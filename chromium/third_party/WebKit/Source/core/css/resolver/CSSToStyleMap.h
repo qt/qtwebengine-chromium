@@ -22,14 +22,17 @@
 #ifndef CSSToStyleMap_h
 #define CSSToStyleMap_h
 
-#include "CSSPropertyNames.h"
+#include "core/CSSPropertyNames.h"
+#include "core/animation/Timing.h"
+#include "core/animation/css/CSSTransitionData.h"
 #include "core/css/resolver/ElementStyleResources.h"
+#include "core/rendering/style/RenderStyleConstants.h"
+#include "platform/animation/TimingFunction.h"
 #include "wtf/Noncopyable.h"
 
 namespace WebCore {
 
 class FillLayer;
-class CSSAnimationData;
 class CSSToLengthConversionData;
 class CSSValue;
 class RenderStyle;
@@ -43,10 +46,10 @@ class BorderImageLengthBox;
 // CSSValue objects into their RenderStyle equivalents.
 
 class CSSToStyleMap {
+    STACK_ALLOCATED();
     WTF_MAKE_NONCOPYABLE(CSSToStyleMap);
 public:
     CSSToStyleMap(const StyleResolverState& state, ElementStyleResources& elementStyleResources) : m_state(state), m_elementStyleResources(elementStyleResources) { }
-
     void mapFillAttachment(CSSPropertyID, FillLayer*, CSSValue*) const;
     void mapFillClip(CSSPropertyID, FillLayer*, CSSValue*) const;
     void mapFillComposite(CSSPropertyID, FillLayer*, CSSValue*) const;
@@ -60,15 +63,15 @@ public:
     void mapFillYPosition(CSSPropertyID, FillLayer*, CSSValue*) const;
     void mapFillMaskSourceType(CSSPropertyID, FillLayer*, CSSValue*);
 
-    void mapAnimationDelay(CSSAnimationData*, CSSValue*) const;
-    void mapAnimationDirection(CSSAnimationData*, CSSValue*) const;
-    void mapAnimationDuration(CSSAnimationData*, CSSValue*) const;
-    void mapAnimationFillMode(CSSAnimationData*, CSSValue*) const;
-    void mapAnimationIterationCount(CSSAnimationData*, CSSValue*) const;
-    void mapAnimationName(CSSAnimationData*, CSSValue*) const;
-    void mapAnimationPlayState(CSSAnimationData*, CSSValue*) const;
-    void mapAnimationProperty(CSSAnimationData*, CSSValue*) const;
-    void mapAnimationTimingFunction(CSSAnimationData*, CSSValue*) const;
+    static double mapAnimationDelay(CSSValue*);
+    static Timing::PlaybackDirection mapAnimationDirection(CSSValue*);
+    static double mapAnimationDuration(CSSValue*);
+    static Timing::FillMode mapAnimationFillMode(CSSValue*);
+    static double mapAnimationIterationCount(CSSValue*);
+    static AtomicString mapAnimationName(CSSValue*);
+    static EAnimPlayState mapAnimationPlayState(CSSValue*);
+    static CSSTransitionData::TransitionProperty mapAnimationProperty(CSSValue*);
+    static PassRefPtr<TimingFunction> mapAnimationTimingFunction(CSSValue*, bool allowStepMiddle = false);
 
     void mapNinePieceImage(RenderStyle* mutableStyle, CSSPropertyID, CSSValue*, NinePieceImage&);
     void mapNinePieceImageSlice(CSSValue*, NinePieceImage&) const;
@@ -77,7 +80,6 @@ public:
 
 private:
     const CSSToLengthConversionData& cssToLengthConversionData() const;
-    bool useSVGZoomRules() const;
 
     PassRefPtr<StyleImage> styleImage(CSSPropertyID, CSSValue*);
 

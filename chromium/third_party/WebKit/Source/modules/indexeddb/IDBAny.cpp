@@ -34,19 +34,19 @@
 
 namespace WebCore {
 
-PassRefPtr<IDBAny> IDBAny::createUndefined()
+IDBAny* IDBAny::createUndefined()
 {
-    return adoptRef(new IDBAny(UndefinedType));
+    return new IDBAny(UndefinedType);
 }
 
-PassRefPtr<IDBAny> IDBAny::createNull()
+IDBAny* IDBAny::createNull()
 {
-    return adoptRef(new IDBAny(NullType));
+    return new IDBAny(NullType);
 }
 
-PassRefPtr<IDBAny> IDBAny::createString(const String& value)
+IDBAny* IDBAny::createString(const String& value)
 {
-    return adoptRef(new IDBAny(value));
+    return new IDBAny(value);
 }
 
 IDBAny::IDBAny(Type type)
@@ -58,6 +58,12 @@ IDBAny::IDBAny(Type type)
 
 IDBAny::~IDBAny()
 {
+}
+
+void IDBAny::contextWillBeDestroyed()
+{
+    if (m_idbCursor)
+        m_idbCursor->contextWillBeDestroyed();
 }
 
 DOMStringList* IDBAny::domStringList() const
@@ -122,6 +128,12 @@ SharedBuffer* IDBAny::buffer() const
     return m_buffer.get();
 }
 
+const Vector<blink::WebBlobInfo>* IDBAny::blobInfo() const
+{
+    ASSERT(m_type == BufferType || m_type == BufferKeyAndKeyPathType);
+    return m_blobInfo;
+}
+
 const String& IDBAny::string() const
 {
     ASSERT(m_type == StringType);
@@ -134,65 +146,67 @@ int64_t IDBAny::integer() const
     return m_integer;
 }
 
-IDBAny::IDBAny(PassRefPtr<DOMStringList> value)
+IDBAny::IDBAny(PassRefPtrWillBeRawPtr<DOMStringList> value)
     : m_type(DOMStringListType)
     , m_domStringList(value)
     , m_integer(0)
 {
 }
 
-IDBAny::IDBAny(PassRefPtr<IDBCursor> value)
+IDBAny::IDBAny(IDBCursor* value)
     : m_type(value->isCursorWithValue() ? IDBCursorWithValueType : IDBCursorType)
     , m_idbCursor(value)
     , m_integer(0)
 {
 }
 
-IDBAny::IDBAny(PassRefPtr<IDBDatabase> value)
+IDBAny::IDBAny(IDBDatabase* value)
     : m_type(IDBDatabaseType)
     , m_idbDatabase(value)
     , m_integer(0)
 {
 }
 
-IDBAny::IDBAny(PassRefPtr<IDBIndex> value)
+IDBAny::IDBAny(IDBIndex* value)
     : m_type(IDBIndexType)
     , m_idbIndex(value)
     , m_integer(0)
 {
 }
 
-IDBAny::IDBAny(PassRefPtr<IDBTransaction> value)
+IDBAny::IDBAny(IDBTransaction* value)
     : m_type(IDBTransactionType)
     , m_idbTransaction(value)
     , m_integer(0)
 {
 }
 
-IDBAny::IDBAny(PassRefPtr<IDBObjectStore> value)
+IDBAny::IDBAny(IDBObjectStore* value)
     : m_type(IDBObjectStoreType)
     , m_idbObjectStore(value)
     , m_integer(0)
 {
 }
 
-IDBAny::IDBAny(PassRefPtr<SharedBuffer> value)
+IDBAny::IDBAny(PassRefPtr<SharedBuffer> value, const Vector<blink::WebBlobInfo>* blobInfo)
     : m_type(BufferType)
     , m_buffer(value)
+    , m_blobInfo(blobInfo)
     , m_integer(0)
 {
 }
 
-IDBAny::IDBAny(PassRefPtr<SharedBuffer> value, PassRefPtr<IDBKey> key, const IDBKeyPath& keyPath)
+IDBAny::IDBAny(PassRefPtr<SharedBuffer> value, const Vector<blink::WebBlobInfo>* blobInfo, IDBKey* key, const IDBKeyPath& keyPath)
     : m_type(BufferKeyAndKeyPathType)
     , m_idbKey(key)
     , m_idbKeyPath(keyPath)
     , m_buffer(value)
+    , m_blobInfo(blobInfo)
     , m_integer(0)
 {
 }
 
-IDBAny::IDBAny(PassRefPtr<IDBKey> key)
+IDBAny::IDBAny(IDBKey* key)
     : m_type(KeyType)
     , m_idbKey(key)
     , m_integer(0)
@@ -217,6 +231,17 @@ IDBAny::IDBAny(int64_t value)
     : m_type(IntegerType)
     , m_integer(value)
 {
+}
+
+void IDBAny::trace(Visitor* visitor)
+{
+    visitor->trace(m_domStringList);
+    visitor->trace(m_idbCursor);
+    visitor->trace(m_idbDatabase);
+    visitor->trace(m_idbIndex);
+    visitor->trace(m_idbObjectStore);
+    visitor->trace(m_idbTransaction);
+    visitor->trace(m_idbKey);
 }
 
 } // namespace WebCore

@@ -32,24 +32,18 @@
 #include "config.h"
 #include "core/html/forms/PasswordInputType.h"
 
-#include "CSSPropertyNames.h"
-#include "CSSValueKeywords.h"
-#include "InputTypeNames.h"
-#include "core/dom/shadow/ShadowRoot.h"
+#include "core/InputTypeNames.h"
+#include "core/dom/Document.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/forms/FormController.h"
-#include "core/page/Chrome.h"
-#include "core/page/ChromeClient.h"
-#include "core/page/Page.h"
-#include "core/frame/Settings.h"
 #include "wtf/Assertions.h"
-#include "wtf/PassOwnPtr.h"
+#include "wtf/PassRefPtr.h"
 
 namespace WebCore {
 
-PassRefPtr<InputType> PasswordInputType::create(HTMLInputElement& element)
+PassRefPtrWillBeRawPtr<InputType> PasswordInputType::create(HTMLInputElement& element)
 {
-    return adoptRef(new PasswordInputType(element));
+    return adoptRefWillBeNoop(new PasswordInputType(element));
 }
 
 void PasswordInputType::countUsage()
@@ -57,38 +51,6 @@ void PasswordInputType::countUsage()
     countUsageIfVisible(UseCounter::InputTypePassword);
     if (element().fastHasAttribute(HTMLNames::maxlengthAttr))
         countUsageIfVisible(UseCounter::InputTypePasswordMaxLength);
-}
-
-bool PasswordInputType::isPasswordGenerationEnabled() const
-{
-    if (isPasswordGenerationDecorationEnabled())
-        return true;
-    if (Page* page = element().document().page())
-        return page->chrome().client().isPasswordGenerationEnabled();
-    return false;
-}
-
-bool PasswordInputType::isPasswordGenerationDecorationEnabled() const
-{
-    if (Page* page = element().document().page())
-        return page->settings().passwordGenerationDecorationEnabled();
-    return false;
-}
-
-bool PasswordInputType::needsContainer() const
-{
-    return BaseTextInputType::needsContainer() || isPasswordGenerationEnabled();
-}
-
-void PasswordInputType::createShadowSubtree()
-{
-    BaseTextInputType::createShadowSubtree();
-    if (!isPasswordGenerationEnabled())
-        return;
-    RefPtr<PasswordGeneratorButtonElement> generatorButton = PasswordGeneratorButtonElement::create(element().document());
-    if (!isPasswordGenerationDecorationEnabled())
-        generatorButton->setInlineStyleProperty(CSSPropertyDisplay, CSSValueNone);
-    containerElement()->appendChild(generatorButton.release());
 }
 
 const AtomicString& PasswordInputType::formControlType() const
@@ -119,11 +81,6 @@ bool PasswordInputType::shouldUseInputMethod() const
     // Input methods are disabled for the password field because otherwise
     // anyone can access the underlying password and display it in clear text.
     return false;
-}
-
-bool PasswordInputType::shouldResetOnDocumentActivation()
-{
-    return true;
 }
 
 bool PasswordInputType::shouldRespectListAttribute()

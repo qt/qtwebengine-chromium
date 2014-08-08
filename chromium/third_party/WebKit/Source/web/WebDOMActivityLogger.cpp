@@ -29,12 +29,12 @@
  */
 
 #include "config.h"
-#include "WebDOMActivityLogger.h"
+#include "public/web/WebDOMActivityLogger.h"
 
-#include "bindings/v8/DOMWrapperWorld.h"
 #include "bindings/v8/V8Binding.h"
 #include "bindings/v8/V8DOMActivityLogger.h"
 #include "core/dom/Document.h"
+#include "core/frame/LocalDOMWindow.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/text/WTFString.h"
 
@@ -49,30 +49,53 @@ public:
     {
     }
 
-    virtual void log(const String& apiName, int argc, const v8::Handle<v8::Value>* argv, const String& extraInfo) OVERRIDE
+    virtual void logGetter(const String& apiName) OVERRIDE
     {
-        KURL url;
-        String title;
-        if (Document* document = currentDocument()) {
-            url = document->url();
-            title = document->title();
-        }
-        m_domActivityLogger->log(WebString(apiName), argc, argv, WebString(extraInfo), WebURL(url), WebString(title));
+        m_domActivityLogger->logGetter(WebString(apiName), getURL(), getTitle());
+    }
+
+    virtual void logSetter(const String& apiName, const v8::Handle<v8::Value>& newValue) OVERRIDE
+    {
+        m_domActivityLogger->logSetter(WebString(apiName), newValue, getURL(), getTitle());
+    }
+
+    virtual void logSetter(const String& apiName, const v8::Handle<v8::Value>& newValue, const v8::Handle<v8::Value>& oldValue) OVERRIDE
+    {
+        m_domActivityLogger->logSetter(WebString(apiName), newValue, oldValue, getURL(), getTitle());
+    }
+
+    virtual void logMethod(const String& apiName, int argc, const v8::Handle<v8::Value>* argv) OVERRIDE
+    {
+        m_domActivityLogger->logMethod(WebString(apiName), argc, argv, getURL(), getTitle());
     }
 
 private:
+    WebURL getURL()
+    {
+        if (Document* document = currentDOMWindow(v8::Isolate::GetCurrent())->document())
+            return WebURL(document->url());
+        return WebURL();
+    }
+
+    WebString getTitle()
+    {
+        if (Document* document = currentDOMWindow(v8::Isolate::GetCurrent())->document())
+            return WebString(document->title());
+        return WebString();
+    }
+
     OwnPtr<WebDOMActivityLogger> m_domActivityLogger;
 };
 
-bool hasDOMActivityLogger(int worldId)
+bool hasDOMActivityLogger(int worldId, const WebString& extensionId)
 {
-    return DOMWrapperWorld::activityLogger(worldId);
+    return V8DOMActivityLogger::activityLogger(worldId, extensionId);
 }
 
-void setDOMActivityLogger(int worldId, WebDOMActivityLogger* logger)
+void setDOMActivityLogger(int worldId, const WebString& extensionId, WebDOMActivityLogger* logger)
 {
     ASSERT(logger);
-    DOMWrapperWorld::setActivityLogger(worldId, adoptPtr(new DOMActivityLoggerContainer(adoptPtr(logger))));
+    V8DOMActivityLogger::setActivityLogger(worldId, extensionId, adoptPtr(new DOMActivityLoggerContainer(adoptPtr(logger))));
 }
 
 } // namespace blink

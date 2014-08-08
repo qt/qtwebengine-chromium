@@ -41,21 +41,10 @@ base::FilePath::StringType GetRegisterNameForPath(const base::FilePath& path) {
 }
 
 bool IsSinglePathIsolatedFileSystem(FileSystemType type) {
-  switch (type) {
-    // As of writing dragged file system is the only filesystem
-    // which could have multiple top-level paths.
-    case kFileSystemTypeDragged:
-      return false;
-
-    case kFileSystemTypeUnknown:
-      NOTREACHED();
-      return true;
-
-    default:
-      return true;
-  }
-  NOTREACHED();
-  return true;
+  DCHECK_NE(kFileSystemTypeUnknown, type);
+  // As of writing dragged file system is the only filesystem which could have
+  // multiple top-level paths.
+  return type != kFileSystemTypeDragged;
 }
 
 static base::LazyInstance<IsolatedContext>::Leaky g_isolated_context =
@@ -117,7 +106,9 @@ class IsolatedContext::Instance {
   // IsolatedContext::RegisterFileSystemForPath() or
   // IsolatedContext::RegisterFileSystemForVirtualPath().
   // Most of isolated file system contexts should be of this type.
-  Instance(FileSystemType type, const MountPointInfo& file_info,
+  Instance(FileSystemType type,
+           const std::string& filesystem_id,
+           const MountPointInfo& file_info,
            PathType path_type);
 
   // For a multi-paths isolated file system.  As of writing only file system
@@ -128,6 +119,7 @@ class IsolatedContext::Instance {
   ~Instance();
 
   FileSystemType type() const { return type_; }
+  const std::string& filesystem_id() const { return filesystem_id_; }
   const MountPointInfo& file_info() const { return file_info_; }
   const std::set<MountPointInfo>& files() const { return files_; }
   int ref_counts() const { return ref_counts_; }
@@ -142,6 +134,7 @@ class IsolatedContext::Instance {
 
  private:
   const FileSystemType type_;
+  const std::string filesystem_id_;
 
   // For single-path instance.
   const MountPointInfo file_info_;
@@ -158,9 +151,11 @@ class IsolatedContext::Instance {
 };
 
 IsolatedContext::Instance::Instance(FileSystemType type,
+                                    const std::string& filesystem_id,
                                     const MountPointInfo& file_info,
                                     Instance::PathType path_type)
     : type_(type),
+      filesystem_id_(filesystem_id),
       file_info_(file_info),
       path_type_(path_type),
       ref_counts_(0) {
@@ -229,6 +224,7 @@ std::string IsolatedContext::RegisterDraggedFileSystem(
 
 std::string IsolatedContext::RegisterFileSystemForPath(
     FileSystemType type,
+    const std::string& filesystem_id,
     const base::FilePath& path_in,
     std::string* register_name) {
   base::FilePath path(path_in.NormalizePathSeparators());
@@ -244,11 +240,12 @@ std::string IsolatedContext::RegisterFileSystemForPath(
   }
 
   base::AutoLock locker(lock_);
-  std::string filesystem_id = GetNewFileSystemId();
-  instance_map_[filesystem_id] = new Instance(type, MountPointInfo(name, path),
-                                              Instance::PLATFORM_PATH);
-  path_to_id_map_[path].insert(filesystem_id);
-  return filesystem_id;
+  std::string new_id = GetNewFileSystemId();
+  instance_map_[new_id] = new Instance(type, filesystem_id,
+                                       MountPointInfo(name, path),
+                                       Instance::PLATFORM_PATH);
+  path_to_id_map_[path].insert(new_id);
+  return new_id;
 }
 
 std::string IsolatedContext::RegisterFileSystemForVirtualPath(
@@ -262,6 +259,7 @@ std::string IsolatedContext::RegisterFileSystemForVirtualPath(
   std::string filesystem_id = GetNewFileSystemId();
   instance_map_[filesystem_id] = new Instance(
       type,
+      std::string(),  // filesystem_id
       MountPointInfo(register_name, cracked_path_prefix),
       Instance::VIRTUAL_PATH);
   path_to_id_map_[path].insert(filesystem_id);
@@ -292,6 +290,7 @@ bool IsolatedContext::CrackVirtualPath(
     const base::FilePath& virtual_path,
     std::string* id_or_name,
     FileSystemType* type,
+    std::string* cracked_id,
     base::FilePath* path,
     FileSystemMountOption* mount_option) const {
   DCHECK(id_or_name);
@@ -325,6 +324,8 @@ bool IsolatedContext::CrackVirtualPath(
     const Instance* instance = found_instance->second;
     if (type)
       *type = instance->type();
+    if (cracked_id)
+      *cracked_id = instance->filesystem_id();
 
     if (component_iter == components.end()) {
       // The virtual root case.
@@ -431,18 +432,22 @@ FileSystemURL IsolatedContext::CrackFileSystemURL(
     return FileSystemURL();
 
   std::string mount_name;
+  std::string cracked_mount_name;
   FileSystemType cracked_type;
   base::FilePath cracked_path;
   FileSystemMountOption cracked_mount_option;
   if (!CrackVirtualPath(url.path(), &mount_name, &cracked_type,
-                        &cracked_path, &cracked_mount_option)) {
+                        &cracked_mount_name, &cracked_path,
+                        &cracked_mount_option)) {
     return FileSystemURL();
   }
 
   return FileSystemURL(
       url.origin(), url.mount_type(), url.virtual_path(),
       !url.filesystem_id().empty() ? url.filesystem_id() : mount_name,
-      cracked_type, cracked_path, mount_name, cracked_mount_option);
+      cracked_type, cracked_path,
+      cracked_mount_name.empty() ? mount_name : cracked_mount_name,
+      cracked_mount_option);
 }
 
 bool IsolatedContext::UnregisterFileSystem(const std::string& filesystem_id) {

@@ -63,20 +63,20 @@ blink::WebUChar GetControlCharacter(int windows_key_code, bool shift) {
 #endif
 #if defined(OS_WIN)
 blink::WebMouseEvent MakeUntranslatedWebMouseEventFromNativeEvent(
-    base::NativeEvent native_event);
+    const base::NativeEvent& native_event);
 blink::WebMouseWheelEvent MakeUntranslatedWebMouseWheelEventFromNativeEvent(
-    base::NativeEvent native_event);
+    const base::NativeEvent& native_event);
 blink::WebKeyboardEvent MakeWebKeyboardEventFromNativeEvent(
-    base::NativeEvent native_event);
+    const base::NativeEvent& native_event);
 blink::WebGestureEvent MakeWebGestureEventFromNativeEvent(
-    base::NativeEvent native_event);
+    const base::NativeEvent& native_event);
 #elif defined(USE_X11)
 blink::WebKeyboardEvent MakeWebKeyboardEventFromAuraEvent(
     ui::KeyEvent* event);
 #elif defined(USE_OZONE)
 blink::WebKeyboardEvent MakeWebKeyboardEventFromAuraEvent(
     ui::KeyEvent* event) {
-  base::NativeEvent native_event = event->native_event();
+  const base::NativeEvent& native_event = event->native_event();
   ui::EventType type = ui::EventTypeFromNative(native_event);
   blink::WebKeyboardEvent webkit_event;
 
@@ -133,18 +133,27 @@ blink::WebMouseWheelEvent MakeWebMouseWheelEventFromAuraEvent(
   webkit_event.modifiers = EventFlagsToWebEventModifiers(event->flags());
   webkit_event.timeStampSeconds = event->time_stamp().InSecondsF();
   webkit_event.hasPreciseScrollingDeltas = true;
-  webkit_event.deltaX = event->x_offset();
-  if (event->x_offset_ordinal() != 0.f && event->x_offset() != 0.f) {
-    webkit_event.accelerationRatioX =
-        event->x_offset_ordinal() / event->x_offset();
+
+  float offset_ordinal_x = 0.f;
+  float offset_ordinal_y = 0.f;
+  if ((event->flags() & ui::EF_SHIFT_DOWN) != 0 && event->x_offset() == 0) {
+    webkit_event.deltaX = event->y_offset();
+    webkit_event.deltaY = 0;
+    offset_ordinal_x = event->y_offset_ordinal();
+    offset_ordinal_y = event->x_offset_ordinal();
+  } else {
+    webkit_event.deltaX = event->x_offset();
+    webkit_event.deltaY = event->y_offset();
+    offset_ordinal_x = event->x_offset_ordinal();
+    offset_ordinal_y = event->y_offset_ordinal();
   }
+
+  if (offset_ordinal_x != 0.f && webkit_event.deltaX != 0.f)
+    webkit_event.accelerationRatioX = offset_ordinal_x / webkit_event.deltaX;
   webkit_event.wheelTicksX = webkit_event.deltaX / kPixelsPerTick;
-  webkit_event.deltaY = event->y_offset();
   webkit_event.wheelTicksY = webkit_event.deltaY / kPixelsPerTick;
-  if (event->y_offset_ordinal() != 0.f && event->y_offset() != 0.f) {
-    webkit_event.accelerationRatioY =
-        event->y_offset_ordinal() / event->y_offset();
-  }
+  if (offset_ordinal_y != 0.f && webkit_event.deltaY != 0.f)
+    webkit_event.accelerationRatioY = offset_ordinal_y / webkit_event.deltaY;
   return webkit_event;
 }
 
@@ -168,7 +177,7 @@ blink::WebGestureEvent MakeWebGestureEventFromAuraEvent(
       NOTREACHED() << "Unknown gesture type: " << event->type();
   }
 
-  webkit_event.sourceDevice = blink::WebGestureEvent::Touchpad;
+  webkit_event.sourceDevice = blink::WebGestureDeviceTouchpad;
   webkit_event.modifiers = EventFlagsToWebEventModifiers(event->flags());
   webkit_event.timeStampSeconds = event->time_stamp().InSecondsF();
   return webkit_event;
@@ -278,6 +287,9 @@ blink::WebMouseWheelEvent MakeWebMouseWheelEvent(ui::ScrollEvent* event) {
 }
 
 blink::WebKeyboardEvent MakeWebKeyboardEvent(ui::KeyEvent* event) {
+  if (!event->HasNativeEvent())
+    return blink::WebKeyboardEvent();
+
   // Windows can figure out whether or not to construct a RawKeyDown or a Char
   // WebInputEvent based on the type of message carried in
   // event->native_event(). X11 is not so fortunate, there is no separate
@@ -337,7 +349,7 @@ blink::WebGestureEvent MakeWebGestureEventFlingCancel() {
 
   // All other fields are ignored on a GestureFlingCancel event.
   gesture_event.type = blink::WebInputEvent::GestureFlingCancel;
-  gesture_event.sourceDevice = blink::WebGestureEvent::Touchpad;
+  gesture_event.sourceDevice = blink::WebGestureDeviceTouchpad;
   return gesture_event;
 }
 
@@ -386,8 +398,15 @@ blink::WebMouseWheelEvent MakeWebMouseWheelEventFromAuraEvent(
   webkit_event.button = blink::WebMouseEvent::ButtonNone;
   webkit_event.modifiers = EventFlagsToWebEventModifiers(event->flags());
   webkit_event.timeStampSeconds = event->time_stamp().InSecondsF();
-  webkit_event.deltaX = event->x_offset();
-  webkit_event.deltaY = event->y_offset();
+
+  if ((event->flags() & ui::EF_SHIFT_DOWN) != 0 && event->x_offset() == 0) {
+    webkit_event.deltaX = event->y_offset();
+    webkit_event.deltaY = 0;
+  } else {
+    webkit_event.deltaX = event->x_offset();
+    webkit_event.deltaY = event->y_offset();
+  }
+
   webkit_event.wheelTicksX = webkit_event.deltaX / kPixelsPerTick;
   webkit_event.wheelTicksY = webkit_event.deltaY / kPixelsPerTick;
 

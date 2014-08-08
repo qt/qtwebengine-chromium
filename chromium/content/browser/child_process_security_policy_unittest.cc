@@ -7,7 +7,6 @@
 
 #include "base/basictypes.h"
 #include "base/files/file_path.h"
-#include "base/platform_file.h"
 #include "content/browser/child_process_security_policy_impl.h"
 #include "content/public/common/url_constants.h"
 #include "content/test/test_content_browser_client.h"
@@ -63,13 +62,13 @@ class ChildProcessSecurityPolicyTest : public testing::Test {
 
     // Claim to always handle chrome:// URLs because the CPSP's notion of
     // allowing WebUI bindings is hard-wired to this particular scheme.
-    test_browser_client_.AddScheme(chrome::kChromeUIScheme);
+    test_browser_client_.AddScheme(kChromeUIScheme);
 
     // Claim to always handle file:// URLs like the browser would.
     // net::URLRequest::IsHandledURL() no longer claims support for default
     // protocols as this is the responsibility of the browser (which is
     // responsible for adding the appropriate ProtocolHandler).
-    test_browser_client_.AddScheme(chrome::kFileScheme);
+    test_browser_client_.AddScheme(url::kFileScheme);
   }
 
   virtual void TearDown() {
@@ -120,34 +119,34 @@ TEST_F(ChildProcessSecurityPolicyTest, IsWebSafeSchemeTest) {
   ChildProcessSecurityPolicyImpl* p =
       ChildProcessSecurityPolicyImpl::GetInstance();
 
-  EXPECT_TRUE(p->IsWebSafeScheme(kHttpScheme));
-  EXPECT_TRUE(p->IsWebSafeScheme(kHttpsScheme));
-  EXPECT_TRUE(p->IsWebSafeScheme(kFtpScheme));
-  EXPECT_TRUE(p->IsWebSafeScheme(chrome::kDataScheme));
+  EXPECT_TRUE(p->IsWebSafeScheme(url::kHttpScheme));
+  EXPECT_TRUE(p->IsWebSafeScheme(url::kHttpsScheme));
+  EXPECT_TRUE(p->IsWebSafeScheme(url::kFtpScheme));
+  EXPECT_TRUE(p->IsWebSafeScheme(url::kDataScheme));
   EXPECT_TRUE(p->IsWebSafeScheme("feed"));
-  EXPECT_TRUE(p->IsWebSafeScheme(chrome::kBlobScheme));
-  EXPECT_TRUE(p->IsWebSafeScheme(chrome::kFileSystemScheme));
+  EXPECT_TRUE(p->IsWebSafeScheme(url::kBlobScheme));
+  EXPECT_TRUE(p->IsWebSafeScheme(url::kFileSystemScheme));
 
   EXPECT_FALSE(p->IsWebSafeScheme("registered-web-safe-scheme"));
   p->RegisterWebSafeScheme("registered-web-safe-scheme");
   EXPECT_TRUE(p->IsWebSafeScheme("registered-web-safe-scheme"));
 
-  EXPECT_FALSE(p->IsWebSafeScheme(chrome::kChromeUIScheme));
+  EXPECT_FALSE(p->IsWebSafeScheme(kChromeUIScheme));
 }
 
 TEST_F(ChildProcessSecurityPolicyTest, IsPseudoSchemeTest) {
   ChildProcessSecurityPolicyImpl* p =
       ChildProcessSecurityPolicyImpl::GetInstance();
 
-  EXPECT_TRUE(p->IsPseudoScheme(chrome::kAboutScheme));
-  EXPECT_TRUE(p->IsPseudoScheme(kJavaScriptScheme));
+  EXPECT_TRUE(p->IsPseudoScheme(url::kAboutScheme));
+  EXPECT_TRUE(p->IsPseudoScheme(url::kJavaScriptScheme));
   EXPECT_TRUE(p->IsPseudoScheme(kViewSourceScheme));
 
   EXPECT_FALSE(p->IsPseudoScheme("registered-pseudo-scheme"));
   p->RegisterPseudoScheme("registered-pseudo-scheme");
   EXPECT_TRUE(p->IsPseudoScheme("registered-pseudo-scheme"));
 
-  EXPECT_FALSE(p->IsPseudoScheme(chrome::kChromeUIScheme));
+  EXPECT_FALSE(p->IsPseudoScheme(kChromeUIScheme));
 }
 
 TEST_F(ChildProcessSecurityPolicyTest, StandardSchemesTest) {
@@ -467,130 +466,130 @@ TEST_F(ChildProcessSecurityPolicyTest, FilePermissions) {
   // Grant permissions for a file.
   p->Add(kRendererID);
   EXPECT_FALSE(p->HasPermissionsForFile(kRendererID, granted_file,
-                                        base::PLATFORM_FILE_OPEN));
+                                        base::File::FLAG_OPEN));
 
   GrantPermissionsForFile(p, kRendererID, granted_file,
-                             base::PLATFORM_FILE_OPEN |
-                             base::PLATFORM_FILE_OPEN_TRUNCATED |
-                             base::PLATFORM_FILE_READ |
-                             base::PLATFORM_FILE_WRITE);
+                             base::File::FLAG_OPEN |
+                             base::File::FLAG_OPEN_TRUNCATED |
+                             base::File::FLAG_READ |
+                             base::File::FLAG_WRITE);
   EXPECT_TRUE(p->HasPermissionsForFile(kRendererID, granted_file,
-                                       base::PLATFORM_FILE_OPEN |
-                                       base::PLATFORM_FILE_OPEN_TRUNCATED |
-                                       base::PLATFORM_FILE_READ |
-                                       base::PLATFORM_FILE_WRITE));
+                                       base::File::FLAG_OPEN |
+                                       base::File::FLAG_OPEN_TRUNCATED |
+                                       base::File::FLAG_READ |
+                                       base::File::FLAG_WRITE));
   EXPECT_TRUE(p->HasPermissionsForFile(kRendererID, granted_file,
-                                       base::PLATFORM_FILE_OPEN |
-                                       base::PLATFORM_FILE_READ));
+                                       base::File::FLAG_OPEN |
+                                       base::File::FLAG_READ));
   EXPECT_FALSE(p->HasPermissionsForFile(kRendererID, granted_file,
-                                        base::PLATFORM_FILE_CREATE));
+                                        base::File::FLAG_CREATE));
   EXPECT_FALSE(p->HasPermissionsForFile(kRendererID, granted_file, 0));
   EXPECT_FALSE(p->HasPermissionsForFile(kRendererID, granted_file,
-                                        base::PLATFORM_FILE_CREATE |
-                                        base::PLATFORM_FILE_OPEN_TRUNCATED |
-                                        base::PLATFORM_FILE_READ |
-                                        base::PLATFORM_FILE_WRITE));
+                                        base::File::FLAG_CREATE |
+                                        base::File::FLAG_OPEN_TRUNCATED |
+                                        base::File::FLAG_READ |
+                                        base::File::FLAG_WRITE));
   EXPECT_FALSE(p->HasPermissionsForFile(kRendererID, sibling_file,
-                                        base::PLATFORM_FILE_OPEN |
-                                        base::PLATFORM_FILE_READ));
+                                        base::File::FLAG_OPEN |
+                                        base::File::FLAG_READ));
   EXPECT_FALSE(p->HasPermissionsForFile(kRendererID, parent_file,
-                                        base::PLATFORM_FILE_OPEN |
-                                        base::PLATFORM_FILE_READ));
+                                        base::File::FLAG_OPEN |
+                                        base::File::FLAG_READ));
   EXPECT_TRUE(p->HasPermissionsForFile(kRendererID, child_file,
-                                        base::PLATFORM_FILE_OPEN |
-                                        base::PLATFORM_FILE_READ));
+                                        base::File::FLAG_OPEN |
+                                        base::File::FLAG_READ));
   EXPECT_TRUE(p->HasPermissionsForFile(kRendererID, child_traversal1,
-                                        base::PLATFORM_FILE_OPEN |
-                                        base::PLATFORM_FILE_READ));
+                                        base::File::FLAG_OPEN |
+                                        base::File::FLAG_READ));
   EXPECT_TRUE(p->HasPermissionsForFile(kRendererID, child_traversal2,
-                                        base::PLATFORM_FILE_OPEN |
-                                        base::PLATFORM_FILE_READ));
+                                        base::File::FLAG_OPEN |
+                                        base::File::FLAG_READ));
   EXPECT_FALSE(p->HasPermissionsForFile(kRendererID, evil_traversal1,
-                                        base::PLATFORM_FILE_OPEN |
-                                        base::PLATFORM_FILE_READ));
+                                        base::File::FLAG_OPEN |
+                                        base::File::FLAG_READ));
   EXPECT_FALSE(p->HasPermissionsForFile(kRendererID, evil_traversal2,
-                                        base::PLATFORM_FILE_OPEN |
-                                        base::PLATFORM_FILE_READ));
+                                        base::File::FLAG_OPEN |
+                                        base::File::FLAG_READ));
   // CPSP doesn't allow this case for the sake of simplicity.
   EXPECT_FALSE(p->HasPermissionsForFile(kRendererID, self_traversal,
-                                        base::PLATFORM_FILE_OPEN |
-                                        base::PLATFORM_FILE_READ));
+                                        base::File::FLAG_OPEN |
+                                        base::File::FLAG_READ));
   p->Remove(kRendererID);
 
   // Grant permissions for the directory the file is in.
   p->Add(kRendererID);
   EXPECT_FALSE(p->HasPermissionsForFile(kRendererID, granted_file,
-                                        base::PLATFORM_FILE_OPEN));
+                                        base::File::FLAG_OPEN));
   GrantPermissionsForFile(p, kRendererID, parent_file,
-                             base::PLATFORM_FILE_OPEN |
-                             base::PLATFORM_FILE_READ);
+                             base::File::FLAG_OPEN |
+                             base::File::FLAG_READ);
   EXPECT_TRUE(p->HasPermissionsForFile(kRendererID, granted_file,
-                                        base::PLATFORM_FILE_OPEN));
+                                        base::File::FLAG_OPEN));
   EXPECT_FALSE(p->HasPermissionsForFile(kRendererID, granted_file,
-                                        base::PLATFORM_FILE_READ |
-                                        base::PLATFORM_FILE_WRITE));
+                                        base::File::FLAG_READ |
+                                        base::File::FLAG_WRITE));
   p->Remove(kRendererID);
 
   // Grant permissions for the directory the file is in (with trailing '/').
   p->Add(kRendererID);
   EXPECT_FALSE(p->HasPermissionsForFile(kRendererID, granted_file,
-                                        base::PLATFORM_FILE_OPEN));
+                                        base::File::FLAG_OPEN));
   GrantPermissionsForFile(p, kRendererID, parent_slash_file,
-                             base::PLATFORM_FILE_OPEN |
-                             base::PLATFORM_FILE_READ);
+                             base::File::FLAG_OPEN |
+                             base::File::FLAG_READ);
   EXPECT_TRUE(p->HasPermissionsForFile(kRendererID, granted_file,
-                                        base::PLATFORM_FILE_OPEN));
+                                        base::File::FLAG_OPEN));
   EXPECT_FALSE(p->HasPermissionsForFile(kRendererID, granted_file,
-                                        base::PLATFORM_FILE_READ |
-                                        base::PLATFORM_FILE_WRITE));
+                                        base::File::FLAG_READ |
+                                        base::File::FLAG_WRITE));
 
   // Grant permissions for the file (should overwrite the permissions granted
   // for the directory).
   GrantPermissionsForFile(p, kRendererID, granted_file,
-                             base::PLATFORM_FILE_TEMPORARY);
+                             base::File::FLAG_TEMPORARY);
   EXPECT_FALSE(p->HasPermissionsForFile(kRendererID, granted_file,
-                                        base::PLATFORM_FILE_OPEN));
+                                        base::File::FLAG_OPEN));
   EXPECT_TRUE(p->HasPermissionsForFile(kRendererID, granted_file,
-                                       base::PLATFORM_FILE_TEMPORARY));
+                                       base::File::FLAG_TEMPORARY));
 
   // Revoke all permissions for the file (it should inherit its permissions
   // from the directory again).
   p->RevokeAllPermissionsForFile(kRendererID, granted_file);
   EXPECT_TRUE(p->HasPermissionsForFile(kRendererID, granted_file,
-                                       base::PLATFORM_FILE_OPEN |
-                                       base::PLATFORM_FILE_READ));
+                                       base::File::FLAG_OPEN |
+                                       base::File::FLAG_READ));
   EXPECT_FALSE(p->HasPermissionsForFile(kRendererID, granted_file,
-                                        base::PLATFORM_FILE_TEMPORARY));
+                                        base::File::FLAG_TEMPORARY));
   p->Remove(kRendererID);
 
   // Grant file permissions for the file to main thread renderer process,
   // make sure its worker thread renderer process inherits those.
   p->Add(kRendererID);
   GrantPermissionsForFile(p, kRendererID, granted_file,
-                             base::PLATFORM_FILE_OPEN |
-                             base::PLATFORM_FILE_READ);
+                             base::File::FLAG_OPEN |
+                             base::File::FLAG_READ);
   EXPECT_TRUE(p->HasPermissionsForFile(kRendererID, granted_file,
-                                       base::PLATFORM_FILE_OPEN |
-                                       base::PLATFORM_FILE_READ));
+                                       base::File::FLAG_OPEN |
+                                       base::File::FLAG_READ));
   EXPECT_FALSE(p->HasPermissionsForFile(kRendererID, granted_file,
-                                       base::PLATFORM_FILE_WRITE));
+                                       base::File::FLAG_WRITE));
   p->AddWorker(kWorkerRendererID, kRendererID);
   EXPECT_TRUE(p->HasPermissionsForFile(kWorkerRendererID, granted_file,
-                                       base::PLATFORM_FILE_OPEN |
-                                       base::PLATFORM_FILE_READ));
+                                       base::File::FLAG_OPEN |
+                                       base::File::FLAG_READ));
   EXPECT_FALSE(p->HasPermissionsForFile(kWorkerRendererID, granted_file,
-                                        base::PLATFORM_FILE_WRITE));
+                                        base::File::FLAG_WRITE));
   p->Remove(kRendererID);
   EXPECT_FALSE(p->HasPermissionsForFile(kWorkerRendererID, granted_file,
-                                        base::PLATFORM_FILE_OPEN |
-                                        base::PLATFORM_FILE_READ));
+                                        base::File::FLAG_OPEN |
+                                        base::File::FLAG_READ));
   p->Remove(kWorkerRendererID);
 
   p->Add(kRendererID);
   GrantPermissionsForFile(p, kRendererID, relative_file,
-                             base::PLATFORM_FILE_OPEN);
+                             base::File::FLAG_OPEN);
   EXPECT_FALSE(p->HasPermissionsForFile(kRendererID, relative_file,
-                                        base::PLATFORM_FILE_OPEN));
+                                        base::File::FLAG_OPEN));
   p->Remove(kRendererID);
 }
 

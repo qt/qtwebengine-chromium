@@ -93,8 +93,8 @@
      */
     function formatLanguageCode(langCode) {
       var key = 'language-' + langCode;
-      if (key in templateData) {
-        var langName = templateData[key];
+      if (loadTimeData.valueExists(key)) {
+        var langName = loadTimeData.getString(key);
         return langCode + ' (' + langName + ')';
       }
 
@@ -368,7 +368,7 @@
                'event-logs-place');
       appendTD(tr, details['message'], 'event-logs-message');
 
-      var tbody = $('event-logs').getElementsByTagName('tbody')[0];
+      var tbody = $('tabpanel-event-logs').getElementsByTagName('tbody')[0];
       tbody.appendChild(tr);
     }
 
@@ -408,7 +408,7 @@
     function onDetectionLogsDump() {
       var data = JSON.stringify(cr.translateInternals.detectionLogs());
       var blob = new Blob([data], {'type': 'text/json'});
-      var url = webkitURL.createObjectURL(blob);
+      var url = URL.createObjectURL(blob);
       var filename = 'translate_internals_detect_logs_dump.json';
 
       var a = document.createElement('a');

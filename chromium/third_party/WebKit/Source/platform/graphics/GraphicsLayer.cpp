@@ -31,8 +31,8 @@
 #include "SkMatrix44.h"
 #include "platform/geometry/FloatRect.h"
 #include "platform/geometry/LayoutRect.h"
-#include "platform/graphics/GraphicsContext.h"
 #include "platform/graphics/GraphicsLayerFactory.h"
+#include "platform/graphics/Image.h"
 #include "platform/graphics/filters/SkiaImageFilterBuilder.h"
 #include "platform/graphics/skia/NativeImageSkia.h"
 #include "platform/scroll/ScrollableArea.h"
@@ -51,6 +51,8 @@
 #include "wtf/HashMap.h"
 #include "wtf/HashSet.h"
 #include "wtf/text/WTFString.h"
+
+#include <algorithm>
 
 #ifndef NDEBUG
 #include <stdio.h>
@@ -78,12 +80,12 @@ PassOwnPtr<GraphicsLayer> GraphicsLayer::create(GraphicsLayerFactory* factory, G
 
 GraphicsLayer::GraphicsLayer(GraphicsLayerClient* client)
     : m_client(client)
-    , m_anchorPoint(0.5f, 0.5f, 0)
+    , m_backgroundColor(Color::transparent)
     , m_opacity(1)
-    , m_zPosition(0)
     , m_blendMode(blink::WebBlendModeNormal)
+    , m_hasTransformOrigin(false)
     , m_contentsOpaque(false)
-    , m_preserves3D(false)
+    , m_shouldFlattenTransform(true)
     , m_backfaceVisibility(true)
     , m_masksToBounds(false)
     , m_drawsContent(false)
@@ -92,7 +94,6 @@ GraphicsLayer::GraphicsLayer(GraphicsLayerClient* client)
     , m_hasScrollParent(false)
     , m_hasClipParent(false)
     , m_paintingPhase(GraphicsLayerPaintAllWithOverflowClip)
-    , m_contentsOrientation(CompositingCoordinatesTopDown)
     , m_parent(0)
     , m_maskLayer(0)
     , m_contentsClippingMaskLayer(0)
@@ -102,8 +103,7 @@ GraphicsLayer::GraphicsLayer(GraphicsLayerClient* client)
     , m_contentsLayer(0)
     , m_contentsLayerId(0)
     , m_scrollableArea(0)
-    , m_compositingReasons(blink::CompositingReasonUnknown)
-    , m_debugInfo(0)
+    , m_3dRenderingContext(0)
 {
 #ifndef NDEBUG
     if (m_client)
@@ -147,6 +147,8 @@ void GraphicsLayer::setParent(GraphicsLayer* layer)
     m_parent = layer;
 }
 
+#if ASSERT_ENABLED
+
 bool GraphicsLayer::hasAncestor(GraphicsLayer* ancestor) const
 {
     for (GraphicsLayer* curr = parent(); curr; curr = curr->parent()) {
@@ -157,7 +159,9 @@ bool GraphicsLayer::hasAncestor(GraphicsLayer* ancestor) const
     return false;
 }
 
-bool GraphicsLayer::setChildren(const Vector<GraphicsLayer*>& newChildren)
+#endif
+
+bool GraphicsLayer::setChildren(const GraphicsLayerVector& newChildren)
 {
     // If the contents of the arrays are the same, nothing to do.
     if (newChildren == m_children)
@@ -278,8 +282,8 @@ bool GraphicsLayer::replaceChild(GraphicsLayer* oldChild, GraphicsLayer* newChil
 
 void GraphicsLayer::removeAllChildren()
 {
-    while (m_children.size()) {
-        GraphicsLayer* curLayer = m_children[0];
+    while (!m_children.isEmpty()) {
+        GraphicsLayer* curLayer = m_children.last();
         ASSERT(curLayer->parent());
         curLayer->removeFromParent();
     }
@@ -288,14 +292,8 @@ void GraphicsLayer::removeAllChildren()
 void GraphicsLayer::removeFromParent()
 {
     if (m_parent) {
-        unsigned i;
-        for (i = 0; i < m_parent->m_children.size(); i++) {
-            if (this == m_parent->m_children[i]) {
-                m_parent->m_children.remove(i);
-                break;
-            }
-        }
-
+        // We use reverseFind so that removeAllChildren() isn't n^2.
+        m_parent->m_children.remove(m_parent->m_children.reverseFind(this));
         setParent(0);
     }
 
@@ -339,34 +337,6 @@ void GraphicsLayer::paintGraphicsLayerContents(GraphicsContext& context, const I
     m_client->paintContents(this, context, m_paintingPhase, clip);
 }
 
-void GraphicsLayer::setZPosition(float position)
-{
-    m_zPosition = position;
-}
-
-float GraphicsLayer::accumulatedOpacity() const
-{
-    if (!preserves3D())
-        return 1;
-
-    return m_opacity * (parent() ? parent()->accumulatedOpacity() : 1);
-}
-
-void GraphicsLayer::distributeOpacity(float accumulatedOpacity)
-{
-    // If this is a transform layer we need to distribute our opacity to all our children
-
-    // Incoming accumulatedOpacity is the contribution from our parent(s). We mutiply this by our own
-    // opacity to get the total contribution
-    accumulatedOpacity *= m_opacity;
-
-    if (preserves3D()) {
-        size_t numChildren = children().size();
-        for (size_t i = 0; i < numChildren; ++i)
-            children()[i]->distributeOpacity(accumulatedOpacity);
-    }
-}
-
 void GraphicsLayer::updateChildList()
 {
     WebLayer* childHost = m_layer->layer();
@@ -381,13 +351,8 @@ void GraphicsLayer::updateChildList()
         childHost->addChild(m_contentsLayer);
     }
 
-    const Vector<GraphicsLayer*>& childLayers = children();
-    size_t numChildren = childLayers.size();
-    for (size_t i = 0; i < numChildren; ++i) {
-        GraphicsLayer* curChild = childLayers[i];
-
-        childHost->addChild(curChild->platformLayer());
-    }
+    for (size_t i = 0; i < m_children.size(); ++i)
+        childHost->addChild(m_children[i]->platformLayer());
 
     for (size_t i = 0; i < m_linkHighlights.size(); ++i)
         childHost->addChild(m_linkHighlights[i]->layer());
@@ -482,7 +447,7 @@ void GraphicsLayer::setupContentsLayer(WebLayer* contentsLayer)
     m_contentsLayerId = m_contentsLayer->id();
 
     m_contentsLayer->setWebLayerClient(this);
-    m_contentsLayer->setAnchorPoint(FloatPoint(0, 0));
+    m_contentsLayer->setTransformOrigin(FloatPoint3D());
     m_contentsLayer->setUseParentBackfaceVisibility(true);
 
     // It is necessary to call setDrawsContent as soon as we receive the new contentsLayer, for
@@ -494,6 +459,8 @@ void GraphicsLayer::setupContentsLayer(WebLayer* contentsLayer)
     m_layer->layer()->insertChild(m_contentsLayer, 0);
     WebLayer* borderWebLayer = m_contentsClippingMaskLayer ? m_contentsClippingMaskLayer->platformLayer() : 0;
     m_contentsLayer->setMaskLayer(borderWebLayer);
+
+    m_contentsLayer->setRenderingContext(m_3dRenderingContext);
 }
 
 void GraphicsLayer::clearContentsLayerIfUnregistered()
@@ -505,33 +472,22 @@ void GraphicsLayer::clearContentsLayerIfUnregistered()
     m_contentsLayerId = 0;
 }
 
-void GraphicsLayer::setDebugInfo(blink::WebGraphicsLayerDebugInfo* debugInfo)
+GraphicsLayerDebugInfo& GraphicsLayer::debugInfo()
 {
-    if (m_debugInfo)
-        delete m_debugInfo;
-    m_debugInfo = debugInfo;
+    return m_debugInfo;
 }
 
-blink::WebGraphicsLayerDebugInfo* GraphicsLayer::takeDebugInfo()
+blink::WebGraphicsLayerDebugInfo* GraphicsLayer::takeDebugInfoFor(WebLayer* layer)
 {
-    blink::WebGraphicsLayerDebugInfo* tempDebugInfo = m_debugInfo;
-    m_debugInfo = 0;
-    return tempDebugInfo;
+    GraphicsLayerDebugInfo* clone = m_debugInfo.clone();
+    clone->setDebugName(debugName(layer));
+    return clone;
 }
 
 WebLayer* GraphicsLayer::contentsLayerIfRegistered()
 {
     clearContentsLayerIfUnregistered();
     return m_contentsLayer;
-}
-
-double GraphicsLayer::backingStoreMemoryEstimate() const
-{
-    if (!drawsContent())
-        return 0;
-
-    // Effects of page and device scale are ignored; subclasses should override to take these into account.
-    return static_cast<double>(4 * size().width()) * size().height();
 }
 
 void GraphicsLayer::resetTrackedRepaints()
@@ -563,10 +519,10 @@ void GraphicsLayer::collectTrackedRepaintRects(Vector<FloatRect>& rects) const
 
     RepaintMap::iterator repaintIt = repaintRectMap().find(this);
     if (repaintIt != repaintRectMap().end())
-        rects.append(repaintIt->value);
+        rects.appendVector(repaintIt->value);
 }
 
-void GraphicsLayer::dumpLayer(TextStream& ts, int indent, LayerTreeFlags flags) const
+void GraphicsLayer::dumpLayer(TextStream& ts, int indent, LayerTreeFlags flags, RenderingContextMap& renderingContextMap) const
 {
     writeIndent(ts, indent);
     ts << "(" << "GraphicsLayer";
@@ -577,12 +533,23 @@ void GraphicsLayer::dumpLayer(TextStream& ts, int indent, LayerTreeFlags flags) 
     }
 
     ts << "\n";
-    dumpProperties(ts, indent, flags);
+    dumpProperties(ts, indent, flags, renderingContextMap);
     writeIndent(ts, indent);
     ts << ")\n";
 }
 
-void GraphicsLayer::dumpProperties(TextStream& ts, int indent, LayerTreeFlags flags) const
+static bool compareFloatRects(const FloatRect& a, const FloatRect& b)
+{
+    if (a.x() != b.x())
+        return a.x() > b.x();
+    if (a.y() != b.y())
+        return a.y() > b.y();
+    if (a.width() != b.width())
+        return a.width() > b.width();
+    return a.height() > b.height();
+}
+
+void GraphicsLayer::dumpProperties(TextStream& ts, int indent, LayerTreeFlags flags, RenderingContextMap& renderingContextMap) const
 {
     if (m_position != FloatPoint()) {
         writeIndent(ts, indent + 1);
@@ -594,9 +561,9 @@ void GraphicsLayer::dumpProperties(TextStream& ts, int indent, LayerTreeFlags fl
         ts << "(bounds origin " << m_boundsOrigin.x() << " " << m_boundsOrigin.y() << ")\n";
     }
 
-    if (m_anchorPoint != FloatPoint3D(0.5f, 0.5f, 0)) {
+    if (m_hasTransformOrigin && m_transformOrigin != FloatPoint3D(m_size.width() * 0.5f, m_size.height() * 0.5f, 0)) {
         writeIndent(ts, indent + 1);
-        ts << "(anchor " << m_anchorPoint.x() << " " << m_anchorPoint.y() << ")\n";
+        ts << "(transformOrigin " << m_transformOrigin.x() << " " << m_transformOrigin.y() << ")\n";
     }
 
     if (m_size != IntSize()) {
@@ -624,9 +591,21 @@ void GraphicsLayer::dumpProperties(TextStream& ts, int indent, LayerTreeFlags fl
         ts << "(contentsOpaque " << m_contentsOpaque << ")\n";
     }
 
-    if (m_preserves3D) {
+    if (!m_shouldFlattenTransform) {
         writeIndent(ts, indent + 1);
-        ts << "(preserves3D " << m_preserves3D << ")\n";
+        ts << "(shouldFlattenTransform " << m_shouldFlattenTransform << ")\n";
+    }
+
+    if (m_3dRenderingContext) {
+        RenderingContextMap::const_iterator it = renderingContextMap.find(m_3dRenderingContext);
+        int contextId = renderingContextMap.size() + 1;
+        if (it == renderingContextMap.end())
+            renderingContextMap.set(m_3dRenderingContext, contextId);
+        else
+            contextId = it->value;
+
+        writeIndent(ts, indent + 1);
+        ts << "(3dRenderingContext " << contextId << ")\n";
     }
 
     if (m_drawsContent) {
@@ -654,7 +633,7 @@ void GraphicsLayer::dumpProperties(TextStream& ts, int indent, LayerTreeFlags fl
         ts << ")\n";
     }
 
-    if (m_backgroundColor.isValid() && m_backgroundColor != Color::transparent) {
+    if (m_backgroundColor.alpha()) {
         writeIndent(ts, indent + 1);
         ts << "(backgroundColor " << m_backgroundColor.nameForRenderTreeAsText() << ")\n";
     }
@@ -668,24 +647,13 @@ void GraphicsLayer::dumpProperties(TextStream& ts, int indent, LayerTreeFlags fl
         ts << "[" << m_transform.m41() << " " << m_transform.m42() << " " << m_transform.m43() << " " << m_transform.m44() << "])\n";
     }
 
-    // Avoid dumping the sublayer transform on the root layer, because it's used for geometry flipping, whose behavior
-    // differs between platforms.
-    if (parent() && !m_childrenTransform.isIdentity()) {
-        writeIndent(ts, indent + 1);
-        ts << "(childrenTransform ";
-        ts << "[" << m_childrenTransform.m11() << " " << m_childrenTransform.m12() << " " << m_childrenTransform.m13() << " " << m_childrenTransform.m14() << "] ";
-        ts << "[" << m_childrenTransform.m21() << " " << m_childrenTransform.m22() << " " << m_childrenTransform.m23() << " " << m_childrenTransform.m24() << "] ";
-        ts << "[" << m_childrenTransform.m31() << " " << m_childrenTransform.m32() << " " << m_childrenTransform.m33() << " " << m_childrenTransform.m34() << "] ";
-        ts << "[" << m_childrenTransform.m41() << " " << m_childrenTransform.m42() << " " << m_childrenTransform.m43() << " " << m_childrenTransform.m44() << "])\n";
-    }
-
     if (m_replicaLayer) {
         writeIndent(ts, indent + 1);
         ts << "(replica layer";
         if (flags & LayerTreeIncludesDebugInfo)
             ts << " " << m_replicaLayer;
         ts << ")\n";
-        m_replicaLayer->dumpLayer(ts, indent + 2, flags);
+        m_replicaLayer->dumpLayer(ts, indent + 2, flags, renderingContextMap);
     }
 
     if (m_replicatedLayer) {
@@ -697,47 +665,49 @@ void GraphicsLayer::dumpProperties(TextStream& ts, int indent, LayerTreeFlags fl
     }
 
     if ((flags & LayerTreeIncludesRepaintRects) && repaintRectMap().contains(this) && !repaintRectMap().get(this).isEmpty()) {
+        Vector<FloatRect> repaintRectsCopy = repaintRectMap().get(this);
+        std::sort(repaintRectsCopy.begin(), repaintRectsCopy.end(), &compareFloatRects);
         writeIndent(ts, indent + 1);
         ts << "(repaint rects\n";
-        for (size_t i = 0; i < repaintRectMap().get(this).size(); ++i) {
-            if (repaintRectMap().get(this)[i].isEmpty())
+        for (size_t i = 0; i < repaintRectsCopy.size(); ++i) {
+            if (repaintRectsCopy[i].isEmpty())
                 continue;
             writeIndent(ts, indent + 2);
             ts << "(rect ";
-            ts << repaintRectMap().get(this)[i].x() << " ";
-            ts << repaintRectMap().get(this)[i].y() << " ";
-            ts << repaintRectMap().get(this)[i].width() << " ";
-            ts << repaintRectMap().get(this)[i].height();
+            ts << repaintRectsCopy[i].x() << " ";
+            ts << repaintRectsCopy[i].y() << " ";
+            ts << repaintRectsCopy[i].width() << " ";
+            ts << repaintRectsCopy[i].height();
             ts << ")\n";
         }
         writeIndent(ts, indent + 1);
         ts << ")\n";
     }
 
-    if ((flags & LayerTreeIncludesPaintingPhases) && paintingPhase()) {
+    if ((flags & LayerTreeIncludesPaintingPhases) && m_paintingPhase) {
         writeIndent(ts, indent + 1);
         ts << "(paintingPhases\n";
-        if (paintingPhase() & GraphicsLayerPaintBackground) {
+        if (m_paintingPhase & GraphicsLayerPaintBackground) {
             writeIndent(ts, indent + 2);
             ts << "GraphicsLayerPaintBackground\n";
         }
-        if (paintingPhase() & GraphicsLayerPaintForeground) {
+        if (m_paintingPhase & GraphicsLayerPaintForeground) {
             writeIndent(ts, indent + 2);
             ts << "GraphicsLayerPaintForeground\n";
         }
-        if (paintingPhase() & GraphicsLayerPaintMask) {
+        if (m_paintingPhase & GraphicsLayerPaintMask) {
             writeIndent(ts, indent + 2);
             ts << "GraphicsLayerPaintMask\n";
         }
-        if (paintingPhase() & GraphicsLayerPaintChildClippingMask) {
+        if (m_paintingPhase & GraphicsLayerPaintChildClippingMask) {
             writeIndent(ts, indent + 2);
             ts << "GraphicsLayerPaintChildClippingMask\n";
         }
-        if (paintingPhase() & GraphicsLayerPaintOverflowContents) {
+        if (m_paintingPhase & GraphicsLayerPaintOverflowContents) {
             writeIndent(ts, indent + 2);
             ts << "GraphicsLayerPaintOverflowContents\n";
         }
-        if (paintingPhase() & GraphicsLayerPaintCompositedScroll) {
+        if (m_paintingPhase & GraphicsLayerPaintCompositedScroll) {
             writeIndent(ts, indent + 2);
             ts << "GraphicsLayerPaintCompositedScroll\n";
         }
@@ -756,13 +726,26 @@ void GraphicsLayer::dumpProperties(TextStream& ts, int indent, LayerTreeFlags fl
         }
     }
 
+    if (flags & LayerTreeIncludesDebugInfo) {
+        writeIndent(ts, indent + 1);
+        ts << "(compositingReasons\n";
+        for (size_t i = 0; i < WTF_ARRAY_LENGTH(compositingReasonStringMap); ++i) {
+            if (m_debugInfo.compositingReasons() & compositingReasonStringMap[i].reason) {
+                writeIndent(ts, indent + 2);
+                ts << compositingReasonStringMap[i].description << "\n";
+            }
+        }
+        writeIndent(ts, indent + 1);
+        ts << ")\n";
+    }
+
     if (m_children.size()) {
         writeIndent(ts, indent + 1);
         ts << "(children " << m_children.size() << "\n";
 
         unsigned i;
         for (i = 0; i < m_children.size(); i++)
-            m_children[i]->dumpLayer(ts, indent + 2, flags);
+            m_children[i]->dumpLayer(ts, indent + 2, flags, renderingContextMap);
         writeIndent(ts, indent + 1);
         ts << ")\n";
     }
@@ -772,11 +755,12 @@ String GraphicsLayer::layerTreeAsText(LayerTreeFlags flags) const
 {
     TextStream ts;
 
-    dumpLayer(ts, 0, flags);
+    RenderingContextMap renderingContextMap;
+    dumpLayer(ts, 0, flags, renderingContextMap);
     return ts.release();
 }
 
-blink::WebString GraphicsLayer::debugName(blink::WebLayer* webLayer)
+String GraphicsLayer::debugName(blink::WebLayer* webLayer) const
 {
     String name;
     if (!m_client)
@@ -802,23 +786,20 @@ blink::WebString GraphicsLayer::debugName(blink::WebLayer* webLayer)
     return name;
 }
 
-void GraphicsLayer::setCompositingReasons(blink::WebCompositingReasons reasons)
+void GraphicsLayer::setCompositingReasons(CompositingReasons reasons)
 {
-    m_compositingReasons = reasons;
-    m_layer->layer()->setCompositingReasons(reasons);
+    m_debugInfo.setCompositingReasons(reasons);
+}
+
+void GraphicsLayer::setOwnerNodeId(int nodeId)
+{
+    m_debugInfo.setOwnerNodeId(nodeId);
 }
 
 void GraphicsLayer::setPosition(const FloatPoint& point)
 {
     m_position = point;
     platformLayer()->setPosition(m_position);
-}
-
-void GraphicsLayer::setAnchorPoint(const FloatPoint3D& point)
-{
-    m_anchorPoint = point;
-    platformLayer()->setAnchorPoint(FloatPoint(m_anchorPoint.x(), m_anchorPoint.y()));
-    platformLayer()->setAnchorPointZ(m_anchorPoint.z());
 }
 
 void GraphicsLayer::setSize(const FloatSize& size)
@@ -845,19 +826,33 @@ void GraphicsLayer::setTransform(const TransformationMatrix& transform)
     platformLayer()->setTransform(TransformationMatrix::toSkMatrix44(m_transform));
 }
 
-void GraphicsLayer::setChildrenTransform(const TransformationMatrix& transform)
+void GraphicsLayer::setTransformOrigin(const FloatPoint3D& transformOrigin)
 {
-    m_childrenTransform = transform;
-    platformLayer()->setSublayerTransform(TransformationMatrix::toSkMatrix44(m_childrenTransform));
+    m_hasTransformOrigin = true;
+    m_transformOrigin = transformOrigin;
+    platformLayer()->setTransformOrigin(transformOrigin);
 }
 
-void GraphicsLayer::setPreserves3D(bool preserves3D)
+void GraphicsLayer::setShouldFlattenTransform(bool shouldFlatten)
 {
-    if (preserves3D == m_preserves3D)
+    if (shouldFlatten == m_shouldFlattenTransform)
         return;
 
-    m_preserves3D = preserves3D;
-    m_layer->layer()->setPreserves3D(m_preserves3D);
+    m_shouldFlattenTransform = shouldFlatten;
+
+    m_layer->layer()->setShouldFlattenTransform(shouldFlatten);
+}
+
+void GraphicsLayer::setRenderingContext(int context)
+{
+    if (m_3dRenderingContext == context)
+        return;
+
+    m_3dRenderingContext = context;
+    m_layer->layer()->setRenderingContext(context);
+
+    if (m_contentsLayer)
+        m_contentsLayer->setRenderingContext(m_3dRenderingContext);
 }
 
 void GraphicsLayer::setMasksToBounds(bool masksToBounds)
@@ -973,7 +968,7 @@ void GraphicsLayer::setContentsNeedsDisplay()
 {
     if (WebLayer* contentsLayer = contentsLayerIfRegistered()) {
         contentsLayer->invalidate();
-        addRepaintRect(contentsRect());
+        addRepaintRect(m_contentsRect);
     }
 }
 
@@ -1008,7 +1003,7 @@ void GraphicsLayer::setContentsRect(const IntRect& rect)
 
 void GraphicsLayer::setContentsToImage(Image* image)
 {
-    RefPtr<NativeImageSkia> nativeImage = image ? image->nativeImageForCurrentFrame() : 0;
+    RefPtr<NativeImageSkia> nativeImage = image ? image->nativeImageForCurrentFrame() : nullptr;
     if (nativeImage) {
         if (!m_imageLayer) {
             m_imageLayer = adoptPtr(Platform::current()->compositorSupport()->createImageLayer());
@@ -1033,7 +1028,7 @@ void GraphicsLayer::setContentsToNinePatch(Image* image, const IntRect& aperture
         unregisterContentsLayer(m_ninePatchLayer->layer());
         m_ninePatchLayer.clear();
     }
-    RefPtr<NativeImageSkia> nativeImage = image ? image->nativeImageForCurrentFrame() : 0;
+    RefPtr<NativeImageSkia> nativeImage = image ? image->nativeImageForCurrentFrame() : nullptr;
     if (nativeImage) {
         m_ninePatchLayer = adoptPtr(Platform::current()->compositorSupport()->createNinePatchLayer());
         m_ninePatchLayer->setBitmap(nativeImage->bitmap(), aperture);
@@ -1041,27 +1036,6 @@ void GraphicsLayer::setContentsToNinePatch(Image* image, const IntRect& aperture
         registerContentsLayer(m_ninePatchLayer->layer());
     }
     setContentsTo(m_ninePatchLayer ? m_ninePatchLayer->layer() : 0);
-}
-
-void GraphicsLayer::setContentsToSolidColor(const Color& color)
-{
-    if (color == m_contentsSolidColor)
-        return;
-
-    m_contentsSolidColor = color;
-    if (color.isValid() && color.alpha()) {
-        if (!m_solidColorLayer) {
-            m_solidColorLayer = adoptPtr(Platform::current()->compositorSupport()->createSolidColorLayer());
-            registerContentsLayer(m_solidColorLayer->layer());
-        }
-        m_solidColorLayer->setBackgroundColor(color.rgb());
-    } else {
-        if (!m_solidColorLayer)
-            return;
-        unregisterContentsLayer(m_solidColorLayer->layer());
-        m_solidColorLayer.clear();
-    }
-    setContentsTo(m_solidColorLayer ? m_solidColorLayer->layer() : 0);
 }
 
 bool GraphicsLayer::addAnimation(PassOwnPtr<WebAnimation> popAnimation)
@@ -1153,9 +1127,6 @@ static bool copyWebCoreFilterOperationsToWebFilterOperations(const FilterOperati
             webFilters.appendDropShadowFilter(WebPoint(dropShadowOp.x(), dropShadowOp.y()), dropShadowOp.stdDeviation(), dropShadowOp.color().rgb());
             break;
         }
-        case FilterOperation::CUSTOM:
-        case FilterOperation::VALIDATED_CUSTOM:
-            return false; // Not supported.
         case FilterOperation::NONE:
             break;
         }
@@ -1191,6 +1162,14 @@ void GraphicsLayer::setBackgroundFilters(const FilterOperations& filters)
     m_layer->layer()->setBackgroundFilters(*webFilters);
 }
 
+void GraphicsLayer::setPaintingPhase(GraphicsLayerPaintingPhase phase)
+{
+    if (m_paintingPhase == phase)
+        return;
+    m_paintingPhase = phase;
+    setNeedsDisplay();
+}
+
 void GraphicsLayer::addLinkHighlight(LinkHighlightClient* linkHighlight)
 {
     ASSERT(linkHighlight && !m_linkHighlights.contains(linkHighlight));
@@ -1214,6 +1193,8 @@ void GraphicsLayer::setScrollableArea(ScrollableArea* scrollableArea, bool isMai
 
     // Main frame scrolling may involve pinch zoom and gets routed through
     // WebViewImpl explicitly rather than via GraphicsLayer::didScroll.
+    // TODO(bokan): With pinch virtual viewport the special case will no
+    // longer be needed, remove once old-style pinch is gone.
     if (isMainFrame)
         m_layer->layer()->setScrollClient(0);
     else
@@ -1226,13 +1207,13 @@ void GraphicsLayer::paint(GraphicsContext& context, const IntRect& clip)
 }
 
 
-void GraphicsLayer::notifyAnimationStarted(double wallClockTime, double monotonicTime, WebAnimation::TargetProperty)
+void GraphicsLayer::notifyAnimationStarted(double monotonicTime, WebAnimation::TargetProperty)
 {
     if (m_client)
-        m_client->notifyAnimationStarted(this, wallClockTime, monotonicTime);
+        m_client->notifyAnimationStarted(this, monotonicTime);
 }
 
-void GraphicsLayer::notifyAnimationFinished(double, double, WebAnimation::TargetProperty)
+void GraphicsLayer::notifyAnimationFinished(double, WebAnimation::TargetProperty)
 {
     // Do nothing.
 }

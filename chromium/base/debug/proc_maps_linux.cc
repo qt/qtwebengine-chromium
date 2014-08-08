@@ -6,16 +6,18 @@
 
 #include <fcntl.h>
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || defined(OS_ANDROID)
 #include <inttypes.h>
 #endif
 
 #include "base/file_util.h"
+#include "base/files/scoped_file.h"
 #include "base/strings/string_split.h"
 
-#if defined(OS_ANDROID)
-// Bionic's inttypes.h defines PRI/SCNxPTR as an unsigned long int, which
-// is incompatible with Bionic's stdint.h defining uintptr_t as a unsigned int:
+#if defined(OS_ANDROID) && !defined(__LP64__)
+// In 32-bit mode, Bionic's inttypes.h defines PRI/SCNxPTR as an
+// unsigned long int, which is incompatible with Bionic's stdint.h
+// defining uintptr_t as an unsigned int:
 // https://code.google.com/p/android/issues/detail?id=57218
 #undef SCNxPTR
 #define SCNxPTR "x"
@@ -45,12 +47,11 @@ bool ReadProcMaps(std::string* proc_maps) {
   // file for details.
   const long kReadSize = sysconf(_SC_PAGESIZE);
 
-  int fd = HANDLE_EINTR(open("/proc/self/maps", O_RDONLY));
-  if (fd == -1) {
+  base::ScopedFD fd(HANDLE_EINTR(open("/proc/self/maps", O_RDONLY)));
+  if (!fd.is_valid()) {
     DPLOG(ERROR) << "Couldn't open /proc/self/maps";
     return false;
   }
-  file_util::ScopedFD fd_closer(&fd);
   proc_maps->clear();
 
   while (true) {
@@ -60,7 +61,7 @@ bool ReadProcMaps(std::string* proc_maps) {
     proc_maps->resize(pos + kReadSize);
     void* buffer = &(*proc_maps)[pos];
 
-    ssize_t bytes_read = HANDLE_EINTR(read(fd, buffer, kReadSize));
+    ssize_t bytes_read = HANDLE_EINTR(read(fd.get(), buffer, kReadSize));
     if (bytes_read < 0) {
       DPLOG(ERROR) << "Couldn't read /proc/self/maps";
       proc_maps->clear();
@@ -90,6 +91,7 @@ bool ReadProcMaps(std::string* proc_maps) {
 
 bool ParseProcMaps(const std::string& input,
                    std::vector<MappedMemoryRegion>* regions_out) {
+  CHECK(regions_out);
   std::vector<MappedMemoryRegion> regions;
 
   // This isn't async safe nor terribly efficient, but it doesn't need to be at
@@ -100,8 +102,10 @@ bool ParseProcMaps(const std::string& input,
   for (size_t i = 0; i < lines.size(); ++i) {
     // Due to splitting on '\n' the last line should be empty.
     if (i == lines.size() - 1) {
-      if (!lines[i].empty())
+      if (!lines[i].empty()) {
+        DLOG(WARNING) << "Last line not empty";
         return false;
+      }
       break;
     }
 
@@ -124,6 +128,7 @@ bool ParseProcMaps(const std::string& input,
     if (sscanf(line, "%" SCNxPTR "-%" SCNxPTR " %4c %llx %hhx:%hhx %ld %n",
                &region.start, &region.end, permissions, &region.offset,
                &dev_major, &dev_minor, &inode, &path_index) < 7) {
+      DPLOG(WARNING) << "sscanf failed for line: " << line;
       return false;
     }
 

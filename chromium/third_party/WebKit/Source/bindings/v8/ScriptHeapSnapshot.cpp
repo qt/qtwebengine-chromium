@@ -51,25 +51,15 @@ String ScriptHeapSnapshot::title() const
     return toCoreString(m_snapshot->GetTitle());
 }
 
-unsigned int ScriptHeapSnapshot::uid() const
-{
-    return m_snapshot->GetUid();
-}
-
-SnapshotObjectId ScriptHeapSnapshot::maxSnapshotJSObjectId() const
-{
-    return m_snapshot->GetMaxSnapshotJSObjectId();
-}
-
 namespace {
 
-class OutputStreamAdapter : public v8::OutputStream {
+class OutputStreamAdapter FINAL : public v8::OutputStream {
 public:
     OutputStreamAdapter(ScriptHeapSnapshot::OutputStream* output)
         : m_output(output) { }
-    void EndOfStream() { m_output->Close(); }
-    int GetChunkSize() { return 102400; }
-    WriteResult WriteAsciiChunk(char* data, int size)
+    virtual void EndOfStream() OVERRIDE { m_output->Close(); }
+    virtual int GetChunkSize() OVERRIDE { return 102400; }
+    virtual WriteResult WriteAsciiChunk(char* data, int size) OVERRIDE
     {
         m_output->Write(String(data, size));
         return kContinue;

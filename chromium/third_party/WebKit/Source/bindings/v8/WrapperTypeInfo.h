@@ -32,13 +32,13 @@
 #define WrapperTypeInfo_h
 
 #include "gin/public/wrapper_info.h"
+#include "platform/heap/Handle.h"
 #include "wtf/Assertions.h"
 #include <v8.h>
 
 namespace WebCore {
 
     class ActiveDOMObject;
-    class DOMDataStore;
     class EventTarget;
     class Node;
 
@@ -51,13 +51,7 @@ namespace WebCore {
     static const uint16_t v8DOMNodeClassId = 1;
     static const uint16_t v8DOMObjectClassId = 2;
 
-    enum WrapperWorldType {
-        MainWorld,
-        IsolatedWorld,
-        WorkerWorld
-    };
-
-    typedef v8::Handle<v8::FunctionTemplate> (*DomTemplateFunction)(v8::Isolate*, WrapperWorldType);
+    typedef v8::Handle<v8::FunctionTemplate> (*DomTemplateFunction)(v8::Isolate*);
     typedef void (*DerefObjectFunction)(void*);
     typedef ActiveDOMObject* (*ToActiveDOMObjectFunction)(v8::Handle<v8::Object>);
     typedef EventTarget* (*ToEventTargetFunction)(v8::Handle<v8::Object>);
@@ -66,7 +60,13 @@ namespace WebCore {
 
     enum WrapperTypePrototype {
         WrapperTypeObjectPrototype,
-        WrapperTypeErrorPrototype
+        WrapperTypeExceptionPrototype
+    };
+
+    enum GCType {
+        GarbageCollectedObject,
+        WillBeGarbageCollectedObject,
+        RefCountedObject,
     };
 
     inline void setObjectGroup(void* object, const v8::Persistent<v8::Object>& wrapper, v8::Isolate* isolate)
@@ -100,12 +100,9 @@ namespace WebCore {
             return false;
         }
 
-        v8::Handle<v8::FunctionTemplate> domTemplate(v8::Isolate* isolate, WrapperWorldType worldType) const { return domTemplateFunction(isolate, worldType); }
-
-        void derefObject(void* object) const
+        v8::Handle<v8::FunctionTemplate> domTemplate(v8::Isolate* isolate) const
         {
-            if (derefObjectFunction)
-                derefObjectFunction(object);
+            return domTemplateFunction(isolate);
         }
 
         void installPerContextEnabledMethods(v8::Handle<v8::Object> prototypeTemplate, v8::Isolate* isolate) const
@@ -147,6 +144,7 @@ namespace WebCore {
         const InstallPerContextEnabledPrototypePropertiesFunction installPerContextEnabledMethodsFunction;
         const WrapperTypeInfo* parentClass;
         const WrapperTypePrototype wrapperTypePrototype;
+        const GCType gcType;
     };
 
 
@@ -162,30 +160,60 @@ namespace WebCore {
     }
 
     template<typename T, int offset>
-    inline T* getInternalField(v8::Handle<v8::Object> object)
+    inline T* getInternalField(v8::Handle<v8::Object> wrapper)
     {
-        ASSERT(offset < object->InternalFieldCount());
-        return static_cast<T*>(object->GetAlignedPointerFromInternalField(offset));
+        ASSERT(offset < wrapper->InternalFieldCount());
+        return static_cast<T*>(wrapper->GetAlignedPointerFromInternalField(offset));
     }
 
-    inline void* toNative(const v8::Persistent<v8::Object>& object)
+    inline void* toNative(const v8::Persistent<v8::Object>& wrapper)
     {
-        return getInternalField<void, v8DOMWrapperObjectIndex>(object);
+        return getInternalField<void, v8DOMWrapperObjectIndex>(wrapper);
     }
 
-    inline void* toNative(v8::Handle<v8::Object> object)
+    inline void* toNative(v8::Handle<v8::Object> wrapper)
     {
-        return getInternalField<void, v8DOMWrapperObjectIndex>(object);
+        return getInternalField<void, v8DOMWrapperObjectIndex>(wrapper);
     }
 
-    inline const WrapperTypeInfo* toWrapperTypeInfo(const v8::Persistent<v8::Object>& object)
+    inline const WrapperTypeInfo* toWrapperTypeInfo(const v8::Persistent<v8::Object>& wrapper)
     {
-        return getInternalField<WrapperTypeInfo, v8DOMWrapperTypeIndex>(object);
+        return getInternalField<WrapperTypeInfo, v8DOMWrapperTypeIndex>(wrapper);
     }
 
-    inline const WrapperTypeInfo* toWrapperTypeInfo(v8::Handle<v8::Object> object)
+    inline const WrapperTypeInfo* toWrapperTypeInfo(v8::Handle<v8::Object> wrapper)
     {
-        return getInternalField<WrapperTypeInfo, v8DOMWrapperTypeIndex>(object);
+        return getInternalField<WrapperTypeInfo, v8DOMWrapperTypeIndex>(wrapper);
+    }
+
+    inline const PersistentNode* toPersistentHandle(const v8::Handle<v8::Object>& wrapper)
+    {
+        // Persistent handle is stored in the last internal field.
+        return static_cast<PersistentNode*>(wrapper->GetAlignedPointerFromInternalField(wrapper->InternalFieldCount() - 1));
+    }
+
+    inline void releaseObject(v8::Handle<v8::Object> wrapper)
+    {
+        const WrapperTypeInfo* typeInfo = toWrapperTypeInfo(wrapper);
+        if (typeInfo->gcType == GarbageCollectedObject) {
+            const PersistentNode* handle = toPersistentHandle(wrapper);
+            // This will be null iff a wrapper for a hidden wrapper object,
+            // see V8DOMWrapper::setNativeInfoForHiddenWrapper().
+            delete handle;
+        } else if (typeInfo->gcType == WillBeGarbageCollectedObject) {
+#if ENABLE(OILPAN)
+            const PersistentNode* handle = toPersistentHandle(wrapper);
+            // This will be null iff a wrapper for a hidden wrapper object,
+            // see V8DOMWrapper::setNativeInfoForHiddenWrapper().
+            delete handle;
+#else
+            ASSERT(typeInfo->derefObjectFunction);
+            typeInfo->derefObjectFunction(toNative(wrapper));
+#endif
+        } else {
+            ASSERT(typeInfo->derefObjectFunction);
+            typeInfo->derefObjectFunction(toNative(wrapper));
+        }
     }
 
     struct WrapperConfiguration {
@@ -194,7 +222,7 @@ namespace WebCore {
             Dependent, Independent
         };
 
-        void configureWrapper(v8::Persistent<v8::Object>* wrapper) const
+        void configureWrapper(v8::PersistentBase<v8::Object>* wrapper) const
         {
             wrapper->SetWrapperClassId(classId);
             if (lifetime == Independent)
@@ -216,11 +244,6 @@ namespace WebCore {
         WrapperConfiguration configuration = {v8DOMNodeClassId, lifetime};
         return configuration;
     }
-
-    template<class ElementType>
-    class WrapperTypeTraits {
-        // specialized classes have thier own functions, which are generated by binding generator.
-    };
 }
 
 #endif // WrapperTypeInfo_h

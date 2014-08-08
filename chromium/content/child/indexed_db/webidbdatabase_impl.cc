@@ -4,19 +4,24 @@
 
 #include "content/child/indexed_db/webidbdatabase_impl.h"
 
+#include <string>
 #include <vector>
 
 #include "content/child/indexed_db/indexed_db_dispatcher.h"
 #include "content/child/indexed_db/indexed_db_key_builders.h"
 #include "content/child/thread_safe_sender.h"
+#include "content/child/worker_task_runner.h"
 #include "content/common/indexed_db/indexed_db_messages.h"
+#include "third_party/WebKit/public/platform/WebBlobInfo.h"
 #include "third_party/WebKit/public/platform/WebIDBKeyPath.h"
 #include "third_party/WebKit/public/platform/WebIDBMetadata.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/platform/WebVector.h"
-#include "webkit/child/worker_task_runner.h"
 
+using blink::WebBlobInfo;
 using blink::WebIDBCallbacks;
+using blink::WebIDBCursor;
+using blink::WebIDBDatabase;
 using blink::WebIDBDatabaseCallbacks;
 using blink::WebIDBMetadata;
 using blink::WebIDBKey;
@@ -24,7 +29,6 @@ using blink::WebIDBKeyPath;
 using blink::WebIDBKeyRange;
 using blink::WebString;
 using blink::WebVector;
-using webkit_glue::WorkerTaskRunner;
 
 namespace content {
 
@@ -74,7 +78,7 @@ void WebIDBDatabaseImpl::createTransaction(
     long long transaction_id,
     WebIDBDatabaseCallbacks* callbacks,
     const WebVector<long long>& object_store_ids,
-    unsigned short mode) {
+    WebIDBDatabase::TransactionMode mode) {
   IndexedDBDispatcher* dispatcher =
       IndexedDBDispatcher::ThreadSpecificInstance(thread_safe_sender_.get());
   dispatcher->RequestIDBDatabaseCreateTransaction(
@@ -108,6 +112,7 @@ void WebIDBDatabaseImpl::get(long long transaction_id,
 void WebIDBDatabaseImpl::put(long long transaction_id,
                              long long object_store_id,
                              const blink::WebData& value,
+                             const blink::WebVector<WebBlobInfo>& web_blob_info,
                              const WebIDBKey& key,
                              PutMode put_mode,
                              WebIDBCallbacks* callbacks,
@@ -119,6 +124,7 @@ void WebIDBDatabaseImpl::put(long long transaction_id,
                                     transaction_id,
                                     object_store_id,
                                     value,
+                                    web_blob_info,
                                     IndexedDBKeyBuilder::Build(key),
                                     put_mode,
                                     callbacks,
@@ -137,18 +143,18 @@ void WebIDBDatabaseImpl::setIndexKeys(
   params.transaction_id = transaction_id;
   params.object_store_id = object_store_id;
   params.primary_key = IndexedDBKeyBuilder::Build(primary_key);
-  COMPILE_ASSERT(sizeof(params.index_ids[0]) == sizeof(index_ids[0]),
-                 Cant_copy);
-  params.index_ids.assign(index_ids.data(),
-                          index_ids.data() + index_ids.size());
 
-  params.index_keys.resize(index_keys.size());
-  for (size_t i = 0; i < index_keys.size(); ++i) {
-    params.index_keys[i].resize(index_keys[i].size());
+  DCHECK_EQ(index_ids.size(), index_keys.size());
+  params.index_keys.resize(index_ids.size());
+  for (size_t i = 0, len = index_ids.size(); i < len; ++i) {
+    params.index_keys[i].first = index_ids[i];
+    params.index_keys[i].second.resize(index_keys[i].size());
     for (size_t j = 0; j < index_keys[i].size(); ++j) {
-      params.index_keys[i][j] = IndexedDBKeyBuilder::Build(index_keys[i][j]);
+      params.index_keys[i].second[j] =
+          IndexedDBKey(IndexedDBKeyBuilder::Build(index_keys[i][j]));
     }
   }
+
   thread_safe_sender_->Send(new IndexedDBHostMsg_DatabaseSetIndexKeys(params));
 }
 
@@ -166,7 +172,7 @@ void WebIDBDatabaseImpl::openCursor(long long transaction_id,
                                     long long object_store_id,
                                     long long index_id,
                                     const WebIDBKeyRange& key_range,
-                                    unsigned short direction,
+                                    WebIDBCursor::Direction direction,
                                     bool key_only,
                                     TaskType task_type,
                                     WebIDBCallbacks* callbacks) {
@@ -258,6 +264,14 @@ void WebIDBDatabaseImpl::abort(long long transaction_id) {
 void WebIDBDatabaseImpl::commit(long long transaction_id) {
   thread_safe_sender_->Send(
       new IndexedDBHostMsg_DatabaseCommit(ipc_database_id_, transaction_id));
+}
+
+void WebIDBDatabaseImpl::ackReceivedBlobs(const WebVector<WebString>& uuids) {
+  DCHECK(uuids.size());
+  std::vector<std::string> param(uuids.size());
+  for (size_t i = 0; i < uuids.size(); ++i)
+    param[i] = uuids[i].latin1().data();
+  thread_safe_sender_->Send(new IndexedDBHostMsg_AckReceivedBlobs(param));
 }
 
 }  // namespace content

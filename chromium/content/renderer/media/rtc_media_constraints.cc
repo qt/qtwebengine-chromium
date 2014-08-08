@@ -8,6 +8,7 @@
 #include "base/logging.h"
 #include "base/strings/string_util.h"
 #include "content/common/media/media_stream_options.h"
+#include "content/renderer/media/media_stream_video_source.h"
 #include "third_party/WebKit/public/platform/WebMediaConstraints.h"
 #include "third_party/WebKit/public/platform/WebCString.h"
 #include "third_party/WebKit/public/platform/WebString.h"
@@ -33,13 +34,9 @@ void GetNativeMediaConstraints(
     if (new_constraint.key == kMediaStreamSourceInfoId)
       continue;
 
-    // Ignore internal constraints set by JS.
-    if (StartsWithASCII(
-        new_constraint.key,
-        webrtc::MediaConstraintsInterface::kInternalConstraintPrefix,
-        true)) {
+    // Ignore constraints that are handled by Chrome in MediaStreamVideoSource.
+    if (MediaStreamVideoSource::IsConstraintSupported(new_constraint.key))
       continue;
-    }
 
     DVLOG(3) << "MediaStreamConstraints:" << new_constraint.key
              << " : " <<  new_constraint.value;
@@ -75,16 +72,24 @@ RTCMediaConstraints::GetOptional() const {
   return optional_;
 }
 
-void RTCMediaConstraints::AddOptional(const std::string& key,
-                                      const std::string& value) {
-  optional_.push_back(Constraint(key, value));
+bool RTCMediaConstraints::AddOptional(const std::string& key,
+                                      const std::string& value,
+                                      bool override_if_exists) {
+  return AddConstraint(&optional_, key, value, override_if_exists);
 }
 
 bool RTCMediaConstraints::AddMandatory(const std::string& key,
                                        const std::string& value,
                                        bool override_if_exists) {
-  for (Constraints::iterator iter = mandatory_.begin();
-       iter != mandatory_.end();
+  return AddConstraint(&mandatory_, key, value, override_if_exists);
+}
+
+bool RTCMediaConstraints::AddConstraint(Constraints* constraints,
+                                        const std::string& key,
+                                        const std::string& value,
+                                        bool override_if_exists) {
+  for (Constraints::iterator iter = constraints->begin();
+       iter != constraints->end();
        ++iter) {
     if (iter->key == key) {
       if (override_if_exists)
@@ -93,7 +98,7 @@ bool RTCMediaConstraints::AddMandatory(const std::string& key,
     }
   }
   // The key wasn't found, add it.
-  mandatory_.push_back(Constraint(key, value));
+  constraints->push_back(Constraint(key, value));
   return true;
 }
 

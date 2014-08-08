@@ -8,6 +8,8 @@
 cr.define('options', function() {
   /** @const */ var OptionsPage = options.OptionsPage;
   /** @const */ var LanguageList = options.LanguageList;
+  /** @const */ var ThirdPartyImeConfirmOverlay =
+      options.ThirdPartyImeConfirmOverlay;
 
   /**
    * Spell check dictionary download status.
@@ -318,6 +320,7 @@ cr.define('options', function() {
 
         var input = element.querySelector('input');
         input.inputMethodId = inputMethod.id;
+        input.imeProvider = inputMethod.extensionName;
         var span = element.querySelector('span');
         span.textContent = inputMethod.displayName;
 
@@ -423,14 +426,6 @@ cr.define('options', function() {
         this.updateInputMethodList_(languageCode);
 
       this.updateLanguageListInAddLanguageOverlay_();
-    },
-
-    /**
-     * Happens when a user changes back to the language they're currently using.
-     */
-    currentLocaleWasReselected: function() {
-      this.updateUiLanguageButton_(
-          loadTimeData.getString('currentUiLanguageCode'));
     },
 
     /**
@@ -557,6 +552,11 @@ cr.define('options', function() {
       // hidden by a language change.
       uiLanguageButton.hidden = false;
 
+      // Hide the controlled setting indicator.
+      var uiLanguageIndicator = document.querySelector(
+          '.language-options-contents .controlled-setting-indicator');
+      uiLanguageIndicator.removeAttribute('controlled-by');
+
       if (languageCode == this.prospectiveUiLanguageCode_) {
         uiLanguageMessage.textContent =
             loadTimeData.getString('isDisplayedInThisLanguage');
@@ -571,11 +571,18 @@ cr.define('options', function() {
         } else {
           uiLanguageButton.textContent =
               loadTimeData.getString('displayInThisLanguage');
+
+          if (loadTimeData.valueExists('secondaryUser') &&
+              loadTimeData.getBoolean('secondaryUser')) {
+            uiLanguageButton.disabled = true;
+            uiLanguageIndicator.setAttribute('controlled-by', 'shared');
+          } else {
+            uiLanguageButton.onclick = function(e) {
+              chrome.send('uiLanguageChange', [languageCode]);
+            };
+          }
           showMutuallyExclusiveNodes(
               [uiLanguageButton, uiLanguageMessage, uiLanguageNotification], 0);
-          uiLanguageButton.onclick = function(e) {
-            chrome.send('uiLanguageChange', [languageCode]);
-          };
         }
       } else {
         uiLanguageMessage.textContent =
@@ -819,6 +826,31 @@ cr.define('options', function() {
     handleCheckboxClick_: function(e) {
       var checkbox = e.target;
 
+      // Third party IMEs require additional confirmation prior to enabling due
+      // to privacy risk.
+      if (/^_ext_ime_/.test(checkbox.inputMethodId) && checkbox.checked) {
+        var confirmationCallback = this.handleCheckboxUpdate_.bind(this,
+                                                                   checkbox);
+        var cancellationCallback = function() {
+          checkbox.checked = false;
+        };
+        ThirdPartyImeConfirmOverlay.showConfirmationDialog({
+          extension: checkbox.imeProvider,
+          confirm: confirmationCallback,
+          cancel: cancellationCallback
+        });
+      } else {
+        this.handleCheckboxUpdate_(checkbox);
+      }
+    },
+
+    /**
+     * Updates active IMEs based on change in state of a checkbox for an input
+     * method.
+     * @param {!Element} checkbox Updated checkbox element.
+     * @private
+     */
+    handleCheckboxUpdate_: function(checkbox) {
       if (checkbox.inputMethodId.match(/^_ext_ime_/)) {
         this.updateEnabledExtensionsFromCheckboxes_();
         this.saveEnabledExtensionPref_();
@@ -842,7 +874,12 @@ cr.define('options', function() {
       this.savePreloadEnginesPref_();
     },
 
-    handleAddLanguageOkButtonClick_: function() {
+    /**
+     * Handles clicks on the "OK" button of the "Add language" dialog.
+     * @param {Event} e Click event.
+     * @private
+     */
+    handleAddLanguageOkButtonClick_: function(e) {
       var languagesSelect = $('add-language-overlay-language-list');
       var selectedIndex = languagesSelect.selectedIndex;
       if (selectedIndex >= 0) {
@@ -1181,6 +1218,39 @@ cr.define('options', function() {
       delayedHide();
     },
 
+    /**
+     * Chrome callback for when the UI language preference is saved.
+     * @param {string} languageCode The newly selected language to use.
+     * @private
+     */
+    uiLanguageSaved_: function(languageCode) {
+      this.prospectiveUiLanguageCode_ = languageCode;
+
+      // If the user is no longer on the same language code, ignore.
+      if ($('language-options-list').getSelectedLanguageCode() != languageCode)
+        return;
+
+      // Special case for when a user changes to a different language, and
+      // changes back to the same language without having restarted Chrome or
+      // logged in/out of ChromeOS.
+      if (languageCode == loadTimeData.getString('currentUiLanguageCode')) {
+        this.updateUiLanguageButton_(languageCode);
+        return;
+      }
+
+      // Otherwise, show a notification telling the user that their changes will
+      // only take effect after restart.
+      showMutuallyExclusiveNodes([$('language-options-ui-language-button'),
+                                  $('language-options-ui-notification-bar')],
+                                 1);
+    },
+
+    /**
+     * A handler for when dictionary for |languageCode| begins downloading.
+     * @param {string} languageCode The language of the dictionary that just
+     *     began downloading.
+     * @private
+     */
     onDictionaryDownloadBegin_: function(languageCode) {
       this.spellcheckDictionaryDownloadStatus_[languageCode] =
           DOWNLOAD_STATUS.IN_PROGRESS;
@@ -1191,6 +1261,12 @@ cr.define('options', function() {
       }
     },
 
+    /**
+     * A handler for when dictionary for |languageCode| successfully downloaded.
+     * @param {string} languageCode The language of the dictionary that
+     *     succeeded downloading.
+     * @private
+     */
     onDictionaryDownloadSuccess_: function(languageCode) {
       delete this.spellcheckDictionaryDownloadStatus_[languageCode];
       this.spellcheckDictionaryDownloadFailures_ = 0;
@@ -1201,6 +1277,12 @@ cr.define('options', function() {
       }
     },
 
+    /**
+     * A handler for when dictionary for |languageCode| fails to download.
+     * @param {string} languageCode The language of the dictionary that failed
+     *     to download.
+     * @private
+     */
     onDictionaryDownloadFailure_: function(languageCode) {
       this.spellcheckDictionaryDownloadStatus_[languageCode] =
           DOWNLOAD_STATUS.FAILED;
@@ -1256,29 +1338,8 @@ cr.define('options', function() {
     }
   }
 
-  /**
-   * Chrome callback for when the UI language preference is saved.
-   * @param {string} languageCode The newly selected language to use.
-   */
   LanguageOptions.uiLanguageSaved = function(languageCode) {
-    this.prospectiveUiLanguageCode_ = languageCode;
-
-    // If the user is no longer on the same language code, ignore.
-    if ($('language-options-list').getSelectedLanguageCode() != languageCode)
-      return;
-
-    // Special case for when a user changes to a different language, and changes
-    // back to the same language without having restarted Chrome or logged
-    // in/out of ChromeOS.
-    if (languageCode == loadTimeData.getString('currentUiLanguageCode')) {
-      LanguageOptions.getInstance().currentLocaleWasReselected();
-      return;
-    }
-
-    // Otherwise, show a notification telling the user that their changes will
-    // only take effect after restart.
-    showMutuallyExclusiveNodes([$('language-options-ui-language-button'),
-                                $('language-options-ui-notification-bar')], 1);
+    LanguageOptions.getInstance().uiLanguageSaved_(languageCode);
   };
 
   LanguageOptions.onDictionaryDownloadBegin = function(languageCode) {

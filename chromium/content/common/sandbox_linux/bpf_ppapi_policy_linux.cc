@@ -18,26 +18,14 @@ using sandbox::SyscallSets;
 
 namespace content {
 
-namespace {
-
-inline bool IsUsingToolKitGtk() {
-#if defined(TOOLKIT_GTK)
-  return true;
-#else
-  return false;
-#endif
-}
-
-}  // namespace
-
 PpapiProcessPolicy::PpapiProcessPolicy() {}
 PpapiProcessPolicy::~PpapiProcessPolicy() {}
 
 ErrorCode PpapiProcessPolicy::EvaluateSyscall(SandboxBPF* sandbox,
                                               int sysno) const {
   switch (sysno) {
-    case __NR_clone:
-      return sandbox::RestrictCloneToThreadsAndEPERMFork(sandbox);
+    // TODO(jln): restrict prctl.
+    case __NR_prctl:
     case __NR_pread64:
     case __NR_pwrite64:
     case __NR_sched_get_priority_max:
@@ -51,17 +39,6 @@ ErrorCode PpapiProcessPolicy::EvaluateSyscall(SandboxBPF* sandbox,
     case __NR_ioctl:
       return ErrorCode(ENOTTY);  // Flash Access.
     default:
-      if (IsUsingToolKitGtk()) {
-#if defined(__x86_64__) || defined(__arm__)
-        if (SyscallSets::IsSystemVSharedMemory(sysno))
-          return ErrorCode(ErrorCode::ERR_ALLOWED);
-#endif
-#if defined(__i386__)
-        if (SyscallSets::IsSystemVIpc(sysno))
-          return ErrorCode(ErrorCode::ERR_ALLOWED);
-#endif
-      }
-
       // Default on the baseline policy.
       return SandboxBPFBasePolicy::EvaluateSyscall(sandbox, sysno);
   }

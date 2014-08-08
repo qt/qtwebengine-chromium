@@ -10,7 +10,7 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "ui/base/theme_provider.h"
-#include "ui/base/ui_export.h"
+#include "ui/base/ui_base_export.h"
 
 namespace ui {
 class ResourceBundle;
@@ -18,12 +18,13 @@ class ResourceBundle;
 
 namespace ui {
 
-class UI_EXPORT DefaultThemeProvider : public ThemeProvider {
+class UI_BASE_EXPORT DefaultThemeProvider : public ThemeProvider {
  public:
   DefaultThemeProvider();
   virtual ~DefaultThemeProvider();
 
   // Overridden from ui::ThemeProvider:
+  virtual bool UsingSystemTheme() const OVERRIDE;
   virtual gfx::ImageSkia* GetImageSkiaNamed(int id) const OVERRIDE;
   virtual SkColor GetColor(int id) const OVERRIDE;
   virtual int GetDisplayProperty(int id) const OVERRIDE;
@@ -39,8 +40,6 @@ class UI_EXPORT DefaultThemeProvider : public ThemeProvider {
   virtual NSColor* GetNSColor(int id) const OVERRIDE;
   virtual NSColor* GetNSColorTint(int id) const OVERRIDE;
   virtual NSGradient* GetNSGradient(int id) const OVERRIDE;
-#elif defined(OS_POSIX) && !defined(TOOLKIT_VIEWS) && !defined(OS_ANDROID)
-  virtual GdkPixbuf* GetRTLEnabledPixbufNamed(int id) const OVERRIDE;
 #endif
 
  private:

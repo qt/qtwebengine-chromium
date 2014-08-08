@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 
+#include "base/callback_forward.h"
 #include "content/common/sandbox_linux/sandbox_bpf_base_policy_linux.h"
 
 namespace sandbox {
@@ -28,13 +29,13 @@ class GpuProcessPolicy : public SandboxBPFBasePolicy {
 
  protected:
   // Start a broker process to handle open() inside the sandbox.
-  // |broker_sandboxer_callback| is a callback that will enable a suitable
-  // sandbox for the broker process itself.
+  // |broker_sandboxer_allocator| is a function pointer which can allocate a
+  // suitable sandbox policy for the broker process itself.
   // |read_whitelist_extra| and |write_whitelist_extra| are lists of file
   // names that should be whitelisted by the broker process, in addition to
   // the basic ones.
   void InitGpuBrokerProcess(
-      bool (*broker_sandboxer_callback)(void),
+      sandbox::SandboxBPFPolicy* (*broker_sandboxer_allocator)(void),
       const std::vector<std::string>& read_whitelist_extra,
       const std::vector<std::string>& write_whitelist_extra);
 

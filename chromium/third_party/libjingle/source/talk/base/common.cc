@@ -28,7 +28,7 @@
 #include <signal.h>
 #include <stdlib.h>
 #include <stdio.h>
-#include <memory.h>
+#include <string.h>
 
 #if WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -76,6 +76,14 @@ void LogAssert(const char* function, const char* file, int line,
     LOG(LS_ERROR) << file << "(" << line << ")" << ": ASSERT FAILED: "
                   << expression << " @ " << function;
   }
+}
+
+bool IsOdd(int n) {
+  return (n & 0x1);
+}
+
+bool IsEven(int n) {
+  return !IsOdd(n);
 }
 
 } // namespace talk_base

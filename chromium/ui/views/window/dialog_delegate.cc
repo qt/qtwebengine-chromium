@@ -14,8 +14,8 @@
 #include "ui/views/widget/widget_observer.h"
 #include "ui/views/window/dialog_client_view.h"
 
-#if defined(USE_AURA)
-#include "ui/views/corewm/shadow_types.h"
+#if defined(OS_WIN)
+#include "ui/base/win/shell.h"
 #endif
 
 namespace views {
@@ -23,23 +23,42 @@ namespace views {
 ////////////////////////////////////////////////////////////////////////////////
 // DialogDelegate:
 
+DialogDelegate::DialogDelegate() : supports_new_style_(true) {
+}
+
 DialogDelegate::~DialogDelegate() {
 }
 
 // static
-Widget* DialogDelegate::CreateDialogWidget(DialogDelegate* dialog,
-                                           gfx::NativeWindow context,
-                                           gfx::NativeWindow parent) {
+Widget* DialogDelegate::CreateDialogWidget(WidgetDelegate* delegate,
+                                           gfx::NativeView context,
+                                           gfx::NativeView parent) {
   views::Widget* widget = new views::Widget;
   views::Widget::InitParams params;
-  params.delegate = dialog;
+  params.delegate = delegate;
+  DialogDelegate* dialog = delegate->AsDialogDelegate();
+
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
+  // The new style doesn't support unparented dialogs on Linux desktop.
+  if (dialog)
+    dialog->supports_new_style_ &= parent != NULL;
+#elif defined(OS_WIN)
+  // The new style doesn't support unparented dialogs on Windows Classic themes.
+  if (dialog && !ui::win::IsAeroGlassEnabled())
+    dialog->supports_new_style_ &= parent != NULL;
+#endif
+
   if (!dialog || dialog->UseNewStyleForThisDialog()) {
     params.opacity = Widget::InitParams::TRANSLUCENT_WINDOW;
     params.remove_standard_frame = true;
+    // The bubble frame includes its own shadow; remove any native shadowing.
+    params.shadow_type = views::Widget::InitParams::SHADOW_TYPE_NONE;
   }
   params.context = context;
   params.parent = parent;
-  params.top_level = true;
+  // Web-modal (ui::MODAL_TYPE_CHILD) dialogs with parents are marked as child
+  // widgets to prevent top-level window behavior (independent movement, etc).
+  params.child = parent && (delegate->GetModalType() == ui::MODAL_TYPE_CHILD);
   widget->Init(params);
   return widget;
 }
@@ -154,43 +173,22 @@ NonClientFrameView* DialogDelegate::CreateNonClientFrameView(Widget* widget) {
 
 // static
 NonClientFrameView* DialogDelegate::CreateDialogFrameView(Widget* widget) {
-  return CreateDialogFrameView(widget, false);
-}
-
-// static
-NonClientFrameView* DialogDelegate::CreateDialogFrameView(
-    Widget* widget,
-    bool force_opaque_border) {
   BubbleFrameView* frame = new BubbleFrameView(gfx::Insets());
-  const SkColor color = widget->GetNativeTheme()->GetSystemColor(
-      ui::NativeTheme::kColorId_DialogBackground);
-  if (force_opaque_border) {
-    frame->SetBubbleBorder(new BubbleBorder(
-        BubbleBorder::NONE,
-        BubbleBorder::NO_SHADOW_OPAQUE_BORDER,
-        color));
-  } else {
-    frame->SetBubbleBorder(new BubbleBorder(BubbleBorder::FLOAT,
-                                            BubbleBorder::SMALL_SHADOW,
-                                            color));
-  }
+  scoped_ptr<BubbleBorder> border(new BubbleBorder(
+      BubbleBorder::FLOAT, BubbleBorder::SMALL_SHADOW, SK_ColorRED));
+  border->set_use_theme_background_color(true);
+  frame->SetBubbleBorder(border.Pass());
   DialogDelegate* delegate = widget->widget_delegate()->AsDialogDelegate();
   if (delegate) {
     View* titlebar_view = delegate->CreateTitlebarExtraView();
     if (titlebar_view)
       frame->SetTitlebarExtraView(titlebar_view);
   }
-  if (force_opaque_border)
-    widget->set_frame_type(views::Widget::FRAME_TYPE_FORCE_CUSTOM);
-#if defined(USE_AURA)
-  // TODO(msw): Add a matching shadow type and remove the bubble frame border?
-  corewm::SetShadowType(widget->GetNativeWindow(), corewm::SHADOW_TYPE_NONE);
-#endif
   return frame;
 }
 
 bool DialogDelegate::UseNewStyleForThisDialog() const {
-  return true;
+  return supports_new_style_;
 }
 
 const DialogClientView* DialogDelegate::GetDialogClientView() const {
@@ -201,8 +199,8 @@ DialogClientView* DialogDelegate::GetDialogClientView() {
   return GetWidget()->client_view()->AsDialogClientView();
 }
 
-ui::AccessibilityTypes::Role DialogDelegate::GetAccessibleWindowRole() const {
-  return ui::AccessibilityTypes::ROLE_DIALOG;
+ui::AXRole DialogDelegate::GetAccessibleWindowRole() const {
+  return ui::AX_ROLE_DIALOG;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -28,22 +28,23 @@ QuicSpdyServerStream::QuicSpdyServerStream(QuicStreamId id,
 QuicSpdyServerStream::~QuicSpdyServerStream() {
 }
 
-uint32 QuicSpdyServerStream::ProcessData(const char* data, uint32 length) {
+uint32 QuicSpdyServerStream::ProcessData(const char* data, uint32 data_len) {
   uint32 total_bytes_processed = 0;
 
   // Are we still reading the request headers.
   if (!request_headers_received_) {
     // Grow the read buffer if necessary.
-    if (read_buf_->RemainingCapacity() < (int)length) {
+    if (read_buf_->RemainingCapacity() < (int)data_len) {
       read_buf_->SetCapacity(read_buf_->capacity() + kHeaderBufInitialSize);
     }
-    memcpy(read_buf_->data(), data, length);
-    read_buf_->set_offset(read_buf_->offset() + length);
+    memcpy(read_buf_->data(), data, data_len);
+    read_buf_->set_offset(read_buf_->offset() + data_len);
     ParseRequestHeaders();
   } else {
-    body_.append(data + total_bytes_processed, length - total_bytes_processed);
+    body_.append(data + total_bytes_processed,
+                 data_len - total_bytes_processed);
   }
-  return length;
+  return data_len;
 }
 
 void QuicSpdyServerStream::OnFinRead() {
@@ -55,7 +56,7 @@ void QuicSpdyServerStream::OnFinRead() {
   if (!request_headers_received_) {
     SendErrorResponse();  // We're not done reading headers.
   } else if ((headers_.content_length_status() ==
-             BalsaHeadersEnums::VALID_CONTENT_LENGTH) &&
+              BalsaHeadersEnums::VALID_CONTENT_LENGTH) &&
              body_.size() != headers_.content_length()) {
     SendErrorResponse();  // Invalid content length
   } else {
@@ -97,12 +98,23 @@ void QuicSpdyServerStream::SendResponse() {
     return;
   }
 
-  DLOG(INFO) << "Sending response for stream " << id();
+  if (response->response_type() == QuicInMemoryCache::CLOSE_CONNECTION) {
+    DVLOG(1) << "Special response: closing connection.";
+    CloseConnection(QUIC_NO_ERROR);
+    return;
+  }
+
+  if (response->response_type() == QuicInMemoryCache::IGNORE_REQUEST) {
+    DVLOG(1) << "Special response: ignoring request.";
+    return;
+  }
+
+  DVLOG(1) << "Sending response for stream " << id();
   SendHeadersAndBody(response->headers(), response->body());
 }
 
 void QuicSpdyServerStream::SendErrorResponse() {
-  DLOG(INFO) << "Sending error response for stream " << id();
+  DVLOG(1) << "Sending error response for stream " << id();
   BalsaHeaders headers;
   headers.SetResponseFirstlineFromStringPieces(
       "HTTP/1.1", "500", "Server Error");
@@ -110,7 +122,7 @@ void QuicSpdyServerStream::SendErrorResponse() {
   SendHeadersAndBody(headers, "bad");
 }
 
-void QuicSpdyServerStream:: SendHeadersAndBody(
+void QuicSpdyServerStream::SendHeadersAndBody(
     const BalsaHeaders& response_headers,
     StringPiece body) {
   // We only support SPDY and HTTP, and neither handles bidirectional streaming.
@@ -121,12 +133,10 @@ void QuicSpdyServerStream:: SendHeadersAndBody(
   SpdyHeaderBlock header_block =
       SpdyUtils::ResponseHeadersToSpdyHeaders(response_headers);
 
-  string headers_string =
-      session()->compressor()->CompressHeaders(header_block);
-    WriteOrBufferData(headers_string, body.empty());
+  WriteHeaders(header_block, body.empty(), NULL);
 
   if (!body.empty()) {
-    WriteOrBufferData(body, true);
+    WriteOrBufferData(body, true, NULL);
   }
 }
 

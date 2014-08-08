@@ -38,9 +38,9 @@ namespace WebCore {
 class ExceptionState;
 class SliderThumbElement;
 
-class RangeInputType : public InputType {
+class RangeInputType FINAL : public InputType {
 public:
-    static PassRefPtr<InputType> create(HTMLInputElement&);
+    static PassRefPtrWillBeRawPtr<InputType> create(HTMLInputElement&);
 
 private:
     RangeInputType(HTMLInputElement&);
@@ -48,7 +48,7 @@ private:
     virtual bool isRangeControl() const OVERRIDE;
     virtual const AtomicString& formControlType() const OVERRIDE;
     virtual double valueAsDouble() const OVERRIDE;
-    virtual void setValueAsDecimal(const Decimal&, TextFieldEventBehavior, ExceptionState&) const OVERRIDE;
+    virtual void setValueAsDouble(double, TextFieldEventBehavior, ExceptionState&) const OVERRIDE;
     virtual bool typeMismatchFor(const String&) const OVERRIDE;
     virtual bool supportsRequired() const OVERRIDE;
     virtual StepRange createStepRange(AnyStepHandling) const OVERRIDE;

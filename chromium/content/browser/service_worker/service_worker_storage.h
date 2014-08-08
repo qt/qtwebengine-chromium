@@ -5,15 +5,25 @@
 #ifndef CONTENT_BROWSER_SERVICE_WORKER_SERVICE_WORKER_STORAGE_H_
 #define CONTENT_BROWSER_SERVICE_WORKER_SERVICE_WORKER_STORAGE_H_
 
+#include <deque>
 #include <map>
+#include <set>
+#include <vector>
 
 #include "base/bind.h"
 #include "base/files/file_path.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_vector.h"
-#include "content/browser/service_worker/service_worker_registration_status.h"
+#include "base/memory/weak_ptr.h"
+#include "content/browser/service_worker/service_worker_database.h"
 #include "content/common/content_export.h"
+#include "content/common/service_worker/service_worker_status_code.h"
 #include "url/gurl.h"
+
+namespace base {
+class MessageLoopProxy;
+class SequencedTaskRunner;
+}
 
 namespace quota {
 class QuotaManagerProxy;
@@ -21,83 +31,271 @@ class QuotaManagerProxy;
 
 namespace content {
 
+class ServiceWorkerContextCore;
+class ServiceWorkerDiskCache;
 class ServiceWorkerRegistration;
-class ServiceWorkerRegisterJob;
+class ServiceWorkerRegistrationInfo;
+class ServiceWorkerResponseReader;
+class ServiceWorkerResponseWriter;
+class ServiceWorkerVersion;
 
-// This class provides an interface to load registration data and
-// instantiate ServiceWorkerRegistration objects. Any asynchronous
-// operations are run through instances of ServiceWorkerRegisterJob.
+// This class provides an interface to store and retrieve ServiceWorker
+// registration data.
 class CONTENT_EXPORT ServiceWorkerStorage {
  public:
+  typedef std::vector<ServiceWorkerDatabase::ResourceRecord> ResourceList;
+  typedef base::Callback<void(ServiceWorkerStatusCode status)> StatusCallback;
+  typedef base::Callback<void(ServiceWorkerStatusCode status,
+                              const scoped_refptr<ServiceWorkerRegistration>&
+                                  registration)> FindRegistrationCallback;
+  typedef base::Callback<
+      void(const std::vector<ServiceWorkerRegistrationInfo>& registrations)>
+          GetAllRegistrationInfosCallback;
+  typedef base::Callback<
+      void(ServiceWorkerStatusCode status, int result)>
+          CompareCallback;
+
   ServiceWorkerStorage(const base::FilePath& path,
+                       base::WeakPtr<ServiceWorkerContextCore> context,
+                       base::SequencedTaskRunner* database_task_runner,
+                       base::MessageLoopProxy* disk_cache_thread,
                        quota::QuotaManagerProxy* quota_manager_proxy);
   ~ServiceWorkerStorage();
 
-  typedef base::Callback<void(ServiceWorkerRegistrationStatus status,
-                              const scoped_refptr<ServiceWorkerRegistration>&
-                                  registration)> RegistrationCallback;
-  typedef base::Callback<
-      void(ServiceWorkerRegistrationStatus status)> UnregistrationCallback;
-
-  // `found` is only valid if status == REGISTRATION_OK.
-  typedef base::Callback<void(bool found,
-                              ServiceWorkerRegistrationStatus status,
-                              const scoped_refptr<ServiceWorkerRegistration>&
-                                  registration)> FindRegistrationCallback;
-
+  // Finds registration for |document_url| or |pattern| or |registration_id|.
+  // The Find methods will find stored and initially installing registrations.
+  // Returns SERVICE_WORKER_OK with non-null registration if registration
+  // is found, or returns SERVICE_WORKER_ERROR_NOT_FOUND if no matching
+  // registration is found.  The FindRegistrationForPattern method is
+  // guaranteed to return asynchronously. However, the methods to find
+  // for |document_url| or |registration_id| may complete immediately
+  // (the callback may be called prior to the method returning) or
+  // asynchronously.
   void FindRegistrationForDocument(const GURL& document_url,
                                    const FindRegistrationCallback& callback);
-  void FindRegistrationForPattern(const GURL& pattern,
+  void FindRegistrationForPattern(const GURL& scope,
                                   const FindRegistrationCallback& callback);
+  void FindRegistrationForId(int64 registration_id,
+                             const GURL& origin,
+                             const FindRegistrationCallback& callback);
 
-  void Register(const GURL& pattern,
-                const GURL& script_url,
-                const RegistrationCallback& callback);
+  // Returns info about all stored and initially installing registrations.
+  void GetAllRegistrations(const GetAllRegistrationInfosCallback& callback);
 
-  void Unregister(const GURL& pattern, const UnregistrationCallback& callback);
+  // Commits |registration| with the installed but not activated |version|
+  // to storage, overwritting any pre-existing registration data for the scope.
+  // A pre-existing version's script resources will remain available until
+  // either a browser restart or DeleteVersionResources is called.
+  void StoreRegistration(
+      ServiceWorkerRegistration* registration,
+      ServiceWorkerVersion* version,
+      const StatusCallback& callback);
+
+  // Updates the state of the registration's stored version to active.
+  void UpdateToActiveState(
+      ServiceWorkerRegistration* registration,
+      const StatusCallback& callback);
+
+  // Deletes the registration data for |registration_id|, the
+  // script resources for the registration's stored version
+  // will remain available until either a browser restart or
+  // DeleteVersionResources is called.
+  void DeleteRegistration(int64 registration_id,
+                          const GURL& origin,
+                          const StatusCallback& callback);
+
+  scoped_ptr<ServiceWorkerResponseReader> CreateResponseReader(
+      int64 response_id);
+  scoped_ptr<ServiceWorkerResponseWriter> CreateResponseWriter(
+      int64 response_id);
+
+  // Adds |id| to the set of resources ids that are in the disk
+  // cache but not yet stored with a registration.
+  void StoreUncommittedReponseId(int64 id);
+
+  // Removes |id| from uncommitted list, adds it to the
+  // purgeable list and purges it.
+  void DoomUncommittedResponse(int64 id);
+
+  // Returns new IDs which are guaranteed to be unique in the storage.
+  int64 NewRegistrationId();
+  int64 NewVersionId();
+  int64 NewResourceId();
+
+  // Intended for use only by ServiceWorkerRegisterJob.
+  void NotifyInstallingRegistration(
+      ServiceWorkerRegistration* registration);
+  void NotifyDoneInstallingRegistration(
+      ServiceWorkerRegistration* registration,
+      ServiceWorkerVersion* version,
+      ServiceWorkerStatusCode status);
 
  private:
-  friend class ServiceWorkerRegisterJob;
-  FRIEND_TEST_ALL_PREFIXES(ServiceWorkerStorageTest, PatternMatches);
+  friend class ServiceWorkerStorageTest;
+  FRIEND_TEST_ALL_PREFIXES(ServiceWorkerStorageTest,
+                           ResourceIdsAreStoredAndPurged);
 
-  typedef std::map<GURL, scoped_refptr<ServiceWorkerRegistration> >
-      PatternToRegistrationMap;
-  typedef ScopedVector<ServiceWorkerRegisterJob> RegistrationJobList;
+  struct InitialData {
+    int64 next_registration_id;
+    int64 next_version_id;
+    int64 next_resource_id;
+    std::set<GURL> origins;
 
-  // TODO(alecflett): These are temporary internal methods providing
-  // synchronous in-memory registration. Eventually these will be
-  // replaced by asynchronous methods that persist registration to disk.
-  scoped_refptr<ServiceWorkerRegistration> RegisterInternal(
-      const GURL& pattern,
-      const GURL& script_url);
-  void UnregisterInternal(const GURL& pattern);
-  static bool PatternMatches(const GURL& pattern, const GURL& script_url);
+    InitialData();
+    ~InitialData();
+  };
 
-  // Jobs are removed whenever they are finished or canceled.
-  void EraseJob(ServiceWorkerRegisterJob* job);
+  typedef std::vector<ServiceWorkerDatabase::RegistrationData> RegistrationList;
+  typedef std::map<int64, scoped_refptr<ServiceWorkerRegistration> >
+      RegistrationRefsById;
+  typedef base::Callback<void(
+      InitialData* data,
+      ServiceWorkerDatabase::Status status)> InitializeCallback;
+  typedef base::Callback<void(
+      const GURL& origin,
+      const std::vector<int64>& newly_purgeable_resources,
+      ServiceWorkerDatabase::Status status)> WriteRegistrationCallback;
+  typedef base::Callback<void(
+      bool origin_is_deletable,
+      const std::vector<int64>& newly_purgeable_resources,
+      ServiceWorkerDatabase::Status status)> DeleteRegistrationCallback;
+  typedef base::Callback<void(
+      const ServiceWorkerDatabase::RegistrationData& data,
+      const ResourceList& resources,
+      ServiceWorkerDatabase::Status status)> FindInDBCallback;
 
-  // Called at ServiceWorkerRegisterJob completion.
-  void RegisterComplete(const RegistrationCallback& callback,
-                        ServiceWorkerRegisterJob* job,
-                        ServiceWorkerRegistrationStatus status,
-                        ServiceWorkerRegistration* registration);
+  base::FilePath GetDatabasePath();
+  base::FilePath GetDiskCachePath();
 
-  // Called at ServiceWorkerRegisterJob completion.
-  void UnregisterComplete(const UnregistrationCallback& callback,
-                          ServiceWorkerRegisterJob* job,
-                          ServiceWorkerRegistrationStatus status,
-                          ServiceWorkerRegistration* registration);
+  bool LazyInitialize(
+      const base::Closure& callback);
+  void DidReadInitialData(
+      InitialData* data,
+      ServiceWorkerDatabase::Status status);
+  void DidFindRegistrationForDocument(
+      const GURL& document_url,
+      const FindRegistrationCallback& callback,
+      const ServiceWorkerDatabase::RegistrationData& data,
+      const ResourceList& resources,
+      ServiceWorkerDatabase::Status status);
+  void DidFindRegistrationForPattern(
+      const GURL& scope,
+      const FindRegistrationCallback& callback,
+      const ServiceWorkerDatabase::RegistrationData& data,
+      const ResourceList& resources,
+      ServiceWorkerDatabase::Status status);
+  void DidFindRegistrationForId(
+      const FindRegistrationCallback& callback,
+      const ServiceWorkerDatabase::RegistrationData& data,
+      const ResourceList& resources,
+      ServiceWorkerDatabase::Status status);
+  void DidGetAllRegistrations(
+      const GetAllRegistrationInfosCallback& callback,
+      RegistrationList* registrations,
+      ServiceWorkerDatabase::Status status);
+  void DidStoreRegistration(
+      const StatusCallback& callback,
+      const GURL& origin,
+      const std::vector<int64>& newly_purgeable_resources,
+      ServiceWorkerDatabase::Status status);
+  void DidUpdateToActiveState(
+      const StatusCallback& callback,
+      ServiceWorkerDatabase::Status status);
+  void DidDeleteRegistration(
+      const GURL& origin,
+      const StatusCallback& callback,
+      bool origin_is_deletable,
+      const std::vector<int64>& newly_purgeable_resources,
+      ServiceWorkerDatabase::Status status);
 
-  // This is the in-memory registration. Eventually the registration will be
-  // persisted to disk.
-  // A list of currently running jobs. This is a temporary structure until we
-  // start managing overlapping registrations explicitly.
-  RegistrationJobList registration_jobs_;
+  scoped_refptr<ServiceWorkerRegistration> GetOrCreateRegistration(
+      const ServiceWorkerDatabase::RegistrationData& data,
+      const ResourceList& resources);
+  ServiceWorkerRegistration* FindInstallingRegistrationForDocument(
+      const GURL& document_url);
+  ServiceWorkerRegistration* FindInstallingRegistrationForPattern(
+      const GURL& scope);
+  ServiceWorkerRegistration* FindInstallingRegistrationForId(
+      int64 registration_id);
 
-  // in-memory map, to eventually be replaced with persistence
-  PatternToRegistrationMap registration_by_pattern_;
-  scoped_refptr<quota::QuotaManagerProxy> quota_manager_proxy_;
+  // Lazy disk_cache getter.
+  ServiceWorkerDiskCache* disk_cache();
+  void OnDiskCacheInitialized(int rv);
+
+  void StartPurgingResources(const std::vector<int64>& ids);
+  void StartPurgingResources(const ResourceList& resources);
+  void ContinuePurgingResources();
+  void PurgeResource(int64 id);
+  void OnResourcePurged(int64 id, int rv);
+
+  // Static cross-thread helpers.
+  static void ReadInitialDataFromDB(
+      ServiceWorkerDatabase* database,
+      scoped_refptr<base::SequencedTaskRunner> original_task_runner,
+      const InitializeCallback& callback);
+  static void DeleteRegistrationFromDB(
+      ServiceWorkerDatabase* database,
+      scoped_refptr<base::SequencedTaskRunner> original_task_runner,
+      int64 registration_id,
+      const GURL& origin,
+      const DeleteRegistrationCallback& callback);
+  static void WriteRegistrationInDB(
+      ServiceWorkerDatabase* database,
+      scoped_refptr<base::SequencedTaskRunner> original_task_runner,
+      const ServiceWorkerDatabase::RegistrationData& registration,
+      const ResourceList& resources,
+      const WriteRegistrationCallback& callback);
+  static void FindForDocumentInDB(
+      ServiceWorkerDatabase* database,
+      scoped_refptr<base::SequencedTaskRunner> original_task_runner,
+      const GURL& document_url,
+      const FindInDBCallback& callback);
+  static void FindForPatternInDB(
+      ServiceWorkerDatabase* database,
+      scoped_refptr<base::SequencedTaskRunner> original_task_runner,
+      const GURL& scope,
+      const FindInDBCallback& callback);
+  static void FindForIdInDB(
+      ServiceWorkerDatabase* database,
+      scoped_refptr<base::SequencedTaskRunner> original_task_runner,
+      int64 registration_id,
+      const GURL& origin,
+      const FindInDBCallback& callback);
+
+  // For finding registrations being installed.
+  RegistrationRefsById installing_registrations_;
+
+  // Origins having registations.
+  std::set<GURL> registered_origins_;
+
+  // Pending database tasks waiting for initialization.
+  std::vector<base::Closure> pending_tasks_;
+
+  int64 next_registration_id_;
+  int64 next_version_id_;
+  int64 next_resource_id_;
+
+  enum State {
+    UNINITIALIZED,
+    INITIALIZING,
+    INITIALIZED,
+    DISABLED,
+  };
+  State state_;
+
   base::FilePath path_;
+  base::WeakPtr<ServiceWorkerContextCore> context_;
+
+  // Only accessed on |database_task_runner_|.
+  scoped_ptr<ServiceWorkerDatabase> database_;
+
+  scoped_refptr<base::SequencedTaskRunner> database_task_runner_;
+  scoped_refptr<base::MessageLoopProxy> disk_cache_thread_;
+  scoped_refptr<quota::QuotaManagerProxy> quota_manager_proxy_;
+  scoped_ptr<ServiceWorkerDiskCache> disk_cache_;
+  std::deque<int64> purgeable_reource_ids_;
+  bool is_purge_pending_;
+
   base::WeakPtrFactory<ServiceWorkerStorage> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(ServiceWorkerStorage);

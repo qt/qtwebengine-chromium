@@ -32,15 +32,19 @@
 #define GCObservation_h
 
 #include "bindings/v8/ScopedPersistent.h"
+#include "platform/heap/Handle.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 #include <v8.h>
 
 namespace WebCore {
 
-class GCObservation : public RefCounted<GCObservation> {
+class GCObservation : public RefCountedWillBeGarbageCollectedFinalized<GCObservation> {
 public:
-    static PassRefPtr<GCObservation> create(v8::Handle<v8::Value> observedValue) { return adoptRef(new GCObservation(observedValue)); }
+    static PassRefPtrWillBeRawPtr<GCObservation> create(v8::Handle<v8::Value> observedValue)
+    {
+        return adoptRefWillBeNoop(new GCObservation(observedValue));
+    }
     ~GCObservation() { }
 
     // Caution: It is only feasible to determine whether an object was
@@ -49,6 +53,8 @@ public:
     // common case.
     bool wasCollected() const { return m_collected; }
     void setWasCollected();
+
+    void trace(Visitor*) { }
 
 private:
     explicit GCObservation(v8::Handle<v8::Value>);

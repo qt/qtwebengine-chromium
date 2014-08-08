@@ -9,11 +9,12 @@
 #include "base/i18n/rtl.h"
 #include "base/message_loop/message_loop.h"
 #include "grit/ui_resources.h"
-#include "ui/base/accessibility/accessible_view_state.h"
+#include "ui/accessibility/ax_view_state.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/events/event.h"
 #include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/gfx/canvas.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/rect_conversions.h"
 #include "ui/gfx/skia_util.h"
@@ -78,8 +79,7 @@ TreeView::TreeView()
       editable_(true),
       controller_(NULL),
       root_shown_(true),
-      has_custom_icons_(false),
-      row_height_(font_.GetHeight() + kTextVerticalPadding * 2) {
+      row_height_(font_list_.GetHeight() + kTextVerticalPadding * 2) {
   SetFocusable(true);
   closed_icon_ = *ui::ResourceBundle::GetSharedInstance().GetImageNamed(
       (base::i18n::IsRTL() ? IDR_FOLDER_CLOSED_RTL
@@ -158,9 +158,9 @@ void TreeView::StartEditing(TreeModelNode* node) {
     // Add the editor immediately as GetPreferredSize returns the wrong thing if
     // not parented.
     AddChildView(editor_);
-    editor_->SetFont(font_);
+    editor_->SetFontList(font_list_);
     empty_editor_size_ = editor_->GetPreferredSize();
-    editor_->SetController(this);
+    editor_->set_controller(this);
   }
   editor_->SetText(selected_node_->model_node()->GetTitle());
   LayoutEditor();
@@ -245,7 +245,7 @@ void TreeView::SetSelectedNode(TreeModelNode* model_node) {
   if (changed) {
     // TODO(dmazzoni): Decide if EVENT_SELECTION_CHANGED is a better choice for
     // sub-item selection event.
-    NotifyAccessibilityEvent(ui::AccessibilityTypes::EVENT_FOCUS, true);
+    NotifyAccessibilityEvent(ui::AX_EVENT_FOCUS, true);
   }
 }
 
@@ -350,7 +350,7 @@ void TreeView::Layout() {
   LayoutEditor();
 }
 
-gfx::Size TreeView::GetPreferredSize() {
+gfx::Size TreeView::GetPreferredSize() const {
   return preferred_size_;
 }
 
@@ -403,14 +403,14 @@ void TreeView::ShowContextMenu(const gfx::Point& p,
   View::ShowContextMenu(p, source_type);
 }
 
-void TreeView::GetAccessibleState(ui::AccessibleViewState* state) {
-  state->role = ui::AccessibilityTypes::ROLE_OUTLINE;
-  state->state = ui::AccessibilityTypes::STATE_READONLY;
+void TreeView::GetAccessibleState(ui::AXViewState* state) {
+  state->role = ui::AX_ROLE_TREE;
+  state->AddStateFlag(ui::AX_STATE_READ_ONLY);
   if (!selected_node_)
     return;
 
   // Get selected item info.
-  state->role = ui::AccessibilityTypes::ROLE_OUTLINEITEM;
+  state->role = ui::AX_ROLE_TREE_ITEM;
   state->name = selected_node_->model_node()->GetTitle();
 }
 
@@ -482,7 +482,7 @@ void TreeView::TreeNodeChanged(TreeModel* model, TreeModelNode* model_node) {
 }
 
 void TreeView::ContentsChanged(Textfield* sender,
-                               const string16& new_contents) {
+                               const base::string16& new_contents) {
 }
 
 bool TreeView::HandleKeyEvent(Textfield* sender,
@@ -525,7 +525,7 @@ void TreeView::SetSelectedRow(int row) {
   SetSelectedNode(GetNodeForRow(row));
 }
 
-string16 TreeView::GetTextForRow(int row) {
+base::string16 TreeView::GetTextForRow(int row) {
   return GetNodeForRow(row)->GetTitle();
 }
 
@@ -694,7 +694,7 @@ void TreeView::ConfigureInternalNode(TreeModelNode* model_node,
 
 void TreeView::UpdateNodeTextWidth(InternalNode* node) {
   int width = 0, height = 0;
-  gfx::Canvas::SizeStringInt(node->model_node()->GetTitle(), font_,
+  gfx::Canvas::SizeStringInt(node->model_node()->GetTitle(), font_list_,
                              &width, &height, 0, gfx::Canvas::NO_ELLIPSIS);
   node->set_text_width(width);
 }
@@ -729,7 +729,7 @@ void TreeView::LayoutEditor() {
   row_bounds.set_width(row_bounds.width() - text_offset_);
   row_bounds.Inset(kTextHorizontalPadding, kTextVerticalPadding);
   row_bounds.Inset(-empty_editor_size_.width() / 2,
-                   -(empty_editor_size_.height() - font_.GetHeight()) / 2);
+                   -(empty_editor_size_.height() - font_list_.GetHeight()) / 2);
   // Give a little extra space for editing.
   row_bounds.set_width(row_bounds.width() + 50);
   editor_->SetBoundsRect(row_bounds);
@@ -803,12 +803,14 @@ void TreeView::PaintRow(gfx::Canvas* canvas,
     }
     const ui::NativeTheme::ColorId color_id =
         text_color_id(HasFocus(), node == selected_node_);
-    canvas->DrawStringInt(node->model_node()->GetTitle(), font_,
-                          GetNativeTheme()->GetSystemColor(color_id),
-                          text_bounds.x() + kTextHorizontalPadding,
-                          text_bounds.y() + kTextVerticalPadding,
-                          text_bounds.width() - kTextHorizontalPadding * 2,
-                          text_bounds.height() - kTextVerticalPadding * 2);
+    const gfx::Rect internal_bounds(
+        text_bounds.x() + kTextHorizontalPadding,
+        text_bounds.y() + kTextVerticalPadding,
+        text_bounds.width() - kTextHorizontalPadding * 2,
+        text_bounds.height() - kTextVerticalPadding * 2);
+    canvas->DrawStringRect(node->model_node()->GetTitle(), font_list_,
+                           GetNativeTheme()->GetSystemColor(color_id),
+                           internal_bounds);
   }
 }
 

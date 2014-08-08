@@ -26,44 +26,39 @@
 #include "config.h"
 #include "bindings/v8/V8MutationCallback.h"
 
-#include "V8MutationObserver.h"
-#include "V8MutationRecord.h"
+#include "bindings/core/v8/V8MutationObserver.h"
+#include "bindings/core/v8/V8MutationRecord.h"
 #include "bindings/v8/ScriptController.h"
 #include "bindings/v8/V8Binding.h"
-#include "bindings/v8/V8HiddenPropertyName.h"
+#include "bindings/v8/V8HiddenValue.h"
 #include "core/dom/ExecutionContext.h"
 #include "wtf/Assertions.h"
 
 namespace WebCore {
 
-V8MutationCallback::V8MutationCallback(v8::Handle<v8::Function> callback, ExecutionContext* context, v8::Handle<v8::Object> owner, v8::Isolate* isolate)
-    : ActiveDOMCallback(context)
-    , m_callback(isolate, callback)
-    , m_world(DOMWrapperWorld::current())
-    , m_isolate(isolate)
+V8MutationCallback::V8MutationCallback(v8::Handle<v8::Function> callback, v8::Handle<v8::Object> owner, ScriptState* scriptState)
+    : ActiveDOMCallback(scriptState->executionContext())
+    , m_callback(scriptState->isolate(), callback)
+    , m_scriptState(scriptState)
 {
-    owner->SetHiddenValue(V8HiddenPropertyName::callback(m_isolate), callback);
+    V8HiddenValue::setHiddenValue(scriptState->isolate(), owner, V8HiddenValue::callback(scriptState->isolate()), callback);
     m_callback.setWeak(this, &setWeakCallback);
 }
 
-void V8MutationCallback::call(const Vector<RefPtr<MutationRecord> >& mutations, MutationObserver* observer)
+void V8MutationCallback::call(const WillBeHeapVector<RefPtrWillBeMember<MutationRecord> >& mutations, MutationObserver* observer)
 {
     if (!canInvokeCallback())
         return;
 
-    v8::HandleScope handleScope(m_isolate);
+    v8::Isolate* isolate = m_scriptState->isolate();
 
-    v8::Handle<v8::Context> v8Context = toV8Context(executionContext(), m_world.get());
-    if (v8Context.IsEmpty())
+    if (m_scriptState->contextIsEmpty())
         return;
+    ScriptState::Scope scope(m_scriptState.get());
 
-    v8::Context::Scope scope(v8Context);
-
-    v8::Handle<v8::Function> callback = m_callback.newLocal(m_isolate);
-    if (callback.IsEmpty())
+    if (m_callback.isEmpty())
         return;
-
-    v8::Handle<v8::Value> observerHandle = toV8(observer, v8::Handle<v8::Object>(), m_isolate);
+    v8::Handle<v8::Value> observerHandle = toV8(observer, m_scriptState->context()->Global(), isolate);
     if (observerHandle.IsEmpty()) {
         if (!isScriptControllerTerminating())
             CRASH();
@@ -74,11 +69,11 @@ void V8MutationCallback::call(const Vector<RefPtr<MutationRecord> >& mutations, 
         return;
 
     v8::Handle<v8::Object> thisObject = v8::Handle<v8::Object>::Cast(observerHandle);
-    v8::Handle<v8::Value> argv[] = { v8Array(mutations, m_isolate), observerHandle };
+    v8::Handle<v8::Value> argv[] = { v8Array(mutations, m_scriptState->context()->Global(), isolate), observerHandle };
 
     v8::TryCatch exceptionCatcher;
     exceptionCatcher.SetVerbose(true);
-    ScriptController::callFunction(executionContext(), callback, thisObject, 2, argv, m_isolate);
+    ScriptController::callFunction(executionContext(), m_callback.newLocal(isolate), thisObject, WTF_ARRAY_LENGTH(argv), argv, isolate);
 }
 
 void V8MutationCallback::setWeakCallback(const v8::WeakCallbackData<v8::Function, V8MutationCallback>& data)

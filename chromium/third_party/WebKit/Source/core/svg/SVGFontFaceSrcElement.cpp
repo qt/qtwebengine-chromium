@@ -22,9 +22,10 @@
 #if ENABLE(SVG_FONTS)
 #include "core/svg/SVGFontFaceSrcElement.h"
 
-#include "SVGNames.h"
+#include "core/SVGNames.h"
 #include "core/css/CSSFontFaceSrcValue.h"
 #include "core/css/CSSValueList.h"
+#include "core/dom/ElementTraversal.h"
 #include "core/svg/SVGFontFaceElement.h"
 #include "core/svg/SVGFontFaceNameElement.h"
 #include "core/svg/SVGFontFaceUriElement.h"
@@ -39,20 +40,17 @@ inline SVGFontFaceSrcElement::SVGFontFaceSrcElement(Document& document)
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<SVGFontFaceSrcElement> SVGFontFaceSrcElement::create(Document& document)
-{
-    return adoptRef(new SVGFontFaceSrcElement(document));
-}
+DEFINE_NODE_FACTORY(SVGFontFaceSrcElement)
 
-PassRefPtr<CSSValueList> SVGFontFaceSrcElement::srcValue() const
+PassRefPtrWillBeRawPtr<CSSValueList> SVGFontFaceSrcElement::srcValue() const
 {
-    RefPtr<CSSValueList> list = CSSValueList::createCommaSeparated();
-    for (Node* child = firstChild(); child; child = child->nextSibling()) {
-        RefPtr<CSSFontFaceSrcValue> srcValue;
-        if (child->hasTagName(font_face_uriTag))
-            srcValue = toSVGFontFaceUriElement(child)->srcValue();
-        else if (child->hasTagName(font_face_nameTag))
-            srcValue = toSVGFontFaceNameElement(child)->srcValue();
+    RefPtrWillBeRawPtr<CSSValueList> list = CSSValueList::createCommaSeparated();
+    for (SVGElement* element = Traversal<SVGElement>::firstChild(*this); element; element = Traversal<SVGElement>::nextSibling(*element)) {
+        RefPtrWillBeRawPtr<CSSFontFaceSrcValue> srcValue = nullptr;
+        if (isSVGFontFaceUriElement(*element))
+            srcValue = toSVGFontFaceUriElement(*element).srcValue();
+        else if (isSVGFontFaceNameElement(*element))
+            srcValue = toSVGFontFaceNameElement(*element).srcValue();
 
         if (srcValue && srcValue->resource().length())
             list->append(srcValue);
@@ -63,8 +61,8 @@ PassRefPtr<CSSValueList> SVGFontFaceSrcElement::srcValue() const
 void SVGFontFaceSrcElement::childrenChanged(bool changedByParser, Node* beforeChange, Node* afterChange, int childCountDelta)
 {
     SVGElement::childrenChanged(changedByParser, beforeChange, afterChange, childCountDelta);
-    if (parentNode() && parentNode()->hasTagName(font_faceTag))
-        toSVGFontFaceElement(parentNode())->rebuildFontFace();
+    if (isSVGFontFaceElement(parentNode()))
+        toSVGFontFaceElement(*parentNode()).rebuildFontFace();
 }
 
 }

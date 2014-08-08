@@ -24,12 +24,6 @@ namespace cc {
 
 class LayerScrollOffsetDelegate;
 
-struct DidOverscrollParams {
-  gfx::Vector2dF accumulated_overscroll;
-  gfx::Vector2dF latest_overscroll_delta;
-  gfx::Vector2dF current_fling_velocity;
-};
-
 class CC_EXPORT InputHandlerClient {
  public:
   virtual ~InputHandlerClient() {}
@@ -41,7 +35,8 @@ class CC_EXPORT InputHandlerClient {
   // Called when scroll deltas reaching the root scrolling layer go unused.
   // The accumulated overscroll is scoped by the most recent call to
   // InputHandler::ScrollBegin.
-  virtual void DidOverscroll(const DidOverscrollParams& params) = 0;
+  virtual void DidOverscroll(const gfx::Vector2dF& accumulated_overscroll,
+                             const gfx::Vector2dF& latest_overscroll_delta) = 0;
 
  protected:
   InputHandlerClient() {}
@@ -56,7 +51,16 @@ class CC_EXPORT InputHandlerClient {
 // interface and bind it to the handler on the compositor thread.
 class CC_EXPORT InputHandler {
  public:
-  enum ScrollStatus { ScrollOnMainThread, ScrollStarted, ScrollIgnored };
+  // Note these are used in a histogram. Do not reorder or delete existing
+  // entries.
+  enum ScrollStatus {
+    ScrollOnMainThread = 0,
+    ScrollStarted,
+    ScrollIgnored,
+    ScrollUnknown,
+    // This must be the last entry.
+    ScrollStatusCount
+  };
   enum ScrollInputType { Gesture, Wheel, NonBubblingGesture };
 
   // Binds a client to this handler to receive notifications. Only one client
@@ -69,7 +73,7 @@ class CC_EXPORT InputHandler {
   // can be scrolled, ScrollOnMainThread if the scroll event should instead be
   // delegated to the main thread, or ScrollIgnored if there is nothing to be
   // scrolled at the given coordinates.
-  virtual ScrollStatus ScrollBegin(gfx::Point viewport_point,
+  virtual ScrollStatus ScrollBegin(const gfx::Point& viewport_point,
                                    ScrollInputType type) = 0;
 
   // Scroll the selected layer starting at the given position. If the scroll
@@ -84,20 +88,17 @@ class CC_EXPORT InputHandler {
   // the root overscroll accumulated within this ScrollBegin() scope is reported
   // to the client.
   // Should only be called if ScrollBegin() returned ScrollStarted.
-  virtual bool ScrollBy(gfx::Point viewport_point,
-                        gfx::Vector2dF scroll_delta) = 0;
+  virtual bool ScrollBy(const gfx::Point& viewport_point,
+                        const gfx::Vector2dF& scroll_delta) = 0;
 
-  virtual bool ScrollVerticallyByPage(
-      gfx::Point viewport_point,
-      ScrollDirection direction) = 0;
+  virtual bool ScrollVerticallyByPage(const gfx::Point& viewport_point,
+                                      ScrollDirection direction) = 0;
 
   // Returns ScrollStarted if a layer was being actively being scrolled,
   // ScrollIgnored if not.
   virtual ScrollStatus FlingScrollBegin() = 0;
 
-  virtual void NotifyCurrentFlingVelocity(gfx::Vector2dF velocity) = 0;
-
-  virtual void MouseMoveAt(gfx::Point mouse_position) = 0;
+  virtual void MouseMoveAt(const gfx::Point& mouse_position) = 0;
 
   // Stop scrolling the selected layer. Should only be called if ScrollBegin()
   // returned ScrollStarted.
@@ -114,18 +115,23 @@ class CC_EXPORT InputHandler {
   virtual void OnRootLayerDelegatedScrollOffsetChanged() = 0;
 
   virtual void PinchGestureBegin() = 0;
-  virtual void PinchGestureUpdate(float magnify_delta, gfx::Point anchor) = 0;
+  virtual void PinchGestureUpdate(float magnify_delta,
+                                  const gfx::Point& anchor) = 0;
   virtual void PinchGestureEnd() = 0;
 
-  virtual void StartPageScaleAnimation(gfx::Vector2d target_offset,
+  virtual void StartPageScaleAnimation(const gfx::Vector2d& target_offset,
                                        bool anchor_point,
                                        float page_scale,
                                        base::TimeDelta duration) = 0;
 
   // Request another callback to InputHandlerClient::Animate().
-  virtual void ScheduleAnimation() = 0;
+  virtual void SetNeedsAnimate() = 0;
 
-  virtual bool HaveTouchEventHandlersAt(gfx::Point viewport_point) = 0;
+  // Whether the layer under |viewport_point| is the currently scrolling layer.
+  virtual bool IsCurrentlyScrollingLayerAt(const gfx::Point& viewport_point,
+                                           ScrollInputType type) = 0;
+
+  virtual bool HaveTouchEventHandlersAt(const gfx::Point& viewport_point) = 0;
 
   // Calling CreateLatencyInfoSwapPromiseMonitor() to get a scoped
   // LatencyInfoSwapPromiseMonitor. During the life time of the

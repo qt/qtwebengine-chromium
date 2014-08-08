@@ -32,9 +32,9 @@
 #include "config.h"
 #include "core/html/forms/NumberInputType.h"
 
-#include "HTMLNames.h"
-#include "InputTypeNames.h"
 #include "bindings/v8/ExceptionState.h"
+#include "core/HTMLNames.h"
+#include "core/InputTypeNames.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/events/KeyboardEvent.h"
 #include "core/html/HTMLInputElement.h"
@@ -49,7 +49,6 @@ namespace WebCore {
 
 using blink::WebLocalizedString;
 using namespace HTMLNames;
-using namespace std;
 
 static const int numberDefaultStep = 1;
 static const int numberDefaultStepBase = 0;
@@ -94,9 +93,9 @@ static RealNumberRenderSize calculateRenderSize(const Decimal& value)
     return RealNumberRenderSize(sizeOfSign + sizeOfZero , numberOfZeroAfterDecimalPoint + sizeOfDigits);
 }
 
-PassRefPtr<InputType> NumberInputType::create(HTMLInputElement& element)
+PassRefPtrWillBeRawPtr<InputType> NumberInputType::create(HTMLInputElement& element)
 {
-    return adoptRef(new NumberInputType(element));
+    return adoptRefWillBeNoop(new NumberInputType(element));
 }
 
 void NumberInputType::countUsage()
@@ -111,8 +110,8 @@ const AtomicString& NumberInputType::formControlType() const
 
 void NumberInputType::setValue(const String& sanitizedValue, bool valueChanged, TextFieldEventBehavior eventBehavior)
 {
-    if (!valueChanged && sanitizedValue.isEmpty() && !element().innerTextValue().isEmpty())
-        updateView();
+    if (!valueChanged && sanitizedValue.isEmpty() && !element().innerEditorValue().isEmpty())
+        element().updateView();
     TextFieldInputType::setValue(sanitizedValue, valueChanged, eventBehavior);
 }
 
@@ -123,23 +122,11 @@ double NumberInputType::valueAsDouble() const
 
 void NumberInputType::setValueAsDouble(double newValue, TextFieldEventBehavior eventBehavior, ExceptionState& exceptionState) const
 {
-    // FIXME: We should use numeric_limits<double>::max for number input type.
-    const double floatMax = numeric_limits<float>::max();
-    if (newValue < -floatMax || newValue > floatMax) {
-        exceptionState.throwDOMException(InvalidStateError, "The value provided (" + String::number(newValue) + ") is outside the range (" + String::number(-floatMax) + ", " + String::number(floatMax) + ").");
-        return;
-    }
     element().setValue(serializeForNumberType(newValue), eventBehavior);
 }
 
 void NumberInputType::setValueAsDecimal(const Decimal& newValue, TextFieldEventBehavior eventBehavior, ExceptionState& exceptionState) const
 {
-    // FIXME: We should use numeric_limits<double>::max for number input type.
-    const Decimal floatMax = Decimal::fromDouble(numeric_limits<float>::max());
-    if (newValue < -floatMax || newValue > floatMax) {
-        exceptionState.throwDOMException(InvalidStateError, "The value provided (" + newValue.toString() + ") is outside the range (-" + floatMax.toString() + ", " + floatMax.toString() + ").");
-        return;
-    }
     element().setValue(serializeForNumberType(newValue), eventBehavior);
 }
 
@@ -157,10 +144,8 @@ bool NumberInputType::typeMismatch() const
 StepRange NumberInputType::createStepRange(AnyStepHandling anyStepHandling) const
 {
     DEFINE_STATIC_LOCAL(const StepRange::StepDescription, stepDescription, (numberDefaultStep, numberDefaultStepBase, numberStepScaleFactor));
-
-    // FIXME: We should use numeric_limits<double>::max for number input type.
-    const Decimal floatMax = Decimal::fromDouble(numeric_limits<float>::max());
-    return InputType::createStepRange(anyStepHandling, numberDefaultStepBase, -floatMax, floatMax, stepDescription);
+    const Decimal doubleMax = Decimal::fromDouble(std::numeric_limits<double>::max());
+    return InputType::createStepRange(anyStepHandling, numberDefaultStepBase, -doubleMax, doubleMax, stepDescription);
 }
 
 bool NumberInputType::sizeShouldIncludeDecoration(int defaultSize, int& preferredSize) const
@@ -252,7 +237,7 @@ String NumberInputType::sanitizeValue(const String& proposedValue) const
 
 bool NumberInputType::hasBadInput() const
 {
-    String standardValue = convertFromVisibleValue(element().innerTextValue());
+    String standardValue = convertFromVisibleValue(element().innerEditorValue());
     return !standardValue.isEmpty() && !std::isfinite(parseToDoubleForNumberType(standardValue));
 }
 
@@ -291,7 +276,7 @@ void NumberInputType::minOrMaxAttributeChanged()
     InputType::minOrMaxAttributeChanged();
 
     if (element().renderer())
-        element().renderer()->setNeedsLayoutAndPrefWidthsRecalc();
+        element().renderer()->setNeedsLayoutAndPrefWidthsRecalcAndFullPaintInvalidation();
 }
 
 void NumberInputType::stepAttributeChanged()
@@ -299,7 +284,7 @@ void NumberInputType::stepAttributeChanged()
     InputType::stepAttributeChanged();
 
     if (element().renderer())
-        element().renderer()->setNeedsLayoutAndPrefWidthsRecalc();
+        element().renderer()->setNeedsLayoutAndPrefWidthsRecalcAndFullPaintInvalidation();
 }
 
 bool NumberInputType::supportsSelectionAPI() const

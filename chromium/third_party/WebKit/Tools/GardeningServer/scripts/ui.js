@@ -29,10 +29,12 @@ var ui = ui || {};
 
 ui.displayURLForBuilder = function(builderName)
 {
-    return config.kPlatforms[config.currentPlatform].waterfallURL + '?' + $.param({
+    return config.waterfallURL + '?' + $.param({
         'builder': builderName
     });
 }
+
+ui.kUseNewWindowForLinksSetting = 'gardenomatic.use-new-window-for-links';
 
 ui.displayNameForBuilder = function(builderName)
 {
@@ -42,6 +44,11 @@ ui.displayNameForBuilder = function(builderName)
 ui.urlForTest = function(testName)
 {
     return 'http://trac.webkit.org/browser/trunk/LayoutTests/' + testName;
+}
+
+ui.urlForCrbug = function(bugID)
+{
+    return 'http://crbug.com/' + bugID;
 }
 
 ui.urlForFlakinessDashboard = function(opt_testNameList)
@@ -62,6 +69,39 @@ ui.rolloutReasonForTestNameList = function(testNameList)
     }).join('\n');
 }
 
+ui.setTargetForLink = function(anchor)
+{
+    if (anchor.href.indexOf('#') === 0)
+        return;
+    if (ui.useNewWindowForLinks)
+        anchor.target = '_blank';
+    else
+        anchor.removeAttribute('target');
+}
+
+ui.setUseNewWindowForLinks = function(enabled)
+{
+    ui.useNewWindowForLinks = enabled;
+    if (enabled)
+        localStorage[ui.kUseNewWindowForLinksSetting] = 'true';
+    else
+        delete localStorage[ui.kUseNewWindowForLinksSetting];
+
+    $('a').each(function() {
+        ui.setTargetForLink(this);
+    });
+}
+ui.setUseNewWindowForLinks(!!localStorage[ui.kUseNewWindowForLinksSetting]);
+
+ui.createLinkNode = function(url, textContent)
+{
+    var link = document.createElement('a');
+    link.href = url;
+    ui.setTargetForLink(link);
+    link.appendChild(document.createTextNode(textContent));
+    return link;
+}
+
 ui.onebar = base.extends('div', {
     init: function()
     {
@@ -72,6 +112,7 @@ ui.onebar = base.extends('div', {
                 '<li><a href="#expected">Expected Failures</a></li>' +
                 '<li><a href="#results">Results</a></li>' +
             '</ul>' +
+            '<div id="link-handling"><input type="checkbox" id="new-window-for-links"><label for="new-window-for-links">Open links in new window</label></div>' +
             '<div id="unexpected"></div>' +
             '<div id="expected"></div>' +
             '<div id="results"></div>';
@@ -85,6 +126,10 @@ ui.onebar = base.extends('div', {
         this._tabs = $(this).tabs({
             disabled: [2],
             show: function(event, ui) { this._restoreScrollOffset(ui.index); },
+            select: function(event, ui) {
+                this._saveScrollOffset();
+                window.location.hash = ui.tab.hash;
+            }.bind(this)
         });
     },
     _saveScrollOffset: function() {
@@ -103,15 +148,6 @@ ui.onebar = base.extends('div', {
         }
 
         var self = this;
-        $('.ui-tabs-nav a').bind('mouseup', function(event) {
-            var href = event.target.getAttribute('href');
-            var hash = currentHash();
-            if (href != hash) {
-                self._saveScrollOffset();
-                window.location = href
-            }
-        });
-
         window.onhashchange = function(event) {
             var tabName = currentHash().substring(1);
             self._selectInternal(tabName);
@@ -124,9 +160,17 @@ ui.onebar = base.extends('div', {
             self._saveScrollOffset();
         };
     },
+    _setupLinkSettingHandler: function()
+    {
+        $('#new-window-for-links').attr('checked', ui.useNewWindowForLinks);
+        $('#new-window-for-links').change(function(event) {
+            ui.setUseNewWindowForLinks(this.checked);
+        });
+    },
     attach: function()
     {
         document.body.insertBefore(this, document.body.firstChild);
+        this._setupLinkSettingHandler();
         this._setupHistoryHandlers();
     },
     tabNamed: function(tabName)
@@ -167,33 +211,6 @@ ui.onebar = base.extends('div', {
     }
 });
 
-// FIXME: Loading a module shouldn't set off a timer.  The controller should kick this off.
-setInterval(function() {
-    Array.prototype.forEach.call(document.querySelectorAll("time.relative"), function(time) {
-        time.update && time.update();
-    });
-}, config.kRelativeTimeUpdateFrequency);
-
-ui.RelativeTime = base.extends('time', {
-    init: function()
-    {
-        this.className = 'relative';
-    },
-    date: function()
-    {
-        return this._date;
-    },
-    update: function()
-    {
-        this.textContent = this._date ? base.relativizeTime(this._date) : '';
-    },
-    setDate: function(date)
-    {
-        this._date = date;
-        this.update();
-    }
-});
-
 ui.TreeStatus = base.extends('div',  {
     addStatus: function(name)
     {
@@ -220,6 +237,35 @@ ui.StatusArea = base.extends('div',  {
         if (ui.StatusArea._instance)
             return ui.StatusArea._instance;
         ui.StatusArea._instance = this;
+
+        var kMinimumStatusAreaHeightPx = 60;
+        var dragger = document.createElement('div');
+        var initialY;
+        var initialHeight;
+        dragger.className = 'dragger';
+        $(dragger).mousedown(function(e) {
+            initialY = e.pageY;
+            initialHeight = $(this).height();
+            $(document.body).addClass('status-resizing');
+        }.bind(this));
+        $(document.body).mouseup(function(e) {
+            initialY = 0;
+            initialHeight = 0;
+            $(document.body).removeClass('status-resizing');
+        });
+        $(document.body).mousemove(function(e) {
+            if (initialY) {
+                var newHeight = initialHeight + initialY - e.pageY;
+                if (newHeight >= kMinimumStatusAreaHeightPx)
+                    $(this).height(newHeight);
+                e.preventDefault();
+            }
+        }.bind(this));
+        this.appendChild(dragger);
+
+        this.contents = document.createElement('div');
+        this.contents.className = 'contents';
+        this.appendChild(this.contents);
 
         this.className = 'status';
         document.body.appendChild(this);
@@ -254,7 +300,7 @@ ui.StatusArea = base.extends('div',  {
             content = document.createElement('div');
             content.id = id;
             content.className = 'status-content';
-            this.appendChild(content);
+            this.contents.appendChild(content);
         }
 
         content.appendChild(element);
@@ -278,6 +324,36 @@ ui.StatusArea = base.extends('div',  {
 });
 
 ui.revisionDetails = base.extends('span', {
+    // We only support 2 levels of visual escalation levels: warning and critical.
+    warnRollRevisionSpanThreshold: 45,
+    criticalRollRevisionSpanThreshold: 80,
+    classNameForUrgencyLevel: function(rollRevisionSpan) {
+        if (rollRevisionSpan < this.criticalRollRevisionSpanThreshold)
+            return "warning";
+        return "critical";
+    },
+    updateUI: function(totRevision) {
+        this.appendChild(document.createElement("br"));
+        this.appendChild(document.createTextNode('Last roll is to '));
+        this.appendChild(ui.createLinkNode(trac.changesetURL(this.lastRolledRevision), this.lastRolledRevision));
+        var rollRevisionSpan = totRevision - this.lastRolledRevision;
+        // Don't clutter the UI if we haven't run behind.
+        if (rollRevisionSpan > this.warnRollRevisionSpanThreshold) {
+            var wrapper = document.createElement("span");
+            wrapper.className = this.classNameForUrgencyLevel(rollRevisionSpan);
+            wrapper.appendChild(document.createTextNode("(" + rollRevisionSpan + " revisions behind)"));
+            this.appendChild(wrapper);
+        }
+        this.appendChild(document.createTextNode(', current autoroll '));
+        if (this.roll) {
+            var linkText = "" + this.roll.fromRevision + ":" + this.roll.toRevision;
+            this.appendChild(ui.createLinkNode(this.roll.url, linkText));
+            if (this.roll.isStopped)
+                this.appendChild(document.createTextNode(' (STOPPED) '));
+        } else {
+            this.appendChild(document.createTextNode(' None'));
+        }
+    },
     init: function() {
         var theSpan = this;
         theSpan.appendChild(document.createTextNode('Latest revision processed by every bot: '));
@@ -287,10 +363,10 @@ ui.revisionDetails = base.extends('span', {
 
         // Get the list of builders sorted with the most recent one first.
         var builders = Object.keys(latestRevisions);
-        builders.sort(function (a, b) { return parseInt(latestRevisions[b]) - parseInt(latestRevisions[a])});
+        builders.sort(function (a, b) { return parseInt(latestRevisions[b]) - parseInt(latestRevisions[a]);});
 
         var summaryNode = document.createElement('summary');
-        var summaryLinkNode = base.createLinkNode(trac.changesetURL(latestRevision), latestRevision);
+        var summaryLinkNode = ui.createLinkNode(trac.changesetURL(latestRevision), latestRevision);
         summaryNode.appendChild(summaryLinkNode);
 
         var revisionsTableNode = document.createElement('table');
@@ -298,14 +374,14 @@ ui.revisionDetails = base.extends('span', {
             var trNode = document.createElement('tr');
 
             var tdNode = document.createElement('td');
-            tdNode.appendChild(base.createLinkNode(ui.displayURLForBuilder(builderName), builderName.replace('WebKit ', '')));
+            tdNode.appendChild(ui.createLinkNode(ui.displayURLForBuilder(builderName), builderName.replace('WebKit ', '')));
             trNode.appendChild(tdNode);
 
             var tdNode = document.createElement('td');
             tdNode.appendChild(document.createTextNode(latestRevisions[builderName]));
-            trNode.appendChild(tdNode)
+            trNode.appendChild(tdNode);
 
-            revisionsTableNode.appendChild(trNode)
+            revisionsTableNode.appendChild(trNode);
         });
 
         var revisionsNode = document.createElement('details');
@@ -321,7 +397,7 @@ ui.revisionDetails = base.extends('span', {
                 var tPosX = $(summaryNode).position().left;
                 var tPosY = $(summaryNode).position().top + 16;
                 $(revisionsPopUp).css({'position': 'absolute', 'top': tPosY, 'left': tPosX});
-                $(revisionsPopUp).addClass('active')
+                $(revisionsPopUp).addClass('active');
             }
         });
         $(summaryLinkNode).mouseout(function(ev) {
@@ -332,23 +408,12 @@ ui.revisionDetails = base.extends('span', {
 
         var totRevision = model.latestRevision();
         theSpan.appendChild(document.createTextNode(', trunk is at '));
-        theSpan.appendChild(base.createLinkNode(trac.changesetURL(totRevision), totRevision));
+        theSpan.appendChild(ui.createLinkNode(trac.changesetURL(totRevision), totRevision));
 
-        checkout.lastBlinkRollRevision(function(revision) {
-            theSpan.appendChild(document.createTextNode(', last roll is to '));
-            theSpan.appendChild(base.createLinkNode(trac.changesetURL(revision), revision));
-        }, function() {});
-
-        rollbot.fetchCurrentRoll(function(roll) {
-            theSpan.appendChild(document.createTextNode(', current autoroll '));
-            if (roll) {
-                var linkText = "" + roll.fromRevision + ":" + roll.toRevision;
-                theSpan.appendChild(base.createLinkNode(roll.url, linkText));
-                if (roll.isStopped)
-                    theSpan.appendChild(document.createTextNode(' (STOPPED) '));
-            } else {
-                theSpan.appendChild(document.createTextNode(' None'));
-            }
+        Promise.all([checkout.lastBlinkRollRevision(), rollbot.fetchCurrentRoll()]).then(function(results) {
+            theSpan.lastRolledRevision = results[0];
+            theSpan.roll = results[1];
+            theSpan.updateUI(totRevision);
         });
     }
 });

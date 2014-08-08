@@ -146,6 +146,22 @@ class FileNodeUnittest(unittest.TestCase):
     self.failUnless(outputs[2] not in active)
     self.failUnless(outputs[2].GetType() == 'rc_all')
 
+  # Verify that 'iw' and 'no' language codes in xtb files are mapped to 'he' and
+  # 'nb'.
+  def testLangCodeMapping(self):
+    grd = grd_reader.Parse(StringIO.StringIO('''<?xml version="1.0" encoding="UTF-8"?>
+      <grit latest_public_release="2" source_lang_id="en-US" current_release="3" base_dir=".">
+        <translations>
+          <file path="generated_resources_no.xtb" lang="nb" />
+          <file path="generated_resources_iw.xtb" lang="he" />
+        </translations>
+        <release seq="3">
+          <messages></messages>
+        </release>
+      </grit>'''), util.PathFromRoot('grit/testdata'))
+    grd.SetOutputLanguage('en')
+    grd.RunGatherers()
+
 
 if __name__ == '__main__':
   unittest.main()

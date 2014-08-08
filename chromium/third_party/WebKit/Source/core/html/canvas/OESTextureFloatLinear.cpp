@@ -27,35 +27,32 @@
 
 #include "core/html/canvas/OESTextureFloatLinear.h"
 
-#include "platform/graphics/Extensions3D.h"
-
 namespace WebCore {
 
-OESTextureFloatLinear::OESTextureFloatLinear(WebGLRenderingContext* context)
+OESTextureFloatLinear::OESTextureFloatLinear(WebGLRenderingContextBase* context)
     : WebGLExtension(context)
 {
     ScriptWrappable::init(this);
-    context->graphicsContext3D()->extensions()->ensureEnabled("GL_OES_texture_float_linear");
+    context->extensionsUtil()->ensureExtensionEnabled("GL_OES_texture_float_linear");
 }
 
 OESTextureFloatLinear::~OESTextureFloatLinear()
 {
 }
 
-WebGLExtension::ExtensionName OESTextureFloatLinear::name() const
+WebGLExtensionName OESTextureFloatLinear::name() const
 {
     return OESTextureFloatLinearName;
 }
 
-PassRefPtr<OESTextureFloatLinear> OESTextureFloatLinear::create(WebGLRenderingContext* context)
+PassRefPtr<OESTextureFloatLinear> OESTextureFloatLinear::create(WebGLRenderingContextBase* context)
 {
     return adoptRef(new OESTextureFloatLinear(context));
 }
 
-bool OESTextureFloatLinear::supported(WebGLRenderingContext* context)
+bool OESTextureFloatLinear::supported(WebGLRenderingContextBase* context)
 {
-    Extensions3D* extensions = context->graphicsContext3D()->extensions();
-    return extensions->supports("GL_OES_texture_float_linear");
+    return context->extensionsUtil()->supportsExtension("GL_OES_texture_float_linear");
 }
 
 const char* OESTextureFloatLinear::extensionName()

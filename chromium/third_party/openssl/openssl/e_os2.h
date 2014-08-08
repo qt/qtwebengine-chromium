@@ -289,6 +289,15 @@ extern "C" {
 # define OPENSSL_GLOBAL_REF(name) _shadow_##name
 #endif
 
+#ifdef OPENSSL_SYS_WINDOWS
+#  include <BaseTsd.h>
+#  define ssize_t SSIZE_T
+#endif
+
+#ifdef OPENSSL_SYS_MACOSX
+#  include <sys/types.h>
+#endif
+
 #if defined(OPENSSL_SYS_MACINTOSH_CLASSIC) && macintosh==1 && !defined(MAC_OS_GUSI_SOURCE)
 #  define ossl_ssize_t long
 #endif
@@ -307,6 +316,10 @@ extern "C" {
 
 #ifndef ossl_ssize_t
 #  define ossl_ssize_t ssize_t
+#endif
+
+#ifndef SSIZE_MAX
+#define SSIZE_MAX ((ssize_t)(((size_t)-1)/2))
 #endif
 
 #ifdef  __cplusplus

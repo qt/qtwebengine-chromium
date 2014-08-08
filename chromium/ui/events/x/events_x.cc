@@ -9,10 +9,10 @@
 #include <X11/extensions/XInput.h>
 #include <X11/extensions/XInput2.h>
 #include <X11/Xlib.h>
+#include <X11/Xutil.h>
 
 #include "base/logging.h"
 #include "base/memory/singleton.h"
-#include "base/message_loop/message_pump_x11.h"
 #include "ui/events/event_utils.h"
 #include "ui/events/keycodes/keyboard_code_conversion_x.h"
 #include "ui/events/x/device_data_manager.h"
@@ -137,6 +137,10 @@ int GetEventFlagsFromXState(unsigned int state) {
     flags |= ui::EF_ALT_DOWN;
   if (state & LockMask)
     flags |= ui::EF_CAPS_LOCK_DOWN;
+  if (state & Mod3Mask)
+    flags |= ui::EF_MOD3_DOWN;
+  if (state & Mod4Mask)
+    flags |= ui::EF_COMMAND_DOWN;
   if (state & Mod5Mask)
     flags |= ui::EF_ALTGR_DOWN;
   if (state & Button1Mask)
@@ -146,6 +150,36 @@ int GetEventFlagsFromXState(unsigned int state) {
   if (state & Button3Mask)
     flags |= ui::EF_RIGHT_MOUSE_BUTTON;
   return flags;
+}
+
+int GetEventFlagsFromXKeyEvent(XEvent* xevent) {
+  DCHECK(xevent->type == KeyPress || xevent->type == KeyRelease);
+
+#if defined(OS_CHROMEOS)
+  const int ime_fabricated_flag = 0;
+#else
+  // XIM fabricates key events for the character compositions by XK_Multi_key.
+  // For example, when a user hits XK_Multi_key, XK_apostrophe, and XK_e in
+  // order to input "é", then XIM generates a key event with keycode=0 and
+  // state=0 for the composition, and the sequence of X11 key events will be
+  // XK_Multi_key, XK_apostrophe, **NoSymbol**, and XK_e.  If the user used
+  // shift key and/or caps lock key, state can be ShiftMask, LockMask or both.
+  //
+  // We have to send these fabricated key events to XIM so it can correctly
+  // handle the character compositions.
+  const unsigned int shift_lock_mask = ShiftMask | LockMask;
+  const bool fabricated_by_xim =
+      xevent->xkey.keycode == 0 &&
+      (xevent->xkey.state & ~shift_lock_mask) == 0;
+  const int ime_fabricated_flag =
+      fabricated_by_xim ? ui::EF_IME_FABRICATED_KEY : 0;
+#endif
+
+  return GetEventFlagsFromXState(xevent->xkey.state) |
+      (IsKeypadKey(XLookupKeysym(&xevent->xkey, 0)) ? ui::EF_NUMPAD_KEY : 0) |
+      (IsFunctionKey(XLookupKeysym(&xevent->xkey, 0)) ?
+          ui::EF_FUNCTION_KEY : 0) |
+      ime_fabricated_flag;
 }
 
 // Get the event flag for the button in XButtonEvent. During a ButtonPress
@@ -225,10 +259,6 @@ double GetTouchParamFromXEvent(XEvent* xev,
   return default_value;
 }
 
-Atom GetNoopEventAtom() {
-  return XInternAtom(gfx::GetXDisplay(), "noop", False);
-}
-
 }  // namespace
 
 namespace ui {
@@ -277,10 +307,19 @@ EventType EventTypeFromNative(const base::NativeEvent& native_event) {
       XIDeviceEvent* xievent =
           static_cast<XIDeviceEvent*>(native_event->xcookie.data);
 
+      // This check works only for master and floating slave devices. That is
+      // why it is necessary to check for the XI_Touch* events in the following
+      // switch statement to account for attached-slave touchscreens.
       if (factory->IsTouchDevice(xievent->sourceid))
         return GetTouchEventType(native_event);
 
       switch (xievent->evtype) {
+        case XI_TouchBegin:
+          return ui::ET_TOUCH_PRESSED;
+        case XI_TouchUpdate:
+          return ui::ET_TOUCH_MOVED;
+        case XI_TouchEnd:
+          return ui::ET_TOUCH_RELEASED;
         case XI_ButtonPress: {
           int button = EventButtonFromNative(native_event);
           if (button >= kMinWheelButton && button <= kMaxWheelButton)
@@ -323,7 +362,7 @@ int EventFlagsFromNative(const base::NativeEvent& native_event) {
     case KeyPress:
     case KeyRelease: {
       XModifierStateWatcher::GetInstance()->UpdateStateFromEvent(native_event);
-      return GetEventFlagsFromXState(native_event->xkey.state);
+      return GetEventFlagsFromXKeyEvent(native_event);
     }
     case ButtonPress:
     case ButtonRelease: {
@@ -333,6 +372,9 @@ int EventFlagsFromNative(const base::NativeEvent& native_event) {
         flags |= GetEventFlagsForButton(native_event->xbutton.button);
       return flags;
     }
+    case EnterNotify:
+    case LeaveNotify:
+      return GetEventFlagsFromXState(native_event->xcrossing.state);
     case MotionNotify:
       return GetEventFlagsFromXState(native_event->xmotion.state);
     case GenericEvent: {
@@ -426,8 +468,21 @@ gfx::Point EventLocationFromNative(const base::NativeEvent& native_event) {
     case GenericEvent: {
       XIDeviceEvent* xievent =
           static_cast<XIDeviceEvent*>(native_event->xcookie.data);
-      return gfx::Point(static_cast<int>(xievent->event_x),
-                        static_cast<int>(xievent->event_y));
+      float x = xievent->event_x;
+      float y = xievent->event_y;
+#if defined(OS_CHROMEOS)
+      switch (xievent->evtype) {
+        case XI_TouchBegin:
+        case XI_TouchUpdate:
+        case XI_TouchEnd:
+          ui::DeviceDataManager::GetInstance()->ApplyTouchTransformer(
+              xievent->deviceid, &x, &y);
+          break;
+        default:
+          break;
+      }
+#endif  // defined(OS_CHROMEOS)
+      return gfx::Point(static_cast<int>(x), static_cast<int>(y));
     }
   }
   return gfx::Point();
@@ -478,21 +533,10 @@ const char* CodeFromNative(const base::NativeEvent& native_event) {
   return CodeFromXEvent(native_event);
 }
 
-bool IsMouseEvent(const base::NativeEvent& native_event) {
-  if (native_event->type == EnterNotify ||
-      native_event->type == LeaveNotify ||
-      native_event->type == ButtonPress ||
-      native_event->type == ButtonRelease ||
-      native_event->type == MotionNotify)
-    return true;
-  if (native_event->type == GenericEvent) {
-    XIDeviceEvent* xievent =
-        static_cast<XIDeviceEvent*>(native_event->xcookie.data);
-    return xievent->evtype == XI_ButtonPress ||
-           xievent->evtype == XI_ButtonRelease ||
-           xievent->evtype == XI_Motion;
-  }
-  return false;
+uint32 PlatformKeycodeFromNative(const base::NativeEvent& native_event) {
+  KeySym keysym;
+  XLookupString(&native_event->xkey, NULL, 0, &keysym, NULL);
+  return keysym;
 }
 
 int GetChangedMouseButtonFlagsFromNative(
@@ -534,10 +578,25 @@ gfx::Vector2d GetMouseWheelOffset(const base::NativeEvent& native_event) {
       return gfx::Vector2d(0, kWheelScrollAmount);
     case 5:
       return gfx::Vector2d(0, -kWheelScrollAmount);
+    case 6:
+      return gfx::Vector2d(kWheelScrollAmount, 0);
+    case 7:
+      return gfx::Vector2d(-kWheelScrollAmount, 0);
     default:
-      // TODO(derat): Do something for horizontal scrolls (buttons 6 and 7)?
       return gfx::Vector2d();
   }
+}
+
+base::NativeEvent CopyNativeEvent(const base::NativeEvent& event) {
+  if (!event || event->type == GenericEvent)
+    return NULL;
+  XEvent* copy = new XEvent;
+  *copy = *event;
+  return copy;
+}
+
+void ReleaseCopiedNativeEvent(const base::NativeEvent& event) {
+  delete event;
 }
 
 void ClearTouchIdIfReleased(const base::NativeEvent& xev) {
@@ -673,37 +732,8 @@ bool GetGestureTimes(const base::NativeEvent& native_event,
   return true;
 }
 
-void SetNaturalScroll(bool enabled) {
-  DeviceDataManager::GetInstance()->set_natural_scroll_enabled(enabled);
-}
-
-bool IsNaturalScrollEnabled() {
-  return DeviceDataManager::GetInstance()->natural_scroll_enabled();
-}
-
 bool IsTouchpadEvent(const base::NativeEvent& event) {
   return DeviceDataManager::GetInstance()->IsTouchpadXInputEvent(event);
-}
-
-bool IsNoopEvent(const base::NativeEvent& event) {
-  return (event->type == ClientMessage &&
-      event->xclient.message_type == GetNoopEventAtom());
-}
-
-base::NativeEvent CreateNoopEvent() {
-  static XEvent* noop = NULL;
-  if (!noop) {
-    noop = new XEvent();
-    memset(noop, 0, sizeof(XEvent));
-    noop->xclient.type = ClientMessage;
-    noop->xclient.window = None;
-    noop->xclient.format = 8;
-    DCHECK(!noop->xclient.display);
-  }
-  // Make sure we use atom from current xdisplay, which may
-  // change during the test.
-  noop->xclient.message_type = GetNoopEventAtom();
-  return noop;
 }
 
 }  // namespace ui

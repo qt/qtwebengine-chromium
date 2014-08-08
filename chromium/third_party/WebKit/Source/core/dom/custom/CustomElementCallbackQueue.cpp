@@ -33,12 +33,12 @@
 
 namespace WebCore {
 
-PassOwnPtr<CustomElementCallbackQueue> CustomElementCallbackQueue::create(PassRefPtr<Element> element)
+PassOwnPtrWillBeRawPtr<CustomElementCallbackQueue> CustomElementCallbackQueue::create(PassRefPtrWillBeRawPtr<Element> element)
 {
-    return adoptPtr(new CustomElementCallbackQueue(element));
+    return adoptPtrWillBeNoop(new CustomElementCallbackQueue(element));
 }
 
-CustomElementCallbackQueue::CustomElementCallbackQueue(PassRefPtr<Element> element)
+CustomElementCallbackQueue::CustomElementCallbackQueue(PassRefPtrWillBeRawPtr<Element> element)
     : m_element(element)
     , m_owner(-1)
     , m_index(0)
@@ -46,9 +46,10 @@ CustomElementCallbackQueue::CustomElementCallbackQueue(PassRefPtr<Element> eleme
 {
 }
 
-void CustomElementCallbackQueue::processInElementQueue(ElementQueue caller)
+bool CustomElementCallbackQueue::processInElementQueue(ElementQueueId caller)
 {
     ASSERT(!m_inCreatedCallback);
+    bool didWork = false;
 
     while (m_index < m_queue.size() && owner() == caller) {
         m_inCreatedCallback = m_queue[m_index]->isCreated();
@@ -58,6 +59,7 @@ void CustomElementCallbackQueue::processInElementQueue(ElementQueue caller)
         // detects this recursion and cedes processing.
         m_queue[m_index++]->dispatch(m_element.get());
         m_inCreatedCallback = false;
+        didWork = true;
     }
 
     if (owner() == caller && m_index == m_queue.size()) {
@@ -66,6 +68,13 @@ void CustomElementCallbackQueue::processInElementQueue(ElementQueue caller)
         m_queue.resize(0);
         m_owner = -1;
     }
+
+    return didWork;
+}
+
+void CustomElementCallbackQueue::trace(Visitor* visitor)
+{
+    visitor->trace(m_element);
 }
 
 } // namespace WebCore

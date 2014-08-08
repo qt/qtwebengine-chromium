@@ -10,9 +10,13 @@
 
 #include "webrtc/modules/desktop_capture/mouse_cursor.h"
 
+#include <assert.h>
+
 #include "webrtc/modules/desktop_capture/desktop_frame.h"
 
 namespace webrtc {
+
+MouseCursor::MouseCursor() {}
 
 MouseCursor::MouseCursor(DesktopFrame* image, const DesktopVector& hotspot)
     : image_(image),
@@ -25,8 +29,10 @@ MouseCursor::~MouseCursor() {}
 
 // static
 MouseCursor* MouseCursor::CopyOf(const MouseCursor& cursor) {
-  return new MouseCursor(BasicDesktopFrame::CopyOf(cursor.image()),
-                         cursor.hotspot());
+  return cursor.image()
+             ? new MouseCursor(BasicDesktopFrame::CopyOf(*cursor.image()),
+                               cursor.hotspot())
+             : new MouseCursor();
 }
 
 }  // namespace webrtc

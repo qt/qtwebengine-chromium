@@ -28,15 +28,6 @@ void ResourceDispatcherHostDelegate::RequestBeginning(
     ScopedVector<ResourceThrottle>* throttles) {
 }
 
-void ResourceDispatcherHostDelegate::WillTransferRequestToNewProcess(
-      int old_child_id,
-      int old_route_id,
-      int old_request_id,
-      int new_child_id,
-      int new_route_id,
-      int new_request_id) {
-}
-
 void ResourceDispatcherHostDelegate::DownloadStarting(
     net::URLRequest* request,
     ResourceContext* resource_context,
@@ -46,18 +37,6 @@ void ResourceDispatcherHostDelegate::DownloadStarting(
     bool is_content_initiated,
     bool must_download,
     ScopedVector<ResourceThrottle>* throttles) {
-}
-
-bool ResourceDispatcherHostDelegate::AcceptSSLClientCertificateRequest(
-    net::URLRequest* request,
-    net::SSLCertRequestInfo* cert_request_info) {
-  return false;
-}
-
-bool ResourceDispatcherHostDelegate::AcceptAuthRequest(
-    net::URLRequest* request,
-    net::AuthChallengeInfo* auth_info) {
-  return false;
 }
 
 ResourceDispatcherHostLoginDelegate*
@@ -80,21 +59,16 @@ bool ResourceDispatcherHostDelegate::ShouldForceDownloadResource(
 }
 
 bool ResourceDispatcherHostDelegate::ShouldInterceptResourceAsStream(
-    content::ResourceContext* resource_context,
-    const GURL& url,
+    net::URLRequest* request,
     const std::string& mime_type,
     GURL* origin,
-    std::string* target_id) {
+    std::string* payload) {
   return false;
 }
 
 void ResourceDispatcherHostDelegate::OnStreamCreated(
-    content::ResourceContext* resource_context,
-    int render_process_id,
-    int render_view_id,
-    const std::string& target_id,
-    scoped_ptr<StreamHandle> stream,
-    int64 expected_content_size) {
+    net::URLRequest* request,
+    scoped_ptr<content::StreamHandle> stream) {
 }
 
 void ResourceDispatcherHostDelegate::OnResponseStarted(
@@ -109,6 +83,10 @@ void ResourceDispatcherHostDelegate::OnRequestRedirected(
     net::URLRequest* request,
     ResourceContext* resource_context,
     ResourceResponse* response) {
+}
+
+void ResourceDispatcherHostDelegate::RequestComplete(
+    net::URLRequest* url_request) {
 }
 
 ResourceDispatcherHostDelegate::ResourceDispatcherHostDelegate() {

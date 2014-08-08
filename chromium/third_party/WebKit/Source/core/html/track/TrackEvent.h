@@ -34,32 +34,34 @@ namespace WebCore {
 struct TrackEventInit : public EventInit {
     TrackEventInit();
 
-    RefPtr<TrackBase> track;
+    RefPtrWillBeMember<TrackBase> track;
 };
 
-class TrackEvent : public Event {
+class TrackEvent FINAL : public Event {
 public:
     virtual ~TrackEvent();
 
-    static PassRefPtr<TrackEvent> create()
+    static PassRefPtrWillBeRawPtr<TrackEvent> create()
     {
-        return adoptRef(new TrackEvent);
+        return adoptRefWillBeNoop(new TrackEvent);
     }
 
-    static PassRefPtr<TrackEvent> create(const AtomicString& type, const TrackEventInit& initializer)
+    static PassRefPtrWillBeRawPtr<TrackEvent> create(const AtomicString& type, const TrackEventInit& initializer)
     {
-        return adoptRef(new TrackEvent(type, initializer));
+        return adoptRefWillBeNoop(new TrackEvent(type, initializer));
     }
 
-    virtual const AtomicString& interfaceName() const;
+    virtual const AtomicString& interfaceName() const OVERRIDE;
 
     TrackBase* track() const { return m_track.get(); }
+
+    virtual void trace(Visitor*) OVERRIDE;
 
 private:
     TrackEvent();
     TrackEvent(const AtomicString& type, const TrackEventInit& initializer);
 
-    RefPtr<TrackBase> m_track;
+    RefPtrWillBeMember<TrackBase> m_track;
 };
 
 } // namespace WebCore

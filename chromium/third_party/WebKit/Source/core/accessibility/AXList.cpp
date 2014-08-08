@@ -29,9 +29,9 @@
 #include "config.h"
 #include "core/accessibility/AXList.h"
 
+#include "core/html/HTMLUListElement.h"
 #include "core/rendering/RenderObject.h"
 
-using namespace std;
 
 namespace WebCore {
 
@@ -55,44 +55,5 @@ bool AXList::computeAccessibilityIsIgnored() const
 {
     return accessibilityIsIgnoredByDefault();
 }
-
-bool AXList::isUnorderedList() const
-{
-    if (!m_renderer)
-        return false;
-
-    Node* node = m_renderer->node();
-
-    // The ARIA spec says the "list" role is supposed to mimic a UL or OL tag.
-    // Since it can't be both, it's probably OK to say that it's an un-ordered list.
-    // On the Mac, there's no distinction to the client.
-    if (ariaRoleAttribute() == ListRole)
-        return true;
-
-    return node && node->hasTagName(ulTag);
-}
-
-bool AXList::isOrderedList() const
-{
-    if (!m_renderer)
-        return false;
-
-    // ARIA says a directory is like a static table of contents, which sounds like an ordered list.
-    if (ariaRoleAttribute() == DirectoryRole)
-        return true;
-
-    Node* node = m_renderer->node();
-    return node && node->hasTagName(olTag);
-}
-
-bool AXList::isDescriptionList() const
-{
-    if (!m_renderer)
-        return false;
-
-    Node* node = m_renderer->node();
-    return node && node->hasTagName(dlTag);
-}
-
 
 } // namespace WebCore

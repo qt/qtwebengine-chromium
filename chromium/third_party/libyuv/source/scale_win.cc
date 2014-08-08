@@ -234,7 +234,8 @@ void ScaleRowDown2_Unaligned_SSE2(const uint8* src_ptr,
 // Blends 32x1 rectangle to 16x1.
 // Alignment requirement: src_ptr 16 byte aligned, dst_ptr 16 byte aligned.
 __declspec(naked) __declspec(align(16))
-void ScaleRowDown2Linear_Unaligned_SSE2(const uint8* src_ptr, ptrdiff_t,
+void ScaleRowDown2Linear_Unaligned_SSE2(const uint8* src_ptr,
+                                        ptrdiff_t src_stride,
                                         uint8* dst_ptr, int dst_width) {
   __asm {
     mov        eax, [esp + 4]        // src_ptr
@@ -882,7 +883,7 @@ void ScaleFilterCols_SSSE3(uint8* dst_ptr, const uint8* src_ptr,
 // Alignment requirement: src_argb 16 byte aligned, dst_argb 16 byte aligned.
 __declspec(naked) __declspec(align(16))
 void ScaleColsUp2_SSE2(uint8* dst_ptr, const uint8* src_ptr,
-                       int dst_width, int /* x */, int /* dx */) {
+                       int dst_width, int x, int dx) {
   __asm {
     mov        edx, [esp + 4]    // dst_ptr
     mov        eax, [esp + 8]    // src_ptr
@@ -909,7 +910,7 @@ void ScaleColsUp2_SSE2(uint8* dst_ptr, const uint8* src_ptr,
 // Alignment requirement: src_argb 16 byte aligned, dst_argb 16 byte aligned.
 __declspec(naked) __declspec(align(16))
 void ScaleARGBRowDown2_SSE2(const uint8* src_argb,
-                            ptrdiff_t /* src_stride */,
+                            ptrdiff_t src_stride,
                             uint8* dst_argb, int dst_width) {
   __asm {
     mov        eax, [esp + 4]        // src_argb
@@ -936,7 +937,7 @@ void ScaleARGBRowDown2_SSE2(const uint8* src_argb,
 // Alignment requirement: src_argb 16 byte aligned, dst_argb 16 byte aligned.
 __declspec(naked) __declspec(align(16))
 void ScaleARGBRowDown2Linear_SSE2(const uint8* src_argb,
-                                  ptrdiff_t /* src_stride */,
+                                  ptrdiff_t src_stride,
                                   uint8* dst_argb, int dst_width) {
   __asm {
     mov        eax, [esp + 4]        // src_argb
@@ -1258,7 +1259,7 @@ void ScaleARGBFilterCols_SSSE3(uint8* dst_argb, const uint8* src_argb,
 // Alignment requirement: src_argb 16 byte aligned, dst_argb 16 byte aligned.
 __declspec(naked) __declspec(align(16))
 void ScaleARGBColsUp2_SSE2(uint8* dst_argb, const uint8* src_argb,
-                           int dst_width, int /* x */, int /* dx */) {
+                           int dst_width, int x, int dx) {
   __asm {
     mov        edx, [esp + 4]    // dst_argb
     mov        eax, [esp + 8]    // src_argb
@@ -1277,6 +1278,36 @@ void ScaleARGBColsUp2_SSE2(uint8* dst_argb, const uint8* src_argb,
     lea        edx, [edx + 32]
     jg         wloop
 
+    ret
+  }
+}
+
+// Divide num by div and return as 16.16 fixed point result.
+__declspec(naked) __declspec(align(16))
+int FixedDiv_X86(int num, int div) {
+  __asm {
+    mov        eax, [esp + 4]    // num
+    cdq                          // extend num to 64 bits
+    shld       edx, eax, 16      // 32.16
+    shl        eax, 16
+    idiv       dword ptr [esp + 8]
+    ret
+  }
+}
+
+// Divide num by div and return as 16.16 fixed point result.
+__declspec(naked) __declspec(align(16))
+int FixedDiv1_X86(int num, int div) {
+  __asm {
+    mov        eax, [esp + 4]    // num
+    mov        ecx, [esp + 8]    // denom
+    cdq                          // extend num to 64 bits
+    shld       edx, eax, 16      // 32.16
+    shl        eax, 16
+    sub        eax, 0x00010001
+    sbb        edx, 0
+    sub        ecx, 1
+    idiv       ecx
     ret
   }
 }

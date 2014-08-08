@@ -31,79 +31,48 @@
 #define PolygonShape_h
 
 #include "core/rendering/shapes/Shape.h"
+#include "core/rendering/shapes/ShapeInterval.h"
 #include "platform/geometry/FloatPolygon.h"
 
 namespace WebCore {
 
-class OffsetPolygonEdge : public VertexPair {
+class OffsetPolygonEdge FINAL : public VertexPair {
 public:
-    enum Basis {
-        Edge,
-        Vertex,
-        LineTop
-    };
-
     OffsetPolygonEdge(const FloatPolygonEdge& edge, const FloatSize& offset)
         : m_vertex1(edge.vertex1() + offset)
         , m_vertex2(edge.vertex2() + offset)
-        , m_edgeIndex(edge.edgeIndex())
-        , m_basis(Edge)
-    {
-    }
-
-    OffsetPolygonEdge(const FloatPoint& reflexVertex, const FloatSize& offset1, const FloatSize& offset2)
-        : m_vertex1(reflexVertex + offset1)
-        , m_vertex2(reflexVertex + offset2)
-        , m_edgeIndex(-1)
-        , m_basis(Vertex)
-    {
-    }
-
-    OffsetPolygonEdge(const FloatPolygon& polygon, float minLogicalIntervalTop, const FloatSize& offset)
-        : m_vertex1(FloatPoint(polygon.boundingBox().x(), minLogicalIntervalTop) + offset)
-        , m_vertex2(FloatPoint(polygon.boundingBox().maxX(), minLogicalIntervalTop) + offset)
-        , m_edgeIndex(-1)
-        , m_basis(LineTop)
     {
     }
 
     virtual const FloatPoint& vertex1() const OVERRIDE { return m_vertex1; }
     virtual const FloatPoint& vertex2() const OVERRIDE { return m_vertex2; }
-    int edgeIndex() const { return m_edgeIndex; }
-    Basis basis() const { return m_basis; }
+
+    bool isWithinYRange(float y1, float y2) const { return y1 <= minY() && y2 >= maxY(); }
+    bool overlapsYRange(float y1, float y2) const { return y2 >= minY() && y1 <= maxY(); }
+    float xIntercept(float y) const;
+    FloatShapeInterval clippedEdgeXRange(float y1, float y2) const;
 
 private:
     FloatPoint m_vertex1;
     FloatPoint m_vertex2;
-    int m_edgeIndex;
-    Basis m_basis;
 };
 
-class PolygonShape : public Shape {
+class PolygonShape FINAL : public Shape {
     WTF_MAKE_NONCOPYABLE(PolygonShape);
 public:
     PolygonShape(PassOwnPtr<Vector<FloatPoint> > vertices, WindRule fillRule)
         : Shape()
         , m_polygon(vertices, fillRule)
-        , m_marginBounds(nullptr)
-        , m_paddingBounds(nullptr)
     {
     }
 
-    virtual LayoutRect shapeMarginLogicalBoundingBox() const OVERRIDE { return static_cast<LayoutRect>(shapeMarginBounds().boundingBox()); }
-    virtual LayoutRect shapePaddingLogicalBoundingBox() const OVERRIDE { return static_cast<LayoutRect>(shapePaddingBounds().boundingBox()); }
+    virtual LayoutRect shapeMarginLogicalBoundingBox() const OVERRIDE;
     virtual bool isEmpty() const OVERRIDE { return m_polygon.isEmpty(); }
     virtual void getExcludedIntervals(LayoutUnit logicalTop, LayoutUnit logicalHeight, SegmentList&) const OVERRIDE;
-    virtual void getIncludedIntervals(LayoutUnit logicalTop, LayoutUnit logicalHeight, SegmentList&) const OVERRIDE;
-    virtual bool firstIncludedIntervalLogicalTop(LayoutUnit minLogicalIntervalTop, const LayoutSize& minLogicalIntervalSize, LayoutUnit&) const OVERRIDE;
+    virtual void buildDisplayPaths(DisplayPaths&) const OVERRIDE;
 
 private:
-    const FloatPolygon& shapeMarginBounds() const;
-    const FloatPolygon& shapePaddingBounds() const;
-
     FloatPolygon m_polygon;
-    mutable OwnPtr<FloatPolygon> m_marginBounds;
-    mutable OwnPtr<FloatPolygon> m_paddingBounds;
 };
 
 } // namespace WebCore

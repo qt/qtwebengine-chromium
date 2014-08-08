@@ -51,6 +51,9 @@ class PRINTING_EXPORT PrintingContext {
   // default device settings.
   virtual Result UseDefaultSettings() = 0;
 
+  // Updates the context with PDF printer settings.
+  Result UsePdfSettings();
+
   // Returns paper size to be used for PDF or Cloud Print in device units.
   virtual gfx::Size GetPdfPaperSizeDeviceUnits() = 0;
 
@@ -61,8 +64,7 @@ class PRINTING_EXPORT PrintingContext {
 
   // Updates Print Settings. |job_settings| contains all print job
   // settings information. |ranges| has the new page range settings.
-  Result UpdatePrintSettings(const base::DictionaryValue& job_settings,
-                             const PageRanges& ranges);
+  Result UpdatePrintSettings(const base::DictionaryValue& job_settings);
 
   // Initializes with predefined settings.
   virtual Result InitWithSettings(const PrintSettings& settings) = 0;

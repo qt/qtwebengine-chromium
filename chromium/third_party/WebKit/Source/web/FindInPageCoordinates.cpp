@@ -29,11 +29,11 @@
  */
 
 #include "config.h"
-#include "FindInPageCoordinates.h"
+#include "web/FindInPageCoordinates.h"
 
 #include "core/dom/Node.h"
 #include "core/dom/Range.h"
-#include "core/frame/Frame.h"
+#include "core/frame/LocalFrame.h"
 #include "core/rendering/RenderBlock.h"
 #include "core/rendering/RenderBox.h"
 #include "core/rendering/RenderObject.h"

@@ -62,13 +62,6 @@ cr.define('options', function() {
         chrome.send('chooseBookmarksFile');
       };
 
-      $('import-data-show-bookmarks-bar').onchange = function() {
-        // Note: The callback 'toggleShowBookmarksBar' is handled within the
-        // browser options handler -- rather than the import data handler --
-        // as the implementation is shared by several clients.
-        chrome.send('toggleShowBookmarksBar');
-      }
-
       $('import-data-confirm').onclick = function() {
         ImportDataOverlay.dismiss();
       };
@@ -100,7 +93,9 @@ cr.define('options', function() {
         this.setUpCheckboxState_(checkboxes[i], enabled);
       $('import-data-commit').disabled = !enabled;
       $('import-choose-file').hidden = !enabled;
+<if expr="is_macosx">
       $('mac-password-keychain').hidden = !enabled;
+</if>
     },
 
     /**
@@ -147,7 +142,9 @@ cr.define('options', function() {
       if (this.browserProfiles.length > index)
         browserProfile = this.browserProfiles[index];
       var enable = browserProfile && browserProfile['show_bottom_bar'];
+<if expr="is_macosx">
       $('mac-password-keychain').hidden = !enable;
+</if>
     },
 
     /**

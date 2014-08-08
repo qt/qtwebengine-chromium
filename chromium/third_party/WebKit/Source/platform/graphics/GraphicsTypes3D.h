@@ -26,36 +26,36 @@
 #ifndef GraphicsTypes3D_h
 #define GraphicsTypes3D_h
 
+#include "third_party/khronos/GLES2/gl2.h"
+#include "third_party/khronos/GLES2/gl2ext.h"
 #include "wtf/Forward.h"
 #include <stdint.h>
 
-// GC3D types and enums match the corresponding GL types and enums as defined
-// in OpenGL ES 2.0 header file gl2.h from khronos.org.
-typedef unsigned GC3Denum;
-typedef unsigned char GC3Dboolean;
-typedef unsigned GC3Dbitfield;
-typedef signed char GC3Dbyte;
-typedef unsigned char GC3Dubyte;
-typedef short GC3Dshort;
-typedef unsigned short GC3Dushort;
-typedef int GC3Dint;
-typedef int GC3Dsizei;
-typedef unsigned GC3Duint;
-typedef float GC3Dfloat;
-typedef unsigned short GC3Dhalffloat;
-typedef float GC3Dclampf;
-typedef intptr_t GC3Dintptr;
-typedef intptr_t GC3Dsizeiptr;
-typedef char GC3Dchar;
-
-typedef GC3Duint Platform3DObject;
+typedef unsigned Platform3DObject;
 
 // WebGL-specific enums
-const GC3Denum GC3D_DEPTH_STENCIL_ATTACHMENT_WEBGL = 0x821A;
-const GC3Denum GC3D_UNPACK_FLIP_Y_WEBGL = 0x9240;
-const GC3Denum GC3D_UNPACK_PREMULTIPLY_ALPHA_WEBGL = 0x9241;
-const GC3Denum GC3D_CONTEXT_LOST_WEBGL = 0x9242;
-const GC3Denum GC3D_UNPACK_COLORSPACE_CONVERSION_WEBGL = 0x9243;
-const GC3Denum GC3D_BROWSER_DEFAULT_WEBGL = 0x9244;
+const unsigned GC3D_DEPTH_STENCIL_ATTACHMENT_WEBGL = 0x821A;
+const unsigned GC3D_UNPACK_FLIP_Y_WEBGL = 0x9240;
+const unsigned GC3D_UNPACK_PREMULTIPLY_ALPHA_WEBGL = 0x9241;
+const unsigned GC3D_CONTEXT_LOST_WEBGL = 0x9242;
+const unsigned GC3D_UNPACK_COLORSPACE_CONVERSION_WEBGL = 0x9243;
+const unsigned GC3D_BROWSER_DEFAULT_WEBGL = 0x9244;
+
+// GL_CHROMIUM_flipy
+const unsigned GC3D_UNPACK_FLIP_Y_CHROMIUM = 0x9240;
+
+// GL_CHROMIUM_copy_texture
+const unsigned GC3D_UNPACK_PREMULTIPLY_ALPHA_CHROMIUM = 0x9241;
+const unsigned GC3D_UNPACK_UNPREMULTIPLY_ALPHA_CHROMIUM = 0x9242;
+
+// GL_AMD_compressed_ATC_texture
+const unsigned GC3D_COMPRESSED_ATC_RGB_AMD = 0x8C92;
+const unsigned GC3D_COMPRESSED_ATC_RGBA_EXPLICIT_ALPHA_AMD = 0x8C93;
+const unsigned GC3D_COMPRESSED_ATC_RGBA_INTERPOLATED_ALPHA_AMD = 0x87EE;
+
+// GL_CHROMIUM_image
+const unsigned GC3D_IMAGE_ROWBYTES_CHROMIUM = 0x78F0;
+const unsigned GC3D_IMAGE_MAP_CHROMIUM = 0x78F1;
+const unsigned GC3D_IMAGE_SCANOUT_CHROMIUM = 0x78F2;
 
 #endif

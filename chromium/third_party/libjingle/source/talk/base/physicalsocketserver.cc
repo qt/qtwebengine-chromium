@@ -29,13 +29,14 @@
 #pragma warning(disable:4786)
 #endif
 
-#include <cassert>
+#include <assert.h>
 
 #ifdef POSIX
 #include <string.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <sys/time.h>
+#include <sys/select.h>
 #include <unistd.h>
 #include <signal.h>
 #endif
@@ -78,6 +79,7 @@ typedef char* SockOptArg;
 
 namespace talk_base {
 
+#if defined(WIN32)
 // Standard MTUs, from RFC 1191
 const uint16 PACKET_MAXIMUMS[] = {
   65535,    // Theoretical maximum, Hyperchannel
@@ -105,6 +107,7 @@ static const int IP_HEADER_SIZE = 20u;
 static const int IPV6_HEADER_SIZE = 40u;
 static const int ICMP_HEADER_SIZE = 8u;
 static const int ICMP_PING_TIMEOUT_MILLIS = 10000u;
+#endif
 
 class PhysicalSocket : public AsyncSocket, public sigslot::has_slots<> {
  public:
@@ -498,7 +501,7 @@ class PhysicalSocket : public AsyncSocket, public sigslot::has_slots<> {
   }
 
   void MaybeRemapSendError() {
-#if defined(OSX)
+#if defined(OSX) || defined(IOS)
     // https://developer.apple.com/library/mac/documentation/Darwin/
     // Reference/ManPages/man2/sendto.2.html
     // ENOBUFS - The output queue for a network interface is full.
@@ -517,7 +520,7 @@ class PhysicalSocket : public AsyncSocket, public sigslot::has_slots<> {
         *slevel = IPPROTO_IP;
         *sopt = IP_DONTFRAGMENT;
         break;
-#elif defined(IOS) || defined(OSX) || defined(BSD)
+#elif defined(IOS) || defined(OSX) || defined(BSD) || defined(__native_client__)
         LOG(LS_WARNING) << "Socket::OPT_DONTFRAGMENT not supported.";
         return -1;
 #elif defined(POSIX)
@@ -540,6 +543,8 @@ class PhysicalSocket : public AsyncSocket, public sigslot::has_slots<> {
       case OPT_DSCP:
         LOG(LS_WARNING) << "Socket::OPT_DSCP not supported.";
         return -1;
+      case OPT_RTP_SENDTIME_EXTN_ID:
+        return -1;  // No logging is necessary as this not a OS socket option.
       default:
         ASSERT(false);
         return -1;
@@ -1199,9 +1204,7 @@ class Signaler : public EventDispatcher {
 };
 
 PhysicalSocketServer::PhysicalSocketServer()
-    : fWait_(false),
-      last_tick_tracked_(0),
-      last_tick_dispatch_count_(0) {
+    : fWait_(false) {
   signal_wakeup_ = new Signaler(this, &fWait_);
 #ifdef WIN32
   socket_ev_ = WSACreateEvent();
@@ -1489,10 +1492,14 @@ bool PhysicalSocketServer::InstallSignal(int signum, void (*handler)(int)) {
     return false;
   }
   act.sa_handler = handler;
+#if !defined(__native_client__)
   // Use SA_RESTART so that our syscalls don't get EINTR, since we don't need it
   // and it's a nuisance. Though some syscalls still return EINTR and there's no
   // real standard for which ones. :(
   act.sa_flags = SA_RESTART;
+#else
+  act.sa_flags = 0;
+#endif
   if (sigaction(signum, &act, NULL) != 0) {
     LOG_ERR(LS_ERROR) << "Couldn't set sigaction";
     return false;
@@ -1506,12 +1513,6 @@ bool PhysicalSocketServer::Wait(int cmsWait, bool process_io) {
   int cmsTotal = cmsWait;
   int cmsElapsed = 0;
   uint32 msStart = Time();
-
-#if LOGGING
-  if (last_tick_dispatch_count_ == 0) {
-    last_tick_tracked_ = msStart;
-  }
-#endif
 
   fWait_ = true;
   while (fWait_) {
@@ -1562,27 +1563,10 @@ bool PhysicalSocketServer::Wait(int cmsWait, bool process_io) {
                                         cmsNext,
                                         false);
 
-#if 0  // LOGGING
-    // we track this information purely for logging purposes.
-    last_tick_dispatch_count_++;
-    if (last_tick_dispatch_count_ >= 1000) {
-      int32 elapsed = TimeSince(last_tick_tracked_);
-      LOG(INFO) << "PhysicalSocketServer took " << elapsed
-                << "ms for 1000 events";
-
-      // If we get more than 1000 events in a second, we are spinning badly
-      // (normally it should take about 8-20 seconds).
-      ASSERT(elapsed > 1000);
-
-      last_tick_tracked_ = Time();
-      last_tick_dispatch_count_ = 0;
-    }
-#endif
-
     if (dw == WSA_WAIT_FAILED) {
       // Failed?
       // TODO: need a better strategy than this!
-      int error = WSAGetLastError();
+      WSAGetLastError();
       ASSERT(false);
       return false;
     } else if (dw == WSA_WAIT_TIMEOUT) {

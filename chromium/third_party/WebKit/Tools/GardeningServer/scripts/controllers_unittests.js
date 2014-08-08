@@ -31,10 +31,11 @@ var kExampleResultsByBuilder = {
 
 module("controllers");
 
-test("UnexpectedFailures", 3, function() {
+asyncTest("UnexpectedFailures", 3, function() {
     var simulator = new NetworkSimulator();
 
     simulator.probe = function() {
+        return Promise.resolve();
     };
 
     simulator.runTest(function() {
@@ -71,7 +72,7 @@ test("UnexpectedFailures", 3, function() {
           }
         };
         controller.onExamine(mockFailures);
-    });
+    }).then(start);
 });
 
 test("controllers.FailingBuilders", 3, function() {
@@ -89,11 +90,11 @@ test("controllers.FailingBuilders", 3, function() {
 
     equal(view.outerHTML, '<div>' +
         '<li style="opacity: 0;">' +
-            '<div class="how"><time class="relative"></time></div>' +
+            '<div class="how"></div>' +
             '<div class="what">' +
                 '<div class="problem">dummy message:' +
                     '<ul class="effects">' +
-                        '<li class="builder"><a class="failing-builder" target="_blank" href="http://build.chromium.org/p/chromium.webkit/waterfall?builder=DummyBuilder">' +
+                        '<li class="builder"><a class="failing-builder" href="http://build.chromium.org/p/chromium.webkit/waterfall?builder=DummyBuilder">' +
                             '<span class="version">DummyBuilder</span><span class="failures"> webkit_tests</span></a>' +
                         '</li>' +
                     '</ul>' +

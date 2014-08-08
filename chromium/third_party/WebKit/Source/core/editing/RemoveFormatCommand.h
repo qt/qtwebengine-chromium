@@ -30,18 +30,18 @@
 
 namespace WebCore {
 
-class RemoveFormatCommand : public CompositeEditCommand {
+class RemoveFormatCommand FINAL : public CompositeEditCommand {
 public:
-    static PassRefPtr<RemoveFormatCommand> create(Document& document)
+    static PassRefPtrWillBeRawPtr<RemoveFormatCommand> create(Document& document)
     {
-        return adoptRef(new RemoveFormatCommand(document));
+        return adoptRefWillBeNoop(new RemoveFormatCommand(document));
     }
 
 private:
     explicit RemoveFormatCommand(Document&);
 
-    virtual void doApply();
-    virtual EditAction editingAction() const { return EditActionUnspecified; }
+    virtual void doApply() OVERRIDE;
+    virtual EditAction editingAction() const OVERRIDE { return EditActionUnspecified; }
 };
 
 } // namespace WebCore

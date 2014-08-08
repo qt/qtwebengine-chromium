@@ -9,6 +9,7 @@
   },
   'targets': [
     {
+      # GN version: //webkit/common:common",
       'target_name': 'webkit_common',
       'type': '<(component)',
       'defines': [
@@ -20,11 +21,16 @@
         '<(DEPTH)/base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
         '<(DEPTH)/net/net.gyp:net',
         '<(DEPTH)/skia/skia.gyp:skia',
+        '<(DEPTH)/ui/base/ui_base.gyp:ui_base',
         '<(DEPTH)/ui/gfx/gfx.gyp:gfx',
+        '<(DEPTH)/ui/gfx/gfx.gyp:gfx_geometry',
         '<(DEPTH)/ui/resources/ui_resources.gyp:ui_resources',
-        '<(DEPTH)/ui/ui.gyp:ui',
         '<(DEPTH)/url/url.gyp:url_lib',
         '<(DEPTH)/webkit/webkit_resources.gyp:webkit_resources',
+        '<(DEPTH)/third_party/WebKit/public/blink_headers.gyp:blink_headers',
+      ],
+      'export_dependent_settings': [
+        '<(DEPTH)/third_party/WebKit/public/blink_headers.gyp:blink_headers',
       ],
 
       'include_dirs': [
@@ -34,25 +40,8 @@
       ],
 
       'sources': [
-        'cursors/webcursor.cc',
-        'cursors/webcursor.h',
-        'cursors/webcursor_android.cc',
-        'cursors/webcursor_aura.cc',
-        'cursors/webcursor_aurawin.cc',
-        'cursors/webcursor_aurax11.cc',
-        'cursors/webcursor_gtk.cc',
-        'cursors/webcursor_gtk_data.h',
-        'cursors/webcursor_mac.mm',
-        'cursors/webcursor_null.cc',
-        'cursors/webcursor_win.cc',
         'data_element.cc',
         'data_element.h',
-        'resource_devtools_info.cc',
-        'resource_devtools_info.h',
-        'resource_request_body.cc',
-        'resource_request_body.h',
-        'resource_response_info.cc',
-        'resource_response_info.h',
         'resource_type.cc',
         'resource_type.h',
         'webkit_common_export.h',
@@ -61,43 +50,21 @@
       ],
 
       'conditions': [
-        ['toolkit_uses_gtk == 1', {
-          'dependencies': [
-            '<(DEPTH)/build/linux/system.gyp:gtk',
-          ],
-          'sources/': [['exclude', '_x11\\.cc$']],
-        }],
-        ['use_aura==1', {
-          'sources!': [
-            'cursors/webcursor_mac.mm',
-            'cursors/webcursor_win.cc',
-          ],
-        }],
         ['use_aura==1 and use_x11==1', {
-          'link_settings': {
-            'libraries': [ '-lXcursor', ],
-          },
-        }],
-        ['use_ozone==0', {
-          'sources!': [
-            'cursors/webcursor_null.cc',
+          'dependencies': [
+            '<(DEPTH)/build/linux/system.gyp:xcursor',
           ],
         }],
-        ['OS!="mac"', {
-          'sources/': [['exclude', '_mac\\.(cc|mm)$']],
-        }, {  # else: OS=="mac"
+        ['OS=="mac"', {
           'link_settings': {
             'libraries': [
               '$(SDKROOT)/System/Library/Frameworks/QuartzCore.framework',
             ],
           },
         }],
-        ['OS!="win"', {
-          'sources/': [['exclude', '_win\\.cc$']],
-        }, {  # else: OS=="win"
+        ['OS=="win"', {
           # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
           'msvs_disabled_warnings': [ 4800, 4267 ],
-          'sources/': [['exclude', '_posix\\.cc$']],
         }],
       ],
     },

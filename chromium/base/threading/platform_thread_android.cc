@@ -5,6 +5,7 @@
 #include "base/threading/platform_thread.h"
 
 #include <errno.h>
+#include <sys/prctl.h>
 #include <sys/resource.h>
 
 #include "base/android/jni_android.h"
@@ -77,6 +78,18 @@ void PlatformThread::SetThreadPriority(PlatformThreadHandle handle,
 void PlatformThread::SetName(const char* name) {
   ThreadIdNameManager::GetInstance()->SetName(CurrentId(), name);
   tracked_objects::ThreadData::InitializeThreadContext(name);
+
+  // Like linux, on android we can get the thread names to show up in the
+  // debugger by setting the process name for the LWP.
+  // We don't want to do this for the main thread because that would rename
+  // the process, causing tools like killall to stop working.
+  if (PlatformThread::CurrentId() == getpid())
+    return;
+
+  // Set the name for the LWP (which gets truncated to 15 characters).
+  int err = prctl(PR_SET_NAME, name);
+  if (err < 0 && errno != EPERM)
+    DPLOG(ERROR) << "prctl(PR_SET_NAME)";
 }
 
 
@@ -95,7 +108,13 @@ void TerminateOnThread() {
 }
 
 size_t GetDefaultThreadStackSize(const pthread_attr_t& attributes) {
+#if !defined(ADDRESS_SANITIZER)
   return 0;
+#else
+  // AddressSanitizer bloats the stack approximately 2x. Default stack size of
+  // 1Mb is not enough for some tests (see http://crbug.com/263749 for example).
+  return 2 * (1 << 20);  // 2Mb
+#endif
 }
 
 bool RegisterThreadUtils(JNIEnv* env) {

@@ -12,7 +12,7 @@
 #include "content/renderer/render_thread_impl.h"
 #include "ipc/ipc_logging.h"
 
-using media::MIDIPortInfoList;
+using media::MidiPortInfoList;
 using base::AutoLock;
 
 // The maximum number of bytes which we're allowed to send to the browser
@@ -22,44 +22,44 @@ static const size_t kMaxUnacknowledgedBytesSent = 10 * 1024 * 1024;  // 10 MB.
 
 namespace content {
 
-MIDIMessageFilter::MIDIMessageFilter(
+MidiMessageFilter::MidiMessageFilter(
     const scoped_refptr<base::MessageLoopProxy>& io_message_loop)
-    : channel_(NULL),
+    : sender_(NULL),
       io_message_loop_(io_message_loop),
       main_message_loop_(base::MessageLoopProxy::current()),
       next_available_id_(0),
       unacknowledged_bytes_sent_(0) {
 }
 
-MIDIMessageFilter::~MIDIMessageFilter() {}
+MidiMessageFilter::~MidiMessageFilter() {}
 
-void MIDIMessageFilter::Send(IPC::Message* message) {
+void MidiMessageFilter::Send(IPC::Message* message) {
   DCHECK(io_message_loop_->BelongsToCurrentThread());
-  if (!channel_) {
+  if (!sender_) {
     delete message;
   } else {
-    channel_->Send(message);
+    sender_->Send(message);
   }
 }
 
-bool MIDIMessageFilter::OnMessageReceived(const IPC::Message& message) {
+bool MidiMessageFilter::OnMessageReceived(const IPC::Message& message) {
   DCHECK(io_message_loop_->BelongsToCurrentThread());
   bool handled = true;
-  IPC_BEGIN_MESSAGE_MAP(MIDIMessageFilter, message)
-    IPC_MESSAGE_HANDLER(MIDIMsg_SessionStarted, OnSessionStarted)
-    IPC_MESSAGE_HANDLER(MIDIMsg_DataReceived, OnDataReceived)
-    IPC_MESSAGE_HANDLER(MIDIMsg_AcknowledgeSentData, OnAcknowledgeSentData)
+  IPC_BEGIN_MESSAGE_MAP(MidiMessageFilter, message)
+    IPC_MESSAGE_HANDLER(MidiMsg_SessionStarted, OnSessionStarted)
+    IPC_MESSAGE_HANDLER(MidiMsg_DataReceived, OnDataReceived)
+    IPC_MESSAGE_HANDLER(MidiMsg_AcknowledgeSentData, OnAcknowledgeSentData)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
 }
 
-void MIDIMessageFilter::OnFilterAdded(IPC::Channel* channel) {
+void MidiMessageFilter::OnFilterAdded(IPC::Sender* sender) {
   DCHECK(io_message_loop_->BelongsToCurrentThread());
-  channel_ = channel;
+  sender_ = sender;
 }
 
-void MIDIMessageFilter::OnFilterRemoved() {
+void MidiMessageFilter::OnFilterRemoved() {
   DCHECK(io_message_loop_->BelongsToCurrentThread());
 
   // Once removed, a filter will not be used again.  At this time all
@@ -67,12 +67,12 @@ void MIDIMessageFilter::OnFilterRemoved() {
   OnChannelClosing();
 }
 
-void MIDIMessageFilter::OnChannelClosing() {
+void MidiMessageFilter::OnChannelClosing() {
   DCHECK(io_message_loop_->BelongsToCurrentThread());
-  channel_ = NULL;
+  sender_ = NULL;
 }
 
-void MIDIMessageFilter::StartSession(blink::WebMIDIAccessorClient* client) {
+void MidiMessageFilter::StartSession(blink::WebMIDIAccessorClient* client) {
   // Generate and keep track of a "client id" which is sent to the browser
   // to ask permission to talk to MIDI hardware.
   // This id is handed back when we receive the answer in OnAccessApproved().
@@ -81,16 +81,16 @@ void MIDIMessageFilter::StartSession(blink::WebMIDIAccessorClient* client) {
     clients_[client] = client_id;
 
     io_message_loop_->PostTask(FROM_HERE,
-        base::Bind(&MIDIMessageFilter::StartSessionOnIOThread, this,
+        base::Bind(&MidiMessageFilter::StartSessionOnIOThread, this,
                    client_id));
   }
 }
 
-void MIDIMessageFilter::StartSessionOnIOThread(int client_id) {
-  Send(new MIDIHostMsg_StartSession(client_id));
+void MidiMessageFilter::StartSessionOnIOThread(int client_id) {
+  Send(new MidiHostMsg_StartSession(client_id));
 }
 
-void MIDIMessageFilter::RemoveClient(blink::WebMIDIAccessorClient* client) {
+void MidiMessageFilter::RemoveClient(blink::WebMIDIAccessorClient* client) {
   ClientsMap::iterator i = clients_.find(client);
   if (i != clients_.end())
     clients_.erase(i);
@@ -98,50 +98,69 @@ void MIDIMessageFilter::RemoveClient(blink::WebMIDIAccessorClient* client) {
 
 // Received from browser.
 
-void MIDIMessageFilter::OnSessionStarted(
+void MidiMessageFilter::OnSessionStarted(
     int client_id,
-    bool success,
-    MIDIPortInfoList inputs,
-    MIDIPortInfoList outputs) {
+    media::MidiResult result,
+    MidiPortInfoList inputs,
+    MidiPortInfoList outputs) {
   // Handle on the main JS thread.
   main_message_loop_->PostTask(
       FROM_HERE,
-      base::Bind(&MIDIMessageFilter::HandleSessionStarted, this,
-                 client_id, success, inputs, outputs));
+      base::Bind(&MidiMessageFilter::HandleSessionStarted, this,
+                 client_id, result, inputs, outputs));
 }
 
-void MIDIMessageFilter::HandleSessionStarted(
+void MidiMessageFilter::HandleSessionStarted(
     int client_id,
-    bool success,
-    MIDIPortInfoList inputs,
-    MIDIPortInfoList outputs) {
+    media::MidiResult result,
+    MidiPortInfoList inputs,
+    MidiPortInfoList outputs) {
   blink::WebMIDIAccessorClient* client = GetClientFromId(client_id);
   if (!client)
     return;
 
-  if (success) {
+  if (result == media::MIDI_OK) {
     // Add the client's input and output ports.
     for (size_t i = 0; i < inputs.size(); ++i) {
       client->didAddInputPort(
-          UTF8ToUTF16(inputs[i].id),
-          UTF8ToUTF16(inputs[i].manufacturer),
-          UTF8ToUTF16(inputs[i].name),
-          UTF8ToUTF16(inputs[i].version));
+          base::UTF8ToUTF16(inputs[i].id),
+          base::UTF8ToUTF16(inputs[i].manufacturer),
+          base::UTF8ToUTF16(inputs[i].name),
+          base::UTF8ToUTF16(inputs[i].version));
     }
 
     for (size_t i = 0; i < outputs.size(); ++i) {
       client->didAddOutputPort(
-          UTF8ToUTF16(outputs[i].id),
-          UTF8ToUTF16(outputs[i].manufacturer),
-          UTF8ToUTF16(outputs[i].name),
-          UTF8ToUTF16(outputs[i].version));
+          base::UTF8ToUTF16(outputs[i].id),
+          base::UTF8ToUTF16(outputs[i].manufacturer),
+          base::UTF8ToUTF16(outputs[i].name),
+          base::UTF8ToUTF16(outputs[i].version));
     }
   }
-  client->didStartSession(success);
+  std::string error;
+  std::string message;
+  switch (result) {
+    case media::MIDI_OK:
+      break;
+    case media::MIDI_NOT_SUPPORTED:
+      error = "NotSupportedError";
+      break;
+    case media::MIDI_INITIALIZATION_ERROR:
+      error = "InvalidStateError";
+      message = "Platform dependent initialization failed.";
+      break;
+    default:
+      NOTREACHED();
+      error = "InvalidStateError";
+      message = "Unknown internal error occurred.";
+      break;
+  }
+  client->didStartSession(result == media::MIDI_OK, base::UTF8ToUTF16(error),
+                          base::UTF8ToUTF16(message));
 }
 
 blink::WebMIDIAccessorClient*
-MIDIMessageFilter::GetClientFromId(int client_id) {
+MidiMessageFilter::GetClientFromId(int client_id) {
   // Iterating like this seems inefficient, but in practice there generally
   // will be very few clients (usually one).  Additionally, this lookup
   // usually happens one time during page load. So the performance hit is
@@ -153,57 +172,57 @@ MIDIMessageFilter::GetClientFromId(int client_id) {
   return NULL;
 }
 
-void MIDIMessageFilter::OnDataReceived(uint32 port,
+void MidiMessageFilter::OnDataReceived(uint32 port,
                                        const std::vector<uint8>& data,
                                        double timestamp) {
-  TRACE_EVENT0("midi", "MIDIMessageFilter::OnDataReceived");
+  TRACE_EVENT0("midi", "MidiMessageFilter::OnDataReceived");
 
   main_message_loop_->PostTask(
       FROM_HERE,
-      base::Bind(&MIDIMessageFilter::HandleDataReceived, this,
+      base::Bind(&MidiMessageFilter::HandleDataReceived, this,
                  port, data, timestamp));
 }
 
-void MIDIMessageFilter::OnAcknowledgeSentData(size_t bytes_sent) {
+void MidiMessageFilter::OnAcknowledgeSentData(size_t bytes_sent) {
   DCHECK_GE(unacknowledged_bytes_sent_, bytes_sent);
   if (unacknowledged_bytes_sent_ >= bytes_sent)
     unacknowledged_bytes_sent_ -= bytes_sent;
 }
 
-void MIDIMessageFilter::HandleDataReceived(uint32 port,
+void MidiMessageFilter::HandleDataReceived(uint32 port,
                                            const std::vector<uint8>& data,
                                            double timestamp) {
   DCHECK(!data.empty());
-  TRACE_EVENT0("midi", "MIDIMessageFilter::HandleDataReceived");
+  TRACE_EVENT0("midi", "MidiMessageFilter::HandleDataReceived");
 
   for (ClientsMap::iterator i = clients_.begin(); i != clients_.end(); ++i)
     (*i).first->didReceiveMIDIData(port, &data[0], data.size(), timestamp);
 }
 
-void MIDIMessageFilter::SendMIDIData(uint32 port,
+void MidiMessageFilter::SendMidiData(uint32 port,
                                      const uint8* data,
                                      size_t length,
                                      double timestamp) {
   if (length > kMaxUnacknowledgedBytesSent) {
-    // TODO(crogers): buffer up the data to send at a later time.
+    // TODO(toyoshim): buffer up the data to send at a later time.
     // For now we're just dropping these bytes on the floor.
     return;
   }
 
   std::vector<uint8> v(data, data + length);
   io_message_loop_->PostTask(FROM_HERE,
-      base::Bind(&MIDIMessageFilter::SendMIDIDataOnIOThread, this,
+      base::Bind(&MidiMessageFilter::SendMidiDataOnIOThread, this,
                  port, v, timestamp));
 }
 
-void MIDIMessageFilter::SendMIDIDataOnIOThread(uint32 port,
+void MidiMessageFilter::SendMidiDataOnIOThread(uint32 port,
                                                const std::vector<uint8>& data,
                                                double timestamp) {
   size_t n = data.size();
   if (n > kMaxUnacknowledgedBytesSent ||
       unacknowledged_bytes_sent_ > kMaxUnacknowledgedBytesSent ||
       n + unacknowledged_bytes_sent_ > kMaxUnacknowledgedBytesSent) {
-    // TODO(crogers): buffer up the data to send at a later time.
+    // TODO(toyoshim): buffer up the data to send at a later time.
     // For now we're just dropping these bytes on the floor.
     return;
   }
@@ -211,7 +230,7 @@ void MIDIMessageFilter::SendMIDIDataOnIOThread(uint32 port,
   unacknowledged_bytes_sent_ += n;
 
   // Send to the browser.
-  Send(new MIDIHostMsg_SendData(port, data, timestamp));
+  Send(new MidiHostMsg_SendData(port, data, timestamp));
 }
 
 }  // namespace content

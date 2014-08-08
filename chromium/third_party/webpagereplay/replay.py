@@ -94,7 +94,8 @@ def AddDnsForward(server_manager, host):
   server_manager.Append(platformsettings.set_temporary_primary_nameserver, host)
 
 
-def AddDnsProxy(server_manager, options, host, real_dns_lookup, http_archive):
+def AddDnsProxy(server_manager, options, host, port, real_dns_lookup,
+                http_archive):
   dns_filters = []
   if options.dns_private_passthrough:
     private_filter = dnsproxy.PrivateIpFilter(real_dns_lookup, http_archive)
@@ -106,7 +107,7 @@ def AddDnsProxy(server_manager, options, host, real_dns_lookup, http_archive):
     dns_filters.append(delay_filter)
     server_manager.AppendRecordCallback(delay_filter.SetRecordMode)
     server_manager.AppendReplayCallback(delay_filter.SetReplayMode)
-  server_manager.Append(dnsproxy.DnsProxyServer, host,
+  server_manager.Append(dnsproxy.DnsProxyServer, host, port,
                         dns_lookup=dnsproxy.ReplayDnsLookup(host, dns_filters))
 
 
@@ -140,24 +141,29 @@ def AddWebProxy(server_manager, options, host, real_dns_lookup, http_archive,
     server_manager.Append(
         httpproxy.HttpProxyServer,
         archive_fetch, custom_handlers,
-        host=host, port=options.port, **options.shaping_http)
+        host=host, port=options.port, use_delays=options.use_server_delay,
+        **options.shaping_http)
     if options.ssl:
       server_manager.Append(
           httpproxy.HttpsProxyServer,
           archive_fetch, custom_handlers, options.certfile,
-          host=host, port=options.ssl_port, **options.shaping_http)
+          host=host, port=options.ssl_port, use_delays=options.use_server_delay,
+          **options.shaping_http)
+    if options.http_to_https_port:
+      server_manager.Append(
+          httpproxy.HttpToHttpsProxyServer,
+          archive_fetch, custom_handlers,
+          host=host, port=options.http_to_https_port,
+          use_delays=options.use_server_delay,
+          **options.shaping_http)
 
 
 def AddTrafficShaper(server_manager, options, host):
   if options.shaping_dummynet:
-    ssl_port = options.ssl_shaping_port if options.ssl else None
-    kwargs = dict(
-        host=host, port=options.shaping_port, ssl_port=ssl_port,
+    server_manager.AppendTrafficShaper(
+        trafficshaper.TrafficShaper, host=host,
         use_loopback=not options.server_mode and host == '127.0.0.1',
         **options.shaping_dummynet)
-    if not options.dns_forwarding:
-      kwargs['dns_port'] = None
-    server_manager.Append(trafficshaper.TrafficShaper, **kwargs)
 
 
 class OptionsWrapper(object):
@@ -248,10 +254,6 @@ class OptionsWrapper(object):
       self._options.down, self._options.up, self._options.delay_ms = \
           net_configs.GetNetConfig(self.net)
       self._nondefaults.update(['down', 'up', 'delay_ms'])
-    if not self.shaping_port:
-      self._options.shaping_port = self.port
-    if not self.ssl_shaping_port:
-      self._options.ssl_shaping_port = self.ssl_port
     if not self.ssl:
       self._options.certfile = None
     self.shaping_dns = self._ShapingKeywordArgs('dns')
@@ -267,15 +269,28 @@ class OptionsWrapper(object):
     return json.dumps(self._options.__dict__)
 
   def IsRootRequired(self):
-    """Returns True iff the options require root access."""
-    return (self.shaping_dummynet or
-            self.dns_forwarding or
-            (self.port and self.port < 1024) or
-            (self.port and self.ssl_port < 1024)) and self.admin_check
+    """Returns True iff the options require whole program root access."""
+    if self.server:
+      return True
+
+    def IsPrivilegedPort(port):
+      return port and port < 1024
+
+    if IsPrivilegedPort(self.port) or (self.ssl and
+                                       IsPrivilegedPort(self.ssl_port)):
+      return True
+
+    if self.dns_forwarding:
+      if IsPrivilegedPort(self.dns_port):
+        return True
+      if not self.server_mode and self.host == '127.0.0.1':
+        return True
+
+    return False
 
 
 def replay(options, replay_filename):
-  if options.IsRootRequired():
+  if options.admin_check and options.IsRootRequired():
     platformsettings.rerun_as_administrator()
   configure_logging(options.log_level, options.log_file)
   server_manager = servermanager.ServerManager(options.record)
@@ -293,9 +308,6 @@ def replay(options, replay_filename):
   if options.server:
     AddDnsForward(server_manager, options.server)
   else:
-    host = options.host
-    if not host:
-      host = platformsettings.get_server_ip_address(options.server_mode)
     real_dns_lookup = dnsproxy.RealDnsLookup(
         name_servers=[platformsettings.get_original_primary_nameserver()])
     if options.record:
@@ -313,10 +325,19 @@ def replay(options, replay_filename):
     server_manager.AppendRecordCallback(real_dns_lookup.ClearCache)
     server_manager.AppendRecordCallback(http_archive.clear)
 
+    ipfw_dns_host = None
+    if options.dns_forwarding or options.shaping_dummynet:
+      # compute the ip/host used for the DNS server and traffic shaping
+      ipfw_dns_host = options.host
+      if not ipfw_dns_host:
+        ipfw_dns_host = platformsettings.get_server_ip_address(
+            options.server_mode)
+
     if options.dns_forwarding:
-      if not options.server_mode and host == '127.0.0.1':
-        AddDnsForward(server_manager, host)
-      AddDnsProxy(server_manager, options, host, real_dns_lookup, http_archive)
+      if not options.server_mode and ipfw_dns_host == '127.0.0.1':
+        AddDnsForward(server_manager, ipfw_dns_host)
+      AddDnsProxy(server_manager, options, ipfw_dns_host, options.dns_port,
+                  real_dns_lookup, http_archive)
     if options.ssl and options.certfile is None:
       options.certfile = os.path.join(os.path.dirname(__file__), 'wpr_cert.pem')
     http_proxy_address = options.host
@@ -325,7 +346,7 @@ def replay(options, replay_filename):
           options.server_mode)
     AddWebProxy(server_manager, options, http_proxy_address, real_dns_lookup,
                 http_archive, cache_misses)
-    AddTrafficShaper(server_manager, options, host)
+    AddTrafficShaper(server_manager, options, ipfw_dns_host)
 
   exit_status = 0
   try:
@@ -493,20 +514,15 @@ def GetOptionParser():
       action='store',
       type='int',
       help='SSL port number to listen on.')
-  harness_group.add_option('--shaping_port', default=None,
+  harness_group.add_option('--http_to_https_port', default=None,
       action='store',
       type='int',
-      help='Port on which to apply traffic shaping.  Defaults to the '
-           'listen port (--port)')
-  harness_group.add_option('--scramble_images', default=False,
-      action='store_true',
-      dest='scramble_images',
-      help='Scramble image responses.')
-  harness_group.add_option('--ssl_shaping_port', default=None,
+      help='Port on which WPR will listen for HTTP requests that it will send '
+           'along as HTTPS requests.')
+  harness_group.add_option('--dns_port', default=53,
       action='store',
       type='int',
-      help='SSL port on which to apply traffic shaping.  Defaults to the '
-           'SSL listen port (--ssl_port)')
+      help='DNS port number to listen on.')
   harness_group.add_option('-c', '--certfile', default=None,
       action='store',
       type='string',
@@ -520,6 +536,10 @@ def GetOptionParser():
       action='store_false',
       dest='admin_check',
       help='Do not check if administrator access is needed.')
+  harness_group.add_option('--scramble_images', default=False,
+      action='store_true',
+      dest='scramble_images',
+      help='Scramble image responses.')
   return option_parser
 
 

@@ -179,6 +179,7 @@ private:
 enum ClipRectsType {
     PaintingClipRects, // Relative to painting ancestor. Used for painting.
     RootRelativeClipRects, // Relative to the ancestor treated as the root (e.g. transformed layer). Used for hit testing.
+    CompositingClipRects, // Relative to the compositing ancestor. Used for updating graphics layer geometry.
     AbsoluteClipRects, // Relative to the RenderView's layer. Used for compositing overlap testing.
     NumCachedClipRectsTypes,
     AllClipRectTypes,
@@ -195,19 +196,24 @@ struct ClipRectsCache {
 public:
     ClipRectsCache()
     {
-#ifndef NDEBUG
         for (int i = 0; i < NumCachedClipRectsTypes; ++i) {
             m_clipRectsRoot[i] = 0;
+#ifndef NDEBUG
             m_scrollbarRelevancy[i] = IgnoreOverlayScrollbarSize;
-        }
 #endif
+        }
     }
 
     PassRefPtr<ClipRects> getClipRects(ClipRectsType clipRectsType, ShouldRespectOverflowClip respectOverflow) { return m_clipRects[getIndex(clipRectsType, respectOverflow)]; }
-    void setClipRects(ClipRectsType clipRectsType, ShouldRespectOverflowClip respectOverflow, PassRefPtr<ClipRects> clipRects) { m_clipRects[getIndex(clipRectsType, respectOverflow)] = clipRects; }
+    void setClipRects(ClipRectsType clipRectsType, ShouldRespectOverflowClip respectOverflow, PassRefPtr<ClipRects> clipRects, const RenderLayer* root)
+    {
+        m_clipRects[getIndex(clipRectsType, respectOverflow)] = clipRects;
+        m_clipRectsRoot[clipRectsType] = root;
+    }
+
+    const RenderLayer* clipRectsRoot(ClipRectsType clipRectsType) const { return m_clipRectsRoot[clipRectsType]; }
 
 #ifndef NDEBUG
-    const RenderLayer* m_clipRectsRoot[NumCachedClipRectsTypes];
     OverlayScrollbarSizeRelevancy m_scrollbarRelevancy[NumCachedClipRectsTypes];
 #endif
 
@@ -220,6 +226,7 @@ private:
         return index;
     }
 
+    const RenderLayer* m_clipRectsRoot[NumCachedClipRectsTypes];
     RefPtr<ClipRects> m_clipRects[NumCachedClipRectsTypes * 2];
 };
 

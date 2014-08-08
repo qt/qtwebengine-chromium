@@ -39,12 +39,17 @@ public:
 
     TransformationMatrix matrix() const {return m_matrix; }
 
+    virtual bool canBlendWith(const TransformOperation& other) const
+    {
+        return false;
+    }
+
 private:
-    virtual bool isIdentity() const { return m_matrix.isIdentity(); }
+    virtual bool isIdentity() const OVERRIDE { return m_matrix.isIdentity(); }
 
     virtual OperationType type() const OVERRIDE { return Matrix3D; }
 
-    virtual bool operator==(const TransformOperation& o) const
+    virtual bool operator==(const TransformOperation& o) const OVERRIDE
     {
         if (!isSameType(o))
             return false;
@@ -52,12 +57,12 @@ private:
         return m_matrix == m->m_matrix;
     }
 
-    virtual void apply(TransformationMatrix& transform, const FloatSize&) const
+    virtual void apply(TransformationMatrix& transform, const FloatSize&) const OVERRIDE
     {
         transform.multiply(TransformationMatrix(m_matrix));
     }
 
-    virtual PassRefPtr<TransformOperation> blend(const TransformOperation* from, double progress, bool blendToIdentity = false);
+    virtual PassRefPtr<TransformOperation> blend(const TransformOperation* from, double progress, bool blendToIdentity = false) OVERRIDE;
 
     Matrix3DTransformOperation(const TransformationMatrix& mat)
     {

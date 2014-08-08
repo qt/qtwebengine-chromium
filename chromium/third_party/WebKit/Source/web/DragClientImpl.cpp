@@ -29,13 +29,12 @@
  */
 
 #include "config.h"
-#include "DragClientImpl.h"
-#include "WebViewClient.h"
-#include "WebViewImpl.h"
-#include "core/dom/Clipboard.h"
-#include "core/frame/Frame.h"
-#include "core/platform/DragImage.h"
-#include "core/platform/chromium/ChromiumDataObject.h"
+#include "web/DragClientImpl.h"
+
+#include "core/clipboard/Clipboard.h"
+#include "core/clipboard/DataObject.h"
+#include "core/frame/LocalFrame.h"
+#include "platform/DragImage.h"
 #include "platform/geometry/IntSize.h"
 #include "platform/graphics/skia/NativeImageSkia.h"
 #include "public/platform/WebCommon.h"
@@ -43,6 +42,8 @@
 #include "public/platform/WebImage.h"
 #include "public/platform/WebPoint.h"
 #include "public/web/WebDragOperation.h"
+#include "public/web/WebViewClient.h"
+#include "web/WebViewImpl.h"
 #include "wtf/Assertions.h"
 #include "wtf/RefPtr.h"
 
@@ -63,13 +64,13 @@ void DragClientImpl::startDrag(DragImage* dragImage,
                                const IntPoint& dragImageOrigin,
                                const IntPoint& eventPos,
                                Clipboard* clipboard,
-                               Frame* frame,
+                               LocalFrame* frame,
                                bool isLinkDrag)
 {
     // Add a ref to the frame just in case a load occurs mid-drag.
-    RefPtr<Frame> frameProtector = frame;
+    RefPtr<LocalFrame> frameProtector = frame;
 
-    WebDragData dragData = clipboard->dataObject();
+    WebDragData dragData(clipboard->dataObject());
     WebDragOperationsMask dragOperationMask = static_cast<WebDragOperationsMask>(clipboard->sourceOperation());
     WebImage image;
     IntSize offsetSize(eventPos - dragImageOrigin);

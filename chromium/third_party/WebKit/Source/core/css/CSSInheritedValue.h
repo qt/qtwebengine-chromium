@@ -28,14 +28,16 @@ namespace WebCore {
 
 class CSSInheritedValue : public CSSValue {
 public:
-    static PassRefPtr<CSSInheritedValue> create()
+    static PassRefPtrWillBeRawPtr<CSSInheritedValue> create()
     {
-        return adoptRef(new CSSInheritedValue);
+        return adoptRefWillBeNoop(new CSSInheritedValue);
     }
 
     String customCSSText() const;
 
     bool equals(const CSSInheritedValue&) const { return true; }
+
+    void traceAfterDispatch(Visitor* visitor) { CSSValue::traceAfterDispatch(visitor); }
 
 private:
     CSSInheritedValue()

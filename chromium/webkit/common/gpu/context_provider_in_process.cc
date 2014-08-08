@@ -48,7 +48,8 @@ scoped_refptr<ContextProviderInProcess> ContextProviderInProcess::Create(
 
 // static
 scoped_refptr<ContextProviderInProcess>
-ContextProviderInProcess::CreateOffscreen() {
+ContextProviderInProcess::CreateOffscreen(
+    bool lose_context_when_out_of_memory) {
   blink::WebGraphicsContext3D::Attributes attributes;
   attributes.depth = false;
   attributes.stencil = true;
@@ -58,7 +59,8 @@ ContextProviderInProcess::CreateOffscreen() {
 
   return Create(
       WebGraphicsContext3DInProcessCommandBufferImpl::CreateOffscreenContext(
-          attributes), "Offscreen");
+          attributes, lose_context_when_out_of_memory),
+      "Offscreen");
 }
 
 ContextProviderInProcess::ContextProviderInProcess(
@@ -75,6 +77,13 @@ ContextProviderInProcess::ContextProviderInProcess(
 ContextProviderInProcess::~ContextProviderInProcess() {
   DCHECK(main_thread_checker_.CalledOnValidThread() ||
          context_thread_checker_.CalledOnValidThread());
+}
+
+blink::WebGraphicsContext3D* ContextProviderInProcess::WebContext3D() {
+  DCHECK(lost_context_callback_proxy_);  // Is bound to thread.
+  DCHECK(context_thread_checker_.CalledOnValidThread());
+
+  return context3d_.get();
 }
 
 bool ContextProviderInProcess::BindToCurrentThread() {
@@ -100,7 +109,7 @@ bool ContextProviderInProcess::BindToCurrentThread() {
 }
 
 void ContextProviderInProcess::InitializeCapabilities() {
-  capabilities_ = Capabilities(context3d_->GetImplementation()->capabilities());
+  capabilities_.gpu = context3d_->GetImplementation()->capabilities();
 }
 
 cc::ContextProvider::Capabilities
@@ -108,13 +117,6 @@ ContextProviderInProcess::ContextCapabilities() {
   DCHECK(lost_context_callback_proxy_);  // Is bound to thread.
   DCHECK(context_thread_checker_.CalledOnValidThread());
   return capabilities_;
-}
-
-blink::WebGraphicsContext3D* ContextProviderInProcess::Context3d() {
-  DCHECK(lost_context_callback_proxy_);  // Is bound to thread.
-  DCHECK(context_thread_checker_.CalledOnValidThread());
-
-  return context3d_.get();
 }
 
 ::gpu::gles2::GLES2Interface* ContextProviderInProcess::ContextGL() {
@@ -147,14 +149,6 @@ class GrContext* ContextProviderInProcess::GrContext() {
   return gr_context_->get();
 }
 
-void ContextProviderInProcess::MakeGrContextCurrent() {
-  DCHECK(lost_context_callback_proxy_);  // Is bound to thread.
-  DCHECK(context_thread_checker_.CalledOnValidThread());
-  DCHECK(gr_context_);
-
-  context3d_->makeContextCurrent();
-}
-
 bool ContextProviderInProcess::IsContextLost() {
   DCHECK(lost_context_callback_proxy_);  // Is bound to thread.
   DCHECK(context_thread_checker_.CalledOnValidThread());
@@ -170,6 +164,13 @@ void ContextProviderInProcess::VerifyContexts() {
     OnLostContext();
 }
 
+void ContextProviderInProcess::DeleteCachedResources() {
+  DCHECK(context_thread_checker_.CalledOnValidThread());
+
+  if (gr_context_)
+    gr_context_->FreeGpuResources();
+}
+
 void ContextProviderInProcess::OnLostContext() {
   DCHECK(context_thread_checker_.CalledOnValidThread());
   {
@@ -180,6 +181,8 @@ void ContextProviderInProcess::OnLostContext() {
   }
   if (!lost_context_callback_.is_null())
     base::ResetAndReturn(&lost_context_callback_).Run();
+  if (gr_context_)
+    gr_context_->OnLostContext();
 }
 
 bool ContextProviderInProcess::DestroyedOnMainThread() {

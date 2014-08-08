@@ -32,21 +32,19 @@
 
 #include "bindings/v8/ScriptFunctionCall.h"
 #include "bindings/v8/ScriptState.h"
+#include "core/clipboard/Pasteboard.h"
 #include "core/fetch/ResourceFetcher.h"
-#include "core/fetch/TextResourceDecoder.h"
-#include "core/frame/Frame.h"
+#include "core/frame/LocalFrame.h"
+#include "core/html/parser/TextResourceDecoder.h"
 #include "core/inspector/InspectorController.h"
 #include "core/inspector/InspectorFrontendClient.h"
 #include "core/loader/FrameLoader.h"
 #include "core/page/ContextMenuController.h"
 #include "core/page/ContextMenuProvider.h"
 #include "core/page/Page.h"
-#include "core/platform/Pasteboard.h"
 #include "core/rendering/RenderTheme.h"
-#include "modules/filesystem/DOMFileSystem.h"
 #include "platform/ContextMenu.h"
 #include "platform/ContextMenuItem.h"
-#include "platform/JSONValues.h"
 #include "platform/SharedBuffer.h"
 #include "platform/UserGestureIndicator.h"
 #include "platform/network/ResourceError.h"
@@ -55,21 +53,21 @@
 
 namespace WebCore {
 
-class FrontendMenuProvider : public ContextMenuProvider {
+class FrontendMenuProvider FINAL : public ContextMenuProvider {
 public:
-    static PassRefPtr<FrontendMenuProvider> create(InspectorFrontendHost* frontendHost, ScriptObject frontendApiObject, const Vector<ContextMenuItem>& items)
+    static PassRefPtr<FrontendMenuProvider> create(InspectorFrontendHost* frontendHost, ScriptValue frontendApiObject, const Vector<ContextMenuItem>& items)
     {
         return adoptRef(new FrontendMenuProvider(frontendHost, frontendApiObject, items));
     }
 
     void disconnect()
     {
-        m_frontendApiObject = ScriptObject();
+        m_frontendApiObject = ScriptValue();
         m_frontendHost = 0;
     }
 
 private:
-    FrontendMenuProvider(InspectorFrontendHost* frontendHost, ScriptObject frontendApiObject, const Vector<ContextMenuItem>& items)
+    FrontendMenuProvider(InspectorFrontendHost* frontendHost, ScriptValue frontendApiObject, const Vector<ContextMenuItem>& items)
         : m_frontendHost(frontendHost)
         , m_frontendApiObject(frontendApiObject)
         , m_items(items)
@@ -81,13 +79,13 @@ private:
         contextMenuCleared();
     }
 
-    virtual void populateContextMenu(ContextMenu* menu)
+    virtual void populateContextMenu(ContextMenu* menu) OVERRIDE
     {
         for (size_t i = 0; i < m_items.size(); ++i)
             menu->appendItem(m_items[i]);
     }
 
-    virtual void contextMenuItemSelected(const ContextMenuItem* item)
+    virtual void contextMenuItemSelected(const ContextMenuItem* item) OVERRIDE
     {
         if (m_frontendHost) {
             UserGestureIndicator gestureIndicator(DefinitelyProcessingNewUserGesture);
@@ -99,7 +97,7 @@ private:
         }
     }
 
-    virtual void contextMenuCleared()
+    virtual void contextMenuCleared() OVERRIDE
     {
         if (m_frontendHost) {
             ScriptFunctionCall function(m_frontendApiObject, "contextMenuCleared");
@@ -111,7 +109,7 @@ private:
     }
 
     InspectorFrontendHost* m_frontendHost;
-    ScriptObject m_frontendApiObject;
+    ScriptValue m_frontendApiObject;
     Vector<ContextMenuItem> m_items;
 };
 
@@ -138,13 +136,12 @@ void InspectorFrontendHost::disconnectClient()
 
 void InspectorFrontendHost::setZoomFactor(float zoom)
 {
-    m_frontendPage->mainFrame()->setPageAndTextZoomFactors(zoom, 1);
+    m_frontendPage->deprecatedLocalMainFrame()->setPageAndTextZoomFactors(zoom, 1);
 }
 
-void InspectorFrontendHost::inspectedURLChanged(const String& newURL)
+float InspectorFrontendHost::zoomFactor()
 {
-    if (m_client)
-        m_client->inspectedURLChanged(newURL);
+    return m_frontendPage->deprecatedLocalMainFrame()->pageZoomFactor();
 }
 
 void InspectorFrontendHost::setInjectedScriptForOrigin(const String& origin, const String& script)
@@ -157,16 +154,33 @@ void InspectorFrontendHost::copyText(const String& text)
     Pasteboard::generalPasteboard()->writePlainText(text, Pasteboard::CannotSmartReplace);
 }
 
+static String escapeUnicodeNonCharacters(const String& str)
+{
+    StringBuilder dst;
+    for (unsigned i = 0; i < str.length(); ++i) {
+        UChar c = str[i];
+        if (c >= 0xD800) {
+            unsigned symbol = static_cast<unsigned>(c);
+            String symbolCode = String::format("\\u%04X", symbol);
+            dst.append(symbolCode);
+        } else {
+            dst.append(c);
+        }
+
+    }
+    return dst.toString();
+}
+
 void InspectorFrontendHost::sendMessageToBackend(const String& message)
 {
     if (m_client)
-        m_client->sendMessageToBackend(message);
+        m_client->sendMessageToBackend(escapeUnicodeNonCharacters(message));
 }
 
 void InspectorFrontendHost::sendMessageToEmbedder(const String& message)
 {
     if (m_client)
-        m_client->sendMessageToEmbedder(message);
+        m_client->sendMessageToEmbedder(escapeUnicodeNonCharacters(message));
 }
 
 void InspectorFrontendHost::showContextMenu(Event* event, const Vector<ContextMenuItem>& items)
@@ -175,12 +189,9 @@ void InspectorFrontendHost::showContextMenu(Event* event, const Vector<ContextMe
         return;
 
     ASSERT(m_frontendPage);
-    ScriptState* frontendScriptState = mainWorldScriptState(m_frontendPage->mainFrame());
-    ScriptObject frontendApiObject;
-    if (!ScriptGlobalObject::get(frontendScriptState, "InspectorFrontendAPI", frontendApiObject)) {
-        ASSERT_NOT_REACHED();
-        return;
-    }
+    ScriptState* frontendScriptState = ScriptState::forMainWorld(m_frontendPage->deprecatedLocalMainFrame());
+    ScriptValue frontendApiObject = frontendScriptState->getFromGlobalObject("InspectorFrontendAPI");
+    ASSERT(frontendApiObject.isObject());
     RefPtr<FrontendMenuProvider> menuProvider = FrontendMenuProvider::create(this, frontendApiObject, items);
     m_frontendPage->contextMenuController().showContextMenu(event, menuProvider);
     m_menuProvider = menuProvider.get();
@@ -188,33 +199,12 @@ void InspectorFrontendHost::showContextMenu(Event* event, const Vector<ContextMe
 
 String InspectorFrontendHost::getSelectionBackgroundColor()
 {
-    Color color = RenderTheme::theme().activeSelectionBackgroundColor();
-    return color.isValid() ? color.serialized() : "";
+    return RenderTheme::theme().activeSelectionBackgroundColor().serialized();
 }
 
 String InspectorFrontendHost::getSelectionForegroundColor()
 {
-    Color color = RenderTheme::theme().activeSelectionForegroundColor();
-    return color.isValid() ? color.serialized() : "";
-}
-
-PassRefPtr<DOMFileSystem> InspectorFrontendHost::isolatedFileSystem(const String& fileSystemName, const String& rootURL)
-{
-    ExecutionContext* context = m_frontendPage->mainFrame()->document();
-    return DOMFileSystem::create(context, fileSystemName, FileSystemTypeIsolated, KURL(ParsedURLString, rootURL));
-}
-
-void InspectorFrontendHost::upgradeDraggedFileSystemPermissions(DOMFileSystem* domFileSystem)
-{
-    if (!m_client)
-        return;
-    RefPtr<JSONObject> message = JSONObject::create();
-    message->setNumber("id", 0);
-    message->setString("method", "upgradeDraggedFileSystemPermissions");
-    RefPtr<JSONArray> params = JSONArray::create();
-    message->setArray("params", params);
-    params->pushString(domFileSystem->rootURL().string());
-    sendMessageToEmbedder(message->toJSONString());
+    return RenderTheme::theme().activeSelectionForegroundColor().serialized();
 }
 
 bool InspectorFrontendHost::isUnderTest()

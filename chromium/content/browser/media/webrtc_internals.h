@@ -5,24 +5,26 @@
 #ifndef CONTENT_BROWSER_MEDIA_WEBRTC_INTERNALS_H_
 #define CONTENT_BROWSER_MEDIA_WEBRTC_INTERNALS_H_
 
+#include "base/gtest_prod_util.h"
 #include "base/memory/singleton.h"
 #include "base/observer_list.h"
 #include "base/process/process.h"
 #include "base/values.h"
 #include "content/common/content_export.h"
-#include "content/public/browser/browser_child_process_observer.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
+#include "ui/shell_dialogs/select_file_dialog.h"
 
 namespace content {
+class WebContents;
 class WebRTCInternalsUIObserver;
 
 // This is a singleton class running in the browser UI thread.
 // It collects peer connection infomation from the renderers,
 // forwards the data to WebRTCInternalsUIObserver and
 // sends data collecting commands to the renderers.
-class CONTENT_EXPORT WebRTCInternals : public BrowserChildProcessObserver,
-                                       public NotificationObserver {
+class CONTENT_EXPORT WebRTCInternals : public NotificationObserver,
+                                       public ui::SelectFileDialog::Listener {
  public:
   static WebRTCInternals* GetInstance();
 
@@ -58,38 +60,74 @@ class CONTENT_EXPORT WebRTCInternals : public BrowserChildProcessObserver,
   // local id, |value| is the list of stats reports.
   void OnAddStats(base::ProcessId pid, int lid, const base::ListValue& value);
 
+  // This method is called when getUserMedia is called. |render_process_id| is
+  // the id of the render process (not OS pid), which is needed because we might
+  // not be able to get the OS process id when the render process terminates and
+  // we want to clean up. |pid| is the renderer OS process id, |origin| is the
+  // security origin of the getUserMedia call, |audio| is true if audio stream
+  // is requested, |video| is true if the video stream is requested,
+  // |audio_constraints| is the constraints for the audio, |video_constraints|
+  // is the constraints for the video.
+  void OnGetUserMedia(int render_process_id,
+                      base::ProcessId pid,
+                      const std::string& origin,
+                      bool audio,
+                      bool video,
+                      const std::string& audio_constraints,
+                      const std::string& video_constraints);
+
   // Methods for adding or removing WebRTCInternalsUIObserver.
   void AddObserver(WebRTCInternalsUIObserver *observer);
   void RemoveObserver(WebRTCInternalsUIObserver *observer);
 
-  // Sends all update data to the observers.
-  void SendAllUpdates();
+  // Sends all update data to |observer|.
+  void UpdateObserver(WebRTCInternalsUIObserver* observer);
 
-  // Tells the renderer processes to start or stop recording RTP packets.
-  void StartRtpRecording();
-  void StopRtpRecording();
+  // Enables or disables AEC dump (diagnostic echo canceller recording).
+  void EnableAecDump(content::WebContents* web_contents);
+  void DisableAecDump();
+
+  bool aec_dump_enabled() {
+    return aec_dump_enabled_;
+  }
+
+  base::FilePath aec_dump_file_path() {
+    return aec_dump_file_path_;
+  }
+
+  void ResetForTesting();
 
  private:
   friend struct DefaultSingletonTraits<WebRTCInternals>;
+  FRIEND_TEST_ALL_PREFIXES(WebRtcBrowserTest, CallWithAecDump);
+  FRIEND_TEST_ALL_PREFIXES(WebRtcBrowserTest,
+                           CallWithAecDumpEnabledThenDisabled);
+  FRIEND_TEST_ALL_PREFIXES(WebRTCInternalsTest,
+                           AecRecordingFileSelectionCanceled);
 
   WebRTCInternals();
   virtual ~WebRTCInternals();
 
   void SendUpdate(const std::string& command, base::Value* value);
 
-  // BrowserChildProcessObserver implementation.
-  virtual void BrowserChildProcessCrashed(
-      const ChildProcessData& data) OVERRIDE;
-
   // NotificationObserver implementation.
   virtual void Observe(int type,
                        const NotificationSource& source,
                        const NotificationDetails& details) OVERRIDE;
 
+  // ui::SelectFileDialog::Listener implementation.
+  virtual void FileSelected(const base::FilePath& path,
+                            int index,
+                            void* unused_params) OVERRIDE;
+  virtual void FileSelectionCanceled(void* params) OVERRIDE;
+
   // Called when a renderer exits (including crashes).
   void OnRendererExit(int render_process_id);
 
-  void SendRtpRecordingUpdate();
+#if defined(ENABLE_WEBRTC)
+  // Enables AEC dump on all render process hosts using |aec_dump_file_path_|.
+  void EnableAecDumpOnAllRenderProcessHosts();
+#endif
 
   ObserverList<WebRTCInternalsUIObserver> observers_;
 
@@ -97,7 +135,8 @@ class CONTENT_EXPORT WebRTCInternals : public BrowserChildProcessObserver,
   // updates.
   // Each item of the list represents the data for one PeerConnection, which
   // contains these fields:
-  // "pid" -- processId of the renderer that creates the PeerConnection.
+  // "rid" -- the renderer id.
+  // "pid" -- OS process id of the renderer that creates the PeerConnection.
   // "lid" -- local Id assigned to the PeerConnection.
   // "url" -- url of the web page that created the PeerConnection.
   // "servers" and "constraints" -- server configuration and media constraints
@@ -107,9 +146,23 @@ class CONTENT_EXPORT WebRTCInternals : public BrowserChildProcessObserver,
   // are strings.
   base::ListValue peer_connection_data_;
 
+  // A list of getUserMedia requests. Each item is a DictionaryValue that
+  // contains these fields:
+  // "rid" -- the renderer id.
+  // "pid" -- proceddId of the renderer.
+  // "origin" -- the security origin of the request.
+  // "audio" -- the serialized audio constraints if audio is requested.
+  // "video" -- the serialized video constraints if video is requested.
+  base::ListValue get_user_media_requests_;
+
   NotificationRegistrar registrar_;
 
-  bool is_recording_rtp_;
+  // For managing select file dialog.
+  scoped_refptr<ui::SelectFileDialog> select_file_dialog_;
+
+  // AEC dump (diagnostic echo canceller recording) state.
+  bool aec_dump_enabled_;
+  base::FilePath aec_dump_file_path_;
 };
 
 }  // namespace content

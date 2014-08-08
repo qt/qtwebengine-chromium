@@ -21,9 +21,9 @@
 #ifndef CSSProperty_h
 #define CSSProperty_h
 
-#include "CSSPropertyNames.h"
-#include "RuntimeEnabledFeatures.h"
+#include "core/CSSPropertyNames.h"
 #include "core/css/CSSValue.h"
+#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/text/TextDirection.h"
 #include "platform/text/WritingMode.h"
 #include "wtf/PassRefPtr.h"
@@ -53,12 +53,12 @@ struct StylePropertyMetadata {
 };
 
 class CSSProperty {
+    ALLOW_ONLY_INLINE_ALLOCATION();
 public:
-    CSSProperty(CSSPropertyID propertyID, PassRefPtr<CSSValue> value, bool important = false, bool isSetFromShorthand = false, int indexInShorthandsVector = 0, bool implicit = false)
+    CSSProperty(CSSPropertyID propertyID, PassRefPtrWillBeRawPtr<CSSValue> value, bool important = false, bool isSetFromShorthand = false, int indexInShorthandsVector = 0, bool implicit = false)
         : m_metadata(propertyID, isSetFromShorthand, indexInShorthandsVector, important, implicit, isInheritedProperty(propertyID))
         , m_value(value)
     {
-    ASSERT((propertyID == CSSPropertyVariable) == (m_value && m_value->isVariableValue()));
     }
 
     // FIXME: Remove this.
@@ -66,7 +66,6 @@ public:
         : m_metadata(metadata)
         , m_value(value)
     {
-    ASSERT((metadata.m_propertyID == CSSPropertyVariable) == (m_value && m_value->isVariableValue()));
     }
 
     CSSPropertyID id() const { return static_cast<CSSPropertyID>(m_metadata.m_propertyID); }
@@ -80,12 +79,15 @@ public:
 
     static CSSPropertyID resolveDirectionAwareProperty(CSSPropertyID, TextDirection, WritingMode);
     static bool isInheritedProperty(CSSPropertyID);
+    static bool isAffectedByAllProperty(CSSPropertyID);
 
     const StylePropertyMetadata& metadata() const { return m_metadata; }
 
+    void trace(Visitor* visitor) { visitor->trace(m_value); }
+
 private:
     StylePropertyMetadata m_metadata;
-    RefPtr<CSSValue> m_value;
+    RefPtrWillBeMember<CSSValue> m_value;
 };
 
 inline CSSPropertyID prefixingVariantForPropertyId(CSSPropertyID propId)
@@ -189,11 +191,6 @@ inline CSSPropertyID prefixingVariantForPropertyId(CSSPropertyID propId)
 
 } // namespace WebCore
 
-namespace WTF {
-template <> struct VectorTraits<WebCore::CSSProperty> : VectorTraitsBase<false, WebCore::CSSProperty> {
-    static const bool canInitializeWithMemset = true;
-    static const bool canMoveWithMemcpy = true;
-};
-}
+WTF_ALLOW_MOVE_AND_INIT_WITH_MEM_FUNCTIONS(WebCore::CSSProperty);
 
 #endif // CSSProperty_h

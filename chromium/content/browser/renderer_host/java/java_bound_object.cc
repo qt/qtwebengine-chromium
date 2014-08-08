@@ -7,6 +7,7 @@
 #include "base/android/jni_android.h"
 #include "base/android/jni_string.h"
 #include "base/memory/singleton.h"
+#include "base/numerics/safe_conversions.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "content/browser/renderer_host/java/java_bridge_dispatcher_host_manager.h"
@@ -38,6 +39,7 @@ namespace {
 const char kJavaLangClass[] = "java/lang/Class";
 const char kJavaLangObject[] = "java/lang/Object";
 const char kJavaLangReflectMethod[] = "java/lang/reflect/Method";
+const char kJavaLangSecurityExceptionClass[] = "java/lang/SecurityException";
 const char kGetClass[] = "getClass";
 const char kGetMethods[] = "getMethods";
 const char kIsAnnotationPresent[] = "isAnnotationPresent";
@@ -45,6 +47,9 @@ const char kReturningJavaLangClass[] = "()Ljava/lang/Class;";
 const char kReturningJavaLangReflectMethodArray[] =
     "()[Ljava/lang/reflect/Method;";
 const char kTakesJavaLangClassReturningBoolean[] = "(Ljava/lang/Class;)Z";
+// This is an exception message, so no need to localize.
+const char kAccessToObjectGetClassIsBlocked[] =
+    "Access to java.lang.Object.getClass is blocked";
 
 // Our special NPObject type.  We extend an NPObject with a pointer to a
 // JavaBoundObject.  We also add static methods for each of the NPObject
@@ -64,6 +69,8 @@ struct JavaNPObject : public NPObject {
   static bool HasProperty(NPObject* np_object, NPIdentifier np_identifier);
   static bool GetProperty(NPObject* np_object, NPIdentifier np_identifier,
                           NPVariant *result);
+  static bool Enumerate(NPObject* object, NPIdentifier** values,
+                        uint32_t* count);
 };
 
 const NPClass JavaNPObject::kNPClass = {
@@ -78,6 +85,8 @@ const NPClass JavaNPObject::kNPClass = {
   JavaNPObject::GetProperty,
   NULL,  // NPSetProperty,
   NULL,  // NPRemoveProperty
+  JavaNPObject::Enumerate,
+  NULL,
 };
 
 NPObject* JavaNPObject::Allocate(NPP npp, NPClass* np_class) {
@@ -120,6 +129,19 @@ bool JavaNPObject::GetProperty(NPObject* np_object,
   return false;
 }
 
+bool JavaNPObject::Enumerate(NPObject* np_object, NPIdentifier** values,
+                             uint32_t* count) {
+  JavaNPObject* obj = reinterpret_cast<JavaNPObject*>(np_object);
+  if (!obj->bound_object->CanEnumerateMethods()) return false;
+  std::vector<std::string> method_names = obj->bound_object->GetMethodNames();
+  *count = base::saturated_cast<uint32_t>(method_names.size());
+  *values = static_cast<NPIdentifier*>(calloc(*count, sizeof(NPIdentifier)));
+  for (uint32_t i = 0; i < *count; ++i) {
+    (*values)[i] = WebBindings::getStringIdentifier(method_names[i].c_str());
+  }
+  return true;
+}
+
 // Calls a Java method through JNI. If the Java method raises an uncaught
 // exception, it is cleared and this method returns false. Otherwise, this
 // method returns true and the Java method's return value is provided as an
@@ -127,45 +149,70 @@ bool JavaNPObject::GetProperty(NPObject* np_object,
 // return value is simply converted to the corresponding NPAPI type.
 bool CallJNIMethod(
     jobject object,
+    jclass clazz,
     const JavaType& return_type,
     jmethodID id,
     jvalue* parameters,
     NPVariant* result,
     const JavaRef<jclass>& safe_annotation_clazz,
-    const base::WeakPtr<JavaBridgeDispatcherHostManager>& manager) {
+    const base::WeakPtr<JavaBridgeDispatcherHostManager>& manager,
+    bool can_enumerate_methods) {
+  DCHECK(object || clazz);
   JNIEnv* env = AttachCurrentThread();
   switch (return_type.type) {
     case JavaType::TypeBoolean:
-      BOOLEAN_TO_NPVARIANT(env->CallBooleanMethodA(object, id, parameters),
-                           *result);
+      BOOLEAN_TO_NPVARIANT(
+          object ? env->CallBooleanMethodA(object, id, parameters)
+                 : env->CallStaticBooleanMethodA(clazz, id, parameters),
+          *result);
       break;
     case JavaType::TypeByte:
-      INT32_TO_NPVARIANT(env->CallByteMethodA(object, id, parameters), *result);
+      INT32_TO_NPVARIANT(
+          object ? env->CallByteMethodA(object, id, parameters)
+                 : env->CallStaticByteMethodA(clazz, id, parameters),
+          *result);
       break;
     case JavaType::TypeChar:
-      INT32_TO_NPVARIANT(env->CallCharMethodA(object, id, parameters), *result);
+      INT32_TO_NPVARIANT(
+          object ? env->CallCharMethodA(object, id, parameters)
+                 : env->CallStaticCharMethodA(clazz, id, parameters),
+          *result);
       break;
     case JavaType::TypeShort:
-      INT32_TO_NPVARIANT(env->CallShortMethodA(object, id, parameters),
-                         *result);
+      INT32_TO_NPVARIANT(
+          object ? env->CallShortMethodA(object, id, parameters)
+                 : env->CallStaticShortMethodA(clazz, id, parameters),
+          *result);
       break;
     case JavaType::TypeInt:
-      INT32_TO_NPVARIANT(env->CallIntMethodA(object, id, parameters), *result);
+      INT32_TO_NPVARIANT(object
+                             ? env->CallIntMethodA(object, id, parameters)
+                             : env->CallStaticIntMethodA(clazz, id, parameters),
+                         *result);
       break;
     case JavaType::TypeLong:
-      DOUBLE_TO_NPVARIANT(env->CallLongMethodA(object, id, parameters),
-                          *result);
+      DOUBLE_TO_NPVARIANT(
+          object ? env->CallLongMethodA(object, id, parameters)
+                 : env->CallStaticLongMethodA(clazz, id, parameters),
+          *result);
       break;
     case JavaType::TypeFloat:
-      DOUBLE_TO_NPVARIANT(env->CallFloatMethodA(object, id, parameters),
-                          *result);
+      DOUBLE_TO_NPVARIANT(
+          object ? env->CallFloatMethodA(object, id, parameters)
+                 : env->CallStaticFloatMethodA(clazz, id, parameters),
+          *result);
       break;
     case JavaType::TypeDouble:
-      DOUBLE_TO_NPVARIANT(env->CallDoubleMethodA(object, id, parameters),
-                          *result);
+      DOUBLE_TO_NPVARIANT(
+          object ? env->CallDoubleMethodA(object, id, parameters)
+                 : env->CallStaticDoubleMethodA(clazz, id, parameters),
+          *result);
       break;
     case JavaType::TypeVoid:
-      env->CallVoidMethodA(object, id, parameters);
+      if (object)
+        env->CallVoidMethodA(object, id, parameters);
+      else
+        env->CallStaticVoidMethodA(clazz, id, parameters);
       VOID_TO_NPVARIANT(*result);
       break;
     case JavaType::TypeArray:
@@ -176,7 +223,8 @@ bool CallJNIMethod(
       break;
     case JavaType::TypeString: {
       jstring java_string = static_cast<jstring>(
-          env->CallObjectMethodA(object, id, parameters));
+          object ? env->CallObjectMethodA(object, id, parameters)
+                 : env->CallStaticObjectMethodA(clazz, id, parameters));
       // If an exception was raised, we must clear it before calling most JNI
       // methods. ScopedJavaLocalRef is liable to make such calls, so we test
       // first.
@@ -204,7 +252,9 @@ bool CallJNIMethod(
       // If an exception was raised, we must clear it before calling most JNI
       // methods. ScopedJavaLocalRef is liable to make such calls, so we test
       // first.
-      jobject java_object = env->CallObjectMethodA(object, id, parameters);
+      jobject java_object =
+          object ? env->CallObjectMethodA(object, id, parameters)
+                 : env->CallStaticObjectMethodA(clazz, id, parameters);
       if (base::android::ClearException(env)) {
         return false;
       }
@@ -215,7 +265,8 @@ bool CallJNIMethod(
       }
       OBJECT_TO_NPVARIANT(JavaBoundObject::Create(scoped_java_object,
                                                   safe_annotation_clazz,
-                                                  manager),
+                                                  manager,
+                                                  can_enumerate_methods),
                           *result);
       break;
     }
@@ -778,7 +829,8 @@ jvalue CoerceJavaScriptValueToJavaValue(const NPVariant& variant,
 NPObject* JavaBoundObject::Create(
     const JavaRef<jobject>& object,
     const JavaRef<jclass>& safe_annotation_clazz,
-    const base::WeakPtr<JavaBridgeDispatcherHostManager>& manager) {
+    const base::WeakPtr<JavaBridgeDispatcherHostManager>& manager,
+    bool can_enumerate_methods) {
   // The first argument (a plugin's instance handle) is passed through to the
   // allocate function directly, and we don't use it, so it's ok to be 0.
   // The object is created with a ref count of one.
@@ -786,17 +838,21 @@ NPObject* JavaBoundObject::Create(
       &JavaNPObject::kNPClass));
   // The NPObject takes ownership of the JavaBoundObject.
   reinterpret_cast<JavaNPObject*>(np_object)->bound_object =
-      new JavaBoundObject(object, safe_annotation_clazz, manager);
+      new JavaBoundObject(
+          object, safe_annotation_clazz, manager, can_enumerate_methods);
   return np_object;
 }
 
 JavaBoundObject::JavaBoundObject(
     const JavaRef<jobject>& object,
     const JavaRef<jclass>& safe_annotation_clazz,
-    const base::WeakPtr<JavaBridgeDispatcherHostManager>& manager)
+    const base::WeakPtr<JavaBridgeDispatcherHostManager>& manager,
+    bool can_enumerate_methods)
     : java_object_(AttachCurrentThread(), object.obj()),
       manager_(manager),
       are_methods_set_up_(false),
+      object_get_class_method_id_(NULL),
+      can_enumerate_methods_(can_enumerate_methods),
       safe_annotation_clazz_(safe_annotation_clazz) {
   BrowserThread::PostTask(
         BrowserThread::UI, FROM_HERE,
@@ -822,6 +878,17 @@ ScopedJavaLocalRef<jobject> JavaBoundObject::GetJavaObject(NPObject* object) {
   DCHECK_EQ(&JavaNPObject::kNPClass, object->_class);
   JavaBoundObject* jbo = reinterpret_cast<JavaNPObject*>(object)->bound_object;
   return jbo->java_object_.get(AttachCurrentThread());
+}
+
+std::vector<std::string> JavaBoundObject::GetMethodNames() const {
+  EnsureMethodsAreSetUp();
+  std::vector<std::string> result;
+  for (JavaMethodMap::const_iterator it = methods_.begin();
+       it != methods_.end();
+       it = methods_.upper_bound(it->first)) {
+    result.push_back(it->first);
+  }
+  return result;
 }
 
 bool JavaBoundObject::HasMethod(const std::string& name) const {
@@ -853,6 +920,16 @@ bool JavaBoundObject::Invoke(const std::string& name, const NPVariant* args,
     return false;
   }
 
+  // Block access to java.lang.Object.getClass.
+  // As it is declared to be final, it is sufficient to compare methodIDs.
+  if (method->id() == object_get_class_method_id_) {
+    BrowserThread::PostTask(
+        BrowserThread::UI, FROM_HERE,
+        base::Bind(&JavaBoundObject::ThrowSecurityException,
+                   kAccessToObjectGetClassIsBlocked));
+    return false;
+  }
+
   // Coerce
   std::vector<jvalue> parameters(arg_count);
   for (size_t i = 0; i < arg_count; ++i) {
@@ -861,25 +938,48 @@ bool JavaBoundObject::Invoke(const std::string& name, const NPVariant* args,
                                                      true);
   }
 
-  ScopedJavaLocalRef<jobject> obj = java_object_.get(AttachCurrentThread());
+  JNIEnv* env = AttachCurrentThread();
 
+  ScopedJavaLocalRef<jobject> obj;
+  ScopedJavaLocalRef<jclass> cls;
   bool ok = false;
-  if (!obj.is_null()) {
+  if (method->is_static()) {
+    cls = GetLocalClassRef(env);
+  } else {
+    obj = java_object_.get(env);
+  }
+  if (!obj.is_null() || !cls.is_null()) {
     // Call
-    ok = CallJNIMethod(obj.obj(), method->return_type(),
+    ok = CallJNIMethod(obj.obj(), cls.obj(), method->return_type(),
                        method->id(), &parameters[0], result,
                        safe_annotation_clazz_,
-                       manager_);
+                       manager_,
+                       can_enumerate_methods_);
   }
 
   // Now that we're done with the jvalue, release any local references created
   // by CoerceJavaScriptValueToJavaValue().
-  JNIEnv* env = AttachCurrentThread();
   for (size_t i = 0; i < arg_count; ++i) {
     ReleaseJavaValueIfRequired(env, &parameters[i], method->parameter_type(i));
   }
 
   return ok;
+}
+
+ScopedJavaLocalRef<jclass> JavaBoundObject::GetLocalClassRef(
+    JNIEnv* env) const {
+  if (!object_get_class_method_id_) {
+    object_get_class_method_id_ = GetMethodIDFromClassName(
+        env, kJavaLangObject, kGetClass, kReturningJavaLangClass);
+  }
+
+  ScopedJavaLocalRef<jobject> obj = java_object_.get(env);
+  if (!obj.is_null()) {
+    return ScopedJavaLocalRef<jclass>(env, static_cast<jclass>(
+        env->CallObjectMethod(obj.obj(), object_get_class_method_id_)));
+  } else {
+    return ScopedJavaLocalRef<jclass>();
+  }
 }
 
 void JavaBoundObject::EnsureMethodsAreSetUp() const {
@@ -888,18 +988,11 @@ void JavaBoundObject::EnsureMethodsAreSetUp() const {
   are_methods_set_up_ = true;
 
   JNIEnv* env = AttachCurrentThread();
-  ScopedJavaLocalRef<jobject> obj = java_object_.get(env);
 
-  if (obj.is_null()) {
+  ScopedJavaLocalRef<jclass> clazz = GetLocalClassRef(env);
+  if (clazz.is_null()) {
     return;
   }
-
-  ScopedJavaLocalRef<jclass> clazz(env, static_cast<jclass>(
-      env->CallObjectMethod(obj.obj(),  GetMethodIDFromClassName(
-          env,
-          kJavaLangObject,
-          kGetClass,
-          kReturningJavaLangClass))));
 
   ScopedJavaLocalRef<jobjectArray> methods(env, static_cast<jobjectArray>(
       env->CallObjectMethod(clazz.obj(), GetMethodIDFromClassName(
@@ -933,6 +1026,15 @@ void JavaBoundObject::EnsureMethodsAreSetUp() const {
     JavaMethod* method = new JavaMethod(java_method);
     methods_.insert(std::make_pair(method->name(), method));
   }
+}
+
+// static
+void JavaBoundObject::ThrowSecurityException(const char* message) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  JNIEnv* env = AttachCurrentThread();
+  base::android::ScopedJavaLocalRef<jclass> clazz(
+      env, env->FindClass(kJavaLangSecurityExceptionClass));
+  env->ThrowNew(clazz.obj(), message);
 }
 
 }  // namespace content

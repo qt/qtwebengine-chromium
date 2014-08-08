@@ -32,37 +32,42 @@
 // modified significantly by Google Inc.
 // Copyright 2012 the V8 project authors. All rights reserved.
 
-#include "assembler.h"
+#include "src/assembler.h"
 
 #include <cmath>
-#include "api.h"
-#include "builtins.h"
-#include "counters.h"
-#include "cpu.h"
-#include "debug.h"
-#include "deoptimizer.h"
-#include "execution.h"
-#include "ic.h"
-#include "isolate-inl.h"
-#include "jsregexp.h"
-#include "lazy-instance.h"
-#include "platform.h"
-#include "regexp-macro-assembler.h"
-#include "regexp-stack.h"
-#include "runtime.h"
-#include "serialize.h"
-#include "store-buffer-inl.h"
-#include "stub-cache.h"
-#include "token.h"
+#include "src/api.h"
+#include "src/base/lazy-instance.h"
+#include "src/builtins.h"
+#include "src/counters.h"
+#include "src/cpu.h"
+#include "src/cpu-profiler.h"
+#include "src/debug.h"
+#include "src/deoptimizer.h"
+#include "src/execution.h"
+#include "src/ic.h"
+#include "src/isolate-inl.h"
+#include "src/jsregexp.h"
+#include "src/platform.h"
+#include "src/regexp-macro-assembler.h"
+#include "src/regexp-stack.h"
+#include "src/runtime.h"
+#include "src/serialize.h"
+#include "src/store-buffer-inl.h"
+#include "src/stub-cache.h"
+#include "src/token.h"
 
 #if V8_TARGET_ARCH_IA32
-#include "ia32/assembler-ia32-inl.h"
+#include "src/ia32/assembler-ia32-inl.h"
 #elif V8_TARGET_ARCH_X64
-#include "x64/assembler-x64-inl.h"
+#include "src/x64/assembler-x64-inl.h"
+#elif V8_TARGET_ARCH_ARM64
+#include "src/arm64/assembler-arm64-inl.h"
 #elif V8_TARGET_ARCH_ARM
-#include "arm/assembler-arm-inl.h"
+#include "src/arm/assembler-arm-inl.h"
 #elif V8_TARGET_ARCH_MIPS
-#include "mips/assembler-mips-inl.h"
+#include "src/mips/assembler-mips-inl.h"
+#elif V8_TARGET_ARCH_X87
+#include "src/x87/assembler-x87-inl.h"
 #else
 #error "Unknown architecture."
 #endif
@@ -70,13 +75,17 @@
 // Include native regexp-macro-assembler.
 #ifndef V8_INTERPRETED_REGEXP
 #if V8_TARGET_ARCH_IA32
-#include "ia32/regexp-macro-assembler-ia32.h"
+#include "src/ia32/regexp-macro-assembler-ia32.h"
 #elif V8_TARGET_ARCH_X64
-#include "x64/regexp-macro-assembler-x64.h"
+#include "src/x64/regexp-macro-assembler-x64.h"
+#elif V8_TARGET_ARCH_ARM64
+#include "src/arm64/regexp-macro-assembler-arm64.h"
 #elif V8_TARGET_ARCH_ARM
-#include "arm/regexp-macro-assembler-arm.h"
+#include "src/arm/regexp-macro-assembler-arm.h"
 #elif V8_TARGET_ARCH_MIPS
-#include "mips/regexp-macro-assembler-mips.h"
+#include "src/mips/regexp-macro-assembler-mips.h"
+#elif V8_TARGET_ARCH_X87
+#include "src/x87/regexp-macro-assembler-x87.h"
 #else  // Unknown architecture.
 #error "Unknown architecture."
 #endif  // Target architecture.
@@ -118,11 +127,12 @@ AssemblerBase::AssemblerBase(Isolate* isolate, void* buffer, int buffer_size)
       jit_cookie_(0),
       enabled_cpu_features_(0),
       emit_debug_code_(FLAG_debug_code),
-      predictable_code_size_(false) {
+      predictable_code_size_(false),
+      // We may use the assembler without an isolate.
+      serializer_enabled_(isolate && isolate->serializer_enabled()) {
   if (FLAG_mask_constants_with_cookie && isolate != NULL)  {
     jit_cookie_ = isolate->random_number_generator()->NextInt();
   }
-
   if (buffer == NULL) {
     // Do our own buffer management.
     if (buffer_size <= kMinimalBufferSize) {
@@ -187,7 +197,7 @@ PredictableCodeSizeScope::~PredictableCodeSizeScope() {
 #ifdef DEBUG
 CpuFeatureScope::CpuFeatureScope(AssemblerBase* assembler, CpuFeature f)
     : assembler_(assembler) {
-  ASSERT(CpuFeatures::IsSafeForSnapshot(f));
+  ASSERT(CpuFeatures::IsSupported(f));
   old_enabled_ = assembler_->enabled_cpu_features();
   uint64_t mask = static_cast<uint64_t>(1) << f;
   // TODO(svenpanne) This special case below doesn't belong here!
@@ -207,22 +217,9 @@ CpuFeatureScope::~CpuFeatureScope() {
 #endif
 
 
-// -----------------------------------------------------------------------------
-// Implementation of PlatformFeatureScope
-
-PlatformFeatureScope::PlatformFeatureScope(CpuFeature f)
-    : old_cross_compile_(CpuFeatures::cross_compile_) {
-  // CpuFeatures is a global singleton, therefore this is only safe in
-  // single threaded code.
-  ASSERT(Serializer::enabled());
-  uint64_t mask = static_cast<uint64_t>(1) << f;
-  CpuFeatures::cross_compile_ |= mask;
-}
-
-
-PlatformFeatureScope::~PlatformFeatureScope() {
-  CpuFeatures::cross_compile_ = old_cross_compile_;
-}
+bool CpuFeatures::initialized_ = false;
+unsigned CpuFeatures::supported_ = 0;
+unsigned CpuFeatures::cache_line_size_ = 0;
 
 
 // -----------------------------------------------------------------------------
@@ -283,9 +280,12 @@ int Label::pos() const {
 //                              00 [4 bit middle_tag] 11 followed by
 //                              00 [6 bit pc delta]
 //
-//      1101: constant pool. Used on ARM only for now.
-//        The format is:       11 1101 11
-//                             signed int (size of the constant pool).
+//      1101: constant or veneer pool. Used only on ARM and ARM64 for now.
+//        The format is:       [2-bit sub-type] 1101 11
+//                             signed int (size of the pool).
+//          The 2-bit sub-types are:
+//            00: constant pool
+//            01: veneer pool
 //      1110: long_data_record
 //        The format is:       [2-bit data_type_tag] 1110 11
 //                             signed intptr_t, lowest byte written first
@@ -306,7 +306,9 @@ int Label::pos() const {
 //                dropped, and last non-zero chunk tagged with 1.)
 
 
+#ifdef DEBUG
 const int kMaxStandardNonCompactModes = 14;
+#endif
 
 const int kTagBits = 2;
 const int kTagMask = (1 << kTagBits) - 1;
@@ -340,8 +342,9 @@ const int kNonstatementPositionTag = 1;
 const int kStatementPositionTag = 2;
 const int kCommentTag = 3;
 
-const int kConstPoolExtraTag = kPCJumpExtraTag - 2;
-const int kConstPoolTag = 3;
+const int kPoolExtraTag = kPCJumpExtraTag - 2;
+const int kConstPoolTag = 0;
+const int kVeneerPoolTag = 1;
 
 
 uint32_t RelocInfoWriter::WriteVariableLengthPCJump(uint32_t pc_delta) {
@@ -401,8 +404,8 @@ void RelocInfoWriter::WriteExtraTaggedIntData(int data_delta, int top_tag) {
 }
 
 
-void RelocInfoWriter::WriteExtraTaggedConstPoolData(int data) {
-  WriteExtraTag(kConstPoolExtraTag, kConstPoolTag);
+void RelocInfoWriter::WriteExtraTaggedPoolData(int data, int pool_type) {
+  WriteExtraTag(kPoolExtraTag, pool_type);
   for (int i = 0; i < kIntSize; i++) {
     *--pos_ = static_cast<byte>(data);
     // Signed right shift is arithmetic shift.  Tested in test-utils.cc.
@@ -474,9 +477,11 @@ void RelocInfoWriter::Write(const RelocInfo* rinfo) {
     WriteExtraTaggedPC(pc_delta, kPCJumpExtraTag);
     WriteExtraTaggedData(rinfo->data(), kCommentTag);
     ASSERT(begin_pos - pos_ >= RelocInfo::kMinRelocCommentSize);
-  } else if (RelocInfo::IsConstPool(rmode)) {
+  } else if (RelocInfo::IsConstPool(rmode) || RelocInfo::IsVeneerPool(rmode)) {
       WriteExtraTaggedPC(pc_delta, kPCJumpExtraTag);
-      WriteExtraTaggedConstPoolData(static_cast<int>(rinfo->data()));
+      WriteExtraTaggedPoolData(static_cast<int>(rinfo->data()),
+                               RelocInfo::IsConstPool(rmode) ? kConstPoolTag
+                                                             : kVeneerPoolTag);
   } else {
     ASSERT(rmode > RelocInfo::LAST_COMPACT_ENUM);
     int saved_mode = rmode - RelocInfo::LAST_COMPACT_ENUM;
@@ -527,7 +532,7 @@ void RelocIterator::AdvanceReadId() {
 }
 
 
-void RelocIterator::AdvanceReadConstPoolData() {
+void RelocIterator::AdvanceReadPoolData() {
   int x = 0;
   for (int i = 0; i < kIntSize; i++) {
     x |= static_cast<int>(*--pos_) << i * kBitsPerByte;
@@ -669,10 +674,13 @@ void RelocIterator::next() {
           }
           Advance(kIntptrSize);
         }
-      } else if ((extra_tag == kConstPoolExtraTag) &&
-                 (GetTopTag() == kConstPoolTag)) {
-        if (SetMode(RelocInfo::CONST_POOL)) {
-          AdvanceReadConstPoolData();
+      } else if (extra_tag == kPoolExtraTag) {
+        int pool_type = GetTopTag();
+        ASSERT(pool_type == kConstPoolTag || pool_type == kVeneerPoolTag);
+        RelocInfo::Mode rmode = (pool_type == kConstPoolTag) ?
+          RelocInfo::CONST_POOL : RelocInfo::VENEER_POOL;
+        if (SetMode(rmode)) {
+          AdvanceReadPoolData();
           return;
         }
         Advance(kIntSize);
@@ -708,7 +716,10 @@ RelocIterator::RelocIterator(Code* code, int mode_mask) {
   last_id_ = 0;
   last_position_ = 0;
   byte* sequence = code->FindCodeAgeSequence();
-  if (sequence != NULL && !Code::IsYoungSequence(sequence)) {
+  // We get the isolate from the map, because at serialization time
+  // the code pointer has been cloned and isn't really in heap space.
+  Isolate* isolate = code->map()->GetIsolate();
+  if (sequence != NULL && !Code::IsYoungSequence(isolate, sequence)) {
     code_age_sequence_ = sequence;
   } else {
     code_age_sequence_ = NULL;
@@ -764,12 +775,7 @@ const char* RelocInfo::RelocModeName(RelocInfo::Mode rmode) {
       return "embedded object";
     case RelocInfo::CONSTRUCT_CALL:
       return "code target (js construct call)";
-    case RelocInfo::CODE_TARGET_CONTEXT:
-      return "code target (context)";
     case RelocInfo::DEBUG_BREAK:
-#ifndef ENABLE_DEBUGGER_SUPPORT
-      UNREACHABLE();
-#endif
       return "debug break";
     case RelocInfo::CODE_TARGET:
       return "code target";
@@ -793,10 +799,9 @@ const char* RelocInfo::RelocModeName(RelocInfo::Mode rmode) {
       return "internal reference";
     case RelocInfo::CONST_POOL:
       return "constant pool";
+    case RelocInfo::VENEER_POOL:
+      return "veneer pool";
     case RelocInfo::DEBUG_BREAK_SLOT:
-#ifndef ENABLE_DEBUGGER_SUPPORT
-      UNREACHABLE();
-#endif
       return "debug break slot";
     case RelocInfo::CODE_AGE_SEQUENCE:
       return "code_age_sequence";
@@ -846,7 +851,7 @@ void RelocInfo::Print(Isolate* isolate, FILE* out) {
 
 
 #ifdef VERIFY_HEAP
-void RelocInfo::Verify() {
+void RelocInfo::Verify(Isolate* isolate) {
   switch (rmode_) {
     case EMBEDDED_OBJECT:
       Object::VerifyPointer(target_object());
@@ -855,12 +860,7 @@ void RelocInfo::Verify() {
       Object::VerifyPointer(target_cell());
       break;
     case DEBUG_BREAK:
-#ifndef ENABLE_DEBUGGER_SUPPORT
-      UNREACHABLE();
-      break;
-#endif
     case CONSTRUCT_CALL:
-    case CODE_TARGET_CONTEXT:
     case CODE_TARGET_WITH_ID:
     case CODE_TARGET: {
       // convert inline target address to code object
@@ -868,7 +868,7 @@ void RelocInfo::Verify() {
       CHECK(addr != NULL);
       // Check that we can find the right code object.
       Code* code = Code::GetCodeFromTargetAddress(addr);
-      Object* found = code->GetIsolate()->FindCodeObject(addr);
+      Object* found = isolate->FindCodeObject(addr);
       CHECK(found->IsCode());
       CHECK(code->address() == HeapObject::cast(found)->address());
       break;
@@ -881,6 +881,7 @@ void RelocInfo::Verify() {
     case EXTERNAL_REFERENCE:
     case INTERNAL_REFERENCE:
     case CONST_POOL:
+    case VENEER_POOL:
     case DEBUG_BREAK_SLOT:
     case NONE32:
     case NONE64:
@@ -889,7 +890,7 @@ void RelocInfo::Verify() {
       UNREACHABLE();
       break;
     case CODE_AGE_SEQUENCE:
-      ASSERT(Code::IsYoungSequence(pc_) || code_age_stub()->IsCode());
+      ASSERT(Code::IsYoungSequence(isolate, pc_) || code_age_stub()->IsCode());
       break;
   }
 }
@@ -936,7 +937,7 @@ void ExternalReference::InitializeMathExpData() {
     // The rest is black magic. Do not attempt to understand it. It is
     // loosely based on the "expd" function published at:
     // http://herumi.blogspot.com/2011/08/fast-double-precision-exponential.html
-    const double constant3 = (1 << kTableSizeBits) / log(2.0);
+    const double constant3 = (1 << kTableSizeBits) / std::log(2.0);
     math_exp_constants_array[3] = constant3;
     math_exp_constants_array[4] =
         static_cast<double>(static_cast<int64_t>(3) << 51);
@@ -947,7 +948,7 @@ void ExternalReference::InitializeMathExpData() {
 
     math_exp_log_table_array = new double[kTableSize];
     for (int i = 0; i < kTableSize; i++) {
-      double value = pow(2, i / kTableSizeDouble);
+      double value = std::pow(2, i / kTableSizeDouble);
       uint64_t bits = BitCast<uint64_t, double>(value);
       bits &= (static_cast<uint64_t>(1) << 52) - 1;
       double mantissa = BitCast<double, uint64_t>(bits);
@@ -1000,11 +1001,6 @@ ExternalReference::ExternalReference(const IC_Utility& ic_utility,
                                      Isolate* isolate)
   : address_(Redirect(isolate, ic_utility.address())) {}
 
-#ifdef ENABLE_DEBUGGER_SUPPORT
-ExternalReference::ExternalReference(const Debug_Address& debug_address,
-                                     Isolate* isolate)
-  : address_(debug_address.address(isolate)) {}
-#endif
 
 ExternalReference::ExternalReference(StatsCounter* counter)
   : address_(reinterpret_cast<Address>(counter->GetInternalPointer())) {}
@@ -1027,14 +1023,6 @@ ExternalReference ExternalReference::
 
 
 ExternalReference ExternalReference::
-    incremental_evacuation_record_write_function(Isolate* isolate) {
-  return ExternalReference(Redirect(
-      isolate,
-      FUNCTION_ADDR(IncrementalMarking::RecordWriteForEvacuationFromCode)));
-}
-
-
-ExternalReference ExternalReference::
     store_buffer_overflow_function(Isolate* isolate) {
   return ExternalReference(Redirect(
       isolate,
@@ -1044,12 +1032,6 @@ ExternalReference ExternalReference::
 
 ExternalReference ExternalReference::flush_icache_function(Isolate* isolate) {
   return ExternalReference(Redirect(isolate, FUNCTION_ADDR(CPU::FlushICache)));
-}
-
-
-ExternalReference ExternalReference::perform_gc_function(Isolate* isolate) {
-  return
-      ExternalReference(Redirect(isolate, FUNCTION_ADDR(Runtime::PerformGC)));
 }
 
 
@@ -1088,13 +1070,6 @@ ExternalReference ExternalReference::date_cache_stamp(Isolate* isolate) {
 
 ExternalReference ExternalReference::stress_deopt_count(Isolate* isolate) {
   return ExternalReference(isolate->stress_deopt_count_address());
-}
-
-
-ExternalReference ExternalReference::transcendental_cache_array_address(
-    Isolate* isolate) {
-  return ExternalReference(
-      isolate->transcendental_cache()->cache_array_address());
 }
 
 
@@ -1229,13 +1204,6 @@ ExternalReference ExternalReference::old_data_space_allocation_limit_address(
 }
 
 
-ExternalReference ExternalReference::
-    new_space_high_promotion_mode_active_address(Isolate* isolate) {
-  return ExternalReference(
-      isolate->heap()->NewSpaceHighPromotionModeActiveAddress());
-}
-
-
 ExternalReference ExternalReference::handle_scope_level_address(
     Isolate* isolate) {
   return ExternalReference(HandleScope::current_level_address(isolate));
@@ -1335,6 +1303,30 @@ ExternalReference ExternalReference::address_of_uint32_bias() {
 }
 
 
+ExternalReference ExternalReference::is_profiling_address(Isolate* isolate) {
+  return ExternalReference(isolate->cpu_profiler()->is_profiling_address());
+}
+
+
+ExternalReference ExternalReference::invoke_function_callback(
+    Isolate* isolate) {
+  Address thunk_address = FUNCTION_ADDR(&InvokeFunctionCallback);
+  ExternalReference::Type thunk_type = ExternalReference::PROFILING_API_CALL;
+  ApiFunction thunk_fun(thunk_address);
+  return ExternalReference(&thunk_fun, thunk_type, isolate);
+}
+
+
+ExternalReference ExternalReference::invoke_accessor_getter_callback(
+    Isolate* isolate) {
+  Address thunk_address = FUNCTION_ADDR(&InvokeAccessorGetterCallback);
+  ExternalReference::Type thunk_type =
+      ExternalReference::PROFILING_GETTER_CALL;
+  ApiFunction thunk_fun(thunk_address);
+  return ExternalReference(&thunk_fun, thunk_type, isolate);
+}
+
+
 #ifndef V8_INTERPRETED_REGEXP
 
 ExternalReference ExternalReference::re_check_stack_guard_state(
@@ -1344,10 +1336,14 @@ ExternalReference ExternalReference::re_check_stack_guard_state(
   function = FUNCTION_ADDR(RegExpMacroAssemblerX64::CheckStackGuardState);
 #elif V8_TARGET_ARCH_IA32
   function = FUNCTION_ADDR(RegExpMacroAssemblerIA32::CheckStackGuardState);
+#elif V8_TARGET_ARCH_ARM64
+  function = FUNCTION_ADDR(RegExpMacroAssemblerARM64::CheckStackGuardState);
 #elif V8_TARGET_ARCH_ARM
   function = FUNCTION_ADDR(RegExpMacroAssemblerARM::CheckStackGuardState);
 #elif V8_TARGET_ARCH_MIPS
   function = FUNCTION_ADDR(RegExpMacroAssemblerMIPS::CheckStackGuardState);
+#elif V8_TARGET_ARCH_X87
+  function = FUNCTION_ADDR(RegExpMacroAssemblerX87::CheckStackGuardState);
 #else
   UNREACHABLE();
 #endif
@@ -1393,79 +1389,11 @@ ExternalReference ExternalReference::address_of_regexp_stack_memory_size(
 #endif  // V8_INTERPRETED_REGEXP
 
 
-static double add_two_doubles(double x, double y) {
-  return x + y;
-}
-
-
-static double sub_two_doubles(double x, double y) {
-  return x - y;
-}
-
-
-static double mul_two_doubles(double x, double y) {
-  return x * y;
-}
-
-
-static double div_two_doubles(double x, double y) {
-  return x / y;
-}
-
-
-static double mod_two_doubles(double x, double y) {
-  return modulo(x, y);
-}
-
-
-static double math_sin_double(double x) {
-  return sin(x);
-}
-
-
-static double math_cos_double(double x) {
-  return cos(x);
-}
-
-
-static double math_tan_double(double x) {
-  return tan(x);
-}
-
-
-static double math_log_double(double x) {
-  return log(x);
-}
-
-
-ExternalReference ExternalReference::math_sin_double_function(
-    Isolate* isolate) {
-  return ExternalReference(Redirect(isolate,
-                                    FUNCTION_ADDR(math_sin_double),
-                                    BUILTIN_FP_CALL));
-}
-
-
-ExternalReference ExternalReference::math_cos_double_function(
-    Isolate* isolate) {
-  return ExternalReference(Redirect(isolate,
-                                    FUNCTION_ADDR(math_cos_double),
-                                    BUILTIN_FP_CALL));
-}
-
-
-ExternalReference ExternalReference::math_tan_double_function(
-    Isolate* isolate) {
-  return ExternalReference(Redirect(isolate,
-                                    FUNCTION_ADDR(math_tan_double),
-                                    BUILTIN_FP_CALL));
-}
-
-
 ExternalReference ExternalReference::math_log_double_function(
     Isolate* isolate) {
+  typedef double (*d2d)(double x);
   return ExternalReference(Redirect(isolate,
-                                    FUNCTION_ADDR(math_log_double),
+                                    FUNCTION_ADDR(static_cast<d2d>(std::log)),
                                     BUILTIN_FP_CALL));
 }
 
@@ -1491,6 +1419,26 @@ ExternalReference ExternalReference::page_flags(Page* page) {
 
 ExternalReference ExternalReference::ForDeoptEntry(Address entry) {
   return ExternalReference(entry);
+}
+
+
+ExternalReference ExternalReference::cpu_features() {
+  ASSERT(CpuFeatures::initialized_);
+  return ExternalReference(&CpuFeatures::supported_);
+}
+
+
+ExternalReference ExternalReference::debug_after_break_target_address(
+    Isolate* isolate) {
+  return ExternalReference(isolate->debug()->after_break_target_address());
+}
+
+
+ExternalReference
+    ExternalReference::debug_restarter_frame_function_pointer_address(
+        Isolate* isolate) {
+  return ExternalReference(
+      isolate->debug()->restarter_frame_function_pointer_address());
 }
 
 
@@ -1536,12 +1484,16 @@ double power_double_double(double x, double y) {
   // special cases that are different.
   if ((x == 0.0 || std::isinf(x)) && std::isfinite(y)) {
     double f;
-    if (modf(y, &f) != 0.0) return ((x == 0.0) ^ (y > 0)) ? V8_INFINITY : 0;
+    if (std::modf(y, &f) != 0.0) {
+      return ((x == 0.0) ^ (y > 0)) ? V8_INFINITY : 0;
+    }
   }
 
   if (x == 2.0) {
     int y_int = static_cast<int>(y);
-    if (y == y_int) return ldexp(1.0, y_int);
+    if (y == y_int) {
+      return std::ldexp(1.0, y_int);
+    }
   }
 #endif
 
@@ -1550,7 +1502,7 @@ double power_double_double(double x, double y) {
   if (std::isnan(y) || ((x == 1 || x == -1) && std::isinf(y))) {
     return OS::nan_value();
   }
-  return pow(x, y);
+  return std::pow(x, y);
 }
 
 
@@ -1567,12 +1519,6 @@ ExternalReference ExternalReference::power_double_int_function(
   return ExternalReference(Redirect(isolate,
                                     FUNCTION_ADDR(power_double_int),
                                     BUILTIN_FP_INT_CALL));
-}
-
-
-static int native_compare_doubles(double y, double x) {
-  if (x == y) return EQUAL;
-  return x < y ? LESS : GREATER;
 }
 
 
@@ -1593,43 +1539,14 @@ bool EvalComparison(Token::Value op, double op1, double op2) {
 }
 
 
-ExternalReference ExternalReference::double_fp_operation(
-    Token::Value operation, Isolate* isolate) {
-  typedef double BinaryFPOperation(double x, double y);
-  BinaryFPOperation* function = NULL;
-  switch (operation) {
-    case Token::ADD:
-      function = &add_two_doubles;
-      break;
-    case Token::SUB:
-      function = &sub_two_doubles;
-      break;
-    case Token::MUL:
-      function = &mul_two_doubles;
-      break;
-    case Token::DIV:
-      function = &div_two_doubles;
-      break;
-    case Token::MOD:
-      function = &mod_two_doubles;
-      break;
-    default:
-      UNREACHABLE();
-  }
+ExternalReference ExternalReference::mod_two_doubles_operation(
+    Isolate* isolate) {
   return ExternalReference(Redirect(isolate,
-                                    FUNCTION_ADDR(function),
+                                    FUNCTION_ADDR(modulo),
                                     BUILTIN_FP_FP_CALL));
 }
 
 
-ExternalReference ExternalReference::compare_doubles(Isolate* isolate) {
-  return ExternalReference(Redirect(isolate,
-                                    FUNCTION_ADDR(native_compare_doubles),
-                                    BUILTIN_COMPARE_CALL));
-}
-
-
-#ifdef ENABLE_DEBUGGER_SUPPORT
 ExternalReference ExternalReference::debug_break(Isolate* isolate) {
   return ExternalReference(Redirect(isolate, FUNCTION_ADDR(Debug_Break)));
 }
@@ -1639,7 +1556,6 @@ ExternalReference ExternalReference::debug_step_in_fp_address(
     Isolate* isolate) {
   return ExternalReference(isolate->debug()->step_in_fp_addr());
 }
-#endif
 
 
 void PositionsRecorder::RecordPosition(int pos) {
@@ -1700,6 +1616,40 @@ bool PositionsRecorder::WriteRecordedPositions() {
 
   // Return whether something was written.
   return written;
+}
+
+
+MultiplierAndShift::MultiplierAndShift(int32_t d) {
+  ASSERT(d <= -2 || 2 <= d);
+  const uint32_t two31 = 0x80000000;
+  uint32_t ad = Abs(d);
+  uint32_t t = two31 + (uint32_t(d) >> 31);
+  uint32_t anc = t - 1 - t % ad;   // Absolute value of nc.
+  int32_t p = 31;                  // Init. p.
+  uint32_t q1 = two31 / anc;       // Init. q1 = 2**p/|nc|.
+  uint32_t r1 = two31 - q1 * anc;  // Init. r1 = rem(2**p, |nc|).
+  uint32_t q2 = two31 / ad;        // Init. q2 = 2**p/|d|.
+  uint32_t r2 = two31 - q2 * ad;   // Init. r2 = rem(2**p, |d|).
+  uint32_t delta;
+  do {
+    p++;
+    q1 *= 2;          // Update q1 = 2**p/|nc|.
+    r1 *= 2;          // Update r1 = rem(2**p, |nc|).
+    if (r1 >= anc) {  // Must be an unsigned comparison here.
+      q1++;
+      r1 = r1 - anc;
+    }
+    q2 *= 2;          // Update q2 = 2**p/|d|.
+    r2 *= 2;          // Update r2 = rem(2**p, |d|).
+    if (r2 >= ad) {   // Must be an unsigned comparison here.
+      q2++;
+      r2 = r2 - ad;
+    }
+    delta = ad - r2;
+  } while (q1 < delta || (q1 == delta && r1 == 0));
+  int32_t mul = static_cast<int32_t>(q2 + 1);
+  multiplier_ = (d < 0) ? -mul : mul;
+  shift_ = p - 32;
 }
 
 } }  // namespace v8::internal

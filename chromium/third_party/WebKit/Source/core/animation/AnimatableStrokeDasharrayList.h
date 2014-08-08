@@ -32,33 +32,36 @@
 #define AnimatableStrokeDasharrayList_h
 
 #include "core/animation/AnimatableRepeatable.h"
-#include "core/svg/SVGLength.h"
+#include "core/svg/SVGLengthList.h"
 
 namespace WebCore {
 
-class AnimatableStrokeDasharrayList: public AnimatableRepeatable {
+class AnimatableStrokeDasharrayList FINAL : public AnimatableRepeatable {
 public:
     virtual ~AnimatableStrokeDasharrayList() { }
 
-    static PassRefPtr<AnimatableStrokeDasharrayList> create(const Vector<SVGLength>& lengths)
+    static PassRefPtrWillBeRawPtr<AnimatableStrokeDasharrayList> create(PassRefPtr<SVGLengthList> lengths)
     {
-        return adoptRef(new AnimatableStrokeDasharrayList(lengths));
+        return adoptRefWillBeNoop(new AnimatableStrokeDasharrayList(lengths));
     }
 
-    Vector<SVGLength> toSVGLengthVector() const;
+    PassRefPtr<SVGLengthList> toSVGLengthList() const;
+
+    virtual void trace(Visitor*) OVERRIDE;
 
 protected:
-    virtual PassRefPtr<AnimatableValue> interpolateTo(const AnimatableValue*, double fraction) const OVERRIDE;
+    virtual PassRefPtrWillBeRawPtr<AnimatableValue> interpolateTo(const AnimatableValue*, double fraction) const OVERRIDE;
+    virtual bool usesDefaultInterpolationWith(const AnimatableValue*) const OVERRIDE;
 
 private:
-    AnimatableStrokeDasharrayList(const Vector<SVGLength>&);
+    AnimatableStrokeDasharrayList(PassRefPtr<SVGLengthList>);
     // This will consume the vector passed into it.
-    AnimatableStrokeDasharrayList(Vector<RefPtr<AnimatableValue> >& values)
+    AnimatableStrokeDasharrayList(WillBeHeapVector<RefPtrWillBeMember<AnimatableValue> >& values)
         : AnimatableRepeatable(values)
     {
     }
 
-    virtual AnimatableType type() const { return TypeStrokeDasharrayList; }
+    virtual AnimatableType type() const OVERRIDE { return TypeStrokeDasharrayList; }
 };
 
 DEFINE_ANIMATABLE_VALUE_TYPE_CASTS(AnimatableStrokeDasharrayList, isStrokeDasharrayList());

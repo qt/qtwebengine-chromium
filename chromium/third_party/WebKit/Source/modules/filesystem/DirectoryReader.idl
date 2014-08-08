@@ -29,7 +29,8 @@
  */
 
 [
-    NoInterfaceObject
+    NoInterfaceObject,
+    GarbageCollected,
 ] interface DirectoryReader {
     void readEntries(EntriesCallback successCallback, optional ErrorCallback errorCallback);
 };

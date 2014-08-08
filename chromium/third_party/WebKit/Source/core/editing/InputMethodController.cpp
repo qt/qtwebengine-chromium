@@ -34,11 +34,11 @@
 #include "core/dom/Text.h"
 #include "core/editing/Editor.h"
 #include "core/editing/TypingCommand.h"
+#include "core/frame/LocalFrame.h"
 #include "core/html/HTMLTextAreaElement.h"
 #include "core/page/Chrome.h"
 #include "core/page/ChromeClient.h"
 #include "core/page/EventHandler.h"
-#include "core/frame/Frame.h"
 #include "core/rendering/RenderObject.h"
 
 namespace WebCore {
@@ -56,12 +56,12 @@ InputMethodController::SelectionOffsetsScope::~SelectionOffsetsScope()
 
 // ----------------------------
 
-PassOwnPtr<InputMethodController> InputMethodController::create(Frame& frame)
+PassOwnPtr<InputMethodController> InputMethodController::create(LocalFrame& frame)
 {
     return adoptPtr(new InputMethodController(frame));
 }
 
-InputMethodController::InputMethodController(Frame& frame)
+InputMethodController::InputMethodController(LocalFrame& frame)
     : m_frame(frame)
     , m_compositionStart(0)
     , m_compositionEnd(0)
@@ -84,7 +84,7 @@ inline Editor& InputMethodController::editor() const
 
 void InputMethodController::clear()
 {
-    m_compositionNode = 0;
+    m_compositionNode = nullptr;
     m_customCompositionUnderlines.clear();
 }
 
@@ -95,7 +95,7 @@ bool InputMethodController::insertTextForConfirmedComposition(const String& text
 
 void InputMethodController::selectComposition() const
 {
-    RefPtr<Range> range = compositionRange();
+    RefPtrWillBeRawPtr<Range> range = compositionRange();
     if (!range)
         return;
 
@@ -192,7 +192,15 @@ bool InputMethodController::finishComposition(const String& text, FinishComposit
     // We should send this event before sending a TextEvent as written in Section 6.2.2 and 6.2.3 of
     // the DOM Event specification.
     if (Element* target = m_frame.document()->focusedElement()) {
-        RefPtr<CompositionEvent> event = CompositionEvent::create(EventTypeNames::compositionend, m_frame.domWindow(), text);
+        unsigned baseOffset = m_frame.selection().base().downstream().deprecatedEditingOffset();
+        Vector<CompositionUnderline> underlines;
+        for (size_t i = 0; i < m_customCompositionUnderlines.size(); ++i) {
+            CompositionUnderline underline = m_customCompositionUnderlines[i];
+            underline.startOffset -= baseOffset;
+            underline.endOffset -= baseOffset;
+            underlines.append(underline);
+        }
+        RefPtrWillBeRawPtr<CompositionEvent> event = CompositionEvent::create(EventTypeNames::compositionend, m_frame.domWindow(), text, underlines);
         target->dispatchEvent(event, IGNORE_EXCEPTION);
     }
 
@@ -203,7 +211,7 @@ bool InputMethodController::finishComposition(const String& text, FinishComposit
         TypingCommand::deleteSelection(*m_frame.document(), 0);
     }
 
-    m_compositionNode = 0;
+    m_compositionNode = nullptr;
     m_customCompositionUnderlines.clear();
 
     insertTextForConfirmedComposition(text);
@@ -223,7 +231,7 @@ void InputMethodController::setComposition(const String& text, const Vector<Comp
     // Updates styles before setting selection for composition to prevent
     // inserting the previous composition text into text nodes oddly.
     // See https://bugs.webkit.org/show_bug.cgi?id=46868
-    m_frame.document()->updateStyleIfNeeded();
+    m_frame.document()->updateRenderTreeIfNeeded();
 
     selectComposition();
 
@@ -246,19 +254,19 @@ void InputMethodController::setComposition(const String& text, const Vector<Comp
         // 3. Canceling the ongoing composition.
         //    Send a compositionend event when function deletes the existing composition node, i.e.
         //    m_compositionNode != 0 && test.isEmpty().
-        RefPtr<CompositionEvent> event;
+        RefPtrWillBeRawPtr<CompositionEvent> event = nullptr;
         if (!hasComposition()) {
             // We should send a compositionstart event only when the given text is not empty because this
             // function doesn't create a composition node when the text is empty.
             if (!text.isEmpty()) {
-                target->dispatchEvent(CompositionEvent::create(EventTypeNames::compositionstart, m_frame.domWindow(), m_frame.selectedText()));
-                event = CompositionEvent::create(EventTypeNames::compositionupdate, m_frame.domWindow(), text);
+                target->dispatchEvent(CompositionEvent::create(EventTypeNames::compositionstart, m_frame.domWindow(), m_frame.selectedText(), underlines));
+                event = CompositionEvent::create(EventTypeNames::compositionupdate, m_frame.domWindow(), text, underlines);
             }
         } else {
             if (!text.isEmpty())
-                event = CompositionEvent::create(EventTypeNames::compositionupdate, m_frame.domWindow(), text);
+                event = CompositionEvent::create(EventTypeNames::compositionupdate, m_frame.domWindow(), text, underlines);
             else
-                event = CompositionEvent::create(EventTypeNames::compositionend, m_frame.domWindow(), text);
+                event = CompositionEvent::create(EventTypeNames::compositionend, m_frame.domWindow(), text, underlines);
         }
         if (event.get())
             target->dispatchEvent(event, IGNORE_EXCEPTION);
@@ -271,7 +279,7 @@ void InputMethodController::setComposition(const String& text, const Vector<Comp
         TypingCommand::deleteSelection(*m_frame.document(), TypingCommand::PreventSpellChecking);
     }
 
-    m_compositionNode = 0;
+    m_compositionNode = nullptr;
     m_customCompositionUnderlines.clear();
 
     if (!text.isEmpty()) {
@@ -297,23 +305,23 @@ void InputMethodController::setComposition(const String& text, const Vector<Comp
                 m_customCompositionUnderlines[i].endOffset += baseOffset;
             }
             if (baseNode->renderer())
-                baseNode->renderer()->repaint();
+                baseNode->renderer()->paintInvalidationForWholeRenderer();
 
             unsigned start = std::min(baseOffset + selectionStart, extentOffset);
             unsigned end = std::min(std::max(start, baseOffset + selectionEnd), extentOffset);
-            RefPtr<Range> selectedRange = Range::create(baseNode->document(), baseNode, start, baseNode, end);
-            m_frame.selection().setSelectedRange(selectedRange.get(), DOWNSTREAM, false);
+            RefPtrWillBeRawPtr<Range> selectedRange = Range::create(baseNode->document(), baseNode, start, baseNode, end);
+            m_frame.selection().setSelectedRange(selectedRange.get(), DOWNSTREAM, FrameSelection::NonDirectional, NotUserTriggered);
         }
     }
 }
 
 void InputMethodController::setCompositionFromExistingText(const Vector<CompositionUnderline>& underlines, unsigned compositionStart, unsigned compositionEnd)
 {
-    Node* editable = m_frame.selection().rootEditableElement();
+    Element* editable = m_frame.selection().rootEditableElement();
     Position base = m_frame.selection().base().downstream();
     Node* baseNode = base.anchorNode();
     if (editable->firstChild() == baseNode && editable->lastChild() == baseNode && baseNode->isTextNode()) {
-        m_compositionNode = 0;
+        m_compositionNode = nullptr;
         m_customCompositionUnderlines.clear();
 
         if (base.anchorType() != Position::PositionIsOffsetInAnchor)
@@ -322,16 +330,17 @@ void InputMethodController::setCompositionFromExistingText(const Vector<Composit
             return;
 
         m_compositionNode = toText(baseNode);
-        m_compositionStart = compositionStart;
-        m_compositionEnd = compositionEnd;
+        RefPtrWillBeRawPtr<Range> range = PlainTextRange(compositionStart, compositionEnd).createRange(*editable);
+        m_compositionStart = range->startOffset();
+        m_compositionEnd = range->endOffset();
         m_customCompositionUnderlines = underlines;
         size_t numUnderlines = m_customCompositionUnderlines.size();
         for (size_t i = 0; i < numUnderlines; ++i) {
-            m_customCompositionUnderlines[i].startOffset += compositionStart;
-            m_customCompositionUnderlines[i].endOffset += compositionStart;
+            m_customCompositionUnderlines[i].startOffset += m_compositionStart;
+            m_customCompositionUnderlines[i].endOffset += m_compositionStart;
         }
         if (baseNode->renderer())
-            baseNode->renderer()->repaint();
+            baseNode->renderer()->paintInvalidationForWholeRenderer();
         return;
     }
 
@@ -341,21 +350,21 @@ void InputMethodController::setCompositionFromExistingText(const Vector<Composit
     setComposition(m_frame.selectedText(), underlines, 0, 0);
 }
 
-PassRefPtr<Range> InputMethodController::compositionRange() const
+PassRefPtrWillBeRawPtr<Range> InputMethodController::compositionRange() const
 {
     if (!hasComposition())
-        return 0;
+        return nullptr;
     unsigned length = m_compositionNode->length();
     unsigned start = std::min(m_compositionStart, length);
     unsigned end = std::min(std::max(start, m_compositionEnd), length);
     if (start >= end)
-        return 0;
+        return nullptr;
     return Range::create(m_compositionNode->document(), m_compositionNode.get(), start, m_compositionNode.get(), end);
 }
 
 PlainTextRange InputMethodController::getSelectionOffsets() const
 {
-    RefPtr<Range> range = m_frame.selection().selection().firstRange();
+    RefPtrWillBeRawPtr<Range> range = m_frame.selection().selection().firstRange();
     if (!range)
         return PlainTextRange();
     Node* editable = m_frame.selection().rootEditableElementOrTreeScopeRootNode();
@@ -371,11 +380,11 @@ bool InputMethodController::setSelectionOffsets(const PlainTextRange& selectionO
     if (!rootEditableElement)
         return false;
 
-    RefPtr<Range> range = selectionOffsets.createRange(*rootEditableElement);
+    RefPtrWillBeRawPtr<Range> range = selectionOffsets.createRange(*rootEditableElement);
     if (!range)
         return false;
 
-    return m_frame.selection().setSelectedRange(range.get(), VP_DEFAULT_AFFINITY, true);
+    return m_frame.selection().setSelectedRange(range.get(), VP_DEFAULT_AFFINITY, FrameSelection::NonDirectional, FrameSelection::CloseTyping);
 }
 
 bool InputMethodController::setEditableSelectionOffsets(const PlainTextRange& selectionOffsets)

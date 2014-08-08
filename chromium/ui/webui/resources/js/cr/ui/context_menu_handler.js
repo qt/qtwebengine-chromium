@@ -50,6 +50,7 @@ cr.define('cr.ui', function() {
       var win = doc.defaultView;
       this.showingEvents_.add(doc, 'keydown', this, true);
       this.showingEvents_.add(doc, 'mousedown', this, true);
+      this.showingEvents_.add(doc, 'touchstart', this, true);
       this.showingEvents_.add(doc, 'focus', this);
       this.showingEvents_.add(win, 'popstate', this);
       this.showingEvents_.add(win, 'resize', this);
@@ -155,6 +156,12 @@ cr.define('cr.ui', function() {
           else
             e.preventDefault();
           break;
+
+        case 'touchstart':
+          if (!this.menu.contains(e.target))
+            this.hideMenu();
+          break;
+
         case 'keydown':
           // keyIdentifier does not report 'Esc' correctly
           if (e.keyCode == 27 /* Esc */) {

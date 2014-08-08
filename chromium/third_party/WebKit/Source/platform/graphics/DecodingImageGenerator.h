@@ -42,17 +42,17 @@ class ImageFrameGenerator;
 //
 // This class does not own an ImageDecode. It does not own encoded data. It serves
 // as and adapter to ImageFrameGenerator which actually performs decoding.
-class DecodingImageGenerator : public SkImageGenerator {
+class DecodingImageGenerator FINAL : public SkImageGenerator {
 public:
     DecodingImageGenerator(PassRefPtr<ImageFrameGenerator>, const SkImageInfo&, size_t index);
     virtual ~DecodingImageGenerator();
 
-    // SkImageGenerator implementation.
-    virtual SkData* refEncodedData();
-    virtual bool getInfo(SkImageInfo*);
-    virtual bool getPixels(const SkImageInfo&, void* pixels, size_t rowBytes);
-
     void setGenerationId(size_t id) { m_generationId = id; }
+
+protected:
+    virtual SkData* onRefEncodedData() OVERRIDE;
+    virtual bool onGetInfo(SkImageInfo*) OVERRIDE;
+    virtual bool onGetPixels(const SkImageInfo&, void* pixels, size_t rowBytes, SkPMColor ctable[], int* ctableCount) OVERRIDE;
 
 private:
     RefPtr<ImageFrameGenerator> m_frameGenerator;

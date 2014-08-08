@@ -28,25 +28,26 @@
 
 #include "bindings/v8/ScriptWrappable.h"
 #include "modules/speech/SpeechRecognitionAlternative.h"
-#include "wtf/RefCounted.h"
-#include "wtf/Vector.h"
+#include "platform/heap/Handle.h"
 
 namespace WebCore {
 
-class SpeechRecognitionResult : public ScriptWrappable, public RefCounted<SpeechRecognitionResult> {
+class SpeechRecognitionResult FINAL : public GarbageCollectedFinalized<SpeechRecognitionResult>, public ScriptWrappable {
 public:
     ~SpeechRecognitionResult();
-    static PassRefPtr<SpeechRecognitionResult> create(const Vector<RefPtr<SpeechRecognitionAlternative> >&, bool final);
+    static SpeechRecognitionResult* create(const HeapVector<Member<SpeechRecognitionAlternative> >&, bool final);
 
     unsigned long length() { return m_alternatives.size(); }
     SpeechRecognitionAlternative* item(unsigned long index);
     bool isFinal() { return m_final; }
 
-private:
-    SpeechRecognitionResult(const Vector<RefPtr<SpeechRecognitionAlternative> >&, bool final);
+    void trace(Visitor*);
 
-    Vector<RefPtr<SpeechRecognitionAlternative> > m_alternatives;
+private:
+    SpeechRecognitionResult(const HeapVector<Member<SpeechRecognitionAlternative> >&, bool final);
+
     bool m_final;
+    HeapVector<Member<SpeechRecognitionAlternative> > m_alternatives;
 };
 
 } // namespace WebCore

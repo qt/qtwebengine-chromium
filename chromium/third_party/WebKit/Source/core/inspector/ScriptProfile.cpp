@@ -32,26 +32,21 @@
 #include "core/inspector/ScriptProfile.h"
 
 #include "bindings/v8/V8Binding.h"
-#include <v8-profiler.h>
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
+#include <v8.h>
 
 namespace WebCore {
 
 ScriptProfile::~ScriptProfile()
 {
-    const_cast<v8::CpuProfile*>(m_profile)->Delete();
+    m_profile->Delete();
 }
 
 String ScriptProfile::title() const
 {
     v8::HandleScope scope(v8::Isolate::GetCurrent());
     return toCoreString(m_profile->GetTitle());
-}
-
-unsigned int ScriptProfile::uid() const
-{
-    return m_profile->GetUid();
 }
 
 double ScriptProfile::idleTime() const
@@ -89,8 +84,8 @@ static PassRefPtr<TypeBuilder::Profiler::CPUProfileNode> buildInspectorObjectFor
         .setHitCount(node->GetHitCount())
         .setCallUID(node->GetCallUid())
         .setChildren(children.release())
-        .setDeoptReason(node->GetBailoutReason());
-    result->setId(node->GetNodeId());
+        .setDeoptReason(node->GetBailoutReason())
+        .setId(node->GetNodeId());
     return result.release();
 }
 
@@ -108,5 +103,13 @@ PassRefPtr<TypeBuilder::Array<int> > ScriptProfile::buildInspectorObjectForSampl
     return array.release();
 }
 
+PassRefPtr<TypeBuilder::Array<double> > ScriptProfile::buildInspectorObjectForTimestamps() const
+{
+    RefPtr<TypeBuilder::Array<double> > array = TypeBuilder::Array<double>::create();
+    int count = m_profile->GetSamplesCount();
+    for (int i = 0; i < count; i++)
+        array->addItem(m_profile->GetSampleTimestamp(i));
+    return array.release();
+}
 
 } // namespace WebCore

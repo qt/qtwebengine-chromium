@@ -46,14 +46,14 @@ enum ParsedURLStringTag { ParsedURLString };
 
 class PLATFORM_EXPORT KURL {
 public:
-    KURL()
-        : m_isValid(false)
-        , m_protocolIsInHTTPFamily(false)
-    {
-    }
-
+    KURL();
     KURL(const KURL&);
     KURL& operator=(const KURL&);
+
+#if COMPILER_SUPPORTS(CXX_RVALUE_REFERENCES)
+    KURL(KURL&&);
+    KURL& operator=(KURL&&);
+#endif
 
     // The argument is an absolute URL string. The string is assumed to be
     // output of KURL::string() called on a valid KURL object, or indiscernible
@@ -80,7 +80,7 @@ public:
     // For conversions from other structures that have already parsed and
     // canonicalized the URL. The input must be exactly what KURL would have
     // done with the same input.
-    KURL(const AtomicString& canonicalString, const url_parse::Parsed&, bool isValid);
+    KURL(const AtomicString& canonicalString, const url::Parsed&, bool isValid);
 
     String strippedForUseAsReferrer() const;
 
@@ -131,9 +131,11 @@ public:
     // terminated ASCII argument. The argument must be lower-case.
     bool protocolIs(const char*) const;
     bool protocolIsData() const { return protocolIs("data"); }
+    // This includes at least about:blank and about:srcdoc.
+    bool protocolIsAbout() const { return protocolIs("about"); }
     bool protocolIsInHTTPFamily() const;
     bool isLocalFile() const;
-    bool isBlankURL() const;
+    bool isAboutBlankURL() const; // Is exactly about:blank.
 
     bool setProtocol(const String&);
     void setHost(const String&);
@@ -171,7 +173,7 @@ public:
 
     operator const String&() const { return string(); }
 
-    const url_parse::Parsed& parsed() const { return m_parsed; }
+    const url::Parsed& parsed() const { return m_parsed; }
 
     const KURL* innerURL() const { return m_innerURL.get(); }
 
@@ -184,11 +186,11 @@ public:
 private:
     void init(const KURL& base, const String& relative, const WTF::TextEncoding* queryEncoding);
 
-    String componentString(const url_parse::Component&) const;
+    String componentString(const url::Component&) const;
     String stringForInvalidComponent() const;
 
     template<typename CHAR>
-    void replaceComponents(const url_canon::Replacements<CHAR>&);
+    void replaceComponents(const url::Replacements<CHAR>&);
 
     template <typename CHAR>
     void init(const KURL& base, const CHAR* relative, int relativeLength, const WTF::TextEncoding* queryEncoding);
@@ -197,7 +199,7 @@ private:
 
     bool m_isValid;
     bool m_protocolIsInHTTPFamily;
-    url_parse::Parsed m_parsed;
+    url::Parsed m_parsed;
     String m_string;
     OwnPtr<KURL> m_innerURL;
 };

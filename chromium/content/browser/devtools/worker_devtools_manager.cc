@@ -12,6 +12,7 @@
 #include "content/browser/devtools/devtools_manager_impl.h"
 #include "content/browser/devtools/devtools_protocol.h"
 #include "content/browser/devtools/devtools_protocol_constants.h"
+#include "content/browser/devtools/embedded_worker_devtools_manager.h"
 #include "content/browser/devtools/ipc_devtools_agent_host.h"
 #include "content/browser/devtools/worker_devtools_message_filter.h"
 #include "content/browser/worker_host/worker_service_impl.h"
@@ -27,19 +28,13 @@ namespace content {
 scoped_refptr<DevToolsAgentHost> DevToolsAgentHost::GetForWorker(
     int worker_process_id,
     int worker_route_id) {
-  return WorkerDevToolsManager::GetDevToolsAgentHostForWorker(
-      worker_process_id,
-      worker_route_id);
-}
-
-// Called on the UI thread.
-// static
-bool DevToolsAgentHost::HasForWorker(
-    int worker_process_id,
-    int worker_route_id) {
-  return WorkerDevToolsManager::HasDevToolsAgentHostForWorker(
-      worker_process_id,
-      worker_route_id);
+  if (WorkerService::EmbeddedSharedWorkerEnabled()) {
+    return EmbeddedWorkerDevToolsManager::GetInstance()
+        ->GetDevToolsAgentHostForWorker(worker_process_id, worker_route_id);
+  } else {
+    return WorkerDevToolsManager::GetDevToolsAgentHostForWorker(
+        worker_process_id, worker_route_id);
+  }
 }
 
 namespace {
@@ -217,6 +212,7 @@ struct WorkerDevToolsManager::InspectedWorker {
 
 // static
 WorkerDevToolsManager* WorkerDevToolsManager::GetInstance() {
+  DCHECK(!WorkerService::EmbeddedSharedWorkerEnabled());
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   return Singleton<WorkerDevToolsManager>::get();
 }
@@ -225,19 +221,12 @@ WorkerDevToolsManager* WorkerDevToolsManager::GetInstance() {
 DevToolsAgentHost* WorkerDevToolsManager::GetDevToolsAgentHostForWorker(
     int worker_process_id,
     int worker_route_id) {
+  DCHECK(!WorkerService::EmbeddedSharedWorkerEnabled());
   WorkerId id(worker_process_id, worker_route_id);
   AgentHosts::iterator it = g_agent_map.Get().find(id);
   if (it == g_agent_map.Get().end())
     return new WorkerDevToolsAgentHost(id);
   return it->second;
-}
-
-// static
-bool WorkerDevToolsManager::HasDevToolsAgentHostForWorker(
-    int worker_process_id,
-    int worker_route_id) {
-  WorkerId id(worker_process_id, worker_route_id);
-  return g_agent_map.Get().find(id) != g_agent_map.Get().end();
 }
 
 WorkerDevToolsManager::WorkerDevToolsManager() {
@@ -246,7 +235,7 @@ WorkerDevToolsManager::WorkerDevToolsManager() {
 WorkerDevToolsManager::~WorkerDevToolsManager() {
 }
 
-void WorkerDevToolsManager::WorkerCreated(
+bool WorkerDevToolsManager::WorkerCreated(
     WorkerProcessHost* worker,
     const WorkerProcessHost::WorkerInstance& instance) {
   for (TerminatedInspectedWorkers::iterator it = terminated_workers_.begin();
@@ -254,14 +243,13 @@ void WorkerDevToolsManager::WorkerCreated(
     if (instance.Matches(it->worker_url, it->worker_name,
                          instance.partition(),
                          instance.resource_context())) {
-      worker->Send(new DevToolsAgentMsg_PauseWorkerContextOnStart(
-          instance.worker_route_id()));
       WorkerId new_worker_id(worker->GetData().id, instance.worker_route_id());
       paused_workers_[new_worker_id] = it->old_worker_id;
       terminated_workers_.erase(it);
-      return;
+      return true;
     }
   }
+  return false;
 }
 
 void WorkerDevToolsManager::WorkerDestroyed(

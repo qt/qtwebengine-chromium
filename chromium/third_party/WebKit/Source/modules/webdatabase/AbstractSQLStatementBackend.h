@@ -28,16 +28,18 @@
 
 #include "modules/webdatabase/SQLError.h"
 #include "modules/webdatabase/SQLResultSet.h"
+#include "platform/heap/Handle.h"
 #include "wtf/ThreadSafeRefCounted.h"
 
 namespace WebCore {
 
-class AbstractSQLStatementBackend : public ThreadSafeRefCounted<AbstractSQLStatementBackend> {
+class AbstractSQLStatementBackend : public ThreadSafeRefCountedWillBeGarbageCollectedFinalized<AbstractSQLStatementBackend> {
 public:
     virtual ~AbstractSQLStatementBackend() { }
+    virtual void trace(Visitor*) { }
 
-    virtual PassRefPtr<SQLError> sqlError() const = 0;
-    virtual PassRefPtr<SQLResultSet> sqlResultSet() const = 0;
+    virtual SQLErrorData* sqlError() const = 0;
+    virtual SQLResultSet* sqlResultSet() const = 0;
 };
 
 } // namespace WebCore

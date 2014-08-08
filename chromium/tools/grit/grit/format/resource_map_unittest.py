@@ -109,13 +109,13 @@ const size_t kTheRcHeaderSize = arraysize(kTheRcHeader);''', output)
             <message name="IDS_PRODUCT_NAME" desc="The application name">
               Application
             </message>
-            <if expr="1">
+            <if expr="True">
               <message name="IDS_DEFAULT_TAB_TITLE_TITLE_CASE"
                   desc="In Title Case: The default title in a tab.">
                 New Tab
               </message>
             </if>
-            <if expr="0">
+            <if expr="False">
               <message name="IDS_DEFAULT_TAB_TITLE"
                   desc="The default title in a tab.">
                 New tab

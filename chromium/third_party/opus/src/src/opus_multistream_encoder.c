@@ -76,7 +76,7 @@ struct OpusMSEncoder {
    int variable_duration;
    int surround;
    opus_int32 bitrate_bps;
-   opus_val32 subframe_mem[3];
+   float subframe_mem[3];
    /* Encoder states go here */
    /* then opus_val32 window_mem[channels*120]; */
    /* then opus_val32 preemph_mem[channels]; */
@@ -205,7 +205,7 @@ static opus_val16 logSum(opus_val16 a, opus_val16 b)
    low = SHR32(diff, DB_SHIFT-1);
    frac = SHL16(diff - SHL16(low, DB_SHIFT-1), 16-DB_SHIFT);
 #else
-   low = floor(2*diff);
+   low = (int)floor(2*diff);
    frac = 2*diff - low;
 #endif
    return max + diff_table[low] + MULT16_16_Q15(frac, SUB16(diff_table[low+1], diff_table[low]));
@@ -238,7 +238,7 @@ void surround_analysis(const CELTMode *celt_mode, const void *pcm, opus_val16 *b
    upsample = resampling_factor(rate);
    frame_size = len*upsample;
 
-   for (LM=0;LM<=celt_mode->maxLM;LM++)
+   for (LM=0;LM<celt_mode->maxLM;LM++)
       if (celt_mode->shortMdctSize<<LM==frame_size)
          break;
 
@@ -256,7 +256,7 @@ void surround_analysis(const CELTMode *celt_mode, const void *pcm, opus_val16 *b
    {
       OPUS_COPY(in, mem+c*overlap, overlap);
       (*copy_channel_in)(x, 1, pcm, channels, c, len);
-      preemphasis(x, in+overlap, frame_size, 1, upsample, celt_mode->preemph, preemph_mem+c, 0);
+      celt_preemphasis(x, in+overlap, frame_size, 1, upsample, celt_mode->preemph, preemph_mem+c, 0);
       clt_mdct_forward(&celt_mode->mdct, in, freq, celt_mode->window, overlap, celt_mode->maxLM-LM, 1);
       if (upsample != 1)
       {
@@ -613,10 +613,11 @@ static void surround_rate_allocation(
       stream_offset = 20000;
    else
       stream_offset = st->bitrate_bps/st->layout.nb_channels/2;
+   stream_offset += 60*(Fs/frame_size-50);
    /* We start by giving each stream (coupled or uncoupled) the same bitrate.
       This models the main saving of coupled channels over uncoupled. */
    /* The LFE stream is an exception to the above and gets fewer bits. */
-   lfe_offset = 3500;
+   lfe_offset = 3500 + 60*(Fs/frame_size-50);
    /* Coupled streams get twice the mono rate after the first 20 kb/s. */
    coupled_ratio = 512;
    /* Should depend on the bitrate, for now we assume LFE gets 1/8 the bits of mono */
@@ -686,7 +687,7 @@ static int opus_multistream_encode_native
    VARDECL(opus_val16, bandSMR);
    unsigned char tmp_data[MS_FRAME_TMP];
    OpusRepacketizer rp;
-   opus_int32 complexity;
+   opus_int32 vbr;
    const CELTMode *celt_mode;
    opus_int32 bitrates[256];
    opus_val16 bandLogE[42];
@@ -703,7 +704,7 @@ static int opus_multistream_encode_native
 
    ptr = (char*)st + align(sizeof(OpusMSEncoder));
    opus_encoder_ctl((OpusEncoder*)ptr, OPUS_GET_SAMPLE_RATE(&Fs));
-   opus_encoder_ctl((OpusEncoder*)ptr, OPUS_GET_COMPLEXITY(&complexity));
+   opus_encoder_ctl((OpusEncoder*)ptr, OPUS_GET_VBR(&vbr));
    opus_encoder_ctl((OpusEncoder*)ptr, CELT_GET_MODE(&celt_mode));
 
    {
@@ -715,7 +716,11 @@ static int opus_multistream_encode_native
       delay_compensation -= Fs/400;
       frame_size = compute_frame_size(pcm, analysis_frame_size,
             st->variable_duration, channels, Fs, st->bitrate_bps,
-            delay_compensation, downmix, st->subframe_mem);
+            delay_compensation, downmix
+#ifndef DISABLE_FLOAT_API
+            , st->subframe_mem
+#endif
+            );
    }
 
    if (400*frame_size < Fs)
@@ -751,6 +756,9 @@ static int opus_multistream_encode_native
    /* Compute bitrate allocation between streams (this could be a lot better) */
    surround_rate_allocation(st, bitrates, frame_size);
 
+   if (!vbr)
+      max_data_bytes = IMIN(max_data_bytes, 3*st->bitrate_bps/(3*8*Fs/frame_size));
+
    ptr = (char*)st + align(sizeof(OpusMSEncoder));
    for (s=0;s<st->layout.nb_streams;s++)
    {
@@ -767,11 +775,11 @@ static int opus_multistream_encode_native
          equiv_rate = st->bitrate_bps;
          if (frame_size*50 < Fs)
             equiv_rate -= 60*(Fs/frame_size - 50)*st->layout.nb_channels;
-         if (equiv_rate > 112000)
+         if (equiv_rate > 10000*st->layout.nb_channels)
             opus_encoder_ctl(enc, OPUS_SET_BANDWIDTH(OPUS_BANDWIDTH_FULLBAND));
-         else if (equiv_rate > 76000)
+         else if (equiv_rate > 7000*st->layout.nb_channels)
             opus_encoder_ctl(enc, OPUS_SET_BANDWIDTH(OPUS_BANDWIDTH_SUPERWIDEBAND));
-         else if (equiv_rate > 48000)
+         else if (equiv_rate > 5000*st->layout.nb_channels)
             opus_encoder_ctl(enc, OPUS_SET_BANDWIDTH(OPUS_BANDWIDTH_WIDEBAND));
          else
             opus_encoder_ctl(enc, OPUS_SET_BANDWIDTH(OPUS_BANDWIDTH_NARROWBAND));
@@ -838,6 +846,8 @@ static int opus_multistream_encode_native
       /* Reserve three bytes for the last stream and four for the others */
       curr_max -= IMAX(0,4*(st->layout.nb_streams-s-1)-1);
       curr_max = IMIN(curr_max,MS_FRAME_TMP);
+      if (!vbr && s == st->layout.nb_streams-1)
+         opus_encoder_ctl(enc, OPUS_SET_BITRATE(curr_max*(8*Fs/frame_size)));
       len = opus_encode_native(enc, buf, frame_size, tmp_data, curr_max, lsb_depth,
             pcm, analysis_frame_size, c1, c2, st->layout.nb_channels, downmix);
       if (len<0)
@@ -849,14 +859,14 @@ static int opus_multistream_encode_native
          while taking into account the fact that the encoder can now return
          more than one frame at a time (e.g. 60 ms CELT-only) */
       opus_repacketizer_cat(&rp, tmp_data, len);
-      len = opus_repacketizer_out_range_impl(&rp, 0, opus_repacketizer_get_nb_frames(&rp), data, max_data_bytes-tot_size, s != st->layout.nb_streams-1);
+      len = opus_repacketizer_out_range_impl(&rp, 0, opus_repacketizer_get_nb_frames(&rp),
+            data, max_data_bytes-tot_size, s != st->layout.nb_streams-1, !vbr && s == st->layout.nb_streams-1);
       data += len;
       tot_size += len;
    }
    /*printf("\n");*/
    RESTORE_STACK;
    return tot_size;
-
 }
 
 #if !defined(DISABLE_FLOAT_API)
@@ -1018,6 +1028,7 @@ int opus_multistream_encoder_ctl(OpusMSEncoder *st, int request, ...)
    case OPUS_GET_SAMPLE_RATE_REQUEST:
    case OPUS_GET_INBAND_FEC_REQUEST:
    case OPUS_GET_FORCE_CHANNELS_REQUEST:
+   case OPUS_GET_PREDICTION_DISABLED_REQUEST:
    {
       OpusEncoder *enc;
       /* For int32* GET params, just query the first stream */
@@ -1063,6 +1074,7 @@ int opus_multistream_encoder_ctl(OpusMSEncoder *st, int request, ...)
    case OPUS_SET_DTX_REQUEST:
    case OPUS_SET_FORCE_MODE_REQUEST:
    case OPUS_SET_FORCE_CHANNELS_REQUEST:
+   case OPUS_SET_PREDICTION_DISABLED_REQUEST:
    {
       int s;
       /* This works for int32 params */
@@ -1119,6 +1131,29 @@ int opus_multistream_encoder_ctl(OpusMSEncoder *st, int request, ...)
           goto bad_arg;
        }
        *value = st->variable_duration;
+   }
+   break;
+   case OPUS_RESET_STATE:
+   {
+      int s;
+      st->subframe_mem[0] = st->subframe_mem[1] = st->subframe_mem[2] = 0;
+      if (st->surround)
+      {
+         OPUS_CLEAR(ms_get_preemph_mem(st), st->layout.nb_channels);
+         OPUS_CLEAR(ms_get_window_mem(st), st->layout.nb_channels*120);
+      }
+      for (s=0;s<st->layout.nb_streams;s++)
+      {
+         OpusEncoder *enc;
+         enc = (OpusEncoder*)ptr;
+         if (s < st->layout.nb_coupled_streams)
+            ptr += align(coupled_size);
+         else
+            ptr += align(mono_size);
+         ret = opus_encoder_ctl(enc, OPUS_RESET_STATE);
+         if (ret != OPUS_OK)
+            break;
+      }
    }
    break;
    default:

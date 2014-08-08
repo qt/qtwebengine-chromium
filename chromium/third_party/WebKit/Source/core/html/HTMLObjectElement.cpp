@@ -24,14 +24,13 @@
 #include "config.h"
 #include "core/html/HTMLObjectElement.h"
 
-#include "HTMLNames.h"
 #include "bindings/v8/ScriptEventListener.h"
+#include "core/HTMLNames.h"
 #include "core/dom/Attribute.h"
 #include "core/dom/ElementTraversal.h"
-#include "core/dom/NodeList.h"
+#include "core/dom/TagCollection.h"
 #include "core/dom/Text.h"
 #include "core/dom/shadow/ShadowRoot.h"
-#include "core/events/ThreadLocalEventNames.h"
 #include "core/fetch/ImageResource.h"
 #include "core/html/FormDataList.h"
 #include "core/html/HTMLDocument.h"
@@ -53,20 +52,28 @@ inline HTMLObjectElement::HTMLObjectElement(Document& document, HTMLFormElement*
     : HTMLPlugInElement(objectTag, document, createdByParser, ShouldNotPreferPlugInsForImages)
     , m_useFallbackContent(false)
 {
-    setForm(form ? form : findFormAncestor());
     ScriptWrappable::init(this);
+    associateByParser(form);
 }
 
 inline HTMLObjectElement::~HTMLObjectElement()
 {
+#if !ENABLE(OILPAN)
     setForm(0);
+#endif
 }
 
-PassRefPtr<HTMLObjectElement> HTMLObjectElement::create(Document& document, HTMLFormElement* form, bool createdByParser)
+PassRefPtrWillBeRawPtr<HTMLObjectElement> HTMLObjectElement::create(Document& document, HTMLFormElement* form, bool createdByParser)
 {
-    RefPtr<HTMLObjectElement> element = adoptRef(new HTMLObjectElement(document, form, createdByParser));
+    RefPtrWillBeRawPtr<HTMLObjectElement> element = adoptRefWillBeNoop(new HTMLObjectElement(document, form, createdByParser));
     element->ensureUserAgentShadowRoot();
     return element.release();
+}
+
+void HTMLObjectElement::trace(Visitor* visitor)
+{
+    FormAssociatedElement::trace(visitor);
+    HTMLPlugInElement::trace(visitor);
 }
 
 RenderWidget* HTMLObjectElement::existingRenderWidget() const
@@ -98,24 +105,24 @@ void HTMLObjectElement::parseAttribute(const QualifiedName& name, const AtomicSt
         size_t pos = m_serviceType.find(";");
         if (pos != kNotFound)
             m_serviceType = m_serviceType.left(pos);
-        if (renderer())
-            setNeedsWidgetUpdate(true);
+        // FIXME: What is the right thing to do here? Should we supress the
+        // reload stuff when a persistable widget-type is specified?
+        reloadPluginOnAttributeChange(name);
+        if (!renderer())
+            requestPluginCreationWithoutRendererIfPossible();
     } else if (name == dataAttr) {
         m_url = stripLeadingAndTrailingHTMLSpaces(value);
-        if (renderer()) {
+        if (renderer() && isImageType()) {
             setNeedsWidgetUpdate(true);
-            if (isImageType()) {
-                if (!m_imageLoader)
-                    m_imageLoader = adoptPtr(new HTMLImageLoader(this));
-                m_imageLoader->updateFromElementIgnoringPreviousError();
-            }
+            if (!m_imageLoader)
+                m_imageLoader = HTMLImageLoader::create(this);
+            m_imageLoader->updateFromElementIgnoringPreviousError();
+        } else {
+            reloadPluginOnAttributeChange(name);
         }
     } else if (name == classidAttr) {
         m_classId = value;
-        if (renderer())
-            setNeedsWidgetUpdate(true);
-    } else if (name == onbeforeloadAttr) {
-        setAttributeEventListener(EventTypeNames::beforeload, createAttributeEventListener(this, name, value));
+        reloadPluginOnAttributeChange(name);
     } else {
         HTMLPlugInElement::parseAttribute(name, value);
     }
@@ -126,7 +133,7 @@ static void mapDataParamToSrc(Vector<String>* paramNames, Vector<String>* paramV
     // Some plugins don't understand the "data" attribute of the OBJECT tag (i.e. Real and WMP
     // require "src" attribute).
     int srcIndex = -1, dataIndex = -1;
-    for (unsigned int i = 0; i < paramNames->size(); ++i) {
+    for (unsigned i = 0; i < paramNames->size(); ++i) {
         if (equalIgnoringCase((*paramNames)[i], "src"))
             srcIndex = i;
         else if (equalIgnoringCase((*paramNames)[i], "data"))
@@ -147,11 +154,7 @@ void HTMLObjectElement::parametersForPlugin(Vector<String>& paramNames, Vector<S
 
     // Scan the PARAM children and store their name/value pairs.
     // Get the URL and type from the params if we don't already have them.
-    for (Node* child = firstChild(); child; child = child->nextSibling()) {
-        if (!child->hasTagName(paramTag))
-            continue;
-
-        HTMLParamElement* p = toHTMLParamElement(child);
+    for (HTMLParamElement* p = Traversal<HTMLParamElement>::firstChild(*this); p; p = Traversal<HTMLParamElement>::nextSibling(*p)) {
         String name = p->name();
         if (name.isEmpty())
             continue;
@@ -185,12 +188,13 @@ void HTMLObjectElement::parametersForPlugin(Vector<String>& paramNames, Vector<S
 
     // Turn the attributes of the <object> element into arrays, but don't override <param> values.
     if (hasAttributes()) {
-        for (unsigned i = 0; i < attributeCount(); ++i) {
-            const Attribute* attribute = attributeItem(i);
-            const AtomicString& name = attribute->name().localName();
+        AttributeCollection attributes = this->attributes();
+        AttributeCollection::const_iterator end = attributes.end();
+        for (AttributeCollection::const_iterator it = attributes.begin(); it != end; ++it) {
+            const AtomicString& name = it->name().localName();
             if (!uniqueParamNames.contains(name.impl())) {
                 paramNames.append(name.string());
-                paramValues.append(attribute->value().string());
+                paramValues.append(it->value().string());
             }
         }
     }
@@ -217,8 +221,9 @@ bool HTMLObjectElement::hasFallbackContent() const
         if (child->isTextNode()) {
             if (!toText(child)->containsOnlyWhitespace())
                 return true;
-        } else if (!child->hasTagName(paramTag))
+        } else if (!isHTMLParamElement(*child)) {
             return true;
+        }
     }
     return false;
 }
@@ -237,7 +242,7 @@ bool HTMLObjectElement::shouldAllowQuickTimeClassIdQuirk()
         || !equalIgnoringCase(classId(), "clsid:02BF25D5-8C17-4B23-BC80-D3488ABDDC6B"))
         return false;
 
-    RefPtr<NodeList> metaElements = document().getElementsByTagName(HTMLNames::metaTag.localName());
+    RefPtrWillBeRawPtr<TagCollection> metaElements = document().getElementsByTagName(HTMLNames::metaTag.localName());
     unsigned length = metaElements->length();
     for (unsigned i = 0; i < length; ++i) {
         ASSERT(metaElements->item(i)->isHTMLElement());
@@ -262,6 +267,30 @@ bool HTMLObjectElement::hasValidClassId()
     return classId().isEmpty();
 }
 
+void HTMLObjectElement::reloadPluginOnAttributeChange(const QualifiedName& name)
+{
+    // Following,
+    //   http://www.whatwg.org/specs/web-apps/current-work/#the-object-element
+    //   (Enumerated list below "Whenever one of the following conditions occur:")
+    //
+    // the updating of certain attributes should bring about "redetermination"
+    // of what the element contains.
+    bool needsInvalidation;
+    if (name == typeAttr) {
+        needsInvalidation = !fastHasAttribute(classidAttr) && !fastHasAttribute(dataAttr);
+    } else if (name == dataAttr) {
+        needsInvalidation = !fastHasAttribute(classidAttr);
+    } else if (name == classidAttr) {
+        needsInvalidation = true;
+    } else {
+        ASSERT_NOT_REACHED();
+        needsInvalidation = false;
+    }
+    setNeedsWidgetUpdate(true);
+    if (needsInvalidation)
+        setNeedsStyleRecalc(SubtreeStyleChange);
+}
+
 // FIXME: This should be unified with HTMLEmbedElement::updateWidget and
 // moved down into HTMLPluginElement.cpp
 void HTMLObjectElement::updateWidgetInternal()
@@ -270,14 +299,18 @@ void HTMLObjectElement::updateWidgetInternal()
     ASSERT(needsWidgetUpdate());
     setNeedsWidgetUpdate(false);
     // FIXME: This should ASSERT isFinishedParsingChildren() instead.
-    if (!isFinishedParsingChildren())
+    if (!isFinishedParsingChildren()) {
+        dispatchErrorEvent();
         return;
+    }
 
     // FIXME: I'm not sure it's ever possible to get into updateWidget during a
     // removal, but just in case we should avoid loading the frame to prevent
     // security bugs.
-    if (!SubframeLoadingDisabler::canLoadFrame(*this))
+    if (!SubframeLoadingDisabler::canLoadFrame(*this)) {
+        dispatchErrorEvent();
         return;
+    }
 
     String url = this->url();
     String serviceType = m_serviceType;
@@ -288,20 +321,21 @@ void HTMLObjectElement::updateWidgetInternal()
     parametersForPlugin(paramNames, paramValues, url, serviceType);
 
     // Note: url is modified above by parametersForPlugin.
-    if (!allowedToLoadFrameURL(url))
+    if (!allowedToLoadFrameURL(url)) {
+        dispatchErrorEvent();
+        return;
+    }
+
+    // FIXME: Is it possible to get here without a renderer now that we don't have beforeload events?
+    if (!renderer())
         return;
 
-    bool fallbackContent = hasFallbackContent();
-    renderEmbeddedObject()->setHasFallbackContent(fallbackContent);
-
-    RefPtr<HTMLObjectElement> protect(this); // beforeload and plugin loading can make arbitrary DOM mutations.
-    bool beforeLoadAllowedLoad = dispatchBeforeLoadEvent(url);
-    if (!renderer()) // Do not load the plugin if beforeload removed this element or its renderer.
-        return;
-
-    bool success = beforeLoadAllowedLoad && hasValidClassId() && requestObject(url, serviceType, paramNames, paramValues);
-    if (!success && fallbackContent)
-        renderFallbackContent();
+    if (!hasValidClassId() || !requestObject(url, serviceType, paramNames, paramValues)) {
+        if (!url.isEmpty())
+            dispatchErrorEvent();
+        if (hasFallbackContent())
+            renderFallbackContent();
+    }
 }
 
 bool HTMLObjectElement::rendererIsNeeded(const RenderStyle& style)
@@ -329,7 +363,7 @@ void HTMLObjectElement::childrenChanged(bool changedByParser, Node* beforeChange
 {
     if (inDocument() && !useFallbackContent()) {
         setNeedsWidgetUpdate(true);
-        setNeedsStyleRecalc();
+        setNeedsStyleRecalc(SubtreeStyleChange);
     }
     HTMLPlugInElement::childrenChanged(changedByParser, beforeChange, afterChange, childCountDelta);
 }
@@ -339,6 +373,16 @@ bool HTMLObjectElement::isURLAttribute(const Attribute& attribute) const
     return attribute.name() == codebaseAttr || attribute.name() == dataAttr
         || (attribute.name() == usemapAttr && attribute.value().string()[0] != '#')
         || HTMLPlugInElement::isURLAttribute(attribute);
+}
+
+bool HTMLObjectElement::hasLegalLinkAttribute(const QualifiedName& name) const
+{
+    return name == classidAttr || name == dataAttr || name == codebaseAttr || HTMLPlugInElement::hasLegalLinkAttribute(name);
+}
+
+const QualifiedName& HTMLObjectElement::subResourceAttributeName() const
+{
+    return dataAttr;
 }
 
 const AtomicString HTMLObjectElement::imageSourceURL() const
@@ -385,12 +429,12 @@ void HTMLObjectElement::renderFallbackContent()
 bool HTMLObjectElement::isExposed() const
 {
     // http://www.whatwg.org/specs/web-apps/current-work/#exposed
-    for (Node* ancestor = parentNode(); ancestor; ancestor = ancestor->parentNode()) {
-        if (ancestor->hasTagName(objectTag) && toHTMLObjectElement(ancestor)->isExposed())
+    for (HTMLObjectElement* ancestor = Traversal<HTMLObjectElement>::firstAncestor(*this); ancestor; ancestor = Traversal<HTMLObjectElement>::firstAncestor(*ancestor)) {
+        if (ancestor->isExposed())
             return false;
     }
-    for (Node* node = firstChild(); node; node = NodeTraversal::next(*node, this)) {
-        if (node->hasTagName(objectTag) || node->hasTagName(embedTag))
+    for (HTMLElement* element = Traversal<HTMLElement>::firstWithin(*this); element; element = Traversal<HTMLElement>::next(*element, this)) {
+        if (isHTMLObjectElement(*element) || isHTMLEmbedElement(*element))
             return false;
     }
     return true;
@@ -401,31 +445,18 @@ bool HTMLObjectElement::containsJavaApplet() const
     if (MIMETypeRegistry::isJavaAppletMIMEType(getAttribute(typeAttr)))
         return true;
 
-    for (Element* child = ElementTraversal::firstWithin(*this); child; child = ElementTraversal::nextSkippingChildren(*child, this)) {
-        if (child->hasTagName(paramTag)
+    for (HTMLElement* child = Traversal<HTMLElement>::firstChild(*this); child; child = Traversal<HTMLElement>::nextSibling(*child)) {
+        if (isHTMLParamElement(*child)
                 && equalIgnoringCase(child->getNameAttribute(), "type")
                 && MIMETypeRegistry::isJavaAppletMIMEType(child->getAttribute(valueAttr).string()))
             return true;
-        if (child->hasTagName(objectTag) && toHTMLObjectElement(child)->containsJavaApplet())
+        if (isHTMLObjectElement(*child) && toHTMLObjectElement(*child).containsJavaApplet())
             return true;
-        if (child->hasTagName(appletTag))
+        if (isHTMLAppletElement(*child))
             return true;
     }
 
     return false;
-}
-
-void HTMLObjectElement::addSubresourceAttributeURLs(ListHashSet<KURL>& urls) const
-{
-    HTMLPlugInElement::addSubresourceAttributeURLs(urls);
-
-    addSubresourceURL(urls, document().completeURL(getAttribute(dataAttr)));
-
-    // FIXME: Passing a string that starts with "#" to the completeURL function does
-    // not seem like it would work. The image element has similar but not identical code.
-    const AtomicString& useMap = getAttribute(usemapAttr);
-    if (useMap.startsWith('#'))
-        addSubresourceURL(urls, document().completeURL(useMap));
 }
 
 void HTMLObjectElement::didMoveToNewDocument(Document& oldDocument)

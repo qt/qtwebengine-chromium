@@ -58,7 +58,6 @@
 #include "content/browser/renderer_host/media/video_capture_controller_event_handler.h"
 #include "content/common/content_export.h"
 #include "content/common/media/video_capture.h"
-#include "media/video/capture/video_capture.h"
 #include "media/video/capture/video_capture_device.h"
 #include "media/video/capture/video_capture_types.h"
 
@@ -98,11 +97,15 @@ class CONTENT_EXPORT VideoCaptureController {
   // prematurely closed.
   void StopSession(int session_id);
 
-  // Return a buffer previously given in
-  // VideoCaptureControllerEventHandler::OnBufferReady.
+  // Return a buffer with id |buffer_id| previously given in
+  // VideoCaptureControllerEventHandler::OnBufferReady. In the case that the
+  // buffer was backed by a texture, |sync_point| will be waited on before
+  // destroying or recycling the texture, to synchronize with texture users in
+  // the renderer process.
   void ReturnBuffer(const VideoCaptureControllerID& id,
                     VideoCaptureControllerEventHandler* event_handler,
-                    int buffer_id);
+                    int buffer_id,
+                    const std::vector<uint32>& sync_points);
 
   const media::VideoCaptureFormat& GetVideoCaptureFormat() const;
 
@@ -113,11 +116,11 @@ class CONTENT_EXPORT VideoCaptureController {
   typedef std::list<ControllerClient*> ControllerClients;
 
   // Worker functions on IO thread. Called by the VideoCaptureDeviceClient.
-  void DoIncomingCapturedI420BufferOnIOThread(
-      scoped_refptr<media::VideoCaptureDevice::Client::Buffer> buffer,
-      const gfx::Size& dimensions,
-      int frame_rate,
-      base::Time timestamp);
+  void DoIncomingCapturedVideoFrameOnIOThread(
+      const scoped_refptr<media::VideoCaptureDevice::Client::Buffer>& buffer,
+      const media::VideoCaptureFormat& format,
+      const scoped_refptr<media::VideoFrame>& frame,
+      base::TimeTicks timestamp);
   void DoErrorOnIOThread();
   void DoDeviceStoppedOnIOThread();
   void DoBufferDestroyedOnIOThread(int buffer_id_to_drop);

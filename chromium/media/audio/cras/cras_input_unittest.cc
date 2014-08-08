@@ -2,17 +2,21 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <unistd.h>
-
 #include <string>
 
 #include "base/synchronization/waitable_event.h"
 #include "base/test/test_timeouts.h"
 #include "base/time/time.h"
 #include "media/audio/cras/audio_manager_cras.h"
-#include "media/audio/cras/cras_input.h"
+#include "media/audio/fake_audio_log_factory.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+// cras_util.h defines custom min/max macros which break compilation, so ensure
+// it's not included until last.  #if avoids presubmit errors.
+#if defined(USE_CRAS)
+#include "media/audio/cras/cras_input.h"
+#endif
 
 using testing::_;
 using testing::AtLeast;
@@ -24,14 +28,15 @@ namespace media {
 
 class MockAudioInputCallback : public AudioInputStream::AudioInputCallback {
  public:
-  MOCK_METHOD5(OnData, void(
-      AudioInputStream*, const uint8*, uint32, uint32, double));
+  MOCK_METHOD4(OnData,
+               void(AudioInputStream*, const AudioBus*, uint32, double));
   MOCK_METHOD1(OnError, void(AudioInputStream*));
-  MOCK_METHOD1(OnClose, void(AudioInputStream*));
 };
 
 class MockAudioManagerCrasInput : public AudioManagerCras {
  public:
+  MockAudioManagerCrasInput() : AudioManagerCras(&fake_audio_log_factory_) {}
+
   // We need to override this function in order to skip checking the number
   // of active output streams. It is because the number of active streams
   // is managed inside MakeAudioInputStream, and we don't use
@@ -40,6 +45,9 @@ class MockAudioManagerCrasInput : public AudioManagerCras {
     DCHECK(stream);
     delete stream;
   }
+
+ private:
+  FakeAudioLogFactory fake_audio_log_factory_;
 };
 
 class CrasInputStreamTest : public testing::Test {
@@ -77,14 +85,9 @@ class CrasInputStreamTest : public testing::Test {
     // samples can be provided when doing non-integer SRC.  For example
     // converting from 192k to 44.1k is a ratio of 4.35 to 1.
     MockAudioInputCallback mock_callback;
-    unsigned int expected_size = (kTestFramesPerPacket - 8) *
-                                 params.channels() *
-                                 params.bits_per_sample() / 8;
-
     base::WaitableEvent event(false, false);
 
-    EXPECT_CALL(mock_callback,
-                OnData(test_stream, _, Ge(expected_size), _, _))
+    EXPECT_CALL(mock_callback, OnData(test_stream, _, _, _))
         .WillOnce(InvokeWithoutArgs(&event, &base::WaitableEvent::Signal));
 
     test_stream->Start(&mock_callback);
@@ -93,8 +96,6 @@ class CrasInputStreamTest : public testing::Test {
     EXPECT_TRUE(event.TimedWait(TestTimeouts::action_timeout()));
 
     test_stream->Stop();
-
-    EXPECT_CALL(mock_callback, OnClose(test_stream)).Times(1);
     test_stream->Close();
   }
 

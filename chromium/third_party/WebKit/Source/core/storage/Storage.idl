@@ -23,18 +23,21 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-interface Storage {
-    [RaisesException, ImplementedAs=anonymousIndexedGetter, NotEnumerable] getter DOMString(unsigned long index);
-    [RaisesException, ImplementedAs=anonymousIndexedSetter] setter DOMString (unsigned long index, DOMString value);
-    [ImplementedAs=anonymousIndexedDeleter, RaisesException] deleter boolean (unsigned long index);
-    [RaisesException, ImplementedAs=anonymousNamedGetter] getter DOMString(DOMString name);
-    [RaisesException, ImplementedAs=anonymousNamedSetter] setter DOMString(DOMString name, DOMString value);
-    [ImplementedAs=anonymousNamedDeleter, RaisesException] deleter boolean (DOMString name);
-    [NotEnumerable, RaisesException=Getter] readonly attribute unsigned long length;
-    [NotEnumerable, TreatReturnedNullStringAs=Null, RaisesException] DOMString key(unsigned long index);
-    [NotEnumerable, TreatReturnedNullStringAs=Null, PerWorldBindings, ActivityLogging=ForIsolatedWorlds, RaisesException] DOMString getItem(DOMString key);
-    [NotEnumerable, RaisesException, PerWorldBindings, ActivityLogging=ForIsolatedWorlds] void setItem(DOMString key, DOMString data);
-    [NotEnumerable, RaisesException, PerWorldBindings, ActivityLogging=ForIsolatedWorlds] void removeItem(DOMString key);
-    [NotEnumerable, RaisesException, PerWorldBindings, ActivityLogging=ForIsolatedWorlds] void clear();
-};
+[
+    WillBeGarbageCollected
+] interface Storage {
+    [NotEnumerable, RaisesException] getter DOMString (unsigned long index);
+    [RaisesException] setter DOMString (unsigned long index, DOMString value);
+    [RaisesException] deleter boolean (unsigned long index);
 
+    [RaisesException] getter DOMString (DOMString name);
+    [RaisesException] setter DOMString (DOMString name, DOMString value);
+    [RaisesException] deleter boolean (DOMString name);
+
+    [NotEnumerable, RaisesException=Getter] readonly attribute unsigned long length;
+    [NotEnumerable, RaisesException, TreatReturnedNullStringAs=Null] DOMString key(unsigned long index);
+    [LogActivity, NotEnumerable, RaisesException, TreatReturnedNullStringAs=Null] DOMString getItem(DOMString key);
+    [LogActivity, NotEnumerable, RaisesException] void setItem(DOMString key, DOMString data);
+    [LogActivity, NotEnumerable, RaisesException] void removeItem(DOMString key);
+    [LogActivity, NotEnumerable, RaisesException] void clear();
+};

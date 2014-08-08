@@ -53,13 +53,13 @@ void OverrideLocaleWithCocoaLocale() {
 
 // Remove the Windows-style accelerator marker and change "..." into an
 // ellipsis.  Returns the result in an autoreleased NSString.
-NSString* FixUpWindowsStyleLabel(const string16& label) {
-  const char16 kEllipsisUTF16 = 0x2026;
-  string16 ret;
+NSString* FixUpWindowsStyleLabel(const base::string16& label) {
+  const base::char16 kEllipsisUTF16 = 0x2026;
+  base::string16 ret;
   size_t label_len = label.length();
   ret.reserve(label_len);
   for (size_t i = 0; i < label_len; ++i) {
-    char16 c = label[i];
+    base::char16 c = label[i];
     if (c == '(' && i + 3 < label_len && label[i + 1] == '&'
         && label[i + 3] == ')') {
       // Strip '(&?)' patterns which means Windows-style accelerator in some
@@ -87,38 +87,38 @@ NSString* GetNSString(int message_id) {
 }
 
 NSString* GetNSStringF(int message_id,
-                       const string16& a) {
+                       const base::string16& a) {
   return base::SysUTF16ToNSString(l10n_util::GetStringFUTF16(message_id,
                                                              a));
 }
 
 NSString* GetNSStringF(int message_id,
-                       const string16& a,
-                       const string16& b) {
+                       const base::string16& a,
+                       const base::string16& b) {
   return base::SysUTF16ToNSString(l10n_util::GetStringFUTF16(message_id,
                                                              a, b));
 }
 
 NSString* GetNSStringF(int message_id,
-                       const string16& a,
-                       const string16& b,
-                       const string16& c) {
+                       const base::string16& a,
+                       const base::string16& b,
+                       const base::string16& c) {
   return base::SysUTF16ToNSString(l10n_util::GetStringFUTF16(message_id,
                                                              a, b, c));
 }
 
 NSString* GetNSStringF(int message_id,
-                       const string16& a,
-                       const string16& b,
-                       const string16& c,
-                       const string16& d) {
+                       const base::string16& a,
+                       const base::string16& b,
+                       const base::string16& c,
+                       const base::string16& d) {
   return base::SysUTF16ToNSString(l10n_util::GetStringFUTF16(message_id,
                                                              a, b, c, d));
 }
 
 NSString* GetNSStringF(int message_id,
-                       const string16& a,
-                       const string16& b,
+                       const base::string16& a,
+                       const base::string16& b,
                        std::vector<size_t>* offsets) {
   return base::SysUTF16ToNSString(l10n_util::GetStringFUTF16(message_id,
                                                              a, b, offsets));
@@ -129,31 +129,31 @@ NSString* GetNSStringWithFixup(int message_id) {
 }
 
 NSString* GetNSStringFWithFixup(int message_id,
-                                const string16& a) {
+                                const base::string16& a) {
   return FixUpWindowsStyleLabel(l10n_util::GetStringFUTF16(message_id,
                                                            a));
 }
 
 NSString* GetNSStringFWithFixup(int message_id,
-                                const string16& a,
-                                const string16& b) {
+                                const base::string16& a,
+                                const base::string16& b) {
   return FixUpWindowsStyleLabel(l10n_util::GetStringFUTF16(message_id,
                                                            a, b));
 }
 
 NSString* GetNSStringFWithFixup(int message_id,
-                                const string16& a,
-                                const string16& b,
-                                const string16& c) {
+                                const base::string16& a,
+                                const base::string16& b,
+                                const base::string16& c) {
   return FixUpWindowsStyleLabel(l10n_util::GetStringFUTF16(message_id,
                                                            a, b, c));
 }
 
 NSString* GetNSStringFWithFixup(int message_id,
-                                const string16& a,
-                                const string16& b,
-                                const string16& c,
-                                const string16& d) {
+                                const base::string16& a,
+                                const base::string16& b,
+                                const base::string16& c,
+                                const base::string16& d) {
   return FixUpWindowsStyleLabel(l10n_util::GetStringFUTF16(message_id,
                                                            a, b, c, d));
 }

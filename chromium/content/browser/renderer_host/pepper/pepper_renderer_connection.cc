@@ -19,18 +19,18 @@
 #include "ppapi/host/resource_host.h"
 #include "ppapi/proxy/ppapi_message_utils.h"
 #include "ppapi/proxy/ppapi_messages.h"
-#include "ppapi/proxy/ppapi_message_utils.h"
 #include "ppapi/proxy/resource_message_params.h"
 
 namespace content {
 
 namespace {
 
+const uint32 kFilteredMessageClasses[] = {PpapiMsgStart, ViewMsgStart, };
+
 // Responsible for creating the pending resource hosts, holding their IDs until
 // all of them have been created for a single message, and sending the reply to
 // say that the hosts have been created.
-class PendingHostCreator
-    : public base::RefCounted<PendingHostCreator> {
+class PendingHostCreator : public base::RefCounted<PendingHostCreator> {
  public:
   PendingHostCreator(BrowserPpapiHostImpl* host,
                      BrowserMessageFilter* connection,
@@ -87,7 +87,9 @@ PendingHostCreator::~PendingHostCreator() {
 }  // namespace
 
 PepperRendererConnection::PepperRendererConnection(int render_process_id)
-    : render_process_id_(render_process_id) {
+    : BrowserMessageFilter(kFilteredMessageClasses,
+                           arraysize(kFilteredMessageClasses)),
+      render_process_id_(render_process_id) {
   // Only give the renderer permission for stable APIs.
   in_process_host_.reset(new BrowserPpapiHostImpl(this,
                                                   ppapi::PpapiPermissions(),
@@ -98,12 +100,11 @@ PepperRendererConnection::PepperRendererConnection(int render_process_id)
                                                   false /* external_plugin */));
 }
 
-PepperRendererConnection::~PepperRendererConnection() {
-}
+PepperRendererConnection::~PepperRendererConnection() {}
 
 BrowserPpapiHostImpl* PepperRendererConnection::GetHostForChildProcess(
     int child_process_id) const {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   // Find the plugin which this message refers to. Check NaCl plugins first.
   BrowserPpapiHostImpl* host = static_cast<BrowserPpapiHostImpl*>(
@@ -131,13 +132,12 @@ BrowserPpapiHostImpl* PepperRendererConnection::GetHostForChildProcess(
   return host;
 }
 
-bool PepperRendererConnection::OnMessageReceived(const IPC::Message& msg,
-                                                 bool* message_was_ok) {
+bool PepperRendererConnection::OnMessageReceived(const IPC::Message& msg) {
   if (in_process_host_->GetPpapiHost()->OnMessageReceived(msg))
     return true;
 
   bool handled = true;
-  IPC_BEGIN_MESSAGE_MAP_EX(PepperRendererConnection, msg, *message_was_ok)
+  IPC_BEGIN_MESSAGE_MAP(PepperRendererConnection, msg)
     IPC_MESSAGE_HANDLER(PpapiHostMsg_CreateResourceHostsFromHost,
                         OnMsgCreateResourceHostsFromHost)
     IPC_MESSAGE_HANDLER(ViewHostMsg_DidCreateInProcessInstance,
@@ -145,7 +145,7 @@ bool PepperRendererConnection::OnMessageReceived(const IPC::Message& msg,
     IPC_MESSAGE_HANDLER(ViewHostMsg_DidDeleteInProcessInstance,
                         OnMsgDidDeleteInProcessInstance)
     IPC_MESSAGE_UNHANDLED(handled = false)
-  IPC_END_MESSAGE_MAP_EX()
+  IPC_END_MESSAGE_MAP()
 
   return handled;
 }
@@ -168,12 +168,12 @@ void PepperRendererConnection::OnMsgCreateResourceHostsFromHost(
     const IPC::Message& nested_msg = nested_msgs[i];
     scoped_ptr<ppapi::host::ResourceHost> resource_host;
     if (host->IsValidInstance(instance)) {
-      if (nested_msg.type() == PpapiHostMsg_FileRef_CreateExternal::ID) {
-        // FileRef_CreateExternal is only permitted from the renderer. Because
+      if (nested_msg.type() == PpapiHostMsg_FileRef_CreateForRawFS::ID) {
+        // FileRef_CreateForRawFS is only permitted from the renderer. Because
         // of this, we handle this message here and not in
         // content_browser_pepper_host_factory.cc.
         base::FilePath external_path;
-        if (ppapi::UnpackMessage<PpapiHostMsg_FileRef_CreateExternal>(
+        if (ppapi::UnpackMessage<PpapiHostMsg_FileRef_CreateForRawFS>(
                 nested_msg, &external_path)) {
           resource_host.reset(new PepperFileRefHost(
               host, instance, params.pp_resource(), external_path));
@@ -187,21 +187,18 @@ void PepperRendererConnection::OnMsgCreateResourceHostsFromHost(
         if (ppapi::UnpackMessage<PpapiHostMsg_FileSystem_CreateFromRenderer>(
                 nested_msg, &root_url, &file_system_type)) {
           PepperFileSystemBrowserHost* browser_host =
-              new PepperFileSystemBrowserHost(host,
-                                              instance,
-                                              params.pp_resource(),
-                                              file_system_type);
+              new PepperFileSystemBrowserHost(
+                  host, instance, params.pp_resource(), file_system_type);
           resource_host.reset(browser_host);
           // Open the file system resource host. This is an asynchronous
           // operation, and we must only add the pending resource host and
           // send the message once it completes.
           browser_host->OpenExisting(
               GURL(root_url),
-              base::Bind(
-                  &PendingHostCreator::AddPendingResourceHost,
-                  creator,
-                  i,
-                  base::Passed(&resource_host)));
+              base::Bind(&PendingHostCreator::AddPendingResourceHost,
+                         creator,
+                         i,
+                         base::Passed(&resource_host)));
           // Do not fall through; the fall-through case adds the pending
           // resource host to the list. We must do this asynchronously.
           continue;

@@ -59,7 +59,51 @@
 
 #include "net/android/network_change_notifier_android.h"
 
+#include "base/threading/thread.h"
+#include "net/base/address_tracker_linux.h"
+#include "net/dns/dns_config_service.h"
+
 namespace net {
+
+// Thread on which we can run DnsConfigService, which requires a TYPE_IO
+// message loop to monitor /system/etc/hosts.
+class NetworkChangeNotifierAndroid::DnsConfigServiceThread
+    : public base::Thread {
+ public:
+  DnsConfigServiceThread()
+      : base::Thread("DnsConfigService"),
+        address_tracker_(base::Bind(base::DoNothing),
+                         base::Bind(base::DoNothing),
+                         // We're only interested in tunnel interface changes.
+                         base::Bind(NotifyNetworkChangeNotifierObservers)) {}
+
+  virtual ~DnsConfigServiceThread() {
+    Stop();
+  }
+
+  virtual void Init() OVERRIDE {
+    address_tracker_.Init();
+    dns_config_service_ = DnsConfigService::CreateSystemService();
+    dns_config_service_->WatchConfig(
+        base::Bind(&NetworkChangeNotifier::SetDnsConfig));
+  }
+
+  virtual void CleanUp() OVERRIDE {
+    dns_config_service_.reset();
+  }
+
+  static void NotifyNetworkChangeNotifierObservers() {
+    NetworkChangeNotifier::NotifyObserversOfIPAddressChange();
+    NetworkChangeNotifier::NotifyObserversOfConnectionTypeChange();
+  }
+
+ private:
+  scoped_ptr<DnsConfigService> dns_config_service_;
+  // Used to detect tunnel state changes.
+  internal::AddressTrackerLinux address_tracker_;
+
+  DISALLOW_COPY_AND_ASSIGN(DnsConfigServiceThread);
+};
 
 NetworkChangeNotifierAndroid::~NetworkChangeNotifierAndroid() {
   delegate_->RemoveObserver(this);
@@ -71,8 +115,7 @@ NetworkChangeNotifierAndroid::GetCurrentConnectionType() const {
 }
 
 void NetworkChangeNotifierAndroid::OnConnectionTypeChanged() {
-  NetworkChangeNotifier::NotifyObserversOfIPAddressChange();
-  NetworkChangeNotifier::NotifyObserversOfConnectionTypeChange();
+  DnsConfigServiceThread::NotifyNetworkChangeNotifierObservers();
 }
 
 // static
@@ -83,8 +126,11 @@ bool NetworkChangeNotifierAndroid::Register(JNIEnv* env) {
 NetworkChangeNotifierAndroid::NetworkChangeNotifierAndroid(
     NetworkChangeNotifierDelegateAndroid* delegate)
     : NetworkChangeNotifier(NetworkChangeCalculatorParamsAndroid()),
-      delegate_(delegate) {
+      delegate_(delegate),
+      dns_config_service_thread_(new DnsConfigServiceThread()) {
   delegate_->AddObserver(this);
+  dns_config_service_thread_->StartWithOptions(
+      base::Thread::Options(base::MessageLoop::TYPE_IO, 0));
 }
 
 // static

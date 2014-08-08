@@ -5,56 +5,66 @@
 #ifndef CC_RESOURCES_IMAGE_RASTER_WORKER_POOL_H_
 #define CC_RESOURCES_IMAGE_RASTER_WORKER_POOL_H_
 
+#include "base/memory/weak_ptr.h"
+#include "base/values.h"
 #include "cc/resources/raster_worker_pool.h"
+#include "cc/resources/rasterizer.h"
 
 namespace cc {
+class ResourceProvider;
 
-class CC_EXPORT ImageRasterWorkerPool : public RasterWorkerPool {
+class CC_EXPORT ImageRasterWorkerPool : public RasterWorkerPool,
+                                        public Rasterizer,
+                                        public RasterizerTaskClient {
  public:
   virtual ~ImageRasterWorkerPool();
 
   static scoped_ptr<RasterWorkerPool> Create(
-      ResourceProvider* resource_provider,
-      size_t num_threads,
-      GLenum texture_target) {
-    return make_scoped_ptr<RasterWorkerPool>(
-        new ImageRasterWorkerPool(resource_provider,
-                                  num_threads,
-                                  texture_target));
-  }
+      base::SequencedTaskRunner* task_runner,
+      TaskGraphRunner* task_graph_runner,
+      ResourceProvider* resource_provider);
 
   // Overridden from RasterWorkerPool:
-  virtual void ScheduleTasks(RasterTask::Queue* queue) OVERRIDE;
-  virtual GLenum GetResourceTarget() const OVERRIDE;
-  virtual ResourceFormat GetResourceFormat() const OVERRIDE;
-  virtual void OnRasterTasksFinished() OVERRIDE;
-  virtual void OnRasterTasksRequiredForActivationFinished() OVERRIDE;
+  virtual Rasterizer* AsRasterizer() OVERRIDE;
+
+  // Overridden from Rasterizer:
+  virtual void SetClient(RasterizerClient* client) OVERRIDE;
+  virtual void Shutdown() OVERRIDE;
+  virtual void ScheduleTasks(RasterTaskQueue* queue) OVERRIDE;
+  virtual void CheckForCompletedTasks() OVERRIDE;
+
+  // Overridden from RasterizerTaskClient:
+  virtual SkCanvas* AcquireCanvasForRaster(RasterTask* task) OVERRIDE;
+  virtual void ReleaseCanvasForRaster(RasterTask* task) OVERRIDE;
+
+ protected:
+  ImageRasterWorkerPool(base::SequencedTaskRunner* task_runner,
+                        TaskGraphRunner* task_graph_runner,
+                        ResourceProvider* resource_provider);
 
  private:
-  ImageRasterWorkerPool(ResourceProvider* resource_provider,
-                        size_t num_threads,
-                        GLenum texture_target);
-
-  void OnRasterTaskCompleted(
-      scoped_refptr<internal::RasterWorkerPoolTask> task, bool was_canceled);
-
+  void OnRasterFinished();
+  void OnRasterRequiredForActivationFinished();
   scoped_ptr<base::Value> StateAsValue() const;
 
-  static void CreateGraphNodeForImageTask(
-      internal::WorkerPoolTask* image_task,
-      const TaskVector& decode_tasks,
-      unsigned priority,
-      bool is_required_for_activation,
-      internal::GraphNode* raster_required_for_activation_finished_node,
-      internal::GraphNode* raster_finished_node,
-      TaskGraph* graph);
-
-  const GLenum texture_target_;
-
-  TaskMap image_tasks_;
+  scoped_refptr<base::SequencedTaskRunner> task_runner_;
+  TaskGraphRunner* task_graph_runner_;
+  const NamespaceToken namespace_token_;
+  RasterizerClient* client_;
+  ResourceProvider* resource_provider_;
 
   bool raster_tasks_pending_;
   bool raster_tasks_required_for_activation_pending_;
+
+  base::WeakPtrFactory<ImageRasterWorkerPool> raster_finished_weak_ptr_factory_;
+
+  scoped_refptr<RasterizerTask> raster_finished_task_;
+  scoped_refptr<RasterizerTask> raster_required_for_activation_finished_task_;
+
+  // Task graph used when scheduling tasks and vector used to gather
+  // completed tasks.
+  TaskGraph graph_;
+  Task::Vector completed_tasks_;
 
   DISALLOW_COPY_AND_ASSIGN(ImageRasterWorkerPool);
 };

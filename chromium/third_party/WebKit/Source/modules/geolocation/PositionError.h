@@ -27,13 +27,12 @@
 #define PositionError_h
 
 #include "bindings/v8/ScriptWrappable.h"
-#include "wtf/PassRefPtr.h"
-#include "wtf/RefCounted.h"
+#include "platform/heap/Handle.h"
 #include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
-class PositionError : public RefCounted<PositionError>, public ScriptWrappable {
+class PositionError : public GarbageCollectedFinalized<PositionError>, public ScriptWrappable {
 public:
     enum ErrorCode {
         PERMISSION_DENIED = 1,
@@ -41,7 +40,8 @@ public:
         TIMEOUT = 3
     };
 
-    static PassRefPtr<PositionError> create(ErrorCode code, const String& message) { return adoptRef(new PositionError(code, message)); }
+    static PositionError* create(ErrorCode code, const String& message) { return new PositionError(code, message); }
+    void trace(Visitor*) { }
 
     ErrorCode code() const { return m_code; }
     const String& message() const { return m_message; }

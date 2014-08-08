@@ -29,6 +29,7 @@
  */
 
 [
+    WillBeGarbageCollected,
     ActiveDOMObject,
     Constructor(Dictionary rtcIceServers, optional Dictionary mediaConstraints),
     ConstructorCallWith=ExecutionContext,
@@ -61,8 +62,8 @@
     sequence<MediaStream> getRemoteStreams();
     MediaStream getStreamById(DOMString streamId);
 
-    [StrictTypeChecking, RaisesException] void addStream(MediaStream stream, optional Dictionary mediaConstraints);
-    [StrictTypeChecking, RaisesException] void removeStream(MediaStream stream);
+    [TypeChecking=Interface|Nullable, RaisesException] void addStream(MediaStream? stream, optional Dictionary mediaConstraints);
+    [TypeChecking=Interface|Nullable, RaisesException] void removeStream(MediaStream? stream);
 
     void getStats(RTCStatsCallback successCallback, [Default=Undefined] optional MediaStreamTrack selector);
 
@@ -80,4 +81,3 @@
     attribute EventHandler oniceconnectionstatechange;
     attribute EventHandler ondatachannel;
 };
-

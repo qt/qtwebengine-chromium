@@ -27,70 +27,89 @@ var net = net || {};
 
 (function () {
 
-// FIXME: Excise this last bit of jquery ajax code.
-// There are callers that depend on automatically parsing the content as JSON or XML
-// based off the content-type. Instead we should add net.json and net.xml for those cases.
-net.get = function(url, success)
+net.get = function(url)
 {
-    $.get(url, success);
+    return net.ajax({
+        url: url
+    });
+};
+
+net.json = function(url)
+{
+    return net.ajax({
+        url: url,
+        parse: function(xhr) {
+            return JSON.parse(xhr.responseText);
+        }
+    });
+};
+
+net.xml = function(url)
+{
+    return net.ajax({
+        url: url,
+        parse: function(xhr) {
+            return xhr.responseXML;
+        }
+    });
 };
 
 net.ajax = function(options)
 {
-    var xhr = new XMLHttpRequest();
-    var method = options.type || 'GET';
-    var async = true;
-    xhr.open(method, options.url, async);
-    xhr.onload = function() {
-        if (xhr.status == 200 && options.success)
-            options.success(xhr.responseText);
-        else if (xhr.status != 200 && options.error)
-            options.error();
-    };
-    xhr.onerror = function() {
-        if (options.error)
-            options.error();
-    };
-    var data = options.data || null;
-    if (data)
-        xhr.setRequestHeader("content-type","application/x-www-form-urlencoded");
-    xhr.send(data);
+    return new Promise(function(resolve, reject) {
+        var xhr = new XMLHttpRequest();
+        var method = options.type || 'GET';
+        var async = true;
+        xhr.open(method, options.url, async);
+        xhr.onload = function() {
+            if (xhr.status == 200) {
+                if (options.parse)
+                    resolve(options.parse(xhr));
+                else
+                    resolve(xhr.responseText);
+            }
+            else if (xhr.status != 200)
+                reject(Error(xhr.statusText));
+        };
+        xhr.onerror = function(error) {
+            reject(error);
+        };
+        var data = options.data || null;
+        if (data)
+            xhr.setRequestHeader("content-type","application/x-www-form-urlencoded");
+        xhr.send(data);
+    });
 };
 
-net.post = function(url, data, success)
+net.post = function(url, data)
 {
-    net.ajax({
+    return net.ajax({
         url: url,
         type: 'POST',
         data: data,
-        success: success,
     });
 
 };
 
-net.probe = function(url, options)
+net.probe = function(url)
 {
-    net.ajax({
+    return net.ajax({
         url: url,
         type: 'HEAD',
-        success: options.success,
-        error: options.error,
     });
 };
 
 // We use XMLHttpRequest and CORS to fetch JSONP rather than using script tags.
 // That's better for security and performance, but we need the server to cooperate
 // by setting CORS headers.
-net.jsonp = function(url, callback)
+net.jsonp = function(url)
 {
-    net.ajax({
+    return net.ajax({
         url: url,
-        success: function(jsonp) {
-            callback(base.parseJSONP(jsonp));
-        },
-        error: function() {
-            callback({});
-        },
+    }).then(function(jsonp) {
+        return base.parseJSONP(jsonp);
+    }).catch(function(error) {
+        return {};
     });
 };
 

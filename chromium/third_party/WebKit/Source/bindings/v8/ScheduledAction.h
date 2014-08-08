@@ -33,36 +33,35 @@
 
 #include "bindings/v8/ScopedPersistent.h"
 #include "bindings/v8/ScriptSourceCode.h"
-#include "bindings/v8/UnsafePersistent.h"
+#include "bindings/v8/ScriptState.h"
+#include "bindings/v8/V8PersistentValueVector.h"
 #include <v8.h>
 #include "wtf/Forward.h"
-#include "wtf/Vector.h"
 
 namespace WebCore {
 
-class Frame;
+class LocalFrame;
 class ExecutionContext;
 class WorkerGlobalScope;
 
 class ScheduledAction {
     WTF_MAKE_NONCOPYABLE(ScheduledAction);
 public:
-    ScheduledAction(v8::Handle<v8::Context>, v8::Handle<v8::Function>, int argc, v8::Handle<v8::Value> argv[], v8::Isolate*);
-    ScheduledAction(v8::Handle<v8::Context>, const String&, const KURL&, v8::Isolate*);
+    ScheduledAction(ScriptState*, v8::Handle<v8::Function>, int argc, v8::Handle<v8::Value> argv[], v8::Isolate*);
+    ScheduledAction(ScriptState*, const String&, const KURL&, v8::Isolate*);
     ~ScheduledAction();
 
     void execute(ExecutionContext*);
 
 private:
-    void execute(Frame*);
+    void execute(LocalFrame*);
     void execute(WorkerGlobalScope*);
     void createLocalHandlesForArgs(Vector<v8::Handle<v8::Value> >* handles);
 
-    ScopedPersistent<v8::Context> m_context;
+    ScriptStateProtectingContext m_scriptState;
     ScopedPersistent<v8::Function> m_function;
-    Vector<UnsafePersistent<v8::Value> > m_info;
+    V8PersistentValueVector<v8::Value> m_info;
     ScriptSourceCode m_code;
-    v8::Isolate* m_isolate;
 };
 
 } // namespace WebCore

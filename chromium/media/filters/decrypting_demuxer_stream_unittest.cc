@@ -38,7 +38,7 @@ static scoped_refptr<DecoderBuffer> CreateFakeEncryptedStreamBuffer(
   buffer->set_decrypt_config(scoped_ptr<DecryptConfig>(new DecryptConfig(
       std::string(reinterpret_cast<const char*>(kFakeKeyId),
                   arraysize(kFakeKeyId)),
-      iv, 0, std::vector<SubsampleEntry>())));
+      iv, std::vector<SubsampleEntry>())));
   return buffer;
 }
 
@@ -50,6 +50,9 @@ ACTION_P(ReturnBuffer, buffer) {
   arg0.Run(buffer.get() ? DemuxerStream::kOk : DemuxerStream::kAborted, buffer);
 }
 
+// Sets the |decryptor| if the DecryptorReadyCB (arg0) is not null. Sets
+// |is_decryptor_set| to true if a non-NULL |decryptor| has been set through the
+// callback.
 ACTION_P2(SetDecryptorIfNotNull, decryptor, is_decryptor_set) {
   if (!arg0.is_null())
     arg0.Run(decryptor);
@@ -111,7 +114,7 @@ class DecryptingDemuxerStreamTest : public testing::Test {
     EXPECT_CALL(*this, RequestDecryptorNotification(_))
         .WillOnce(SetDecryptorIfNotNull(decryptor_.get(), &is_decryptor_set_));
     EXPECT_CALL(*decryptor_, RegisterNewKeyCB(Decryptor::kAudio, _))
-        .WillRepeatedly(SaveArg<1>(&key_added_cb_));
+        .WillOnce(SaveArg<1>(&key_added_cb_));
 
     AudioDecoderConfig input_config(
         kCodecVorbis, kSampleFormatPlanarF32, CHANNEL_LAYOUT_STEREO, 44100,
@@ -251,7 +254,7 @@ class DecryptingDemuxerStreamTest : public testing::Test {
   base::MessageLoop message_loop_;
   scoped_ptr<DecryptingDemuxerStream> demuxer_stream_;
   scoped_ptr<StrictMock<MockDecryptor> > decryptor_;
-  // Whether a valid Decryptor is set to the |demuxer_stream_|.
+  // Whether a valid Decryptor has been set in the |demuxer_stream_|.
   bool is_decryptor_set_;
   scoped_ptr<StrictMock<MockDemuxerStream> > input_audio_stream_;
   scoped_ptr<StrictMock<MockDemuxerStream> > input_video_stream_;

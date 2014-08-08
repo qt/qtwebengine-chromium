@@ -32,6 +32,8 @@
 
 #ifdef LINUX
 #include <X11/Xlib.h>
+#include <X11/extensions/Xrandr.h>
+
 // X defines a few macros that stomp on types that gunit.h uses.
 #undef None
 #undef Bool
@@ -43,6 +45,7 @@
 #include "talk/base/common.h"
 #include "talk/base/gunit.h"
 #include "talk/base/nethelpers.h"
+#include "talk/base/pathutils.h"
 #include "talk/base/stream.h"
 #include "talk/base/stringencode.h"
 #include "talk/base/stringutils.h"
@@ -449,6 +452,30 @@ inline bool ReadFile(const char* filename, std::string* contents) {
   return success;
 }
 
+// Look in parent dir for parallel directory.
+inline talk_base::Pathname GetSiblingDirectory(
+    const std::string& parallel_dir) {
+  talk_base::Pathname path = talk_base::Filesystem::GetCurrentDirectory();
+  while (!path.empty()) {
+    talk_base::Pathname potential_parallel_dir = path;
+    potential_parallel_dir.AppendFolder(parallel_dir);
+    if (talk_base::Filesystem::IsFolder(potential_parallel_dir)) {
+      return potential_parallel_dir;
+    }
+
+    path.SetFolder(path.parent_folder());
+  }
+  return path;
+}
+
+inline talk_base::Pathname GetGoogle3Directory() {
+  return GetSiblingDirectory("google3");
+}
+
+inline talk_base::Pathname GetTalkDirectory() {
+  return GetSiblingDirectory("talk");
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // Unittest predicates which are similar to STREQ, but for raw memory
 ///////////////////////////////////////////////////////////////////////////////
@@ -599,6 +626,16 @@ inline bool IsScreencastingAvailable() {
   XDisplay display;
   if (!display.IsValid()) {
     LOG(LS_WARNING) << "No X Display available.";
+    return false;
+  }
+  int ignored_int, major_version, minor_version;
+  if (!XRRQueryExtension(display, &ignored_int, &ignored_int) ||
+      !XRRQueryVersion(display, &major_version, &minor_version) ||
+      major_version < 1 ||
+      (major_version < 2 && minor_version < 3)) {
+    LOG(LS_WARNING) << "XRandr version: " << major_version << "."
+                    << minor_version;
+    LOG(LS_WARNING) << "XRandr is not supported or is too old (pre 1.3).";
     return false;
   }
 #endif

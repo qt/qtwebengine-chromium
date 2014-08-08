@@ -5,7 +5,7 @@
 #ifndef UI_BASE_UI_BASE_TYPES_H_
 #define UI_BASE_UI_BASE_TYPES_H_
 
-#include "ui/base/ui_export.h"
+#include "ui/base/ui_base_export.h"
 
 namespace ui {
 
@@ -48,9 +48,10 @@ enum MenuSourceType {
   MENU_SOURCE_KEYBOARD        = 2,
   MENU_SOURCE_TOUCH           = 3,
   MENU_SOURCE_TOUCH_EDIT_MENU = 4,
+  MENU_SOURCE_TYPE_LAST = MENU_SOURCE_TOUCH_EDIT_MENU
 };
 
-UI_EXPORT MenuSourceType GetMenuSourceTypeForEvent(const ui::Event& event);
+UI_BASE_EXPORT MenuSourceType GetMenuSourceTypeForEvent(const ui::Event& event);
 
 }  // namespace ui
 

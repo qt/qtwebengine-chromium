@@ -10,8 +10,6 @@
 mangle(SYMBOL):
   %assign   stack_offset 0
 
-  extern    mangle(kCoefficientsRgbY)
-
 ; Parameters are in the following order:
 ; 1. Y plane
 ; 2. U plane
@@ -19,8 +17,9 @@ mangle(SYMBOL):
 ; 4. ARGB frame
 ; 5. Width
 ; 6. Source dx
+; 7. Conversion lookup table
 
-PROLOGUE  6, 7, 3, Y, R0, R1, ARGB, R2, R3, TEMP
+PROLOGUE  7, 7, 3, Y, R0, R1, ARGB, R2, TEMP, R3
 
 %if gprsize == 8
 %define     WORD_SIZE   QWORD
@@ -34,60 +33,30 @@ PROLOGUE  6, 7, 3, Y, R0, R1, ARGB, R2, R3, TEMP
 %define     COMPLd              R2d     ; Component A value
 %define     U_ARG_REGq          R0q     ; U plane address argument
 %define     V_ARG_REGq          R1q     ; V plane address argument
-%define     SOURCE_DX_ARG_REGq  R3q     ; Source dx argument
+%define     SOURCE_DX_ARG_REGq  TEMPq   ; Source dx argument
 %define     WIDTH_ARG_REGq      R2q     ; Width argument
 
-%ifdef PIC
-; PIC code shared COMPR, U and V with the same register. Need to be careful in the
-; code they don't mix up. This allows R3q to be used for YUV table.
 %define     COMPRq              R0q     ; Component B value
 %define     COMPRd              R0d     ; Component B value
 %define     Uq                  R0q     ; U plane address
 %define     Vq                  R0q     ; V plane address
 %define     U_PLANE             WORD_SIZE [rsp + 3 * gprsize]
 %define     TABLE               R3q     ; Address of the table
-%else
-; Non-PIC code defines.
-%define     COMPRq              R3q     ; Component B value
-%define     COMPRd              R3d     ; Component B value
-%define     Uq                  R0q     ; U plane address
-%define     Vq                  R3q     ; V plane address
-%define     TABLE               mangle(kCoefficientsRgbY)
-%endif
 
-; Defines for stack variables. These are used in both PIC and non-PIC code.
+; Defines for stack variables.
 %define     V_PLANE             WORD_SIZE [rsp + 2 * gprsize]
 %define     SOURCE_DX           WORD_SIZE [rsp + gprsize]
 %define     SOURCE_WIDTH        WORD_SIZE [rsp]
 
-; Handle stack variables differently for PIC and non-PIC code.
-
-%ifdef PIC
-; Define stack usage for PIC code. PIC code push U plane onto stack.
+; Define stack usage.
   PUSH      U_ARG_REGq
   PUSH      V_ARG_REGq
   PUSH      SOURCE_DX_ARG_REGq
   imul      WIDTH_ARG_REGq, SOURCE_DX_ARG_REGq  ; source_width = width * source_dx
   PUSH      WIDTH_ARG_REGq
 
-; Load the address of kCoefficientsRgbY into TABLE
-  mov       TEMPq, SOURCE_DX_ARG_REGq    ; Need to save source_dx first
-  LOAD_SYM  TABLE, mangle(kCoefficientsRgbY)
-%define     SOURCE_DX_ARG_REGq  TEMPq   ; Overwrite SOURCE_DX_ARG_REGq to TEMPq
-%else
-; Define stack usage. Non-PIC code just push 3 registers to stack.
-  PUSH      V_ARG_REGq
-  PUSH      SOURCE_DX_ARG_REGq
-  imul      WIDTH_ARG_REGq, SOURCE_DX_ARG_REGq  ; source_width = width * source_dx
-  PUSH      WIDTH_ARG_REGq
-%endif
-
 %macro EPILOGUE 0
-%ifdef PIC
   ADD       rsp, 4 * gprsize
-%else
-  ADD       rsp, 3 * gprsize
-%endif
 %endmacro
 
   xor       Xq, Xq                       ; x = 0
@@ -97,9 +66,7 @@ PROLOGUE  6, 7, 3, Y, R0, R1, ARGB, R2, R3, TEMP
   jmp       .lscaleend
 
 .lscaleloop:
-%ifdef PIC
-  mov       Uq, U_PLANE                  ; PIC code saves U_PLANE on stack.
-%endif
+  mov       Uq, U_PLANE
 
 ; Define macros for scaling YUV components since they are reused.
 %macro SCALEUV 1

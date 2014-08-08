@@ -32,7 +32,7 @@
 #ifndef SliderThumbElement_h
 #define SliderThumbElement_h
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 #include "core/html/HTMLDivElement.h"
 #include "core/rendering/RenderBlockFlow.h"
 #include "wtf/Forward.h"
@@ -46,43 +46,40 @@ class FloatPoint;
 
 class SliderThumbElement FINAL : public HTMLDivElement {
 public:
-    static PassRefPtr<SliderThumbElement> create(Document&);
+    static PassRefPtrWillBeRawPtr<SliderThumbElement> create(Document&);
 
     void setPositionFromValue();
 
     void dragFrom(const LayoutPoint&);
-    virtual void defaultEventHandler(Event*);
+    virtual void defaultEventHandler(Event*) OVERRIDE;
     virtual bool willRespondToMouseMoveEvents() OVERRIDE;
     virtual bool willRespondToMouseClickEvents() OVERRIDE;
     virtual void detach(const AttachContext& = AttachContext()) OVERRIDE;
-    virtual const AtomicString& pseudo() const OVERRIDE;
+    virtual const AtomicString& shadowPseudoId() const OVERRIDE;
     HTMLInputElement* hostInput() const;
     void setPositionFromPoint(const LayoutPoint&);
     void stopDragging();
 
 private:
     SliderThumbElement(Document&);
-    virtual RenderObject* createRenderer(RenderStyle*);
-    virtual PassRefPtr<Element> cloneElementWithoutAttributesAndChildren();
+    virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
+    virtual PassRefPtrWillBeRawPtr<Element> cloneElementWithoutAttributesAndChildren() OVERRIDE;
     virtual bool isDisabledFormControl() const OVERRIDE;
     virtual bool matchesReadOnlyPseudoClass() const OVERRIDE;
     virtual bool matchesReadWritePseudoClass() const OVERRIDE;
-    virtual Node* focusDelegate();
+    virtual Node* focusDelegate() OVERRIDE;
     void startDragging();
 
     bool m_inDragMode;
 };
 
-inline PassRefPtr<Element> SliderThumbElement::cloneElementWithoutAttributesAndChildren()
+inline PassRefPtrWillBeRawPtr<Element> SliderThumbElement::cloneElementWithoutAttributesAndChildren()
 {
     return create(document());
 }
 
-inline SliderThumbElement* toSliderThumbElement(Node* node)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->isHTMLElement());
-    return static_cast<SliderThumbElement*>(node);
-}
+// FIXME: There are no ways to check if a node is a SliderThumbElement.
+DEFINE_ELEMENT_TYPE_CASTS(SliderThumbElement, isHTMLElement());
 
 // --------------------------------
 
@@ -92,20 +89,19 @@ public:
     void updateAppearance(RenderStyle* parentStyle);
 
 private:
-    virtual bool isSliderThumb() const;
-    virtual bool supportsPartialLayout() const OVERRIDE { return false; }
+    virtual bool isSliderThumb() const OVERRIDE;
 };
 
 // --------------------------------
 
 class SliderContainerElement FINAL : public HTMLDivElement {
 public:
-    static PassRefPtr<SliderContainerElement> create(Document&);
+    DECLARE_NODE_FACTORY(SliderContainerElement);
 
 private:
-    SliderContainerElement(Document&);
-    virtual RenderObject* createRenderer(RenderStyle*);
-    virtual const AtomicString& pseudo() const;
+    explicit SliderContainerElement(Document&);
+    virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
+    virtual const AtomicString& shadowPseudoId() const OVERRIDE;
 };
 
 }

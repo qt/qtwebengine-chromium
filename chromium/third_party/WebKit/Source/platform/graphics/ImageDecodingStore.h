@@ -89,8 +89,6 @@ public:
     ~ImageDecodingStore();
 
     static ImageDecodingStore* instance();
-    static void initializeOnce();
-    static void shutdown();
 
     // Why do we need this?
     // ImageDecodingStore is used in two code paths:
@@ -137,8 +135,8 @@ private:
     // Image cache entry is identified by:
     // 1. Pointer to ImageFrameGenerator.
     // 2. Size of the image.
-    // 3. Frame index.
-    // 4. Frame generation. Increments on each progressive decode.
+    // 3. LocalFrame index.
+    // 4. LocalFrame generation. Increments on each progressive decode.
     //
     // The use of generation ID is to allow multiple versions of an image frame
     // be stored in the cache. Each generation comes from a progressive decode.
@@ -192,7 +190,7 @@ private:
         CacheEntry* m_next;
     };
 
-    class ImageCacheEntry : public CacheEntry {
+    class ImageCacheEntry FINAL : public CacheEntry {
     public:
         static PassOwnPtr<ImageCacheEntry> createAndUse(const ImageFrameGenerator* generator, PassOwnPtr<ScaledImageFragment> image)
         {
@@ -207,8 +205,8 @@ private:
 
         // FIXME: getSafeSize() returns size in bytes truncated to a 32-bits integer.
         //        Find a way to get the size in 64-bits.
-        virtual size_t memoryUsageInBytes() const { return cachedImage()->bitmap().getSafeSize(); }
-        virtual CacheType type() const { return TypeImage; }
+        virtual size_t memoryUsageInBytes() const OVERRIDE { return cachedImage()->bitmap().getSafeSize(); }
+        virtual CacheType type() const OVERRIDE { return TypeImage; }
 
         static ImageCacheKey makeCacheKey(const ImageFrameGenerator* generator, const SkISize& size, size_t index, size_t generation)
         {
@@ -222,7 +220,7 @@ private:
         OwnPtr<ScaledImageFragment> m_cachedImage;
     };
 
-    class DecoderCacheEntry : public CacheEntry {
+    class DecoderCacheEntry FINAL : public CacheEntry {
     public:
         static PassOwnPtr<DecoderCacheEntry> create(const ImageFrameGenerator* generator, PassOwnPtr<ImageDecoder> decoder, bool isDiscardable)
         {
@@ -236,8 +234,8 @@ private:
         {
         }
 
-        virtual size_t memoryUsageInBytes() const { return m_size.width() * m_size.height() * 4; }
-        virtual CacheType type() const { return TypeDecoder; }
+        virtual size_t memoryUsageInBytes() const OVERRIDE { return m_size.width() * m_size.height() * 4; }
+        virtual CacheType type() const OVERRIDE { return TypeDecoder; }
 
         static DecoderCacheKey makeCacheKey(const ImageFrameGenerator* generator, const SkISize& size)
         {

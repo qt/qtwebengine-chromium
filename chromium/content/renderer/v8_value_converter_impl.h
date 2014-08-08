@@ -44,25 +44,30 @@ class CONTENT_EXPORT V8ValueConverterImpl : public V8ValueConverter {
   class FromV8ValueState;
 
   v8::Local<v8::Value> ToV8ValueImpl(v8::Isolate* isolate,
-                                      const base::Value* value) const;
+                                     v8::Handle<v8::Object> creation_context,
+                                     const base::Value* value) const;
   v8::Handle<v8::Value> ToV8Array(v8::Isolate* isolate,
+                                  v8::Handle<v8::Object> creation_context,
                                   const base::ListValue* list) const;
   v8::Handle<v8::Value> ToV8Object(
       v8::Isolate* isolate,
+      v8::Handle<v8::Object> creation_context,
       const base::DictionaryValue* dictionary) const;
-  v8::Handle<v8::Value> ToArrayBuffer(const base::BinaryValue* value) const;
+  v8::Handle<v8::Value> ToArrayBuffer(v8::Isolate* isolate,
+                                      v8::Handle<v8::Object> creation_context,
+                                      const base::BinaryValue* value) const;
 
-  base::Value* FromV8ValueImpl(v8::Handle<v8::Value> value,
-                               FromV8ValueState* state,
+  base::Value* FromV8ValueImpl(FromV8ValueState* state,
+                               v8::Handle<v8::Value> value,
                                v8::Isolate* isolate) const;
   base::Value* FromV8Array(v8::Handle<v8::Array> array,
                            FromV8ValueState* state,
                            v8::Isolate* isolate) const;
 
   // This will convert objects of type ArrayBuffer or any of the
-  // ArrayBufferView subclasses. The return value will be NULL if |value| is
-  // not one of these types.
-  base::BinaryValue* FromV8Buffer(v8::Handle<v8::Value> value) const;
+  // ArrayBufferView subclasses.
+  base::Value* FromV8ArrayBuffer(v8::Handle<v8::Object> val,
+                                 v8::Isolate* isolate) const;
 
   base::Value* FromV8Object(v8::Handle<v8::Object> object,
                             FromV8ValueState* state,

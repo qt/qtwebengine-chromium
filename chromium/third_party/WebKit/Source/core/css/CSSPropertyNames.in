@@ -49,11 +49,11 @@ font-kerning
 font-size
 font-style
 font-variant
+font-variant-ligatures
 font-weight
 text-rendering
 -webkit-font-feature-settings
 -webkit-font-smoothing
--webkit-font-variant-ligatures
 -webkit-locale
 -webkit-text-orientation
 -epub-text-orientation alias_for=-webkit-text-orientation
@@ -136,6 +136,7 @@ font-stretch
 height
 image-rendering
 isolation
+justify-self
 left
 letter-spacing
 list-style
@@ -183,6 +184,7 @@ position
 quotes
 resize
 right
+scroll-behavior
 size
 src
 speak
@@ -224,6 +226,7 @@ visibility
 white-space
 widows
 width
+will-change
 word-break
 -epub-word-break alias_for=word-break
 word-spacing
@@ -231,6 +234,7 @@ word-wrap
 z-index
 -webkit-appearance
 -webkit-aspect-ratio
+backface-visibility
 -webkit-backface-visibility
 -webkit-background-clip
 -webkit-background-composite
@@ -274,14 +278,12 @@ z-index
 -webkit-box-reflect
 -webkit-box-shadow
 -internal-callback
--webkit-column-axis
 -webkit-column-break-after
 -webkit-column-break-before
 -webkit-column-break-inside
 -webkit-column-count
 column-fill
 -webkit-column-gap
--webkit-column-progression
 -webkit-column-rule
 -webkit-column-rule-color
 -webkit-column-rule-style
@@ -321,20 +323,19 @@ grid-area
 grid-column
 grid-column-end
 grid-column-start
-grid-definition-columns
-grid-definition-rows
+grid
+grid-template
+grid-template-columns
+grid-template-rows
 grid-row
 grid-row-end
 grid-row-start
-grid-template
+grid-template-areas
 -webkit-highlight
 -webkit-hyphenate-character
 -webkit-line-box-contain
--webkit-line-align
 -webkit-line-break
 -webkit-line-clamp
--webkit-line-grid
--webkit-line-snap
 -webkit-logical-width
 -webkit-logical-height
 -webkit-margin-after-collapse
@@ -374,7 +375,9 @@ order
 -webkit-padding-before
 -webkit-padding-end
 -webkit-padding-start
+perspective
 -webkit-perspective
+perspective-origin
 -webkit-perspective-origin
 -webkit-perspective-origin-x
 -webkit-perspective-origin-y
@@ -396,30 +399,23 @@ order
 -webkit-text-stroke
 -webkit-text-stroke-color
 -webkit-text-stroke-width
+transform
 -webkit-transform
+transform-origin
 -webkit-transform-origin
 -webkit-transform-origin-x
 -webkit-transform-origin-y
 -webkit-transform-origin-z
+transform-style
 -webkit-transform-style
 -webkit-user-drag
 -webkit-user-modify
 -webkit-user-select
--webkit-flow-into
--webkit-flow-from
--webkit-region-fragment
--webkit-region-break-after
--webkit-region-break-before
--webkit-region-break-inside
--webkit-shape-inside alias_for=shape-inside
 -webkit-shape-outside alias_for=shape-outside
 -webkit-shape-margin alias_for=shape-margin
--webkit-shape-padding alias_for=shape-padding
 -webkit-shape-image-threshold alias_for=shape-image-threshold
-shape-inside
 shape-outside
 shape-margin
-shape-padding
 shape-image-threshold
 -webkit-wrap-flow
 -webkit-wrap-through
@@ -429,6 +425,7 @@ orientation
 user-zoom
 -webkit-tap-highlight-color
 -webkit-app-region
+all
 
 // Internal properties.
 -internal-marquee-direction

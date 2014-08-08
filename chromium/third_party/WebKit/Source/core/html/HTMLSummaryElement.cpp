@@ -21,23 +21,23 @@
 #include "config.h"
 #include "core/html/HTMLSummaryElement.h"
 
-#include "HTMLNames.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "core/HTMLNames.h"
 #include "core/events/KeyboardEvent.h"
 #include "core/dom/NodeRenderingTraversal.h"
 #include "core/dom/shadow/ShadowRoot.h"
+#include "core/html/HTMLContentElement.h"
 #include "core/html/HTMLDetailsElement.h"
 #include "core/html/shadow/DetailsMarkerControl.h"
-#include "core/html/shadow/HTMLContentElement.h"
 #include "core/rendering/RenderBlockFlow.h"
 
 namespace WebCore {
 
 using namespace HTMLNames;
 
-PassRefPtr<HTMLSummaryElement> HTMLSummaryElement::create(Document& document)
+PassRefPtrWillBeRawPtr<HTMLSummaryElement> HTMLSummaryElement::create(Document& document)
 {
-    RefPtr<HTMLSummaryElement> summary = adoptRef(new HTMLSummaryElement(document));
+    RefPtrWillBeRawPtr<HTMLSummaryElement> summary = adoptRefWillBeNoop(new HTMLSummaryElement(document));
     summary->ensureUserAgentShadowRoot();
     return summary.release();
 }
@@ -61,7 +61,7 @@ void HTMLSummaryElement::didAddUserAgentShadowRoot(ShadowRoot& root)
 HTMLDetailsElement* HTMLSummaryElement::detailsElement() const
 {
     Node* parent = NodeRenderingTraversal::parent(this);
-    if (parent && isHTMLDetailsElement(parent))
+    if (isHTMLDetailsElement(parent))
         return toHTMLDetailsElement(parent);
     return 0;
 }

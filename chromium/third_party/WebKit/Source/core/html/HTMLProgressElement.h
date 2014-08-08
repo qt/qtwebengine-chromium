@@ -34,17 +34,19 @@ public:
     static const double IndeterminatePosition;
     static const double InvalidPosition;
 
-    static PassRefPtr<HTMLProgressElement> create(Document&);
+    static PassRefPtrWillBeRawPtr<HTMLProgressElement> create(Document&);
 
     double value() const;
-    void setValue(double, ExceptionState&);
+    void setValue(double);
 
     double max() const;
-    void setMax(double, ExceptionState&);
+    void setMax(double);
 
     double position() const;
 
-    virtual bool canContainRangeEndPoint() const { return false; }
+    virtual bool canContainRangeEndPoint() const OVERRIDE { return false; }
+
+    virtual void trace(Visitor*) OVERRIDE;
 
 private:
     explicit HTMLProgressElement(Document&);
@@ -54,7 +56,7 @@ private:
     virtual bool shouldAppearIndeterminate() const OVERRIDE;
     virtual bool supportLabels() const OVERRIDE { return true; }
 
-    virtual RenderObject* createRenderer(RenderStyle*);
+    virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
     RenderProgress* renderProgress() const;
 
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
@@ -65,16 +67,8 @@ private:
     virtual void didAddUserAgentShadowRoot(ShadowRoot&) OVERRIDE;
     bool isDeterminate() const;
 
-    ProgressValueElement* m_value;
+    RawPtrWillBeMember<ProgressValueElement> m_value;
 };
-
-inline bool isHTMLProgressElement(Node* node)
-{
-    ASSERT(node);
-    return node->hasTagName(HTMLNames::progressTag);
-}
-
-DEFINE_NODE_TYPE_CASTS(HTMLProgressElement, hasTagName(HTMLNames::progressTag));
 
 } // namespace
 

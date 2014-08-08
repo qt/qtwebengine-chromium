@@ -1,37 +1,16 @@
 // Copyright 2011 the V8 project authors. All rights reserved.
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-//       copyright notice, this list of conditions and the following
-//       disclaimer in the documentation and/or other materials provided
-//       with the distribution.
-//     * Neither the name of Google Inc. nor the names of its
-//       contributors may be used to endorse or promote products derived
-//       from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
-#include "store-buffer.h"
+#include "src/store-buffer.h"
 
 #include <algorithm>
 
-#include "v8.h"
-#include "store-buffer-inl.h"
-#include "v8-counters.h"
+#include "src/v8.h"
+
+#include "src/base/atomicops.h"
+#include "src/counters.h"
+#include "src/store-buffer-inl.h"
 
 namespace v8 {
 namespace internal {
@@ -355,27 +334,6 @@ void StoreBuffer::GCPrologue() {
 
 
 #ifdef VERIFY_HEAP
-static void DummyScavengePointer(HeapObject** p, HeapObject* o) {
-  // Do nothing.
-}
-
-
-void StoreBuffer::VerifyPointers(PagedSpace* space,
-                                 RegionCallback region_callback) {
-  PageIterator it(space);
-
-  while (it.has_next()) {
-    Page* page = it.next();
-    FindPointersToNewSpaceOnPage(
-        reinterpret_cast<PagedSpace*>(page->owner()),
-        page,
-        region_callback,
-        &DummyScavengePointer,
-        false);
-  }
-}
-
-
 void StoreBuffer::VerifyPointers(LargeObjectSpace* space) {
   LargeObjectIterator it(space);
   for (HeapObject* object = it.Next(); object != NULL; object = it.Next()) {
@@ -388,7 +346,9 @@ void StoreBuffer::VerifyPointers(LargeObjectSpace* space) {
         // When we are not in GC the Heap::InNewSpace() predicate
         // checks that pointers which satisfy predicate point into
         // the active semispace.
-        heap_->InNewSpace(*slot);
+        Object* object = reinterpret_cast<Object*>(
+            base::NoBarrier_Load(reinterpret_cast<base::AtomicWord*>(slot)));
+        heap_->InNewSpace(object);
         slot_address += kPointerSize;
       }
     }
@@ -399,10 +359,6 @@ void StoreBuffer::VerifyPointers(LargeObjectSpace* space) {
 
 void StoreBuffer::Verify() {
 #ifdef VERIFY_HEAP
-  VerifyPointers(heap_->old_pointer_space(),
-                 &StoreBuffer::FindPointersToNewSpaceInRegion);
-  VerifyPointers(heap_->map_space(),
-                 &StoreBuffer::FindPointersToNewSpaceInMapsRegion);
   VerifyPointers(heap_->lo_space());
 #endif
 }
@@ -427,14 +383,18 @@ void StoreBuffer::FindPointersToNewSpaceInRegion(
        slot_address < end;
        slot_address += kPointerSize) {
     Object** slot = reinterpret_cast<Object**>(slot_address);
-    if (heap_->InNewSpace(*slot)) {
-      HeapObject* object = reinterpret_cast<HeapObject*>(*slot);
-      ASSERT(object->IsHeapObject());
+    Object* object = reinterpret_cast<Object*>(
+        base::NoBarrier_Load(reinterpret_cast<base::AtomicWord*>(slot)));
+    if (heap_->InNewSpace(object)) {
+      HeapObject* heap_object = reinterpret_cast<HeapObject*>(object);
+      ASSERT(heap_object->IsHeapObject());
       // The new space object was not promoted if it still contains a map
       // pointer. Clear the map field now lazily.
-      if (clear_maps) ClearDeadObject(object);
-      slot_callback(reinterpret_cast<HeapObject**>(slot), object);
-      if (heap_->InNewSpace(*slot)) {
+      if (clear_maps) ClearDeadObject(heap_object);
+      slot_callback(reinterpret_cast<HeapObject**>(slot), heap_object);
+      object = reinterpret_cast<Object*>(
+          base::NoBarrier_Load(reinterpret_cast<base::AtomicWord*>(slot)));
+      if (heap_->InNewSpace(object)) {
         EnterDirectlyIntoStoreBuffer(slot_address);
       }
     }
@@ -490,89 +450,12 @@ void StoreBuffer::FindPointersToNewSpaceInMapsRegion(
   Address map_aligned_end   = MapEndAlign(end);
 
   ASSERT(map_aligned_start == start);
-  ASSERT(map_aligned_end == end);
+  ASSERT(map_aligned_start <= map_aligned_end && map_aligned_end <= end);
 
   FindPointersToNewSpaceInMaps(map_aligned_start,
                                map_aligned_end,
                                slot_callback,
                                clear_maps);
-}
-
-
-// This function iterates over all the pointers in a paged space in the heap,
-// looking for pointers into new space.  Within the pages there may be dead
-// objects that have not been overwritten by free spaces or fillers because of
-// lazy sweeping.  These dead objects may not contain pointers to new space.
-// The garbage areas that have been swept properly (these will normally be the
-// large ones) will be marked with free space and filler map words.  In
-// addition any area that has never been used at all for object allocation must
-// be marked with a free space or filler.  Because the free space and filler
-// maps do not move we can always recognize these even after a compaction.
-// Normal objects like FixedArrays and JSObjects should not contain references
-// to these maps.  The special garbage section (see comment in spaces.h) is
-// skipped since it can contain absolutely anything.  Any objects that are
-// allocated during iteration may or may not be visited by the iteration, but
-// they will not be partially visited.
-void StoreBuffer::FindPointersToNewSpaceOnPage(
-    PagedSpace* space,
-    Page* page,
-    RegionCallback region_callback,
-    ObjectSlotCallback slot_callback,
-    bool clear_maps) {
-  Address visitable_start = page->area_start();
-  Address end_of_page = page->area_end();
-
-  Address visitable_end = visitable_start;
-
-  Object* free_space_map = heap_->free_space_map();
-  Object* two_pointer_filler_map = heap_->two_pointer_filler_map();
-
-  while (visitable_end < end_of_page) {
-    Object* o = *reinterpret_cast<Object**>(visitable_end);
-    // Skip fillers but not things that look like fillers in the special
-    // garbage section which can contain anything.
-    if (o == free_space_map ||
-        o == two_pointer_filler_map ||
-        (visitable_end == space->top() && visitable_end != space->limit())) {
-      if (visitable_start != visitable_end) {
-        // After calling this the special garbage section may have moved.
-        (this->*region_callback)(visitable_start,
-                                 visitable_end,
-                                 slot_callback,
-                                 clear_maps);
-        if (visitable_end >= space->top() && visitable_end < space->limit()) {
-          visitable_end = space->limit();
-          visitable_start = visitable_end;
-          continue;
-        }
-      }
-      if (visitable_end == space->top() && visitable_end != space->limit()) {
-        visitable_start = visitable_end = space->limit();
-      } else {
-        // At this point we are either at the start of a filler or we are at
-        // the point where the space->top() used to be before the
-        // visit_pointer_region call above.  Either way we can skip the
-        // object at the current spot:  We don't promise to visit objects
-        // allocated during heap traversal, and if space->top() moved then it
-        // must be because an object was allocated at this point.
-        visitable_start =
-            visitable_end + HeapObject::FromAddress(visitable_end)->Size();
-        visitable_end = visitable_start;
-      }
-    } else {
-      ASSERT(o != free_space_map);
-      ASSERT(o != two_pointer_filler_map);
-      ASSERT(visitable_end < space->top() || visitable_end >= space->limit());
-      visitable_end += kPointerSize;
-    }
-  }
-  ASSERT(visitable_end == end_of_page);
-  if (visitable_start != visitable_end) {
-    (this->*region_callback)(visitable_start,
-                             visitable_end,
-                             slot_callback,
-                             clear_maps);
-  }
 }
 
 
@@ -588,14 +471,17 @@ void StoreBuffer::IteratePointersInStoreBuffer(
       Address* saved_top = old_top_;
 #endif
       Object** slot = reinterpret_cast<Object**>(*current);
-      Object* object = *slot;
+      Object* object = reinterpret_cast<Object*>(
+          base::NoBarrier_Load(reinterpret_cast<base::AtomicWord*>(slot)));
       if (heap_->InFromSpace(object)) {
         HeapObject* heap_object = reinterpret_cast<HeapObject*>(object);
         // The new space object was not promoted if it still contains a map
         // pointer. Clear the map field now lazily.
         if (clear_maps) ClearDeadObject(heap_object);
         slot_callback(reinterpret_cast<HeapObject**>(slot), heap_object);
-        if (heap_->InNewSpace(*slot)) {
+        object = reinterpret_cast<Object*>(
+            base::NoBarrier_Load(reinterpret_cast<base::AtomicWord*>(slot)));
+        if (heap_->InNewSpace(object)) {
           EnterDirectlyIntoStoreBuffer(reinterpret_cast<Address>(slot));
         }
       }
@@ -659,14 +545,15 @@ void StoreBuffer::IteratePointersToNewSpace(ObjectSlotCallback slot_callback,
         } else {
           Page* page = reinterpret_cast<Page*>(chunk);
           PagedSpace* owner = reinterpret_cast<PagedSpace*>(page->owner());
-          FindPointersToNewSpaceOnPage(
-              owner,
-              page,
-              (owner == heap_->map_space() ?
-                 &StoreBuffer::FindPointersToNewSpaceInMapsRegion :
-                 &StoreBuffer::FindPointersToNewSpaceInRegion),
-              slot_callback,
-              clear_maps);
+          Address start = page->area_start();
+          Address end = page->area_end();
+          if (owner == heap_->map_space()) {
+            FindPointersToNewSpaceInMapsRegion(
+                start, end, slot_callback, clear_maps);
+          } else {
+            FindPointersToNewSpaceInRegion(
+                start, end, slot_callback, clear_maps);
+          }
         }
       }
     }

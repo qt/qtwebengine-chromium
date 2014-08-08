@@ -18,8 +18,8 @@
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/public/browser/browser_thread.h"
+#include "net/base/filename_util.h"
 #include "net/base/io_buffer.h"
-#include "net/base/net_util.h"
 #include "url/gurl.h"
 
 namespace content {
@@ -389,9 +389,8 @@ void SaveFileManager::OnRequireSaveJobFromOtherSource(
 void SaveFileManager::ExecuteCancelSaveRequest(int render_process_id,
                                                int request_id) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  ResourceDispatcherHostImpl::Get()->CancelRequest(render_process_id,
-                                                   request_id,
-                                                   false);
+  ResourceDispatcherHostImpl::Get()->CancelRequest(
+      render_process_id, request_id);
 }
 
 // Notifications sent from the UI thread and run on the file thread.

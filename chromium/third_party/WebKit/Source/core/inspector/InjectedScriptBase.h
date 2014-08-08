@@ -31,8 +31,9 @@
 #ifndef InjectedScriptBase_h
 #define InjectedScriptBase_h
 
-#include "InspectorTypeBuilder.h"
-#include "bindings/v8/ScriptObject.h"
+#include "bindings/v8/ScriptState.h"
+#include "bindings/v8/ScriptValue.h"
+#include "core/InspectorTypeBuilder.h"
 #include "wtf/Forward.h"
 
 namespace WebCore {
@@ -48,24 +49,28 @@ public:
     virtual ~InjectedScriptBase() { }
 
     const String& name() const { return m_name; }
-    bool hasNoValue() const { return m_injectedScriptObject.hasNoValue(); }
-    ScriptState* scriptState() const { return m_injectedScriptObject.scriptState(); }
+    bool isEmpty() const { return m_injectedScriptObject.isEmpty(); }
+    ScriptState* scriptState() const
+    {
+        ASSERT(!isEmpty());
+        return m_injectedScriptObject.scriptState();
+    }
 
 protected:
     typedef bool (*InspectedStateAccessCheck)(ScriptState*);
     InjectedScriptBase(const String& name);
-    InjectedScriptBase(const String& name, ScriptObject, InspectedStateAccessCheck);
+    InjectedScriptBase(const String& name, ScriptValue, InspectedStateAccessCheck);
 
-    void initialize(ScriptObject, InspectedStateAccessCheck);
+    void initialize(ScriptValue, InspectedStateAccessCheck);
     bool canAccessInspectedWindow() const;
-    const ScriptObject& injectedScriptObject() const;
+    const ScriptValue& injectedScriptObject() const;
     ScriptValue callFunctionWithEvalEnabled(ScriptFunctionCall&, bool& hadException) const;
     void makeCall(ScriptFunctionCall&, RefPtr<JSONValue>* result);
     void makeEvalCall(ErrorString*, ScriptFunctionCall&, RefPtr<TypeBuilder::Runtime::RemoteObject>* result, TypeBuilder::OptOutput<bool>* wasThrown);
 
 private:
     String m_name;
-    ScriptObject m_injectedScriptObject;
+    ScriptValue m_injectedScriptObject;
     InspectedStateAccessCheck m_inspectedStateAccessCheck;
 };
 

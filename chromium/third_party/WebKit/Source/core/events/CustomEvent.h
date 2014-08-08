@@ -34,23 +34,23 @@ class SerializedScriptValue;
 
 typedef EventInit CustomEventInit;
 
-class CustomEvent : public Event {
+class CustomEvent FINAL : public Event {
 public:
     virtual ~CustomEvent();
 
-    static PassRefPtr<CustomEvent> create()
+    static PassRefPtrWillBeRawPtr<CustomEvent> create()
     {
-        return adoptRef(new CustomEvent);
+        return adoptRefWillBeNoop(new CustomEvent);
     }
 
-    static PassRefPtr<CustomEvent> create(const AtomicString& type, const CustomEventInit& initializer)
+    static PassRefPtrWillBeRawPtr<CustomEvent> create(const AtomicString& type, const CustomEventInit& initializer)
     {
-        return adoptRef(new CustomEvent(type, initializer));
+        return adoptRefWillBeNoop(new CustomEvent(type, initializer));
     }
 
     void initCustomEvent(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtr<SerializedScriptValue>);
 
-    virtual const AtomicString& interfaceName() const;
+    virtual const AtomicString& interfaceName() const OVERRIDE;
 
     SerializedScriptValue* serializedDetail() { return m_serializedDetail.get(); }
 
@@ -59,6 +59,8 @@ public:
         ASSERT(!m_serializedDetail);
         m_serializedDetail = detail;
     }
+
+    virtual void trace(Visitor*) OVERRIDE;
 
 private:
     CustomEvent();

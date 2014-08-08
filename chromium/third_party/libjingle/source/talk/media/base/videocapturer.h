@@ -34,9 +34,13 @@
 #include "talk/base/basictypes.h"
 #include "talk/base/criticalsection.h"
 #include "talk/base/messagehandler.h"
+#include "talk/base/rollingaccumulator.h"
 #include "talk/base/scoped_ptr.h"
 #include "talk/base/sigslot.h"
 #include "talk/base/thread.h"
+#include "talk/base/timing.h"
+#include "talk/media/base/mediachannel.h"
+#include "talk/media/base/videoadapter.h"
 #include "talk/media/base/videocommon.h"
 #include "talk/media/devices/devicemanager.h"
 
@@ -97,12 +101,10 @@ struct CapturedFrame {
 // capturing. The subclasses implement the video capturer for various types of
 // capturers and various platforms.
 //
-// The captured frames may need to be adapted (for example, cropping). Adaptors
-// can be registered to the capturer or applied externally to the capturer.
-// If the adaptor is needed, it acts as the downstream of VideoCapturer, adapts
-// the captured frames, and delivers the adapted frames to other components
-// such as the encoder. Effects can also be registered to the capturer or
-// applied externally.
+// The captured frames may need to be adapted (for example, cropping).
+// Video adaptation is built into and enabled by default. After a frame has
+// been captured from the device, it is sent to the video adapter, then video
+// processors, then out to the encoder.
 //
 // Programming model:
 //   Create an object of a subclass of VideoCapturer
@@ -111,6 +113,7 @@ struct CapturedFrame {
 //   SignalFrameCaptured.connect()
 //   Find the capture format for Start() by either calling GetSupportedFormats()
 //   and selecting one of the supported or calling GetBestCaptureFormat().
+//   video_adapter()->OnOutputFormatRequest(desired_encoding_format)
 //   Start()
 //   GetCaptureFormat() optionally
 //   Stop()
@@ -255,12 +258,8 @@ class VideoCapturer
   // Signal the captured frame to downstream.
   sigslot::signal2<VideoCapturer*, const CapturedFrame*,
                    sigslot::multi_threaded_local> SignalFrameCaptured;
-  // If slots are connected to SignalAdaptFrame, this signals with parameters
-  // of this capturer instance, the input video frame and output frame
-  // pointer, respectively.
-  sigslot::signal3<VideoCapturer*, const VideoFrame*, VideoFrame**,
-                   sigslot::multi_threaded_local> SignalAdaptFrame;
-  // Signal the captured frame converted to I420 to downstream.
+  // Signal the captured and possibly adapted frame to downstream consumers
+  // such as the encoder.
   sigslot::signal2<VideoCapturer*, const VideoFrame*,
                    sigslot::multi_threaded_local> SignalVideoFrame;
 
@@ -276,6 +275,27 @@ class VideoCapturer
   void set_screencast_max_pixels(int p) {
     screencast_max_pixels_ = talk_base::_max(0, p);
   }
+
+  // If true, run video adaptation. By default, video adaptation is enabled
+  // and users must call video_adapter()->OnOutputFormatRequest()
+  // to receive frames.
+  bool enable_video_adapter() const { return enable_video_adapter_; }
+  void set_enable_video_adapter(bool enable_video_adapter) {
+    enable_video_adapter_ = enable_video_adapter;
+  }
+
+  CoordinatedVideoAdapter* video_adapter() { return &video_adapter_; }
+  const CoordinatedVideoAdapter* video_adapter() const {
+    return &video_adapter_;
+  }
+
+  // Gets statistics for tracked variables recorded since the last call to
+  // GetStats.  Note that calling GetStats resets any gathered data so it
+  // should be called only periodically to log statistics.
+  void GetStats(VariableInfo<int>* adapt_drop_stats,
+                VariableInfo<int>* effect_drop_stats,
+                VariableInfo<double>* frame_time_stats,
+                VideoFormat* last_captured_frame_format);
 
  protected:
   // Callback attached to SignalFrameCaptured where SignalVideoFrames is called.
@@ -297,6 +317,12 @@ class VideoCapturer
 
   void SetCaptureFormat(const VideoFormat* format) {
     capture_format_.reset(format ? new VideoFormat(*format) : NULL);
+    if (capture_format_) {
+      ASSERT(capture_format_->interval > 0 &&
+             "Capture format expected to have positive interval.");
+      // Video adapter really only cares about capture format interval.
+      video_adapter_.SetInputFormat(*capture_format_);
+    }
   }
 
   void SetSupportedFormats(const std::vector<VideoFormat>& formats);
@@ -323,6 +349,15 @@ class VideoCapturer
   // Returns true if format doesn't fulfill all applied restrictions.
   bool ShouldFilterFormat(const VideoFormat& format) const;
 
+  void UpdateStats(const CapturedFrame* captured_frame);
+
+  // Helper function to save statistics on the current data from a
+  // RollingAccumulator into stats.
+  template<class T>
+  static void GetVariableSnapshot(
+      const talk_base::RollingAccumulator<T>& data,
+      VariableInfo<T>* stats);
+
   talk_base::Thread* thread_;
   std::string id_;
   CaptureState capture_state_;
@@ -340,6 +375,21 @@ class VideoCapturer
   int screencast_max_pixels_;  // Downscale screencasts further if requested.
   bool muted_;
   int black_frame_count_down_;
+
+  bool enable_video_adapter_;
+  CoordinatedVideoAdapter video_adapter_;
+
+  talk_base::Timing frame_length_time_reporter_;
+  talk_base::CriticalSection frame_stats_crit_;
+
+  int adapt_frame_drops_;
+  talk_base::RollingAccumulator<int> adapt_frame_drops_data_;
+  int effect_frame_drops_;
+  talk_base::RollingAccumulator<int> effect_frame_drops_data_;
+  double previous_frame_time_;
+  talk_base::RollingAccumulator<double> frame_time_data_;
+  // The captured frame format before potential adapation.
+  VideoFormat last_captured_frame_format_;
 
   talk_base::CriticalSection crit_;
   VideoProcessors video_processors_;

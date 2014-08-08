@@ -14,6 +14,7 @@
 
 namespace content {
 
+class DevToolsExternalAgentProxyDelegate;
 class RenderViewHost;
 class WebContents;
 
@@ -23,6 +24,11 @@ class CONTENT_EXPORT DevToolsAgentHost
  public:
   // Returns DevToolsAgentHost with a given |id| or NULL of it does not exist.
   static scoped_refptr<DevToolsAgentHost> GetForId(const std::string& id);
+
+  // Returns DevToolsAgentHost that can be used for inspecting |web_contents|.
+  // New DevToolsAgentHost will be created if it does not exist.
+  static scoped_refptr<DevToolsAgentHost> GetOrCreateFor(
+      WebContents* web_contents);
 
   // Returns DevToolsAgentHost that can be used for inspecting |rvh|.
   // New DevToolsAgentHost will be created if it does not exist.
@@ -37,10 +43,11 @@ class CONTENT_EXPORT DevToolsAgentHost
   static scoped_refptr<DevToolsAgentHost> GetForWorker(int worker_process_id,
                                                        int worker_route_id);
 
-  // Returns true iff an instance of DevToolsAgentHost exists for the shared
-  // worker with given process host id and routing id.
-  static bool HasForWorker(int worker_process_id,
-                           int worker_route_id);
+  // Creates DevToolsAgentHost that communicates to the target by means of
+  // provided |delegate|. |delegate| ownership is passed to the created agent
+  // host.
+  static scoped_refptr<DevToolsAgentHost> Create(
+      DevToolsExternalAgentProxyDelegate* delegate);
 
   static bool IsDebuggerAttached(WebContents* web_contents);
 
@@ -65,6 +72,9 @@ class CONTENT_EXPORT DevToolsAgentHost
 
   // Attaches render view host to this host.
   virtual void ConnectRenderViewHost(RenderViewHost* rvh) = 0;
+
+  // Returns true if DevToolsAgentHost is for worker.
+  virtual bool IsWorker() const = 0;
 
  protected:
   friend class base::RefCounted<DevToolsAgentHost>;

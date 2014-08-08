@@ -26,7 +26,7 @@
 #include "config.h"
 #include "core/rendering/RenderThemeChromiumFontProvider.h"
 
-#include "CSSValueKeywords.h"
+#include "core/CSSValueKeywords.h"
 #include "platform/fonts/FontDescription.h"
 
 #include "wtf/StdLibExtras.h"
@@ -65,7 +65,7 @@ void RenderThemeChromiumFontProvider::systemFont(CSSValueID valueID, FontDescrip
     fontDescription.setIsAbsoluteSize(true);
     fontDescription.setGenericFamily(FontDescription::NoFamily);
     fontDescription.setWeight(FontWeightNormal);
-    fontDescription.setItalic(false);
+    fontDescription.setStyle(FontStyleNormal);
 }
 
 } // namespace WebCore

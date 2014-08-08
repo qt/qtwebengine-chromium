@@ -18,7 +18,8 @@ namespace content {
 enum WebSocketMessageType {
   WEB_SOCKET_MESSAGE_TYPE_CONTINUATION = 0x0,
   WEB_SOCKET_MESSAGE_TYPE_TEXT = 0x1,
-  WEB_SOCKET_MESSAGE_TYPE_BINARY = 0x2
+  WEB_SOCKET_MESSAGE_TYPE_BINARY = 0x2,
+  WEB_SOCKET_MESSAGE_TYPE_LAST = WEB_SOCKET_MESSAGE_TYPE_BINARY
 };
 
 // Opening handshake request information which will be shown in the inspector.
@@ -31,6 +32,8 @@ struct WebSocketHandshakeRequest {
   GURL url;
   // Additional HTTP request headers
   std::vector<std::pair<std::string, std::string> > headers;
+  // HTTP request headers raw string
+  std::string headers_text;
   // The time that this request is sent
   base::Time request_time;
 };
@@ -49,6 +52,8 @@ struct WebSocketHandshakeResponse {
   std::string status_text;
   // Additional HTTP response headers
   std::vector<std::pair<std::string, std::string> > headers;
+  // HTTP response headers raw string
+  std::string headers_text;
   // The time that this response arrives
   base::Time response_time;
 };

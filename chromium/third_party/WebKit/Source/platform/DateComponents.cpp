@@ -81,6 +81,11 @@ static int dayOfWeek(int year, int month, int day)
     return result;
 }
 
+int DateComponents::weekDay() const
+{
+    return dayOfWeek(m_year, m_month, m_monthDay);
+}
+
 int DateComponents::maxWeekNumberInYear() const
 {
     int day = dayOfWeek(m_year, 0, 1); // January 1.
@@ -100,7 +105,7 @@ static unsigned countDigits(const String& src, unsigned start)
 // Very strict integer parser. Do not allow leading or trailing whitespace unlike charactersToIntStrict().
 static bool toInt(const String& src, unsigned parseStart, unsigned parseLength, int& out)
 {
-    if (parseStart + parseLength > src.length() || parseLength <= 0)
+    if (parseStart + parseLength > src.length() || !parseLength)
         return false;
     int value = 0;
     unsigned current = parseStart;

@@ -37,6 +37,7 @@
 #include <pthread.h>
 #endif
 #include "talk/base/constructormagic.h"
+#include "talk/base/event.h"
 #include "talk/base/messagequeue.h"
 
 #ifdef WIN32
@@ -143,14 +144,7 @@ class Thread : public MessageQueue {
   bool SetPriority(ThreadPriority priority);
 
   // Starts the execution of the thread.
-  bool started() const { return started_; }
   bool Start(Runnable* runnable = NULL);
-
-  // Used for fire-and-forget threads.  Deletes this thread object when the
-  // Run method returns.
-  void Release() {
-    delete_self_when_complete_ = true;
-  }
 
   // Tells the thread to stop and waits until it is joined.
   // Never call Stop on the current thread.  Instead use the inherited Quit
@@ -218,38 +212,24 @@ class Thread : public MessageQueue {
   bool WrapCurrent();
   void UnwrapCurrent();
 
+  // Expose private method running() for tests.
+  //
+  // DANGER: this is a terrible public API.  Most callers that might want to
+  // call this likely do not have enough control/knowledge of the Thread in
+  // question to guarantee that the returned value remains true for the duration
+  // of whatever code is conditionally executing because of the return value!
+  bool RunningForTest() { return running(); }
+  // This is a legacy call-site that probably doesn't need to exist in the first
+  // place.
+  // TODO(fischman): delete once the ASSERT added in channelmanager.cc sticks
+  // for a month (ETA 2014/06/22).
+  bool RunningForChannelManager() { return running(); }
+
  protected:
   // Blocks the calling thread until this thread has terminated.
   void Join();
 
  private:
-  // Helper class to facilitate executing a functor on a thread.
-  template <class ReturnT, class FunctorT>
-  class FunctorMessageHandler : public MessageHandler {
-   public:
-    explicit FunctorMessageHandler(const FunctorT& functor)
-        : functor_(functor) {}
-    virtual void OnMessage(Message* msg) {
-      result_ = functor_();
-    }
-    const ReturnT& result() const { return result_; }
-   private:
-    FunctorT functor_;
-    ReturnT result_;
-  };
-
-  // Specialization for ReturnT of void.
-  template <class FunctorT>
-  class FunctorMessageHandler<void, FunctorT> : public MessageHandler {
-   public:
-    explicit FunctorMessageHandler(const FunctorT& functor)
-        : functor_(functor) {}
-    virtual void OnMessage(Message* msg) { functor_(); }
-    void result() const {}
-   private:
-    FunctorT functor_;
-  };
-
   static void *PreRun(void *pv);
 
   // ThreadManager calls this instead WrapCurrent() because
@@ -257,10 +237,13 @@ class Thread : public MessageQueue {
   // being created.
   bool WrapCurrentWithThreadManager(ThreadManager* thread_manager);
 
+  // Return true if the thread was started and hasn't yet stopped.
+  bool running() { return running_.Wait(0); }
+
   std::list<_SendMessage> sendlist_;
   std::string name_;
   ThreadPriority priority_;
-  bool started_;
+  Event running_;  // Signalled means running.
 
 #ifdef POSIX
   pthread_t thread_;
@@ -272,7 +255,6 @@ class Thread : public MessageQueue {
 #endif
 
   bool owned_;
-  bool delete_self_when_complete_;
 
   friend class ThreadManager;
 

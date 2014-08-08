@@ -5,11 +5,10 @@
 #include "printing/pdf_metafile_skia.h"
 
 #include "base/containers/hash_tables.h"
-#include "base/file_descriptor_posix.h"
 #include "base/file_util.h"
 #include "base/metrics/histogram.h"
+#include "base/numerics/safe_conversions.h"
 #include "base/posix/eintr_wrapper.h"
-#include "base/safe_numerics.h"
 #include "skia/ext/refptr.h"
 #include "skia/ext/vector_platform_device_skia.h"
 #include "third_party/skia/include/core/SkData.h"
@@ -25,6 +24,10 @@
 
 #if defined(OS_MACOSX)
 #include "printing/pdf_metafile_cg_mac.h"
+#endif
+
+#if defined(OS_POSIX)
+#include "base/file_descriptor_posix.h"
 #endif
 
 namespace printing {
@@ -112,7 +115,7 @@ bool PdfMetafileSkia::FinishDocument() {
 }
 
 uint32 PdfMetafileSkia::GetDataSize() const {
-  return base::checked_numeric_cast<uint32>(data_->pdf_stream_.getOffset());
+  return base::checked_cast<uint32>(data_->pdf_stream_.getOffset());
 }
 
 bool PdfMetafileSkia::GetData(void* dst_buffer,
@@ -128,9 +131,9 @@ bool PdfMetafileSkia::GetData(void* dst_buffer,
 bool PdfMetafileSkia::SaveTo(const base::FilePath& file_path) const {
   DCHECK_GT(data_->pdf_stream_.getOffset(), 0U);
   SkAutoDataUnref data(data_->pdf_stream_.copyToData());
-  if (file_util::WriteFile(file_path,
-                           reinterpret_cast<const char*>(data->data()),
-                           GetDataSize()) != static_cast<int>(GetDataSize())) {
+  if (base::WriteFile(file_path,
+                      reinterpret_cast<const char*>(data->data()),
+                      GetDataSize()) != static_cast<int>(GetDataSize())) {
     DLOG(ERROR) << "Failed to save file " << file_path.value().c_str();
     return false;
   }
@@ -203,9 +206,9 @@ bool PdfMetafileSkia::SaveToFD(const base::FileDescriptor& fd) const {
 
   bool result = true;
   SkAutoDataUnref data(data_->pdf_stream_.copyToData());
-  if (file_util::WriteFileDescriptor(fd.fd,
-                                     reinterpret_cast<const char*>(data->data()),
-                                     GetDataSize()) !=
+  if (base::WriteFileDescriptor(fd.fd,
+                                reinterpret_cast<const char*>(data->data()),
+                                GetDataSize()) !=
       static_cast<int>(GetDataSize())) {
     DLOG(ERROR) << "Failed to save file with fd " << fd.fd;
     result = false;
@@ -241,7 +244,7 @@ PdfMetafileSkia* PdfMetafileSkia::GetMetafileForCurrentPage() {
 
   PdfMetafileSkia* metafile = new PdfMetafileSkia;
   metafile->InitFromData(data->bytes(),
-                         base::checked_numeric_cast<uint32>(data->size()));
+                         base::checked_cast<uint32>(data->size()));
   return metafile;
 }
 

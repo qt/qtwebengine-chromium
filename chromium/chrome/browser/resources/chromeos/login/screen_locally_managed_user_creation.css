@@ -15,9 +15,28 @@
   height: 100%;
 }
 
+#managed-user-creation .nofocus:focus {
+  outline: none;
+}
+
 #managed-user-creation .step-controls {
   -webkit-padding-end: 20px;
+  align-items: center;
   bottom: 20px;
+  display: flex;
+  justify-content: space-between;
+}
+
+#managed-user-creation .controls-links {
+  align-items: center;
+  display: flex;
+  justify-content: flex-start;
+}
+
+#managed-user-creation .controls-buttons {
+  align-items: center;
+  display: flex;
+  justify-content: flex-end;
 }
 
 #managed-user-creation .logo-padded-text {
@@ -39,7 +58,6 @@
 #managed-user-creation .button-link {
   font-size: small;
   padding: 0 20px;
-  position: absolute;
 }
 
 .below-marketing::-webkit-scrollbar {
@@ -47,11 +65,11 @@
 }
 
 .below-marketing::-webkit-scrollbar-track-piece {
-  background: #888
+  background: #eee;
 }
 
 .below-marketing::-webkit-scrollbar-thumb {
-  background: #eee
+  background: #888;
 }
 
 #managed-user-creation .page-no-marketing {
@@ -105,7 +123,7 @@
 }
 
 #managed-user-creation-intro .below-marketing {
-  margin: 20px 40px 0;
+  margin: 20px 21px 2px 40px;
 }
 
 #managed-user-creation-intro-alternate-text {
@@ -176,6 +194,7 @@ input.managed-user-creation-manager-password,
   border: 1px solid #c8c8c8;
   height: 100%;
   margin-top: 20px;
+  overflow-x: hidden;
   overflow-y: auto;
 }
 
@@ -207,14 +226,16 @@ input.managed-user-creation-manager-password,
 .import-pod {
   height: 32px;
   opacity: 0.8;
-  padding: 6px;
-  width: 626px;
+  padding: 20px;
+  width: 646px;
 }
 
 .import-pod .import-pod-name {
   color: #000;
-  display: inline;
-  max-height: 30px;
+  display: inline-block;
+  height: 32px;
+  max-height: 32px;
+  padding-top: 6px;
   vertical-align: top;
 }
 
@@ -326,6 +347,11 @@ input.managed-user-creation-manager-password,
   height: 400px;
   overflow-x: hidden;
   overflow-y: auto;
+}
+
+#managed-user-creation-import .page-title-explanation {
+  padding-bottom: 10px;
+  padding-top: 6px;
 }
 
 .manager-pod .password-error,
@@ -491,7 +517,7 @@ html[dir=rtl] #managed-user-creation-flip-photo {
 
 .camera:not(.live) #managed-user-creation-discard-photo {
   background: url('chrome://theme/IDR_USER_IMAGE_RECYCLE')
-      no-repeat center 0;
+      no-repeat center center;
   display: block;
 }
 
@@ -503,6 +529,10 @@ html[dir=rtl] #managed-user-creation-flip-photo {
 
 #managed-user-creation-image-preview .perspective-box {
   -webkit-perspective: 600px;
+   border: solid 1px #cacaca;
+   border-radius: 4px;
+   padding: 2px;
+   width: 220px;
 }
 
 .managed-user-creation-image-stream-area .spinner {

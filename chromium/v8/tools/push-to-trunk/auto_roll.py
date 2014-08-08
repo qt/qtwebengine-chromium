@@ -1,111 +1,116 @@
 #!/usr/bin/env python
-# Copyright 2013 the V8 project authors. All rights reserved.
-# Redistribution and use in source and binary forms, with or without
-# modification, are permitted provided that the following conditions are
-# met:
-#
-#     * Redistributions of source code must retain the above copyright
-#       notice, this list of conditions and the following disclaimer.
-#     * Redistributions in binary form must reproduce the above
-#       copyright notice, this list of conditions and the following
-#       disclaimer in the documentation and/or other materials provided
-#       with the distribution.
-#     * Neither the name of Google Inc. nor the names of its
-#       contributors may be used to endorse or promote products derived
-#       from this software without specific prior written permission.
-#
-# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-# "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-# LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-# A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-# OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-# SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-# LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-# DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-# THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+# Copyright 2014 the V8 project authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
 
-import optparse
-import re
+import argparse
+import json
+import os
 import sys
+import urllib
 
 from common_includes import *
+import chromium_roll
 
 CONFIG = {
   PERSISTFILE_BASENAME: "/tmp/v8-auto-roll-tempfile",
-  DOT_GIT_LOCATION: ".git",
 }
 
+CR_DEPS_URL = 'http://src.chromium.org/svn/trunk/src/DEPS'
 
-class Preparation(Step):
-  MESSAGE = "Preparation."
+class CheckActiveRoll(Step):
+  MESSAGE = "Check active roll."
 
-  def RunStep(self):
-    self.InitialEnvironmentChecks()
-    self.CommonPrepare()
-
-
-class FetchLatestRevision(Step):
-  MESSAGE = "Fetching latest V8 revision."
-
-  def RunStep(self):
-    log = self.Git("svn log -1 --oneline").strip()
-    match = re.match(r"^r(\d+) ", log)
-    if not match:
-      self.Die("Could not extract current svn revision from log.")
-    self.Persist("latest", match.group(1))
-
-
-class FetchLKGR(Step):
-  MESSAGE = "Fetching V8 LKGR."
+  @staticmethod
+  def ContainsChromiumRoll(changes):
+    for change in changes:
+      if change["subject"].startswith("Update V8 to"):
+        return True
+    return False
 
   def RunStep(self):
-    lkgr_url = "https://v8-status.appspot.com/lkgr"
-    # Retry several times since app engine might have issues.
-    self.Persist("lkgr", self.ReadURL(lkgr_url, wait_plan=[5, 20, 300, 300]))
+    params = {
+      "closed": 3,
+      "owner": self._options.author,
+      "limit": 30,
+      "format": "json",
+    }
+    params = urllib.urlencode(params)
+    search_url = "https://codereview.chromium.org/search"
+    result = self.ReadURL(search_url, params, wait_plan=[5, 20])
+    if self.ContainsChromiumRoll(json.loads(result)["results"]):
+      print "Stop due to existing Chromium roll."
+      return True
 
 
-class PushToTrunk(Step):
-  MESSAGE = "Pushing to trunk if possible."
+class DetectLastPush(Step):
+  MESSAGE = "Detect commit ID of the last push to trunk."
 
   def RunStep(self):
-    self.RestoreIfUnset("latest")
-    self.RestoreIfUnset("lkgr")
-    latest = int(self._state["latest"])
-    lkgr = int(self._state["lkgr"])
-    if latest == lkgr:
-      print "ToT (r%d) is clean. Pushing to trunk." % latest
-      # TODO(machenbach): Call push to trunk script.
-    else:
-      print("ToT (r%d) is ahead of the LKGR (r%d). Skipping push to trunk."
-            % (latest, lkgr))
+    push_hash = self.FindLastTrunkPush(include_patches=True)
+    self["last_push"] = self.GitSVNFindSVNRev(push_hash)
 
 
-def RunAutoRoll(config,
-                options,
-                side_effect_handler=DEFAULT_SIDE_EFFECT_HANDLER):
-  step_classes = [
-    Preparation,
-    FetchLatestRevision,
-    FetchLKGR,
-    PushToTrunk,
-  ]
-  RunScript(step_classes, config, options, side_effect_handler)
+class DetectLastRoll(Step):
+  MESSAGE = "Detect commit ID of the last Chromium roll."
+
+  def RunStep(self):
+    # Interpret the DEPS file to retrieve the v8 revision.
+    Var = lambda var: '%s'
+    exec(self.ReadURL(CR_DEPS_URL))
+    last_roll = vars['v8_revision']
+    if last_roll >= self["last_push"]:
+      print("There is no newer v8 revision than the one in Chromium (%s)."
+            % last_roll)
+      return True
 
 
-def BuildOptions():
-  result = optparse.OptionParser()
-  result.add_option("-s", "--step", dest="s",
-                    help="Specify the step where to start work. Default: 0.",
-                    default=0, type="int")
-  return result
+class RollChromium(Step):
+  MESSAGE = "Roll V8 into Chromium."
+
+  def RunStep(self):
+    if self._options.roll:
+      args = [
+        "--author", self._options.author,
+        "--reviewer", self._options.reviewer,
+        "--chromium", self._options.chromium,
+        "--force",
+      ]
+      if self._options.sheriff:
+        args.extend([
+            "--sheriff", "--googlers-mapping", self._options.googlers_mapping])
+      R = chromium_roll.ChromiumRoll
+      self._side_effect_handler.Call(
+          R(chromium_roll.CONFIG, self._side_effect_handler).Run,
+          args)
 
 
-def Main():
-  parser = BuildOptions()
-  (options, args) = parser.parse_args()
-  RunAutoRoll(CONFIG, options)
+class AutoRoll(ScriptsBase):
+  def _PrepareOptions(self, parser):
+    parser.add_argument("-c", "--chromium", required=True,
+                        help=("The path to your Chromium src/ "
+                              "directory to automate the V8 roll."))
+    parser.add_argument("--roll",
+                        help="Make Chromium roll. Dry run if unspecified.",
+                        default=False, action="store_true")
 
-if __name__ == "__main__":
-  sys.exit(Main())
+  def _ProcessOptions(self, options):  # pragma: no cover
+    if not options.reviewer:
+      print "A reviewer (-r) is required."
+      return False
+    if not options.author:
+      print "An author (-a) is required."
+      return False
+    return True
+
+  def _Steps(self):
+    return [
+      CheckActiveRoll,
+      DetectLastPush,
+      DetectLastRoll,
+      RollChromium,
+    ]
+
+
+if __name__ == "__main__":  # pragma: no cover
+  sys.exit(AutoRoll(CONFIG).Run())

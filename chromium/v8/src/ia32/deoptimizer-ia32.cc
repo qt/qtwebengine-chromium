@@ -1,38 +1,15 @@
 // Copyright 2012 the V8 project authors. All rights reserved.
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-//       copyright notice, this list of conditions and the following
-//       disclaimer in the documentation and/or other materials provided
-//       with the distribution.
-//     * Neither the name of Google Inc. nor the names of its
-//       contributors may be used to endorse or promote products derived
-//       from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
-#include "v8.h"
+#include "src/v8.h"
 
 #if V8_TARGET_ARCH_IA32
 
-#include "codegen.h"
-#include "deoptimizer.h"
-#include "full-codegen.h"
-#include "safepoint-table.h"
+#include "src/codegen.h"
+#include "src/deoptimizer.h"
+#include "src/full-codegen.h"
+#include "src/safepoint-table.h"
 
 namespace v8 {
 namespace internal {
@@ -90,9 +67,8 @@ void Deoptimizer::EnsureRelocSpaceForLazyDeoptimization(Handle<Code> code) {
     Factory* factory = isolate->factory();
     Handle<ByteArray> new_reloc =
         factory->NewByteArray(reloc_length + padding, TENURED);
-    OS::MemCopy(new_reloc->GetDataStartAddress() + padding,
-                code->relocation_info()->GetDataStartAddress(),
-                reloc_length);
+    MemCopy(new_reloc->GetDataStartAddress() + padding,
+            code->relocation_info()->GetDataStartAddress(), reloc_length);
     // Create a relocation writer to write the comments in the padding
     // space. Use position 0 for everything to ensure short encoding.
     RelocInfoWriter reloc_info_writer(
@@ -116,6 +92,27 @@ void Deoptimizer::EnsureRelocSpaceForLazyDeoptimization(Handle<Code> code) {
 
 void Deoptimizer::PatchCodeForDeoptimization(Isolate* isolate, Code* code) {
   Address code_start_address = code->instruction_start();
+
+  if (FLAG_zap_code_space) {
+    // Fail hard and early if we enter this code object again.
+    byte* pointer = code->FindCodeAgeSequence();
+    if (pointer != NULL) {
+      pointer += kNoCodeAgeSequenceLength;
+    } else {
+      pointer = code->instruction_start();
+    }
+    CodePatcher patcher(pointer, 1);
+    patcher.masm()->int3();
+
+    DeoptimizationInputData* data =
+        DeoptimizationInputData::cast(code->deoptimization_data());
+    int osr_offset = data->OsrPcOffset()->value();
+    if (osr_offset > 0) {
+      CodePatcher osr_patcher(code->instruction_start() + osr_offset, 1);
+      osr_patcher.masm()->int3();
+    }
+  }
+
   // We will overwrite the code's relocation info in-place. Relocation info
   // is written backward. The relocation info is the payload of a byte
   // array.  Later on we will slide this to the start of the byte array and
@@ -124,9 +121,6 @@ void Deoptimizer::PatchCodeForDeoptimization(Isolate* isolate, Code* code) {
   Address reloc_end_address = reloc_info->address() + reloc_info->Size();
   RelocInfoWriter reloc_info_writer(reloc_end_address, code_start_address);
 
-  // For each LLazyBailout instruction insert a call to the corresponding
-  // deoptimization entry.
-
   // Since the call is a relative encoding, write new
   // reloc info.  We do not need any of the existing reloc info because the
   // existing code will not be used again (we zap it in debug builds).
@@ -134,9 +128,14 @@ void Deoptimizer::PatchCodeForDeoptimization(Isolate* isolate, Code* code) {
   // Emit call to lazy deoptimization at all lazy deopt points.
   DeoptimizationInputData* deopt_data =
       DeoptimizationInputData::cast(code->deoptimization_data());
+  SharedFunctionInfo* shared =
+      SharedFunctionInfo::cast(deopt_data->SharedFunctionInfo());
+  shared->EvictFromOptimizedCodeMap(code, "deoptimized code");
 #ifdef DEBUG
   Address prev_call_address = NULL;
 #endif
+  // For each LLazyBailout instruction insert a call to the corresponding
+  // deoptimization entry.
   for (int i = 0; i < deopt_data->DeoptCount(); i++) {
     if (deopt_data->Pc(i)->value() == -1) continue;
     // Patch lazy deoptimization entry.
@@ -162,8 +161,7 @@ void Deoptimizer::PatchCodeForDeoptimization(Isolate* isolate, Code* code) {
 
   // Move the relocation info to the beginning of the byte array.
   int new_reloc_size = reloc_end_address - reloc_info_writer.pos();
-  OS::MemMove(
-      code->relocation_start(), reloc_info_writer.pos(), new_reloc_size);
+  MemMove(code->relocation_start(), reloc_info_writer.pos(), new_reloc_size);
 
   // The relocation info is in place, update the size.
   reloc_info->set_length(new_reloc_size);
@@ -187,7 +185,7 @@ void Deoptimizer::FillInputFrame(Address tos, JavaScriptFrame* frame) {
   }
   input_->SetRegister(esp.code(), reinterpret_cast<intptr_t>(frame->sp()));
   input_->SetRegister(ebp.code(), reinterpret_cast<intptr_t>(frame->fp()));
-  for (int i = 0; i < DoubleRegister::NumAllocatableRegisters(); i++) {
+  for (int i = 0; i < XMMRegister::kMaxNumAllocatableRegisters; i++) {
     input_->SetDoubleRegister(i, 0.0);
   }
 
@@ -209,8 +207,7 @@ void Deoptimizer::SetPlatformCompiledStubRegisters(
 
 
 void Deoptimizer::CopyDoubleRegisters(FrameDescription* output_frame) {
-  if (!CpuFeatures::IsSupported(SSE2)) return;
-  for (int i = 0; i < XMMRegister::kNumAllocatableRegisters; ++i) {
+  for (int i = 0; i < XMMRegister::kMaxNumAllocatableRegisters; ++i) {
     double double_value = input_->GetDoubleRegister(i);
     output_frame->SetDoubleRegister(i, double_value);
   }
@@ -231,13 +228,6 @@ bool Deoptimizer::HasAlignmentPadding(JSFunction* function) {
 }
 
 
-Code* Deoptimizer::NotifyStubFailureBuiltin() {
-  Builtins::Name name = CpuFeatures::IsSupported(SSE2) ?
-      Builtins::kNotifyStubFailureSaveDoubles : Builtins::kNotifyStubFailure;
-  return isolate_->builtins()->builtin(name);
-}
-
-
 #define __ masm()->
 
 void Deoptimizer::EntryGenerator::Generate() {
@@ -247,15 +237,12 @@ void Deoptimizer::EntryGenerator::Generate() {
   const int kNumberOfRegisters = Register::kNumRegisters;
 
   const int kDoubleRegsSize = kDoubleSize *
-                              XMMRegister::kNumAllocatableRegisters;
+                              XMMRegister::kMaxNumAllocatableRegisters;
   __ sub(esp, Immediate(kDoubleRegsSize));
-  if (CpuFeatures::IsSupported(SSE2)) {
-    CpuFeatureScope scope(masm(), SSE2);
-    for (int i = 0; i < XMMRegister::kNumAllocatableRegisters; ++i) {
-      XMMRegister xmm_reg = XMMRegister::FromAllocationIndex(i);
-      int offset = i * kDoubleSize;
-      __ movsd(Operand(esp, offset), xmm_reg);
-    }
+  for (int i = 0; i < XMMRegister::kMaxNumAllocatableRegisters; ++i) {
+    XMMRegister xmm_reg = XMMRegister::FromAllocationIndex(i);
+    int offset = i * kDoubleSize;
+    __ movsd(Operand(esp, offset), xmm_reg);
   }
 
   __ pushad();
@@ -300,15 +287,12 @@ void Deoptimizer::EntryGenerator::Generate() {
   }
 
   int double_regs_offset = FrameDescription::double_registers_offset();
-  if (CpuFeatures::IsSupported(SSE2)) {
-    CpuFeatureScope scope(masm(), SSE2);
-    // Fill in the double input registers.
-    for (int i = 0; i < XMMRegister::kNumAllocatableRegisters; ++i) {
-      int dst_offset = i * kDoubleSize + double_regs_offset;
-      int src_offset = i * kDoubleSize;
-      __ movsd(xmm0, Operand(esp, src_offset));
-      __ movsd(Operand(ebx, dst_offset), xmm0);
-    }
+  // Fill in the double input registers.
+  for (int i = 0; i < XMMRegister::kMaxNumAllocatableRegisters; ++i) {
+    int dst_offset = i * kDoubleSize + double_regs_offset;
+    int src_offset = i * kDoubleSize;
+    __ movsd(xmm0, Operand(esp, src_offset));
+    __ movsd(Operand(ebx, dst_offset), xmm0);
   }
 
   // Clear FPU all exceptions.
@@ -387,13 +371,10 @@ void Deoptimizer::EntryGenerator::Generate() {
   __ j(below, &outer_push_loop);
 
   // In case of a failed STUB, we have to restore the XMM registers.
-  if (CpuFeatures::IsSupported(SSE2)) {
-    CpuFeatureScope scope(masm(), SSE2);
-    for (int i = 0; i < XMMRegister::kNumAllocatableRegisters; ++i) {
-      XMMRegister xmm_reg = XMMRegister::FromAllocationIndex(i);
-      int src_offset = i * kDoubleSize + double_regs_offset;
-      __ movsd(xmm_reg, Operand(ebx, src_offset));
-    }
+  for (int i = 0; i < XMMRegister::kMaxNumAllocatableRegisters; ++i) {
+    XMMRegister xmm_reg = XMMRegister::FromAllocationIndex(i);
+    int src_offset = i * kDoubleSize + double_regs_offset;
+    __ movsd(xmm_reg, Operand(ebx, src_offset));
   }
 
   // Push state, pc, and continuation from the last output frame.
@@ -437,6 +418,12 @@ void FrameDescription::SetCallerPc(unsigned offset, intptr_t value) {
 
 void FrameDescription::SetCallerFp(unsigned offset, intptr_t value) {
   SetFrameSlot(offset, value);
+}
+
+
+void FrameDescription::SetCallerConstantPool(unsigned offset, intptr_t value) {
+  // No out-of-line constant pool support.
+  UNREACHABLE();
 }
 
 

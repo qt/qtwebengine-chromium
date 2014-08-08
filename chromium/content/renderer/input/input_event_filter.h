@@ -11,10 +11,19 @@
 #include "base/callback_forward.h"
 #include "base/synchronization/lock.h"
 #include "content/common/content_export.h"
-#include "content/port/common/input_event_ack_state.h"
+#include "content/common/input/input_event_ack_state.h"
 #include "content/renderer/input/input_handler_manager_client.h"
-#include "ipc/ipc_channel_proxy.h"
+#include "ipc/message_filter.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
+
+namespace base {
+class MessageLoopProxy;
+}
+
+namespace IPC {
+class Listener;
+class Sender;
+}
 
 // This class can be used to intercept InputMsg_HandleInputEvent messages
 // and have them be delivered to a target thread.  Input events are filtered
@@ -26,9 +35,8 @@
 
 namespace content {
 
-class CONTENT_EXPORT InputEventFilter
-    : public InputHandlerManagerClient,
-      public IPC::ChannelProxy::MessageFilter {
+class CONTENT_EXPORT InputEventFilter : public InputHandlerManagerClient,
+                                        public IPC::MessageFilter {
  public:
   InputEventFilter(IPC::Listener* main_listener,
                    const scoped_refptr<base::MessageLoopProxy>& target_loop);
@@ -48,25 +56,22 @@ class CONTENT_EXPORT InputEventFilter
                                   cc::InputHandler* input_handler) OVERRIDE;
   virtual void DidRemoveInputHandler(int routing_id) OVERRIDE;
   virtual void DidOverscroll(int routing_id,
-                             const cc::DidOverscrollParams& params) OVERRIDE;
+                             const DidOverscrollParams& params) OVERRIDE;
+  virtual void DidStopFlinging(int routing_id) OVERRIDE;
 
-  // IPC::ChannelProxy::MessageFilter methods:
-  virtual void OnFilterAdded(IPC::Channel* channel) OVERRIDE;
+  // IPC::MessageFilter methods:
+  virtual void OnFilterAdded(IPC::Sender* sender) OVERRIDE;
   virtual void OnFilterRemoved() OVERRIDE;
   virtual void OnChannelClosing() OVERRIDE;
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 
  private:
-  friend class IPC::ChannelProxy::MessageFilter;
   virtual ~InputEventFilter();
 
   void ForwardToMainListener(const IPC::Message& message);
   void ForwardToHandler(const IPC::Message& message);
-  void SendACK(blink::WebInputEvent::Type type,
-               InputEventAckState ack_result,
-               const ui::LatencyInfo& latency_info,
-               int routing_id);
-  void SendMessageOnIOThread(const IPC::Message& message);
+  void SendMessage(scoped_ptr<IPC::Message> message);
+  void SendMessageOnIOThread(scoped_ptr<IPC::Message> message);
 
   scoped_refptr<base::MessageLoopProxy> main_loop_;
   IPC::Listener* main_listener_;
@@ -87,6 +92,12 @@ class CONTENT_EXPORT InputEventFilter
 
   // Specifies whether overscroll notifications are forwarded to the host.
   bool overscroll_notifications_enabled_;
+
+  // Used to intercept overscroll notifications while an event is being
+  // dispatched.  If the event causes overscroll, the overscroll metadata can be
+  // bundled in the event ack, saving an IPC.  Note that we must continue
+  // supporting overscroll IPC notifications due to fling animation updates.
+  scoped_ptr<DidOverscrollParams>* current_overscroll_params_;
 };
 
 }  // namespace content

@@ -34,16 +34,21 @@ public:
         return adoptRef(new DistantLightSource(azimuth, elevation));
     }
 
+    virtual PassRefPtr<LightSource> create(const FloatPoint3D& scale, const FloatSize& offset) const OVERRIDE
+    {
+        return adoptRef(new DistantLightSource(m_azimuth, m_elevation));
+    }
+
     float azimuth() const { return m_azimuth; }
     float elevation() const { return m_elevation; }
 
     virtual bool setAzimuth(float) OVERRIDE;
     virtual bool setElevation(float) OVERRIDE;
 
-    virtual void initPaintingData(PaintingData&);
-    virtual void updatePaintingData(PaintingData&, int x, int y, float z);
+    virtual void initPaintingData(PaintingData&) const OVERRIDE;
+    virtual void updatePaintingData(PaintingData&, int x, int y, float z) const OVERRIDE;
 
-    virtual TextStream& externalRepresentation(TextStream&) const;
+    virtual TextStream& externalRepresentation(TextStream&) const OVERRIDE;
 
 private:
     DistantLightSource(float azimuth, float elevation)

@@ -19,8 +19,8 @@ scoped_refptr<QuotaReservation> QuotaReservation::Create(
     scoped_refptr<fileapi::FileSystemContext> file_system_context,
     const GURL& origin_url,
     fileapi::FileSystemType type) {
-  return scoped_refptr<QuotaReservation>(new QuotaReservation(
-      file_system_context, origin_url, type));
+  return scoped_refptr<QuotaReservation>(
+      new QuotaReservation(file_system_context, origin_url, type));
 }
 
 QuotaReservation::QuotaReservation(
@@ -30,8 +30,7 @@ QuotaReservation::QuotaReservation(
     : file_system_context_(file_system_context) {
   quota_reservation_ =
       file_system_context->CreateQuotaReservationOnFileTaskRunner(
-          origin_url,
-          file_system_type);
+          origin_url, file_system_type);
 }
 
 // For unit testing only.
@@ -39,13 +38,12 @@ QuotaReservation::QuotaReservation(
     scoped_refptr<fileapi::QuotaReservation> quota_reservation,
     const GURL& /* origin_url */,
     fileapi::FileSystemType /* file_system_type */)
-    : quota_reservation_(quota_reservation) {
-}
+    : quota_reservation_(quota_reservation) {}
 
 QuotaReservation::~QuotaReservation() {
   // We should have no open files at this point.
   DCHECK(files_.size() == 0);
-  for (FileMap::iterator it = files_.begin(); it != files_.end(); ++ it)
+  for (FileMap::iterator it = files_.begin(); it != files_.end(); ++it)
     delete it->second;
 }
 
@@ -53,10 +51,10 @@ int64_t QuotaReservation::OpenFile(int32_t id,
                                    const fileapi::FileSystemURL& url) {
   base::FilePath platform_file_path;
   if (file_system_context_) {
-    base::PlatformFileError error =
+    base::File::Error error =
         file_system_context_->operation_runner()->SyncGetPlatformPath(
             url, &platform_file_path);
-    if (error != base::PLATFORM_FILE_OK) {
+    if (error != base::File::FILE_OK) {
       NOTREACHED();
       return 0;
     }
@@ -70,7 +68,7 @@ int64_t QuotaReservation::OpenFile(int32_t id,
   std::pair<FileMap::iterator, bool> insert_result =
       files_.insert(std::make_pair(id, file_handle.get()));
   if (insert_result.second) {
-    int64_t max_written_offset = file_handle->base_file_size();
+    int64_t max_written_offset = file_handle->GetMaxWrittenOffset();
     ignore_result(file_handle.release());
     return max_written_offset;
   }
@@ -79,10 +77,11 @@ int64_t QuotaReservation::OpenFile(int32_t id,
 }
 
 void QuotaReservation::CloseFile(int32_t id,
-                                 int64_t max_written_offset) {
+                                 const ppapi::FileGrowth& file_growth) {
   FileMap::iterator it = files_.find(id);
   if (it != files_.end()) {
-    it->second->UpdateMaxWrittenOffset(max_written_offset);
+    it->second->UpdateMaxWrittenOffset(file_growth.max_written_offset);
+    it->second->AddAppendModeWriteAmount(file_growth.append_mode_write_amount);
     delete it->second;
     files_.erase(it);
   } else {
@@ -90,54 +89,50 @@ void QuotaReservation::CloseFile(int32_t id,
   }
 }
 
-void QuotaReservation::ReserveQuota(
-    int64_t amount,
-    const OffsetMap& max_written_offsets,
-    const ReserveQuotaCallback& callback) {
-  for (FileMap::iterator it = files_.begin(); it != files_.end(); ++ it) {
-    OffsetMap::const_iterator offset_it = max_written_offsets.find(it->first);
-    if (offset_it != max_written_offsets.end())
-      it->second->UpdateMaxWrittenOffset(offset_it->second);
-    else
+void QuotaReservation::ReserveQuota(int64_t amount,
+                                    const ppapi::FileGrowthMap& file_growths,
+                                    const ReserveQuotaCallback& callback) {
+  for (FileMap::iterator it = files_.begin(); it != files_.end(); ++it) {
+    ppapi::FileGrowthMap::const_iterator growth_it =
+        file_growths.find(it->first);
+    if (growth_it != file_growths.end()) {
+      it->second->UpdateMaxWrittenOffset(growth_it->second.max_written_offset);
+      it->second->AddAppendModeWriteAmount(
+          growth_it->second.append_mode_write_amount);
+    } else {
       NOTREACHED();
+    }
   }
 
   quota_reservation_->RefreshReservation(
-      amount,
-      base::Bind(&QuotaReservation::GotReservedQuota,
-                 this,
-                 callback));
+      amount, base::Bind(&QuotaReservation::GotReservedQuota, this, callback));
 }
 
-void QuotaReservation::GotReservedQuota(
-    const ReserveQuotaCallback& callback,
-    base::PlatformFileError error) {
-  OffsetMap max_written_offsets;
-  for (FileMap::iterator it = files_.begin(); it != files_.end(); ++ it) {
-    max_written_offsets.insert(
-        std::make_pair(it->first, it->second->base_file_size()));
-  }
+void QuotaReservation::OnClientCrash() { quota_reservation_->OnClientCrash(); }
+
+void QuotaReservation::GotReservedQuota(const ReserveQuotaCallback& callback,
+                                        base::File::Error error) {
+  ppapi::FileSizeMap file_sizes;
+  for (FileMap::iterator it = files_.begin(); it != files_.end(); ++it)
+    file_sizes[it->first] = it->second->GetMaxWrittenOffset();
 
   if (file_system_context_) {
     BrowserThread::PostTask(
         BrowserThread::IO,
         FROM_HERE,
-        base::Bind(callback,
-                   quota_reservation_->remaining_quota(),
-                   max_written_offsets));
+        base::Bind(
+            callback, quota_reservation_->remaining_quota(), file_sizes));
   } else {
     // Unit testing code path.
-    callback.Run(quota_reservation_->remaining_quota(), max_written_offsets);
+    callback.Run(quota_reservation_->remaining_quota(), file_sizes);
   }
 }
 
 void QuotaReservation::DeleteOnCorrectThread() const {
-  if (file_system_context_ &&
-      !file_system_context_->
-          default_file_task_runner()->RunsTasksOnCurrentThread()) {
-    file_system_context_->default_file_task_runner()->DeleteSoon(
-        FROM_HERE,
-        this);
+  if (file_system_context_ && !file_system_context_->default_file_task_runner()
+                                   ->RunsTasksOnCurrentThread()) {
+    file_system_context_->default_file_task_runner()->DeleteSoon(FROM_HERE,
+                                                                 this);
   } else {
     // We're on the right thread to delete, or unit test.
     delete this;

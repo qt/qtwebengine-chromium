@@ -26,6 +26,7 @@
 #include "platform/PlatformExport.h"
 #include "platform/geometry/FloatRect.h"
 #include "platform/geometry/IntRect.h"
+#include "platform/graphics/Color.h"
 #include "platform/graphics/ColorSpace.h"
 
 #include "third_party/skia/include/core/SkImageFilter.h"
@@ -35,8 +36,6 @@
 #include "wtf/RefPtr.h"
 #include "wtf/Uint8ClampedArray.h"
 #include "wtf/Vector.h"
-
-static const float kMaxFilterSize = 5000.0f;
 
 namespace WebCore {
 
@@ -68,6 +67,9 @@ class PLATFORM_EXPORT FilterEffect : public RefCounted<FilterEffect> {
 public:
     virtual ~FilterEffect();
 
+    static bool isFilterSizeValid(const FloatRect&);
+    static float maxFilterArea();
+
     void clearResult();
     void clearResultsRecursive();
 
@@ -88,6 +90,10 @@ public:
             || m_unmultipliedImageResult
             || m_premultipliedImageResult;
     }
+    inline bool hasImageFilter() const
+    {
+        return m_imageFilters[0] || m_imageFilters[1] || m_imageFilters[2] || m_imageFilters[3];
+    }
 
     IntRect drawingRegionOfInputImage(const IntRect&) const;
     IntRect requestedRegionOfInputImageData(const IntRect&) const;
@@ -97,7 +103,6 @@ public:
     void setIsAlphaImage(bool alphaImage) { m_alphaImage = alphaImage; }
 
     IntRect absolutePaintRect() const { return m_absolutePaintRect; }
-    void setAbsolutePaintRect(const IntRect& absolutePaintRect) { m_absolutePaintRect = absolutePaintRect; }
 
     FloatRect maxEffectRect() const { return m_maxEffectRect; }
     void setMaxEffectRect(const FloatRect& maxEffectRect) { m_maxEffectRect = maxEffectRect; }
@@ -110,8 +115,7 @@ public:
     virtual void correctFilterResultIfNeeded() { }
 
     virtual PassRefPtr<SkImageFilter> createImageFilter(SkiaImageFilterBuilder*);
-
-    virtual void determineAbsolutePaintRect();
+    virtual PassRefPtr<SkImageFilter> createImageFilterWithoutValidation(SkiaImageFilterBuilder*);
 
     // Mapping a rect forwards determines which which destination pixels a
     // given source rect would affect. Mapping a rect backwards determines
@@ -120,10 +124,19 @@ public:
     // each other. For example, for FEGaussianBlur, they are the same
     // transformation.
     virtual FloatRect mapRect(const FloatRect& rect, bool forward = true) { return rect; }
+    // A version of the above that is used for calculating paint rects. We can't
+    // use mapRect above for that, because that is also used for calculating effect
+    // regions for CSS filters and has undesirable effects for tile and
+    // displacement map.
+    virtual FloatRect mapPaintRect(const FloatRect& rect, bool forward)
+    {
+        return mapRect(rect, forward);
+    }
     FloatRect mapRectRecursive(const FloatRect&);
 
     // This is a recursive version of a backwards mapRect(), which also takes
     // into account the filter primitive subregion of each effect.
+    // Note: This works in absolute coordinates!
     FloatRect getSourceRect(const FloatRect& destRect, const FloatRect& clipRect);
 
     virtual FilterEffectType filterEffectType() const { return FilterEffectTypeUnknown; }
@@ -165,25 +178,35 @@ public:
     void transformResultColorSpace(ColorSpace);
 
     FloatRect determineFilterPrimitiveSubregion(DetermineSubregionFlags = DetermineSubregionNone);
+    void determineAllAbsolutePaintRects();
+
+    virtual FloatRect determineAbsolutePaintRect(const FloatRect& requestedAbsoluteRect);
+    virtual bool affectsTransparentPixels() { return false; }
+
+    // Return false if the filter will only operate correctly on valid RGBA values, with
+    // alpha in [0,255] and each color component in [0, alpha].
+    virtual bool mayProduceInvalidPreMultipliedPixels() { return false; }
+
+    SkImageFilter* getImageFilter(ColorSpace, bool requiresPMColorValidation) const;
+    void setImageFilter(ColorSpace, bool requiresPMColorValidation, PassRefPtr<SkImageFilter>);
 
 protected:
     FilterEffect(Filter*);
-
     ImageBuffer* createImageBufferResult();
     Uint8ClampedArray* createUnmultipliedImageResult();
     Uint8ClampedArray* createPremultipliedImageResult();
 
-    // Return true if the filter will only operate correctly on valid RGBA values, with
-    // alpha in [0,255] and each color component in [0, alpha].
-    virtual bool requiresValidPreMultipliedPixels() { return true; }
+    Color adaptColorToOperatingColorSpace(const Color& deviceColor);
 
     // If a pre-multiplied image, check every pixel for validity and correct if necessary.
     void forceValidPreMultipliedPixels();
     SkImageFilter::CropRect getCropRect(const FloatSize& cropOffset) const;
 
+    void addAbsolutePaintRect(const FloatRect& absolutePaintRect);
+
 private:
+    void applyRecursive();
     virtual void applySoftware() = 0;
-    virtual bool applySkia() { return false; }
 
     inline void copyImageBytes(Uint8ClampedArray* source, Uint8ClampedArray* destination, const IntRect&);
 
@@ -221,6 +244,8 @@ private:
 
     ColorSpace m_operatingColorSpace;
     ColorSpace m_resultColorSpace;
+
+    RefPtr<SkImageFilter> m_imageFilters[4];
 };
 
 } // namespace WebCore

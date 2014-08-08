@@ -12,6 +12,8 @@
 
 #include <string>
 
+#include "base/file_util.h"
+#include "base/files/scoped_file.h"
 #include "base/threading/thread.h"
 #include "media/video/capture/video_capture_device.h"
 #include "media/video/capture/video_capture_types.h"
@@ -20,6 +22,10 @@ namespace media {
 
 class VideoCaptureDeviceLinux : public VideoCaptureDevice {
  public:
+  static VideoPixelFormat V4l2ColorToVideoCaptureColorFormat(int32 v4l2_fourcc);
+  static void GetListOfUsableFourCCs(bool favour_mjpeg,
+                                     std::list<int>* fourccs);
+
   explicit VideoCaptureDeviceLinux(const Name& device_name);
   virtual ~VideoCaptureDeviceLinux();
 
@@ -28,6 +34,12 @@ class VideoCaptureDeviceLinux : public VideoCaptureDevice {
                                 scoped_ptr<Client> client) OVERRIDE;
 
   virtual void StopAndDeAllocate() OVERRIDE;
+
+ protected:
+  void SetRotation(int rotation);
+
+  // Once |v4l2_thread_| is started, only called on that thread.
+  void SetRotationOnV4L2Thread(int rotation);
 
  private:
   enum InternalState {
@@ -59,12 +71,17 @@ class VideoCaptureDeviceLinux : public VideoCaptureDevice {
   InternalState state_;
   scoped_ptr<VideoCaptureDevice::Client> client_;
   Name device_name_;
-  int device_fd_;  // File descriptor for the opened camera device.
+  base::ScopedFD device_fd_;  // File descriptor for the opened camera device.
   base::Thread v4l2_thread_;  // Thread used for reading data from the device.
   Buffer* buffer_pool_;
   int buffer_pool_size_;  // Number of allocated buffers.
   int timeout_count_;
   VideoCaptureFormat capture_format_;
+
+  // Clockwise rotation in degrees.  This value should be 0, 90, 180, or 270.
+  // This is only used on |v4l2_thread_| when it is running, or the constructor
+  // thread otherwise.
+  int rotation_;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(VideoCaptureDeviceLinux);
 };

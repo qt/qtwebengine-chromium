@@ -4,13 +4,15 @@
 
 #include "third_party/zlib/google/zip.h"
 
+#include <string>
+#include <vector>
+
 #include "base/bind.h"
-#include "base/file_util.h"
+#include "base/files/file.h"
 #include "base/files/file_enumerator.h"
 #include "base/logging.h"
 #include "base/strings/string16.h"
 #include "base/strings/string_util.h"
-#include "net/base/file_stream.h"
 #include "third_party/zlib/google/zip_internal.h"
 #include "third_party/zlib/google/zip_reader.h"
 
@@ -25,18 +27,16 @@
 namespace {
 
 bool AddFileToZip(zipFile zip_file, const base::FilePath& src_dir) {
-  net::FileStream stream(NULL);
-  int flags = base::PLATFORM_FILE_OPEN | base::PLATFORM_FILE_READ;
-  if (stream.OpenSync(src_dir, flags) != 0) {
-    DLOG(ERROR) << "Could not open stream for path "
-                << src_dir.value();
+  base::File file(src_dir, base::File::FLAG_OPEN | base::File::FLAG_READ);
+  if (!file.IsValid()) {
+    DLOG(ERROR) << "Could not open file for path " << src_dir.value();
     return false;
   }
 
   int num_bytes;
   char buf[zip::internal::kZipBufSize];
   do {
-    num_bytes = stream.ReadSync(buf, zip::internal::kZipBufSize);
+    num_bytes = file.ReadAtCurrentPos(buf, zip::internal::kZipBufSize);
     if (num_bytes > 0) {
       if (ZIP_OK != zipWriteInFileInZip(zip_file, buf, num_bytes)) {
         DLOG(ERROR) << "Could not write data to zip for path "
@@ -63,32 +63,9 @@ bool AddEntryToZip(zipFile zip_file, const base::FilePath& path,
   if (is_directory)
     str_path += "/";
 
-  // Section 4.4.4 http://www.pkware.com/documents/casestudies/APPNOTE.TXT
-  // Setting the Language encoding flag so the file is told to be in utf-8.
-  const unsigned long LANGUAGE_ENCODING_FLAG = 0x1 << 11;
-
-  if (ZIP_OK != zipOpenNewFileInZip4(
-                    zip_file,  //file
-                    str_path.c_str(),  // filename
-                    NULL,  // zipfi (file_info)
-                    NULL,  // extrafield_local,
-                    0u,  // size_extrafield_local
-                    NULL,  // extrafield_global
-                    0u,  // size_extrafield_global
-                    NULL,  // comment
-                    Z_DEFLATED,  // method
-                    Z_DEFAULT_COMPRESSION,  // level
-                    0,  // raw
-                    -MAX_WBITS,  // windowBits
-                    DEF_MEM_LEVEL,  // memLevel
-                    Z_DEFAULT_STRATEGY,  // strategy
-                    NULL,  //password
-                    0,  // crcForCrypting
-                    0,  // versionMadeBy
-                    LANGUAGE_ENCODING_FLAG)) {  // flagBase
-    DLOG(ERROR) << "Could not open zip file entry " << str_path;
+  zip_fileinfo file_info = zip::internal::GetFileInfoForZipping(path);
+  if (!zip::internal::ZipOpenNewFileInZip(zip_file, str_path, &file_info))
     return false;
-  }
 
   bool success = true;
   if (!is_directory) {
@@ -168,7 +145,7 @@ bool ZipWithFilterCallback(const base::FilePath& src_dir,
 
     if (!AddEntryToZip(zip_file, path, src_dir)) {
       success = false;
-      return false;
+      break;
     }
   }
 

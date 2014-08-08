@@ -9,8 +9,8 @@
  */
 
 
-#ifndef __INC_VP8_H
-#define __INC_VP8_H
+#ifndef VP8_COMMON_ONYX_H_
+#define VP8_COMMON_ONYX_H_
 
 #ifdef __cplusplus
 extern "C"
@@ -39,8 +39,8 @@ extern "C"
 
     typedef enum
     {
-        USAGE_STREAM_FROM_SERVER    = 0x0,
-        USAGE_LOCAL_FILE_PLAYBACK   = 0x1,
+        USAGE_LOCAL_FILE_PLAYBACK   = 0x0,
+        USAGE_STREAM_FROM_SERVER    = 0x1,
         USAGE_CONSTRAINED_QUALITY   = 0x2,
         USAGE_CONSTANT_QUALITY      = 0x3
     } END_USAGE;
@@ -267,4 +267,4 @@ extern "C"
 }
 #endif
 
-#endif
+#endif  // VP8_COMMON_ONYX_H_

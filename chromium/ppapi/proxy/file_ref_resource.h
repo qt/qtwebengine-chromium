@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef PPAPI_PROXY_PPB_FILE_REF_PROXY_H_
-#define PPAPI_PROXY_PPB_FILE_REF_PROXY_H_
+#ifndef PPAPI_PROXY_FILE_REF_RESOURCE_H_
+#define PPAPI_PROXY_FILE_REF_RESOURCE_H_
 
 #include <string>
 
@@ -42,8 +42,8 @@ class PPAPI_PROXY_EXPORT FileRefResource
   virtual PP_Var GetPath() const OVERRIDE;
   virtual PP_Resource GetParent() OVERRIDE;
   virtual int32_t MakeDirectory(
-     PP_Bool make_ancestors,
-     scoped_refptr<TrackedCallback> callback) OVERRIDE;
+      int32_t make_directory_flags,
+      scoped_refptr<TrackedCallback> callback) OVERRIDE;
   virtual int32_t Touch(PP_Time last_access_time,
                         PP_Time last_modified_time,
                         scoped_refptr<TrackedCallback> callback) OVERRIDE;
@@ -80,6 +80,8 @@ class PPAPI_PROXY_EXPORT FileRefResource
       const std::vector<ppapi::FileRefCreateInfo>& infos,
       const std::vector<PP_FileType>& file_types);
 
+  bool uses_internal_paths() const;
+
   // Populated after creation.
   FileRefCreateInfo create_info_;
 
@@ -98,4 +100,4 @@ class PPAPI_PROXY_EXPORT FileRefResource
 }  // namespace proxy
 }  // namespace ppapi
 
-#endif  // PPAPI_PROXY_PPB_FILE_REF_PROXY_H_
+#endif  // PPAPI_PROXY_FILE_REF_RESOURCE_H_

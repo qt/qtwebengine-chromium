@@ -43,7 +43,6 @@ namespace WebCore {
 
 using blink::WebLocalizedString;
 using namespace HTMLNames;
-using namespace std;
 
 static const int msecPerMinute = 60 * 1000;
 static const int msecPerSecond = 1000;
@@ -64,9 +63,9 @@ double BaseDateAndTimeInputType::valueAsDouble() const
     return value.isFinite() ? value.toDouble() : DateComponents::invalidMilliseconds();
 }
 
-void BaseDateAndTimeInputType::setValueAsDecimal(const Decimal& newValue, TextFieldEventBehavior eventBehavior, ExceptionState&) const
+void BaseDateAndTimeInputType::setValueAsDouble(double newValue, TextFieldEventBehavior eventBehavior, ExceptionState& exceptionState) const
 {
-    element().setValue(serialize(newValue), eventBehavior);
+    setValueAsDecimal(Decimal::fromDouble(newValue), eventBehavior, exceptionState);
 }
 
 bool BaseDateAndTimeInputType::typeMismatchFor(const String& value) const
@@ -177,7 +176,7 @@ bool BaseDateAndTimeInputType::supportsReadOnly() const
 
 bool BaseDateAndTimeInputType::shouldRespectListAttribute()
 {
-    return InputType::themeSupportsDataListUI(this);
+    return true;
 }
 
 bool BaseDateAndTimeInputType::valueMissing(const String& value) const

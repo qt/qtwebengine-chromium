@@ -31,8 +31,8 @@
 #include "config.h"
 #include "core/html/forms/MonthInputType.h"
 
-#include "HTMLNames.h"
-#include "InputTypeNames.h"
+#include "core/HTMLNames.h"
+#include "core/InputTypeNames.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/forms/DateTimeFieldsState.h"
 #include "platform/DateComponents.h"
@@ -51,9 +51,9 @@ static const int monthDefaultStep = 1;
 static const int monthDefaultStepBase = 0;
 static const int monthStepScaleFactor = 1;
 
-PassRefPtr<InputType> MonthInputType::create(HTMLInputElement& element)
+PassRefPtrWillBeRawPtr<InputType> MonthInputType::create(HTMLInputElement& element)
 {
-    return adoptRef(new MonthInputType(element));
+    return adoptRefWillBeNoop(new MonthInputType(element));
 }
 
 void MonthInputType::countUsage()
@@ -130,6 +130,11 @@ bool MonthInputType::setMillisecondToDateComponents(double value, DateComponents
 }
 
 bool MonthInputType::isMonthField() const
+{
+    return true;
+}
+
+bool MonthInputType::canSetSuggestedValue()
 {
     return true;
 }

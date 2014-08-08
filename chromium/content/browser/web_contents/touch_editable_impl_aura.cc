@@ -6,16 +6,18 @@
 
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_view_aura.h"
+#include "content/browser/web_contents/web_contents_impl.h"
 #include "content/common/view_messages.h"
+#include "content/public/browser/render_view_host.h"
 #include "content/public/browser/render_widget_host.h"
 #include "grit/ui_strings.h"
-#include "ui/aura/client/activation_client.h"
 #include "ui/aura/client/screen_position_client.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_tree_host.h"
 #include "ui/base/clipboard/clipboard.h"
 #include "ui/base/ui_base_switches_util.h"
 #include "ui/gfx/range/range.h"
+#include "ui/wm/public/activation_client.h"
 
 namespace content {
 
@@ -49,20 +51,12 @@ void TouchEditableImplAura::UpdateEditingController() {
   if (!rwhva_ || !rwhva_->HasFocus())
     return;
 
-  // If touch editing handles were not visible, we bring them up only if
-  // there is non-zero selection on the page. And the current event is a
-  // gesture event (we dont want to show handles if the user is selecting
-  // using mouse or keyboard).
-  if (selection_gesture_in_process_ && !scroll_in_progress_ &&
-      selection_anchor_rect_ != selection_focus_rect_)
-    StartTouchEditing();
-
   if (text_input_type_ != ui::TEXT_INPUT_TYPE_NONE ||
       selection_anchor_rect_ != selection_focus_rect_) {
     if (touch_selection_controller_)
       touch_selection_controller_->SelectionChanged();
   } else {
-    EndTouchEditing();
+    EndTouchEditing(false);
   }
 }
 
@@ -105,12 +99,15 @@ void TouchEditableImplAura::StartTouchEditing() {
     touch_selection_controller_->SelectionChanged();
 }
 
-void TouchEditableImplAura::EndTouchEditing() {
+void TouchEditableImplAura::EndTouchEditing(bool quick) {
   if (touch_selection_controller_) {
-    if (touch_selection_controller_->IsHandleDragInProgress())
+    if (touch_selection_controller_->IsHandleDragInProgress()) {
       touch_selection_controller_->SelectionChanged();
-    else
+    } else {
+      selection_gesture_in_process_ = false;
+      touch_selection_controller_->HideHandles(quick);
       touch_selection_controller_.reset();
+    }
   }
 }
 
@@ -118,6 +115,18 @@ void TouchEditableImplAura::OnSelectionOrCursorChanged(const gfx::Rect& anchor,
                                                        const gfx::Rect& focus) {
   selection_anchor_rect_ = anchor;
   selection_focus_rect_ = focus;
+
+  // If touch editing handles were not visible, we bring them up only if
+  // there is non-zero selection on the page. And the current event is a
+  // gesture event (we dont want to show handles if the user is selecting
+  // using mouse or keyboard).
+  if (selection_gesture_in_process_ && !scroll_in_progress_ &&
+      !overscroll_in_progress_ &&
+      selection_anchor_rect_ != selection_focus_rect_) {
+    StartTouchEditing();
+    selection_gesture_in_process_ = false;
+  }
+
   UpdateEditingController();
 }
 
@@ -127,11 +136,9 @@ void TouchEditableImplAura::OnTextInputTypeChanged(ui::TextInputType type) {
 
 bool TouchEditableImplAura::HandleInputEvent(const ui::Event* event) {
   DCHECK(rwhva_);
-  if (event->IsTouchEvent())
-    return false;
-
   if (!event->IsGestureEvent()) {
-    EndTouchEditing();
+    // Ignore all non-gesture events. Non-gesture events that can deactivate
+    // touch editing are handled in TouchSelectionControllerImpl.
     return false;
   }
 
@@ -139,12 +146,10 @@ bool TouchEditableImplAura::HandleInputEvent(const ui::Event* event) {
       static_cast<const ui::GestureEvent*>(event);
   switch (event->type()) {
     case ui::ET_GESTURE_TAP:
-      tap_gesture_tap_count_queue_.push(gesture_event->details().tap_count());
-      if (gesture_event->details().tap_count() > 1)
-        selection_gesture_in_process_ = true;
       // When the user taps, we want to show touch editing handles if user
       // tapped on selected text.
-      if (selection_anchor_rect_ != selection_focus_rect_) {
+      if (gesture_event->details().tap_count() == 1 &&
+          selection_anchor_rect_ != selection_focus_rect_) {
         // UnionRects only works for rects with non-zero width.
         gfx::Rect anchor(selection_anchor_rect_.origin(),
                          gfx::Size(1, selection_anchor_rect_.height()));
@@ -158,10 +163,10 @@ bool TouchEditableImplAura::HandleInputEvent(const ui::Event* event) {
       }
       // For single taps, not inside selected region, we want to show handles
       // only when the tap is on an already focused textfield.
-      is_tap_on_focused_textfield_ = false;
+      textfield_was_focused_on_tap_ = false;
       if (gesture_event->details().tap_count() == 1 &&
           text_input_type_ != ui::TEXT_INPUT_TYPE_NONE)
-        is_tap_on_focused_textfield_ = true;
+        textfield_was_focused_on_tap_ = true;
       break;
     case ui::ET_GESTURE_LONG_PRESS:
       selection_gesture_in_process_ = true;
@@ -169,13 +174,12 @@ bool TouchEditableImplAura::HandleInputEvent(const ui::Event* event) {
     case ui::ET_GESTURE_SCROLL_BEGIN:
       // If selection handles are currently visible, we want to get them back up
       // when scrolling ends. So we set |handles_hidden_due_to_scroll_| so that
-      // we can re-start touch editing when we call |UpdateEditingController()|
-      // on scroll end gesture.
+      // we can re-start touch editing on scroll end gesture.
       scroll_in_progress_ = true;
       handles_hidden_due_to_scroll_ = false;
       if (touch_selection_controller_)
         handles_hidden_due_to_scroll_ = true;
-      EndTouchEditing();
+      EndTouchEditing(true);
       break;
     case ui::ET_GESTURE_SCROLL_END:
       // Scroll has ended, but we might still be in overscroll animation.
@@ -200,18 +204,9 @@ void TouchEditableImplAura::GestureEventAck(int gesture_event_type) {
   DCHECK(rwhva_);
   if (gesture_event_type == blink::WebInputEvent::GestureTap &&
       text_input_type_ != ui::TEXT_INPUT_TYPE_NONE &&
-      is_tap_on_focused_textfield_) {
+      textfield_was_focused_on_tap_) {
     StartTouchEditing();
-    if (touch_selection_controller_)
-      touch_selection_controller_->SelectionChanged();
-  }
-
-  if (gesture_event_type == blink::WebInputEvent::GestureLongPress)
-    selection_gesture_in_process_ = false;
-  if (gesture_event_type == blink::WebInputEvent::GestureTap) {
-    if (tap_gesture_tap_count_queue_.front() > 1)
-      selection_gesture_in_process_ = false;
-    tap_gesture_tap_count_queue_.pop();
+    UpdateEditingController();
   }
 }
 
@@ -224,12 +219,11 @@ void TouchEditableImplAura::OnViewDestroyed() {
 
 void TouchEditableImplAura::SelectRect(const gfx::Point& start,
                                        const gfx::Point& end) {
-  if (!rwhva_)
-    return;
-
-  RenderWidgetHostImpl* host = RenderWidgetHostImpl::From(
-      rwhva_->GetRenderWidgetHost());
-  host->SelectRange(start, end);
+  RenderWidgetHost* host = rwhva_->GetRenderWidgetHost();
+  RenderViewHost* rvh = RenderViewHost::From(host);
+  WebContentsImpl* wc =
+      static_cast<WebContentsImpl*>(WebContents::FromRenderViewHost(rvh));
+  wc->SelectRange(start, end);
 }
 
 void TouchEditableImplAura::MoveCaretTo(const gfx::Point& point) {
@@ -248,11 +242,12 @@ void TouchEditableImplAura::GetSelectionEndPoints(gfx::Rect* p1,
 }
 
 gfx::Rect TouchEditableImplAura::GetBounds() {
-  return rwhva_ ? rwhva_->GetNativeView()->bounds() : gfx::Rect();
+  return rwhva_ ? gfx::Rect(rwhva_->GetNativeView()->bounds().size()) :
+      gfx::Rect();
 }
 
-gfx::NativeView TouchEditableImplAura::GetNativeView() {
-  return rwhva_ ? rwhva_->GetNativeView()->GetRootWindow() : NULL;
+gfx::NativeView TouchEditableImplAura::GetNativeView() const {
+  return rwhva_ ? rwhva_->GetNativeView()->GetToplevelWindow() : NULL;
 }
 
 void TouchEditableImplAura::ConvertPointToScreen(gfx::Point* point) {
@@ -286,7 +281,7 @@ void TouchEditableImplAura::OpenContextMenu(const gfx::Point& anchor) {
   ConvertPointFromScreen(&point);
   RenderWidgetHost* host = rwhva_->GetRenderWidgetHost();
   host->Send(new ViewMsg_ShowContextMenu(host->GetRoutingID(), point));
-  EndTouchEditing();
+  EndTouchEditing(false);
 }
 
 bool TouchEditableImplAura::IsCommandIdChecked(int command_id) const {
@@ -328,30 +323,35 @@ bool TouchEditableImplAura::GetAcceleratorForCommandId(
 }
 
 void TouchEditableImplAura::ExecuteCommand(int command_id, int event_flags) {
-  if (!rwhva_)
-    return;
   RenderWidgetHost* host = rwhva_->GetRenderWidgetHost();
+  RenderViewHost* rvh = RenderViewHost::From(host);
+  WebContents* wc = WebContents::FromRenderViewHost(rvh);
+
   switch (command_id) {
     case IDS_APP_CUT:
-      host->Cut();
+      wc->Cut();
       break;
     case IDS_APP_COPY:
-      host->Copy();
+      wc->Copy();
       break;
     case IDS_APP_PASTE:
-      host->Paste();
+      wc->Paste();
       break;
     case IDS_APP_DELETE:
-      host->Delete();
+      wc->Delete();
       break;
     case IDS_APP_SELECT_ALL:
-      host->SelectAll();
+      wc->SelectAll();
       break;
     default:
       NOTREACHED();
       break;
   }
-  EndTouchEditing();
+  EndTouchEditing(false);
+}
+
+void TouchEditableImplAura::DestroyTouchSelection() {
+  EndTouchEditing(false);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -364,7 +364,7 @@ TouchEditableImplAura::TouchEditableImplAura()
       handles_hidden_due_to_scroll_(false),
       scroll_in_progress_(false),
       overscroll_in_progress_(false),
-      is_tap_on_focused_textfield_(false) {
+      textfield_was_focused_on_tap_(false) {
 }
 
 void TouchEditableImplAura::Cleanup() {
@@ -373,7 +373,8 @@ void TouchEditableImplAura::Cleanup() {
     rwhva_ = NULL;
   }
   text_input_type_ = ui::TEXT_INPUT_TYPE_NONE;
-  touch_selection_controller_.reset();
+  EndTouchEditing(true);
+  selection_gesture_in_process_ = false;
   handles_hidden_due_to_scroll_ = false;
   scroll_in_progress_ = false;
   overscroll_in_progress_ = false;

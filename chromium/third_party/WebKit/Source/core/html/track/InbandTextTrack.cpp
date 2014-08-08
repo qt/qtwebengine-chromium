@@ -27,6 +27,7 @@
 #include "core/html/track/InbandTextTrack.h"
 
 #include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "core/html/HTMLMediaElement.h"
 #include "core/html/track/vtt/VTTCue.h"
 #include "platform/Logging.h"
 #include "public/platform/WebInbandTextTrack.h"
@@ -38,13 +39,13 @@ using blink::WebString;
 
 namespace WebCore {
 
-PassRefPtr<InbandTextTrack> InbandTextTrack::create(Document& document, TextTrackClient* client, WebInbandTextTrack* webTrack)
+PassRefPtrWillBeRawPtr<InbandTextTrack> InbandTextTrack::create(Document& document, WebInbandTextTrack* webTrack)
 {
-    return adoptRef(new InbandTextTrack(document, client, webTrack));
+    return adoptRefWillBeRefCountedGarbageCollected(new InbandTextTrack(document, webTrack));
 }
 
-InbandTextTrack::InbandTextTrack(Document& document, TextTrackClient* client, WebInbandTextTrack* webTrack)
-    : TextTrack(document, client, emptyAtom, webTrack->label(), webTrack->language(), webTrack->id(), InBand)
+InbandTextTrack::InbandTextTrack(Document& document, WebInbandTextTrack* webTrack)
+    : TextTrack(document, emptyAtom, webTrack->label(), webTrack->language(), webTrack->id(), InBand)
     , m_webTrack(webTrack)
 {
     m_webTrack->setClient(this);
@@ -74,8 +75,13 @@ InbandTextTrack::InbandTextTrack(Document& document, TextTrackClient* client, We
 
 InbandTextTrack::~InbandTextTrack()
 {
+#if ENABLE(OILPAN)
+    if (m_webTrack)
+        m_webTrack->setClient(0);
+#else
     // Make sure m_webTrack was cleared by trackRemoved() before destruction.
     ASSERT(!m_webTrack);
+#endif
 }
 
 size_t InbandTextTrack::inbandTrackIndex()
@@ -84,17 +90,22 @@ size_t InbandTextTrack::inbandTrackIndex()
     return m_webTrack->textTrackIndex();
 }
 
-void InbandTextTrack::trackRemoved()
+void InbandTextTrack::setTrackList(TextTrackList* trackList)
 {
+    TextTrack::setTrackList(trackList);
+    if (trackList)
+        return;
+
     ASSERT(m_webTrack);
     m_webTrack->setClient(0);
     m_webTrack = 0;
-    clearClient();
 }
 
 void InbandTextTrack::addWebVTTCue(double start, double end, const WebString& id, const WebString& content, const WebString& settings)
 {
-    RefPtr<VTTCue> cue = VTTCue::create(document(), start, end, content);
+    HTMLMediaElement* owner = mediaElement();
+    ASSERT(owner);
+    RefPtrWillBeRawPtr<VTTCue> cue = VTTCue::create(owner->document(), start, end, content);
     cue->setId(id);
     cue->parseSettings(settings);
     addCue(cue);

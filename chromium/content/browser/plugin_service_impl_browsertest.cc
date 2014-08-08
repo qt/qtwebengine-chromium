@@ -13,10 +13,10 @@
 #include "content/public/browser/resource_context.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/content_switches.h"
+#include "content/public/test/content_browser_test.h"
 #include "content/public/test/test_browser_thread.h"
 #include "content/public/test/test_utils.h"
 #include "content/shell/browser/shell.h"
-#include "content/test/content_browser_test.h"
 #include "testing/gmock/include/gmock/gmock.h"
 
 namespace content {
@@ -60,7 +60,7 @@ class MockPluginProcessHostClient : public PluginProcessHost::Client,
     ASSERT_TRUE(BrowserThread::CurrentlyOn(BrowserThread::IO));
     ASSERT_TRUE(set_plugin_info_called_);
     ASSERT_TRUE(!channel_);
-    channel_ = new IPC::Channel(handle, IPC::Channel::MODE_CLIENT, this);
+    channel_ = IPC::Channel::CreateClient(handle, this).release();
     ASSERT_TRUE(channel_->Connect());
   }
 

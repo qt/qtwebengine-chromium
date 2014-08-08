@@ -27,8 +27,12 @@
 #include "config.h"
 #include "core/fetch/CrossOriginAccessControl.h"
 
+#include "core/fetch/Resource.h"
+#include "core/fetch/ResourceLoaderOptions.h"
 #include "platform/network/HTTPParsers.h"
+#include "platform/network/ResourceRequest.h"
 #include "platform/network/ResourceResponse.h"
+#include "platform/weborigin/SchemeRegistry.h"
 #include "platform/weborigin/SecurityOrigin.h"
 #include "wtf/Threading.h"
 #include "wtf/text/AtomicString.h"
@@ -99,10 +103,10 @@ bool isOnAccessControlResponseHeaderWhitelist(const String& name)
 void updateRequestForAccessControl(ResourceRequest& request, SecurityOrigin* securityOrigin, StoredCredentials allowCredentials)
 {
     request.removeCredentials();
-    request.setAllowCookies(allowCredentials == AllowStoredCredentials);
+    request.setAllowStoredCredentials(allowCredentials == AllowStoredCredentials);
 
     if (securityOrigin)
-        request.setHTTPOrigin(securityOrigin->toString());
+        request.setHTTPOrigin(securityOrigin->toAtomicString());
 }
 
 ResourceRequest createAccessControlPreflightRequest(const ResourceRequest& request, SecurityOrigin* securityOrigin)
@@ -127,7 +131,7 @@ ResourceRequest createAccessControlPreflightRequest(const ResourceRequest& reque
             headerBuffer.append(it->key);
         }
 
-        preflightRequest.setHTTPHeaderField("Access-Control-Request-Headers", headerBuffer.toString().lower());
+        preflightRequest.setHTTPHeaderField("Access-Control-Request-Headers", AtomicString(headerBuffer.toString().lower()));
     }
 
     return preflightRequest;
@@ -143,16 +147,23 @@ bool passesAccessControlCheck(const ResourceResponse& response, StoredCredential
     AtomicallyInitializedStatic(AtomicString&, accessControlAllowOrigin = *new AtomicString("access-control-allow-origin", AtomicString::ConstructFromLiteral));
     AtomicallyInitializedStatic(AtomicString&, accessControlAllowCredentials = *new AtomicString("access-control-allow-credentials", AtomicString::ConstructFromLiteral));
 
-    // A wildcard Access-Control-Allow-Origin can not be used if credentials are to be sent,
-    // even with Access-Control-Allow-Credentials set to true.
-    const AtomicString& accessControlOriginString = response.httpHeaderField(accessControlAllowOrigin);
-    if (accessControlOriginString == starAtom && includeCredentials == DoNotAllowStoredCredentials)
-        return true;
+    if (!response.httpStatusCode()) {
+        errorDescription = "Received an invalid response. Origin '" + securityOrigin->toString() + "' is therefore not allowed access.";
+        return false;
+    }
 
-    if (accessControlOriginString != securityOrigin->toString()) {
-        if (accessControlOriginString == starAtom) {
+    const AtomicString& accessControlOriginString = response.httpHeaderField(accessControlAllowOrigin);
+    if (accessControlOriginString == starAtom) {
+        // A wildcard Access-Control-Allow-Origin can not be used if credentials are to be sent,
+        // even with Access-Control-Allow-Credentials set to true.
+        if (includeCredentials == DoNotAllowStoredCredentials)
+            return true;
+        if (response.isHTTP()) {
             errorDescription = "A wildcard '*' cannot be used in the 'Access-Control-Allow-Origin' header when the credentials flag is true. Origin '" + securityOrigin->toString() + "' is therefore not allowed access.";
-        } else if (accessControlOriginString.isEmpty()) {
+            return false;
+        }
+    } else if (accessControlOriginString != securityOrigin->toAtomicString()) {
+        if (accessControlOriginString.isEmpty()) {
             errorDescription = "No 'Access-Control-Allow-Origin' header is present on the requested resource. Origin '" + securityOrigin->toString() + "' is therefore not allowed access.";
         } else if (accessControlOriginString.string().find(isOriginSeparator, 0) != kNotFound) {
             errorDescription = "The 'Access-Control-Allow-Origin' header contains multiple values '" + accessControlOriginString + "', but only one is allowed. Origin '" + securityOrigin->toString() + "' is therefore not allowed access.";
@@ -196,6 +207,69 @@ void parseAccessControlExposeHeadersAllowList(const String& headerValue, HTTPHea
         if (!strippedHeader.isEmpty())
             headerSet.add(strippedHeader);
     }
+}
+
+bool CrossOriginAccessControl::isLegalRedirectLocation(const KURL& requestURL, String& errorDescription)
+{
+    // CORS restrictions imposed on Location: URL -- http://www.w3.org/TR/cors/#redirect-steps (steps 2 + 3.)
+    if (!SchemeRegistry::shouldTreatURLSchemeAsCORSEnabled(requestURL.protocol())) {
+        errorDescription = "The request was redirected to a URL ('" + requestURL.string() + "') which has a disallowed scheme for cross-origin requests.";
+        return false;
+    }
+
+    if (!(requestURL.user().isEmpty() && requestURL.pass().isEmpty())) {
+        errorDescription = "The request was redirected to a URL ('" + requestURL.string() + "') containing userinfo, which is disallowed for cross-origin requests.";
+        return false;
+    }
+
+    return true;
+}
+
+bool CrossOriginAccessControl::handleRedirect(Resource* resource, SecurityOrigin* securityOrigin, ResourceRequest& request, const ResourceResponse& redirectResponse, ResourceLoaderOptions& options, String& errorMessage)
+{
+    // http://www.w3.org/TR/cors/#redirect-steps terminology:
+    const KURL& originalURL = redirectResponse.url();
+    const KURL& requestURL = request.url();
+
+    bool redirectCrossOrigin = !securityOrigin->canRequest(requestURL);
+
+    // Same-origin request URLs that redirect are allowed without checking access.
+    if (!securityOrigin->canRequest(originalURL)) {
+        // Follow http://www.w3.org/TR/cors/#redirect-steps
+        String errorDescription;
+
+        // Steps 3 & 4 - check if scheme and other URL restrictions hold.
+        bool allowRedirect = isLegalRedirectLocation(requestURL, errorDescription);
+        if (allowRedirect) {
+            // Step 5: perform resource sharing access check.
+            StoredCredentials withCredentials = resource->lastResourceRequest().allowStoredCredentials() ? AllowStoredCredentials : DoNotAllowStoredCredentials;
+            allowRedirect = passesAccessControlCheck(redirectResponse, withCredentials, securityOrigin, errorDescription);
+            if (allowRedirect) {
+                RefPtr<SecurityOrigin> originalOrigin = SecurityOrigin::create(originalURL);
+                // Step 6: if the request URL origin is not same origin as the original URL's,
+                // set the source origin to a globally unique identifier.
+                if (!originalOrigin->canRequest(requestURL)) {
+                    options.securityOrigin = SecurityOrigin::createUnique();
+                    securityOrigin = options.securityOrigin.get();
+                }
+            }
+        }
+        if (!allowRedirect) {
+            const String& originalOrigin = SecurityOrigin::create(originalURL)->toString();
+            errorMessage = "Redirect at origin '" + originalOrigin + "' has been blocked from loading by Cross-Origin Resource Sharing policy: " + errorDescription;
+            return false;
+        }
+    }
+    if (redirectCrossOrigin) {
+        // If now to a different origin, update/set Origin:.
+        request.clearHTTPOrigin();
+        request.setHTTPOrigin(securityOrigin->toAtomicString());
+        // If the user didn't request credentials in the first place, update our
+        // state so we neither request them nor expect they must be allowed.
+        if (options.credentialsRequested == ClientDidNotRequestCredentials)
+            options.allowCredentials = DoNotAllowStoredCredentials;
+    }
+    return true;
 }
 
 } // namespace WebCore

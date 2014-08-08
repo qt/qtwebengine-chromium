@@ -1,7 +1,6 @@
-Index: unix_rand.c
-===================================================================
---- unix_rand.c	(revision 203531)
-+++ unix_rand.c	(working copy)
+diff -r c3565a90b8c4 lib/freebl/unix_rand.c
+--- a/lib/freebl/unix_rand.c	Fri Jan 03 20:59:10 2014 +0100
++++ b/lib/freebl/unix_rand.c	Tue Jan 07 11:28:59 2014 -0800
 @@ -916,8 +916,19 @@
  #if defined(BSDI) || defined(FREEBSD) || defined(NETBSD) \
      || defined(OPENBSD) || defined(DARWIN) || defined(LINUX) \
@@ -23,7 +22,7 @@ Index: unix_rand.c
  #endif
  
  #ifdef SOLARIS
-@@ -1123,6 +1134,11 @@
+@@ -1134,6 +1145,11 @@
     }
  }
  
@@ -35,7 +34,7 @@ Index: unix_rand.c
  size_t RNG_SystemRNG(void *dest, size_t maxLen)
  {
      FILE *file;
-@@ -1132,7 +1148,10 @@
+@@ -1144,7 +1160,10 @@
  
      file = fopen("/dev/urandom", "r");
      if (file == NULL) {
@@ -45,9 +44,9 @@ Index: unix_rand.c
 +	fflush(stderr);
 +	abort();
      }
-     while (maxLen > fileBytes) {
- 	bytes = maxLen - fileBytes;
-@@ -1144,8 +1163,10 @@
+     /* Read from the underlying file descriptor directly to bypass stdio
+      * buffering and avoid reading more bytes than we need from /dev/urandom.
+@@ -1164,8 +1183,10 @@
      }
      fclose(file);
      if (fileBytes != maxLen) {

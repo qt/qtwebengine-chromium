@@ -52,10 +52,10 @@ URLFetcherStringWriter* URLFetcherStringWriter::AsStringWriter() {
 URLFetcherFileWriter::URLFetcherFileWriter(
     scoped_refptr<base::SequencedTaskRunner> file_task_runner,
     const base::FilePath& file_path)
-    : weak_factory_(this),
-      file_task_runner_(file_task_runner),
+    : file_task_runner_(file_task_runner),
       file_path_(file_path),
-      owns_file_(false) {
+      owns_file_(false),
+      weak_factory_(this) {
   DCHECK(file_task_runner_.get());
 }
 
@@ -64,7 +64,7 @@ URLFetcherFileWriter::~URLFetcherFileWriter() {
 }
 
 int URLFetcherFileWriter::Initialize(const CompletionCallback& callback) {
-  file_stream_.reset(new FileStream(NULL));
+  file_stream_.reset(new FileStream(file_task_runner_));
 
   int result = ERR_IO_PENDING;
   if (file_path_.empty()) {
@@ -80,8 +80,8 @@ int URLFetcherFileWriter::Initialize(const CompletionCallback& callback) {
   } else {
     result = file_stream_->Open(
         file_path_,
-        base::PLATFORM_FILE_WRITE | base::PLATFORM_FILE_ASYNC |
-        base::PLATFORM_FILE_CREATE_ALWAYS,
+        base::File::FLAG_WRITE | base::File::FLAG_ASYNC |
+        base::File::FLAG_CREATE_ALWAYS,
         base::Bind(&URLFetcherFileWriter::DidOpenFile,
                    weak_factory_.GetWeakPtr(),
                    callback));
@@ -107,12 +107,16 @@ int URLFetcherFileWriter::Write(IOBuffer* buffer,
 }
 
 int URLFetcherFileWriter::Finish(const CompletionCallback& callback) {
-  int result = file_stream_->Close(base::Bind(
-      &URLFetcherFileWriter::CloseComplete,
-      weak_factory_.GetWeakPtr(), callback));
-  if (result != ERR_IO_PENDING)
-    file_stream_.reset();
-  return result;
+  // If the file_stream_ still exists at this point, close it.
+  if (file_stream_) {
+    int result = file_stream_->Close(base::Bind(
+        &URLFetcherFileWriter::CloseComplete,
+        weak_factory_.GetWeakPtr(), callback));
+    if (result != ERR_IO_PENDING)
+      file_stream_.reset();
+    return result;
+  }
+  return OK;
 }
 
 URLFetcherFileWriter* URLFetcherFileWriter::AsFileWriter() {
@@ -158,8 +162,8 @@ void URLFetcherFileWriter::DidCreateTempFile(const CompletionCallback& callback,
   owns_file_ = true;
   const int result = file_stream_->Open(
       file_path_,
-      base::PLATFORM_FILE_WRITE | base::PLATFORM_FILE_ASYNC |
-      base::PLATFORM_FILE_OPEN,
+      base::File::FLAG_WRITE | base::File::FLAG_ASYNC |
+      base::File::FLAG_OPEN,
       base::Bind(&URLFetcherFileWriter::DidOpenFile,
                  weak_factory_.GetWeakPtr(),
                  callback));

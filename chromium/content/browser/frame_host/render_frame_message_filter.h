@@ -21,15 +21,12 @@ class RenderFrameMessageFilter : public BrowserMessageFilter {
   RenderFrameMessageFilter(int render_process_id,
                            RenderWidgetHelper* render_widget_helper);
 
-  virtual bool OnMessageReceived(const IPC::Message& message,
-                                 bool* message_was_ok) OVERRIDE;
+  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 
  private:
   virtual ~RenderFrameMessageFilter();
 
-  void OnCreateChildFrame(int parent_render_frame_id,
-                          int64 parent_frame_id,
-                          int64 frame_id,
+  void OnCreateChildFrame(int parent_routing_id,
                           const std::string& frame_name,
                           int* new_render_frame_id);
 

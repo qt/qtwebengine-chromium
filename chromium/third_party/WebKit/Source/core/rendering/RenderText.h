@@ -24,6 +24,8 @@
 #define RenderText_h
 
 #include "core/rendering/RenderObject.h"
+#include "platform/LengthFunctions.h"
+#include "platform/text/TextPath.h"
 #include "wtf/Forward.h"
 #include "wtf/PassRefPtr.h"
 
@@ -42,7 +44,7 @@ public:
     virtual ~RenderText();
 #endif
 
-    virtual const char* renderName() const;
+    virtual const char* renderName() const OVERRIDE;
 
     virtual bool isTextFragment() const;
     virtual bool isWordBreak() const;
@@ -82,8 +84,8 @@ public:
     unsigned textLength() const { return m_text.length(); } // non virtual implementation of length()
     void positionLineBox(InlineBox*);
 
-    virtual float width(unsigned from, unsigned len, const Font&, float xPos, HashSet<const SimpleFontData*>* fallbackFonts = 0, GlyphOverflow* = 0) const;
-    virtual float width(unsigned from, unsigned len, float xPos, bool firstLine = false, HashSet<const SimpleFontData*>* fallbackFonts = 0, GlyphOverflow* = 0) const;
+    virtual float width(unsigned from, unsigned len, const Font&, float xPos, TextDirection, HashSet<const SimpleFontData*>* fallbackFonts = 0, GlyphOverflow* = 0) const;
+    virtual float width(unsigned from, unsigned len, float xPos, TextDirection, bool firstLine = false, HashSet<const SimpleFontData*>* fallbackFonts = 0, GlyphOverflow* = 0) const;
 
     float minLogicalWidth() const;
     float maxLogicalWidth() const;
@@ -93,7 +95,8 @@ public:
         float& lastLineMinWidth, bool& hasBreakableEnd,
         bool& hasBreakableChar, bool& hasBreak,
         float& firstLineMaxWidth, float& lastLineMaxWidth,
-        float& minWidth, float& maxWidth, bool& stripFrontSpaces);
+        float& minWidth, float& maxWidth, bool& stripFrontSpaces,
+        TextDirection);
 
     virtual IntRect linesBoundingBox() const;
     LayoutRect linesVisualOverflowBoundingBox() const;
@@ -107,21 +110,21 @@ public:
 
     virtual void transformText();
 
-    virtual bool canBeSelectionLeaf() const { return true; }
+    virtual bool canBeSelectionLeaf() const OVERRIDE { return true; }
     virtual void setSelectionState(SelectionState s) OVERRIDE FINAL;
-    virtual LayoutRect selectionRectForRepaint(const RenderLayerModelObject* repaintContainer, bool clipToVisibleContent = true) OVERRIDE;
-    virtual LayoutRect localCaretRect(InlineBox*, int caretOffset, LayoutUnit* extraWidthToEndOfLine = 0);
+    virtual LayoutRect selectionRectForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer, bool clipToVisibleContent = true) OVERRIDE;
+    virtual LayoutRect localCaretRect(InlineBox*, int caretOffset, LayoutUnit* extraWidthToEndOfLine = 0) OVERRIDE;
 
-    LayoutUnit marginLeft() const { return minimumValueForLength(style()->marginLeft(), 0, view()); }
-    LayoutUnit marginRight() const { return minimumValueForLength(style()->marginRight(), 0, view()); }
+    LayoutUnit marginLeft() const { return minimumValueForLength(style()->marginLeft(), 0); }
+    LayoutUnit marginRight() const { return minimumValueForLength(style()->marginRight(), 0); }
 
-    virtual LayoutRect clippedOverflowRectForRepaint(const RenderLayerModelObject* repaintContainer) const OVERRIDE FINAL;
+    virtual LayoutRect clippedOverflowRectForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer) const OVERRIDE FINAL;
 
     InlineTextBox* firstTextBox() const { return m_firstTextBox; }
     InlineTextBox* lastTextBox() const { return m_lastTextBox; }
 
-    virtual int caretMinOffset() const;
-    virtual int caretMaxOffset() const;
+    virtual int caretMinOffset() const OVERRIDE;
+    virtual int caretMaxOffset() const OVERRIDE;
     unsigned renderedTextLength() const;
 
     virtual int previousOffset(int current) const OVERRIDE FINAL;
@@ -132,8 +135,6 @@ public:
 
     bool isSecure() const { return style()->textSecurity() != TSNONE; }
     void momentarilyRevealLastTypedCharacter(unsigned lastTypedCharacterOffset);
-
-    InlineTextBox* findNextInlineTextBox(int offset, int& pos) const;
 
     void checkConsistency() const;
 
@@ -148,10 +149,10 @@ public:
 
 protected:
     virtual void computePreferredLogicalWidths(float leadWidth);
-    virtual void willBeDestroyed();
+    virtual void willBeDestroyed() OVERRIDE;
 
-    virtual void styleWillChange(StyleDifference, const RenderStyle*) OVERRIDE FINAL { }
-    virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle);
+    virtual void styleWillChange(StyleDifference, const RenderStyle&) OVERRIDE FINAL { }
+    virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle) OVERRIDE;
 
     virtual void setTextInternal(PassRefPtr<StringImpl>);
     virtual UChar previousCharacter() const;
@@ -176,7 +177,7 @@ private:
 
     void deleteTextBoxes();
     bool containsOnlyWhitespace(unsigned from, unsigned len) const;
-    float widthFromCache(const Font&, int start, int len, float xPos, HashSet<const SimpleFontData*>* fallbackFonts, GlyphOverflow*) const;
+    float widthFromCache(const Font&, int start, int len, float xPos, TextDirection, HashSet<const SimpleFontData*>* fallbackFonts, GlyphOverflow*) const;
     bool isAllASCII() const { return m_isAllASCII; }
 
     void secureText(UChar mask);

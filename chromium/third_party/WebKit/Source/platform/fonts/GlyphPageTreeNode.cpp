@@ -124,7 +124,7 @@ static bool fill(GlyphPage* pageToFill, unsigned offset, unsigned length, UChar*
     if (fontData->isSVGFont())
         return fontData->customFontData()->fillSVGGlyphPage(pageToFill, offset, length, buffer, bufferLength, fontData);
 #endif
-    bool hasGlyphs = pageToFill->fill(offset, length, buffer, bufferLength, fontData);
+    bool hasGlyphs = fontData->fillGlyphPage(pageToFill, offset, length, buffer, bufferLength);
 #if ENABLE(OPENTYPE_VERTICAL)
     if (hasGlyphs && fontData->verticalData())
         fontData->verticalData()->substituteWithVerticalGlyphs(fontData, pageToFill, offset, length);
@@ -214,52 +214,32 @@ void GlyphPageTreeNode::initializePage(const FontData* fontData, unsigned pageNu
                 haveGlyphs = false;
 
                 const SegmentedFontData* segmentedFontData = static_cast<const SegmentedFontData*>(fontData);
-                unsigned numRanges = segmentedFontData->numRanges();
-                bool zeroFilled = false;
-                RefPtr<GlyphPage> scratchPage;
-                GlyphPage* pageToFill = m_page.get();
-                for (unsigned i = 0; i < numRanges; i++) {
+                for (int i = segmentedFontData->numRanges() - 1; i >= 0; i--) {
                     const FontDataRange& range = segmentedFontData->rangeAt(i);
                     // all this casting is to ensure all the parameters to min and max have the same type,
                     // to avoid ambiguous template parameter errors on Windows
                     int from = max(0, static_cast<int>(range.from()) - static_cast<int>(start));
                     int to = 1 + min(static_cast<int>(range.to()) - static_cast<int>(start), static_cast<int>(GlyphPage::size) - 1);
-                    if (from < static_cast<int>(GlyphPage::size) && to > 0) {
-                        // If this is a custom font needs to be loaded, kick off
-                        // the load here, and do not fill the page so that
-                        // font fallback is used while loading.
-                        RefPtr<CustomFontData> customData = range.fontData()->customFontData();
-                        if (customData && customData->isLoadingFallback()) {
-                            customData->beginLoadIfNeeded();
-                            continue;
-                        }
+                    if (from >= static_cast<int>(GlyphPage::size) || to <= 0)
+                        continue;
 
-                        if (haveGlyphs && !scratchPage) {
-                            scratchPage = GlyphPage::createForMixedFontData(this);
-                            pageToFill = scratchPage.get();
+                    // If this is a custom font needs to be loaded, do not fill
+                    // the page so that font fallback is used while loading.
+                    RefPtr<CustomFontData> customData = range.fontData()->customFontData();
+                    if (customData && customData->isLoadingFallback()) {
+                        for (int j = from; j < to; j++) {
+                            m_page->setCustomFontToLoad(j, customData.get());
+                            haveGlyphs = true;
                         }
-
-                        if (!zeroFilled) {
-                            if (from > 0 || to < static_cast<int>(GlyphPage::size)) {
-                                for (unsigned i = 0; i < GlyphPage::size; i++)
-                                    pageToFill->setGlyphDataForIndex(i, 0, 0);
-                            }
-                            zeroFilled = true;
-                        }
-                        haveGlyphs |= fill(pageToFill, from, to - from, buffer + from * (start < 0x10000 ? 1 : 2), (to - from) * (start < 0x10000 ? 1 : 2), range.fontData().get());
-                        if (scratchPage) {
-                            ASSERT_WITH_SECURITY_IMPLICATION(to <=  static_cast<int>(GlyphPage::size));
-                            for (int j = from; j < to; j++) {
-                                if (!m_page->glyphAt(j) && pageToFill->glyphAt(j))
-                                    m_page->setGlyphDataForIndex(j, pageToFill->glyphDataForIndex(j));
-                            }
-                        }
+                        continue;
                     }
+
+                    haveGlyphs |= fill(m_page.get(), from, to - from, buffer + from * (start < 0x10000 ? 1 : 2), (to - from) * (start < 0x10000 ? 1 : 2), range.fontData().get());
                 }
             }
 
             if (!haveGlyphs)
-                m_page = 0;
+                m_page = nullptr;
         } else if (parentPage && parentPage->owner() != m_parent) {
             // The page we're overriding may not be owned by our parent node.
             // This happens when our parent node provides no useful overrides
@@ -294,13 +274,19 @@ void GlyphPageTreeNode::initializePage(const FontData* fontData, unsigned pageNu
                 // has added anything.
                 bool newGlyphs = false;
                 for (unsigned i = 0; i < GlyphPage::size; i++) {
-                    if (parentPage->glyphAt(i))
+                    if (parentPage->glyphAt(i)) {
                         m_page->setGlyphDataForIndex(i, parentPage->glyphDataForIndex(i));
-                    else  if (fallbackPage->glyphAt(i)) {
+                    } else if (fallbackPage->glyphAt(i)) {
                         m_page->setGlyphDataForIndex(i, fallbackPage->glyphDataForIndex(i));
                         newGlyphs = true;
-                    } else
-                        m_page->setGlyphDataForIndex(i, 0, 0);
+                    }
+
+                    if (parentPage->customFontToLoadAt(i)) {
+                        m_page->setCustomFontToLoad(i, parentPage->customFontToLoadAt(i));
+                    } else if (fallbackPage->customFontToLoadAt(i) && !parentPage->glyphAt(i)) {
+                        m_page->setCustomFontToLoad(i, fallbackPage->customFontToLoadAt(i));
+                        newGlyphs = true;
+                    }
                 }
 
                 if (!newGlyphs)

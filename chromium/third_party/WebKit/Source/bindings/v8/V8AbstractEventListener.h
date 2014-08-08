@@ -33,7 +33,6 @@
 
 #include "bindings/v8/DOMWrapperWorld.h"
 #include "bindings/v8/ScopedPersistent.h"
-#include "bindings/v8/V8Utilities.h"
 #include "core/events/EventListener.h"
 #include <v8.h>
 #include "wtf/PassRefPtr.h"
@@ -69,9 +68,9 @@ namespace WebCore {
 
         // Implementation of EventListener interface.
 
-        virtual bool operator==(const EventListener& other) { return this == &other; }
+        virtual bool operator==(const EventListener& other) OVERRIDE { return this == &other; }
 
-        virtual void handleEvent(ExecutionContext*, Event*);
+        virtual void handleEvent(ExecutionContext*, Event*) OVERRIDE;
 
         virtual bool isLazy() const { return false; }
 
@@ -109,26 +108,34 @@ namespace WebCore {
             m_listener.clear();
         }
 
-        virtual DOMWrapperWorld* world() const OVERRIDE FINAL { return m_world.get(); }
+        virtual bool belongsToTheCurrentWorld() const OVERRIDE FINAL;
         v8::Isolate* isolate() const { return m_isolate; }
+        virtual DOMWrapperWorld& world() const { return scriptState()->world(); }
+        ScriptState* scriptState() const
+        {
+            ASSERT(m_scriptState);
+            return m_scriptState.get();
+        }
+        void setScriptState(ScriptState* scriptState) { m_scriptState = scriptState; }
 
     protected:
-        V8AbstractEventListener(bool isAttribute, PassRefPtr<DOMWrapperWorld>, v8::Isolate*);
+        V8AbstractEventListener(bool isAttribute, ScriptState*);
+        V8AbstractEventListener(bool isAttribute, v8::Isolate*);
 
         virtual void prepareListenerObject(ExecutionContext*) { }
 
         void setListenerObject(v8::Handle<v8::Object> listener);
 
-        void invokeEventHandler(ExecutionContext*, Event*, v8::Local<v8::Value> jsEvent);
+        void invokeEventHandler(Event*, v8::Local<v8::Value> jsEvent);
 
         // Get the receiver object to use for event listener call.
-        v8::Local<v8::Object> getReceiverObject(ExecutionContext*, Event*);
+        v8::Local<v8::Object> getReceiverObject(Event*);
 
     private:
         // Implementation of EventListener function.
-        virtual bool virtualisAttribute() const { return m_isAttribute; }
+        virtual bool virtualisAttribute() const OVERRIDE { return m_isAttribute; }
 
-        virtual v8::Local<v8::Value> callListenerFunction(ExecutionContext*, v8::Handle<v8::Value> jsevent, Event*) = 0;
+        virtual v8::Local<v8::Value> callListenerFunction(v8::Handle<v8::Value> jsevent, Event*) = 0;
 
         virtual bool shouldPreventDefault(v8::Local<v8::Value> returnValue);
 
@@ -139,7 +146,10 @@ namespace WebCore {
         // Indicates if this is an HTML type listener.
         bool m_isAttribute;
 
-        RefPtr<DOMWrapperWorld> m_world;
+        // For V8LazyEventListener, m_scriptState can be 0 until V8LazyEventListener is actually used.
+        // m_scriptState is set lazily because V8LazyEventListener doesn't know the associated frame
+        // until the listener is actually used.
+        RefPtr<ScriptState> m_scriptState;
         v8::Isolate* m_isolate;
     };
 

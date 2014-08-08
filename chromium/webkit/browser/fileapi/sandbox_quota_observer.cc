@@ -10,7 +10,7 @@
 #include "webkit/browser/fileapi/sandbox_file_system_backend_delegate.h"
 #include "webkit/browser/fileapi/timed_task_helper.h"
 #include "webkit/browser/quota/quota_client.h"
-#include "webkit/browser/quota/quota_manager.h"
+#include "webkit/browser/quota/quota_manager_proxy.h"
 #include "webkit/common/fileapi/file_system_util.h"
 
 namespace fileapi {
@@ -105,11 +105,11 @@ void SandboxQuotaObserver::SetUsageCacheEnabled(
 base::FilePath SandboxQuotaObserver::GetUsageCachePath(
     const FileSystemURL& url) {
   DCHECK(sandbox_file_util_);
-  base::PlatformFileError error = base::PLATFORM_FILE_OK;
+  base::File::Error error = base::File::FILE_OK;
   base::FilePath path =
       SandboxFileSystemBackendDelegate::GetUsageCachePathForOriginAndType(
           sandbox_file_util_, url.origin(), url.type(), &error);
-  if (error != base::PLATFORM_FILE_OK) {
+  if (error != base::File::FILE_OK) {
     LOG(WARNING) << "Could not get usage cache path for: "
                  << url.DebugString();
     return base::FilePath();

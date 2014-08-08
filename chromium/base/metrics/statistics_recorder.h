@@ -30,7 +30,7 @@ class BASE_EXPORT StatisticsRecorder {
  public:
   typedef std::vector<HistogramBase*> Histograms;
 
-  // Initializes the StatisticsRecorder system.
+  // Initializes the StatisticsRecorder system. Safe to call multiple times.
   static void Initialize();
 
   // Find out if histograms can now be registered into our list.
@@ -70,9 +70,9 @@ class BASE_EXPORT StatisticsRecorder {
   static HistogramBase* FindHistogram(const std::string& name);
 
   // GetSnapshot copies some of the pointers to registered histograms into the
-  // caller supplied vector (Histograms).  Only histograms with names matching
-  // query are returned. The query must be a substring of histogram name for its
-  // pointer to be copied.
+  // caller supplied vector (Histograms). Only histograms which have |query| as
+  // a substring are copied (an empty string will process all registered
+  // histograms).
   static void GetSnapshot(const std::string& query, Histograms* snapshot);
 
  private:
@@ -86,6 +86,7 @@ class BASE_EXPORT StatisticsRecorder {
 
   friend struct DefaultLazyInstanceTraits<StatisticsRecorder>;
   friend class HistogramBaseTest;
+  friend class HistogramSnapshotManagerTest;
   friend class HistogramTest;
   friend class SparseHistogramTest;
   friend class StatisticsRecorderTest;

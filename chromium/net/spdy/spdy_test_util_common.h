@@ -50,7 +50,7 @@ const int kUploadDataSize = arraysize(kUploadData)-1;
 
 // SpdyNextProtos returns a vector of next protocols for negotiating
 // SPDY.
-std::vector<NextProto> SpdyNextProtos();
+NextProtoVector SpdyNextProtos();
 
 // Chop a frame into an array of MockWrites.
 // |data| is the frame to chop.
@@ -218,13 +218,20 @@ struct SpdySessionDependencies {
   NextProto protocol;
   size_t stream_initial_recv_window_size;
   SpdySession::TimeFunc time_func;
+  NextProtoVector next_protos;
   std::string trusted_spdy_proxy;
+  bool force_spdy_over_ssl;
+  bool force_spdy_always;
+  bool use_alternate_protocols;
+  bool enable_websocket_over_spdy;
   NetLog* net_log;
 };
 
 class SpdyURLRequestContext : public URLRequestContext {
  public:
-  explicit SpdyURLRequestContext(NextProto protocol);
+  SpdyURLRequestContext(NextProto protocol,
+                        bool force_spdy_over_ssl,
+                        bool force_spdy_always);
   virtual ~SpdyURLRequestContext();
 
   MockClientSocketFactory& socket_factory() { return socket_factory_; }
@@ -247,8 +254,9 @@ base::WeakPtr<SpdySession> CreateInsecureSpdySession(
 
 // Tries to create a SPDY session for the given key but expects the
 // attempt to fail with the given error. A SPDY session for |key| must
-// not already exist.
-void TryCreateInsecureSpdySessionExpectingFailure(
+// not already exist. The session will be created but close in the
+// next event loop iteration.
+base::WeakPtr<SpdySession> TryCreateInsecureSpdySessionExpectingFailure(
     const scoped_refptr<HttpNetworkSession>& http_session,
     const SpdySessionKey& key,
     Error expected_error,
@@ -269,10 +277,12 @@ base::WeakPtr<SpdySession> CreateFakeSpdySession(SpdySessionPool* pool,
 // Tries to create an insecure SPDY session for the given key but
 // expects the attempt to fail with the given error. The session will
 // neither receive nor send any data. A SPDY session for |key| must
-// not already exist.
-void TryCreateFakeSpdySessionExpectingFailure(SpdySessionPool* pool,
-                                              const SpdySessionKey& key,
-                                              Error expected_error);
+// not already exist. The session will be created but close in the
+// next event loop iteration.
+base::WeakPtr<SpdySession> TryCreateFakeSpdySessionExpectingFailure(
+    SpdySessionPool* pool,
+    const SpdySessionKey& key,
+    Error expected_error);
 
 class SpdySessionPoolPeer {
  public:
@@ -363,14 +373,13 @@ class SpdyTestUtil {
   // Returns the constructed frame.  The caller takes ownership of the frame.
   SpdyFrame* ConstructSpdySettings(const SettingsMap& settings) const;
 
-  // Construct an expected SPDY CREDENTIAL frame.
-  // |credential| is the credential to send.
-  // Returns the constructed frame.  The caller takes ownership of the frame.
-  SpdyFrame* ConstructSpdyCredential(const SpdyCredential& credential) const;
+  // Constructs an expected SPDY SETTINGS acknowledgement frame, if the protocol
+  // version is SPDY4 or higher, or an empty placeholder frame otherwise.
+  SpdyFrame* ConstructSpdySettingsAck() const;
 
   // Construct a SPDY PING frame.
   // Returns the constructed frame.  The caller takes ownership of the frame.
-  SpdyFrame* ConstructSpdyPing(uint32 ping_id) const;
+  SpdyFrame* ConstructSpdyPing(uint32 ping_id, bool is_ack) const;
 
   // Construct a SPDY GOAWAY frame with last_good_stream_id = 0.
   // Returns the constructed frame.  The caller takes ownership of the frame.
@@ -379,6 +388,13 @@ class SpdyTestUtil {
   // Construct a SPDY GOAWAY frame with the specified last_good_stream_id.
   // Returns the constructed frame.  The caller takes ownership of the frame.
   SpdyFrame* ConstructSpdyGoAway(SpdyStreamId last_good_stream_id) const;
+
+  // Construct a SPDY GOAWAY frame with the specified last_good_stream_id,
+  // status, and description. Returns the constructed frame. The caller takes
+  // ownership of the frame.
+  SpdyFrame* ConstructSpdyGoAway(SpdyStreamId last_good_stream_id,
+                                 SpdyGoAwayStatus status,
+                                 const std::string& desc) const;
 
   // Construct a SPDY WINDOW_UPDATE frame.
   // Returns the constructed frame.  The caller takes ownership of the frame.
@@ -392,7 +408,7 @@ class SpdyTestUtil {
                                     SpdyRstStreamStatus status) const;
 
   // Constructs a standard SPDY GET SYN frame, optionally compressed
-  // for the url |url|.
+  // for |url|.
   // |extra_headers| are the extra header-value pairs, which typically
   // will vary the most between calls.
   // Returns a SpdyFrame.
@@ -440,6 +456,10 @@ class SpdyTestUtil {
                                const char* url,
                                const char* status,
                                const char* location);
+
+  SpdyFrame* ConstructInitialSpdyPushFrame(scoped_ptr<SpdyHeaderBlock> headers,
+                                           int stream_id,
+                                           int associated_stream_id);
 
   SpdyFrame* ConstructSpdyPushHeaders(int stream_id,
                                       const char* const extra_headers[],
@@ -510,10 +530,17 @@ class SpdyTestUtil {
 
   const SpdyHeaderInfo MakeSpdyHeader(SpdyFrameType type);
 
+  // For versions below SPDY4, adds the version HTTP/1.1 header.
+  void MaybeAddVersionHeader(SpdyFrameWithNameValueBlockIR* frame_ir) const;
+
+  // Maps |priority| to SPDY version priority, and sets it on |frame_ir|.
+  void SetPriority(RequestPriority priority, SpdySynStreamIR* frame_ir) const;
+
   NextProto protocol() const { return protocol_; }
   SpdyMajorVersion spdy_version() const { return spdy_version_; }
   bool is_spdy2() const { return protocol_ < kProtoSPDY3; }
-  scoped_ptr<SpdyFramer> CreateFramer() const;
+  bool include_version_header() const { return protocol_ < kProtoSPDY4; }
+  scoped_ptr<SpdyFramer> CreateFramer(bool compressed) const;
 
   const char* GetMethodKey() const;
   const char* GetStatusKey() const;

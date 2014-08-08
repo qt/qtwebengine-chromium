@@ -68,7 +68,7 @@ COMPILE_ASSERT_MATCHING_ENUM(DragOperationEvery);
 @end
 
 namespace content {
-WebContentsViewPort* CreateWebContentsView(
+WebContentsView* CreateWebContentsView(
     WebContentsImpl* web_contents,
     WebContentsViewDelegate* delegate,
     RenderViewHostDelegateView** render_view_host_delegate_view) {
@@ -152,21 +152,11 @@ void WebContentsViewMac::StartDragging(
                               offset:offset];
 }
 
-void WebContentsViewMac::OnTabCrashed(base::TerminationStatus /* status */,
-                                      int /* error_code */) {
-}
-
 void WebContentsViewMac::SizeContents(const gfx::Size& size) {
   // TODO(brettw | japhet) This is a hack and should be removed.
   // See web_contents_view.h.
-  gfx::Rect rect(gfx::Point(), size);
-  WebContentsViewCocoa* view = cocoa_view_.get();
-
-  NSPoint origin = [view frame].origin;
-  NSRect frame = [view flipRectToNSRect:rect];
-  frame.origin = NSMakePoint(NSMinX(frame) + origin.x,
-                             NSMinY(frame) + origin.y);
-  [view setFrame:frame];
+  // Note(erikchen): This method has /never/ worked correctly. I've removed the
+  // previous implementation.
 }
 
 void WebContentsViewMac::Focus() {
@@ -230,7 +220,9 @@ void WebContentsViewMac::TakeFocus(bool reverse) {
   }
 }
 
-void WebContentsViewMac::ShowContextMenu(const ContextMenuParams& params) {
+void WebContentsViewMac::ShowContextMenu(
+    content::RenderFrameHost* render_frame_host,
+    const ContextMenuParams& params) {
   // Allow delegates to handle the context menu operation first.
   if (web_contents_->GetDelegate() &&
       web_contents_->GetDelegate()->HandleContextMenu(params)) {
@@ -238,7 +230,7 @@ void WebContentsViewMac::ShowContextMenu(const ContextMenuParams& params) {
   }
 
   if (delegate())
-    delegate()->ShowContextMenu(params);
+    delegate()->ShowContextMenu(render_frame_host, params);
   else
     DLOG(ERROR) << "Cannot show context menus without a delegate.";
 }
@@ -252,10 +244,17 @@ void WebContentsViewMac::ShowPopupMenu(
     const std::vector<MenuItem>& items,
     bool right_aligned,
     bool allow_multiple_selection) {
-  PopupMenuHelper popup_menu_helper(web_contents_->GetRenderViewHost());
-  popup_menu_helper.ShowPopupMenu(bounds, item_height, item_font_size,
-                                  selected_item, items, right_aligned,
-                                  allow_multiple_selection);
+  popup_menu_helper_.reset(
+      new PopupMenuHelper(web_contents_->GetRenderViewHost()));
+  popup_menu_helper_->ShowPopupMenu(bounds, item_height, item_font_size,
+                                    selected_item, items, right_aligned,
+                                    allow_multiple_selection);
+  popup_menu_helper_.reset();
+}
+
+void WebContentsViewMac::HidePopupMenu() {
+  if (popup_menu_helper_)
+    popup_menu_helper_->Hide();
 }
 
 gfx::Rect WebContentsViewMac::GetViewBounds() const {
@@ -334,7 +333,7 @@ void WebContentsViewMac::CreateView(
   cocoa_view_.reset(view);
 }
 
-RenderWidgetHostView* WebContentsViewMac::CreateViewForWidget(
+RenderWidgetHostViewBase* WebContentsViewMac::CreateViewForWidget(
     RenderWidgetHost* render_widget_host) {
   if (render_widget_host->GetView()) {
     // During testing, the view will already be set up in most cases to the
@@ -343,15 +342,18 @@ RenderWidgetHostView* WebContentsViewMac::CreateViewForWidget(
     // view twice), we check for the RVH Factory, which will be set when we're
     // making special ones (which go along with the special views).
     DCHECK(RenderViewHostFactory::has_factory());
-    return render_widget_host->GetView();
+    return static_cast<RenderWidgetHostViewBase*>(
+        render_widget_host->GetView());
   }
 
-  RenderWidgetHostViewMac* view = static_cast<RenderWidgetHostViewMac*>(
-      RenderWidgetHostView::CreateViewForWidget(render_widget_host));
+  RenderWidgetHostViewMac* view = new RenderWidgetHostViewMac(
+      render_widget_host);
   if (delegate()) {
-    NSObject<RenderWidgetHostViewMacDelegate>* rw_delegate =
-        delegate()->CreateRenderWidgetHostViewDelegate(render_widget_host);
-    view->SetDelegate(rw_delegate);
+    base::scoped_nsobject<NSObject<RenderWidgetHostViewMacDelegate> >
+        rw_delegate(
+            delegate()->CreateRenderWidgetHostViewDelegate(render_widget_host));
+
+    view->SetDelegate(rw_delegate.get());
   }
   view->SetAllowOverlappingViews(allow_overlapping_views_);
 
@@ -377,9 +379,9 @@ RenderWidgetHostView* WebContentsViewMac::CreateViewForWidget(
   return view;
 }
 
-RenderWidgetHostView* WebContentsViewMac::CreateViewForPopupWidget(
+RenderWidgetHostViewBase* WebContentsViewMac::CreateViewForPopupWidget(
     RenderWidgetHost* render_widget_host) {
-  return RenderWidgetHostViewPort::CreateViewForWidget(render_widget_host);
+  return new RenderWidgetHostViewMac(render_widget_host);
 }
 
 void WebContentsViewMac::SetPageTitle(const base::string16& title) {
@@ -560,7 +562,6 @@ void WebContentsViewMac::CloseTab() {
 
 // Called when a drag initiated in our view moves.
 - (void)draggedImage:(NSImage*)draggedImage movedTo:(NSPoint)screenPoint {
-  [dragSource_ moveDragTo:screenPoint];
 }
 
 // Called when a file drag is dropped and the promised files need to be written.
@@ -622,6 +623,15 @@ void WebContentsViewMac::CloseTab() {
 
   [self webContents]->
       FocusThroughTabTraversal(direction == NSSelectingPrevious);
+}
+
+// When the subviews require a layout, their size should be reset to the size
+// of this view. (It is possible for the size to get out of sync as an
+// optimization in preparation for an upcoming WebContentsView resize.
+// http://crbug.com/264207)
+- (void)resizeSubviewsWithOldSize:(NSSize)oldBoundsSize {
+  for (NSView* subview in self.subviews)
+    [subview setFrame:self.bounds];
 }
 
 @end

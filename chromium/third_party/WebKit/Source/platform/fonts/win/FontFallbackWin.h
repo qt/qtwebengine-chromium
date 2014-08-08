@@ -28,11 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-// A collection of utilities for font handling.
-
-// FIXME: Move all methods to the files that have their callsites and remove this file.
-// *Utils files are not very WebKit-ty.
-
 #ifndef FontFallbackWin_h
 #define FontFallbackWin_h
 
@@ -43,14 +38,9 @@
 #include <wchar.h>
 #include <windows.h>
 
-namespace WebCore {
+class SkFontMgr;
 
-// Return a font family that can render |characters| based on
-// what script characters belong to.
-// FIXME: This function needs a total overhaul.
-PLATFORM_EXPORT const UChar* getFallbackFamilyForFirstNonCommonCharacter(const UChar* characters,
-    int length,
-    FontDescription::GenericFamilyType);
+namespace WebCore {
 
 // Return a font family that can render |character| based on what script
 // that characters belong to.
@@ -58,7 +48,8 @@ PLATFORM_EXPORT const UChar* getFallbackFamilyForFirstNonCommonCharacter(const U
 // the family is returned.
 PLATFORM_EXPORT const UChar* getFallbackFamily(UChar32 character,
     FontDescription::GenericFamilyType,
-    UScriptCode* scriptChecked);
+    UScriptCode* scriptChecked,
+    SkFontMgr* fontManager);
 
 } // namespace WebCore
 

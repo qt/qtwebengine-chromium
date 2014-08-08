@@ -21,20 +21,20 @@ class CONTENT_EXPORT BrowserAccessibilityManagerAndroid
  public:
   BrowserAccessibilityManagerAndroid(
       base::android::ScopedJavaLocalRef<jobject> content_view_core,
-      const AccessibilityNodeData& src,
+      const ui::AXTreeUpdate& initial_tree,
       BrowserAccessibilityDelegate* delegate,
       BrowserAccessibilityFactory* factory = new BrowserAccessibilityFactory());
 
   virtual ~BrowserAccessibilityManagerAndroid();
 
-  static AccessibilityNodeData GetEmptyDocument();
+  static ui::AXTreeUpdate GetEmptyDocument();
 
   void SetContentViewCore(
       base::android::ScopedJavaLocalRef<jobject> content_view_core);
 
   // Implementation of BrowserAccessibilityManager.
   virtual void NotifyAccessibilityEvent(
-      blink::WebAXEvent event_type, BrowserAccessibility* node) OVERRIDE;
+      ui::AXEvent event_type, BrowserAccessibility* node) OVERRIDE;
 
   // --------------------------------------------------------------------------
   // Methods called from Java via JNI
@@ -43,7 +43,7 @@ class CONTENT_EXPORT BrowserAccessibilityManagerAndroid
   // Tree methods.
   jint GetRootId(JNIEnv* env, jobject obj);
   jboolean IsNodeValid(JNIEnv* env, jobject obj, jint id);
-  jint HitTest(JNIEnv* env, jobject obj, jint x, jint y);
+  void HitTest(JNIEnv* env, jobject obj, jint x, jint y);
 
   // Populate Java accessibility data structures with info about a node.
   jboolean PopulateAccessibilityNodeInfo(
@@ -55,9 +55,19 @@ class CONTENT_EXPORT BrowserAccessibilityManagerAndroid
   void Click(JNIEnv* env, jobject obj, jint id);
   void Focus(JNIEnv* env, jobject obj, jint id);
   void Blur(JNIEnv* env, jobject obj);
+  void ScrollToMakeNodeVisible(JNIEnv* env, jobject obj, int id);
+
+  // Return the id of the next node in tree order in the direction given by
+  // |forwards|, starting with |start_id|, that matches |element_type|,
+  // where |element_type| is a special uppercase string from TalkBack or
+  // BrailleBack indicating general categories of web content like
+  // "SECTION" or "CONTROL".  Return 0 if not found.
+  jint FindElementType(JNIEnv* env, jobject obj, jint start_id,
+                       jstring element_type, jboolean forwards);
 
  protected:
-  virtual void NotifyRootChanged() OVERRIDE;
+  // AXTreeDelegate overrides.
+  virtual void OnRootChanged(ui::AXNode* new_root) OVERRIDE;
 
   virtual bool UseRootScrollOffsetsWhenComputingBounds() OVERRIDE;
 
@@ -73,18 +83,8 @@ class CONTENT_EXPORT BrowserAccessibilityManagerAndroid
   // ContentViewCore.
   JavaObjectWeakGlobalRef java_ref_;
 
-  // Searches through the children of start_node to find the nearest
-  // accessibility focus candidate for a touch which has not landed directly on
-  // an accessibility focus candidate.
-  BrowserAccessibility* FuzzyHitTest(
-      int x, int y, BrowserAccessibility* start_node);
-
-  static void FuzzyHitTestImpl(int x, int y, BrowserAccessibility* start_node,
-      BrowserAccessibility** nearest_candidate, int* min_distance);
-
-  // Calculates the distance from the point (x, y) to the nearest point on the
-  // edge of |node|.
-  static int CalculateDistanceSquared(int x, int y, BrowserAccessibility* node);
+  // Handle a hover event from the renderer process.
+  void HandleHoverEvent(BrowserAccessibility* node);
 
   DISALLOW_COPY_AND_ASSIGN(BrowserAccessibilityManagerAndroid);
 };

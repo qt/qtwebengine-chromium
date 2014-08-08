@@ -26,6 +26,8 @@
 #include "config.h"
 #include "core/fileapi/File.h"
 
+#include "bindings/v8/ExceptionState.h"
+#include "core/dom/ExceptionCode.h"
 #include "platform/FileMetadata.h"
 #include "platform/MIMETypeRegistry.h"
 #include "public/platform/Platform.h"
@@ -84,9 +86,9 @@ static PassOwnPtr<BlobData> createBlobDataForFileSystemURL(const KURL& fileSyste
     return blobData.release();
 }
 
-PassRefPtr<File> File::createWithRelativePath(const String& path, const String& relativePath)
+PassRefPtrWillBeRawPtr<File> File::createWithRelativePath(const String& path, const String& relativePath)
 {
-    RefPtr<File> file = adoptRef(new File(path, AllContentTypes));
+    RefPtrWillBeRawPtr<File> file = adoptRefWillBeNoop(new File(path, AllContentTypes));
     file->m_relativePath = relativePath;
     return file.release();
 }
@@ -149,6 +151,7 @@ File::File(const String& name, const FileMetadata& metadata)
 File::File(const KURL& fileSystemURL, const FileMetadata& metadata)
     : Blob(BlobDataHandle::create(createBlobDataForFileSystemURL(fileSystemURL, metadata), metadata.length))
     , m_hasBackingFile(true)
+    , m_name(decodeURLEscapeSequences(fileSystemURL.lastPathComponent()))
     , m_fileSystemURL(fileSystemURL)
     , m_snapshotSize(metadata.length)
     , m_snapshotModificationTime(metadata.modificationTime)
@@ -162,7 +165,7 @@ double File::lastModifiedDate() const
         return m_snapshotModificationTime * msPerSecond;
 
     time_t modificationTime;
-    if (getFileModificationTime(m_path, modificationTime) && isValidFileTime(modificationTime))
+    if (hasBackingFile() && getFileModificationTime(m_path, modificationTime) && isValidFileTime(modificationTime))
         return modificationTime * msPerSecond;
 
     return currentTime() * msPerSecond;
@@ -176,9 +179,37 @@ unsigned long long File::size() const
     // FIXME: JavaScript cannot represent sizes as large as unsigned long long, we need to
     // come up with an exception to throw if file size is not representable.
     long long size;
-    if (!getFileSize(m_path, size))
+    if (!hasBackingFile() || !getFileSize(m_path, size))
         return 0;
     return static_cast<unsigned long long>(size);
+}
+
+PassRefPtrWillBeRawPtr<Blob> File::slice(long long start, long long end, const String& contentType, ExceptionState& exceptionState) const
+{
+    if (hasBeenClosed()) {
+        exceptionState.throwDOMException(InvalidStateError, "File has been closed.");
+        return nullptr;
+    }
+
+    if (!m_hasBackingFile)
+        return Blob::slice(start, end, contentType, exceptionState);
+
+    // FIXME: This involves synchronous file operation. We need to figure out how to make it asynchronous.
+    long long size;
+    double modificationTime;
+    captureSnapshot(size, modificationTime);
+    clampSliceOffsets(size, start, end);
+
+    long long length = end - start;
+    OwnPtr<BlobData> blobData = BlobData::create();
+    blobData->setContentType(contentType);
+    if (!m_fileSystemURL.isEmpty()) {
+        blobData->appendFileSystemURL(m_fileSystemURL, start, length, modificationTime);
+    } else {
+        ASSERT(!m_path.isEmpty());
+        blobData->appendFile(m_path, start, length, modificationTime);
+    }
+    return Blob::create(BlobDataHandle::create(blobData.release(), length));
 }
 
 void File::captureSnapshot(long long& snapshotSize, double& snapshotModificationTime) const
@@ -192,7 +223,7 @@ void File::captureSnapshot(long long& snapshotSize, double& snapshotModification
     // Obtains a snapshot of the file by capturing its current size and modification time. This is used when we slice a file for the first time.
     // If we fail to retrieve the size or modification time, probably due to that the file has been deleted, 0 size is returned.
     FileMetadata metadata;
-    if (!getFileMetadata(m_path, metadata)) {
+    if (!hasBackingFile() || !getFileMetadata(m_path, metadata)) {
         snapshotSize = 0;
         snapshotModificationTime = invalidFileTime();
         return;
@@ -200,6 +231,43 @@ void File::captureSnapshot(long long& snapshotSize, double& snapshotModification
 
     snapshotSize = metadata.length;
     snapshotModificationTime = metadata.modificationTime;
+}
+
+void File::close(ExecutionContext* executionContext, ExceptionState& exceptionState)
+{
+    if (hasBeenClosed()) {
+        exceptionState.throwDOMException(InvalidStateError, "Blob has been closed.");
+        return;
+    }
+
+    // Reset the File to its closed representation, an empty
+    // Blob. The name isn't cleared, as it should still be
+    // available.
+    m_hasBackingFile = false;
+    m_path = String();
+    m_fileSystemURL = KURL();
+    invalidateSnapshotMetadata();
+    m_relativePath = String();
+    Blob::close(executionContext, exceptionState);
+}
+
+void File::appendTo(BlobData& blobData) const
+{
+    if (!m_hasBackingFile) {
+        Blob::appendTo(blobData);
+        return;
+    }
+
+    // FIXME: This involves synchronous file operation. We need to figure out how to make it asynchronous.
+    long long size;
+    double modificationTime;
+    captureSnapshot(size, modificationTime);
+    if (!m_fileSystemURL.isEmpty()) {
+        blobData.appendFileSystemURL(m_fileSystemURL, 0, size, modificationTime);
+        return;
+    }
+    ASSERT(!m_path.isEmpty());
+    blobData.appendFile(m_path, 0, size, modificationTime);
 }
 
 } // namespace WebCore

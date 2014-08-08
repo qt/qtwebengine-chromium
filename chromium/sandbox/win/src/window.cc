@@ -48,9 +48,8 @@ ResultCode CreateAltWindowStation(HWINSTA* winsta) {
   *winsta = ::CreateWindowStationW(NULL, 0, WINSTA_ALL_ACCESS, &attributes);
   LocalFree(attributes.lpSecurityDescriptor);
 
-  if (*winsta) {
+  if (*winsta)
     return SBOX_ALL_OK;
-  }
 
   return SBOX_ERROR_CANNOT_CREATE_WINSTATION;
 }
@@ -100,11 +99,14 @@ ResultCode CreateAltDesktop(HWINSTA winsta, HDESK* desktop) {
   if (*desktop) {
     // Replace the DACL on the new Desktop with a reduced privilege version.
     // We can soft fail on this for now, as it's just an extra mitigation.
-    static const ACCESS_MASK  kDesktopDenyMask = WRITE_DAC | WRITE_OWNER |
-                                                 DESKTOP_HOOKCONTROL |
-                                                 DESKTOP_JOURNALPLAYBACK |
-                                                 DESKTOP_JOURNALRECORD |
-                                                 DESKTOP_SWITCHDESKTOP;
+    static const ACCESS_MASK kDesktopDenyMask = WRITE_DAC | WRITE_OWNER |
+                                                DELETE |
+                                                DESKTOP_CREATEMENU |
+                                                DESKTOP_CREATEWINDOW |
+                                                DESKTOP_HOOKCONTROL |
+                                                DESKTOP_JOURNALPLAYBACK |
+                                                DESKTOP_JOURNALRECORD |
+                                                DESKTOP_SWITCHDESKTOP;
     AddKnownSidToObject(*desktop, SE_WINDOW_OBJECT, Sid(WinRestrictedCodeSid),
                         DENY_ACCESS, kDesktopDenyMask);
     return SBOX_ALL_OK;

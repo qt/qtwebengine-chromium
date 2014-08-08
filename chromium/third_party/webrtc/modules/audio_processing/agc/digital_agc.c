@@ -118,7 +118,7 @@ int32_t WebRtcAgc_CalculateGainTable(int32_t *gainTable, // Q16
     limiterLvlX = analogTarget - limiterOffset;
     limiterIdx = 2
             + WebRtcSpl_DivW32W16ResW16(WEBRTC_SPL_LSHIFT_W32((int32_t)limiterLvlX, 13),
-                                        WEBRTC_SPL_RSHIFT_U16(kLog10_2, 1));
+                                        (kLog10_2 / 2));
     tmp16no1 = WebRtcSpl_DivW32W16ResW16(limiterOffset + (kCompRatio >> 1), kCompRatio);
     limiterLvl = targetLevelDbfs + tmp16no1;
 
@@ -288,12 +288,7 @@ int32_t WebRtcAgc_InitDigital(DigitalAgc_t *stt, int16_t agcMode)
 int32_t WebRtcAgc_AddFarendToDigital(DigitalAgc_t *stt, const int16_t *in_far,
                                      int16_t nrSamples)
 {
-    // Check for valid pointer
-    if (&stt->vadFarend == NULL)
-    {
-        return -1;
-    }
-
+    assert(stt != NULL);
     // VAD for far end
     WebRtcAgc_ProcessVad(&stt->vadFarend, in_far, nrSamples);
 
@@ -778,7 +773,7 @@ int16_t WebRtcAgc_ProcessVad(AgcVad_t *state, // (i) VAD state
     tmp16 = WEBRTC_SPL_LSHIFT_W16(3, 12);
     tmp32 = WEBRTC_SPL_MUL_16_16(tmp16, (dB - state->meanLongTerm));
     tmp32 = WebRtcSpl_DivW32W16(tmp32, state->stdLongTerm);
-    tmpU16 = WEBRTC_SPL_LSHIFT_U16((uint16_t)13, 12);
+    tmpU16 = (13 << 12);
     tmp32b = WEBRTC_SPL_MUL_16_U16(state->logRatio, tmpU16);
     tmp32 += WEBRTC_SPL_RSHIFT_W32(tmp32b, 10);
 

@@ -39,6 +39,7 @@
 
 #include <map>
 
+#include "base/atomic_ref_count.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
@@ -82,8 +83,11 @@ class CONTENT_EXPORT AudioRendererHost : public BrowserMessageFilter {
   // BrowserMessageFilter implementation.
   virtual void OnChannelClosing() OVERRIDE;
   virtual void OnDestruct() const OVERRIDE;
-  virtual bool OnMessageReceived(const IPC::Message& message,
-                                 bool* message_was_ok) OVERRIDE;
+  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
+
+  // Returns true if any streams managed by this host are actively playing.  Can
+  // be called from any thread.
+  bool HasActiveAudio();
 
  private:
   friend class AudioRendererHostTest;
@@ -112,6 +116,7 @@ class CONTENT_EXPORT AudioRendererHost : public BrowserMessageFilter {
   // message.
   void OnCreateStream(int stream_id,
                       int render_view_id,
+                      int render_frame_id,
                       int session_id,
                       const media::AudioParameters& params);
 
@@ -132,11 +137,11 @@ class CONTENT_EXPORT AudioRendererHost : public BrowserMessageFilter {
   // NotifyStreamCreated message to the peer.
   void DoCompleteCreation(int stream_id);
 
+  // Send playing/paused status to the renderer.
+  void DoNotifyStreamStateChanged(int stream_id, bool is_playing);
+
   RenderViewHost::AudioOutputControllerList DoGetOutputControllers(
       int render_view_id) const;
-
-  // Propagate measured power level of the audio signal to MediaObserver.
-  void DoNotifyAudioPowerLevel(int stream_id, float power_dbfs, bool clipped);
 
   // Send an error message to the renderer.
   void SendErrorMessage(int stream_id);
@@ -164,6 +169,9 @@ class CONTENT_EXPORT AudioRendererHost : public BrowserMessageFilter {
 
   // A map of stream IDs to audio sources.
   AudioEntryMap audio_entries_;
+
+  // The number of streams in the playing state.
+  base::AtomicRefCount num_playing_streams_;
 
   DISALLOW_COPY_AND_ASSIGN(AudioRendererHost);
 };

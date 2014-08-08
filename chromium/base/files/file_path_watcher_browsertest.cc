@@ -172,8 +172,7 @@ class FilePathWatcherTest : public testing::Test {
 
   // Write |content| to |file|. Returns true on success.
   bool WriteFile(const FilePath& file, const std::string& content) {
-    int write_size = file_util::WriteFile(file, content.c_str(),
-                                          content.length());
+    int write_size = ::base::WriteFile(file, content.c_str(), content.length());
     return write_size == static_cast<int>(content.length());
   }
 
@@ -206,9 +205,8 @@ bool FilePathWatcherTest::SetupWatch(const FilePath& target,
   bool result;
   file_thread_.message_loop_proxy()->PostTask(
       FROM_HERE,
-      base::Bind(SetupWatchCallback,
-                 target, watcher, delegate, recursive_watch, &result,
-                 &completion));
+      base::Bind(SetupWatchCallback, target, watcher, delegate, recursive_watch,
+                 &result, &completion));
   completion.Wait();
   return result;
 }
@@ -484,12 +482,17 @@ TEST_F(FilePathWatcherTest, MoveParent) {
   DeleteDelegateOnFileThread(subdir_delegate.release());
 }
 
-#if defined(OS_WIN)
 TEST_F(FilePathWatcherTest, RecursiveWatch) {
   FilePathWatcher watcher;
   FilePath dir(temp_dir_.path().AppendASCII("dir"));
   scoped_ptr<TestDelegate> delegate(new TestDelegate(collector()));
-  ASSERT_TRUE(SetupWatch(dir, &watcher, delegate.get(), true));
+  bool setup_result = SetupWatch(dir, &watcher, delegate.get(), true);
+  if (!FilePathWatcher::RecursiveWatchAvailable()) {
+    ASSERT_FALSE(setup_result);
+    DeleteDelegateOnFileThread(delegate.release());
+    return;
+  }
+  ASSERT_TRUE(setup_result);
 
   // Main directory("dir") creation.
   ASSERT_TRUE(base::CreateDirectory(dir));
@@ -537,16 +540,48 @@ TEST_F(FilePathWatcherTest, RecursiveWatch) {
   ASSERT_TRUE(WaitForEvents());
   DeleteDelegateOnFileThread(delegate.release());
 }
-#else
-TEST_F(FilePathWatcherTest, RecursiveWatch) {
+
+#if defined(OS_POSIX)
+TEST_F(FilePathWatcherTest, RecursiveWithSymLink) {
+  if (!FilePathWatcher::RecursiveWatchAvailable())
+    return;
+
   FilePathWatcher watcher;
-  FilePath dir(temp_dir_.path().AppendASCII("dir"));
+  FilePath test_dir(temp_dir_.path().AppendASCII("test_dir"));
+  ASSERT_TRUE(base::CreateDirectory(test_dir));
+  FilePath symlink(test_dir.AppendASCII("symlink"));
   scoped_ptr<TestDelegate> delegate(new TestDelegate(collector()));
-  // Non-Windows implementaion does not support recursive watching.
-  ASSERT_FALSE(SetupWatch(dir, &watcher, delegate.get(), true));
+  ASSERT_TRUE(SetupWatch(symlink, &watcher, delegate.get(), true));
+
+  // Link creation.
+  FilePath target1(temp_dir_.path().AppendASCII("target1"));
+  ASSERT_TRUE(base::CreateSymbolicLink(target1, symlink));
+  ASSERT_TRUE(WaitForEvents());
+
+  // Target1 creation.
+  ASSERT_TRUE(base::CreateDirectory(target1));
+  ASSERT_TRUE(WaitForEvents());
+
+  // Create a file in target1.
+  FilePath target1_file(target1.AppendASCII("file"));
+  ASSERT_TRUE(WriteFile(target1_file, "content"));
+  ASSERT_TRUE(WaitForEvents());
+
+  // Link change.
+  FilePath target2(temp_dir_.path().AppendASCII("target2"));
+  ASSERT_TRUE(base::CreateDirectory(target2));
+  ASSERT_TRUE(base::DeleteFile(symlink, false));
+  ASSERT_TRUE(base::CreateSymbolicLink(target2, symlink));
+  ASSERT_TRUE(WaitForEvents());
+
+  // Create a file in target2.
+  FilePath target2_file(target2.AppendASCII("file"));
+  ASSERT_TRUE(WriteFile(target2_file, "content"));
+  ASSERT_TRUE(WaitForEvents());
+
   DeleteDelegateOnFileThread(delegate.release());
 }
-#endif
+#endif  // OS_POSIX
 
 TEST_F(FilePathWatcherTest, MoveChild) {
   FilePathWatcher file_watcher;
@@ -575,10 +610,6 @@ TEST_F(FilePathWatcherTest, MoveChild) {
   DeleteDelegateOnFileThread(subdir_delegate.release());
 }
 
-#if !defined(OS_LINUX)
-// Linux implementation of FilePathWatcher doesn't catch attribute changes.
-// http://crbug.com/78043
-
 // Verify that changing attributes on a file is caught
 TEST_F(FilePathWatcherTest, FileAttributesChanged) {
   ASSERT_TRUE(WriteFile(test_file(), "content"));
@@ -591,8 +622,6 @@ TEST_F(FilePathWatcherTest, FileAttributesChanged) {
   ASSERT_TRUE(WaitForEvents());
   DeleteDelegateOnFileThread(delegate.release());
 }
-
-#endif  // !OS_LINUX
 
 #if defined(OS_LINUX)
 

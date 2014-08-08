@@ -7,8 +7,8 @@
 #include <mfapi.h>
 #include <mferror.h>
 
-#include "base/lazy_instance.h"
 #include "base/memory/ref_counted.h"
+#include "base/strings/stringprintf.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/win/scoped_co_mem.h"
@@ -19,7 +19,6 @@ using base::win::ScopedCoMem;
 using base::win::ScopedComPtr;
 
 namespace media {
-namespace {
 
 // In Windows device identifiers, the USB VID and PID are preceded by the string
 // "vid_" or "pid_".  The identifiers are each 4 bytes long.
@@ -27,74 +26,7 @@ const char kVidPrefix[] = "vid_";  // Also contains '\0'.
 const char kPidPrefix[] = "pid_";  // Also contains '\0'.
 const size_t kVidPidSize = 4;
 
-class MFInitializerSingleton {
- public:
-  MFInitializerSingleton() { MFStartup(MF_VERSION, MFSTARTUP_LITE); }
-  ~MFInitializerSingleton() { MFShutdown(); }
-};
-
-static base::LazyInstance<MFInitializerSingleton> g_mf_initialize =
-    LAZY_INSTANCE_INITIALIZER;
-
-void EnsureMFInit() {
-  g_mf_initialize.Get();
-}
-
-bool PrepareVideoCaptureAttributes(IMFAttributes** attributes, int count) {
-  EnsureMFInit();
-
-  if (FAILED(MFCreateAttributes(attributes, count)))
-    return false;
-
-  return SUCCEEDED((*attributes)->SetGUID(MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE,
-      MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_VIDCAP_GUID));
-}
-
-bool EnumerateVideoDevices(IMFActivate*** devices,
-                           UINT32* count) {
-  ScopedComPtr<IMFAttributes> attributes;
-  if (!PrepareVideoCaptureAttributes(attributes.Receive(), 1))
-    return false;
-
-  return SUCCEEDED(MFEnumDeviceSources(attributes, devices, count));
-}
-
-bool CreateVideoCaptureDevice(const char* sym_link, IMFMediaSource** source) {
-  ScopedComPtr<IMFAttributes> attributes;
-  if (!PrepareVideoCaptureAttributes(attributes.Receive(), 2))
-    return false;
-
-  attributes->SetString(MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_VIDCAP_SYMBOLIC_LINK,
-                        base::SysUTF8ToWide(sym_link).c_str());
-
-  return SUCCEEDED(MFCreateDeviceSource(attributes, source));
-}
-
-bool FormatFromGuid(const GUID& guid, VideoPixelFormat* format) {
-  struct {
-    const GUID& guid;
-    const VideoPixelFormat format;
-  } static const kFormatMap[] = {
-    { MFVideoFormat_I420, PIXEL_FORMAT_I420 },
-    { MFVideoFormat_YUY2, PIXEL_FORMAT_YUY2 },
-    { MFVideoFormat_UYVY, PIXEL_FORMAT_UYVY },
-    { MFVideoFormat_RGB24, PIXEL_FORMAT_RGB24 },
-    { MFVideoFormat_ARGB32, PIXEL_FORMAT_ARGB },
-    { MFVideoFormat_MJPG, PIXEL_FORMAT_MJPEG },
-    { MFVideoFormat_YV12, PIXEL_FORMAT_YV12 },
-  };
-
-  for (int i = 0; i < arraysize(kFormatMap); ++i) {
-    if (kFormatMap[i].guid == guid) {
-      *format = kFormatMap[i].format;
-      return true;
-    }
-  }
-
-  return false;
-}
-
-bool GetFrameSize(IMFMediaType* type, gfx::Size* frame_size) {
+static bool GetFrameSize(IMFMediaType* type, gfx::Size* frame_size) {
   UINT32 width32, height32;
   if (FAILED(MFGetAttributeSize(type, MF_MT_FRAME_SIZE, &width32, &height32)))
     return false;
@@ -102,9 +34,9 @@ bool GetFrameSize(IMFMediaType* type, gfx::Size* frame_size) {
   return true;
 }
 
-bool GetFrameRate(IMFMediaType* type,
-                  int* frame_rate_numerator,
-                  int* frame_rate_denominator) {
+static bool GetFrameRate(IMFMediaType* type,
+                         int* frame_rate_numerator,
+                         int* frame_rate_denominator) {
   UINT32 numerator, denominator;
   if (FAILED(MFGetAttributeRatio(type, MF_MT_FRAME_RATE, &numerator,
                                  &denominator))||
@@ -116,18 +48,18 @@ bool GetFrameRate(IMFMediaType* type,
   return true;
 }
 
-bool FillCapabilitiesFromType(IMFMediaType* type,
-                              VideoCaptureCapabilityWin* capability) {
+static bool FillCapabilitiesFromType(IMFMediaType* type,
+                                     VideoCaptureCapabilityWin* capability) {
   GUID type_guid;
   if (FAILED(type->GetGUID(MF_MT_SUBTYPE, &type_guid)) ||
       !GetFrameSize(type, &capability->supported_format.frame_size) ||
       !GetFrameRate(type,
                     &capability->frame_rate_numerator,
                     &capability->frame_rate_denominator) ||
-      !FormatFromGuid(type_guid, &capability->supported_format.pixel_format)) {
+      !VideoCaptureDeviceMFWin::FormatFromGuid(type_guid,
+          &capability->supported_format.pixel_format)) {
     return false;
   }
-  // Keep the integer version of the frame_rate for (potential) returns.
   capability->supported_format.frame_rate =
       capability->frame_rate_numerator / capability->frame_rate_denominator;
 
@@ -153,26 +85,8 @@ HRESULT FillCapabilities(IMFSourceReader* source,
   return (hr == MF_E_NO_MORE_TYPES) ? S_OK : hr;
 }
 
-bool LoadMediaFoundationDlls() {
-  static const wchar_t* const kMfDLLs[] = {
-    L"%WINDIR%\\system32\\mf.dll",
-    L"%WINDIR%\\system32\\mfplat.dll",
-    L"%WINDIR%\\system32\\mfreadwrite.dll",
-  };
 
-  for (int i = 0; i < arraysize(kMfDLLs); ++i) {
-    wchar_t path[MAX_PATH] = {0};
-    ExpandEnvironmentStringsW(kMfDLLs[i], path, arraysize(path));
-    if (!LoadLibraryExW(path, NULL, LOAD_WITH_ALTERED_SEARCH_PATH))
-      return false;
-  }
-
-  return true;
-}
-
-}  // namespace
-
-class MFReaderCallback
+class MFReaderCallback FINAL
     : public base::RefCountedThreadSafe<MFReaderCallback>,
       public IMFSourceReaderCallback {
  public:
@@ -204,9 +118,9 @@ class MFReaderCallback
 
   STDMETHOD(OnReadSample)(HRESULT status, DWORD stream_index,
       DWORD stream_flags, LONGLONG time_stamp, IMFSample* sample) {
-    base::Time stamp(base::Time::Now());
+    base::TimeTicks stamp(base::TimeTicks::Now());
     if (!sample) {
-      observer_->OnIncomingCapturedFrame(NULL, 0, stamp, 0);
+      observer_->OnIncomingCapturedData(NULL, 0, 0, stamp);
       return S_OK;
     }
 
@@ -220,7 +134,7 @@ class MFReaderCallback
         DWORD length = 0, max_length = 0;
         BYTE* data = NULL;
         buffer->Lock(&data, &max_length, &length);
-        observer_->OnIncomingCapturedFrame(data, length, stamp, 0);
+        observer_->OnIncomingCapturedData(data, length, 0, stamp);
         buffer->Unlock();
       }
     }
@@ -249,41 +163,29 @@ class MFReaderCallback
 };
 
 // static
-bool VideoCaptureDeviceMFWin::PlatformSupported() {
-  // Even though the DLLs might be available on Vista, we get crashes
-  // when running our tests on the build bots.
-  if (base::win::GetVersion() < base::win::VERSION_WIN7)
-    return false;
+bool VideoCaptureDeviceMFWin::FormatFromGuid(const GUID& guid,
+                                             VideoPixelFormat* format) {
+  struct {
+    const GUID& guid;
+    const VideoPixelFormat format;
+  } static const kFormatMap[] = {
+    { MFVideoFormat_I420, PIXEL_FORMAT_I420 },
+    { MFVideoFormat_YUY2, PIXEL_FORMAT_YUY2 },
+    { MFVideoFormat_UYVY, PIXEL_FORMAT_UYVY },
+    { MFVideoFormat_RGB24, PIXEL_FORMAT_RGB24 },
+    { MFVideoFormat_ARGB32, PIXEL_FORMAT_ARGB },
+    { MFVideoFormat_MJPG, PIXEL_FORMAT_MJPEG },
+    { MFVideoFormat_YV12, PIXEL_FORMAT_YV12 },
+  };
 
-  static bool g_dlls_available = LoadMediaFoundationDlls();
-  return g_dlls_available;
-}
-
-// static
-void VideoCaptureDeviceMFWin::GetDeviceNames(Names* device_names) {
-  ScopedCoMem<IMFActivate*> devices;
-  UINT32 count;
-  if (!EnumerateVideoDevices(&devices, &count))
-    return;
-
-  HRESULT hr;
-  for (UINT32 i = 0; i < count; ++i) {
-    UINT32 name_size, id_size;
-    ScopedCoMem<wchar_t> name, id;
-    if (SUCCEEDED(hr = devices[i]->GetAllocatedString(
-            MF_DEVSOURCE_ATTRIBUTE_FRIENDLY_NAME, &name, &name_size)) &&
-        SUCCEEDED(hr = devices[i]->GetAllocatedString(
-            MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_VIDCAP_SYMBOLIC_LINK, &id,
-            &id_size))) {
-      std::wstring name_w(name, name_size), id_w(id, id_size);
-      Name device(base::SysWideToUTF8(name_w), base::SysWideToUTF8(id_w),
-          Name::MEDIA_FOUNDATION);
-      device_names->push_back(device);
-    } else {
-      DLOG(WARNING) << "GetAllocatedString failed: " << std::hex << hr;
+  for (int i = 0; i < arraysize(kFormatMap); ++i) {
+    if (kFormatMap[i].guid == guid) {
+      *format = kFormatMap[i].format;
+      return true;
     }
-    devices[i]->Release();
   }
+
+  return false;
 }
 
 const std::string VideoCaptureDevice::Name::GetModel() const {
@@ -315,13 +217,10 @@ VideoCaptureDeviceMFWin::~VideoCaptureDeviceMFWin() {
   DCHECK(CalledOnValidThread());
 }
 
-bool VideoCaptureDeviceMFWin::Init() {
+bool VideoCaptureDeviceMFWin::Init(
+    const base::win::ScopedComPtr<IMFMediaSource>& source) {
   DCHECK(CalledOnValidThread());
   DCHECK(!reader_);
-
-  ScopedComPtr<IMFMediaSource> source;
-  if (!CreateVideoCaptureDevice(name_.id().c_str(), source.Receive()))
-    return false;
 
   ScopedComPtr<IMFAttributes> attributes;
   MFCreateAttributes(attributes.Receive(), 1);
@@ -404,18 +303,16 @@ void VideoCaptureDeviceMFWin::StopAndDeAllocate() {
     flushed.TimedWait(base::TimeDelta::FromMilliseconds(kFlushTimeOutInMs));
 }
 
-void VideoCaptureDeviceMFWin::OnIncomingCapturedFrame(
+void VideoCaptureDeviceMFWin::OnIncomingCapturedData(
     const uint8* data,
     int length,
-    const base::Time& time_stamp,
-    int rotation) {
+    int rotation,
+    const base::TimeTicks& time_stamp) {
   base::AutoLock lock(lock_);
-  if (data && client_.get())
-    client_->OnIncomingCapturedFrame(data,
-                                     length,
-                                     time_stamp,
-                                     rotation,
-                                     capture_format_);
+  if (data && client_.get()) {
+    client_->OnIncomingCapturedData(
+        data, length, capture_format_, rotation, time_stamp);
+  }
 
   if (capture_) {
     HRESULT hr = reader_->ReadSample(MF_SOURCE_READER_FIRST_VIDEO_STREAM, 0,
@@ -432,9 +329,10 @@ void VideoCaptureDeviceMFWin::OnIncomingCapturedFrame(
 }
 
 void VideoCaptureDeviceMFWin::OnError(HRESULT hr) {
-  DLOG(ERROR) << "VideoCaptureDeviceMFWin: " << std::hex << hr;
+  std::string log_msg = base::StringPrintf("VideoCaptureDeviceMFWin: %x", hr);
+  DLOG(ERROR) << log_msg;
   if (client_.get())
-    client_->OnError();
+    client_->OnError(log_msg);
 }
 
 }  // namespace media

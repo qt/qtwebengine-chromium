@@ -29,10 +29,10 @@
  */
 
 #include "config.h"
-#include "BackForwardClientImpl.h"
+#include "web/BackForwardClientImpl.h"
 
-#include "WebViewClient.h"
-#include "WebViewImpl.h"
+#include "public/web/WebViewClient.h"
+#include "web/WebViewImpl.h"
 
 using namespace WebCore;
 

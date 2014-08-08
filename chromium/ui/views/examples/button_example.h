@@ -5,8 +5,7 @@
 #ifndef UI_VIEWS_EXAMPLES_BUTTON_EXAMPLE_H_
 #define UI_VIEWS_EXAMPLES_BUTTON_EXAMPLE_H_
 
-#include "base/basictypes.h"
-#include "base/compiler_specific.h"
+#include "base/macros.h"
 #include "ui/views/controls/button/text_button.h"
 #include "ui/views/examples/example_base.h"
 
@@ -18,19 +17,20 @@ class LabelButton;
 namespace examples {
 
 // ButtonExample simply counts the number of clicks.
-class ButtonExample : public ExampleBase, public ButtonListener {
+class VIEWS_EXAMPLES_EXPORT ButtonExample : public ExampleBase,
+                                            public ButtonListener {
  public:
   ButtonExample();
   virtual ~ButtonExample();
 
-  // Overridden from ExampleBase:
+  // ExampleBase:
   virtual void CreateExampleView(View* container) OVERRIDE;
 
  private:
   void TextButtonPressed(const ui::Event& event);
   void LabelButtonPressed(const ui::Event& event);
 
-  // Overridden from ButtonListener:
+  // ButtonListener:
   virtual void ButtonPressed(Button* sender, const ui::Event& event) OVERRIDE;
 
   // Example buttons.

@@ -8,8 +8,10 @@
 
 #include "base/basictypes.h"
 #include "base/strings/utf_string_conversions.h"
+#include "ui/base/ime/text_input_client.h"
 #include "ui/base/models/combobox_model.h"
 #include "ui/events/event.h"
+#include "ui/events/event_constants.h"
 #include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/views/controls/combobox/combobox_listener.h"
 #include "ui/views/controls/menu/menu_runner.h"
@@ -19,6 +21,8 @@
 #include "ui/views/test/views_test_base.h"
 #include "ui/views/widget/widget.h"
 
+using base::ASCIIToUTF16;
+
 namespace views {
 
 namespace {
@@ -27,15 +31,14 @@ namespace {
 // shown or not.
 class TestMenuRunnerHandler : public MenuRunnerHandler {
  public:
-  TestMenuRunnerHandler()
-      : executed_(false) {}
+  TestMenuRunnerHandler() : executed_(false) {}
 
   bool executed() const { return executed_; }
 
   virtual MenuRunner::RunResult RunMenuAt(Widget* parent,
                                           MenuButton* button,
                                           const gfx::Rect& bounds,
-                                          MenuItemView::AnchorPosition anchor,
+                                          MenuAnchorPosition anchor,
                                           ui::MenuSourceType source_type,
                                           int32 types) OVERRIDE {
     executed_ = true;
@@ -55,8 +58,7 @@ class TestCombobox : public Combobox {
   explicit TestCombobox(ui::ComboboxModel* model)
       : Combobox(model),
         key_handled_(false),
-        key_received_(false) {
-  }
+        key_received_(false) {}
 
   virtual bool OnKeyPressed(const ui::KeyEvent& e) OVERRIDE {
     key_received_ = true;
@@ -94,7 +96,7 @@ class TestComboboxModel : public ui::ComboboxModel {
   virtual int GetItemCount() const OVERRIDE {
     return 10;
   }
-  virtual string16 GetItemAt(int index) OVERRIDE {
+  virtual base::string16 GetItemAt(int index) OVERRIDE {
     if (IsItemSeparatorAt(index)) {
       NOTREACHED();
       return ASCIIToUTF16("SEPARATOR");
@@ -115,13 +117,35 @@ class TestComboboxModel : public ui::ComboboxModel {
   DISALLOW_COPY_AND_ASSIGN(TestComboboxModel);
 };
 
+// A combobox model which refers to a vector.
+class VectorComboboxModel : public ui::ComboboxModel {
+ public:
+  explicit VectorComboboxModel(std::vector<std::string>* values)
+      : values_(values) {}
+  virtual ~VectorComboboxModel() {}
+
+  // ui::ComboboxModel:
+  virtual int GetItemCount() const OVERRIDE {
+    return (int)values_->size();
+  }
+  virtual base::string16 GetItemAt(int index) OVERRIDE {
+    return ASCIIToUTF16(values_->at(index));
+  }
+  virtual bool IsItemSeparatorAt(int index) OVERRIDE {
+    return false;
+  }
+
+ private:
+  std::vector<std::string>* values_;
+};
+
 class EvilListener : public ComboboxListener {
  public:
-  EvilListener() : deleted_(false) {};
+  EvilListener() : deleted_(false) {}
   virtual ~EvilListener() {};
 
   // ComboboxListener:
-  virtual void OnSelectedIndexChanged(Combobox* combobox) OVERRIDE {
+  virtual void OnPerformAction(Combobox* combobox) OVERRIDE {
     delete combobox;
     deleted_ = true;
   }
@@ -136,31 +160,29 @@ class EvilListener : public ComboboxListener {
 
 class TestComboboxListener : public views::ComboboxListener {
  public:
-  TestComboboxListener()
-      : on_selected_index_changed_called_(false),
-        on_combobox_text_button_clicked_called_(false) {
-  }
+  TestComboboxListener() : perform_action_index_(-1), actions_performed_(0) {}
   virtual ~TestComboboxListener() {}
 
-  virtual void OnSelectedIndexChanged(views::Combobox* combobox) OVERRIDE {
-    on_selected_index_changed_called_ = true;
+  virtual void OnPerformAction(views::Combobox* combobox) OVERRIDE {
+    perform_action_index_ = combobox->selected_index();
+    actions_performed_++;
   }
 
-  virtual void OnComboboxTextButtonClicked(views::Combobox* combobox) OVERRIDE {
-    on_combobox_text_button_clicked_called_ = true;
+  int perform_action_index() const {
+    return perform_action_index_;
   }
 
-  bool on_selected_index_changed_called() const {
-    return on_selected_index_changed_called_;
+  bool on_perform_action_called() const {
+    return actions_performed_ > 0;
   }
 
-  bool on_combobox_text_button_clicked_called() const {
-    return on_combobox_text_button_clicked_called_;
+  int actions_performed() const {
+    return actions_performed_;
   }
 
  private:
-  bool on_selected_index_changed_called_;
-  bool on_combobox_text_button_clicked_called_;
+  int perform_action_index_;
+  int actions_performed_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(TestComboboxListener);
@@ -170,7 +192,7 @@ class TestComboboxListener : public views::ComboboxListener {
 
 class ComboboxTest : public ViewsTestBase {
  public:
-  ComboboxTest() : widget_(NULL), combobox_(NULL), input_method_(NULL) {}
+  ComboboxTest() : widget_(NULL), combobox_(NULL) {}
 
   virtual void TearDown() OVERRIDE {
     if (widget_)
@@ -193,11 +215,10 @@ class ComboboxTest : public ViewsTestBase {
     widget_->SetContentsView(container);
     container->AddChildView(combobox_);
 
-    input_method_ = new MockInputMethod();
-    widget_->ReplaceInputMethod(input_method_);
+    widget_->ReplaceInputMethod(new MockInputMethod);
 
     // Assumes the Widget is always focused.
-    input_method_->OnFocus();
+    widget_->GetInputMethod()->OnFocus();
 
     combobox_->RequestFocus();
     combobox_->SizeToPreferredSize();
@@ -210,7 +231,7 @@ class ComboboxTest : public ViewsTestBase {
 
   void SendKeyEventWithType(ui::KeyboardCode key_code, ui::EventType type) {
     ui::KeyEvent event(type, key_code, 0, false);
-    input_method_->DispatchKeyEvent(event);
+    widget_->GetInputMethod()->DispatchKeyEvent(event);
   }
 
   View* GetFocusedView() {
@@ -220,10 +241,12 @@ class ComboboxTest : public ViewsTestBase {
   void PerformClick(const gfx::Point& point) {
     ui::MouseEvent pressed_event = ui::MouseEvent(ui::ET_MOUSE_PRESSED, point,
                                                   point,
+                                                  ui::EF_LEFT_MOUSE_BUTTON,
                                                   ui::EF_LEFT_MOUSE_BUTTON);
     widget_->OnMouseEvent(&pressed_event);
     ui::MouseEvent released_event = ui::MouseEvent(ui::ET_MOUSE_RELEASED, point,
                                                    point,
+                                                   ui::EF_LEFT_MOUSE_BUTTON,
                                                    ui::EF_LEFT_MOUSE_BUTTON);
     widget_->OnMouseEvent(&released_event);
   }
@@ -236,9 +259,6 @@ class ComboboxTest : public ViewsTestBase {
 
   // Combobox does not take ownership of the model, hence it needs to be scoped.
   scoped_ptr<TestComboboxModel> model_;
-
-  // For testing input method related behaviors.
-  MockInputMethod* input_method_;
 };
 
 TEST_F(ComboboxTest, KeyTest) {
@@ -435,15 +455,48 @@ TEST_F(ComboboxTest, SelectValue) {
   EXPECT_EQ(1, combobox_->selected_index());
   EXPECT_FALSE(combobox_->SelectValue(ASCIIToUTF16("BANANAS")));
   EXPECT_EQ(1, combobox_->selected_index());
+
+  // With the action style, the selected index is always 0.
+  combobox_->SetStyle(Combobox::STYLE_ACTION);
+  EXPECT_FALSE(combobox_->SelectValue(ASCIIToUTF16("PEANUT BUTTER")));
+  EXPECT_EQ(0, combobox_->selected_index());
+  EXPECT_FALSE(combobox_->SelectValue(ASCIIToUTF16("JELLY")));
+  EXPECT_EQ(0, combobox_->selected_index());
+  EXPECT_FALSE(combobox_->SelectValue(ASCIIToUTF16("BANANAS")));
+  EXPECT_EQ(0, combobox_->selected_index());
+}
+
+TEST_F(ComboboxTest, SelectIndexActionStyle) {
+  InitCombobox();
+
+  // With the action style, the selected index is always 0.
+  combobox_->SetStyle(Combobox::STYLE_ACTION);
+  combobox_->SetSelectedIndex(1);
+  EXPECT_EQ(0, combobox_->selected_index());
+  combobox_->SetSelectedIndex(2);
+  EXPECT_EQ(0, combobox_->selected_index());
+  combobox_->SetSelectedIndex(3);
+  EXPECT_EQ(0, combobox_->selected_index());
 }
 
 TEST_F(ComboboxTest, ListenerHandlesDelete) {
   TestComboboxModel model;
-  TestCombobox* combobox = new TestCombobox(&model);  // Deleted on change.
-  EvilListener evil_listener;
-  combobox->set_listener(&evil_listener);
+
+  // |combobox| will be deleted on change.
+  TestCombobox* combobox = new TestCombobox(&model);
+  scoped_ptr<EvilListener> evil_listener(new EvilListener());
+  combobox->set_listener(evil_listener.get());
   ASSERT_NO_FATAL_FAILURE(combobox->ExecuteCommand(2));
-  EXPECT_TRUE(evil_listener.deleted());
+  EXPECT_TRUE(evil_listener->deleted());
+
+  // With STYLE_ACTION
+  // |combobox| will be deleted on change.
+  combobox = new TestCombobox(&model);
+  evil_listener.reset(new EvilListener());
+  combobox->set_listener(evil_listener.get());
+  combobox->SetStyle(Combobox::STYLE_ACTION);
+  ASSERT_NO_FATAL_FAILURE(combobox->ExecuteCommand(2));
+  EXPECT_TRUE(evil_listener->deleted());
 }
 
 TEST_F(ComboboxTest, Click) {
@@ -462,8 +515,29 @@ TEST_F(ComboboxTest, Click) {
   test_api.SetMenuRunnerHandler(menu_runner_handler.Pass());
   PerformClick(gfx::Point(combobox_->x() + 1,
                           combobox_->y() + combobox_->height() / 2));
-  EXPECT_FALSE(listener.on_combobox_text_button_clicked_called());
+  EXPECT_FALSE(listener.on_perform_action_called());
   EXPECT_TRUE(test_menu_runner_handler->executed());
+}
+
+TEST_F(ComboboxTest, ClickButDisabled) {
+  InitCombobox();
+
+  TestComboboxListener listener;
+  combobox_->set_listener(&listener);
+
+  combobox_->Layout();
+  combobox_->SetEnabled(false);
+
+  // Click the left side, but nothing happens since the combobox is disabled.
+  TestMenuRunnerHandler* test_menu_runner_handler = new TestMenuRunnerHandler();
+  scoped_ptr<MenuRunnerHandler> menu_runner_handler(test_menu_runner_handler);
+  test::MenuRunnerTestAPI test_api(
+      combobox_->dropdown_list_menu_runner_.get());
+  test_api.SetMenuRunnerHandler(menu_runner_handler.Pass());
+  PerformClick(gfx::Point(combobox_->x() + 1,
+                          combobox_->y() + combobox_->height() / 2));
+  EXPECT_FALSE(listener.on_perform_action_called());
+  EXPECT_FALSE(test_menu_runner_handler->executed());
 }
 
 TEST_F(ComboboxTest, NotifyOnClickWithReturnKey) {
@@ -472,14 +546,15 @@ TEST_F(ComboboxTest, NotifyOnClickWithReturnKey) {
   TestComboboxListener listener;
   combobox_->set_listener(&listener);
 
-  // With STYLE_SHOW_DROP_DOWN_ON_CLICK, the click event is ignored.
+  // With STYLE_NORMAL, the click event is ignored.
   SendKeyEvent(ui::VKEY_RETURN);
-  EXPECT_FALSE(listener.on_combobox_text_button_clicked_called());
+  EXPECT_FALSE(listener.on_perform_action_called());
 
-  // With STYLE_NOTIFY_ON_CLICK, the click event is notified.
-  combobox_->SetStyle(Combobox::STYLE_NOTIFY_ON_CLICK);
+  // With STYLE_ACTION, the click event is notified.
+  combobox_->SetStyle(Combobox::STYLE_ACTION);
   SendKeyEvent(ui::VKEY_RETURN);
-  EXPECT_TRUE(listener.on_combobox_text_button_clicked_called());
+  EXPECT_TRUE(listener.on_perform_action_called());
+  EXPECT_EQ(0, listener.perform_action_index());
 }
 
 TEST_F(ComboboxTest, NotifyOnClickWithSpaceKey) {
@@ -488,18 +563,19 @@ TEST_F(ComboboxTest, NotifyOnClickWithSpaceKey) {
   TestComboboxListener listener;
   combobox_->set_listener(&listener);
 
-  // With STYLE_SHOW_DROP_DOWN_ON_CLICK, the click event is ignored.
+  // With STYLE_NORMAL, the click event is ignored.
   SendKeyEvent(ui::VKEY_SPACE);
-  EXPECT_FALSE(listener.on_combobox_text_button_clicked_called());
+  EXPECT_FALSE(listener.on_perform_action_called());
   SendKeyEventWithType(ui::VKEY_SPACE, ui::ET_KEY_RELEASED);
-  EXPECT_FALSE(listener.on_combobox_text_button_clicked_called());
+  EXPECT_FALSE(listener.on_perform_action_called());
 
-  // With STYLE_NOTIFY_ON_CLICK, the click event is notified after releasing.
-  combobox_->SetStyle(Combobox::STYLE_NOTIFY_ON_CLICK);
+  // With STYLE_ACTION, the click event is notified after releasing.
+  combobox_->SetStyle(Combobox::STYLE_ACTION);
   SendKeyEvent(ui::VKEY_SPACE);
-  EXPECT_FALSE(listener.on_combobox_text_button_clicked_called());
+  EXPECT_FALSE(listener.on_perform_action_called());
   SendKeyEventWithType(ui::VKEY_SPACE, ui::ET_KEY_RELEASED);
-  EXPECT_TRUE(listener.on_combobox_text_button_clicked_called());
+  EXPECT_TRUE(listener.on_perform_action_called());
+  EXPECT_EQ(0, listener.perform_action_index());
 }
 
 TEST_F(ComboboxTest, NotifyOnClickWithMouse) {
@@ -508,7 +584,7 @@ TEST_F(ComboboxTest, NotifyOnClickWithMouse) {
   TestComboboxListener listener;
   combobox_->set_listener(&listener);
 
-  combobox_->SetStyle(Combobox::STYLE_NOTIFY_ON_CLICK);
+  combobox_->SetStyle(Combobox::STYLE_ACTION);
   combobox_->Layout();
 
   // Click the right side (arrow button). The menu is shown.
@@ -520,7 +596,7 @@ TEST_F(ComboboxTest, NotifyOnClickWithMouse) {
 
   PerformClick(gfx::Point(combobox_->x() + combobox_->width() - 1,
                           combobox_->y() + combobox_->height() / 2));
-  EXPECT_FALSE(listener.on_combobox_text_button_clicked_called());
+  EXPECT_FALSE(listener.on_perform_action_called());
   EXPECT_TRUE(test_menu_runner_handler->executed());
 
   // Click the left side (text button). The click event is notified.
@@ -531,8 +607,9 @@ TEST_F(ComboboxTest, NotifyOnClickWithMouse) {
   test_api->SetMenuRunnerHandler(menu_runner_handler.Pass());
   PerformClick(gfx::Point(combobox_->x() + 1,
                           combobox_->y() + combobox_->height() / 2));
-  EXPECT_TRUE(listener.on_combobox_text_button_clicked_called());
+  EXPECT_TRUE(listener.on_perform_action_called());
   EXPECT_FALSE(test_menu_runner_handler->executed());
+  EXPECT_EQ(0, listener.perform_action_index());
 }
 
 TEST_F(ComboboxTest, ConsumingPressKeyEvents) {
@@ -543,13 +620,74 @@ TEST_F(ComboboxTest, ConsumingPressKeyEvents) {
   EXPECT_FALSE(combobox_->OnKeyPressed(
       ui::KeyEvent(ui::ET_KEY_PRESSED, ui::VKEY_SPACE, 0, false)));
 
-  // When the combobox's style is STYLE_NOTIFY_ON_CLICK, pressing events of
-  // a space key or an enter key will be consumed.
-  combobox_->SetStyle(Combobox::STYLE_NOTIFY_ON_CLICK);
+  // When the combobox's style is STYLE_ACTION, pressing events of a space key
+  // or an enter key will be consumed.
+  combobox_->SetStyle(Combobox::STYLE_ACTION);
   EXPECT_TRUE(combobox_->OnKeyPressed(
       ui::KeyEvent(ui::ET_KEY_PRESSED, ui::VKEY_RETURN, 0, false)));
   EXPECT_TRUE(combobox_->OnKeyPressed(
       ui::KeyEvent(ui::ET_KEY_PRESSED, ui::VKEY_SPACE, 0, false)));
+}
+
+TEST_F(ComboboxTest, ContentWidth) {
+  std::vector<std::string> values;
+  VectorComboboxModel model(&values);
+  TestCombobox combobox(&model);
+
+  std::string long_item = "this is the long item";
+  std::string short_item = "s";
+
+  values.resize(1);
+  values[0] = long_item;
+  combobox.ModelChanged();
+
+  const int long_item_width = combobox.content_size_.width();
+
+  values[0] = short_item;
+  combobox.ModelChanged();
+
+  const int short_item_width = combobox.content_size_.width();
+
+  values.resize(2);
+  values[0] = short_item;
+  values[1] = long_item;
+  combobox.ModelChanged();
+
+  // When the style is STYLE_NORMAL, the width will fit with the longest item.
+  combobox.SetStyle(Combobox::STYLE_NORMAL);
+  EXPECT_EQ(long_item_width, combobox.content_size_.width());
+
+  // When the style is STYLE_ACTION, the width will fit with the first items'
+  // width.
+  combobox.SetStyle(Combobox::STYLE_ACTION);
+  EXPECT_EQ(short_item_width, combobox.content_size_.width());
+}
+
+TEST_F(ComboboxTest, TypingPrefixNotifiesListener) {
+  InitCombobox();
+
+  TestComboboxListener listener;
+  combobox_->set_listener(&listener);
+
+  // Type the first character of the second menu item ("JELLY").
+  combobox_->GetTextInputClient()->InsertChar('J', ui::EF_NONE);
+  EXPECT_EQ(1, listener.actions_performed());
+  EXPECT_EQ(1, listener.perform_action_index());
+
+  // Type the second character of "JELLY", item shouldn't change and
+  // OnPerformAction() shouldn't be re-called.
+  combobox_->GetTextInputClient()->InsertChar('E', ui::EF_NONE);
+  EXPECT_EQ(1, listener.actions_performed());
+  EXPECT_EQ(1, listener.perform_action_index());
+
+  // Clears the typed text.
+  combobox_->OnBlur();
+
+  // Type the first character of "PEANUT BUTTER", which should change the
+  // selected index and perform an action.
+  combobox_->GetTextInputClient()->InsertChar('P', ui::EF_NONE);
+  EXPECT_EQ(2, listener.actions_performed());
+  EXPECT_EQ(2, listener.perform_action_index());
 }
 
 }  // namespace views

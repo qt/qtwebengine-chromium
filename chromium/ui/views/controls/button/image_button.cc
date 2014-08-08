@@ -5,7 +5,7 @@
 #include "ui/views/controls/button/image_button.h"
 
 #include "base/strings/utf_string_conversions.h"
-#include "ui/base/accessibility/accessible_view_state.h"
+#include "ui/accessibility/ax_view_state.h"
 #include "ui/gfx/animation/throb_animation.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/image/image_skia_operations.h"
@@ -60,14 +60,6 @@ void ImageButton::SetBackground(SkColor color,
      *image, *mask);
 }
 
-void ImageButton::SetOverlayImage(const gfx::ImageSkia* image) {
-  if (!image) {
-    overlay_image_ = gfx::ImageSkia();
-    return;
-  }
-  overlay_image_ = *image;
-}
-
 void ImageButton::SetImageAlignment(HorizontalAlignment h_align,
                                     VerticalAlignment v_align) {
   h_alignment_ = h_align;
@@ -82,7 +74,7 @@ void ImageButton::SetFocusPainter(scoped_ptr<Painter> focus_painter) {
 ////////////////////////////////////////////////////////////////////////////////
 // ImageButton, View overrides:
 
-gfx::Size ImageButton::GetPreferredSize() {
+gfx::Size ImageButton::GetPreferredSize() const {
   gfx::Size size = preferred_size_;
   if (!images_[STATE_NORMAL].isNull()) {
     size = gfx::Size(images_[STATE_NORMAL].width(),
@@ -116,9 +108,6 @@ void ImageButton::OnPaint(gfx::Canvas* canvas) {
       canvas->DrawImageInt(background_image_, position.x(), position.y());
 
     canvas->DrawImageInt(img, position.x(), position.y());
-
-    if (!overlay_image_.isNull())
-      canvas->DrawImageInt(overlay_image_, position.x(), position.y());
   }
 
   Painter::PaintFocusPainter(this, canvas, focus_painter());
@@ -206,7 +195,7 @@ void ToggleImageButton::SetToggled(bool toggled) {
   toggled_ = toggled;
   SchedulePaint();
 
-  NotifyAccessibilityEvent(ui::AccessibilityTypes::EVENT_VALUE_CHANGED, true);
+  NotifyAccessibilityEvent(ui::AX_EVENT_VALUE_CHANGED, true);
 }
 
 void ToggleImageButton::SetToggledImage(ButtonState state,
@@ -220,7 +209,7 @@ void ToggleImageButton::SetToggledImage(ButtonState state,
   }
 }
 
-void ToggleImageButton::SetToggledTooltipText(const string16& tooltip) {
+void ToggleImageButton::SetToggledTooltipText(const base::string16& tooltip) {
   toggled_tooltip_text_ = tooltip;
 }
 
@@ -249,7 +238,7 @@ void ToggleImageButton::SetImage(ButtonState state,
 // ToggleImageButton, View overrides:
 
 bool ToggleImageButton::GetTooltipText(const gfx::Point& p,
-                                       string16* tooltip) const {
+                                       base::string16* tooltip) const {
   if (!toggled_ || toggled_tooltip_text_.empty())
     return Button::GetTooltipText(p, tooltip);
 
@@ -257,7 +246,7 @@ bool ToggleImageButton::GetTooltipText(const gfx::Point& p,
   return true;
 }
 
-void ToggleImageButton::GetAccessibleState(ui::AccessibleViewState* state) {
+void ToggleImageButton::GetAccessibleState(ui::AXViewState* state) {
   ImageButton::GetAccessibleState(state);
   GetTooltipText(gfx::Point(), &state->name);
 }

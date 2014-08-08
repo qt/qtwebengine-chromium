@@ -20,6 +20,8 @@ namespace {
 int kDefaultDPIX = 96;
 int kDefaultDPIY = 96;
 
+bool force_highdpi_for_testing = false;
+
 BOOL IsProcessDPIAwareWrapper() {
   typedef BOOL(WINAPI *IsProcessDPIAwarePtr)(VOID);
   IsProcessDPIAwarePtr is_process_dpi_aware_func =
@@ -33,32 +35,80 @@ BOOL IsProcessDPIAwareWrapper() {
 float g_device_scale_factor = 0.0f;
 
 float GetUnforcedDeviceScaleFactor() {
+  // If the global device scale factor is initialized use it. This is to ensure
+  // we use the same scale factor across all callsites. We don't use the
+  // GetDeviceScaleFactor function here because it fires a DCHECK if the
+  // g_device_scale_factor global is 0. 
+  if (g_device_scale_factor)
+    return g_device_scale_factor;
   return static_cast<float>(gfx::GetDPI().width()) /
       static_cast<float>(kDefaultDPIX);
 }
 
-float GetModernUIScaleWrapper() {
-  float result = 1.0f;
-  typedef float(WINAPI *GetModernUIScalePtr)(VOID);
-  HMODULE lib = LoadLibraryA("metro_driver.dll");
-  if (lib) {
-    GetModernUIScalePtr func =
-        reinterpret_cast<GetModernUIScalePtr>(
-        GetProcAddress(lib, "GetModernUIScale"));
-    if (func)
-      result = func();
-    FreeLibrary(lib);
+// Duplicated from Win8.1 SDK ShellScalingApi.h
+typedef enum PROCESS_DPI_AWARENESS {
+    PROCESS_DPI_UNAWARE = 0,
+    PROCESS_SYSTEM_DPI_AWARE = 1,
+    PROCESS_PER_MONITOR_DPI_AWARE = 2
+} PROCESS_DPI_AWARENESS;
+
+typedef enum MONITOR_DPI_TYPE {
+    MDT_EFFECTIVE_DPI = 0,
+    MDT_ANGULAR_DPI = 1,
+    MDT_RAW_DPI = 2,
+    MDT_DEFAULT = MDT_EFFECTIVE_DPI
+} MONITOR_DPI_TYPE;
+
+// Win8.1 supports monitor-specific DPI scaling.
+bool SetProcessDpiAwarenessWrapper(PROCESS_DPI_AWARENESS value) {
+  typedef BOOL(WINAPI *SetProcessDpiAwarenessPtr)(PROCESS_DPI_AWARENESS);
+  SetProcessDpiAwarenessPtr set_process_dpi_awareness_func =
+      reinterpret_cast<SetProcessDpiAwarenessPtr>(
+          GetProcAddress(GetModuleHandleA("user32.dll"),
+                          "SetProcessDpiAwarenessInternal"));
+  if (set_process_dpi_awareness_func) {
+    HRESULT hr = set_process_dpi_awareness_func(value);
+    if (SUCCEEDED(hr)) {
+      VLOG(1) << "SetProcessDpiAwareness succeeded.";
+      return true;
+    } else if (hr == E_ACCESSDENIED) {
+      LOG(ERROR) << "Access denied error from SetProcessDpiAwareness. "
+          "Function called twice, or manifest was used.";
+    }
   }
-  return result;
+  return false;
+}
+
+// This function works for Windows Vista through Win8. Win8.1 must use
+// SetProcessDpiAwareness[Wrapper]
+BOOL SetProcessDPIAwareWrapper() {
+  typedef BOOL(WINAPI *SetProcessDPIAwarePtr)(VOID);
+  SetProcessDPIAwarePtr set_process_dpi_aware_func =
+      reinterpret_cast<SetProcessDPIAwarePtr>(
+      GetProcAddress(GetModuleHandleA("user32.dll"),
+                      "SetProcessDPIAware"));
+  return set_process_dpi_aware_func &&
+    set_process_dpi_aware_func();
+}
+
+DWORD ReadRegistryValue(HKEY root,
+                        const wchar_t* base_key,
+                        const wchar_t* value_name,
+                        DWORD default_value) {
+  base::win::RegKey reg_key(HKEY_CURRENT_USER,
+                            base_key,
+                            KEY_QUERY_VALUE);
+  DWORD value;
+  if (reg_key.Valid() &&
+      reg_key.ReadValueDW(value_name, &value) == ERROR_SUCCESS) {
+    return value;
+  }
+  return default_value;
 }
 
 }  // namespace
 
 namespace gfx {
-
-float GetModernUIScale() {
-  return GetModernUIScaleWrapper();
-}
 
 void InitDeviceScaleFactor(float scale) {
   DCHECK_NE(0.0f, scale);
@@ -91,14 +141,18 @@ float GetDPIScale() {
   return 1.0;
 }
 
+void ForceHighDPISupportForTesting(float scale) {
+  g_device_scale_factor = scale;
+}
+
 bool IsHighDPIEnabled() {
+  // Flag stored in HKEY_CURRENT_USER\SOFTWARE\\Google\\Chrome\\Profile,
+  // under the DWORD value high-dpi-support.
   // Default is disabled.
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kHighDPISupport)) {
-    return CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
-        switches::kHighDPISupport).compare("1") == 0;
-  }
-  return false;
+  static DWORD value = ReadRegistryValue(
+      HKEY_CURRENT_USER, gfx::win::kRegistryProfilePath,
+      gfx::win::kHighDPISupportW, TRUE);
+  return value != 0;
 }
 
 bool IsInHighDPIMode() {
@@ -107,18 +161,16 @@ bool IsInHighDPIMode() {
 
 void EnableHighDPISupport() {
   if (IsHighDPIEnabled() &&
-      (base::win::GetVersion() < base::win::VERSION_WIN8_1)) {
-    typedef BOOL(WINAPI *SetProcessDPIAwarePtr)(VOID);
-    SetProcessDPIAwarePtr set_process_dpi_aware_func =
-        reinterpret_cast<SetProcessDPIAwarePtr>(
-            GetProcAddress(GetModuleHandleA("user32.dll"),
-                           "SetProcessDPIAware"));
-    if (set_process_dpi_aware_func)
-      set_process_dpi_aware_func();
+      !SetProcessDpiAwarenessWrapper(PROCESS_SYSTEM_DPI_AWARE)) {
+    SetProcessDPIAwareWrapper();
   }
 }
 
 namespace win {
+
+GFX_EXPORT const wchar_t kRegistryProfilePath[] =
+    L"Software\\Google\\Chrome\\Profile";
+GFX_EXPORT const wchar_t kHighDPISupportW[] = L"high-dpi-support";
 
 float GetDeviceScaleFactor() {
   DCHECK_NE(0.0f, g_device_scale_factor);
@@ -126,12 +178,8 @@ float GetDeviceScaleFactor() {
 }
 
 Point ScreenToDIPPoint(const Point& pixel_point) {
-  static float scaling_factor =
-      GetDeviceScaleFactor() > GetUnforcedDeviceScaleFactor() ?
-      1.0f / GetDeviceScaleFactor() :
-      1.0f;
   return ToFlooredPoint(ScalePoint(pixel_point,
-      scaling_factor));
+      1.0f / GetDeviceScaleFactor()));
 }
 
 Point DIPToScreenPoint(const Point& dip_point) {
@@ -145,9 +193,17 @@ Rect ScreenToDIPRect(const Rect& pixel_bounds) {
 }
 
 Rect DIPToScreenRect(const Rect& dip_bounds) {
-  // TODO(kevers): Switch to non-deprecated method for float to int conversions.
-  return ToFlooredRectDeprecated(
-      ScaleRect(dip_bounds, GetDeviceScaleFactor()));
+  // We scale the origin by the scale factor and round up via ceil. This
+  // ensures that we get the original logical origin back when we scale down.
+  // We round the size down after scaling. It may be better to round this up
+  // on the same lines as the origin.
+  // TODO(ananta)
+  // Investigate if rounding size up on the same lines as origin is workable.
+  return gfx::Rect(
+      gfx::ToCeiledPoint(gfx::ScalePoint(
+          dip_bounds.origin(), GetDeviceScaleFactor())),
+      gfx::ToFlooredSize(gfx::ScaleSize(
+          dip_bounds.size(), GetDeviceScaleFactor())));
 }
 
 Size ScreenToDIPSize(const Size& size_in_pixels) {
@@ -164,31 +220,8 @@ int GetSystemMetricsInDIP(int metric) {
       GetDeviceScaleFactor() + 0.5);
 }
 
-double GetUndocumentedDPIScale() {
-  // TODO(girard): Remove this code when chrome is DPIAware.
-  static double scale = -1.0;
-  if (scale == -1.0) {
-    scale = 1.0;
-    if (!IsProcessDPIAwareWrapper()) {
-      base::win::RegKey key(HKEY_CURRENT_USER,
-                            L"Control Panel\\Desktop\\WindowMetrics",
-                            KEY_QUERY_VALUE);
-      if (key.Valid()) {
-        DWORD value = 0;
-        if (key.ReadValueDW(L"AppliedDPI", &value) == ERROR_SUCCESS) {
-          scale = static_cast<double>(value) / kDefaultDPIX;
-        }
-      }
-    }
-  }
-  return scale;
-}
-
-double GetUndocumentedDPITouchScale() {
-  static double scale =
-      (base::win::GetVersion() < base::win::VERSION_WIN8_1) ?
-      GetUndocumentedDPIScale() : 1.0;
-  return scale;
+bool IsDeviceScaleFactorSet() {
+  return g_device_scale_factor != 0.0f;
 }
 
 }  // namespace win

@@ -14,10 +14,10 @@
 
 #include "base/compiler_specific.h"
 #include "base/memory/linked_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "base/threading/non_thread_safe.h"
 #include "base/win/scoped_comptr.h"
 #include "content/common/content_export.h"
-#include "content/common/gpu/media/video_decode_accelerator_impl.h"
 #include "media/video/video_decode_accelerator.h"
 
 interface IMFSample;
@@ -30,7 +30,7 @@ namespace content {
 // This class lives on a single thread and DCHECKs that it is never accessed
 // from any other.
 class CONTENT_EXPORT DXVAVideoDecodeAccelerator
-    : public VideoDecodeAcceleratorImpl,
+    : public media::VideoDecodeAccelerator,
       NON_EXPORTED_BASE(public base::NonThreadSafe) {
  public:
   enum State {
@@ -43,12 +43,12 @@ class CONTENT_EXPORT DXVAVideoDecodeAccelerator
 
   // Does not take ownership of |client| which must outlive |*this|.
   explicit DXVAVideoDecodeAccelerator(
-      media::VideoDecodeAccelerator::Client* client,
       const base::Callback<bool(void)>& make_context_current);
   virtual ~DXVAVideoDecodeAccelerator();
 
   // media::VideoDecodeAccelerator implementation.
-  virtual bool Initialize(media::VideoCodecProfile profile) OVERRIDE;
+  virtual bool Initialize(media::VideoCodecProfile profile,
+                          Client* client) OVERRIDE;
   virtual void Decode(const media::BitstreamBuffer& bitstream_buffer) OVERRIDE;
   virtual void AssignPictureBuffers(
       const std::vector<media::PictureBuffer>& buffers) OVERRIDE;
@@ -56,6 +56,7 @@ class CONTENT_EXPORT DXVAVideoDecodeAccelerator
   virtual void Flush() OVERRIDE;
   virtual void Reset() OVERRIDE;
   virtual void Destroy() OVERRIDE;
+  virtual bool CanDecodeOnIOThread() OVERRIDE;
 
  private:
   typedef void* EGLConfig;
@@ -112,9 +113,6 @@ class CONTENT_EXPORT DXVAVideoDecodeAccelerator
   // Notifies the client that the input buffer identifed by input_buffer_id has
   // been processed.
   void NotifyInputBufferRead(int input_buffer_id);
-
-  // Notifies the client that initialize was completed.
-  void NotifyInitializeDone();
 
   // Notifies the client that the decoder was flushed.
   void NotifyFlushDone();
@@ -206,6 +204,9 @@ class CONTENT_EXPORT DXVAVideoDecodeAccelerator
 
   // Callback to set the correct gl context.
   base::Callback<bool(void)> make_context_current_;
+
+  // WeakPtrFactory for posting tasks back to |this|.
+  base::WeakPtrFactory<DXVAVideoDecodeAccelerator> weak_this_factory_;
 };
 
 }  // namespace content

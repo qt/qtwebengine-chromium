@@ -31,19 +31,48 @@
 #include "config.h"
 #include "core/dom/ElementRareData.h"
 
-#include "core/rendering/RegionOversetState.h"
 #include "core/rendering/style/RenderStyle.h"
 
 namespace WebCore {
 
 struct SameSizeAsElementRareData : NodeRareData {
     short indices[2];
-    unsigned bitfields;
-    RegionOversetState regionOversetState;
     LayoutSize sizeForResizing;
     IntSize scrollOffset;
-    void* pointers[10];
+    void* pointers[13];
 };
+
+CSSStyleDeclaration& ElementRareData::ensureInlineCSSStyleDeclaration(Element* ownerElement)
+{
+    if (!m_cssomWrapper)
+        m_cssomWrapper = adoptPtrWillBeNoop(new InlineCSSStyleDeclaration(ownerElement));
+    return *m_cssomWrapper;
+}
+
+WillBeHeapVector<RefPtrWillBeMember<Attr> >& ElementRareData::ensureAttrNodeList()
+{
+    if (!m_attrNodeList)
+        m_attrNodeList = adoptPtrWillBeNoop(new WillBeHeapVector<RefPtrWillBeMember<Attr> >());
+    return *m_attrNodeList;
+}
+
+void ElementRareData::traceAfterDispatch(Visitor* visitor)
+{
+    visitor->trace(m_dataset);
+    visitor->trace(m_classList);
+    visitor->trace(m_shadow);
+    visitor->trace(m_attributeMap);
+#if ENABLE(OILPAN)
+    visitor->trace(m_attrNodeList);
+#endif
+    visitor->trace(m_inputMethodContext);
+    visitor->trace(m_activeAnimations);
+    visitor->trace(m_cssomWrapper);
+    visitor->trace(m_generatedBefore);
+    visitor->trace(m_generatedAfter);
+    visitor->trace(m_backdrop);
+    NodeRareData::traceAfterDispatch(visitor);
+}
 
 COMPILE_ASSERT(sizeof(ElementRareData) == sizeof(SameSizeAsElementRareData), ElementRareDataShouldStaySmall);
 

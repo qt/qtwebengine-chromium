@@ -29,9 +29,9 @@
  */
 
 #include "config.h"
-#include "WebSelectElement.h"
+#include "public/web/WebSelectElement.h"
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 #include "core/html/HTMLOptionElement.h"
 #include "core/html/HTMLSelectElement.h"
 #include "public/platform/WebString.h"
@@ -41,38 +41,28 @@ using namespace WebCore;
 
 namespace blink {
 
-void WebSelectElement::setValue(const WebString& value)
-{
-    unwrap<HTMLSelectElement>()->setValue(value);
-}
-
-WebString WebSelectElement::value() const
-{
-    return constUnwrap<HTMLSelectElement>()->value();
-}
-
 WebVector<WebElement> WebSelectElement::listItems() const
 {
-    const Vector<HTMLElement*>& sourceItems = constUnwrap<HTMLSelectElement>()->listItems();
+    const WillBeHeapVector<RawPtrWillBeMember<HTMLElement> >& sourceItems = constUnwrap<HTMLSelectElement>()->listItems();
     WebVector<WebElement> items(sourceItems.size());
     for (size_t i = 0; i < sourceItems.size(); ++i)
-        items[i] = WebElement(sourceItems[i]);
+        items[i] = WebElement(sourceItems[i].get());
 
     return items;
 }
 
-WebSelectElement::WebSelectElement(const PassRefPtr<HTMLSelectElement>& element)
+WebSelectElement::WebSelectElement(const PassRefPtrWillBeRawPtr<HTMLSelectElement>& element)
     : WebFormControlElement(element)
 {
 }
 
-WebSelectElement& WebSelectElement::operator=(const PassRefPtr<HTMLSelectElement>& element)
+WebSelectElement& WebSelectElement::operator=(const PassRefPtrWillBeRawPtr<HTMLSelectElement>& element)
 {
     m_private = element;
     return *this;
 }
 
-WebSelectElement::operator PassRefPtr<HTMLSelectElement>() const
+WebSelectElement::operator PassRefPtrWillBeRawPtr<HTMLSelectElement>() const
 {
     return toHTMLSelectElement(m_private.get());
 }

@@ -116,13 +116,15 @@ bool CreateThread(size_t stack_size, bool joinable,
   params.priority = priority;
   params.handle = thread_handle;
 
-  pthread_t handle = 0;
+  pthread_t handle;
   int err = pthread_create(&handle,
                            &attributes,
                            ThreadFunc,
                            &params);
   success = !err;
   if (!success) {
+    // Value of |handle| is undefined if pthread_create fails.
+    handle = 0;
     errno = err;
     PLOG(ERROR) << "pthread_create";
   }
@@ -150,7 +152,7 @@ PlatformThreadId PlatformThread::CurrentId() {
   return syscall(__NR_gettid);
 #elif defined(OS_ANDROID)
   return gettid();
-#elif defined(OS_SOLARIS)
+#elif defined(OS_SOLARIS) || defined(OS_QNX)
   return pthread_self();
 #elif defined(OS_NACL) && defined(__GLIBC__)
   return pthread_self();
@@ -162,7 +164,12 @@ PlatformThreadId PlatformThread::CurrentId() {
 #endif
 }
 
-//static
+// static
+PlatformThreadRef PlatformThread::CurrentRef() {
+  return PlatformThreadRef(pthread_self());
+}
+
+// static
 PlatformThreadHandle PlatformThread::CurrentHandle() {
   return PlatformThreadHandle(pthread_self(), CurrentId());
 }

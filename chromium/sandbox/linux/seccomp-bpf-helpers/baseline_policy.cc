@@ -6,8 +6,10 @@
 
 #include <errno.h>
 #include <sys/mman.h>
-#include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/syscall.h>
+#include <sys/types.h>
+#include <unistd.h>
 
 #include "base/logging.h"
 #include "build/build_config.h"
@@ -30,19 +32,17 @@ bool IsBaselinePolicyAllowed(int sysno) {
          SyscallSets::IsAllowedBasicScheduler(sysno) ||
          SyscallSets::IsAllowedEpoll(sysno) ||
          SyscallSets::IsAllowedFileSystemAccessViaFd(sysno) ||
+         SyscallSets::IsAllowedFutex(sysno) ||
          SyscallSets::IsAllowedGeneralIo(sysno) ||
          SyscallSets::IsAllowedGetOrModifySocket(sysno) ||
          SyscallSets::IsAllowedGettime(sysno) ||
-         SyscallSets::IsAllowedPrctl(sysno) ||
          SyscallSets::IsAllowedProcessStartOrDeath(sysno) ||
          SyscallSets::IsAllowedSignalHandling(sysno) ||
-         SyscallSets::IsFutex(sysno) ||
          SyscallSets::IsGetSimpleId(sysno) ||
          SyscallSets::IsKernelInternalApi(sysno) ||
 #if defined(__arm__)
          SyscallSets::IsArmPrivate(sysno) ||
 #endif
-         SyscallSets::IsKill(sysno) ||
          SyscallSets::IsAllowedOperationOnFd(sysno);
 }
 
@@ -63,14 +63,15 @@ bool IsBaselinePolicyWatched(int sysno) {
          SyscallSets::IsInotify(sysno) ||
          SyscallSets::IsKernelModule(sysno) ||
          SyscallSets::IsKeyManagement(sysno) ||
+         SyscallSets::IsKill(sysno) ||
          SyscallSets::IsMessageQueue(sysno) ||
          SyscallSets::IsMisc(sysno) ||
 #if defined(__x86_64__)
          SyscallSets::IsNetworkSocketInformation(sysno) ||
 #endif
          SyscallSets::IsNuma(sysno) ||
+         SyscallSets::IsPrctl(sysno) ||
          SyscallSets::IsProcessGroupOrSession(sysno) ||
-         SyscallSets::IsProcessPrivilegeChange(sysno) ||
 #if defined(__i386__)
          SyscallSets::IsSocketCall(sysno) ||
 #endif
@@ -81,21 +82,47 @@ bool IsBaselinePolicyWatched(int sysno) {
 }
 
 // |fs_denied_errno| is the errno return for denied filesystem access.
-ErrorCode EvaluateSyscallImpl(int fs_denied_errno, SandboxBPF* sandbox,
+ErrorCode EvaluateSyscallImpl(int fs_denied_errno,
+                              pid_t current_pid,
+                              SandboxBPF* sandbox,
                               int sysno) {
+#if defined(ADDRESS_SANITIZER) || defined(THREAD_SANITIZER) || \
+    defined(MEMORY_SANITIZER)
+  // TCGETS is required by the sanitizers on failure.
+  if (sysno == __NR_ioctl) {
+    return RestrictIoctl(sandbox);
+  }
+
+  if (sysno == __NR_sched_getaffinity) {
+    return ErrorCode(ErrorCode::ERR_ALLOWED);
+  }
+
+  if (sysno == __NR_sigaltstack) {
+    // Required for better stack overflow detection in ASan. Disallowed in
+    // non-ASan builds.
+    return ErrorCode(ErrorCode::ERR_ALLOWED);
+  }
+#endif  // defined(ADDRESS_SANITIZER) || defined(THREAD_SANITIZER) ||
+        // defined(MEMORY_SANITIZER)
+
   if (IsBaselinePolicyAllowed(sysno)) {
     return ErrorCode(ErrorCode::ERR_ALLOWED);
   }
 
-#if defined(__x86_64__) || defined(__arm__)
-  if (sysno == __NR_socketpair) {
-    // Only allow AF_UNIX, PF_UNIX. Crash if anything else is seen.
-    COMPILE_ASSERT(AF_UNIX == PF_UNIX, af_unix_pf_unix_different);
-    return sandbox->Cond(0, ErrorCode::TP_32BIT, ErrorCode::OP_EQUAL, AF_UNIX,
-                         ErrorCode(ErrorCode::ERR_ALLOWED),
-                         sandbox->Trap(CrashSIGSYS_Handler, NULL));
+  if (sysno == __NR_clone) {
+    return RestrictCloneToThreadsAndEPERMFork(sandbox);
   }
+
+  if (sysno == __NR_fcntl)
+    return RestrictFcntlCommands(sandbox);
+
+#if defined(__i386__) || defined(__arm__)
+  if (sysno == __NR_fcntl64)
+    return RestrictFcntlCommands(sandbox);
 #endif
+
+  if (sysno == __NR_futex)
+    return RestrictFutex(sandbox);
 
   if (sysno == __NR_madvise) {
     // Only allow MADV_DONTNEED (aka MADV_FREE).
@@ -118,13 +145,22 @@ ErrorCode EvaluateSyscallImpl(int fs_denied_errno, SandboxBPF* sandbox,
   if (sysno == __NR_mprotect)
     return RestrictMprotectFlags(sandbox);
 
-  if (sysno == __NR_fcntl)
-    return RestrictFcntlCommands(sandbox);
+  if (sysno == __NR_prctl)
+    return sandbox::RestrictPrctl(sandbox);
 
-#if defined(__i386__) || defined(__arm__)
-  if (sysno == __NR_fcntl64)
-    return RestrictFcntlCommands(sandbox);
+#if defined(__x86_64__) || defined(__arm__)
+  if (sysno == __NR_socketpair) {
+    // Only allow AF_UNIX, PF_UNIX. Crash if anything else is seen.
+    COMPILE_ASSERT(AF_UNIX == PF_UNIX, af_unix_pf_unix_different);
+    return sandbox->Cond(0, ErrorCode::TP_32BIT, ErrorCode::OP_EQUAL, AF_UNIX,
+                         ErrorCode(ErrorCode::ERR_ALLOWED),
+                         sandbox->Trap(CrashSIGSYS_Handler, NULL));
+  }
 #endif
+
+  if (SyscallSets::IsKill(sysno)) {
+    return RestrictKillTarget(current_pid, sandbox, sysno);
+  }
 
   if (SyscallSets::IsFileSystem(sysno) ||
       SyscallSets::IsCurrentDirectory(sysno)) {
@@ -137,7 +173,8 @@ ErrorCode EvaluateSyscallImpl(int fs_denied_errno, SandboxBPF* sandbox,
 
   if (SyscallSets::IsUmask(sysno) ||
       SyscallSets::IsDeniedFileSystemAccessViaFd(sysno) ||
-      SyscallSets::IsDeniedGetOrModifySocket(sysno)) {
+      SyscallSets::IsDeniedGetOrModifySocket(sysno) ||
+      SyscallSets::IsProcessPrivilegeChange(sysno)) {
     return ErrorCode(EPERM);
   }
 
@@ -151,6 +188,7 @@ ErrorCode EvaluateSyscallImpl(int fs_denied_errno, SandboxBPF* sandbox,
     // be denied gracefully right away.
     return sandbox->Trap(CrashSIGSYS_Handler, NULL);
   }
+
   // In any other case crash the program with our SIGSYS handler.
   return sandbox->Trap(CrashSIGSYS_Handler, NULL);
 }
@@ -160,16 +198,24 @@ ErrorCode EvaluateSyscallImpl(int fs_denied_errno, SandboxBPF* sandbox,
 // Unfortunately C++03 doesn't allow delegated constructors.
 // Call other constructor when C++11 lands.
 BaselinePolicy::BaselinePolicy()
-    : fs_denied_errno_(EPERM) {}
+    : fs_denied_errno_(EPERM), current_pid_(syscall(__NR_getpid)) {}
 
 BaselinePolicy::BaselinePolicy(int fs_denied_errno)
-    : fs_denied_errno_(fs_denied_errno) {}
+    : fs_denied_errno_(fs_denied_errno), current_pid_(syscall(__NR_getpid)) {}
 
-BaselinePolicy::~BaselinePolicy() {}
+BaselinePolicy::~BaselinePolicy() {
+  // Make sure that this policy is created, used and destroyed by a single
+  // process.
+  DCHECK_EQ(syscall(__NR_getpid), current_pid_);
+}
 
 ErrorCode BaselinePolicy::EvaluateSyscall(SandboxBPF* sandbox,
                                           int sysno) const {
-  return EvaluateSyscallImpl(fs_denied_errno_, sandbox, sysno);
+  // Make sure that this policy is used in the creating process.
+  if (1 == sysno) {
+    DCHECK_EQ(syscall(__NR_getpid), current_pid_);
+  }
+  return EvaluateSyscallImpl(fs_denied_errno_, current_pid_, sandbox, sysno);
 }
 
 }  // namespace sandbox.

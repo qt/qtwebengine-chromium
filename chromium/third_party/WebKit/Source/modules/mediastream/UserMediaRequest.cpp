@@ -34,20 +34,22 @@
 #include "modules/mediastream/UserMediaRequest.h"
 
 #include "bindings/v8/Dictionary.h"
+#include "bindings/v8/ExceptionMessages.h"
 #include "bindings/v8/ExceptionState.h"
 #include "core/dom/Document.h"
+#include "core/dom/ExceptionCode.h"
 #include "core/dom/SpaceSplitString.h"
-#include "core/platform/mediastream/MediaStreamCenter.h"
-#include "core/platform/mediastream/MediaStreamDescriptor.h"
 #include "modules/mediastream/MediaConstraintsImpl.h"
 #include "modules/mediastream/MediaStream.h"
 #include "modules/mediastream/UserMediaController.h"
+#include "platform/mediastream/MediaStreamCenter.h"
+#include "platform/mediastream/MediaStreamDescriptor.h"
 
 namespace WebCore {
 
-static PassRefPtr<MediaConstraintsImpl> parseOptions(const Dictionary& options, const String& mediaType, ExceptionState& exceptionState)
+static blink::WebMediaConstraints parseOptions(const Dictionary& options, const String& mediaType, ExceptionState& exceptionState)
 {
-    RefPtr<MediaConstraintsImpl> constraints;
+    blink::WebMediaConstraints constraints;
 
     Dictionary constraintsDictionary;
     bool ok = options.get(mediaType, constraintsDictionary);
@@ -60,26 +62,28 @@ static PassRefPtr<MediaConstraintsImpl> parseOptions(const Dictionary& options, 
             constraints = MediaConstraintsImpl::create();
     }
 
-    return constraints.release();
+    return constraints;
 }
 
-PassRefPtr<UserMediaRequest> UserMediaRequest::create(ExecutionContext* context, UserMediaController* controller, const Dictionary& options, PassOwnPtr<NavigatorUserMediaSuccessCallback> successCallback, PassOwnPtr<NavigatorUserMediaErrorCallback> errorCallback, ExceptionState& exceptionState)
+PassRefPtrWillBeRawPtr<UserMediaRequest> UserMediaRequest::create(ExecutionContext* context, UserMediaController* controller, const Dictionary& options, PassOwnPtr<NavigatorUserMediaSuccessCallback> successCallback, PassOwnPtr<NavigatorUserMediaErrorCallback> errorCallback, ExceptionState& exceptionState)
 {
-    RefPtr<MediaConstraintsImpl> audio = parseOptions(options, "audio", exceptionState);
+    blink::WebMediaConstraints audio = parseOptions(options, "audio", exceptionState);
     if (exceptionState.hadException())
-        return 0;
+        return nullptr;
 
-    RefPtr<MediaConstraintsImpl> video = parseOptions(options, "video", exceptionState);
+    blink::WebMediaConstraints video = parseOptions(options, "video", exceptionState);
     if (exceptionState.hadException())
-        return 0;
+        return nullptr;
 
-    if (!audio && !video)
-        return 0;
+    if (audio.isNull() && video.isNull()) {
+        exceptionState.throwDOMException(SyntaxError, "At least one of audio and video must be requested");
+        return nullptr;
+    }
 
-    return adoptRef(new UserMediaRequest(context, controller, audio.release(), video.release(), successCallback, errorCallback));
+    return adoptRefWillBeNoop(new UserMediaRequest(context, controller, audio, video, successCallback, errorCallback));
 }
 
-UserMediaRequest::UserMediaRequest(ExecutionContext* context, UserMediaController* controller, PassRefPtr<MediaConstraintsImpl> audio, PassRefPtr<MediaConstraintsImpl> video, PassOwnPtr<NavigatorUserMediaSuccessCallback> successCallback, PassOwnPtr<NavigatorUserMediaErrorCallback> errorCallback)
+UserMediaRequest::UserMediaRequest(ExecutionContext* context, UserMediaController* controller, blink::WebMediaConstraints audio, blink::WebMediaConstraints video, PassOwnPtr<NavigatorUserMediaSuccessCallback> successCallback, PassOwnPtr<NavigatorUserMediaErrorCallback> errorCallback)
     : ContextLifecycleObserver(context)
     , m_audio(audio)
     , m_video(video)
@@ -95,22 +99,22 @@ UserMediaRequest::~UserMediaRequest()
 
 bool UserMediaRequest::audio() const
 {
-    return m_audio;
+    return !m_audio.isNull();
 }
 
 bool UserMediaRequest::video() const
 {
+    return !m_video.isNull();
+}
+
+blink::WebMediaConstraints UserMediaRequest::audioConstraints() const
+{
+    return m_audio;
+}
+
+blink::WebMediaConstraints UserMediaRequest::videoConstraints() const
+{
     return m_video;
-}
-
-MediaConstraints* UserMediaRequest::audioConstraints() const
-{
-    return m_audio.get();
-}
-
-MediaConstraints* UserMediaRequest::videoConstraints() const
-{
-    return m_video.get();
 }
 
 Document* UserMediaRequest::ownerDocument()
@@ -133,7 +137,7 @@ void UserMediaRequest::succeed(PassRefPtr<MediaStreamDescriptor> streamDescripto
     if (!executionContext())
         return;
 
-    RefPtr<MediaStream> stream = MediaStream::create(executionContext(), streamDescriptor);
+    RefPtrWillBeRawPtr<MediaStream> stream = MediaStream::create(executionContext(), streamDescriptor);
 
     MediaStreamTrackVector audioTracks = stream->getAudioTracks();
     for (MediaStreamTrackVector::iterator iter = audioTracks.begin(); iter != audioTracks.end(); ++iter) {
@@ -148,32 +152,38 @@ void UserMediaRequest::succeed(PassRefPtr<MediaStreamDescriptor> streamDescripto
     m_successCallback->handleEvent(stream.get());
 }
 
-void UserMediaRequest::fail(const String& description)
+void UserMediaRequest::failPermissionDenied(const String& message)
 {
     if (!executionContext())
         return;
 
-    if (m_errorCallback) {
-        RefPtr<NavigatorUserMediaError> error = NavigatorUserMediaError::create(NavigatorUserMediaError::NamePermissionDenied, description, String());
-        m_errorCallback->handleEvent(error.get());
-    }
+    RefPtrWillBeRawPtr<NavigatorUserMediaError> error = NavigatorUserMediaError::create(NavigatorUserMediaError::NamePermissionDenied, message, String());
+    m_errorCallback->handleEvent(error.get());
 }
 
-void UserMediaRequest::failConstraint(const String& constraintName, const String& description)
+void UserMediaRequest::failConstraint(const String& constraintName, const String& message)
 {
     ASSERT(!constraintName.isEmpty());
     if (!executionContext())
         return;
 
-    if (m_errorCallback) {
-        RefPtr<NavigatorUserMediaError> error = NavigatorUserMediaError::create(NavigatorUserMediaError::NameConstraintNotSatisfied, description, constraintName);
-        m_errorCallback->handleEvent(error.get());
-    }
+    RefPtrWillBeRawPtr<NavigatorUserMediaError> error = NavigatorUserMediaError::create(NavigatorUserMediaError::NameConstraintNotSatisfied, message, constraintName);
+    m_errorCallback->handleEvent(error.get());
+}
+
+void UserMediaRequest::failUASpecific(const String& name, const String& message, const String& constraintName)
+{
+    ASSERT(!name.isEmpty());
+    if (!executionContext())
+        return;
+
+    RefPtrWillBeRawPtr<NavigatorUserMediaError> error = NavigatorUserMediaError::create(name, message, constraintName);
+    m_errorCallback->handleEvent(error.get());
 }
 
 void UserMediaRequest::contextDestroyed()
 {
-    RefPtr<UserMediaRequest> protect(this);
+    RefPtrWillBeRawPtr<UserMediaRequest> protect(this);
 
     if (m_controller) {
         m_controller->cancelUserMediaRequest(this);

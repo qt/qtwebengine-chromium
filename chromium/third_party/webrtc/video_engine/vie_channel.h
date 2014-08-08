@@ -34,7 +34,6 @@ class ChannelStatsObserver;
 class Config;
 class CriticalSectionWrapper;
 class EncodedImageCallback;
-class Encryption;
 class I420FrameCallback;
 class PacedSender;
 class ProcessThread;
@@ -146,6 +145,8 @@ class ViEChannel
   int32_t GetRemoteCSRC(uint32_t CSRCs[kRtpCsrcSize]);
 
   int SetRtxSendPayloadType(int payload_type);
+  // Only has an effect once RTX is enabled.
+  void SetPadWithRedundantPayloads(bool enable);
   void SetRtxReceivePayloadType(int payload_type);
 
   // Sets the starting sequence number, must be called before StartSend.
@@ -185,6 +186,10 @@ class ViEChannel
                                     uint32_t* jitter_samples,
                                     int32_t* rtt_ms);
 
+  // Called on generation of RTCP stats
+  void RegisterReceiveChannelRtcpStatisticsCallback(
+      RtcpStatisticsCallback* callback);
+
   // Gets sent/received packets statistics.
   int32_t GetRtpStatistics(uint32_t* bytes_sent,
                            uint32_t* packets_sent,
@@ -195,12 +200,20 @@ class ViEChannel
   void RegisterSendChannelRtpStatisticsCallback(
       StreamDataCountersCallback* callback);
 
+  // Called on update of RTP statistics.
+  void RegisterReceiveChannelRtpStatisticsCallback(
+      StreamDataCountersCallback* callback);
+
+  void GetRtcpPacketTypeCounters(RtcpPacketTypeCounter* packets_sent,
+                                 RtcpPacketTypeCounter* packets_received) const;
+
   void GetBandwidthUsage(uint32_t* total_bitrate_sent,
                          uint32_t* video_bitrate_sent,
                          uint32_t* fec_bitrate_sent,
                          uint32_t* nackBitrateSent) const;
   bool GetSendSideDelay(int* avg_send_delay, int* max_send_delay) const;
-  void GetEstimatedReceiveBandwidth(uint32_t* estimated_bandwidth) const;
+  void GetReceiveBandwidthEstimatorStats(
+      ReceiveBandwidthEstimatorStats* output) const;
 
   // Called on any new send bitrate estimate.
   void RegisterSendBitrateObserver(BitrateStatisticsObserver* observer);
@@ -323,9 +336,6 @@ class ViEChannel
   virtual int32_t ResendPackets(const uint16_t* sequence_numbers,
                                 uint16_t length);
 
-  int32_t RegisterExternalEncryption(Encryption* encryption);
-  int32_t DeRegisterExternalEncryption();
-
   int32_t SetVoiceChannel(int32_t ve_channel_id,
                           VoEVideoSync* ve_sync_interface);
   int32_t VoiceChannel();
@@ -341,6 +351,9 @@ class ViEChannel
       EncodedImageCallback* pre_decode_callback);
 
   void RegisterSendFrameCountObserver(FrameCountObserver* observer);
+
+  void ReceivedBWEPacket(int64_t arrival_time_ms, int payload_size,
+                         const RTPHeader& header);
 
  protected:
   static bool ChannelDecodeThreadFunction(void* obj);
@@ -359,6 +372,7 @@ class ViEChannel
                             const unsigned char payload_typeFEC);
   // Compute NACK list parameters for the buffering mode.
   int GetRequiredNackListSize(int target_delay_ms);
+  void SetRtxSendStatus(bool enable);
 
   int32_t channel_id_;
   int32_t engine_id_;
@@ -375,7 +389,7 @@ class ViEChannel
   scoped_ptr<RtpRtcp> rtp_rtcp_;
   std::list<RtpRtcp*> simulcast_rtp_rtcp_;
   std::list<RtpRtcp*> removed_rtp_rtcp_;
-  VideoCodingModule& vcm_;
+  VideoCodingModule* const vcm_;
   ViEReceiver vie_receiver_;
   ViESender vie_sender_;
   ViESyncModule vie_sync_;
@@ -392,11 +406,11 @@ class ViEChannel
   RtcpIntraFrameObserver* intra_frame_observer_;
   RtcpRttStats* rtt_stats_;
   PacedSender* paced_sender_;
+  bool pad_with_redundant_payloads_;
 
   scoped_ptr<RtcpBandwidthObserver> bandwidth_observer_;
   int send_timestamp_extension_id_;
   int absolute_send_time_extension_id_;
-  bool using_packet_spread_;
 
   Transport* external_transport_;
 
@@ -405,8 +419,6 @@ class ViEChannel
   VideoCodec receive_codec_;
   bool wait_for_key_frame_;
   ThreadWrapper* decode_thread_;
-
-  Encryption* external_encryption_;
 
   ViEEffectFilter* effect_filter_;
   bool color_enhancement_;
@@ -418,7 +430,6 @@ class ViEChannel
   int nack_history_size_sender_;
   int max_nack_reordering_threshold_;
   I420FrameCallback* pre_render_callback_;
-  const Config& config_;
 };
 
 }  // namespace webrtc

@@ -28,17 +28,13 @@
 
 #include "core/rendering/OrderIterator.h"
 #include "core/rendering/RenderBlock.h"
+#include "core/rendering/style/GridResolvedPosition.h"
 
 namespace WebCore {
 
 struct GridCoordinate;
 struct GridSpan;
 class GridTrack;
-
-enum GridTrackSizingDirection {
-    ForColumns,
-    ForRows
-};
 
 class RenderGrid FINAL : public RenderBlock {
 public:
@@ -47,7 +43,7 @@ public:
 
     virtual const char* renderName() const OVERRIDE;
 
-    virtual void layoutBlock(bool relayoutChildren, LayoutUnit pageLogicalHeight = 0) OVERRIDE;
+    virtual void layoutBlock(bool relayoutChildren) OVERRIDE;
 
     virtual bool avoidsFloats() const OVERRIDE { return true; }
     virtual bool canCollapseAnonymousBlockChild() const OVERRIDE { return false; }
@@ -63,6 +59,7 @@ private:
     virtual void computePreferredLogicalWidths() OVERRIDE;
 
     virtual void addChild(RenderObject* newChild, RenderObject* beforeChild = 0) OVERRIDE;
+    void addChildToIndexesMap(RenderBox*);
     virtual void removeChild(RenderObject*) OVERRIDE;
 
     virtual void styleDidChange(StyleDifference, const RenderStyle*) OVERRIDE;
@@ -72,18 +69,19 @@ private:
 
     class GridIterator;
     struct GridSizingData;
-    void computedUsedBreadthOfGridTracks(GridTrackSizingDirection, GridSizingData&);
-    void computedUsedBreadthOfGridTracks(GridTrackSizingDirection, GridSizingData&, LayoutUnit& availableLogicalSpace);
+    bool gridElementIsShrinkToFit();
+    void computeUsedBreadthOfGridTracks(GridTrackSizingDirection, GridSizingData&);
+    void computeUsedBreadthOfGridTracks(GridTrackSizingDirection, GridSizingData&, LayoutUnit& availableLogicalSpace);
     LayoutUnit computeUsedBreadthOfMinLength(GridTrackSizingDirection, const GridLength&) const;
     LayoutUnit computeUsedBreadthOfMaxLength(GridTrackSizingDirection, const GridLength&, LayoutUnit usedBreadth) const;
     LayoutUnit computeUsedBreadthOfSpecifiedLength(GridTrackSizingDirection, const Length&) const;
     void resolveContentBasedTrackSizingFunctions(GridTrackSizingDirection, GridSizingData&, LayoutUnit& availableLogicalSpace);
 
-    void growGrid(GridTrackSizingDirection);
-    void insertItemIntoGrid(RenderBox*, size_t rowTrack, size_t columnTrack);
+    void ensureGridSize(size_t maximumRowIndex, size_t maximumColumnIndex);
     void insertItemIntoGrid(RenderBox*, const GridCoordinate&);
     void placeItemsOnGrid();
     void populateExplicitGridAndOrderIterator();
+    PassOwnPtr<GridCoordinate> createEmptyGridAreaAtSpecifiedPositionsOutsideGrid(const RenderBox*, GridTrackSizingDirection, const GridSpan& specifiedPositions) const;
     void placeSpecifiedMajorAxisItemsOnGrid(const Vector<RenderBox*>&);
     void placeAutoMajorAxisItemsOnGrid(const Vector<RenderBox*>&);
     void placeAutoMajorAxisItemOnGrid(RenderBox*);
@@ -93,8 +91,6 @@ private:
     void layoutGridItems();
     void populateGridPositions(const GridSizingData&);
 
-    virtual bool supportsPartialLayout() const OVERRIDE { return false; }
-
     typedef LayoutUnit (RenderGrid::* SizingFunction)(RenderBox*, GridTrackSizingDirection, Vector<GridTrack>&);
     typedef LayoutUnit (GridTrack::* AccumulatorGetter)() const;
     typedef void (GridTrack::* AccumulatorGrowFunction)(LayoutUnit);
@@ -102,32 +98,26 @@ private:
     void resolveContentBasedTrackSizingFunctionsForItems(GridTrackSizingDirection, GridSizingData&, RenderBox*, FilterFunction, SizingFunction, AccumulatorGetter, AccumulatorGrowFunction);
     void distributeSpaceToTracks(Vector<GridTrack*>&, Vector<GridTrack*>* tracksForGrowthAboveMaxBreadth, AccumulatorGetter, AccumulatorGrowFunction, GridSizingData&, LayoutUnit& availableLogicalSpace);
 
-    double computeNormalizedFractionBreadth(Vector<GridTrack>&, GridTrackSizingDirection, LayoutUnit availableLogicalSpace) const;
+    double computeNormalizedFractionBreadth(Vector<GridTrack>&, const GridSpan& tracksSpan, GridTrackSizingDirection, LayoutUnit availableLogicalSpace) const;
 
     const GridTrackSize& gridTrackSize(GridTrackSizingDirection, size_t) const;
-    size_t explicitGridColumnCount() const;
-    size_t explicitGridRowCount() const;
-    size_t explicitGridSizeForSide(GridPositionSide) const;
 
-    LayoutUnit logicalContentHeightForChild(RenderBox*, Vector<GridTrack>&);
+    LayoutUnit logicalHeightForChild(RenderBox*, Vector<GridTrack>&);
     LayoutUnit minContentForChild(RenderBox*, GridTrackSizingDirection, Vector<GridTrack>& columnTracks);
     LayoutUnit maxContentForChild(RenderBox*, GridTrackSizingDirection, Vector<GridTrack>& columnTracks);
-    LayoutPoint findChildLogicalPosition(RenderBox*, const GridSizingData&);
+    LayoutUnit startOfColumnForChild(const RenderBox* child) const;
+    LayoutUnit endOfColumnForChild(const RenderBox* child) const;
+    LayoutUnit columnPositionAlignedWithGridContainerStart(const RenderBox*) const;
+    LayoutUnit columnPositionAlignedWithGridContainerEnd(const RenderBox*) const;
+    LayoutUnit centeredColumnPositionForChild(const RenderBox*) const;
+    LayoutUnit columnPositionForChild(const RenderBox*) const;
+    LayoutUnit rowPositionForChild(const RenderBox*) const;
+    LayoutPoint findChildLogicalPosition(const RenderBox*) const;
     GridCoordinate cachedGridCoordinate(const RenderBox*) const;
-
-    GridSpan resolveGridPositionsFromAutoPlacementPosition(const RenderBox*, GridTrackSizingDirection, size_t) const;
-    PassOwnPtr<GridSpan> resolveGridPositionsFromStyle(const RenderBox*, GridTrackSizingDirection) const;
-    size_t resolveNamedGridLinePositionFromStyle(const GridPosition&, GridPositionSide) const;
-    size_t resolveGridPositionFromStyle(const GridPosition&, GridPositionSide) const;
-    PassOwnPtr<GridSpan> resolveGridPositionAgainstOppositePosition(size_t resolvedOppositePosition, const GridPosition&, GridPositionSide) const;
-    PassOwnPtr<GridSpan> resolveNamedGridLinePositionAgainstOppositePosition(size_t resolvedOppositePosition, const GridPosition&, GridPositionSide) const;
-    PassOwnPtr<GridSpan> resolveBeforeStartNamedGridLinePositionAgainstOppositePosition(size_t resolvedOppositePosition, const GridPosition&, const Vector<size_t>&) const;
-    PassOwnPtr<GridSpan> resolveAfterEndNamedGridLinePositionAgainstOppositePosition(size_t resolvedOppositePosition, const GridPosition&, const Vector<size_t>&) const;
 
     LayoutUnit gridAreaBreadthForChild(const RenderBox* child, GridTrackSizingDirection, const Vector<GridTrack>&) const;
 
-    virtual void paintChildren(PaintInfo&, const LayoutPoint&) OVERRIDE FINAL;
-    void paintChildrenSlowCase(PaintInfo&, const LayoutPoint&);
+    virtual void paintChildren(PaintInfo&, const LayoutPoint&) OVERRIDE;
 
     bool gridIsDirty() const { return m_gridIsDirty; }
 
@@ -154,7 +144,8 @@ private:
     Vector<LayoutUnit> m_columnPositions;
     HashMap<const RenderBox*, GridCoordinate> m_gridItemCoordinate;
     OrderIterator m_orderIterator;
-    bool m_gridItemOverflowGridArea;
+    Vector<RenderBox*> m_gridItemsOverflowingGridArea;
+    HashMap<const RenderBox*, size_t> m_gridItemsIndexesMap;
 };
 
 DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderGrid, isRenderGrid());

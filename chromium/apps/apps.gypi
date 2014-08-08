@@ -15,7 +15,8 @@
       # browser, then we can clean up these dependencies.
       'dependencies': [
         'browser_extensions',
-        'common/extensions/api/api.gyp:api',
+        'common/extensions/api/api.gyp:chrome_api',
+        '../apps/common/api/api.gyp:apps_api',
         '../skia/skia.gyp:skia',
       ],
       'include_dirs': [
@@ -23,10 +24,6 @@
         '<(grit_out_dir)',
       ],
       'sources': [
-        'app_keep_alive_service.cc',
-        'app_keep_alive_service.h',
-        'app_keep_alive_service_factory.cc',
-        'app_keep_alive_service_factory.h',
         'app_lifetime_monitor.cc',
         'app_lifetime_monitor.h',
         'app_lifetime_monitor_factory.cc',
@@ -39,10 +36,22 @@
         'app_restore_service.h',
         'app_restore_service_factory.cc',
         'app_restore_service_factory.h',
+        'app_window.cc',
+        'app_window.h',
         'app_window_contents.cc',
         'app_window_contents.h',
+        'app_window_geometry_cache.cc',
+        'app_window_geometry_cache.h',
+        'app_window_registry.cc',
+        'app_window_registry.h',
         'apps_client.cc',
         'apps_client.h',
+        'browser_context_keyed_service_factories.cc',
+        'browser_context_keyed_service_factories.h',
+        'browser/api/app_runtime/app_runtime_api.cc',
+        'browser/api/app_runtime/app_runtime_api.h',
+        'browser/file_handler_util.cc',
+        'browser/file_handler_util.h',
         'launcher.cc',
         'launcher.h',
         'metrics_names.h',
@@ -54,19 +63,27 @@
         'saved_files_service.h',
         'saved_files_service_factory.cc',
         'saved_files_service_factory.h',
-        'shell_window.cc',
-        'shell_window.h',
-        'shell_window_geometry_cache.cc',
-        'shell_window_geometry_cache.h',
-        'shell_window_registry.cc',
-        'shell_window_registry.h',
+        'size_constraints.cc',
+        'size_constraints.h',
         'switches.cc',
         'switches.h',
         'ui/native_app_window.h',
-        'ui/views/shell_window_frame_view.cc',
-        'ui/views/shell_window_frame_view.h',
+        'ui/views/app_window_frame_view.cc',
+        'ui/views/app_window_frame_view.h',
+        'ui/views/native_app_window_views.cc',
+        'ui/views/native_app_window_views.h',
+        'ui/web_contents_sizer.h',
       ],
       'conditions': [
+        ['OS=="mac"', {
+          'sources': [
+            'ui/web_contents_sizer.mm',
+          ],
+        }, {  # OS!=mac
+          'sources': [
+            'ui/web_contents_sizer.cc',
+          ],
+        }],
         ['chromeos==1',
           {
             'dependencies': [
@@ -77,13 +94,15 @@
         ['enable_extensions==0',
           {
             'sources/': [
-              ['exclude', '^apps/'],
+              ['exclude', '.*'],
+              ['include', 'ui/web_contents_sizer\.cc$'],
+              ['include', 'ui/web_contents_sizer\.mm$'],
             ],
           }
         ],
         ['toolkit_views==1', {
           'dependencies': [
-            '../ui/base/strings/ui_strings.gyp:ui_strings',
+            '../ui/strings/ui_strings.gyp:ui_strings',
             '../ui/views/views.gyp:views',
           ],
         }, {  # toolkit_views==0
@@ -96,54 +115,4 @@
       'msvs_disabled_warnings': [ 4267, ],
     },
   ],  # targets
-  'conditions': [
-    ['chromeos==1', {
-      'targets': [
-        {
-          'target_name': 'app_shell',
-          'type': 'executable',
-          'defines!': ['CONTENT_IMPLEMENTATION'],
-          'variables': {
-            'chromium_code': 1,
-          },
-          'dependencies': [
-            'apps',
-            'chrome_resources.gyp:packed_resources',
-            'test_support_common',
-            '../base/base.gyp:base',
-            '../base/base.gyp:base_prefs_test_support',
-            '../content/content.gyp:content',
-            '../content/content_shell_and_tests.gyp:content_shell_lib',
-            '../skia/skia.gyp:skia',
-            '../ui/views/views.gyp:views',
-            '../ui/wm/wm.gyp:wm_test_support',
-          ],
-          'include_dirs': [
-            '..',
-          ],
-          'sources': [
-            'shell/shell_app_sorting.cc',
-            'shell/shell_app_sorting.h',
-            'shell/shell_browser_context.cc',
-            'shell/shell_browser_context.h',
-            'shell/shell_browser_main_parts.cc',
-            'shell/shell_browser_main_parts.h',
-            'shell/shell_content_browser_client.cc',
-            'shell/shell_content_browser_client.h',
-            'shell/shell_content_client.cc',
-            'shell/shell_content_client.h',
-            'shell/shell_extensions_browser_client.cc',
-            'shell/shell_extensions_browser_client.h',
-            'shell/shell_extensions_client.cc',
-            'shell/shell_extensions_client.h',
-            'shell/shell_main_delegate.cc',
-            'shell/shell_main_delegate.h',
-            'shell/shell_main.cc',
-            'shell/web_view_window.cc',
-            'shell/web_view_window.cc',
-          ],
-        },
-      ],  # targets
-    }],  # chromeos==1
-  ],  # conditions
 }

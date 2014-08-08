@@ -39,8 +39,7 @@ class MEDIA_EXPORT AudioManagerWin : public AudioManagerBase {
       const AudioParameters& params) OVERRIDE;
   virtual AudioOutputStream* MakeLowLatencyOutputStream(
       const AudioParameters& params,
-      const std::string& device_id,
-      const std::string& input_device_id) OVERRIDE;
+      const std::string& device_id) OVERRIDE;
   virtual AudioInputStream* MakeLinearInputStream(
       const AudioParameters& params, const std::string& device_id) OVERRIDE;
   virtual AudioInputStream* MakeLowLatencyInputStream(
@@ -56,7 +55,6 @@ class MEDIA_EXPORT AudioManagerWin : public AudioManagerBase {
 
  private:
   enum EnumerationType {
-    kUninitializedEnumeration = 0,
     kMMDeviceEnumeration,
     kWaveEnumeration,
   };
@@ -70,6 +68,10 @@ class MEDIA_EXPORT AudioManagerWin : public AudioManagerBase {
     enumeration_type_ = type;
   }
 
+  inline bool core_audio_supported() const {
+    return enumeration_type_ == kMMDeviceEnumeration;
+  }
+
   // Returns a PCMWaveInAudioInputStream instance or NULL on failure.
   // This method converts MMDevice-style device ID to WaveIn-style device ID if
   // necessary.
@@ -79,9 +81,10 @@ class MEDIA_EXPORT AudioManagerWin : public AudioManagerBase {
       const AudioParameters& params,
       const std::string& device_id);
 
-  // Helper methods for constructing AudioDeviceListenerWin on the audio thread.
-  void CreateDeviceListener();
-  void DestroyDeviceListener();
+  // Helper methods for performing expensive initialization tasks on the audio
+  // thread instead of on the UI thread which AudioManager is constructed on.
+  void InitializeOnAudioThread();
+  void ShutdownOnAudioThread();
 
   void GetAudioDeviceNamesImpl(bool input, AudioDeviceNames* device_names);
 

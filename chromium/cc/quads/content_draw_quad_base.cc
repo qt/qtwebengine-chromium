@@ -19,12 +19,12 @@ ContentDrawQuadBase::~ContentDrawQuadBase() {
 
 void ContentDrawQuadBase::SetNew(const SharedQuadState* shared_quad_state,
                                  DrawQuad::Material material,
-                                 gfx::Rect rect,
-                                 gfx::Rect opaque_rect,
+                                 const gfx::Rect& rect,
+                                 const gfx::Rect& opaque_rect,
+                                 const gfx::Rect& visible_rect,
                                  const gfx::RectF& tex_coord_rect,
-                                 gfx::Size texture_size,
+                                 const gfx::Size& texture_size,
                                  bool swizzle_contents) {
-  gfx::Rect visible_rect = rect;
   bool needs_blending = false;
   DrawQuad::SetAll(shared_quad_state, material, rect, opaque_rect,
                    visible_rect, needs_blending);
@@ -35,12 +35,12 @@ void ContentDrawQuadBase::SetNew(const SharedQuadState* shared_quad_state,
 
 void ContentDrawQuadBase::SetAll(const SharedQuadState* shared_quad_state,
                                  DrawQuad::Material material,
-                                 gfx::Rect rect,
-                                 gfx::Rect opaque_rect,
-                                 gfx::Rect visible_rect,
+                                 const gfx::Rect& rect,
+                                 const gfx::Rect& opaque_rect,
+                                 const gfx::Rect& visible_rect,
                                  bool needs_blending,
                                  const gfx::RectF& tex_coord_rect,
-                                 gfx::Size texture_size,
+                                 const gfx::Size& texture_size,
                                  bool swizzle_contents) {
   DrawQuad::SetAll(shared_quad_state, material, rect, opaque_rect,
                    visible_rect, needs_blending);

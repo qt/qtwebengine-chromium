@@ -34,6 +34,15 @@
 #include "platform/animation/AnimationUtilities.h"
 #include "wtf/MathExtras.h"
 
+namespace {
+
+double square(double x)
+{
+    return x * x;
+}
+
+} // namespace
+
 namespace WebCore {
 
 AnimatableColorImpl::AnimatableColorImpl(float red, float green, float blue, float alpha)
@@ -67,14 +76,6 @@ AnimatableColorImpl AnimatableColorImpl::interpolateTo(const AnimatableColorImpl
         blend(m_alpha, to.m_alpha, fraction));
 }
 
-AnimatableColorImpl AnimatableColorImpl::addWith(const AnimatableColorImpl& addend) const
-{
-    return AnimatableColorImpl(m_red + addend.m_red,
-        m_green + addend.m_green,
-        m_blue + addend.m_blue,
-        m_alpha + addend.m_alpha);
-}
-
 bool AnimatableColorImpl::operator==(const AnimatableColorImpl& other) const
 {
     return m_red == other.m_red
@@ -83,29 +84,36 @@ bool AnimatableColorImpl::operator==(const AnimatableColorImpl& other) const
         && m_alpha == other.m_alpha;
 }
 
-PassRefPtr<AnimatableColor> AnimatableColor::create(const AnimatableColorImpl& color, const AnimatableColorImpl& visitedLinkColor)
+double AnimatableColorImpl::distanceTo(const AnimatableColorImpl& other) const
 {
-    return adoptRef(new AnimatableColor(color, visitedLinkColor));
+    return sqrt(square(m_red - other.m_red)
+        + square(m_green - other.m_green)
+        + square(m_blue - other.m_blue)
+        + square(m_alpha - other.m_alpha));
 }
 
-PassRefPtr<AnimatableValue> AnimatableColor::interpolateTo(const AnimatableValue* value, double fraction) const
+PassRefPtrWillBeRawPtr<AnimatableColor> AnimatableColor::create(const AnimatableColorImpl& color, const AnimatableColorImpl& visitedLinkColor)
+{
+    return adoptRefWillBeNoop(new AnimatableColor(color, visitedLinkColor));
+}
+
+PassRefPtrWillBeRawPtr<AnimatableValue> AnimatableColor::interpolateTo(const AnimatableValue* value, double fraction) const
 {
     const AnimatableColor* color = toAnimatableColor(value);
     return create(m_color.interpolateTo(color->m_color, fraction),
         m_visitedLinkColor.interpolateTo(color->m_visitedLinkColor, fraction));
 }
 
-PassRefPtr<AnimatableValue> AnimatableColor::addWith(const AnimatableValue* value) const
-{
-    const AnimatableColor* color = toAnimatableColor(value);
-    return create(m_color.addWith(color->m_color),
-        m_visitedLinkColor.addWith(color->m_visitedLinkColor));
-}
-
 bool AnimatableColor::equalTo(const AnimatableValue* value) const
 {
     const AnimatableColor* color = toAnimatableColor(value);
     return m_color == color->m_color && m_visitedLinkColor == color->m_visitedLinkColor;
+}
+
+double AnimatableColor::distanceTo(const AnimatableValue* value) const
+{
+    const AnimatableColor* color = toAnimatableColor(value);
+    return m_color.distanceTo(color->m_color);
 }
 
 } // namespace WebCore

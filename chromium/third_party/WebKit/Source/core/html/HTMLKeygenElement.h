@@ -32,10 +32,7 @@ class HTMLSelectElement;
 
 class HTMLKeygenElement FINAL : public HTMLFormControlElementWithState {
 public:
-    static PassRefPtr<HTMLKeygenElement> create(Document& document, HTMLFormElement* form)
-    {
-        return adoptRef(new HTMLKeygenElement(document, form));
-    }
+    static PassRefPtrWillBeRawPtr<HTMLKeygenElement> create(Document&, HTMLFormElement*);
 
     virtual bool willValidate() const OVERRIDE { return false; }
 
@@ -54,6 +51,7 @@ private:
 
     virtual bool isEnumeratable() const OVERRIDE { return true; }
     virtual bool isInteractiveContent() const OVERRIDE;
+    virtual bool supportsAutofocus() const OVERRIDE;
     virtual bool supportLabels() const OVERRIDE { return true; }
 
     virtual void resetImpl() OVERRIDE;

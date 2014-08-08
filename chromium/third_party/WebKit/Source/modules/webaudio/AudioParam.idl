@@ -27,6 +27,7 @@
  */
 
 [
+    WillBeGarbageCollected,
     Conditional=WEB_AUDIO
 ] interface AudioParam {
     attribute float value;
@@ -42,7 +43,7 @@
     // Parameter automation.
     void setValueAtTime(float value, double time);
     void linearRampToValueAtTime(float value, double time);
-    void exponentialRampToValueAtTime(float value, double time);
+    [RaisesException] void exponentialRampToValueAtTime(float value, double time);
 
     // Exponentially approach the target with a rate having the given time constant.
     void setTargetAtTime(float target, double time, double timeConstant);
@@ -53,7 +54,5 @@
 
     // Cancels all scheduled parameter changes with times greater than or equal to startTime.
     void cancelScheduledValues(double startTime);
-
-    [MeasureAs=LegacyWebAudio, ImplementedAs=setTargetAtTime] void setTargetValueAtTime(float targetValue, double time, double timeConstant);
 
 };

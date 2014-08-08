@@ -11,8 +11,9 @@ cr.define('options', function() {
   /**
    * blah
    * @param {!string} id The id of this tab.
+   * @param {boolean} isKiosk True if dialog is shown during CrOS kiosk launch.
    */
-  function CertificateManagerTab(id) {
+  function CertificateManagerTab(id, isKiosk) {
     this.tree = $(id + '-tree');
 
     options.CertificatesTree.decorate(this.tree);
@@ -44,24 +45,36 @@ cr.define('options', function() {
 
     this.backupButton = $(id + '-backup');
     if (this.backupButton !== null) {
-      this.backupButton.onclick = function(e) {
-        var selected = tree.selectedItem;
-        chrome.send('exportPersonalCertificate', [selected.data.id]);
+      if (id == 'personalCertsTab' && isKiosk) {
+        this.backupButton.hidden = true;
+      } else {
+        this.backupButton.onclick = function(e) {
+          var selected = tree.selectedItem;
+          chrome.send('exportPersonalCertificate', [selected.data.id]);
+        }
       }
     }
 
     this.backupAllButton = $(id + '-backup-all');
     if (this.backupAllButton !== null) {
-      this.backupAllButton.onclick = function(e) {
-        chrome.send('exportAllPersonalCertificates');
+      if (id == 'personalCertsTab' && isKiosk) {
+        this.backupAllButton.hidden = true;
+      } else {
+        this.backupAllButton.onclick = function(e) {
+          chrome.send('exportAllPersonalCertificates');
+        }
       }
     }
 
     this.importButton = $(id + '-import');
     if (this.importButton !== null) {
       if (id == 'personalCertsTab') {
-        this.importButton.onclick = function(e) {
-          chrome.send('importPersonalCertificate', [false]);
+        if (isKiosk) {
+          this.importButton.hidden = true;
+        } else {
+          this.importButton.onclick = function(e) {
+            chrome.send('importPersonalCertificate', [false]);
+          }
         }
       } else if (id == 'serverCertsTab') {
         this.importButton.onclick = function(e) {
@@ -85,9 +98,13 @@ cr.define('options', function() {
 
     this.exportButton = $(id + '-export');
     if (this.exportButton !== null) {
-      this.exportButton.onclick = function(e) {
-        var selected = tree.selectedItem;
-        chrome.send('exportCertificate', [selected.data.id]);
+      if (id == 'personalCertsTab' && isKiosk) {
+        this.exportButton.hidden = true;
+      } else {
+        this.exportButton.onclick = function(e) {
+          var selected = tree.selectedItem;
+          chrome.send('exportCertificate', [selected.data.id]);
+        }
       }
     }
 
@@ -146,26 +163,6 @@ cr.define('options', function() {
     },
   };
 
-  // TODO(xiyuan): Use notification from backend instead of polling.
-  // TPM token check polling timer.
-  var tpmPollingTimer;
-
-  // Initiate tpm token check if needed.
-  function checkTpmToken() {
-    var importAndBindButton = $('personalCertsTab-import-and-bind');
-
-    if (importAndBindButton && importAndBindButton.disabled)
-      chrome.send('checkTpmTokenReady');
-  }
-
-  // Stop tpm polling timer.
-  function stopTpmTokenCheckPolling() {
-    if (tpmPollingTimer) {
-      window.clearTimeout(tpmPollingTimer);
-      tpmPollingTimer = undefined;
-    }
-  }
-
   /////////////////////////////////////////////////////////////////////////////
   // CertificateManager class:
 
@@ -184,13 +181,14 @@ cr.define('options', function() {
   CertificateManager.prototype = {
     __proto__: OptionsPage.prototype,
 
-    initializePage: function() {
+    initializePage: function(isKiosk) {
       OptionsPage.prototype.initializePage.call(this);
 
-      this.personalTab = new CertificateManagerTab('personalCertsTab');
-      this.serverTab = new CertificateManagerTab('serverCertsTab');
-      this.caTab = new CertificateManagerTab('caCertsTab');
-      this.otherTab = new CertificateManagerTab('otherCertsTab');
+      this.personalTab = new CertificateManagerTab('personalCertsTab',
+                                                   !!isKiosk);
+      this.serverTab = new CertificateManagerTab('serverCertsTab', !!isKiosk);
+      this.caTab = new CertificateManagerTab('caCertsTab', !!isKiosk);
+      this.otherTab = new CertificateManagerTab('otherCertsTab', !!isKiosk);
 
       this.addEventListener('visibleChange', this.handleVisibleChange_);
 
@@ -212,14 +210,6 @@ cr.define('options', function() {
         OptionsPage.showTab($('personal-certs-nav-tab'));
         chrome.send('populateCertificateManager');
       }
-
-      if (cr.isChromeOS) {
-        // Ensure TPM token check on visible and stop polling when hidden.
-        if (this.visible)
-          checkTpmToken();
-        else
-          stopTpmTokenCheckPolling();
-      }
     }
   };
 
@@ -236,16 +226,15 @@ cr.define('options', function() {
     CertificateRestoreOverlay.show();
   };
 
-  CertificateManager.onCheckTpmTokenReady = function(ready) {
-    var importAndBindButton = $('personalCertsTab-import-and-bind');
-    if (importAndBindButton) {
-      importAndBindButton.disabled = !ready;
-
-      // Check again after 5 seconds if Tpm is not ready and certificate manager
-      // is still visible.
-      if (!ready && CertificateManager.getInstance().visible)
-        tpmPollingTimer = window.setTimeout(checkTpmToken, 5000);
-    }
+  CertificateManager.onModelReady = function(userDbAvailable,
+                                             tpmAvailable) {
+    if (!userDbAvailable)
+      return;
+    if (tpmAvailable)
+      $('personalCertsTab-import-and-bind').disabled = false;
+    $('personalCertsTab-import').disabled = false;
+    $('serverCertsTab-import').disabled = false;
+    $('caCertsTab-import').disabled = false;
   };
 
   // Export

@@ -32,7 +32,8 @@
       <form id="choose-data-types-form">
         <div id="sync-configure-content" class="content-area">
           <div id="sync-select-container">
-            <select id="sync-select-datatypes">
+            <select id="sync-select-datatypes"
+                    metric="Options_SyncSelectDataTypes">
               <option i18n-content="syncAllDataTypes" selected></option>
               <option i18n-content="chooseDataTypes"></option>
               <!-- The syncNothing element is to be removed for M29.
@@ -104,10 +105,6 @@
                 </label>
               </div>
             </div>
-          </div>
-          <div class="sync-configuration-errors">
-            <div id="error-text" i18n-content="syncZeroDataTypesError"
-                class="sync-configuration-error reset-hidden" hidden></div>
           </div>
           <div id="customize-sync-encryption-new">
             <hr>
@@ -224,6 +221,14 @@
     <h1 i18n-content="stopSyncingTitle"></h1>
     <div class="content-area">
       <span i18n-values=".innerHTML:stopSyncingExplanation"></span>
+<if expr="(not chromeos and is_posix) or is_win or is_macosx">
+      <div id="sync-setup-delete-profile" class="checkbox">
+        <label>
+          <input id="delete-profile" type="checkbox">
+          <span i18n-content="deleteProfileLabel"></span>
+        </label>
+      </div>
+</if>
     </div>
     <div class="action-area button-strip">
       <input id="stop-syncing-cancel" type="button"

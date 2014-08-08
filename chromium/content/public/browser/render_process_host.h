@@ -14,7 +14,6 @@
 #include "ipc/ipc_channel_proxy.h"
 #include "ipc/ipc_sender.h"
 #include "ui/gfx/native_widget_types.h"
-#include "ui/surface/transport_dib.h"
 
 class GURL;
 struct ViewMsg_SwapOut_Params;
@@ -29,9 +28,7 @@ class BrowserMessageFilter;
 class RenderProcessHostObserver;
 class RenderWidgetHost;
 class StoragePartition;
-
-typedef base::Thread* (*RendererMainThreadFactoryFunction)(
-    const std::string& id);
+struct GlobalRequestID;
 
 // Interface that represents the browser side of the browser <-> renderer
 // communication channel. There will generally be one RenderProcessHost per
@@ -98,9 +95,11 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
   virtual void WidgetHidden() = 0;
   virtual int VisibleWidgetCount() const = 0;
 
-  // Indicates whether the current RenderProcessHost associated with a guest
-  // renderer process.
-  virtual bool IsGuest() const = 0;
+  // Indicates whether the current RenderProcessHost is associated with an
+  // isolated guest renderer process. Not all guest renderers are created equal.
+  // A guest, as indicated by BrowserPluginGuest::IsGuest, may coexist with
+  // other non-guest renderers in the same process if IsIsolatedGuest is false.
+  virtual bool IsIsolatedGuest() const = 0;
 
   // Returns the storage partition associated with this process.
   //
@@ -130,19 +129,6 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
   // the first IPC arrives.
   virtual base::ProcessHandle GetHandle() const = 0;
 
-  // Transport DIB functions ---------------------------------------------------
-
-  // Return the TransportDIB for the given id. On Linux, this can involve
-  // mapping shared memory. On Mac, the shared memory is created in the browser
-  // process and the cached metadata is returned. On Windows, this involves
-  // duplicating the handle from the remote process.  The RenderProcessHost
-  // still owns the returned DIB.
-  virtual TransportDIB* GetTransportDIB(TransportDIB::Id dib_id) = 0;
-
-  // Return the TransportDIB for the given id. In contrast to GetTransportDIB,
-  // the caller owns the resulting TransportDIB.
-  virtual TransportDIB* MapTransportDIB(TransportDIB::Id dib_id) = 0;
-
   // Returns the user browser context associated with this renderer process.
   virtual content::BrowserContext* GetBrowserContext() const = 0;
 
@@ -150,12 +136,14 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
   // |partition|.
   virtual bool InSameStoragePartition(StoragePartition* partition) const = 0;
 
-  // Returns the unique ID for this child process. This can be used later in
-  // a call to FromID() to get back to this object (this is used to avoid
+  // Returns the unique ID for this child process host. This can be used later
+  // in a call to FromID() to get back to this object (this is used to avoid
   // sending non-threadsafe pointers to other threads).
   //
-  // This ID will be unique for all child processes, including workers, plugins,
-  // etc.
+  // This ID will be unique across all child process hosts, including workers,
+  // plugins, etc.
+  //
+  // This will never return ChildProcessHost::kInvalidUniqueID.
   virtual int GetID() const = 0;
 
   // Returns true iff channel_ has been set to non-NULL. Use this for checking
@@ -201,14 +189,48 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
   // 10 milliseconds.
   virtual base::TimeDelta GetChildProcessIdleTime() const = 0;
 
-  // Signals that a compositing surface has been updated after a lost context
-  // event, so that we can process requests from the renderer to create contexts
-  // with that surface.
-  virtual void SurfaceUpdated(int32 surface_id) = 0;
-
   // Called to resume the requests for a view created through window.open that
   // were initially blocked.
   virtual void ResumeRequestsForView(int route_id) = 0;
+
+  // Checks that the given renderer can request |url|, if not it sets it to
+  // about:blank.
+  // |empty_allowed| must be set to false for navigations for security reasons.
+  virtual void FilterURL(bool empty_allowed, GURL* url) = 0;
+
+#if defined(ENABLE_WEBRTC)
+  virtual void EnableAecDump(const base::FilePath& file) = 0;
+  virtual void DisableAecDump() = 0;
+
+  // When set, |callback| receives log messages regarding, for example, media
+  // devices (webcams, mics, etc) that were initially requested in the render
+  // process associated with this RenderProcessHost.
+  virtual void SetWebRtcLogMessageCallback(
+      base::Callback<void(const std::string&)> callback) = 0;
+
+  typedef base::Callback<void(scoped_ptr<uint8[]> packet_header,
+                              size_t header_length,
+                              size_t packet_length,
+                              bool incoming)> WebRtcRtpPacketCallback;
+
+  typedef base::Callback<void(bool incoming, bool outgoing)>
+      WebRtcStopRtpDumpCallback;
+
+  // Starts passing RTP packets to |packet_callback| and returns the callback
+  // used to stop dumping.
+  virtual WebRtcStopRtpDumpCallback StartRtpDump(
+      bool incoming,
+      bool outgoing,
+      const WebRtcRtpPacketCallback& packet_callback) = 0;
+#endif
+
+  // Tells the ResourceDispatcherHost to resume a deferred navigation without
+  // transferring it to a new renderer process.
+  virtual void ResumeDeferredNavigation(const GlobalRequestID& request_id) = 0;
+
+  // Notifies the renderer that the timezone configuration of the system might
+  // have changed.
+  virtual void NotifyTimezoneChange() = 0;
 
   // Static management functions -----------------------------------------------
 
@@ -263,9 +285,6 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
   // Returns the current max number of renderer processes used by the content
   // module.
   static size_t GetMaxRendererProcessCount();
-
-  static void RegisterRendererMainThreadFactory(
-      RendererMainThreadFactoryFunction create);
 };
 
 }  // namespace content.

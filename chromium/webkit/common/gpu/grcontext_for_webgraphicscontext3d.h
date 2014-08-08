@@ -26,7 +26,8 @@ class WEBKIT_GPU_EXPORT GrContextForWebGraphicsContext3D {
 
   GrContext* get() { return gr_context_.get(); }
 
-  void SetMemoryLimit(bool nonzero_allocation);
+  void OnLostContext();
+  void FreeGpuResources();
 
  private:
   skia::RefPtr<class GrContext> gr_context_;

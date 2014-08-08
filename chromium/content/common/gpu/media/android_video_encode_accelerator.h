@@ -31,18 +31,18 @@ namespace content {
 class CONTENT_EXPORT AndroidVideoEncodeAccelerator
     : public media::VideoEncodeAccelerator {
  public:
-  explicit AndroidVideoEncodeAccelerator(
-      media::VideoEncodeAccelerator::Client* client);
+  AndroidVideoEncodeAccelerator();
   virtual ~AndroidVideoEncodeAccelerator();
 
   static std::vector<media::VideoEncodeAccelerator::SupportedProfile>
       GetSupportedProfiles();
 
   // media::VideoEncodeAccelerator implementation.
-  virtual void Initialize(media::VideoFrame::Format format,
+  virtual bool Initialize(media::VideoFrame::Format format,
                           const gfx::Size& input_visible_size,
                           media::VideoCodecProfile output_profile,
-                          uint32 initial_bitrate) OVERRIDE;
+                          uint32 initial_bitrate,
+                          Client* client) OVERRIDE;
   virtual void Encode(const scoped_refptr<media::VideoFrame>& frame,
                       bool force_keyframe) OVERRIDE;
   virtual void UseOutputBitstreamBuffer(const media::BitstreamBuffer& buffer)
@@ -77,7 +77,7 @@ class CONTENT_EXPORT AndroidVideoEncodeAccelerator
 
   // VideoDecodeAccelerator::Client callbacks go here.  Invalidated once any
   // error triggers.
-  base::WeakPtrFactory<Client> client_ptr_factory_;
+  scoped_ptr<base::WeakPtrFactory<Client> > client_ptr_factory_;
 
   scoped_ptr<media::VideoCodecBridge> media_codec_;
 

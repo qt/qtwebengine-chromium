@@ -43,6 +43,8 @@ class FakeTimeEpollServer : public EpollServer {
 
  private:
   int64 now_in_usec_;
+
+  DISALLOW_COPY_AND_ASSIGN(FakeTimeEpollServer);
 };
 
 class MockEpollServer : public FakeTimeEpollServer {
@@ -83,20 +85,22 @@ class MockEpollServer : public FakeTimeEpollServer {
  protected:  // functions
   // These functions do nothing here, as we're not actually
   // using the epoll_* syscalls.
-  virtual void DelFD(int fd) const OVERRIDE { }
-  virtual void AddFD(int fd, int event_mask) const OVERRIDE { }
-  virtual void ModFD(int fd, int event_mask) const OVERRIDE { }
+  virtual void DelFD(int fd) const OVERRIDE {}
+  virtual void AddFD(int fd, int event_mask) const OVERRIDE {}
+  virtual void ModFD(int fd, int event_mask) const OVERRIDE {}
 
   // Replaces the epoll_server's epoll_wait_impl.
   virtual int epoll_wait_impl(int epfd,
                               struct epoll_event* events,
                               int max_events,
                               int timeout_in_ms) OVERRIDE;
-  virtual void SetNonblocking (int fd) OVERRIDE { }
+  virtual void SetNonblocking (int fd) OVERRIDE {}
 
  private:  // members
   EventQueue event_queue_;
   int64 until_in_usec_;
+
+  DISALLOW_COPY_AND_ASSIGN(MockEpollServer);
 };
 
 }  // namespace test

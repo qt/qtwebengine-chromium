@@ -8,7 +8,8 @@
 #include "SkBitmap.h"
 #include "SkMagnifierImageFilter.h"
 #include "SkColorPriv.h"
-#include "SkFlattenableBuffers.h"
+#include "SkReadBuffer.h"
+#include "SkWriteBuffer.h"
 #include "SkValidationUtils.h"
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -231,7 +232,7 @@ void GrMagnifierEffect::getConstantColorComponents(GrColor* color, uint32_t* val
 #endif
 
 ////////////////////////////////////////////////////////////////////////////////
-SkMagnifierImageFilter::SkMagnifierImageFilter(SkFlattenableReadBuffer& buffer)
+SkMagnifierImageFilter::SkMagnifierImageFilter(SkReadBuffer& buffer)
   : INHERITED(1, buffer) {
     float x = buffer.readScalar();
     float y = buffer.readScalar();
@@ -246,7 +247,7 @@ SkMagnifierImageFilter::SkMagnifierImageFilter(SkFlattenableReadBuffer& buffer)
 }
 
 // FIXME:  implement single-input semantics
-SkMagnifierImageFilter::SkMagnifierImageFilter(SkRect srcRect, SkScalar inset)
+SkMagnifierImageFilter::SkMagnifierImageFilter(const SkRect& srcRect, SkScalar inset)
     : INHERITED(0), fSrcRect(srcRect), fInset(inset) {
     SkASSERT(srcRect.x() >= 0 && srcRect.y() >= 0 && inset >= 0);
 }
@@ -269,7 +270,7 @@ bool SkMagnifierImageFilter::asNewEffect(GrEffectRef** effect, GrTexture* textur
 }
 #endif
 
-void SkMagnifierImageFilter::flatten(SkFlattenableWriteBuffer& buffer) const {
+void SkMagnifierImageFilter::flatten(SkWriteBuffer& buffer) const {
     this->INHERITED::flatten(buffer);
     buffer.writeScalar(fSrcRect.x());
     buffer.writeScalar(fSrcRect.y());
@@ -279,13 +280,13 @@ void SkMagnifierImageFilter::flatten(SkFlattenableWriteBuffer& buffer) const {
 }
 
 bool SkMagnifierImageFilter::onFilterImage(Proxy*, const SkBitmap& src,
-                                           const SkMatrix&, SkBitmap* dst,
-                                           SkIPoint* offset) {
-    SkASSERT(src.config() == SkBitmap::kARGB_8888_Config);
+                                           const Context&, SkBitmap* dst,
+                                           SkIPoint* offset) const {
+    SkASSERT(src.colorType() == kN32_SkColorType);
     SkASSERT(fSrcRect.width() < src.width());
     SkASSERT(fSrcRect.height() < src.height());
 
-    if ((src.config() != SkBitmap::kARGB_8888_Config) ||
+    if ((src.colorType() != kN32_SkColorType) ||
         (fSrcRect.width() >= src.width()) ||
         (fSrcRect.height() >= src.height())) {
       return false;
@@ -297,9 +298,7 @@ bool SkMagnifierImageFilter::onFilterImage(Proxy*, const SkBitmap& src,
       return false;
     }
 
-    dst->setConfig(src.config(), src.width(), src.height());
-    dst->allocPixels();
-    if (!dst->getPixels()) {
+    if (!dst->allocPixels(src.info())) {
         return false;
     }
 

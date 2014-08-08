@@ -31,8 +31,8 @@ class NET_EXPORT UDPServerSocket : public DatagramServerSocket {
                      int buf_len,
                      const IPEndPoint& address,
                      const CompletionCallback& callback) OVERRIDE;
-  virtual bool SetReceiveBufferSize(int32 size) OVERRIDE;
-  virtual bool SetSendBufferSize(int32 size) OVERRIDE;
+  virtual int SetReceiveBufferSize(int32 size) OVERRIDE;
+  virtual int SetSendBufferSize(int32 size) OVERRIDE;
   virtual void Close() OVERRIDE;
   virtual int GetPeerAddress(IPEndPoint* address) const OVERRIDE;
   virtual int GetLocalAddress(IPEndPoint* address) const OVERRIDE;
@@ -45,6 +45,7 @@ class NET_EXPORT UDPServerSocket : public DatagramServerSocket {
   virtual int SetMulticastTimeToLive(int time_to_live) OVERRIDE;
   virtual int SetMulticastLoopbackMode(bool loopback) OVERRIDE;
   virtual int SetDiffServCodePoint(DiffServCodePoint dscp) OVERRIDE;
+  virtual void DetachFromThread() OVERRIDE;
 
  private:
   UDPSocket socket_;

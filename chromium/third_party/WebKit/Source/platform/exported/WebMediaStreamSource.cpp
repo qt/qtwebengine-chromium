@@ -33,7 +33,6 @@
 #include "public/platform/WebMediaStreamSource.h"
 
 #include "platform/audio/AudioBus.h"
-#include "platform/mediastream/MediaConstraints.h"
 #include "platform/mediastream/MediaStreamSource.h"
 #include "public/platform/WebAudioDestinationConsumer.h"
 #include "public/platform/WebMediaConstraints.h"
@@ -50,7 +49,7 @@ namespace {
 
 class ExtraDataContainer : public MediaStreamSource::ExtraData {
 public:
-    ExtraDataContainer(WebMediaStreamSource::ExtraData* extraData) : m_extraData(adoptPtr(extraData)) { }
+    ExtraDataContainer(PassOwnPtr<WebMediaStreamSource::ExtraData> extraData) : m_extraData(extraData) { }
 
     WebMediaStreamSource::ExtraData* extraData() { return m_extraData.get(); }
 
@@ -154,7 +153,7 @@ void WebMediaStreamSource::setExtraData(ExtraData* extraData)
     if (extraData)
         extraData->setOwner(m_private.get());
 
-    m_private->setExtraData(new ExtraDataContainer(extraData));
+    m_private->setExtraData(adoptPtr(new ExtraDataContainer(adoptPtr(extraData))));
 }
 
 WebMediaConstraints WebMediaStreamSource::constraints()
@@ -222,7 +221,7 @@ bool WebMediaStreamSource::removeAudioConsumer(WebAudioDestinationConsumer* cons
 
     const Vector<RefPtr<AudioDestinationConsumer> >& consumers = m_private->audioConsumers();
     for (Vector<RefPtr<AudioDestinationConsumer> >::const_iterator it = consumers.begin(); it != consumers.end(); ++it) {
-        ConsumerWrapper* wrapper = static_cast<ConsumerWrapper*>((*it).get());
+        ConsumerWrapper* wrapper = static_cast<ConsumerWrapper*>(it->get());
         if (wrapper->consumer() == consumer) {
             m_private->removeAudioConsumer(wrapper);
             return true;

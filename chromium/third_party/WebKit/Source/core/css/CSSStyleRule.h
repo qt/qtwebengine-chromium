@@ -23,6 +23,7 @@
 #define CSSStyleRule_h
 
 #include "core/css/CSSRule.h"
+#include "platform/heap/Handle.h"
 
 namespace WebCore {
 
@@ -30,13 +31,16 @@ class CSSStyleDeclaration;
 class StyleRuleCSSStyleDeclaration;
 class StyleRule;
 
-class CSSStyleRule : public CSSRule {
+class CSSStyleRule FINAL : public CSSRule {
 public:
-    static PassRefPtr<CSSStyleRule> create(StyleRule* rule, CSSStyleSheet* sheet) { return adoptRef(new CSSStyleRule(rule, sheet)); }
+    static PassRefPtrWillBeRawPtr<CSSStyleRule> create(StyleRule* rule, CSSStyleSheet* sheet)
+    {
+        return adoptRefWillBeNoop(new CSSStyleRule(rule, sheet));
+    }
 
     virtual ~CSSStyleRule();
 
-    virtual CSSRule::Type type() const { return STYLE_RULE; }
+    virtual CSSRule::Type type() const OVERRIDE { return STYLE_RULE; }
     virtual String cssText() const OVERRIDE;
     virtual void reattach(StyleRuleBase*) OVERRIDE;
 
@@ -48,13 +52,15 @@ public:
     // FIXME: Not CSSOM. Remove.
     StyleRule* styleRule() const { return m_styleRule.get(); }
 
+    virtual void trace(Visitor*) OVERRIDE;
+
 private:
     CSSStyleRule(StyleRule*, CSSStyleSheet*);
 
     String generateSelectorText() const;
 
-    RefPtr<StyleRule> m_styleRule;
-    mutable RefPtr<StyleRuleCSSStyleDeclaration> m_propertiesCSSOMWrapper;
+    RefPtrWillBeMember<StyleRule> m_styleRule;
+    mutable RefPtrWillBeMember<StyleRuleCSSStyleDeclaration> m_propertiesCSSOMWrapper;
 };
 
 DEFINE_CSS_RULE_TYPE_CASTS(CSSStyleRule, STYLE_RULE);

@@ -27,7 +27,6 @@
 
 {
   'includes': ['build/common.gypi'],
-
   'conditions': [
     ['os_posix == 1 and OS != "mac" and OS != "ios"', {
      'conditions': [
@@ -53,6 +52,9 @@
           ],
           'sources': [
             'app/webrtc/java/jni/peerconnection_jni.cc'
+          ],
+          'include_dirs': [
+            '<(DEPTH)/third_party/libyuv/include',
           ],
           'conditions': [
             ['OS=="linux"', {
@@ -80,6 +82,7 @@
               'variables': {
                 'java_src_dir': 'app/webrtc/java/src',
                 'webrtc_modules_dir': '<(webrtc_root)/modules',
+                'build_jar_log': '<(INTERMEDIATE_DIR)/build_jar.log',
                 'peerconnection_java_files': [
                   'app/webrtc/java/src/org/webrtc/AudioSource.java',
                   'app/webrtc/java/src/org/webrtc/AudioTrack.java',
@@ -105,6 +108,8 @@
                 # included here, or better yet, build a proper .jar in webrtc
                 # and include it here.
                 'android_java_files': [
+                  'app/webrtc/java/android/org/webrtc/VideoRendererGui.java',
+                  'app/webrtc/java/src/org/webrtc/MediaCodecVideoEncoder.java',
                   '<(webrtc_modules_dir)/audio_device/android/java/src/org/webrtc/voiceengine/AudioManagerAndroid.java',
                   '<(webrtc_modules_dir)/video_capture/android/java/src/org/webrtc/videoengine/VideoCaptureAndroid.java',
                   '<(webrtc_modules_dir)/video_capture/android/java/src/org/webrtc/videoengine/VideoCaptureDeviceInfoAndroid.java',
@@ -137,10 +142,13 @@
                 }],
               ],
               'action': [
-                'build/build_jar.sh', '<(java_home)', '<@(_outputs)',
-                '<(INTERMEDIATE_DIR)',
-                '<(build_classpath)',
-                '<@(java_files)'
+                'bash', '-ec',
+                'mkdir -p <(INTERMEDIATE_DIR) && '
+                '{ build/build_jar.sh <(java_home) <@(_outputs) '
+                '      <(INTERMEDIATE_DIR)/build_jar.tmp '
+                '      <(build_classpath) <@(java_files) '
+                '      > <(build_jar_log) 2>&1 || '
+                '  { cat <(build_jar_log) ; exit 1; } }'
               ],
             },
           ],
@@ -150,7 +158,8 @@
         },
       ],
     }],
-    ['OS=="ios" or (OS=="mac" and target_arch!="ia32")', {
+    ['OS=="ios" or (OS=="mac" and target_arch!="ia32" and mac_sdk>="10.7")', {
+      # The >= 10.7 above is required for ARC.
       'targets': [
         {
           'target_name': 'libjingle_peerconnection_objc',
@@ -161,8 +170,11 @@
           'sources': [
             'app/webrtc/objc/RTCAudioTrack+Internal.h',
             'app/webrtc/objc/RTCAudioTrack.mm',
+            'app/webrtc/objc/RTCDataChannel+Internal.h',
+            'app/webrtc/objc/RTCDataChannel.mm',
             'app/webrtc/objc/RTCEnumConverter.h',
             'app/webrtc/objc/RTCEnumConverter.mm',
+            'app/webrtc/objc/RTCI420Frame+Internal.h',
             'app/webrtc/objc/RTCI420Frame.mm',
             'app/webrtc/objc/RTCICECandidate+Internal.h',
             'app/webrtc/objc/RTCICECandidate.mm',
@@ -178,6 +190,7 @@
             'app/webrtc/objc/RTCMediaStream.mm',
             'app/webrtc/objc/RTCMediaStreamTrack+Internal.h',
             'app/webrtc/objc/RTCMediaStreamTrack.mm',
+            'app/webrtc/objc/RTCOpenGLVideoRenderer.mm',
             'app/webrtc/objc/RTCPair.m',
             'app/webrtc/objc/RTCPeerConnection+Internal.h',
             'app/webrtc/objc/RTCPeerConnection.mm',
@@ -186,6 +199,8 @@
             'app/webrtc/objc/RTCPeerConnectionObserver.mm',
             'app/webrtc/objc/RTCSessionDescription+Internal.h',
             'app/webrtc/objc/RTCSessionDescription.mm',
+            'app/webrtc/objc/RTCStatsReport+Internal.h',
+            'app/webrtc/objc/RTCStatsReport.mm',
             'app/webrtc/objc/RTCVideoCapturer+Internal.h',
             'app/webrtc/objc/RTCVideoCapturer.mm',
             'app/webrtc/objc/RTCVideoRenderer+Internal.h',
@@ -196,6 +211,7 @@
             'app/webrtc/objc/RTCVideoTrack.mm',
             'app/webrtc/objc/public/RTCAudioSource.h',
             'app/webrtc/objc/public/RTCAudioTrack.h',
+            'app/webrtc/objc/public/RTCDataChannel.h',
             'app/webrtc/objc/public/RTCI420Frame.h',
             'app/webrtc/objc/public/RTCICECandidate.h',
             'app/webrtc/objc/public/RTCICEServer.h',
@@ -203,16 +219,18 @@
             'app/webrtc/objc/public/RTCMediaSource.h',
             'app/webrtc/objc/public/RTCMediaStream.h',
             'app/webrtc/objc/public/RTCMediaStreamTrack.h',
+            'app/webrtc/objc/public/RTCOpenGLVideoRenderer.h',
             'app/webrtc/objc/public/RTCPair.h',
             'app/webrtc/objc/public/RTCPeerConnection.h',
             'app/webrtc/objc/public/RTCPeerConnectionDelegate.h',
             'app/webrtc/objc/public/RTCPeerConnectionFactory.h',
             'app/webrtc/objc/public/RTCSessionDescription.h',
-            'app/webrtc/objc/public/RTCSessionDescriptonDelegate.h',
+            'app/webrtc/objc/public/RTCSessionDescriptionDelegate.h',
+            'app/webrtc/objc/public/RTCStatsDelegate.h',
+            'app/webrtc/objc/public/RTCStatsReport.h',
             'app/webrtc/objc/public/RTCTypes.h',
             'app/webrtc/objc/public/RTCVideoCapturer.h',
             'app/webrtc/objc/public/RTCVideoRenderer.h',
-            'app/webrtc/objc/public/RTCVideoRendererDelegate.h',
             'app/webrtc/objc/public/RTCVideoSource.h',
             'app/webrtc/objc/public/RTCVideoTrack.h',
           ],
@@ -228,13 +246,50 @@
           ],
           'link_settings': {
             'libraries': [
-              '$(SDKROOT)/System/Library/Frameworks/Foundation.framework',
               '-lstdc++',
             ],
           },
           'xcode_settings': {
             'CLANG_ENABLE_OBJC_ARC': 'YES',
+            # common.gypi enables this for mac but we want this to be disabled
+            # like it is for ios.
+            'CLANG_WARN_OBJC_MISSING_PROPERTY_SYNTHESIS': 'NO',
           },
+          'conditions': [
+            ['OS=="ios"', {
+              'sources': [
+                'app/webrtc/objc/RTCEAGLVideoView+Internal.h',
+                'app/webrtc/objc/RTCEAGLVideoView.m',
+                'app/webrtc/objc/public/RTCEAGLVideoView.h',
+              ],
+              'link_settings': {
+                'xcode_settings': {
+                  'OTHER_LDFLAGS': [
+                    '-framework CoreGraphics',
+                    '-framework GLKit',
+                  ],
+                },
+              },
+            }],
+            ['OS=="mac"', {
+              'sources': [
+                'app/webrtc/objc/RTCNSGLVideoView.m',
+                'app/webrtc/objc/public/RTCNSGLVideoView.h',
+              ],
+              'xcode_settings': {
+                # Need to build against 10.7 framework for full ARC support
+                # on OSX.
+                'MACOSX_DEPLOYMENT_TARGET' : '10.7',
+              },
+              'link_settings': {
+                'xcode_settings': {
+                  'OTHER_LDFLAGS': [
+                    '-framework Cocoa',
+                  ],
+                },
+              },
+            }],
+          ],
         },  # target libjingle_peerconnection_objc
       ],
     }],
@@ -257,6 +312,8 @@
         'base/asyncfile.h',
         'base/asynchttprequest.cc',
         'base/asynchttprequest.h',
+        'base/asyncinvoker.cc',
+        'base/asyncinvoker.h',
         'base/asyncpacketsocket.h',
         'base/asyncresolverinterface.h',
         'base/asyncsocket.cc',
@@ -279,6 +336,7 @@
         'base/bytebuffer.cc',
         'base/bytebuffer.h',
         'base/byteorder.h',
+        'base/callback.h',
         'base/checks.cc',
         'base/checks.h',
         'base/common.cc',
@@ -380,6 +438,7 @@
         'base/scoped_autorelease_pool.h',
         'base/scoped_ptr.h',
         'base/scoped_ref_ptr.h',
+        'base/scopedptrcollection.h',
         'base/sec_buffer.h',
         'base/sha1.cc',
         'base/sha1.h',
@@ -406,6 +465,7 @@
         'base/ssladapter.cc',
         'base/ssladapter.h',
         'base/sslconfig.h',
+        'base/sslfingerprint.cc',
         'base/sslfingerprint.h',
         'base/sslidentity.cc',
         'base/sslidentity.h',
@@ -504,6 +564,8 @@
         'xmpp/pubsub_task.h',
         'xmpp/pubsubclient.cc',
         'xmpp/pubsubclient.h',
+        'xmpp/pubsubstateclient.cc',
+        'xmpp/pubsubstateclient.h',
         'xmpp/pubsubtasks.cc',
         'xmpp/pubsubtasks.h',
         'xmpp/receivetask.cc',
@@ -539,13 +601,6 @@
         'xmpp/xmppthread.h',
       ],
       'conditions': [
-        ['OS=="mac" or OS=="ios" or OS=="win"', {
-          'dependencies': [
-            # The chromium copy of nss should NOT be used on platforms that
-            # have NSS as system libraries, such as linux.
-            '<(DEPTH)/third_party/nss/nss.gyp:nss',
-          ],
-        }],
         ['OS=="android"', {
           'sources': [
             'base/ifaddrs-android.cc',
@@ -643,16 +698,16 @@
         }],
         ['OS=="ios"', {
           'sources': [
+            'base/iosfilesystem.mm',
             'base/scoped_autorelease_pool.mm',
           ],
           'dependencies': [
-            '../net/third_party/nss/ssl.gyp:libssl',
+            '<(DEPTH)/net/third_party/nss/ssl.gyp:libssl',
           ],
           'all_dependent_settings': {
             'xcode_settings': {
               'OTHER_LDFLAGS': [
                 '-framework Foundation',
-                '-framework IOKit',
                 '-framework Security',
                 '-framework SystemConfiguration',
                 '-framework UIKit',
@@ -706,13 +761,9 @@
             'base/unixfilesystem.h',
           ],
           'conditions': [
-            ['OS=="linux" or OS=="android"', {
-              'dependencies': [
-                '<(DEPTH)/third_party/openssl/openssl.gyp:openssl',
-              ],
-            }],
             ['OS!="ios"', {
               'sources': [
+                'base/openssl.h',
                 'base/openssladapter.cc',
                 'base/openssladapter.h',
                 'base/openssldigest.cc',
@@ -772,13 +823,20 @@
     {
       'target_name': 'libjingle_media',
       'type': 'static_library',
+      'include_dirs': [
+        # TODO(jiayl): move this into the direct_dependent_settings of
+        # usrsctp.gyp.
+        '<(DEPTH)/third_party/usrsctp',
+      ],
       'dependencies': [
         '<(DEPTH)/third_party/libyuv/libyuv.gyp:libyuv',
+        '<(DEPTH)/third_party/usrsctp/usrsctp.gyp:usrsctplib',
         '<(webrtc_root)/modules/modules.gyp:video_capture_module',
         '<(webrtc_root)/modules/modules.gyp:video_render_module',
-        '<(webrtc_root)/video_engine/video_engine.gyp:video_engine_core',
+        '<(webrtc_root)/webrtc.gyp:webrtc',
         '<(webrtc_root)/voice_engine/voice_engine.gyp:voice_engine',
         '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers',
+        '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:field_trial_default',
         'libjingle',
         'libjingle_sound',
       ],
@@ -832,6 +890,8 @@
         'media/base/videoprocessor.h',
         'media/base/videorenderer.h',
         'media/base/voiceprocessor.h',
+        'media/base/yuvframegenerator.cc',
+        'media/base/yuvframegenerator.h',
         'media/devices/deviceinfo.h',
         'media/devices/devicemanager.cc',
         'media/devices/devicemanager.h',
@@ -839,14 +899,14 @@
         'media/devices/filevideocapturer.cc',
         'media/devices/filevideocapturer.h',
         'media/devices/videorendererfactory.h',
+        'media/devices/yuvframescapturer.cc',
+        'media/devices/yuvframescapturer.h',
         'media/other/linphonemediaengine.h',
-        # TODO(ronghuawu): Enable when SCTP is ready.
-        # 'media/sctp/sctpdataengine.cc',
-        # 'media/sctp/sctpdataengine.h',
-        'media/sctp/sctputils.cc',
-        'media/sctp/sctputils.h',
+        'media/sctp/sctpdataengine.cc',
+        'media/sctp/sctpdataengine.h',
         'media/webrtc/webrtccommon.h',
         'media/webrtc/webrtcexport.h',
+        'media/webrtc/webrtcmediaengine.cc',
         'media/webrtc/webrtcmediaengine.h',
         'media/webrtc/webrtcpassthroughrender.cc',
         'media/webrtc/webrtcpassthroughrender.h',
@@ -858,6 +918,8 @@
         'media/webrtc/webrtcvideoencoderfactory.h',
         'media/webrtc/webrtcvideoengine.cc',
         'media/webrtc/webrtcvideoengine.h',
+        'media/webrtc/webrtcvideoengine2.cc',
+        'media/webrtc/webrtcvideoengine2.h',
         'media/webrtc/webrtcvideoframe.cc',
         'media/webrtc/webrtcvideoframe.h',
         'media/webrtc/webrtcvie.h',
@@ -952,13 +1014,19 @@
         }],
         ['OS=="ios"', {
           'sources': [
-            'media/devices/iosdeviceinfo.cc',
             'media/devices/mobiledevicemanager.cc',
           ],
           'include_dirs': [
             # TODO(sjlee) Remove when vp8 is building for iOS.  vp8 pulls in
             # libjpeg which pulls in libyuv which currently disabled.
             '../third_party/libyuv/include',
+          ],
+          'dependencies!': [
+            '<(DEPTH)/third_party/usrsctp/usrsctp.gyp:usrsctplib',
+          ],
+          'sources!': [
+            'media/sctp/sctpdataengine.cc',
+            'media/sctp/sctpdataengine.h',
           ],
         }],
         ['OS=="android"', {
@@ -984,10 +1052,6 @@
           '<(DEPTH)/testing/gtest/include',
         ],
       },
-      'defines': [
-        # TODO(ronghuawu): enable SCTP when it's ready.
-        # 'HAVE_SCTP',
-      ],
       'sources': [
         'p2p/base/asyncstuntcpsocket.cc',
         'p2p/base/asyncstuntcpsocket.h',
@@ -1081,6 +1145,8 @@
         'session/tunnel/securetunnelsessionclient.h',
         'session/media/audiomonitor.cc',
         'session/media/audiomonitor.h',
+        'session/media/bundlefilter.cc',
+        'session/media/bundlefilter.h',
         'session/media/call.cc',
         'session/media/call.h',
         'session/media/channel.cc',
@@ -1106,8 +1172,6 @@
         'session/media/soundclip.h',
         'session/media/srtpfilter.cc',
         'session/media/srtpfilter.h',
-        'session/media/ssrcmuxfilter.cc',
-        'session/media/ssrcmuxfilter.h',
         'session/media/typingmonitor.cc',
         'session/media/typingmonitor.h',
         'session/media/voicechannel.h',
@@ -1163,8 +1227,12 @@
         'app/webrtc/portallocatorfactory.cc',
         'app/webrtc/portallocatorfactory.h',
         'app/webrtc/proxy.h',
+        'app/webrtc/remoteaudiosource.cc',
+        'app/webrtc/remoteaudiosource.h',
         'app/webrtc/remotevideocapturer.cc',
         'app/webrtc/remotevideocapturer.h',
+        'app/webrtc/sctputils.cc',
+        'app/webrtc/sctputils.h',
         'app/webrtc/statscollector.cc',
         'app/webrtc/statscollector.h',
         'app/webrtc/statstypes.h',

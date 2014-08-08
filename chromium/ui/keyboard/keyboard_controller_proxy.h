@@ -7,6 +7,7 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "content/public/common/media_stream_request.h"
+#include "ui/aura/window_observer.h"
 #include "ui/base/ime/text_input_type.h"
 #include "ui/keyboard/keyboard_export.h"
 
@@ -24,13 +25,30 @@ class Rect;
 namespace ui {
 class InputMethod;
 }
+namespace wm {
+class Shadow;
+}
 
 namespace keyboard {
 
 // A proxy used by the KeyboardController to get access to the virtual
 // keyboard window.
-class KEYBOARD_EXPORT KeyboardControllerProxy {
+class KEYBOARD_EXPORT KeyboardControllerProxy : public aura::WindowObserver {
  public:
+  class TestApi {
+   public:
+    explicit TestApi(KeyboardControllerProxy* proxy) : proxy_(proxy) {}
+
+    const content::WebContents* keyboard_contents() {
+      return proxy_->keyboard_contents_.get();
+    }
+
+   private:
+    KeyboardControllerProxy* proxy_;
+
+    DISALLOW_COPY_AND_ASSIGN(TestApi);
+  };
+
   KeyboardControllerProxy();
   virtual ~KeyboardControllerProxy();
 
@@ -38,17 +56,9 @@ class KEYBOARD_EXPORT KeyboardControllerProxy {
   // with the proxy.
   virtual aura::Window* GetKeyboardWindow();
 
-  // Sets the override content url.
-  void SetOverrideContentUrl(const GURL& url);
-
-  // Whether the keyboard window is resizing from its web contents.
-  bool resizing_from_contents() const { return resizing_from_contents_; }
-
-  // Sets the flag of whether the keyboard window is resizing from
-  // its web contents.
-  void set_resizing_from_contents(bool resizing) {
-    resizing_from_contents_ = resizing;
-  }
+  // Whether the keyboard window is created. The keyboard window is tied to a
+  // WebContent so we can just check if the WebContent is created or not.
+  virtual bool HasKeyboardWindow() const;
 
   // Gets the InputMethod that will provide notifications about changes in the
   // text input context.
@@ -69,10 +79,27 @@ class KEYBOARD_EXPORT KeyboardControllerProxy {
   // necesasry animation, or delay the visibility change as it desires.
   virtual void HideKeyboardContainer(aura::Window* container);
 
-  // Updates the type of the focused text input box. The default implementation
-  // calls OnTextInputBoxFocused javascript function through webui to update the
-  // type the of focused input box.
+  // Updates the type of the focused text input box.
   virtual void SetUpdateInputType(ui::TextInputType type);
+
+  // Ensures caret in current work area (not occluded by virtual keyboard
+  // window).
+  virtual void EnsureCaretInWorkArea();
+
+  // Loads system virtual keyboard. Noop if the current virtual keyboard is
+  // system virtual keyboard.
+  virtual void LoadSystemKeyboard();
+
+  // Reloads virtual keyboard URL if the current keyboard's web content URL is
+  // different. The URL can be different if user switch from password field to
+  // any other type input field.
+  // At password field, the system virtual keyboard is forced to load even if
+  // the current IME provides a customized virtual keyboard. This is needed to
+  // prevent IME virtual keyboard logging user's password. Once user switch to
+  // other input fields, the virtual keyboard should switch back to the IME
+  // provided keyboard, or keep using the system virtual keyboard if IME doesn't
+  // provide one.
+  virtual void ReloadKeyboardIfNeeded();
 
  protected:
   // Gets the BrowserContext to use for creating the WebContents hosting the
@@ -85,20 +112,25 @@ class KEYBOARD_EXPORT KeyboardControllerProxy {
   // loading the keyboard page.
   virtual void SetupWebContents(content::WebContents* contents);
 
- private:
-  // Reloads the web contents to the valid url from GetValidUrl().
-  void ReloadContents();
+  // aura::WindowObserver overrides:
+  virtual void OnWindowBoundsChanged(aura::Window* window,
+                                     const gfx::Rect& old_bounds,
+                                     const gfx::Rect& new_bounds) OVERRIDE;
+  virtual void OnWindowDestroyed(aura::Window* window) OVERRIDE;
 
-  // Gets the valid url from default url or override url.
-  const GURL& GetValidUrl();
+ private:
+  friend class TestApi;
+
+  // Loads the web contents for the given |url|.
+  void LoadContents(const GURL& url);
+
+  // Gets the virtual keyboard URL (either the default URL or IME override URL).
+  const GURL& GetVirtualKeyboardUrl();
 
   const GURL default_url_;
-  GURL override_url_;
 
   scoped_ptr<content::WebContents> keyboard_contents_;
-
-  // Whether the current keyboard window is resizing from its web content.
-  bool resizing_from_contents_;
+  scoped_ptr<wm::Shadow> shadow_;
 
   DISALLOW_COPY_AND_ASSIGN(KeyboardControllerProxy);
 };

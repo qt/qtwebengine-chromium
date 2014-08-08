@@ -153,48 +153,51 @@ static void gamma(unsigned char* values, const ComponentTransferFunction& transf
 void FEComponentTransfer::applySoftware()
 {
     FilterEffect* in = inputEffect(0);
-
-    Uint8ClampedArray* pixelArray = createUnmultipliedImageResult();
-    if (!pixelArray)
-        return;
-
-    unsigned char rValues[256], gValues[256], bValues[256], aValues[256];
-    getValues(rValues, gValues, bValues, aValues);
-    unsigned char* tables[] = { rValues, gValues, bValues, aValues };
-
-    IntRect drawingRect = requestedRegionOfInputImageData(in->absolutePaintRect());
-    in->copyUnmultipliedImage(pixelArray, drawingRect);
-
-    unsigned pixelArrayLength = pixelArray->length();
-    for (unsigned pixelOffset = 0; pixelOffset < pixelArrayLength; pixelOffset += 4) {
-        for (unsigned channel = 0; channel < 4; ++channel) {
-            unsigned char c = pixelArray->item(pixelOffset + channel);
-            pixelArray->set(pixelOffset + channel, tables[channel][c]);
-        }
-    }
-}
-
-bool FEComponentTransfer::applySkia()
-{
-    FilterEffect* in = inputEffect(0);
     ImageBuffer* resultImage = createImageBufferResult();
     if (!resultImage)
-        return false;
+        return;
 
     RefPtr<Image> image = in->asImageBuffer()->copyImage(DontCopyBackingStore);
     RefPtr<NativeImageSkia> nativeImage = image->nativeImageForCurrentFrame();
     if (!nativeImage)
-        return false;
+        return;
 
     unsigned char rValues[256], gValues[256], bValues[256], aValues[256];
     getValues(rValues, gValues, bValues, aValues);
 
+    IntRect destRect = drawingRegionOfInputImage(in->absolutePaintRect());
     SkPaint paint;
     paint.setColorFilter(SkTableColorFilter::CreateARGB(aValues, rValues, gValues, bValues))->unref();
     paint.setXfermodeMode(SkXfermode::kSrc_Mode);
-    resultImage->context()->drawBitmap(nativeImage->bitmap(), 0, 0, &paint);
+    resultImage->context()->drawBitmap(nativeImage->bitmap(), destRect.x(), destRect.y(), &paint);
 
-    return true;
+    if (affectsTransparentPixels()) {
+        IntRect fullRect = IntRect(IntPoint(), absolutePaintRect().size());
+        resultImage->context()->clipOut(destRect);
+        resultImage->context()->fillRect(fullRect, Color(rValues[0], gValues[0], bValues[0], aValues[0]));
+    }
+}
+
+bool FEComponentTransfer::affectsTransparentPixels()
+{
+    double intercept = 0;
+    switch (m_alphaFunc.type) {
+    case FECOMPONENTTRANSFER_TYPE_UNKNOWN:
+    case FECOMPONENTTRANSFER_TYPE_IDENTITY:
+        break;
+    case FECOMPONENTTRANSFER_TYPE_TABLE:
+    case FECOMPONENTTRANSFER_TYPE_DISCRETE:
+        if (m_alphaFunc.tableValues.size() > 0)
+            intercept = m_alphaFunc.tableValues[0];
+        break;
+    case FECOMPONENTTRANSFER_TYPE_LINEAR:
+        intercept = m_alphaFunc.intercept;
+        break;
+    case FECOMPONENTTRANSFER_TYPE_GAMMA:
+        intercept = m_alphaFunc.offset;
+        break;
+    }
+    return 255 * intercept >= 1;
 }
 
 PassRefPtr<SkImageFilter> FEComponentTransfer::createImageFilter(SkiaImageFilterBuilder* builder)

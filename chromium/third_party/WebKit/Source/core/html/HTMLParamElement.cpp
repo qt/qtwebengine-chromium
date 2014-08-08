@@ -23,7 +23,7 @@
 #include "config.h"
 #include "core/html/HTMLParamElement.h"
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 #include "core/dom/Attribute.h"
 #include "core/dom/Document.h"
 
@@ -37,10 +37,7 @@ inline HTMLParamElement::HTMLParamElement(Document& document)
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLParamElement> HTMLParamElement::create(Document& document)
-{
-    return adoptRef(new HTMLParamElement(document));
-}
+DEFINE_NODE_FACTORY(HTMLParamElement)
 
 const AtomicString& HTMLParamElement::name() const
 {
@@ -64,16 +61,6 @@ bool HTMLParamElement::isURLAttribute(const Attribute& attribute) const
     if (attribute.name() == valueAttr && isURLParameter(name()))
         return true;
     return HTMLElement::isURLAttribute(attribute);
-}
-
-void HTMLParamElement::addSubresourceAttributeURLs(ListHashSet<KURL>& urls) const
-{
-    HTMLElement::addSubresourceAttributeURLs(urls);
-
-    if (!isURLParameter(name()))
-        return;
-
-    addSubresourceURL(urls, document().completeURL(value()));
 }
 
 }

@@ -9,6 +9,7 @@
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "cc/output/compositor_frame.h"
 #include "cc/output/managed_memory_policy.h"
 #include "cc/output/output_surface.h"
 #include "content/public/browser/android/synchronous_compositor.h"
@@ -32,8 +33,6 @@ class SynchronousCompositorOutputSurfaceDelegate {
   virtual void DidDestroySynchronousOutputSurface(
       SynchronousCompositorOutputSurface* output_surface) = 0;
   virtual void SetContinuousInvalidate(bool enable) = 0;
-  virtual void UpdateFrameMetaData(
-      const cc::CompositorFrameMetadata& frame_metadata) = 0;
   virtual void DidActivatePendingTree() = 0;
 
  protected:
@@ -58,29 +57,25 @@ class SynchronousCompositorOutputSurface
   // OutputSurface.
   virtual bool ForcedDrawToSoftwareDevice() const OVERRIDE;
   virtual bool BindToClient(cc::OutputSurfaceClient* surface_client) OVERRIDE;
-  virtual void Reshape(gfx::Size size, float scale_factor) OVERRIDE;
-  virtual void SetNeedsBeginImplFrame(bool enable) OVERRIDE;
+  virtual void Reshape(const gfx::Size& size, float scale_factor) OVERRIDE;
+  virtual void SetNeedsBeginFrame(bool enable) OVERRIDE;
   virtual void SwapBuffers(cc::CompositorFrame* frame) OVERRIDE;
 
   // Partial SynchronousCompositor API implementation.
   bool InitializeHwDraw(
-      scoped_refptr<gfx::GLSurface> surface,
-      scoped_refptr<cc::ContextProvider> offscreen_context_provider);
+      scoped_refptr<cc::ContextProvider> onscreen_context_provider);
   void ReleaseHwDraw();
-  bool DemandDrawHw(gfx::Size surface_size,
-                    const gfx::Transform& transform,
-                    gfx::Rect viewport,
-                    gfx::Rect clip,
-                    bool stencil_enabled);
-  bool DemandDrawSw(SkCanvas* canvas);
+  scoped_ptr<cc::CompositorFrame> DemandDrawHw(gfx::Size surface_size,
+                                               const gfx::Transform& transform,
+                                               gfx::Rect viewport,
+                                               gfx::Rect clip);
+  void ReturnResources(const cc::CompositorFrameAck& frame_ack);
+  scoped_ptr<cc::CompositorFrame> DemandDrawSw(SkCanvas* canvas);
   void SetMemoryPolicy(const SynchronousCompositorMemoryPolicy& policy);
 
  private:
   class SoftwareDevice;
   friend class SoftwareDevice;
-
-  // Private OutputSurface overrides.
-  virtual void PostCheckForRetroactiveBeginImplFrame() OVERRIDE;
 
   void InvokeComposite(const gfx::Transform& transform,
                        gfx::Rect viewport,
@@ -90,9 +85,8 @@ class SynchronousCompositorOutputSurface
   SynchronousCompositorOutputSurfaceDelegate* GetDelegate();
 
   int routing_id_;
-  bool needs_begin_impl_frame_;
+  bool needs_begin_frame_;
   bool invoking_composite_;
-  bool did_swap_buffer_;
 
   gfx::Transform cached_hw_transform_;
   gfx::Rect cached_hw_viewport_;
@@ -104,6 +98,7 @@ class SynchronousCompositorOutputSurface
   cc::ManagedMemoryPolicy memory_policy_;
 
   cc::OutputSurfaceClient* output_surface_client_;
+  scoped_ptr<cc::CompositorFrame> frame_holder_;
 
   DISALLOW_COPY_AND_ASSIGN(SynchronousCompositorOutputSurface);
 };

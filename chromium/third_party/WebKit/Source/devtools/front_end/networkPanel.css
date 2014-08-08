@@ -47,7 +47,7 @@
     top: 4px;
 }
 
-.network.panel.viewing-resource #network-close-button  {
+.network.panel.viewing-resource #network-close-button {
     display: block;
 }
 
@@ -85,12 +85,7 @@
 
 .network-item-view {
     display: none;
-    position: absolute;
     background: white;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
 }
 
 .network-item-view.visible {
@@ -130,12 +125,10 @@
     white-space: nowrap;
 }
 
-.resource-headers-view .outline-disclosure li.expanded .caution {
-    color: rgb(255, 128, 0);
-}
-
-.resource-headers-view .outline-disclosure li:not(.expanded) .caution {
-    display: none;
+.resource-headers-view .outline-disclosure .caution {
+    margin-left: 4px;
+    display: inline-block;
+    font-weight: bold;
 }
 
 .resource-headers-view .outline-disclosure li.expanded .header-count {
@@ -173,7 +166,7 @@
 
 .resource-headers-view .outline-disclosure .header-value {
     display: inline;
-    margin-right: 100px;
+    margin-right: 1em;
     white-space: pre-wrap;
     word-break: break-all;
     margin-top: 1px;
@@ -192,10 +185,11 @@
 }
 
 .resource-cookies-view.visible {
-    display: block;
+    display: flex;
 }
 
 .resource-cookies-view .data-grid {
+    flex: auto;
     height: 100%;
 }
 
@@ -227,33 +221,33 @@
 
 .resource-timing-view .network-timing-bar.blocking,
 .resource-timing-view .network-timing-bar.proxy {
-    background-image: -webkit-gradient(linear, left top, left bottom, from(rgb(242, 242, 194)), to(rgb(204, 204, 102)));
+    background-image: linear-gradient(to bottom, rgb(242, 242, 194), rgb(204, 204, 102));
     border-left: 1px solid rgb(204, 204, 102);
 }
 
 .resource-timing-view .network-timing-bar.dns {
-    background-image: -webkit-gradient(linear, left top, left bottom, from(rgb(194, 242, 194)), to(rgb(102, 204, 102)));
+    background-image: linear-gradient(to bottom, rgb(194, 242, 194), rgb(102, 204, 102));
     border-left: 1px solid rgb(102, 204, 102);
 }
 
 .resource-timing-view .network-timing-bar.connecting,
 .resource-timing-view .network-timing-bar.ssl {
-    background-image: -webkit-gradient(linear, left top, left bottom, from(rgb(194, 242, 242)), to(rgb(102, 204, 204)));
+    background-image: linear-gradient(to bottom, rgb(194, 242, 242), rgb(102, 204, 204));
     border-left: 1px solid rgb(102, 204, 204);
 }
 
 .resource-timing-view .network-timing-bar.sending {
-    background-image: -webkit-gradient(linear, left top, left bottom, from(rgb(194, 194, 242)), to(rgb(102, 102, 204)));
+    background-image: linear-gradient(to bottom, rgb(194, 194, 242), rgb(102, 102, 204));
     border-left: 1px solid rgb(102, 102, 204);
 }
 
 .resource-timing-view .network-timing-bar.waiting {
-    background-image: -webkit-gradient(linear, left top, left bottom, from(rgb(242, 194, 242)), to(rgb(204, 102, 204)));
+    background-image: linear-gradient(to bottom, rgb(242, 194, 242), rgb(204, 102, 204));
     border-left: 1px solid rgb(204, 102, 204);
 }
 
 .resource-timing-view .network-timing-bar.receiving {
-    background-image: -webkit-gradient(linear, left top, left bottom, from(rgb(242, 194, 194)), to(rgb(204, 102, 102)));
+    background-image: linear-gradient(to bottom, rgb(242, 194, 194), rgb(204, 102, 102));
     border-left: 1px solid rgb(204, 102, 102);
 }
 
@@ -283,12 +277,6 @@
     padding-top: 3px;
     padding-bottom: 3px;
     border-top: 1px solid rgb(240, 240, 240);
-}
-
-.resource-websocket .data-column div {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
 }
 
 .resource-websocket-row-outcoming {
@@ -328,4 +316,5 @@
 
 .network-filters-header {
     flex: 0 0 23px;
+    padding-right: 4px;
 }

@@ -23,21 +23,77 @@
 
 #include "bindings/v8/ExceptionMessages.h"
 #include "bindings/v8/ExceptionState.h"
+#include "core/accessibility/AXObjectCache.h"
 #include "core/dom/ExceptionCode.h"
+#include "core/events/Event.h"
+#include "core/frame/FrameView.h"
+#include "core/frame/LocalFrame.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderClient.h"
-#include "core/frame/Frame.h"
-#include "core/frame/FrameView.h"
+#include "core/rendering/RenderLayer.h"
 #include "core/rendering/RenderPart.h"
-#include "core/svg/SVGDocument.h"
+#include "core/rendering/compositing/RenderLayerCompositor.h"
 #include "platform/weborigin/SecurityOrigin.h"
 #include "platform/weborigin/SecurityPolicy.h"
 
 namespace WebCore {
 
+typedef HashMap<RefPtr<Widget>, FrameView*> WidgetToParentMap;
+static WidgetToParentMap& widgetNewParentMap()
+{
+    DEFINE_STATIC_LOCAL(WidgetToParentMap, map, ());
+    return map;
+}
+
+static unsigned s_updateSuspendCount = 0;
+
+HTMLFrameOwnerElement::UpdateSuspendScope::UpdateSuspendScope()
+{
+    ++s_updateSuspendCount;
+}
+
+void HTMLFrameOwnerElement::UpdateSuspendScope::performDeferredWidgetTreeOperations()
+{
+    WidgetToParentMap map;
+    widgetNewParentMap().swap(map);
+    WidgetToParentMap::iterator end = map.end();
+    for (WidgetToParentMap::iterator it = map.begin(); it != end; ++it) {
+        Widget* child = it->key.get();
+        ScrollView* currentParent = toScrollView(child->parent());
+        FrameView* newParent = it->value;
+        if (newParent != currentParent) {
+            if (currentParent)
+                currentParent->removeChild(child);
+            if (newParent)
+                newParent->addChild(child);
+        }
+    }
+}
+
+HTMLFrameOwnerElement::UpdateSuspendScope::~UpdateSuspendScope()
+{
+    ASSERT(s_updateSuspendCount > 0);
+    if (s_updateSuspendCount == 1)
+        performDeferredWidgetTreeOperations();
+    --s_updateSuspendCount;
+}
+
+static void moveWidgetToParentSoon(Widget* child, FrameView* parent)
+{
+    if (!s_updateSuspendCount) {
+        if (parent)
+            parent->addChild(child);
+        else if (toScrollView(child->parent()))
+            toScrollView(child->parent())->removeChild(child);
+        return;
+    }
+    widgetNewParentMap().set(child, parent);
+}
+
 HTMLFrameOwnerElement::HTMLFrameOwnerElement(const QualifiedName& tagName, Document& document)
     : HTMLElement(tagName, document)
     , m_contentFrame(0)
+    , m_widget(nullptr)
     , m_sandboxFlags(SandboxNone)
 {
 }
@@ -54,7 +110,7 @@ RenderPart* HTMLFrameOwnerElement::renderPart() const
 void HTMLFrameOwnerElement::setContentFrame(Frame& frame)
 {
     // Make sure we will not end up with two frames referencing the same owner element.
-    ASSERT(!m_contentFrame || m_contentFrame->ownerElement() != this);
+    ASSERT(!m_contentFrame || m_contentFrame->owner() != this);
     // Disconnected frames should not be allowed to load.
     ASSERT(inDocument());
     m_contentFrame = &frame;
@@ -82,7 +138,8 @@ void HTMLFrameOwnerElement::disconnectContentFrame()
     // see if this behavior is really needed as Gecko does not allow this.
     if (Frame* frame = contentFrame()) {
         RefPtr<Frame> protect(frame);
-        frame->loader().frameDetached();
+        if (frame->isLocalFrame())
+            toLocalFrame(frame)->loader().frameDetached();
         frame->disconnectOwnerElement();
     }
 }
@@ -95,10 +152,10 @@ HTMLFrameOwnerElement::~HTMLFrameOwnerElement()
 
 Document* HTMLFrameOwnerElement::contentDocument() const
 {
-    return m_contentFrame ? m_contentFrame->document() : 0;
+    return (m_contentFrame && m_contentFrame->isLocalFrame()) ? toLocalFrame(m_contentFrame)->document() : 0;
 }
 
-DOMWindow* HTMLFrameOwnerElement::contentWindow() const
+LocalDOMWindow* HTMLFrameOwnerElement::contentWindow() const
 {
     return m_contentFrame ? m_contentFrame->domWindow() : 0;
 }
@@ -113,19 +170,59 @@ bool HTMLFrameOwnerElement::isKeyboardFocusable() const
     return m_contentFrame && HTMLElement::isKeyboardFocusable();
 }
 
-SVGDocument* HTMLFrameOwnerElement::getSVGDocument(ExceptionState& exceptionState) const
+void HTMLFrameOwnerElement::dispatchLoad()
+{
+    dispatchEvent(Event::create(EventTypeNames::load));
+}
+
+Document* HTMLFrameOwnerElement::getSVGDocument(ExceptionState& exceptionState) const
 {
     Document* doc = contentDocument();
     if (doc && doc->isSVGDocument())
-        return toSVGDocument(doc);
+        return doc;
     return 0;
+}
+
+void HTMLFrameOwnerElement::setWidget(PassRefPtr<Widget> widget)
+{
+    if (widget == m_widget)
+        return;
+
+    if (m_widget) {
+        if (m_widget->parent())
+            moveWidgetToParentSoon(m_widget.get(), 0);
+        m_widget = nullptr;
+    }
+
+    m_widget = widget;
+
+    RenderWidget* renderWidget = toRenderWidget(renderer());
+    if (!renderWidget)
+        return;
+
+    if (m_widget) {
+        renderWidget->updateOnWidgetChange();
+
+        ASSERT(document().view() == renderWidget->frameView());
+        ASSERT(renderWidget->frameView());
+        moveWidgetToParentSoon(m_widget.get(), renderWidget->frameView());
+    }
+
+    if (AXObjectCache* cache = document().existingAXObjectCache())
+        cache->childrenChanged(renderWidget);
+}
+
+Widget* HTMLFrameOwnerElement::ownedWidget() const
+{
+    return m_widget.get();
 }
 
 bool HTMLFrameOwnerElement::loadOrRedirectSubframe(const KURL& url, const AtomicString& frameName, bool lockBackForwardList)
 {
-    RefPtr<Frame> parentFrame = document().frame();
-    if (contentFrame()) {
-        contentFrame()->navigationScheduler().scheduleLocationChange(&document(), url.string(), document().outgoingReferrer(), lockBackForwardList);
+    RefPtr<LocalFrame> parentFrame = document().frame();
+    // FIXME(kenrb): The necessary semantics for RemoteFrames have not been worked out yet, but this will likely need some logic to handle them.
+    if (contentFrame() && contentFrame()->isLocalFrame()) {
+        toLocalFrame(contentFrame())->navigationScheduler().scheduleLocationChange(&document(), url.string(), Referrer(document().outgoingReferrer(), document().referrerPolicy()), lockBackForwardList);
         return true;
     }
 
@@ -138,7 +235,7 @@ bool HTMLFrameOwnerElement::loadOrRedirectSubframe(const KURL& url, const Atomic
         return false;
 
     String referrer = SecurityPolicy::generateReferrerHeader(document().referrerPolicy(), url, document().outgoingReferrer());
-    RefPtr<Frame> childFrame = parentFrame->loader().client()->createFrame(url, frameName, referrer, this);
+    RefPtr<LocalFrame> childFrame = parentFrame->loader().client()->createFrame(url, frameName, Referrer(referrer, document().referrerPolicy()), this);
 
     if (!childFrame)  {
         parentFrame->loader().checkCompleted();
@@ -153,10 +250,12 @@ bool HTMLFrameOwnerElement::loadOrRedirectSubframe(const KURL& url, const Atomic
     // FIXME: Can we remove this entirely? m_isComplete normally gets set to false when a load is committed.
     childFrame->loader().started();
 
-    RenderObject* renderObject = renderer();
     FrameView* view = childFrame->view();
+    RenderObject* renderObject = renderer();
+    // We need to test the existence of renderObject and its widget-ness, as
+    // failing to do so causes problems.
     if (renderObject && renderObject->isWidget() && view)
-        toRenderWidget(renderObject)->setWidget(view);
+        setWidget(view);
 
     // Some loads are performed synchronously (e.g., about:blank and loads
     // cancelled by returning a null ResourceRequest from requestFromDelegate).
@@ -164,7 +263,7 @@ bool HTMLFrameOwnerElement::loadOrRedirectSubframe(const KURL& url, const Atomic
     // before we could connect the signals, so make sure to send the
     // completed() signal for the child by hand and mark the load as being
     // complete.
-    // FIXME: In this case the Frame will have finished loading before
+    // FIXME: In this case the LocalFrame will have finished loading before
     // it's being added to the child list. It would be a good idea to
     // create the child first, then invoke the loader separately.
     if (childFrame->loader().state() == FrameStateComplete && !childFrame->loader().policyDocumentLoader())

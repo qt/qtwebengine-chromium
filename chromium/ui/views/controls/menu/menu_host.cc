@@ -18,10 +18,6 @@
 #include "ui/views/widget/native_widget_private.h"
 #include "ui/views/widget/widget.h"
 
-#if defined(USE_AURA)
-#include "ui/views/corewm/shadow_types.h"
-#endif
-
 namespace views {
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -49,7 +45,8 @@ void MenuHost::InitMenuHost(Widget* parent,
   bool rounded_border = menu_controller && menu_config.corner_radius > 0;
   bool bubble_border = submenu_->GetScrollViewContainer() &&
                        submenu_->GetScrollViewContainer()->HasBubbleBorder();
-  params.has_dropshadow = !bubble_border;
+  params.shadow_type = bubble_border ? Widget::InitParams::SHADOW_TYPE_NONE
+                                     : Widget::InitParams::SHADOW_TYPE_DROP;
   params.opacity = (bubble_border || rounded_border) ?
       Widget::InitParams::TRANSLUCENT_WINDOW :
       Widget::InitParams::OPAQUE_WINDOW;
@@ -57,14 +54,7 @@ void MenuHost::InitMenuHost(Widget* parent,
   params.bounds = bounds;
   Init(params);
 
-#if defined(USE_AURA)
-  if (bubble_border)
-    SetShadowType(GetNativeView(), views::corewm::SHADOW_TYPE_NONE);
-#endif
-
   SetContentsView(contents_view);
-  if (bubble_border || rounded_border)
-    SetOpacity(0);
   ShowMenuHost(do_capture);
 }
 
@@ -76,13 +66,11 @@ void MenuHost::ShowMenuHost(bool do_capture) {
   // Doing a capture may make us get capture lost. Ignore it while we're in the
   // process of showing.
   base::AutoReset<bool> reseter(&ignore_capture_lost_, true);
-  Show();
+  ShowInactive();
   if (do_capture) {
-#if defined(USE_AURA)
     // Cancel existing touches, so we don't miss some touch release/cancel
     // events due to the menu taking capture.
-    ui::GestureRecognizer::Get()->TransferEventsTo(GetNativeWindow(), NULL);
-#endif  // USE_AURA
+    ui::GestureRecognizer::Get()->TransferEventsTo(NULL, NULL);
     native_widget_private()->SetCapture();
   }
 }

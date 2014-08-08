@@ -13,9 +13,7 @@
 #include "base/posix/eintr_wrapper.h"
 #include "base/threading/thread_restrictions.h"
 #include "content/common/gpu/client/command_buffer_proxy_impl.h"
-#include "content/common/gpu/client/gpu_video_encode_accelerator_host.h"
 #include "content/common/gpu/gpu_messages.h"
-#include "gpu/command_buffer/common/mailbox.h"
 #include "ipc/ipc_sync_message_filter.h"
 #include "url/gurl.h"
 
@@ -35,13 +33,12 @@ GpuListenerInfo::~GpuListenerInfo() {}
 // static
 scoped_refptr<GpuChannelHost> GpuChannelHost::Create(
     GpuChannelHostFactory* factory,
-    int gpu_host_id,
     const gpu::GPUInfo& gpu_info,
-    const IPC::ChannelHandle& channel_handle) {
+    const IPC::ChannelHandle& channel_handle,
+    base::WaitableEvent* shutdown_event) {
   DCHECK(factory->IsMainThread());
-  scoped_refptr<GpuChannelHost> host = new GpuChannelHost(
-      factory, gpu_host_id, gpu_info);
-  host->Connect(channel_handle);
+  scoped_refptr<GpuChannelHost> host = new GpuChannelHost(factory, gpu_info);
+  host->Connect(channel_handle, shutdown_event);
   return host;
 }
 
@@ -53,6 +50,9 @@ bool GpuChannelHost::IsValidGpuMemoryBuffer(
 #if defined(OS_MACOSX)
     case gfx::IO_SURFACE_BUFFER:
 #endif
+#if defined(OS_ANDROID)
+    case gfx::SURFACE_TEXTURE_BUFFER:
+#endif
       return true;
     default:
       return false;
@@ -60,28 +60,27 @@ bool GpuChannelHost::IsValidGpuMemoryBuffer(
 }
 
 GpuChannelHost::GpuChannelHost(GpuChannelHostFactory* factory,
-                               int gpu_host_id,
                                const gpu::GPUInfo& gpu_info)
     : factory_(factory),
-      gpu_host_id_(gpu_host_id),
       gpu_info_(gpu_info) {
   next_transfer_buffer_id_.GetNext();
   next_gpu_memory_buffer_id_.GetNext();
+  next_route_id_.GetNext();
 }
 
-void GpuChannelHost::Connect(const IPC::ChannelHandle& channel_handle) {
+void GpuChannelHost::Connect(const IPC::ChannelHandle& channel_handle,
+                             base::WaitableEvent* shutdown_event) {
   // Open a channel to the GPU process. We pass NULL as the main listener here
   // since we need to filter everything to route it to the right thread.
   scoped_refptr<base::MessageLoopProxy> io_loop = factory_->GetIOLoopProxy();
-  channel_.reset(new IPC::SyncChannel(channel_handle,
+  channel_ = IPC::SyncChannel::Create(channel_handle,
                                       IPC::Channel::MODE_CLIENT,
                                       NULL,
                                       io_loop.get(),
                                       true,
-                                      factory_->GetShutDownEvent()));
+                                      shutdown_event);
 
-  sync_filter_ = new IPC::SyncMessageFilter(
-      factory_->GetShutDownEvent());
+  sync_filter_ = new IPC::SyncMessageFilter(shutdown_event);
 
   channel_->AddFilter(sync_filter_.get());
 
@@ -111,9 +110,15 @@ bool GpuChannelHost::Send(IPC::Message* msg) {
   if (factory_->IsMainThread()) {
     // http://crbug.com/125264
     base::ThreadRestrictions::ScopedAllowWait allow_wait;
-    return channel_->Send(message.release());
+    bool result = channel_->Send(message.release());
+    if (!result)
+      DVLOG(1) << "GpuChannelHost::Send failed: Channel::Send failed";
+    return result;
   } else if (base::MessageLoop::current()) {
-    return sync_filter_->Send(message.release());
+    bool result = sync_filter_->Send(message.release());
+    if (!result)
+      DVLOG(1) << "GpuChannelHost::Send failed: SyncMessageFilter::Send failed";
+    return result;
   }
 
   return false;
@@ -136,9 +141,29 @@ CommandBufferProxyImpl* GpuChannelHost::CreateViewCommandBuffer(
   init_params.attribs = attribs;
   init_params.active_url = active_url;
   init_params.gpu_preference = gpu_preference;
-  int32 route_id = factory_->CreateViewCommandBuffer(surface_id, init_params);
-  if (route_id == MSG_ROUTING_NONE)
+  int32 route_id = GenerateRouteID();
+  CreateCommandBufferResult result = factory_->CreateViewCommandBuffer(
+      surface_id, init_params, route_id);
+  if (result != CREATE_COMMAND_BUFFER_SUCCEEDED) {
+    LOG(ERROR) << "GpuChannelHost::CreateViewCommandBuffer failed.";
+
+    if (result == CREATE_COMMAND_BUFFER_FAILED_AND_CHANNEL_LOST) {
+      // The GPU channel needs to be considered lost. The caller will
+      // then set up a new connection, and the GPU channel and any
+      // view command buffers will all be associated with the same GPU
+      // process.
+      DCHECK(MessageLoopProxy::current().get());
+
+      scoped_refptr<base::MessageLoopProxy> io_loop =
+          factory_->GetIOLoopProxy();
+      io_loop->PostTask(
+          FROM_HERE,
+          base::Bind(&GpuChannelHost::MessageFilter::OnChannelError,
+                     channel_filter_.get()));
+    }
+
     return NULL;
+  }
 
   CommandBufferProxyImpl* command_buffer =
       new CommandBufferProxyImpl(this, route_id);
@@ -163,15 +188,21 @@ CommandBufferProxyImpl* GpuChannelHost::CreateOffscreenCommandBuffer(
   init_params.attribs = attribs;
   init_params.active_url = active_url;
   init_params.gpu_preference = gpu_preference;
-  int32 route_id;
+  int32 route_id = GenerateRouteID();
+  bool succeeded = false;
   if (!Send(new GpuChannelMsg_CreateOffscreenCommandBuffer(size,
                                                            init_params,
-                                                           &route_id))) {
+                                                           route_id,
+                                                           &succeeded))) {
+    LOG(ERROR) << "Failed to send GpuChannelMsg_CreateOffscreenCommandBuffer.";
     return NULL;
   }
 
-  if (route_id == MSG_ROUTING_NONE)
+  if (!succeeded) {
+    LOG(ERROR)
+        << "GpuChannelMsg_CreateOffscreenCommandBuffer returned failure.";
     return NULL;
+  }
 
   CommandBufferProxyImpl* command_buffer =
       new CommandBufferProxyImpl(this, route_id);
@@ -183,29 +214,21 @@ CommandBufferProxyImpl* GpuChannelHost::CreateOffscreenCommandBuffer(
 }
 
 scoped_ptr<media::VideoDecodeAccelerator> GpuChannelHost::CreateVideoDecoder(
-    int command_buffer_route_id,
-    media::VideoCodecProfile profile,
-    media::VideoDecodeAccelerator::Client* client) {
+    int command_buffer_route_id) {
+  TRACE_EVENT0("gpu", "GpuChannelHost::CreateVideoDecoder");
   AutoLock lock(context_lock_);
   ProxyMap::iterator it = proxies_.find(command_buffer_route_id);
   DCHECK(it != proxies_.end());
-  CommandBufferProxyImpl* proxy = it->second;
-  return proxy->CreateVideoDecoder(profile, client).Pass();
+  return it->second->CreateVideoDecoder();
 }
 
 scoped_ptr<media::VideoEncodeAccelerator> GpuChannelHost::CreateVideoEncoder(
-    media::VideoEncodeAccelerator::Client* client) {
+    int command_buffer_route_id) {
   TRACE_EVENT0("gpu", "GpuChannelHost::CreateVideoEncoder");
-
-  scoped_ptr<media::VideoEncodeAccelerator> vea;
-  int32 route_id = MSG_ROUTING_NONE;
-  if (!Send(new GpuChannelMsg_CreateVideoEncoder(&route_id)))
-    return vea.Pass();
-  if (route_id == MSG_ROUTING_NONE)
-    return vea.Pass();
-
-  vea.reset(new GpuVideoEncodeAcceleratorHost(client, this, route_id));
-  return vea.Pass();
+  AutoLock lock(context_lock_);
+  ProxyMap::iterator it = proxies_.find(command_buffer_route_id);
+  DCHECK(it != proxies_.end());
+  return it->second->CreateVideoEncoder();
 }
 
 void GpuChannelHost::DestroyCommandBuffer(
@@ -219,14 +242,6 @@ void GpuChannelHost::DestroyCommandBuffer(
   AutoLock lock(context_lock_);
   proxies_.erase(route_id);
   delete command_buffer;
-}
-
-bool GpuChannelHost::CollectRenderingStatsForSurface(
-    int surface_id, GpuRenderingStats* stats) {
-  TRACE_EVENT0("gpu", "GpuChannelHost::CollectRenderingStats");
-
-  return Send(new GpuChannelMsg_CollectRenderingStatsForSurface(surface_id,
-                                                                stats));
 }
 
 void GpuChannelHost::AddRoute(
@@ -256,7 +271,7 @@ base::SharedMemoryHandle GpuChannelHost::ShareToGpuProcess(
   // Windows needs to explicitly duplicate the handle out to another process.
   base::SharedMemoryHandle target_handle;
   if (!BrokerDuplicateHandle(source_handle,
-                             channel_->peer_pid(),
+                             channel_->GetPeerPID(),
                              &target_handle,
                              FILE_GENERIC_READ | FILE_GENERIC_WRITE,
                              0)) {
@@ -271,26 +286,6 @@ base::SharedMemoryHandle GpuChannelHost::ShareToGpuProcess(
 
   return base::FileDescriptor(duped_handle, true);
 #endif
-}
-
-bool GpuChannelHost::GenerateMailboxNames(unsigned num,
-                                          std::vector<gpu::Mailbox>* names) {
-  DCHECK(names->empty());
-  TRACE_EVENT0("gpu", "GenerateMailboxName");
-  size_t generate_count = channel_filter_->GetMailboxNames(num, names);
-
-  if (names->size() < num) {
-    std::vector<gpu::Mailbox> new_names;
-    if (!Send(new GpuChannelMsg_GenerateMailboxNames(num - names->size(),
-                                                     &new_names)))
-      return false;
-    names->insert(names->end(), new_names.begin(), new_names.end());
-  }
-
-  if (generate_count > 0)
-    Send(new GpuChannelMsg_GenerateMailboxNamesAsync(generate_count));
-
-  return true;
 }
 
 int32 GpuChannelHost::ReserveTransferBufferId() {
@@ -310,6 +305,10 @@ gfx::GpuMemoryBufferHandle GpuChannelHost::ShareGpuMemoryBufferToGpuProcess(
     case gfx::IO_SURFACE_BUFFER:
       return source_handle;
 #endif
+#if defined(OS_ANDROID)
+    case gfx::SURFACE_TEXTURE_BUFFER:
+      return source_handle;
+#endif
     default:
       NOTREACHED();
       return gfx::GpuMemoryBufferHandle();
@@ -320,6 +319,10 @@ int32 GpuChannelHost::ReserveGpuMemoryBufferId() {
   return next_gpu_memory_buffer_id_.GetNext();
 }
 
+int32 GpuChannelHost::GenerateRouteID() {
+  return next_route_id_.GetNext();
+}
+
 GpuChannelHost::~GpuChannelHost() {
   // channel_ must be destroyed on the main thread.
   if (!factory_->IsMainThread())
@@ -328,8 +331,7 @@ GpuChannelHost::~GpuChannelHost() {
 
 
 GpuChannelHost::MessageFilter::MessageFilter()
-    : lost_(false),
-      requested_mailboxes_(0) {
+    : lost_(false) {
 }
 
 GpuChannelHost::MessageFilter::~MessageFilter() {}
@@ -357,21 +359,17 @@ bool GpuChannelHost::MessageFilter::OnMessageReceived(
   if (message.is_reply())
     return false;
 
-  if (message.routing_id() == MSG_ROUTING_CONTROL)
-    return OnControlMessageReceived(message);
-
   ListenerMap::iterator it = listeners_.find(message.routing_id());
+  if (it == listeners_.end())
+    return false;
 
-  if (it != listeners_.end()) {
-    const GpuListenerInfo& info = it->second;
-    info.loop->PostTask(
-        FROM_HERE,
-        base::Bind(
-            base::IgnoreResult(&IPC::Listener::OnMessageReceived),
-            info.listener,
-            message));
-  }
-
+  const GpuListenerInfo& info = it->second;
+  info.loop->PostTask(
+      FROM_HERE,
+      base::Bind(
+          base::IgnoreResult(&IPC::Listener::OnMessageReceived),
+          info.listener,
+          message));
   return true;
 }
 
@@ -402,51 +400,5 @@ bool GpuChannelHost::MessageFilter::IsLost() const {
   AutoLock lock(lock_);
   return lost_;
 }
-
-size_t GpuChannelHost::MessageFilter::GetMailboxNames(
-    size_t num, std::vector<gpu::Mailbox>* names) {
-  AutoLock lock(lock_);
-  size_t count = std::min(num, mailbox_name_pool_.size());
-  names->insert(names->begin(),
-                mailbox_name_pool_.end() - count,
-                mailbox_name_pool_.end());
-  mailbox_name_pool_.erase(mailbox_name_pool_.end() - count,
-                           mailbox_name_pool_.end());
-
-  const size_t ideal_mailbox_pool_size = 100;
-  size_t total = mailbox_name_pool_.size() + requested_mailboxes_;
-  DCHECK_LE(total, ideal_mailbox_pool_size);
-  if (total >= ideal_mailbox_pool_size / 2)
-    return 0;
-  size_t request = ideal_mailbox_pool_size - total;
-  requested_mailboxes_ += request;
-  return request;
-}
-
-bool GpuChannelHost::MessageFilter::OnControlMessageReceived(
-    const IPC::Message& message) {
-  bool handled = true;
-
-  IPC_BEGIN_MESSAGE_MAP(GpuChannelHost::MessageFilter, message)
-  IPC_MESSAGE_HANDLER(GpuChannelMsg_GenerateMailboxNamesReply,
-                      OnGenerateMailboxNamesReply)
-  IPC_MESSAGE_UNHANDLED(handled = false)
-  IPC_END_MESSAGE_MAP()
-
-  DCHECK(handled);
-  return handled;
-}
-
-void GpuChannelHost::MessageFilter::OnGenerateMailboxNamesReply(
-    const std::vector<gpu::Mailbox>& names) {
-  TRACE_EVENT0("gpu", "OnGenerateMailboxNamesReply");
-  AutoLock lock(lock_);
-  DCHECK_LE(names.size(), requested_mailboxes_);
-  requested_mailboxes_ -= names.size();
-  mailbox_name_pool_.insert(mailbox_name_pool_.end(),
-                            names.begin(),
-                            names.end());
-}
-
 
 }  // namespace content

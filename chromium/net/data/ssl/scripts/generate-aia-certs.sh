@@ -9,15 +9,15 @@
 
 try() {
   echo "$@"
-  $@ || exit 1
+  "$@" || exit 1
 }
 
 try rm -rf out
 try mkdir out
 
 # Create the serial number files.
-try echo 1 > out/aia-test-root-serial
-try echo 1 > out/aia-test-intermediate-serial
+try /bin/sh -c "echo 01 > out/aia-test-root-serial"
+try /bin/sh -c "echo 01 > out/aia-test-intermediate-serial"
 
 # Create the signers' DB files.
 touch out/aia-test-root-index.txt
@@ -47,7 +47,8 @@ CA_COMMON_NAME="AIA Test Root CA" \
     -out out/aia-test-root.pem \
     -signkey out/aia-test-root.key \
     -extfile aia-test.cnf \
-    -extensions ca_cert
+    -extensions ca_cert \
+    -text
 
 # Generate the intermediate
 CA_COMMON_NAME="AIA Test Intermediate CA" \
@@ -89,3 +90,11 @@ CA_COMMON_NAME="AIA Test Intermediate CA" \
     -out out/aia-test-cert.pem \
     -config aia-test.cnf \
     -extensions user_cert
+
+# Copy to the file names that are actually checked in.
+try cp out/aia-test-cert.pem ../certificates/aia-cert.pem
+try openssl x509 \
+  -outform der \
+  -in out/aia-test-intermediate.pem \
+  -out ../certificates/aia-intermediate.der
+try cp out/aia-test-root.pem ../certificates/aia-root.pem

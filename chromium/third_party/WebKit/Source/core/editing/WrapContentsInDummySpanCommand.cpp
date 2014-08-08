@@ -32,7 +32,7 @@
 
 namespace WebCore {
 
-WrapContentsInDummySpanCommand::WrapContentsInDummySpanCommand(PassRefPtr<Element> element)
+WrapContentsInDummySpanCommand::WrapContentsInDummySpanCommand(PassRefPtrWillBeRawPtr<Element> element)
     : SimpleEditCommand(element->document())
     , m_element(element)
 {
@@ -41,7 +41,7 @@ WrapContentsInDummySpanCommand::WrapContentsInDummySpanCommand(PassRefPtr<Elemen
 
 void WrapContentsInDummySpanCommand::executeApply()
 {
-    Vector<RefPtr<Node> > children;
+    WillBeHeapVector<RefPtrWillBeMember<Node> > children;
     for (Node* child = m_element->firstChild(); child; child = child->nextSibling())
         children.append(child);
 
@@ -66,7 +66,7 @@ void WrapContentsInDummySpanCommand::doUnapply()
     if (!m_dummySpan || !m_element->rendererIsEditable())
         return;
 
-    Vector<RefPtr<Node> > children;
+    WillBeHeapVector<RefPtrWillBeMember<Node> > children;
     for (Node* child = m_dummySpan->firstChild(); child; child = child->nextSibling())
         children.append(child);
 
@@ -85,6 +85,13 @@ void WrapContentsInDummySpanCommand::doReapply()
         return;
 
     executeApply();
+}
+
+void WrapContentsInDummySpanCommand::trace(Visitor* visitor)
+{
+    visitor->trace(m_element);
+    visitor->trace(m_dummySpan);
+    SimpleEditCommand::trace(visitor);
 }
 
 } // namespace WebCore

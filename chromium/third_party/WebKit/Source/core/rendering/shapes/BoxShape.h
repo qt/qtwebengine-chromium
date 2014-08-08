@@ -35,7 +35,7 @@
 
 namespace WebCore {
 
-class BoxShape : public Shape {
+class BoxShape FINAL : public Shape {
 public:
     BoxShape(const FloatRoundedRect& bounds)
         : Shape()
@@ -44,15 +44,12 @@ public:
     }
 
     virtual LayoutRect shapeMarginLogicalBoundingBox() const OVERRIDE;
-    virtual LayoutRect shapePaddingLogicalBoundingBox() const OVERRIDE;
     virtual bool isEmpty() const OVERRIDE { return m_bounds.isEmpty(); }
     virtual void getExcludedIntervals(LayoutUnit logicalTop, LayoutUnit logicalHeight, SegmentList&) const OVERRIDE;
-    virtual void getIncludedIntervals(LayoutUnit logicalTop, LayoutUnit logicalHeight, SegmentList&) const OVERRIDE;
-    virtual bool firstIncludedIntervalLogicalTop(LayoutUnit minLogicalIntervalTop, const LayoutSize& minLogicalIntervalSize, LayoutUnit&) const OVERRIDE;
+    virtual void buildDisplayPaths(DisplayPaths&) const OVERRIDE;
 
 private:
     FloatRoundedRect shapeMarginBounds() const;
-    FloatRoundedRect shapePaddingBounds() const;
 
     FloatRoundedRect m_bounds;
 };

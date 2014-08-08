@@ -18,7 +18,7 @@ class RendererClipboardClient : public ClipboardClient {
 
   virtual ui::Clipboard* GetClipboard() OVERRIDE;
   virtual uint64 GetSequenceNumber(ui::ClipboardType type) OVERRIDE;
-  virtual bool IsFormatAvailable(const ui::Clipboard::FormatType& format,
+  virtual bool IsFormatAvailable(ClipboardFormat format,
                                  ui::ClipboardType type) OVERRIDE;
   virtual void Clear(ui::ClipboardType type) OVERRIDE;
   virtual void ReadAvailableTypes(ui::ClipboardType type,
@@ -26,8 +26,6 @@ class RendererClipboardClient : public ClipboardClient {
                                   bool* contains_filenames) OVERRIDE;
   virtual void ReadText(ui::ClipboardType type,
                         base::string16* result) OVERRIDE;
-  virtual void ReadAsciiText(ui::ClipboardType type,
-                             std::string* result) OVERRIDE;
   virtual void ReadHTML(ui::ClipboardType type,
                         base::string16* markup,
                         GURL* url,
@@ -38,8 +36,6 @@ class RendererClipboardClient : public ClipboardClient {
   virtual void ReadCustomData(ui::ClipboardType clipboard_type,
                               const base::string16& type,
                               base::string16* data) OVERRIDE;
-  virtual void ReadData(const ui::Clipboard::FormatType& format,
-                        std::string* data) OVERRIDE;
   virtual WriteContext* CreateWriteContext() OVERRIDE;
 };
 

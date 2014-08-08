@@ -32,20 +32,19 @@
 
 #include "bindings/v8/ScriptController.h"
 #include "bindings/v8/V8Binding.h"
-#include "bindings/v8/V8Utilities.h"
 #include "core/dom/ExecutionContext.h"
+#include "core/frame/LocalDOMWindow.h"
+#include "core/frame/FrameConsole.h"
+#include "core/frame/FrameHost.h"
+#include "core/frame/LocalFrame.h"
 #include "core/inspector/ScriptCallStack.h"
-#include "core/frame/DOMWindow.h"
-#include "core/frame/Frame.h"
-#include "core/page/Page.h"
-#include "core/page/PageConsole.h"
 #include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
-PassRefPtr<V8CustomXPathNSResolver> V8CustomXPathNSResolver::create(v8::Handle<v8::Object> resolver, v8::Isolate* isolate)
+PassRefPtrWillBeRawPtr<V8CustomXPathNSResolver> V8CustomXPathNSResolver::create(v8::Handle<v8::Object> resolver, v8::Isolate* isolate)
 {
-    return adoptRef(new V8CustomXPathNSResolver(resolver, isolate));
+    return adoptRefWillBeNoop(new V8CustomXPathNSResolver(resolver, isolate));
 }
 
 V8CustomXPathNSResolver::V8CustomXPathNSResolver(v8::Handle<v8::Object> resolver, v8::Isolate* isolate)
@@ -71,9 +70,9 @@ AtomicString V8CustomXPathNSResolver::lookupNamespaceURI(const String& prefix)
     }
 
     if (lookupNamespaceURIFunc.IsEmpty() && !m_resolver->IsFunction()) {
-        Frame* frame = activeDOMWindow()->frame();
-        if (frame && frame->page())
-            frame->page()->console().addMessage(JSMessageSource, ErrorMessageLevel, "XPathNSResolver does not have a lookupNamespaceURI method.");
+        LocalFrame* frame = callingDOMWindow(m_isolate)->frame();
+        if (frame && frame->host())
+            frame->console().addMessage(JSMessageSource, ErrorMessageLevel, "XPathNSResolver does not have a lookupNamespaceURI method.");
         return nullAtom;
     }
 
@@ -85,14 +84,19 @@ AtomicString V8CustomXPathNSResolver::lookupNamespaceURI(const String& prefix)
     v8::Handle<v8::Value> argv[argc] = { v8String(m_isolate, prefix) };
     v8::Handle<v8::Function> function = lookupNamespaceURIFunc.IsEmpty() ? v8::Handle<v8::Function>::Cast(m_resolver) : lookupNamespaceURIFunc;
 
-    v8::Handle<v8::Value> retval = ScriptController::callFunction(activeExecutionContext(), function, m_resolver, argc, argv, m_isolate);
+    v8::Handle<v8::Value> retval = ScriptController::callFunction(callingExecutionContext(m_isolate), function, m_resolver, argc, argv, m_isolate);
 
     // Eat exceptions from namespace resolver and return an empty string. This will most likely cause NamespaceError.
     if (tryCatch.HasCaught())
         return nullAtom;
 
-    V8TRYCATCH_FOR_V8STRINGRESOURCE_RETURN(V8StringResource<WithNullCheck>, returnString, retval, nullAtom);
+    TOSTRING_DEFAULT(V8StringResource<WithNullCheck>, returnString, retval, nullAtom);
     return returnString;
+}
+
+void V8CustomXPathNSResolver::trace(Visitor* visitor)
+{
+    XPathNSResolver::trace(visitor);
 }
 
 } // namespace WebCore

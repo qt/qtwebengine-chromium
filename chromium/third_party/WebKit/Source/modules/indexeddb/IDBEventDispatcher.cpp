@@ -29,12 +29,12 @@
 #include "config.h"
 #include "modules/indexeddb/IDBEventDispatcher.h"
 
-#include "core/events/Event.h"
-#include "core/events/EventTarget.h"
+#include "modules/EventModules.h"
+#include "modules/EventTargetModules.h"
 
 namespace WebCore {
 
-bool IDBEventDispatcher::dispatch(Event* event, Vector<RefPtr<EventTarget> >& eventTargets)
+bool IDBEventDispatcher::dispatch(Event* event, WillBeHeapVector<RefPtrWillBeMember<EventTarget> >& eventTargets)
 {
     size_t size = eventTargets.size();
     ASSERT(size);
@@ -60,24 +60,6 @@ bool IDBEventDispatcher::dispatch(Event* event, Vector<RefPtr<EventTarget> >& ev
         if (event->propagationStopped() || event->cancelBubble())
             goto doneDispatching;
     }
-
-    // FIXME: "...However, we also wanted to integrate the window.onerror feature in
-    //        HTML5. So after we've fired an "error" event, if .preventDefault() was
-    //        never called on the event, we fire an error event on the window (can't
-    //        remember if this happens before or after we abort the transaction).
-    //        This is a separate event, which for example means that even if you
-    //        attach a capturing "error" handler on window, you won't see any events
-    //        unless an error really went unhandled. And you also can't call
-    //        .preventDefault on the error event fired on the window in order to
-    //        prevent the transaction from being aborted. It's purely there for
-    //        error reporting and distinctly different from the event propagating to
-    //        the window.
-    //
-    //        This is similar to how "error" events are handled in workers.
-    //
-    //        (I think that so far webkit hasn't implemented the window.onerror
-    //        feature yet, so you probably don't want to fire the separate error
-    //        event on the window until that has been implemented)." -- Jonas Sicking
 
 doneDispatching:
     event->setCurrentTarget(0);

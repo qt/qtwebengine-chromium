@@ -24,7 +24,7 @@
 #include "config.h"
 #include "core/rendering/RenderThemeChromiumSkia.h"
 
-#include "UserAgentStyleSheets.h"
+#include "core/UserAgentStyleSheets.h"
 #include "core/rendering/PaintInfo.h"
 #include "core/rendering/RenderBox.h"
 #include "core/rendering/RenderMediaControls.h"
@@ -89,11 +89,6 @@ bool RenderThemeChromiumSkia::supportsFocusRing(const RenderStyle* style) const
 {
     // This causes WebKit to draw the focus rings for us.
     return false;
-}
-
-bool RenderThemeChromiumSkia::supportsClosedCaptioning() const
-{
-    return true;
 }
 
 Color RenderThemeChromiumSkia::platformActiveSelectionBackgroundColor() const
@@ -227,6 +222,8 @@ IntRect RenderThemeChromiumSkia::convertToPaintingRect(RenderObject* inputRender
 bool RenderThemeChromiumSkia::paintSearchFieldCancelButton(RenderObject* cancelButtonObject, const PaintInfo& paintInfo, const IntRect& r)
 {
     // Get the renderer of <input> element.
+    if (!cancelButtonObject->node())
+        return false;
     Node* input = cancelButtonObject->node()->shadowHost();
     RenderObject* baseRenderer = input ? input->renderer() : cancelButtonObject;
     if (!baseRenderer->isBox())
@@ -270,6 +267,8 @@ void RenderThemeChromiumSkia::adjustSearchFieldResultsDecorationStyle(RenderStyl
 bool RenderThemeChromiumSkia::paintSearchFieldResultsDecoration(RenderObject* magnifierObject, const PaintInfo& paintInfo, const IntRect& r)
 {
     // Get the renderer of <input> element.
+    if (!magnifierObject->node())
+        return false;
     Node* input = magnifierObject->node()->shadowHost();
     RenderObject* baseRenderer = input ? input->renderer() : magnifierObject;
     if (!baseRenderer->isBox())
@@ -325,6 +324,11 @@ bool RenderThemeChromiumSkia::paintMediaVolumeSliderThumb(RenderObject* object, 
 bool RenderThemeChromiumSkia::paintMediaPlayButton(RenderObject* object, const PaintInfo& paintInfo, const IntRect& rect)
 {
     return RenderMediaControls::paintMediaControlsPart(MediaPlayButton, object, paintInfo, rect);
+}
+
+bool RenderThemeChromiumSkia::paintMediaOverlayPlayButton(RenderObject* object, const PaintInfo& paintInfo, const IntRect& rect)
+{
+    return RenderMediaControls::paintMediaControlsPart(MediaOverlayPlayButton, object, paintInfo, rect);
 }
 
 bool RenderThemeChromiumSkia::paintMediaMuteButton(RenderObject* object, const PaintInfo& paintInfo, const IntRect& rect)
@@ -473,7 +477,7 @@ RenderThemeChromiumSkia::DirectionFlippingScope::DirectionFlippingScope(RenderOb
         return;
     m_paintInfo.context->save();
     m_paintInfo.context->translate(2 * rect.x() + rect.width(), 0);
-    m_paintInfo.context->scale(FloatSize(-1, 1));
+    m_paintInfo.context->scale(-1, 1);
 }
 
 RenderThemeChromiumSkia::DirectionFlippingScope::~DirectionFlippingScope()

@@ -32,7 +32,7 @@
 #include "core/dom/custom/CustomElementCallbackDispatcher.h"
 
 #include "core/dom/custom/CustomElementCallbackQueue.h"
-#include "core/dom/custom/CustomElementCallbackScheduler.h"
+#include "core/dom/custom/CustomElementScheduler.h"
 #include "wtf/MainThread.h"
 
 namespace WebCore {
@@ -48,17 +48,6 @@ CustomElementCallbackDispatcher& CustomElementCallbackDispatcher::instance()
     return instance;
 }
 
-bool CustomElementCallbackDispatcher::dispatch()
-{
-    ASSERT(isMainThread());
-    if (inCallbackDeliveryScope())
-        return false;
-
-    bool didWork = m_baseElementQueue.dispatch(baseElementQueue());
-    CustomElementCallbackScheduler::clearElementCallbackQueueMap();
-    return didWork;
-}
-
 // Dispatches callbacks when popping the processing stack.
 void CustomElementCallbackDispatcher::processElementQueueAndPop()
 {
@@ -68,7 +57,7 @@ void CustomElementCallbackDispatcher::processElementQueueAndPop()
 void CustomElementCallbackDispatcher::processElementQueueAndPop(size_t start, size_t end)
 {
     ASSERT(isMainThread());
-    ElementQueue thisQueue = currentElementQueue();
+    CustomElementCallbackQueue::ElementQueueId thisQueue = currentElementQueue();
 
     for (size_t i = start; i < end; i++) {
         {
@@ -86,23 +75,21 @@ void CustomElementCallbackDispatcher::processElementQueueAndPop(size_t start, si
     m_flattenedProcessingStack.resize(start);
     s_elementQueueEnd = start;
 
-    if (start == kNumSentinels && m_baseElementQueue.isEmpty())
-        CustomElementCallbackScheduler::clearElementCallbackQueueMap();
+    if (s_elementQueueStart == kNumSentinels)
+        CustomElementScheduler::callbackDispatcherDidFinish();
 }
 
 void CustomElementCallbackDispatcher::enqueue(CustomElementCallbackQueue* callbackQueue)
 {
+    ASSERT(inCallbackDeliveryScope());
+
     if (callbackQueue->owner() == currentElementQueue())
         return;
 
     callbackQueue->setOwner(currentElementQueue());
 
-    if (inCallbackDeliveryScope()) {
-        m_flattenedProcessingStack.append(callbackQueue);
-        ++s_elementQueueEnd;
-    } else {
-        m_baseElementQueue.enqueue(callbackQueue);
-    }
+    m_flattenedProcessingStack.append(callbackQueue);
+    ++s_elementQueueEnd;
 }
 
 } // namespace WebCore

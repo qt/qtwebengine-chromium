@@ -33,40 +33,49 @@
 
 #include "bindings/v8/ScriptWrappable.h"
 #include "modules/crypto/NormalizeAlgorithm.h"
+#include "platform/heap/Handle.h"
+#include "public/platform/WebCryptoAlgorithm.h"
 #include "public/platform/WebCryptoKey.h"
 #include "wtf/Forward.h"
-#include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
-class Algorithm;
-class ExceptionState;
+class CryptoResult;
+class KeyAlgorithm;
 
-class Key : public ScriptWrappable, public RefCounted<Key> {
+class Key : public GarbageCollectedFinalized<Key>, public ScriptWrappable {
 public:
-    static PassRefPtr<Key> create(const blink::WebCryptoKey& key) { return adoptRef(new Key(key)); }
+    static Key* create(const blink::WebCryptoKey& key)
+    {
+        return new Key(key);
+    }
 
     ~Key();
 
     String type() const;
     bool extractable() const;
-    Algorithm* algorithm();
+    KeyAlgorithm* algorithm();
     Vector<String> usages() const;
 
     const blink::WebCryptoKey& key() const { return m_key; }
 
-    bool canBeUsedForAlgorithm(const blink::WebCryptoAlgorithm&, AlgorithmOperation, ExceptionState&) const;
+    // If the key cannot be used with the indicated algorithm, returns false
+    // and completes the CryptoResult with an error.
+    bool canBeUsedForAlgorithm(const blink::WebCryptoAlgorithm&, blink::WebCryptoOperation, CryptoResult*) const;
 
-    static bool parseFormat(const String&, blink::WebCryptoKeyFormat&, ExceptionState&);
-    static bool parseUsageMask(const Vector<String>&, blink::WebCryptoKeyUsageMask&, ExceptionState&);
+    // On failure, these return false and complete the CryptoResult with an error.
+    static bool parseFormat(const String&, blink::WebCryptoKeyFormat&, CryptoResult*);
+    static bool parseUsageMask(const Vector<String>&, blink::WebCryptoKeyUsageMask&, CryptoResult*);
+
+    void trace(Visitor*);
 
 protected:
     explicit Key(const blink::WebCryptoKey&);
 
     const blink::WebCryptoKey m_key;
-    RefPtr<Algorithm> m_algorithm;
+    Member<KeyAlgorithm> m_algorithm;
 };
 
 } // namespace WebCore

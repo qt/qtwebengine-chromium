@@ -81,6 +81,7 @@ class Namespace(object):
   Properties:
   - |name| the name of the namespace
   - |description| the description of the namespace
+  - |deprecated| a reason and possible alternative for a deprecated api
   - |unix_name| the unix_name of the namespace
   - |source_file| the file that contained the namespace definition
   - |source_file_dir| the directory component of |source_file|
@@ -102,9 +103,11 @@ class Namespace(object):
                        'on the API summary page.' % self.name)
       json['description'] = ''
     self.description = json['description']
+    self.deprecated = json.get('deprecated', None)
     self.unix_name = UnixName(self.name)
     self.source_file = source_file
     self.source_file_dir, self.source_file_filename = os.path.split(source_file)
+    self.short_filename = os.path.basename(source_file).split('.')[0]
     self.parent = None
     self.platforms = _GetPlatforms(json)
     toplevel_origin = Origin(from_client=True, from_json=True)
@@ -187,6 +190,7 @@ class Type(object):
     elif 'enum' in json and json_type == 'string':
       self.property_type = PropertyType.ENUM
       self.enum_values = [EnumValue(value) for value in json['enum']]
+      self.cpp_enum_prefix_override = json.get('cpp_enum_prefix_override', None)
     elif json_type == 'any':
       self.property_type = PropertyType.ANY
     elif json_type == 'binary':
@@ -406,6 +410,9 @@ class EnumValue(object):
       self.name = json
       self.description = None
 
+  def CamelName(self):
+    return CamelName(self.name)
+
 class _Enum(object):
   """Superclass for enum types with a "name" field, setting up repr/eq/ne.
   Enums need to do this so that equality/non-equality work over pickling.
@@ -478,6 +485,19 @@ def UnixName(name):
       # Everything is lowercase.
       unix_name.append(c.lower())
   return ''.join(unix_name)
+
+
+@memoize
+def CamelName(snake):
+  ''' Converts a snake_cased_string to a camelCasedOne. '''
+  pieces = snake.split('_')
+  camel = []
+  for i, piece in enumerate(pieces):
+    if i == 0:
+      camel.append(piece)
+    else:
+      camel.append(piece.capitalize())
+  return ''.join(camel)
 
 
 def _StripNamespace(name, namespace):

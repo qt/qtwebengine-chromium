@@ -5,7 +5,7 @@
 #ifndef UI_VIEWS_EXAMPLES_CHECKBOX_EXAMPLE_H_
 #define UI_VIEWS_EXAMPLES_CHECKBOX_EXAMPLE_H_
 
-#include "base/basictypes.h"
+#include "base/macros.h"
 #include "ui/views/controls/button/button.h"
 #include "ui/views/examples/example_base.h"
 
@@ -15,7 +15,8 @@ class Checkbox;
 namespace examples {
 
 // CheckboxExample exercises a Checkbox control.
-class CheckboxExample : public ExampleBase, public ButtonListener {
+class VIEWS_EXAMPLES_EXPORT CheckboxExample : public ExampleBase,
+                                              public ButtonListener {
  public:
   CheckboxExample();
   virtual ~CheckboxExample();

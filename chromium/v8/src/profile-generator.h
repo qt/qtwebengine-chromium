@@ -1,36 +1,13 @@
 // Copyright 2011 the V8 project authors. All rights reserved.
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-//       copyright notice, this list of conditions and the following
-//       disclaimer in the documentation and/or other materials provided
-//       with the distribution.
-//     * Neither the name of Google Inc. nor the names of its
-//       contributors may be used to endorse or promote products derived
-//       from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
 #ifndef V8_PROFILE_GENERATOR_H_
 #define V8_PROFILE_GENERATOR_H_
 
-#include "allocation.h"
-#include "hashmap.h"
-#include "../include/v8-profiler.h"
+#include "src/allocation.h"
+#include "src/hashmap.h"
+#include "include/v8-profiler.h"
 
 namespace v8 {
 namespace internal {
@@ -196,21 +173,21 @@ class ProfileTree {
 
 class CpuProfile {
  public:
-  CpuProfile(const char* title, unsigned uid, bool record_samples);
+  CpuProfile(const char* title, bool record_samples);
 
   // Add pc -> ... -> main() call path to the profile.
-  void AddPath(const Vector<CodeEntry*>& path);
+  void AddPath(TimeTicks timestamp, const Vector<CodeEntry*>& path);
   void CalculateTotalTicksAndSamplingRate();
 
   const char* title() const { return title_; }
-  unsigned uid() const { return uid_; }
   const ProfileTree* top_down() const { return &top_down_; }
 
   int samples_count() const { return samples_.length(); }
   ProfileNode* sample(int index) const { return samples_.at(index); }
+  TimeTicks sample_timestamp(int index) const { return timestamps_.at(index); }
 
-  Time start_time() const { return start_time_; }
-  Time end_time() const { return end_time_; }
+  TimeTicks start_time() const { return start_time_; }
+  TimeTicks end_time() const { return end_time_; }
 
   void UpdateTicksScale();
 
@@ -218,12 +195,11 @@ class CpuProfile {
 
  private:
   const char* title_;
-  unsigned uid_;
   bool record_samples_;
-  Time start_time_;
-  Time end_time_;
-  ElapsedTimer timer_;
+  TimeTicks start_time_;
+  TimeTicks end_time_;
   List<ProfileNode*> samples_;
+  List<TimeTicks> timestamps_;
   ProfileTree top_down_;
 
   DISALLOW_COPY_AND_ASSIGN(CpuProfile);
@@ -281,7 +257,7 @@ class CpuProfilesCollection {
   explicit CpuProfilesCollection(Heap* heap);
   ~CpuProfilesCollection();
 
-  bool StartProfiling(const char* title, unsigned uid, bool record_samples);
+  bool StartProfiling(const char* title, bool record_samples);
   CpuProfile* StopProfiling(const char* title);
   List<CpuProfile*>* profiles() { return &finished_profiles_; }
   const char* GetName(Name* name) {
@@ -308,7 +284,8 @@ class CpuProfilesCollection {
       int column_number = v8::CpuProfileNode::kNoColumnNumberInfo);
 
   // Called from profile generator thread.
-  void AddPathToCurrentProfiles(const Vector<CodeEntry*>& path);
+  void AddPathToCurrentProfiles(
+      TimeTicks timestamp, const Vector<CodeEntry*>& path);
 
   // Limits the number of profiles that can be simultaneously collected.
   static const int kMaxSimultaneousProfiles = 100;

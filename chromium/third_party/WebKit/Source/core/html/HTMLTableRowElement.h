@@ -34,27 +34,24 @@ class ExceptionState;
 
 class HTMLTableRowElement FINAL : public HTMLTablePartElement {
 public:
-    static PassRefPtr<HTMLTableRowElement> create(Document&);
+    DECLARE_NODE_FACTORY(HTMLTableRowElement);
 
     int rowIndex() const;
 
     int sectionRowIndex() const;
 
-    PassRefPtr<HTMLElement> insertCell(int index, ExceptionState&);
+    PassRefPtrWillBeRawPtr<HTMLElement> insertCell(ExceptionState&);
+    PassRefPtrWillBeRawPtr<HTMLElement> insertCell(int index, ExceptionState&);
     void deleteCell(int index, ExceptionState&);
 
-    PassRefPtr<HTMLCollection> cells();
+    PassRefPtrWillBeRawPtr<HTMLCollection> cells();
 
 private:
     explicit HTMLTableRowElement(Document&);
+
+    virtual bool hasLegalLinkAttribute(const QualifiedName&) const OVERRIDE;
+    virtual const QualifiedName& subResourceAttributeName() const OVERRIDE;
 };
-
-inline bool isHTMLTableRowElement(const Node* node)
-{
-    return node->hasTagName(HTMLNames::trTag);
-}
-
-DEFINE_NODE_TYPE_CASTS(HTMLTableRowElement, hasTagName(HTMLNames::trTag));
 
 } // namespace
 

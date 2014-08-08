@@ -20,9 +20,11 @@ const char kAuxAttributes[] = "auxAttributes";
 const char kDeviceId[] = "deviceId";
 const char kDeviceString[] = "deviceString";
 const char kDevices[] = "devices";
+const char kDriverBugWorkarounds[] = "driverBugWorkarounds";
 const char kFeatureStatus[] = "featureStatus";
 const char kGPU[] = "gpu";
 const char kModelName[] = "modelName";
+const char kModelVersion[] = "modelVersion";
 const char kVendorId[] = "vendorId";
 const char kVendorString[] = "vendorString";
 
@@ -118,8 +120,11 @@ DevToolsSystemInfoHandler::OnGetInfo(
 
   gpu_dict->Set(kFeatureStatus,  GetFeatureStatus());
 
+  gpu_dict->Set(kDriverBugWorkarounds, GetDriverBugWorkarounds());
+
   base::DictionaryValue* system_dict = new base::DictionaryValue;
-  system_dict->SetString(kModelName, gpu_info.machine_model);
+  system_dict->SetString(kModelName, gpu_info.machine_model_name);
+  system_dict->SetString(kModelVersion, gpu_info.machine_model_version);
   system_dict->Set(kGPU, gpu_dict);
   return command->SuccessResponse(system_dict);
 }

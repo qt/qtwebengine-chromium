@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 #include "content/browser/gpu/compositor_util.h"
-#include "content/test/content_browser_test.h"
+#include "content/public/test/content_browser_test.h"
 
 #if defined(OS_MACOSX)
 #include "base/mac/mac_util.h"
@@ -27,7 +27,7 @@ IN_PROC_BROWSER_TEST_F(CompositorUtilTest, CompositingModeAsExpected) {
 #if defined(USE_AURA)
   expected_mode = DELEGATED;
 #elif defined(OS_ANDROID)
-  expected_mode = THREADED;
+  expected_mode = DELEGATED;
 #elif defined(OS_MACOSX)
   expected_mode = THREADED;
   // Lion and SnowLeopard have compositing blacklisted when using the Apple
@@ -41,10 +41,6 @@ IN_PROC_BROWSER_TEST_F(CompositorUtilTest, CompositingModeAsExpected) {
     expected_mode = THREADED;
 #endif
 
-  EXPECT_EQ(expected_mode == ENABLED ||
-            expected_mode == THREADED ||
-            expected_mode == DELEGATED,
-            IsForceCompositingModeEnabled());
   EXPECT_EQ(expected_mode == THREADED ||
             expected_mode == DELEGATED,
             IsThreadedCompositingEnabled());

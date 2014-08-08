@@ -1,31 +1,8 @@
 // Copyright 2013 the V8 project authors. All rights reserved.
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-//       copyright notice, this list of conditions and the following
-//       disclaimer in the documentation and/or other materials provided
-//       with the distribution.
-//     * Neither the name of Google Inc. nor the names of its
-//       contributors may be used to endorse or promote products derived
-//       from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
-#include "hydrogen-representation-changes.h"
+#include "src/hydrogen-representation-changes.h"
 
 namespace v8 {
 namespace internal {
@@ -61,10 +38,11 @@ void HRepresentationChangesPhase::InsertRepresentationChangeForUse(
   if (new_value == NULL) {
     new_value = new(graph()->zone()) HChange(
         value, to, is_truncating_to_smi, is_truncating_to_int);
-    if (use_value->operand_position(use_index) != RelocInfo::kNoPosition) {
+    if (!use_value->operand_position(use_index).IsUnknown()) {
       new_value->set_position(use_value->operand_position(use_index));
     } else {
-      ASSERT(!FLAG_emit_opt_code_positions || !graph()->info()->IsOptimizing());
+      ASSERT(!FLAG_hydrogen_track_positions ||
+             !graph()->info()->IsOptimizing());
     }
   }
 
@@ -73,28 +51,56 @@ void HRepresentationChangesPhase::InsertRepresentationChangeForUse(
 }
 
 
+static bool IsNonDeoptingIntToSmiChange(HChange* change) {
+  Representation from_rep = change->from();
+  Representation to_rep = change->to();
+  // Flags indicating Uint32 operations are set in a later Hydrogen phase.
+  ASSERT(!change->CheckFlag(HValue::kUint32));
+  return from_rep.IsInteger32() && to_rep.IsSmi() && SmiValuesAre32Bits();
+}
+
+
 void HRepresentationChangesPhase::InsertRepresentationChangesForValue(
     HValue* value) {
   Representation r = value->representation();
   if (r.IsNone()) return;
-  if (value->HasNoUses()) return;
+  if (value->HasNoUses()) {
+    if (value->IsForceRepresentation()) value->DeleteAndReplaceWith(NULL);
+    return;
+  }
 
   for (HUseIterator it(value->uses()); !it.Done(); it.Advance()) {
     HValue* use_value = it.value();
     int use_index = it.index();
     Representation req = use_value->RequiredInputRepresentation(use_index);
     if (req.IsNone() || req.Equals(r)) continue;
+
+    // If this is an HForceRepresentation instruction, and an HChange has been
+    // inserted above it, examine the input representation of the HChange. If
+    // that's int32, and this HForceRepresentation use is int32, and int32 to
+    // smi changes can't cause deoptimisation, set the input of the use to the
+    // input of the HChange.
+    if (value->IsForceRepresentation()) {
+      HValue* input = HForceRepresentation::cast(value)->value();
+      if (input->IsChange()) {
+        HChange* change = HChange::cast(input);
+        if (change->from().Equals(req) && IsNonDeoptingIntToSmiChange(change)) {
+          use_value->SetOperandAt(use_index, change->value());
+          continue;
+        }
+      }
+    }
     InsertRepresentationChangeForUse(value, use_value, use_index, req);
   }
   if (value->HasNoUses()) {
-    ASSERT(value->IsConstant());
+    ASSERT(value->IsConstant() || value->IsForceRepresentation());
     value->DeleteAndReplaceWith(NULL);
-  }
-
-  // The only purpose of a HForceRepresentation is to represent the value
-  // after the (possible) HChange instruction.  We make it disappear.
-  if (value->IsForceRepresentation()) {
-    value->DeleteAndReplaceWith(HForceRepresentation::cast(value)->value());
+  } else {
+    // The only purpose of a HForceRepresentation is to represent the value
+    // after the (possible) HChange instruction.  We make it disappear.
+    if (value->IsForceRepresentation()) {
+      value->DeleteAndReplaceWith(HForceRepresentation::cast(value)->value());
+    }
   }
 }
 

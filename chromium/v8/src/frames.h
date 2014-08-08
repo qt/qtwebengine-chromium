@@ -1,41 +1,22 @@
 // Copyright 2012 the V8 project authors. All rights reserved.
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-//       copyright notice, this list of conditions and the following
-//       disclaimer in the documentation and/or other materials provided
-//       with the distribution.
-//     * Neither the name of Google Inc. nor the names of its
-//       contributors may be used to endorse or promote products derived
-//       from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
 #ifndef V8_FRAMES_H_
 #define V8_FRAMES_H_
 
-#include "allocation.h"
-#include "handles.h"
-#include "safepoint-table.h"
+#include "src/allocation.h"
+#include "src/handles.h"
+#include "src/safepoint-table.h"
 
 namespace v8 {
 namespace internal {
 
+#if V8_TARGET_ARCH_ARM64
+typedef uint64_t RegList;
+#else
 typedef uint32_t RegList;
+#endif
 
 // Get the number of registers in a given register list.
 int NumRegs(RegList list);
@@ -143,6 +124,7 @@ class StackHandler BASE_EMBEDDED {
   inline Kind kind() const;
   inline unsigned index() const;
 
+  inline Object** constant_pool_address() const;
   inline Object** context_address() const;
   inline Object** code_address() const;
   inline void SetFp(Address slot, Address fp);
@@ -167,18 +149,25 @@ class StackHandler BASE_EMBEDDED {
 class StandardFrameConstants : public AllStatic {
  public:
   // Fixed part of the frame consists of return address, caller fp,
-  // context and function.
-  // StandardFrame::IterateExpressions assumes that kContextOffset is the last
-  // object pointer.
-  static const int kFixedFrameSizeFromFp =  2 * kPointerSize;
+  // constant pool (if FLAG_enable_ool_constant_pool), context, and function.
+  // StandardFrame::IterateExpressions assumes that kLastObjectOffset is the
+  // last object pointer.
+  static const int kCPSlotSize =
+      FLAG_enable_ool_constant_pool ? kPointerSize : 0;
+  static const int kFixedFrameSizeFromFp =  2 * kPointerSize + kCPSlotSize;
   static const int kFixedFrameSize       =  kPCOnStackSize + kFPOnStackSize +
                                             kFixedFrameSizeFromFp;
-  static const int kExpressionsOffset    = -3 * kPointerSize;
-  static const int kMarkerOffset         = -2 * kPointerSize;
-  static const int kContextOffset        = -1 * kPointerSize;
+  static const int kExpressionsOffset    = -3 * kPointerSize - kCPSlotSize;
+  static const int kMarkerOffset         = -2 * kPointerSize - kCPSlotSize;
+  static const int kContextOffset        = -1 * kPointerSize - kCPSlotSize;
+  static const int kConstantPoolOffset   = FLAG_enable_ool_constant_pool ?
+                                           -1 * kPointerSize : 0;
   static const int kCallerFPOffset       =  0 * kPointerSize;
   static const int kCallerPCOffset       = +1 * kFPOnStackSize;
   static const int kCallerSPOffset       = kCallerPCOffset + 1 * kPCOnStackSize;
+
+  static const int kLastObjectOffset     = FLAG_enable_ool_constant_pool ?
+                                           kConstantPoolOffset : kContextOffset;
 };
 
 
@@ -213,10 +202,12 @@ class StackFrame BASE_EMBEDDED {
   };
 
   struct State {
-    State() : sp(NULL), fp(NULL), pc_address(NULL) { }
+    State() : sp(NULL), fp(NULL), pc_address(NULL),
+              constant_pool_address(NULL) { }
     Address sp;
     Address fp;
     Address* pc_address;
+    Address* constant_pool_address;
   };
 
   // Copy constructor; it breaks the connection to host iterator
@@ -258,12 +249,21 @@ class StackFrame BASE_EMBEDDED {
   Address pc() const { return *pc_address(); }
   void set_pc(Address pc) { *pc_address() = pc; }
 
+  Address constant_pool() const { return *constant_pool_address(); }
+  void set_constant_pool(ConstantPoolArray* constant_pool) {
+    *constant_pool_address() = reinterpret_cast<Address>(constant_pool);
+  }
+
   virtual void SetCallerFp(Address caller_fp) = 0;
 
   // Manually changes value of fp in this object.
   void UpdateFp(Address fp) { state_.fp = fp; }
 
   Address* pc_address() const { return state_.pc_address; }
+
+  Address* constant_pool_address() const {
+    return state_.constant_pool_address;
+  }
 
   // Get the id of this stack frame.
   Id id() const { return static_cast<Id>(OffsetFrom(caller_sp())); }
@@ -419,6 +419,7 @@ class ExitFrame: public StackFrame {
   virtual Code* unchecked_code() const;
 
   Object*& code_slot() const;
+  Object*& constant_pool_slot() const;
 
   // Garbage collection support.
   virtual void Iterate(ObjectVisitor* v) const;
@@ -482,6 +483,10 @@ class StandardFrame: public StackFrame {
   // Computes the address of the PC field in the standard frame given
   // by the provided frame pointer.
   static inline Address ComputePCAddress(Address fp);
+
+  // Computes the address of the constant pool  field in the standard
+  // frame given by the provided frame pointer.
+  static inline Address ComputeConstantPoolAddress(Address fp);
 
   // Iterate over expression stack including stack handlers, locals,
   // and parts of the fixed part including context and code fields.
@@ -602,6 +607,7 @@ class JavaScriptFrame: public StandardFrame {
   // Architecture-specific register description.
   static Register fp_register();
   static Register context_register();
+  static Register constant_pool_pointer_register();
 
   static JavaScriptFrame* cast(StackFrame* frame) {
     ASSERT(frame->is_java_script());
@@ -758,6 +764,7 @@ class StubFailureTrampolineFrame: public StandardFrame {
   // Architecture-specific register description.
   static Register fp_register();
   static Register context_register();
+  static Register constant_pool_pointer_register();
 
  protected:
   inline explicit StubFailureTrampolineFrame(
@@ -920,13 +927,6 @@ class StackFrameLocator BASE_EMBEDDED {
 
  private:
   StackFrameIterator iterator_;
-};
-
-
-// Used specify the type of prologue to generate.
-enum PrologueFrameMode {
-  BUILD_FUNCTION_FRAME,
-  BUILD_STUB_FRAME
 };
 
 

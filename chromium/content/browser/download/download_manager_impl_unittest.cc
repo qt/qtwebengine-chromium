@@ -76,6 +76,8 @@ class MockDownloadItemImpl : public DownloadItemImpl {
           base::FilePath(),
           std::vector<GURL>(),
           GURL(),
+          "application/octet-stream",
+          "application/octet-stream",
           base::Time(),
           base::Time(),
           std::string(),
@@ -132,6 +134,8 @@ class MockDownloadItemImpl : public DownloadItemImpl {
   MOCK_CONST_METHOD0(GetURL, const GURL&());
   MOCK_CONST_METHOD0(GetOriginalUrl, const GURL&());
   MOCK_CONST_METHOD0(GetReferrerUrl, const GURL&());
+  MOCK_CONST_METHOD0(GetTabUrl, const GURL&());
+  MOCK_CONST_METHOD0(GetTabReferrerUrl, const GURL&());
   MOCK_CONST_METHOD0(GetSuggestedFilename, std::string());
   MOCK_CONST_METHOD0(GetContentDisposition, std::string());
   MOCK_CONST_METHOD0(GetMimeType, std::string());
@@ -232,6 +236,8 @@ class MockDownloadItemFactory
       const base::FilePath& target_path,
       const std::vector<GURL>& url_chain,
       const GURL& referrer_url,
+      const std::string& mime_type,
+      const std::string& original_mime_type,
       const base::Time& start_time,
       const base::Time& end_time,
       const std::string& etag,
@@ -297,6 +303,8 @@ DownloadItemImpl* MockDownloadItemFactory::CreatePersistedItem(
     const base::FilePath& target_path,
     const std::vector<GURL>& url_chain,
     const GURL& referrer_url,
+    const std::string& mime_type,
+    const std::string& original_mime_type,
     const base::Time& start_time,
     const base::Time& end_time,
     const std::string& etag,
@@ -404,22 +412,11 @@ class MockBrowserContext : public BrowserContext {
   MOCK_METHOD2(GetMediaRequestContextForStoragePartition,
                net::URLRequestContextGetter*(
                    const base::FilePath& partition_path, bool in_memory));
-  MOCK_METHOD5(RequestMIDISysExPermission,
-               void(int render_process_id,
-                    int render_view_id,
-                    int bridge_id,
-                    const GURL& requesting_frame,
-                    const MIDISysExPermissionCallback& callback));
-  MOCK_METHOD4(CancelMIDISysExPermissionRequest,
-               void(int render_process_id,
-                    int render_view_id,
-                    int bridge_id,
-                    const GURL& requesting_frame));
   MOCK_METHOD0(GetResourceContext, ResourceContext*());
   MOCK_METHOD0(GetDownloadManagerDelegate, DownloadManagerDelegate*());
-  MOCK_METHOD0(GetGeolocationPermissionContext,
-               GeolocationPermissionContext* ());
+  MOCK_METHOD0(GetGuestManager, BrowserPluginGuestManager* ());
   MOCK_METHOD0(GetSpecialStoragePolicy, quota::SpecialStoragePolicy*());
+  MOCK_METHOD0(GetPushMessagingService, PushMessagingService*());
 };
 
 class MockDownloadManagerObserver : public DownloadManager::Observer {

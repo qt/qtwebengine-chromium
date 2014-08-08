@@ -28,7 +28,7 @@
 
 {
   'includes': [
-    '../../../client/windows/build/common.gypi',
+    '../../../build/common.gypi',
   ],
   'targets': [
     {
@@ -38,7 +38,7 @@
         'dump_syms.cc',
       ],
       'dependencies': [
-        '<(DEPTH)/common/windows/common_windows.gyp:common_windows_lib',
+        '../../../common/windows/common_windows.gyp:common_windows_lib',
       ],
     },
     {
@@ -52,6 +52,13 @@
         '<(DEPTH)/client/windows/unittests/testing.gyp:gtest',
         'dump_syms',
       ],
+      'msvs_settings': {
+        'VCLinkerTool': {
+          'AdditionalDependencies': [
+            'shell32.lib',
+          ],
+        },
+      },
     },
   ],
 }

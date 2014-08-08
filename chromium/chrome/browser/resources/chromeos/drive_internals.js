@@ -17,15 +17,6 @@ function ToMegaByteString(bytes) {
 }
 
 /**
- * Updates the Drive related Flags section.
- * @param {Array} flags List of dictionaries describing flags.
- */
-function updateDriveRelatedFlags(flags) {
-  var ul = $('drive-related-flags');
-  updateKeyValueList(ul, flags);
-}
-
-/**
  * Updates the Drive related Preferences section.
  * @param {Array} preferences List of dictionaries describing preferences.
  */
@@ -42,6 +33,15 @@ function updateConnectionStatus(connStatus) {
   $('connection-status').textContent = connStatus['status'];
   $('has-refresh-token').textContent = connStatus['has-refresh-token'];
   $('has-access-token').textContent = connStatus['has-access-token'];
+}
+
+/**
+ * Updates the Path Configurations section.
+ * @param {Array} paths List of dictionaries describing paths.
+ */
+function updatePathConfigurations(paths) {
+  var ul = $('path-configurations');
+  updateKeyValueList(ul, paths);
 }
 
 /**
@@ -253,11 +253,11 @@ function updateKeyValueList(ul, list) {
 }
 
 /**
- * Updates the text next to the 'reload' button to update the status.
- * @param {boolean} success whether or not reloading has succeeded.
+ * Updates the text next to the 'reset' button to update the status.
+ * @param {boolean} success whether or not resetting has succeeded.
  */
-function updateReloadStatus(success) {
-  $('reload-status-text').textContent = (success ? 'success' : 'failed');
+function updateResetStatus(success) {
+  $('reset-status-text').textContent = (success ? 'success' : 'failed');
 }
 
 document.addEventListener('DOMContentLoaded', function() {
@@ -283,9 +283,9 @@ document.addEventListener('DOMContentLoaded', function() {
     chrome.send('clearRefreshToken');
   });
 
-  $('button-reload-drive-filesystem').addEventListener('click', function() {
-    $('reload-status-text').textContent = 'reloading...';
-    chrome.send('reloadDriveFileSystem');
+  $('button-reset-drive-filesystem').addEventListener('click', function() {
+    $('reset-status-text').textContent = 'resetting...';
+    chrome.send('resetDriveFileSystem');
   });
 
   $('button-show-file-entries').addEventListener('click', function() {

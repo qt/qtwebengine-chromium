@@ -108,6 +108,9 @@ class Manager(object):
         tests_to_skip = self._finder.skip_tests(paths, test_names, self._expectations, self._http_tests(test_names))
         tests_to_run = [test for test in test_names if test not in tests_to_skip]
 
+        if not tests_to_run:
+            return tests_to_run, tests_to_skip
+
         # Create a sorted list of test files so the subset chunk,
         # if used, contains alphabetically consecutive tests.
         if self._options.order == 'natural':
@@ -250,6 +253,11 @@ class Manager(object):
         summarized_failing_results = test_run_results.summarize_results(self._port, self._expectations, initial_results, retry_results, enabled_pixel_tests_in_retry, only_include_failing=True)
 
         exit_code = summarized_failing_results['num_regressions']
+        if exit_code > test_run_results.MAX_FAILURES_EXIT_STATUS:
+            _log.warning('num regressions (%d) exceeds max exit status (%d)' %
+                         (exit_code, test_run_results.MAX_FAILURES_EXIT_STATUS))
+            exit_code = test_run_results.MAX_FAILURES_EXIT_STATUS
+
         if not self._options.dry_run:
             self._write_json_files(summarized_full_results, summarized_failing_results, initial_results)
             self._upload_json_files()
@@ -259,6 +267,8 @@ class Manager(object):
             if initial_results.keyboard_interrupted:
                 exit_code = test_run_results.INTERRUPTED_EXIT_STATUS
             else:
+                if initial_results.interrupted:
+                    exit_code = test_run_results.EARLY_EXIT_STATUS
                 if self._options.show_results and (exit_code or (self._options.full_results_html and initial_results.total_failures)):
                     self._port.show_results_html_file(results_path)
                 self._printer.print_results(time.time() - start_time, initial_results, summarized_failing_results)
@@ -276,7 +286,7 @@ class Manager(object):
     def _start_servers(self, tests_to_run):
         if self._port.requires_http_server() or any(self._is_http_test(test) for test in tests_to_run):
             self._printer.write_update('Starting HTTP server ...')
-            self._port.start_http_server(number_of_servers=(2 * self._options.max_locked_shards))
+            self._port.start_http_server(additional_dirs={}, number_of_drivers=self._options.max_locked_shards)
             self._http_server_started = True
 
         if any(self._is_websocket_test(test) for test in tests_to_run):

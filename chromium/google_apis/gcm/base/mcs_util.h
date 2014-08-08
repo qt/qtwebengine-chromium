@@ -8,12 +8,17 @@
 #define GOOGLE_APIS_GCM_BASE_MCS_UTIL_H_
 
 #include <string>
+#include <vector>
 
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "google_apis/gcm/base/gcm_export.h"
 #include "google_apis/gcm/protocol/mcs.pb.h"
+
+namespace base {
+class Clock;
+}
 
 namespace net {
 class StreamSocket;
@@ -52,7 +57,8 @@ enum MCSIqStanzaExtension {
 // Builds a LoginRequest with the hardcoded local data.
 GCM_EXPORT scoped_ptr<mcs_proto::LoginRequest> BuildLoginRequest(
     uint64 auth_id,
-    uint64 auth_token);
+    uint64 auth_token,
+    const std::string& version_string);
 
 // Builds a StreamAck IqStanza message.
 GCM_EXPORT scoped_ptr<mcs_proto::IqStanza> BuildStreamAck();
@@ -75,6 +81,13 @@ GCM_EXPORT uint32 GetLastStreamIdReceived(
 GCM_EXPORT void SetLastStreamIdReceived(
     uint32 last_stream_id_received,
     google::protobuf::MessageLite* protobuf);
+
+// Returns whether the TTL (time to live) for this message has expired, based
+// on the |sent| timestamps and base::TimeTicks::Now(). If |protobuf| is not
+// for a DataMessageStanza or the TTL is 0, will return false.
+GCM_EXPORT bool HasTTLExpired(const google::protobuf::MessageLite& protobuf,
+                              base::Clock* clock);
+GCM_EXPORT int GetTTL(const google::protobuf::MessageLite& protobuf);
 
 }  // namespace gcm
 

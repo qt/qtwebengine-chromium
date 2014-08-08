@@ -23,9 +23,7 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-[
-    RuntimeEnabled=DeviceMotion
-] interface DeviceMotionEvent : Event {
+interface DeviceMotionEvent : Event {
     readonly attribute DeviceAcceleration acceleration;
     readonly attribute DeviceAcceleration accelerationIncludingGravity;
     readonly attribute DeviceRotationRate rotationRate;
@@ -33,8 +31,8 @@
     [Custom] void initDeviceMotionEvent([Default=Undefined] optional DOMString type,
                                         [Default=Undefined] optional boolean bubbles,
                                         [Default=Undefined] optional boolean cancelable,
-                                        [Default=Undefined] optional Acceleration acceleration,
-                                        [Default=Undefined] optional Acceleration accelerationIncludingGravity,
-                                        [Default=Undefined] optional RotationRate rotationRate,
+                                        [Default=Undefined] optional DeviceAcceleration acceleration,
+                                        [Default=Undefined] optional DeviceAcceleration accelerationIncludingGravity,
+                                        [Default=Undefined] optional DeviceRotationRate rotationRate,
                                         [Default=Undefined] optional double interval);
 };

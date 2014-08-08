@@ -8,24 +8,25 @@
 
 #include "base/debug/trace_event.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/numerics/safe_conversions.h"
 #include "base/pickle.h"
 #include "base/posix/eintr_wrapper.h"
 #include "base/posix/unix_domain_socket_linux.h"
-#include "base/safe_numerics.h"
 #include "base/sys_byteorder.h"
 #include "content/common/sandbox_linux/sandbox_linux.h"
-#include "third_party/WebKit/public/platform/linux/WebFontFamily.h"
+#include "content/common/zygote_commands_linux.h"
+#include "third_party/WebKit/public/platform/linux/WebFallbackFont.h"
 #include "third_party/WebKit/public/platform/linux/WebFontRenderStyle.h"
 
 namespace content {
 
-void GetFontFamilyForCharacter(int32_t character,
-                               const char* preferred_locale,
-                               blink::WebFontFamily* family) {
+void GetFallbackFontForCharacter(int32_t character,
+                                 const char* preferred_locale,
+                                 blink::WebFallbackFont* fallbackFont) {
   TRACE_EVENT0("sandbox_ipc", "GetFontFamilyForCharacter");
 
   Pickle request;
-  request.WriteInt(LinuxSandbox::METHOD_GET_FONT_FAMILY_FOR_CHAR);
+  request.WriteInt(LinuxSandbox::METHOD_GET_FALLBACK_FONT_FOR_CHAR);
   request.WriteInt(character);
   request.WriteString(preferred_locale);
 
@@ -34,17 +35,23 @@ void GetFontFamilyForCharacter(int32_t character,
                                                   sizeof(buf), NULL, request);
 
   std::string family_name;
+  std::string filename;
+  int ttcIndex = 0;
   bool isBold = false;
   bool isItalic = false;
   if (n != -1) {
     Pickle reply(reinterpret_cast<char*>(buf), n);
     PickleIterator pickle_iter(reply);
     if (reply.ReadString(&pickle_iter, &family_name) &&
+        reply.ReadString(&pickle_iter, &filename) &&
+        reply.ReadInt(&pickle_iter, &ttcIndex) &&
         reply.ReadBool(&pickle_iter, &isBold) &&
         reply.ReadBool(&pickle_iter, &isItalic)) {
-      family->name = family_name;
-      family->isBold = isBold;
-      family->isItalic = isItalic;
+      fallbackFont->name = family_name;
+      fallbackFont->filename = filename;
+      fallbackFont->ttcIndex = ttcIndex;
+      fallbackFont->isBold = isBold;
+      fallbackFont->isItalic = isItalic;
     }
   }
 }
@@ -88,8 +95,11 @@ void GetRenderStyleForStrike(const char* family, int sizeAndStyle,
   }
 }
 
-int MatchFontWithFallback(const std::string& face, bool bold,
-                          bool italic, int charset) {
+int MatchFontWithFallback(const std::string& face,
+                          bool bold,
+                          bool italic,
+                          int charset,
+                          PP_BrowserFont_Trusted_Family fallback_family) {
   TRACE_EVENT0("sandbox_ipc", "MatchFontWithFallback");
 
   Pickle request;
@@ -98,6 +108,7 @@ int MatchFontWithFallback(const std::string& face, bool bold,
   request.WriteBool(bold);
   request.WriteBool(italic);
   request.WriteUInt32(charset);
+  request.WriteUInt32(fallback_family);
   uint8_t reply_buf[64];
   int fd = -1;
   UnixDomainSocket::SendRecvMsg(GetSandboxFD(), reply_buf, sizeof(reply_buf),
@@ -117,7 +128,7 @@ bool GetFontTable(int fd, uint32_t table_tag, off_t offset,
     struct stat st;
     if (fstat(fd, &st) < 0)
       return false;
-    data_length = base::checked_numeric_cast<size_t>(st.st_size);
+    data_length = base::checked_cast<size_t>(st.st_size);
   } else {
     // Get a font table. Read the header to find its offset in the file.
     uint16_t num_tables;
@@ -134,7 +145,7 @@ bool GetFontTable(int fd, uint32_t table_tag, off_t offset,
     scoped_ptr<uint8_t[]> table_entries(new uint8_t[directory_size]);
     n = HANDLE_EINTR(pread(fd, table_entries.get(), directory_size,
                            12 /* skip the SFNT header */));
-    if (n != base::checked_numeric_cast<ssize_t>(directory_size))
+    if (n != base::checked_cast<ssize_t>(directory_size))
       return false;
 
     for (uint16_t i = 0; i < num_tables; ++i) {
@@ -155,7 +166,7 @@ bool GetFontTable(int fd, uint32_t table_tag, off_t offset,
     return false;
   // Clamp |offset| inside the allowable range. This allows the read to succeed
   // but return 0 bytes.
-  offset = std::min(offset, base::checked_numeric_cast<off_t>(data_length));
+  offset = std::min(offset, base::checked_cast<off_t>(data_length));
   // Make sure it's safe to add the data offset and the caller's logical offset.
   // Define the maximum positive offset on 32 bit systems.
   static const off_t kMaxPositiveOffset32 = 0x7FFFFFFF;  // 2 GB - 1.
@@ -169,12 +180,19 @@ bool GetFontTable(int fd, uint32_t table_tag, off_t offset,
     // 'output_length' holds the maximum amount of data the caller can accept.
     data_length = std::min(data_length, *output_length);
     ssize_t n = HANDLE_EINTR(pread(fd, output, data_length, data_offset));
-    if (n != base::checked_numeric_cast<ssize_t>(data_length))
+    if (n != base::checked_cast<ssize_t>(data_length))
       return false;
   }
   *output_length = data_length;
 
   return true;
+}
+
+bool SendZygoteChildPing(int fd) {
+  return UnixDomainSocket::SendMsg(fd,
+                                   kZygoteChildPingMessage,
+                                   sizeof(kZygoteChildPingMessage),
+                                   std::vector<int>());
 }
 
 }  // namespace content

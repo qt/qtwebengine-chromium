@@ -24,7 +24,7 @@
     [Reflect] attribute DOMString title;
     [Reflect] attribute DOMString lang;
     attribute boolean translate;
-    [Reflect] attribute DOMString dir;
+    attribute DOMString dir;
 
     [CustomElementCallbacks] attribute long              tabIndex;
     [CustomElementCallbacks] attribute boolean           draggable;
@@ -35,11 +35,6 @@
     // Extensions
     [TreatNullAs=NullString, CustomElementCallbacks, RaisesException=Setter, MeasureAs=HTMLElementInnerText] attribute DOMString innerText;
     [TreatNullAs=NullString, CustomElementCallbacks, RaisesException=Setter, MeasureAs=HTMLElementOuterText] attribute DOMString outerText;
-
-    [RaisesException, CustomElementCallbacks, MeasureAs=InsertAdjacentElement] Element insertAdjacentElement([Default=Undefined] optional DOMString where,
-                                  [Default=Undefined] optional Element element);
-    [RaisesException, MeasureAs=InsertAdjacentText] void insertAdjacentText([Default=Undefined] optional DOMString where,
-                            [Default=Undefined] optional DOMString text);
 
     [RuntimeEnabled=IMEAPI] readonly attribute InputMethodContext inputMethodContext;
 
@@ -52,3 +47,4 @@
 };
 
 HTMLElement implements GlobalEventHandlers;
+

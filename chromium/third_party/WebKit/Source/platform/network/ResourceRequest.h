@@ -30,8 +30,10 @@
 
 #include "platform/network/FormData.h"
 #include "platform/network/HTTPHeaderMap.h"
+#include "platform/network/HTTPParsers.h"
 #include "platform/network/ResourceLoadPriority.h"
 #include "platform/weborigin/KURL.h"
+#include "platform/weborigin/Referrer.h"
 #include "wtf/OwnPtr.h"
 
 namespace WebCore {
@@ -40,7 +42,8 @@ enum ResourceRequestCachePolicy {
     UseProtocolCachePolicy, // normal load
     ReloadIgnoringCacheData, // reload
     ReturnCacheDataElseLoad, // back/forward or encoding change - allow stale data
-    ReturnCacheDataDontLoad  // results of a post - allow stale data and only use cache
+    ReturnCacheDataDontLoad, // results of a post - allow stale data and only use cache
+    ReloadBypassingCache, // end-to-end reload
 };
 
 struct CrossThreadResourceRequestData;
@@ -90,7 +93,7 @@ public:
         initialize(url, UseProtocolCachePolicy);
     }
 
-    ResourceRequest(const KURL& url, const AtomicString& referrer, ResourceRequestCachePolicy cachePolicy = UseProtocolCachePolicy)
+    ResourceRequest(const KURL& url, const Referrer& referrer, ResourceRequestCachePolicy cachePolicy = UseProtocolCachePolicy)
     {
         initialize(url, cachePolicy);
         setHTTPReferrer(referrer);
@@ -134,10 +137,10 @@ public:
 
     const AtomicString& httpContentType() const { return httpHeaderField("Content-Type");  }
     void setHTTPContentType(const AtomicString& httpContentType) { setHTTPHeaderField("Content-Type", httpContentType); }
-    void clearHTTPContentType();
 
     const AtomicString& httpReferrer() const { return httpHeaderField("Referer"); }
-    void setHTTPReferrer(const AtomicString& httpReferrer) { setHTTPHeaderField("Referer", httpReferrer); }
+    ReferrerPolicy referrerPolicy() const { return m_referrerPolicy; }
+    void setHTTPReferrer(const Referrer& httpReferrer) { setHTTPHeaderField("Referer", httpReferrer.referrer); m_referrerPolicy = httpReferrer.referrerPolicy; }
     void clearHTTPReferrer();
 
     const AtomicString& httpOrigin() const { return httpHeaderField("Origin"); }
@@ -150,16 +153,15 @@ public:
 
     const AtomicString& httpAccept() const { return httpHeaderField("Accept"); }
     void setHTTPAccept(const AtomicString& httpAccept) { setHTTPHeaderField("Accept", httpAccept); }
-    void clearHTTPAccept();
 
     FormData* httpBody() const;
     void setHTTPBody(PassRefPtr<FormData> httpBody);
 
-    bool allowCookies() const;
-    void setAllowCookies(bool allowCookies);
+    bool allowStoredCredentials() const;
+    void setAllowStoredCredentials(bool allowCredentials);
 
     ResourceLoadPriority priority() const;
-    void setPriority(ResourceLoadPriority);
+    void setPriority(ResourceLoadPriority, int intraPriorityValue = 0);
 
     bool isConditional() const;
 
@@ -167,10 +169,6 @@ public:
     // upload progress made for that resource.
     bool reportUploadProgress() const { return m_reportUploadProgress; }
     void setReportUploadProgress(bool reportUploadProgress) { m_reportUploadProgress = reportUploadProgress; }
-
-    // Whether the timing information should be collected for the request.
-    bool reportLoadTiming() const { return m_reportLoadTiming; }
-    void setReportLoadTiming(bool reportLoadTiming) { m_reportLoadTiming = reportLoadTiming; }
 
     // Whether actual headers being sent/received should be collected and reported for the request.
     bool reportRawHeaders() const { return m_reportRawHeaders; }
@@ -207,6 +205,10 @@ public:
     TargetType targetType() const { return m_targetType; }
     void setTargetType(TargetType type) { m_targetType = type; }
 
+    bool cacheControlContainsNoCache();
+    bool cacheControlContainsNoStore();
+    bool hasCacheValidatorFields();
+
     static double defaultTimeoutInterval(); // May return 0 when using platform default.
     static void setDefaultTimeoutInterval(double);
 
@@ -222,18 +224,20 @@ private:
     AtomicString m_httpMethod;
     HTTPHeaderMap m_httpHeaderFields;
     RefPtr<FormData> m_httpBody;
-    bool m_allowCookies : 1;
+    bool m_allowStoredCredentials : 1;
     bool m_reportUploadProgress : 1;
-    bool m_reportLoadTiming : 1;
     bool m_reportRawHeaders : 1;
     bool m_hasUserGesture : 1;
     bool m_downloadToFile : 1;
     ResourceLoadPriority m_priority;
+    int m_intraPriorityValue;
     int m_requestorID;
     int m_requestorProcessID;
     int m_appCacheHostID;
     RefPtr<ExtraData> m_extraData;
     TargetType m_targetType;
+    ReferrerPolicy m_referrerPolicy;
+    CacheControlHeader m_cacheControlHeader;
 
     static double s_defaultTimeoutInterval;
 };
@@ -256,15 +260,17 @@ public:
     String m_httpMethod;
     OwnPtr<CrossThreadHTTPHeaderMapData> m_httpHeaders;
     RefPtr<FormData> m_httpBody;
-    bool m_allowCookies;
+    bool m_allowStoredCredentials;
     bool m_reportUploadProgress;
     bool m_hasUserGesture;
     bool m_downloadToFile;
     ResourceLoadPriority m_priority;
+    int m_intraPriorityValue;
     int m_requestorID;
     int m_requestorProcessID;
     int m_appCacheHostID;
     ResourceRequest::TargetType m_targetType;
+    ReferrerPolicy m_referrerPolicy;
 };
 
 unsigned initializeMaximumHTTPConnectionCountPerHost();

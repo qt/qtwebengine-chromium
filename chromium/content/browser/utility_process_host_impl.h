@@ -25,10 +25,16 @@ class Thread;
 namespace content {
 class BrowserChildProcessHostImpl;
 
+typedef base::Thread* (*UtilityMainThreadFactoryFunction)(
+    const std::string& id);
+
 class CONTENT_EXPORT UtilityProcessHostImpl
     : public NON_EXPORTED_BASE(UtilityProcessHost),
       public BrowserChildProcessHostDelegate {
  public:
+  static void RegisterUtilityMainThreadFactory(
+      UtilityMainThreadFactoryFunction create);
+
   UtilityProcessHostImpl(UtilityProcessHostClient* client,
                          base::SequencedTaskRunner* client_task_runner);
   virtual ~UtilityProcessHostImpl();
@@ -40,6 +46,9 @@ class CONTENT_EXPORT UtilityProcessHostImpl
   virtual void SetExposedDir(const base::FilePath& dir) OVERRIDE;
   virtual void EnableMDns() OVERRIDE;
   virtual void DisableSandbox() OVERRIDE;
+#if defined(OS_WIN)
+  virtual void ElevatePrivileges() OVERRIDE;
+#endif
   virtual const ChildProcessData& GetData() OVERRIDE;
 #if defined(OS_POSIX)
   virtual void SetEnv(const base::EnvironmentMap& env) OVERRIDE;
@@ -54,6 +63,7 @@ class CONTENT_EXPORT UtilityProcessHostImpl
 
   // BrowserChildProcessHost:
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
+  virtual void OnProcessLaunchFailed() OVERRIDE;
   virtual void OnProcessCrashed(int exit_code) OVERRIDE;
 
   // A pointer to our client interface, who will be informed of progress.
@@ -71,6 +81,9 @@ class CONTENT_EXPORT UtilityProcessHostImpl
 
   // Whether to pass switches::kNoSandbox to the child.
   bool no_sandbox_;
+
+  // Whether to launch the process with elevated privileges.
+  bool run_elevated_;
 
   // Flags defined in ChildProcessHost with which to start the process.
   int child_flags_;

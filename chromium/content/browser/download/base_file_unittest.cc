@@ -5,6 +5,7 @@
 #include "content/browser/download/base_file.h"
 
 #include "base/file_util.h"
+#include "base/files/file.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
@@ -13,8 +14,7 @@
 #include "content/browser/browser_thread_impl.h"
 #include "content/public/browser/download_interrupt_reasons.h"
 #include "crypto/secure_hash.h"
-#include "net/base/file_stream.h"
-#include "net/base/mock_file_stream.h"
+#include "crypto/sha2.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace content {
@@ -36,8 +36,7 @@ const base::TimeDelta kElapsedTimeDelta = base::TimeDelta::FromSeconds(
 
 class BaseFileTest : public testing::Test {
  public:
-  static const size_t kSha256HashLen = 32;
-  static const unsigned char kEmptySha256Hash[kSha256HashLen];
+  static const unsigned char kEmptySha256Hash[crypto::kSHA256Length];
 
   BaseFileTest()
       : expect_file_survives_(false),
@@ -55,7 +54,7 @@ class BaseFileTest : public testing::Test {
                                   0,
                                   false,
                                   std::string(),
-                                  scoped_ptr<net::FileStream>(),
+                                  base::File(),
                                   net::BoundNetLog()));
   }
 
@@ -84,7 +83,7 @@ class BaseFileTest : public testing::Test {
 
   void ResetHash() {
     secure_hash_.reset(crypto::SecureHash::Create(crypto::SecureHash::SHA256));
-    memcpy(sha256_hash_, kEmptySha256Hash, kSha256HashLen);
+    memcpy(sha256_hash_, kEmptySha256Hash, crypto::kSHA256Length);
   }
 
   void UpdateHash(const char* data, size_t length) {
@@ -93,7 +92,7 @@ class BaseFileTest : public testing::Test {
 
   std::string GetFinalHash() {
     std::string hash;
-    secure_hash_->Finish(sha256_hash_, kSha256HashLen);
+    secure_hash_->Finish(sha256_hash_, crypto::kSHA256Length);
     hash.assign(reinterpret_cast<const char*>(sha256_hash_),
                 sizeof(sha256_hash_));
     return hash;
@@ -106,7 +105,7 @@ class BaseFileTest : public testing::Test {
                                   0,
                                   true,
                                   std::string(),
-                                  scoped_ptr<net::FileStream>(),
+                                  base::File(),
                                   net::BoundNetLog()));
   }
 
@@ -146,7 +145,7 @@ class BaseFileTest : public testing::Test {
                   0,
                   false,
                   std::string(),
-                  scoped_ptr<net::FileStream>(),
+                  base::File(),
                   net::BoundNetLog());
 
     EXPECT_EQ(DOWNLOAD_INTERRUPT_REASON_NONE,
@@ -172,7 +171,7 @@ class BaseFileTest : public testing::Test {
                             0,
                             false,
                             std::string(),
-                            scoped_ptr<net::FileStream>(),
+                            base::File(),
                             net::BoundNetLog());
     EXPECT_EQ(DOWNLOAD_INTERRUPT_REASON_NONE,
               duplicate_file.Initialize(temp_dir_.path()));
@@ -197,8 +196,6 @@ class BaseFileTest : public testing::Test {
   }
 
  protected:
-  linked_ptr<net::testing::MockFileStream> mock_file_stream_;
-
   // BaseClass instance we are testing.
   scoped_ptr<BaseFile> base_file_;
 
@@ -214,7 +211,7 @@ class BaseFileTest : public testing::Test {
   // Hash calculator.
   scoped_ptr<crypto::SecureHash> secure_hash_;
 
-  unsigned char sha256_hash_[kSha256HashLen];
+  unsigned char sha256_hash_[crypto::kSHA256Length];
 
  private:
   // Keep track of what data should be saved to the disk file.
@@ -401,7 +398,7 @@ TEST_F(BaseFileTest, MultipleWritesInterruptedWithHash) {
                        base_file_->bytes_so_far(),
                        true,
                        hash_state,
-                       scoped_ptr<net::FileStream>(),
+                       base::File(),
                        net::BoundNetLog());
   ASSERT_EQ(DOWNLOAD_INTERRUPT_REASON_NONE,
             second_file.Initialize(base::FilePath()));
@@ -479,41 +476,29 @@ TEST_F(BaseFileTest, RenameWithError) {
   base_file_->Finish();
 }
 
-// Write data to the file multiple times.
-TEST_F(BaseFileTest, MultipleWritesWithError) {
+// Test that a failed write reports an error.
+TEST_F(BaseFileTest, WriteWithError) {
   base::FilePath path;
   ASSERT_TRUE(base::CreateTemporaryFile(&path));
-  // Create a new file stream.  scoped_ptr takes ownership and passes it to
-  // BaseFile; we use the pointer anyway and rely on the BaseFile not
-  // deleting the MockFileStream until the BaseFile is reset.
-  net::testing::MockFileStream* mock_file_stream(
-      new net::testing::MockFileStream(NULL));
-  scoped_ptr<net::FileStream> mock_file_stream_scoped_ptr(mock_file_stream);
 
-  ASSERT_EQ(0,
-            mock_file_stream->OpenSync(
-                path,
-                base::PLATFORM_FILE_OPEN_ALWAYS | base::PLATFORM_FILE_WRITE));
-
-  // Copy of mock_file_stream; we pass ownership and rely on the BaseFile
-  // not deleting it until it is reset.
-
-  base_file_.reset(new BaseFile(mock_file_stream->get_path(),
+  // Pass a file handle which was opened without the WRITE flag.
+  // This should result in an error when writing.
+  base::File file(path, base::File::FLAG_OPEN_ALWAYS | base::File::FLAG_READ);
+  base_file_.reset(new BaseFile(path,
                                 GURL(),
                                 GURL(),
                                 0,
                                 false,
                                 std::string(),
-                                mock_file_stream_scoped_ptr.Pass(),
+                                file.Pass(),
                                 net::BoundNetLog()));
   ASSERT_TRUE(InitializeFile());
-  ASSERT_TRUE(AppendDataToFile(kTestData1));
-  ASSERT_TRUE(AppendDataToFile(kTestData2));
-  mock_file_stream->set_forced_error(net::ERR_ACCESS_DENIED);
+#if defined(OS_WIN)
   set_expected_error(DOWNLOAD_INTERRUPT_REASON_FILE_ACCESS_DENIED);
-  ASSERT_FALSE(AppendDataToFile(kTestData3));
-  std::string hash;
-  EXPECT_FALSE(base_file_->GetHash(&hash));
+#elif defined (OS_POSIX)
+  set_expected_error(DOWNLOAD_INTERRUPT_REASON_FILE_FAILED);
+#endif
+  ASSERT_FALSE(AppendDataToFile(kTestData1));
   base_file_->Finish();
 }
 
@@ -551,7 +536,7 @@ TEST_F(BaseFileTest, AppendToBaseFile) {
                                 kTestDataLength4,
                                 false,
                                 std::string(),
-                                scoped_ptr<net::FileStream>(),
+                                base::File(),
                                 net::BoundNetLog()));
 
   ASSERT_TRUE(InitializeFile());
@@ -585,7 +570,7 @@ TEST_F(BaseFileTest, ReadonlyBaseFile) {
                                 0,
                                 false,
                                 std::string(),
-                                scoped_ptr<net::FileStream>(),
+                                base::File(),
                                 net::BoundNetLog()));
 
   expect_in_progress_ = false;
@@ -605,11 +590,15 @@ TEST_F(BaseFileTest, ReadonlyBaseFile) {
 }
 
 TEST_F(BaseFileTest, IsEmptyHash) {
-  std::string empty(BaseFile::kSha256HashLen, '\x00');
+  std::string empty(crypto::kSHA256Length, '\x00');
   EXPECT_TRUE(BaseFile::IsEmptyHash(empty));
-  std::string not_empty(BaseFile::kSha256HashLen, '\x01');
+  std::string not_empty(crypto::kSHA256Length, '\x01');
   EXPECT_FALSE(BaseFile::IsEmptyHash(not_empty));
   EXPECT_FALSE(BaseFile::IsEmptyHash(std::string()));
+
+  std::string also_not_empty = empty;
+  also_not_empty[crypto::kSHA256Length - 1] = '\x01';
+  EXPECT_FALSE(BaseFile::IsEmptyHash(also_not_empty));
 }
 
 // Test that a temporary file is created in the default download directory.
@@ -628,6 +617,23 @@ TEST_F(BaseFileTest, CreatedInDefaultDirectory) {
   EXPECT_STREQ(temp_file.DirName().value().c_str(),
                base_file_->full_path().DirName().value().c_str());
   base_file_->Finish();
+}
+
+TEST_F(BaseFileTest, NoDoubleDeleteAfterCancel) {
+  ASSERT_TRUE(InitializeFile());
+  base::FilePath full_path = base_file_->full_path();
+  ASSERT_FALSE(full_path.empty());
+  ASSERT_TRUE(base::PathExists(full_path));
+
+  base_file_->Cancel();
+  ASSERT_FALSE(base::PathExists(full_path));
+
+  const char kData[] = "hello";
+  const int kDataLength = static_cast<int>(arraysize(kData) - 1);
+  ASSERT_EQ(kDataLength, base::WriteFile(full_path, kData, kDataLength));
+  // The file that we created here should stick around when the BaseFile is
+  // destroyed during TearDown.
+  expect_file_survives_ = true;
 }
 
 }  // namespace content

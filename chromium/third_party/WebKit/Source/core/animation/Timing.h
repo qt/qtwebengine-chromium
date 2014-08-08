@@ -31,7 +31,7 @@
 #ifndef Timing_h
 #define Timing_h
 
-#include "core/platform/animation/TimingFunction.h"
+#include "platform/animation/TimingFunction.h"
 #include "wtf/MathExtras.h"
 #include "wtf/RefPtr.h"
 
@@ -39,6 +39,7 @@ namespace WebCore {
 
 struct Timing {
     enum FillMode {
+        FillModeAuto,
         FillModeNone,
         FillModeForwards,
         FillModeBackwards,
@@ -52,37 +53,43 @@ struct Timing {
         PlaybackDirectionAlternateReverse
     };
 
+    static const Timing& defaults()
+    {
+        DEFINE_STATIC_LOCAL(Timing, timing, ());
+        return timing;
+    }
+
     Timing()
         : startDelay(0)
-        , fillMode(FillModeForwards)
+        , endDelay(0)
+        , fillMode(FillModeAuto)
         , iterationStart(0)
         , iterationCount(1)
-        , hasIterationDuration(false)
-        , iterationDuration(0)
+        , iterationDuration(std::numeric_limits<double>::quiet_NaN())
         , playbackRate(1)
         , direction(PlaybackDirectionNormal)
-        , timingFunction(LinearTimingFunction::create())
+        , timingFunction(LinearTimingFunction::shared())
     {
     }
 
     void assertValid() const
     {
         ASSERT(std::isfinite(startDelay));
+        ASSERT(std::isfinite(endDelay));
         ASSERT(std::isfinite(iterationStart));
         ASSERT(iterationStart >= 0);
         ASSERT(iterationCount >= 0);
-        ASSERT(iterationDuration >= 0);
+        ASSERT(std::isnan(iterationDuration) || iterationDuration >= 0);
         ASSERT(std::isfinite(playbackRate));
         ASSERT(timingFunction);
     }
 
     double startDelay;
+    double endDelay;
     FillMode fillMode;
     double iterationStart;
     double iterationCount;
-    bool hasIterationDuration;
     double iterationDuration;
-    // FIXME: Add activeDuration.
     double playbackRate;
     PlaybackDirection direction;
     RefPtr<TimingFunction> timingFunction;

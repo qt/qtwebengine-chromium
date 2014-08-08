@@ -35,7 +35,7 @@
 
 namespace WebCore {
 
-class Frame;
+class LocalFrame;
 class FrameLoaderClient;
 class KURL;
 class SecurityOrigin;
@@ -43,22 +43,47 @@ class SecurityOrigin;
 class MixedContentChecker {
     WTF_MAKE_NONCOPYABLE(MixedContentChecker);
 public:
-    MixedContentChecker(Frame*);
+    MixedContentChecker(LocalFrame*);
 
-    bool canDisplayInsecureContent(SecurityOrigin*, const KURL&) const;
-    bool canRunInsecureContent(SecurityOrigin*, const KURL&) const;
+    bool canDisplayInsecureContent(SecurityOrigin* securityOrigin, const KURL& url) const
+    {
+        return canDisplayInsecureContentInternal(securityOrigin, url, MixedContentChecker::Display);
+    }
+    bool canSubmitToInsecureForm(SecurityOrigin* securityOrigin, const KURL& url) const
+    {
+        return canDisplayInsecureContentInternal(securityOrigin, url, MixedContentChecker::Submission);
+    }
+
+    bool canRunInsecureContent(SecurityOrigin* securityOrigin, const KURL& url) const
+    {
+        return canRunInsecureContentInternal(securityOrigin, url, MixedContentChecker::Execution);
+    }
+    bool canConnectInsecureWebSocket(SecurityOrigin* securityOrigin, const KURL& url) const
+    {
+        return canRunInsecureContentInternal(securityOrigin, url, MixedContentChecker::WebSocket);
+    }
     static bool isMixedContent(SecurityOrigin*, const KURL&);
 
 private:
+    enum MixedContentType {
+        Display,
+        Execution,
+        WebSocket,
+        Submission
+    };
+
     // FIXME: This should probably have a separate client from FrameLoader.
     FrameLoaderClient* client() const;
 
-    void logWarning(bool allowed, const String& action, const KURL&) const;
+    bool canDisplayInsecureContentInternal(SecurityOrigin*, const KURL&, const MixedContentType) const;
 
-    Frame* m_frame;
+    bool canRunInsecureContentInternal(SecurityOrigin*, const KURL&, const MixedContentType) const;
+
+    void logWarning(bool allowed, const KURL& i, const MixedContentType) const;
+
+    LocalFrame* m_frame;
 };
 
 } // namespace WebCore
 
 #endif // MixedContentChecker_h
-

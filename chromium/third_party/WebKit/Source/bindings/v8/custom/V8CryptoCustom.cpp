@@ -23,12 +23,11 @@
  */
 
 #include "config.h"
-#include "V8Crypto.h"
+#include "bindings/modules/v8/V8Crypto.h"
 
 #include "bindings/v8/ExceptionMessages.h"
 #include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/V8Binding.h"
-#include "bindings/v8/V8Utilities.h"
 #include "bindings/v8/custom/V8ArrayBufferViewCustom.h"
 #include "core/dom/ExceptionCode.h"
 #include "modules/crypto/Crypto.h"
@@ -36,9 +35,6 @@
 
 namespace WebCore {
 
-// This custom binding is shared by V8WorkerCrypto. As such:
-//   * Do not call V8Crypto::toNative()
-//   * Must be threadsafe
 void V8Crypto::getRandomValuesMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
     ExceptionState exceptionState(ExceptionState::ExecutionContext, "getRandomValues", "Crypto", info.Holder(), info.GetIsolate());
@@ -49,13 +45,14 @@ void V8Crypto::getRandomValuesMethodCustom(const v8::FunctionCallbackInfo<v8::Va
     }
 
     v8::Handle<v8::Value> buffer = info[0];
-    if (!V8ArrayBufferView::hasInstance(buffer, info.GetIsolate(), worldType(info.GetIsolate()))) {
+    if (!V8ArrayBufferView::hasInstance(buffer, info.GetIsolate())) {
         exceptionState.throwTypeError("First argument is not an ArrayBufferView");
     } else {
         ArrayBufferView* arrayBufferView = V8ArrayBufferView::toNative(v8::Handle<v8::Object>::Cast(buffer));
         ASSERT(arrayBufferView);
 
-        Crypto::getRandomValues(arrayBufferView, exceptionState);
+        Crypto* crypto = V8Crypto::toNative(info.Holder());
+        crypto->getRandomValues(arrayBufferView, exceptionState);
     }
 
     if (exceptionState.throwIfNeeded())

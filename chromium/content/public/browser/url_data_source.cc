@@ -46,8 +46,8 @@ bool URLDataSource::ShouldDenyXFrameOptions() const {
 }
 
 bool URLDataSource::ShouldServiceRequest(const net::URLRequest* request) const {
-  if (request->url().SchemeIs(chrome::kChromeDevToolsScheme) ||
-      request->url().SchemeIs(chrome::kChromeUIScheme))
+  if (request->url().SchemeIs(kChromeDevToolsScheme) ||
+      request->url().SchemeIs(kChromeUIScheme))
     return true;
   return false;
 }

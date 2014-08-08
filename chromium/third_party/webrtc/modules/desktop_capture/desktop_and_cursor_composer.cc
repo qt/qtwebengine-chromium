@@ -81,7 +81,7 @@ DesktopFrameWithCursor::DesktopFrameWithCursor(DesktopFrame* frame,
   mutable_updated_region()->Swap(frame->mutable_updated_region());
 
   DesktopVector image_pos = position.subtract(cursor.hotspot());
-  DesktopRect target_rect = DesktopRect::MakeSize(cursor.image().size());
+  DesktopRect target_rect = DesktopRect::MakeSize(cursor.image()->size());
   target_rect.Translate(image_pos);
   DesktopVector target_origin = target_rect.top_left();
   target_rect.IntersectWith(DesktopRect::MakeSize(size()));
@@ -101,10 +101,10 @@ DesktopFrameWithCursor::DesktopFrameWithCursor(DesktopFrame* frame,
                               target_rect.left() * DesktopFrame::kBytesPerPixel;
   DesktopVector origin_shift = target_rect.top_left().subtract(target_origin);
   AlphaBlend(target_rect_data, stride(),
-             cursor.image().data() +
-                 origin_shift.y() * cursor.image().stride() +
+             cursor.image()->data() +
+                 origin_shift.y() * cursor.image()->stride() +
                  origin_shift.x() * DesktopFrame::kBytesPerPixel,
-             cursor.image().stride(),
+             cursor.image()->stride(),
              target_rect.size());
 }
 
@@ -142,12 +142,16 @@ void DesktopAndCursorComposer::Capture(const DesktopRegion& region) {
   desktop_capturer_->Capture(region);
 }
 
+void DesktopAndCursorComposer::SetExcludedWindow(WindowId window) {
+  desktop_capturer_->SetExcludedWindow(window);
+}
+
 SharedMemory* DesktopAndCursorComposer::CreateSharedMemory(size_t size) {
   return callback_->CreateSharedMemory(size);
 }
 
 void DesktopAndCursorComposer::OnCaptureCompleted(DesktopFrame* frame) {
-  if (cursor_.get() && cursor_state_ == MouseCursorMonitor::INSIDE) {
+  if (frame && cursor_.get() && cursor_state_ == MouseCursorMonitor::INSIDE) {
     DesktopFrameWithCursor* frame_with_cursor =
         new DesktopFrameWithCursor(frame, *cursor_, cursor_position_);
     frame = frame_with_cursor;

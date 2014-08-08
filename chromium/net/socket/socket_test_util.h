@@ -334,6 +334,7 @@ struct SSLSocketDataProvider {
   scoped_refptr<X509Certificate> cert;
   bool channel_id_sent;
   ServerBoundCertService* server_bound_cert_service;
+  int connection_status;
 };
 
 // A DataProvider where the client must write a request before the reads (e.g.
@@ -675,8 +676,8 @@ class MockClientSocket : public SSLClientSocket {
   virtual int Write(IOBuffer* buf,
                     int buf_len,
                     const CompletionCallback& callback) = 0;
-  virtual bool SetReceiveBufferSize(int32 size) OVERRIDE;
-  virtual bool SetSendBufferSize(int32 size) OVERRIDE;
+  virtual int SetReceiveBufferSize(int32 size) OVERRIDE;
+  virtual int SetSendBufferSize(int32 size) OVERRIDE;
 
   // StreamSocket implementation.
   virtual int Connect(const CompletionCallback& callback) = 0;
@@ -706,6 +707,10 @@ class MockClientSocket : public SSLClientSocket {
   virtual ~MockClientSocket();
   void RunCallbackAsync(const CompletionCallback& callback, int result);
   void RunCallback(const CompletionCallback& callback, int result);
+
+  // SSLClientSocket implementation.
+  virtual scoped_refptr<X509Certificate> GetUnverifiedServerCertificateChain()
+      const OVERRIDE;
 
   // True if Connect completed successfully and Disconnect hasn't been called.
   bool connected_;
@@ -846,8 +851,8 @@ class DeterministicMockUDPClientSocket
   virtual int Write(IOBuffer* buf,
                     int buf_len,
                     const CompletionCallback& callback) OVERRIDE;
-  virtual bool SetReceiveBufferSize(int32 size) OVERRIDE;
-  virtual bool SetSendBufferSize(int32 size) OVERRIDE;
+  virtual int SetReceiveBufferSize(int32 size) OVERRIDE;
+  virtual int SetSendBufferSize(int32 size) OVERRIDE;
 
   // DatagramSocket implementation.
   virtual void Close() OVERRIDE;
@@ -862,10 +867,13 @@ class DeterministicMockUDPClientSocket
   virtual void OnReadComplete(const MockRead& data) OVERRIDE;
   virtual void OnConnectComplete(const MockConnect& data) OVERRIDE;
 
+  void set_source_port(int port) { source_port_ = port; }
+
  private:
   bool connected_;
   IPEndPoint peer_address_;
   DeterministicSocketHelper helper_;
+  int source_port_;  // Ephemeral source port.
 
   DISALLOW_COPY_AND_ASSIGN(DeterministicMockUDPClientSocket);
 };
@@ -985,8 +993,8 @@ class MockUDPClientSocket : public DatagramClientSocket, public AsyncSocket {
   virtual int Write(IOBuffer* buf,
                     int buf_len,
                     const CompletionCallback& callback) OVERRIDE;
-  virtual bool SetReceiveBufferSize(int32 size) OVERRIDE;
-  virtual bool SetSendBufferSize(int32 size) OVERRIDE;
+  virtual int SetReceiveBufferSize(int32 size) OVERRIDE;
+  virtual int SetSendBufferSize(int32 size) OVERRIDE;
 
   // DatagramSocket implementation.
   virtual void Close() OVERRIDE;
@@ -1001,6 +1009,8 @@ class MockUDPClientSocket : public DatagramClientSocket, public AsyncSocket {
   virtual void OnReadComplete(const MockRead& data) OVERRIDE;
   virtual void OnConnectComplete(const MockConnect& data) OVERRIDE;
 
+  void set_source_port(int port) { source_port_ = port;}
+
  private:
   int CompleteRead();
 
@@ -1012,6 +1022,7 @@ class MockUDPClientSocket : public DatagramClientSocket, public AsyncSocket {
   int read_offset_;
   MockRead read_data_;
   bool need_read_data_;
+  int source_port_;  // Ephemeral source port.
 
   // Address of the "remote" peer we're connected to.
   IPEndPoint peer_addr_;

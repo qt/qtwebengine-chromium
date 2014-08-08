@@ -41,6 +41,7 @@ WebMediaSource::AddStatus WebMediaSourceImpl::addSourceBuffer(
   std::vector<std::string> new_codecs(codecs.size());
   for (size_t i = 0; i < codecs.size(); ++i)
     new_codecs[i] = codecs[i].utf8().data();
+
   WebMediaSource::AddStatus result =
       static_cast<WebMediaSource::AddStatus>(
           demuxer_->AddId(id, type.utf8().data(), new_codecs));
@@ -73,8 +74,6 @@ void WebMediaSourceImpl::markEndOfStream(
     case WebMediaSource::EndOfStreamStatusDecodeError:
       pipeline_status = media::PIPELINE_ERROR_DECODE;
       break;
-    default:
-      NOTIMPLEMENTED();
   }
 
   demuxer_->MarkEndOfStream(pipeline_status);

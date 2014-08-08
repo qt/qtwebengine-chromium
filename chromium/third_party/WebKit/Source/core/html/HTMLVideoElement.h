@@ -27,15 +27,21 @@
 #define HTMLVideoElement_h
 
 #include "core/html/HTMLMediaElement.h"
+#include "core/html/canvas/CanvasImageSource.h"
+
+namespace blink {
+class WebGraphicsContext3D;
+}
 
 namespace WebCore {
 
 class ExceptionState;
 class HTMLImageLoader;
 
-class HTMLVideoElement FINAL : public HTMLMediaElement {
+class HTMLVideoElement FINAL : public HTMLMediaElement, public CanvasImageSource {
 public:
-    static PassRefPtr<HTMLVideoElement> create(Document&, bool createdByParser = false);
+    static PassRefPtrWillBeRawPtr<HTMLVideoElement> create(Document&);
+    virtual void trace(Visitor*) OVERRIDE;
 
     unsigned videoWidth() const;
     unsigned videoHeight() const;
@@ -51,18 +57,28 @@ public:
     unsigned webkitDroppedFrameCount() const;
 
     // Used by canvas to gain raw pixel access
-    void paintCurrentFrameInContext(GraphicsContext*, const IntRect&);
+    void paintCurrentFrameInContext(GraphicsContext*, const IntRect&) const;
 
     // Used by WebGL to do GPU-GPU textures copy if possible.
     // See more details at MediaPlayer::copyVideoTextureToPlatformTexture() defined in Source/WebCore/platform/graphics/MediaPlayer.h.
-    bool copyVideoTextureToPlatformTexture(GraphicsContext3D*, Platform3DObject texture, GC3Dint level, GC3Denum type, GC3Denum internalFormat, bool premultiplyAlpha, bool flipY);
+    bool copyVideoTextureToPlatformTexture(blink::WebGraphicsContext3D*, Platform3DObject texture, GC3Dint level, GC3Denum type, GC3Denum internalFormat, bool premultiplyAlpha, bool flipY);
 
     bool shouldDisplayPosterImage() const { return displayMode() == Poster || displayMode() == PosterWaitingForVideo; }
 
     KURL posterImageURL() const;
 
+    // FIXME: Remove this when WebMediaPlayerClientImpl::loadInternal does not depend on it.
+    virtual KURL mediaPlayerPosterURL() OVERRIDE;
+
+    // CanvasImageSource implementation
+    virtual PassRefPtr<Image> getSourceImageForCanvas(SourceImageMode, SourceImageStatus*) const OVERRIDE;
+    virtual bool isVideoElement() const OVERRIDE { return true; }
+    virtual bool wouldTaintOrigin(SecurityOrigin*) const OVERRIDE;
+    virtual FloatSize sourceSize() const OVERRIDE;
+    virtual const KURL& sourceURL() const OVERRIDE { return currentSrc(); }
+
 private:
-    HTMLVideoElement(Document&, bool);
+    HTMLVideoElement(Document&);
 
     virtual bool rendererIsNeeded(const RenderStyle&) OVERRIDE;
     virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
@@ -70,9 +86,8 @@ private:
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
     virtual bool isPresentationAttribute(const QualifiedName&) const OVERRIDE;
     virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) OVERRIDE;
-    virtual bool isVideo() const OVERRIDE { return true; }
-    virtual bool hasVideo() const OVERRIDE { return player() && player()->hasVideo(); }
-    virtual bool supportsFullscreen() const OVERRIDE;
+    virtual bool hasVideo() const OVERRIDE { return webMediaPlayer() && webMediaPlayer()->hasVideo(); }
+    bool supportsFullscreen() const;
     virtual bool isURLAttribute(const Attribute&) const OVERRIDE;
     virtual const AtomicString imageSourceURL() const OVERRIDE;
 
@@ -81,22 +96,10 @@ private:
     virtual void didMoveToNewDocument(Document& oldDocument) OVERRIDE;
     virtual void setDisplayMode(DisplayMode) OVERRIDE;
 
-    OwnPtr<HTMLImageLoader> m_imageLoader;
+    OwnPtrWillBeMember<HTMLImageLoader> m_imageLoader;
 
     AtomicString m_defaultPosterURL;
 };
-
-inline bool isHTMLVideoElement(const Node* node)
-{
-    return node->hasTagName(HTMLNames::videoTag);
-}
-
-inline bool isHTMLVideoElement(const Element* element)
-{
-    return element->hasTagName(HTMLNames::videoTag);
-}
-
-DEFINE_NODE_TYPE_CASTS(HTMLVideoElement, hasTagName(HTMLNames::videoTag));
 
 } //namespace
 

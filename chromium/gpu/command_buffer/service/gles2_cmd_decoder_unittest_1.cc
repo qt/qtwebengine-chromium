@@ -37,6 +37,8 @@ class GLES2DecoderTest1 : public GLES2DecoderTestBase {
   GLES2DecoderTest1() { }
 };
 
+INSTANTIATE_TEST_CASE_P(Service, GLES2DecoderTest1, ::testing::Bool());
+
 template <>
 void GLES2DecoderTestBase::SpecializedSetup<cmds::GenerateMipmap, 0>(
     bool valid) {
@@ -45,14 +47,6 @@ void GLES2DecoderTestBase::SpecializedSetup<cmds::GenerateMipmap, 0>(
       GL_TEXTURE_2D, 0, GL_RGBA, 16, 16, 0, GL_RGBA, GL_UNSIGNED_BYTE,
       kSharedMemoryId, kSharedMemoryOffset);
   if (valid) {
-    EXPECT_CALL(*gl_, TexParameteri(
-        GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_NEAREST))
-        .Times(1)
-        .RetiresOnSaturation();
-    EXPECT_CALL(*gl_, TexParameteri(
-        GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_LINEAR))
-        .Times(1)
-        .RetiresOnSaturation();
     EXPECT_CALL(*gl_, GetError())
         .WillOnce(Return(GL_NO_ERROR))
         .WillOnce(Return(GL_NO_ERROR))
@@ -280,6 +274,26 @@ void GLES2DecoderTestBase::SpecializedSetup<cmds::GetVertexAttribiv, 0>(
         .RetiresOnSaturation();
   }
 };
+
+template <>
+void GLES2DecoderTestBase::SpecializedSetup<cmds::RenderbufferStorage, 0>(
+    bool valid) {
+  DoBindRenderbuffer(GL_RENDERBUFFER, client_renderbuffer_id_,
+                    kServiceRenderbufferId);
+  if (valid) {
+    EXPECT_CALL(*gl_, GetError())
+        .WillOnce(Return(GL_NO_ERROR))
+        .RetiresOnSaturation();
+    EXPECT_CALL(*gl_,
+                RenderbufferStorageEXT(GL_RENDERBUFFER, _, 3, 4))
+        .Times(1)
+        .RetiresOnSaturation();
+    EXPECT_CALL(*gl_, GetError())
+        .WillOnce(Return(GL_NO_ERROR))
+        .RetiresOnSaturation();
+  }
+}
+
 
 #include "gpu/command_buffer/service/gles2_cmd_decoder_unittest_1_autogen.h"
 

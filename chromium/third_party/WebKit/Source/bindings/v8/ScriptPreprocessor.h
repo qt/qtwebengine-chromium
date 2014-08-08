@@ -40,12 +40,11 @@ namespace WebCore {
 class ScriptController;
 class ScriptSourceCode;
 class ScriptDebugServer;
-class PageConsole;
 
 class ScriptPreprocessor {
     WTF_MAKE_NONCOPYABLE(ScriptPreprocessor);
 public:
-    ScriptPreprocessor(const ScriptSourceCode&, ScriptController&, PageConsole&);
+    ScriptPreprocessor(const ScriptSourceCode&, LocalFrame*);
     String preprocessSourceCode(const String& sourceCode, const String& sourceName);
     String preprocessSourceCode(const String& sourceCode, const String& sourceName, const String& functionName);
     bool isPreprocessing() { return m_isPreprocessing; }
@@ -53,9 +52,7 @@ public:
 
 private:
     String preprocessSourceCode(const String& sourceCode, const String& sourceName, v8::Handle<v8::Value> functionName);
-    RefPtr<DOMWrapperWorld> m_world;
-    ScopedPersistent<v8::Context> m_context;
-    v8::Isolate* m_isolate;
+    RefPtr<ScriptState> m_scriptState;
     ScopedPersistent<v8::Function> m_preprocessorFunction;
     bool m_isPreprocessing;
 };

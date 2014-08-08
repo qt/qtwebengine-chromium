@@ -10,10 +10,6 @@
 #include <errno.h>
 #include <pthread.h>
 
-#if !defined(OS_MACOSX)
-#include <gcrypt.h>
-#endif
-
 #include "base/debug/leak_annotations.h"
 #include "base/file_util.h"
 #include "base/lazy_instance.h"
@@ -24,76 +20,6 @@
 #include "printing/backend/cups_helper.h"
 #include "printing/backend/print_backend_consts.h"
 #include "url/gurl.h"
-
-#if !defined(OS_MACOSX)
-GCRY_THREAD_OPTION_PTHREAD_IMPL;
-
-namespace {
-
-// Init GCrypt library (needed for CUPS) using pthreads.
-// There exists a bug in CUPS library, where it crashed with: "ath.c:184:
-// _gcry_ath_mutex_lock: Assertion `*lock == ((ath_mutex_t) 0)' failed."
-// It happened when multiple threads tried printing simultaneously.
-// Google search for 'gnutls thread safety' provided a solution that
-// initialized gcrypt and gnutls.
-
-// TODO(phajdan.jr): Remove this after https://bugs.g10code.com/gnupg/issue1197
-// gets fixed on all Linux distros we support (i.e. when they ship libgcrypt
-// with the fix).
-
-// Initially, we linked with -lgnutls and simply called gnutls_global_init(),
-// but this did not work well since we build one binary on Ubuntu Hardy and
-// expect it to run on many Linux distros. (See http://crbug.com/46954)
-// So instead we use dlopen() and dlsym() to dynamically load and call
-// gnutls_global_init().
-
-class GcryptInitializer {
- public:
-  GcryptInitializer() {
-    Init();
-  }
-
- private:
-  void Init() {
-    const char* kGnuTlsFiles[] = {
-      "libgnutls.so.28",
-      "libgnutls.so.26",
-      "libgnutls.so",
-    };
-    gcry_control(GCRYCTL_SET_THREAD_CBS, &gcry_threads_pthread);
-    for (size_t i = 0; i < arraysize(kGnuTlsFiles); ++i) {
-      void* gnutls_lib = dlopen(kGnuTlsFiles[i], RTLD_NOW);
-      if (!gnutls_lib) {
-        VLOG(1) << "Cannot load " << kGnuTlsFiles[i];
-        continue;
-      }
-      const char* kGnuTlsInitFuncName = "gnutls_global_init";
-      int (*pgnutls_global_init)(void) = reinterpret_cast<int(*)()>(
-          dlsym(gnutls_lib, kGnuTlsInitFuncName));
-      if (!pgnutls_global_init) {
-        VLOG(1) << "Could not find " << kGnuTlsInitFuncName
-                << " in " << kGnuTlsFiles[i];
-        continue;
-      }
-      {
-        // GnuTLS has a genuine small memory leak that is easier to annotate
-        // than suppress. See http://crbug.com/176888#c7
-        // TODO(earthdok): remove this once the leak is fixed.
-        ANNOTATE_SCOPED_MEMORY_LEAK;
-        if ((*pgnutls_global_init)() != 0)
-          LOG(ERROR) << "gnutls_global_init() failed";
-      }
-      return;
-    }
-    LOG(ERROR) << "Cannot find libgnutls";
-  }
-};
-
-base::LazyInstance<GcryptInitializer> g_gcrypt_initializer =
-    LAZY_INSTANCE_INITIALIZER;
-
-}  // namespace
-#endif  // !defined(OS_MACOSX)
 
 namespace printing {
 
@@ -239,8 +165,7 @@ bool PrintBackendCUPS::GetPrinterCapsAndDefaults(
   base::FilePath ppd_path(GetPPD(printer_name.c_str()));
   // In some cases CUPS failed to get ppd file.
   if (ppd_path.empty()) {
-    LOG(ERROR) << "CUPS: Failed to get PPD"
-               << ", printer name: " << printer_name;
+    LOG(ERROR) << "CUPS: Failed to get PPD, printer name: " << printer_name;
     return false;
   }
 
@@ -296,11 +221,6 @@ bool PrintBackendCUPS::IsValidPrinter(const std::string& printer_name) {
 
 scoped_refptr<PrintBackend> PrintBackend::CreateInstance(
     const base::DictionaryValue* print_backend_settings) {
-#if !defined(OS_MACOSX)
-  // Initialize gcrypt library.
-  g_gcrypt_initializer.Get();
-#endif
-
   std::string print_server_url_str, cups_blocking;
   int encryption = HTTP_ENCRYPT_NEVER;
   if (print_backend_settings) {
@@ -320,6 +240,12 @@ scoped_refptr<PrintBackend> PrintBackend::CreateInstance(
 
 int PrintBackendCUPS::GetDests(cups_dest_t** dests) {
   if (print_server_url_.is_empty()) {  // Use default (local) print server.
+    // GnuTLS has a genuine small memory leak that is easier to annotate
+    // than suppress. See http://crbug.com/176888#c7
+    // In theory any CUPS function can trigger this leak, but in
+    // PrintBackendCUPS, this is the most likely spot.
+    // TODO(earthdok): remove this once the leak is fixed.
+    ANNOTATE_SCOPED_MEMORY_LEAK;
     return cupsGetDests(dests);
   } else {
     HttpConnectionCUPS http(print_server_url_, cups_encryption_);

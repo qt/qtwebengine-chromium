@@ -8,12 +8,12 @@
 #include "content/child/plugin_param_traits.h"
 #include "content/common/content_export.h"
 #include "content/common/content_param_traits.h"
+#include "content/common/cursors/webcursor.h"
 #include "content/public/common/common_param_traits.h"
 #include "ipc/ipc_channel_handle.h"
 #include "ipc/ipc_message_macros.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/rect.h"
-#include "webkit/common/cursors/webcursor.h"
 
 #if defined(OS_POSIX)
 #include "base/file_descriptor_posix.h"
@@ -62,7 +62,7 @@ IPC_STRUCT_BEGIN(PluginMsg_FetchURL_Params)
   IPC_STRUCT_MEMBER(GURL, referrer)
   IPC_STRUCT_MEMBER(bool, notify_redirect)
   IPC_STRUCT_MEMBER(bool, is_plugin_src_load)
-  IPC_STRUCT_MEMBER(int, render_view_id)
+  IPC_STRUCT_MEMBER(int, render_frame_id)
 IPC_STRUCT_END()
 
 IPC_STRUCT_BEGIN(PluginMsg_UpdateGeometry_Param)
@@ -133,7 +133,7 @@ IPC_SYNC_MESSAGE_ROUTED1_0(PluginMsg_SetFocus,
 IPC_SYNC_MESSAGE_ROUTED1_2(PluginMsg_HandleInputEvent,
                            IPC::WebInputEventPointer /* event */,
                            bool /* handled */,
-                           WebCursor /* cursor type*/)
+                           content::WebCursor /* cursor type*/)
 
 IPC_MESSAGE_ROUTED1(PluginMsg_SetContentAreaFocus,
                     bool /* has_focus */)
@@ -223,12 +223,6 @@ IPC_MESSAGE_ROUTED2(PluginMsg_WindowFrameChanged,
 
 IPC_MESSAGE_ROUTED1(PluginMsg_ImeCompositionCompleted,
                     base::string16 /* text */)
-
-// This message, used only on 10.6 and later, transmits the "fake"
-// window handle allocated by the browser on behalf of the renderer
-// to the GPU plugin.
-IPC_MESSAGE_ROUTED1(PluginMsg_SetFakeAcceleratedSurfaceWindowHandle,
-                    gfx::PluginWindowHandle /* window */)
 #endif
 
 //-----------------------------------------------------------------------------

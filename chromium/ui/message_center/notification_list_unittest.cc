@@ -15,6 +15,8 @@
 #include "ui/message_center/notification_types.h"
 #include "ui/message_center/notifier_settings.h"
 
+using base::UTF8ToUTF16;
+
 namespace message_center {
 
 class NotificationListTest : public testing::Test {
@@ -134,9 +136,9 @@ TEST_F(NotificationListTest, Basic) {
   EXPECT_EQ(2u, notification_list()->UnreadCount(blockers()));
 
   EXPECT_TRUE(notification_list()->HasPopupNotifications(blockers()));
-  EXPECT_TRUE(notification_list()->HasNotification(id0));
-  EXPECT_TRUE(notification_list()->HasNotification(id1));
-  EXPECT_FALSE(notification_list()->HasNotification(id1 + "foo"));
+  EXPECT_TRUE(notification_list()->GetNotificationById(id0));
+  EXPECT_TRUE(notification_list()->GetNotificationById(id1));
+  EXPECT_FALSE(notification_list()->GetNotificationById(id1 + "foo"));
 
   EXPECT_EQ(2u, GetPopupCounts());
 

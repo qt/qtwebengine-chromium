@@ -352,7 +352,7 @@ void _NPN_InitializeVariantWithStringCopy(NPVariant* variant, const NPString* va
 // The rootObjectMap is a hash table of root objects to a set of
 // objects that should be deactivated in sync with the root.  A
 // root is defined as a top-level owner object.  This is used on
-// Frame teardown to deactivate all objects associated
+// LocalFrame teardown to deactivate all objects associated
 // with a particular plugin.
 
 typedef WTF::HashSet<NPObject*> NPObjectSet;
@@ -432,7 +432,7 @@ void _NPN_UnregisterObject(NPObject* npObject)
             set->remove(sub_object);
             liveObjectMap().remove(sub_object);
 
-            // Script objects hold a refernce to their DOMWindow*, which is going away if
+            // Script objects hold a refernce to their LocalDOMWindow*, which is going away if
             // we're unregistering the associated owner NPObject. Clear it out.
             if (V8NPObject* v8npObject = npObjectToV8NPObject(sub_object))
                 v8npObject->rootObject = 0;

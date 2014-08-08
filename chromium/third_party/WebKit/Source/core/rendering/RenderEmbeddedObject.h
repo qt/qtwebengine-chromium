@@ -27,7 +27,6 @@
 
 namespace WebCore {
 
-class MouseEvent;
 class TextRun;
 
 // Renderer for embeds and objects, often, but not always, rendered via plug-ins.
@@ -44,47 +43,32 @@ public:
     void setPluginUnavailabilityReason(PluginUnavailabilityReason);
     bool showsUnavailablePluginIndicator() const;
 
-    // FIXME: This belongs on HTMLObjectElement.
-    bool hasFallbackContent() const { return m_hasFallbackContent; }
-    void setHasFallbackContent(bool hasFallbackContent) { m_hasFallbackContent = hasFallbackContent; }
-
-    bool allowsAcceleratedCompositing() const;
-
 protected:
     virtual void paintReplaced(PaintInfo&, const LayoutPoint&) OVERRIDE FINAL;
     virtual void paint(PaintInfo&, const LayoutPoint&) OVERRIDE FINAL;
-
-    const RenderObjectChildList* children() const { return &m_children; }
-    RenderObjectChildList* children() { return &m_children; }
 
 protected:
     virtual void layout() OVERRIDE FINAL;
 
 private:
-    virtual const char* renderName() const { return "RenderEmbeddedObject"; }
+    virtual const char* renderName() const OVERRIDE { return "RenderEmbeddedObject"; }
     virtual bool isEmbeddedObject() const OVERRIDE FINAL { return true; }
+    virtual RenderBox* embeddedContentBox() const OVERRIDE FINAL;
 
     void paintSnapshotImage(PaintInfo&, const LayoutPoint&, Image*);
     virtual void paintContents(PaintInfo&, const LayoutPoint&) OVERRIDE FINAL;
 
-    virtual bool requiresLayer() const OVERRIDE FINAL;
-
-    virtual void viewCleared() OVERRIDE FINAL;
+    virtual LayerType layerTypeRequired() const OVERRIDE FINAL;
 
     virtual bool scroll(ScrollDirection, ScrollGranularity, float multiplier) OVERRIDE FINAL;
 
     bool getReplacementTextGeometry(const LayoutPoint& accumulatedOffset, FloatRect& contentRect, Path&, FloatRect& replacementTextRect, Font&, TextRun&, float& textWidth) const;
 
-    virtual bool canHaveChildren() const OVERRIDE FINAL;
-    virtual RenderObjectChildList* virtualChildren() OVERRIDE FINAL { return children(); }
-    virtual const RenderObjectChildList* virtualChildren() const OVERRIDE FINAL { return children(); }
-
-    bool m_hasFallbackContent; // FIXME: This belongs on HTMLObjectElement.
+    virtual CompositingReasons additionalCompositingReasons(CompositingTriggerFlags) const OVERRIDE;
 
     bool m_showsUnavailablePluginIndicator;
     PluginUnavailabilityReason m_pluginUnavailabilityReason;
     String m_unavailablePluginReplacementText;
-    RenderObjectChildList m_children;
 };
 
 DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderEmbeddedObject, isEmbeddedObject());

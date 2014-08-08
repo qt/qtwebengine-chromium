@@ -1219,15 +1219,39 @@ TEST(TransformOperationTest, BlendedBoundsForSkew) {
   }
 }
 
+TEST(TransformOperationTest, NonCommutativeRotations) {
+  TransformOperations operations_from;
+  operations_from.AppendRotate(1.0, 0.0, 0.0, 0.0);
+  operations_from.AppendRotate(0.0, 1.0, 0.0, 0.0);
+  TransformOperations operations_to;
+  operations_to.AppendRotate(1.0, 0.0, 0.0, 45.0);
+  operations_to.AppendRotate(0.0, 1.0, 0.0, 135.0);
+
+  gfx::BoxF box(0, 0, 0, 1, 1, 1);
+  gfx::BoxF bounds;
+
+  SkMScalar min_progress = 0.0f;
+  SkMScalar max_progress = 1.0f;
+  EXPECT_TRUE(operations_to.BlendedBoundsForBox(
+      box, operations_from, min_progress, max_progress, &bounds));
+  gfx::Transform blended_transform =
+      operations_to.Blend(operations_from, max_progress);
+  gfx::Point3F blended_point(0.9f, 0.9f, 0.0f);
+  blended_transform.TransformPoint(&blended_point);
+  gfx::BoxF expanded_bounds = bounds;
+  expanded_bounds.ExpandTo(blended_point);
+  EXPECT_EQ(bounds.ToString(), expanded_bounds.ToString());
+}
+
 TEST(TransformOperationTest, BlendedBoundsForSequence) {
   TransformOperations operations_from;
-  operations_from.AppendTranslate(2.0, 4.0, -1.0);
-  operations_from.AppendScale(-1.0, 2.0, 3.0);
   operations_from.AppendTranslate(1.0, -5.0, 1.0);
+  operations_from.AppendScale(-1.0, 2.0, 3.0);
+  operations_from.AppendTranslate(2.0, 4.0, -1.0);
   TransformOperations operations_to;
-  operations_to.AppendTranslate(6.0, -2.0, 3.0);
-  operations_to.AppendScale(-3.0, -2.0, 5.0);
   operations_to.AppendTranslate(13.0, -1.0, 5.0);
+  operations_to.AppendScale(-3.0, -2.0, 5.0);
+  operations_to.AppendTranslate(6.0, -2.0, 3.0);
 
   gfx::BoxF box(1.f, 2.f, 3.f, 4.f, 4.f, 4.f);
   gfx::BoxF bounds;
@@ -1256,6 +1280,253 @@ TEST(TransformOperationTest, BlendedBoundsForSequence) {
         box, operations_from, min_progress, max_progress, &bounds));
   EXPECT_EQ(gfx::BoxF(-7.f, -3.f, 2.f, 15.f, 23.f, 20.f).ToString(),
             bounds.ToString());
+}
+
+TEST(TransformOperationTest, AffectsScaleWithSingleOperation) {
+  TransformOperations empty_operations;
+  EXPECT_FALSE(empty_operations.AffectsScale());
+
+  TransformOperations identity;
+  identity.AppendIdentity();
+  EXPECT_FALSE(identity.AffectsScale());
+
+  TransformOperations translate;
+  translate.AppendTranslate(1.f, 2.f, 3.f);
+  EXPECT_FALSE(translate.AffectsScale());
+
+  TransformOperations rotate;
+  rotate.AppendRotate(1.f, 2.f, 3.f, 4.f);
+  EXPECT_FALSE(rotate.AffectsScale());
+
+  TransformOperations scale;
+  scale.AppendScale(1.f, 2.f, 3.f);
+  EXPECT_TRUE(scale.AffectsScale());
+
+  TransformOperations skew;
+  skew.AppendSkew(1.f, 2.f);
+  EXPECT_FALSE(skew.AffectsScale());
+
+  TransformOperations perspective;
+  perspective.AppendPerspective(1.f);
+  EXPECT_FALSE(perspective.AffectsScale());
+
+  TransformOperations identity_matrix;
+  identity_matrix.AppendMatrix(gfx::Transform());
+  EXPECT_FALSE(identity_matrix.AffectsScale());
+
+  TransformOperations translation_matrix;
+  gfx::Transform translation_transform;
+  translation_transform.Translate3d(1.f, 2.f, 3.f);
+  translation_matrix.AppendMatrix(translation_transform);
+  EXPECT_FALSE(translation_matrix.AffectsScale());
+
+  TransformOperations scaling_matrix;
+  gfx::Transform scaling_transform;
+  scaling_transform.Scale(2.f, 2.f);
+  scaling_matrix.AppendMatrix(scaling_transform);
+  EXPECT_TRUE(scaling_matrix.AffectsScale());
+}
+
+TEST(TransformOperationTest, AffectsScaleWithMultipleOperations) {
+  TransformOperations operations1;
+  operations1.AppendSkew(1.f, 2.f);
+  operations1.AppendTranslate(1.f, 2.f, 3.f);
+  operations1.AppendIdentity();
+  EXPECT_FALSE(operations1.AffectsScale());
+
+  TransformOperations operations2;
+  operations2.AppendPerspective(2.f);
+  operations2.AppendScale(1.f, 2.f, 3.f);
+  operations2.AppendTranslate(3.f, 2.f, 1.f);
+  EXPECT_TRUE(operations2.AffectsScale());
+}
+
+TEST(TransformOperationTest, IsTranslationWithSingleOperation) {
+  TransformOperations empty_operations;
+  EXPECT_TRUE(empty_operations.IsTranslation());
+
+  TransformOperations identity;
+  identity.AppendIdentity();
+  EXPECT_TRUE(identity.IsTranslation());
+
+  TransformOperations translate;
+  translate.AppendTranslate(1.f, 2.f, 3.f);
+  EXPECT_TRUE(translate.IsTranslation());
+
+  TransformOperations rotate;
+  rotate.AppendRotate(1.f, 2.f, 3.f, 4.f);
+  EXPECT_FALSE(rotate.IsTranslation());
+
+  TransformOperations scale;
+  scale.AppendScale(1.f, 2.f, 3.f);
+  EXPECT_FALSE(scale.IsTranslation());
+
+  TransformOperations skew;
+  skew.AppendSkew(1.f, 2.f);
+  EXPECT_FALSE(skew.IsTranslation());
+
+  TransformOperations perspective;
+  perspective.AppendPerspective(1.f);
+  EXPECT_FALSE(perspective.IsTranslation());
+
+  TransformOperations identity_matrix;
+  identity_matrix.AppendMatrix(gfx::Transform());
+  EXPECT_TRUE(identity_matrix.IsTranslation());
+
+  TransformOperations translation_matrix;
+  gfx::Transform translation_transform;
+  translation_transform.Translate3d(1.f, 2.f, 3.f);
+  translation_matrix.AppendMatrix(translation_transform);
+  EXPECT_TRUE(translation_matrix.IsTranslation());
+
+  TransformOperations scaling_matrix;
+  gfx::Transform scaling_transform;
+  scaling_transform.Scale(2.f, 2.f);
+  scaling_matrix.AppendMatrix(scaling_transform);
+  EXPECT_FALSE(scaling_matrix.IsTranslation());
+}
+
+TEST(TransformOperationTest, IsTranslationWithMultipleOperations) {
+  TransformOperations operations1;
+  operations1.AppendSkew(1.f, 2.f);
+  operations1.AppendTranslate(1.f, 2.f, 3.f);
+  operations1.AppendIdentity();
+  EXPECT_FALSE(operations1.IsTranslation());
+
+  TransformOperations operations2;
+  operations2.AppendIdentity();
+  operations2.AppendTranslate(3.f, 2.f, 1.f);
+  gfx::Transform translation_transform;
+  translation_transform.Translate3d(1.f, 2.f, 3.f);
+  operations2.AppendMatrix(translation_transform);
+  EXPECT_TRUE(operations2.IsTranslation());
+}
+
+TEST(TransformOperationTest, MaximumScale) {
+  TransformOperations operations1;
+  operations1.AppendScale(3.f, 2.f, 5.f);
+  TransformOperations operations2;
+  operations2.AppendScale(6.f, 5.f, 2.f);
+
+  float max_scale = 0.f;
+  EXPECT_TRUE(operations2.MaximumScale(operations1, 0.f, 1.f, &max_scale));
+  // x at progress 1.f
+  EXPECT_EQ(6.f, max_scale);
+
+  EXPECT_TRUE(operations2.MaximumScale(operations1, -1.f, 1.f, &max_scale));
+  // z at progress -1.f
+  EXPECT_EQ(8.f, max_scale);
+
+  EXPECT_TRUE(operations2.MaximumScale(operations1, 0.f, 2.f, &max_scale));
+  // x at progress 2.f
+  EXPECT_EQ(9.f, max_scale);
+
+  TransformOperations operations3;
+  operations3.AppendScale(1.f, 4.f, 1.f);
+  TransformOperations operations4;
+
+  EXPECT_TRUE(operations4.MaximumScale(operations3, 0.f, 1.f, &max_scale));
+  // y at progress 0.f
+  EXPECT_EQ(4.f, max_scale);
+
+  EXPECT_TRUE(operations4.MaximumScale(operations3, -1.f, 1.f, &max_scale));
+  // y at progress -1.f
+  EXPECT_EQ(7.f, max_scale);
+
+  EXPECT_TRUE(operations4.MaximumScale(operations3, 0.f, 2.f, &max_scale));
+  // y at progress 0.f
+  EXPECT_EQ(4.f, max_scale);
+
+  TransformOperations operations5;
+  operations5.AppendTranslate(1.f, 2.f, 3.f);
+  operations5.AppendScale(1.f, 1.f, 4.f);
+  gfx::Transform translation_transform;
+  translation_transform.Translate3d(1.f, 2.f, 3.f);
+  operations5.AppendMatrix(translation_transform);
+  TransformOperations operations6;
+  operations6.AppendTranslate(2.f, 3.f, 4.f);
+  operations6.AppendScale(2.f, 5.f, 1.f);
+  operations6.AppendMatrix(translation_transform);
+
+  EXPECT_TRUE(operations6.MaximumScale(operations5, 0.f, 1.f, &max_scale));
+  // y at progress 1.f
+  EXPECT_EQ(5.f, max_scale);
+
+  EXPECT_TRUE(operations6.MaximumScale(operations5, -1.f, 1.f, &max_scale));
+  // z at progress -1.f
+  EXPECT_EQ(7.f, max_scale);
+
+  EXPECT_TRUE(operations6.MaximumScale(operations5, 0.f, 2.f, &max_scale));
+  // y at progress 2.f
+  EXPECT_EQ(9.f, max_scale);
+}
+
+TEST(TransformOperationTest, MaximumScaleCannotBeComputed) {
+  TransformOperations operations1;
+  operations1.AppendScale(2.f, 2.f, 2.f);
+  TransformOperations operations2;
+  operations2.AppendTranslate(1.f, 2.f, 3.f);
+
+  float max_scale = 0.f;
+
+  // Non-matching operations.
+  EXPECT_FALSE(operations2.MaximumScale(operations1, 0.f, 1.f, &max_scale));
+
+  TransformOperations operations3;
+  operations3.AppendScale(2.f, 2.f, 2.f);
+  operations3.AppendTranslate(1.f, 2.f, 3.f);
+  operations3.AppendScale(3.f, 3.f, 3.f);
+  TransformOperations operations4;
+  operations4.AppendScale(4.f, 4.f, 4.f);
+  operations4.AppendTranslate(2.f, 3.f, 4.f);
+  operations4.AppendScale(5.f, 5.f, 5.f);
+
+  // More that one scale operation in a sequence.
+  EXPECT_FALSE(operations4.MaximumScale(operations3, 0.f, 1.f, &max_scale));
+
+  TransformOperations operations5;
+  operations5.AppendScale(2.f, 2.f, 2.f);
+  gfx::Transform scaling_transform;
+  scaling_transform.Scale(2.f, 2.f);
+  operations5.AppendMatrix(scaling_transform);
+  TransformOperations operations6;
+  operations6.AppendScale(3.f, 3.f, 3.f);
+  gfx::Transform translation_transform;
+  translation_transform.Translate3d(1.f, 2.f, 3.f);
+  operations6.AppendMatrix(translation_transform);
+
+  // Non-translation matrix operation.
+  EXPECT_FALSE(operations6.MaximumScale(operations5, 0.f, 1.f, &max_scale));
+
+  TransformOperations operations7;
+  operations7.AppendScale(2.f, 2.f, 2.f);
+  operations7.AppendRotate(1.f, 2.f, 3.f, 4.f);
+  TransformOperations operations8;
+  operations8.AppendScale(3.f, 3.f, 3.f);
+  operations8.AppendRotate(3.f, 4.f, 5.f, 6.f);
+
+  // Rotation operation.
+  EXPECT_FALSE(operations8.MaximumScale(operations7, 0.f, 1.f, &max_scale));
+
+  TransformOperations operations9;
+  operations9.AppendScale(2.f, 2.f, 2.f);
+  operations9.AppendSkew(1.f, 2.f);
+  TransformOperations operations10;
+  operations10.AppendScale(3.f, 3.f, 3.f);
+  operations10.AppendSkew(3.f, 4.f);
+
+  // Skew operation.
+  EXPECT_FALSE(operations10.MaximumScale(operations9, 0.f, 1.f, &max_scale));
+
+  TransformOperations operations11;
+  operations11.AppendScale(2.f, 2.f, 2.f);
+  operations11.AppendPerspective(1.f);
+  TransformOperations operations12;
+  operations12.AppendScale(3.f, 3.f, 3.f);
+  operations12.AppendPerspective(3.f);
+
+  // Perspective operation.
+  EXPECT_FALSE(operations12.MaximumScale(operations11, 0.f, 1.f, &max_scale));
 }
 
 }  // namespace

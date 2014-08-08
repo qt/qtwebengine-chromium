@@ -10,6 +10,7 @@
 
 #include "base/basictypes.h"
 #include "base/containers/hash_tables.h"
+#include "base/containers/scoped_ptr_hash_map.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "base/process/process.h"
@@ -19,6 +20,7 @@
 #include "ppapi/c/pp_rect.h"
 #include "ppapi/c/ppb_console.h"
 #include "ppapi/proxy/dispatcher.h"
+#include "ppapi/proxy/message_handler.h"
 #include "ppapi/shared_impl/ppapi_preferences.h"
 #include "ppapi/shared_impl/ppb_view_shared.h"
 #include "ppapi/shared_impl/singleton_resource_id.h"
@@ -61,6 +63,10 @@ struct InstanceData {
   // calling when we shouldn't).
   bool is_request_surrounding_text_pending;
   bool should_do_request_surrounding_text;
+
+  // The message handler which should handle JavaScript->Plugin messages, if
+  // one has been registered, otherwise NULL.
+  scoped_ptr<MessageHandler> message_handler;
 };
 
 class PPAPI_PROXY_EXPORT PluginDispatcher
@@ -183,7 +189,7 @@ class PPAPI_PROXY_EXPORT PluginDispatcher
   typedef base::hash_map<std::string, const void*> InterfaceMap;
   InterfaceMap plugin_interfaces_;
 
-  typedef base::hash_map<PP_Instance, InstanceData> InstanceDataMap;
+  typedef base::ScopedPtrHashMap<PP_Instance, InstanceData> InstanceDataMap;
   InstanceDataMap instance_map_;
 
   // The preferences sent from the host. We only want to set this once, which

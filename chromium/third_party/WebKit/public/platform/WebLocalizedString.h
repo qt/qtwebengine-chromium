@@ -63,14 +63,6 @@ struct WebLocalizedString {
         AXMediaPauseButtonHelp,
         AXMediaPlayButton,
         AXMediaPlayButtonHelp,
-        AXMediaReturnToRealTime,
-        AXMediaReturnToRealTimeHelp,
-        AXMediaRewindButton,
-        AXMediaRewindButtonHelp,
-        AXMediaSeekBackButton,
-        AXMediaSeekBackButtonHelp,
-        AXMediaSeekForwardButton,
-        AXMediaSeekForwardButtonHelp,
         AXMediaShowClosedCaptionsButton,
         AXMediaShowClosedCaptionsButtonHelp,
         AXMediaSlider, // Deprecated.
@@ -132,6 +124,7 @@ struct WebLocalizedString {
         SearchMenuClearRecentSearchesText, // Deprecated.
         SearchMenuNoRecentSearchesText, // Deprecated.
         SearchMenuRecentSearchesText, // Deprecated.
+        SelectMenuListText,
         SubmitButtonDefaultLabel,
         ThisMonthButtonLabel,
         ThisWeekButtonLabel,

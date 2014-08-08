@@ -16,10 +16,29 @@
     "example": false,
     "level": "recommended"
   },
-  "browser_action": {
+  "bluetooth": {
+    "documentation": "manifest/bluetooth.html",
+    "example": {
+      "uuids": [ "1105", "1006" ]
+    }
+  },
+   "browser_action": {
     "documentation": "browserAction.html",
     "example": {},
     "level": "only_one"
+  },
+  "chrome_settings_overrides": {
+    "documentation": "settings_override.html",
+    "example": {}
+  },
+  "chrome_ui_overrides": {
+    "documentation": "ui_override.html",
+    "example": {
+      "bookmarks_ui": {
+        "remove_button": true,
+        "remove_bookmark_shortcut": true
+       }
+    }
   },
   "chrome_url_overrides": {
     "documentation": "override.html",
@@ -138,6 +157,12 @@
   "short_name": {
     "documentation": "manifest/name.html#short_name",
     "example": "Short Name"
+  },
+  "sockets": {
+    "documentation": "manifest/sockets.html",
+    "example": {
+      "tcp": { "connect": "*" }, "udp": { "send": "*" }
+    }
   },
   "storage": {
     "documentation": "manifest/storage.html",

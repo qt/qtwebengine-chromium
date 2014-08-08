@@ -20,7 +20,8 @@
 #include "config.h"
 #include "core/svg/SVGFESpotLightElement.h"
 
-#include "SVGNames.h"
+#include "core/SVGNames.h"
+#include "platform/graphics/filters/Filter.h"
 #include "platform/graphics/filters/SpotLightSource.h"
 
 namespace WebCore {
@@ -31,17 +32,14 @@ inline SVGFESpotLightElement::SVGFESpotLightElement(Document& document)
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<SVGFESpotLightElement> SVGFESpotLightElement::create(Document& document)
-{
-    return adoptRef(new SVGFESpotLightElement(document));
-}
+DEFINE_NODE_FACTORY(SVGFESpotLightElement)
 
-PassRefPtr<LightSource> SVGFESpotLightElement::lightSource() const
+PassRefPtr<LightSource> SVGFESpotLightElement::lightSource(Filter* filter) const
 {
-    FloatPoint3D pos(xCurrentValue(), yCurrentValue(), zCurrentValue());
-    FloatPoint3D direction(pointsAtXCurrentValue(), pointsAtYCurrentValue(), pointsAtZCurrentValue());
+    FloatPoint3D pos(x()->currentValue()->value(), y()->currentValue()->value(), z()->currentValue()->value());
+    FloatPoint3D direction(pointsAtX()->currentValue()->value(), pointsAtY()->currentValue()->value(), pointsAtZ()->currentValue()->value());
 
-    return SpotLightSource::create(pos, direction, specularExponentCurrentValue(), limitingConeAngleCurrentValue());
+    return SpotLightSource::create(filter->resolve3dPoint(pos), filter->resolve3dPoint(direction), specularExponent()->currentValue()->value(), limitingConeAngle()->currentValue()->value());
 }
 
 }

@@ -34,11 +34,11 @@
 #include "bindings/v8/ScriptWrappable.h"
 #include "core/dom/ActiveDOMObject.h"
 #include "core/dom/ExecutionContext.h"
-#include "core/events/EventTarget.h"
 #include "core/fileapi/FileError.h"
+#include "modules/EventTargetModules.h"
 #include "modules/filesystem/FileWriterBase.h"
+#include "platform/heap/Handle.h"
 #include "public/platform/WebFileWriterClient.h"
-#include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
 
 namespace WebCore {
@@ -47,10 +47,11 @@ class Blob;
 class ExceptionState;
 class ExecutionContext;
 
-class FileWriter : public ScriptWrappable, public FileWriterBase, public ActiveDOMObject, public EventTargetWithInlineData, public blink::WebFileWriterClient {
-    DEFINE_EVENT_TARGET_REFCOUNTING(FileWriterBase);
+class FileWriter FINAL : public FileWriterBase, public ScriptWrappable, public ActiveDOMObject, public EventTargetWithInlineData, public blink::WebFileWriterClient {
+    DEFINE_EVENT_TARGET_REFCOUNTING(RefCountedGarbageCollected<FileWriterBase>);
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(FileWriter);
 public:
-    static PassRefPtr<FileWriter> create(ExecutionContext*);
+    static FileWriter* create(ExecutionContext*);
 
     enum ReadyState {
         INIT = 0,
@@ -71,7 +72,7 @@ public:
     virtual void didFail(blink::WebFileError) OVERRIDE;
 
     // ActiveDOMObject
-    virtual void stop();
+    virtual void stop() OVERRIDE;
 
     // EventTarget
     virtual const AtomicString& interfaceName() const OVERRIDE;
@@ -83,6 +84,8 @@ public:
     DEFINE_ATTRIBUTE_EVENT_LISTENER(abort);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(error);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(writeend);
+
+    virtual void trace(Visitor*) OVERRIDE;
 
 private:
     enum Operation {
@@ -106,7 +109,7 @@ private:
 
     void setError(FileError::ErrorCode, ExceptionState&);
 
-    RefPtr<FileError> m_error;
+    RefPtrWillBeMember<FileError> m_error;
     ReadyState m_readyState;
     Operation m_operationInProgress;
     Operation m_queuedOperation;
@@ -116,7 +119,7 @@ private:
     long long m_numAborts;
     long long m_recursionDepth;
     double m_lastProgressNotificationTimeMS;
-    RefPtr<Blob> m_blobBeingWritten;
+    RefPtrWillBeMember<Blob> m_blobBeingWritten;
 };
 
 } // namespace WebCore

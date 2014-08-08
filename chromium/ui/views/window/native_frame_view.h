@@ -13,6 +13,8 @@ class Widget;
 
 class VIEWS_EXPORT NativeFrameView : public NonClientFrameView {
  public:
+  static const char kViewClassName[];
+
   explicit NativeFrameView(Widget* frame);
   virtual ~NativeFrameView();
 
@@ -28,9 +30,10 @@ class VIEWS_EXPORT NativeFrameView : public NonClientFrameView {
   virtual void UpdateWindowTitle() OVERRIDE;
 
   // View overrides:
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
-  virtual gfx::Size GetMinimumSize() OVERRIDE;
-  virtual gfx::Size GetMaximumSize() OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
+  virtual gfx::Size GetMinimumSize() const OVERRIDE;
+  virtual gfx::Size GetMaximumSize() const OVERRIDE;
+  virtual const char* GetClassName() const OVERRIDE;
 
  private:
   // Our containing frame.

@@ -6,13 +6,18 @@
     ['OS=="linux"', {
       'variables': {
         'isolate_dependency_tracked': [
-          '<(PRODUCT_DIR)/libclearkeycdm.so',
-          '<(PRODUCT_DIR)/libclearkeycdmadapter.so',
           '<(PRODUCT_DIR)/libffmpegsumo.so',
           '<(PRODUCT_DIR)/libosmesa.so',
           '<(PRODUCT_DIR)/libppGoogleNaClPluginChrome.so',
           '<(PRODUCT_DIR)/nacl_helper<(EXECUTABLE_SUFFIX)',
           '<(PRODUCT_DIR)/nacl_helper_bootstrap<(EXECUTABLE_SUFFIX)',
+        ],
+      },
+    }],
+    ['OS=="linux" or OS=="mac" or OS=="win"', {
+      'variables': {
+        'isolate_dependency_tracked': [
+          '<(PRODUCT_DIR)/resources.pak',
         ],
       },
     }],
@@ -27,11 +32,8 @@
           '<(PRODUCT_DIR)/locales/en-US.pak',
           '<(PRODUCT_DIR)/locales/fr.pak',
           '<(PRODUCT_DIR)/nacl_irt_x86_64.nexe',
-          '<(PRODUCT_DIR)/resources.pak',
         ],
         'isolate_dependency_untracked': [
-          '<(PRODUCT_DIR)/lib64/',
-          '<(PRODUCT_DIR)/plugins/',
           '<(PRODUCT_DIR)/resources/extension/',
         ],
       },
@@ -41,8 +43,13 @@
         'command': [
           '<(PRODUCT_DIR)/<(mac_product_name).app/Contents/MacOS/<(mac_product_name)',
         ],
+        'isolate_dependency_tracked': [
+          '<(PRODUCT_DIR)/exif.so',
+          '<(PRODUCT_DIR)/ffmpegsumo.so',
+        ],
         'isolate_dependency_untracked': [
           '<(PRODUCT_DIR)/<(mac_product_name) Framework.framework/',
+          '<(PRODUCT_DIR)/<(mac_product_name) Helper.app/',
           '<(PRODUCT_DIR)/<(mac_product_name).app/',
         ],
       },
@@ -50,14 +57,14 @@
     ['OS=="win"', {
       'variables': {
         'isolate_dependency_tracked': [
-          '<(PRODUCT_DIR)/D3DCompiler_43.dll',
+          '<(PRODUCT_DIR)/<(version_full).manifest',
           '<(PRODUCT_DIR)/chrome.dll',
-          '<(PRODUCT_DIR)/clearkeycdm.dll',
-          '<(PRODUCT_DIR)/clearkeycdmadapter.dll',
+          '<(PRODUCT_DIR)/chrome_child.dll',
+          '<(PRODUCT_DIR)/chrome_elf.dll',
           '<(PRODUCT_DIR)/d3dcompiler_46.dll',
           '<(PRODUCT_DIR)/ffmpegsumo.dll',
-          '<(PRODUCT_DIR)/icudt.dll',
           '<(PRODUCT_DIR)/libEGL.dll',
+          '<(PRODUCT_DIR)/libexif.dll',
           '<(PRODUCT_DIR)/libGLESv2.dll',
           '<(PRODUCT_DIR)/nacl64<(EXECUTABLE_SUFFIX)',
           '<(PRODUCT_DIR)/osmesa.dll',
@@ -65,5 +72,8 @@
         ],
       },
     }],
+  ],
+  'includes': [
+    '../base/base.isolate',
   ],
 }

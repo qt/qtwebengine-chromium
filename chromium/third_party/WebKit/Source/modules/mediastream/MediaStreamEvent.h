@@ -25,7 +25,7 @@
 #ifndef MediaStreamEvent_h
 #define MediaStreamEvent_h
 
-#include "core/events/Event.h"
+#include "modules/EventModules.h"
 #include "modules/mediastream/MediaStream.h"
 #include "wtf/text/AtomicString.h"
 
@@ -37,18 +37,20 @@ struct MediaStreamEventInit : public EventInit {
     RefPtr<MediaStream> stream;
 };
 
-class MediaStreamEvent : public Event {
+class MediaStreamEvent FINAL : public Event {
 public:
     virtual ~MediaStreamEvent();
 
-    static PassRefPtr<MediaStreamEvent> create();
-    static PassRefPtr<MediaStreamEvent> create(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtr<MediaStream>);
-    static PassRefPtr<MediaStreamEvent> create(const AtomicString& type, const MediaStreamEventInit& initializer);
+    static PassRefPtrWillBeRawPtr<MediaStreamEvent> create();
+    static PassRefPtrWillBeRawPtr<MediaStreamEvent> create(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtr<MediaStream>);
+    static PassRefPtrWillBeRawPtr<MediaStreamEvent> create(const AtomicString& type, const MediaStreamEventInit& initializer);
 
     MediaStream* stream() const;
     MediaStream* stream(bool&) const;
 
-    virtual const AtomicString& interfaceName() const;
+    virtual const AtomicString& interfaceName() const OVERRIDE;
+
+    virtual void trace(Visitor*) OVERRIDE;
 
 private:
     MediaStreamEvent();

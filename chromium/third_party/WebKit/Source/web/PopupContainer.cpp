@@ -29,13 +29,13 @@
  */
 
 #include "config.h"
-#include "PopupContainer.h"
+#include "web/PopupContainer.h"
 
 #include "core/dom/Document.h"
+#include "core/frame/FrameView.h"
+#include "core/frame/LocalFrame.h"
 #include "core/page/Chrome.h"
 #include "core/page/ChromeClient.h"
-#include "core/frame/Frame.h"
-#include "core/frame/FrameView.h"
 #include "core/page/Page.h"
 #include "platform/PlatformGestureEvent.h"
 #include "platform/PlatformKeyboardEvent.h"
@@ -48,9 +48,16 @@
 #include "platform/geometry/IntRect.h"
 #include "platform/graphics/GraphicsContext.h"
 #include "platform/scroll/FramelessScrollViewClient.h"
+#include "public/web/WebPopupMenuInfo.h"
+#include "public/web/WebPopupType.h"
+#include "public/web/WebViewClient.h"
+#include "web/WebPopupMenuImpl.h"
+#include "web/WebViewImpl.h"
 #include <limits>
 
-namespace WebCore {
+namespace blink {
+
+using namespace WebCore;
 
 static const int borderSize = 1;
 
@@ -79,15 +86,13 @@ static PlatformWheelEvent constructRelativeWheelEvent(const PlatformWheelEvent& 
 }
 
 // static
-PassRefPtr<PopupContainer> PopupContainer::create(PopupMenuClient* client, PopupType popupType, const PopupContainerSettings& settings)
+PassRefPtr<PopupContainer> PopupContainer::create(PopupMenuClient* client, bool deviceSupportsTouch)
 {
-    return adoptRef(new PopupContainer(client, popupType, settings));
+    return adoptRef(new PopupContainer(client, deviceSupportsTouch));
 }
 
-PopupContainer::PopupContainer(PopupMenuClient* client, PopupType popupType, const PopupContainerSettings& settings)
-    : m_listBox(PopupListBox::create(client, settings))
-    , m_settings(settings)
-    , m_popupType(popupType)
+PopupContainer::PopupContainer(PopupMenuClient* client, bool deviceSupportsTouch)
+    : m_listBox(PopupListBox::create(client, deviceSupportsTouch))
     , m_popupOpen(false)
 {
     setScrollbarModes(ScrollbarAlwaysOff, ScrollbarAlwaysOff);
@@ -212,7 +217,7 @@ void PopupContainer::showPopup(FrameView* view)
     listBox()->m_focusedElement = m_frameView->frame().document()->focusedElement();
 
     IntSize transformOffset(m_controlPosition.p4().x() - m_controlPosition.p1().x(), m_controlPosition.p4().y() - m_controlPosition.p1().y() - m_controlSize.height());
-    chromeClient().popupOpened(this, layoutAndCalculateWidgetRect(m_controlSize.height(), transformOffset, roundedIntPoint(m_controlPosition.p4())), false);
+    popupOpened(layoutAndCalculateWidgetRect(m_controlSize.height(), transformOffset, roundedIntPoint(m_controlPosition.p4())));
     m_popupOpen = true;
 
     if (!m_listBox->parent())
@@ -237,7 +242,7 @@ void PopupContainer::notifyPopupHidden()
     if (!m_popupOpen)
         return;
     m_popupOpen = false;
-    chromeClient().popupClosed(this);
+    WebViewImpl::fromPage(m_frameView->frame().page())->popupClosed(this);
 }
 
 void PopupContainer::fitToListBox()
@@ -439,7 +444,7 @@ int PopupContainer::menuItemHeight() const
 
 int PopupContainer::menuItemFontSize() const
 {
-    return m_listBox->getRowFont(0).size();
+    return m_listBox->getRowFont(0).fontDescription().computedSize();
 }
 
 PopupMenuStyle PopupContainer::menuStyle() const
@@ -460,4 +465,58 @@ String PopupContainer::getSelectedItemToolTip()
     return listBox()->m_popupClient->itemToolTip(listBox()->m_selectedIndex);
 }
 
-} // namespace WebCore
+void PopupContainer::popupOpened(const IntRect& bounds)
+{
+    WebViewImpl* webView = WebViewImpl::fromPage(m_frameView->frame().page());
+    if (!webView->client())
+        return;
+
+    WebWidget* webwidget = webView->client()->createPopupMenu(WebPopupTypeSelect);
+    if (!webwidget)
+        return;
+    // We only notify when the WebView has to handle the popup, as when
+    // the popup is handled externally, the fact that a popup is showing is
+    // transparent to the WebView.
+    webView->popupOpened(this);
+    toWebPopupMenuImpl(webwidget)->initialize(this, bounds);
+}
+
+void PopupContainer::getPopupMenuInfo(WebPopupMenuInfo* info)
+{
+    const Vector<PopupItem*>& inputItems = popupData();
+
+    WebVector<WebMenuItemInfo> outputItems(inputItems.size());
+
+    for (size_t i = 0; i < inputItems.size(); ++i) {
+        const PopupItem& inputItem = *inputItems[i];
+        WebMenuItemInfo& outputItem = outputItems[i];
+
+        outputItem.label = inputItem.label;
+        outputItem.enabled = inputItem.enabled;
+        if (inputItem.textDirection == WebCore::RTL)
+            outputItem.textDirection = WebTextDirectionRightToLeft;
+        else
+            outputItem.textDirection = WebTextDirectionLeftToRight;
+        outputItem.hasTextDirectionOverride = inputItem.hasTextDirectionOverride;
+
+        switch (inputItem.type) {
+        case PopupItem::TypeOption:
+            outputItem.type = WebMenuItemInfo::Option;
+            break;
+        case PopupItem::TypeGroup:
+            outputItem.type = WebMenuItemInfo::Group;
+            break;
+        case PopupItem::TypeSeparator:
+            outputItem.type = WebMenuItemInfo::Separator;
+            break;
+        }
+    }
+
+    info->itemHeight = menuItemHeight();
+    info->itemFontSize = menuItemFontSize();
+    info->selectedIndex = selectedIndex();
+    info->items.swap(outputItems);
+    info->rightAligned = menuStyle().textDirection() == RTL;
+}
+
+} // namespace blink

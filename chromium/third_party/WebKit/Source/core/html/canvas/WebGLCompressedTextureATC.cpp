@@ -27,37 +27,34 @@
 
 #include "core/html/canvas/WebGLCompressedTextureATC.h"
 
-#include "platform/graphics/Extensions3D.h"
-
 namespace WebCore {
 
-WebGLCompressedTextureATC::WebGLCompressedTextureATC(WebGLRenderingContext* context)
+WebGLCompressedTextureATC::WebGLCompressedTextureATC(WebGLRenderingContextBase* context)
     : WebGLExtension(context)
 {
     ScriptWrappable::init(this);
-    context->addCompressedTextureFormat(Extensions3D::COMPRESSED_ATC_RGB_AMD);
-    context->addCompressedTextureFormat(Extensions3D::COMPRESSED_ATC_RGBA_EXPLICIT_ALPHA_AMD);
-    context->addCompressedTextureFormat(Extensions3D::COMPRESSED_ATC_RGBA_INTERPOLATED_ALPHA_AMD);
+    context->addCompressedTextureFormat(GC3D_COMPRESSED_ATC_RGB_AMD);
+    context->addCompressedTextureFormat(GC3D_COMPRESSED_ATC_RGBA_EXPLICIT_ALPHA_AMD);
+    context->addCompressedTextureFormat(GC3D_COMPRESSED_ATC_RGBA_INTERPOLATED_ALPHA_AMD);
 }
 
 WebGLCompressedTextureATC::~WebGLCompressedTextureATC()
 {
 }
 
-WebGLExtension::ExtensionName WebGLCompressedTextureATC::name() const
+WebGLExtensionName WebGLCompressedTextureATC::name() const
 {
     return WebGLCompressedTextureATCName;
 }
 
-PassRefPtr<WebGLCompressedTextureATC> WebGLCompressedTextureATC::create(WebGLRenderingContext* context)
+PassRefPtr<WebGLCompressedTextureATC> WebGLCompressedTextureATC::create(WebGLRenderingContextBase* context)
 {
     return adoptRef(new WebGLCompressedTextureATC(context));
 }
 
-bool WebGLCompressedTextureATC::supported(WebGLRenderingContext* context)
+bool WebGLCompressedTextureATC::supported(WebGLRenderingContextBase* context)
 {
-    Extensions3D* extensions = context->graphicsContext3D()->extensions();
-    return extensions->supports("GL_AMD_compressed_ATC_texture");
+    return context->extensionsUtil()->supportsExtension("GL_AMD_compressed_ATC_texture");
 }
 
 const char* WebGLCompressedTextureATC::extensionName()

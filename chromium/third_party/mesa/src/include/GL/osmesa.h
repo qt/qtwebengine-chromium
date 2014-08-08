@@ -101,7 +101,8 @@ extern "C" {
 typedef struct osmesa_context *OSMesaContext;
 
 
-#if defined(__QUICKDRAW__)
+/* See https://bugs.freedesktop.org/show_bug.cgi?id=77749 */
+#if 0 /* defined(__QUICKDRAW__) */
 #pragma export on
 #endif
 

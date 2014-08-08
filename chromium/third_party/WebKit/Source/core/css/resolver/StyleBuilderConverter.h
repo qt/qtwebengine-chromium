@@ -30,7 +30,9 @@
 #include "core/css/CSSValue.h"
 #include "core/css/resolver/StyleResolverState.h"
 #include "core/rendering/RenderView.h"
+#include "core/rendering/style/QuotesData.h"
 #include "core/rendering/style/ShadowList.h"
+#include "core/rendering/style/StyleReflection.h"
 #include "core/svg/SVGLength.h"
 #include "platform/LengthSize.h"
 
@@ -40,20 +42,33 @@ namespace WebCore {
 
 class StyleBuilderConverter {
 public:
-    static String convertFragmentIdentifier(StyleResolverState&, CSSValue*);
+    static PassRefPtr<StyleReflection> convertBoxReflect(StyleResolverState&, CSSValue*);
+    static AtomicString convertFragmentIdentifier(StyleResolverState&, CSSValue*);
     template <typename T> static T convertComputedLength(StyleResolverState&, CSSValue*);
+    static EGlyphOrientation convertGlyphOrientation(StyleResolverState&, CSSValue*);
+    static GridPosition convertGridPosition(StyleResolverState&, CSSValue*);
+    static GridTrackSize convertGridTrackSize(StyleResolverState&, CSSValue*);
     template <typename T> static T convertLineWidth(StyleResolverState&, CSSValue*);
     static Length convertLength(StyleResolverState&, CSSValue*);
     static Length convertLengthOrAuto(StyleResolverState&, CSSValue*);
     static Length convertLengthSizing(StyleResolverState&, CSSValue*);
     static Length convertLengthMaxSizing(StyleResolverState&, CSSValue*);
     static LengthPoint convertLengthPoint(StyleResolverState&, CSSValue*);
+    static LineBoxContain convertLineBoxContain(StyleResolverState&, CSSValue*);
     static float convertNumberOrPercentage(StyleResolverState&, CSSValue*);
+    static PassRefPtr<QuotesData> convertQuotes(StyleResolverState&, CSSValue*);
     static LengthSize convertRadius(StyleResolverState&, CSSValue*);
+    static EPaintOrder convertPaintOrder(StyleResolverState&, CSSValue*);
     static PassRefPtr<ShadowList> convertShadow(StyleResolverState&, CSSValue*);
     static float convertSpacing(StyleResolverState&, CSSValue*);
     template <CSSValueID IdForNone> static AtomicString convertString(StyleResolverState&, CSSValue*);
-    static SVGLength convertSVGLength(StyleResolverState&, CSSValue*);
+    static PassRefPtr<SVGLengthList> convertStrokeDasharray(StyleResolverState&, CSSValue*);
+    static Color convertSVGColor(StyleResolverState&, CSSValue*);
+    static PassRefPtr<SVGLength> convertSVGLength(StyleResolverState&, CSSValue*);
+    static float convertTextStrokeWidth(StyleResolverState&, CSSValue*);
+
+    static bool convertGridTrackList(CSSValue*, Vector<GridTrackSize>&, NamedGridLinesMap&, OrderedNamedGridLines&, StyleResolverState&);
+    static void createImplicitNamedGridLinesFromGridArea(const NamedGridAreaMap&, NamedGridLinesMap&, GridTrackSizingDirection);
 };
 
 template <typename T>
@@ -73,8 +88,6 @@ T StyleBuilderConverter::convertLineWidth(StyleResolverState& state, CSSValue* v
         return 3;
     if (valueID == CSSValueThick)
         return 5;
-    if (primitiveValue->isViewportPercentageLength())
-        return intValueForLength(primitiveValue->viewportPercentageLength(), 0, state.document().renderView());
     if (valueID == CSSValueInvalid) {
         // Any original result that was >= 1 should not be allowed to fall below 1.
         // This keeps border lines from vanishing.
@@ -96,7 +109,7 @@ AtomicString StyleBuilderConverter::convertString(StyleResolverState&, CSSValue*
     CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value);
     if (primitiveValue->getValueID() == IdForNone)
         return nullAtom;
-    return primitiveValue->getStringValue();
+    return AtomicString(primitiveValue->getStringValue());
 }
 
 } // namespace WebCore

@@ -33,8 +33,8 @@
 
 #include "bindings/v8/ScriptWrappable.h"
 #include "core/dom/ActiveDOMObject.h"
-#include "core/events/EventTarget.h"
 #include "core/fileapi/FileReaderLoaderClient.h"
+#include "modules/EventTargetModules.h"
 #include "platform/AsyncMethodRunner.h"
 #include "platform/weborigin/KURL.h"
 #include "wtf/OwnPtr.h"
@@ -57,22 +57,27 @@ class MediaSource;
 class Stream;
 class TimeRanges;
 
-class SourceBuffer : public RefCounted<SourceBuffer>, public ActiveDOMObject, public EventTargetWithInlineData, public ScriptWrappable, public FileReaderLoaderClient {
+class SourceBuffer FINAL : public RefCountedWillBeRefCountedGarbageCollected<SourceBuffer>, public ActiveDOMObject, public EventTargetWithInlineData, public ScriptWrappable, public FileReaderLoaderClient {
     REFCOUNTED_EVENT_TARGET(SourceBuffer);
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(SourceBuffer);
 public:
-    static PassRefPtr<SourceBuffer> create(PassOwnPtr<blink::WebSourceBuffer>, MediaSource*, GenericEventQueue*);
+    static PassRefPtrWillBeRawPtr<SourceBuffer> create(PassOwnPtr<blink::WebSourceBuffer>, MediaSource*, GenericEventQueue*);
+    static const AtomicString& segmentsKeyword();
+    static const AtomicString& sequenceKeyword();
 
     virtual ~SourceBuffer();
 
     // SourceBuffer.idl methods
+    const AtomicString& mode() const { return m_mode; }
+    void setMode(const AtomicString&, ExceptionState&);
     bool updating() const { return m_updating; }
     PassRefPtr<TimeRanges> buffered(ExceptionState&) const;
     double timestampOffset() const;
     void setTimestampOffset(double, ExceptionState&);
     void appendBuffer(PassRefPtr<ArrayBuffer> data, ExceptionState&);
     void appendBuffer(PassRefPtr<ArrayBufferView> data, ExceptionState&);
-    void appendStream(PassRefPtr<Stream>, ExceptionState&);
-    void appendStream(PassRefPtr<Stream>, unsigned long long maxSize, ExceptionState&);
+    void appendStream(PassRefPtrWillBeRawPtr<Stream>, ExceptionState&);
+    void appendStream(PassRefPtrWillBeRawPtr<Stream>, unsigned long long maxSize, ExceptionState&);
     void abort(ExceptionState&);
     void remove(double start, double end, ExceptionState&);
     double appendWindowStart() const;
@@ -93,6 +98,8 @@ public:
     virtual ExecutionContext* executionContext() const OVERRIDE;
     virtual const AtomicString& interfaceName() const OVERRIDE;
 
+    virtual void trace(Visitor*) OVERRIDE;
+
 private:
     SourceBuffer(PassOwnPtr<blink::WebSourceBuffer>, MediaSource*, GenericEventQueue*);
 
@@ -104,7 +111,7 @@ private:
 
     void removeAsyncPart();
 
-    void appendStreamInternal(PassRefPtr<Stream>, ExceptionState&);
+    void appendStreamInternal(PassRefPtrWillBeRawPtr<Stream>, ExceptionState&);
     void appendStreamAsyncPart();
     void appendStreamDone(bool success);
     void clearAppendStreamState();
@@ -116,15 +123,17 @@ private:
     virtual void didFail(FileError::ErrorCode) OVERRIDE;
 
     OwnPtr<blink::WebSourceBuffer> m_webSourceBuffer;
-    MediaSource* m_source;
+    RawPtrWillBeMember<MediaSource> m_source;
     GenericEventQueue* m_asyncEventQueue;
 
+    AtomicString m_mode;
     bool m_updating;
     double m_timestampOffset;
     double m_appendWindowStart;
     double m_appendWindowEnd;
 
     Vector<unsigned char> m_pendingAppendData;
+    size_t m_pendingAppendDataOffset;
     AsyncMethodRunner<SourceBuffer> m_appendBufferAsyncPartRunner;
 
     double m_pendingRemoveStart;
@@ -134,7 +143,7 @@ private:
     bool m_streamMaxSizeValid;
     unsigned long long m_streamMaxSize;
     AsyncMethodRunner<SourceBuffer> m_appendStreamAsyncPartRunner;
-    RefPtr<Stream> m_stream;
+    RefPtrWillBeMember<Stream> m_stream;
     OwnPtr<FileReaderLoader> m_loader;
 };
 

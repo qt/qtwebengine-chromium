@@ -83,9 +83,10 @@ bool ChannelReader::DispatchInputData(const char* input_data,
       Logging* logger = Logging::GetInstance();
       std::string name;
       logger->GetMessageText(m.type(), &name, &m, NULL);
-      TRACE_EVENT1("ipc", "ChannelReader::DispatchInputData", "name", name);
+      TRACE_EVENT1("ipc,toplevel", "ChannelReader::DispatchInputData",
+                   "name", name);
 #else
-      TRACE_EVENT2("ipc", "ChannelReader::DispatchInputData",
+      TRACE_EVENT2("ipc,toplevel", "ChannelReader::DispatchInputData",
                    "class", IPC_MESSAGE_ID_CLASS(m.type()),
                    "line", IPC_MESSAGE_ID_LINE(m.type()));
 #endif
@@ -94,6 +95,8 @@ bool ChannelReader::DispatchInputData(const char* input_data,
         HandleInternalMessage(m);
       else
         listener_->OnMessageReceived(m);
+      if (m.dispatch_error())
+        listener_->OnBadMessageReceived(m);
       p = message_tail;
     } else {
       // Last message is partial.

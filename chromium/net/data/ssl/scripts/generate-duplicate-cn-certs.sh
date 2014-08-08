@@ -16,24 +16,14 @@
 
 try () {
   echo "$@"
-  $@ || exit 1
-}
-
-generate_key_command () {
-  case "$1" in
-    rsa)
-      echo genrsa
-      ;;
-    *)
-      exit 1
-  esac
+  "$@" || exit 1
 }
 
 try rm -rf out
 try mkdir out
 
 echo Create the serial number and index files.
-try echo 1 > out/B-serial
+try /bin/sh -c "echo 01 > out/B-serial"
 try touch out/B-index.txt
 
 echo Generate the keys.
@@ -42,12 +32,7 @@ try openssl genrsa -out out/B.key 2048
 
 echo Generate the B CSR.
 CA_COMMON_NAME="B Root CA" \
-  CA_DIR=out \
-  CA_NAME=req_env_dn \
-  KEY_SIZE=2048 \
-  ALGO=rsa \
-  CERT_TYPE=root \
-  TYPE=B CERTIFICATE=B \
+  CERTIFICATE=B \
   try openssl req \
     -new \
     -key out/B.key \
@@ -56,8 +41,6 @@ CA_COMMON_NAME="B Root CA" \
 
 echo B signs itself.
 CA_COMMON_NAME="B Root CA" \
-  CA_DIR=out \
-  CA_NAME=req_env_dn \
   try openssl x509 \
     -req -days 3650 \
     -in out/B.csr \
@@ -85,12 +68,7 @@ SUBJECT_NAME=req_duplicate_cn_2 \
 
 echo B signs A1.
 CA_COMMON_NAME="B CA" \
-  CA_DIR=out \
-  CA_NAME=req_env_dn \
-  KEY_SIZE=2048 \
-  ALGO=sha1 \
-  CERT_TYPE=intermediate \
-  TYPE=B CERTIFICATE=B \
+  CERTIFICATE=B \
   try openssl ca \
     -batch \
     -extensions user_cert \
@@ -100,12 +78,7 @@ CA_COMMON_NAME="B CA" \
 
 echo B signs A2.
 CA_COMMON_NAME="B CA" \
-  CA_DIR=out \
-  CA_NAME=req_env_dn \
-  KEY_SIZE=2048 \
-  ALGO=sha1 \
-  CERT_TYPE=intermediate \
-  TYPE=B CERTIFICATE=B \
+  CERTIFICATE=B \
   try openssl ca \
     -batch \
     -extensions user_cert \
@@ -128,5 +101,5 @@ try openssl pkcs12 \
   -out ../certificates/duplicate_cn_2.p12 \
   -passout pass:chrome
 
-cp out/A1.pem ../certificates/duplicate_cn_1.pem
-cp out/A2.pem ../certificates/duplicate_cn_2.pem
+try cp out/A1.pem ../certificates/duplicate_cn_1.pem
+try cp out/A2.pem ../certificates/duplicate_cn_2.pem

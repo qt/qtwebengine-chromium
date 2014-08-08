@@ -35,6 +35,7 @@
 
 #include "bindings/v8/ScriptCallStackFactory.h"
 #include "bindings/v8/ScriptValue.h"
+#include "core/dom/ExecutionContext.h"
 #include "core/inspector/IdentifiersFactory.h"
 #include "core/inspector/InjectedScript.h"
 #include "core/inspector/InjectedScriptManager.h"
@@ -50,40 +51,40 @@ ConsoleMessage::ConsoleMessage(bool canGenerateCallStack, MessageSource source, 
     , m_type(type)
     , m_level(level)
     , m_message(message)
+    , m_scriptState(0)
     , m_url()
     , m_line(0)
     , m_column(0)
-    , m_repeatCount(1)
     , m_requestId(IdentifiersFactory::requestId(0))
     , m_timestamp(WTF::currentTime())
 {
     autogenerateMetadata(canGenerateCallStack);
 }
 
-ConsoleMessage::ConsoleMessage(bool canGenerateCallStack, MessageSource source, MessageType type, MessageLevel level, const String& message, const String& url, unsigned line, unsigned column, ScriptState* state, unsigned long requestIdentifier)
+ConsoleMessage::ConsoleMessage(bool canGenerateCallStack, MessageSource source, MessageType type, MessageLevel level, const String& message, const String& url, unsigned line, unsigned column, ScriptState* scriptState, unsigned long requestIdentifier)
     : m_source(source)
     , m_type(type)
     , m_level(level)
     , m_message(message)
+    , m_scriptState(scriptState)
     , m_url(url)
     , m_line(line)
     , m_column(column)
-    , m_repeatCount(1)
     , m_requestId(IdentifiersFactory::requestId(requestIdentifier))
     , m_timestamp(WTF::currentTime())
 {
-    autogenerateMetadata(canGenerateCallStack, state);
+    autogenerateMetadata(canGenerateCallStack, scriptState);
 }
 
-ConsoleMessage::ConsoleMessage(bool, MessageSource source, MessageType type, MessageLevel level, const String& message, PassRefPtr<ScriptCallStack> callStack, unsigned long requestIdentifier)
+ConsoleMessage::ConsoleMessage(bool, MessageSource source, MessageType type, MessageLevel level, const String& message, PassRefPtrWillBeRawPtr<ScriptCallStack> callStack, unsigned long requestIdentifier)
     : m_source(source)
     , m_type(type)
     , m_level(level)
     , m_message(message)
-    , m_arguments(0)
+    , m_scriptState(0)
+    , m_arguments(nullptr)
     , m_line(0)
     , m_column(0)
-    , m_repeatCount(1)
     , m_requestId(IdentifiersFactory::requestId(requestIdentifier))
     , m_timestamp(WTF::currentTime())
 {
@@ -96,33 +97,33 @@ ConsoleMessage::ConsoleMessage(bool, MessageSource source, MessageType type, Mes
     m_callStack = callStack;
 }
 
-ConsoleMessage::ConsoleMessage(bool canGenerateCallStack, MessageSource source, MessageType type, MessageLevel level, const String& message, PassRefPtr<ScriptArguments> arguments, ScriptState* state, unsigned long requestIdentifier)
+ConsoleMessage::ConsoleMessage(bool canGenerateCallStack, MessageSource source, MessageType type, MessageLevel level, const String& message, PassRefPtrWillBeRawPtr<ScriptArguments> arguments, ScriptState* scriptState, unsigned long requestIdentifier)
     : m_source(source)
     , m_type(type)
     , m_level(level)
     , m_message(message)
+    , m_scriptState(scriptState)
     , m_arguments(arguments)
     , m_url()
     , m_line(0)
     , m_column(0)
-    , m_repeatCount(1)
     , m_requestId(IdentifiersFactory::requestId(requestIdentifier))
     , m_timestamp(WTF::currentTime())
 {
-    autogenerateMetadata(canGenerateCallStack, state);
+    autogenerateMetadata(canGenerateCallStack, scriptState);
 }
 
 ConsoleMessage::~ConsoleMessage()
 {
 }
 
-void ConsoleMessage::autogenerateMetadata(bool canGenerateCallStack, ScriptState* state)
+void ConsoleMessage::autogenerateMetadata(bool canGenerateCallStack, ScriptState* scriptState)
 {
     if (m_type == EndGroupMessageType)
         return;
 
-    if (state)
-        m_callStack = createScriptCallStackForConsole();
+    if (scriptState)
+        m_callStack = createScriptCallStackForConsole(scriptState);
     else if (canGenerateCallStack)
         m_callStack = createScriptCallStack(ScriptCallStack::maxCallStackSizeToCapture, true);
     else
@@ -198,12 +199,14 @@ void ConsoleMessage::addToFrontend(InspectorFrontend::Console* frontend, Injecte
     jsonObj->setLine(static_cast<int>(m_line));
     jsonObj->setColumn(static_cast<int>(m_column));
     jsonObj->setUrl(m_url);
-    jsonObj->setRepeatCount(static_cast<int>(m_repeatCount));
+    ScriptState* scriptState = m_scriptState.get();
+    if (scriptState && scriptState->executionContext()->isDocument())
+        jsonObj->setExecutionContextId(injectedScriptManager->injectedScriptIdFor(scriptState));
     if (m_source == NetworkMessageSource && !m_requestId.isEmpty())
         jsonObj->setNetworkRequestId(m_requestId);
     if (m_arguments && m_arguments->argumentCount()) {
-        InjectedScript injectedScript = injectedScriptManager->injectedScriptFor(m_arguments->globalState());
-        if (!injectedScript.hasNoValue()) {
+        InjectedScript injectedScript = injectedScriptManager->injectedScriptFor(m_arguments->scriptState());
+        if (!injectedScript.isEmpty()) {
             RefPtr<TypeBuilder::Array<TypeBuilder::Runtime::RemoteObject> > jsonArgs = TypeBuilder::Array<TypeBuilder::Runtime::RemoteObject>::create();
             if (m_type == TableMessageType && generatePreview && m_arguments->argumentCount()) {
                 ScriptValue table = m_arguments->argumentAt(0);
@@ -230,53 +233,17 @@ void ConsoleMessage::addToFrontend(InspectorFrontend::Console* frontend, Injecte
     if (m_callStack)
         jsonObj->setStackTrace(m_callStack->buildInspectorArray());
     frontend->messageAdded(jsonObj);
+    frontend->flush();
 }
 
-void ConsoleMessage::incrementCount()
+void ConsoleMessage::windowCleared(LocalDOMWindow* window)
 {
-    m_timestamp = WTF::currentTime();
-    ++m_repeatCount;
-}
+    if (m_scriptState.get() && m_scriptState.get()->domWindow() == window)
+        m_scriptState.clear();
 
-void ConsoleMessage::updateRepeatCountInConsole(InspectorFrontend::Console* frontend)
-{
-    frontend->messageRepeatCountUpdated(m_repeatCount, m_timestamp);
-}
-
-bool ConsoleMessage::isEqual(ConsoleMessage* msg) const
-{
-    if (m_arguments) {
-        if (!m_arguments->isEqual(msg->m_arguments.get()))
-            return false;
-        // Never treat objects as equal - their properties might change over time.
-        for (size_t i = 0; i < m_arguments->argumentCount(); ++i) {
-            if (m_arguments->argumentAt(i).isObject())
-                return false;
-        }
-    } else if (msg->m_arguments)
-        return false;
-
-    if (m_callStack) {
-        if (!m_callStack->isEqual(msg->m_callStack.get()))
-            return false;
-    } else if (msg->m_callStack)
-        return false;
-
-    return msg->m_source == m_source
-        && msg->m_type == m_type
-        && msg->m_level == m_level
-        && msg->m_message == m_message
-        && msg->m_line == m_line
-        && msg->m_column == m_column
-        && msg->m_url == m_url
-        && msg->m_requestId == m_requestId;
-}
-
-void ConsoleMessage::windowCleared(DOMWindow* window)
-{
     if (!m_arguments)
         return;
-    if (m_arguments->globalState()->domWindow() != window)
+    if (m_arguments->scriptState()->domWindow() != window)
         return;
     if (!m_message)
         m_message = "<message collected>";

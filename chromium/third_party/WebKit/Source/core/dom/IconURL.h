@@ -31,15 +31,10 @@
 #ifndef IconURL_h
 #define IconURL_h
 
+#include "platform/geometry/IntSize.h"
 #include "platform/weborigin/KURL.h"
 
 namespace WebCore {
-
-#if ENABLE(TOUCH_ICON_LOADING)
-#define ICON_COUNT 3
-#else
-#define ICON_COUNT 1
-#endif
 
 enum IconType {
     InvalidIcon = 0,
@@ -50,7 +45,7 @@ enum IconType {
 
 struct IconURL {
     IconType m_iconType;
-    String m_sizes;
+    Vector<IntSize> m_sizes;
     String m_mimeType;
     KURL m_iconURL;
     bool m_isDefaultIcon;
@@ -61,7 +56,7 @@ struct IconURL {
     {
     }
 
-    IconURL(const KURL& url, const String& sizes, const String& mimeType, IconType type)
+    IconURL(const KURL& url, const Vector<IntSize>& sizes, const String& mimeType, IconType type)
         : m_iconType(type)
         , m_sizes(sizes)
         , m_mimeType(mimeType)
@@ -74,8 +69,6 @@ struct IconURL {
 };
 
 bool operator==(const IconURL&, const IconURL&);
-
-typedef Vector<IconURL, ICON_COUNT> IconURLs;
 
 }
 

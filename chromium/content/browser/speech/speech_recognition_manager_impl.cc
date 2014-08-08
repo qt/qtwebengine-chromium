@@ -147,7 +147,8 @@ int SpeechRecognitionManagerImpl::CreateSession(
   session->recognizer = new SpeechRecognizerImpl(
       this,
       session_id,
-      !config.continuous,
+      config.continuous,
+      config.interim_results,
       google_remote_engine);
 #else
   session->recognizer = new SpeechRecognizerImplAndroid(this, session_id);
@@ -289,8 +290,8 @@ void SpeechRecognitionManagerImpl::StopAudioCaptureForSession(int session_id) {
 
 // Here begins the SpeechRecognitionEventListener interface implementation,
 // which will simply relay the events to the proper listener registered for the
-// particular session (most likely InputTagSpeechDispatcherHost) and to the
-// catch-all listener provided by the delegate (if any).
+// particular session and to the catch-all listener provided by the delegate
+// (if any).
 
 void SpeechRecognitionManagerImpl::OnRecognitionStart(int session_id) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
@@ -300,7 +301,8 @@ void SpeechRecognitionManagerImpl::OnRecognitionStart(int session_id) {
   SessionsTable::iterator iter = sessions_.find(session_id);
   if (iter->second->ui) {
     // Notify the UI that the devices are being used.
-    iter->second->ui->OnStarted(base::Closure());
+    iter->second->ui->OnStarted(base::Closure(),
+                                MediaStreamUIProxy::WindowIdCallback());
   }
 
   DCHECK_EQ(primary_session_id_, session_id);

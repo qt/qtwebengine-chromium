@@ -32,7 +32,8 @@ SocketStreamDispatcherHost::SocketStreamDispatcherHost(
     int render_process_id,
     const GetRequestContextCallback& request_context_callback,
     ResourceContext* resource_context)
-    : render_process_id_(render_process_id),
+    : BrowserMessageFilter(SocketStreamMsgStart),
+      render_process_id_(render_process_id),
       request_context_callback_(request_context_callback),
       resource_context_(resource_context),
       weak_ptr_factory_(this),
@@ -40,18 +41,18 @@ SocketStreamDispatcherHost::SocketStreamDispatcherHost(
   net::WebSocketJob::EnsureInit();
 }
 
-bool SocketStreamDispatcherHost::OnMessageReceived(const IPC::Message& message,
-                                                   bool* message_was_ok) {
+bool SocketStreamDispatcherHost::OnMessageReceived(
+    const IPC::Message& message) {
   if (on_shutdown_)
     return false;
 
   bool handled = true;
-  IPC_BEGIN_MESSAGE_MAP_EX(SocketStreamDispatcherHost, message, *message_was_ok)
+  IPC_BEGIN_MESSAGE_MAP(SocketStreamDispatcherHost, message)
     IPC_MESSAGE_HANDLER(SocketStreamHostMsg_Connect, OnConnect)
     IPC_MESSAGE_HANDLER(SocketStreamHostMsg_SendData, OnSendData)
     IPC_MESSAGE_HANDLER(SocketStreamHostMsg_Close, OnCloseReq)
     IPC_MESSAGE_UNHANDLED(handled = false)
-  IPC_END_MESSAGE_MAP_EX()
+  IPC_END_MESSAGE_MAP()
   return handled;
 }
 
@@ -144,22 +145,45 @@ void SocketStreamDispatcherHost::OnSSLCertificateError(
   GlobalRequestID request_id(-1, socket_id);
   SSLManager::OnSSLCertificateError(
       weak_ptr_factory_.GetWeakPtr(), request_id, ResourceType::SUB_RESOURCE,
-      socket->url(), render_process_id_, socket_stream_host->render_view_id(),
+      socket->url(), render_process_id_, socket_stream_host->render_frame_id(),
       ssl_info, fatal);
 }
 
 bool SocketStreamDispatcherHost::CanGetCookies(net::SocketStream* socket,
                                                const GURL& url) {
+  int socket_id = SocketStreamHost::SocketIdFromSocketStream(socket);
+  if (socket_id == kNoSocketId) {
+    return false;
+  }
+  SocketStreamHost* socket_stream_host = hosts_.Lookup(socket_id);
+  DCHECK(socket_stream_host);
   return GetContentClient()->browser()->AllowGetCookie(
-      url, url, net::CookieList(), resource_context_, 0, MSG_ROUTING_NONE);
+      url,
+      url,
+      net::CookieList(),
+      resource_context_,
+      render_process_id_,
+      socket_stream_host->render_frame_id());
 }
 
 bool SocketStreamDispatcherHost::CanSetCookie(net::SocketStream* request,
                                               const GURL& url,
                                               const std::string& cookie_line,
                                               net::CookieOptions* options) {
+  int socket_id = SocketStreamHost::SocketIdFromSocketStream(request);
+  if (socket_id == kNoSocketId) {
+    return false;
+  }
+  SocketStreamHost* socket_stream_host = hosts_.Lookup(socket_id);
+  DCHECK(socket_stream_host);
   return GetContentClient()->browser()->AllowSetCookie(
-      url, url, cookie_line, resource_context_, 0, MSG_ROUTING_NONE, options);
+      url,
+      url,
+      cookie_line,
+      resource_context_,
+      render_process_id_,
+      socket_stream_host->render_frame_id(),
+      options);
 }
 
 void SocketStreamDispatcherHost::CancelSSLRequest(
@@ -190,16 +214,16 @@ void SocketStreamDispatcherHost::ContinueSSLRequest(
 }
 
 SocketStreamDispatcherHost::~SocketStreamDispatcherHost() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   Shutdown();
 }
 
 // Message handlers called by OnMessageReceived.
-void SocketStreamDispatcherHost::OnConnect(int render_view_id,
+void SocketStreamDispatcherHost::OnConnect(int render_frame_id,
                                            const GURL& url,
                                            int socket_id) {
   DVLOG(2) << "SocketStreamDispatcherHost::OnConnect"
-           << " render_view_id=" << render_view_id
+           << " render_frame_id=" << render_frame_id
            << " url=" << url
            << " socket_id=" << socket_id;
   DCHECK_NE(kNoSocketId, socket_id);
@@ -223,7 +247,8 @@ void SocketStreamDispatcherHost::OnConnect(int render_view_id,
   // Note that the SocketStreamHost is responsible for checking that |url|
   // is valid.
   SocketStreamHost* socket_stream_host =
-      new SocketStreamHost(this, render_view_id, socket_id);
+      new SocketStreamHost(this, render_process_id_, render_frame_id,
+                           socket_id);
   hosts_.AddWithID(socket_stream_host, socket_id);
   socket_stream_host->Connect(url, GetURLRequestContext());
   DVLOG(2) << "SocketStreamDispatcherHost::OnConnect -> " << socket_id;
@@ -266,7 +291,7 @@ net::URLRequestContext* SocketStreamDispatcherHost::GetURLRequestContext() {
 }
 
 void SocketStreamDispatcherHost::Shutdown() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   // TODO(ukai): Implement IDMap::RemoveAll().
   for (IDMap<SocketStreamHost>::const_iterator iter(&hosts_);
        !iter.IsAtEnd();

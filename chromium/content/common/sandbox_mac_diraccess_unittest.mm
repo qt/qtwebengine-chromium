@@ -34,8 +34,7 @@ class MacDirAccessSandboxTest : public base::MultiProcessTest {
  public:
   bool CheckSandbox(const std::string& directory_to_try) {
     setenv(kSandboxAccessPathKey, directory_to_try.c_str(), 1);
-    base::ProcessHandle child_process = SpawnChild("mac_sandbox_path_access",
-                                                   false);
+    base::ProcessHandle child_process = SpawnChild("mac_sandbox_path_access");
     if (child_process == base::kNullProcessHandle) {
       LOG(WARNING) << "SpawnChild failed";
       return false;
@@ -99,13 +98,14 @@ TEST_F(MacDirAccessSandboxTest, RegexEscape) {
     EXPECT_TRUE(Sandbox::QuoteStringForRegex("}", &out));   // } == 0x7D == 125
     EXPECT_FALSE(Sandbox::QuoteStringForRegex("~", &out));  // ~ == 0x7E == 126
     EXPECT_FALSE(
-        Sandbox::QuoteStringForRegex(WideToUTF8(L"^\u2135.\u2136$"), &out));
+        Sandbox::QuoteStringForRegex(base::WideToUTF8(L"^\u2135.\u2136$"),
+                                     &out));
   }
 
   {
     for (size_t i = 0; i < ARRAYSIZE_UNSAFE(regex_cases); ++i) {
       std::string out;
-      std::string in = WideToUTF8(regex_cases[i].to_escape);
+      std::string in = base::WideToUTF8(regex_cases[i].to_escape);
       EXPECT_TRUE(Sandbox::QuoteStringForRegex(in, &out));
       std::string expected("^");
       expected.append(regex_cases[i].escaped);
@@ -132,17 +132,14 @@ TEST_F(MacDirAccessSandboxTest, RegexEscape) {
 }
 
 // A class to handle auto-deleting a directory.
-class ScopedDirectoryDelete {
- public:
+struct ScopedDirectoryDelete {
   inline void operator()(base::FilePath* x) const {
-    if (x) {
+    if (x)
       base::DeleteFile(*x, true);
-    }
   }
 };
 
-typedef scoped_ptr_malloc<base::FilePath, ScopedDirectoryDelete>
-    ScopedDirectory;
+typedef scoped_ptr<base::FilePath, ScopedDirectoryDelete> ScopedDirectory;
 
 TEST_F(MacDirAccessSandboxTest, SandboxAccess) {
   using base::CreateDirectory;

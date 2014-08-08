@@ -36,7 +36,7 @@ class KURL;
 class MediaStream;
 class MediaStreamDescriptor;
 
-class MediaStreamRegistry : public URLRegistry {
+class MediaStreamRegistry FINAL : public URLRegistry {
 public:
     // Returns a single instance of MediaStreamRegistry.
     static MediaStreamRegistry& registry();
@@ -44,10 +44,12 @@ public:
     // Registers a blob URL referring to the specified stream data.
     virtual void registerURL(SecurityOrigin*, const KURL&, URLRegistrable*) OVERRIDE;
     virtual void unregisterURL(const KURL&) OVERRIDE;
+    virtual bool contains(const String&) OVERRIDE;
 
     MediaStreamDescriptor* lookupMediaStreamDescriptor(const String& url);
 
 private:
+    MediaStreamRegistry();
     HashMap<String, RefPtr<MediaStreamDescriptor> > m_streamDescriptors;
 };
 

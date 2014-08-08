@@ -17,6 +17,8 @@
  * Boston, MA 02110-1301, USA.
  */
 
+// http://www.w3.org/TR/filter-effects/#InterfaceSVGFEDropShadowElement
+
 interface SVGFEDropShadowElement : SVGElement {
     readonly attribute SVGAnimatedString in1;
     readonly attribute SVGAnimatedNumber dx;
@@ -24,8 +26,7 @@ interface SVGFEDropShadowElement : SVGElement {
     readonly attribute SVGAnimatedNumber stdDeviationX;
     readonly attribute SVGAnimatedNumber stdDeviationY;
 
-    void setStdDeviation([Default=Undefined] optional float stdDeviationX,
-                         [Default=Undefined] optional float stdDeviationY);
+    void setStdDeviation(float stdDeviationX, float stdDeviationY);
 };
 
 SVGFEDropShadowElement implements SVGFilterPrimitiveStandardAttributes;

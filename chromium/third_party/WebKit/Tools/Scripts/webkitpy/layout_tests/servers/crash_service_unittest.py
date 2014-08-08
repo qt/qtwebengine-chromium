@@ -33,7 +33,7 @@ import webkitpy.thirdparty.unittest2 as unittest
 from webkitpy.common.host_mock import MockHost
 from webkitpy.layout_tests.port import test
 from webkitpy.layout_tests.servers.crash_service import CrashService
-from webkitpy.layout_tests.servers.http_server_base import ServerError
+from webkitpy.layout_tests.servers.server_base import ServerError
 
 
 class TestCrashService(unittest.TestCase):
@@ -78,4 +78,3 @@ class TestCrashService(unittest.TestCase):
         server._wait_for_action = wait_for_action
 
         server.stop()
-        self.assertEqual(['taskkill.exe', '/f', '/t', '/pid', 42], host.executive.calls[1])

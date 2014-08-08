@@ -31,18 +31,22 @@
 
 namespace WebCore {
 
+template<typename T> class EventSender;
+typedef EventSender<HTMLSourceElement> SourceEventSender;
+
 class HTMLSourceElement FINAL : public HTMLElement {
 public:
-    static PassRefPtr<HTMLSourceElement> create(Document&);
+    DECLARE_NODE_FACTORY(HTMLSourceElement);
+    virtual ~HTMLSourceElement();
 
-    const AtomicString& media() const;
     const AtomicString& type() const;
     void setSrc(const String&);
-    void setMedia(const AtomicString&);
     void setType(const AtomicString&);
 
     void scheduleErrorEvent();
     void cancelPendingErrorEvent();
+
+    void dispatchPendingEvent(SourceEventSender*);
 
 private:
     explicit HTMLSourceElement(Document&);
@@ -50,13 +54,8 @@ private:
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
     virtual void removedFrom(ContainerNode*) OVERRIDE;
     virtual bool isURLAttribute(const Attribute&) const OVERRIDE;
-
-    void errorEventTimerFired(Timer<HTMLSourceElement>*);
-
-    Timer<HTMLSourceElement> m_errorEventTimer;
+    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
 };
-
-DEFINE_NODE_TYPE_CASTS(HTMLSourceElement, hasTagName(HTMLNames::sourceTag));
 
 } // namespace WebCore
 

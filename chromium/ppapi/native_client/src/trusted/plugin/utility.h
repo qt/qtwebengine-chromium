@@ -13,6 +13,8 @@
 #include "native_client/src/include/portability.h"
 #include "native_client/src/shared/platform/nacl_threads.h"
 #include "native_client/src/shared/platform/nacl_time.h"
+#include "ppapi/c/private/pp_file_handle.h"
+#include "ppapi/c/private/ppb_nacl_private.h"
 
 #define SRPC_PLUGIN_DEBUG 1
 
@@ -26,18 +28,23 @@ namespace plugin {
 // TODO(sehr): add Unicode identifier support.
 bool IsValidIdentifierString(const char* strval, uint32_t* length);
 
+const PPB_NaCl_Private* GetNaClInterface();
+void SetNaClInterface(const PPB_NaCl_Private* nacl_interface);
+
+void CloseFileHandle(PP_FileHandle file_handle);
+
+// Converts a PP_FileHandle to a POSIX file descriptor.
+int32_t ConvertFileDescriptor(PP_FileHandle handle, bool read_only);
+
 // Debugging print utility
 extern int gNaClPluginDebugPrintEnabled;
-extern FILE* gNaClPluginLogFile;
 extern int NaClPluginPrintLog(const char *format, ...);
 extern int NaClPluginDebugPrintCheckEnv();
-extern FILE* NaClPluginLogFileEnv();
 #if SRPC_PLUGIN_DEBUG
 #define INIT_PLUGIN_LOGGING() do {                                    \
     if (-1 == ::plugin::gNaClPluginDebugPrintEnabled) {               \
       ::plugin::gNaClPluginDebugPrintEnabled =                        \
           ::plugin::NaClPluginDebugPrintCheckEnv();                   \
-      ::plugin::gNaClPluginLogFile = ::plugin::NaClPluginLogFileEnv();\
     }                                                                 \
 } while (0)
 

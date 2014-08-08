@@ -29,6 +29,7 @@
 #define SVGRenderStyleDefs_h
 
 #include "core/svg/SVGLength.h"
+#include "core/svg/SVGLengthList.h"
 #include "core/svg/SVGPaint.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
@@ -103,10 +104,6 @@ namespace WebCore {
     typedef unsigned EPaintOrder;
     const unsigned PO_NORMAL = PT_FILL | PT_STROKE << 2 | PT_MARKERS << 4;
 
-    class CSSValue;
-    class CSSValueList;
-    class SVGPaint;
-
     // Inherited/Non-Inherited Style Datastructures
     class StyleFillData : public RefCounted<StyleFillData> {
     public:
@@ -146,9 +143,9 @@ namespace WebCore {
         float opacity;
         float miterLimit;
 
-        SVGLength width;
-        SVGLength dashOffset;
-        Vector<SVGLength> dashArray;
+        RefPtr<SVGLength> width;
+        RefPtr<SVGLength> dashOffset;
+        RefPtr<SVGLengthList> dashArray;
 
         SVGPaint::SVGPaintType paintType;
         Color paintColor;
@@ -181,24 +178,6 @@ namespace WebCore {
         StyleStopData(const StyleStopData&);
     };
 
-    class StyleTextData : public RefCounted<StyleTextData> {
-    public:
-        static PassRefPtr<StyleTextData> create() { return adoptRef(new StyleTextData); }
-        PassRefPtr<StyleTextData> copy() const { return adoptRef(new StyleTextData(*this)); }
-
-        bool operator==(const StyleTextData& other) const;
-        bool operator!=(const StyleTextData& other) const
-        {
-            return !(*this == other);
-        }
-
-        SVGLength kerning;
-
-    private:
-        StyleTextData();
-        StyleTextData(const StyleTextData&);
-    };
-
     // Note: the rule for this class is, *no inheritance* of these props
     class StyleMiscData : public RefCounted<StyleMiscData> {
     public:
@@ -215,8 +194,7 @@ namespace WebCore {
         float floodOpacity;
         Color lightingColor;
 
-        // non-inherited text stuff lives here not in StyleTextData.
-        SVGLength baselineShiftValue;
+        RefPtr<SVGLength> baselineShiftValue;
 
     private:
         StyleMiscData();
@@ -235,9 +213,9 @@ namespace WebCore {
             return !(*this == other);
         }
 
-        String clipper;
-        String filter;
-        String masker;
+        AtomicString clipper;
+        AtomicString filter;
+        AtomicString masker;
 
     private:
         StyleResourceData();
@@ -256,9 +234,9 @@ namespace WebCore {
             return !(*this == other);
         }
 
-        String markerStart;
-        String markerMid;
-        String markerEnd;
+        AtomicString markerStart;
+        AtomicString markerMid;
+        AtomicString markerEnd;
 
     private:
         StyleInheritedResourceData();

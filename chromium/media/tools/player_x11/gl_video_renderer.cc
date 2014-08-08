@@ -11,7 +11,7 @@
 #include "media/base/buffers.h"
 #include "media/base/video_frame.h"
 #include "media/base/yuv_convert.h"
-#include "ui/gl/gl_implementation.h"
+#include "ui/gl/gl_surface.h"
 
 enum { kNumYUVPlanes = 3 };
 
@@ -20,8 +20,8 @@ static GLXContext InitGLContext(Display* display, Window window) {
   // dlopen/dlsym, and so linking it into chrome breaks it. So we dynamically
   // load it, and use glew to dynamically resolve symbols.
   // See http://code.google.com/p/chromium/issues/detail?id=16800
-  if (!InitializeGLBindings(gfx::kGLImplementationDesktopGL)) {
-    LOG(ERROR) << "InitializeGLBindings failed";
+  if (!gfx::GLSurface::InitializeOneOff()) {
+    LOG(ERROR) << "GLSurface::InitializeOneOff failed";
     return NULL;
   }
 
@@ -111,12 +111,14 @@ GlVideoRenderer::~GlVideoRenderer() {
   glXDestroyContext(display_, gl_context_);
 }
 
-void GlVideoRenderer::Paint(media::VideoFrame* video_frame) {
+void GlVideoRenderer::Paint(
+    const scoped_refptr<media::VideoFrame>& video_frame) {
   if (!gl_context_)
     Initialize(video_frame->coded_size(), video_frame->visible_rect());
 
   // Convert YUV frame to RGB.
   DCHECK(video_frame->format() == media::VideoFrame::YV12 ||
+         video_frame->format() == media::VideoFrame::I420 ||
          video_frame->format() == media::VideoFrame::YV16);
   DCHECK(video_frame->stride(media::VideoFrame::kUPlane) ==
          video_frame->stride(media::VideoFrame::kVPlane));

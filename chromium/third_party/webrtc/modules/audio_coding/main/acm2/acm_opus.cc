@@ -75,6 +75,8 @@ ACMOpus::ACMOpus(int16_t codec_id)
   // Opus has internal DTX, but we dont use it for now.
   has_internal_dtx_ = false;
 
+  has_internal_fec_ = true;
+
   if (codec_id_ != ACMCodecDB::kOpus) {
     WEBRTC_TRACE(webrtc::kTraceError, webrtc::kTraceAudioCoding, unique_id_,
                  "Wrong codec id for Opus.");
@@ -140,6 +142,20 @@ int16_t ACMOpus::InternalInitEncoder(WebRtcACMCodecParams* codec_params) {
   // Store bitrate.
   bitrate_ = codec_params->codec_inst.rate;
 
+  // TODO(tlegrand): Remove this code when we have proper APIs to set the
+  // complexity at a higher level.
+#if defined(WEBRTC_ANDROID) || defined(WEBRTC_IOS) || defined(WEBRTC_ARCH_ARM)
+  // If we are on Android, iOS and/or ARM, use a lower complexity setting as
+  // default, to save encoder complexity.
+  const int kOpusComplexity5 = 5;
+  WebRtcOpus_SetComplexity(encoder_inst_ptr_, kOpusComplexity5);
+  if (ret < 0) {
+     WEBRTC_TRACE(webrtc::kTraceError, webrtc::kTraceAudioCoding, unique_id_,
+                  "Setting complexity failed for Opus");
+     return ret;
+   }
+#endif
+
   return 0;
 }
 
@@ -181,6 +197,31 @@ int16_t ACMOpus::SetBitRateSafe(const int32_t rate) {
     return 0;
   }
 
+  return -1;
+}
+
+int ACMOpus::SetFEC(bool enable_fec) {
+  // Ask the encoder to enable FEC.
+  if (enable_fec) {
+    if (WebRtcOpus_EnableFec(encoder_inst_ptr_) == 0) {
+      fec_enabled_ = true;
+      return 0;
+    }
+  } else {
+    if (WebRtcOpus_DisableFec(encoder_inst_ptr_) == 0) {
+      fec_enabled_ = false;
+      return 0;
+    }
+  }
+  return -1;
+}
+
+int ACMOpus::SetPacketLossRate(int loss_rate) {
+  // Ask the encoder to change the target packet loss rate.
+  if (WebRtcOpus_SetPacketLossRate(encoder_inst_ptr_, loss_rate) == 0) {
+    packet_loss_rate_ = loss_rate;
+    return 0;
+  }
   return -1;
 }
 

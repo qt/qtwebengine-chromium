@@ -44,10 +44,6 @@ struct ImagePNGRep;
 class ImageSkia;
 class Size;
 
-#if defined(TOOLKIT_GTK)
-class CairoCachedSurface;
-#endif
-
 namespace internal {
 class ImageRep;
 class ImageStorage;
@@ -56,10 +52,8 @@ class ImageStorage;
 class GFX_EXPORT Image {
  public:
   enum RepresentationType {
-    kImageRepGdk,
     kImageRepCocoa,
     kImageRepCocoaTouch,
-    kImageRepCairo,
     kImageRepSkia,
     kImageRepPNG,
   };
@@ -77,10 +71,7 @@ class GFX_EXPORT Image {
   // representation.
   explicit Image(const ImageSkia& image);
 
-#if defined(TOOLKIT_GTK)
-  // Does not increase |pixbuf|'s reference count; expects to take ownership.
-  explicit Image(GdkPixbuf* pixbuf);
-#elif defined(OS_IOS)
+#if defined(OS_IOS)
   // Does not retain |image|; expects to take ownership.
   explicit Image(UIImage* image);
 #elif defined(OS_MACOSX)
@@ -113,15 +104,16 @@ class GFX_EXPORT Image {
   static Image CreateFrom1xPNGBytes(const unsigned char* input,
                                     size_t input_size);
 
+  // Creates an image from the PNG encoded input.
+  static Image CreateFrom1xPNGBytes(
+      const scoped_refptr<base::RefCountedMemory>& input);
+
   // Converts the Image to the desired representation and stores it internally.
   // The returned result is a weak pointer owned by and scoped to the life of
   // the Image. Must only be called if IsEmpty() is false.
   const SkBitmap* ToSkBitmap() const;
   const ImageSkia* ToImageSkia() const;
-#if defined(TOOLKIT_GTK)
-  GdkPixbuf* ToGdkPixbuf() const;
-  CairoCachedSurface* const ToCairo() const;
-#elif defined(OS_IOS)
+#if defined(OS_IOS)
   UIImage* ToUIImage() const;
 #elif defined(OS_MACOSX)
   NSImage* ToNSImage() const;
@@ -154,9 +146,7 @@ class GFX_EXPORT Image {
   scoped_refptr<base::RefCountedMemory> Copy1xPNGBytes() const;
   ImageSkia* CopyImageSkia() const;
   SkBitmap* CopySkBitmap() const;
-#if defined(TOOLKIT_GTK)
-  GdkPixbuf* CopyGdkPixbuf() const;
-#elif defined(OS_IOS)
+#if defined(OS_IOS)
   UIImage* CopyUIImage() const;
 #elif defined(OS_MACOSX)
   NSImage* CopyNSImage() const;

@@ -17,6 +17,7 @@
 #include "ui/message_center/message_center_observer.h"
 #include "ui/message_center/message_center_types.h"
 #include "ui/message_center/notification_blocker.h"
+#include "ui/message_center/notifier_settings.h"
 
 namespace message_center {
 class NotificationDelegate;
@@ -85,7 +86,9 @@ class MESSAGE_CENTER_EXPORT PopupTimersController
   virtual ~PopupTimersController();
 
   // MessageCenterObserver implementation.
-  virtual void OnNotificationDisplayed(const std::string& id) OVERRIDE;
+  virtual void OnNotificationDisplayed(
+      const std::string& id,
+      const DisplaySource source) OVERRIDE;
   virtual void OnNotificationUpdated(const std::string& id) OVERRIDE;
   virtual void OnNotificationRemoved(const std::string& id, bool by_user)
       OVERRIDE;
@@ -135,7 +138,8 @@ class MESSAGE_CENTER_EXPORT PopupTimersController
 
 // The default implementation of MessageCenter.
 class MessageCenterImpl : public MessageCenter,
-                          public NotificationBlocker::Observer {
+                          public NotificationBlocker::Observer,
+                          public message_center::NotifierSettingsObserver {
  public:
   MessageCenterImpl();
   virtual ~MessageCenterImpl();
@@ -150,9 +154,10 @@ class MessageCenterImpl : public MessageCenter,
   virtual size_t NotificationCount() const OVERRIDE;
   virtual size_t UnreadNotificationCount() const OVERRIDE;
   virtual bool HasPopupNotifications() const OVERRIDE;
-  virtual bool HasNotification(const std::string& id) OVERRIDE;
   virtual bool IsQuietMode() const OVERRIDE;
   virtual bool HasClickedListener(const std::string& id) OVERRIDE;
+  virtual message_center::Notification* FindVisibleNotificationById(
+      const std::string& id) OVERRIDE;
   virtual const NotificationList::Notifications& GetVisibleNotifications()
       OVERRIDE;
   virtual NotificationList::PopupNotifications GetPopupNotifications() OVERRIDE;
@@ -172,13 +177,14 @@ class MessageCenterImpl : public MessageCenter,
                                          const gfx::Image& image) OVERRIDE;
   virtual void DisableNotificationsByNotifier(
       const NotifierId& notifier_id) OVERRIDE;
-  virtual void ExpandNotification(const std::string& id) OVERRIDE;
   virtual void ClickOnNotification(const std::string& id) OVERRIDE;
   virtual void ClickOnNotificationButton(const std::string& id,
                                          int button_index) OVERRIDE;
   virtual void MarkSinglePopupAsShown(const std::string& id,
                                       bool mark_notification_as_read) OVERRIDE;
-  virtual void DisplayedNotification(const std::string& id) OVERRIDE;
+  virtual void DisplayedNotification(
+      const std::string& id,
+      const DisplaySource source) OVERRIDE;
   virtual void SetNotifierSettingsProvider(
       NotifierSettingsProvider* provider) OVERRIDE;
   virtual NotifierSettingsProvider* GetNotifierSettingsProvider() OVERRIDE;
@@ -191,6 +197,13 @@ class MessageCenterImpl : public MessageCenter,
   // NotificationBlocker::Observer overrides:
   virtual void OnBlockingStateChanged(NotificationBlocker* blocker) OVERRIDE;
 
+  // message_center::NotifierSettingsObserver overrides:
+  virtual void UpdateIconImage(const NotifierId& notifier_id,
+                               const gfx::Image& icon) OVERRIDE;
+  virtual void NotifierGroupChanged() OVERRIDE;
+  virtual void NotifierEnabledChanged(const NotifierId& notifier_id,
+                                      bool enabled) OVERRIDE;
+
  protected:
   virtual void DisableTimersForTest() OVERRIDE;
 
@@ -198,7 +211,7 @@ class MessageCenterImpl : public MessageCenter,
   struct NotificationCache {
     NotificationCache();
     ~NotificationCache();
-    void Rebuild(const NotificationList::Notifications& notificaitons);
+    void Rebuild(const NotificationList::Notifications& notifications);
     void RecountUnread();
 
     NotificationList::Notifications visible_notifications;
@@ -206,6 +219,7 @@ class MessageCenterImpl : public MessageCenter,
   };
 
   void RemoveNotifications(bool by_user, const NotificationBlockers& blockers);
+  void RemoveNotificationsForNotifierId(const NotifierId& notifier_id);
 
   scoped_ptr<NotificationList> notification_list_;
   NotificationCache notification_cache_;

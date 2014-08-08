@@ -38,8 +38,8 @@
 #include "bindings/v8/WrapperTypeInfo.h"
 #include "bindings/v8/npruntime_impl.h"
 #include "bindings/v8/npruntime_priv.h"
-#include "core/frame/DOMWindow.h"
-#include "core/frame/Frame.h"
+#include "core/frame/LocalDOMWindow.h"
+#include "core/frame/LocalFrame.h"
 #include "platform/UserGestureIndicator.h"
 #include "wtf/OwnPtr.h"
 
@@ -53,7 +53,7 @@ namespace WebCore {
 
 const WrapperTypeInfo* npObjectTypeInfo()
 {
-    static const WrapperTypeInfo typeInfo = { gin::kEmbedderBlink, 0, 0, 0, 0, 0, 0, 0, WrapperTypeObjectPrototype };
+    static const WrapperTypeInfo typeInfo = { gin::kEmbedderBlink, 0, 0, 0, 0, 0, 0, 0, WrapperTypeObjectPrototype, RefCountedObject };
     return &typeInfo;
 }
 
@@ -77,14 +77,16 @@ static NPClass V8NPObjectClass = {
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0
 };
 
-static v8::Local<v8::Context> toV8Context(NPP npp, NPObject* npObject)
+static ScriptState* mainWorldScriptState(v8::Isolate* isolate, NPP npp, NPObject* npObject)
 {
     ASSERT(npObject->_class == &V8NPObjectClass);
     V8NPObject* object = reinterpret_cast<V8NPObject*>(npObject);
-    DOMWindow* window = object->rootObject;
+    LocalDOMWindow* window = object->rootObject;
     if (!window || !window->isCurrentlyDisplayedInFrame())
-        return v8::Local<v8::Context>();
-    return ScriptController::mainWorldContext(object->rootObject->frame());
+        return 0;
+    v8::HandleScope handleScope(isolate);
+    v8::Handle<v8::Context> context = toV8Context(object->rootObject->frame(), DOMWrapperWorld::mainWorld());
+    return ScriptState::from(context);
 }
 
 static PassOwnPtr<v8::Handle<v8::Value>[]> createValueListFromVariantArgs(const NPVariant* arguments, uint32_t argumentCount, NPObject* owner, v8::Isolate* isolate)
@@ -114,7 +116,7 @@ NPObject* v8ObjectToNPObject(v8::Handle<v8::Object> object)
     return reinterpret_cast<NPObject*>(object->GetAlignedPointerFromInternalField(v8DOMWrapperObjectIndex));
 }
 
-NPObject* npCreateV8ScriptObject(NPP npp, v8::Handle<v8::Object> object, DOMWindow* root, v8::Isolate* isolate)
+NPObject* npCreateV8ScriptObject(NPP npp, v8::Handle<v8::Object> object, LocalDOMWindow* root, v8::Isolate* isolate)
 {
     // Check to see if this object is already wrapped.
     if (object->InternalFieldCount() == npObjectInternalFieldCount) {
@@ -141,10 +143,10 @@ NPObject* npCreateV8ScriptObject(NPP npp, v8::Handle<v8::Object> object, DOMWind
                     return reinterpret_cast<NPObject*>(v8npObject);
                 }
             }
+            objectVector = &iter->value;
         } else {
-            iter = v8NPObjectMap->set(v8ObjectHash, V8NPObjectVector()).iterator;
+            objectVector = &v8NPObjectMap->set(v8ObjectHash, V8NPObjectVector()).storedValue->value;
         }
-        objectVector = &iter->value;
     }
 
     V8NPObject* v8npObject = reinterpret_cast<V8NPObject*>(_NPN_CreateObject(npp, &V8NPObjectClass));
@@ -230,13 +232,12 @@ bool _NPN_Invoke(NPP npp, NPObject* npObject, NPIdentifier methodName, const NPV
         return _NPN_Evaluate(npp, npObject, const_cast<NPString*>(&arguments[0].value.stringValue), result);
     }
 
-    v8::HandleScope handleScope(isolate);
     // FIXME: should use the plugin's owner frame as the security context.
-    v8::Handle<v8::Context> context = toV8Context(npp, npObject);
-    if (context.IsEmpty())
+    ScriptState* scriptState = mainWorldScriptState(isolate, npp, npObject);
+    if (!scriptState)
         return false;
 
-    v8::Context::Scope scope(context);
+    ScriptState::Scope scope(scriptState);
     ExceptionCatcher exceptionCatcher;
 
     v8::Handle<v8::Object> v8Object = v8::Local<v8::Object>::New(isolate, v8NpObject->v8Object);
@@ -250,7 +251,7 @@ bool _NPN_Invoke(NPP npp, NPObject* npObject, NPIdentifier methodName, const NPV
         return false;
     }
 
-    Frame* frame = v8NpObject->rootObject->frame();
+    LocalFrame* frame = v8NpObject->rootObject->frame();
     ASSERT(frame);
 
     // Call the function object.
@@ -286,12 +287,11 @@ bool _NPN_InvokeDefault(NPP npp, NPObject* npObject, const NPVariant* arguments,
 
     VOID_TO_NPVARIANT(*result);
 
-    v8::HandleScope handleScope(isolate);
-    v8::Handle<v8::Context> context = toV8Context(npp, npObject);
-    if (context.IsEmpty())
+    ScriptState* scriptState = mainWorldScriptState(isolate, npp, npObject);
+    if (!scriptState)
         return false;
 
-    v8::Context::Scope scope(context);
+    ScriptState::Scope scope(scriptState);
     ExceptionCatcher exceptionCatcher;
 
     // Lookup the function object and call it.
@@ -302,7 +302,7 @@ bool _NPN_InvokeDefault(NPP npp, NPObject* npObject, const NPVariant* arguments,
     v8::Local<v8::Value> resultObject;
     v8::Handle<v8::Function> function = v8::Local<v8::Function>::Cast(functionObject);
     if (!function->IsNull()) {
-        Frame* frame = v8NpObject->rootObject->frame();
+        LocalFrame* frame = v8NpObject->rootObject->frame();
         ASSERT(frame);
 
         OwnPtr<v8::Handle<v8::Value>[]> argv = createValueListFromVariantArgs(arguments, argumentCount, npObject, isolate);
@@ -335,12 +335,11 @@ bool _NPN_EvaluateHelper(NPP npp, bool popupsAllowed, NPObject* npObject, NPStri
         return false;
 
     v8::Isolate* isolate = v8::Isolate::GetCurrent();
-    v8::HandleScope handleScope(isolate);
-    v8::Handle<v8::Context> context = toV8Context(npp, npObject);
-    if (context.IsEmpty())
+    ScriptState* scriptState = mainWorldScriptState(isolate, npp, npObject);
+    if (!scriptState)
         return false;
 
-    v8::Context::Scope scope(context);
+    ScriptState::Scope scope(scriptState);
     ExceptionCatcher exceptionCatcher;
 
     // FIXME: Is this branch still needed after switching to using UserGestureIndicator?
@@ -348,13 +347,13 @@ bool _NPN_EvaluateHelper(NPP npp, bool popupsAllowed, NPObject* npObject, NPStri
     if (!popupsAllowed)
         filename = "npscript";
 
-    Frame* frame = v8NpObject->rootObject->frame();
+    LocalFrame* frame = v8NpObject->rootObject->frame();
     ASSERT(frame);
 
     String script = String::fromUTF8(npScript->UTF8Characters, npScript->UTF8Length);
 
     UserGestureIndicator gestureIndicator(popupsAllowed ? DefinitelyProcessingNewUserGesture : PossiblyProcessingUserGesture);
-    v8::Local<v8::Value> v8result = frame->script().executeScriptAndReturnValue(context, ScriptSourceCode(script, KURL(ParsedURLString, filename)));
+    v8::Local<v8::Value> v8result = frame->script().executeScriptAndReturnValue(scriptState->context(), ScriptSourceCode(script, KURL(ParsedURLString, filename)));
 
     if (v8result.IsEmpty())
         return false;
@@ -371,12 +370,11 @@ bool _NPN_GetProperty(NPP npp, NPObject* npObject, NPIdentifier propertyName, NP
 
     if (V8NPObject* object = npObjectToV8NPObject(npObject)) {
         v8::Isolate* isolate = v8::Isolate::GetCurrent();
-        v8::HandleScope handleScope(isolate);
-        v8::Handle<v8::Context> context = toV8Context(npp, npObject);
-        if (context.IsEmpty())
+        ScriptState* scriptState = mainWorldScriptState(isolate, npp, npObject);
+        if (!scriptState)
             return false;
 
-        v8::Context::Scope scope(context);
+        ScriptState::Scope scope(scriptState);
         ExceptionCatcher exceptionCatcher;
 
         v8::Handle<v8::Object> obj = v8::Local<v8::Object>::New(isolate, object->v8Object);
@@ -405,16 +403,15 @@ bool _NPN_SetProperty(NPP npp, NPObject* npObject, NPIdentifier propertyName, co
 
     if (V8NPObject* object = npObjectToV8NPObject(npObject)) {
         v8::Isolate* isolate = v8::Isolate::GetCurrent();
-        v8::HandleScope handleScope(isolate);
-        v8::Handle<v8::Context> context = toV8Context(npp, npObject);
-        if (context.IsEmpty())
+        ScriptState* scriptState = mainWorldScriptState(isolate, npp, npObject);
+        if (!scriptState)
             return false;
 
-        v8::Context::Scope scope(context);
+        ScriptState::Scope scope(scriptState);
         ExceptionCatcher exceptionCatcher;
 
         v8::Handle<v8::Object> obj = v8::Local<v8::Object>::New(isolate, object->v8Object);
-        obj->Set(npIdentifierToV8Identifier(propertyName, context->GetIsolate()), convertNPVariantToV8Object(value, object->rootObject->frame()->script().windowScriptNPObject(), context->GetIsolate()));
+        obj->Set(npIdentifierToV8Identifier(propertyName, isolate), convertNPVariantToV8Object(value, object->rootObject->frame()->script().windowScriptNPObject(), isolate));
         return true;
     }
 
@@ -434,11 +431,10 @@ bool _NPN_RemoveProperty(NPP npp, NPObject* npObject, NPIdentifier propertyName)
         return false;
 
     v8::Isolate* isolate = v8::Isolate::GetCurrent();
-    v8::HandleScope handleScope(isolate);
-    v8::Handle<v8::Context> context = toV8Context(npp, npObject);
-    if (context.IsEmpty())
+    ScriptState* scriptState = mainWorldScriptState(isolate, npp, npObject);
+    if (!scriptState)
         return false;
-    v8::Context::Scope scope(context);
+    ScriptState::Scope scope(scriptState);
     ExceptionCatcher exceptionCatcher;
 
     v8::Handle<v8::Object> obj = v8::Local<v8::Object>::New(isolate, object->v8Object);
@@ -454,11 +450,10 @@ bool _NPN_HasProperty(NPP npp, NPObject* npObject, NPIdentifier propertyName)
 
     if (V8NPObject* object = npObjectToV8NPObject(npObject)) {
         v8::Isolate* isolate = v8::Isolate::GetCurrent();
-        v8::HandleScope handleScope(isolate);
-        v8::Handle<v8::Context> context = toV8Context(npp, npObject);
-        if (context.IsEmpty())
+        ScriptState* scriptState = mainWorldScriptState(isolate, npp, npObject);
+        if (!scriptState)
             return false;
-        v8::Context::Scope scope(context);
+        ScriptState::Scope scope(scriptState);
         ExceptionCatcher exceptionCatcher;
 
         v8::Handle<v8::Object> obj = v8::Local<v8::Object>::New(isolate, object->v8Object);
@@ -477,11 +472,10 @@ bool _NPN_HasMethod(NPP npp, NPObject* npObject, NPIdentifier methodName)
 
     if (V8NPObject* object = npObjectToV8NPObject(npObject)) {
         v8::Isolate* isolate = v8::Isolate::GetCurrent();
-        v8::HandleScope handleScope(isolate);
-        v8::Handle<v8::Context> context = toV8Context(npp, npObject);
-        if (context.IsEmpty())
+        ScriptState* scriptState = mainWorldScriptState(isolate, npp, npObject);
+        if (!scriptState)
             return false;
-        v8::Context::Scope scope(context);
+        ScriptState::Scope scope(scriptState);
         ExceptionCatcher exceptionCatcher;
 
         v8::Handle<v8::Object> obj = v8::Local<v8::Object>::New(isolate, object->v8Object);
@@ -503,15 +497,15 @@ void _NPN_SetException(NPObject* npObject, const NPUTF8 *message)
         return;
     }
 
-    v8::HandleScope handleScope(v8::Isolate::GetCurrent());
-    v8::Handle<v8::Context> context = toV8Context(0, npObject);
-    if (context.IsEmpty())
+    v8::Isolate* isolate = v8::Isolate::GetCurrent();
+    ScriptState* scriptState = mainWorldScriptState(isolate, 0, npObject);
+    if (!scriptState)
         return;
 
-    v8::Context::Scope scope(context);
+    ScriptState::Scope scope(scriptState);
     ExceptionCatcher exceptionCatcher;
 
-    throwError(v8GeneralError, message, context->GetIsolate());
+    throwError(v8GeneralError, message, isolate);
 }
 
 bool _NPN_Enumerate(NPP npp, NPObject* npObject, NPIdentifier** identifier, uint32_t* count)
@@ -521,11 +515,10 @@ bool _NPN_Enumerate(NPP npp, NPObject* npObject, NPIdentifier** identifier, uint
 
     if (V8NPObject* object = npObjectToV8NPObject(npObject)) {
         v8::Isolate* isolate = v8::Isolate::GetCurrent();
-        v8::HandleScope handleScope(isolate);
-        v8::Local<v8::Context> context = toV8Context(npp, npObject);
-        if (context.IsEmpty())
+        ScriptState* scriptState = mainWorldScriptState(isolate, npp, npObject);
+        if (!scriptState)
             return false;
-        v8::Context::Scope scope(context);
+        ScriptState::Scope scope(scriptState);
         ExceptionCatcher exceptionCatcher;
 
         v8::Handle<v8::Object> obj = v8::Local<v8::Object>::New(isolate, object->v8Object);
@@ -542,22 +535,22 @@ bool _NPN_Enumerate(NPP npp, NPObject* npObject, NPIdentifier** identifier, uint
             "  }"
             "  return props;"
             "});";
-        v8::Handle<v8::String> source = v8::String::NewFromUtf8(isolate, enumeratorCode);
-        v8::Handle<v8::Value> result = V8ScriptRunner::compileAndRunInternalScript(source, context->GetIsolate());
+        v8::Handle<v8::String> source = v8AtomicString(isolate, enumeratorCode);
+        v8::Handle<v8::Value> result = V8ScriptRunner::compileAndRunInternalScript(source, isolate);
         ASSERT(!result.IsEmpty());
         ASSERT(result->IsFunction());
         v8::Handle<v8::Function> enumerator = v8::Handle<v8::Function>::Cast(result);
         v8::Handle<v8::Value> argv[] = { obj };
-        v8::Local<v8::Value> propsObj = V8ScriptRunner::callInternalFunction(enumerator, v8::Handle<v8::Object>::Cast(result), WTF_ARRAY_LENGTH(argv), argv, context->GetIsolate());
+        v8::Local<v8::Value> propsObj = V8ScriptRunner::callInternalFunction(enumerator, v8::Handle<v8::Object>::Cast(result), WTF_ARRAY_LENGTH(argv), argv, isolate);
         if (propsObj.IsEmpty())
             return false;
 
         // Convert the results into an array of NPIdentifiers.
         v8::Handle<v8::Array> props = v8::Handle<v8::Array>::Cast(propsObj);
         *count = props->Length();
-        *identifier = static_cast<NPIdentifier*>(malloc(sizeof(NPIdentifier*) * *count));
+        *identifier = static_cast<NPIdentifier*>(calloc(*count, sizeof(NPIdentifier)));
         for (uint32_t i = 0; i < *count; ++i) {
-            v8::Local<v8::Value> name = props->Get(v8::Integer::New(i, context->GetIsolate()));
+            v8::Local<v8::Value> name = props->Get(v8::Integer::New(isolate, i));
             (*identifier)[i] = getStringIdentifier(v8::Local<v8::String>::Cast(name));
         }
         return true;
@@ -577,11 +570,10 @@ bool _NPN_Construct(NPP npp, NPObject* npObject, const NPVariant* arguments, uin
     v8::Isolate* isolate = v8::Isolate::GetCurrent();
 
     if (V8NPObject* object = npObjectToV8NPObject(npObject)) {
-        v8::HandleScope handleScope(isolate);
-        v8::Handle<v8::Context> context = toV8Context(npp, npObject);
-        if (context.IsEmpty())
+        ScriptState* scriptState = mainWorldScriptState(isolate, npp, npObject);
+        if (!scriptState)
             return false;
-        v8::Context::Scope scope(context);
+        ScriptState::Scope scope(scriptState);
         ExceptionCatcher exceptionCatcher;
 
         // Lookup the constructor function.
@@ -593,10 +585,10 @@ bool _NPN_Construct(NPP npp, NPObject* npObject, const NPVariant* arguments, uin
         v8::Local<v8::Value> resultObject;
         v8::Handle<v8::Function> ctor = v8::Handle<v8::Function>::Cast(ctorObj);
         if (!ctor->IsNull()) {
-            Frame* frame = object->rootObject->frame();
+            LocalFrame* frame = object->rootObject->frame();
             ASSERT(frame);
             OwnPtr<v8::Handle<v8::Value>[]> argv = createValueListFromVariantArgs(arguments, argumentCount, npObject, isolate);
-            resultObject = V8ObjectConstructor::newInstanceInDocument(ctor, argumentCount, argv.get(), frame ? frame->document() : 0);
+            resultObject = V8ObjectConstructor::newInstanceInDocument(isolate, ctor, argumentCount, argv.get(), frame ? frame->document() : 0);
         }
 
         if (resultObject.IsEmpty())

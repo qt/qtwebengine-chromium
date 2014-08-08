@@ -13,6 +13,7 @@
 #include "net/base/host_port_pair.h"
 #include "net/base/net_export.h"
 #include "net/base/net_util.h"
+#include "net/base/prioritized_dispatcher.h"
 #include "net/base/request_priority.h"
 
 namespace base {
@@ -47,6 +48,8 @@ class NET_EXPORT HostResolver {
   // |enable_caching| controls whether a HostCache is used.
   struct NET_EXPORT Options {
     Options();
+
+    PrioritizedDispatcher::Limits GetDispatcherLimits() const;
 
     size_t max_concurrent_resolves;
     size_t max_retry_attempts;
@@ -85,6 +88,9 @@ class NET_EXPORT HostResolver {
     bool is_speculative() const { return is_speculative_; }
     void set_is_speculative(bool b) { is_speculative_ = b; }
 
+    bool is_my_ip_address() const { return is_my_ip_address_; }
+    void set_is_my_ip_address(bool b) { is_my_ip_address_ = b; }
+
    private:
     // The hostname to resolve, and the port to use in resulting sockaddrs.
     HostPortPair host_port_pair_;
@@ -100,18 +106,20 @@ class NET_EXPORT HostResolver {
 
     // Whether this request was started by the DNS prefetcher.
     bool is_speculative_;
+
+    // Indicates a request for myIpAddress (to differentiate from other requests
+    // for localhost, currently used by Chrome OS).
+    bool is_my_ip_address_;
   };
 
   // Opaque type used to cancel a request.
   typedef void* RequestHandle;
 
-  // This value can be passed into CreateSystemResolver as the
-  // |max_concurrent_resolves| parameter. It will select a default level of
-  // concurrency.
+  // Set Options.max_concurrent_resolves to this to select a default level
+  // of concurrency.
   static const size_t kDefaultParallelism = 0;
 
-  // This value can be passed into CreateSystemResolver as the
-  // |max_retry_attempts| parameter.
+  // Set Options.max_retry_attempts to this to select a default retry value.
   static const size_t kDefaultRetryAttempts = -1;
 
   // If any completion callbacks are pending when the resolver is destroyed,

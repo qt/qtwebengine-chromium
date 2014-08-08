@@ -39,8 +39,8 @@ namespace {
 
 // How many milliseconds we delay writing the index to disk since the last cache
 // operation has happened.
-const int kDefaultWriteToDiskDelayMSecs = 20000;
-const int kDefaultWriteToDiskOnBackgroundDelayMSecs = 100;
+const int kWriteToDiskDelayMSecs = 20000;
+const int kWriteToDiskOnBackgroundDelayMSecs = 100;
 
 // Divides the cache space into this amount of parts to evict when only one part
 // is left.
@@ -167,28 +167,10 @@ SimpleIndex::~SimpleIndex() {
 void SimpleIndex::Initialize(base::Time cache_mtime) {
   DCHECK(io_thread_checker_.CalledOnValidThread());
 
-  // Take the foreground and background index flush delays from the experiment
-  // settings only if both are valid.
-  foreground_flush_delay_ = kDefaultWriteToDiskDelayMSecs;
-  background_flush_delay_ = kDefaultWriteToDiskOnBackgroundDelayMSecs;
-  const std::string index_flush_intervals = base::FieldTrialList::FindFullName(
-      "SimpleCacheIndexFlushDelay_Foreground_Background");
-  if (!index_flush_intervals.empty()) {
-    base::StringTokenizer tokens(index_flush_intervals, "_");
-    int foreground_delay, background_delay;
-    if (tokens.GetNext() &&
-        base::StringToInt(tokens.token(), &foreground_delay) &&
-        tokens.GetNext() &&
-        base::StringToInt(tokens.token(), &background_delay)) {
-      foreground_flush_delay_ = foreground_delay;
-      background_flush_delay_ = background_delay;
-    }
-  }
-
 #if defined(OS_ANDROID)
   if (base::android::IsVMInitialized()) {
-    activity_status_listener_.reset(new base::android::ActivityStatus::Listener(
-        base::Bind(&SimpleIndex::OnActivityStateChange, AsWeakPtr())));
+    app_status_listener_.reset(new base::android::ApplicationStatusListener(
+        base::Bind(&SimpleIndex::OnApplicationStateChange, AsWeakPtr())));
   }
 #endif
 
@@ -388,8 +370,8 @@ void SimpleIndex::InsertInEntrySet(
 void SimpleIndex::PostponeWritingToDisk() {
   if (!initialized_)
     return;
-  const int delay = app_on_background_ ? background_flush_delay_
-                                       : foreground_flush_delay_;
+  const int delay = app_on_background_ ? kWriteToDiskOnBackgroundDelayMSecs
+                                       : kWriteToDiskDelayMSecs;
   // If the timer is already active, Start() will just Reset it, postponing it.
   write_to_disk_timer_.Start(
       FROM_HERE, base::TimeDelta::FromMilliseconds(delay), write_to_disk_cb_);
@@ -455,15 +437,15 @@ void SimpleIndex::MergeInitializingSet(
 }
 
 #if defined(OS_ANDROID)
-void SimpleIndex::OnActivityStateChange(
-    base::android::ActivityState state) {
+void SimpleIndex::OnApplicationStateChange(
+    base::android::ApplicationState state) {
   DCHECK(io_thread_checker_.CalledOnValidThread());
   // For more info about android activities, see:
   // developer.android.com/training/basics/activity-lifecycle/pausing.html
-  // These values are defined in the file ActivityStatus.java
-  if (state == base::android::ACTIVITY_STATE_RESUMED) {
+  if (state == base::android::APPLICATION_STATE_HAS_RUNNING_ACTIVITIES) {
     app_on_background_ = false;
-  } else if (state == base::android::ACTIVITY_STATE_STOPPED) {
+  } else if (state ==
+      base::android::APPLICATION_STATE_HAS_STOPPED_ACTIVITIES) {
     app_on_background_ = true;
     WriteToDisk();
   }

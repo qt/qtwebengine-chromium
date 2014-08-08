@@ -42,10 +42,10 @@
 
 namespace WebCore {
 
-PassOwnPtr<SQLStatement> SQLStatement::create(Database* database,
+PassOwnPtrWillBeRawPtr<SQLStatement> SQLStatement::create(Database* database,
     PassOwnPtr<SQLStatementCallback> callback, PassOwnPtr<SQLStatementErrorCallback> errorCallback)
 {
-    return adoptPtr(new SQLStatement(database, callback, errorCallback));
+    return adoptPtrWillBeNoop(new SQLStatement(database, callback, errorCallback));
 }
 
 SQLStatement::SQLStatement(Database* database, PassOwnPtr<SQLStatementCallback> callback,
@@ -53,6 +53,14 @@ SQLStatement::SQLStatement(Database* database, PassOwnPtr<SQLStatementCallback> 
     : m_statementCallbackWrapper(callback, database->executionContext())
     , m_statementErrorCallbackWrapper(errorCallback, database->executionContext())
 {
+}
+
+void SQLStatement::trace(Visitor* visitor)
+{
+    visitor->trace(m_backend);
+    visitor->trace(m_statementCallbackWrapper);
+    visitor->trace(m_statementErrorCallbackWrapper);
+    AbstractSQLStatement::trace(visitor);
 }
 
 void SQLStatement::setBackend(AbstractSQLStatementBackend* backend)
@@ -79,15 +87,17 @@ bool SQLStatement::performCallback(SQLTransaction* transaction)
 
     OwnPtr<SQLStatementCallback> callback = m_statementCallbackWrapper.unwrap();
     OwnPtr<SQLStatementErrorCallback> errorCallback = m_statementErrorCallbackWrapper.unwrap();
-    RefPtr<SQLError> error = m_backend->sqlError();
+    SQLErrorData* error = m_backend->sqlError();
 
     // Call the appropriate statement callback and track if it resulted in an error,
     // because then we need to jump to the transaction error callback.
     if (error) {
-        if (errorCallback)
-            callbackError = errorCallback->handleEvent(transaction, error.get());
+        if (errorCallback) {
+            RefPtrWillBeRawPtr<SQLError> sqlError = SQLError::create(*error);
+            callbackError = errorCallback->handleEvent(transaction, sqlError.get());
+        }
     } else if (callback) {
-        RefPtr<SQLResultSet> resultSet = m_backend->sqlResultSet();
+        RefPtrWillBeRawPtr<SQLResultSet> resultSet = m_backend->sqlResultSet();
         callbackError = !callback->handleEvent(transaction, resultSet.get());
     }
 

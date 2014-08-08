@@ -25,8 +25,9 @@
 #include "config.h"
 #include "core/html/HTMLTableRowElement.h"
 
-#include "HTMLNames.h"
 #include "bindings/v8/ExceptionState.h"
+#include "core/HTMLNames.h"
+#include "core/dom/ElementTraversal.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/html/HTMLCollection.h"
 #include "core/html/HTMLTableCellElement.h"
@@ -37,15 +38,22 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-HTMLTableRowElement::HTMLTableRowElement(Document& document)
+inline HTMLTableRowElement::HTMLTableRowElement(Document& document)
     : HTMLTablePartElement(trTag, document)
 {
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLTableRowElement> HTMLTableRowElement::create(Document& document)
+DEFINE_NODE_FACTORY(HTMLTableRowElement)
+
+bool HTMLTableRowElement::hasLegalLinkAttribute(const QualifiedName& name) const
 {
-    return adoptRef(new HTMLTableRowElement(document));
+    return name == backgroundAttr || HTMLTablePartElement::hasLegalLinkAttribute(name);
+}
+
+const QualifiedName& HTMLTableRowElement::subResourceAttributeName() const
+{
+    return backgroundAttr;
 }
 
 int HTMLTableRowElement::rowIndex() const
@@ -54,7 +62,7 @@ int HTMLTableRowElement::rowIndex() const
     if (!table)
         return -1;
     table = table->parentNode();
-    if (!table || !isHTMLTableElement(table))
+    if (!isHTMLTableElement(table))
         return -1;
 
     // To match Firefox, the row indices work like this:
@@ -65,32 +73,29 @@ int HTMLTableRowElement::rowIndex() const
     int rIndex = 0;
 
     if (HTMLTableSectionElement* head = toHTMLTableElement(table)->tHead()) {
-        for (Node *row = head->firstChild(); row; row = row->nextSibling()) {
+        for (HTMLTableRowElement* row = Traversal<HTMLTableRowElement>::firstChild(*head); row; row = Traversal<HTMLTableRowElement>::nextSibling(*row)) {
             if (row == this)
                 return rIndex;
-            if (row->hasTagName(trTag))
-                ++rIndex;
+            ++rIndex;
         }
     }
 
-    for (Node *node = table->firstChild(); node; node = node->nextSibling()) {
-        if (node->hasTagName(tbodyTag)) {
-            HTMLTableSectionElement* section = toHTMLTableSectionElement(node);
-            for (Node* row = section->firstChild(); row; row = row->nextSibling()) {
+    for (Element* child = ElementTraversal::firstWithin(*table); child; child = ElementTraversal::nextSibling(*child)) {
+        if (child->hasTagName(tbodyTag)) {
+            HTMLTableSectionElement* section = toHTMLTableSectionElement(child);
+            for (HTMLTableRowElement* row = Traversal<HTMLTableRowElement>::firstChild(*section); row; row = Traversal<HTMLTableRowElement>::nextSibling(*row)) {
                 if (row == this)
                     return rIndex;
-                if (row->hasTagName(trTag))
-                    ++rIndex;
+                ++rIndex;
             }
         }
     }
 
     if (HTMLTableSectionElement* foot = toHTMLTableElement(table)->tFoot()) {
-        for (Node *row = foot->firstChild(); row; row = row->nextSibling()) {
+        for (HTMLTableRowElement* row = Traversal<HTMLTableRowElement>::firstChild(*foot); row; row = Traversal<HTMLTableRowElement>::nextSibling(*row)) {
             if (row == this)
                 return rIndex;
-            if (row->hasTagName(trTag))
-                ++rIndex;
+            ++rIndex;
         }
     }
 
@@ -101,55 +106,54 @@ int HTMLTableRowElement::rowIndex() const
 int HTMLTableRowElement::sectionRowIndex() const
 {
     int rIndex = 0;
-    const Node *n = this;
+    const Node* n = this;
     do {
         n = n->previousSibling();
-        if (n && n->hasTagName(trTag))
-            rIndex++;
-    }
-    while (n);
+        if (n && isHTMLTableRowElement(*n))
+            ++rIndex;
+    } while (n);
 
     return rIndex;
 }
 
-PassRefPtr<HTMLElement> HTMLTableRowElement::insertCell(int index, ExceptionState& exceptionState)
+PassRefPtrWillBeRawPtr<HTMLElement> HTMLTableRowElement::insertCell(ExceptionState& exceptionState)
 {
-    RefPtr<HTMLCollection> children = cells();
+    // The default 'index' argument value is -1.
+    return insertCell(-1, exceptionState);
+}
+
+PassRefPtrWillBeRawPtr<HTMLElement> HTMLTableRowElement::insertCell(int index, ExceptionState& exceptionState)
+{
+    RefPtrWillBeRawPtr<HTMLCollection> children = cells();
     int numCells = children ? children->length() : 0;
     if (index < -1 || index > numCells) {
         exceptionState.throwDOMException(IndexSizeError, "The value provided (" + String::number(index) + ") is outside the range [-1, " + String::number(numCells) + "].");
-        return 0;
+        return nullptr;
     }
 
-    RefPtr<HTMLTableCellElement> cell = HTMLTableCellElement::create(tdTag, document());
-    if (index < 0 || index >= numCells)
+    RefPtrWillBeRawPtr<HTMLTableCellElement> cell = HTMLTableCellElement::create(tdTag, document());
+    if (numCells == index || index == -1)
         appendChild(cell, exceptionState);
-    else {
-        Node* n;
-        if (index < 1)
-            n = firstChild();
-        else
-            n = children->item(index);
-        insertBefore(cell, n, exceptionState);
-    }
+    else
+        insertBefore(cell, children->item(index), exceptionState);
     return cell.release();
 }
 
 void HTMLTableRowElement::deleteCell(int index, ExceptionState& exceptionState)
 {
-    RefPtr<HTMLCollection> children = cells();
+    RefPtrWillBeRawPtr<HTMLCollection> children = cells();
     int numCells = children ? children->length() : 0;
     if (index == -1)
         index = numCells-1;
     if (index >= 0 && index < numCells) {
-        RefPtr<Node> cell = children->item(index);
+        RefPtrWillBeRawPtr<Element> cell = children->item(index);
         HTMLElement::removeChild(cell.get(), exceptionState);
     } else {
         exceptionState.throwDOMException(IndexSizeError, "The value provided (" + String::number(index) + ") is outside the range [0, " + String::number(numCells) + ").");
     }
 }
 
-PassRefPtr<HTMLCollection> HTMLTableRowElement::cells()
+PassRefPtrWillBeRawPtr<HTMLCollection> HTMLTableRowElement::cells()
 {
     return ensureCachedHTMLCollection(TRCells);
 }

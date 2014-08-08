@@ -16,7 +16,7 @@ namespace gles2 {
 
 class ErrorStateImpl : public ErrorState {
  public:
-  explicit ErrorStateImpl(Logger* logger);
+  explicit ErrorStateImpl(ErrorStateClient* client, Logger* logger);
   virtual ~ErrorStateImpl();
 
   virtual uint32 GetGLError() OVERRIDE;
@@ -33,13 +33,20 @@ class ErrorStateImpl : public ErrorState {
       const char* function_name,
       unsigned int value,
       const char* label) OVERRIDE;
-  virtual void SetGLErrorInvalidParam(
+  virtual void SetGLErrorInvalidParami(
       const char* filename,
       int line,
       unsigned int error,
       const char* function_name,
       unsigned int pname,
       int param) OVERRIDE;
+  virtual void SetGLErrorInvalidParamf(
+      const char* filename,
+      int line,
+      unsigned int error,
+      const char* function_name,
+      unsigned int pname,
+      float param) OVERRIDE;
 
   virtual unsigned int PeekGLError(
       const char* filename, int line, const char* function_name) OVERRIDE;
@@ -56,6 +63,7 @@ class ErrorStateImpl : public ErrorState {
   // Current GL error bits.
   uint32 error_bits_;
 
+  ErrorStateClient* client_;
   Logger* logger_;
 
   DISALLOW_COPY_AND_ASSIGN(ErrorStateImpl);
@@ -65,13 +73,12 @@ ErrorState::ErrorState() {}
 
 ErrorState::~ErrorState() {}
 
-ErrorState* ErrorState::Create(Logger* logger) {
-  return new ErrorStateImpl(logger);
+ErrorState* ErrorState::Create(ErrorStateClient* client, Logger* logger) {
+  return new ErrorStateImpl(client, logger);
 }
 
-ErrorStateImpl::ErrorStateImpl(Logger* logger)
-    : error_bits_(0),
-      logger_(logger) {}
+ErrorStateImpl::ErrorStateImpl(ErrorStateClient* client, Logger* logger)
+    : error_bits_(0), client_(client), logger_(logger) {}
 
 ErrorStateImpl::~ErrorStateImpl() {}
 
@@ -118,6 +125,8 @@ void ErrorStateImpl::SetGLError(
         function_name + ": " + msg);
   }
   error_bits_ |= GLES2Util::GLErrorToErrorBit(error);
+  if (error == GL_OUT_OF_MEMORY)
+    client_->OnOutOfMemoryError();
 }
 
 void ErrorStateImpl::SetGLErrorInvalidEnum(
@@ -131,7 +140,7 @@ void ErrorStateImpl::SetGLErrorInvalidEnum(
              GLES2Util::GetStringEnum(value)).c_str());
 }
 
-void ErrorStateImpl::SetGLErrorInvalidParam(
+void ErrorStateImpl::SetGLErrorInvalidParami(
     const char* filename,
     int line,
     unsigned int error,
@@ -150,6 +159,19 @@ void ErrorStateImpl::SetGLErrorInvalidParam(
          GLES2Util::GetStringEnum(pname) + " to " +
          base::StringPrintf("%d", param)).c_str());
   }
+}
+
+void ErrorStateImpl::SetGLErrorInvalidParamf(
+    const char* filename,
+    int line,
+    unsigned int error,
+    const char* function_name,
+    unsigned int pname, float param) {
+  SetGLError(
+      filename, line, error, function_name,
+      (std::string("trying to set ") +
+       GLES2Util::GetStringEnum(pname) + " to " +
+       base::StringPrintf("%G", param)).c_str());
 }
 
 void ErrorStateImpl::CopyRealGLErrorsToWrapper(

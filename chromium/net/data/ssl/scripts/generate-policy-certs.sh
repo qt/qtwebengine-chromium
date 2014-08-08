@@ -12,15 +12,15 @@
 
 try() {
   echo "$@"
-  $@ || exit 1
+  "$@" || exit 1
 }
 
 try rm -rf out
 try mkdir out
 
 # Create the serial number files.
-try echo 1 > out/policy-root-serial
-try echo 1 > out/policy-intermediate-serial
+try /bin/sh -c "echo 01 > out/policy-root-serial"
+try /bin/sh -c "echo 01 > out/policy-intermediate-serial"
 
 # Create the signers' DB files.
 touch out/policy-root-index.txt
@@ -50,7 +50,8 @@ COMMON_NAME="Policy Test Root CA" \
     -out out/policy-root.pem \
     -signkey out/policy-root.key \
     -extfile policy.cnf \
-    -extensions ca_cert
+    -extensions ca_cert \
+    -text
 
 # Generate the intermediate
 COMMON_NAME="Policy Test Intermediate CA" \
@@ -91,6 +92,6 @@ COMMON_NAME="Policy Test Intermediate CA" \
     -config policy.cnf \
     -extensions user_cert
 
-cat out/policy-cert.pem \
+try /bin/sh -c "cat out/policy-cert.pem \
     out/policy-intermediate.pem \
-    out/policy-root.pem >../certificates/explicit-policy-chain.pem
+    out/policy-root.pem >../certificates/explicit-policy-chain.pem"

@@ -29,11 +29,11 @@
 
 #include "core/rendering/GraphicsContextAnnotator.h"
 #include "core/rendering/ImageQualityController.h"
-#include "core/rendering/LayoutRectRecorder.h"
 #include "core/rendering/LayoutRepainter.h"
 #include "core/rendering/PointerEventsHitRules.h"
 #include "core/rendering/RenderImageResource.h"
 #include "core/rendering/svg/RenderSVGResource.h"
+#include "core/rendering/svg/SVGRenderSupport.h"
 #include "core/rendering/svg/SVGRenderingContext.h"
 #include "core/rendering/svg/SVGResources.h"
 #include "core/rendering/svg/SVGResourcesCache.h"
@@ -64,12 +64,12 @@ bool RenderSVGImage::updateImageViewport()
     bool updatedViewport = false;
 
     SVGLengthContext lengthContext(image);
-    m_objectBoundingBox = FloatRect(image->xCurrentValue().value(lengthContext), image->yCurrentValue().value(lengthContext), image->widthCurrentValue().value(lengthContext), image->heightCurrentValue().value(lengthContext));
+    m_objectBoundingBox = FloatRect(image->x()->currentValue()->value(lengthContext), image->y()->currentValue()->value(lengthContext), image->width()->currentValue()->value(lengthContext), image->height()->currentValue()->value(lengthContext));
 
     // Images with preserveAspectRatio=none should force non-uniform scaling. This can be achieved
     // by setting the image's container size to its intrinsic size.
     // See: http://www.w3.org/TR/SVG/single-page.html, 7.8 The ‘preserveAspectRatio’ attribute.
-    if (image->preserveAspectRatioCurrentValue().align() == SVGPreserveAspectRatio::SVG_PRESERVEASPECTRATIO_NONE) {
+    if (image->preserveAspectRatio()->currentValue()->align() == SVGPreserveAspectRatio::SVG_PRESERVEASPECTRATIO_NONE) {
         if (ImageResource* cachedImage = m_imageResource->cachedImage()) {
             LayoutSize intrinsicSize = cachedImage->imageSizeForRenderer(0, style()->effectiveZoom());
             if (intrinsicSize != m_imageResource->imageSize(style()->effectiveZoom())) {
@@ -93,7 +93,6 @@ void RenderSVGImage::layout()
 {
     ASSERT(needsLayout());
 
-    LayoutRectRecorder recorder(*this);
     LayoutRepainter repainter(*this, SVGRenderSupport::checkForSVGRepaintDuringLayout(this) && selfNeedsLayout());
     updateImageViewport();
 
@@ -126,33 +125,38 @@ void RenderSVGImage::paint(PaintInfo& paintInfo, const LayoutPoint&)
 {
     ANNOTATE_GRAPHICS_CONTEXT(paintInfo, this);
 
-    if (paintInfo.context->paintingDisabled() || style()->visibility() == HIDDEN || !m_imageResource->hasImage())
+    if (paintInfo.context->paintingDisabled()
+        || paintInfo.phase != PaintPhaseForeground
+        || style()->visibility() == HIDDEN
+        || !m_imageResource->hasImage())
         return;
 
-    FloatRect boundingBox = repaintRectInLocalCoordinates();
+    FloatRect boundingBox = paintInvalidationRectInLocalCoordinates();
     if (!SVGRenderSupport::paintInfoIntersectsRepaintRect(boundingBox, m_localTransform, paintInfo))
         return;
 
     PaintInfo childPaintInfo(paintInfo);
-    bool drawsOutline = style()->outlineWidth() && (childPaintInfo.phase == PaintPhaseOutline || childPaintInfo.phase == PaintPhaseSelfOutline);
-    if (drawsOutline || childPaintInfo.phase == PaintPhaseForeground) {
-        GraphicsContextStateSaver stateSaver(*childPaintInfo.context);
-        childPaintInfo.applyTransform(m_localTransform);
+    GraphicsContextStateSaver stateSaver(*childPaintInfo.context, false);
 
-        if (childPaintInfo.phase == PaintPhaseForeground && !m_objectBoundingBox.isEmpty()) {
-            SVGRenderingContext renderingContext(this, childPaintInfo);
-
-            if (renderingContext.isRenderingPrepared()) {
-                if (style()->svgStyle()->bufferedRendering() == BR_STATIC && renderingContext.bufferForeground(m_bufferedForeground))
-                    return;
-
-                paintForeground(childPaintInfo);
-            }
-        }
-
-        if (drawsOutline)
-            paintOutline(childPaintInfo, IntRect(boundingBox));
+    if (!m_localTransform.isIdentity()) {
+        stateSaver.save();
+        childPaintInfo.applyTransform(m_localTransform, false);
     }
+    if (!m_objectBoundingBox.isEmpty()) {
+        // SVGRenderingContext may taint the state - make sure we're always saving.
+        SVGRenderingContext renderingContext(this, childPaintInfo, stateSaver.saved() ?
+            SVGRenderingContext::DontSaveGraphicsContext : SVGRenderingContext::SaveGraphicsContext);
+
+        if (renderingContext.isRenderingPrepared()) {
+            if (style()->svgStyle()->bufferedRendering() == BR_STATIC && renderingContext.bufferForeground(m_bufferedForeground))
+                return;
+
+            paintForeground(childPaintInfo);
+        }
+    }
+
+    if (style()->outlineWidth())
+        paintOutline(childPaintInfo, IntRect(boundingBox));
 }
 
 void RenderSVGImage::paintForeground(PaintInfo& paintInfo)
@@ -162,13 +166,16 @@ void RenderSVGImage::paintForeground(PaintInfo& paintInfo)
     FloatRect srcRect(0, 0, image->width(), image->height());
 
     SVGImageElement* imageElement = toSVGImageElement(element());
-    imageElement->preserveAspectRatioCurrentValue().transformRect(destRect, srcRect);
+    imageElement->preserveAspectRatio()->currentValue()->transformRect(destRect, srcRect);
 
-    bool useLowQualityScaling = false;
+    InterpolationQuality interpolationQuality = InterpolationDefault;
     if (style()->svgStyle()->bufferedRendering() != BR_STATIC)
-        useLowQualityScaling = ImageQualityController::imageQualityController()->shouldPaintAtLowQuality(paintInfo.context, this, image.get(), image.get(), LayoutSize(destRect.size()));
+        interpolationQuality = ImageQualityController::imageQualityController()->chooseInterpolationQuality(paintInfo.context, this, image.get(), image.get(), LayoutSize(destRect.size()));
 
-    paintInfo.context->drawImage(image.get(), destRect, srcRect, CompositeSourceOver, DoNotRespectImageOrientation, useLowQualityScaling);
+    InterpolationQuality previousInterpolationQuality = paintInfo.context->imageInterpolationQuality();
+    paintInfo.context->setImageInterpolationQuality(interpolationQuality);
+    paintInfo.context->drawImage(image.get(), destRect, srcRect, CompositeSourceOver);
+    paintInfo.context->setImageInterpolationQuality(previousInterpolationQuality);
 }
 
 void RenderSVGImage::invalidateBufferedForeground()
@@ -218,13 +225,13 @@ void RenderSVGImage::imageChanged(WrappedImagePtr, const IntRect*)
 
     invalidateBufferedForeground();
 
-    repaint();
+    paintInvalidationForWholeRenderer();
 }
 
 void RenderSVGImage::addFocusRingRects(Vector<IntRect>& rects, const LayoutPoint&, const RenderLayerModelObject*)
 {
     // this is called from paint() after the localTransform has already been applied
-    IntRect contentRect = enclosingIntRect(repaintRectInLocalCoordinates());
+    IntRect contentRect = enclosingIntRect(paintInvalidationRectInLocalCoordinates());
     if (!contentRect.isEmpty())
         rects.append(contentRect);
 }

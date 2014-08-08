@@ -13,6 +13,7 @@
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/rect_conversions.h"
 #include "ui/gfx/skia_util.h"
+#include "ui/gfx/text_utils.h"
 #include "ui/native_theme/native_theme.h"
 #include "ui/views/controls/scroll_view.h"
 #include "ui/views/controls/table/table_grouper.h"
@@ -124,7 +125,7 @@ TableView::TableView(ui::TableModel* model,
       table_type_(table_type),
       single_selection_(single_selection),
       table_view_observer_(NULL),
-      row_height_(font_.GetHeight() + kTextVerticalPadding * 2),
+      row_height_(font_list_.GetHeight() + kTextVerticalPadding * 2),
       last_parent_width_(0),
       layout_width_(0),
       grouper_(NULL),
@@ -317,7 +318,7 @@ void TableView::Layout() {
   SetBounds(x(), y(), width, height);
 }
 
-gfx::Size TableView::GetPreferredSize() {
+gfx::Size TableView::GetPreferredSize() const {
   int width = 50;
   if (header_ && !visible_columns_.empty())
     width = visible_columns_.back().x + visible_columns_.back().width;
@@ -404,7 +405,7 @@ void TableView::OnGestureEvent(ui::GestureEvent* event) {
 }
 
 bool TableView::GetTooltipText(const gfx::Point& p,
-                               string16* tooltip) const {
+                               base::string16* tooltip) const {
   return GetTooltipImpl(p, tooltip, NULL);
 }
 
@@ -522,14 +523,14 @@ void TableView::OnPaint(gfx::Canvas* canvas) {
         text_x += kImageSize + kTextHorizontalPadding;
       }
       if (text_x < cell_bounds.right() - kTextHorizontalPadding) {
-        canvas->DrawStringInt(
-            model_->GetText(model_index, visible_columns_[j].column.id), font_,
-            is_selected ? selected_fg_color : fg_color,
-            GetMirroredXWithWidthInView(text_x, cell_bounds.right() - text_x -
-                                        kTextHorizontalPadding),
-            cell_bounds.y() + kTextVerticalPadding,
-            cell_bounds.right() - text_x,
-            cell_bounds.height() - kTextVerticalPadding * 2,
+        canvas->DrawStringRectWithFlags(
+            model_->GetText(model_index, visible_columns_[j].column.id),
+            font_list_, is_selected ? selected_fg_color : fg_color,
+            gfx::Rect(GetMirroredXWithWidthInView(
+                text_x, cell_bounds.right() - text_x - kTextHorizontalPadding),
+                      cell_bounds.y() + kTextVerticalPadding,
+                      cell_bounds.right() - text_x,
+                      cell_bounds.height() - kTextVerticalPadding * 2),
             TableColumnAlignmentToCanvasAlignment(
                 visible_columns_[j].column.alignment));
       }
@@ -684,7 +685,7 @@ void TableView::UpdateVisibleColumnSizes() {
     first_column_padding += kGroupingIndicatorSize + kTextHorizontalPadding;
 
   std::vector<int> sizes = views::CalculateTableColumnSizes(
-      layout_width_, first_column_padding, header_->font(), font_,
+      layout_width_, first_column_padding, header_->font_list(), font_list_,
       std::max(kTextHorizontalPadding, TableHeader::kHorizontalPadding) * 2,
       TableHeader::kSortIndicatorWidth, columns, model_);
   DCHECK_EQ(visible_columns_.size(), sizes.size());
@@ -871,7 +872,7 @@ GroupRange TableView::GetGroupRange(int model_index) const {
 }
 
 bool TableView::GetTooltipImpl(const gfx::Point& location,
-                               string16* tooltip,
+                               base::string16* tooltip,
                                gfx::Point* tooltip_origin) const {
   const int row = location.y() / row_height_;
   if (row < 0 || row >= RowCount() || visible_columns_.empty())
@@ -883,7 +884,7 @@ bool TableView::GetTooltipImpl(const gfx::Point& location,
       x > (visible_columns_[column].x + visible_columns_[column].width))
     return false;
 
-  const string16 text(model_->GetText(ViewToModel(row),
+  const base::string16 text(model_->GetText(ViewToModel(row),
                                       visible_columns_[column].column.id));
   if (text.empty())
     return false;
@@ -892,7 +893,7 @@ bool TableView::GetTooltipImpl(const gfx::Point& location,
   AdjustCellBoundsForText(column, &cell_bounds);
   const int right = std::min(GetVisibleBounds().right(), cell_bounds.right());
   if (right > cell_bounds.x() &&
-      font_.GetStringWidth(text) <= (right - cell_bounds.x()))
+      gfx::GetStringWidth(text, font_list_) <= (right - cell_bounds.x()))
     return false;
 
   if (tooltip)

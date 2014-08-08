@@ -29,15 +29,15 @@
 #ifndef GraphicsContextState_h
 #define GraphicsContextState_h
 
+#include "platform/graphics/DrawLooperBuilder.h"
 #include "platform/graphics/Gradient.h"
 #include "platform/graphics/GraphicsTypes.h"
 #include "platform/graphics/Path.h"
 #include "platform/graphics/Pattern.h"
 #include "platform/graphics/StrokeData.h"
+#include "platform/graphics/skia/SkiaUtils.h"
 #include "third_party/skia/include/core/SkColorFilter.h"
-#include "third_party/skia/include/core/SkColorPriv.h"
-#include "third_party/skia/include/core/SkDrawLooper.h"
-#include "third_party/skia/include/effects/SkDashPathEffect.h"
+#include "third_party/skia/include/core/SkPaint.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/RefPtr.h"
 
@@ -45,95 +45,143 @@ namespace WebCore {
 
 // Encapsulates the state information we store for each pushed graphics state.
 // Only GraphicsContext can use this class.
-class GraphicsContextState {
+class PLATFORM_EXPORT GraphicsContextState FINAL {
+public:
+    static PassOwnPtr<GraphicsContextState> create()
+    {
+        return adoptPtr(new GraphicsContextState());
+    }
+
+    static PassOwnPtr<GraphicsContextState> createAndCopy(const GraphicsContextState& other)
+    {
+        return adoptPtr(new GraphicsContextState(other));
+    }
+
+    void copy(const GraphicsContextState&);
+
+    // SkPaint objects that reflect the current state. If the length of the
+    // path to be stroked is known, pass it in for correct dash or dot placement.
+    const SkPaint& strokePaint(int strokedPathLength = 0) const;
+    const SkPaint& fillPaint() const;
+
+    uint16_t saveCount() const { return m_saveCount; }
+    void incrementSaveCount() { ++m_saveCount; }
+    void decrementSaveCount() { --m_saveCount; }
+
+    // Stroke data
+    const StrokeData& strokeData() const { return m_strokeData; }
+
+    void setStrokeStyle(StrokeStyle);
+
+    void setStrokeThickness(float);
+
+    SkColor effectiveStrokeColor() const { return applyAlpha(m_strokeData.color().rgb()); }
+    void setStrokeColor(const Color&);
+
+    void setStrokeGradient(const PassRefPtr<Gradient>);
+    void clearStrokeGradient();
+
+    void setStrokePattern(const PassRefPtr<Pattern>);
+    void clearStrokePattern();
+
+    void setLineCap(LineCap);
+
+    void setLineJoin(LineJoin);
+
+    void setMiterLimit(float);
+
+    void setLineDash(const DashArray&, float);
+
+    // Fill data
+    Color fillColor() const { return m_fillColor; }
+    SkColor effectiveFillColor() const { return applyAlpha(m_fillColor.rgb()); }
+    void setFillColor(const Color&);
+
+    Gradient* fillGradient() const { return m_fillGradient.get(); }
+    void setFillGradient(const PassRefPtr<Gradient>);
+    void clearFillGradient();
+
+    Pattern* fillPattern() const { return m_fillPattern.get(); }
+    void setFillPattern(const PassRefPtr<Pattern>);
+    void clearFillPattern();
+
+    // Path fill rule
+    WindRule fillRule() const { return m_fillRule; }
+    void setFillRule(WindRule rule) { m_fillRule = rule; }
+
+    // Shadow. (This will need tweaking if we use draw loopers for other things.)
+    SkDrawLooper* drawLooper() const { return m_looper.get(); }
+    void setDrawLooper(PassRefPtr<SkDrawLooper>);
+    void clearDrawLooper();
+
+    // Text. (See TextModeFill & friends.)
+    TextDrawingModeFlags textDrawingMode() const { return m_textDrawingMode; }
+    void setTextDrawingMode(TextDrawingModeFlags mode) { m_textDrawingMode = mode; }
+
+    // Common shader state.
+    int alpha() const { return m_alpha; }
+    void setAlphaAsFloat(float);
+
+    SkColorFilter* colorFilter() const { return m_colorFilter.get(); }
+    void setColorFilter(PassRefPtr<SkColorFilter>);
+
+    // Compositing control, for the CSS and Canvas compositing spec.
+    void setCompositeOperation(CompositeOperator, blink::WebBlendMode);
+    CompositeOperator compositeOperator() const { return m_compositeOperator; }
+    blink::WebBlendMode blendMode() const { return m_blendMode; }
+    SkXfermode* xferMode() const { return m_xferMode.get(); }
+
+    // Image interpolation control.
+    InterpolationQuality interpolationQuality() const { return m_interpolationQuality; }
+    void setInterpolationQuality(InterpolationQuality);
+
+    bool shouldAntialias() const { return m_shouldAntialias; }
+    void setShouldAntialias(bool);
+
+    bool shouldSmoothFonts() const { return m_shouldSmoothFonts; }
+    void setShouldSmoothFonts(bool shouldSmoothFonts) { m_shouldSmoothFonts = shouldSmoothFonts; }
+
+    bool shouldClampToSourceRect() const { return m_shouldClampToSourceRect; }
+    void setShouldClampToSourceRect(bool shouldClampToSourceRect) { m_shouldClampToSourceRect = shouldClampToSourceRect; }
+
 private:
-    friend class GraphicsContext;
-
-    GraphicsContextState()
-        : m_fillColor(Color::black)
-        , m_fillRule(RULE_NONZERO)
-        , m_textDrawingMode(TextModeFill)
-        , m_alpha(1)
-        , m_xferMode(0)
-        , m_compositeOperator(CompositeSourceOver)
-        , m_blendMode(blink::WebBlendModeNormal)
-#if USE(LOW_QUALITY_IMAGE_INTERPOLATION)
-        , m_interpolationQuality(InterpolationLow)
-#else
-        , m_interpolationQuality(InterpolationHigh)
-#endif
-        , m_shouldAntialias(true)
-        , m_shouldSmoothFonts(true)
-        , m_shouldClampToSourceRect(true)
-    {
-    }
-
-    GraphicsContextState(const GraphicsContextState& other)
-        : m_strokeData(other.m_strokeData)
-        , m_fillColor(other.m_fillColor)
-        , m_fillRule(other.m_fillRule)
-        , m_fillGradient(other.m_fillGradient)
-        , m_fillPattern(other.m_fillPattern)
-        , m_looper(other.m_looper)
-        , m_textDrawingMode(other.m_textDrawingMode)
-        , m_alpha(other.m_alpha)
-        , m_xferMode(other.m_xferMode)
-        , m_colorFilter(other.m_colorFilter)
-        , m_compositeOperator(other.m_compositeOperator)
-        , m_blendMode(other.m_blendMode)
-        , m_interpolationQuality(other.m_interpolationQuality)
-        , m_shouldAntialias(other.m_shouldAntialias)
-        , m_shouldSmoothFonts(other.m_shouldSmoothFonts)
-        , m_shouldClampToSourceRect(other.m_shouldClampToSourceRect)
-    {
-    }
+    GraphicsContextState();
+    explicit GraphicsContextState(const GraphicsContextState&);
+    GraphicsContextState& operator=(const GraphicsContextState&);
 
     // Helper function for applying the state's alpha value to the given input
     // color to produce a new output color.
     SkColor applyAlpha(SkColor c) const
     {
-        int s = roundf(m_alpha * 256);
-        if (s >= 256)
-            return c;
-        if (s < 0)
-            return 0;
-
-        int a = SkAlphaMul(SkColorGetA(c), s);
+        int a = SkAlphaMul(SkColorGetA(c), m_alpha);
         return (c & 0x00FFFFFF) | (a << 24);
     }
 
-    // Returns a new State with all of this object's inherited properties copied.
-    PassOwnPtr<GraphicsContextState> clone() { return adoptPtr(new GraphicsContextState(*this)); }
+    // These are mutbale to enable gradient updates when the paints are fetched for use.
+    mutable SkPaint m_strokePaint;
+    mutable SkPaint m_fillPaint;
 
-    // Not supported. No implementations.
-    void operator=(const GraphicsContextState&);
-
-    // Stroke.
     StrokeData m_strokeData;
 
-    // Fill.
     Color m_fillColor;
     WindRule m_fillRule;
     RefPtr<Gradient> m_fillGradient;
     RefPtr<Pattern> m_fillPattern;
 
-    // Shadow. (This will need tweaking if we use draw loopers for other things.)
     RefPtr<SkDrawLooper> m_looper;
 
-    // Text. (See TextModeFill & friends.)
     TextDrawingModeFlags m_textDrawingMode;
 
-    // Common shader state.
-    float m_alpha;
+    int m_alpha;
     RefPtr<SkXfermode> m_xferMode;
     RefPtr<SkColorFilter> m_colorFilter;
 
-    // Compositing control, for the CSS and Canvas compositing spec.
     CompositeOperator m_compositeOperator;
     blink::WebBlendMode m_blendMode;
 
-    // Image interpolation control.
     InterpolationQuality m_interpolationQuality;
+
+    uint16_t m_saveCount;
 
     bool m_shouldAntialias : 1;
     bool m_shouldSmoothFonts : 1;
@@ -143,4 +191,3 @@ private:
 } // namespace WebCore
 
 #endif // GraphicsContextState_h
-

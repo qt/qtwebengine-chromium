@@ -8,6 +8,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
+#include "base/synchronization/waitable_event.h"
 #include "content/browser/browser_thread_impl.h"
 #include "content/browser/renderer_host/media/audio_input_device_manager.h"
 #include "content/public/common/media_stream_request.h"
@@ -32,7 +33,7 @@ class MockAudioInputDeviceManagerListener
   MOCK_METHOD2(Closed, void(MediaStreamType, const int));
   MOCK_METHOD2(DevicesEnumerated, void(MediaStreamType,
                                        const StreamDeviceInfoArray&));
-  MOCK_METHOD3(Error, void(MediaStreamType, int, MediaStreamProviderError));
+  MOCK_METHOD2(Aborted, void(MediaStreamType, int));
 
   StreamDeviceInfoArray devices_;
 
@@ -40,23 +41,34 @@ class MockAudioInputDeviceManagerListener
   DISALLOW_COPY_AND_ASSIGN(MockAudioInputDeviceManagerListener);
 };
 
-class AudioInputDeviceManagerTest : public testing::Test {
- public:
-  AudioInputDeviceManagerTest() {}
+// TODO(henrika): there are special restrictions for Android since
+// AudioInputDeviceManager::Open() must be called on the audio thread.
+// This test suite must be modified to run on Android.
+#if defined(OS_ANDROID)
+#define MAYBE_AudioInputDeviceManagerTest DISABLED_AudioInputDeviceManagerTest
+#else
+#define MAYBE_AudioInputDeviceManagerTest AudioInputDeviceManagerTest
+#endif
 
-  // Returns true iff machine has an audio input device.
-  bool CanRunAudioInputDeviceTests() {
-    return audio_manager_->HasAudioInputDevices();
-  }
+class MAYBE_AudioInputDeviceManagerTest : public testing::Test {
+ public:
+  MAYBE_AudioInputDeviceManagerTest() {}
 
  protected:
   virtual void SetUp() OVERRIDE {
     // The test must run on Browser::IO.
-    message_loop_.reset(new base::MessageLoop(base::MessageLoop::TYPE_IO));
+    message_loop_.reset(new base::MessageLoopForIO);
     io_thread_.reset(new BrowserThreadImpl(BrowserThread::IO,
                                            message_loop_.get()));
     audio_manager_.reset(media::AudioManager::CreateForTesting());
+    // Wait for audio thread initialization to complete.  Otherwise the
+    // enumeration type may not have been set yet.
+    base::WaitableEvent event(false, false);
+    audio_manager_->GetTaskRunner()->PostTask(FROM_HERE, base::Bind(
+        &base::WaitableEvent::Signal, base::Unretained(&event)));
+    event.Wait();
     manager_ = new AudioInputDeviceManager(audio_manager_.get());
+    manager_->UseFakeDevice();
     audio_input_listener_.reset(new MockAudioInputDeviceManagerListener());
     manager_->Register(audio_input_listener_.get(),
                        message_loop_->message_loop_proxy().get());
@@ -85,13 +97,11 @@ class AudioInputDeviceManagerTest : public testing::Test {
   StreamDeviceInfoArray devices_;
 
  private:
-  DISALLOW_COPY_AND_ASSIGN(AudioInputDeviceManagerTest);
+  DISALLOW_COPY_AND_ASSIGN(MAYBE_AudioInputDeviceManagerTest);
 };
 
 // Opens and closes the devices.
-TEST_F(AudioInputDeviceManagerTest, OpenAndCloseDevice) {
-  if (!CanRunAudioInputDeviceTests())
-    return;
+TEST_F(MAYBE_AudioInputDeviceManagerTest, OpenAndCloseDevice) {
 
   ASSERT_FALSE(devices_.empty());
 
@@ -120,10 +130,7 @@ TEST_F(AudioInputDeviceManagerTest, OpenAndCloseDevice) {
 }
 
 // Opens multiple devices at one time and closes them later.
-TEST_F(AudioInputDeviceManagerTest, OpenMultipleDevices) {
-  if (!CanRunAudioInputDeviceTests())
-    return;
-
+TEST_F(MAYBE_AudioInputDeviceManagerTest, OpenMultipleDevices) {
   ASSERT_FALSE(devices_.empty());
 
   InSequence s;
@@ -166,9 +173,7 @@ TEST_F(AudioInputDeviceManagerTest, OpenMultipleDevices) {
 }
 
 // Opens a non-existing device.
-TEST_F(AudioInputDeviceManagerTest, OpenNotExistingDevice) {
-  if (!CanRunAudioInputDeviceTests())
-    return;
+TEST_F(MAYBE_AudioInputDeviceManagerTest, OpenNotExistingDevice) {
   InSequence s;
 
   MediaStreamType stream_type = MEDIA_DEVICE_AUDIO_CAPTURE;
@@ -189,10 +194,7 @@ TEST_F(AudioInputDeviceManagerTest, OpenNotExistingDevice) {
 }
 
 // Opens default device twice.
-TEST_F(AudioInputDeviceManagerTest, OpenDeviceTwice) {
-  if (!CanRunAudioInputDeviceTests())
-    return;
-
+TEST_F(MAYBE_AudioInputDeviceManagerTest, OpenDeviceTwice) {
   ASSERT_FALSE(devices_.empty());
 
   InSequence s;
@@ -225,10 +227,7 @@ TEST_F(AudioInputDeviceManagerTest, OpenDeviceTwice) {
 }
 
 // Accesses then closes the sessions after opening the devices.
-TEST_F(AudioInputDeviceManagerTest, AccessAndCloseSession) {
-  if (!CanRunAudioInputDeviceTests())
-    return;
-
+TEST_F(MAYBE_AudioInputDeviceManagerTest, AccessAndCloseSession) {
   ASSERT_FALSE(devices_.empty());
 
   InSequence s;
@@ -261,9 +260,7 @@ TEST_F(AudioInputDeviceManagerTest, AccessAndCloseSession) {
 }
 
 // Access an invalid session.
-TEST_F(AudioInputDeviceManagerTest, AccessInvalidSession) {
-  if (!CanRunAudioInputDeviceTests())
-    return;
+TEST_F(MAYBE_AudioInputDeviceManagerTest, AccessInvalidSession) {
   InSequence s;
 
   // Opens the first device.

@@ -2,10 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/base_paths.h"
 #include "base/command_line.h"
 #include "base/debug/debugger.h"
+#include "base/files/file_path.h"
 #include "base/i18n/rtl.h"
 #include "base/message_loop/message_loop.h"
+#include "base/path_service.h"
 #include "base/threading/platform_thread.h"
 #include "build/build_config.h"
 #include "content/child/child_process.h"
@@ -24,6 +27,10 @@
 #if defined(OS_WIN)
 #include "sandbox/win/src/sandbox.h"
 #include "third_party/skia/include/ports/SkTypeface_win.h"
+#endif
+
+#if defined(OS_CHROMEOS)
+#include "base/file_util.h"
 #endif
 
 #if defined(OS_LINUX)
@@ -93,6 +100,14 @@ int PpapiPluginMain(const MainFunctionParams& parameters) {
     setenv("LANG", locale.c_str(), 0);
 #endif
   }
+
+#if defined(OS_CHROMEOS)
+  // Specifies $HOME explicitly because some plugins rely on $HOME but
+  // no other part of Chrome OS uses that.  See crbug.com/335290.
+  base::FilePath homedir;
+  PathService::Get(base::DIR_HOME, &homedir);
+  setenv("HOME", homedir.value().c_str(), 1);
+#endif
 
   base::MessageLoop main_message_loop;
   base::PlatformThread::SetName("CrPPAPIMain");

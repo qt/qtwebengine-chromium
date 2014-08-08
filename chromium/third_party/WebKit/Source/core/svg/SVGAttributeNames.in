@@ -31,10 +31,7 @@ clipPathUnits
 color
 color-interpolation
 color-interpolation-filters
-color-profile
 color-rendering
-contentScriptType
-contentStyleType
 cursor
 cx
 cy
@@ -53,7 +50,6 @@ elevation
 enable-background
 end
 exponent
-externalResourcesRequired
 fill
 fill-opacity
 fill-rule
@@ -99,7 +95,6 @@ k3
 k4
 kernelMatrix
 kernelUnitLength
-kerning
 keyPoints
 keySplines
 keyTimes

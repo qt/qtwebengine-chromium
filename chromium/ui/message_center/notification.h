@@ -20,17 +20,17 @@
 namespace message_center {
 
 struct MESSAGE_CENTER_EXPORT NotificationItem {
-  string16 title;
-  string16 message;
+  base::string16 title;
+  base::string16 message;
 
-  NotificationItem(const string16& title, const string16& message);
+  NotificationItem(const base::string16& title, const base::string16& message);
 };
 
 struct MESSAGE_CENTER_EXPORT ButtonInfo {
-  string16 title;
+  base::string16 title;
   gfx::Image icon;
 
-  ButtonInfo(const string16& title);
+  ButtonInfo(const base::string16& title);
 };
 
 class MESSAGE_CENTER_EXPORT RichNotificationData {
@@ -42,9 +42,9 @@ class MESSAGE_CENTER_EXPORT RichNotificationData {
   int priority;
   bool never_timeout;
   base::Time timestamp;
-  string16 expanded_message;
-  string16 context_message;
+  base::string16 context_message;
   gfx::Image image;
+  gfx::Image small_image;
   std::vector<NotificationItem> items;
   int progress;
   std::vector<ButtonInfo> buttons;
@@ -56,35 +56,40 @@ class MESSAGE_CENTER_EXPORT Notification {
  public:
   Notification(NotificationType type,
                const std::string& id,
-               const string16& title,
-               const string16& message,
+               const base::string16& title,
+               const base::string16& message,
                const gfx::Image& icon,
-               const string16& display_source,
+               const base::string16& display_source,
                const NotifierId& notifier_id,
                const RichNotificationData& optional_fields,
                NotificationDelegate* delegate);
 
   Notification(const Notification& other);
-  Notification& operator=(const Notification& other);
+
   virtual ~Notification();
 
   // Copies the internal on-memory state from |base|, i.e. shown_as_popup,
-  // is_read, is_expanded, and never_timeout.
+  // is_read, and never_timeout.
   void CopyState(Notification* base);
 
   NotificationType type() const { return type_; }
   void set_type(NotificationType type) { type_ = type; }
 
+  // Uniquely identifies a notification in the message center. For
+  // notification front ends that support multiple profiles, this id should
+  // identify a unique profile + frontend_notification_id combination. You can
+  // Use this id against the MessageCenter interface but not the
+  // NotificationUIManager interface.
   const std::string& id() const { return id_; }
 
-  const string16& title() const { return title_; }
-  void set_title(const string16& title) { title_ = title; }
+  const base::string16& title() const { return title_; }
+  void set_title(const base::string16& title) { title_ = title; }
 
-  const string16& message() const { return message_; }
-  void set_message(const string16& message) { message_ = message; }
+  const base::string16& message() const { return message_; }
+  void set_message(const base::string16& message) { message_ = message; }
 
   // A display string for the source of the notification.
-  const string16& display_source() const { return display_source_; }
+  const base::string16& display_source() const { return display_source_; }
 
   const NotifierId& notifier_id() const { return notifier_id_; }
 
@@ -101,17 +106,10 @@ class MESSAGE_CENTER_EXPORT Notification {
     optional_fields_.timestamp = timestamp;
   }
 
-  const string16& expanded_message() const {
-    return optional_fields_.expanded_message;
-  }
-  void set_expanded_message(const string16& expanded_message) {
-    optional_fields_.expanded_message = expanded_message;
-  }
-
-  const string16& context_message() const {
+  const base::string16& context_message() const {
     return optional_fields_.context_message;
   }
-  void set_context_message(const string16& context_message) {
+  void set_context_message(const base::string16& context_message) {
     optional_fields_.context_message = context_message;
   }
 
@@ -133,6 +131,11 @@ class MESSAGE_CENTER_EXPORT Notification {
   const gfx::Image& image() const { return optional_fields_.image; }
   void set_image(const gfx::Image& image) { optional_fields_.image = image; }
 
+  const gfx::Image& small_image() const { return optional_fields_.small_image; }
+  void set_small_image(const gfx::Image& image) {
+    optional_fields_.small_image = image;
+  }
+
   // Buttons, with icons fetched asynchronously.
   const std::vector<ButtonInfo>& buttons() const {
     return optional_fields_.buttons;
@@ -150,10 +153,6 @@ class MESSAGE_CENTER_EXPORT Notification {
   // Read status in the message center.
   bool IsRead() const;
   void set_is_read(bool read) { is_read_ = read; }
-
-  // Expanded status in the message center (not the popups).
-  bool is_expanded() const { return is_expanded_; }
-  void set_is_expanded(bool expanded) { is_expanded_ = expanded; }
 
   // Used to keep the order of notifications with the same timestamp.
   // The notification with lesser serial_number is considered 'older'.
@@ -201,19 +200,21 @@ class MESSAGE_CENTER_EXPORT Notification {
       const base::Closure& click_callback);
 
  protected:
+  Notification& operator=(const Notification& other);
+
   // The type of notification we'd like displayed.
   NotificationType type_;
 
   std::string id_;
-  string16 title_;
-  string16 message_;
+  base::string16 title_;
+  base::string16 message_;
 
   // Image data for the associated icon, used by Ash when available.
   gfx::Image icon_;
 
   // The display string for the source of the notification.  Could be
   // the same as origin_url_, or the name of an extension.
-  string16 display_source_;
+  base::string16 display_source_;
 
  private:
   NotifierId notifier_id_;
@@ -221,7 +222,6 @@ class MESSAGE_CENTER_EXPORT Notification {
   RichNotificationData optional_fields_;
   bool shown_as_popup_;  // True if this has been shown as a popup.
   bool is_read_;  // True if this has been seen in the message center.
-  bool is_expanded_;  // True if this has been expanded in the message center.
 
   // A proxy object that allows access back to the JavaScript object that
   // represents the notification, for firing events.

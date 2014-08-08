@@ -49,7 +49,10 @@ class QuicCryptoServerConfigPeer {
 
 namespace {
 
-class QuicCryptoServerStreamTest : public testing::TestWithParam<bool> {
+const char kServerHostname[] = "test.example.com";
+const uint16 kServerPort = 80;
+
+class QuicCryptoServerStreamTest : public ::testing::TestWithParam<bool> {
  public:
   QuicCryptoServerStreamTest()
       : connection_(new PacketSavingConnection(true)),
@@ -102,7 +105,7 @@ class QuicCryptoServerStreamTest : public testing::TestWithParam<bool> {
 
  protected:
   PacketSavingConnection* connection_;
-  TestSession session_;
+  TestClientSession session_;
   QuicConfig config_;
   QuicCryptoServerConfig crypto_config_;
   QuicCryptoServerStream stream_;
@@ -137,13 +140,15 @@ TEST_P(QuicCryptoServerStreamTest, ZeroRTT) {
 
   QuicConfig client_config;
   client_config.SetDefaults();
-  scoped_ptr<TestSession> client_session(
-      new TestSession(client_conn, client_config));
+  scoped_ptr<TestClientSession> client_session(
+      new TestClientSession(client_conn, client_config));
   QuicCryptoClientConfig client_crypto_config;
   client_crypto_config.SetDefaults();
 
+  QuicServerId server_id(kServerHostname, kServerPort, false,
+                         PRIVACY_MODE_DISABLED);
   scoped_ptr<QuicCryptoClientStream> client(new QuicCryptoClientStream(
-        "test.example.com", client_session.get(), &client_crypto_config));
+      server_id, client_session.get(), NULL, &client_crypto_config));
   client_session->SetCryptoStream(client.get());
 
   // Do a first handshake in order to prime the client config with the server's
@@ -173,10 +178,10 @@ TEST_P(QuicCryptoServerStreamTest, ZeroRTT) {
   // This causes the client's nonce to be different and thus stops the
   // strike-register from rejecting the repeated nonce.
   reinterpret_cast<MockRandom*>(client_conn->random_generator())->ChangeValue();
-  client_session.reset(new TestSession(client_conn, client_config));
+  client_session.reset(new TestClientSession(client_conn, client_config));
   server_session.reset(new TestSession(server_conn, config_));
   client.reset(new QuicCryptoClientStream(
-        "test.example.com", client_session.get(), &client_crypto_config));
+      server_id, client_session.get(), NULL, &client_crypto_config));
   client_session->SetCryptoStream(client.get());
 
   server.reset(new QuicCryptoServerStream(crypto_config_,
@@ -249,7 +254,6 @@ TEST_P(QuicCryptoServerStreamTest, WithoutCertificates) {
 
 TEST_P(QuicCryptoServerStreamTest, ChannelID) {
   client_options_.channel_id_enabled = true;
-  // TODO(rtenneti): Enable testing of ProofVerifier.
   // CompleteCryptoHandshake verifies
   // stream_.crypto_negotiated_params().channel_id is correct.
   EXPECT_EQ(2, CompleteCryptoHandshake());

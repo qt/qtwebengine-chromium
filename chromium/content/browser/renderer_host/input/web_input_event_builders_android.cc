@@ -5,18 +5,21 @@
 #include "content/browser/renderer_host/input/web_input_event_builders_android.h"
 
 #include "base/logging.h"
+#include "content/browser/renderer_host/input/motion_event_android.h"
 #include "content/browser/renderer_host/input/web_input_event_util.h"
 #include "content/browser/renderer_host/input/web_input_event_util_posix.h"
 #include "ui/events/keycodes/keyboard_code_conversion_android.h"
 #include "ui/events/keycodes/keyboard_codes_posix.h"
-
-namespace content {
 
 using blink::WebInputEvent;
 using blink::WebKeyboardEvent;
 using blink::WebGestureEvent;
 using blink::WebMouseEvent;
 using blink::WebMouseWheelEvent;
+using blink::WebTouchEvent;
+using blink::WebTouchPoint;
+
+namespace content {
 
 WebKeyboardEvent WebKeyboardEventBuilder::Build(WebInputEvent::Type type,
                                                 int modifiers,
@@ -125,7 +128,7 @@ WebGestureEvent WebGestureEventBuilder::Build(WebInputEvent::Type type,
   result.x = x;
   result.y = y;
   result.timeStampSeconds = time_sec;
-  result.sourceDevice = WebGestureEvent::Touchscreen;
+  result.sourceDevice = blink::WebGestureDeviceTouchscreen;
 
   return result;
 }

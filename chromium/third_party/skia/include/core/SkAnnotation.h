@@ -12,8 +12,8 @@
 #include "SkString.h"
 
 class SkData;
-class SkFlattenableReadBuffer;
-class SkFlattenableWriteBuffer;
+class SkReadBuffer;
+class SkWriteBuffer;
 class SkStream;
 class SkWStream;
 struct SkPoint;
@@ -24,18 +24,27 @@ struct SkPoint;
  */
 class SkAnnotation : public SkRefCnt {
 public:
-    SkAnnotation(const char key[], SkData* value);
     virtual ~SkAnnotation();
+
+    static SkAnnotation* Create(const char key[], SkData* value) {
+        return SkNEW_ARGS(SkAnnotation, (key, value));
+    }
+
+    static SkAnnotation* Create(SkReadBuffer& buffer) {
+        return SkNEW_ARGS(SkAnnotation, (buffer));
+    }
 
     /**
      *  Return the data for the specified key, or NULL.
      */
     SkData* find(const char key[]) const;
 
-    SkAnnotation(SkFlattenableReadBuffer&);
-    void writeToBuffer(SkFlattenableWriteBuffer&) const;
+    void writeToBuffer(SkWriteBuffer&) const;
 
 private:
+    SkAnnotation(const char key[], SkData* value);
+    SkAnnotation(SkReadBuffer&);
+
     SkString    fKey;
     SkData*     fData;
 

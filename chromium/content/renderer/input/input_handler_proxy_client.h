@@ -14,6 +14,8 @@ struct WebSize;
 
 namespace content {
 
+struct DidOverscrollParams;
+
 // All callbacks invoked from the compositor thread.
 class InputHandlerProxyClient {
  public:
@@ -28,11 +30,13 @@ class InputHandlerProxyClient {
   // Creates a new fling animation curve instance for device |device_source|
   // with |velocity| and already scrolled |cumulative_scroll| pixels.
   virtual blink::WebGestureCurve* CreateFlingAnimationCurve(
-      int device_source,
+      blink::WebGestureDevice device_source,
       const blink::WebFloatPoint& velocity,
       const blink::WebSize& cumulative_scroll) = 0;
 
-  virtual void DidOverscroll(const cc::DidOverscrollParams& params) = 0;
+  virtual void DidOverscroll(const DidOverscrollParams& params) = 0;
+
+  virtual void DidStopFlinging() = 0;
 
  protected:
   virtual ~InputHandlerProxyClient() {}

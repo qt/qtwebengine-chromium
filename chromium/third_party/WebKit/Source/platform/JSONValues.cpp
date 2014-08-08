@@ -31,8 +31,8 @@
 #include "config.h"
 #include "platform/JSONValues.h"
 
-#include "wtf/DecimalNumber.h"
-#include "wtf/dtoa.h"
+#include "platform/Decimal.h"
+#include "wtf/MathExtras.h"
 #include "wtf/text/StringBuilder.h"
 
 namespace WebCore {
@@ -135,12 +135,12 @@ bool JSONValue::asArray(RefPtr<JSONArray>*)
 
 PassRefPtr<JSONObject> JSONValue::asObject()
 {
-    return 0;
+    return nullptr;
 }
 
 PassRefPtr<JSONArray> JSONValue::asArray()
 {
-    return 0;
+    return nullptr;
 }
 
 String JSONValue::toJSONString() const
@@ -214,25 +214,11 @@ void JSONBasicValue::writeJSON(StringBuilder* output) const
         else
             output->append(falseString, 5);
     } else if (type() == TypeNumber) {
-        NumberToLStringBuffer buffer;
         if (!std::isfinite(m_doubleValue)) {
             output->append(nullString, 4);
             return;
         }
-        DecimalNumber decimal = m_doubleValue;
-        unsigned length = 0;
-        if (decimal.bufferLengthForStringDecimal() > WTF::NumberToStringBufferLength) {
-            // Not enough room for decimal. Use exponential format.
-            if (decimal.bufferLengthForStringExponential() > WTF::NumberToStringBufferLength) {
-                // Fallback for an abnormal case if it's too little even for exponential.
-                output->append("NaN", 3);
-                return;
-            }
-            length = decimal.toStringExponential(buffer, WTF::NumberToStringBufferLength);
-        } else {
-            length = decimal.toStringDecimal(buffer, WTF::NumberToStringBufferLength);
-        }
-        output->append(buffer, length);
+        output->append(Decimal::fromDouble(m_doubleValue).toString());
     }
 }
 
@@ -264,10 +250,56 @@ PassRefPtr<JSONObject> JSONObjectBase::asObject()
     return openAccessors();
 }
 
+void JSONObjectBase::setBoolean(const String& name, bool value)
+{
+    setValue(name, JSONBasicValue::create(value));
+}
+
+void JSONObjectBase::setNumber(const String& name, double value)
+{
+    setValue(name, JSONBasicValue::create(value));
+}
+
+void JSONObjectBase::setString(const String& name, const String& value)
+{
+    setValue(name, JSONString::create(value));
+}
+
+void JSONObjectBase::setValue(const String& name, PassRefPtr<JSONValue> value)
+{
+    ASSERT(value);
+    if (m_data.set(name, value).isNewEntry)
+        m_order.append(name);
+}
+
+void JSONObjectBase::setObject(const String& name, PassRefPtr<JSONObject> value)
+{
+    ASSERT(value);
+    if (m_data.set(name, value).isNewEntry)
+        m_order.append(name);
+}
+
+void JSONObjectBase::setArray(const String& name, PassRefPtr<JSONArray> value)
+{
+    ASSERT(value);
+    if (m_data.set(name, value).isNewEntry)
+        m_order.append(name);
+}
+
 JSONObject* JSONObjectBase::openAccessors()
 {
     COMPILE_ASSERT(sizeof(JSONObject) == sizeof(JSONObjectBase), cannot_cast);
     return static_cast<JSONObject*>(this);
+}
+
+JSONObjectBase::iterator JSONObjectBase::find(const String& name)
+{
+    return m_data.find(name);
+}
+
+JSONObjectBase::const_iterator JSONObjectBase::find(const String& name) const
+{
+    return m_data.find(name);
 }
 
 bool JSONObjectBase::getBoolean(const String& name, bool* output) const
@@ -290,7 +322,7 @@ PassRefPtr<JSONObject> JSONObjectBase::getObject(const String& name) const
 {
     RefPtr<JSONValue> value = get(name);
     if (!value)
-        return 0;
+        return nullptr;
     return value->asObject();
 }
 
@@ -298,7 +330,7 @@ PassRefPtr<JSONArray> JSONObjectBase::getArray(const String& name) const
 {
     RefPtr<JSONValue> value = get(name);
     if (!value)
-        return 0;
+        return nullptr;
     return value->asArray();
 }
 
@@ -306,7 +338,7 @@ PassRefPtr<JSONValue> JSONObjectBase::get(const String& name) const
 {
     Dictionary::const_iterator it = m_data.find(name);
     if (it == m_data.end())
-        return 0;
+        return nullptr;
     return it->value;
 }
 
@@ -375,6 +407,44 @@ JSONArrayBase::JSONArrayBase()
     : JSONValue(TypeArray)
     , m_data()
 {
+}
+
+void JSONArrayBase::pushBoolean(bool value)
+{
+    m_data.append(JSONBasicValue::create(value));
+}
+
+void JSONArrayBase::pushInt(int value)
+{
+    m_data.append(JSONBasicValue::create(value));
+}
+
+void JSONArrayBase::pushNumber(double value)
+{
+    m_data.append(JSONBasicValue::create(value));
+}
+
+void JSONArrayBase::pushString(const String& value)
+{
+    m_data.append(JSONString::create(value));
+}
+
+void JSONArrayBase::pushValue(PassRefPtr<JSONValue> value)
+{
+    ASSERT(value);
+    m_data.append(value);
+}
+
+void JSONArrayBase::pushObject(PassRefPtr<JSONObject> value)
+{
+    ASSERT(value);
+    m_data.append(value);
+}
+
+void JSONArrayBase::pushArray(PassRefPtr<JSONArray> value)
+{
+    ASSERT(value);
+    m_data.append(value);
 }
 
 PassRefPtr<JSONValue> JSONArrayBase::get(size_t index)

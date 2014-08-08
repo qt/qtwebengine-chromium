@@ -22,7 +22,7 @@
 
 #include "core/svg/SVGTSpanElement.h"
 
-#include "SVGNames.h"
+#include "core/SVGNames.h"
 #include "core/rendering/svg/RenderSVGTSpan.h"
 
 namespace WebCore {
@@ -33,39 +33,23 @@ inline SVGTSpanElement::SVGTSpanElement(Document& document)
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<SVGTSpanElement> SVGTSpanElement::create(Document& document)
-{
-    return adoptRef(new SVGTSpanElement(document));
-}
+DEFINE_NODE_FACTORY(SVGTSpanElement)
 
 RenderObject* SVGTSpanElement::createRenderer(RenderStyle*)
 {
     return new RenderSVGTSpan(this);
 }
 
-bool SVGTSpanElement::childShouldCreateRenderer(const Node& child) const
-{
-    if (child.isTextNode()
-        || child.hasTagName(SVGNames::aTag)
-#if ENABLE(SVG_FONTS)
-        || child.hasTagName(SVGNames::altGlyphTag)
-#endif
-        || child.hasTagName(SVGNames::tspanTag))
-        return true;
-
-    return false;
-}
-
 bool SVGTSpanElement::rendererIsNeeded(const RenderStyle& style)
 {
     if (parentNode()
-        && (parentNode()->hasTagName(SVGNames::aTag)
+        && (isSVGAElement(*parentNode())
 #if ENABLE(SVG_FONTS)
-            || parentNode()->hasTagName(SVGNames::altGlyphTag)
+            || isSVGAltGlyphElement(*parentNode())
 #endif
-            || parentNode()->hasTagName(SVGNames::textTag)
-            || parentNode()->hasTagName(SVGNames::textPathTag)
-            || parentNode()->hasTagName(SVGNames::tspanTag)))
+            || isSVGTextElement(*parentNode())
+            || isSVGTextPathElement(*parentNode())
+            || isSVGTSpanElement(*parentNode())))
         return Element::rendererIsNeeded(style);
 
     return false;

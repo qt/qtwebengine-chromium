@@ -17,23 +17,33 @@
 IPC_ENUM_TRAITS(ui::EventType)
 IPC_ENUM_TRAITS(ui::EventFlags)
 
+// Contains the parameters sent for a mousebutton message.
+IPC_STRUCT_BEGIN(MetroViewerHostMsg_MouseButtonParams)
+
+  IPC_STRUCT_MEMBER(int32, x)
+  IPC_STRUCT_MEMBER(int32, y)
+  IPC_STRUCT_MEMBER(int32, extra)
+  IPC_STRUCT_MEMBER(ui::EventType, event_type)
+  IPC_STRUCT_MEMBER(uint32, flags)
+  IPC_STRUCT_MEMBER(ui::EventFlags, changed_button)
+  IPC_STRUCT_MEMBER(bool, is_horizontal_wheel)
+
+IPC_STRUCT_END()
+
 // Messages sent from the viewer to the browser:
 
 // Inform the browser of the surface to target for compositing.
-IPC_MESSAGE_CONTROL1(MetroViewerHostMsg_SetTargetSurface,
-                     gfx::NativeViewId /* target hwnd */)
+IPC_MESSAGE_CONTROL2(MetroViewerHostMsg_SetTargetSurface,
+                     gfx::NativeViewId /* target hwnd */,
+                     float             /* device scale */)
 // Informs the browser that the mouse moved.
 IPC_MESSAGE_CONTROL3(MetroViewerHostMsg_MouseMoved,
                      int32,       /* x-coordinate */
                      int32,       /* y-coordinate */
                      int32        /* flags */)
 // Informs the brower that a mouse button was pressed.
-IPC_MESSAGE_CONTROL5(MetroViewerHostMsg_MouseButton,
-                     int32,           /* x-coordinate */
-                     int32,           /* y-coordinate */
-                     int32,           /* extra */
-                     ui::EventType,   /* event type */
-                     ui::EventFlags   /* event flags */)
+IPC_MESSAGE_CONTROL1(MetroViewerHostMsg_MouseButton,
+                     MetroViewerHostMsg_MouseButtonParams)
 // Informs the browser that a key was pressed.
 IPC_MESSAGE_CONTROL4(MetroViewerHostMsg_KeyDown,
                      uint32,       /* virtual key */
@@ -53,6 +63,9 @@ IPC_MESSAGE_CONTROL4(MetroViewerHostMsg_Character,
                      uint32        /* key state */);
 // Informs the browser that the Metro window has been activated.
 IPC_MESSAGE_CONTROL0(MetroViewerHostMsg_WindowActivated);
+
+// Informs the browser that the user has completed an edge gesture.
+IPC_MESSAGE_CONTROL0(MetroViewerHostMsg_EdgeGesture)
 
 IPC_MESSAGE_CONTROL4(MetroViewerHostMsg_TouchDown,
                      int32,           /* x-coordinate */
@@ -103,7 +116,7 @@ IPC_MESSAGE_CONTROL0(MetroViewerHostMsg_MetroExit);
 // Requests the viewer to open a URL in desktop mode.
 IPC_MESSAGE_CONTROL2(MetroViewerHostMsg_OpenURLOnDesktop,
                      base::FilePath,  /* shortcut */
-                     string16         /* url */);
+                     base::string16         /* url */);
 
 // Requests the viewer to change the pointer to a new cursor.
 IPC_MESSAGE_CONTROL1(MetroViewerHostMsg_SetCursor,
@@ -114,19 +127,19 @@ IPC_MESSAGE_CONTROL1(MetroViewerHostMsg_SetCursor,
 IPC_STRUCT_BEGIN(MetroViewerHostMsg_SaveAsDialogParams)
 
   // The title of the file save dialog if any.
-  IPC_STRUCT_MEMBER(string16, title)
+  IPC_STRUCT_MEMBER(base::string16, title)
 
   // The suggested file name.
   IPC_STRUCT_MEMBER(base::FilePath, suggested_name)
 
   // The save as filter to be used.
-  IPC_STRUCT_MEMBER(string16, filter)
+  IPC_STRUCT_MEMBER(base::string16, filter)
 
   // The filter index.
   IPC_STRUCT_MEMBER(uint32, filter_index)
 
   // The default extension.
-  IPC_STRUCT_MEMBER(string16, default_extension)
+  IPC_STRUCT_MEMBER(base::string16, default_extension)
 
 IPC_STRUCT_END()
 
@@ -136,14 +149,14 @@ IPC_MESSAGE_CONTROL1(MetroViewerHostMsg_DisplayFileSaveAs,
 
 // Requests the viewer to display the file open dialog.
 IPC_MESSAGE_CONTROL4(MetroViewerHostMsg_DisplayFileOpen,
-                     string16,       /* title */
-                     string16,       /* filter */
+                     base::string16,       /* title */
+                     base::string16,       /* filter */
                      base::FilePath, /* Default path */
                      bool)           /* allow_multi_select */
 
 // Requests the viewer to display the select folder dialog.
 IPC_MESSAGE_CONTROL1(MetroViewerHostMsg_DisplaySelectFolder,
-                     string16)   /* title */
+                     base::string16)   /* title */
 
 // Sent to the viewer process to set the cursor position.
 IPC_MESSAGE_CONTROL2(MetroViewerHostMsg_SetCursorPos,
@@ -155,10 +168,10 @@ IPC_MESSAGE_CONTROL2(MetroViewerHostMsg_SetCursorPos,
 IPC_MESSAGE_CONTROL0(MetroViewerHostMsg_SetCursorPosAck)
 
 IPC_MESSAGE_CONTROL1(MetroViewerHostMsg_OpenURL,
-                     string16)  /* url */
+                     base::string16)  /* url */
 
 IPC_MESSAGE_CONTROL1(MetroViewerHostMsg_SearchRequest,
-                     string16)  /* search_string */
+                     base::string16)  /* search_string */
 
 // Sent from the metro viewer process to the browser process to indicate that
 // the viewer window size has changed.
@@ -176,7 +189,7 @@ IPC_STRUCT_TRAITS_END()
 // composition string.
 IPC_MESSAGE_CONTROL4(
     MetroViewerHostMsg_ImeCompositionChanged,
-    string16,                                  /* text */
+    base::string16,                                  /* text */
     int32,                                     /* selection_start */
     int32,                                     /* selection_end */
     std::vector<metro_viewer::UnderlineInfo>)  /* underlines */
@@ -189,7 +202,7 @@ IPC_MESSAGE_CONTROL1(
 
 // Sent from the metro viewer process to the browser process to commit strings.
 IPC_MESSAGE_CONTROL1(MetroViewerHostMsg_ImeTextCommitted,
-                     string16)                 /* text */
+                     base::string16)                 /* text */
 
 // Sent from the metro viewer process to the browser process to notify that the
 // active text input source is changed.

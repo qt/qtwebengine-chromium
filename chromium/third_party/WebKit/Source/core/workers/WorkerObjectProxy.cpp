@@ -29,7 +29,7 @@
  */
 
 #include "config.h"
-#include "WorkerObjectProxy.h"
+#include "core/workers/WorkerObjectProxy.h"
 
 #include "bindings/v8/SerializedScriptValue.h"
 #include "core/dom/ExecutionContext.h"
@@ -47,6 +47,11 @@ PassOwnPtr<WorkerObjectProxy> WorkerObjectProxy::create(ExecutionContext* execut
 void WorkerObjectProxy::postMessageToWorkerObject(PassRefPtr<SerializedScriptValue> message, PassOwnPtr<MessagePortChannelArray> channels)
 {
     m_executionContext->postTask(bind(&WorkerMessagingProxy::postMessageToWorkerObject, m_messagingProxy, message, channels));
+}
+
+void WorkerObjectProxy::postTaskToMainExecutionContext(PassOwnPtr<ExecutionContextTask> task)
+{
+    m_executionContext->postTask(task);
 }
 
 void WorkerObjectProxy::confirmMessageFromWorkerObject(bool hasPendingActivity)

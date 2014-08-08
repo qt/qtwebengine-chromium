@@ -11,12 +11,14 @@
 #include "third_party/WebKit/public/platform/WebURLError.h"
 #include "third_party/WebKit/public/platform/WebURLRequest.h"
 #include "third_party/WebKit/public/platform/WebURLResponse.h"
+#include "third_party/WebKit/public/web/WebLocalFrame.h"
 #include "third_party/WebKit/public/web/WebView.h"
 
 using ::testing::_;
 using ::testing::InSequence;
 using ::testing::NiceMock;
 
+using blink::WebLocalFrame;
 using blink::WebString;
 using blink::WebURLError;
 using blink::WebURLResponse;
@@ -28,6 +30,7 @@ static const char* kHttpUrl = "http://test";
 static const char kHttpRedirectToSameDomainUrl1[] = "http://test/ing";
 static const char kHttpRedirectToSameDomainUrl2[] = "http://test/ing2";
 static const char kHttpRedirectToDifferentDomainUrl1[] = "http://test2";
+static const char kHttpDataUrl[] = "data:audio/wav;base64,UklGRhwMAABXQVZFZm10";
 
 static const int kHttpOK = 200;
 static const int kHttpNotFound = 404;
@@ -35,12 +38,13 @@ static const int kHttpNotFound = 404;
 class MediaInfoLoaderTest : public testing::Test {
  public:
   MediaInfoLoaderTest()
-      : view_(WebView::create(NULL)) {
-    view_->initializeMainFrame(&client_);
+      : view_(WebView::create(NULL)), frame_(WebLocalFrame::create(&client_)) {
+    view_->setMainFrame(frame_);
   }
 
   virtual ~MediaInfoLoaderTest() {
     view_->close();
+    frame_->close();
   }
 
   void Initialize(
@@ -108,6 +112,7 @@ class MediaInfoLoaderTest : public testing::Test {
 
   MockWebFrameClient client_;
   WebView* view_;
+  WebLocalFrame* frame_;
 
   base::MessageLoop message_loop_;
 
@@ -125,6 +130,12 @@ TEST_F(MediaInfoLoaderTest, LoadFailure) {
   Initialize(kHttpUrl, blink::WebMediaPlayer::CORSModeUnspecified);
   Start();
   FailLoad();
+}
+
+TEST_F(MediaInfoLoaderTest, DataUri) {
+  Initialize(kHttpDataUrl, blink::WebMediaPlayer::CORSModeUnspecified);
+  Start();
+  SendResponse(0, MediaInfoLoader::kOk);
 }
 
 TEST_F(MediaInfoLoaderTest, HasSingleOriginNoRedirect) {

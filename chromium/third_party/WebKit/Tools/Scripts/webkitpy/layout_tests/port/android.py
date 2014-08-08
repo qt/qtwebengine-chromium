@@ -412,6 +412,8 @@ class AndroidPort(base.Port):
     # Android has aac and mp3 codecs built in.
     PORT_HAS_AUDIO_CODECS_BUILT_IN = True
 
+    BUILD_REQUIREMENTS_URL = 'https://code.google.com/p/chromium/wiki/AndroidBuildInstructions'
+
     def __init__(self, host, port_name, **kwargs):
         super(AndroidPort, self).__init__(host, port_name, **kwargs)
 
@@ -601,12 +603,10 @@ class AndroidPort(base.Port):
         serve the actual layout tests to the test driver."""
         return True
 
-    def start_http_server(self, additional_dirs=None, number_of_servers=0):
-        if not additional_dirs:
-            additional_dirs = {}
+    def start_http_server(self, additional_dirs, number_of_drivers):
         additional_dirs[PERF_TEST_PATH_PREFIX] = self.perf_tests_dir()
         additional_dirs[LAYOUT_TEST_PATH_PREFIX] = self.layout_tests_dir()
-        super(AndroidPort, self).start_http_server(additional_dirs, number_of_servers)
+        super(AndroidPort, self).start_http_server(additional_dirs, number_of_drivers)
 
     def create_driver(self, worker_number, no_timeout=False):
         return ChromiumAndroidDriver(self, worker_number, pixel_tests=self.get_option('pixel_tests'),
@@ -631,11 +631,11 @@ class AndroidPort(base.Port):
     def _build_path_with_configuration(self, configuration, *comps):
         return self._host_port._build_path_with_configuration(configuration, *comps)
 
-    def _path_to_apache(self):
-        return self._host_port._path_to_apache()
+    def path_to_apache(self):
+        return self._host_port.path_to_apache()
 
-    def _path_to_apache_config_file(self):
-        return self._host_port._path_to_apache_config_file()
+    def path_to_apache_config_file(self):
+        return self._host_port.path_to_apache_config_file()
 
     def _path_to_driver(self, configuration=None):
         return self._build_path_with_configuration(configuration, self._driver_details.apk_name())
@@ -646,13 +646,13 @@ class AndroidPort(base.Port):
     def _path_to_image_diff(self):
         return self._host_port._path_to_image_diff()
 
-    def _path_to_lighttpd(self):
+    def path_to_lighttpd(self):
         return self._host_port._path_to_lighttpd()
 
-    def _path_to_lighttpd_modules(self):
+    def path_to_lighttpd_modules(self):
         return self._host_port._path_to_lighttpd_modules()
 
-    def _path_to_lighttpd_php(self):
+    def path_to_lighttpd_php(self):
         return self._host_port._path_to_lighttpd_php()
 
     def _path_to_wdiff(self):

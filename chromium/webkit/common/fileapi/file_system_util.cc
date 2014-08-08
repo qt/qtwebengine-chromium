@@ -11,6 +11,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
+#include "net/base/escape.h"
 #include "net/base/net_errors.h"
 #include "url/gurl.h"
 #include "webkit/common/database/database_identifier.h"
@@ -146,6 +147,65 @@ bool VirtualPath::IsRootPath(const base::FilePath& path) {
            components[0] == VirtualPath::kRoot));
 }
 
+bool ParseFileSystemSchemeURL(const GURL& url,
+                              GURL* origin_url,
+                              FileSystemType* type,
+                              base::FilePath* virtual_path) {
+  GURL origin;
+  FileSystemType file_system_type = kFileSystemTypeUnknown;
+
+  if (!url.is_valid() || !url.SchemeIsFileSystem())
+    return false;
+
+  const struct {
+    FileSystemType type;
+    const char* dir;
+  } kValidTypes[] = {
+    { kFileSystemTypePersistent, kPersistentDir },
+    { kFileSystemTypeTemporary, kTemporaryDir },
+    { kFileSystemTypeIsolated, kIsolatedDir },
+    { kFileSystemTypeExternal, kExternalDir },
+    { kFileSystemTypeTest, kTestDir },
+  };
+
+  // A path of the inner_url contains only mount type part (e.g. "/temporary").
+  DCHECK(url.inner_url());
+  std::string inner_path = url.inner_url()->path();
+  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kValidTypes); ++i) {
+    if (inner_path == kValidTypes[i].dir) {
+      file_system_type = kValidTypes[i].type;
+      break;
+    }
+  }
+
+  if (file_system_type == kFileSystemTypeUnknown)
+    return false;
+
+  std::string path = net::UnescapeURLComponent(url.path(),
+      net::UnescapeRule::SPACES | net::UnescapeRule::URL_SPECIAL_CHARS |
+      net::UnescapeRule::CONTROL_CHARS);
+
+  // Ensure the path is relative.
+  while (!path.empty() && path[0] == '/')
+    path.erase(0, 1);
+
+  base::FilePath converted_path = base::FilePath::FromUTF8Unsafe(path);
+
+  // All parent references should have been resolved in the renderer.
+  if (converted_path.ReferencesParent())
+    return false;
+
+  if (origin_url)
+    *origin_url = url.GetOrigin();
+  if (type)
+    *type = file_system_type;
+  if (virtual_path)
+    *virtual_path = converted_path.NormalizePathSeparators().
+        StripTrailingSeparators();
+
+  return true;
+}
+
 GURL GetFileSystemRootURI(const GURL& origin_url, FileSystemType type) {
   // origin_url is based on a security origin, so http://foo.com or file:///
   // instead of the corresponding filesystem URL.
@@ -255,6 +315,12 @@ std::string GetFileSystemTypeString(FileSystemType type) {
       return "TransientFile";
     case kFileSystemTypePluginPrivate:
       return "PluginPrivate";
+    case kFileSystemTypeCloudDevice:
+      return "CloudDevice";
+    case kFileSystemTypeProvided:
+      return "Provided";
+    case kFileSystemTypeDeviceMediaAsFileStorage:
+      return "DeviceMediaStorage";
     case kFileSystemInternalTypeEnumStart:
     case kFileSystemInternalTypeEnumEnd:
       NOTREACHED();
@@ -268,7 +334,7 @@ std::string GetFileSystemTypeString(FileSystemType type) {
 
 std::string FilePathToString(const base::FilePath& file_path) {
 #if defined(OS_WIN)
-  return UTF16ToUTF8(file_path.value());
+  return base::UTF16ToUTF8(file_path.value());
 #elif defined(OS_POSIX)
   return file_path.value();
 #endif
@@ -276,35 +342,35 @@ std::string FilePathToString(const base::FilePath& file_path) {
 
 base::FilePath StringToFilePath(const std::string& file_path_string) {
 #if defined(OS_WIN)
-  return base::FilePath(UTF8ToUTF16(file_path_string));
+  return base::FilePath(base::UTF8ToUTF16(file_path_string));
 #elif defined(OS_POSIX)
   return base::FilePath(file_path_string);
 #endif
 }
 
-blink::WebFileError PlatformFileErrorToWebFileError(
-    base::PlatformFileError error_code) {
+blink::WebFileError FileErrorToWebFileError(
+    base::File::Error error_code) {
   switch (error_code) {
-    case base::PLATFORM_FILE_ERROR_NOT_FOUND:
+    case base::File::FILE_ERROR_NOT_FOUND:
       return blink::WebFileErrorNotFound;
-    case base::PLATFORM_FILE_ERROR_INVALID_OPERATION:
-    case base::PLATFORM_FILE_ERROR_EXISTS:
-    case base::PLATFORM_FILE_ERROR_NOT_EMPTY:
+    case base::File::FILE_ERROR_INVALID_OPERATION:
+    case base::File::FILE_ERROR_EXISTS:
+    case base::File::FILE_ERROR_NOT_EMPTY:
       return blink::WebFileErrorInvalidModification;
-    case base::PLATFORM_FILE_ERROR_NOT_A_DIRECTORY:
-    case base::PLATFORM_FILE_ERROR_NOT_A_FILE:
+    case base::File::FILE_ERROR_NOT_A_DIRECTORY:
+    case base::File::FILE_ERROR_NOT_A_FILE:
       return blink::WebFileErrorTypeMismatch;
-    case base::PLATFORM_FILE_ERROR_ACCESS_DENIED:
+    case base::File::FILE_ERROR_ACCESS_DENIED:
       return blink::WebFileErrorNoModificationAllowed;
-    case base::PLATFORM_FILE_ERROR_FAILED:
+    case base::File::FILE_ERROR_FAILED:
       return blink::WebFileErrorInvalidState;
-    case base::PLATFORM_FILE_ERROR_ABORT:
+    case base::File::FILE_ERROR_ABORT:
       return blink::WebFileErrorAbort;
-    case base::PLATFORM_FILE_ERROR_SECURITY:
+    case base::File::FILE_ERROR_SECURITY:
       return blink::WebFileErrorSecurity;
-    case base::PLATFORM_FILE_ERROR_NO_SPACE:
+    case base::File::FILE_ERROR_NO_SPACE:
       return blink::WebFileErrorQuotaExceeded;
-    case base::PLATFORM_FILE_ERROR_INVALID_URL:
+    case base::File::FILE_ERROR_INVALID_URL:
       return blink::WebFileErrorEncoding;
     default:
       return blink::WebFileErrorInvalidModification;
@@ -377,7 +443,7 @@ bool ValidateIsolatedFileSystemId(const std::string& filesystem_id) {
   if (filesystem_id.size() != kExpectedFileSystemIdSize)
     return false;
   const std::string kExpectedChars("ABCDEF0123456789");
-  return ContainsOnlyChars(filesystem_id, kExpectedChars);
+  return base::ContainsOnlyChars(filesystem_id, kExpectedChars);
 }
 
 std::string GetIsolatedFileSystemRootURIString(
@@ -388,12 +454,12 @@ std::string GetIsolatedFileSystemRootURIString(
                                           kFileSystemTypeIsolated).spec();
   if (base::FilePath::FromUTF8Unsafe(filesystem_id).ReferencesParent())
     return std::string();
-  root.append(filesystem_id);
+  root.append(net::EscapePath(filesystem_id));
   root.append("/");
   if (!optional_root_name.empty()) {
     if (base::FilePath::FromUTF8Unsafe(optional_root_name).ReferencesParent())
       return std::string();
-    root.append(optional_root_name);
+    root.append(net::EscapePath(optional_root_name));
     root.append("/");
   }
   return root;
@@ -406,50 +472,41 @@ std::string GetExternalFileSystemRootURIString(
                                           kFileSystemTypeExternal).spec();
   if (base::FilePath::FromUTF8Unsafe(mount_name).ReferencesParent())
     return std::string();
-  root.append(mount_name);
+  root.append(net::EscapePath(mount_name));
   root.append("/");
   return root;
 }
 
-base::PlatformFileError NetErrorToPlatformFileError(int error) {
+base::File::Error NetErrorToFileError(int error) {
   switch (error) {
     case net::OK:
-      return base::PLATFORM_FILE_OK;
+      return base::File::FILE_OK;
     case net::ERR_ADDRESS_IN_USE:
-      return base::PLATFORM_FILE_ERROR_IN_USE;
+      return base::File::FILE_ERROR_IN_USE;
     case net::ERR_FILE_EXISTS:
-      return base::PLATFORM_FILE_ERROR_EXISTS;
+      return base::File::FILE_ERROR_EXISTS;
     case net::ERR_FILE_NOT_FOUND:
-      return base::PLATFORM_FILE_ERROR_NOT_FOUND;
+      return base::File::FILE_ERROR_NOT_FOUND;
     case net::ERR_ACCESS_DENIED:
-      return base::PLATFORM_FILE_ERROR_ACCESS_DENIED;
+      return base::File::FILE_ERROR_ACCESS_DENIED;
     case net::ERR_TOO_MANY_SOCKET_STREAMS:
-      return base::PLATFORM_FILE_ERROR_TOO_MANY_OPENED;
+      return base::File::FILE_ERROR_TOO_MANY_OPENED;
     case net::ERR_OUT_OF_MEMORY:
-      return base::PLATFORM_FILE_ERROR_NO_MEMORY;
+      return base::File::FILE_ERROR_NO_MEMORY;
     case net::ERR_FILE_NO_SPACE:
-      return base::PLATFORM_FILE_ERROR_NO_SPACE;
+      return base::File::FILE_ERROR_NO_SPACE;
     case net::ERR_INVALID_ARGUMENT:
     case net::ERR_INVALID_HANDLE:
-      return base::PLATFORM_FILE_ERROR_INVALID_OPERATION;
+      return base::File::FILE_ERROR_INVALID_OPERATION;
     case net::ERR_ABORTED:
     case net::ERR_CONNECTION_ABORTED:
-      return base::PLATFORM_FILE_ERROR_ABORT;
+      return base::File::FILE_ERROR_ABORT;
     case net::ERR_ADDRESS_INVALID:
     case net::ERR_INVALID_URL:
-      return base::PLATFORM_FILE_ERROR_INVALID_URL;
+      return base::File::FILE_ERROR_INVALID_URL;
     default:
-      return base::PLATFORM_FILE_ERROR_FAILED;
+      return base::File::FILE_ERROR_FAILED;
   }
 }
-
-#if defined(OS_CHROMEOS)
-FileSystemInfo GetFileSystemInfoForChromeOS(const GURL& origin_url) {
-  FileSystemType mount_type = fileapi::kFileSystemTypeExternal;
-  return FileSystemInfo(fileapi::GetFileSystemName(origin_url, mount_type),
-                        fileapi::GetFileSystemRootURI(origin_url, mount_type),
-                        mount_type);
-}
-#endif
 
 }  // namespace fileapi

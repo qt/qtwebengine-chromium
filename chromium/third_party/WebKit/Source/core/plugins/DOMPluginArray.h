@@ -24,6 +24,7 @@
 #include "bindings/v8/ScriptWrappable.h"
 #include "core/frame/DOMWindowProperty.h"
 #include "core/plugins/DOMPlugin.h"
+#include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
@@ -31,23 +32,28 @@
 
 namespace WebCore {
 
-class Frame;
+class LocalFrame;
 class PluginData;
 
-class DOMPluginArray : public ScriptWrappable, public RefCounted<DOMPluginArray>, public DOMWindowProperty {
+class DOMPluginArray FINAL : public RefCountedWillBeGarbageCollectedFinalized<DOMPluginArray>, public ScriptWrappable, public DOMWindowProperty {
 public:
-    static PassRefPtr<DOMPluginArray> create(Frame* frame) { return adoptRef(new DOMPluginArray(frame)); }
-    ~DOMPluginArray();
+    static PassRefPtrWillBeRawPtr<DOMPluginArray> create(LocalFrame* frame)
+    {
+        return adoptRefWillBeNoop(new DOMPluginArray(frame));
+    }
+    virtual ~DOMPluginArray();
 
     unsigned length() const;
-    PassRefPtr<DOMPlugin> item(unsigned index);
+    PassRefPtrWillBeRawPtr<DOMPlugin> item(unsigned index);
     bool canGetItemsForName(const AtomicString& propertyName);
-    PassRefPtr<DOMPlugin> namedItem(const AtomicString& propertyName);
+    PassRefPtrWillBeRawPtr<DOMPlugin> namedItem(const AtomicString& propertyName);
 
     void refresh(bool reload);
 
+    void trace(Visitor*) { }
+
 private:
-    explicit DOMPluginArray(Frame*);
+    explicit DOMPluginArray(LocalFrame*);
     PluginData* pluginData() const;
 };
 

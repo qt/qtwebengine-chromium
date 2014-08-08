@@ -37,6 +37,8 @@
 #include "core/frame/ConsoleTypes.h"
 #include "core/frame/DOMTimer.h"
 #include "platform/LifecycleContext.h"
+#include "platform/Supplementable.h"
+#include "platform/heap/Handle.h"
 #include "platform/weborigin/KURL.h"
 #include "wtf/Functional.h"
 #include "wtf/OwnPtr.h"
@@ -49,23 +51,24 @@ class OrdinalNumber;
 namespace WebCore {
 
 class ContextLifecycleNotifier;
-class DOMWindow;
+class LocalDOMWindow;
 class EventListener;
 class EventQueue;
 class EventTarget;
 class ExecutionContextTask;
+class ScriptState;
 class PublicURLManager;
 class SecurityOrigin;
 class ScriptCallStack;
-class ScriptState;
 
-class ExecutionContext : public LifecycleContext<ExecutionContext> {
+class ExecutionContext
+    : public WillBeGarbageCollectedMixin
+    , public LifecycleContext<ExecutionContext>
+    , public Supplementable<ExecutionContext> {
 public:
-    ExecutionContext();
-    virtual ~ExecutionContext();
+    virtual void trace(Visitor*);
 
     // Delegating to ExecutionContextClient
-    void setClient(ExecutionContextClient* client) { m_client = client; }
     bool isDocument() const { return m_client && m_client->isDocument(); }
     bool isWorkerGlobalScope() const { return m_client && m_client->isWorkerGlobalScope(); }
     bool isJSExecutionForbidden() { return m_client && m_client->isJSExecutionForbidden(); }
@@ -73,16 +76,21 @@ public:
     ContentSecurityPolicy* contentSecurityPolicy() const;
     const KURL& url() const;
     KURL completeURL(const String& url) const;
-    void userEventWasHandled();
     void disableEval(const String& errorMessage);
-    DOMWindow* executingWindow() const;
+    LocalDOMWindow* executingWindow() const;
     String userAgent(const KURL&) const;
     void postTask(PassOwnPtr<ExecutionContextTask>);
     void postTask(const Closure&);
     double timerAlignmentInterval() const;
 
+    virtual void reportBlockedScriptExecutionToInspector(const String& directiveText) = 0;
+
+    virtual SecurityContext& securityContext() = 0;
+    KURL contextURL() const { return virtualURL(); }
+    KURL contextCompleteURL(const String& url) const { return virtualCompleteURL(url); }
+
     bool shouldSanitizeScriptError(const String& sourceURL, AccessControlStatus);
-    void reportException(PassRefPtr<ErrorEvent>, PassRefPtr<ScriptCallStack>, AccessControlStatus);
+    void reportException(PassRefPtrWillBeRawPtr<ErrorEvent>, PassRefPtrWillBeRawPtr<ScriptCallStack>, AccessControlStatus);
 
     void addConsoleMessage(MessageSource, MessageLevel, const String& message, const String& sourceURL, unsigned lineNumber);
     void addConsoleMessage(MessageSource, MessageLevel, const String& message, ScriptState* = 0);
@@ -95,6 +103,7 @@ public:
     void suspendActiveDOMObjects();
     void resumeActiveDOMObjects();
     void stopActiveDOMObjects();
+    unsigned activeDOMObjectCount();
 
     virtual void suspendScheduledTasks();
     virtual void resumeScheduledTasks();
@@ -106,9 +115,10 @@ public:
 
     // Called after the construction of an ActiveDOMObject to synchronize suspend state.
     void suspendActiveDOMObjectIfNeeded(ActiveDOMObject*);
-
+#if !ENABLE(OILPAN)
     void ref() { refExecutionContext(); }
     void deref() { derefExecutionContext(); }
+#endif
 
     // Gets the next id in a circular sequence from 1 to 2^31-1.
     int circularSequentialID();
@@ -124,16 +134,25 @@ public:
     virtual EventQueue* eventQueue() const = 0;
 
 protected:
+    ExecutionContext();
+    virtual ~ExecutionContext();
+
+    void setClient(ExecutionContextClient* client) { m_client = client; }
+
+    virtual const KURL& virtualURL() const = 0;
+    virtual KURL virtualCompleteURL(const String&) const = 0;
 
     ContextLifecycleNotifier& lifecycleNotifier();
 
 private:
     friend class DOMTimer; // For installNewTimeout() and removeTimeoutByID() below.
 
-    bool dispatchErrorEvent(PassRefPtr<ErrorEvent>, AccessControlStatus);
+    bool dispatchErrorEvent(PassRefPtrWillBeRawPtr<ErrorEvent>, AccessControlStatus);
 
+#if !ENABLE(OILPAN)
     virtual void refExecutionContext() = 0;
     virtual void derefExecutionContext() = 0;
+#endif
     // LifecycleContext implementation.
 
     // Implementation details for DOMTimer. No other classes should call these functions.
@@ -149,7 +168,7 @@ private:
 
     bool m_inDispatchErrorEvent;
     class PendingException;
-    OwnPtr<Vector<OwnPtr<PendingException> > > m_pendingExceptions;
+    OwnPtrWillBeMember<WillBeHeapVector<OwnPtrWillBeMember<PendingException> > > m_pendingExceptions;
 
     bool m_activeDOMObjectsAreSuspended;
     bool m_activeDOMObjectsAreStopped;

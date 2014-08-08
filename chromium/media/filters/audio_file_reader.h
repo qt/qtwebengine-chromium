@@ -10,6 +10,7 @@
 #include "media/base/media_export.h"
 
 struct AVCodecContext;
+struct AVPacket;
 
 namespace base { class TimeDelta; }
 
@@ -28,7 +29,7 @@ class MEDIA_EXPORT AudioFileReader {
   virtual ~AudioFileReader();
 
   // Open() reads the audio data format so that the sample_rate(),
-  // channels(), duration(), and number_of_frames() methods can be called.
+  // channels(), GetDuration(), and GetNumberOfFrames() methods can be called.
   // It returns |true| on success.
   bool Open();
   void Close();
@@ -46,14 +47,27 @@ class MEDIA_EXPORT AudioFileReader {
   int channels() const { return channels_; }
   int sample_rate() const { return sample_rate_; }
 
-  // Please note that duration() and number_of_frames() attempt to be accurate,
-  // but are only estimates.  For some encoded formats, the actual duration
-  // of the file can only be determined once all the file data has been read.
-  // The Read() method returns the actual number of sample-frames it has read.
-  base::TimeDelta duration() const;
-  int64 number_of_frames() const;
+  // Please note that GetDuration() and GetNumberOfFrames() attempt to be
+  // accurate, but are only estimates.  For some encoded formats, the actual
+  // duration of the file can only be determined once all the file data has been
+  // read. The Read() method returns the actual number of sample-frames it has
+  // read.
+  base::TimeDelta GetDuration() const;
+  int GetNumberOfFrames() const;
+
+  // Helper methods which allows AudioFileReader to double as a test utility for
+  // demuxing audio files.  Returns true if a packet could be demuxed from the
+  // first audio stream in the file, |output_packet| will contain the demuxed
+  // packet then.
+  bool ReadPacketForTesting(AVPacket* output_packet);
+
+  const AVCodecContext* codec_context_for_testing() const {
+    return codec_context_;
+  }
 
  private:
+  bool ReadPacket(AVPacket* output_packet);
+
   scoped_ptr<FFmpegGlue> glue_;
   AVCodecContext* codec_context_;
   int stream_index_;

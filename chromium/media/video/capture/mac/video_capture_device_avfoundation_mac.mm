@@ -20,8 +20,9 @@
   // library is loaded and initialised, by the device monitoring.
   NSArray* devices = [AVCaptureDeviceGlue devices];
   for (CrAVCaptureDevice* device in devices) {
-    if ([device hasMediaType:AVFoundationGlue::AVMediaTypeVideo()] ||
-        [device hasMediaType:AVFoundationGlue::AVMediaTypeMuxed()]) {
+    if (([device hasMediaType:AVFoundationGlue::AVMediaTypeVideo()] ||
+         [device hasMediaType:AVFoundationGlue::AVMediaTypeMuxed()]) &&
+        ![device isSuspended]) {
       [deviceNames setObject:[device localizedName]
                       forKey:[device uniqueID]];
     }
@@ -37,11 +38,59 @@
   return deviceNames;
 }
 
++ (void)getDevice:(const media::VideoCaptureDevice::Name&)name
+ supportedFormats:(media::VideoCaptureFormats*)formats{
+  NSArray* devices = [AVCaptureDeviceGlue devices];
+  CrAVCaptureDevice* device = nil;
+  for (device in devices) {
+    if ([[device uniqueID] UTF8String] == name.id())
+      break;
+  }
+  if (device == nil)
+    return;
+  for (CrAVCaptureDeviceFormat* format in device.formats) {
+    // MediaSubType is a CMPixelFormatType but can be used as CVPixelFormatType
+    // as well according to CMFormatDescription.h
+    media::VideoPixelFormat pixelFormat = media::PIXEL_FORMAT_UNKNOWN;
+    switch (CoreMediaGlue::CMFormatDescriptionGetMediaSubType(
+                [format formatDescription])) {
+      case kCVPixelFormatType_422YpCbCr8:  // Typical.
+        pixelFormat = media::PIXEL_FORMAT_UYVY;
+        break;
+      case CoreMediaGlue::kCMPixelFormat_422YpCbCr8_yuvs:
+        pixelFormat = media::PIXEL_FORMAT_YUY2;
+        break;
+      case CoreMediaGlue::kCMVideoCodecType_JPEG_OpenDML:
+        pixelFormat = media::PIXEL_FORMAT_MJPEG;
+      default:
+        break;
+    }
+
+  CoreMediaGlue::CMVideoDimensions dimensions =
+        CoreMediaGlue::CMVideoFormatDescriptionGetDimensions(
+            [format formatDescription]);
+
+  for (CrAVFrameRateRange* frameRate in
+           [format videoSupportedFrameRateRanges]) {
+      media::VideoCaptureFormat format(
+          gfx::Size(dimensions.width, dimensions.height),
+          static_cast<int>(frameRate.maxFrameRate),
+          pixelFormat);
+      formats->push_back(format);
+      DVLOG(2) << name.name() << " resolution: "
+               << format.frame_size.ToString() << ", fps: "
+               << format.frame_rate << ", pixel format: "
+               << format.pixel_format;
+    }
+  }
+
+}
+
 #pragma mark Public methods
 
 - (id)initWithFrameReceiver:(media::VideoCaptureDeviceMac*)frameReceiver {
   if ((self = [super init])) {
-    DCHECK(thread_checker_.CalledOnValidThread());
+    DCHECK(main_thread_checker_.CalledOnValidThread());
     DCHECK(frameReceiver);
     [self setFrameReceiver:frameReceiver];
     captureSession_.reset(
@@ -62,7 +111,7 @@
 
 - (BOOL)setCaptureDevice:(NSString*)deviceId {
   DCHECK(captureSession_);
-  DCHECK(thread_checker_.CalledOnValidThread());
+  DCHECK(main_thread_checker_.CalledOnValidThread());
 
   if (!deviceId) {
     // First stop the capture session, if it's running.
@@ -80,7 +129,8 @@
   // Look for input device with requested name.
   captureDevice_ = [AVCaptureDeviceGlue deviceWithUniqueID:deviceId];
   if (!captureDevice_) {
-    DLOG(ERROR) << "Could not open video capture device.";
+    [self sendErrorString:[NSString
+        stringWithUTF8String:"Could not open video capture device."]];
     return NO;
   }
 
@@ -91,8 +141,10 @@
                       error:&error];
   if (!captureDeviceInput_) {
     captureDevice_ = nil;
-    DLOG(ERROR) << "Could not create video capture input: "
-                << [[error localizedDescription] UTF8String];
+    [self sendErrorString:[NSString
+        stringWithFormat:@"Could not create video capture input (%@): %@",
+                         [error localizedDescription],
+                         [error localizedFailureReason]]];
     return NO;
   }
   [captureSession_ addInput:captureDeviceInput_];
@@ -103,7 +155,8 @@
       [[AVFoundationGlue::AVCaptureVideoDataOutputClass() alloc] init]);
   if (!captureVideoDataOutput_) {
     [captureSession_ removeInput:captureDeviceInput_];
-    DLOG(ERROR) << "Could not create video data output.";
+    [self sendErrorString:[NSString
+        stringWithUTF8String:"Could not create video data output."]];
     return NO;
   }
   [captureVideoDataOutput_
@@ -115,74 +168,56 @@
 }
 
 - (BOOL)setCaptureHeight:(int)height width:(int)width frameRate:(int)frameRate {
-  DCHECK(thread_checker_.CalledOnValidThread());
+  // Check if either of VideoCaptureDeviceMac::AllocateAndStart() or
+  // VideoCaptureDeviceMac::ReceiveFrame() is calling here, depending on the
+  // running state. VCDM::ReceiveFrame() calls here to change aspect ratio.
+  DCHECK((![captureSession_ isRunning] &&
+      main_thread_checker_.CalledOnValidThread()) ||
+      callback_thread_checker_.CalledOnValidThread());
+
   frameWidth_ = width;
   frameHeight_ = height;
   frameRate_ = frameRate;
 
-  // Identify the sessionPreset that corresponds to the desired resolution.
-  NSString* sessionPreset;
-  if (width == 1280 && height == 720 && [captureSession_ canSetSessionPreset:
-          AVFoundationGlue::AVCaptureSessionPreset1280x720()]) {
-    sessionPreset = AVFoundationGlue::AVCaptureSessionPreset1280x720();
-  } else if (width == 640 && height == 480 && [captureSession_
-          canSetSessionPreset:
-              AVFoundationGlue::AVCaptureSessionPreset640x480()]) {
-    sessionPreset = AVFoundationGlue::AVCaptureSessionPreset640x480();
-  } else if (width == 320 && height == 240 && [captureSession_
-          canSetSessionPreset:
-              AVFoundationGlue::AVCaptureSessionPreset320x240()]) {
-    sessionPreset = AVFoundationGlue::AVCaptureSessionPreset320x240();
-  } else {
-    DLOG(ERROR) << "Unsupported resolution (" << width << "x" << height << ")";
-    return NO;
-  }
-  [captureSession_ setSessionPreset:sessionPreset];
-
-  // Check that our capture Device can be used with the current preset.
-  if (![captureDevice_ supportsAVCaptureSessionPreset:
-          [captureSession_ sessionPreset]]){
-    DLOG(ERROR) << "Video capture device does not support current preset";
-    return NO;
-  }
-
-  // Despite all Mac documentation detailing that setting the sessionPreset is
-  // enough, that is not the case for, at least, the MacBook Air built-in
-  // FaceTime HD Camera, and the capture output has to be configured as well.
-  // The reason for this mismatch is probably because most of the AVFoundation
-  // docs are written for iOS and not for MacOsX.
-  // AVVideoScalingModeKey() refers to letterboxing yes/no and preserve aspect
-  // ratio yes/no when scaling. Currently we set letterbox and preservation.
+  // The capture output has to be configured, despite Mac documentation
+  // detailing that setting the sessionPreset would be enough. The reason for
+  // this mismatch is probably because most of the AVFoundation docs are written
+  // for iOS and not for MacOsX. AVVideoScalingModeKey() refers to letterboxing
+  // yes/no and preserve aspect ratio yes/no when scaling. Currently we set
+  // cropping and preservation.
   NSDictionary* videoSettingsDictionary = @{
     (id)kCVPixelBufferWidthKey : @(width),
     (id)kCVPixelBufferHeightKey : @(height),
     (id)kCVPixelBufferPixelFormatTypeKey : @(kCVPixelFormatType_422YpCbCr8),
     AVFoundationGlue::AVVideoScalingModeKey() :
-        AVFoundationGlue::AVVideoScalingModeResizeAspect()
+        AVFoundationGlue::AVVideoScalingModeResizeAspectFill()
   };
   [captureVideoDataOutput_ setVideoSettings:videoSettingsDictionary];
 
   CrAVCaptureConnection* captureConnection = [captureVideoDataOutput_
       connectionWithMediaType:AVFoundationGlue::AVMediaTypeVideo()];
-  // TODO(mcasas): Check selector existence, related to bugs
-  // http://crbug.com/327532 and http://crbug.com/328096.
+  // Check selector existence, related to bugs http://crbug.com/327532 and
+  // http://crbug.com/328096.
+  // CMTimeMake accepts integer argumenst but |frameRate| is float, round it.
   if ([captureConnection
            respondsToSelector:@selector(isVideoMinFrameDurationSupported)] &&
       [captureConnection isVideoMinFrameDurationSupported]) {
     [captureConnection setVideoMinFrameDuration:
-        CoreMediaGlue::CMTimeMake(1, frameRate)];
+        CoreMediaGlue::CMTimeMake(media::kFrameRatePrecision,
+                                  frameRate * media::kFrameRatePrecision)];
   }
   if ([captureConnection
            respondsToSelector:@selector(isVideoMaxFrameDurationSupported)] &&
       [captureConnection isVideoMaxFrameDurationSupported]) {
     [captureConnection setVideoMaxFrameDuration:
-        CoreMediaGlue::CMTimeMake(1, frameRate)];
+        CoreMediaGlue::CMTimeMake(media::kFrameRatePrecision,
+                                  frameRate * media::kFrameRatePrecision)];
   }
   return YES;
 }
 
 - (BOOL)startCapture {
-  DCHECK(thread_checker_.CalledOnValidThread());
+  DCHECK(main_thread_checker_.CalledOnValidThread());
   if (!captureSession_) {
     DLOG(ERROR) << "Video capture session not initialized.";
     return NO;
@@ -198,7 +233,7 @@
 }
 
 - (void)stopCapture {
-  DCHECK(thread_checker_.CalledOnValidThread());
+  DCHECK(main_thread_checker_.CalledOnValidThread());
   if ([captureSession_ isRunning])
     [captureSession_ stopRunning];  // Synchronous.
   [[NSNotificationCenter defaultCenter] removeObserver:self];
@@ -210,6 +245,10 @@
 - (void)captureOutput:(CrAVCaptureOutput*)captureOutput
     didOutputSampleBuffer:(CoreMediaGlue::CMSampleBufferRef)sampleBuffer
            fromConnection:(CrAVCaptureConnection*)connection {
+  // AVFoundation calls from a number of threads, depending on, at least, if
+  // Chrome is on foreground or background. Sample the actual thread here.
+  callback_thread_checker_.DetachFromThread();
+  callback_thread_checker_.CalledOnValidThread();
   CVImageBufferRef videoFrame =
       CoreMediaGlue::CMSampleBufferGetImageBuffer(sampleBuffer);
   // Lock the frame and calculate frame size.
@@ -238,9 +277,17 @@
 - (void)onVideoError:(NSNotification*)errorNotification {
   NSError* error = base::mac::ObjCCast<NSError>([[errorNotification userInfo]
       objectForKey:AVFoundationGlue::AVCaptureSessionErrorKey()]);
+  [self sendErrorString:[NSString
+      stringWithFormat:@"%@: %@",
+                       [error localizedDescription],
+                       [error localizedFailureReason]]];
+}
+
+- (void)sendErrorString:(NSString*)error {
+  DLOG(ERROR) << [error UTF8String];
   base::AutoLock lock(lock_);
   if (frameReceiver_)
-    frameReceiver_->ReceiveError([[error localizedDescription] UTF8String]);
+    frameReceiver_->ReceiveError([error UTF8String]);
 }
 
 @end

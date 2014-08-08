@@ -35,23 +35,30 @@
 
 namespace WTF {
 
-#ifdef ENABLE_INSTANCE_COUNTER
+#if ENABLE(INSTANCE_COUNTER) || ENABLE(GC_TRACING)
+
+#if COMPILER(CLANG)
+const size_t extractNameFunctionPrefixLength = sizeof("const char *WTF::extractNameFunction() [T = ") - 1;
+const size_t extractNameFunctionPostfixLength = 1;
+#elif COMPILER(GCC)
+const size_t extractNameFunctionPrefixLength = sizeof("const char* WTF::extractNameFunction() [with T = ") - 1;
+const size_t extractNameFunctionPostfixLength = 1;
+#else
+#warning "Extracting typename in a compiler other than GCC isn't supported atm"
+#endif
 
 // This function is used to stringify a typename T without using RTTI.
-// The result of extractNameFunc<T>() is given as |funcName|. |extractNameFromFunctionName| then extracts a typename string from |funcName|.
-String extractNameFromFunctionName(const char* funcName)
+// The result of extractNameFunction<T>() is given as |funcName|. |extractTypeNameFromFunctionName| then extracts a typename string from |funcName|.
+String extractTypeNameFromFunctionName(const char* funcName)
 {
-#if COMPILER(GCC)
-    const size_t prefixLength = sizeof("const char* WTF::extractNameFunc() [with T = ") - 1;
-
+#if COMPILER(CLANG) || COMPILER(GCC)
     size_t funcNameLength = strlen(funcName);
-    ASSERT(funcNameLength > prefixLength + 1);
+    ASSERT(funcNameLength > extractNameFunctionPrefixLength + 1);
 
-    const char* funcNameWithoutPrefix = funcName + prefixLength;
-    return String(funcNameWithoutPrefix, funcNameLength - prefixLength - 1 /* last ] */);
+    const char* funcNameWithoutPrefix = funcName + extractNameFunctionPrefixLength;
+    return String(funcNameWithoutPrefix, funcNameLength - extractNameFunctionPrefixLength - extractNameFunctionPostfixLength /* last ] */);
 #else
-    // FIXME: Support other compilers
-    ASSERT(false);
+    return String();
 #endif
 }
 
@@ -74,15 +81,15 @@ private:
     HashMap<String, int> m_counterMap;
 };
 
-void incrementInstanceCount(const char* extractNameFuncName, void* ptr)
+void incrementInstanceCount(const char* extractNameFunctionName, void* ptr)
 {
-    String instanceName = extractNameFromFunctionName(extractNameFuncName);
+    String instanceName = extractTypeNameFromFunctionName(extractNameFunctionName);
     InstanceCounter::instance()->incrementInstanceCount(instanceName, ptr);
 }
 
-void decrementInstanceCount(const char* extractNameFuncName, void* ptr)
+void decrementInstanceCount(const char* extractNameFunctionName, void* ptr)
 {
-    String instanceName = extractNameFromFunctionName(extractNameFuncName);
+    String instanceName = extractTypeNameFromFunctionName(extractNameFunctionName);
     InstanceCounter::instance()->decrementInstanceCount(instanceName, ptr);
 }
 
@@ -96,7 +103,7 @@ void InstanceCounter::incrementInstanceCount(const String& instanceName, void* p
     MutexLocker locker(m_mutex);
     HashMap<String, int>::AddResult result = m_counterMap.add(instanceName, 1);
     if (!result.isNewEntry)
-        ++(result.iterator->value);
+        ++(result.storedValue->value);
 }
 
 void InstanceCounter::decrementInstanceCount(const String& instanceName, void* ptr)
@@ -139,6 +146,6 @@ String dumpRefCountedInstanceCounts()
     return String("{}");
 }
 
-#endif // ENABLE_INSTANCE_COUNTER
+#endif // ENABLE(INSTANCE_COUNTER) || ENABLE(GC_TRACING)
 
 } // namespace WTF

@@ -25,7 +25,6 @@
 #define DOMImplementation_h
 
 #include "core/dom/Document.h"
-#include "wtf/Forward.h"
 #include "wtf/PassRefPtr.h"
 
 namespace WebCore {
@@ -35,43 +34,48 @@ class Document;
 class DocumentInit;
 class DocumentType;
 class ExceptionState;
-class Frame;
+class LocalFrame;
 class HTMLDocument;
 class KURL;
+class XMLDocument;
 
-class DOMImplementation : public ScriptWrappable {
-    WTF_MAKE_FAST_ALLOCATED;
+class DOMImplementation FINAL : public NoBaseWillBeGarbageCollectedFinalized<DOMImplementation>, public ScriptWrappable {
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
 public:
-    static PassOwnPtr<DOMImplementation> create(Document& document) { return adoptPtr(new DOMImplementation(document)); }
+    static PassOwnPtrWillBeRawPtr<DOMImplementation> create(Document& document)
+    {
+        return adoptPtrWillBeNoop(new DOMImplementation(document));
+    }
 
-    void ref() { m_document.ref(); }
-    void deref() { m_document.deref(); }
-    Document* document() { return &m_document; }
+#if !ENABLE(OILPAN)
+    void ref() { m_document->ref(); }
+    void deref() { m_document->deref(); }
+#endif
+    Document& document() const { return *m_document; }
 
     // DOM methods & attributes for DOMImplementation
     static bool hasFeature(const String& feature, const String& version);
-    PassRefPtr<DocumentType> createDocumentType(const AtomicString& qualifiedName, const String& publicId, const String& systemId, ExceptionState&);
-    PassRefPtr<Document> createDocument(const AtomicString& namespaceURI, const AtomicString& qualifiedName, DocumentType*, ExceptionState&);
-
-    DOMImplementation* getInterface(const String& feature);
-
-    // From the DOMImplementationCSS interface
-    static PassRefPtr<CSSStyleSheet> createCSSStyleSheet(const String& title, const String& media);
+    bool hasFeatureForBindings(const String& feature, const String& version);
+    PassRefPtrWillBeRawPtr<DocumentType> createDocumentType(const AtomicString& qualifiedName, const String& publicId, const String& systemId, ExceptionState&);
+    PassRefPtrWillBeRawPtr<XMLDocument> createDocument(const AtomicString& namespaceURI, const AtomicString& qualifiedName, DocumentType*, ExceptionState&);
 
     // From the HTMLDOMImplementation interface
-    PassRefPtr<HTMLDocument> createHTMLDocument(const String& title);
+    PassRefPtrWillBeRawPtr<HTMLDocument> createHTMLDocument(const String& title);
 
     // Other methods (not part of DOM)
-    static PassRefPtr<Document> createDocument(const String& MIMEType, Frame*, const KURL&, bool inViewSourceMode);
-    static PassRefPtr<Document> createDocument(const String& type, const DocumentInit&, bool inViewSourceMode);
+    static PassRefPtrWillBeRawPtr<Document> createDocument(const String& mimeType, LocalFrame*, const KURL&, bool inViewSourceMode);
+    static PassRefPtrWillBeRawPtr<Document> createDocument(const String& mimeType, const DocumentInit&, bool inViewSourceMode);
 
-    static bool isXMLMIMEType(const String& MIMEType);
-    static bool isTextMIMEType(const String& MIMEType);
+    static bool isXMLMIMEType(const String&);
+    static bool isTextMIMEType(const String&);
+    static bool isJSONMIMEType(const String&);
+
+    void trace(Visitor*);
 
 private:
     explicit DOMImplementation(Document&);
 
-    Document& m_document;
+    RawPtrWillBeMember<Document> m_document;
 };
 
 } // namespace WebCore

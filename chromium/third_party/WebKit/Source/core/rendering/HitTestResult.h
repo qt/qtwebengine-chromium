@@ -27,6 +27,7 @@
 #include "platform/geometry/FloatQuad.h"
 #include "platform/geometry/FloatRect.h"
 #include "platform/geometry/LayoutRect.h"
+#include "platform/heap/Handle.h"
 #include "platform/text/TextDirection.h"
 #include "wtf/Forward.h"
 #include "wtf/ListHashSet.h"
@@ -36,18 +37,17 @@
 namespace WebCore {
 
 class Element;
-class Frame;
+class LocalFrame;
 class HTMLMediaElement;
 class Image;
 class KURL;
 class Node;
 class RenderObject;
-class RenderRegion;
 class Scrollbar;
 
 class HitTestResult {
 public:
-    typedef ListHashSet<RefPtr<Node> > NodeSet;
+    typedef WillBeHeapListHashSet<RefPtrWillBeMember<Node> > NodeSet;
 
     HitTestResult();
     HitTestResult(const LayoutPoint&);
@@ -76,7 +76,7 @@ public:
     // The hit-tested point in the coordinates of the innerNode frame, the frame containing innerNode.
     const LayoutPoint& pointInInnerNodeFrame() const { return m_pointInInnerNodeFrame; }
     IntPoint roundedPointInInnerNodeFrame() const { return roundedIntPoint(pointInInnerNodeFrame()); }
-    Frame* innerNodeFrame() const;
+    LocalFrame* innerNodeFrame() const;
 
     // The hit-tested point in the coordinates of the inner node.
     const LayoutPoint& localPoint() const { return m_localPoint; }
@@ -96,12 +96,10 @@ public:
     void setIsFirstLetter(bool b) { m_isFirstLetter = b; }
     void setIsOverWidget(bool b) { m_isOverWidget = b; }
 
-    Frame* targetFrame() const;
     bool isSelected() const;
     String spellingToolTip(TextDirection&) const;
     String title(TextDirection&) const;
     const AtomicString& altDisplayString() const;
-    String titleDisplayString() const;
     Image* image() const;
     IntRect imageRect() const;
     KURL absoluteImageURL() const;
@@ -132,18 +130,18 @@ private:
 
     HitTestLocation m_hitTestLocation;
 
-    RefPtr<Node> m_innerNode;
-    RefPtr<Node> m_innerPossiblyPseudoNode;
-    RefPtr<Node> m_innerNonSharedNode;
+    RefPtrWillBePersistent<Node> m_innerNode;
+    RefPtrWillBePersistent<Node> m_innerPossiblyPseudoNode;
+    RefPtrWillBePersistent<Node> m_innerNonSharedNode;
     LayoutPoint m_pointInInnerNodeFrame; // The hit-tested point in innerNode frame coordinates.
     LayoutPoint m_localPoint; // A point in the local coordinate space of m_innerNonSharedNode's renderer. Allows us to efficiently
                               // determine where inside the renderer we hit on subsequent operations.
-    RefPtr<Element> m_innerURLElement;
+    RefPtrWillBePersistent<Element> m_innerURLElement;
     RefPtr<Scrollbar> m_scrollbar;
     bool m_isOverWidget; // Returns true if we are over a widget (and not in the border/padding area of a RenderWidget for example).
     bool m_isFirstLetter;
 
-    mutable OwnPtr<NodeSet> m_rectBasedTestResult;
+    mutable OwnPtrWillBePersistent<NodeSet> m_rectBasedTestResult;
 };
 
 } // namespace WebCore

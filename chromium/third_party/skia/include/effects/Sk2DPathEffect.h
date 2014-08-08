@@ -14,7 +14,9 @@
 
 class SK_API Sk2DPathEffect : public SkPathEffect {
 public:
-    Sk2DPathEffect(const SkMatrix& mat);
+    static Sk2DPathEffect* Create(const SkMatrix& mat) {
+        return SkNEW_ARGS(Sk2DPathEffect, (mat));
+    }
 
     virtual bool filterPath(SkPath*, const SkPath&,
                             SkStrokeRec*, const SkRect*) const SK_OVERRIDE;
@@ -41,8 +43,9 @@ protected:
     const SkMatrix& getMatrix() const { return fMatrix; }
 
     // protected so that subclasses can call this during unflattening
-    Sk2DPathEffect(SkFlattenableReadBuffer&);
-    virtual void flatten(SkFlattenableWriteBuffer&) const SK_OVERRIDE;
+    explicit Sk2DPathEffect(const SkMatrix& mat);
+    explicit Sk2DPathEffect(SkReadBuffer&);
+    virtual void flatten(SkWriteBuffer&) const SK_OVERRIDE;
 
 private:
     SkMatrix    fMatrix, fInverse;
@@ -58,8 +61,9 @@ private:
 
 class SK_API SkLine2DPathEffect : public Sk2DPathEffect {
 public:
-    SkLine2DPathEffect(SkScalar width, const SkMatrix& matrix)
-    : Sk2DPathEffect(matrix), fWidth(width) {}
+    static SkLine2DPathEffect* Create(SkScalar width, const SkMatrix& matrix) {
+        return SkNEW_ARGS(SkLine2DPathEffect, (width, matrix));
+    }
 
     virtual bool filterPath(SkPath* dst, const SkPath& src,
                             SkStrokeRec*, const SkRect*) const SK_OVERRIDE;
@@ -67,11 +71,13 @@ public:
     SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(SkLine2DPathEffect)
 
 protected:
+    SkLine2DPathEffect(SkScalar width, const SkMatrix& matrix)
+        : Sk2DPathEffect(matrix), fWidth(width) {}
+    explicit SkLine2DPathEffect(SkReadBuffer&);
+
+    virtual void flatten(SkWriteBuffer&) const SK_OVERRIDE;
+
     virtual void nextSpan(int u, int v, int ucount, SkPath*) const SK_OVERRIDE;
-
-    SkLine2DPathEffect(SkFlattenableReadBuffer&);
-
-    virtual void flatten(SkFlattenableWriteBuffer&) const SK_OVERRIDE;
 
 private:
     SkScalar fWidth;
@@ -85,13 +91,16 @@ public:
      *  Stamp the specified path to fill the shape, using the matrix to define
      *  the latice.
      */
-    SkPath2DPathEffect(const SkMatrix&, const SkPath&);
+    static SkPath2DPathEffect* Create(const SkMatrix& matrix, const SkPath& path) {
+        return SkNEW_ARGS(SkPath2DPathEffect, (matrix, path));
+    }
 
     SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(SkPath2DPathEffect)
 
 protected:
-    SkPath2DPathEffect(SkFlattenableReadBuffer& buffer);
-    virtual void flatten(SkFlattenableWriteBuffer&) const SK_OVERRIDE;
+    SkPath2DPathEffect(const SkMatrix&, const SkPath&);
+    explicit SkPath2DPathEffect(SkReadBuffer& buffer);
+    virtual void flatten(SkWriteBuffer&) const SK_OVERRIDE;
 
     virtual void next(const SkPoint&, int u, int v, SkPath*) const SK_OVERRIDE;
 

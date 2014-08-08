@@ -12,7 +12,6 @@
 
 class GrContext;
 
-namespace blink { class WebGraphicsContext3D; }
 namespace gpu {
 class ContextSupport;
 namespace gles2 { class GLES2Interface; }
@@ -29,32 +28,17 @@ class ContextProvider : public base::RefCountedThreadSafe<ContextProvider> {
   // from the same thread.
   virtual bool BindToCurrentThread() = 0;
 
-  virtual blink::WebGraphicsContext3D* Context3d() = 0;
   virtual gpu::gles2::GLES2Interface* ContextGL() = 0;
   virtual gpu::ContextSupport* ContextSupport() = 0;
   virtual class GrContext* GrContext() = 0;
-  virtual void MakeGrContextCurrent() = 0;
 
   struct Capabilities {
-    bool egl_image_external : 1;
-    bool fast_npot_mo8_textures : 1;
-    bool iosurface : 1;
-    bool map_image : 1;
-    bool post_sub_buffer : 1;
-    bool texture_format_bgra8888 : 1;
-    bool texture_format_etc1 : 1;
-    bool texture_rectangle : 1;
-    bool texture_storage : 1;
-    bool texture_usage : 1;
-    bool discard_framebuffer : 1;
+    gpu::Capabilities gpu;
     size_t max_transfer_buffer_usage_bytes;
 
     CC_EXPORT Capabilities();
-
-    // TODO(boliu): Compose a gpu::Capabilities instead and remove this
-    // constructor.
-    explicit CC_EXPORT Capabilities(const gpu::Capabilities& gpu_capabilities);
   };
+
   // Returns the capabilities of the currently bound 3d context.
   virtual Capabilities ContextCapabilities() = 0;
 
@@ -65,6 +49,9 @@ class ContextProvider : public base::RefCountedThreadSafe<ContextProvider> {
   // this should invalidate the provider so that it can be replaced with a new
   // one.
   virtual void VerifyContexts() = 0;
+
+  // Delete all cached gpu resources.
+  virtual void DeleteCachedResources() = 0;
 
   // A method to be called from the main thread that should return true if
   // the context inside the provider is no longer valid.

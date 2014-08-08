@@ -18,6 +18,14 @@ class SkMatrix;
 typedef uint32_t GrGLVersion;
 typedef uint32_t GrGLSLVersion;
 
+#define GR_GL_VER(major, minor) ((static_cast<int>(major) << 16) | \
+                                 static_cast<int>(minor))
+#define GR_GLSL_VER(major, minor) ((static_cast<int>(major) << 16) | \
+                                   static_cast<int>(minor))
+
+#define GR_GL_INVALID_VER GR_GL_VER(0, 0)
+#define GR_GLSL_INVALID_VER GR_GL_VER(0, 0)
+
 /**
  * The Vendor and Renderer enum values are lazily updated as required.
  */
@@ -31,15 +39,11 @@ enum GrGLVendor {
 };
 
 enum GrGLRenderer {
+    kTegra2_GrGLRenderer,
     kTegra3_GrGLRenderer,
 
     kOther_GrGLRenderer
 };
-
-#define GR_GL_VER(major, minor) ((static_cast<int>(major) << 16) | \
-                                 static_cast<int>(minor))
-#define GR_GLSL_VER(major, minor) ((static_cast<int>(major) << 16) | \
-                                   static_cast<int>(minor))
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -78,7 +82,7 @@ enum GrGLRenderer {
 
 // these variants assume caller already has a string from glGetString()
 GrGLVersion GrGLGetVersionFromString(const char* versionString);
-GrGLBinding GrGLGetBindingInUseFromString(const char* versionString);
+GrGLStandard GrGLGetStandardInUseFromString(const char* versionString);
 GrGLSLVersion GrGLGetGLSLVersionFromString(const char* versionString);
 bool GrGLIsMesaFromVersionString(const char* versionString);
 GrGLVendor GrGLGetVendorFromString(const char* vendorString);
@@ -86,7 +90,6 @@ GrGLRenderer GrGLGetRendererFromString(const char* rendererString);
 bool GrGLIsChromiumFromRendererString(const char* rendererString);
 
 // these variants call glGetString()
-GrGLBinding GrGLGetBindingInUse(const GrGLInterface*);
 GrGLVersion GrGLGetVersion(const GrGLInterface*);
 GrGLSLVersion GrGLGetGLSLVersion(const GrGLInterface*);
 GrGLVendor GrGLGetVendor(const GrGLInterface*);
@@ -155,7 +158,7 @@ template<int MatrixSize> void GrGLGetMatrix(GrGLfloat* dest, const SkMatrix& src
 #define GR_GL_CALL_NOERRCHECK(IFACE, X)                         \
     do {                                                        \
         GR_GL_CALLBACK_IMPL(IFACE);                             \
-        (IFACE)->f##X;                                          \
+        (IFACE)->fFunctions.f##X;                               \
         GR_GL_LOG_CALLS_IMPL(X);                                \
     } while (false)
 
@@ -170,11 +173,11 @@ template<int MatrixSize> void GrGLGetMatrix(GrGLfloat* dest, const SkMatrix& src
 #define GR_GL_CALL_RET_NOERRCHECK(IFACE, RET, X)                \
     do {                                                        \
         GR_GL_CALLBACK_IMPL(IFACE);                             \
-        (RET) = (IFACE)->f##X;                                  \
+        (RET) = (IFACE)->fFunctions.f##X;                       \
         GR_GL_LOG_CALLS_IMPL(X);                                \
     } while (false)
 
 // call glGetError without doing a redundant error check or logging.
-#define GR_GL_GET_ERROR(IFACE) (IFACE)->fGetError()
+#define GR_GL_GET_ERROR(IFACE) (IFACE)->fFunctions.fGetError()
 
 #endif

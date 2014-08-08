@@ -6,7 +6,6 @@
 
 #include <string>
 
-#include "base/i18n/icu_string_conversions.h"
 #include "base/logging.h"
 #include "base/md5.h"
 #include "base/rand_util.h"
@@ -14,8 +13,10 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "net/base/net_errors.h"
+#include "net/base/net_string_util.h"
 #include "net/base/net_util.h"
 #include "net/http/http_auth.h"
+#include "net/http/http_auth_challenge_tokenizer.h"
 #include "net/http/http_request_info.h"
 #include "net/http/http_util.h"
 #include "url/gurl.h"
@@ -89,7 +90,7 @@ void HttpAuthHandlerDigest::Factory::set_nonce_generator(
 }
 
 int HttpAuthHandlerDigest::Factory::CreateAuthHandler(
-    HttpAuth::ChallengeTokenizer* challenge,
+    HttpAuthChallengeTokenizer* challenge,
     HttpAuth::Target target,
     const GURL& origin,
     CreateReason reason,
@@ -107,7 +108,7 @@ int HttpAuthHandlerDigest::Factory::CreateAuthHandler(
 }
 
 HttpAuth::AuthorizationResult HttpAuthHandlerDigest::HandleAnotherChallenge(
-    HttpAuth::ChallengeTokenizer* challenge) {
+    HttpAuthChallengeTokenizer* challenge) {
   // Even though Digest is not connection based, a "second round" is parsed
   // to differentiate between stale and rejected responses.
   // Note that the state of the current handler is not mutated - this way if
@@ -133,7 +134,7 @@ HttpAuth::AuthorizationResult HttpAuthHandlerDigest::HandleAnotherChallenge(
       HttpAuth::AUTHORIZATION_RESULT_REJECT;
 }
 
-bool HttpAuthHandlerDigest::Init(HttpAuth::ChallengeTokenizer* challenge) {
+bool HttpAuthHandlerDigest::Init(HttpAuthChallengeTokenizer* challenge) {
   return ParseChallenge(challenge);
 }
 
@@ -186,7 +187,7 @@ HttpAuthHandlerDigest::~HttpAuthHandlerDigest() {
 // send the realm (See http://crbug.com/20984 for an instance where a
 // webserver was not sending the realm with a BASIC challenge).
 bool HttpAuthHandlerDigest::ParseChallenge(
-    HttpAuth::ChallengeTokenizer* challenge) {
+    HttpAuthChallengeTokenizer* challenge) {
   auth_scheme_ = HttpAuth::AUTH_SCHEME_DIGEST;
   score_ = 2;
   properties_ = ENCRYPTS_IDENTITY;
@@ -226,7 +227,7 @@ bool HttpAuthHandlerDigest::ParseChallengeProperty(const std::string& name,
                                                    const std::string& value) {
   if (LowerCaseEqualsASCII(name, "realm")) {
     std::string realm;
-    if (!base::ConvertToUtf8AndNormalize(value, base::kCodepageLatin1, &realm))
+    if (!net::ConvertToUtf8AndNormalize(value, kCharsetLatin1, &realm))
       return false;
     realm_ = realm;
     original_realm_ = value;
@@ -322,9 +323,9 @@ std::string HttpAuthHandlerDigest::AssembleResponseDigest(
     const std::string& nc) const {
   // ha1 = MD5(A1)
   // TODO(eroman): is this the right encoding?
-  std::string ha1 = base::MD5String(UTF16ToUTF8(credentials.username()) + ":" +
-                                    original_realm_ + ":" +
-                                    UTF16ToUTF8(credentials.password()));
+  std::string ha1 = base::MD5String(base::UTF16ToUTF8(credentials.username()) +
+                                    ":" + original_realm_ + ":" +
+                                    base::UTF16ToUTF8(credentials.password()));
   if (algorithm_ == HttpAuthHandlerDigest::ALGORITHM_MD5_SESS)
     ha1 = base::MD5String(ha1 + ":" + nonce_ + ":" + cnonce);
 
@@ -352,7 +353,7 @@ std::string HttpAuthHandlerDigest::AssembleCredentials(
   // TODO(eroman): is this the right encoding?
   std::string authorization = (std::string("Digest username=") +
                                HttpUtil::Quote(
-                                   UTF16ToUTF8(credentials.username())));
+                                   base::UTF16ToUTF8(credentials.username())));
   authorization += ", realm=" + HttpUtil::Quote(original_realm_);
   authorization += ", nonce=" + HttpUtil::Quote(nonce_);
   authorization += ", uri=" + HttpUtil::Quote(path);

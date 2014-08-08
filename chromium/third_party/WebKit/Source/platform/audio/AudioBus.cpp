@@ -32,14 +32,17 @@
 
 #include "platform/audio/AudioBus.h"
 
+#include "platform/audio/AudioFileReader.h"
 #include "platform/audio/DenormalDisabler.h"
+#include "platform/audio/SincResampler.h"
+#include "platform/audio/VectorMath.h"
+#include "public/platform/Platform.h"
+#include "public/platform/WebAudioBus.h"
+#include "wtf/OwnPtr.h"
 
 #include <assert.h>
 #include <math.h>
 #include <algorithm>
-#include "platform/audio/SincResampler.h"
-#include "platform/audio/VectorMath.h"
-#include "wtf/OwnPtr.h"
 
 namespace WebCore {
 
@@ -51,7 +54,7 @@ PassRefPtr<AudioBus> AudioBus::create(unsigned numberOfChannels, size_t length, 
 {
     ASSERT(numberOfChannels <= MaxBusChannels);
     if (numberOfChannels > MaxBusChannels)
-        return 0;
+        return nullptr;
 
     return adoptRef(new AudioBus(numberOfChannels, length, allocate));
 }
@@ -177,7 +180,7 @@ PassRefPtr<AudioBus> AudioBus::createBufferFromRange(const AudioBus* sourceBuffe
     bool isRangeSafe = startFrame < endFrame && endFrame <= numberOfSourceFrames;
     ASSERT(isRangeSafe);
     if (!isRangeSafe)
-        return 0;
+        return nullptr;
 
     size_t rangeLength = endFrame - startFrame;
 
@@ -527,7 +530,7 @@ PassRefPtr<AudioBus> AudioBus::createBySampleRateConverting(const AudioBus* sour
     // sourceBus's sample-rate must be known.
     ASSERT(sourceBus && sourceBus->sampleRate());
     if (!sourceBus || !sourceBus->sampleRate())
-        return 0;
+        return nullptr;
 
     double sourceSampleRate = sourceBus->sampleRate();
     double destinationSampleRate = newSampleRate;
@@ -614,7 +617,7 @@ PassRefPtr<AudioBus> AudioBus::createByMixingToMono(const AudioBus* sourceBus)
     }
 
     ASSERT_NOT_REACHED();
-    return 0;
+    return nullptr;
 }
 
 bool AudioBus::isSilent() const
@@ -630,6 +633,45 @@ void AudioBus::clearSilentFlag()
 {
     for (size_t i = 0; i < m_channels.size(); ++i)
         m_channels[i]->clearSilentFlag();
+}
+
+PassRefPtr<AudioBus> decodeAudioFileData(const char* data, size_t size)
+{
+    blink::WebAudioBus webAudioBus;
+    if (blink::Platform::current()->loadAudioResource(&webAudioBus, data, size))
+        return webAudioBus.release();
+    return nullptr;
+}
+
+PassRefPtr<AudioBus> AudioBus::loadPlatformResource(const char* name, float sampleRate)
+{
+    const blink::WebData& resource = blink::Platform::current()->loadResource(name);
+    if (resource.isEmpty())
+        return nullptr;
+
+    RefPtr<AudioBus> audioBus = decodeAudioFileData(resource.data(), resource.size());
+
+    if (!audioBus.get())
+        return nullptr;
+
+    // If the bus is already at the requested sample-rate then return as is.
+    if (audioBus->sampleRate() == sampleRate)
+        return audioBus;
+
+    return AudioBus::createBySampleRateConverting(audioBus.get(), false, sampleRate);
+}
+
+PassRefPtr<AudioBus> createBusFromInMemoryAudioFile(const void* data, size_t dataSize, bool mixToMono, float sampleRate)
+{
+    RefPtr<AudioBus> audioBus = decodeAudioFileData(static_cast<const char*>(data), dataSize);
+    if (!audioBus.get())
+        return nullptr;
+
+    // If the bus needs no conversion then return as is.
+    if ((!mixToMono || audioBus->numberOfChannels() == 1) && audioBus->sampleRate() == sampleRate)
+        return audioBus;
+
+    return AudioBus::createBySampleRateConverting(audioBus.get(), mixToMono, sampleRate);
 }
 
 } // WebCore

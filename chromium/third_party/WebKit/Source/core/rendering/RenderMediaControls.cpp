@@ -106,7 +106,7 @@ static bool paintMediaPlayButton(RenderObject* object, const PaintInfo& paintInf
     if (!hasSource(mediaElement))
         return paintMediaButton(paintInfo.context, rect, mediaPlayDisabled);
 
-    return paintMediaButton(paintInfo.context, rect, mediaElement->canPlay() ? mediaPlay : mediaPause);
+    return paintMediaButton(paintInfo.context, rect, mediaControlElementType(object->node()) == MediaPlayButton ? mediaPlay : mediaPause);
 }
 
 static bool paintMediaOverlayPlayButton(RenderObject* object, const PaintInfo& paintInfo, const IntRect& rect)
@@ -115,7 +115,7 @@ static bool paintMediaOverlayPlayButton(RenderObject* object, const PaintInfo& p
     if (!mediaElement)
         return false;
 
-    if (!hasSource(mediaElement) || !mediaElement->canPlay())
+    if (!hasSource(mediaElement) || !mediaElement->togglePlayStateWillPlay())
         return false;
 
     static Image* mediaOverlayPlay = platformResource("mediaplayerOverlayPlay");
@@ -133,9 +133,7 @@ static void paintRoundedSliderBackground(const IntRect& rect, const RenderStyle*
     int borderRadius = rect.height() / 2;
     IntSize radii(borderRadius, borderRadius);
     Color sliderBackgroundColor = Color(11, 11, 11);
-    context->save();
     context->fillRoundedRect(rect, radii, radii, radii, radii, sliderBackgroundColor);
-    context->restore();
 }
 
 static void paintSliderRangeHighlight(const IntRect& rect, const RenderStyle* style, GraphicsContext* context, int startPosition, int endPosition, Color startColor, Color endColor)
@@ -156,10 +154,8 @@ static void paintSliderRangeHighlight(const IntRect& rect, const RenderStyle* st
     // Make sure the range width is bigger than border radius at the edges to retain rounded corners.
     if (startOffset < borderRadius && rangeWidth < borderRadius)
         rangeWidth = borderRadius;
-    if (endOffset < borderRadius && rangeWidth < borderRadius) {
-        startPosition -= borderRadius - rangeWidth;
+    if (endOffset < borderRadius && rangeWidth < borderRadius)
         rangeWidth = borderRadius;
-    }
 
     // Set rectangle to highlight range.
     IntRect highlightRect = rect;
@@ -365,16 +361,11 @@ bool RenderMediaControls::paintMediaControlsPart(MediaControlElementType part, R
         return paintMediaFullscreenButton(object, paintInfo, rect);
     case MediaOverlayPlayButton:
         return paintMediaOverlayPlayButton(object, paintInfo, rect);
-    case MediaVolumeSliderMuteButton:
-    case MediaSeekBackButton:
-    case MediaSeekForwardButton:
     case MediaVolumeSliderContainer:
     case MediaTimelineContainer:
     case MediaCurrentTimeDisplay:
     case MediaTimeRemainingDisplay:
     case MediaControlsPanel:
-    case MediaRewindButton:
-    case MediaReturnToRealtimeButton:
     case MediaStatusDisplay:
     case MediaHideClosedCaptionsButton:
     case MediaTextTrackDisplayContainer:

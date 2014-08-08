@@ -34,31 +34,38 @@
 
 #include "bindings/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
+#include "wtf/StringExtras.h"
 #include "wtf/text/TextEncodingRegistry.h"
 
 namespace WebCore {
 
-PassRefPtr<TextDecoder> TextDecoder::create(const String& label, const Dictionary& options, ExceptionState& exceptionState)
+TextDecoder* TextDecoder::create(const String& label, const Dictionary& options, ExceptionState& exceptionState)
 {
     const String& encodingLabel = label.isNull() ? String("utf-8") : label;
 
     WTF::TextEncoding encoding(encodingLabel);
-    if (!encoding.isValid()) {
-        exceptionState.throwUninformativeAndGenericTypeError();
+    // The replacement encoding is not valid, but the Encoding API also
+    // rejects aliases of the replacement encoding.
+    if (!encoding.isValid() || !strcasecmp(encoding.name(), "replacement")) {
+        exceptionState.throwTypeError("The encoding label provided ('" + encodingLabel + "') is invalid.");
         return 0;
     }
 
     bool fatal = false;
     options.get("fatal", fatal);
 
-    return adoptRef(new TextDecoder(encoding.name(), fatal));
+    bool ignoreBOM = false;
+    options.get("ignoreBOM", ignoreBOM);
+
+    return new TextDecoder(encoding, fatal, ignoreBOM);
 }
 
 
-TextDecoder::TextDecoder(const String& encoding, bool fatal)
+TextDecoder::TextDecoder(const WTF::TextEncoding& encoding, bool fatal, bool ignoreBOM)
     : m_encoding(encoding)
-    , m_codec(newTextCodec(m_encoding))
+    , m_codec(newTextCodec(encoding))
     , m_fatal(fatal)
+    , m_ignoreBOM(ignoreBOM)
     , m_bomSeen(false)
 {
 }
@@ -85,10 +92,7 @@ String TextDecoder::decode(ArrayBufferView* input, const Dictionary& options, Ex
     const char* start = input ? static_cast<const char*>(input->baseAddress()) : 0;
     size_t length = input ? input->byteLength() : 0;
 
-    bool flush = !stream;
-
-    // FIXME: Not all TextCodec implementations handle |flush| - notably TextCodecUTF16
-    // ignores it and never flushes!
+    WTF::FlushBehavior flush = stream ? WTF::DoNotFlush : WTF::DataEOF;
 
     bool sawError = false;
     String s = m_codec->decode(start, length, flush, m_fatal, sawError);
@@ -98,7 +102,7 @@ String TextDecoder::decode(ArrayBufferView* input, const Dictionary& options, Ex
         return String();
     }
 
-    if (!m_bomSeen && !s.isEmpty()) {
+    if (!m_ignoreBOM && !m_bomSeen && !s.isEmpty()) {
         m_bomSeen = true;
         String name(m_encoding.name());
         if ((name == "UTF-8" || name == "UTF-16LE" || name == "UTF-16BE") && s[0] == 0xFEFF)

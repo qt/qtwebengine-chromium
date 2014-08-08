@@ -3,6 +3,9 @@
     <li>QUIC Enabled: <span jscontent="!!quic_enabled"></span></li>
     <li>HTTPS Over QUIC Enabled: <span jscontent="!!quic_enabled_https"></span></li>
     <li>Origin To Force QUIC On: <span jscontent="origin_to_force_quic_on"></span></li>
+    <li>Packet Pacing Enabled: <span jscontent="!!enable_quic_pacing"></span></li>
+    <li>Persist Server Config Information Enabled: <span jscontent="!!enable_quic_persist_server_info"></span></li>
+    <li>Consistent Port Selection Enabled: <span jscontent="!!enable_quic_port_selection"></span></li>
   </ul>
 
   <h4>QUIC sessions</h4>
@@ -15,24 +18,32 @@
           <thead>
             <tr>
               <th>Host</th>
+              <th>Secure</th>
               <th>Version</th>
               <th>Peer address</th>
-              <th>GUID</th>
+              <th>Connection UID</th>
+              <th>Active stream count</th>
               <th>Active streams</th>
-              <th>Total streams</th>
+              <th>Total stream count</th>
+              <th>Packets Sent</th>
+              <th>Packets Lost</th>
+              <th>Packets Received</th>
               <th>Connected</th>
             </tr>
           </thead>
           <tbody>
             <tr jsselect="sessions">
-              <td><span jscontent="host_port_pair"></span>
-                <span jscontent="$this.aliases ? $this.aliases.join(' ') : ''"></span>
-              </td>
+              <td jscontent="$this.aliases ? $this.aliases.join(' ') : ''"></td>
+              <td jscontent="!!secure"></td>
               <td jscontent="version"></td>
               <td jscontent="peer_address"></td>
-              <td jscontent="guid"></td>
+              <td><a jsvalues=".href: '#events&q=type:QUIC_SESSION%20' + connection_id" jscontent="connection_id"></a></td>
               <td jscontent="open_streams"></td>
+              <td jscontent="$this.active_streams && $this.active_streams.length > 0 ? $this.active_streams.join(', ') : 'None'"></td>
               <td jscontent="total_streams"></td>
+              <td jscontent="packets_sent"></td>
+              <td jscontent="packets_lost"></td>
+              <td jscontent="packets_received"></td>
               <td jscontent="connected"></td>
             </tr>
           </tbody>

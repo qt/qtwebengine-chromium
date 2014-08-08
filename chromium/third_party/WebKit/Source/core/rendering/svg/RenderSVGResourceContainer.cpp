@@ -21,7 +21,6 @@
 
 #include "core/rendering/svg/RenderSVGResourceContainer.h"
 
-#include "core/rendering/LayoutRectRecorder.h"
 #include "core/rendering/RenderLayer.h"
 #include "core/rendering/RenderView.h"
 #include "core/rendering/svg/SVGRenderingContext.h"
@@ -32,7 +31,7 @@
 
 namespace WebCore {
 
-static inline SVGDocumentExtensions* svgExtensionsFromElement(SVGElement* element)
+static inline SVGDocumentExtensions& svgExtensionsFromElement(SVGElement* element)
 {
     ASSERT(element);
     return element->document().accessSVGExtensions();
@@ -51,7 +50,7 @@ RenderSVGResourceContainer::RenderSVGResourceContainer(SVGElement* node)
 RenderSVGResourceContainer::~RenderSVGResourceContainer()
 {
     if (m_registered)
-        svgExtensionsFromElement(element())->removeResource(m_id);
+        svgExtensionsFromElement(element()).removeResource(m_id);
 }
 
 void RenderSVGResourceContainer::layout()
@@ -62,7 +61,6 @@ void RenderSVGResourceContainer::layout()
     if (m_isInLayout)
         return;
 
-    LayoutRectRecorder recorder(*this);
     TemporaryChange<bool> inLayoutChange(m_isInLayout, true);
 
     RenderSVGHiddenContainer::layout();
@@ -92,8 +90,8 @@ void RenderSVGResourceContainer::idChanged()
     removeAllClientsFromCache();
 
     // Remove old id, that is guaranteed to be present in cache.
-    SVGDocumentExtensions* extensions = svgExtensionsFromElement(element());
-    extensions->removeResource(m_id);
+    SVGDocumentExtensions& extensions = svgExtensionsFromElement(element());
+    extensions.removeResource(m_id);
     m_id = element()->getIdAttribute();
 
     registerResource();
@@ -150,10 +148,10 @@ void RenderSVGResourceContainer::markClientForInvalidation(RenderObject* client,
         break;
     case RepaintInvalidation:
         if (client->view()) {
-            if (RuntimeEnabledFeatures::repaintAfterLayoutEnabled() && frameView()->isInLayout())
-                client->setShouldDoFullRepaintAfterLayout(true);
+            if (RuntimeEnabledFeatures::repaintAfterLayoutEnabled() && frameView()->isInPerformLayout())
+                client->setShouldDoFullPaintInvalidationAfterLayout(true);
             else
-                client->repaint();
+                client->paintInvalidationForWholeRenderer();
         }
         break;
     case ParentOnlyInvalidation:
@@ -202,7 +200,7 @@ void RenderSVGResourceContainer::invalidateCacheAndMarkForLayout(SubtreeLayoutSc
     if (selfNeedsLayout())
         return;
 
-    setNeedsLayout(MarkContainingBlockChain, layoutScope);
+    setNeedsLayoutAndFullPaintInvalidation(MarkContainingBlockChain, layoutScope);
 
     if (everHadLayout())
         removeAllClientsFromCache();
@@ -210,33 +208,36 @@ void RenderSVGResourceContainer::invalidateCacheAndMarkForLayout(SubtreeLayoutSc
 
 void RenderSVGResourceContainer::registerResource()
 {
-    SVGDocumentExtensions* extensions = svgExtensionsFromElement(element());
-    if (!extensions->hasPendingResource(m_id)) {
-        extensions->addResource(m_id, this);
+    SVGDocumentExtensions& extensions = svgExtensionsFromElement(element());
+    if (!extensions.hasPendingResource(m_id)) {
+        extensions.addResource(m_id, this);
         return;
     }
 
-    OwnPtr<SVGDocumentExtensions::SVGPendingElements> clients(extensions->removePendingResource(m_id));
+    OwnPtr<SVGDocumentExtensions::SVGPendingElements> clients(extensions.removePendingResource(m_id));
 
     // Cache us with the new id.
-    extensions->addResource(m_id, this);
+    extensions.addResource(m_id, this);
 
     // Update cached resources of pending clients.
     const SVGDocumentExtensions::SVGPendingElements::const_iterator end = clients->end();
     for (SVGDocumentExtensions::SVGPendingElements::const_iterator it = clients->begin(); it != end; ++it) {
         ASSERT((*it)->hasPendingResources());
-        extensions->clearHasPendingResourcesIfPossible(*it);
+        extensions.clearHasPendingResourcesIfPossible(*it);
         RenderObject* renderer = (*it)->renderer();
         if (!renderer)
             continue;
-        SVGResourcesCache::clientStyleChanged(renderer, StyleDifferenceLayout, renderer->style());
-        renderer->setNeedsLayout();
+
+        StyleDifference diff;
+        diff.setNeedsFullLayout();
+        SVGResourcesCache::clientStyleChanged(renderer, diff, renderer->style());
+        renderer->setNeedsLayoutAndFullPaintInvalidation();
     }
 }
 
-bool RenderSVGResourceContainer::shouldTransformOnTextPainting(RenderObject* object, AffineTransform& resourceTransform)
+static bool shouldTransformOnTextPainting(RenderObject* object, AffineTransform& resourceTransform)
 {
-    ASSERT_UNUSED(object, object);
+    ASSERT(object);
 
     // This method should only be called for RenderObjects that deal with text rendering. Cmp. RenderObject.h's is*() methods.
     ASSERT(object->isSVGText() || object->isSVGTextPath() || object->isSVGInline());
@@ -249,6 +250,26 @@ bool RenderSVGResourceContainer::shouldTransformOnTextPainting(RenderObject* obj
         return false;
     resourceTransform.scale(scalingFactor);
     return true;
+}
+
+AffineTransform RenderSVGResourceContainer::computeResourceSpaceTransform(RenderObject* object, const AffineTransform& baseTransform, const SVGRenderStyle* svgStyle, unsigned short resourceMode)
+{
+    AffineTransform computedSpaceTransform = baseTransform;
+    if (resourceMode & ApplyToTextMode) {
+        // Depending on the font scaling factor, we may need to apply an
+        // additional transform (scale-factor) the paintserver, since text
+        // painting removes the scale factor from the context. (See
+        // SVGInlineTextBox::paintTextWithShadows.)
+        AffineTransform additionalTextTransformation;
+        if (shouldTransformOnTextPainting(object, additionalTextTransformation))
+            computedSpaceTransform = additionalTextTransformation * computedSpaceTransform;
+    }
+    if (resourceMode & ApplyToStrokeMode) {
+        // Non-scaling stroke needs to reset the transform back to the host transform.
+        if (svgStyle->vectorEffect() == VE_NON_SCALING_STROKE)
+            computedSpaceTransform = transformOnNonScalingStroke(object, computedSpaceTransform);
+    }
+    return computedSpaceTransform;
 }
 
 // FIXME: This does not belong here.

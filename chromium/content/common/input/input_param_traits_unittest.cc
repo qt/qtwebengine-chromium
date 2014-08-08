@@ -40,8 +40,10 @@ class InputParamTraitsTest : public testing::Test {
   static void Compare(const SyntheticSmoothScrollGestureParams* a,
                       const SyntheticSmoothScrollGestureParams* b) {
     EXPECT_EQ(a->gesture_source_type, b->gesture_source_type);
-    EXPECT_EQ(a->distance, b->distance);
     EXPECT_EQ(a->anchor, b->anchor);
+    EXPECT_EQ(a->distances.size(), b->distances.size());
+    for (size_t i = 0; i < a->distances.size(); i++)
+        EXPECT_EQ(a->distances[i], b->distances[i]);
     EXPECT_EQ(a->prevent_fling, b->prevent_fling);
     EXPECT_EQ(a->speed_in_pixels_s, b->speed_in_pixels_s);
   }
@@ -49,8 +51,7 @@ class InputParamTraitsTest : public testing::Test {
   static void Compare(const SyntheticPinchGestureParams* a,
                       const SyntheticPinchGestureParams* b) {
     EXPECT_EQ(a->gesture_source_type, b->gesture_source_type);
-    EXPECT_EQ(a->zoom_in, b->zoom_in);
-    EXPECT_EQ(a->total_num_pixels_covered, b->total_num_pixels_covered);
+    EXPECT_EQ(a->scale_factor, b->scale_factor);
     EXPECT_EQ(a->anchor, b->anchor);
     EXPECT_EQ(a->relative_pointer_speed_in_pixels_s,
               b->relative_pointer_speed_in_pixels_s);
@@ -190,8 +191,9 @@ TEST_F(InputParamTraitsTest, SyntheticSmoothScrollGestureParams) {
   scoped_ptr<SyntheticSmoothScrollGestureParams> gesture_params(
       new SyntheticSmoothScrollGestureParams);
   gesture_params->gesture_source_type = SyntheticGestureParams::TOUCH_INPUT;
-  gesture_params->distance = gfx::Vector2d(123, -789);
   gesture_params->anchor.SetPoint(234, 345);
+  gesture_params->distances.push_back(gfx::Vector2d(123, -789));
+  gesture_params->distances.push_back(gfx::Vector2d(-78, 43));
   gesture_params->prevent_fling = false;
   gesture_params->speed_in_pixels_s = 456;
   ASSERT_EQ(SyntheticGestureParams::SMOOTH_SCROLL_GESTURE,
@@ -206,8 +208,7 @@ TEST_F(InputParamTraitsTest, SyntheticPinchGestureParams) {
   scoped_ptr<SyntheticPinchGestureParams> gesture_params(
       new SyntheticPinchGestureParams);
   gesture_params->gesture_source_type = SyntheticGestureParams::TOUCH_INPUT;
-  gesture_params->zoom_in = true;
-  gesture_params->total_num_pixels_covered = 123;
+  gesture_params->scale_factor = 2.3f;
   gesture_params->anchor.SetPoint(234, 345);
   gesture_params->relative_pointer_speed_in_pixels_s = 456;
   ASSERT_EQ(SyntheticGestureParams::PINCH_GESTURE,

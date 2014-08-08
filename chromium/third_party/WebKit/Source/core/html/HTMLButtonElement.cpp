@@ -26,10 +26,9 @@
 #include "config.h"
 #include "core/html/HTMLButtonElement.h"
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 #include "core/dom/Attribute.h"
 #include "core/events/KeyboardEvent.h"
-#include "core/events/ThreadLocalEventNames.h"
 #include "core/html/FormDataList.h"
 #include "core/html/HTMLFormElement.h"
 #include "core/rendering/RenderButton.h"
@@ -47,9 +46,9 @@ inline HTMLButtonElement::HTMLButtonElement(Document& document, HTMLFormElement*
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLButtonElement> HTMLButtonElement::create(Document& document, HTMLFormElement* form)
+PassRefPtrWillBeRawPtr<HTMLButtonElement> HTMLButtonElement::create(Document& document, HTMLFormElement* form)
 {
-    return adoptRef(new HTMLButtonElement(document, form));
+    return adoptRefWillBeNoop(new HTMLButtonElement(document, form));
 }
 
 void HTMLButtonElement::setType(const AtomicString& type)
@@ -205,6 +204,11 @@ bool HTMLButtonElement::recalcWillValidate() const
 }
 
 bool HTMLButtonElement::isInteractiveContent() const
+{
+    return true;
+}
+
+bool HTMLButtonElement::supportsAutofocus() const
 {
     return true;
 }

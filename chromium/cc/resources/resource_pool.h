@@ -21,14 +21,12 @@ class CC_EXPORT ResourcePool {
   static scoped_ptr<ResourcePool> Create(ResourceProvider* resource_provider,
                                          GLenum target,
                                          ResourceFormat format) {
-    return make_scoped_ptr(new ResourcePool(resource_provider,
-                                            target,
-                                            format));
+    return make_scoped_ptr(new ResourcePool(resource_provider, target, format));
   }
 
   virtual ~ResourcePool();
 
-  scoped_ptr<ScopedResource> AcquireResource(gfx::Size size);
+  scoped_ptr<ScopedResource> AcquireResource(const gfx::Size& size);
   void ReleaseResource(scoped_ptr<ScopedResource>);
 
   void SetResourceUsageLimits(size_t max_memory_usage_bytes,
@@ -38,15 +36,16 @@ class CC_EXPORT ResourcePool {
   void ReduceResourceUsage();
   void CheckBusyResources();
 
-  size_t total_memory_usage_bytes() const {
-    return memory_usage_bytes_;
-  }
+  size_t total_memory_usage_bytes() const { return memory_usage_bytes_; }
   size_t acquired_memory_usage_bytes() const {
     return memory_usage_bytes_ - unused_memory_usage_bytes_;
   }
+  size_t total_resource_count() const { return resource_count_; }
   size_t acquired_resource_count() const {
     return resource_count_ - unused_resources_.size();
   }
+
+  ResourceFormat resource_format() const { return format_; }
 
  protected:
   ResourcePool(ResourceProvider* resource_provider,

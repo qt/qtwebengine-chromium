@@ -30,74 +30,81 @@
 
 /**
  * @constructor
- * @extends {WebInspector.View}
+ * @extends {WebInspector.VBox}
  * @implements {WebInspector.DOMNodeHighlighter}
+ * @param {!WebInspector.Target} target
  */
-WebInspector.ScreencastView = function()
+WebInspector.ScreencastView = function(target)
 {
-    WebInspector.View.call(this);
+    WebInspector.VBox.call(this);
+    this._target = target;
+
+    this.setMinimumSize(150, 150);
     this.registerRequiredCSS("screencastView.css");
+};
 
-    this.element.classList.add("fill");
-    this.element.classList.add("screencast");
-
-    this._createNavigationBar();
-
-    this._viewportElement = this.element.createChild("div", "screencast-viewport hidden");
-    this._glassPaneElement = this.element.createChild("div", "screencast-glasspane hidden");
-
-    this._canvasElement = this._viewportElement.createChild("canvas");
-    this._canvasElement.tabIndex = 1;
-    this._canvasElement.addEventListener("mousedown", this._handleMouseEvent.bind(this), false);
-    this._canvasElement.addEventListener("mouseup", this._handleMouseEvent.bind(this), false);
-    this._canvasElement.addEventListener("mousemove", this._handleMouseEvent.bind(this), false);
-    this._canvasElement.addEventListener("mousewheel", this._handleMouseEvent.bind(this), false);
-    this._canvasElement.addEventListener("click", this._handleMouseEvent.bind(this), false);
-    this._canvasElement.addEventListener("contextmenu", this._handleContextMenuEvent.bind(this), false);
-    this._canvasElement.addEventListener("keydown", this._handleKeyEvent.bind(this), false);
-    this._canvasElement.addEventListener("keyup", this._handleKeyEvent.bind(this), false);
-    this._canvasElement.addEventListener("keypress", this._handleKeyEvent.bind(this), false);
-
-    this._titleElement = this._viewportElement.createChild("div", "screencast-element-title monospace hidden");
-    this._tagNameElement = this._titleElement.createChild("span", "screencast-tag-name");
-    this._nodeIdElement = this._titleElement.createChild("span", "screencast-node-id");
-    this._classNameElement = this._titleElement.createChild("span", "screencast-class-name");
-    this._titleElement.appendChild(document.createTextNode(" "));
-    this._nodeWidthElement = this._titleElement.createChild("span");
-    this._titleElement.createChild("span", "screencast-px").textContent = "px";
-    this._titleElement.appendChild(document.createTextNode(" \u00D7 "));
-    this._nodeHeightElement = this._titleElement.createChild("span");
-    this._titleElement.createChild("span", "screencast-px").textContent = "px";
-
-    this._imageElement = new Image();
-    this._isCasting = false;
-    this._context = this._canvasElement.getContext("2d");
-    this._checkerboardPattern = this._createCheckerboardPattern(this._context);
-
-    this._shortcuts = /** !Object.<number, function(Event=):boolean> */ ({});
-    this._shortcuts[WebInspector.KeyboardShortcut.makeKey("l", WebInspector.KeyboardShortcut.Modifiers.Ctrl)] = this._focusNavigationBar.bind(this);
-
-    WebInspector.resourceTreeModel.addEventListener(WebInspector.ResourceTreeModel.EventTypes.ScreencastFrame, this._screencastFrame, this);
-    WebInspector.resourceTreeModel.addEventListener(WebInspector.ResourceTreeModel.EventTypes.ScreencastVisibilityChanged, this._screencastVisibilityChanged, this);
-
-    WebInspector.timelineManager.addEventListener(WebInspector.TimelineManager.EventTypes.TimelineStarted, this._onTimeline.bind(this, true), this);
-    WebInspector.timelineManager.addEventListener(WebInspector.TimelineManager.EventTypes.TimelineStopped, this._onTimeline.bind(this, false), this);
-    this._timelineActive = WebInspector.timelineManager.isStarted();
-
-    WebInspector.cpuProfilerModel.addEventListener(WebInspector.CPUProfilerModel.EventTypes.ProfileStarted, this._onProfiler.bind(this, true), this);
-    WebInspector.cpuProfilerModel.addEventListener(WebInspector.CPUProfilerModel.EventTypes.ProfileStopped, this._onProfiler.bind(this, false), this);
-    this._profilerActive = WebInspector.cpuProfilerModel.isRecordingProfile();
-
-    this._updateGlasspane();
-}
-
-WebInspector.ScreencastView._bordersSize = 40;
+WebInspector.ScreencastView._bordersSize = 44;
 
 WebInspector.ScreencastView._navBarHeight = 29;
 
 WebInspector.ScreencastView._HttpRegex = /^https?:\/\/(.+)/;
 
 WebInspector.ScreencastView.prototype = {
+    initialize: function()
+    {
+        this.element.classList.add("screencast");
+
+        this._createNavigationBar();
+
+        this._viewportElement = this.element.createChild("div", "screencast-viewport hidden");
+        this._canvasContainerElement = this._viewportElement.createChild("div", "screencast-canvas-container");
+        this._glassPaneElement = this._canvasContainerElement.createChild("div", "screencast-glasspane hidden");
+
+        this._canvasElement = this._canvasContainerElement.createChild("canvas");
+        this._canvasElement.tabIndex = 1;
+        this._canvasElement.addEventListener("mousedown", this._handleMouseEvent.bind(this), false);
+        this._canvasElement.addEventListener("mouseup", this._handleMouseEvent.bind(this), false);
+        this._canvasElement.addEventListener("mousemove", this._handleMouseEvent.bind(this), false);
+        this._canvasElement.addEventListener("mousewheel", this._handleMouseEvent.bind(this), false);
+        this._canvasElement.addEventListener("click", this._handleMouseEvent.bind(this), false);
+        this._canvasElement.addEventListener("contextmenu", this._handleContextMenuEvent.bind(this), false);
+        this._canvasElement.addEventListener("keydown", this._handleKeyEvent.bind(this), false);
+        this._canvasElement.addEventListener("keyup", this._handleKeyEvent.bind(this), false);
+        this._canvasElement.addEventListener("keypress", this._handleKeyEvent.bind(this), false);
+
+        this._titleElement = this._canvasContainerElement.createChild("div", "screencast-element-title monospace hidden");
+        this._tagNameElement = this._titleElement.createChild("span", "screencast-tag-name");
+        this._nodeIdElement = this._titleElement.createChild("span", "screencast-node-id");
+        this._classNameElement = this._titleElement.createChild("span", "screencast-class-name");
+        this._titleElement.appendChild(document.createTextNode(" "));
+        this._nodeWidthElement = this._titleElement.createChild("span");
+        this._titleElement.createChild("span", "screencast-px").textContent = "px";
+        this._titleElement.appendChild(document.createTextNode(" \u00D7 "));
+        this._nodeHeightElement = this._titleElement.createChild("span");
+        this._titleElement.createChild("span", "screencast-px").textContent = "px";
+
+        this._imageElement = new Image();
+        this._isCasting = false;
+        this._context = this._canvasElement.getContext("2d");
+        this._checkerboardPattern = this._createCheckerboardPattern(this._context);
+
+        this._shortcuts = /** !Object.<number, function(Event=):boolean> */ ({});
+        this._shortcuts[WebInspector.KeyboardShortcut.makeKey("l", WebInspector.KeyboardShortcut.Modifiers.Ctrl)] = this._focusNavigationBar.bind(this);
+
+        WebInspector.resourceTreeModel.addEventListener(WebInspector.ResourceTreeModel.EventTypes.ScreencastFrame, this._screencastFrame, this);
+        WebInspector.resourceTreeModel.addEventListener(WebInspector.ResourceTreeModel.EventTypes.ScreencastVisibilityChanged, this._screencastVisibilityChanged, this);
+
+        WebInspector.timelineManager.addEventListener(WebInspector.TimelineManager.EventTypes.TimelineStarted, this._onTimeline.bind(this, true), this);
+        WebInspector.timelineManager.addEventListener(WebInspector.TimelineManager.EventTypes.TimelineStopped, this._onTimeline.bind(this, false), this);
+        this._timelineActive = WebInspector.timelineManager.isStarted();
+
+        WebInspector.cpuProfilerModel.addEventListener(WebInspector.CPUProfilerModel.EventTypes.ProfileStarted, this._onProfiler.bind(this, true), this);
+        WebInspector.cpuProfilerModel.addEventListener(WebInspector.CPUProfilerModel.EventTypes.ProfileStopped, this._onProfiler.bind(this, false), this);
+        this._profilerActive = WebInspector.cpuProfilerModel.isRecordingProfile();
+
+        this._updateGlasspane();
+    },
+
     wasShown: function()
     {
         this._startCasting();
@@ -122,10 +129,10 @@ WebInspector.ScreencastView.prototype = {
             this._isCasting = false;
             return;
         }
-        dimensions.width *= WebInspector.zoomFactor();
-        dimensions.height *= WebInspector.zoomFactor();
-        PageAgent.startScreencast("jpeg", 80, Math.min(maxImageDimension, dimensions.width), Math.min(maxImageDimension, dimensions.height));
-        WebInspector.domAgent.setHighlighter(this);
+        dimensions.width *= WebInspector.zoomManager.zoomFactor();
+        dimensions.height *= WebInspector.zoomManager.zoomFactor();
+        this._target.pageAgent().startScreencast("jpeg", 80, Math.min(maxImageDimension, dimensions.width), Math.min(maxImageDimension, dimensions.height));
+        this._target.domModel.setHighlighter(this);
     },
 
     _stopCasting: function()
@@ -133,8 +140,8 @@ WebInspector.ScreencastView.prototype = {
         if (!this._isCasting)
             return;
         this._isCasting = false;
-        PageAgent.stopScreencast();
-        WebInspector.domAgent.setHighlighter(null);
+        this._target.pageAgent().stopScreencast();
+        this._target.domModel.setHighlighter(null);
     },
 
     /**
@@ -165,7 +172,7 @@ WebInspector.ScreencastView.prototype = {
         this._resizeViewport(screenWidthDIP, screenHeightDIP);
 
         this._imageZoom = this._imageElement.naturalWidth ? this._canvasElement.offsetWidth / this._imageElement.naturalWidth : 1;
-        this.highlightDOMNode(this._highlightNodeId, this._highlightConfig);
+        this.highlightDOMNode(this._highlightNode, this._highlightConfig);
     },
 
     _isGlassPaneActive: function()
@@ -198,6 +205,7 @@ WebInspector.ScreencastView.prototype = {
 
     /**
      * @param {boolean} on
+     * @param {!WebInspector.Event} event
      * @private
      */
     _onProfiler: function(on, event) {
@@ -241,7 +249,7 @@ WebInspector.ScreencastView.prototype = {
     },
 
     /**
-     * @param {!Event} event
+     * @param {?Event} event
      */
     _handleMouseEvent: function(event)
     {
@@ -262,26 +270,25 @@ WebInspector.ScreencastView.prototype = {
         }
 
         var position = this._convertIntoScreenSpace(event);
-        DOMAgent.getNodeForLocation(position.x / this._pageScaleFactor, position.y / this._pageScaleFactor, callback.bind(this));
+        this._target.domModel.nodeForLocation(position.x / this._pageScaleFactor, position.y / this._pageScaleFactor, callback.bind(this));
 
         /**
-         * @param {?Protocol.Error} error
-         * @param {number} nodeId
+         * @param {?WebInspector.DOMNode} node
          * @this {WebInspector.ScreencastView}
          */
-        function callback(error, nodeId)
+        function callback(node)
         {
-            if (error)
+            if (!node)
                 return;
             if (event.type === "mousemove")
-                this.highlightDOMNode(nodeId, this._inspectModeConfig);
+                this.highlightDOMNode(node, this._inspectModeConfig);
             else if (event.type === "click")
-                WebInspector.domAgent.dispatchEventToListeners(WebInspector.DOMAgent.Events.InspectNodeRequested, nodeId);
+                node.reveal();
         }
     },
 
     /**
-     * @param {!KeyboardEvent} event
+     * @param {?Event} event
      */
     _handleKeyEvent: function(event)
     {
@@ -290,7 +297,7 @@ WebInspector.ScreencastView.prototype = {
             return;
         }
 
-        var shortcutKey = WebInspector.KeyboardShortcut.makeKeyFromEvent(event);
+        var shortcutKey = WebInspector.KeyboardShortcut.makeKeyFromEvent(/** @type {!KeyboardEvent} */ (event));
         var handler = this._shortcuts[shortcutKey];
         if (handler && handler(event)) {
             event.consume();
@@ -307,13 +314,13 @@ WebInspector.ScreencastView.prototype = {
 
         var text = event.type === "keypress" ? String.fromCharCode(event.charCode) : undefined;
         InputAgent.dispatchKeyEvent(type, this._modifiersForEvent(event), event.timeStamp / 1000, text, text ? text.toLowerCase() : undefined,
-                                    event.keyIdentifier, event.keyCode /* windowsVirtualKeyCode */, event.keyCode /* nativeVirtualKeyCode */, undefined /* macCharCode */, false, false, false);
+                                    event.keyIdentifier, event.keyCode /* windowsVirtualKeyCode */, event.keyCode /* nativeVirtualKeyCode */, false, false, false);
         event.consume();
         this._canvasElement.focus();
     },
 
     /**
-     * @param {!Event} event
+     * @param {?Event} event
      */
     _handleContextMenuEvent: function(event)
     {
@@ -321,92 +328,193 @@ WebInspector.ScreencastView.prototype = {
     },
 
     /**
-     * @param {!Event} event
+     * @param {?Event} event
      */
     _simulateTouchGestureForMouseEvent: function(event)
     {
-        var position = this._convertIntoScreenSpace(event);
+        var convertedPosition = this._convertIntoScreenSpace(event);
+        var zoomedPosition = this._zoomIntoScreenSpace(event);
         var timeStamp = event.timeStamp / 1000;
-        var x = position.x;
-        var y = position.y;
+
+        /**
+         * @this {!WebInspector.ScreencastView}
+         */
+        function clearPinch()
+        {
+            delete this._lastPinchAnchor;
+            delete this._lastPinchZoomedY;
+            delete this._lastPinchScale;
+        }
+
+        /**
+         * @this {!WebInspector.ScreencastView}
+         */
+        function clearScroll()
+        {
+            delete this._lastScrollZoomedPosition;
+        }
+
+        /**
+         * @this {!WebInspector.ScreencastView}
+         */
+        function scrollBegin()
+        {
+            InputAgent.dispatchGestureEvent("scrollBegin", convertedPosition.x, convertedPosition.y, timeStamp);
+            this._lastScrollZoomedPosition = zoomedPosition;
+            clearPinch.call(this);
+        }
+
+        /**
+         * @this {!WebInspector.ScreencastView}
+         */
+        function scrollUpdate()
+        {
+            var dx = this._lastScrollZoomedPosition ? zoomedPosition.x - this._lastScrollZoomedPosition.x : 0;
+            var dy = this._lastScrollZoomedPosition ? zoomedPosition.y - this._lastScrollZoomedPosition.y : 0;
+            if (dx || dy) {
+                InputAgent.dispatchGestureEvent("scrollUpdate", convertedPosition.x, convertedPosition.y, timeStamp, dx, dy);
+                this._lastScrollZoomedPosition = zoomedPosition;
+            }
+        }
+
+        /**
+         * @this {!WebInspector.ScreencastView}
+         */
+        function scrollEnd()
+        {
+            if (this._lastScrollZoomedPosition) {
+                InputAgent.dispatchGestureEvent("scrollEnd", convertedPosition.x, convertedPosition.y, timeStamp);
+                clearScroll.call(this);
+                return true;
+            }
+            return false;
+        }
+
+        /**
+         * @this {!WebInspector.ScreencastView}
+         */
+        function pinchBegin()
+        {
+            InputAgent.dispatchGestureEvent("pinchBegin", convertedPosition.x, convertedPosition.y, timeStamp);
+            this._lastPinchAnchor = convertedPosition;
+            this._lastPinchZoomedY = zoomedPosition.y;
+            this._lastPinchScale = 1;
+            clearScroll.call(this);
+        }
+
+        /**
+         * @this {!WebInspector.ScreencastView}
+         */
+        function pinchUpdate()
+        {
+            var dy = this._lastPinchZoomedY ? this._lastPinchZoomedY - zoomedPosition.y : 0;
+            if (dy) {
+                var scale = Math.exp(dy * 0.002);
+                InputAgent.dispatchGestureEvent("pinchUpdate", this._lastPinchAnchor.x, this._lastPinchAnchor.y, timeStamp, 0, 0, scale / this._lastPinchScale);
+                this._lastPinchScale = scale;
+            }
+        }
+
+        /**
+         * @this {!WebInspector.ScreencastView}
+         */
+        function pinchEnd()
+        {
+            if (this._lastPinchAnchor) {
+                InputAgent.dispatchGestureEvent("pinchEnd", this._lastPinchAnchor.x, this._lastPinchAnchor.y, timeStamp);
+                clearPinch.call(this);
+                return true;
+            }
+            return false;
+        }
 
         switch (event.which) {
         case 1: // Left
             if (event.type === "mousedown") {
-                InputAgent.dispatchGestureEvent("scrollBegin", x, y, timeStamp);
-            } else if (event.type === "mousemove") {
-                var dx = this._lastScrollPosition ? position.x - this._lastScrollPosition.x : 0;
-                var dy = this._lastScrollPosition ? position.y - this._lastScrollPosition.y : 0;
-                if (dx || dy)
-                    InputAgent.dispatchGestureEvent("scrollUpdate", x, y, timeStamp, dx, dy);
-            } else if (event.type === "mouseup") {
-                InputAgent.dispatchGestureEvent("scrollEnd", x, y, timeStamp);
-            } else if (event.type === "mousewheel") {
-                if (event.altKey) {
-                    var factor = 1.1;
-                    var scale = event.wheelDeltaY < 0 ? 1 / factor : factor;
-                    InputAgent.dispatchGestureEvent("pinchBegin", x, y, timeStamp);
-                    InputAgent.dispatchGestureEvent("pinchUpdate", x, y, timeStamp, 0, 0, scale);
-                    InputAgent.dispatchGestureEvent("pinchEnd", x, y, timeStamp);
+                if (event.shiftKey) {
+                    pinchBegin.call(this);
                 } else {
-                    InputAgent.dispatchGestureEvent("scrollBegin", x, y, timeStamp);
-                    InputAgent.dispatchGestureEvent("scrollUpdate", x, y, timeStamp, event.wheelDeltaX, event.wheelDeltaY);
-                    InputAgent.dispatchGestureEvent("scrollEnd", x, y, timeStamp);
+                    scrollBegin.call(this);
+                }
+            } else if (event.type === "mousemove") {
+                if (event.shiftKey) {
+                    if (scrollEnd.call(this))
+                        pinchBegin.call(this);
+                    pinchUpdate.call(this);
+                } else {
+                    if (pinchEnd.call(this))
+                        scrollBegin.call(this);
+                    scrollUpdate.call(this);
+                }
+            } else if (event.type === "mouseup") {
+                pinchEnd.call(this);
+                scrollEnd.call(this);
+            } else if (event.type === "mousewheel") {
+                if (!this._lastPinchAnchor && !this._lastScrollZoomedPosition) {
+                    if (event.shiftKey) {
+                        var factor = 1.1;
+                        var scale = event.wheelDeltaY < 0 ? 1 / factor : factor;
+                        InputAgent.dispatchGestureEvent("pinchBegin", convertedPosition.x, convertedPosition.y, timeStamp);
+                        InputAgent.dispatchGestureEvent("pinchUpdate", convertedPosition.x, convertedPosition.y, timeStamp, 0, 0, scale);
+                        InputAgent.dispatchGestureEvent("pinchEnd", convertedPosition.x, convertedPosition.y, timeStamp);
+                    } else {
+                        InputAgent.dispatchGestureEvent("scrollBegin", convertedPosition.x, convertedPosition.y, timeStamp);
+                        InputAgent.dispatchGestureEvent("scrollUpdate", convertedPosition.x, convertedPosition.y, timeStamp, event.wheelDeltaX, event.wheelDeltaY);
+                        InputAgent.dispatchGestureEvent("scrollEnd", convertedPosition.x, convertedPosition.y, timeStamp);
+                    }
                 }
             } else if (event.type === "click") {
-                InputAgent.dispatchMouseEvent("mousePressed", x, y, 0, timeStamp, "left", 1, true);
-                InputAgent.dispatchMouseEvent("mouseReleased", x, y, 0, timeStamp, "left", 1, true);
-                // FIXME: migrate to tap once it dispatches clicks again.
-                // InputAgent.dispatchGestureEvent("tapDown", x, y, timeStamp);
-                // InputAgent.dispatchGestureEvent("tap", x, y, timeStamp);
+                if (!event.shiftKey) {
+                    InputAgent.dispatchMouseEvent("mousePressed", convertedPosition.x, convertedPosition.y, 0, timeStamp, "left", 1, true);
+                    InputAgent.dispatchMouseEvent("mouseReleased", convertedPosition.x, convertedPosition.y, 0, timeStamp, "left", 1, true);
+                    // FIXME: migrate to tap once it dispatches clicks again.
+                    // InputAgent.dispatchGestureEvent("tapDown", x, y, timeStamp);
+                    // InputAgent.dispatchGestureEvent("tap", x, y, timeStamp);
+                }
             }
-            this._lastScrollPosition = position;
             break;
 
         case 2: // Middle
             if (event.type === "mousedown") {
-                InputAgent.dispatchGestureEvent("tapDown", x, y, timeStamp);
+                InputAgent.dispatchGestureEvent("tapDown", convertedPosition.x, convertedPosition.y, timeStamp);
             } else if (event.type === "mouseup") {
-                InputAgent.dispatchGestureEvent("tap", x, y, timeStamp);
+                InputAgent.dispatchGestureEvent("tap", convertedPosition.x, convertedPosition.y, timeStamp);
             }
             break;
 
         case 3: // Right
-            if (event.type === "mousedown") {
-                this._pinchStart = position;
-                InputAgent.dispatchGestureEvent("pinchBegin", x, y, timeStamp);
-            } else if (event.type === "mousemove") {
-                var dx = this._pinchStart ? position.x - this._pinchStart.x : 0;
-                var dy = this._pinchStart ? position.y - this._pinchStart.y : 0;
-                if (dx || dy) {
-                    var scale = Math.pow(dy < 0 ? 0.999 : 1.001, Math.abs(dy));
-                    InputAgent.dispatchGestureEvent("pinchUpdate", this._pinchStart.x, this._pinchStart.y, timeStamp, 0, 0, scale);
-                }
-            } else if (event.type === "mouseup") {
-                InputAgent.dispatchGestureEvent("pinchEnd", x, y, timeStamp);
-            }
-            break;
         case 0: // None
         default:
         }
     },
 
     /**
-     * @param {!Event} event
+     * @param {?Event} event
      * @return {!{x: number, y: number}}
      */
-    _convertIntoScreenSpace: function(event)
+    _zoomIntoScreenSpace: function(event)
     {
         var zoom = this._canvasElement.offsetWidth / this._viewport.width / this._pageScaleFactor;
         var position  = {};
         position.x = Math.round(event.offsetX / zoom);
-        position.y = Math.round(event.offsetY / zoom - this._screenOffsetTop);
+        position.y = Math.round(event.offsetY / zoom);
         return position;
     },
 
     /**
-     * @param {!Event} event
-     * @return number
+     * @param {?Event} event
+     * @return {!{x: number, y: number}}
+     */
+    _convertIntoScreenSpace: function(event)
+    {
+        var position = this._zoomIntoScreenSpace(event);
+        position.y = Math.round(position.y - this._screenOffsetTop);
+        return position;
+    },
+
+    /**
+     * @param {?Event} event
+     * @return {number}
      */
     _modifiersForEvent: function(event)
     {
@@ -434,15 +542,15 @@ WebInspector.ScreencastView.prototype = {
     },
 
     /**
-     * @param {!DOMAgent.NodeId} nodeId
+     * @param {?WebInspector.DOMNode} node
      * @param {?DOMAgent.HighlightConfig} config
      * @param {!RuntimeAgent.RemoteObjectId=} objectId
      */
-    highlightDOMNode: function(nodeId, config, objectId)
+    highlightDOMNode: function(node, config, objectId)
     {
-        this._highlightNodeId = nodeId;
+        this._highlightNode = node;
         this._highlightConfig = config;
-        if (!nodeId) {
+        if (!node) {
             this._model = null;
             this._config = null;
             this._node = null;
@@ -451,17 +559,16 @@ WebInspector.ScreencastView.prototype = {
             return;
         }
 
-        this._node = WebInspector.domAgent.nodeForId(nodeId);
-        DOMAgent.getBoxModel(nodeId, callback.bind(this));
+        this._node = node;
+        node.boxModel(callback.bind(this));
 
         /**
-         * @param {?Protocol.Error} error
-         * @param {!DOMAgent.BoxModel} model
+         * @param {?DOMAgent.BoxModel} model
          * @this {WebInspector.ScreencastView}
          */
-        function callback(error, model)
+        function callback(model)
         {
-            if (error) {
+            if (!model) {
                 this._repaint();
                 return;
             }
@@ -716,11 +823,11 @@ WebInspector.ScreencastView.prototype = {
 
     /**
      * @param {boolean} enabled
-     * @param {boolean} inspectShadowDOM
+     * @param {boolean} inspectUAShadowDOM
      * @param {!DOMAgent.HighlightConfig} config
      * @param {function(?Protocol.Error)=} callback
      */
-    setInspectModeEnabled: function(enabled, inspectShadowDOM, config, callback)
+    setInspectModeEnabled: function(enabled, inspectUAShadowDOM, config, callback)
     {
         this._inspectModeConfig = enabled ? config : null;
         if (callback)
@@ -750,6 +857,8 @@ WebInspector.ScreencastView.prototype = {
     _createNavigationBar: function()
     {
         this._navigationBar = this.element.createChild("div", "toolbar-background screencast-navigation");
+        if (WebInspector.queryParam("hideNavigation"))
+            this._navigationBar.classList.add("hidden");
 
         this._navigationBack = this._navigationBar.createChild("button", "back");
         this._navigationBack.disabled = true;
@@ -819,6 +928,7 @@ WebInspector.ScreencastView.prototype = {
         var match = url.match(WebInspector.ScreencastView._HttpRegex);
         if (match)
             url = match[1];
+        InspectorFrontendHost.inspectedURLChanged(url);
         this._navigationUrl.value = url;
     },
 
@@ -829,11 +939,11 @@ WebInspector.ScreencastView.prototype = {
         return true;
     },
 
-  __proto__: WebInspector.View.prototype
+  __proto__: WebInspector.VBox.prototype
 }
 
 /**
- * @param {!HTMLElement} element
+ * @param {!Element} element
  * @constructor
  */
 WebInspector.ScreencastView.ProgressTracker = function(element) {

@@ -47,23 +47,23 @@ struct ErrorEventInit : public EventInit {
     unsigned colno;
 };
 
-class ErrorEvent : public Event {
+class ErrorEvent FINAL : public Event {
 public:
-    static PassRefPtr<ErrorEvent> create()
+    static PassRefPtrWillBeRawPtr<ErrorEvent> create()
     {
-        return adoptRef(new ErrorEvent);
+        return adoptRefWillBeNoop(new ErrorEvent);
     }
-    static PassRefPtr<ErrorEvent> create(const String& message, const String& fileName, unsigned lineNumber, unsigned columnNumber, PassRefPtr<DOMWrapperWorld> world)
+    static PassRefPtrWillBeRawPtr<ErrorEvent> create(const String& message, const String& fileName, unsigned lineNumber, unsigned columnNumber, DOMWrapperWorld* world)
     {
-        return adoptRef(new ErrorEvent(message, fileName, lineNumber, columnNumber, world));
+        return adoptRefWillBeNoop(new ErrorEvent(message, fileName, lineNumber, columnNumber, world));
     }
-    static PassRefPtr<ErrorEvent> create(const AtomicString& type, const ErrorEventInit& initializer)
+    static PassRefPtrWillBeRawPtr<ErrorEvent> create(const AtomicString& type, const ErrorEventInit& initializer)
     {
-        return adoptRef(new ErrorEvent(type, initializer));
+        return adoptRefWillBeNoop(new ErrorEvent(type, initializer));
     }
-    static PassRefPtr<ErrorEvent> createSanitizedError(PassRefPtr<DOMWrapperWorld> world)
+    static PassRefPtrWillBeRawPtr<ErrorEvent> createSanitizedError(DOMWrapperWorld* world)
     {
-        return adoptRef(new ErrorEvent("Script error.", String(), 0, 0, world));
+        return adoptRefWillBeNoop(new ErrorEvent("Script error.", String(), 0, 0, world));
     }
     virtual ~ErrorEvent();
 
@@ -76,15 +76,17 @@ public:
     // 'messageForConsole' is not exposed to JavaScript, and prefers 'm_unsanitizedMessage'.
     const String& messageForConsole() const { return !m_unsanitizedMessage.isEmpty() ? m_unsanitizedMessage : m_sanitizedMessage; }
 
-    virtual const AtomicString& interfaceName() const;
+    virtual const AtomicString& interfaceName() const OVERRIDE;
 
-    PassRefPtr<DOMWrapperWorld> world() const { return m_world; }
+    DOMWrapperWorld* world() const { return m_world.get(); }
 
     void setUnsanitizedMessage(const String&);
 
+    virtual void trace(Visitor*) OVERRIDE;
+
 private:
     ErrorEvent();
-    ErrorEvent(const String& message, const String& fileName, unsigned lineNumber, unsigned columnNumber, PassRefPtr<DOMWrapperWorld>);
+    ErrorEvent(const String& message, const String& fileName, unsigned lineNumber, unsigned columnNumber, DOMWrapperWorld*);
     ErrorEvent(const AtomicString&, const ErrorEventInit&);
 
     String m_unsanitizedMessage;

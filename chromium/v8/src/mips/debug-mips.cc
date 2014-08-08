@@ -1,43 +1,18 @@
 // Copyright 2012 the V8 project authors. All rights reserved.
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-//       copyright notice, this list of conditions and the following
-//       disclaimer in the documentation and/or other materials provided
-//       with the distribution.
-//     * Neither the name of Google Inc. nor the names of its
-//       contributors may be used to endorse or promote products derived
-//       from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
 
 
-#include "v8.h"
+#include "src/v8.h"
 
 #if V8_TARGET_ARCH_MIPS
 
-#include "codegen.h"
-#include "debug.h"
+#include "src/codegen.h"
+#include "src/debug.h"
 
 namespace v8 {
 namespace internal {
-
-#ifdef ENABLE_DEBUGGER_SUPPORT
 
 bool BreakLocationIterator::IsDebugBreakAtReturn() {
   return Debug::IsDebugBreakAtReturn(rinfo());
@@ -58,9 +33,8 @@ void BreakLocationIterator::SetDebugBreakAtReturn() {
   ASSERT(Assembler::kJSReturnSequenceInstructions == 7);
   CodePatcher patcher(rinfo()->pc(), Assembler::kJSReturnSequenceInstructions);
   // li and Call pseudo-instructions emit two instructions each.
-  patcher.masm()->li(v8::internal::t9,
-      Operand(reinterpret_cast<int32_t>(
-        debug_info_->GetIsolate()->debug()->debug_break_return()->entry())));
+  patcher.masm()->li(v8::internal::t9, Operand(reinterpret_cast<int32_t>(
+      debug_info_->GetIsolate()->builtins()->Return_DebugBreak()->entry())));
   patcher.masm()->Call(v8::internal::t9);
   patcher.masm()->nop();
   patcher.masm()->nop();
@@ -105,7 +79,7 @@ void BreakLocationIterator::SetDebugBreakAtSlot() {
   //   call t9          (jalr t9 / nop instruction pair)
   CodePatcher patcher(rinfo()->pc(), Assembler::kDebugBreakSlotInstructions);
   patcher.masm()->li(v8::internal::t9, Operand(reinterpret_cast<int32_t>(
-      debug_info_->GetIsolate()->debug()->debug_break_slot()->entry())));
+      debug_info_->GetIsolate()->builtins()->Slot_DebugBreak()->entry())));
   patcher.masm()->Call(v8::internal::t9);
 }
 
@@ -115,8 +89,6 @@ void BreakLocationIterator::ClearDebugBreakAtSlot() {
   rinfo()->PatchCode(original_rinfo()->pc(),
                      Assembler::kDebugBreakSlotInstructions);
 }
-
-const bool Debug::FramePaddingLayout::kIsSupported = false;
 
 
 #define __ ACCESS_MASM(masm)
@@ -156,7 +128,7 @@ static void Generate_DebugBreakCallHelper(MacroAssembler* masm,
     __ PrepareCEntryArgs(0);  // No arguments.
     __ PrepareCEntryFunction(ExternalReference::debug_break(masm->isolate()));
 
-    CEntryStub ceb(1);
+    CEntryStub ceb(masm->isolate(), 1);
     __ CallStub(&ceb);
 
     // Restore the register values from the expression stack.
@@ -181,14 +153,25 @@ static void Generate_DebugBreakCallHelper(MacroAssembler* masm,
   // Now that the break point has been handled, resume normal execution by
   // jumping to the target address intended by the caller and that was
   // overwritten by the address of DebugBreakXXX.
-  __ li(t9, Operand(
-      ExternalReference(Debug_Address::AfterBreakTarget(), masm->isolate())));
+  ExternalReference after_break_target =
+      ExternalReference::debug_after_break_target_address(masm->isolate());
+  __ li(t9, Operand(after_break_target));
   __ lw(t9, MemOperand(t9));
   __ Jump(t9);
 }
 
 
-void Debug::GenerateLoadICDebugBreak(MacroAssembler* masm) {
+void DebugCodegen::GenerateCallICStubDebugBreak(MacroAssembler* masm) {
+  // Register state for CallICStub
+  // ----------- S t a t e -------------
+  //  -- a1 : function
+  //  -- a3 : slot in feedback array (smi)
+  // -----------------------------------
+  Generate_DebugBreakCallHelper(masm, a1.bit() | a3.bit(), 0);
+}
+
+
+void DebugCodegen::GenerateLoadICDebugBreak(MacroAssembler* masm) {
   // Calling convention for IC load (from ic-mips.cc).
   // ----------- S t a t e -------------
   //  -- a2    : name
@@ -202,7 +185,7 @@ void Debug::GenerateLoadICDebugBreak(MacroAssembler* masm) {
 }
 
 
-void Debug::GenerateStoreICDebugBreak(MacroAssembler* masm) {
+void DebugCodegen::GenerateStoreICDebugBreak(MacroAssembler* masm) {
   // Calling convention for IC store (from ic-mips.cc).
   // ----------- S t a t e -------------
   //  -- a0    : value
@@ -216,7 +199,7 @@ void Debug::GenerateStoreICDebugBreak(MacroAssembler* masm) {
 }
 
 
-void Debug::GenerateKeyedLoadICDebugBreak(MacroAssembler* masm) {
+void DebugCodegen::GenerateKeyedLoadICDebugBreak(MacroAssembler* masm) {
   // ---------- S t a t e --------------
   //  -- ra  : return address
   //  -- a0  : key
@@ -225,7 +208,7 @@ void Debug::GenerateKeyedLoadICDebugBreak(MacroAssembler* masm) {
 }
 
 
-void Debug::GenerateKeyedStoreICDebugBreak(MacroAssembler* masm) {
+void DebugCodegen::GenerateKeyedStoreICDebugBreak(MacroAssembler* masm) {
   // ---------- S t a t e --------------
   //  -- a0     : value
   //  -- a1     : key
@@ -235,7 +218,7 @@ void Debug::GenerateKeyedStoreICDebugBreak(MacroAssembler* masm) {
 }
 
 
-void Debug::GenerateCompareNilICDebugBreak(MacroAssembler* masm) {
+void DebugCodegen::GenerateCompareNilICDebugBreak(MacroAssembler* masm) {
   // Register state for CompareNil IC
   // ----------- S t a t e -------------
   //  -- a0    : value
@@ -244,16 +227,7 @@ void Debug::GenerateCompareNilICDebugBreak(MacroAssembler* masm) {
 }
 
 
-void Debug::GenerateCallICDebugBreak(MacroAssembler* masm) {
-  // Calling convention for IC call (from ic-mips.cc).
-  // ----------- S t a t e -------------
-  //  -- a2: name
-  // -----------------------------------
-  Generate_DebugBreakCallHelper(masm, a2.bit(), 0);
-}
-
-
-void Debug::GenerateReturnDebugBreak(MacroAssembler* masm) {
+void DebugCodegen::GenerateReturnDebugBreak(MacroAssembler* masm) {
   // In places other than IC call sites it is expected that v0 is TOS which
   // is an object - this is not generally the case so this should be used with
   // care.
@@ -261,7 +235,7 @@ void Debug::GenerateReturnDebugBreak(MacroAssembler* masm) {
 }
 
 
-void Debug::GenerateCallFunctionStubDebugBreak(MacroAssembler* masm) {
+void DebugCodegen::GenerateCallFunctionStubDebugBreak(MacroAssembler* masm) {
   // Register state for CallFunctionStub (from code-stubs-mips.cc).
   // ----------- S t a t e -------------
   //  -- a1 : function
@@ -270,17 +244,7 @@ void Debug::GenerateCallFunctionStubDebugBreak(MacroAssembler* masm) {
 }
 
 
-void Debug::GenerateCallFunctionStubRecordDebugBreak(MacroAssembler* masm) {
-  // Register state for CallFunctionStub (from code-stubs-mips.cc).
-  // ----------- S t a t e -------------
-  //  -- a1 : function
-  //  -- a2 : cache cell for call target
-  // -----------------------------------
-  Generate_DebugBreakCallHelper(masm, a1.bit() | a2.bit(), 0);
-}
-
-
-void Debug::GenerateCallConstructStubDebugBreak(MacroAssembler* masm) {
+void DebugCodegen::GenerateCallConstructStubDebugBreak(MacroAssembler* masm) {
   // Calling convention for CallConstructStub (from code-stubs-mips.cc).
   // ----------- S t a t e -------------
   //  -- a0     : number of arguments (not smi)
@@ -290,18 +254,20 @@ void Debug::GenerateCallConstructStubDebugBreak(MacroAssembler* masm) {
 }
 
 
-void Debug::GenerateCallConstructStubRecordDebugBreak(MacroAssembler* masm) {
+void DebugCodegen::GenerateCallConstructStubRecordDebugBreak(
+    MacroAssembler* masm) {
   // Calling convention for CallConstructStub (from code-stubs-mips.cc).
   // ----------- S t a t e -------------
   //  -- a0     : number of arguments (not smi)
   //  -- a1     : constructor function
-  //  -- a2     : cache cell for call target
+  //  -- a2     : feedback array
+  //  -- a3     : feedback slot (smi)
   // -----------------------------------
-  Generate_DebugBreakCallHelper(masm, a1.bit() | a2.bit(), a0.bit());
+  Generate_DebugBreakCallHelper(masm, a1.bit() | a2.bit() | a3.bit(), a0.bit());
 }
 
 
-void Debug::GenerateSlot(MacroAssembler* masm) {
+void DebugCodegen::GenerateSlot(MacroAssembler* masm) {
   // Generate enough nop's to make space for a call instruction. Avoid emitting
   // the trampoline pool in the debug break slot code.
   Assembler::BlockTrampolinePoolScope block_trampoline_pool(masm);
@@ -316,29 +282,26 @@ void Debug::GenerateSlot(MacroAssembler* masm) {
 }
 
 
-void Debug::GenerateSlotDebugBreak(MacroAssembler* masm) {
+void DebugCodegen::GenerateSlotDebugBreak(MacroAssembler* masm) {
   // In the places where a debug break slot is inserted no registers can contain
   // object pointers.
   Generate_DebugBreakCallHelper(masm, 0, 0);
 }
 
 
-void Debug::GeneratePlainReturnLiveEdit(MacroAssembler* masm) {
+void DebugCodegen::GeneratePlainReturnLiveEdit(MacroAssembler* masm) {
   masm->Abort(kLiveEditFrameDroppingIsNotSupportedOnMips);
 }
 
 
-void Debug::GenerateFrameDropperLiveEdit(MacroAssembler* masm) {
+void DebugCodegen::GenerateFrameDropperLiveEdit(MacroAssembler* masm) {
   masm->Abort(kLiveEditFrameDroppingIsNotSupportedOnMips);
 }
 
 
-const bool Debug::kFrameDropperSupported = false;
+const bool LiveEdit::kFrameDropperSupported = false;
 
 #undef __
-
-
-#endif  // ENABLE_DEBUGGER_SUPPORT
 
 } }  // namespace v8::internal
 

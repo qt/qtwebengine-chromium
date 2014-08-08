@@ -13,6 +13,7 @@
 #include "ppapi/c/ppb_input_event.h"
 #include "ppapi/shared_impl/resource.h"
 #include "ppapi/thunk/ppb_input_event_api.h"
+#include "ui/events/latency_info.h"
 
 namespace ppapi {
 
@@ -41,7 +42,6 @@ struct PPAPI_SHARED_EXPORT InputEventData {
   bool wheel_scroll_by_page;
 
   uint32_t key_code;
-  uint32_t usb_key_code;
 
   // The key event's |code| attribute as defined in:
   // http://www.w3.org/TR/uievents/
@@ -57,6 +57,8 @@ struct PPAPI_SHARED_EXPORT InputEventData {
   std::vector<PP_TouchPoint> touches;
   std::vector<PP_TouchPoint> changed_touches;
   std::vector<PP_TouchPoint> target_touches;
+
+  ui::LatencyInfo latency_info;
 };
 
 // This simple class implements the PPB_InputEvent_API in terms of the
@@ -86,8 +88,6 @@ class PPAPI_SHARED_EXPORT PPB_InputEvent_Shared
   virtual PP_Bool GetWheelScrollByPage() OVERRIDE;
   virtual uint32_t GetKeyCode() OVERRIDE;
   virtual PP_Var GetCharacterText() OVERRIDE;
-  virtual PP_Bool SetUsbKeyCode(uint32_t usb_key_code) OVERRIDE;
-  virtual uint32_t GetUsbKeyCode() OVERRIDE;
   virtual PP_Var GetCode() OVERRIDE;
   virtual uint32_t GetIMESegmentNumber() OVERRIDE;
   virtual uint32_t GetIMESegmentOffset(uint32_t index) OVERRIDE;
@@ -100,6 +100,7 @@ class PPAPI_SHARED_EXPORT PPB_InputEvent_Shared
                                         uint32_t index) OVERRIDE;
   virtual PP_TouchPoint GetTouchById(PP_TouchListType list,
                                      uint32_t id) OVERRIDE;
+  virtual PP_Bool TraceInputLatency(PP_Bool has_damage) OVERRIDE;
 
   // Implementations for event creation.
   static PP_Resource CreateIMEInputEvent(ResourceObjectType type,
@@ -118,7 +119,8 @@ class PPAPI_SHARED_EXPORT PPB_InputEvent_Shared
                                               PP_TimeTicks time_stamp,
                                               uint32_t modifiers,
                                               uint32_t key_code,
-                                              struct PP_Var character_text);
+                                              struct PP_Var character_text,
+                                              struct PP_Var code);
   static PP_Resource CreateMouseInputEvent(
       ResourceObjectType type,
       PP_Instance instance,

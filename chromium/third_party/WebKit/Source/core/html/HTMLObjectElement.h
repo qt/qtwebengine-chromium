@@ -31,9 +31,12 @@ namespace WebCore {
 class HTMLFormElement;
 
 class HTMLObjectElement FINAL : public HTMLPlugInElement, public FormAssociatedElement {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(HTMLObjectElement);
+
 public:
-    static PassRefPtr<HTMLObjectElement> create(Document&, HTMLFormElement*, bool createdByParser);
+    static PassRefPtrWillBeRawPtr<HTMLObjectElement> create(Document&, HTMLFormElement*, bool createdByParser);
     virtual ~HTMLObjectElement();
+    virtual void trace(Visitor*) OVERRIDE;
 
     const String& classId() const { return m_classId; }
 
@@ -41,14 +44,15 @@ public:
 
     bool containsJavaApplet() const;
 
+    virtual bool hasFallbackContent() const OVERRIDE;
     virtual bool useFallbackContent() const OVERRIDE;
     virtual void renderFallbackContent() OVERRIDE;
 
-    virtual bool isFormControlElement() const { return false; }
+    virtual bool isFormControlElement() const OVERRIDE { return false; }
 
-    virtual bool isEnumeratable() const { return true; }
+    virtual bool isEnumeratable() const OVERRIDE { return true; }
     virtual bool isInteractiveContent() const OVERRIDE;
-    virtual bool appendFormData(FormDataList&, bool);
+    virtual bool appendFormData(FormDataList&, bool) OVERRIDE;
 
     virtual bool isObjectElement() const OVERRIDE { return true; }
 
@@ -58,10 +62,12 @@ public:
     bool checkValidity() { return true; }
     virtual void setCustomValidity(const String&) OVERRIDE { }
 
+#if !ENABLE(OILPAN)
     using Node::ref;
     using Node::deref;
+#endif
 
-    virtual bool canContainRangeEndPoint() const { return useFallbackContent(); }
+    virtual bool canContainRangeEndPoint() const OVERRIDE { return useFallbackContent(); }
 
     bool isExposed() const;
 
@@ -75,24 +81,22 @@ private:
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
     virtual void removedFrom(ContainerNode*) OVERRIDE;
 
-    virtual bool rendererIsNeeded(const RenderStyle&);
+    virtual bool rendererIsNeeded(const RenderStyle&) OVERRIDE;
     virtual void didMoveToNewDocument(Document& oldDocument) OVERRIDE;
 
-    virtual void childrenChanged(bool changedByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0);
+    virtual void childrenChanged(bool changedByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0) OVERRIDE;
 
     virtual bool isURLAttribute(const Attribute&) const OVERRIDE;
+    virtual bool hasLegalLinkAttribute(const QualifiedName&) const OVERRIDE;
+    virtual const QualifiedName& subResourceAttributeName() const OVERRIDE;
     virtual const AtomicString imageSourceURL() const OVERRIDE;
 
     virtual RenderWidget* existingRenderWidget() const OVERRIDE;
-
-    virtual void addSubresourceAttributeURLs(ListHashSet<KURL>&) const;
 
     virtual void updateWidgetInternal() OVERRIDE;
     void updateDocNamedItem();
 
     void reattachFallbackContent();
-
-    bool hasFallbackContent() const;
 
     // FIXME: This function should not deal with url or serviceType
     // so that we can better share code between <object> and <embed>.
@@ -101,8 +105,12 @@ private:
     bool shouldAllowQuickTimeClassIdQuirk();
     bool hasValidClassId();
 
-    virtual void refFormAssociatedElement() { ref(); }
-    virtual void derefFormAssociatedElement() { deref(); }
+    void reloadPluginOnAttributeChange(const QualifiedName&);
+
+#if !ENABLE(OILPAN)
+    virtual void refFormAssociatedElement() OVERRIDE { ref(); }
+    virtual void derefFormAssociatedElement() OVERRIDE { deref(); }
+#endif
 
     virtual bool shouldRegisterAsNamedItem() const OVERRIDE { return true; }
     virtual bool shouldRegisterAsExtraNamedItem() const OVERRIDE { return true; }
@@ -111,9 +119,13 @@ private:
     bool m_useFallbackContent : 1;
 };
 
-DEFINE_NODE_TYPE_CASTS(HTMLObjectElement, hasTagName(HTMLNames::objectTag));
+// Intentionally left unimplemented, template specialization needs to be provided for specific
+// return types.
+template<typename T> inline const T& toElement(const FormAssociatedElement&);
+template<typename T> inline const T* toElement(const FormAssociatedElement*);
 
-inline const HTMLObjectElement* toHTMLObjectElement(const FormAssociatedElement* element)
+// Make toHTMLObjectElement() accept a FormAssociatedElement as input instead of a Node.
+template<> inline const HTMLObjectElement* toElement<HTMLObjectElement>(const FormAssociatedElement* element)
 {
     ASSERT_WITH_SECURITY_IMPLICATION(!element || !element->isFormControlElement());
     const HTMLObjectElement* objectElement = static_cast<const HTMLObjectElement*>(element);
@@ -123,7 +135,7 @@ inline const HTMLObjectElement* toHTMLObjectElement(const FormAssociatedElement*
     return objectElement;
 }
 
-inline const HTMLObjectElement& toHTMLObjectElement(const FormAssociatedElement& element)
+template<> inline const HTMLObjectElement& toElement<HTMLObjectElement>(const FormAssociatedElement& element)
 {
     ASSERT_WITH_SECURITY_IMPLICATION(!element.isFormControlElement());
     const HTMLObjectElement& objectElement = static_cast<const HTMLObjectElement&>(element);

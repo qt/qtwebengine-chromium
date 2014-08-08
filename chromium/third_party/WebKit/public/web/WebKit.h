@@ -74,6 +74,10 @@ BLINK_EXPORT void shutdownWithoutV8();
 BLINK_EXPORT void setLayoutTestMode(bool);
 BLINK_EXPORT bool layoutTestMode();
 
+// Alters the rendering of fonts for layout tests.
+BLINK_EXPORT void setFontAntialiasingEnabledForTest(bool);
+BLINK_EXPORT bool fontAntialiasingEnabledForTest();
+
 // Enables the named log channel. See WebCore/platform/Logging.h for details.
 BLINK_EXPORT void enableLogChannel(const char*);
 

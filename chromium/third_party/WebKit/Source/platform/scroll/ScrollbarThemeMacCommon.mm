@@ -24,6 +24,7 @@
  */
 
 #include "config.h"
+#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/scroll/ScrollbarThemeMacCommon.h"
 
 #include <Carbon/Carbon.h>
@@ -33,6 +34,7 @@
 #include "platform/graphics/GraphicsContextStateSaver.h"
 #include "platform/graphics/GraphicsLayer.h"
 #include "platform/graphics/ImageBuffer.h"
+#include "platform/graphics/Pattern.h"
 #include "platform/mac/ColorMac.h"
 #include "platform/mac/LocalCurrentGraphicsContext.h"
 #include "platform/mac/NSScrollerImpDetails.h"
@@ -40,7 +42,7 @@
 #include "platform/scroll/ScrollbarThemeClient.h"
 #include "platform/scroll/ScrollbarThemeMacNonOverlayAPI.h"
 #include "platform/scroll/ScrollbarThemeMacOverlayAPI.h"
-#include "public/platform/mac/WebThemeEngine.h"
+#include "public/platform/WebThemeEngine.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebRect.h"
 #include "skia/ext/skia_utils_mac.h"
@@ -67,20 +69,16 @@ static ScrollbarSet& scrollbarSet()
     return set;
 }
 
-}
-
-namespace WebCore {
-
 static float gInitialButtonDelay = 0.5f;
 static float gAutoscrollButtonDelay = 0.05f;
-static bool gJumpOnTrackClick = false;
+static NSScrollerStyle gPreferredScrollerStyle = NSScrollerStyleLegacy;
 
 ScrollbarTheme* ScrollbarTheme::nativeTheme()
 {
     static ScrollbarThemeMacCommon* theme = NULL;
     if (theme)
         return theme;
-    if (isScrollbarOverlayAPIAvailable()) {
+    if (ScrollbarThemeMacCommon::isOverlayAPIAvailable()) {
         DEFINE_STATIC_LOCAL(ScrollbarThemeMacOverlayAPI, overlayTheme, ());
         theme = &overlayTheme;
     } else {
@@ -291,18 +289,25 @@ ScrollbarThemeMacCommon::~ScrollbarThemeMacCommon()
 {
 }
 
-void ScrollbarThemeMacCommon::preferencesChanged(float initialButtonDelay, float autoscrollButtonDelay, bool jumpOnTrackClick, bool redraw)
+void ScrollbarThemeMacCommon::preferencesChanged(float initialButtonDelay, float autoscrollButtonDelay, NSScrollerStyle preferredScrollerStyle, bool redraw)
 {
     updateButtonPlacement();
     gInitialButtonDelay = initialButtonDelay;
     gAutoscrollButtonDelay = autoscrollButtonDelay;
-    gJumpOnTrackClick = jumpOnTrackClick;
+    bool sendScrollerStyleNotification = gPreferredScrollerStyle != preferredScrollerStyle;
+    gPreferredScrollerStyle = preferredScrollerStyle;
     if (redraw && !scrollbarSet().isEmpty()) {
         ScrollbarSet::iterator end = scrollbarSet().end();
         for (ScrollbarSet::iterator it = scrollbarSet().begin(); it != end; ++it) {
             (*it)->styleChanged();
             (*it)->invalidate();
         }
+    }
+    if (sendScrollerStyleNotification) {
+        [[NSNotificationCenter defaultCenter]
+            postNotificationName:@"NSPreferredScrollerStyleDidChangeNotification"
+                          object:nil
+                        userInfo:@{ @"NSScrollerStyle" : @(gPreferredScrollerStyle) }];
     }
 }
 
@@ -314,15 +319,6 @@ double ScrollbarThemeMacCommon::initialAutoscrollTimerDelay()
 double ScrollbarThemeMacCommon::autoscrollTimerDelay()
 {
     return gAutoscrollButtonDelay;
-}
-
-bool ScrollbarThemeMacCommon::shouldCenterOnThumb(ScrollbarThemeClient*, const PlatformMouseEvent& evt)
-{
-    if (evt.button() != LeftButton)
-        return false;
-    if (gJumpOnTrackClick)
-        return !evt.altKey();
-    return evt.altKey();
 }
 
 bool ScrollbarThemeMacCommon::shouldDragDocumentInsteadOfThumb(ScrollbarThemeClient*, const PlatformMouseEvent& event)
@@ -346,6 +342,23 @@ int ScrollbarThemeMacCommon::scrollbarPartToHIPressedState(ScrollbarPart part)
         default:
             return 0;
     }
+}
+
+// static
+NSScrollerStyle ScrollbarThemeMacCommon::recommendedScrollerStyle()
+{
+    if (RuntimeEnabledFeatures::overlayScrollbarsEnabled())
+        return NSScrollerStyleOverlay;
+    return gPreferredScrollerStyle;
+}
+
+// static
+bool ScrollbarThemeMacCommon::isOverlayAPIAvailable()
+{
+    static bool apiAvailable =
+        [NSClassFromString(@"NSScrollerImp") respondsToSelector:@selector(scrollerImpWithStyle:controlSize:horizontal:replacingScrollerImp:)]
+        && [NSClassFromString(@"NSScrollerImpPair") instancesRespondToSelector:@selector(scrollerStyle)];
+    return apiAvailable;
 }
 
 } // namespace WebCore

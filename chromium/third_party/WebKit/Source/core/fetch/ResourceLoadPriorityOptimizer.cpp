@@ -30,12 +30,23 @@
 
 #include "config.h"
 #include "core/fetch/ResourceLoadPriorityOptimizer.h"
+#include "core/rendering/RenderObject.h"
+#include "platform/TraceEvent.h"
+
+#include "wtf/Vector.h"
 
 namespace WebCore {
 
-ResourceLoadPriorityOptimizer::ResourceAndVisibility::ResourceAndVisibility(ImageResource* image, VisibilityStatus v)
+ResourceLoadPriorityOptimizer* ResourceLoadPriorityOptimizer::resourceLoadPriorityOptimizer()
+{
+    DEFINE_STATIC_LOCAL(ResourceLoadPriorityOptimizer, s_renderLoadOptimizer, ());
+    return &s_renderLoadOptimizer;
+}
+
+ResourceLoadPriorityOptimizer::ResourceAndVisibility::ResourceAndVisibility(ImageResource* image, VisibilityStatus visibilityStatus, uint32_t screenArea)
     : imageResource(image)
-    , status(v)
+    , status(visibilityStatus)
+    , screenArea(screenArea)
 {
 }
 
@@ -49,6 +60,37 @@ ResourceLoadPriorityOptimizer::ResourceLoadPriorityOptimizer()
 
 ResourceLoadPriorityOptimizer::~ResourceLoadPriorityOptimizer()
 {
+}
+
+void ResourceLoadPriorityOptimizer::addRenderObject(RenderObject* renderer)
+{
+    m_objects.add(renderer);
+    renderer->setHasPendingResourceUpdate(true);
+}
+
+void ResourceLoadPriorityOptimizer::removeRenderObject(RenderObject* renderer)
+{
+    if (!renderer->hasPendingResourceUpdate())
+        return;
+    m_objects.remove(renderer);
+    renderer->setHasPendingResourceUpdate(false);
+}
+
+void ResourceLoadPriorityOptimizer::updateAllImageResourcePriorities()
+{
+    TRACE_EVENT0("webkit", "ResourceLoadPriorityOptimizer::updateAllImageResourcePriorities");
+
+    m_imageResources.clear();
+
+    Vector<RenderObject*> objectsToRemove;
+    for (RenderObjectSet::iterator it = m_objects.begin(); it != m_objects.end(); ++it) {
+        RenderObject* obj = *it;
+        if (!obj->updateImageLoadingPriorities()) {
+            objectsToRemove.append(obj);
+        }
+    }
+    m_objects.removeAll(objectsToRemove);
+
     updateImageResourcesWithLoadPriority();
 }
 
@@ -59,21 +101,27 @@ void ResourceLoadPriorityOptimizer::updateImageResourcesWithLoadPriority()
             ResourceLoadPriorityLow : ResourceLoadPriorityVeryLow;
 
         if (priority != it->value->imageResource->resourceRequest().priority()) {
-            it->value->imageResource->resourceRequest().setPriority(priority);
-            it->value->imageResource->didChangePriority(priority);
+            it->value->imageResource->resourceRequest().setPriority(priority, it->value->screenArea);
+            it->value->imageResource->didChangePriority(priority, it->value->screenArea);
         }
     }
     m_imageResources.clear();
 }
 
-void ResourceLoadPriorityOptimizer::notifyImageResourceVisibility(ImageResource* img, VisibilityStatus status)
+void ResourceLoadPriorityOptimizer::notifyImageResourceVisibility(ImageResource* img, VisibilityStatus status, const LayoutRect& screenRect)
 {
     if (!img || img->isLoaded())
         return;
 
-    ImageResourceMap::AddResult result = m_imageResources.add(img->identifier(), adoptPtr(new ResourceAndVisibility(img, status)));
-    if (!result.isNewEntry && status == Visible)
-        result.iterator->value->status = status;
+    int screenArea = 0;
+    if (!screenRect.isEmpty() && status == Visible)
+        screenArea += static_cast<uint32_t>(screenRect.width() * screenRect.height());
+
+    ImageResourceMap::AddResult result = m_imageResources.add(img->identifier(), adoptPtr(new ResourceAndVisibility(img, status, screenArea)));
+    if (!result.isNewEntry && status == Visible) {
+        result.storedValue->value->status = status;
+        result.storedValue->value->screenArea = status;
+    }
 }
 
 }

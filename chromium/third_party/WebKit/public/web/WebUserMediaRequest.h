@@ -74,11 +74,15 @@ public:
 
     BLINK_EXPORT void requestSucceeded(const WebMediaStream&);
 
-    BLINK_EXPORT void requestFailed(const WebString& description = WebString());
+    BLINK_EXPORT void requestDenied(const WebString& description = WebString());
     BLINK_EXPORT void requestFailedConstraint(const WebString& constraintName, const WebString& description = WebString());
+    BLINK_EXPORT void requestFailedUASpecific(const WebString& name, const WebString& constraintName = WebString(), const WebString& description = WebString());
+
+    // DEPRECATED
+    BLINK_EXPORT void requestFailed(const WebString& description = WebString()) { requestDenied(description); }
 
 #if BLINK_IMPLEMENTATION
-    WebUserMediaRequest(const PassRefPtr<WebCore::UserMediaRequest>&);
+    WebUserMediaRequest(const PassRefPtrWillBeRawPtr<WebCore::UserMediaRequest>&);
     WebUserMediaRequest(WebCore::UserMediaRequest*);
     operator WebCore::UserMediaRequest*() const;
 #endif

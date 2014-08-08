@@ -39,8 +39,6 @@
 #include "core/svg/SVGFilterElement.h"
 #include "core/svg/SVGFilterPrimitiveStandardAttributes.h"
 #include "core/svg/graphics/filters/SVGFilter.h"
-#include "platform/graphics/filters/custom/CustomFilterOperation.h"
-#include "platform/graphics/filters/custom/CustomFilterProgram.h"
 
 namespace WebCore {
 
@@ -95,7 +93,6 @@ RenderLayerFilterInfo::RenderLayerFilterInfo(RenderLayer* layer)
 
 RenderLayerFilterInfo::~RenderLayerFilterInfo()
 {
-    removeCustomFilterClients();
     removeReferenceFilterClients();
 }
 
@@ -107,8 +104,12 @@ void RenderLayerFilterInfo::setRenderer(PassRefPtr<FilterEffectRenderer> rendere
 void RenderLayerFilterInfo::notifyFinished(Resource*)
 {
     RenderObject* renderer = m_layer->renderer();
-    toElement(renderer->node())->scheduleLayerUpdate();
-    renderer->repaint();
+    // FIXME: This caller of scheduleSVGFilterLayerUpdateHack() is not correct. It's using the layer update
+    // system to trigger a RenderLayer to go through the filter updating logic, but that might not
+    // even happen if this element is style sharing and RenderObject::setStyle() returns early.
+    // Filters need to find a better way to hook into the system.
+    toElement(renderer->node())->scheduleSVGFilterLayerUpdateHack();
+    renderer->paintInvalidationForWholeRenderer();
 }
 
 void RenderLayerFilterInfo::updateReferenceFilterClients(const FilterOperations& operations)
@@ -130,7 +131,7 @@ void RenderLayerFilterInfo::updateReferenceFilterClients(const FilterOperations&
             // Reference is internal; add layer as a client so we can trigger
             // filter repaint on SVG attribute change.
             Element* filter = m_layer->renderer()->node()->document().getElementById(referenceFilterOperation->fragment());
-            if (!filter || !filter->hasTagName(SVGNames::filterTag))
+            if (!isSVGFilterElement(filter))
                 continue;
             if (filter->renderer())
                 toRenderSVGResourceContainer(filter->renderer())->addClientRenderLayer(m_layer);
@@ -154,40 +155,6 @@ void RenderLayerFilterInfo::removeReferenceFilterClients()
             toSVGFilterElement(filter)->removeClient(m_layer->renderer()->node());
     }
     m_internalSVGReferences.clear();
-}
-
-void RenderLayerFilterInfo::notifyCustomFilterProgramLoaded(CustomFilterProgram*)
-{
-    RenderObject* renderer = m_layer->renderer();
-    toElement(renderer->node())->scheduleLayerUpdate();
-    renderer->repaint();
-}
-
-void RenderLayerFilterInfo::updateCustomFilterClients(const FilterOperations& operations)
-{
-    if (!operations.size()) {
-        removeCustomFilterClients();
-        return;
-    }
-    CustomFilterProgramList cachedCustomFilterPrograms;
-    for (size_t i = 0; i < operations.size(); ++i) {
-        const FilterOperation* filterOperation = operations.at(i);
-        if (filterOperation->type() != FilterOperation::CUSTOM)
-            continue;
-        RefPtr<CustomFilterProgram> program = toCustomFilterOperation(filterOperation)->program();
-        cachedCustomFilterPrograms.append(program);
-        program->addClient(this);
-    }
-    // Remove the old clients here, after we've added the new ones, so that we don't flicker if some shaders are unchanged.
-    removeCustomFilterClients();
-    m_cachedCustomFilterPrograms.swap(cachedCustomFilterPrograms);
-}
-
-void RenderLayerFilterInfo::removeCustomFilterClients()
-{
-    for (size_t i = 0; i < m_cachedCustomFilterPrograms.size(); ++i)
-        m_cachedCustomFilterPrograms.at(i)->removeClient(this);
-    m_cachedCustomFilterPrograms.clear();
 }
 
 } // namespace WebCore

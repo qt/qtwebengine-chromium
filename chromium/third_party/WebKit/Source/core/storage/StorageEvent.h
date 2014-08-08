@@ -27,6 +27,7 @@
 #define StorageEvent_h
 
 #include "core/events/Event.h"
+#include "platform/heap/Handle.h"
 #include "wtf/text/WTFString.h"
 
 namespace WebCore {
@@ -40,14 +41,14 @@ struct StorageEventInit : public EventInit {
     String oldValue;
     String newValue;
     String url;
-    RefPtr<Storage> storageArea;
+    RefPtrWillBeMember<Storage> storageArea;
 };
 
-class StorageEvent : public Event {
+class StorageEvent FINAL : public Event {
 public:
-    static PassRefPtr<StorageEvent> create();
-    static PassRefPtr<StorageEvent> create(const AtomicString& type, const String& key, const String& oldValue, const String& newValue, const String& url, Storage* storageArea);
-    static PassRefPtr<StorageEvent> create(const AtomicString&, const StorageEventInit&);
+    static PassRefPtrWillBeRawPtr<StorageEvent> create();
+    static PassRefPtrWillBeRawPtr<StorageEvent> create(const AtomicString& type, const String& key, const String& oldValue, const String& newValue, const String& url, Storage* storageArea);
+    static PassRefPtrWillBeRawPtr<StorageEvent> create(const AtomicString&, const StorageEventInit&);
     virtual ~StorageEvent();
 
     const String& key() const { return m_key; }
@@ -62,7 +63,9 @@ public:
     // Needed once we support init<blank>EventNS
     // void initStorageEventNS(in DOMString namespaceURI, in DOMString typeArg, in boolean canBubbleArg, in boolean cancelableArg, in DOMString keyArg, in DOMString oldValueArg, in DOMString newValueArg, in DOMString urlArg, Storage storageAreaArg);
 
-    virtual const AtomicString& interfaceName() const;
+    virtual const AtomicString& interfaceName() const OVERRIDE;
+
+    virtual void trace(Visitor*) OVERRIDE;
 
 private:
     StorageEvent();
@@ -73,7 +76,7 @@ private:
     String m_oldValue;
     String m_newValue;
     String m_url;
-    RefPtr<Storage> m_storageArea;
+    RefPtrWillBeMember<Storage> m_storageArea;
 };
 
 } // namespace WebCore

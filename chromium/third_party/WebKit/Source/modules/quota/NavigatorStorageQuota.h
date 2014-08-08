@@ -32,30 +32,39 @@
 #define NavigatorStorageQuota_h
 
 #include "core/frame/DOMWindowProperty.h"
+#include "modules/quota/DeprecatedStorageQuota.h"
 #include "platform/Supplementable.h"
+#include "platform/heap/Handle.h"
 
 namespace WebCore {
 
-class Frame;
-class StorageQuota;
+class LocalFrame;
 class Navigator;
+class StorageQuota;
 
-class NavigatorStorageQuota : public Supplement<Navigator>, public DOMWindowProperty {
+class NavigatorStorageQuota FINAL : public NoBaseWillBeGarbageCollectedFinalized<NavigatorStorageQuota>, public WillBeHeapSupplement<Navigator>, public DOMWindowProperty {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(NavigatorStorageQuota);
 public:
     virtual ~NavigatorStorageQuota();
-    static NavigatorStorageQuota* from(Navigator*);
+    static NavigatorStorageQuota& from(Navigator&);
 
-    static StorageQuota* webkitTemporaryStorage(Navigator*);
-    static StorageQuota* webkitPersistentStorage(Navigator*);
-    StorageQuota* webkitTemporaryStorage() const;
-    StorageQuota* webkitPersistentStorage() const;
+    static StorageQuota* storageQuota(Navigator&);
+    static DeprecatedStorageQuota* webkitTemporaryStorage(Navigator&);
+    static DeprecatedStorageQuota* webkitPersistentStorage(Navigator&);
+
+    StorageQuota* storageQuota() const;
+    DeprecatedStorageQuota* webkitTemporaryStorage() const;
+    DeprecatedStorageQuota* webkitPersistentStorage() const;
+
+    void trace(Visitor*);
 
 private:
-    explicit NavigatorStorageQuota(Frame*);
+    explicit NavigatorStorageQuota(LocalFrame*);
     static const char* supplementName();
 
-    mutable RefPtr<StorageQuota> m_temporaryStorage;
-    mutable RefPtr<StorageQuota> m_persistentStorage;
+    mutable PersistentWillBeMember<StorageQuota> m_storageQuota;
+    mutable PersistentWillBeMember<DeprecatedStorageQuota> m_temporaryStorage;
+    mutable PersistentWillBeMember<DeprecatedStorageQuota> m_persistentStorage;
 };
 
 } // namespace WebCore

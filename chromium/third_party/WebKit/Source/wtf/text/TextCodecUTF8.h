@@ -35,11 +35,13 @@ public:
     static void registerEncodingNames(EncodingNameRegistrar);
     static void registerCodecs(TextCodecRegistrar);
 
-private:
-    static PassOwnPtr<TextCodec> create(const TextEncoding&, const void*);
+protected:
     TextCodecUTF8() : m_partialSequenceSize(0) { }
 
-    virtual String decode(const char*, size_t length, bool flush, bool stopOnError, bool& sawError) OVERRIDE;
+private:
+    static PassOwnPtr<TextCodec> create(const TextEncoding&, const void*);
+
+    virtual String decode(const char*, size_t length, FlushBehavior, bool stopOnError, bool& sawError) OVERRIDE;
     virtual CString encode(const UChar*, size_t length, UnencodableHandling) OVERRIDE;
     virtual CString encode(const LChar*, size_t length, UnencodableHandling) OVERRIDE;
 

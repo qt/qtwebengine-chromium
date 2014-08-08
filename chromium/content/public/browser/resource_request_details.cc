@@ -6,6 +6,7 @@
 
 #include "content/browser/worker_host/worker_service_impl.h"
 #include "content/public/browser/resource_request_info.h"
+#include "net/http/http_response_headers.h"
 #include "net/url_request/url_request.h"
 
 namespace content {
@@ -24,7 +25,10 @@ ResourceRequestDetails::ResourceRequestDetails(const net::URLRequest* request,
       socket_address(request->GetSocketAddress()) {
   const ResourceRequestInfo* info = ResourceRequestInfo::ForRequest(request);
   resource_type = info->GetResourceType();
-  frame_id = info->GetFrameID();
+  render_frame_id = info->GetRenderFrameID();
+  http_response_code =
+      request->response_info().headers.get() ?
+          request->response_info().headers.get()->response_code() : -1;
 
   // If request is from the worker process on behalf of a renderer, use
   // the renderer process id, since it consumes the notification response
@@ -33,10 +37,10 @@ ResourceRequestDetails::ResourceRequestDetails(const net::URLRequest* request,
   // of ssl state change (http://crbug.com/25357). For now, just notify
   // the first one (works for dedicated workers and shared workers with
   // a single process).
+  int worker_render_frame_id;
   if (!WorkerServiceImpl::GetInstance()->GetRendererForWorker(
-          info->GetChildID(), &origin_child_id, &origin_route_id)) {
+          info->GetChildID(), &origin_child_id, &worker_render_frame_id)) {
     origin_child_id = info->GetChildID();
-    origin_route_id = info->GetRouteID();
   }
 }
 

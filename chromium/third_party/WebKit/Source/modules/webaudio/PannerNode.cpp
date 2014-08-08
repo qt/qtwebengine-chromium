@@ -49,9 +49,24 @@ static void fixNANs(double &x)
 PannerNode::PannerNode(AudioContext* context, float sampleRate)
     : AudioNode(context, sampleRate)
     , m_panningModel(Panner::PanningModelHRTF)
+    , m_distanceModel(DistanceEffect::ModelInverse)
+    , m_position(0, 0, 0)
+    , m_orientation(1, 0, 0)
+    , m_velocity(0, 0, 0)
+    , m_isAzimuthElevationDirty(true)
+    , m_isDistanceConeGainDirty(true)
+    , m_isDopplerRateDirty(true)
     , m_lastGain(-1.0)
+    , m_cachedAzimuth(0)
+    , m_cachedElevation(0)
+    , m_cachedDistanceConeGain(1.0f)
+    , m_cachedDopplerRate(1)
     , m_connectionCount(0)
 {
+    // Load the HRTF database asynchronously so we don't block the Javascript thread while creating the HRTF database.
+    // The HRTF panner will return zeroes until the database is loaded.
+    m_hrtfDatabaseLoader = HRTFDatabaseLoader::createAndLoadAsynchronouslyIfNecessary(context->sampleRate());
+
     ScriptWrappable::init(this);
     addInput(adoptPtr(new AudioNodeInput(this)));
     addOutput(adoptPtr(new AudioNodeOutput(this, 2)));
@@ -60,13 +75,6 @@ PannerNode::PannerNode(AudioContext* context, float sampleRate)
     m_channelCount = 2;
     m_channelCountMode = ClampedMax;
     m_channelInterpretation = AudioBus::Speakers;
-
-    m_distanceGain = AudioParam::create(context, "distanceGain", 1.0, 0.0, 1.0);
-    m_coneGain = AudioParam::create(context, "coneGain", 1.0, 0.0, 1.0);
-
-    m_position = FloatPoint3D(0, 0, 0);
-    m_orientation = FloatPoint3D(1, 0, 0);
-    m_velocity = FloatPoint3D(0, 0, 0);
 
     setNodeType(NodeTypePanner);
 
@@ -85,8 +93,12 @@ void PannerNode::pullInputs(size_t framesToProcess)
     if (m_connectionCount != context()->connectionCount()) {
         m_connectionCount = context()->connectionCount();
 
-        // Recursively go through all nodes connected to us.
-        notifyAudioSourcesConnectedToNode(this);
+        // A map for keeping track if we have visited a node or not. This prevents feedback loops
+        // from recursing infinitely. See crbug.com/331446.
+        HashMap<AudioNode*, bool> visitedNodes;
+
+        // Recursively go through all nodes connected to us
+        notifyAudioSourcesConnectedToNode(this, visitedNodes);
     }
 
     AudioNode::pullInputs(framesToProcess);
@@ -102,23 +114,35 @@ void PannerNode::process(size_t framesToProcess)
     }
 
     AudioBus* source = input(0)->bus();
-
     if (!source) {
         destination->zero();
         return;
     }
 
     // The audio thread can't block on this lock, so we call tryLock() instead.
-    MutexTryLocker tryLocker(m_pannerLock);
-    if (tryLocker.locked()) {
+    MutexTryLocker tryLocker(m_processLock);
+    MutexTryLocker tryListenerLocker(listener()->listenerLock());
+
+    if (tryLocker.locked() && tryListenerLocker.locked()) {
+        // HRTFDatabase should be loaded before proceeding for offline audio context when the panning model is HRTF.
+        if (m_panningModel == Panner::PanningModelHRTF && !m_hrtfDatabaseLoader->isLoaded()) {
+            if (context()->isOfflineContext()) {
+                m_hrtfDatabaseLoader->waitForLoaderThreadCompletion();
+            } else {
+                destination->zero();
+                return;
+            }
+        }
+
         // Apply the panning effect.
         double azimuth;
         double elevation;
-        getAzimuthElevation(&azimuth, &elevation);
+        azimuthElevation(&azimuth, &elevation);
+
         m_panner->pan(azimuth, elevation, source, destination, framesToProcess);
 
         // Get the distance and cone gain.
-        double totalGain = distanceConeGain();
+        float totalGain = distanceConeGain();
 
         // Snap to desired gain at the beginning.
         if (m_lastGain == -1.0)
@@ -127,16 +151,10 @@ void PannerNode::process(size_t framesToProcess)
         // Apply gain in-place with de-zippering.
         destination->copyWithGainFrom(*destination, &m_lastGain, totalGain);
     } else {
-        // Too bad - The tryLock() failed. We must be in the middle of changing the panner.
+        // Too bad - The tryLock() failed.
+        // We must be in the middle of changing the properties of the panner or the listener.
         destination->zero();
     }
-}
-
-void PannerNode::reset()
-{
-    m_lastGain = -1.0; // force to snap to initial gain
-    if (m_panner.get())
-        m_panner->reset();
 }
 
 void PannerNode::initialize()
@@ -144,7 +162,8 @@ void PannerNode::initialize()
     if (isInitialized())
         return;
 
-    m_panner = Panner::create(m_panningModel, sampleRate(), context()->hrtfDatabaseLoader());
+    m_panner = Panner::create(m_panningModel, sampleRate(), m_hrtfDatabaseLoader.get());
+    listener()->addPanner(this);
 
     AudioNode::initialize();
 }
@@ -155,6 +174,8 @@ void PannerNode::uninitialize()
         return;
 
     m_panner.clear();
+    listener()->removePanner(this);
+
     AudioNode::uninitialize();
 }
 
@@ -166,12 +187,10 @@ AudioListener* PannerNode::listener()
 String PannerNode::panningModel() const
 {
     switch (m_panningModel) {
-    case EQUALPOWER:
+    case Panner::PanningModelEqualPower:
         return "equalpower";
-    case HRTF:
+    case Panner::PanningModelHRTF:
         return "HRTF";
-    case SOUNDFIELD:
-        return "soundfield";
     default:
         ASSERT_NOT_REACHED();
         return "HRTF";
@@ -181,34 +200,26 @@ String PannerNode::panningModel() const
 void PannerNode::setPanningModel(const String& model)
 {
     if (model == "equalpower")
-        setPanningModel(EQUALPOWER);
+        setPanningModel(Panner::PanningModelEqualPower);
     else if (model == "HRTF")
-        setPanningModel(HRTF);
-    else if (model == "soundfield")
-        setPanningModel(SOUNDFIELD);
-    else
-        ASSERT_NOT_REACHED();
+        setPanningModel(Panner::PanningModelHRTF);
 }
 
 bool PannerNode::setPanningModel(unsigned model)
 {
     switch (model) {
-    case EQUALPOWER:
-    case HRTF:
+    case Panner::PanningModelEqualPower:
+    case Panner::PanningModelHRTF:
         if (!m_panner.get() || model != m_panningModel) {
             // This synchronizes with process().
-            MutexLocker processLocker(m_pannerLock);
-
-            OwnPtr<Panner> newPanner = Panner::create(model, sampleRate(), context()->hrtfDatabaseLoader());
+            MutexLocker processLocker(m_processLock);
+            OwnPtr<Panner> newPanner = Panner::create(model, sampleRate(), m_hrtfDatabaseLoader.get());
             m_panner = newPanner.release();
             m_panningModel = model;
         }
         break;
-    case SOUNDFIELD:
-        // FIXME: Implement sound field model. See // https://bugs.webkit.org/show_bug.cgi?id=77367.
-        context()->executionContext()->addConsoleMessage(JSMessageSource, WarningMessageLevel, "'soundfield' panning model not implemented.");
-        break;
     default:
+        ASSERT_NOT_REACHED();
         return false;
     }
 
@@ -238,8 +249,6 @@ void PannerNode::setDistanceModel(const String& model)
         setDistanceModel(DistanceEffect::ModelInverse);
     else if (model == "exponential")
         setDistanceModel(DistanceEffect::ModelExponential);
-    else
-        ASSERT_NOT_REACHED();
 }
 
 bool PannerNode::setDistanceModel(unsigned model)
@@ -248,32 +257,135 @@ bool PannerNode::setDistanceModel(unsigned model)
     case DistanceEffect::ModelLinear:
     case DistanceEffect::ModelInverse:
     case DistanceEffect::ModelExponential:
-        m_distanceEffect.setModel(static_cast<DistanceEffect::ModelType>(model), true);
+        if (model != m_distanceModel) {
+            // This synchronizes with process().
+            MutexLocker processLocker(m_processLock);
+            m_distanceEffect.setModel(static_cast<DistanceEffect::ModelType>(model), true);
+            m_distanceModel = model;
+        }
         break;
     default:
+        ASSERT_NOT_REACHED();
         return false;
     }
 
     return true;
 }
 
-void PannerNode::getAzimuthElevation(double* outAzimuth, double* outElevation)
+void PannerNode::setRefDistance(double distance)
 {
-    // FIXME: we should cache azimuth and elevation (if possible), so we only re-calculate if a change has been made.
+    if (refDistance() == distance)
+        return;
 
+    // This synchronizes with process().
+    MutexLocker processLocker(m_processLock);
+    m_distanceEffect.setRefDistance(distance);
+    markPannerAsDirty(PannerNode::DistanceConeGainDirty);
+}
+
+void PannerNode::setMaxDistance(double distance)
+{
+    if (maxDistance() == distance)
+        return;
+
+    // This synchronizes with process().
+    MutexLocker processLocker(m_processLock);
+    m_distanceEffect.setMaxDistance(distance);
+    markPannerAsDirty(PannerNode::DistanceConeGainDirty);
+}
+
+void PannerNode::setRolloffFactor(double factor)
+{
+    if (rolloffFactor() == factor)
+        return;
+
+    // This synchronizes with process().
+    MutexLocker processLocker(m_processLock);
+    m_distanceEffect.setRolloffFactor(factor);
+    markPannerAsDirty(PannerNode::DistanceConeGainDirty);
+}
+
+void PannerNode::setConeInnerAngle(double angle)
+{
+    if (coneInnerAngle() == angle)
+        return;
+
+    // This synchronizes with process().
+    MutexLocker processLocker(m_processLock);
+    m_coneEffect.setInnerAngle(angle);
+    markPannerAsDirty(PannerNode::DistanceConeGainDirty);
+}
+
+void PannerNode::setConeOuterAngle(double angle)
+{
+    if (coneOuterAngle() == angle)
+        return;
+
+    // This synchronizes with process().
+    MutexLocker processLocker(m_processLock);
+    m_coneEffect.setOuterAngle(angle);
+    markPannerAsDirty(PannerNode::DistanceConeGainDirty);
+}
+
+void PannerNode::setConeOuterGain(double angle)
+{
+    if (coneOuterGain() == angle)
+        return;
+
+    // This synchronizes with process().
+    MutexLocker processLocker(m_processLock);
+    m_coneEffect.setOuterGain(angle);
+    markPannerAsDirty(PannerNode::DistanceConeGainDirty);
+}
+
+void PannerNode::setPosition(float x, float y, float z)
+{
+    FloatPoint3D position = FloatPoint3D(x, y, z);
+
+    if (m_position == position)
+        return;
+
+    // This synchronizes with process().
+    MutexLocker processLocker(m_processLock);
+    m_position = position;
+    markPannerAsDirty(PannerNode::AzimuthElevationDirty | PannerNode::DistanceConeGainDirty | PannerNode::DopplerRateDirty);
+}
+
+void PannerNode::setOrientation(float x, float y, float z)
+{
+    FloatPoint3D orientation = FloatPoint3D(x, y, z);
+
+    if (m_orientation == orientation)
+        return;
+
+    // This synchronizes with process().
+    MutexLocker processLocker(m_processLock);
+    m_orientation = orientation;
+    markPannerAsDirty(PannerNode::DistanceConeGainDirty);
+}
+
+void PannerNode::setVelocity(float x, float y, float z)
+{
+    FloatPoint3D velocity = FloatPoint3D(x, y, z);
+
+    if (m_velocity == velocity)
+        return;
+
+    // This synchronizes with process().
+    MutexLocker processLocker(m_processLock);
+    m_velocity = velocity;
+    markPannerAsDirty(PannerNode::DopplerRateDirty);
+}
+
+void PannerNode::calculateAzimuthElevation(double* outAzimuth, double* outElevation)
+{
     double azimuth = 0.0;
 
     // Calculate the source-listener vector
     FloatPoint3D listenerPosition = listener()->position();
     FloatPoint3D sourceListener = m_position - listenerPosition;
 
-    if (sourceListener.isZero()) {
-        // degenerate case if source and listener are at the same point
-        *outAzimuth = 0.0;
-        *outElevation = 0.0;
-        return;
-    }
-
+    // normalize() does nothing if the length of |sourceListener| is zero.
     sourceListener.normalize();
 
     // Align axes
@@ -321,11 +433,9 @@ void PannerNode::getAzimuthElevation(double* outAzimuth, double* outElevation)
         *outElevation = elevation;
 }
 
-float PannerNode::dopplerRate()
+double PannerNode::calculateDopplerRate()
 {
     double dopplerShift = 1.0;
-
-    // FIXME: optimize for case when neither source nor listener has changed...
     double dopplerFactor = listener()->dopplerFactor();
 
     if (dopplerFactor > 0.0) {
@@ -345,48 +455,97 @@ float PannerNode::dopplerRate()
 
             double sourceListenerMagnitude = sourceToListener.length();
 
-            double listenerProjection = sourceToListener.dot(listenerVelocity) / sourceListenerMagnitude;
-            double sourceProjection = sourceToListener.dot(sourceVelocity) / sourceListenerMagnitude;
+            if (!sourceListenerMagnitude) {
+                // Source and listener are at the same position. Skip the computation of the doppler
+                // shift, and just return the cached value.
+                dopplerShift = m_cachedDopplerRate;
+            } else {
+                double listenerProjection = sourceToListener.dot(listenerVelocity) / sourceListenerMagnitude;
+                double sourceProjection = sourceToListener.dot(sourceVelocity) / sourceListenerMagnitude;
 
-            listenerProjection = -listenerProjection;
-            sourceProjection = -sourceProjection;
+                listenerProjection = -listenerProjection;
+                sourceProjection = -sourceProjection;
 
-            double scaledSpeedOfSound = speedOfSound / dopplerFactor;
-            listenerProjection = min(listenerProjection, scaledSpeedOfSound);
-            sourceProjection = min(sourceProjection, scaledSpeedOfSound);
+                double scaledSpeedOfSound = speedOfSound / dopplerFactor;
+                listenerProjection = min(listenerProjection, scaledSpeedOfSound);
+                sourceProjection = min(sourceProjection, scaledSpeedOfSound);
 
-            dopplerShift = ((speedOfSound - dopplerFactor * listenerProjection) / (speedOfSound - dopplerFactor * sourceProjection));
-            fixNANs(dopplerShift); // avoid illegal values
+                dopplerShift = ((speedOfSound - dopplerFactor * listenerProjection) / (speedOfSound - dopplerFactor * sourceProjection));
+                fixNANs(dopplerShift); // avoid illegal values
 
-            // Limit the pitch shifting to 4 octaves up and 3 octaves down.
-            if (dopplerShift > 16.0)
-                dopplerShift = 16.0;
-            else if (dopplerShift < 0.125)
-                dopplerShift = 0.125;
+                // Limit the pitch shifting to 4 octaves up and 3 octaves down.
+                if (dopplerShift > 16.0)
+                    dopplerShift = 16.0;
+                else if (dopplerShift < 0.125)
+                    dopplerShift = 0.125;
+            }
         }
     }
 
-    return static_cast<float>(dopplerShift);
+    return dopplerShift;
 }
 
-float PannerNode::distanceConeGain()
+float PannerNode::calculateDistanceConeGain()
 {
     FloatPoint3D listenerPosition = listener()->position();
 
     double listenerDistance = m_position.distanceTo(listenerPosition);
     double distanceGain = m_distanceEffect.gain(listenerDistance);
-
-    m_distanceGain->setValue(static_cast<float>(distanceGain));
-
-    // FIXME: could optimize by caching coneGain
     double coneGain = m_coneEffect.gain(m_position, m_orientation, listenerPosition);
-
-    m_coneGain->setValue(static_cast<float>(coneGain));
 
     return float(distanceGain * coneGain);
 }
 
-void PannerNode::notifyAudioSourcesConnectedToNode(AudioNode* node)
+void PannerNode::azimuthElevation(double* outAzimuth, double* outElevation)
+{
+    ASSERT(context()->isAudioThread());
+
+    if (isAzimuthElevationDirty()) {
+        calculateAzimuthElevation(&m_cachedAzimuth, &m_cachedElevation);
+        m_isAzimuthElevationDirty = false;
+    }
+
+    *outAzimuth = m_cachedAzimuth;
+    *outElevation = m_cachedElevation;
+}
+
+double PannerNode::dopplerRate()
+{
+    ASSERT(context()->isAudioThread());
+
+    if (isDopplerRateDirty()) {
+        m_cachedDopplerRate = calculateDopplerRate();
+        m_isDopplerRateDirty = false;
+    }
+
+    return m_cachedDopplerRate;
+}
+
+float PannerNode::distanceConeGain()
+{
+    ASSERT(context()->isAudioThread());
+
+    if (isDistanceConeGainDirty()) {
+        m_cachedDistanceConeGain = calculateDistanceConeGain();
+        m_isDistanceConeGainDirty = false;
+    }
+
+    return m_cachedDistanceConeGain;
+}
+
+void PannerNode::markPannerAsDirty(unsigned dirty)
+{
+    if (dirty & PannerNode::AzimuthElevationDirty)
+        m_isAzimuthElevationDirty = true;
+
+    if (dirty & PannerNode::DistanceConeGainDirty)
+        m_isDistanceConeGainDirty = true;
+
+    if (dirty & PannerNode::DopplerRateDirty)
+        m_isDopplerRateDirty = true;
+}
+
+void PannerNode::notifyAudioSourcesConnectedToNode(AudioNode* node, HashMap<AudioNode*, bool>& visitedNodes)
 {
     ASSERT(node);
     if (!node)
@@ -405,7 +564,14 @@ void PannerNode::notifyAudioSourcesConnectedToNode(AudioNode* node)
             for (unsigned j = 0; j < input->numberOfRenderingConnections(); ++j) {
                 AudioNodeOutput* connectedOutput = input->renderingOutput(j);
                 AudioNode* connectedNode = connectedOutput->node();
-                notifyAudioSourcesConnectedToNode(connectedNode); // recurse
+                HashMap<AudioNode*, bool>::iterator iterator = visitedNodes.find(connectedNode);
+
+                // If we've seen this node already, we don't need to process it again. Otherwise,
+                // mark it as visited and recurse through the node looking for sources.
+                if (iterator == visitedNodes.end()) {
+                    visitedNodes.set(connectedNode, true);
+                    notifyAudioSourcesConnectedToNode(connectedNode, visitedNodes); // recurse
+                }
             }
         }
     }

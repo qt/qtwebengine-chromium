@@ -23,9 +23,8 @@
  */
 
 #include "config.h"
-#include "WebSurroundingText.h"
+#include "public/web/WebSurroundingText.h"
 
-#include "WebHitTestResult.h"
 #include "core/dom/Element.h"
 #include "core/dom/Node.h"
 #include "core/dom/Range.h"
@@ -34,6 +33,7 @@
 #include "core/editing/VisiblePosition.h"
 #include "core/rendering/RenderObject.h"
 #include "public/platform/WebPoint.h"
+#include "public/web/WebHitTestResult.h"
 
 using namespace WebCore;
 
@@ -45,7 +45,13 @@ void WebSurroundingText::initialize(const WebNode& webNode, const WebPoint& node
     if (!node || !node->renderer())
         return;
 
-    m_private.reset(new SurroundingText(VisiblePosition(node->renderer()->positionForPoint(static_cast<IntPoint>(nodePoint))), maxLength));
+    m_private.reset(new SurroundingText(VisiblePosition(node->renderer()->positionForPoint(static_cast<IntPoint>(nodePoint))).deepEquivalent().parentAnchoredEquivalent(), maxLength));
+}
+
+void WebSurroundingText::initialize(const WebRange& webRange, size_t maxLength)
+{
+    if (RefPtrWillBeRawPtr<Range> range = static_cast<PassRefPtrWillBeRawPtr<Range> >(webRange))
+        m_private.reset(new SurroundingText(*range, maxLength));
 }
 
 WebString WebSurroundingText::textContent() const
@@ -55,7 +61,18 @@ WebString WebSurroundingText::textContent() const
 
 size_t WebSurroundingText::hitOffsetInTextContent() const
 {
-    return m_private->positionOffsetInContent();
+    ASSERT(m_private->startOffsetInContent() == m_private->endOffsetInContent());
+    return m_private->startOffsetInContent();
+}
+
+size_t WebSurroundingText::startOffsetInTextContent() const
+{
+    return m_private->startOffsetInContent();
+}
+
+size_t WebSurroundingText::endOffsetInTextContent() const
+{
+    return m_private->endOffsetInContent();
 }
 
 WebRange WebSurroundingText::rangeFromContentOffsets(size_t startOffsetInContent, size_t endOffsetInContent)

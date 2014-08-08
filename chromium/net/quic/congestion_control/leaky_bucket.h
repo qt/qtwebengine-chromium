@@ -13,7 +13,6 @@
 #include "base/basictypes.h"
 #include "net/base/net_export.h"
 #include "net/quic/quic_bandwidth.h"
-#include "net/quic/quic_clock.h"
 #include "net/quic/quic_protocol.h"
 #include "net/quic/quic_time.h"
 
@@ -30,7 +29,7 @@ class NET_EXPORT_PRIVATE LeakyBucket {
   void Add(QuicTime now, QuicByteCount bytes);
 
   // Time until the buffer is empty.
-  QuicTime::Delta TimeRemaining(QuicTime now);
+  QuicTime::Delta TimeRemaining(QuicTime now) const;
 
   // Number of bytes in the buffer.
   QuicByteCount BytesPending(QuicTime now);

@@ -8,6 +8,7 @@
 #include "base/callback.h"
 #include "base/memory/scoped_ptr.h"
 #include "cc/base/cc_export.h"
+#include "cc/resources/single_release_callback.h"
 #include "cc/resources/texture_mailbox.h"
 #include "ui/gfx/rect.h"
 
@@ -15,7 +16,6 @@ class SkBitmap;
 
 namespace cc {
 class CopyOutputResult;
-class SingleReleaseCallback;
 
 class CC_EXPORT CopyOutputRequest {
  public:
@@ -46,7 +46,7 @@ class CC_EXPORT CopyOutputRequest {
   // By default copy requests copy the entire layer's subtree output. If an
   // area is given, then the intersection of this rect (in layer space) with
   // the layer's subtree output will be returned.
-  void set_area(gfx::Rect area) {
+  void set_area(const gfx::Rect& area) {
     has_area_ = true;
     area_ = area;
   }
@@ -62,7 +62,7 @@ class CC_EXPORT CopyOutputRequest {
 
   void SendEmptyResult();
   void SendBitmapResult(scoped_ptr<SkBitmap> bitmap);
-  void SendTextureResult(gfx::Size size,
+  void SendTextureResult(const gfx::Size& size,
                          const TextureMailbox& texture_mailbox,
                          scoped_ptr<SingleReleaseCallback> release_callback);
 

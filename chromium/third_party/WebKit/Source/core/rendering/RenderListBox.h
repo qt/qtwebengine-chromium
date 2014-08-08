@@ -47,57 +47,58 @@ public:
 
     void setOptionsChanged(bool changed) { m_optionsChanged = changed; }
 
-    int listIndexAtOffset(const LayoutSize&);
-    LayoutRect itemBoundingBoxRect(const LayoutPoint&, int index);
+    int listIndexAtOffset(const LayoutSize&) const;
+    LayoutRect itemBoundingBoxRect(const LayoutPoint&, int index) const;
 
     bool scrollToRevealElementAtListIndex(int index);
-    bool listIndexIsVisible(int index);
 
     int scrollToward(const IntPoint&); // Returns the new index or -1 if no scroll occurred
 
     int size() const;
 
+    void repaintScrollbarIfNeeded();
+
 private:
     HTMLSelectElement* selectElement() const;
 
-    virtual const char* renderName() const { return "RenderListBox"; }
+    virtual const char* renderName() const OVERRIDE { return "RenderListBox"; }
 
-    virtual bool isListBox() const { return true; }
+    virtual bool isListBox() const OVERRIDE { return true; }
+    virtual bool isChildAllowed(RenderObject*, RenderStyle*) const OVERRIDE;
 
-    virtual void updateFromElement();
-    virtual bool hasControlClip() const { return true; }
-    virtual void paintObject(PaintInfo&, const LayoutPoint&);
-    virtual LayoutRect controlClipRect(const LayoutPoint&) const;
+    virtual void updateFromElement() OVERRIDE;
+    virtual bool hasControlClip() const OVERRIDE { return true; }
+    virtual void paintObject(PaintInfo&, const LayoutPoint&) OVERRIDE;
+    virtual LayoutRect controlClipRect(const LayoutPoint&) const OVERRIDE;
 
-    virtual bool isPointInOverflowControl(HitTestResult&, const LayoutPoint& locationInContainer, const LayoutPoint& accumulatedOffset);
+    virtual bool isPointInOverflowControl(HitTestResult&, const LayoutPoint& locationInContainer, const LayoutPoint& accumulatedOffset) OVERRIDE;
 
     virtual bool scroll(ScrollDirection, ScrollGranularity, float) OVERRIDE;
 
     virtual void computeIntrinsicLogicalWidths(LayoutUnit& minLogicalWidth, LayoutUnit& maxLogicalWidth) const OVERRIDE;
     virtual void computePreferredLogicalWidths() OVERRIDE;
-    virtual int baselinePosition(FontBaseline, bool firstLine, LineDirectionMode, LinePositionMode = PositionOnContainingLine) const;
+    virtual int baselinePosition(FontBaseline, bool firstLine, LineDirectionMode, LinePositionMode = PositionOnContainingLine) const OVERRIDE;
     virtual void computeLogicalHeight(LayoutUnit logicalHeight, LayoutUnit logicalTop, LogicalExtentComputedValues&) const OVERRIDE;
 
-    virtual void layout();
+    virtual void layout() OVERRIDE;
 
-    virtual bool supportsPartialLayout() const OVERRIDE { return false; }
+    virtual void invalidateTreeAfterLayout(const RenderLayerModelObject&) OVERRIDE FINAL;
 
     virtual void addFocusRingRects(Vector<IntRect>&, const LayoutPoint& additionalOffset, const RenderLayerModelObject* paintContainer = 0) OVERRIDE;
 
-    virtual bool canBeProgramaticallyScrolled() const { return true; }
-    virtual void autoscroll(const IntPoint&);
-    virtual void stopAutoscroll();
+    virtual bool canBeProgramaticallyScrolled() const OVERRIDE { return true; }
+    virtual void autoscroll(const IntPoint&) OVERRIDE;
+    virtual void stopAutoscroll() OVERRIDE;
 
-    virtual bool shouldPanScroll() const { return true; }
-    virtual void panScroll(const IntPoint&);
+    virtual void panScroll(const IntPoint&) OVERRIDE;
 
-    virtual int verticalScrollbarWidth() const;
-    virtual int scrollLeft() const;
-    virtual int scrollTop() const;
-    virtual int scrollWidth() const;
-    virtual int scrollHeight() const;
-    virtual void setScrollLeft(int);
-    virtual void setScrollTop(int);
+    virtual int verticalScrollbarWidth() const OVERRIDE;
+    virtual LayoutUnit scrollLeft() const OVERRIDE;
+    virtual LayoutUnit scrollTop() const OVERRIDE;
+    virtual LayoutUnit scrollWidth() const OVERRIDE;
+    virtual LayoutUnit scrollHeight() const OVERRIDE;
+    virtual void setScrollLeft(LayoutUnit) OVERRIDE;
+    virtual void setScrollTop(LayoutUnit) OVERRIDE;
 
     virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction) OVERRIDE;
 
@@ -125,13 +126,13 @@ private:
     virtual IntPoint maximumScrollPosition() const OVERRIDE;
     virtual bool userInputScrollable(ScrollbarOrientation) const OVERRIDE;
     virtual bool shouldPlaceVerticalScrollbarOnLeft() const OVERRIDE;
-    virtual int lineStep(ScrollbarOrientation) const;
-    virtual int pageStep(ScrollbarOrientation) const;
-    virtual float pixelStep(ScrollbarOrientation) const;
-
-
-    virtual ScrollableArea* enclosingScrollableArea() const OVERRIDE;
+    virtual int lineStep(ScrollbarOrientation) const OVERRIDE;
+    virtual int pageStep(ScrollbarOrientation) const OVERRIDE;
+    virtual float pixelStep(ScrollbarOrientation) const OVERRIDE;
     virtual IntRect scrollableAreaBoundingBox() const OVERRIDE;
+
+    LayoutRect itemBoundingBoxRectInternal(const LayoutPoint&, int index) const;
+    bool scrollToRevealElementAtListIndexInternal(int index);
 
     // NOTE: This should only be called by the overriden setScrollOffset from ScrollableArea.
     void scrollTo(int newOffset);
@@ -141,8 +142,8 @@ private:
     void destroyScrollbar();
 
     LayoutUnit itemHeight() const;
-    void valueChanged(unsigned listIndex);
     int numVisibleItems() const;
+    bool listIndexIsVisible(int index) const;
     int numItems() const;
     LayoutUnit listHeight() const;
     int scrollbarLeft() const;
@@ -151,11 +152,15 @@ private:
     void paintItemBackground(PaintInfo&, const LayoutPoint&, int listIndex);
     void scrollToRevealSelection();
 
+    int renderListBoxIndexToListIndex(int index) const;
+    int listIndexToRenderListBoxIndex(int index) const;
+
     bool m_optionsChanged;
     bool m_scrollToRevealSelectionAfterLayout;
     bool m_inAutoscroll;
     int m_optionsWidth;
     int m_indexOffset;
+    int m_listItemCount;
 
     RefPtr<Scrollbar> m_vBar;
 };

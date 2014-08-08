@@ -27,21 +27,21 @@
 
 #include "core/html/canvas/WebGLBuffer.h"
 
-#include "core/html/canvas/WebGLRenderingContext.h"
+#include "core/html/canvas/WebGLRenderingContextBase.h"
 
 namespace WebCore {
 
-PassRefPtr<WebGLBuffer> WebGLBuffer::create(WebGLRenderingContext* ctx)
+PassRefPtr<WebGLBuffer> WebGLBuffer::create(WebGLRenderingContextBase* ctx)
 {
     return adoptRef(new WebGLBuffer(ctx));
 }
 
-WebGLBuffer::WebGLBuffer(WebGLRenderingContext* ctx)
+WebGLBuffer::WebGLBuffer(WebGLRenderingContextBase* ctx)
     : WebGLSharedObject(ctx)
     , m_target(0)
 {
     ScriptWrappable::init(this);
-    setObject(ctx->graphicsContext3D()->createBuffer());
+    setObject(ctx->webContext()->createBuffer());
 }
 
 WebGLBuffer::~WebGLBuffer()
@@ -49,12 +49,12 @@ WebGLBuffer::~WebGLBuffer()
     deleteObject(0);
 }
 
-void WebGLBuffer::deleteObjectImpl(GraphicsContext3D* context3d, Platform3DObject object)
+void WebGLBuffer::deleteObjectImpl(blink::WebGraphicsContext3D* context3d, Platform3DObject object)
 {
       context3d->deleteBuffer(object);
 }
 
-void WebGLBuffer::setTarget(GC3Denum target)
+void WebGLBuffer::setTarget(GLenum target)
 {
     // In WebGL, a buffer is bound to one target in its lifetime
     if (m_target)

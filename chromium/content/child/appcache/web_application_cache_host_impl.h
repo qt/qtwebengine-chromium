@@ -7,15 +7,12 @@
 
 #include <string>
 
+#include "third_party/WebKit/public/platform/WebApplicationCacheHost.h"
+#include "third_party/WebKit/public/platform/WebApplicationCacheHostClient.h"
 #include "third_party/WebKit/public/platform/WebURLResponse.h"
 #include "third_party/WebKit/public/platform/WebVector.h"
-#include "third_party/WebKit/public/web/WebApplicationCacheHostClient.h"
 #include "url/gurl.h"
 #include "webkit/common/appcache/appcache_interfaces.h"
-
-namespace blink {
-class WebFrame;
-}
 
 namespace content {
 
@@ -24,9 +21,6 @@ class WebApplicationCacheHostImpl
  public:
   // Returns the host having given id or NULL if there is no such host.
   static WebApplicationCacheHostImpl* FromId(int id);
-
-  // Returns the host associated with the current document in frame.
-  static WebApplicationCacheHostImpl* FromFrame(const blink::WebFrame* frame);
 
   WebApplicationCacheHostImpl(blink::WebApplicationCacheHostClient* client,
                               appcache::AppCacheBackend* backend);
@@ -37,17 +31,17 @@ class WebApplicationCacheHostImpl
   blink::WebApplicationCacheHostClient* client() const { return client_; }
 
   virtual void OnCacheSelected(const appcache::AppCacheInfo& info);
-  void OnStatusChanged(appcache::Status);
-  void OnEventRaised(appcache::EventID);
+  void OnStatusChanged(appcache::AppCacheStatus);
+  void OnEventRaised(appcache::AppCacheEventID);
   void OnProgressEventRaised(const GURL& url, int num_total, int num_complete);
-  void OnErrorEventRaised(const std::string& message);
-  virtual void OnLogMessage(appcache::LogLevel log_level,
+  void OnErrorEventRaised(const appcache::AppCacheErrorDetails& details);
+  virtual void OnLogMessage(appcache::AppCacheLogLevel log_level,
                             const std::string& message) {}
   virtual void OnContentBlocked(const GURL& manifest_url) {}
 
   // blink::WebApplicationCacheHost:
-  virtual void willStartMainResourceRequest(blink::WebURLRequest&,
-                                            const blink::WebFrame*);
+  virtual void willStartMainResourceRequest(
+      blink::WebURLRequest&, const blink::WebApplicationCacheHost*);
   virtual void willStartSubResourceRequest(blink::WebURLRequest&);
   virtual void selectCacheWithoutManifest();
   virtual bool selectCacheWithManifest(const blink::WebURL& manifestURL);
@@ -70,7 +64,7 @@ class WebApplicationCacheHostImpl
   blink::WebApplicationCacheHostClient* client_;
   appcache::AppCacheBackend* backend_;
   int host_id_;
-  appcache::Status status_;
+  appcache::AppCacheStatus status_;
   blink::WebURLResponse document_response_;
   GURL document_url_;
   bool is_scheme_supported_;

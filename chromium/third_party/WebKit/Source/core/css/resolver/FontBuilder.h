@@ -23,9 +23,10 @@
 #ifndef FontBuilder_h
 #define FontBuilder_h
 
-#include "CSSValueKeywords.h"
+#include "core/CSSValueKeywords.h"
 
 #include "platform/fonts/FontDescription.h"
+#include "platform/heap/Handle.h"
 #include "wtf/PassRefPtr.h"
 
 namespace WebCore {
@@ -42,7 +43,7 @@ public:
     FontBuilder();
 
     // FIXME: The name is probably wrong, but matches StyleResolverState callsite for consistency.
-    void initForStyleResolve(const Document&, RenderStyle*, bool useSVGZoomRules);
+    void initForStyleResolve(const Document&, RenderStyle*);
 
     void setInitial(float effectiveZoom);
 
@@ -51,13 +52,13 @@ public:
     void inheritFrom(const FontDescription&);
     void fromSystemFont(CSSValueID, float effectiveZoom);
 
-    void setFontFamilyInitial(float effectiveZoom);
+    void setFontFamilyInitial();
     void setFontFamilyInherit(const FontDescription&);
-    void setFontFamilyValue(CSSValue*, float effectiveZoom);
+    void setFontFamilyValue(CSSValue*);
 
-    void setFontSizeInitial(float effectiveZoom);
-    void setFontSizeInherit(const FontDescription&, float effectiveZoom);
-    void setFontSizeValue(CSSValue*, RenderStyle* parentStyle, const RenderStyle* rootElementStyle, float effectiveZoom);
+    void setFontSizeInitial();
+    void setFontSizeInherit(const FontDescription&);
+    void setFontSizeValue(CSSValue*, RenderStyle* parentStyle, const RenderStyle* rootElementStyle);
 
     void setWeight(FontWeight);
     void setWeightBolder();
@@ -71,24 +72,34 @@ public:
     void setFeatureSettingsValue(CSSValue*);
 
     void setScript(const String& locale);
-    void setItalic(FontItalic);
-    void setSmallCaps(FontSmallCaps);
-    void setTextRenderingMode(TextRenderingMode);
+    void setStyle(FontStyle);
+    void setVariant(FontVariant);
+    void setTextRendering(TextRenderingMode);
     void setKerning(FontDescription::Kerning);
     void setFontSmoothing(FontSmoothingMode);
 
     // FIXME: These need to just vend a Font object eventually.
-    void createFont(PassRefPtr<FontSelector>, const RenderStyle* parentStyle, RenderStyle*);
+    void createFont(PassRefPtrWillBeRawPtr<FontSelector>, const RenderStyle* parentStyle, RenderStyle*);
     // FIXME: This is nearly static, should either made fully static or decomposed into
     // FontBuilder calls at the callsite.
-    void createFontForDocument(PassRefPtr<FontSelector>, RenderStyle*);
+    void createFontForDocument(PassRefPtrWillBeRawPtr<FontSelector>, RenderStyle*);
+
+    bool fontSizeHasViewportUnits() { return m_fontSizehasViewportUnits; }
 
     // FIXME: These should not be necessary eventually.
     void setFontDirty(bool fontDirty) { m_fontDirty = fontDirty; }
     // FIXME: This is only used by an ASSERT in StyleResolver. Remove?
     bool fontDirty() const { return m_fontDirty; }
 
+    static FontDescription::GenericFamilyType initialGenericFamily() { return FontDescription::NoFamily; }
+    static TextRenderingMode initialTextRendering() { return AutoTextRendering; }
+    static FontVariant initialVariant() { return FontVariantNormal; }
+    static FontStyle initialStyle() { return FontStyleNormal; }
+    static FontDescription::Kerning initialKerning() { return FontDescription::AutoKerning; }
+    static FontSmoothingMode initialFontSmoothing() { return AutoSmoothing; }
+
     friend class FontDescriptionChangeScope;
+
 private:
 
     // FIXME: "size" arg should be first for consistency with other similar functions.
@@ -96,12 +107,12 @@ private:
     void checkForOrientationChange(RenderStyle*);
     // This function fixes up the default font size if it detects that the current generic font family has changed. -dwh
     void checkForGenericFamilyChange(RenderStyle*, const RenderStyle* parentStyle);
-    void checkForZoomChange(RenderStyle*, const RenderStyle* parentStyle);
+    void updateComputedSize(RenderStyle*, const RenderStyle* parentStyle);
 
     float getComputedSizeFromSpecifiedSize(FontDescription&, float effectiveZoom, float specifiedSize);
 
     const Document* m_document;
-    bool m_useSVGZoomRules;
+    bool m_fontSizehasViewportUnits;
     // FIXME: This member is here on a short-term lease. The plan is to remove
     // any notion of RenderStyle from here, allowing FontBuilder to build Font objects
     // directly, rather than as a byproduct of calling RenderStyle::setFontDescription.
@@ -115,6 +126,8 @@ private:
     // is changed, FontBuilder tracks the need to update
     // style->font() with this bool.
     bool m_fontDirty;
+
+    friend class FontBuilderTest;
 };
 
 }

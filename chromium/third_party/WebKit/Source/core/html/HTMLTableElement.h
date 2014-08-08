@@ -38,35 +38,38 @@ class HTMLTableSectionElement;
 
 class HTMLTableElement FINAL : public HTMLElement {
 public:
-    static PassRefPtr<HTMLTableElement> create(Document&);
+    DECLARE_NODE_FACTORY(HTMLTableElement);
 
     HTMLTableCaptionElement* caption() const;
-    void setCaption(PassRefPtr<HTMLTableCaptionElement>, ExceptionState&);
+    void setCaption(PassRefPtrWillBeRawPtr<HTMLTableCaptionElement>, ExceptionState&);
 
     HTMLTableSectionElement* tHead() const;
-    void setTHead(PassRefPtr<HTMLTableSectionElement>, ExceptionState&);
+    void setTHead(PassRefPtrWillBeRawPtr<HTMLTableSectionElement>, ExceptionState&);
 
     HTMLTableSectionElement* tFoot() const;
-    void setTFoot(PassRefPtr<HTMLTableSectionElement>, ExceptionState&);
+    void setTFoot(PassRefPtrWillBeRawPtr<HTMLTableSectionElement>, ExceptionState&);
 
-    PassRefPtr<HTMLElement> createTHead();
+    PassRefPtrWillBeRawPtr<HTMLElement> createTHead();
     void deleteTHead();
-    PassRefPtr<HTMLElement> createTFoot();
+    PassRefPtrWillBeRawPtr<HTMLElement> createTFoot();
     void deleteTFoot();
-    PassRefPtr<HTMLElement> createTBody();
-    PassRefPtr<HTMLElement> createCaption();
+    PassRefPtrWillBeRawPtr<HTMLElement> createTBody();
+    PassRefPtrWillBeRawPtr<HTMLElement> createCaption();
     void deleteCaption();
-    PassRefPtr<HTMLElement> insertRow(int index, ExceptionState&);
+    PassRefPtrWillBeRawPtr<HTMLElement> insertRow(ExceptionState&);
+    PassRefPtrWillBeRawPtr<HTMLElement> insertRow(int index, ExceptionState&);
     void deleteRow(int index, ExceptionState&);
 
-    PassRefPtr<HTMLCollection> rows();
-    PassRefPtr<HTMLCollection> tBodies();
+    PassRefPtrWillBeRawPtr<HTMLTableRowsCollection> rows();
+    PassRefPtrWillBeRawPtr<HTMLCollection> tBodies();
 
     const AtomicString& rules() const;
     const AtomicString& summary() const;
 
     const StylePropertySet* additionalCellStyle();
     const StylePropertySet* additionalGroupStyle(bool rows);
+
+    virtual void trace(Visitor*) OVERRIDE;
 
 private:
     explicit HTMLTableElement(Document&);
@@ -75,20 +78,22 @@ private:
     virtual bool isPresentationAttribute(const QualifiedName&) const OVERRIDE;
     virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) OVERRIDE;
     virtual bool isURLAttribute(const Attribute&) const OVERRIDE;
+    virtual bool hasLegalLinkAttribute(const QualifiedName&) const OVERRIDE;
+    virtual const QualifiedName& subResourceAttributeName() const OVERRIDE;
 
     // Used to obtain either a solid or outset border decl and to deal with the frame and rules attributes.
     virtual const StylePropertySet* additionalPresentationAttributeStyle() OVERRIDE;
-
-    virtual void addSubresourceAttributeURLs(ListHashSet<KURL>&) const;
 
     enum TableRules { UnsetRules, NoneRules, GroupsRules, RowsRules, ColsRules, AllRules };
     enum CellBorders { NoBorders, SolidBorders, InsetBorders, SolidBordersColsOnly, SolidBordersRowsOnly };
 
     CellBorders cellBorders() const;
 
-    PassRefPtr<StylePropertySet> createSharedCellStyle();
+    PassRefPtrWillBeRawPtr<StylePropertySet> createSharedCellStyle();
 
     HTMLTableSectionElement* lastBody() const;
+
+    void setNeedsTableStyleRecalc() const;
 
     bool m_borderAttr;          // Sets a precise border width and creates an outset border for the table and for its cells.
     bool m_borderColorAttr;     // Overrides the outset border and makes it solid for the table and cells instead.
@@ -97,20 +102,8 @@ private:
                                 // are present, to none otherwise).
 
     unsigned short m_padding;
-    RefPtr<StylePropertySet> m_sharedCellStyle;
+    RefPtrWillBeMember<StylePropertySet> m_sharedCellStyle;
 };
-
-inline bool isHTMLTableElement(const Node* node)
-{
-    return node->hasTagName(HTMLNames::tableTag);
-}
-
-inline bool isHTMLTableElement(const Element* element)
-{
-    return element->hasTagName(HTMLNames::tableTag);
-}
-
-DEFINE_NODE_TYPE_CASTS(HTMLTableElement, hasTagName(HTMLNames::tableTag));
 
 } //namespace
 

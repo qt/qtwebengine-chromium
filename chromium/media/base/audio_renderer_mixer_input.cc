@@ -24,17 +24,17 @@ AudioRendererMixerInput::AudioRendererMixerInput(
 }
 
 AudioRendererMixerInput::~AudioRendererMixerInput() {
-  // Mixer is no longer safe to use after |remove_mixer_cb_| has been called.
-  if (initialized_)
-    remove_mixer_cb_.Run(params_);
+  DCHECK(!playing_);
+  DCHECK(!mixer_);
 }
 
 void AudioRendererMixerInput::Initialize(
     const AudioParameters& params,
     AudioRendererSink::RenderCallback* callback) {
+  DCHECK(callback);
   DCHECK(!initialized_);
+
   params_ = params;
-  mixer_ = get_mixer_cb_.Run(params_);
   callback_ = callback;
   initialized_ = true;
 }
@@ -42,30 +42,45 @@ void AudioRendererMixerInput::Initialize(
 void AudioRendererMixerInput::Start() {
   DCHECK(initialized_);
   DCHECK(!playing_);
+  DCHECK(!mixer_);
+  mixer_ = get_mixer_cb_.Run(params_);
+
+  // Note: OnRenderError() may be called immediately after this call returns.
+  mixer_->AddErrorCallback(error_cb_);
 }
 
 void AudioRendererMixerInput::Stop() {
   // Stop() may be called at any time, if Pause() hasn't been called we need to
   // remove our mixer input before shutdown.
-  if (!playing_)
-    return;
+  if (playing_) {
+    mixer_->RemoveMixerInput(this);
+    playing_ = false;
+  }
 
-  mixer_->RemoveMixerInput(this);
-  playing_ = false;
+  if (mixer_) {
+    // TODO(dalecurtis): This is required so that |callback_| isn't called after
+    // Stop() by an error event since it may outlive this ref-counted object. We
+    // should instead have sane ownership semantics: http://crbug.com/151051
+    mixer_->RemoveErrorCallback(error_cb_);
+    remove_mixer_cb_.Run(params_);
+    mixer_ = NULL;
+  }
 }
 
 void AudioRendererMixerInput::Play() {
   DCHECK(initialized_);
+  DCHECK(mixer_);
 
   if (playing_)
     return;
 
-  mixer_->AddMixerInput(this, error_cb_);
+  mixer_->AddMixerInput(this);
   playing_ = true;
 }
 
 void AudioRendererMixerInput::Pause() {
   DCHECK(initialized_);
+  DCHECK(mixer_);
 
   if (!playing_)
     return;

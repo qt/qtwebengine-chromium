@@ -27,18 +27,18 @@
 #define SpeechGrammar_h
 
 #include "bindings/v8/ScriptWrappable.h"
+#include "platform/heap/Handle.h"
 #include "platform/weborigin/KURL.h"
-#include "wtf/RefCounted.h"
 #include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
 class ExecutionContext;
 
-class SpeechGrammar : public ScriptWrappable, public RefCounted<SpeechGrammar> {
+class SpeechGrammar FINAL : public GarbageCollectedFinalized<SpeechGrammar>, public ScriptWrappable {
 public:
-    static PassRefPtr<SpeechGrammar> create(); // FIXME: The spec is not clear on what the constructor should look like.
-    static PassRefPtr<SpeechGrammar> create(const KURL& src, double weight);
+    static SpeechGrammar* create(); // FIXME: The spec is not clear on what the constructor should look like.
+    static SpeechGrammar* create(const KURL& src, double weight);
 
     const KURL& src(ExecutionContext*) const { return m_src; }
     const KURL& src() const { return m_src; }
@@ -46,6 +46,8 @@ public:
 
     double weight() const { return m_weight; }
     void setWeight(double weight) { m_weight = weight; }
+
+    void trace(Visitor*) { }
 
 private:
     SpeechGrammar();

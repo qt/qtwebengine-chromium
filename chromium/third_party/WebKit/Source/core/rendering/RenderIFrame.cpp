@@ -26,11 +26,10 @@
 #include "config.h"
 #include "core/rendering/RenderIFrame.h"
 
-#include "HTMLNames.h"
-#include "core/html/HTMLIFrameElement.h"
-#include "core/frame/Frame.h"
+#include "core/HTMLNames.h"
 #include "core/frame/FrameView.h"
-#include "core/rendering/LayoutRectRecorder.h"
+#include "core/frame/LocalFrame.h"
+#include "core/html/HTMLIFrameElement.h"
 #include "core/rendering/RenderView.h"
 
 namespace WebCore {
@@ -44,99 +43,32 @@ RenderIFrame::RenderIFrame(Element* element)
 
 bool RenderIFrame::shouldComputeSizeAsReplaced() const
 {
-    // When we're seamless, we use normal block/box sizing code except when inline.
-    return !isSeamless();
+    return true;
 }
 
 bool RenderIFrame::isInlineBlockOrInlineTable() const
 {
-    return isSeamless() && isInline();
+    return isInline();
 }
 
-LayoutUnit RenderIFrame::minPreferredLogicalWidth() const
+LayerType RenderIFrame::layerTypeRequired() const
 {
-    if (!isSeamless())
-        return RenderPart::minPreferredLogicalWidth();
-
-    RenderView* childRoot = contentRootRenderer();
-    if (!childRoot)
-        return 0;
-
-    return childRoot->minPreferredLogicalWidth() + borderAndPaddingLogicalWidth();
-}
-
-LayoutUnit RenderIFrame::maxPreferredLogicalWidth() const
-{
-    if (!isSeamless())
-        return RenderPart::maxPreferredLogicalWidth();
-
-    RenderView* childRoot = contentRootRenderer();
-    if (!childRoot)
-        return 0;
-
-    return childRoot->maxPreferredLogicalWidth() + borderAndPaddingLogicalWidth();
-}
-
-bool RenderIFrame::isSeamless() const
-{
-    return node() && node()->hasTagName(iframeTag) && toHTMLIFrameElement(node())->shouldDisplaySeamlessly();
-}
-
-bool RenderIFrame::requiresLayer() const
-{
-    return RenderPart::requiresLayer() || style()->resize() != RESIZE_NONE;
-}
-
-RenderView* RenderIFrame::contentRootRenderer() const
-{
-    // FIXME: Is this always a valid cast? What about plugins?
-    ASSERT(!widget() || widget()->isFrameView());
-    FrameView* childFrameView = toFrameView(widget());
-    return childFrameView ? childFrameView->frame().contentRenderer() : 0;
-}
-
-void RenderIFrame::layoutSeamlessly()
-{
-    updateLogicalWidth();
-    // FIXME: Containers set their height to 0 before laying out their kids (as we're doing here)
-    // however, this causes FrameView::layout() to add vertical scrollbars, incorrectly inflating
-    // the resulting contentHeight(). We'll need to make FrameView::layout() smarter.
-    setLogicalHeight(0);
-    updateWidgetPosition(); // Tell the Widget about our new width/height (it will also layout the child document).
-
-    // Laying out our kids is normally responsible for adjusting our height, so we set it here.
-    // Replaced elements normally do not respect padding, but seamless elements should: we'll add
-    // both padding and border to the child's logical height here.
-    FrameView* childFrameView = toFrameView(widget());
-    if (childFrameView) // Widget should never be null during layout(), but just in case.
-        setLogicalHeight(childFrameView->contentsHeight() + borderTop() + borderBottom() + paddingTop() + paddingBottom());
-    updateLogicalHeight();
-
-    updateWidgetPosition(); // Notify the Widget of our final height.
-
-    // Assert that the child document did a complete layout.
-    RenderView* childRoot = childFrameView ? childFrameView->frame().contentRenderer() : 0;
-    ASSERT(!childFrameView || !childFrameView->layoutPending());
-    ASSERT_UNUSED(childRoot, !childRoot || !childRoot->needsLayout());
+    if (style()->resize() != RESIZE_NONE)
+        return NormalLayer;
+    return RenderPart::layerTypeRequired();
 }
 
 void RenderIFrame::layout()
 {
     ASSERT(needsLayout());
 
-    LayoutRectRecorder recorder(*this);
-    if (isSeamless()) {
-        layoutSeamlessly();
-        // Do not return so as to share the layer and overflow updates below.
-    } else {
-        updateLogicalWidth();
-        // No kids to layout as a replaced element.
-        updateLogicalHeight();
-    }
+    updateLogicalWidth();
+    // No kids to layout as a replaced element.
+    updateLogicalHeight();
 
     m_overflow.clear();
     addVisualEffectOverflow();
-    updateLayerTransform();
+    updateLayerTransformAfterLayout();
 
     clearNeedsLayout();
 }

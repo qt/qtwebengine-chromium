@@ -80,7 +80,7 @@ class CC_EXPORT VideoResourceUpdater
     gpu::Mailbox mailbox;
 
     PlaneResource(unsigned resource_id,
-                  gfx::Size resource_size,
+                  const gfx::Size& resource_size,
                   ResourceFormat resource_format,
                   gpu::Mailbox mailbox)
         : resource_id(resource_id),
@@ -104,7 +104,7 @@ class CC_EXPORT VideoResourceUpdater
   };
   static void RecycleResource(base::WeakPtr<VideoResourceUpdater> updater,
                               RecycleResourceData data,
-                              unsigned sync_point,
+                              uint32 sync_point,
                               bool lost_resource);
 
   ContextProvider* context_provider_;

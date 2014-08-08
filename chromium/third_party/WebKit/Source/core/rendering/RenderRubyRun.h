@@ -47,20 +47,19 @@ public:
 
     bool hasRubyText() const;
     bool hasRubyBase() const;
-    bool isEmpty() const;
     RenderRubyText* rubyText() const;
     RenderRubyBase* rubyBase() const;
     RenderRubyBase* rubyBaseSafe(); // creates the base if it doesn't already exist
 
-    virtual RenderObject* layoutSpecialExcludedChild(bool relayoutChildren, SubtreeLayoutScope&);
-    virtual void layout();
+    virtual RenderObject* layoutSpecialExcludedChild(bool relayoutChildren, SubtreeLayoutScope&) OVERRIDE;
+    virtual void layout() OVERRIDE;
 
-    virtual bool isChildAllowed(RenderObject*, RenderStyle*) const;
-    virtual void addChild(RenderObject* child, RenderObject* beforeChild = 0);
-    virtual void removeChild(RenderObject* child);
+    virtual bool isChildAllowed(RenderObject*, RenderStyle*) const OVERRIDE;
+    virtual void addChild(RenderObject* child, RenderObject* beforeChild = 0) OVERRIDE;
+    virtual void removeChild(RenderObject* child) OVERRIDE;
 
-    virtual RenderBlock* firstLineBlock() const;
-    virtual void updateFirstLetter();
+    virtual RenderBlock* firstLineBlock() const OVERRIDE;
+    virtual void updateFirstLetter() OVERRIDE;
 
     void getOverhang(bool firstLine, RenderObject* startRenderer, RenderObject* endRenderer, int& startOverhang, int& endOverhang) const;
 
@@ -72,11 +71,10 @@ protected:
 private:
     RenderRubyRun();
 
-    virtual bool isRubyRun() const { return true; }
-    virtual const char* renderName() const { return "RenderRubyRun (anonymous)"; }
-    virtual bool supportsPartialLayout() const OVERRIDE { return false; }
-    virtual bool createsAnonymousWrapper() const { return true; }
-    virtual void removeLeftoverAnonymousBlock(RenderBlock*) { }
+    virtual bool isRubyRun() const OVERRIDE { return true; }
+    virtual const char* renderName() const OVERRIDE { return "RenderRubyRun (anonymous)"; }
+    virtual bool createsAnonymousWrapper() const OVERRIDE { return true; }
+    virtual void removeLeftoverAnonymousBlock(RenderBlock*) OVERRIDE { }
 };
 
 DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderRubyRun, isRubyRun());

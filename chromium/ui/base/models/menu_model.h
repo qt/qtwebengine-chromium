@@ -8,12 +8,12 @@
 #include "base/strings/string16.h"
 #include "ui/base/models/menu_model_delegate.h"
 #include "ui/base/models/menu_separator_types.h"
-#include "ui/base/ui_export.h"
+#include "ui/base/ui_base_export.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/native_widget_types.h"
 
 namespace gfx {
-class Font;
+class FontList;
 class Image;
 }
 
@@ -23,7 +23,7 @@ class Accelerator;
 class ButtonMenuItemModel;
 
 // An interface implemented by an object that provides the content of a menu.
-class UI_EXPORT MenuModel {
+class UI_BASE_EXPORT MenuModel {
  public:
   // The type of item.
   enum ItemType {
@@ -71,9 +71,9 @@ class UI_EXPORT MenuModel {
   // updated each time the menu is shown.
   virtual bool IsItemDynamicAt(int index) const = 0;
 
-  // Returns the font used for the label at the specified index.
-  // If NULL, then the default font should be used.
-  virtual const gfx::Font* GetLabelFontAt(int index) const;
+  // Returns the font list used for the label at the specified index.
+  // If NULL, then the default font list should be used.
+  virtual const gfx::FontList* GetLabelFontListAt(int index) const;
 
   // Gets the acclerator information for the specified index, returning true if
   // there is a shortcut accelerator for the item, false otherwise.

@@ -24,7 +24,8 @@ class CONTENT_EXPORT DeviceRequestMessageFilter : public BrowserMessageFilter,
                                                   public MediaStreamRequester {
  public:
   DeviceRequestMessageFilter(ResourceContext* resource_context,
-                             MediaStreamManager* media_stream_manager);
+                             MediaStreamManager* media_stream_manager,
+                             int render_process_id);
 
   // MediaStreamRequester implementation.
   // TODO(vrk): Replace MediaStreamRequester interface with a single callback so
@@ -34,8 +35,10 @@ class CONTENT_EXPORT DeviceRequestMessageFilter : public BrowserMessageFilter,
       int render_view_id, int page_request_id, const std::string& label,
       const StreamDeviceInfoArray& audio_devices,
       const StreamDeviceInfoArray& video_devices) OVERRIDE {}
-  virtual void StreamGenerationFailed(int render_view_id,
-                                      int page_request_id) OVERRIDE {}
+  virtual void StreamGenerationFailed(
+      int render_view_id,
+      int page_request_id,
+      content::MediaStreamRequestResult result) OVERRIDE {}
   virtual void DeviceStopped(int render_view_id,
                              const std::string& label,
                              const StreamDeviceInfo& device) OVERRIDE {}
@@ -50,8 +53,7 @@ class CONTENT_EXPORT DeviceRequestMessageFilter : public BrowserMessageFilter,
                                  const StreamDeviceInfoArray& devices) OVERRIDE;
 
   // BrowserMessageFilter implementation.
-  virtual bool OnMessageReceived(const IPC::Message& message,
-                                 bool* message_was_ok) OVERRIDE;
+  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
   virtual void OnChannelClosing() OVERRIDE;
 
  protected:
@@ -68,6 +70,8 @@ class CONTENT_EXPORT DeviceRequestMessageFilter : public BrowserMessageFilter,
   typedef std::vector<DeviceRequest> DeviceRequestList;
   // List of all requests.
   DeviceRequestList requests_;
+
+  int render_process_id_;
 
   DISALLOW_COPY_AND_ASSIGN(DeviceRequestMessageFilter);
 };

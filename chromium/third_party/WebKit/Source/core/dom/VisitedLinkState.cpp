@@ -29,8 +29,8 @@
 #include "config.h"
 #include "core/dom/VisitedLinkState.h"
 
-#include "HTMLNames.h"
-#include "XLinkNames.h"
+#include "core/HTMLNames.h"
+#include "core/XLinkNames.h"
 #include "core/dom/ElementTraversal.h"
 #include "core/html/HTMLAnchorElement.h"
 #include "public/platform/Platform.h"
@@ -65,7 +65,7 @@ void VisitedLinkState::invalidateStyleForAllLinks()
         return;
     for (Element* element = ElementTraversal::firstWithin(m_document); element; element = ElementTraversal::next(*element)) {
         if (element->isLink())
-            element->setNeedsStyleRecalc();
+            element->setNeedsStyleRecalc(SubtreeStyleChange);
     }
 }
 
@@ -75,7 +75,7 @@ void VisitedLinkState::invalidateStyleForLink(LinkHash linkHash)
         return;
     for (Element* element = ElementTraversal::firstWithin(m_document); element; element = ElementTraversal::next(*element)) {
         if (element->isLink() && linkHashForElement(*element) == linkHash)
-            element->setNeedsStyleRecalc();
+            element->setNeedsStyleRecalc(SubtreeStyleChange);
     }
 }
 

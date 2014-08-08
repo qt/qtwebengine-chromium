@@ -33,7 +33,14 @@
 
 namespace WebCore {
 
-PassRefPtr<AnimatableValue> AnimatableVisibility::interpolateTo(const AnimatableValue* value, double fraction) const
+bool AnimatableVisibility::usesDefaultInterpolationWith(const AnimatableValue* value) const
+{
+    EVisibility from = m_visibility;
+    EVisibility to = toAnimatableVisibility(value)->m_visibility;
+    return from != VISIBLE && to != VISIBLE;
+}
+
+PassRefPtrWillBeRawPtr<AnimatableValue> AnimatableVisibility::interpolateTo(const AnimatableValue* value, double fraction) const
 {
     EVisibility from = m_visibility;
     EVisibility to = toAnimatableVisibility(value)->m_visibility;

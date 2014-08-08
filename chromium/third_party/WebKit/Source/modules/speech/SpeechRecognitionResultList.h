@@ -28,22 +28,23 @@
 
 #include "bindings/v8/ScriptWrappable.h"
 #include "modules/speech/SpeechRecognitionResult.h"
-#include "wtf/RefCounted.h"
-#include "wtf/Vector.h"
+#include "platform/heap/Handle.h"
 
 namespace WebCore {
 
-class SpeechRecognitionResultList : public ScriptWrappable, public RefCounted<SpeechRecognitionResultList> {
+class SpeechRecognitionResultList : public GarbageCollectedFinalized<SpeechRecognitionResultList>, public ScriptWrappable {
 public:
-    static PassRefPtr<SpeechRecognitionResultList> create(const Vector<RefPtr<SpeechRecognitionResult> >&);
+    static SpeechRecognitionResultList* create(const HeapVector<Member<SpeechRecognitionResult> >&);
 
     unsigned long length() { return m_results.size(); }
     SpeechRecognitionResult* item(unsigned long index);
 
-private:
-    explicit SpeechRecognitionResultList(const Vector<RefPtr<SpeechRecognitionResult> >&);
+    void trace(Visitor*);
 
-    Vector<RefPtr<SpeechRecognitionResult> > m_results;
+private:
+    explicit SpeechRecognitionResultList(const HeapVector<Member<SpeechRecognitionResult> >&);
+
+    HeapVector<Member<SpeechRecognitionResult> > m_results;
 };
 
 } // namespace WebCore

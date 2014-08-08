@@ -33,7 +33,7 @@
 #include "core/events/MessageEvent.h"
 #include "core/fetch/ResourceFetcher.h"
 #include "core/inspector/InspectorInstrumentation.h"
-#include "core/frame/DOMWindow.h"
+#include "core/frame/LocalDOMWindow.h"
 #include "core/frame/UseCounter.h"
 #include "core/workers/WorkerGlobalScopeProxy.h"
 #include "core/workers/WorkerGlobalScopeProxyProvider.h"
@@ -50,28 +50,31 @@ inline Worker::Worker(ExecutionContext* context)
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<Worker> Worker::create(ExecutionContext* context, const String& url, ExceptionState& exceptionState)
+PassRefPtrWillBeRawPtr<Worker> Worker::create(ExecutionContext* context, const String& url, ExceptionState& exceptionState)
 {
     ASSERT(isMainThread());
     Document* document = toDocument(context);
-    UseCounter::count(document->domWindow(), UseCounter::WorkerStart);
-    ASSERT(document->page());
-    WorkerGlobalScopeProxyProvider* proxyProvider = WorkerGlobalScopeProxyProvider::from(document->page());
+    UseCounter::count(context, UseCounter::WorkerStart);
+    if (!document->page()) {
+        exceptionState.throwDOMException(InvalidAccessError, "The context provided is invalid.");
+        return nullptr;
+    }
+    WorkerGlobalScopeProxyProvider* proxyProvider = WorkerGlobalScopeProxyProvider::from(*document->page());
     ASSERT(proxyProvider);
 
-    RefPtr<Worker> worker = adoptRef(new Worker(context));
+    RefPtrWillBeRawPtr<Worker> worker = adoptRefWillBeRefCountedGarbageCollected(new Worker(context));
 
     worker->suspendIfNeeded();
 
     KURL scriptURL = worker->resolveURL(url, exceptionState);
     if (scriptURL.isEmpty())
-        return 0;
+        return nullptr;
 
     // The worker context does not exist while loading, so we must ensure that the worker object is not collected, nor are its event listeners.
     worker->setPendingActivity(worker.get());
 
     worker->m_scriptLoader = WorkerScriptLoader::create();
-    worker->m_scriptLoader->loadAsynchronously(context, scriptURL, DenyCrossOriginRequests, worker.get());
+    worker->m_scriptLoader->loadAsynchronously(*context, scriptURL, DenyCrossOriginRequests, worker.get());
     worker->m_contextProxy = proxyProvider->createWorkerGlobalScopeProxy(worker.get());
     return worker.release();
 }
@@ -100,7 +103,8 @@ void Worker::postMessage(PassRefPtr<SerializedScriptValue> message, const Messag
 
 void Worker::terminate()
 {
-    m_contextProxy->terminateWorkerGlobalScope();
+    if (m_contextProxy)
+        m_contextProxy->terminateWorkerGlobalScope();
 }
 
 void Worker::stop()
@@ -132,6 +136,11 @@ void Worker::notifyFinished()
     m_scriptLoader = nullptr;
 
     unsetPendingActivity(this);
+}
+
+void Worker::trace(Visitor* visitor)
+{
+    AbstractWorker::trace(visitor);
 }
 
 } // namespace WebCore

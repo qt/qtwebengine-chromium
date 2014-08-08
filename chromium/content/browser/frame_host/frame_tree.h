@@ -34,9 +34,6 @@ class RenderWidgetHostDelegate;
 // TODO(ajwong): Move NavigationController ownership to the main frame
 // FrameTreeNode. Possibly expose access to it from here.
 //
-// TODO(ajwong): Currently this class only contains FrameTreeNodes for
-// subframes if the --site-per-process flag is enabled.
-//
 // This object is only used on the UI thread.
 class CONTENT_EXPORT FrameTree {
  public:
@@ -53,71 +50,80 @@ class CONTENT_EXPORT FrameTree {
             RenderFrameHostManager::Delegate* manager_delegate);
   ~FrameTree();
 
+  FrameTreeNode* root() const { return root_.get(); }
+
   // Returns the FrameTreeNode with the given |frame_tree_node_id|.
   FrameTreeNode* FindByID(int64 frame_tree_node_id);
 
+  // Returns the FrameTreeNode with the given renderer-specific |routing_id|.
+  FrameTreeNode* FindByRoutingID(int routing_id, int process_id);
+
   // Executes |on_node| on each node in the frame tree.  If |on_node| returns
   // false, terminates the iteration immediately. Returning false is useful
-  // if |on_node| is just doing a search over the tree.
+  // if |on_node| is just doing a search over the tree.  The iteration proceeds
+  // top-down and visits a node before adding its children to the queue, making
+  // it safe to remove children during the callback.
   void ForEach(const base::Callback<bool(FrameTreeNode*)>& on_node) const;
 
-  // After the FrameTree is created, or after SwapMainFrame() has been called,
-  // the root node does not yet have a frame id. This is allocated by the
-  // renderer and is published to the browser process on the first navigation
-  // after a swap. These two functions are used to set the root node's frame
-  // id.
-  //
-  // TODO(ajwong): Remove these once RenderFrameHost's routing id replaces
-  // frame_id.
-  bool IsFirstNavigationAfterSwap() const;
-  void OnFirstNavigationAfterSwap(int main_frame_id);
-
   // Frame tree manipulation routines.
-  // TODO(creis): These should take in RenderFrameHost routing IDs.
-  RenderFrameHostImpl* AddFrame(int render_frame_host_id,
-                                int64 parent_frame_tree_node_id,
-                                int64 frame_id,
+  RenderFrameHostImpl* AddFrame(FrameTreeNode* parent,
+                                int new_routing_id,
                                 const std::string& frame_name);
-  void RemoveFrame(RenderFrameHostImpl* render_frame_host,
-                   int64 parent_frame_id,
-                   int64 frame_id);
-  void SetFrameUrl(int64 frame_id, const GURL& url);
+  void RemoveFrame(FrameTreeNode* child);
 
-  // Resets the FrameTree and changes RenderFrameHost for the main frame.
+  // Clears process specific-state after a main frame process swap.
   // This destroys most of the frame tree but retains the root node so that
   // navigation state may be kept on it between process swaps. Used to
   // support bookkeeping for top-level navigations.
-  //
-  // If |main_frame| is NULL, reset tree to initially constructed state.
-  //
-  // TODO(ajwong): This function should not be given a |main_frame|. This is
-  // required currently because the RenderViewHost owns its main frame. When
-  // that relation is fixed, the FrameTree should be responsible for
-  // created/destroying the main frame on the swap.
-  void SwapMainFrame(RenderFrameHostImpl* main_frame);
+  // TODO(creis): Look into how we can remove the need for this method.
+  void ResetForMainFrameSwap();
+
+  // Update the frame tree after a process exits.  Any nodes currently using the
+  // given |render_view_host| will lose all their children.
+  // TODO(creis): This should take a RenderProcessHost once RenderFrameHost
+  // knows its process.  Until then, we would just be asking the RenderViewHost
+  // for its process, so we'll skip that step.
+  void RenderProcessGone(RenderViewHost* render_view_host);
 
   // Convenience accessor for the main frame's RenderFrameHostImpl.
   RenderFrameHostImpl* GetMainFrame() const;
 
+  // Returns the focused frame.
+  FrameTreeNode* GetFocusedFrame();
+
+  // Sets the focused frame.
+  void SetFocusedFrame(FrameTreeNode* node);
+
   // Allows a client to listen for frame removal.  The listener should expect
   // to receive the RenderViewHostImpl containing the frame and the renderer-
-  // specific frame ID of the removed frame.
+  // specific frame routing ID of the removed frame.
   // TODO(creis): These parameters will later change to be the RenderFrameHost.
   void SetFrameRemoveListener(
-      const base::Callback<void(RenderViewHostImpl*, int64)>& on_frame_removed);
+      const base::Callback<void(RenderViewHostImpl*, int)>& on_frame_removed);
 
-  FrameTreeNode* root() const { return root_.get(); }
+  // Creates a RenderViewHost for a new main frame RenderFrameHost in the given
+  // |site_instance|.  The RenderViewHost will have its Shutdown method called
+  // when all of the RenderFrameHosts using it are deleted.
+  RenderViewHostImpl* CreateRenderViewHostForMainFrame(
+      SiteInstance* site_instance,
+      int routing_id,
+      int main_frame_routing_id,
+      bool swapped_out,
+      bool hidden);
+
+  // Returns the existing RenderViewHost for a new subframe RenderFrameHost.
+  // There should always be such a RenderViewHost, because the main frame
+  // RenderFrameHost for each SiteInstance should be created before subframes.
+  RenderViewHostImpl* GetRenderViewHostForSubFrame(SiteInstance* site_instance);
+
+  // Keeps track of which RenderFrameHosts are using each RenderViewHost.  When
+  // the number drops to zero, we call Shutdown on the RenderViewHost.
+  void RegisterRenderFrameHost(RenderFrameHostImpl* render_frame_host);
+  void UnregisterRenderFrameHost(RenderFrameHostImpl* render_frame_host);
 
  private:
-  // Returns the FrameTreeNode with the given renderer-specific |frame_id|.
-  // For internal use only.
-  // TODO(creis): Replace this with a version that takes in a routing ID.
-  FrameTreeNode* FindByFrameID(int64 frame_id);
-
-  scoped_ptr<FrameTreeNode> CreateNode(int64 frame_id,
-                                       const std::string& frame_name,
-                                       int render_frame_host_id,
-                                       FrameTreeNode* parent_node);
+  typedef base::hash_map<int, RenderViewHostImpl*> RenderViewHostMap;
+  typedef std::multimap<int, RenderViewHostImpl*> RenderViewHostMultiMap;
 
   // These delegates are installed into all the RenderViewHosts and
   // RenderFrameHosts that we create.
@@ -126,9 +132,28 @@ class CONTENT_EXPORT FrameTree {
   RenderWidgetHostDelegate* render_widget_delegate_;
   RenderFrameHostManager::Delegate* manager_delegate_;
 
+  // Map of SiteInstance ID to a RenderViewHost.  This allows us to look up the
+  // RenderViewHost for a given SiteInstance when creating RenderFrameHosts.
+  // Combined with the refcount on RenderViewHost, this allows us to call
+  // Shutdown on the RenderViewHost and remove it from the map when no more
+  // RenderFrameHosts are using it.
+  //
+  // Must be declared before |root_| so that it is deleted afterward.  Otherwise
+  // the map will be cleared before we delete the RenderFrameHosts in the tree.
+  RenderViewHostMap render_view_host_map_;
+
+  // Map of SiteInstance ID to RenderViewHosts that are pending shutdown. The
+  // renderers of these RVH are currently executing the unload event in
+  // background. When the SwapOutACK is received, they will be deleted. In the
+  // meantime, they are kept in this map, as they should not be reused (part of
+  // their state is already gone away).
+  RenderViewHostMultiMap render_view_host_pending_shutdown_map_;
+
   scoped_ptr<FrameTreeNode> root_;
 
-  base::Callback<void(RenderViewHostImpl*, int64)> on_frame_removed_;
+  int64 focused_frame_tree_node_id_;
+
+  base::Callback<void(RenderViewHostImpl*, int)> on_frame_removed_;
 
   DISALLOW_COPY_AND_ASSIGN(FrameTree);
 };

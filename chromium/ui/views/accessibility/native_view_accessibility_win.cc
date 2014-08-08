@@ -4,8 +4,8 @@
 
 #include "ui/views/accessibility/native_view_accessibility_win.h"
 
-#include <UIAutomationClient.h>
 #include <oleacc.h>
+#include <UIAutomationClient.h>
 
 #include <set>
 #include <vector>
@@ -15,8 +15,9 @@
 #include "base/win/scoped_comptr.h"
 #include "base/win/windows_version.h"
 #include "third_party/iaccessible2/ia2_api_all.h"
-#include "ui/base/accessibility/accessible_text_utils.h"
-#include "ui/base/accessibility/accessible_view_state.h"
+#include "ui/accessibility/ax_enums.h"
+#include "ui/accessibility/ax_text_utils.h"
+#include "ui/accessibility/ax_view_state.h"
 #include "ui/base/win/accessibility_ids_win.h"
 #include "ui/base/win/accessibility_misc_utils.h"
 #include "ui/base/win/atl_module.h"
@@ -25,8 +26,6 @@
 #include "ui/views/focus/view_storage.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/win/hwnd_util.h"
-
-using ui::AccessibilityTypes;
 
 namespace views {
 namespace {
@@ -190,6 +189,7 @@ void AccessibleWebViewRegistry::QueryIAccessible2Interface(View* web_view) {
 long NativeViewAccessibilityWin::next_unique_id_ = 1;
 int NativeViewAccessibilityWin::view_storage_ids_[kMaxViewStorageIds] = {0};
 int NativeViewAccessibilityWin::next_view_storage_id_index_ = 0;
+std::vector<int> NativeViewAccessibilityWin::alert_target_view_storage_ids_;
 
 // static
 NativeViewAccessibility* NativeViewAccessibility::Create(View* view) {
@@ -211,10 +211,11 @@ NativeViewAccessibilityWin::NativeViewAccessibilityWin()
 }
 
 NativeViewAccessibilityWin::~NativeViewAccessibilityWin() {
+  RemoveAlertTarget();
 }
 
 void NativeViewAccessibilityWin::NotifyAccessibilityEvent(
-    ui::AccessibilityTypes::Event event_type) {
+    ui::AXEvent event_type) {
   if (!view_)
     return;
 
@@ -237,6 +238,10 @@ void NativeViewAccessibilityWin::NotifyAccessibilityEvent(
   ::NotifyWinEvent(MSAAEvent(event_type), hwnd, OBJID_CLIENT, child_id);
   next_view_storage_id_index_ =
       (next_view_storage_id_index_ + 1) % kMaxViewStorageIds;
+
+  // Keep track of views that are a target of an alert event.
+  if (event_type == ui::AX_EVENT_ALERT)
+    AddAlertTarget();
 }
 
 gfx::NativeViewAccessible NativeViewAccessibilityWin::GetNativeObject() {
@@ -557,9 +562,9 @@ STDMETHODIMP NativeViewAccessibilityWin::get_accDefaultAction(
   if (!view_)
     return E_FAIL;
 
-  ui::AccessibleViewState state;
+  ui::AXViewState state;
   view_->GetAccessibleState(&state);
-  string16 temp_action = state.default_action;
+  base::string16 temp_action = state.default_action;
 
   if (!temp_action.empty()) {
     *def_action = SysAllocString(temp_action.c_str());
@@ -578,7 +583,7 @@ STDMETHODIMP NativeViewAccessibilityWin::get_accDescription(
   if (!view_)
     return E_FAIL;
 
-  string16 temp_desc;
+  base::string16 temp_desc;
 
   view_->GetTooltipText(gfx::Point(), &temp_desc);
   if (!temp_desc.empty()) {
@@ -624,9 +629,9 @@ STDMETHODIMP NativeViewAccessibilityWin::get_accKeyboardShortcut(
   if (!view_)
     return E_FAIL;
 
-  ui::AccessibleViewState state;
+  ui::AXViewState state;
   view_->GetAccessibleState(&state);
-  string16 temp_key = state.keyboard_shortcut;
+  base::string16 temp_key = state.keyboard_shortcut;
 
   if (!temp_key.empty()) {
     *acc_key = SysAllocString(temp_key.c_str());
@@ -646,9 +651,9 @@ STDMETHODIMP NativeViewAccessibilityWin::get_accName(
     return E_FAIL;
 
   // Retrieve the current view's name.
-  ui::AccessibleViewState state;
+  ui::AXViewState state;
   view_->GetAccessibleState(&state);
-  string16 temp_name = state.name;
+  base::string16 temp_name = state.name;
   if (!temp_name.empty()) {
     // Return name retrieved.
     *name = SysAllocString(temp_name.c_str());
@@ -694,7 +699,7 @@ STDMETHODIMP NativeViewAccessibilityWin::get_accRole(
   if (!view_)
     return E_FAIL;
 
-  ui::AccessibleViewState state;
+  ui::AXViewState state;
   view_->GetAccessibleState(&state);
   role->vt = VT_I4;
   role->lVal = MSAARole(state.role);
@@ -733,9 +738,9 @@ STDMETHODIMP NativeViewAccessibilityWin::get_accValue(VARIANT var_id,
     return E_FAIL;
 
   // Retrieve the current view's value.
-  ui::AccessibleViewState state;
+  ui::AXViewState state;
   view_->GetAccessibleState(&state);
-  string16 temp_value = state.value;
+  base::string16 temp_value = state.value;
 
   if (!temp_value.empty()) {
     // Return value retrieved.
@@ -758,7 +763,7 @@ STDMETHODIMP NativeViewAccessibilityWin::put_accValue(VARIANT var_id,
     return E_FAIL;
 
   // Return an error if the view can't set the value.
-  ui::AccessibleViewState state;
+  ui::AXViewState state;
   view_->GetAccessibleState(&state);
   if (state.set_value_callback.is_null())
     return E_FAIL;
@@ -782,9 +787,9 @@ STDMETHODIMP NativeViewAccessibilityWin::accSelect(
 
 STDMETHODIMP NativeViewAccessibilityWin::get_accHelp(
     VARIANT var_id, BSTR* help) {
-  if (help)
-    *help = NULL;
-  return E_NOTIMPL;
+  base::string16 temp = base::UTF8ToUTF16(view_->GetClassName());
+  *help = SysAllocString(temp.c_str());
+  return S_OK;
 }
 
 STDMETHODIMP NativeViewAccessibilityWin::get_accHelpTopic(
@@ -815,7 +820,7 @@ STDMETHODIMP NativeViewAccessibilityWin::role(LONG* role) {
   if (!role)
     return E_INVALIDARG;
 
-  ui::AccessibleViewState state;
+  ui::AXViewState state;
   view_->GetAccessibleState(&state);
   *role = MSAARole(state.role);
   return S_OK;
@@ -831,14 +836,14 @@ STDMETHODIMP NativeViewAccessibilityWin::get_states(AccessibleStates* states) {
   if (!states)
     return E_INVALIDARG;
 
-  ui::AccessibleViewState state;
+  ui::AXViewState state;
   view_->GetAccessibleState(&state);
 
   // There are only a couple of states we need to support
   // in IAccessible2. If any more are added, we may want to
   // add a helper function like MSAAState.
   *states = IA2_STATE_OPAQUE;
-  if (state.state & AccessibilityTypes::STATE_EDITABLE)
+  if (state.HasStateFlag(ui::AX_STATE_EDITABLE))
     *states |= IA2_STATE_EDITABLE;
 
   return S_OK;
@@ -866,6 +871,59 @@ STDMETHODIMP NativeViewAccessibilityWin::get_windowHandle(HWND* window_handle) {
   return *window_handle ? S_OK : S_FALSE;
 }
 
+STDMETHODIMP NativeViewAccessibilityWin::get_relationTargetsOfType(
+    BSTR type_bstr,
+    long max_targets,
+    IUnknown ***targets,
+    long *n_targets) {
+  if (!view_)
+    return E_FAIL;
+
+  if (!targets || !n_targets)
+    return E_INVALIDARG;
+
+  *n_targets = 0;
+  *targets = NULL;
+
+  // Only respond to requests for relations of type "alerts" on the
+  // root view.
+  base::string16 type(type_bstr);
+  if (type != L"alerts" || view_->parent())
+    return S_FALSE;
+
+  // Collect all of the alert views that are still valid.
+  std::vector<View*> alert_views;
+  ViewStorage* view_storage = ViewStorage::GetInstance();
+  for (size_t i = 0; i < alert_target_view_storage_ids_.size(); ++i) {
+    int view_storage_id = alert_target_view_storage_ids_[i];
+    View* view = view_storage->RetrieveView(view_storage_id);
+    if (!view || !view_->Contains(view))
+      continue;
+    alert_views.push_back(view);
+  }
+
+  long count = alert_views.size();
+  if (count == 0)
+    return S_FALSE;
+
+  // Don't return more targets than max_targets - but note that the caller
+  // is allowed to specify max_targets=0 to mean no limit.
+  if (max_targets > 0 && count > max_targets)
+    count = max_targets;
+
+  // Return the number of targets.
+  *n_targets = count;
+
+  // Allocate COM memory for the result array and populate it.
+  *targets = static_cast<IUnknown**>(
+      CoTaskMemAlloc(count * sizeof(IUnknown*)));
+  for (long i = 0; i < count; ++i) {
+    (*targets)[i] = alert_views[i]->GetNativeViewAccessible();
+    (*targets)[i]->AddRef();
+  }
+  return S_OK;
+}
+
 //
 // IAccessibleText
 //
@@ -877,7 +935,7 @@ STDMETHODIMP NativeViewAccessibilityWin::get_nCharacters(LONG* n_characters) {
   if (!n_characters)
     return E_INVALIDARG;
 
-  string16 text = TextForIAccessibleText();
+  base::string16 text = TextForIAccessibleText();
   *n_characters = static_cast<LONG>(text.size());
   return S_OK;
 }
@@ -889,7 +947,7 @@ STDMETHODIMP NativeViewAccessibilityWin::get_caretOffset(LONG* offset) {
   if (!offset)
     return E_INVALIDARG;
 
-  ui::AccessibleViewState state;
+  ui::AXViewState state;
   view_->GetAccessibleState(&state);
   *offset = static_cast<LONG>(state.selection_end);
   return S_OK;
@@ -902,7 +960,7 @@ STDMETHODIMP NativeViewAccessibilityWin::get_nSelections(LONG* n_selections) {
   if (!n_selections)
     return E_INVALIDARG;
 
-  ui::AccessibleViewState state;
+  ui::AXViewState state;
   view_->GetAccessibleState(&state);
   if (state.selection_start != state.selection_end)
     *n_selections = 1;
@@ -920,7 +978,7 @@ STDMETHODIMP NativeViewAccessibilityWin::get_selection(LONG selection_index,
   if (!start_offset || !end_offset || selection_index != 0)
     return E_INVALIDARG;
 
-  ui::AccessibleViewState state;
+  ui::AXViewState state;
   view_->GetAccessibleState(&state);
   *start_offset = static_cast<LONG>(state.selection_start);
   *end_offset = static_cast<LONG>(state.selection_end);
@@ -933,9 +991,9 @@ STDMETHODIMP NativeViewAccessibilityWin::get_text(LONG start_offset,
   if (!view_)
     return E_FAIL;
 
-  ui::AccessibleViewState state;
+  ui::AXViewState state;
   view_->GetAccessibleState(&state);
-  string16 text_str = TextForIAccessibleText();
+  base::string16 text_str = TextForIAccessibleText();
   LONG len = static_cast<LONG>(text_str.size());
 
   if (start_offset == IA2_TEXT_OFFSET_LENGTH) {
@@ -963,7 +1021,8 @@ STDMETHODIMP NativeViewAccessibilityWin::get_text(LONG start_offset,
   if (end_offset > len)
     return E_INVALIDARG;
 
-  string16 substr = text_str.substr(start_offset, end_offset - start_offset);
+  base::string16 substr =
+      text_str.substr(start_offset, end_offset - start_offset);
   if (substr.empty())
     return S_FALSE;
 
@@ -989,7 +1048,7 @@ STDMETHODIMP NativeViewAccessibilityWin::get_textAtOffset(
     return S_FALSE;
   }
 
-  const string16& text_str = TextForIAccessibleText();
+  const base::string16& text_str = TextForIAccessibleText();
 
   *start_offset = FindBoundary(
       text_str, boundary_type, offset, ui::BACKWARDS_DIRECTION);
@@ -1015,7 +1074,7 @@ STDMETHODIMP NativeViewAccessibilityWin::get_textBeforeOffset(
     return S_FALSE;
   }
 
-  const string16& text_str = TextForIAccessibleText();
+  const base::string16& text_str = TextForIAccessibleText();
 
   *start_offset = FindBoundary(
       text_str, boundary_type, offset, ui::BACKWARDS_DIRECTION);
@@ -1040,7 +1099,7 @@ STDMETHODIMP NativeViewAccessibilityWin::get_textAfterOffset(
     return S_FALSE;
   }
 
-  const string16& text_str = TextForIAccessibleText();
+  const base::string16& text_str = TextForIAccessibleText();
 
   *start_offset = offset;
   *end_offset = FindBoundary(
@@ -1071,11 +1130,12 @@ STDMETHODIMP NativeViewAccessibilityWin::QueryService(
   if (!view_)
     return E_FAIL;
 
-  if (riid == IID_IAccessible2)
+  if (riid == IID_IAccessible2 || riid == IID_IAccessible2_2)
     AccessibleWebViewRegistry::GetInstance()->EnableIAccessible2Support();
 
   if (guidService == IID_IAccessible ||
       guidService == IID_IAccessible2 ||
+      guidService == IID_IAccessible2_2 ||
       guidService == IID_IAccessibleText)  {
     return QueryInterface(riid, object);
   }
@@ -1100,13 +1160,14 @@ STDMETHODIMP NativeViewAccessibilityWin::GetPatternProvider(
            << " for pattern id: "
            << id;
   if (id == UIA_ValuePatternId || id == UIA_TextPatternId) {
-    ui::AccessibleViewState state;
+    ui::AXViewState state;
     view_->GetAccessibleState(&state);
     long role = MSAARole(state.role);
 
     if (role == ROLE_SYSTEM_TEXT) {
       DVLOG(1) << "Returning UIA text provider";
-      base::win::UIATextProvider::CreateTextProvider(true, provider);
+      base::win::UIATextProvider::CreateTextProvider(
+          state.value, true, provider);
       return S_OK;
     }
   }
@@ -1120,7 +1181,7 @@ STDMETHODIMP NativeViewAccessibilityWin::GetPropertyValue(PROPERTYID id,
            << " for property id: "
            << id;
   if (id == UIA_ControlTypePropertyId) {
-    ui::AccessibleViewState state;
+    ui::AXViewState state;
     view_->GetAccessibleState(&state);
     long role = MSAARole(state.role);
     if (role == ROLE_SYSTEM_TEXT) {
@@ -1149,27 +1210,25 @@ void NativeViewAccessibility::UnregisterWebView(View* web_view) {
   AccessibleWebViewRegistry::GetInstance()->UnregisterWebView(web_view);
 }
 
-int32 NativeViewAccessibilityWin::MSAAEvent(AccessibilityTypes::Event event) {
+int32 NativeViewAccessibilityWin::MSAAEvent(ui::AXEvent event) {
   switch (event) {
-    case AccessibilityTypes::EVENT_ALERT:
+    case ui::AX_EVENT_ALERT:
       return EVENT_SYSTEM_ALERT;
-    case AccessibilityTypes::EVENT_FOCUS:
+    case ui::AX_EVENT_FOCUS:
       return EVENT_OBJECT_FOCUS;
-    case AccessibilityTypes::EVENT_MENUSTART:
+    case ui::AX_EVENT_MENU_START:
       return EVENT_SYSTEM_MENUSTART;
-    case AccessibilityTypes::EVENT_MENUEND:
+    case ui::AX_EVENT_MENU_END:
       return EVENT_SYSTEM_MENUEND;
-    case AccessibilityTypes::EVENT_MENUPOPUPSTART:
+    case ui::AX_EVENT_MENU_POPUP_START:
       return EVENT_SYSTEM_MENUPOPUPSTART;
-    case AccessibilityTypes::EVENT_MENUPOPUPEND:
+    case ui::AX_EVENT_MENU_POPUP_END:
       return EVENT_SYSTEM_MENUPOPUPEND;
-    case AccessibilityTypes::EVENT_NAME_CHANGED:
+    case ui::AX_EVENT_TEXT_CHANGED:
       return EVENT_OBJECT_NAMECHANGE;
-    case AccessibilityTypes::EVENT_TEXT_CHANGED:
-      return EVENT_OBJECT_VALUECHANGE;
-    case AccessibilityTypes::EVENT_SELECTION_CHANGED:
+    case ui::AX_EVENT_SELECTION_CHANGED:
       return IA2_EVENT_TEXT_CARET_MOVED;
-    case AccessibilityTypes::EVENT_VALUE_CHANGED:
+    case ui::AX_EVENT_VALUE_CHANGED:
       return EVENT_OBJECT_VALUECHANGE;
     default:
       // Not supported or invalid event.
@@ -1178,109 +1237,109 @@ int32 NativeViewAccessibilityWin::MSAAEvent(AccessibilityTypes::Event event) {
   }
 }
 
-int32 NativeViewAccessibilityWin::MSAARole(AccessibilityTypes::Role role) {
+int32 NativeViewAccessibilityWin::MSAARole(ui::AXRole role) {
   switch (role) {
-    case AccessibilityTypes::ROLE_ALERT:
+    case ui::AX_ROLE_ALERT:
       return ROLE_SYSTEM_ALERT;
-    case AccessibilityTypes::ROLE_APPLICATION:
+    case ui::AX_ROLE_APPLICATION:
       return ROLE_SYSTEM_APPLICATION;
-    case AccessibilityTypes::ROLE_BUTTONDROPDOWN:
+    case ui::AX_ROLE_BUTTON_DROP_DOWN:
       return ROLE_SYSTEM_BUTTONDROPDOWN;
-    case AccessibilityTypes::ROLE_BUTTONMENU:
+    case ui::AX_ROLE_POP_UP_BUTTON:
       return ROLE_SYSTEM_BUTTONMENU;
-    case AccessibilityTypes::ROLE_CHECKBUTTON:
+    case ui::AX_ROLE_CHECK_BOX:
       return ROLE_SYSTEM_CHECKBUTTON;
-    case AccessibilityTypes::ROLE_COMBOBOX:
+    case ui::AX_ROLE_COMBO_BOX:
       return ROLE_SYSTEM_COMBOBOX;
-    case AccessibilityTypes::ROLE_DIALOG:
+    case ui::AX_ROLE_DIALOG:
       return ROLE_SYSTEM_DIALOG;
-    case AccessibilityTypes::ROLE_GRAPHIC:
+    case ui::AX_ROLE_GROUP:
+      return ROLE_SYSTEM_GROUPING;
+    case ui::AX_ROLE_IMAGE:
       return ROLE_SYSTEM_GRAPHIC;
-    case AccessibilityTypes::ROLE_GROUPING:
-      return ROLE_SYSTEM_GROUPING;
-    case AccessibilityTypes::ROLE_LINK:
+    case ui::AX_ROLE_LINK:
       return ROLE_SYSTEM_LINK;
-    case AccessibilityTypes::ROLE_LOCATION_BAR:
+    case ui::AX_ROLE_LOCATION_BAR:
       return ROLE_SYSTEM_GROUPING;
-    case AccessibilityTypes::ROLE_MENUBAR:
+    case ui::AX_ROLE_MENU_BAR:
       return ROLE_SYSTEM_MENUBAR;
-    case AccessibilityTypes::ROLE_MENUITEM:
+    case ui::AX_ROLE_MENU_ITEM:
       return ROLE_SYSTEM_MENUITEM;
-    case AccessibilityTypes::ROLE_MENUPOPUP:
+    case ui::AX_ROLE_MENU_LIST_POPUP:
       return ROLE_SYSTEM_MENUPOPUP;
-    case AccessibilityTypes::ROLE_OUTLINE:
+    case ui::AX_ROLE_TREE:
       return ROLE_SYSTEM_OUTLINE;
-    case AccessibilityTypes::ROLE_OUTLINEITEM:
+    case ui::AX_ROLE_TREE_ITEM:
       return ROLE_SYSTEM_OUTLINEITEM;
-    case AccessibilityTypes::ROLE_PAGETAB:
+    case ui::AX_ROLE_TAB:
       return ROLE_SYSTEM_PAGETAB;
-    case AccessibilityTypes::ROLE_PAGETABLIST:
+    case ui::AX_ROLE_TAB_LIST:
       return ROLE_SYSTEM_PAGETABLIST;
-    case AccessibilityTypes::ROLE_PANE:
+    case ui::AX_ROLE_PANE:
       return ROLE_SYSTEM_PANE;
-    case AccessibilityTypes::ROLE_PROGRESSBAR:
+    case ui::AX_ROLE_PROGRESS_INDICATOR:
       return ROLE_SYSTEM_PROGRESSBAR;
-    case AccessibilityTypes::ROLE_PUSHBUTTON:
+    case ui::AX_ROLE_BUTTON:
       return ROLE_SYSTEM_PUSHBUTTON;
-    case AccessibilityTypes::ROLE_RADIOBUTTON:
+    case ui::AX_ROLE_RADIO_BUTTON:
       return ROLE_SYSTEM_RADIOBUTTON;
-    case AccessibilityTypes::ROLE_SCROLLBAR:
+    case ui::AX_ROLE_SCROLL_BAR:
       return ROLE_SYSTEM_SCROLLBAR;
-    case AccessibilityTypes::ROLE_SEPARATOR:
+    case ui::AX_ROLE_SPLITTER:
       return ROLE_SYSTEM_SEPARATOR;
-    case AccessibilityTypes::ROLE_SLIDER:
+    case ui::AX_ROLE_SLIDER:
       return ROLE_SYSTEM_SLIDER;
-    case AccessibilityTypes::ROLE_STATICTEXT:
+    case ui::AX_ROLE_STATIC_TEXT:
       return ROLE_SYSTEM_STATICTEXT;
-    case AccessibilityTypes::ROLE_TEXT:
+    case ui::AX_ROLE_TEXT_FIELD:
       return ROLE_SYSTEM_TEXT;
-    case AccessibilityTypes::ROLE_TITLEBAR:
+    case ui::AX_ROLE_TITLE_BAR:
       return ROLE_SYSTEM_TITLEBAR;
-    case AccessibilityTypes::ROLE_TOOLBAR:
+    case ui::AX_ROLE_TOOLBAR:
       return ROLE_SYSTEM_TOOLBAR;
-    case AccessibilityTypes::ROLE_WINDOW:
+    case ui::AX_ROLE_WINDOW:
       return ROLE_SYSTEM_WINDOW;
-    case AccessibilityTypes::ROLE_CLIENT:
+    case ui::AX_ROLE_CLIENT:
     default:
       // This is the default role for MSAA.
       return ROLE_SYSTEM_CLIENT;
   }
 }
 
-int32 NativeViewAccessibilityWin::MSAAState(AccessibilityTypes::State state) {
+int32 NativeViewAccessibilityWin::MSAAState(const ui::AXViewState& state) {
   // This maps MSAA states for get_accState(). See also the IAccessible2
   // interface get_states().
 
   int32 msaa_state = 0;
-  if (state & AccessibilityTypes::STATE_CHECKED)
+  if (state.HasStateFlag(ui::AX_STATE_CHECKED))
     msaa_state |= STATE_SYSTEM_CHECKED;
-  if (state & AccessibilityTypes::STATE_COLLAPSED)
+  if (state.HasStateFlag(ui::AX_STATE_COLLAPSED))
     msaa_state |= STATE_SYSTEM_COLLAPSED;
-  if (state & AccessibilityTypes::STATE_DEFAULT)
+  if (state.HasStateFlag(ui::AX_STATE_DEFAULT))
     msaa_state |= STATE_SYSTEM_DEFAULT;
-  if (state & AccessibilityTypes::STATE_EXPANDED)
+  if (state.HasStateFlag(ui::AX_STATE_EXPANDED))
     msaa_state |= STATE_SYSTEM_EXPANDED;
-  if (state & AccessibilityTypes::STATE_HASPOPUP)
+  if (state.HasStateFlag(ui::AX_STATE_HASPOPUP))
     msaa_state |= STATE_SYSTEM_HASPOPUP;
-  if (state & AccessibilityTypes::STATE_HOTTRACKED)
+  if (state.HasStateFlag(ui::AX_STATE_HOVERED))
     msaa_state |= STATE_SYSTEM_HOTTRACKED;
-  if (state & AccessibilityTypes::STATE_INVISIBLE)
+  if (state.HasStateFlag(ui::AX_STATE_INVISIBLE))
     msaa_state |= STATE_SYSTEM_INVISIBLE;
-  if (state & AccessibilityTypes::STATE_LINKED)
+  if (state.HasStateFlag(ui::AX_STATE_LINKED))
     msaa_state |= STATE_SYSTEM_LINKED;
-  if (state & AccessibilityTypes::STATE_OFFSCREEN)
+  if (state.HasStateFlag(ui::AX_STATE_OFFSCREEN))
     msaa_state |= STATE_SYSTEM_OFFSCREEN;
-  if (state & AccessibilityTypes::STATE_PRESSED)
+  if (state.HasStateFlag(ui::AX_STATE_PRESSED))
     msaa_state |= STATE_SYSTEM_PRESSED;
-  if (state & AccessibilityTypes::STATE_PROTECTED)
+  if (state.HasStateFlag(ui::AX_STATE_PROTECTED))
     msaa_state |= STATE_SYSTEM_PROTECTED;
-  if (state & AccessibilityTypes::STATE_READONLY)
+  if (state.HasStateFlag(ui::AX_STATE_READ_ONLY))
     msaa_state |= STATE_SYSTEM_READONLY;
-  if (state & AccessibilityTypes::STATE_SELECTED)
+  if (state.HasStateFlag(ui::AX_STATE_SELECTED))
     msaa_state |= STATE_SYSTEM_SELECTED;
-  if (state & AccessibilityTypes::STATE_FOCUSED)
+  if (state.HasStateFlag(ui::AX_STATE_FOCUSED))
     msaa_state |= STATE_SYSTEM_FOCUSED;
-  if (state & AccessibilityTypes::STATE_UNAVAILABLE)
+  if (state.HasStateFlag(ui::AX_STATE_DISABLED))
     msaa_state |= STATE_SYSTEM_UNAVAILABLE;
   return msaa_state;
 }
@@ -1339,22 +1398,22 @@ void NativeViewAccessibilityWin::SetState(
     msaa_state->lVal |= STATE_SYSTEM_FOCUSED;
 
   // Add on any view-specific states.
-  ui::AccessibleViewState view_state;
+  ui::AXViewState view_state;
   view->GetAccessibleState(&view_state);
-  msaa_state->lVal |= MSAAState(view_state.state);
+  msaa_state->lVal |= MSAAState(view_state);
 }
 
-string16 NativeViewAccessibilityWin::TextForIAccessibleText() {
-  ui::AccessibleViewState state;
+base::string16 NativeViewAccessibilityWin::TextForIAccessibleText() {
+  ui::AXViewState state;
   view_->GetAccessibleState(&state);
-  if (state.role == AccessibilityTypes::ROLE_TEXT)
+  if (state.role == ui::AX_ROLE_TEXT_FIELD)
     return state.value;
   else
     return state.name;
 }
 
 void NativeViewAccessibilityWin::HandleSpecialTextOffset(
-    const string16& text, LONG* offset) {
+    const base::string16& text, LONG* offset) {
   if (*offset == IA2_TEXT_OFFSET_LENGTH) {
     *offset = static_cast<LONG>(text.size());
   } else if (*offset == IA2_TEXT_OFFSET_CARET) {
@@ -1378,7 +1437,7 @@ ui::TextBoundaryType NativeViewAccessibilityWin::IA2TextBoundaryToTextBoundary(
 }
 
 LONG NativeViewAccessibilityWin::FindBoundary(
-    const string16& text,
+    const base::string16& text,
     IA2TextBoundaryType ia2_boundary,
     LONG start_offset,
     ui::TextBoundaryDirection direction) {
@@ -1411,6 +1470,34 @@ void NativeViewAccessibilityWin::PopulateChildWidgetVector(
       continue;
 
     result_child_widgets->push_back(child_widget);
+  }
+}
+
+void NativeViewAccessibilityWin::AddAlertTarget() {
+  ViewStorage* view_storage = ViewStorage::GetInstance();
+  for (size_t i = 0; i < alert_target_view_storage_ids_.size(); ++i) {
+    int view_storage_id = alert_target_view_storage_ids_[i];
+    View* view = view_storage->RetrieveView(view_storage_id);
+    if (view == view_)
+      return;
+  }
+  int view_storage_id = view_storage->CreateStorageID();
+  view_storage->StoreView(view_storage_id, view_);
+  alert_target_view_storage_ids_.push_back(view_storage_id);
+}
+
+void NativeViewAccessibilityWin::RemoveAlertTarget() {
+  ViewStorage* view_storage = ViewStorage::GetInstance();
+  size_t i = 0;
+  while (i < alert_target_view_storage_ids_.size()) {
+    int view_storage_id = alert_target_view_storage_ids_[i];
+    View* view = view_storage->RetrieveView(view_storage_id);
+    if (view == NULL || view == view_) {
+      alert_target_view_storage_ids_.erase(
+          alert_target_view_storage_ids_.begin() + i);
+    } else {
+      ++i;
+    }
   }
 }
 

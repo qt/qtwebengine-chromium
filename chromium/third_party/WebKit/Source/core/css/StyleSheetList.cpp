@@ -21,7 +21,7 @@
 #include "config.h"
 #include "core/css/StyleSheetList.h"
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 #include "core/dom/Document.h"
 #include "core/dom/StyleEngine.h"
 #include "core/html/HTMLStyleElement.h"
@@ -40,18 +40,22 @@ StyleSheetList::~StyleSheetList()
 {
 }
 
-inline const Vector<RefPtr<StyleSheet> >& StyleSheetList::styleSheets()
+inline const WillBeHeapVector<RefPtrWillBeMember<StyleSheet> >& StyleSheetList::styleSheets()
 {
+#if !ENABLE(OILPAN)
     if (!m_treeScope)
         return m_detachedStyleSheets;
+#endif
     return document()->styleEngine()->styleSheetsForStyleSheetList(*m_treeScope);
 }
 
+#if !ENABLE(OILPAN)
 void StyleSheetList::detachFromDocument()
 {
     m_detachedStyleSheets = document()->styleEngine()->styleSheetsForStyleSheetList(*m_treeScope);
-    m_treeScope = 0;
+    m_treeScope = nullptr;
 }
+#endif
 
 unsigned StyleSheetList::length()
 {
@@ -60,14 +64,16 @@ unsigned StyleSheetList::length()
 
 StyleSheet* StyleSheetList::item(unsigned index)
 {
-    const Vector<RefPtr<StyleSheet> >& sheets = styleSheets();
+    const WillBeHeapVector<RefPtrWillBeMember<StyleSheet> >& sheets = styleSheets();
     return index < sheets.size() ? sheets[index].get() : 0;
 }
 
 HTMLStyleElement* StyleSheetList::getNamedItem(const AtomicString& name) const
 {
+#if !ENABLE(OILPAN)
     if (!m_treeScope)
         return 0;
+#endif
 
     // IE also supports retrieving a stylesheet by name, using the name/id of the <style> tag
     // (this is consistent with all the other collections)
@@ -76,9 +82,7 @@ HTMLStyleElement* StyleSheetList::getNamedItem(const AtomicString& name) const
     // But unicity of stylesheet ids is good practice anyway ;)
     // FIXME: We should figure out if we should change this or fix the spec.
     Element* element = m_treeScope->getElementById(name);
-    if (element && element->hasTagName(styleTag))
-        return toHTMLStyleElement(element);
-    return 0;
+    return isHTMLStyleElement(element) ? toHTMLStyleElement(element) : 0;
 }
 
 CSSStyleSheet* StyleSheetList::anonymousNamedGetter(const AtomicString& name)
@@ -87,6 +91,11 @@ CSSStyleSheet* StyleSheetList::anonymousNamedGetter(const AtomicString& name)
     if (!item)
         return 0;
     return item->sheet();
+}
+
+void StyleSheetList::trace(Visitor* visitor)
+{
+    visitor->trace(m_treeScope);
 }
 
 } // namespace WebCore

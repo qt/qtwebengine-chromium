@@ -10,10 +10,14 @@
 namespace keyboard {
 
 // Initializes the keyboard module. This includes adding the necessary pak files
-// for loading resources used in for the virtual keyboard, and registers
-// a WebUIControllerFactory for creating a WebUIController necessary for the
-// virtual keyboard. This becomes a no-op after the first call.
+// for loading resources used in for the virtual keyboard. This becomes a no-op
+// after the first call.
 KEYBOARD_EXPORT void InitializeKeyboard();
+
+// Resets the keyboard to an uninitialized state. Required for
+// BrowserWithTestWindowTest tests as they tear down the controller factory
+// after each test yet resume testing in the same process.
+KEYBOARD_EXPORT void ResetKeyboardForTesting();
 
 }  // namespace keyboard
 

@@ -44,13 +44,11 @@
 #include "talk/media/webrtc/webrtcvoe.h"
 #include "talk/session/media/channel.h"
 #include "webrtc/common.h"
-#include "webrtc/modules/audio_coding/main/interface/audio_coding_module.h"
 
 #if !defined(LIBPEERCONNECTION_LIB) && \
     !defined(LIBPEERCONNECTION_IMPLEMENTATION)
 #error "Bogus include."
 #endif
-
 
 namespace cricket {
 
@@ -174,6 +172,9 @@ class WebRtcVoiceEngine
   bool SetAudioDeviceModule(webrtc::AudioDeviceModule* adm,
                             webrtc::AudioDeviceModule* adm_sc);
 
+  // Starts AEC dump using existing file.
+  bool StartAecDump(talk_base::PlatformFile file);
+
   // Check whether the supplied trace should be ignored.
   bool ShouldIgnoreTrace(const std::string& trace);
 
@@ -198,9 +199,6 @@ class WebRtcVoiceEngine
   // allows us to selectively turn on and off different options easily
   // at any time.
   bool ApplyOptions(const AudioOptions& options);
-  // Configure for using ACM2, if |enable| is true, otherwise configure for
-  // ACM1.
-  void EnableExperimentalAcm(bool enable);
   virtual void Print(webrtc::TraceLevel level, const char* trace, int length);
   virtual void CallbackOnError(int channel, int errCode);
   // Given the device type, name, and id, find device id. Return true and
@@ -258,7 +256,6 @@ class WebRtcVoiceEngine
   webrtc::AgcConfig default_agc_config_;
 
   webrtc::Config voe_config_;
-  bool use_experimental_acm_;
 
   bool initialized_;
   // See SetOptions and SetOptionOverrides for a description of the
@@ -362,7 +359,8 @@ class WebRtcVoiceMediaChannel
                               const talk_base::PacketTime& packet_time);
   virtual void OnReadyToSend(bool ready) {}
   virtual bool MuteStream(uint32 ssrc, bool on);
-  virtual bool SetSendBandwidth(bool autobw, int bps);
+  virtual bool SetStartSendBandwidth(int bps);
+  virtual bool SetMaxSendBandwidth(int bps);
   virtual bool GetStats(VoiceMediaInfo* info);
   // Gets last reported error from WebRtc voice engine.  This should be only
   // called in response a failure.
@@ -388,8 +386,13 @@ class WebRtcVoiceMediaChannel
   static Error WebRtcErrorToChannelError(int err_code);
 
  private:
-  struct WebRtcVoiceChannelInfo;
-  typedef std::map<uint32, WebRtcVoiceChannelInfo> ChannelMap;
+  class WebRtcVoiceChannelRenderer;
+  // Map of ssrc to WebRtcVoiceChannelRenderer object.  A new object of
+  // WebRtcVoiceChannelRenderer will be created for every new stream and
+  // will be destroyed when the stream goes away.
+  typedef std::map<uint32, WebRtcVoiceChannelRenderer*> ChannelMap;
+  typedef int (webrtc::VoERTP_RTCP::* ExtensionSetterFunction)(int, bool,
+      unsigned char);
 
   void SetNack(int channel, bool nack_enabled);
   void SetNack(const ChannelMap& channels, bool nack_enabled);
@@ -408,7 +411,17 @@ class WebRtcVoiceMediaChannel
     return channel_id == voe_channel();
   }
   bool SetSendCodecs(int channel, const std::vector<AudioCodec>& codecs);
-  bool SetSendBandwidthInternal(bool autobw, int bps);
+  bool SetSendBandwidthInternal(int bps);
+
+  bool SetHeaderExtension(ExtensionSetterFunction setter, int channel_id,
+                          const RtpHeaderExtension* extension);
+
+  bool SetChannelRecvRtpHeaderExtensions(
+    int channel_id,
+    const std::vector<RtpHeaderExtension>& extensions);
+  bool SetChannelSendRtpHeaderExtensions(
+    int channel_id,
+    const std::vector<RtpHeaderExtension>& extensions);
 
   talk_base::scoped_ptr<WebRtcSoundclipStream> ringback_tone_;
   std::set<int> ringback_channels_;  // channels playing ringback
@@ -416,7 +429,6 @@ class WebRtcVoiceMediaChannel
   std::vector<AudioCodec> send_codecs_;
   talk_base::scoped_ptr<webrtc::CodecInst> send_codec_;
   bool send_bw_setting_;
-  bool send_autobw_;
   int send_bw_bps_;
   AudioOptions options_;
   bool dtmf_allowed_;
@@ -431,6 +443,7 @@ class WebRtcVoiceMediaChannel
   // When the default channel (voe_channel) is used for sending, it is
   // contained in send_channels_, otherwise not.
   ChannelMap send_channels_;
+  std::vector<RtpHeaderExtension> send_extensions_;
   uint32 default_receive_ssrc_;
   // Note the default channel (voe_channel()) can reside in both
   // receive_channels_ and send_channels_ in non-conference mode and in that
@@ -440,6 +453,7 @@ class WebRtcVoiceMediaChannel
   // the WebRtc thread must be synchronized with edits on the worker thread.
   // Reads on the worker thread are ok.
   //
+  std::vector<RtpHeaderExtension> receive_extensions_;
   // Do not lock this on the VoE media processor thread; potential for deadlock
   // exists.
   mutable talk_base::CriticalSection receive_channels_cs_;

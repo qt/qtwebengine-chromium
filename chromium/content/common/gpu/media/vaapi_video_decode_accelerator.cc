@@ -9,10 +9,10 @@
 #include "base/stl_util.h"
 #include "base/strings/string_util.h"
 #include "base/synchronization/waitable_event.h"
-#include "content/child/child_thread.h"
+#include "base/threading/non_thread_safe.h"
 #include "content/common/gpu/gpu_channel.h"
 #include "content/common/gpu/media/vaapi_video_decode_accelerator.h"
-#include "media/base/bind_to_loop.h"
+#include "media/base/bind_to_current_loop.h"
 #include "media/video/picture.h"
 #include "ui/gl/gl_bindings.h"
 #include "ui/gl/scoped_binders.h"
@@ -57,7 +57,7 @@ void VaapiVideoDecodeAccelerator::NotifyError(Error error) {
   DVLOG(1) << "Notifying of error " << error;
   if (client_) {
     client_->NotifyError(error);
-    client_ptr_factory_.InvalidateWeakPtrs();
+    client_ptr_factory_.reset();
   }
 }
 
@@ -68,7 +68,7 @@ void VaapiVideoDecodeAccelerator::NotifyError(Error error) {
 //
 // TFPPictures are used for output, contents of VASurfaces passed from decoder
 // are put into the associated pixmap memory and sent to client.
-class VaapiVideoDecodeAccelerator::TFPPicture {
+class VaapiVideoDecodeAccelerator::TFPPicture : public base::NonThreadSafe {
  public:
   ~TFPPicture();
 
@@ -82,10 +82,6 @@ class VaapiVideoDecodeAccelerator::TFPPicture {
 
   int32 picture_buffer_id() {
     return picture_buffer_id_;
-  }
-
-  uint32 texture_id() {
-    return texture_id_;
   }
 
   gfx::Size size() {
@@ -162,10 +158,7 @@ VaapiVideoDecodeAccelerator::TFPPicture::Create(
 
 bool VaapiVideoDecodeAccelerator::TFPPicture::Initialize(
     const GLXFBConfig& fb_config) {
-  // Check for NULL prevents unittests from crashing on nonexistent ChildThread.
-  DCHECK(ChildThread::current() == NULL ||
-      ChildThread::current()->message_loop() == base::MessageLoop::current());
-
+  DCHECK(CalledOnValidThread());
   if (!make_context_current_.Run())
     return false;
 
@@ -197,10 +190,7 @@ bool VaapiVideoDecodeAccelerator::TFPPicture::Initialize(
 }
 
 VaapiVideoDecodeAccelerator::TFPPicture::~TFPPicture() {
-  // Check for NULL prevents unittests from crashing on nonexistent ChildThread.
-  DCHECK(ChildThread::current() == NULL ||
-      ChildThread::current()->message_loop() == base::MessageLoop::current());
-
+  DCHECK(CalledOnValidThread());
   // Unbind surface from texture and deallocate resources.
   if (glx_pixmap_ && make_context_current_.Run()) {
     glXReleaseTexImageEXT(x_display_, glx_pixmap_, GLX_FRONT_LEFT_EXT);
@@ -213,12 +203,9 @@ VaapiVideoDecodeAccelerator::TFPPicture::~TFPPicture() {
 }
 
 bool VaapiVideoDecodeAccelerator::TFPPicture::Bind() {
+  DCHECK(CalledOnValidThread());
   DCHECK(x_pixmap_);
   DCHECK(glx_pixmap_);
-  // Check for NULL prevents unittests from crashing on nonexistent ChildThread.
-  DCHECK(ChildThread::current() == NULL ||
-      ChildThread::current()->message_loop() == base::MessageLoop::current());
-
   if (!make_context_current_.Run())
     return false;
 
@@ -240,33 +227,31 @@ VaapiVideoDecodeAccelerator::TFPPicture*
 }
 
 VaapiVideoDecodeAccelerator::VaapiVideoDecodeAccelerator(
-    Display* x_display, GLXContext glx_context,
-    Client* client,
+    Display* x_display,
     const base::Callback<bool(void)>& make_context_current)
     : x_display_(x_display),
-      glx_context_(glx_context),
       make_context_current_(make_context_current),
       state_(kUninitialized),
       input_ready_(&lock_),
       surfaces_available_(&lock_),
       message_loop_(base::MessageLoop::current()),
-      weak_this_(base::AsWeakPtr(this)),
-      client_ptr_factory_(client),
-      client_(client_ptr_factory_.GetWeakPtr()),
       decoder_thread_("VaapiDecoderThread"),
       num_frames_at_client_(0),
       num_stream_bufs_at_decoder_(0),
       finish_flush_pending_(false),
       awaiting_va_surfaces_recycle_(false),
-      requested_num_pics_(0) {
-  DCHECK(client);
+      requested_num_pics_(0),
+      weak_this_factory_(this) {
+  weak_this_ = weak_this_factory_.GetWeakPtr();
+  va_surface_release_cb_ = media::BindToCurrentLoop(
+      base::Bind(&VaapiVideoDecodeAccelerator::RecycleVASurfaceID, weak_this_));
 }
 
 VaapiVideoDecodeAccelerator::~VaapiVideoDecodeAccelerator() {
   DCHECK_EQ(message_loop_, base::MessageLoop::current());
 }
 
-class ScopedPtrXFree {
+class XFreeDeleter {
  public:
   void operator()(void* x) const {
     ::XFree(x);
@@ -283,7 +268,7 @@ bool VaapiVideoDecodeAccelerator::InitializeFBConfig() {
   };
 
   int num_fbconfigs;
-  scoped_ptr_malloc<GLXFBConfig, ScopedPtrXFree> glx_fb_configs(
+  scoped_ptr<GLXFBConfig, XFreeDeleter> glx_fb_configs(
       glXChooseFBConfig(x_display_, DefaultScreen(x_display_), fbconfig_attr,
                         &num_fbconfigs));
   if (!glx_fb_configs)
@@ -295,9 +280,12 @@ bool VaapiVideoDecodeAccelerator::InitializeFBConfig() {
   return true;
 }
 
-bool VaapiVideoDecodeAccelerator::Initialize(
-    media::VideoCodecProfile profile) {
+bool VaapiVideoDecodeAccelerator::Initialize(media::VideoCodecProfile profile,
+                                             Client* client) {
   DCHECK_EQ(message_loop_, base::MessageLoop::current());
+
+  client_ptr_factory_.reset(new base::WeakPtrFactory<Client>(client));
+  client_ = client_ptr_factory_->GetWeakPtr();
 
   base::AutoLock auto_lock(lock_);
   DCHECK_EQ(state_, kUninitialized);
@@ -323,7 +311,7 @@ bool VaapiVideoDecodeAccelerator::Initialize(
   decoder_.reset(
       new VaapiH264Decoder(
           vaapi_wrapper_.get(),
-          media::BindToLoop(message_loop_->message_loop_proxy(), base::Bind(
+          media::BindToCurrentLoop(base::Bind(
               &VaapiVideoDecodeAccelerator::SurfaceReady, weak_this_)),
           base::Bind(&ReportToUMA)));
 
@@ -331,9 +319,6 @@ bool VaapiVideoDecodeAccelerator::Initialize(
   decoder_thread_proxy_ = decoder_thread_.message_loop_proxy();
 
   state_ = kIdle;
-
-  message_loop_->PostTask(FROM_HERE, base::Bind(
-      &Client::NotifyInitializeDone, client_));
   return true;
 }
 
@@ -384,7 +369,8 @@ void VaapiVideoDecodeAccelerator::OutputPicture(
   TRACE_COUNTER1("Video Decoder", "Textures at client", num_frames_at_client_);
   DVLOG(4) << "Notifying output picture id " << output_id
            << " for input "<< input_id << " is ready";
-  client_->PictureReady(media::Picture(output_id, input_id));
+  if (client_)
+    client_->PictureReady(media::Picture(output_id, input_id));
 }
 
 void VaapiVideoDecodeAccelerator::TryOutputSurface() {
@@ -513,13 +499,9 @@ bool VaapiVideoDecodeAccelerator::FeedDecoderWithOutputSurfaces_Locked() {
   if (state_ != kDecoding && state_ != kFlushing && state_ != kIdle)
     return false;
 
-  VASurface::ReleaseCB va_surface_release_cb =
-      media::BindToLoop(message_loop_->message_loop_proxy(), base::Bind(
-          &VaapiVideoDecodeAccelerator::RecycleVASurfaceID, weak_this_));
-
   while (!available_va_surfaces_.empty()) {
     scoped_refptr<VASurface> va_surface(
-        new VASurface(available_va_surfaces_.front(), va_surface_release_cb));
+        new VASurface(available_va_surfaces_.front(), va_surface_release_cb_));
     available_va_surfaces_.pop_front();
     decoder_->ReuseSurface(va_surface);
   }
@@ -632,7 +614,8 @@ void VaapiVideoDecodeAccelerator::TryFinishSurfaceSetChange() {
   for (TFPPictures::iterator iter = tfp_pictures_.begin();
        iter != tfp_pictures_.end(); ++iter) {
     DVLOG(2) << "Dismissing picture id: " << iter->first;
-    client_->DismissPictureBuffer(iter->first);
+    if (client_)
+      client_->DismissPictureBuffer(iter->first);
   }
   tfp_pictures_.clear();
 
@@ -909,17 +892,16 @@ void VaapiVideoDecodeAccelerator::Cleanup() {
   base::AutoLock auto_lock(lock_);
   state_ = kDestroying;
 
-  client_ptr_factory_.InvalidateWeakPtrs();
+  client_ptr_factory_.reset();
+  weak_this_factory_.InvalidateWeakPtrs();
 
+  // Signal all potential waiters on the decoder_thread_, let them early-exit,
+  // as we've just moved to the kDestroying state, and wait for all tasks
+  // to finish.
+  input_ready_.Signal();
+  surfaces_available_.Signal();
   {
     base::AutoUnlock auto_unlock(lock_);
-    // Post a dummy task to the decoder_thread_ to ensure it is drained.
-    base::WaitableEvent waiter(false, false);
-    decoder_thread_proxy_->PostTask(FROM_HERE, base::Bind(
-        &base::WaitableEvent::Signal, base::Unretained(&waiter)));
-    input_ready_.Signal();
-    surfaces_available_.Signal();
-    waiter.Wait();
     decoder_thread_.Stop();
   }
 
@@ -930,6 +912,10 @@ void VaapiVideoDecodeAccelerator::Destroy() {
   DCHECK_EQ(message_loop_, base::MessageLoop::current());
   Cleanup();
   delete this;
+}
+
+bool VaapiVideoDecodeAccelerator::CanDecodeOnIOThread() {
+  return false;
 }
 
 }  // namespace content

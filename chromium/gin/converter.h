@@ -65,6 +65,15 @@ struct GIN_EXPORT Converter<uint64_t> {
 };
 
 template<>
+struct GIN_EXPORT Converter<float> {
+  static v8::Handle<v8::Value> ToV8(v8::Isolate* isolate,
+                                    float val);
+  static bool FromV8(v8::Isolate* isolate,
+                     v8::Handle<v8::Value> val,
+                     float* out);
+};
+
+template<>
 struct GIN_EXPORT Converter<double> {
   static v8::Handle<v8::Value> ToV8(v8::Isolate* isolate,
                                     double val);
@@ -167,8 +176,7 @@ struct Converter<std::vector<T> > {
 
 // Convenience functions that deduce T.
 template<typename T>
-v8::Handle<v8::Value> ConvertToV8(v8::Isolate* isolate,
-                                  T input) {
+v8::Handle<v8::Value> ConvertToV8(v8::Isolate* isolate, T input) {
   return Converter<T>::ToV8(isolate, input);
 }
 

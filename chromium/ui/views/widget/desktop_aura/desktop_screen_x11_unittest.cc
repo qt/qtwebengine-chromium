@@ -4,12 +4,47 @@
 
 #include "ui/views/widget/desktop_aura/desktop_screen_x11.h"
 
-#include "base/message_loop/message_loop.h"
+#include "base/memory/scoped_ptr.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "ui/aura/client/aura_constants.h"
+#include "ui/aura/test/event_generator.h"
+#include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
+#include "ui/base/hit_test.h"
+#include "ui/base/x/x11_util.h"
 #include "ui/gfx/display_observer.h"
+#include "ui/gfx/x/x11_types.h"
 #include "ui/views/test/views_test_base.h"
 #include "ui/views/widget/desktop_aura/desktop_native_widget_aura.h"
-#include "ui/views/widget/desktop_aura/desktop_root_window_host_x11.h"
+#include "ui/views/widget/desktop_aura/desktop_window_tree_host_x11.h"
+
+namespace {
+
+// Class which allows for the designation of non-client component targets of
+// hit tests.
+class TestDesktopNativeWidgetAura : public views::DesktopNativeWidgetAura {
+ public:
+  explicit TestDesktopNativeWidgetAura(
+      views::internal::NativeWidgetDelegate* delegate)
+      : views::DesktopNativeWidgetAura(delegate) {}
+  virtual ~TestDesktopNativeWidgetAura() {}
+
+  void set_window_component(int window_component) {
+    window_component_ = window_component;
+  }
+
+  // DesktopNativeWidgetAura:
+  virtual int GetNonClientComponent(const gfx::Point& point) const OVERRIDE {
+    return window_component_;
+  }
+
+ private:
+  int window_component_;
+
+  DISALLOW_COPY_AND_ASSIGN(TestDesktopNativeWidgetAura);
+};
+
+}  // namespace
 
 namespace views {
 
@@ -50,29 +85,37 @@ class DesktopScreenX11Test : public views::ViewsTestBase,
     removed_display_.clear();
   }
 
-  Widget* BuildTopLevelDesktopWidget(const gfx::Rect& bounds) {
+  Widget* BuildTopLevelDesktopWidget(const gfx::Rect& bounds,
+      bool use_test_native_widget) {
     Widget* toplevel = new Widget;
     Widget::InitParams toplevel_params =
         CreateParams(Widget::InitParams::TYPE_WINDOW);
-    toplevel_params.native_widget =
-        new views::DesktopNativeWidgetAura(toplevel);
+    if (use_test_native_widget) {
+      toplevel_params.native_widget =
+          new TestDesktopNativeWidgetAura(toplevel);
+    } else {
+      toplevel_params.native_widget =
+          new views::DesktopNativeWidgetAura(toplevel);
+    }
     toplevel_params.bounds = bounds;
+    toplevel_params.remove_standard_frame = true;
     toplevel->Init(toplevel_params);
     return toplevel;
   }
 
  private:
   // Overridden from gfx::DisplayObserver:
-  virtual void OnDisplayBoundsChanged(const gfx::Display& display) OVERRIDE {
-    changed_display_.push_back(display);
-  }
-
   virtual void OnDisplayAdded(const gfx::Display& new_display) OVERRIDE {
     added_display_.push_back(new_display);
   }
 
   virtual void OnDisplayRemoved(const gfx::Display& old_display) OVERRIDE {
     removed_display_.push_back(old_display);
+  }
+
+  virtual void OnDisplayMetricsChanged(const gfx::Display& display,
+                                       uint32_t metrics) OVERRIDE {
+    changed_display_.push_back(display);
   }
 
   scoped_ptr<DesktopScreenX11> screen_;
@@ -198,32 +241,6 @@ TEST_F(DesktopScreenX11Test, GetPrimaryDisplay) {
   EXPECT_EQ(kFirstDisplay, screen()->GetPrimaryDisplay().id());
 }
 
-TEST_F(DesktopScreenX11Test, GetWindowAtScreenPoint) {
-  Widget* window_one = BuildTopLevelDesktopWidget(gfx::Rect(10, 10, 10, 10));
-  Widget* window_two = BuildTopLevelDesktopWidget(gfx::Rect(50, 50, 10, 10));
-  Widget* window_three = BuildTopLevelDesktopWidget(gfx::Rect(15, 15, 20, 20));
-
-  // Make sure the internal state of DesktopRootWindowHostX11 is set up
-  // correctly.
-  ASSERT_EQ(3u, DesktopRootWindowHostX11::GetAllOpenWindows().size());
-
-  EXPECT_EQ(window_one->GetNativeWindow(),
-            screen()->GetWindowAtScreenPoint(gfx::Point(15, 15)));
-  EXPECT_EQ(window_two->GetNativeWindow(),
-            screen()->GetWindowAtScreenPoint(gfx::Point(55, 55)));
-  EXPECT_EQ(NULL,
-            screen()->GetWindowAtScreenPoint(gfx::Point(100, 100)));
-
-  // Bring the third window in front. It overlaps with the first window.
-  // Hit-testing on the intersecting region should give the third window.
-  window_three->Activate();
-  EXPECT_EQ(window_three->GetNativeWindow(),
-            screen()->GetWindowAtScreenPoint(gfx::Point(15, 15)));
-
-  window_one->CloseNow();
-  window_two->CloseNow();
-}
-
 TEST_F(DesktopScreenX11Test, GetDisplayNearestWindow) {
   // Set up a two monitor situation.
   std::vector<gfx::Display> displays;
@@ -232,8 +249,10 @@ TEST_F(DesktopScreenX11Test, GetDisplayNearestWindow) {
                                   gfx::Rect(640, 0, 1024, 768)));
   screen()->ProcessDisplayChange(displays);
 
-  Widget* window_one = BuildTopLevelDesktopWidget(gfx::Rect(10, 10, 10, 10));
-  Widget* window_two = BuildTopLevelDesktopWidget(gfx::Rect(650, 50, 10, 10));
+  Widget* window_one = BuildTopLevelDesktopWidget(gfx::Rect(10, 10, 10, 10),
+      false);
+  Widget* window_two = BuildTopLevelDesktopWidget(gfx::Rect(650, 50, 10, 10),
+      false);
 
   EXPECT_EQ(
       kFirstDisplay,
@@ -244,6 +263,185 @@ TEST_F(DesktopScreenX11Test, GetDisplayNearestWindow) {
 
   window_one->CloseNow();
   window_two->CloseNow();
+}
+
+// Tests that the window is maximized in response to a double click event.
+TEST_F(DesktopScreenX11Test, DoubleClickHeaderMaximizes) {
+  if (!ui::WmSupportsHint(ui::GetAtom("_NET_WM_STATE_MAXIMIZED_VERT")))
+    return;
+
+  Widget* widget = BuildTopLevelDesktopWidget(gfx::Rect(0, 0, 100, 100), true);
+  widget->Show();
+  TestDesktopNativeWidgetAura* native_widget =
+      static_cast<TestDesktopNativeWidgetAura*>(widget->native_widget());
+  native_widget->set_window_component(HTCAPTION);
+
+  aura::Window* window = widget->GetNativeWindow();
+  window->SetProperty(aura::client::kCanMaximizeKey, true);
+
+  // Cast to superclass as DesktopWindowTreeHostX11 hide IsMaximized
+  DesktopWindowTreeHost* rwh =
+      DesktopWindowTreeHostX11::GetHostForXID(window->GetHost()->
+          GetAcceleratedWidget());
+
+  aura::test::EventGenerator generator(window);
+  generator.ClickLeftButton();
+  generator.DoubleClickLeftButton();
+  RunPendingMessages();
+  EXPECT_TRUE(rwh->IsMaximized());
+
+  widget->CloseNow();
+}
+
+// Tests that the window does not maximize in response to a double click event,
+// if the first click was to a different target component than that of the
+// second click.
+TEST_F(DesktopScreenX11Test, DoubleClickTwoDifferentTargetsDoesntMaximizes) {
+  Widget* widget = BuildTopLevelDesktopWidget(gfx::Rect(0, 0, 100, 100), true);
+  widget->Show();
+  TestDesktopNativeWidgetAura* native_widget =
+      static_cast<TestDesktopNativeWidgetAura*>(widget->native_widget());
+
+  aura::Window* window = widget->GetNativeWindow();
+  window->SetProperty(aura::client::kCanMaximizeKey, true);
+
+  // Cast to superclass as DesktopWindowTreeHostX11 hide IsMaximized
+  DesktopWindowTreeHost* rwh =
+      DesktopWindowTreeHostX11::GetHostForXID(window->GetHost()->
+          GetAcceleratedWidget());
+
+  aura::test::EventGenerator generator(window);
+  native_widget->set_window_component(HTCLIENT);
+  generator.ClickLeftButton();
+  native_widget->set_window_component(HTCAPTION);
+  generator.DoubleClickLeftButton();
+  RunPendingMessages();
+  EXPECT_FALSE(rwh->IsMaximized());
+
+  widget->CloseNow();
+}
+
+// Tests that the window does not maximize in response to a double click event,
+// if the double click was interrupted by a right click.
+TEST_F(DesktopScreenX11Test, RightClickDuringDoubleClickDoesntMaximize) {
+  Widget* widget = BuildTopLevelDesktopWidget(gfx::Rect(0, 0, 100, 100), true);
+  widget->Show();
+  TestDesktopNativeWidgetAura* native_widget =
+      static_cast<TestDesktopNativeWidgetAura*>(widget->native_widget());
+
+  aura::Window* window = widget->GetNativeWindow();
+  window->SetProperty(aura::client::kCanMaximizeKey, true);
+
+  // Cast to superclass as DesktopWindowTreeHostX11 hide IsMaximized
+  DesktopWindowTreeHost* rwh = static_cast<DesktopWindowTreeHost*>(
+      DesktopWindowTreeHostX11::GetHostForXID(window->GetHost()->
+          GetAcceleratedWidget()));
+
+  aura::test::EventGenerator generator(window);
+  native_widget->set_window_component(HTCLIENT);
+  generator.ClickLeftButton();
+  native_widget->set_window_component(HTCAPTION);
+  generator.PressRightButton();
+  generator.ReleaseRightButton();
+  EXPECT_FALSE(rwh->IsMaximized());
+  generator.DoubleClickLeftButton();
+  RunPendingMessages();
+  EXPECT_FALSE(rwh->IsMaximized());
+
+  widget->CloseNow();
+}
+
+// Test that rotating the displays notifies the DisplayObservers.
+TEST_F(DesktopScreenX11Test, RotationChange) {
+  std::vector<gfx::Display> displays;
+  displays.push_back(gfx::Display(kFirstDisplay, gfx::Rect(0, 0, 640, 480)));
+  displays.push_back(
+      gfx::Display(kSecondDisplay, gfx::Rect(640, 0, 1024, 768)));
+  screen()->ProcessDisplayChange(displays);
+  ResetDisplayChanges();
+
+  displays[0].set_rotation(gfx::Display::ROTATE_90);
+  screen()->ProcessDisplayChange(displays);
+  EXPECT_EQ(1u, changed_display_.size());
+
+  displays[1].set_rotation(gfx::Display::ROTATE_90);
+  screen()->ProcessDisplayChange(displays);
+  EXPECT_EQ(2u, changed_display_.size());
+
+  displays[0].set_rotation(gfx::Display::ROTATE_270);
+  screen()->ProcessDisplayChange(displays);
+  EXPECT_EQ(3u, changed_display_.size());
+
+  displays[0].set_rotation(gfx::Display::ROTATE_270);
+  screen()->ProcessDisplayChange(displays);
+  EXPECT_EQ(3u, changed_display_.size());
+
+  displays[0].set_rotation(gfx::Display::ROTATE_0);
+  displays[1].set_rotation(gfx::Display::ROTATE_0);
+  screen()->ProcessDisplayChange(displays);
+  EXPECT_EQ(5u, changed_display_.size());
+}
+
+// Test that changing the displays workarea notifies the DisplayObservers.
+TEST_F(DesktopScreenX11Test, WorkareaChange) {
+  std::vector<gfx::Display> displays;
+  displays.push_back(gfx::Display(kFirstDisplay, gfx::Rect(0, 0, 640, 480)));
+  displays.push_back(
+      gfx::Display(kSecondDisplay, gfx::Rect(640, 0, 1024, 768)));
+  screen()->ProcessDisplayChange(displays);
+  ResetDisplayChanges();
+
+  displays[0].set_work_area(gfx::Rect(0, 0, 300, 300));
+  screen()->ProcessDisplayChange(displays);
+  EXPECT_EQ(1u, changed_display_.size());
+
+  displays[1].set_work_area(gfx::Rect(0, 0, 300, 300));
+  screen()->ProcessDisplayChange(displays);
+  EXPECT_EQ(2u, changed_display_.size());
+
+  displays[0].set_work_area(gfx::Rect(0, 0, 300, 300));
+  screen()->ProcessDisplayChange(displays);
+  EXPECT_EQ(2u, changed_display_.size());
+
+  displays[1].set_work_area(gfx::Rect(0, 0, 300, 300));
+  screen()->ProcessDisplayChange(displays);
+  EXPECT_EQ(2u, changed_display_.size());
+
+  displays[0].set_work_area(gfx::Rect(0, 0, 640, 480));
+  displays[1].set_work_area(gfx::Rect(640, 0, 1024, 768));
+  screen()->ProcessDisplayChange(displays);
+  EXPECT_EQ(4u, changed_display_.size());
+}
+
+// Test that changing the device scale factor notifies the DisplayObservers.
+TEST_F(DesktopScreenX11Test, DeviceScaleFactorChange) {
+  std::vector<gfx::Display> displays;
+  displays.push_back(gfx::Display(kFirstDisplay, gfx::Rect(0, 0, 640, 480)));
+  displays.push_back(
+      gfx::Display(kSecondDisplay, gfx::Rect(640, 0, 1024, 768)));
+  screen()->ProcessDisplayChange(displays);
+  ResetDisplayChanges();
+
+  displays[0].set_device_scale_factor(2.5f);
+  screen()->ProcessDisplayChange(displays);
+  EXPECT_EQ(1u, changed_display_.size());
+
+  displays[1].set_device_scale_factor(2.5f);
+  screen()->ProcessDisplayChange(displays);
+  EXPECT_EQ(2u, changed_display_.size());
+
+  displays[0].set_device_scale_factor(2.5f);
+  screen()->ProcessDisplayChange(displays);
+  EXPECT_EQ(2u, changed_display_.size());
+
+  displays[1].set_device_scale_factor(2.5f);
+  screen()->ProcessDisplayChange(displays);
+  EXPECT_EQ(2u, changed_display_.size());
+
+  displays[0].set_device_scale_factor(1.f);
+  displays[1].set_device_scale_factor(1.f);
+  screen()->ProcessDisplayChange(displays);
+  EXPECT_EQ(4u, changed_display_.size());
 }
 
 }  // namespace views

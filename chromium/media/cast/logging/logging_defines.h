@@ -9,120 +9,88 @@
 #include <string>
 #include <vector>
 
-#include "base/memory/linked_ptr.h"
 #include "base/time/time.h"
 
 namespace media {
 namespace cast {
 
-static const uint32 kFrameIdUnknown = 0xFFFF;
+static const uint32 kFrameIdUnknown = 0xFFFFFFFF;
 
-struct CastLoggingConfig {
-  CastLoggingConfig();
-  ~CastLoggingConfig();
-
-  bool enable_data_collection;
-  bool enable_uma_stats;
-  bool enable_tracing;
-};
-
-// By default, enable raw and stats data collection. Disable tracing and UMA.
-CastLoggingConfig GetDefaultCastLoggingConfig();
+typedef uint32 RtpTimestamp;
 
 enum CastLoggingEvent {
-  // Generic events.
-  kUnknown,
-  kRttMs,
-  kPacketLoss,
-  kJitterMs,
-  kAckReceived,
-  kRembBitrate,
-  kAckSent,
-  kLastEvent,
-  // Audio sender.
-  kAudioFrameReceived,
-  kAudioFrameCaptured,
-  kAudioFrameEncoded,
-  // Audio receiver.
-  kAudioPlayoutDelay,
-  kAudioFrameDecoded,
-  // Video sender.
-  kVideoFrameCaptured,
-  kVideoFrameReceived,
-  kVideoFrameSentToEncoder,
-  kVideoFrameEncoded,
-  // Video receiver.
-  kVideoFrameDecoded,
-  kVideoRenderDelay,
-  // Send-side packet events.
-  kPacketSentToPacer,
-  kPacketSentToNetwork,
-  kPacketRetransmited,
-  // Receive-side packet events.
-  kPacketReceived,
-
-  kNumOfLoggingEvents,
+  UNKNOWN,
+  // Sender side frame events.
+  FRAME_CAPTURE_BEGIN,
+  FRAME_CAPTURE_END,
+  FRAME_ENCODED,
+  FRAME_ACK_RECEIVED,
+  // Receiver side frame events.
+  FRAME_ACK_SENT,
+  FRAME_DECODED,
+  FRAME_PLAYOUT,
+  // Sender side packet events.
+  PACKET_SENT_TO_NETWORK,
+  PACKET_RETRANSMITTED,
+  PACKET_RTX_REJECTED,
+  // Receiver side packet events.
+  PACKET_RECEIVED,
+  kNumOfLoggingEvents = PACKET_RECEIVED
 };
 
-std::string CastLoggingToString(CastLoggingEvent event);
+const char* CastLoggingToString(CastLoggingEvent event);
+
+// CastLoggingEvent are classified into one of three following types.
+enum EventMediaType {
+  AUDIO_EVENT,
+  VIDEO_EVENT,
+  UNKNOWN_EVENT,
+  EVENT_MEDIA_TYPE_LAST = UNKNOWN_EVENT
+};
 
 struct FrameEvent {
   FrameEvent();
   ~FrameEvent();
 
+  RtpTimestamp rtp_timestamp;
   uint32 frame_id;
-  size_t size;  // Encoded size only.
-  std::vector<base::TimeTicks> timestamp;
-  std::vector<CastLoggingEvent> type;
-  base::TimeDelta delay_delta;  // Render/playout delay.
-};
 
-// Internal map sorted by packet id.
-struct BasePacketInfo {
-  BasePacketInfo();
-  ~BasePacketInfo();
-
+  // Size of encoded frame. Only set for FRAME_ENCODED event.
   size_t size;
-  std::vector<base::TimeTicks> timestamp;
-  std::vector<CastLoggingEvent> type;
-};
 
-typedef std::map<uint16, BasePacketInfo> BasePacketMap;
+  // Time of event logged.
+  base::TimeTicks timestamp;
+
+  CastLoggingEvent type;
+
+  EventMediaType media_type;
+
+  // Render / playout delay. Only set for FRAME_PLAYOUT events.
+  base::TimeDelta delay_delta;
+
+  // Whether the frame is a key frame. Only set for video FRAME_ENCODED event.
+  bool key_frame;
+
+  // The requested target bitrate of the encoder at the time the frame is
+  // encoded. Only set for video FRAME_ENCODED event.
+  int target_bitrate;
+};
 
 struct PacketEvent {
   PacketEvent();
   ~PacketEvent();
+
+  RtpTimestamp rtp_timestamp;
   uint32 frame_id;
-  int max_packet_id;
-  BasePacketMap packet_map;
+  uint16 max_packet_id;
+  uint16 packet_id;
+  size_t size;
+
+  // Time of event logged.
+  base::TimeTicks timestamp;
+  CastLoggingEvent type;
+  EventMediaType media_type;
 };
-
-struct GenericEvent {
-  GenericEvent();
-  ~GenericEvent();
-  std::vector<int> value;
-  std::vector<base::TimeTicks> timestamp;
-};
-
-struct FrameLogStats {
-  FrameLogStats();
-  ~FrameLogStats();
-
-  double framerate_fps;
-  double bitrate_kbps;
-  int max_delay_ms;
-  int min_delay_ms;
-  int avg_delay_ms;
-};
-
-// Store all log types in a map based on the event.
-typedef std::map<uint32, FrameEvent> FrameRawMap;
-typedef std::map<uint32, PacketEvent> PacketRawMap;
-typedef std::map<CastLoggingEvent, GenericEvent> GenericRawMap;
-
-typedef std::map<CastLoggingEvent, linked_ptr<FrameLogStats > > FrameStatsMap;
-typedef std::map<CastLoggingEvent, double> PacketStatsMap;
-typedef std::map<CastLoggingEvent, double> GenericStatsMap;
 
 }  // namespace cast
 }  // namespace media

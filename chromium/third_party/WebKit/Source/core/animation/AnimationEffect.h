@@ -31,38 +31,30 @@
 #ifndef AnimationEffect_h
 #define AnimationEffect_h
 
-#include "CSSPropertyNames.h"
+#include "core/CSSPropertyNames.h"
+#include "platform/heap/Handle.h"
 #include "wtf/HashMap.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/RefCounted.h"
 
 namespace WebCore {
 
-class AnimatableValue;
+class Interpolation;
 
-class AnimationEffect : public RefCounted<AnimationEffect> {
+class AnimationEffect : public RefCountedWillBeGarbageCollectedFinalized<AnimationEffect> {
 public:
     enum CompositeOperation {
         CompositeReplace,
         CompositeAdd,
     };
-    // Encapsulates the value which results from applying a set of composition operations onto an
-    // underlying value. It is used to represent the output of the effect phase of the Web
-    // Animations model.
-    class CompositableValue : public RefCounted<CompositableValue> {
-    public:
-        virtual ~CompositableValue() { }
-        virtual bool dependsOnUnderlyingValue() const = 0;
-        virtual PassRefPtr<AnimatableValue> compositeOnto(const AnimatableValue*) const = 0;
-    };
 
     virtual ~AnimationEffect() { }
-    typedef HashMap<CSSPropertyID, RefPtr<CompositableValue> > CompositableValueMap;
-    typedef Vector<std::pair<CSSPropertyID, RefPtr<CompositableValue> > > CompositableValueList;
-    virtual PassOwnPtr<CompositableValueList> sample(int iteration, double fraction) const = 0;
+    virtual PassOwnPtrWillBeRawPtr<WillBeHeapVector<RefPtrWillBeMember<Interpolation> > > sample(int iteration, double fraction, double iterationDuration) const = 0;
 
     virtual bool affects(CSSPropertyID) { return false; };
-    virtual bool isKeyframeAnimationEffect() const { return false; }
+    virtual bool isKeyframeEffectModel() const { return false; }
+
+    virtual void trace(Visitor*) { }
 };
 
 } // namespace WebCore

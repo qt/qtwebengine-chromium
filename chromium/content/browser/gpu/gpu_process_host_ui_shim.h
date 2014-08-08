@@ -87,9 +87,6 @@ class GpuProcessHostUIShim : public IPC::Listener,
 
   void OnLogMessage(int level, const std::string& header,
       const std::string& message);
-  void OnResizeView(int32 surface_id,
-                    int32 route_id,
-                    gfx::Size size);
 
   void OnGraphicsInfoCollected(const gpu::GPUInfo& gpu_info);
 
@@ -106,7 +103,7 @@ class GpuProcessHostUIShim : public IPC::Listener,
   void OnUpdateVSyncParameters(int surface_id,
                                base::TimeTicks timebase,
                                base::TimeDelta interval);
-  void OnFrameDrawn(const ui::LatencyInfo& latency_info);
+  void OnFrameDrawn(const std::vector<ui::LatencyInfo>& latency_info);
 
   // The serial number of the GpuProcessHost / GpuProcessHostUIShim pair.
   int host_id_;

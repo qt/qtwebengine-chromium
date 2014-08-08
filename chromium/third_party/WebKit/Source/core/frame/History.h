@@ -30,20 +30,24 @@
 #include "bindings/v8/SerializedScriptValue.h"
 #include "core/loader/FrameLoaderTypes.h"
 #include "core/frame/DOMWindowProperty.h"
+#include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 
 namespace WebCore {
 
-class Frame;
+class LocalFrame;
 class KURL;
 class ExecutionContext;
 class ExceptionState;
 
-class History : public ScriptWrappable, public RefCounted<History>, public DOMWindowProperty {
+class History FINAL : public RefCountedWillBeGarbageCollectedFinalized<History>, public ScriptWrappable, public DOMWindowProperty {
 public:
-    static PassRefPtr<History> create(Frame* frame) { return adoptRef(new History(frame)); }
+    static PassRefPtrWillBeRawPtr<History> create(LocalFrame* frame)
+    {
+        return adoptRefWillBeNoop(new History(frame));
+    }
 
     unsigned length() const;
     SerializedScriptValue* state();
@@ -55,10 +59,12 @@ public:
     bool stateChanged() const;
     bool isSameAsCurrentState(SerializedScriptValue*) const;
 
-    void stateObjectAdded(PassRefPtr<SerializedScriptValue>, const String& title, const String& url, SameDocumentNavigationSource, ExceptionState&);
+    void stateObjectAdded(PassRefPtr<SerializedScriptValue>, const String& title, const String& url, FrameLoadType, ExceptionState&);
+
+    void trace(Visitor*) { }
 
 private:
-    explicit History(Frame*);
+    explicit History(LocalFrame*);
 
     KURL urlForState(const String& url);
 

@@ -31,7 +31,7 @@
 #include "config.h"
 #include "core/html/forms/TextInputType.h"
 
-#include "InputTypeNames.h"
+#include "core/InputTypeNames.h"
 #include "core/html/HTMLInputElement.h"
 #include "wtf/PassOwnPtr.h"
 
@@ -39,9 +39,9 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-PassRefPtr<InputType> TextInputType::create(HTMLInputElement& element)
+PassRefPtrWillBeRawPtr<InputType> TextInputType::create(HTMLInputElement& element)
 {
-    return adoptRef(new TextInputType(element));
+    return adoptRefWillBeNoop(new TextInputType(element));
 }
 
 void TextInputType::countUsage()

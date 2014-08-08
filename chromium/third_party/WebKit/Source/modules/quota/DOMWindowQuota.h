@@ -33,24 +33,28 @@
 
 #include "core/frame/DOMWindowProperty.h"
 #include "platform/Supplementable.h"
+#include "platform/heap/Handle.h"
 
 namespace WebCore {
 
-class DOMWindow;
-class StorageInfo;
+class DeprecatedStorageInfo;
+class LocalDOMWindow;
 
-class DOMWindowQuota : public Supplement<DOMWindow>, public DOMWindowProperty {
+class DOMWindowQuota FINAL : public NoBaseWillBeGarbageCollectedFinalized<DOMWindowQuota>, public WillBeHeapSupplement<LocalDOMWindow>, public DOMWindowProperty {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(DOMWindowQuota);
 public:
     virtual ~DOMWindowQuota();
-    static DOMWindowQuota* from(DOMWindow*);
-    static StorageInfo* webkitStorageInfo(DOMWindow*);
-    StorageInfo* webkitStorageInfo() const;
+    static DOMWindowQuota& from(LocalDOMWindow&);
+    static DeprecatedStorageInfo* webkitStorageInfo(LocalDOMWindow&);
+    DeprecatedStorageInfo* webkitStorageInfo() const;
+
+    void trace(Visitor*);
 
 private:
-    explicit DOMWindowQuota(DOMWindow*);
+    explicit DOMWindowQuota(LocalDOMWindow&);
     static const char* supplementName();
 
-    mutable RefPtr<StorageInfo> m_storageInfo;
+    mutable PersistentWillBeMember<DeprecatedStorageInfo> m_storageInfo;
 };
 
 } // namespace WebCore

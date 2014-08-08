@@ -26,9 +26,10 @@
 #ifndef SVGSMILElement_h
 #define SVGSMILElement_h
 
-#include "SVGNames.h"
+#include "core/SVGNames.h"
 #include "core/svg/SVGElement.h"
 #include "core/svg/animation/SMILTime.h"
+#include "platform/heap/Heap.h"
 #include "wtf/HashMap.h"
 
 namespace WebCore {
@@ -86,8 +87,7 @@ public:
 
     SMILTime elapsed() const;
 
-    SMILTime intervalBegin() const { return m_intervalBegin; }
-    SMILTime intervalEnd() const { return m_intervalEnd; }
+    SMILTime intervalBegin() const { return m_interval.begin; }
     SMILTime previousIntervalBegin() const { return m_previousIntervalBegin; }
     SMILTime simpleDuration() const;
 
@@ -101,21 +101,24 @@ public:
     static SMILTime parseOffsetValue(const String&);
 
     bool isContributing(SMILTime elapsed) const;
-    bool isInactive() const;
     bool isFrozen() const;
 
     unsigned documentOrderIndex() const { return m_documentOrderIndex; }
     void setDocumentOrderIndex(unsigned index) { m_documentOrderIndex = index; }
 
-    virtual bool isAdditive() const = 0;
     virtual void resetAnimatedType() = 0;
     virtual void clearAnimatedType(SVGElement* targetElement) = 0;
     virtual void applyResultsToTarget() = 0;
 
-    void connectConditions();
+    void connectSyncBaseConditions();
+    void connectEventBaseConditions();
 
     void dispatchPendingEvent(SMILEventSender*);
     void dispatchRepeatEvents(unsigned);
+
+    virtual bool isSVGDiscardElement() const { return false; }
+
+    void trace(Visitor*) OVERRIDE;
 
 protected:
     void addBeginTime(SMILTime eventTime, SMILTime endTime, SMILTimeWithOrigin::Origin = SMILTimeWithOrigin::ParserOrigin);
@@ -128,8 +131,9 @@ protected:
     virtual void setAttributeName(const QualifiedName&);
 
 private:
-    void buildPendingResource();
-    void clearResourceReferences();
+    virtual void buildPendingResource() OVERRIDE;
+    void clearResourceAndEventBaseReferences();
+    void clearConditions();
 
     virtual void startedActiveInterval() = 0;
     void endedActiveInterval();
@@ -143,18 +147,31 @@ private:
     };
 
     SMILTime findInstanceTime(BeginOrEnd, SMILTime minimumTime, bool equalsMinimumOK) const;
+
+    enum ResolveInterval {
+        FirstInterval,
+        NextInterval
+    };
+
+    SMILInterval resolveInterval(ResolveInterval) const;
     void resolveFirstInterval();
     bool resolveNextInterval();
-    void resolveInterval(bool first, SMILTime& beginResult, SMILTime& endResult) const;
     SMILTime resolveActiveEnd(SMILTime resolvedBegin, SMILTime resolvedEnd) const;
     SMILTime repeatingDuration() const;
-    void checkRestart(SMILTime elapsed);
+
+    enum RestartedInterval {
+        DidNotRestartInterval,
+        DidRestartInterval
+    };
+
+    RestartedInterval maybeRestartInterval(SMILTime elapsed);
     void beginListChanged(SMILTime eventTime);
     void endListChanged(SMILTime eventTime);
 
     // This represents conditions on elements begin or end list that need to be resolved on runtime
     // for example <animate begin="otherElement.begin + 8s; button.click" ... />
-    struct Condition {
+    class Condition : public NoBaseWillBeGarbageCollectedFinalized<Condition> {
+    public:
         enum Type {
             EventBase,
             Syncbase,
@@ -162,28 +179,48 @@ private:
         };
 
         Condition(Type, BeginOrEnd, const String& baseID, const String& name, SMILTime offset, int repeat = -1);
+        static PassOwnPtrWillBeRawPtr<Condition> create(Type type, BeginOrEnd beginOrEnd, const String& baseID, const String& name, SMILTime offset, int repeat = -1)
+        {
+            return adoptPtrWillBeNoop(new Condition(type, beginOrEnd, baseID, name, offset, repeat));
+        }
+        ~Condition();
+        void trace(Visitor*);
+
+        Type type() const { return m_type; }
+        BeginOrEnd beginOrEnd() const { return m_beginOrEnd; }
+        String baseID() const { return m_baseID; }
+        String name() const { return m_name; }
+        SMILTime offset() const { return m_offset; }
+        int repeat() const { return m_repeat; }
+        SVGSMILElement* syncBase() const { return m_syncBase.get(); }
+        void setSyncBase(SVGSMILElement* element) { m_syncBase = element; }
+        ConditionEventListener* eventListener() const { return m_eventListener.get(); }
+        void setEventListener(PassRefPtr<ConditionEventListener>);
+
+    private:
         Type m_type;
         BeginOrEnd m_beginOrEnd;
         String m_baseID;
         String m_name;
         SMILTime m_offset;
         int m_repeat;
-        RefPtr<Element> m_syncbase;
+        RefPtrWillBeMember<SVGSMILElement> m_syncBase;
         RefPtr<ConditionEventListener> m_eventListener;
     };
     bool parseCondition(const String&, BeginOrEnd beginOrEnd);
     void parseBeginOrEnd(const String&, BeginOrEnd beginOrEnd);
-    Element* eventBaseFor(const Condition&);
+    SVGElement* eventBaseFor(const Condition&);
 
-    void disconnectConditions();
+    void disconnectSyncBaseConditions();
+    void disconnectEventBaseConditions();
 
     // Event base timing
     void handleConditionEvent(Event*, Condition*);
 
     void notifyDependentsIntervalChanged();
     void createInstanceTimesFromSyncbase(SVGSMILElement* syncbase);
-    void addTimeDependent(SVGSMILElement*);
-    void removeTimeDependent(SVGSMILElement*);
+    void addSyncBaseDependent(SVGSMILElement*);
+    void removeSyncBaseDependent(SVGSMILElement*);
 
     enum ActiveState {
         Inactive,
@@ -197,24 +234,23 @@ private:
     float calculateAnimationPercentAndRepeat(SMILTime elapsed, unsigned& repeat) const;
     SMILTime calculateNextProgressTime(SMILTime elapsed) const;
 
-    mutable SVGElement* m_targetElement;
+    RawPtrWillBeMember<SVGElement> m_targetElement;
 
-    Vector<Condition> m_conditions;
-    bool m_conditionsConnected;
+    WillBeHeapVector<OwnPtrWillBeMember<Condition> > m_conditions;
+    bool m_syncBaseConditionsConnected;
     bool m_hasEndEventConditions;
 
     bool m_isWaitingForFirstInterval;
 
-    typedef HashSet<SVGSMILElement*> TimeDependentSet;
-    TimeDependentSet m_timeDependents;
+    typedef WillBeHeapHashSet<RawPtrWillBeMember<SVGSMILElement> > TimeDependentSet;
+    TimeDependentSet m_syncBaseDependents;
 
     // Instance time lists
     Vector<SMILTimeWithOrigin> m_beginTimes;
     Vector<SMILTimeWithOrigin> m_endTimes;
 
     // This is the upcoming or current interval
-    SMILTime m_intervalBegin;
-    SMILTime m_intervalEnd;
+    SMILInterval m_interval;
 
     SMILTime m_previousIntervalBegin;
 
@@ -224,7 +260,7 @@ private:
 
     SMILTime m_nextProgressTime;
 
-    RefPtr<SMILTimeContainer> m_timeContainer;
+    RefPtrWillBeMember<SMILTimeContainer> m_timeContainer;
     unsigned m_documentOrderIndex;
 
     Vector<unsigned> m_repeatEventCountList;
@@ -241,10 +277,10 @@ private:
 inline bool isSVGSMILElement(const Node& node)
 {
     return node.hasTagName(SVGNames::setTag) || node.hasTagName(SVGNames::animateTag) || node.hasTagName(SVGNames::animateMotionTag)
-        || node.hasTagName(SVGNames::animateTransformTag) || node.hasTagName(SVGNames::animateColorTag);
+        || node.hasTagName(SVGNames::animateTransformTag) || node.hasTagName((SVGNames::discardTag));
 }
 
-DEFINE_NODE_TYPE_CASTS_WITH_FUNCTION(SVGSMILElement);
+DEFINE_ELEMENT_TYPE_CASTS_WITH_FUNCTION(SVGSMILElement);
 
 }
 

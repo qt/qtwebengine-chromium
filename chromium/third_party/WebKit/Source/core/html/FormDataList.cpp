@@ -43,22 +43,22 @@ void FormDataList::appendString(const CString& string)
     m_items.append(string);
 }
 
-void FormDataList::appendBlob(PassRefPtr<Blob> blob, const String& filename)
+void FormDataList::appendBlob(PassRefPtrWillBeRawPtr<Blob> blob, const String& filename)
 {
     m_items.append(Item(blob, filename));
 }
 
-PassRefPtr<FormData> FormDataList::createFormData(const WTF::TextEncoding& encoding, FormData::EncodingType encodingType)
+PassRefPtr<FormData> FormDataList::createFormData(FormData::EncodingType encodingType)
 {
     RefPtr<FormData> result = FormData::create();
-    appendKeyValuePairItemsTo(result.get(), encoding, false, encodingType);
+    appendKeyValuePairItemsTo(result.get(), m_encoding, false, encodingType);
     return result.release();
 }
 
-PassRefPtr<FormData> FormDataList::createMultiPartFormData(const WTF::TextEncoding& encoding)
+PassRefPtr<FormData> FormDataList::createMultiPartFormData()
 {
     RefPtr<FormData> result = FormData::create();
-    appendKeyValuePairItemsTo(result.get(), encoding, true);
+    appendKeyValuePairItemsTo(result.get(), m_encoding, true);
     return result.release();
 }
 
@@ -69,7 +69,7 @@ void FormDataList::appendKeyValuePairItemsTo(FormData* formData, const WTF::Text
 
     Vector<char> encodedData;
 
-    const Vector<FormDataList::Item>& items = this->items();
+    const WillBeHeapVector<Item>& items = this->items();
     size_t formDataListSize = items.size();
     ASSERT(!(formDataListSize % 2));
     for (size_t i = 0; i < formDataListSize; i += 2) {
@@ -130,12 +130,7 @@ void FormDataList::appendKeyValuePairItemsTo(FormData* formData, const WTF::Text
             }
             formData->appendData("\r\n", 2);
         } else {
-            // Omit the name "isindex" if it's the first form data element.
-            // FIXME: Why is this a good rule? Is this obsolete now?
-            if (encodedData.isEmpty() && key.data() == "isindex")
-                FormDataBuilder::encodeStringAsFormData(encodedData, value.data());
-            else
-                FormDataBuilder::addKeyValuePairAsFormData(encodedData, key.data(), value.data(), encodingType);
+            FormDataBuilder::addKeyValuePairAsFormData(encodedData, key.data(), value.data(), encodingType);
         }
     }
 
@@ -143,6 +138,16 @@ void FormDataList::appendKeyValuePairItemsTo(FormData* formData, const WTF::Text
         FormDataBuilder::addBoundaryToMultiPartHeader(encodedData, formData->boundary().data(), true);
 
     formData->appendData(encodedData.data(), encodedData.size());
+}
+
+void FormDataList::trace(Visitor* visitor)
+{
+    visitor->trace(m_items);
+}
+
+void FormDataList::Item::trace(Visitor* visitor)
+{
+    visitor->trace(m_blob);
 }
 
 } // namespace

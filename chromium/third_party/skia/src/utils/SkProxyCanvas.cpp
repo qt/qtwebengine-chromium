@@ -21,57 +21,48 @@ void SkProxyCanvas::setProxy(SkCanvas* proxy) {
 
 ///////////////////////////////// Overrides ///////////
 
-int SkProxyCanvas::save(SaveFlags flags) {
-    return fProxy->save(flags);
+void SkProxyCanvas::willSave(SaveFlags flags) {
+    fProxy->save(flags);
+    this->INHERITED::willSave(flags);
 }
 
-int SkProxyCanvas::saveLayer(const SkRect* bounds, const SkPaint* paint,
-                             SaveFlags flags) {
-    return fProxy->saveLayer(bounds, paint, flags);
+SkCanvas::SaveLayerStrategy SkProxyCanvas::willSaveLayer(const SkRect* bounds, const SkPaint* paint,
+                                                         SaveFlags flags) {
+    fProxy->saveLayer(bounds, paint, flags);
+    this->INHERITED::willSaveLayer(bounds, paint, flags);
+    // No need for a layer.
+    return kNoLayer_SaveLayerStrategy;
 }
 
-void SkProxyCanvas::restore() {
+void SkProxyCanvas::willRestore() {
     fProxy->restore();
+    this->INHERITED::willRestore();
 }
 
-bool SkProxyCanvas::translate(SkScalar dx, SkScalar dy) {
-    return fProxy->translate(dx, dy);
+void SkProxyCanvas::didConcat(const SkMatrix& matrix) {
+    fProxy->concat(matrix);
+    this->INHERITED::didConcat(matrix);
 }
 
-bool SkProxyCanvas::scale(SkScalar sx, SkScalar sy) {
-    return fProxy->scale(sx, sy);
-}
-
-bool SkProxyCanvas::rotate(SkScalar degrees) {
-    return fProxy->rotate(degrees);
-}
-
-bool SkProxyCanvas::skew(SkScalar sx, SkScalar sy) {
-    return fProxy->skew(sx, sy);
-}
-
-bool SkProxyCanvas::concat(const SkMatrix& matrix) {
-    return fProxy->concat(matrix);
-}
-
-void SkProxyCanvas::setMatrix(const SkMatrix& matrix) {
+void SkProxyCanvas::didSetMatrix(const SkMatrix& matrix) {
     fProxy->setMatrix(matrix);
+    this->INHERITED::didSetMatrix(matrix);
 }
 
-bool SkProxyCanvas::clipRect(const SkRect& rect, SkRegion::Op op, bool doAA) {
-    return fProxy->clipRect(rect, op, doAA);
+void SkProxyCanvas::onClipRect(const SkRect& rect, SkRegion::Op op, ClipEdgeStyle edgeStyle) {
+    fProxy->clipRect(rect, op, kSoft_ClipEdgeStyle == edgeStyle);
 }
 
-bool SkProxyCanvas::clipRRect(const SkRRect& rrect, SkRegion::Op op, bool doAA) {
-    return fProxy->clipRRect(rrect, op, doAA);
+void SkProxyCanvas::onClipRRect(const SkRRect& rrect, SkRegion::Op op, ClipEdgeStyle edgeStyle) {
+    fProxy->clipRRect(rrect, op, kSoft_ClipEdgeStyle == edgeStyle);
 }
 
-bool SkProxyCanvas::clipPath(const SkPath& path, SkRegion::Op op, bool doAA) {
-    return fProxy->clipPath(path, op, doAA);
+void SkProxyCanvas::onClipPath(const SkPath& path, SkRegion::Op op, ClipEdgeStyle edgeStyle) {
+    fProxy->clipPath(path, op, kSoft_ClipEdgeStyle == edgeStyle);
 }
 
-bool SkProxyCanvas::clipRegion(const SkRegion& deviceRgn, SkRegion::Op op) {
-    return fProxy->clipRegion(deviceRgn, op);
+void SkProxyCanvas::onClipRegion(const SkRegion& deviceRgn, SkRegion::Op op) {
+    fProxy->clipRegion(deviceRgn, op);
 }
 
 void SkProxyCanvas::drawPaint(const SkPaint& paint) {
@@ -93,6 +84,11 @@ void SkProxyCanvas::drawRect(const SkRect& rect, const SkPaint& paint) {
 
 void SkProxyCanvas::drawRRect(const SkRRect& rrect, const SkPaint& paint) {
     fProxy->drawRRect(rrect, paint);
+}
+
+void SkProxyCanvas::onDrawDRRect(const SkRRect& outer, const SkRRect& inner,
+                                 const SkPaint& paint) {
+    fProxy->drawDRRect(outer, inner, paint);
 }
 
 void SkProxyCanvas::drawPath(const SkPath& path, const SkPaint& paint) {
@@ -120,29 +116,27 @@ void SkProxyCanvas::drawSprite(const SkBitmap& bitmap, int x, int y,
     fProxy->drawSprite(bitmap, x, y, paint);
 }
 
-void SkProxyCanvas::drawText(const void* text, size_t byteLength, SkScalar x,
-                             SkScalar y, const SkPaint& paint) {
+void SkProxyCanvas::onDrawText(const void* text, size_t byteLength, SkScalar x, SkScalar y,
+                               const SkPaint& paint) {
     fProxy->drawText(text, byteLength, x, y, paint);
 }
 
-void SkProxyCanvas::drawPosText(const void* text, size_t byteLength,
-                                const SkPoint pos[], const SkPaint& paint) {
+void SkProxyCanvas::onDrawPosText(const void* text, size_t byteLength, const SkPoint pos[],
+                                  const SkPaint& paint) {
     fProxy->drawPosText(text, byteLength, pos, paint);
 }
 
-void SkProxyCanvas::drawPosTextH(const void* text, size_t byteLength,
-                                 const SkScalar xpos[], SkScalar constY,
-                                 const SkPaint& paint) {
+void SkProxyCanvas::onDrawPosTextH(const void* text, size_t byteLength, const SkScalar xpos[],
+                                   SkScalar constY, const SkPaint& paint) {
     fProxy->drawPosTextH(text, byteLength, xpos, constY, paint);
 }
 
-void SkProxyCanvas::drawTextOnPath(const void* text, size_t byteLength,
-                                   const SkPath& path, const SkMatrix* matrix,
-                                   const SkPaint& paint) {
+void SkProxyCanvas::onDrawTextOnPath(const void* text, size_t byteLength, const SkPath& path,
+                                     const SkMatrix* matrix, const SkPaint& paint) {
     fProxy->drawTextOnPath(text, byteLength, path, matrix, paint);
 }
 
-void SkProxyCanvas::drawPicture(SkPicture& picture) {
+void SkProxyCanvas::onDrawPicture(const SkPicture* picture) {
     fProxy->drawPicture(picture);
 }
 
@@ -169,10 +163,6 @@ void SkProxyCanvas::addComment(const char* kywd, const char* value) {
 
 void SkProxyCanvas::endCommentGroup() {
     fProxy->endCommentGroup();
-}
-
-SkBounder* SkProxyCanvas::setBounder(SkBounder* bounder) {
-    return fProxy->setBounder(bounder);
 }
 
 SkDrawFilter* SkProxyCanvas::setDrawFilter(SkDrawFilter* filter) {

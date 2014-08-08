@@ -6,7 +6,7 @@
 
 #include "base/basictypes.h"
 #include "base/bind.h"
-#include "base/message_loop/message_loop.h"
+#include "base/memory/scoped_vector.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/time/time.h"
 #include "media/audio/audio_manager_base.h"
@@ -40,15 +40,16 @@ class AudioInputDevice::AudioThreadCallback
 
  private:
   int current_segment_id_;
+  ScopedVector<media::AudioBus> audio_buses_;
   CaptureCallback* capture_callback_;
-  scoped_ptr<AudioBus> audio_bus_;
+
   DISALLOW_COPY_AND_ASSIGN(AudioThreadCallback);
 };
 
 AudioInputDevice::AudioInputDevice(
     scoped_ptr<AudioInputIPC> ipc,
-    const scoped_refptr<base::MessageLoopProxy>& io_loop)
-    : ScopedLoopObserver(io_loop),
+    const scoped_refptr<base::SingleThreadTaskRunner>& io_task_runner)
+    : ScopedTaskRunnerObserver(io_task_runner),
       callback_(NULL),
       ipc_(ipc.Pass()),
       state_(IDLE),
@@ -78,7 +79,7 @@ void AudioInputDevice::Initialize(const AudioParameters& params,
 void AudioInputDevice::Start() {
   DCHECK(callback_) << "Initialize hasn't been called";
   DVLOG(1) << "Start()";
-  message_loop()->PostTask(FROM_HERE,
+  task_runner()->PostTask(FROM_HERE,
       base::Bind(&AudioInputDevice::StartUpOnIOThread, this));
 }
 
@@ -91,7 +92,7 @@ void AudioInputDevice::Stop() {
     stopping_hack_ = true;
   }
 
-  message_loop()->PostTask(FROM_HERE,
+  task_runner()->PostTask(FROM_HERE,
       base::Bind(&AudioInputDevice::ShutDownOnIOThread, this));
 }
 
@@ -101,13 +102,13 @@ void AudioInputDevice::SetVolume(double volume) {
     return;
   }
 
-  message_loop()->PostTask(FROM_HERE,
+  task_runner()->PostTask(FROM_HERE,
       base::Bind(&AudioInputDevice::SetVolumeOnIOThread, this, volume));
 }
 
 void AudioInputDevice::SetAutomaticGainControl(bool enabled) {
   DVLOG(1) << "SetAutomaticGainControl(enabled=" << enabled << ")";
-  message_loop()->PostTask(FROM_HERE,
+  task_runner()->PostTask(FROM_HERE,
       base::Bind(&AudioInputDevice::SetAutomaticGainControlOnIOThread,
           this, enabled));
 }
@@ -117,7 +118,7 @@ void AudioInputDevice::OnStreamCreated(
     base::SyncSocket::Handle socket_handle,
     int length,
     int total_segments) {
-  DCHECK(message_loop()->BelongsToCurrentThread());
+  DCHECK(task_runner()->BelongsToCurrentThread());
 #if defined(OS_WIN)
   DCHECK(handle);
   DCHECK(socket_handle);
@@ -153,7 +154,7 @@ void AudioInputDevice::OnVolume(double volume) {
 
 void AudioInputDevice::OnStateChanged(
     AudioInputIPCDelegate::State state) {
-  DCHECK(message_loop()->BelongsToCurrentThread());
+  DCHECK(task_runner()->BelongsToCurrentThread());
 
   // Do nothing if the stream has been closed.
   if (state_ < CREATING_STREAM)
@@ -186,7 +187,7 @@ void AudioInputDevice::OnStateChanged(
 }
 
 void AudioInputDevice::OnIPCClosed() {
-  DCHECK(message_loop()->BelongsToCurrentThread());
+  DCHECK(task_runner()->BelongsToCurrentThread());
   state_ = IPC_CLOSED;
   ipc_.reset();
 }
@@ -198,7 +199,7 @@ AudioInputDevice::~AudioInputDevice() {
 }
 
 void AudioInputDevice::StartUpOnIOThread() {
-  DCHECK(message_loop()->BelongsToCurrentThread());
+  DCHECK(task_runner()->BelongsToCurrentThread());
 
   // Make sure we don't call Start() more than once.
   if (state_ != IDLE)
@@ -215,7 +216,7 @@ void AudioInputDevice::StartUpOnIOThread() {
 }
 
 void AudioInputDevice::ShutDownOnIOThread() {
-  DCHECK(message_loop()->BelongsToCurrentThread());
+  DCHECK(task_runner()->BelongsToCurrentThread());
 
   // Close the stream, if we haven't already.
   if (state_ >= CREATING_STREAM) {
@@ -240,13 +241,13 @@ void AudioInputDevice::ShutDownOnIOThread() {
 }
 
 void AudioInputDevice::SetVolumeOnIOThread(double volume) {
-  DCHECK(message_loop()->BelongsToCurrentThread());
+  DCHECK(task_runner()->BelongsToCurrentThread());
   if (state_ >= CREATING_STREAM)
     ipc_->SetVolume(volume);
 }
 
 void AudioInputDevice::SetAutomaticGainControlOnIOThread(bool enabled) {
-  DCHECK(message_loop()->BelongsToCurrentThread());
+  DCHECK(task_runner()->BelongsToCurrentThread());
 
   if (state_ >= CREATING_STREAM) {
     DLOG(WARNING) << "The AGC state can not be modified after starting.";
@@ -274,7 +275,6 @@ AudioInputDevice::AudioThreadCallback::AudioThreadCallback(
                                   total_segments),
       current_segment_id_(0),
       capture_callback_(capture_callback) {
-  audio_bus_ = AudioBus::Create(audio_parameters_);
 }
 
 AudioInputDevice::AudioThreadCallback::~AudioThreadCallback() {
@@ -282,6 +282,17 @@ AudioInputDevice::AudioThreadCallback::~AudioThreadCallback() {
 
 void AudioInputDevice::AudioThreadCallback::MapSharedMemory() {
   shared_memory_.Map(memory_length_);
+
+  // Create vector of audio buses by wrapping existing blocks of memory.
+  uint8* ptr = static_cast<uint8*>(shared_memory_.memory());
+  for (int i = 0; i < total_segments_; ++i) {
+    media::AudioInputBuffer* buffer =
+        reinterpret_cast<media::AudioInputBuffer*>(ptr);
+    scoped_ptr<media::AudioBus> audio_bus =
+        media::AudioBus::WrapMemory(audio_parameters_, buffer->audio);
+    audio_buses_.push_back(audio_bus.release());
+    ptr += segment_length_;
+  }
 }
 
 void AudioInputDevice::AudioThreadCallback::Process(int pending_data) {
@@ -298,21 +309,17 @@ void AudioInputDevice::AudioThreadCallback::Process(int pending_data) {
   double volume = buffer->params.volume;
   bool key_pressed = buffer->params.key_pressed;
 
-  int audio_delay_milliseconds = pending_data / bytes_per_ms_;
-  int16* memory = reinterpret_cast<int16*>(&buffer->audio[0]);
-  const int bytes_per_sample = sizeof(memory[0]);
-
-  if (++current_segment_id_ >= total_segments_)
-    current_segment_id_ = 0;
-
-  // Deinterleave each channel and convert to 32-bit floating-point
-  // with nominal range -1.0 -> +1.0.
-  audio_bus_->FromInterleaved(memory, audio_bus_->frames(), bytes_per_sample);
+  // Use pre-allocated audio bus wrapping existing block of shared memory.
+  media::AudioBus* audio_bus = audio_buses_[current_segment_id_];
 
   // Deliver captured data to the client in floating point format
   // and update the audio-delay measurement.
+  int audio_delay_milliseconds = pending_data / bytes_per_ms_;
   capture_callback_->Capture(
-      audio_bus_.get(), audio_delay_milliseconds, volume, key_pressed);
+      audio_bus, audio_delay_milliseconds, volume, key_pressed);
+
+  if (++current_segment_id_ >= total_segments_)
+    current_segment_id_ = 0;
 }
 
 }  // namespace media

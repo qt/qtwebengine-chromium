@@ -4,6 +4,7 @@
 
 #include <cerrno>
 
+#include "base/files/file.h"
 #include "base/files/file_path.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/strings/string16.h"
@@ -20,22 +21,37 @@ using content::LevelDBDatabase;
 using content::LevelDBFactory;
 using content::LevelDBSnapshot;
 
+namespace base {
+class TaskRunner;
+}
+
+namespace content {
+class IndexedDBFactory;
+}
+
+namespace net {
+class URLRequestContext;
+}
+
 namespace {
 
 class BustedLevelDBDatabase : public LevelDBDatabase {
  public:
+  BustedLevelDBDatabase() {}
   static scoped_ptr<LevelDBDatabase> Open(
       const base::FilePath& file_name,
       const LevelDBComparator* /*comparator*/) {
     return scoped_ptr<LevelDBDatabase>(new BustedLevelDBDatabase);
   }
-  virtual bool Get(const base::StringPiece& key,
-                   std::string* value,
-                   bool* found,
-                   const LevelDBSnapshot* = 0) OVERRIDE {
-    // false means IO error.
-    return false;
+  virtual leveldb::Status Get(const base::StringPiece& key,
+                              std::string* value,
+                              bool* found,
+                              const LevelDBSnapshot* = 0) OVERRIDE {
+    return leveldb::Status::IOError("It's busted!");
   }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(BustedLevelDBDatabase);
 };
 
 class MockLevelDBFactory : public LevelDBFactory {
@@ -49,34 +65,46 @@ class MockLevelDBFactory : public LevelDBFactory {
     *db = BustedLevelDBDatabase::Open(file_name, comparator);
     return leveldb::Status::OK();
   }
-  virtual bool DestroyLevelDB(const base::FilePath& file_name) OVERRIDE {
+  virtual leveldb::Status DestroyLevelDB(const base::FilePath& file_name)
+      OVERRIDE {
     EXPECT_FALSE(destroy_called_);
     destroy_called_ = true;
-    return false;
+    return leveldb::Status::IOError("error");
   }
   virtual ~MockLevelDBFactory() { EXPECT_TRUE(destroy_called_); }
 
  private:
   bool destroy_called_;
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(MockLevelDBFactory);
 };
 
 TEST(IndexedDBIOErrorTest, CleanUpTest) {
+  content::IndexedDBFactory* factory = NULL;
   const GURL origin("http://localhost:81");
   base::ScopedTempDir temp_directory;
   ASSERT_TRUE(temp_directory.CreateUniqueTempDir());
   const base::FilePath path = temp_directory.path();
+  net::URLRequestContext* request_context = NULL;
   MockLevelDBFactory mock_leveldb_factory;
   blink::WebIDBDataLoss data_loss =
       blink::WebIDBDataLossNone;
   std::string data_loss_message;
   bool disk_full = false;
+  base::TaskRunner* task_runner = NULL;
+  bool clean_journal = false;
   scoped_refptr<IndexedDBBackingStore> backing_store =
-      IndexedDBBackingStore::Open(origin,
+      IndexedDBBackingStore::Open(factory,
+                                  origin,
                                   path,
+                                  request_context,
                                   &data_loss,
                                   &data_loss_message,
                                   &disk_full,
-                                  &mock_leveldb_factory);
+                                  &mock_leveldb_factory,
+                                  task_runner,
+                                  clean_journal);
 }
 
 // TODO(dgrogan): Remove expect_destroy if we end up not using it again. It is
@@ -96,10 +124,11 @@ class MockErrorLevelDBFactory : public LevelDBFactory {
     return MakeIOError(
         "some filename", "some message", leveldb_env::kNewLogger, error_);
   }
-  virtual bool DestroyLevelDB(const base::FilePath& file_name) OVERRIDE {
+  virtual leveldb::Status DestroyLevelDB(const base::FilePath& file_name)
+      OVERRIDE {
     EXPECT_FALSE(destroy_called_);
     destroy_called_ = true;
-    return false;
+    return leveldb::Status::IOError("error");
   }
   virtual ~MockErrorLevelDBFactory() {
     EXPECT_EQ(expect_destroy_, destroy_called_);
@@ -109,10 +138,14 @@ class MockErrorLevelDBFactory : public LevelDBFactory {
   T error_;
   bool expect_destroy_;
   bool destroy_called_;
+
+  DISALLOW_COPY_AND_ASSIGN(MockErrorLevelDBFactory);
 };
 
 TEST(IndexedDBNonRecoverableIOErrorTest, NuancedCleanupTest) {
+  content::IndexedDBFactory* factory = NULL;
   const GURL origin("http://localhost:81");
+  net::URLRequestContext* request_context = NULL;
   base::ScopedTempDir temp_directory;
   ASSERT_TRUE(temp_directory.CreateUniqueTempDir());
   const base::FilePath path = temp_directory.path();
@@ -120,44 +153,62 @@ TEST(IndexedDBNonRecoverableIOErrorTest, NuancedCleanupTest) {
       blink::WebIDBDataLossNone;
   std::string data_loss_reason;
   bool disk_full = false;
+  base::TaskRunner* task_runner = NULL;
+  bool clean_journal = false;
 
   MockErrorLevelDBFactory<int> mock_leveldb_factory(ENOSPC, false);
   scoped_refptr<IndexedDBBackingStore> backing_store =
-      IndexedDBBackingStore::Open(origin,
+      IndexedDBBackingStore::Open(factory,
+                                  origin,
                                   path,
+                                  request_context,
                                   &data_loss,
                                   &data_loss_reason,
                                   &disk_full,
-                                  &mock_leveldb_factory);
+                                  &mock_leveldb_factory,
+                                  task_runner,
+                                  clean_journal);
 
-  MockErrorLevelDBFactory<base::PlatformFileError> mock_leveldb_factory2(
-      base::PLATFORM_FILE_ERROR_NO_MEMORY, false);
+  MockErrorLevelDBFactory<base::File::Error> mock_leveldb_factory2(
+      base::File::FILE_ERROR_NO_MEMORY, false);
   scoped_refptr<IndexedDBBackingStore> backing_store2 =
-      IndexedDBBackingStore::Open(origin,
+      IndexedDBBackingStore::Open(factory,
+                                  origin,
                                   path,
+                                  request_context,
                                   &data_loss,
                                   &data_loss_reason,
                                   &disk_full,
-                                  &mock_leveldb_factory2);
+                                  &mock_leveldb_factory2,
+                                  task_runner,
+                                  clean_journal);
 
   MockErrorLevelDBFactory<int> mock_leveldb_factory3(EIO, false);
   scoped_refptr<IndexedDBBackingStore> backing_store3 =
-      IndexedDBBackingStore::Open(origin,
+      IndexedDBBackingStore::Open(factory,
+                                  origin,
                                   path,
+                                  request_context,
                                   &data_loss,
                                   &data_loss_reason,
                                   &disk_full,
-                                  &mock_leveldb_factory3);
+                                  &mock_leveldb_factory3,
+                                  task_runner,
+                                  clean_journal);
 
-  MockErrorLevelDBFactory<base::PlatformFileError> mock_leveldb_factory4(
-      base::PLATFORM_FILE_ERROR_FAILED, false);
+  MockErrorLevelDBFactory<base::File::Error> mock_leveldb_factory4(
+      base::File::FILE_ERROR_FAILED, false);
   scoped_refptr<IndexedDBBackingStore> backing_store4 =
-      IndexedDBBackingStore::Open(origin,
+      IndexedDBBackingStore::Open(factory,
+                                  origin,
                                   path,
+                                  request_context,
                                   &data_loss,
                                   &data_loss_reason,
                                   &disk_full,
-                                  &mock_leveldb_factory4);
+                                  &mock_leveldb_factory4,
+                                  task_runner,
+                                  clean_journal);
 }
 
 }  // namespace

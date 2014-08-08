@@ -33,7 +33,7 @@
 #include "core/dom/NodeTraversal.h"
 #include "core/editing/VisibleUnits.h"
 #include "core/editing/htmlediting.h"
-#include "core/frame/Frame.h"
+#include "core/frame/LocalFrame.h"
 #include "core/rendering/RenderListItem.h"
 #include "core/rendering/RenderTheme.h"
 #include "core/rendering/RenderView.h"
@@ -43,7 +43,6 @@
 #include "wtf/text/WTFString.h"
 
 using blink::WebLocalizedString;
-using namespace std;
 
 namespace WebCore {
 
@@ -70,7 +69,7 @@ static ARIARoleMap* createARIARoleMap()
         { "contentinfo", ContentInfoRole },
         { "dialog", DialogRole },
         { "directory", DirectoryRole },
-        { "grid", TableRole },
+        { "grid", GridRole },
         { "gridcell", CellRole },
         { "columnheader", ColumnHeaderRole },
         { "combobox", ComboBoxRole },
@@ -164,13 +163,6 @@ AXObjectCache* AXObject::axObjectCache() const
     return 0;
 }
 
-void AXObject::updateBackingStore()
-{
-    // Updating the layout may delete this object.
-    if (Document* document = this->document())
-        document->updateLayoutIgnorePendingStylesheets();
-}
-
 bool AXObject::isARIATextControl() const
 {
     return ariaRoleAttribute() == TextAreaRole || ariaRoleAttribute() == TextFieldRole;
@@ -181,6 +173,25 @@ bool AXObject::isButton() const
     AccessibilityRole role = roleValue();
 
     return role == ButtonRole || role == PopUpButtonRole || role == ToggleButtonRole;
+}
+
+bool AXObject::isLandmarkRelated() const
+{
+    switch (roleValue()) {
+    case ApplicationRole:
+    case ArticleRole:
+    case BannerRole:
+    case ComplementaryRole:
+    case ContentInfoRole:
+    case FooterRole:
+    case MainRole:
+    case NavigationRole:
+    case RegionRole:
+    case SearchRole:
+        return true;
+    default:
+        return false;
+    }
 }
 
 bool AXObject::isMenuRelated() const
@@ -242,7 +253,11 @@ bool AXObject::isExpanded() const
 
 bool AXObject::accessibilityIsIgnored() const
 {
-    AXComputedObjectAttributeCache* attributeCache = axObjectCache()->computedObjectAttributeCache();
+    AXObjectCache* cache = axObjectCache();
+    if (!cache)
+        return true;
+
+    AXComputedObjectAttributeCache* attributeCache = cache->computedObjectAttributeCache();
     if (attributeCache) {
         AXObjectInclusion ignored = attributeCache->getIgnored(axObjectID());
         switch (ignored) {
@@ -376,15 +391,6 @@ AccessibilityButtonState AXObject::checkboxOrRadioValue() const
     return ButtonStateOff;
 }
 
-const AtomicString& AXObject::placeholderValue() const
-{
-    const AtomicString& placeholder = getAttribute(placeholderAttr);
-    if (!placeholder.isEmpty())
-        return placeholder;
-
-    return nullAtom;
-}
-
 bool AXObject::ariaIsMultiline() const
 {
     return equalIgnoringCase(getAttribute(aria_multilineAttr), "true");
@@ -393,20 +399,6 @@ bool AXObject::ariaIsMultiline() const
 bool AXObject::ariaPressedIsPresent() const
 {
     return !getAttribute(aria_pressedAttr).isEmpty();
-}
-
-const AtomicString& AXObject::invalidStatus() const
-{
-    DEFINE_STATIC_LOCAL(const AtomicString, invalidStatusFalse, ("false", AtomicString::ConstructFromLiteral));
-
-    // aria-invalid can return false (default), grammer, spelling, or true.
-    const AtomicString& ariaInvalid = getAttribute(aria_invalidAttr);
-
-    // If empty or not present, it should return false.
-    if (ariaInvalid.isEmpty())
-        return invalidStatusFalse;
-
-    return ariaInvalid;
 }
 
 bool AXObject::supportsARIAAttributes() const
@@ -735,7 +727,7 @@ void AXObject::scrollToMakeVisibleWithSubFocus(const IntRect& subfocus) const
     if (!scrollableArea)
         return;
 
-    LayoutRect objectRect = elementRect();
+    IntRect objectRect = pixelSnappedIntRect(elementRect());
     IntPoint scrollPosition = scrollableArea->scrollPosition();
     IntRect scrollVisibleRect = scrollableArea->visibleContentRect();
 
@@ -780,8 +772,8 @@ void AXObject::scrollToGlobalPoint(const IntPoint& globalPoint) const
 
         ScrollableArea* scrollableArea = outer->getScrollableAreaIfScrollable();
 
-        LayoutRect innerRect = inner->isAXScrollView() ? inner->parentObject()->elementRect() : inner->elementRect();
-        LayoutRect objectRect = innerRect;
+        IntRect innerRect = inner->isAXScrollView() ? pixelSnappedIntRect(inner->parentObject()->elementRect()) : pixelSnappedIntRect(inner->elementRect());
+        IntRect objectRect = innerRect;
         IntPoint scrollPosition = scrollableArea->scrollPosition();
 
         // Convert the object rect into local coordinates.

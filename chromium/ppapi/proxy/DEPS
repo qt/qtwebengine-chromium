@@ -1,11 +1,12 @@
 include_rules = [
   "+base",
-  "+components/tracing",
   "+gpu",
   "+ipc",
   "+media/audio",
+  "+media/base",
   "+skia",
   "+ui/surface",
+  "+ui/events",
 
   # We don't want the proxy to depend on the C++ layer, which is appropriate
   # for plugins only. However, the completion callback factory is a very useful
@@ -14,9 +15,4 @@ include_rules = [
   "-ppapi/cpp",
   "+ppapi/cpp/completion_callback.h",
   "+ppapi/cpp/output_traits.h",
-
-  # The untrusted build references the NaCl integrated runtime (IRT).
-  "+native_client/src/shared",
-  "+native_client/src/untrusted"
 ]
-

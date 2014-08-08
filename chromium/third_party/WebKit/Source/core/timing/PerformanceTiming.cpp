@@ -33,7 +33,7 @@
 
 #include "core/dom/Document.h"
 #include "core/dom/DocumentTiming.h"
-#include "core/frame/Frame.h"
+#include "core/frame/LocalFrame.h"
 #include "core/loader/DocumentLoadTiming.h"
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/FrameLoader.h"
@@ -48,7 +48,7 @@ static unsigned long long toIntegerMilliseconds(double seconds)
     return static_cast<unsigned long long>(seconds * 1000.0);
 }
 
-PerformanceTiming::PerformanceTiming(Frame* frame)
+PerformanceTiming::PerformanceTiming(LocalFrame* frame)
     : DOMWindowProperty(frame)
 {
     ScriptWrappable::init(this);
@@ -324,7 +324,7 @@ const DocumentTiming* PerformanceTiming::documentTiming() const
     if (!document)
         return 0;
 
-    return document->timing();
+    return &document->timing();
 }
 
 DocumentLoadTiming* PerformanceTiming::documentLoadTiming() const
@@ -349,7 +349,9 @@ unsigned long long PerformanceTiming::monotonicTimeToIntegerMilliseconds(double 
 {
     ASSERT(monotonicSeconds >= 0);
     const DocumentLoadTiming* timing = documentLoadTiming();
-    ASSERT(timing);
+    if (!timing)
+        return 0;
+
     return toIntegerMilliseconds(timing->monotonicTimeToPseudoWallTime(monotonicSeconds));
 }
 

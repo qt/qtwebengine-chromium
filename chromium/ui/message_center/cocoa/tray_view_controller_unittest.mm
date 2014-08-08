@@ -8,7 +8,7 @@
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "base/strings/utf_string_conversions.h"
-#import "ui/base/test/ui_cocoa_test_helper.h"
+#import "ui/gfx/test/ui_cocoa_test_helper.h"
 #include "ui/message_center/fake_notifier_settings_provider.h"
 #include "ui/message_center/message_center.h"
 #include "ui/message_center/message_center_impl.h"
@@ -16,13 +16,14 @@
 #include "ui/message_center/notification.h"
 #include "ui/message_center/notifier_settings.h"
 
+using base::ASCIIToUTF16;
+
 namespace message_center {
 
 class TrayViewControllerTest : public ui::CocoaTest {
  public:
   TrayViewControllerTest()
-    : center_(NULL),
-      message_loop_(base::MessageLoop::TYPE_UI) {
+    : center_(NULL) {
   }
 
   virtual void SetUp() OVERRIDE {
@@ -61,7 +62,7 @@ class TrayViewControllerTest : public ui::CocoaTest {
 
   message_center::MessageCenter* center_;  // Weak, global.
 
-  base::MessageLoop message_loop_;
+  base::MessageLoopForUI message_loop_;
   scoped_ptr<base::RunLoop> nested_run_loop_;
   base::scoped_nsobject<MCTrayViewController> tray_;
 };
@@ -76,7 +77,7 @@ TEST_F(TrayViewControllerTest, AddRemoveOne) {
       ASCIIToUTF16("First notification"),
       ASCIIToUTF16("This is a simple test."),
       gfx::Image(),
-      string16(),
+      base::string16(),
       DummyNotifierId(),
       message_center::RichNotificationData(),
       NULL));
@@ -97,7 +98,10 @@ TEST_F(TrayViewControllerTest, AddRemoveOne) {
   center_->RemoveNotification("1", true);
   [tray_ onMessageCenterTrayChanged];
   EXPECT_EQ(0u, [[view subviews] count]);
-  EXPECT_CGFLOAT_EQ(0, NSHeight([view frame]));
+  // The empty tray is now 100px tall to accommodate
+  // the empty message.
+  EXPECT_CGFLOAT_EQ(message_center::kMinScrollViewHeight,
+                    NSHeight([view frame]));
 }
 
 TEST_F(TrayViewControllerTest, AddThreeClearAll) {
@@ -110,7 +114,7 @@ TEST_F(TrayViewControllerTest, AddThreeClearAll) {
       ASCIIToUTF16("First notification"),
       ASCIIToUTF16("This is a simple test."),
       gfx::Image(),
-      string16(),
+      base::string16(),
       DummyNotifierId(),
       message_center::RichNotificationData(),
       NULL));
@@ -121,7 +125,7 @@ TEST_F(TrayViewControllerTest, AddThreeClearAll) {
       ASCIIToUTF16("Second notification"),
       ASCIIToUTF16("This is a simple test."),
       gfx::Image(),
-      string16(),
+      base::string16(),
       DummyNotifierId(),
       message_center::RichNotificationData(),
       NULL));
@@ -132,7 +136,7 @@ TEST_F(TrayViewControllerTest, AddThreeClearAll) {
       ASCIIToUTF16("Third notification"),
       ASCIIToUTF16("This is a simple test."),
       gfx::Image(),
-      string16(),
+      base::string16(),
       DummyNotifierId(),
       message_center::RichNotificationData(),
       NULL));
@@ -145,7 +149,10 @@ TEST_F(TrayViewControllerTest, AddThreeClearAll) {
   [tray_ onMessageCenterTrayChanged];
 
   EXPECT_EQ(0u, [[view subviews] count]);
-  EXPECT_CGFLOAT_EQ(0, NSHeight([view frame]));
+  // The empty tray is now 100px tall to accommodate
+  // the empty message.
+  EXPECT_CGFLOAT_EQ(message_center::kMinScrollViewHeight,
+                    NSHeight([view frame]));
 }
 
 TEST_F(TrayViewControllerTest, NoClearAllWhenNoNotifications) {
@@ -165,7 +172,7 @@ TEST_F(TrayViewControllerTest, NoClearAllWhenNoNotifications) {
       ASCIIToUTF16("First notification"),
       ASCIIToUTF16("This is a simple test."),
       gfx::Image(),
-      string16(),
+      base::string16(),
       DummyNotifierId(),
       message_center::RichNotificationData(),
       NULL));
@@ -184,7 +191,7 @@ TEST_F(TrayViewControllerTest, NoClearAllWhenNoNotifications) {
       ASCIIToUTF16("Second notification"),
       ASCIIToUTF16("This is a simple test."),
       gfx::Image(),
-      string16(),
+      base::string16(),
       DummyNotifierId(),
       message_center::RichNotificationData(),
       NULL));
@@ -241,6 +248,35 @@ TEST_F(TrayViewControllerTest, Settings) {
 
   // The tray should be back at its previous height now.
   EXPECT_EQ(trayHeight, NSHeight([[tray_ view] frame]));
+
+  // Clean up since this frame owns FakeNotifierSettingsProvider.
+  center_->SetNotifierSettingsProvider(NULL);
+}
+
+TEST_F(TrayViewControllerTest, EmptyCenter) {
+  EXPECT_FALSE([[tray_ emptyDescription] isHidden]);
+
+  // With no notifications, the divider should be hidden.
+  EXPECT_TRUE([[tray_ divider] isHidden]);
+  EXPECT_TRUE([[tray_ scrollView] isHidden]);
+
+  scoped_ptr<message_center::Notification> notification;
+  notification.reset(new message_center::Notification(
+      message_center::NOTIFICATION_TYPE_SIMPLE,
+      "1",
+      ASCIIToUTF16("First notification"),
+      ASCIIToUTF16("This is a simple test."),
+      gfx::Image(),
+      base::string16(),
+      DummyNotifierId(),
+      message_center::RichNotificationData(),
+      NULL));
+  center_->AddNotification(notification.Pass());
+  [tray_ onMessageCenterTrayChanged];
+
+  EXPECT_FALSE([[tray_ divider] isHidden]);
+  EXPECT_FALSE([[tray_ scrollView] isHidden]);
+  EXPECT_TRUE([[tray_ emptyDescription] isHidden]);
 }
 
 }  // namespace message_center

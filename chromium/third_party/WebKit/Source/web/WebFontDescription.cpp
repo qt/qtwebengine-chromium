@@ -29,7 +29,7 @@
  */
 
 #include "config.h"
-#include "WebFontDescription.h"
+#include "public/web/WebFontDescription.h"
 
 #include "platform/fonts/FontDescription.h"
 
@@ -37,18 +37,17 @@ using namespace WebCore;
 
 namespace blink {
 
-WebFontDescription::WebFontDescription(const FontDescription& desc,
-                                       short fontLetterSpacing, short fontWordSpacing)
+WebFontDescription::WebFontDescription(const FontDescription& desc)
 {
     family = desc.family().family();
     genericFamily = static_cast<GenericFamily>(desc.genericFamily());
     size = desc.specifiedSize();
-    italic = desc.italic();
-    smallCaps = desc.smallCaps();
+    italic = desc.style() == FontStyleItalic;
+    smallCaps = desc.variant() == FontVariantSmallCaps;
     weight = static_cast<Weight>(desc.weight());
     smoothing = static_cast<Smoothing>(desc.fontSmoothing());
-    letterSpacing = fontLetterSpacing;
-    wordSpacing = fontWordSpacing;
+    letterSpacing = desc.letterSpacing();
+    wordSpacing = desc.wordSpacing();
 }
 
 WebFontDescription::operator WebCore::FontDescription() const
@@ -61,10 +60,12 @@ WebFontDescription::operator WebCore::FontDescription() const
     desc.setGenericFamily(static_cast<FontDescription::GenericFamilyType>(genericFamily));
     desc.setSpecifiedSize(size);
     desc.setComputedSize(size);
-    desc.setItalic(italic);
-    desc.setSmallCaps(smallCaps);
+    desc.setStyle(italic ? FontStyleItalic : FontStyleNormal);
+    desc.setVariant(smallCaps ? FontVariantSmallCaps : FontVariantNormal);
     desc.setWeight(static_cast<FontWeight>(weight));
     desc.setFontSmoothing(static_cast<FontSmoothingMode>(smoothing));
+    desc.setLetterSpacing(letterSpacing);
+    desc.setWordSpacing(wordSpacing);
     return desc;
 }
 

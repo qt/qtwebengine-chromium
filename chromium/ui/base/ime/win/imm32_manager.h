@@ -14,7 +14,7 @@
 #include "base/i18n/rtl.h"
 #include "base/strings/string16.h"
 #include "ui/base/ime/text_input_mode.h"
-#include "ui/base/ui_export.h"
+#include "ui/base/ui_base_export.h"
 #include "ui/gfx/rect.h"
 
 namespace ui {
@@ -74,7 +74,7 @@ struct CompositionText;
 //   hand, we can NEVER disable either TSF or CUAS in Windows Vista, i.e.
 //   THIS CLASS IS NOT ONLY USED ON THE INPUT CONTEXTS OF EAST-ASIAN
 //   LANGUAGES BUT ALSO USED ON THE INPUT CONTEXTS OF ALL LANGUAGES.
-class UI_EXPORT IMM32Manager {
+class UI_BASE_EXPORT IMM32Manager {
  public:
   IMM32Manager();
   virtual ~IMM32Manager();
@@ -154,7 +154,7 @@ class UI_EXPORT IMM32Manager {
   //     the same parameter of a WM_IME_COMPOSITION message handler.
   //     This parameter is used for checking if the ongoing composition has
   //     its result string,
-  //   * result [out] (string16)
+  //   * result [out] (base::string16)
   //     Represents the object contains the composition result.
   // Return values
   //   * true
@@ -164,7 +164,7 @@ class UI_EXPORT IMM32Manager {
   // Remarks
   //   This function is designed for being called from WM_IME_COMPOSITION
   //   message handlers.
-  bool GetResult(HWND window_handle, LPARAM lparam, string16* result);
+  bool GetResult(HWND window_handle, LPARAM lparam, base::string16* result);
 
   // Retrieves the current composition status of the ongoing composition.
   // Parameters
@@ -237,9 +237,6 @@ class UI_EXPORT IMM32Manager {
   // Returns BCP-47 tag name of the current input language.
   std::string GetInputLanguageName() const;
 
-  // Returns the text direction of the current input language.
-  base::i18n::TextDirection GetTextDirection() const;
-
   // Sets conversion status corresponding to |input_mode|.
   virtual void SetTextInputMode(HWND window_handle, TextInputMode input_mode);
 
@@ -274,7 +271,10 @@ class UI_EXPORT IMM32Manager {
   void CompleteComposition(HWND window_handle, HIMC imm_context);
 
   // Retrieves a string from the IMM.
-  bool GetString(HIMC imm_context, WPARAM lparam, int type, string16* result);
+  bool GetString(HIMC imm_context,
+                 WPARAM lparam,
+                 int type,
+                 base::string16* result);
 
  private:
   // Represents whether or not there is an ongoing composition in a browser

@@ -37,7 +37,13 @@
 #include "public/platform/WebString.h"
 #include "public/platform/WebURL.h"
 
+#if BLINK_IMPLEMENTATION
+#include "platform/heap/Handle.h"
+#endif
+
 namespace v8 {
+class Isolate;
+class Object;
 class Value;
 template <class T> class Handle;
 }
@@ -58,6 +64,7 @@ public:
         return *this;
     }
 
+    BLINK_EXPORT static WebBlob createFromUUID(const WebString& uuid, const WebString& type, long long size);
     BLINK_EXPORT static WebBlob createFromFile(const WebString& path, long long size);
     BLINK_EXPORT static WebBlob fromV8Value(v8::Handle<v8::Value>);
 
@@ -67,12 +74,11 @@ public:
 
     bool isNull() const { return m_private.isNull(); }
 
-    BLINK_EXPORT v8::Handle<v8::Value>  toV8Value();
+    BLINK_EXPORT v8::Handle<v8::Value>  toV8Value(v8::Handle<v8::Object> creationContext, v8::Isolate*);
 
 #if BLINK_IMPLEMENTATION
-    WebBlob(const WTF::PassRefPtr<WebCore::Blob>&);
-    WebBlob& operator=(const WTF::PassRefPtr<WebCore::Blob>&);
-    operator WTF::PassRefPtr<WebCore::Blob>() const;
+    explicit WebBlob(const PassRefPtrWillBeRawPtr<WebCore::Blob>&);
+    WebBlob& operator=(const PassRefPtrWillBeRawPtr<WebCore::Blob>&);
 #endif
 
 protected:

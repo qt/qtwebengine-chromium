@@ -4,139 +4,110 @@
 
 #include "media/cast/logging/logging_raw.h"
 
+#include <algorithm>
+
 #include "base/logging.h"
-#include "base/metrics/histogram.h"
 #include "base/time/time.h"
 
 namespace media {
 namespace cast {
 
-LoggingRaw::LoggingRaw(base::TickClock* clock)
-    : clock_(clock),
-      frame_map_(),
-      packet_map_(),
-      generic_map_(),
-      weak_factory_(this) {}
+LoggingRaw::LoggingRaw() {}
 
 LoggingRaw::~LoggingRaw() {}
 
-void LoggingRaw::InsertFrameEvent(CastLoggingEvent event,
+void LoggingRaw::InsertFrameEvent(const base::TimeTicks& time_of_event,
+                                  CastLoggingEvent event,
+                                  EventMediaType event_media_type,
                                   uint32 rtp_timestamp,
                                   uint32 frame_id) {
-  InsertBaseFrameEvent(event, frame_id, rtp_timestamp);
+  InsertBaseFrameEvent(time_of_event, event, event_media_type, frame_id,
+                       rtp_timestamp, base::TimeDelta(), 0, false, 0);
 }
 
-void LoggingRaw::InsertFrameEventWithSize(CastLoggingEvent event,
-                                          uint32 rtp_timestamp,
-                                          uint32 frame_id,
-                                          int size) {
-  InsertBaseFrameEvent(event, frame_id, rtp_timestamp);
-  // Now insert size.
-  FrameRawMap::iterator it = frame_map_.find(rtp_timestamp);
-  DCHECK(it != frame_map_.end());
-  it->second.size = size;
+void LoggingRaw::InsertEncodedFrameEvent(const base::TimeTicks& time_of_event,
+                                         CastLoggingEvent event,
+                                         EventMediaType event_media_type,
+                                         uint32 rtp_timestamp, uint32 frame_id,
+                                         int size, bool key_frame,
+                                         int target_bitrate) {
+  InsertBaseFrameEvent(time_of_event, event, event_media_type,
+                       frame_id, rtp_timestamp, base::TimeDelta(), size,
+                       key_frame, target_bitrate);
 }
 
-void LoggingRaw::InsertFrameEventWithDelay(CastLoggingEvent event,
+void LoggingRaw::InsertFrameEventWithDelay(const base::TimeTicks& time_of_event,
+                                           CastLoggingEvent event,
+                                           EventMediaType event_media_type,
                                            uint32 rtp_timestamp,
                                            uint32 frame_id,
                                            base::TimeDelta delay) {
-  InsertBaseFrameEvent(event, frame_id, rtp_timestamp);
-  // Now insert delay.
-  FrameRawMap::iterator it = frame_map_.find(rtp_timestamp);
-  DCHECK(it != frame_map_.end());
-  it->second.delay_delta = delay;
+  InsertBaseFrameEvent(time_of_event, event, event_media_type, frame_id,
+                       rtp_timestamp, delay, 0, false, 0);
 }
 
-void LoggingRaw::InsertBaseFrameEvent(CastLoggingEvent event,
+void LoggingRaw::InsertBaseFrameEvent(const base::TimeTicks& time_of_event,
+                                      CastLoggingEvent event,
+                                      EventMediaType event_media_type,
                                       uint32 frame_id,
-                                      uint32 rtp_timestamp) {
-  // Is this a new event?
-  FrameRawMap::iterator it = frame_map_.find(rtp_timestamp);
-  if (it == frame_map_.end()) {
-    // Create a new map entry.
-    FrameEvent info;
-    info.frame_id = frame_id;
-    info.timestamp.push_back(clock_->NowTicks());
-    info.type.push_back(event);
-    frame_map_.insert(std::make_pair(rtp_timestamp, info));
-  } else {
-    // Insert to an existing entry.
-    it->second.timestamp.push_back(clock_->NowTicks());
-    it->second.type.push_back(event);
-    // Do we have a valid frame_id?
-    // Not all events have a valid frame id.
-    if (it->second.frame_id == kFrameIdUnknown && frame_id != kFrameIdUnknown)
-      it->second.frame_id = frame_id;
+                                      uint32 rtp_timestamp,
+                                      base::TimeDelta delay, int size,
+                                      bool key_frame, int target_bitrate) {
+  FrameEvent frame_event;
+  frame_event.rtp_timestamp = rtp_timestamp;
+  frame_event.frame_id = frame_id;
+  frame_event.size = size;
+  frame_event.timestamp = time_of_event;
+  frame_event.type = event;
+  frame_event.media_type = event_media_type;
+  frame_event.delay_delta = delay;
+  frame_event.key_frame = key_frame;
+  frame_event.target_bitrate = target_bitrate;
+  for (std::vector<RawEventSubscriber*>::const_iterator it =
+           subscribers_.begin();
+       it != subscribers_.end(); ++it) {
+    (*it)->OnReceiveFrameEvent(frame_event);
   }
 }
 
-void LoggingRaw::InsertPacketEvent(CastLoggingEvent event,
+void LoggingRaw::InsertPacketEvent(const base::TimeTicks& time_of_event,
+                                   CastLoggingEvent event,
+                                   EventMediaType event_media_type,
                                    uint32 rtp_timestamp,
-                                   uint32 frame_id,
-                                   uint16 packet_id,
-                                   uint16 max_packet_id,
-                                   size_t size) {
-  // Is this packet belonging to a new frame?
-  PacketRawMap::iterator it = packet_map_.find(rtp_timestamp);
-  if (it == packet_map_.end()) {
-    // Create a new entry - start with base packet map.
-    PacketEvent info;
-    info.frame_id = frame_id;
-    info.max_packet_id = max_packet_id;
-    BasePacketInfo base_info;
-    base_info.size = size;
-    base_info.timestamp.push_back(clock_->NowTicks());
-    base_info.type.push_back(event);
-    packet_map_.insert(std::make_pair(rtp_timestamp, info));
-  } else {
-    // Is this a new packet?
-    BasePacketMap::iterator packet_it = it->second.packet_map.find(packet_id);
-    if (packet_it == it->second.packet_map.end()) {
-      BasePacketInfo base_info;
-      base_info.size = size;
-      base_info.timestamp.push_back(clock_->NowTicks());
-      base_info.type.push_back(event);
-      it->second.packet_map.insert(std::make_pair(packet_id, base_info));
-    } else {
-      packet_it->second.timestamp.push_back(clock_->NowTicks());
-      packet_it->second.type.push_back(event);
-    }
+                                   uint32 frame_id, uint16 packet_id,
+                                   uint16 max_packet_id, size_t size) {
+  PacketEvent packet_event;
+  packet_event.rtp_timestamp = rtp_timestamp;
+  packet_event.frame_id = frame_id;
+  packet_event.max_packet_id = max_packet_id;
+  packet_event.packet_id = packet_id;
+  packet_event.size = size;
+  packet_event.timestamp = time_of_event;
+  packet_event.type = event;
+  packet_event.media_type = event_media_type;
+  for (std::vector<RawEventSubscriber*>::const_iterator it =
+           subscribers_.begin();
+       it != subscribers_.end(); ++it) {
+    (*it)->OnReceivePacketEvent(packet_event);
   }
 }
 
-void LoggingRaw::InsertGenericEvent(CastLoggingEvent event, int value) {
-  GenericEvent event_data;
-  event_data.value.push_back(value);
-  event_data.timestamp.push_back(clock_->NowTicks());
-  // Is this a new event?
-  GenericRawMap::iterator it = generic_map_.find(event);
-  if (it == generic_map_.end()) {
-    // Create new entry.
-    generic_map_.insert(std::make_pair(event, event_data));
-  } else {
-    // Insert to existing entry.
-    it->second.value.push_back(value);
-    it->second.timestamp.push_back(clock_->NowTicks());
-  }
+void LoggingRaw::AddSubscriber(RawEventSubscriber* subscriber) {
+  DCHECK(subscriber);
+  DCHECK(std::find(subscribers_.begin(), subscribers_.end(), subscriber) ==
+      subscribers_.end());
+
+  subscribers_.push_back(subscriber);
 }
 
-FrameRawMap LoggingRaw::GetFrameData() const {
-  return frame_map_;
-}
+void LoggingRaw::RemoveSubscriber(RawEventSubscriber* subscriber) {
+  DCHECK(subscriber);
+  DCHECK(std::find(subscribers_.begin(), subscribers_.end(), subscriber) !=
+      subscribers_.end());
 
-PacketRawMap LoggingRaw::GetPacketData() const {
-  return packet_map_;
-}
-
-GenericRawMap LoggingRaw::GetGenericData() const {
-  return generic_map_;
-}
-
-void LoggingRaw::Reset() {
-  frame_map_.clear();
-  packet_map_.clear();
-  generic_map_.clear();
+  subscribers_.erase(
+      std::remove(subscribers_.begin(), subscribers_.end(), subscriber),
+      subscribers_.end());
 }
 
 }  // namespace cast

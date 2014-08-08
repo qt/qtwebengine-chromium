@@ -341,6 +341,16 @@ See <a href="http://policy-explanation.example.com">http://policy-explanation.ex
         'platforms': ['win', 'mac', 'linux'],
         'since_version': '8',
         'until_version': '',
+      }, {
+        'product': 'chrome',
+        'platforms': ['android'],
+        'since_version': '30',
+        'until_version': '',
+      }, {
+        'product': 'chrome',
+        'platforms': ['ios'],
+        'since_version': '34',
+        'until_version': '',
       }],
       'features': {'dynamic_refresh': False},
       'example_value': False
@@ -359,6 +369,8 @@ See <a href="http://policy-explanation.example.com">http://policy-explanation.ex
       '<dd>'
         '<ul style="style_ul;">'
           '<li>Chrome (Windows, Mac, Linux) ...8...</li>'
+          '<li>Chrome (Android) ...30...</li>'
+          '<li>Chrome (iOS) ...34...</li>'
         '</ul>'
       '</dd>'
       '<dt style="style_dt;">_test_supported_features</dt>'

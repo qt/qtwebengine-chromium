@@ -29,34 +29,26 @@
  */
 
 #include "config.h"
-#include "WebDevToolsAgentImpl.h"
+#include "web/WebDevToolsAgentImpl.h"
 
-#include "InspectorBackendDispatcher.h"
-#include "InspectorFrontend.h"
-#include "InspectorProtocolVersion.h"
-#include "RuntimeEnabledFeatures.h"
-#include "WebDataSource.h"
-#include "WebDevToolsAgentClient.h"
-#include "WebFrameImpl.h"
-#include "WebInputEventConversion.h"
-#include "WebMemoryUsageInfo.h"
-#include "WebSettings.h"
-#include "WebViewClient.h"
-#include "WebViewImpl.h"
 #include "bindings/v8/PageScriptDebugServer.h"
 #include "bindings/v8/ScriptController.h"
 #include "bindings/v8/V8Binding.h"
-#include "bindings/v8/V8Utilities.h"
+#include "core/InspectorBackendDispatcher.h"
+#include "core/InspectorFrontend.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/fetch/MemoryCache.h"
-#include "core/frame/Frame.h"
 #include "core/frame/FrameView.h"
+#include "core/frame/LocalFrame.h"
+#include "core/frame/Settings.h"
 #include "core/inspector/InjectedScriptHost.h"
 #include "core/inspector/InspectorController.h"
+#include "core/page/FocusController.h"
 #include "core/page/Page.h"
-#include "core/page/PageGroup.h"
 #include "core/rendering/RenderView.h"
 #include "platform/JSONValues.h"
+#include "platform/RuntimeEnabledFeatures.h"
+#include "platform/TraceEvent.h"
 #include "platform/graphics/GraphicsContext.h"
 #include "platform/network/ResourceError.h"
 #include "platform/network/ResourceRequest.h"
@@ -68,13 +60,21 @@
 #include "public/platform/WebURLError.h"
 #include "public/platform/WebURLRequest.h"
 #include "public/platform/WebURLResponse.h"
+#include "public/web/WebDataSource.h"
+#include "public/web/WebDevToolsAgentClient.h"
+#include "public/web/WebDeviceEmulationParams.h"
+#include "public/web/WebMemoryUsageInfo.h"
+#include "public/web/WebSettings.h"
+#include "public/web/WebViewClient.h"
+#include "web/WebInputEventConversion.h"
+#include "web/WebLocalFrameImpl.h"
+#include "web/WebViewImpl.h"
 #include "wtf/CurrentTime.h"
 #include "wtf/MathExtras.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/text/WTFString.h"
 
 using namespace WebCore;
-using namespace std;
 
 namespace OverlayZOrders {
 // Use 99 as a big z-order number so that highlight is above other overlays.
@@ -119,11 +119,17 @@ private:
             return;
         m_running = true;
 
+        // 0. Flush pending frontend messages.
+        WebViewImpl* viewImpl = WebViewImpl::fromPage(page);
+        WebDevToolsAgentImpl* agent = static_cast<WebDevToolsAgentImpl*>(viewImpl->devToolsAgent());
+        agent->flushPendingFrontendMessages();
+
         Vector<WebViewImpl*> views;
 
         // 1. Disable input events.
-        HashSet<Page*>::const_iterator end =  page->group().pages().end();
-        for (HashSet<Page*>::const_iterator it =  page->group().pages().begin(); it != end; ++it) {
+        const HashSet<Page*>& pages = Page::ordinaryPages();
+        HashSet<Page*>::const_iterator end = pages.end();
+        for (HashSet<Page*>::const_iterator it =  pages.begin(); it != end; ++it) {
             WebViewImpl* view = WebViewImpl::fromPage(*it);
             if (!view)
                 continue;
@@ -131,6 +137,8 @@ private:
             views.append(view);
             view->setIgnoreInputEvents(true);
         }
+        // Notify embedder about pausing.
+        agent->client()->willEnterDebugLoop();
 
         // 2. Disable active objects
         WebView::willEnterModalLoop();
@@ -148,6 +156,7 @@ private:
                 (*it)->setIgnoreInputEvents(false);
             }
         }
+        agent->client()->didExitDebugLoop();
 
         // 6. All views have been resumed, clear the set.
         m_frozenViews.clear();
@@ -191,7 +200,8 @@ private:
 WebDevToolsAgentImpl::WebDevToolsAgentImpl(
     WebViewImpl* webViewImpl,
     WebDevToolsAgentClient* client)
-    : m_hostId(client->hostIdentifier())
+    : m_debuggerId(client->debuggerId())
+    , m_layerTreeId(0)
     , m_client(client)
     , m_webViewImpl(webViewImpl)
     , m_attached(false)
@@ -200,8 +210,12 @@ WebDevToolsAgentImpl::WebDevToolsAgentImpl(
     , m_emulateViewportEnabled(false)
     , m_originalViewportEnabled(false)
     , m_isOverlayScrollbarsEnabled(false)
+    , m_originalMinimumPageScaleFactor(0)
+    , m_originalMaximumPageScaleFactor(0)
+    , m_pageScaleLimitsOverriden(false)
+    , m_touchEventEmulationEnabled(false)
 {
-    ASSERT(m_hostId > 0);
+    ASSERT(m_debuggerId > 0);
     ClientMessageLoopAdapter::ensureClientMessageLoopCreated(m_client);
 }
 
@@ -214,21 +228,30 @@ WebDevToolsAgentImpl::~WebDevToolsAgentImpl()
 
 void WebDevToolsAgentImpl::attach()
 {
-    if (m_attached)
-        return;
-
-    inspectorController()->connectFrontend(this);
-    inspectorController()->webViewResized(m_webViewImpl->size());
-    blink::Platform::current()->currentThread()->addTaskObserver(this);
-    m_attached = true;
+    attach("");
 }
 
 void WebDevToolsAgentImpl::reattach(const WebString& savedState)
 {
+    reattach("", savedState);
+}
+
+void WebDevToolsAgentImpl::attach(const WebString& hostId)
+{
     if (m_attached)
         return;
 
-    inspectorController()->reuseFrontend(this, savedState);
+    inspectorController()->connectFrontend(hostId, this);
+    blink::Platform::current()->currentThread()->addTaskObserver(this);
+    m_attached = true;
+}
+
+void WebDevToolsAgentImpl::reattach(const WebString& hostId, const WebString& savedState)
+{
+    if (m_attached)
+        return;
+
+    inspectorController()->reuseFrontend(hostId, this, savedState);
     blink::Platform::current()->currentThread()->addTaskObserver(this);
     m_attached = true;
 }
@@ -240,7 +263,6 @@ void WebDevToolsAgentImpl::detach()
     // Prevent controller from sending messages to the frontend.
     InspectorController* ic = inspectorController();
     ic->disconnectFrontend();
-    ic->hideHighlight();
     m_attached = false;
 }
 
@@ -251,6 +273,7 @@ void WebDevToolsAgentImpl::didNavigate()
 
 void WebDevToolsAgentImpl::didBeginFrame(int frameId)
 {
+    TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "BeginMainThreadFrame", "layerTreeId", m_layerTreeId);
     if (InspectorController* ic = inspectorController())
         ic->didBeginFrame(frameId);
 }
@@ -263,29 +286,25 @@ void WebDevToolsAgentImpl::didCancelFrame()
 
 void WebDevToolsAgentImpl::willComposite()
 {
+    TRACE_EVENT_BEGIN1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "CompositeLayers", "layerTreeId", m_layerTreeId);
     if (InspectorController* ic = inspectorController())
         ic->willComposite();
 }
 
 void WebDevToolsAgentImpl::didComposite()
 {
+    TRACE_EVENT_END0(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "CompositeLayers");
     if (InspectorController* ic = inspectorController())
         ic->didComposite();
 }
 
-void WebDevToolsAgentImpl::didCreateScriptContext(WebFrameImpl* webframe, int worldId)
+void WebDevToolsAgentImpl::didCreateScriptContext(WebLocalFrameImpl* webframe, int worldId)
 {
     // Skip non main world contexts.
     if (worldId)
         return;
-    if (WebCore::Frame* frame = webframe->frame())
-        frame->script().setContextDebugId(m_hostId);
-}
-
-void WebDevToolsAgentImpl::webViewResized(const WebSize& size)
-{
-    if (InspectorController* ic = inspectorController())
-        ic->webViewResized(IntSize());
+    if (WebCore::LocalFrame* frame = webframe->frame())
+        frame->script().setContextDebugId(m_debuggerId);
 }
 
 bool WebDevToolsAgentImpl::handleInputEvent(WebCore::Page* page, const WebInputEvent& inputEvent)
@@ -293,54 +312,92 @@ bool WebDevToolsAgentImpl::handleInputEvent(WebCore::Page* page, const WebInputE
     if (!m_attached && !m_generatingEvent)
         return false;
 
+    // FIXME: This workaround is required for touch emulation on Mac, where
+    // compositor-side pinch handling is not enabled. See http://crbug.com/138003.
+    bool isPinch = inputEvent.type == WebInputEvent::GesturePinchBegin || inputEvent.type == WebInputEvent::GesturePinchUpdate || inputEvent.type == WebInputEvent::GesturePinchEnd;
+    if (isPinch && m_touchEventEmulationEnabled && m_emulateViewportEnabled) {
+        FrameView* frameView = page->deprecatedLocalMainFrame()->view();
+        PlatformGestureEventBuilder gestureEvent(frameView, *static_cast<const WebGestureEvent*>(&inputEvent));
+        float pageScaleFactor = page->pageScaleFactor();
+        if (gestureEvent.type() == PlatformEvent::GesturePinchBegin) {
+            m_lastPinchAnchorCss = adoptPtr(new WebCore::IntPoint(frameView->scrollPosition() + gestureEvent.position()));
+            m_lastPinchAnchorDip = adoptPtr(new WebCore::IntPoint(gestureEvent.position()));
+            m_lastPinchAnchorDip->scale(pageScaleFactor, pageScaleFactor);
+        }
+        if (gestureEvent.type() == PlatformEvent::GesturePinchUpdate && m_lastPinchAnchorCss) {
+            float newPageScaleFactor = pageScaleFactor * gestureEvent.scale();
+            WebCore::IntPoint anchorCss(*m_lastPinchAnchorDip.get());
+            anchorCss.scale(1.f / newPageScaleFactor, 1.f / newPageScaleFactor);
+            m_webViewImpl->setPageScaleFactor(newPageScaleFactor);
+            m_webViewImpl->setMainFrameScrollOffset(*m_lastPinchAnchorCss.get() - toIntSize(anchorCss));
+        }
+        if (gestureEvent.type() == PlatformEvent::GesturePinchEnd) {
+            m_lastPinchAnchorCss.clear();
+            m_lastPinchAnchorDip.clear();
+        }
+        return true;
+    }
+
     InspectorController* ic = inspectorController();
     if (!ic)
         return false;
 
     if (WebInputEvent::isGestureEventType(inputEvent.type) && inputEvent.type == WebInputEvent::GestureTap) {
         // Only let GestureTab in (we only need it and we know PlatformGestureEventBuilder supports it).
-        PlatformGestureEvent gestureEvent = PlatformGestureEventBuilder(page->mainFrame()->view(), *static_cast<const WebGestureEvent*>(&inputEvent));
-        return ic->handleGestureEvent(page->mainFrame(), gestureEvent);
+        PlatformGestureEvent gestureEvent = PlatformGestureEventBuilder(page->deprecatedLocalMainFrame()->view(), *static_cast<const WebGestureEvent*>(&inputEvent));
+        return ic->handleGestureEvent(toLocalFrame(page->mainFrame()), gestureEvent);
     }
     if (WebInputEvent::isMouseEventType(inputEvent.type) && inputEvent.type != WebInputEvent::MouseEnter) {
         // PlatformMouseEventBuilder does not work with MouseEnter type, so we filter it out manually.
-        PlatformMouseEvent mouseEvent = PlatformMouseEventBuilder(page->mainFrame()->view(), *static_cast<const WebMouseEvent*>(&inputEvent));
-        return ic->handleMouseEvent(page->mainFrame(), mouseEvent);
+        PlatformMouseEvent mouseEvent = PlatformMouseEventBuilder(page->deprecatedLocalMainFrame()->view(), *static_cast<const WebMouseEvent*>(&inputEvent));
+        return ic->handleMouseEvent(toLocalFrame(page->mainFrame()), mouseEvent);
     }
     if (WebInputEvent::isTouchEventType(inputEvent.type)) {
-        PlatformTouchEvent touchEvent = PlatformTouchEventBuilder(page->mainFrame()->view(), *static_cast<const WebTouchEvent*>(&inputEvent));
-        return ic->handleTouchEvent(page->mainFrame(), touchEvent);
+        PlatformTouchEvent touchEvent = PlatformTouchEventBuilder(page->deprecatedLocalMainFrame()->view(), *static_cast<const WebTouchEvent*>(&inputEvent));
+        return ic->handleTouchEvent(toLocalFrame(page->mainFrame()), touchEvent);
     }
     if (WebInputEvent::isKeyboardEventType(inputEvent.type)) {
         PlatformKeyboardEvent keyboardEvent = PlatformKeyboardEventBuilder(*static_cast<const WebKeyboardEvent*>(&inputEvent));
-        return ic->handleKeyboardEvent(page->mainFrame(), keyboardEvent);
+        return ic->handleKeyboardEvent(page->deprecatedLocalMainFrame(), keyboardEvent);
     }
     return false;
 }
 
-void WebDevToolsAgentImpl::overrideDeviceMetrics(int width, int height, float deviceScaleFactor, bool emulateViewport, bool fitWindow)
+void WebDevToolsAgentImpl::setDeviceMetricsOverride(int width, int height, float deviceScaleFactor, bool emulateViewport, bool fitWindow)
 {
-    if (!width && !height) {
-        if (m_deviceMetricsEnabled) {
-            m_deviceMetricsEnabled = false;
-            m_webViewImpl->setBackgroundColorOverride(Color::transparent);
-            RuntimeEnabledFeatures::setOverlayScrollbarsEnabled(m_isOverlayScrollbarsEnabled);
-            disableViewportEmulation();
-            m_client->disableDeviceEmulation();
-        }
-    } else {
-        if (!m_deviceMetricsEnabled) {
-            m_deviceMetricsEnabled = true;
-            m_webViewImpl->setBackgroundColorOverride(Color::darkGray);
-            m_isOverlayScrollbarsEnabled = RuntimeEnabledFeatures::overlayScrollbarsEnabled();
-            RuntimeEnabledFeatures::setOverlayScrollbarsEnabled(true);
-        }
-        if (emulateViewport)
-            enableViewportEmulation();
-        else
-            disableViewportEmulation();
-        m_client->enableDeviceEmulation(IntRect(10, 10, width, height), IntRect(0, 0, width, height), deviceScaleFactor, fitWindow);
+    if (!m_deviceMetricsEnabled) {
+        m_deviceMetricsEnabled = true;
+        m_webViewImpl->setBackgroundColorOverride(Color::darkGray);
     }
+    if (emulateViewport)
+        enableViewportEmulation();
+    else
+        disableViewportEmulation();
+
+    WebDeviceEmulationParams params;
+    params.screenPosition = emulateViewport ? WebDeviceEmulationParams::Mobile : WebDeviceEmulationParams::Desktop;
+    params.deviceScaleFactor = deviceScaleFactor;
+    params.viewSize = WebSize(width, height);
+    params.fitToView = fitWindow;
+    params.viewInsets = WebSize(0, 0);
+    m_client->enableDeviceEmulation(params);
+}
+
+void WebDevToolsAgentImpl::clearDeviceMetricsOverride()
+{
+    if (m_deviceMetricsEnabled) {
+        m_deviceMetricsEnabled = false;
+        m_webViewImpl->setBackgroundColorOverride(Color::transparent);
+        disableViewportEmulation();
+        m_client->disableDeviceEmulation();
+    }
+}
+
+void WebDevToolsAgentImpl::setTouchEventEmulationEnabled(bool enabled)
+{
+    m_client->setTouchEventEmulationEnabled(enabled, enabled);
+    m_touchEventEmulationEnabled = enabled;
+    updatePageScaleFactorLimits();
 }
 
 void WebDevToolsAgentImpl::enableViewportEmulation()
@@ -348,26 +405,49 @@ void WebDevToolsAgentImpl::enableViewportEmulation()
     if (m_emulateViewportEnabled)
         return;
     m_emulateViewportEnabled = true;
+    m_isOverlayScrollbarsEnabled = RuntimeEnabledFeatures::overlayScrollbarsEnabled();
+    RuntimeEnabledFeatures::setOverlayScrollbarsEnabled(true);
     m_originalViewportEnabled = RuntimeEnabledFeatures::cssViewportEnabled();
     RuntimeEnabledFeatures::setCSSViewportEnabled(true);
     m_webViewImpl->settings()->setViewportEnabled(true);
     m_webViewImpl->settings()->setViewportMetaEnabled(true);
+    m_webViewImpl->settings()->setShrinksViewportContentToFit(true);
     m_webViewImpl->setIgnoreViewportTagScaleLimits(true);
-    m_webViewImpl->setPageScaleFactorLimits(-1, -1);
     m_webViewImpl->setZoomFactorOverride(1);
+    // FIXME: with touch and viewport emulation enabled, we may want to disable overscroll navigation.
+    updatePageScaleFactorLimits();
 }
 
 void WebDevToolsAgentImpl::disableViewportEmulation()
 {
     if (!m_emulateViewportEnabled)
         return;
+    RuntimeEnabledFeatures::setOverlayScrollbarsEnabled(m_isOverlayScrollbarsEnabled);
     RuntimeEnabledFeatures::setCSSViewportEnabled(m_originalViewportEnabled);
     m_webViewImpl->settings()->setViewportEnabled(false);
     m_webViewImpl->settings()->setViewportMetaEnabled(false);
+    m_webViewImpl->settings()->setShrinksViewportContentToFit(false);
     m_webViewImpl->setIgnoreViewportTagScaleLimits(false);
-    m_webViewImpl->setPageScaleFactorLimits(1, 1);
     m_webViewImpl->setZoomFactorOverride(0);
     m_emulateViewportEnabled = false;
+    updatePageScaleFactorLimits();
+}
+
+void WebDevToolsAgentImpl::updatePageScaleFactorLimits()
+{
+    if (m_touchEventEmulationEnabled || m_emulateViewportEnabled) {
+        if (!m_pageScaleLimitsOverriden) {
+            m_originalMinimumPageScaleFactor = m_webViewImpl->minimumPageScaleFactor();
+            m_originalMaximumPageScaleFactor = m_webViewImpl->maximumPageScaleFactor();
+            m_pageScaleLimitsOverriden = true;
+        }
+        m_webViewImpl->setPageScaleFactorLimits(1, 4);
+    } else {
+        if (m_pageScaleLimitsOverriden) {
+            m_pageScaleLimitsOverriden = false;
+            m_webViewImpl->setPageScaleFactorLimits(m_originalMinimumPageScaleFactor, m_originalMaximumPageScaleFactor);
+        }
+    }
 }
 
 void WebDevToolsAgentImpl::getAllocatedObjects(HashSet<const void*>& set)
@@ -466,9 +546,24 @@ void WebDevToolsAgentImpl::dumpUncountedAllocatedObjects(const HashMap<const voi
     m_client->dumpUncountedAllocatedObjects(&provider);
 }
 
-void WebDevToolsAgentImpl::setTraceEventCallback(TraceEventCallback callback)
+void WebDevToolsAgentImpl::setTraceEventCallback(const String& categoryFilter, TraceEventCallback callback)
 {
-    m_client->setTraceEventCallback(callback);
+    m_client->setTraceEventCallback(categoryFilter, callback);
+}
+
+void WebDevToolsAgentImpl::resetTraceEventCallback()
+{
+    m_client->resetTraceEventCallback();
+}
+
+void WebDevToolsAgentImpl::enableTracing(const String& categoryFilter)
+{
+    m_client->enableTracing(categoryFilter);
+}
+
+void WebDevToolsAgentImpl::disableTracing()
+{
+    m_client->disableTracing();
 }
 
 void WebDevToolsAgentImpl::startGPUEventsRecording()
@@ -481,20 +576,17 @@ void WebDevToolsAgentImpl::stopGPUEventsRecording()
     m_client->stopGPUEventsRecording();
 }
 
-void WebDevToolsAgentImpl::processGPUEvent(double timestamp, int phase, bool foreign)
-{
-    if (InspectorController* ic = inspectorController())
-        ic->processGPUEvent(timestamp, phase, foreign, 0);
-}
-
 void WebDevToolsAgentImpl::processGPUEvent(const GPUEvent& event)
 {
     if (InspectorController* ic = inspectorController())
-        ic->processGPUEvent(event.timestamp, event.phase, event.foreign, event.usedGPUMemoryBytes);
+        ic->processGPUEvent(event.timestamp, event.phase, event.foreign, event.usedGPUMemoryBytes, event.limitGPUMemoryBytes);
 }
 
 void WebDevToolsAgentImpl::dispatchKeyEvent(const PlatformKeyboardEvent& event)
 {
+    if (!m_webViewImpl->page()->focusController().isFocused())
+        m_webViewImpl->setFocus(true);
+
     m_generatingEvent = true;
     WebKeyboardEvent webEvent = WebKeyboardEventBuilder(event);
     if (!webEvent.keyIdentifier[0] && webEvent.type != WebInputEvent::Char)
@@ -505,6 +597,9 @@ void WebDevToolsAgentImpl::dispatchKeyEvent(const PlatformKeyboardEvent& event)
 
 void WebDevToolsAgentImpl::dispatchMouseEvent(const PlatformMouseEvent& event)
 {
+    if (!m_webViewImpl->page()->focusController().isFocused())
+        m_webViewImpl->setFocus(true);
+
     m_generatingEvent = true;
     WebMouseEvent webEvent = WebMouseEventBuilder(m_webViewImpl->mainFrameImpl()->frameView(), event);
     m_webViewImpl->handleInputEvent(webEvent);
@@ -528,10 +623,10 @@ InspectorController* WebDevToolsAgentImpl::inspectorController()
     return 0;
 }
 
-Frame* WebDevToolsAgentImpl::mainFrame()
+LocalFrame* WebDevToolsAgentImpl::mainFrame()
 {
     if (Page* page = m_webViewImpl->page())
-        return page->mainFrame();
+        return page->deprecatedLocalMainFrame();
     return 0;
 }
 
@@ -556,28 +651,19 @@ void WebDevToolsAgentImpl::hideHighlight()
     m_webViewImpl->removePageOverlay(this);
 }
 
-bool WebDevToolsAgentImpl::sendMessageToFrontend(const String& message)
+void WebDevToolsAgentImpl::sendMessageToFrontend(PassRefPtr<WebCore::JSONObject> message)
 {
-    WebDevToolsAgentImpl* devToolsAgent = static_cast<WebDevToolsAgentImpl*>(m_webViewImpl->devToolsAgent());
-    if (!devToolsAgent)
-        return false;
-    m_client->sendMessageToInspectorFrontend(message);
-    return true;
+    m_frontendMessageQueue.append(message);
+}
+
+void WebDevToolsAgentImpl::flush()
+{
+    flushPendingFrontendMessages();
 }
 
 void WebDevToolsAgentImpl::updateInspectorStateCookie(const String& state)
 {
     m_client->saveAgentRuntimeState(state);
-}
-
-void WebDevToolsAgentImpl::clearBrowserCache()
-{
-    m_client->clearBrowserCache();
-}
-
-void WebDevToolsAgentImpl::clearBrowserCookies()
-{
-    m_client->clearBrowserCookies();
 }
 
 void WebDevToolsAgentImpl::setProcessId(long processId)
@@ -587,6 +673,7 @@ void WebDevToolsAgentImpl::setProcessId(long processId)
 
 void WebDevToolsAgentImpl::setLayerTreeId(int layerTreeId)
 {
+    m_layerTreeId = layerTreeId;
     inspectorController()->setLayerTreeId(layerTreeId);
 }
 
@@ -596,26 +683,33 @@ void WebDevToolsAgentImpl::evaluateInWebInspector(long callId, const WebString& 
     ic->evaluateForTestInFrontend(callId, script);
 }
 
+void WebDevToolsAgentImpl::flushPendingFrontendMessages()
+{
+    InspectorController* ic = inspectorController();
+    ic->flushPendingFrontendMessages();
+
+    for (size_t i = 0; i < m_frontendMessageQueue.size(); ++i)
+        m_client->sendMessageToInspectorFrontend(m_frontendMessageQueue[i]->toJSONString());
+    m_frontendMessageQueue.clear();
+}
+
 void WebDevToolsAgentImpl::willProcessTask()
 {
+    if (!m_attached)
+        return;
     if (InspectorController* ic = inspectorController())
         ic->willProcessTask();
+    TRACE_EVENT_BEGIN0(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "Program");
 }
 
 void WebDevToolsAgentImpl::didProcessTask()
 {
+    if (!m_attached)
+        return;
     if (InspectorController* ic = inspectorController())
         ic->didProcessTask();
-}
-
-WebString WebDevToolsAgent::inspectorProtocolVersion()
-{
-    return WebCore::inspectorProtocolVersion();
-}
-
-bool WebDevToolsAgent::supportsInspectorProtocolVersion(const WebString& version)
-{
-    return WebCore::supportsInspectorProtocolVersion(version);
+    TRACE_EVENT_END0(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "Program");
+    flushPendingFrontendMessages();
 }
 
 void WebDevToolsAgent::interruptAndDispatch(MessageDescriptor* rawDescriptor)
@@ -623,7 +717,7 @@ void WebDevToolsAgent::interruptAndDispatch(MessageDescriptor* rawDescriptor)
     // rawDescriptor can't be a PassOwnPtr because interruptAndDispatch is a WebKit API function.
     OwnPtr<MessageDescriptor> descriptor = adoptPtr(rawDescriptor);
     OwnPtr<DebuggerTask> task = adoptPtr(new DebuggerTask(descriptor.release()));
-    PageScriptDebugServer::interruptAndRun(task.release(), v8::Isolate::GetCurrent());
+    PageScriptDebugServer::interruptAndRun(task.release());
 }
 
 bool WebDevToolsAgent::shouldInterruptForMessage(const WebString& message)
@@ -635,10 +729,7 @@ bool WebDevToolsAgent::shouldInterruptForMessage(const WebString& message)
         || commandName == InspectorBackendDispatcher::commandName(InspectorBackendDispatcher::kDebugger_setBreakpointCmd)
         || commandName == InspectorBackendDispatcher::commandName(InspectorBackendDispatcher::kDebugger_setBreakpointByUrlCmd)
         || commandName == InspectorBackendDispatcher::commandName(InspectorBackendDispatcher::kDebugger_removeBreakpointCmd)
-        || commandName == InspectorBackendDispatcher::commandName(InspectorBackendDispatcher::kDebugger_setBreakpointsActiveCmd)
-        || commandName == InspectorBackendDispatcher::commandName(InspectorBackendDispatcher::kProfiler_startCmd)
-        || commandName == InspectorBackendDispatcher::commandName(InspectorBackendDispatcher::kProfiler_stopCmd)
-        || commandName == InspectorBackendDispatcher::commandName(InspectorBackendDispatcher::kHeapProfiler_getHeapSnapshotCmd);
+        || commandName == InspectorBackendDispatcher::commandName(InspectorBackendDispatcher::kDebugger_setBreakpointsActiveCmd);
 }
 
 void WebDevToolsAgent::processPendingMessages()

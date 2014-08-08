@@ -29,27 +29,6 @@
  */
 
 /**
- * @param {string} methodName
- */
-function dispatchMethodByName(methodName)
-{
-    var callId = ++lastCallId;
-    var argsArray = Array.prototype.slice.call(arguments, 1);
-    var callback = argsArray[argsArray.length - 1];
-    if (typeof callback === "function") {
-        argsArray.pop();
-        InspectorFrontendHost._callbacks[callId] = callback;
-    }
-
-    var message = { "id": callId, "method": methodName };
-    if (argsArray.length)
-        message.params = argsArray;
-    InspectorFrontendHost.sendMessageToEmbedder(JSON.stringify(message));
-}
-
-if (!window.InspectorFrontendHost) {
-
-/**
  * @constructor
  * @implements {InspectorFrontendHostAPI}
  */
@@ -59,16 +38,25 @@ WebInspector.InspectorFrontendHostStub = function()
 }
 
 WebInspector.InspectorFrontendHostStub.prototype = {
+    /**
+     * @return {string}
+     */
     getSelectionBackgroundColor: function()
     {
         return "#6e86ff";
     },
 
+    /**
+     * @return {string}
+     */
     getSelectionForegroundColor: function()
     {
         return "#ffffff";
     },
 
+    /**
+     * @return {string}
+     */
     platform: function()
     {
         var match = navigator.userAgent.match(/Windows NT/);
@@ -80,6 +68,9 @@ WebInspector.InspectorFrontendHostStub.prototype = {
         return "linux";
     },
 
+    /**
+     * @return {string}
+     */
     port: function()
     {
         return "unknown";
@@ -95,20 +86,29 @@ WebInspector.InspectorFrontendHostStub.prototype = {
         this._windowVisible = false;
     },
 
-    requestSetDockSide: function(side)
+    setIsDocked: function(isDocked, callback)
     {
-        InspectorFrontendAPI.setDockSide(side);
+    },
+
+    /**
+     * Requests inspected page to be placed atop of the inspector frontend with specified bounds.
+     * @param {{x: number, y: number, width: number, height: number}} bounds
+     */
+    setInspectedPageBounds: function(bounds)
+    {
     },
 
     /**
      * Requests inspected page to be placed atop of the inspector frontend
-     * with passed insets from the frontend sides.
-     * @param {number} top
-     * @param {number} left
-     * @param {number} bottom
-     * @param {number} right
+     * with passed insets from the frontend sides, respecting minimum size passed.
+     * @param {{top: number, left: number, right: number, bottom: number}} insets
+     * @param {{width: number, height: number}} minSize
      */
-    setContentsInsets: function(top, left, bottom, right)
+    setContentsResizingStrategy: function(insets, minSize)
+    {
+    },
+
+    inspectElementCompleted: function()
     {
     },
 
@@ -120,22 +120,14 @@ WebInspector.InspectorFrontendHostStub.prototype = {
     {
     },
 
-    loaded: function()
-    {
-    },
-
-    localizedStringsURL: function()
-    {
-    },
-
     inspectedURLChanged: function(url)
     {
-        document.title = WebInspector.UIString(Preferences.applicationTitle, url);
+        document.title = WebInspector.UIString("Developer Tools - %s", url);
     },
 
     copyText: function(text)
     {
-        WebInspector.log("Clipboard is not enabled in hosted mode. Please inspect using chrome://inspect", WebInspector.ConsoleMessage.MessageLevel.Error, true);
+        WebInspector.messageSink.addErrorMessage("Clipboard is not enabled in hosted mode. Please inspect using chrome://inspect", true);
     },
 
     openInNewTab: function(url)
@@ -145,17 +137,13 @@ WebInspector.InspectorFrontendHostStub.prototype = {
 
     save: function(url, content, forceSaveAs)
     {
-        WebInspector.log("Saving files is not enabled in hosted mode. Please inspect using chrome://inspect", WebInspector.ConsoleMessage.MessageLevel.Error, true);
+        WebInspector.messageSink.addErrorMessage("Saving files is not enabled in hosted mode. Please inspect using chrome://inspect", true);
         WebInspector.fileManager.canceledSaveURL(url);
     },
 
     append: function(url, content)
     {
-        WebInspector.log("Saving files is not enabled in hosted mode. Please inspect using chrome://inspect", WebInspector.ConsoleMessage.MessageLevel.Error, true);
-    },
-
-    close: function(url)
-    {
+        WebInspector.messageSink.addErrorMessage("Saving files is not enabled in hosted mode. Please inspect using chrome://inspect", true);
     },
 
     sendMessageToBackend: function(message)
@@ -174,15 +162,6 @@ WebInspector.InspectorFrontendHostStub.prototype = {
     {
     },
 
-    recordSettingChanged: function(settingCode)
-    {
-    },
-
-    supportsFileSystems: function()
-    {
-        return false;
-    },
-
     requestFileSystems: function()
     {
     },
@@ -195,6 +174,11 @@ WebInspector.InspectorFrontendHostStub.prototype = {
     {
     },
 
+    /**
+     * @param {string} fileSystemId
+     * @param {string} registeredName
+     * @return {?WebInspector.IsolatedFileSystem}
+     */
     isolatedFileSystem: function(fileSystemId, registeredName)
     {
         return null;
@@ -220,67 +204,74 @@ WebInspector.InspectorFrontendHostStub.prototype = {
     {
     },
 
+    /**
+     * @return {number}
+     */
+    zoomFactor: function()
+    {
+        return 1;
+    },
+
+    zoomIn: function()
+    {
+    },
+
+    zoomOut: function()
+    {
+    },
+
+    resetZoom: function()
+    {
+    },
+
+    setWhitelistedShortcuts: function(shortcuts)
+    {
+    },
+
+    /**
+     * @return {boolean}
+     */
     isUnderTest: function()
     {
         return false;
-    }
-}
-
-InspectorFrontendHost = new WebInspector.InspectorFrontendHostStub();
-
-} else if (InspectorFrontendHost.sendMessageToEmbedder) {
-  // Install message-based handlers with callbacks.
-    var lastCallId = 0;
-    InspectorFrontendHost._callbacks = [];
+    },
 
     /**
-     * @param {number} id
-     * @param {?string} error
+     * @param {string} browserId
+     * @param {string} url
      */
-    InspectorFrontendHost.embedderMessageAck = function(id, error)
+    openUrlOnRemoteDeviceAndInspect: function(browserId, url)
     {
-        var callback = InspectorFrontendHost._callbacks[id];
-        delete InspectorFrontendHost._callbacks[id];
-        if (callback)
-            callback(error);
+    },
+
+    /**
+     * @param {string} eventType
+     */
+    subscribe: function(eventType)
+    {
+    },
+
+    /**
+     * @param {string} eventType
+     */
+    unsubscribe: function(eventType)
+    {
     }
-
-    var methodList = [
-        "addFileSystem",
-        "append",
-        "bringToFront",
-        "closeWindow",
-        "indexPath",
-        "moveWindowBy",
-        "openInNewTab",
-        "removeFileSystem",
-        "requestFileSystems",
-        "requestSetDockSide",
-        "save",
-        "searchInPath",
-        "setContentsInsets",
-        "stopIndexing"
-    ];
-
-    for (var i = 0; i < methodList.length; ++i)
-        InspectorFrontendHost[methodList[i]] = dispatchMethodByName.bind(null, methodList[i]);
 }
 
-/**
- * @constructor
- * @extends {WebInspector.HelpScreen}
- */
-WebInspector.RemoteDebuggingTerminatedScreen = function(reason)
-{
-    WebInspector.HelpScreen.call(this, WebInspector.UIString("Detached from the target"));
-    var p = this.contentElement.createChild("p");
-    p.classList.add("help-section");
-    p.createChild("span").textContent = "Remote debugging has been terminated with reason: ";
-    p.createChild("span", "error-message").textContent = reason;
-    p.createChild("br");
-    p.createChild("span").textContent = "Please re-attach to the new target.";
-}
-
-WebInspector.RemoteDebuggingTerminatedScreen.prototype = {
-    __proto__: WebInspector.HelpScreen.prototype
+if (!window.InspectorFrontendHost) {
+    InspectorFrontendHost = new WebInspector.InspectorFrontendHostStub();
+} else {
+    var proto = WebInspector.InspectorFrontendHostStub.prototype;
+    for (var name in proto) {
+        var value = proto[name];
+        if (typeof value !== "function" || InspectorFrontendHost[name])
+            continue;
+        InspectorFrontendHost[name] = function(name) {
+            var message = "Incompatible embedder: method InspectorFrontendHost." + name + " is missing. Using stub instead.";
+            WebInspector.messageSink.addErrorMessage(message, true);
+            var args = Array.prototype.slice.call(arguments, 1);
+            return proto[name].apply(InspectorFrontendHost, args);
+        }.bind(null, name);
+    }
 }

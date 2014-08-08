@@ -26,13 +26,14 @@
 /* Bitstream struct for decoder */
 typedef struct Bitstreamstruct_dec {
 
-  uint16_t  *stream;          /* Pointer to bytestream to decode */
+  uint16_t  stream[STREAM_MAXW16_60MS];  /* Array bytestream to decode */
   uint32_t  W_upper;          /* Upper boundary of interval W */
   uint32_t  streamval;
   uint16_t  stream_index;     /* Index to the current position in bytestream */
   int16_t   full;             /* 0 - first byte in memory filled, second empty*/
   /* 1 - both bytes are empty (we just filled the previous memory */
 
+  int stream_size;  /* The size of stream. */
 } Bitstr_dec;
 
 /* Bitstream struct for encoder */

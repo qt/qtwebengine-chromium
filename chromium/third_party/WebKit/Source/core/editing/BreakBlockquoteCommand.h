@@ -30,16 +30,16 @@
 
 namespace WebCore {
 
-class BreakBlockquoteCommand : public CompositeEditCommand {
+class BreakBlockquoteCommand FINAL : public CompositeEditCommand {
 public:
-    static PassRefPtr<BreakBlockquoteCommand> create(Document& document)
+    static PassRefPtrWillBeRawPtr<BreakBlockquoteCommand> create(Document& document)
     {
-        return adoptRef(new BreakBlockquoteCommand(document));
+        return adoptRefWillBeNoop(new BreakBlockquoteCommand(document));
     }
 
 private:
     explicit BreakBlockquoteCommand(Document&);
-    virtual void doApply();
+    virtual void doApply() OVERRIDE;
 };
 
 } // namespace WebCore

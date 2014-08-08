@@ -32,12 +32,15 @@
 
 #include "bindings/v8/ScriptState.h"
 #include "bindings/v8/ScriptWrappable.h"
+#include "wtf/PassOwnPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/Vector.h"
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
 class Database;
+class EventTarget;
 class InjectedScript;
 class InstrumentingAgents;
 class JSONValue;
@@ -64,7 +67,7 @@ public:
         m_scriptDebugServer = scriptDebugServer;
     }
 
-    static Node* scriptValueAsNode(ScriptValue);
+    static Node* scriptValueAsNode(ScriptState*, ScriptValue);
     static ScriptValue nodeAsScriptValue(ScriptState*, Node*);
 
     void disconnect();
@@ -77,14 +80,12 @@ public:
     };
     void addInspectedObject(PassOwnPtr<InspectableObject>);
     void clearInspectedObjects();
-    InspectableObject* inspectedObject(unsigned int num);
+    InspectableObject* inspectedObject(unsigned num);
 
     void inspectImpl(PassRefPtr<JSONValue> objectToInspect, PassRefPtr<JSONValue> hints);
-    void getEventListenersImpl(Node*, Vector<EventListenerInfo>& listenersArray);
+    void getEventListenersImpl(EventTarget*, Vector<EventListenerInfo>& listenersArray);
 
     void clearConsoleMessages();
-    String databaseIdImpl(Database*);
-    String storageIdImpl(Storage*);
     void debugFunction(const String& scriptId, int lineNumber, int columnNumber);
     void undebugFunction(const String& scriptId, int lineNumber, int columnNumber);
     void monitorFunction(const String& scriptId, int lineNumber, int columnNumber, const String& functionName);

@@ -25,16 +25,7 @@
 
 # List of files that should not be committed to
 DO_NOT_SUBMIT_FILES = [
-    "talk/app/webrtc/mediaconstraintsinterface.h",
-    "talk/app/webrtc/webrtcsdp_unittest.cc",
-    "talk/base/linux.cc",
-    "talk/base/linux.h",
-    "talk/base/linux_unittest.cc",
-    "talk/main.scons",
-    "talk/media/base/hybridvideoengine.cc",
-    "talk/media/base/mediaengine.cc",
     "talk/media/base/mutedvideocapturer.cc",
-    "talk/media/base/streamparams.h",
     "talk/media/base/videocapturer.cc",
     "talk/media/base/videocapturer.h",
     "talk/media/base/videocapturer_unittest.cc",
@@ -50,9 +41,7 @@ DO_NOT_SUBMIT_FILES = [
     "talk/media/webrtc/webrtcvoiceengine.cc",
     "talk/media/webrtc/webrtcvoiceengine.h",
     "talk/media/webrtc/webrtcvoiceengine_unittest.cc",
-    "talk/p2p/base/session.cc",
-    "talk/session/media/channel.cc",
-    "talk/session/media/mediasession_unittest.cc"]
+    "talk/session/media/channel.cc"]
 
 def _LicenseHeader(input_api):
   """Returns the license header regexp."""
@@ -60,6 +49,7 @@ def _LicenseHeader(input_api):
   current_year = int(input_api.time.strftime('%Y'))
   allowed_years = (str(s) for s in reversed(xrange(2004, current_year + 1)))
   years_re = '(' + '|'.join(allowed_years) + ')'
+  years_re = '%s(--%s)?' % (years_re, years_re)
   license_header = (
       r'.*? libjingle\n'
       r'.*? Copyright %(year)s,? Google Inc\.\n'

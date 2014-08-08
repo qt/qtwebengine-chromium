@@ -22,46 +22,35 @@
 
 #include "core/svg/SVGCursorElement.h"
 
-#include "SVGNames.h"
-#include "XLinkNames.h"
+#include "core/SVGNames.h"
+#include "core/XLinkNames.h"
 #include "core/dom/Document.h"
-#include "core/svg/SVGElementInstance.h"
 
 namespace WebCore {
 
-// Animated property definitions
-DEFINE_ANIMATED_LENGTH(SVGCursorElement, SVGNames::xAttr, X, x)
-DEFINE_ANIMATED_LENGTH(SVGCursorElement, SVGNames::yAttr, Y, y)
-DEFINE_ANIMATED_STRING(SVGCursorElement, XLinkNames::hrefAttr, Href, href)
-DEFINE_ANIMATED_BOOLEAN(SVGCursorElement, SVGNames::externalResourcesRequiredAttr, ExternalResourcesRequired, externalResourcesRequired)
-
-BEGIN_REGISTER_ANIMATED_PROPERTIES(SVGCursorElement)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(x)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(y)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(href)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(externalResourcesRequired)
-    REGISTER_PARENT_ANIMATED_PROPERTIES(SVGTests)
-END_REGISTER_ANIMATED_PROPERTIES
-
 inline SVGCursorElement::SVGCursorElement(Document& document)
     : SVGElement(SVGNames::cursorTag, document)
-    , m_x(LengthModeWidth)
-    , m_y(LengthModeHeight)
+    , SVGTests(this)
+    , SVGURIReference(this)
+    , m_x(SVGAnimatedLength::create(this, SVGNames::xAttr, SVGLength::create(LengthModeWidth), AllowNegativeLengths))
+    , m_y(SVGAnimatedLength::create(this, SVGNames::yAttr, SVGLength::create(LengthModeHeight), AllowNegativeLengths))
 {
     ScriptWrappable::init(this);
-    registerAnimatedPropertiesForSVGCursorElement();
+
+    addToPropertyMap(m_x);
+    addToPropertyMap(m_y);
 }
 
-PassRefPtr<SVGCursorElement> SVGCursorElement::create(Document& document)
-{
-    return adoptRef(new SVGCursorElement(document));
-}
+DEFINE_NODE_FACTORY(SVGCursorElement)
 
 SVGCursorElement::~SVGCursorElement()
 {
-    HashSet<SVGElement*>::iterator end = m_clients.end();
-    for (HashSet<SVGElement*>::iterator it = m_clients.begin(); it != end; ++it)
+    // The below teardown is all handled by weak pointer processing in oilpan.
+#if !ENABLE(OILPAN)
+    HashSet<RawPtr<SVGElement> >::iterator end = m_clients.end();
+    for (HashSet<RawPtr<SVGElement> >::iterator it = m_clients.begin(); it != end; ++it)
         (*it)->cursorElementRemoved();
+#endif
 }
 
 bool SVGCursorElement::isSupportedAttribute(const QualifiedName& attrName)
@@ -69,7 +58,6 @@ bool SVGCursorElement::isSupportedAttribute(const QualifiedName& attrName)
     DEFINE_STATIC_LOCAL(HashSet<QualifiedName>, supportedAttributes, ());
     if (supportedAttributes.isEmpty()) {
         SVGTests::addSupportedAttributes(supportedAttributes);
-        SVGExternalResourcesRequired::addSupportedAttributes(supportedAttributes);
         SVGURIReference::addSupportedAttributes(supportedAttributes);
         supportedAttributes.add(SVGNames::xAttr);
         supportedAttributes.add(SVGNames::yAttr);
@@ -81,17 +69,17 @@ void SVGCursorElement::parseAttribute(const QualifiedName& name, const AtomicStr
 {
     SVGParsingError parseError = NoError;
 
-    if (!isSupportedAttribute(name))
+    if (!isSupportedAttribute(name)) {
         SVGElement::parseAttribute(name, value);
-    else if (name == SVGNames::xAttr)
-        setXBaseValue(SVGLength::construct(LengthModeWidth, value, parseError));
-    else if (name == SVGNames::yAttr)
-        setYBaseValue(SVGLength::construct(LengthModeHeight, value, parseError));
-    else if (SVGTests::parseAttribute(name, value)
-             || SVGExternalResourcesRequired::parseAttribute(name, value)
-             || SVGURIReference::parseAttribute(name, value)) {
-    } else
+    } else if (name == SVGNames::xAttr) {
+        m_x->setBaseValueAsString(value, parseError);
+    } else if (name == SVGNames::yAttr) {
+        m_y->setBaseValueAsString(value, parseError);
+    } else if (SVGURIReference::parseAttribute(name, value, parseError)) {
+    } else if (SVGTests::parseAttribute(name, value)) {
+    } else {
         ASSERT_NOT_REACHED();
+    }
 
     reportAttributeParsingError(parseError, name, value);
 }
@@ -102,14 +90,16 @@ void SVGCursorElement::addClient(SVGElement* element)
     element->setCursorElement(this);
 }
 
+#if !ENABLE(OILPAN)
 void SVGCursorElement::removeClient(SVGElement* element)
 {
-    HashSet<SVGElement*>::iterator it = m_clients.find(element);
+    HashSet<RawPtr<SVGElement> >::iterator it = m_clients.find(element);
     if (it != m_clients.end()) {
         m_clients.remove(it);
         element->cursorElementRemoved();
     }
 }
+#endif
 
 void SVGCursorElement::removeReferencedElement(SVGElement* element)
 {
@@ -123,14 +113,20 @@ void SVGCursorElement::svgAttributeChanged(const QualifiedName& attrName)
         return;
     }
 
-    SVGElementInstance::InvalidationGuard invalidationGuard(this);
+    SVGElement::InvalidationGuard invalidationGuard(this);
 
     // Any change of a cursor specific attribute triggers this recalc.
-    HashSet<SVGElement*>::const_iterator it = m_clients.begin();
-    HashSet<SVGElement*>::const_iterator end = m_clients.end();
+    WillBeHeapHashSet<RawPtrWillBeWeakMember<SVGElement> >::const_iterator it = m_clients.begin();
+    WillBeHeapHashSet<RawPtrWillBeWeakMember<SVGElement> >::const_iterator end = m_clients.end();
 
     for (; it != end; ++it)
-        (*it)->setNeedsStyleRecalc();
+        (*it)->setNeedsStyleRecalc(SubtreeStyleChange);
+}
+
+void SVGCursorElement::trace(Visitor* visitor)
+{
+    visitor->trace(m_clients);
+    SVGElement::trace(visitor);
 }
 
 }

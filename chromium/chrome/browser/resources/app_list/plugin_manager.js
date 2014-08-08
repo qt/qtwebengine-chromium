@@ -9,6 +9,9 @@
 cr.define('speech', function() {
   'use strict';
 
+  /** The timeout milliseconds to load the model file. */
+  var MODEL_LOAD_TIMEOUT = 2000;
+
   /**
    * The type of the plugin state.
    ** @enum {number}
@@ -16,9 +19,8 @@ cr.define('speech', function() {
   var PluginState = {
     UNINITIALIZED: 0,
     LOADED: 1,
-    SAMPLING_RATE_READY: 2,
-    READY: 3,
-    RECOGNIZING: 4
+    READY: 2,
+    RECOGNIZING: 3
   };
 
   /**
@@ -35,29 +37,32 @@ cr.define('speech', function() {
   /**
    * The regexp pattern of the hotword recognition result.
    */
-  var recognitionPattern = /^HotwordFiredEvent: \[(.*)\] confidence: (.*)/;
-
-  /**
-   * Checks the availability of the plugin.
-   * @return {boolean} True only if the plugin is available.
-   */
-  function isPluginAvailable() {
-    return !!($('recognizer') && $('recognizer').postMessage);
-  }
+  var recognitionPattern = /^(HotwordFiredEvent:|hotword)/;
 
   /**
    * @constructor
    */
-  function PluginManager(onReady, onRecognized) {
+  function PluginManager(prefix, onReady, onRecognized, onError) {
     this.state = PluginState.UNINITIALIZED;
     this.onReady_ = onReady;
     this.onRecognized_ = onRecognized;
+    this.onError_ = onError;
     this.samplingRate_ = null;
     this.config_ = null;
-    if (isPluginAvailable()) {
-      $('recognizer').addEventListener('message', this.onMessage_.bind(this));
-      $('recognizer').addEventListener('load', this.onLoad_.bind(this));
+    this.modelLoadTimeoutId_ = null;
+    var recognizer = $('recognizer');
+    if (!recognizer) {
+      recognizer = document.createElement('EMBED');
+      recognizer.id = 'recognizer';
+      recognizer.type = 'application/x-nacl';
+      recognizer.src = 'chrome://app-list/hotword_' + prefix + '.nmf';
+      recognizer.width = '1';
+      recognizer.height = '1';
+      document.body.appendChild(recognizer);
     }
+    recognizer.addEventListener('error', onError);
+    recognizer.addEventListener('message', this.onMessage_.bind(this));
+    recognizer.addEventListener('load', this.onLoad_.bind(this));
   };
 
   /**
@@ -67,22 +72,19 @@ cr.define('speech', function() {
    * @private
    */
   PluginManager.prototype.onMessage_ = function(messageEvent) {
-    if (this.state == PluginState.LOADED) {
-      if (messageEvent.data == 'stopped')
-        this.state = PluginState.SAMPLING_RATE_READY;
-      return;
-    }
-
     if (messageEvent.data == 'audio') {
-      if (this.state < PluginState.READY)
-        this.onReady_(this);
+      var wasNotReady = this.state < PluginState.READY;
       this.state = PluginState.RECOGNIZING;
-    } else if (messageEvent.data == 'stopped') {
+      if (wasNotReady) {
+        window.clearTimeout(this.modelLoadTimeoutId_);
+        this.modelLoadTimeoutId_ = null;
+        this.onReady_(this);
+      }
+    } else if (messageEvent.data == 'stopped' &&
+               this.state == PluginState.RECOGNIZING) {
       this.state = PluginState.READY;
-    } else {
-      var matched = recognitionPattern.exec(messageEvent.data);
-      if (matched && matched[1] == 'hotword_ok_google')
-        this.onRecognized_(Number(matched[2]));
+    } else if (recognitionPattern.exec(messageEvent.data)) {
+      this.onRecognized_();
     }
   };
 
@@ -96,6 +98,10 @@ cr.define('speech', function() {
       this.state = PluginState.LOADED;
       if (this.samplingRate_ && this.config_)
         this.initialize_(this.samplingRate_, this.config_);
+      // Sets the timeout for initialization in case that NaCl module failed to
+      // respond during the initialization.
+      this.modelLoadTimeoutId_ = window.setTimeout(
+          this.onError_, MODEL_LOAD_TIMEOUT);
     }
   };
 
@@ -158,6 +164,5 @@ cr.define('speech', function() {
   return {
     PluginManager: PluginManager,
     PluginState: PluginState,
-    isPluginAvailable: isPluginAvailable
   };
 });

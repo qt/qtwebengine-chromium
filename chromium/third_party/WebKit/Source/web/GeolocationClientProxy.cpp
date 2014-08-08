@@ -24,13 +24,13 @@
  */
 
 #include "config.h"
-#include "GeolocationClientProxy.h"
+#include "web/GeolocationClientProxy.h"
 
-#include "WebGeolocationClient.h"
-#include "WebGeolocationPermissionRequest.h"
-#include "WebGeolocationPosition.h"
 #include "modules/geolocation/Geolocation.h"
 #include "modules/geolocation/GeolocationPosition.h"
+#include "public/web/WebGeolocationClient.h"
+#include "public/web/WebGeolocationPermissionRequest.h"
+#include "public/web/WebGeolocationPosition.h"
 
 namespace blink {
 
@@ -77,7 +77,7 @@ WebCore::GeolocationPosition* GeolocationClientProxy::lastPosition()
 {
     WebGeolocationPosition webPosition;
     if (m_client->lastPosition(webPosition))
-        m_lastPosition = webPosition;
+        m_lastPosition = static_cast<WebCore::GeolocationPosition*>(webPosition);
     else
         m_lastPosition.clear();
 

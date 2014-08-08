@@ -8,6 +8,7 @@
 
 #include "base/bind.h"
 #include "base/debug/trace_event.h"
+#include "base/debug/trace_event_synthetic_delay.h"
 #include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
@@ -18,7 +19,6 @@
 #include "base/threading/thread.h"
 #include "base/threading/thread_checker.h"
 #include "gpu/command_buffer/service/async_pixel_transfer_delegate.h"
-#include "gpu/command_buffer/service/safe_shared_memory_pool.h"
 #include "ui/gl/gl_bindings.h"
 #include "ui/gl/gl_context.h"
 #include "ui/gl/gl_surface.h"
@@ -33,12 +33,9 @@ const char kAsyncTransferThreadName[] = "AsyncTransferThread";
 
 void PerformNotifyCompletion(
     AsyncMemoryParams mem_params,
-    ScopedSafeSharedMemory* safe_shared_memory,
     scoped_refptr<AsyncPixelTransferCompletionObserver> observer) {
   TRACE_EVENT0("gpu", "PerformNotifyCompletion");
-  AsyncMemoryParams safe_mem_params = mem_params;
-  safe_mem_params.shared_memory = safe_shared_memory->shared_memory();
-  observer->DidComplete(safe_mem_params);
+  observer->DidComplete(mem_params);
 }
 
 // TODO(backer): Factor out common thread scheduling logic from the EGL and
@@ -79,16 +76,11 @@ class TransferThread : public base::Thread {
     context_ = NULL;
   }
 
-  SafeSharedMemoryPool* safe_shared_memory_pool() {
-    return &safe_shared_memory_pool_;
-  }
-
  private:
   bool initialized_;
 
   scoped_refptr<gfx::GLSurface> surface_;
   scoped_refptr<gfx::GLContext> context_;
-  SafeSharedMemoryPool safe_shared_memory_pool_;
 
   void InitializeOnTransferThread(gfx::GLContext* parent_context,
                                    base::WaitableEvent* caller_wait) {
@@ -133,10 +125,6 @@ base::LazyInstance<TransferThread>::Leaky
 
 base::MessageLoopProxy* transfer_message_loop_proxy() {
   return g_transfer_thread.Pointer()->message_loop_proxy().get();
-}
-
-SafeSharedMemoryPool* safe_shared_memory_pool() {
-  return g_transfer_thread.Pointer()->safe_shared_memory_pool();
 }
 
 class PendingTask : public base::RefCountedThreadSafe<PendingTask> {
@@ -251,16 +239,12 @@ class TransferStateInternal
       const AsyncMemoryParams mem_params,
       scoped_refptr<AsyncPixelTransferUploadStats> texture_upload_stats,
       const base::Closure& bind_callback) {
+    TRACE_EVENT_SYNTHETIC_DELAY_BEGIN("gpu.AsyncTexImage");
     pending_upload_task_ = new PendingTask(base::Bind(
         &TransferStateInternal::PerformAsyncTexImage2D,
         this,
         tex_params,
         mem_params,
-        // Duplicate the shared memory so there is no way we can get
-        // a use-after-free of the raw pixels.
-        base::Owned(new ScopedSafeSharedMemory(safe_shared_memory_pool(),
-                                               mem_params.shared_memory,
-                                               mem_params.shm_size)),
         texture_upload_stats));
     transfer_message_loop_proxy()->PostTask(
         FROM_HERE,
@@ -276,14 +260,12 @@ class TransferStateInternal
       AsyncTexSubImage2DParams tex_params,
       AsyncMemoryParams mem_params,
       scoped_refptr<AsyncPixelTransferUploadStats> texture_upload_stats) {
+    TRACE_EVENT_SYNTHETIC_DELAY_BEGIN("gpu.AsyncTexImage");
     pending_upload_task_ = new PendingTask(base::Bind(
         &TransferStateInternal::PerformAsyncTexSubImage2D,
         this,
         tex_params,
         mem_params,
-        base::Owned(new ScopedSafeSharedMemory(safe_shared_memory_pool(),
-                                               mem_params.shared_memory,
-                                               mem_params.shm_size)),
         texture_upload_stats));
     transfer_message_loop_proxy()->PostTask(
         FROM_HERE,
@@ -300,7 +282,6 @@ class TransferStateInternal
   void PerformAsyncTexImage2D(
       AsyncTexImage2DParams tex_params,
       AsyncMemoryParams mem_params,
-      ScopedSafeSharedMemory* safe_shared_memory,
       scoped_refptr<AsyncPixelTransferUploadStats> texture_upload_stats) {
     TRACE_EVENT2("gpu",
                  "PerformAsyncTexImage",
@@ -314,8 +295,7 @@ class TransferStateInternal
     if (texture_upload_stats.get())
       begin_time = base::TimeTicks::HighResNow();
 
-    void* data =
-        AsyncPixelTransferDelegate::GetAddress(safe_shared_memory, mem_params);
+    void* data = mem_params.GetDataAddress();
 
     {
       TRACE_EVENT0("gpu", "glTexImage2D");
@@ -328,6 +308,7 @@ class TransferStateInternal
                    tex_params.format,
                    tex_params.type,
                    data);
+      TRACE_EVENT_SYNTHETIC_DELAY_END("gpu.AsyncTexImage");
     }
 
     if (texture_upload_stats.get()) {
@@ -339,7 +320,6 @@ class TransferStateInternal
   void PerformAsyncTexSubImage2D(
       AsyncTexSubImage2DParams tex_params,
       AsyncMemoryParams mem_params,
-      ScopedSafeSharedMemory* safe_shared_memory,
       scoped_refptr<AsyncPixelTransferUploadStats> texture_upload_stats) {
     TRACE_EVENT2("gpu",
                  "PerformAsyncTexSubImage2D",
@@ -353,9 +333,7 @@ class TransferStateInternal
     if (texture_upload_stats.get())
       begin_time = base::TimeTicks::HighResNow();
 
-    void* data =
-        AsyncPixelTransferDelegate::GetAddress(safe_shared_memory, mem_params);
-
+    void* data = mem_params.GetDataAddress();
     {
       TRACE_EVENT0("gpu", "glTexSubImage2D");
       glTexSubImage2D(GL_TEXTURE_2D,
@@ -367,6 +345,7 @@ class TransferStateInternal
                       tex_params.format,
                       tex_params.type,
                       data);
+      TRACE_EVENT_SYNTHETIC_DELAY_END("gpu.AsyncTexImage");
     }
 
     if (texture_upload_stats.get()) {
@@ -462,9 +441,6 @@ void AsyncPixelTransferDelegateShareGroup::AsyncTexImage2D(
     const AsyncTexImage2DParams& tex_params,
     const AsyncMemoryParams& mem_params,
     const base::Closure& bind_callback) {
-  DCHECK(mem_params.shared_memory);
-  DCHECK_LE(mem_params.shm_data_offset + mem_params.shm_data_size,
-            mem_params.shm_size);
   DCHECK(!state_->TransferIsInProgress());
   DCHECK_EQ(static_cast<GLenum>(GL_TEXTURE_2D), tex_params.target);
   DCHECK_EQ(tex_params.level, 0);
@@ -483,9 +459,6 @@ void AsyncPixelTransferDelegateShareGroup::AsyncTexSubImage2D(
                "width", tex_params.width,
                "height", tex_params.height);
   DCHECK(!state_->TransferIsInProgress());
-  DCHECK(mem_params.shared_memory);
-  DCHECK_LE(mem_params.shm_data_offset + mem_params.shm_data_size,
-            mem_params.shm_size);
   DCHECK_EQ(static_cast<GLenum>(GL_TEXTURE_2D), tex_params.target);
   DCHECK_EQ(tex_params.level, 0);
 
@@ -534,19 +507,12 @@ void AsyncPixelTransferManagerShareGroup::BindCompletedAsyncTransfers() {
 void AsyncPixelTransferManagerShareGroup::AsyncNotifyCompletion(
     const AsyncMemoryParams& mem_params,
     AsyncPixelTransferCompletionObserver* observer) {
-  DCHECK(mem_params.shared_memory);
-  DCHECK_LE(mem_params.shm_data_offset + mem_params.shm_data_size,
-            mem_params.shm_size);
   // Post a PerformNotifyCompletion task to the upload thread. This task
   // will run after all async transfers are complete.
   transfer_message_loop_proxy()->PostTask(
       FROM_HERE,
       base::Bind(&PerformNotifyCompletion,
                  mem_params,
-                 base::Owned(
-                     new ScopedSafeSharedMemory(safe_shared_memory_pool(),
-                                                mem_params.shared_memory,
-                                                mem_params.shm_size)),
                  make_scoped_refptr(observer)));
 }
 
@@ -566,6 +532,16 @@ void AsyncPixelTransferManagerShareGroup::ProcessMorePendingTransfers() {
 
 bool AsyncPixelTransferManagerShareGroup::NeedsProcessMorePendingTransfers() {
   return false;
+}
+
+void AsyncPixelTransferManagerShareGroup::WaitAllAsyncTexImage2D() {
+  if (shared_state_.pending_allocations.empty())
+    return;
+
+  AsyncPixelTransferDelegateShareGroup* delegate =
+      shared_state_.pending_allocations.back().get();
+  if (delegate)
+    delegate->WaitForTransferCompletion();
 }
 
 AsyncPixelTransferDelegate*

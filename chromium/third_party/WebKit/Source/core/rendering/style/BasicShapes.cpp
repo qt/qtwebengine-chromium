@@ -28,70 +28,90 @@
  */
 
 #include "config.h"
-
 #include "core/rendering/style/BasicShapes.h"
+
+#include "core/css/BasicShapeFunctions.h"
+#include "platform/CalculationValue.h"
 #include "platform/LengthFunctions.h"
 #include "platform/geometry/FloatRect.h"
 #include "platform/graphics/Path.h"
 
 namespace WebCore {
 
+void BasicShapeCenterCoordinate::updateComputedLength()
+{
+    if (m_direction == TopLeft) {
+        m_computedLength = m_length.isUndefined() ? Length(0, Fixed) : m_length;
+        return;
+    }
+    if (m_length.isUndefined()) {
+        m_computedLength = Length(100, Percent);
+        return;
+    }
+
+    m_computedLength = m_length.subtractFromOneHundredPercent();
+}
+
 bool BasicShape::canBlend(const BasicShape* other) const
 {
     // FIXME: Support animations between different shapes in the future.
-    if (type() != other->type())
+    if (!other || !isSameType(*other))
         return false;
 
     // Just polygons with same number of vertices can be animated.
     if (type() == BasicShape::BasicShapePolygonType
-        && static_cast<const BasicShapePolygon*>(this)->values().size() != static_cast<const BasicShapePolygon*>(other)->values().size())
+        && (static_cast<const BasicShapePolygon*>(this)->values().size() != static_cast<const BasicShapePolygon*>(other)->values().size()
+        || static_cast<const BasicShapePolygon*>(this)->windRule() != static_cast<const BasicShapePolygon*>(other)->windRule()))
         return false;
 
-    return true;
+    // Circles with keywords for radii or center coordinates cannot be animated.
+    if (type() == BasicShape::BasicShapeCircleType) {
+        const BasicShapeCircle* thisCircle = static_cast<const BasicShapeCircle*>(this);
+        const BasicShapeCircle* otherCircle = static_cast<const BasicShapeCircle*>(other);
+        if (!thisCircle->radius().canBlend(otherCircle->radius()))
+            return false;
+    }
+
+    // Ellipses with keywords for radii or center coordinates cannot be animated.
+    if (type() != BasicShape::BasicShapeEllipseType)
+        return true;
+
+    const BasicShapeEllipse* thisEllipse = static_cast<const BasicShapeEllipse*>(this);
+    const BasicShapeEllipse* otherEllipse = static_cast<const BasicShapeEllipse*>(other);
+    return (thisEllipse->radiusX().canBlend(otherEllipse->radiusX())
+        && thisEllipse->radiusY().canBlend(otherEllipse->radiusY()));
 }
 
-void BasicShapeRectangle::path(Path& path, const FloatRect& boundingBox)
+bool BasicShapeCircle::operator==(const BasicShape& o) const
 {
-    ASSERT(path.isEmpty());
-    path.addRoundedRect(
-        FloatRect(
-            floatValueForLength(m_x, boundingBox.width()) + boundingBox.x(),
-            floatValueForLength(m_y, boundingBox.height()) + boundingBox.y(),
-            floatValueForLength(m_width, boundingBox.width()),
-            floatValueForLength(m_height, boundingBox.height())
-        ),
-        FloatSize(
-            floatValueForLength(m_cornerRadiusX, boundingBox.width()),
-            floatValueForLength(m_cornerRadiusY, boundingBox.height())
-        )
-    );
+    if (!isSameType(o))
+        return false;
+    const BasicShapeCircle& other = toBasicShapeCircle(o);
+    return m_centerX == other.m_centerX && m_centerY == other.m_centerY && m_radius == other.m_radius;
 }
 
-PassRefPtr<BasicShape> BasicShapeRectangle::blend(const BasicShape* other, double progress) const
+float BasicShapeCircle::floatValueForRadiusInBox(FloatSize boxSize) const
 {
-    ASSERT(type() == other->type());
+    if (m_radius.type() == BasicShapeRadius::Value)
+        return floatValueForLength(m_radius.value(), hypotf(boxSize.width(), boxSize.height()) / sqrtf(2));
 
-    const BasicShapeRectangle* o = static_cast<const BasicShapeRectangle*>(other);
-    RefPtr<BasicShapeRectangle> result =  BasicShapeRectangle::create();
-    result->setX(m_x.blend(o->x(), progress, ValueRangeAll));
-    result->setY(m_y.blend(o->y(), progress, ValueRangeAll));
-    result->setWidth(m_width.blend(o->width(), progress, ValueRangeNonNegative));
-    result->setHeight(m_height.blend(o->height(), progress, ValueRangeNonNegative));
-    result->setCornerRadiusX(m_cornerRadiusX.blend(o->cornerRadiusX(), progress, ValueRangeNonNegative));
-    result->setCornerRadiusY(m_cornerRadiusY.blend(o->cornerRadiusY(), progress, ValueRangeNonNegative));
-    return result.release();
+    FloatPoint center = floatPointForCenterCoordinate(m_centerX, m_centerY, boxSize);
+
+    if (m_radius.type() == BasicShapeRadius::ClosestSide)
+        return std::min(std::min(center.x(), boxSize.width() - center.x()), std::min(center.y(), boxSize.height() - center.y()));
+
+    // If radius.type() == BasicShapeRadius::FarthestSide.
+    return std::max(std::max(center.x(), boxSize.width() - center.x()), std::max(center.y(), boxSize.height() - center.y()));
 }
 
 void BasicShapeCircle::path(Path& path, const FloatRect& boundingBox)
 {
     ASSERT(path.isEmpty());
-    float diagonal = sqrtf((boundingBox.width() * boundingBox.width() + boundingBox.height() * boundingBox.height()) / 2);
-    float centerX = floatValueForLength(m_centerX, boundingBox.width());
-    float centerY = floatValueForLength(m_centerY, boundingBox.height());
-    float radius = floatValueForLength(m_radius, diagonal);
+    FloatPoint center = floatPointForCenterCoordinate(m_centerX, m_centerY, boundingBox.size());
+    float radius = floatValueForRadiusInBox(boundingBox.size());
     path.addEllipse(FloatRect(
-        centerX - radius + boundingBox.x(),
-        centerY - radius + boundingBox.y(),
+        center.x() - radius + boundingBox.x(),
+        center.y() - radius + boundingBox.y(),
         radius * 2,
         radius * 2
     ));
@@ -100,25 +120,44 @@ void BasicShapeCircle::path(Path& path, const FloatRect& boundingBox)
 PassRefPtr<BasicShape> BasicShapeCircle::blend(const BasicShape* other, double progress) const
 {
     ASSERT(type() == other->type());
-
     const BasicShapeCircle* o = static_cast<const BasicShapeCircle*>(other);
     RefPtr<BasicShapeCircle> result =  BasicShapeCircle::create();
-    result->setCenterX(m_centerX.blend(o->centerX(), progress, ValueRangeAll));
-    result->setCenterY(m_centerY.blend(o->centerY(), progress, ValueRangeAll));
-    result->setRadius(m_radius.blend(o->radius(), progress, ValueRangeNonNegative));
+
+    result->setCenterX(m_centerX.blend(o->centerX(), progress));
+    result->setCenterY(m_centerY.blend(o->centerY(), progress));
+    result->setRadius(m_radius.blend(o->radius(), progress));
     return result.release();
+}
+
+bool BasicShapeEllipse::operator==(const BasicShape& o) const
+{
+    if (!isSameType(o))
+        return false;
+    const BasicShapeEllipse& other = toBasicShapeEllipse(o);
+    return m_centerX == other.m_centerX && m_centerY == other.m_centerY && m_radiusX == other.m_radiusX && m_radiusY == other.m_radiusY;
+}
+
+float BasicShapeEllipse::floatValueForRadiusInBox(const BasicShapeRadius& radius, float center, float boxWidthOrHeight) const
+{
+    if (radius.type() == BasicShapeRadius::Value)
+        return floatValueForLength(radius.value(), boxWidthOrHeight);
+
+    if (radius.type() == BasicShapeRadius::ClosestSide)
+        return std::min(center, boxWidthOrHeight - center);
+
+    ASSERT(radius.type() == BasicShapeRadius::FarthestSide);
+    return std::max(center, boxWidthOrHeight - center);
 }
 
 void BasicShapeEllipse::path(Path& path, const FloatRect& boundingBox)
 {
     ASSERT(path.isEmpty());
-    float centerX = floatValueForLength(m_centerX, boundingBox.width());
-    float centerY = floatValueForLength(m_centerY, boundingBox.height());
-    float radiusX = floatValueForLength(m_radiusX, boundingBox.width());
-    float radiusY = floatValueForLength(m_radiusY, boundingBox.height());
+    FloatPoint center = floatPointForCenterCoordinate(m_centerX, m_centerY, boundingBox.size());
+    float radiusX = floatValueForRadiusInBox(m_radiusX, center.x(), boundingBox.width());
+    float radiusY = floatValueForRadiusInBox(m_radiusY, center.y(), boundingBox.height());
     path.addEllipse(FloatRect(
-        centerX - radiusX + boundingBox.x(),
-        centerY - radiusY + boundingBox.y(),
+        center.x() - radiusX + boundingBox.x(),
+        center.y() - radiusY + boundingBox.y(),
         radiusX * 2,
         radiusY * 2
     ));
@@ -127,13 +166,22 @@ void BasicShapeEllipse::path(Path& path, const FloatRect& boundingBox)
 PassRefPtr<BasicShape> BasicShapeEllipse::blend(const BasicShape* other, double progress) const
 {
     ASSERT(type() == other->type());
-
     const BasicShapeEllipse* o = static_cast<const BasicShapeEllipse*>(other);
     RefPtr<BasicShapeEllipse> result =  BasicShapeEllipse::create();
-    result->setCenterX(m_centerX.blend(o->centerX(), progress, ValueRangeAll));
-    result->setCenterY(m_centerY.blend(o->centerY(), progress, ValueRangeAll));
-    result->setRadiusX(m_radiusX.blend(o->radiusX(), progress, ValueRangeNonNegative));
-    result->setRadiusY(m_radiusY.blend(o->radiusY(), progress, ValueRangeNonNegative));
+
+    if (m_radiusX.type() != BasicShapeRadius::Value || o->radiusX().type() != BasicShapeRadius::Value
+        || m_radiusY.type() != BasicShapeRadius::Value || o->radiusY().type() != BasicShapeRadius::Value) {
+        result->setCenterX(o->centerX());
+        result->setCenterY(o->centerY());
+        result->setRadiusX(o->radiusX());
+        result->setRadiusY(o->radiusY());
+        return result;
+    }
+
+    result->setCenterX(m_centerX.blend(o->centerX(), progress));
+    result->setCenterY(m_centerY.blend(o->centerY(), progress));
+    result->setRadiusX(m_radiusX.blend(o->radiusX(), progress));
+    result->setRadiusY(m_radiusY.blend(o->radiusY(), progress));
     return result.release();
 }
 
@@ -157,7 +205,7 @@ void BasicShapePolygon::path(Path& path, const FloatRect& boundingBox)
 
 PassRefPtr<BasicShape> BasicShapePolygon::blend(const BasicShape* other, double progress) const
 {
-    ASSERT(type() == other->type());
+    ASSERT(other && isSameType(*other));
 
     const BasicShapePolygon* o = static_cast<const BasicShapePolygon*>(other);
     ASSERT(m_values.size() == o->values().size());
@@ -178,7 +226,21 @@ PassRefPtr<BasicShape> BasicShapePolygon::blend(const BasicShape* other, double 
     return result.release();
 }
 
-void BasicShapeInsetRectangle::path(Path& path, const FloatRect& boundingBox)
+bool BasicShapePolygon::operator==(const BasicShape& o) const
+{
+    if (!isSameType(o))
+        return false;
+    const BasicShapePolygon& other = toBasicShapePolygon(o);
+    return m_windRule == other.m_windRule && m_values == other.m_values;
+}
+
+static FloatSize floatSizeForLengthSize(const LengthSize& lengthSize, const FloatRect& boundingBox)
+{
+    return FloatSize(floatValueForLength(lengthSize.width(), boundingBox.width()),
+        floatValueForLength(lengthSize.height(), boundingBox.height()));
+}
+
+void BasicShapeInset::path(Path& path, const FloatRect& boundingBox)
 {
     ASSERT(path.isEmpty());
     float left = floatValueForLength(m_left, boundingBox.width());
@@ -190,25 +252,33 @@ void BasicShapeInsetRectangle::path(Path& path, const FloatRect& boundingBox)
             std::max<float>(boundingBox.width() - left - floatValueForLength(m_right, boundingBox.width()), 0),
             std::max<float>(boundingBox.height() - top - floatValueForLength(m_bottom, boundingBox.height()), 0)
         ),
-        FloatSize(
-            floatValueForLength(m_cornerRadiusX, boundingBox.width()),
-            floatValueForLength(m_cornerRadiusY, boundingBox.height())
-        )
+        floatSizeForLengthSize(m_topLeftRadius, boundingBox),
+        floatSizeForLengthSize(m_topRightRadius, boundingBox),
+        floatSizeForLengthSize(m_bottomLeftRadius, boundingBox),
+        floatSizeForLengthSize(m_bottomRightRadius, boundingBox)
     );
 }
 
-PassRefPtr<BasicShape> BasicShapeInsetRectangle::blend(const BasicShape* other, double progress) const
+PassRefPtr<BasicShape> BasicShapeInset::blend(const BasicShape* other, double) const
 {
     ASSERT(type() == other->type());
-
-    const BasicShapeInsetRectangle* o = static_cast<const BasicShapeInsetRectangle*>(other);
-    RefPtr<BasicShapeInsetRectangle> result =  BasicShapeInsetRectangle::create();
-    result->setTop(m_top.blend(o->top(), progress, ValueRangeNonNegative));
-    result->setRight(m_right.blend(o->right(), progress, ValueRangeNonNegative));
-    result->setBottom(m_bottom.blend(o->bottom(), progress, ValueRangeNonNegative));
-    result->setLeft(m_left.blend(o->left(), progress, ValueRangeNonNegative));
-    result->setCornerRadiusX(m_cornerRadiusX.blend(o->cornerRadiusX(), progress, ValueRangeNonNegative));
-    result->setCornerRadiusY(m_cornerRadiusY.blend(o->cornerRadiusY(), progress, ValueRangeNonNegative));
-    return result.release();
+    // FIXME: Implement blend for BasicShapeInset.
+    return nullptr;
 }
+
+bool BasicShapeInset::operator==(const BasicShape& o) const
+{
+    if (!isSameType(o))
+        return false;
+    const BasicShapeInset& other = toBasicShapeInset(o);
+    return m_right == other.m_right
+        && m_top == other.m_top
+        && m_bottom == other.m_bottom
+        && m_left == other.m_left
+        && m_topLeftRadius == other.m_topLeftRadius
+        && m_topRightRadius == other.m_topRightRadius
+        && m_bottomRightRadius == other.m_bottomRightRadius
+        && m_bottomLeftRadius == other.m_bottomLeftRadius;
+}
+
 }

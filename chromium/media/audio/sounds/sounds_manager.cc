@@ -4,21 +4,20 @@
 
 #include "media/audio/sounds/sounds_manager.h"
 
-#include "base/command_line.h"
 #include "base/compiler_specific.h"
 #include "base/logging.h"
 #include "base/memory/linked_ptr.h"
 #include "base/memory/ref_counted.h"
-#include "base/message_loop/message_loop_proxy.h"
+#include "base/single_thread_task_runner.h"
 #include "media/audio/audio_manager.h"
 #include "media/audio/sounds/audio_stream_handler.h"
-#include "media/base/media_switches.h"
 
 namespace media {
 
 namespace {
 
 SoundsManager* g_instance = NULL;
+bool g_initialized_for_testing = false;
 
 // SoundsManagerImpl ---------------------------------------------------
 
@@ -35,13 +34,14 @@ class SoundsManagerImpl : public SoundsManager {
 
  private:
   base::hash_map<SoundKey, linked_ptr<AudioStreamHandler> > handlers_;
-  scoped_refptr<base::MessageLoopProxy> message_loop_;
+  scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
 
   DISALLOW_COPY_AND_ASSIGN(SoundsManagerImpl);
 };
 
 SoundsManagerImpl::SoundsManagerImpl()
-    : message_loop_(AudioManager::Get()->GetMessageLoop()) {}
+    : task_runner_(AudioManager::Get()->GetTaskRunner()) {
+}
 
 SoundsManagerImpl::~SoundsManagerImpl() { DCHECK(CalledOnValidThread()); }
 
@@ -74,46 +74,7 @@ base::TimeDelta SoundsManagerImpl::GetDuration(SoundKey key) {
     return base::TimeDelta();
   }
   const WavAudioHandler& wav_audio = handlers_[key]->wav_audio_handler();
-  const int64 size = wav_audio.size();
-  const int64 rate = wav_audio.byte_rate();
-  return base::TimeDelta::FromMicroseconds(size * 1000000 / rate);
-}
-
-// SoundsManagerStub ---------------------------------------------------
-
-class SoundsManagerStub : public SoundsManager {
- public:
-  SoundsManagerStub();
-  virtual ~SoundsManagerStub();
-
-  // SoundsManager implementation:
-  virtual bool Initialize(SoundKey key,
-                          const base::StringPiece& data) OVERRIDE;
-  virtual bool Play(SoundKey key) OVERRIDE;
-  virtual base::TimeDelta GetDuration(SoundKey key) OVERRIDE;
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(SoundsManagerStub);
-};
-
-SoundsManagerStub::SoundsManagerStub() {}
-
-SoundsManagerStub::~SoundsManagerStub() { DCHECK(CalledOnValidThread()); }
-
-bool SoundsManagerStub::Initialize(SoundKey /* key */,
-                                   const base::StringPiece& /* data */) {
-  DCHECK(CalledOnValidThread());
-  return false;
-}
-
-bool SoundsManagerStub::Play(SoundKey /* key */) {
-  DCHECK(CalledOnValidThread());
-  return false;
-}
-
-base::TimeDelta SoundsManagerStub::GetDuration(SoundKey /* key */) {
-  DCHECK(CalledOnValidThread());
-  return base::TimeDelta();
+  return wav_audio.params().GetBufferDuration();
 }
 
 }  // namespace
@@ -124,13 +85,11 @@ SoundsManager::~SoundsManager() { DCHECK(CalledOnValidThread()); }
 
 // static
 void SoundsManager::Create() {
-  CHECK(!g_instance) << "SoundsManager::Create() is called twice";
-  const bool enabled = !CommandLine::ForCurrentProcess()->HasSwitch(
-                            ::switches::kDisableSystemSoundsManager);
-  if (enabled)
-    g_instance = new SoundsManagerImpl();
-  else
-    g_instance = new SoundsManagerStub();
+  CHECK(!g_instance || g_initialized_for_testing)
+      << "SoundsManager::Create() is called twice";
+  if (g_initialized_for_testing)
+    return;
+  g_instance = new SoundsManagerImpl();
 }
 
 // static
@@ -145,6 +104,14 @@ void SoundsManager::Shutdown() {
 SoundsManager* SoundsManager::Get() {
   CHECK(g_instance) << "SoundsManager::Get() is called before Create()";
   return g_instance;
+}
+
+// static
+void SoundsManager::InitializeForTesting(SoundsManager* manager) {
+  CHECK(!g_instance) << "SoundsManager is already initialized.";
+  CHECK(manager);
+  g_instance = manager;
+  g_initialized_for_testing = true;
 }
 
 }  // namespace media

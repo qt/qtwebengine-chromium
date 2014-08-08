@@ -10,12 +10,13 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "content/browser/renderer_host/overscroll_controller_delegate.h"
+#include "content/browser/renderer_host/render_view_host_delegate_view.h"
+#include "content/browser/web_contents/web_contents_view.h"
 #include "content/common/content_export.h"
-#include "content/port/browser/render_view_host_delegate_view.h"
-#include "content/port/browser/web_contents_view_port.h"
-#include "ui/aura/client/drag_drop_delegate.h"
 #include "ui/aura/window_delegate.h"
+#include "ui/aura/window_observer.h"
 #include "ui/compositor/layer_animation_observer.h"
+#include "ui/wm/public/drag_drop_delegate.h"
 
 namespace aura {
 class Window;
@@ -26,27 +27,30 @@ class DropTargetEvent;
 }
 
 namespace content {
+class GestureNavSimple;
 class OverscrollNavigationOverlay;
+class RenderWidgetHostImpl;
+class RenderWidgetHostViewAura;
 class ShadowLayerDelegate;
 class TouchEditableImplAura;
 class WebContentsViewDelegate;
 class WebContentsImpl;
 class WebDragDestDelegate;
 
-class CONTENT_EXPORT WebContentsViewAura
-    : public WebContentsViewPort,
+class WebContentsViewAura
+    : public WebContentsView,
       public RenderViewHostDelegateView,
-      NON_EXPORTED_BASE(public OverscrollControllerDelegate),
+      public OverscrollControllerDelegate,
       public ui::ImplicitAnimationObserver,
       public aura::WindowDelegate,
-      public aura::client::DragDropDelegate {
+      public aura::client::DragDropDelegate,
+      public aura::WindowObserver {
  public:
   WebContentsViewAura(WebContentsImpl* web_contents,
                       WebContentsViewDelegate* delegate);
 
-  void SetupOverlayWindowForTesting();
-
-  void SetTouchEditableForTest(TouchEditableImplAura* touch_editable);
+  CONTENT_EXPORT void SetTouchEditableForTest(
+      TouchEditableImplAura* touch_editable);
 
  private:
   class WindowObserver;
@@ -56,6 +60,8 @@ class CONTENT_EXPORT WebContentsViewAura
   void SizeChangedCommon(const gfx::Size& size);
 
   void EndDrag(blink::WebDragOperationsMask ops);
+
+  void InstallOverscrollControllerDelegate(RenderWidgetHostViewAura* view);
 
   // Creates and sets up the overlay window that will be displayed during the
   // overscroll gesture.
@@ -101,8 +107,6 @@ class CONTENT_EXPORT WebContentsViewAura
   virtual gfx::NativeView GetContentNativeView() const OVERRIDE;
   virtual gfx::NativeWindow GetTopLevelNativeWindow() const OVERRIDE;
   virtual void GetContainerBounds(gfx::Rect *out) const OVERRIDE;
-  virtual void OnTabCrashed(base::TerminationStatus status,
-                            int error_code) OVERRIDE;
   virtual void SizeContents(const gfx::Size& size) OVERRIDE;
   virtual void Focus() OVERRIDE;
   virtual void SetInitialFocus() OVERRIDE;
@@ -110,13 +114,11 @@ class CONTENT_EXPORT WebContentsViewAura
   virtual void RestoreFocus() OVERRIDE;
   virtual DropData* GetDropData() const OVERRIDE;
   virtual gfx::Rect GetViewBounds() const OVERRIDE;
-
-  // Overridden from WebContentsViewPort:
   virtual void CreateView(
       const gfx::Size& initial_size, gfx::NativeView context) OVERRIDE;
-  virtual RenderWidgetHostView* CreateViewForWidget(
+  virtual RenderWidgetHostViewBase* CreateViewForWidget(
       RenderWidgetHost* render_widget_host) OVERRIDE;
-  virtual RenderWidgetHostView* CreateViewForPopupWidget(
+  virtual RenderWidgetHostViewBase* CreateViewForPopupWidget(
       RenderWidgetHost* render_widget_host) OVERRIDE;
   virtual void SetPageTitle(const base::string16& title) OVERRIDE;
   virtual void RenderViewCreated(RenderViewHost* host) OVERRIDE;
@@ -124,14 +126,8 @@ class CONTENT_EXPORT WebContentsViewAura
   virtual void SetOverscrollControllerEnabled(bool enabled) OVERRIDE;
 
   // Overridden from RenderViewHostDelegateView:
-  virtual void ShowContextMenu(const ContextMenuParams& params) OVERRIDE;
-  virtual void ShowPopupMenu(const gfx::Rect& bounds,
-                             int item_height,
-                             double item_font_size,
-                             int selected_item,
-                             const std::vector<MenuItem>& items,
-                             bool right_aligned,
-                             bool allow_multiple_selection) OVERRIDE;
+  virtual void ShowContextMenu(RenderFrameHost* render_frame_host,
+                               const ContextMenuParams& params) OVERRIDE;
   virtual void StartDragging(const DropData& drop_data,
                              blink::WebDragOperationsMask operations,
                              const gfx::ImageSkia& image,
@@ -165,13 +161,11 @@ class CONTENT_EXPORT WebContentsViewAura
   virtual void OnCaptureLost() OVERRIDE;
   virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
   virtual void OnDeviceScaleFactorChanged(float device_scale_factor) OVERRIDE;
-  virtual void OnWindowDestroying() OVERRIDE;
-  virtual void OnWindowDestroyed() OVERRIDE;
+  virtual void OnWindowDestroying(aura::Window* window) OVERRIDE;
+  virtual void OnWindowDestroyed(aura::Window* window) OVERRIDE;
   virtual void OnWindowTargetVisibilityChanged(bool visible) OVERRIDE;
   virtual bool HasHitTestMask() const OVERRIDE;
   virtual void GetHitTestMask(gfx::Path* mask) const OVERRIDE;
-  virtual void DidRecreateLayer(ui::Layer* old_layer,
-                                ui::Layer* new_layer) OVERRIDE;
 
   // Overridden from ui::EventHandler:
   virtual void OnKeyEvent(ui::KeyEvent* event) OVERRIDE;
@@ -182,6 +176,12 @@ class CONTENT_EXPORT WebContentsViewAura
   virtual int OnDragUpdated(const ui::DropTargetEvent& event) OVERRIDE;
   virtual void OnDragExited() OVERRIDE;
   virtual int OnPerformDrop(const ui::DropTargetEvent& event) OVERRIDE;
+
+  // Overridden from aura::WindowObserver:
+  virtual void OnWindowParentChanged(aura::Window* window,
+                                     aura::Window* parent) OVERRIDE;
+  virtual void OnWindowVisibilityChanged(aura::Window* window,
+                                         bool visible) OVERRIDE;
 
   scoped_ptr<aura::Window> window_;
 
@@ -224,6 +224,7 @@ class CONTENT_EXPORT WebContentsViewAura
   scoped_ptr<ShadowLayerDelegate> overscroll_shadow_;
 
   scoped_ptr<TouchEditableImplAura> touch_editable_;
+  scoped_ptr<GestureNavSimple> gesture_nav_simple_;
 
   DISALLOW_COPY_AND_ASSIGN(WebContentsViewAura);
 };

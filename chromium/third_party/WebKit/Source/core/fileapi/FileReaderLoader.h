@@ -50,7 +50,7 @@ class Stream;
 class TextResourceDecoder;
 class ThreadableLoader;
 
-class FileReaderLoader : public ThreadableLoaderClient {
+class FileReaderLoader FINAL : public ThreadableLoaderClient {
 public:
     enum ReadType {
         ReadAsArrayBuffer,
@@ -63,17 +63,17 @@ public:
 
     // If client is given, do the loading asynchronously. Otherwise, load synchronously.
     FileReaderLoader(ReadType, FileReaderLoaderClient*);
-    ~FileReaderLoader();
+    virtual ~FileReaderLoader();
 
     void start(ExecutionContext*, PassRefPtr<BlobDataHandle>);
     void start(ExecutionContext*, const Stream&, unsigned readSize);
     void cancel();
 
     // ThreadableLoaderClient
-    virtual void didReceiveResponse(unsigned long, const ResourceResponse&);
-    virtual void didReceiveData(const char*, int);
-    virtual void didFinishLoading(unsigned long, double);
-    virtual void didFail(const ResourceError&);
+    virtual void didReceiveResponse(unsigned long, const ResourceResponse&) OVERRIDE;
+    virtual void didReceiveData(const char*, int) OVERRIDE;
+    virtual void didFinishLoading(unsigned long, double) OVERRIDE;
+    virtual void didFail(const ResourceError&) OVERRIDE;
 
     String stringResult();
     PassRefPtr<ArrayBuffer> arrayBufferResult() const;
@@ -99,7 +99,7 @@ public:
     void setDataType(const String& dataType) { m_dataType = dataType; }
 
 private:
-    void startInternal(ExecutionContext*, const Stream*, PassRefPtr<BlobDataHandle>);
+    void startInternal(ExecutionContext&, const Stream*, PassRefPtr<BlobDataHandle>);
     void terminate();
     void cleanup();
 

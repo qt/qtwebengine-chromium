@@ -84,9 +84,9 @@ bool DataPack::LoadFromPath(const base::FilePath& path) {
   return LoadImpl();
 }
 
-bool DataPack::LoadFromFile(base::PlatformFile file) {
+bool DataPack::LoadFromFile(base::File file) {
   mmap_.reset(new base::MemoryMappedFile);
-  if (!mmap_->Initialize(file)) {
+  if (!mmap_->Initialize(file.Pass())) {
     DLOG(ERROR) << "Failed to mmap datapack";
     UMA_HISTOGRAM_ENUMERATION("DataPack.Load", INIT_FAILED_FROM_FILE,
                               LOAD_ERRORS_COUNT);
@@ -134,8 +134,9 @@ bool DataPack::LoadImpl() {
   }
 
   // Sanity check the file.
-  // 1) Check we have enough entries.
-  if (kHeaderLength + resource_count_ * sizeof(DataPackEntry) >
+  // 1) Check we have enough entries. There's an extra entry after the last item
+  // which gives the length of the last item.
+  if (kHeaderLength + (resource_count_ + 1) * sizeof(DataPackEntry) >
       mmap_->length()) {
     LOG(ERROR) << "Data pack file corruption: too short for number of "
                   "entries specified.";
@@ -188,9 +189,21 @@ bool DataPack::GetStringPiece(uint16 resource_id,
   }
 
   const DataPackEntry* next_entry = target + 1;
-  size_t length = next_entry->file_offset - target->file_offset;
+  // If the next entry points beyond the end of the file this data pack's entry
+  // table is corrupt. Log an error and return false. See
+  // http://crbug.com/371301.
+  if (next_entry->file_offset > mmap_->length()) {
+    size_t entry_index = target -
+        reinterpret_cast<const DataPackEntry*>(mmap_->data() + kHeaderLength);
+    LOG(ERROR) << "Entry #" << entry_index << " in data pack points off end "
+               << "of file. This should have been caught when loading. Was the "
+               << "file modified?";
+    return false;
+  }
 
-  data->set(mmap_->data() + target->file_offset, length);
+  size_t length = next_entry->file_offset - target->file_offset;
+  data->set(reinterpret_cast<const char*>(mmap_->data() + target->file_offset),
+            length);
   return true;
 }
 
@@ -200,8 +213,7 @@ base::RefCountedStaticMemory* DataPack::GetStaticMemory(
   if (!GetStringPiece(resource_id, &piece))
     return NULL;
 
-  return new base::RefCountedStaticMemory(
-      reinterpret_cast<const unsigned char*>(piece.data()), piece.length());
+  return new base::RefCountedStaticMemory(piece.data(), piece.length());
 }
 
 ResourceHandle::TextEncodingType DataPack::GetTextEncodingType() const {

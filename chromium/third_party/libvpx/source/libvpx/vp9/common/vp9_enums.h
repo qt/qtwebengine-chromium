@@ -13,6 +13,10 @@
 
 #include "./vpx_config.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define MI_SIZE_LOG2 3
 #define MI_BLOCK_SIZE_LOG2 (6 - MI_SIZE_LOG2)  // 64 = 2^6
 
@@ -21,6 +25,23 @@
 
 #define MI_MASK (MI_BLOCK_SIZE - 1)
 
+// Bitstream profiles indicated by 2 bits in the uncompressed header.
+// 00: Profile 0. 4:2:0 only.
+// 10: Profile 1. adds 4:4:4, 4:2:2, alpha.
+// 01: Profile 2. Supports 10-bit and 12-bit color only.
+// 11: Undefined profile.
+typedef enum BITSTREAM_PROFILE {
+  PROFILE_0,
+  PROFILE_1,
+  PROFILE_2,
+  MAX_PROFILES
+} BITSTREAM_PROFILE;
+
+typedef enum BIT_DEPTH {
+  BITS_8,
+  BITS_10,
+  BITS_12
+} BIT_DEPTH;
 
 typedef enum BLOCK_SIZE {
   BLOCK_4X4,
@@ -52,20 +73,22 @@ typedef enum PARTITION_TYPE {
 #define PARTITION_PLOFFSET   4  // number of probability models per block size
 #define PARTITION_CONTEXTS (4 * PARTITION_PLOFFSET)
 
+// block transform size
 typedef enum {
-  TX_4X4 = 0,                      // 4x4 dct transform
-  TX_8X8 = 1,                      // 8x8 dct transform
-  TX_16X16 = 2,                    // 16x16 dct transform
-  TX_32X32 = 3,                    // 32x32 dct transform
+  TX_4X4 = 0,                      // 4x4 transform
+  TX_8X8 = 1,                      // 8x8 transform
+  TX_16X16 = 2,                    // 16x16 transform
+  TX_32X32 = 3,                    // 32x32 transform
   TX_SIZES
 } TX_SIZE;
 
+// frame transform mode
 typedef enum {
-  ONLY_4X4            = 0,
-  ALLOW_8X8           = 1,
-  ALLOW_16X16         = 2,
-  ALLOW_32X32         = 3,
-  TX_MODE_SELECT      = 4,
+  ONLY_4X4            = 0,        // only 4x4 transform used
+  ALLOW_8X8           = 1,        // allow block transform size up to 8x8
+  ALLOW_16X16         = 2,        // allow block transform size up to 16x16
+  ALLOW_32X32         = 3,        // allow block transform size up to 32x32
+  TX_MODE_SELECT      = 4,        // transform specified for each block
   TX_MODES            = 5,
 } TX_MODE;
 
@@ -73,7 +96,8 @@ typedef enum {
   DCT_DCT   = 0,                      // DCT  in both horizontal and vertical
   ADST_DCT  = 1,                      // ADST in vertical, DCT in horizontal
   DCT_ADST  = 2,                      // DCT  in vertical, ADST in horizontal
-  ADST_ADST = 3                       // ADST in both directions
+  ADST_ADST = 3,                      // ADST in both directions
+  TX_TYPES = 4
 } TX_TYPE;
 
 typedef enum {
@@ -86,5 +110,15 @@ typedef enum {
   RESERVED_2 = 6,
   SRGB       = 7   // RGB
 } COLOR_SPACE;
+
+typedef enum {
+  VP9_LAST_FLAG = 1 << 0,
+  VP9_GOLD_FLAG = 1 << 1,
+  VP9_ALT_FLAG = 1 << 2,
+} VP9_REFFRAME;
+
+#ifdef __cplusplus
+}  // extern "C"
+#endif
 
 #endif  // VP9_COMMON_VP9_ENUMS_H_

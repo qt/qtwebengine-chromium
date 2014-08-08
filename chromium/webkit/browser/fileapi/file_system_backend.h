@@ -9,9 +9,9 @@
 #include <vector>
 
 #include "base/callback_forward.h"
+#include "base/files/file.h"
 #include "base/files/file_path.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/platform_file.h"
 #include "webkit/browser/fileapi/file_permission_policy.h"
 #include "webkit/browser/fileapi/open_file_system_mode.h"
 #include "webkit/browser/webkit_storage_browser_export.h"
@@ -44,7 +44,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT FileSystemBackend {
   // Callback for InitializeFileSystem.
   typedef base::Callback<void(const GURL& root_url,
                               const std::string& name,
-                              base::PlatformFileError error)>
+                              base::File::Error error)>
       OpenFileSystemCallback;
   virtual ~FileSystemBackend() {}
 
@@ -57,26 +57,24 @@ class WEBKIT_STORAGE_BROWSER_EXPORT FileSystemBackend {
   // do additional initialization which depends on FileSystemContext here.
   virtual void Initialize(FileSystemContext* context) = 0;
 
-  // Opens the filesystem for the given |origin_url| and |type|.
-  // This verifies if it is allowed to request (or create) the filesystem
-  // and if it can access (or create) the root directory.
-  // If |mode| is CREATE_IF_NONEXISTENT calling this may also create
-  // the root directory (and/or related database entries etc) for
-  // the filesystem if it doesn't exist.
-  virtual void OpenFileSystem(
-      const GURL& origin_url,
-      FileSystemType type,
-      OpenFileSystemMode mode,
-      const OpenFileSystemCallback& callback) = 0;
+  // Resolves the filesystem root URL and the name for the given |url|.
+  // This verifies if it is allowed to request (or create) the filesystem and if
+  // it can access (or create) the root directory.
+  // If |mode| is CREATE_IF_NONEXISTENT calling this may also create the root
+  // directory (and/or related database entries etc) for the filesystem if it
+  // doesn't exist.
+  virtual void ResolveURL(const FileSystemURL& url,
+                          OpenFileSystemMode mode,
+                          const OpenFileSystemCallback& callback) = 0;
 
   // Returns the specialized AsyncFileUtil for this backend.
   virtual AsyncFileUtil* GetAsyncFileUtil(FileSystemType type) = 0;
 
   // Returns the specialized CopyOrMoveFileValidatorFactory for this backend
-  // and |type|.  If |error_code| is PLATFORM_FILE_OK and the result is NULL,
+  // and |type|.  If |error_code| is File::FILE_OK and the result is NULL,
   // then no validator is required.
   virtual CopyOrMoveFileValidatorFactory* GetCopyOrMoveFileValidatorFactory(
-      FileSystemType type, base::PlatformFileError* error_code) = 0;
+      FileSystemType type, base::File::Error* error_code) = 0;
 
   // Returns a new instance of the specialized FileSystemOperation for this
   // backend based on the given triplet of |origin_url|, |file_system_type|
@@ -87,7 +85,12 @@ class WEBKIT_STORAGE_BROWSER_EXPORT FileSystemBackend {
   virtual FileSystemOperation* CreateFileSystemOperation(
       const FileSystemURL& url,
       FileSystemContext* context,
-      base::PlatformFileError* error_code) const = 0;
+      base::File::Error* error_code) const = 0;
+
+  // Returns true if Blobs accessing |url| should use FileStreamReader.
+  // If false, Blobs are accessed using a snapshot file by calling
+  // AsyncFileUtil::CreateSnapshotFile.
+  virtual bool SupportsStreaming(const FileSystemURL& url) const = 0;
 
   // Creates a new file stream reader for a given filesystem URL |url| with an
   // offset |offset|. |expected_modification_time| specifies the expected last

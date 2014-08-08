@@ -29,23 +29,28 @@ class CC_EXPORT PicturePileBase : public base::RefCounted<PicturePileBase> {
   explicit PicturePileBase(const PicturePileBase* other);
   PicturePileBase(const PicturePileBase* other, unsigned thread_index);
 
-  void Resize(gfx::Size size);
-  gfx::Size size() const { return tiling_.total_size(); }
+  void SetTilingRect(const gfx::Rect& tiling_rect);
+  gfx::Rect tiling_rect() const { return tiling_.tiling_rect(); }
   void SetMinContentsScale(float min_contents_scale);
 
-  void UpdateRecordedRegion();
-  const Region& recorded_region() const { return recorded_region_; }
+  // If non-empty, all pictures tiles inside this rect are recorded. There may
+  // be recordings outside this rect, but everything inside the rect is
+  // recorded.
+  gfx::Rect recorded_viewport() const { return recorded_viewport_; }
 
   int num_tiles_x() const { return tiling_.num_tiles_x(); }
   int num_tiles_y() const { return tiling_.num_tiles_y(); }
   gfx::Rect tile_bounds(int x, int y) const { return tiling_.TileBounds(x, y); }
   bool HasRecordingAt(int x, int y);
-  bool CanRaster(float contents_scale, gfx::Rect content_rect);
+  bool CanRaster(float contents_scale, const gfx::Rect& content_rect);
 
-  static void ComputeTileGridInfo(gfx::Size tile_grid_size,
-                                  SkTileGridPicture::TileGridInfo* info);
+  // If this pile contains any valid recordings. May have false positives.
+  bool HasRecordings() const { return has_any_recordings_; }
 
-  void SetTileGridSize(gfx::Size tile_grid_size);
+  static void ComputeTileGridInfo(const gfx::Size& tile_grid_size,
+                                  SkTileGridFactory::TileGridInfo* info);
+
+  void SetTileGridSize(const gfx::Size& tile_grid_size);
   TilingData& tiling() { return tiling_; }
 
   scoped_ptr<base::Value> AsValue() const;
@@ -84,30 +89,32 @@ class CC_EXPORT PicturePileBase : public base::RefCounted<PicturePileBase> {
 
   virtual ~PicturePileBase();
 
-  void SetRecordedRegionForTesting(const Region& recorded_region) {
-    recorded_region_ = recorded_region;
-  }
-
-  int num_raster_threads() { return num_raster_threads_; }
   int buffer_pixels() const { return tiling_.border_texels(); }
   void Clear();
 
   gfx::Rect PaddedRect(const PictureMapKey& key);
-  gfx::Rect PadRect(gfx::Rect rect);
+  gfx::Rect PadRect(const gfx::Rect& rect);
+
+  // An internal CanRaster check that goes to the picture_map rather than
+  // using the recorded_viewport hint.
+  bool CanRasterSlowTileCheck(const gfx::Rect& layer_rect) const;
 
   // A picture pile is a tiled set of pictures. The picture map is a map of tile
   // indices to picture infos.
   PictureMap picture_map_;
   TilingData tiling_;
-  Region recorded_region_;
+  gfx::Rect recorded_viewport_;
   float min_contents_scale_;
-  SkTileGridPicture::TileGridInfo tile_grid_info_;
+  SkTileGridFactory::TileGridInfo tile_grid_info_;
   SkColor background_color_;
   int slow_down_raster_scale_factor_for_debug_;
   bool contents_opaque_;
+  bool contents_fill_bounds_completely_;
   bool show_debug_picture_borders_;
   bool clear_canvas_with_debug_color_;
-  int num_raster_threads_;
+  // A hint about whether there are any recordings. This may be a false
+  // positive.
+  bool has_any_recordings_;
 
  private:
   void SetBufferPixels(int buffer_pixels);

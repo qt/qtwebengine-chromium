@@ -10,6 +10,9 @@
 #include "ui/views/layout/box_layout.h"
 #include "ui/views/view.h"
 
+using base::ASCIIToUTF16;
+using base::WideToUTF16;
+
 namespace views {
 namespace examples {
 
@@ -18,23 +21,19 @@ namespace {
 // A Label with a constrained preferred size to demonstrate eliding or wrapping.
 class PreferredSizeLabel : public Label {
  public:
-  PreferredSizeLabel();
-  virtual ~PreferredSizeLabel();
+  PreferredSizeLabel() : Label() {
+    SetBorder(Border::CreateSolidBorder(2, SK_ColorCYAN));
+  }
+  virtual ~PreferredSizeLabel() {}
 
-  // Overridden from Label:
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  // Label:
+  virtual gfx::Size GetPreferredSize() const OVERRIDE {
+    return gfx::Size(100, 40);
+  }
 
  private:
   DISALLOW_COPY_AND_ASSIGN(PreferredSizeLabel);
 };
-
-PreferredSizeLabel::PreferredSizeLabel() : Label() {
-  set_border(Border::CreateSolidBorder(2, SK_ColorCYAN));
-}
-
-PreferredSizeLabel::~PreferredSizeLabel() {}
-
-gfx::Size PreferredSizeLabel::GetPreferredSize() { return gfx::Size(100, 40); }
 
 }  // namespace
 
@@ -63,10 +62,12 @@ void LabelExample::CreateExampleView(View* container) {
   label->SetEnabledColor(SK_ColorBLUE);
   container->AddChildView(label);
 
-  label = new Label(ASCIIToUTF16("A Courier-18 label with a shadow."));
-  label->SetFont(gfx::Font("Courier", 18));
-  label->SetShadowColors(SK_ColorGRAY, SK_ColorLTGRAY);
-  label->SetShadowOffset(1, 1);
+  label = new Label(ASCIIToUTF16("A Courier-18 label with shadows."));
+  label->SetFontList(gfx::FontList("Courier, 18px"));
+  gfx::ShadowValues shadows(1, gfx::ShadowValue(gfx::Point(), 1, SK_ColorRED));
+  gfx::ShadowValue shadow(gfx::Point(2, 2), 0, SK_ColorGRAY);
+  shadows.push_back(shadow);
+  label->set_shadows(shadows);
   container->AddChildView(label);
 
   label = new PreferredSizeLabel();
@@ -75,9 +76,19 @@ void LabelExample::CreateExampleView(View* container) {
   container->AddChildView(label);
 
   label = new PreferredSizeLabel();
+  label->SetElideBehavior(gfx::FADE_TAIL);
+  label->SetText(ASCIIToUTF16("Some long labels will fade, rather than elide, "
+      "if the text's width exceeds the label's available width."));
+  container->AddChildView(label);
+
+  label = new PreferredSizeLabel();
   label->SetText(ASCIIToUTF16("A multi-line label will wrap onto subsequent "
       "lines if the text's width exceeds the label's available width."));
   label->SetMultiLine(true);
+  container->AddChildView(label);
+
+  label = new Label(WideToUTF16(L"Password!"));
+  label->SetObscured(true);
   container->AddChildView(label);
 }
 

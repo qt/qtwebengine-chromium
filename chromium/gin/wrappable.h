@@ -27,11 +27,23 @@ GIN_EXPORT void* FromV8Impl(v8::Isolate* isolate,
 // USAGE:
 // // my_class.h
 // class MyClass : Wrappable<MyClass> {
+//  public:
+//   static WrapperInfo kWrapperInfo;
+//
+//   // Optional, only required if non-empty template should be used.
+//   virtual gin::ObjectTemplateBuilder GetObjectTemplateBuilder(
+//       v8::Isolate* isolate);
 //   ...
 // };
 //
 // // my_class.cc
-// INIT_WRAPABLE(MyClass);
+// WrapperInfo MyClass::kWrapperInfo = {kEmbedderNativeGin};
+//
+// gin::ObjectTemplateBuilder MyClass::GetObjectTemplateBuilder(
+//     v8::Isolate* isolate) {
+//   return Wrappable<MyClass>::GetObjectTemplateBuilder(isolate)
+//       .SetValue("foobar", 42);
+// }
 //
 // Subclasses should also typically have private constructors and expose a
 // static Create function that returns a gin::Handle. Forcing creators through
@@ -42,21 +54,24 @@ GIN_EXPORT void* FromV8Impl(v8::Isolate* isolate,
 template<typename T>
 class Wrappable;
 
+class ObjectTemplateBuilder;
 
 // Non-template base class to share code between templates instances.
 class GIN_EXPORT WrappableBase {
  protected:
   WrappableBase();
   virtual ~WrappableBase();
+
+  virtual ObjectTemplateBuilder GetObjectTemplateBuilder(v8::Isolate* isolate);
+
   v8::Handle<v8::Object> GetWrapperImpl(v8::Isolate* isolate,
                                         WrapperInfo* wrapper_info);
-  v8::Handle<v8::Object> CreateWrapper(v8::Isolate* isolate,
-                                       WrapperInfo* wrapper_info);
-  v8::Persistent<v8::Object> wrapper_;  // Weak
 
  private:
   static void WeakCallback(
       const v8::WeakCallbackData<v8::Object, WrappableBase>& data);
+
+  v8::Persistent<v8::Object> wrapper_;  // Weak
 
   DISALLOW_COPY_AND_ASSIGN(WrappableBase);
 };
@@ -84,14 +99,14 @@ class Wrappable : public WrappableBase {
 // This converter handles any subclass of Wrappable.
 template<typename T>
 struct Converter<T*, typename base::enable_if<
-                       base::is_convertible<T*, Wrappable<T>*>::value>::type> {
+                       base::is_convertible<T*, WrappableBase*>::value>::type> {
   static v8::Handle<v8::Value> ToV8(v8::Isolate* isolate, T* val) {
     return val->GetWrapper(isolate);
   }
 
   static bool FromV8(v8::Isolate* isolate, v8::Handle<v8::Value> val, T** out) {
-    *out = static_cast<T*>(internal::FromV8Impl(isolate, val,
-                                                &T::kWrapperInfo));
+    *out = static_cast<T*>(static_cast<WrappableBase*>(
+        internal::FromV8Impl(isolate, val, &T::kWrapperInfo)));
     return *out != NULL;
   }
 };

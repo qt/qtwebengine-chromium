@@ -79,6 +79,12 @@ enum TrailingZerosTruncatingPolicy {
     TruncateTrailingZeros
 };
 
+enum UTF8ConversionMode {
+    LenientUTF8Conversion,
+    StrictUTF8Conversion,
+    StrictUTF8ConversionReplacingUnpairedSurrogatesWithFFFD
+};
+
 template<bool isSpecialCharacter(UChar), typename CharacterType>
 bool isAllSpecialCharacters(const CharacterType*, size_t);
 
@@ -183,14 +189,7 @@ public:
 
     CString ascii() const;
     CString latin1() const;
-
-    typedef enum {
-        LenientConversion,
-        StrictConversion,
-        StrictConversionReplacingUnpairedSurrogatesWithFFFD,
-    } ConversionMode;
-
-    CString utf8(ConversionMode = LenientConversion) const;
+    CString utf8(UTF8ConversionMode = LenientUTF8Conversion) const;
 
     UChar operator[](unsigned index) const
     {
@@ -287,9 +286,10 @@ public:
 
     void append(const String&);
     void append(LChar);
-    void append(char c) { append(static_cast<LChar>(c)); };
+    void append(char c) { append(static_cast<LChar>(c)); }
     void append(UChar);
     void append(const LChar*, unsigned length);
+    void append(const char* charactersToAppend, unsigned length) { append(reinterpret_cast<const LChar*>(charactersToAppend), length); }
     void append(const UChar*, unsigned length);
     void insert(const String&, unsigned pos);
     void insert(const LChar*, unsigned length, unsigned pos);
@@ -383,13 +383,6 @@ public:
     String isolatedCopy() const;
     bool isSafeToSendToAnotherThread() const;
 
-    // Prevent Strings from being implicitly convertable to bool as it will be ambiguous on any platform that
-    // allows implicit conversion to another pointer type (e.g., Mac allows implicit conversion to NSString*).
-    typedef struct ImplicitConversionFromWTFStringToBoolDisallowedA* (String::*UnspecifiedBoolTypeA);
-    typedef struct ImplicitConversionFromWTFStringToBoolDisallowedB* (String::*UnspecifiedBoolTypeB);
-    operator UnspecifiedBoolTypeA() const;
-    operator UnspecifiedBoolTypeB() const;
-
 #if USE(CF)
     String(CFStringRef);
     RetainPtr<CFStringRef> createCFString() const;
@@ -445,6 +438,9 @@ public:
     }
 
 private:
+    typedef struct ImplicitConversionFromWTFStringToBoolDisallowed* (String::*UnspecifiedBoolType);
+    operator UnspecifiedBoolType() const;
+
     template <typename CharacterType>
     void removeInternal(const CharacterType*, unsigned, int);
 
@@ -622,7 +618,7 @@ template<size_t inlineCapacity>
 inline void String::appendTo(Vector<UChar, inlineCapacity>& result, unsigned pos, unsigned len) const
 {
     unsigned numberOfCharactersToCopy = std::min(len, length() - pos);
-    if (numberOfCharactersToCopy <= 0)
+    if (!numberOfCharactersToCopy)
         return;
     result.reserveCapacity(result.size() + numberOfCharactersToCopy);
     if (is8Bit()) {
@@ -639,7 +635,7 @@ template<typename BufferType>
 inline void String::appendTo(BufferType& result, unsigned pos, unsigned len) const
 {
     unsigned numberOfCharactersToCopy = std::min(len, length() - pos);
-    if (numberOfCharactersToCopy <= 0)
+    if (!numberOfCharactersToCopy)
         return;
     if (is8Bit())
         result.append(m_impl->characters8() + pos, numberOfCharactersToCopy);
@@ -651,7 +647,7 @@ template<size_t inlineCapacity>
 inline void String::prependTo(Vector<UChar, inlineCapacity>& result, unsigned pos, unsigned len) const
 {
     unsigned numberOfCharactersToCopy = std::min(len, length() - pos);
-    if (numberOfCharactersToCopy <= 0)
+    if (!numberOfCharactersToCopy)
         return;
     if (is8Bit()) {
         size_t oldSize = result.size();
@@ -669,17 +665,23 @@ template<> struct DefaultHash<String> {
     typedef StringHash Hash;
 };
 
-template <> struct VectorTraits<String> : SimpleClassVectorTraits {
-    static const bool canCompareWithMemcmp = false;
-};
-
 // Shared global empty string.
 WTF_EXPORT const String& emptyString();
 
-}
+#ifndef STRING_HIDE_GLOBALS
+
+WTF_EXPORT extern const String xmlnsWithColon;
+
+#endif // STRING_HIDE_GLOBALS
+
+} // namespace WTF
+
+WTF_ALLOW_MOVE_AND_INIT_WITH_MEM_FUNCTIONS(String);
 
 using WTF::CString;
 using WTF::KeepTrailingZeros;
+using WTF::StrictUTF8Conversion;
+using WTF::StrictUTF8ConversionReplacingUnpairedSurrogatesWithFFFD;
 using WTF::String;
 using WTF::emptyString;
 using WTF::append;
@@ -705,4 +707,4 @@ using WTF::isSpaceOrNewline;
 using WTF::reverseFind;
 
 #include "wtf/text/AtomicString.h"
-#endif
+#endif // WTFString_h

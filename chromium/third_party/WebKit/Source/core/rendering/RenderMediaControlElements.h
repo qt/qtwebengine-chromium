@@ -39,8 +39,7 @@ public:
     RenderTextTrackContainerElement(Element*);
 
 private:
-    virtual void layout();
-    virtual bool supportsPartialLayout() const OVERRIDE { return false; }
+    virtual void layout() OVERRIDE;
 };
 
 

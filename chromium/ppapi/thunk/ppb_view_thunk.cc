@@ -2,16 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// From ppb_view.idl modified Wed Apr 10 14:15:15 2013.
+// From ppb_view.idl modified Wed Jun 11 15:42:26 2014.
 
 #include "ppapi/c/pp_errors.h"
 #include "ppapi/c/ppb_view.h"
 #include "ppapi/shared_impl/tracked_callback.h"
 #include "ppapi/thunk/enter.h"
-#include "ppapi/thunk/ppb_instance_api.h"
+#include "ppapi/thunk/ppapi_thunk_export.h"
 #include "ppapi/thunk/ppb_view_api.h"
-#include "ppapi/thunk/resource_creation_api.h"
-#include "ppapi/thunk/thunk.h"
 
 namespace ppapi {
 namespace thunk {
@@ -80,6 +78,14 @@ float GetCSSScale(PP_Resource resource) {
   return enter.object()->GetCSSScale();
 }
 
+PP_Bool GetScrollOffset(PP_Resource resource, struct PP_Point* offset) {
+  VLOG(4) << "PPB_View::GetScrollOffset()";
+  EnterResource<PPB_View_API> enter(resource, true);
+  if (enter.failed())
+    return PP_FALSE;
+  return enter.object()->GetScrollOffset(offset);
+}
+
 const PPB_View_1_0 g_ppb_view_thunk_1_0 = {
   &IsView,
   &GetRect,
@@ -100,14 +106,30 @@ const PPB_View_1_1 g_ppb_view_thunk_1_1 = {
   &GetCSSScale
 };
 
+const PPB_View_1_2 g_ppb_view_thunk_1_2 = {
+  &IsView,
+  &GetRect,
+  &IsFullscreen,
+  &IsVisible,
+  &IsPageVisible,
+  &GetClipRect,
+  &GetDeviceScale,
+  &GetCSSScale,
+  &GetScrollOffset
+};
+
 }  // namespace
 
-const PPB_View_1_0* GetPPB_View_1_0_Thunk() {
+PPAPI_THUNK_EXPORT const PPB_View_1_0* GetPPB_View_1_0_Thunk() {
   return &g_ppb_view_thunk_1_0;
 }
 
-const PPB_View_1_1* GetPPB_View_1_1_Thunk() {
+PPAPI_THUNK_EXPORT const PPB_View_1_1* GetPPB_View_1_1_Thunk() {
   return &g_ppb_view_thunk_1_1;
+}
+
+PPAPI_THUNK_EXPORT const PPB_View_1_2* GetPPB_View_1_2_Thunk() {
+  return &g_ppb_view_thunk_1_2;
 }
 
 }  // namespace thunk

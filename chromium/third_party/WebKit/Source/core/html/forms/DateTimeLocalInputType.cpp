@@ -31,9 +31,9 @@
 #include "config.h"
 #include "core/html/forms/DateTimeLocalInputType.h"
 
-#include "HTMLNames.h"
-#include "InputTypeNames.h"
 #include "bindings/v8/ExceptionState.h"
+#include "core/HTMLNames.h"
+#include "core/InputTypeNames.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/forms/DateTimeFieldsState.h"
 #include "platform/DateComponents.h"
@@ -50,9 +50,9 @@ static const int dateTimeLocalDefaultStep = 60;
 static const int dateTimeLocalDefaultStepBase = 0;
 static const int dateTimeLocalStepScaleFactor = 1000;
 
-PassRefPtr<InputType> DateTimeLocalInputType::create(HTMLInputElement& element)
+PassRefPtrWillBeRawPtr<InputType> DateTimeLocalInputType::create(HTMLInputElement& element)
 {
-    return adoptRef(new DateTimeLocalInputType(element));
+    return adoptRefWillBeNoop(new DateTimeLocalInputType(element));
 }
 
 void DateTimeLocalInputType::countUsage()
@@ -81,7 +81,7 @@ StepRange DateTimeLocalInputType::createStepRange(AnyStepHandling anyStepHandlin
 {
     DEFINE_STATIC_LOCAL(const StepRange::StepDescription, stepDescription, (dateTimeLocalDefaultStep, dateTimeLocalDefaultStepBase, dateTimeLocalStepScaleFactor, StepRange::ScaledStepValueShouldBeInteger));
 
-    return InputType::createStepRange(anyStepHandling, 0, Decimal::fromDouble(DateComponents::minimumDateTime()), Decimal::fromDouble(DateComponents::maximumDateTime()), stepDescription);
+    return InputType::createStepRange(anyStepHandling, dateTimeLocalDefaultStepBase, Decimal::fromDouble(DateComponents::minimumDateTime()), Decimal::fromDouble(DateComponents::maximumDateTime()), stepDescription);
 }
 
 bool DateTimeLocalInputType::parseToDateComponentsInternal(const String& string, DateComponents* out) const

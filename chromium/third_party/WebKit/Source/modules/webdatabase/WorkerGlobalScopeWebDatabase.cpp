@@ -29,7 +29,6 @@
 
 #include "modules/webdatabase/WorkerGlobalScopeWebDatabase.h"
 
-#include "RuntimeEnabledFeatures.h"
 #include "bindings/v8/ExceptionMessages.h"
 #include "bindings/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
@@ -38,18 +37,19 @@
 #include "modules/webdatabase/DatabaseCallback.h"
 #include "modules/webdatabase/DatabaseManager.h"
 #include "modules/webdatabase/DatabaseSync.h"
+#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/weborigin/SecurityOrigin.h"
 
 namespace WebCore {
 
-PassRefPtr<Database> WorkerGlobalScopeWebDatabase::openDatabase(WorkerGlobalScope* context, const String& name, const String& version, const String& displayName, unsigned long estimatedSize, PassOwnPtr<DatabaseCallback> creationCallback, ExceptionState& exceptionState)
+PassRefPtrWillBeRawPtr<Database> WorkerGlobalScopeWebDatabase::openDatabase(WorkerGlobalScope& context, const String& name, const String& version, const String& displayName, unsigned long estimatedSize, PassOwnPtr<DatabaseCallback> creationCallback, ExceptionState& exceptionState)
 {
     DatabaseManager& dbManager = DatabaseManager::manager();
-    RefPtr<Database> database;
+    RefPtrWillBeRawPtr<Database> database = nullptr;
     DatabaseError error = DatabaseError::None;
-    if (RuntimeEnabledFeatures::databaseEnabled() && context->securityOrigin()->canAccessDatabase()) {
+    if (RuntimeEnabledFeatures::databaseEnabled() && context.securityOrigin()->canAccessDatabase()) {
         String errorMessage;
-        database = dbManager.openDatabase(context, name, version, displayName, estimatedSize, creationCallback, error, errorMessage);
+        database = dbManager.openDatabase(&context, name, version, displayName, estimatedSize, creationCallback, error, errorMessage);
         ASSERT(database || error != DatabaseError::None);
         if (error != DatabaseError::None)
             DatabaseManager::throwExceptionForDatabaseError(error, errorMessage, exceptionState);
@@ -60,14 +60,14 @@ PassRefPtr<Database> WorkerGlobalScopeWebDatabase::openDatabase(WorkerGlobalScop
     return database.release();
 }
 
-PassRefPtr<DatabaseSync> WorkerGlobalScopeWebDatabase::openDatabaseSync(WorkerGlobalScope* context, const String& name, const String& version, const String& displayName, unsigned long estimatedSize, PassOwnPtr<DatabaseCallback> creationCallback, ExceptionState& exceptionState)
+PassRefPtrWillBeRawPtr<DatabaseSync> WorkerGlobalScopeWebDatabase::openDatabaseSync(WorkerGlobalScope& context, const String& name, const String& version, const String& displayName, unsigned long estimatedSize, PassOwnPtr<DatabaseCallback> creationCallback, ExceptionState& exceptionState)
 {
     DatabaseManager& dbManager = DatabaseManager::manager();
-    RefPtr<DatabaseSync> database;
+    RefPtrWillBeRawPtr<DatabaseSync> database = nullptr;
     DatabaseError error =  DatabaseError::None;
-    if (RuntimeEnabledFeatures::databaseEnabled() && context->securityOrigin()->canAccessDatabase()) {
+    if (RuntimeEnabledFeatures::databaseEnabled() && context.securityOrigin()->canAccessDatabase()) {
         String errorMessage;
-        database = dbManager.openDatabaseSync(context, name, version, displayName, estimatedSize, creationCallback, error, errorMessage);
+        database = dbManager.openDatabaseSync(&context, name, version, displayName, estimatedSize, creationCallback, error, errorMessage);
         ASSERT(database || error != DatabaseError::None);
         if (error != DatabaseError::None)
             DatabaseManager::throwExceptionForDatabaseError(error, errorMessage, exceptionState);

@@ -14,6 +14,10 @@ namespace gfx {
 class Display;
 }
 
+namespace ui {
+class KeyEvent;
+}
+
 namespace aura {
 class Window;
 namespace client {
@@ -34,12 +38,6 @@ class AURA_EXPORT CursorClient {
   // Hides the cursor. Mouse events keep being sent even when the cursor is
   // invisible.
   virtual void HideCursor() = 0;
-
-  // Sets the scale of the mouse cursor icon.
-  virtual void SetScale(float scale) = 0;
-
-  // Gets the current scale of the mouse cursor icon.
-  virtual float GetScale() const = 0;
 
   // Sets the type of the mouse cursor icon.
   virtual void SetCursorSet(ui::CursorSetType cursor_set) = 0;
@@ -79,6 +77,9 @@ class AURA_EXPORT CursorClient {
   // Used to add or remove a CursorClientObserver.
   virtual void AddObserver(CursorClientObserver* observer) = 0;
   virtual void RemoveObserver(CursorClientObserver* observer) = 0;
+
+  // Returns true if the mouse cursor should be hidden on |event|.
+  virtual bool ShouldHideCursorOnKeyEvent(const ui::KeyEvent& event) const = 0;
 
  protected:
   virtual ~CursorClient() {}

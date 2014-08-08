@@ -40,8 +40,7 @@ class SocketStreamDispatcherHost
       ResourceContext* resource_context);
 
   // BrowserMessageFilter:
-  virtual bool OnMessageReceived(const IPC::Message& message,
-                                 bool* message_was_ok) OVERRIDE;
+  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 
   // Make this object inactive.
   // Remove all active SocketStreamHost objects.
@@ -76,7 +75,7 @@ class SocketStreamDispatcherHost
 
  private:
   // Message handlers called by OnMessageReceived.
-  void OnConnect(int render_view_id, const GURL& url, int socket_id);
+  void OnConnect(int render_frame_id, const GURL& url, int socket_id);
   void OnSendData(int socket_id, const std::vector<char>& data);
   void OnCloseReq(int socket_id);
 

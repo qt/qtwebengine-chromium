@@ -32,30 +32,35 @@
 
 namespace WebCore {
 
-class NavigatorUserMediaError FINAL : public RefCounted<NavigatorUserMediaError>, public ScriptWrappable {
+class NavigatorUserMediaError FINAL : public RefCountedWillBeGarbageCollectedFinalized<NavigatorUserMediaError>, public ScriptWrappable {
 public:
     enum Name {
         NamePermissionDenied,
         NameConstraintNotSatisfied
     };
 
-    static PassRefPtr<NavigatorUserMediaError> create(Name name, const String& message, const String& constraintName)
+    static PassRefPtrWillBeRawPtr<NavigatorUserMediaError> create(Name, const String& message, const String& constraintName);
+
+    static PassRefPtrWillBeRawPtr<NavigatorUserMediaError> create(const String& name, const String& message, const String& constraintName)
     {
-        return adoptRef(new NavigatorUserMediaError(name, message, constraintName));
+        return adoptRefWillBeNoop(new NavigatorUserMediaError(name, message, constraintName));
     }
 
-    String name() const;
+    String name() const { return m_name; }
     const String& message() const { return m_message; }
     const String& constraintName() const { return m_constraintName; }
 
+    void trace(Visitor*) { }
+
 private:
-    NavigatorUserMediaError(Name name, const String& message, const String& constraintName)
+    NavigatorUserMediaError(const String& name, const String& message, const String& constraintName)
         : m_name(name), m_message(message), m_constraintName(constraintName)
     {
+        ASSERT(!name.isEmpty());
         ScriptWrappable::init(this);
     }
 
-    Name m_name;
+    String m_name;
     String m_message;
     String m_constraintName;
 };

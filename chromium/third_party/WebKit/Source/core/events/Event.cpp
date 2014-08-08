@@ -25,7 +25,8 @@
 
 #include "core/dom/StaticNodeList.h"
 #include "core/events/EventTarget.h"
-#include "core/events/ThreadLocalEventNames.h"
+#include "core/frame/UseCounter.h"
+#include "core/svg/SVGElement.h"
 #include "wtf/CurrentTime.h"
 
 namespace WebCore {
@@ -46,9 +47,8 @@ Event::Event()
     , m_defaultHandled(false)
     , m_cancelBubble(false)
     , m_eventPhase(0)
-    , m_currentTarget(0)
+    , m_currentTarget(nullptr)
     , m_createTime(convertSecondsToDOMTimeStamp(currentTime()))
-    , m_eventPath(this)
 {
     ScriptWrappable::init(this);
 }
@@ -63,9 +63,8 @@ Event::Event(const AtomicString& eventType, bool canBubbleArg, bool cancelableAr
     , m_defaultHandled(false)
     , m_cancelBubble(false)
     , m_eventPhase(0)
-    , m_currentTarget(0)
+    , m_currentTarget(nullptr)
     , m_createTime(convertSecondsToDOMTimeStamp(currentTime()))
-    , m_eventPath(this)
 {
     ScriptWrappable::init(this);
 }
@@ -80,9 +79,8 @@ Event::Event(const AtomicString& eventType, const EventInit& initializer)
     , m_defaultHandled(false)
     , m_cancelBubble(false)
     , m_eventPhase(0)
-    , m_currentTarget(0)
+    , m_currentTarget(nullptr)
     , m_createTime(convertSecondsToDOMTimeStamp(currentTime()))
-    , m_eventPath(this)
 {
     ScriptWrappable::init(this);
 }
@@ -103,6 +101,25 @@ void Event::initEvent(const AtomicString& eventTypeArg, bool canBubbleArg, bool 
     m_type = eventTypeArg;
     m_canBubble = canBubbleArg;
     m_cancelable = cancelableArg;
+}
+
+bool Event::legacyReturnValue(ExecutionContext* executionContext) const
+{
+    bool returnValue = !defaultPrevented();
+    if (returnValue)
+        UseCounter::count(executionContext, UseCounter::EventGetReturnValueTrue);
+    else
+        UseCounter::count(executionContext, UseCounter::EventGetReturnValueFalse);
+    return returnValue;
+}
+
+void Event::setLegacyReturnValue(ExecutionContext* executionContext, bool returnValue)
+{
+    if (returnValue)
+        UseCounter::count(executionContext, UseCounter::EventSetReturnValueTrue);
+    else
+        UseCounter::count(executionContext, UseCounter::EventSetReturnValueFalse);
+    setDefaultPrevented(!returnValue);
 }
 
 const AtomicString& Event::interfaceName() const
@@ -170,7 +187,7 @@ bool Event::isBeforeUnloadEvent() const
     return false;
 }
 
-void Event::setTarget(PassRefPtr<EventTarget> target)
+void Event::setTarget(PassRefPtrWillBeRawPtr<EventTarget> target)
 {
     if (m_target == target)
         return;
@@ -184,7 +201,7 @@ void Event::receivedTarget()
 {
 }
 
-void Event::setUnderlyingEvent(PassRefPtr<Event> ue)
+void Event::setUnderlyingEvent(PassRefPtrWillBeRawPtr<Event> ue)
 {
     // Prohibit creation of a cycle -- just do nothing in that case.
     for (Event* e = ue.get(); e; e = e->underlyingEvent())
@@ -193,19 +210,48 @@ void Event::setUnderlyingEvent(PassRefPtr<Event> ue)
     m_underlyingEvent = ue;
 }
 
-PassRefPtr<NodeList> Event::path() const
+EventPath& Event::ensureEventPath()
+{
+    if (!m_eventPath)
+        m_eventPath = adoptPtrWillBeNoop(new EventPath(this));
+    return *m_eventPath;
+}
+
+PassRefPtrWillBeRawPtr<StaticNodeList> Event::path() const
 {
     if (!m_currentTarget || !m_currentTarget->toNode())
         return StaticNodeList::createEmpty();
     Node* node = m_currentTarget->toNode();
-    size_t eventPathSize = m_eventPath.size();
+    // FIXME: Support SVG Elements.
+    if (node->isSVGElement())
+        return StaticNodeList::createEmpty();
+    size_t eventPathSize = m_eventPath->size();
     for (size_t i = 0; i < eventPathSize; ++i) {
-        if (node == m_eventPath[i].node()) {
-            ASSERT(m_eventPath[i].eventPath());
-            return m_eventPath[i].eventPath();
+        if (node == (*m_eventPath)[i].node()) {
+            return (*m_eventPath)[i].treeScopeEventContext().ensureEventPath(*m_eventPath);
         }
     }
     return StaticNodeList::createEmpty();
+}
+
+EventTarget* Event::currentTarget() const
+{
+    if (!m_currentTarget)
+        return 0;
+    Node* node = m_currentTarget->toNode();
+    if (node && node->isSVGElement()) {
+        if (SVGElement* svgElement = toSVGElement(node)->correspondingElement())
+            return svgElement;
+    }
+    return m_currentTarget;
+}
+
+void Event::trace(Visitor* visitor)
+{
+    visitor->trace(m_currentTarget);
+    visitor->trace(m_target);
+    visitor->trace(m_underlyingEvent);
+    visitor->trace(m_eventPath);
 }
 
 } // namespace WebCore

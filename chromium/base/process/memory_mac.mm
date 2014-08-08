@@ -16,6 +16,7 @@
 #include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/mac/mac_util.h"
+#include "base/mac/mach_logging.h"
 #include "base/scoped_clear_errno.h"
 #include "third_party/apple_apsl/CFBase.h"
 #include "third_party/apple_apsl/malloc.h"
@@ -222,10 +223,12 @@ void DeprotectMallocZone(ChromeMallocZone* default_zone,
                      reinterpret_cast<vm_region_info_t>(&info),
                      &count,
                      &unused);
-  CHECK(result == KERN_SUCCESS);
+  MACH_CHECK(result == KERN_SUCCESS, result) << "mach_vm_region";
 
-  result = mach_port_deallocate(mach_task_self(), unused);
-  CHECK(result == KERN_SUCCESS);
+  // The kernel always returns a null object for VM_REGION_BASIC_INFO_64, but
+  // balance it with a deallocate in case this ever changes. See 10.9.2
+  // xnu-2422.90.20/osfmk/vm/vm_map.c vm_map_region.
+  mach_port_deallocate(mach_task_self(), unused);
 
   // Does the region fully enclose the zone pointers? Possibly unwarranted
   // simplification used: using the size of a full version 8 malloc zone rather
@@ -248,7 +251,7 @@ void DeprotectMallocZone(ChromeMallocZone* default_zone,
                              *reprotection_length,
                              false,
                              info.protection | VM_PROT_WRITE);
-    CHECK(result == KERN_SUCCESS);
+    MACH_CHECK(result == KERN_SUCCESS, result) << "mach_vm_protect";
   }
 }
 
@@ -435,7 +438,7 @@ void oom_killer_new() {
 // === Core Foundation CFAllocators ===
 
 bool CanGetContextForCFAllocator() {
-  return !base::mac::IsOSLaterThanMavericks_DontCallThis();
+  return !base::mac::IsOSLaterThanYosemite_DontCallThis();
 }
 
 CFAllocatorContext* ContextForCFAllocator(CFAllocatorRef allocator) {
@@ -446,7 +449,8 @@ CFAllocatorContext* ContextForCFAllocator(CFAllocatorRef allocator) {
     return &our_allocator->_context;
   } else if (base::mac::IsOSLion() ||
              base::mac::IsOSMountainLion() ||
-             base::mac::IsOSMavericks()) {
+             base::mac::IsOSMavericks() ||
+             base::mac::IsOSYosemite()) {
     ChromeCFAllocatorLions* our_allocator =
         const_cast<ChromeCFAllocatorLions*>(
             reinterpret_cast<const ChromeCFAllocatorLions*>(allocator));
@@ -502,26 +506,42 @@ id oom_killer_allocWithZone(id self, SEL _cmd, NSZone* zone)
 
 }  // namespace
 
-void* UncheckedMalloc(size_t size) {
+bool UncheckedMalloc(size_t size, void** result) {
   if (g_old_malloc) {
 #if ARCH_CPU_32_BITS
     ScopedClearErrno clear_errno;
     ThreadLocalBooleanAutoReset flag(g_unchecked_alloc.Pointer(), true);
 #endif  // ARCH_CPU_32_BITS
-    return g_old_malloc(malloc_default_zone(), size);
+    *result = g_old_malloc(malloc_default_zone(), size);
+  } else {
+    *result = malloc(size);
   }
-  return malloc(size);
+
+  return *result != NULL;
 }
 
-void* UncheckedCalloc(size_t num_items, size_t size) {
+bool UncheckedCalloc(size_t num_items, size_t size, void** result) {
   if (g_old_calloc) {
 #if ARCH_CPU_32_BITS
     ScopedClearErrno clear_errno;
     ThreadLocalBooleanAutoReset flag(g_unchecked_alloc.Pointer(), true);
 #endif  // ARCH_CPU_32_BITS
-    return g_old_calloc(malloc_default_zone(), num_items, size);
+    *result = g_old_calloc(malloc_default_zone(), num_items, size);
+  } else {
+    *result = calloc(num_items, size);
   }
-  return calloc(num_items, size);
+
+  return *result != NULL;
+}
+
+void* UncheckedMalloc(size_t size) {
+  void* address;
+  return UncheckedMalloc(size, &address) ? address : NULL;
+}
+
+void* UncheckedCalloc(size_t num_items, size_t size) {
+  void* address;
+  return UncheckedCalloc(num_items, size, &address) ? address : NULL;
 }
 
 void EnableTerminationOnOutOfMemory() {
@@ -630,7 +650,7 @@ void EnableTerminationOnOutOfMemory() {
                                            default_reprotection_length,
                                            false,
                                            default_reprotection_value);
-    CHECK(result == KERN_SUCCESS);
+    MACH_CHECK(result == KERN_SUCCESS, result) << "mach_vm_protect";
   }
 
   if (purgeable_reprotection_start) {
@@ -639,7 +659,7 @@ void EnableTerminationOnOutOfMemory() {
                                            purgeable_reprotection_length,
                                            false,
                                            purgeable_reprotection_value);
-    CHECK(result == KERN_SUCCESS);
+    MACH_CHECK(result == KERN_SUCCESS, result) << "mach_vm_protect";
   }
 #endif
 
@@ -703,8 +723,9 @@ void EnableTerminationOnOutOfMemory() {
         << "Failed to get kCFAllocatorMallocZone allocation function.";
     context->allocate = oom_killer_cfallocator_malloc_zone;
   } else {
-    NSLog(@"Internals of CFAllocator not known; out-of-memory failures via "
-        "CFAllocator will not result in termination. http://crbug.com/45650");
+    DLOG(WARNING) << "Internals of CFAllocator not known; out-of-memory "
+                     "failures via CFAllocator will not result in termination. "
+                     "http://crbug.com/45650";
   }
 #endif
 

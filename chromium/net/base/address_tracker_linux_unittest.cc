@@ -11,33 +11,67 @@
 #include "base/bind.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
+#ifndef IFA_F_HOMEADDRESS
+#define IFA_F_HOMEADDRESS 0x10
+#endif
+
 namespace net {
 namespace internal {
+namespace {
+
+const int kTestInterfaceTun = 123;
+
+const char* TestGetInterfaceName(int interface_index) {
+  if (interface_index == kTestInterfaceTun)
+    return "tun0";
+  return "eth0";
+}
+
+}  // namespace
 
 typedef std::vector<char> Buffer;
 
-void Noop() {}
-
 class AddressTrackerLinuxTest : public testing::Test {
  protected:
-  AddressTrackerLinuxTest() : tracker_(base::Bind(&Noop), base::Bind(&Noop)) {}
+  AddressTrackerLinuxTest()
+      : tracker_(base::Bind(&base::DoNothing),
+                 base::Bind(&base::DoNothing),
+                 base::Bind(&base::DoNothing)),
+        original_get_interface_name_(tracker_.get_interface_name_) {
+    tracker_.get_interface_name_ = TestGetInterfaceName;
+  }
 
   bool HandleAddressMessage(const Buffer& buf) {
+    Buffer writable_buf = buf;
     bool address_changed = false;
     bool link_changed = false;
-    tracker_.HandleMessage(&buf[0], buf.size(),
-                           &address_changed, &link_changed);
+    bool tunnel_changed = false;
+    tracker_.HandleMessage(&writable_buf[0], buf.size(),
+                           &address_changed, &link_changed, &tunnel_changed);
     EXPECT_FALSE(link_changed);
     return address_changed;
   }
 
   bool HandleLinkMessage(const Buffer& buf) {
+    Buffer writable_buf = buf;
     bool address_changed = false;
     bool link_changed = false;
-    tracker_.HandleMessage(&buf[0], buf.size(),
-                           &address_changed, &link_changed);
+    bool tunnel_changed = false;
+    tracker_.HandleMessage(&writable_buf[0], buf.size(),
+                           &address_changed, &link_changed, &tunnel_changed);
     EXPECT_FALSE(address_changed);
     return link_changed;
+  }
+
+  bool HandleTunnelMessage(const Buffer& buf) {
+    Buffer writable_buf = buf;
+    bool address_changed = false;
+    bool link_changed = false;
+    bool tunnel_changed = false;
+    tracker_.HandleMessage(&writable_buf[0], buf.size(),
+                           &address_changed, &link_changed, &tunnel_changed);
+    EXPECT_FALSE(address_changed);
+    return tunnel_changed;
   }
 
   AddressTrackerLinux::AddressMap GetAddressMap() {
@@ -49,6 +83,7 @@ class AddressTrackerLinuxTest : public testing::Test {
   }
 
   AddressTrackerLinux tracker_;
+  AddressTrackerLinux::GetInterfaceNameFunction original_get_interface_name_;
 };
 
 namespace {
@@ -103,12 +138,15 @@ class NetlinkMessage {
   Buffer buffer_;
 };
 
-void MakeAddrMessage(uint16 type,
-                     uint8 flags,
-                     uint8 family,
-                     const IPAddressNumber& address,
-                     const IPAddressNumber& local,
-                     Buffer* output) {
+#define INFINITY_LIFE_TIME 0xFFFFFFFF
+
+void MakeAddrMessageWithCacheInfo(uint16 type,
+                                  uint8 flags,
+                                  uint8 family,
+                                  const IPAddressNumber& address,
+                                  const IPAddressNumber& local,
+                                  uint32 preferred_lifetime,
+                                  Buffer* output) {
   NetlinkMessage nlmsg(type);
   struct ifaddrmsg msg = {};
   msg.ifa_family = family;
@@ -118,7 +156,21 @@ void MakeAddrMessage(uint16 type,
     nlmsg.AddAttribute(IFA_ADDRESS, &address[0], address.size());
   if (local.size())
     nlmsg.AddAttribute(IFA_LOCAL, &local[0], local.size());
+  struct ifa_cacheinfo cache_info = {};
+  cache_info.ifa_prefered = preferred_lifetime;
+  cache_info.ifa_valid = INFINITY_LIFE_TIME;
+  nlmsg.AddAttribute(IFA_CACHEINFO, &cache_info, sizeof(cache_info));
   nlmsg.AppendTo(output);
+}
+
+void MakeAddrMessage(uint16 type,
+                     uint8 flags,
+                     uint8 family,
+                     const IPAddressNumber& address,
+                     const IPAddressNumber& local,
+                     Buffer* output) {
+  MakeAddrMessageWithCacheInfo(type, flags, family, address, local,
+                               INFINITY_LIFE_TIME, output);
 }
 
 void MakeLinkMessage(uint16 type, uint32 flags, uint32 index, Buffer* output) {
@@ -258,6 +310,46 @@ TEST_F(AddressTrackerLinuxTest, DeleteAddress) {
   EXPECT_EQ(0u, map.size());
 }
 
+TEST_F(AddressTrackerLinuxTest, DeprecatedLifetime) {
+  const IPAddressNumber kEmpty;
+  const IPAddressNumber kAddr3(kAddress3, kAddress3 + arraysize(kAddress3));
+
+  Buffer buffer;
+  MakeAddrMessage(RTM_NEWADDR, 0, AF_INET6, kEmpty, kAddr3, &buffer);
+  EXPECT_TRUE(HandleAddressMessage(buffer));
+  AddressTrackerLinux::AddressMap map = GetAddressMap();
+  EXPECT_EQ(1u, map.size());
+  EXPECT_EQ(1u, map.count(kAddr3));
+  EXPECT_EQ(0, map[kAddr3].ifa_flags);
+
+  // Verify 0 preferred lifetime implies deprecated.
+  buffer.clear();
+  MakeAddrMessageWithCacheInfo(RTM_NEWADDR, 0, AF_INET6, kEmpty, kAddr3, 0,
+                               &buffer);
+  EXPECT_TRUE(HandleAddressMessage(buffer));
+  map = GetAddressMap();
+  EXPECT_EQ(1u, map.size());
+  EXPECT_EQ(IFA_F_DEPRECATED, map[kAddr3].ifa_flags);
+
+  // Verify properly flagged message doesn't imply change.
+  buffer.clear();
+  MakeAddrMessageWithCacheInfo(RTM_NEWADDR, IFA_F_DEPRECATED, AF_INET6, kEmpty,
+                               kAddr3, 0, &buffer);
+  EXPECT_FALSE(HandleAddressMessage(buffer));
+  map = GetAddressMap();
+  EXPECT_EQ(1u, map.size());
+  EXPECT_EQ(IFA_F_DEPRECATED, map[kAddr3].ifa_flags);
+
+  // Verify implied deprecated doesn't imply change.
+  buffer.clear();
+  MakeAddrMessageWithCacheInfo(RTM_NEWADDR, 0, AF_INET6, kEmpty, kAddr3, 0,
+                               &buffer);
+  EXPECT_FALSE(HandleAddressMessage(buffer));
+  map = GetAddressMap();
+  EXPECT_EQ(1u, map.size());
+  EXPECT_EQ(IFA_F_DEPRECATED, map[kAddr3].ifa_flags);
+}
+
 TEST_F(AddressTrackerLinuxTest, IgnoredMessage) {
   const IPAddressNumber kEmpty;
   const IPAddressNumber kAddr0(kAddress0, kAddress0 + arraysize(kAddress0));
@@ -356,6 +448,53 @@ TEST_F(AddressTrackerLinuxTest, RemoveInterface) {
   MakeLinkMessage(RTM_DELLINK, IFF_UP | IFF_LOWER_UP | IFF_RUNNING, 0, &buffer);
   EXPECT_TRUE(HandleLinkMessage(buffer));
   EXPECT_TRUE(GetOnlineLinks()->empty());
+}
+
+TEST_F(AddressTrackerLinuxTest, TunnelInterface) {
+  Buffer buffer;
+
+  // Ignores without "tun" prefixed name.
+  MakeLinkMessage(RTM_NEWLINK,
+                  IFF_UP | IFF_LOWER_UP | IFF_RUNNING | IFF_POINTOPOINT,
+                  0, &buffer);
+  EXPECT_FALSE(HandleTunnelMessage(buffer));
+
+  // Verify success.
+  MakeLinkMessage(RTM_NEWLINK,
+                  IFF_UP | IFF_LOWER_UP | IFF_RUNNING | IFF_POINTOPOINT,
+                  kTestInterfaceTun, &buffer);
+  EXPECT_TRUE(HandleTunnelMessage(buffer));
+
+  // Ignores redundant enables.
+  MakeLinkMessage(RTM_NEWLINK,
+                  IFF_UP | IFF_LOWER_UP | IFF_RUNNING | IFF_POINTOPOINT,
+                  kTestInterfaceTun, &buffer);
+  EXPECT_FALSE(HandleTunnelMessage(buffer));
+
+  // Ignores deleting without "tun" prefixed name.
+  MakeLinkMessage(RTM_DELLINK,
+                  IFF_UP | IFF_LOWER_UP | IFF_RUNNING | IFF_POINTOPOINT,
+                  0, &buffer);
+  EXPECT_FALSE(HandleTunnelMessage(buffer));
+
+  // Verify successful deletion
+  MakeLinkMessage(RTM_DELLINK,
+                  IFF_UP | IFF_LOWER_UP | IFF_RUNNING | IFF_POINTOPOINT,
+                  kTestInterfaceTun, &buffer);
+  EXPECT_TRUE(HandleTunnelMessage(buffer));
+
+  // Ignores redundant deletions.
+  MakeLinkMessage(RTM_DELLINK,
+                  IFF_UP | IFF_LOWER_UP | IFF_RUNNING | IFF_POINTOPOINT,
+                  kTestInterfaceTun, &buffer);
+  EXPECT_FALSE(HandleTunnelMessage(buffer));
+}
+
+// Check AddressTrackerLinux::get_interface_name_ original implementation
+// doesn't crash or return NULL.
+TEST_F(AddressTrackerLinuxTest, GetInterfaceName) {
+  for (int i = 0; i < 10; i++)
+    EXPECT_NE((const char*)NULL, original_get_interface_name_(i));
 }
 
 }  // namespace

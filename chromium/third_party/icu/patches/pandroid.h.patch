@@ -1,5 +1,5 @@
---- a/public/common/unicode/pandroid.h
-+++ b/public/common/unicode/pandroid.h
+--- a/source/common/unicode/pandroid.h
++++ b/source/common/unicode/pandroid.h
 @@ -272,7 +272,7 @@
  /*===========================================================================*/
  

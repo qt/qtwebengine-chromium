@@ -27,6 +27,7 @@
 #ifndef SQLiteDatabase_h
 #define SQLiteDatabase_h
 
+#include "platform/heap/Handle.h"
 #include "wtf/Threading.h"
 #include "wtf/ThreadingPrimitives.h"
 #include "wtf/text/CString.h"
@@ -45,15 +46,14 @@ class SQLiteStatement;
 class SQLiteTransaction;
 
 extern const int SQLResultDone;
-extern const int SQLResultError;
 extern const int SQLResultOk;
 extern const int SQLResultRow;
-extern const int SQLResultSchema;
 extern const int SQLResultFull;
 extern const int SQLResultInterrupt;
 extern const int SQLResultConstraint;
 
 class SQLiteDatabase {
+    DISALLOW_ALLOCATION();
     WTF_MAKE_NONCOPYABLE(SQLiteDatabase);
     friend class SQLiteTransaction;
 public:
@@ -69,10 +69,8 @@ public:
     void updateLastChangesCount();
 
     bool executeCommand(const String&);
-    bool returnsAtLeastOneResult(const String&);
 
     bool tableExists(const String&);
-    void clearAllTables();
     int runVacuumCommand();
     int runIncrementalVacuumCommand();
 
@@ -82,27 +80,16 @@ public:
     int lastChanges();
 
     void setBusyTimeout(int ms);
-    void setBusyHandler(int(*)(void*, int));
 
-    void setFullsync(bool);
-
-    // Gets/sets the maximum size in bytes
+    // Sets the maximum size in bytes
     // Depending on per-database attributes, the size will only be settable in units that are the page size of the database, which is established at creation
     // These chunks will never be anything other than 512, 1024, 2048, 4096, 8192, 16384, or 32768 bytes in size.
     // setMaximumSize() will round the size down to the next smallest chunk if the passed size doesn't align.
-    int64_t maximumSize();
     void setMaximumSize(int64_t);
 
     // Gets the number of unused bytes in the database file.
     int64_t freeSpaceSize();
     int64_t totalSize();
-
-    // The SQLite SYNCHRONOUS pragma can be either FULL, NORMAL, or OFF
-    // FULL - Any writing calls to the DB block until the data is actually on the disk surface
-    // NORMAL - SQLite pauses at some critical moments when writing, but much less than FULL
-    // OFF - Calls return immediately after the data has been passed to disk
-    enum SynchronousPragma { SyncOff = 0, SyncNormal = 1, SyncFull = 2 };
-    void setSynchronous(SynchronousPragma);
 
     int lastError();
     const char* lastErrorMsg();
@@ -112,7 +99,7 @@ public:
         return m_db;
     }
 
-    void setAuthorizer(PassRefPtr<DatabaseAuthorizer>);
+    void setAuthorizer(DatabaseAuthorizer*);
 
     Mutex& databaseMutex() { return m_lockingMutex; }
     bool isAutoCommitOn() const;
@@ -129,13 +116,7 @@ public:
     enum AutoVacuumPragma { AutoVacuumNone = 0, AutoVacuumFull = 1, AutoVacuumIncremental = 2 };
     bool turnOnIncrementalAutoVacuum();
 
-    // Set this flag to allow access from multiple threads.  Not all multi-threaded accesses are safe!
-    // See http://www.sqlite.org/cvstrac/wiki?p=MultiThreading for more info.
-#ifndef NDEBUG
-    void disableThreadingChecks();
-#else
-    void disableThreadingChecks() {}
-#endif
+    void trace(Visitor*);
 
 private:
     static int authorizerFunction(void*, int, const char*, const char*, const char*, const char*);
@@ -151,7 +132,7 @@ private:
     bool m_sharable;
 
     Mutex m_authorizerLock;
-    RefPtr<DatabaseAuthorizer> m_authorizer;
+    RefPtrWillBeMember<DatabaseAuthorizer> m_authorizer;
 
     Mutex m_lockingMutex;
     ThreadIdentifier m_openingThread;

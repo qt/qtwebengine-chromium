@@ -47,8 +47,6 @@ class MultiThreadedProxyResolver::Executor
   // and resolver.
   void Destroy();
 
-  void PurgeMemory();
-
   // Returns the outstanding job, or NULL.
   Job* outstanding_job() const { return outstanding_job_.get(); }
 
@@ -316,11 +314,8 @@ MultiThreadedProxyResolver::Executor::Executor(
   DCHECK(coordinator);
   DCHECK(resolver);
   // Start up the thread.
-  // Note that it is safe to pass a temporary C-String to Thread(), as it will
-  // make a copy.
-  std::string thread_name =
-      base::StringPrintf("PAC thread #%d", thread_number);
-  thread_.reset(new base::Thread(thread_name.c_str()));
+  thread_.reset(new base::Thread(base::StringPrintf("PAC thread #%d",
+                                                    thread_number)));
   CHECK(thread_->Start());
 }
 
@@ -368,13 +363,6 @@ void MultiThreadedProxyResolver::Executor::Destroy() {
   // Null some stuff as a precaution.
   coordinator_ = NULL;
   outstanding_job_ = NULL;
-}
-
-void MultiThreadedProxyResolver::Executor::PurgeMemory() {
-  thread_->message_loop()->PostTask(
-      FROM_HERE,
-      base::Bind(&ProxyResolver::PurgeMemory,
-                 base::Unretained(resolver_.get())));
 }
 
 MultiThreadedProxyResolver::Executor::~Executor() {
@@ -481,15 +469,6 @@ void MultiThreadedProxyResolver::CancelSetPacScript() {
   current_script_data_ = NULL;
 
   ReleaseAllExecutors();
-}
-
-void MultiThreadedProxyResolver::PurgeMemory() {
-  DCHECK(CalledOnValidThread());
-  for (ExecutorList::iterator it = executors_.begin();
-       it != executors_.end(); ++it) {
-    Executor* executor = it->get();
-    executor->PurgeMemory();
-  }
 }
 
 int MultiThreadedProxyResolver::SetPacScript(

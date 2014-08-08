@@ -1,5 +1,5 @@
 .help-window-outer {
-    position: absolute;
+    position: absolute !important;
     top: 0;
     left: 0;
     right: 0;
@@ -8,7 +8,6 @@
 }
 
 .help-window-main {
-    max-height: 100%;
     color: white;
     background-color: rgba(17, 17, 17, 0.85);
     display: -webkit-flex;
@@ -40,6 +39,7 @@
     overflow-x: hidden;
     margin: 8px;
     padding: 0 4px;
+    flex: auto;
 }
 
 .help-footnote {
@@ -58,18 +58,18 @@
 }
 
 .help-window-main .help-container-wrapper::-webkit-scrollbar-thumb:vertical {
-    background: -webkit-gradient(linear, left top, right top, from(rgb(128, 128, 128)), to(rgb(128, 128, 128)), color-stop(40%, rgb(96, 96, 96)));
+    background: linear-gradient(to right, rgb(128, 128, 128), rgb(96, 96, 96) 40%, rgb(128, 128, 128));
     border-radius: 5px;
     min-height: 20px;
 }
 
 .help-window-main .help-container-wrapper::-webkit-scrollbar-thumb:vertical:hover,
 .help-window-main .help-container-wrapper::-webkit-scrollbar-thumb:vertical:active {
-    background: -webkit-gradient(linear, left top, right top, from(rgb(176, 176, 176)), to(rgb(176, 176, 176)), color-stop(40%, rgb(144, 144, 144)));
+    background: linear-gradient(to right, rgb(176, 176, 176), rgb(144, 144, 144) 40%, rgb(176, 176, 176));
 }
 
 .help-window-main .help-container-wrapper::-webkit-scrollbar-track:vertical {
-    background: -webkit-gradient(linear, left top, right top, from(rgb(10, 10, 10)), to(rgb(32, 32, 32)), color-stop(25%, rgb(32, 32, 32)));
+    background: linear-gradient(to right, rgb(10, 10, 10), rgb(32, 32, 32) 25%, rgb(32, 32, 32));
     border-radius: 5px;
 }
 
@@ -105,6 +105,10 @@ body.platform-mac .help-container {
     -webkit-column-width: 361px;
 }
 
+.help-no-columns {
+    -webkit-column-width: initial !important;
+}
+
 .help-block {
     display: block;
     padding-bottom: 9px;
@@ -127,6 +131,7 @@ body.platform-mac .settings-tab .help-block {
 
 .settings-tab .field-error-message {
     color: DarkRed;
+    height: 0px; // Avoid changing element height when content is set.
 }
 
 .help-line {
@@ -192,6 +197,7 @@ body.platform-mac .help-key {
 
 .settings-tab label {
     padding-right: 4px;
+    display: inline-flex;
 }
 
 #general-tab-content .help-block fieldset legend {
@@ -224,22 +230,7 @@ body.platform-mac .help-key {
 }
 
 .help-content input[type=checkbox] {
-    height: 13px;
-    width: 13px;
-    margin: 0 7px 0 0;
-    vertical-align: -2px;
-}
-
-body.platform-mac .help-content input[type=checkbox] {
-    vertical-align: -1px;
-}
-
-.help-content input[type=radio] {
-    vertical-align: -2px;
-}
-
-body.platform-mac .help-content input[type=radio] {
-    vertical-align: -1px;
+    margin-right: 7px;
 }
 
 .help-content select {
@@ -359,6 +350,7 @@ body.platform-mac .help-content input[type=radio] {
 
 .settings-tab-container {
     flex: auto;
+    overflow: hidden;
 }
 
 .settings-tab-container header {
@@ -456,7 +448,7 @@ body.platform-mac .help-content input[type=radio] {
 }
 
 .settings-tab-text-button {
-    background-image: -webkit-linear-gradient(hsl(0, 0%, 93%), hsl(0, 0%, 93%) 38%, hsl(0, 0%, 87%));
+    background-image: linear-gradient(hsl(0, 0%, 93%), hsl(0, 0%, 93%) 38%, hsl(0, 0%, 87%));
     border: 1px solid hsla(0, 0%, 0%, 0.25);
     border-radius: 2px;
     box-shadow: 0 1px 0 hsla(0, 0%, 0%, 0.08), inset 0 1px 2px hsla(0, 100%, 100%, 0.75);
@@ -470,21 +462,21 @@ body.platform-mac .help-content input[type=radio] {
 }
 
 .settings-tab-text-button:disabled {
-    background-image: -webkit-linear-gradient(#f1f1f1, #f1f1f1 38%, #e6e6e6);
+    background-image: linear-gradient(#f1f1f1, #f1f1f1 38%, #e6e6e6);
     border-color: rgba(80, 80, 80, 0.2);
     box-shadow: 0 1px 0 rgba(80, 80, 80, 0.08), inset 0 1px 2px rgba(255, 255, 255, 0.75);
     color: #aaa;
 }
 
 .settings-tab-text-button:not(:disabled):hover {
-    background-image: -webkit-linear-gradient(hsl(0, 0%, 94%), hsl(0, 0%, 94%) 38%, hsl(0, 0%, 88%));
+    background-image: linear-gradient(hsl(0, 0%, 94%), hsl(0, 0%, 94%) 38%, hsl(0, 0%, 88%));
     border-color: hsla(0, 0%, 0%, 0.3);
     box-shadow: 0 1px 0 hsla(0, 0%, 0%, 0.12), inset 0 1px 2px hsla(0, 100%, 100%, 0.95);
     color: hsl(0, 0%, 0%);
 }
 
 .settings-tab-text-button:not(:disabled):active {
-    background-image: -webkit-linear-gradient(hsl(0, 0%, 91%), hsl(0, 0%, 91%) 38%, hsl(0, 0%, 84%));
+    background-image: linear-gradient(hsl(0, 0%, 91%), hsl(0, 0%, 91%) 38%, hsl(0, 0%, 84%));
     box-shadow: none;
     text-shadow: none;
 }
@@ -653,7 +645,6 @@ body.platform-mac .help-content input[type=radio] {
     flex: 1 1 auto;
     padding: 0 17px;
     overflow: auto;
-    margin-bottom: 10px;
 }
 
 .settings-dialog .block-header {
@@ -683,4 +674,20 @@ body.platform-mac .help-content input[type=radio] {
 .help-field-note {
     opacity: 0.6;
     padding-left: 19px;
+}
+
+.edit-file-system-dialog .section {
+    min-width: 400px;
+}
+
+.settings-experiment-hidden {
+    display: none;
+}
+
+.settings-experiment-hidden label {
+    background-color: #ddd;
+}
+
+.settings-developer-mode .settings-experiment-hidden {
+    display: block;
 }

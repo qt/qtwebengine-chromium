@@ -107,9 +107,10 @@ BASE_EXPORT bool ShouldCrashOnProcessDetach();
 // process is aborted.
 BASE_EXPORT void SetAbortBehaviorForCrashReporting();
 
-// A touch enabled device by this definition is something that has
-// integrated multi-touch ready to use and has Windows version > Windows7.
-BASE_EXPORT bool IsTouchEnabledDevice();
+// A tablet is a device that is touch enabled and also is being used
+// "like a tablet".  This is used primarily for metrics in order to gain some
+// insight into how users use Chrome.
+BASE_EXPORT bool IsTabletDevice();
 
 // Get the size of a struct up to and including the specified member.
 // This is necessary to set compatible struct sizes for different versions
@@ -126,12 +127,12 @@ BASE_EXPORT bool DisplayVirtualKeyboard();
 // above. Returns true on success.
 BASE_EXPORT bool DismissVirtualKeyboard();
 
-// Returns monitor info after correcting rcWorkArea based on metro version.
-// see bug #247430 for more details.
-BASE_EXPORT BOOL GetMonitorInfoWrapper(HMONITOR monitor, MONITORINFO* mi);
-
 // Returns true if the machine is enrolled to a domain.
 BASE_EXPORT bool IsEnrolledToDomain();
+
+// Used by tests to mock any wanted state. Call with |state| set to true to
+// simulate being in a domain and false otherwise.
+BASE_EXPORT void SetDomainStateForTesting(bool state);
 
 }  // namespace win
 }  // namespace base

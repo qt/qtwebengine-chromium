@@ -31,11 +31,17 @@
 #ifndef Microtask_h
 #define Microtask_h
 
+#include "public/platform/WebThread.h"
+#include "wtf/Functional.h"
+#include "wtf/PassOwnPtr.h"
+
 namespace WebCore {
 
 class Microtask {
 public:
     static void performCheckpoint();
+    static void enqueueMicrotask(PassOwnPtr<blink::WebThread::Task>);
+    static void enqueueMicrotask(const Closure&);
 
 private:
     explicit Microtask();

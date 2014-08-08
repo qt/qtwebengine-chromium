@@ -23,17 +23,19 @@
 [
     Custom=Wrap,
 ] interface SVGElement : Element {
-    [TreatNullAs=NullString] attribute DOMString xmlbase;
-    readonly attribute SVGSVGElement ownerSVGElement;
-    readonly attribute SVGElement viewportElement;
+    attribute DOMString xmlbase;
+    [TypeChecking=Interface|Nullable] readonly attribute SVGSVGElement? ownerSVGElement;
+    [TypeChecking=Interface|Nullable] readonly attribute SVGElement? viewportElement;
 
     attribute DOMString xmllang;
     attribute DOMString xmlspace;
 
-    readonly attribute SVGAnimatedString className;
+    [MeasureAs=SVGClassName] readonly attribute SVGAnimatedString className;
+
     readonly attribute CSSStyleDeclaration style;
 
-    CSSValue getPresentationAttribute([Default=Undefined] optional DOMString name);
+    [CustomElementCallbacks] attribute long tabIndex;
 };
 
 SVGElement implements GlobalEventHandlers;
+

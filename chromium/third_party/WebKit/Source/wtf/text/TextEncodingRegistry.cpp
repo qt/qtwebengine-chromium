@@ -38,6 +38,7 @@
 #include "wtf/text/CString.h"
 #include "wtf/text/TextCodecICU.h"
 #include "wtf/text/TextCodecLatin1.h"
+#include "wtf/text/TextCodecReplacement.h"
 #include "wtf/text/TextCodecUTF16.h"
 #include "wtf/text/TextCodecUTF8.h"
 #include "wtf/text/TextCodecUserDefined.h"
@@ -115,8 +116,6 @@ static Mutex& encodingRegistryMutex()
 static TextEncodingNameMap* textEncodingNameMap;
 static TextCodecMap* textCodecMap;
 static bool didExtendTextCodecMaps;
-static HashSet<const char*>* japaneseEncodings;
-static HashSet<const char*>* nonBackslashEncodings;
 
 static const char textEncodingNameBlacklist[][6] = { "UTF-7" };
 
@@ -192,9 +191,7 @@ static void pruneBlacklistedCodecs()
                 names.append(it->key);
         }
 
-        size_t length = names.size();
-        for (size_t j = 0; j < length; ++j)
-            textEncodingNameMap->remove(names[j]);
+        textEncodingNameMap->removeAll(names);
 
         textCodecMap->remove(atomicName);
     }
@@ -222,66 +219,25 @@ static void buildBaseTextCodecMaps()
     TextCodecUserDefined::registerCodecs(addToTextCodecMap);
 }
 
-static void addEncodingName(HashSet<const char*>* set, const char* name)
+bool isReplacementEncoding(const char* alias)
 {
-    // We must not use atomicCanonicalTextEncodingName() because this function is called in it.
-    const char* atomicName = textEncodingNameMap->get(name);
-    if (atomicName)
-        set->add(atomicName);
+    return alias && !strcasecmp(alias, "replacement");
 }
 
-static void buildQuirksSets()
+bool isReplacementEncoding(const String& alias)
 {
-    // FIXME: Having isJapaneseEncoding() and shouldShowBackslashAsCurrencySymbolIn()
-    // and initializing the sets for them in TextEncodingRegistry.cpp look strange.
-
-    ASSERT(!japaneseEncodings);
-    ASSERT(!nonBackslashEncodings);
-
-    japaneseEncodings = new HashSet<const char*>;
-    addEncodingName(japaneseEncodings, "EUC-JP");
-    addEncodingName(japaneseEncodings, "ISO-2022-JP");
-    addEncodingName(japaneseEncodings, "ISO-2022-JP-1");
-    addEncodingName(japaneseEncodings, "ISO-2022-JP-2");
-    addEncodingName(japaneseEncodings, "ISO-2022-JP-3");
-    addEncodingName(japaneseEncodings, "JIS_C6226-1978");
-    addEncodingName(japaneseEncodings, "JIS_X0201");
-    addEncodingName(japaneseEncodings, "JIS_X0208-1983");
-    addEncodingName(japaneseEncodings, "JIS_X0208-1990");
-    addEncodingName(japaneseEncodings, "JIS_X0212-1990");
-    addEncodingName(japaneseEncodings, "Shift_JIS");
-    addEncodingName(japaneseEncodings, "Shift_JIS_X0213-2000");
-    addEncodingName(japaneseEncodings, "cp932");
-    addEncodingName(japaneseEncodings, "x-mac-japanese");
-
-    nonBackslashEncodings = new HashSet<const char*>;
-    // The text encodings below treat backslash as a currency symbol for IE compatibility.
-    // See http://blogs.msdn.com/michkap/archive/2005/09/17/469941.aspx for more information.
-    addEncodingName(nonBackslashEncodings, "x-mac-japanese");
-    addEncodingName(nonBackslashEncodings, "ISO-2022-JP");
-    addEncodingName(nonBackslashEncodings, "EUC-JP");
-    // Shift_JIS_X0213-2000 is not the same encoding as Shift_JIS on Mac. We need to register both of them.
-    addEncodingName(nonBackslashEncodings, "Shift_JIS");
-    addEncodingName(nonBackslashEncodings, "Shift_JIS_X0213-2000");
-}
-
-bool isJapaneseEncoding(const char* canonicalEncodingName)
-{
-    return canonicalEncodingName && japaneseEncodings && japaneseEncodings->contains(canonicalEncodingName);
-}
-
-bool shouldShowBackslashAsCurrencySymbolIn(const char* canonicalEncodingName)
-{
-    return canonicalEncodingName && nonBackslashEncodings && nonBackslashEncodings->contains(canonicalEncodingName);
+    return alias == "replacement";
 }
 
 static void extendTextCodecMaps()
 {
+    TextCodecReplacement::registerEncodingNames(addToTextEncodingNameMap);
+    TextCodecReplacement::registerCodecs(addToTextCodecMap);
+
     TextCodecICU::registerEncodingNames(addToTextEncodingNameMap);
     TextCodecICU::registerCodecs(addToTextCodecMap);
 
     pruneBlacklistedCodecs();
-    buildQuirksSets();
 }
 
 PassOwnPtr<TextCodec> newTextCodec(const TextEncoding& encoding)

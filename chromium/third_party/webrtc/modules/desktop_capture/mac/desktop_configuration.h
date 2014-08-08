@@ -52,10 +52,18 @@ struct MacDesktopConfiguration {
   // increase as you move up the screen) or Carbon-style "top-down" coordinates.
   static MacDesktopConfiguration GetCurrent(Origin origin);
 
-  // Bounds of the desktop in Density-Independent Pixels (DIPs).
+  // Returns true if the given desktop configuration equals this one.
+  bool Equals(const MacDesktopConfiguration& other);
+
+  // Returns the pointer to the display configuration with the specified id.
+  const MacDisplayConfiguration* FindDisplayConfigurationById(
+      CGDirectDisplayID id);
+
+  // Bounds of the desktop excluding monitors with DPI settings different from
+  // the main monitor. In Density-Independent Pixels (DIPs).
   DesktopRect bounds;
 
-  // Bounds of the desktop in physical pixels.
+  // Same as bounds, but expressed in physical pixels.
   DesktopRect pixel_bounds;
 
   // Scale factor from DIPs to physical pixels.

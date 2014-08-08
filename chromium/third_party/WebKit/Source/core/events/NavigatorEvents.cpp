@@ -31,15 +31,15 @@
 #include "config.h"
 #include "core/events/NavigatorEvents.h"
 
-#include "core/frame/Frame.h"
+#include "core/frame/LocalFrame.h"
 #include "core/frame/Navigator.h"
 #include "core/frame/Settings.h"
 
 namespace WebCore {
 
-long NavigatorEvents::maxTouchPoints(Navigator* navigator)
+long NavigatorEvents::maxTouchPoints(Navigator& navigator)
 {
-    Frame* frame = navigator->frame();
+    LocalFrame* frame = navigator.frame();
     if (!frame)
         return 0;
     if (Settings* settings = frame->settings())

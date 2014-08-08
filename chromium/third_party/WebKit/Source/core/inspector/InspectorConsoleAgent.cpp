@@ -28,9 +28,8 @@
 
 #include "bindings/v8/ScriptCallStackFactory.h"
 #include "bindings/v8/ScriptController.h"
-#include "bindings/v8/ScriptObject.h"
 #include "bindings/v8/ScriptProfiler.h"
-#include "core/frame/Frame.h"
+#include "core/frame/LocalFrame.h"
 #include "core/inspector/ConsoleMessage.h"
 #include "core/inspector/InjectedScriptHost.h"
 #include "core/inspector/InjectedScriptManager.h"
@@ -62,16 +61,14 @@ static const char consoleMessagesEnabled[] = "consoleMessagesEnabled";
 
 int InspectorConsoleAgent::s_enabledAgentCount = 0;
 
-InspectorConsoleAgent::InspectorConsoleAgent(InstrumentingAgents* instrumentingAgents, InspectorTimelineAgent* timelineAgent, InspectorCompositeState* state, InjectedScriptManager* injectedScriptManager)
-    : InspectorBaseAgent<InspectorConsoleAgent>("Console", instrumentingAgents, state)
+InspectorConsoleAgent::InspectorConsoleAgent(InspectorTimelineAgent* timelineAgent, InjectedScriptManager* injectedScriptManager)
+    : InspectorBaseAgent<InspectorConsoleAgent>("Console")
     , m_timelineAgent(timelineAgent)
     , m_injectedScriptManager(injectedScriptManager)
     , m_frontend(0)
-    , m_previousMessage(0)
     , m_expiredConsoleMessageCount(0)
     , m_enabled(false)
 {
-    m_instrumentingAgents->setInspectorConsoleAgent(this);
 }
 
 InspectorConsoleAgent::~InspectorConsoleAgent()
@@ -80,6 +77,11 @@ InspectorConsoleAgent::~InspectorConsoleAgent()
     m_instrumentingAgents = 0;
     m_state = 0;
     m_injectedScriptManager = 0;
+}
+
+void InspectorConsoleAgent::init()
+{
+    m_instrumentingAgents->setInspectorConsoleAgent(this);
 }
 
 void InspectorConsoleAgent::enable(ErrorString*)
@@ -118,7 +120,6 @@ void InspectorConsoleAgent::clearMessages(ErrorString*)
 {
     m_consoleMessages.clear();
     m_expiredConsoleMessageCount = 0;
-    m_previousMessage = 0;
     m_injectedScriptManager->releaseObjectGroup("console");
     if (m_frontend && m_enabled)
         m_frontend->messagesCleared();
@@ -153,7 +154,7 @@ void InspectorConsoleAgent::clearFrontend()
     disable(&errorString);
 }
 
-void InspectorConsoleAgent::addMessageToConsole(MessageSource source, MessageType type, MessageLevel level, const String& message, PassRefPtr<ScriptCallStack> callStack, unsigned long requestIdentifier)
+void InspectorConsoleAgent::addMessageToConsole(MessageSource source, MessageType type, MessageLevel level, const String& message, PassRefPtrWillBeRawPtr<ScriptCallStack> callStack, unsigned long requestIdentifier)
 {
     if (type == ClearMessageType) {
         ErrorString error;
@@ -163,17 +164,17 @@ void InspectorConsoleAgent::addMessageToConsole(MessageSource source, MessageTyp
     addConsoleMessage(adoptPtr(new ConsoleMessage(!isWorkerAgent(), source, type, level, message, callStack, requestIdentifier)));
 }
 
-void InspectorConsoleAgent::addMessageToConsole(MessageSource source, MessageType type, MessageLevel level, const String& message, ScriptState* state, PassRefPtr<ScriptArguments> arguments, unsigned long requestIdentifier)
+void InspectorConsoleAgent::addMessageToConsole(MessageSource source, MessageType type, MessageLevel level, const String& message, ScriptState* scriptState, PassRefPtrWillBeRawPtr<ScriptArguments> arguments, unsigned long requestIdentifier)
 {
     if (type == ClearMessageType) {
         ErrorString error;
         clearMessages(&error);
     }
 
-    addConsoleMessage(adoptPtr(new ConsoleMessage(!isWorkerAgent(), source, type, level, message, arguments, state, requestIdentifier)));
+    addConsoleMessage(adoptPtr(new ConsoleMessage(!isWorkerAgent(), source, type, level, message, arguments, scriptState, requestIdentifier)));
 }
 
-void InspectorConsoleAgent::addMessageToConsole(MessageSource source, MessageType type, MessageLevel level, const String& message, const String& scriptId, unsigned lineNumber, unsigned columnNumber, ScriptState* state, unsigned long requestIdentifier)
+void InspectorConsoleAgent::addMessageToConsole(MessageSource source, MessageType type, MessageLevel level, const String& message, const String& scriptId, unsigned lineNumber, unsigned columnNumber, ScriptState* scriptState, unsigned long requestIdentifier)
 {
     if (type == ClearMessageType) {
         ErrorString error;
@@ -181,7 +182,7 @@ void InspectorConsoleAgent::addMessageToConsole(MessageSource source, MessageTyp
     }
 
     bool canGenerateCallStack = !isWorkerAgent() && m_frontend;
-    addConsoleMessage(adoptPtr(new ConsoleMessage(canGenerateCallStack, source, type, level, message, scriptId, lineNumber, columnNumber, state, requestIdentifier)));
+    addConsoleMessage(adoptPtr(new ConsoleMessage(canGenerateCallStack, source, type, level, message, scriptId, lineNumber, columnNumber, scriptState, requestIdentifier)));
 }
 
 Vector<unsigned> InspectorConsoleAgent::consoleMessageArgumentCounts()
@@ -202,7 +203,7 @@ void InspectorConsoleAgent::consoleTime(ExecutionContext*, const String& title)
     m_times.add(title, monotonicallyIncreasingTime());
 }
 
-void InspectorConsoleAgent::consoleTimeEnd(ExecutionContext*, const String& title, ScriptState* state)
+void InspectorConsoleAgent::consoleTimeEnd(ExecutionContext*, const String& title, ScriptState* scriptState)
 {
     // Follow Firebug's behavior of requiring a title that is not null or
     // undefined for timing functions
@@ -218,22 +219,22 @@ void InspectorConsoleAgent::consoleTimeEnd(ExecutionContext*, const String& titl
 
     double elapsed = monotonicallyIncreasingTime() - startTime;
     String message = title + String::format(": %.3fms", elapsed * 1000);
-    addMessageToConsole(ConsoleAPIMessageSource, LogMessageType, DebugMessageLevel, message, String(), 0, 0, state);
+    addMessageToConsole(ConsoleAPIMessageSource, LogMessageType, DebugMessageLevel, message, String(), 0, 0, scriptState);
 }
 
-void InspectorConsoleAgent::consoleTimeline(ExecutionContext* context, const String& title, ScriptState* state)
+void InspectorConsoleAgent::consoleTimeline(ExecutionContext* context, const String& title, ScriptState* scriptState)
 {
-    m_timelineAgent->consoleTimeline(context, title, state);
+    m_timelineAgent->consoleTimeline(context, title, scriptState);
 }
 
-void InspectorConsoleAgent::consoleTimelineEnd(ExecutionContext* context, const String& title, ScriptState* state)
+void InspectorConsoleAgent::consoleTimelineEnd(ExecutionContext* context, const String& title, ScriptState* scriptState)
 {
-    m_timelineAgent->consoleTimelineEnd(context, title, state);
+    m_timelineAgent->consoleTimelineEnd(context, title, scriptState);
 }
 
-void InspectorConsoleAgent::consoleCount(ScriptState* state, PassRefPtr<ScriptArguments> arguments)
+void InspectorConsoleAgent::consoleCount(ScriptState* scriptState, PassRefPtrWillBeRawPtr<ScriptArguments> arguments)
 {
-    RefPtr<ScriptCallStack> callStack(createScriptCallStackForConsole());
+    RefPtrWillBeRawPtr<ScriptCallStack> callStack(createScriptCallStackForConsole(scriptState));
     const ScriptCallFrame& lastCaller = callStack->at(0);
     // Follow Firebug's behavior of counting with null and undefined title in
     // the same bucket as no argument
@@ -243,11 +244,11 @@ void InspectorConsoleAgent::consoleCount(ScriptState* state, PassRefPtr<ScriptAr
                                         : String(title + '@');
 
     HashCountedSet<String>::AddResult result = m_counts.add(identifier);
-    String message = title + ": " + String::number(result.iterator->value);
-    addMessageToConsole(ConsoleAPIMessageSource, LogMessageType, DebugMessageLevel, message, callStack);
+    String message = title + ": " + String::number(result.storedValue->value);
+    addMessageToConsole(ConsoleAPIMessageSource, LogMessageType, DebugMessageLevel, message, callStack.get());
 }
 
-void InspectorConsoleAgent::frameWindowDiscarded(DOMWindow* window)
+void InspectorConsoleAgent::frameWindowDiscarded(LocalDOMWindow* window)
 {
     size_t messageCount = m_consoleMessages.size();
     for (size_t i = 0; i < messageCount; ++i)
@@ -255,22 +256,22 @@ void InspectorConsoleAgent::frameWindowDiscarded(DOMWindow* window)
     m_injectedScriptManager->discardInjectedScriptsFor(window);
 }
 
-void InspectorConsoleAgent::didCommitLoad(Frame* frame, DocumentLoader* loader)
+void InspectorConsoleAgent::didCommitLoad(LocalFrame* frame, DocumentLoader* loader)
 {
     if (loader->frame() != frame->page()->mainFrame())
         return;
     reset();
 }
 
-void InspectorConsoleAgent::didFinishXHRLoading(XMLHttpRequest*, ThreadableLoaderClient*, unsigned long requestIdentifier, ScriptString, const String& url, const String& sendURL, unsigned sendLineNumber)
+void InspectorConsoleAgent::didFinishXHRLoading(XMLHttpRequest*, ThreadableLoaderClient*, unsigned long requestIdentifier, ScriptString, const AtomicString& method, const String& url, const String& sendURL, unsigned sendLineNumber)
 {
     if (m_frontend && m_state->getBoolean(ConsoleAgentState::monitoringXHR)) {
-        String message = "XHR finished loading: \"" + url + "\".";
+        String message = "XHR finished loading: " + method + " \"" + url + "\".";
         addMessageToConsole(NetworkMessageSource, LogMessageType, DebugMessageLevel, message, sendURL, sendLineNumber, 0, 0, requestIdentifier);
     }
 }
 
-void InspectorConsoleAgent::didReceiveResourceResponse(Frame*, unsigned long requestIdentifier, DocumentLoader* loader, const ResourceResponse& response, ResourceLoader* resourceLoader)
+void InspectorConsoleAgent::didReceiveResourceResponse(LocalFrame*, unsigned long requestIdentifier, DocumentLoader* loader, const ResourceResponse& response, ResourceLoader* resourceLoader)
 {
     if (!loader)
         return;
@@ -280,7 +281,7 @@ void InspectorConsoleAgent::didReceiveResourceResponse(Frame*, unsigned long req
     }
 }
 
-void InspectorConsoleAgent::didFailLoading(unsigned long requestIdentifier, DocumentLoader*, const ResourceError& error)
+void InspectorConsoleAgent::didFailLoading(unsigned long requestIdentifier, const ResourceError& error)
 {
     if (error.isCancellation()) // Report failures only.
         return;
@@ -298,27 +299,14 @@ void InspectorConsoleAgent::setMonitoringXHREnabled(ErrorString*, bool enabled)
     m_state->setBoolean(ConsoleAgentState::monitoringXHR, enabled);
 }
 
-static bool isGroupMessage(MessageType type)
-{
-    return type == StartGroupMessageType
-        || type ==  StartGroupCollapsedMessageType
-        || type == EndGroupMessageType;
-}
-
 void InspectorConsoleAgent::addConsoleMessage(PassOwnPtr<ConsoleMessage> consoleMessage)
 {
     ASSERT_ARG(consoleMessage, consoleMessage);
 
-    if (m_previousMessage && !isGroupMessage(m_previousMessage->type()) && m_previousMessage->isEqual(consoleMessage.get())) {
-        m_previousMessage->incrementCount();
-        if (m_frontend && m_enabled)
-            m_previousMessage->updateRepeatCountInConsole(m_frontend);
-    } else {
-        m_previousMessage = consoleMessage.get();
-        m_consoleMessages.append(consoleMessage);
-        if (m_frontend && m_enabled)
-            m_previousMessage->addToFrontend(m_frontend, m_injectedScriptManager, true);
-    }
+    if (m_frontend && m_enabled)
+        consoleMessage->addToFrontend(m_frontend, m_injectedScriptManager, true);
+
+    m_consoleMessages.append(consoleMessage);
 
     if (!m_frontend && m_consoleMessages.size() >= maximumConsoleMessages) {
         m_expiredConsoleMessageCount += expireConsoleMessagesStep;
@@ -326,10 +314,10 @@ void InspectorConsoleAgent::addConsoleMessage(PassOwnPtr<ConsoleMessage> console
     }
 }
 
-class InspectableHeapObject : public InjectedScriptHost::InspectableObject {
+class InspectableHeapObject FINAL : public InjectedScriptHost::InspectableObject {
 public:
     explicit InspectableHeapObject(int heapObjectId) : m_heapObjectId(heapObjectId) { }
-    virtual ScriptValue get(ScriptState*)
+    virtual ScriptValue get(ScriptState*) OVERRIDE
     {
         return ScriptProfiler::objectByHeapObjectId(m_heapObjectId);
     }

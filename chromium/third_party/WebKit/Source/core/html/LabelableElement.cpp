@@ -39,12 +39,17 @@ LabelableElement::~LabelableElement()
 {
 }
 
-PassRefPtr<NodeList> LabelableElement::labels()
+PassRefPtrWillBeRawPtr<LabelsNodeList> LabelableElement::labels()
 {
     if (!supportLabels())
-        return 0;
+        return nullptr;
 
-    return ensureRareData().ensureNodeLists().addCacheWithAtomicName<LabelsNodeList>(this, LabelsNodeListType, starAtom);
+    return ensureRareData().ensureNodeLists().addCache<LabelsNodeList>(*this, LabelsNodeListType);
+}
+
+void LabelableElement::trace(Visitor* visitor)
+{
+    HTMLElement::trace(visitor);
 }
 
 } // namespace Webcore

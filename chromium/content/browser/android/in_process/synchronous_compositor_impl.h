@@ -10,13 +10,12 @@
 #include "base/memory/scoped_ptr.h"
 #include "cc/input/layer_scroll_offset_delegate.h"
 #include "content/browser/android/in_process/synchronous_compositor_output_surface.h"
-#include "content/port/common/input_event_ack_state.h"
+#include "content/common/input/input_event_ack_state.h"
 #include "content/public/browser/android/synchronous_compositor.h"
 #include "content/public/browser/web_contents_user_data.h"
 
 namespace cc {
 class InputHandler;
-struct DidOverscrollParams;
 }
 
 namespace blink {
@@ -25,6 +24,7 @@ class WebInputEvent;
 
 namespace content {
 class InputHandlerManager;
+struct DidOverscrollParams;
 
 // The purpose of this class is to act as the intermediary between the various
 // components that make up the 'synchronous compositor mode' implementation and
@@ -48,16 +48,17 @@ class SynchronousCompositorImpl
   // SynchronousCompositor
   virtual void SetClient(SynchronousCompositorClient* compositor_client)
       OVERRIDE;
-  virtual bool InitializeHwDraw(
-      scoped_refptr<gfx::GLSurface> surface) OVERRIDE;
+  virtual bool InitializeHwDraw() OVERRIDE;
   virtual void ReleaseHwDraw() OVERRIDE;
-  virtual bool DemandDrawHw(
+  virtual gpu::GLInProcessContext* GetShareContext() OVERRIDE;
+  virtual scoped_ptr<cc::CompositorFrame> DemandDrawHw(
       gfx::Size surface_size,
       const gfx::Transform& transform,
       gfx::Rect viewport,
-      gfx::Rect clip,
-      bool stencil_enabled) OVERRIDE;
+      gfx::Rect clip) OVERRIDE;
   virtual bool DemandDrawSw(SkCanvas* canvas) OVERRIDE;
+  virtual void ReturnResources(
+      const cc::CompositorFrameAck& frame_ack) OVERRIDE;
   virtual void SetMemoryPolicy(
       const SynchronousCompositorMemoryPolicy& policy) OVERRIDE;
   virtual void DidChangeRootLayerScrollOffset() OVERRIDE;
@@ -68,34 +69,36 @@ class SynchronousCompositorImpl
   virtual void DidDestroySynchronousOutputSurface(
       SynchronousCompositorOutputSurface* output_surface) OVERRIDE;
   virtual void SetContinuousInvalidate(bool enable) OVERRIDE;
-  virtual void UpdateFrameMetaData(
-      const cc::CompositorFrameMetadata& frame_info) OVERRIDE;
   virtual void DidActivatePendingTree() OVERRIDE;
 
   // LayerScrollOffsetDelegate
-  virtual void SetMaxScrollOffset(gfx::Vector2dF max_scroll_offset) OVERRIDE;
-  virtual void SetTotalScrollOffset(gfx::Vector2dF new_value) OVERRIDE;
   virtual gfx::Vector2dF GetTotalScrollOffset() OVERRIDE;
+  virtual void UpdateRootLayerState(const gfx::Vector2dF& total_scroll_offset,
+                                    const gfx::Vector2dF& max_scroll_offset,
+                                    const gfx::SizeF& scrollable_size,
+                                    float page_scale_factor,
+                                    float min_page_scale_factor,
+                                    float max_page_scale_factor) OVERRIDE;
   virtual bool IsExternalFlingActive() const OVERRIDE;
-  virtual void SetTotalPageScaleFactor(float page_scale_factor) OVERRIDE;
-  virtual void SetScrollableSize(gfx::SizeF scrollable_size) OVERRIDE;
 
   void SetInputHandler(cc::InputHandler* input_handler);
-  void DidOverscroll(const cc::DidOverscrollParams& params);
+  void DidOverscroll(const DidOverscrollParams& params);
+  void DidStopFlinging();
 
  private:
   explicit SynchronousCompositorImpl(WebContents* contents);
   virtual ~SynchronousCompositorImpl();
   friend class WebContentsUserData<SynchronousCompositorImpl>;
 
-  void DidCreateSynchronousOutputSurface(
-      SynchronousCompositorOutputSurface* output_surface);
+  void UpdateFrameMetaData(const cc::CompositorFrameMetadata& frame_info);
   bool CalledOnValidThread() const;
 
   SynchronousCompositorClient* compositor_client_;
   SynchronousCompositorOutputSurface* output_surface_;
   WebContents* contents_;
   cc::InputHandler* input_handler_;
+
+  base::WeakPtrFactory<SynchronousCompositorImpl> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(SynchronousCompositorImpl);
 };

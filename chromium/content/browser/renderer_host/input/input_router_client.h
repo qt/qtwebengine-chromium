@@ -5,9 +5,9 @@
 #ifndef CONTENT_BROWSER_RENDERER_HOST_INPUT_INPUT_ROUTER_CLIENT_H_
 #define CONTENT_BROWSER_RENDERER_HOST_INPUT_INPUT_ROUTER_CLIENT_H_
 
+#include "content/browser/renderer_host/event_with_latency_info.h"
 #include "content/common/content_export.h"
-#include "content/port/browser/event_with_latency_info.h"
-#include "content/port/common/input_event_ack_state.h"
+#include "content/common/input/input_event_ack_state.h"
 #include "content/public/browser/native_web_keyboard_event.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
 
@@ -17,7 +17,7 @@ struct LatencyInfo;
 
 namespace content {
 
-class OverscrollController;
+struct DidOverscrollParams;
 
 class CONTENT_EXPORT InputRouterClient {
  public:
@@ -42,11 +42,6 @@ class CONTENT_EXPORT InputRouterClient {
   // Called when the renderer notifies that it has touch event handlers.
   virtual void OnHasTouchEventHandlers(bool has_handlers) = 0;
 
-  // Returns an optional OverscrollController.  If non-NULL, the controller
-  // will be fed events and event acks by the router, when appropriate.
-  // TODO(jdduke): crbug.com/306133 - Move the controller to the router.
-  virtual OverscrollController* GetOverscrollController() const = 0;
-
   // Certain router implementations require periodic flushing of queued events.
   // When this method is called, the client should ensure a timely call, either
   // synchronous or asynchronous, of |Flush| on the InputRouter.
@@ -56,6 +51,10 @@ class CONTENT_EXPORT InputRouterClient {
   // of the call to Flush.  The call will typically be asynchronous with
   // respect to the call to |Flush| on the InputRouter.
   virtual void DidFlush() = 0;
+
+  // Called when the router has received an overscroll notification from the
+  // renderer.
+  virtual void DidOverscroll(const DidOverscrollParams& params) = 0;
 };
 
 } // namespace content

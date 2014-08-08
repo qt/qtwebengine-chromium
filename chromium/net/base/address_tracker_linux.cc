@@ -6,11 +6,11 @@
 
 #include <errno.h>
 #include <linux/if.h>
+#include <sys/ioctl.h>
 
 #include "base/logging.h"
 #include "base/posix/eintr_wrapper.h"
 #include "base/threading/thread_restrictions.h"
-#include "net/base/network_change_notifier_linux.h"
 
 namespace net {
 namespace internal {
@@ -18,7 +18,12 @@ namespace internal {
 namespace {
 
 // Retrieves address from NETLINK address message.
-bool GetAddress(const struct nlmsghdr* header, IPAddressNumber* out) {
+// Sets |really_deprecated| for IPv6 addresses with preferred lifetimes of 0.
+bool GetAddress(const struct nlmsghdr* header,
+                IPAddressNumber* out,
+                bool* really_deprecated) {
+  if (really_deprecated)
+    *really_deprecated = false;
   const struct ifaddrmsg* msg =
       reinterpret_cast<struct ifaddrmsg*>(NLMSG_DATA(header));
   size_t address_length = 0;
@@ -53,6 +58,12 @@ bool GetAddress(const struct nlmsghdr* header, IPAddressNumber* out) {
         DCHECK_GE(RTA_PAYLOAD(attr), address_length);
         local = reinterpret_cast<unsigned char*>(RTA_DATA(attr));
         break;
+      case IFA_CACHEINFO: {
+        const struct ifa_cacheinfo *cache_info =
+            reinterpret_cast<const struct ifa_cacheinfo*>(RTA_DATA(attr));
+        if (really_deprecated)
+          *really_deprecated = (cache_info->ifa_prefered == 0);
+      } break;
       default:
         break;
     }
@@ -65,12 +76,34 @@ bool GetAddress(const struct nlmsghdr* header, IPAddressNumber* out) {
   return true;
 }
 
+// Returns the name for the interface with interface index |interface_index|.
+// The return value points to a function-scoped static so it may be changed by
+// subsequent calls. This function could be replaced with if_indextoname() but
+// net/if.h cannot be mixed with linux/if.h so we'll stick with exclusively
+// talking to the kernel and not the C library.
+const char* GetInterfaceName(int interface_index) {
+  int ioctl_socket = socket(AF_INET, SOCK_DGRAM, 0);
+  if (ioctl_socket < 0)
+    return "";
+  static struct ifreq ifr;
+  memset(&ifr, 0, sizeof(ifr));
+  ifr.ifr_ifindex = interface_index;
+  int rv = ioctl(ioctl_socket, SIOCGIFNAME, &ifr);
+  close(ioctl_socket);
+  if (rv != 0)
+    return "";
+  return ifr.ifr_name;
+}
+
 }  // namespace
 
 AddressTrackerLinux::AddressTrackerLinux(const base::Closure& address_callback,
-                                         const base::Closure& link_callback)
-    : address_callback_(address_callback),
+                                         const base::Closure& link_callback,
+                                         const base::Closure& tunnel_callback)
+    : get_interface_name_(GetInterfaceName),
+      address_callback_(address_callback),
       link_callback_(link_callback),
+      tunnel_callback_(tunnel_callback),
       netlink_fd_(-1),
       is_offline_(true),
       is_offline_initialized_(false),
@@ -135,7 +168,8 @@ void AddressTrackerLinux::Init() {
   // Sending another request without first reading responses results in EBUSY.
   bool address_changed;
   bool link_changed;
-  ReadMessages(&address_changed, &link_changed);
+  bool tunnel_changed;
+  ReadMessages(&address_changed, &link_changed, &tunnel_changed);
 
   // Request dump of link state
   request.header.nlmsg_type = RTM_GETLINK;
@@ -150,7 +184,7 @@ void AddressTrackerLinux::Init() {
   }
 
   // Consume pending message to populate links_online_, but don't notify.
-  ReadMessages(&address_changed, &link_changed);
+  ReadMessages(&address_changed, &link_changed, &tunnel_changed);
   {
     base::AutoLock lock(is_offline_lock_);
     is_offline_initialized_ = true;
@@ -195,9 +229,11 @@ AddressTrackerLinux::GetCurrentConnectionType() {
 }
 
 void AddressTrackerLinux::ReadMessages(bool* address_changed,
-                                       bool* link_changed) {
+                                       bool* link_changed,
+                                       bool* tunnel_changed) {
   *address_changed = false;
   *link_changed = false;
+  *tunnel_changed = false;
   char buffer[4096];
   bool first_loop = true;
   for (;;) {
@@ -217,7 +253,7 @@ void AddressTrackerLinux::ReadMessages(bool* address_changed,
       PLOG(ERROR) << "Failed to recv from netlink socket";
       return;
     }
-    HandleMessage(buffer, rv, address_changed, link_changed);
+    HandleMessage(buffer, rv, address_changed, link_changed, tunnel_changed);
   };
   if (*link_changed) {
     base::AutoLock lock(is_offline_lock_);
@@ -225,13 +261,13 @@ void AddressTrackerLinux::ReadMessages(bool* address_changed,
   }
 }
 
-void AddressTrackerLinux::HandleMessage(const char* buffer,
+void AddressTrackerLinux::HandleMessage(char* buffer,
                                         size_t length,
                                         bool* address_changed,
-                                        bool* link_changed) {
+                                        bool* link_changed,
+                                        bool* tunnel_changed) {
   DCHECK(buffer);
-  for (const struct nlmsghdr* header =
-          reinterpret_cast<const struct nlmsghdr*>(buffer);
+  for (struct nlmsghdr* header = reinterpret_cast<struct nlmsghdr*>(buffer);
        NLMSG_OK(header, length);
        header = NLMSG_NEXT(header, length)) {
     switch (header->nlmsg_type) {
@@ -244,10 +280,20 @@ void AddressTrackerLinux::HandleMessage(const char* buffer,
       } return;
       case RTM_NEWADDR: {
         IPAddressNumber address;
-        if (GetAddress(header, &address)) {
+        bool really_deprecated;
+        if (GetAddress(header, &address, &really_deprecated)) {
           base::AutoLock lock(address_map_lock_);
-          const struct ifaddrmsg* msg =
+          struct ifaddrmsg* msg =
               reinterpret_cast<struct ifaddrmsg*>(NLMSG_DATA(header));
+          // Routers may frequently (every few seconds) output the IPv6 ULA
+          // prefix which can cause the linux kernel to frequently output two
+          // back-to-back messages, one without the deprecated flag and one with
+          // the deprecated flag but both with preferred lifetimes of 0. Avoid
+          // interpretting this as an actual change by canonicalizing the two
+          // messages by setting the deprecated flag based on the preferred
+          // lifetime also.  http://crbug.com/268042
+          if (really_deprecated)
+            msg->ifa_flags |= IFA_F_DEPRECATED;
           // Only indicate change if the address is new or ifaddrmsg info has
           // changed.
           AddressMap::iterator it = address_map_.find(address);
@@ -262,7 +308,7 @@ void AddressTrackerLinux::HandleMessage(const char* buffer,
       } break;
       case RTM_DELADDR: {
         IPAddressNumber address;
-        if (GetAddress(header, &address)) {
+        if (GetAddress(header, &address, NULL)) {
           base::AutoLock lock(address_map_lock_);
           if (address_map_.erase(address))
             *address_changed = true;
@@ -273,18 +319,27 @@ void AddressTrackerLinux::HandleMessage(const char* buffer,
             reinterpret_cast<struct ifinfomsg*>(NLMSG_DATA(header));
         if (!(msg->ifi_flags & IFF_LOOPBACK) && (msg->ifi_flags & IFF_UP) &&
             (msg->ifi_flags & IFF_LOWER_UP) && (msg->ifi_flags & IFF_RUNNING)) {
-          if (online_links_.insert(msg->ifi_index).second)
+          if (online_links_.insert(msg->ifi_index).second) {
             *link_changed = true;
+            if (IsTunnelInterface(msg))
+              *tunnel_changed = true;
+          }
         } else {
-          if (online_links_.erase(msg->ifi_index))
+          if (online_links_.erase(msg->ifi_index)) {
             *link_changed = true;
+            if (IsTunnelInterface(msg))
+              *tunnel_changed = true;
+          }
         }
       } break;
       case RTM_DELLINK: {
         const struct ifinfomsg* msg =
             reinterpret_cast<struct ifinfomsg*>(NLMSG_DATA(header));
-        if (online_links_.erase(msg->ifi_index))
+        if (online_links_.erase(msg->ifi_index)) {
           *link_changed = true;
+          if (IsTunnelInterface(msg))
+            *tunnel_changed = true;
+        }
       } break;
       default:
         break;
@@ -296,11 +351,14 @@ void AddressTrackerLinux::OnFileCanReadWithoutBlocking(int fd) {
   DCHECK_EQ(netlink_fd_, fd);
   bool address_changed;
   bool link_changed;
-  ReadMessages(&address_changed, &link_changed);
+  bool tunnel_changed;
+  ReadMessages(&address_changed, &link_changed, &tunnel_changed);
   if (address_changed)
     address_callback_.Run();
   if (link_changed)
     link_callback_.Run();
+  if (tunnel_changed)
+    tunnel_callback_.Run();
 }
 
 void AddressTrackerLinux::OnFileCanWriteWithoutBlocking(int /* fd */) {}
@@ -309,6 +367,11 @@ void AddressTrackerLinux::CloseSocket() {
   if (netlink_fd_ >= 0 && IGNORE_EINTR(close(netlink_fd_)) < 0)
     PLOG(ERROR) << "Could not close NETLINK socket.";
   netlink_fd_ = -1;
+}
+
+bool AddressTrackerLinux::IsTunnelInterface(const struct ifinfomsg* msg) const {
+  // Linux kernel drivers/net/tun.c uses "tun" name prefix.
+  return strncmp(get_interface_name_(msg->ifi_index), "tun", 3) == 0;
 }
 
 }  // namespace internal

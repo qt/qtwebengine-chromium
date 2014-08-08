@@ -61,7 +61,7 @@ bool WriteRules(const RuleMap& rules, const base::FilePath& outfile) {
 
   data.append("%%\n");
 
-  int written = file_util::WriteFile(outfile,
+  int written = base::WriteFile(outfile,
                                      data.data(),
                                      static_cast<int>(data.size()));
 
@@ -115,7 +115,7 @@ NormalizeResult NormalizeRule(std::string* domain, Rule* rule) {
   url.append(*domain);
   GURL gurl(url);
   const std::string& spec = gurl.possibly_invalid_spec();
-  url_parse::Component host = gurl.parsed_for_possibly_invalid_spec().host;
+  url::Component host = gurl.parsed_for_possibly_invalid_spec().host;
   if (host.len < 0) {
     LOG(ERROR) << "Ignoring rule that couldn't be normalized: " << *domain;
     return kError;

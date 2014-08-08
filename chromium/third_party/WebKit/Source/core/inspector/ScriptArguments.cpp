@@ -31,14 +31,17 @@
 #include "config.h"
 #include "core/inspector/ScriptArguments.h"
 
-#include "bindings/v8/ScriptScope.h"
 #include "bindings/v8/ScriptValue.h"
+#include "bindings/v8/V8Binding.h"
+#include <v8.h>
 
 namespace WebCore {
 
-PassRefPtr<ScriptArguments> ScriptArguments::create(ScriptState* scriptState, Vector<ScriptValue>& arguments)
+DEFINE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(ScriptArguments)
+
+PassRefPtrWillBeRawPtr<ScriptArguments> ScriptArguments::create(ScriptState* scriptState, Vector<ScriptValue>& arguments)
 {
-    return adoptRef(new ScriptArguments(scriptState, arguments));
+    return adoptRefWillBeNoop(new ScriptArguments(scriptState, arguments));
 }
 
 ScriptArguments::ScriptArguments(ScriptState* scriptState, Vector<ScriptValue>& arguments)
@@ -47,19 +50,10 @@ ScriptArguments::ScriptArguments(ScriptState* scriptState, Vector<ScriptValue>& 
     m_arguments.swap(arguments);
 }
 
-ScriptArguments::~ScriptArguments()
-{
-}
-
 const ScriptValue &ScriptArguments::argumentAt(size_t index) const
 {
     ASSERT(m_arguments.size() > index);
     return m_arguments[index];
-}
-
-ScriptState* ScriptArguments::globalState() const
-{
-    return m_scriptState.get();
 }
 
 bool ScriptArguments::getFirstArgumentAsString(String& result, bool checkForNullOrUndefined)
@@ -68,33 +62,14 @@ bool ScriptArguments::getFirstArgumentAsString(String& result, bool checkForNull
         return false;
 
     const ScriptValue& value = argumentAt(0);
-    ScriptScope scope(m_scriptState.get());
+    ScriptState::Scope scope(m_scriptState.get());
     if (checkForNullOrUndefined && (value.isNull() || value.isUndefined()))
         return false;
 
-    if (!globalState()) {
-        ASSERT_NOT_REACHED();
-        return false;
-    }
-
-    result = value.toString();
-    return true;
-}
-
-bool ScriptArguments::isEqual(ScriptArguments* other) const
-{
-    if (!other)
-        return false;
-
-    if (m_arguments.size() != other->m_arguments.size())
-        return false;
-    if (!globalState() && m_arguments.size())
-        return false;
-
-    for (size_t i = 0; i < m_arguments.size(); ++i) {
-        if (!m_arguments[i].isEqual(other->globalState(), other->m_arguments[i]))
-            return false;
-    }
+    // We intentionally ignore an exception that can be thrown in ToString().
+    v8::TryCatch block;
+    v8::Handle<v8::String> string = value.v8Value()->ToString();
+    result = string.IsEmpty() ? String() : toCoreString(string);
     return true;
 }
 

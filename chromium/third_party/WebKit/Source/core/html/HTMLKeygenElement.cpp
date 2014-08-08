@@ -25,8 +25,8 @@
 #include "config.h"
 #include "core/html/HTMLKeygenElement.h"
 
-#include "HTMLNames.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "core/HTMLNames.h"
 #include "core/dom/Document.h"
 #include "core/dom/Text.h"
 #include "core/dom/shadow/ShadowRoot.h"
@@ -46,7 +46,13 @@ HTMLKeygenElement::HTMLKeygenElement(Document& document, HTMLFormElement* form)
     : HTMLFormControlElementWithState(keygenTag, document, form)
 {
     ScriptWrappable::init(this);
-    ensureUserAgentShadowRoot();
+}
+
+PassRefPtrWillBeRawPtr<HTMLKeygenElement> HTMLKeygenElement::create(Document& document, HTMLFormElement* form)
+{
+    RefPtrWillBeRawPtr<HTMLKeygenElement> keygen = adoptRefWillBeNoop(new HTMLKeygenElement(document, form));
+    keygen->ensureUserAgentShadowRoot();
+    return keygen.release();
 }
 
 void HTMLKeygenElement::didAddUserAgentShadowRoot(ShadowRoot& root)
@@ -57,10 +63,10 @@ void HTMLKeygenElement::didAddUserAgentShadowRoot(ShadowRoot& root)
     getSupportedKeySizes(locale(), keys);
 
     // Create a select element with one option element for each key size.
-    RefPtr<HTMLSelectElement> select = HTMLSelectElement::create(document());
-    select->setPseudo(keygenSelectPseudoId);
+    RefPtrWillBeRawPtr<HTMLSelectElement> select = HTMLSelectElement::create(document());
+    select->setShadowPseudoId(keygenSelectPseudoId);
     for (size_t i = 0; i < keys.size(); ++i) {
-        RefPtr<HTMLOptionElement> option = HTMLOptionElement::create(document());
+        RefPtrWillBeRawPtr<HTMLOptionElement> option = HTMLOptionElement::create(document());
         option->appendChild(Text::create(document(), keys[i]));
         select->appendChild(option);
     }
@@ -108,6 +114,11 @@ HTMLSelectElement* HTMLKeygenElement::shadowSelect() const
 }
 
 bool HTMLKeygenElement::isInteractiveContent() const
+{
+    return true;
+}
+
+bool HTMLKeygenElement::supportsAutofocus() const
 {
     return true;
 }

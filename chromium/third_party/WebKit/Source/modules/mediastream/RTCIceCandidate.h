@@ -43,16 +43,21 @@ namespace WebCore {
 class Dictionary;
 class ExceptionState;
 
-class RTCIceCandidate FINAL : public RefCounted<RTCIceCandidate>, public ScriptWrappable {
+class RTCIceCandidate FINAL : public RefCountedWillBeGarbageCollectedFinalized<RTCIceCandidate>, public ScriptWrappable {
 public:
-    static PassRefPtr<RTCIceCandidate> create(const Dictionary&, ExceptionState&);
-    static PassRefPtr<RTCIceCandidate> create(blink::WebRTCICECandidate);
+    static PassRefPtrWillBeRawPtr<RTCIceCandidate> create(const Dictionary&, ExceptionState&);
+    static PassRefPtrWillBeRawPtr<RTCIceCandidate> create(blink::WebRTCICECandidate);
 
     String candidate() const;
+    void setCandidate(String);
     String sdpMid() const;
+    void setSdpMid(String);
     unsigned short sdpMLineIndex() const;
+    void setSdpMLineIndex(unsigned short);
 
-    blink::WebRTCICECandidate webCandidate();
+    blink::WebRTCICECandidate webCandidate() const;
+
+    void trace(Visitor*) { }
 
 private:
     explicit RTCIceCandidate(blink::WebRTCICECandidate);

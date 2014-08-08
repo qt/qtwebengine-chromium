@@ -36,6 +36,7 @@
 #include "wtf/text/AtomicString.h"
 #include "wtf/text/AtomicStringHash.h"
 
+#include <unicode/uscript.h>
 
 namespace WebCore {
 
@@ -73,9 +74,9 @@ public:
     // Only called by InternalSettings to clear font family maps.
     void reset();
 
-private:
-    GenericFontFamilySettings& operator=(const GenericFontFamilySettings&) WTF_DELETED_FUNCTION;
+    GenericFontFamilySettings& operator=(const GenericFontFamilySettings&);
 
+private:
     // UScriptCode uses -1 and 0 for UScriptInvalidCode and UScriptCommon.
     // We need to use -2 and -3 for empty value and deleted value.
     struct UScriptCodeHashTraits : WTF::GenericHashTraits<int> {

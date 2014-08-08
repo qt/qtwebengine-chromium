@@ -16,6 +16,8 @@
 #include "ui/views/layout/box_layout.h"
 #include "ui/views/view.h"
 
+using base::ASCIIToUTF16;
+
 namespace {
 const char kLabelButton[] = "Label Button";
 const char kTextButton[] = "Text Button";
@@ -73,8 +75,6 @@ void ButtonExample::CreateExampleView(View* container) {
                           rb.GetImageNamed(IDR_CLOSE_H).ToImageSkia());
   image_button_->SetImage(ImageButton::STATE_PRESSED,
                           rb.GetImageNamed(IDR_CLOSE_P).ToImageSkia());
-  image_button_->SetOverlayImage(rb.GetImageNamed(
-      IDR_MENU_CHECK).ToImageSkia());
   container->AddChildView(image_button_);
 }
 
@@ -124,10 +124,13 @@ void ButtonExample::TextButtonPressed(const ui::Event& event) {
           text_button_->text().length() < 50 ? kLongText : kTextButton));
     } else {
       use_native_theme_border_ = !use_native_theme_border_;
-      if (use_native_theme_border_)
-        text_button_->set_border(new TextButtonNativeThemeBorder(text_button_));
-      else
-        text_button_->set_border(new TextButtonDefaultBorder());
+      if (use_native_theme_border_) {
+        text_button_->SetBorder(scoped_ptr<views::Border>(
+            new TextButtonNativeThemeBorder(text_button_)));
+      } else {
+        text_button_->SetBorder(
+            scoped_ptr<views::Border>(new TextButtonDefaultBorder()));
+      }
     }
   } else if (event.IsAltDown()) {
     text_button_->SetIsDefault(!text_button_->is_default());
@@ -161,7 +164,7 @@ void ButtonExample::LabelButtonPressed(const ui::Event& event) {
     }
   } else if (event.IsShiftDown()) {
     if (event.IsAltDown()) {
-      label_button_->SetFocusable(!label_button_->focusable());
+      label_button_->SetFocusable(!label_button_->IsFocusable());
     } else {
       label_button_->SetStyle(static_cast<Button::ButtonStyle>(
           (label_button_->style() + 1) % Button::STYLE_COUNT));

@@ -16,7 +16,7 @@
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_type.h"
 
-struct ViewHostMsg_FrameNavigate_Params;
+struct FrameHostMsg_DidCommitProvisionalLoad_Params;
 
 namespace content {
 class NavigationEntryImpl;
@@ -94,6 +94,10 @@ class CONTENT_EXPORT NavigationControllerImpl
   virtual void PruneAllButLastCommitted() OVERRIDE;
   virtual void ClearAllScreenshots() OVERRIDE;
 
+  // Whether this is the initial navigation in an unmodified new tab.  In this
+  // case, we know there is no content displayed in the page.
+  bool IsUnmodifiedBlankTab() const;
+
   // The session storage namespace that all child RenderViews belonging to
   // |instance| should use.
   SessionStorageNamespace* GetSessionStorageNamespace(
@@ -134,8 +138,10 @@ class CONTENT_EXPORT NavigationControllerImpl
   //
   // In the case that nothing has changed, the details structure is undefined
   // and it will return false.
-  bool RendererDidNavigate(const ViewHostMsg_FrameNavigate_Params& params,
-                           LoadCommittedDetails* details);
+  bool RendererDidNavigate(
+      RenderFrameHost* rfh,
+      const FrameHostMsg_DidCommitProvisionalLoad_Params& params,
+      LoadCommittedDetails* details);
 
   // Notifies us that we just became active. This is used by the WebContentsImpl
   // so that we know to load URLs that were pending as "lazy" loads.
@@ -153,15 +159,11 @@ class CONTENT_EXPORT NavigationControllerImpl
   // whether a navigation happened without loading anything, the same URL could
   // be a reload, while only a different ref would be in-page (pages can't clear
   // refs without reload, only change to "#" which we don't count as empty).
-  bool IsURLInPageNavigation(const GURL& url) const {
-    return IsURLInPageNavigation(url, false, NAVIGATION_TYPE_UNKNOWN);
-  }
-
+  //
   // The situation is made murkier by history.replaceState(), which could
   // provide the same URL as part of an in-page navigation, not a reload. So
-  // we need this form which lets the (untrustworthy) renderer resolve the
-  // ambiguity, but only when the URLs are equal. This should be safe since the
-  // origin isn't changing.
+  // we need to let the (untrustworthy) renderer resolve the ambiguity, but
+  // only when the URLs are on the same origin.
   bool IsURLInPageNavigation(
       const GURL& url,
       bool renderer_says_in_page,
@@ -231,7 +233,8 @@ class CONTENT_EXPORT NavigationControllerImpl
 
   // Classifies the given renderer navigation (see the NavigationType enum).
   NavigationType ClassifyNavigation(
-      const ViewHostMsg_FrameNavigate_Params& params) const;
+      RenderFrameHost* rfh,
+      const FrameHostMsg_DidCommitProvisionalLoad_Params& params) const;
 
   // Causes the controller to load the specified entry. The function assumes
   // ownership of the pointer since it is put in the navigation list.
@@ -251,17 +254,25 @@ class CONTENT_EXPORT NavigationControllerImpl
   // whether the last entry has been replaced or not.
   // See LoadCommittedDetails.did_replace_entry.
   void RendererDidNavigateToNewPage(
-      const ViewHostMsg_FrameNavigate_Params& params, bool replace_entry);
+      RenderFrameHost* rfh,
+      const FrameHostMsg_DidCommitProvisionalLoad_Params& params,
+      bool replace_entry);
   void RendererDidNavigateToExistingPage(
-      const ViewHostMsg_FrameNavigate_Params& params);
+      RenderFrameHost* rfh,
+      const FrameHostMsg_DidCommitProvisionalLoad_Params& params);
   void RendererDidNavigateToSamePage(
-      const ViewHostMsg_FrameNavigate_Params& params);
+      RenderFrameHost* rfh,
+      const FrameHostMsg_DidCommitProvisionalLoad_Params& params);
   void RendererDidNavigateInPage(
-      const ViewHostMsg_FrameNavigate_Params& params, bool* did_replace_entry);
+      RenderFrameHost* rfh,
+      const FrameHostMsg_DidCommitProvisionalLoad_Params& params,
+      bool* did_replace_entry);
   void RendererDidNavigateNewSubframe(
-      const ViewHostMsg_FrameNavigate_Params& params);
+      RenderFrameHost* rfh,
+      const FrameHostMsg_DidCommitProvisionalLoad_Params& params);
   bool RendererDidNavigateAutoSubframe(
-      const ViewHostMsg_FrameNavigate_Params& params);
+      RenderFrameHost* rfh,
+      const FrameHostMsg_DidCommitProvisionalLoad_Params& params);
 
   // Helper function for code shared between Reload() and ReloadIgnoringCache().
   void ReloadInternal(bool check_for_repost, ReloadType reload_type);
@@ -371,6 +382,9 @@ class CONTENT_EXPORT NavigationControllerImpl
   // Whether this is the initial navigation.
   // Becomes false when initial navigation commits.
   bool is_initial_navigation_;
+
+  // Prevent unsafe re-entrant calls to NavigateToPendingEntry.
+  bool in_navigate_to_pending_entry_;
 
   // Used to find the appropriate SessionStorageNamespace for the storage
   // partition of a NavigationEntry.

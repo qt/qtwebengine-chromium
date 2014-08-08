@@ -28,6 +28,7 @@
 
 #include "modules/webdatabase/DatabaseBasicTypes.h"
 #include "modules/webdatabase/DatabaseError.h"
+#include "platform/heap/Handle.h"
 #include "wtf/RefPtr.h"
 #include "wtf/text/WTFString.h"
 
@@ -41,7 +42,7 @@ class SecurityOrigin;
 class AbstractDatabaseServer {
 public:
     virtual String fullPathForDatabase(SecurityOrigin*, const String& name, bool createIfDoesNotExist = true) = 0;
-    virtual PassRefPtr<DatabaseBackendBase> openDatabase(RefPtr<DatabaseContext>&, DatabaseType,
+    virtual PassRefPtrWillBeRawPtr<DatabaseBackendBase> openDatabase(DatabaseContext*, DatabaseType,
         const String& name, const String& expectedVersion, const String& displayName, unsigned long estimatedSize,
         bool setVersionInNewDatabase, DatabaseError&, String& errorMessage) = 0;
 

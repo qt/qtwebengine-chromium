@@ -31,15 +31,20 @@
 #include "config.h"
 #include "core/dom/custom/CustomElement.h"
 
-#include "HTMLNames.h"
-#include "MathMLNames.h"
-#include "RuntimeEnabledFeatures.h"
-#include "SVGNames.h"
+#include "core/HTMLNames.h"
+#include "core/MathMLNames.h"
+#include "core/SVGNames.h"
+#include "core/dom/Document.h"
 #include "core/dom/Element.h"
-#include "core/dom/custom/CustomElementCallbackScheduler.h"
 #include "core/dom/custom/CustomElementObserver.h"
+#include "core/dom/custom/CustomElementScheduler.h"
 
 namespace WebCore {
+
+CustomElementMicrotaskImportStep* CustomElement::didCreateImport(HTMLImportChild* import)
+{
+    return CustomElementScheduler::scheduleImport(import);
+}
 
 Vector<AtomicString>& CustomElement::embedderCustomElementNames()
 {
@@ -55,15 +60,8 @@ void CustomElement::addEmbedderCustomElementName(const AtomicString& name)
     embedderCustomElementNames().append(lower);
 }
 
-static CustomElement::NameSet enabledNameSet()
-{
-    return CustomElement::NameSet((RuntimeEnabledFeatures::customElementsEnabled() ? CustomElement::StandardNames : 0) | (RuntimeEnabledFeatures::embedderCustomElementsEnabled() ? CustomElement::EmbedderNames : 0));
-}
-
 bool CustomElement::isValidName(const AtomicString& name, NameSet validNames)
 {
-    validNames = NameSet(validNames & enabledNameSet());
-
     if ((validNames & EmbedderNames) && kNotFound != embedderCustomElementNames().find(name))
         return Document::isValidName(name);
 
@@ -71,15 +69,14 @@ bool CustomElement::isValidName(const AtomicString& name, NameSet validNames)
         DEFINE_STATIC_LOCAL(Vector<AtomicString>, reservedNames, ());
         if (reservedNames.isEmpty()) {
             reservedNames.append(MathMLNames::annotation_xmlTag.localName());
-            // In principle, "color-profile" should exist in the SVGNames
-            // namespace, but we don't implement the color-profile element.
-            reservedNames.append("color-profile");
+#if ENABLE(SVG_FONTS)
             reservedNames.append(SVGNames::font_faceTag.localName());
             reservedNames.append(SVGNames::font_face_srcTag.localName());
             reservedNames.append(SVGNames::font_face_uriTag.localName());
             reservedNames.append(SVGNames::font_face_formatTag.localName());
             reservedNames.append(SVGNames::font_face_nameTag.localName());
             reservedNames.append(SVGNames::missing_glyphTag.localName());
+#endif
         }
 
         if (kNotFound == reservedNames.find(name))
@@ -100,23 +97,16 @@ void CustomElement::define(Element* element, PassRefPtr<CustomElementDefinition>
         break;
 
     case Element::WaitingForUpgrade:
-        definitions().add(element, definition);
-        CustomElementCallbackScheduler::scheduleCreatedCallback(definition->callbacks(), element);
+        element->setCustomElementDefinition(definition);
+        CustomElementScheduler::scheduleCallback(definition->callbacks(), element, CustomElementLifecycleCallbacks::Created);
         break;
     }
-}
-
-CustomElementDefinition* CustomElement::definitionFor(Element* element)
-{
-    CustomElementDefinition* definition = definitions().get(element);
-    ASSERT(definition);
-    return definition;
 }
 
 void CustomElement::attributeDidChange(Element* element, const AtomicString& name, const AtomicString& oldValue, const AtomicString& newValue)
 {
     ASSERT(element->customElementState() == Element::Upgraded);
-    CustomElementCallbackScheduler::scheduleAttributeChangedCallback(definitionFor(element)->callbacks(), element, name, oldValue, newValue);
+    CustomElementScheduler::scheduleAttributeChangedCallback(element->customElementDefinition()->callbacks(), element, name, oldValue, newValue);
 }
 
 void CustomElement::didEnterDocument(Element* element, const Document& document)
@@ -124,7 +114,7 @@ void CustomElement::didEnterDocument(Element* element, const Document& document)
     ASSERT(element->customElementState() == Element::Upgraded);
     if (!document.domWindow())
         return;
-    CustomElementCallbackScheduler::scheduleAttachedCallback(definitionFor(element)->callbacks(), element);
+    CustomElementScheduler::scheduleCallback(element->customElementDefinition()->callbacks(), element, CustomElementLifecycleCallbacks::Attached);
 }
 
 void CustomElement::didLeaveDocument(Element* element, const Document& document)
@@ -132,7 +122,7 @@ void CustomElement::didLeaveDocument(Element* element, const Document& document)
     ASSERT(element->customElementState() == Element::Upgraded);
     if (!document.domWindow())
         return;
-    CustomElementCallbackScheduler::scheduleDetachedCallback(definitionFor(element)->callbacks(), element);
+    CustomElementScheduler::scheduleCallback(element->customElementDefinition()->callbacks(), element, CustomElementLifecycleCallbacks::Detached);
 }
 
 void CustomElement::wasDestroyed(Element* element)
@@ -144,23 +134,9 @@ void CustomElement::wasDestroyed(Element* element)
 
     case Element::WaitingForUpgrade:
     case Element::Upgraded:
-        definitions().remove(element);
         CustomElementObserver::notifyElementWasDestroyed(element);
         break;
     }
-}
-
-void CustomElement::DefinitionMap::add(Element* element, PassRefPtr<CustomElementDefinition> definition)
-{
-    ASSERT(definition.get());
-    DefinitionMap::ElementDefinitionHashMap::AddResult result = m_definitions.add(element, definition);
-    ASSERT_UNUSED(result, result.isNewEntry);
-}
-
-CustomElement::DefinitionMap& CustomElement::definitions()
-{
-    DEFINE_STATIC_LOCAL(DefinitionMap, map, ());
-    return map;
 }
 
 } // namespace WebCore

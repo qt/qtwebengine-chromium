@@ -34,18 +34,30 @@
 #include "wtf/text/TextEncoding.h"
 
 namespace WebCore {
+class TextResourceDecoder;
 
-struct DocumentEncodingData {
-    DocumentEncodingData()
-        : wasDetectedHeuristically(false)
-        , sawDecodingError(false)
-    {
-    }
+class DocumentEncodingData {
+public:
+    DocumentEncodingData();
+    explicit DocumentEncodingData(const TextResourceDecoder&);
 
-    WTF::TextEncoding encoding;
-    bool wasDetectedHeuristically;
-    bool sawDecodingError;
+    const WTF::TextEncoding& encoding() const { return m_encoding; }
+    void setEncoding(const WTF::TextEncoding&);
+    bool wasDetectedHeuristically() const { return m_wasDetectedHeuristically; }
+    bool sawDecodingError() const { return m_sawDecodingError; }
+
+private:
+    WTF::TextEncoding m_encoding;
+    bool m_wasDetectedHeuristically;
+    bool m_sawDecodingError;
 };
+
+inline bool operator!=(const DocumentEncodingData& a, const DocumentEncodingData& b)
+{
+    return a.encoding() != b.encoding()
+        || a.wasDetectedHeuristically() != b.wasDetectedHeuristically()
+        || a.sawDecodingError() != b.sawDecodingError();
+}
 
 } // namespace WebCore
 

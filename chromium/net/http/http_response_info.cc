@@ -113,6 +113,7 @@ HttpResponseInfo::HttpResponseInfo(const HttpResponseInfo& rhs)
       was_fetched_via_spdy(rhs.was_fetched_via_spdy),
       was_npn_negotiated(rhs.was_npn_negotiated),
       was_fetched_via_proxy(rhs.was_fetched_via_proxy),
+      proxy_server(rhs.proxy_server),
       did_use_http_auth(rhs.did_use_http_auth),
       socket_address(rhs.socket_address),
       npn_negotiated_protocol(rhs.npn_negotiated_protocol),
@@ -135,6 +136,7 @@ HttpResponseInfo& HttpResponseInfo::operator=(const HttpResponseInfo& rhs) {
   server_data_unavailable = rhs.server_data_unavailable;
   network_accessed = rhs.network_accessed;
   was_fetched_via_spdy = rhs.was_fetched_via_spdy;
+  proxy_server = rhs.proxy_server;
   was_npn_negotiated = rhs.was_npn_negotiated;
   was_fetched_via_proxy = rhs.was_fetched_via_proxy;
   did_use_http_auth = rhs.did_use_http_auth;
@@ -340,8 +342,8 @@ void HttpResponseInfo::Persist(Pickle* pickle,
       for (SignedCertificateTimestampAndStatusList::const_iterator it =
            ssl_info.signed_certificate_timestamps.begin(); it !=
            ssl_info.signed_certificate_timestamps.end(); ++it) {
-        it->sct_->Persist(pickle);
-        pickle->WriteUInt16(it->status_);
+        it->sct->Persist(pickle);
+        pickle->WriteUInt16(it->status);
       }
     }
   }
@@ -367,10 +369,8 @@ HttpResponseInfo::ConnectionInfo HttpResponseInfo::ConnectionInfoFromNextProto(
     case kProtoSPDY3:
     case kProtoSPDY31:
       return CONNECTION_INFO_SPDY3;
-    case kProtoSPDY4a2:
-      return CONNECTION_INFO_SPDY4A2;
-    case kProtoHTTP2Draft04:
-      return CONNECTION_INFO_HTTP2_DRAFT_04;
+    case kProtoSPDY4:
+      return CONNECTION_INFO_SPDY4;
     case kProtoQUIC1SPDY3:
       return CONNECTION_INFO_QUIC1_SPDY3;
 
@@ -395,10 +395,10 @@ std::string HttpResponseInfo::ConnectionInfoToString(
       return "spdy/2";
     case CONNECTION_INFO_SPDY3:
       return "spdy/3";
-    case CONNECTION_INFO_SPDY4A2:
-      return "spdy/4a2";
-    case CONNECTION_INFO_HTTP2_DRAFT_04:
-      return "HTTP-draft-04/2.0";
+    case CONNECTION_INFO_SPDY4:
+      // This is the HTTP/2 draft 12 identifier. For internal
+      // consistency, HTTP/2 is named SPDY4 within Chromium.
+      return "h2-12";
     case CONNECTION_INFO_QUIC1_SPDY3:
       return "quic/1+spdy/3";
     case NUM_OF_CONNECTION_INFOS:

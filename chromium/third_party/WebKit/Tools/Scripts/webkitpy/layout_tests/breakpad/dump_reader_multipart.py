@@ -43,6 +43,7 @@ class DumpReaderMultipart(DumpReader):
         super(DumpReaderMultipart, self).__init__(host, build_dir)
         self._webkit_finder = WebKitFinder(host.filesystem)
         self._breakpad_tools_available = None
+        self._generated_symbols = False
 
     def check_is_functional(self):
         return self._check_breakpad_tools_available()
@@ -81,8 +82,11 @@ class DumpReaderMultipart(DumpReader):
         with self._host.filesystem.open_binary_file_for_reading(dump_file) as f:
             boundary = f.readline().strip()[2:]
             f.seek(0)
-            data = cgi.parse_multipart(f, {'boundary': boundary})
-            return data
+            try:
+                data = cgi.parse_multipart(f, {'boundary': boundary})
+                return data
+            except:
+                pass
         return None
 
     def _check_breakpad_tools_available(self):
@@ -119,19 +123,11 @@ class DumpReaderMultipart(DumpReader):
         return self._host.filesystem.join(self._build_dir, 'content_shell.syms')
 
     def _generate_breakpad_symbols_if_necessary(self):
-        if self._host.filesystem.exists(self._symbols_dir()):
-            needs_update = False
-            symbols_mtime = self._host.filesystem.mtime(self._symbols_dir())
-            for binary in self._binaries_to_symbolize():
-                full_path = self._host.filesystem.join(self._build_dir, binary)
-                if self._host.filesystem.mtime(full_path) >= symbols_mtime:
-                    needs_update = True
-            if not needs_update:
-                return
+        if self._generated_symbols:
+            return
+        self._generated_symbols = True
 
-        _log.debug("Regenerating breakpad symbols")
-        self._host.filesystem.rmtree(self._symbols_dir())
-
+        _log.debug("Generating breakpad symbols")
         for binary in self._binaries_to_symbolize():
             full_path = self._host.filesystem.join(self._build_dir, binary)
             cmd = [
@@ -156,7 +152,7 @@ class DumpReaderLinux(DumpReaderMultipart):
     """Linux breakpad dump reader."""
 
     def _binaries_to_symbolize(self):
-        return ['content_shell', 'libTestNetscapePlugIn.so', 'libffmpegsumo.so', 'libosmesa.so']
+        return ['content_shell', 'libtest_netscape_plugin.so', 'libffmpegsumo.so', 'libosmesa.so']
 
     def _file_extension(self):
         return 'dmp'

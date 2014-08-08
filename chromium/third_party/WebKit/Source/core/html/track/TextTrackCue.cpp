@@ -42,20 +42,11 @@ namespace WebCore {
 
 static const int invalidCueIndex = -1;
 
-bool TextTrackCue::isInfiniteOrNonNumber(double value, ExceptionState& exceptionState)
-{
-    if (!std::isfinite(value)) {
-        exceptionState.throwTypeError(ExceptionMessages::notAFiniteNumber(value));
-        return true;
-    }
-    return false;
-}
-
 TextTrackCue::TextTrackCue(double start, double end)
     : m_startTime(start)
     , m_endTime(end)
     , m_cueIndex(invalidCueIndex)
-    , m_track(0)
+    , m_track(nullptr)
     , m_isActive(false)
     , m_pauseOnExit(false)
 {
@@ -83,7 +74,12 @@ void TextTrackCue::setTrack(TextTrack* track)
     m_track = track;
 }
 
-void TextTrackCue::setId(const String& id)
+Node* TextTrackCue::owner() const
+{
+    return m_track ? m_track->owner() : 0;
+}
+
+void TextTrackCue::setId(const AtomicString& id)
 {
     if (m_id == id)
         return;
@@ -93,12 +89,8 @@ void TextTrackCue::setId(const String& id)
     cueDidChange();
 }
 
-void TextTrackCue::setStartTime(double value, ExceptionState& exceptionState)
+void TextTrackCue::setStartTime(double value)
 {
-    // NaN, Infinity and -Infinity values should trigger a TypeError.
-    if (isInfiniteOrNonNumber(value, exceptionState))
-        return;
-
     // TODO(93143): Add spec-compliant behavior for negative time values.
     if (m_startTime == value || value < 0)
         return;
@@ -108,12 +100,8 @@ void TextTrackCue::setStartTime(double value, ExceptionState& exceptionState)
     cueDidChange();
 }
 
-void TextTrackCue::setEndTime(double value, ExceptionState& exceptionState)
+void TextTrackCue::setEndTime(double value)
 {
-    // NaN, Infinity and -Infinity values should trigger a TypeError.
-    if (isInfiniteOrNonNumber(value, exceptionState))
-        return;
-
     // TODO(93143): Add spec-compliant behavior for negative time values.
     if (m_endTime == value || value < 0)
         return;
@@ -146,7 +134,7 @@ void TextTrackCue::invalidateCueIndex()
     m_cueIndex = invalidCueIndex;
 }
 
-bool TextTrackCue::dispatchEvent(PassRefPtr<Event> event)
+bool TextTrackCue::dispatchEvent(PassRefPtrWillBeRawPtr<Event> event)
 {
     // When a TextTrack's mode is disabled: no cues are active, no events fired.
     if (!track() || track()->mode() == TextTrack::disabledKeyword())
@@ -172,6 +160,12 @@ void TextTrackCue::setIsActive(bool active)
 const AtomicString& TextTrackCue::interfaceName() const
 {
     return EventTargetNames::TextTrackCue;
+}
+
+void TextTrackCue::trace(Visitor* visitor)
+{
+    visitor->trace(m_track);
+    EventTargetWithInlineData::trace(visitor);
 }
 
 } // namespace WebCore

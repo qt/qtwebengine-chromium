@@ -11,21 +11,20 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/timer/timer.h"
 #include "content/browser/loader/resource_handler.h"
+#include "content/public/browser/download_interrupt_reasons.h"
 #include "content/public/browser/download_manager.h"
 #include "content/public/browser/download_save_info.h"
 #include "content/public/browser/download_url_parameters.h"
-#include "content/public/browser/global_request_id.h"
-#include "net/base/net_errors.h"
-
 
 namespace net {
 class URLRequest;
 }  // namespace net
 
 namespace content {
-class ByteStreamWriter;
 class ByteStreamReader;
+class ByteStreamWriter;
 class DownloadRequestHandle;
+class PowerSaveBlocker;
 struct DownloadCreateInfo;
 
 // Forwards data to the download thread.
@@ -33,6 +32,8 @@ class CONTENT_EXPORT DownloadResourceHandler
     : public ResourceHandler,
       public base::SupportsWeakPtr<DownloadResourceHandler> {
  public:
+  struct DownloadTabInfo;
+
   // Size of the buffer used between the DownloadResourceHandler and the
   // downstream receiver of its output.
   static const int kDownloadByteStreamSize;
@@ -45,45 +46,41 @@ class CONTENT_EXPORT DownloadResourceHandler
       const DownloadUrlParameters::OnStartedCallback& started_cb,
       scoped_ptr<DownloadSaveInfo> save_info);
 
-  virtual bool OnUploadProgress(int request_id,
-                                uint64 position,
-                                uint64 size) OVERRIDE;
+  virtual bool OnUploadProgress(uint64 position, uint64 size) OVERRIDE;
 
-  virtual bool OnRequestRedirected(int request_id,
-                                   const GURL& url,
+  virtual bool OnRequestRedirected(const GURL& url,
                                    ResourceResponse* response,
                                    bool* defer) OVERRIDE;
 
   // Send the download creation information to the download thread.
-  virtual bool OnResponseStarted(int request_id,
-                                 ResourceResponse* response,
+  virtual bool OnResponseStarted(ResourceResponse* response,
                                  bool* defer) OVERRIDE;
 
   // Pass-through implementation.
-  virtual bool OnWillStart(int request_id,
-                           const GURL& url,
-                           bool* defer) OVERRIDE;
+  virtual bool OnWillStart(const GURL& url, bool* defer) OVERRIDE;
+
+  // Pass-through implementation.
+  virtual bool OnBeforeNetworkStart(const GURL& url, bool* defer) OVERRIDE;
 
   // Create a new buffer, which will be handed to the download thread for file
   // writing and deletion.
-  virtual bool OnWillRead(int request_id,
-                          scoped_refptr<net::IOBuffer>* buf,
+  virtual bool OnWillRead(scoped_refptr<net::IOBuffer>* buf,
                           int* buf_size,
                           int min_size) OVERRIDE;
 
-  virtual bool OnReadCompleted(int request_id, int bytes_read,
-                               bool* defer) OVERRIDE;
+  virtual bool OnReadCompleted(int bytes_read, bool* defer) OVERRIDE;
 
-  virtual void OnResponseCompleted(int request_id,
-                                   const net::URLRequestStatus& status,
+  virtual void OnResponseCompleted(const net::URLRequestStatus& status,
                                    const std::string& security_info,
                                    bool* defer) OVERRIDE;
 
   // N/A to this flavor of DownloadHandler.
-  virtual void OnDataDownloaded(int request_id, int bytes_downloaded) OVERRIDE;
+  virtual void OnDataDownloaded(int bytes_downloaded) OVERRIDE;
 
   void PauseRequest();
   void ResumeRequest();
+
+  // May result in this object being deleted by its owner.
   void CancelRequest();
 
   std::string DebugString() const;
@@ -94,7 +91,8 @@ class CONTENT_EXPORT DownloadResourceHandler
   // Arrange for started_cb_ to be called on the UI thread with the
   // below values, nulling out started_cb_.  Should only be called
   // on the IO thread.
-  void CallStartedCB(DownloadItem* item, net::Error error);
+  void CallStartedCB(DownloadItem* item,
+                     DownloadInterruptReason interrupt_reason);
 
   uint32 download_id_;
   // This is read only on the IO thread, but may only
@@ -102,9 +100,20 @@ class CONTENT_EXPORT DownloadResourceHandler
   DownloadUrlParameters::OnStartedCallback started_cb_;
   scoped_ptr<DownloadSaveInfo> save_info_;
 
+  // Stores information about the download that must be acquired on the UI
+  // thread before StartOnUIThread is called.
+  // Created on IO thread, but only accessed on UI thread. |tab_info_| holds
+  // the pointer until we pass it off to StartOnUIThread or DeleteSoon.
+  DownloadTabInfo* tab_info_;
+
   // Data flow
   scoped_refptr<net::IOBuffer> read_buffer_;       // From URLRequest.
   scoped_ptr<ByteStreamWriter> stream_writer_; // To rest of system.
+
+  // Keeps the system from sleeping while this ResourceHandler is alive. If the
+  // system enters power saving mode while a request is alive, it can cause the
+  // request to fail and the associated download will be interrupted.
+  scoped_ptr<PowerSaveBlocker> power_save_blocker_;
 
   // The following are used to collect stats.
   base::TimeTicks download_start_time_;

@@ -63,15 +63,15 @@ protected:
     OperationType m_type;
 };
 
-class ReferenceClipPathOperation : public ClipPathOperation {
+class ReferenceClipPathOperation FINAL : public ClipPathOperation {
 public:
-    static PassRefPtr<ReferenceClipPathOperation> create(const String& url, const String& fragment)
+    static PassRefPtr<ReferenceClipPathOperation> create(const String& url, const AtomicString& fragment)
     {
         return adoptRef(new ReferenceClipPathOperation(url, fragment));
     }
 
     const String& url() const { return m_url; }
-    const String& fragment() const { return m_fragment; }
+    const AtomicString& fragment() const { return m_fragment; }
 
 private:
     virtual bool operator==(const ClipPathOperation& o) const OVERRIDE
@@ -79,7 +79,7 @@ private:
         return isSameType(o) && m_url == static_cast<const ReferenceClipPathOperation&>(o).m_url;
     }
 
-    ReferenceClipPathOperation(const String& url, const String& fragment)
+    ReferenceClipPathOperation(const String& url, const AtomicString& fragment)
         : ClipPathOperation(REFERENCE)
         , m_url(url)
         , m_fragment(fragment)
@@ -87,12 +87,12 @@ private:
     }
 
     String m_url;
-    String m_fragment;
+    AtomicString m_fragment;
 };
 
 DEFINE_TYPE_CASTS(ReferenceClipPathOperation, ClipPathOperation, op, op->type() == ClipPathOperation::REFERENCE, op.type() == ClipPathOperation::REFERENCE);
 
-class ShapeClipPathOperation : public ClipPathOperation {
+class ShapeClipPathOperation FINAL : public ClipPathOperation {
 public:
     static PassRefPtr<ShapeClipPathOperation> create(PassRefPtr<BasicShape> shape)
     {
@@ -111,10 +111,7 @@ public:
     }
 
 private:
-    virtual bool operator==(const ClipPathOperation& o) const OVERRIDE
-    {
-        return isSameType(o) && m_shape == static_cast<const ShapeClipPathOperation&>(o).m_shape;
-    }
+    virtual bool operator==(const ClipPathOperation&) const OVERRIDE;
 
     ShapeClipPathOperation(PassRefPtr<BasicShape> shape)
         : ClipPathOperation(SHAPE)
@@ -127,6 +124,11 @@ private:
 };
 
 DEFINE_TYPE_CASTS(ShapeClipPathOperation, ClipPathOperation, op, op->type() == ClipPathOperation::SHAPE, op.type() == ClipPathOperation::SHAPE);
+
+inline bool ShapeClipPathOperation::operator==(const ClipPathOperation& o) const
+{
+    return isSameType(o) && *m_shape == *toShapeClipPathOperation(o).m_shape;
+}
 
 }
 

@@ -669,7 +669,7 @@ void CRYPTO_set_NEON_capable(int on)
 	global_arm_neon_enabled = on != 0;
 	}
 
-int CRYPTO_is_NEON_capable()
+int CRYPTO_is_NEON_capable(void)
 	{
 	return global_arm_neon_enabled;
 	}

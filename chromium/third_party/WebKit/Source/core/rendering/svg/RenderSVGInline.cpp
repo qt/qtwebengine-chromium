@@ -27,12 +27,22 @@
 #include "core/rendering/svg/SVGInlineFlowBox.h"
 #include "core/rendering/svg/SVGRenderSupport.h"
 #include "core/rendering/svg/SVGResourcesCache.h"
+#include "core/svg/SVGAElement.h"
 
 namespace WebCore {
 
 bool RenderSVGInline::isChildAllowed(RenderObject* child, RenderStyle* style) const
 {
-    if (SVGRenderSupport::isEmptySVGInlineText(child))
+    if (child->isText())
+        return SVGRenderSupport::isRenderableTextNode(child);
+
+    if (isSVGAElement(*node())) {
+        // Disallow direct descendant 'a'.
+        if (isSVGAElement(*child->node()))
+            return false;
+    }
+
+    if (!child->isSVGInline() && !child->isSVGInlineText())
         return false;
 
     return RenderInline::isChildAllowed(child, style);
@@ -46,7 +56,7 @@ RenderSVGInline::RenderSVGInline(Element* element)
 
 InlineFlowBox* RenderSVGInline::createInlineFlowBox()
 {
-    InlineFlowBox* box = new SVGInlineFlowBox(this);
+    InlineFlowBox* box = new SVGInlineFlowBox(*this);
     box->setHasVirtualLogicalHeight();
     return box;
 }
@@ -67,22 +77,22 @@ FloatRect RenderSVGInline::strokeBoundingBox() const
     return FloatRect();
 }
 
-FloatRect RenderSVGInline::repaintRectInLocalCoordinates() const
+FloatRect RenderSVGInline::paintInvalidationRectInLocalCoordinates() const
 {
     if (const RenderObject* object = RenderSVGText::locateRenderSVGTextAncestor(this))
-        return object->repaintRectInLocalCoordinates();
+        return object->paintInvalidationRectInLocalCoordinates();
 
     return FloatRect();
 }
 
-LayoutRect RenderSVGInline::clippedOverflowRectForRepaint(const RenderLayerModelObject* repaintContainer) const
+LayoutRect RenderSVGInline::clippedOverflowRectForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer) const
 {
-    return SVGRenderSupport::clippedOverflowRectForRepaint(this, repaintContainer);
+    return SVGRenderSupport::clippedOverflowRectForRepaint(this, paintInvalidationContainer);
 }
 
-void RenderSVGInline::computeFloatRectForRepaint(const RenderLayerModelObject* repaintContainer, FloatRect& repaintRect, bool fixed) const
+void RenderSVGInline::computeFloatRectForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer, FloatRect& paintInvalidationRect, bool fixed) const
 {
-    SVGRenderSupport::computeFloatRectForRepaint(this, repaintContainer, repaintRect, fixed);
+    SVGRenderSupport::computeFloatRectForRepaint(this, paintInvalidationContainer, paintInvalidationRect, fixed);
 }
 
 void RenderSVGInline::mapLocalToContainer(const RenderLayerModelObject* repaintContainer, TransformState& transformState, MapCoordinatesFlags, bool* wasFixed) const
@@ -114,7 +124,7 @@ void RenderSVGInline::willBeDestroyed()
 
 void RenderSVGInline::styleDidChange(StyleDifference diff, const RenderStyle* oldStyle)
 {
-    if (diff == StyleDifferenceLayout)
+    if (diff.needsFullLayout())
         setNeedsBoundariesUpdate();
 
     RenderInline::styleDidChange(diff, oldStyle);

@@ -26,9 +26,10 @@
  */
 
 [
-    ActiveDOMObject
+    ActiveDOMObject,
+    WillBeGarbageCollected
 ] interface MessagePort : EventTarget {
-    [Custom, RaisesException] void postMessage(any message, optional Array messagePorts);
+    [Custom, RaisesException] void postMessage(any message, optional MessagePort[] messagePorts);
 
     void start();
     void close();

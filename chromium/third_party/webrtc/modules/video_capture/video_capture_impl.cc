@@ -17,9 +17,9 @@
 #include "webrtc/modules/video_capture/video_capture_config.h"
 #include "webrtc/system_wrappers/interface/clock.h"
 #include "webrtc/system_wrappers/interface/critical_section_wrapper.h"
+#include "webrtc/system_wrappers/interface/logging.h"
 #include "webrtc/system_wrappers/interface/ref_count.h"
 #include "webrtc/system_wrappers/interface/tick_util.h"
-#include "webrtc/system_wrappers/interface/trace.h"
 #include "webrtc/system_wrappers/interface/trace_event.h"
 
 namespace webrtc
@@ -187,45 +187,33 @@ VideoCaptureImpl::~VideoCaptureImpl()
         delete[] _deviceUniqueId;
 }
 
-int32_t VideoCaptureImpl::RegisterCaptureDataCallback(
-                                        VideoCaptureDataCallback& dataCallBack)
-{
+void VideoCaptureImpl::RegisterCaptureDataCallback(
+    VideoCaptureDataCallback& dataCallBack) {
     CriticalSectionScoped cs(&_apiCs);
     CriticalSectionScoped cs2(&_callBackCs);
     _dataCallBack = &dataCallBack;
-
-    return 0;
 }
 
-int32_t VideoCaptureImpl::DeRegisterCaptureDataCallback()
-{
+void VideoCaptureImpl::DeRegisterCaptureDataCallback() {
     CriticalSectionScoped cs(&_apiCs);
     CriticalSectionScoped cs2(&_callBackCs);
     _dataCallBack = NULL;
-    return 0;
 }
-int32_t VideoCaptureImpl::RegisterCaptureCallback(VideoCaptureFeedBack& callBack)
-{
+void VideoCaptureImpl::RegisterCaptureCallback(VideoCaptureFeedBack& callBack) {
 
     CriticalSectionScoped cs(&_apiCs);
     CriticalSectionScoped cs2(&_callBackCs);
     _captureCallBack = &callBack;
-    return 0;
 }
-int32_t VideoCaptureImpl::DeRegisterCaptureCallback()
-{
+void VideoCaptureImpl::DeRegisterCaptureCallback() {
 
     CriticalSectionScoped cs(&_apiCs);
     CriticalSectionScoped cs2(&_callBackCs);
     _captureCallBack = NULL;
-    return 0;
-
 }
-int32_t VideoCaptureImpl::SetCaptureDelay(int32_t delayMS)
-{
+void VideoCaptureImpl::SetCaptureDelay(int32_t delayMS) {
     CriticalSectionScoped cs(&_apiCs);
     _captureDelay = delayMS;
-    return 0;
 }
 int32_t VideoCaptureImpl::CaptureDelay()
 {
@@ -272,13 +260,8 @@ int32_t VideoCaptureImpl::IncomingFrame(
     const VideoCaptureCapability& frameInfo,
     int64_t captureTime/*=0*/)
 {
-    WEBRTC_TRACE(webrtc::kTraceStream, webrtc::kTraceVideoCapture, _id,
-               "IncomingFrame width %d, height %d", (int) frameInfo.width,
-               (int) frameInfo.height);
-
-    TickTime startProcessTime = TickTime::Now();
-
-    CriticalSectionScoped cs(&_callBackCs);
+    CriticalSectionScoped cs(&_apiCs);
+    CriticalSectionScoped cs2(&_callBackCs);
 
     const int32_t width = frameInfo.width;
     const int32_t height = frameInfo.height;
@@ -295,8 +278,7 @@ int32_t VideoCaptureImpl::IncomingFrame(
             CalcBufferSize(commonVideoType, width,
                            abs(height)) != videoFrameLength)
         {
-            WEBRTC_TRACE(webrtc::kTraceError, webrtc::kTraceVideoCapture, _id,
-                         "Wrong incoming frame length.");
+            LOG(LS_ERROR) << "Wrong incoming frame length.";
             return -1;
         }
 
@@ -320,8 +302,8 @@ int32_t VideoCaptureImpl::IncomingFrame(
                                                  stride_uv, stride_uv);
         if (ret < 0)
         {
-            WEBRTC_TRACE(webrtc::kTraceError, webrtc::kTraceVideoCapture, _id,
-                       "Failed to allocate I420 frame.");
+            LOG(LS_ERROR) << "Failed to create empty frame, this should only "
+                             "happen due to bad parameters.";
             return -1;
         }
         const int conversionResult = ConvertToI420(commonVideoType,
@@ -333,9 +315,8 @@ int32_t VideoCaptureImpl::IncomingFrame(
                                                    &_captureFrame);
         if (conversionResult < 0)
         {
-            WEBRTC_TRACE(webrtc::kTraceError, webrtc::kTraceVideoCapture, _id,
-                       "Failed to convert capture frame from type %d to I420",
-                       frameInfo.rawType);
+          LOG(LS_ERROR) << "Failed to convert capture frame from type "
+                        << frameInfo.rawType << "to I420.";
             return -1;
         }
         DeliverCapturedFrame(_captureFrame, captureTime);
@@ -346,22 +327,14 @@ int32_t VideoCaptureImpl::IncomingFrame(
         return -1;
     }
 
-    const uint32_t processTime =
-        (uint32_t)(TickTime::Now() - startProcessTime).Milliseconds();
-    if (processTime > 10) // If the process time is too long MJPG will not work well.
-    {
-        WEBRTC_TRACE(webrtc::kTraceWarning, webrtc::kTraceVideoCapture, _id,
-                   "Too long processing time of Incoming frame: %ums",
-                   (unsigned int) processTime);
-    }
-
     return 0;
 }
 
 int32_t VideoCaptureImpl::IncomingI420VideoFrame(I420VideoFrame* video_frame,
                                                  int64_t captureTime) {
 
-  CriticalSectionScoped cs(&_callBackCs);
+  CriticalSectionScoped cs(&_apiCs);
+  CriticalSectionScoped cs2(&_callBackCs);
   DeliverCapturedFrame(*video_frame, captureTime);
 
   return 0;
@@ -389,8 +362,7 @@ int32_t VideoCaptureImpl::SetCaptureRotation(VideoCaptureRotation rotation) {
   return 0;
 }
 
-int32_t VideoCaptureImpl::EnableFrameRateCallback(const bool enable)
-{
+void VideoCaptureImpl::EnableFrameRateCallback(const bool enable) {
     CriticalSectionScoped cs(&_apiCs);
     CriticalSectionScoped cs2(&_callBackCs);
     _frameRateCallBack = enable;
@@ -398,15 +370,12 @@ int32_t VideoCaptureImpl::EnableFrameRateCallback(const bool enable)
     {
         _lastFrameRateCallbackTime = TickTime::Now();
     }
-    return 0;
 }
 
-int32_t VideoCaptureImpl::EnableNoPictureAlarm(const bool enable)
-{
+void VideoCaptureImpl::EnableNoPictureAlarm(const bool enable) {
     CriticalSectionScoped cs(&_apiCs);
     CriticalSectionScoped cs2(&_callBackCs);
     _noPictureAlarmCallBack = enable;
-    return 0;
 }
 
 void VideoCaptureImpl::UpdateFrameCount()

@@ -18,7 +18,7 @@ from grit.format.policy_templates.writers import adml_writer
 from grit.format.policy_templates.writers import xml_writer_base_unittest
 
 
-class AdmlWriterTest(xml_writer_base_unittest.XmlWriterBaseTest):
+class AdmlWriterUnittest(xml_writer_base_unittest.XmlWriterBaseTest):
 
   def setUp(self):
     config = {

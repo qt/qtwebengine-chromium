@@ -25,16 +25,11 @@
 #include "net/base/request_priority.h"
 #include "net/base/upload_progress.h"
 #include "net/cookies/canonical_cookie.h"
+#include "net/cookies/cookie_store.h"
 #include "net/http/http_request_headers.h"
 #include "net/http/http_response_info.h"
 #include "net/url_request/url_request_status.h"
 #include "url/gurl.h"
-
-// Temporary layering violation to allow existing users of a deprecated
-// interface.
-class ChildProcessSecurityPolicyTest;
-class TestAutomationProvider;
-class URLRequestAutomationJob;
 
 namespace base {
 class Value;
@@ -46,30 +41,8 @@ class StackTrace;
 
 // Temporary layering violation to allow existing users of a deprecated
 // interface.
-namespace appcache {
-class AppCacheInterceptor;
-class AppCacheRequestHandlerTest;
-class AppCacheURLRequestJobTest;
-}
-
-// Temporary layering violation to allow existing users of a deprecated
-// interface.
 namespace content {
-class ResourceDispatcherHostTest;
-}
-
-// Temporary layering violation to allow existing users of a deprecated
-// interface.
-namespace fileapi {
-class FileSystemDirURLRequestJobTest;
-class FileSystemURLRequestJobTest;
-class FileWriterDelegateTest;
-}
-
-// Temporary layering violation to allow existing users of a deprecated
-// interface.
-namespace webkit_blob {
-class BlobURLRequestJobTest;
+class AppCacheInterceptor;
 }
 
 namespace net {
@@ -138,7 +111,7 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
   // This class handles network interception.  Use with
   // (Un)RegisterRequestInterceptor.
   class NET_EXPORT Interceptor {
-  public:
+   public:
     virtual ~Interceptor() {}
 
     // Called for every request made.  Should return a new job to handle the
@@ -176,23 +149,8 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
   class NET_EXPORT Deprecated {
    private:
     // TODO(willchan): Kill off these friend declarations.
-    friend class ::ChildProcessSecurityPolicyTest;
-    friend class ::TestAutomationProvider;
-    friend class ::URLRequestAutomationJob;
     friend class TestInterceptor;
-    friend class URLRequestFilter;
-    friend class appcache::AppCacheInterceptor;
-    friend class appcache::AppCacheRequestHandlerTest;
-    friend class appcache::AppCacheURLRequestJobTest;
-    friend class content::ResourceDispatcherHostTest;
-    friend class fileapi::FileSystemDirURLRequestJobTest;
-    friend class fileapi::FileSystemURLRequestJobTest;
-    friend class fileapi::FileWriterDelegateTest;
-    friend class webkit_blob::BlobURLRequestJobTest;
-
-    // Use URLRequestJobFactory::ProtocolHandler instead.
-    static ProtocolFactory* RegisterProtocolFactory(const std::string& scheme,
-                                                    ProtocolFactory* factory);
+    friend class content::AppCacheInterceptor;
 
     // TODO(pauljensen): Remove this when AppCacheInterceptor is a
     // ProtocolHandler, see crbug.com/161547.
@@ -278,6 +236,12 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
                                        const SSLInfo& ssl_info,
                                        bool fatal);
 
+    // Called to notify that the request must use the network to complete the
+    // request and is about to do so. This is called at most once per
+    // URLRequest, and by default does not defer. If deferred, call
+    // ResumeNetworkStart() to continue or Cancel() to cancel.
+    virtual void OnBeforeNetworkStart(URLRequest* request, bool* defer);
+
     // After calling Start(), the delegate will receive an OnResponseStarted
     // callback when the request has completed.  If an error occurred, the
     // request->status() will be set.  On success, all redirects have been
@@ -299,10 +263,19 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
     virtual ~Delegate() {}
   };
 
+  // TODO(tburkard): we should get rid of this constructor, and have each
+  // creator of a URLRequest specifically list the cookie store to be used.
+  // For now, this constructor will use the cookie store in |context|.
   URLRequest(const GURL& url,
              RequestPriority priority,
              Delegate* delegate,
              const URLRequestContext* context);
+
+  URLRequest(const GURL& url,
+             RequestPriority priority,
+             Delegate* delegate,
+             const URLRequestContext* context,
+             CookieStore* cookie_store);
 
   // If destroyed after Start() has been called but while IO is pending,
   // then the request will be effectively canceled and the delegate
@@ -438,6 +411,10 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
   // 2. The OnResponseStarted callback is currently running or has run.
   bool GetFullRequestHeaders(HttpRequestHeaders* headers) const;
 
+  // Gets the total amount of data received from network after SSL decoding and
+  // proxy handling.
+  int64 GetTotalReceivedBytes() const;
+
   // Returns the current load state for the request. The returned value's
   // |param| field is an optional parameter describing details related to the
   // load state. Not all load states have a parameter.
@@ -502,6 +479,11 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
   // Returns true if the URLRequest was delivered through a proxy.
   bool was_fetched_via_proxy() const {
     return response_info_.was_fetched_via_proxy;
+  }
+
+  // Returns true if the URLRequest was delivered over SPDY.
+  bool was_fetched_via_spdy() const {
+    return response_info_.was_fetched_via_spdy;
   }
 
   // Returns the host and port that the content was fetched from.  See
@@ -626,6 +608,10 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
   // response to an OnReceivedRedirect call.
   void FollowDeferredRedirect();
 
+  // This method must be called to resume network communications that were
+  // deferred in response to an OnBeforeNetworkStart call.
+  void ResumeNetworkStart();
+
   // One of the following two methods should be called in response to an
   // OnAuthRequired() callback (and only then).
   // SetAuth will reissue the request with the given credentials.
@@ -679,12 +665,20 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
     return received_response_content_length_;
   }
 
+  // Available at NetworkDelegate::NotifyHeadersReceived() time, which is before
+  // the more general response_info() is available, even though it is a subset.
+  const HostPortPair& proxy_server() const {
+    return proxy_server_;
+  }
+
  protected:
   // Allow the URLRequestJob class to control the is_pending() flag.
   void set_is_pending(bool value) { is_pending_ = value; }
 
   // Allow the URLRequestJob class to set our status too
   void set_status(const URLRequestStatus& value) { status_ = value; }
+
+  CookieStore* cookie_store() const { return cookie_store_; }
 
   // Allow the URLRequestJob to redirect this request.  Returns OK if
   // successful, otherwise an error code is returned.
@@ -693,6 +687,10 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
   // Called by URLRequestJob to allow interception when a redirect occurs.
   void NotifyReceivedRedirect(const GURL& location, bool* defer_redirect);
 
+  // Called by URLRequestHttpJob (note, only HTTP(S) jobs will call this) to
+  // allow deferral of network initialization.
+  void NotifyBeforeNetworkStart(bool* defer);
+
   // Allow an interceptor's URLRequestJob to restart this request.
   // Should only be called if the original job has not started a response.
   void Restart();
@@ -700,26 +698,18 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
  private:
   friend class URLRequestJob;
 
-  // Registers a new protocol handler for the given scheme. If the scheme is
-  // already handled, this will overwrite the given factory. To delete the
-  // protocol factory, use NULL for the factory BUT this WILL NOT put back
-  // any previously registered protocol factory. It will have returned
-  // the previously registered factory (or NULL if none is registered) when
-  // the scheme was first registered so that the caller can manually put it
-  // back if desired.
-  //
-  // The scheme must be all-lowercase ASCII. See the ProtocolFactory
-  // declaration for its requirements.
-  //
-  // The registered protocol factory may return NULL, which will cause the
-  // regular "built-in" protocol factory to be used.
-  //
-  static ProtocolFactory* RegisterProtocolFactory(const std::string& scheme,
-                                                  ProtocolFactory* factory);
-
   // Registers or unregisters a network interception class.
   static void RegisterRequestInterceptor(Interceptor* interceptor);
   static void UnregisterRequestInterceptor(Interceptor* interceptor);
+
+  // Initializes the URLRequest. Code shared between the two constructors.
+  // TODO(tburkard): This can ultimately be folded into a single constructor
+  // again.
+  void Init(const GURL& url,
+            RequestPriority priotity,
+            Delegate* delegate,
+            const URLRequestContext* context,
+            CookieStore* cookie_store);
 
   // Resumes or blocks a request paused by the NetworkDelegate::OnBeforeRequest
   // handler. If |blocked| is true, the request is blocked and an error page is
@@ -882,6 +872,15 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
   LoadTimingInfo load_timing_info_;
 
   scoped_ptr<const base::debug::StackTrace> stack_trace_;
+
+  // Keeps track of whether or not OnBeforeNetworkStart has been called yet.
+  bool notified_before_network_start_;
+
+  // The cookie store to be used for this request.
+  scoped_refptr<CookieStore> cookie_store_;
+
+  // The proxy server used for this request, if any.
+  HostPortPair proxy_server_;
 
   DISALLOW_COPY_AND_ASSIGN(URLRequest);
 };

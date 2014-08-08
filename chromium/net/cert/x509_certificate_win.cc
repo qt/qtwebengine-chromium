@@ -45,8 +45,9 @@ void ExplodedTimeToSystemTime(const base::Time::Exploded& exploded,
 
 // Decodes the cert's subjectAltName extension into a CERT_ALT_NAME_INFO
 // structure and stores it in *output.
-void GetCertSubjectAltName(PCCERT_CONTEXT cert,
-                           scoped_ptr_malloc<CERT_ALT_NAME_INFO>* output) {
+void GetCertSubjectAltName(
+    PCCERT_CONTEXT cert,
+    scoped_ptr<CERT_ALT_NAME_INFO, base::FreeDeleter>* output) {
   PCERT_EXTENSION extension = CertFindExtension(szOID_SUBJECT_ALT_NAME2,
                                                 cert->pCertInfo->cExtension,
                                                 cert->pCertInfo->rgExtension);
@@ -175,18 +176,18 @@ void X509Certificate::GetSubjectAltName(
   if (!cert_handle_)
     return;
 
-  scoped_ptr_malloc<CERT_ALT_NAME_INFO> alt_name_info;
+  scoped_ptr<CERT_ALT_NAME_INFO, base::FreeDeleter> alt_name_info;
   GetCertSubjectAltName(cert_handle_, &alt_name_info);
   CERT_ALT_NAME_INFO* alt_name = alt_name_info.get();
   if (alt_name) {
     int num_entries = alt_name->cAltEntry;
     for (int i = 0; i < num_entries; i++) {
       // dNSName is an ASN.1 IA5String representing a string of ASCII
-      // characters, so we can use WideToASCII here.
+      // characters, so we can use UTF16ToASCII here.
       const CERT_ALT_NAME_ENTRY& entry = alt_name->rgAltEntry[i];
 
       if (dns_names && entry.dwAltNameChoice == CERT_ALT_NAME_DNS_NAME) {
-        dns_names->push_back(WideToASCII(entry.pwszDNSName));
+        dns_names->push_back(base::UTF16ToASCII(entry.pwszDNSName));
       } else if (ip_addrs &&
                  entry.dwAltNameChoice == CERT_ALT_NAME_IP_ADDRESS) {
         ip_addrs->push_back(std::string(

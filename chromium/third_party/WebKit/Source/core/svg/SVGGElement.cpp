@@ -22,39 +22,24 @@
 
 #include "core/svg/SVGGElement.h"
 
-#include "SVGNames.h"
+#include "core/SVGNames.h"
 #include "core/rendering/svg/RenderSVGHiddenContainer.h"
 #include "core/rendering/svg/RenderSVGResource.h"
 #include "core/rendering/svg/RenderSVGTransformableContainer.h"
-#include "core/svg/SVGElementInstance.h"
 
 namespace WebCore {
 
-// Animated property definitions
-DEFINE_ANIMATED_BOOLEAN(SVGGElement, SVGNames::externalResourcesRequiredAttr, ExternalResourcesRequired, externalResourcesRequired)
-
-BEGIN_REGISTER_ANIMATED_PROPERTIES(SVGGElement)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(externalResourcesRequired)
-    REGISTER_PARENT_ANIMATED_PROPERTIES(SVGGraphicsElement)
-END_REGISTER_ANIMATED_PROPERTIES
-
-SVGGElement::SVGGElement(Document& document, ConstructionType constructionType)
+inline SVGGElement::SVGGElement(Document& document, ConstructionType constructionType)
     : SVGGraphicsElement(SVGNames::gTag, document, constructionType)
 {
     ScriptWrappable::init(this);
-    registerAnimatedPropertiesForSVGGElement();
 }
 
-PassRefPtr<SVGGElement> SVGGElement::create(Document& document)
-{
-    return adoptRef(new SVGGElement(document));
-}
+DEFINE_NODE_FACTORY(SVGGElement)
 
 bool SVGGElement::isSupportedAttribute(const QualifiedName& attrName)
 {
     DEFINE_STATIC_LOCAL(HashSet<QualifiedName>, supportedAttributes, ());
-    if (supportedAttributes.isEmpty())
-        SVGExternalResourcesRequired::addSupportedAttributes(supportedAttributes);
     return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
 }
 
@@ -75,7 +60,7 @@ void SVGGElement::svgAttributeChanged(const QualifiedName& attrName)
         return;
     }
 
-    SVGElementInstance::InvalidationGuard invalidationGuard(this);
+    SVGElement::InvalidationGuard invalidationGuard(this);
 
     if (RenderObject* renderer = this->renderer())
         RenderSVGResource::markForLayoutAndParentResourceInvalidation(renderer);

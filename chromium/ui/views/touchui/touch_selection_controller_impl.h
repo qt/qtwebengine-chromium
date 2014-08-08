@@ -14,13 +14,20 @@
 
 namespace views {
 
+namespace test {
+class WidgetTestInteractive;
+}
+
 // Touch specific implementation of TouchSelectionController. Responsible for
 // displaying selection handles and menu elements relevant in a touch interface.
 class VIEWS_EXPORT TouchSelectionControllerImpl
     : public ui::TouchSelectionController,
       public TouchEditingMenuController,
-      public WidgetObserver {
+      public WidgetObserver,
+      public ui::EventHandler {
  public:
+  class EditingHandleView;
+
   // Use TextSelectionController::create().
   explicit TouchSelectionControllerImpl(
       ui::TouchEditable* client_view);
@@ -30,10 +37,11 @@ class VIEWS_EXPORT TouchSelectionControllerImpl
   // TextSelectionController.
   virtual void SelectionChanged() OVERRIDE;
   virtual bool IsHandleDragInProgress() OVERRIDE;
+  virtual void HideHandles(bool quick) OVERRIDE;
 
  private:
   friend class TouchSelectionControllerImplTest;
-  class EditingHandleView;
+  friend class test::WidgetTestInteractive;
 
   void SetDraggingHandle(EditingHandleView* handle);
 
@@ -50,6 +58,10 @@ class VIEWS_EXPORT TouchSelectionControllerImpl
   void SetHandleSelectionRect(EditingHandleView* handle, const gfx::Rect& rect,
                               const gfx::Rect& rect_in_screen);
 
+  // Checks if handle should be shown for a selection end-point at |rect|.
+  // |rect| should be the clipped version of the selection end-point.
+  bool ShouldShowHandleFor(const gfx::Rect& rect) const;
+
   // Overridden from TouchEditingMenuController.
   virtual bool IsCommandIdEnabled(int command_id) const OVERRIDE;
   virtual void ExecuteCommand(int command_id, int event_flags) OVERRIDE;
@@ -63,18 +75,24 @@ class VIEWS_EXPORT TouchSelectionControllerImpl
   virtual void OnWidgetBoundsChanged(Widget* widget,
                                      const gfx::Rect& new_bounds) OVERRIDE;
 
+  // Overriden from ui::EventHandler.
+  virtual void OnKeyEvent(ui::KeyEvent* event) OVERRIDE;
+  virtual void OnMouseEvent(ui::MouseEvent* event) OVERRIDE;
+  virtual void OnScrollEvent(ui::ScrollEvent* event) OVERRIDE;
+
   // Time to show context menu.
   void ContextMenuTimerFired();
 
   void StartContextMenuTimer();
 
   // Convenience method to update the position/visibility of the context menu.
-  void UpdateContextMenu(const gfx::Point& p1, const gfx::Point& p2);
+  void UpdateContextMenu();
 
   // Convenience method for hiding context menu.
   void HideContextMenu();
 
   // Convenience methods for testing.
+  gfx::NativeView GetCursorHandleNativeView();
   gfx::Point GetSelectionHandle1Position();
   gfx::Point GetSelectionHandle2Position();
   gfx::Point GetCursorHandlePosition();
@@ -104,18 +122,11 @@ class VIEWS_EXPORT TouchSelectionControllerImpl
   // position of handles which might be invalid when handles are hidden.
   gfx::Rect selection_end_point_1_;
   gfx::Rect selection_end_point_2_;
+  // Selection end points, clipped to client view's boundaries.
+  gfx::Rect selection_end_point_1_clipped_;
+  gfx::Rect selection_end_point_2_clipped_;
 
   DISALLOW_COPY_AND_ASSIGN(TouchSelectionControllerImpl);
-};
-
-class VIEWS_EXPORT ViewsTouchSelectionControllerFactory
-    : public ui::TouchSelectionControllerFactory {
- public:
-  ViewsTouchSelectionControllerFactory();
-
-  // Overridden from ui::TouchSelectionControllerFactory.
-  virtual ui::TouchSelectionController* create(
-      ui::TouchEditable* client_view) OVERRIDE;
 };
 
 }  // namespace views

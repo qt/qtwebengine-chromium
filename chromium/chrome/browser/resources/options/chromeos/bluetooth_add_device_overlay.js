@@ -33,8 +33,9 @@ cr.define('options', function() {
       OptionsPage.prototype.initializePage.call(this);
       this.createDeviceList_();
 
+      BluetoothOptions.updateDiscoveryState(true);
+
       $('bluetooth-add-device-cancel-button').onclick = function(event) {
-        chrome.send('stopBluetoothDeviceDiscovery');
         OptionsPage.closeOverlay();
       };
 
@@ -42,7 +43,6 @@ cr.define('options', function() {
       $('bluetooth-add-device-apply-button').onclick = function(event) {
         var device = self.deviceList_.selectedItem;
         var address = device.address;
-        chrome.send('stopBluetoothDeviceDiscovery');
         OptionsPage.closeOverlay();
         device.pairing = 'bluetoothStartConnecting';
         options.BluetoothPairing.showDialog(device);
@@ -68,6 +68,11 @@ cr.define('options', function() {
       });
     },
 
+    /** @override */
+    didClosePage: function() {
+      chrome.send('stopBluetoothDeviceDiscovery');
+    },
+
     /**
      * Creates, decorates and initializes the bluetooth device list.
      * @private
@@ -82,11 +87,30 @@ cr.define('options', function() {
    * Automatically start the device discovery process if the
    * "Add device" dialog is visible.
    */
-  BluetoothOptions.updateDiscovery = function() {
+  BluetoothOptions.startDeviceDiscovery = function() {
     var page = BluetoothOptions.getInstance();
     if (page && page.visible)
       chrome.send('findBluetoothDevices');
-  }
+  };
+
+  /**
+   * Updates the dialog to show that device discovery has stopped. Updates the
+   * label text and hides/unhides the spinner. based on discovery state.
+   */
+  BluetoothOptions.updateDiscoveryState = function(discovering) {
+    $('bluetooth-scanning-label').hidden = !discovering;
+    $('bluetooth-scanning-icon').hidden = !discovering;
+    $('bluetooth-scan-stopped-label').hidden = discovering;
+  };
+
+  /**
+   * If the "Add device" dialog is visible, dismiss it.
+   */
+  BluetoothOptions.dismissOverlay = function() {
+    var page = BluetoothOptions.getInstance();
+    if (page && page.visible)
+      OptionsPage.closeOverlay();
+  };
 
   // Export
   return {

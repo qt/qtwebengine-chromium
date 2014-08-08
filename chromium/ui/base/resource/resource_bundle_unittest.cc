@@ -5,6 +5,7 @@
 #include "ui/base/resource/resource_bundle.h"
 
 #include "base/base_paths.h"
+#include "base/big_endian.h"
 #include "base/file_util.h"
 #include "base/files/file_path.h"
 #include "base/files/scoped_temp_dir.h"
@@ -12,7 +13,7 @@
 #include "base/memory/ref_counted_memory.h"
 #include "base/path_service.h"
 #include "base/strings/utf_string_conversions.h"
-#include "net/base/big_endian.h"
+#include "grit/ui_resources.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/skia/include/core/SkBitmap.h"
@@ -20,8 +21,9 @@
 #include "ui/base/resource/data_pack.h"
 #include "ui/gfx/codec/png_codec.h"
 #include "ui/gfx/image/image_skia.h"
-
-#include "grit/ui_resources.h"
+#if defined(OS_WIN)
+#include "ui/gfx/win/dpi.h"
+#endif
 
 using ::testing::_;
 using ::testing::Between;
@@ -78,8 +80,9 @@ class MockResourceBundleDelegate : public ui::ResourceBundle::Delegate {
     *value = GetRawDataResourceMock(resource_id, scale_factor);
     return true;
   }
-  MOCK_METHOD1(GetLocalizedStringMock, string16(int message_id));
-  virtual bool GetLocalizedString(int message_id, string16* value) OVERRIDE {
+  MOCK_METHOD1(GetLocalizedStringMock, base::string16(int message_id));
+  virtual bool GetLocalizedString(int message_id,
+                                  base::string16* value) OVERRIDE {
     *value = GetLocalizedStringMock(message_id);
     return true;
   }
@@ -105,8 +108,8 @@ void AddCustomChunk(const base::StringPiece& custom_chunk,
   for (size_t i = 0; i < sizeof(uint32); ++i)
     ihdr_length_data[i] = *(ihdr_start + i);
   uint32 ihdr_chunk_length = 0;
-  net::ReadBigEndian(reinterpret_cast<char*>(ihdr_length_data),
-                     &ihdr_chunk_length);
+  base::ReadBigEndian(reinterpret_cast<char*>(ihdr_length_data),
+                      &ihdr_chunk_length);
   EXPECT_TRUE(std::equal(
       ihdr_start + sizeof(uint32),
       ihdr_start + sizeof(uint32) + sizeof(kPngIHDRChunkType),
@@ -297,14 +300,14 @@ TEST_F(ResourceBundleTest, DelegateGetLocalizedString) {
   MockResourceBundleDelegate delegate;
   ResourceBundle* resource_bundle = CreateResourceBundle(&delegate);
 
-  string16 data = ASCIIToUTF16("My test data");
+  base::string16 data = base::ASCIIToUTF16("My test data");
   int resource_id = 5;
 
   EXPECT_CALL(delegate, GetLocalizedStringMock(resource_id))
       .Times(1)
       .WillOnce(Return(data));
 
-  string16 result = resource_bundle->GetLocalizedString(resource_id);
+  base::string16 result = resource_bundle->GetLocalizedString(resource_id);
   EXPECT_EQ(data, result);
 }
 
@@ -359,7 +362,7 @@ class ResourceBundleImageTest : public ResourceBundleTest {
     // Write an empty data pak for locale data.
     const base::FilePath& locale_path = dir_path().Append(
         FILE_PATH_LITERAL("locale.pak"));
-    EXPECT_EQ(file_util::WriteFile(locale_path, kEmptyPakContents,
+    EXPECT_EQ(base::WriteFile(locale_path, kEmptyPakContents,
                                    kEmptyPakSize),
               static_cast<int>(kEmptyPakSize));
 
@@ -386,7 +389,7 @@ TEST_F(ResourceBundleImageTest, LoadDataResourceBytes) {
   base::FilePath data_path = dir_path().Append(FILE_PATH_LITERAL("sample.pak"));
 
   // Dump contents into the pak files.
-  ASSERT_EQ(file_util::WriteFile(data_path, kEmptyPakContents,
+  ASSERT_EQ(base::WriteFile(data_path, kEmptyPakContents,
       kEmptyPakSize), static_cast<int>(kEmptyPakSize));
 
   // Create a resource bundle from the file.
@@ -411,9 +414,9 @@ TEST_F(ResourceBundleImageTest, GetRawDataResource) {
       dir_path().Append(FILE_PATH_LITERAL("sample_2x.pak"));
 
   // Dump contents into the pak files.
-  ASSERT_EQ(file_util::WriteFile(data_path, kSamplePakContents,
+  ASSERT_EQ(base::WriteFile(data_path, kSamplePakContents,
       kSamplePakSize), static_cast<int>(kSamplePakSize));
-  ASSERT_EQ(file_util::WriteFile(data_2x_path, kSamplePakContents2x,
+  ASSERT_EQ(base::WriteFile(data_2x_path, kSamplePakContents2x,
       kSamplePakSize2x), static_cast<int>(kSamplePakSize2x));
 
   // Load the regular and 2x pak files.
@@ -439,6 +442,9 @@ TEST_F(ResourceBundleImageTest, GetRawDataResource) {
 // Test requesting image reps at various scale factors from the image returned
 // via ResourceBundle::GetImageNamed().
 TEST_F(ResourceBundleImageTest, GetImageNamed) {
+#if defined(OS_WIN)
+  gfx::ForceHighDPISupportForTesting(2.0);
+#endif
   std::vector<ScaleFactor> supported_factors;
   supported_factors.push_back(SCALE_FACTOR_100P);
   supported_factors.push_back(SCALE_FACTOR_200P);
@@ -459,8 +465,8 @@ TEST_F(ResourceBundleImageTest, GetImageNamed) {
 
   gfx::ImageSkia* image_skia = resource_bundle->GetImageSkiaNamed(3);
 
-#if defined(OS_CHROMEOS)
-  // ChromeOS loads highest scale factor first.
+#if defined(OS_CHROMEOS) || defined(OS_WIN)
+  // ChromeOS/Windows load highest scale factor first.
   EXPECT_EQ(ui::SCALE_FACTOR_200P,
             GetSupportedScaleFactor(image_skia->image_reps()[0].scale()));
 #else
@@ -471,19 +477,25 @@ TEST_F(ResourceBundleImageTest, GetImageNamed) {
   // Resource ID 3 exists in both 1x and 2x paks. Image reps should be
   // available for both scale factors in |image_skia|.
   gfx::ImageSkiaRep image_rep =
-      image_skia->GetRepresentation(GetImageScale(ui::SCALE_FACTOR_100P));
+      image_skia->GetRepresentation(
+      GetScaleForScaleFactor(ui::SCALE_FACTOR_100P));
   EXPECT_EQ(ui::SCALE_FACTOR_100P, GetSupportedScaleFactor(image_rep.scale()));
   image_rep =
-      image_skia->GetRepresentation(GetImageScale(ui::SCALE_FACTOR_200P));
+      image_skia->GetRepresentation(
+      GetScaleForScaleFactor(ui::SCALE_FACTOR_200P));
   EXPECT_EQ(ui::SCALE_FACTOR_200P, GetSupportedScaleFactor(image_rep.scale()));
 
   // The 1.4x pack was not loaded. Requesting the 1.4x resource should return
   // either the 1x or the 2x resource.
   image_rep = image_skia->GetRepresentation(
-      ui::GetImageScale(ui::SCALE_FACTOR_140P));
+      ui::GetScaleForScaleFactor(ui::SCALE_FACTOR_140P));
   ui::ScaleFactor scale_factor = GetSupportedScaleFactor(image_rep.scale());
   EXPECT_TRUE(scale_factor == ui::SCALE_FACTOR_100P ||
               scale_factor == ui::SCALE_FACTOR_200P);
+
+  // ImageSkia scales image if the one for the requested scale factor is not
+  // available.
+  EXPECT_EQ(1.4f, image_skia->GetRepresentation(1.4f).scale());
 }
 
 // Test that GetImageNamed() behaves properly for images which GRIT has
@@ -514,7 +526,8 @@ TEST_F(ResourceBundleImageTest, GetImageNamedFallback1x) {
   // The image rep for 2x should be available. It should be resized to the
   // proper 2x size.
   gfx::ImageSkiaRep image_rep =
-    image_skia->GetRepresentation(GetImageScale(ui::SCALE_FACTOR_200P));
+      image_skia->GetRepresentation(GetScaleForScaleFactor(
+      ui::SCALE_FACTOR_200P));
   EXPECT_EQ(ui::SCALE_FACTOR_200P, GetSupportedScaleFactor(image_rep.scale()));
   EXPECT_EQ(20, image_rep.pixel_width());
   EXPECT_EQ(20, image_rep.pixel_height());
@@ -553,15 +566,21 @@ TEST_F(ResourceBundleImageTest, GetImageNamedFallback1xRounding) {
   gfx::ImageSkia* image_skia = resource_bundle->GetImageSkiaNamed(3);
   gfx::ImageSkiaRep image_rep =
     image_skia->GetRepresentation(
-      GetImageScale(ui::SCALE_FACTOR_140P));
+    GetScaleForScaleFactor(ui::SCALE_FACTOR_140P));
   EXPECT_EQ(12, image_rep.pixel_width());
   image_rep = image_skia->GetRepresentation(
-    GetImageScale(ui::SCALE_FACTOR_180P));
+    GetScaleForScaleFactor(ui::SCALE_FACTOR_180P));
   EXPECT_EQ(15, image_rep.pixel_width());
 }
 #endif
 
-TEST_F(ResourceBundleImageTest, FallbackToNone) {
+#if defined(OS_IOS)
+// Fails on devices that have non-100P scaling. See crbug.com/298406
+#define MAYBE_FallbackToNone DISABLED_FallbackToNone
+#else
+#define MAYBE_FallbackToNone FallbackToNone
+#endif
+TEST_F(ResourceBundleImageTest, MAYBE_FallbackToNone) {
   base::FilePath data_default_path = dir_path().AppendASCII("sample.pak");
 
   // Create the pak files.
@@ -573,6 +592,7 @@ TEST_F(ResourceBundleImageTest, FallbackToNone) {
 
   gfx::ImageSkia* image_skia = resource_bundle->GetImageSkiaNamed(3);
   EXPECT_EQ(1u, image_skia->image_reps().size());
+  EXPECT_TRUE(image_skia->image_reps()[0].unscaled());
   EXPECT_EQ(ui::SCALE_FACTOR_100P,
             GetSupportedScaleFactor(image_skia->image_reps()[0].scale()));
 }

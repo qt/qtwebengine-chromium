@@ -11,7 +11,6 @@
 #   'type': 'none',
 #   'variables': {
 #     'test_suite_name': 'test_suite_name',  # string
-#     'input_shlib_path' : '/path/to/test_suite.so',  # string
 #     'input_jars_paths': ['/path/to/test_suite.jar', ... ],  # list
 #   },
 #   'includes': ['path/to/this/gypi/file'],
@@ -24,7 +23,7 @@
     '<(DEPTH)/tools/android/android_tools.gyp:android_tools',
   ],
   'conditions': [
-     ['OS == "android" and gtest_target_type == "shared_library"', {
+     ['OS == "android"', {
        'variables': {
          # These are used to configure java_apk.gypi included below.
          'apk_name': '<(test_suite_name)',
@@ -36,6 +35,6 @@
          'gyp_managed_install': 0,
        },
        'includes': [ 'java_apk.gypi' ],
-     }],  # 'OS == "android" and gtest_target_type == "shared_library"
+     }],  # 'OS == "android"
   ],  # conditions
 }

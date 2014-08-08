@@ -30,6 +30,7 @@ extern "C" {
 #include <libexif/exif-byte-order.h>
 #include <libexif/exif-format.h>
 #include <libexif/_stdint.h>
+
 #include "config.h"
 
 /* If these definitions don't work for you, please let us fix the 

@@ -41,6 +41,12 @@ void WebContentsObserver::Observe(WebContents* web_contents) {
   }
 }
 
+bool WebContentsObserver::OnMessageReceived(
+    const IPC::Message& message,
+    RenderFrameHost* render_frame_host) {
+  return false;
+}
+
 bool WebContentsObserver::OnMessageReceived(const IPC::Message& message) {
   return false;
 }
@@ -61,12 +67,9 @@ int WebContentsObserver::routing_id() const {
   return web_contents_->GetRoutingID();
 }
 
-void WebContentsObserver::WebContentsImplDestroyed() {
-  // Do cleanup so that 'this' can safely be deleted from WebContentsDestroyed.
+void WebContentsObserver::ResetWebContents() {
   web_contents_->RemoveObserver(this);
-  WebContentsImpl* contents = web_contents_;
   web_contents_ = NULL;
-  WebContentsDestroyed(contents);
 }
 
 }  // namespace content

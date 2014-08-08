@@ -64,8 +64,9 @@ public:
             return;
         }
 
+        // FIXME: runAsync should take a TraceLocation and pass it to timer here.
         if (!m_timer.isActive())
-            m_timer.startOneShot(0);
+            m_timer.startOneShot(0, FROM_HERE);
     }
 
     // If it's scheduled to run the method, cancel it and remember to schedule
@@ -93,7 +94,8 @@ public:
             return;
 
         m_runWhenResumed = false;
-        m_timer.startOneShot(0);
+        // FIXME: resume should take a TraceLocation and pass it to timer here.
+        m_timer.startOneShot(0, FROM_HERE);
     }
 
     void stop()
@@ -120,6 +122,10 @@ private:
 
     Timer<AsyncMethodRunner<TargetClass> > m_timer;
 
+    // FIXME: oilpan: AsyncMethodRunner should be moved to the heap and m_object should be traced.
+    // This raw pointer is safe as long as AsyncMethodRunner<X> is held by the X itself
+    // (That's the case in the current code base).
+    GC_PLUGIN_IGNORE("363031")
     TargetClass* m_object;
     TargetMethod m_method;
 

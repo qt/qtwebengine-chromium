@@ -6,16 +6,13 @@
 #define CONTENT_PUBLIC_BROWSER_RENDER_WIDGET_HOST_VIEW_H_
 
 #include "base/basictypes.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/strings/string16.h"
 #include "content/common/content_export.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkRegion.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "ui/gfx/native_widget_types.h"
-
-#if defined(TOOLKIT_GTK)
-#include <gdk/gdk.h>
-#endif
 
 class GURL;
 
@@ -24,10 +21,14 @@ class Rect;
 class Size;
 }
 
+namespace ui {
+class TextInputClient;
+}
+
 namespace content {
 
-class BrowserAccessibilityManager;
 class RenderWidgetHost;
+class RenderWidgetHostViewFrameSubscriber;
 
 // RenderWidgetHostView is an interface implemented by an object that acts as
 // the "View" portion of a RenderWidgetHost. The RenderWidgetHost and its
@@ -39,25 +40,11 @@ class RenderWidgetHost;
 //
 // RenderWidgetHostView Class Hierarchy:
 //   RenderWidgetHostView - Public interface.
-//   RenderWidgetHostViewPort - Private interface for content/ and ports.
 //   RenderWidgetHostViewBase - Common implementation between platforms.
-//   RenderWidgetHostViewWin, ... - Platform specific implementations.
+//   RenderWidgetHostViewAura, ... - Platform specific implementations.
 class CONTENT_EXPORT RenderWidgetHostView {
  public:
   virtual ~RenderWidgetHostView() {}
-
-  // Platform-specific creator. Use this to construct new RenderWidgetHostViews
-  // rather than using RenderWidgetHostViewWin & friends.
-  //
-  // This function must NOT size it, because the RenderView in the renderer
-  // wouldn't have been created yet. The widget would set its "waiting for
-  // resize ack" flag, and the ack would never come becasue no RenderView
-  // received it.
-  //
-  // The RenderWidgetHost must already be created (because we can't know if it's
-  // going to be a regular RenderWidgetHost or a RenderViewHost (a subclass).
-  static RenderWidgetHostView* CreateViewForWidget(
-      RenderWidgetHost* widget);
 
   // Initialize this object for use as a drawing area.  |parent_view| may be
   // left as NULL on platforms where a parent view is not required to initialize
@@ -79,6 +66,13 @@ class CONTENT_EXPORT RenderWidgetHostView {
   virtual gfx::NativeView GetNativeView() const = 0;
   virtual gfx::NativeViewId GetNativeViewId() const = 0;
   virtual gfx::NativeViewAccessible GetNativeViewAccessible() = 0;
+
+  // Returns a ui::TextInputClient to support text input or NULL if this RWHV
+  // doesn't support text input.
+  // Note: Not all the platforms use ui::InputMethod and ui::TextInputClient for
+  // text input.  Some platforms (Mac and Android for example) use their own
+  // text input system.
+  virtual ui::TextInputClient* GetTextInputClient() = 0;
 
   // Set focus to the associated View component.
   virtual void Focus() = 0;
@@ -108,15 +102,34 @@ class CONTENT_EXPORT RenderWidgetHostView {
   virtual base::string16 GetSelectedText() const = 0;
 
   // Subclasses should override this method to do what is appropriate to set
-  // the custom background for their platform.
-  virtual void SetBackground(const SkBitmap& background) = 0;
-  virtual const SkBitmap& GetBackground() = 0;
+  // the background to be transparent or opaque.
+  virtual void SetBackgroundOpaque(bool opaque) = 0;
+  virtual bool GetBackgroundOpaque() = 0;
 
   // Return value indicates whether the mouse is locked successfully or not.
   virtual bool LockMouse() = 0;
   virtual void UnlockMouse() = 0;
   // Returns true if the mouse pointer is currently locked.
   virtual bool IsMouseLocked() = 0;
+
+  // Retrives the size of the viewport for the visible region. May be smaller
+  // than the view size if a portion of the view is obstructed (e.g. by a
+  // virtual keyboard).
+  virtual gfx::Size GetVisibleViewportSize() const = 0;
+
+  // Set insets for the visible region of the root window. Used to compute the
+  // visible viewport.
+  virtual void SetInsets(const gfx::Insets& insets) = 0;
+
+  // Begin subscribing for presentation events and captured frames.
+  // |subscriber| is now owned by this object, it will be called only on the
+  // UI thread.
+  virtual void BeginFrameSubscription(
+      scoped_ptr<RenderWidgetHostViewFrameSubscriber> subscriber) = 0;
+
+  // End subscribing for frame presentation events. FrameSubscriber will be
+  // deleted after this call.
+  virtual void EndFrameSubscription() = 0;
 
 #if defined(OS_MACOSX)
   // Set the view's active state (i.e., tint state of controls).
@@ -151,18 +164,6 @@ class CONTENT_EXPORT RenderWidgetHostView {
   // Stops speaking, if it is currently in progress.
   virtual void StopSpeaking() = 0;
 #endif  // defined(OS_MACOSX)
-
-#if defined(TOOLKIT_GTK)
-  // Gets the event for the last mouse down.
-  virtual GdkEventButton* GetLastMouseDown() = 0;
-  // Builds a submenu containing all the gtk input method commands.
-  virtual gfx::NativeView BuildInputMethodsGtkMenu() = 0;
-#endif  // defined(TOOLKIT_GTK)
-
-#if defined(OS_WIN) && !defined(USE_AURA)
-  // The region specified will be transparent to mouse clicks.
-  virtual void SetClickthroughRegion(SkRegion* region) = 0;
-#endif
 };
 
 }  // namespace content

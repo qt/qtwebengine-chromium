@@ -213,6 +213,24 @@ cr.define('cr.ui', function() {
     },
 
     /**
+     * Updates the existing item with the new item.
+     *
+     * The existing item and the new item are regarded as the same item and the
+     * permutation tracks these indexes.
+     *
+     * @param {*} oldItem Old item that is contained in the model. If the item
+     *     is not found in the model, the method call is just ignored.
+     * @param {*} newItem New item.
+     */
+    replaceItem: function(oldItem, newItem) {
+      var index = this.indexOf(oldItem);
+      if (index < 0)
+        return;
+      this.array_[this.indexes_[index]] = newItem;
+      this.updateIndex(index);
+    },
+
+    /**
      * Use this to update a given item in the array. This does not remove and
      * reinsert a new item.
      * This dispatches a change event.
@@ -220,13 +238,28 @@ cr.define('cr.ui', function() {
      * @param {number} index The index of the item to update.
      */
     updateIndex: function(index) {
-      if (index < 0 || index >= this.length)
-        throw Error('Invalid index, ' + index);
+      this.updateIndexes([index]);
+    },
 
-      // TODO(arv): Maybe unify splice and change events?
-      var e = new Event('change');
-      e.index = index;
-      this.dispatchEvent(e);
+    /**
+     * Notifies of update of the items in the array. This does not remove and
+     * reinsert new items.
+     * This dispatches one or more change events.
+     * This runs sort after updating.
+     * @param {Array.<number>} indexes The index list of items to update.
+     */
+    updateIndexes: function(indexes) {
+      var isIndexesValid = indexes.every(function(index) {
+        return 0 <= index && index < this.length;
+      }, this);
+      if (!isIndexesValid)
+        throw Error('Invalid index, ' + indexes[i]);
+
+      for (var i = 0; i < indexes.length; i++) {
+        var e = new Event('change');
+        e.index = indexes[i];
+        this.dispatchEvent(e);
+      }
 
       if (this.sortStatus.field) {
         var status = this.sortStatus;

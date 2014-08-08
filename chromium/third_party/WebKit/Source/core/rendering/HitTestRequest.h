@@ -40,7 +40,7 @@ public:
         AllowFrameScrollbars = 1 << 9,
         AllowChildFrameContent = 1 << 10,
         ChildFrameHitTest = 1 << 11,
-        IgnorePointerEventsNone = 1 << 12
+        IgnorePointerEventsNone = 1 << 12,
     };
 
     typedef unsigned HitTestRequestType;

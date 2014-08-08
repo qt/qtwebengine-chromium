@@ -12,13 +12,25 @@
 
 #ifdef HAVE_JPEG
 #include <assert.h>
-#ifndef __CLR_VER
+
+#if !defined(__pnacl__) && !defined(__CLR_VER) && !defined(COVERAGE_ENABLED) &&\
+    !defined(TARGET_IPHONE_SIMULATOR)
 // Must be included before jpeglib.
 #include <setjmp.h>
 #define HAVE_SETJMP
 #endif
 struct FILE;  // For jpeglib.h.
+
+// C++ build requires extern C for jpeg internals.
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <jpeglib.h>
+
+#ifdef __cplusplus
+}  // extern "C"
+#endif
 
 #include "libyuv/planar_functions.h"  // For CopyPlane().
 
@@ -38,8 +50,16 @@ const int MJpegDecoder::kColorSpaceYCbCr = JCS_YCbCr;
 const int MJpegDecoder::kColorSpaceCMYK = JCS_CMYK;
 const int MJpegDecoder::kColorSpaceYCCK = JCS_YCCK;
 
+// Methods that are passed to jpeglib.
+boolean fill_input_buffer(jpeg_decompress_struct* cinfo);
+void init_source(jpeg_decompress_struct* cinfo);
+void skip_input_data(jpeg_decompress_struct* cinfo,
+                     long num_bytes);  // NOLINT
+void term_source(jpeg_decompress_struct* cinfo);
+void ErrorHandler(jpeg_common_struct* cinfo);
+
 MJpegDecoder::MJpegDecoder()
-    : has_scanline_padding_(false),
+    : has_scanline_padding_(LIBYUV_FALSE),
       num_outbufs_(0),
       scanlines_(NULL),
       scanlines_sizes_(NULL),
@@ -75,25 +95,25 @@ MJpegDecoder::~MJpegDecoder() {
   DestroyOutputBuffers();
 }
 
-bool MJpegDecoder::LoadFrame(const uint8* src, size_t src_len) {
+LIBYUV_BOOL MJpegDecoder::LoadFrame(const uint8* src, size_t src_len) {
   if (!ValidateJpeg(src, src_len)) {
-    return false;
+    return LIBYUV_FALSE;
   }
 
   buf_.data = src;
-  buf_.len = static_cast<int>(src_len);
+  buf_.len = (int)(src_len);
   buf_vec_.pos = 0;
   decompress_struct_->client_data = &buf_vec_;
 #ifdef HAVE_SETJMP
   if (setjmp(error_mgr_->setjmp_buffer)) {
     // We called jpeg_read_header, it experienced an error, and we called
     // longjmp() and rewound the stack to here. Return error.
-    return false;
+    return LIBYUV_FALSE;
   }
 #endif
   if (jpeg_read_header(decompress_struct_, TRUE) != JPEG_HEADER_OK) {
     // ERROR: Bad MJPEG header
-    return false;
+    return LIBYUV_FALSE;
   }
   AllocOutputBuffers(GetNumComponents());
   for (int i = 0; i < num_outbufs_; ++i) {
@@ -123,10 +143,10 @@ bool MJpegDecoder::LoadFrame(const uint8* src, size_t src_len) {
     }
 
     if (GetComponentStride(i) != GetComponentWidth(i)) {
-      has_scanline_padding_ = true;
+      has_scanline_padding_ = LIBYUV_TRUE;
     }
   }
-  return true;
+  return LIBYUV_TRUE;
 }
 
 static int DivideAndRoundUp(int numerator, int denominator) {
@@ -205,36 +225,36 @@ int MJpegDecoder::GetComponentSize(int component) {
   return GetComponentWidth(component) * GetComponentHeight(component);
 }
 
-bool MJpegDecoder::UnloadFrame() {
+LIBYUV_BOOL MJpegDecoder::UnloadFrame() {
 #ifdef HAVE_SETJMP
   if (setjmp(error_mgr_->setjmp_buffer)) {
     // We called jpeg_abort_decompress, it experienced an error, and we called
     // longjmp() and rewound the stack to here. Return error.
-    return false;
+    return LIBYUV_FALSE;
   }
 #endif
   jpeg_abort_decompress(decompress_struct_);
-  return true;
+  return LIBYUV_TRUE;
 }
 
 // TODO(fbarchard): Allow rectangle to be specified: x, y, width, height.
-bool MJpegDecoder::DecodeToBuffers(
+LIBYUV_BOOL MJpegDecoder::DecodeToBuffers(
     uint8** planes, int dst_width, int dst_height) {
   if (dst_width != GetWidth() ||
       dst_height > GetHeight()) {
     // ERROR: Bad dimensions
-    return false;
+    return LIBYUV_FALSE;
   }
 #ifdef HAVE_SETJMP
   if (setjmp(error_mgr_->setjmp_buffer)) {
     // We called into jpeglib, it experienced an error sometime during this
     // function call, and we called longjmp() and rewound the stack to here.
     // Return error.
-    return false;
+    return LIBYUV_FALSE;
   }
 #endif
   if (!StartDecode()) {
-    return false;
+    return LIBYUV_FALSE;
   }
   SetScanlinePointers(databuf_);
   int lines_left = dst_height;
@@ -248,7 +268,7 @@ bool MJpegDecoder::DecodeToBuffers(
     while (skip >= GetImageScanlinesPerImcuRow()) {
       if (!DecodeImcuRow()) {
         FinishDecode();
-        return false;
+        return LIBYUV_FALSE;
       }
       skip -= GetImageScanlinesPerImcuRow();
     }
@@ -257,7 +277,7 @@ bool MJpegDecoder::DecodeToBuffers(
       // copy the parts we want into the destination.
       if (!DecodeImcuRow()) {
         FinishDecode();
-        return false;
+        return LIBYUV_FALSE;
       }
       for (int i = 0; i < num_outbufs_; ++i) {
         // TODO(fbarchard): Compute skip to avoid this
@@ -281,7 +301,7 @@ bool MJpegDecoder::DecodeToBuffers(
          lines_left -= GetImageScanlinesPerImcuRow()) {
     if (!DecodeImcuRow()) {
       FinishDecode();
-      return false;
+      return LIBYUV_FALSE;
     }
     for (int i = 0; i < num_outbufs_; ++i) {
       int scanlines_to_copy = GetComponentScanlinesPerImcuRow(i);
@@ -296,7 +316,7 @@ bool MJpegDecoder::DecodeToBuffers(
     // Have a partial iMCU row left over to decode.
     if (!DecodeImcuRow()) {
       FinishDecode();
-      return false;
+      return LIBYUV_FALSE;
     }
     for (int i = 0; i < num_outbufs_; ++i) {
       int scanlines_to_copy =
@@ -310,23 +330,23 @@ bool MJpegDecoder::DecodeToBuffers(
   return FinishDecode();
 }
 
-bool MJpegDecoder::DecodeToCallback(CallbackFunction fn, void* opaque,
+LIBYUV_BOOL MJpegDecoder::DecodeToCallback(CallbackFunction fn, void* opaque,
     int dst_width, int dst_height) {
   if (dst_width != GetWidth() ||
       dst_height > GetHeight()) {
     // ERROR: Bad dimensions
-    return false;
+    return LIBYUV_FALSE;
   }
 #ifdef HAVE_SETJMP
   if (setjmp(error_mgr_->setjmp_buffer)) {
     // We called into jpeglib, it experienced an error sometime during this
     // function call, and we called longjmp() and rewound the stack to here.
     // Return error.
-    return false;
+    return LIBYUV_FALSE;
   }
 #endif
   if (!StartDecode()) {
-    return false;
+    return LIBYUV_FALSE;
   }
   SetScanlinePointers(databuf_);
   int lines_left = dst_height;
@@ -336,7 +356,7 @@ bool MJpegDecoder::DecodeToCallback(CallbackFunction fn, void* opaque,
     while (skip >= GetImageScanlinesPerImcuRow()) {
       if (!DecodeImcuRow()) {
         FinishDecode();
-        return false;
+        return LIBYUV_FALSE;
       }
       skip -= GetImageScanlinesPerImcuRow();
     }
@@ -344,7 +364,7 @@ bool MJpegDecoder::DecodeToCallback(CallbackFunction fn, void* opaque,
       // Have a partial iMCU row left over to skip.
       if (!DecodeImcuRow()) {
         FinishDecode();
-        return false;
+        return LIBYUV_FALSE;
       }
       for (int i = 0; i < num_outbufs_; ++i) {
         // TODO(fbarchard): Compute skip to avoid this
@@ -371,7 +391,7 @@ bool MJpegDecoder::DecodeToCallback(CallbackFunction fn, void* opaque,
          lines_left -= GetImageScanlinesPerImcuRow()) {
     if (!DecodeImcuRow()) {
       FinishDecode();
-      return false;
+      return LIBYUV_FALSE;
     }
     (*fn)(opaque, databuf_, databuf_strides_, GetImageScanlinesPerImcuRow());
   }
@@ -379,19 +399,19 @@ bool MJpegDecoder::DecodeToCallback(CallbackFunction fn, void* opaque,
     // Have a partial iMCU row left over to decode.
     if (!DecodeImcuRow()) {
       FinishDecode();
-      return false;
+      return LIBYUV_FALSE;
     }
     (*fn)(opaque, databuf_, databuf_strides_, lines_left);
   }
   return FinishDecode();
 }
 
-void MJpegDecoder::init_source(j_decompress_ptr cinfo) {
+void init_source(j_decompress_ptr cinfo) {
   fill_input_buffer(cinfo);
 }
 
-boolean MJpegDecoder::fill_input_buffer(j_decompress_ptr cinfo) {
-  BufferVector* buf_vec = static_cast<BufferVector*>(cinfo->client_data);
+boolean fill_input_buffer(j_decompress_ptr cinfo) {
+  BufferVector* buf_vec = (BufferVector*)(cinfo->client_data);
   if (buf_vec->pos >= buf_vec->len) {
     assert(0 && "No more data");
     // ERROR: No more data
@@ -403,17 +423,17 @@ boolean MJpegDecoder::fill_input_buffer(j_decompress_ptr cinfo) {
   return TRUE;
 }
 
-void MJpegDecoder::skip_input_data(j_decompress_ptr cinfo,
-                                   long num_bytes) {  // NOLINT
+void skip_input_data(j_decompress_ptr cinfo,
+                     long num_bytes) {  // NOLINT
   cinfo->src->next_input_byte += num_bytes;
 }
 
-void MJpegDecoder::term_source(j_decompress_ptr cinfo) {
+void term_source(j_decompress_ptr cinfo) {
   // Nothing to do.
 }
 
 #ifdef HAVE_SETJMP
-void MJpegDecoder::ErrorHandler(j_common_ptr cinfo) {
+void ErrorHandler(j_common_ptr cinfo) {
   // This is called when a jpeglib command experiences an error. Unfortunately
   // jpeglib's error handling model is not very flexible, because it expects the
   // error handler to not return--i.e., it wants the program to terminate. To
@@ -427,7 +447,7 @@ void MJpegDecoder::ErrorHandler(j_common_ptr cinfo) {
   // ERROR: Error in jpeglib: buf
 #endif
 
-  SetJmpErrorMgr* mgr = reinterpret_cast<SetJmpErrorMgr*>(cinfo->err);
+  SetJmpErrorMgr* mgr = (SetJmpErrorMgr*)(cinfo->err);
   // This rewinds the call stack to the point of the corresponding setjmp()
   // and causes it to return (for a second time) with value 1.
   longjmp(mgr->setjmp_buffer, 1);
@@ -474,26 +494,29 @@ void MJpegDecoder::DestroyOutputBuffers() {
 }
 
 // JDCT_IFAST and do_block_smoothing improve performance substantially.
-bool MJpegDecoder::StartDecode() {
+LIBYUV_BOOL MJpegDecoder::StartDecode() {
   decompress_struct_->raw_data_out = TRUE;
   decompress_struct_->dct_method = JDCT_IFAST;  // JDCT_ISLOW is default
   decompress_struct_->dither_mode = JDITHER_NONE;
-  decompress_struct_->do_fancy_upsampling = false;  // Not applicable to 'raw'
-  decompress_struct_->enable_2pass_quant = false;  // Only for buffered mode
-  decompress_struct_->do_block_smoothing = false;  // blocky but fast
+  // Not applicable to 'raw':
+  decompress_struct_->do_fancy_upsampling = (boolean)(LIBYUV_FALSE);
+  // Only for buffered mode:
+  decompress_struct_->enable_2pass_quant = (boolean)(LIBYUV_FALSE);
+  // Blocky but fast:
+  decompress_struct_->do_block_smoothing = (boolean)(LIBYUV_FALSE);
 
   if (!jpeg_start_decompress(decompress_struct_)) {
     // ERROR: Couldn't start JPEG decompressor";
-    return false;
+    return LIBYUV_FALSE;
   }
-  return true;
+  return LIBYUV_TRUE;
 }
 
-bool MJpegDecoder::FinishDecode() {
+LIBYUV_BOOL MJpegDecoder::FinishDecode() {
   // jpeglib considers it an error if we finish without decoding the whole
   // image, so we call "abort" rather than "finish".
   jpeg_abort_decompress(decompress_struct_);
-  return true;
+  return LIBYUV_TRUE;
 }
 
 void MJpegDecoder::SetScanlinePointers(uint8** data) {
@@ -506,8 +529,8 @@ void MJpegDecoder::SetScanlinePointers(uint8** data) {
   }
 }
 
-inline bool MJpegDecoder::DecodeImcuRow() {
-  return static_cast<unsigned int>(GetImageScanlinesPerImcuRow()) ==
+inline LIBYUV_BOOL MJpegDecoder::DecodeImcuRow() {
+  return (unsigned int)(GetImageScanlinesPerImcuRow()) ==
       jpeg_read_raw_data(decompress_struct_,
                          scanlines_,
                          GetImageScanlinesPerImcuRow());

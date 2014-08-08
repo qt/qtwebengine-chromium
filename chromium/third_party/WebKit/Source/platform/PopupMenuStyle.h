@@ -35,9 +35,8 @@ namespace WebCore {
 
 class PopupMenuStyle {
 public:
-    enum PopupMenuType { SelectPopup, AutofillPopup };
     enum BackgroundColorType { DefaultBackgroundColor, CustomBackgroundColor };
-    PopupMenuStyle(const Color& foreground, const Color& background, const Font& font, bool visible, bool isDisplayNone, Length textIndent, TextDirection textDirection, bool hasTextDirectionOverride, BackgroundColorType backgroundColorType = DefaultBackgroundColor, PopupMenuType menuType = SelectPopup)
+    PopupMenuStyle(const Color& foreground, const Color& background, const Font& font, bool visible, bool isDisplayNone, Length textIndent, TextDirection textDirection, bool hasTextDirectionOverride, BackgroundColorType backgroundColorType = DefaultBackgroundColor)
         : m_foregroundColor(foreground)
         , m_backgroundColor(background)
         , m_font(font)
@@ -47,7 +46,6 @@ public:
         , m_textDirection(textDirection)
         , m_hasTextDirectionOverride(hasTextDirectionOverride)
         , m_backgroundColorType(backgroundColorType)
-        , m_menuType(menuType)
     {
     }
 
@@ -56,11 +54,9 @@ public:
     const Font& font() const { return m_font; }
     bool isVisible() const { return m_visible; }
     bool isDisplayNone() const { return m_isDisplayNone; }
-    Length textIndent() const { return m_textIndent; }
     TextDirection textDirection() const { return m_textDirection; }
     bool hasTextDirectionOverride() const { return m_hasTextDirectionOverride; }
     BackgroundColorType backgroundColorType() const { return m_backgroundColorType; }
-    PopupMenuType menuType() const { return m_menuType; }
 private:
     Color m_foregroundColor;
     Color m_backgroundColor;
@@ -71,7 +67,6 @@ private:
     TextDirection m_textDirection;
     bool m_hasTextDirectionOverride;
     BackgroundColorType m_backgroundColorType;
-    PopupMenuType m_menuType;
 };
 
 } // namespace WebCore

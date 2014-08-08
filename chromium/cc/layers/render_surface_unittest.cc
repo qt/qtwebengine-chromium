@@ -12,6 +12,7 @@
 #include "cc/test/fake_layer_tree_host_impl.h"
 #include "cc/test/geometry_test_utils.h"
 #include "cc/test/mock_quad_culler.h"
+#include "cc/test/test_shared_bitmap_manager.h"
 #include "cc/trees/single_thread_proxy.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -36,7 +37,8 @@ TEST(RenderSurfaceTest, VerifySurfaceChangesAreTrackedProperly) {
   //
 
   FakeImplProxy proxy;
-  FakeLayerTreeHostImpl host_impl(&proxy);
+  TestSharedBitmapManager shared_bitmap_manager;
+  FakeLayerTreeHostImpl host_impl(&proxy, &shared_bitmap_manager);
   scoped_ptr<LayerImpl> owning_layer =
       LayerImpl::Create(host_impl.active_tree(), 1);
   owning_layer->CreateRenderSurface();
@@ -80,7 +82,8 @@ TEST(RenderSurfaceTest, VerifySurfaceChangesAreTrackedProperly) {
 
 TEST(RenderSurfaceTest, SanityCheckSurfaceCreatesCorrectSharedQuadState) {
   FakeImplProxy proxy;
-  FakeLayerTreeHostImpl host_impl(&proxy);
+  TestSharedBitmapManager shared_bitmap_manager;
+  FakeLayerTreeHostImpl host_impl(&proxy, &shared_bitmap_manager);
   scoped_ptr<LayerImpl> root_layer =
       LayerImpl::Create(host_impl.active_tree(), 1);
 
@@ -104,17 +107,17 @@ TEST(RenderSurfaceTest, SanityCheckSurfaceCreatesCorrectSharedQuadState) {
   render_surface->SetClipRect(clip_rect);
   render_surface->SetDrawOpacity(1.f);
 
-  QuadList quad_list;
-  SharedQuadStateList shared_state_list;
-  MockQuadCuller mock_quad_culler(&quad_list, &shared_state_list);
+  MockOcclusionTracker<LayerImpl> occlusion_tracker;
+  scoped_ptr<RenderPass> render_pass = RenderPass::Create();
+  MockQuadCuller mock_quad_culler(render_pass.get(), &occlusion_tracker);
   AppendQuadsData append_quads_data;
 
   bool for_replica = false;
   render_surface->AppendQuads(
       &mock_quad_culler, &append_quads_data, for_replica, RenderPass::Id(2, 0));
 
-  ASSERT_EQ(1u, shared_state_list.size());
-  SharedQuadState* shared_quad_state = shared_state_list[0];
+  ASSERT_EQ(1u, render_pass->shared_quad_state_list.size());
+  SharedQuadState* shared_quad_state = render_pass->shared_quad_state_list[0];
 
   EXPECT_EQ(
       30.0,
@@ -143,7 +146,8 @@ class TestRenderPassSink : public RenderPassSink {
 
 TEST(RenderSurfaceTest, SanityCheckSurfaceCreatesCorrectRenderPass) {
   FakeImplProxy proxy;
-  FakeLayerTreeHostImpl host_impl(&proxy);
+  TestSharedBitmapManager shared_bitmap_manager;
+  FakeLayerTreeHostImpl host_impl(&proxy, &shared_bitmap_manager);
   scoped_ptr<LayerImpl> root_layer =
       LayerImpl::Create(host_impl.active_tree(), 1);
 

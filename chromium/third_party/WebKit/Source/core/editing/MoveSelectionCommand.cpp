@@ -31,7 +31,7 @@
 
 namespace WebCore {
 
-MoveSelectionCommand::MoveSelectionCommand(PassRefPtr<DocumentFragment> fragment, const Position& position, bool smartInsert, bool smartDelete)
+MoveSelectionCommand::MoveSelectionCommand(PassRefPtrWillBeRawPtr<DocumentFragment> fragment, const Position& position, bool smartInsert, bool smartDelete)
     : CompositeEditCommand(*position.document()), m_fragment(fragment), m_position(position), m_smartInsert(smartInsert), m_smartDelete(smartDelete)
 {
     ASSERT(m_fragment);
@@ -65,7 +65,7 @@ void MoveSelectionCommand::doApply()
     if (!pos.inDocument())
         pos = endingSelection().start();
 
-    cleanupAfterDeletion(pos);
+    cleanupAfterDeletion(VisiblePosition(pos));
 
     setEndingSelection(VisibleSelection(pos, endingSelection().affinity(), endingSelection().isDirectional()));
     if (!pos.inDocument()) {
@@ -81,6 +81,13 @@ void MoveSelectionCommand::doApply()
 EditAction MoveSelectionCommand::editingAction() const
 {
     return EditActionDrag;
+}
+
+void MoveSelectionCommand::trace(Visitor* visitor)
+{
+    visitor->trace(m_fragment);
+    visitor->trace(m_position);
+    CompositeEditCommand::trace(visitor);
 }
 
 } // namespace WebCore

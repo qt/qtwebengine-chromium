@@ -60,10 +60,7 @@
   "chrome/app/theme/chrome_unscaled_resources.grd": {
     "includes": [7500],
   },
-  "chrome_frame/resources/chrome_frame_resources.grd": {
-    "includes": [8000],
-  },
-  "ui/base/strings/app_locale_settings.grd": {
+  "ui/strings/app_locale_settings.grd": {
     "messages": [9000],
   },
   "chrome/app/resources/locale_settings.grd": {
@@ -87,8 +84,7 @@
   "chrome/app/resources/locale_settings_win.grd": {
     "messages": [10500],
   },
-
-  "ui/base/strings/ui_strings.grd": {
+  "ui/strings/ui_strings.grd": {
     "messages": [11000],
   },
   # Chromium strings and Google Chrome strings must start at the same id.
@@ -106,35 +102,24 @@
     "structures": [12000],
     "messages": [12500],
   },
-  # The chrome frame dialogs are also in generated_resources.grd so they
-  # get included by the translation console.  We make sure that the ids
-  # for structures here are the same as for generated_resources.grd.
-  "chrome_frame/resources/chrome_frame_dialogs.grd": {
-    "structures": [12000],
-    "includes": [12250],
-  },
   "webkit/glue/inspector_strings.grd": {
     "messages": [17500],
   },
   "webkit/glue/webkit_strings.grd": {
     "messages": [18500],
   },
-
-  "chrome_frame/resources/chrome_frame_resources.grd": {
-    "includes": [19000],
-    "structures": [19500],
-  },
-
   "components/policy/resources/policy_templates.grd": {
     "structures": [20500],
     "messages": [20510],
   },
-
   "chrome/browser/resources/sync_internals_resources.grd": {
     "includes": [21500],
   },
   "chrome/browser/resources/signin_internals_resources.grd": {
     "includes": [21750],
+  },
+  "chrome/browser/resources/invalidations_resources.grd": {
+    "includes": [21950],
   },
   # This file is generated during the build.
   "<(SHARED_INTERMEDIATE_DIR)/devtools/devtools_resources.grd": {
@@ -143,13 +128,8 @@
   "devtools_resources.grd": {
     "includes": [22000],
   },
-  "chrome/browser/devtools/frontend/devtools_discovery_page_resources.grd": {
-    "includes": [22500],
-  },
   "chrome/browser/resources/options_resources.grd": {
     "includes": [23000],
-  },
-  "chrome/browser/resources/options_resources.grd": {
     "structures": [23200],
   },
   "cloud_print/virtual_driver/win/install/virtual_driver_setup_resources.grd": {
@@ -183,10 +163,25 @@
     "messages": [26000],
   },
   "chrome/common/extensions_api_resources.grd": {
-    "includes": [26500],
+    "includes": [26400],
+  },
+  "extensions/extensions_resources.grd": {
+    "includes": [26600],
+  },
+  "extensions/renderer/resources/extensions_renderer_resources.grd": {
+    "includes": [26800],
+  },
+  "extensions/extensions_strings.grd": {
+    "messages": [27000],
+  },
+  "apps/shell/app_shell_resources.grd": {
+    "includes": [27400],
   },
   "chrome/browser/resources/memory_internals_resources.grd": {
     "includes": [27500],
+  },
+  "chrome/browser/resources/password_manager_internals_resources.grd": {
+    "includes": [27800],
   },
   "device/bluetooth/bluetooth_strings.grd": {
     "messages": [28000],
@@ -194,20 +189,29 @@
   "ui/keyboard/keyboard_resources.grd": {
     "includes": [28050],
   },
+  "ui/file_manager/file_manager_resources.grd": {
+    "includes": [28100],
+  },
   "chrome/browser/resources/translate_internals_resources.grd": {
     "includes": [28500],
   },
   "chrome/browser/resources/sync_file_system_internals_resources.grd": {
     "includes": [29000],
   },
-  "third_party/libaddressinput/chromium/cpp/res/messages.grd": {
+  "third_party/libaddressinput/chromium/cpp/res/libaddressinput_strings.grd": {
     "messages": [29050],
   },
-  "components/component_strings.grd": {
+  "chrome/app/address_input_strings.grd": {
+    "messages": [29100],
+  },
+  "components/components_strings.grd": {
     "messages": [30000],
   },
-  "components/dom_distiller_resources.grd": {
+  "components/resources/components_resources.grd": {
     "includes": [30250],
+  },
+  "components/resources/components_scaled_resources.grd": {
+    "structures": [30350],
   },
   "third_party/WebKit/public/blink_resources.grd": {
     "includes": [30500],

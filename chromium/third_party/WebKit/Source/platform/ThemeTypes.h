@@ -29,16 +29,16 @@
 namespace WebCore {
 
 enum ControlState {
-    HoverState = 1,
-    PressedState = 1 << 1,
-    FocusState = 1 << 2,
-    EnabledState = 1 << 3,
-    CheckedState = 1 << 4,
-    ReadOnlyState = 1 << 5,
-    WindowInactiveState = 1 << 7,
-    IndeterminateState = 1 << 8,
-    SpinUpState = 1 << 9, // Sub-state for HoverState and PressedState.
-    AllStates = 0xffffffff
+    HoverControlState = 1,
+    PressedControlState = 1 << 1,
+    FocusControlState = 1 << 2,
+    EnabledControlState = 1 << 3,
+    CheckedControlState = 1 << 4,
+    ReadOnlyControlState = 1 << 5,
+    WindowInactiveControlState = 1 << 7,
+    IndeterminateControlState = 1 << 8,
+    SpinUpControlState = 1 << 9, // Sub-state for HoverControlState and PressedControlState.
+    AllControlStates = 0xffffffff
 };
 
 typedef unsigned ControlStates;
@@ -46,11 +46,11 @@ typedef unsigned ControlStates;
 // Must follow CSSValueKeywords.in order
 enum ControlPart {
     NoControlPart, CheckboxPart, RadioPart, PushButtonPart, SquareButtonPart, ButtonPart,
-    ButtonBevelPart, InnerSpinButtonPart, InputSpeechButtonPart, ListboxPart, ListItemPart,
+    ButtonBevelPart, InnerSpinButtonPart, ListboxPart, ListItemPart,
     MediaEnterFullscreenButtonPart, MediaExitFullscreenButtonPart, MediaFullScreenVolumeSliderPart, MediaFullScreenVolumeSliderThumbPart, MediaMuteButtonPart, MediaPlayButtonPart,
-    MediaOverlayPlayButtonPart, MediaSeekBackButtonPart, MediaSeekForwardButtonPart, MediaRewindButtonPart, MediaReturnToRealtimeButtonPart, MediaToggleClosedCaptionsButtonPart,
+    MediaOverlayPlayButtonPart, MediaToggleClosedCaptionsButtonPart,
     MediaSliderPart, MediaSliderThumbPart, MediaVolumeSliderContainerPart, MediaVolumeSliderPart, MediaVolumeSliderThumbPart,
-    MediaVolumeSliderMuteButtonPart, MediaControlsBackgroundPart, MediaControlsFullscreenBackgroundPart, MediaCurrentTimePart, MediaTimeRemainingPart,
+    MediaControlsBackgroundPart, MediaControlsFullscreenBackgroundPart, MediaCurrentTimePart, MediaTimeRemainingPart,
     MenulistPart, MenulistButtonPart, MenulistTextPart, MenulistTextFieldPart, MeterPart, ProgressBarPart, ProgressBarValuePart,
     SliderHorizontalPart, SliderVerticalPart, SliderThumbHorizontalPart,
     SliderThumbVerticalPart, CaretPart, SearchFieldPart, SearchFieldDecorationPart,

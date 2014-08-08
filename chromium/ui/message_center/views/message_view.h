@@ -13,8 +13,13 @@
 #include "ui/views/controls/button/button.h"
 #include "ui/views/controls/slide_out_view.h"
 
+namespace ui {
+class MenuModel;
+}
+
 namespace views {
 class ImageButton;
+class ImageView;
 class Painter;
 class ScrollView;
 }
@@ -28,12 +33,7 @@ class MessageViewController {
   virtual void ClickOnNotification(const std::string& notification_id) = 0;
   virtual void RemoveNotification(const std::string& notification_id,
                                   bool by_user) = 0;
-  virtual void DisableNotificationsFromThisSource(
-      const NotifierId& notifier_id) = 0;
-  virtual void ShowNotifierSettingsBubble() = 0;
 };
-
-class MessageViewContextMenuController;
 
 // Individual notifications constants.
 const int kPaddingBetweenItems = 10;
@@ -41,15 +41,20 @@ const int kPaddingHorizontal = 18;
 const int kWebNotificationButtonWidth = 32;
 const int kWebNotificationIconSize = 40;
 
-// An abstract class that forms the basis of a view for a notification entry.
+// An base class for a notification entry. Contains background, close button
+// and other elements shared by derived notification views.
 class MESSAGE_CENTER_EXPORT MessageView : public views::SlideOutView,
                                           public views::ButtonListener {
  public:
   MessageView(MessageViewController* controller,
               const std::string& notification_id,
               const NotifierId& notifier_id,
-              const string16& display_source);
+              const gfx::ImageSkia& small_image,
+              const base::string16& display_source);
   virtual ~MessageView();
+
+  // Updates this view with the new data contained in the notification.
+  virtual void UpdateWithNotification(const Notification& notification);
 
   // Returns the insets for the shadow it will have for rich notification.
   static gfx::Insets GetShadowInsets();
@@ -60,16 +65,19 @@ class MESSAGE_CENTER_EXPORT MessageView : public views::SlideOutView,
   bool IsCloseButtonFocused();
   void RequestFocusOnCloseButton();
 
-  void set_accessible_name(const string16& name) { accessible_name_ = name; }
+  void set_accessible_name(const base::string16& accessible_name) {
+    accessible_name_ = accessible_name;
+  }
 
   // Overridden from views::View:
-  virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
+  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
   virtual bool OnMousePressed(const ui::MouseEvent& event) OVERRIDE;
   virtual bool OnKeyPressed(const ui::KeyEvent& event) OVERRIDE;
   virtual bool OnKeyReleased(const ui::KeyEvent& event) OVERRIDE;
   virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
   virtual void OnFocus() OVERRIDE;
   virtual void OnBlur() OVERRIDE;
+  virtual void Layout() OVERRIDE;
 
   // Overridden from ui::EventHandler:
   virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
@@ -81,11 +89,13 @@ class MESSAGE_CENTER_EXPORT MessageView : public views::SlideOutView,
   void set_scroller(views::ScrollView* scroller) { scroller_ = scroller; }
   std::string notification_id() { return notification_id_; }
   NotifierId notifier_id() { return notifier_id_; }
+  const base::string16& display_source() const { return display_source_; }
 
  protected:
   // Overridden from views::SlideOutView:
   virtual void OnSlideOut() OVERRIDE;
 
+  views::ImageView* small_image() { return small_image_view_.get(); }
   views::ImageButton* close_button() { return close_button_.get(); }
   views::ScrollView* scroller() { return scroller_; }
 
@@ -93,11 +103,14 @@ class MESSAGE_CENTER_EXPORT MessageView : public views::SlideOutView,
   MessageViewController* controller_;
   std::string notification_id_;
   NotifierId notifier_id_;
-  scoped_ptr<MessageViewContextMenuController> context_menu_controller_;
+  views::View* background_view_;  // Owned by views hierarchy.
   scoped_ptr<views::ImageButton> close_button_;
+  scoped_ptr<views::ImageView> small_image_view_;
   views::ScrollView* scroller_;
 
-  string16 accessible_name_;
+  base::string16 accessible_name_;
+
+  base::string16 display_source_;
 
   scoped_ptr<views::Painter> focus_painter_;
 

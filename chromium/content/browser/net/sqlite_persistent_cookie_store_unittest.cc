@@ -128,15 +128,16 @@ class SQLitePersistentCookieStoreTest : public testing::Test {
   void CreateAndLoad(bool crypt_cookies,
                      bool restore_old_session_cookies,
                      CanonicalCookieVector* cookies) {
+    if (crypt_cookies)
+      cookie_crypto_delegate_.reset(new CookieCryptor());
+
     store_ = new SQLitePersistentCookieStore(
         temp_dir_.path().Append(kCookieFilename),
         client_task_runner(),
         background_task_runner(),
         restore_old_session_cookies,
         NULL,
-        crypt_cookies ?
-            scoped_ptr<content::CookieCryptoDelegate>(new CookieCryptor) :
-            scoped_ptr<content::CookieCryptoDelegate>());
+        cookie_crypto_delegate_.get());
     Load(cookies);
   }
 
@@ -190,6 +191,7 @@ class SQLitePersistentCookieStoreTest : public testing::Test {
   CanonicalCookieVector cookies_;
   base::ScopedTempDir temp_dir_;
   scoped_refptr<SQLitePersistentCookieStore> store_;
+  scoped_ptr<content::CookieCryptoDelegate> cookie_crypto_delegate_;
 };
 
 TEST_F(SQLitePersistentCookieStoreTest, TestInvalidMetaTableRecovery) {
@@ -276,8 +278,7 @@ TEST_F(SQLitePersistentCookieStoreTest, TestLoadCookiesForKey) {
       temp_dir_.path().Append(kCookieFilename),
       client_task_runner(),
       background_task_runner(),
-      false, NULL,
-      scoped_ptr<content::CookieCryptoDelegate>());
+      false, NULL, NULL);
 
   // Posting a blocking task to db_thread_ makes sure that the DB thread waits
   // until both Load and LoadCookiesForKey have been posted to its task queue.
@@ -337,7 +338,7 @@ TEST_F(SQLitePersistentCookieStoreTest, TestFlush) {
   // File timestamps don't work well on all platforms, so we'll determine
   // whether the DB file has been modified by checking its size.
   base::FilePath path = temp_dir_.path().Append(kCookieFilename);
-  base::PlatformFileInfo info;
+  base::File::Info info;
   ASSERT_TRUE(base::GetFileInfo(path, &info));
   int64 base_size = info.size;
 

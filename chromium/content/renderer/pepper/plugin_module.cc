@@ -25,12 +25,10 @@
 #include "content/renderer/pepper/ppb_image_data_impl.h"
 #include "content/renderer/pepper/ppb_proxy_impl.h"
 #include "content/renderer/pepper/ppb_scrollbar_impl.h"
-#include "content/renderer/pepper/ppb_uma_private_impl.h"
 #include "content/renderer/pepper/ppb_var_deprecated_impl.h"
 #include "content/renderer/pepper/ppb_video_decoder_impl.h"
 #include "content/renderer/pepper/renderer_ppapi_host_impl.h"
 #include "content/renderer/render_view_impl.h"
-#include "ppapi/c/dev/ppb_alarms_dev.h"
 #include "ppapi/c/dev/ppb_audio_input_dev.h"
 #include "ppapi/c/dev/ppb_buffer_dev.h"
 #include "ppapi/c/dev/ppb_char_set_dev.h"
@@ -38,35 +36,34 @@
 #include "ppapi/c/dev/ppb_cursor_control_dev.h"
 #include "ppapi/c/dev/ppb_device_ref_dev.h"
 #include "ppapi/c/dev/ppb_file_chooser_dev.h"
-#include "ppapi/c/dev/ppb_find_dev.h"
 #include "ppapi/c/dev/ppb_font_dev.h"
 #include "ppapi/c/dev/ppb_gles_chromium_texture_mapping_dev.h"
-#include "ppapi/c/dev/ppb_graphics_2d_dev.h"
 #include "ppapi/c/dev/ppb_memory_dev.h"
 #include "ppapi/c/dev/ppb_opengles2ext_dev.h"
 #include "ppapi/c/dev/ppb_printing_dev.h"
-#include "ppapi/c/dev/ppb_resource_array_dev.h"
 #include "ppapi/c/dev/ppb_scrollbar_dev.h"
 #include "ppapi/c/dev/ppb_text_input_dev.h"
 #include "ppapi/c/dev/ppb_trace_event_dev.h"
 #include "ppapi/c/dev/ppb_truetype_font_dev.h"
 #include "ppapi/c/dev/ppb_url_util_dev.h"
 #include "ppapi/c/dev/ppb_var_deprecated.h"
-#include "ppapi/c/dev/ppb_var_resource_dev.h"
 #include "ppapi/c/dev/ppb_video_capture_dev.h"
 #include "ppapi/c/dev/ppb_video_decoder_dev.h"
 #include "ppapi/c/dev/ppb_view_dev.h"
 #include "ppapi/c/dev/ppb_widget_dev.h"
 #include "ppapi/c/dev/ppb_zoom_dev.h"
-#include "ppapi/c/extensions/dev/ppb_ext_socket_dev.h"
 #include "ppapi/c/pp_module.h"
 #include "ppapi/c/pp_resource.h"
 #include "ppapi/c/pp_var.h"
 #include "ppapi/c/ppb_audio.h"
+#include "ppapi/c/ppb_audio_buffer.h"
 #include "ppapi/c/ppb_audio_config.h"
+#include "ppapi/c/ppb_compositor.h"
+#include "ppapi/c/ppb_compositor_layer.h"
 #include "ppapi/c/ppb_console.h"
 #include "ppapi/c/ppb_core.h"
 #include "ppapi/c/ppb_file_io.h"
+#include "ppapi/c/ppb_file_mapping.h"
 #include "ppapi/c/ppb_file_ref.h"
 #include "ppapi/c/ppb_file_system.h"
 #include "ppapi/c/ppb_fullscreen.h"
@@ -75,6 +72,8 @@
 #include "ppapi/c/ppb_host_resolver.h"
 #include "ppapi/c/ppb_image_data.h"
 #include "ppapi/c/ppb_instance.h"
+#include "ppapi/c/ppb_media_stream_audio_track.h"
+#include "ppapi/c/ppb_media_stream_video_track.h"
 #include "ppapi/c/ppb_messaging.h"
 #include "ppapi/c/ppb_mouse_cursor.h"
 #include "ppapi/c/ppb_mouse_lock.h"
@@ -93,12 +92,15 @@
 #include "ppapi/c/ppb_var_array.h"
 #include "ppapi/c/ppb_var_array_buffer.h"
 #include "ppapi/c/ppb_var_dictionary.h"
+#include "ppapi/c/ppb_video_decoder.h"
+#include "ppapi/c/ppb_video_frame.h"
 #include "ppapi/c/ppb_view.h"
 #include "ppapi/c/ppp.h"
 #include "ppapi/c/ppp_instance.h"
 #include "ppapi/c/private/ppb_ext_crx_file_system_private.h"
 #include "ppapi/c/private/ppb_file_io_private.h"
 #include "ppapi/c/private/ppb_file_ref_private.h"
+#include "ppapi/c/private/ppb_find_private.h"
 #include "ppapi/c/private/ppb_flash.h"
 #include "ppapi/c/private/ppb_flash_clipboard.h"
 #include "ppapi/c/private/ppb_flash_device_id.h"
@@ -110,6 +112,7 @@
 #include "ppapi/c/private/ppb_flash_message_loop.h"
 #include "ppapi/c/private/ppb_flash_print.h"
 #include "ppapi/c/private/ppb_host_resolver_private.h"
+#include "ppapi/c/private/ppb_input_event_private.h"
 #include "ppapi/c/private/ppb_instance_private.h"
 #include "ppapi/c/private/ppb_isolated_file_system_private.h"
 #include "ppapi/c/private/ppb_output_protection_private.h"
@@ -186,9 +189,7 @@ void ReleaseResource(PP_Resource resource) {
   PpapiGlobals::Get()->GetResourceTracker()->ReleaseResource(resource);
 }
 
-PP_Time GetTime() {
-  return TimeToPPTime(base::Time::Now());
-}
+PP_Time GetTime() { return TimeToPPTime(base::Time::Now()); }
 
 PP_TimeTicks GetTickTime() {
   return TimeTicksToPPTimeTicks(base::TimeTicks::Now());
@@ -206,18 +207,14 @@ void CallOnMainThread(int delay_in_msec,
 }
 
 PP_Bool IsMainThread() {
-  return BoolToPPBool(PpapiGlobals::Get()->
-      GetMainThreadMessageLoop()->BelongsToCurrentThread());
+  return BoolToPPBool(PpapiGlobals::Get()
+                          ->GetMainThreadMessageLoop()
+                          ->BelongsToCurrentThread());
 }
 
-const PPB_Core core_interface = {
-  &AddRefResource,
-  &ReleaseResource,
-  &GetTime,
-  &GetTickTime,
-  &CallOnMainThread,
-  &IsMainThread
-};
+const PPB_Core core_interface = {&AddRefResource,   &ReleaseResource,
+                                 &GetTime,          &GetTickTime,
+                                 &CallOnMainThread, &IsMainThread};
 
 // PPB_Testing -----------------------------------------------------------------
 
@@ -245,9 +242,7 @@ uint32_t GetLiveObjectsForInstance(PP_Instance instance_id) {
       instance_id);
 }
 
-PP_Bool IsOutOfProcess() {
-  return PP_FALSE;
-}
+PP_Bool IsOutOfProcess() { return PP_FALSE; }
 
 void SimulateInputEvent(PP_Instance instance, PP_Resource input_event) {
   PepperPluginInstanceImpl* plugin_instance =
@@ -287,16 +282,11 @@ void SetMinimumArrayBufferSizeForShmem(PP_Instance /*instance*/,
 }
 
 const PPB_Testing_Private testing_interface = {
-  &ReadImageData,
-  &RunMessageLoop,
-  &QuitMessageLoop,
-  &GetLiveObjectsForInstance,
-  &IsOutOfProcess,
-  &SimulateInputEvent,
-  &GetDocumentURL,
-  &GetLiveVars,
-  &SetMinimumArrayBufferSizeForShmem
-};
+    &ReadImageData,                    &RunMessageLoop,
+    &QuitMessageLoop,                  &GetLiveObjectsForInstance,
+    &IsOutOfProcess,                   &SimulateInputEvent,
+    &GetDocumentURL,                   &GetLiveVars,
+    &SetMinimumArrayBufferSizeForShmem};
 
 // GetInterface ----------------------------------------------------------------
 
@@ -307,29 +297,27 @@ const void* InternalGetInterface(const char* name) {
   if (custom_interface)
     return custom_interface;
 
-  // TODO(brettw) put these in a hash map for better performance.
-  #define UNPROXIED_IFACE(api_name, iface_str, iface_struct) \
-      if (strcmp(name, iface_str) == 0) \
-        return ppapi::thunk::Get##iface_struct##_Thunk();
-  #define PROXIED_IFACE(api_name, iface_str, iface_struct) \
-      UNPROXIED_IFACE(api_name, iface_str, iface_struct)
+// TODO(brettw) put these in a hash map for better performance.
+#define PROXIED_IFACE(iface_str, iface_struct) \
+  if (strcmp(name, iface_str) == 0)            \
+    return ppapi::thunk::Get##iface_struct##_Thunk();
 
-  #include "ppapi/thunk/interfaces_ppb_public_stable.h"
-  #include "ppapi/thunk/interfaces_ppb_public_dev.h"
-  #include "ppapi/thunk/interfaces_ppb_private.h"
-  #include "ppapi/thunk/interfaces_ppb_private_no_permissions.h"
-  #include "ppapi/thunk/interfaces_ppb_private_flash.h"
+#include "ppapi/thunk/interfaces_ppb_private.h"
+#include "ppapi/thunk/interfaces_ppb_private_flash.h"
+#include "ppapi/thunk/interfaces_ppb_private_no_permissions.h"
+#include "ppapi/thunk/interfaces_ppb_public_dev.h"
+#include "ppapi/thunk/interfaces_ppb_public_dev_channel.h"
+#include "ppapi/thunk/interfaces_ppb_public_stable.h"
 
-  #undef UNPROXIED_API
-  #undef PROXIED_IFACE
+#undef PROXIED_IFACE
 
-  #define LEGACY_IFACE(iface_str, function_name) \
-      if (strcmp(name, iface_str) == 0) \
-        return function_name;
+#define LEGACY_IFACE(iface_str, function_name) \
+  if (strcmp(name, iface_str) == 0)            \
+    return function_name;
 
-  #include "ppapi/thunk/interfaces_legacy.h"
+#include "ppapi/thunk/interfaces_legacy.h"
 
-  #undef LEGACY_IFACE
+#undef LEGACY_IFACE
 
   // Only support the testing interface when the command line switch is
   // specified. This allows us to prevent people from (ab)using this interface
@@ -351,9 +339,8 @@ const void* GetInterface(const char* name) {
 
 // Gets the PPAPI entry points from the given library and places them into the
 // given structure. Returns true on success.
-bool LoadEntryPointsFromLibrary(
-    const base::NativeLibrary& library,
-    PepperPluginInfo::EntryPoints* entry_points) {
+bool LoadEntryPointsFromLibrary(const base::NativeLibrary& library,
+                                PepperPluginInfo::EntryPoints* entry_points) {
   entry_points->get_interface =
       reinterpret_cast<PepperPluginInfo::GetInterfaceFunc>(
           base::GetFunctionPointerFromNativeLibrary(library,
@@ -390,9 +377,9 @@ void CreateHostForInProcessModule(RenderFrameImpl* render_frame,
       PepperPluginRegistry::GetInstance()->GetInfoForPlugin(webplugin_info);
   DCHECK(!info->is_out_of_process);
 
-  ppapi::PpapiPermissions perms(
-      PepperPluginRegistry::GetInstance()->GetInfoForPlugin(
-          webplugin_info)->permissions);
+  ppapi::PpapiPermissions perms(PepperPluginRegistry::GetInstance()
+                                    ->GetInfoForPlugin(webplugin_info)
+                                    ->permissions);
   RendererPpapiHostImpl* host_impl =
       RendererPpapiHostImpl::CreateOnModuleForInProcess(module, perms);
   render_frame->PepperPluginCreated(host_impl);
@@ -412,7 +399,7 @@ PluginModule::PluginModule(const std::string& name,
       library_(NULL),
       name_(name),
       path_(path),
-      permissions_(perms),
+      permissions_(ppapi::PpapiPermissions::GetForCommandLine(perms.GetBits())),
       reserve_instance_id_(NULL) {
   // Ensure the globals object is created.
   if (!host_globals)
@@ -499,13 +486,11 @@ void PluginModule::InitAsProxied(
 }
 
 scoped_refptr<PluginModule>
-    PluginModule::CreateModuleForExternalPluginInstance() {
+PluginModule::CreateModuleForExternalPluginInstance() {
   // Create a new module, but don't set the lifetime delegate. This isn't a
   // plugin in the usual sense, so it isn't tracked by the browser.
   scoped_refptr<PluginModule> external_plugin_module(
-      new PluginModule(name_,
-                       path_,
-                       permissions_));
+      new PluginModule(name_, path_, permissions_));
   return external_plugin_module;
 }
 
@@ -523,9 +508,7 @@ PP_ExternalPluginResult PluginModule::InitAsProxiedExternalPlugin(
   return instance->ResetAsProxied(this);
 }
 
-bool PluginModule::IsProxied() const {
-  return !!host_dispatcher_wrapper_;
-}
+bool PluginModule::IsProxied() const { return !!host_dispatcher_wrapper_; }
 
 base::ProcessId PluginModule::GetPeerProcessId() {
   if (host_dispatcher_wrapper_)
@@ -540,9 +523,7 @@ int PluginModule::GetPluginChildId() {
 }
 
 // static
-const PPB_Core* PluginModule::GetCore() {
-  return &core_interface;
-}
+const PPB_Core* PluginModule::GetCore() { return &core_interface; }
 
 // static
 bool PluginModule::SupportsInterface(const char* name) {
@@ -601,7 +582,8 @@ void PluginModule::PluginCrashed() {
 
   // Notify all instances that they crashed.
   for (PluginInstanceSet::iterator i = instances_.begin();
-       i != instances_.end(); ++i)
+       i != instances_.end();
+       ++i)
     (*i)->InstanceCrashed();
 
   PepperPluginRegistry::GetInstance()->PluginModuleDead(this);
@@ -624,9 +606,7 @@ void PluginModule::SetBroker(PepperBroker* broker) {
   broker_ = broker;
 }
 
-PepperBroker* PluginModule::GetBroker() {
-  return broker_;
-}
+PepperBroker* PluginModule::GetBroker() { return broker_; }
 
 RendererPpapiHostImpl* PluginModule::CreateOutOfProcessModule(
     RenderFrameImpl* render_frame,
@@ -638,12 +618,8 @@ RendererPpapiHostImpl* PluginModule::CreateOutOfProcessModule(
     bool is_external) {
   scoped_refptr<PepperHungPluginFilter> hung_filter(new PepperHungPluginFilter(
       path, render_frame->GetRoutingID(), plugin_child_id));
-  scoped_ptr<HostDispatcherWrapper> dispatcher(
-      new HostDispatcherWrapper(this,
-                                peer_pid,
-                                plugin_child_id,
-                                permissions,
-                                is_external));
+  scoped_ptr<HostDispatcherWrapper> dispatcher(new HostDispatcherWrapper(
+      this, peer_pid, plugin_child_id, permissions, is_external));
   if (!dispatcher->Init(
           channel_handle,
           &GetInterface,
@@ -672,7 +648,9 @@ bool PluginModule::InitializeModule(
   DCHECK(entry_points.initialize_module != NULL);
   int retval = entry_points.initialize_module(pp_module(), &GetInterface);
   if (retval != 0) {
+#if !defined(DISABLE_NACL)
     LOG(WARNING) << "PPP_InitializeModule returned failure " << retval;
+#endif  // !defined(DISABLE_NACL)
     return false;
   }
   return true;
@@ -711,9 +689,6 @@ scoped_refptr<PluginModule> PluginModule::Create(
     return scoped_refptr<PluginModule>();
   }
 
-  ppapi::PpapiPermissions permissions =
-      ppapi::PpapiPermissions::GetForCommandLine(info->permissions);
-
   // Out of process: have the browser start the plugin process for us.
   IPC::ChannelHandle channel_handle;
   base::ProcessId peer_pid;
@@ -724,6 +699,8 @@ scoped_refptr<PluginModule> PluginModule::Create(
     // Couldn't be initialized.
     return scoped_refptr<PluginModule>();
   }
+
+  ppapi::PpapiPermissions permissions(info->permissions);
 
   // AddLiveModule must be called before any early returns since the
   // module's destructor will remove itself.

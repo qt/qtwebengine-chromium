@@ -17,6 +17,7 @@
 #include "net/base/test_completion_callback.h"
 #include "net/dns/mock_host_resolver.h"
 #include "net/proxy/dhcp_proxy_script_fetcher.h"
+#include "net/proxy/mock_proxy_script_fetcher.h"
 #include "net/proxy/proxy_config.h"
 #include "net/proxy/proxy_resolver.h"
 #include "net/proxy/proxy_script_decider.h"
@@ -43,9 +44,9 @@ class Rules {
 
     base::string16 text() const {
       if (is_valid_script)
-        return UTF8ToUTF16(url.spec() + "!FindProxyForURL");
+        return base::UTF8ToUTF16(url.spec() + "!FindProxyForURL");
       if (fetch_error == OK)
-        return UTF8ToUTF16(url.spec() + "!invalid-script");
+        return base::UTF8ToUTF16(url.spec() + "!invalid-script");
       return base::string16();
     }
 
@@ -329,11 +330,10 @@ class ProxyScriptDeciderQuickCheckTest : public ::testing::Test {
   TestCompletionCallback callback_;
   RuleBasedProxyScriptFetcher fetcher_;
   ProxyConfig config_;
+  DoNothingDhcpProxyScriptFetcher dhcp_fetcher_;
 
  private:
   URLRequestContext request_context_;
-
-  DoNothingDhcpProxyScriptFetcher dhcp_fetcher_;
 };
 
 // Fails if a synchronous DNS lookup success for wpad causes QuickCheck to fail.
@@ -399,6 +399,21 @@ TEST_F(ProxyScriptDeciderQuickCheckTest, QuickCheckInhibitsDhcp) {
   dhcp_fetcher.CompleteRequests(OK, pac_contents);
   EXPECT_TRUE(decider_->effective_config().has_pac_url());
   EXPECT_EQ(decider_->effective_config().pac_url(), url);
+}
+
+// Fails if QuickCheck still happens when disabled. To ensure QuickCheck is not
+// happening, we add a synchronous failing resolver, which would ordinarily
+// mean a QuickCheck failure, then ensure that our ProxyScriptFetcher is still
+// asked to fetch.
+TEST_F(ProxyScriptDeciderQuickCheckTest, QuickCheckDisabled) {
+  const char *kPac = "function FindProxyForURL(u,h) { return \"DIRECT\"; }";
+  resolver_.set_synchronous_mode(true);
+  resolver_.rules()->AddSimulatedFailure("wpad");
+  MockProxyScriptFetcher fetcher;
+  decider_.reset(new ProxyScriptDecider(&fetcher, &dhcp_fetcher_, NULL));
+  EXPECT_EQ(ERR_IO_PENDING, StartDecider());
+  EXPECT_TRUE(fetcher.has_pending_request());
+  fetcher.NotifyFetchCompletion(OK, kPac);
 }
 
 TEST_F(ProxyScriptDeciderQuickCheckTest, ExplicitPacUrl) {
@@ -660,7 +675,7 @@ TEST(ProxyScriptDeciderTest, AutodetectDhcpSuccess) {
   Rules rules;
   RuleBasedProxyScriptFetcher fetcher(&rules);
   SynchronousSuccessDhcpFetcher dhcp_fetcher(
-      WideToUTF16(L"http://bingo/!FindProxyForURL"));
+      base::WideToUTF16(L"http://bingo/!FindProxyForURL"));
 
   ProxyConfig config;
   config.set_auto_detect(true);
@@ -683,7 +698,7 @@ TEST(ProxyScriptDeciderTest, AutodetectDhcpFailParse) {
   Rules rules;
   RuleBasedProxyScriptFetcher fetcher(&rules);
   SynchronousSuccessDhcpFetcher dhcp_fetcher(
-      WideToUTF16(L"http://bingo/!invalid-script"));
+      base::WideToUTF16(L"http://bingo/!invalid-script"));
 
   ProxyConfig config;
   config.set_auto_detect(true);

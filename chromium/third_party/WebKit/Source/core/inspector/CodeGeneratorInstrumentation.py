@@ -353,7 +353,7 @@ class Method:
             agent_class=agent_class,
             agent_fetch=agent_fetch,
             maybe_return=maybe_return,
-            params_agent=", ".join(map(Parameter.to_str_name, self.params_impl)[1:]))
+            params_agent=", ".join(map(Parameter.to_str_value, self.params_impl)[1:]))
 
 
 class Parameter:
@@ -384,6 +384,12 @@ class Parameter:
             self.type = param_decl
             self.name = generate_param_name(self.type)
 
+        if re.match("PassRefPtr<", param_decl):
+            self.value = "%s.get()" % self.name
+        else:
+            self.value = self.name
+
+
     def to_str_full(self):
         if self.default_value is None:
             return self.to_str_class_and_name()
@@ -398,6 +404,9 @@ class Parameter:
     def to_str_name(self):
         return self.name
 
+    def to_str_value(self):
+        return self.value
+
 
 def generate_param_name(param_type):
     base_name = re.match("(const |PassRefPtr<)?(\w*)", param_type).group(2)
@@ -405,7 +414,7 @@ def generate_param_name(param_type):
 
 
 def agent_class_name(agent):
-    custom_agent_names = ["Inspector", "PageDebugger", "PageRuntime", "WorkerRuntime"]
+    custom_agent_names = ["PageDebugger", "PageRuntime", "WorkerRuntime"]
     if agent in custom_agent_names:
         return "%sAgent" % agent
     return "Inspector%sAgent" % agent

@@ -6,35 +6,32 @@
 
 #include <string>
 
+#include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "device/bluetooth/bluetooth_utils.h"
+#include "device/bluetooth/bluetooth_gatt_service.h"
 #include "grit/device_bluetooth_strings.h"
 #include "ui/base/l10n/l10n_util.h"
 
 namespace device {
 
-// static
-bool BluetoothDevice::IsUUIDValid(const std::string& uuid) {
-  return !bluetooth_utils::CanonicalUuid(uuid).empty();
-}
-
 BluetoothDevice::BluetoothDevice() {
 }
 
 BluetoothDevice::~BluetoothDevice() {
+  STLDeleteValues(&gatt_services_);
 }
 
-string16 BluetoothDevice::GetName() const {
+base::string16 BluetoothDevice::GetName() const {
   std::string name = GetDeviceName();
   if (!name.empty()) {
-    return UTF8ToUTF16(name);
+    return base::UTF8ToUTF16(name);
   } else {
     return GetAddressWithLocalizedDeviceTypeName();
   }
 }
 
-string16 BluetoothDevice::GetAddressWithLocalizedDeviceTypeName() const {
-  string16 address_utf16 = UTF8ToUTF16(GetAddress());
+base::string16 BluetoothDevice::GetAddressWithLocalizedDeviceTypeName() const {
+  base::string16 address_utf16 = base::UTF8ToUTF16(GetAddress());
   BluetoothDevice::DeviceType device_type = GetDeviceType();
   switch (device_type) {
     case DEVICE_COMPUTER:
@@ -165,26 +162,79 @@ bool BluetoothDevice::IsPairable() const {
   std::string vendor = GetAddress().substr(0, 8);
 
   // Verbatim "Bluetooth Mouse", model 96674
-  if ((type == DEVICE_MOUSE && vendor == "00:12:A1") ||
+  if (type == DEVICE_MOUSE && vendor == "00:12:A1")
+    return false;
   // Microsoft "Microsoft Bluetooth Notebook Mouse 5000", model X807028-001
-      (type == DEVICE_MOUSE && vendor == "7C:ED:8D"))
-      return false;
+  if (type == DEVICE_MOUSE && vendor == "7C:ED:8D")
+    return false;
+  // Sony PlayStation Dualshock3
+  if (IsTrustable())
+    return false;
+
   // TODO: Move this database into a config file.
 
   return true;
 }
 
-bool BluetoothDevice::ProvidesServiceWithUUID(
-    const std::string& uuid) const {
-  std::string canonical_uuid = bluetooth_utils::CanonicalUuid(uuid);
-  BluetoothDevice::ServiceList services = GetServices();
-  for (BluetoothDevice::ServiceList::const_iterator iter = services.begin();
-       iter != services.end();
-       ++iter) {
-    if (bluetooth_utils::CanonicalUuid(*iter) == canonical_uuid)
-      return true;
-  }
+bool BluetoothDevice::IsTrustable() const {
+  // Sony PlayStation Dualshock3
+  if ((GetVendorID() == 0x054c && GetProductID() == 0x0268 &&
+       GetDeviceName() == "PLAYSTATION(R)3 Controller"))
+    return true;
+
   return false;
+}
+
+std::vector<BluetoothGattService*>
+    BluetoothDevice::GetGattServices() const {
+  std::vector<BluetoothGattService*> services;
+  for (GattServiceMap::const_iterator iter = gatt_services_.begin();
+       iter != gatt_services_.end(); ++iter)
+    services.push_back(iter->second);
+  return services;
+}
+
+BluetoothGattService* BluetoothDevice::GetGattService(
+    const std::string& identifier) const {
+  GattServiceMap::const_iterator iter = gatt_services_.find(identifier);
+  if (iter != gatt_services_.end())
+    return iter->second;
+  return NULL;
+}
+
+// static
+std::string BluetoothDevice::CanonicalizeAddress(const std::string& address) {
+  std::string canonicalized = address;
+  if (address.size() == 12) {
+    // Might be an address in the format "1A2B3C4D5E6F". Add separators.
+    for (size_t i = 2; i < canonicalized.size(); i += 3) {
+      canonicalized.insert(i, ":");
+    }
+  }
+
+  // Verify that the length matches the canonical format "1A:2B:3C:4D:5E:6F".
+  const size_t kCanonicalAddressLength = 17;
+  if (canonicalized.size() != kCanonicalAddressLength)
+    return std::string();
+
+  const char separator = canonicalized[2];
+  for (size_t i = 0; i < canonicalized.size(); ++i) {
+    bool is_separator = (i + 1) % 3 == 0;
+    if (is_separator) {
+      // All separators in the input |address| should be consistent.
+      if (canonicalized[i] != separator)
+        return std::string();
+
+      canonicalized[i] = ':';
+    } else {
+      if (!IsHexDigit(canonicalized[i]))
+        return std::string();
+
+      canonicalized[i] = base::ToUpperASCII(canonicalized[i]);
+    }
+  }
+
+  return canonicalized;
 }
 
 }  // namespace device

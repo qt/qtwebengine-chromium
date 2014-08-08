@@ -4,23 +4,18 @@
 
 #include "ui/views/controls/menu/menu_controller.h"
 
-#if defined(OS_WIN)
-#include <windowsx.h>
-#endif
-
 #include "base/i18n/case_conversion.h"
 #include "base/i18n/rtl.h"
-#include "base/run_loop.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
 #include "ui/base/dragdrop/drag_utils.h"
 #include "ui/base/dragdrop/os_exchange_data.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "ui/events/event_constants.h"
+#include "ui/events/event.h"
 #include "ui/events/event_utils.h"
-#include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/native_widget_types.h"
+#include "ui/gfx/point.h"
 #include "ui/gfx/screen.h"
 #include "ui/gfx/vector2d.h"
 #include "ui/native_theme/native_theme.h"
@@ -28,30 +23,24 @@
 #include "ui/views/controls/menu/menu_config.h"
 #include "ui/views/controls/menu/menu_controller_delegate.h"
 #include "ui/views/controls/menu/menu_host_root_view.h"
+#include "ui/views/controls/menu/menu_item_view.h"
+#include "ui/views/controls/menu/menu_message_loop.h"
 #include "ui/views/controls/menu/menu_scroll_view_container.h"
 #include "ui/views/controls/menu/submenu_view.h"
 #include "ui/views/drag_utils.h"
-#include "ui/views/event_utils.h"
 #include "ui/views/focus/view_storage.h"
 #include "ui/views/mouse_constants.h"
+#include "ui/views/view.h"
 #include "ui/views/view_constants.h"
 #include "ui/views/views_delegate.h"
 #include "ui/views/widget/root_view.h"
 #include "ui/views/widget/tooltip_manager.h"
 #include "ui/views/widget/widget.h"
 
-#if defined(USE_AURA)
-#include "ui/aura/env.h"
-#include "ui/aura/root_window.h"
-#endif
-
 #if defined(OS_WIN)
-#include "ui/views/win/hwnd_message_handler.h"
+#include "ui/base/win/internal_constants.h"
+#include "ui/gfx/win/dpi.h"
 #include "ui/views/win/hwnd_util.h"
-#endif
-
-#if defined(USE_X11)
-#include <X11/Xlib.h>
 #endif
 
 using base::Time;
@@ -87,17 +76,17 @@ const int kBubbleTipSizeTopBottom = 11;
 const float kMaximumLengthMovedToActivate = 4.0f;
 
 // Returns true if the mnemonic of |menu| matches key.
-bool MatchesMnemonic(MenuItemView* menu, char16 key) {
-  return menu->GetMnemonic() == key;
+bool MatchesMnemonic(MenuItemView* menu, base::char16 key) {
+  return key != 0 && menu->GetMnemonic() == key;
 }
 
 // Returns true if |menu| doesn't have a mnemonic and first character of the its
 // title is |key|.
-bool TitleMatchesMnemonic(MenuItemView* menu, char16 key) {
+bool TitleMatchesMnemonic(MenuItemView* menu, base::char16 key) {
   if (menu->GetMnemonic())
     return false;
 
-  string16 lower_title = base::i18n::ToLower(menu->title());
+  base::string16 lower_title = base::i18n::ToLower(menu->title());
   return !lower_title.empty() && lower_title[0] == key;
 }
 
@@ -279,8 +268,9 @@ struct MenuController::SelectByCharDetails {
 MenuController::State::State()
     : item(NULL),
       submenu_open(false),
-      anchor(MenuItemView::TOPLEFT),
-      context_menu(false) {}
+      anchor(MENU_ANCHOR_TOPLEFT),
+      context_menu(false) {
+}
 
 MenuController::State::~State() {}
 
@@ -298,7 +288,7 @@ MenuItemView* MenuController::Run(Widget* parent,
                                   MenuButton* button,
                                   MenuItemView* root,
                                   const gfx::Rect& bounds,
-                                  MenuItemView::AnchorPosition position,
+                                  MenuAnchorPosition position,
                                   bool context_menu,
                                   int* result_event_flags) {
   exit_type_ = EXIT_NONE;
@@ -385,7 +375,7 @@ MenuItemView* MenuController::Run(Widget* parent,
   // Close any open menus.
   SetSelection(NULL, SELECTION_UPDATE_IMMEDIATELY | SELECTION_EXIT);
 
-#if defined(OS_WIN) && defined(USE_AURA)
+#if defined(OS_WIN)
   // On Windows, if we select the menu item by touch and if the window at the
   // location is another window on the same thread, that window gets a
   // WM_MOUSEACTIVATE message and ends up activating itself, which is not
@@ -400,7 +390,7 @@ MenuItemView* MenuController::Run(Widget* parent,
      HWND window = ::WindowFromPoint(cursor_pos);
      if (::GetWindowThreadProcessId(window, NULL) ==
                                     ::GetCurrentThreadId()) {
-       ::SetProp(window, views::kIgnoreTouchMouseActivateForWindow,
+       ::SetProp(window, ui::kIgnoreTouchMouseActivateForWindow,
                  reinterpret_cast<HANDLE>(true));
      }
   }
@@ -596,13 +586,11 @@ void MenuController::OnMouseEntered(SubmenuView* source,
   // do anything here.
 }
 
-#if defined(USE_AURA)
 bool MenuController::OnMouseWheel(SubmenuView* source,
                                   const ui::MouseWheelEvent& event) {
   MenuPart part = GetMenuPart(source, event.location());
   return part.submenu && part.submenu->OnMouseWheel(event);
 }
-#endif
 
 void MenuController::OnGestureEvent(SubmenuView* source,
                                     ui::GestureEvent* event) {
@@ -809,6 +797,7 @@ void MenuController::OnWidgetDestroying(Widget* widget) {
   DCHECK_EQ(owner_, widget);
   owner_->RemoveObserver(this);
   owner_ = NULL;
+  message_loop_->ClearOwner();
 }
 
 // static
@@ -875,7 +864,7 @@ void MenuController::SetSelection(MenuItemView* menu_item,
       (MenuDepth(menu_item) != 1 ||
        menu_item->GetType() != MenuItemView::SUBMENU)) {
     menu_item->NotifyAccessibilityEvent(
-        ui::AccessibilityTypes::EVENT_FOCUS, true);
+        ui::AX_EVENT_FOCUS, true);
   }
 }
 
@@ -912,14 +901,7 @@ void MenuController::SetSelectionOnPointerDown(SubmenuView* source,
 #if defined(OS_WIN)
     // We're going to close and we own the mouse capture. We need to repost the
     // mouse down, otherwise the window the user clicked on won't get the event.
-    if (!state_.item) {
-      // We some times get an event after closing all the menus. Ignore it. Make
-      // sure the menu is in fact not visible. If the menu is visible, then
-      // we're in a bad state where we think the menu isn't visibile but it is.
-      DCHECK(!source->GetWidget()->IsVisible());
-    } else {
-      RepostEvent(source, event);
-    }
+    RepostEvent(source, event);
 #endif
 
     // And close.
@@ -936,14 +918,15 @@ void MenuController::SetSelectionOnPointerDown(SubmenuView* source,
     }
     Cancel(exit_type);
 
-#if defined(USE_AURA) && !defined(OS_WIN)
+#if defined(OS_CHROMEOS)
     // We're going to exit the menu and want to repost the event so that is
     // is handled normally after the context menu has exited. We call
     // RepostEvent after Cancel so that mouse capture has been released so
     // that finding the event target is unaffected by the current capture.
     RepostEvent(source, event);
 #endif
-
+    // Do not repost events for Linux Aura because this behavior is more
+    // consistent with the behavior of other Linux apps.
     return;
   }
 
@@ -982,7 +965,7 @@ void MenuController::StartDrag(SubmenuView* source,
 
   OSExchangeData data;
   item->GetDelegate()->WriteDragData(item, &data);
-  drag_utils::SetDragImageOnDataObject(*canvas, item->size(),
+  drag_utils::SetDragImageOnDataObject(*canvas,
                                        press_loc.OffsetFromOrigin(),
                                        &data);
   StopScrolling();
@@ -1001,94 +984,6 @@ void MenuController::StartDrag(SubmenuView* source,
     }  // else case, drop was on us.
   }  // else case, someone canceled us, don't do anything
 }
-
-#if defined(OS_WIN)
-bool MenuController::Dispatch(const MSG& msg) {
-  DCHECK(blocking_run_);
-
-  if (exit_type_ == EXIT_ALL || exit_type_ == EXIT_DESTROYED) {
-    // We must translate/dispatch the message here, otherwise we would drop
-    // the message on the floor.
-    TranslateMessage(&msg);
-    DispatchMessage(&msg);
-    return false;
-  }
-
-  // NOTE: we don't get WM_ACTIVATE or anything else interesting in here.
-  switch (msg.message) {
-    case WM_CONTEXTMENU: {
-      MenuItemView* item = pending_state_.item;
-      if (item && item->GetRootMenuItem() != item) {
-        gfx::Point screen_loc(0, item->height());
-        View::ConvertPointToScreen(item, &screen_loc);
-        ui::MenuSourceType source_type = ui::MENU_SOURCE_MOUSE;
-        if (GET_X_LPARAM(msg.lParam) == -1 && GET_Y_LPARAM(msg.lParam) == -1)
-          source_type = ui::MENU_SOURCE_KEYBOARD;
-        item->GetDelegate()->ShowContextMenu(item, item->GetCommand(),
-                                             screen_loc, source_type);
-      }
-      return true;
-    }
-
-    // NOTE: focus wasn't changed when the menu was shown. As such, don't
-    // dispatch key events otherwise the focused window will get the events.
-    case WM_KEYDOWN: {
-      bool result = OnKeyDown(ui::KeyboardCodeFromNative(msg));
-      TranslateMessage(&msg);
-      return result;
-    }
-    case WM_CHAR:
-      return !SelectByChar(static_cast<char16>(msg.wParam));
-    case WM_KEYUP:
-      return true;
-
-    case WM_SYSKEYUP:
-      // We may have been shown on a system key, as such don't do anything
-      // here. If another system key is pushed we'll get a WM_SYSKEYDOWN and
-      // close the menu.
-      return true;
-
-    case WM_CANCELMODE:
-    case WM_SYSKEYDOWN:
-      // Exit immediately on system keys.
-      Cancel(EXIT_ALL);
-      return false;
-
-    default:
-      break;
-  }
-  TranslateMessage(&msg);
-  DispatchMessage(&msg);
-  return exit_type_ == EXIT_NONE;
-}
-#elif defined(USE_AURA)
-bool MenuController::Dispatch(const base::NativeEvent& event) {
-  if (exit_type_ == EXIT_ALL || exit_type_ == EXIT_DESTROYED) {
-    aura::Env::GetInstance()->GetDispatcher()->Dispatch(event);
-    return false;
-  }
-  // Activates mnemonics only when it it pressed without modifiers except for
-  // caps and shift.
-  int flags = ui::EventFlagsFromNative(event) &
-      ~ui::EF_CAPS_LOCK_DOWN & ~ui::EF_SHIFT_DOWN;
-  if (flags == ui::EF_NONE) {
-    switch (ui::EventTypeFromNative(event)) {
-      case ui::ET_KEY_PRESSED:
-        if (!OnKeyDown(ui::KeyboardCodeFromNative(event)))
-          return false;
-
-        return !SelectByChar(ui::KeyboardCodeFromNative(event));
-      case ui::ET_KEY_RELEASED:
-        return true;
-      default:
-        break;
-    }
-  }
-
-  aura::Env::GetInstance()->GetDispatcher()->Dispatch(event);
-  return exit_type_ == EXIT_NONE;
-}
-#endif
 
 bool MenuController::OnKeyDown(ui::KeyboardCode key_code) {
   DCHECK(blocking_run_);
@@ -1124,7 +1019,7 @@ bool MenuController::OnKeyDown(ui::KeyboardCode key_code) {
       break;
 
     case ui::VKEY_F4:
-      if (!accept_on_f4_)
+      if (!is_combobox_)
         break;
       // Fallthrough to accept on F4, so combobox menus match Windows behavior.
     case ui::VKEY_RETURN:
@@ -1156,11 +1051,6 @@ bool MenuController::OnKeyDown(ui::KeyboardCode key_code) {
       CloseSubmenu();
       break;
 
-#if defined(OS_WIN)
-    case VK_APPS:
-      break;
-#endif
-
     default:
       break;
   }
@@ -1191,8 +1081,9 @@ MenuController::MenuController(ui::NativeTheme* theme,
       menu_config_(theme),
       closing_event_time_(base::TimeDelta()),
       menu_start_time_(base::TimeTicks()),
-      accept_on_f4_(false),
-      item_selected_by_touch_(false) {
+      is_combobox_(false),
+      item_selected_by_touch_(false),
+      message_loop_(MenuMessageLoop::Create()) {
   active_instance_ = this;
 }
 
@@ -1204,6 +1095,10 @@ MenuController::~MenuController() {
     active_instance_ = NULL;
   StopShowTimer();
   StopCancelAllTimer();
+}
+
+void MenuController::RunMessageLoop(bool nested_menu) {
+  message_loop_->Run(this, owner_, nested_menu);
 }
 
 MenuController::SendAcceleratorResultType
@@ -1220,10 +1115,9 @@ MenuController::SendAcceleratorResultType
       ACCELERATOR_PROCESSED : ACCELERATOR_PROCESSED_EXIT;
 }
 
-void MenuController::UpdateInitialLocation(
-    const gfx::Rect& bounds,
-    MenuItemView::AnchorPosition position,
-    bool context_menu) {
+void MenuController::UpdateInitialLocation(const gfx::Rect& bounds,
+                                           MenuAnchorPosition position,
+                                           bool context_menu) {
   pending_state_.context_menu = context_menu;
   pending_state_.initial_bounds = bounds;
   if (bounds.height() > 1) {
@@ -1234,10 +1128,10 @@ void MenuController::UpdateInitialLocation(
 
   // Reverse anchor position for RTL languages.
   if (base::i18n::IsRTL() &&
-      (position == MenuItemView::TOPRIGHT ||
-       position == MenuItemView::TOPLEFT)) {
-    pending_state_.anchor = position == MenuItemView::TOPRIGHT ?
-        MenuItemView::TOPLEFT : MenuItemView::TOPRIGHT;
+      (position == MENU_ANCHOR_TOPRIGHT || position == MENU_ANCHOR_TOPLEFT)) {
+    pending_state_.anchor = position == MENU_ANCHOR_TOPRIGHT
+                                ? MENU_ANCHOR_TOPLEFT
+                                : MENU_ANCHOR_TOPRIGHT;
   } else {
     pending_state_.anchor = position;
   }
@@ -1246,7 +1140,7 @@ void MenuController::UpdateInitialLocation(
   // avoid repeated system queries for the info.
   pending_state_.monitor_bounds = GetScreen()->GetDisplayNearestPoint(
       bounds.origin()).work_area();
-#if defined(USE_ASH)
+
   if (!pending_state_.monitor_bounds.Contains(bounds)) {
     // Use the monitor area if the work area doesn't contain the bounds. This
     // handles showing a menu from the launcher.
@@ -1255,7 +1149,6 @@ void MenuController::UpdateInitialLocation(
     if (monitor_area.Contains(bounds))
       pending_state_.monitor_bounds = monitor_area;
   }
-#endif
 }
 
 void MenuController::Accept(MenuItemView* item, int event_flags) {
@@ -1293,7 +1186,7 @@ bool MenuController::ShowSiblingMenu(SubmenuView* source,
   // if there is a sibling menu we should show.
   gfx::Point screen_point(mouse_location);
   View::ConvertPointToScreen(source_view, &screen_point);
-  MenuItemView::AnchorPosition anchor;
+  MenuAnchorPosition anchor;
   bool has_mnemonics;
   MenuButton* button = NULL;
   MenuItemView* alt_menu = source->GetMenuItem()->GetDelegate()->
@@ -1717,11 +1610,11 @@ gfx::Rect MenuController::CalculateMenuBounds(MenuItemView* item,
       x += 1;
 
     y = state_.initial_bounds.bottom();
-    if (state_.anchor == MenuItemView::TOPRIGHT) {
+    if (state_.anchor == MENU_ANCHOR_TOPRIGHT) {
       x = x + state_.initial_bounds.width() - pref.width();
       if (menu_config.offset_context_menus && state_.context_menu)
         x -= 1;
-    } else if (state_.anchor == MenuItemView::BOTTOMCENTER) {
+    } else if (state_.anchor == MENU_ANCHOR_BOTTOMCENTER) {
       x = x - (pref.width() - state_.initial_bounds.width()) / 2;
       if (pref.height() >
           state_.initial_bounds.y() + kCenteredContextMenuYOffset) {
@@ -1770,7 +1663,7 @@ gfx::Rect MenuController::CalculateMenuBounds(MenuItemView* item,
           // The menu should never overlap the owning button. So move it.
           // We use the anchor view style to determine the preferred position
           // relative to the owning button.
-          if (state_.anchor == MenuItemView::TOPLEFT) {
+          if (state_.anchor == MENU_ANCHOR_TOPLEFT) {
             // The menu starts with the same x coordinate as the owning button.
             if (x + state_.initial_bounds.width() + pref.width() >
                 state_.monitor_bounds.right())
@@ -1883,16 +1776,16 @@ gfx::Rect MenuController::CalculateBubbleMenuBounds(MenuItemView* item,
     int max_height = state_.monitor_bounds.height();
     // In case of bubbles, the maximum width is limited by the space
     // between the display corner and the target area + the tip size.
-    if (state_.anchor == MenuItemView::BUBBLE_LEFT) {
+    if (state_.anchor == MENU_ANCHOR_BUBBLE_LEFT) {
       max_width = owner_bounds.x() - state_.monitor_bounds.x() +
                   kBubbleTipSizeLeftRight;
-    } else if (state_.anchor == MenuItemView::BUBBLE_RIGHT) {
+    } else if (state_.anchor == MENU_ANCHOR_BUBBLE_RIGHT) {
       max_width = state_.monitor_bounds.right() - owner_bounds.right() +
                   kBubbleTipSizeLeftRight;
-    } else if (state_.anchor == MenuItemView::BUBBLE_ABOVE) {
+    } else if (state_.anchor == MENU_ANCHOR_BUBBLE_ABOVE) {
       max_height = owner_bounds.y() - state_.monitor_bounds.y() +
                    kBubbleTipSizeTopBottom;
-    } else if (state_.anchor == MenuItemView::BUBBLE_BELOW) {
+    } else if (state_.anchor == MENU_ANCHOR_BUBBLE_BELOW) {
       max_height = state_.monitor_bounds.bottom() - owner_bounds.bottom() +
                    kBubbleTipSizeTopBottom;
     }
@@ -1907,9 +1800,9 @@ gfx::Rect MenuController::CalculateBubbleMenuBounds(MenuItemView* item,
                           item->GetDelegate()->GetMaxWidthForMenu(item)));
 
   int x, y;
-  if (state_.anchor == MenuItemView::BUBBLE_ABOVE ||
-      state_.anchor == MenuItemView::BUBBLE_BELOW) {
-    if (state_.anchor == MenuItemView::BUBBLE_ABOVE)
+  if (state_.anchor == MENU_ANCHOR_BUBBLE_ABOVE ||
+      state_.anchor == MENU_ANCHOR_BUBBLE_BELOW) {
+    if (state_.anchor == MENU_ANCHOR_BUBBLE_ABOVE)
       y = owner_bounds.y() - pref.height() + kBubbleTipSizeTopBottom;
     else
       y = owner_bounds.bottom() - kBubbleTipSizeTopBottom;
@@ -1924,7 +1817,7 @@ gfx::Rect MenuController::CalculateBubbleMenuBounds(MenuItemView* item,
     submenu->GetScrollViewContainer()->SetBubbleArrowOffset(
         pref.width() / 2 - x + x_old);
   } else {
-    if (state_.anchor == MenuItemView::BUBBLE_RIGHT)
+    if (state_.anchor == MENU_ANCHOR_BUBBLE_RIGHT)
       x = owner_bounds.right() - kBubbleTipSizeLeftRight;
     else
       x = owner_bounds.x() - pref.width() + kBubbleTipSizeLeftRight;
@@ -2046,8 +1939,8 @@ void MenuController::CloseSubmenu() {
 
 MenuController::SelectByCharDetails MenuController::FindChildForMnemonic(
     MenuItemView* parent,
-    char16 key,
-    bool (*match_function)(MenuItemView* menu, char16 mnemonic)) {
+    base::char16 key,
+    bool (*match_function)(MenuItemView* menu, base::char16 mnemonic)) {
   SubmenuView* submenu = parent->GetSubmenu();
   DCHECK(submenu);
   SelectByCharDetails details;
@@ -2098,9 +1991,9 @@ bool MenuController::AcceptOrSelect(MenuItemView* parent,
   return false;
 }
 
-bool MenuController::SelectByChar(char16 character) {
-  char16 char_array[] = { character, 0 };
-  char16 key = base::i18n::ToLower(char_array)[0];
+bool MenuController::SelectByChar(base::char16 character) {
+  base::char16 char_array[] = { character, 0 };
+  base::char16 key = base::i18n::ToLower(char_array)[0];
   MenuItemView* item = pending_state_.item;
   if (!item->HasSubmenu() || !item->GetSubmenu()->IsShowing())
     item = item->GetParentMenuItem();
@@ -2116,60 +2009,113 @@ bool MenuController::SelectByChar(char16 character) {
   if (details.first_match != -1)
     return AcceptOrSelect(item, details);
 
-  // If no mnemonics found, look at first character of titles.
-  details = FindChildForMnemonic(item, key, &TitleMatchesMnemonic);
-  if (details.first_match != -1)
-    return AcceptOrSelect(item, details);
+  if (is_combobox_) {
+    item->GetSubmenu()->GetTextInputClient()->InsertChar(character, 0);
+  } else {
+    // If no mnemonics found, look at first character of titles.
+    details = FindChildForMnemonic(item, key, &TitleMatchesMnemonic);
+    if (details.first_match != -1)
+      return AcceptOrSelect(item, details);
+  }
 
   return false;
 }
 
 void MenuController::RepostEvent(SubmenuView* source,
                                  const ui::LocatedEvent& event) {
+  if (!event.IsMouseEvent()) {
+    // TODO(rbyers): Gesture event repost is tricky to get right
+    // crbug.com/170987.
+    DCHECK(event.IsGestureEvent());
+    return;
+  }
+
+#if defined(OS_WIN)
+  if (!state_.item) {
+    // We some times get an event after closing all the menus. Ignore it. Make
+    // sure the menu is in fact not visible. If the menu is visible, then
+    // we're in a bad state where we think the menu isn't visibile but it is.
+    DCHECK(!source->GetWidget()->IsVisible());
+    return;
+  }
+
+  state_.item->GetRootMenuItem()->GetSubmenu()->ReleaseCapture();
+#endif
+
   gfx::Point screen_loc(event.location());
   View::ConvertPointToScreen(source->GetScrollViewContainer(), &screen_loc);
-
   gfx::NativeView native_view = source->GetWidget()->GetNativeView();
+  if (!native_view)
+    return;
+
   gfx::Screen* screen = gfx::Screen::GetScreenFor(native_view);
   gfx::NativeWindow window = screen->GetWindowAtScreenPoint(screen_loc);
 
+#if defined(OS_WIN)
+  // Convert screen_loc to pixels for the Win32 API's like WindowFromPoint,
+  // PostMessage/SendMessage to work correctly. These API's expect the
+  // coordinates to be in pixels.
+  // PostMessage() to metro windows isn't allowed (access will be denied). Don't
+  // try to repost with Win32 if the window under the mouse press is in metro.
+  if (!ViewsDelegate::views_delegate ||
+      !ViewsDelegate::views_delegate->IsWindowInMetro(window)) {
+    gfx::Point screen_loc_pixels = gfx::win::DIPToScreenPoint(screen_loc);
+    HWND target_window = window ? HWNDForNativeWindow(window) :
+                                  WindowFromPoint(screen_loc_pixels.ToPOINT());
+    HWND source_window = HWNDForNativeView(native_view);
+    if (!target_window || !source_window ||
+        GetWindowThreadProcessId(source_window, NULL) !=
+        GetWindowThreadProcessId(target_window, NULL)) {
+      // Even though we have mouse capture, windows generates a mouse event if
+      // the other window is in a separate thread. Only repost an event if
+      // |target_window| and |source_window| were created on the same thread,
+      // else double events can occur and lead to bad behavior.
+      return;
+    }
+
+    // Determine whether the click was in the client area or not.
+    // NOTE: WM_NCHITTEST coordinates are relative to the screen.
+    LPARAM coords = MAKELPARAM(screen_loc_pixels.x(), screen_loc_pixels.y());
+    LRESULT nc_hit_result = SendMessage(target_window, WM_NCHITTEST, 0, coords);
+    const bool client_area = nc_hit_result == HTCLIENT;
+
+    // TODO(sky): this isn't right. The event to generate should correspond with
+    // the event we just got. MouseEvent only tells us what is down, which may
+    // differ. Need to add ability to get changed button from MouseEvent.
+    int event_type;
+    int flags = event.flags();
+    if (flags & ui::EF_LEFT_MOUSE_BUTTON) {
+      event_type = client_area ? WM_LBUTTONDOWN : WM_NCLBUTTONDOWN;
+    } else if (flags & ui::EF_MIDDLE_MOUSE_BUTTON) {
+      event_type = client_area ? WM_MBUTTONDOWN : WM_NCMBUTTONDOWN;
+    } else if (flags & ui::EF_RIGHT_MOUSE_BUTTON) {
+      event_type = client_area ? WM_RBUTTONDOWN : WM_NCRBUTTONDOWN;
+    } else {
+      NOTREACHED();
+      return;
+    }
+
+    int window_x = screen_loc_pixels.x();
+    int window_y = screen_loc_pixels.y();
+    if (client_area) {
+      POINT pt = { window_x, window_y };
+      ScreenToClient(target_window, &pt);
+      window_x = pt.x;
+      window_y = pt.y;
+    }
+
+    WPARAM target = client_area ? event.native_event().wParam : nc_hit_result;
+    LPARAM window_coords = MAKELPARAM(window_x, window_y);
+    PostMessage(target_window, event_type, target, window_coords);
+    return;
+  }
+#endif
+  // Non-Windows Aura or |window| is in metro mode.
   if (!window)
     return;
 
-#if defined(OS_WIN)
-  // Release the capture.
-  SubmenuView* submenu = state_.item->GetRootMenuItem()->GetSubmenu();
-  submenu->ReleaseCapture();
-
-  gfx::NativeView view = submenu->GetWidget()->GetNativeView();
-  if (view) {
-    DWORD view_tid = GetWindowThreadProcessId(HWNDForNativeView(view), NULL);
-    if (view_tid != GetWindowThreadProcessId(HWNDForNativeView(window), NULL)) {
-      // Even though we have mouse capture, windows generates a mouse event if
-      // the other window is in a separate thread. Only repost an event if
-      // |view| was created on the same thread, else the target window can get
-      // double events leading to bad behavior.
-      return;
-    }
-  }
-#endif
-
-  scoped_ptr<ui::LocatedEvent> clone;
-  if (event.IsMouseEvent()) {
-    clone.reset(new ui::MouseEvent(static_cast<const ui::MouseEvent&>(event)));
-  } else if (event.IsGestureEvent()) {
-    // TODO(rbyers): Gesture event repost is tricky to get right
-    // crbug.com/170987.
-    return;
-  } else {
-    NOTREACHED();
-    return;
-  }
-  clone->set_location(screen_loc);
-
-  RepostLocatedEvent(window, *clone);
+  message_loop_->RepostEventToWindow(event, window, screen_loc);
 }
-
 
 void MenuController::SetDropMenuItem(
     MenuItemView* new_target,
@@ -2230,12 +2176,13 @@ void MenuController::UpdateActiveMouseView(SubmenuView* event_source,
           target_menu, active_mouse_view, &target_point);
       ui::MouseEvent mouse_entered_event(ui::ET_MOUSE_ENTERED,
                                          target_point, target_point,
-                                         0);
+                                         0, 0);
       active_mouse_view->OnMouseEntered(mouse_entered_event);
 
       ui::MouseEvent mouse_pressed_event(ui::ET_MOUSE_PRESSED,
                                          target_point, target_point,
-                                         event.flags());
+                                         event.flags(),
+                                         event.changed_button_flags());
       active_mouse_view->OnMousePressed(mouse_pressed_event);
     }
   }
@@ -2245,7 +2192,8 @@ void MenuController::UpdateActiveMouseView(SubmenuView* event_source,
     View::ConvertPointToTarget(target_menu, active_mouse_view, &target_point);
     ui::MouseEvent mouse_dragged_event(ui::ET_MOUSE_DRAGGED,
                                        target_point, target_point,
-                                       event.flags());
+                                       event.flags(),
+                                       event.changed_button_flags());
     active_mouse_view->OnMouseDragged(mouse_dragged_event);
   }
 }
@@ -2261,7 +2209,7 @@ void MenuController::SendMouseReleaseToActiveView(SubmenuView* event_source,
                              &target_loc);
   View::ConvertPointFromScreen(active_mouse_view, &target_loc);
   ui::MouseEvent release_event(ui::ET_MOUSE_RELEASED, target_loc, target_loc,
-                               event.flags());
+                               event.flags(), event.changed_button_flags());
   // Reset active mouse view before sending mouse released. That way if it calls
   // back to us, we aren't in a weird state.
   SetActiveMouseView(NULL);
@@ -2293,20 +2241,22 @@ View* MenuController::GetActiveMouseView() {
 void MenuController::SetExitType(ExitType type) {
   exit_type_ = type;
   // Exit nested message loops as soon as possible. We do this as
-  // MessageLoop::Dispatcher is only invoked before native events, which means
+  // MessagePumpDispatcher is only invoked before native events, which means
   // its entirely possible for a Widget::CloseNow() task to be processed before
-  // the next native message. By using QuitNow() we ensures the nested message
-  // loop returns as soon as possible and avoids having deleted views classes
-  // (such as widgets and rootviews) on the stack when the nested message loop
-  // stops.
+  // the next native message. We quite the nested message loop as soon as
+  // possible to avoid having deleted views classes (such as widgets and
+  // rootviews) on the stack when the nested message loop stops.
   //
-  // It's safe to invoke QuitNow multiple times, it only effects the current
-  // loop.
-  bool quit_now = ShouldQuitNow() && exit_type_ != EXIT_NONE &&
+  // It's safe to invoke QuitNestedMessageLoop() multiple times, it only effects
+  // the current loop.
+  bool quit_now = message_loop_->ShouldQuitNow() && exit_type_ != EXIT_NONE &&
       message_loop_depth_;
-
   if (quit_now)
-    base::MessageLoop::current()->QuitNow();
+    TerminateNestedMessageLoop();
+}
+
+void MenuController::TerminateNestedMessageLoop() {
+  message_loop_->QuitNow();
 }
 
 void MenuController::HandleMouseLocation(SubmenuView* source,
@@ -2339,6 +2289,12 @@ void MenuController::HandleMouseLocation(SubmenuView* source,
     SetSelection(pending_state_.item->GetParentMenuItem(),
                  SELECTION_OPEN_SUBMENU);
   }
+}
+
+gfx::Screen* MenuController::GetScreen() {
+  Widget* root = owner_ ? owner_->GetTopLevelWidget() : NULL;
+  return root ? gfx::Screen::GetScreenFor(root->GetNativeView())
+              : gfx::Screen::GetNativeScreen();
 }
 
 }  // namespace views

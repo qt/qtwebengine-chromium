@@ -71,6 +71,10 @@ class RealDnsLookup(object):
       answers = self.resolver.query(hostname, rdtype)
     except dns.resolver.NXDOMAIN:
       return None
+    except dns.resolver.NoNameservers:
+      logging.debug('_real_dns_lookup(%s) -> No nameserver.',
+                    hostname)
+      return None
     except (dns.resolver.NoAnswer, dns.resolver.Timeout) as ex:
       logging.debug('_real_dns_lookup(%s) -> None (%s)',
                     hostname, ex.__class__.__name__)
@@ -83,7 +87,7 @@ class RealDnsLookup(object):
     return ip
 
   def ClearCache(self):
-    """Clearn the dns cache."""
+    """Clear the dns cache."""
     self.dns_cache_lock.acquire()
     self.dns_cache.clear()
     self.dns_cache_lock.release()
@@ -142,7 +146,8 @@ class PrivateIpFilter(object):
 
   def InitializeArchiveHosts(self):
     """Recompute the archive_hosts from the http_archive."""
-    self.archive_hosts = set('%s.' % req.host for req in self.http_archive)
+    self.archive_hosts = set('%s.' % req.host.split(':')[0]
+                             for req in self.http_archive)
 
 
 class DelayFilter(object):
@@ -271,8 +276,9 @@ class DnsProxyServer(SocketServer.ThreadingUDPServer,
             'Unable to bind DNS server on (%s:%s)' % (host, port))
       raise
     self.dns_lookup = dns_lookup or (lambda host: self.server_address[0])
-    logging.warning('DNS server started on %s:%d', (self.server_address[0],
-                                                    self.server_address[1]))
+    self.server_port = self.server_address[1]
+    logging.warning('DNS server started on %s:%d', self.server_address[0],
+                                                   self.server_address[1])
 
   def cleanup(self):
     try:

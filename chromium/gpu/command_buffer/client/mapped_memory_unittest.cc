@@ -4,6 +4,7 @@
 
 #include "gpu/command_buffer/client/mapped_memory.h"
 
+#include <list>
 #include "base/bind.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
@@ -67,7 +68,7 @@ class MappedMemoryTestBase : public testing::Test {
   }
 
   int32 GetToken() {
-    return command_buffer_->GetState().token;
+    return command_buffer_->GetLastState().token;
   }
 
 #if defined(OS_MACOSX)
@@ -85,6 +86,11 @@ class MappedMemoryTestBase : public testing::Test {
 const unsigned int MappedMemoryTestBase::kBufferSize;
 #endif
 
+namespace {
+void EmptyPoll() {
+}
+}
+
 // Test fixture for MemoryChunk test - Creates a MemoryChunk, using a
 // CommandBufferHelper with a mock AsyncAPIInterface for its interface (calling
 // it directly, not through the RPC mechanism), making sure Noops are ignored
@@ -94,11 +100,13 @@ class MemoryChunkTest : public MappedMemoryTestBase {
   static const int32 kShmId = 123;
   virtual void SetUp() {
     MappedMemoryTestBase::SetUp();
-    buffer_.reset(new uint8[kBufferSize]);
-    gpu::Buffer buf;
-    buf.size = kBufferSize;
-    buf.ptr = buffer_.get();
-    chunk_.reset(new MemoryChunk(kShmId, buf, helper_.get()));
+    scoped_ptr<base::SharedMemory> shared_memory(new base::SharedMemory());
+    shared_memory->CreateAndMapAnonymous(kBufferSize);
+    buffer_ = MakeBufferFromSharedMemory(shared_memory.Pass(), kBufferSize);
+    chunk_.reset(new MemoryChunk(kShmId,
+                                 buffer_,
+                                 helper_.get(),
+                                 base::Bind(&EmptyPoll)));
   }
 
   virtual void TearDown() {
@@ -108,8 +116,10 @@ class MemoryChunkTest : public MappedMemoryTestBase {
     MappedMemoryTestBase::TearDown();
   }
 
+  uint8* buffer_memory() { return static_cast<uint8*>(buffer_->memory()); }
+
   scoped_ptr<MemoryChunk> chunk_;
-  scoped_ptr<uint8[]> buffer_;
+  scoped_refptr<gpu::Buffer> buffer_;
 };
 
 #ifndef _MSC_VER
@@ -124,8 +134,9 @@ TEST_F(MemoryChunkTest, Basic) {
   EXPECT_EQ(kBufferSize, chunk_->GetSize());
   void *pointer = chunk_->Alloc(kSize);
   ASSERT_TRUE(pointer);
-  EXPECT_LE(buffer_.get(), static_cast<uint8 *>(pointer));
-  EXPECT_GE(kBufferSize, static_cast<uint8 *>(pointer) - buffer_.get() + kSize);
+  EXPECT_LE(buffer_->memory(), static_cast<uint8*>(pointer));
+  EXPECT_GE(kBufferSize,
+            static_cast<uint8*>(pointer) - buffer_memory() + kSize);
   EXPECT_EQ(kBufferSize - kSize, chunk_->GetLargestFreeSizeWithoutWaiting());
   EXPECT_EQ(kBufferSize - kSize, chunk_->GetLargestFreeSizeWithWaiting());
   EXPECT_EQ(kBufferSize, chunk_->GetSize());
@@ -136,8 +147,8 @@ TEST_F(MemoryChunkTest, Basic) {
 
   uint8 *pointer_char = static_cast<uint8*>(chunk_->Alloc(kSize));
   ASSERT_TRUE(pointer_char);
-  EXPECT_LE(buffer_.get(), pointer_char);
-  EXPECT_GE(buffer_.get() + kBufferSize, pointer_char + kSize);
+  EXPECT_LE(buffer_memory(), pointer_char);
+  EXPECT_GE(buffer_memory() + kBufferSize, pointer_char + kSize);
   EXPECT_EQ(kBufferSize - kSize, chunk_->GetLargestFreeSizeWithoutWaiting());
   EXPECT_EQ(kBufferSize - kSize, chunk_->GetLargestFreeSizeWithWaiting());
   chunk_->Free(pointer_char);
@@ -146,11 +157,16 @@ TEST_F(MemoryChunkTest, Basic) {
 }
 
 class MappedMemoryManagerTest : public MappedMemoryTestBase {
+ public:
+  MappedMemoryManager* manager() const {
+    return manager_.get();
+  }
+
  protected:
   virtual void SetUp() {
     MappedMemoryTestBase::SetUp();
     manager_.reset(new MappedMemoryManager(
-        helper_.get(), MappedMemoryManager::kNoLimit));
+        helper_.get(), base::Bind(&EmptyPoll), MappedMemoryManager::kNoLimit));
   }
 
   virtual void TearDown() {
@@ -252,16 +268,6 @@ TEST_F(MappedMemoryManagerTest, FreePendingToken) {
   }
 }
 
-// Check if we don't free we don't crash.
-TEST_F(MappedMemoryManagerTest, DontFree) {
-  const unsigned int kSize = 1024;
-  // Check we can alloc.
-  int32 id1 = -1;
-  unsigned int offset1 = 0xFFFFFFFFU;
-  void* mem1 = manager_->Alloc(kSize, &id1, &offset1);
-  ASSERT_TRUE(mem1);
-}
-
 TEST_F(MappedMemoryManagerTest, FreeUnused) {
   int32 id = -1;
   unsigned int offset = 0xFFFFFFFFU;
@@ -305,12 +311,17 @@ TEST_F(MappedMemoryManagerTest, ChunkSizeMultiple) {
   EXPECT_EQ(0u, offset1);
   EXPECT_EQ(kSize, offset2);
   EXPECT_EQ(0u, offset3);
+
+  manager_->Free(mem1);
+  manager_->Free(mem2);
+  manager_->Free(mem3);
 }
 
 TEST_F(MappedMemoryManagerTest, UnusedMemoryLimit) {
   const unsigned int kChunkSize = 2048;
   // Reset the manager with a memory limit.
-  manager_.reset(new MappedMemoryManager(helper_.get(), kChunkSize));
+  manager_.reset(new MappedMemoryManager(
+      helper_.get(), base::Bind(&EmptyPoll), kChunkSize));
   manager_->set_chunk_size_multiple(kChunkSize);
 
   // Allocate one chunk worth of memory.
@@ -333,12 +344,16 @@ TEST_F(MappedMemoryManagerTest, UnusedMemoryLimit) {
   // Expect two chunks to be allocated, exceeding the limit,
   // since all memory is in use.
   EXPECT_EQ(2 * kChunkSize, manager_->allocated_memory());
+
+  manager_->Free(mem1);
+  manager_->Free(mem2);
 }
 
 TEST_F(MappedMemoryManagerTest, MemoryLimitWithReuse) {
   const unsigned int kSize = 1024;
   // Reset the manager with a memory limit.
-  manager_.reset(new MappedMemoryManager(helper_.get(), kSize));
+  manager_.reset(new MappedMemoryManager(
+      helper_.get(), base::Bind(&EmptyPoll), kSize));
   const unsigned int kChunkSize = 2 * 1024;
   manager_->set_chunk_size_multiple(kChunkSize);
 
@@ -382,6 +397,60 @@ TEST_F(MappedMemoryManagerTest, MemoryLimitWithReuse) {
 
   // Expect one chunk to be allocated
   EXPECT_EQ(1 * kChunkSize, manager_->allocated_memory());
+
+  manager_->Free(mem1);
+  manager_->Free(mem3);
+}
+
+namespace {
+void Poll(MappedMemoryManagerTest *test, std::list<void*>* list) {
+  std::list<void*>::iterator it = list->begin();
+  while (it != list->end()) {
+    void* address = *it;
+    test->manager()->Free(address);
+    it = list->erase(it);
+  }
+}
+}
+
+TEST_F(MappedMemoryManagerTest, Poll) {
+  std::list<void*> unmanaged_memory_list;
+
+  const unsigned int kSize = 1024;
+  // Reset the manager with a memory limit.
+  manager_.reset(new MappedMemoryManager(
+      helper_.get(),
+      base::Bind(&Poll, this, &unmanaged_memory_list),
+      kSize));
+
+  // Allocate kSize bytes. Don't add the address to
+  // the unmanaged memory list, so that it won't be free:ed just yet.
+  int32 id1;
+  unsigned int offset1;
+  void* mem1 = manager_->Alloc(kSize, &id1, &offset1);
+  EXPECT_EQ(manager_->bytes_in_use(), kSize);
+
+  // Allocate kSize more bytes, and make sure we grew.
+  int32 id2;
+  unsigned int offset2;
+  void* mem2 = manager_->Alloc(kSize, &id2, &offset2);
+  EXPECT_EQ(manager_->bytes_in_use(), kSize * 2);
+
+  // Make the unmanaged buffer be released next time FreeUnused() is called
+  // in MappedMemoryManager/FencedAllocator. This happens for example when
+  // allocating new memory.
+  unmanaged_memory_list.push_back(mem1);
+
+  // Allocate kSize more bytes. This should poll unmanaged memory, which now
+  // should free the previously allocated unmanaged memory.
+  int32 id3;
+  unsigned int offset3;
+  void* mem3 = manager_->Alloc(kSize, &id3, &offset3);
+  EXPECT_EQ(manager_->bytes_in_use(), kSize * 2);
+
+  manager_->Free(mem2);
+  manager_->Free(mem3);
+  EXPECT_EQ(manager_->bytes_in_use(), static_cast<size_t>(0));
 }
 
 }  // namespace gpu

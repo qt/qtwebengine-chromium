@@ -13,13 +13,15 @@ import os
 import re
 import shutil
 import subprocess
+import stat
+import string
 import sys
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# A regex matching an argument corresponding to a PDB filename passed as an
-# argument to link.exe.
-_LINK_EXE_PDB_ARG = re.compile('/PDB:(?P<pdb>.+\.exe\.pdb)$', re.IGNORECASE)
+# A regex matching an argument corresponding to the output filename passed to
+# link.exe.
+_LINK_EXE_OUT_ARG = re.compile('/OUT:(?P<out>.+)$', re.IGNORECASE)
 
 def main(args):
   executor = WinTool()
@@ -32,25 +34,23 @@ class WinTool(object):
   """This class performs all the Windows tooling steps. The methods can either
   be executed directly, or dispatched from an argument list."""
 
-  def _MaybeUseSeparateMspdbsrv(self, env, args):
-    """Allows to use a unique instance of mspdbsrv.exe for the linkers linking
-    an .exe target if GYP_USE_SEPARATE_MSPDBSRV has been set."""
-    if not os.environ.get('GYP_USE_SEPARATE_MSPDBSRV'):
-      return
-
+  def _UseSeparateMspdbsrv(self, env, args):
+    """Allows to use a unique instance of mspdbsrv.exe per linker instead of a
+    shared one."""
     if len(args) < 1:
       raise Exception("Not enough arguments")
 
     if args[0] != 'link.exe':
       return
 
-    # Checks if this linker produces a PDB for an .exe target. If so use the
-    # name of this PDB to generate an endpoint name for mspdbsrv.exe.
+    # Use the output filename passed to the linker to generate an endpoint name
+    # for mspdbsrv.exe.
     endpoint_name = None
     for arg in args:
-      m = _LINK_EXE_PDB_ARG.match(arg)
+      m = _LINK_EXE_OUT_ARG.match(arg)
       if m:
-        endpoint_name = '%s_%d' % (m.group('pdb'), os.getpid())
+        endpoint_name = re.sub(r'\W+', '',
+            '%s_%d' % (m.group('out'), os.getpid()))
         break
 
     if endpoint_name is None:
@@ -90,21 +90,32 @@ class WinTool(object):
     """Emulation of rm -rf out && cp -af in out."""
     if os.path.exists(dest):
       if os.path.isdir(dest):
-        shutil.rmtree(dest)
+        def _on_error(fn, path, excinfo):
+          # The operation failed, possibly because the file is set to
+          # read-only. If that's why, make it writable and try the op again.
+          if not os.access(path, os.W_OK):
+            os.chmod(path, stat.S_IWRITE)
+          fn(path)
+        shutil.rmtree(dest, onerror=_on_error)
       else:
+        if not os.access(dest, os.W_OK):
+          # Attempt to make the file writable before deleting it.
+          os.chmod(dest, stat.S_IWRITE)
         os.unlink(dest)
+
     if os.path.isdir(source):
       shutil.copytree(source, dest)
     else:
       shutil.copy2(source, dest)
 
-  def ExecLinkWrapper(self, arch, *args):
+  def ExecLinkWrapper(self, arch, use_separate_mspdbsrv, *args):
     """Filter diagnostic output from link that looks like:
     '   Creating library ui.dll.lib and object ui.dll.exp'
     This happens when there are exports from the dll or exe.
     """
     env = self._GetEnv(arch)
-    self._MaybeUseSeparateMspdbsrv(env, args)
+    if use_separate_mspdbsrv == 'True':
+      self._UseSeparateMspdbsrv(env, args)
     link = subprocess.Popen(args,
                             shell=True,
                             env=env,
@@ -115,6 +126,82 @@ class WinTool(object):
       if not line.startswith('   Creating library '):
         print line
     return link.returncode
+
+  def ExecLinkWithManifests(self, arch, embed_manifest, out, ldcmd, resname,
+                            mt, rc, intermediate_manifest, *manifests):
+    """A wrapper for handling creating a manifest resource and then executing
+    a link command."""
+    # The 'normal' way to do manifests is to have link generate a manifest
+    # based on gathering dependencies from the object files, then merge that
+    # manifest with other manifests supplied as sources, convert the merged
+    # manifest to a resource, and then *relink*, including the compiled
+    # version of the manifest resource. This breaks incremental linking, and
+    # is generally overly complicated. Instead, we merge all the manifests
+    # provided (along with one that includes what would normally be in the
+    # linker-generated one, see msvs_emulation.py), and include that into the
+    # first and only link. We still tell link to generate a manifest, but we
+    # only use that to assert that our simpler process did not miss anything.
+    variables = {
+      'python': sys.executable,
+      'arch': arch,
+      'out': out,
+      'ldcmd': ldcmd,
+      'resname': resname,
+      'mt': mt,
+      'rc': rc,
+      'intermediate_manifest': intermediate_manifest,
+      'manifests': ' '.join(manifests),
+    }
+    add_to_ld = ''
+    if manifests:
+      subprocess.check_call(
+          '%(python)s gyp-win-tool manifest-wrapper %(arch)s %(mt)s -nologo '
+          '-manifest %(manifests)s -out:%(out)s.manifest' % variables)
+      if embed_manifest == 'True':
+        subprocess.check_call(
+            '%(python)s gyp-win-tool manifest-to-rc %(arch)s %(out)s.manifest'
+          ' %(out)s.manifest.rc %(resname)s' % variables)
+        subprocess.check_call(
+            '%(python)s gyp-win-tool rc-wrapper %(arch)s %(rc)s '
+            '%(out)s.manifest.rc' % variables)
+        add_to_ld = ' %(out)s.manifest.res' % variables
+    subprocess.check_call(ldcmd + add_to_ld)
+
+    # Run mt.exe on the theoretically complete manifest we generated, merging
+    # it with the one the linker generated to confirm that the linker
+    # generated one does not add anything. This is strictly unnecessary for
+    # correctness, it's only to verify that e.g. /MANIFESTDEPENDENCY was not
+    # used in a #pragma comment.
+    if manifests:
+      # Merge the intermediate one with ours to .assert.manifest, then check
+      # that .assert.manifest is identical to ours.
+      subprocess.check_call(
+          '%(python)s gyp-win-tool manifest-wrapper %(arch)s %(mt)s -nologo '
+          '-manifest %(out)s.manifest %(intermediate_manifest)s '
+          '-out:%(out)s.assert.manifest' % variables)
+      assert_manifest = '%(out)s.assert.manifest' % variables
+      our_manifest = '%(out)s.manifest' % variables
+      # Load and normalize the manifests. mt.exe sometimes removes whitespace,
+      # and sometimes doesn't unfortunately.
+      with open(our_manifest, 'rb') as our_f:
+        with open(assert_manifest, 'rb') as assert_f:
+          our_data = our_f.read().translate(None, string.whitespace)
+          assert_data = assert_f.read().translate(None, string.whitespace)
+      if our_data != assert_data:
+        os.unlink(out)
+        def dump(filename):
+          sys.stderr.write('%s\n-----\n' % filename)
+          with open(filename, 'rb') as f:
+            sys.stderr.write(f.read() + '\n-----\n')
+        dump(intermediate_manifest)
+        dump(our_manifest)
+        dump(assert_manifest)
+        sys.stderr.write(
+            'Linker generated manifest "%s" added to final manifest "%s" '
+            '(result in "%s"). '
+            'Were /MANIFEST switches used in #pragma statements? ' % (
+              intermediate_manifest, our_manifest, assert_manifest))
+        return 1
 
   def ExecManifestWrapper(self, arch, *args):
     """Run manifest tool with environment set. Strip out undesirable warning
@@ -161,10 +248,11 @@ class WinTool(object):
     # Processing C:\Program Files (x86)\Microsoft SDKs\...\include\objidl.idl
     # objidl.idl
     lines = out.splitlines()
-    prefix = 'Processing '
-    processing = set(os.path.basename(x) for x in lines if x.startswith(prefix))
+    prefixes = ('Processing ', '64 bit Processing ')
+    processing = set(os.path.basename(x)
+                     for x in lines if x.startswith(prefixes))
     for line in lines:
-      if not line.startswith(prefix) and line not in processing:
+      if not line.startswith(prefixes) and line not in processing:
         print line
     return popen.returncode
 
@@ -203,9 +291,25 @@ class WinTool(object):
     """Runs an action command line from a response file using the environment
     for |arch|. If |dir| is supplied, use that as the working directory."""
     env = self._GetEnv(arch)
+    # TODO(scottmg): This is a temporary hack to get some specific variables
+    # through to actions that are set after gyp-time. http://crbug.com/333738.
+    for k, v in os.environ.iteritems():
+      if k not in env:
+        env[k] = v
     args = open(rspfile).read()
     dir = dir[0] if dir else None
     return subprocess.call(args, shell=True, env=env, cwd=dir)
+
+  def ExecClCompile(self, project_dir, selected_files):
+    """Executed by msvs-ninja projects when the 'ClCompile' target is used to
+    build selected C/C++ files."""
+    project_dir = os.path.relpath(project_dir, BASE_DIR)
+    selected_files = selected_files.split(';')
+    ninja_targets = [os.path.join(project_dir, filename) + '^^'
+        for filename in selected_files]
+    cmd = ['ninja.exe']
+    cmd.extend(ninja_targets)
+    return subprocess.call(cmd, shell=True, cwd=BASE_DIR)
 
 if __name__ == '__main__':
   sys.exit(main(sys.argv[1:]))

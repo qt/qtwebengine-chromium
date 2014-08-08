@@ -24,15 +24,8 @@
  */
 
 #include "config.h"
-#include "SpeechRecognitionClientProxy.h"
+#include "web/SpeechRecognitionClientProxy.h"
 
-#include "wtf/PassRefPtr.h"
-#include "WebSecurityOrigin.h"
-#include "WebSpeechGrammar.h"
-#include "WebSpeechRecognitionHandle.h"
-#include "WebSpeechRecognitionParams.h"
-#include "WebSpeechRecognitionResult.h"
-#include "WebSpeechRecognizer.h"
 #include "core/dom/ExecutionContext.h"
 #include "modules/speech/SpeechGrammarList.h"
 #include "modules/speech/SpeechRecognition.h"
@@ -40,6 +33,13 @@
 #include "modules/speech/SpeechRecognitionResult.h"
 #include "modules/speech/SpeechRecognitionResultList.h"
 #include "platform/weborigin/SecurityOrigin.h"
+#include "public/web/WebSecurityOrigin.h"
+#include "public/web/WebSpeechGrammar.h"
+#include "public/web/WebSpeechRecognitionHandle.h"
+#include "public/web/WebSpeechRecognitionParams.h"
+#include "public/web/WebSpeechRecognitionResult.h"
+#include "public/web/WebSpeechRecognizer.h"
+#include "wtf/PassRefPtr.h"
 
 using namespace WebCore;
 
@@ -76,67 +76,67 @@ void SpeechRecognitionClientProxy::abort(SpeechRecognition* recognition)
 
 void SpeechRecognitionClientProxy::didStartAudio(const WebSpeechRecognitionHandle& handle)
 {
-    RefPtr<SpeechRecognition> recognition = PassRefPtr<SpeechRecognition>(handle);
+    SpeechRecognition* recognition(handle);
     recognition->didStartAudio();
 }
 
 void SpeechRecognitionClientProxy::didStartSound(const WebSpeechRecognitionHandle& handle)
 {
-    RefPtr<SpeechRecognition> recognition = PassRefPtr<SpeechRecognition>(handle);
+    SpeechRecognition* recognition(handle);
     recognition->didStartSound();
     recognition->didStartSpeech();
 }
 
 void SpeechRecognitionClientProxy::didEndSound(const WebSpeechRecognitionHandle& handle)
 {
-    RefPtr<SpeechRecognition> recognition = PassRefPtr<SpeechRecognition>(handle);
+    SpeechRecognition* recognition(handle);
     recognition->didEndSpeech();
     recognition->didEndSound();
 }
 
 void SpeechRecognitionClientProxy::didEndAudio(const WebSpeechRecognitionHandle& handle)
 {
-    RefPtr<SpeechRecognition> recognition = PassRefPtr<SpeechRecognition>(handle);
+    SpeechRecognition* recognition(handle);
     recognition->didEndAudio();
 }
 
 void SpeechRecognitionClientProxy::didReceiveResults(const WebSpeechRecognitionHandle& handle, const WebVector<WebSpeechRecognitionResult>& newFinalResults, const WebVector<WebSpeechRecognitionResult>& currentInterimResults)
 {
-    RefPtr<SpeechRecognition> recognition = PassRefPtr<SpeechRecognition>(handle);
+    SpeechRecognition* recognition(handle);
 
-    Vector<RefPtr<SpeechRecognitionResult> > finalResultsVector(newFinalResults.size());
+    HeapVector<Member<SpeechRecognitionResult> > finalResultsVector(newFinalResults.size());
     for (size_t i = 0; i < newFinalResults.size(); ++i)
-        finalResultsVector[i] = static_cast<PassRefPtr<SpeechRecognitionResult> >(newFinalResults[i]);
+        finalResultsVector[i] = static_cast<SpeechRecognitionResult*>(newFinalResults[i]);
 
-    Vector<RefPtr<SpeechRecognitionResult> > interimResultsVector(currentInterimResults.size());
+    HeapVector<Member<SpeechRecognitionResult> > interimResultsVector(currentInterimResults.size());
     for (size_t i = 0; i < currentInterimResults.size(); ++i)
-        interimResultsVector[i] = static_cast<PassRefPtr<SpeechRecognitionResult> >(currentInterimResults[i]);
+        interimResultsVector[i] = static_cast<SpeechRecognitionResult*>(currentInterimResults[i]);
 
     recognition->didReceiveResults(finalResultsVector, interimResultsVector);
 }
 
 void SpeechRecognitionClientProxy::didReceiveNoMatch(const WebSpeechRecognitionHandle& handle, const WebSpeechRecognitionResult& result)
 {
-    RefPtr<SpeechRecognition> recognition = PassRefPtr<SpeechRecognition>(handle);
+    SpeechRecognition* recognition(handle);
     recognition->didReceiveNoMatch(result);
 }
 
 void SpeechRecognitionClientProxy::didReceiveError(const WebSpeechRecognitionHandle& handle, const WebString& message, WebSpeechRecognizerClient::ErrorCode code)
 {
-    RefPtr<SpeechRecognition> recognition = PassRefPtr<SpeechRecognition>(handle);
+    SpeechRecognition* recognition(handle);
     SpeechRecognitionError::ErrorCode errorCode = static_cast<SpeechRecognitionError::ErrorCode>(code);
     recognition->didReceiveError(SpeechRecognitionError::create(errorCode, message));
 }
 
 void SpeechRecognitionClientProxy::didStart(const WebSpeechRecognitionHandle& handle)
 {
-    RefPtr<SpeechRecognition> recognition = PassRefPtr<SpeechRecognition>(handle);
+    SpeechRecognition* recognition(handle);
     recognition->didStart();
 }
 
 void SpeechRecognitionClientProxy::didEnd(const WebSpeechRecognitionHandle& handle)
 {
-    RefPtr<SpeechRecognition> recognition = PassRefPtr<SpeechRecognition>(handle);
+    SpeechRecognition* recognition(handle);
     recognition->didEnd();
 }
 

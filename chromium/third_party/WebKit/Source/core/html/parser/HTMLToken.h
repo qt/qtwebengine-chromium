@@ -27,7 +27,6 @@
 #define HTMLToken_h
 
 #include "core/dom/Attribute.h"
-#include "core/html/parser/HTMLToken.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
@@ -104,7 +103,12 @@ public:
         m_range.start = 0;
         m_range.end = 0;
         m_baseOffset = 0;
-        m_data.clear();
+        // Don't call Vector::clear() as that would destroy the
+        // alloced VectorBuffer. If the innerHTML'd content has
+        // two 257 character text nodes in a row, we'll needlessly
+        // thrash malloc. When we finally finish the parse the
+        // HTMLToken will be destroyed and the VectorBuffer released.
+        m_data.shrink(0);
         m_orAllData = 0;
     }
 
@@ -326,9 +330,7 @@ public:
     {
         ASSERT(character);
         ASSERT(m_type == StartTag || m_type == EndTag);
-        // FIXME: We should be able to add the following ASSERT once we fix
-        // https://bugs.webkit.org/show_bug.cgi?id=62971
-        //   ASSERT(m_currentAttribute->nameRange.start);
+        ASSERT(m_currentAttribute->nameRange.start);
         m_currentAttribute->name.append(character);
     }
 
@@ -426,6 +428,7 @@ public:
         m_orAllData |= character;
     }
 
+    // Only for XSSAuditor
     void eraseCharacters()
     {
         ASSERT(m_type == Character);

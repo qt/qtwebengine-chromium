@@ -7,7 +7,7 @@
 #include "base/logging.h"
 #include "content/common/ssl_status_serialization.h"
 #include "content/public/common/context_menu_params.h"
-#include "content/public/renderer/history_item_serialization.h"
+#include "content/renderer/history_serialization.h"
 #include "content/renderer/menu_item_builder.h"
 #include "third_party/WebKit/public/web/WebElement.h"
 #include "third_party/WebKit/public/web/WebNode.h"
@@ -32,7 +32,6 @@ ContextMenuParams ContextMenuParamsBuilder::Build(
   params.selection_text = data.selectedText;
   params.misspelled_word = data.misspelledWord;
   params.misspelling_hash = data.misspellingHash;
-  params.speech_input_enabled = data.isSpeechInputEnabled;
   params.spellcheck_enabled = data.isSpellCheckingEnabled;
   params.is_editable = data.isEditable;
   params.writing_direction_default = data.writingDirectionDefault;
@@ -49,8 +48,10 @@ ContextMenuParams ContextMenuParamsBuilder::Build(
   for (size_t i = 0; i < data.customItems.size(); ++i)
     params.custom_items.push_back(MenuItemBuilder::Build(data.customItems[i]));
 
-  if (!data.frameHistoryItem.isNull())
-    params.frame_page_state = HistoryItemToPageState(data.frameHistoryItem);
+  if (!data.frameHistoryItem.isNull()) {
+    params.frame_page_state =
+        SingleHistoryItemToPageState(data.frameHistoryItem);
+  }
 
   if (!params.link_url.is_empty()) {
     blink::WebNode selectedNode = data.node;

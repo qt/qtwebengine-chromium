@@ -9,8 +9,10 @@
 #include <vector>
 
 #include "base/basictypes.h"
+#include "base/callback_forward.h"
 #include "base/pickle.h"
 #include "base/process/process.h"
+#include "sandbox/sandbox_export.h"
 
 namespace sandbox {
 
@@ -24,7 +26,7 @@ namespace sandbox {
 // 2. CHECK(open_broker.Init(NULL));
 // 3. Enable sandbox.
 // 4. Use open_broker.Open() to open files.
-class BrokerProcess {
+class SANDBOX_EXPORT BrokerProcess {
  public:
   // |denied_errno| is the error code returned when methods such as Open()
   // or Access() are invoked on a file which is not in the whitelist. EACCESS
@@ -42,9 +44,9 @@ class BrokerProcess {
   ~BrokerProcess();
   // Will initialize the broker process. There should be no threads at this
   // point, since we need to fork().
-  // sandbox_callback is a function that should be called to enable the
-  // sandbox in the broker.
-  bool Init(bool (*sandbox_callback)(void));
+  // broker_process_init_callback will be called in the new broker process,
+  // after fork() returns.
+  bool Init(const base::Callback<bool(void)>& broker_process_init_callback);
 
   // Can be used in place of access(). Will be async signal safe.
   // X_OK will always return an error in practice since the broker process
@@ -95,6 +97,8 @@ class BrokerProcess {
   const std::vector<std::string> allowed_w_files_;  // Files allowed for write.
   int ipc_socketpair_;  // Our communication channel to parent or child.
   DISALLOW_IMPLICIT_CONSTRUCTORS(BrokerProcess);
+
+  friend class BrokerProcessTestHelper;
 };
 
 }  // namespace sandbox

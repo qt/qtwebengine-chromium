@@ -12,65 +12,53 @@
 #include "base/basictypes.h"
 #include "base/callback.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/shared_memory.h"
+#include "base/single_thread_task_runner.h"
 #include "media/cast/cast_defines.h"
+#include "media/cast/transport/cast_transport_config.h"
 
 namespace media {
+class VideoEncodeAccelerator;
+
 namespace cast {
 
 enum RtcpMode {
-  kRtcpCompound,  // Compound RTCP mode is described by RFC 4585.
+  kRtcpCompound,     // Compound RTCP mode is described by RFC 4585.
   kRtcpReducedSize,  // Reduced-size RTCP mode is described by RFC 5506.
 };
 
-enum VideoCodec {
-  kVp8,
-  kH264,
-  kExternalVideo,
-};
-
-enum AudioCodec {
-  kOpus,
-  kPcm16,
-  kExternalAudio,
-};
-
+// TODO(miu): Merge AudioSenderConfig and VideoSenderConfig and make their
+// naming/documentation consistent with FrameReceiverConfig.
 struct AudioSenderConfig {
   AudioSenderConfig();
 
-  uint32 sender_ssrc;
+  // The sender ssrc is in rtp_config.ssrc.
   uint32 incoming_feedback_ssrc;
 
   int rtcp_interval;
   std::string rtcp_c_name;
   RtcpMode rtcp_mode;
 
-  int rtp_history_ms;  // The time RTP packets are stored for retransmissions.
-  int rtp_max_delay_ms;
-  int rtp_payload_type;
+  transport::RtpConfig rtp_config;
 
   bool use_external_encoder;
   int frequency;
   int channels;
   int bitrate;  // Set to <= 0 for "auto variable bitrate" (libopus knows best).
-  AudioCodec codec;
-
-  std::string aes_key;  // Binary string of size kAesKeySize.
-  std::string aes_iv_mask;  // Binary string of size kAesKeySize.
+  transport::AudioCodec codec;
 };
 
 struct VideoSenderConfig {
   VideoSenderConfig();
 
-  uint32 sender_ssrc;
+  // The sender ssrc is in rtp_config.ssrc.
   uint32 incoming_feedback_ssrc;
 
   int rtcp_interval;
   std::string rtcp_c_name;
   RtcpMode rtcp_mode;
 
-  int rtp_history_ms;  // The time RTP packets are stored for retransmissions.
-  int rtp_max_delay_ms;
-  int rtp_payload_type;
+  transport::RtpConfig rtp_config;
 
   bool use_external_encoder;
   int width;  // Incoming frames will be scaled to this size.
@@ -84,148 +72,92 @@ struct VideoSenderConfig {
   int min_qp;
   int max_frame_rate;
   int max_number_of_video_buffers_used;  // Max value depend on codec.
-  VideoCodec codec;
-  int number_of_cores;
-
-  std::string aes_key;  // Binary string of size kAesKeySize.
-  std::string aes_iv_mask;  // Binary string of size kAesKeySize.
+  transport::VideoCodec codec;
+  int number_of_encode_threads;
 };
 
-struct AudioReceiverConfig {
-  AudioReceiverConfig();
+// TODO(miu): Naming and minor type changes are badly needed in a later CL.
+struct FrameReceiverConfig {
+  FrameReceiverConfig();
+  ~FrameReceiverConfig();
 
-  uint32 feedback_ssrc;
-  uint32 incoming_ssrc;
+  // The receiver's SSRC identifier.
+  uint32 feedback_ssrc;  // TODO(miu): Rename to receiver_ssrc for clarity.
 
+  // The sender's SSRC identifier.
+  uint32 incoming_ssrc;  // TODO(miu): Rename to sender_ssrc for clarity.
+
+  // Mean interval (in milliseconds) between RTCP reports.
+  // TODO(miu): Remove this since it's never not kDefaultRtcpIntervalMs.
   int rtcp_interval;
+
+  // CNAME representing this receiver.
+  // TODO(miu): Remove this since it should be derived elsewhere (probably in
+  // the transport layer).
   std::string rtcp_c_name;
+
+  // Determines amount of detail in RTCP reports.
+  // TODO(miu): Remove this since it's never anything but kRtcpReducedSize.
   RtcpMode rtcp_mode;
 
-  // The time the receiver is prepared to wait for retransmissions.
-  int rtp_max_delay_ms;
+  // The total amount of time between a frame's capture/recording on the sender
+  // and its playback on the receiver (i.e., shown to a user).  This is fixed as
+  // a value large enough to give the system sufficient time to encode,
+  // transmit/retransmit, receive, decode, and render; given its run-time
+  // environment (sender/receiver hardware performance, network conditions,
+  // etc.).
+  int rtp_max_delay_ms;  // TODO(miu): Change to TimeDelta target_playout_delay.
+
+  // RTP payload type enum: Specifies the type/encoding of frame data.
   int rtp_payload_type;
 
-  bool use_external_decoder;
-  int frequency;
+  // RTP timebase: The number of RTP units advanced per one second.  For audio,
+  // this is the sampling rate.  For video, by convention, this is 90 kHz.
+  int frequency;  // TODO(miu): Rename to rtp_timebase for clarity.
+
+  // Number of channels.  For audio, this is normally 2.  For video, this must
+  // be 1 as Cast does not have support for stereoscopic video.
   int channels;
-  AudioCodec codec;
 
-  std::string aes_key;  // Binary string of size kAesKeySize.
-  std::string aes_iv_mask;  // Binary string of size kAesKeySize.
+  // The target frame rate.  For audio, this is normally 100 (i.e., frames have
+  // a duration of 10ms each).  For video, this is normally 30, but any frame
+  // rate is supported.
+  int max_frame_rate;  // TODO(miu): Rename to target_frame_rate.
+
+  // Codec used for the compression of signal data.
+  // TODO(miu): Merge the AudioCodec and VideoCodec enums into one so this union
+  // is not necessary.
+  union MergedCodecPlaceholder {
+    transport::AudioCodec audio;
+    transport::VideoCodec video;
+    MergedCodecPlaceholder() : audio(transport::kUnknownAudioCodec) {}
+  } codec;
+
+  // The AES crypto key and initialization vector.  Each of these strings
+  // contains the data in binary form, of size kAesKeySize.  If they are empty
+  // strings, crypto is not being used.
+  std::string aes_key;
+  std::string aes_iv_mask;
 };
 
-struct VideoReceiverConfig {
-  VideoReceiverConfig();
+// import from media::cast::transport
+typedef transport::Packet Packet;
+typedef transport::PacketList PacketList;
 
-  uint32 feedback_ssrc;
-  uint32 incoming_ssrc;
+typedef base::Callback<void(CastInitializationStatus)>
+    CastInitializationCallback;
 
-  int rtcp_interval;
-  std::string rtcp_c_name;
-  RtcpMode rtcp_mode;
+typedef base::Callback<void(scoped_refptr<base::SingleThreadTaskRunner>,
+                            scoped_ptr<media::VideoEncodeAccelerator>)>
+    ReceiveVideoEncodeAcceleratorCallback;
+typedef base::Callback<void(const ReceiveVideoEncodeAcceleratorCallback&)>
+    CreateVideoEncodeAcceleratorCallback;
 
-  // The time the receiver is prepared to wait for retransmissions.
-  int rtp_max_delay_ms;
-  int rtp_payload_type;
-
-  bool use_external_decoder;
-  int max_frame_rate;
-
-  // Some HW decoders can not run faster than the frame rate, preventing it
-  // from catching up after a glitch.
-  bool decoder_faster_than_max_frame_rate;
-  VideoCodec codec;
-
-  std::string aes_key;  // Binary string of size kAesKeySize.
-  std::string aes_iv_mask;  // Binary string of size kAesKeySize.
-};
-
-struct EncodedVideoFrame {
-  EncodedVideoFrame();
-  ~EncodedVideoFrame();
-
-  VideoCodec codec;
-  bool key_frame;
-  uint32 frame_id;
-  uint32 last_referenced_frame_id;
-  std::string data;
-};
-
-// DEPRECATED: Do not use in new code.  Please migrate existing code to use
-// media::AudioBus.
-struct PcmAudioFrame {
-  PcmAudioFrame();
-  ~PcmAudioFrame();
-
-  int channels;  // Samples in interleaved stereo format. L0, R0, L1 ,R1 ,...
-  int frequency;
-  std::vector<int16> samples;
-};
-
-struct EncodedAudioFrame {
-  EncodedAudioFrame();
-  ~EncodedAudioFrame();
-
-  AudioCodec codec;
-  uint32 frame_id;  // Needed to release the frame.
-  int samples;  // Needed send side to advance the RTP timestamp.
-                // Not used receive side.
-  // Support for max sampling rate of 48KHz, 2 channels, 100 ms duration.
-  static const int kMaxNumberOfSamples = 48 * 2 * 100;
-  std::string data;
-};
-
-typedef std::vector<uint8> Packet;
-typedef std::vector<Packet> PacketList;
-
-class PacketSender {
- public:
-  // All packets to be sent to the network will be delivered via these
-  // functions.
-  virtual bool SendPackets(const PacketList& packets) = 0;
-
-  virtual bool SendPacket(const Packet& packet) = 0;
-
-  virtual ~PacketSender() {}
-};
-
-class PacketReceiver : public base::RefCountedThreadSafe<PacketReceiver> {
- public:
-  // All packets received from the network should be delivered via this
-  // function.
-  virtual void ReceivedPacket(const uint8* packet, size_t length,
-                              const base::Closure callback) = 0;
-
-  static void DeletePacket(const uint8* packet);
-
- protected:
-  virtual ~PacketReceiver() {}
-
- private:
-  friend class base::RefCountedThreadSafe<PacketReceiver>;
-};
-
-class VideoEncoderController {
- public:
-  // Inform the encoder about the new target bit rate.
-  virtual void SetBitRate(int new_bit_rate) = 0;
-
-  // Inform the encoder to not encode the next frame.
-  // Note: this setting is sticky and should last until called with false.
-  virtual void SkipNextFrame(bool skip_next_frame) = 0;
-
-  // Inform the encoder to encode the next frame as a key frame.
-  virtual void GenerateKeyFrame() = 0;
-
-  // Inform the encoder to only reference frames older or equal to frame_id;
-  virtual void LatestFrameIdToReference(uint32 frame_id) = 0;
-
-  // Query the codec about how many frames it has skipped due to slow ACK.
-  virtual int NumberOfSkippedFrames() const = 0;
-
- protected:
-  virtual ~VideoEncoderController() {}
-};
+typedef base::Callback<void(scoped_ptr<base::SharedMemory>)>
+    ReceiveVideoEncodeMemoryCallback;
+typedef base::Callback<void(size_t size,
+                            const ReceiveVideoEncodeMemoryCallback&)>
+    CreateVideoEncodeMemoryCallback;
 
 }  // namespace cast
 }  // namespace media

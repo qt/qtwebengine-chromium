@@ -4,7 +4,7 @@
  *           (C) 1998 Waldo Bastian (bastian@kde.org)
  *           (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
- * Copyright (C) 2003, 2004, 2005, 2006, 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2003, 2004, 2005, 2006, 2009, 2013 Apple Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -65,13 +65,13 @@ public:
     RenderTableSection(Element*);
     virtual ~RenderTableSection();
 
-    RenderObject* firstChild() const { ASSERT(children() == virtualChildren()); return children()->firstChild(); }
-    RenderObject* lastChild() const { ASSERT(children() == virtualChildren()); return children()->lastChild(); }
+    RenderTableRow* firstRow() const;
+    RenderTableRow* lastRow() const;
 
     const RenderObjectChildList* children() const { return &m_children; }
     RenderObjectChildList* children() { return &m_children; }
 
-    virtual void addChild(RenderObject* child, RenderObject* beforeChild = 0);
+    virtual void addChild(RenderObject* child, RenderObject* beforeChild = 0) OVERRIDE;
 
     virtual int firstLineBoxBaseline() const OVERRIDE;
 
@@ -129,14 +129,14 @@ public:
         SpanningRowsHeight()
             : totalRowsHeight(0)
             , spanningCellHeightIgnoringBorderSpacing(0)
-            , rowWithOnlySpanningCells(false)
+            , isAnyRowWithOnlySpanningCells(false)
         {
         }
 
         Vector<int> rowHeight;
         int totalRowsHeight;
         int spanningCellHeightIgnoringBorderSpacing;
-        bool rowWithOnlySpanningCells;
+        bool isAnyRowWithOnlySpanningCells;
     };
 
     const BorderValue& borderAdjoiningTableStart() const
@@ -174,10 +174,10 @@ public:
     void appendColumn(unsigned pos);
     void splitColumn(unsigned pos, unsigned first);
 
-    int calcOuterBorderBefore() const;
-    int calcOuterBorderAfter() const;
-    int calcOuterBorderStart() const;
-    int calcOuterBorderEnd() const;
+    enum BlockBorderSide { BorderBefore, BorderAfter };
+    int calcBlockDirectionOuterBorder(BlockBorderSide) const;
+    enum InlineBorderSide { BorderStart, BorderEnd };
+    int calcInlineDirectionOuterBorder(InlineBorderSide) const;
     void recalcOuterBorder();
 
     int outerBorderBefore() const { return m_outerBorderBefore; }
@@ -218,26 +218,25 @@ public:
     virtual void paint(PaintInfo&, const LayoutPoint&) OVERRIDE;
 
 protected:
-    virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle);
+    virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle) OVERRIDE;
+    virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction) OVERRIDE;
 
 private:
-    virtual RenderObjectChildList* virtualChildren() { return children(); }
-    virtual const RenderObjectChildList* virtualChildren() const { return children(); }
+    virtual RenderObjectChildList* virtualChildren() OVERRIDE { return children(); }
+    virtual const RenderObjectChildList* virtualChildren() const OVERRIDE { return children(); }
 
-    virtual const char* renderName() const { return (isAnonymous() || isPseudoElement()) ? "RenderTableSection (anonymous)" : "RenderTableSection"; }
+    virtual const char* renderName() const OVERRIDE { return (isAnonymous() || isPseudoElement()) ? "RenderTableSection (anonymous)" : "RenderTableSection"; }
 
-    virtual bool isTableSection() const { return true; }
+    virtual bool isTableSection() const OVERRIDE { return true; }
 
     virtual void willBeRemovedFromTree() OVERRIDE;
 
-    virtual void layout();
+    virtual void layout() OVERRIDE;
 
-    virtual void paintCell(RenderTableCell*, PaintInfo&, const LayoutPoint&);
-    virtual void paintObject(PaintInfo&, const LayoutPoint&);
+    void paintCell(RenderTableCell*, PaintInfo&, const LayoutPoint&);
+    virtual void paintObject(PaintInfo&, const LayoutPoint&) OVERRIDE;
 
-    virtual void imageChanged(WrappedImagePtr, const IntRect* = 0);
-
-    virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction) OVERRIDE;
+    virtual void imageChanged(WrappedImagePtr, const IntRect* = 0) OVERRIDE;
 
     int borderSpacingForRow(unsigned row) const { return m_grid[row].rowRenderer ? table()->vBorderSpacing() : 0; }
 

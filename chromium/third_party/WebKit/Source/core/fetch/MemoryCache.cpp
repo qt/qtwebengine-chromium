@@ -41,8 +41,6 @@
 #include "wtf/TemporaryChange.h"
 #include "wtf/text/CString.h"
 
-using namespace std;
-
 namespace WebCore {
 
 static MemoryCache* gMemoryCache;
@@ -83,7 +81,7 @@ MemoryCache::MemoryCache()
 {
 #ifdef MEMORY_CACHE_STATS
     const double statsIntervalInSeconds = 15;
-    m_statsTimer.startRepeating(statsIntervalInSeconds);
+    m_statsTimer.startRepeating(statsIntervalInSeconds, FROM_HERE);
 #endif
     m_pruneTimeStamp = m_pruneFrameTimeStamp = FrameView::currentFrameTimeStamp();
 }
@@ -111,35 +109,51 @@ KURL MemoryCache::removeFragmentIdentifierIfNeeded(const KURL& originalURL)
 void MemoryCache::add(Resource* resource)
 {
     ASSERT(WTF::isMainThread());
-    m_resources.set(resource->url(), resource);
-    resource->setInCache(true);
-    resource->updateForAccess();
+    RELEASE_ASSERT(!m_resources.contains(resource->url()));
+    m_resources.set(resource->url(), MemoryCacheEntry::create(resource));
+    update(resource, 0, resource->size(), true);
 
     WTF_LOG(ResourceLoading, "MemoryCache::add Added '%s', resource %p\n", resource->url().string().latin1().data(), resource);
 }
 
 void MemoryCache::replace(Resource* newResource, Resource* oldResource)
 {
-    evict(oldResource);
-    ASSERT(!m_resources.get(newResource->url()));
-    m_resources.set(newResource->url(), newResource);
-    newResource->setInCache(true);
-    insertInLRUList(newResource);
-    int delta = newResource->size();
+    if (MemoryCacheEntry* oldEntry = m_resources.get(oldResource->url()))
+        evict(oldEntry);
+    add(newResource);
     if (newResource->decodedSize() && newResource->hasClients())
-        insertInLiveDecodedResourcesList(newResource);
-    if (delta)
-        adjustSize(newResource->hasClients(), delta);
+        insertInLiveDecodedResourcesList(m_resources.get(newResource->url()));
+}
+
+void MemoryCache::remove(Resource* resource)
+{
+    // The resource may have already been removed by someone other than our caller,
+    // who needed a fresh copy for a reload.
+    if (!contains(resource))
+        return;
+    evict(m_resources.get(resource->url()));
+}
+
+bool MemoryCache::contains(const Resource* resource) const
+{
+    if (resource->url().isNull())
+        return false;
+    const MemoryCacheEntry* entry = m_resources.get(resource->url());
+    return entry && entry->m_resource == resource;
 }
 
 Resource* MemoryCache::resourceForURL(const KURL& resourceURL)
 {
     ASSERT(WTF::isMainThread());
     KURL url = removeFragmentIdentifierIfNeeded(resourceURL);
-    Resource* resource = m_resources.get(url);
-    if (resource && !resource->makePurgeable(false)) {
+    MemoryCacheEntry* entry = m_resources.get(url);
+    if (!entry)
+        return 0;
+    Resource* resource = entry->m_resource.get();
+    if (resource && !resource->lock()) {
         ASSERT(!resource->hasClients());
-        evict(resource);
+        bool didEvict = evict(entry);
+        ASSERT_UNUSED(didEvict, didEvict);
         return 0;
     }
     return resource;
@@ -148,9 +162,9 @@ Resource* MemoryCache::resourceForURL(const KURL& resourceURL)
 size_t MemoryCache::deadCapacity() const
 {
     // Dead resource capacity is whatever space is not occupied by live resources, bounded by an independent minimum and maximum.
-    size_t capacity = m_capacity - min(m_liveSize, m_capacity); // Start with available capacity.
-    capacity = max(capacity, m_minDeadCapacity); // Make sure it's above the minimum.
-    capacity = min(capacity, m_maxDeadCapacity); // Make sure it's below the maximum.
+    size_t capacity = m_capacity - std::min(m_liveSize, m_capacity); // Start with available capacity.
+    capacity = std::max(capacity, m_minDeadCapacity); // Make sure it's above the minimum.
+    capacity = std::min(capacity, m_maxDeadCapacity); // Make sure it's below the maximum.
     return capacity;
 }
 
@@ -180,26 +194,26 @@ void MemoryCache::pruneLiveResources()
     // For more details see: https://bugs.webkit.org/show_bug.cgi?id=30209
 
     // Start pruning from the lowest priority list.
-    for (int priority = Resource::CacheLiveResourcePriorityLow; priority <= Resource::CacheLiveResourcePriorityHigh; ++priority) {
-        Resource* current = m_liveDecodedResources[priority].m_tail;
+    for (int priority = MemoryCacheLiveResourcePriorityLow; priority <= MemoryCacheLiveResourcePriorityHigh; ++priority) {
+        MemoryCacheEntry* current = m_liveDecodedResources[priority].m_tail;
         while (current) {
-            Resource* prev = current->m_prevInLiveResourcesList;
-            ASSERT(current->hasClients());
-            if (current->isLoaded() && current->decodedSize()) {
+            MemoryCacheEntry* previous = current->m_previousInLiveResourcesList;
+            ASSERT(current->m_resource->hasClients());
+            if (current->m_resource->isLoaded() && current->m_resource->decodedSize()) {
                 // Check to see if the remaining resources are too new to prune.
                 double elapsedTime = m_pruneFrameTimeStamp - current->m_lastDecodedAccessTime;
                 if (elapsedTime < m_delayBeforeLiveDecodedPrune)
                     return;
 
-                // Destroy our decoded data. This will remove us from
-                // m_liveDecodedResources, and possibly move us to a different LRU
-                // list in m_allResources.
-                current->destroyDecodedData();
+                // Destroy our decoded data if possible. This will remove us
+                // from m_liveDecodedResources, and possibly move us to a
+                // different LRU list in m_allResources.
+                current->m_resource->prune();
 
                 if (targetSize && m_liveSize <= targetSize)
                     return;
             }
-            current = prev;
+            current = previous;
         }
     }
 }
@@ -216,15 +230,19 @@ void MemoryCache::pruneDeadResources()
 
     // See if we have any purged resources we can evict.
     for (int i = 0; i < size; i++) {
-        Resource* current = m_allResources[i].m_tail;
+        MemoryCacheEntry* current = m_allResources[i].m_tail;
         while (current) {
-            Resource* prev = current->m_prevInAllResourcesList;
-            if (current->wasPurged()) {
-                ASSERT(!current->hasClients());
-                ASSERT(!current->isPreloaded());
-                evict(current);
+            MemoryCacheEntry* previous = current->m_previousInAllResourcesList;
+            // Main Resources in the cache are only substitue data that was
+            // precached and should not be evicted.
+            if (current->m_resource->wasPurged() && current->m_resource->canDelete()
+                && current->m_resource->type() != Resource::MainResource) {
+                ASSERT(!current->m_resource->hasClients());
+                ASSERT(!current->m_resource->isPreloaded());
+                bool wasEvicted = evict(current);
+                ASSERT_UNUSED(wasEvicted, wasEvicted);
             }
-            current = prev;
+            current = previous;
         }
     }
     if (targetSize && m_deadSize <= targetSize)
@@ -233,42 +251,47 @@ void MemoryCache::pruneDeadResources()
     bool canShrinkLRULists = true;
     for (int i = size - 1; i >= 0; i--) {
         // Remove from the tail, since this is the least frequently accessed of the objects.
-        Resource* current = m_allResources[i].m_tail;
+        MemoryCacheEntry* current = m_allResources[i].m_tail;
 
         // First flush all the decoded data in this queue.
         while (current) {
             // Protect 'previous' so it can't get deleted during destroyDecodedData().
-            ResourcePtr<Resource> previous = current->m_prevInAllResourcesList;
-            ASSERT(!previous || previous->inCache());
-            if (!current->hasClients() && !current->isPreloaded() && current->isLoaded()) {
+            MemoryCacheEntry* previous = current->m_previousInAllResourcesList;
+            ASSERT(!previous || contains(previous->m_resource.get()));
+            if (!current->m_resource->hasClients() && !current->m_resource->isPreloaded() && current->m_resource->isLoaded()) {
                 // Destroy our decoded data. This will remove us from
                 // m_liveDecodedResources, and possibly move us to a different
                 // LRU list in m_allResources.
-                current->destroyDecodedData();
+                current->m_resource->prune();
 
                 if (targetSize && m_deadSize <= targetSize)
                     return;
             }
             // Decoded data may reference other resources. Stop iterating if 'previous' somehow got
             // kicked out of cache during destroyDecodedData().
-            if (previous && !previous->inCache())
+            if (previous && !contains(previous->m_resource.get()))
                 break;
-            current = previous.get();
+            current = previous;
         }
 
         // Now evict objects from this queue.
         current = m_allResources[i].m_tail;
         while (current) {
-            ResourcePtr<Resource> previous = current->m_prevInAllResourcesList;
-            ASSERT(!previous || previous->inCache());
-            if (!current->hasClients() && !current->isPreloaded() && !current->isCacheValidator()) {
-                evict(current);
+            MemoryCacheEntry* previous = current->m_previousInAllResourcesList;
+            ASSERT(!previous || contains(previous->m_resource.get()));
+            if (!current->m_resource->hasClients() && !current->m_resource->isPreloaded()
+                && !current->m_resource->isCacheValidator() && current->m_resource->canDelete()
+                && current->m_resource->type() != Resource::MainResource) {
+                // Main Resources in the cache are only substitue data that was
+                // precached and should not be evicted.
+                bool wasEvicted = evict(current);
+                ASSERT_UNUSED(wasEvicted, wasEvicted);
                 if (targetSize && m_deadSize <= targetSize)
                     return;
             }
-            if (previous && !previous->inCache())
+            if (previous && !contains(previous->m_resource.get()))
                 break;
-            current = previous.get();
+            current = previous;
         }
 
         // Shrink the vector back down so we don't waste time inspecting
@@ -291,60 +314,42 @@ void MemoryCache::setCapacities(size_t minDeadBytes, size_t maxDeadBytes, size_t
     prune();
 }
 
-void MemoryCache::evict(Resource* resource)
+bool MemoryCache::evict(MemoryCacheEntry* entry)
 {
     ASSERT(WTF::isMainThread());
+
+    Resource* resource = entry->m_resource.get();
+    bool canDelete = resource->canDelete();
     WTF_LOG(ResourceLoading, "Evicting resource %p for '%s' from cache", resource, resource->url().string().latin1().data());
     // The resource may have already been removed by someone other than our caller,
     // who needed a fresh copy for a reload. See <http://bugs.webkit.org/show_bug.cgi?id=12479#c6>.
-    if (resource->inCache()) {
-        // Remove from the resource map.
-        m_resources.remove(resource->url());
-        resource->setInCache(false);
+    update(resource, resource->size(), 0, false);
+    removeFromLiveDecodedResourcesList(entry);
 
-        // Remove from the appropriate LRU list.
-        removeFromLRUList(resource);
-        removeFromLiveDecodedResourcesList(resource);
-        adjustSize(resource->hasClients(), -static_cast<ptrdiff_t>(resource->size()));
-    } else {
-        ASSERT(m_resources.get(resource->url()) != resource);
-    }
-
-    resource->deleteIfPossible();
+    ResourceMap::iterator it = m_resources.find(resource->url());
+    ASSERT(it != m_resources.end());
+    OwnPtr<MemoryCacheEntry> entryPtr;
+    entryPtr.swap(it->value);
+    m_resources.remove(it);
+    return canDelete;
 }
 
-MemoryCache::LRUList* MemoryCache::lruListFor(Resource* resource)
+MemoryCache::LRUList* MemoryCache::lruListFor(unsigned accessCount, size_t size)
 {
-    unsigned accessCount = max(resource->accessCount(), 1U);
-    unsigned queueIndex = WTF::fastLog2(resource->size() / accessCount);
-#ifndef NDEBUG
-    resource->m_lruIndex = queueIndex;
-#endif
+    ASSERT(accessCount > 0);
+    unsigned queueIndex = WTF::fastLog2(size / accessCount);
     if (m_allResources.size() <= queueIndex)
         m_allResources.grow(queueIndex + 1);
     return &m_allResources[queueIndex];
 }
 
-void MemoryCache::removeFromLRUList(Resource* resource)
+void MemoryCache::removeFromLRUList(MemoryCacheEntry* entry, LRUList* list)
 {
-    // If we've never been accessed, then we're brand new and not in any list.
-    if (!resource->accessCount())
-        return;
-
-#if !ASSERT_DISABLED
-    unsigned oldListIndex = resource->m_lruIndex;
-#endif
-
-    LRUList* list = lruListFor(resource);
-
-#if !ASSERT_DISABLED
-    // Verify that the list we got is the list we want.
-    ASSERT(resource->m_lruIndex == oldListIndex);
-
+#if ASSERT_ENABLED
     // Verify that we are in fact in this list.
     bool found = false;
-    for (Resource* current = list->m_head; current; current = current->m_nextInAllResourcesList) {
-        if (current == resource) {
+    for (MemoryCacheEntry* current = list->m_head; current; current = current->m_nextInAllResourcesList) {
+        if (current == entry) {
             found = true;
             break;
         }
@@ -352,72 +357,61 @@ void MemoryCache::removeFromLRUList(Resource* resource)
     ASSERT(found);
 #endif
 
-    Resource* next = resource->m_nextInAllResourcesList;
-    Resource* prev = resource->m_prevInAllResourcesList;
-
-    if (!next && !prev && list->m_head != resource)
-        return;
-
-    resource->m_nextInAllResourcesList = 0;
-    resource->m_prevInAllResourcesList = 0;
+    MemoryCacheEntry* next = entry->m_nextInAllResourcesList;
+    MemoryCacheEntry* previous = entry->m_previousInAllResourcesList;
+    entry->m_nextInAllResourcesList = 0;
+    entry->m_previousInAllResourcesList = 0;
 
     if (next)
-        next->m_prevInAllResourcesList = prev;
-    else if (list->m_tail == resource)
-        list->m_tail = prev;
+        next->m_previousInAllResourcesList = previous;
+    else
+        list->m_tail = previous;
 
-    if (prev)
-        prev->m_nextInAllResourcesList = next;
-    else if (list->m_head == resource)
+    if (previous)
+        previous->m_nextInAllResourcesList = next;
+    else
         list->m_head = next;
 }
 
-void MemoryCache::insertInLRUList(Resource* resource)
+void MemoryCache::insertInLRUList(MemoryCacheEntry* entry, LRUList* list)
 {
-    // Make sure we aren't in some list already.
-    ASSERT(!resource->m_nextInAllResourcesList && !resource->m_prevInAllResourcesList);
-    ASSERT(resource->inCache());
-    ASSERT(resource->accessCount() > 0);
+    ASSERT(!entry->m_nextInAllResourcesList && !entry->m_previousInAllResourcesList);
 
-    LRUList* list = lruListFor(resource);
+    entry->m_nextInAllResourcesList = list->m_head;
+    list->m_head = entry;
 
-    resource->m_nextInAllResourcesList = list->m_head;
-    if (list->m_head)
-        list->m_head->m_prevInAllResourcesList = resource;
-    list->m_head = resource;
+    if (entry->m_nextInAllResourcesList)
+        entry->m_nextInAllResourcesList->m_previousInAllResourcesList = entry;
+    else
+        list->m_tail = entry;
 
-    if (!resource->m_nextInAllResourcesList)
-        list->m_tail = resource;
-
-#if !ASSERT_DISABLED
+#if ASSERT_ENABLED
     // Verify that we are in now in the list like we should be.
-    list = lruListFor(resource);
     bool found = false;
-    for (Resource* current = list->m_head; current; current = current->m_nextInAllResourcesList) {
-        if (current == resource) {
+    for (MemoryCacheEntry* current = list->m_head; current; current = current->m_nextInAllResourcesList) {
+        if (current == entry) {
             found = true;
             break;
         }
     }
     ASSERT(found);
 #endif
-
 }
 
-void MemoryCache::removeFromLiveDecodedResourcesList(Resource* resource)
+void MemoryCache::removeFromLiveDecodedResourcesList(MemoryCacheEntry* entry)
 {
     // If we've never been accessed, then we're brand new and not in any list.
-    if (!resource->m_inLiveDecodedResourcesList)
+    if (!entry->m_inLiveDecodedResourcesList)
         return;
-    resource->m_inLiveDecodedResourcesList = false;
+    entry->m_inLiveDecodedResourcesList = false;
 
-    LRUList* list = &m_liveDecodedResources[resource->cacheLiveResourcePriority()];
+    LRUList* list = &m_liveDecodedResources[entry->m_liveResourcePriority];
 
-#if !ASSERT_DISABLED
+#if ASSERT_ENABLED
     // Verify that we are in fact in this list.
     bool found = false;
-    for (Resource* current = list->m_head; current; current = current->m_nextInLiveResourcesList) {
-        if (current == resource) {
+    for (MemoryCacheEntry* current = list->m_head; current; current = current->m_nextInLiveResourcesList) {
+        if (current == entry) {
             found = true;
             break;
         }
@@ -425,78 +419,121 @@ void MemoryCache::removeFromLiveDecodedResourcesList(Resource* resource)
     ASSERT(found);
 #endif
 
-    Resource* next = resource->m_nextInLiveResourcesList;
-    Resource* prev = resource->m_prevInLiveResourcesList;
+    MemoryCacheEntry* next = entry->m_nextInLiveResourcesList;
+    MemoryCacheEntry* previous = entry->m_previousInLiveResourcesList;
 
-    if (!next && !prev && list->m_head != resource)
-        return;
-
-    resource->m_nextInLiveResourcesList = 0;
-    resource->m_prevInLiveResourcesList = 0;
+    entry->m_nextInLiveResourcesList = 0;
+    entry->m_previousInLiveResourcesList = 0;
 
     if (next)
-        next->m_prevInLiveResourcesList = prev;
-    else if (list->m_tail == resource)
-        list->m_tail = prev;
+        next->m_previousInLiveResourcesList = previous;
+    else
+        list->m_tail = previous;
 
-    if (prev)
-        prev->m_nextInLiveResourcesList = next;
-    else if (list->m_head == resource)
+    if (previous)
+        previous->m_nextInLiveResourcesList = next;
+    else
         list->m_head = next;
 }
 
-void MemoryCache::insertInLiveDecodedResourcesList(Resource* resource)
+void MemoryCache::insertInLiveDecodedResourcesList(MemoryCacheEntry* entry)
 {
     // Make sure we aren't in the list already.
-    ASSERT(!resource->m_nextInLiveResourcesList && !resource->m_prevInLiveResourcesList && !resource->m_inLiveDecodedResourcesList);
-    resource->m_inLiveDecodedResourcesList = true;
+    ASSERT(!entry->m_nextInLiveResourcesList && !entry->m_previousInLiveResourcesList && !entry->m_inLiveDecodedResourcesList);
+    entry->m_inLiveDecodedResourcesList = true;
 
-    LRUList* list = &m_liveDecodedResources[resource->cacheLiveResourcePriority()];
-    resource->m_nextInLiveResourcesList = list->m_head;
+    LRUList* list = &m_liveDecodedResources[entry->m_liveResourcePriority];
+    entry->m_nextInLiveResourcesList = list->m_head;
     if (list->m_head)
-        list->m_head->m_prevInLiveResourcesList = resource;
-    list->m_head = resource;
+        list->m_head->m_previousInLiveResourcesList = entry;
+    list->m_head = entry;
 
-    if (!resource->m_nextInLiveResourcesList)
-        list->m_tail = resource;
+    if (!entry->m_nextInLiveResourcesList)
+        list->m_tail = entry;
 
-#if !ASSERT_DISABLED
+#if ASSERT_ENABLED
     // Verify that we are in now in the list like we should be.
     bool found = false;
-    for (Resource* current = list->m_head; current; current = current->m_nextInLiveResourcesList) {
-        if (current == resource) {
+    for (MemoryCacheEntry* current = list->m_head; current; current = current->m_nextInLiveResourcesList) {
+        if (current == entry) {
             found = true;
             break;
         }
     }
     ASSERT(found);
 #endif
-
 }
 
-void MemoryCache::addToLiveResourcesSize(Resource* resource)
+void MemoryCache::makeLive(Resource* resource)
 {
+    if (!contains(resource))
+        return;
     ASSERT(m_deadSize >= resource->size());
     m_liveSize += resource->size();
     m_deadSize -= resource->size();
 }
 
-void MemoryCache::removeFromLiveResourcesSize(Resource* resource)
+void MemoryCache::makeDead(Resource* resource)
 {
-    ASSERT(m_liveSize >= resource->size());
+    if (!contains(resource))
+        return;
     m_liveSize -= resource->size();
     m_deadSize += resource->size();
+    removeFromLiveDecodedResourcesList(m_resources.get(resource->url()));
 }
 
-void MemoryCache::adjustSize(bool live, ptrdiff_t delta)
+void MemoryCache::update(Resource* resource, size_t oldSize, size_t newSize, bool wasAccessed)
 {
-    if (live) {
+    if (!contains(resource))
+        return;
+    MemoryCacheEntry* entry = m_resources.get(resource->url());
+
+    // The object must now be moved to a different queue, since either its size or its accessCount has been changed,
+    // and both of those are used to determine which LRU queue the resource should be in.
+    if (oldSize)
+        removeFromLRUList(entry, lruListFor(entry->m_accessCount, oldSize));
+    if (wasAccessed)
+        entry->m_accessCount++;
+    if (newSize)
+        insertInLRUList(entry, lruListFor(entry->m_accessCount, newSize));
+
+    ptrdiff_t delta = newSize - oldSize;
+    if (resource->hasClients()) {
         ASSERT(delta >= 0 || m_liveSize >= static_cast<size_t>(-delta) );
         m_liveSize += delta;
     } else {
         ASSERT(delta >= 0 || m_deadSize >= static_cast<size_t>(-delta) );
         m_deadSize += delta;
     }
+}
+
+void MemoryCache::updateDecodedResource(Resource* resource, UpdateReason reason, MemoryCacheLiveResourcePriority priority)
+{
+    if (!contains(resource))
+        return;
+    MemoryCacheEntry* entry = m_resources.get(resource->url());
+
+    removeFromLiveDecodedResourcesList(entry);
+    if (priority != MemoryCacheLiveResourcePriorityUnknown && priority != entry->m_liveResourcePriority)
+        entry->m_liveResourcePriority = priority;
+    if (resource->decodedSize() && resource->hasClients())
+        insertInLiveDecodedResourcesList(entry);
+
+    if (reason != UpdateForAccess)
+        return;
+
+    double timestamp = resource->isImage() ? FrameView::currentFrameTimeStamp() : 0.0;
+    if (!timestamp)
+        timestamp = currentTime();
+    entry->m_lastDecodedAccessTime = timestamp;
+}
+
+MemoryCacheLiveResourcePriority MemoryCache::priority(Resource* resource) const
+{
+    if (!contains(resource))
+        return MemoryCacheLiveResourcePriorityUnknown;
+    MemoryCacheEntry* entry = m_resources.get(resource->url());
+    return entry->m_liveResourcePriority;
 }
 
 void MemoryCache::removeURLFromCache(ExecutionContext* context, const KURL& url)
@@ -535,7 +572,7 @@ MemoryCache::Statistics MemoryCache::getStatistics()
     Statistics stats;
     ResourceMap::iterator e = m_resources.end();
     for (ResourceMap::iterator i = m_resources.begin(); i != e; ++i) {
-        Resource* resource = i->value;
+        Resource* resource = i->value->m_resource.get();
         switch (resource->type()) {
         case Resource::Image:
             stats.images.addResource(resource);
@@ -566,7 +603,7 @@ void MemoryCache::evictResources()
         ResourceMap::iterator i = m_resources.begin();
         if (i == m_resources.end())
             break;
-        evict(i->value);
+        evict(i->value.get());
     }
 }
 
@@ -608,7 +645,10 @@ void MemoryCache::prune(Resource* justReleasedResource)
         // objects O(N^2) if we pruned immediately. This immediate eviction is a
         // safeguard against runaway memory consumption by dead resources
         // while a prune is pending.
-        evict(justReleasedResource);
+        // Main Resources in the cache are only substitue data that was
+        // precached and should not be evicted.
+        if (contains(justReleasedResource) && justReleasedResource->type() != Resource::MainResource)
+            evict(m_resources.get(justReleasedResource->url()));
 
         // As a last resort, prune immediately
         if (m_deadSize > m_maxDeferredPruneDeadCapacity)

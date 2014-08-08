@@ -26,35 +26,37 @@
 #include "config.h"
 
 #include "core/html/canvas/OESTextureFloat.h"
-#include "platform/graphics/Extensions3D.h"
 
 namespace WebCore {
 
-OESTextureFloat::OESTextureFloat(WebGLRenderingContext* context)
+OESTextureFloat::OESTextureFloat(WebGLRenderingContextBase* context)
     : WebGLExtension(context)
 {
     ScriptWrappable::init(this);
-    context->graphicsContext3D()->extensions()->ensureEnabled("GL_OES_texture_float");
+    if (context->extensionsUtil()->ensureExtensionEnabled("GL_OES_texture_float")) {
+        // Implicitly enable rendering to float textures
+        context->extensionsUtil()->ensureExtensionEnabled("GL_CHROMIUM_color_buffer_float_rgba");
+        context->extensionsUtil()->ensureExtensionEnabled("GL_CHROMIUM_color_buffer_float_rgb");
+    }
 }
 
 OESTextureFloat::~OESTextureFloat()
 {
 }
 
-WebGLExtension::ExtensionName OESTextureFloat::name() const
+WebGLExtensionName OESTextureFloat::name() const
 {
     return OESTextureFloatName;
 }
 
-PassRefPtr<OESTextureFloat> OESTextureFloat::create(WebGLRenderingContext* context)
+PassRefPtr<OESTextureFloat> OESTextureFloat::create(WebGLRenderingContextBase* context)
 {
     return adoptRef(new OESTextureFloat(context));
 }
 
-bool OESTextureFloat::supported(WebGLRenderingContext* context)
+bool OESTextureFloat::supported(WebGLRenderingContextBase* context)
 {
-    Extensions3D* extensions = context->graphicsContext3D()->extensions();
-    return extensions->supports("GL_OES_texture_float");
+    return context->extensionsUtil()->supportsExtension("GL_OES_texture_float");
 }
 
 const char* OESTextureFloat::extensionName()

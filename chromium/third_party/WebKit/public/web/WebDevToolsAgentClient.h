@@ -36,6 +36,7 @@
 
 namespace blink {
 class WebString;
+struct WebDeviceEmulationParams;
 struct WebDevToolsMessageData;
 struct WebRect;
 struct WebSize;
@@ -46,7 +47,11 @@ public:
     virtual void sendDebuggerOutput(const WebString&) { }
 
     // Returns the identifier of the entity hosting this agent.
+    // FIXME: remove once migrated to debuggerId().
     virtual int hostIdentifier() { return -1; }
+
+    // Returns unique identifier of the entity within process.
+    virtual int debuggerId() { return hostIdentifier(); }
 
     // Save the agent state in order to pass it later into WebDevToolsAgent::reattach
     // if the same client is reattached to another agent.
@@ -59,9 +64,8 @@ public:
         virtual void quitNow() = 0;
     };
     virtual WebKitClientMessageLoop* createClientMessageLoop() { return 0; }
-
-    virtual void clearBrowserCache() { }
-    virtual void clearBrowserCookies() { }
+    virtual void willEnterDebugLoop() { }
+    virtual void didExitDebugLoop() { }
 
     class AllocatedObjectVisitor {
     public:
@@ -83,23 +87,21 @@ public:
         int numArgs, const char* const* argNames, const unsigned char* argTypes, const unsigned long long* argValues,
         unsigned char flags, double timestamp);
 
-    virtual void setTraceEventCallback(TraceEventCallback) { }
+    virtual void setTraceEventCallback(const WebString& categoryFilter, TraceEventCallback) { }
+    virtual void resetTraceEventCallback() { }
+    virtual void enableTracing(const WebString& categoryFilter) { }
+    virtual void disableTracing() { }
 
     virtual void startGPUEventsRecording() { }
     virtual void stopGPUEventsRecording() { }
 
-    // Called to emulate device dimensions, scale factor and input. Window should
-    // occupy the whole device screen, while the view should be located at |viewRect|.
-    // x-coordinate of |screenRect| defines the left and right gutters' width,
-    // y-coordinate defines the top and bottom gutters' height.
-    // With |fitToView| set, contents should be scaled down to fit into embedder window.
-    // All sizes are measured in device independent pixels.
-    virtual void enableDeviceEmulation(
-        const WebRect& screenRect, const WebRect& viewRect,
-        float deviceScaleFactor, bool fitToView) { }
+    // Enables device emulation as specified in params.
+    virtual void enableDeviceEmulation(const WebDeviceEmulationParams& params) { }
 
     // Cancel emulation started via |enableDeviceEmulation| call.
     virtual void disableDeviceEmulation() { }
+
+    virtual void setTouchEventEmulationEnabled(bool enabled, bool allowPinch) { }
 
 protected:
     ~WebDevToolsAgentClient() { }

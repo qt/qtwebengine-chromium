@@ -1,38 +1,15 @@
 // Copyright 2012 the V8 project authors. All rights reserved.
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-//       copyright notice, this list of conditions and the following
-//       disclaimer in the documentation and/or other materials provided
-//       with the distribution.
-//     * Neither the name of Google Inc. nor the names of its
-//       contributors may be used to endorse or promote products derived
-//       from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
 #ifndef V8_DEOPTIMIZER_H_
 #define V8_DEOPTIMIZER_H_
 
-#include "v8.h"
+#include "src/v8.h"
 
-#include "allocation.h"
-#include "macro-assembler.h"
-#include "zone-inl.h"
+#include "src/allocation.h"
+#include "src/macro-assembler.h"
+#include "src/zone-inl.h"
 
 
 namespace v8 {
@@ -134,7 +111,7 @@ class Deoptimizer : public Malloced {
 
   static const int kBailoutTypesWithCodeEntry = SOFT + 1;
 
-  struct JumpTableEntry {
+  struct JumpTableEntry : public ZoneObject {
     inline JumpTableEntry(Address entry,
                           Deoptimizer::BailoutType type,
                           bool frame)
@@ -169,7 +146,6 @@ class Deoptimizer : public Malloced {
                           Isolate* isolate);
   static Deoptimizer* Grab(Isolate* isolate);
 
-#ifdef ENABLE_DEBUGGER_SUPPORT
   // The returned object with information on the optimized frame needs to be
   // freed before another one can be generated.
   static DeoptimizedFrameInfo* DebuggerInspectableFrame(JavaScriptFrame* frame,
@@ -177,7 +153,6 @@ class Deoptimizer : public Malloced {
                                                         Isolate* isolate);
   static void DeleteDebuggerInspectableFrame(DeoptimizedFrameInfo* info,
                                              Isolate* isolate);
-#endif
 
   // Makes sure that there is enough room in the relocation
   // information of a code object to perform lazy deoptimization
@@ -212,14 +187,13 @@ class Deoptimizer : public Malloced {
   ~Deoptimizer();
 
   void MaterializeHeapObjects(JavaScriptFrameIterator* it);
-#ifdef ENABLE_DEBUGGER_SUPPORT
+
   void MaterializeHeapNumbersForDebuggerInspectableFrame(
       Address parameters_top,
       uint32_t parameters_size,
       Address expressions_top,
       uint32_t expressions_size,
       DeoptimizedFrameInfo* info);
-#endif
 
   static void ComputeOutputFrames(Deoptimizer* deoptimizer);
 
@@ -329,13 +303,20 @@ class Deoptimizer : public Malloced {
   void DoComputeCompiledStubFrame(TranslationIterator* iterator,
                                   int frame_index);
 
+  // Translate object, store the result into an auxiliary array
+  // (deferred_objects_tagged_values_).
   void DoTranslateObject(TranslationIterator* iterator,
                          int object_index,
                          int field_index);
 
+  // Translate value, store the result into the given frame slot.
   void DoTranslateCommand(TranslationIterator* iterator,
                           int frame_index,
                           unsigned output_offset);
+
+  // Translate object, do not store the result anywhere (but do update
+  // the deferred materialization array).
+  void DoTranslateObjectAndSkip(TranslationIterator* iterator);
 
   unsigned ComputeInputFrameSize() const;
   unsigned ComputeFixedSize(JSFunction* function) const;
@@ -406,10 +387,6 @@ class Deoptimizer : public Malloced {
   // at the dynamic alignment state slot inside the frame.
   bool HasAlignmentPadding(JSFunction* function);
 
-  // Select the version of NotifyStubFailure builtin that either saves or
-  // doesn't save the double registers depending on CPU features.
-  Code* NotifyStubFailureBuiltin();
-
   Isolate* isolate_;
   JSFunction* function_;
   Code* compiled_code_;
@@ -434,6 +411,11 @@ class Deoptimizer : public Malloced {
       deferred_objects_double_values_;
   List<ObjectMaterializationDescriptor> deferred_objects_;
   List<HeapNumberMaterializationDescriptor<Address> > deferred_heap_numbers_;
+
+  // Key for lookup of previously materialized objects
+  Address stack_fp_;
+  Handle<FixedArray> previously_materialized_objects_;
+  int prev_materialized_count_;
 
   // Output frame information. Only used during heap object materialization.
   List<Handle<JSFunction> > jsframe_functions_;
@@ -503,6 +485,8 @@ class FrameDescription {
 
   void SetCallerFp(unsigned offset, intptr_t value);
 
+  void SetCallerConstantPool(unsigned offset, intptr_t value);
+
   intptr_t GetRegister(unsigned n) const {
 #if DEBUG
     // This convoluted ASSERT is needed to work around a gcc problem that
@@ -542,6 +526,11 @@ class FrameDescription {
 
   intptr_t GetContext() const { return context_; }
   void SetContext(intptr_t context) { context_ = context; }
+
+  intptr_t GetConstantPool() const { return constant_pool_; }
+  void SetConstantPool(intptr_t constant_pool) {
+    constant_pool_ = constant_pool;
+  }
 
   Smi* GetState() const { return state_; }
   void SetState(Smi* state) { state_ = state; }
@@ -605,6 +594,7 @@ class FrameDescription {
   intptr_t pc_;
   intptr_t fp_;
   intptr_t context_;
+  intptr_t constant_pool_;
   StackFrame::Type type_;
   Smi* state_;
 
@@ -631,18 +621,14 @@ class DeoptimizerData {
   explicit DeoptimizerData(MemoryAllocator* allocator);
   ~DeoptimizerData();
 
-#ifdef ENABLE_DEBUGGER_SUPPORT
   void Iterate(ObjectVisitor* v);
-#endif
 
  private:
   MemoryAllocator* allocator_;
   int deopt_entry_code_entries_[Deoptimizer::kBailoutTypesWithCodeEntry];
   MemoryChunk* deopt_entry_code_[Deoptimizer::kBailoutTypesWithCodeEntry];
 
-#ifdef ENABLE_DEBUGGER_SUPPORT
   DeoptimizedFrameInfo* deoptimized_frame_info_;
-#endif
 
   Deoptimizer* current_;
 
@@ -777,7 +763,15 @@ class SlotRef BASE_EMBEDDED {
     INT32,
     UINT32,
     DOUBLE,
-    LITERAL
+    LITERAL,
+    DEFERRED_OBJECT,   // Object captured by the escape analysis.
+                       // The number of nested objects can be obtained
+                       // with the DeferredObjectLength() method
+                       // (the SlotRefs of the nested objects follow
+                       // this SlotRef in the depth-first order.)
+    DUPLICATE_OBJECT,  // Duplicated object of a deferred object.
+    ARGUMENTS_OBJECT   // Arguments object - only used to keep indexing
+                       // in sync, it should not be materialized.
   };
 
   SlotRef()
@@ -789,52 +783,80 @@ class SlotRef BASE_EMBEDDED {
   SlotRef(Isolate* isolate, Object* literal)
       : literal_(literal, isolate), representation_(LITERAL) { }
 
-  Handle<Object> GetValue(Isolate* isolate) {
-    switch (representation_) {
-      case TAGGED:
-        return Handle<Object>(Memory::Object_at(addr_), isolate);
+  static SlotRef NewArgumentsObject(int length) {
+    SlotRef slot;
+    slot.representation_ = ARGUMENTS_OBJECT;
+    slot.deferred_object_length_ = length;
+    return slot;
+  }
 
-      case INT32: {
-        int value = Memory::int32_at(addr_);
-        if (Smi::IsValid(value)) {
-          return Handle<Object>(Smi::FromInt(value), isolate);
-        } else {
-          return isolate->factory()->NewNumberFromInt(value);
-        }
-      }
+  static SlotRef NewDeferredObject(int length) {
+    SlotRef slot;
+    slot.representation_ = DEFERRED_OBJECT;
+    slot.deferred_object_length_ = length;
+    return slot;
+  }
 
-      case UINT32: {
-        uint32_t value = Memory::uint32_at(addr_);
-        if (value <= static_cast<uint32_t>(Smi::kMaxValue)) {
-          return Handle<Object>(Smi::FromInt(static_cast<int>(value)), isolate);
-        } else {
-          return isolate->factory()->NewNumber(static_cast<double>(value));
-        }
-      }
+  SlotRepresentation Representation() { return representation_; }
 
-      case DOUBLE: {
-        double value = read_double_value(addr_);
-        return isolate->factory()->NewNumber(value);
-      }
+  static SlotRef NewDuplicateObject(int id) {
+    SlotRef slot;
+    slot.representation_ = DUPLICATE_OBJECT;
+    slot.duplicate_object_id_ = id;
+    return slot;
+  }
 
-      case LITERAL:
-        return literal_;
-
-      default:
-        UNREACHABLE();
-        return Handle<Object>::null();
+  int GetChildrenCount() {
+    if (representation_ == DEFERRED_OBJECT ||
+        representation_ == ARGUMENTS_OBJECT) {
+      return deferred_object_length_;
+    } else {
+      return 0;
     }
   }
 
-  static Vector<SlotRef> ComputeSlotMappingForArguments(
-      JavaScriptFrame* frame,
-      int inlined_frame_index,
-      int formal_parameter_count);
+  int DuplicateObjectId() { return duplicate_object_id_; }
+
+  Handle<Object> GetValue(Isolate* isolate);
 
  private:
   Address addr_;
   Handle<Object> literal_;
   SlotRepresentation representation_;
+  int deferred_object_length_;
+  int duplicate_object_id_;
+};
+
+class SlotRefValueBuilder BASE_EMBEDDED {
+ public:
+  SlotRefValueBuilder(
+      JavaScriptFrame* frame,
+      int inlined_frame_index,
+      int formal_parameter_count);
+
+  void Prepare(Isolate* isolate);
+  Handle<Object> GetNext(Isolate* isolate, int level);
+  void Finish(Isolate* isolate);
+
+  int args_length() { return args_length_; }
+
+ private:
+  List<Handle<Object> > materialized_objects_;
+  Handle<FixedArray> previously_materialized_objects_;
+  int prev_materialized_count_;
+  Address stack_frame_id_;
+  List<SlotRef> slot_refs_;
+  int current_slot_;
+  int args_length_;
+  int first_slot_index_;
+
+  static SlotRef ComputeSlotForNextArgument(
+      Translation::Opcode opcode,
+      TranslationIterator* iterator,
+      DeoptimizationInputData* data,
+      JavaScriptFrame* frame);
+
+  Handle<Object> GetPreviouslyMaterialized(Isolate* isolate, int length);
 
   static Address SlotAddress(JavaScriptFrame* frame, int slot_index) {
     if (slot_index >= 0) {
@@ -846,19 +868,30 @@ class SlotRef BASE_EMBEDDED {
     }
   }
 
-  static SlotRef ComputeSlotForNextArgument(TranslationIterator* iterator,
-                                            DeoptimizationInputData* data,
-                                            JavaScriptFrame* frame);
+  Handle<Object> GetDeferredObject(Isolate* isolate);
+};
 
-  static void ComputeSlotsForArguments(
-      Vector<SlotRef>* args_slots,
-      TranslationIterator* iterator,
-      DeoptimizationInputData* data,
-      JavaScriptFrame* frame);
+class MaterializedObjectStore {
+ public:
+  explicit MaterializedObjectStore(Isolate* isolate) : isolate_(isolate) {
+  }
+
+  Handle<FixedArray> Get(Address fp);
+  void Set(Address fp, Handle<FixedArray> materialized_objects);
+  void Remove(Address fp);
+
+ private:
+  Isolate* isolate() { return isolate_; }
+  Handle<FixedArray> GetStackEntries();
+  Handle<FixedArray> EnsureStackEntries(int size);
+
+  int StackIdToIndex(Address fp);
+
+  Isolate* isolate_;
+  List<Address> frame_fps_;
 };
 
 
-#ifdef ENABLE_DEBUGGER_SUPPORT
 // Class used to represent an unoptimized frame when the debugger
 // needs to inspect a frame that is part of an optimized frame. The
 // internally used FrameDescription objects are not GC safe so for use
@@ -932,7 +965,6 @@ class DeoptimizedFrameInfo : public Malloced {
 
   friend class Deoptimizer;
 };
-#endif
 
 } }  // namespace v8::internal
 

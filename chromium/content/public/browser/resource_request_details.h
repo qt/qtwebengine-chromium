@@ -34,13 +34,15 @@ struct ResourceRequestDetails {
   bool has_upload;
   int load_flags;
   int origin_child_id;
-  int origin_route_id;
   net::URLRequestStatus status;
   int ssl_cert_id;
   net::CertStatus ssl_cert_status;
   ResourceType::Type resource_type;
   net::HostPortPair socket_address;
-  int64 frame_id;
+  int render_frame_id;
+  // HTTP response code. See HttpResponseHeaders::response_code().
+  // -1 if there are no response headers yet.
+  int http_response_code;
 };
 
 // Details about a redirection of a resource request.

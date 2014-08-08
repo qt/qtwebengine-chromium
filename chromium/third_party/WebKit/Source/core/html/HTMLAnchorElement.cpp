@@ -28,8 +28,10 @@
 #include "core/editing/FrameSelection.h"
 #include "core/events/KeyboardEvent.h"
 #include "core/events/MouseEvent.h"
-#include "core/events/ThreadLocalEventNames.h"
-#include "core/frame/Frame.h"
+#include "core/frame/FrameHost.h"
+#include "core/frame/LocalFrame.h"
+#include "core/frame/Settings.h"
+#include "core/frame/UseCounter.h"
 #include "core/html/HTMLFormElement.h"
 #include "core/html/HTMLImageElement.h"
 #include "core/html/parser/HTMLParserIdioms.h"
@@ -40,10 +42,7 @@
 #include "core/loader/PingLoader.h"
 #include "core/page/Chrome.h"
 #include "core/page/ChromeClient.h"
-#include "core/page/Page.h"
-#include "core/frame/Settings.h"
 #include "core/rendering/RenderImage.h"
-#include "core/svg/graphics/SVGImage.h"
 #include "platform/PlatformMouseEvent.h"
 #include "platform/network/DNS.h"
 #include "platform/network/ResourceRequest.h"
@@ -70,11 +69,11 @@ void preconnectToURL(const KURL& url, blink::WebPreconnectMotivation motivation)
 
 }
 
-class HTMLAnchorElement::PrefetchEventHandler {
+class HTMLAnchorElement::PrefetchEventHandler FINAL : public NoBaseWillBeGarbageCollected<HTMLAnchorElement::PrefetchEventHandler> {
 public:
-    static PassOwnPtr<PrefetchEventHandler> create(HTMLAnchorElement* anchorElement)
+    static PassOwnPtrWillBeRawPtr<PrefetchEventHandler> create(HTMLAnchorElement* anchorElement)
     {
-        return adoptPtr(new HTMLAnchorElement::PrefetchEventHandler(anchorElement));
+        return adoptPtrWillBeNoop(new HTMLAnchorElement::PrefetchEventHandler(anchorElement));
     }
 
     void reset();
@@ -82,6 +81,8 @@ public:
     void handleEvent(Event* e);
     void didChangeHREF() { m_hadHREFChanged = true; }
     bool hasIssuedPreconnect() const { return m_hasIssuedPreconnect; }
+
+    void trace(Visitor* visitor) { visitor->trace(m_anchorElement); }
 
 private:
     explicit PrefetchEventHandler(HTMLAnchorElement*);
@@ -96,7 +97,7 @@ private:
     bool shouldPrefetch(const KURL&);
     void prefetch(blink::WebPreconnectMotivation);
 
-    HTMLAnchorElement* m_anchorElement;
+    RawPtrWillBeMember<HTMLAnchorElement> m_anchorElement;
     double m_mouseOverTimestamp;
     double m_mouseDownTimestamp;
     double m_tapDownTimestamp;
@@ -109,27 +110,19 @@ using namespace HTMLNames;
 
 HTMLAnchorElement::HTMLAnchorElement(const QualifiedName& tagName, Document& document)
     : HTMLElement(tagName, document)
-    , m_hasRootEditableElementForSelectionOnMouseDown(false)
-    , m_wasShiftKeyDownOnMouseDown(false)
     , m_linkRelations(0)
     , m_cachedVisitedLinkHash(0)
 {
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLAnchorElement> HTMLAnchorElement::create(Document& document)
+PassRefPtrWillBeRawPtr<HTMLAnchorElement> HTMLAnchorElement::create(Document& document)
 {
-    return adoptRef(new HTMLAnchorElement(aTag, document));
-}
-
-PassRefPtr<HTMLAnchorElement> HTMLAnchorElement::create(const QualifiedName& tagName, Document& document)
-{
-    return adoptRef(new HTMLAnchorElement(tagName, document));
+    return adoptRefWillBeNoop(new HTMLAnchorElement(aTag, document));
 }
 
 HTMLAnchorElement::~HTMLAnchorElement()
 {
-    clearRootEditableElementForSelectionOnMouseDown();
 }
 
 bool HTMLAnchorElement::supportsFocus() const
@@ -152,16 +145,13 @@ bool HTMLAnchorElement::isMouseFocusable() const
 
 bool HTMLAnchorElement::isKeyboardFocusable() const
 {
+    ASSERT(document().isActive());
+
     if (isFocusable() && Element::supportsFocus())
         return HTMLElement::isKeyboardFocusable();
 
-    if (isLink()) {
-        Page* page = document().page();
-        if (!page)
-            return false;
-        if (!page->chrome().client().tabsToLinks())
-            return false;
-    }
+    if (isLink() && !document().frameHost()->chrome().client().tabsToLinks())
+        return false;
     return HTMLElement::isKeyboardFocusable();
 }
 
@@ -173,16 +163,16 @@ static void appendServerMapMousePosition(StringBuilder& url, Event* event)
     ASSERT(event->target());
     Node* target = event->target()->toNode();
     ASSERT(target);
-    if (!target->hasTagName(imgTag))
+    if (!isHTMLImageElement(*target))
         return;
 
-    HTMLImageElement* imageElement = toHTMLImageElement(event->target()->toNode());
-    if (!imageElement || !imageElement->isServerMap())
+    HTMLImageElement& imageElement = toHTMLImageElement(*target);
+    if (!imageElement.isServerMap())
         return;
 
-    if (!imageElement->renderer() || !imageElement->renderer()->isRenderImage())
+    if (!imageElement.renderer() || !imageElement.renderer()->isRenderImage())
         return;
-    RenderImage* renderer = toRenderImage(imageElement->renderer());
+    RenderImage* renderer = toRenderImage(imageElement.renderer());
 
     // FIXME: This should probably pass true for useTransforms.
     FloatPoint absolutePosition = renderer->absoluteToLocal(FloatPoint(toMouseEvent(event)->pageX(), toMouseEvent(event)->pageY()));
@@ -197,7 +187,7 @@ static void appendServerMapMousePosition(StringBuilder& url, Event* event)
 void HTMLAnchorElement::defaultEventHandler(Event* event)
 {
     if (isLink()) {
-        if (focused() && isEnterKeyKeydownEvent(event) && treatLinkAsLiveForEventType(NonMouseEvent)) {
+        if (focused() && isEnterKeyKeydownEvent(event) && isLiveLink()) {
             event->setDefaultHandled();
             dispatchSimulatedClick(event);
             return;
@@ -205,24 +195,10 @@ void HTMLAnchorElement::defaultEventHandler(Event* event)
 
         prefetchEventHandler()->handleEvent(event);
 
-        if (isLinkClick(event) && treatLinkAsLiveForEventType(eventType(event))) {
+        if (isLinkClick(event) && isLiveLink()) {
             handleClick(event);
             prefetchEventHandler()->reset();
             return;
-        }
-
-        if (rendererIsEditable()) {
-            // This keeps track of the editable block that the selection was in (if it was in one) just before the link was clicked
-            // for the LiveWhenNotFocused editable link behavior
-            if (event->type() == EventTypeNames::mousedown && event->isMouseEvent() && toMouseEvent(event)->button() != RightButton && document().frame()) {
-                setRootEditableElementForSelectionOnMouseDown(document().frame()->selection().rootEditableElement());
-                m_wasShiftKeyDownOnMouseDown = toMouseEvent(event)->shiftKey();
-            } else if (event->type() == EventTypeNames::mouseover) {
-                // These are cleared on mouseover and not mouseout because their values are needed for drag events,
-                // but drag events happen after mouse out events.
-                clearRootEditableElementForSelectionOnMouseDown();
-                m_wasShiftKeyDownOnMouseDown = false;
-            }
         }
     }
 
@@ -231,32 +207,8 @@ void HTMLAnchorElement::defaultEventHandler(Event* event)
 
 void HTMLAnchorElement::setActive(bool down)
 {
-    if (rendererIsEditable()) {
-        EditableLinkBehavior editableLinkBehavior = EditableLinkDefaultBehavior;
-        if (Settings* settings = document().settings())
-            editableLinkBehavior = settings->editableLinkBehavior();
-
-        switch (editableLinkBehavior) {
-            default:
-            case EditableLinkDefaultBehavior:
-            case EditableLinkAlwaysLive:
-                break;
-
-            case EditableLinkNeverLive:
-                return;
-
-            // Don't set the link to be active if the current selection is in the same editable block as
-            // this link
-            case EditableLinkLiveWhenNotFocused:
-                if (down && document().frame() && document().frame()->selection().rootEditableElement() == rootEditableElement())
-                    return;
-                break;
-
-            case EditableLinkOnlyLiveWithShiftKey:
-                return;
-        }
-
-    }
+    if (rendererIsEditable())
+        return;
 
     ContainerNode::setActive(down);
 }
@@ -303,9 +255,13 @@ bool HTMLAnchorElement::isURLAttribute(const Attribute& attribute) const
     return attribute.name().localName() == hrefAttr || HTMLElement::isURLAttribute(attribute);
 }
 
+bool HTMLAnchorElement::hasLegalLinkAttribute(const QualifiedName& name) const
+{
+    return name == hrefAttr || HTMLElement::hasLegalLinkAttribute(name);
+}
+
 bool HTMLAnchorElement::canStartSelection() const
 {
-    // FIXME: We probably want this same behavior in SVGAElement too
     if (!isLink())
         return HTMLElement::canStartSelection();
     return rendererIsEditable();
@@ -349,7 +305,7 @@ String HTMLAnchorElement::input() const
 
 void HTMLAnchorElement::setInput(const String& value)
 {
-    setHref(value);
+    setHref(AtomicString(value));
 }
 
 bool HTMLAnchorElement::hasRel(uint32_t relation) const
@@ -357,7 +313,7 @@ bool HTMLAnchorElement::hasRel(uint32_t relation) const
     return m_linkRelations & relation;
 }
 
-void HTMLAnchorElement::setRel(const String& value)
+void HTMLAnchorElement::setRel(const AtomicString& value)
 {
     m_linkRelations = 0;
     SpaceSplitString newLinkRelations(value, true);
@@ -377,37 +333,34 @@ short HTMLAnchorElement::tabIndex() const
     return Element::tabIndex();
 }
 
-String HTMLAnchorElement::target() const
+AtomicString HTMLAnchorElement::target() const
 {
     return getAttribute(targetAttr);
 }
 
-
-String HTMLAnchorElement::text()
-{
-    return innerText();
-}
-
 bool HTMLAnchorElement::isLiveLink() const
 {
-    return isLink() && treatLinkAsLiveForEventType(m_wasShiftKeyDownOnMouseDown ? MouseEventWithShiftKey : MouseEventWithoutShiftKey);
+    return isLink() && !rendererIsEditable();
 }
 
 void HTMLAnchorElement::sendPings(const KURL& destinationURL)
 {
-    if (!hasAttribute(pingAttr) || !document().settings() || !document().settings()->hyperlinkAuditingEnabled())
+    const AtomicString& pingValue = getAttribute(pingAttr);
+    if (pingValue.isNull() || !document().settings() || !document().settings()->hyperlinkAuditingEnabled())
         return;
 
-    SpaceSplitString pingURLs(getAttribute(pingAttr), false);
+    UseCounter::count(document(), UseCounter::HTMLAnchorElementPingAttribute);
+
+    SpaceSplitString pingURLs(pingValue, false);
     for (unsigned i = 0; i < pingURLs.size(); i++)
-        PingLoader::sendPing(document().frame(), document().completeURL(pingURLs[i]), destinationURL);
+        PingLoader::sendLinkAuditPing(document().frame(), document().completeURL(pingURLs[i]), destinationURL);
 }
 
 void HTMLAnchorElement::handleClick(Event* event)
 {
     event->setDefaultHandled();
 
-    Frame* frame = document().frame();
+    LocalFrame* frame = document().frame();
     if (!frame)
         return;
 
@@ -427,10 +380,13 @@ void HTMLAnchorElement::handleClick(Event* event)
         if (!hasRel(RelationNoReferrer)) {
             String referrer = SecurityPolicy::generateReferrerHeader(document().referrerPolicy(), completedURL, document().outgoingReferrer());
             if (!referrer.isEmpty())
-                request.setHTTPReferrer(referrer);
+                request.setHTTPReferrer(Referrer(referrer, document().referrerPolicy()));
         }
 
-        frame->loader().client()->loadURLExternally(request, NavigationPolicyDownload, fastGetAttribute(downloadAttr));
+        bool isSameOrigin = completedURL.protocolIsData() || document().securityOrigin()->canRequest(completedURL);
+        const AtomicString& suggestedName = (isSameOrigin ? fastGetAttribute(downloadAttr) : nullAtom);
+
+        frame->loader().client()->loadURLExternally(request, NavigationPolicyDownload, suggestedName);
     } else {
         FrameLoadRequest frameRequest(&document(), request, target());
         frameRequest.setTriggeringEvent(event);
@@ -438,43 +394,6 @@ void HTMLAnchorElement::handleClick(Event* event)
             frameRequest.setShouldSendReferrer(NeverSendReferrer);
         frame->loader().load(frameRequest);
     }
-}
-
-HTMLAnchorElement::EventType HTMLAnchorElement::eventType(Event* event)
-{
-    if (!event->isMouseEvent())
-        return NonMouseEvent;
-    return toMouseEvent(event)->shiftKey() ? MouseEventWithShiftKey : MouseEventWithoutShiftKey;
-}
-
-bool HTMLAnchorElement::treatLinkAsLiveForEventType(EventType eventType) const
-{
-    if (!rendererIsEditable())
-        return true;
-
-    Settings* settings = document().settings();
-    if (!settings)
-        return true;
-
-    switch (settings->editableLinkBehavior()) {
-    case EditableLinkDefaultBehavior:
-    case EditableLinkAlwaysLive:
-        return true;
-
-    case EditableLinkNeverLive:
-        return false;
-
-    // If the selection prior to clicking on this link resided in the same editable block as this link,
-    // and the shift key isn't pressed, we don't want to follow the link.
-    case EditableLinkLiveWhenNotFocused:
-        return eventType == MouseEventWithShiftKey || (eventType == MouseEventWithoutShiftKey && rootEditableElementForSelectionOnMouseDown() != rootEditableElement());
-
-    case EditableLinkOnlyLiveWithShiftKey:
-        return eventType == MouseEventWithShiftKey;
-    }
-
-    ASSERT_NOT_REACHED();
-    return false;
 }
 
 bool isEnterKeyKeydownEvent(Event* event)
@@ -490,40 +409,6 @@ bool isLinkClick(Event* event)
 bool HTMLAnchorElement::willRespondToMouseClickEvents()
 {
     return isLink() || HTMLElement::willRespondToMouseClickEvents();
-}
-
-typedef HashMap<const HTMLAnchorElement*, RefPtr<Element> > RootEditableElementMap;
-
-static RootEditableElementMap& rootEditableElementMap()
-{
-    DEFINE_STATIC_LOCAL(RootEditableElementMap, map, ());
-    return map;
-}
-
-Element* HTMLAnchorElement::rootEditableElementForSelectionOnMouseDown() const
-{
-    if (!m_hasRootEditableElementForSelectionOnMouseDown)
-        return 0;
-    return rootEditableElementMap().get(this);
-}
-
-void HTMLAnchorElement::clearRootEditableElementForSelectionOnMouseDown()
-{
-    if (!m_hasRootEditableElementForSelectionOnMouseDown)
-        return;
-    rootEditableElementMap().remove(this);
-    m_hasRootEditableElementForSelectionOnMouseDown = false;
-}
-
-void HTMLAnchorElement::setRootEditableElementForSelectionOnMouseDown(Element* element)
-{
-    if (!element) {
-        clearRootEditableElementForSelectionOnMouseDown();
-        return;
-    }
-
-    rootEditableElementMap().set(this, element);
-    m_hasRootEditableElementForSelectionOnMouseDown = true;
 }
 
 HTMLAnchorElement::PrefetchEventHandler* HTMLAnchorElement::prefetchEventHandler()
@@ -667,7 +552,7 @@ bool HTMLAnchorElement::PrefetchEventHandler::shouldPrefetch(const KURL& url)
     if (url.hasFragmentIdentifier() && equalIgnoringFragmentIdentifier(document.url(), url))
         return false;
 
-    Frame* frame = document.frame();
+    LocalFrame* frame = document.frame();
     if (!frame)
         return false;
 
@@ -696,6 +581,12 @@ void HTMLAnchorElement::PrefetchEventHandler::prefetch(blink::WebPreconnectMotiv
 bool HTMLAnchorElement::isInteractiveContent() const
 {
     return isLink();
+}
+
+void HTMLAnchorElement::trace(Visitor* visitor)
+{
+    visitor->trace(m_prefetchEventHandler);
+    HTMLElement::trace(visitor);
 }
 
 }

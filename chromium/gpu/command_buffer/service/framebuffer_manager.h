@@ -49,6 +49,8 @@ class GPU_EXPORT Framebuffer : public base::RefCounted<Framebuffer> {
         GLenum attachment_type, uint32 max_color_attachments) = 0;
     virtual void AddToSignature(
         TextureManager* texture_manager, std::string* signature) const = 0;
+    virtual void OnWillRenderTo() const = 0;
+    virtual void OnDidRenderTo() const = 0;
 
    protected:
     friend class base::RefCounted<Attachment>;
@@ -62,6 +64,7 @@ class GPU_EXPORT Framebuffer : public base::RefCounted<Framebuffer> {
   }
 
   bool HasUnclearedAttachment(GLenum attachment) const;
+  bool HasUnclearedColorAttachments() const;
 
   void MarkAttachmentAsCleared(
     RenderbufferManager* renderbuffer_manager,
@@ -127,6 +130,14 @@ class GPU_EXPORT Framebuffer : public base::RefCounted<Framebuffer> {
 
   void SetDrawBuffers(GLsizei n, const GLenum* bufs);
 
+  // If a color buffer is attached to GL_COLOR_ATTACHMENTi, enable that
+  // draw buffer for glClear().
+  void PrepareDrawBuffersForClear() const;
+
+  // Restore draw buffers states that have been changed in
+  // PrepareDrawBuffersForClear().
+  void RestoreDrawBuffersAfterClear() const;
+
   // Return true if any draw buffers has an alpha channel.
   bool HasAlphaMRT() const;
 
@@ -137,6 +148,8 @@ class GPU_EXPORT Framebuffer : public base::RefCounted<Framebuffer> {
   }
 
   void OnTextureRefDetached(TextureRef* texture);
+  void OnWillRenderTo() const;
+  void OnDidRenderTo() const;
 
  private:
   friend class FramebufferManager;
@@ -158,6 +171,10 @@ class GPU_EXPORT Framebuffer : public base::RefCounted<Framebuffer> {
   unsigned framebuffer_complete_state_count_id() const {
     return framebuffer_complete_state_count_id_;
   }
+
+  // Helper function for PrepareDrawBuffersForClear() and
+  // RestoreDrawBuffersAfterClear().
+  void ChangeDrawBuffersHelper(bool recover) const;
 
   // The managers that owns this.
   FramebufferManager* manager_;

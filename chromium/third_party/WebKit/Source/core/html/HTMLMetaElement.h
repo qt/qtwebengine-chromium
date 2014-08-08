@@ -23,6 +23,7 @@
 #ifndef HTMLMetaElement_h
 #define HTMLMetaElement_h
 
+#include "core/dom/ViewportDescription.h"
 #include "core/html/HTMLElement.h"
 
 namespace WebCore {
@@ -37,7 +38,7 @@ enum ViewportErrorCode {
 
 class HTMLMetaElement FINAL : public HTMLElement {
 public:
-    static PassRefPtr<HTMLMetaElement> create(Document&);
+    DECLARE_NODE_FACTORY(HTMLMetaElement);
 
     const AtomicString& content() const;
     const AtomicString& httpEquiv() const;
@@ -52,12 +53,13 @@ private:
 
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
+    virtual void didNotifySubtreeInsertionsToDocument() OVERRIDE;
 
     float parsePositiveNumber(const String& key, const String& value, bool* ok = 0);
 
     Length parseViewportValueAsLength(const String& key, const String& value);
-    float parseViewportValueAsZoom(const String& key, const String& value);
-    float parseViewportValueAsUserZoom(const String& key, const String& value);
+    float parseViewportValueAsZoom(const String& key, const String& value, bool& computedValueMatchesParsedValue);
+    bool parseViewportValueAsUserZoom(const String& key, const String& value, bool& computedValueMatchesParsedValue);
     float parseViewportValueAsDPI(const String& key, const String& value);
 
     void reportViewportWarning(ViewportErrorCode, const String& replacement1, const String& replacement2);
@@ -65,8 +67,6 @@ private:
     void process();
     void processViewportContentAttribute(const String& content, ViewportDescription::Type origin);
 };
-
-DEFINE_NODE_TYPE_CASTS(HTMLMetaElement, hasTagName(HTMLNames::metaTag));
 
 } // namespace WebCore
 

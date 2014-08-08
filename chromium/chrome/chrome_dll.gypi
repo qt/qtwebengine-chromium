@@ -45,7 +45,6 @@
                   'action': ['tools\\build\\win\\hardlink_failsafe.bat',
                              '$(OutDir)\\initial\\chrome.dll',
                              '$(OutDir)\\chrome.dll'],
-                  'msvs_cygwin_shell': 0,
                 },
               ],
               'conditions': [
@@ -64,7 +63,6 @@
                       'action': ['tools\\build\\win\\hardlink_failsafe.bat',
                                  '$(OutDir)\\initial\\chrome.dll.pdb',
                                  '$(OutDir)\\chrome.dll.pdb'],
-                      'msvs_cygwin_shell': 0,
                     }
                   ]
                 }]
@@ -80,21 +78,25 @@
           },
           'dependencies': [
             '<@(chromium_browser_dependencies)',
-            '../components/components.gyp:policy',
             '../content/content.gyp:content_app_browser',
           ],
           'conditions': [
+            ['OS=="win"', {
+              'dependencies': [
+                '<(DEPTH)/chrome_elf/chrome_elf.gyp:chrome_elf',
+              ],
+            }],
+            ['OS=="win" and configuration_policy==1', {
+              'dependencies': [
+                '<(DEPTH)/components/components.gyp:policy',
+              ],
+            }],
             ['use_aura==1', {
               'dependencies': [
                 '../ui/compositor/compositor.gyp:compositor',
               ],
             }],
-            ['OS=="win" and target_arch=="ia32" and MSVS_VERSION!="2013"', {
-              # TODO(scottmg): The assembler is very broken in VS2013 and
-              # crashes on the generated .asm file, so disable this for now.
-              # This should be revisited after a VS2013 update. See
-              # http://crbug.com/288948.
-              #
+            ['OS=="win" and target_arch=="ia32"', {
               # Add a dependency to custom import library for user32 delay
               # imports only in x86 builds.
               'dependencies': [
@@ -106,7 +108,6 @@
               'dependencies': [
                 # On Windows, link the dependencies (libraries) that make
                 # up actual Chromium functionality into this .dll.
-                'chrome_dll_pdb_workaround',
                 'chrome_version_resources',
                 '../chrome/chrome_resources.gyp:chrome_unscaled_resources',
                 '../crypto/crypto.gyp:crypto',
@@ -144,7 +145,6 @@
               },
               'msvs_settings': {
                 'VCLinkerTool': {
-                  'BaseAddress': '0x01c30000',
                   'ImportLibrary': '$(OutDir)\\lib\\chrome_dll.lib',
                   # Set /SUBSYSTEM:WINDOWS for chrome.dll (for consistency).
                   'SubSystem': '2',
@@ -153,7 +153,9 @@
                       'OutputFile': '$(OutDir)\\initial\\chrome.dll',
                       'UseLibraryDependencyInputs': "true",
                     }],
-                    ['target_arch=="ia32" and MSVS_VERSION!="2013"', {
+                    ['target_arch=="ia32"', {
+                      # Don't set an x64 base address (to avoid breaking HE-ASLR).
+                      'BaseAddress': '0x01c30000',
                       # Link against the XP-constrained user32 import library
                       # instead of the platform-SDK provided one to avoid
                       # inadvertently taking dependencies on post-XP user32
@@ -218,6 +220,20 @@
                     '../printing/printing.gyp:printing',
                   ],
                 }],
+                ['chrome_pgo_phase==1', {
+                  'msvs_settings': {
+                    'VCLinkerTool': {
+                      'LinkTimeCodeGeneration': '2',
+                    },
+                  },
+                }],
+                ['chrome_pgo_phase==2', {
+                  'msvs_settings': {
+                    'VCLinkerTool': {
+                      'LinkTimeCodeGeneration': '3',
+                    },
+                  },
+                }],
               ]
             }],
             ['chrome_multiple_dll==1', {
@@ -265,6 +281,9 @@
                 'app/chrome_main_mac.mm',
                 'app/chrome_main_mac.h',
               ],
+              'dependencies': [
+                '../pdf/pdf.gyp:pdf',
+              ],
               'include_dirs': [
                 '<(grit_out_dir)',
               ],
@@ -302,40 +321,12 @@
                     '../components/components.gyp:breakpad_stubs',
                   ],
                 }],  # mac_breakpad_compiled_in
-                ['internal_pdf', {
-                  'dependencies': [
-                    '../pdf/pdf.gyp:pdf',
-                  ],
-                }],
               ],  # conditions
             }],  # OS=="mac"
           ],  # conditions
         },  # target chrome_main_dll
       ],  # targets
     }],  # OS=="mac" or OS=="win"
-    ['OS=="win"', {
-      'targets': [
-        {
-          # This target is only depended upon on Windows.
-          'target_name': 'chrome_dll_pdb_workaround',
-          'type': 'static_library',
-          'sources': [ 'empty_pdb_workaround.cc' ],
-          'conditions': [
-            ['fastbuild==0 or win_z7!=0', {
-             'msvs_settings': {
-              'VCCLCompilerTool': {
-                # This *in the compile phase* must match the pdb name that's
-                # output by the final link. See empty_pdb_workaround.cc for
-                # more details.
-                'DebugInformationFormat': '3',
-                'ProgramDataBaseFileName': '<(PRODUCT_DIR)/chrome.dll.pdb',
-              },
-             },
-            }],
-          ],
-        },
-      ],
-    }],
     ['chrome_multiple_dll', {
       'targets': [
         {
@@ -356,12 +347,33 @@
             'CHROME_MULTIPLE_DLL_CHILD',
           ],
           'sources': [
-            '<(SHARED_INTERMEDIATE_DIR)/chrome/common_resources.rc',
-            '<(SHARED_INTERMEDIATE_DIR)/chrome/extensions_api_resources.rc',
             '<(SHARED_INTERMEDIATE_DIR)/chrome_version/chrome_dll_version.rc',
             'app/chrome_main.cc',
             'app/chrome_main_delegate.cc',
             'app/chrome_main_delegate.h',
+          ],
+          'conditions': [
+            ['OS=="win"', {
+              'dependencies': [
+                '<(DEPTH)/chrome_elf/chrome_elf.gyp:chrome_elf',
+              ],
+              'conditions': [
+                ['chrome_pgo_phase==1', {
+                  'msvs_settings': {
+                    'VCLinkerTool': {
+                      'LinkTimeCodeGeneration': '2',
+                    },
+                  },
+                }],
+                ['chrome_pgo_phase==2', {
+                  'msvs_settings': {
+                    'VCLinkerTool': {
+                      'LinkTimeCodeGeneration': '3',
+                    },
+                  },
+                }],
+              ]
+            }],
           ],
         },  # target chrome_child_dll
       ],

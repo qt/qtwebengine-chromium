@@ -31,6 +31,7 @@ namespace WebCore {
 
 class ExceptionState;
 class Position;
+class Range;
 class RenderTextControl;
 class VisiblePosition;
 
@@ -69,20 +70,18 @@ public:
     virtual void setRangeText(const String& replacement, unsigned start, unsigned end, const String& selectionMode, ExceptionState&);
     void setSelectionRange(int start, int end, const String& direction);
     void setSelectionRange(int start, int end, TextFieldSelectionDirection = SelectionHasNoDirection);
-    PassRefPtr<Range> selection() const;
-    String selectedText() const;
+    PassRefPtrWillBeRawPtr<Range> selection() const;
 
-    virtual void dispatchFormControlChangeEvent();
+    virtual void dispatchFormControlChangeEvent() OVERRIDE FINAL;
 
-    virtual int maxLength() const = 0;
     virtual String value() const = 0;
 
-    HTMLElement* innerTextElement() const;
+    HTMLElement* innerEditorElement() const;
 
     void selectionChanged(bool userTriggered);
     bool lastChangeWasUserEdit() const;
-    void setInnerTextValue(const String&);
-    String innerTextValue() const;
+    virtual void setInnerEditorValue(const String&);
+    String innerEditorValue() const;
 
     String directionForFormData() const;
 
@@ -97,35 +96,37 @@ protected:
 
     void cacheSelection(int start, int end, TextFieldSelectionDirection direction)
     {
+        ASSERT(start >= 0);
         m_cachedSelectionStart = start;
         m_cachedSelectionEnd = end;
         m_cachedSelectionDirection = direction;
     }
 
     void restoreCachedSelection();
-    bool hasCachedSelection() const { return m_cachedSelectionStart >= 0; }
 
-    virtual void defaultEventHandler(Event*);
+    virtual void defaultEventHandler(Event*) OVERRIDE;
     virtual void subtreeHasChanged() = 0;
 
     void setLastChangeWasNotUserEdit() { m_lastChangeWasUserEdit = false; }
 
     String valueWithHardLineBreaks() const;
 
+    virtual bool shouldDispatchFormControlChangeEvent(String&, String&);
+
 private:
     int computeSelectionStart() const;
     int computeSelectionEnd() const;
     TextFieldSelectionDirection computeSelectionDirection() const;
 
-    virtual void dispatchFocusEvent(Element* oldFocusedElement, FocusDirection) OVERRIDE;
-    virtual void dispatchBlurEvent(Element* newFocusedElement) OVERRIDE;
+    virtual void dispatchFocusEvent(Element* oldFocusedElement, FocusType) OVERRIDE FINAL;
+    virtual void dispatchBlurEvent(Element* newFocusedElement) OVERRIDE FINAL;
 
     // Returns true if user-editable value is empty. Used to check placeholder visibility.
     virtual bool isEmptyValue() const = 0;
     // Returns true if suggested value is empty. Used to check placeholder visibility.
     virtual bool isEmptySuggestedValue() const { return true; }
     // Called in dispatchFocusEvent(), after placeholder process, before calling parent's dispatchFocusEvent().
-    virtual void handleFocusEvent(Element* /* oldFocusedNode */, FocusDirection) { }
+    virtual void handleFocusEvent(Element* /* oldFocusedNode */, FocusType) { }
     // Called in dispatchBlurEvent(), after placeholder process, before calling parent's dispatchBlurEvent().
     virtual void handleBlurEvent() { }
 
@@ -137,19 +138,15 @@ private:
     TextFieldSelectionDirection m_cachedSelectionDirection;
 };
 
-inline bool isHTMLTextFormControlElement(const Node* node)
+inline bool isHTMLTextFormControlElement(const Element& element)
 {
-    return node->isElementNode() && toElement(node)->isTextFormControl();
+    return element.isTextFormControl();
 }
 
-inline bool isHTMLTextFormControlElement(const Node& node)
-{
-    return node.isElementNode() && toElement(node).isTextFormControl();
-}
-
-DEFINE_NODE_TYPE_CASTS_WITH_FUNCTION(HTMLTextFormControlElement);
+DEFINE_HTMLELEMENT_TYPE_CASTS_WITH_FUNCTION(HTMLTextFormControlElement);
 
 HTMLTextFormControlElement* enclosingTextFormControl(const Position&);
+HTMLTextFormControlElement* enclosingTextFormControl(Node*);
 
 } // namespace
 

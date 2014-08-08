@@ -22,10 +22,10 @@
 
 #include "core/html/HTMLProgressElement.h"
 
-#include "HTMLNames.h"
 #include "bindings/v8/ExceptionMessages.h"
 #include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "core/HTMLNames.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/html/parser/HTMLParserIdioms.h"
@@ -41,7 +41,7 @@ const double HTMLProgressElement::InvalidPosition = -2;
 
 HTMLProgressElement::HTMLProgressElement(Document& document)
     : LabelableElement(progressTag, document)
-    , m_value(0)
+    , m_value(nullptr)
 {
     ScriptWrappable::init(this);
 }
@@ -50,9 +50,9 @@ HTMLProgressElement::~HTMLProgressElement()
 {
 }
 
-PassRefPtr<HTMLProgressElement> HTMLProgressElement::create(Document& document)
+PassRefPtrWillBeRawPtr<HTMLProgressElement> HTMLProgressElement::create(Document& document)
 {
-    RefPtr<HTMLProgressElement> progress = adoptRef(new HTMLProgressElement(document));
+    RefPtrWillBeRawPtr<HTMLProgressElement> progress = adoptRefWillBeNoop(new HTMLProgressElement(document));
     progress->ensureUserAgentShadowRoot();
     return progress.release();
 }
@@ -95,30 +95,30 @@ void HTMLProgressElement::attach(const AttachContext& context)
 double HTMLProgressElement::value() const
 {
     double value = getFloatingPointAttribute(valueAttr);
+    // Otherwise, if the parsed value was greater than or equal to the maximum
+    // value, then the current value of the progress bar is the maximum value
+    // of the progress bar. Otherwise, if parsing the value attribute's value
+    // resulted in an error, or a number less than or equal to zero, then the
+    // current value of the progress bar is zero.
     return !std::isfinite(value) || value < 0 ? 0 : std::min(value, max());
 }
 
-void HTMLProgressElement::setValue(double value, ExceptionState& exceptionState)
+void HTMLProgressElement::setValue(double value)
 {
-    if (!std::isfinite(value)) {
-        exceptionState.throwDOMException(NotSupportedError, ExceptionMessages::notAFiniteNumber(value));
-        return;
-    }
     setFloatingPointAttribute(valueAttr, std::max(value, 0.));
 }
 
 double HTMLProgressElement::max() const
 {
     double max = getFloatingPointAttribute(maxAttr);
+    // Otherwise, if the element has no max attribute, or if it has one but
+    // parsing it resulted in an error, or if the parsed value was less than or
+    // equal to zero, then the maximum value of the progress bar is 1.0.
     return !std::isfinite(max) || max <= 0 ? 1 : max;
 }
 
-void HTMLProgressElement::setMax(double max, ExceptionState& exceptionState)
+void HTMLProgressElement::setMax(double max)
 {
-    if (!std::isfinite(max)) {
-        exceptionState.throwDOMException(NotSupportedError, ExceptionMessages::notAFiniteNumber(max));
-        return;
-    }
     // FIXME: The specification says we should ignore the input value if it is inferior or equal to 0.
     setFloatingPointAttribute(maxAttr, max > 0 ? max : 1);
 }
@@ -150,15 +150,15 @@ void HTMLProgressElement::didAddUserAgentShadowRoot(ShadowRoot& root)
 {
     ASSERT(!m_value);
 
-    RefPtr<ProgressInnerElement> inner = ProgressInnerElement::create(document());
-    inner->setPseudo(AtomicString("-webkit-progress-inner-element", AtomicString::ConstructFromLiteral));
+    RefPtrWillBeRawPtr<ProgressInnerElement> inner = ProgressInnerElement::create(document());
+    inner->setShadowPseudoId(AtomicString("-webkit-progress-inner-element", AtomicString::ConstructFromLiteral));
     root.appendChild(inner);
 
-    RefPtr<ProgressBarElement> bar = ProgressBarElement::create(document());
-    bar->setPseudo(AtomicString("-webkit-progress-bar", AtomicString::ConstructFromLiteral));
-    RefPtr<ProgressValueElement> value = ProgressValueElement::create(document());
+    RefPtrWillBeRawPtr<ProgressBarElement> bar = ProgressBarElement::create(document());
+    bar->setShadowPseudoId(AtomicString("-webkit-progress-bar", AtomicString::ConstructFromLiteral));
+    RefPtrWillBeRawPtr<ProgressValueElement> value = ProgressValueElement::create(document());
     m_value = value.get();
-    m_value->setPseudo(AtomicString("-webkit-progress-value", AtomicString::ConstructFromLiteral));
+    m_value->setShadowPseudoId(AtomicString("-webkit-progress-value", AtomicString::ConstructFromLiteral));
     m_value->setWidthPercentage(HTMLProgressElement::IndeterminatePosition * 100);
     bar->appendChild(m_value);
 
@@ -168,6 +168,12 @@ void HTMLProgressElement::didAddUserAgentShadowRoot(ShadowRoot& root)
 bool HTMLProgressElement::shouldAppearIndeterminate() const
 {
     return !isDeterminate();
+}
+
+void HTMLProgressElement::trace(Visitor* visitor)
+{
+    visitor->trace(m_value);
+    LabelableElement::trace(visitor);
 }
 
 } // namespace

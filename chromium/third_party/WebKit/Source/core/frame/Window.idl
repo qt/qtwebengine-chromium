@@ -30,20 +30,22 @@
 [
     CheckSecurity=Frame,
     Custom=ToV8,
-    ImplementedAs=DOMWindow,
+    ImplementedAs=LocalDOMWindow,
+    PrimaryGlobal,
+    WillBeGarbageCollected,
 ] interface Window : EventTarget {
     // DOM Level 0
-    [Replaceable] readonly attribute Screen screen;
-    [Replaceable] readonly attribute History history;
-    [Replaceable] readonly attribute BarProp locationbar;
-    [Replaceable] readonly attribute BarProp menubar;
-    [Replaceable] readonly attribute BarProp personalbar;
-    [Replaceable] readonly attribute BarProp scrollbars;
-    [Replaceable] readonly attribute BarProp statusbar;
-    [Replaceable] readonly attribute BarProp toolbar;
-    [Replaceable, PerWorldBindings, ActivityLogging=GetterForIsolatedWorlds] readonly attribute Navigator navigator;
+    readonly attribute Screen screen;
+    readonly attribute History history;
+    [Replaceable, MeasureAs=BarPropLocationbar] readonly attribute BarProp locationbar;
+    [Replaceable, MeasureAs=BarPropMenubar] readonly attribute BarProp menubar;
+    [Replaceable, MeasureAs=BarPropPersonalbar] readonly attribute BarProp personalbar;
+    [Replaceable, MeasureAs=BarPropScrollbars] readonly attribute BarProp scrollbars;
+    [Replaceable, MeasureAs=BarPropStatusbar] readonly attribute BarProp statusbar;
+    [Replaceable, MeasureAs=BarPropToolbar] readonly attribute BarProp toolbar;
+    [LogActivity=GetterOnly] readonly attribute Navigator navigator;
     [Replaceable] readonly attribute Navigator clientInformation;
-    [DoNotCheckSecurity, Unforgeable, Replaceable, PerWorldBindings, ActivityLogging=ForIsolatedWorlds, PutForwards=href] readonly attribute Location location;
+    [DoNotCheckSecurity, Unforgeable, Replaceable, LogActivity, PutForwards=href] readonly attribute Location location;
     [Custom, MeasureAs=WindowEvent, NotEnumerable] attribute Event event;
 
     Selection getSelection();
@@ -61,14 +63,15 @@
                             DOMString name,
                             optional DOMString options);
 
-    [Custom] any showModalDialog(DOMString url,
+    [RuntimeEnabled=ShowModalDialog, Custom] any showModalDialog(DOMString url,
                                        optional any dialogArgs,
                                        optional DOMString featureArgs);
 
-    void alert([Default=Undefined] optional DOMString message);
-    boolean confirm([Default=Undefined] optional DOMString message);
-    [TreatReturnedNullStringAs=Null] DOMString prompt([Default=Undefined] optional DOMString message,
-                                                [TreatNullAs=NullString, TreatUndefinedAs=NullString,Default=Undefined] optional DOMString defaultValue);
+    void alert();
+    void alert(DOMString message);
+    boolean confirm(optional DOMString message = null);
+    [TreatReturnedNullStringAs=Null] DOMString prompt(optional DOMString message = null,
+                                                      optional DOMString defaultValue = null);
 
     boolean find([Default=Undefined] optional DOMString string,
                  [Default=Undefined] optional boolean caseSensitive,
@@ -78,7 +81,7 @@
                  [Default=Undefined] optional boolean searchInFrames,
                  [Default=Undefined] optional boolean showDialog);
 
-    [Replaceable] readonly attribute  boolean offscreenBuffering;
+    [Replaceable, MeasureAs=WindowOffscreenBuffering] readonly attribute boolean offscreenBuffering;
 
     [Replaceable] readonly attribute long outerHeight;
     [Replaceable] readonly attribute long outerWidth;
@@ -93,9 +96,14 @@
     readonly attribute long pageXOffset;
     readonly attribute long pageYOffset;
 
+    // Overloading can be replaced by optional if RuntimeEnabled is removed, by
+    // changing the third argument to *optional* Dictionary scrollOptions
     void scrollBy(long x, long y);
+    [RuntimeEnabled=CSSOMSmoothScroll, RaisesException] void scrollBy(long x, long y, Dictionary scrollOptions);
     void scrollTo(long x, long y);
+    [RuntimeEnabled=CSSOMSmoothScroll, RaisesException] void scrollTo(long x, long y, Dictionary scrollOptions);
     void scroll(long x, long y);
+    [RuntimeEnabled=CSSOMSmoothScroll, RaisesException] void scroll(long x, long y, Dictionary scrollOptions);
     void moveBy([Default=Undefined] optional float x, [Default=Undefined] optional float y); // FIXME: this should take longs not floats.
     void moveTo([Default=Undefined] optional float x, [Default=Undefined] optional float y); // FIXME: this should take longs not floats.
     void resizeBy([Default=Undefined] optional float x, [Default=Undefined] optional float y); // FIXME: this should take longs not floats.
@@ -108,9 +116,9 @@
     attribute DOMString name;
 
     attribute DOMString status;
-    attribute DOMString defaultStatus;
+    [MeasureAs=WindowDefaultStatus] attribute DOMString defaultStatus;
     // This attribute is an alias of defaultStatus and is necessary for legacy uses.
-    [ImplementedAs=defaultStatus] attribute DOMString defaultstatus;
+    [ImplementedAs=defaultStatus, MeasureAs=WindowDefaultstatus] attribute DOMString defaultstatus;
 
     // Self referential attributes
     [Replaceable, DoNotCheckSecurity] readonly attribute Window self;
@@ -131,42 +139,42 @@
     readonly attribute StyleMedia styleMedia;
 
     // DOM Level 2 Style Interface
-    [PerWorldBindings] CSSStyleDeclaration getComputedStyle([Default=Undefined] optional Element element,
-                                                              [TreatNullAs=NullString, TreatUndefinedAs=NullString,Default=Undefined] optional DOMString pseudoElement);
+    CSSStyleDeclaration getComputedStyle([Default=Undefined] optional Element element,
+                                                            [TreatNullAs=NullString, TreatUndefinedAs=NullString, Default=Undefined] optional DOMString pseudoElement);
 
     // WebKit extensions
-    CSSRuleList getMatchedCSSRules([Default=Undefined] optional Element element,
-                                   [TreatNullAs=NullString, TreatUndefinedAs=NullString,Default=Undefined] optional DOMString pseudoElement);
+    [MeasureAs=GetMatchedCSSRules] CSSRuleList getMatchedCSSRules([Default=Undefined] optional Element element,
+                                                                  [TreatNullAs=NullString, TreatUndefinedAs=NullString, Default=Undefined] optional DOMString pseudoElement);
 
     [Replaceable] readonly attribute double devicePixelRatio;
 
-    WebKitPoint webkitConvertPointFromPageToNode([Default=Undefined] optional Node node,
-                                                 [Default=Undefined] optional WebKitPoint p);
-    WebKitPoint webkitConvertPointFromNodeToPage([Default=Undefined] optional Node node,
-                                                 [Default=Undefined] optional WebKitPoint p);
+    [MeasureAs=PrefixedConvertPointFromPageToNode] WebKitPoint webkitConvertPointFromPageToNode([Default=Undefined] optional Node node,
+                                                                                                [Default=Undefined] optional WebKitPoint p);
+    [MeasureAs=PrefixedConvertPointFromNodeToPage] WebKitPoint webkitConvertPointFromNodeToPage([Default=Undefined] optional Node node,
+                                                                                                [Default=Undefined] optional WebKitPoint p);
 
-    [RuntimeEnabled=ApplicationCache, PerWorldBindings, ActivityLogging=GetterForIsolatedWorlds] readonly attribute ApplicationCache applicationCache;
+    [RuntimeEnabled=ApplicationCache, LogActivity=GetterOnly] readonly attribute ApplicationCache applicationCache;
 
-    [RuntimeEnabled=SessionStorage, PerWorldBindings, ActivityLogging=GetterForIsolatedWorlds, RaisesException=Getter] readonly attribute Storage sessionStorage;
-    [RuntimeEnabled=LocalStorage, PerWorldBindings, ActivityLogging=GetterForIsolatedWorlds, RaisesException=Getter] readonly attribute Storage localStorage;
+    [RuntimeEnabled=SessionStorage, LogActivity=GetterOnly, RaisesException=Getter] readonly attribute Storage sessionStorage;
+    [RuntimeEnabled=LocalStorage, LogActivity=GetterOnly, RaisesException=Getter] readonly attribute Storage localStorage;
 
     // This is the interface orientation in degrees. Some examples are:
     //  0 is straight up; -90 is when the device is rotated 90 clockwise;
     //  90 is when rotated counter clockwise.
-    [Conditional=ORIENTATION_EVENTS] readonly attribute long orientation;
+    [RuntimeEnabled=OrientationEvent, MeasureAs=WindowOrientation] readonly attribute long orientation;
 
     [Replaceable] readonly attribute Console console;
 
     // cross-document messaging
-    [DoNotCheckSecurity, Custom, RaisesException] void postMessage(SerializedScriptValue message, DOMString targetOrigin, optional Array messagePorts);
+    [DoNotCheckSecurity, Custom, RaisesException] void postMessage(SerializedScriptValue message, DOMString targetOrigin, optional MessagePort[] messagePorts);
 
     [Replaceable] readonly attribute Performance performance;
 
     [MeasureAs=UnprefixedRequestAnimationFrame] long requestAnimationFrame(RequestAnimationFrameCallback callback);
     void cancelAnimationFrame(long id);
-    [MeasureAs=PrefixedRequestAnimationFrame] long webkitRequestAnimationFrame(RequestAnimationFrameCallback callback);
-    [ImplementedAs=cancelAnimationFrame] void webkitCancelAnimationFrame(long id);
-    [ImplementedAs=cancelAnimationFrame] void webkitCancelRequestAnimationFrame(long id); // This is a deprecated alias for webkitCancelAnimationFrame(). Remove this when removing vendor prefix.
+    [DeprecateAs=PrefixedRequestAnimationFrame] long webkitRequestAnimationFrame(RequestAnimationFrameCallback callback);
+    [DeprecateAs=PrefixedCancelAnimationFrame, ImplementedAs=cancelAnimationFrame] void webkitCancelAnimationFrame(long id);
+    [DeprecateAs=PrefixedCancelRequestAnimationFrame, ImplementedAs=cancelAnimationFrame] void webkitCancelRequestAnimationFrame(long id);
 
     [Replaceable] readonly attribute CSS CSS;
 
@@ -174,9 +182,7 @@
     [RuntimeEnabled=CSSAnimationUnprefixed] attribute EventHandler onanimationend;
     [RuntimeEnabled=CSSAnimationUnprefixed] attribute EventHandler onanimationiteration;
     [RuntimeEnabled=CSSAnimationUnprefixed] attribute EventHandler onanimationstart;
-    [RuntimeEnabled=DeviceMotion] attribute EventHandler ondevicemotion;
-    [RuntimeEnabled=DeviceOrientation] attribute EventHandler ondeviceorientation;
-    [Conditional=ORIENTATION_EVENTS] attribute EventHandler onorientationchange;
+    [RuntimeEnabled=OrientationEvent] attribute EventHandler onorientationchange;
     attribute EventHandler onsearch;
     [RuntimeEnabled=Touch] attribute EventHandler ontouchcancel;
     [RuntimeEnabled=Touch] attribute EventHandler ontouchend;
@@ -187,57 +193,25 @@
     attribute EventHandler onwebkitanimationiteration;
     attribute EventHandler onwebkitanimationstart;
     attribute EventHandler onwebkittransitionend;
-    [PerWorldBindings, ActivityLogging=SetterForIsolatedWorlds] attribute EventHandler onwheel;
+    [LogActivity=SetterOnly] attribute EventHandler onwheel;
 
-    [DeprecateAs=CaptureEvents] void captureEvents();
-    [DeprecateAs=ReleaseEvents] void releaseEvents();
+    [MeasureAs=WindowCaptureEvents] void captureEvents();
+    [MeasureAs=WindowReleaseEvents] void releaseEvents();
 
     // Additional constructors.
-    attribute TransitionEventConstructor WebKitTransitionEvent;
+    [MeasureAs=PrefixedTransitionEventConstructor] attribute TransitionEventConstructor WebKitTransitionEvent;
     [RuntimeEnabled=CSSAnimationUnprefixed] attribute WebKitAnimationEventConstructor AnimationEvent;
-    // Mozilla has a separate XMLDocument object for XML documents.
-    // We just use Document for this.
-    attribute DocumentConstructor XMLDocument;
-    attribute URLConstructor webkitURL; // FIXME: deprecate this.
-    attribute MutationObserverConstructor WebKitMutationObserver; // FIXME: Add metrics to determine when we can remove this.
-    attribute IDBCursorConstructor webkitIDBCursor;
-    attribute IDBDatabaseConstructor webkitIDBDatabase;
-    attribute IDBFactoryConstructor webkitIDBFactory;
-    attribute IDBIndexConstructor webkitIDBIndex;
-    attribute IDBKeyRangeConstructor webkitIDBKeyRange;
-    attribute IDBObjectStoreConstructor webkitIDBObjectStore;
-    attribute IDBRequestConstructor webkitIDBRequest;
-    attribute IDBTransactionConstructor webkitIDBTransaction;
-
-    // Constructors whose name does not match the interface name.
-    // FIXME: Remove these once [ImplementedAs] is used and once constructor names match interface names.
-    [RuntimeEnabled=MediaStream] attribute MediaStreamConstructor webkitMediaStream;
-    [Conditional=WEB_AUDIO, RuntimeEnabled=WebAudio] attribute AudioContextConstructor webkitAudioContext;
-    [Conditional=WEB_AUDIO, RuntimeEnabled=WebAudio] attribute OfflineAudioContextConstructor webkitOfflineAudioContext;
-    [RuntimeEnabled=PeerConnection] attribute RTCPeerConnectionConstructor webkitRTCPeerConnection;
-    [RuntimeEnabled=ScriptedSpeech] attribute SpeechGrammarConstructor webkitSpeechGrammar;
-    [RuntimeEnabled=ScriptedSpeech] attribute SpeechGrammarListConstructor webkitSpeechGrammarList;
-    [RuntimeEnabled=ScriptedSpeech] attribute SpeechRecognitionConstructor webkitSpeechRecognition;
-    [RuntimeEnabled=ScriptedSpeech] attribute SpeechRecognitionErrorConstructor webkitSpeechRecognitionError;
-    [RuntimeEnabled=ScriptedSpeech] attribute SpeechRecognitionEventConstructor webkitSpeechRecognitionEvent;
-    [Conditional=WEB_AUDIO] attribute PannerNodeConstructor webkitAudioPannerNode;
-
-    // Prefixed ShadowRoot constructor should be phased out eventually, but for the moment it must be always exposed.
-    // Unprefixed ShadowRoot constructor should be visible when the feature flag is enabled.
-    // FIXME: When it's ready to remove WebKitShadowRoot, get rid of both constructors from Window.idl and remove
-    // [NoInterfaceObject] from ShadowRoot interface definition.
-    [RuntimeEnabled=ShadowDOM] attribute ShadowRootConstructor ShadowRoot;
-    [MeasureAs=PrefixedShadowRootConstructor] attribute ShadowRootConstructor WebKitShadowRoot;
+    [MeasureAs=PrefixedWindowURL] attribute URLConstructor webkitURL; // FIXME: deprecate this.
+    [MeasureAs=PrefixedMutationObserverConstructor] attribute MutationObserverConstructor WebKitMutationObserver;
 
     // window.toString() requires special handling in V8
     [DoNotCheckSignature, DoNotCheckSecurity, Custom, NotEnumerable] DOMString toString();
 
-    [ImplementedAs=anonymousIndexedGetter, NotEnumerable] getter Window(unsigned long index);
+    [NotEnumerable] getter Window (unsigned long index);
     [Custom, NotEnumerable] getter Window (DOMString name);
 };
 
 Window implements GlobalEventHandlers;
-Window implements ImageBitmapFactories;
 Window implements WindowBase64;
 Window implements WindowEventHandlers;
 Window implements WindowTimers;

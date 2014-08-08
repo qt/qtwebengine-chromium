@@ -23,6 +23,14 @@ int DeviceDisplayInfo::GetDisplayWidth() {
   return SharedDeviceDisplayInfo::GetInstance()->GetDisplayWidth();
 }
 
+int DeviceDisplayInfo::GetPhysicalDisplayHeight() {
+  return SharedDeviceDisplayInfo::GetInstance()->GetPhysicalDisplayHeight();
+}
+
+int DeviceDisplayInfo::GetPhysicalDisplayWidth() {
+  return SharedDeviceDisplayInfo::GetInstance()->GetPhysicalDisplayWidth();
+}
+
 int DeviceDisplayInfo::GetBitsPerPixel() {
   return SharedDeviceDisplayInfo::GetInstance()->GetBitsPerPixel();
 }
@@ -37,6 +45,10 @@ double DeviceDisplayInfo::GetDIPScale() {
 
 int DeviceDisplayInfo::GetSmallestDIPWidth() {
   return SharedDeviceDisplayInfo::GetInstance()->GetSmallestDIPWidth();
+}
+
+int DeviceDisplayInfo::GetRotationDegrees() {
+  return SharedDeviceDisplayInfo::GetInstance()->GetRotationDegrees();
 }
 
 }  // namespace gfx

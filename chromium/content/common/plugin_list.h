@@ -34,7 +34,6 @@ namespace content {
 // This object is thread safe.
 class CONTENT_EXPORT PluginList {
  public:
-
   // Gets the one instance of the PluginList.
   static PluginList* Singleton();
 
@@ -139,6 +138,13 @@ class CONTENT_EXPORT PluginList {
   void GetPluginPathsToLoad(std::vector<base::FilePath>* plugin_paths,
                             bool include_npapi);
 
+  // Signals that plugin loading will start. This method should be called before
+  // loading plugins with a different instance of this class. Returns false if
+  // the plugin list is up to date.
+  // When loading has finished, SetPlugins() should be called with the list of
+  // plugins.
+  bool PrepareForPluginLoading();
+
   // Clears the internal list of Plugins and copies them from the vector.
   void SetPlugins(const std::vector<WebPluginInfo>& plugins);
 
@@ -151,18 +157,6 @@ class CONTENT_EXPORT PluginList {
   // Returns false if the library couldn't be found, or if it's not a plugin.
   static bool ReadWebPluginInfo(const base::FilePath& filename,
                                 WebPluginInfo* info);
-
-#if defined(OS_POSIX) && !defined(OS_MACOSX)
-  // Parse the result of an NP_GetMIMEDescription() call.
-  // This API is only used on Unixes, and is exposed here for testing.
-  static void ParseMIMEDescription(const std::string& description,
-      std::vector<WebPluginMimeType>* mime_types);
-
-  // Extract a version number from a description string.
-  // This API is only used on Unixes, and is exposed here for testing.
-  static void ExtractVersionString(const std::string& version,
-                                   WebPluginInfo* info);
-#endif
 
  private:
   enum LoadingState {

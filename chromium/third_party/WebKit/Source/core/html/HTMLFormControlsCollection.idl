@@ -1,6 +1,7 @@
 /*
  * Copyright (C) 2006, 2007, 2012 Apple Inc. All rights reserved.
  * Copyright (C) 2006 Samuel Weinig <sam.weinig@gmail.com>
+ * Copyright (C) 2014 Samsung Electronics. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -20,9 +21,8 @@
 
 [
     DependentLifetime,
-    GenerateVisitDOMWrapper=ownerNode,
+    SetWrapperReferenceFrom=ownerNode,
 ] interface HTMLFormControlsCollection : HTMLCollection {
-    [ImplementedAs=item] getter Node(unsigned long index);
-    [Custom] Node namedItem([Default=Undefined] optional DOMString name);
-    [ImplementedAs=namedGetter, NotEnumerable] getter (RadioNodeList or Node)(DOMString name);
+    [ImplementedAs=item] getter Node (unsigned long index);
+    [ImplementedAs=namedGetter] getter (RadioNodeList or Element) namedItem(DOMString name); // shadows inherited namedItem()
 };

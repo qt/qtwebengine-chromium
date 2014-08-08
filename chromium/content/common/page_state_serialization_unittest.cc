@@ -23,7 +23,7 @@ inline bool isnan(double num) { return !!_isnan(num); }
 #endif
 
 base::NullableString16 NS16(const char* s) {
-  return s ? base::NullableString16(ASCIIToUTF16(s), false) :
+  return s ? base::NullableString16(base::ASCIIToUTF16(s), false) :
              base::NullableString16();
 }
 
@@ -67,15 +67,15 @@ void ExpectEquality(const ExplodedHttpBody& a, const ExplodedHttpBody& b) {
 template <>
 void ExpectEquality(const ExplodedFrameState& a, const ExplodedFrameState& b) {
   EXPECT_EQ(a.url_string, b.url_string);
-  EXPECT_EQ(a.original_url_string, b.original_url_string);
   EXPECT_EQ(a.referrer, b.referrer);
+  EXPECT_EQ(a.referrer_policy, b.referrer_policy);
   EXPECT_EQ(a.target, b.target);
   EXPECT_EQ(a.state_object, b.state_object);
   ExpectEquality(a.document_state, b.document_state);
+  EXPECT_EQ(a.pinch_viewport_scroll_offset, b.pinch_viewport_scroll_offset);
   EXPECT_EQ(a.scroll_offset, b.scroll_offset);
   EXPECT_EQ(a.item_sequence_number, b.item_sequence_number);
   EXPECT_EQ(a.document_sequence_number, b.document_sequence_number);
-  EXPECT_EQ(a.target_frame_id, b.target_frame_id);
   EXPECT_EQ(a.page_scale_factor, b.page_scale_factor);
   ExpectEquality(a.http_body, b.http_body);
   ExpectEquality(a.children, b.children);
@@ -93,18 +93,18 @@ class PageStateSerializationTest : public testing::Test {
   void PopulateFrameState(ExplodedFrameState* frame_state) {
     // Invent some data for the various fields.
     frame_state->url_string = NS16("http://dev.chromium.org/");
-    frame_state->original_url_string = frame_state->url_string;
     frame_state->referrer = NS16("https://www.google.com/search?q=dev.chromium.org");
+    frame_state->referrer_policy = blink::WebReferrerPolicyAlways;
     frame_state->target = NS16("foo");
     frame_state->state_object = NS16(NULL);
     frame_state->document_state.push_back(NS16("1"));
     frame_state->document_state.push_back(NS16("q"));
     frame_state->document_state.push_back(NS16("text"));
     frame_state->document_state.push_back(NS16("dev.chromium.org"));
+    frame_state->pinch_viewport_scroll_offset = gfx::PointF(10, 15);
     frame_state->scroll_offset = gfx::Point(0, 100);
     frame_state->item_sequence_number = 1;
     frame_state->document_sequence_number = 2;
-    frame_state->target_frame_id = 3;
     frame_state->page_scale_factor = 2.0;
   }
 
@@ -135,14 +135,14 @@ class PageStateSerializationTest : public testing::Test {
       ExplodedFrameState* frame_state,
       bool is_child) {
     frame_state->url_string = NS16("http://chromium.org/");
-    frame_state->original_url_string = frame_state->url_string;
     frame_state->referrer = NS16("http://google.com/");
+    frame_state->referrer_policy = blink::WebReferrerPolicyDefault;
     if (!is_child)
       frame_state->target = NS16("target");
+    frame_state->pinch_viewport_scroll_offset = gfx::PointF(-1, -1);
     frame_state->scroll_offset = gfx::Point(42, -42);
     frame_state->item_sequence_number = 123;
     frame_state->document_sequence_number = 456;
-    frame_state->target_frame_id = 0;
     frame_state->page_scale_factor = 2.0f;
 
     frame_state->document_state.push_back(
@@ -361,11 +361,9 @@ TEST_F(PageStateSerializationTest, BadMessagesTest2) {
 }
 
 TEST_F(PageStateSerializationTest, DumpExpectedPageStateForBackwardsCompat) {
-  // Comment out this return statement to enable this code.  Use this code to
-  // generate data, based on the current serialization format, for the
-  // BackwardsCompat_vXX tests.
-  return;
-
+  // Change to #if 1 to enable this code.  Use this code to generate data, based
+  // on the current serialization format, for the BackwardsCompat_vXX tests.
+#if 0
   ExplodedPageState state;
   PopulatePageStateForBackwardsCompatTest(&state);
 
@@ -391,6 +389,7 @@ TEST_F(PageStateSerializationTest, DumpExpectedPageStateForBackwardsCompat) {
   }
 
   fclose(fp);
+#endif
 }
 
 #if !defined(OS_ANDROID)
@@ -419,6 +418,10 @@ TEST_F(PageStateSerializationTest, BackwardsCompat_v15) {
 
 TEST_F(PageStateSerializationTest, BackwardsCompat_v16) {
   TestBackwardsCompat(16);
+}
+
+TEST_F(PageStateSerializationTest, BackwardsCompat_v18) {
+  TestBackwardsCompat(18);
 }
 
 }  // namespace

@@ -53,51 +53,50 @@ namespace WebCore {
 enum RepaintStatus {
     NeedsNormalRepaint = 0,
     NeedsFullRepaint = 1 << 0,
-    NeedsFullRepaintForPositionedMovementLayout = 1 << 1
+    NeedsFullRepaintForPositionedMovementLayout = NeedsFullRepaint | 1 << 1
 };
 
-class RenderGeometryMap;
 class RenderLayer;
 class RenderLayerModelObject;
 
 class RenderLayerRepainter {
     WTF_MAKE_NONCOPYABLE(RenderLayerRepainter);
 public:
-    RenderLayerRepainter(RenderLayerModelObject*);
+    RenderLayerRepainter(RenderLayerModelObject&);
 
-    // Return a cached repaint rect, computed relative to the layer renderer's containerForRepaint.
+    // Return a cached repaint rect, computed relative to the layer renderer's containerForPaintInvalidation.
     LayoutRect repaintRect() const { return m_repaintRect; }
     LayoutRect repaintRectIncludingNonCompositingDescendants() const;
 
-    void repaintAfterLayout(RenderGeometryMap*, bool shouldCheckForRepaint);
-    void repaintIncludingNonCompositingDescendants(RenderLayerModelObject* repaintContainer);
-    void repaintIncludingDescendants();
+    void repaintAfterLayout(bool shouldCheckForRepaint);
+    void repaintIncludingNonCompositingDescendants();
 
     void setRepaintStatus(RepaintStatus status) { m_repaintStatus = status; }
 
-    void computeRepaintRects(const RenderLayerModelObject* repaintContainer, const RenderGeometryMap* = 0);
-    void computeRepaintRectsIncludingDescendants();
+    void computeRepaintRects();
+    void computeRepaintRectsIncludingNonCompositingDescendants();
 
     // Indicate that the layer contents need to be repainted. Only has an effect
     // if layer compositing is being used,
-    void setBackingNeedsRepaint();
     void setBackingNeedsRepaintInRect(const LayoutRect&); // r is in the coordinate space of the layer's render object
 
     void setFilterBackendNeedsRepaintingInRect(const LayoutRect&);
 
 private:
-    bool shouldRepaintAfterLayout() const;
+    void repaintIncludingNonCompositingDescendantsInternal(const RenderLayerModelObject* repaintContainer);
+
+    bool shouldRepaintLayer() const;
 
     void clearRepaintRects();
 
     RenderLayer* enclosingFilterRepaintLayer() const;
 
-    RenderLayerModelObject* m_renderer;
+    RenderLayerModelObject& m_renderer;
 
     unsigned m_repaintStatus; // RepaintStatus
 
     LayoutRect m_repaintRect; // Cached repaint rects. Used by layout.
-    LayoutRect m_outlineBox;
+    LayoutPoint m_offset;
 };
 
 } // namespace WebCore

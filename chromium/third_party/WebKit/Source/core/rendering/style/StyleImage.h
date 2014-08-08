@@ -49,9 +49,9 @@ public:
         return data() == other.data();
     }
 
-    virtual PassRefPtr<CSSValue> cssValue() const = 0;
+    virtual PassRefPtrWillBeRawPtr<CSSValue> cssValue() const = 0;
 
-    virtual bool canRender(const RenderObject*, float /*multiplier*/) const { return true; }
+    virtual bool canRender(const RenderObject&, float /*multiplier*/) const { return true; }
     virtual bool isLoaded() const { return true; }
     virtual bool errorOccurred() const { return false; }
     virtual LayoutSize imageSize(const RenderObject*, float multiplier) const = 0;
@@ -72,16 +72,6 @@ public:
     ALWAYS_INLINE bool isPendingImage() const { return m_isPendingImage; }
     ALWAYS_INLINE bool isGeneratedImage() const { return m_isGeneratedImage; }
     ALWAYS_INLINE bool isImageResourceSet() const { return m_isImageResourceSet; }
-
-    static bool imagesEquivalent(const StyleImage* image1, const StyleImage* image2)
-    {
-        if (image1 != image2) {
-            if (!image1 || !image2)
-                return false;
-            return *image1 == *image2;
-        }
-        return true;
-    }
 
 protected:
     StyleImage()

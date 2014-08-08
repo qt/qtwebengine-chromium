@@ -52,29 +52,50 @@ public:
      *  pixels in SkPMColor format.
      */
     static SkSurface* NewRasterPMColor(int width, int height) {
-        SkImageInfo info = {
-            width, height, kPMColor_SkColorType, kPremul_SkAlphaType
-        };
-        return NewRaster(info);
+        return NewRaster(SkImageInfo::MakeN32Premul(width, height));
     }
 
     /**
-     *  Return a new surface whose contents will be recorded into a picture.
-     *  When this surface is drawn into another canvas, its contents will be
-     *  "replayed" into that canvas.
+     *  Text rendering modes that can be passed to NewRenderTarget*
      */
-    static SkSurface* NewPicture(int width, int height);
+    enum TextRenderMode {
+        /**
+         *  This will use the standard text rendering method
+         */
+        kStandard_TextRenderMode,
+        /**
+         *  This will use signed distance fields for text rendering when possible
+         */
+        kDistanceField_TextRenderMode,
+    };
 
     /**
      *  Return a new surface using the specified render target.
      */
-    static SkSurface* NewRenderTargetDirect(GrContext*, GrRenderTarget*);
+    static SkSurface* NewRenderTargetDirect(GrRenderTarget*,
+                                            TextRenderMode trm = kStandard_TextRenderMode);
 
     /**
      *  Return a new surface whose contents will be drawn to an offscreen
      *  render target, allocated by the surface.
      */
-    static SkSurface* NewRenderTarget(GrContext*, const SkImageInfo&, int sampleCount = 0);
+    static SkSurface* NewRenderTarget(GrContext*, const SkImageInfo&, int sampleCount = 0,
+                                      TextRenderMode trm = kStandard_TextRenderMode);
+
+    /**
+     *  Return a new surface whose contents will be drawn to an offscreen
+     *  render target, allocated by the surface from the scratch texture pool
+     *  managed by the GrContext. The scratch texture pool serves the purpose
+     *  of retaining textures after they are no longer in use in order to
+     *  re-use them later without having to re-allocate.  Scratch textures
+     *  should be used in cases where high turnover is expected. This allows,
+     *  for example, the copy on write to recycle a texture from a recently
+     *  released SkImage snapshot of the surface.
+     *  Note: Scratch textures count against the GrContext's cached resource
+     *  budget.
+     */
+    static SkSurface* NewScratchRenderTarget(GrContext*, const SkImageInfo&, int sampleCount = 0,
+                                             TextRenderMode trm = kStandard_TextRenderMode);
 
     int width() const { return fWidth; }
     int height() const { return fHeight; }
@@ -151,8 +172,21 @@ public:
      */
     void draw(SkCanvas*, SkScalar x, SkScalar y, const SkPaint*);
 
+    /**
+     *  If the surface has direct access to its pixels (i.e. they are in local
+     *  RAM) return the const-address of those pixels, and if not null, return
+     *  the ImageInfo and rowBytes. The returned address is only valid while
+     *  the surface object is in scope, and no API call is made on the surface
+     *  or its canvas.
+     *
+     *  On failure, returns NULL and the info and rowBytes parameters are
+     *  ignored.
+     */
+    const void* peekPixels(SkImageInfo* info, size_t* rowBytes);
+
 protected:
     SkSurface(int width, int height);
+    SkSurface(const SkImageInfo&);
 
     // called by subclass if their contents have changed
     void dirtyGenerationID() {

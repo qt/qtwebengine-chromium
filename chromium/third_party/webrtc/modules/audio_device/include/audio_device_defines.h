@@ -63,14 +63,16 @@ public:
                                             const int32_t clockDrift,
                                             const uint32_t currentMicLevel,
                                             const bool keyPressed,
-                                            uint32_t& newMicLevel) = 0;   
+                                            uint32_t& newMicLevel) = 0;
 
     virtual int32_t NeedMorePlayData(const uint32_t nSamples,
                                      const uint8_t nBytesPerSample,
                                      const uint8_t nChannels,
                                      const uint32_t samplesPerSec,
                                      void* audioSamples,
-                                     uint32_t& nSamplesOut) = 0;
+                                     uint32_t& nSamplesOut,
+                                     int64_t* elapsed_time_ms,
+                                     int64_t* ntp_time_ms) = 0;
 
     // Method to pass captured data directly and unmixed to network channels.
     // |channel_ids| contains a list of VoE channels which are the
@@ -85,8 +87,8 @@ public:
     // will be ignored.
     // The return value is the new microphone volume, in the range of |0, 255].
     // When the volume does not need to be updated, it returns 0.
-    // TODO(xians): Make the interface pure virtual after libjingle has its
-    // implementation.
+    // TODO(xians): Remove this interface after Chrome and Libjingle switches
+    // to OnData().
     virtual int OnDataAvailable(const int voe_channels[],
                                 int number_of_voe_channels,
                                 const int16_t* audio_data,
@@ -97,6 +99,37 @@ public:
                                 int current_volume,
                                 bool key_pressed,
                                 bool need_audio_processing) { return 0; }
+
+    // Method to pass the captured audio data to the specific VoE channel.
+    // |voe_channel| is the id of the VoE channel which is the sink to the
+    // capture data.
+    // TODO(xians): Remove this interface after Libjingle switches to
+    // PushCaptureData().
+    virtual void OnData(int voe_channel, const void* audio_data,
+                        int bits_per_sample, int sample_rate,
+                        int number_of_channels,
+                        int number_of_frames) {}
+
+    // Method to push the captured audio data to the specific VoE channel.
+    // The data will not undergo audio processing.
+    // |voe_channel| is the id of the VoE channel which is the sink to the
+    // capture data.
+    // TODO(xians): Make the interface pure virtual after Libjingle
+    // has its implementation.
+    virtual void PushCaptureData(int voe_channel, const void* audio_data,
+                                 int bits_per_sample, int sample_rate,
+                                 int number_of_channels,
+                                 int number_of_frames) {}
+
+    // Method to pull mixed render audio data from all active VoE channels.
+    // The data will not be passed as reference for audio processing internally.
+    // TODO(xians): Support getting the unmixed render data from specific VoE
+    // channel.
+    virtual void PullRenderData(int bits_per_sample, int sample_rate,
+                                int number_of_channels, int number_of_frames,
+                                void* audio_data,
+                                int64_t* elapsed_time_ms,
+                                int64_t* ntp_time_ms) {}
 
 protected:
     virtual ~AudioTransport() {}

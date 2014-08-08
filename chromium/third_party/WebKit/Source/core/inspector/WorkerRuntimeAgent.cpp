@@ -42,12 +42,11 @@
 
 namespace WebCore {
 
-WorkerRuntimeAgent::WorkerRuntimeAgent(InstrumentingAgents* instrumentingAgents, InspectorCompositeState* state, InjectedScriptManager* injectedScriptManager, ScriptDebugServer* scriptDebugServer, WorkerGlobalScope* workerGlobalScope)
-    : InspectorRuntimeAgent(instrumentingAgents, state, injectedScriptManager, scriptDebugServer)
+WorkerRuntimeAgent::WorkerRuntimeAgent(InjectedScriptManager* injectedScriptManager, ScriptDebugServer* scriptDebugServer, WorkerGlobalScope* workerGlobalScope)
+    : InspectorRuntimeAgent(injectedScriptManager, scriptDebugServer)
     , m_workerGlobalScope(workerGlobalScope)
     , m_paused(false)
 {
-    m_instrumentingAgents->setWorkerRuntimeAgent(this);
 }
 
 WorkerRuntimeAgent::~WorkerRuntimeAgent()
@@ -55,14 +54,29 @@ WorkerRuntimeAgent::~WorkerRuntimeAgent()
     m_instrumentingAgents->setWorkerRuntimeAgent(0);
 }
 
+void WorkerRuntimeAgent::init()
+{
+    m_instrumentingAgents->setWorkerRuntimeAgent(this);
+}
+
+void WorkerRuntimeAgent::enable(ErrorString* errorString)
+{
+    if (m_enabled)
+        return;
+
+    InspectorRuntimeAgent::enable(errorString);
+    addExecutionContextToFrontend(m_workerGlobalScope->script()->scriptState(), true, m_workerGlobalScope->url(), "");
+}
+
 InjectedScript WorkerRuntimeAgent::injectedScriptForEval(ErrorString* error, const int* executionContextId)
 {
-    if (executionContextId) {
-        *error = "Execution context id is not supported for workers as there is only one execution context.";
-        return InjectedScript();
-    }
-    ScriptState* scriptState = scriptStateFromWorkerGlobalScope(m_workerGlobalScope);
-    return injectedScriptManager()->injectedScriptFor(scriptState);
+    if (!executionContextId)
+        return injectedScriptManager()->injectedScriptFor(m_workerGlobalScope->script()->scriptState());
+
+    InjectedScript injectedScript = injectedScriptManager()->injectedScriptForId(*executionContextId);
+    if (injectedScript.isEmpty())
+        *error = "Execution context with given id not found.";
+    return injectedScript;
 }
 
 void WorkerRuntimeAgent::muteConsole()
@@ -80,6 +94,11 @@ void WorkerRuntimeAgent::run(ErrorString*)
     m_paused = false;
 }
 
+void WorkerRuntimeAgent::isRunRequired(ErrorString*, bool* out_result)
+{
+    *out_result = m_paused;
+}
+
 void WorkerRuntimeAgent::willEvaluateWorkerScript(WorkerGlobalScope* context, int workerThreadStartMode)
 {
     if (workerThreadStartMode != PauseWorkerGlobalScopeOnStart)
@@ -88,7 +107,7 @@ void WorkerRuntimeAgent::willEvaluateWorkerScript(WorkerGlobalScope* context, in
     m_paused = true;
     MessageQueueWaitResult result;
     do {
-        result = context->thread()->runLoop().runInMode(context, WorkerDebuggerAgent::debuggerTaskMode);
+        result = context->thread()->runLoop().runDebuggerTask();
     // Keep waiting until execution is resumed.
     } while (result == MessageQueueMessageReceived && m_paused);
 }

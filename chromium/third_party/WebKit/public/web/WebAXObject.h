@@ -76,19 +76,19 @@ public:
     BLINK_EXPORT static void enableAccessibility();
     BLINK_EXPORT static bool accessibilityEnabled();
 
-    BLINK_EXPORT void startCachingComputedObjectAttributesUntilTreeMutates();
-    BLINK_EXPORT void stopCachingComputedObjectAttributes();
-
     // Temporary: this flag will only be toggleable until Chromium has it on by default.
     BLINK_EXPORT static void enableInlineTextBoxAccessibility();
 
     BLINK_EXPORT int axID() const;
 
-    // Update the underlying tree, and return true if this object is
+    // Update layout on the underlying tree, and return true if this object is
     // still valid (not detached). Note that calling this method
     // can cause other WebAXObjects to become invalid, too,
     // so always call isDetached if updateBackingStoreAndCheckValidity
     // has been called on any object, or if any other WebCore code has run.
+    BLINK_EXPORT bool updateLayoutAndCheckValidity();
+
+    // FIXME: Deprecated - remove once callers use updateLayoutAndCheckValidity, instead.
     BLINK_EXPORT bool updateBackingStoreAndCheckValidity();
 
     BLINK_EXPORT WebString accessibilityDescription() const;
@@ -123,11 +123,17 @@ public:
     BLINK_EXPORT bool isVisited() const;
 
     BLINK_EXPORT WebString accessKey() const;
+    BLINK_EXPORT WebAXObject ariaActiveDescendant() const;
+    BLINK_EXPORT bool ariaControls(WebVector<WebAXObject>& controlsElements) const;
+    BLINK_EXPORT bool ariaDescribedby(WebVector<WebAXObject>& describedbyElements) const;
+    BLINK_EXPORT bool ariaFlowTo(WebVector<WebAXObject>& flowToElements) const;
     BLINK_EXPORT bool ariaHasPopup() const;
+    BLINK_EXPORT bool ariaLabelledby(WebVector<WebAXObject>& labelledbyElements) const;
     BLINK_EXPORT bool ariaLiveRegionAtomic() const;
     BLINK_EXPORT bool ariaLiveRegionBusy() const;
     BLINK_EXPORT WebString ariaLiveRegionRelevant() const;
     BLINK_EXPORT WebString ariaLiveRegionStatus() const;
+    BLINK_EXPORT bool ariaOwns(WebVector<WebAXObject>& ownsElements) const;
     BLINK_EXPORT WebRect boundingBoxRect() const;
     BLINK_EXPORT bool canvasHasFallbackContent() const;
     BLINK_EXPORT WebPoint clickPoint() const;

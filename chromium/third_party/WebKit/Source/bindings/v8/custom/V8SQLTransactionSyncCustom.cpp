@@ -29,9 +29,9 @@
  */
 
 #include "config.h"
-#include "V8SQLTransactionSync.h"
+#include "bindings/modules/v8/V8SQLTransactionSync.h"
 
-#include "V8SQLResultSet.h"
+#include "bindings/modules/v8/V8SQLResultSet.h"
 #include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/V8Binding.h"
 #include "core/dom/ExceptionCode.h"
@@ -46,41 +46,44 @@ namespace WebCore {
 
 void V8SQLTransactionSync::executeSqlMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
+    ExceptionState exceptionState(ExceptionState::ExecutionContext, "executeSql", "SQLTransactionSync", info.Holder(), info.GetIsolate());
     if (!info.Length()) {
-        setDOMException(SyntaxError, info.GetIsolate());
+        exceptionState.throwDOMException(SyntaxError, ExceptionMessages::notEnoughArguments(1, 0));
+        exceptionState.throwIfNeeded();
         return;
     }
 
-    V8TRYCATCH_FOR_V8STRINGRESOURCE_VOID(V8StringResource<>, statement, info[0]);
+    TOSTRING_VOID(V8StringResource<>, statement, info[0]);
 
     Vector<SQLValue> sqlValues;
 
     if (info.Length() > 1 && !isUndefinedOrNull(info[1])) {
         if (!info[1]->IsObject()) {
-            setDOMException(TypeMismatchError, info.GetIsolate());
+            exceptionState.throwDOMException(TypeMismatchError, ExceptionMessages::argumentNullOrIncorrectType(1, "DOMString"));
+            exceptionState.throwIfNeeded();
             return;
         }
 
         uint32_t sqlArgsLength = 0;
         v8::Local<v8::Object> sqlArgsObject = info[1]->ToObject();
-        V8TRYCATCH_VOID(v8::Local<v8::Value>, length, sqlArgsObject->Get(v8AtomicString(info.GetIsolate(), "length")));
+        TONATIVE_VOID(v8::Local<v8::Value>, length, sqlArgsObject->Get(v8AtomicString(info.GetIsolate(), "length")));
 
         if (isUndefinedOrNull(length))
             sqlArgsLength = sqlArgsObject->GetPropertyNames()->Length();
         else
             sqlArgsLength = length->Uint32Value();
 
-        for (unsigned int i = 0; i < sqlArgsLength; ++i) {
-            v8::Handle<v8::Integer> key = v8::Integer::New(i, info.GetIsolate());
-            V8TRYCATCH_VOID(v8::Local<v8::Value>, value, sqlArgsObject->Get(key));
+        for (unsigned i = 0; i < sqlArgsLength; ++i) {
+            v8::Handle<v8::Integer> key = v8::Integer::New(info.GetIsolate(), i);
+            TONATIVE_VOID(v8::Local<v8::Value>, value, sqlArgsObject->Get(key));
 
             if (value.IsEmpty() || value->IsNull())
                 sqlValues.append(SQLValue());
             else if (value->IsNumber()) {
-                V8TRYCATCH_VOID(double, sqlValue, value->NumberValue());
+                TONATIVE_VOID(double, sqlValue, value->NumberValue());
                 sqlValues.append(SQLValue(sqlValue));
             } else {
-                V8TRYCATCH_FOR_V8STRINGRESOURCE_VOID(V8StringResource<>, sqlValue, value);
+                TOSTRING_VOID(V8StringResource<>, sqlValue, value);
                 sqlValues.append(SQLValue(sqlValue));
             }
         }
@@ -88,7 +91,6 @@ void V8SQLTransactionSync::executeSqlMethodCustom(const v8::FunctionCallbackInfo
 
     SQLTransactionSync* transaction = V8SQLTransactionSync::toNative(info.Holder());
 
-    ExceptionState exceptionState(info.Holder(), info.GetIsolate());
     v8::Handle<v8::Value> result = toV8(transaction->executeSQL(statement, sqlValues, exceptionState), info.Holder(), info.GetIsolate());
     if (exceptionState.throwIfNeeded())
         return;

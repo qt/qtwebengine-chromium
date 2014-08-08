@@ -19,9 +19,11 @@
 #include "base/sequenced_task_runner_helpers.h"
 #include "base/strings/string16.h"
 #include "build/build_config.h"
+#include "cc/resources/shared_bitmap_manager.h"
 #include "content/common/pepper_renderer_instance_data.h"
 #include "content/public/browser/browser_message_filter.h"
 #include "content/public/common/three_d_api_types.h"
+#include "ipc/message_filter.h"
 #include "media/audio/audio_parameters.h"
 #include "media/base/channel_layout.h"
 #include "net/cookies/canonical_cookie.h"
@@ -30,7 +32,6 @@
 #include "ui/surface/transport_dib.h"
 
 #if defined(OS_MACOSX)
-#include "base/mac/scoped_cftyperef.h"
 #include "content/common/mac/font_loader.h"
 #endif
 
@@ -51,17 +52,13 @@ class SharedMemory;
 class TaskRunner;
 }
 
-namespace gfx {
-class Rect;
-struct GpuMemoryBufferHandle;
-}
-
 namespace media {
 class AudioManager;
 struct MediaLogEvent;
 }
 
 namespace net {
+class CookieStore;
 class KeygenHandler;
 class URLRequestContext;
 class URLRequestContextGetter;
@@ -84,7 +81,6 @@ class RenderMessageFilter : public BrowserMessageFilter {
  public:
   // Create the filter.
   RenderMessageFilter(int render_process_id,
-                      bool is_guest,
                       PluginServiceImpl * plugin_service,
                       BrowserContext* browser_context,
                       net::URLRequestContextGetter* request_context,
@@ -93,13 +89,12 @@ class RenderMessageFilter : public BrowserMessageFilter {
                       MediaInternals* media_internals,
                       DOMStorageContextWrapper* dom_storage_context);
 
-  // IPC::ChannelProxy::MessageFilter methods:
+  // IPC::MessageFilter methods:
   virtual void OnChannelClosing() OVERRIDE;
   virtual void OnChannelConnected(int32 peer_pid) OVERRIDE;
 
   // BrowserMessageFilter methods:
-  virtual bool OnMessageReceived(const IPC::Message& message,
-                                 bool* message_was_ok) OVERRIDE;
+  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
   virtual void OnDestruct() const OVERRIDE;
   virtual base::TaskRunner* OverrideTaskRunnerForMessage(
       const IPC::Message& message) OVERRIDE;
@@ -108,10 +103,10 @@ class RenderMessageFilter : public BrowserMessageFilter {
 
   int render_process_id() const { return render_process_id_; }
 
-  // Returns the correct net::URLRequestContext depending on what type of url is
+  // Returns the correct net::CookieStore depending on what type of url is
   // given.
   // Only call on the IO thread.
-  net::URLRequestContext* GetRequestContextForURL(const GURL& url);
+  net::CookieStore* GetCookieStoreForURL(const GURL& url);
 
  private:
   friend class BrowserThread;
@@ -134,11 +129,12 @@ class RenderMessageFilter : public BrowserMessageFilter {
   void OnCreateFullscreenWidget(int opener_id,
                                 int* route_id,
                                 int* surface_id);
-  void OnSetCookie(const IPC::Message& message,
+  void OnSetCookie(int render_frame_id,
                    const GURL& url,
                    const GURL& first_party_for_cookies,
                    const std::string& cookie);
-  void OnGetCookies(const GURL& url,
+  void OnGetCookies(int render_frame_id,
+                    const GURL& url,
                     const GURL& first_party_for_cookies,
                     IPC::Message* reply_msg);
   void OnGetRawCookies(const GURL& url,
@@ -146,7 +142,8 @@ class RenderMessageFilter : public BrowserMessageFilter {
                        IPC::Message* reply_msg);
   void OnDeleteCookie(const GURL& url,
                       const std::string& cookieName);
-  void OnCookiesEnabled(const GURL& url,
+  void OnCookiesEnabled(int render_frame_id,
+                        const GURL& url,
                         const GURL& first_party_for_cookies,
                         bool* cookies_enabled);
 
@@ -189,10 +186,11 @@ class RenderMessageFilter : public BrowserMessageFilter {
   void OnOpenChannelToPpapiBroker(int routing_id,
                                   const base::FilePath& path);
   void OnGenerateRoutingID(int* route_id);
-  void OnDownloadUrl(const IPC::Message& message,
+  void OnDownloadUrl(int render_view_id,
                      const GURL& url,
                      const Referrer& referrer,
-                     const base::string16& suggested_name);
+                     const base::string16& suggested_name,
+                     const bool use_prompt);
   void OnCheckNotificationPermission(const GURL& source_origin,
                                      int* permission_level);
 
@@ -211,6 +209,16 @@ class RenderMessageFilter : public BrowserMessageFilter {
   // in the renderer on POSIX due to the sandbox.
   void OnAllocateSharedMemory(uint32 buffer_size,
                               base::SharedMemoryHandle* handle);
+  void AllocateSharedBitmapOnFileThread(uint32 buffer_size,
+                                        const cc::SharedBitmapId& id,
+                                        IPC::Message* reply_msg);
+  void OnAllocateSharedBitmap(uint32 buffer_size,
+                              const cc::SharedBitmapId& id,
+                              IPC::Message* reply_msg);
+  void OnAllocatedSharedBitmap(size_t buffer_size,
+                               const base::SharedMemoryHandle& handle,
+                               const cc::SharedBitmapId& id);
+  void OnDeletedSharedBitmap(const cc::SharedBitmapId& id);
   void OnResolveProxy(const GURL& url, IPC::Message* reply_msg);
 
   // Browser side transport DIB allocation
@@ -230,7 +238,8 @@ class RenderMessageFilter : public BrowserMessageFilter {
   void OnMediaLogEvents(const std::vector<media::MediaLogEvent>&);
 
   // Check the policy for getting cookies. Gets the cookies if allowed.
-  void CheckPolicyForCookies(const GURL& url,
+  void CheckPolicyForCookies(int render_frame_id,
+                             const GURL& url,
                              const GURL& first_party_for_cookies,
                              IPC::Message* reply_msg,
                              const net::CookieList& cookie_list);
@@ -247,7 +256,6 @@ class RenderMessageFilter : public BrowserMessageFilter {
   void OnCompletedOpenChannelToNpapiPlugin(
       OpenChannelToNpapiPluginCallback* client);
 
-  void OnUpdateIsDelayed(const IPC::Message& msg);
   void OnAre3DAPIsBlocked(int render_view_id,
                           const GURL& top_origin_url,
                           ThreeDAPIType requester,
@@ -261,11 +269,6 @@ class RenderMessageFilter : public BrowserMessageFilter {
                             base::FileDescriptor pcm_output,
                             uint32_t data_size);
 #endif
-
-  void OnAllocateGpuMemoryBuffer(uint32 width,
-                                 uint32 height,
-                                 uint32 internalformat,
-                                 gfx::GpuMemoryBufferHandle* handle);
 
   // Cached resource request dispatcher host and plugin service, guaranteed to
   // be non-null if Init succeeds. We do not own the objects, they are managed
@@ -293,8 +296,6 @@ class RenderMessageFilter : public BrowserMessageFilter {
 
   int render_process_id_;
 
-  bool is_guest_;
-
   std::set<OpenChannelToNpapiPluginCallback*> plugin_host_clients_;
 
   // Records the last time we sampled CPU usage of the renderer process.
@@ -306,10 +307,6 @@ class RenderMessageFilter : public BrowserMessageFilter {
 
   media::AudioManager* audio_manager_;
   MediaInternals* media_internals_;
-
-#if defined(OS_MACOSX)
-  base::ScopedCFTypeRef<CFTypeRef> last_io_surface_;
-#endif
 
   DISALLOW_COPY_AND_ASSIGN(RenderMessageFilter);
 };

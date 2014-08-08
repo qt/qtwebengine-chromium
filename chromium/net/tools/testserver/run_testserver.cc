@@ -25,8 +25,8 @@ int main(int argc, const char* argv[]) {
   base::MessageLoopForIO message_loop;
 
   // Process command line
-  CommandLine::Init(argc, argv);
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
+  base::CommandLine::Init(argc, argv);
+  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
 
   logging::LoggingSettings settings;
   settings.logging_dest = logging::LOG_TO_ALL;
@@ -113,7 +113,8 @@ int main(int argc, const char* argv[]) {
 
   if (!base::DirectoryExists(test_server->document_root())) {
     printf("Error: invalid doc root: \"%s\" does not exist!\n",
-        UTF16ToUTF8(test_server->document_root().LossyDisplayName()).c_str());
+        base::UTF16ToUTF8(
+            test_server->document_root().LossyDisplayName()).c_str());
     return -1;
   }
 

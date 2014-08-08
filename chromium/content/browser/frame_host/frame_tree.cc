@@ -12,6 +12,8 @@
 #include "content/browser/frame_host/navigator.h"
 #include "content/browser/frame_host/render_frame_host_factory.h"
 #include "content/browser/frame_host/render_frame_host_impl.h"
+#include "content/browser/renderer_host/render_view_host_factory.h"
+#include "content/browser/renderer_host/render_view_host_impl.h"
 
 namespace content {
 
@@ -29,15 +31,26 @@ bool FrameTreeNodeForId(int64 frame_tree_node_id,
   return true;
 }
 
-// TODO(creis): Remove this version along with FrameTreeNode::frame_id().
-bool FrameTreeNodeForFrameId(int64 frame_id,
-                             FrameTreeNode** out_node,
-                             FrameTreeNode* node) {
-  if (node->frame_id() == frame_id) {
+bool FrameTreeNodeForRoutingId(int routing_id,
+                               int process_id,
+                               FrameTreeNode** out_node,
+                               FrameTreeNode* node) {
+  // TODO(creis): Look through the swapped out RFHs as well.
+  if (node->current_frame_host()->GetProcess()->GetID() == process_id &&
+      node->current_frame_host()->GetRoutingID() == routing_id) {
     *out_node = node;
     // Terminate iteration once the node has been found.
     return false;
   }
+  return true;
+}
+
+// Iterate over the FrameTree to reset any node affected by the loss of the
+// given RenderViewHost's process.
+bool ResetNodesForNewProcess(RenderViewHost* render_view_host,
+                             FrameTreeNode* node) {
+  if (render_view_host == node->current_frame_host()->render_view_host())
+    node->ResetForNewProcess();
   return true;
 }
 
@@ -52,13 +65,14 @@ FrameTree::FrameTree(Navigator* navigator,
       render_view_delegate_(render_view_delegate),
       render_widget_delegate_(render_widget_delegate),
       manager_delegate_(manager_delegate),
-      root_(new FrameTreeNode(navigator,
+      root_(new FrameTreeNode(this,
+                              navigator,
                               render_frame_delegate,
                               render_view_delegate,
                               render_widget_delegate,
                               manager_delegate,
-                              FrameTreeNode::kInvalidFrameId,
-                              std::string())) {
+                              std::string())),
+      focused_frame_tree_node_id_(-1) {
 }
 
 FrameTree::~FrameTree() {
@@ -67,6 +81,13 @@ FrameTree::~FrameTree() {
 FrameTreeNode* FrameTree::FindByID(int64 frame_tree_node_id) {
   FrameTreeNode* node = NULL;
   ForEach(base::Bind(&FrameTreeNodeForId, frame_tree_node_id, &node));
+  return node;
+}
+
+FrameTreeNode* FrameTree::FindByRoutingID(int routing_id, int process_id) {
+  FrameTreeNode* node = NULL;
+  ForEach(
+      base::Bind(&FrameTreeNodeForRoutingId, routing_id, process_id, &node));
   return node;
 }
 
@@ -86,106 +107,165 @@ void FrameTree::ForEach(
   }
 }
 
-bool FrameTree::IsFirstNavigationAfterSwap() const {
-  return root_->frame_id() == FrameTreeNode::kInvalidFrameId;
-}
-
-void FrameTree::OnFirstNavigationAfterSwap(int main_frame_id) {
-  root_->set_frame_id(main_frame_id);
-}
-
-RenderFrameHostImpl* FrameTree::AddFrame(int render_frame_host_id,
-                                         int64 parent_frame_id,
-                                         int64 frame_id,
+RenderFrameHostImpl* FrameTree::AddFrame(FrameTreeNode* parent,
+                                         int new_routing_id,
                                          const std::string& frame_name) {
-  FrameTreeNode* parent = FindByFrameID(parent_frame_id);
-  // TODO(ajwong): Should the renderer be killed here? Would there be a race on
-  // shutdown that might make this case possible?
-  if (!parent)
-    return NULL;
-
-  scoped_ptr<FrameTreeNode> node(CreateNode(
-      frame_id, frame_name, render_frame_host_id, parent));
-  RenderFrameHostImpl* render_frame = node->render_frame_host();
-  parent->AddChild(node.Pass());
-  return render_frame;
+  scoped_ptr<FrameTreeNode> node(new FrameTreeNode(
+      this, parent->navigator(), render_frame_delegate_, render_view_delegate_,
+      render_widget_delegate_, manager_delegate_, frame_name));
+  FrameTreeNode* node_ptr = node.get();
+  // AddChild is what creates the RenderFrameHost.
+  parent->AddChild(node.Pass(), new_routing_id);
+  return node_ptr->current_frame_host();
 }
 
-void FrameTree::RemoveFrame(RenderFrameHostImpl* render_frame_host,
-                            int64 parent_frame_id,
-                            int64 frame_id) {
-  // If switches::kSitePerProcess is not specified, then the FrameTree only
-  // contains a node for the root element. However, even in this case
-  // frame detachments need to be broadcast outwards.
-  //
-  // TODO(ajwong): Move this below the |parent| check after the FrameTree is
-  // guaranteed to be correctly populated even without the
-  // switches::kSitePerProcess flag.
-  FrameTreeNode* parent = FindByFrameID(parent_frame_id);
-  FrameTreeNode* child = FindByFrameID(frame_id);
-  if (!on_frame_removed_.is_null()) {
-    on_frame_removed_.Run(
-        render_frame_host->render_view_host(), frame_id);
+void FrameTree::RemoveFrame(FrameTreeNode* child) {
+  FrameTreeNode* parent = child->parent();
+  if (!parent) {
+    NOTREACHED() << "Unexpected RemoveFrame call for main frame.";
+    return;
   }
 
-  // TODO(ajwong): Should the renderer be killed here? Would there be a race on
-  // shutdown that might make this case possible?
-  if (!parent || !child)
-    return;
+  // Notify observers of the frame removal.
+  RenderFrameHostImpl* render_frame_host = child->current_frame_host();
+  if (!on_frame_removed_.is_null()) {
+    on_frame_removed_.Run(
+        render_frame_host->render_view_host(),
+        render_frame_host->GetRoutingID());
+  }
 
   parent->RemoveChild(child);
 }
 
-void FrameTree::SetFrameUrl(int64 frame_id, const GURL& url) {
-  FrameTreeNode* node = FindByFrameID(frame_id);
-  // TODO(ajwong): Should the renderer be killed here? Would there be a race on
-  // shutdown that might make this case possible?
-  if (!node)
-    return;
-
-  if (node)
-    node->set_current_url(url);
+void FrameTree::ResetForMainFrameSwap() {
+  root_->ResetForNewProcess();
+  focused_frame_tree_node_id_ = -1;
 }
 
-void FrameTree::SwapMainFrame(RenderFrameHostImpl* render_frame_host) {
-  return root_->ResetForMainFrame(render_frame_host);
+void FrameTree::RenderProcessGone(RenderViewHost* render_view_host) {
+  // Walk the full tree looking for nodes that may be affected.  Once a frame
+  // crashes, all of its child FrameTreeNodes go away.
+  // Note that the helper function may call ResetForNewProcess on a node, which
+  // clears its children before we iterate over them.  That's ok, because
+  // ForEach does not add a node's children to the queue until after visiting
+  // the node itself.
+  ForEach(base::Bind(&ResetNodesForNewProcess, render_view_host));
 }
 
 RenderFrameHostImpl* FrameTree::GetMainFrame() const {
-  return root_->render_frame_host();
+  return root_->current_frame_host();
+}
+
+FrameTreeNode* FrameTree::GetFocusedFrame() {
+  return FindByID(focused_frame_tree_node_id_);
+}
+
+void FrameTree::SetFocusedFrame(FrameTreeNode* node) {
+  focused_frame_tree_node_id_ = node->frame_tree_node_id();
 }
 
 void FrameTree::SetFrameRemoveListener(
-    const base::Callback<void(RenderViewHostImpl*, int64)>& on_frame_removed) {
+    const base::Callback<void(RenderViewHostImpl*, int)>& on_frame_removed) {
   on_frame_removed_ = on_frame_removed;
 }
 
-FrameTreeNode* FrameTree::FindByFrameID(int64 frame_id) {
-  FrameTreeNode* node = NULL;
-  ForEach(base::Bind(&FrameTreeNodeForFrameId, frame_id, &node));
-  return node;
+RenderViewHostImpl* FrameTree::CreateRenderViewHostForMainFrame(
+    SiteInstance* site_instance,
+    int routing_id,
+    int main_frame_routing_id,
+    bool swapped_out,
+    bool hidden) {
+  DCHECK(main_frame_routing_id != MSG_ROUTING_NONE);
+  RenderViewHostMap::iterator iter =
+      render_view_host_map_.find(site_instance->GetId());
+  if (iter != render_view_host_map_.end()) {
+    // If a RenderViewHost is pending shutdown for this |site_instance|, put it
+    // in the map of RenderViewHosts pending shutdown. Otherwise there should
+    // not be a RenderViewHost for the SiteInstance.
+    CHECK_EQ(RenderViewHostImpl::STATE_PENDING_SHUTDOWN,
+             iter->second->rvh_state());
+    render_view_host_pending_shutdown_map_.insert(
+        std::pair<int, RenderViewHostImpl*>(site_instance->GetId(),
+                                            iter->second));
+    render_view_host_map_.erase(iter);
+  }
+  RenderViewHostImpl* rvh = static_cast<RenderViewHostImpl*>(
+      RenderViewHostFactory::Create(site_instance,
+                                    render_view_delegate_,
+                                    render_widget_delegate_,
+                                    routing_id,
+                                    main_frame_routing_id,
+                                    swapped_out,
+                                    hidden));
+
+  render_view_host_map_[site_instance->GetId()] = rvh;
+  return rvh;
 }
 
-scoped_ptr<FrameTreeNode> FrameTree::CreateNode(
-    int64 frame_id,
-    const std::string& frame_name,
-    int render_frame_host_id,
-    FrameTreeNode* parent_node) {
-  scoped_ptr<FrameTreeNode> frame_tree_node(new FrameTreeNode(
-      parent_node->navigator(), render_frame_delegate_, render_view_delegate_,
-      render_widget_delegate_, manager_delegate_, frame_id, frame_name));
+RenderViewHostImpl* FrameTree::GetRenderViewHostForSubFrame(
+    SiteInstance* site_instance) {
+  RenderViewHostMap::iterator iter =
+      render_view_host_map_.find(site_instance->GetId());
+  // TODO(creis): Mirror the frame tree so this check can't fail.
+  if (iter == render_view_host_map_.end())
+    return NULL;
+  return iter->second;
+}
 
-  scoped_ptr<RenderFrameHostImpl> render_frame_host(
-      RenderFrameHostFactory::Create(
-          parent_node->render_frame_host()->render_view_host(),
-          parent_node->render_frame_host()->delegate(),
-          this,
-          frame_tree_node.get(),
-          render_frame_host_id,
-          false));
+void FrameTree::RegisterRenderFrameHost(
+    RenderFrameHostImpl* render_frame_host) {
+  SiteInstance* site_instance =
+      render_frame_host->render_view_host()->GetSiteInstance();
+  RenderViewHostMap::iterator iter =
+      render_view_host_map_.find(site_instance->GetId());
+  CHECK(iter != render_view_host_map_.end());
 
-  frame_tree_node->set_render_frame_host(render_frame_host.release(), true);
-  return frame_tree_node.Pass();
+  iter->second->increment_ref_count();
+}
+
+void FrameTree::UnregisterRenderFrameHost(
+    RenderFrameHostImpl* render_frame_host) {
+  SiteInstance* site_instance =
+      render_frame_host->render_view_host()->GetSiteInstance();
+  int32 site_instance_id = site_instance->GetId();
+  RenderViewHostMap::iterator iter =
+      render_view_host_map_.find(site_instance_id);
+  if (iter != render_view_host_map_.end() &&
+      iter->second == render_frame_host->render_view_host()) {
+    // Decrement the refcount and shutdown the RenderViewHost if no one else is
+    // using it.
+    CHECK_GT(iter->second->ref_count(), 0);
+    iter->second->decrement_ref_count();
+    if (iter->second->ref_count() == 0) {
+      iter->second->Shutdown();
+      render_view_host_map_.erase(iter);
+    }
+  } else {
+    // The RenderViewHost should be in the list of RenderViewHosts pending
+    // shutdown.
+    bool render_view_host_found = false;
+    std::pair<RenderViewHostMultiMap::iterator,
+              RenderViewHostMultiMap::iterator> result =
+        render_view_host_pending_shutdown_map_.equal_range(site_instance_id);
+    for (RenderViewHostMultiMap::iterator multi_iter = result.first;
+         multi_iter != result.second;
+         ++multi_iter) {
+      if (multi_iter->second != render_frame_host->render_view_host())
+        continue;
+      render_view_host_found = true;
+      RenderViewHostImpl* rvh = multi_iter->second;
+      // Decrement the refcount and shutdown the RenderViewHost if no one else
+      // is using it.
+      CHECK_GT(rvh->ref_count(), 0);
+      rvh->decrement_ref_count();
+      if (rvh->ref_count() == 0) {
+        rvh->Shutdown();
+        render_view_host_pending_shutdown_map_.erase(multi_iter);
+      }
+      break;
+    }
+    CHECK(render_view_host_found);
+  }
 }
 
 }  // namespace content

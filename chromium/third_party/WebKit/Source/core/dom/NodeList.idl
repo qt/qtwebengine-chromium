@@ -19,14 +19,10 @@
  */
 
 [
-    Custom=VisitDOMWrapper,
     DependentLifetime,
+    SetWrapperReferenceFrom=virtualOwnerNode,
+    WillBeGarbageCollected,
 ] interface NodeList {
-
     getter Node item(unsigned long index);
-    [ImplementedAs=anonymousNamedGetter, OverrideBuiltins, NotEnumerable] getter (Node or unsigned long) (DOMString name);
-
     readonly attribute unsigned long length;
-
 };
-

@@ -40,7 +40,7 @@ namespace WebCore {
 
 class MIDIAccessorClient;
 
-class MIDIAccessor : public blink::WebMIDIAccessorClient {
+class MIDIAccessor FINAL : public blink::WebMIDIAccessorClient {
 public:
     static PassOwnPtr<MIDIAccessor> create(MIDIAccessorClient*);
 
@@ -48,11 +48,15 @@ public:
 
     void startSession();
     void sendMIDIData(unsigned portIndex, const unsigned char* data, size_t length, double timeStamp);
+    // MIDIAccessInitializer and MIDIAccess are both MIDIAccessClient.
+    // MIDIAccessInitializer is the first client and MIDIAccess takes over it
+    // once the initialization successfully finishes.
+    void setClient(MIDIAccessorClient* client) { m_client = client; }
 
     // blink::WebMIDIAccessorClient
     virtual void didAddInputPort(const blink::WebString& id, const blink::WebString& manufacturer, const blink::WebString& name, const blink::WebString& version) OVERRIDE;
     virtual void didAddOutputPort(const blink::WebString& id, const blink::WebString& manufacturer, const blink::WebString& name, const blink::WebString& version) OVERRIDE;
-    virtual void didStartSession(bool success) OVERRIDE;
+    virtual void didStartSession(bool success, const blink::WebString& error, const blink::WebString& message) OVERRIDE;
     virtual void didReceiveMIDIData(unsigned portIndex, const unsigned char* data, size_t length, double timeStamp) OVERRIDE;
 
 private:

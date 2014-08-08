@@ -59,13 +59,21 @@ class CppTypeGenerator(object):
     """
     return '%s_NONE' % self.FollowRef(type_).unix_name.upper()
 
+  def GetEnumLastValue(self, type_):
+    """Gets the enum value in the given model.Property indicating the last value
+    for the type.
+    """
+    return '%s_LAST' % self.FollowRef(type_).unix_name.upper()
+
   def GetEnumValue(self, type_, enum_value):
     """Gets the enum value of the given model.Property of the given type.
 
     e.g VAR_STRING
     """
-    value = '%s_%s' % (self.FollowRef(type_).unix_name.upper(),
-                       cpp_util.Classname(enum_value.name.upper()))
+    value = cpp_util.Classname(enum_value.name.upper())
+    prefix = (type_.cpp_enum_prefix_override or
+              self.FollowRef(type_).unix_name)
+    value = '%s_%s' % (prefix.upper(), value)
     # To avoid collisions with built-in OS_* preprocessor definitions, we add a
     # trailing slash to enum names that start with OS_.
     if value.startswith("OS_"):
@@ -89,10 +97,7 @@ class CppTypeGenerator(object):
       ref_type = self._FindType(type_.ref_type)
       if ref_type is None:
         raise KeyError('Cannot find referenced type: %s' % type_.ref_type)
-      if self._default_namespace is ref_type.namespace:
-        cpp_type = ref_type.name
-      else:
-        cpp_type = '%s::%s' % (ref_type.namespace.unix_name, ref_type.name)
+      cpp_type = self.GetCppType(ref_type)
     elif type_.property_type == PropertyType.BOOLEAN:
       cpp_type = 'bool'
     elif type_.property_type == PropertyType.INTEGER:
@@ -103,13 +108,16 @@ class CppTypeGenerator(object):
       cpp_type = 'double'
     elif type_.property_type == PropertyType.STRING:
       cpp_type = 'std::string'
-    elif type_.property_type == PropertyType.ENUM:
-      cpp_type = cpp_util.Classname(type_.name)
+    elif type_.property_type in (PropertyType.ENUM,
+                                 PropertyType.OBJECT,
+                                 PropertyType.CHOICES):
+      if self._default_namespace is type_.namespace:
+        cpp_type = cpp_util.Classname(type_.name)
+      else:
+        cpp_type = '%s::%s' % (type_.namespace.unix_name,
+                               cpp_util.Classname(type_.name))
     elif type_.property_type == PropertyType.ANY:
       cpp_type = 'base::Value'
-    elif (type_.property_type == PropertyType.OBJECT or
-          type_.property_type == PropertyType.CHOICES):
-      cpp_type = cpp_util.Classname(type_.name)
     elif type_.property_type == PropertyType.FUNCTION:
       # Functions come into the json schema compiler as empty objects. We can
       # record these as empty DictionaryValues so that we know if the function

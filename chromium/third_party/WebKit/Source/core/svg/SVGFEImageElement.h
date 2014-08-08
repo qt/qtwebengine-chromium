@@ -21,12 +21,11 @@
 #ifndef SVGFEImageElement_h
 #define SVGFEImageElement_h
 
-#include "SVGNames.h"
+#include "core/SVGNames.h"
 #include "core/fetch/ImageResource.h"
 #include "core/fetch/ResourcePtr.h"
 #include "core/svg/SVGAnimatedBoolean.h"
 #include "core/svg/SVGAnimatedPreserveAspectRatio.h"
-#include "core/svg/SVGExternalResourcesRequired.h"
 #include "core/svg/SVGFilterPrimitiveStandardAttributes.h"
 #include "core/svg/SVGURIReference.h"
 #include "core/svg/graphics/filters/SVGFEImage.h"
@@ -36,43 +35,36 @@ namespace WebCore {
 
 class SVGFEImageElement FINAL : public SVGFilterPrimitiveStandardAttributes,
                                 public SVGURIReference,
-                                public SVGExternalResourcesRequired,
                                 public ImageResourceClient {
 public:
-    static PassRefPtr<SVGFEImageElement> create(Document&);
+    DECLARE_NODE_FACTORY(SVGFEImageElement);
 
     bool currentFrameHasSingleSecurityOrigin() const;
 
     virtual ~SVGFEImageElement();
+    SVGAnimatedPreserveAspectRatio* preserveAspectRatio() { return m_preserveAspectRatio.get(); }
 
 private:
     explicit SVGFEImageElement(Document&);
 
     bool isSupportedAttribute(const QualifiedName&);
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual void svgAttributeChanged(const QualifiedName&);
-    virtual void notifyFinished(Resource*);
+    virtual void svgAttributeChanged(const QualifiedName&) OVERRIDE;
+    virtual void notifyFinished(Resource*) OVERRIDE;
 
-    virtual void addSubresourceAttributeURLs(ListHashSet<KURL>&) const;
-    virtual PassRefPtr<FilterEffect> build(SVGFilterBuilder*, Filter*);
+    virtual PassRefPtr<FilterEffect> build(SVGFilterBuilder*, Filter*) OVERRIDE;
 
     void clearResourceReferences();
     void fetchImageResource();
 
-    virtual void buildPendingResource();
+    virtual void buildPendingResource() OVERRIDE;
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
     virtual void removedFrom(ContainerNode*) OVERRIDE;
 
-    BEGIN_DECLARE_ANIMATED_PROPERTIES(SVGFEImageElement)
-        DECLARE_ANIMATED_PRESERVEASPECTRATIO(PreserveAspectRatio, preserveAspectRatio)
-        DECLARE_ANIMATED_STRING(Href, href)
-        DECLARE_ANIMATED_BOOLEAN(ExternalResourcesRequired, externalResourcesRequired)
-    END_DECLARE_ANIMATED_PROPERTIES
+    RefPtr<SVGAnimatedPreserveAspectRatio> m_preserveAspectRatio;
 
     ResourcePtr<ImageResource> m_cachedImage;
 };
-
-DEFINE_NODE_TYPE_CASTS(SVGFEImageElement, hasTagName(SVGNames::feImageTag));
 
 } // namespace WebCore
 

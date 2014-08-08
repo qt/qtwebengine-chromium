@@ -31,15 +31,18 @@
 #include "config.h"
 #include "modules/webmidi/NavigatorWebMIDI.h"
 
+#include "bindings/v8/ScriptPromise.h"
+#include "bindings/v8/ScriptPromiseResolver.h"
+#include "core/dom/DOMError.h"
 #include "core/dom/Document.h"
-#include "core/dom/ExecutionContext.h"
-#include "core/frame/Frame.h"
+#include "core/frame/LocalFrame.h"
 #include "core/frame/Navigator.h"
-#include "modules/webmidi/MIDIAccessPromise.h"
+#include "modules/webmidi/MIDIAccessInitializer.h"
+#include "modules/webmidi/MIDIOptions.h"
 
 namespace WebCore {
 
-NavigatorWebMIDI::NavigatorWebMIDI(Frame* frame)
+NavigatorWebMIDI::NavigatorWebMIDI(LocalFrame* frame)
     : DOMWindowProperty(frame)
 {
 }
@@ -53,30 +56,32 @@ const char* NavigatorWebMIDI::supplementName()
     return "NavigatorWebMIDI";
 }
 
-NavigatorWebMIDI* NavigatorWebMIDI::from(Navigator* navigator)
+NavigatorWebMIDI& NavigatorWebMIDI::from(Navigator& navigator)
 {
-    NavigatorWebMIDI* supplement = static_cast<NavigatorWebMIDI*>(Supplement<Navigator>::from(navigator, supplementName()));
+    NavigatorWebMIDI* supplement = static_cast<NavigatorWebMIDI*>(WillBeHeapSupplement<Navigator>::from(navigator, supplementName()));
     if (!supplement) {
-        supplement = new NavigatorWebMIDI(navigator->frame());
-        provideTo(navigator, supplementName(), adoptPtr(supplement));
+        supplement = new NavigatorWebMIDI(navigator.frame());
+        provideTo(navigator, supplementName(), adoptPtrWillBeNoop(supplement));
     }
-    return supplement;
+    return *supplement;
 }
 
-PassRefPtr<MIDIAccessPromise> NavigatorWebMIDI::requestMIDIAccess(Navigator* navigator, const Dictionary& options)
+ScriptPromise NavigatorWebMIDI::requestMIDIAccess(ScriptState* scriptState, Navigator& navigator, const Dictionary& options)
 {
-    return NavigatorWebMIDI::from(navigator)->requestMIDIAccess(options);
+    return NavigatorWebMIDI::from(navigator).requestMIDIAccess(scriptState, options);
 }
 
-PassRefPtr<MIDIAccessPromise> NavigatorWebMIDI::requestMIDIAccess(const Dictionary& options)
+ScriptPromise NavigatorWebMIDI::requestMIDIAccess(ScriptState* scriptState, const Dictionary& options)
 {
-    if (!frame())
-        return 0;
+    if (!frame() || frame()->document()->activeDOMObjectsAreStopped()) {
+        RefPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(scriptState);
+        ScriptPromise promise = resolver->promise();
+        // FIXME: Currently this rejection does not work because the context is stopped.
+        resolver->reject(DOMError::create("AbortError"));
+        return promise;
+    }
 
-    ExecutionContext* context = frame()->document();
-    ASSERT(context);
-
-    return MIDIAccessPromise::create(context, options);
+    return MIDIAccessInitializer::start(scriptState, MIDIOptions(options));
 }
 
 } // namespace WebCore

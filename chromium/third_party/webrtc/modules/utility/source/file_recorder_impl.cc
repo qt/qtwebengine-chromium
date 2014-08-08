@@ -12,7 +12,7 @@
 #include "webrtc/engine_configurations.h"
 #include "webrtc/modules/media_file/interface/media_file.h"
 #include "webrtc/modules/utility/source/file_recorder_impl.h"
-#include "webrtc/system_wrappers/interface/trace.h"
+#include "webrtc/system_wrappers/interface/logging.h"
 
 #ifdef WEBRTC_MODULE_UTILITY_VIDEO
     #include "critical_section_wrapper.h"
@@ -38,8 +38,6 @@ FileRecorder* FileRecorder::CreateFileRecorder(uint32_t instanceID,
 #ifdef WEBRTC_MODULE_UTILITY_VIDEO
         return new AviRecorder(instanceID, fileFormat);
 #else
-        WEBRTC_TRACE(kTraceError, kTraceFile, -1,
-                             "Invalid file format: %d", kFileFormatAviFile);
         assert(false);
         return NULL;
 #endif
@@ -115,13 +113,8 @@ int32_t FileRecorderImpl::StartRecordingAudioFile(
     }
     if( retVal != 0)
     {
-        WEBRTC_TRACE(
-            kTraceWarning,
-            kTraceVoice,
-            _instanceID,
-            "FileRecorder::StartRecording() failed to initialize file %s for\
- recording.",
-            fileName);
+        LOG(LS_WARNING) << "Failed to initialize file " << fileName
+                        << " for recording.";
 
         if(IsRecording())
         {
@@ -152,12 +145,7 @@ int32_t FileRecorderImpl::StartRecordingAudioFile(
     }
     if( retVal != 0)
     {
-        WEBRTC_TRACE(
-            kTraceWarning,
-            kTraceVoice,
-            _instanceID,
-            "FileRecorder::StartRecording() failed to initialize outStream for\
- recording.");
+        LOG(LS_WARNING) << "Failed to initialize outStream for recording.";
 
         if(IsRecording())
         {
@@ -184,12 +172,8 @@ int32_t FileRecorderImpl::RecordAudioToFile(
 {
     if (codec_info_.plfreq == 0)
     {
-        WEBRTC_TRACE(
-            kTraceWarning,
-            kTraceVoice,
-            _instanceID,
-            "FileRecorder::RecordAudioToFile() recording audio is not turned\
- on");
+        LOG(LS_WARNING) << "RecordAudioToFile() recording audio is not "
+                        << "turned on.";
         return -1;
     }
     AudioFrame tempAudioFrame;
@@ -250,13 +234,9 @@ int32_t FileRecorderImpl::RecordAudioToFile(
         if (_audioEncoder.Encode(*ptrAudioFrame, _audioBuffer,
                                  encodedLenInBytes) == -1)
         {
-            WEBRTC_TRACE(
-                kTraceWarning,
-                kTraceVoice,
-                _instanceID,
-                "FileRecorder::RecordAudioToFile() codec %s not supported or\
- failed to encode stream",
-                codec_info_.plname);
+            LOG(LS_WARNING) << "RecordAudioToFile() codec "
+                            << codec_info_.plname
+                            << " not supported or failed to encode stream.";
             return -1;
         }
     } else {
@@ -309,12 +289,8 @@ int32_t FileRecorderImpl::SetUpAudioEncoder()
     {
         if(_audioEncoder.SetEncodeCodec(codec_info_,_amrFormat) == -1)
         {
-            WEBRTC_TRACE(
-                kTraceError,
-                kTraceVoice,
-                _instanceID,
-                "FileRecorder::StartRecording() codec %s not supported",
-                codec_info_.plname);
+            LOG(LS_ERROR) << "SetUpAudioEncoder() codec "
+                          << codec_info_.plname << " not supported.";
             return -1;
         }
     }
@@ -342,31 +318,6 @@ int32_t FileRecorderImpl::WriteEncodedAudioData(
 
 
 #ifdef WEBRTC_MODULE_UTILITY_VIDEO
-class AudioFrameFileInfo
-{
-    public:
-       AudioFrameFileInfo(const int8_t* audioData,
-                     const uint16_t audioSize,
-                     const uint16_t audioMS,
-                     const TickTime& playoutTS)
-           : _audioData(), _audioSize(audioSize), _audioMS(audioMS),
-             _playoutTS(playoutTS)
-       {
-           if(audioSize > MAX_AUDIO_BUFFER_IN_BYTES)
-           {
-               assert(false);
-               _audioSize = 0;
-               return;
-           }
-           memcpy(_audioData, audioData, audioSize);
-       };
-    // TODO (hellner): either turn into a struct or provide get/set functions.
-    int8_t   _audioData[MAX_AUDIO_BUFFER_IN_BYTES];
-    uint16_t _audioSize;
-    uint16_t _audioMS;
-    TickTime _playoutTS;
-};
-
 AviRecorder::AviRecorder(uint32_t instanceID, FileFormats fileFormat)
     : FileRecorderImpl(instanceID, fileFormat),
       _videoOnly(false),
@@ -377,7 +328,7 @@ AviRecorder::AviRecorder(uint32_t instanceID, FileFormats fileFormat)
       _writtenAudioMS(0),
       _writtenVideoMS(0)
 {
-    _videoEncoder = new VideoCoder(instanceID);
+    _videoEncoder = new VideoCoder();
     _frameScaler = new FrameScaler();
     _videoFramesQueue = new VideoFramesQueue();
     _thread = ThreadWrapper::CreateThread(Run, this, kNormalPriority,
@@ -545,49 +496,39 @@ int32_t AviRecorder::ProcessAudio()
         {
             // Syncronize audio to the current frame to process by throwing away
             // audio samples with older timestamp than the video frame.
-            uint32_t numberOfAudioElements =
-                _audioFramesToWrite.GetSize();
-            for (uint32_t i = 0; i < numberOfAudioElements; ++i)
+            size_t numberOfAudioElements =
+                _audioFramesToWrite.size();
+            for (size_t i = 0; i < numberOfAudioElements; ++i)
             {
-                AudioFrameFileInfo* frameInfo =
-                    (AudioFrameFileInfo*)_audioFramesToWrite.First()->GetItem();
-                if(frameInfo)
+                AudioFrameFileInfo* frameInfo = _audioFramesToWrite.front();
+                if(TickTime::TicksToMilliseconds(
+                       frameInfo->_playoutTS.Ticks()) <
+                   frameToProcess->render_time_ms())
                 {
-                    if(TickTime::TicksToMilliseconds(
-                           frameInfo->_playoutTS.Ticks()) <
-                       frameToProcess->render_time_ms())
-                    {
-                        delete frameInfo;
-                        _audioFramesToWrite.PopFront();
-                    } else
-                    {
-                        break;
-                    }
+                    delete frameInfo;
+                    _audioFramesToWrite.pop_front();
+                } else
+                {
+                    break;
                 }
             }
         }
     }
     // Write all audio up to current timestamp.
     int32_t error = 0;
-    uint32_t numberOfAudioElements = _audioFramesToWrite.GetSize();
-    for (uint32_t i = 0; i < numberOfAudioElements; ++i)
+    size_t numberOfAudioElements = _audioFramesToWrite.size();
+    for (size_t i = 0; i < numberOfAudioElements; ++i)
     {
-        AudioFrameFileInfo* frameInfo =
-            (AudioFrameFileInfo*)_audioFramesToWrite.First()->GetItem();
-        if(frameInfo)
+        AudioFrameFileInfo* frameInfo = _audioFramesToWrite.front();
+        if((TickTime::Now() - frameInfo->_playoutTS).Milliseconds() > 0)
         {
-            if((TickTime::Now() - frameInfo->_playoutTS).Milliseconds() > 0)
-            {
-                _moduleFile->IncomingAudioData(frameInfo->_audioData,
-                                               frameInfo->_audioSize);
-                _writtenAudioMS += frameInfo->_audioMS;
-                delete frameInfo;
-                _audioFramesToWrite.PopFront();
-            } else {
-                break;
-            }
+            _moduleFile->IncomingAudioData(frameInfo->_audioData,
+                                           frameInfo->_audioSize);
+            _writtenAudioMS += frameInfo->_audioMS;
+            delete frameInfo;
+            _audioFramesToWrite.pop_front();
         } else {
-            _audioFramesToWrite.PopFront();
+            break;
         }
     }
     return error;
@@ -635,8 +576,8 @@ bool AviRecorder::Process()
             error = EncodeAndWriteVideoToFile( *frameToProcess);
             if( error != 0)
             {
-                WEBRTC_TRACE(kTraceError, kTraceVideo, _instanceID,
-                        "AviRecorder::Process() error writing to file.");
+                LOG(LS_ERROR) << "AviRecorder::Process() error writing to "
+                              << "file.";
                 break;
             } else {
                 uint32_t frameLengthMS = 1000 /
@@ -675,8 +616,7 @@ bool AviRecorder::Process()
         error = EncodeAndWriteVideoToFile( *frameToProcess);
         if(error != 0)
         {
-            WEBRTC_TRACE(kTraceError, kTraceVideo, _instanceID,
-                    "AviRecorder::Process() error writing to file.");
+            LOG(LS_ERROR) << "AviRecorder::Process() error writing to file.";
         } else {
             _writtenVideoMS += frameLengthMS;
         }
@@ -727,17 +667,12 @@ int32_t AviRecorder::EncodeAndWriteVideoToFile(I420VideoFrame& videoFrame)
                (int8_t*)(_videoEncodedData.payloadData),
                _videoEncodedData.payloadSize))
         {
-            WEBRTC_TRACE(kTraceError, kTraceVideo, _instanceID,
-                         "Error writing AVI file");
+            LOG(LS_ERROR) << "Error writing AVI file.";
             return -1;
         }
     } else {
-        WEBRTC_TRACE(
-            kTraceError,
-            kTraceVideo,
-            _instanceID,
-            "FileRecorder::RecordVideoToFile() frame dropped by encoder bitrate\
- likely to low.");
+        LOG(LS_ERROR) << "FileRecorder::RecordVideoToFile() frame dropped by "
+                      << "encoder, bitrate likely too low.";
     }
     return 0;
 }
@@ -750,6 +685,8 @@ int32_t AviRecorder::WriteEncodedAudioData(
     uint16_t millisecondsOfData,
     const TickTime* playoutTS)
 {
+    CriticalSectionScoped lock(_critSec);
+
     if (!IsRecording())
     {
         return -1;
@@ -762,7 +699,7 @@ int32_t AviRecorder::WriteEncodedAudioData(
     {
         return -1;
     }
-    if (_audioFramesToWrite.GetSize() > kMaxAudioBufferQueueLength)
+    if (_audioFramesToWrite.size() > kMaxAudioBufferQueueLength)
     {
         StopRecording();
         return -1;
@@ -771,15 +708,15 @@ int32_t AviRecorder::WriteEncodedAudioData(
 
     if(playoutTS)
     {
-        _audioFramesToWrite.PushBack(new AudioFrameFileInfo(audioBuffer,
-                                                            bufferLength,
-                                                            millisecondsOfData,
-                                                            *playoutTS));
+        _audioFramesToWrite.push_back(new AudioFrameFileInfo(audioBuffer,
+                                                             bufferLength,
+                                                             millisecondsOfData,
+                                                             *playoutTS));
     } else {
-        _audioFramesToWrite.PushBack(new AudioFrameFileInfo(audioBuffer,
-                                                            bufferLength,
-                                                            millisecondsOfData,
-                                                            TickTime::Now()));
+        _audioFramesToWrite.push_back(new AudioFrameFileInfo(audioBuffer,
+                                                             bufferLength,
+                                                             millisecondsOfData,
+                                                             TickTime::Now()));
     }
     _timeEvent.Set();
     return 0;

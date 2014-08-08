@@ -7,10 +7,12 @@
 
 #include "base/basictypes.h"
 #include "base/process/process_handle.h"
+#include "base/strings/string16.h"
 #include "content/common/content_export.h"
 #include "ppapi/c/pp_resource.h"
 #include "ppapi/c/pp_var.h"
 #include "ppapi/c/private/ppb_instance_private.h"
+#include "ui/base/ime/text_input_type.h"
 
 class GURL;
 
@@ -103,6 +105,18 @@ class PepperPluginInstance {
 
   // Sets a read-only property on the <embed> tag for this plugin instance.
   virtual void SetEmbedProperty(PP_Var key, PP_Var value) = 0;
+
+  // Sets the selected text for this plugin.
+  virtual void SetSelectedText(const base::string16& selected_text) = 0;
+
+  // Sets the link currently under the cursor.
+  virtual void SetLinkUnderCursor(const std::string& url) = 0;
+
+  // Sets the text input type for this plugin.
+  virtual void SetTextInputType(ui::TextInputType type) = 0;
+
+  // Posts a message to the JavaScript object for this instance.
+  virtual void PostMessageToJavaScript(PP_Var message) = 0;
 };
 
 }  // namespace content

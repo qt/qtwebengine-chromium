@@ -34,19 +34,18 @@
 
 namespace WebCore {
 
-class WebGLProgram : public WebGLSharedObject, public ScriptWrappable {
+class WebGLProgram FINAL : public WebGLSharedObject, public ScriptWrappable {
 public:
     virtual ~WebGLProgram();
 
-    static PassRefPtr<WebGLProgram> create(WebGLRenderingContext*);
+    static PassRefPtr<WebGLProgram> create(WebGLRenderingContextBase*);
 
     unsigned numActiveAttribLocations();
-    GC3Dint getActiveAttribLocation(GC3Duint index);
+    GLint getActiveAttribLocation(GLuint index);
 
     bool isUsingVertexAttrib0();
 
     bool linkStatus();
-    void setLinkStatus(bool);
 
     unsigned linkCount() const { return m_linkCount; }
 
@@ -56,24 +55,24 @@ public:
     // Also, we invalidate the cached program info.
     void increaseLinkCount();
 
-    WebGLShader* getAttachedShader(GC3Denum);
+    WebGLShader* getAttachedShader(GLenum);
     bool attachShader(WebGLShader*);
     bool detachShader(WebGLShader*);
 
 protected:
-    WebGLProgram(WebGLRenderingContext*);
+    WebGLProgram(WebGLRenderingContextBase*);
 
-    virtual void deleteObjectImpl(GraphicsContext3D*, Platform3DObject);
+    virtual void deleteObjectImpl(blink::WebGraphicsContext3D*, Platform3DObject) OVERRIDE;
 
 private:
-    virtual bool isProgram() const { return true; }
+    virtual bool isProgram() const OVERRIDE { return true; }
 
-    void cacheActiveAttribLocations(GraphicsContext3D*);
+    void cacheActiveAttribLocations(blink::WebGraphicsContext3D*);
     void cacheInfoIfNeeded();
 
-    Vector<GC3Dint> m_activeAttribLocations;
+    Vector<GLint> m_activeAttribLocations;
 
-    GC3Dint m_linkStatus;
+    GLint m_linkStatus;
 
     // This is used to track whether a WebGLUniformLocation belongs to this
     // program or not.

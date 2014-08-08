@@ -4,6 +4,7 @@
 
 #include "net/cert/cert_verify_proc.h"
 
+#include "base/basictypes.h"
 #include "base/metrics/histogram.h"
 #include "base/sha1.h"
 #include "base/strings/stringprintf.h"
@@ -20,7 +21,7 @@
 
 #if defined(USE_NSS) || defined(OS_IOS)
 #include "net/cert/cert_verify_proc_nss.h"
-#elif defined(USE_OPENSSL) && !defined(OS_ANDROID)
+#elif defined(USE_OPENSSL_CERTS) && !defined(OS_ANDROID)
 #include "net/cert/cert_verify_proc_openssl.h"
 #elif defined(OS_ANDROID)
 #include "net/cert/cert_verify_proc_android.h"
@@ -167,7 +168,7 @@ bool ExaminePublicKeys(const scoped_refptr<X509Certificate>& cert,
 CertVerifyProc* CertVerifyProc::CreateDefault() {
 #if defined(USE_NSS) || defined(OS_IOS)
   return new CertVerifyProcNSS();
-#elif defined(USE_OPENSSL) && !defined(OS_ANDROID)
+#elif defined(USE_OPENSSL_CERTS) && !defined(OS_ANDROID)
   return new CertVerifyProcOpenSSL();
 #elif defined(OS_ANDROID)
   return new CertVerifyProcAndroid();
@@ -261,19 +262,16 @@ int CertVerifyProc::Verify(X509Certificate* cert,
       rv = MapCertStatusToNetError(verify_result->cert_status);
   }
 
-#if !defined(OS_ANDROID)
   // Flag certificates from publicly-trusted CAs that are issued to intranet
   // hosts. While the CA/Browser Forum Baseline Requirements (v1.1) permit
   // these to be issued until 1 November 2015, they represent a real risk for
   // the deployment of gTLDs and are being phased out ahead of the hard
   // deadline.
-  //
-  // TODO(ppi): is_issued_by_known_root is incorrect on Android. Once this is
-  // fixed, re-enable this check for Android. crbug.com/116838
   if (verify_result->is_issued_by_known_root && IsHostnameNonUnique(hostname)) {
     verify_result->cert_status |= CERT_STATUS_NON_UNIQUE_NAME;
+    // CERT_STATUS_NON_UNIQUE_NAME will eventually become a hard error. For
+    // now treat it as a warning and do not map it to an error return value.
   }
-#endif
 
   return rv;
 }
@@ -344,6 +342,25 @@ bool CertVerifyProc::IsBlacklisted(X509Certificate* cert) {
     }
   }
 
+  // CloudFlare revoked all certificates issued prior to April 2nd, 2014. Thus
+  // all certificates where the CN ends with ".cloudflare.com" with a prior
+  // issuance date are rejected.
+  //
+  // The old certs had a lifetime of five years, so this can be removed April
+  // 2nd, 2019.
+  const std::string& cn = cert->subject().common_name;
+  static const char kCloudFlareCNSuffix[] = ".cloudflare.com";
+  // kCloudFlareEpoch is the base::Time internal value for midnight at the
+  // beginning of April 2nd, 2014, UTC.
+  static const int64 kCloudFlareEpoch = INT64_C(13040870400000000);
+  if (cn.size() > arraysize(kCloudFlareCNSuffix) - 1 &&
+      cn.compare(cn.size() - (arraysize(kCloudFlareCNSuffix) - 1),
+                 arraysize(kCloudFlareCNSuffix) - 1,
+                 kCloudFlareCNSuffix) == 0 &&
+      cert->valid_start() < base::Time::FromInternalValue(kCloudFlareEpoch)) {
+    return true;
+  }
+
   return false;
 }
 
@@ -351,7 +368,7 @@ bool CertVerifyProc::IsBlacklisted(X509Certificate* cert) {
 // NOTE: This implementation assumes and enforces that the hashes are SHA1.
 bool CertVerifyProc::IsPublicKeyBlacklisted(
     const HashValueVector& public_key_hashes) {
-  static const unsigned kNumHashes = 11;
+  static const unsigned kNumHashes = 17;
   static const uint8 kHashes[kNumHashes][base::kSHA1Length] = {
     // Subject: CN=DigiNotar Root CA
     // Issuer: CN=Entrust.net x2 and self-signed
@@ -400,6 +417,30 @@ bool CertVerifyProc::IsPublicKeyBlacklisted(
     // Expires: Jul 18 10:05:28 2014 GMT
     {0x3e, 0xcf, 0x4b, 0xbb, 0xe4, 0x60, 0x96, 0xd5, 0x14, 0xbb,
      0x53, 0x9b, 0xb9, 0x13, 0xd7, 0x7a, 0xa4, 0xef, 0x31, 0xbf},
+    // Three retired intermediate certificates from Symantec. No compromise;
+    // just for robustness. All expire May 17 23:59:59 2018.
+    // See https://bugzilla.mozilla.org/show_bug.cgi?id=966060
+    {0x68, 0x5e, 0xec, 0x0a, 0x39, 0xf6, 0x68, 0xae, 0x8f, 0xd8,
+     0x96, 0x4f, 0x98, 0x74, 0x76, 0xb4, 0x50, 0x4f, 0xd2, 0xbe},
+    {0x0e, 0x50, 0x2d, 0x4d, 0xd1, 0xe1, 0x60, 0x36, 0x8a, 0x31,
+     0xf0, 0x6a, 0x81, 0x04, 0x31, 0xba, 0x6f, 0x72, 0xc0, 0x41},
+    {0x93, 0xd1, 0x53, 0x22, 0x29, 0xcc, 0x2a, 0xbd, 0x21, 0xdf,
+     0xf5, 0x97, 0xee, 0x32, 0x0f, 0xe4, 0x24, 0x6f, 0x3d, 0x0c},
+    // C=IN, O=National Informatics Centre, OU=NICCA, CN=NIC Certifying
+    // Authority. Issued by C=IN, O=India PKI, CN=CCA India 2007.
+    // Expires July 4th, 2015.
+    {0xf5, 0x71, 0x79, 0xfa, 0xea, 0x10, 0xc5, 0x43, 0x8c, 0xb0,
+     0xc6, 0xe1, 0xcc, 0x27, 0x7b, 0x6e, 0x0d, 0xb2, 0xff, 0x54},
+    // C=IN, O=National Informatics Centre, CN=NIC CA 2011. Issued by
+    // C=IN, O=India PKI, CN=CCA India 2011.
+    // Expires March 11th 2016.
+    {0x07, 0x7a, 0xc7, 0xde, 0x8d, 0xa5, 0x58, 0x64, 0x3a, 0x06,
+     0xc5, 0x36, 0x9e, 0x55, 0x4f, 0xae, 0xb3, 0xdf, 0xa1, 0x66},
+    // C=IN, O=National Informatics Centre, CN=NIC CA 2014. Issued by
+    // C=IN, O=India PKI, CN=CCA India 2014.
+    // Expires: March 5th, 2024.
+    {0xe5, 0x8e, 0x31, 0x5b, 0xaa, 0xee, 0xaa, 0xc6, 0xe7, 0x2e,
+     0xc9, 0x57, 0x36, 0x70, 0xca, 0x2f, 0x25, 0x4e, 0xc3, 0x47},
   };
 
   for (unsigned i = 0; i < kNumHashes; i++) {
@@ -425,7 +466,7 @@ static bool CheckNameConstraints(const std::vector<std::string>& dns_names,
   for (std::vector<std::string>::const_iterator i = dns_names.begin();
        i != dns_names.end(); ++i) {
     bool ok = false;
-    url_canon::CanonHostInfo host_info;
+    url::CanonHostInfo host_info;
     const std::string dns_name = CanonicalizeHost(*i, &host_info);
     if (host_info.IsIPAddress())
       continue;

@@ -77,9 +77,9 @@ class URLFetcherCore
   void SetLoadFlags(int load_flags);
   int GetLoadFlags() const;
   void SetReferrer(const std::string& referrer);
+  void SetReferrerPolicy(URLRequest::ReferrerPolicy referrer_policy);
   void SetExtraRequestHeaders(const std::string& extra_request_headers);
   void AddExtraRequestHeader(const std::string& header_line);
-  void GetExtraRequestHeaders(HttpRequestHeaders* headers) const;
   void SetRequestContext(URLRequestContextGetter* request_context_getter);
   // Set the URL that should be consulted for the third-party cookie
   // blocking policy.
@@ -242,7 +242,8 @@ class URLFetcherCore
   uint64 upload_range_length_;       // The length of the part of file to be
                                      // uploaded.
   std::string upload_content_type_;  // MIME type of POST payload
-  std::string referrer_;             // HTTP Referer header value
+  std::string referrer_;             // HTTP Referer header value and policy
+  URLRequest::ReferrerPolicy referrer_policy_;
   bool is_chunked_upload_;           // True if using chunked transfer encoding
 
   // Used to determine how long to wait before making a request or doing a

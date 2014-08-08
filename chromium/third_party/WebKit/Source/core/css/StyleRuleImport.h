@@ -25,6 +25,7 @@
 #include "core/css/StyleRule.h"
 #include "core/fetch/ResourcePtr.h"
 #include "core/fetch/StyleSheetResourceClient.h"
+#include "platform/heap/Handle.h"
 
 namespace WebCore {
 
@@ -33,15 +34,15 @@ class MediaQuerySet;
 class StyleSheetContents;
 
 class StyleRuleImport : public StyleRuleBase {
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
 public:
-    static PassRefPtr<StyleRuleImport> create(const String& href, PassRefPtr<MediaQuerySet>);
+    static PassRefPtrWillBeRawPtr<StyleRuleImport> create(const String& href, PassRefPtrWillBeRawPtr<MediaQuerySet>);
 
     ~StyleRuleImport();
 
     StyleSheetContents* parentStyleSheet() const { return m_parentStyleSheet; }
     void setParentStyleSheet(StyleSheetContents* sheet) { ASSERT(sheet); m_parentStyleSheet = sheet; }
-    void clearParentStyleSheet() { m_parentStyleSheet = 0; }
+    void clearParentStyleSheet() { m_parentStyleSheet = nullptr; }
 
     String href() const { return m_strHref; }
     StyleSheetContents* styleSheet() const { return m_styleSheet.get(); }
@@ -51,14 +52,17 @@ public:
 
     void requestStyleSheet();
 
+    void traceAfterDispatch(Visitor*);
+
 private:
+    // FIXME: inherit from StyleSheetResourceClient directly to eliminate raw back pointer, as there are no space savings in this.
     // NOTE: We put the StyleSheetResourceClient in a member instead of inheriting from it
     // to avoid adding a vptr to StyleRuleImport.
-    class ImportedStyleSheetClient : public StyleSheetResourceClient {
+    class ImportedStyleSheetClient FINAL : public StyleSheetResourceClient {
     public:
         ImportedStyleSheetClient(StyleRuleImport* ownerRule) : m_ownerRule(ownerRule) { }
         virtual ~ImportedStyleSheetClient() { }
-        virtual void setCSSStyleSheet(const String& href, const KURL& baseURL, const String& charset, const CSSStyleSheetResource* sheet)
+        virtual void setCSSStyleSheet(const String& href, const KURL& baseURL, const String& charset, const CSSStyleSheetResource* sheet) OVERRIDE
         {
             m_ownerRule->setCSSStyleSheet(href, baseURL, charset, sheet);
         }
@@ -69,14 +73,14 @@ private:
     void setCSSStyleSheet(const String& href, const KURL& baseURL, const String& charset, const CSSStyleSheetResource*);
     friend class ImportedStyleSheetClient;
 
-    StyleRuleImport(const String& href, PassRefPtr<MediaQuerySet>);
+    StyleRuleImport(const String& href, PassRefPtrWillBeRawPtr<MediaQuerySet>);
 
-    StyleSheetContents* m_parentStyleSheet;
+    RawPtrWillBeMember<StyleSheetContents> m_parentStyleSheet;
 
     ImportedStyleSheetClient m_styleSheetClient;
     String m_strHref;
-    RefPtr<MediaQuerySet> m_mediaQueries;
-    RefPtr<StyleSheetContents> m_styleSheet;
+    RefPtrWillBeMember<MediaQuerySet> m_mediaQueries;
+    RefPtrWillBeMember<StyleSheetContents> m_styleSheet;
     ResourcePtr<CSSStyleSheetResource> m_resource;
     bool m_loading;
 };

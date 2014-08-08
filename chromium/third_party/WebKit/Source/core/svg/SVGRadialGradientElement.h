@@ -21,7 +21,7 @@
 #ifndef SVGRadialGradientElement_h
 #define SVGRadialGradientElement_h
 
-#include "SVGNames.h"
+#include "core/SVGNames.h"
 #include "core/svg/SVGAnimatedLength.h"
 #include "core/svg/SVGGradientElement.h"
 
@@ -31,32 +31,35 @@ struct RadialGradientAttributes;
 
 class SVGRadialGradientElement FINAL : public SVGGradientElement {
 public:
-    static PassRefPtr<SVGRadialGradientElement> create(Document&);
+    DECLARE_NODE_FACTORY(SVGRadialGradientElement);
 
     bool collectGradientAttributes(RadialGradientAttributes&);
+
+    SVGAnimatedLength* cx() const { return m_cx.get(); }
+    SVGAnimatedLength* cy() const { return m_cy.get(); }
+    SVGAnimatedLength* r() const { return m_r.get(); }
+    SVGAnimatedLength* fx() const { return m_fx.get(); }
+    SVGAnimatedLength* fy() const { return m_fy.get(); }
+    SVGAnimatedLength* fr() const { return m_fr.get(); }
 
 private:
     explicit SVGRadialGradientElement(Document&);
 
     bool isSupportedAttribute(const QualifiedName&);
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual void svgAttributeChanged(const QualifiedName&);
+    virtual void svgAttributeChanged(const QualifiedName&) OVERRIDE;
 
-    virtual RenderObject* createRenderer(RenderStyle*);
+    virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
 
-    virtual bool selfHasRelativeLengths() const;
+    virtual bool selfHasRelativeLengths() const OVERRIDE;
 
-    BEGIN_DECLARE_ANIMATED_PROPERTIES(SVGRadialGradientElement)
-        DECLARE_ANIMATED_LENGTH(Cx, cx)
-        DECLARE_ANIMATED_LENGTH(Cy, cy)
-        DECLARE_ANIMATED_LENGTH(R, r)
-        DECLARE_ANIMATED_LENGTH(Fx, fx)
-        DECLARE_ANIMATED_LENGTH(Fy, fy)
-        DECLARE_ANIMATED_LENGTH(Fr, fr)
-    END_DECLARE_ANIMATED_PROPERTIES
+    RefPtr<SVGAnimatedLength> m_cx;
+    RefPtr<SVGAnimatedLength> m_cy;
+    RefPtr<SVGAnimatedLength> m_r;
+    RefPtr<SVGAnimatedLength> m_fx;
+    RefPtr<SVGAnimatedLength> m_fy;
+    RefPtr<SVGAnimatedLength> m_fr;
 };
-
-DEFINE_NODE_TYPE_CASTS(SVGRadialGradientElement, hasTagName(SVGNames::radialGradientTag));
 
 } // namespace WebCore
 

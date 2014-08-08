@@ -32,9 +32,9 @@ inline CDATASection::CDATASection(Document& document, const String& data)
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<CDATASection> CDATASection::create(Document& document, const String& data)
+PassRefPtrWillBeRawPtr<CDATASection> CDATASection::create(Document& document, const String& data)
 {
-    return adoptRef(new CDATASection(document, data));
+    return adoptRefWillBeNoop(new CDATASection(document, data));
 }
 
 String CDATASection::nodeName() const
@@ -47,12 +47,7 @@ Node::NodeType CDATASection::nodeType() const
     return CDATA_SECTION_NODE;
 }
 
-bool CDATASection::childTypeAllowed(NodeType) const
-{
-    return false;
-}
-
-PassRefPtr<Text> CDATASection::cloneWithData(const String& data)
+PassRefPtrWillBeRawPtr<Text> CDATASection::cloneWithData(const String& data)
 {
     return create(document(), data);
 }

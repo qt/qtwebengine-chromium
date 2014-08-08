@@ -33,6 +33,15 @@ class WebMessagePortChannelImpl
                             int message_port_id,
                             base::MessageLoopProxy* child_thread_loop);
 
+  static void CreatePair(base::MessageLoopProxy* child_thread_loop,
+                         blink::WebMessagePortChannel** channel1,
+                         blink::WebMessagePortChannel** channel2);
+
+  // Extracts port IDs for passing on to the browser process, and queues any
+  // received messages. Takes ownership of the passed array (and deletes it).
+  static std::vector<int> ExtractMessagePortIDs(
+      blink::WebMessagePortChannelArray* channels);
+
   // Queues received and incoming messages until there are no more in-flight
   // messages, then sends all of them to the browser process.
   void QueueMessages();
@@ -45,7 +54,6 @@ class WebMessagePortChannelImpl
   // WebMessagePortChannel implementation.
   virtual void setClient(blink::WebMessagePortChannelClient* client);
   virtual void destroy();
-  virtual void entangle(blink::WebMessagePortChannel* channel);
   virtual void postMessage(const blink::WebString& message,
                            blink::WebMessagePortChannelArray* channels);
   virtual bool tryGetMessage(blink::WebString* message,
@@ -54,6 +62,8 @@ class WebMessagePortChannelImpl
   void Init();
   void Entangle(scoped_refptr<WebMessagePortChannelImpl> channel);
   void Send(IPC::Message* message);
+  void PostMessage(const base::string16& message,
+                   blink::WebMessagePortChannelArray* channels);
 
   // IPC::Listener implementation.
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;

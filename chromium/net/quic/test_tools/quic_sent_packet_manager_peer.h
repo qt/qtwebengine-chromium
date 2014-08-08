@@ -16,17 +16,32 @@ namespace test {
 
 class QuicSentPacketManagerPeer {
  public:
+  static void SetMaxTailLossProbes(
+      QuicSentPacketManager* sent_packet_manager, size_t max_tail_loss_probes);
+
   static void SetSendAlgorithm(QuicSentPacketManager* sent_packet_manager,
                                SendAlgorithmInterface* send_algorithm);
+
+  static const LossDetectionInterface* GetLossAlgorithm(
+      QuicSentPacketManager* sent_packet_manager);
+
+  static void SetLossAlgorithm(QuicSentPacketManager* sent_packet_manager,
+                               LossDetectionInterface* loss_detector);
+
+  static RttStats* GetRttStats(QuicSentPacketManager* sent_packet_manager);
 
   static size_t GetNackCount(
       const QuicSentPacketManager* sent_packet_manager,
       QuicPacketSequenceNumber sequence_number);
 
+  static size_t GetPendingRetransmissionCount(
+      const QuicSentPacketManager* sent_packet_manager);
+
+  static bool HasPendingPackets(
+      const QuicSentPacketManager* sent_packet_manager);
+
   static QuicTime GetSentTime(const QuicSentPacketManager* sent_packet_manager,
                               QuicPacketSequenceNumber sequence_number);
-
-  static QuicTime::Delta rtt(QuicSentPacketManager* sent_packet_manager);
 
   // Returns true if |sequence_number| is a retransmission of a packet.
   static bool IsRetransmission(QuicSentPacketManager* sent_packet_manager,
@@ -35,6 +50,18 @@ class QuicSentPacketManagerPeer {
   static void MarkForRetransmission(QuicSentPacketManager* sent_packet_manager,
                                     QuicPacketSequenceNumber sequence_number,
                                     TransmissionType transmission_type);
+
+  static QuicTime::Delta GetRetransmissionDelay(
+      const QuicSentPacketManager* sent_packet_manager);
+
+  static bool HasUnackedCryptoPackets(
+      const QuicSentPacketManager* sent_packet_manager);
+
+  static size_t GetNumRetransmittablePackets(
+      const QuicSentPacketManager* sent_packet_manager);
+
+  static QuicByteCount GetBytesInFlight(
+      const QuicSentPacketManager* sent_packet_manager);
 
  private:
   DISALLOW_COPY_AND_ASSIGN(QuicSentPacketManagerPeer);

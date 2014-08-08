@@ -4,7 +4,6 @@
 
 #include "google_apis/gaia/gaia_auth_fetcher.h"
 
-#include <algorithm>
 #include <string>
 #include <utility>
 #include <vector>
@@ -33,7 +32,12 @@ const int kLoadFlagsIgnoreCookies = net::LOAD_DO_NOT_SEND_COOKIES |
 
 static bool CookiePartsContains(const std::vector<std::string>& parts,
                                 const char* part) {
-  return std::find(parts.begin(), parts.end(), part) != parts.end();
+  for (std::vector<std::string>::const_iterator it = parts.begin();
+       it != parts.end(); ++it) {
+    if (LowerCaseEqualsASCII(*it, part))
+      return true;
+  }
+  return false;
 }
 
 bool ExtractOAuth2TokenPairResponse(base::DictionaryValue* dict,
@@ -84,6 +88,9 @@ const char GaiaAuthFetcher::kIssueAuthTokenFormat[] =
 const char GaiaAuthFetcher::kClientLoginToOAuth2BodyFormat[] =
     "scope=%s&client_id=%s";
 // static
+const char GaiaAuthFetcher::kClientLoginToOAuth2WithDeviceTypeBodyFormat[] =
+    "scope=%s&client_id=%s&device_type=chrome";
+// static
 const char GaiaAuthFetcher::kOAuth2CodeToTokenPairBodyFormat[] =
     "scope=%s&"
     "grant_type=authorization_code&"
@@ -110,21 +117,15 @@ const char GaiaAuthFetcher::kOAuthLoginFormat[] = "service=%s&source=%s";
 
 // static
 const char GaiaAuthFetcher::kAccountDeletedError[] = "AccountDeleted";
-const char GaiaAuthFetcher::kAccountDeletedErrorCode[] = "adel";
 // static
 const char GaiaAuthFetcher::kAccountDisabledError[] = "AccountDisabled";
-const char GaiaAuthFetcher::kAccountDisabledErrorCode[] = "adis";
 // static
 const char GaiaAuthFetcher::kBadAuthenticationError[] = "BadAuthentication";
-const char GaiaAuthFetcher::kBadAuthenticationErrorCode[] = "badauth";
 // static
 const char GaiaAuthFetcher::kCaptchaError[] = "CaptchaRequired";
-const char GaiaAuthFetcher::kCaptchaErrorCode[] = "cr";
 // static
 const char GaiaAuthFetcher::kServiceUnavailableError[] =
     "ServiceUnavailable";
-const char GaiaAuthFetcher::kServiceUnavailableErrorCode[] =
-    "ire";
 // static
 const char GaiaAuthFetcher::kErrorParam[] = "Error";
 // static
@@ -156,10 +157,12 @@ const char GaiaAuthFetcher::kOAuthHeaderFormat[] = "Authorization: OAuth %s";
 const char GaiaAuthFetcher::kOAuth2BearerHeaderFormat[] =
     "Authorization: Bearer %s";
 // static
-const char GaiaAuthFetcher::kClientLoginToOAuth2CookiePartSecure[] = "Secure";
+const char GaiaAuthFetcher::kDeviceIdHeaderFormat[] = "X-Device-ID: %s";
+// static
+const char GaiaAuthFetcher::kClientLoginToOAuth2CookiePartSecure[] = "secure";
 // static
 const char GaiaAuthFetcher::kClientLoginToOAuth2CookiePartHttpOnly[] =
-    "HttpOnly";
+    "httponly";
 // static
 const char GaiaAuthFetcher::kClientLoginToOAuth2CookiePartCodePrefix[] =
     "oauth_code=";
@@ -298,21 +301,27 @@ std::string GaiaAuthFetcher::MakeIssueAuthTokenBody(
 }
 
 // static
-std::string GaiaAuthFetcher::MakeGetAuthCodeBody() {
+std::string GaiaAuthFetcher::MakeGetAuthCodeBody(bool include_device_type) {
   std::string encoded_scope = net::EscapeUrlEncodedData(
-      GaiaUrls::GetInstance()->oauth1_login_scope(), true);
+      GaiaConstants::kOAuth1LoginScope, true);
   std::string encoded_client_id = net::EscapeUrlEncodedData(
       GaiaUrls::GetInstance()->oauth2_chrome_client_id(), true);
-  return base::StringPrintf(kClientLoginToOAuth2BodyFormat,
-                            encoded_scope.c_str(),
-                            encoded_client_id.c_str());
+  if (include_device_type) {
+    return base::StringPrintf(kClientLoginToOAuth2WithDeviceTypeBodyFormat,
+                              encoded_scope.c_str(),
+                              encoded_client_id.c_str());
+  } else {
+    return base::StringPrintf(kClientLoginToOAuth2BodyFormat,
+                              encoded_scope.c_str(),
+                              encoded_client_id.c_str());
+  }
 }
 
 // static
 std::string GaiaAuthFetcher::MakeGetTokenPairBody(
     const std::string& auth_code) {
   std::string encoded_scope = net::EscapeUrlEncodedData(
-      GaiaUrls::GetInstance()->oauth1_login_scope(), true);
+      GaiaConstants::kOAuth1LoginScope, true);
   std::string encoded_client_id = net::EscapeUrlEncodedData(
       GaiaUrls::GetInstance()->oauth2_chrome_client_id(), true);
   std::string encoded_client_secret = net::EscapeUrlEncodedData(
@@ -516,7 +525,7 @@ void GaiaAuthFetcher::StartLsoForOAuthLoginTokenExchange(
   DCHECK(!fetch_pending_) << "Tried to fetch two things at once!";
 
   DVLOG(1) << "Starting OAuth login token exchange with auth_token";
-  request_body_ = MakeGetAuthCodeBody();
+  request_body_ = MakeGetAuthCodeBody(false);
   client_login_to_oauth2_gurl_ =
       GaiaUrls::GetInstance()->client_login_to_oauth2_url();
 
@@ -547,10 +556,17 @@ void GaiaAuthFetcher::StartRevokeOAuth2Token(const std::string& auth_token) {
 
 void GaiaAuthFetcher::StartCookieForOAuthLoginTokenExchange(
     const std::string& session_index) {
+  StartCookieForOAuthLoginTokenExchangeWithDeviceId(session_index,
+                                                    std::string());
+}
+
+void GaiaAuthFetcher::StartCookieForOAuthLoginTokenExchangeWithDeviceId(
+    const std::string& session_index,
+    const std::string& device_id) {
   DCHECK(!fetch_pending_) << "Tried to fetch two things at once!";
 
   DVLOG(1) << "Starting OAuth login token fetch with cookie jar";
-  request_body_ = MakeGetAuthCodeBody();
+  request_body_ = MakeGetAuthCodeBody(!device_id.empty());
 
   client_login_to_oauth2_gurl_ =
       GaiaUrls::GetInstance()->client_login_to_oauth2_url();
@@ -559,9 +575,15 @@ void GaiaAuthFetcher::StartCookieForOAuthLoginTokenExchange(
         client_login_to_oauth2_gurl_.Resolve("?authuser=" + session_index);
   }
 
+  std::string device_id_header;
+  if (!device_id.empty()) {
+    device_id_header =
+        base::StringPrintf(kDeviceIdHeaderFormat, device_id.c_str());
+  }
+
   fetcher_.reset(CreateGaiaFetcher(getter_,
                                    request_body_,
-                                   std::string(),
+                                   device_id_header,
                                    client_login_to_oauth2_gurl_,
                                    net::LOAD_NORMAL,
                                    this));
@@ -680,102 +702,42 @@ GoogleServiceAuthError GaiaAuthFetcher::GenerateAuthError(
   if (!status.is_success()) {
     if (status.status() == net::URLRequestStatus::CANCELED) {
       return GoogleServiceAuthError(GoogleServiceAuthError::REQUEST_CANCELED);
-    } else {
-      DLOG(WARNING) << "Could not reach Google Accounts servers: errno "
-          << status.error();
-      return GoogleServiceAuthError::FromConnectionError(status.error());
     }
-  } else {
-    if (IsSecondFactorSuccess(data)) {
-      return GoogleServiceAuthError(GoogleServiceAuthError::TWO_FACTOR);
-    }
+    DLOG(WARNING) << "Could not reach Google Accounts servers: errno "
+                  << status.error();
+    return GoogleServiceAuthError::FromConnectionError(status.error());
+  }
 
-    std::string error;
-    std::string url;
-    std::string captcha_url;
-    std::string captcha_token;
-    ParseClientLoginFailure(data, &error, &url, &captcha_url, &captcha_token);
-    DLOG(WARNING) << "ClientLogin failed with " << error;
+  if (IsSecondFactorSuccess(data))
+    return GoogleServiceAuthError(GoogleServiceAuthError::TWO_FACTOR);
 
-    if (error == kCaptchaError) {
-      GURL image_url(
-          GaiaUrls::GetInstance()->captcha_base_url().Resolve(captcha_url));
-      GURL unlock_url(url);
-      return GoogleServiceAuthError::FromClientLoginCaptchaChallenge(
-          captcha_token, image_url, unlock_url);
-    }
-    if (error == kAccountDeletedError)
-      return GoogleServiceAuthError(GoogleServiceAuthError::ACCOUNT_DELETED);
-    if (error == kAccountDisabledError)
-      return GoogleServiceAuthError(GoogleServiceAuthError::ACCOUNT_DISABLED);
-    if (error == kBadAuthenticationError) {
-      return GoogleServiceAuthError(
-          GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS);
-    }
-    if (error == kServiceUnavailableError) {
-      return GoogleServiceAuthError(
-          GoogleServiceAuthError::SERVICE_UNAVAILABLE);
-    }
+  std::string error;
+  std::string url;
+  std::string captcha_url;
+  std::string captcha_token;
+  ParseClientLoginFailure(data, &error, &url, &captcha_url, &captcha_token);
+  DLOG(WARNING) << "ClientLogin failed with " << error;
 
-    DLOG(WARNING) << "Incomprehensible response from Google Accounts servers.";
+  if (error == kCaptchaError) {
+    return GoogleServiceAuthError::FromClientLoginCaptchaChallenge(
+        captcha_token,
+        GURL(GaiaUrls::GetInstance()->captcha_base_url().Resolve(captcha_url)),
+        GURL(url));
+  }
+  if (error == kAccountDeletedError)
+    return GoogleServiceAuthError(GoogleServiceAuthError::ACCOUNT_DELETED);
+  if (error == kAccountDisabledError)
+    return GoogleServiceAuthError(GoogleServiceAuthError::ACCOUNT_DISABLED);
+  if (error == kBadAuthenticationError) {
+    return GoogleServiceAuthError(
+        GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS);
+  }
+  if (error == kServiceUnavailableError) {
     return GoogleServiceAuthError(
         GoogleServiceAuthError::SERVICE_UNAVAILABLE);
   }
 
-  NOTREACHED();
-  return GoogleServiceAuthError(GoogleServiceAuthError::SERVICE_UNAVAILABLE);
-}
-
-// static
-GoogleServiceAuthError GaiaAuthFetcher::GenerateOAuthLoginError(
-    const std::string& data,
-    const net::URLRequestStatus& status) {
-  if (!status.is_success()) {
-    if (status.status() == net::URLRequestStatus::CANCELED) {
-      return GoogleServiceAuthError(GoogleServiceAuthError::REQUEST_CANCELED);
-    } else {
-      DLOG(WARNING) << "Could not reach Google Accounts servers: errno "
-          << status.error();
-      return GoogleServiceAuthError::FromConnectionError(status.error());
-    }
-  } else {
-    if (IsSecondFactorSuccess(data)) {
-      return GoogleServiceAuthError(GoogleServiceAuthError::TWO_FACTOR);
-    }
-
-    std::string error;
-    std::string url;
-    std::string captcha_url;
-    std::string captcha_token;
-    ParseClientLoginFailure(data, &error, &url, &captcha_url, &captcha_token);
-    LOG(WARNING) << "OAuthLogin failed with " << error;
-
-    if (error == kCaptchaErrorCode) {
-      GURL image_url(
-          GaiaUrls::GetInstance()->captcha_base_url().Resolve(captcha_url));
-      GURL unlock_url(url);
-      return GoogleServiceAuthError::FromClientLoginCaptchaChallenge(
-          captcha_token, image_url, unlock_url);
-    }
-    if (error == kAccountDeletedErrorCode)
-      return GoogleServiceAuthError(GoogleServiceAuthError::ACCOUNT_DELETED);
-    if (error == kAccountDisabledErrorCode)
-      return GoogleServiceAuthError(GoogleServiceAuthError::ACCOUNT_DISABLED);
-    if (error == kBadAuthenticationErrorCode) {
-      return GoogleServiceAuthError(
-          GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS);
-    }
-    if (error == kServiceUnavailableErrorCode) {
-      return GoogleServiceAuthError(
-          GoogleServiceAuthError::SERVICE_UNAVAILABLE);
-    }
-
-    DLOG(WARNING) << "Incomprehensible response from Google Accounts servers.";
-    return GoogleServiceAuthError(
-        GoogleServiceAuthError::SERVICE_UNAVAILABLE);
-  }
-
-  NOTREACHED();
+  DLOG(WARNING) << "Incomprehensible response from Google Accounts servers.";
   return GoogleServiceAuthError(GoogleServiceAuthError::SERVICE_UNAVAILABLE);
 }
 
@@ -819,7 +781,8 @@ void GaiaAuthFetcher::OnClientLoginToOAuth2Fetched(
     ParseClientLoginToOAuth2Response(cookies, &auth_code);
     StartAuthCodeForOAuth2TokenExchange(auth_code);
   } else {
-    consumer_->OnClientOAuthFailure(GenerateAuthError(data, status));
+    GoogleServiceAuthError auth_error(GenerateAuthError(data, status));
+    consumer_->OnClientOAuthFailure(auth_error);
   }
 }
 

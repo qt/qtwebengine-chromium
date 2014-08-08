@@ -25,24 +25,23 @@
 namespace WebCore {
 
 class Font;
-class SVGRenderStyle;
-class SVGElement;
 
-// Helper class used by SVGTextLayoutEngine to handle 'kerning' / 'letter-spacing' and 'word-spacing'.
+// Helper class used by SVGTextLayoutEngine to handle 'letter-spacing' and 'word-spacing'.
 class SVGTextLayoutEngineSpacing {
     WTF_MAKE_NONCOPYABLE(SVGTextLayoutEngineSpacing);
 public:
-    SVGTextLayoutEngineSpacing(const Font&);
+    SVGTextLayoutEngineSpacing(const Font&, float effectiveZoom);
 
-    float calculateSVGKerning(bool isVerticalText, const SVGTextMetrics::Glyph& currentGlyph);
-    float calculateCSSKerningAndSpacing(const SVGRenderStyle*, SVGElement* lengthContext, UChar currentCharacter);
+    float calculateSVGKerning(bool isVerticalText, Glyph currentGlyph);
+    float calculateCSSSpacing(UChar currentCharacter);
 
 private:
     const Font& m_font;
     UChar m_lastCharacter;
+    float m_effectiveZoom;
 
 #if ENABLE(SVG_FONTS)
-    SVGTextMetrics::Glyph m_lastGlyph;
+    Glyph m_lastGlyph;
 #endif
 };
 

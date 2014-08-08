@@ -21,7 +21,8 @@ namespace media {
 //    synchronization purposes).
 class MockAudioManager : public media::AudioManager {
  public:
-  explicit MockAudioManager(base::MessageLoopProxy* message_loop_proxy);
+  explicit MockAudioManager(
+      const scoped_refptr<base::SingleThreadTaskRunner>& task_runner);
 
   virtual bool HasAudioOutputDevices() OVERRIDE;
 
@@ -39,20 +40,19 @@ class MockAudioManager : public media::AudioManager {
 
   virtual media::AudioOutputStream* MakeAudioOutputStream(
       const media::AudioParameters& params,
-      const std::string& device_id,
-      const std::string& input_device_id) OVERRIDE;
+      const std::string& device_id) OVERRIDE;
 
   virtual media::AudioOutputStream* MakeAudioOutputStreamProxy(
       const media::AudioParameters& params,
-      const std::string& device_id,
-      const std::string& input_device_id) OVERRIDE;
+      const std::string& device_id) OVERRIDE;
 
   virtual media::AudioInputStream* MakeAudioInputStream(
       const media::AudioParameters& params,
       const std::string& device_id) OVERRIDE;
 
-  virtual scoped_refptr<base::MessageLoopProxy> GetMessageLoop() OVERRIDE;
-  virtual scoped_refptr<base::MessageLoopProxy> GetWorkerLoop() OVERRIDE;
+  virtual scoped_refptr<base::SingleThreadTaskRunner> GetTaskRunner() OVERRIDE;
+  virtual scoped_refptr<base::SingleThreadTaskRunner> GetWorkerTaskRunner()
+      OVERRIDE;
 
   virtual void AddOutputDeviceChangeListener(
       AudioDeviceListener* listener) OVERRIDE;
@@ -70,13 +70,11 @@ class MockAudioManager : public media::AudioManager {
   virtual scoped_ptr<AudioLog> CreateAudioLog(
       AudioLogFactory::AudioComponent component) OVERRIDE;
 
-  virtual void FixWedgedAudio() OVERRIDE;
-
  protected:
   virtual ~MockAudioManager();
 
  private:
-  scoped_refptr<base::MessageLoopProxy> message_loop_proxy_;
+  scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
 
   DISALLOW_COPY_AND_ASSIGN(MockAudioManager);
 };

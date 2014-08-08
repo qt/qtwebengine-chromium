@@ -11,7 +11,7 @@
 #include "base/observer_list.h"
 #include "url/gurl.h"
 #include "webkit/browser/appcache/appcache_group.h"
-#include "webkit/browser/appcache/appcache_service.h"
+#include "webkit/browser/appcache/appcache_service_impl.h"
 #include "webkit/browser/appcache/appcache_storage.h"
 #include "webkit/browser/webkit_storage_browser_export.h"
 #include "webkit/common/appcache/appcache_interfaces.h"
@@ -21,13 +21,34 @@ namespace net {
 class URLRequest;
 }  // namespace net
 
+namespace content {
+FORWARD_DECLARE_TEST(AppCacheGroupTest, CleanupUnusedGroup);
+FORWARD_DECLARE_TEST(AppCacheGroupTest, QueueUpdate);
+FORWARD_DECLARE_TEST(AppCacheHostTest, Basic);
+FORWARD_DECLARE_TEST(AppCacheHostTest, SelectNoCache);
+FORWARD_DECLARE_TEST(AppCacheHostTest, ForeignEntry);
+FORWARD_DECLARE_TEST(AppCacheHostTest, FailedCacheLoad);
+FORWARD_DECLARE_TEST(AppCacheHostTest, FailedGroupLoad);
+FORWARD_DECLARE_TEST(AppCacheHostTest, SetSwappableCache);
+FORWARD_DECLARE_TEST(AppCacheHostTest, ForDedicatedWorker);
+FORWARD_DECLARE_TEST(AppCacheHostTest, SelectCacheAllowed);
+FORWARD_DECLARE_TEST(AppCacheHostTest, SelectCacheBlocked);
+FORWARD_DECLARE_TEST(AppCacheTest, CleanupUnusedCache);
+class AppCacheTest;
+class AppCacheHostTest;
+class AppCacheGroupTest;
+class AppCacheStorageImplTest;
+class AppCacheRequestHandlerTest;
+class AppCacheUpdateJobTest;
+}
+
 namespace appcache {
 
 class AppCache;
 class AppCacheFrontend;
 class AppCacheRequestHandler;
 
-typedef base::Callback<void(Status, void*)> GetStatusCallback;
+typedef base::Callback<void(AppCacheStatus, void*)> GetStatusCallback;
 typedef base::Callback<void(bool, void*)> StartUpdateCallback;
 typedef base::Callback<void(bool, void*)> SwapCacheCallback;
 
@@ -35,7 +56,7 @@ typedef base::Callback<void(bool, void*)> SwapCacheCallback;
 class WEBKIT_STORAGE_BROWSER_EXPORT AppCacheHost
     : public AppCacheStorage::Delegate,
       public AppCacheGroup::UpdateObserver,
-      public AppCacheService::Observer {
+      public AppCacheServiceImpl::Observer {
  public:
 
   class WEBKIT_STORAGE_BROWSER_EXPORT Observer {
@@ -50,7 +71,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AppCacheHost
   };
 
   AppCacheHost(int host_id, AppCacheFrontend* frontend,
-               AppCacheService* service);
+               AppCacheServiceImpl* service);
   virtual ~AppCacheHost();
 
   // Adds/removes an observer, the AppCacheHost does not take
@@ -140,13 +161,13 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AppCacheHost
   }
 
   int host_id() const { return host_id_; }
-  AppCacheService* service() const { return service_; }
+  AppCacheServiceImpl* service() const { return service_; }
   AppCacheStorage* storage() const { return storage_; }
   AppCacheFrontend* frontend() const { return frontend_; }
   AppCache* associated_cache() const { return associated_cache_.get(); }
 
   bool is_selection_pending() const {
-    return pending_selected_cache_id_ != kNoCacheId ||
+    return pending_selected_cache_id_ != kAppCacheNoCacheId ||
            !pending_selected_manifest_url_.is_empty();
   }
 
@@ -157,7 +178,12 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AppCacheHost
   void CompleteTransfer(int host_id, AppCacheFrontend* frontend);
 
  private:
-  Status GetStatus();
+  friend class content::AppCacheHostTest;
+  friend class content::AppCacheStorageImplTest;
+  friend class content::AppCacheRequestHandlerTest;
+  friend class content::AppCacheUpdateJobTest;
+
+  AppCacheStatus GetStatus();
   void LoadSelectedCache(int64 cache_id);
   void LoadOrCreateGroup(const GURL& manifest_url);
 
@@ -168,7 +194,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AppCacheHost
   virtual void OnCacheLoaded(AppCache* cache, int64 cache_id) OVERRIDE;
   virtual void OnGroupLoaded(AppCacheGroup* group,
                              const GURL& manifest_url) OVERRIDE;
-  // AppCacheService::Observer impl
+  // AppCacheServiceImpl::Observer impl
   virtual void OnServiceReinitialized(
       AppCacheStorageReference* old_storage_ref) OVERRIDE;
 
@@ -184,7 +210,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AppCacheHost
 
   // Returns true if this host is for a dedicated worker context.
   bool is_for_dedicated_worker() const {
-    return parent_host_id_ != kNoHostId;
+    return parent_host_id_ != kAppCacheNoHostId;
   }
 
   // Returns the parent context's host instance. This is only valid
@@ -249,7 +275,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AppCacheHost
   AppCacheFrontend* frontend_;
 
   // Our central service object.
-  AppCacheService* service_;
+  AppCacheServiceImpl* service_;
 
   // And the equally central storage object, with a twist. In some error
   // conditions the storage object gets recreated and reinitialized. The
@@ -291,21 +317,18 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AppCacheHost
   // First party url to be used in policy checks.
   GURL first_party_url_;
 
-  friend class AppCacheStorageImplTest;
-  friend class AppCacheRequestHandlerTest;
-  friend class AppCacheUpdateJobTest;
-  FRIEND_TEST_ALL_PREFIXES(AppCacheTest, CleanupUnusedCache);
-  FRIEND_TEST_ALL_PREFIXES(AppCacheGroupTest, CleanupUnusedGroup);
-  FRIEND_TEST_ALL_PREFIXES(AppCacheHostTest, Basic);
-  FRIEND_TEST_ALL_PREFIXES(AppCacheHostTest, SelectNoCache);
-  FRIEND_TEST_ALL_PREFIXES(AppCacheHostTest, ForeignEntry);
-  FRIEND_TEST_ALL_PREFIXES(AppCacheHostTest, FailedCacheLoad);
-  FRIEND_TEST_ALL_PREFIXES(AppCacheHostTest, FailedGroupLoad);
-  FRIEND_TEST_ALL_PREFIXES(AppCacheHostTest, SetSwappableCache);
-  FRIEND_TEST_ALL_PREFIXES(AppCacheHostTest, ForDedicatedWorker);
-  FRIEND_TEST_ALL_PREFIXES(AppCacheHostTest, SelectCacheAllowed);
-  FRIEND_TEST_ALL_PREFIXES(AppCacheHostTest, SelectCacheBlocked);
-  FRIEND_TEST_ALL_PREFIXES(AppCacheGroupTest, QueueUpdate);
+  FRIEND_TEST_ALL_PREFIXES(content::AppCacheGroupTest, CleanupUnusedGroup);
+  FRIEND_TEST_ALL_PREFIXES(content::AppCacheGroupTest, QueueUpdate);
+  FRIEND_TEST_ALL_PREFIXES(content::AppCacheHostTest, Basic);
+  FRIEND_TEST_ALL_PREFIXES(content::AppCacheHostTest, SelectNoCache);
+  FRIEND_TEST_ALL_PREFIXES(content::AppCacheHostTest, ForeignEntry);
+  FRIEND_TEST_ALL_PREFIXES(content::AppCacheHostTest, FailedCacheLoad);
+  FRIEND_TEST_ALL_PREFIXES(content::AppCacheHostTest, FailedGroupLoad);
+  FRIEND_TEST_ALL_PREFIXES(content::AppCacheHostTest, SetSwappableCache);
+  FRIEND_TEST_ALL_PREFIXES(content::AppCacheHostTest, ForDedicatedWorker);
+  FRIEND_TEST_ALL_PREFIXES(content::AppCacheHostTest, SelectCacheAllowed);
+  FRIEND_TEST_ALL_PREFIXES(content::AppCacheHostTest, SelectCacheBlocked);
+  FRIEND_TEST_ALL_PREFIXES(content::AppCacheTest, CleanupUnusedCache);
 
   DISALLOW_COPY_AND_ASSIGN(AppCacheHost);
 };

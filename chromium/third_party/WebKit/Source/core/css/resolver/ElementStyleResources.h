@@ -23,8 +23,9 @@
 #ifndef ElementStyleResources_h
 #define ElementStyleResources_h
 
-#include "CSSPropertyNames.h"
+#include "core/CSSPropertyNames.h"
 #include "platform/graphics/Color.h"
+#include "platform/heap/Handle.h"
 #include "wtf/HashMap.h"
 #include "wtf/Noncopyable.h"
 
@@ -40,28 +41,29 @@ class FilterOperation;
 class StyleImage;
 class TextLinkColors;
 
-typedef HashMap<FilterOperation*, RefPtr<CSSSVGDocumentValue> > PendingSVGDocumentMap;
-typedef HashMap<CSSPropertyID, RefPtr<CSSValue> > PendingImagePropertyMap;
+typedef WillBeHeapHashMap<FilterOperation*, RefPtrWillBeMember<CSSSVGDocumentValue> > PendingSVGDocumentMap;
+typedef WillBeHeapHashMap<CSSPropertyID, RefPtrWillBeMember<CSSValue> > PendingImagePropertyMap;
 
 // Holds information about resources, requested by stylesheets.
 // Lifetime: per-element style resolve.
 class ElementStyleResources {
+STACK_ALLOCATED();
 WTF_MAKE_NONCOPYABLE(ElementStyleResources);
 public:
     ElementStyleResources();
 
-    PassRefPtr<StyleImage> styleImage(const TextLinkColors&, Color currentColor, CSSPropertyID, CSSValue*);
+    PassRefPtr<StyleImage> styleImage(Document&, const TextLinkColors&, Color currentColor, CSSPropertyID, CSSValue*);
 
     PassRefPtr<StyleImage> generatedOrPendingFromValue(CSSPropertyID, CSSImageGeneratorValue*);
-    PassRefPtr<StyleImage> cachedOrPendingFromValue(CSSPropertyID, CSSImageValue*);
+    PassRefPtr<StyleImage> cachedOrPendingFromValue(Document&, CSSPropertyID, CSSImageValue*);
     PassRefPtr<StyleImage> setOrPendingFromValue(CSSPropertyID, CSSImageSetValue*);
     PassRefPtr<StyleImage> cursorOrPendingFromValue(CSSPropertyID, CSSCursorImageValue*);
 
     const PendingImagePropertyMap& pendingImageProperties() const { return m_pendingImageProperties; }
     const PendingSVGDocumentMap& pendingSVGDocuments() const { return m_pendingSVGDocuments; }
 
-    void setHasNewCustomFilterProgram(bool hasNewCustomFilterProgram) { m_hasNewCustomFilterProgram = hasNewCustomFilterProgram; }
-    bool hasNewCustomFilterProgram() const { return m_hasNewCustomFilterProgram; }
+    void clearPendingImageProperties();
+    void clearPendingSVGDocuments();
 
     float deviceScaleFactor() const { return m_deviceScaleFactor; }
     void setDeviceScaleFactor(float deviceScaleFactor) { m_deviceScaleFactor = deviceScaleFactor; }
@@ -71,7 +73,6 @@ public:
 private:
     PendingImagePropertyMap m_pendingImageProperties;
     PendingSVGDocumentMap m_pendingSVGDocuments;
-    bool m_hasNewCustomFilterProgram;
     float m_deviceScaleFactor;
 };
 

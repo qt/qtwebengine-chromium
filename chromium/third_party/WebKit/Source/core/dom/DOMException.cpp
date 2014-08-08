@@ -29,7 +29,7 @@
 #include "config.h"
 #include "core/dom/DOMException.h"
 
-#include "ExceptionCode.h"
+#include "core/dom/ExceptionCode.h"
 
 namespace WebCore {
 
@@ -76,6 +76,9 @@ static const struct CoreException {
 
     // SQL
     { "DatabaseError", "The operation failed for some reason related to the database.", 0 },
+
+    // Web Crypto
+    { "OperationError", "The operation failed for an operation-specific reason", 0 },
 };
 
 static const CoreException* getErrorEntry(ExceptionCode ec)
@@ -96,11 +99,11 @@ DOMException::DOMException(unsigned short code, const String& name, const String
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<DOMException> DOMException::create(ExceptionCode ec, const String& sanitizedMessage, const String& unsanitizedMessage)
+PassRefPtrWillBeRawPtr<DOMException> DOMException::create(ExceptionCode ec, const String& sanitizedMessage, const String& unsanitizedMessage)
 {
     const CoreException* entry = getErrorEntry(ec);
     ASSERT(entry);
-    return adoptRef(new DOMException(entry->code,
+    return adoptRefWillBeNoop(new DOMException(entry->code,
         entry->name ? entry->name : "Error",
         sanitizedMessage.isNull() ? String(entry->message) : sanitizedMessage,
         unsanitizedMessage));
@@ -134,14 +137,6 @@ String DOMException::getErrorMessage(ExceptionCode ec)
         return "Unknown error.";
 
     return entry->message;
-}
-
-unsigned short DOMException::getLegacyErrorCode(ExceptionCode ec)
-{
-    const CoreException* entry = getErrorEntry(ec);
-    ASSERT(entry);
-
-    return (entry && entry->code) ? entry->code : 0;
 }
 
 } // namespace WebCore

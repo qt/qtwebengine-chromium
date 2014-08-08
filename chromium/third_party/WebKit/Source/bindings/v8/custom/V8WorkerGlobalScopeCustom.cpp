@@ -29,27 +29,27 @@
  */
 
 #include "config.h"
-#include "V8WorkerGlobalScope.h"
+#include "bindings/core/v8/V8WorkerGlobalScope.h"
 
 #include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/ScheduledAction.h"
 #include "bindings/v8/V8Binding.h"
-#include "bindings/v8/V8Utilities.h"
 #include "bindings/v8/V8WorkerGlobalScopeEventListener.h"
 #include "bindings/v8/WorkerScriptController.h"
 #include "core/inspector/ScriptCallStack.h"
-#include "core/frame/ContentSecurityPolicy.h"
 #include "core/frame/DOMTimer.h"
 #include "core/frame/DOMWindowTimers.h"
+#include "core/frame/csp/ContentSecurityPolicy.h"
 #include "core/workers/WorkerGlobalScope.h"
 #include "modules/websockets/WebSocket.h"
 #include "wtf/OwnPtr.h"
 
 namespace WebCore {
 
-void SetTimeoutOrInterval(const v8::FunctionCallbackInfo<v8::Value>& info, bool singleShot)
+static void setTimeoutOrInterval(const v8::FunctionCallbackInfo<v8::Value>& info, bool singleShot)
 {
     WorkerGlobalScope* workerGlobalScope = V8WorkerGlobalScope::toNative(info.Holder());
+    ASSERT(workerGlobalScope);
 
     int argumentCount = info.Length();
     if (argumentCount < 1)
@@ -61,8 +61,8 @@ void SetTimeoutOrInterval(const v8::FunctionCallbackInfo<v8::Value>& info, bool 
     if (!script)
         return;
 
+    ScriptState* scriptState = ScriptState::current(info.GetIsolate());
     OwnPtr<ScheduledAction> action;
-    v8::Handle<v8::Context> v8Context = script->context();
     if (function->IsString()) {
         if (ContentSecurityPolicy* policy = workerGlobalScope->contentSecurityPolicy()) {
             if (!policy->allowEval()) {
@@ -70,7 +70,7 @@ void SetTimeoutOrInterval(const v8::FunctionCallbackInfo<v8::Value>& info, bool 
                 return;
             }
         }
-        action = adoptPtr(new ScheduledAction(v8Context, toCoreString(function.As<v8::String>()), workerGlobalScope->url(), info.GetIsolate()));
+        action = adoptPtr(new ScheduledAction(scriptState, toCoreString(function.As<v8::String>()), workerGlobalScope->url(), info.GetIsolate()));
     } else if (function->IsFunction()) {
         size_t paramCount = argumentCount >= 2 ? argumentCount - 2 : 0;
         OwnPtr<v8::Local<v8::Value>[]> params;
@@ -80,28 +80,28 @@ void SetTimeoutOrInterval(const v8::FunctionCallbackInfo<v8::Value>& info, bool 
                 params[i] = info[i+2];
         }
         // ScheduledAction takes ownership of actual params and releases them in its destructor.
-        action = adoptPtr(new ScheduledAction(v8Context, v8::Handle<v8::Function>::Cast(function), paramCount, params.get(), info.GetIsolate()));
+        action = adoptPtr(new ScheduledAction(scriptState, v8::Handle<v8::Function>::Cast(function), paramCount, params.get(), info.GetIsolate()));
     } else
         return;
 
     int32_t timeout = argumentCount >= 2 ? info[1]->Int32Value() : 0;
     int timerId;
     if (singleShot)
-        timerId = DOMWindowTimers::setTimeout(workerGlobalScope, action.release(), timeout);
+        timerId = DOMWindowTimers::setTimeout(*workerGlobalScope, action.release(), timeout);
     else
-        timerId = DOMWindowTimers::setInterval(workerGlobalScope, action.release(), timeout);
+        timerId = DOMWindowTimers::setInterval(*workerGlobalScope, action.release(), timeout);
 
     v8SetReturnValue(info, timerId);
 }
 
 void V8WorkerGlobalScope::setTimeoutMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
-    return SetTimeoutOrInterval(info, true);
+    return setTimeoutOrInterval(info, true);
 }
 
 void V8WorkerGlobalScope::setIntervalMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
-    return SetTimeoutOrInterval(info, false);
+    return setTimeoutOrInterval(info, false);
 }
 
 v8::Handle<v8::Value> toV8(WorkerGlobalScope* impl, v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)

@@ -10,15 +10,17 @@
 #include "content/child/child_process.h"
 #include "content/child/scoped_child_process_reference.h"
 #include "content/child/thread_safe_sender.h"
-#include "content/common/service_worker_messages.h"
+#include "content/child/worker_task_runner.h"
+#include "content/common/devtools_messages.h"
+#include "content/common/service_worker/embedded_worker_messages.h"
+#include "content/public/common/content_client.h"
 #include "content/renderer/render_thread_impl.h"
-#include "content/renderer/service_worker/service_worker_context_client.h"
+#include "content/renderer/service_worker/embedded_worker_context_client.h"
+#include "content/renderer/service_worker/embedded_worker_devtools_agent.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/platform/WebURL.h"
 #include "third_party/WebKit/public/web/WebEmbeddedWorker.h"
 #include "third_party/WebKit/public/web/WebEmbeddedWorkerStartData.h"
-#include "webkit/child/worker_task_runner.h"
-#include "webkit/common/user_agent/user_agent.h"
 
 namespace content {
 
@@ -26,7 +28,10 @@ namespace content {
 // references automatically.
 class EmbeddedWorkerDispatcher::WorkerWrapper {
  public:
-  explicit WorkerWrapper(blink::WebEmbeddedWorker* worker) : worker_(worker) {}
+  WorkerWrapper(blink::WebEmbeddedWorker* worker, int devtools_agent_route_id)
+      : worker_(worker),
+        dev_tools_agent_(
+            new EmbeddedWorkerDevToolsAgent(worker, devtools_agent_route_id)) {}
   ~WorkerWrapper() {}
 
   blink::WebEmbeddedWorker* worker() { return worker_.get(); }
@@ -34,6 +39,7 @@ class EmbeddedWorkerDispatcher::WorkerWrapper {
  private:
   ScopedChildProcessReference process_ref_;
   scoped_ptr<blink::WebEmbeddedWorker> worker_;
+  scoped_ptr<EmbeddedWorkerDevToolsAgent> dev_tools_agent_;
 };
 
 EmbeddedWorkerDispatcher::EmbeddedWorkerDispatcher() : weak_factory_(this) {}
@@ -44,8 +50,8 @@ bool EmbeddedWorkerDispatcher::OnMessageReceived(
     const IPC::Message& message) {
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(EmbeddedWorkerDispatcher, message)
-    IPC_MESSAGE_HANDLER(ServiceWorkerMsg_StartWorker, OnStartWorker)
-    IPC_MESSAGE_HANDLER(ServiceWorkerMsg_TerminateWorker, OnTerminateWorker)
+    IPC_MESSAGE_HANDLER(EmbeddedWorkerMsg_StartWorker, OnStartWorker)
+    IPC_MESSAGE_HANDLER(EmbeddedWorkerMsg_StopWorker, OnStopWorker)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
@@ -53,35 +59,41 @@ bool EmbeddedWorkerDispatcher::OnMessageReceived(
 
 void EmbeddedWorkerDispatcher::WorkerContextDestroyed(
     int embedded_worker_id) {
+  RenderThreadImpl::current()->thread_safe_sender()->Send(
+      new EmbeddedWorkerHostMsg_WorkerStopped(embedded_worker_id));
   workers_.Remove(embedded_worker_id);
 }
 
 void EmbeddedWorkerDispatcher::OnStartWorker(
-    int embedded_worker_id,
-    int64 service_worker_version_id,
-    const GURL& script_url) {
-  DCHECK(!workers_.Lookup(embedded_worker_id));
-  scoped_ptr<WorkerWrapper> wrapper(new WorkerWrapper(
-      blink::WebEmbeddedWorker::create(
-          new ServiceWorkerContextClient(
-              embedded_worker_id,
-              service_worker_version_id,
-              script_url),
-          NULL)));
+    const EmbeddedWorkerMsg_StartWorker_Params& params) {
+  DCHECK(!workers_.Lookup(params.embedded_worker_id));
+  RenderThread::Get()->EnsureWebKitInitialized();
+  scoped_ptr<WorkerWrapper> wrapper(
+      new WorkerWrapper(blink::WebEmbeddedWorker::create(
+                            new EmbeddedWorkerContextClient(
+                                params.embedded_worker_id,
+                                params.service_worker_version_id,
+                                params.scope,
+                                params.script_url,
+                                params.worker_devtools_agent_route_id),
+                            NULL),
+                        params.worker_devtools_agent_route_id));
 
   blink::WebEmbeddedWorkerStartData start_data;
-  start_data.scriptURL = script_url;
-  start_data.userAgent =
-      base::UTF8ToUTF16(webkit_glue::GetUserAgent(script_url));
+  start_data.scriptURL = params.script_url;
+  start_data.userAgent = base::UTF8ToUTF16(GetContentClient()->GetUserAgent());
+  start_data.startMode =
+      params.pause_on_start ? blink::WebEmbeddedWorkerStartModePauseOnStart
+                            : blink::WebEmbeddedWorkerStartModeDontPauseOnStart;
 
   wrapper->worker()->startWorkerContext(start_data);
-  workers_.AddWithID(wrapper.release(), embedded_worker_id);
+  workers_.AddWithID(wrapper.release(), params.embedded_worker_id);
 }
 
-void EmbeddedWorkerDispatcher::OnTerminateWorker(int embedded_worker_id) {
+void EmbeddedWorkerDispatcher::OnStopWorker(int embedded_worker_id) {
   WorkerWrapper* wrapper = workers_.Lookup(embedded_worker_id);
   if (!wrapper) {
-    LOG(WARNING) << "Got OnTerminateWorker for nonexistent worker";
+    LOG(WARNING) << "Got OnStopWorker for nonexistent worker";
     return;
   }
 

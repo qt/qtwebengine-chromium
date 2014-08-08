@@ -21,42 +21,36 @@
 #ifndef SVGCircleElement_h
 #define SVGCircleElement_h
 
-#include "SVGNames.h"
+#include "core/SVGNames.h"
 #include "core/svg/SVGAnimatedBoolean.h"
 #include "core/svg/SVGAnimatedLength.h"
-#include "core/svg/SVGExternalResourcesRequired.h"
 #include "core/svg/SVGGeometryElement.h"
 
 namespace WebCore {
 
-class SVGCircleElement FINAL : public SVGGeometryElement,
-                               public SVGExternalResourcesRequired {
+class SVGCircleElement FINAL : public SVGGeometryElement {
 public:
-    static PassRefPtr<SVGCircleElement> create(Document&);
+    DECLARE_NODE_FACTORY(SVGCircleElement);
+
+    SVGAnimatedLength* cx() const { return m_cx.get(); }
+    SVGAnimatedLength* cy() const { return m_cy.get(); }
+    SVGAnimatedLength* r() const { return m_r.get(); }
 
 private:
     explicit SVGCircleElement(Document&);
 
-    virtual bool isValid() const { return SVGTests::isValid(); }
-    virtual bool supportsFocus() const OVERRIDE { return hasFocusEventListeners(); }
-
     bool isSupportedAttribute(const QualifiedName&);
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual void svgAttributeChanged(const QualifiedName&);
+    virtual void svgAttributeChanged(const QualifiedName&) OVERRIDE;
 
-    virtual bool selfHasRelativeLengths() const;
+    virtual bool selfHasRelativeLengths() const OVERRIDE;
 
     virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
 
-    BEGIN_DECLARE_ANIMATED_PROPERTIES(SVGCircleElement)
-        DECLARE_ANIMATED_LENGTH(Cx, cx)
-        DECLARE_ANIMATED_LENGTH(Cy, cy)
-        DECLARE_ANIMATED_LENGTH(R, r)
-        DECLARE_ANIMATED_BOOLEAN(ExternalResourcesRequired, externalResourcesRequired)
-    END_DECLARE_ANIMATED_PROPERTIES
+    RefPtr<SVGAnimatedLength> m_cx;
+    RefPtr<SVGAnimatedLength> m_cy;
+    RefPtr<SVGAnimatedLength> m_r;
 };
-
-DEFINE_NODE_TYPE_CASTS(SVGCircleElement, hasTagName(SVGNames::circleTag));
 
 } // namespace WebCore
 

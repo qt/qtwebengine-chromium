@@ -29,7 +29,6 @@
 
 #include "core/dom/DOMURLUtilsReadOnly.h"
 #include "wtf/Forward.h"
-#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
@@ -41,17 +40,17 @@ public:
     virtual void setInput(const String&) = 0;
     virtual ~DOMURLUtils() { };
 
-    static void setHref(DOMURLUtils*, const String&);
+    void setHref(const String&);
 
-    static void setProtocol(DOMURLUtils*, const String&);
-    static void setUsername(DOMURLUtils*, const String&);
-    static void setPassword(DOMURLUtils*, const String&);
-    static void setHost(DOMURLUtils*, const String&);
-    static void setHostname(DOMURLUtils*, const String&);
-    static void setPort(DOMURLUtils*, const String&);
-    static void setPathname(DOMURLUtils*, const String&);
-    static void setSearch(DOMURLUtils*, const String&);
-    static void setHash(DOMURLUtils*, const String&);
+    void setProtocol(const String&);
+    void setUsername(const String&);
+    void setPassword(const String&);
+    void setHost(const String&);
+    void setHostname(const String&);
+    void setPort(const String&);
+    void setPathname(const String&);
+    void setSearch(const String&);
+    void setHash(const String&);
 };
 
 } // namespace WebCore

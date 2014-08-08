@@ -33,6 +33,7 @@
 #define MediaStreamComponent_h
 
 #include "platform/audio/AudioSourceProvider.h"
+#include "wtf/PassOwnPtr.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/ThreadingPrimitives.h"
@@ -49,17 +50,13 @@ class MediaStreamSource;
 
 class PLATFORM_EXPORT MediaStreamComponent : public RefCounted<MediaStreamComponent> {
 public:
-    class ExtraData : public RefCounted<ExtraData> {
+    class ExtraData {
     public:
         virtual ~ExtraData() { }
     };
 
     static PassRefPtr<MediaStreamComponent> create(PassRefPtr<MediaStreamSource>);
     static PassRefPtr<MediaStreamComponent> create(const String& id, PassRefPtr<MediaStreamSource>);
-    static PassRefPtr<MediaStreamComponent> create(MediaStreamDescriptor*, PassRefPtr<MediaStreamSource>);
-
-    MediaStreamDescriptor* stream() const { return m_stream; }
-    void setStream(MediaStreamDescriptor* stream) { m_stream = stream; }
 
     MediaStreamSource* source() const { return m_source.get(); }
 
@@ -73,16 +70,16 @@ public:
 #endif // ENABLE(WEB_AUDIO)
 
     ExtraData* extraData() const { return m_extraData.get(); }
-    void setExtraData(PassRefPtr<ExtraData> extraData) { m_extraData = extraData; }
+    void setExtraData(PassOwnPtr<ExtraData> extraData) { m_extraData = extraData; }
 
 private:
-    MediaStreamComponent(const String& id, MediaStreamDescriptor*, PassRefPtr<MediaStreamSource>);
+    MediaStreamComponent(const String& id, PassRefPtr<MediaStreamSource>);
 
 #if ENABLE(WEB_AUDIO)
     // AudioSourceProviderImpl wraps a WebAudioSourceProvider::provideInput()
     // calls into chromium to get a rendered audio stream.
 
-    class AudioSourceProviderImpl : public AudioSourceProvider {
+    class PLATFORM_EXPORT AudioSourceProviderImpl FINAL: public AudioSourceProvider {
     public:
         AudioSourceProviderImpl()
             : m_webAudioSourceProvider(0)
@@ -95,7 +92,7 @@ private:
         void wrap(blink::WebAudioSourceProvider*);
 
         // WebCore::AudioSourceProvider
-        virtual void provideInput(WebCore::AudioBus*, size_t framesToProcess);
+        virtual void provideInput(WebCore::AudioBus*, size_t framesToProcess) OVERRIDE;
 
     private:
         blink::WebAudioSourceProvider* m_webAudioSourceProvider;
@@ -105,11 +102,10 @@ private:
     AudioSourceProviderImpl m_sourceProvider;
 #endif // ENABLE(WEB_AUDIO)
 
-    MediaStreamDescriptor* m_stream;
     RefPtr<MediaStreamSource> m_source;
     String m_id;
     bool m_enabled;
-    RefPtr<ExtraData> m_extraData;
+    OwnPtr<ExtraData> m_extraData;
 };
 
 typedef Vector<RefPtr<MediaStreamComponent> > MediaStreamComponentVector;

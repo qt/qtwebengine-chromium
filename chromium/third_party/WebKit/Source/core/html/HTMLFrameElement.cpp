@@ -24,7 +24,7 @@
 #include "config.h"
 #include "core/html/HTMLFrameElement.h"
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 #include "core/html/HTMLFrameSetElement.h"
 #include "core/rendering/RenderFrame.h"
 
@@ -40,10 +40,7 @@ inline HTMLFrameElement::HTMLFrameElement(Document& document)
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLFrameElement> HTMLFrameElement::create(Document& document)
-{
-    return adoptRef(new HTMLFrameElement(document));
-}
+DEFINE_NODE_FACTORY(HTMLFrameElement)
 
 bool HTMLFrameElement::rendererIsNeeded(const RenderStyle&)
 {
@@ -56,15 +53,6 @@ RenderObject* HTMLFrameElement::createRenderer(RenderStyle*)
     return new RenderFrame(this);
 }
 
-static inline HTMLFrameSetElement* containingFrameSetElement(Node* node)
-{
-    while ((node = node->parentNode())) {
-        if (node->hasTagName(framesetTag))
-            return toHTMLFrameSetElement(node);
-    }
-    return 0;
-}
-
 bool HTMLFrameElement::noResize() const
 {
     return hasAttribute(noresizeAttr);
@@ -74,7 +62,7 @@ void HTMLFrameElement::attach(const AttachContext& context)
 {
     HTMLFrameElementBase::attach(context);
 
-    if (HTMLFrameSetElement* frameSetElement = containingFrameSetElement(this)) {
+    if (HTMLFrameSetElement* frameSetElement = Traversal<HTMLFrameSetElement>::firstAncestor(*this)) {
         if (!m_frameBorderSet)
             m_frameBorder = frameSetElement->hasFrameBorder();
     }

@@ -39,9 +39,9 @@ namespace WebCore {
 
 class HTMLDataListElement FINAL : public HTMLElement {
 public:
-    static PassRefPtr<HTMLDataListElement> create(Document&);
+    static PassRefPtrWillBeRawPtr<HTMLDataListElement> create(Document&);
 
-    PassRefPtr<HTMLCollection> options();
+    PassRefPtrWillBeRawPtr<HTMLCollection> options();
 
     void optionElementChildrenChanged();
 
@@ -50,8 +50,6 @@ private:
     virtual void childrenChanged(bool, Node*, Node*, int) OVERRIDE;
     virtual void finishParsingChildren() OVERRIDE;
 };
-
-DEFINE_NODE_TYPE_CASTS(HTMLDataListElement, hasTagName(HTMLNames::datalistTag));
 
 } // namespace WebCore
 

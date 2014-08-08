@@ -1,10 +1,10 @@
-/**
+/*
  * Copyright (C) 1997 Martin Jones (mjones@kde.org)
  *           (C) 1997 Torben Weis (weis@kde.org)
  *           (C) 1998 Waldo Bastian (bastian@kde.org)
  *           (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
- * Copyright (C) 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010 Apple Inc. All rights reserved.
+ * Copyright (C) 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2013 Apple Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -25,12 +25,11 @@
 #include "config.h"
 #include "core/rendering/RenderTableRow.h"
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 #include "core/dom/Document.h"
 #include "core/fetch/ImageResource.h"
 #include "core/rendering/GraphicsContextAnnotator.h"
 #include "core/rendering/HitTestResult.h"
-#include "core/rendering/LayoutRectRecorder.h"
 #include "core/rendering/PaintInfo.h"
 #include "core/rendering/RenderTableCell.h"
 #include "core/rendering/RenderView.h"
@@ -80,7 +79,7 @@ void RenderTableRow::styleDidChange(StyleDifference diff, const RenderStyle* old
         if (table && !table->selfNeedsLayout() && !table->normalChildNeedsLayout() && oldStyle && oldStyle->border() != style()->border())
             table->invalidateCollapsedBorders();
 
-        if (table && oldStyle && diff == StyleDifferenceLayout && needsLayout() && table->collapseBorders() && borderWidthChanged(oldStyle, style())) {
+        if (table && oldStyle && diff.needsFullLayout() && needsLayout() && table->collapseBorders() && borderWidthChanged(oldStyle, style())) {
             // If the border width changes on a row, we need to make sure the cells in the row know to lay out again.
             // This only happens when borders are collapsed, since they end up affecting the border sides of the cell
             // itself.
@@ -112,11 +111,12 @@ void RenderTableRow::addChild(RenderObject* child, RenderObject* beforeChild)
     if (!child->isTableCell()) {
         RenderObject* last = beforeChild;
         if (!last)
-            last = lastChild();
+            last = lastCell();
         if (last && last->isAnonymous() && last->isTableCell() && !last->isBeforeOrAfterContent()) {
-            if (beforeChild == last)
-                beforeChild = last->firstChild();
-            last->addChild(child, beforeChild);
+            RenderTableCell* lastCell = toRenderTableCell(last);
+            if (beforeChild == lastCell)
+                beforeChild = lastCell->firstChild();
+            lastCell->addChild(child, beforeChild);
             return;
         }
 
@@ -152,7 +152,7 @@ void RenderTableRow::addChild(RenderObject* child, RenderObject* beforeChild)
     ASSERT(!beforeChild || beforeChild->isTableCell());
     RenderBox::addChild(cell, beforeChild);
 
-    if (beforeChild || nextSibling())
+    if (beforeChild || nextRow())
         section()->setNeedsCellRecalc();
 }
 
@@ -160,59 +160,40 @@ void RenderTableRow::layout()
 {
     ASSERT(needsLayout());
 
-    LayoutRectRecorder recorder(*this);
-
     // Table rows do not add translation.
-    LayoutStateMaintainer statePusher(view(), this, LayoutSize(), style()->isFlippedBlocksWritingMode());
+    LayoutState state(*this, LayoutSize());
 
-    bool paginated = view()->layoutState()->isPaginated();
+    for (RenderTableCell* cell = firstCell(); cell; cell = cell->nextCell()) {
+        SubtreeLayoutScope layouter(*cell);
+        if (!cell->needsLayout())
+            cell->markForPaginationRelayoutIfNeeded(layouter);
+        if (cell->needsLayout()) {
+            cell->computeAndSetBlockDirectionMargins(table());
+            cell->layout();
+        }
+    }
 
-    for (RenderObject* child = firstChild(); child; child = child->nextSibling()) {
-        if (child->isTableCell()) {
-            SubtreeLayoutScope layouter(child);
-            RenderTableCell* cell = toRenderTableCell(child);
-            if (!cell->needsLayout() && paginated && view()->layoutState()->pageLogicalHeight() && view()->layoutState()->pageLogicalOffset(cell, cell->logicalTop()) != cell->pageLogicalOffset())
-                layouter.setChildNeedsLayout(cell);
+    m_overflow.clear();
+    addVisualEffectOverflow();
 
-            if (child->needsLayout()) {
-                cell->computeAndSetBlockDirectionMargins(table());
-                cell->layout();
+    // We only ever need to issue paint invalidations if our cells didn't, which means that they didn't need
+    // layout, so we know that our bounds didn't change. This code is just making up for
+    // the fact that we did not invalidate paints in setStyle() because we had a layout hint.
+    // We cannot call repaint() because our clippedOverflowRectForPaintInvalidation() is taken from the
+    // parent table, and being mid-layout, that is invalid. Instead, we issue paint invalidations for our cells.
+    if (selfNeedsLayout() && checkForPaintInvalidation()) {
+        for (RenderTableCell* cell = firstCell(); cell; cell = cell->nextCell()) {
+            if (RuntimeEnabledFeatures::repaintAfterLayoutEnabled()) {
+                // FIXME: Is this needed with Repaint After Layout?
+                cell->setShouldDoFullPaintInvalidationAfterLayout(true);
+            } else {
+                cell->paintInvalidationForWholeRenderer();
             }
         }
     }
 
-    // We only ever need to repaint if our cells didn't, which menas that they didn't need
-    // layout, so we know that our bounds didn't change. This code is just making up for
-    // the fact that we did not repaint in setStyle() because we had a layout hint.
-    // We cannot call repaint() because our clippedOverflowRectForRepaint() is taken from the
-    // parent table, and being mid-layout, that is invalid. Instead, we repaint our cells.
-    if (selfNeedsLayout() && checkForRepaintDuringLayout()) {
-        for (RenderObject* child = firstChild(); child; child = child->nextSibling()) {
-            if (child->isTableCell())
-                child->repaint();
-        }
-    }
-
-    statePusher.pop();
     // RenderTableSection::layoutRows will set our logical height and width later, so it calls updateLayerTransform().
     clearNeedsLayout();
-}
-
-LayoutRect RenderTableRow::clippedOverflowRectForRepaint(const RenderLayerModelObject* repaintContainer) const
-{
-    ASSERT(parent());
-
-    if (repaintContainer == this)
-        return RenderBox::clippedOverflowRectForRepaint(repaintContainer);
-
-    // For now, just repaint the whole table.
-    // FIXME: Find a better way to do this, e.g., need to repaint all the cells that we
-    // might have propagated a background color into.
-    // FIXME: do repaintContainer checks here
-    if (RenderTable* parentTable = table())
-        return parentTable->clippedOverflowRectForRepaint(repaintContainer);
-
-    return LayoutRect();
 }
 
 // Hit Testing
@@ -220,14 +201,14 @@ bool RenderTableRow::nodeAtPoint(const HitTestRequest& request, HitTestResult& r
 {
     // Table rows cannot ever be hit tested.  Effectively they do not exist.
     // Just forward to our children always.
-    for (RenderObject* child = lastChild(); child; child = child->previousSibling()) {
+    for (RenderTableCell* cell = lastCell(); cell; cell = cell->previousCell()) {
         // FIXME: We have to skip over inline flows, since they can show up inside table rows
         // at the moment (a demoted inline <form> for example). If we ever implement a
         // table-specific hit-test method (which we should do for performance reasons anyway),
         // then we can remove this check.
-        if (child->isTableCell() && !toRenderBox(child)->hasSelfPaintingLayer()) {
-            LayoutPoint cellPoint = flipForWritingModeForChild(toRenderTableCell(child), accumulatedOffset);
-            if (child->nodeAtPoint(request, result, locationInContainer, cellPoint, action)) {
+        if (!cell->hasSelfPaintingLayer()) {
+            LayoutPoint cellPoint = flipForWritingModeForChild(cell, accumulatedOffset);
+            if (cell->nodeAtPoint(request, result, locationInContainer, cellPoint, action)) {
                 updateHitTestResult(result, locationInContainer.point() - toLayoutSize(cellPoint));
                 return true;
             }
@@ -251,23 +232,19 @@ void RenderTableRow::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset)
     ANNOTATE_GRAPHICS_CONTEXT(paintInfo, this);
 
     paintOutlineForRowIfNeeded(paintInfo, paintOffset);
-    for (RenderObject* child = firstChild(); child; child = child->nextSibling()) {
-        if (child->isTableCell()) {
-            // Paint the row background behind the cell.
-            if (paintInfo.phase == PaintPhaseBlockBackground || paintInfo.phase == PaintPhaseChildBlockBackground) {
-                RenderTableCell* cell = toRenderTableCell(child);
-                cell->paintBackgroundsBehindCell(paintInfo, paintOffset, this);
-            }
-            if (!toRenderBox(child)->hasSelfPaintingLayer())
-                child->paint(paintInfo, paintOffset);
-        }
+    for (RenderTableCell* cell = firstCell(); cell; cell = cell->nextCell()) {
+        // Paint the row background behind the cell.
+        if (paintInfo.phase == PaintPhaseBlockBackground || paintInfo.phase == PaintPhaseChildBlockBackground)
+            cell->paintBackgroundsBehindCell(paintInfo, paintOffset, this);
+        if (!cell->hasSelfPaintingLayer())
+            cell->paint(paintInfo, paintOffset);
     }
 }
 
 void RenderTableRow::imageChanged(WrappedImagePtr, const IntRect*)
 {
     // FIXME: Examine cells and repaint only the rect the image paints in.
-    repaint();
+    paintInvalidationForWholeRenderer();
 }
 
 RenderTableRow* RenderTableRow::createAnonymous(Document* document)

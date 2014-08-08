@@ -22,9 +22,10 @@
 #include "config.h"
 #include "core/html/forms/RadioInputType.h"
 
-#include "HTMLNames.h"
-#include "InputTypeNames.h"
-#include "core/dom/NodeTraversal.h"
+#include "core/HTMLNames.h"
+#include "core/InputTypeNames.h"
+#include "core/dom/Document.h"
+#include "core/dom/ElementTraversal.h"
 #include "core/events/KeyboardEvent.h"
 #include "core/events/MouseEvent.h"
 #include "core/html/HTMLInputElement.h"
@@ -36,9 +37,9 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-PassRefPtr<InputType> RadioInputType::create(HTMLInputElement& element)
+PassRefPtrWillBeRawPtr<InputType> RadioInputType::create(HTMLInputElement& element)
 {
-    return adoptRef(new RadioInputType(element));
+    return adoptRefWillBeNoop(new RadioInputType(element));
 }
 
 const AtomicString& RadioInputType::formControlType() const
@@ -83,19 +84,19 @@ void RadioInputType::handleKeydownEvent(KeyboardEvent* event)
 
     // We can only stay within the form's children if the form hasn't been demoted to a leaf because
     // of malformed HTML.
-    Node* node = &element();
-    while ((node = (forward ? NodeTraversal::next(*node) : NodeTraversal::previous(*node)))) {
+    HTMLElement* htmlElement = &element();
+    while ((htmlElement = (forward ? Traversal<HTMLElement>::next(*htmlElement) : Traversal<HTMLElement>::previous(*htmlElement)))) {
         // Once we encounter a form element, we know we're through.
-        if (node->hasTagName(formTag))
+        if (isHTMLFormElement(*htmlElement))
             break;
         // Look for more radio buttons.
-        if (!node->hasTagName(inputTag))
+        if (!isHTMLInputElement(*htmlElement))
             continue;
-        HTMLInputElement* inputElement = toHTMLInputElement(node);
+        HTMLInputElement* inputElement = toHTMLInputElement(htmlElement);
         if (inputElement->form() != element().form())
             break;
         if (inputElement->isRadioButton() && inputElement->name() == element().name() && inputElement->isFocusable()) {
-            RefPtr<HTMLInputElement> protector(inputElement);
+            RefPtrWillBeRawPtr<HTMLInputElement> protector(inputElement);
             document.setFocusedElement(inputElement);
             inputElement->dispatchSimulatedClick(event, SendNoEvents);
             event->setDefaultHandled();
@@ -128,9 +129,9 @@ bool RadioInputType::isKeyboardFocusable() const
     // Never allow keyboard tabbing to leave you in the same radio group. Always
     // skip any other elements in the group.
     Element* currentFocusedElement = element().document().focusedElement();
-    if (currentFocusedElement && currentFocusedElement->hasTagName(inputTag)) {
-        HTMLInputElement* focusedInput = toHTMLInputElement(currentFocusedElement);
-        if (focusedInput->isRadioButton() && focusedInput->form() == element().form() && focusedInput->name() == element().name())
+    if (isHTMLInputElement(currentFocusedElement)) {
+        HTMLInputElement& focusedInput = toHTMLInputElement(*currentFocusedElement);
+        if (focusedInput.isRadioButton() && focusedInput.form() == element().form() && focusedInput.name() == element().name())
             return false;
     }
 
@@ -145,7 +146,7 @@ bool RadioInputType::shouldSendChangeEventAfterCheckedChanged()
     return element().checked();
 }
 
-PassOwnPtr<ClickHandlingState> RadioInputType::willDispatchClick()
+PassOwnPtrWillBeRawPtr<ClickHandlingState> RadioInputType::willDispatchClick()
 {
     // An event handler can use preventDefault or "return false" to reverse the selection we do here.
     // The ClickHandlingState object contains what we need to undo what we did here in didDispatchClick.
@@ -154,7 +155,7 @@ PassOwnPtr<ClickHandlingState> RadioInputType::willDispatchClick()
     // Therefore if nothing is currently selected, we won't allow the upcoming action to be "undone", since
     // we want some object in the radio group to actually get selected.
 
-    OwnPtr<ClickHandlingState> state = adoptPtr(new ClickHandlingState);
+    OwnPtrWillBeRawPtr<ClickHandlingState> state = adoptPtrWillBeNoop(new ClickHandlingState);
 
     state->checked = element().checked();
     state->checkedRadioButton = element().checkedRadioButtonForGroup();

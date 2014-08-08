@@ -16,8 +16,7 @@
 // headers to subclasses which implement CheckChromeClass().
 class ChromeClassTester : public clang::ASTConsumer {
  public:
-  explicit ChromeClassTester(clang::CompilerInstance& instance,
-                             bool check_url_directory);
+  explicit ChromeClassTester(clang::CompilerInstance& instance);
   virtual ~ChromeClassTester();
 
   // clang::ASTConsumer:
@@ -55,6 +54,12 @@ class ChromeClassTester : public clang::ASTConsumer {
   virtual void CheckChromeClass(clang::SourceLocation record_location,
                                 clang::CXXRecordDecl* record) = 0;
 
+  // Filtered versions of enum type that are only called with things defined
+  // in chrome header files.
+  virtual void CheckChromeEnum(clang::SourceLocation enum_location,
+                               clang::EnumDecl* enum_decl) {
+  }
+
   // Utility methods used for filtering out non-chrome classes (and ones we
   // deliberately ignore) in HandleTagDeclDefinition().
   std::string GetNamespaceImpl(const clang::DeclContext* context,
@@ -80,9 +85,6 @@ class ChromeClassTester : public clang::ASTConsumer {
 
   // List of decls to check once the current top-level decl is parsed.
   std::vector<clang::TagDecl*> pending_class_decls_;
-
-  // TODO(tfarina): Remove once url/ directory compiles without warnings.
-  bool check_url_directory_;
 };
 
 #endif  // TOOLS_CLANG_PLUGINS_CHROMECLASSTESTER_H_

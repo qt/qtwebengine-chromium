@@ -22,8 +22,8 @@
 #ifndef CSSPrimitiveValue_h
 #define CSSPrimitiveValue_h
 
-#include "CSSPropertyNames.h"
-#include "CSSValueKeywords.h"
+#include "core/CSSPropertyNames.h"
+#include "core/CSSValueKeywords.h"
 #include "core/css/CSSValue.h"
 #include "platform/graphics/Color.h"
 #include "wtf/Forward.h"
@@ -38,6 +38,7 @@ class CSSToLengthConversionData;
 class Counter;
 class ExceptionState;
 class Length;
+class LengthSize;
 class Pair;
 class Quad;
 class RGBColor;
@@ -64,9 +65,13 @@ template<> inline float roundForImpreciseConversion(double value)
     return static_cast<float>(value);
 }
 
+// CSSPrimitiveValues are immutable. This class has manual ref-counting
+// of unioned types and does not have the code necessary
+// to handle any kind of mutations. All DOM-exposed "setters" just throw
+// exceptions.
 class CSSPrimitiveValue : public CSSValue {
 public:
-    enum UnitTypes {
+    enum UnitType {
         CSS_UNKNOWN = 0,
         CSS_NUMBER = 1,
         CSS_PERCENTAGE = 2,
@@ -130,13 +135,31 @@ public:
         CSS_CALC = 113,
         CSS_CALC_PERCENTAGE_WITH_NUMBER = 114,
         CSS_CALC_PERCENTAGE_WITH_LENGTH = 115,
-        CSS_VARIABLE_NAME = 116,
 
         CSS_PROPERTY_ID = 117,
         CSS_VALUE_ID = 118
     };
 
-    // This enum follows the CSSParser::Units enum augmented with UNIT_FREQUENCY for frequencies.
+    enum LengthUnitType {
+        UnitTypePixels = 0,
+        UnitTypePercentage,
+        UnitTypeFontSize,
+        UnitTypeFontXSize,
+        UnitTypeRootFontSize,
+        UnitTypeZeroCharacterWidth,
+        UnitTypeViewportWidth,
+        UnitTypeViewportHeight,
+        UnitTypeViewportMin,
+        UnitTypeViewportMax,
+
+        // This value must come after the last length unit type to enable iteration over the length unit types.
+        LengthUnitTypeCount,
+    };
+
+    typedef Vector<double, CSSPrimitiveValue::LengthUnitTypeCount> CSSLengthArray;
+    void accumulateLengthArray(CSSLengthArray&, double multiplier = 1) const;
+
+    // This enum follows the BisonCSSParser::Units enum augmented with UNIT_FREQUENCY for frequencies.
     enum UnitCategory {
         UNumber,
         UPercent,
@@ -144,11 +167,12 @@ public:
         UAngle,
         UTime,
         UFrequency,
-        UViewportPercentageLength,
         UResolution,
         UOther
     };
-    static UnitCategory unitCategory(CSSPrimitiveValue::UnitTypes);
+    static UnitCategory unitCategory(UnitType);
+
+    static UnitType fromName(const String& unit);
 
     bool isAngle() const
     {
@@ -167,11 +191,13 @@ public:
             || m_primitiveUnitType == CSS_REMS
             || m_primitiveUnitType == CSS_CHS;
     }
-    bool isLength() const
+    bool isViewportPercentageLength() const { return isViewportPercentageLength(static_cast<UnitType>(m_primitiveUnitType)); }
+    static bool isViewportPercentageLength(UnitType type) { return type >= CSS_VW && type <= CSS_VMAX; }
+    static bool isLength(UnitType type)
     {
-        unsigned short type = primitiveType();
-        return (type >= CSS_EMS && type <= CSS_PC) || type == CSS_REMS || type == CSS_CHS;
+        return (type >= CSS_EMS && type <= CSS_PC) || type == CSS_REMS || type == CSS_CHS || isViewportPercentageLength(type);
     }
+    bool isLength() const { return isLength(primitiveType()); }
     bool isNumber() const { return primitiveType() == CSS_NUMBER; }
     bool isPercentage() const { return primitiveType() == CSS_PERCENTAGE; }
     bool isPx() const { return primitiveType() == CSS_PX; }
@@ -184,49 +210,67 @@ public:
     bool isCalculated() const { return m_primitiveUnitType == CSS_CALC; }
     bool isCalculatedPercentageWithNumber() const { return primitiveType() == CSS_CALC_PERCENTAGE_WITH_NUMBER; }
     bool isCalculatedPercentageWithLength() const { return primitiveType() == CSS_CALC_PERCENTAGE_WITH_LENGTH; }
-    bool isDotsPerInch() const { return primitiveType() == CSS_DPI; }
-    bool isDotsPerPixel() const { return primitiveType() == CSS_DPPX; }
-    bool isDotsPerCentimeter() const { return primitiveType() == CSS_DPCM; }
-    bool isResolution() const
-    {
-        unsigned short type = primitiveType();
-        return type >= CSS_DPPX && type <= CSS_DPCM;
-    }
-    bool isVariableName() const { return primitiveType() == CSS_VARIABLE_NAME; }
-    bool isViewportPercentageLength() const { return m_primitiveUnitType >= CSS_VW && m_primitiveUnitType <= CSS_VMAX; }
+    static bool isDotsPerInch(UnitType type) { return type == CSS_DPI; }
+    static bool isDotsPerPixel(UnitType type) { return type == CSS_DPPX; }
+    static bool isDotsPerCentimeter(UnitType type) { return type == CSS_DPCM; }
+    static bool isResolution(UnitType type) { return type >= CSS_DPPX && type <= CSS_DPCM; }
     bool isFlex() const { return primitiveType() == CSS_FR; }
     bool isValueID() const { return m_primitiveUnitType == CSS_VALUE_ID; }
     bool colorIsDerivedFromElement() const;
 
-    static PassRefPtr<CSSPrimitiveValue> createIdentifier(CSSValueID valueID) { return adoptRef(new CSSPrimitiveValue(valueID)); }
-    static PassRefPtr<CSSPrimitiveValue> createIdentifier(CSSPropertyID propertyID) { return adoptRef(new CSSPrimitiveValue(propertyID)); }
-    static PassRefPtr<CSSPrimitiveValue> createParserOperator(int parserOperator) { return adoptRef(new CSSPrimitiveValue(parserOperator)); }
-    static PassRefPtr<CSSPrimitiveValue> createColor(unsigned rgbValue) { return adoptRef(new CSSPrimitiveValue(rgbValue)); }
-    static PassRefPtr<CSSPrimitiveValue> create(double value, UnitTypes type) { return adoptRef(new CSSPrimitiveValue(value, type)); }
-    static PassRefPtr<CSSPrimitiveValue> create(const String& value, UnitTypes type) { return adoptRef(new CSSPrimitiveValue(value, type)); }
-    static PassRefPtr<CSSPrimitiveValue> create(const Length& value, float zoom) { return adoptRef(new CSSPrimitiveValue(value, zoom)); }
-
-    template<typename T> static PassRefPtr<CSSPrimitiveValue> create(T value)
+    static PassRefPtrWillBeRawPtr<CSSPrimitiveValue> createIdentifier(CSSValueID valueID)
     {
-        return adoptRef(new CSSPrimitiveValue(value));
+        return adoptRefWillBeNoop(new CSSPrimitiveValue(valueID));
+    }
+    static PassRefPtrWillBeRawPtr<CSSPrimitiveValue> createIdentifier(CSSPropertyID propertyID)
+    {
+        return adoptRefWillBeNoop(new CSSPrimitiveValue(propertyID));
+    }
+    static PassRefPtrWillBeRawPtr<CSSPrimitiveValue> createParserOperator(int parserOperator)
+    {
+        return adoptRefWillBeNoop(new CSSPrimitiveValue(parserOperator, CSS_PARSER_OPERATOR));
+    }
+    static PassRefPtrWillBeRawPtr<CSSPrimitiveValue> createColor(unsigned rgbValue)
+    {
+        return adoptRefWillBeNoop(new CSSPrimitiveValue(rgbValue, CSS_RGBCOLOR));
+    }
+    static PassRefPtrWillBeRawPtr<CSSPrimitiveValue> create(double value, UnitType type)
+    {
+        return adoptRefWillBeNoop(new CSSPrimitiveValue(value, type));
+    }
+    static PassRefPtrWillBeRawPtr<CSSPrimitiveValue> create(const String& value, UnitType type)
+    {
+        return adoptRefWillBeNoop(new CSSPrimitiveValue(value, type));
+    }
+    static PassRefPtrWillBeRawPtr<CSSPrimitiveValue> create(const Length& value, float zoom)
+    {
+        return adoptRefWillBeNoop(new CSSPrimitiveValue(value, zoom));
+    }
+    static PassRefPtrWillBeRawPtr<CSSPrimitiveValue> create(const LengthSize& value, const RenderStyle& style)
+    {
+        return adoptRefWillBeNoop(new CSSPrimitiveValue(value, style));
+    }
+    template<typename T> static PassRefPtrWillBeRawPtr<CSSPrimitiveValue> create(T value)
+    {
+        return adoptRefWillBeNoop(new CSSPrimitiveValue(value));
     }
 
     // This value is used to handle quirky margins in reflow roots (body, td, and th) like WinIE.
     // The basic idea is that a stylesheet can use the value __qem (for quirky em) instead of em.
     // When the quirky value is used, if you're in quirks mode, the margin will collapse away
     // inside a table cell.
-    static PassRefPtr<CSSPrimitiveValue> createAllowingMarginQuirk(double value, UnitTypes type)
+    static PassRefPtrWillBeRawPtr<CSSPrimitiveValue> createAllowingMarginQuirk(double value, UnitType type)
     {
         CSSPrimitiveValue* quirkValue = new CSSPrimitiveValue(value, type);
         quirkValue->m_isQuirkValue = true;
-        return adoptRef(quirkValue);
+        return adoptRefWillBeNoop(quirkValue);
     }
 
     ~CSSPrimitiveValue();
 
     void cleanup();
 
-    unsigned short primitiveType() const;
+    UnitType primitiveType() const;
 
     double computeDegrees();
 
@@ -259,24 +303,22 @@ public:
     // Converts to a Length, mapping various unit types appropriately.
     template<int> Length convertToLength(const CSSToLengthConversionData&);
 
-    // use with care!!!
-    void setPrimitiveType(unsigned short type) { m_primitiveUnitType = type; }
-
-    double getDoubleValue(unsigned short unitType, ExceptionState&) const;
-    double getDoubleValue(unsigned short unitType) const;
+    double getDoubleValue(UnitType, ExceptionState&) const;
+    double getDoubleValue(UnitType) const;
     double getDoubleValue() const;
 
+    // setFloatValue(..., ExceptionState&) and setStringValue() must use unsigned short instead of UnitType to match IDL bindings.
     void setFloatValue(unsigned short unitType, double floatValue, ExceptionState&);
-    float getFloatValue(unsigned short unitType, ExceptionState& exceptionState) const { return getValue<float>(unitType, exceptionState); }
-    float getFloatValue(unsigned short unitType) const { return getValue<float>(unitType); }
+    float getFloatValue(unsigned short unitType, ExceptionState& exceptionState) const { return getValue<float>(static_cast<UnitType>(unitType), exceptionState); }
+    float getFloatValue(UnitType type) const { return getValue<float>(type); }
     float getFloatValue() const { return getValue<float>(); }
 
-    int getIntValue(unsigned short unitType, ExceptionState& exceptionState) const { return getValue<int>(unitType, exceptionState); }
-    int getIntValue(unsigned short unitType) const { return getValue<int>(unitType); }
+    int getIntValue(UnitType type, ExceptionState& exceptionState) const { return getValue<int>(type, exceptionState); }
+    int getIntValue(UnitType type) const { return getValue<int>(type); }
     int getIntValue() const { return getValue<int>(); }
 
-    template<typename T> inline T getValue(unsigned short unitType, ExceptionState& exceptionState) const { return clampTo<T>(getDoubleValue(unitType, exceptionState)); }
-    template<typename T> inline T getValue(unsigned short unitType) const { return clampTo<T>(getDoubleValue(unitType)); }
+    template<typename T> inline T getValue(UnitType type, ExceptionState& exceptionState) const { return clampTo<T>(getDoubleValue(type, exceptionState)); }
+    template<typename T> inline T getValue(UnitType type) const { return clampTo<T>(getDoubleValue(type)); }
     template<typename T> inline T getValue() const { return clampTo<T>(getDoubleValue()); }
 
     void setStringValue(unsigned short stringType, const String& stringValue, ExceptionState&);
@@ -292,7 +334,7 @@ public:
     Quad* getQuadValue(ExceptionState&) const;
     Quad* getQuadValue() const { return m_primitiveUnitType != CSS_QUAD ? 0 : m_value.quad; }
 
-    PassRefPtr<RGBColor> getRGBColorValue(ExceptionState&) const;
+    PassRefPtrWillBeRawPtr<RGBColor> getRGBColorValue(ExceptionState&) const;
     RGBA32 getRGBA32Value() const { return m_primitiveUnitType != CSS_RGBCOLOR ? 0 : m_value.rgbcolor; }
 
     Pair* getPairValue(ExceptionState&) const;
@@ -307,47 +349,44 @@ public:
 
     template<typename T> inline operator T() const; // Defined in CSSPrimitiveValueMappings.h
 
+    static const char* unitTypeToString(UnitType);
     String customCSSText(CSSTextFormattingFlags = QuoteCSSStringIfNeeded) const;
-    String customSerializeResolvingVariables(const HashMap<AtomicString, String>&) const;
-    bool hasVariableReference() const;
 
     bool isQuirkValue() { return m_isQuirkValue; }
 
-    void addSubresourceStyleURLs(ListHashSet<KURL>&, const StyleSheetContents*) const;
-
-    Length viewportPercentageLength();
-
-    PassRefPtr<CSSPrimitiveValue> cloneForCSSOM() const;
+    PassRefPtrWillBeRawPtr<CSSPrimitiveValue> cloneForCSSOM() const;
     void setCSSOMSafe() { m_isCSSOMSafe = true; }
 
     bool equals(const CSSPrimitiveValue&) const;
 
-    static UnitTypes canonicalUnitTypeForCategory(UnitCategory);
-    static double conversionToCanonicalUnitsScaleFactor(unsigned short unitType);
+    void traceAfterDispatch(Visitor*);
+
+    static UnitType canonicalUnitTypeForCategory(UnitCategory);
+    static double conversionToCanonicalUnitsScaleFactor(UnitType);
+
+    // Returns true and populates lengthUnitType, if unitType is a length unit. Otherwise, returns false.
+    static bool unitTypeToLengthUnitType(UnitType, LengthUnitType&);
+    static UnitType lengthUnitTypeToUnitType(LengthUnitType);
 
 private:
     CSSPrimitiveValue(CSSValueID);
     CSSPrimitiveValue(CSSPropertyID);
-    // FIXME: int vs. unsigned overloading is too subtle to distinguish the color and operator cases.
-    CSSPrimitiveValue(int parserOperator);
-    CSSPrimitiveValue(unsigned color); // RGB value
-    CSSPrimitiveValue(const Length& length)
-        : CSSValue(PrimitiveClass)
-    {
-        init(length);
-    }
+    // int vs. unsigned is too subtle to distinguish types, so require a UnitType.
+    CSSPrimitiveValue(int parserOperator, UnitType);
+    CSSPrimitiveValue(unsigned color, UnitType); // RGB value
     CSSPrimitiveValue(const Length&, float zoom);
-    CSSPrimitiveValue(const String&, UnitTypes);
-    CSSPrimitiveValue(double, UnitTypes);
+    CSSPrimitiveValue(const LengthSize&, const RenderStyle&);
+    CSSPrimitiveValue(const String&, UnitType);
+    CSSPrimitiveValue(double, UnitType);
 
     template<typename T> CSSPrimitiveValue(T); // Defined in CSSPrimitiveValueMappings.h
     template<typename T> CSSPrimitiveValue(T* val)
         : CSSValue(PrimitiveClass)
     {
-        init(PassRefPtr<T>(val));
+        init(PassRefPtrWillBeRawPtr<T>(val));
     }
 
-    template<typename T> CSSPrimitiveValue(PassRefPtr<T> val)
+    template<typename T> CSSPrimitiveValue(PassRefPtrWillBeRawPtr<T> val)
         : CSSValue(PrimitiveClass)
     {
         init(val);
@@ -358,13 +397,14 @@ private:
     template<typename T> operator T*(); // compile-time guard
 
     void init(const Length&);
-    void init(PassRefPtr<Counter>);
-    void init(PassRefPtr<Rect>);
-    void init(PassRefPtr<Pair>);
-    void init(PassRefPtr<Quad>);
-    void init(PassRefPtr<CSSBasicShape>);
-    void init(PassRefPtr<CSSCalcValue>);
-    bool getDoubleValueInternal(UnitTypes targetUnitType, double* result) const;
+    void init(const LengthSize&, const RenderStyle&);
+    void init(PassRefPtrWillBeRawPtr<Counter>);
+    void init(PassRefPtrWillBeRawPtr<Rect>);
+    void init(PassRefPtrWillBeRawPtr<Pair>);
+    void init(PassRefPtrWillBeRawPtr<Quad>);
+    void init(PassRefPtrWillBeRawPtr<CSSBasicShape>);
+    void init(PassRefPtrWillBeRawPtr<CSSCalcValue>);
+    bool getDoubleValueInternal(UnitType targetUnitType, double* result) const;
 
     double computeLengthDouble(const CSSToLengthConversionData&);
 
@@ -374,15 +414,18 @@ private:
         int parserOperator;
         double num;
         StringImpl* string;
-        Counter* counter;
-        Rect* rect;
-        Quad* quad;
         unsigned rgbcolor;
-        Pair* pair;
+        // FIXME: oilpan: Should be members, but no support for members in unions. Just trace the raw ptr for now.
         CSSBasicShape* shape;
         CSSCalcValue* calc;
+        Counter* counter;
+        Pair* pair;
+        Rect* rect;
+        Quad* quad;
     } m_value;
 };
+
+typedef CSSPrimitiveValue::CSSLengthArray CSSLengthArray;
 
 DEFINE_CSS_VALUE_TYPE_CASTS(CSSPrimitiveValue, isPrimitiveValue());
 

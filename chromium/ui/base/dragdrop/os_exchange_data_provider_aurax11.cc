@@ -6,14 +6,15 @@
 
 #include "base/logging.h"
 #include "base/memory/ref_counted_memory.h"
-#include "base/message_loop/message_pump_x11.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "net/base/net_util.h"
+#include "net/base/filename_util.h"
 #include "ui/base/clipboard/clipboard.h"
 #include "ui/base/clipboard/scoped_clipboard_writer.h"
+#include "ui/base/dragdrop/file_info.h"
 #include "ui/base/x/selection_utils.h"
 #include "ui/base/x/x11_util.h"
+#include "ui/events/platform/platform_event_source.h"
 
 // Note: the GetBlah() methods are used immediately by the
 // web_contents_view_aura.cc:PrepareDropData(), while the omnibox is a
@@ -25,6 +26,9 @@ namespace ui {
 namespace {
 
 const char kDndSelection[] = "XdndSelection";
+const char kRendererTaint[] = "chromium/x-renderer-taint";
+
+const char kNetscapeURL[] = "_NETSCAPE_URL";
 
 const char* kAtomsToCache[] = {
   kString,
@@ -33,7 +37,9 @@ const char* kAtomsToCache[] = {
   kDndSelection,
   Clipboard::kMimeTypeURIList,
   kMimeTypeMozillaURL,
+  kNetscapeURL,
   Clipboard::kMimeTypeText,
+  kRendererTaint,
   NULL
 };
 
@@ -77,12 +83,12 @@ OSExchangeDataProviderAuraX11::OSExchangeDataProviderAuraX11()
 
   XStoreName(x_display_, x_window_, "Chromium Drag & Drop Window");
 
-  base::MessagePumpX11::Current()->AddDispatcherForWindow(this, x_window_);
+  PlatformEventSource::GetInstance()->AddPlatformEventDispatcher(this);
 }
 
 OSExchangeDataProviderAuraX11::~OSExchangeDataProviderAuraX11() {
   if (own_window_) {
-    base::MessagePumpX11::Current()->RemoveDispatcherForWindow(x_window_);
+    PlatformEventSource::GetInstance()->RemovePlatformEventDispatcher(this);
     XDestroyWindow(x_display_, x_window_);
   }
 }
@@ -108,8 +114,20 @@ OSExchangeData::Provider* OSExchangeDataProviderAuraX11::Clone() const {
   return ret;
 }
 
+void OSExchangeDataProviderAuraX11::MarkOriginatedFromRenderer() {
+  std::string empty;
+  format_map_.Insert(atom_cache_.GetAtom(kRendererTaint),
+                     scoped_refptr<base::RefCountedMemory>(
+                         base::RefCountedString::TakeString(&empty)));
+}
+
+bool OSExchangeDataProviderAuraX11::DidOriginateFromRenderer() const {
+  return format_map_.find(atom_cache_.GetAtom(kRendererTaint)) !=
+         format_map_.end();
+}
+
 void OSExchangeDataProviderAuraX11::SetString(const base::string16& text_data) {
-  std::string utf8 = UTF16ToUTF8(text_data);
+  std::string utf8 = base::UTF16ToUTF8(text_data);
   scoped_refptr<base::RefCountedMemory> mem(
       base::RefCountedString::TakeString(&utf8));
 
@@ -121,30 +139,66 @@ void OSExchangeDataProviderAuraX11::SetString(const base::string16& text_data) {
 
 void OSExchangeDataProviderAuraX11::SetURL(const GURL& url,
                                            const base::string16& title) {
-  // Mozilla's URL format: (UTF16: URL, newline, title)
+  // TODO(dcheng): The original GTK code tries very hard to avoid writing out an
+  // empty title. Is this necessary?
   if (url.is_valid()) {
-    string16 spec = UTF8ToUTF16(url.spec());
+    // Mozilla's URL format: (UTF16: URL, newline, title)
+    base::string16 spec = base::UTF8ToUTF16(url.spec());
 
     std::vector<unsigned char> data;
     ui::AddString16ToVector(spec, &data);
-    ui::AddString16ToVector(ASCIIToUTF16("\n"), &data);
+    ui::AddString16ToVector(base::ASCIIToUTF16("\n"), &data);
     ui::AddString16ToVector(title, &data);
     scoped_refptr<base::RefCountedMemory> mem(
         base::RefCountedBytes::TakeVector(&data));
 
     format_map_.Insert(atom_cache_.GetAtom(kMimeTypeMozillaURL), mem);
 
+    // Set a string fallback as well.
     SetString(spec);
+
+    // Return early if this drag already contains file contents (this implies
+    // that file contents must be populated before URLs). Nautilus (and possibly
+    // other file managers) prefer _NETSCAPE_URL over the X Direct Save
+    // protocol, but we want to prioritize XDS in this case.
+    if (!file_contents_name_.empty())
+      return;
+
+    // Set _NETSCAPE_URL for file managers like Nautilus that use it as a hint
+    // to create a link to the URL. Setting text/uri-list doesn't work because
+    // Nautilus will fetch and copy the contents of the URL to the drop target
+    // instead of linking...
+    // Format is UTF8: URL + "\n" + title.
+    std::string netscape_url = url.spec();
+    netscape_url += "\n";
+    netscape_url += base::UTF16ToUTF8(title);
+    format_map_.Insert(atom_cache_.GetAtom(kNetscapeURL),
+                       scoped_refptr<base::RefCountedMemory>(
+                           base::RefCountedString::TakeString(&netscape_url)));
   }
 }
 
 void OSExchangeDataProviderAuraX11::SetFilename(const base::FilePath& path) {
-  NOTIMPLEMENTED();
+  std::vector<FileInfo> data;
+  data.push_back(FileInfo(path, base::FilePath()));
+  SetFilenames(data);
 }
 
 void OSExchangeDataProviderAuraX11::SetFilenames(
-    const std::vector<OSExchangeData::FileInfo>& filenames) {
-  NOTIMPLEMENTED();
+    const std::vector<FileInfo>& filenames) {
+  std::vector<std::string> paths;
+  for (std::vector<FileInfo>::const_iterator it = filenames.begin();
+       it != filenames.end();
+       ++it) {
+    std::string url_spec = net::FilePathToFileURL(it->path).spec();
+    if (!url_spec.empty())
+      paths.push_back(url_spec);
+  }
+
+  std::string joined_data = JoinString(paths, '\n');
+  scoped_refptr<base::RefCountedMemory> mem(
+      base::RefCountedString::TakeString(&joined_data));
+  format_map_.Insert(atom_cache_.GetAtom(Clipboard::kMimeTypeURIList), mem);
 }
 
 void OSExchangeDataProviderAuraX11::SetPickledData(
@@ -162,6 +216,13 @@ void OSExchangeDataProviderAuraX11::SetPickledData(
 }
 
 bool OSExchangeDataProviderAuraX11::GetString(base::string16* result) const {
+  if (HasFile()) {
+    // Various Linux file managers both pass a list of file:// URIs and set the
+    // string representation to the URI. We explicitly don't want to return use
+    // this representation.
+    return false;
+  }
+
   std::vector< ::Atom> text_atoms = ui::GetTextAtomsFrom(&atom_cache_);
   std::vector< ::Atom> requested_types;
   ui::GetAtomIntersection(text_atoms, GetTargets(), &requested_types);
@@ -169,7 +230,7 @@ bool OSExchangeDataProviderAuraX11::GetString(base::string16* result) const {
   ui::SelectionData data(format_map_.GetFirstOf(requested_types));
   if (data.IsValid()) {
     std::string text = data.GetText();
-    *result = UTF8ToUTF16(text);
+    *result = base::UTF8ToUTF16(text);
     return true;
   }
 
@@ -196,33 +257,29 @@ bool OSExchangeDataProviderAuraX11::GetURLAndTitle(
       data.AssignTo(&unparsed);
 
       std::vector<base::string16> tokens;
-      size_t num_tokens = Tokenize(unparsed, ASCIIToUTF16("\n"), &tokens);
+      size_t num_tokens = Tokenize(unparsed, base::ASCIIToUTF16("\n"), &tokens);
       if (num_tokens > 0) {
         if (num_tokens > 1)
           *title = tokens[1];
         else
-          *title = string16();
+          *title = base::string16();
 
         *url = GURL(tokens[0]);
         return true;
       }
     } else if (data.GetType() == atom_cache_.GetAtom(
                    Clipboard::kMimeTypeURIList)) {
-      // uri-lists are newline separated file lists in URL encoding.
-      std::string unparsed;
-      data.AssignTo(&unparsed);
-
-      std::vector<std::string> tokens;
-      size_t num_tokens = Tokenize(unparsed, "\n", &tokens);
-      if (!num_tokens) {
-        NOTREACHED() << "Empty URI list";
-        return false;
+      std::vector<std::string> tokens = ui::ParseURIList(data);
+      for (std::vector<std::string>::const_iterator it = tokens.begin();
+           it != tokens.end(); ++it) {
+        GURL test_url(*it);
+        if (!test_url.SchemeIsFile() ||
+            policy == OSExchangeData::CONVERT_FILENAMES) {
+          *url = test_url;
+          *title = base::string16();
+          return true;
+        }
       }
-
-      *url = GURL(tokens[0]);
-      *title = base::string16();
-
-      return true;
     }
   }
 
@@ -230,14 +287,36 @@ bool OSExchangeDataProviderAuraX11::GetURLAndTitle(
 }
 
 bool OSExchangeDataProviderAuraX11::GetFilename(base::FilePath* path) const {
-  // On X11, files are passed by URL and aren't separate.
+  std::vector<FileInfo> filenames;
+  if (GetFilenames(&filenames)) {
+    *path = filenames.front().path;
+    return true;
+  }
+
   return false;
 }
 
 bool OSExchangeDataProviderAuraX11::GetFilenames(
-    std::vector<OSExchangeData::FileInfo>* filenames) const {
-  // On X11, files are passed by URL and aren't separate.
-  return false;
+    std::vector<FileInfo>* filenames) const {
+  std::vector< ::Atom> url_atoms = ui::GetURIListAtomsFrom(&atom_cache_);
+  std::vector< ::Atom> requested_types;
+  ui::GetAtomIntersection(url_atoms, GetTargets(), &requested_types);
+
+  filenames->clear();
+  ui::SelectionData data(format_map_.GetFirstOf(requested_types));
+  if (data.IsValid()) {
+    std::vector<std::string> tokens = ui::ParseURIList(data);
+    for (std::vector<std::string>::const_iterator it = tokens.begin();
+         it != tokens.end(); ++it) {
+      GURL url(*it);
+      base::FilePath file_path;
+      if (url.SchemeIsFile() && net::FileURLToFilePath(url, &file_path)) {
+        filenames->push_back(FileInfo(file_path, base::FilePath()));
+      }
+    }
+  }
+
+  return !filenames->empty();
 }
 
 bool OSExchangeDataProviderAuraX11::GetPickledData(
@@ -262,18 +341,65 @@ bool OSExchangeDataProviderAuraX11::HasString() const {
   std::vector< ::Atom> text_atoms = ui::GetTextAtomsFrom(&atom_cache_);
   std::vector< ::Atom> requested_types;
   ui::GetAtomIntersection(text_atoms, GetTargets(), &requested_types);
-  return !requested_types.empty();
+  return !requested_types.empty() && !HasFile();
 }
 
-bool OSExchangeDataProviderAuraX11::HasURL() const {
+bool OSExchangeDataProviderAuraX11::HasURL(
+    OSExchangeData::FilenameToURLPolicy policy) const {
   std::vector< ::Atom> url_atoms = ui::GetURLAtomsFrom(&atom_cache_);
   std::vector< ::Atom> requested_types;
   ui::GetAtomIntersection(url_atoms, GetTargets(), &requested_types);
-  return !requested_types.empty();
+
+  if (requested_types.empty())
+    return false;
+
+  // The Linux desktop doesn't differentiate between files and URLs like
+  // Windows does and stuffs all the data into one mime type.
+  ui::SelectionData data(format_map_.GetFirstOf(requested_types));
+  if (data.IsValid()) {
+    if (data.GetType() == atom_cache_.GetAtom(kMimeTypeMozillaURL)) {
+      // File managers shouldn't be using this type, so this is a URL.
+      return true;
+    } else if (data.GetType() == atom_cache_.GetAtom(
+        ui::Clipboard::kMimeTypeURIList)) {
+      std::vector<std::string> tokens = ui::ParseURIList(data);
+      for (std::vector<std::string>::const_iterator it = tokens.begin();
+           it != tokens.end(); ++it) {
+        if (!GURL(*it).SchemeIsFile() ||
+            policy == OSExchangeData::CONVERT_FILENAMES)
+          return true;
+      }
+
+      return false;
+    }
+  }
+
+  return false;
 }
 
 bool OSExchangeDataProviderAuraX11::HasFile() const {
-  // On X11, files are passed by URL and aren't separate.
+  std::vector< ::Atom> url_atoms = ui::GetURIListAtomsFrom(&atom_cache_);
+  std::vector< ::Atom> requested_types;
+  ui::GetAtomIntersection(url_atoms, GetTargets(), &requested_types);
+
+  if (requested_types.empty())
+    return false;
+
+  // To actually answer whether we have a file, we need to look through the
+  // contents of the kMimeTypeURIList type, and see if any of them are file://
+  // URIs.
+  ui::SelectionData data(format_map_.GetFirstOf(requested_types));
+  if (data.IsValid()) {
+    std::vector<std::string> tokens = ui::ParseURIList(data);
+    for (std::vector<std::string>::const_iterator it = tokens.begin();
+         it != tokens.end(); ++it) {
+      GURL url(*it);
+      base::FilePath file_path;
+      if (url.SchemeIsFile() && net::FileURLToFilePath(url, &file_path))
+        return true;
+    }
+  }
+
   return false;
 }
 
@@ -285,6 +411,42 @@ bool OSExchangeDataProviderAuraX11::HasCustomFormat(
   ui::GetAtomIntersection(url_atoms, GetTargets(), &requested_types);
 
   return !requested_types.empty();
+}
+
+void OSExchangeDataProviderAuraX11::SetFileContents(
+    const base::FilePath& filename,
+    const std::string& file_contents) {
+  DCHECK(!filename.empty());
+  DCHECK(format_map_.end() ==
+         format_map_.find(atom_cache_.GetAtom(kMimeTypeMozillaURL)));
+
+  file_contents_name_ = filename;
+
+  // Direct save handling is a complicated juggling affair between this class,
+  // SelectionFormat, and DesktopDragDropClientAuraX11. The general idea behind
+  // the protocol is this:
+  // - The source window sets its XdndDirectSave0 window property to the
+  //   proposed filename.
+  // - When a target window receives the drop, it updates the XdndDirectSave0
+  //   property on the source window to the filename it would like the contents
+  //   to be saved to and then requests the XdndDirectSave0 type from the
+  //   source.
+  // - The source is supposed to copy the file here and return success (S),
+  //   failure (F), or error (E).
+  // - In this case, failure means the destination should try to populate the
+  //   file itself by copying the data from application/octet-stream. To make
+  //   things simpler for Chrome, we always 'fail' and let the destination do
+  //   the work.
+  std::string failure("F");
+  format_map_.Insert(
+      atom_cache_.GetAtom("XdndDirectSave0"),
+                          scoped_refptr<base::RefCountedMemory>(
+                              base::RefCountedString::TakeString(&failure)));
+  std::string file_contents_copy = file_contents;
+  format_map_.Insert(
+      atom_cache_.GetAtom("application/octet-stream"),
+      scoped_refptr<base::RefCountedMemory>(
+          base::RefCountedString::TakeString(&file_contents_copy)));
 }
 
 void OSExchangeDataProviderAuraX11::SetHtml(const base::string16& html,
@@ -342,21 +504,26 @@ const gfx::Vector2d& OSExchangeDataProviderAuraX11::GetDragImageOffset() const {
   return drag_image_offset_;
 }
 
-bool OSExchangeDataProviderAuraX11::Dispatch(const base::NativeEvent& event) {
+bool OSExchangeDataProviderAuraX11::CanDispatchEvent(
+    const PlatformEvent& event) {
+  return event->xany.window == x_window_;
+}
+
+uint32_t OSExchangeDataProviderAuraX11::DispatchEvent(
+    const PlatformEvent& event) {
   XEvent* xev = event;
   switch (xev->type) {
     case SelectionRequest:
       selection_owner_.OnSelectionRequest(xev->xselectionrequest);
-      break;
+      return ui::POST_DISPATCH_STOP_PROPAGATION;
     default:
       NOTIMPLEMENTED();
   }
-
-  return true;
+  return ui::POST_DISPATCH_NONE;
 }
 
 bool OSExchangeDataProviderAuraX11::GetPlainTextURL(GURL* url) const {
-  string16 text;
+  base::string16 text;
   if (GetString(&text)) {
     GURL test_url(text);
     if (test_url.is_valid()) {

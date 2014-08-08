@@ -27,7 +27,7 @@
 #include "core/html/parser/BackgroundHTMLParser.h"
 
 #include "core/html/parser/HTMLDocumentParser.h"
-#include "core/html/parser/HTMLParserThread.h"
+#include "core/html/parser/TextResourceDecoder.h"
 #include "core/html/parser/XSSAuditor.h"
 #include "wtf/MainThread.h"
 #include "wtf/text/TextPosition.h"
@@ -76,6 +76,12 @@ static void checkThatXSSInfosAreSafeToSendToAnotherThread(const XSSInfoStream& i
 
 #endif
 
+void BackgroundHTMLParser::start(PassRefPtr<WeakReference<BackgroundHTMLParser> > reference, PassOwnPtr<Configuration> config)
+{
+    new BackgroundHTMLParser(reference, config);
+    // Caller must free by calling stop().
+}
+
 BackgroundHTMLParser::BackgroundHTMLParser(PassRefPtr<WeakReference<BackgroundHTMLParser> > reference, PassOwnPtr<Configuration> config)
     : m_weakFactory(reference, this)
     , m_token(adoptPtr(new HTMLToken))
@@ -86,14 +92,60 @@ BackgroundHTMLParser::BackgroundHTMLParser(PassRefPtr<WeakReference<BackgroundHT
     , m_pendingTokens(adoptPtr(new CompactHTMLTokenStream))
     , m_xssAuditor(config->xssAuditor.release())
     , m_preloadScanner(config->preloadScanner.release())
+    , m_decoder(config->decoder.release())
 {
 }
 
-void BackgroundHTMLParser::append(const String& input)
+BackgroundHTMLParser::~BackgroundHTMLParser()
+{
+}
+
+void BackgroundHTMLParser::appendRawBytesFromParserThread(const char* data, int dataLength)
+{
+    ASSERT(m_decoder);
+    updateDocument(m_decoder->decode(data, dataLength));
+}
+
+void BackgroundHTMLParser::appendRawBytesFromMainThread(PassOwnPtr<Vector<char> > buffer)
+{
+    ASSERT(m_decoder);
+    updateDocument(m_decoder->decode(buffer->data(), buffer->size()));
+}
+
+void BackgroundHTMLParser::appendDecodedBytes(const String& input)
 {
     ASSERT(!m_input.current().isClosed());
     m_input.append(input);
     pumpTokenizer();
+}
+
+void BackgroundHTMLParser::setDecoder(PassOwnPtr<TextResourceDecoder> decoder)
+{
+    ASSERT(decoder);
+    m_decoder = decoder;
+}
+
+void BackgroundHTMLParser::flush()
+{
+    ASSERT(m_decoder);
+    updateDocument(m_decoder->flush());
+}
+
+void BackgroundHTMLParser::updateDocument(const String& decodedData)
+{
+    DocumentEncodingData encodingData(*m_decoder.get());
+
+    if (encodingData != m_lastSeenEncodingData) {
+        m_lastSeenEncodingData = encodingData;
+
+        m_xssAuditor->setEncoding(encodingData.encoding());
+        callOnMainThread(bind(&HTMLDocumentParser::didReceiveEncodingDataFromBackgroundParser, m_parser, encodingData));
+    }
+
+    if (decodedData.isEmpty())
+        return;
+
+    appendDecodedBytes(decodedData);
 }
 
 void BackgroundHTMLParser::resumeFrom(PassOwnPtr<Checkpoint> checkpoint)

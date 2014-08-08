@@ -55,36 +55,31 @@ WorkerDebuggerAgents& workerDebuggerAgents()
 }
 
 
-class RunInspectorCommandsTask : public ScriptDebugServer::Task {
+class RunInspectorCommandsTask FINAL : public ScriptDebugServer::Task {
 public:
-    RunInspectorCommandsTask(WorkerThread* thread, WorkerGlobalScope* workerGlobalScope)
-        : m_thread(thread)
-        , m_workerGlobalScope(workerGlobalScope) { }
+    explicit RunInspectorCommandsTask(WorkerThread* thread)
+        : m_thread(thread) { }
     virtual ~RunInspectorCommandsTask() { }
-    virtual void run()
+    virtual void run() OVERRIDE
     {
-        // Process all queued debugger commands. It is safe to use m_workerGlobalScope here
-        // because it is alive if RunWorkerLoop is not terminated, otherwise it will
-        // just be ignored. WorkerThread is certainly alive if this task is being executed.
-        while (MessageQueueMessageReceived == m_thread->runLoop().runInMode(m_workerGlobalScope, WorkerDebuggerAgent::debuggerTaskMode, WorkerRunLoop::DontWaitForMessage)) { }
+        // Process all queued debugger commands. WorkerThread is certainly
+        // alive if this task is being executed.
+        while (MessageQueueMessageReceived == m_thread->runLoop().runDebuggerTask(WorkerRunLoop::DontWaitForMessage)) { }
     }
 
 private:
     WorkerThread* m_thread;
-    WorkerGlobalScope* m_workerGlobalScope;
 };
 
 } // namespace
 
-const char WorkerDebuggerAgent::debuggerTaskMode[] = "debugger";
-
-PassOwnPtr<WorkerDebuggerAgent> WorkerDebuggerAgent::create(InstrumentingAgents* instrumentingAgents, InspectorCompositeState* inspectorState, WorkerScriptDebugServer* scriptDebugServer, WorkerGlobalScope* inspectedWorkerGlobalScope, InjectedScriptManager* injectedScriptManager)
+PassOwnPtr<WorkerDebuggerAgent> WorkerDebuggerAgent::create(WorkerScriptDebugServer* scriptDebugServer, WorkerGlobalScope* inspectedWorkerGlobalScope, InjectedScriptManager* injectedScriptManager)
 {
-    return adoptPtr(new WorkerDebuggerAgent(instrumentingAgents, inspectorState, scriptDebugServer, inspectedWorkerGlobalScope, injectedScriptManager));
+    return adoptPtr(new WorkerDebuggerAgent(scriptDebugServer, inspectedWorkerGlobalScope, injectedScriptManager));
 }
 
-WorkerDebuggerAgent::WorkerDebuggerAgent(InstrumentingAgents* instrumentingAgents, InspectorCompositeState* inspectorState, WorkerScriptDebugServer* scriptDebugServer, WorkerGlobalScope* inspectedWorkerGlobalScope, InjectedScriptManager* injectedScriptManager)
-    : InspectorDebuggerAgent(instrumentingAgents, inspectorState, injectedScriptManager)
+WorkerDebuggerAgent::WorkerDebuggerAgent(WorkerScriptDebugServer* scriptDebugServer, WorkerGlobalScope* inspectedWorkerGlobalScope, InjectedScriptManager* injectedScriptManager)
+    : InspectorDebuggerAgent(injectedScriptManager)
     , m_scriptDebugServer(scriptDebugServer)
     , m_inspectedWorkerGlobalScope(inspectedWorkerGlobalScope)
 {
@@ -104,7 +99,7 @@ void WorkerDebuggerAgent::interruptAndDispatchInspectorCommands(WorkerThread* th
     MutexLocker lock(workerDebuggerAgentsMutex());
     WorkerDebuggerAgent* agent = workerDebuggerAgents().get(thread);
     if (agent)
-        agent->m_scriptDebugServer->interruptAndRunTask(adoptPtr(new RunInspectorCommandsTask(thread, agent->m_inspectedWorkerGlobalScope)));
+        agent->m_scriptDebugServer->interruptAndRunTask(adoptPtr(new RunInspectorCommandsTask(thread)));
 }
 
 void WorkerDebuggerAgent::startListeningScriptDebugServer()
@@ -128,8 +123,7 @@ InjectedScript WorkerDebuggerAgent::injectedScriptForEval(ErrorString* error, co
         *error = "Execution context id is not supported for workers as there is only one execution context.";
         return InjectedScript();
     }
-    ScriptState* scriptState = scriptStateFromWorkerGlobalScope(m_inspectedWorkerGlobalScope);
-    return injectedScriptManager()->injectedScriptFor(scriptState);
+    return injectedScriptManager()->injectedScriptFor(m_inspectedWorkerGlobalScope->script()->scriptState());
 }
 
 void WorkerDebuggerAgent::muteConsole()

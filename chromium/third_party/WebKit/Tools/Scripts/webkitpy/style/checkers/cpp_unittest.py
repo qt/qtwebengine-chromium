@@ -2317,6 +2317,15 @@ class CppStyleTest(CppStyleTestBase):
                 '  [build/header_guard] [5]'),
             error_collector.result_list())
 
+        # Verify that the Chromium-style header guard is allowed as well.
+        error_collector = ErrorCollector(self.assertTrue, header_guard_filter)
+        self.process_file_data('Source/foo/testname.h', 'h',
+                               ['#ifndef BLINK_FOO_TESTNAME_H_',
+                                '#define BLINK_FOO_TESTNAME_H_'],
+                              error_collector)
+        self.assertEqual(0, len(error_collector.result_list()),
+                          error_collector.result_list())
+
     def test_build_printf_format(self):
         self.assert_lint(
             r'printf("\%%d", value);',
@@ -4724,39 +4733,39 @@ class WebKitStyleTest(CppStyleTestBase):
         #    false. Objective-C BOOL values should be written as YES and NO.
         # FIXME: Implement this.
 
-        # 3. Tests for true/false, null/non-null, and zero/non-zero should
-        #    all be done without equality comparisons.
-        self.assert_lint(
-            'if (count == 0)',
-            'Tests for true/false, null/non-null, and zero/non-zero should all be done without equality comparisons.'
-            '  [readability/comparison_to_zero] [5]')
+        # 3. Tests for true/false and null/non-null should be done without
+        #    equality comparisons.
         self.assert_lint_one_of_many_errors_re(
             'if (string != NULL)',
-            r'Tests for true/false, null/non-null, and zero/non-zero should all be done without equality comparisons\.')
+            r'Tests for true/false and null/non-null should be done without equality comparisons\.')
+        self.assert_lint(
+            'if (p == nullptr)',
+            'Tests for true/false and null/non-null should be done without equality comparisons.'
+            '  [readability/comparison_to_boolean] [5]')
         self.assert_lint(
             'if (condition == true)',
-            'Tests for true/false, null/non-null, and zero/non-zero should all be done without equality comparisons.'
-            '  [readability/comparison_to_zero] [5]')
+            'Tests for true/false and null/non-null should be done without equality comparisons.'
+            '  [readability/comparison_to_boolean] [5]')
         self.assert_lint(
             'if (myVariable != /* Why would anyone put a comment here? */ false)',
-            'Tests for true/false, null/non-null, and zero/non-zero should all be done without equality comparisons.'
-            '  [readability/comparison_to_zero] [5]')
+            'Tests for true/false and null/non-null should be done without equality comparisons.'
+            '  [readability/comparison_to_boolean] [5]')
 
-        self.assert_lint(
-            'if (0 /* This comment also looks odd to me. */ != aLongerVariableName)',
-            'Tests for true/false, null/non-null, and zero/non-zero should all be done without equality comparisons.'
-            '  [readability/comparison_to_zero] [5]')
         self.assert_lint_one_of_many_errors_re(
             'if (NULL == thisMayBeNull)',
-            r'Tests for true/false, null/non-null, and zero/non-zero should all be done without equality comparisons\.')
+            r'Tests for true/false and null/non-null should be done without equality comparisons\.')
+        self.assert_lint(
+            'if (nullptr /* funny place for a comment */ == p)',
+            'Tests for true/false and null/non-null should be done without equality comparisons.'
+            '  [readability/comparison_to_boolean] [5]')
         self.assert_lint(
             'if (true != anotherCondition)',
-            'Tests for true/false, null/non-null, and zero/non-zero should all be done without equality comparisons.'
-            '  [readability/comparison_to_zero] [5]')
+            'Tests for true/false and null/non-null should be done without equality comparisons.'
+            '  [readability/comparison_to_boolean] [5]')
         self.assert_lint(
             'if (false == myBoolValue)',
-            'Tests for true/false, null/non-null, and zero/non-zero should all be done without equality comparisons.'
-            '  [readability/comparison_to_zero] [5]')
+            'Tests for true/false and null/non-null should be done without equality comparisons.'
+            '  [readability/comparison_to_boolean] [5]')
 
         self.assert_lint(
             'if (fontType == trueType)',
@@ -4795,6 +4804,12 @@ class WebKitStyleTest(CppStyleTestBase):
             'using std::min;',
             "Use 'using namespace std;' instead of 'using std::min;'."
             "  [build/using_std] [4]",
+            'foo.cpp')
+
+    def test_using_std_swap_ignored(self):
+        self.assert_lint(
+            'using std::swap;',
+            '',
             'foo.cpp')
 
     def test_max_macro(self):
@@ -5022,6 +5037,11 @@ class WebKitStyleTest(CppStyleTestBase):
 
         # vm_throw is allowed as well.
         self.assert_lint('int vm_throw;', '')
+
+        # Attributes.
+        self.assert_lint('int foo ALLOW_UNUSED;', '')
+        self.assert_lint('int foo_error ALLOW_UNUSED;', 'foo_error' + name_underscore_error_message)
+        self.assert_lint('ThreadFunctionInvocation* leakedInvocation ALLOW_UNUSED = invocation.leakPtr()', '')
 
         # Bitfields.
         self.assert_lint('unsigned _fillRule : 1;',

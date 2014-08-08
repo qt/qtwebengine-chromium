@@ -30,19 +30,6 @@
       'include_dirs': [
         '../../..',
       ],
-      'conditions': [
-        # Warning: A PIE tool cannot run on ICS 4.0.4, so only
-        #          build it as position-independent when ASAN
-        #          is activated. See b/6587214 for details.
-        [ 'asan==1', {
-          'cflags': [
-            '-fPIE',
-          ],
-          'ldflags': [
-            '-pie',
-          ],
-        }],
-      ],
       'sources': [
         'command.cc',
         'common.cc',
@@ -51,6 +38,7 @@
         'device_forwarder_main.cc',
         'device_listener.cc',
         'forwarder.cc',
+        'forwarders_manager.cc',
         'pipe_notifier.cc',
         'socket.cc',
       ],
@@ -61,7 +49,6 @@
       'toolsets': ['host'],
       'dependencies': [
         '../../../base/base.gyp:base',
-        '../../../build/linux/system.gyp:x11',
         '../common/common.gyp:android_tools_common',
       ],
       'include_dirs': [
@@ -72,14 +59,11 @@
         'common.cc',
         'daemon.cc',
         'forwarder.cc',
+        'forwarders_manager.cc',
         'host_controller.cc',
         'host_forwarder_main.cc',
         'pipe_notifier.cc',
         'socket.cc',
-        # TODO(pliard): Remove this and x11 dependency above. This is needed
-        # to avoid undefined references at link time.
-        '../../../base/message_loop/message_pump_glib.cc',
-        '../../../base/message_loop/message_pump_gtk.cc',
       ],
     },
   ],

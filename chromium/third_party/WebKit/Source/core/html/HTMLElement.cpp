@@ -25,35 +25,34 @@
 #include "config.h"
 #include "core/html/HTMLElement.h"
 
-#include "CSSPropertyNames.h"
-#include "CSSValueKeywords.h"
-#include "HTMLNames.h"
-#include "XMLNames.h"
 #include "bindings/v8/ExceptionState.h"
-#include "bindings/v8/ScriptController.h"
 #include "bindings/v8/ScriptEventListener.h"
-#include "core/css/CSSParser.h"
+#include "core/CSSPropertyNames.h"
+#include "core/CSSValueKeywords.h"
+#include "core/HTMLNames.h"
+#include "core/XMLNames.h"
+#include "core/css/CSSMarkup.h"
 #include "core/css/CSSValuePool.h"
 #include "core/css/StylePropertySet.h"
 #include "core/dom/DocumentFragment.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/NodeTraversal.h"
 #include "core/dom/Text.h"
+#include "core/dom/shadow/ElementShadow.h"
+#include "core/dom/shadow/ShadowRoot.h"
 #include "core/editing/markup.h"
 #include "core/events/EventListener.h"
 #include "core/events/KeyboardEvent.h"
-#include "core/events/ThreadLocalEventNames.h"
+#include "core/frame/Settings.h"
 #include "core/html/HTMLBRElement.h"
 #include "core/html/HTMLFormElement.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/HTMLTemplateElement.h"
 #include "core/html/HTMLTextFormControlElement.h"
 #include "core/html/parser/HTMLParserIdioms.h"
-#include "core/loader/FrameLoader.h"
-#include "core/frame/Frame.h"
-#include "core/frame/Settings.h"
-#include "core/rendering/RenderWordBreak.h"
+#include "core/rendering/RenderObject.h"
 #include "platform/text/BidiResolver.h"
+#include "platform/text/BidiTextRun.h"
 #include "platform/text/TextRunIterator.h"
 #include "wtf/StdLibExtras.h"
 #include "wtf/text/CString.h"
@@ -66,18 +65,18 @@ using namespace WTF;
 using std::min;
 using std::max;
 
-PassRefPtr<HTMLElement> HTMLElement::create(const QualifiedName& tagName, Document& document)
-{
-    return adoptRef(new HTMLElement(tagName, document));
-}
+DEFINE_ELEMENT_FACTORY_WITH_TAGNAME(HTMLElement);
 
 String HTMLElement::nodeName() const
 {
     // FIXME: Would be nice to have an atomicstring lookup based off uppercase
     // chars that does not have to copy the string on a hit in the hash.
     // FIXME: We should have a way to detect XHTML elements and replace the hasPrefix() check with it.
-    if (document().isHTMLDocument() && !tagQName().hasPrefix())
-        return tagQName().localNameUpper();
+    if (document().isHTMLDocument()) {
+        if (!tagQName().hasPrefix())
+            return tagQName().localNameUpper();
+        return Element::nodeName().upper();
+    }
     return Element::nodeName();
 }
 
@@ -101,7 +100,6 @@ bool HTMLElement::ieForbidsInsertHTML() const
         || hasLocalName(imageTag)
         || hasLocalName(imgTag)
         || hasLocalName(inputTag)
-        || hasLocalName(isindexTag)
         || hasLocalName(linkTag)
         || hasLocalName(metaTag)
         || hasLocalName(paramTag)
@@ -204,22 +202,61 @@ void HTMLElement::collectStyleForPresentationAttribute(const QualifiedName& name
         Element::collectStyleForPresentationAttribute(name, value, style);
 }
 
-const AtomicString& HTMLElement::eventNameForAttributeName(const QualifiedName& attrName) const
+const AtomicString& HTMLElement::eventNameForAttributeName(const QualifiedName& attrName)
 {
     if (!attrName.namespaceURI().isNull())
+        return nullAtom;
+
+    if (!attrName.localName().startsWith("on", false))
         return nullAtom;
 
     typedef HashMap<AtomicString, AtomicString> StringToStringMap;
     DEFINE_STATIC_LOCAL(StringToStringMap, attributeNameToEventNameMap, ());
     if (!attributeNameToEventNameMap.size()) {
-        attributeNameToEventNameMap.set(onanimationstartAttr.localName(), EventTypeNames::animationstart);
-        attributeNameToEventNameMap.set(onanimationiterationAttr.localName(), EventTypeNames::animationiteration);
+        attributeNameToEventNameMap.set(onabortAttr.localName(), EventTypeNames::abort);
         attributeNameToEventNameMap.set(onanimationendAttr.localName(), EventTypeNames::animationend);
+        attributeNameToEventNameMap.set(onanimationiterationAttr.localName(), EventTypeNames::animationiteration);
+        attributeNameToEventNameMap.set(onanimationstartAttr.localName(), EventTypeNames::animationstart);
+        attributeNameToEventNameMap.set(onautocompleteAttr.localName(), EventTypeNames::autocomplete);
+        attributeNameToEventNameMap.set(onautocompleteerrorAttr.localName(), EventTypeNames::autocompleteerror);
+        attributeNameToEventNameMap.set(onbeforecopyAttr.localName(), EventTypeNames::beforecopy);
+        attributeNameToEventNameMap.set(onbeforecutAttr.localName(), EventTypeNames::beforecut);
+        attributeNameToEventNameMap.set(onbeforepasteAttr.localName(), EventTypeNames::beforepaste);
+        attributeNameToEventNameMap.set(onblurAttr.localName(), EventTypeNames::blur);
         attributeNameToEventNameMap.set(oncancelAttr.localName(), EventTypeNames::cancel);
+        attributeNameToEventNameMap.set(oncanplayAttr.localName(), EventTypeNames::canplay);
+        attributeNameToEventNameMap.set(oncanplaythroughAttr.localName(), EventTypeNames::canplaythrough);
+        attributeNameToEventNameMap.set(onchangeAttr.localName(), EventTypeNames::change);
         attributeNameToEventNameMap.set(onclickAttr.localName(), EventTypeNames::click);
         attributeNameToEventNameMap.set(oncloseAttr.localName(), EventTypeNames::close);
         attributeNameToEventNameMap.set(oncontextmenuAttr.localName(), EventTypeNames::contextmenu);
+        attributeNameToEventNameMap.set(oncopyAttr.localName(), EventTypeNames::copy);
+        attributeNameToEventNameMap.set(oncuechangeAttr.localName(), EventTypeNames::cuechange);
+        attributeNameToEventNameMap.set(oncutAttr.localName(), EventTypeNames::cut);
         attributeNameToEventNameMap.set(ondblclickAttr.localName(), EventTypeNames::dblclick);
+        attributeNameToEventNameMap.set(ondragAttr.localName(), EventTypeNames::drag);
+        attributeNameToEventNameMap.set(ondragendAttr.localName(), EventTypeNames::dragend);
+        attributeNameToEventNameMap.set(ondragenterAttr.localName(), EventTypeNames::dragenter);
+        attributeNameToEventNameMap.set(ondragleaveAttr.localName(), EventTypeNames::dragleave);
+        attributeNameToEventNameMap.set(ondragoverAttr.localName(), EventTypeNames::dragover);
+        attributeNameToEventNameMap.set(ondragstartAttr.localName(), EventTypeNames::dragstart);
+        attributeNameToEventNameMap.set(ondropAttr.localName(), EventTypeNames::drop);
+        attributeNameToEventNameMap.set(ondurationchangeAttr.localName(), EventTypeNames::durationchange);
+        attributeNameToEventNameMap.set(onemptiedAttr.localName(), EventTypeNames::emptied);
+        attributeNameToEventNameMap.set(onendedAttr.localName(), EventTypeNames::ended);
+        attributeNameToEventNameMap.set(onerrorAttr.localName(), EventTypeNames::error);
+        attributeNameToEventNameMap.set(onfocusAttr.localName(), EventTypeNames::focus);
+        attributeNameToEventNameMap.set(onfocusinAttr.localName(), EventTypeNames::focusin);
+        attributeNameToEventNameMap.set(onfocusoutAttr.localName(), EventTypeNames::focusout);
+        attributeNameToEventNameMap.set(oninputAttr.localName(), EventTypeNames::input);
+        attributeNameToEventNameMap.set(oninvalidAttr.localName(), EventTypeNames::invalid);
+        attributeNameToEventNameMap.set(onkeydownAttr.localName(), EventTypeNames::keydown);
+        attributeNameToEventNameMap.set(onkeypressAttr.localName(), EventTypeNames::keypress);
+        attributeNameToEventNameMap.set(onkeyupAttr.localName(), EventTypeNames::keyup);
+        attributeNameToEventNameMap.set(onloadAttr.localName(), EventTypeNames::load);
+        attributeNameToEventNameMap.set(onloadeddataAttr.localName(), EventTypeNames::loadeddata);
+        attributeNameToEventNameMap.set(onloadedmetadataAttr.localName(), EventTypeNames::loadedmetadata);
+        attributeNameToEventNameMap.set(onloadstartAttr.localName(), EventTypeNames::loadstart);
         attributeNameToEventNameMap.set(onmousedownAttr.localName(), EventTypeNames::mousedown);
         attributeNameToEventNameMap.set(onmouseenterAttr.localName(), EventTypeNames::mouseenter);
         attributeNameToEventNameMap.set(onmouseleaveAttr.localName(), EventTypeNames::mouseleave);
@@ -228,71 +265,39 @@ const AtomicString& HTMLElement::eventNameForAttributeName(const QualifiedName& 
         attributeNameToEventNameMap.set(onmouseoverAttr.localName(), EventTypeNames::mouseover);
         attributeNameToEventNameMap.set(onmouseupAttr.localName(), EventTypeNames::mouseup);
         attributeNameToEventNameMap.set(onmousewheelAttr.localName(), EventTypeNames::mousewheel);
-        attributeNameToEventNameMap.set(onwheelAttr.localName(), EventTypeNames::wheel);
-        attributeNameToEventNameMap.set(onfocusAttr.localName(), EventTypeNames::focus);
-        attributeNameToEventNameMap.set(onfocusinAttr.localName(), EventTypeNames::focusin);
-        attributeNameToEventNameMap.set(onfocusoutAttr.localName(), EventTypeNames::focusout);
-        attributeNameToEventNameMap.set(onblurAttr.localName(), EventTypeNames::blur);
-        attributeNameToEventNameMap.set(onkeydownAttr.localName(), EventTypeNames::keydown);
-        attributeNameToEventNameMap.set(onkeypressAttr.localName(), EventTypeNames::keypress);
-        attributeNameToEventNameMap.set(onkeyupAttr.localName(), EventTypeNames::keyup);
-        attributeNameToEventNameMap.set(onscrollAttr.localName(), EventTypeNames::scroll);
-        attributeNameToEventNameMap.set(onbeforecutAttr.localName(), EventTypeNames::beforecut);
-        attributeNameToEventNameMap.set(oncutAttr.localName(), EventTypeNames::cut);
-        attributeNameToEventNameMap.set(onbeforecopyAttr.localName(), EventTypeNames::beforecopy);
-        attributeNameToEventNameMap.set(oncopyAttr.localName(), EventTypeNames::copy);
-        attributeNameToEventNameMap.set(onbeforepasteAttr.localName(), EventTypeNames::beforepaste);
         attributeNameToEventNameMap.set(onpasteAttr.localName(), EventTypeNames::paste);
-        attributeNameToEventNameMap.set(ondragenterAttr.localName(), EventTypeNames::dragenter);
-        attributeNameToEventNameMap.set(ondragoverAttr.localName(), EventTypeNames::dragover);
-        attributeNameToEventNameMap.set(ondragleaveAttr.localName(), EventTypeNames::dragleave);
-        attributeNameToEventNameMap.set(ondropAttr.localName(), EventTypeNames::drop);
-        attributeNameToEventNameMap.set(ondragstartAttr.localName(), EventTypeNames::dragstart);
-        attributeNameToEventNameMap.set(ondragAttr.localName(), EventTypeNames::drag);
-        attributeNameToEventNameMap.set(ondragendAttr.localName(), EventTypeNames::dragend);
-        attributeNameToEventNameMap.set(onselectstartAttr.localName(), EventTypeNames::selectstart);
-        attributeNameToEventNameMap.set(onsubmitAttr.localName(), EventTypeNames::submit);
-        attributeNameToEventNameMap.set(onerrorAttr.localName(), EventTypeNames::error);
-        attributeNameToEventNameMap.set(onwebkitanimationstartAttr.localName(), EventTypeNames::webkitAnimationStart);
-        attributeNameToEventNameMap.set(onwebkitanimationiterationAttr.localName(), EventTypeNames::webkitAnimationIteration);
-        attributeNameToEventNameMap.set(onwebkitanimationendAttr.localName(), EventTypeNames::webkitAnimationEnd);
-        attributeNameToEventNameMap.set(onwebkittransitionendAttr.localName(), EventTypeNames::webkitTransitionEnd);
-        attributeNameToEventNameMap.set(ontransitionendAttr.localName(), EventTypeNames::webkitTransitionEnd);
-        attributeNameToEventNameMap.set(oninputAttr.localName(), EventTypeNames::input);
-        attributeNameToEventNameMap.set(oninvalidAttr.localName(), EventTypeNames::invalid);
-        attributeNameToEventNameMap.set(ontouchstartAttr.localName(), EventTypeNames::touchstart);
-        attributeNameToEventNameMap.set(ontouchmoveAttr.localName(), EventTypeNames::touchmove);
-        attributeNameToEventNameMap.set(ontouchendAttr.localName(), EventTypeNames::touchend);
-        attributeNameToEventNameMap.set(ontouchcancelAttr.localName(), EventTypeNames::touchcancel);
-        attributeNameToEventNameMap.set(onwebkitfullscreenchangeAttr.localName(), EventTypeNames::webkitfullscreenchange);
-        attributeNameToEventNameMap.set(onwebkitfullscreenerrorAttr.localName(), EventTypeNames::webkitfullscreenerror);
-        attributeNameToEventNameMap.set(onabortAttr.localName(), EventTypeNames::abort);
-        attributeNameToEventNameMap.set(oncanplayAttr.localName(), EventTypeNames::canplay);
-        attributeNameToEventNameMap.set(oncanplaythroughAttr.localName(), EventTypeNames::canplaythrough);
-        attributeNameToEventNameMap.set(onchangeAttr.localName(), EventTypeNames::change);
-        attributeNameToEventNameMap.set(oncuechangeAttr.localName(), EventTypeNames::cuechange);
-        attributeNameToEventNameMap.set(ondurationchangeAttr.localName(), EventTypeNames::durationchange);
-        attributeNameToEventNameMap.set(onemptiedAttr.localName(), EventTypeNames::emptied);
-        attributeNameToEventNameMap.set(onendedAttr.localName(), EventTypeNames::ended);
-        attributeNameToEventNameMap.set(onloadeddataAttr.localName(), EventTypeNames::loadeddata);
-        attributeNameToEventNameMap.set(onloadedmetadataAttr.localName(), EventTypeNames::loadedmetadata);
-        attributeNameToEventNameMap.set(onloadstartAttr.localName(), EventTypeNames::loadstart);
         attributeNameToEventNameMap.set(onpauseAttr.localName(), EventTypeNames::pause);
         attributeNameToEventNameMap.set(onplayAttr.localName(), EventTypeNames::play);
         attributeNameToEventNameMap.set(onplayingAttr.localName(), EventTypeNames::playing);
         attributeNameToEventNameMap.set(onprogressAttr.localName(), EventTypeNames::progress);
         attributeNameToEventNameMap.set(onratechangeAttr.localName(), EventTypeNames::ratechange);
         attributeNameToEventNameMap.set(onresetAttr.localName(), EventTypeNames::reset);
+        attributeNameToEventNameMap.set(onresizeAttr.localName(), EventTypeNames::resize);
+        attributeNameToEventNameMap.set(onscrollAttr.localName(), EventTypeNames::scroll);
         attributeNameToEventNameMap.set(onseekedAttr.localName(), EventTypeNames::seeked);
         attributeNameToEventNameMap.set(onseekingAttr.localName(), EventTypeNames::seeking);
         attributeNameToEventNameMap.set(onselectAttr.localName(), EventTypeNames::select);
+        attributeNameToEventNameMap.set(onselectstartAttr.localName(), EventTypeNames::selectstart);
         attributeNameToEventNameMap.set(onshowAttr.localName(), EventTypeNames::show);
         attributeNameToEventNameMap.set(onstalledAttr.localName(), EventTypeNames::stalled);
+        attributeNameToEventNameMap.set(onsubmitAttr.localName(), EventTypeNames::submit);
         attributeNameToEventNameMap.set(onsuspendAttr.localName(), EventTypeNames::suspend);
         attributeNameToEventNameMap.set(ontimeupdateAttr.localName(), EventTypeNames::timeupdate);
+        attributeNameToEventNameMap.set(ontoggleAttr.localName(), EventTypeNames::toggle);
+        attributeNameToEventNameMap.set(ontouchcancelAttr.localName(), EventTypeNames::touchcancel);
+        attributeNameToEventNameMap.set(ontouchendAttr.localName(), EventTypeNames::touchend);
+        attributeNameToEventNameMap.set(ontouchmoveAttr.localName(), EventTypeNames::touchmove);
+        attributeNameToEventNameMap.set(ontouchstartAttr.localName(), EventTypeNames::touchstart);
+        attributeNameToEventNameMap.set(ontransitionendAttr.localName(), EventTypeNames::webkitTransitionEnd);
         attributeNameToEventNameMap.set(onvolumechangeAttr.localName(), EventTypeNames::volumechange);
         attributeNameToEventNameMap.set(onwaitingAttr.localName(), EventTypeNames::waiting);
-        attributeNameToEventNameMap.set(onloadAttr.localName(), EventTypeNames::load);
+        attributeNameToEventNameMap.set(onwebkitanimationendAttr.localName(), EventTypeNames::webkitAnimationEnd);
+        attributeNameToEventNameMap.set(onwebkitanimationiterationAttr.localName(), EventTypeNames::webkitAnimationIteration);
+        attributeNameToEventNameMap.set(onwebkitanimationstartAttr.localName(), EventTypeNames::webkitAnimationStart);
+        attributeNameToEventNameMap.set(onwebkitfullscreenchangeAttr.localName(), EventTypeNames::webkitfullscreenchange);
+        attributeNameToEventNameMap.set(onwebkitfullscreenerrorAttr.localName(), EventTypeNames::webkitfullscreenerror);
+        attributeNameToEventNameMap.set(onwebkittransitionendAttr.localName(), EventTypeNames::webkitTransitionEnd);
+        attributeNameToEventNameMap.set(onwheelAttr.localName(), EventTypeNames::wheel);
     }
 
     return attributeNameToEventNameMap.get(attrName.localName());
@@ -300,37 +305,24 @@ const AtomicString& HTMLElement::eventNameForAttributeName(const QualifiedName& 
 
 void HTMLElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
 {
-    if (isIdAttributeName(name) || name == classAttr || name == styleAttr)
+    if (name == tabindexAttr)
         return Element::parseAttribute(name, value);
 
-    if (name == dirAttr)
+    if (name == dirAttr) {
         dirAttributeChanged(value);
-    else if (name == tabindexAttr) {
-        int tabindex = 0;
-        if (value.isEmpty()) {
-            clearTabIndexExplicitlyIfNeeded();
-            if (treeScope().adjustedFocusedElement() == this) {
-                // We might want to call blur(), but it's dangerous to dispatch
-                // events here.
-                document().setNeedsFocusedElementCheck();
-            }
-        } else if (parseHTMLInteger(value, tabindex)) {
-            // Clamp tabindex to the range of 'short' to match Firefox's behavior.
-            setTabIndexExplicitly(max(static_cast<int>(std::numeric_limits<short>::min()), min(tabindex, static_cast<int>(std::numeric_limits<short>::max()))));
-        }
     } else {
         const AtomicString& eventName = eventNameForAttributeName(name);
         if (!eventName.isNull())
-            setAttributeEventListener(eventName, createAttributeEventListener(this, name, value));
+            setAttributeEventListener(eventName, createAttributeEventListener(this, name, value, eventParameterName()));
     }
 }
 
-PassRefPtr<DocumentFragment> HTMLElement::textToFragment(const String& text, ExceptionState& exceptionState)
+PassRefPtrWillBeRawPtr<DocumentFragment> HTMLElement::textToFragment(const String& text, ExceptionState& exceptionState)
 {
-    RefPtr<DocumentFragment> fragment = DocumentFragment::create(document());
-    unsigned int i, length = text.length();
+    RefPtrWillBeRawPtr<DocumentFragment> fragment = DocumentFragment::create(document());
+    unsigned i, length = text.length();
     UChar c = 0;
-    for (unsigned int start = 0; start < length; ) {
+    for (unsigned start = 0; start < length; ) {
 
         // Find next line break.
         for (i = start; i < length; i++) {
@@ -341,12 +333,12 @@ PassRefPtr<DocumentFragment> HTMLElement::textToFragment(const String& text, Exc
 
         fragment->appendChild(Text::create(document(), text.substring(start, i - start)), exceptionState);
         if (exceptionState.hadException())
-            return 0;
+            return nullptr;
 
         if (c == '\r' || c == '\n') {
             fragment->appendChild(HTMLBRElement::create(document()), exceptionState);
             if (exceptionState.hadException())
-                return 0;
+                return nullptr;
             // Make sure \r\n doesn't result in two line breaks.
             if (c == '\r' && i + 1 < length && text[i + 1] == '\n')
                 i++;
@@ -400,7 +392,7 @@ void HTMLElement::setInnerText(const String& text, ExceptionState& exceptionStat
     }
 
     // Add text nodes and <br> elements.
-    RefPtr<DocumentFragment> fragment = textToFragment(text, exceptionState);
+    RefPtrWillBeRawPtr<DocumentFragment> fragment = textToFragment(text, exceptionState);
     if (!exceptionState.hadException())
         replaceChildrenWithFragment(this, fragment.release(), exceptionState);
 }
@@ -425,9 +417,9 @@ void HTMLElement::setOuterText(const String &text, ExceptionState& exceptionStat
         return;
     }
 
-    RefPtr<Node> prev = previousSibling();
-    RefPtr<Node> next = nextSibling();
-    RefPtr<Node> newChild;
+    RefPtrWillBeRawPtr<Node> prev = previousSibling();
+    RefPtrWillBeRawPtr<Node> next = nextSibling();
+    RefPtrWillBeRawPtr<Node> newChild = nullptr;
 
     // Convert text to fragment with <br> tags instead of linebreaks if needed.
     if (text.contains('\r') || text.contains('\n'))
@@ -436,7 +428,7 @@ void HTMLElement::setOuterText(const String &text, ExceptionState& exceptionStat
         newChild = Text::create(document(), text);
 
     // textToFragment might cause mutation events.
-    if (!this || !parentNode())
+    if (!parentNode())
         exceptionState.throwDOMException(HierarchyRequestError, "The element has no parent.");
 
     if (exceptionState.hadException())
@@ -444,30 +436,12 @@ void HTMLElement::setOuterText(const String &text, ExceptionState& exceptionStat
 
     parent->replaceChild(newChild.release(), this, exceptionState);
 
-    RefPtr<Node> node = next ? next->previousSibling() : 0;
+    RefPtrWillBeRawPtr<Node> node = next ? next->previousSibling() : nullptr;
     if (!exceptionState.hadException() && node && node->isTextNode())
         mergeWithNextTextNode(node.release(), exceptionState);
 
     if (!exceptionState.hadException() && prev && prev->isTextNode())
         mergeWithNextTextNode(prev.release(), exceptionState);
-}
-
-Element* HTMLElement::insertAdjacentElement(const String& where, Element* newChild, ExceptionState& exceptionState)
-{
-    if (!newChild) {
-        // IE throws COM Exception E_INVALIDARG; this is the best DOM exception alternative.
-        exceptionState.throwTypeError("The node provided is null.");
-        return 0;
-    }
-
-    Node* returnValue = insertAdjacent(where, newChild, exceptionState);
-    return toElement(returnValue);
-}
-
-void HTMLElement::insertAdjacentText(const String& where, const String& text, ExceptionState& exceptionState)
-{
-    RefPtr<Text> textNode = document().createTextNode(text);
-    insertAdjacent(where, textNode.get(), exceptionState);
 }
 
 void HTMLElement::applyAlignmentAttributeToStyle(const AtomicString& alignment, MutableStylePropertySet* style)
@@ -508,33 +482,6 @@ void HTMLElement::applyAlignmentAttributeToStyle(const AtomicString& alignment, 
 bool HTMLElement::hasCustomFocusLogic() const
 {
     return false;
-}
-
-bool HTMLElement::supportsSpatialNavigationFocus() const
-{
-    // This function checks whether the element satisfies the extended criteria
-    // for the element to be focusable, introduced by spatial navigation feature,
-    // i.e. checks if click or keyboard event handler is specified.
-    // This is the way to make it possible to navigate to (focus) elements
-    // which web designer meant for being active (made them respond to click events).
-
-    if (!document().settings() || !document().settings()->spatialNavigationEnabled())
-        return false;
-    return hasEventListeners(EventTypeNames::click)
-        || hasEventListeners(EventTypeNames::keydown)
-        || hasEventListeners(EventTypeNames::keypress)
-        || hasEventListeners(EventTypeNames::keyup);
-}
-
-bool HTMLElement::supportsFocus() const
-{
-    // FIXME: supportsFocus() can be called when layout is not up to date.
-    // Logic that deals with the renderer should be moved to rendererIsFocusable().
-    // But supportsFocus must return true when the element is editable, or else
-    // it won't be focusable. Furthermore, supportsFocus cannot just return true
-    // always or else tabIndex() will change for all HTML elements.
-    return Element::supportsFocus() || (rendererIsEditable() && parentNode() && !parentNode()->rendererIsEditable())
-        || supportsSpatialNavigationFocus();
 }
 
 String HTMLElement::contentEditable() const
@@ -600,7 +547,7 @@ void HTMLElement::accessKeyAction(bool sendMouseEvents)
 
 String HTMLElement::title() const
 {
-    return getAttribute(titleAttr);
+    return fastGetAttribute(titleAttr);
 }
 
 short HTMLElement::tabIndex() const
@@ -608,11 +555,6 @@ short HTMLElement::tabIndex() const
     if (supportsFocus())
         return Element::tabIndex();
     return -1;
-}
-
-void HTMLElement::setTabIndex(int value)
-{
-    setIntegralAttribute(tabindexAttr, value);
 }
 
 TranslateAttributeMode HTMLElement::translateAttributeMode() const
@@ -631,13 +573,11 @@ TranslateAttributeMode HTMLElement::translateAttributeMode() const
 
 bool HTMLElement::translate() const
 {
-    for (const Node* n = this; n; n = n->parentNode()) {
-        if (n->isHTMLElement()) {
-            TranslateAttributeMode mode = toHTMLElement(n)->translateAttributeMode();
-            if (mode != TranslateAttributeInherit) {
-                ASSERT(mode == TranslateAttributeYes || mode == TranslateAttributeNo);
-                return mode == TranslateAttributeYes;
-            }
+    for (const HTMLElement* element = this; element; element = Traversal<HTMLElement>::firstAncestor(*element)) {
+        TranslateAttributeMode mode = element->translateAttributeMode();
+        if (mode != TranslateAttributeInherit) {
+            ASSERT(mode == TranslateAttributeYes || mode == TranslateAttributeNo);
+            return mode == TranslateAttributeYes;
         }
     }
 
@@ -650,39 +590,43 @@ void HTMLElement::setTranslate(bool enable)
     setAttribute(translateAttr, enable ? "yes" : "no");
 }
 
-bool HTMLElement::rendererIsNeeded(const RenderStyle& style)
+// Returns the conforming 'dir' value associated with the state the attribute is in (in its canonical case), if any,
+// or the empty string if the attribute is in a state that has no associated keyword value or if the attribute is
+// not in a defined state (e.g. the attribute is missing and there is no missing value default).
+// http://www.whatwg.org/specs/web-apps/current-work/multipage/common-dom-interfaces.html#limited-to-only-known-values
+static inline const AtomicString& toValidDirValue(const AtomicString& value)
 {
-    if (hasLocalName(noscriptTag)) {
-        Frame* frame = document().frame();
-        if (frame && frame->script().canExecuteScripts(NotAboutToExecuteScript))
-            return false;
-    } else if (hasLocalName(noembedTag)) {
-        Frame* frame = document().frame();
-        if (frame && frame->loader().allowPlugins(NotAboutToInstantiatePlugin))
-            return false;
-    }
-    return Element::rendererIsNeeded(style);
+    DEFINE_STATIC_LOCAL(const AtomicString, ltrValue, ("ltr", AtomicString::ConstructFromLiteral));
+    DEFINE_STATIC_LOCAL(const AtomicString, rtlValue, ("rtl", AtomicString::ConstructFromLiteral));
+    DEFINE_STATIC_LOCAL(const AtomicString, autoValue, ("auto", AtomicString::ConstructFromLiteral));
+
+    if (equalIgnoringCase(value, ltrValue))
+        return ltrValue;
+    if (equalIgnoringCase(value, rtlValue))
+        return rtlValue;
+    if (equalIgnoringCase(value, autoValue))
+        return autoValue;
+    return nullAtom;
 }
 
-RenderObject* HTMLElement::createRenderer(RenderStyle* style)
+const AtomicString& HTMLElement::dir()
 {
-    if (hasLocalName(wbrTag))
-        return new RenderWordBreak(this);
-    return RenderObject::createObject(this, style);
+    return toValidDirValue(fastGetAttribute(dirAttr));
+}
+
+void HTMLElement::setDir(const AtomicString& value)
+{
+    setAttribute(dirAttr, value);
 }
 
 HTMLFormElement* HTMLElement::findFormAncestor() const
 {
-    for (ContainerNode* ancestor = parentNode(); ancestor; ancestor = ancestor->parentNode()) {
-        if (ancestor->hasTagName(formTag))
-            return toHTMLFormElement(ancestor);
-    }
-    return 0;
+    return Traversal<HTMLFormElement>::firstAncestor(*this);
 }
 
 static inline bool elementAffectsDirectionality(const Node* node)
 {
-    return node->isHTMLElement() && (node->hasTagName(bdiTag) || toHTMLElement(node)->hasAttribute(dirAttr));
+    return node->isHTMLElement() && (isHTMLBDIElement(*node) || toHTMLElement(node)->hasAttribute(dirAttr));
 }
 
 static void setHasDirAutoFlagRecursively(Node* firstNode, bool flag, Node* lastNode = 0)
@@ -692,9 +636,6 @@ static void setHasDirAutoFlagRecursively(Node* firstNode, bool flag, Node* lastN
     Node* node = firstNode->firstChild();
 
     while (node) {
-        if (node->selfOrAncestorHasDirAutoAttribute() == flag)
-            return;
-
         if (elementAffectsDirectionality(node)) {
             if (node == lastNode)
                 return;
@@ -717,7 +658,7 @@ void HTMLElement::childrenChanged(bool changedByParser, Node* beforeChange, Node
 bool HTMLElement::hasDirectionAuto() const
 {
     const AtomicString& direction = fastGetAttribute(dirAttr);
-    return (hasTagName(bdiTag) && direction == nullAtom) || equalIgnoringCase(direction, "auto");
+    return (isHTMLBDIElement(*this) && direction == nullAtom) || equalIgnoringCase(direction, "auto");
 }
 
 TextDirection HTMLElement::directionalityIfhasDirAutoAttribute(bool& isAuto) const
@@ -731,18 +672,9 @@ TextDirection HTMLElement::directionalityIfhasDirAutoAttribute(bool& isAuto) con
     return directionality();
 }
 
-static TextDirection determineDirectionality(const String& value, bool& hasStrongDirectionality)
-{
-    TextRun run(value);
-    BidiResolver<TextRunIterator, BidiCharacterRun> bidiResolver;
-    bidiResolver.setStatus(BidiStatus(run.direction(), run.directionalOverride()));
-    bidiResolver.setPositionIgnoringNestedIsolates(TextRunIterator(&run, 0));
-    return bidiResolver.determineParagraphDirectionality(&hasStrongDirectionality);
-}
-
 TextDirection HTMLElement::directionality(Node** strongDirectionalityTextNode) const
 {
-    if (hasTagName(inputTag)) {
+    if (isHTMLInputElement(*this)) {
         HTMLInputElement* inputElement = toHTMLInputElement(const_cast<HTMLElement*>(this));
         bool hasStrongDirectionality;
         TextDirection textDirection = determineDirectionality(inputElement->value(), hasStrongDirectionality);
@@ -754,7 +686,7 @@ TextDirection HTMLElement::directionality(Node** strongDirectionalityTextNode) c
     Node* node = firstChild();
     while (node) {
         // Skip bdi, script, style and text form controls.
-        if (equalIgnoringCase(node->nodeName(), "bdi") || node->hasTagName(scriptTag) || node->hasTagName(styleTag)
+        if (equalIgnoringCase(node->nodeName(), "bdi") || isHTMLScriptElement(*node) || isHTMLStyleElement(*node)
             || (node->isElementNode() && toElement(node)->isTextFormControl())) {
             node = NodeTraversal::nextSkippingChildren(*node, this);
             continue;
@@ -806,7 +738,7 @@ void HTMLElement::adjustDirectionalityIfNeededAfterChildAttributeChanged(Element
         Element* elementToAdjust = this;
         for (; elementToAdjust; elementToAdjust = elementToAdjust->parentElement()) {
             if (elementAffectsDirectionality(elementToAdjust)) {
-                elementToAdjust->setNeedsStyleRecalc();
+                elementToAdjust->setNeedsStyleRecalc(SubtreeStyleChange);
                 return;
             }
         }
@@ -817,14 +749,16 @@ void HTMLElement::calculateAndAdjustDirectionality()
 {
     Node* strongDirectionalityTextNode;
     TextDirection textDirection = directionality(&strongDirectionalityTextNode);
-    setHasDirAutoFlagRecursively(this, true, strongDirectionalityTextNode);
+    setHasDirAutoFlagRecursively(this, hasDirectionAuto(), strongDirectionalityTextNode);
+    for (ShadowRoot* root = youngestShadowRoot(); root; root = root->olderShadowRoot())
+        setHasDirAutoFlagRecursively(root, hasDirectionAuto());
     if (renderer() && renderer()->style() && renderer()->style()->direction() != textDirection)
-        setNeedsStyleRecalc();
+        setNeedsStyleRecalc(SubtreeStyleChange);
 }
 
 void HTMLElement::adjustDirectionalityIfNeededAfterChildrenChanged(Node* beforeChange, int childCountDelta)
 {
-    if (document().renderer() && childCountDelta < 0) {
+    if (document().renderView() && childCountDelta < 0) {
         Node* node = beforeChange ? NodeTraversal::nextSkippingChildren(*beforeChange) : 0;
         for (int counter = 0; node && counter < childCountDelta; counter++, node = NodeTraversal::nextSkippingChildren(*node)) {
             if (elementAffectsDirectionality(node))
@@ -859,25 +793,25 @@ void HTMLElement::addHTMLLengthToStyle(MutableStylePropertySet* style, CSSProper
     // strip attribute garbage..
     StringImpl* v = value.impl();
     if (v) {
-        unsigned int l = 0;
+        unsigned length = 0;
 
-        while (l < v->length() && (*v)[l] <= ' ')
-            l++;
+        while (length < v->length() && (*v)[length] <= ' ')
+            length++;
 
-        for (; l < v->length(); l++) {
-            UChar cc = (*v)[l];
+        for (; length < v->length(); length++) {
+            UChar cc = (*v)[length];
             if (cc > '9')
                 break;
             if (cc < '0') {
                 if (cc == '%' || cc == '*')
-                    l++;
+                    length++;
                 if (cc != '.')
                     break;
             }
         }
 
-        if (l != v->length()) {
-            addPropertyToPresentationAttributeStyle(style, propertyID, v->substring(0, l));
+        if (length != v->length()) {
+            addPropertyToPresentationAttributeStyle(style, propertyID, v->substring(0, length));
             return;
         }
     }
@@ -955,8 +889,8 @@ void HTMLElement::addHTMLColorToStyle(MutableStylePropertySet* style, CSSPropert
         return;
 
     // If the string is a named CSS color or a 3/6-digit hex color, use that.
-    Color parsedColor(colorString);
-    if (!parsedColor.isValid())
+    Color parsedColor;
+    if (!parsedColor.setFromString(colorString))
         parsedColor.setRGB(parseColorStringWithCrazyLegacyRules(colorString));
 
     style->setProperty(propertyID, cssValuePool().createColorValue(parsedColor.rgb()));
@@ -978,6 +912,26 @@ void HTMLElement::defaultEventHandler(Event* event)
     Element::defaultEventHandler(event);
 }
 
+bool HTMLElement::matchesReadOnlyPseudoClass() const
+{
+    return !matchesReadWritePseudoClass();
+}
+
+bool HTMLElement::matchesReadWritePseudoClass() const
+{
+    if (fastHasAttribute(contenteditableAttr)) {
+        const AtomicString& value = fastGetAttribute(contenteditableAttr);
+
+        if (value.isEmpty() || equalIgnoringCase(value, "true") || equalIgnoringCase(value, "plaintext-only"))
+            return true;
+        if (equalIgnoringCase(value, "false"))
+            return false;
+        // All other values should be treated as "inherit".
+    }
+
+    return parentElement() && parentElement()->rendererIsEditable();
+}
+
 void HTMLElement::handleKeypressEvent(KeyboardEvent* event)
 {
     if (!document().settings() || !document().settings()->spatialNavigationEnabled() || !supportsFocus())
@@ -992,6 +946,12 @@ void HTMLElement::handleKeypressEvent(KeyboardEvent* event)
         dispatchSimulatedClick(event);
         event->setDefaultHandled();
     }
+}
+
+const AtomicString& HTMLElement::eventParameterName()
+{
+    DEFINE_STATIC_LOCAL(const AtomicString, eventString, ("event", AtomicString::ConstructFromLiteral));
+    return eventString;
 }
 
 } // namespace WebCore

@@ -97,7 +97,7 @@ ATOM ClassRegistrar::RetrieveClassAtom(const ClassInfo& class_info) {
   }
 
   // No class found, need to register one.
-  string16 name = string16(WindowImpl::kBaseClassName) +
+  base::string16 name = base::string16(WindowImpl::kBaseClassName) +
       base::IntToString16(registered_count_++);
 
   WNDCLASSEX window_class;
@@ -226,10 +226,14 @@ HICON WindowImpl::GetDefaultWindowIcon() const {
 LRESULT WindowImpl::OnWndProc(UINT message, WPARAM w_param, LPARAM l_param) {
   LRESULT result = 0;
 
+  HWND hwnd = hwnd_;
+  if (message == WM_NCDESTROY)
+    hwnd_ = NULL;
+
   // Handle the message if it's in our message map; otherwise, let the system
   // handle it.
-  if (!ProcessWindowMessage(hwnd_, message, w_param, l_param, result))
-    result = DefWindowProc(hwnd_, message, w_param, l_param);
+  if (!ProcessWindowMessage(hwnd, message, w_param, l_param, result))
+    result = DefWindowProc(hwnd, message, w_param, l_param);
 
   return result;
 }

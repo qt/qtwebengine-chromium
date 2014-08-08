@@ -24,31 +24,29 @@
  */
 
 #include "config.h"
-#include "V8Geolocation.h"
+#include "bindings/modules/v8/V8Geolocation.h"
 
-#include "V8PositionCallback.h"
-#include "V8PositionErrorCallback.h"
+#include "bindings/modules/v8/V8PositionCallback.h"
+#include "bindings/modules/v8/V8PositionErrorCallback.h"
 #include "bindings/v8/V8Binding.h"
 #include "bindings/v8/V8Callback.h"
-#include "bindings/v8/V8Utilities.h"
 #include "modules/geolocation/Geolocation.h"
 
-using namespace std;
 using namespace WTF;
 
 namespace WebCore {
 
-static PassRefPtr<PositionOptions> createPositionOptions(v8::Local<v8::Value> value, v8::Isolate* isolate, bool& succeeded)
+static PositionOptions* createPositionOptions(v8::Local<v8::Value> value, v8::Isolate* isolate, bool& succeeded, ExceptionState& exceptionState)
 {
     succeeded = true;
 
     // Create default options.
-    RefPtr<PositionOptions> options = PositionOptions::create();
+    PositionOptions* options = PositionOptions::create();
 
     // Argument is optional (hence undefined is allowed), and null is allowed.
     if (isUndefinedOrNull(value)) {
         // Use default options.
-        return options.release();
+        return options;
     }
 
     // Given the above test, this will always yield an object.
@@ -61,13 +59,13 @@ static PassRefPtr<PositionOptions> createPositionOptions(v8::Local<v8::Value> va
     v8::Local<v8::Value> enableHighAccuracyValue = object->Get(v8AtomicString(isolate, "enableHighAccuracy"));
     if (enableHighAccuracyValue.IsEmpty()) {
         succeeded = false;
-        return 0;
+        return nullptr;
     }
     if (!enableHighAccuracyValue->IsUndefined()) {
         v8::Local<v8::Boolean> enableHighAccuracyBoolean = enableHighAccuracyValue->ToBoolean();
         if (enableHighAccuracyBoolean.IsEmpty()) {
             succeeded = false;
-            return 0;
+            return nullptr;
         }
         options->setEnableHighAccuracy(enableHighAccuracyBoolean->Value());
     }
@@ -75,100 +73,88 @@ static PassRefPtr<PositionOptions> createPositionOptions(v8::Local<v8::Value> va
     v8::Local<v8::Value> timeoutValue = object->Get(v8AtomicString(isolate, "timeout"));
     if (timeoutValue.IsEmpty()) {
         succeeded = false;
-        return 0;
+        return nullptr;
     }
     if (!timeoutValue->IsUndefined()) {
         v8::Local<v8::Number> timeoutNumber = timeoutValue->ToNumber();
         if (timeoutNumber.IsEmpty()) {
             succeeded = false;
-            return 0;
+            return nullptr;
         }
-        double timeoutDouble = timeoutNumber->Value();
-        // If the value is positive infinity, there's nothing to do.
-        if (!(std::isinf(timeoutDouble) && timeoutDouble > 0)) {
-            v8::Local<v8::Int32> timeoutInt32 = timeoutValue->ToInt32();
-            if (timeoutInt32.IsEmpty()) {
-                succeeded = false;
-                return 0;
-            }
-            // Wrap to int32 and force non-negative to match behavior of window.setTimeout.
-            options->setTimeout(max(0, timeoutInt32->Value()));
-        }
+        if (timeoutNumber->Value() <= 0)
+            options->setTimeout(0);
+        else
+            options->setTimeout(toUInt32(timeoutValue, Clamp, exceptionState));
     }
 
     v8::Local<v8::Value> maximumAgeValue = object->Get(v8AtomicString(isolate, "maximumAge"));
     if (maximumAgeValue.IsEmpty()) {
         succeeded = false;
-        return 0;
+        return nullptr;
     }
     if (!maximumAgeValue->IsUndefined()) {
         v8::Local<v8::Number> maximumAgeNumber = maximumAgeValue->ToNumber();
         if (maximumAgeNumber.IsEmpty()) {
             succeeded = false;
-            return 0;
+            return nullptr;
         }
-        double maximumAgeDouble = maximumAgeNumber->Value();
-        if (std::isinf(maximumAgeDouble) && maximumAgeDouble > 0) {
-            // If the value is positive infinity, clear maximumAge.
-            options->clearMaximumAge();
-        } else {
-            v8::Local<v8::Int32> maximumAgeInt32 = maximumAgeValue->ToInt32();
-            if (maximumAgeInt32.IsEmpty()) {
-                succeeded = false;
-                return 0;
-            }
-            // Wrap to int32 and force non-negative to match behavior of window.setTimeout.
-            options->setMaximumAge(max(0, maximumAgeInt32->Value()));
-        }
+        if (maximumAgeNumber->Value() <= 0)
+            options->setMaximumAge(0);
+        else
+            options->setMaximumAge(toUInt32(maximumAgeValue, Clamp, exceptionState));
     }
 
-    return options.release();
+    return options;
 }
 
 void V8Geolocation::getCurrentPositionMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
     bool succeeded = false;
 
-    OwnPtr<PositionCallback> positionCallback = createFunctionOnlyCallback<V8PositionCallback>(info[0], succeeded, info.GetIsolate());
+    ExceptionState exceptionState(ExceptionState::ExecutionContext, "getCurrentPosition", "Geolocation", info.Holder(), info.GetIsolate());
+
+    OwnPtr<PositionCallback> positionCallback = createFunctionOnlyCallback<V8PositionCallback>(info[0], 1, succeeded, info.GetIsolate(), exceptionState);
     if (!succeeded)
         return;
     ASSERT(positionCallback);
 
     // Argument is optional (hence undefined is allowed), and null is allowed.
-    OwnPtr<PositionErrorCallback> positionErrorCallback = createFunctionOnlyCallback<V8PositionErrorCallback>(info[1], succeeded, info.GetIsolate(), CallbackAllowUndefined | CallbackAllowNull);
+    OwnPtr<PositionErrorCallback> positionErrorCallback = createFunctionOnlyCallback<V8PositionErrorCallback>(info[1], 2, succeeded, info.GetIsolate(), exceptionState, CallbackAllowUndefined | CallbackAllowNull);
     if (!succeeded)
         return;
 
-    RefPtr<PositionOptions> positionOptions = createPositionOptions(info[2], info.GetIsolate(), succeeded);
+    PositionOptions* positionOptions = createPositionOptions(info[2], info.GetIsolate(), succeeded, exceptionState);
     if (!succeeded)
         return;
     ASSERT(positionOptions);
 
     Geolocation* geolocation = V8Geolocation::toNative(info.Holder());
-    geolocation->getCurrentPosition(positionCallback.release(), positionErrorCallback.release(), positionOptions.release());
+    geolocation->getCurrentPosition(positionCallback.release(), positionErrorCallback.release(), positionOptions);
 }
 
 void V8Geolocation::watchPositionMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
     bool succeeded = false;
 
-    OwnPtr<PositionCallback> positionCallback = createFunctionOnlyCallback<V8PositionCallback>(info[0], succeeded, info.GetIsolate());
+    ExceptionState exceptionState(ExceptionState::ExecutionContext, "watchCurrentPosition", "Geolocation", info.Holder(), info.GetIsolate());
+
+    OwnPtr<PositionCallback> positionCallback = createFunctionOnlyCallback<V8PositionCallback>(info[0], 1, succeeded, info.GetIsolate(), exceptionState);
     if (!succeeded)
         return;
     ASSERT(positionCallback);
 
     // Argument is optional (hence undefined is allowed), and null is allowed.
-    OwnPtr<PositionErrorCallback> positionErrorCallback = createFunctionOnlyCallback<V8PositionErrorCallback>(info[1], succeeded, info.GetIsolate(), CallbackAllowUndefined | CallbackAllowNull);
+    OwnPtr<PositionErrorCallback> positionErrorCallback = createFunctionOnlyCallback<V8PositionErrorCallback>(info[1], 2, succeeded, info.GetIsolate(), exceptionState, CallbackAllowUndefined | CallbackAllowNull);
     if (!succeeded)
         return;
 
-    RefPtr<PositionOptions> positionOptions = createPositionOptions(info[2], info.GetIsolate(), succeeded);
+    PositionOptions* positionOptions = createPositionOptions(info[2], info.GetIsolate(), succeeded, exceptionState);
     if (!succeeded)
         return;
     ASSERT(positionOptions);
 
     Geolocation* geolocation = V8Geolocation::toNative(info.Holder());
-    int watchId = geolocation->watchPosition(positionCallback.release(), positionErrorCallback.release(), positionOptions.release());
+    int watchId = geolocation->watchPosition(positionCallback.release(), positionErrorCallback.release(), positionOptions);
     v8SetReturnValue(info, watchId);
 }
 

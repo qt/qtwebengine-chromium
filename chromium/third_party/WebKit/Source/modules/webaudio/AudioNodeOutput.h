@@ -62,10 +62,6 @@ public:
     // Unlike fanOutCount() it will not change during the course of a render quantum.
     unsigned renderingFanOutCount() const;
 
-    // renderingParamFanOutCount() is the number of AudioParams that we're connected to during rendering.
-    // Unlike paramFanOutCount() it will not change during the course of a render quantum.
-    unsigned renderingParamFanOutCount() const;
-
     // Must be called with the context's graph lock.
     void disconnectAll();
 
@@ -144,8 +140,7 @@ private:
     unsigned m_renderingFanOutCount;
     unsigned m_renderingParamFanOutCount;
 
-    HashSet<RefPtr<AudioParam> > m_params;
-    typedef HashSet<RefPtr<AudioParam> >::iterator ParamsIterator;
+    WillBePersistentHeapHashSet<RefPtrWillBeMember<AudioParam> > m_params;
 };
 
 } // namespace WebCore

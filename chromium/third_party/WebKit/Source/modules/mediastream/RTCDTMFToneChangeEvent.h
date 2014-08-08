@@ -26,7 +26,7 @@
 #ifndef RTCDTMFToneChangeEvent_h
 #define RTCDTMFToneChangeEvent_h
 
-#include "core/events/Event.h"
+#include "modules/EventModules.h"
 #include "wtf/text/AtomicString.h"
 
 namespace WebCore {
@@ -35,17 +35,19 @@ struct RTCDTMFToneChangeEventInit : public EventInit {
     String tone;
 };
 
-class RTCDTMFToneChangeEvent : public Event {
+class RTCDTMFToneChangeEvent FINAL : public Event {
 public:
     virtual ~RTCDTMFToneChangeEvent();
 
-    static PassRefPtr<RTCDTMFToneChangeEvent> create();
-    static PassRefPtr<RTCDTMFToneChangeEvent> create(const String& tone);
-    static PassRefPtr<RTCDTMFToneChangeEvent> create(const AtomicString& type, const RTCDTMFToneChangeEventInit& initializer);
+    static PassRefPtrWillBeRawPtr<RTCDTMFToneChangeEvent> create();
+    static PassRefPtrWillBeRawPtr<RTCDTMFToneChangeEvent> create(const String& tone);
+    static PassRefPtrWillBeRawPtr<RTCDTMFToneChangeEvent> create(const AtomicString& type, const RTCDTMFToneChangeEventInit& initializer);
 
     const String& tone() const;
 
-    virtual const AtomicString& interfaceName() const;
+    virtual const AtomicString& interfaceName() const OVERRIDE;
+
+    virtual void trace(Visitor*) OVERRIDE;
 
 private:
     RTCDTMFToneChangeEvent();

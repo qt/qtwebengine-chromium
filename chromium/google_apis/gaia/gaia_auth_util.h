@@ -6,6 +6,7 @@
 #define GOOGLE_APIS_GAIA_GAIA_AUTH_UTIL_H_
 
 #include <string>
+#include <utility>
 #include <vector>
 
 class GURL;
@@ -13,10 +14,7 @@ class GURL;
 namespace gaia {
 
 // Perform basic canonicalization of |email_address|, taking into account that
-// gmail does not consider '.' or caps inside a username to matter. It also
-// ignores everything after a '+'. For example, c.masone+abc@gmail.com ==
-// cMaSone@gmail.com, per
-// http://mail.google.com/support/bin/answer.py?hl=en&ctx=mail&answer=10313#
+// gmail does not consider '.' or caps inside a username to matter.
 std::string CanonicalizeEmail(const std::string& email_address);
 
 // Returns the canonical form of the given domain.
@@ -35,9 +33,13 @@ std::string ExtractDomainName(const std::string& email);
 
 bool IsGaiaSignonRealm(const GURL& url);
 
-// Parses JSON data returned by /ListAccounts call, returns vector of
-// accounts (email addresses).
-std::vector<std::string> ParseListAccountsData(const std::string& data);
+// Parses JSON data returned by /ListAccounts call, returning a vector of
+// email/valid pairs.  An email addresses is considered valid if a passive
+// login would succeed (i.e. the user does not need to reauthenticate).
+// If there an error parsing the JSON, then false is returned.
+bool ParseListAccountsData(
+    const std::string& data,
+    std::vector<std::pair<std::string, bool> >* accounts);
 
 }  // namespace gaia
 

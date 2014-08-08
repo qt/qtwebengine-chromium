@@ -1,3 +1,0 @@
-include_rules = [
-  "+tools/ipc_fuzzer/message_lib",
-]

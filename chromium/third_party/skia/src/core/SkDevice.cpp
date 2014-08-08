@@ -1,4 +1,3 @@
-
 /*
  * Copyright 2011 Google Inc.
  *
@@ -9,15 +8,6 @@
 #include "SkDevice.h"
 #include "SkMetaData.h"
 
-#if SK_PMCOLOR_BYTE_ORDER(B,G,R,A)
-    const SkCanvas::Config8888 SkBaseDevice::kPMColorAlias = SkCanvas::kBGRA_Premul_Config8888;
-#elif SK_PMCOLOR_BYTE_ORDER(R,G,B,A)
-    const SkCanvas::Config8888 SkBaseDevice::kPMColorAlias = SkCanvas::kRGBA_Premul_Config8888;
-#else
-    const SkCanvas::Config8888 SkBaseDevice::kPMColorAlias = (SkCanvas::Config8888) -1;
-#endif
-
-///////////////////////////////////////////////////////////////////////////////
 SkBaseDevice::SkBaseDevice()
     : fLeakyProperties(SkDeviceProperties::MakeDefault())
 #ifdef SK_DEBUG
@@ -42,18 +32,12 @@ SkBaseDevice::~SkBaseDevice() {
     delete fMetaData;
 }
 
-SkBaseDevice* SkBaseDevice::createCompatibleDevice(SkBitmap::Config config,
-                                                   int width, int height,
-                                                   bool isOpaque) {
-    return this->onCreateCompatibleDevice(config, width, height,
-                                          isOpaque, kGeneral_Usage);
+SkBaseDevice* SkBaseDevice::createCompatibleDevice(const SkImageInfo& info) {
+    return this->onCreateDevice(info, kGeneral_Usage);
 }
 
-SkBaseDevice* SkBaseDevice::createCompatibleDeviceForSaveLayer(SkBitmap::Config config,
-                                                               int width, int height,
-                                                               bool isOpaque) {
-    return this->onCreateCompatibleDevice(config, width, height,
-                                          isOpaque, kSaveLayer_Usage);
+SkBaseDevice* SkBaseDevice::createCompatibleDeviceForSaveLayer(const SkImageInfo& info) {
+    return this->onCreateDevice(info, kSaveLayer_Usage);
 }
 
 SkMetaData& SkBaseDevice::getMetaData() {
@@ -65,6 +49,10 @@ SkMetaData& SkBaseDevice::getMetaData() {
     return *fMetaData;
 }
 
+SkImageInfo SkBaseDevice::imageInfo() const {
+    return SkImageInfo::MakeUnknown();
+}
+
 const SkBitmap& SkBaseDevice::accessBitmap(bool changePixels) {
     const SkBitmap& bitmap = this->onAccessBitmap();
     if (changePixels) {
@@ -73,46 +61,84 @@ const SkBitmap& SkBaseDevice::accessBitmap(bool changePixels) {
     return bitmap;
 }
 
-bool SkBaseDevice::readPixels(SkBitmap* bitmap, int x, int y,
-                              SkCanvas::Config8888 config8888) {
-    if (SkBitmap::kARGB_8888_Config != bitmap->config() ||
-        NULL != bitmap->getTexture()) {
-        return false;
+SkSurface* SkBaseDevice::newSurface(const SkImageInfo&) { return NULL; }
+
+const void* SkBaseDevice::peekPixels(SkImageInfo*, size_t*) { return NULL; }
+
+void SkBaseDevice::drawDRRect(const SkDraw& draw, const SkRRect& outer,
+                              const SkRRect& inner, const SkPaint& paint) {
+    SkPath path;
+    path.addRRect(outer);
+    path.addRRect(inner);
+    path.setFillType(SkPath::kEvenOdd_FillType);
+
+    const SkMatrix* preMatrix = NULL;
+    const bool pathIsMutable = true;
+    this->drawPath(draw, path, paint, preMatrix, pathIsMutable);
+}
+
+bool SkBaseDevice::readPixels(const SkImageInfo& info, void* dstP, size_t rowBytes, int x, int y) {
+#ifdef SK_DEBUG
+    SkASSERT(info.width() > 0 && info.height() > 0);
+    SkASSERT(dstP);
+    SkASSERT(rowBytes >= info.minRowBytes());
+    SkASSERT(x >= 0 && y >= 0);
+
+    const SkImageInfo& srcInfo = this->imageInfo();
+    SkASSERT(x + info.width() <= srcInfo.width());
+    SkASSERT(y + info.height() <= srcInfo.height());
+#endif
+    return this->onReadPixels(info, dstP, rowBytes, x, y);
+}
+
+bool SkBaseDevice::writePixels(const SkImageInfo& info, const void* pixels, size_t rowBytes,
+                               int x, int y) {
+#ifdef SK_DEBUG
+    SkASSERT(info.width() > 0 && info.height() > 0);
+    SkASSERT(pixels);
+    SkASSERT(rowBytes >= info.minRowBytes());
+    SkASSERT(x >= 0 && y >= 0);
+
+    const SkImageInfo& dstInfo = this->imageInfo();
+    SkASSERT(x + info.width() <= dstInfo.width());
+    SkASSERT(y + info.height() <= dstInfo.height());
+#endif
+    return this->onWritePixels(info, pixels, rowBytes, x, y);
+}
+
+bool SkBaseDevice::onWritePixels(const SkImageInfo&, const void*, size_t, int, int) {
+    return false;
+}
+
+bool SkBaseDevice::onReadPixels(const SkImageInfo&, void*, size_t, int x, int y) {
+    return false;
+}
+
+void* SkBaseDevice::accessPixels(SkImageInfo* info, size_t* rowBytes) {
+    SkImageInfo tmpInfo;
+    size_t tmpRowBytes;
+    if (NULL == info) {
+        info = &tmpInfo;
     }
-
-    const SkBitmap& src = this->accessBitmap(false);
-
-    SkIRect srcRect = SkIRect::MakeXYWH(x, y, bitmap->width(),
-                                              bitmap->height());
-    SkIRect devbounds = SkIRect::MakeWH(src.width(), src.height());
-    if (!srcRect.intersect(devbounds)) {
-        return false;
+    if (NULL == rowBytes) {
+        rowBytes = &tmpRowBytes;
     }
+    return this->onAccessPixels(info, rowBytes);
+}
 
-    SkBitmap tmp;
-    SkBitmap* bmp;
-    if (bitmap->isNull()) {
-        tmp.setConfig(SkBitmap::kARGB_8888_Config, bitmap->width(),
-                                                   bitmap->height());
-        if (!tmp.allocPixels()) {
-            return false;
-        }
-        bmp = &tmp;
-    } else {
-        bmp = bitmap;
-    }
+void* SkBaseDevice::onAccessPixels(SkImageInfo* info, size_t* rowBytes) {
+    return NULL;
+}
 
-    SkIRect subrect = srcRect;
-    subrect.offset(-x, -y);
-    SkBitmap bmpSubset;
-    bmp->extractSubset(&bmpSubset, subrect);
+void SkBaseDevice::EXPERIMENTAL_optimize(const SkPicture* picture) {
+    // The base class doesn't perform any analysis but derived classes may
+}
 
-    bool result = this->onReadPixels(bmpSubset,
-                                     srcRect.fLeft,
-                                     srcRect.fTop,
-                                     config8888);
-    if (result && bmp == &tmp) {
-        tmp.swap(*bitmap);
-    }
-    return result;
+void SkBaseDevice::EXPERIMENTAL_purge(const SkPicture* picture) {
+    // Derived-classes may have data to purge but not the base class
+}
+
+bool SkBaseDevice::EXPERIMENTAL_drawPicture(SkCanvas* canvas, const SkPicture* picture) {
+    // The base class doesn't perform any accelerated picture rendering
+    return false;
 }

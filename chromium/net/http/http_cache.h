@@ -60,7 +60,6 @@ class ViewCacheHelper;
 struct HttpRequestInfo;
 
 class NET_EXPORT HttpCache : public HttpTransactionFactory,
-                             public base::SupportsWeakPtr<HttpCache>,
                              NON_EXPORTED_BASE(public base::NonThreadSafe) {
  public:
   // The cache mode of operation.
@@ -125,17 +124,16 @@ class NET_EXPORT HttpCache : public HttpTransactionFactory,
   HttpCache(const net::HttpNetworkSession::Params& params,
             BackendFactory* backend_factory);
 
-  // The disk cache is initialized lazily (by CreateTransaction) in  this case.
+  // The disk cache is initialized lazily (by CreateTransaction) in this case.
   // Provide an existing HttpNetworkSession, the cache can construct a
   // network layer with a shared HttpNetworkSession in order for multiple
   // network layers to share information (e.g. authentication data). The
   // HttpCache takes ownership of the |backend_factory|.
   HttpCache(HttpNetworkSession* session, BackendFactory* backend_factory);
 
-  // Initialize the cache from its component parts, which is useful for
-  // testing.  The lifetime of the network_layer and backend_factory are managed
-  // by the HttpCache and will be destroyed using |delete| when the HttpCache is
-  // destroyed.
+  // Initialize the cache from its component parts. The lifetime of the
+  // |network_layer| and |backend_factory| are managed by the HttpCache and
+  // will be destroyed using |delete| when the HttpCache is destroyed.
   HttpCache(HttpTransactionFactory* network_layer,
             NetLog* net_log,
             BackendFactory* backend_factory);
@@ -191,12 +189,23 @@ class NET_EXPORT HttpCache : public HttpTransactionFactory,
 
   // HttpTransactionFactory implementation:
   virtual int CreateTransaction(RequestPriority priority,
-                                scoped_ptr<HttpTransaction>* trans,
-                                HttpTransactionDelegate* delegate) OVERRIDE;
+                                scoped_ptr<HttpTransaction>* trans) OVERRIDE;
   virtual HttpCache* GetCache() OVERRIDE;
   virtual HttpNetworkSession* GetSession() OVERRIDE;
 
- protected:
+  base::WeakPtr<HttpCache> GetWeakPtr() { return weak_factory_.GetWeakPtr(); }
+
+  // Resets the network layer to allow for tests that probe
+  // network changes (e.g. host unreachable).  The old network layer is
+  // returned to allow for filter patterns that only intercept
+  // some creation requests.  Note ownership exchange.
+  scoped_ptr<HttpTransactionFactory>
+      SetHttpNetworkTransactionFactoryForTesting(
+          scoped_ptr<HttpTransactionFactory> new_network_layer);
+
+ private:
+  // Types --------------------------------------------------------------------
+
   // Disk cache entry data indices.
   enum {
     kResponseInfoIndex = 0,
@@ -206,15 +215,13 @@ class NET_EXPORT HttpCache : public HttpTransactionFactory,
     // Must remain at the end of the enum.
     kNumCacheEntryDataIndices
   };
-  friend class ViewCacheHelper;
-
- private:
-  // Types --------------------------------------------------------------------
 
   class MetadataWriter;
+  class QuicServerInfoFactoryAdaptor;
   class Transaction;
   class WorkItem;
   friend class Transaction;
+  friend class ViewCacheHelper;
   struct PendingOp;  // Info for an entry under construction.
 
   typedef std::list<Transaction*> TransactionList;
@@ -347,6 +354,9 @@ class NET_EXPORT HttpCache : public HttpTransactionFactory,
   bool RemovePendingTransactionFromPendingOp(PendingOp* pending_op,
                                              Transaction* trans);
 
+  // Instantiates and sets QUIC server info factory.
+  void SetupQuicServerInfoFactory(HttpNetworkSession* session);
+
   // Resumes processing the pending list of |entry|.
   void ProcessPendingQueue(ActiveEntry* entry);
 
@@ -382,7 +392,10 @@ class NET_EXPORT HttpCache : public HttpTransactionFactory,
 
   Mode mode_;
 
-  const scoped_ptr<HttpTransactionFactory> network_layer_;
+  scoped_ptr<QuicServerInfoFactoryAdaptor> quic_server_info_factory_;
+
+  scoped_ptr<HttpTransactionFactory> network_layer_;
+
   scoped_ptr<disk_cache::Backend> disk_cache_;
 
   // The set of active entries indexed by cache key.
@@ -395,6 +408,8 @@ class NET_EXPORT HttpCache : public HttpTransactionFactory,
   PendingOpsMap pending_ops_;
 
   scoped_ptr<PlaybackCacheMap> playback_cache_map_;
+
+  base::WeakPtrFactory<HttpCache> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(HttpCache);
 };

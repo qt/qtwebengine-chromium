@@ -5,6 +5,7 @@
 #include "media/base/decoder_buffer.h"
 
 #include "base/logging.h"
+#include "media/base/buffers.h"
 #include "media/base/decrypt_config.h"
 
 namespace media {
@@ -43,6 +44,7 @@ void DecoderBuffer::Initialize() {
         base::AlignedAlloc(side_data_size_ + kPaddingSize, kAlignmentSize)));
     memset(side_data_.get() + side_data_size_, 0, kPaddingSize);
   }
+  splice_timestamp_ = kNoTimestamp();
 }
 
 // static
@@ -81,8 +83,14 @@ std::string DecoderBuffer::AsHumanReadableString() {
     << " size: " << size_
     << " side_data_size: " << side_data_size_
     << " encrypted: " << (decrypt_config_ != NULL)
-    << " discard_padding (ms): " << discard_padding_.InMilliseconds();
+    << " discard_padding (ms): (" << discard_padding_.first.InMilliseconds()
+    << ", " << discard_padding_.second.InMilliseconds() << ")";
   return s.str();
+}
+
+void DecoderBuffer::set_timestamp(base::TimeDelta timestamp) {
+  DCHECK(!end_of_stream());
+  timestamp_ = timestamp;
 }
 
 }  // namespace media

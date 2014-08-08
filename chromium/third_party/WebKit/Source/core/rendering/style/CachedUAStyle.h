@@ -32,30 +32,29 @@ namespace WebCore {
 // applyMatchedProperties for later use during adjustRenderStyle.
 class CachedUAStyle {
 public:
-    CachedUAStyle()
-        : hasAppearance(false)
-        , backgroundLayers(BackgroundFillLayer)
-    { }
-
-    explicit CachedUAStyle(const RenderStyle* style)
-        : hasAppearance(style->hasAppearance())
-        , backgroundLayers(BackgroundFillLayer)
+    static PassOwnPtr<CachedUAStyle> create(const RenderStyle* style)
     {
-        // RenderTheme::adjustStyle is the only consumer of this data.
-        // It only cares about the styles if appearance is set,
-        // so we cheat and don't bother to copy them when !hasAppearance.
-        if (!hasAppearance)
-            return;
-        border = style->border();
-        backgroundLayers = *style->backgroundLayers();
-        backgroundColor = style->backgroundColor();
+        return adoptPtr(new CachedUAStyle(style));
     }
 
     bool hasAppearance;
     BorderData border;
     FillLayer backgroundLayers;
-    Color backgroundColor;
+    StyleColor backgroundColor;
+
+private:
+    explicit CachedUAStyle(const RenderStyle* style)
+        : hasAppearance(true)
+        , backgroundLayers(BackgroundFillLayer)
+        , backgroundColor(StyleColor::currentColor())
+    {
+        ASSERT(style->hasAppearance());
+        border = style->border();
+        backgroundLayers = *style->backgroundLayers();
+        backgroundColor = style->backgroundColor();
+    }
 };
+
 
 
 } // namespace WebCore

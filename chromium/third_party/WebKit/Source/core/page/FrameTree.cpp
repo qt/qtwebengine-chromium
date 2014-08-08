@@ -22,10 +22,12 @@
 #include "core/page/FrameTree.h"
 
 #include "core/dom/Document.h"
-#include "core/frame/Frame.h"
+#include "core/frame/FrameClient.h"
 #include "core/frame/FrameView.h"
+#include "core/frame/LocalFrame.h"
+#include "core/frame/RemoteFrame.h"
+#include "core/frame/RemoteFrameView.h"
 #include "core/page/Page.h"
-#include "core/page/PageGroup.h"
 #include "wtf/Vector.h"
 #include "wtf/text/CString.h"
 #include "wtf/text/StringBuilder.h"
@@ -34,13 +36,30 @@ using std::swap;
 
 namespace WebCore {
 
-FrameTree::~FrameTree()
+namespace {
+
+const unsigned invalidChildCount = ~0;
+
+} // namespace
+
+FrameTree::FrameTree(Frame* thisFrame)
+    : m_thisFrame(thisFrame)
+    , m_scopedChildCount(invalidChildCount)
 {
-    for (Frame* child = firstChild(); child; child = child->tree().nextSibling())
-        child->setView(0);
 }
 
-void FrameTree::setName(const AtomicString& name)
+FrameTree::~FrameTree()
+{
+    // FIXME: Why is this here? Doesn't this parallel what we already do in ~LocalFrame?
+    for (Frame* child = firstChild(); child; child = child->tree().nextSibling()) {
+        if (child->isLocalFrame())
+            toLocalFrame(child)->setView(nullptr);
+        else if (child->isRemoteFrame())
+            toRemoteFrame(child)->setView(nullptr);
+    }
+}
+
+void FrameTree::setName(const AtomicString& name, const AtomicString& fallbackName)
 {
     m_name = name;
     if (!parent()) {
@@ -48,55 +67,67 @@ void FrameTree::setName(const AtomicString& name)
         return;
     }
     m_uniqueName = AtomicString(); // Remove our old frame name so it's not considered in uniqueChildName.
-    m_uniqueName = parent()->tree().uniqueChildName(name);
+    m_uniqueName = parent()->tree().uniqueChildName(name.isEmpty() ? fallbackName : name);
 }
 
 Frame* FrameTree::parent() const
 {
-    return m_parent;
+    if (!m_thisFrame->client())
+        return 0;
+    return m_thisFrame->client()->parent();
 }
 
-void FrameTree::appendChild(PassRefPtr<Frame> child)
+Frame* FrameTree::top() const
 {
-    ASSERT(child->page() == m_thisFrame->page());
-    child->tree().m_parent = m_thisFrame;
-    Frame* oldLast = m_lastChild;
-    m_lastChild = child.get();
-
-    if (oldLast) {
-        child->tree().m_previousSibling = oldLast;
-        oldLast->tree().m_nextSibling = child;
-    } else
-        m_firstChild = child;
-
-    m_scopedChildCount = invalidCount;
-
-    ASSERT(!m_lastChild->tree().m_nextSibling);
+    // FIXME: top() should never return null, so here are some hacks to deal
+    // with EmptyFrameLoaderClient and cases where the frame is detached
+    // already...
+    if (!m_thisFrame->client())
+        return m_thisFrame;
+    Frame* candidate = m_thisFrame->client()->top();
+    return candidate ? candidate : m_thisFrame;
 }
 
-void FrameTree::removeChild(Frame* child)
+Frame* FrameTree::previousSibling() const
 {
-    child->tree().m_parent = 0;
+    if (!m_thisFrame->client())
+        return 0;
+    return m_thisFrame->client()->previousSibling();
+}
 
-    // Slightly tricky way to prevent deleting the child until we are done with it, w/o
-    // extra refs. These swaps leave the child in a circular list by itself. Clearing its
-    // previous and next will then finally deref it.
+Frame* FrameTree::nextSibling() const
+{
+    if (!m_thisFrame->client())
+        return 0;
+    return m_thisFrame->client()->nextSibling();
+}
 
-    RefPtr<Frame>& newLocationForNext = m_firstChild == child ? m_firstChild : child->tree().m_previousSibling->tree().m_nextSibling;
-    Frame*& newLocationForPrevious = m_lastChild == child ? m_lastChild : child->tree().m_nextSibling->tree().m_previousSibling;
-    swap(newLocationForNext, child->tree().m_nextSibling);
-    // For some inexplicable reason, the following line does not compile without the explicit std:: namespace
-    std::swap(newLocationForPrevious, child->tree().m_previousSibling);
+Frame* FrameTree::firstChild() const
+{
+    if (!m_thisFrame->client())
+        return 0;
+    return m_thisFrame->client()->firstChild();
+}
 
-    child->tree().m_previousSibling = 0;
-    child->tree().m_nextSibling = 0;
+Frame* FrameTree::lastChild() const
+{
+    if (!m_thisFrame->client())
+        return 0;
+    return m_thisFrame->client()->lastChild();
+}
 
-    m_scopedChildCount = invalidCount;
+bool FrameTree::uniqueNameExists(const AtomicString& name) const
+{
+    for (Frame* frame = top(); frame; frame = frame->tree().traverseNext()) {
+        if (frame->tree().uniqueName() == name)
+            return true;
+    }
+    return false;
 }
 
 AtomicString FrameTree::uniqueChildName(const AtomicString& requestedName) const
 {
-    if (!requestedName.isEmpty() && !child(requestedName) && requestedName != "_blank")
+    if (!requestedName.isEmpty() && !uniqueNameExists(requestedName) && requestedName != "_blank")
         return requestedName;
 
     // Create a repeatable name for a child about to be added to us. The name must be
@@ -131,7 +162,7 @@ AtomicString FrameTree::uniqueChildName(const AtomicString& requestedName) const
     }
 
     name.appendLiteral("/<!--frame");
-    name.appendNumber(childCount());
+    name.appendNumber(childCount() - 1);
     name.appendLiteral("-->-->");
 
     return name.toAtomicString();
@@ -139,13 +170,15 @@ AtomicString FrameTree::uniqueChildName(const AtomicString& requestedName) const
 
 Frame* FrameTree::scopedChild(unsigned index) const
 {
-    TreeScope* scope = m_thisFrame->document();
+    if (!m_thisFrame->isLocalFrame())
+        return 0;
+    TreeScope* scope = toLocalFrame(m_thisFrame)->document();
     if (!scope)
         return 0;
 
     unsigned scopedIndex = 0;
     for (Frame* result = firstChild(); result; result = result->tree().nextSibling()) {
-        if (result->inScope(scope)) {
+        if (result->isLocalFrame() && toLocalFrame(result)->inScope(scope)) {
             if (scopedIndex == index)
                 return result;
             scopedIndex++;
@@ -157,12 +190,15 @@ Frame* FrameTree::scopedChild(unsigned index) const
 
 Frame* FrameTree::scopedChild(const AtomicString& name) const
 {
-    TreeScope* scope = m_thisFrame->document();
+    if (!m_thisFrame->isLocalFrame())
+        return 0;
+
+    TreeScope* scope = toLocalFrame(m_thisFrame)->document();
     if (!scope)
         return 0;
 
     for (Frame* child = firstChild(); child; child = child->tree().nextSibling())
-        if (child->tree().uniqueName() == name && child->inScope(scope))
+        if (child->tree().name() == name && child->isLocalFrame() && toLocalFrame(child)->inScope(scope))
             return child;
     return 0;
 }
@@ -174,7 +210,7 @@ inline unsigned FrameTree::scopedChildCount(TreeScope* scope) const
 
     unsigned scopedCount = 0;
     for (Frame* result = firstChild(); result; result = result->tree().nextSibling()) {
-        if (result->inScope(scope))
+        if (result->isLocalFrame() && toLocalFrame(result)->inScope(scope))
             scopedCount++;
     }
 
@@ -183,9 +219,14 @@ inline unsigned FrameTree::scopedChildCount(TreeScope* scope) const
 
 unsigned FrameTree::scopedChildCount() const
 {
-    if (m_scopedChildCount == invalidCount)
-        m_scopedChildCount = scopedChildCount(m_thisFrame->document());
+    if (m_scopedChildCount == invalidChildCount)
+        m_scopedChildCount = scopedChildCount(toLocalFrame(m_thisFrame)->document());
     return m_scopedChildCount;
+}
+
+void FrameTree::invalidateScopedChildCount()
+{
+    m_scopedChildCount = invalidChildCount;
 }
 
 unsigned FrameTree::childCount() const
@@ -199,7 +240,7 @@ unsigned FrameTree::childCount() const
 Frame* FrameTree::child(const AtomicString& name) const
 {
     for (Frame* child = firstChild(); child; child = child->tree().nextSibling())
-        if (child->tree().uniqueName() == name)
+        if (child->tree().name() == name)
             return child;
     return 0;
 }
@@ -221,7 +262,7 @@ Frame* FrameTree::find(const AtomicString& name) const
 
     // Search subtree starting with this frame first.
     for (Frame* frame = m_thisFrame; frame; frame = frame->tree().traverseNext(m_thisFrame))
-        if (frame->tree().uniqueName() == name)
+        if (frame->tree().name() == name)
             return frame;
 
     // Search the entire tree for this page next.
@@ -232,18 +273,18 @@ Frame* FrameTree::find(const AtomicString& name) const
         return 0;
 
     for (Frame* frame = page->mainFrame(); frame; frame = frame->tree().traverseNext())
-        if (frame->tree().uniqueName() == name)
+        if (frame->tree().name() == name)
             return frame;
 
     // Search the entire tree of each of the other pages in this namespace.
     // FIXME: Is random order OK?
-    const HashSet<Page*>& pages = page->group().pages();
+    const HashSet<Page*>& pages = Page::ordinaryPages();
     HashSet<Page*>::const_iterator end = pages.end();
     for (HashSet<Page*>::const_iterator it = pages.begin(); it != end; ++it) {
         Page* otherPage = *it;
         if (otherPage != page) {
             for (Frame* frame = otherPage->mainFrame(); frame; frame = frame->tree().traverseNext()) {
-                if (frame->tree().uniqueName() == name)
+                if (frame->tree().name() == name)
                     return frame;
             }
         }
@@ -336,14 +377,6 @@ Frame* FrameTree::deepLastChild() const
     return result;
 }
 
-Frame* FrameTree::top() const
-{
-    Frame* frame = m_thisFrame;
-    for (Frame* parent = m_thisFrame; parent; parent = parent->tree().parent())
-        frame = parent;
-    return frame;
-}
-
 } // namespace WebCore
 
 #ifndef NDEBUG
@@ -362,16 +395,16 @@ static void printFrames(const WebCore::Frame* frame, const WebCore::Frame* targe
     } else
         printIndent(indent);
 
-    WebCore::FrameView* view = frame->view();
+    WebCore::FrameView* view = frame->isLocalFrame() ? toLocalFrame(frame)->view() : 0;
     printf("Frame %p %dx%d\n", frame, view ? view->width() : 0, view ? view->height() : 0);
     printIndent(indent);
-    printf("  ownerElement=%p\n", frame->ownerElement());
+    printf("  owner=%p\n", frame->owner());
     printIndent(indent);
     printf("  frameView=%p\n", view);
     printIndent(indent);
-    printf("  document=%p\n", frame->document());
+    printf("  document=%p\n", frame->isLocalFrame() ? toLocalFrame(frame)->document() : 0);
     printIndent(indent);
-    printf("  uri=%s\n\n", frame->document()->documentURI().utf8().data());
+    printf("  uri=%s\n\n", frame->isLocalFrame() ? toLocalFrame(frame)->document()->url().string().utf8().data() : 0);
 
     for (WebCore::Frame* child = frame->tree().firstChild(); child; child = child->tree().nextSibling())
         printFrames(child, targetFrame, indent + 1);

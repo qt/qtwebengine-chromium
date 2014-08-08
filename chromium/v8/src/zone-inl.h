@@ -1,42 +1,27 @@
 // Copyright 2012 the V8 project authors. All rights reserved.
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-//       copyright notice, this list of conditions and the following
-//       disclaimer in the documentation and/or other materials provided
-//       with the distribution.
-//     * Neither the name of Google Inc. nor the names of its
-//       contributors may be used to endorse or promote products derived
-//       from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
 #ifndef V8_ZONE_INL_H_
 #define V8_ZONE_INL_H_
 
-#include "zone.h"
+#include "src/zone.h"
 
-#include "counters.h"
-#include "isolate.h"
-#include "utils.h"
-#include "v8-counters.h"
+#ifdef V8_USE_ADDRESS_SANITIZER
+  #include <sanitizer/asan_interface.h>
+#else
+  #define ASAN_UNPOISON_MEMORY_REGION(start, size) ((void) 0)
+#endif
+
+#include "src/counters.h"
+#include "src/isolate.h"
+#include "src/utils.h"
 
 namespace v8 {
 namespace internal {
+
+
+static const int kASanRedzoneBytes = 24;  // Must be a multiple of 8.
 
 
 inline void* Zone::New(int size) {
@@ -54,11 +39,24 @@ inline void* Zone::New(int size) {
   // Check if the requested size is available without expanding.
   Address result = position_;
 
-  if (size > limit_ - position_) {
-     result = NewExpand(size);
+  int size_with_redzone =
+#ifdef V8_USE_ADDRESS_SANITIZER
+      size + kASanRedzoneBytes;
+#else
+      size;
+#endif
+
+  if (size_with_redzone > limit_ - position_) {
+     result = NewExpand(size_with_redzone);
   } else {
-     position_ += size;
+     position_ += size_with_redzone;
   }
+
+#ifdef V8_USE_ADDRESS_SANITIZER
+  Address redzone_position = result + size;
+  ASSERT(redzone_position + kASanRedzoneBytes == position_);
+  ASAN_POISON_MEMORY_REGION(redzone_position, kASanRedzoneBytes);
+#endif
 
   // Check that the result has the proper alignment and return it.
   ASSERT(IsAddressAligned(result, kAlignment, 0));
@@ -69,6 +67,7 @@ inline void* Zone::New(int size) {
 
 template <typename T>
 T* Zone::NewArray(int length) {
+  CHECK(std::numeric_limits<int>::max() / static_cast<int>(sizeof(T)) > length);
   return static_cast<T*>(New(length * sizeof(T)));
 }
 

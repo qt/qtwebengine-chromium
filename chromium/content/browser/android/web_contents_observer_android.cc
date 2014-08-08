@@ -11,7 +11,6 @@
 #include "base/android/jni_android.h"
 #include "base/android/jni_string.h"
 #include "base/android/scoped_java_ref.h"
-#include "content/browser/android/content_view_core_impl.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/public/browser/navigation_details.h"
@@ -36,11 +35,13 @@ WebContentsObserverAndroid::WebContentsObserverAndroid(
 WebContentsObserverAndroid::~WebContentsObserverAndroid() {
 }
 
-jlong Init(JNIEnv* env, jobject obj, jlong native_content_view_core) {
-  ContentViewCore* content_view_core =
-      reinterpret_cast<ContentViewCore*>(native_content_view_core);
+jlong Init(JNIEnv* env, jobject obj, jobject java_web_contents) {
+  content::WebContents* web_contents =
+        content::WebContents::FromJavaWebContents(java_web_contents);
+  CHECK(web_contents);
+
   WebContentsObserverAndroid* native_observer = new WebContentsObserverAndroid(
-      env, obj, content_view_core->GetWebContents());
+      env, obj, web_contents);
   return reinterpret_cast<intptr_t>(native_observer);
 }
 
@@ -48,8 +49,7 @@ void WebContentsObserverAndroid::Destroy(JNIEnv* env, jobject obj) {
   delete this;
 }
 
-void WebContentsObserverAndroid::WebContentsDestroyed(
-    WebContents* web_contents) {
+void WebContentsObserverAndroid::WebContentsDestroyed() {
   JNIEnv* env = AttachCurrentThread();
   ScopedJavaLocalRef<jobject> obj(weak_java_observer_.get(env));
   if (obj.is_null()) {
@@ -130,16 +130,23 @@ void WebContentsObserverAndroid::DidNavigateMainFrame(
       ConvertUTF8ToJavaString(env, params.url.spec()));
   ScopedJavaLocalRef<jstring> jstring_base_url(
       ConvertUTF8ToJavaString(env, params.base_url.spec()));
+
   // See http://crbug.com/251330 for why it's determined this way.
-  bool in_page_navigation =
-      details.type == NAVIGATION_TYPE_IN_PAGE || details.is_in_page;
-  // TODO(mkosiba): delete once downstream rolls.
-  Java_WebContentsObserverAndroid_didNavigateMainFrameV_JLS_JLS_Z(
+  url::Replacements<char> replacements;
+  replacements.ClearRef();
+  bool urls_same_ignoring_fragment =
+      params.url.ReplaceComponents(replacements) ==
+      details.previous_url.ReplaceComponents(replacements);
+
+  // is_fragment_navigation is indicative of the intent of this variable.
+  // However, there isn't sufficient information here to determine whether this
+  // is actually a fragment navigation, or a history API navigation to a URL
+  // that would also be valid for a fragment navigation.
+  bool is_fragment_navigation = urls_same_ignoring_fragment &&
+      (details.type == NAVIGATION_TYPE_IN_PAGE || details.is_in_page);
+  Java_WebContentsObserverAndroid_didNavigateMainFrame(
       env, obj.obj(), jstring_url.obj(), jstring_base_url.obj(),
-      details.is_navigation_to_different_page());
-  Java_WebContentsObserverAndroid_didNavigateMainFrameV_JLS_JLS_Z_Z(
-      env, obj.obj(), jstring_url.obj(), jstring_base_url.obj(),
-      details.is_navigation_to_different_page(), in_page_navigation);
+      details.is_navigation_to_different_page(), is_fragment_navigation);
 }
 
 void WebContentsObserverAndroid::DidNavigateAnyFrame(
@@ -221,6 +228,17 @@ void WebContentsObserverAndroid::DidFinishLoad(
       env, obj.obj(), frame_id, jstring_url.obj(), is_main_frame);
 }
 
+void WebContentsObserverAndroid::DocumentLoadedInFrame(
+    int64 frame_id,
+    RenderViewHost* render_view_host) {
+  JNIEnv* env = AttachCurrentThread();
+  ScopedJavaLocalRef<jobject> obj(weak_java_observer_.get(env));
+  if (obj.is_null())
+    return;
+  Java_WebContentsObserverAndroid_documentLoadedInFrame(
+      env, obj.obj(), frame_id);
+}
+
 void WebContentsObserverAndroid::NavigationEntryCommitted(
     const LoadCommittedDetails& load_details) {
   JNIEnv* env = AttachCurrentThread();
@@ -228,14 +246,6 @@ void WebContentsObserverAndroid::NavigationEntryCommitted(
   if (obj.is_null())
     return;
   Java_WebContentsObserverAndroid_navigationEntryCommitted(env, obj.obj());
-}
-
-void WebContentsObserverAndroid::DidChangeVisibleSSLState() {
-  JNIEnv* env = AttachCurrentThread();
-  ScopedJavaLocalRef<jobject> obj(weak_java_observer_.get(env));
-  if (obj.is_null())
-    return;
-  Java_WebContentsObserverAndroid_didChangeVisibleSSLState(env, obj.obj());
 }
 
 void WebContentsObserverAndroid::DidAttachInterstitialPage() {
@@ -252,6 +262,14 @@ void WebContentsObserverAndroid::DidDetachInterstitialPage() {
   if (obj.is_null())
     return;
   Java_WebContentsObserverAndroid_didDetachInterstitialPage(env, obj.obj());
+}
+
+void WebContentsObserverAndroid::DidChangeThemeColor(SkColor color) {
+  JNIEnv* env = AttachCurrentThread();
+  ScopedJavaLocalRef<jobject> obj(weak_java_observer_.get(env));
+  if (obj.is_null())
+    return;
+  Java_WebContentsObserverAndroid_didChangeThemeColor(env, obj.obj(), color);
 }
 
 void WebContentsObserverAndroid::DidFailLoadInternal(
@@ -275,6 +293,15 @@ void WebContentsObserverAndroid::DidFailLoadInternal(
       is_main_frame,
       error_code,
       jstring_error_description.obj(), jstring_url.obj());
+}
+
+void WebContentsObserverAndroid::DidFirstVisuallyNonEmptyPaint() {
+  JNIEnv* env = AttachCurrentThread();
+  ScopedJavaLocalRef<jobject> obj(weak_java_observer_.get(env));
+  if (obj.is_null())
+    return;
+  Java_WebContentsObserverAndroid_didFirstVisuallyNonEmptyPaint(
+      env, obj.obj());
 }
 
 bool RegisterWebContentsObserverAndroid(JNIEnv* env) {

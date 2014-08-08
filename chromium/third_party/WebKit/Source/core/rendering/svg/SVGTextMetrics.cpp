@@ -30,6 +30,7 @@ SVGTextMetrics::SVGTextMetrics()
     : m_width(0)
     , m_height(0)
     , m_length(0)
+    , m_glyph(0)
 {
 }
 
@@ -37,6 +38,7 @@ SVGTextMetrics::SVGTextMetrics(SVGTextMetrics::MetricsType)
     : m_width(0)
     , m_height(0)
     , m_length(1)
+    , m_glyph(0)
 {
 }
 
@@ -51,17 +53,20 @@ SVGTextMetrics::SVGTextMetrics(RenderSVGInlineText* textRenderer, const TextRun&
     int length = 0;
 
     // Calculate width/height using the scaled font, divide this result by the scalingFactor afterwards.
-    m_width = scaledFont.width(run, length, m_glyph.name) / scalingFactor;
+    m_width = scaledFont.width(run, length, m_glyph) / scalingFactor;
     m_height = scaledFont.fontMetrics().floatHeight() / scalingFactor;
-
-    m_glyph.unicodeString = run.is8Bit() ? String(run.characters8(), length) : String(run.characters16(), length);
-    m_glyph.isValid = true;
 
     ASSERT(length >= 0);
     m_length = static_cast<unsigned>(length);
 }
 
 TextRun SVGTextMetrics::constructTextRun(RenderSVGInlineText* text, unsigned position, unsigned length)
+{
+    ASSERT(text->style());
+    return constructTextRun(text, position, length, text->style()->direction());
+}
+
+TextRun SVGTextMetrics::constructTextRun(RenderSVGInlineText* text, unsigned position, unsigned length, TextDirection textDirection)
 {
     RenderStyle* style = text->style();
     ASSERT(style);
@@ -71,7 +76,7 @@ TextRun SVGTextMetrics::constructTextRun(RenderSVGInlineText* text, unsigned pos
                 , 0 // xPos, only relevant with allowTabs=true
                 , 0 // padding, only relevant for justified text, not relevant for SVG
                 , TextRun::AllowTrailingExpansion
-                , style->direction()
+                , textDirection
                 , isOverride(style->unicodeBidi()) /* directionalOverride */);
 
     if (length) {
@@ -95,13 +100,19 @@ TextRun SVGTextMetrics::constructTextRun(RenderSVGInlineText* text, unsigned pos
     return run;
 }
 
+SVGTextMetrics SVGTextMetrics::measureCharacterRange(RenderSVGInlineText* text, unsigned position, unsigned length, TextDirection textDirection)
+{
+    ASSERT(text);
+    return SVGTextMetrics(text, constructTextRun(text, position, length, textDirection));
+}
+
 SVGTextMetrics SVGTextMetrics::measureCharacterRange(RenderSVGInlineText* text, unsigned position, unsigned length)
 {
     ASSERT(text);
     return SVGTextMetrics(text, constructTextRun(text, position, length));
 }
 
-SVGTextMetrics::SVGTextMetrics(RenderSVGInlineText* text, unsigned position, unsigned length, float width, const String& glyphName)
+SVGTextMetrics::SVGTextMetrics(RenderSVGInlineText* text, unsigned position, unsigned length, float width, Glyph glyphNameGlyphId)
 {
     ASSERT(text);
 
@@ -111,11 +122,7 @@ SVGTextMetrics::SVGTextMetrics(RenderSVGInlineText* text, unsigned position, uns
 
     m_width = width / scalingFactor;
     m_height = text->scaledFont().fontMetrics().floatHeight() / scalingFactor;
-    if (needsContext) {
-        m_glyph.isValid = true;
-        m_glyph.unicodeString = text->substring(position, length);
-        m_glyph.name = glyphName;
-    }
+    m_glyph = needsContext ? glyphNameGlyphId : 0;
 
     m_length = length;
 }

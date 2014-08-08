@@ -6,6 +6,9 @@
   'variables': {
     'chromium_code': 1,
   },
+  'includes': [
+    'url_srcs.gypi',
+  ],
   'targets': [
     {
       # Note, this target_name cannot be 'url', because that will generate
@@ -20,35 +23,7 @@
         '../third_party/icu/icu.gyp:icuuc',
       ],
       'sources': [
-        'gurl.cc',
-        'gurl.h',
-        'third_party/mozilla/url_parse.cc',
-        'third_party/mozilla/url_parse.h',
-        'url_canon.h',
-        'url_canon_etc.cc',
-        'url_canon_filesystemurl.cc',
-        'url_canon_fileurl.cc',
-        'url_canon_host.cc',
-        'url_canon_icu.cc',
-        'url_canon_icu.h',
-        'url_canon_internal.cc',
-        'url_canon_internal.h',
-        'url_canon_internal_file.h',
-        'url_canon_ip.cc',
-        'url_canon_ip.h',
-        'url_canon_mailtourl.cc',
-        'url_canon_path.cc',
-        'url_canon_pathurl.cc',
-        'url_canon_query.cc',
-        'url_canon_relative.cc',
-        'url_canon_stdstring.cc',
-        'url_canon_stdstring.h',
-        'url_canon_stdurl.cc',
-        'url_file.h',
-        'url_parse_file.cc',
-        'url_parse_internal.h',
-        'url_util.cc',
-        'url_util.h',
+        '<@(gurl_sources)',
       ],
       'direct_dependent_settings': {
         'include_dirs': [
@@ -58,6 +33,28 @@
       'defines': [
         'URL_IMPLEMENTATION',
       ],
+      'conditions': [
+        ['use_icu_alternatives_on_android==1', {
+          'sources!': [
+            'url_canon_icu.cc',
+            'url_canon_icu.h',
+          ],
+          'dependencies!': [
+            '../third_party/icu/icu.gyp:icui18n',
+            '../third_party/icu/icu.gyp:icuuc',
+          ],
+        }],
+        ['use_icu_alternatives_on_android==1 and OS=="android"', {
+          'dependencies': [
+            'url_java',
+            'url_jni_headers',
+          ],
+          'sources': [
+            'url_canon_icu_alternatives_android.cc',
+            'url_canon_icu_alternatives_android.h',
+          ],
+        }],
+      ],
       # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
       'msvs_disabled_warnings': [4267, ],
     },
@@ -65,7 +62,6 @@
       'target_name': 'url_unittests',
       'type': 'executable',
       'dependencies': [
-        '../base/base.gyp:base_i18n',
         '../base/base.gyp:run_all_unittests',
         '../testing/gtest.gyp:gtest',
         '../third_party/icu/icu.gyp:icuuc',
@@ -73,22 +69,28 @@
       ],
       'sources': [
         'gurl_unittest.cc',
+        'origin_unittest.cc',
+        'url_canon_icu_unittest.cc',
         'url_canon_unittest.cc',
         'url_parse_unittest.cc',
         'url_test_utils.h',
         'url_util_unittest.cc',
       ],
       'conditions': [
-        ['os_posix==1 and OS!="mac" and OS!="ios"',
+        ['os_posix==1 and OS!="mac" and OS!="ios" and use_allocator!="none"',
           {
-            'conditions': [
-              ['linux_use_tcmalloc==1',
-                {
-                  'dependencies': [
-                    '../base/allocator/allocator.gyp:allocator',
-                  ],
-                }
-              ],
+            'dependencies': [
+              '../base/allocator/allocator.gyp:allocator',
+            ],
+          }
+        ],
+        ['use_icu_alternatives_on_android==1',
+          {
+            'sources!': [
+              'url_canon_icu_unittest.cc',
+            ],
+            'dependencies!': [
+              '../third_party/icu/icu.gyp:icuuc',
             ],
           }
         ],
@@ -96,5 +98,33 @@
       # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
       'msvs_disabled_warnings': [4267, ],
     },
+  ],
+  'conditions': [
+    ['use_icu_alternatives_on_android==1 and OS=="android"', {
+      'targets': [
+        {
+          'target_name': 'url_jni_headers',
+          'type': 'none',
+          'sources': [
+            'android/java/src/org/chromium/url/IDNStringUtil.java'
+          ],
+          'variables': {
+            'jni_gen_package': 'url',
+          },
+          'includes': [ '../build/jni_generator.gypi' ],
+        },
+        {
+          'target_name': 'url_java',
+          'type': 'none',
+          'variables': {
+            'java_in_dir': '../url/android/java',
+          },
+          'dependencies': [
+            '../base/base.gyp:base',
+          ],
+          'includes': [ '../build/java.gypi' ],
+        },
+      ],
+    }],
   ],
 }

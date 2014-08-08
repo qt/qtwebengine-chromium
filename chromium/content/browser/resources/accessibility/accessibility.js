@@ -5,6 +5,24 @@
 cr.define('accessibility', function() {
   'use strict';
 
+  // Keep in sync with view_message_enums.h
+  var AccessibilityModeFlag = {
+    Platform: 1 << 0,
+    FullTree: 1 << 1
+  }
+
+  var AccessibilityMode = {
+    Off: 0,
+    Complete:
+        AccessibilityModeFlag.Platform | AccessibilityModeFlag.FullTree,
+    EditableTextOnly: AccessibilityModeFlag.Platform,
+    TreeOnly: AccessibilityModeFlag.FullTree
+  }
+
+  function isAccessibilityComplete(mode) {
+    return ((mode & AccessibilityMode.Complete) == AccessibilityMode.Complete);
+  }
+
   function requestData() {
     var xhr = new XMLHttpRequest();
     xhr.open('GET', 'targets-data.json', false);
@@ -60,7 +78,8 @@ cr.define('accessibility', function() {
   }
 
   function addGlobalAccessibilityModeToggle(global_a11y_mode) {
-    $('toggle_global').textContent = (global_a11y_mode == 0 ? 'off' : 'on');
+    var full_a11y_on = isAccessibilityComplete(global_a11y_mode);
+    $('toggle_global').textContent = (full_a11y_on ? 'on' : 'off');
     $('toggle_global').addEventListener('click',
                                         toggleGlobalAccessibility);
   }
@@ -92,7 +111,7 @@ cr.define('accessibility', function() {
       row.appendChild(formatValue(data, properties[j]));
 
     row.appendChild(createToggleAccessibilityElement(data));
-    if (data['a11y_mode'] != 0) {
+    if (isAccessibilityComplete(data['a11y_mode'])) {
       row.appendChild(document.createTextNode(' | '));
       if ('tree' in data) {
         row.appendChild(createShowAccessibilityTreeElement(data, row, true));
@@ -132,8 +151,8 @@ cr.define('accessibility', function() {
   function createToggleAccessibilityElement(data) {
     var link = document.createElement('a');
     link.setAttribute('href', '#');
-    var a11y_mode = data['a11y_mode'];
-    link.textContent = 'accessibility ' + (a11y_mode == 0 ? 'off' : 'on');
+    var full_a11y_on = isAccessibilityComplete(data['a11y_mode']);
+    link.textContent = 'accessibility ' + (full_a11y_on ? 'on' : 'off');
     link.addEventListener('click',
                           toggleAccessibility.bind(this, data, link));
     return link;

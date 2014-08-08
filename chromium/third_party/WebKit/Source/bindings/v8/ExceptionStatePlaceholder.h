@@ -34,6 +34,7 @@
 #include "bindings/v8/ExceptionState.h"
 #include "wtf/Assertions.h"
 #include "wtf/text/WTFString.h"
+#include <v8.h>
 
 namespace WebCore {
 
@@ -41,30 +42,26 @@ class ExceptionState;
 
 typedef int ExceptionCode;
 
-class IgnorableExceptionState : public ExceptionState {
+class IgnorableExceptionState FINAL : public ExceptionState {
 public:
-    IgnorableExceptionState(): ExceptionState(v8::Handle<v8::Object>(), 0) { }
+    IgnorableExceptionState(): ExceptionState(ExceptionState::UnknownContext, 0, 0, v8::Handle<v8::Object>(), 0) { }
     ExceptionState& returnThis() { return *this; }
-    virtual void throwDOMException(const ExceptionCode&, const String& message = String()) OVERRIDE FINAL { };
-    virtual void throwTypeError(const String& message = String()) OVERRIDE FINAL { }
-    virtual void throwSecurityError(const String& sanitizedMessage, const String& unsanitizedMessage = String()) OVERRIDE FINAL { }
+    virtual void throwDOMException(const ExceptionCode&, const String& message = String()) OVERRIDE { }
+    virtual void throwTypeError(const String& message = String()) OVERRIDE { }
+    virtual void throwSecurityError(const String& sanitizedMessage, const String& unsanitizedMessage = String()) OVERRIDE { }
 };
 
 #define IGNORE_EXCEPTION (::WebCore::IgnorableExceptionState().returnThis())
 
-#if ASSERT_DISABLED
+#if ASSERT_ENABLED
 
-#define ASSERT_NO_EXCEPTION (::WebCore::IgnorableExceptionState().returnThis())
-
-#else
-
-class NoExceptionStateAssertionChecker : public ExceptionState {
+class NoExceptionStateAssertionChecker FINAL : public ExceptionState {
 public:
     NoExceptionStateAssertionChecker(const char* file, int line);
     ExceptionState& returnThis() { return *this; }
-    virtual void throwDOMException(const ExceptionCode&, const String& message = String()) OVERRIDE FINAL;
-    virtual void throwTypeError(const String& message = String()) OVERRIDE FINAL;
-    virtual void throwSecurityError(const String& sanitizedMessage, const String& unsanitizedMessage = String()) OVERRIDE FINAL;
+    virtual void throwDOMException(const ExceptionCode&, const String& message = String()) OVERRIDE;
+    virtual void throwTypeError(const String& message = String()) OVERRIDE;
+    virtual void throwSecurityError(const String& sanitizedMessage, const String& unsanitizedMessage = String()) OVERRIDE;
 
 private:
     const char* m_file;
@@ -72,6 +69,10 @@ private:
 };
 
 #define ASSERT_NO_EXCEPTION (::WebCore::NoExceptionStateAssertionChecker(__FILE__, __LINE__).returnThis())
+
+#else
+
+#define ASSERT_NO_EXCEPTION (::WebCore::IgnorableExceptionState().returnThis())
 
 #endif
 

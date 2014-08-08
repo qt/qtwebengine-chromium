@@ -134,25 +134,27 @@ Chrome supports. -->
   </translations>
   <release seq="1" allow_pseudo="false">
     <messages fallback_to_english="true">
+      <message name="IDS_PROFILES_DISCONNECT_MANAGED_PROFILE_TEXT" desc="Message explaining to the user what will happen if they disconnect the managed profile.">
+        Disconnecting <ph name="USERNAME">$1<ex>someone@example.com</ex></ph> will clear your history, bookmarks, settings, and other Chrome data stored on this device. Data stored in your Google Account will not be cleared and can be managed on <ph name="GOOGLE_DASHBOARD_LINK">&lt;a target="_blank" href="$2"&gt;</ph>Google Dashboard<ph name="END_GOOGLE_DASHBOARD_LINK">&lt;/a&gt;</ph>.
+      </message>
       <message name="IDS_PRODUCT_NAME" desc="The Chrome application name">
         Google Chrome
       </message>
       <message name="IDS_SHORT_PRODUCT_NAME" desc="The Chrome application short name">
         Chrome
       </message>
-      <message name="IDS_SHORT_PRODUCT_NAME_LOWER" desc="The Chrome application short name all lowercase">
-        chrome
-      </message>
-      <message name="IDS_SXS_SHORTCUT_NAME" desc="The Chrome short cut name for SxS channel">
-        Google Chrome Canary
-      </message>
-      <message name="IDS_PRODUCT_DESCRIPTION" desc="Browser description">
-        Google Chrome is a web browser that runs webpages and applications with lightning speed. It's fast, stable, and easy to use. Browse the web more safely with malware and phishing protection built into Google Chrome.
-      </message>
-      <message name="IDS_APP_LAUNCHER_PRODUCT_DESCRIPTION" desc="App Launcher description">
-        Google Chrome App Launcher is a standalone platform for Chrome apps.
-      </message>
-      <if expr="pp_ifdef('chromeos')">
+      <if expr="is_win">
+        <message name="IDS_SXS_SHORTCUT_NAME" desc="The Chrome short cut name for SxS channel">
+          Google Chrome Canary
+        </message>
+        <message name="IDS_PRODUCT_DESCRIPTION" desc="Browser description">
+          Google Chrome is a web browser that runs webpages and applications with lightning speed. It's fast, stable, and easy to use. Browse the web more safely with malware and phishing protection built into Google Chrome.
+        </message>
+        <message name="IDS_APP_LAUNCHER_PRODUCT_DESCRIPTION" desc="App Launcher description">
+          Google Chrome App Launcher is a standalone platform for Chrome apps.
+        </message>
+      </if>
+      <if expr="chromeos">
         <message name="IDS_PRODUCT_OS_NAME" desc="The Chrome OS application name">
           Google Chrome OS
         </message>
@@ -161,50 +163,20 @@ Chrome supports. -->
         </message>
       </if>
       <if expr="is_win">
-        <message name="IDS_PRODUCT_FRAME_NAME" desc="The Chrome Frame application name">
-          Google Chrome Frame
-        </message>
         <message name="IDS_PRODUCT_APP_LAUNCHER_NAME" desc="The Chrome App Launcher application name">
           Google Chrome App Launcher
         </message>
-        <message name="IDS_WIN8_INFOBAR_DESKTOP_RESTART_FOR_APP_LIST"
-                 desc="Infobar message to restart chrome in desktop mode to display the App Launcher. Aplies to Windows 8 only">
-          To use the app launcher, you must relaunch Google Chrome on the desktop.
-        </message>
-        <message name="IDS_WIN8_INFOBAR_DESKTOP_RESTART_FOR_PACKAGED_APP"
-                 desc="Infobar message to restart chrome in desktop mode to launch a Chrome Packaged App. Aplies to Windows 8 only">
-          To use Chrome apps, you must relaunch Google Chrome on the desktop.
-        </message>
-        <message name="IDS_WIN8_INFOBAR_DESKTOP_RESTART_TO_LAUNCH_APPS_YES_BUTTON"
-             desc="Infobar button 'yes' text to confirm that the user does wish to switch to desktop mode to use Chrome Apps">
-          Relaunch Chrome
-        </message>
         <message name="IDS_PRODUCT_BINARIES_NAME" desc="The Chrome Binaries application name">
           Google Chrome Binaries
-        </message>
-        <message name="IDS_VERSIONMISMATCH_HEADER">
-          Chrome Frame Update.
-        </message>
-        <message name="IDS_VERSIONMISMATCH">
-          Chrome Frame has been updated. Please relaunch your browser. Chrome version: <ph name="TODO_0001">%ls<ex>TODO</ex></ph>, Chrome Frame version: <ph name="TODO_0002">%ls<ex>TODO</ex></ph>
-        </message>
-        <message name="IDS_VERSIONUNKNOWN">
-          Unknown version.
-        </message>
-        <message name="IDS_CHROME_FRAME_MENU_ABOUT" desc="About Chrome Frame label">
-          About Chrome Frame...
-        </message>
-        <message name="IDS_CHROME_FRAME_READY_MODE_LEARN_MORE_URL" desc="Link to knowledge-base article about Chrome Frame Ready Mode">
-          http://www.google.com/support/chrome/bin/answer.py?hl=[GRITLANGCODE]&amp;answer=161796
         </message>
         <message name="IDS_CHROME_FRAME_TURNDOWN_LEARN_MORE_URL" desc="Link to knowledge-base article about Chrome Frame turndown">
           http://support.google.com/chrome/?p=ib_chromeframe
         </message>
         <message name="IDS_CHROME_FRAME_TURNDOWN_TEXT_IE_OLDER" desc="Text of Chrome Frame turndown prompt for IE 6, 7, and 8">
-          This site is using the Chrome Frame plug-in which will soon stop receiving security and stability updates. Please uninstall it and upgrade to a modern browser.
+          This site is using the retired Chrome Frame plug-in which no longer receives security and stability updates. Please uninstall it and upgrade to a modern browser.
         </message>
         <message name="IDS_CHROME_FRAME_TURNDOWN_TEXT_IE_NEWER" desc="Text of Chrome Frame turndown prompt for IE 9 and 10">
-          This site is using the Chrome Frame plug-in which will soon stop receiving security and stability updates. Please uninstall it and download a compatible browser.
+          This site is using the retired Chrome Frame plug-in which no longer receives security and stability updates. Please uninstall it and upgrade to a modern browser.
         </message>
         <message name="IDS_SHORTCUT_NEW_WINDOW" desc="The text label of the New window shortcut context menu entry as of Windows 8">
           New window
@@ -239,16 +211,19 @@ name="DOMAIN">$1<ex>paypal.com</ex></ph>&lt;/strong&gt;, but the server presente
       <message name="IDS_SESSION_CRASHED_VIEW_MESSAGE" desc="Message shown when the last session didn't exit cleanly.">
         Google Chrome didn't shut down correctly. To reopen the pages you had open, click Restore.
       </message>
+      <message name="IDS_SESSION_CRASHED_VIEW_UMA_OPTIN" desc="Text besides the checkbox to let users optin to UMA in the restore from previous crash bubble.">
+        Help make Google Chrome better by sending crash reports and <ph name="UMA_LINK">$1<ex>usage statistics</ex></ph> to Google
+      </message>
       <!-- Browser Window Title Format -->
       <message name="IDS_BROWSER_WINDOW_TITLE_FORMAT" desc="The format for titles displayed in tabs and popup windows">
         <ph name="PAGE_TITLE">$1<ex>Google</ex></ph> - Google Chrome
       </message>
-      <if expr="not pp_ifdef('chromeos')">
+      <if expr="not chromeos">
         <message name="IDS_GET_HELP_USING_CHROME" desc="Text of the button which takes the user to the Chrome help page.">
           Get help with using Chrome
         </message>
       </if>
-      <if expr="pp_ifdef('chromeos')">
+      <if expr="chromeos">
         <message name="IDS_GET_HELP_USING_CHROME" desc="Text of the button which takes the user to the Chrome help page.">
           Get help with using Chrome OS
         </message>
@@ -262,14 +237,35 @@ name="DOMAIN">$1<ex>paypal.com</ex></ph>&lt;/strong&gt;, but the server presente
       <message name="IDS_ABOUT_VERSION_LICENSE" desc="The label below the copyright message, containing the URLs.">
         Google Chrome is made possible by the <ph name="BEGIN_LINK_CHROMIUM">&lt;a target="_blank" href="$1"&gt;</ph>Chromium<ph name="END_LINK_CHROMIUM">&lt;/a&gt;</ph> open source project and other <ph name="BEGIN_LINK_OSS">&lt;a target="_blank" href="$2"&gt;</ph>open source software<ph name="END_LINK_OSS">&lt;/a&gt;</ph>.
       </message>
-      <if expr="pp_ifdef('chromeos')">
+      <if expr="chromeos">
+        <message name="IDS_ABOUT_VERSION_LICENSE_EULA" desc="The label below the copyright message, containing the URLs.">
+          Chrome open source licenses
+        </message>
         <message name="IDS_ABOUT_CROS_VERSION_LICENSE" desc="Additional text displayed beneath the Chromium open source URLs for Chrome OS.">
           Chrome OS is made possible by additional <ph name="BEGIN_LINK_CROS_OSS">&lt;a target="_blank" href="$1"&gt;</ph>open source software<ph name="END_LINK_CROS_OSS">&lt;/a&gt;</ph>.
+        </message>
+        <message name="IDS_ABOUT_CROS_VERSION_LICENSE_EULA"  desc="Additional text displayed beneath the Chromium open source URLs for Chrome OS.">
+          Chrome OS open source licenses
         </message>
       </if>
       <message name="IDS_ABOUT_TERMS_OF_SERVICE" desc="The terms of service label in the About box.">
         Google Chrome <ph name="TERMS_OF_SERVICE_LINK">&lt;a target="_blank" href="$1"&gt;</ph>Terms of Service<ph name="END_TERMS_OF_SERVICE_LINK">&lt;/a&gt;</ph>
       </message>
+      <if expr="is_macosx">
+        <!-- Mac 32-bit deprecation -->
+        <message name="IDS_MAC_32_BIT_OBSOLETE_SOON" desc="A message displayed on an at-launch infobar and About (Help) page warning the user that the computer they are using is about to become unsupported.">
+          This computer will soon stop receiving Google Chrome updates because its hardware is no longer supported.
+        </message>
+        <message name="IDS_MAC_32_BIT_OBSOLETE_NOW" desc="A message displayed on an at-launch infobar and About (Help) page warning the user that the computer they are using is no longer supported.">
+          This computer will no longer receive Google Chrome updates because its hardware is no longer supported.
+        </message>
+      </if>
+      <if expr="is_win">
+        <!-- Windows non-SSE2 deprecation -->
+        <message name="IDS_WIN_SSE_OBSOLETE_NOW" desc="A message displayed on an at-launch infobar and About (Help) page warning the user that the computer they are using is no longer supported.">
+          This computer will no longer receive Google Chrome updates because its hardware is no longer supported.
+        </message>
+      </if>
       <message name="IDS_ACCNAME_APP" desc="The accessible name for the app menu.">
         Chrome
       </message>
@@ -277,12 +273,11 @@ name="DOMAIN">$1<ex>paypal.com</ex></ph>&lt;/strong&gt;, but the server presente
         Google Chrome Toolbar
       </message>
       <!-- Hung Browser Detector -->
-      <message name="IDS_BROWSER_HUNGBROWSER_MESSAGE" desc="Content of the dialog box shown when the browser is hung">
-        Google Chrome is unresponsive. Relaunch now?
-      </message>
-      <message name="IDS_IMPORT_PROGRESS_INFO" desc="Explanatory text for the importing progress dialog">
-        Google Chrome is now importing the following items from <ph name="BROWSER_COMPONENT">$1<ex>History</ex></ph>:
-      </message>
+      <if expr="is_win">
+        <message name="IDS_BROWSER_HUNGBROWSER_MESSAGE" desc="Content of the dialog box shown when the browser is hung">
+          Google Chrome is unresponsive. Relaunch now?
+        </message>
+      </if>
       <message name="IDS_IMPORT_FIND_YOUR_BOOKMARKS" desc="Helpful reminder for where to find imported bookmarks">
         Find your bookmarks in the Chrome menu or on the bookmarks bar.
       </message>
@@ -297,26 +292,20 @@ name="DOMAIN">$1<ex>paypal.com</ex></ph>&lt;/strong&gt;, but the server presente
         <message name="IDS_UNINSTALL_CLOSE_APP_IMMERSIVE" desc="Message to user when uninstall detects other app instance running, possibly in the Windows 8 immersive mode">
           Please close all Google Chrome windows (including those in Windows 8 mode) and try again.
         </message>
+        <message name="IDS_UNINSTALL_VERIFY" desc="Message to confirm user wants to uninstall">
+          Are you sure you want to uninstall Google Chrome?
+        </message>
+        <message name="IDS_UNINSTALL_CHROME" desc="The text of the shortcut in the Start Menu for uninstalling chrome.">
+          Uninstall Google Chrome
+        </message>
+        <message name="IDS_UNINSTALL_APP_LAUNCHER" desc="The text of the shortcut in the Start Menu for uninstalling App Launcher.">
+          Uninstall Google Chrome App Launcher
+        </message>
       </if>
-      <message name="IDS_UNINSTALL_VERIFY" desc="Message to confirm user wants to uninstall">
-        Are you sure you want to uninstall Google Chrome?
-      </message>
-      <message name="IDS_UNINSTALL_CHROME" desc="The text of the shortcut in the Start Menu for uninstalling chrome.">
-        Uninstall Google Chrome
-      </message>
-      <message name="IDS_UNINSTALL_APP_LAUNCHER" desc="The text of the shortcut in the Start Menu for uninstalling App Launcher.">
-        Uninstall Google Chrome App Launcher
-      </message>
-      <message name="IDS_FIRSTRUN_DLG_TITLE" desc="Dialog title for first-run dialog">
-        Welcome to Google Chrome
-      </message>
-      <message name="IDS_FIRSTRUN_DLG_OK" desc="Text for OK button on first-run dialog">
-        Start Google Chrome
-      </message>
       <message name="IDS_FR_CUSTOMIZE_DEFAULT_BROWSER" desc="Default browser checkbox label">
         Make Google Chrome the default browser
       </message>
-      <if expr="pp_ifdef('chromeos')">
+      <if expr="chromeos">
         <message name="IDS_NEW_TAB_CHROME_WELCOME_PAGE_TITLE"
                  desc="Title for the hard-coded thumbnail that represents the Google Chrome Welcome page.  This is used on the NTP when there aren't enough thumbnails to show.">
           Get Started with Chrome OS
@@ -328,45 +317,44 @@ name="DOMAIN">$1<ex>paypal.com</ex></ph>&lt;/strong&gt;, but the server presente
           Welcome
         </message>
       </if>
-      <if expr="not pp_ifdef('chromeos') and not is_ios">
+      <if expr="not chromeos and not is_ios">
         <message name="IDS_NEW_TAB_CHROME_WELCOME_PAGE_TITLE"
                  desc="Title for the hard-coded thumbnail that represents the Google Chrome OS Welcome page. This is used on the NTP when there aren't enough thumbnails to show.">
           Welcome to Google Chrome
         </message>
       </if>
-      <if expr="not pp_ifdef('chromeos')">
+      <if expr="not chromeos">
         <message name="IDS_EXTERNAL_PROTOCOL_INFORMATION" desc="General information about what Chrome is trying to do when opening this external protocol">
           Google Chrome needs to launch an external application to handle <ph name="SCHEME">$1<ex>acrobat:</ex></ph> links. The link requested is <ph name="PROTOLINK">$2<ex>acrobat:yourpdf</ex></ph>.
         </message>
       </if>
-      <if expr="pp_ifdef('chromeos')">
+      <if expr="chromeos">
         <message name="IDS_EXTERNAL_PROTOCOL_INFORMATION" desc="General information about what Chrome is trying to do when opening this external protocol">
           Google ChromeOS does not support launching an external application to handle <ph name="SCHEME">$1<ex>acrobat:</ex></ph> links. The link requested is <ph name="PROTOLINK">$2<ex>acrobat:yourpdf</ex></ph>.
         </message>
       </if>
       <!-- Strings used to warn that an OS is not supported -->
-      <message name="IDS_UNSUPPORTED_OS_PRE_WIN_XP" desc="The text used to warn the user that Windows pre-XP is not supported">
-        Google Chrome requires Windows XP or later. Some features may not work.
-      </message>
-      <message name="IDS_UNSUPPORTED_OS" desc="The text used to warn the user that current OS is not supported">
-        Google Chrome does not support <ph name="OS_NAME">$1<ex>Windows 2000</ex></ph>.
-      </message>
-      <if expr="not pp_ifdef('chromeos')">
+      <if expr="is_win">
+        <message name="IDS_UNSUPPORTED_OS_PRE_WIN_XP" desc="The text used to warn the user that Windows pre-XP is not supported">
+          Google Chrome requires Windows XP or later. Some features may not work.
+        </message>
+      </if>
+      <if expr="not chromeos">
         <message name="IDS_OPTIONS_RELAUNCH_REQUIRED" desc="The message displayed for an option that requires a relaunch to take effect. This appears in a message box if an option is changed that requires a relaunch.">
           Please close all Google Chrome windows and relaunch it for this change to take effect.
         </message>
       </if>
-      <if expr="pp_ifdef('chromeos')">
+      <if expr="chromeos">
         <message name="IDS_OPTIONS_RELAUNCH_REQUIRED" desc="The message displayed for an option that requires a relaunch to take effect. This appears in a message box if an option is changed that requires a relaunch.">
           Please sign out and sign in again for this change to take effect.
         </message>
       </if>
-      <if expr="pp_ifdef('use_titlecase')">
+      <if expr="use_titlecase">
         <message name="IDS_STATUS_TRAY_KEEP_CHROME_RUNNING_IN_BACKGROUND" desc="In Title Case: The checkbox in the status tray context menu that controls whether chrome keeps running in the background after the last window is closed">
           Let Google Chrome Run In The Background
         </message>
       </if>
-      <if expr="not pp_ifdef('use_titlecase')">
+      <if expr="not use_titlecase">
         <message name="IDS_STATUS_TRAY_KEEP_CHROME_RUNNING_IN_BACKGROUND" desc="The checkbox in the status tray context menu that controls whether chrome keeps running in the background after the last window is closed">
           Let Google Chrome run in the background
         </message>
@@ -385,9 +373,11 @@ Google Chrome cannot read and write to its data directory:
 
 <ph name="USER_DATA_DIRECTORY">$1<ex>C:\Documents and Settings\devint\Local Settings\Application Data\Google\Chrome</ex></ph>
       </message>
-      <message name="IDS_EULA_CHECKBOX_ENABLE_LOGGING" desc="The label of the checkbox to enable/disable crash and user metrics logging on EULA screen.">
-        Optional: Help make Chrome OS better by automatically sending usage statistics and crash reports to Google.
-      </message>
+      <if expr="chromeos">
+        <message name="IDS_EULA_CHECKBOX_ENABLE_LOGGING" desc="The label of the checkbox to enable/disable crash and user metrics logging on EULA screen.">
+          Optional: Help make Chrome OS better by automatically sending usage statistics and crash reports to Google.
+        </message>
+      </if>
       <message name="IDS_PROFILE_TOO_NEW_ERROR" desc="Error displayed on startup when the profile is from a newer version of the product and can not be read">
 Your profile can not be used because it is from a newer version of Google Chrome.
 
@@ -407,8 +397,13 @@ Google Chrome is unable to recover your settings.
       <message name="IDS_CRASH_RECOVERY_TITLE" desc="Title of dialog shown when the browser crashes.">
         Google Chrome
       </message>
-      <message name="IDS_CRASH_RECOVERY_CONTENT" desc="Text content telling the user the browser has crashed.">
-        Whoa! Google Chrome has crashed. Relaunch now?
+      <if expr="is_win">
+        <message name="IDS_CRASH_RECOVERY_CONTENT" desc="Text content telling the user the browser has crashed.">
+          Whoa! Google Chrome has crashed. Relaunch now?
+        </message>
+      </if>
+      <message name="IDS_PASSWORD_GENERATION_SUGGESTION" desc="Text shown next to a generated password describing it as a suggestion.">
+        Suggested by Chrome
       </message>
       <if expr="not is_android">
         <message name="IDS_PASSWORD_MANAGER_SAVE_PASSWORD_PROMPT" desc="Info bar message to save a password">
@@ -429,138 +424,121 @@ Google Chrome is unable to recover your settings.
         <message name="IDS_PASSWORDS_PAGE_AUTHENTICATION_PROMPT" desc="Text for the dialog box that prompts the user for their OS account password before revealing plaintext passwords on the password page.">
           Google Chrome is trying to show passwords. Type your Windows password to allow this.
         </message>
+        <message name="IDS_MACHINE_LEVEL_INSTALL_CONFLICT" desc="Error message to display when user tries to run user level Chromium even though machine level Chromium is already installed.">
+          An administrator has installed Google Chrome on this system, and it is available for all users. The system-level Google Chrome will replace your user-level installation now.
+        </message>
+        <message name="IDS_INSTALL_HIGHER_VERSION" desc="Error displayed when higher version already exists.">
+          This computer already has a more recent version of Google Chrome. If the software is not working, please uninstall Google Chrome and try again.
+        </message>
+        <message name="IDS_INSTALL_HIGHER_VERSION_APP_LAUNCHER" desc="Error displayed when higher version of the Chrome App Launcher already exists.">
+          This computer already has a more recent version of the Google Chrome components. Please use a more recent installer.
+        </message>
+        <message name="IDS_INSTALL_FAILED" desc="Error displayed if installation fails due to some unknown error.">
+          Installation failed due to unspecified error. If Google Chrome is currently running, please close it and try again.
+        </message>
+        <message name="IDS_SAME_VERSION_REPAIR_FAILED" desc="Error displayed if installation fails due to Chrome running.">
+          Can not install the same Google Chrome version that is currently running. Please close Google Chrome and try again.
+        </message>
+        <message name="IDS_SETUP_PATCH_FAILED" desc="Error message when setup.exe fails to patch itself.">
+          Installation failed due to unspecified error. Please download Google Chrome again.
+        </message>
+        <message name="IDS_INSTALL_OS_NOT_SUPPORTED" desc="Error displayed if OS is not supported">
+          Google Chrome requires Windows Vista or Windows XP with SP2 or higher.
+        </message>
+        <message name="IDS_INSTALL_OS_ERROR" desc="Error displayed when any Windows API call fails and we do not have more specific information.">
+          An operating system error occurred during installation. Please download Google Chrome again.
+        </message>
+        <message name="IDS_INSTALL_TEMP_DIR_FAILED" desc="Error displayed when we fail to create temporary directory during installation.">
+          The installer couldn't create a temporary directory. Please check for free disk space and permission to install software.
+        </message>
+        <message name="IDS_INSTALL_UNCOMPRESSION_FAILED" desc="Error when when we can not uncompress installation archive.">
+          The installer failed to uncompress archive. Please download Google Chrome again.
+        </message>
+        <message name="IDS_INSTALL_INVALID_ARCHIVE" desc="Error displayed when we can not open the installation archive.">
+          The installer archive is corrupted or invalid. Please download Google Chrome again.
+        </message>
+        <message name="IDS_INSTALL_INSUFFICIENT_RIGHTS" desc="Error displayed when a non admin user tries to attempt system level install/uninstall.">
+          You do not have appropriate rights for system-level install. Try running the installer again as Administrator.
+        </message>
+        <message name="IDS_INSTALL_NO_PRODUCTS_TO_UPDATE" desc="Error displayed if the installer is not provided one or more products to install/update.">
+          No installation of Google Chrome found to update.
+        </message>
+        <message name="IDS_INSTALL_MULTI_INSTALLATION_EXISTS" desc="Error during install if a multi-install Google Chrome is present, thereby preventing the installation of a single-install Google Chrome.">
+          A conflicting installation of Google Chrome was found on the system. Please uninstall it and try again.
+        </message>
+        <message name="IDS_INSTALL_INCONSISTENT_UPDATE_POLICY" desc="Error during install if the update policies settings in Group Policy are inconsistent.">
+          Google Chrome cannot be updated due to inconsistent Google Update Group Policy settings. Use the Group Policy Editor to set the update policy override for the Google Chrome Binaries application and try again; see http://goo.gl/uJ9gV for details.
+        </message>
       </if>
-      <message name="IDS_CANT_WRITE_USER_DIRECTORY_EXIT_BUTTON" desc="Text on button of dialog that closes Chrome if we can't create a directory for this user.">
-        Exit Chrome
-      </message>
-      <message name="IDS_MACHINE_LEVEL_INSTALL_CONFLICT" desc="Error message to display when user tries to run user level Chromium even though machine level Chromium is already installed.">
-        An administrator has installed Google Chrome on this system, and it is available for all users. The system-level Google Chrome will replace your user-level installation now.
-      </message>
-      <message name="IDS_INSTALL_HIGHER_VERSION" desc="Error displayed when higher version already exists.">
-        This computer already has a more recent version of Google Chrome. If the software is not working, please uninstall Google Chrome and try again.
-      </message>
-      <message name="IDS_INSTALL_HIGHER_VERSION_APP_LAUNCHER" desc="Error displayed when higher version of the Chrome App Launcher already exists.">
-        This computer already has a more recent version of the Google Chrome components. Please use a more recent installer.
-      </message>
-      <message name="IDS_INSTALL_SYSTEM_LEVEL_EXISTS" desc="Error displayed during user level install if system level Chrome Frame is already installed.">
-        Google Chrome Frame is already installed and available to all users of this computer. If you want to install Google Chrome Frame at the user level, you must first uninstall the system-level version installed by an administrator.
-      </message>
-      <message name="IDS_INSTALL_FAILED" desc="Error displayed if installation fails due to some unknown error.">
-        Installation failed due to unspecified error. If Google Chrome is currently running, please close it and try again.
-      </message>
-      <message name="IDS_SAME_VERSION_REPAIR_FAILED" desc="Error displayed if installation fails due to Chrome running.">
-        Can not install the same Google Chrome version that is currently running. Please close Google Chrome and try again.
-      </message>
-      <message name="IDS_SETUP_PATCH_FAILED" desc="Error message when setup.exe fails to patch itself.">
-        Installation failed due to unspecified error. Please download Google Chrome again.
-      </message>
-      <message name="IDS_INSTALL_OS_NOT_SUPPORTED" desc="Error displayed if OS is not supported">
-        Google Chrome requires Windows Vista or Windows XP with SP2 or higher.
-      </message>
-      <message name="IDS_INSTALL_OS_ERROR" desc="Error displayed when any Windows API call fails and we do not have more specific information.">
-        An operating system error occurred during installation. Please download Google Chrome again.
-      </message>
-      <message name="IDS_INSTALL_TEMP_DIR_FAILED" desc="Error displayed when we fail to create temporary directory during installation.">
-        The installer couldn't create a temporary directory. Please check for free disk space and permission to install software.
-      </message>
-      <message name="IDS_INSTALL_UNCOMPRESSION_FAILED" desc="Error when when we can not uncompress installation archive.">
-        The installer failed to uncompress archive. Please download Google Chrome again.
-      </message>
-      <message name="IDS_INSTALL_INVALID_ARCHIVE" desc="Error displayed when we can not open the installation archive.">
-        The installer archive is corrupted or invalid. Please download Google Chrome again.
-      </message>
-      <message name="IDS_INSTALL_INSUFFICIENT_RIGHTS" desc="Error displayed when a non admin user tries to attempt system level install/uninstall.">
-        You do not have appropriate rights for system-level install. Try running the installer again as Administrator.
-      </message>
-      <message name="IDS_INSTALL_NO_PRODUCTS_TO_UPDATE" desc="Error displayed if the installer is not provided one or more products to install/update.">
-        No installation of Google Chrome or Google Chrome Frame found to update.
-      </message>
-      <message name="IDS_UNINSTALL_COMPLETE" desc="Text displayed on dialog that is shown when uninstall is complete and no reboot is required.">
-        Uninstallation complete.
-      </message>
-      <message name="IDS_INSTALL_DIR_IN_USE" desc="Error during install if Google Chrome version is missing from registry but the installation directory exists and can not be deleted.">
-        Google Chrome installation directory seems to be in use. Please reboot your computer and try again.
-      </message>
-      <message name="IDS_INSTALL_NON_MULTI_INSTALLATION_EXISTS" desc="Error during install if a single-install Google Chrome or Google Chrome Frame is present, thereby preventing the installation of a multi-install Google Chrome or Google Chrome Frame.">
-        A conflicting installation of Google Chrome or Google Chrome Frame was found on the system. Please uninstall it and try again.
-      </message>
-      <message name="IDS_INSTALL_MULTI_INSTALLATION_EXISTS" desc="Error during install if a multi-install Google Chrome or Google Chrome Frame is present, thereby preventing the installation of a single-install Google Chrome or Google Chrome Frame.">
-        A conflicting installation of Google Chrome or Google Chrome Frame was found on the system. Please uninstall it and try again.
-      </message>
-      <message name="IDS_INSTALL_READY_MODE_REQUIRES_CHROME" desc="Chrome Frame in ready mode requires Chrome.">
-        Invalid arguments. Google Chrome Frame cannot be installed in ready mode without also installing Google Chrome.
-      </message>
-      <message name="IDS_INSTALL_INCONSISTENT_UPDATE_POLICY" desc="Error during install if the update policies settings in Group Policy are inconsistent.">
-        Google Chrome or Google Chrome Frame cannot be updated due to inconsistent Google Update Group Policy settings. Use the Group Policy Editor to set the update policy override for the Google Chrome Binaries application and try again; see http://goo.gl/uJ9gV for details.
-      </message>
       <!-- Options Dialog -->
       <message name="IDS_OPTIONS_IMPROVE_BROWSING_EXPERIENCE" desc="The text in the options panel that describes how we use web services to improve browsing experience.">
         Google Chrome may use web services to improve your browsing experience.
       </message>
-      <message name="IDS_IMPORT_BOOKMARKS" desc="Explanatory text for the importing progress dialog when importing a bookmarks.html file from the bookmark manager">
-        Google Chrome is now importing Favorites/Bookmarks.
-      </message>
-      <message name="IDS_OEM_MAIN_SHORTCUT_NAME" desc="Name of the desktop shortcut to start the application for OEM pre-installations.">
-        Internet Browser
-      </message>
-      <message name="IDS_SHORTCUT_TOOLTIP" desc="Text for the hover-on tooltip for the Google Chrome shortcuts.">
-        Access the Internet
-      </message>
-      <message name="IDS_APP_LAUNCHER_SHORTCUT_TOOLTIP" desc="Text for the hover-on tooltip for the App Launcher shortcut.">
-        Launch Chrome apps
-      </message>
-      <message name="IDS_UNINSTALL_DELETE_PROFILE" desc="Text to show user to ask whether to delete all the profile data also during uninstallation.">
-        Also delete your browsing data?
-      </message>
-      <message name="IDS_UNINSTALL_SET_DEFAULT_BROWSER" desc="Text to ask whether to set another browser as default when Chromium is uninstalled.">
-        Change default browser to:
-      </message>
-      <message name="IDS_UNINSTALL_BUTTON_TEXT" desc="Label for uninstall button on Uninstall confirmation dialog.">
-        Uninstall
-      </message>
+      <if expr="is_win">
+        <message name="IDS_OEM_MAIN_SHORTCUT_NAME" desc="Name of the desktop shortcut to start the application for OEM pre-installations.">
+          Internet Browser
+        </message>
+        <message name="IDS_SHORTCUT_TOOLTIP" desc="Text for the hover-on tooltip for the Google Chrome shortcuts.">
+          Access the Internet
+        </message>
+        <message name="IDS_APP_LAUNCHER_SHORTCUT_TOOLTIP" desc="Text for the hover-on tooltip for the App Launcher shortcut.">
+          Launch Chrome apps
+        </message>
+        <message name="IDS_UNINSTALL_DELETE_PROFILE" desc="Text to show user to ask whether to delete all the profile data also during uninstallation.">
+          Also delete your browsing data?
+        </message>
+        <message name="IDS_UNINSTALL_SET_DEFAULT_BROWSER" desc="Text to ask whether to set another browser as default when Chromium is uninstalled.">
+          Change default browser to:
+        </message>
+        <message name="IDS_UNINSTALL_BUTTON_TEXT" desc="Label for uninstall button on Uninstall confirmation dialog.">
+          Uninstall
+        </message>
+      </if>
       <message name="IDS_DEFAULT_BROWSER_INFOBAR_SHORT_TEXT" desc="More compact text to show in the default browser query infobar.">
         Google Chrome isn't your default browser.
       </message>
-      <if expr="pp_ifdef('chromeos')">
+      <if expr="chromeos">
         <message name="IDS_SYNC_OVERVIEW" desc="Chrome OS: The message that appears in the options dialog when sync has not been set up by the user.">
           Set up Sync to save your personalized browser features to the web and access them from Google Chrome on any computer.
         </message>
       </if>
-      <!-- Try Chrome Toast Dialog -->
-      <message name="IDS_TRY_TOAST_HEADING" desc="Top line of the try-chrome-again dialog">
-        There is a new version of Google Chrome available.
-      </message>
-      <message name="IDS_TRY_TOAST_HEADING2" desc="Top line of the try-chrome-again dialog">
-        There's a new version of Google Chrome available, and it's faster than ever.
-      </message>
-      <message name="IDS_TRY_TOAST_HEADING3" desc="Top line of the try-chrome-again dialog">
-        There's a new, safer version of Google Chrome available.
-      </message>
-      <message name="IDS_TRY_TOAST_HEADING4" desc="Top line of the try-chrome-again dialog">
-        Google Chrome has been updated, but you haven't used it for at least 30 days.
-      </message>
-      <message name="IDS_TRY_TOAST_HEADING_SKYPE" desc="Top line of the try-chrome-again dialog">
-        Google Chrome lets you click a phone number on the web and call it with Skype!
-      </message>
-      <message name="IDS_TRY_TOAST_TRY_OPT" desc="First option radio button on the dialog to try chrome">
-        Try it out, it's already installed
-      </message>
-      <message name="IDS_TRY_TOAST_CANCEL" desc="Try chrome again dialog Cancel button">
-        Don't bug me
-      </message>
-      <message name="IDS_TRY_TOAST_WHY" desc="Text of the url link that explains why this dialog is being shown">
-        Why am I seeing this?
-      </message>
-      <!-- about:conflicts strings -->
-      <message name="IDS_CONFLICTS_CHECK_PAGE_TITLE_LONG" desc="The long title on the compatibility page">
-        Modules loaded into Google Chrome
-      </message>
-      <message name="IDS_CONFLICTS_CHECK_WARNING_CONFIRMED" desc="Warning label on the compatibility page">
-        This module is known to conflict with Google Chrome.
-      </message>
-      <message name="IDS_CONFLICTS_CHECK_WARNING_SUSPECTED" desc="Warning label on the compatibility page">
-        A module with the same name has been known to conflict with Google Chrome.
-      </message>
+      <if expr="is_win">
+        <!-- Try Chrome Toast Dialog -->
+        <message name="IDS_TRY_TOAST_HEADING" desc="Top line of the try-chrome-again dialog">
+          There is a new version of Google Chrome available.
+        </message>
+        <message name="IDS_TRY_TOAST_HEADING2" desc="Top line of the try-chrome-again dialog">
+          There's a new version of Google Chrome available, and it's faster than ever.
+        </message>
+        <message name="IDS_TRY_TOAST_HEADING3" desc="Top line of the try-chrome-again dialog">
+          There's a new, safer version of Google Chrome available.
+        </message>
+        <message name="IDS_TRY_TOAST_HEADING4" desc="Top line of the try-chrome-again dialog">
+          Google Chrome has been updated, but you haven't used it for at least 30 days.
+        </message>
+        <message name="IDS_TRY_TOAST_HEADING_SKYPE" desc="Top line of the try-chrome-again dialog">
+          Google Chrome lets you click a phone number on the web and call it with Skype!
+        </message>
+        <message name="IDS_TRY_TOAST_TRY_OPT" desc="First option radio button on the dialog to try chrome">
+          Try it out, it's already installed
+        </message>
+        <message name="IDS_TRY_TOAST_CANCEL" desc="Try chrome again dialog Cancel button">
+          Don't bug me
+        </message>
+        <message name="IDS_TRY_TOAST_WHY" desc="Text of the url link that explains why this dialog is being shown">
+          Why am I seeing this?
+        </message>
+        <!-- about:conflicts strings -->
+        <message name="IDS_CONFLICTS_CHECK_PAGE_TITLE_LONG" desc="The long title on the compatibility page">
+          Modules loaded into Google Chrome
+        </message>
+        <message name="IDS_CONFLICTS_CHECK_WARNING_CONFIRMED" desc="Warning label on the compatibility page">
+          This module is known to conflict with Google Chrome.
+        </message>
+        <message name="IDS_CONFLICTS_CHECK_WARNING_SUSPECTED" desc="Warning label on the compatibility page">
+          A module with the same name has been known to conflict with Google Chrome.
+        </message>
+      </if>
       <!-- chrome://crashes strings -->
       <message name="IDS_CRASHES_DISABLED_MESSAGE" desc="The explanatory message for chrome://crashes when crash reporting is disabled">
         This page only shows information on your recent crashes if you <ph name="BEGIN_LINK">&lt;a href="https://www.google.com/support/chrome/bin/answer.py?answer=96817"&gt;</ph>enable crash reporting<ph name="END_LINK">&lt;/a&gt;</ph>.
@@ -582,7 +560,7 @@ Google Chrome is unable to recover your settings.
 
       <message name="IDS_PROMPT_DOWNLOAD_CHANGES_SETTINGS"
                desc="Message shown on the download shelf when the download is known to change settings in the browser.">
-        <ph name="FILE_NAME">$1<ex>bla.exe</ex></ph> makes settings changes similar to some malware, so Chrome has blocked it.
+        <ph name="FILE_NAME">$1<ex>bla.exe</ex></ph> may harm your browsing experience, so Chrome has blocked it.
       </message>
 
       <message name="IDS_PROMPT_MALICIOUS_DOWNLOAD_URL"
@@ -605,25 +583,27 @@ Google Chrome is unable to recover your settings.
         Yes, exit Chrome
       </message>
 
-      <!-- "Create application shortcuts" dialog -->
-      <if expr="is_posix and not is_macosx and not is_ios">
-        <message name="IDS_CREATE_SHORTCUTS_ERROR_LABEL" desc="Contents of the main label in the error dialog box when creating an application shortcut failed for unknown reasons.">
-          Google Chrome could not create an application shortcut.
+      <!-- Quit all apps confirmation dialog -->
+      <if expr="is_macosx">
+        <message name="IDS_QUIT_WITH_APPS_TITLE" desc="Title for a notification explaining that Chrome is running in the background.">
+          Google Chrome is running in the background.
         </message>
       </if>
 
       <!-- Autolaunch infobar -->
-      <message name="IDS_AUTO_LAUNCH_INFOBAR_TEXT" desc="The text to show in the infobar when Chrome was automatically launched on startup">
-        Google Chrome is configured to automatically launch when you start your computer.
-      </message>
+      <if expr="is_win">
+        <message name="IDS_AUTO_LAUNCH_INFOBAR_TEXT" desc="The text to show in the infobar when Chrome was automatically launched on startup">
+          Google Chrome is configured to automatically launch when you start your computer.
+        </message>
+      </if>
 
       <!-- about:flags -->
-      <if expr="not pp_ifdef('chromeos')">
+      <if expr="not chromeos">
         <message name="IDS_FLAGS_RELAUNCH_NOTICE" desc="Notifies the user that he needs to relaunch Chrome. Shown next to a button that says 'Relaunch Now'.">
           Your changes will take effect the next time you relaunch Google Chrome.
         </message>
       </if>
-      <if expr="pp_ifdef('chromeos')">
+      <if expr="chromeos">
         <message name="IDS_FLAGS_RELAUNCH_NOTICE" desc="Notifies the user that he needs to restart Chrome OS. Shown next to a button that says 'Restart Now'.">
           Your changes will take effect the next time you restart your device.
         </message>
@@ -656,42 +636,42 @@ For Google Chrome, processes used to display diagnostics information (such as th
       </if>
 
       <!-- About Chrome page -->
-      <if expr="not pp_ifdef('chromeos')">
+      <if expr="not chromeos">
         <message name="IDS_UPGRADE_SUCCESSFUL_RELAUNCH" desc="Status label: Successfully updated Google Chrome">
           Nearly up-to-date! Relaunch Google Chrome to finish updating.
         </message>
       </if>
-      <if expr="pp_ifdef('chromeos')">
+      <if expr="chromeos">
         <message name="IDS_UPGRADE_SUCCESSFUL_RELAUNCH" desc="Status label: Successfully updated Chrome OS">
           Nearly up-to-date! Restart your device to finish updating.
         </message>
       </if>
-      <if expr="pp_ifdef('chromeos')">
+      <if expr="chromeos">
         <message name="IDS_UPGRADE_SUCCESSFUL_CHANNEL_SWITCH" desc="Status label: Channel was successfully switched on Chrome OS">
           Channel changed. Restart your device to apply changes.
         </message>
       </if>
-      <if expr="not pp_ifdef('chromeos')">
+      <if expr="not chromeos">
         <message name="IDS_UPGRADE_UP_TO_DATE" desc="Status label: Already up to date (Google Chrome)">
           Google Chrome is up to date.
         </message>
       </if>
-      <if expr="pp_ifdef('chromeos')">
+      <if expr="chromeos">
         <message name="IDS_UPGRADE_UP_TO_DATE" desc="Status label: Already up to date (Chrome OS)">
           Your device is up to date.
         </message>
       </if>
-      <if expr="not pp_ifdef('chromeos')">
+      <if expr="not chromeos">
         <message name="IDS_UPGRADE_UPDATING" desc="Status label: Updating Google Chrome">
           Updating Google Chrome...
         </message>
       </if>
-      <if expr="pp_ifdef('chromeos')">
+      <if expr="chromeos">
         <message name="IDS_UPGRADE_UPDATING" desc="Status label: Updating Chrome OS">
           Updating your device...
         </message>
       </if>
-      <if expr="pp_ifdef('chromeos')">
+      <if expr="chromeos">
         <message name="IDS_UPGRADE_UPDATING_CHANNEL_SWITCH" desc="Status label: Updating Chrome OS to a specified channel">
           Updating your device to <ph name="CHANNEL_NAME">$1<ex>stable</ex></ph> channel...
         </message>
@@ -713,9 +693,14 @@ For Google Chrome, processes used to display diagnostics information (such as th
       </message>
 
       <!-- Extension installed bubble -->
-      <message name="IDS_EXTENSION_INSTALLED_HEADING" desc="First line in the content area of the extension installed bubble. Instructs that the extension was installed.">
-        <ph name="EXTENSION_NAME">$1<ex>Gmail Checker</ex></ph> has been added to Chrome.
-      </message>
+      <if expr="enable_extensions">
+        <message name="IDS_EXTENSION_INSTALLED_HEADING" desc="First line in the content area of the extension installed bubble. Instructs that the extension was installed.">
+          <ph name="EXTENSION_NAME">$1<ex>Gmail Checker</ex></ph> has been added to Chrome.
+        </message>
+        <message name="IDS_EXTENSION_INSTALLED_SIGNIN_PROMO_LINK" desc="The first part of the sign-in promo paragraph. This part will be converted to a link and will get more text appended to it (see IDS_EXTENSION_INSTALLED_SIGNIN_PROMO). Keep this text short.">
+          Sign in to Chrome
+        </message>
+      </if>
 
       <!-- chrome://settings/extensions page -->
       <message name="IDS_EXTENSIONS_INCOGNITO_WARNING" desc="Warns the user that Chrome cannot prevent extensions from recording history in incognito mode. Displayed in extensions management UI after an extension is selected to be run in incognito mode.">
@@ -725,16 +710,18 @@ For Google Chrome, processes used to display diagnostics information (such as th
         Remove from Chrome
       </message>
 
-      <message name="IDS_EXTENSIONS_SUSPICIOUS_DISABLED_BODY" desc="Body of the dialog shown when suspicious extensions have been disabled">
-        To make Chrome safer, we disabled some extensions that aren't listed in the <ph name="IDS_EXTENSION_WEB_STORE_TITLE">$1<ex>Chrome Web Store</ex></ph> and may have been added without your knowledge.
-      </message>
+      <if expr="enable_extensions">
+        <message name="IDS_EXTENSIONS_UNSUPPORTED_DISABLED_BODY" desc="Body of the dialog shown when unsupported extensions have been disabled">
+          To make Chrome safer, we disabled some extensions that aren't listed in the <ph name="IDS_EXTENSION_WEB_STORE_TITLE">$1<ex>Chrome Web Store</ex></ph> and may have been added without your knowledge.
+        </message>
+      </if>
 
       <!-- Wrench menu -->
       <message name="IDS_APPMENU_TOOLTIP" desc="The tooltip to show for the browser menu">
         Customize and control Google Chrome
       </message>
 
-      <if expr="pp_ifdef('use_titlecase') and not pp_ifdef('chromeos')">
+      <if expr="use_titlecase and not chromeos">
         <message name="IDS_ABOUT" desc="In Title Case: The text label of the About Chrome menu item">
           About &amp;Google Chrome
         </message>
@@ -742,7 +729,7 @@ For Google Chrome, processes used to display diagnostics information (such as th
           Update &amp;Google Chrome
         </message>
       </if>
-      <if expr="not pp_ifdef('use_titlecase') and not pp_ifdef('chromeos')">
+      <if expr="not use_titlecase and not chromeos">
         <message name="IDS_ABOUT" desc="The text label of the About Chrome menu item">
           About &amp;Google Chrome
         </message>
@@ -750,7 +737,7 @@ For Google Chrome, processes used to display diagnostics information (such as th
           Update &amp;Google Chrome
         </message>
       </if>
-      <if expr="pp_ifdef('chromeos')">
+      <if expr="chromeos">
         <message name="IDS_ABOUT" desc="The text label of the About Chrome OS menu item">
           About &amp;Chrome OS
         </message>
@@ -771,30 +758,51 @@ For Google Chrome, processes used to display diagnostics information (such as th
         </message>
       </if>
 
-      <!-- Sync Promo New Tab Page bubble strings -->
-      <message name="IDS_SYNC_PROMO_NTP_BUBBLE_MESSAGE_NEW" desc="The body of the sync promo NTP bubble.">
-        Now that you're signed in, you can get your tabs, bookmarks and other Chrome stuff across your laptop, phone and tablet. You will also receive more relevant suggestions and features on Google services.
+      <!-- Chrome sign-in page -->
+      <message name="IDS_CHROME_SIGNIN_TITLE" desc="Title on the about:chrome-signin page">
+        Chrome
       </message>
 
-      <!-- One click sign in infobar -->
-      <if expr="not pp_ifdef('chromeos')">
-        <!-- New one-click signin dialog contents for SAML support -->
-        <message name="IDS_ONE_CLICK_SIGNIN_DIALOG_TITLE_NEW" desc="The title of the modal dialog window that opens when the user chooses to use one click sign in.">
+      <!-- Tutorial card in the avatar menu bubble -->
+      <message name="IDS_PROFILES_PREVIEW_ENABLED_TUTORIAL_CONTENT_TEXT" desc="The main content of the tutorial card in the avatar menu bubble view shown when user enables the new profile management preview.">
+        You can add your other Google Accounts and lock your Chromium below.
+      </message>
+      <message name="IDS_PROFILES_PREVIEW_TUTORIAL_TITLE" desc="The title of the tutorial card in the avatar menu bubble view that asks the user to preview the new profile management UI.">
+        Preview the new Chrome
+      </message>
+      <message name="IDS_PROFILES_PREVIEW_TUTORIAL_CONTENT_TEXT" desc="The main content of the tutorial card in the avatar menu bubble view that asks the user to preview the new profile management UI.">
+       Try the new way to use Chrome with your Google Account and on shared computers.
+      </message>
+      <message name="IDS_PROFILES_FEEDBACK_TUTORIAL_CONTENT_TEXT" desc="The main content of the tutorial card in the avatar menu bubble view that asks the user to send feedback about the new profile management UI.">
+       You're previewing the new Chrome.
+      </message>
+
+      <!-- Account removal view in the avatar menu bubble -->
+      <message name="IDS_PROFILES_ACCOUNT_REMOVAL_TEXT" desc="Main text of the account removal view when removing a secondary account.">
+        After removing your account from Chrome, you may need to reload your open tabs to take effect.
+      </message>
+      <message name="IDS_PROFILES_PRIMARY_ACCOUNT_REMOVAL_TEXT" desc="Main text of the account removal view when removing a primary account.">
+        You're using <ph name="PROFILE_EMAIL">$1<ex>jessica@gmail.com</ex></ph> to sync your Chrome stuff. To update your sync preference or to use Chrome without a Google account, visit <ph name="SETTINGS_LINK">$2<ex>settings</ex></ph>.
+      </message>
+
+      <!-- End-preview view in the avatar menu bubble -->
+      <message name="IDS_PROFILES_END_PREVIEW_TEXT" desc="Main text of the end-preview view.">
+        Thanks for trying out the new Chrome. Chrome needs to restart to make sure you've saved any open work before continuing.
+      </message>
+
+      <!-- One click sign-in infobar -->
+      <if expr="not chromeos">
+        <!-- New one-click sign-in dialog contents for SAML support -->
+        <message name="IDS_ONE_CLICK_SIGNIN_DIALOG_TITLE_NEW" desc="The title of the modal dialog window that opens when the user chooses to use one click sign-in.">
           You're signed in to Chrome!
         </message>
-        <message name="IDS_ONE_CLICK_SIGNIN_DIALOG_MESSAGE_NEW" desc="The message of the one click sign in dialog.">
+        <message name="IDS_ONE_CLICK_SIGNIN_DIALOG_MESSAGE_NEW" desc="The message of the one click sign-in dialog.">
           You're signed in as <ph name="USER_EMAIL_ADDRESS">$1<ex>foo@gmail.com</ex></ph>. Now you can access your bookmarks, history, and other settings on all your signed in devices.
         </message>
-        <message name="IDS_ONE_CLICK_SIGNIN_BUBBLE_MESSAGE" desc="The body of the sync promo NTP bubble.">
-          You're now signed in to Chrome! Your bookmarks, history, and other settings will be synced to your Google Account.
-        </message>
-        <message name="IDS_ONE_CLICK_SIGNIN_BUBBLE_MESSAGE_NEW" desc="The body of the sync promo NTP bubble.">
-          Now that you're signed in, you can get your tabs, bookmarks and other Chrome stuff across your laptop, phone and tablet. You will also receive more relevant suggestions and features on Google services.
-        </message>
-        <message name="IDS_ONE_CLICK_SIGNIN_BUBBLE_SYNC_DISABLED_MESSAGE" desc="The body of the signin bubble, when sync has been disabled.">
+        <message name="IDS_ONE_CLICK_SIGNIN_BUBBLE_SYNC_DISABLED_MESSAGE" desc="The body of the sign-in bubble, when sync has been disabled.">
           You're now signed in to Chrome! Sync is disabled by your administrator.
         </message>
-        <message name="IDS_SYNC_WRONG_EMAIL" desc="Message shown when sync setup failed due to the user entering the wrong email address for sign in.">
+        <message name="IDS_SYNC_WRONG_EMAIL" desc="Message shown when sync setup failed due to the user entering the wrong email address for sign-in.">
           You were signed in to Chrome as <ph name="USER_EMAIL_ADDRESS">$1<ex>foo@gmail.com</ex></ph>. Please use the same account to sign in again.
         </message>
         <message name="IDS_ONE_CLICK_SIGNIN_CONFIRM_EMAIL_DIALOG_MESSAGE" desc="Error message to display when setting up sync for a second time and the user name is different from the previous user name.">
@@ -805,34 +813,73 @@ Signing in anyway will merge Chrome information like bookmarks, history, and oth
       </if>
 
       <!-- Enterprise sign-in profile linking -->
-      <message name="IDS_ENTERPRISE_SIGNIN_PROFILE_LINK_DIALOG_TITLE" desc="The title of the dialog to confirm linking the browser profile with the signed-in enterprise account">
-        Important information regarding your Chrome data
-      </message>
-      <message name="IDS_ENTERPRISE_SIGNIN_PROFILE_LINK_MESSAGE" desc="The warning message displayed to an enterprise user about to link their profile to their Google account. This message is followed by a 'Learn more' link.">
-        You are signing in with a managed account and giving its administrator control over your Google Chrome profile. Your Chrome data, such as your apps, bookmarks, history, passwords, and other settings will become permanently tied to <ph name="USER_NAME">$1<ex>pat@example.com</ex></ph>. You will be able to delete this data via the Google Accounts Dashboard, but you will not be able to associate this data with another account.
-      </message>
-      <message name="IDS_ENTERPRISE_SIGNIN_CREATE_NEW_PROFILE_PROMPT" desc="The text of the prompt to create a new profile after signing into an enterprise account">
-        If you prefer to keep your existing Chrome data separate, you can create a new Chrome user for <ph name="USER_NAME">$1<ex>pat@example.com</ex></ph>.
-      </message>
-      <message name="IDS_ENTERPRISE_SIGNIN_CREATE_NEW_PROFILE_NO" desc="Text of the button to link the current profile with the signed-in enterprise account">
-        Link my Chrome data to this account
-      </message>
+      <if expr="not is_android">
+        <message name="IDS_ENTERPRISE_SIGNIN_PROFILE_LINK_DIALOG_TITLE" desc="The title of the dialog to confirm linking the browser profile with the signed-in enterprise account">
+          Important information regarding your Chrome data
+        </message>
+        <message name="IDS_ENTERPRISE_SIGNIN_PROFILE_LINK_MESSAGE" desc="The warning message displayed to an enterprise user about to link their profile to their Google account. This message is followed by a 'Learn more' link.">
+          You are signing in with a managed account and giving its administrator control over your Google Chrome profile. Your Chrome data, such as your apps, bookmarks, history, passwords, and other settings will become permanently tied to <ph name="USER_NAME">$1<ex>pat@example.com</ex></ph>. You will be able to delete this data via the Google Accounts Dashboard, but you will not be able to associate this data with another account.
+        </message>
+        <message name="IDS_ENTERPRISE_SIGNIN_CREATE_NEW_PROFILE_PROMPT" desc="The text of the prompt to create a new profile after signing in to an enterprise account">
+          If you prefer to keep your existing Chrome data separate, you can create a new Chrome user for <ph name="USER_NAME">$1<ex>pat@example.com</ex></ph>.
+        </message>
+        <message name="IDS_ENTERPRISE_SIGNIN_CREATE_NEW_PROFILE_NO" desc="Text of the button to link the current profile with the signed-in enterprise account">
+          Link my Chrome data to this account
+        </message>
+      </if>
 
       <!-- Enterprise sign-in dialog (new-style) -->
       <!-- TODO(dconnelly): remove "new-style" once the old dialog is gone. -->
-      <message name="IDS_ENTERPRISE_SIGNIN_TITLE_NEW_STYLE" desc="The title of the dialog to confirm linking the browser profile with the signed-in enterprise account">
-        Link your Chrome data to this account?
-      </message>
-      <message name="IDS_ENTERPRISE_SIGNIN_EXPLANATION_WITHOUT_PROFILE_CREATION_NEW_STYLE" desc="The warning message displayed to an enterprise user about to link their profile to their Google account. This message is followed by a 'Learn more' link.">
-        You are signing in with a managed account and giving its administrator control over your Google Chrome profile. Your Chrome data, such as your apps, bookmarks, history, passwords, and other settings will become permanently tied to <ph name="USER_NAME">$1<ex>pat@example.com</ex></ph>. You will be able to delete this data via the Google Accounts Dashboard, but you will not be able to associate this data with another account. <ph name="LEARN_MORE">$2<ex>Learn more</ex></ph>
-      </message>
-      <message name="IDS_ENTERPRISE_SIGNIN_EXPLANATION_WITH_PROFILE_CREATION_NEW_STYLE" desc="The warning message displayed to an enterprise user about to link their profile to their Google account. Additionally notifies the user that they can create a new profile instead. This message is followed by a 'Learn more' link.">
-        You are signing in with a managed account and giving its administrator control over your Google Chrome profile. Your Chrome data, such as your apps, bookmarks, history, passwords, and other settings will become permanently tied to <ph name="USER_NAME">$1<ex>pat@example.com</ex></ph>. You will be able to delete this data via the Google Accounts Dashboard, but you will not be able to associate this data with another account. You can optionally create a new profile to keep your existing Chrome data separate. <ph name="LEARN_MORE">$2<ex>Learn more</ex></ph>
-      </message>
+      <if expr="toolkit_views or is_macosx">
+        <message name="IDS_ENTERPRISE_SIGNIN_TITLE_NEW_STYLE" desc="The title of the dialog to confirm linking the browser profile with the signed-in enterprise account">
+          Link your Chrome data to this account?
+        </message>
+        <message name="IDS_ENTERPRISE_SIGNIN_EXPLANATION_WITHOUT_PROFILE_CREATION_NEW_STYLE" desc="The warning message displayed to an enterprise user about to link their profile to their Google account. This message is followed by a 'Learn more' link.">
+          You are signing in with a managed account and giving its administrator control over your Google Chrome profile. Your Chrome data, such as your apps, bookmarks, history, passwords, and other settings will become permanently tied to <ph name="USER_NAME">$1<ex>pat@example.com</ex></ph>. You will be able to delete this data via the Google Accounts Dashboard, but you will not be able to associate this data with another account. <ph name="LEARN_MORE">$2<ex>Learn more</ex></ph>
+        </message>
+        <message name="IDS_ENTERPRISE_SIGNIN_EXPLANATION_WITH_PROFILE_CREATION_NEW_STYLE" desc="The warning message displayed to an enterprise user about to link their profile to their Google account. Additionally notifies the user that they can create a new profile instead. This message is followed by a 'Learn more' link.">
+          You are signing in with a managed account and giving its administrator control over your Google Chrome profile. Your Chrome data, such as your apps, bookmarks, history, passwords, and other settings will become permanently tied to <ph name="USER_NAME">$1<ex>pat@example.com</ex></ph>. You will be able to delete this data via the Google Accounts Dashboard, but you will not be able to associate this data with another account. You can optionally create a new profile to keep your existing Chrome data separate. <ph name="LEARN_MORE">$2<ex>Learn more</ex></ph>
+        </message>
+      </if>
 
-      <message name="IDS_OPTIONS_PASSWORDS_MAC_WARNING" desc="The warning for OS X that passwords are shared across profiles in the keychain.">
-        On Mac, passwords are saved to your Keychain and may be accessed or synced by other Chrome users sharing this OS X account.
-      </message>
+      <!-- Sync/sign-in error messages -->
+      <if expr="not chromeos">
+        <message name="IDS_SYNC_PASSPHRASE_ERROR_BUBBLE_VIEW_MESSAGE" desc="Message in the sync error bubble view when the user needs to update their sync passphrase.">
+          Google Chrome could not sync your data. Please update your Sync passphrase.
+        </message>
+        <message name="IDS_SYNC_SIGN_IN_ERROR_BUBBLE_VIEW_MESSAGE" desc="Message in the sign-in error bubble view when the user's sign-in credentials are out of date.">
+          Google Chrome could not sync your data because your account sign-in details are out of date.
+        </message>
+        <message name="IDS_SYNC_UNAVAILABLE_ERROR_BUBBLE_VIEW_MESSAGE" desc="Message in the sign-in error bubble view when sync is not available for their domain.">
+          Google Chrome could not sync your data because Sync is not available for your domain.
+        </message>
+        <message name="IDS_SYNC_OTHER_SIGN_IN_ERROR_BUBBLE_VIEW_MESSAGE" desc="Message in the sign-in error bubble view when there's an error signing in.">
+          Google Chrome could not sync your data due to an error signing in.
+        </message>
+      </if>
+      <if expr="chromeos">
+        <message name="IDS_SYNC_PASSPHRASE_ERROR_BUBBLE_VIEW_MESSAGE" desc="Message in the sync error bubble view when the user needs to update their sync passphrase.">
+          Chrome OS could not sync your data. Please update your Sync passphrase.
+        </message>
+        <message name="IDS_SYNC_SIGN_IN_ERROR_BUBBLE_VIEW_MESSAGE" desc="Message in the sign-in error notification when the user's sign-in credentials are out of date.">
+          Chrome OS could not sync your data because your account sign-in details are out of date.
+        </message>
+        <message name="IDS_SYNC_UNAVAILABLE_ERROR_BUBBLE_VIEW_MESSAGE" desc="Message in the sign-in error notification when sync is not available for their domain.">
+          Chrome OS could not sync your data because Sync is not available for your domain.
+        </message>
+        <message name="IDS_SYNC_OTHER_SIGN_IN_ERROR_BUBBLE_VIEW_MESSAGE" desc="Message in the sign-in error notification when there's an error signing in.">
+          Chrome OS could not sync your data due to an error signing in.
+        </message>
+      </if>
+
+      <if expr="is_macosx">
+        <message name="IDS_OPTIONS_PASSWORDS_MAC_WARNING" desc="The warning for OS X that passwords are shared across profiles in the keychain.">
+          On Mac, passwords are saved to your Keychain and may be accessed or synced by other Chrome users sharing this OS X account.
+        </message>
+        <message name="IDS_AUTOFILL_ADDRESS_BOOK_PROMPT_DESCRIPTION" desc="Text to show in dialog requesting permission to access the user's Address Book contents.">
+          Details from your contacts can help you fill out forms more quickly in Chrome.
+        </message>
+      </if>
 
       <message name="IDS_AUTOFILL_CC_INFOBAR_TEXT" desc="Text to show in the Autofill credit card request infobar.">
         Do you want Chrome to save this credit card information for completing web forms?
@@ -876,7 +923,7 @@ Signing in anyway will merge Chrome information like bookmarks, history, and oth
         <message name="IDS_ERRORPAGES_SUGGESTION_PROXY_DISABLE_PLATFORM" desc="Instructions for disabling use of a proxy server (leave empty for Android and iOS).">
         </message>
       </if>
-      <if expr="not pp_ifdef('chromeos') and is_posix and not is_macosx and not is_android and not is_ios">
+      <if expr="not chromeos and is_posix and not is_macosx and not is_android and not is_ios">
         <message name="IDS_ERRORPAGES_SUGGESTION_PROXY_DISABLE_PLATFORM" desc="Linux instructions for disabling use of a proxy server.">
           Go to
           the Chrome menu &gt;
@@ -904,25 +951,29 @@ Signing in anyway will merge Chrome information like bookmarks, history, and oth
       </if>
 
       <!-- Chrome OS keyboard overlay-->
-      <if expr="pp_ifdef('chromeos')">
+      <if expr="chromeos">
         <message name="IDS_KEYBOARD_OVERLAY_SHOW_WRENCH_MENU" desc="The text in the keyboard overlay to explain the shortcut that opens the main Chrome menu.">
           Show the Chrome menu
         </message>
       </if>
 
       <!-- App list -->
-      <message name="IDS_APP_LIST_SHORTCUT_NAME" desc="Name for the Chrome App List to appear in the taskbar and in any shortcuts to it.">
-        Chrome App Launcher
-      </message>
-      <message name="IDS_APP_LIST_SHORTCUT_NAME_CANARY" desc="Name for the Chrome App List to appear in the taskbar and in any shortcuts to it for the Canary channel.">
-        Chrome App Launcher Canary
-      </message>
-      <message name="IDS_APP_LIST_SIGNIN_HEADING" desc="Heading for when the launcher needs to sign in.">
-        Sign in to Chrome
-      </message>
-      <message name="IDS_APP_LIST_SIGNIN_TEXT" desc="Text for when the launcher needs to sign in.">
-        You need to be signed into Chrome to use apps. This allows Chrome to sync your apps, bookmarks, history, passwords and other settings across devices.
-      </message>
+      <if expr="enable_app_list">
+        <message name="IDS_APP_LIST_SHORTCUT_NAME" desc="Name for the Chrome App List to appear in the taskbar and in any shortcuts to it.">
+          Chrome App Launcher
+        </message>
+        <if expr="is_win or is_macosx">
+          <message name="IDS_APP_LIST_SHORTCUT_NAME_CANARY" desc="Name for the Chrome App List to appear in the taskbar and in any shortcuts to it for the Canary channel.">
+            Chrome App Launcher Canary
+          </message>
+        </if>
+        <message name="IDS_APP_LIST_SIGNIN_HEADING" desc="Heading for when the launcher needs to sign in.">
+          Sign in to Chrome
+        </message>
+        <message name="IDS_APP_LIST_SIGNIN_TEXT" desc="Text for when the launcher needs to sign in.">
+          You need to be signed in to Chrome to use apps. This allows Chrome to sync your apps, bookmarks, history, passwords and other settings across devices.
+        </message>
+      </if>
 
       <!-- App shortcuts -->
       <message name="IDS_APP_SHORTCUTS_SUBDIR_NAME" desc="Name for the Chrome Apps Start Menu folder name.">
@@ -940,27 +991,29 @@ Signing in anyway will merge Chrome information like bookmarks, history, and oth
       </if>
 
       <!-- Chrome OS OOBE Terms of Service screen-->
-      <if expr="pp_ifdef('chromeos')">
+      <if expr="chromeos">
         <message name="IDS_TERMS_OF_SERVICE_SCREEN_SUBHEADING" desc="Subheading at the top of the Terms of Service screen.">
           <ph name="DOMAIN">$1<ex>example.com</ex></ph> requires that you read and accept the following Terms of Service before using this device. These terms do not expand, modify or limit the Google Chrome OS Terms.
         </message>
       </if>
 
       <!-- Chrome Notifications center -->
-      <if expr="is_win">
-        <message name="IDS_MESSAGE_CENTER_BALLOON_TITLE" desc="Title of the first run notification ballon describing the notification center.">
-          Chrome Notification Center
+      <if expr="enable_notifications">
+        <if expr="is_win">
+          <message name="IDS_MESSAGE_CENTER_BALLOON_TITLE" desc="Title of the first run notification ballon describing the notification center.">
+            Chrome Notification Center
+          </message>
+          <message name="IDS_MESSAGE_CENTER_BALLOON_TEXT" desc="Body text for the the first run notification ballon describing the notification center.">
+            You can see all your notifications from Chrome apps, extensions, and websites here.
+          </message>
+        </if>
+        <message name="IDS_MESSAGE_CENTER_TOOLTIP" desc="Tooltip for notification tray icon without unread notifications">
+          Chrome - Notifications
         </message>
-        <message name="IDS_MESSAGE_CENTER_BALLOON_TEXT" desc="Body text for the the first run notification ballon describing the notification center.">
-          You can see all your notifications from Chrome apps, extensions, and websites here.
+        <message name="IDS_MESSAGE_CENTER_TOOLTIP_UNREAD" desc="Tooltip for notification tray icon with unread notifications">
+          Chrome - Notifications (<ph name="QUANTITY">$1<ex>3</ex></ph> unread)
         </message>
       </if>
-      <message name="IDS_MESSAGE_CENTER_TOOLTIP" desc="Tooltip for notification tray icon without unread notifications">
-        Chrome - Notifications
-      </message>
-      <message name="IDS_MESSAGE_CENTER_TOOLTIP_UNREAD" desc="Tooltip for notification tray icon with unread notifications">
-        Chrome - Notifications (<ph name="QUANTITY">$1<ex>3</ex></ph> unread)
-      </message>
 
       <!-- MediaStream capture status tray icon -->
       <message name="IDS_MEDIA_STREAM_STATUS_TRAY_TEXT_AUDIO_AND_VIDEO" desc="Tool tip for the capture status tray icon when microphone and camera are being used">
@@ -974,10 +1027,125 @@ Signing in anyway will merge Chrome information like bookmarks, history, and oth
       </message>
 
       <!-- ProcessSingleton -->
-      <message name="IDS_PROFILE_IN_USE_LINUX" desc="Message shown when the browser cannot start because the profile is in use on a different host.">
-        The profile appears to be in use by another Google Chrome process (<ph name="PROCESS_ID">$1<ex>12345</ex></ph>) on another computer (<ph name="HOST_NAME">$2<ex>example.com</ex></ph>).  Chrome has locked the profile so that it doesn't get corrupted.  If you are sure no other processes are using this profile, you can unlock the profile and relaunch Chrome.
+      <if expr="is_linux or is_macosx">
+        <message name="IDS_PROFILE_IN_USE_POSIX" desc="Message shown when the browser cannot start because the profile is in use on a different host.">
+          The profile appears to be in use by another Google Chrome process (<ph name="PROCESS_ID">$1<ex>12345</ex></ph>) on another computer (<ph name="HOST_NAME">$2<ex>example.com</ex></ph>).  Chrome has locked the profile so that it doesn't get corrupted.  If you are sure no other processes are using this profile, you can unlock the profile and relaunch Chrome.
+        </message>
+      </if>
+
+      <!-- Mac First-run dialog messages -->
+      <if expr="is_macosx">
+        <message name="IDS_FIRSTRUN_DLG_MAC_SET_DEFAULT_BROWSER_LABEL" desc="Label for checkbox that sets the default browser">
+          Set Google Chrome as your default browser
+        </message>
+      </if>
+
+      <!-- chrome://settings. Android uses native UI for settings -->
+      <if expr="not is_android">
+        <message name="IDS_AUTOLAUNCH_TEXT" desc="The text displayed in settings to explain whether Chromium is set to auto-launch on startup or not.">
+          Launch Chromium automatically when your computer starts
+        </message>
+        <message name="IDS_OPTIONS_DEFAULTBROWSER_USEASDEFAULT" desc="The label of the 'Use Chrome as default' browser button">
+          Make Google Chrome the default browser
+        </message>
+      </if>
+
+      <!-- Toast experiment. -->
+      <if expr="is_win">
+        <message name="IDS_TRY_TOAST_SET_DEFAULT" desc="Text of the checkbox to make Chrome the default browser">
+          Make Google Chrome the default browser
+        </message>
+      </if>
+
+      <!-- User manager tutorial -->
+      <if expr="not is_android and not is_ios and not chromeos">
+        <message name="IDS_USER_MANAGER_TUTORIAL_SLIDE_INTRO_TITLE" desc="Title of the tutorial introduction slide">
+          Chrome just got better
+        </message>
+        <message name="IDS_USER_MANAGER_TUTORIAL_SLIDE_INTRO_TEXT" desc="Main text of the tutorial introduction slide">
+          Now it's easier to use Chrome with your Google Account and on shared computers.
+        </message>
+        <message name="IDS_USER_MANAGER_TUTORIAL_SLIDE_YOUR_CHROME_TITLE" desc="Title of the personalization slide">
+          This is your Chrome
+        </message>
+        <message name="IDS_USER_MANAGER_TUTORIAL_SLIDE_YOUR_CHROME_TEXT" desc="Main text of the personalization slide">
+          Your web, bookmarks, and other Chrome stuff live here.
+        </message>
+        <message name="IDS_USER_MANAGER_TUTORIAL_SLIDE_GUEST_TEXT" desc="Main text of the guest user slide">
+          Guests can use Chrome without leaving anything behind.
+        </message>
+        <message name="IDS_USER_MANAGER_TUTORIAL_SLIDE_FRIENDS_TEXT" desc="Main text of the friends and family slide">
+          If you share a computer, friends and family can browse separately and set up Chrome just the way they want.
+        </message>
+        <message name="IDS_USER_MANAGER_TUTORIAL_SLIDE_OUTRO_TEXT" desc="Main text of the tutorial completion slide">
+          Click your name to open Chrome and start browsing.
+        </message>
+        <message name="IDS_USER_MANAGER_TUTORIAL_SLIDE_OUTRO_ADD_USER" desc="Title text for the button that would add a new user">
+          Add yourself to Chrome
+        </message>
+      </if>
+
+      <!-- Settings API bubble -->
+      <message name="IDS_EXTENSIONS_SETTINGS_API_FIRST_LINE_START_PAGES" desc="Text displayed in the Settings API bubble as first line when an extension has changed the start pages.">
+        An extension has changed what page is shown when you start Chrome.
+      </message>
+      <message name="IDS_EXTENSIONS_SETTINGS_API_SECOND_LINE_START_PAGES" desc="Second line in the Settings API bubble. Only shown if the secondary change by the extension was just the start pages. The triple single quotes are needed to preserve the space before and after the sentence which is needed when the language (Chrome is being translated to) uses space as word separator. Please preserve them, unless the language being translated to does not use space as word separator.">
+        ''' It also controls what page is shown when you start Chrome. '''
+      </message>
+      <message name="IDS_EXTENSIONS_SETTINGS_API_SECOND_LINE_START_AND_HOME" desc="Second line in the Settings API bubble. Only shown if the secondary change by the extension was both the start page and the home page. See IDS_EXTENSIONS_SETTINGS_API_SECOND_LINE_START_PAGES for reason for triple quotes.">
+        ''' It also controls what page is shown when you start Chrome or click the Home button. '''
+      </message>
+      <message name="IDS_EXTENSIONS_SETTINGS_API_SECOND_LINE_START_AND_SEARCH" desc="Second line in the Settings API bubble. Only shown if the secondary change by the extension was both the start page and the search engine. See IDS_EXTENSIONS_SETTINGS_API_SECOND_LINE_START_PAGES for reason for triple quotes.">
+        ''' It also controls what page is shown when you start Chrome or search from the Omnibox. '''
       </message>
 
+      <!-- Windows firewall rule strings. -->
+      <if expr="is_win">
+        <message name="IDS_INBOUND_MDNS_RULE_NAME" desc="The name of the firewall rule allowing inbound mDNS traffic.">
+          Google Chrome (mDNS-In)
+        </message>
+        <message name="IDS_INBOUND_MDNS_RULE_NAME_CANARY" desc="The name of the firewall rule allowing inbound mDNS traffic for canary.">
+          Google Chrome Canary (mDNS-In)
+        </message>
+        <message name="IDS_INBOUND_MDNS_RULE_DESCRIPTION" desc="The description of the firewall rule allowing inbound mDNS traffic.">
+          Inbound rule for Google Chrome to allow mDNS traffic.
+        </message>
+        <message name="IDS_INBOUND_MDNS_RULE_DESCRIPTION_CANARY" desc="The description of the firewall rule allowing inbound mDNS traffic canary.">
+          Inbound rule for Google Chrome Canary to allow mDNS traffic.
+        </message>
+      </if>
+
+      <!-- Update bubble -->
+      <message name="IDS_REINSTALL_APP" desc="Text for the button the user clicks to reinstall the app.">
+        Reinstall Chrome
+      </message>
+      <if expr="use_titlecase">
+        <message name="IDS_UPGRADE_BUBBLE_MENU_ITEM" desc="In Title Case: Text for the Chrome menu option replacing Update required.">
+          Chrome is Out of Date
+        </message>
+      </if>
+      <if expr="not use_titlecase">
+        <message name="IDS_UPGRADE_BUBBLE_MENU_ITEM" desc="Text for the Chrome menu option replacing Update required.">
+          Chrome is out of date
+        </message>
+      </if>
+      <message name="IDS_UPGRADE_BUBBLE_TITLE" desc="Text for the title of the upgrade bubble view.">
+        Chrome is out of date
+      </message>
+      <message name="IDS_UPGRADE_BUBBLE_TEXT" desc="Text for the upgrade bubble view full description.">
+        Chrome could not update itself to the latest version, so you are missing out on awesome new features and security fixes. You need to manually reinstall Chrome.
+      </message>
+      <message name="IDS_UPGRADE_BUBBLE_REENABLE_TEXT" desc="Text for the upgrade bubble view full description.">
+        Chrome could not update itself to the latest version, so you are missing out on awesome new features and security fixes. You need to update Chrome.
+      </message>
+
+      <!-- Dialog that asks whether user wants to participate in Safe Browsing Extended Reporting -->
+      <message name="IDS_FEEDBACK_SERVICE_DIALOG_TITLE" desc="Title of the dialog asking whether the user wants to upload suspected malicious files for analysis">
+        Help make Chrome better
+      </message>
+      <message name="IDS_FEEDBACK_SERVICE_DIALOG_EXPLANATION" desc="Explanation of the dialog asking whether the user wants to upload suspected malicious files for analysis">
+        You can help make Chrome safer and easier to use by automatically reporting details of possible security incidents to Google.
+      </message>
     </messages>
   </release>
 </grit>

@@ -28,7 +28,6 @@ class CONTENT_EXPORT SpeechRecognitionDispatcherHost
       public SpeechRecognitionEventListener {
  public:
   SpeechRecognitionDispatcherHost(
-      bool is_guest,
       int render_process_id,
       net::URLRequestContextGetter* context_getter);
 
@@ -53,8 +52,7 @@ class CONTENT_EXPORT SpeechRecognitionDispatcherHost
                                    float noise_volume) OVERRIDE;
 
   // BrowserMessageFilter implementation.
-  virtual bool OnMessageReceived(const IPC::Message& message,
-                                 bool* message_was_ok) OVERRIDE;
+  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
   virtual void OverrideThreadForMessage(
       const IPC::Message& message,
       BrowserThread::ID* thread) OVERRIDE;
@@ -73,8 +71,8 @@ class CONTENT_EXPORT SpeechRecognitionDispatcherHost
       bool filter_profanities);
   void OnAbortRequest(int render_view_id, int request_id);
   void OnStopCaptureRequest(int render_view_id, int request_id);
+  void OnAbortAllRequests(int render_view_id);
 
-  bool is_guest_;
   int render_process_id_;
   scoped_refptr<net::URLRequestContextGetter> context_getter_;
 

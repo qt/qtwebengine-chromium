@@ -23,9 +23,9 @@
 #include "config.h"
 #include "core/html/HTMLHRElement.h"
 
-#include "CSSPropertyNames.h"
-#include "CSSValueKeywords.h"
-#include "HTMLNames.h"
+#include "core/CSSPropertyNames.h"
+#include "core/CSSValueKeywords.h"
+#include "core/HTMLNames.h"
 #include "core/css/CSSValuePool.h"
 #include "core/css/StylePropertySet.h"
 
@@ -33,16 +33,13 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-HTMLHRElement::HTMLHRElement(Document& document)
+inline HTMLHRElement::HTMLHRElement(Document& document)
     : HTMLElement(hrTag, document)
 {
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLHRElement> HTMLHRElement::create(Document& document)
-{
-    return adoptRef(new HTMLHRElement(document));
-}
+DEFINE_NODE_FACTORY(HTMLHRElement)
 
 bool HTMLHRElement::isPresentationAttribute(const QualifiedName& name) const
 {
@@ -76,11 +73,13 @@ void HTMLHRElement::collectStyleForPresentationAttribute(const QualifiedName& na
         addHTMLColorToStyle(style, CSSPropertyBorderColor, value);
         addHTMLColorToStyle(style, CSSPropertyBackgroundColor, value);
     } else if (name == noshadeAttr) {
-        addPropertyToPresentationAttributeStyle(style, CSSPropertyBorderStyle, CSSValueSolid);
+        if (!hasAttribute(colorAttr)) {
+            addPropertyToPresentationAttributeStyle(style, CSSPropertyBorderStyle, CSSValueSolid);
 
-        RefPtr<CSSPrimitiveValue> darkGrayValue = cssValuePool().createColorValue(Color::darkGray);
-        style->setProperty(CSSPropertyBorderColor, darkGrayValue);
-        style->setProperty(CSSPropertyBackgroundColor, darkGrayValue);
+            RefPtrWillBeRawPtr<CSSPrimitiveValue> darkGrayValue = cssValuePool().createColorValue(Color::darkGray);
+            style->setProperty(CSSPropertyBorderColor, darkGrayValue);
+            style->setProperty(CSSPropertyBackgroundColor, darkGrayValue);
+        }
     } else if (name == sizeAttr) {
         StringImpl* si = value.impl();
         int size = si->toInt();

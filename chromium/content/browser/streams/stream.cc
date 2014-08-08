@@ -7,11 +7,13 @@
 #include "base/bind.h"
 #include "base/location.h"
 #include "base/message_loop/message_loop_proxy.h"
+#include "base/values.h"
 #include "content/browser/streams/stream_handle_impl.h"
 #include "content/browser/streams/stream_read_observer.h"
 #include "content/browser/streams/stream_registry.h"
 #include "content/browser/streams/stream_write_observer.h"
 #include "net/base/io_buffer.h"
+#include "net/http/http_response_headers.h"
 
 namespace {
 // Start throttling the connection at about 1MB.
@@ -158,12 +160,15 @@ Stream::StreamState Stream::ReadRawData(net::IOBuffer* buf,
   return STREAM_HAS_DATA;
 }
 
-scoped_ptr<StreamHandle> Stream::CreateHandle(const GURL& original_url,
-                                              const std::string& mime_type) {
+scoped_ptr<StreamHandle> Stream::CreateHandle(
+    const GURL& original_url,
+    const std::string& mime_type,
+    scoped_refptr<net::HttpResponseHeaders> response_headers) {
   CHECK(!stream_handle_);
   stream_handle_ = new StreamHandleImpl(weak_ptr_factory_.GetWeakPtr(),
                                         original_url,
-                                        mime_type);
+                                        mime_type,
+                                        response_headers);
   return scoped_ptr<StreamHandle>(stream_handle_).Pass();
 }
 

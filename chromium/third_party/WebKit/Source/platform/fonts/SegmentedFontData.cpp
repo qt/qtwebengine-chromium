@@ -57,17 +57,6 @@ bool SegmentedFontData::containsCharacter(UChar32 c) const
     return false;
 }
 
-bool SegmentedFontData::containsCharacters(const UChar* characters, int length) const
-{
-    UChar32 c;
-    for (int i = 0; i < length; ) {
-        U16_NEXT(characters, i, length, c)
-        if (!containsCharacter(c))
-            return false;
-    }
-    return true;
-}
-
 bool SegmentedFontData::isCustomFont() const
 {
     // All segmented fonts are custom fonts.
@@ -84,20 +73,30 @@ bool SegmentedFontData::isLoading() const
     return false;
 }
 
-// Returns true only if all of the sub fonts are loadingFallback.
+// Returns true if any of the sub fonts are loadingFallback.
 bool SegmentedFontData::isLoadingFallback() const
 {
     Vector<FontDataRange>::const_iterator end = m_ranges.end();
     for (Vector<FontDataRange>::const_iterator it = m_ranges.begin(); it != end; ++it) {
-        if (!it->fontData()->isLoadingFallback())
-            return false;
+        if (it->fontData()->isLoadingFallback())
+            return true;
     }
-    return true;
+    return false;
 }
 
 bool SegmentedFontData::isSegmented() const
 {
     return true;
+}
+
+bool SegmentedFontData::shouldSkipDrawing() const
+{
+    Vector<FontDataRange>::const_iterator end = m_ranges.end();
+    for (Vector<FontDataRange>::const_iterator it = m_ranges.begin(); it != end; ++it) {
+        if (it->fontData()->shouldSkipDrawing())
+            return true;
+    }
+    return false;
 }
 
 #ifndef NDEBUG

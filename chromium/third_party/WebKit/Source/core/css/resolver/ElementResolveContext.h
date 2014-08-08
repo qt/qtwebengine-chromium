@@ -34,14 +34,14 @@ class RenderStyle;
 
 // ElementResolveContext is immutable and serves as an input to the style resolve process.
 class ElementResolveContext {
+    STACK_ALLOCATED();
 public:
     ElementResolveContext()
-        : m_element(0)
-        , m_parentNode(0)
+        : m_element(nullptr)
+        , m_parentNode(nullptr)
         , m_rootElementStyle(0)
         , m_elementLinkState(NotInsideLink)
         , m_distributedToInsertionPoint(false)
-        , m_resetStyleInheritance(false)
     {
     }
 
@@ -52,15 +52,13 @@ public:
     const RenderStyle* rootElementStyle() const { return m_rootElementStyle; }
     EInsideLink elementLinkState() const { return m_elementLinkState; }
     bool distributedToInsertionPoint() const { return m_distributedToInsertionPoint; }
-    bool resetStyleInheritance() const { return m_resetStyleInheritance; }
 
 private:
-    Element* m_element;
-    ContainerNode* m_parentNode;
+    RawPtrWillBeMember<Element> m_element;
+    RawPtrWillBeMember<ContainerNode> m_parentNode;
     RenderStyle* m_rootElementStyle;
     EInsideLink m_elementLinkState;
     bool m_distributedToInsertionPoint;
-    bool m_resetStyleInheritance;
 };
 
 } // namespace WebCore

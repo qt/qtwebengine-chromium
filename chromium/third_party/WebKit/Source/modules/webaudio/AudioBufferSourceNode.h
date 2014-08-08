@@ -42,15 +42,14 @@ class AudioContext;
 // AudioBufferSourceNode is an AudioNode representing an audio source from an in-memory audio asset represented by an AudioBuffer.
 // It generally will be used for short sounds which require a high degree of scheduling flexibility (can playback in rhythmically perfect ways).
 
-class AudioBufferSourceNode : public AudioScheduledSourceNode {
+class AudioBufferSourceNode FINAL : public AudioScheduledSourceNode {
 public:
-    static PassRefPtr<AudioBufferSourceNode> create(AudioContext*, float sampleRate);
+    static PassRefPtrWillBeRawPtr<AudioBufferSourceNode> create(AudioContext*, float sampleRate);
 
     virtual ~AudioBufferSourceNode();
 
     // AudioNode
-    virtual void process(size_t framesToProcess);
-    virtual void reset();
+    virtual void process(size_t framesToProcess) OVERRIDE;
 
     // setBuffer() is called on the main thread. This is the buffer we use for playback.
     void setBuffer(AudioBuffer*, ExceptionState&);
@@ -61,12 +60,10 @@ public:
     unsigned numberOfChannels();
 
     // Play-state
-    void start(ExceptionState&);
+    void start(ExceptionState& exceptionState) { start(0, exceptionState); }
     void start(double when, ExceptionState&);
     void start(double when, double grainOffset, ExceptionState&);
     void start(double when, double grainOffset, double grainDuration, ExceptionState&);
-
-    void noteGrainOn(double when, double grainOffset, double grainDuration, ExceptionState&);
 
     // Note: the attribute was originally exposed as .looping, but to be more consistent in naming with <audio>
     // and with how it's described in the specification, the proper attribute name is .loop
@@ -80,7 +77,6 @@ public:
     void setLoopStart(double loopStart) { m_loopStart = loopStart; }
     void setLoopEnd(double loopEnd) { m_loopEnd = loopEnd; }
 
-    AudioParam* gain() { return m_gain.get(); }
     AudioParam* playbackRate() { return m_playbackRate.get(); }
 
     // If a panner node is set, then we can incorporate doppler shift into the playback pitch rate.
@@ -88,15 +84,15 @@ public:
     void clearPannerNode();
 
     // If we are no longer playing, propogate silence ahead to downstream nodes.
-    virtual bool propagatesSilence() const;
+    virtual bool propagatesSilence() const OVERRIDE;
 
     // AudioScheduledSourceNode
     virtual void finish() OVERRIDE;
 
+    virtual void trace(Visitor*) OVERRIDE;
+
 private:
     AudioBufferSourceNode(AudioContext*, float sampleRate);
-
-    void startPlaying(bool isGrain, double when, double grainOffset, double grainDuration, ExceptionState&);
 
     // Returns true on success.
     bool renderFromBuffer(AudioBus*, unsigned destinationFrameOffset, size_t numberOfFrames);
@@ -105,15 +101,14 @@ private:
     inline bool renderSilenceAndFinishIfNotLooping(AudioBus*, unsigned index, size_t framesToProcess);
 
     // m_buffer holds the sample data which this node outputs.
-    RefPtr<AudioBuffer> m_buffer;
+    RefPtrWillBeMember<AudioBuffer> m_buffer;
 
     // Pointers for the buffer and destination.
     OwnPtr<const float*[]> m_sourceChannels;
     OwnPtr<float*[]> m_destinationChannels;
 
-    // Used for the "gain" and "playbackRate" attributes.
-    RefPtr<AudioParam> m_gain;
-    RefPtr<AudioParam> m_playbackRate;
+    // Used for the "playbackRate" attributes.
+    RefPtrWillBeMember<AudioParam> m_playbackRate;
 
     // If m_isLooping is false, then this node will be done playing and become inactive after it reaches the end of the sample data in the buffer.
     // If true, it will wrap around to the start of the buffer each time it reaches the end.
@@ -134,9 +129,6 @@ private:
     // totalPitchRate() returns the instantaneous pitch rate (non-time preserving).
     // It incorporates the base pitch rate, any sample-rate conversion factor from the buffer, and any doppler shift from an associated panner node.
     double totalPitchRate();
-
-    // m_lastGain provides continuity when we dynamically adjust the gain.
-    float m_lastGain;
 
     // We optionally keep track of a panner node which has a doppler shift that is incorporated into
     // the pitch rate. We manually manage ref-counting because we want to use RefTypeConnection.

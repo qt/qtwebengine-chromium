@@ -76,6 +76,10 @@ int32_t OpenSlesOutput::SetAndroidAudioDeviceObjects(void* javaVM,
   return 0;
 }
 
+void OpenSlesOutput::ClearAndroidAudioDeviceObjects() {
+  AudioManagerJni::ClearAndroidAudioDeviceObjects();
+}
+
 int32_t OpenSlesOutput::Init() {
   assert(!initialized_);
 
@@ -181,11 +185,6 @@ int32_t OpenSlesOutput::StopPlayout() {
   StopCbThreads();
   DestroyAudioPlayer();
   playing_ = false;
-  return 0;
-}
-
-int32_t OpenSlesOutput::SpeakerIsAvailable(bool& available) {  // NOLINT
-  available = true;
   return 0;
 }
 
@@ -341,7 +340,7 @@ void OpenSlesOutput::AllocateBuffers() {
   fifo_.reset(new SingleRwFifo(num_fifo_buffers_needed_));
 
   // Allocate the memory area to be used.
-  play_buf_.reset(new scoped_array<int8_t>[TotalBuffersUsed()]);
+  play_buf_.reset(new scoped_ptr<int8_t[]>[TotalBuffersUsed()]);
   int required_buffer_size = fine_buffer_->RequiredBufferSizeBytes();
   for (int i = 0; i < TotalBuffersUsed(); ++i) {
     play_buf_[i].reset(new int8_t[required_buffer_size]);

@@ -1,6 +1,4 @@
 include_rules = [
-  "+grit/ui_resources.h",
-  "+grit/ui_strings.h",
   "+skia/ext",
   "+third_party/skia",
   "+ui/base",
@@ -10,5 +8,6 @@ include_rules = [
   "+ui/metro_viewer",  # TODO(beng): investigate moving remote_root_window_host
                        #             to ui/metro_viewer.
   "+ui/ozone",
+  "+ui/wm/public",
 ]
 

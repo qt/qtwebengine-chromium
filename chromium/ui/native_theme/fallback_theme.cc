@@ -7,7 +7,6 @@
 #include "base/basictypes.h"
 #include "base/logging.h"
 #include "ui/gfx/color_utils.h"
-#include "ui/gfx/skia_utils_gtk.h"
 #include "ui/native_theme/common_theme.h"
 
 namespace ui {
@@ -22,8 +21,6 @@ SkColor FallbackTheme::GetSystemColor(ColorId color_id) const {
   // This implementation returns hardcoded colors.
 
   static const SkColor kInvalidColorIdColor = SkColorSetRGB(255, 0, 128);
-  // Menu:
-  static const SkColor kMenuBackgroundColor = SK_ColorWHITE;
   // Windows:
   static const SkColor kWindowBackgroundColor = SK_ColorWHITE;
   // Dialogs:
@@ -34,26 +31,10 @@ SkColor FallbackTheme::GetSystemColor(ColorId color_id) const {
   // Button:
   static const SkColor kButtonBackgroundColor = SkColorSetRGB(0xDE, 0xDE, 0xDE);
   static const SkColor kButtonEnabledColor = SkColorSetRGB(0x22, 0x22, 0x22);
-  static const SkColor kButtonDisabledColor = SkColorSetRGB(0x99, 0x99, 0x99);
   static const SkColor kButtonHighlightColor = SkColorSetRGB(0, 0, 0);
   static const SkColor kButtonHoverColor = kButtonEnabledColor;
-  // MenuItem:
-  static const SkColor kEnabledMenuItemForegroundColor = kButtonEnabledColor;
-  static const SkColor kDisabledMenuItemForegroundColor = kButtonDisabledColor;
-  static const SkColor kFocusedMenuItemBackgroundColor =
-      SkColorSetRGB(0xF1, 0xF1, 0xF1);
-  static const SkColor kHoverMenuItemBackgroundColor =
-      SkColorSetARGB(204, 255, 255, 255);
-  static const SkColor kMenuSeparatorColor = SkColorSetRGB(0xED, 0xED, 0xED);
-  static const SkColor kEnabledMenuButtonBorderColor =
-      SkColorSetARGB(36, 0, 0, 0);
-  static const SkColor kFocusedMenuButtonBorderColor =
-      SkColorSetARGB(72, 0, 0, 0);
-  static const SkColor kHoverMenuButtonBorderColor =
-      SkColorSetARGB(72, 0, 0, 0);
   // Label:
   static const SkColor kLabelEnabledColor = kButtonEnabledColor;
-  static const SkColor kLabelDisabledColor = kButtonDisabledColor;
   static const SkColor kLabelBackgroundColor = SK_ColorWHITE;
   // Textfield:
   static const SkColor kTextfieldDefaultColor = SK_ColorBLACK;
@@ -65,6 +46,9 @@ SkColor FallbackTheme::GetSystemColor(ColorId color_id) const {
   static const SkColor kTextfieldSelectionColor =
       color_utils::AlphaBlend(SK_ColorBLACK,
           kTextfieldSelectionBackgroundFocused, 0xdd);
+  // Tooltip
+  static const SkColor kTooltipBackground = 0xFFFFFFCC;
+  static const SkColor kTooltipTextColor = kLabelEnabledColor;
   // Tree
   static const SkColor kTreeBackground = SK_ColorWHITE;
   static const SkColor kTreeTextColor = SK_ColorBLACK;
@@ -80,6 +64,31 @@ SkColor FallbackTheme::GetSystemColor(ColorId color_id) const {
       SkColorSetRGB(0xEE, 0xEE, 0xEE);
   static const SkColor kTableGroupingIndicatorColor =
       SkColorSetRGB(0xCC, 0xCC, 0xCC);
+  // Results Tables
+  static const SkColor kResultsTableHoveredBackground =
+      color_utils::AlphaBlend(kTextfieldSelectionBackgroundFocused,
+                              kTextfieldDefaultBackground, 0x40);
+  static const SkColor kResultsTableNormalText = color_utils::AlphaBlend(
+      SK_ColorBLACK, kTextfieldDefaultBackground, 0xDD);
+  static const SkColor kResultsTableHoveredText = color_utils::AlphaBlend(
+      SK_ColorBLACK, kResultsTableHoveredBackground, 0xDD);
+  static const SkColor kResultsTableSelectedText = color_utils::AlphaBlend(
+      SK_ColorBLACK, kTextfieldSelectionBackgroundFocused, 0xDD);
+  static const SkColor kResultsTableNormalDimmedText = color_utils::AlphaBlend(
+      SK_ColorBLACK, kTextfieldDefaultBackground, 0xBB);
+  static const SkColor kResultsTableHoveredDimmedText = color_utils::AlphaBlend(
+      SK_ColorBLACK, kResultsTableHoveredBackground, 0xBB);
+  static const SkColor kResultsTableSelectedDimmedText =
+      color_utils::AlphaBlend(
+          SK_ColorBLACK, kTextfieldSelectionBackgroundFocused, 0xBB);
+  static const SkColor kResultsTableSelectedOrHoveredUrl =
+      SkColorSetARGB(0xff, 0x00, 0x66, 0x22);
+  static const SkColor kResultsTableNormalDivider = color_utils::AlphaBlend(
+      kResultsTableNormalText, kTextfieldDefaultBackground, 0x34);
+  static const SkColor kResultsTableHoveredDivider = color_utils::AlphaBlend(
+      kResultsTableHoveredText, kResultsTableHoveredBackground, 0x34);
+  static const SkColor kResultsTabSelectedDivider = color_utils::AlphaBlend(
+      kResultsTableSelectedText, kTextfieldSelectionBackgroundFocused, 0x34);
 
   SkColor color;
   if (CommonThemeGetSystemColor(color_id, &color))
@@ -105,38 +114,16 @@ SkColor FallbackTheme::GetSystemColor(ColorId color_id) const {
       return kButtonBackgroundColor;
     case kColorId_ButtonEnabledColor:
       return kButtonEnabledColor;
-    case kColorId_ButtonDisabledColor:
-      return kButtonDisabledColor;
     case kColorId_ButtonHighlightColor:
       return kButtonHighlightColor;
     case kColorId_ButtonHoverColor:
       return kButtonHoverColor;
 
-    // MenuItem
-    case kColorId_EnabledMenuItemForegroundColor:
-      return kEnabledMenuItemForegroundColor;
-    case kColorId_DisabledMenuItemForegroundColor:
-      return kDisabledMenuItemForegroundColor;
-    case kColorId_SelectedMenuItemForegroundColor:
-      return kEnabledMenuItemForegroundColor;
-    case kColorId_FocusedMenuItemBackgroundColor:
-      return kFocusedMenuItemBackgroundColor;
-    case kColorId_HoverMenuItemBackgroundColor:
-      return kHoverMenuItemBackgroundColor;
-    case kColorId_MenuSeparatorColor:
-      return kMenuSeparatorColor;
-    case kColorId_EnabledMenuButtonBorderColor:
-      return kEnabledMenuButtonBorderColor;
-    case kColorId_FocusedMenuButtonBorderColor:
-      return kFocusedMenuButtonBorderColor;
-    case kColorId_HoverMenuButtonBorderColor:
-      return kHoverMenuButtonBorderColor;
-
     // Label
     case kColorId_LabelEnabledColor:
       return kLabelEnabledColor;
     case kColorId_LabelDisabledColor:
-      return kLabelDisabledColor;
+      return GetSystemColor(kColorId_ButtonDisabledColor);
     case kColorId_LabelBackgroundColor:
       return kLabelBackgroundColor;
 
@@ -153,6 +140,12 @@ SkColor FallbackTheme::GetSystemColor(ColorId color_id) const {
       return kTextfieldSelectionColor;
     case kColorId_TextfieldSelectionBackgroundFocused:
       return kTextfieldSelectionBackgroundFocused;
+
+    // Tooltip
+    case kColorId_TooltipBackground:
+      return kTooltipBackground;
+    case kColorId_TooltipText:
+      return kTooltipTextColor;
 
     // Tree
     case kColorId_TreeBackground:
@@ -182,9 +175,38 @@ SkColor FallbackTheme::GetSystemColor(ColorId color_id) const {
     case kColorId_TableGroupingIndicatorColor:
       return kTableGroupingIndicatorColor;
 
-    case kColorId_MenuBackgroundColor:
-      return kMenuBackgroundColor;
-    case kColorId_MenuBorderColor:
+    // Results Tables
+    case kColorId_ResultsTableNormalBackground:
+      return kTextfieldDefaultBackground;
+    case kColorId_ResultsTableHoveredBackground:
+      return kResultsTableHoveredBackground;
+    case kColorId_ResultsTableSelectedBackground:
+      return kTextfieldSelectionBackgroundFocused;
+    case kColorId_ResultsTableNormalText:
+      return kResultsTableNormalText;
+    case kColorId_ResultsTableHoveredText:
+      return kResultsTableHoveredText;
+    case kColorId_ResultsTableSelectedText:
+      return kResultsTableSelectedText;
+    case kColorId_ResultsTableNormalDimmedText:
+      return kResultsTableNormalDimmedText;
+    case kColorId_ResultsTableHoveredDimmedText:
+      return kResultsTableHoveredDimmedText;
+    case kColorId_ResultsTableSelectedDimmedText:
+      return kResultsTableSelectedDimmedText;
+    case kColorId_ResultsTableNormalUrl:
+      return kTextfieldSelectionColor;
+    case kColorId_ResultsTableHoveredUrl:
+    case kColorId_ResultsTableSelectedUrl:
+      return kResultsTableSelectedOrHoveredUrl;
+    case kColorId_ResultsTableNormalDivider:
+      return kResultsTableNormalDivider;
+    case kColorId_ResultsTableHoveredDivider:
+      return kResultsTableHoveredDivider;
+    case kColorId_ResultsTableSelectedDivider:
+      return kResultsTabSelectedDivider;
+
+    default:
       NOTREACHED();
       break;
   }

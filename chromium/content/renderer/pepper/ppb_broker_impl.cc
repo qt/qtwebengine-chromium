@@ -31,9 +31,9 @@ PPB_Broker_Impl::PPB_Broker_Impl(PP_Instance instance)
     : Resource(ppapi::OBJECT_IS_IMPL, instance),
       broker_(NULL),
       connect_callback_(),
-      pipe_handle_(PlatformFileToInt(base::kInvalidPlatformFileValue)),
+      pipe_handle_(PlatformFileToInt(base::SyncSocket::kInvalidHandle)),
       routing_id_(RenderThreadImpl::current()->GenerateRoutingID()) {
-  ChildThread::current()->AddRoute(routing_id_, this);
+  ChildThread::current()->GetRouter()->AddRoute(routing_id_, this);
 }
 
 PPB_Broker_Impl::~PPB_Broker_Impl() {
@@ -43,13 +43,11 @@ PPB_Broker_Impl::~PPB_Broker_Impl() {
   }
 
   // The plugin owns the handle.
-  pipe_handle_ = PlatformFileToInt(base::kInvalidPlatformFileValue);
-  ChildThread::current()->RemoveRoute(routing_id_);
+  pipe_handle_ = PlatformFileToInt(base::SyncSocket::kInvalidHandle);
+  ChildThread::current()->GetRouter()->RemoveRoute(routing_id_);
 }
 
-PPB_Broker_API* PPB_Broker_Impl::AsPPB_Broker_API() {
-  return this;
-}
+PPB_Broker_API* PPB_Broker_Impl::AsPPB_Broker_API() { return this; }
 
 int32_t PPB_Broker_Impl::Connect(
     scoped_refptr<TrackedCallback> connect_callback) {
@@ -78,8 +76,8 @@ int32_t PPB_Broker_Impl::Connect(
     broker_ = new PepperBroker(module);
 
     // Have the browser start the broker process for us.
-    RenderThreadImpl::current()->Send(new ViewHostMsg_OpenChannelToPpapiBroker(
-        routing_id_, broker_path));
+    RenderThreadImpl::current()->Send(
+        new ViewHostMsg_OpenChannelToPpapiBroker(routing_id_, broker_path));
   }
 
   RenderThreadImpl::current()->Send(
@@ -97,7 +95,7 @@ int32_t PPB_Broker_Impl::Connect(
 }
 
 int32_t PPB_Broker_Impl::GetHandle(int32_t* handle) {
-  if (pipe_handle_ == PlatformFileToInt(base::kInvalidPlatformFileValue))
+  if (pipe_handle_ == PlatformFileToInt(base::SyncSocket::kInvalidHandle))
     return PP_ERROR_FAILED;  // Handle not set yet.
   *handle = pipe_handle_;
   return PP_OK;
@@ -111,10 +109,9 @@ GURL PPB_Broker_Impl::GetDocumentUrl() {
 
 // Transfers ownership of the handle to the plugin.
 void PPB_Broker_Impl::BrokerConnected(int32_t handle, int32_t result) {
-  DCHECK(pipe_handle_ ==
-         PlatformFileToInt(base::kInvalidPlatformFileValue));
+  DCHECK(pipe_handle_ == PlatformFileToInt(base::SyncSocket::kInvalidHandle));
   DCHECK(result == PP_OK ||
-         handle == PlatformFileToInt(base::kInvalidPlatformFileValue));
+         handle == PlatformFileToInt(base::SyncSocket::kInvalidHandle));
 
   pipe_handle_ = handle;
 

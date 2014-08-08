@@ -37,7 +37,7 @@
 
 using namespace std;
 
-#if OS(POSIX) && !OS(MACOSX)
+#if ((OS(POSIX) && !OS(MACOSX)) || OS(WIN))
 // The position of the scrollbar thumb affects the appearance of the steppers, so
 // when the thumb moves, we have to invalidate them for painting.
 #define THUMB_POSITION_AFFECTS_BUTTONS
@@ -249,7 +249,7 @@ void Scrollbar::startTimerIfNeeded(double delay)
             return;
     }
 
-    m_scrollTimer.startOneShot(delay);
+    m_scrollTimer.startOneShot(delay, FROM_HERE);
 }
 
 void Scrollbar::stopTimerIfNeeded()
@@ -392,7 +392,7 @@ void Scrollbar::mouseMoved(const PlatformMouseEvent& evt)
     if (m_pressedPart == ThumbPart) {
         if (theme()->shouldSnapBackToDragOrigin(this, evt)) {
             if (m_scrollableArea)
-                m_scrollableArea->scrollToOffsetWithoutAnimation(m_orientation, m_dragOrigin);
+                m_scrollableArea->scrollToOffsetWithoutAnimation(m_orientation, m_dragOrigin + m_scrollableArea->minimumScrollPosition(m_orientation));
         } else {
             moveThumb(m_orientation == HorizontalScrollbar ?
                       convertFromContainingWindow(evt.position()).x() :

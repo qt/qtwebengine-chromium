@@ -37,8 +37,7 @@
 #include "talk/media/base/mediacommon.h"
 #include "talk/media/devices/deviceinfo.h"
 #include "talk/media/devices/filevideocapturer.h"
-
-#if !defined(IOS)
+#include "talk/media/devices/yuvframescapturer.h"
 
 #if defined(HAVE_WEBRTC_VIDEO)
 #include "talk/media/webrtc/webrtcvideocapturer.h"
@@ -49,8 +48,6 @@
 #define VIDEO_CAPTURER_NAME WebRtcVideoCapturer
 #endif
 
-
-#endif
 
 namespace {
 
@@ -66,7 +63,6 @@ namespace cricket {
 
 // Initialize to empty string.
 const char DeviceManagerInterface::kDefaultDeviceName[] = "";
-
 
 class DefaultVideoCapturerFactory : public VideoCapturerFactory {
  public:
@@ -180,9 +176,24 @@ bool DeviceManager::GetVideoCaptureDevice(const std::string& name,
     }
   }
 
-  // If |name| is a valid name for a file, return a file video capturer device.
+  // If |name| is a valid name for a file or yuvframedevice,
+  // return a fake video capturer device.
+  if (GetFakeVideoCaptureDevice(name, out)) {
+    return true;
+  }
+
+  return false;
+}
+
+bool DeviceManager::GetFakeVideoCaptureDevice(const std::string& name,
+                                              Device* out) const {
   if (talk_base::Filesystem::IsFile(name)) {
     *out = FileVideoCapturer::CreateFileVideoCapturerDevice(name);
+    return true;
+  }
+
+  if (name == YuvFramesCapturer::kYuvFrameDeviceName) {
+    *out = YuvFramesCapturer::CreateYuvFramesCapturerDevice();
     return true;
   }
 
@@ -201,10 +212,27 @@ void DeviceManager::ClearVideoCaptureDeviceMaxFormat(
 }
 
 VideoCapturer* DeviceManager::CreateVideoCapturer(const Device& device) const {
-#if defined(IOS)
-  LOG_F(LS_ERROR) << " should never be called!";
-  return NULL;
-#else
+  VideoCapturer* capturer = ConstructFakeVideoCapturer(device);
+  if (capturer) {
+    return capturer;
+  }
+
+  capturer = device_video_capturer_factory_->Create(device);
+  if (!capturer) {
+    return NULL;
+  }
+  LOG(LS_INFO) << "Created VideoCapturer for " << device.name;
+  VideoFormat video_format;
+  bool has_max = GetMaxFormat(device, &video_format);
+  capturer->set_enable_camera_list(has_max);
+  if (has_max) {
+    capturer->ConstrainSupportedFormats(video_format);
+  }
+  return capturer;
+}
+
+VideoCapturer* DeviceManager::ConstructFakeVideoCapturer(
+    const Device& device) const {
   // TODO(hellner): Throw out the creation of a file video capturer once the
   // refactoring is completed.
   if (FileVideoCapturer::IsFileVideoCapturerDevice(device)) {
@@ -217,19 +245,13 @@ VideoCapturer* DeviceManager::CreateVideoCapturer(const Device& device) const {
     capturer->set_repeat(talk_base::kForever);
     return capturer;
   }
-  VideoCapturer* capturer = device_video_capturer_factory_->Create(device);
-  if (!capturer) {
-    return NULL;
+
+  if (YuvFramesCapturer::IsYuvFramesCapturerDevice(device)) {
+    YuvFramesCapturer* capturer = new YuvFramesCapturer();
+    capturer->Init();
+    return capturer;
   }
-  LOG(LS_INFO) << "Created VideoCapturer for " << device.name;
-  VideoFormat video_format;
-  bool has_max = GetMaxFormat(device, &video_format);
-  capturer->set_enable_camera_list(has_max);
-  if (has_max) {
-    capturer->ConstrainSupportedFormats(video_format);
-  }
-  return capturer;
-#endif
+  return NULL;
 }
 
 bool DeviceManager::GetWindows(

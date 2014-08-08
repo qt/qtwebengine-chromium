@@ -12,7 +12,7 @@
 #include "base/callback.h"
 #include "base/callback_helpers.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop/message_loop.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "base/metrics/sparse_histogram.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
@@ -20,7 +20,7 @@
 #include "base/task_runner_util.h"
 #include "base/time/time.h"
 #include "media/base/audio_decoder_config.h"
-#include "media/base/bind_to_loop.h"
+#include "media/base/bind_to_current_loop.h"
 #include "media/base/decoder_buffer.h"
 #include "media/base/decrypt_config.h"
 #include "media/base/limits.h"
@@ -30,9 +30,30 @@
 #include "media/filters/ffmpeg_glue.h"
 #include "media/filters/ffmpeg_h264_to_annex_b_bitstream_converter.h"
 #include "media/filters/webvtt_util.h"
-#include "media/webm/webm_crypto_helpers.h"
+#include "media/formats/webm/webm_crypto_helpers.h"
 
 namespace media {
+
+static base::Time ExtractTimelineOffset(AVFormatContext* format_context) {
+  if (strstr(format_context->iformat->name, "webm") ||
+      strstr(format_context->iformat->name, "matroska")) {
+    const AVDictionaryEntry* entry =
+        av_dict_get(format_context->metadata, "creation_time", NULL, 0);
+
+    base::Time timeline_offset;
+    if (entry != NULL && entry->value != NULL &&
+        FFmpegUTCDateToTime(entry->value, &timeline_offset)) {
+      return timeline_offset;
+    }
+  }
+
+  return base::Time();
+}
+
+static base::TimeDelta FramesToTimeDelta(int frames, double sample_rate) {
+  return base::TimeDelta::FromMicroseconds(
+      frames * base::Time::kMicrosecondsPerSecond / sample_rate);
+}
 
 //
 // FFmpegDemuxerStream
@@ -41,7 +62,7 @@ FFmpegDemuxerStream::FFmpegDemuxerStream(
     FFmpegDemuxer* demuxer,
     AVStream* stream)
     : demuxer_(demuxer),
-      message_loop_(base::MessageLoopProxy::current()),
+      task_runner_(base::MessageLoopProxy::current()),
       stream_(stream),
       type_(UNKNOWN),
       end_of_stream_(false),
@@ -74,10 +95,12 @@ FFmpegDemuxerStream::FFmpegDemuxerStream(
   // Calculate the duration.
   duration_ = ConvertStreamTimestamp(stream->time_base, stream->duration);
 
+#if defined(USE_PROPRIETARY_CODECS)
   if (stream_->codec->codec_id == AV_CODEC_ID_H264) {
     bitstream_converter_.reset(
         new FFmpegH264ToAnnexBBitstreamConverter(stream_->codec));
   }
+#endif
 
   if (is_encrypted) {
     AVDictionaryEntry* key = av_dict_get(stream->metadata, "enc_key_id", NULL,
@@ -99,23 +122,26 @@ FFmpegDemuxerStream::FFmpegDemuxerStream(
 }
 
 void FFmpegDemuxerStream::EnqueuePacket(ScopedAVPacket packet) {
-  DCHECK(message_loop_->BelongsToCurrentThread());
+  DCHECK(task_runner_->BelongsToCurrentThread());
 
   if (!demuxer_ || end_of_stream_) {
     NOTREACHED() << "Attempted to enqueue packet on a stopped stream";
     return;
   }
 
+#if defined(USE_PROPRIETARY_CODECS)
   // Convert the packet if there is a bitstream filter.
   if (packet->data && bitstream_converter_enabled_ &&
       !bitstream_converter_->ConvertPacket(packet.get())) {
     LOG(ERROR) << "Format conversion failed.";
   }
+#endif
 
   // Get side data if any. For now, the only type of side_data is VP8 Alpha. We
   // keep this generic so that other side_data types in the future can be
   // handled the same way as well.
   av_packet_split_side_data(packet.get());
+
   scoped_refptr<DecoderBuffer> buffer;
 
   if (type() == DemuxerStream::TEXT) {
@@ -145,43 +171,59 @@ void FFmpegDemuxerStream::EnqueuePacket(ScopedAVPacket packet) {
         AV_PKT_DATA_MATROSKA_BLOCKADDITIONAL,
         &side_data_size);
 
+    scoped_ptr<DecryptConfig> decrypt_config;
+    int data_offset = 0;
+    if ((type() == DemuxerStream::AUDIO && audio_config_.is_encrypted()) ||
+        (type() == DemuxerStream::VIDEO && video_config_.is_encrypted())) {
+      if (!WebMCreateDecryptConfig(
+          packet->data, packet->size,
+          reinterpret_cast<const uint8*>(encryption_key_id_.data()),
+          encryption_key_id_.size(),
+          &decrypt_config,
+          &data_offset)) {
+        LOG(ERROR) << "Creation of DecryptConfig failed.";
+      }
+    }
+
     // If a packet is returned by FFmpeg's av_parser_parse2() the packet will
     // reference inner memory of FFmpeg.  As such we should transfer the packet
     // into memory we control.
     if (side_data_size > 0) {
-      buffer = DecoderBuffer::CopyFrom(packet.get()->data, packet.get()->size,
+      buffer = DecoderBuffer::CopyFrom(packet.get()->data + data_offset,
+                                       packet.get()->size - data_offset,
                                        side_data, side_data_size);
     } else {
-      buffer = DecoderBuffer::CopyFrom(packet.get()->data, packet.get()->size);
+      buffer = DecoderBuffer::CopyFrom(packet.get()->data + data_offset,
+                                       packet.get()->size - data_offset);
     }
 
     int skip_samples_size = 0;
-    uint8* skip_samples = av_packet_get_side_data(packet.get(),
-                                                  AV_PKT_DATA_SKIP_SAMPLES,
-                                                  &skip_samples_size);
+    const uint32* skip_samples_ptr =
+        reinterpret_cast<const uint32*>(av_packet_get_side_data(
+            packet.get(), AV_PKT_DATA_SKIP_SAMPLES, &skip_samples_size));
     const int kSkipSamplesValidSize = 10;
-    const int kSkipSamplesOffset = 4;
+    const int kSkipEndSamplesOffset = 1;
     if (skip_samples_size >= kSkipSamplesValidSize) {
-      int discard_padding_samples = base::ByteSwapToLE32(
-          *(reinterpret_cast<const uint32*>(skip_samples +
-                                            kSkipSamplesOffset)));
-      // TODO(vigneshv): Change decoder buffer to use number of samples so that
-      // this conversion can be avoided.
-      buffer->set_discard_padding(base::TimeDelta::FromMicroseconds(
-          discard_padding_samples * 1000000.0 /
-          audio_decoder_config().samples_per_second()));
-    }
-  }
+      // Because FFmpeg rolls codec delay and skip samples into one we can only
+      // allow front discard padding on the first buffer.  Otherwise the discard
+      // helper can't figure out which data to discard.  See AudioDiscardHelper.
+      int discard_front_samples = base::ByteSwapToLE32(*skip_samples_ptr);
+      if (last_packet_timestamp_ != kNoTimestamp()) {
+        DLOG(ERROR) << "Skip samples are only allowed for the first packet.";
+        discard_front_samples = 0;
+      }
 
-  if ((type() == DemuxerStream::AUDIO && audio_config_.is_encrypted()) ||
-      (type() == DemuxerStream::VIDEO && video_config_.is_encrypted())) {
-    scoped_ptr<DecryptConfig> config(WebMCreateDecryptConfig(
-        packet->data, packet->size,
-        reinterpret_cast<const uint8*>(encryption_key_id_.data()),
-        encryption_key_id_.size()));
-    if (!config)
-      LOG(ERROR) << "Creation of DecryptConfig failed.";
-    buffer->set_decrypt_config(config.Pass());
+      const int discard_end_samples =
+          base::ByteSwapToLE32(*(skip_samples_ptr + kSkipEndSamplesOffset));
+      const int samples_per_second =
+          audio_decoder_config().samples_per_second();
+      buffer->set_discard_padding(std::make_pair(
+          FramesToTimeDelta(discard_front_samples, samples_per_second),
+          FramesToTimeDelta(discard_end_samples, samples_per_second)));
+    }
+
+    if (decrypt_config)
+      buffer->set_decrypt_config(decrypt_config.Pass());
   }
 
   buffer->set_timestamp(ConvertStreamTimestamp(
@@ -201,13 +243,13 @@ void FFmpegDemuxerStream::EnqueuePacket(ScopedAVPacket packet) {
 }
 
 void FFmpegDemuxerStream::SetEndOfStream() {
-  DCHECK(message_loop_->BelongsToCurrentThread());
+  DCHECK(task_runner_->BelongsToCurrentThread());
   end_of_stream_ = true;
   SatisfyPendingRead();
 }
 
 void FFmpegDemuxerStream::FlushBuffers() {
-  DCHECK(message_loop_->BelongsToCurrentThread());
+  DCHECK(task_runner_->BelongsToCurrentThread());
   DCHECK(read_cb_.is_null()) << "There should be no pending read";
   buffer_queue_.Clear();
   end_of_stream_ = false;
@@ -215,7 +257,7 @@ void FFmpegDemuxerStream::FlushBuffers() {
 }
 
 void FFmpegDemuxerStream::Stop() {
-  DCHECK(message_loop_->BelongsToCurrentThread());
+  DCHECK(task_runner_->BelongsToCurrentThread());
   buffer_queue_.Clear();
   if (!read_cb_.is_null()) {
     base::ResetAndReturn(&read_cb_).Run(
@@ -231,12 +273,12 @@ base::TimeDelta FFmpegDemuxerStream::duration() {
 }
 
 DemuxerStream::Type FFmpegDemuxerStream::type() {
-  DCHECK(message_loop_->BelongsToCurrentThread());
+  DCHECK(task_runner_->BelongsToCurrentThread());
   return type_;
 }
 
 void FFmpegDemuxerStream::Read(const ReadCB& read_cb) {
-  DCHECK(message_loop_->BelongsToCurrentThread());
+  DCHECK(task_runner_->BelongsToCurrentThread());
   CHECK(read_cb_.is_null()) << "Overlapping reads are not supported";
   read_cb_ = BindToCurrentLoop(read_cb);
 
@@ -254,19 +296,26 @@ void FFmpegDemuxerStream::Read(const ReadCB& read_cb) {
 }
 
 void FFmpegDemuxerStream::EnableBitstreamConverter() {
-  DCHECK(message_loop_->BelongsToCurrentThread());
+  DCHECK(task_runner_->BelongsToCurrentThread());
+
+#if defined(USE_PROPRIETARY_CODECS)
   CHECK(bitstream_converter_.get());
   bitstream_converter_enabled_ = true;
+#else
+  NOTREACHED() << "Proprietary codecs not enabled.";
+#endif
 }
 
+bool FFmpegDemuxerStream::SupportsConfigChanges() { return false; }
+
 AudioDecoderConfig FFmpegDemuxerStream::audio_decoder_config() {
-  DCHECK(message_loop_->BelongsToCurrentThread());
+  DCHECK(task_runner_->BelongsToCurrentThread());
   CHECK_EQ(type_, AUDIO);
   return audio_config_;
 }
 
 VideoDecoderConfig FFmpegDemuxerStream::video_decoder_config() {
-  DCHECK(message_loop_->BelongsToCurrentThread());
+  DCHECK(task_runner_->BelongsToCurrentThread());
   CHECK_EQ(type_, VIDEO);
   return video_config_;
 }
@@ -286,7 +335,7 @@ Ranges<base::TimeDelta> FFmpegDemuxerStream::GetBufferedRanges() const {
 }
 
 void FFmpegDemuxerStream::SatisfyPendingRead() {
-  DCHECK(message_loop_->BelongsToCurrentThread());
+  DCHECK(task_runner_->BelongsToCurrentThread());
   if (!read_cb_.is_null()) {
     if (!buffer_queue_.IsEmpty()) {
       base::ResetAndReturn(&read_cb_).Run(
@@ -304,14 +353,20 @@ void FFmpegDemuxerStream::SatisfyPendingRead() {
 }
 
 bool FFmpegDemuxerStream::HasAvailableCapacity() {
-  // TODO(scherkus): Remove early return and reenable time-based capacity
+  // TODO(scherkus): Remove this return and reenable time-based capacity
   // after our data sources support canceling/concurrent reads, see
   // http://crbug.com/165762 for details.
+#if 1
   return !read_cb_.is_null();
-
+#else
   // Try to have one second's worth of encoded data per stream.
   const base::TimeDelta kCapacity = base::TimeDelta::FromSeconds(1);
   return buffer_queue_.IsEmpty() || buffer_queue_.Duration() < kCapacity;
+#endif
+}
+
+size_t FFmpegDemuxerStream::MemoryUsage() const {
+  return buffer_queue_.data_size();
 }
 
 TextKind FFmpegDemuxerStream::GetTextKind() const {
@@ -348,13 +403,12 @@ base::TimeDelta FFmpegDemuxerStream::ConvertStreamTimestamp(
 // FFmpegDemuxer
 //
 FFmpegDemuxer::FFmpegDemuxer(
-    const scoped_refptr<base::MessageLoopProxy>& message_loop,
+    const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
     DataSource* data_source,
     const NeedKeyCB& need_key_cb,
     const scoped_refptr<MediaLog>& media_log)
     : host_(NULL),
-      message_loop_(message_loop),
-      weak_factory_(this),
+      task_runner_(task_runner),
       blocking_thread_("FFmpegDemuxer"),
       pending_read_(false),
       pending_seek_(false),
@@ -362,29 +416,29 @@ FFmpegDemuxer::FFmpegDemuxer(
       media_log_(media_log),
       bitrate_(0),
       start_time_(kNoTimestamp()),
-      audio_disabled_(false),
+      liveness_(LIVENESS_UNKNOWN),
       text_enabled_(false),
       duration_known_(false),
-      url_protocol_(data_source, BindToLoop(message_loop_, base::Bind(
-          &FFmpegDemuxer::OnDataSourceError, base::Unretained(this)))),
-      need_key_cb_(need_key_cb) {
-  DCHECK(message_loop_.get());
+      need_key_cb_(need_key_cb),
+      weak_factory_(this) {
+  DCHECK(task_runner_.get());
   DCHECK(data_source_);
 }
 
 FFmpegDemuxer::~FFmpegDemuxer() {}
 
 void FFmpegDemuxer::Stop(const base::Closure& callback) {
-  DCHECK(message_loop_->BelongsToCurrentThread());
-  url_protocol_.Abort();
-  data_source_->Stop(BindToCurrentLoop(base::Bind(
-      &FFmpegDemuxer::OnDataSourceStopped, weak_this_,
-      BindToCurrentLoop(callback))));
+  DCHECK(task_runner_->BelongsToCurrentThread());
+  url_protocol_->Abort();
+  data_source_->Stop(
+      BindToCurrentLoop(base::Bind(&FFmpegDemuxer::OnDataSourceStopped,
+                                   weak_factory_.GetWeakPtr(),
+                                   BindToCurrentLoop(callback))));
   data_source_ = NULL;
 }
 
 void FFmpegDemuxer::Seek(base::TimeDelta time, const PipelineStatusCB& cb) {
-  DCHECK(message_loop_->BelongsToCurrentThread());
+  DCHECK(task_runner_->BelongsToCurrentThread());
   CHECK(!pending_seek_);
 
   // TODO(scherkus): Inspect |pending_read_| and cancel IO via |blocking_url_|,
@@ -406,33 +460,20 @@ void FFmpegDemuxer::Seek(base::TimeDelta time, const PipelineStatusCB& cb) {
                  -1,
                  time.InMicroseconds(),
                  flags),
-      base::Bind(&FFmpegDemuxer::OnSeekFrameDone, weak_this_, cb));
-}
-
-void FFmpegDemuxer::OnAudioRendererDisabled() {
-  DCHECK(message_loop_->BelongsToCurrentThread());
-  audio_disabled_ = true;
-  StreamVector::iterator iter;
-  for (iter = streams_.begin(); iter != streams_.end(); ++iter) {
-    if (*iter && (*iter)->type() == DemuxerStream::AUDIO) {
-      (*iter)->Stop();
-    }
-  }
+      base::Bind(
+          &FFmpegDemuxer::OnSeekFrameDone, weak_factory_.GetWeakPtr(), cb));
 }
 
 void FFmpegDemuxer::Initialize(DemuxerHost* host,
                                const PipelineStatusCB& status_cb,
                                bool enable_text_tracks) {
-  DCHECK(message_loop_->BelongsToCurrentThread());
+  DCHECK(task_runner_->BelongsToCurrentThread());
   host_ = host;
-  weak_this_ = weak_factory_.GetWeakPtr();
   text_enabled_ = enable_text_tracks;
 
-  // TODO(scherkus): DataSource should have a host by this point,
-  // see http://crbug.com/122071
-  data_source_->set_host(host);
-
-  glue_.reset(new FFmpegGlue(&url_protocol_));
+  url_protocol_.reset(new BlockingUrlProtocol(data_source_, BindToCurrentLoop(
+      base::Bind(&FFmpegDemuxer::OnDataSourceError, base::Unretained(this)))));
+  glue_.reset(new FFmpegGlue(url_protocol_.get()));
   AVFormatContext* format_context = glue_->format_context();
 
   // Disable ID3v1 tag reading to avoid costly seeks to end of file for data we
@@ -446,11 +487,13 @@ void FFmpegDemuxer::Initialize(DemuxerHost* host,
       blocking_thread_.message_loop_proxy().get(),
       FROM_HERE,
       base::Bind(&FFmpegGlue::OpenContext, base::Unretained(glue_.get())),
-      base::Bind(&FFmpegDemuxer::OnOpenContextDone, weak_this_, status_cb));
+      base::Bind(&FFmpegDemuxer::OnOpenContextDone,
+                 weak_factory_.GetWeakPtr(),
+                 status_cb));
 }
 
 DemuxerStream* FFmpegDemuxer::GetStream(DemuxerStream::Type type) {
-  DCHECK(message_loop_->BelongsToCurrentThread());
+  DCHECK(task_runner_->BelongsToCurrentThread());
   return GetFFmpegStream(type);
 }
 
@@ -466,12 +509,21 @@ FFmpegDemuxerStream* FFmpegDemuxer::GetFFmpegStream(
 }
 
 base::TimeDelta FFmpegDemuxer::GetStartTime() const {
-  DCHECK(message_loop_->BelongsToCurrentThread());
+  DCHECK(task_runner_->BelongsToCurrentThread());
   return start_time_;
 }
 
+base::Time FFmpegDemuxer::GetTimelineOffset() const {
+  return timeline_offset_;
+}
+
+Demuxer::Liveness FFmpegDemuxer::GetLiveness() const {
+  DCHECK(task_runner_->BelongsToCurrentThread());
+  return liveness_;
+}
+
 void FFmpegDemuxer::AddTextStreams() {
-  DCHECK(message_loop_->BelongsToCurrentThread());
+  DCHECK(task_runner_->BelongsToCurrentThread());
 
   for (StreamVector::size_type idx = 0; idx < streams_.size(); ++idx) {
     FFmpegDemuxerStream* stream = streams_[idx];
@@ -527,7 +579,7 @@ static int CalculateBitrate(
 
 void FFmpegDemuxer::OnOpenContextDone(const PipelineStatusCB& status_cb,
                                       bool result) {
-  DCHECK(message_loop_->BelongsToCurrentThread());
+  DCHECK(task_runner_->BelongsToCurrentThread());
   if (!blocking_thread_.IsRunning()) {
     status_cb.Run(PIPELINE_ERROR_ABORT);
     return;
@@ -545,12 +597,14 @@ void FFmpegDemuxer::OnOpenContextDone(const PipelineStatusCB& status_cb,
       base::Bind(&avformat_find_stream_info,
                  glue_->format_context(),
                  static_cast<AVDictionary**>(NULL)),
-      base::Bind(&FFmpegDemuxer::OnFindStreamInfoDone, weak_this_, status_cb));
+      base::Bind(&FFmpegDemuxer::OnFindStreamInfoDone,
+                 weak_factory_.GetWeakPtr(),
+                 status_cb));
 }
 
 void FFmpegDemuxer::OnFindStreamInfoDone(const PipelineStatusCB& status_cb,
                                          int result) {
-  DCHECK(message_loop_->BelongsToCurrentThread());
+  DCHECK(task_runner_->BelongsToCurrentThread());
   if (!blocking_thread_.IsRunning() || !data_source_) {
     status_cb.Run(PIPELINE_ERROR_ABORT);
     return;
@@ -656,13 +710,23 @@ void FFmpegDemuxer::OnFindStreamInfoDone(const PipelineStatusCB& status_cb,
   if (strcmp(format_context->iformat->name, "avi") == 0)
     format_context->flags |= AVFMT_FLAG_GENPTS;
 
+  timeline_offset_ = ExtractTimelineOffset(format_context);
+
+  if (max_duration == kInfiniteDuration() && !timeline_offset_.is_null()) {
+    liveness_ = LIVENESS_LIVE;
+  } else if (max_duration != kInfiniteDuration()) {
+    liveness_ = LIVENESS_RECORDED;
+  } else {
+    liveness_ = LIVENESS_UNKNOWN;
+  }
+
   // Good to go: set the duration and bitrate and notify we're done
   // initializing.
   host_->SetDuration(max_duration);
   duration_known_ = (max_duration != kInfiniteDuration());
 
   int64 filesize_in_bytes = 0;
-  url_protocol_.GetSize(&filesize_in_bytes);
+  url_protocol_->GetSize(&filesize_in_bytes);
   bitrate_ = CalculateBitrate(format_context, max_duration, filesize_in_bytes);
   if (bitrate_ > 0)
     data_source_->SetBitrate(bitrate_);
@@ -720,15 +784,15 @@ void FFmpegDemuxer::OnFindStreamInfoDone(const PipelineStatusCB& status_cb,
   }
 
 
-  media_log_->SetDoubleProperty("max_duration", max_duration.InSecondsF());
-  media_log_->SetDoubleProperty("start_time", start_time_.InSecondsF());
+  media_log_->SetTimeProperty("max_duration", max_duration);
+  media_log_->SetTimeProperty("start_time", start_time_);
   media_log_->SetIntegerProperty("bitrate", bitrate_);
 
   status_cb.Run(PIPELINE_OK);
 }
 
 void FFmpegDemuxer::OnSeekFrameDone(const PipelineStatusCB& cb, int result) {
-  DCHECK(message_loop_->BelongsToCurrentThread());
+  DCHECK(task_runner_->BelongsToCurrentThread());
   CHECK(pending_seek_);
   pending_seek_ = false;
 
@@ -759,7 +823,7 @@ void FFmpegDemuxer::OnSeekFrameDone(const PipelineStatusCB& cb, int result) {
 }
 
 void FFmpegDemuxer::ReadFrameIfNeeded() {
-  DCHECK(message_loop_->BelongsToCurrentThread());
+  DCHECK(task_runner_->BelongsToCurrentThread());
 
   // Make sure we have work to do before reading.
   if (!blocking_thread_.IsRunning() || !StreamsHaveAvailableCapacity() ||
@@ -778,12 +842,13 @@ void FFmpegDemuxer::ReadFrameIfNeeded() {
       blocking_thread_.message_loop_proxy().get(),
       FROM_HERE,
       base::Bind(&av_read_frame, glue_->format_context(), packet_ptr),
-      base::Bind(
-          &FFmpegDemuxer::OnReadFrameDone, weak_this_, base::Passed(&packet)));
+      base::Bind(&FFmpegDemuxer::OnReadFrameDone,
+                 weak_factory_.GetWeakPtr(),
+                 base::Passed(&packet)));
 }
 
 void FFmpegDemuxer::OnReadFrameDone(ScopedAVPacket packet, int result) {
-  DCHECK(message_loop_->BelongsToCurrentThread());
+  DCHECK(task_runner_->BelongsToCurrentThread());
   DCHECK(pending_read_);
   pending_read_ = false;
 
@@ -791,22 +856,29 @@ void FFmpegDemuxer::OnReadFrameDone(ScopedAVPacket packet, int result) {
     return;
   }
 
-  if (result < 0) {
-    // Update the duration based on the audio stream if
-    // it was previously unknown http://crbug.com/86830
+  // Consider the stream as ended if:
+  // - either underlying ffmpeg returned an error
+  // - or FFMpegDemuxer reached the maximum allowed memory usage.
+  if (result < 0 || IsMaxMemoryUsageReached()) {
+    // Update the duration based on the highest elapsed time across all streams
+    // if it was previously unknown.
     if (!duration_known_) {
-      // Search streams for AUDIO one.
+      base::TimeDelta max_duration;
+
       for (StreamVector::iterator iter = streams_.begin();
            iter != streams_.end();
            ++iter) {
-        if (*iter && (*iter)->type() == DemuxerStream::AUDIO) {
-          base::TimeDelta duration = (*iter)->GetElapsedTime();
-          if (duration != kNoTimestamp() && duration > base::TimeDelta()) {
-            host_->SetDuration(duration);
-            duration_known_ = true;
-          }
-          break;
-        }
+        if (!*iter)
+          continue;
+
+        base::TimeDelta duration = (*iter)->GetElapsedTime();
+        if (duration != kNoTimestamp() && duration > max_duration)
+          max_duration = duration;
+      }
+
+      if (max_duration > base::TimeDelta()) {
+        host_->SetDuration(max_duration);
+        duration_known_ = true;
       }
     }
     // If we have reached the end of stream, tell the downstream filters about
@@ -822,10 +894,7 @@ void FFmpegDemuxer::OnReadFrameDone(ScopedAVPacket packet, int result) {
   // Defend against ffmpeg giving us a bad stream index.
   if (packet->stream_index >= 0 &&
       packet->stream_index < static_cast<int>(streams_.size()) &&
-      streams_[packet->stream_index] &&
-      (!audio_disabled_ ||
-       streams_[packet->stream_index]->type() != DemuxerStream::AUDIO)) {
-
+      streams_[packet->stream_index]) {
     // TODO(scherkus): Fix demuxing upstream to never return packets w/o data
     // when av_read_frame() returns success code. See bug comment for ideas:
     //
@@ -833,15 +902,7 @@ void FFmpegDemuxer::OnReadFrameDone(ScopedAVPacket packet, int result) {
     if (!packet->data) {
       ScopedAVPacket new_packet(new AVPacket());
       av_new_packet(new_packet.get(), 0);
-
-      new_packet->pts = packet->pts;
-      new_packet->dts = packet->dts;
-      new_packet->pos = packet->pos;
-      new_packet->duration = packet->duration;
-      new_packet->convergence_duration = packet->convergence_duration;
-      new_packet->flags = packet->flags;
-      new_packet->stream_index = packet->stream_index;
-
+      av_packet_copy_props(new_packet.get(), packet.get());
       packet.swap(new_packet);
     }
 
@@ -871,7 +932,7 @@ void FFmpegDemuxer::OnDataSourceStopped(const base::Closure& callback) {
   // possible for reply tasks (e.g., OnReadFrameDone()) to be queued on this
   // thread. Each of the reply task methods must check whether we've stopped the
   // thread and drop their results on the floor.
-  DCHECK(message_loop_->BelongsToCurrentThread());
+  DCHECK(task_runner_->BelongsToCurrentThread());
   blocking_thread_.Stop();
 
   StreamVector::iterator iter;
@@ -884,7 +945,7 @@ void FFmpegDemuxer::OnDataSourceStopped(const base::Closure& callback) {
 }
 
 bool FFmpegDemuxer::StreamsHaveAvailableCapacity() {
-  DCHECK(message_loop_->BelongsToCurrentThread());
+  DCHECK(task_runner_->BelongsToCurrentThread());
   StreamVector::iterator iter;
   for (iter = streams_.begin(); iter != streams_.end(); ++iter) {
     if (*iter && (*iter)->HasAvailableCapacity()) {
@@ -894,14 +955,32 @@ bool FFmpegDemuxer::StreamsHaveAvailableCapacity() {
   return false;
 }
 
+bool FFmpegDemuxer::IsMaxMemoryUsageReached() const {
+  DCHECK(task_runner_->BelongsToCurrentThread());
+
+  // Max allowed memory usage, all streams combined.
+  const size_t kDemuxerMemoryLimit = 150 * 1024 * 1024;
+
+  size_t memory_left = kDemuxerMemoryLimit;
+  for (StreamVector::const_iterator iter = streams_.begin();
+       iter != streams_.end(); ++iter) {
+    if (!(*iter))
+      continue;
+
+    size_t stream_memory_usage = (*iter)->MemoryUsage();
+    if (stream_memory_usage > memory_left)
+      return true;
+    memory_left -= stream_memory_usage;
+  }
+  return false;
+}
+
 void FFmpegDemuxer::StreamHasEnded() {
-  DCHECK(message_loop_->BelongsToCurrentThread());
+  DCHECK(task_runner_->BelongsToCurrentThread());
   StreamVector::iterator iter;
   for (iter = streams_.begin(); iter != streams_.end(); ++iter) {
-    if (!*iter ||
-        (audio_disabled_ && (*iter)->type() == DemuxerStream::AUDIO)) {
+    if (!*iter)
       continue;
-    }
     (*iter)->SetEndOfStream();
   }
 }
@@ -914,15 +993,14 @@ void FFmpegDemuxer::FireNeedKey(const std::string& init_data_type,
 }
 
 void FFmpegDemuxer::NotifyCapacityAvailable() {
-  DCHECK(message_loop_->BelongsToCurrentThread());
+  DCHECK(task_runner_->BelongsToCurrentThread());
   ReadFrameIfNeeded();
 }
 
 void FFmpegDemuxer::NotifyBufferingChanged() {
-  DCHECK(message_loop_->BelongsToCurrentThread());
+  DCHECK(task_runner_->BelongsToCurrentThread());
   Ranges<base::TimeDelta> buffered;
-  FFmpegDemuxerStream* audio =
-      audio_disabled_ ? NULL : GetFFmpegStream(DemuxerStream::AUDIO);
+  FFmpegDemuxerStream* audio = GetFFmpegStream(DemuxerStream::AUDIO);
   FFmpegDemuxerStream* video = GetFFmpegStream(DemuxerStream::VIDEO);
   if (audio && video) {
     buffered = audio->GetBufferedRanges().IntersectionWith(

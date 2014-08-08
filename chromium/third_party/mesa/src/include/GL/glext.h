@@ -6149,14 +6149,24 @@ typedef char GLchar;
 
 #ifndef GL_VERSION_1_5
 /* GL types for handling large vertex buffer objects */
-typedef signed long int GLintptr;
-typedef signed long int GLsizeiptr;
+#ifdef _WIN64
+typedef signed   long long int GLintptr;
+typedef signed   long long int GLsizeiptr;
+#else
+typedef signed   long  int     GLintptr;
+typedef signed   long  int     GLsizeiptr;
+#endif
 #endif
 
 #ifndef GL_ARB_vertex_buffer_object
 /* GL types for handling large vertex buffer objects */
-typedef signed long int GLintptrARB;
-typedef signed long int GLsizeiptrARB;
+#ifdef _WIN64
+typedef signed   long long int GLintptrARB;
+typedef signed   long long int GLsizeiptrARB;
+#else
+typedef signed   long  int     GLintptrARB;
+typedef signed   long  int     GLsizeiptrARB;
+#endif
 #endif
 
 #ifndef GL_ARB_shader_objects

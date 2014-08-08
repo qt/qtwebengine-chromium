@@ -35,21 +35,28 @@
 #include "wtf/Forward.h"
 #include "wtf/HashMap.h"
 #include "wtf/Noncopyable.h"
+#include "wtf/Vector.h"
 #include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
 class DOMWrapperWorld;
-class Frame;
+class LocalFrame;
 class GraphicsContext;
+class GraphicsLayer;
 class InjectedScriptManager;
 class InspectorBackendDispatcher;
+class InspectorAgent;
 class InspectorClient;
+class InspectorDOMAgent;
 class InspectorFrontend;
 class InspectorFrontendChannel;
 class InspectorFrontendClient;
-class InspectorMemoryAgent;
+class InspectorLayerTreeAgent;
+class InspectorPageAgent;
+class InspectorResourceAgent;
 class InspectorTimelineAgent;
+class InspectorTracingAgent;
 class InspectorOverlay;
 class InspectorState;
 class InstrumentingAgents;
@@ -60,10 +67,7 @@ class PlatformGestureEvent;
 class PlatformKeyboardEvent;
 class PlatformMouseEvent;
 class PlatformTouchEvent;
-class PostWorkerNotificationToFrontendTask;
 class Node;
-
-struct Highlight;
 
 class InspectorController {
     WTF_MAKE_NONCOPYABLE(InspectorController);
@@ -72,32 +76,34 @@ public:
     ~InspectorController();
 
     static PassOwnPtr<InspectorController> create(Page*, InspectorClient*);
-    void inspectedPageDestroyed();
+
+    // Settings overrides.
+    void setTextAutosizingEnabled(bool);
+    void setDeviceScaleAdjustment(float);
+
+    void willBeDestroyed();
+    void registerModuleAgent(PassOwnPtr<InspectorAgent>);
 
     void setInspectorFrontendClient(PassOwnPtr<InspectorFrontendClient>);
-    void didClearWindowObjectInWorld(Frame*, DOMWrapperWorld*);
+    void didClearDocumentOfWindowObject(LocalFrame*);
     void setInjectedScriptForOrigin(const String& origin, const String& source);
 
     void dispatchMessageFromFrontend(const String& message);
 
-    void connectFrontend(InspectorFrontendChannel*);
+    void connectFrontend(const String& hostId, InspectorFrontendChannel*);
     void disconnectFrontend();
     void reconnectFrontend();
-    void reuseFrontend(InspectorFrontendChannel*, const String& inspectorStateCookie);
+    void reuseFrontend(const String& hostId, InspectorFrontendChannel*, const String& inspectorStateCookie);
     void setProcessId(long);
     void setLayerTreeId(int);
-    void webViewResized(const IntSize&);
 
     void inspect(Node*);
     void drawHighlight(GraphicsContext&) const;
-    void getHighlight(Highlight*) const;
-    void hideHighlight();
-    Node* highlightedNode() const;
 
-    bool handleGestureEvent(Frame*, const PlatformGestureEvent&);
-    bool handleMouseEvent(Frame*, const PlatformMouseEvent&);
-    bool handleTouchEvent(Frame*, const PlatformTouchEvent&);
-    bool handleKeyboardEvent(Frame*, const PlatformKeyboardEvent&);
+    bool handleGestureEvent(LocalFrame*, const PlatformGestureEvent&);
+    bool handleMouseEvent(LocalFrame*, const PlatformMouseEvent&);
+    bool handleTouchEvent(LocalFrame*, const PlatformTouchEvent&);
+    bool handleKeyboardEvent(LocalFrame*, const PlatformKeyboardEvent&);
 
     void requestPageScaleFactor(float scale, const IntPoint& origin);
     bool deviceEmulationEnabled();
@@ -111,18 +117,26 @@ public:
 
     void willProcessTask();
     void didProcessTask();
+    void flushPendingFrontendMessages();
 
+    void didCommitLoadForMainFrame();
     void didBeginFrame(int frameId);
     void didCancelFrame();
     void willComposite();
     void didComposite();
 
-    void processGPUEvent(double timestamp, int phase, bool foreign, size_t usedGPUMemoryBytes);
+    void processGPUEvent(double timestamp, int phase, bool foreign, uint64_t usedGPUMemoryBytes, uint64_t limitGPUMemoryBytes);
+
+    void scriptsEnabled(bool);
+
+    void willAddPageOverlay(const GraphicsLayer*);
+    void didRemovePageOverlay(const GraphicsLayer*);
 
 private:
     InspectorController(Page*, InspectorClient*);
 
-    friend class PostWorkerNotificationToFrontendTask;
+    void initializeDeferredAgents();
+
     friend InstrumentingAgents* instrumentationForPage(Page*);
 
     RefPtr<InstrumentingAgents> m_instrumentingAgents;
@@ -130,8 +144,12 @@ private:
     OwnPtr<InspectorCompositeState> m_state;
     OwnPtr<InspectorOverlay> m_overlay;
 
-    InspectorMemoryAgent* m_memoryAgent;
+    InspectorDOMAgent* m_domAgent;
+    InspectorPageAgent* m_pageAgent;
+    InspectorResourceAgent* m_resourceAgent;
     InspectorTimelineAgent* m_timelineAgent;
+    InspectorLayerTreeAgent* m_layerTreeAgent;
+    InspectorTracingAgent* m_tracingAgent;
 
     RefPtr<InspectorBackendDispatcher> m_inspectorBackendDispatcher;
     OwnPtr<InspectorFrontendClient> m_inspectorFrontendClient;
@@ -139,7 +157,10 @@ private:
     Page* m_page;
     InspectorClient* m_inspectorClient;
     InspectorAgentRegistry m_agents;
+    Vector<InspectorAgent*> m_moduleAgents;
     bool m_isUnderTest;
+    bool m_deferredAgentsInitialized;
+    String m_hostId;
 };
 
 }

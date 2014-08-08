@@ -9,6 +9,7 @@
 
 #import "base/mac/scoped_nsobject.h"
 #include "base/memory/scoped_ptr.h"
+#import "ui/message_center/cocoa/opaque_views.h"
 #import "ui/message_center/cocoa/settings_entry_view.h"
 #include "ui/message_center/message_center_export.h"
 #include "ui/message_center/notifier_settings.h"
@@ -29,6 +30,8 @@ class NotifierSettingsObserverMac : public NotifierSettingsObserver {
   virtual void UpdateIconImage(const NotifierId& notifier_id,
                                const gfx::Image& icon) OVERRIDE;
   virtual void NotifierGroupChanged() OVERRIDE;
+  virtual void NotifierEnabledChanged(const NotifierId& notifier_id,
+                                      bool enabled) OVERRIDE;
 
  private:
   MCSettingsController* settings_controller_;  // weak, owns this
@@ -53,7 +56,7 @@ MESSAGE_CENTER_EXPORT
   base::scoped_nsobject<NSTextField> detailsText_;
 
   // The profile switcher.
-  base::scoped_nsobject<NSPopUpButton> groupDropDownButton_;
+  base::scoped_nsobject<MCDropDown> groupDropDownButton_;
 
   // Container for all the checkboxes.
   base::scoped_nsobject<NSScrollView> scrollView_;

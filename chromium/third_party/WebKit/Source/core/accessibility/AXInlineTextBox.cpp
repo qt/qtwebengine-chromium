@@ -34,7 +34,6 @@
 #include "core/rendering/RenderText.h"
 #include "platform/LayoutUnit.h"
 
-using namespace std;
 
 namespace WebCore {
 
@@ -64,7 +63,7 @@ void AXInlineTextBox::init()
 
 void AXInlineTextBox::detach()
 {
-    m_inlineTextBox = 0;
+    m_inlineTextBox = nullptr;
     m_axObjectCache = 0;
     AXObject::detach();
 }
@@ -99,7 +98,7 @@ void AXInlineTextBox::textCharacterOffsets(Vector<int>& offsets) const
     float widthSoFar = 0;
     for (unsigned i = 0; i < len; i++) {
         widthSoFar += widths[i];
-        offsets[i] = LayoutUnit::fromFloatRound(widthSoFar);
+        offsets[i] = lroundf(widthSoFar);
     }
 }
 

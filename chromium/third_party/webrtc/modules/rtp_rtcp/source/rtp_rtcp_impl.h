@@ -21,10 +21,6 @@
 #include "webrtc/system_wrappers/interface/scoped_ptr.h"
 #include "webrtc/test/testsupport/gtest_prod_util.h"
 
-#ifdef MATLAB
-class MatlabPlot;
-#endif
-
 namespace webrtc {
 
 class ModuleRtpRtcpImpl : public RtpRtcp {
@@ -80,7 +76,7 @@ class ModuleRtpRtcpImpl : public RtpRtcp {
   virtual uint32_t SSRC() const OVERRIDE;
 
   // Configure SSRC, default is a random number.
-  virtual int32_t SetSSRC(const uint32_t ssrc) OVERRIDE;
+  virtual void SetSSRC(const uint32_t ssrc) OVERRIDE;
 
   virtual int32_t CSRCs(uint32_t arr_of_csrc[kRtpCsrcSize]) const OVERRIDE;
 
@@ -95,13 +91,12 @@ class ModuleRtpRtcpImpl : public RtpRtcp {
 
   virtual uint32_t ByteCountSent() const;
 
-  virtual int32_t SetRTXSendStatus(const int mode,
-                                   const bool set_ssrc,
-                                   const uint32_t ssrc) OVERRIDE;
+  virtual void SetRTXSendStatus(const int mode) OVERRIDE;
 
-  virtual int32_t RTXSendStatus(int* mode, uint32_t* ssrc,
-                                int* payloadType) const OVERRIDE;
+  virtual void RTXSendStatus(int* mode, uint32_t* ssrc,
+                             int* payloadType) const OVERRIDE;
 
+  virtual void SetRtxSsrc(uint32_t ssrc) OVERRIDE;
 
   virtual void SetRtxSendPayloadType(int payload_type) OVERRIDE;
 
@@ -197,9 +192,13 @@ class ModuleRtpRtcpImpl : public RtpRtcp {
 
   // Set received RTCP report block.
   virtual int32_t AddRTCPReportBlock(
-    const uint32_t ssrc, const RTCPReportBlock* receive_block) OVERRIDE;
+      const uint32_t ssrc, const RTCPReportBlock* receive_block) OVERRIDE;
 
   virtual int32_t RemoveRTCPReportBlock(const uint32_t ssrc) OVERRIDE;
+
+  virtual void GetRtcpPacketTypeCounters(
+      RtcpPacketTypeCounter* packets_sent,
+      RtcpPacketTypeCounter* packets_received) const OVERRIDE;
 
   // (REMB) Receiver Estimated Max Bitrate.
   virtual bool REMB() const OVERRIDE;
@@ -290,14 +289,6 @@ class ModuleRtpRtcpImpl : public RtpRtcp {
 
   // Get payload type for Redundant Audio Data RFC 2198.
   virtual int32_t SendREDPayloadType(int8_t& payload_type) const OVERRIDE;
-
-  // Set status and id for header-extension-for-audio-level-indication.
-  virtual int32_t SetRTPAudioLevelIndicationStatus(
-      const bool enable, const uint8_t id) OVERRIDE;
-
-  // Get status and id for header-extension-for-audio-level-indication.
-  virtual int32_t GetRTPAudioLevelIndicationStatus(
-      bool& enable, uint8_t& id) const OVERRIDE;
 
   // Store the audio level in d_bov for header-extension-for-audio-level-
   // indication.
@@ -418,6 +409,8 @@ class ModuleRtpRtcpImpl : public RtpRtcp {
   void set_rtt_ms(uint32_t rtt_ms);
   uint32_t rtt_ms() const;
 
+  bool IsDefaultModule() const;
+
   int32_t             id_;
   const bool                audio_;
   bool                      collision_detected_;
@@ -429,7 +422,8 @@ class ModuleRtpRtcpImpl : public RtpRtcp {
   scoped_ptr<CriticalSectionWrapper> critical_section_module_ptrs_;
   scoped_ptr<CriticalSectionWrapper> critical_section_module_ptrs_feedback_;
   ModuleRtpRtcpImpl*            default_module_;
-  std::list<ModuleRtpRtcpImpl*> child_modules_;
+  std::vector<ModuleRtpRtcpImpl*> child_modules_;
+  size_t padding_index_;
 
   // Send side
   NACKMethod            nack_method_;
@@ -441,10 +435,6 @@ class ModuleRtpRtcpImpl : public RtpRtcp {
   KeyFrameRequestMethod key_frame_req_method_;
 
   RemoteBitrateEstimator* remote_bitrate_;
-
-#ifdef MATLAB
-  MatlabPlot*           plot1_;
-#endif
 
   RtcpRttStats* rtt_stats_;
 

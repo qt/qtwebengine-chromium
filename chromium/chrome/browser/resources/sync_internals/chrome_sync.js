@@ -2,182 +2,125 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-var chrome = chrome || {};
+// require cr.js
+// require cr/event_target.js
+// require cr/util.js
 
-// TODO(akalin): Add mocking code for e.g. chrome.send() so that we
-// can test this without rebuilding chrome.
+cr.define('chrome.sync', function() {
+  'use strict';
 
-/**
- * Organize sync event listeners and asynchronous requests.
- * This object is one of a kind; its constructor is not public.
- * @type {Object}
- */
-chrome.sync = chrome.sync || {};
-(function() {
-
-// This Event class is a simplified version of the one from
-// event_bindings.js.
-function Event() {
-  this.listeners_ = [];
-}
-
-Event.prototype.addListener = function(listener) {
-  this.listeners_.push(listener);
-};
-
-Event.prototype.removeListener = function(listener) {
-  var i = this.findListener_(listener);
-  if (i == -1) {
-    return;
+  /**
+   * A simple timer to measure elapsed time.
+   * @constructor
+   */
+  function Timer() {
+    /**
+     * The time that this Timer was created.
+     * @type {number}
+     * @private
+     * @const
+     */
+    this.start_ = Date.now();
   }
-  this.listeners_.splice(i, 1);
-};
 
-Event.prototype.removeListeners = function() {
-  this.listeners_ = [];
-}
-
-Event.prototype.hasListener = function(listener) {
-  return this.findListener_(listener) > -1;
-};
-
-Event.prototype.hasListeners = function(listener) {
-  return this.listeners_.length > 0;
-};
-
-// Returns the index of the given listener, or -1 if not found.
-Event.prototype.findListener_ = function(listener) {
-  for (var i = 0; i < this.listeners_.length; i++) {
-    if (this.listeners_[i] == listener) {
-      return i;
-    }
-  }
-  return -1;
-};
-
-// Fires the event.  Called by the actual event callback.  Any
-// exceptions thrown by a listener are caught and logged.
-Event.prototype.fire = function() {
-  var args = Array.prototype.slice.call(arguments);
-  for (var i = 0; i < this.listeners_.length; i++) {
-    try {
-      this.listeners_[i].apply(null, args);
-    } catch (e) {
-      if (e instanceof Error) {
-        // Non-standard, but useful.
-        console.error(e.stack);
-      } else {
-        console.error(e);
-      }
-    }
-  }
-};
-
-chrome.sync.events = {
-  'service': [
-    'onServiceStateChanged'
-  ],
-
-  // See chrome/browser/sync/engine/syncapi.h for docs.
-  'notifier': [
-    'onNotificationStateChange',
-    'onIncomingNotification'
-  ],
-
-  'manager': [
-    'onChangesApplied',
-    'onChangesComplete',
-    'onSyncCycleCompleted',
-    'onConnectionStatusChange',
-    'onPassphraseRequired',
-    'onPassphraseAccepted',
-    'onInitializationComplete',
-    'onStopSyncingPermanently',
-    'onClearServerDataSucceeded',
-    'onClearServerDataFailed',
-    'onEncryptedTypesChanged',
-    'onEncryptionComplete',
-    'onActionableError',
-  ],
-
-  'transaction': [
-    'onTransactionWrite',
-  ]
-};
-
-for (var eventType in chrome.sync.events) {
-  var events = chrome.sync.events[eventType];
-  for (var i = 0; i < events.length; ++i) {
-    var event = events[i];
-    chrome.sync[event] = new Event();
-  }
-}
-
-function makeSyncFunction(name) {
-  var callbacks = [];
-
-  // Calls the function, assuming the last argument is a callback to be
-  // called with the return value.
-  var fn = function() {
-    var args = Array.prototype.slice.call(arguments);
-    callbacks.push(args.pop());
-    chrome.send(name, args);
+  /**
+   * @return {number} The elapsed seconds since this Timer was created.
+   */
+  Timer.prototype.getElapsedSeconds = function() {
+    return (Date.now() - this.start_) / 1000;
   };
 
-  // Handle a reply, assuming that messages are processed in FIFO order.
-  // Called by SyncInternalsUI::HandleJsReply().
-  fn.handleReply = function() {
-    var args = Array.prototype.slice.call(arguments);
-    // Remove the callback before we call it since the callback may
-    // throw.
-    var callback = callbacks.shift();
-    callback.apply(null, args);
+  /** @return {!Timer} An object which measures elapsed time. */
+  var makeTimer = function() {
+    return new Timer;
   };
 
-  return fn;
-}
+  /**
+   * @param {string} name The name of the event type.
+   * @param {!Object} details A collection of event-specific details.
+   */
+  var dispatchEvent = function(name, details) {
+    var e = new Event(name);
+    e.details = details;
+    chrome.sync.events.dispatchEvent(e);
+  };
 
-var syncFunctions = [
-  // Sync service functions.
-  'getAboutInfo',
+  /**
+   * Registers to receive a stream of events through
+   * chrome.sync.dispatchEvent().
+   */
+  var registerForEvents = function() {
+    chrome.send('registerForEvents');
+  };
 
-  // Notification functions.  See chrome/browser/sync/engine/syncapi.h
-  // for docs.
-  'getNotificationState',
-  'getNotificationInfo',
+  /**
+   * Registers to receive a stream of status counter update events
+   * chrome.sync.dispatchEvent().
+   */
+  var registerForPerTypeCounters = function() {
+    chrome.send('registerForPerTypeCounters');
+  }
 
-  // Client server communication logging functions.
-  'getClientServerTraffic',
+  /**
+   * Asks the browser to refresh our snapshot of sync state.  Should result
+   * in an onAboutInfoUpdated event being emitted.
+   */
+  var requestUpdatedAboutInfo = function() {
+    chrome.send('requestUpdatedAboutInfo');
+  };
 
-  // Node lookup functions.  See chrome/browser/sync/engine/syncapi.h
-  // for docs.
-  'getRootNodeDetails',
-  'getNodeSummariesById',
-  'getNodeDetailsById',
-  'getChildNodeIds',
-  'getAllNodes',
-];
+  /**
+   * Asks the browser to send us the list of registered types.  Should result
+   * in an onReceivedListOfTypes event being emitted.
+   */
+  var requestListOfTypes = function() {
+    chrome.send('requestListOfTypes');
+  };
 
-for (var i = 0; i < syncFunctions.length; ++i) {
-  var syncFunction = syncFunctions[i];
-  chrome.sync[syncFunction] = makeSyncFunction(syncFunction);
-}
+  /**
+   * Counter to uniquely identify requests while they're in progress.
+   * Used in the implementation of GetAllNodes.
+   */
+  var requestId = 0;
 
-/**
- * Returns an object which measures elapsed time.
- */
-chrome.sync.makeTimer = function() {
-  var start = new Date();
+  /**
+   * A map from counter values to asynchronous request callbacks.
+   * Used in the implementation of GetAllNodes.
+   * @type {{number: !Function}}
+   */
+  var requestCallbacks = {};
+
+  /**
+   * Asks the browser to send us a copy of all existing sync nodes.
+   * Will eventually invoke the given callback with the results.
+   *
+   * @param {function(!Object)} callback The function to call with the response.
+   */
+  var getAllNodes = function(callback) {
+    requestId++;
+    requestCallbacks[requestId] = callback;
+    chrome.send('getAllNodes', [requestId]);
+  };
+
+  /**
+   * Called from C++ with the response to a getAllNodes request.
+   * @param {number} id The requestId passed in with the request.
+   * @param {Object} response The response to the request.
+   */
+  var getAllNodesCallback = function(id, response) {
+    requestCallbacks[id](response);
+    requestCallbacks[id] = undefined;
+  };
 
   return {
-    /**
-     * @return {number} The number of seconds since the timer was
-     * created.
-     */
-    get elapsedSeconds() {
-      return ((new Date()).getTime() - start.getTime()) / 1000.0;
-    }
+    makeTimer: makeTimer,
+    dispatchEvent: dispatchEvent,
+    events: new cr.EventTarget(),
+    getAllNodes: getAllNodes,
+    getAllNodesCallback: getAllNodesCallback,
+    registerForEvents: registerForEvents,
+    registerForPerTypeCounters: registerForPerTypeCounters,
+    requestUpdatedAboutInfo: requestUpdatedAboutInfo,
+    requestListOfTypes: requestListOfTypes,
   };
-};
-
-})();
+});

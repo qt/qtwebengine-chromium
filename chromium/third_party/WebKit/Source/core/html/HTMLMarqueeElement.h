@@ -25,6 +25,7 @@
 
 #include "core/dom/ActiveDOMObject.h"
 #include "core/html/HTMLElement.h"
+#include "platform/Timer.h"
 
 namespace WebCore {
 
@@ -33,14 +34,14 @@ class RenderMarquee;
 
 class HTMLMarqueeElement FINAL : public HTMLElement, private ActiveDOMObject {
 public:
-    static PassRefPtr<HTMLMarqueeElement> create(Document&);
+    static PassRefPtrWillBeRawPtr<HTMLMarqueeElement> create(Document&);
 
     int minimumDelay() const;
 
     // DOM Functions
 
     void start();
-    void stop();
+    virtual void stop() OVERRIDE;
 
     int scrollAmount() const;
     void setScrollAmount(int, ExceptionState&);
@@ -56,19 +57,19 @@ public:
 private:
     explicit HTMLMarqueeElement(Document&);
 
+    virtual void didMoveToNewDocument(Document& oldDocument) OVERRIDE;
+
     virtual bool isPresentationAttribute(const QualifiedName&) const OVERRIDE;
     virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) OVERRIDE;
 
     // ActiveDOMObject
-    virtual void suspend();
-    virtual void resume();
+    virtual void suspend() OVERRIDE;
+    virtual void resume() OVERRIDE;
 
-    virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE FINAL;
+    virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
 
     RenderMarquee* renderMarquee() const;
 };
-
-DEFINE_NODE_TYPE_CASTS(HTMLMarqueeElement, hasTagName(HTMLNames::marqueeTag));
 
 } // namespace WebCore
 

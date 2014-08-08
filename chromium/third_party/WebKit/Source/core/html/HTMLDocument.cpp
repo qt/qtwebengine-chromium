@@ -53,11 +53,11 @@
 #include "config.h"
 #include "core/html/HTMLDocument.h"
 
-#include "HTMLNames.h"
 #include "bindings/v8/ScriptController.h"
-#include "core/frame/DOMWindow.h"
-#include "core/frame/Frame.h"
+#include "core/HTMLNames.h"
+#include "core/frame/LocalDOMWindow.h"
 #include "core/frame/FrameView.h"
+#include "core/frame/LocalFrame.h"
 #include "core/html/HTMLBodyElement.h"
 #include "core/page/FocusController.h"
 #include "core/page/FrameTree.h"
@@ -73,69 +73,20 @@ HTMLDocument::HTMLDocument(const DocumentInit& initializer, DocumentClassFlags e
 {
     ScriptWrappable::init(this);
     clearXMLVersion();
+    if (isSrcdocDocument() || initializer.importsController()) {
+        ASSERT(inNoQuirksMode());
+        lockCompatibilityMode();
+    }
 }
 
 HTMLDocument::~HTMLDocument()
 {
 }
 
-const AtomicString& HTMLDocument::dir()
-{
-    HTMLElement* b = body();
-    if (!b)
-        return nullAtom;
-    return b->getAttribute(dirAttr);
-}
-
-void HTMLDocument::setDir(const AtomicString& value)
-{
-    HTMLElement* b = body();
-    if (b)
-        b->setAttribute(dirAttr, value);
-}
-
-String HTMLDocument::designMode() const
-{
-    return inDesignMode() ? "on" : "off";
-}
-
-void HTMLDocument::setDesignMode(const String& value)
-{
-    InheritedBool mode;
-    if (equalIgnoringCase(value, "on"))
-        mode = on;
-    else if (equalIgnoringCase(value, "off"))
-        mode = off;
-    else
-        mode = inherit;
-    Document::setDesignMode(mode);
-}
-
-Element* HTMLDocument::activeElement()
-{
-    if (Element* element = treeScope().adjustedFocusedElement())
-        return element;
-    return body();
-}
-
-bool HTMLDocument::hasFocus()
-{
-    Page* page = this->page();
-    if (!page)
-        return false;
-    if (!page->focusController().isActive() || !page->focusController().isFocused())
-        return false;
-    if (Frame* focusedFrame = page->focusController().focusedFrame()) {
-        if (focusedFrame->tree().isDescendantOf(frame()))
-            return true;
-    }
-    return false;
-}
-
 HTMLBodyElement* HTMLDocument::htmlBodyElement() const
 {
     HTMLElement* body = this->body();
-    return (body && body->hasTagName(bodyTag)) ? toHTMLBodyElement(body) : 0;
+    return isHTMLBodyElement(body) ? toHTMLBodyElement(body) : 0;
 }
 
 const AtomicString& HTMLDocument::bodyAttributeValue(const QualifiedName& name) const
@@ -207,7 +158,7 @@ void HTMLDocument::setVlinkColor(const AtomicString& value)
     setBodyAttribute(vlinkAttr, value);
 }
 
-PassRefPtr<Document> HTMLDocument::cloneDocumentWithoutChildren()
+PassRefPtrWillBeRawPtr<Document> HTMLDocument::cloneDocumentWithoutChildren()
 {
     return create(DocumentInit(url()).withRegistrationContext(registrationContext()));
 }
@@ -221,7 +172,7 @@ void HTMLDocument::addItemToMap(HashCountedSet<AtomicString>& map, const AtomicS
     if (name.isEmpty())
         return;
     map.add(name);
-    if (Frame* f = frame())
+    if (LocalFrame* f = frame())
         f->script().namedItemAdded(this, name);
 }
 
@@ -230,7 +181,7 @@ void HTMLDocument::removeItemFromMap(HashCountedSet<AtomicString>& map, const At
     if (name.isEmpty())
         return;
     map.remove(name);
-    if (Frame* f = frame())
+    if (LocalFrame* f = frame())
         f->script().namedItemRemoved(this, name);
 }
 
@@ -321,29 +272,22 @@ bool HTMLDocument::isCaseSensitiveAttribute(const QualifiedName& attributeName)
     return !isPossibleHTMLAttr || !htmlCaseInsensitiveAttributesSet->contains(attributeName.localName().impl());
 }
 
-void HTMLDocument::clear()
+void HTMLDocument::write(LocalDOMWindow* callingWindow, const Vector<String>& text, ExceptionState& exceptionState)
 {
-    // FIXME: This does nothing, and that seems unlikely to be correct.
-    // We've long had a comment saying that IE doesn't support this.
-    // But I do see it in the documentation for Mozilla.
-}
-
-void HTMLDocument::write(DOMWindow* activeWindow, const Vector<String>& text)
-{
-    ASSERT(activeWindow);
+    ASSERT(callingWindow);
     StringBuilder builder;
     for (size_t i = 0; i < text.size(); ++i)
         builder.append(text[i]);
-    write(builder.toString(), activeWindow->document());
+    write(builder.toString(), callingWindow->document(), exceptionState);
 }
 
-void HTMLDocument::writeln(DOMWindow* activeWindow, const Vector<String>& text)
+void HTMLDocument::writeln(LocalDOMWindow* callingWindow, const Vector<String>& text, ExceptionState& exceptionState)
 {
-    ASSERT(activeWindow);
+    ASSERT(callingWindow);
     StringBuilder builder;
     for (size_t i = 0; i < text.size(); ++i)
         builder.append(text[i]);
-    writeln(builder.toString(), activeWindow->document());
+    writeln(builder.toString(), callingWindow->document(), exceptionState);
 }
 
 }

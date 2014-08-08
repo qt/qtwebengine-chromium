@@ -1,34 +1,11 @@
 // Copyright 2012 the V8 project authors. All rights reserved.
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-//       copyright notice, this list of conditions and the following
-//       disclaimer in the documentation and/or other materials provided
-//       with the distribution.
-//     * Neither the name of Google Inc. nor the names of its
-//       contributors may be used to endorse or promote products derived
-//       from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
 #ifndef V8_SERIALIZE_H_
 #define V8_SERIALIZE_H_
 
-#include "hashmap.h"
+#include "src/hashmap.h"
 
 namespace v8 {
 namespace internal {
@@ -40,7 +17,6 @@ enum TypeCode {
   BUILTIN,
   RUNTIME_FUNCTION,
   IC_UTILITY,
-  DEBUG_ADDRESS,
   STATS_COUNTER,
   TOP_ADDRESS,
   C_BUILTIN,
@@ -57,10 +33,8 @@ const int kFirstTypeCode = UNCLASSIFIED;
 const int kReferenceIdBits = 16;
 const int kReferenceIdMask = (1 << kReferenceIdBits) - 1;
 const int kReferenceTypeShift = kReferenceIdBits;
-const int kDebugRegisterBits = 4;
-const int kDebugIdShift = kDebugRegisterBits;
 
-const int kDeoptTableSerializeEntryCount = 12;
+const int kDeoptTableSerializeEntryCount = 64;
 
 // ExternalReferenceTable is a helper class that defines the relationship
 // between external references and their encodings. It is used to build
@@ -83,7 +57,7 @@ class ExternalReferenceTable {
 
  private:
   explicit ExternalReferenceTable(Isolate* isolate) : refs_(64) {
-      PopulateTable(isolate);
+    PopulateTable(isolate);
   }
 
   struct ExternalReferenceEntry {
@@ -123,8 +97,6 @@ class ExternalReferenceEncoder {
   }
 
   int IndexOf(Address key) const;
-
-  static bool Match(void* key1, void* key2) { return key1 == key2; }
 
   void Put(Address key, int index);
 
@@ -311,7 +283,7 @@ int SnapshotByteSource::GetInt() {
 
 
 void SnapshotByteSource::CopyRaw(byte* to, int number_of_bytes) {
-  OS::MemCopy(to, data_ + position_, number_of_bytes);
+  MemCopy(to, data_ + position_, number_of_bytes);
   position_ += number_of_bytes;
 }
 
@@ -414,7 +386,7 @@ class SerializationAddressMapper {
  public:
   SerializationAddressMapper()
       : no_allocation_(),
-        serialization_map_(new HashMap(&SerializationMatchFun)) { }
+        serialization_map_(new HashMap(HashMap::PointersMatch)) { }
 
   ~SerializationAddressMapper() {
     delete serialization_map_;
@@ -438,10 +410,6 @@ class SerializationAddressMapper {
   }
 
  private:
-  static bool SerializationMatchFun(void* key1, void* key2) {
-    return key1 == key2;
-  }
-
   static uint32_t Hash(HeapObject* obj) {
     return static_cast<int32_t>(reinterpret_cast<intptr_t>(obj->address()));
   }
@@ -470,19 +438,13 @@ class Serializer : public SerializerDeserializer {
   void VisitPointers(Object** start, Object** end);
   // You can call this after serialization to find out how much space was used
   // in each space.
-  int CurrentAllocationAddress(int space) {
+  int CurrentAllocationAddress(int space) const {
     ASSERT(space < kNumberOfSpaces);
     return fullness_[space];
   }
 
   Isolate* isolate() const { return isolate_; }
-  static void Enable(Isolate* isolate);
-  static void Disable();
 
-  // Call this when you have made use of the fact that there is no serialization
-  // going on.
-  static void TooLateToEnableNow() { too_late_to_enable_now_ = true; }
-  static bool enabled() { return serialization_enabled_; }
   SerializationAddressMapper* address_mapper() { return &address_mapper_; }
   void PutRoot(int index,
                HeapObject* object,
@@ -494,7 +456,6 @@ class Serializer : public SerializerDeserializer {
   static const int kInvalidRootIndex = -1;
 
   int RootIndex(HeapObject* heap_object, HowToCode from);
-  virtual bool ShouldBeInThePartialSnapshotCache(HeapObject* o) = 0;
   intptr_t root_index_wave_front() { return root_index_wave_front_; }
   void set_root_index_wave_front(intptr_t value) {
     ASSERT(value >= root_index_wave_front_);
@@ -579,11 +540,8 @@ class Serializer : public SerializerDeserializer {
   // relative addresses for back references.
   int fullness_[LAST_SPACE + 1];
   SnapshotByteSink* sink_;
-  int current_root_index_;
   ExternalReferenceEncoder* external_reference_encoder_;
-  static bool serialization_enabled_;
-  // Did we already make use of the fact that serialization was not enabled?
-  static bool too_late_to_enable_now_;
+
   SerializationAddressMapper address_mapper_;
   intptr_t root_index_wave_front_;
   void Pad();
@@ -591,8 +549,12 @@ class Serializer : public SerializerDeserializer {
   friend class ObjectSerializer;
   friend class Deserializer;
 
+  // We may not need the code address map for logging for every instance
+  // of the serializer.  Initialize it on demand.
+  void InitializeCodeAddressMap();
+
  private:
-  static CodeAddressMap* code_address_map_;
+  CodeAddressMap* code_address_map_;
   DISALLOW_COPY_AND_ASSIGN(Serializer);
 };
 
@@ -605,18 +567,19 @@ class PartialSerializer : public Serializer {
     : Serializer(isolate, sink),
       startup_serializer_(startup_snapshot_serializer) {
     set_root_index_wave_front(Heap::kStrongRootListLength);
+    InitializeCodeAddressMap();
   }
 
   // Serialize the objects reachable from a single object pointer.
-  virtual void Serialize(Object** o);
+  void Serialize(Object** o);
   virtual void SerializeObject(Object* o,
                                HowToCode how_to_code,
                                WhereToPoint where_to_point,
                                int skip);
 
- protected:
-  virtual int PartialSnapshotCacheIndex(HeapObject* o);
-  virtual bool ShouldBeInThePartialSnapshotCache(HeapObject* o) {
+ private:
+  int PartialSnapshotCacheIndex(HeapObject* o);
+  bool ShouldBeInThePartialSnapshotCache(HeapObject* o) {
     // Scripts should be referred only through shared function infos.  We can't
     // allow them to be part of the partial snapshot because they contain a
     // unique ID, and deserializing several partial snapshots containing script
@@ -629,7 +592,7 @@ class PartialSerializer : public Serializer {
                startup_serializer_->isolate()->heap()->fixed_cow_array_map();
   }
 
- private:
+
   Serializer* startup_serializer_;
   DISALLOW_COPY_AND_ASSIGN(PartialSerializer);
 };
@@ -644,6 +607,7 @@ class StartupSerializer : public Serializer {
     // which will repopulate the cache with objects needed by that partial
     // snapshot.
     isolate->set_serialize_partial_snapshot_cache_length(0);
+    InitializeCodeAddressMap();
   }
   // Serialize the current state of the heap.  The order is:
   // 1) Strong references.
@@ -659,11 +623,6 @@ class StartupSerializer : public Serializer {
     SerializeStrongReferences();
     SerializeWeakReferences();
     Pad();
-  }
-
- private:
-  virtual bool ShouldBeInThePartialSnapshotCache(HeapObject* o) {
-    return false;
   }
 };
 

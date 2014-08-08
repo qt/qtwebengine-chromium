@@ -1,34 +1,11 @@
 // Copyright 2012 the V8 project authors. All rights reserved.
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-//       copyright notice, this list of conditions and the following
-//       disclaimer in the documentation and/or other materials provided
-//       with the distribution.
-//     * Neither the name of Google Inc. nor the names of its
-//       contributors may be used to endorse or promote products derived
-//       from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
 #ifndef V8_ARGUMENTS_H_
 #define V8_ARGUMENTS_H_
 
-#include "allocation.h"
+#include "src/allocation.h"
 
 namespace v8 {
 namespace internal {
@@ -44,6 +21,9 @@ namespace internal {
 //   Object* Runtime_function(Arguments args) {
 //     ... use args[i] here ...
 //   }
+//
+// Note that length_ (whose value is in the integer range) is defined
+// as intptr_t to provide endian-neutrality on 64-bit archs.
 
 class Arguments BASE_EMBEDDED {
  public:
@@ -73,12 +53,12 @@ class Arguments BASE_EMBEDDED {
   }
 
   // Get the total number of arguments including the receiver.
-  int length() const { return length_; }
+  int length() const { return static_cast<int>(length_); }
 
   Object** arguments() { return arguments_; }
 
  private:
-  int length_;
+  intptr_t length_;
   Object** arguments_;
 };
 
@@ -299,17 +279,22 @@ double ClobberDoubleRegisters(double x1, double x2, double x3, double x4);
 #endif
 
 
-#define DECLARE_RUNTIME_FUNCTION(Type, Name)    \
-Type Name(int args_length, Object** args_object, Isolate* isolate)
+#define DECLARE_RUNTIME_FUNCTION(Name)    \
+Object* Name(int args_length, Object** args_object, Isolate* isolate)
 
-#define RUNTIME_FUNCTION(Type, Name)                                  \
-static Type __RT_impl_##Name(Arguments args, Isolate* isolate);       \
-Type Name(int args_length, Object** args_object, Isolate* isolate) {  \
-  CLOBBER_DOUBLE_REGISTERS();                                         \
-  Arguments args(args_length, args_object);                           \
-  return __RT_impl_##Name(args, isolate);                             \
-}                                                                     \
+#define RUNTIME_FUNCTION_RETURNS_TYPE(Type, Name)                        \
+static INLINE(Type __RT_impl_##Name(Arguments args, Isolate* isolate));  \
+Type Name(int args_length, Object** args_object, Isolate* isolate) {     \
+  CLOBBER_DOUBLE_REGISTERS();                                            \
+  Arguments args(args_length, args_object);                              \
+  return __RT_impl_##Name(args, isolate);                                \
+}                                                                        \
 static Type __RT_impl_##Name(Arguments args, Isolate* isolate)
+
+
+#define RUNTIME_FUNCTION(Name) RUNTIME_FUNCTION_RETURNS_TYPE(Object*, Name)
+#define RUNTIME_FUNCTION_RETURN_PAIR(Name) \
+    RUNTIME_FUNCTION_RETURNS_TYPE(ObjectPair, Name)
 
 #define RUNTIME_ARGUMENTS(isolate, args) \
   args.length(), args.arguments(), isolate

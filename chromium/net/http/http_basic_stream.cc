@@ -42,10 +42,6 @@ int HttpBasicStream::ReadResponseHeaders(const CompletionCallback& callback) {
   return parser()->ReadResponseHeaders(callback);
 }
 
-const HttpResponseInfo* HttpBasicStream::GetResponseInfo() const {
-  return parser()->GetResponseInfo();
-}
-
 int HttpBasicStream::ReadResponseBody(IOBuffer* buf,
                                       int buf_len,
                                       const CompletionCallback& callback) {
@@ -86,7 +82,9 @@ bool HttpBasicStream::IsConnectionReusable() const {
 }
 
 int64 HttpBasicStream::GetTotalReceivedBytes() const {
-  return parser()->received_bytes();
+  if (parser())
+    return parser()->received_bytes();
+  return 0;
 }
 
 bool HttpBasicStream::GetLoadTimingInfo(

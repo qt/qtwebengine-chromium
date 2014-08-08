@@ -25,12 +25,13 @@
 #define QNAME_DEFAULT_CONSTRUCTOR
 #endif
 
-#include "HTMLNames.h"
-#include "SVGNames.h"
-#include "XLinkNames.h"
-#include "XMLNSNames.h"
-#include "XMLNames.h"
 #include "core/dom/QualifiedName.h"
+
+#include "core/HTMLNames.h"
+#include "core/SVGNames.h"
+#include "core/XLinkNames.h"
+#include "core/XMLNSNames.h"
+#include "core/XMLNames.h"
 #include "wtf/Assertions.h"
 #include "wtf/HashSet.h"
 #include "wtf/MainThread.h"
@@ -59,42 +60,39 @@ static QualifiedNameCache& qualifiedNameCache()
 }
 
 struct QNameComponentsTranslator {
-    static unsigned hash(const QualifiedNameComponents& components)
+    static unsigned hash(const QualifiedNameData& data)
     {
-        return hashComponents(components);
+        return hashComponents(data.m_components);
     }
-    static bool equal(QualifiedName::QualifiedNameImpl* name, const QualifiedNameComponents& c)
+    static bool equal(QualifiedName::QualifiedNameImpl* name, const QualifiedNameData& data)
     {
-        return c.m_prefix == name->m_prefix.impl() && c.m_localName == name->m_localName.impl() && c.m_namespace == name->m_namespace.impl();
+        return data.m_components.m_prefix == name->m_prefix.impl()
+            && data.m_components.m_localName == name->m_localName.impl()
+            && data.m_components.m_namespace == name->m_namespace.impl();
     }
-    static void translate(QualifiedName::QualifiedNameImpl*& location, const QualifiedNameComponents& components, unsigned)
+    static void translate(QualifiedName::QualifiedNameImpl*& location, const QualifiedNameData& data, unsigned)
     {
-        location = QualifiedName::QualifiedNameImpl::create(AtomicString(components.m_prefix), AtomicString(components.m_localName), AtomicString(components.m_namespace)).leakRef();
+        const QualifiedNameComponents& components = data.m_components;
+        location = QualifiedName::QualifiedNameImpl::create(AtomicString(components.m_prefix), AtomicString(components.m_localName), AtomicString(components.m_namespace), data.m_isStatic).leakRef();
     }
 };
 
 QualifiedName::QualifiedName(const AtomicString& p, const AtomicString& l, const AtomicString& n)
 {
-    QualifiedNameComponents components = { p.impl(), l.impl(), n.isEmpty() ? nullAtom.impl() : n.impl() };
-    QualifiedNameCache::AddResult addResult = qualifiedNameCache().add<QNameComponentsTranslator>(components);
-    m_impl = *addResult.iterator;
-    if (!addResult.isNewEntry)
-        m_impl->ref();
+    QualifiedNameData data = { { p.impl(), l.impl(), n.isEmpty() ? nullAtom.impl() : n.impl() }, false };
+    QualifiedNameCache::AddResult addResult = qualifiedNameCache().add<QNameComponentsTranslator>(data);
+    m_impl = addResult.isNewEntry ? adoptRef(*addResult.storedValue) : *addResult.storedValue;
+}
+
+QualifiedName::QualifiedName(const AtomicString& p, const AtomicString& l, const AtomicString& n, bool isStatic)
+{
+    QualifiedNameData data = { { p.impl(), l.impl(), n.impl() }, isStatic };
+    QualifiedNameCache::AddResult addResult = qualifiedNameCache().add<QNameComponentsTranslator>(data);
+    m_impl = addResult.isNewEntry ? adoptRef(*addResult.storedValue) : *addResult.storedValue;
 }
 
 QualifiedName::~QualifiedName()
 {
-    deref();
-}
-
-void QualifiedName::deref()
-{
-#ifdef QNAME_DEFAULT_CONSTRUCTOR
-    if (!m_impl)
-        return;
-#endif
-    ASSERT(!isHashTableDeletedValue());
-    m_impl->deref();
 }
 
 QualifiedName::QualifiedNameImpl::~QualifiedNameImpl()
@@ -116,12 +114,12 @@ DEFINE_GLOBAL(QualifiedName, anyName, nullAtom, starAtom, starAtom)
 void QualifiedName::init()
 {
     ASSERT(starAtom.impl());
-    new ((void*)&anyName) QualifiedName(nullAtom, starAtom, starAtom);
+    new ((void*)&anyName) QualifiedName(nullAtom, starAtom, starAtom, true );
 }
 
-const QualifiedName& nullQName()
+const QualifiedName& QualifiedName::null()
 {
-    DEFINE_STATIC_LOCAL(QualifiedName, nullName, (nullAtom, nullAtom, nullAtom));
+    DEFINE_STATIC_LOCAL(QualifiedName, nullName, (nullAtom, nullAtom, nullAtom, true));
     return nullName;
 }
 
@@ -138,14 +136,14 @@ unsigned QualifiedName::QualifiedNameImpl::computeHash() const
     return hashComponents(components);
 }
 
-void createQualifiedName(void* targetAddress, StringImpl* name, const AtomicString& nameNamespace)
+void QualifiedName::createStatic(void* targetAddress, StringImpl* name, const AtomicString& nameNamespace)
 {
-    new (targetAddress) QualifiedName(nullAtom, AtomicString(name), nameNamespace);
+    new (targetAddress) QualifiedName(nullAtom, AtomicString(name), nameNamespace, true);
 }
 
-void createQualifiedName(void* targetAddress, StringImpl* name)
+void QualifiedName::createStatic(void* targetAddress, StringImpl* name)
 {
-    new (targetAddress) QualifiedName(nullAtom, AtomicString(name), nullAtom);
+    new (targetAddress) QualifiedName(nullAtom, AtomicString(name), nullAtom, true);
 }
 
 }

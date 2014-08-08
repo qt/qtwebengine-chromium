@@ -7,7 +7,7 @@
 #include <stdint.h>
 #include <sys/time.h>
 #include <time.h>
-#if defined(OS_ANDROID)
+#if defined(OS_ANDROID) && !defined(__LP64__)
 #include <time64.h>
 #endif
 #include <unistd.h>
@@ -32,7 +32,7 @@ namespace {
 // Define a system-specific SysTime that wraps either to a time_t or
 // a time64_t depending on the host system, and associated convertion.
 // See crbug.com/162007
-#if defined(OS_ANDROID)
+#if defined(OS_ANDROID) && !defined(__LP64__)
 typedef time64_t SysTime;
 
 SysTime SysTimeFromTimeStruct(struct tm* timestruct, bool is_local) {
@@ -49,7 +49,7 @@ void SysTimeToTimeStruct(SysTime t, struct tm* timestruct, bool is_local) {
     gmtime64_r(&t, timestruct);
 }
 
-#else  // OS_ANDROID
+#else  // OS_ANDROID && !__LP64__
 typedef time_t SysTime;
 
 SysTime SysTimeFromTimeStruct(struct tm* timestruct, bool is_local) {
@@ -140,7 +140,7 @@ Time Time::Now() {
   struct timezone tz = { 0, 0 };  // UTC
   if (gettimeofday(&tv, &tz) != 0) {
     DCHECK(0) << "Could not determine time of day";
-    LOG_ERRNO(ERROR) << "Call to gettimeofday failed.";
+    PLOG(ERROR) << "Call to gettimeofday failed.";
     // Return null instead of uninitialized |tv| value, which contains random
     // garbage data. This may result in the crash seen in crbug.com/147570.
     return Time();
@@ -320,18 +320,14 @@ TimeTicks TimeTicks::ThreadNow() {
 #endif
 }
 
+// Use the Chrome OS specific system-wide clock.
 #if defined(OS_CHROMEOS)
-// Force definition of the system trace clock; it is a chromeos-only api
-// at the moment and surfacing it in the right place requires mucking
-// with glibc et al.
-#define CLOCK_SYSTEM_TRACE 11
-
 // static
 TimeTicks TimeTicks::NowFromSystemTraceTime() {
   uint64_t absolute_micro;
 
   struct timespec ts;
-  if (clock_gettime(CLOCK_SYSTEM_TRACE, &ts) != 0) {
+  if (clock_gettime(kClockSystemTrace, &ts) != 0) {
     // NB: fall-back for a chrome os build running on linux
     return HighResNow();
   }
@@ -343,14 +339,14 @@ TimeTicks TimeTicks::NowFromSystemTraceTime() {
   return TimeTicks(absolute_micro);
 }
 
-#else // !defined(OS_CHROMEOS)
+#else  // !defined(OS_CHROMEOS)
 
 // static
 TimeTicks TimeTicks::NowFromSystemTraceTime() {
   return HighResNow();
 }
 
-#endif // defined(OS_CHROMEOS)
+#endif  // defined(OS_CHROMEOS)
 
 #endif  // !OS_MACOSX
 

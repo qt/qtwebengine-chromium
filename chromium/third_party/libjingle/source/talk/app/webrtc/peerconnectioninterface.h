@@ -76,6 +76,8 @@
 #include "talk/app/webrtc/jsep.h"
 #include "talk/app/webrtc/mediastreaminterface.h"
 #include "talk/app/webrtc/statstypes.h"
+#include "talk/app/webrtc/umametrics.h"
+#include "talk/base/fileutils.h"
 #include "talk/base/socketaddress.h"
 
 namespace talk_base {
@@ -115,6 +117,16 @@ class StatsObserver : public talk_base::RefCountInterface {
 
  protected:
   virtual ~StatsObserver() {}
+};
+
+class UMAObserver : public talk_base::RefCountInterface {
+ public:
+  virtual void IncrementCounter(PeerConnectionUMAMetricsCounter type) = 0;
+  virtual void AddHistogramSample(PeerConnectionUMAMetricsName type,
+                                  int value) = 0;
+
+ protected:
+  virtual ~UMAObserver() {}
 };
 
 class PeerConnectionInterface : public talk_base::RefCountInterface {
@@ -165,6 +177,30 @@ class PeerConnectionInterface : public talk_base::RefCountInterface {
   };
   typedef std::vector<IceServer> IceServers;
 
+  enum IceTransportsType {
+    kNone,
+    kRelay,
+    kNoHost,
+    kAll
+  };
+
+  struct RTCConfiguration {
+    IceTransportsType type;
+    IceServers servers;
+
+    RTCConfiguration() : type(kAll) {}
+    explicit RTCConfiguration(IceTransportsType type) : type(type) {}
+  };
+
+  // Used by GetStats to decide which stats to include in the stats reports.
+  // |kStatsOutputLevelStandard| includes the standard stats for Javascript API;
+  // |kStatsOutputLevelDebug| includes both the standard stats and additional
+  // stats for debugging purposes.
+  enum StatsOutputLevel {
+    kStatsOutputLevelStandard,
+    kStatsOutputLevelDebug,
+  };
+
   // Accessor methods to active local streams.
   virtual talk_base::scoped_refptr<StreamCollectionInterface>
       local_streams() = 0;
@@ -190,7 +226,8 @@ class PeerConnectionInterface : public talk_base::RefCountInterface {
       AudioTrackInterface* track) = 0;
 
   virtual bool GetStats(StatsObserver* observer,
-                        MediaStreamTrackInterface* track) = 0;
+                        MediaStreamTrackInterface* track,
+                        StatsOutputLevel level) = 0;
 
   virtual talk_base::scoped_refptr<DataChannelInterface> CreateDataChannel(
       const std::string& label,
@@ -228,6 +265,8 @@ class PeerConnectionInterface : public talk_base::RefCountInterface {
   // TODO(ronghuawu): Consider to change this so that the AddIceCandidate will
   // take the ownership of the |candidate|.
   virtual bool AddIceCandidate(const IceCandidateInterface* candidate) = 0;
+
+  virtual void RegisterUMAObserver(UMAObserver* observer) = 0;
 
   // Returns the current SignalingState.
   virtual SignalingState signaling_state() = 0;
@@ -276,8 +315,8 @@ class PeerConnectionObserver {
   // TODO(perkj): Make pure virtual.
   virtual void OnDataChannel(DataChannelInterface* data_channel) {}
 
-  // Triggered when renegotation is needed, for example the ICE has restarted.
-  virtual void OnRenegotiationNeeded() {}
+  // Triggered when renegotiation is needed, for example the ICE has restarted.
+  virtual void OnRenegotiationNeeded() = 0;
 
   // Called any time the IceConnectionState changes
   virtual void OnIceConnectionChange(
@@ -393,29 +432,42 @@ class PeerConnectionFactoryInterface : public talk_base::RefCountInterface {
   class Options {
    public:
     Options() :
-      enable_aec_dump(false),
       disable_encryption(false),
       disable_sctp_data_channels(false) {
     }
-    bool enable_aec_dump;
     bool disable_encryption;
     bool disable_sctp_data_channels;
   };
 
   virtual void SetOptions(const Options& options) = 0;
+
   virtual talk_base::scoped_refptr<PeerConnectionInterface>
-     CreatePeerConnection(
-         const PeerConnectionInterface::IceServers& configuration,
-         const MediaConstraintsInterface* constraints,
-         DTLSIdentityServiceInterface* dtls_identity_service,
-         PeerConnectionObserver* observer) = 0;
-  virtual talk_base::scoped_refptr<PeerConnectionInterface>
+      CreatePeerConnection(
+          const PeerConnectionInterface::RTCConfiguration& configuration,
+          const MediaConstraintsInterface* constraints,
+          PortAllocatorFactoryInterface* allocator_factory,
+          DTLSIdentityServiceInterface* dtls_identity_service,
+          PeerConnectionObserver* observer) = 0;
+
+  // TODO(mallinath) : Remove below versions after clients are updated
+  // to above method.
+  // In latest W3C WebRTC draft, PC constructor will take RTCConfiguration,
+  // and not IceServers. RTCConfiguration is made up of ice servers and
+  // ice transport type.
+  // http://dev.w3.org/2011/webrtc/editor/webrtc.html
+  inline talk_base::scoped_refptr<PeerConnectionInterface>
       CreatePeerConnection(
           const PeerConnectionInterface::IceServers& configuration,
           const MediaConstraintsInterface* constraints,
           PortAllocatorFactoryInterface* allocator_factory,
           DTLSIdentityServiceInterface* dtls_identity_service,
-          PeerConnectionObserver* observer) = 0;
+          PeerConnectionObserver* observer) {
+      PeerConnectionInterface::RTCConfiguration rtc_config;
+      rtc_config.servers = configuration;
+      return CreatePeerConnection(rtc_config, constraints, allocator_factory,
+                                  dtls_identity_service, observer);
+  }
+
   virtual talk_base::scoped_refptr<MediaStreamInterface>
       CreateLocalMediaStream(const std::string& label) = 0;
 
@@ -441,6 +493,13 @@ class PeerConnectionFactoryInterface : public talk_base::RefCountInterface {
   virtual talk_base::scoped_refptr<AudioTrackInterface>
       CreateAudioTrack(const std::string& label,
                        AudioSourceInterface* source) = 0;
+
+  // Starts AEC dump using existing file. Takes ownership of |file| and passes
+  // it on to VoiceEngine (via other objects) immediately, which will take
+  // the ownerhip. If the operation fails, the file will be closed.
+  // TODO(grunell): Remove when Chromium has started to use AEC in each source.
+  // http://crbug.com/264611.
+  virtual bool StartAecDump(talk_base::PlatformFile file) = 0;
 
  protected:
   // Dtor and ctor protected as objects shouldn't be created or deleted via

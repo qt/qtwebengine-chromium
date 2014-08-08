@@ -35,6 +35,7 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
+#if !ENABLE(OILPAN)
 void NamedNodeMap::ref()
 {
     m_element->ref();
@@ -44,63 +45,64 @@ void NamedNodeMap::deref()
 {
     m_element->deref();
 }
+#endif
 
-PassRefPtr<Node> NamedNodeMap::getNamedItem(const AtomicString& name) const
+PassRefPtrWillBeRawPtr<Node> NamedNodeMap::getNamedItem(const AtomicString& name) const
 {
     return m_element->getAttributeNode(name);
 }
 
-PassRefPtr<Node> NamedNodeMap::getNamedItemNS(const AtomicString& namespaceURI, const AtomicString& localName) const
+PassRefPtrWillBeRawPtr<Node> NamedNodeMap::getNamedItemNS(const AtomicString& namespaceURI, const AtomicString& localName) const
 {
     return m_element->getAttributeNodeNS(namespaceURI, localName);
 }
 
-PassRefPtr<Node> NamedNodeMap::removeNamedItem(const AtomicString& name, ExceptionState& exceptionState)
+PassRefPtrWillBeRawPtr<Node> NamedNodeMap::removeNamedItem(const AtomicString& name, ExceptionState& exceptionState)
 {
-    size_t index = m_element->hasAttributes() ? m_element->getAttributeItemIndex(name, m_element->shouldIgnoreAttributeCase()) : kNotFound;
+    size_t index = m_element->hasAttributes() ? m_element->findAttributeIndexByName(name, m_element->shouldIgnoreAttributeCase()) : kNotFound;
     if (index == kNotFound) {
-        exceptionState.throwUninformativeAndGenericDOMException(NotFoundError);
-        return 0;
+        exceptionState.throwDOMException(NotFoundError, "No item with name '" + name + "' was found.");
+        return nullptr;
     }
     return m_element->detachAttribute(index);
 }
 
-PassRefPtr<Node> NamedNodeMap::removeNamedItemNS(const AtomicString& namespaceURI, const AtomicString& localName, ExceptionState& exceptionState)
+PassRefPtrWillBeRawPtr<Node> NamedNodeMap::removeNamedItemNS(const AtomicString& namespaceURI, const AtomicString& localName, ExceptionState& exceptionState)
 {
-    size_t index = m_element->hasAttributes() ? m_element->getAttributeItemIndex(QualifiedName(nullAtom, localName, namespaceURI)) : kNotFound;
+    size_t index = m_element->hasAttributes() ? m_element->findAttributeIndexByName(QualifiedName(nullAtom, localName, namespaceURI)) : kNotFound;
     if (index == kNotFound) {
-        exceptionState.throwUninformativeAndGenericDOMException(NotFoundError);
-        return 0;
+        exceptionState.throwDOMException(NotFoundError, "No item with name '" + namespaceURI + "::" + localName + "' was found.");
+        return nullptr;
     }
     return m_element->detachAttribute(index);
 }
 
-PassRefPtr<Node> NamedNodeMap::setNamedItem(Node* node, ExceptionState& exceptionState)
+PassRefPtrWillBeRawPtr<Node> NamedNodeMap::setNamedItem(Node* node, ExceptionState& exceptionState)
 {
     if (!node) {
-        exceptionState.throwUninformativeAndGenericDOMException(NotFoundError);
-        return 0;
+        exceptionState.throwDOMException(NotFoundError, "The node provided was null.");
+        return nullptr;
     }
 
     // Not mentioned in spec: throw a HIERARCHY_REQUEST_ERROR if the user passes in a non-attribute node
     if (!node->isAttributeNode()) {
-        exceptionState.throwUninformativeAndGenericDOMException(HierarchyRequestError);
-        return 0;
+        exceptionState.throwDOMException(HierarchyRequestError, "The node provided is not an attribute node.");
+        return nullptr;
     }
 
     return m_element->setAttributeNode(toAttr(node), exceptionState);
 }
 
-PassRefPtr<Node> NamedNodeMap::setNamedItemNS(Node* node, ExceptionState& exceptionState)
+PassRefPtrWillBeRawPtr<Node> NamedNodeMap::setNamedItemNS(Node* node, ExceptionState& exceptionState)
 {
     return setNamedItem(node, exceptionState);
 }
 
-PassRefPtr<Node> NamedNodeMap::item(unsigned index) const
+PassRefPtrWillBeRawPtr<Node> NamedNodeMap::item(unsigned index) const
 {
     if (index >= length())
-        return 0;
-    return m_element->ensureAttr(m_element->attributeItem(index)->name());
+        return nullptr;
+    return m_element->ensureAttr(m_element->attributeAt(index).name());
 }
 
 size_t NamedNodeMap::length() const
@@ -108,6 +110,11 @@ size_t NamedNodeMap::length() const
     if (!m_element->hasAttributes())
         return 0;
     return m_element->attributeCount();
+}
+
+void NamedNodeMap::trace(Visitor* visitor)
+{
+    visitor->trace(m_element);
 }
 
 } // namespace WebCore

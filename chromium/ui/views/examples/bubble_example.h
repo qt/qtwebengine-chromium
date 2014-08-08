@@ -12,15 +12,17 @@ namespace views {
 namespace examples {
 
 // A Bubble example.
-class BubbleExample : public ExampleBase, public ButtonListener {
+class VIEWS_EXAMPLES_EXPORT BubbleExample : public ExampleBase,
+                                            public ButtonListener {
  public:
   BubbleExample();
   virtual ~BubbleExample();
 
-  // Overridden from ExampleBase.
+  // ExampleBase:
   virtual void CreateExampleView(View* container) OVERRIDE;
 
  private:
+  // ButtonListener:
   virtual void ButtonPressed(Button* sender, const ui::Event& event) OVERRIDE;
 
   Button* no_shadow_;
@@ -28,7 +30,6 @@ class BubbleExample : public ExampleBase, public ButtonListener {
   Button* small_shadow_;
   Button* align_to_edge_;
   Button* persistent_;
-  Button* fade_in_;
 
   DISALLOW_COPY_AND_ASSIGN(BubbleExample);
 };

@@ -26,24 +26,56 @@
 #ifndef TrackBase_h
 #define TrackBase_h
 
-#include "core/events/EventTarget.h"
+#include "platform/heap/Handle.h"
+#include "public/platform/WebMediaPlayer.h"
 #include "wtf/RefCounted.h"
+#include "wtf/text/AtomicString.h"
 
 namespace WebCore {
 
-class TrackBase : public RefCounted<TrackBase>, public EventTargetWithInlineData {
-    REFCOUNTED_EVENT_TARGET(TrackBase);
+class HTMLMediaElement;
+
+class TrackBase : public RefCountedWillBeRefCountedGarbageCollected<TrackBase> {
 public:
-    virtual ~TrackBase() { }
+    virtual ~TrackBase();
+
+    blink::WebMediaPlayer::TrackId trackId() const { return m_trackId; }
 
     enum Type { TextTrack, AudioTrack, VideoTrack };
     Type type() const { return m_type; }
 
+    const AtomicString& kind() const { return m_kind; }
+    virtual void setKind(const AtomicString&);
+
+    AtomicString label() const { return m_label; }
+    void setLabel(const AtomicString& label) { m_label = label; }
+
+    AtomicString language() const { return m_language; }
+    void setLanguage(const AtomicString& language) { m_language = language; }
+
+    String id() const { return m_id; }
+    void setId(const String& id) { m_id = id; }
+
+    void setMediaElement(HTMLMediaElement* mediaElement) { m_mediaElement = mediaElement; }
+    HTMLMediaElement* mediaElement() const { return m_mediaElement; }
+    Node* owner() const;
+
+    virtual void trace(Visitor*);
+
 protected:
-    explicit TrackBase(Type type) : m_type(type) { }
+    TrackBase(Type, const AtomicString& label, const AtomicString& language, const String& id);
+
+    virtual bool isValidKind(const AtomicString&) const = 0;
+    virtual AtomicString defaultKind() const = 0;
 
 private:
+    blink::WebMediaPlayer::TrackId m_trackId;
     Type m_type;
+    AtomicString m_kind;
+    AtomicString m_label;
+    AtomicString m_language;
+    String m_id;
+    RawPtrWillBeMember<HTMLMediaElement> m_mediaElement;
 };
 
 } // namespace WebCore

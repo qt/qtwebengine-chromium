@@ -224,57 +224,55 @@ QuicData* EncryptWithNonce(Aes128Gcm12Encrypter* encrypter,
 }
 
 TEST(Aes128Gcm12EncrypterTest, Encrypt) {
-  string key;
-  string iv;
-  string pt;
-  string aad;
-  string ct;
-  string tag;
-
   for (size_t i = 0; i < arraysize(test_group_array); i++) {
     SCOPED_TRACE(i);
-    const TestVector* test_vector = test_group_array[i];
+    const TestVector* test_vectors = test_group_array[i];
     const TestGroupInfo& test_info = test_group_info[i];
-    for (size_t j = 0; test_vector[j].key != NULL; j++) {
+    for (size_t j = 0; test_vectors[j].key != NULL; j++) {
       // Decode the test vector.
-      ASSERT_TRUE(DecodeHexString(test_vector[j].key, &key));
-      ASSERT_TRUE(DecodeHexString(test_vector[j].iv, &iv));
-      ASSERT_TRUE(DecodeHexString(test_vector[j].pt, &pt));
-      ASSERT_TRUE(DecodeHexString(test_vector[j].aad, &aad));
-      ASSERT_TRUE(DecodeHexString(test_vector[j].ct, &ct));
-      ASSERT_TRUE(DecodeHexString(test_vector[j].tag, &tag));
+      string key;
+      string iv;
+      string pt;
+      string aad;
+      string ct;
+      string tag;
+      ASSERT_TRUE(DecodeHexString(test_vectors[j].key, &key));
+      ASSERT_TRUE(DecodeHexString(test_vectors[j].iv, &iv));
+      ASSERT_TRUE(DecodeHexString(test_vectors[j].pt, &pt));
+      ASSERT_TRUE(DecodeHexString(test_vectors[j].aad, &aad));
+      ASSERT_TRUE(DecodeHexString(test_vectors[j].ct, &ct));
+      ASSERT_TRUE(DecodeHexString(test_vectors[j].tag, &tag));
 
       // The test vector's lengths should look sane. Note that the lengths
       // in |test_info| are in bits.
-      EXPECT_EQ(test_info.key_len, key.size() * 8);
-      EXPECT_EQ(test_info.iv_len, iv.size() * 8);
-      EXPECT_EQ(test_info.pt_len, pt.size() * 8);
-      EXPECT_EQ(test_info.aad_len, aad.size() * 8);
-      EXPECT_EQ(test_info.pt_len, ct.size() * 8);
-      EXPECT_EQ(test_info.tag_len, tag.size() * 8);
+      EXPECT_EQ(test_info.key_len, key.length() * 8);
+      EXPECT_EQ(test_info.iv_len, iv.length() * 8);
+      EXPECT_EQ(test_info.pt_len, pt.length() * 8);
+      EXPECT_EQ(test_info.aad_len, aad.length() * 8);
+      EXPECT_EQ(test_info.pt_len, ct.length() * 8);
+      EXPECT_EQ(test_info.tag_len, tag.length() * 8);
 
       Aes128Gcm12Encrypter encrypter;
       ASSERT_TRUE(encrypter.SetKey(key));
       scoped_ptr<QuicData> encrypted(EncryptWithNonce(
           &encrypter, iv,
-          // OpenSSL fails if NULL is set as the AAD, as opposed to a
-          // zero-length, non-NULL pointer. This deliberately tests that we
-          // handle this case.
-          aad.size() ? aad : StringPiece(), pt));
+          // This deliberately tests that the encrypter can handle an AAD that
+          // is set to NULL, as opposed to a zero-length, non-NULL pointer.
+          aad.length() ? aad : StringPiece(), pt));
       ASSERT_TRUE(encrypted.get());
 
       // The test vectors have 16 byte authenticators but this code only uses
       // the first 12.
       ASSERT_LE(static_cast<size_t>(Aes128Gcm12Encrypter::kAuthTagSize),
-                tag.size());
-      size_t tag_len = Aes128Gcm12Encrypter::kAuthTagSize;
+                tag.length());
+      tag.resize(Aes128Gcm12Encrypter::kAuthTagSize);
 
-      ASSERT_EQ(ct.size() + tag_len, encrypted->length());
+      ASSERT_EQ(ct.length() + tag.length(), encrypted->length());
       test::CompareCharArraysWithHexError("ciphertext", encrypted->data(),
-                                          ct.size(), ct.data(), ct.size());
+                                          ct.length(), ct.data(), ct.length());
       test::CompareCharArraysWithHexError(
-          "authentication tag", encrypted->data() + ct.size(), tag_len,
-          tag.data(), tag_len);
+          "authentication tag", encrypted->data() + ct.length(), tag.length(),
+          tag.data(), tag.length());
     }
   }
 }

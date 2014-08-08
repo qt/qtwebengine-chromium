@@ -23,6 +23,7 @@
 #define CSSFontFaceRule_h
 
 #include "core/css/CSSRule.h"
+#include "platform/heap/Handle.h"
 
 namespace WebCore {
 
@@ -30,9 +31,12 @@ class CSSStyleDeclaration;
 class StyleRuleFontFace;
 class StyleRuleCSSStyleDeclaration;
 
-class CSSFontFaceRule : public CSSRule {
+class CSSFontFaceRule FINAL : public CSSRule {
 public:
-    static PassRefPtr<CSSFontFaceRule> create(StyleRuleFontFace* rule, CSSStyleSheet* sheet) { return adoptRef(new CSSFontFaceRule(rule, sheet)); }
+    static PassRefPtrWillBeRawPtr<CSSFontFaceRule> create(StyleRuleFontFace* rule, CSSStyleSheet* sheet)
+    {
+        return adoptRefWillBeNoop(new CSSFontFaceRule(rule, sheet));
+    }
 
     virtual ~CSSFontFaceRule();
 
@@ -44,11 +48,13 @@ public:
 
     StyleRuleFontFace* styleRule() const { return m_fontFaceRule.get(); }
 
+    virtual void trace(Visitor*) OVERRIDE;
+
 private:
     CSSFontFaceRule(StyleRuleFontFace*, CSSStyleSheet* parent);
 
-    RefPtr<StyleRuleFontFace> m_fontFaceRule;
-    mutable RefPtr<StyleRuleCSSStyleDeclaration> m_propertiesCSSOMWrapper;
+    RefPtrWillBeMember<StyleRuleFontFace> m_fontFaceRule;
+    mutable RefPtrWillBeMember<StyleRuleCSSStyleDeclaration> m_propertiesCSSOMWrapper;
 };
 
 DEFINE_CSS_RULE_TYPE_CASTS(CSSFontFaceRule, FONT_FACE_RULE);

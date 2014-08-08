@@ -26,29 +26,32 @@
 #include "config.h"
 #include "core/html/HTMLAudioElement.h"
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
+#include "core/dom/shadow/ShadowRoot.h"
 
 namespace WebCore {
 
 using namespace HTMLNames;
 
-HTMLAudioElement::HTMLAudioElement(Document& document, bool createdByParser)
-    : HTMLMediaElement(audioTag, document, createdByParser)
+HTMLAudioElement::HTMLAudioElement(Document& document)
+    : HTMLMediaElement(audioTag, document)
 {
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLAudioElement> HTMLAudioElement::create(Document& document, bool createdByParser)
+PassRefPtrWillBeRawPtr<HTMLAudioElement> HTMLAudioElement::create(Document& document)
 {
-    RefPtr<HTMLAudioElement> audioElement(adoptRef(new HTMLAudioElement(document, createdByParser)));
-    audioElement->suspendIfNeeded();
-    return audioElement.release();
+    RefPtrWillBeRawPtr<HTMLAudioElement> audio = adoptRefWillBeNoop(new HTMLAudioElement(document));
+    audio->ensureUserAgentShadowRoot();
+    audio->suspendIfNeeded();
+    return audio.release();
 }
 
-PassRefPtr<HTMLAudioElement> HTMLAudioElement::createForJSConstructor(Document& document, const AtomicString& src)
+PassRefPtrWillBeRawPtr<HTMLAudioElement> HTMLAudioElement::createForJSConstructor(Document& document, const AtomicString& src)
 {
-    RefPtr<HTMLAudioElement> audio = adoptRef(new HTMLAudioElement(document, false));
-    audio->setPreload("auto");
+    RefPtrWillBeRawPtr<HTMLAudioElement> audio = adoptRefWillBeNoop(new HTMLAudioElement(document));
+    audio->ensureUserAgentShadowRoot();
+    audio->setPreload(AtomicString("auto", AtomicString::ConstructFromLiteral));
     if (!src.isNull())
         audio->setSrc(src);
     audio->suspendIfNeeded();

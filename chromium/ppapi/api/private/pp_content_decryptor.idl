@@ -81,7 +81,7 @@ struct PP_DecryptSubsampleDescription {
  * The <code>PP_EncryptedBlockInfo</code> struct contains all the information
  * needed to decrypt an encrypted block.
  */
-[assert_size(248)]
+[assert_size(240)]
 struct PP_EncryptedBlockInfo {
   /**
    * Information needed by the client to track the block to be decrypted.
@@ -92,11 +92,6 @@ struct PP_EncryptedBlockInfo {
    * Size in bytes of data to be decrypted (data_offset included).
    */
   uint32_t data_size;
-
-  /**
-   * Size in bytes of data to be discarded before applying the decryption.
-   */
-  uint32_t data_offset;
 
   /**
    * Key ID of the block to be decrypted.
@@ -121,12 +116,6 @@ struct PP_EncryptedBlockInfo {
    */
   PP_DecryptSubsampleDescription[16] subsamples;
   uint32_t num_subsamples;
-
-  /**
-   * 4-byte padding to make the size of <code>PP_EncryptedBlockInfo</code>
-   * a multiple of 8 bytes. The value of this field should not be used.
-   */
-  uint32_t padding;
 };
 
 /**
@@ -337,7 +326,8 @@ struct PP_AudioDecoderConfig {
 enum PP_VideoCodec {
   PP_VIDEOCODEC_UNKNOWN = 0,
   PP_VIDEOCODEC_VP8 = 1,
-  PP_VIDEOCODEC_H264 = 2
+  PP_VIDEOCODEC_H264 = 2,
+  PP_VIDEOCODEC_VP9 = 3
 };
 
 /**
@@ -348,7 +338,7 @@ enum PP_VideoCodec {
 [assert_size(4)]
 enum PP_VideoCodecProfile {
   PP_VIDEOCODECPROFILE_UNKNOWN = 0,
-  PP_VIDEOCODECPROFILE_VP8_MAIN = 1,
+  PP_VIDEOCODECPROFILE_NOT_NEEDED = 1,
   PP_VIDEOCODECPROFILE_H264_BASELINE = 2,
   PP_VIDEOCODECPROFILE_H264_MAIN = 3,
   PP_VIDEOCODECPROFILE_H264_EXTENDED = 4,
@@ -408,4 +398,27 @@ struct PP_VideoDecoderConfig {
 enum PP_DecryptorStreamType {
   PP_DECRYPTORSTREAMTYPE_AUDIO = 0,
   PP_DECRYPTORSTREAMTYPE_VIDEO = 1
+};
+
+/**
+ * <code>PP_SessionType</code> contains session type constants.
+ */
+[assert_size(4)]
+enum PP_SessionType {
+  PP_SESSIONTYPE_TEMPORARY = 0,
+  PP_SESSIONTYPE_PERSISTENT = 1
+};
+
+/**
+ * <code>PP_CdmExceptionCode</code> contains exception code constants.
+ */
+[assert_size(4)]
+enum PP_CdmExceptionCode {
+  PP_CDMEXCEPTIONCODE_NOTSUPPORTEDERROR = 1,
+  PP_CDMEXCEPTIONCODE_INVALIDSTATEERROR = 2,
+  PP_CDMEXCEPTIONCODE_INVALIDACCESSERROR = 3,
+  PP_CDMEXCEPTIONCODE_QUOTAEXCEEDEDERROR = 4,
+  PP_CDMEXCEPTIONCODE_UNKNOWNERROR = 5,
+  PP_CDMEXCEPTIONCODE_CLIENTERROR = 6,
+  PP_CDMEXCEPTIONCODE_OUTPUTERROR = 7
 };

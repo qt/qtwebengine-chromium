@@ -29,17 +29,17 @@
  */
 
 #include "config.h"
-#include "FullscreenController.h"
+#include "web/FullscreenController.h"
 
-#include "RuntimeEnabledFeatures.h"
-#include "WebFrame.h"
-#include "WebViewClient.h"
-#include "WebViewImpl.h"
 #include "core/dom/Document.h"
 #include "core/dom/FullscreenElementStack.h"
+#include "core/frame/LocalFrame.h"
 #include "core/html/HTMLMediaElement.h"
-#include "core/frame/Frame.h"
 #include "platform/LayoutTestSupport.h"
+#include "platform/RuntimeEnabledFeatures.h"
+#include "public/web/WebFrame.h"
+#include "public/web/WebViewClient.h"
+#include "web/WebViewImpl.h"
 
 using namespace WebCore;
 
@@ -65,7 +65,7 @@ void FullscreenController::willEnterFullScreen()
     // Ensure that this element's document is still attached.
     Document& doc = m_provisionalFullScreenElement->document();
     if (doc.frame()) {
-        FullscreenElementStack::from(&doc)->webkitWillEnterFullScreenForElement(m_provisionalFullScreenElement.get());
+        FullscreenElementStack::from(doc).webkitWillEnterFullScreenForElement(m_provisionalFullScreenElement.get());
         m_fullScreenFrame = doc.frame();
     }
     m_provisionalFullScreenElement.clear();
@@ -77,18 +77,21 @@ void FullscreenController::didEnterFullScreen()
         return;
 
     if (Document* doc = m_fullScreenFrame->document()) {
-        if (FullscreenElementStack::isFullScreen(doc)) {
+        if (FullscreenElementStack::isFullScreen(*doc)) {
             if (!m_exitFullscreenPageScaleFactor) {
                 m_exitFullscreenPageScaleFactor = m_webViewImpl->pageScaleFactor();
                 m_exitFullscreenScrollOffset = m_webViewImpl->mainFrame()->scrollOffset();
-                m_webViewImpl->setPageScaleFactorPreservingScrollOffset(1.0f);
+                m_exitFullscreenPinchViewportOffset = m_webViewImpl->pinchViewportOffset();
+                m_webViewImpl->setPageScaleFactor(1.0f);
+                m_webViewImpl->setMainFrameScrollOffset(IntPoint());
+                m_webViewImpl->setPinchViewportOffset(FloatPoint());
             }
 
-            FullscreenElementStack::from(doc)->webkitDidEnterFullScreenForElement(0);
+            FullscreenElementStack::from(*doc).webkitDidEnterFullScreenForElement(0);
             if (RuntimeEnabledFeatures::overlayFullscreenVideoEnabled()) {
-                Element* element = FullscreenElementStack::currentFullScreenElementFrom(doc);
+                Element* element = FullscreenElementStack::currentFullScreenElementFrom(*doc);
                 ASSERT(element);
-                if (element->isMediaElement() && m_webViewImpl->layerTreeView())
+                if (isHTMLMediaElement(*element) && m_webViewImpl->layerTreeView())
                     m_webViewImpl->layerTreeView()->setHasTransparentBackground(true);
             }
         }
@@ -101,10 +104,10 @@ void FullscreenController::willExitFullScreen()
         return;
 
     if (Document* doc = m_fullScreenFrame->document()) {
-        FullscreenElementStack* fullscreen = FullscreenElementStack::fromIfExists(doc);
+        FullscreenElementStack* fullscreen = FullscreenElementStack::fromIfExists(*doc);
         if (!fullscreen)
             return;
-        if (fullscreen->isFullScreen(doc)) {
+        if (fullscreen->isFullScreen(*doc)) {
             // When the client exits from full screen we have to call webkitCancelFullScreen to
             // notify the document. While doing that, suppress notifications back to the client.
             m_isCancelingFullScreen = true;
@@ -123,11 +126,12 @@ void FullscreenController::didExitFullScreen()
         return;
 
     if (Document* doc = m_fullScreenFrame->document()) {
-        if (FullscreenElementStack* fullscreen = FullscreenElementStack::fromIfExists(doc)) {
+        if (FullscreenElementStack* fullscreen = FullscreenElementStack::fromIfExists(*doc)) {
             if (fullscreen->webkitIsFullScreen()) {
                 if (m_exitFullscreenPageScaleFactor) {
-                    m_webViewImpl->setPageScaleFactor(m_exitFullscreenPageScaleFactor,
-                        WebPoint(m_exitFullscreenScrollOffset.width(), m_exitFullscreenScrollOffset.height()));
+                    m_webViewImpl->setPageScaleFactor(m_exitFullscreenPageScaleFactor);
+                    m_webViewImpl->setMainFrameScrollOffset(IntPoint(m_exitFullscreenScrollOffset));
+                    m_webViewImpl->setPinchViewportOffset(m_exitFullscreenPinchViewportOffset);
                     m_exitFullscreenPageScaleFactor = 0;
                     m_exitFullscreenScrollOffset = IntSize();
                 }
@@ -157,12 +161,12 @@ void FullscreenController::enterFullScreenForElement(WebCore::Element* element)
     }
 
     if (RuntimeEnabledFeatures::overlayFullscreenVideoEnabled()
-        && element && element->isMediaElement()
+        && isHTMLMediaElement(element)
         // FIXME: There is no embedder-side handling in layout test mode.
         && !isRunningLayoutTest()) {
         HTMLMediaElement* mediaElement = toHTMLMediaElement(element);
-        if (mediaElement->player() && mediaElement->player()->canShowFullscreenOverlay()) {
-            mediaElement->player()->showFullscreenOverlay();
+        if (mediaElement->webMediaPlayer() && mediaElement->webMediaPlayer()->canEnterFullscreen()) {
+            mediaElement->webMediaPlayer()->enterFullscreen();
             m_provisionalFullScreenElement = element;
             return;
         }
@@ -181,12 +185,12 @@ void FullscreenController::exitFullScreenForElement(WebCore::Element* element)
     if (m_isCancelingFullScreen)
         return;
     if (RuntimeEnabledFeatures::overlayFullscreenVideoEnabled()
-        && element && element->isMediaElement()
+        && isHTMLMediaElement(element)
         // FIXME: There is no embedder-side handling in layout test mode.
         && !isRunningLayoutTest()) {
         HTMLMediaElement* mediaElement = toHTMLMediaElement(element);
-        if (mediaElement->player())
-            mediaElement->player()->hideFullscreenOverlay();
+        if (mediaElement->webMediaPlayer())
+            mediaElement->webMediaPlayer()->exitFullscreen();
         return;
     }
     if (WebViewClient* client = m_webViewImpl->client())

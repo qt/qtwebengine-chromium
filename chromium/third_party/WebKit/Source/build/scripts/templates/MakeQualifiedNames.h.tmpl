@@ -1,10 +1,11 @@
-{% from "macros.tmpl" import license -%}
+{% from "macros.tmpl" import license %}
 {{ license() }}
 
 #ifndef {{namespace}}Names_h
 #define {{namespace}}Names_h
 
 #include "core/dom/QualifiedName.h"
+#include "wtf/PassOwnPtr.h"
 
 namespace WebCore {
 namespace {{namespace}}Names {
@@ -14,23 +15,22 @@ namespace {{namespace}}Names {
 extern const WTF::AtomicString {{namespace_prefix}}NamespaceURI;
 
 // Tags
-{%- for tag in tags|sort %}
+{% for tag in tags|sort %}
 extern const WebCore::QualifiedName {{tag|symbol}}Tag;
-{%- endfor %}
+{% endfor %}
 
 // Attributes
-{%- for attr in attrs|sort %}
+{% for attr in attrs|sort %}
 extern const WebCore::QualifiedName {{attr|symbol}}Attr;
-{%- endfor %}
+{% endfor %}
 
 #endif // {{namespace|to_macro_style}}_NAMES_HIDE_GLOBALS
-
-{%- if tags %}
+{% if tags %}
 const unsigned {{namespace}}TagsCount = {{tags|count}};
-const WebCore::QualifiedName* const* get{{namespace}}Tags();
-{%- endif %}
+PassOwnPtr<const QualifiedName*[]> get{{namespace}}Tags();
+{% endif %}
 const unsigned {{namespace}}AttrsCount = {{attrs|count}};
-const WebCore::QualifiedName* const* get{{namespace}}Attrs();
+PassOwnPtr<const QualifiedName*[]> get{{namespace}}Attrs();
 
 void init();
 

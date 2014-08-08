@@ -24,30 +24,19 @@
 
 #include "core/rendering/svg/RenderSVGGradientStop.h"
 #include "core/rendering/svg/RenderSVGResource.h"
-#include "core/svg/SVGElementInstance.h"
 
 namespace WebCore {
 
-// Animated property definitions
-DEFINE_ANIMATED_NUMBER(SVGStopElement, SVGNames::offsetAttr, Offset, offset)
-
-BEGIN_REGISTER_ANIMATED_PROPERTIES(SVGStopElement)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(offset)
-    REGISTER_PARENT_ANIMATED_PROPERTIES(SVGElement)
-END_REGISTER_ANIMATED_PROPERTIES
-
 inline SVGStopElement::SVGStopElement(Document& document)
     : SVGElement(SVGNames::stopTag, document)
-    , m_offset(0)
+    , m_offset(SVGAnimatedNumber::create(this, SVGNames::offsetAttr, SVGNumberAcceptPercentage::create()))
 {
     ScriptWrappable::init(this);
-    registerAnimatedPropertiesForSVGStopElement();
+
+    addToPropertyMap(m_offset);
 }
 
-PassRefPtr<SVGStopElement> SVGStopElement::create(Document& document)
-{
-    return adoptRef(new SVGStopElement(document));
-}
+DEFINE_NODE_FACTORY(SVGStopElement)
 
 bool SVGStopElement::isSupportedAttribute(const QualifiedName& attrName)
 {
@@ -64,15 +53,14 @@ void SVGStopElement::parseAttribute(const QualifiedName& name, const AtomicStrin
         return;
     }
 
-    if (name == SVGNames::offsetAttr) {
-        if (value.endsWith('%'))
-            setOffsetBaseValue(value.string().left(value.length() - 1).toFloat() / 100.0f);
-        else
-            setOffsetBaseValue(value.toFloat());
-        return;
-    }
+    SVGParsingError parseError = NoError;
 
-    ASSERT_NOT_REACHED();
+    if (name == SVGNames::offsetAttr)
+        m_offset->setBaseValueAsString(value, parseError);
+    else
+        ASSERT_NOT_REACHED();
+
+    reportAttributeParsingError(parseError, name, value);
 }
 
 void SVGStopElement::svgAttributeChanged(const QualifiedName& attrName)
@@ -82,7 +70,7 @@ void SVGStopElement::svgAttributeChanged(const QualifiedName& attrName)
         return;
     }
 
-    SVGElementInstance::InvalidationGuard invalidationGuard(this);
+    SVGElement::InvalidationGuard invalidationGuard(this);
 
     if (!renderer())
         return;
@@ -112,10 +100,10 @@ Color SVGStopElement::stopColorIncludingOpacity() const
     // which the renderer or style is null. This entire class is scheduled for removal (Bug WK 86941)
     // and we will tolerate this null check until then.
     if (!style || !style->svgStyle())
-        return Color(Color::transparent, true); // Transparent black.
+        return Color(Color::transparent); // Transparent black.
 
     const SVGRenderStyle* svgStyle = style->svgStyle();
-    return colorWithOverrideAlpha(svgStyle->stopColor().rgb(), svgStyle->stopOpacity());
+    return svgStyle->stopColor().combineWithAlpha(svgStyle->stopOpacity());
 }
 
 }

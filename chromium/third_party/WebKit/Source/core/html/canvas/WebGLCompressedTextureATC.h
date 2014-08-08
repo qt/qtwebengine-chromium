@@ -34,17 +34,17 @@ namespace WebCore {
 
 class WebGLTexture;
 
-class WebGLCompressedTextureATC : public WebGLExtension, public ScriptWrappable {
+class WebGLCompressedTextureATC FINAL : public WebGLExtension, public ScriptWrappable {
 public:
-    static PassRefPtr<WebGLCompressedTextureATC> create(WebGLRenderingContext*);
-    static bool supported(WebGLRenderingContext*);
+    static PassRefPtr<WebGLCompressedTextureATC> create(WebGLRenderingContextBase*);
+    static bool supported(WebGLRenderingContextBase*);
     static const char* extensionName();
 
     virtual ~WebGLCompressedTextureATC();
-    virtual ExtensionName name() const;
+    virtual WebGLExtensionName name() const OVERRIDE;
 
 private:
-    WebGLCompressedTextureATC(WebGLRenderingContext*);
+    WebGLCompressedTextureATC(WebGLRenderingContextBase*);
 };
 
 } // namespace WebCore

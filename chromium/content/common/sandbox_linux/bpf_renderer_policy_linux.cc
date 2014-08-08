@@ -18,31 +18,18 @@ using sandbox::SyscallSets;
 
 namespace content {
 
-namespace {
-
-inline bool IsUsingToolKitGtk() {
-#if defined(TOOLKIT_GTK)
-  return true;
-#else
-  return false;
-#endif
-}
-
-}  // namespace
-
 RendererProcessPolicy::RendererProcessPolicy() {}
 RendererProcessPolicy::~RendererProcessPolicy() {}
 
 ErrorCode RendererProcessPolicy::EvaluateSyscall(SandboxBPF* sandbox,
                                                  int sysno) const {
   switch (sysno) {
-    case __NR_clone:
-      return sandbox::RestrictCloneToThreadsAndEPERMFork(sandbox);
     case __NR_ioctl:
       return sandbox::RestrictIoctl(sandbox);
-    case __NR_prctl:
-      return sandbox::RestrictPrctl(sandbox);
     // Allow the system calls below.
+    // The baseline policy allows __NR_clock_gettime. Allow
+    // clock_getres() for V8. crbug.com/329053.
+    case __NR_clock_getres:
     case __NR_fdatasync:
     case __NR_fsync:
     case __NR_getpriority:
@@ -69,17 +56,6 @@ ErrorCode RendererProcessPolicy::EvaluateSyscall(SandboxBPF* sandbox,
     case __NR_prlimit64:
       return ErrorCode(EPERM);  // See crbug.com/160157.
     default:
-      if (IsUsingToolKitGtk()) {
-#if defined(__x86_64__) || defined(__arm__)
-        if (SyscallSets::IsSystemVSharedMemory(sysno))
-          return ErrorCode(ErrorCode::ERR_ALLOWED);
-#endif
-#if defined(__i386__)
-        if (SyscallSets::IsSystemVIpc(sysno))
-          return ErrorCode(ErrorCode::ERR_ALLOWED);
-#endif
-      }
-
       // Default on the content baseline policy.
       return SandboxBPFBasePolicy::EvaluateSyscall(sandbox, sysno);
   }

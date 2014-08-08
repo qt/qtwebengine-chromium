@@ -37,45 +37,32 @@
 
 namespace WebCore {
 
-PassRefPtr<AnimatableValue> AnimatableImage::interpolateTo(const AnimatableValue* value, double fraction) const
+// FIXME: Once cross-fade works on generated image types, remove this method.
+bool AnimatableImage::usesDefaultInterpolationWith(const AnimatableValue* value) const
 {
-    if (fraction <= 0 || fraction >= 1)
-        return defaultInterpolateTo(this, value, fraction);
-    RefPtr<CSSValue> fromValue = this->toCSSValue();
-    // FIXME: Once cross-fade works on generated image types, remove this check.
-    if (fromValue->isImageGeneratorValue())
-        return defaultInterpolateTo(this, value, fraction);
-    if (!fromValue->isImageValue() && !fromValue->isImageGeneratorValue()) {
-        if (!m_image->isImageResource())
-            return defaultInterpolateTo(this, value, fraction);
-        ImageResource* resource = static_cast<ImageResource*>(m_image->data());
-        fromValue = CSSImageValue::create(resource->url(), m_image.get());
-    }
-    const AnimatableImage* image = toAnimatableImage(value);
-    RefPtr<CSSValue> toValue = image->toCSSValue();
-    // FIXME: Once cross-fade works on generated image types, remove this check.
-    if (toValue->isImageGeneratorValue())
-        return defaultInterpolateTo(this, value, fraction);
-    if (!toValue->isImageValue() && !toValue->isImageGeneratorValue()) {
-        if (!image->m_image->isImageResource())
-            return defaultInterpolateTo(this, value, fraction);
-        ImageResource* resource = static_cast<ImageResource*>(image->m_image->data());
-        toValue = CSSImageValue::create(resource->url(), image->m_image.get());
-    }
-    RefPtr<CSSCrossfadeValue> crossfadeValue = CSSCrossfadeValue::create(fromValue, toValue);
-    crossfadeValue->setPercentage(CSSPrimitiveValue::create(fraction, CSSPrimitiveValue::CSS_NUMBER));
-    return create(StyleGeneratedImage::create(crossfadeValue.get()).get());
+    if (!m_value->isImageValue())
+        return true;
+    if (!toAnimatableImage(value)->toCSSValue()->isImageValue())
+        return true;
+    return false;
 }
 
-PassRefPtr<AnimatableValue> AnimatableImage::addWith(const AnimatableValue* value) const
+PassRefPtrWillBeRawPtr<AnimatableValue> AnimatableImage::interpolateTo(const AnimatableValue* value, double fraction) const
 {
-    // FIXME: Correct procedure is defined here: http://dev.w3.org/fxtf/web-animations/#the--image--type
-    return defaultAddWith(this, value);
+    if (fraction <= 0 || fraction >= 1 || usesDefaultInterpolationWith(value))
+        return defaultInterpolateTo(this, value, fraction);
+
+    CSSValue* fromValue = toCSSValue();
+    CSSValue* toValue = toAnimatableImage(value)->toCSSValue();
+
+    RefPtrWillBeRawPtr<CSSCrossfadeValue> crossfadeValue = CSSCrossfadeValue::create(fromValue, toValue);
+    crossfadeValue->setPercentage(CSSPrimitiveValue::create(fraction, CSSPrimitiveValue::CSS_NUMBER));
+    return create(crossfadeValue);
 }
 
 bool AnimatableImage::equalTo(const AnimatableValue* value) const
 {
-    return StyleImage::imagesEquivalent(m_image.get(), toAnimatableImage(value)->m_image.get());
+    return m_value->equals(*toAnimatableImage(value)->m_value.get());
 }
 
 }

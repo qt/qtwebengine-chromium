@@ -24,7 +24,7 @@
  */
 
 #include "config.h"
-#include "V8DeviceOrientationEvent.h"
+#include "bindings/modules/v8/V8DeviceOrientationEvent.h"
 
 #include "bindings/v8/V8Binding.h"
 #include "modules/device_orientation/DeviceOrientationData.h"
@@ -34,8 +34,8 @@ namespace WebCore {
 
 void V8DeviceOrientationEvent::initDeviceOrientationEventMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
-    DeviceOrientationEvent* imp = V8DeviceOrientationEvent::toNative(info.Holder());
-    V8TRYCATCH_FOR_V8STRINGRESOURCE_VOID(V8StringResource<>, type, info[0]);
+    DeviceOrientationEvent* impl = V8DeviceOrientationEvent::toNative(info.Holder());
+    TOSTRING_VOID(V8StringResource<>, type, info[0]);
     bool bubbles = info[1]->BooleanValue();
     bool cancelable = info[2]->BooleanValue();
     // If alpha, beta, gamma or absolute are null or undefined, mark them as not provided.
@@ -48,8 +48,8 @@ void V8DeviceOrientationEvent::initDeviceOrientationEventMethodCustom(const v8::
     double gamma = info[5]->NumberValue();
     bool absoluteProvided = !isUndefinedOrNull(info[6]);
     bool absolute = info[6]->BooleanValue();
-    RefPtr<DeviceOrientationData> orientation = DeviceOrientationData::create(alphaProvided, alpha, betaProvided, beta, gammaProvided, gamma, absoluteProvided, absolute);
-    imp->initDeviceOrientationEvent(type, bubbles, cancelable, orientation.get());
+    RefPtrWillBeRawPtr<DeviceOrientationData> orientation = DeviceOrientationData::create(alphaProvided, alpha, betaProvided, beta, gammaProvided, gamma, absoluteProvided, absolute);
+    impl->initDeviceOrientationEvent(type, bubbles, cancelable, orientation.get());
 }
 
 } // namespace WebCore

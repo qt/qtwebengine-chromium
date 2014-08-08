@@ -51,6 +51,8 @@ def determine_result_type(failure_list):
     failure_types = [type(f) for f in failure_list]
     if FailureCrash in failure_types:
         return test_expectations.CRASH
+    elif FailureLeak in failure_types:
+        return test_expectations.LEAK
     elif FailureTimeout in failure_types:
         return test_expectations.TIMEOUT
     elif FailureEarlyExit in failure_types:
@@ -61,7 +63,8 @@ def determine_result_type(failure_list):
           FailureMissingAudio in failure_types):
         return test_expectations.MISSING
     else:
-        is_text_failure = FailureTextMismatch in failure_types
+        is_text_failure = (FailureTextMismatch in failure_types or
+                           FailureTestHarnessAssertion in failure_types)
         is_image_failure = (FailureImageHashIncorrect in failure_types or
                             FailureImageHashMismatch in failure_types)
         is_audio_failure = (FailureAudioMismatch in failure_types)
@@ -136,14 +139,30 @@ class FailureCrash(TestFailure):
         return True
 
 
+class FailureLeak(TestFailure):
+    def __init__(self, is_reftest=False, log=''):
+        super(FailureLeak, self).__init__()
+        self.is_reftest = is_reftest
+        self.log = log
+
+    def message(self):
+        return "leak detected: %s" % (self.log)
+
+
 class FailureMissingResult(TestFailure):
     def message(self):
         return "-expected.txt was missing"
 
 
+class FailureTestHarnessAssertion(TestFailure):
+    def message(self):
+        return "asserts failed"
+
+
 class FailureTextMismatch(TestFailure):
     def message(self):
         return "text diff"
+
 
 class FailureMissingImageHash(TestFailure):
     def message(self):
@@ -210,6 +229,7 @@ class FailureEarlyExit(TestFailure):
 # Convenient collection of all failure classes for anything that might
 # need to enumerate over them all.
 ALL_FAILURE_CLASSES = (FailureTimeout, FailureCrash, FailureMissingResult,
+                       FailureTestHarnessAssertion,
                        FailureTextMismatch, FailureMissingImageHash,
                        FailureMissingImage, FailureImageHashMismatch,
                        FailureImageHashIncorrect, FailureReftestMismatch,

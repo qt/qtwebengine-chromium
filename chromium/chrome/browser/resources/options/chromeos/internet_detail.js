@@ -526,6 +526,8 @@ cr.define('options.internet', function() {
                                     !$('proxy-use-pac-url').checked;
       $('auto-proxy-parms').hidden = !$('auto-proxy').checked;
       $('manual-proxy-parms').hidden = !$('manual-proxy').checked;
+      chrome.send('coreOptionsUserMetricsAction',
+                  ['Options_NetworkManualProxy_Disable']);
     },
 
     /**
@@ -556,6 +558,8 @@ cr.define('options.internet', function() {
       $('proxy-pac-url').disabled = true;
       $('auto-proxy-parms').hidden = !$('auto-proxy').checked;
       $('manual-proxy-parms').hidden = !$('manual-proxy').checked;
+      chrome.send('coreOptionsUserMetricsAction',
+                  ['Options_NetworkManualProxy_Enable']);
     },
   };
 
@@ -626,6 +630,8 @@ cr.define('options.internet', function() {
     updateHidden('#details-internet-page .action-area', true);
     detailsPage.updateControls();
     detailsPage.visible = true;
+    chrome.send('coreOptionsUserMetricsAction',
+                ['Options_NetworkShowProxyTab']);
   };
 
   /**
@@ -809,6 +815,9 @@ cr.define('options.internet', function() {
         ((data.type == Constants.TYPE_WIFI && data.encryption) ||
           data.type == Constants.TYPE_WIMAX ||
           data.type == Constants.TYPE_VPN)) {
+      $('details-internet-configure').hidden = false;
+    } else if (data.type == Constants.TYPE_ETHERNET) {
+      // Ethernet (802.1x) can be configured while connected.
       $('details-internet-configure').hidden = false;
     } else {
       $('details-internet-configure').hidden = true;
@@ -1111,7 +1120,7 @@ cr.define('options.internet', function() {
       $('roaming-state').textContent = data.roamingState;
       $('restricted-pool').textContent = data.restrictedPool;
       $('error-state').textContent = data.errorState;
-      $('manufacturer').textContent = data.manufacturer;
+      $('manufacturer').textContent = data.cellularManufacturer;
       $('model-id').textContent = data.modelId;
       $('firmware-revision').textContent = data.firmwareRevision;
       $('hardware-revision').textContent = data.hardwareRevision;

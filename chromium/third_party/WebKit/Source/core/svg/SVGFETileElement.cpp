@@ -22,32 +22,21 @@
 
 #include "core/svg/SVGFETileElement.h"
 
-#include "SVGNames.h"
+#include "core/SVGNames.h"
 #include "platform/graphics/filters/FilterEffect.h"
-#include "core/svg/SVGElementInstance.h"
 #include "core/svg/graphics/filters/SVGFilterBuilder.h"
 
 namespace WebCore {
 
-// Animated property definitions
-DEFINE_ANIMATED_STRING(SVGFETileElement, SVGNames::inAttr, In1, in1)
-
-BEGIN_REGISTER_ANIMATED_PROPERTIES(SVGFETileElement)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(in1)
-    REGISTER_PARENT_ANIMATED_PROPERTIES(SVGFilterPrimitiveStandardAttributes)
-END_REGISTER_ANIMATED_PROPERTIES
-
 inline SVGFETileElement::SVGFETileElement(Document& document)
     : SVGFilterPrimitiveStandardAttributes(SVGNames::feTileTag, document)
+    , m_in1(SVGAnimatedString::create(this, SVGNames::inAttr, SVGString::create()))
 {
     ScriptWrappable::init(this);
-    registerAnimatedPropertiesForSVGFETileElement();
+    addToPropertyMap(m_in1);
 }
 
-PassRefPtr<SVGFETileElement> SVGFETileElement::create(Document& document)
-{
-    return adoptRef(new SVGFETileElement(document));
-}
+DEFINE_NODE_FACTORY(SVGFETileElement)
 
 bool SVGFETileElement::isSupportedAttribute(const QualifiedName& attrName)
 {
@@ -64,12 +53,14 @@ void SVGFETileElement::parseAttribute(const QualifiedName& name, const AtomicStr
         return;
     }
 
-    if (name == SVGNames::inAttr) {
-        setIn1BaseValue(value);
-        return;
-    }
+    SVGParsingError parseError = NoError;
 
-    ASSERT_NOT_REACHED();
+    if (name == SVGNames::inAttr)
+        m_in1->setBaseValueAsString(value, parseError);
+    else
+        ASSERT_NOT_REACHED();
+
+    reportAttributeParsingError(parseError, name, value);
 }
 
 void SVGFETileElement::svgAttributeChanged(const QualifiedName& attrName)
@@ -79,7 +70,7 @@ void SVGFETileElement::svgAttributeChanged(const QualifiedName& attrName)
         return;
     }
 
-    SVGElementInstance::InvalidationGuard invalidationGuard(this);
+    SVGElement::InvalidationGuard invalidationGuard(this);
 
     if (attrName == SVGNames::inAttr) {
         invalidate();
@@ -91,10 +82,10 @@ void SVGFETileElement::svgAttributeChanged(const QualifiedName& attrName)
 
 PassRefPtr<FilterEffect> SVGFETileElement::build(SVGFilterBuilder* filterBuilder, Filter* filter)
 {
-    FilterEffect* input1 = filterBuilder->getEffectById(in1CurrentValue());
+    FilterEffect* input1 = filterBuilder->getEffectById(AtomicString(m_in1->currentValue()->value()));
 
     if (!input1)
-        return 0;
+        return nullptr;
 
     RefPtr<FilterEffect> effect = FETile::create(filter);
     effect->inputEffects().append(input1);

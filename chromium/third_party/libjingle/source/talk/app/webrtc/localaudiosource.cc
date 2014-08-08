@@ -37,26 +37,6 @@ using webrtc::MediaSourceInterface;
 
 namespace webrtc {
 
-// Constraint keys.
-// They are declared as static members in mediaconstraintsinterface.h
-const char MediaConstraintsInterface::kEchoCancellation[] =
-    "googEchoCancellation";
-const char MediaConstraintsInterface::kExperimentalEchoCancellation[] =
-    "googEchoCancellation2";
-const char MediaConstraintsInterface::kAutoGainControl[] =
-    "googAutoGainControl";
-const char MediaConstraintsInterface::kExperimentalAutoGainControl[] =
-    "googAutoGainControl2";
-const char MediaConstraintsInterface::kNoiseSuppression[] =
-    "googNoiseSuppression";
-const char MediaConstraintsInterface::kHighpassFilter[] =
-    "googHighpassFilter";
-const char MediaConstraintsInterface::kTypingNoiseDetection[] =
-    "googTypingNoiseDetection";
-const char MediaConstraintsInterface::kAudioMirroring[] = "googAudioMirroring";
-// TODO(perkj): Remove kInternalAecDump once its not used by Chrome.
-const char MediaConstraintsInterface::kInternalAecDump[] = "deprecatedAecDump";
-
 namespace {
 
 // Convert constraints to audio options. Return false if constraints are
@@ -90,6 +70,9 @@ bool FromConstraints(const MediaConstraintsInterface::Constraints& constraints,
       options->experimental_agc.Set(value);
     else if (iter->key == MediaConstraintsInterface::kNoiseSuppression)
       options->noise_suppression.Set(value);
+    else if (iter->key ==
+          MediaConstraintsInterface::kExperimentalNoiseSuppression)
+      options->experimental_ns.Set(value);
     else if (iter->key == MediaConstraintsInterface::kHighpassFilter)
       options->highpass_filter.Set(value);
     else if (iter->key == MediaConstraintsInterface::kTypingNoiseDetection)
@@ -129,8 +112,6 @@ void LocalAudioSource::Initialize(
     return;
   }
   options_.SetAll(audio_options);
-  if (options.enable_aec_dump)
-    options_.aec_dump.Set(true);
   source_state_ = kLive;
 }
 

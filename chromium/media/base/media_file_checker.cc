@@ -21,20 +21,17 @@ static void OnError(bool* called) {
   *called = false;
 }
 
-MediaFileChecker::MediaFileChecker(const base::PlatformFile& file)
-    : file_(file),
-      file_closer_(&file_) {
+MediaFileChecker::MediaFileChecker(base::File file) : file_(file.Pass()) {
 }
 
 MediaFileChecker::~MediaFileChecker() {
 }
 
 bool MediaFileChecker::Start(base::TimeDelta check_time) {
-  media::FileDataSource source;
+  media::FileDataSource source(file_.Pass());
   bool read_ok = true;
   media::BlockingUrlProtocol protocol(&source, base::Bind(&OnError, &read_ok));
   media::FFmpegGlue glue(&protocol);
-  source.InitializeFromPlatformFile(file_);
   AVFormatContext* format_context = glue.format_context();
 
   if (!glue.OpenContext())
@@ -59,11 +56,10 @@ bool MediaFileChecker::Start(base::TimeDelta check_time) {
     return false;
 
   AVPacket packet;
-  scoped_ptr_malloc<AVFrame, media::ScopedPtrAVFreeFrame> frame(
-      av_frame_alloc());
+  scoped_ptr<AVFrame, media::ScopedPtrAVFreeFrame> frame(av_frame_alloc());
   int result = 0;
 
-  base::Time deadline = base::Time::Now() +
+  const base::TimeTicks deadline = base::TimeTicks::Now() +
       std::min(check_time,
                base::TimeDelta::FromSeconds(kMaxCheckTimeInSeconds));
   do {
@@ -88,21 +84,23 @@ bool MediaFileChecker::Start(base::TimeDelta check_time) {
       // decoded; otherwise av_free_packet() will corrupt memory.
       AVPacket temp_packet = packet;
       do {
-        avcodec_get_frame_defaults(frame.get());
         result = avcodec_decode_audio4(av_context, frame.get(), &frame_decoded,
                                        &temp_packet);
         if (result < 0)
           break;
+        av_frame_unref(frame.get());
         temp_packet.size -= result;
         temp_packet.data += result;
+        frame_decoded = 0;
       } while (temp_packet.size > 0);
     } else if (av_context->codec_type == AVMEDIA_TYPE_VIDEO) {
-      avcodec_get_frame_defaults(frame.get());
       result = avcodec_decode_video2(av_context, frame.get(), &frame_decoded,
                                      &packet);
+      if (result >= 0 && frame_decoded)
+        av_frame_unref(frame.get());
     }
     av_free_packet(&packet);
-  } while (base::Time::Now() < deadline && read_ok && result >= 0);
+  } while (base::TimeTicks::Now() < deadline && read_ok && result >= 0);
 
   return read_ok && (result == AVERROR_EOF || result >= 0);
 }

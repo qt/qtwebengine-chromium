@@ -6,10 +6,14 @@
 #include "base/bind.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
+#include "base/sequenced_task_runner.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/test/test_simple_task_runner.h"
 #include "device/bluetooth/bluetooth_device_win.h"
-#include "device/bluetooth/bluetooth_service_record.h"
+#include "device/bluetooth/bluetooth_service_record_win.h"
+#include "device/bluetooth/bluetooth_socket_thread.h"
 #include "device/bluetooth/bluetooth_task_manager_win.h"
+#include "device/bluetooth/bluetooth_uuid.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace {
@@ -23,7 +27,7 @@ const char kTestAudioSdpBytes[] =
     "35510900000a00010001090001350319110a09000435103506190100090019350619001909"
     "010209000535031910020900093508350619110d090102090100250c417564696f20536f75"
     "726365090311090001";
-const char kTestAudioSdpUuid[] = "0000110a-0000-1000-8000-00805f9b34fb";
+const device::BluetoothUUID kTestAudioSdpUuid("110a");
 
 const char kTestVideoSdpName[] = "Video";
 const char kTestVideoSdpAddress[] = "A0:10:0A:03:02:01";
@@ -31,7 +35,7 @@ const char kTestVideoSdpBytes[] =
     "354b0900000a000100030900013506191112191203090004350c3503190100350519000308"
     "0b090005350319100209000935083506191108090100090100250d566f6963652047617465"
     "776179";
-const char kTestVideoSdpUuid[] = "00001112-0000-1000-8000-00805f9b34fb";
+const device::BluetoothUUID kTestVideoSdpUuid("1112");
 
 }  // namespace
 
@@ -39,13 +43,12 @@ namespace device {
 
 class BluetoothDeviceWinTest : public testing::Test {
  public:
-  BluetoothDeviceWinTest()
-      : error_called_(false),
-        provides_service_with_name_(false) {
+  BluetoothDeviceWinTest() {
     BluetoothTaskManagerWin::DeviceState device_state;
     device_state.name = kDeviceName;
     device_state.address = kDeviceAddress;
 
+    // Add device with audio/video services.
     BluetoothTaskManagerWin::ServiceRecordState* audio_state =
         new BluetoothTaskManagerWin::ServiceRecordState();
     audio_state->name = kTestAudioSdpName;
@@ -60,84 +63,39 @@ class BluetoothDeviceWinTest : public testing::Test {
     base::HexStringToBytes(kTestVideoSdpBytes, &video_state->sdp_bytes);
     device_state.service_record_states.push_back(video_state);
 
-    device_.reset(new BluetoothDeviceWin(device_state));
-  }
+    scoped_refptr<base::SequencedTaskRunner> ui_task_runner(
+        new base::TestSimpleTaskRunner());
+    scoped_refptr<BluetoothSocketThread> socket_thread(
+        BluetoothSocketThread::Get());
+    device_.reset(new BluetoothDeviceWin(device_state,
+                                         ui_task_runner,
+                                         socket_thread,
+                                         NULL,
+                                         net::NetLog::Source()));
 
-  void GetServiceRecords(
-      const BluetoothDevice::ServiceRecordList& service_record_list) {
-    service_records_ = &service_record_list;
-  }
-
-  void OnError() {
-    error_called_ = true;
-  }
-
-  void SetProvidesServiceWithName(bool provides_service_with_name) {
-    provides_service_with_name_ = provides_service_with_name;
+    // Add empty device.
+    device_state.service_record_states.clear();
+    empty_device_.reset(new BluetoothDeviceWin(device_state,
+                                               ui_task_runner,
+                                               socket_thread,
+                                               NULL,
+                                               net::NetLog::Source()));
   }
 
  protected:
   scoped_ptr<BluetoothDevice> device_;
   scoped_ptr<BluetoothDevice> empty_device_;
-  const BluetoothDevice::ServiceRecordList* service_records_;
-  bool error_called_;
-  bool provides_service_with_name_;
 };
 
-TEST_F(BluetoothDeviceWinTest, GetServices) {
-  BluetoothDevice::ServiceList service_list = device_->GetServices();
+TEST_F(BluetoothDeviceWinTest, GetUUIDs) {
+  BluetoothDevice::UUIDList uuids = device_->GetUUIDs();
 
-  EXPECT_EQ(2, service_list.size());
-  EXPECT_STREQ(kTestAudioSdpUuid, service_list[0].c_str());
-  EXPECT_STREQ(kTestVideoSdpUuid, service_list[1].c_str());
-}
+  EXPECT_EQ(2, uuids.size());
+  EXPECT_EQ(kTestAudioSdpUuid, uuids[0]);
+  EXPECT_EQ(kTestVideoSdpUuid, uuids[1]);
 
-TEST_F(BluetoothDeviceWinTest, GetServiceRecords) {
-  device_->GetServiceRecords(
-      base::Bind(&BluetoothDeviceWinTest::GetServiceRecords,
-                 base::Unretained(this)),
-      BluetoothDevice::ErrorCallback());
-  ASSERT_TRUE(service_records_ != NULL);
-  EXPECT_EQ(2, service_records_->size());
-  EXPECT_STREQ(kTestAudioSdpUuid, (*service_records_)[0]->uuid().c_str());
-  EXPECT_STREQ(kTestVideoSdpUuid, (*service_records_)[1]->uuid().c_str());
-
-  BluetoothDeviceWin* device_win =
-      reinterpret_cast<BluetoothDeviceWin*>(device_.get());
-
-  const BluetoothServiceRecord* audio_device =
-      device_win->GetServiceRecord(kTestAudioSdpUuid);
-  ASSERT_TRUE(audio_device != NULL);
-  EXPECT_EQ((*service_records_)[0], audio_device);
-
-  const BluetoothServiceRecord* video_device =
-      device_win->GetServiceRecord(kTestVideoSdpUuid);
-  ASSERT_TRUE(video_device != NULL);
-  EXPECT_EQ((*service_records_)[1], video_device);
-
-  const BluetoothServiceRecord* invalid_device =
-      device_win->GetServiceRecord(kTestVideoSdpAddress);
-  EXPECT_TRUE(invalid_device == NULL);
-}
-
-TEST_F(BluetoothDeviceWinTest, ProvidesServiceWithName) {
-  device_->ProvidesServiceWithName(
-      kTestAudioSdpName,
-      base::Bind(&BluetoothDeviceWinTest::SetProvidesServiceWithName,
-                 base::Unretained(this)));
-  EXPECT_TRUE(provides_service_with_name_);
-
-  device_->ProvidesServiceWithName(
-      kTestVideoSdpName,
-      base::Bind(&BluetoothDeviceWinTest::SetProvidesServiceWithName,
-                 base::Unretained(this)));
-  EXPECT_TRUE(provides_service_with_name_);
-
-  device_->ProvidesServiceWithName(
-      "name that does not exist",
-      base::Bind(&BluetoothDeviceWinTest::SetProvidesServiceWithName,
-                 base::Unretained(this)));
-  EXPECT_FALSE(provides_service_with_name_);
+  uuids = empty_device_->GetUUIDs();
+  EXPECT_EQ(0, uuids.size());
 }
 
 }  // namespace device

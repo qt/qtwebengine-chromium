@@ -43,15 +43,24 @@ function resetGlobals()
         historyInstance.crossDashboardState[key] = history.DEFAULT_CROSS_DASHBOARD_STATE_VALUES[key];
 
     LOAD_BUILDBOT_DATA({
+        "no_upload_test_types": [
+            "webkit_unit_tests"
+        ],
         'masters': [{
             name: 'ChromiumWebkit',
-            url: 'dummyurl',
-            tests: {'layout-tests': {'builders': ['WebKit Linux', 'WebKit Linux (dbg)', 'WebKit Linux (deps)', 'WebKit Mac10.7', 'WebKit Win', 'WebKit Win (dbg)']}},
+            url_name: "chromium.webkit",
+            tests: {
+                'layout-tests': {'builders': ['WebKit Linux', 'WebKit Linux (dbg)', 'WebKit Linux (deps)', 'WebKit Mac10.7', 'WebKit Win', 'WebKit Win (dbg)']},
+                'unit_tests': {'builders': ['Linux Tests']},
+            },
             groups: ['@ToT Chromium', '@ToT Blink'],
         },{
             name :'ChromiumWin',
-            url: 'dummyurl2',
-            tests: {'ash_unittests': {'builders': ['XP Tests (1)', 'Win7 Tests (1)']}},
+            url_name: "chromium.win",
+            tests: {
+                'ash_unittests': {'builders': ['XP Tests (1)', 'Win7 Tests (1)']},
+                'unit_tests': {'builders': ['Linux Tests']},
+            },
             groups: ['@ToT Chromium'],
         }],
     });

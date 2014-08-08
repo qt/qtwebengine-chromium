@@ -29,13 +29,12 @@
  */
 
 #include "config.h"
-#include "V8Worker.h"
+#include "bindings/core/v8/V8Worker.h"
 
 #include "bindings/v8/ExceptionMessages.h"
 #include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/SerializedScriptValue.h"
 #include "bindings/v8/V8Binding.h"
-#include "bindings/v8/V8Utilities.h"
 #include "core/workers/Worker.h"
 #include "core/workers/WorkerGlobalScope.h"
 #include "wtf/ArrayBuffer.h"
@@ -50,18 +49,13 @@ void V8Worker::postMessageMethodCustom(const v8::FunctionCallbackInfo<v8::Value>
     ArrayBufferArray arrayBuffers;
     if (info.Length() > 1) {
         const int transferablesArgIndex = 1;
-        bool notASequence = false;
-        if (!extractTransferables(info[transferablesArgIndex], ports, arrayBuffers, notASequence, info.GetIsolate())) {
-            if (notASequence) {
-                exceptionState.throwTypeError(ExceptionMessages::notAnArrayTypeArgumentOrValue(transferablesArgIndex + 1));
-                exceptionState.throwIfNeeded();
-            }
+        if (!SerializedScriptValue::extractTransferables(info[transferablesArgIndex], transferablesArgIndex, ports, arrayBuffers, exceptionState, info.GetIsolate())) {
+            exceptionState.throwIfNeeded();
             return;
         }
     }
-    bool didThrow = false;
-    RefPtr<SerializedScriptValue> message = SerializedScriptValue::create(info[0], &ports, &arrayBuffers, didThrow, info.GetIsolate());
-    if (didThrow)
+    RefPtr<SerializedScriptValue> message = SerializedScriptValue::create(info[0], &ports, &arrayBuffers, exceptionState, info.GetIsolate());
+    if (exceptionState.throwIfNeeded())
         return;
     worker->postMessage(message.release(), &ports, exceptionState);
     exceptionState.throwIfNeeded();

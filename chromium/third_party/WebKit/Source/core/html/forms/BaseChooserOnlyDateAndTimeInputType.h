@@ -35,12 +35,14 @@
 namespace WebCore {
 
 class BaseChooserOnlyDateAndTimeInputType : public BaseDateAndTimeInputType, public DateTimeChooserClient {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(BaseChooserOnlyDateAndTimeInputType);
 protected:
-    BaseChooserOnlyDateAndTimeInputType(HTMLInputElement& element) : BaseDateAndTimeInputType(element) { }
+    explicit BaseChooserOnlyDateAndTimeInputType(HTMLInputElement& element) : BaseDateAndTimeInputType(element) { }
     virtual ~BaseChooserOnlyDateAndTimeInputType();
 
+    virtual void trace(Visitor*) OVERRIDE;
+
 private:
-    void updateAppearance();
     void closeDateTimeChooser();
 
     // InputType functions:
@@ -52,13 +54,14 @@ private:
     virtual void handleKeypressEvent(KeyboardEvent*) OVERRIDE;
     virtual void handleKeyupEvent(KeyboardEvent*) OVERRIDE;
     virtual void accessKeyAction(bool sendMouseEvents) OVERRIDE;
+    virtual void updateView() OVERRIDE;
 
     // DateTimeChooserClient functions:
     virtual void didChooseValue(const String&) OVERRIDE;
     virtual void didChooseValue(double) OVERRIDE;
     virtual void didEndChooser() OVERRIDE;
 
-    RefPtr<DateTimeChooser> m_dateTimeChooser;
+    RefPtrWillBeMember<DateTimeChooser> m_dateTimeChooser;
 };
 
 }

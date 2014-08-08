@@ -32,10 +32,12 @@
 #include <CoreAudio/CoreAudio.h>
 #endif
 
-#include <climits>
+#include <limits.h>
+
 #include <string>
 #include <vector>
 
+#include "talk/base/fileutils.h"
 #include "talk/base/sigslotrepeater.h"
 #include "talk/media/base/codec.h"
 #include "talk/media/base/mediachannel.h"
@@ -135,6 +137,9 @@ class MediaEngineInterface {
   virtual void SetVoiceLogging(int min_sev, const char* filter) = 0;
   virtual void SetVideoLogging(int min_sev, const char* filter) = 0;
 
+  // Starts AEC dump using existing file.
+  virtual bool StartAecDump(talk_base::PlatformFile file) = 0;
+
   // Voice processors for effects.
   virtual bool RegisterVoiceProcessor(uint32 ssrc,
                                       VoiceProcessor* video_processor,
@@ -153,7 +158,18 @@ class MediaEngineInterface {
 #if !defined(DISABLE_MEDIA_ENGINE_FACTORY)
 class MediaEngineFactory {
  public:
+  typedef cricket::MediaEngineInterface* (*MediaEngineCreateFunction)();
+  // Creates a media engine, using either the compiled system default or the
+  // creation function specified in SetCreateFunction, if specified.
   static MediaEngineInterface* Create();
+  // Sets the function used when calling Create. If unset, the compiled system
+  // default will be used. Returns the old create function, or NULL if one
+  // wasn't set. Likewise, NULL can be used as the |function| parameter to
+  // reset to the default behavior.
+  static MediaEngineCreateFunction SetCreateFunction(
+      MediaEngineCreateFunction function);
+ private:
+  static MediaEngineCreateFunction create_function_;
 };
 #endif
 
@@ -253,6 +269,10 @@ class CompositeMediaEngine : public MediaEngineInterface {
     video_.SetLogging(min_sev, filter);
   }
 
+  virtual bool StartAecDump(talk_base::PlatformFile file) {
+    return voice_.StartAecDump(file);
+  }
+
   virtual bool RegisterVoiceProcessor(uint32 ssrc,
                                       VoiceProcessor* processor,
                                       MediaProcessorDirection direction) {
@@ -309,6 +329,7 @@ class NullVoiceEngine {
     return rtp_header_extensions_;
   }
   void SetLogging(int min_sev, const char* filter) {}
+  bool StartAecDump(talk_base::PlatformFile file) { return false; }
   bool RegisterProcessor(uint32 ssrc,
                          VoiceProcessor* voice_processor,
                          MediaProcessorDirection direction) { return true; }

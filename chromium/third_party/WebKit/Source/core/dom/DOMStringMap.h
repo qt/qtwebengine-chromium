@@ -28,6 +28,8 @@
 
 #include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/ScriptWrappable.h"
+#include "bindings/v8/V8Binding.h"
+#include "platform/heap/Handle.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/Vector.h"
 #include "wtf/text/WTFString.h"
@@ -36,36 +38,31 @@ namespace WebCore {
 
 class Element;
 
-class DOMStringMap : public ScriptWrappable {
-    WTF_MAKE_NONCOPYABLE(DOMStringMap); WTF_MAKE_FAST_ALLOCATED;
+class DOMStringMap : public NoBaseWillBeGarbageCollectedFinalized<DOMStringMap>, public ScriptWrappable {
+    WTF_MAKE_NONCOPYABLE(DOMStringMap);
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
 public:
     virtual ~DOMStringMap();
 
+#if !ENABLE(OILPAN)
     virtual void ref() = 0;
     virtual void deref() = 0;
+#endif
 
     virtual void getNames(Vector<String>&) = 0;
     virtual String item(const String& name) = 0;
     virtual bool contains(const String& name) = 0;
     virtual void setItem(const String& name, const String& value, ExceptionState&) = 0;
-    virtual void deleteItem(const String& name, ExceptionState&) = 0;
+    virtual bool deleteItem(const String& name) = 0;
     bool anonymousNamedSetter(const String& name, const String& value, ExceptionState& exceptionState)
     {
         setItem(name, value, exceptionState);
         return true;
     }
-    bool anonymousNamedDeleter(const AtomicString& name, ExceptionState&)
+    DeleteResult anonymousNamedDeleter(const AtomicString& name)
     {
-        // FIXME: Remove ExceptionState parameter.
-
-        TrackExceptionState exceptionState;
-        deleteItem(name, exceptionState);
-        bool result = !exceptionState.hadException();
-        // DOMStringMap deleter should ignore exception.
-        // Behavior of Firefox and Opera are same.
-        // delete document.body.dataset["-foo"] // false instead of DOM Exception 12
-        // LayoutTests/fast/dom/HTMLSelectElement/select-selectedIndex-multiple.html
-        return result;
+        bool knownProperty = deleteItem(name);
+        return knownProperty ? DeleteSuccess : DeleteUnknownProperty;
     }
     void namedPropertyEnumerator(Vector<String>& names, ExceptionState&)
     {
@@ -81,12 +78,14 @@ public:
     {
         return anonymousNamedSetter(String::number(index), value, exceptionState);
     }
-    bool anonymousIndexedDeleter(uint32_t index, ExceptionState& exceptionState)
+    DeleteResult anonymousIndexedDeleter(uint32_t index)
     {
-        return anonymousNamedDeleter(AtomicString::number(index), exceptionState);
+        return anonymousNamedDeleter(AtomicString::number(index));
     }
 
     virtual Element* element() = 0;
+
+    virtual void trace(Visitor*) { }
 
 protected:
     DOMStringMap()

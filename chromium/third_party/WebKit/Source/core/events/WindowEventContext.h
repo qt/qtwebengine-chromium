@@ -27,30 +27,32 @@
 #ifndef WindowEventContext_h
 #define WindowEventContext_h
 
+#include "platform/heap/Handle.h"
 #include "wtf/RefPtr.h"
 
 namespace WebCore {
 
-class DOMWindow;
+class LocalDOMWindow;
 class EventTarget;
-class EventContext;
 class Event;
 class Node;
+class NodeEventContext;
 
 class WindowEventContext {
+    STACK_ALLOCATED();
 public:
-    WindowEventContext(Event*, PassRefPtr<Node>, const EventContext*);
+    WindowEventContext(Event*, PassRefPtrWillBeRawPtr<Node>, const NodeEventContext*);
 
-    DOMWindow* window() const;
+    LocalDOMWindow* window() const;
     EventTarget* target() const;
     bool handleLocalEvents(Event* event);
 
 private:
-    RefPtr<DOMWindow> m_window;
-    RefPtr<EventTarget> m_target;
+    RefPtrWillBeMember<LocalDOMWindow> m_window;
+    RefPtrWillBeMember<EventTarget> m_target;
 };
 
-inline DOMWindow* WindowEventContext::window() const
+inline LocalDOMWindow* WindowEventContext::window() const
 {
     return m_window.get();
 }

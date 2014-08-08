@@ -23,81 +23,53 @@
 #include "core/svg/SVGAnimatedBoolean.h"
 #include "core/svg/SVGAnimatedEnumeration.h"
 #include "core/svg/SVGAnimatedInteger.h"
+#include "core/svg/SVGAnimatedIntegerOptionalInteger.h"
 #include "core/svg/SVGAnimatedNumber.h"
 #include "core/svg/SVGAnimatedNumberList.h"
+#include "core/svg/SVGAnimatedNumberOptionalNumber.h"
 #include "core/svg/SVGFilterPrimitiveStandardAttributes.h"
 #include "platform/graphics/filters/FEConvolveMatrix.h"
 
 namespace WebCore {
 
-template<>
-struct SVGPropertyTraits<EdgeModeType> {
-    static unsigned highestEnumValue() { return EDGEMODE_NONE; }
-
-    static String toString(EdgeModeType type)
-    {
-        switch (type) {
-        case EDGEMODE_UNKNOWN:
-            return emptyString();
-        case EDGEMODE_DUPLICATE:
-            return "duplicate";
-        case EDGEMODE_WRAP:
-            return "wrap";
-        case EDGEMODE_NONE:
-            return "none";
-        }
-
-        ASSERT_NOT_REACHED();
-        return emptyString();
-    }
-
-    static EdgeModeType fromString(const String& value)
-    {
-        if (value == "duplicate")
-            return EDGEMODE_DUPLICATE;
-        if (value == "wrap")
-            return EDGEMODE_WRAP;
-        if (value == "none")
-            return EDGEMODE_NONE;
-        return EDGEMODE_UNKNOWN;
-    }
-};
+template<> const SVGEnumerationStringEntries& getStaticStringEntries<EdgeModeType>();
 
 class SVGFEConvolveMatrixElement FINAL : public SVGFilterPrimitiveStandardAttributes {
 public:
-    static PassRefPtr<SVGFEConvolveMatrixElement> create(Document&);
+    DECLARE_NODE_FACTORY(SVGFEConvolveMatrixElement);
 
-    void setOrder(float orderX, float orderY);
-    void setKernelUnitLength(float kernelUnitLengthX, float kernelUnitLengthY);
+    SVGAnimatedBoolean* preserveAlpha() { return m_preserveAlpha.get(); }
+    SVGAnimatedNumber* divisor() { return m_divisor.get(); }
+    SVGAnimatedNumber* bias() { return m_bias.get(); }
+    SVGAnimatedNumber* kernelUnitLengthX() { return m_kernelUnitLength->firstNumber(); }
+    SVGAnimatedNumber* kernelUnitLengthY() { return m_kernelUnitLength->secondNumber(); }
+    SVGAnimatedNumberList* kernelMatrix() { return m_kernelMatrix.get(); }
+    SVGAnimatedString* in1() { return m_in1.get(); }
+    SVGAnimatedEnumeration<EdgeModeType>* edgeMode() { return m_edgeMode.get(); }
+    SVGAnimatedInteger* orderX() { return m_order->firstInteger(); }
+    SVGAnimatedInteger* orderY() { return m_order->secondInteger(); }
+    SVGAnimatedInteger* targetX() { return m_targetX.get(); }
+    SVGAnimatedInteger* targetY() { return m_targetY.get(); }
 
 private:
     explicit SVGFEConvolveMatrixElement(Document&);
 
     bool isSupportedAttribute(const QualifiedName&);
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual bool setFilterEffectAttribute(FilterEffect*, const QualifiedName&);
-    virtual void svgAttributeChanged(const QualifiedName&);
-    virtual PassRefPtr<FilterEffect> build(SVGFilterBuilder*, Filter*);
+    virtual bool setFilterEffectAttribute(FilterEffect*, const QualifiedName&) OVERRIDE;
+    virtual void svgAttributeChanged(const QualifiedName&) OVERRIDE;
+    virtual PassRefPtr<FilterEffect> build(SVGFilterBuilder*, Filter*) OVERRIDE;
 
-    static const AtomicString& orderXIdentifier();
-    static const AtomicString& orderYIdentifier();
-    static const AtomicString& kernelUnitLengthXIdentifier();
-    static const AtomicString& kernelUnitLengthYIdentifier();
-
-    BEGIN_DECLARE_ANIMATED_PROPERTIES(SVGFEConvolveMatrixElement)
-        DECLARE_ANIMATED_STRING(In1, in1)
-        DECLARE_ANIMATED_INTEGER(OrderX, orderX)
-        DECLARE_ANIMATED_INTEGER(OrderY, orderY)
-        DECLARE_ANIMATED_NUMBER_LIST(KernelMatrix, kernelMatrix)
-        DECLARE_ANIMATED_NUMBER(Divisor, divisor)
-        DECLARE_ANIMATED_NUMBER(Bias, bias)
-        DECLARE_ANIMATED_INTEGER(TargetX, targetX)
-        DECLARE_ANIMATED_INTEGER(TargetY, targetY)
-        DECLARE_ANIMATED_ENUMERATION(EdgeMode, edgeMode, EdgeModeType)
-        DECLARE_ANIMATED_NUMBER(KernelUnitLengthX, kernelUnitLengthX)
-        DECLARE_ANIMATED_NUMBER(KernelUnitLengthY, kernelUnitLengthY)
-        DECLARE_ANIMATED_BOOLEAN(PreserveAlpha, preserveAlpha)
-    END_DECLARE_ANIMATED_PROPERTIES
+    RefPtr<SVGAnimatedNumber> m_bias;
+    RefPtr<SVGAnimatedNumber> m_divisor;
+    RefPtr<SVGAnimatedString> m_in1;
+    RefPtr<SVGAnimatedEnumeration<EdgeModeType> > m_edgeMode;
+    RefPtr<SVGAnimatedNumberList> m_kernelMatrix;
+    RefPtr<SVGAnimatedNumberOptionalNumber> m_kernelUnitLength;
+    RefPtr<SVGAnimatedIntegerOptionalInteger> m_order;
+    RefPtr<SVGAnimatedBoolean> m_preserveAlpha;
+    RefPtr<SVGAnimatedInteger> m_targetX;
+    RefPtr<SVGAnimatedInteger> m_targetY;
 };
 
 } // namespace WebCore

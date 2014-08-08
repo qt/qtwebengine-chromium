@@ -7,22 +7,25 @@
 #include "base/command_line.h"
 #include "base/files/file_path.h"
 #include "base/lazy_instance.h"
+#include "base/logging.h"
 #include "base/memory/shared_memory.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/metrics/histogram.h"
-#include "base/platform_file.h"
-#include "base/safe_numerics.h"
+#include "base/numerics/safe_conversions.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
+#include "content/child/blink_glue.h"
 #include "content/child/database_util.h"
 #include "content/child/fileapi/webfilesystem_impl.h"
 #include "content/child/indexed_db/webidbfactory_impl.h"
 #include "content/child/npapi/npobject_util.h"
 #include "content/child/quota_dispatcher.h"
 #include "content/child/quota_message_filter.h"
+#include "content/child/simple_webmimeregistry_impl.h"
 #include "content/child/thread_safe_sender.h"
 #include "content/child/web_database_observer_impl.h"
 #include "content/child/webblobregistry_impl.h"
+#include "content/child/webfileutilities_impl.h"
 #include "content/child/webmessageportchannel_impl.h"
 #include "content/common/file_utilities_messages.h"
 #include "content/common/gpu/client/context_provider_command_buffer.h"
@@ -34,20 +37,23 @@
 #include "content/public/common/content_switches.h"
 #include "content/public/common/webplugininfo.h"
 #include "content/public/renderer/content_renderer_client.h"
-#include "content/renderer/device_orientation/device_motion_event_pump.h"
-#include "content/renderer/device_orientation/device_orientation_event_pump.h"
+#include "content/renderer/battery_status/battery_status_dispatcher.h"
+#include "content/renderer/battery_status/fake_battery_status_dispatcher.h"
+#include "content/renderer/device_sensors/device_motion_event_pump.h"
+#include "content/renderer/device_sensors/device_orientation_event_pump.h"
 #include "content/renderer/dom_storage/webstoragenamespace_impl.h"
 #include "content/renderer/gamepad_shared_memory_reader.h"
 #include "content/renderer/media/audio_decoder.h"
 #include "content/renderer/media/crypto/key_systems.h"
-#include "content/renderer/media/media_stream_dependency_factory.h"
 #include "content/renderer/media/renderer_webaudiodevice_impl.h"
 #include "content/renderer/media/renderer_webmidiaccessor_impl.h"
 #include "content/renderer/media/webcontentdecryptionmodule_impl.h"
+#include "content/renderer/media/webrtc/peer_connection_dependency_factory.h"
 #include "content/renderer/render_thread_impl.h"
 #include "content/renderer/renderer_clipboard_client.h"
+#include "content/renderer/screen_orientation/mock_screen_orientation_controller.h"
 #include "content/renderer/webclipboard_impl.h"
-#include "content/renderer/webcrypto/webcrypto_impl.h"
+#include "content/renderer/webgraphicscontext3d_provider_impl.h"
 #include "content/renderer/webpublicsuffixlist_impl.h"
 #include "gpu/config/gpu_info.h"
 #include "ipc/ipc_sync_message_filter.h"
@@ -56,6 +62,7 @@
 #include "media/filters/stream_parser_factory.h"
 #include "net/base/mime_util.h"
 #include "net/base/net_util.h"
+#include "third_party/WebKit/public/platform/WebBatteryStatusListener.h"
 #include "third_party/WebKit/public/platform/WebBlobRegistry.h"
 #include "third_party/WebKit/public/platform/WebDeviceMotionListener.h"
 #include "third_party/WebKit/public/platform/WebDeviceOrientationListener.h"
@@ -66,44 +73,47 @@
 #include "third_party/WebKit/public/platform/WebPluginListBuilder.h"
 #include "third_party/WebKit/public/platform/WebURL.h"
 #include "third_party/WebKit/public/platform/WebVector.h"
-#include "third_party/WebKit/public/web/WebFrame.h"
-#include "third_party/WebKit/public/web/WebRuntimeFeatures.h"
 #include "ui/gfx/color_profile.h"
 #include "url/gurl.h"
-#include "webkit/common/gpu/webgraphicscontext3d_provider_impl.h"
+#include "webkit/common/gpu/context_provider_web_context.h"
 #include "webkit/common/quota/quota_types.h"
-#include "webkit/glue/simple_webmimeregistry_impl.h"
-#include "webkit/glue/webfileutilities_impl.h"
-#include "webkit/glue/webkit_glue.h"
+
+#if defined(OS_ANDROID)
+#include "content/renderer/android/synchronous_compositor_factory.h"
+#include "content/renderer/media/android/audio_decoder_android.h"
+#endif
+
+#if defined(OS_MACOSX)
+#include "content/common/mac/font_descriptor.h"
+#include "content/common/mac/font_loader.h"
+#include "content/renderer/webscrollbarbehavior_impl_mac.h"
+#include "third_party/WebKit/public/platform/mac/WebSandboxSupport.h"
+#endif
+
+#if defined(OS_POSIX)
+#include "base/file_descriptor_posix.h"
+#if !defined(OS_MACOSX) && !defined(OS_ANDROID)
+#include <map>
+#include <string>
+
+#include "base/synchronization/lock.h"
+#include "content/common/child_process_sandbox_support_impl_linux.h"
+#include "third_party/WebKit/public/platform/linux/WebFallbackFont.h"
+#include "third_party/WebKit/public/platform/linux/WebSandboxSupport.h"
+#include "third_party/icu/source/common/unicode/utf16.h"
+#endif
+#endif
 
 #if defined(OS_WIN)
 #include "content/common/child_process_messages.h"
 #include "third_party/WebKit/public/platform/win/WebSandboxSupport.h"
 #endif
 
-#if defined(OS_MACOSX)
-#include "content/common/mac/font_descriptor.h"
-#include "content/common/mac/font_loader.h"
-#include "third_party/WebKit/public/platform/mac/WebSandboxSupport.h"
-#endif
-
-#if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID)
-#include <map>
-#include <string>
-
-#include "base/synchronization/lock.h"
-#include "content/common/child_process_sandbox_support_impl_linux.h"
-#include "third_party/WebKit/public/platform/linux/WebFontFamily.h"
-#include "third_party/WebKit/public/platform/linux/WebSandboxSupport.h"
-#include "third_party/icu/source/common/unicode/utf16.h"
-#endif
-
-#if defined(OS_POSIX)
-#include "base/file_descriptor_posix.h"
-#endif
-
-#if defined(OS_ANDROID)
-#include "content/renderer/media/android/audio_decoder_android.h"
+#if defined(USE_AURA)
+#include "content/renderer/webscrollbarbehavior_impl_gtkoraura.h"
+#elif !defined(OS_MACOSX)
+#include "third_party/WebKit/public/platform/WebScrollbarBehavior.h"
+#define WebScrollbarBehaviorImpl blink::WebScrollbarBehavior
 #endif
 
 using blink::Platform;
@@ -112,7 +122,7 @@ using blink::WebBlobRegistry;
 using blink::WebDatabaseObserver;
 using blink::WebFileInfo;
 using blink::WebFileSystem;
-using blink::WebFrame;
+using blink::WebGamepad;
 using blink::WebGamepads;
 using blink::WebIDBFactory;
 using blink::WebMIDIAccessor;
@@ -128,18 +138,24 @@ using blink::WebVector;
 
 namespace content {
 
+namespace {
+
 static bool g_sandbox_enabled = true;
-base::LazyInstance<WebGamepads>::Leaky g_test_gamepads =
-    LAZY_INSTANCE_INITIALIZER;
 base::LazyInstance<blink::WebDeviceMotionData>::Leaky
     g_test_device_motion_data = LAZY_INSTANCE_INITIALIZER;
 base::LazyInstance<blink::WebDeviceOrientationData>::Leaky
     g_test_device_orientation_data = LAZY_INSTANCE_INITIALIZER;
+base::LazyInstance<MockScreenOrientationController>::Leaky
+    g_test_screen_orientation_controller = LAZY_INSTANCE_INITIALIZER;
+base::LazyInstance<FakeBatteryStatusDispatcher>::Leaky
+    g_test_battery_status_dispatcher = LAZY_INSTANCE_INITIALIZER;
+
+} // namespace
 
 //------------------------------------------------------------------------------
 
 class RendererWebKitPlatformSupportImpl::MimeRegistry
-    : public webkit_glue::SimpleWebMimeRegistryImpl {
+    : public SimpleWebMimeRegistryImpl {
  public:
   virtual blink::WebMimeRegistry::SupportsType supportsMediaMIMEType(
       const blink::WebString& mime_type,
@@ -147,6 +163,9 @@ class RendererWebKitPlatformSupportImpl::MimeRegistry
       const blink::WebString& key_system);
   virtual bool supportsMediaSourceMIMEType(const blink::WebString& mime_type,
                                            const blink::WebString& codecs);
+  virtual bool supportsEncryptedMediaMIMEType(const WebString& key_system,
+                                              const WebString& mime_type,
+                                              const WebString& codecs) OVERRIDE;
   virtual blink::WebString mimeTypeForExtension(
       const blink::WebString& file_extension);
   virtual blink::WebString mimeTypeFromFile(
@@ -154,7 +173,7 @@ class RendererWebKitPlatformSupportImpl::MimeRegistry
 };
 
 class RendererWebKitPlatformSupportImpl::FileUtilities
-    : public webkit_glue::WebFileUtilitiesImpl {
+    : public WebFileUtilitiesImpl {
  public:
   explicit FileUtilities(ThreadSafeSender* sender)
       : thread_safe_sender_(sender) {}
@@ -183,10 +202,10 @@ class RendererWebKitPlatformSupportImpl::SandboxSupport
       CGFontRef* container,
       uint32* font_id);
 #elif defined(OS_POSIX)
-  virtual void getFontFamilyForCharacter(
+  virtual void getFallbackFontForCharacter(
       blink::WebUChar32 character,
       const char* preferred_locale,
-      blink::WebFontFamily* family);
+      blink::WebFallbackFont* fallbackFont);
   virtual void getRenderStyleForStrike(
       const char* family, int sizeAndStyle, blink::WebFontRenderStyle* out);
 
@@ -195,7 +214,7 @@ class RendererWebKitPlatformSupportImpl::SandboxSupport
   // unicode code points. It needs this information frequently so we cache it
   // here.
   base::Lock unicode_font_families_mutex_;
-  std::map<int32_t, blink::WebFontFamily> unicode_font_families_;
+  std::map<int32_t, blink::WebFallbackFont> unicode_font_families_;
 #endif
 };
 #endif  // defined(OS_ANDROID)
@@ -208,7 +227,9 @@ RendererWebKitPlatformSupportImpl::RendererWebKitPlatformSupportImpl()
       mime_registry_(new RendererWebKitPlatformSupportImpl::MimeRegistry),
       sudden_termination_disables_(0),
       plugin_refresh_allowed_(true),
-      child_thread_loop_(base::MessageLoopProxy::current()) {
+      child_thread_loop_(base::MessageLoopProxy::current()),
+      web_scrollbar_behavior_(new WebScrollbarBehaviorImpl),
+      gamepad_provider_(NULL) {
   if (g_sandbox_enabled && sandboxEnabled()) {
     sandbox_support_.reset(
         new RendererWebKitPlatformSupportImpl::SandboxSupport);
@@ -274,7 +295,7 @@ blink::WebThemeEngine* RendererWebKitPlatformSupportImpl::themeEngine() {
       GetContentClient()->renderer()->OverrideThemeEngine();
   if (theme_engine)
     return theme_engine;
-  return WebKitPlatformSupportImpl::themeEngine();
+  return BlinkPlatformImpl::themeEngine();
 }
 
 bool RendererWebKitPlatformSupportImpl::sandboxEnabled() {
@@ -299,9 +320,11 @@ bool RendererWebKitPlatformSupportImpl::isLinkVisited(
   return GetContentClient()->renderer()->IsLinkVisited(link_hash);
 }
 
-blink::WebMessagePortChannel*
-RendererWebKitPlatformSupportImpl::createMessagePortChannel() {
-  return new WebMessagePortChannelImpl(child_thread_loop_.get());
+void RendererWebKitPlatformSupportImpl::createMessageChannel(
+    blink::WebMessagePortChannel** channel1,
+    blink::WebMessagePortChannel** channel2) {
+  WebMessagePortChannelImpl::CreatePair(
+      child_thread_loop_.get(), channel1, channel2);
 }
 
 blink::WebPrescientNetworking*
@@ -338,7 +361,7 @@ void RendererWebKitPlatformSupportImpl::cacheMetadata(
 }
 
 WebString RendererWebKitPlatformSupportImpl::defaultLocale() {
-  return ASCIIToUTF16(RenderThread::Get()->GetLocale());
+  return base::ASCIIToUTF16(RenderThread::Get()->GetLocale());
 }
 
 void RendererWebKitPlatformSupportImpl::suddenTerminationChanged(bool enabled) {
@@ -394,31 +417,37 @@ RendererWebKitPlatformSupportImpl::MimeRegistry::supportsMediaMIMEType(
   if (!key_system.isEmpty()) {
     // Check whether the key system is supported with the mime_type and codecs.
 
+    // Chromium only supports ASCII parameters.
+    if (!base::IsStringASCII(key_system))
+      return IsNotSupported;
+
+    std::string key_system_ascii =
+        GetUnprefixedKeySystemName(base::UTF16ToASCII(key_system));
     std::vector<std::string> strict_codecs;
     bool strip_suffix = !net::IsStrictMediaMimeType(mime_type_ascii);
     net::ParseCodecString(ToASCIIOrEmpty(codecs), &strict_codecs, strip_suffix);
 
     if (!IsSupportedKeySystemWithMediaMimeType(
-            mime_type_ascii, strict_codecs, ToASCIIOrEmpty(key_system)))
+            mime_type_ascii, strict_codecs, key_system_ascii)) {
       return IsNotSupported;
+    }
 
     // Continue processing the mime_type and codecs.
   }
 
   // Check list of strict codecs to see if it is supported.
   if (net::IsStrictMediaMimeType(mime_type_ascii)) {
+    // Check if the codecs are a perfect match.
+    std::vector<std::string> strict_codecs;
+    net::ParseCodecString(ToASCIIOrEmpty(codecs), &strict_codecs, false);
+    if (net::IsSupportedStrictMediaMimeType(mime_type_ascii, strict_codecs))
+      return IsSupported;
+
     // We support the container, but no codecs were specified.
     if (codecs.isNull())
       return MayBeSupported;
 
-    // Check if the codecs are a perfect match.
-    std::vector<std::string> strict_codecs;
-    net::ParseCodecString(ToASCIIOrEmpty(codecs), &strict_codecs, false);
-    if (!net::IsSupportedStrictMediaMimeType(mime_type_ascii, strict_codecs))
-      return IsNotSupported;
-
-    // Good to go!
-    return IsSupported;
+    return IsNotSupported;
   }
 
   // If we don't recognize the codec, it's possible we support it.
@@ -444,6 +473,31 @@ RendererWebKitPlatformSupportImpl::MimeRegistry::supportsMediaSourceMIMEType(
       mime_type_ascii, parsed_codec_ids);
 }
 
+bool
+RendererWebKitPlatformSupportImpl::MimeRegistry::supportsEncryptedMediaMIMEType(
+    const WebString& key_system,
+    const WebString& mime_type,
+    const WebString& codecs) {
+  // Chromium only supports ASCII parameters.
+  if (!base::IsStringASCII(key_system) || !base::IsStringASCII(mime_type) ||
+      !base::IsStringASCII(codecs)) {
+    return false;
+  }
+
+  if (key_system.isEmpty())
+    return false;
+
+  const std::string mime_type_ascii = base::UTF16ToASCII(mime_type);
+
+  std::vector<std::string> codec_vector;
+  bool strip_suffix = !net::IsStrictMediaMimeType(mime_type_ascii);
+  net::ParseCodecString(base::UTF16ToASCII(codecs), &codec_vector,
+                        strip_suffix);
+
+  return IsSupportedKeySystemWithMediaMimeType(
+      mime_type_ascii, codec_vector, base::UTF16ToASCII(key_system));
+}
+
 WebString
 RendererWebKitPlatformSupportImpl::MimeRegistry::mimeTypeForExtension(
     const WebString& file_extension) {
@@ -456,7 +510,7 @@ RendererWebKitPlatformSupportImpl::MimeRegistry::mimeTypeForExtension(
   RenderThread::Get()->Send(
       new MimeRegistryMsg_GetMimeTypeFromExtension(
           base::FilePath::FromUTF16Unsafe(file_extension).value(), &mime_type));
-  return ASCIIToUTF16(mime_type);
+  return base::ASCIIToUTF16(mime_type);
 }
 
 WebString RendererWebKitPlatformSupportImpl::MimeRegistry::mimeTypeFromFile(
@@ -470,7 +524,7 @@ WebString RendererWebKitPlatformSupportImpl::MimeRegistry::mimeTypeFromFile(
   RenderThread::Get()->Send(new MimeRegistryMsg_GetMimeTypeFromFile(
       base::FilePath::FromUTF16Unsafe(file_path),
       &mime_type));
-  return ASCIIToUTF16(mime_type);
+  return base::ASCIIToUTF16(mime_type);
 }
 
 //------------------------------------------------------------------------------
@@ -478,14 +532,14 @@ WebString RendererWebKitPlatformSupportImpl::MimeRegistry::mimeTypeFromFile(
 bool RendererWebKitPlatformSupportImpl::FileUtilities::getFileInfo(
     const WebString& path,
     WebFileInfo& web_file_info) {
-  base::PlatformFileInfo file_info;
-  base::PlatformFileError status;
+  base::File::Info file_info;
+  base::File::Error status;
   if (!SendSyncMessageFromAnyThread(new FileUtilitiesMsg_GetFileInfo(
            base::FilePath::FromUTF16Unsafe(path), &file_info, &status)) ||
-      status != base::PLATFORM_FILE_OK) {
+      status != base::File::FILE_OK) {
     return false;
   }
-  webkit_glue::PlatformFileInfoToWebFileInfo(file_info, &web_file_info);
+  FileInfoToWebFileInfo(file_info, &web_file_info);
   web_file_info.platformPath = path;
   return true;
 }
@@ -550,22 +604,24 @@ bool RendererWebKitPlatformSupportImpl::SandboxSupport::loadFont(
 #elif defined(OS_POSIX)
 
 void
-RendererWebKitPlatformSupportImpl::SandboxSupport::getFontFamilyForCharacter(
+RendererWebKitPlatformSupportImpl::SandboxSupport::getFallbackFontForCharacter(
     blink::WebUChar32 character,
     const char* preferred_locale,
-    blink::WebFontFamily* family) {
+    blink::WebFallbackFont* fallbackFont) {
   base::AutoLock lock(unicode_font_families_mutex_);
-  const std::map<int32_t, blink::WebFontFamily>::const_iterator iter =
+  const std::map<int32_t, blink::WebFallbackFont>::const_iterator iter =
       unicode_font_families_.find(character);
   if (iter != unicode_font_families_.end()) {
-    family->name = iter->second.name;
-    family->isBold = iter->second.isBold;
-    family->isItalic = iter->second.isItalic;
+    fallbackFont->name = iter->second.name;
+    fallbackFont->filename = iter->second.filename;
+    fallbackFont->ttcIndex = iter->second.ttcIndex;
+    fallbackFont->isBold = iter->second.isBold;
+    fallbackFont->isItalic = iter->second.isItalic;
     return;
   }
 
-  GetFontFamilyForCharacter(character, preferred_locale, family);
-  unicode_font_families_.insert(std::make_pair(character, *family));
+  GetFallbackFontForCharacter(character, preferred_locale, fallbackFont);
+  unicode_font_families_.insert(std::make_pair(character, *fallbackFont));
 }
 
 void
@@ -620,7 +676,9 @@ bool RendererWebKitPlatformSupportImpl::canAccelerate2dCanvas() {
 }
 
 bool RendererWebKitPlatformSupportImpl::isThreadedCompositingEnabled() {
-  return !!RenderThreadImpl::current()->compositor_message_loop_proxy().get();
+  RenderThreadImpl* thread = RenderThreadImpl::current();
+  // thread can be NULL in tests.
+  return thread && thread->compositor_message_loop_proxy().get();
 }
 
 double RendererWebKitPlatformSupportImpl::audioHardwareSampleRate() {
@@ -640,29 +698,6 @@ unsigned RendererWebKitPlatformSupportImpl::audioHardwareOutputChannels() {
 
 WebDatabaseObserver* RendererWebKitPlatformSupportImpl::databaseObserver() {
   return web_database_observer_impl_.get();
-}
-
-// TODO(crogers): remove deprecated API as soon as WebKit calls new API.
-WebAudioDevice*
-RendererWebKitPlatformSupportImpl::createAudioDevice(
-    size_t buffer_size,
-    unsigned channels,
-    double sample_rate,
-    WebAudioDevice::RenderCallback* callback) {
-  return createAudioDevice(
-      buffer_size, 0, channels, sample_rate, callback, "default");
-}
-
-// TODO(crogers): remove deprecated API as soon as WebKit calls new API.
-WebAudioDevice*
-RendererWebKitPlatformSupportImpl::createAudioDevice(
-    size_t buffer_size,
-    unsigned input_channels,
-    unsigned channels,
-    double sample_rate,
-    WebAudioDevice::RenderCallback* callback) {
-  return createAudioDevice(
-      buffer_size, input_channels, channels, sample_rate, callback, "default");
 }
 
 WebAudioDevice*
@@ -716,7 +751,7 @@ RendererWebKitPlatformSupportImpl::createAudioDevice(
 
   int session_id = 0;
   if (input_device_id.isNull() ||
-      !base::StringToInt(UTF16ToUTF8(input_device_id), &session_id)) {
+      !base::StringToInt(base::UTF16ToUTF8(input_device_id), &session_id)) {
     if (input_channels > 0)
       DLOG(WARNING) << "createAudioDevice(): request for audio input ignored";
 
@@ -735,29 +770,20 @@ RendererWebKitPlatformSupportImpl::createAudioDevice(
 #if defined(OS_ANDROID)
 bool RendererWebKitPlatformSupportImpl::loadAudioResource(
     blink::WebAudioBus* destination_bus, const char* audio_file_data,
-    size_t data_size, double sample_rate) {
+    size_t data_size) {
   return DecodeAudioFileData(destination_bus,
                              audio_file_data,
                              data_size,
-                             sample_rate,
                              thread_safe_sender_);
 }
 #else
 bool RendererWebKitPlatformSupportImpl::loadAudioResource(
     blink::WebAudioBus* destination_bus, const char* audio_file_data,
-    size_t data_size, double sample_rate) {
+    size_t data_size) {
   return DecodeAudioFileData(
-      destination_bus, audio_file_data, data_size, sample_rate);
+      destination_bus, audio_file_data, data_size);
 }
 #endif  // defined(OS_ANDROID)
-
-//------------------------------------------------------------------------------
-
-blink::WebContentDecryptionModule*
-RendererWebKitPlatformSupportImpl::createContentDecryptionModule(
-    const blink::WebString& key_system) {
-  return WebContentDecryptionModuleImpl::Create(key_system);
-}
 
 //------------------------------------------------------------------------------
 
@@ -833,14 +859,25 @@ void RendererWebKitPlatformSupportImpl::screenColorProfile(
 #if defined(OS_WIN)
   // On Windows screen color profile is only available in the browser.
   std::vector<char> profile;
-  RenderThread::Get()->Send(
+  // This Send() can be called from any impl-side thread. Use a thread
+  // safe send to avoid crashing trying to access RenderThread::Get(),
+  // which is not accessible from arbitrary threads.
+  thread_safe_sender_->Send(
       new ViewHostMsg_GetMonitorColorProfile(&profile));
   *to_profile = profile;
 #else
-  // On other platforms color profile can be obtained directly.
+  // On other platforms, the primary monitor color profile can be read
+  // directly.
   gfx::ColorProfile profile;
   *to_profile = profile.profile();
 #endif
+}
+
+//------------------------------------------------------------------------------
+
+blink::WebScrollbarBehavior*
+    RendererWebKitPlatformSupportImpl::scrollbarBehavior() {
+  return web_scrollbar_behavior_.get();
 }
 
 //------------------------------------------------------------------------------
@@ -853,16 +890,14 @@ WebBlobRegistry* RendererWebKitPlatformSupportImpl::blobRegistry() {
 //------------------------------------------------------------------------------
 
 void RendererWebKitPlatformSupportImpl::sampleGamepads(WebGamepads& gamepads) {
-  if (g_test_gamepads == 0) {
-    RenderThreadImpl::current()->SampleGamepads(&gamepads);
-  } else {
-    gamepads = g_test_gamepads.Get();
-  }
+  DCHECK(gamepad_provider_);
+  gamepad_provider_->SampleGamepads(gamepads);
 }
 
-blink::WebString RendererWebKitPlatformSupportImpl::userAgent(
-    const blink::WebURL& url) {
-  return WebKitPlatformSupportImpl::userAgent(url);
+void RendererWebKitPlatformSupportImpl::setGamepadListener(
+      blink::WebGamepadListener* listener) {
+  DCHECK(gamepad_provider_);
+  gamepad_provider_->SetGamepadListener(listener);
 }
 
 //------------------------------------------------------------------------------
@@ -882,8 +917,8 @@ RendererWebKitPlatformSupportImpl::createRTCPeerConnectionHandler(
   if (peer_connection_handler)
     return peer_connection_handler;
 
-  MediaStreamDependencyFactory* rtc_dependency_factory =
-      render_thread->GetMediaStreamDependencyFactory();
+  PeerConnectionDependencyFactory* rtc_dependency_factory =
+      render_thread->GetPeerConnectionDependencyFactory();
   return rtc_dependency_factory->CreateRTCPeerConnectionHandler(client);
 #else
   return NULL;
@@ -910,12 +945,6 @@ bool RendererWebKitPlatformSupportImpl::SetSandboxEnabledForTesting(
   return was_enabled;
 }
 
-// static
-void RendererWebKitPlatformSupportImpl::SetMockGamepadsForTesting(
-    const WebGamepads& pads) {
-  g_test_gamepads.Get() = pads;
-}
-
 //------------------------------------------------------------------------------
 
 blink::WebSpeechSynthesizer*
@@ -938,41 +967,47 @@ bool RendererWebKitPlatformSupportImpl::processMemorySizesInBytes(
 blink::WebGraphicsContext3D*
 RendererWebKitPlatformSupportImpl::createOffscreenGraphicsContext3D(
     const blink::WebGraphicsContext3D::Attributes& attributes) {
+  return createOffscreenGraphicsContext3D(attributes, NULL);
+}
+
+blink::WebGraphicsContext3D*
+RendererWebKitPlatformSupportImpl::createOffscreenGraphicsContext3D(
+    const blink::WebGraphicsContext3D::Attributes& attributes,
+    blink::WebGraphicsContext3D* share_context) {
   if (!RenderThreadImpl::current())
     return NULL;
+
+#if defined(OS_ANDROID)
+  if (SynchronousCompositorFactory* factory =
+          SynchronousCompositorFactory::GetInstance()) {
+    return factory->CreateOffscreenGraphicsContext3D(attributes);
+  }
+#endif
 
   scoped_refptr<GpuChannelHost> gpu_channel_host(
       RenderThreadImpl::current()->EstablishGpuChannelSync(
           CAUSE_FOR_GPU_LAUNCH_WEBGRAPHICSCONTEXT3DCOMMANDBUFFERIMPL_INITIALIZE));
 
   WebGraphicsContext3DCommandBufferImpl::SharedMemoryLimits limits;
-
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
-  if (command_line->HasSwitch(switches::kWebGLCommandBufferSizeKb)) {
-    std::string size_string = command_line->GetSwitchValueASCII(
-        switches::kWebGLCommandBufferSizeKb);
-    size_t buffer_size_kb;
-    if (base::StringToSizeT(size_string, &buffer_size_kb)) {
-      limits.command_buffer_size = buffer_size_kb * 1024;
-    }
-  }
-
+  bool lose_context_when_out_of_memory = false;
   return WebGraphicsContext3DCommandBufferImpl::CreateOffscreenContext(
       gpu_channel_host.get(),
       attributes,
+      lose_context_when_out_of_memory,
       GURL(attributes.topDocumentURL),
-      limits);
+      limits,
+      static_cast<WebGraphicsContext3DCommandBufferImpl*>(share_context));
 }
 
 //------------------------------------------------------------------------------
 
 blink::WebGraphicsContext3DProvider* RendererWebKitPlatformSupportImpl::
     createSharedOffscreenGraphicsContext3DProvider() {
-  scoped_refptr<cc::ContextProvider> provider =
+  scoped_refptr<webkit::gpu::ContextProviderWebContext> provider =
       RenderThreadImpl::current()->SharedMainThreadContextProvider();
   if (!provider)
     return NULL;
-  return new webkit::gpu::WebGraphicsContext3DProviderImpl(provider);
+  return new WebGraphicsContext3DProviderImpl(provider);
 }
 
 //------------------------------------------------------------------------------
@@ -1016,6 +1051,13 @@ void RendererWebKitPlatformSupportImpl::SetMockDeviceMotionDataForTesting(
   g_test_device_motion_data.Get() = data;
 }
 
+// static
+void RendererWebKitPlatformSupportImpl::ResetMockScreenOrientationForTesting()
+{
+  if (!(g_test_screen_orientation_controller == 0))
+    g_test_screen_orientation_controller.Get().ResetData();
+}
+
 //------------------------------------------------------------------------------
 
 void RendererWebKitPlatformSupportImpl::setDeviceOrientationListener(
@@ -1045,18 +1087,9 @@ void RendererWebKitPlatformSupportImpl::SetMockDeviceOrientationDataForTesting(
 
 //------------------------------------------------------------------------------
 
-blink::WebCrypto* RendererWebKitPlatformSupportImpl::crypto() {
-  if (!web_crypto_)
-    web_crypto_.reset(new WebCryptoImpl());
-  return web_crypto_.get();
-
-}
-
-//------------------------------------------------------------------------------
-
 void RendererWebKitPlatformSupportImpl::vibrate(unsigned int milliseconds) {
   RenderThread::Get()->Send(
-      new ViewHostMsg_Vibrate(base::checked_numeric_cast<int64>(milliseconds)));
+      new ViewHostMsg_Vibrate(base::checked_cast<int64>(milliseconds)));
 }
 
 void RendererWebKitPlatformSupportImpl::cancelVibration() {
@@ -1065,10 +1098,20 @@ void RendererWebKitPlatformSupportImpl::cancelVibration() {
 
 //------------------------------------------------------------------------------
 
+// static
+void RendererWebKitPlatformSupportImpl::SetMockScreenOrientationForTesting(
+    RenderView* render_view,
+    blink::WebScreenOrientationType orientation) {
+  g_test_screen_orientation_controller.Get()
+      .UpdateDeviceOrientation(render_view, orientation);
+}
+
+//------------------------------------------------------------------------------
+
 void RendererWebKitPlatformSupportImpl::queryStorageUsageAndQuota(
     const blink::WebURL& storage_partition,
     blink::WebStorageQuotaType type,
-    blink::WebStorageQuotaCallbacks* callbacks) {
+    blink::WebStorageQuotaCallbacks callbacks) {
   if (!thread_safe_sender_.get() || !quota_message_filter_.get())
     return;
   QuotaDispatcher::ThreadSpecificInstance(
@@ -1077,6 +1120,32 @@ void RendererWebKitPlatformSupportImpl::queryStorageUsageAndQuota(
           storage_partition,
           static_cast<quota::StorageType>(type),
           QuotaDispatcher::CreateWebStorageQuotaCallbacksWrapper(callbacks));
+}
+
+//------------------------------------------------------------------------------
+
+void RendererWebKitPlatformSupportImpl::setBatteryStatusListener(
+    blink::WebBatteryStatusListener* listener) {
+  if (RenderThreadImpl::current() &&
+      RenderThreadImpl::current()->layout_test_mode()) {
+    // If we are in test mode, we want to use a fake battery status dispatcher,
+    // which does not communicate with the browser process. Battery status
+    // changes are signalled by invoking MockBatteryStatusChangedForTesting().
+    g_test_battery_status_dispatcher.Get().SetListener(listener);
+    return;
+  }
+
+  if (!battery_status_dispatcher_) {
+    battery_status_dispatcher_.reset(
+        new BatteryStatusDispatcher(RenderThreadImpl::current()));
+  }
+  battery_status_dispatcher_->SetListener(listener);
+}
+
+// static
+void RendererWebKitPlatformSupportImpl::MockBatteryStatusChangedForTesting(
+    const blink::WebBatteryStatus& status) {
+  g_test_battery_status_dispatcher.Get().PostBatteryStatusChange(status);
 }
 
 }  // namespace content

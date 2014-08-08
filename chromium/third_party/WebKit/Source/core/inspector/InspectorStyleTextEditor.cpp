@@ -31,7 +31,7 @@
 
 namespace WebCore {
 
-InspectorStyleTextEditor::InspectorStyleTextEditor(Vector<InspectorStyleProperty>* allProperties, const String& styleText, const NewLineAndWhitespace& format)
+InspectorStyleTextEditor::InspectorStyleTextEditor(WillBeHeapVector<InspectorStyleProperty>* allProperties, const String& styleText, const NewLineAndWhitespace& format)
     : m_allProperties(allProperties)
     , m_styleText(styleText)
     , m_format(format)
@@ -93,11 +93,11 @@ void InspectorStyleTextEditor::insertProperty(unsigned index, const String& prop
                 textToSet.insert(formatLineFeed, formattingPrependOffset);
         }
         if (!isHTMLLineBreak(m_styleText[propertyStart]))
-            textToSet.append(formatLineFeed);
+            textToSet = textToSet + formatLineFeed;
     } else {
         String fullPrefix = formatLineFeed + formatPropertyPrefix;
         long fullPrefixLength = fullPrefix.length();
-        textToSet.append(fullPrefix);
+        textToSet = textToSet + fullPrefix;
         if (insertFirstInSource && (propertyStart < fullPrefixLength || m_styleText.substring(propertyStart - fullPrefixLength, fullPrefixLength) != fullPrefix))
             textToSet.insert(fullPrefix, formattingPrependOffset);
     }
@@ -108,29 +108,6 @@ void InspectorStyleTextEditor::replaceProperty(unsigned index, const String& new
 {
     ASSERT_WITH_SECURITY_IMPLICATION(index < m_allProperties->size());
     internalReplaceProperty(m_allProperties->at(index), newText);
-}
-
-void InspectorStyleTextEditor::removeProperty(unsigned index)
-{
-    replaceProperty(index, "");
-}
-
-void InspectorStyleTextEditor::enableProperty(unsigned index)
-{
-    InspectorStyleProperty& disabledProperty = m_allProperties->at(index);
-    ASSERT(disabledProperty.sourceData.disabled);
-    internalReplaceProperty(disabledProperty, disabledProperty.rawText.substring(2, disabledProperty.rawText.length() - 4).stripWhiteSpace());
-}
-
-void InspectorStyleTextEditor::disableProperty(unsigned index)
-{
-    ASSERT(!m_allProperties->at(index).sourceData.disabled);
-
-    InspectorStyleProperty& property = m_allProperties->at(index);
-    property.setRawTextFromStyleDeclaration(m_styleText);
-    property.sourceData.disabled = true;
-
-    internalReplaceProperty(property, "/* " + property.rawText + " */");
 }
 
 void InspectorStyleTextEditor::internalReplaceProperty(const InspectorStyleProperty& property, const String& newText)

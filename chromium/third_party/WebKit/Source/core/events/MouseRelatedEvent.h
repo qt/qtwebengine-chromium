@@ -39,17 +39,16 @@ namespace WebCore {
         const IntPoint& screenLocation() const { return m_screenLocation; }
         int clientX() const { return m_clientLocation.x(); }
         int clientY() const { return m_clientLocation.y(); }
-        int webkitMovementX() const { return m_movementDelta.x(); }
-        int webkitMovementY() const { return m_movementDelta.y(); }
+        int movementX() const { return m_movementDelta.x(); }
+        int movementY() const { return m_movementDelta.y(); }
         const LayoutPoint& clientLocation() const { return m_clientLocation; }
-        int layerX();
-        int layerY();
+        virtual int layerX() OVERRIDE FINAL;
+        virtual int layerY() OVERRIDE FINAL;
         int offsetX();
         int offsetY();
         bool isSimulated() const { return m_isSimulated; }
-        virtual int pageX() const;
-        virtual int pageY() const;
-        virtual const LayoutPoint& pageLocation() const;
+        virtual int pageX() const OVERRIDE FINAL;
+        virtual int pageY() const OVERRIDE FINAL;
         int x() const;
         int y() const;
 
@@ -58,16 +57,18 @@ namespace WebCore {
         const LayoutPoint& absoluteLocation() const { return m_absoluteLocation; }
         void setAbsoluteLocation(const LayoutPoint& p) { m_absoluteLocation = p; }
 
+        virtual void trace(Visitor*) OVERRIDE;
+
     protected:
         MouseRelatedEvent();
-        MouseRelatedEvent(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtr<AbstractView>,
+        MouseRelatedEvent(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtrWillBeRawPtr<AbstractView>,
                           int detail, const IntPoint& screenLocation, const IntPoint& windowLocation,
                           const IntPoint& movementDelta,
                           bool ctrlKey, bool altKey, bool shiftKey, bool metaKey, bool isSimulated = false);
 
         void initCoordinates();
         void initCoordinates(const LayoutPoint& clientLocation);
-        virtual void receivedTarget();
+        virtual void receivedTarget() OVERRIDE FINAL;
 
         void computePageLocation();
         void computeRelativePosition();

@@ -29,14 +29,14 @@
  */
 
 #include "config.h"
-#include "WebSecurityPolicy.h"
+#include "public/web/WebSecurityPolicy.h"
 
-#include "public/platform/WebString.h"
-#include "public/platform/WebURL.h"
 #include "core/loader/FrameLoader.h"
 #include "platform/weborigin/SchemeRegistry.h"
 #include "platform/weborigin/SecurityOrigin.h"
 #include "platform/weborigin/SecurityPolicy.h"
+#include "public/platform/WebString.h"
+#include "public/platform/WebURL.h"
 
 using namespace WebCore;
 

@@ -39,25 +39,24 @@ namespace WebCore {
 class WorkerGlobalScope;
 class WorkerThread;
 
-class WorkerDebuggerAgent : public InspectorDebuggerAgent {
+class WorkerDebuggerAgent FINAL : public InspectorDebuggerAgent {
     WTF_MAKE_NONCOPYABLE(WorkerDebuggerAgent);
     WTF_MAKE_FAST_ALLOCATED;
 public:
-    static PassOwnPtr<WorkerDebuggerAgent> create(InstrumentingAgents*, InspectorCompositeState*, WorkerScriptDebugServer*, WorkerGlobalScope*, InjectedScriptManager*);
+    static PassOwnPtr<WorkerDebuggerAgent> create(WorkerScriptDebugServer*, WorkerGlobalScope*, InjectedScriptManager*);
     virtual ~WorkerDebuggerAgent();
 
-    static const char debuggerTaskMode[];
     static void interruptAndDispatchInspectorCommands(WorkerThread*);
 
 private:
-    WorkerDebuggerAgent(InstrumentingAgents*, InspectorCompositeState*, WorkerScriptDebugServer*, WorkerGlobalScope*, InjectedScriptManager*);
+    WorkerDebuggerAgent(WorkerScriptDebugServer*, WorkerGlobalScope*, InjectedScriptManager*);
 
-    virtual void startListeningScriptDebugServer();
-    virtual void stopListeningScriptDebugServer();
-    virtual WorkerScriptDebugServer& scriptDebugServer();
-    virtual InjectedScript injectedScriptForEval(ErrorString*, const int* executionContextId);
-    virtual void muteConsole();
-    virtual void unmuteConsole();
+    virtual void startListeningScriptDebugServer() OVERRIDE;
+    virtual void stopListeningScriptDebugServer() OVERRIDE;
+    virtual WorkerScriptDebugServer& scriptDebugServer() OVERRIDE;
+    virtual InjectedScript injectedScriptForEval(ErrorString*, const int* executionContextId) OVERRIDE;
+    virtual void muteConsole() OVERRIDE;
+    virtual void unmuteConsole() OVERRIDE;
 
     WorkerScriptDebugServer* m_scriptDebugServer;
     WorkerGlobalScope* m_inspectedWorkerGlobalScope;

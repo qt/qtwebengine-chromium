@@ -31,6 +31,8 @@
 #import <ApplicationServices/ApplicationServices.h>
 #import <float.h>
 #import <unicode/uchar.h>
+#import "platform/LayoutTestSupport.h"
+#import "platform/RuntimeEnabledFeatures.h"
 #import "platform/SharedBuffer.h"
 #import "platform/fonts/Font.h"
 #import "platform/fonts/FontCache.h"
@@ -106,6 +108,14 @@ static NSString *webFallbackFontFamily(void)
     return webFallbackFontFamily.get();
 }
 
+static bool useHinting()
+{
+    // Enable hinting when subpixel font scaling is disabled or
+    // when running the set of standard non-subpixel layout tests,
+    // otherwise use subpixel glyph positioning.
+    return (isRunningLayoutTest() && !isFontAntialiasingEnabledForTest()) || !RuntimeEnabledFeatures::subpixelFontScalingEnabled();
+}
+
 const SimpleFontData* SimpleFontData::getCompositeFontReferenceFontData(NSFont *key) const
 {
     if (key && !CFEqual(RetainPtr<CFStringRef>(AdoptCF, CTFontCopyPostScriptName(CTFontRef(key))).get(), CFSTR("LastResort"))) {
@@ -119,15 +129,14 @@ const SimpleFontData* SimpleFontData::getCompositeFontReferenceFontData(NSFont *
                 return found;
         }
         if (CFMutableDictionaryRef dictionary = m_derivedFontData->compositeFontReferences.get()) {
-            bool isUsingPrinterFont = platformData().isPrinterFont();
-            NSFont *substituteFont = isUsingPrinterFont ? [key printerFont] : [key screenFont];
+            NSFont *substituteFont = [key printerFont];
 
             CTFontSymbolicTraits traits = CTFontGetSymbolicTraits(toCTFontRef(substituteFont));
             bool syntheticBold = platformData().syntheticBold() && !(traits & kCTFontBoldTrait);
             bool syntheticOblique = platformData().syntheticOblique() && !(traits & kCTFontItalicTrait);
 
-            FontPlatformData substitutePlatform(substituteFont, platformData().size(), isUsingPrinterFont, syntheticBold, syntheticOblique, platformData().orientation(), platformData().widthVariant());
-            SimpleFontData* value = new SimpleFontData(substitutePlatform, isCustomFont() ? CustomFontData::create(false) : 0);
+            FontPlatformData substitutePlatform(substituteFont, platformData().size(), syntheticBold, syntheticOblique, platformData().orientation(), platformData().widthVariant());
+            SimpleFontData* value = new SimpleFontData(substitutePlatform, isCustomFont() ? CustomFontData::create() : nullptr);
             if (value) {
                 CFDictionaryAddValue(dictionary, key, value);
                 return value;
@@ -155,7 +164,7 @@ void SimpleFontData::platformInit()
             fallbackFontFamily = @"Times New Roman";
         else
             fallbackFontFamily = webFallbackFontFamily();
-        
+
         // Try setting up the alternate font.
         // This is a last ditch effort to use a substitute font when something has gone wrong.
 #if !ERROR_DISABLED
@@ -195,11 +204,12 @@ void SimpleFontData::platformInit()
         WTF_LOG_ERROR("failed to set up font, using system font %s", m_platformData.font());
         initFontData(this);
     }
-    
+
     int iAscent;
     int iDescent;
     int iLineGap;
     unsigned unitsPerEm;
+
     iAscent = CGFontGetAscent(m_platformData.cgFont());
     // Some fonts erroneously specify a positive descender value. We follow Core Text in assuming that
     // such fonts meant the same distance, but in the reverse direction.
@@ -211,6 +221,8 @@ void SimpleFontData::platformInit()
     float ascent = scaleEmToUnits(iAscent, unitsPerEm) * pointSize;
     float descent = -scaleEmToUnits(iDescent, unitsPerEm) * pointSize;
     float lineGap = scaleEmToUnits(iLineGap, unitsPerEm) * pointSize;
+    float underlineThickness = CTFontGetUnderlineThickness(m_platformData.ctFont());
+    float underlinePosition = CTFontGetUnderlinePosition(m_platformData.ctFont());
 
     // We need to adjust Times, Helvetica, and Courier to closely match the
     // vertical metrics of their Microsoft counterparts that are the de facto
@@ -230,7 +242,7 @@ void SimpleFontData::platformInit()
         lineGap -= 3 - descent;
         descent = 3;
     }
-    
+
     if (platformData().orientation() == Vertical && !isTextOrientationFallback())
         m_hasVerticalGlyphs = fontHasVerticalGlyphs(m_platformData.ctFont());
 
@@ -253,6 +265,8 @@ void SimpleFontData::platformInit()
     m_fontMetrics.setDescent(descent);
     m_fontMetrics.setLineGap(lineGap);
     m_fontMetrics.setXHeight(xHeight);
+    m_fontMetrics.setUnderlineThickness(underlineThickness);
+    m_fontMetrics.setUnderlinePosition(underlinePosition);
 }
 
 static CFDataRef copyFontTableForTag(FontPlatformData& platformData, FourCharCode tableName)
@@ -264,7 +278,7 @@ void SimpleFontData::platformCharWidthInit()
 {
     m_avgCharWidth = 0;
     m_maxCharWidth = 0;
-    
+
     RetainPtr<CFDataRef> os2Table(AdoptCF, copyFontTableForTag(m_platformData, 'OS/2'));
     if (os2Table && CFDataGetLength(os2Table.get()) >= 4) {
         const UInt8* os2 = CFDataGetBytePtr(os2Table.get());
@@ -304,16 +318,15 @@ PassRefPtr<SimpleFontData> SimpleFontData::platformCreateScaledFontData(const Fo
     if (isCustomFont()) {
         FontPlatformData scaledFontData(m_platformData);
         scaledFontData.m_size = scaledFontData.m_size * scaleFactor;
-        return SimpleFontData::create(scaledFontData, CustomFontData::create(false));
+        return SimpleFontData::create(scaledFontData, CustomFontData::create());
     }
 
     BEGIN_BLOCK_OBJC_EXCEPTIONS;
     float size = m_platformData.size() * scaleFactor;
-    FontPlatformData scaledFontData([[NSFontManager sharedFontManager] convertFont:m_platformData.font() toSize:size], size, m_platformData.isPrinterFont(), false, false, m_platformData.orientation());
+    FontPlatformData scaledFontData([[NSFontManager sharedFontManager] convertFont:m_platformData.font() toSize:size], size, false, false, m_platformData.orientation());
 
-    // AppKit resets the type information (screen/printer) when you convert a font to a different size.
-    // We have to fix up the font that we're handed back.
-    scaledFontData.setFont(fontDescription.usePrinterFont() ? [scaledFontData.font() printerFont] : [scaledFontData.font() screenFont]);
+    // AppKit forgets about hinting property when scaling, so we have to remind it.
+    scaledFontData.setFont(useHinting() ? [scaledFontData.font() screenFont] : [scaledFontData.font() printerFont]);
 
     if (scaledFontData.font()) {
         NSFontManager *fontManager = [NSFontManager sharedFontManager];
@@ -333,16 +346,7 @@ PassRefPtr<SimpleFontData> SimpleFontData::platformCreateScaledFontData(const Fo
     }
     END_BLOCK_OBJC_EXCEPTIONS;
 
-    return 0;
-}
-
-bool SimpleFontData::containsCharacters(const UChar* characters, int length) const
-{
-    NSString *string = [[NSString alloc] initWithCharactersNoCopy:const_cast<unichar*>(characters) length:length freeWhenDone:NO];
-    NSCharacterSet *set = [[m_platformData.font() coveredCharacterSet] invertedSet];
-    bool result = set && [string rangeOfCharacterFromSet:set].location == NSNotFound;
-    [string release];
-    return result;
+    return nullptr;
 }
 
 void SimpleFontData::determinePitch()
@@ -425,7 +429,7 @@ bool SimpleFontData::canRenderCombiningCharacterSequence(const UChar* characters
 
     WTF::HashMap<String, bool>::AddResult addResult = m_combiningCharacterSequenceSupport->add(String(characters, length), false);
     if (!addResult.isNewEntry)
-        return addResult.iterator->value;
+        return addResult.storedValue->value;
 
     RetainPtr<CGFontRef> cgFont(AdoptCF, CTFontCopyGraphicsFont(platformData().ctFont(), 0));
 
@@ -445,7 +449,7 @@ bool SimpleFontData::canRenderCombiningCharacterSequence(const UChar* characters
             return false;
     }
 
-    addResult.iterator->value = true;
+    addResult.storedValue->value = true;
     return true;
 }
 

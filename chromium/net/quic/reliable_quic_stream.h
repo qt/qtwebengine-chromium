@@ -11,13 +11,16 @@
 
 #include <list>
 
+#include "base/basictypes.h"
+#include "base/memory/ref_counted.h"
 #include "base/strings/string_piece.h"
 #include "net/base/iovec.h"
 #include "net/base/net_export.h"
 #include "net/quic/quic_ack_notifier.h"
+#include "net/quic/quic_flow_controller.h"
 #include "net/quic/quic_protocol.h"
-#include "net/quic/quic_spdy_compressor.h"
 #include "net/quic/quic_stream_sequencer.h"
+#include "net/quic/quic_types.h"
 
 namespace net {
 
@@ -25,9 +28,7 @@ namespace test {
 class ReliableQuicStreamPeer;
 }  // namespace test
 
-class IPEndPoint;
 class QuicSession;
-class SSLInfo;
 
 class NET_EXPORT_PRIVATE ReliableQuicStream {
  public:
@@ -35,8 +36,6 @@ class NET_EXPORT_PRIVATE ReliableQuicStream {
                      QuicSession* session);
 
   virtual ~ReliableQuicStream();
-
-  bool WillAcceptStreamFrame(const QuicStreamFrame& frame) const;
 
   // Called when a (potentially duplicate) stream frame has been received
   // for this stream.  Returns false if this frame can not be accepted
@@ -51,7 +50,7 @@ class NET_EXPORT_PRIVATE ReliableQuicStream {
   virtual void OnClose();
 
   // Called when we get a stream reset from the peer.
-  virtual void OnStreamReset(QuicRstStreamErrorCode error);
+  virtual void OnStreamReset(const QuicRstStreamFrame& frame);
 
   // Called when we get or send a connection close, and should immediately
   // close the stream.  This is not passed through the sequencer,
@@ -83,15 +82,52 @@ class NET_EXPORT_PRIVATE ReliableQuicStream {
   bool read_side_closed() const { return read_side_closed_; }
   bool write_side_closed() const { return write_side_closed_; }
 
-  uint64 stream_bytes_read() { return stream_bytes_read_; }
-  uint64 stream_bytes_written() { return stream_bytes_written_; }
+  uint64 stream_bytes_read() const { return stream_bytes_read_; }
+  uint64 stream_bytes_written() const { return stream_bytes_written_; }
 
-  QuicVersion version();
+  QuicVersion version() const;
+
+  void set_fin_sent(bool fin_sent) { fin_sent_ = fin_sent; }
+  void set_rst_sent(bool rst_sent) { rst_sent_ = rst_sent; }
+
+  // Adjust our flow control windows according to new offset in |frame|.
+  virtual void OnWindowUpdateFrame(const QuicWindowUpdateFrame& frame);
+
+  int num_frames_received() const;
+
+  int num_duplicate_frames_received() const;
+
+  QuicFlowController* flow_controller() { return &flow_controller_; }
+
+  // Called when we see a frame which could increase the highest offset.
+  // Returns true if the highest offset did increase.
+  bool MaybeIncreaseHighestReceivedOffset(uint64 new_offset);
+  // Called when bytese are sent to the peer.
+  void AddBytesSent(uint64 bytes);
+  // Called by the stream sequencer as bytes are consumed from the buffer.
+  // If our receive window has dropped below the threshold, then send a
+  // WINDOW_UPDATE frame.
+  void AddBytesConsumed(uint64 bytes);
+
+  // Returns true if the stream is flow control blocked, by the stream flow
+  // control window or the connection flow control window.
+  bool IsFlowControlBlocked();
+
+  // Returns true if we have received either a RST or a FIN - either of which
+  // gives a definitive number of bytes which the peer has sent. If this is not
+  // true on stream termination the session must keep track of the stream's byte
+  // offset until a definitive final value arrives.
+  bool HasFinalReceivedByteOffset() const {
+    return fin_received_ || rst_received_;
+  }
 
  protected:
   // Sends as much of 'data' to the connection as the connection will consume,
   // and then buffers any remaining data in queued_data_.
-  void WriteOrBufferData(base::StringPiece data, bool fin);
+  void WriteOrBufferData(
+      base::StringPiece data,
+      bool fin,
+      QuicAckNotifier::DelegateInterface* ack_notifier_delegate);
 
   // Sends as many bytes in the first |count| buffers of |iov| to the connection
   // as the connection will consume.
@@ -104,26 +140,53 @@ class NET_EXPORT_PRIVATE ReliableQuicStream {
       bool fin,
       QuicAckNotifier::DelegateInterface* ack_notifier_delegate);
 
+  // Helper method that returns FecProtection to use for writes to the session.
+  FecProtection GetFecProtection();
+
   // Close the read side of the socket.  Further frames will not be accepted.
   virtual void CloseReadSide();
 
   // Close the write side of the socket.  Further writes will fail.
   void CloseWriteSide();
 
-  bool HasBufferedData();
+  bool HasBufferedData() const;
 
-  bool fin_buffered() { return fin_buffered_; }
+  bool fin_buffered() const { return fin_buffered_; }
 
+  void set_fec_policy(FecPolicy fec_policy) { fec_policy_ = fec_policy; }
+
+  const QuicSession* session() const { return session_; }
   QuicSession* session() { return session_; }
 
   const QuicStreamSequencer* sequencer() const { return &sequencer_; }
   QuicStreamSequencer* sequencer() { return &sequencer_; }
 
+  void DisableFlowControl() {
+    flow_controller_.Disable();
+  }
+
  private:
   friend class test::ReliableQuicStreamPeer;
   friend class QuicStreamUtils;
+  class ProxyAckNotifierDelegate;
 
-  std::list<string> queued_data_;
+  struct PendingData {
+    PendingData(string data_in,
+                scoped_refptr<ProxyAckNotifierDelegate> delegate_in);
+    ~PendingData();
+
+    string data;
+    // Delegate that should be notified when the pending data is acked.
+    // Can be nullptr.
+    scoped_refptr<ProxyAckNotifierDelegate> delegate;
+  };
+
+  // Calls MaybeSendBlocked on our flow controller, and connection level flow
+  // controller. If we are flow control blocked, marks this stream as write
+  // blocked.
+  void MaybeSendBlocked();
+
+  std::list<PendingData> queued_data_;
 
   QuicStreamSequencer sequencer_;
   QuicStreamId id_;
@@ -149,8 +212,27 @@ class NET_EXPORT_PRIVATE ReliableQuicStream {
   bool fin_buffered_;
   bool fin_sent_;
 
+  // True if this stream has received (and the sequencer has accepted) a
+  // StreamFrame with the FIN set.
+  bool fin_received_;
+
+  // In combination with fin_sent_, used to ensure that a FIN and/or a RST is
+  // always sent before stream termination.
+  bool rst_sent_;
+
+  // True if this stream has received a RST stream frame.
+  bool rst_received_;
+
+  // FEC policy to be used for this stream.
+  FecPolicy fec_policy_;
+
   // True if the session this stream is running under is a server session.
   bool is_server_;
+
+  QuicFlowController flow_controller_;
+
+  // The connection level flow controller. Not owned.
+  QuicFlowController* connection_flow_controller_;
 
   DISALLOW_COPY_AND_ASSIGN(ReliableQuicStream);
 };

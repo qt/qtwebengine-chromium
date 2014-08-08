@@ -32,15 +32,15 @@
 #include "modules/quota/DOMWindowQuota.h"
 
 #include "core/dom/Document.h"
-#include "core/frame/DOMWindow.h"
-#include "core/frame/Frame.h"
-#include "modules/quota/StorageInfo.h"
+#include "core/frame/LocalDOMWindow.h"
+#include "core/frame/LocalFrame.h"
+#include "modules/quota/DeprecatedStorageInfo.h"
 #include "wtf/PassRefPtr.h"
 
 namespace WebCore {
 
-DOMWindowQuota::DOMWindowQuota(DOMWindow* window)
-    : DOMWindowProperty(window->frame())
+DOMWindowQuota::DOMWindowQuota(LocalDOMWindow& window)
+    : DOMWindowProperty(window.frame())
 {
 }
 
@@ -54,27 +54,33 @@ const char* DOMWindowQuota::supplementName()
 }
 
 // static
-DOMWindowQuota* DOMWindowQuota::from(DOMWindow* window)
+DOMWindowQuota& DOMWindowQuota::from(LocalDOMWindow& window)
 {
-    DOMWindowQuota* supplement = static_cast<DOMWindowQuota*>(Supplement<DOMWindow>::from(window, supplementName()));
+    DOMWindowQuota* supplement = static_cast<DOMWindowQuota*>(WillBeHeapSupplement<LocalDOMWindow>::from(window, supplementName()));
     if (!supplement) {
         supplement = new DOMWindowQuota(window);
-        provideTo(window, supplementName(), adoptPtr(supplement));
+        provideTo(window, supplementName(), adoptPtrWillBeNoop(supplement));
     }
-    return supplement;
+    return *supplement;
 }
 
 // static
-StorageInfo* DOMWindowQuota::webkitStorageInfo(DOMWindow* window)
+DeprecatedStorageInfo* DOMWindowQuota::webkitStorageInfo(LocalDOMWindow& window)
 {
-    return DOMWindowQuota::from(window)->webkitStorageInfo();
+    return DOMWindowQuota::from(window).webkitStorageInfo();
 }
 
-StorageInfo* DOMWindowQuota::webkitStorageInfo() const
+DeprecatedStorageInfo* DOMWindowQuota::webkitStorageInfo() const
 {
     if (!m_storageInfo && frame())
-        m_storageInfo = StorageInfo::create();
+        m_storageInfo = DeprecatedStorageInfo::create();
     return m_storageInfo.get();
+}
+
+void DOMWindowQuota::trace(Visitor* visitor)
+{
+    visitor->trace(m_storageInfo);
+    WillBeHeapSupplement<LocalDOMWindow>::trace(visitor);
 }
 
 } // namespace WebCore

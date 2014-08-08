@@ -27,30 +27,29 @@
 #define Geoposition_h
 
 #include "bindings/v8/ScriptWrappable.h"
-#include "core/events/Event.h"
+#include "modules/EventModules.h"
 #include "modules/geolocation/Coordinates.h"
-#include "wtf/RefCounted.h"
-#include "wtf/text/WTFString.h"
+#include "platform/heap/Handle.h"
 
 namespace WebCore {
 
-class Geoposition : public RefCounted<Geoposition>, public ScriptWrappable {
+class Geoposition : public GarbageCollectedFinalized<Geoposition>, public ScriptWrappable {
 public:
-    static PassRefPtr<Geoposition> create(PassRefPtr<Coordinates> coordinates, DOMTimeStamp timestamp)
+    static Geoposition* create(Coordinates* coordinates, DOMTimeStamp timestamp)
     {
-        return adoptRef(new Geoposition(coordinates, timestamp));
+        return new Geoposition(coordinates, timestamp);
     }
 
-    PassRefPtr<Geoposition> isolatedCopy() const
+    void trace(Visitor* visitor)
     {
-        return Geoposition::create(m_coordinates->isolatedCopy(), m_timestamp);
+        visitor->trace(m_coordinates);
     }
 
     DOMTimeStamp timestamp() const { return m_timestamp; }
     Coordinates* coords() const { return m_coordinates.get(); }
 
 private:
-    Geoposition(PassRefPtr<Coordinates> coordinates, DOMTimeStamp timestamp)
+    Geoposition(Coordinates* coordinates, DOMTimeStamp timestamp)
         : m_coordinates(coordinates)
         , m_timestamp(timestamp)
     {
@@ -58,7 +57,7 @@ private:
         ScriptWrappable::init(this);
     }
 
-    RefPtr<Coordinates> m_coordinates;
+    Member<Coordinates> m_coordinates;
     DOMTimeStamp m_timestamp;
 };
 

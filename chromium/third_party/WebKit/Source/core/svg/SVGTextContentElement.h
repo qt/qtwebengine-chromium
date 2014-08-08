@@ -24,8 +24,8 @@
 #include "core/svg/SVGAnimatedBoolean.h"
 #include "core/svg/SVGAnimatedEnumeration.h"
 #include "core/svg/SVGAnimatedLength.h"
-#include "core/svg/SVGExternalResourcesRequired.h"
 #include "core/svg/SVGGraphicsElement.h"
+#include "core/svg/SVGPointTearOff.h"
 
 namespace WebCore {
 
@@ -36,38 +36,9 @@ enum SVGLengthAdjustType {
     SVGLengthAdjustSpacing,
     SVGLengthAdjustSpacingAndGlyphs
 };
+template<> const SVGEnumerationStringEntries& getStaticStringEntries<SVGLengthAdjustType>();
 
-template<>
-struct SVGPropertyTraits<SVGLengthAdjustType> {
-    static unsigned highestEnumValue() { return SVGLengthAdjustSpacingAndGlyphs; }
-
-    static String toString(SVGLengthAdjustType type)
-    {
-        switch (type) {
-        case SVGLengthAdjustUnknown:
-            return emptyString();
-        case SVGLengthAdjustSpacing:
-            return "spacing";
-        case SVGLengthAdjustSpacingAndGlyphs:
-            return "spacingAndGlyphs";
-        }
-
-        ASSERT_NOT_REACHED();
-        return emptyString();
-    }
-
-    static SVGLengthAdjustType fromString(const String& value)
-    {
-        if (value == "spacingAndGlyphs")
-            return SVGLengthAdjustSpacingAndGlyphs;
-        if (value == "spacing")
-            return SVGLengthAdjustSpacing;
-        return SVGLengthAdjustUnknown;
-    }
-};
-
-class SVGTextContentElement : public SVGGraphicsElement,
-                              public SVGExternalResourcesRequired {
+class SVGTextContentElement : public SVGGraphicsElement {
 public:
     // Forward declare enumerations in the W3C naming scheme, for IDL generation.
     enum {
@@ -79,47 +50,36 @@ public:
     unsigned getNumberOfChars();
     float getComputedTextLength();
     float getSubStringLength(unsigned charnum, unsigned nchars, ExceptionState&);
-    SVGPoint getStartPositionOfChar(unsigned charnum, ExceptionState&);
-    SVGPoint getEndPositionOfChar(unsigned charnum, ExceptionState&);
-    SVGRect getExtentOfChar(unsigned charnum, ExceptionState&);
+    PassRefPtr<SVGPointTearOff> getStartPositionOfChar(unsigned charnum, ExceptionState&);
+    PassRefPtr<SVGPointTearOff> getEndPositionOfChar(unsigned charnum, ExceptionState&);
+    PassRefPtr<SVGRectTearOff> getExtentOfChar(unsigned charnum, ExceptionState&);
     float getRotationOfChar(unsigned charnum, ExceptionState&);
-    int getCharNumAtPosition(const SVGPoint&);
+    int getCharNumAtPosition(PassRefPtr<SVGPointTearOff>, ExceptionState&);
     void selectSubString(unsigned charnum, unsigned nchars, ExceptionState&);
 
     static SVGTextContentElement* elementFromRenderer(RenderObject*);
 
-    // textLength is not declared using the standard DECLARE_ANIMATED_LENGTH macro
-    // as its getter needs special handling (return getComputedTextLength(), instead of m_textLength).
-    SVGLength& specifiedTextLength() { return m_specifiedTextLength; }
-    PassRefPtr<SVGAnimatedLength> textLength();
-    static const SVGPropertyInfo* textLengthPropertyInfo();
+    SVGAnimatedLength* textLength() { return m_textLength.get(); }
+    bool textLengthIsSpecifiedByUser() { return m_textLengthIsSpecifiedByUser; }
+    SVGAnimatedEnumeration<SVGLengthAdjustType>* lengthAdjust() { return m_lengthAdjust.get(); }
 
 protected:
     SVGTextContentElement(const QualifiedName&, Document&);
 
-    virtual bool isValid() const { return SVGTests::isValid(); }
-
     bool isSupportedAttribute(const QualifiedName&);
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual bool isPresentationAttribute(const QualifiedName&) const OVERRIDE;
-    virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) OVERRIDE;
-    virtual void svgAttributeChanged(const QualifiedName&);
+    virtual bool isPresentationAttribute(const QualifiedName&) const OVERRIDE FINAL;
+    virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) OVERRIDE FINAL;
+    virtual void svgAttributeChanged(const QualifiedName&) OVERRIDE;
 
-    virtual bool selfHasRelativeLengths() const;
+    virtual bool selfHasRelativeLengths() const OVERRIDE;
 
 private:
-    virtual bool isTextContent() const { return true; }
+    virtual bool isTextContent() const OVERRIDE FINAL { return true; }
 
-    // Custom 'textLength' property
-    static void synchronizeTextLength(SVGElement* contextElement);
-    static PassRefPtr<SVGAnimatedProperty> lookupOrCreateTextLengthWrapper(SVGElement* contextElement);
-    mutable SVGSynchronizableAnimatedProperty<SVGLength> m_textLength;
-    SVGLength m_specifiedTextLength;
-
-    BEGIN_DECLARE_ANIMATED_PROPERTIES(SVGTextContentElement)
-        DECLARE_ANIMATED_ENUMERATION(LengthAdjust, lengthAdjust, SVGLengthAdjustType)
-        DECLARE_ANIMATED_BOOLEAN(ExternalResourcesRequired, externalResourcesRequired)
-    END_DECLARE_ANIMATED_PROPERTIES
+    RefPtr<SVGAnimatedLength> m_textLength;
+    bool m_textLengthIsSpecifiedByUser;
+    RefPtr<SVGAnimatedEnumeration<SVGLengthAdjustType> > m_lengthAdjust;
 };
 
 inline bool isSVGTextContentElement(const Node& node)
@@ -127,7 +87,7 @@ inline bool isSVGTextContentElement(const Node& node)
     return node.isSVGElement() && toSVGElement(node).isTextContent();
 }
 
-DEFINE_NODE_TYPE_CASTS_WITH_FUNCTION(SVGTextContentElement);
+DEFINE_ELEMENT_TYPE_CASTS_WITH_FUNCTION(SVGTextContentElement);
 
 } // namespace WebCore
 

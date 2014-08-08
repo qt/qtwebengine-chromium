@@ -17,27 +17,34 @@ bool SwappedOutMessages::CanSendWhileSwappedOut(const IPC::Message* msg) {
   // important (e.g., ACKs) for keeping the browser and renderer state
   // consistent in case we later return to the same renderer.
   switch (msg->type()) {
-    // Handled by RenderWidget.
+    // Handled by RenderWidgetHost.
     case InputHostMsg_HandleInputEvent_ACK::ID:
-    case ViewHostMsg_PaintAtSize_ACK::ID:
     case ViewHostMsg_UpdateRect::ID:
     // Allow targeted navigations while swapped out.
-    case ViewHostMsg_OpenURL::ID:
+    case FrameHostMsg_OpenURL::ID:
     case ViewHostMsg_Focus::ID:
-    // Handled by RenderView.
+    // Handled by RenderViewHost.
     case ViewHostMsg_RenderProcessGone::ID:
-    case ViewHostMsg_ShouldClose_ACK::ID:
-    case ViewHostMsg_SwapOut_ACK::ID:
     case ViewHostMsg_ClosePage_ACK::ID:
-    case ViewHostMsg_DomOperationResponse::ID:
     case ViewHostMsg_SwapCompositorFrame::ID:
-    case ViewHostMsg_UpdateIsDelayed::ID:
-    case ViewHostMsg_DidActivateAcceleratedCompositing::ID:
+    // Handled by WorkerMessageFilter (or by SharedWorkerMessageFilter when
+    // embedded-shared-worker is enabled).
+    case ViewHostMsg_DocumentDetached::ID:
     // Allow cross-process JavaScript calls.
     case ViewHostMsg_RouteCloseEvent::ID:
     case ViewHostMsg_RouteMessageEvent::ID:
+    // Handled by RenderFrameHost.
+    case FrameHostMsg_BeforeUnload_ACK::ID:
+    case FrameHostMsg_SwapOut_ACK::ID:
     // Frame detach must occur after the RenderView has swapped out.
     case FrameHostMsg_Detach::ID:
+    case FrameHostMsg_DomOperationResponse::ID:
+    case FrameHostMsg_CompositorFrameSwappedACK::ID:
+    case FrameHostMsg_BuffersSwappedACK::ID:
+    case FrameHostMsg_ReclaimCompositorResources::ID:
+    // Input events propagate from parent to child.
+    case FrameHostMsg_ForwardInputEvent::ID:
+    case FrameHostMsg_InitializeChildFrame::ID:
       return true;
     default:
       break;
@@ -79,19 +86,12 @@ bool SwappedOutMessages::CanHandleWhileSwappedOut(
     case ViewHostMsg_RequestMove::ID:
     // Sends an ACK.
     case AccessibilityHostMsg_Events::ID:
-#if defined(USE_X11)
-    // Synchronous message when leaving a page with plugin.  In this case,
-    // we want to destroy the plugin rather than return an error message.
-    case ViewHostMsg_DestroyPluginContainer::ID:
-#endif
       return true;
     default:
       break;
   }
 
-  // Check with the embedder as well.
-  ContentClient* client = GetContentClient();
-  return client->CanHandleWhileSwappedOut(msg);
+  return false;
 }
 
 }  // namespace content

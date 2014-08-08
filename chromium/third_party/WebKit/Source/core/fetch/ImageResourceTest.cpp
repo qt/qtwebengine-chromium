@@ -37,6 +37,7 @@
 #include "core/fetch/ResourceFetcher.h"
 #include "core/fetch/ResourcePtr.h"
 #include "core/loader/DocumentLoader.h"
+#include "core/loader/UniqueIdentifier.h"
 #include "core/testing/DummyPageHolder.h"
 #include "core/testing/UnitTestHelpers.h"
 #include "platform/SharedBuffer.h"
@@ -58,7 +59,7 @@ TEST(ImageResourceTest, MultipartImage)
     cachedImage->addClient(&client);
 
     // Send the multipart response. No image or data buffer is created.
-    cachedImage->responseReceived(ResourceResponse(KURL(), "multipart/x-mixed-replace", 0, String(), String()));
+    cachedImage->responseReceived(ResourceResponse(KURL(), "multipart/x-mixed-replace", 0, nullAtom, String()));
     ASSERT_FALSE(cachedImage->resourceBuffer());
     ASSERT_FALSE(cachedImage->hasImage());
     ASSERT_EQ(client.imageChangedCount(), 0);
@@ -67,7 +68,7 @@ TEST(ImageResourceTest, MultipartImage)
     // Send the response for the first real part. No image or data buffer is created.
     const char* svgData = "<svg xmlns='http://www.w3.org/2000/svg' width='1' height='1'><rect width='1' height='1' fill='green'/></svg>";
     unsigned svgDataLength = strlen(svgData);
-    cachedImage->responseReceived(ResourceResponse(KURL(), "image/svg+xml", svgDataLength, String(), String()));
+    cachedImage->responseReceived(ResourceResponse(KURL(), "image/svg+xml", svgDataLength, nullAtom, String()));
     ASSERT_FALSE(cachedImage->resourceBuffer());
     ASSERT_FALSE(cachedImage->hasImage());
     ASSERT_EQ(client.imageChangedCount(), 0);
@@ -100,17 +101,17 @@ TEST(ImageResourceTest, CancelOnDetach)
     blink::WebURLResponse response;
     response.initialize();
     response.setMIMEType("text/html");
-    WTF::String localPath = blink::Platform::current()->unitTestSupport()->webKitRootDir();
-    localPath.append("/Source/web/tests/data/cancelTest.html");
+    WTF::String localPath = String(blink::Platform::current()->unitTestSupport()->webKitRootDir()) + "/Source/web/tests/data/cancelTest.html";
     blink::Platform::current()->unitTestSupport()->registerMockedURL(testURL, response, localPath);
 
     // Create enough of a mocked world to get a functioning ResourceLoader.
     OwnPtr<DummyPageHolder> dummyPageHolder = DummyPageHolder::create();
-    RefPtr<DocumentLoader> documentLoader = DocumentLoader::create(ResourceRequest(testURL), SubstituteData());
-    documentLoader->setFrame(&dummyPageHolder->frame());
+    RefPtr<DocumentLoader> documentLoader = DocumentLoader::create(&dummyPageHolder->frame(), ResourceRequest(testURL), SubstituteData());
 
     // Emulate starting a real load.
     ResourcePtr<ImageResource> cachedImage = new ImageResource(ResourceRequest(testURL));
+    cachedImage->setIdentifier(createUniqueIdentifier());
+
     cachedImage->load(documentLoader->fetcher(), ResourceLoaderOptions());
     memoryCache()->add(cachedImage.get());
 
@@ -129,6 +130,63 @@ TEST(ImageResourceTest, CancelOnDetach)
     EXPECT_EQ(reinterpret_cast<Resource*>(0), memoryCache()->resourceForURL(testURL));
 
     blink::Platform::current()->unitTestSupport()->unregisterMockedURL(testURL);
+}
+
+TEST(ImageResourceTest, DecodedDataRemainsWhileHasClients)
+{
+    ResourcePtr<ImageResource> cachedImage = new ImageResource(ResourceRequest());
+    cachedImage->setLoading(true);
+
+    MockImageResourceClient client;
+    cachedImage->addClient(&client);
+
+    // Send the image response.
+    cachedImage->responseReceived(ResourceResponse(KURL(), "multipart/x-mixed-replace", 0, nullAtom, String()));
+    static const unsigned char jpegData[] = {
+        0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01, 0x01, 0x01, 0x00,
+        0x48, 0x00, 0x48, 0x00, 0x00, 0xff, 0xfe, 0x00, 0x13, 0x43, 0x72, 0x65, 0x61, 0x74, 0x65,
+        0x64, 0x20, 0x77, 0x69, 0x74, 0x68, 0x20, 0x47, 0x49, 0x4d, 0x50, 0xff, 0xdb, 0x00, 0x43,
+        0x00, 0x05, 0x03, 0x04, 0x04, 0x04, 0x03, 0x05, 0x04, 0x04, 0x04, 0x05, 0x05, 0x05, 0x06,
+        0x07, 0x0c, 0x08, 0x07, 0x07, 0x07, 0x07, 0x0f, 0x0b, 0x0b, 0x09, 0x0c, 0x11, 0x0f, 0x12,
+        0x12, 0x11, 0x0f, 0x11, 0x11, 0x13, 0x16, 0x1c, 0x17, 0x13, 0x14, 0x1a, 0x15, 0x11, 0x11,
+        0x18, 0x21, 0x18, 0x1a, 0x1d, 0x1d, 0x1f, 0x1f, 0x1f, 0x13, 0x17, 0x22, 0x24, 0x22, 0x1e,
+        0x24, 0x1c, 0x1e, 0x1f, 0x1e, 0xff, 0xdb, 0x00, 0x43, 0x01, 0x05, 0x05, 0x05, 0x07, 0x06,
+        0x07, 0x0e, 0x08, 0x08, 0x0e, 0x1e, 0x14, 0x11, 0x14, 0x1e, 0x1e, 0x1e, 0x1e, 0x1e, 0x1e,
+        0x1e, 0x1e, 0x1e, 0x1e, 0x1e, 0x1e, 0x1e, 0x1e, 0x1e, 0x1e, 0x1e, 0x1e, 0x1e, 0x1e, 0x1e,
+        0x1e, 0x1e, 0x1e, 0x1e, 0x1e, 0x1e, 0x1e, 0x1e, 0x1e, 0x1e, 0x1e, 0x1e, 0x1e, 0x1e, 0x1e,
+        0x1e, 0x1e, 0x1e, 0x1e, 0x1e, 0x1e, 0x1e, 0x1e, 0x1e, 0x1e, 0x1e, 0x1e, 0x1e, 0x1e, 0xff,
+        0xc0, 0x00, 0x11, 0x08, 0x00, 0x01, 0x00, 0x01, 0x03, 0x01, 0x22, 0x00, 0x02, 0x11, 0x01,
+        0x03, 0x11, 0x01, 0xff, 0xc4, 0x00, 0x15, 0x00, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x08, 0xff, 0xc4, 0x00, 0x14,
+        0x10, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0xff, 0xc4, 0x00, 0x14, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xc4, 0x00, 0x14, 0x11,
+        0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0xff, 0xda, 0x00, 0x0c, 0x03, 0x01, 0x00, 0x02, 0x11, 0x03, 0x11, 0x00, 0x3f,
+        0x00, 0xb2, 0xc0, 0x07, 0xff, 0xd9
+    };
+
+    unsigned jpegDataLength = sizeof(jpegData);
+    cachedImage->responseReceived(ResourceResponse(KURL(), "image/jpeg", jpegDataLength, nullAtom, String()));
+    cachedImage->appendData(reinterpret_cast<const char*>(jpegData), jpegDataLength);
+    cachedImage->finish();
+    ASSERT_FALSE(cachedImage->errorOccurred());
+    ASSERT_TRUE(cachedImage->hasImage());
+    ASSERT_FALSE(cachedImage->image()->isNull());
+    ASSERT_TRUE(client.notifyFinishedCalled());
+
+    // The prune comes when the ImageResource still has clients. The image should not be deleted.
+    cachedImage->prune();
+    ASSERT_TRUE(cachedImage->hasClients());
+    ASSERT_TRUE(cachedImage->hasImage());
+    ASSERT_FALSE(cachedImage->image()->isNull());
+
+    // The ImageResource no longer has clients. The image should be deleted by prune.
+    cachedImage->removeClient(&client);
+    cachedImage->prune();
+    ASSERT_FALSE(cachedImage->hasClients());
+    ASSERT_FALSE(cachedImage->hasImage());
+    ASSERT_TRUE(cachedImage->image()->isNull());
 }
 
 } // namespace

@@ -5,9 +5,7 @@
 #ifndef CONTENT_PUBLIC_BROWSER_WEB_CONTENTS_VIEW_WIN_DELEGATE_H_
 #define CONTENT_PUBLIC_BROWSER_WEB_CONTENTS_VIEW_WIN_DELEGATE_H_
 
-#if defined(TOOLKIT_GTK)
-#include <gtk/gtk.h>
-#elif defined(OS_MACOSX)
+#if defined(OS_MACOSX)
 #import <Cocoa/Cocoa.h>
 #endif
 
@@ -27,7 +25,7 @@ class FocusStoreGtk;
 }
 
 namespace content {
-
+class RenderFrameHost;
 class RenderWidgetHost;
 class WebDragDestDelegate;
 struct ContextMenuParams;
@@ -42,9 +40,10 @@ class CONTENT_EXPORT WebContentsViewDelegate {
   virtual WebDragDestDelegate* GetDragDestDelegate() = 0;
 
   // Shows a context menu.
-  virtual void ShowContextMenu(const content::ContextMenuParams& params) = 0;
+  virtual void ShowContextMenu(RenderFrameHost* render_frame_host,
+                               const ContextMenuParams& params) = 0;
 
-#if defined(OS_WIN) || defined(USE_AURA)
+#if defined(USE_AURA)
   // These methods allow the embedder to intercept WebContentsViewWin's
   // implementation of these WebContentsView methods. See the WebContentsView
   // interface documentation for more information about these methods.
@@ -53,25 +52,6 @@ class CONTENT_EXPORT WebContentsViewDelegate {
   virtual bool Focus() = 0;
   virtual void TakeFocus(bool reverse) = 0;
   virtual void SizeChanged(const gfx::Size& size) = 0;
-#elif defined(TOOLKIT_GTK)
-  // Initializes the WebContentsViewDelegate.
-  virtual void Initialize(GtkWidget* expanded_container,
-                          ui::FocusStoreGtk* focus_store) = 0;
-
-  // Returns the top widget that contains |view| passed in from WrapView. This
-  // is exposed through WebContentsViewGtk::GetNativeView() when a wrapper is
-  // supplied to a WebContentsViewGtk.
-  virtual gfx::NativeView GetNativeView() const = 0;
-
-  // Handles a focus event from the renderer process.
-  virtual void Focus() = 0;
-
-  // Gives the delegate a first chance at focus events from our render widget
-  // host, before the main view invokes its default behaviour. Returns TRUE if
-  // |return_value| has been set and that value should be returned to GTK+.
-  virtual gboolean OnNativeViewFocusEvent(GtkWidget* widget,
-                                          GtkDirectionType type,
-                                          gboolean* return_value) = 0;
 #elif defined(OS_MACOSX)
   // Returns a newly-created delegate for the RenderWidgetHostViewMac, to handle
   // events on the responder chain.

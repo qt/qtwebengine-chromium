@@ -28,18 +28,16 @@
 
 #include "modules/webaudio/OfflineAudioCompletionEvent.h"
 
-#include "core/events/ThreadLocalEventNames.h"
-
 namespace WebCore {
 
-PassRefPtr<OfflineAudioCompletionEvent> OfflineAudioCompletionEvent::create()
+PassRefPtrWillBeRawPtr<OfflineAudioCompletionEvent> OfflineAudioCompletionEvent::create()
 {
-    return adoptRef(new OfflineAudioCompletionEvent);
+    return adoptRefWillBeNoop(new OfflineAudioCompletionEvent);
 }
 
-PassRefPtr<OfflineAudioCompletionEvent> OfflineAudioCompletionEvent::create(PassRefPtr<AudioBuffer> renderedBuffer)
+PassRefPtrWillBeRawPtr<OfflineAudioCompletionEvent> OfflineAudioCompletionEvent::create(PassRefPtrWillBeRawPtr<AudioBuffer> renderedBuffer)
 {
-    return adoptRef(new OfflineAudioCompletionEvent(renderedBuffer));
+    return adoptRefWillBeNoop(new OfflineAudioCompletionEvent(renderedBuffer));
 }
 
 OfflineAudioCompletionEvent::OfflineAudioCompletionEvent()
@@ -47,7 +45,7 @@ OfflineAudioCompletionEvent::OfflineAudioCompletionEvent()
     ScriptWrappable::init(this);
 }
 
-OfflineAudioCompletionEvent::OfflineAudioCompletionEvent(PassRefPtr<AudioBuffer> renderedBuffer)
+OfflineAudioCompletionEvent::OfflineAudioCompletionEvent(PassRefPtrWillBeRawPtr<AudioBuffer> renderedBuffer)
     : Event(EventTypeNames::complete, true, false)
     , m_renderedBuffer(renderedBuffer)
 {
@@ -61,6 +59,12 @@ OfflineAudioCompletionEvent::~OfflineAudioCompletionEvent()
 const AtomicString& OfflineAudioCompletionEvent::interfaceName() const
 {
     return EventNames::OfflineAudioCompletionEvent;
+}
+
+void OfflineAudioCompletionEvent::trace(Visitor* visitor)
+{
+    visitor->trace(m_renderedBuffer);
+    Event::trace(visitor);
 }
 
 } // namespace WebCore

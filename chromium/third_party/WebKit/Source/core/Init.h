@@ -33,8 +33,19 @@
 
 namespace WebCore {
 
-// Should be called by clients before trying to create Frames.
-void init();
+class CoreInitializer {
+public:
+    CoreInitializer() : m_isInited(false) { }
+    // Should be called by clients before trying to create Frames.
+    void init();
+
+    virtual void registerEventFactory();
+    virtual void initEventNames();
+    virtual void initEventTargetNames();
+
+private:
+    bool m_isInited;
+};
 
 void shutdown();
 

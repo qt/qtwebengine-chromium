@@ -24,74 +24,42 @@
 #include "core/svg/SVGAnimatedEnumeration.h"
 #include "core/svg/SVGAnimatedNumber.h"
 #include "core/svg/SVGAnimatedNumberList.h"
+#include "core/svg/SVGElement.h"
 #include "platform/graphics/filters/FEComponentTransfer.h"
 
 namespace WebCore {
 
-template<>
-struct SVGPropertyTraits<ComponentTransferType> {
-    static unsigned highestEnumValue() { return FECOMPONENTTRANSFER_TYPE_GAMMA; }
-
-    static String toString(ComponentTransferType type)
-    {
-        switch (type) {
-        case FECOMPONENTTRANSFER_TYPE_UNKNOWN:
-            return emptyString();
-        case FECOMPONENTTRANSFER_TYPE_IDENTITY:
-            return "identity";
-        case FECOMPONENTTRANSFER_TYPE_TABLE:
-            return "table";
-        case FECOMPONENTTRANSFER_TYPE_DISCRETE:
-            return "discrete";
-        case FECOMPONENTTRANSFER_TYPE_LINEAR:
-            return "linear";
-        case FECOMPONENTTRANSFER_TYPE_GAMMA:
-            return "gamma";
-        }
-
-        ASSERT_NOT_REACHED();
-        return emptyString();
-    }
-
-    static ComponentTransferType fromString(const String& value)
-    {
-        if (value == "identity")
-            return FECOMPONENTTRANSFER_TYPE_IDENTITY;
-        if (value == "table")
-            return FECOMPONENTTRANSFER_TYPE_TABLE;
-        if (value == "discrete")
-            return FECOMPONENTTRANSFER_TYPE_DISCRETE;
-        if (value == "linear")
-            return FECOMPONENTTRANSFER_TYPE_LINEAR;
-        if (value == "gamma")
-            return FECOMPONENTTRANSFER_TYPE_GAMMA;
-        return FECOMPONENTTRANSFER_TYPE_UNKNOWN;
-    }
-};
+template<> const SVGEnumerationStringEntries& getStaticStringEntries<ComponentTransferType>();
 
 class SVGComponentTransferFunctionElement : public SVGElement {
 public:
     ComponentTransferFunction transferFunction() const;
 
+    SVGAnimatedNumberList* tableValues() { return m_tableValues.get(); }
+    SVGAnimatedNumber* slope() { return m_slope.get(); }
+    SVGAnimatedNumber* intercept() { return m_intercept.get(); }
+    SVGAnimatedNumber* amplitude() { return m_amplitude.get(); }
+    SVGAnimatedNumber* exponent() { return m_exponent.get(); }
+    SVGAnimatedNumber* offset() { return m_offset.get(); }
+    SVGAnimatedEnumeration<ComponentTransferType>* type() { return m_type.get(); }
+
 protected:
     SVGComponentTransferFunctionElement(const QualifiedName&, Document&);
 
     bool isSupportedAttribute(const QualifiedName&);
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual void svgAttributeChanged(const QualifiedName&);
+    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE FINAL;
+    virtual void svgAttributeChanged(const QualifiedName&) OVERRIDE FINAL;
 
-    virtual bool rendererIsNeeded(const RenderStyle&) OVERRIDE { return false; }
+    virtual bool rendererIsNeeded(const RenderStyle&) OVERRIDE FINAL { return false; }
 
 private:
-    BEGIN_DECLARE_ANIMATED_PROPERTIES(SVGComponentTransferFunctionElement)
-        DECLARE_ANIMATED_ENUMERATION(Type, type, ComponentTransferType)
-        DECLARE_ANIMATED_NUMBER_LIST(TableValues, tableValues)
-        DECLARE_ANIMATED_NUMBER(Slope, slope)
-        DECLARE_ANIMATED_NUMBER(Intercept, intercept)
-        DECLARE_ANIMATED_NUMBER(Amplitude, amplitude)
-        DECLARE_ANIMATED_NUMBER(Exponent, exponent)
-        DECLARE_ANIMATED_NUMBER(Offset, offset)
-    END_DECLARE_ANIMATED_PROPERTIES
+    RefPtr<SVGAnimatedNumberList> m_tableValues;
+    RefPtr<SVGAnimatedNumber> m_slope;
+    RefPtr<SVGAnimatedNumber> m_intercept;
+    RefPtr<SVGAnimatedNumber> m_amplitude;
+    RefPtr<SVGAnimatedNumber> m_exponent;
+    RefPtr<SVGAnimatedNumber> m_offset;
+    RefPtr<SVGAnimatedEnumeration<ComponentTransferType> > m_type;
 };
 
 } // namespace WebCore

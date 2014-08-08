@@ -87,7 +87,7 @@ void IndexedDBInternalsUI::GetAllOriginsOnIndexedDBThread(
     const base::FilePath& context_path) {
   DCHECK(context->TaskRunner()->RunsTasksOnCurrentThread());
 
-  scoped_ptr<ListValue> info_list(static_cast<IndexedDBContextImpl*>(
+  scoped_ptr<base::ListValue> info_list(static_cast<IndexedDBContextImpl*>(
       context.get())->GetAllOriginsDetails());
 
   BrowserThread::PostTask(BrowserThread::UI,
@@ -98,7 +98,7 @@ void IndexedDBInternalsUI::GetAllOriginsOnIndexedDBThread(
                                      context_path));
 }
 
-void IndexedDBInternalsUI::OnOriginsReady(scoped_ptr<ListValue> origins,
+void IndexedDBInternalsUI::OnOriginsReady(scoped_ptr<base::ListValue> origins,
                                           const base::FilePath& path) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   web_ui()->CallJavascriptFunction(
@@ -201,7 +201,8 @@ void IndexedDBInternalsUI::DownloadOriginDataOnIndexedDBThread(
   if (!context->IsInOriginSet(origin_url))
     return;
 
-  context->ForceClose(origin_url);
+  context->ForceClose(origin_url,
+                      IndexedDBContextImpl::FORCE_CLOSE_INTERNALS_PAGE);
   size_t connection_count = context->GetConnectionCount(origin_url);
 
   base::ScopedTempDir temp_dir;
@@ -242,7 +243,8 @@ void IndexedDBInternalsUI::ForceCloseOriginOnIndexedDBThread(
   if (!context->IsInOriginSet(origin_url))
     return;
 
-  context->ForceClose(origin_url);
+  context->ForceClose(origin_url,
+                      IndexedDBContextImpl::FORCE_CLOSE_INTERNALS_PAGE);
   size_t connection_count = context->GetConnectionCount(origin_url);
 
   BrowserThread::PostTask(BrowserThread::UI,
@@ -261,7 +263,7 @@ void IndexedDBInternalsUI::OnForcedClose(const base::FilePath& partition_path,
       "indexeddb.onForcedClose",
       base::StringValue(partition_path.value()),
       base::StringValue(origin_url.spec()),
-      base::FundamentalValue(double(connection_count)));
+      base::FundamentalValue(static_cast<double>(connection_count)));
 }
 
 void IndexedDBInternalsUI::OnDownloadDataReady(
@@ -308,6 +310,8 @@ class FileDeleter : public DownloadItem::Observer {
 
  private:
   const base::FilePath temp_dir_;
+
+  DISALLOW_COPY_AND_ASSIGN(FileDeleter);
 };
 
 void FileDeleter::OnDownloadUpdated(DownloadItem* item) {
@@ -338,11 +342,11 @@ void IndexedDBInternalsUI::OnDownloadStarted(
     const base::FilePath& temp_path,
     size_t connection_count,
     DownloadItem* item,
-    net::Error error) {
+    DownloadInterruptReason interrupt_reason) {
 
-  if (error != net::OK) {
-    LOG(ERROR)
-        << "Error downloading database dump: " << net::ErrorToString(error);
+  if (interrupt_reason != DOWNLOAD_INTERRUPT_REASON_NONE) {
+    LOG(ERROR) << "Error downloading database dump: "
+               << DownloadInterruptReasonToString(interrupt_reason);
     return;
   }
 
@@ -351,7 +355,7 @@ void IndexedDBInternalsUI::OnDownloadStarted(
       "indexeddb.onOriginDownloadReady",
       base::StringValue(partition_path.value()),
       base::StringValue(origin_url.spec()),
-      base::FundamentalValue(double(connection_count)));
+      base::FundamentalValue(static_cast<double>(connection_count)));
 }
 
 }  // namespace content

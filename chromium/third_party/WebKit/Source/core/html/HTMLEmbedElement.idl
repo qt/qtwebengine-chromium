@@ -24,7 +24,7 @@
     [Reflect] attribute DOMString align;
     [Reflect] attribute DOMString height;
     [Reflect] attribute DOMString name;
-    [Reflect, URL, PerWorldBindings, ActivityLogging=SetterForIsolatedWorlds] attribute DOMString src;
+    [Reflect, URL, LogActivity=SetterOnly, LogPreviousValue] attribute DOMString src;
     [Reflect] attribute DOMString type;
     [Reflect] attribute DOMString width;
     [Custom, NotEnumerable] getter boolean (unsigned long index);
@@ -32,5 +32,7 @@
     [Custom, NotEnumerable] getter Node (DOMString name);
     [Custom] setter Node (DOMString name, Node value);
 
-    [CheckSecurity=Node, RaisesException] SVGDocument getSVGDocument();
+    [CheckSecurity=Node, RaisesException] Document getSVGDocument();
+
+    [Reflect, RuntimeEnabled=SubresourceIntegrity] attribute DOMString integrity;
 };

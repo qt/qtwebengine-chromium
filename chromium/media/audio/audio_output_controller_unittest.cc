@@ -39,7 +39,6 @@ class MockAudioOutputControllerEventHandler
 
   MOCK_METHOD0(OnCreated, void());
   MOCK_METHOD0(OnPlaying, void());
-  MOCK_METHOD2(OnPowerMeasured, void(float power_dbfs, bool clipped));
   MOCK_METHOD0(OnPaused, void());
   MOCK_METHOD0(OnError, void());
   MOCK_METHOD2(OnDeviceChange, void(int new_buffer_size, int new_sample_rate));
@@ -54,7 +53,7 @@ class MockAudioOutputControllerSyncReader
   MockAudioOutputControllerSyncReader() {}
 
   MOCK_METHOD1(UpdatePendingBytes, void(uint32 bytes));
-  MOCK_METHOD2(Read, void(const AudioBus* source, AudioBus* dest));
+  MOCK_METHOD1(Read, void(AudioBus* dest));
   MOCK_METHOD0(Close, void());
 
  private:
@@ -84,10 +83,10 @@ ACTION_P(SignalEvent, event) {
 
 static const float kBufferNonZeroData = 1.0f;
 ACTION(PopulateBuffer) {
-  arg1->Zero();
+  arg0->Zero();
   // Note: To confirm the buffer will be populated in these tests, it's
   // sufficient that only the first float in channel 0 is set to the value.
-  arg1->channel(0)[0] = kBufferNonZeroData;
+  arg0->channel(0)[0] = kBufferNonZeroData;
 }
 
 class AudioOutputControllerTest : public testing::Test {
@@ -121,7 +120,7 @@ class AudioOutputControllerTest : public testing::Test {
 
     controller_ = AudioOutputController::Create(
         audio_manager_.get(), &mock_event_handler_, params_, std::string(),
-        std::string(), &mock_sync_reader_);
+        &mock_sync_reader_);
     if (controller_.get())
       controller_->SetVolume(kTestVolume);
 
@@ -129,20 +128,15 @@ class AudioOutputControllerTest : public testing::Test {
   }
 
   void Play() {
-    // Expect the event handler to receive one OnPlaying() call and one or more
-    // OnPowerMeasured() calls.
+    // Expect the event handler to receive one OnPlaying() call.
     EXPECT_CALL(mock_event_handler_, OnPlaying())
         .WillOnce(SignalEvent(&play_event_));
-#if defined(AUDIO_POWER_MONITORING)
-    EXPECT_CALL(mock_event_handler_, OnPowerMeasured(_, false))
-        .Times(AtLeast(1));
-#endif
 
     // During playback, the mock pretends to provide audio data rendered and
     // sent from the render process.
     EXPECT_CALL(mock_sync_reader_, UpdatePendingBytes(_))
         .Times(AtLeast(1));
-    EXPECT_CALL(mock_sync_reader_, Read(_, _))
+    EXPECT_CALL(mock_sync_reader_, Read(_))
         .WillRepeatedly(DoAll(PopulateBuffer(),
                               SignalEvent(&read_event_)));
     controller_->Play();
@@ -166,7 +160,7 @@ class AudioOutputControllerTest : public testing::Test {
 
     // Simulate a device change event to AudioOutputController from the
     // AudioManager.
-    audio_manager_->GetMessageLoop()->PostTask(
+    audio_manager_->GetTaskRunner()->PostTask(
         FROM_HERE,
         base::Bind(&AudioOutputController::OnDeviceChange, controller_));
   }

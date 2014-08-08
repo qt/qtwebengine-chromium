@@ -4,7 +4,7 @@
  *           (C) 1998 Waldo Bastian (bastian@kde.org)
  *           (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
- * Copyright (C) 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010 Apple Inc. All rights reserved.
+ * Copyright (C) 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2013 Apple Inc. All rights reserved.
  * Copyright (C) 2006 Alexey Proskuryakov (ap@nypop.com)
  *
  * This library is free software; you can redistribute it and/or
@@ -26,15 +26,15 @@
 #include "config.h"
 #include "core/rendering/RenderTable.h"
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 #include "core/dom/Document.h"
-#include "core/html/HTMLTableElement.h"
 #include "core/frame/FrameView.h"
+#include "core/html/HTMLTableElement.h"
 #include "core/rendering/AutoTableLayout.h"
+#include "core/rendering/FastTextAutosizer.h"
 #include "core/rendering/FixedTableLayout.h"
 #include "core/rendering/GraphicsContextAnnotator.h"
 #include "core/rendering/HitTestResult.h"
-#include "core/rendering/LayoutRectRecorder.h"
 #include "core/rendering/LayoutRepainter.h"
 #include "core/rendering/RenderLayer.h"
 #include "core/rendering/RenderTableCaption.h"
@@ -63,6 +63,7 @@ RenderTable::RenderTable(Element* element)
     , m_needsSectionRecalc(false)
     , m_columnLogicalWidthChanged(false)
     , m_columnRenderersValid(false)
+    , m_hasCellColspanThatDeterminesTableWidth(false)
     , m_hSpacing(0)
     , m_vSpacing(0)
     , m_borderStart(0)
@@ -82,20 +83,20 @@ void RenderTable::styleDidChange(StyleDifference diff, const RenderStyle* oldSty
     RenderBlock::styleDidChange(diff, oldStyle);
     propagateStyleToAnonymousChildren();
 
-    ETableLayout oldTableLayout = oldStyle ? oldStyle->tableLayout() : TAUTO;
+    bool oldFixedTableLayout = oldStyle ? oldStyle->isFixedTableLayout() : false;
 
     // In the collapsed border model, there is no cell spacing.
     m_hSpacing = collapseBorders() ? 0 : style()->horizontalBorderSpacing();
     m_vSpacing = collapseBorders() ? 0 : style()->verticalBorderSpacing();
     m_columnPos[0] = m_hSpacing;
 
-    if (!m_tableLayout || style()->tableLayout() != oldTableLayout) {
+    if (!m_tableLayout || style()->isFixedTableLayout() != oldFixedTableLayout) {
         if (m_tableLayout)
             m_tableLayout->willChangeTableLayout();
 
         // According to the CSS2 spec, you only use fixed table layout if an
         // explicit width is specified on the table.  Auto width implies auto table layout.
-        if (style()->tableLayout() == TFIXED && !style()->logicalWidth().isAuto())
+        if (style()->isFixedTableLayout())
             m_tableLayout = adoptPtr(new FixedTableLayout(this));
         else
             m_tableLayout = adoptPtr(new AutoTableLayout(this));
@@ -115,6 +116,14 @@ static inline void resetSectionPointerIfNotBefore(RenderTableSection*& ptr, Rend
         o = o->previousSibling();
     if (!o)
         ptr = 0;
+}
+
+static inline bool needsTableSection(RenderObject* object)
+{
+    // Return true if 'object' can't exist in an anonymous table without being
+    // wrapped in a table section box.
+    EDisplay display = object->style()->display();
+    return display != TABLE_CAPTION && display != TABLE_COLUMN_GROUP && display != TABLE_COLUMN;
 }
 
 void RenderTable::addChild(RenderObject* child, RenderObject* beforeChild)
@@ -156,9 +165,7 @@ void RenderTable::addChild(RenderObject* child, RenderObject* beforeChild)
             default:
                 ASSERT_NOT_REACHED();
         }
-    } else if (child->isTableCell() || child->isTableRow())
-        wrapInAnonymousSection = true;
-    else
+    } else
         wrapInAnonymousSection = true;
 
     if (child->isTableSection())
@@ -186,16 +193,16 @@ void RenderTable::addChild(RenderObject* child, RenderObject* beforeChild)
     }
 
     RenderObject* lastBox = beforeChild;
-    while (lastBox && lastBox->parent()->isAnonymous() && !lastBox->isTableSection() && lastBox->style()->display() != TABLE_CAPTION && lastBox->style()->display() != TABLE_COLUMN_GROUP)
+    while (lastBox && lastBox->parent()->isAnonymous() && !lastBox->isTableSection() && needsTableSection(lastBox))
         lastBox = lastBox->parent();
     if (lastBox && lastBox->isAnonymous() && !isAfterContent(lastBox)) {
         if (beforeChild == lastBox)
-            beforeChild = lastBox->firstChild();
+            beforeChild = lastBox->slowFirstChild();
         lastBox->addChild(child, beforeChild);
         return;
     }
 
-    if (beforeChild && !beforeChild->isTableSection() && beforeChild->style()->display() != TABLE_CAPTION && beforeChild->style()->display() != TABLE_COLUMN_GROUP)
+    if (beforeChild && !beforeChild->isTableSection() && needsTableSection(beforeChild))
         beforeChild = 0;
 
     RenderTableSection* section = RenderTableSection::createAnonymousWithParentRenderer(this);
@@ -253,7 +260,6 @@ void RenderTable::updateLogicalWidth()
     }
 
     RenderBlock* cb = containingBlock();
-    RenderView* renderView = view();
 
     LayoutUnit availableLogicalWidth = containingBlockLogicalWidthForContent();
     bool hasPerpendicularContainingBlock = cb->style()->isHorizontalWritingMode() != style()->isHorizontalWritingMode();
@@ -264,16 +270,14 @@ void RenderTable::updateLogicalWidth()
         setLogicalWidth(convertStyleLogicalWidthToComputedWidth(styleLogicalWidth, containerWidthInInlineDirection));
     else {
         // Subtract out any fixed margins from our available width for auto width tables.
-        LayoutUnit marginStart = minimumValueForLength(style()->marginStart(), availableLogicalWidth, renderView);
-        LayoutUnit marginEnd = minimumValueForLength(style()->marginEnd(), availableLogicalWidth, renderView);
+        LayoutUnit marginStart = minimumValueForLength(style()->marginStart(), availableLogicalWidth);
+        LayoutUnit marginEnd = minimumValueForLength(style()->marginEnd(), availableLogicalWidth);
         LayoutUnit marginTotal = marginStart + marginEnd;
 
         // Subtract out our margins to get the available content width.
         LayoutUnit availableContentLogicalWidth = max<LayoutUnit>(0, containerWidthInInlineDirection - marginTotal);
-        if (shrinkToAvoidFloats() && cb->containsFloats() && !hasPerpendicularContainingBlock) {
-            // FIXME: Work with regions someday.
-            availableContentLogicalWidth = shrinkLogicalWidthToAvoidFloats(marginStart, marginEnd, toRenderBlockFlow(cb), 0);
-        }
+        if (shrinkToAvoidFloats() && cb->containsFloats() && !hasPerpendicularContainingBlock)
+            availableContentLogicalWidth = shrinkLogicalWidthToAvoidFloats(marginStart, marginEnd, toRenderBlockFlow(cb));
 
         // Ensure we aren't bigger than our available width.
         setLogicalWidth(min<int>(availableContentLogicalWidth, maxPreferredLogicalWidth()));
@@ -298,23 +302,10 @@ void RenderTable::updateLogicalWidth()
     }
 
     // Finally, with our true width determined, compute our margins for real.
-    setMarginStart(0);
-    setMarginEnd(0);
-    if (!hasPerpendicularContainingBlock) {
-        LayoutUnit containerLogicalWidthForAutoMargins = availableLogicalWidth;
-        if (avoidsFloats() && cb->containsFloats())
-            containerLogicalWidthForAutoMargins = containingBlockAvailableLineWidthInRegion(0); // FIXME: Work with regions someday.
-        ComputedMarginValues marginValues;
-        bool hasInvertedDirection =  cb->style()->isLeftToRightDirection() == style()->isLeftToRightDirection();
-        computeInlineDirectionMargins(cb, containerLogicalWidthForAutoMargins, logicalWidth(),
-            hasInvertedDirection ? marginValues.m_start : marginValues.m_end,
-            hasInvertedDirection ? marginValues.m_end : marginValues.m_start);
-        setMarginStart(marginValues.m_start);
-        setMarginEnd(marginValues.m_end);
-    } else {
-        setMarginStart(minimumValueForLength(style()->marginStart(), availableLogicalWidth, renderView));
-        setMarginEnd(minimumValueForLength(style()->marginEnd(), availableLogicalWidth, renderView));
-    }
+    ComputedMarginValues marginValues;
+    computeMarginsForDirection(InlineDirection, cb, availableLogicalWidth, logicalWidth(), marginValues.m_start, marginValues.m_end, style()->marginStart(), style()->marginEnd());
+    setMarginStart(marginValues.m_start);
+    setMarginEnd(marginValues.m_end);
 
     // We should NEVER shrink the table below the min-content logical width, or else the table can't accomodate
     // its own content which doesn't match CSS nor what authors expect.
@@ -331,11 +322,11 @@ LayoutUnit RenderTable::convertStyleLogicalWidthToComputedWidth(const Length& st
 
     // HTML tables' width styles already include borders and paddings, but CSS tables' width styles do not.
     LayoutUnit borders = 0;
-    bool isCSSTable = !node() || !isHTMLTableElement(node());
+    bool isCSSTable = !isHTMLTableElement(node());
     if (isCSSTable && styleLogicalWidth.isSpecified() && styleLogicalWidth.isPositive() && style()->boxSizing() == CONTENT_BOX)
         borders = borderStart() + borderEnd() + (collapseBorders() ? LayoutUnit() : paddingStart() + paddingEnd());
 
-    return minimumValueForLength(styleLogicalWidth, availableWidth, view()) + borders;
+    return minimumValueForLength(styleLogicalWidth, availableWidth) + borders;
 }
 
 LayoutUnit RenderTable::convertStyleLogicalHeightToComputedHeight(const Length& styleLogicalHeight)
@@ -348,14 +339,12 @@ LayoutUnit RenderTable::convertStyleLogicalHeightToComputedHeight(const Length& 
         // HTML tables size as though CSS height includes border/padding, CSS tables do not.
         LayoutUnit borders = LayoutUnit();
         // FIXME: We cannot apply box-sizing: content-box on <table> which other browsers allow.
-        if ((node() && isHTMLTableElement(node())) || style()->boxSizing() == BORDER_BOX) {
+        if (isHTMLTableElement(node()) || style()->boxSizing() == BORDER_BOX) {
             borders = borderAndPadding;
         }
         computedLogicalHeight = styleLogicalHeight.value() - borders;
     } else if (styleLogicalHeight.isPercent())
         computedLogicalHeight = computePercentageLogicalHeight(styleLogicalHeight);
-    else if (styleLogicalHeight.isViewportPercentage())
-        computedLogicalHeight = minimumValueForLength(styleLogicalHeight, 0, view());
     else if (styleLogicalHeight.isIntrinsic())
         computedLogicalHeight = computeIntrinsicLogicalContentHeightUsing(styleLogicalHeight, logicalHeight() - borderAndPadding, borderAndPadding);
     else
@@ -375,9 +364,14 @@ void RenderTable::layoutCaption(RenderTableCaption* caption)
         caption->layoutIfNeeded();
     }
     // Apply the margins to the location now that they are definitely available from layout
-    caption->setLogicalLocation(LayoutPoint(caption->marginStart(), collapsedMarginBeforeForChild(caption) + logicalHeight()));
+    LayoutUnit captionLogicalTop = collapsedMarginBeforeForChild(caption) + logicalHeight();
+    if (view()->layoutState()->isPaginated()) {
+        captionLogicalTop += caption->paginationStrut();
+        caption->setPaginationStrut(0);
+    }
+    caption->setLogicalLocation(LayoutPoint(caption->marginStart(), captionLogicalTop));
 
-    if (!selfNeedsLayout() && caption->checkForRepaintDuringLayout())
+    if (!selfNeedsLayout() && caption->checkForPaintInvalidationDuringLayout())
         caption->repaintDuringLayoutIfMoved(captionRect);
 
     setLogicalHeight(logicalHeight() + caption->logicalHeight() + collapsedMarginBeforeForChild(caption) + collapsedMarginAfterForChild(caption));
@@ -409,172 +403,179 @@ void RenderTable::layout()
 {
     ASSERT(needsLayout());
 
-    LayoutRectRecorder recorder(*this);
-
     if (simplifiedLayout())
         return;
+
+    // Note: RenderTable is handled differently than other RenderBlocks and the LayoutScope
+    //       must be created before the table begins laying out.
+    FastTextAutosizer::LayoutScope fastTextAutosizerLayoutScope(this);
 
     recalcSectionsIfNeeded();
     // FIXME: We should do this recalc lazily in borderStart/borderEnd so that we don't have to make sure
     // to call this before we call borderStart/borderEnd to avoid getting a stale value.
     recalcBordersInRowDirection();
 
-    LayoutRepainter repainter(*this, checkForRepaintDuringLayout());
-    LayoutStateMaintainer statePusher(view(), this, locationOffset(), style()->isFlippedBlocksWritingMode());
+    LayoutRepainter repainter(*this, checkForPaintInvalidationDuringLayout());
+    SubtreeLayoutScope layouter(*this);
 
-    setLogicalHeight(0);
-
-    LayoutUnit oldLogicalWidth = logicalWidth();
-    updateLogicalWidth();
-
-    SubtreeLayoutScope layouter(this);
-
-    if (logicalWidth() != oldLogicalWidth) {
-        for (unsigned i = 0; i < m_captions.size(); i++)
-            layouter.setNeedsLayout(m_captions[i]);
-    }
-    // FIXME: The optimisation below doesn't work since the internal table
-    // layout could have changed.  we need to add a flag to the table
-    // layout that tells us if something has changed in the min max
-    // calculations to do it correctly.
-//     if ( oldWidth != width() || columns.size() + 1 != columnPos.size() )
-    m_tableLayout->layout();
-
-    LayoutUnit totalSectionLogicalHeight = 0;
-    LayoutUnit oldTableLogicalTop = 0;
-    for (unsigned i = 0; i < m_captions.size(); i++)
-        oldTableLogicalTop += m_captions[i]->logicalHeight() + m_captions[i]->marginBefore() + m_captions[i]->marginAfter();
-
-    bool collapsing = collapseBorders();
-
-    for (RenderObject* child = firstChild(); child; child = child->nextSibling()) {
-        if (child->isTableSection()) {
-            RenderTableSection* section = toRenderTableSection(child);
-            if (m_columnLogicalWidthChanged)
-                layouter.setChildNeedsLayout(section);
-            section->layoutIfNeeded();
-            totalSectionLogicalHeight += section->calcRowLogicalHeight();
-            if (collapsing)
-                section->recalcOuterBorder();
-            ASSERT(!section->needsLayout());
-        } else if (child->isRenderTableCol()) {
-            child->layoutIfNeeded();
-            ASSERT(!child->needsLayout());
-        } else {
-            // FIXME: We should never have other type of children (they should be wrapped in an
-            // anonymous table section) but our code is too crazy and this can happen in practice.
-            // Until this is fixed, let's make sure we don't leave non laid out children in the tree.
-            child->layoutIfNeeded();
-        }
-    }
 
     // If any table section moved vertically, we will just repaint everything from that
     // section down (it is quite unlikely that any of the following sections
     // did not shift).
     bool sectionMoved = false;
     LayoutUnit movedSectionLogicalTop = 0;
+    {
+        LayoutState state(*this, locationOffset());
 
-    // FIXME: Collapse caption margin.
-    if (!m_captions.isEmpty()) {
+        setLogicalHeight(0);
+
+        LayoutUnit oldLogicalWidth = logicalWidth();
+        updateLogicalWidth();
+
+        if (logicalWidth() != oldLogicalWidth) {
+            for (unsigned i = 0; i < m_captions.size(); i++)
+                layouter.setNeedsLayout(m_captions[i]);
+        }
+        // FIXME: The optimisation below doesn't work since the internal table
+        // layout could have changed. We need to add a flag to the table
+        // layout that tells us if something has changed in the min max
+        // calculations to do it correctly.
+        // if ( oldWidth != width() || columns.size() + 1 != columnPos.size() )
+        m_tableLayout->layout();
+
+        LayoutUnit totalSectionLogicalHeight = 0;
+        LayoutUnit oldTableLogicalTop = 0;
+        for (unsigned i = 0; i < m_captions.size(); i++)
+            oldTableLogicalTop += m_captions[i]->logicalHeight() + m_captions[i]->marginBefore() + m_captions[i]->marginAfter();
+
+        bool collapsing = collapseBorders();
+
+        for (RenderObject* child = firstChild(); child; child = child->nextSibling()) {
+            if (child->isTableSection()) {
+                RenderTableSection* section = toRenderTableSection(child);
+                if (m_columnLogicalWidthChanged)
+                    layouter.setChildNeedsLayout(section);
+                section->layoutIfNeeded();
+                totalSectionLogicalHeight += section->calcRowLogicalHeight();
+                if (collapsing)
+                    section->recalcOuterBorder();
+                ASSERT(!section->needsLayout());
+            } else if (child->isRenderTableCol()) {
+                child->layoutIfNeeded();
+                ASSERT(!child->needsLayout());
+            } else {
+                // FIXME: We should never have other type of children (they should be wrapped in an
+                // anonymous table section) but our code is too crazy and this can happen in practice.
+                // Until this is fixed, let's make sure we don't leave non laid out children in the tree.
+                child->layoutIfNeeded();
+            }
+        }
+
+        // FIXME: Collapse caption margin.
+        if (!m_captions.isEmpty()) {
+            for (unsigned i = 0; i < m_captions.size(); i++) {
+                if (m_captions[i]->style()->captionSide() == CAPBOTTOM)
+                    continue;
+                layoutCaption(m_captions[i]);
+            }
+            if (logicalHeight() != oldTableLogicalTop) {
+                sectionMoved = true;
+                movedSectionLogicalTop = min(logicalHeight(), oldTableLogicalTop);
+            }
+        }
+
+        LayoutUnit borderAndPaddingBefore = borderBefore() + (collapsing ? LayoutUnit() : paddingBefore());
+        LayoutUnit borderAndPaddingAfter = borderAfter() + (collapsing ? LayoutUnit() : paddingAfter());
+
+        setLogicalHeight(logicalHeight() + borderAndPaddingBefore);
+
+        if (!isOutOfFlowPositioned())
+            updateLogicalHeight();
+
+        LayoutUnit computedLogicalHeight = 0;
+
+        Length logicalHeightLength = style()->logicalHeight();
+        if (logicalHeightLength.isIntrinsic() || (logicalHeightLength.isSpecified() && logicalHeightLength.isPositive()))
+            computedLogicalHeight = convertStyleLogicalHeightToComputedHeight(logicalHeightLength);
+
+        Length logicalMaxHeightLength = style()->logicalMaxHeight();
+        if (logicalMaxHeightLength.isIntrinsic() || (logicalMaxHeightLength.isSpecified() && !logicalMaxHeightLength.isNegative())) {
+            LayoutUnit computedMaxLogicalHeight = convertStyleLogicalHeightToComputedHeight(logicalMaxHeightLength);
+            computedLogicalHeight = min(computedLogicalHeight, computedMaxLogicalHeight);
+        }
+
+        Length logicalMinHeightLength = style()->logicalMinHeight();
+        if (logicalMinHeightLength.isIntrinsic() || (logicalMinHeightLength.isSpecified() && !logicalMinHeightLength.isNegative())) {
+            LayoutUnit computedMinLogicalHeight = convertStyleLogicalHeightToComputedHeight(logicalMinHeightLength);
+            computedLogicalHeight = max(computedLogicalHeight, computedMinLogicalHeight);
+        }
+
+        distributeExtraLogicalHeight(floorToInt(computedLogicalHeight - totalSectionLogicalHeight));
+
+        for (RenderTableSection* section = topSection(); section; section = sectionBelow(section))
+            section->layoutRows();
+
+        if (!topSection() && computedLogicalHeight > totalSectionLogicalHeight && !document().inQuirksMode()) {
+            // Completely empty tables (with no sections or anything) should at least honor specified height
+            // in strict mode.
+            setLogicalHeight(logicalHeight() + computedLogicalHeight);
+        }
+
+        LayoutUnit sectionLogicalLeft = style()->isLeftToRightDirection() ? borderStart() : borderEnd();
+        if (!collapsing)
+            sectionLogicalLeft += style()->isLeftToRightDirection() ? paddingStart() : paddingEnd();
+
+        // position the table sections
+        RenderTableSection* section = topSection();
+        while (section) {
+            if (!sectionMoved && section->logicalTop() != logicalHeight()) {
+                sectionMoved = true;
+                movedSectionLogicalTop = min(logicalHeight(), section->logicalTop()) + (style()->isHorizontalWritingMode() ? section->visualOverflowRect().y() : section->visualOverflowRect().x());
+            }
+            section->setLogicalLocation(LayoutPoint(sectionLogicalLeft, logicalHeight()));
+
+            setLogicalHeight(logicalHeight() + section->logicalHeight());
+            section = sectionBelow(section);
+        }
+
+        setLogicalHeight(logicalHeight() + borderAndPaddingAfter);
+
         for (unsigned i = 0; i < m_captions.size(); i++) {
-            if (m_captions[i]->style()->captionSide() == CAPBOTTOM)
+            if (m_captions[i]->style()->captionSide() != CAPBOTTOM)
                 continue;
             layoutCaption(m_captions[i]);
         }
-        if (logicalHeight() != oldTableLogicalTop) {
-            sectionMoved = true;
-            movedSectionLogicalTop = min(logicalHeight(), oldTableLogicalTop);
-        }
+
+        if (isOutOfFlowPositioned())
+            updateLogicalHeight();
+
+        // table can be containing block of positioned elements.
+        // FIXME: Only pass true if width or height changed.
+        layoutPositionedObjects(true);
+
+        updateLayerTransformAfterLayout();
+
+        // Layout was changed, so probably borders too.
+        invalidateCollapsedBorders();
+
+        computeOverflow(clientLogicalBottom());
     }
 
-    LayoutUnit borderAndPaddingBefore = borderBefore() + (collapsing ? LayoutUnit() : paddingBefore());
-    LayoutUnit borderAndPaddingAfter = borderAfter() + (collapsing ? LayoutUnit() : paddingAfter());
-
-    setLogicalHeight(logicalHeight() + borderAndPaddingBefore);
-
-    if (!isOutOfFlowPositioned())
-        updateLogicalHeight();
-
-    LayoutUnit computedLogicalHeight = 0;
-
-    Length logicalHeightLength = style()->logicalHeight();
-    if (logicalHeightLength.isIntrinsic() || (logicalHeightLength.isSpecified() && logicalHeightLength.isPositive()))
-        computedLogicalHeight = convertStyleLogicalHeightToComputedHeight(logicalHeightLength);
-
-    Length logicalMaxHeightLength = style()->logicalMaxHeight();
-    if (logicalMaxHeightLength.isIntrinsic() || (logicalMaxHeightLength.isSpecified() && !logicalMaxHeightLength.isNegative())) {
-        LayoutUnit computedMaxLogicalHeight = convertStyleLogicalHeightToComputedHeight(logicalMaxHeightLength);
-        computedLogicalHeight = min(computedLogicalHeight, computedMaxLogicalHeight);
-    }
-
-    Length logicalMinHeightLength = style()->logicalMinHeight();
-    if (logicalMinHeightLength.isIntrinsic() || (logicalMinHeightLength.isSpecified() && !logicalMinHeightLength.isNegative())) {
-        LayoutUnit computedMinLogicalHeight = convertStyleLogicalHeightToComputedHeight(logicalMinHeightLength);
-        computedLogicalHeight = max(computedLogicalHeight, computedMinLogicalHeight);
-    }
-
-    distributeExtraLogicalHeight(floorToInt(computedLogicalHeight - totalSectionLogicalHeight));
-
-    for (RenderTableSection* section = topSection(); section; section = sectionBelow(section))
-        section->layoutRows();
-
-    if (!topSection() && computedLogicalHeight > totalSectionLogicalHeight && !document().inQuirksMode()) {
-        // Completely empty tables (with no sections or anything) should at least honor specified height
-        // in strict mode.
-        setLogicalHeight(logicalHeight() + computedLogicalHeight);
-    }
-
-    LayoutUnit sectionLogicalLeft = style()->isLeftToRightDirection() ? borderStart() : borderEnd();
-    if (!collapsing)
-        sectionLogicalLeft += style()->isLeftToRightDirection() ? paddingStart() : paddingEnd();
-
-    // position the table sections
-    RenderTableSection* section = topSection();
-    while (section) {
-        if (!sectionMoved && section->logicalTop() != logicalHeight()) {
-            sectionMoved = true;
-            movedSectionLogicalTop = min(logicalHeight(), section->logicalTop()) + (style()->isHorizontalWritingMode() ? section->visualOverflowRect().y() : section->visualOverflowRect().x());
-        }
-        section->setLogicalLocation(LayoutPoint(sectionLogicalLeft, logicalHeight()));
-
-        setLogicalHeight(logicalHeight() + section->logicalHeight());
-        section = sectionBelow(section);
-    }
-
-    setLogicalHeight(logicalHeight() + borderAndPaddingAfter);
-
-    for (unsigned i = 0; i < m_captions.size(); i++) {
-        if (m_captions[i]->style()->captionSide() != CAPBOTTOM)
-            continue;
-        layoutCaption(m_captions[i]);
-    }
-
-    if (isOutOfFlowPositioned())
-        updateLogicalHeight();
-
-    // table can be containing block of positioned elements.
-    // FIXME: Only pass true if width or height changed.
-    layoutPositionedObjects(true);
-
-    updateLayerTransform();
-
-    // Layout was changed, so probably borders too.
-    invalidateCollapsedBorders();
-
-    computeOverflow(clientLogicalBottom());
-
-    statePusher.pop();
+    // FIXME: This value isn't the intrinsic content logical height, but we need
+    // to update the value as its used by flexbox layout. crbug.com/367324
+    updateIntrinsicContentLogicalHeight(contentLogicalHeight());
 
     if (view()->layoutState()->pageLogicalHeight())
-        setPageLogicalOffset(view()->layoutState()->pageLogicalOffset(this, logicalTop()));
+        setPageLogicalOffset(view()->layoutState()->pageLogicalOffset(*this, logicalTop()));
 
     bool didFullRepaint = repainter.repaintAfterLayout();
     // Repaint with our new bounds if they are different from our old bounds.
-    if (!didFullRepaint && sectionMoved) {
+    if (!RuntimeEnabledFeatures::repaintAfterLayoutEnabled()
+        && !didFullRepaint && sectionMoved) {
         if (style()->isHorizontalWritingMode())
-            repaintRectangle(LayoutRect(visualOverflowRect().x(), movedSectionLogicalTop, visualOverflowRect().width(), visualOverflowRect().maxY() - movedSectionLogicalTop));
+            invalidatePaintRectangle(LayoutRect(visualOverflowRect().x(), movedSectionLogicalTop, visualOverflowRect().width(), visualOverflowRect().maxY() - movedSectionLogicalTop));
         else
-            repaintRectangle(LayoutRect(movedSectionLogicalTop, visualOverflowRect().y(), visualOverflowRect().maxX() - movedSectionLogicalTop, visualOverflowRect().height()));
+            invalidatePaintRectangle(LayoutRect(movedSectionLogicalTop, visualOverflowRect().y(), visualOverflowRect().maxX() - movedSectionLogicalTop, visualOverflowRect().height()));
     }
 
     m_columnLogicalWidthChanged = false;
@@ -591,14 +592,10 @@ void RenderTable::recalcCollapsedBorders()
     for (RenderObject* section = firstChild(); section; section = section->nextSibling()) {
         if (!section->isTableSection())
             continue;
-        for (RenderObject* row = section->firstChild(); row; row = row->nextSibling()) {
-            if (!row->isTableRow())
-                continue;
-            for (RenderObject* cell = row->firstChild(); cell; cell = cell->nextSibling()) {
-                if (!cell->isTableCell())
-                    continue;
-                ASSERT(toRenderTableCell(cell)->table() == this);
-                toRenderTableCell(cell)->collectBorderValues(m_collapsedBorders);
+        for (RenderTableRow* row = toRenderTableSection(section)->firstRow(); row; row = row->nextRow()) {
+            for (RenderTableCell* cell = row->firstCell(); cell; cell = cell->nextCell()) {
+                ASSERT(cell->table() == this);
+                cell->collectBorderValues(m_collapsedBorders);
             }
         }
     }
@@ -640,10 +637,9 @@ void RenderTable::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset)
 
     PaintPhase paintPhase = paintInfo.phase;
 
-    if (!isRoot()) {
+    if (!isDocumentElement()) {
         LayoutRect overflowBox = visualOverflowRect();
         flipForWritingMode(overflowBox);
-        overflowBox.inflate(maximalOutlineSize(paintInfo.phase));
         overflowBox.moveBy(adjustedPaintOffset);
         if (!overflowBox.intersects(paintInfo.rect))
             return;
@@ -773,13 +769,13 @@ void RenderTable::computePreferredLogicalWidths()
         m_minPreferredLogicalWidth = max(m_minPreferredLogicalWidth, m_captions[i]->minPreferredLogicalWidth());
 
     RenderStyle* styleToUse = style();
-    // FIXME: This should probably be checking for isSpecified since you should be able to use percentage, calc or viewport relative values for min-width.
+    // FIXME: This should probably be checking for isSpecified since you should be able to use percentage or calc values for min-width.
     if (styleToUse->logicalMinWidth().isFixed() && styleToUse->logicalMinWidth().value() > 0) {
         m_maxPreferredLogicalWidth = std::max(m_maxPreferredLogicalWidth, adjustContentBoxLogicalWidthForBoxSizing(styleToUse->logicalMinWidth().value()));
         m_minPreferredLogicalWidth = std::max(m_minPreferredLogicalWidth, adjustContentBoxLogicalWidthForBoxSizing(styleToUse->logicalMinWidth().value()));
     }
 
-    // FIXME: This should probably be checking for isSpecified since you should be able to use percentage, calc or viewport relative values for maxWidth.
+    // FIXME: This should probably be checking for isSpecified since you should be able to use percentage or calc values for maxWidth.
     if (styleToUse->logicalMaxWidth().isFixed()) {
         // We don't constrain m_minPreferredLogicalWidth as the table should be at least the size of its min-content, regardless of 'max-width'.
         m_maxPreferredLogicalWidth = std::min(m_maxPreferredLogicalWidth, adjustContentBoxLogicalWidthForBoxSizing(styleToUse->logicalMaxWidth().value()));
@@ -826,6 +822,10 @@ void RenderTable::appendColumn(unsigned span)
 {
     unsigned newColumnIndex = m_columns.size();
     m_columns.append(ColumnStruct(span));
+
+    // Unless the table has cell(s) with colspan that exceed the number of columns afforded
+    // by the other rows in the table we can use the fast path when mapping columns to effective columns.
+    m_hasCellColspanThatDeterminesTableWidth = m_hasCellColspanThatDeterminesTableWidth || span > 1;
 
     // Propagate the change in our columns representation to the sections that don't need
     // cell recalc. If they do, they will be synced up directly with m_columns later.
@@ -901,6 +901,7 @@ void RenderTable::recalcSections() const
     m_foot = 0;
     m_firstBody = 0;
     m_hasColElements = false;
+    m_hasCellColspanThatDeterminesTableWidth = hasCellColspanThatDeterminesTableWidth();
 
     // We need to get valid pointers to caption, head, foot and first body again
     RenderObject* nextSibling;
@@ -1331,9 +1332,12 @@ void RenderTable::updateFirstLetter()
 int RenderTable::baselinePosition(FontBaseline baselineType, bool firstLine, LineDirectionMode direction, LinePositionMode linePositionMode) const
 {
     ASSERT(linePositionMode == PositionOnContainingLine);
-    LayoutUnit baseline = firstLineBoxBaseline();
-    if (baseline != -1)
+    int baseline = firstLineBoxBaseline();
+    if (baseline != -1) {
+        if (isInline())
+            return beforeMarginInLineDirection(direction) + baseline;
         return baseline;
+    }
 
     return RenderBox::baselinePosition(baselineType, firstLine, direction, linePositionMode);
 }
@@ -1367,9 +1371,9 @@ int RenderTable::firstLineBoxBaseline() const
     return -1;
 }
 
-LayoutRect RenderTable::overflowClipRect(const LayoutPoint& location, RenderRegion* region, OverlayScrollbarSizeRelevancy relevancy)
+LayoutRect RenderTable::overflowClipRect(const LayoutPoint& location, OverlayScrollbarSizeRelevancy relevancy)
 {
-    LayoutRect rect = RenderBlock::overflowClipRect(location, region, relevancy);
+    LayoutRect rect = RenderBlock::overflowClipRect(location, relevancy);
 
     // If we have a caption, expand the clip to include the caption.
     // FIXME: Technically this is wrong, but it's virtually impossible to fix this
@@ -1395,7 +1399,7 @@ bool RenderTable::nodeAtPoint(const HitTestRequest& request, HitTestResult& resu
     LayoutPoint adjustedLocation = accumulatedOffset + location();
 
     // Check kids first.
-    if (!hasOverflowClip() || locationInContainer.intersects(overflowClipRect(adjustedLocation, locationInContainer.region()))) {
+    if (!hasOverflowClip() || locationInContainer.intersects(overflowClipRect(adjustedLocation))) {
         for (RenderObject* child = lastChild(); child; child = child->previousSibling()) {
             if (child->isBox() && !toRenderBox(child)->hasSelfPaintingLayer() && (child->isTableSection() || child->isTableCaption())) {
                 LayoutPoint childPoint = flipForWritingModeForChild(toRenderBox(child), adjustedLocation);

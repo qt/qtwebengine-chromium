@@ -8,6 +8,7 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/models/menu_model.h"
 #include "ui/gfx/image/image.h"
+#include "ui/views/controls/menu/menu_item_view.h"
 #include "ui/views/controls/menu/submenu_view.h"
 #include "ui/views/views_delegate.h"
 
@@ -59,7 +60,7 @@ MenuItemView* MenuModelAdapter::AddMenuItemFromModelAt(ui::MenuModel* model,
                                                        int item_id) {
   gfx::Image icon;
   model->GetIconAt(model_index, &icon);
-  string16 label, sublabel, minor_text;
+  base::string16 label, sublabel, minor_text;
   ui::MenuSeparatorType separator_style = ui::NORMAL_SEPARATOR;
   MenuItemView::Type type;
   ui::MenuModel::ItemType menu_type = model->GetTypeAt(model_index);
@@ -161,7 +162,7 @@ bool MenuModelAdapter::IsTriggerableEvent(MenuItemView* source,
 }
 
 bool MenuModelAdapter::GetAccelerator(int id,
-                                      ui::Accelerator* accelerator) {
+                                      ui::Accelerator* accelerator) const {
   ui::MenuModel* model = menu_model_;
   int index = 0;
   if (ui::MenuModel::GetModelAndIndexForCommandId(id, &model, &index))
@@ -171,27 +172,27 @@ bool MenuModelAdapter::GetAccelerator(int id,
   return false;
 }
 
-string16 MenuModelAdapter::GetLabel(int id) const {
+base::string16 MenuModelAdapter::GetLabel(int id) const {
   ui::MenuModel* model = menu_model_;
   int index = 0;
   if (ui::MenuModel::GetModelAndIndexForCommandId(id, &model, &index))
     return model->GetLabelAt(index);
 
   NOTREACHED();
-  return string16();
+  return base::string16();
 }
 
-const gfx::Font* MenuModelAdapter::GetLabelFont(int id) const {
+const gfx::FontList* MenuModelAdapter::GetLabelFontList(int id) const {
   ui::MenuModel* model = menu_model_;
   int index = 0;
   if (ui::MenuModel::GetModelAndIndexForCommandId(id, &model, &index)) {
-    const gfx::Font* font = model->GetLabelFontAt(index);
-    if (font)
-      return font;
+    const gfx::FontList* font_list = model->GetLabelFontListAt(index);
+    if (font_list)
+      return font_list;
   }
 
   // This line may be reached for the empty menu item.
-  return MenuDelegate::GetLabelFont(id);
+  return MenuDelegate::GetLabelFontList(id);
 }
 
 bool MenuModelAdapter::IsCommandEnabled(int id) const {
@@ -199,6 +200,16 @@ bool MenuModelAdapter::IsCommandEnabled(int id) const {
   int index = 0;
   if (ui::MenuModel::GetModelAndIndexForCommandId(id, &model, &index))
     return model->IsEnabledAt(index);
+
+  NOTREACHED();
+  return false;
+}
+
+bool MenuModelAdapter::IsCommandVisible(int id) const {
+  ui::MenuModel* model = menu_model_;
+  int index = 0;
+  if (ui::MenuModel::GetModelAndIndexForCommandId(id, &model, &index))
+    return model->IsVisibleAt(index);
 
   NOTREACHED();
   return false;
@@ -263,9 +274,6 @@ void MenuModelAdapter::BuildMenuImpl(MenuItemView* menu, ui::MenuModel* model) {
   const int item_count = model->GetItemCount();
   for (int i = 0; i < item_count; ++i) {
     MenuItemView* item = AppendMenuItem(menu, model, i);
-
-    if (item)
-      item->SetVisible(model->IsVisibleAt(i));
 
     if (model->GetTypeAt(i) == ui::MenuModel::TYPE_SUBMENU) {
       DCHECK(item);

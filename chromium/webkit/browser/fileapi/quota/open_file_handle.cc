@@ -13,21 +13,36 @@ OpenFileHandle::~OpenFileHandle() {
   DCHECK(sequence_checker_.CalledOnValidSequencedThread());
 }
 
-int64 OpenFileHandle::UpdateMaxWrittenOffset(int64 offset) {
+void OpenFileHandle::UpdateMaxWrittenOffset(int64 offset) {
   DCHECK(sequence_checker_.CalledOnValidSequencedThread());
 
-  int64 new_file_size = 0;
-  int64 growth = 0;
-  context_->UpdateMaxWrittenOffset(offset, &new_file_size, &growth);
-
+  int64 growth = context_->UpdateMaxWrittenOffset(offset);
   if (growth > 0)
     reservation_->ConsumeReservation(growth);
-
-  return new_file_size;
 }
 
-int64 OpenFileHandle::base_file_size() const {
-  return context_->base_file_size();
+void OpenFileHandle::AddAppendModeWriteAmount(int64 amount) {
+  DCHECK(sequence_checker_.CalledOnValidSequencedThread());
+  if (amount <= 0)
+    return;
+
+  context_->AddAppendModeWriteAmount(amount);
+  reservation_->ConsumeReservation(amount);
+}
+
+int64 OpenFileHandle::GetEstimatedFileSize() const {
+  DCHECK(sequence_checker_.CalledOnValidSequencedThread());
+  return context_->GetEstimatedFileSize();
+}
+
+int64 OpenFileHandle::GetMaxWrittenOffset() const {
+  DCHECK(sequence_checker_.CalledOnValidSequencedThread());
+  return context_->GetMaxWrittenOffset();
+}
+
+const base::FilePath& OpenFileHandle::platform_path() const {
+  DCHECK(sequence_checker_.CalledOnValidSequencedThread());
+  return context_->platform_path();
 }
 
 OpenFileHandle::OpenFileHandle(QuotaReservation* reservation,

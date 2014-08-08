@@ -29,6 +29,7 @@
 #include "SkBitmapDevice.h"
 #include "SkCanvas.h"
 #include "SkPicture.h"
+#include "SkPictureRecorder.h"
 #include "platform/SharedBuffer.h"
 #include "platform/Task.h"
 #include "platform/graphics/ImageDecodingStore.h"
@@ -59,12 +60,6 @@ const unsigned char whitePNG[] = {
     0x42, 0x60, 0x82,
 };
 
-static SkCanvas* createRasterCanvas(int width, int height)
-{
-    SkAutoTUnref<SkBaseDevice> device(new SkBitmapDevice(SkBitmap::kARGB_8888_Config, width, height));
-    return new SkCanvas(device);
-}
-
 struct Rasterizer {
     SkCanvas* canvas;
     SkPicture* picture;
@@ -76,14 +71,15 @@ class DeferredImageDecoderTest : public ::testing::Test, public MockImageDecoder
 public:
     virtual void SetUp() OVERRIDE
     {
-        ImageDecodingStore::initializeOnce();
+        ImageDecodingStore::instance()->setCacheLimitInBytes(1024 * 1024);
         DeferredImageDecoder::setEnabled(true);
         m_data = SharedBuffer::create(whitePNG, sizeof(whitePNG));
         OwnPtr<MockImageDecoder> decoder = MockImageDecoder::create(this);
         m_actualDecoder = decoder.get();
         m_actualDecoder->setSize(1, 1);
         m_lazyDecoder = DeferredImageDecoder::createForTesting(decoder.release());
-        m_canvas.reset(createRasterCanvas(100, 100));
+        m_canvas.reset(SkCanvas::NewRasterN32(100, 100));
+        ASSERT_TRUE(m_canvas);
         m_frameBufferRequestCount = 0;
         m_frameCount = 1;
         m_repetitionCount = cAnimationNone;
@@ -94,7 +90,7 @@ public:
 
     virtual void TearDown() OVERRIDE
     {
-        ImageDecodingStore::shutdown();
+        ImageDecodingStore::instance()->clear();
     }
 
     virtual void decoderBeingDestroyed() OVERRIDE
@@ -141,7 +137,6 @@ protected:
     // Don't own this but saves the pointer to query states.
     MockImageDecoder* m_actualDecoder;
     OwnPtr<DeferredImageDecoder> m_lazyDecoder;
-    SkPicture m_picture;
     SkAutoTUnref<SkCanvas> m_canvas;
     int m_frameBufferRequestCount;
     RefPtr<SharedBuffer> m_data;
@@ -154,82 +149,85 @@ protected:
 
 TEST_F(DeferredImageDecoderTest, drawIntoSkPicture)
 {
-    m_lazyDecoder->setData(m_data.get(), true);
+    m_lazyDecoder->setData(*m_data, true);
     RefPtr<NativeImageSkia> image = m_lazyDecoder->frameBufferAtIndex(0)->asNewNativeImage();
     EXPECT_EQ(1, image->bitmap().width());
     EXPECT_EQ(1, image->bitmap().height());
     EXPECT_FALSE(image->bitmap().isNull());
     EXPECT_TRUE(image->bitmap().isImmutable());
 
-    SkCanvas* tempCanvas = m_picture.beginRecording(100, 100);
+    SkPictureRecorder recorder;
+    SkCanvas* tempCanvas = recorder.beginRecording(100, 100, 0, 0);
     tempCanvas->drawBitmap(image->bitmap(), 0, 0);
-    m_picture.endRecording();
+    RefPtr<SkPicture> picture = adoptRef(recorder.endRecording());
     EXPECT_EQ(0, m_frameBufferRequestCount);
 
-    m_canvas->drawPicture(m_picture);
+    m_canvas->drawPicture(picture.get());
     EXPECT_EQ(0, m_frameBufferRequestCount);
 
     SkBitmap canvasBitmap;
-    canvasBitmap.setConfig(SkBitmap::kARGB_8888_Config, 100, 100);
+    ASSERT_TRUE(canvasBitmap.allocN32Pixels(100, 100));
     ASSERT_TRUE(m_canvas->readPixels(&canvasBitmap, 0, 0));
     SkAutoLockPixels autoLock(canvasBitmap);
     EXPECT_EQ(SkColorSetARGB(255, 255, 255, 255), canvasBitmap.getColor(0, 0));
 }
 
-TEST_F(DeferredImageDecoderTest, DISABLED_drawScaledIntoSkPicture)
+TEST_F(DeferredImageDecoderTest, drawIntoSkPictureProgressive)
 {
-    m_lazyDecoder->setData(m_data.get(), true);
+    RefPtr<SharedBuffer> partialData = SharedBuffer::create(m_data->data(), m_data->size() - 10);
+
+    // Received only half the file.
+    m_lazyDecoder->setData(*partialData, false);
     RefPtr<NativeImageSkia> image = m_lazyDecoder->frameBufferAtIndex(0)->asNewNativeImage();
-    SkBitmap scaledBitmap = image->resizedBitmap(SkISize::Make(50, 51), SkIRect::MakeWH(50, 51));
-    EXPECT_FALSE(scaledBitmap.isNull());
-    EXPECT_TRUE(scaledBitmap.isImmutable());
-    EXPECT_EQ(50, scaledBitmap.width());
-    EXPECT_EQ(51, scaledBitmap.height());
-    EXPECT_EQ(0, m_frameBufferRequestCount);
+    SkPictureRecorder recorder;
+    SkCanvas* tempCanvas = recorder.beginRecording(100, 100, 0, 0);
+    tempCanvas->drawBitmap(image->bitmap(), 0, 0);
+    RefPtr<SkPicture> picture = adoptRef(recorder.endRecording());
+    m_canvas->drawPicture(picture.get());
 
-    SkCanvas* tempCanvas = m_picture.beginRecording(100, 100);
-    tempCanvas->drawBitmap(scaledBitmap, 0, 0);
-    m_picture.endRecording();
-    EXPECT_EQ(0, m_frameBufferRequestCount);
-
-    m_canvas->drawPicture(m_picture);
-    EXPECT_EQ(0, m_frameBufferRequestCount);
+    // Fully received the file and draw the SkPicture again.
+    m_lazyDecoder->setData(*m_data, true);
+    image = m_lazyDecoder->frameBufferAtIndex(0)->asNewNativeImage();
+    tempCanvas = recorder.beginRecording(100, 100, 0, 0);
+    tempCanvas->drawBitmap(image->bitmap(), 0, 0);
+    picture = adoptRef(recorder.endRecording());
+    m_canvas->drawPicture(picture.get());
 
     SkBitmap canvasBitmap;
-    canvasBitmap.setConfig(SkBitmap::kARGB_8888_Config, 100, 100);
+    ASSERT_TRUE(canvasBitmap.allocN32Pixels(100, 100));
     ASSERT_TRUE(m_canvas->readPixels(&canvasBitmap, 0, 0));
     SkAutoLockPixels autoLock(canvasBitmap);
     EXPECT_EQ(SkColorSetARGB(255, 255, 255, 255), canvasBitmap.getColor(0, 0));
-    EXPECT_EQ(SkColorSetARGB(255, 255, 255, 255), canvasBitmap.getColor(49, 50));
 }
 
 static void rasterizeMain(SkCanvas* canvas, SkPicture* picture)
 {
-    canvas->drawPicture(*picture);
+    canvas->drawPicture(picture);
 }
 
 TEST_F(DeferredImageDecoderTest, decodeOnOtherThread)
 {
-    m_lazyDecoder->setData(m_data.get(), true);
+    m_lazyDecoder->setData(*m_data, true);
     RefPtr<NativeImageSkia> image = m_lazyDecoder->frameBufferAtIndex(0)->asNewNativeImage();
     EXPECT_EQ(1, image->bitmap().width());
     EXPECT_EQ(1, image->bitmap().height());
     EXPECT_FALSE(image->bitmap().isNull());
     EXPECT_TRUE(image->bitmap().isImmutable());
 
-    SkCanvas* tempCanvas = m_picture.beginRecording(100, 100);
+    SkPictureRecorder recorder;
+    SkCanvas* tempCanvas = recorder.beginRecording(100, 100, 0, 0);
     tempCanvas->drawBitmap(image->bitmap(), 0, 0);
-    m_picture.endRecording();
+    RefPtr<SkPicture> picture = adoptRef(recorder.endRecording());
     EXPECT_EQ(0, m_frameBufferRequestCount);
 
     // Create a thread to rasterize SkPicture.
     OwnPtr<blink::WebThread> thread = adoptPtr(blink::Platform::current()->createThread("RasterThread"));
-    thread->postTask(new Task(WTF::bind(&rasterizeMain, m_canvas.get(), &m_picture)));
+    thread->postTask(new Task(WTF::bind(&rasterizeMain, m_canvas.get(), picture.get())));
     thread.clear();
     EXPECT_EQ(0, m_frameBufferRequestCount);
 
     SkBitmap canvasBitmap;
-    canvasBitmap.setConfig(SkBitmap::kARGB_8888_Config, 100, 100);
+    ASSERT_TRUE(canvasBitmap.allocN32Pixels(100, 100));
     ASSERT_TRUE(m_canvas->readPixels(&canvasBitmap, 0, 0));
     SkAutoLockPixels autoLock(canvasBitmap);
     EXPECT_EQ(SkColorSetARGB(255, 255, 255, 255), canvasBitmap.getColor(0, 0));
@@ -238,19 +236,25 @@ TEST_F(DeferredImageDecoderTest, decodeOnOtherThread)
 TEST_F(DeferredImageDecoderTest, singleFrameImageLoading)
 {
     m_status = ImageFrame::FramePartial;
-    m_lazyDecoder->setData(m_data.get(), false);
+    m_lazyDecoder->setData(*m_data, false);
     EXPECT_FALSE(m_lazyDecoder->frameIsCompleteAtIndex(0));
     ImageFrame* frame = m_lazyDecoder->frameBufferAtIndex(0);
+    unsigned firstId = frame->getSkBitmap().getGenerationID();
     EXPECT_EQ(ImageFrame::FramePartial, frame->status());
     EXPECT_TRUE(m_actualDecoder);
 
     m_status = ImageFrame::FrameComplete;
-    m_lazyDecoder->setData(m_data.get(), true);
+    m_data->append(" ", 1);
+    m_lazyDecoder->setData(*m_data, true);
     EXPECT_FALSE(m_actualDecoder);
     EXPECT_TRUE(m_lazyDecoder->frameIsCompleteAtIndex(0));
     frame = m_lazyDecoder->frameBufferAtIndex(0);
+    unsigned secondId = frame->getSkBitmap().getGenerationID();
     EXPECT_EQ(ImageFrame::FrameComplete, frame->status());
     EXPECT_FALSE(m_frameBufferRequestCount);
+    EXPECT_NE(firstId, secondId);
+
+    EXPECT_EQ(secondId, m_lazyDecoder->frameBufferAtIndex(0)->getSkBitmap().getGenerationID());
 }
 
 TEST_F(DeferredImageDecoderTest, multiFrameImageLoading)
@@ -259,8 +263,9 @@ TEST_F(DeferredImageDecoderTest, multiFrameImageLoading)
     m_frameCount = 1;
     m_frameDuration = 10;
     m_status = ImageFrame::FramePartial;
-    m_lazyDecoder->setData(m_data.get(), false);
+    m_lazyDecoder->setData(*m_data, false);
     EXPECT_EQ(ImageFrame::FramePartial, m_lazyDecoder->frameBufferAtIndex(0)->status());
+    unsigned firstId = m_lazyDecoder->frameBufferAtIndex(0)->getSkBitmap().getGenerationID();
     EXPECT_FALSE(m_lazyDecoder->frameIsCompleteAtIndex(0));
     EXPECT_EQ(10.0f, m_lazyDecoder->frameBufferAtIndex(0)->duration());
     EXPECT_EQ(10.0f, m_lazyDecoder->frameDurationAtIndex(0));
@@ -268,9 +273,12 @@ TEST_F(DeferredImageDecoderTest, multiFrameImageLoading)
     m_frameCount = 2;
     m_frameDuration = 20;
     m_status = ImageFrame::FrameComplete;
-    m_lazyDecoder->setData(m_data.get(), false);
+    m_data->append(" ", 1);
+    m_lazyDecoder->setData(*m_data, false);
     EXPECT_EQ(ImageFrame::FrameComplete, m_lazyDecoder->frameBufferAtIndex(0)->status());
     EXPECT_EQ(ImageFrame::FrameComplete, m_lazyDecoder->frameBufferAtIndex(1)->status());
+    unsigned secondId = m_lazyDecoder->frameBufferAtIndex(0)->getSkBitmap().getGenerationID();
+    EXPECT_NE(firstId, secondId);
     EXPECT_TRUE(m_lazyDecoder->frameIsCompleteAtIndex(0));
     EXPECT_TRUE(m_lazyDecoder->frameIsCompleteAtIndex(1));
     EXPECT_EQ(20.0f, m_lazyDecoder->frameDurationAtIndex(1));
@@ -281,11 +289,12 @@ TEST_F(DeferredImageDecoderTest, multiFrameImageLoading)
     m_frameCount = 3;
     m_frameDuration = 30;
     m_status = ImageFrame::FrameComplete;
-    m_lazyDecoder->setData(m_data.get(), true);
+    m_lazyDecoder->setData(*m_data, true);
     EXPECT_FALSE(m_actualDecoder);
     EXPECT_EQ(ImageFrame::FrameComplete, m_lazyDecoder->frameBufferAtIndex(0)->status());
     EXPECT_EQ(ImageFrame::FrameComplete, m_lazyDecoder->frameBufferAtIndex(1)->status());
     EXPECT_EQ(ImageFrame::FrameComplete, m_lazyDecoder->frameBufferAtIndex(2)->status());
+    EXPECT_EQ(secondId, m_lazyDecoder->frameBufferAtIndex(0)->getSkBitmap().getGenerationID());
     EXPECT_TRUE(m_lazyDecoder->frameIsCompleteAtIndex(0));
     EXPECT_TRUE(m_lazyDecoder->frameIsCompleteAtIndex(1));
     EXPECT_TRUE(m_lazyDecoder->frameIsCompleteAtIndex(2));
@@ -301,7 +310,7 @@ TEST_F(DeferredImageDecoderTest, multiFrameImageLoading)
 TEST_F(DeferredImageDecoderTest, decodedSize)
 {
     m_decodedSize = IntSize(22, 33);
-    m_lazyDecoder->setData(m_data.get(), true);
+    m_lazyDecoder->setData(*m_data, true);
     RefPtr<NativeImageSkia> image = m_lazyDecoder->frameBufferAtIndex(0)->asNewNativeImage();
     EXPECT_EQ(m_decodedSize.width(), image->bitmap().width());
     EXPECT_EQ(m_decodedSize.height(), image->bitmap().height());
@@ -311,12 +320,26 @@ TEST_F(DeferredImageDecoderTest, decodedSize)
     useMockImageDecoderFactory();
 
     // The following code should not fail any assert.
-    SkCanvas* tempCanvas = m_picture.beginRecording(100, 100);
+    SkPictureRecorder recorder;
+    SkCanvas* tempCanvas = recorder.beginRecording(100, 100, 0, 0);
     tempCanvas->drawBitmap(image->bitmap(), 0, 0);
-    m_picture.endRecording();
+    RefPtr<SkPicture> picture = adoptRef(recorder.endRecording());
     EXPECT_EQ(0, m_frameBufferRequestCount);
-    m_canvas->drawPicture(m_picture);
+    m_canvas->drawPicture(picture.get());
     EXPECT_EQ(1, m_frameBufferRequestCount);
+}
+
+TEST_F(DeferredImageDecoderTest, smallerFrameCount)
+{
+    m_frameCount = 1;
+    m_lazyDecoder->setData(*m_data, false);
+    EXPECT_EQ(m_frameCount, m_lazyDecoder->frameCount());
+    m_frameCount = 2;
+    m_lazyDecoder->setData(*m_data, false);
+    EXPECT_EQ(m_frameCount, m_lazyDecoder->frameCount());
+    m_frameCount = 0;
+    m_lazyDecoder->setData(*m_data, true);
+    EXPECT_EQ(m_frameCount, m_lazyDecoder->frameCount());
 }
 
 } // namespace WebCore

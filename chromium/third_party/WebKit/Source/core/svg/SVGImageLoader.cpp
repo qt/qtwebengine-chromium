@@ -23,7 +23,6 @@
 #include "core/svg/SVGImageLoader.h"
 
 #include "core/events/Event.h"
-#include "core/events/ThreadLocalEventNames.h"
 #include "core/fetch/ImageResource.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/svg/SVGImageElement.h"
@@ -41,17 +40,16 @@ void SVGImageLoader::dispatchLoadEvent()
         element()->dispatchEvent(Event::create(EventTypeNames::error));
     else {
         SVGImageElement* imageElement = toSVGImageElement(element());
-        if (imageElement->externalResourcesRequiredBaseValue())
-            imageElement->sendSVGLoadEventIfPossible(true);
+        imageElement->sendSVGLoadEventIfPossible(true);
     }
 }
 
 String SVGImageLoader::sourceURI(const AtomicString& attribute) const
 {
     KURL base = element()->baseURI();
-    if (base.isValid())
-        return KURL(base, stripLeadingAndTrailingHTMLSpaces(attribute)).string();
-    return element()->document().completeURL(stripLeadingAndTrailingHTMLSpaces(attribute));
+    if (!base.isValid())
+        base = element()->document().baseURI();
+    return element()->document().completeURLWithOverride(stripLeadingAndTrailingHTMLSpaces(attribute), base);
 }
 
 }

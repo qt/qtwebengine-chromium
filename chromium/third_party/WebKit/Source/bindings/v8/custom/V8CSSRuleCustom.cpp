@@ -29,20 +29,19 @@
  */
 
 #include "config.h"
-#include "V8CSSRule.h"
+#include "bindings/core/v8/V8CSSRule.h"
 
-#include "V8CSSCharsetRule.h"
-#include "V8CSSFontFaceRule.h"
-#include "V8CSSImportRule.h"
-#include "V8CSSKeyframeRule.h"
-#include "V8CSSKeyframesRule.h"
-#include "V8CSSMediaRule.h"
-#include "V8CSSPageRule.h"
-#include "V8CSSStyleRule.h"
-#include "V8CSSSupportsRule.h"
-#include "V8CSSViewportRule.h"
-#include "V8WebKitCSSFilterRule.h"
-#include "V8WebKitCSSRegionRule.h"
+#include "bindings/core/v8/V8CSSCharsetRule.h"
+#include "bindings/core/v8/V8CSSFontFaceRule.h"
+#include "bindings/core/v8/V8CSSImportRule.h"
+#include "bindings/core/v8/V8CSSKeyframeRule.h"
+#include "bindings/core/v8/V8CSSKeyframesRule.h"
+#include "bindings/core/v8/V8CSSMediaRule.h"
+#include "bindings/core/v8/V8CSSPageRule.h"
+#include "bindings/core/v8/V8CSSStyleRule.h"
+#include "bindings/core/v8/V8CSSSupportsRule.h"
+#include "bindings/core/v8/V8CSSViewportRule.h"
+#include "bindings/core/v8/V8WebKitCSSFilterRule.h"
 
 namespace WebCore {
 
@@ -52,7 +51,7 @@ v8::Handle<v8::Object> wrap(CSSRule* impl, v8::Handle<v8::Object> creationContex
     switch (impl->type()) {
     case CSSRule::UNKNOWN_RULE:
         // CSSUnknownRule.idl is explicitly excluded as it doesn't add anything
-        // over CSSRule.idl (see bindings/derived_sources.gyp: 'idl_files').
+        // over CSSRule.idl (see core/core.gypi: 'core_idl_files').
         // -> Use the base class wrapper here.
         return V8CSSRule::createWrapper(impl, creationContext, isolate);
     case CSSRule::STYLE_RULE:
@@ -75,8 +74,6 @@ v8::Handle<v8::Object> wrap(CSSRule* impl, v8::Handle<v8::Object> creationContex
         return wrap(toCSSSupportsRule(impl), creationContext, isolate);
     case CSSRule::VIEWPORT_RULE:
         return wrap(toCSSViewportRule(impl), creationContext, isolate);
-    case CSSRule::WEBKIT_REGION_RULE:
-        return wrap(toCSSRegionRule(impl), creationContext, isolate);
     case CSSRule::WEBKIT_FILTER_RULE:
         return wrap(toCSSFilterRule(impl), creationContext, isolate);
     }

@@ -29,22 +29,24 @@
  */
 
 #include "config.h"
-#include "WorkerGlobalScopeProxyProviderImpl.h"
+#include "web/WorkerGlobalScopeProxyProviderImpl.h"
 
-#include "DatabaseClientImpl.h"
-#include "LocalFileSystemClient.h"
-#include "WebFrameImpl.h"
-#include "WebPermissionClient.h"
-#include "WebViewImpl.h"
-#include "WorkerPermissionClient.h"
 #include "core/dom/Document.h"
 #include "core/inspector/ScriptCallStack.h"
 #include "core/workers/Worker.h"
 #include "core/workers/WorkerClients.h"
 #include "core/workers/WorkerMessagingProxy.h"
+#include "modules/serviceworkers/ServiceWorkerContainerClient.h"
+#include "public/platform/WebServiceWorkerProvider.h"
 #include "public/platform/WebString.h"
 #include "public/web/WebFrameClient.h"
+#include "public/web/WebPermissionClient.h"
 #include "public/web/WebWorkerPermissionClientProxy.h"
+#include "web/DatabaseClientImpl.h"
+#include "web/LocalFileSystemClient.h"
+#include "web/WebLocalFrameImpl.h"
+#include "web/WebViewImpl.h"
+#include "web/WorkerPermissionClient.h"
 
 using namespace WebCore;
 
@@ -54,11 +56,12 @@ WebCore::WorkerGlobalScopeProxy* WorkerGlobalScopeProxyProviderImpl::createWorke
 {
     if (worker->executionContext()->isDocument()) {
         Document* document = toDocument(worker->executionContext());
-        WebFrameImpl* webFrame = WebFrameImpl::fromFrame(document->frame());
-        OwnPtr<WorkerClients> workerClients = WorkerClients::create();
+        WebLocalFrameImpl* webFrame = WebLocalFrameImpl::fromFrame(document->frame());
+        OwnPtrWillBeRawPtr<WorkerClients> workerClients = WorkerClients::create();
         provideLocalFileSystemToWorker(workerClients.get(), LocalFileSystemClient::create());
         provideDatabaseClientToWorker(workerClients.get(), DatabaseClientImpl::create());
         providePermissionClientToWorker(workerClients.get(), adoptPtr(webFrame->client()->createWorkerPermissionClientProxy(webFrame)));
+        provideServiceWorkerContainerClientToWorker(workerClients.get(), adoptPtr(webFrame->client()->createServiceWorkerProvider(webFrame)));
         return new WorkerMessagingProxy(worker, workerClients.release());
     }
     ASSERT_NOT_REACHED();

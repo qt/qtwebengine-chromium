@@ -22,8 +22,12 @@
 
 #include "bindings/v8/ScriptWrappable.h"
 #include "core/frame/DOMWindowProperty.h"
-#include "core/frame/NavigatorBase.h"
+#include "core/frame/NavigatorCPU.h"
+#include "core/frame/NavigatorID.h"
+#include "core/frame/NavigatorLanguage.h"
+#include "core/frame/NavigatorOnLine.h"
 #include "platform/Supplementable.h"
+#include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
@@ -33,18 +37,29 @@ namespace WebCore {
 
 class DOMMimeTypeArray;
 class DOMPluginArray;
-class Frame;
+class LocalFrame;
 class PluginData;
 
 typedef int ExceptionCode;
 
-class Navigator : public NavigatorBase, public ScriptWrappable, public RefCounted<Navigator>, public DOMWindowProperty, public Supplementable<Navigator> {
+class Navigator FINAL
+    : public RefCountedWillBeGarbageCollectedFinalized<Navigator>
+    , public NavigatorCPU
+    , public NavigatorID
+    , public NavigatorLanguage
+    , public NavigatorOnLine
+    , public ScriptWrappable
+    , public DOMWindowProperty
+    , public WillBeHeapSupplementable<Navigator> {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(Navigator);
 public:
-    static PassRefPtr<Navigator> create(Frame* frame) { return adoptRef(new Navigator(frame)); }
+    static PassRefPtrWillBeRawPtr<Navigator> create(LocalFrame* frame)
+    {
+        return adoptRefWillBeNoop(new Navigator(frame));
+    }
+
     virtual ~Navigator();
 
-    String appVersion() const;
-    String language() const;
     DOMPluginArray* plugins() const;
     DOMMimeTypeArray* mimeTypes() const;
     bool cookieEnabled() const;
@@ -59,11 +74,16 @@ public:
     // Relinquishes the storage lock, if one exists.
     void getStorageUpdates();
 
-private:
-    explicit Navigator(Frame*);
+    // NavigatorLanguage
+    virtual Vector<String> languages() OVERRIDE;
 
-    mutable RefPtr<DOMPluginArray> m_plugins;
-    mutable RefPtr<DOMMimeTypeArray> m_mimeTypes;
+    virtual void trace(Visitor*);
+
+private:
+    explicit Navigator(LocalFrame*);
+
+    mutable RefPtrWillBeMember<DOMPluginArray> m_plugins;
+    mutable RefPtrWillBeMember<DOMMimeTypeArray> m_mimeTypes;
 };
 
 }

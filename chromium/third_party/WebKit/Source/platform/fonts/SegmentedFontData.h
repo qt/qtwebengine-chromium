@@ -62,32 +62,27 @@ public:
     void appendRange(const FontDataRange& range) { m_ranges.append(range); }
     unsigned numRanges() const { return m_ranges.size(); }
     const FontDataRange& rangeAt(unsigned i) const { return m_ranges[i]; }
+    bool containsCharacter(UChar32) const;
 
 #ifndef NDEBUG
-    virtual String description() const;
+    virtual String description() const OVERRIDE;
 #endif
 
 private:
     SegmentedFontData() { }
 
     virtual const SimpleFontData* fontDataForCharacter(UChar32) const OVERRIDE;
-    virtual bool containsCharacters(const UChar*, int length) const OVERRIDE;
 
     virtual bool isCustomFont() const OVERRIDE;
     virtual bool isLoading() const OVERRIDE;
     virtual bool isLoadingFallback() const OVERRIDE;
     virtual bool isSegmented() const OVERRIDE;
-
-    bool containsCharacter(UChar32) const;
+    virtual bool shouldSkipDrawing() const OVERRIDE;
 
     Vector<FontDataRange, 1> m_ranges;
 };
 
-inline SegmentedFontData* toSegmentedFontData(FontData* fontData)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!fontData || fontData->isSegmented());
-    return static_cast<SegmentedFontData*>(fontData);
-}
+DEFINE_TYPE_CASTS(SegmentedFontData, FontData, fontData, fontData->isSegmented(), fontData.isSegmented());
 
 } // namespace WebCore
 

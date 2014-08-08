@@ -10,6 +10,7 @@
 #include "base/android/jni_android.h"
 #include "base/gtest_prod_util.h"
 #include "base/synchronization/lock.h"
+#include "base/synchronization/waitable_event.h"
 #include "media/audio/audio_manager_base.h"
 
 namespace media {
@@ -33,8 +34,7 @@ class MEDIA_EXPORT AudioManagerAndroid : public AudioManagerBase {
 
   virtual AudioOutputStream* MakeAudioOutputStream(
       const AudioParameters& params,
-      const std::string& device_id,
-      const std::string& input_device_id) OVERRIDE;
+      const std::string& device_id) OVERRIDE;
   virtual AudioInputStream* MakeAudioInputStream(
       const AudioParameters& params,
       const std::string& device_id) OVERRIDE;
@@ -46,8 +46,7 @@ class MEDIA_EXPORT AudioManagerAndroid : public AudioManagerBase {
       const AudioParameters& params) OVERRIDE;
   virtual AudioOutputStream* MakeLowLatencyOutputStream(
       const AudioParameters& params,
-      const std::string& device_id,
-      const std::string& input_device_id) OVERRIDE;
+      const std::string& device_id) OVERRIDE;
   virtual AudioInputStream* MakeLinearInputStream(
       const AudioParameters& params,
       const std::string& device_id) OVERRIDE;
@@ -67,10 +66,12 @@ class MEDIA_EXPORT AudioManagerAndroid : public AudioManagerBase {
       const AudioParameters& input_params) OVERRIDE;
 
  private:
-  void Init();
-  void Close();
-  void SetAudioMode(int mode);
-  void SetAudioDevice(const std::string& device_id);
+  void InitializeOnAudioThread();
+  void ShutdownOnAudioThread();
+
+  bool HasNoAudioInputStreams();
+  void SetCommunicationAudioModeOn(bool on);
+  bool SetAudioDevice(const std::string& device_id);
   int GetNativeOutputSampleRate();
   bool IsAudioLowLatencySupported();
   int GetAudioLowLatencyOutputFrameSize();
@@ -78,18 +79,15 @@ class MEDIA_EXPORT AudioManagerAndroid : public AudioManagerBase {
 
   void DoSetMuteOnAudioThread(bool muted);
 
-  // Allow the AudioAndroidTest to access private methods.
-  FRIEND_TEST_ALL_PREFIXES(AudioAndroidOutputTest, IsAudioLowLatencySupported);
-
   // Java AudioManager instance.
   base::android::ScopedJavaGlobalRef<jobject> j_audio_manager_;
 
   typedef std::set<OpenSLESOutputStream*> OutputStreams;
   OutputStreams streams_;
-  // TODO(wjia): remove this lock once unit test modules are fixed to call
-  // AudioManager::MakeAudioOutputStream on the audio thread. For now, this
-  // lock is used to guard access to |streams_|.
-  base::Lock streams_lock_;
+
+  // Enabled when first input stream is created and set to false when last
+  // input stream is destroyed. Also affects the stream type of output streams.
+  bool communication_mode_is_on_;
 
   DISALLOW_COPY_AND_ASSIGN(AudioManagerAndroid);
 };

@@ -5,7 +5,7 @@
 #include "content/browser/renderer_host/java/java_bridge_dispatcher_host_manager.h"
 
 #include "base/android/jni_android.h"
-#include "base/android/jni_helper.h"
+#include "base/android/jni_weak_ref.h"
 #include "base/android/scoped_java_ref.h"
 #include "base/bind.h"
 #include "base/logging.h"
@@ -13,14 +13,21 @@
 #include "content/browser/renderer_host/java/java_bound_object.h"
 #include "content/browser/renderer_host/java/java_bridge_dispatcher_host.h"
 #include "content/common/android/hash_set.h"
+#include "content/common/java_bridge_messages.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/render_frame_host.h"
 #include "third_party/WebKit/public/web/WebBindings.h"
 
 namespace content {
 
 JavaBridgeDispatcherHostManager::JavaBridgeDispatcherHostManager(
-    WebContents* web_contents)
-    : WebContentsObserver(web_contents) {
+    WebContents* web_contents,
+    jobject retained_object_set)
+    : WebContentsObserver(web_contents),
+      retained_object_set_(base::android::AttachCurrentThread(),
+                           retained_object_set),
+      allow_object_contents_inspection_(true) {
+  DCHECK(retained_object_set);
 }
 
 JavaBridgeDispatcherHostManager::~JavaBridgeDispatcherHostManager() {
@@ -46,27 +53,6 @@ void JavaBridgeDispatcherHostManager::AddNamedObject(const base::string16& name,
   }
 }
 
-void JavaBridgeDispatcherHostManager::SetRetainedObjectSet(
-    const JavaObjectWeakGlobalRef& retained_object_set) {
-  // It's an error to replace the retained_object_set_ after it's been set,
-  // so we check that it hasn't already been here.
-  // TODO(benm): It'd be better to pass the set in the constructor to avoid
-  // the chance of this happening; but that's tricky as this get's constructed
-  // before ContentViewCore (which owns the set). Best solution may be to move
-  // ownership of the JavaBridgerDispatchHostManager from WebContents to
-  // ContentViewCore?
-  JNIEnv* env = base::android::AttachCurrentThread();
-  base::android::ScopedJavaLocalRef<jobject> new_retained_object_set =
-      retained_object_set.get(env);
-  base::android::ScopedJavaLocalRef<jobject> current_retained_object_set =
-      retained_object_set_.get(env);
-  if (!env->IsSameObject(new_retained_object_set.obj(),
-                         current_retained_object_set.obj())) {
-    DCHECK(current_retained_object_set.is_null());
-    retained_object_set_ = retained_object_set;
-  }
-}
-
 void JavaBridgeDispatcherHostManager::RemoveNamedObject(
     const base::string16& name) {
   ObjectMap::iterator iter = objects_.find(name);
@@ -83,36 +69,31 @@ void JavaBridgeDispatcherHostManager::RemoveNamedObject(
   }
 }
 
-void JavaBridgeDispatcherHostManager::OnGetChannelHandle(
-    RenderViewHost* render_view_host, IPC::Message* reply_msg) {
-  instances_[render_view_host]->OnGetChannelHandle(reply_msg);
-}
-
-void JavaBridgeDispatcherHostManager::RenderViewCreated(
-    RenderViewHost* render_view_host) {
+void JavaBridgeDispatcherHostManager::RenderFrameCreated(
+    RenderFrameHost* render_frame_host) {
   // Creates a JavaBridgeDispatcherHost for the specified RenderViewHost and
   // adds all currently registered named objects to the new instance.
   scoped_refptr<JavaBridgeDispatcherHost> instance =
-      new JavaBridgeDispatcherHost(render_view_host);
+      new JavaBridgeDispatcherHost(render_frame_host);
 
   for (ObjectMap::const_iterator iter = objects_.begin();
       iter != objects_.end(); ++iter) {
     instance->AddNamedObject(iter->first, iter->second);
   }
 
-  instances_[render_view_host] = instance;
+  instances_[render_frame_host] = instance;
 }
 
-void JavaBridgeDispatcherHostManager::RenderViewDeleted(
-    RenderViewHost* render_view_host) {
-  if (!instances_.count(render_view_host))  // Needed for tests.
+void JavaBridgeDispatcherHostManager::RenderFrameDeleted(
+    RenderFrameHost* render_frame_host) {
+  if (!instances_.count(render_frame_host))  // Needed for tests.
     return;
-  instances_[render_view_host]->RenderViewDeleted();
-  instances_.erase(render_view_host);
+  instances_[render_frame_host]->RenderFrameDeleted();
+  instances_.erase(render_frame_host);
 }
 
 void JavaBridgeDispatcherHostManager::DocumentAvailableInMainFrame() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   // Called when the window object has been cleared in the main frame.
   JNIEnv* env = base::android::AttachCurrentThread();
   base::android::ScopedJavaLocalRef<jobject> retained_object_set =
@@ -130,9 +111,28 @@ void JavaBridgeDispatcherHostManager::DocumentAvailableInMainFrame() {
   }
 }
 
+bool JavaBridgeDispatcherHostManager::OnMessageReceived(
+    const IPC::Message& message,
+    RenderFrameHost* render_frame_host) {
+  DCHECK(render_frame_host);
+  if (!instances_.count(render_frame_host))
+    return false;
+  scoped_refptr<JavaBridgeDispatcherHost> instance =
+      instances_[render_frame_host];
+  bool handled = true;
+  IPC_BEGIN_MESSAGE_MAP(JavaBridgeDispatcherHostManager, message)
+    IPC_MESSAGE_FORWARD_DELAY_REPLY(
+        JavaBridgeHostMsg_GetChannelHandle,
+        instance.get(),
+        JavaBridgeDispatcherHost::OnGetChannelHandle)
+    IPC_MESSAGE_UNHANDLED(handled = false)
+  IPC_END_MESSAGE_MAP()
+  return handled;
+}
+
 void JavaBridgeDispatcherHostManager::JavaBoundObjectCreated(
     const base::android::JavaRef<jobject>& object) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   JNIEnv* env = base::android::AttachCurrentThread();
   base::android::ScopedJavaLocalRef<jobject> retained_object_set =
@@ -144,7 +144,7 @@ void JavaBridgeDispatcherHostManager::JavaBoundObjectCreated(
 
 void JavaBridgeDispatcherHostManager::JavaBoundObjectDestroyed(
     const base::android::JavaRef<jobject>& object) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   JNIEnv* env = base::android::AttachCurrentThread();
   base::android::ScopedJavaLocalRef<jobject> retained_object_set =
@@ -152,6 +152,11 @@ void JavaBridgeDispatcherHostManager::JavaBoundObjectDestroyed(
   if (!retained_object_set.is_null()) {
     JNI_Java_HashSet_remove(env, retained_object_set, object);
   }
+}
+
+void JavaBridgeDispatcherHostManager::SetAllowObjectContentsInspection(
+    bool allow) {
+  allow_object_contents_inspection_ = allow;
 }
 
 }  // namespace content

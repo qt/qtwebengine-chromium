@@ -35,9 +35,11 @@
 #include "public/platform/WebContentLayerClient.h"
 #include "public/platform/WebLayer.h"
 #include "wtf/OwnPtr.h"
+#include "wtf/Vector.h"
 
 namespace WebCore {
 class RenderLayer;
+class RenderObject;
 class Node;
 }
 
@@ -47,7 +49,7 @@ struct WebFloatRect;
 struct WebRect;
 class WebViewImpl;
 
-class LinkHighlight : public WebContentLayerClient, public WebAnimationDelegate, WebCore::LinkHighlightClient {
+class LinkHighlight FINAL : public WebContentLayerClient, public WebAnimationDelegate, WebCore::LinkHighlightClient {
 public:
     static PassOwnPtr<LinkHighlight> create(WebCore::Node*, WebViewImpl*);
     virtual ~LinkHighlight();
@@ -58,11 +60,12 @@ public:
     void updateGeometry();
 
     // WebContentLayerClient implementation.
-    virtual void paintContents(WebCanvas*, const WebRect& clipRect, bool canPaintLCDText, WebFloatRect& opaque) OVERRIDE;
+    virtual void paintContents(WebCanvas*, const WebRect& clipRect, bool canPaintLCDText, WebFloatRect& opaque,
+        WebContentLayerClient::GraphicsContextStatus = GraphicsContextEnabled) OVERRIDE;
 
     // WebAnimationDelegate implementation.
-    virtual void notifyAnimationStarted(double wallClockTime, double monotonicTime, blink::WebAnimation::TargetProperty) OVERRIDE;
-    virtual void notifyAnimationFinished(double wallClockTime, double monotonicTime, blink::WebAnimation::TargetProperty) OVERRIDE;
+    virtual void notifyAnimationStarted(double monotonicTime, blink::WebAnimation::TargetProperty) OVERRIDE;
+    virtual void notifyAnimationFinished(double monotonicTime, blink::WebAnimation::TargetProperty) OVERRIDE;
 
     // LinkHighlightClient inplementation.
     virtual void invalidate() OVERRIDE;
@@ -75,6 +78,7 @@ private:
     LinkHighlight(WebCore::Node*, WebViewImpl*);
 
     void releaseResources();
+    void computeQuads(WebCore::Node*, WTF::Vector<WebCore::FloatQuad>&) const;
 
     WebCore::RenderLayer* computeEnclosingCompositingLayer();
     void clearGraphicsLayerLinkHighlightPointer();
@@ -86,7 +90,7 @@ private:
     OwnPtr<WebLayer> m_clipLayer;
     WebCore::Path m_path;
 
-    RefPtr<WebCore::Node> m_node;
+    RefPtrWillBePersistent<WebCore::Node> m_node;
     WebViewImpl* m_owningWebViewImpl;
     WebCore::GraphicsLayer* m_currentGraphicsLayer;
 

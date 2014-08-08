@@ -31,26 +31,41 @@
 #include "config.h"
 #include "core/dom/Microtask.h"
 
-#include "core/dom/MutationObserver.h"
-#include "core/dom/custom/CustomElementCallbackDispatcher.h"
+#include "bindings/v8/V8PerIsolateData.h"
+#include "platform/Task.h"
+#include "public/platform/WebThread.h"
 #include "wtf/Vector.h"
+#include <v8.h>
 
 namespace WebCore {
 
 void Microtask::performCheckpoint()
 {
-    static bool performingCheckpoint = false;
-    if (performingCheckpoint)
+    v8::Isolate* isolate = v8::Isolate::GetCurrent();
+    V8PerIsolateData* isolateData = V8PerIsolateData::from(isolate);
+    ASSERT(isolateData);
+    if (isolateData->recursionLevel() || isolateData->performingMicrotaskCheckpoint())
         return;
-    performingCheckpoint = true;
+    isolateData->setPerformingMicrotaskCheckpoint(true);
+    isolate->RunMicrotasks();
+    isolateData->setPerformingMicrotaskCheckpoint(false);
+}
 
-    bool anyWorkDone;
-    do {
-        MutationObserver::deliverAllMutations();
-        anyWorkDone = CustomElementCallbackDispatcher::instance().dispatch();
-    } while (anyWorkDone);
+static void microtaskFunctionCallback(void* data)
+{
+    OwnPtr<blink::WebThread::Task> task = adoptPtr(static_cast<blink::WebThread::Task*>(data));
+    task->run();
+}
 
-    performingCheckpoint = false;
+void Microtask::enqueueMicrotask(PassOwnPtr<blink::WebThread::Task> callback)
+{
+    v8::Isolate* isolate = v8::Isolate::GetCurrent();
+    isolate->EnqueueMicrotask(&microtaskFunctionCallback, callback.leakPtr());
+}
+
+void Microtask::enqueueMicrotask(const Closure& callback)
+{
+    enqueueMicrotask(adoptPtr(new Task(callback)));
 }
 
 } // namespace WebCore

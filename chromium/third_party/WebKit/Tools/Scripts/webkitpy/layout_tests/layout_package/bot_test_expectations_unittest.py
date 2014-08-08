@@ -30,19 +30,53 @@ import webkitpy.thirdparty.unittest2 as unittest
 
 from webkitpy.layout_tests.layout_package import bot_test_expectations
 from webkitpy.layout_tests.models import test_expectations
+from webkitpy.layout_tests.port import builders
+
+
+class BotTestExpectationsFactoryTest(unittest.TestCase):
+    def fake_results_json_for_builder(self, builder):
+        return bot_test_expectations.ResultsJSON(builder, 'Dummy content')
+
+    def test_expectations_for_builder(self):
+        factory = bot_test_expectations.BotTestExpectationsFactory()
+        factory._results_json_for_builder = self.fake_results_json_for_builder
+
+        old_builders = builders._exact_matches
+        builders._exact_matches = {
+            "Dummy builder name": {"port_name": "dummy-port", "specifiers": []},
+        }
+
+        try:
+            self.assertIsNotNone(factory.expectations_for_builder('Dummy builder name'))
+        finally:
+            builders._exact_matches = old_builders
+
+    def test_expectations_for_port(self):
+        factory = bot_test_expectations.BotTestExpectationsFactory()
+        factory._results_json_for_builder = self.fake_results_json_for_builder
+
+        old_builders = builders._exact_matches
+        builders._exact_matches = {
+            "Dummy builder name": {"port_name": "dummy-port", "specifiers": []},
+        }
+
+        try:
+            self.assertIsNotNone(factory.expectations_for_port('dummy-port'))
+        finally:
+            builders._exact_matches = old_builders
 
 
 class BotTestExpectationsTest(unittest.TestCase):
     # FIXME: Find a way to import this map from Tools/TestResultServer/model/jsonresults.py.
     FAILURE_MAP = {"A": "AUDIO", "C": "CRASH", "F": "TEXT", "I": "IMAGE", "O": "MISSING",
-        "N": "NO DATA", "P": "PASS", "T": "TIMEOUT", "Y": "NOTRUN", "X": "SKIP", "Z": "IMAGE+TEXT"}
+        "N": "NO DATA", "P": "PASS", "T": "TIMEOUT", "Y": "NOTRUN", "X": "SKIP", "Z": "IMAGE+TEXT", "K": "LEAK"}
 
     # All result_string's in this file expect newest result
     # on left: "PFF", means it just passed after 2 failures.
 
     def _assert_is_flaky(self, results_string, should_be_flaky):
         results_json = self._results_json_from_test_data({})
-        expectations = bot_test_expectations.BotTestExpectations(results_json)
+        expectations = bot_test_expectations.BotTestExpectations(results_json, set('test'))
         length_encoded = self._results_from_string(results_string)['results']
         num_actual_results = len(expectations._flaky_types_in_results(length_encoded, only_ignore_very_flaky=True))
         if should_be_flaky:
@@ -80,12 +114,12 @@ class BotTestExpectationsTest(unittest.TestCase):
 
     def _assert_expectations(self, test_data, expectations_string, only_ignore_very_flaky):
         results_json = self._results_json_from_test_data(test_data)
-        expectations = bot_test_expectations.BotTestExpectations(results_json)
+        expectations = bot_test_expectations.BotTestExpectations(results_json, set('test'))
         self.assertEqual(expectations.flakes_by_path(only_ignore_very_flaky), expectations_string)
 
     def _assert_unexpected_results(self, test_data, expectations_string):
         results_json = self._results_json_from_test_data(test_data)
-        expectations = bot_test_expectations.BotTestExpectations(results_json)
+        expectations = bot_test_expectations.BotTestExpectations(results_json, set('test'))
         self.assertEqual(expectations.unexpected_results_by_path(), expectations_string)
 
     def test_basic(self):
@@ -112,14 +146,14 @@ class BotTestExpectationsTest(unittest.TestCase):
         test_data = {
             'tests': {
                 'foo': {
-                    'allfailures.html': self._results_from_string('FPFPCNCNTXTXIZIZOCYOCY'),
+                    'allfailures.html': self._results_from_string('FPFPCNCNTXTXIZIZOCOCYKYK'),
                     'imageplustextflake.html': self._results_from_string('ZPZPPPPPPPPPPPPPPPPP'),
                 }
             }
         }
         self._assert_expectations(test_data, {
             'foo/imageplustextflake.html': sorted(["IMAGE+TEXT", "PASS"]),
-            'foo/allfailures.html': sorted(["TEXT", "PASS", "IMAGE+TEXT", "TIMEOUT", "CRASH", "IMAGE", "MISSING"]),
+            'foo/allfailures.html': sorted(["TEXT", "PASS", "IMAGE+TEXT", "TIMEOUT", "CRASH", "IMAGE", "MISSING", "LEAK"]),
         }, only_ignore_very_flaky=True)
 
     def test_unexpected_results_no_unexpected(self):
@@ -147,7 +181,7 @@ class BotTestExpectationsTest(unittest.TestCase):
                     'crash.html': {'results': [[2, 'F'], [1, 'C']], 'expected': 'WONTFIX'},
                     'image.html': {'results': [[2, 'F'], [1, 'I']], 'expected': 'CRASH FAIL'},
                     'i_f.html': {'results': [[1, 'F'], [5, 'I']], 'expected': 'PASS'},
-                    'all.html': self._results_from_string('FPFPCNCNTXTXIZIZOCYOCY'),
+                    'all.html': self._results_from_string('FPFPCNCNTXTXIZIZOCOCYKYK'),
                 }
             }
         }
@@ -160,5 +194,5 @@ class BotTestExpectationsTest(unittest.TestCase):
             'foo/crash.html': sorted(["WONTFIX", "CRASH", "TEXT"]),
             'foo/image.html': sorted(["CRASH", "FAIL", "IMAGE"]),
             'foo/i_f.html': sorted(["PASS", "IMAGE", "TEXT"]),
-            'foo/all.html': sorted(["TEXT", "PASS", "IMAGE+TEXT", "TIMEOUT", "CRASH", "IMAGE", "MISSING"]),
+            'foo/all.html': sorted(["TEXT", "PASS", "IMAGE+TEXT", "TIMEOUT", "CRASH", "IMAGE", "MISSING", "LEAK"]),
         })

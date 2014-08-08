@@ -23,8 +23,11 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-interface SVGAnimatedEnumeration {
-    [StrictTypeChecking, RaisesException=Setter] attribute unsigned short baseVal;
+[
+    ImplementedAs=SVGAnimatedEnumerationBase,
+    SetWrapperReferenceTo(SVGElement contextElement),
+    TypeChecking=Interface|Nullable,
+] interface SVGAnimatedEnumeration {
+    [RaisesException=Setter] attribute unsigned short baseVal;
     readonly attribute unsigned short animVal;
 };
-

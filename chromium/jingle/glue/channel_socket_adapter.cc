@@ -76,9 +76,9 @@ int TransportChannelSocketAdapter::Write(
   }
 
   int result;
+  talk_base::PacketOptions options;
   if (channel_->writable()) {
-    result = channel_->SendPacket(buffer->data(), buffer_size,
-                                  talk_base::DSCP_NO_CHANGE);
+    result = channel_->SendPacket(buffer->data(), buffer_size, options);
     if (result < 0) {
       result = net::MapSystemError(channel_->GetError());
 
@@ -99,14 +99,16 @@ int TransportChannelSocketAdapter::Write(
   return result;
 }
 
-bool TransportChannelSocketAdapter::SetReceiveBufferSize(int32 size) {
+int TransportChannelSocketAdapter::SetReceiveBufferSize(int32 size) {
   DCHECK_EQ(base::MessageLoop::current(), message_loop_);
-  return channel_->SetOption(talk_base::Socket::OPT_RCVBUF, size) == 0;
+  return (channel_->SetOption(talk_base::Socket::OPT_RCVBUF, size) == 0) ?
+      net::OK : net::ERR_SOCKET_SET_RECEIVE_BUFFER_SIZE_ERROR;
 }
 
-bool TransportChannelSocketAdapter::SetSendBufferSize(int32 size) {
+int TransportChannelSocketAdapter::SetSendBufferSize(int32 size) {
   DCHECK_EQ(base::MessageLoop::current(), message_loop_);
-  return channel_->SetOption(talk_base::Socket::OPT_SNDBUF, size) == 0;
+  return (channel_->SetOption(talk_base::Socket::OPT_SNDBUF, size) == 0) ?
+      net::OK : net::ERR_SOCKET_SET_SEND_BUFFER_SIZE_ERROR;
 }
 
 void TransportChannelSocketAdapter::Close(int error_code) {
@@ -172,9 +174,10 @@ void TransportChannelSocketAdapter::OnWritableState(
   DCHECK_EQ(base::MessageLoop::current(), message_loop_);
   // Try to send the packet if there is a pending write.
   if (!write_callback_.is_null()) {
+    talk_base::PacketOptions options;
     int result = channel_->SendPacket(write_buffer_->data(),
                                       write_buffer_size_,
-                                      talk_base::DSCP_NO_CHANGE);
+                                      options);
     if (result < 0)
       result = net::MapSystemError(channel_->GetError());
 

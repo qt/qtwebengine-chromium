@@ -31,23 +31,31 @@
 
 namespace WebCore {
 
-DatabaseBackendSync::DatabaseBackendSync(PassRefPtr<DatabaseContext> databaseContext, const String& name, const String& expectedVersion, const String& displayName, unsigned long estimatedSize)
+DatabaseBackendSync::DatabaseBackendSync(DatabaseContext* databaseContext, const String& name, const String& expectedVersion, const String& displayName, unsigned long estimatedSize)
     : DatabaseBackendBase(databaseContext, name, expectedVersion, displayName, estimatedSize, DatabaseType::Sync)
 {
 }
 
 DatabaseBackendSync::~DatabaseBackendSync()
 {
+#if !ENABLE(OILPAN)
     // SQLite is "multi-thread safe", but each database handle can only be used
     // on a single thread at a time.
     //
     // For DatabaseBackendSync, we open the SQLite database on the script context
     // thread. And hence we should also close it on that same thread. This means
     // that the SQLite database need to be closed here in the destructor.
-
-    ASSERT(m_databaseContext->isContextThread());
-    if (opened())
+    if (opened()) {
+        ASSERT(m_databaseContext->isContextThread());
         closeDatabase();
+    }
+#endif
+    ASSERT(!opened());
+}
+
+void DatabaseBackendSync::trace(Visitor* visitor)
+{
+    DatabaseBackendBase::trace(visitor);
 }
 
 bool DatabaseBackendSync::openAndVerifyVersion(bool setVersionInNewDatabase, DatabaseError& error, String& errorMessage)

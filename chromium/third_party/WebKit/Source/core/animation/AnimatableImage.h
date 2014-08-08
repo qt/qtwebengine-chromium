@@ -37,30 +37,35 @@
 
 namespace WebCore {
 
-class AnimatableImage : public AnimatableValue {
+class AnimatableImage FINAL : public AnimatableValue {
 public:
     virtual ~AnimatableImage() { }
-    static PassRefPtr<AnimatableImage> create(StyleImage* image)
+    static PassRefPtrWillBeRawPtr<AnimatableImage> create(PassRefPtrWillBeRawPtr<CSSValue> value)
     {
-        return adoptRef(new AnimatableImage(image));
+        return adoptRefWillBeNoop(new AnimatableImage(value));
     }
-    PassRefPtr<CSSValue> toCSSValue() const { return m_image->cssValue(); }
-    StyleImage* toStyleImage() const { return m_image.get(); }
+    CSSValue* toCSSValue() const { return m_value.get(); }
+
+    virtual void trace(Visitor* visitor) OVERRIDE
+    {
+        visitor->trace(m_value);
+        AnimatableValue::trace(visitor);
+    }
 
 protected:
-    virtual PassRefPtr<AnimatableValue> interpolateTo(const AnimatableValue*, double fraction) const OVERRIDE;
-    virtual PassRefPtr<AnimatableValue> addWith(const AnimatableValue*) const OVERRIDE;
+    virtual PassRefPtrWillBeRawPtr<AnimatableValue> interpolateTo(const AnimatableValue*, double fraction) const OVERRIDE;
+    virtual bool usesDefaultInterpolationWith(const AnimatableValue*) const OVERRIDE;
 
 private:
-    AnimatableImage(StyleImage* image)
-        : m_image(image)
+    AnimatableImage(PassRefPtrWillBeRawPtr<CSSValue> value)
+        : m_value(value)
     {
-        ASSERT(m_image);
+        ASSERT(m_value.get());
     }
     virtual AnimatableType type() const OVERRIDE { return TypeImage; }
     virtual bool equalTo(const AnimatableValue*) const OVERRIDE;
 
-    const RefPtr<StyleImage> m_image;
+    const RefPtrWillBeMember<CSSValue> m_value;
 };
 
 DEFINE_ANIMATABLE_VALUE_TYPE_CASTS(AnimatableImage, isImage());

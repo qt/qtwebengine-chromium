@@ -39,13 +39,14 @@ namespace WebCore {
 
 class AbstractSQLStatement;
 class DatabaseBackend;
-class SQLError;
+class SQLErrorData;
 class SQLTransactionBackend;
 
-class SQLStatementBackend : public AbstractSQLStatementBackend {
+class SQLStatementBackend FINAL : public AbstractSQLStatementBackend {
 public:
-    static PassRefPtr<SQLStatementBackend> create(PassOwnPtr<AbstractSQLStatement>,
+    static PassRefPtrWillBeRawPtr<SQLStatementBackend> create(PassOwnPtrWillBeRawPtr<AbstractSQLStatement>,
         const String& sqlStatement, const Vector<SQLValue>& arguments, int permissions);
+    virtual void trace(Visitor*) OVERRIDE;
 
     bool execute(DatabaseBackend*);
     bool lastExecutionFailedDueToQuota() const;
@@ -56,24 +57,24 @@ public:
     void setVersionMismatchedError(DatabaseBackend*);
 
     AbstractSQLStatement* frontend();
-    virtual PassRefPtr<SQLError> sqlError() const;
-    virtual PassRefPtr<SQLResultSet> sqlResultSet() const;
+    virtual SQLErrorData* sqlError() const OVERRIDE;
+    virtual SQLResultSet* sqlResultSet() const OVERRIDE;
 
 private:
-    SQLStatementBackend(PassOwnPtr<AbstractSQLStatement>, const String& statement,
+    SQLStatementBackend(PassOwnPtrWillBeRawPtr<AbstractSQLStatement>, const String& statement,
         const Vector<SQLValue>& arguments, int permissions);
 
     void setFailureDueToQuota(DatabaseBackend*);
     void clearFailureDueToQuota();
 
-    OwnPtr<AbstractSQLStatement> m_frontend;
+    OwnPtrWillBeMember<AbstractSQLStatement> m_frontend;
     String m_statement;
     Vector<SQLValue> m_arguments;
     bool m_hasCallback;
     bool m_hasErrorCallback;
 
-    RefPtr<SQLError> m_error;
-    RefPtr<SQLResultSet> m_resultSet;
+    OwnPtr<SQLErrorData> m_error;
+    RefPtrWillBeMember<SQLResultSet> m_resultSet;
 
     int m_permissions;
 };

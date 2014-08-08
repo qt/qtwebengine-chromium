@@ -20,9 +20,10 @@
 #include "webrtc/modules/audio_coding/main/acm2/acm_resampler.h"
 #include "webrtc/modules/audio_coding/main/acm2/call_statistics.h"
 #include "webrtc/modules/audio_coding/main/acm2/initial_delay_manager.h"
-#include "webrtc/modules/audio_coding/neteq4/interface/neteq.h"
+#include "webrtc/modules/audio_coding/neteq/interface/neteq.h"
 #include "webrtc/modules/interface/module_common_types.h"
 #include "webrtc/system_wrappers/interface/scoped_ptr.h"
+#include "webrtc/system_wrappers/interface/thread_annotations.h"
 #include "webrtc/typedefs.h"
 
 namespace webrtc {
@@ -47,9 +48,7 @@ class AcmReceiver {
   };
 
   // Constructor of the class
-  AcmReceiver();
-
-  explicit AcmReceiver(NetEq* neteq);
+  explicit AcmReceiver(const AudioCodingModule::Config& config);
 
   // Destructor of the class.
   ~AcmReceiver();
@@ -244,9 +243,10 @@ class AcmReceiver {
   void set_id(int id);  // TODO(turajs): can be inline.
 
   //
-  // Returns the RTP timestamp of the last sample delivered by GetAudio().
+  // Gets the RTP timestamp of the last sample delivered by GetAudio().
+  // Returns true if the RTP timestamp is valid, otherwise false.
   //
-  uint32_t PlayoutTimestamp();
+  bool GetPlayoutTimestamp(uint32_t* timestamp);
 
   //
   // Return the index of the codec associated with the last non-CNG/non-DTMF
@@ -328,7 +328,8 @@ class AcmReceiver {
  private:
   int PayloadType2CodecIndex(uint8_t payload_type) const;
 
-  bool GetSilence(int desired_sample_rate_hz, AudioFrame* frame);
+  bool GetSilence(int desired_sample_rate_hz, AudioFrame* frame)
+      EXCLUSIVE_LOCKS_REQUIRED(crit_sect_);
 
   int GetNumSyncPacketToInsert(uint16_t received_squence_number);
 
@@ -339,20 +340,23 @@ class AcmReceiver {
 
   void InsertStreamOfSyncPackets(InitialDelayManager::SyncStream* sync_stream);
 
-  int id_;
+  scoped_ptr<CriticalSectionWrapper> crit_sect_;
+  int id_;  // TODO(henrik.lundin) Make const.
+  int last_audio_decoder_ GUARDED_BY(crit_sect_);
+  AudioFrame::VADActivity previous_audio_activity_ GUARDED_BY(crit_sect_);
+  int current_sample_rate_hz_ GUARDED_BY(crit_sect_);
+  ACMResampler resampler_ GUARDED_BY(crit_sect_);
+  // Used in GetAudio, declared as member to avoid allocating every 10ms.
+  // TODO(henrik.lundin) Stack-allocate in GetAudio instead?
+  int16_t audio_buffer_[AudioFrame::kMaxDataSizeSamples] GUARDED_BY(crit_sect_);
+  scoped_ptr<Nack> nack_ GUARDED_BY(crit_sect_);
+  bool nack_enabled_ GUARDED_BY(crit_sect_);
+  CallStatistics call_stats_ GUARDED_BY(crit_sect_);
   NetEq* neteq_;
   Decoder decoders_[ACMCodecDB::kMaxNumCodecs];
-  int last_audio_decoder_;
   RWLockWrapper* decode_lock_;
-  CriticalSectionWrapper* neteq_crit_sect_;
   bool vad_enabled_;
-  AudioFrame::VADActivity previous_audio_activity_;
-  int current_sample_rate_hz_;
-  ACMResampler resampler_;
-  // Used in GetAudio, declared as member to avoid allocating every 10ms.
-  int16_t audio_buffer_[AudioFrame::kMaxDataSizeSamples];
-  scoped_ptr<Nack> nack_;
-  bool nack_enabled_;
+  Clock* clock_;  // TODO(henrik.lundin) Make const if possible.
 
   // Indicates if a non-zero initial delay is set, and the receiver is in
   // AV-sync mode.
@@ -366,8 +370,6 @@ class AcmReceiver {
   // initial delay is set.
   scoped_ptr<InitialDelayManager::SyncStream> missing_packets_sync_stream_;
   scoped_ptr<InitialDelayManager::SyncStream> late_packets_sync_stream_;
-
-  CallStatistics call_stats_;
 };
 
 }  // namespace acm2

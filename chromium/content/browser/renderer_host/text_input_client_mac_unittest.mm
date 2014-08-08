@@ -35,8 +35,7 @@ class MockRenderWidgetHostDelegate : public RenderWidgetHostDelegate {
 class TextInputClientMacTest : public testing::Test {
  public:
   TextInputClientMacTest()
-      : message_loop_(base::MessageLoop::TYPE_UI),
-        browser_context_(),
+      : browser_context_(),
         process_factory_(),
         delegate_(),
         widget_(&delegate_,
@@ -74,7 +73,7 @@ class TextInputClientMacTest : public testing::Test {
  private:
   friend class ScopedTestingThread;
 
-  base::MessageLoop message_loop_;
+  base::MessageLoopForUI message_loop_;
   TestBrowserContext browser_context_;
 
   // Gets deleted when the last RWH in the "process" gets destroyed.
@@ -105,9 +104,8 @@ class ScopedTestingThread {
 // Adapter for OnMessageReceived to ignore return type so it can be posted
 // to a MessageLoop.
 void CallOnMessageReceived(scoped_refptr<TextInputClientMessageFilter> filter,
-                           const IPC::Message& message,
-                           bool* message_was_ok) {
-  filter->OnMessageReceived(message, message_was_ok);
+                           const IPC::Message& message) {
+  filter->OnMessageReceived(message);
 }
 
 }  // namespace
@@ -154,11 +152,10 @@ TEST_F(TextInputClientMacTest, NotFoundCharacterIndex) {
   scoped_ptr<IPC::Message> message(
       new TextInputClientReplyMsg_GotCharacterIndexForPoint(
           widget()->GetRoutingID(), kNotFoundValue));
-  bool message_ok = true;
   // Set |WTF::notFound| to the index |kTaskDelayMs| after the previous
   // setting.
   PostTask(FROM_HERE,
-           base::Bind(&CallOnMessageReceived, filter, *message, &message_ok),
+           base::Bind(&CallOnMessageReceived, filter, *message),
            base::TimeDelta::FromMilliseconds(kTaskDelayMs) * 2);
 
   NSUInteger index = service()->GetCharacterIndexAtPoint(

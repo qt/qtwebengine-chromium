@@ -24,16 +24,16 @@
  */
 
 #include "config.h"
-#include "ColorChooserPopupUIController.h"
+#include "web/ColorChooserPopupUIController.h"
 
-#include "ChromeClientImpl.h"
 #include "ColorSuggestionPicker.h"
 #include "PickerCommon.h"
-#include "WebColorChooser.h"
-#include "WebViewImpl.h"
 #include "core/frame/FrameView.h"
 #include "platform/ColorChooserClient.h"
 #include "platform/geometry/IntRect.h"
+#include "public/web/WebColorChooser.h"
+#include "web/ChromeClientImpl.h"
+#include "web/WebViewImpl.h"
 
 using namespace WebCore;
 
@@ -46,8 +46,8 @@ enum ColorPickerPopupAction {
     ColorPickerPopupActionSetValue = 0
 };
 
-ColorChooserPopupUIController::ColorChooserPopupUIController(ChromeClientImpl* chromeClient, ColorChooserClient* client)
-    : ColorChooserUIController(chromeClient, client)
+ColorChooserPopupUIController::ColorChooserPopupUIController(WebCore::LocalFrame* frame, ChromeClientImpl* chromeClient, ColorChooserClient* client)
+    : ColorChooserUIController(frame, client)
     , m_chromeClient(chromeClient)
     , m_client(client)
     , m_popup(0)
@@ -80,7 +80,7 @@ IntSize ColorChooserPopupUIController::contentSize()
     return IntSize(0, 0);
 }
 
-void ColorChooserPopupUIController::writeDocument(DocumentWriter& writer)
+void ColorChooserPopupUIController::writeDocument(SharedBuffer* data)
 {
     Vector<ColorSuggestion> suggestions = m_client->suggestions();
     Vector<String> suggestionValues;
@@ -88,18 +88,18 @@ void ColorChooserPopupUIController::writeDocument(DocumentWriter& writer)
         suggestionValues.append(suggestions[i].color.serialized());
     IntRect anchorRectInScreen = m_chromeClient->rootViewToScreen(m_client->elementRectRelativeToRootView());
 
-    PagePopupClient::addString("<!DOCTYPE html><head><meta charset='UTF-8'><style>\n", writer);
-    writer.addData(pickerCommonCss, sizeof(pickerCommonCss));
-    writer.addData(colorSuggestionPickerCss, sizeof(colorSuggestionPickerCss));
+    PagePopupClient::addString("<!DOCTYPE html><head><meta charset='UTF-8'><style>\n", data);
+    data->append(pickerCommonCss, sizeof(pickerCommonCss));
+    data->append(colorSuggestionPickerCss, sizeof(colorSuggestionPickerCss));
     PagePopupClient::addString("</style></head><body><div id=main>Loading...</div><script>\n"
-        "window.dialogArguments = {\n", writer);
-    PagePopupClient::addProperty("values", suggestionValues, writer);
-    PagePopupClient::addProperty("otherColorLabel", locale().queryString(WebLocalizedString::OtherColorLabel), writer);
-    addProperty("anchorRectInScreen", anchorRectInScreen, writer);
-    PagePopupClient::addString("};\n", writer);
-    writer.addData(pickerCommonJs, sizeof(pickerCommonJs));
-    writer.addData(colorSuggestionPickerJs, sizeof(colorSuggestionPickerJs));
-    PagePopupClient::addString("</script></body>\n", writer);
+        "window.dialogArguments = {\n", data);
+    PagePopupClient::addProperty("values", suggestionValues, data);
+    PagePopupClient::addProperty("otherColorLabel", locale().queryString(WebLocalizedString::OtherColorLabel), data);
+    addProperty("anchorRectInScreen", anchorRectInScreen, data);
+    PagePopupClient::addString("};\n", data);
+    data->append(pickerCommonJs, sizeof(pickerCommonJs));
+    data->append(colorSuggestionPickerJs, sizeof(colorSuggestionPickerJs));
+    PagePopupClient::addString("</script></body>\n", data);
 }
 
 Locale& ColorChooserPopupUIController::locale()
@@ -112,7 +112,7 @@ void ColorChooserPopupUIController::setValueAndClosePopup(int numValue, const St
     ASSERT(m_popup);
     ASSERT(m_client);
     if (numValue == ColorPickerPopupActionSetValue)
-        m_client->didChooseColor(Color(stringValue));
+        setValue(stringValue);
     if (numValue == ColorPickerPopupActionChooseOtherColor)
         openColorChooser();
     closePopup();
@@ -121,7 +121,10 @@ void ColorChooserPopupUIController::setValueAndClosePopup(int numValue, const St
 void ColorChooserPopupUIController::setValue(const String& value)
 {
     ASSERT(m_client);
-    m_client->didChooseColor(Color(value));
+    Color color;
+    bool success = color.setFromString(value);
+    ASSERT_UNUSED(success, success);
+    m_client->didChooseColor(color);
 }
 
 void ColorChooserPopupUIController::didClosePopup()

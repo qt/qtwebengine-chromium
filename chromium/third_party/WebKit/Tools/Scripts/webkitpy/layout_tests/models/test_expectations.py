@@ -42,8 +42,8 @@ _log = logging.getLogger(__name__)
 #
 # FIXME: range() starts with 0 which makes if expectation checks harder
 # as PASS is 0.
-(PASS, FAIL, TEXT, IMAGE, IMAGE_PLUS_TEXT, AUDIO, TIMEOUT, CRASH, SKIP, WONTFIX,
- SLOW, REBASELINE, NEEDS_REBASELINE, NEEDS_MANUAL_REBASELINE, MISSING, FLAKY, NOW, NONE) = range(18)
+(PASS, FAIL, TEXT, IMAGE, IMAGE_PLUS_TEXT, AUDIO, TIMEOUT, CRASH, LEAK, SKIP, WONTFIX,
+ SLOW, REBASELINE, NEEDS_REBASELINE, NEEDS_MANUAL_REBASELINE, MISSING, FLAKY, NOW, NONE) = range(19)
 
 # FIXME: Perhas these two routines should be part of the Port instead?
 BASELINE_SUFFIX_LIST = ('png', 'wav', 'txt')
@@ -156,6 +156,11 @@ class TestExpectationParser(object):
         if self.REBASELINE_MODIFIER in expectations:
             expectation_line.warnings.append('REBASELINE should only be used for running rebaseline.py. Cannot be checked in.')
 
+        if self.NEEDS_REBASELINE_MODIFIER in expectations or self.NEEDS_MANUAL_REBASELINE_MODIFIER in expectations:
+            for test in expectation_line.matching_tests:
+                if self._port.reference_files(test):
+                    expectation_line.warnings.append('A reftest cannot be marked as NeedsRebaseline/NeedsManualRebaseline')
+
     def _parse_expectations(self, expectation_line):
         result = set()
         for part in expectation_line.expectations:
@@ -217,6 +222,7 @@ class TestExpectationParser(object):
     # FIXME: Update the original specifiers list and remove this once the old syntax is gone.
     _expectation_tokens = {
         'Crash': 'CRASH',
+        'Leak': 'LEAK',
         'Failure': 'FAIL',
         'ImageOnlyFailure': 'IMAGE',
         MISSING_KEYWORD: 'MISSING',
@@ -396,7 +402,7 @@ class TestExpectationLine(object):
             and self.is_skipped_outside_expectations_file == other.is_skipped_outside_expectations_file)
 
     def is_invalid(self):
-        return self.warnings and self.warnings != [TestExpectationParser.MISSING_BUG_WARNING]
+        return bool(self.warnings and self.warnings != [TestExpectationParser.MISSING_BUG_WARNING])
 
     def is_flaky(self):
         return len(self.parsed_expectations) > 1
@@ -801,6 +807,7 @@ class TestExpectations(object):
                     'text': TEXT,
                     'timeout': TIMEOUT,
                     'crash': CRASH,
+                    'leak': LEAK,
                     'missing': MISSING,
                     TestExpectationParser.SKIP_MODIFIER: SKIP,
                     TestExpectationParser.NEEDS_REBASELINE_MODIFIER: NEEDS_REBASELINE,
@@ -821,6 +828,7 @@ class TestExpectations(object):
                                 IMAGE_PLUS_TEXT: 'image and text failures',
                                 AUDIO: 'audio failures',
                                 CRASH: 'crashes',
+                                LEAK: 'leaks',
                                 TIMEOUT: 'timeouts',
                                 MISSING: 'missing results'}
 
@@ -873,6 +881,17 @@ class TestExpectations(object):
         if IMAGE in expected_results:
             expected_results.remove(IMAGE)
             expected_results.add(PASS)
+        return expected_results
+
+    @staticmethod
+    def remove_non_sanitizer_failures(expected_results):
+        """Returns a copy of the expected results for a test, except that we
+        drop any failures that the sanitizers don't care about."""
+        expected_results = expected_results.copy()
+        for result in (IMAGE, FAIL, IMAGE_PLUS_TEXT):
+            if result in expected_results:
+                expected_results.remove(result)
+                expected_results.add(PASS)
         return expected_results
 
     @staticmethod
@@ -979,9 +998,11 @@ class TestExpectations(object):
     def expectation_to_string(self, expectation):
         return self._model.expectation_to_string(expectation)
 
-    def matches_an_expected_result(self, test, result, pixel_tests_are_enabled):
+    def matches_an_expected_result(self, test, result, pixel_tests_are_enabled, sanitizer_is_enabled):
         expected_results = self._model.get_expectations(test)
-        if not pixel_tests_are_enabled:
+        if sanitizer_is_enabled:
+            expected_results = self.remove_non_sanitizer_failures(expected_results)
+        elif not pixel_tests_are_enabled:
             expected_results = self.remove_pixel_failures(expected_results)
         return self.result_was_expected(result, expected_results, self.is_rebaselining(test))
 
@@ -1018,21 +1039,22 @@ class TestExpectations(object):
     def has_warnings(self):
         return self._has_warnings
 
-    def remove_configuration_from_test(self, test, test_configuration):
+    def remove_configurations(self, removals):
         expectations_to_remove = []
         modified_expectations = []
 
-        for expectation in self._expectations:
-            if expectation.name != test or not expectation.parsed_expectations:
-                continue
-            if test_configuration not in expectation.matching_configurations:
-                continue
+        for test, test_configuration in removals:
+            for expectation in self._expectations:
+                if expectation.name != test or not expectation.parsed_expectations:
+                    continue
+                if test_configuration not in expectation.matching_configurations:
+                    continue
 
-            expectation.matching_configurations.remove(test_configuration)
-            if expectation.matching_configurations:
-                modified_expectations.append(expectation)
-            else:
-                expectations_to_remove.append(expectation)
+                expectation.matching_configurations.remove(test_configuration)
+                if expectation.matching_configurations:
+                    modified_expectations.append(expectation)
+                else:
+                    expectations_to_remove.append(expectation)
 
         for expectation in expectations_to_remove:
             index = self._expectations.index(expectation)

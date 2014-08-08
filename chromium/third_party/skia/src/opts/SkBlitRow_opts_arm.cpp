@@ -12,8 +12,6 @@
 #include "SkUtils.h"
 #include "SkUtilsArm.h"
 
-#include "SkCachePreload_arm.h"
-
 // Define USE_NEON_CODE to indicate that we need to build NEON routines
 #define USE_NEON_CODE  (!SK_ARM_NEON_IS_NONE)
 
@@ -375,4 +373,8 @@ SkBlitRow::Proc32 SkBlitRow::PlatformProcs32(unsigned flags) {
 #define Color32_arm  NULL
 SkBlitRow::ColorProc SkBlitRow::PlatformColorProc() {
     return SK_ARM_NEON_WRAP(Color32_arm);
+}
+
+SkBlitRow::ColorRectProc PlatformColorRectProcFactory() {
+    return NULL;
 }

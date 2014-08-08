@@ -20,7 +20,6 @@
 #include "ui/base/ime/input_method_initializer.h"
 
 #if defined(OS_WIN)
-#include "base/win/metro.h"
 #include "base/win/windows_version.h"
 #include "ui/base/win/scoped_ole_initializer.h"
 #endif
@@ -54,17 +53,13 @@ class BrowserMainRunnerImpl : public BrowserMainRunner {
 #endif
 
 #if defined(OS_WIN)
-      if (parameters.command_line.HasSwitch(
-              switches::kEnableTextServicesFramework)) {
-        base::win::SetForceToUseTSF();
-      } else if (base::win::GetVersion() < base::win::VERSION_VISTA) {
+      if (base::win::GetVersion() < base::win::VERSION_VISTA) {
         // When "Extend support of advanced text services to all programs"
         // (a.k.a. Cicero Unaware Application Support; CUAS) is enabled on
         // Windows XP and handwriting modules shipped with Office 2003 are
         // installed, "penjpn.dll" and "skchui.dll" will be loaded and then
-        // crash
-        // unless a user installs Office 2003 SP3. To prevent these modules from
-        // being loaded, disable TSF entirely. crbug/160914.
+        // crash unless a user installs Office 2003 SP3. To prevent these
+        // modules from being loaded, disable TSF entirely. crbug.com/160914.
         // TODO(yukawa): Add a high-level wrapper for this instead of calling
         // Win32 API here directly.
         ImmDisableTextFrameService(static_cast<DWORD>(-1));
@@ -89,7 +84,8 @@ class BrowserMainRunnerImpl : public BrowserMainRunner {
       main_loop_->EarlyInitialization();
 
       // Must happen before we try to use a message loop or display any UI.
-      main_loop_->InitializeToolkit();
+      if (!main_loop_->InitializeToolkit())
+        return 1;
 
       main_loop_->MainMessageLoopStart();
 
@@ -153,7 +149,12 @@ class BrowserMainRunnerImpl : public BrowserMainRunner {
   #if defined(OS_WIN)
       ole_initializer_.reset(NULL);
   #endif
-
+  #if defined(OS_ANDROID)
+      // Forcefully terminates the RunLoop inside MessagePumpForUI, ensuring
+      // proper shutdown for content_browsertests. Shutdown() is not used by
+      // the actual browser.
+      base::MessageLoop::current()->QuitNow();
+  #endif
       main_loop_.reset(NULL);
 
       notification_service_.reset(NULL);

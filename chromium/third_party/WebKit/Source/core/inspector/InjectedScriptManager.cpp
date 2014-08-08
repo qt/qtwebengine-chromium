@@ -31,8 +31,8 @@
 #include "config.h"
 #include "core/inspector/InjectedScriptManager.h"
 
-#include "InjectedScriptSource.h"
-#include "bindings/v8/ScriptObject.h"
+#include "bindings/v8/ScriptValue.h"
+#include "core/InjectedScriptSource.h"
 #include "core/inspector/InjectedScript.h"
 #include "core/inspector/InjectedScriptHost.h"
 #include "core/inspector/JSONParser.h"
@@ -80,7 +80,7 @@ InjectedScript InjectedScriptManager::injectedScriptForId(int id)
         return it->value;
     for (ScriptStateToId::iterator it = m_scriptStateToId.begin(); it != m_scriptStateToId.end(); ++it) {
         if (it->value == id)
-            return injectedScriptFor(it->key);
+            return injectedScriptFor(it->key.get());
     }
     return InjectedScript();
 }
@@ -113,7 +113,7 @@ void InjectedScriptManager::discardInjectedScripts()
     m_scriptStateToId.clear();
 }
 
-void InjectedScriptManager::discardInjectedScriptsFor(DOMWindow* window)
+void InjectedScriptManager::discardInjectedScriptsFor(LocalDOMWindow* window)
 {
     if (m_scriptStateToId.isEmpty())
         return;
@@ -127,19 +127,16 @@ void InjectedScriptManager::discardInjectedScriptsFor(DOMWindow* window)
         m_scriptStateToId.remove(scriptState);
         idsToRemove.append(it->key);
     }
-
-    for (size_t i = 0; i < idsToRemove.size(); i++)
-        m_idToInjectedScript.remove(idsToRemove[i]);
+    m_idToInjectedScript.removeAll(idsToRemove);
 
     // Now remove script states that have id but no injected script.
     Vector<ScriptState*> scriptStatesToRemove;
     for (ScriptStateToId::iterator it = m_scriptStateToId.begin(); it != m_scriptStateToId.end(); ++it) {
-        ScriptState* scriptState = it->key;
+        ScriptState* scriptState = it->key.get();
         if (window == scriptState->domWindow())
             scriptStatesToRemove.append(scriptState);
     }
-    for (size_t i = 0; i < scriptStatesToRemove.size(); i++)
-        m_scriptStateToId.remove(scriptStatesToRemove[i]);
+    m_scriptStateToId.removeAll(scriptStatesToRemove);
 }
 
 bool InjectedScriptManager::canAccessInspectedWorkerGlobalScope(ScriptState*)
@@ -176,8 +173,8 @@ InjectedScript InjectedScriptManager::injectedScriptFor(ScriptState* inspectedSc
         return InjectedScript();
 
     int id = injectedScriptIdFor(inspectedScriptState);
-    ScriptObject injectedScriptObject = createInjectedScript(injectedScriptSource(), inspectedScriptState, id);
-    InjectedScript result(injectedScriptObject, m_inspectedStateAccessCheck);
+    ScriptValue injectedScriptValue = createInjectedScript(injectedScriptSource(), inspectedScriptState, id);
+    InjectedScript result(injectedScriptValue, m_inspectedStateAccessCheck);
     m_idToInjectedScript.set(id, result);
     return result;
 }

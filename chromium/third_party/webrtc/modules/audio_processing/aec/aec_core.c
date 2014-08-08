@@ -67,7 +67,7 @@ static const float sqrtHanning[65] = {
 // Matlab code to produce table:
 // weightCurve = [0 ; 0.3 * sqrt(linspace(0,1,64))' + 0.1];
 // fprintf(1, '\t%.4f, %.4f, %.4f, %.4f, %.4f, %.4f,\n', weightCurve);
-const float WebRtcAec_weightCurve[65] = {
+ALIGN16_BEG const float ALIGN16_END WebRtcAec_weightCurve[65] = {
     0.0000f, 0.1000f, 0.1378f, 0.1535f, 0.1655f, 0.1756f, 0.1845f, 0.1926f,
     0.2000f, 0.2069f, 0.2134f, 0.2195f, 0.2254f, 0.2309f, 0.2363f, 0.2414f,
     0.2464f, 0.2512f, 0.2558f, 0.2604f, 0.2648f, 0.2690f, 0.2732f, 0.2773f,
@@ -81,7 +81,7 @@ const float WebRtcAec_weightCurve[65] = {
 // Matlab code to produce table:
 // overDriveCurve = [sqrt(linspace(0,1,65))' + 1];
 // fprintf(1, '\t%.4f, %.4f, %.4f, %.4f, %.4f, %.4f,\n', overDriveCurve);
-const float WebRtcAec_overDriveCurve[65] = {
+ALIGN16_BEG const float ALIGN16_END WebRtcAec_overDriveCurve[65] = {
     1.0000f, 1.1250f, 1.1768f, 1.2165f, 1.2500f, 1.2795f, 1.3062f, 1.3307f,
     1.3536f, 1.3750f, 1.3953f, 1.4146f, 1.4330f, 1.4507f, 1.4677f, 1.4841f,
     1.5000f, 1.5154f, 1.5303f, 1.5449f, 1.5590f, 1.5728f, 1.5863f, 1.5995f,
@@ -116,7 +116,7 @@ extern int webrtc_aec_instance_count;
 // "Private" function prototypes.
 static void ProcessBlock(AecCore* aec);
 
-static void NonLinearProcessing(AecCore* aec, short* output, short* outputH);
+static void NonLinearProcessing(AecCore* aec, float* output, float* outputH);
 
 static void GetHighbandGain(const float* lambda, float* nlpGainHband);
 
@@ -160,28 +160,28 @@ int WebRtcAec_CreateAec(AecCore** aecInst) {
     return -1;
   }
 
-  aec->nearFrBuf = WebRtc_CreateBuffer(FRAME_LEN + PART_LEN, sizeof(int16_t));
+  aec->nearFrBuf = WebRtc_CreateBuffer(FRAME_LEN + PART_LEN, sizeof(float));
   if (!aec->nearFrBuf) {
     WebRtcAec_FreeAec(aec);
     aec = NULL;
     return -1;
   }
 
-  aec->outFrBuf = WebRtc_CreateBuffer(FRAME_LEN + PART_LEN, sizeof(int16_t));
+  aec->outFrBuf = WebRtc_CreateBuffer(FRAME_LEN + PART_LEN, sizeof(float));
   if (!aec->outFrBuf) {
     WebRtcAec_FreeAec(aec);
     aec = NULL;
     return -1;
   }
 
-  aec->nearFrBufH = WebRtc_CreateBuffer(FRAME_LEN + PART_LEN, sizeof(int16_t));
+  aec->nearFrBufH = WebRtc_CreateBuffer(FRAME_LEN + PART_LEN, sizeof(float));
   if (!aec->nearFrBufH) {
     WebRtcAec_FreeAec(aec);
     aec = NULL;
     return -1;
   }
 
-  aec->outFrBufH = WebRtc_CreateBuffer(FRAME_LEN + PART_LEN, sizeof(int16_t));
+  aec->outFrBufH = WebRtc_CreateBuffer(FRAME_LEN + PART_LEN, sizeof(float));
   if (!aec->outFrBufH) {
     WebRtcAec_FreeAec(aec);
     aec = NULL;
@@ -419,6 +419,7 @@ WebRtcAec_FilterFar_t WebRtcAec_FilterFar;
 WebRtcAec_ScaleErrorSignal_t WebRtcAec_ScaleErrorSignal;
 WebRtcAec_FilterAdaptation_t WebRtcAec_FilterAdaptation;
 WebRtcAec_OverdriveAndSuppress_t WebRtcAec_OverdriveAndSuppress;
+WebRtcAec_ComfortNoise_t WebRtcAec_ComfortNoise;
 
 int WebRtcAec_InitAec(AecCore* aec, int sampFreq) {
   int i;
@@ -472,8 +473,20 @@ int WebRtcAec_InitAec(AecCore* aec, int sampFreq) {
   aec->delay_logging_enabled = 0;
   memset(aec->delay_histogram, 0, sizeof(aec->delay_histogram));
 
+  aec->reported_delay_enabled = 1;
   aec->extended_filter_enabled = 0;
   aec->num_partitions = kNormalNumPartitions;
+
+  // Update the delay estimator with filter length.  We use half the
+  // |num_partitions| to take the echo path into account.  In practice we say
+  // that the echo has a duration of maximum half |num_partitions|, which is not
+  // true, but serves as a crude measure.
+  WebRtc_set_allowed_offset(aec->delay_estimator, aec->num_partitions / 2);
+  // TODO(bjornv): I currently hard coded the enable.  Once we've established
+  // that AECM has no performance regression, robust_validation will be enabled
+  // all the time and the APIs to turn it on/off will be removed.  Hence, remove
+  // this line then.
+  WebRtc_enable_robust_validation(aec->delay_estimator, 1);
 
   // Default target suppression mode.
   aec->nlp_mode = 1;
@@ -557,11 +570,20 @@ int WebRtcAec_InitAec(AecCore* aec, int sampFreq) {
   WebRtcAec_ScaleErrorSignal = ScaleErrorSignal;
   WebRtcAec_FilterAdaptation = FilterAdaptation;
   WebRtcAec_OverdriveAndSuppress = OverdriveAndSuppress;
+  WebRtcAec_ComfortNoise = ComfortNoise;
 
 #if defined(WEBRTC_ARCH_X86_FAMILY)
   if (WebRtc_GetCPUInfo(kSSE2)) {
     WebRtcAec_InitAec_SSE2();
   }
+#endif
+
+#if defined(MIPS_FPU_LE)
+  WebRtcAec_InitAec_mips();
+#endif
+
+#if defined(WEBRTC_DETECT_ARM_NEON) || defined(WEBRTC_ARCH_ARM_NEON)
+  WebRtcAec_InitAec_neon();
 #endif
 
   aec_rdft_init();
@@ -599,11 +621,11 @@ int WebRtcAec_MoveFarReadPtr(AecCore* aec, int elements) {
 }
 
 void WebRtcAec_ProcessFrame(AecCore* aec,
-                            const short* nearend,
-                            const short* nearendH,
+                            const float* nearend,
+                            const float* nearendH,
                             int knownDelay,
-                            int16_t* out,
-                            int16_t* outH) {
+                            float* out,
+                            float* outH) {
   int out_elements = 0;
 
   // For each frame the process is as follows:
@@ -724,7 +746,7 @@ int WebRtcAec_GetDelayMetricsCore(AecCore* self, int* median, int* std) {
 
   // Calculate the L1 norm, with median value as central moment.
   for (i = 0; i < kHistorySizeBlocks; i++) {
-    l1_norm += (float)(fabs(i - my_median) * self->delay_histogram[i]);
+    l1_norm += (float)abs(i - my_median) * self->delay_histogram[i];
   }
   *std = (int)(l1_norm / (float)num_delay_values + 0.5f) * kMsPerBlock;
 
@@ -768,9 +790,19 @@ void WebRtcAec_SetConfigCore(AecCore* self,
   }
 }
 
+void WebRtcAec_enable_reported_delay(AecCore* self, int enable) {
+  self->reported_delay_enabled = enable;
+}
+
+int WebRtcAec_reported_delay_enabled(AecCore* self) {
+  return self->reported_delay_enabled;
+}
+
 void WebRtcAec_enable_delay_correction(AecCore* self, int enable) {
   self->extended_filter_enabled = enable;
   self->num_partitions = enable ? kExtendedNumPartitions : kNormalNumPartitions;
+  // Update the delay estimator with filter length.  See InitAEC() for details.
+  WebRtc_set_allowed_offset(self->delay_estimator, self->num_partitions / 2);
 }
 
 int WebRtcAec_delay_correction_enabled(AecCore* self) {
@@ -786,7 +818,7 @@ void WebRtcAec_SetSystemDelay(AecCore* self, int delay) {
 
 static void ProcessBlock(AecCore* aec) {
   int i;
-  float d[PART_LEN], y[PART_LEN], e[PART_LEN], dH[PART_LEN];
+  float y[PART_LEN], e[PART_LEN];
   float scale;
 
   float fft[PART_LEN2];
@@ -805,30 +837,22 @@ static void ProcessBlock(AecCore* aec) {
   const float ramp = 1.0002f;
   const float gInitNoise[2] = {0.999f, 0.001f};
 
-  int16_t nearend[PART_LEN];
-  int16_t* nearend_ptr = NULL;
-  int16_t output[PART_LEN];
-  int16_t outputH[PART_LEN];
+  float nearend[PART_LEN];
+  float* nearend_ptr = NULL;
+  float output[PART_LEN];
+  float outputH[PART_LEN];
 
   float* xf_ptr = NULL;
 
-  memset(dH, 0, sizeof(dH));
+  // Concatenate old and new nearend blocks.
   if (aec->sampFreq == 32000) {
-    // Get the upper band first so we can reuse |nearend|.
     WebRtc_ReadBuffer(aec->nearFrBufH, (void**)&nearend_ptr, nearend, PART_LEN);
-    for (i = 0; i < PART_LEN; i++) {
-      dH[i] = (float)(nearend_ptr[i]);
-    }
-    memcpy(aec->dBufH + PART_LEN, dH, sizeof(float) * PART_LEN);
+    memcpy(aec->dBufH + PART_LEN, nearend_ptr, sizeof(nearend));
   }
   WebRtc_ReadBuffer(aec->nearFrBuf, (void**)&nearend_ptr, nearend, PART_LEN);
+  memcpy(aec->dBuf + PART_LEN, nearend_ptr, sizeof(nearend));
 
   // ---------- Ooura fft ----------
-  // Concatenate old and new nearend blocks.
-  for (i = 0; i < PART_LEN; i++) {
-    d[i] = (float)(nearend_ptr[i]);
-  }
-  memcpy(aec->dBuf + PART_LEN, d, sizeof(float) * PART_LEN);
 
 #ifdef WEBRTC_AEC_DEBUG_DUMP
   {
@@ -940,7 +964,7 @@ static void ProcessBlock(AecCore* aec) {
   }
 
   for (i = 0; i < PART_LEN; i++) {
-    e[i] = d[i] - y[i];
+    e[i] = nearend_ptr[i] - y[i];
   }
 
   // Error fft
@@ -999,7 +1023,7 @@ static void ProcessBlock(AecCore* aec) {
 #endif
 }
 
-static void NonLinearProcessing(AecCore* aec, short* output, short* outputH) {
+static void NonLinearProcessing(AecCore* aec, float* output, float* outputH) {
   float efw[2][PART_LEN1], dfw[2][PART_LEN1], xfw[2][PART_LEN1];
   complex_t comfortNoiseHband[PART_LEN1];
   float fft[PART_LEN2];
@@ -1266,7 +1290,7 @@ static void NonLinearProcessing(AecCore* aec, short* output, short* outputH) {
   WebRtcAec_OverdriveAndSuppress(aec, hNl, hNlFb, efw);
 
   // Add comfort noise.
-  ComfortNoise(aec, efw, comfortNoiseHband, aec->noisePow, hNl);
+  WebRtcAec_ComfortNoise(aec, efw, comfortNoiseHband, aec->noisePow, hNl);
 
   // TODO(bjornv): Investigate how to take the windowing below into account if
   // needed.
@@ -1293,12 +1317,12 @@ static void NonLinearProcessing(AecCore* aec, short* output, short* outputH) {
     fft[i] *= scale;  // fft scaling
     fft[i] = fft[i] * sqrtHanning[i] + aec->outBuf[i];
 
-    // Saturation protection
-    output[i] = (short)WEBRTC_SPL_SAT(
-        WEBRTC_SPL_WORD16_MAX, fft[i], WEBRTC_SPL_WORD16_MIN);
-
     fft[PART_LEN + i] *= scale;  // fft scaling
     aec->outBuf[i] = fft[PART_LEN + i] * sqrtHanning[PART_LEN - i];
+
+    // Saturate output to keep it in the allowed range.
+    output[i] = WEBRTC_SPL_SAT(
+        WEBRTC_SPL_WORD16_MAX, fft[i], WEBRTC_SPL_WORD16_MIN);
   }
 
   // For H band
@@ -1323,8 +1347,8 @@ static void NonLinearProcessing(AecCore* aec, short* output, short* outputH) {
 
     // compute gain factor
     for (i = 0; i < PART_LEN; i++) {
-      dtmp = (float)aec->dBufH[i];
-      dtmp = (float)dtmp * nlpGainHband;  // for variable gain
+      dtmp = aec->dBufH[i];
+      dtmp = dtmp * nlpGainHband;  // for variable gain
 
       // add some comfort noise where Hband is attenuated
       if (flagHbandCn == 1) {
@@ -1332,8 +1356,8 @@ static void NonLinearProcessing(AecCore* aec, short* output, short* outputH) {
         dtmp += cnScaleHband * fft[i];
       }
 
-      // Saturation protection
-      outputH[i] = (short)WEBRTC_SPL_SAT(
+      // Saturate output to keep it in the allowed range.
+      outputH[i] = WEBRTC_SPL_SAT(
           WEBRTC_SPL_WORD16_MAX, dtmp, WEBRTC_SPL_WORD16_MIN);
     }
   }

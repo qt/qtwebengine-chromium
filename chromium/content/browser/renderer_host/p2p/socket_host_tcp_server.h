@@ -13,7 +13,7 @@
 #include "base/message_loop/message_loop.h"
 #include "content/browser/renderer_host/p2p/socket_host.h"
 #include "content/common/content_export.h"
-#include "content/public/common/p2p_socket_type.h"
+#include "content/common/p2p_socket_type.h"
 #include "ipc/ipc_sender.h"
 #include "net/base/completion_callback.h"
 #include "net/socket/tcp_server_socket.h"
@@ -28,19 +28,22 @@ class CONTENT_EXPORT P2PSocketHostTcpServer : public P2PSocketHost {
  public:
   typedef std::map<net::IPEndPoint, net::StreamSocket*> AcceptedSocketsMap;
 
-  P2PSocketHostTcpServer(IPC::Sender* message_sender, int id,
+  P2PSocketHostTcpServer(IPC::Sender* message_sender,
+                         int socket_id,
                          P2PSocketType client_type);
   virtual ~P2PSocketHostTcpServer();
 
   // P2PSocketHost overrides.
   virtual bool Init(const net::IPEndPoint& local_address,
-                    const net::IPEndPoint& remote_address) OVERRIDE;
+                    const P2PHostAndIPEndPoint& remote_address) OVERRIDE;
   virtual void Send(const net::IPEndPoint& to,
                     const std::vector<char>& data,
-                    net::DiffServCodePoint dscp,
+                    const talk_base::PacketOptions& options,
                     uint64 packet_id) OVERRIDE;
   virtual P2PSocketHost* AcceptIncomingTcpConnection(
       const net::IPEndPoint& remote_address, int id) OVERRIDE;
+  virtual bool SetOption(P2PSocketOption option, int value) OVERRIDE;
+
 
  private:
   friend class P2PSocketHostTcpServerTest;

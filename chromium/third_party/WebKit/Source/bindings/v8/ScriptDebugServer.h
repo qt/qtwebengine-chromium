@@ -31,25 +31,26 @@
 #ifndef ScriptDebugServer_h
 #define ScriptDebugServer_h
 
-#include "InspectorBackendDispatcher.h"
 #include "bindings/v8/ScopedPersistent.h"
+#include "core/InspectorBackendDispatcher.h"
 #include "core/inspector/ScriptBreakpoint.h"
+#include "core/inspector/ScriptCallStack.h"
 #include "core/inspector/ScriptDebugListener.h"
-#include <v8-debug.h>
 #include "wtf/HashMap.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/Vector.h"
 #include "wtf/text/StringHash.h"
 #include "wtf/text/WTFString.h"
+#include <v8-debug.h>
+#include <v8.h>
 
 namespace WebCore {
 
+class ScriptState;
 class ScriptController;
 class ScriptDebugListener;
-class ScriptObject;
 class ScriptSourceCode;
-class ScriptState;
 class ScriptValue;
 class JavaScriptCallFrame;
 
@@ -74,11 +75,14 @@ public:
     void breakProgram();
     void continueProgram();
     void stepIntoStatement();
-    void stepOverStatement(const ScriptValue& frame);
-    void stepOutOfFunction(const ScriptValue& frame);
+    void stepOverStatement();
+    void stepOutOfFunction();
 
-    bool setScriptSource(const String& sourceID, const String& newContent, bool preview, String* error, RefPtr<TypeBuilder::Debugger::SetScriptSourceError>&, ScriptValue* newCallFrames, ScriptObject* result);
+    bool setScriptSource(const String& sourceID, const String& newContent, bool preview, String* error, RefPtr<TypeBuilder::Debugger::SetScriptSourceError>&, ScriptValue* newCallFrames, RefPtr<JSONObject>* result);
     ScriptValue currentCallFrames();
+    ScriptValue currentCallFramesForAsyncStack();
+    PassRefPtrWillBeRawPtr<JavaScriptCallFrame> topCallFrameNoScopes();
+    int frameCount();
 
     class Task {
     public:
@@ -96,13 +100,16 @@ public:
     v8::Handle<v8::Value> setFunctionVariableValue(v8::Handle<v8::Value> functionValue, int scopeNumber, const String& variableName, v8::Handle<v8::Value> newValue);
     v8::Local<v8::Value> callDebuggerMethod(const char* functionName, int argc, v8::Handle<v8::Value> argv[]);
 
-    virtual void compileScript(ScriptState*, const String& expression, const String& sourceURL, String* scriptId, String* exceptionMessage);
+    virtual void compileScript(ScriptState*, const String& expression, const String& sourceURL, String* scriptId, String* exceptionDetailsText, int* lineNumber, int* columnNumber, RefPtrWillBeRawPtr<ScriptCallStack>* stackTrace);
     virtual void clearCompiledScripts();
-    virtual void runScript(ScriptState*, const String& scriptId, ScriptValue* result, bool* wasThrown, String* exceptionMessage);
+    virtual void runScript(ScriptState*, const String& scriptId, ScriptValue* result, bool* wasThrown, String* exceptionDetailsText, int* lineNumber, int* columnNumber, RefPtrWillBeRawPtr<ScriptCallStack>* stackTrace);
     virtual void setPreprocessorSource(const String&) { }
     virtual void preprocessBeforeCompile(const v8::Debug::EventDetails&) { }
-    virtual PassOwnPtr<ScriptSourceCode> preprocess(Frame*, const ScriptSourceCode&);
-    virtual String preprocessEventListener(Frame*, const String& source, const String& url, const String& functionName);
+    virtual PassOwnPtr<ScriptSourceCode> preprocess(LocalFrame*, const ScriptSourceCode&);
+    virtual String preprocessEventListener(LocalFrame*, const String& source, const String& url, const String& functionName);
+
+    virtual void muteWarningsAndDeprecations() { }
+    virtual void unmuteWarningsAndDeprecations() { }
 
 protected:
     explicit ScriptDebugServer(v8::Isolate*);
@@ -113,8 +120,7 @@ protected:
     virtual void quitMessageLoopOnPause() = 0;
 
     static void breakProgramCallback(const v8::FunctionCallbackInfo<v8::Value>&);
-    void handleProgramBreak(v8::Handle<v8::Object> executionState, v8::Handle<v8::Value> exception, v8::Handle<v8::Array> hitBreakpoints);
-    void handleProgramBreak(const v8::Debug::EventDetails&, v8::Handle<v8::Value> exception, v8::Handle<v8::Array> hitBreakpointNumbers);
+    void handleProgramBreak(ScriptState* pausedScriptState, v8::Handle<v8::Object> executionState, v8::Handle<v8::Value> exception, v8::Handle<v8::Array> hitBreakpoints);
 
     static void v8DebugEventCallback(const v8::Debug::EventDetails& eventDetails);
     void handleV8DebugEvent(const v8::Debug::EventDetails& eventDetails);
@@ -122,20 +128,27 @@ protected:
     void dispatchDidParseSource(ScriptDebugListener* listener, v8::Handle<v8::Object> sourceObject);
 
     void ensureDebuggerScriptCompiled();
+    void discardDebuggerScript();
 
     PauseOnExceptionsState m_pauseOnExceptionsState;
     ScopedPersistent<v8::Object> m_debuggerScript;
-    ScopedPersistent<v8::Object> m_executionState;
-    v8::Handle<v8::Context> m_pausedContext;
+    v8::Local<v8::Object> m_executionState;
+    RefPtr<ScriptState> m_pausedScriptState;
     bool m_breakpointsActivated;
     ScopedPersistent<v8::FunctionTemplate> m_breakProgramCallbackTemplate;
     HashMap<String, OwnPtr<ScopedPersistent<v8::Script> > > m_compiledScripts;
     v8::Isolate* m_isolate;
 
 private:
-    void stepCommandWithFrame(const char* functionName, const ScriptValue& frame);
-    PassRefPtr<JavaScriptCallFrame> wrapCallFrames(v8::Handle<v8::Object> executionState, int maximumLimit);
-    bool executeSkipPauseRequest(ScriptDebugListener::SkipPauseRequest, v8::Handle<v8::Object> executionState);
+    enum ScopeInfoDetails {
+        AllScopes,
+        FastAsyncScopes,
+        NoScopes // Should be the last option.
+    };
+
+    ScriptValue currentCallFramesInner(ScopeInfoDetails);
+
+    PassRefPtrWillBeRawPtr<JavaScriptCallFrame> wrapCallFrames(int maximumLimit, ScopeInfoDetails);
 
     bool m_runningNestedMessageLoop;
 };

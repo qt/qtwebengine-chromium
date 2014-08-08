@@ -27,35 +27,32 @@
 
 #include "core/html/canvas/OESTextureHalfFloatLinear.h"
 
-#include "platform/graphics/Extensions3D.h"
-
 namespace WebCore {
 
-OESTextureHalfFloatLinear::OESTextureHalfFloatLinear(WebGLRenderingContext* context)
+OESTextureHalfFloatLinear::OESTextureHalfFloatLinear(WebGLRenderingContextBase* context)
     : WebGLExtension(context)
 {
     ScriptWrappable::init(this);
-    context->graphicsContext3D()->extensions()->ensureEnabled("GL_OES_texture_half_float_linear");
+    context->extensionsUtil()->ensureExtensionEnabled("GL_OES_texture_half_float_linear");
 }
 
 OESTextureHalfFloatLinear::~OESTextureHalfFloatLinear()
 {
 }
 
-WebGLExtension::ExtensionName OESTextureHalfFloatLinear::name() const
+WebGLExtensionName OESTextureHalfFloatLinear::name() const
 {
     return OESTextureHalfFloatLinearName;
 }
 
-PassRefPtr<OESTextureHalfFloatLinear> OESTextureHalfFloatLinear::create(WebGLRenderingContext* context)
+PassRefPtr<OESTextureHalfFloatLinear> OESTextureHalfFloatLinear::create(WebGLRenderingContextBase* context)
 {
     return adoptRef(new OESTextureHalfFloatLinear(context));
 }
 
-bool OESTextureHalfFloatLinear::supported(WebGLRenderingContext* context)
+bool OESTextureHalfFloatLinear::supported(WebGLRenderingContextBase* context)
 {
-    Extensions3D* extensions = context->graphicsContext3D()->extensions();
-    return extensions->supports("GL_OES_texture_half_float_linear");
+    return context->extensionsUtil()->supportsExtension("GL_OES_texture_half_float_linear");
 }
 
 const char* OESTextureHalfFloatLinear::extensionName()

@@ -49,12 +49,12 @@ public:
     virtual ~FontData();
 
     virtual const SimpleFontData* fontDataForCharacter(UChar32) const = 0;
-    virtual bool containsCharacters(const UChar*, int length) const = 0;
     virtual bool isCustomFont() const = 0;
     virtual bool isLoading() const = 0;
     // Returns whether this is a temporary font data for a custom font which is not yet loaded.
     virtual bool isLoadingFallback() const = 0;
     virtual bool isSegmented() const = 0;
+    virtual bool shouldSkipDrawing() const = 0;
 
     void setMaxGlyphPageTreeLevel(unsigned level) const { m_maxGlyphPageTreeLevel = level; }
     unsigned maxGlyphPageTreeLevel() const { return m_maxGlyphPageTreeLevel; }

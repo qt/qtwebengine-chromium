@@ -24,22 +24,19 @@
 
 #include "core/svg/SVGAnimateTransformElement.h"
 
-#include "SVGNames.h"
+#include "core/SVGNames.h"
 #include "core/svg/SVGParserUtilities.h"
 
 namespace WebCore {
 
 inline SVGAnimateTransformElement::SVGAnimateTransformElement(Document& document)
     : SVGAnimateElement(SVGNames::animateTransformTag, document)
-    , m_type(SVGTransform::SVG_TRANSFORM_UNKNOWN)
+    , m_type(SVG_TRANSFORM_UNKNOWN)
 {
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<SVGAnimateTransformElement> SVGAnimateTransformElement::create(Document& document)
-{
-    return adoptRef(new SVGAnimateTransformElement(document));
-}
+DEFINE_NODE_FACTORY(SVGAnimateTransformElement)
 
 bool SVGAnimateTransformElement::hasValidAttributeType()
 {
@@ -50,7 +47,7 @@ bool SVGAnimateTransformElement::hasValidAttributeType()
     if (attributeType() == AttributeTypeCSS)
         return false;
 
-    return m_animatedPropertyType == AnimatedTransformList;
+    return animatedPropertyType() == AnimatedTransformList;
 }
 
 bool SVGAnimateTransformElement::isSupportedAttribute(const QualifiedName& attrName)
@@ -70,8 +67,8 @@ void SVGAnimateTransformElement::parseAttribute(const QualifiedName& name, const
 
     if (name == SVGNames::typeAttr) {
         m_type = parseTransformType(value);
-        if (m_type == SVGTransform::SVG_TRANSFORM_MATRIX)
-            m_type = SVGTransform::SVG_TRANSFORM_UNKNOWN;
+        if (m_type == SVG_TRANSFORM_MATRIX)
+            m_type = SVG_TRANSFORM_UNKNOWN;
         return;
     }
 

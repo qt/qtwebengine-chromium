@@ -36,13 +36,17 @@
 
 namespace WebCore {
 
+class Element;
+class SpaceSplitString;
+
 class SelectRuleFeatureSet {
+    DISALLOW_ALLOCATION();
 public:
     SelectRuleFeatureSet();
 
     void add(const SelectRuleFeatureSet&);
     void clear();
-    void collectFeaturesFromSelector(const CSSSelector*);
+    void collectFeaturesFromSelector(const CSSSelector&);
 
     bool hasSelectorForId(const AtomicString&) const;
     bool hasSelectorForClass(const AtomicString&) const;
@@ -58,6 +62,11 @@ public:
 
     bool hasSelectorFor(AffectedSelectorMask features) const { return m_featureFlags & features; }
 
+    bool checkSelectorsForClassChange(const SpaceSplitString& changedClasses) const;
+    bool checkSelectorsForClassChange(const SpaceSplitString& oldClasses, const SpaceSplitString& newClasses) const;
+
+    void trace(Visitor* visitor) { visitor->trace(m_cssRuleFeatureSet); }
+
 private:
     void setSelectRuleFeature(AffectedSelectorType feature) { m_featureFlags |= feature; }
 
@@ -68,19 +77,19 @@ private:
 inline bool SelectRuleFeatureSet::hasSelectorForId(const AtomicString& idValue) const
 {
     ASSERT(!idValue.isEmpty());
-    return m_cssRuleFeatureSet.idsInRules.contains(idValue);
+    return m_cssRuleFeatureSet.hasSelectorForId(idValue);
 }
 
 inline bool SelectRuleFeatureSet::hasSelectorForClass(const AtomicString& classValue) const
 {
     ASSERT(!classValue.isEmpty());
-    return m_cssRuleFeatureSet.classesInRules.contains(classValue);
+    return m_cssRuleFeatureSet.hasSelectorForClass(classValue);
 }
 
 inline bool SelectRuleFeatureSet::hasSelectorForAttribute(const AtomicString& attributeName) const
 {
     ASSERT(!attributeName.isEmpty());
-    return m_cssRuleFeatureSet.attrsInRules.contains(attributeName);
+    return m_cssRuleFeatureSet.hasSelectorForAttribute(attributeName);
 }
 
 }

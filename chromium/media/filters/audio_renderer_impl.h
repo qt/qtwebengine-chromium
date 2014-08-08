@@ -29,15 +29,18 @@
 #include "media/base/audio_renderer_sink.h"
 #include "media/base/decryptor.h"
 #include "media/filters/audio_renderer_algorithm.h"
+#include "media/filters/decoder_stream.h"
 
 namespace base {
-class MessageLoopProxy;
+class SingleThreadTaskRunner;
 }
 
 namespace media {
 
+class AudioBufferConverter;
 class AudioBus;
-class AudioDecoderSelector;
+class AudioClock;
+class AudioHardwareConfig;
 class AudioSplicer;
 class DecryptingDemuxerStream;
 
@@ -45,7 +48,7 @@ class MEDIA_EXPORT AudioRendererImpl
     : public AudioRenderer,
       NON_EXPORTED_BASE(public AudioRendererSink::RenderCallback) {
  public:
-  // |message_loop| is the thread on which AudioRendererImpl will execute.
+  // |task_runner| is the thread on which AudioRendererImpl will execute.
   //
   // |sink| is used as the destination for the rendered audio.
   //
@@ -53,10 +56,12 @@ class MEDIA_EXPORT AudioRendererImpl
   //
   // |set_decryptor_ready_cb| is fired when the audio decryptor is available
   // (only applicable if the stream is encrypted and we have a decryptor).
-  AudioRendererImpl(const scoped_refptr<base::MessageLoopProxy>& message_loop,
-                    AudioRendererSink* sink,
-                    ScopedVector<AudioDecoder> decoders,
-                    const SetDecryptorReadyCB& set_decryptor_ready_cb);
+  AudioRendererImpl(
+      const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
+      AudioRendererSink* sink,
+      ScopedVector<AudioDecoder> decoders,
+      const SetDecryptorReadyCB& set_decryptor_ready_cb,
+      AudioHardwareConfig* hardware_params);
   virtual ~AudioRendererImpl();
 
   // AudioRenderer implementation.
@@ -66,10 +71,9 @@ class MEDIA_EXPORT AudioRendererImpl
                           const base::Closure& underflow_cb,
                           const TimeCB& time_cb,
                           const base::Closure& ended_cb,
-                          const base::Closure& disabled_cb,
                           const PipelineStatusCB& error_cb) OVERRIDE;
-  virtual void Play(const base::Closure& callback) OVERRIDE;
-  virtual void Pause(const base::Closure& callback) OVERRIDE;
+  virtual void StartRendering() OVERRIDE;
+  virtual void StopRendering() OVERRIDE;
   virtual void Flush(const base::Closure& callback) OVERRIDE;
   virtual void Stop(const base::Closure& callback) OVERRIDE;
   virtual void SetPlaybackRate(float rate) OVERRIDE;
@@ -77,12 +81,6 @@ class MEDIA_EXPORT AudioRendererImpl
                        const PipelineStatusCB& cb) OVERRIDE;
   virtual void ResumeAfterUnderflow() OVERRIDE;
   virtual void SetVolume(float volume) OVERRIDE;
-
-  // Disables underflow support.  When used, |state_| will never transition to
-  // kUnderflow resulting in Render calls that underflow returning 0 frames
-  // instead of some number of silence frames.  Must be called prior to
-  // Initialize().
-  void DisableUnderflowForTesting();
 
   // Allows injection of a custom time callback for non-realtime testing.
   typedef base::Callback<base::TimeTicks()> NowCB;
@@ -93,11 +91,33 @@ class MEDIA_EXPORT AudioRendererImpl
  private:
   friend class AudioRendererImplTest;
 
-  // TODO(acolwell): Add a state machine graph.
+  // Important detail: being in kPlaying doesn't imply that audio is being
+  // rendered. Rather, it means that the renderer is ready to go. The actual
+  // rendering of audio is controlled via Start/StopRendering().
+  //
+  //   kUninitialized
+  //         | Initialize()
+  //         |
+  //         V
+  //    kInitializing
+  //         | Decoders initialized
+  //         |
+  //         V            Decoders reset
+  //      kFlushed <------------------ kFlushing
+  //         | Preroll()                  ^
+  //         |                            |
+  //         V                            | Flush()
+  //     kPrerolling ----------------> kPlaying ---------.
+  //           Enough data buffered       ^              | Not enough data
+  //                                      |              | buffered
+  //                 Enough data buffered |              V
+  //                                 kRebuffering <--- kUnderflow
+  //                                      ResumeAfterUnderflow()
   enum State {
     kUninitialized,
-    kPaused,
+    kInitializing,
     kFlushing,
+    kFlushed,
     kPrerolling,
     kPlaying,
     kStopped,
@@ -106,7 +126,7 @@ class MEDIA_EXPORT AudioRendererImpl
   };
 
   // Callback from the audio decoder delivering decoded audio samples.
-  void DecodedAudioReady(AudioDecoder::Status status,
+  void DecodedAudioReady(AudioBufferStream::Status status,
                          const scoped_refptr<AudioBuffer>& buffer);
 
   // Handles buffers that come out of |splicer_|.
@@ -122,8 +142,8 @@ class MEDIA_EXPORT AudioRendererImpl
                                     const base::TimeDelta& playback_delay,
                                     const base::TimeTicks& time_now);
 
-  void DoPlay_Locked();
-  void DoPause_Locked();
+  void StartRendering_Locked();
+  void StopRendering_Locked();
 
   // AudioRendererSink::RenderCallback implementation.
   //
@@ -151,7 +171,7 @@ class MEDIA_EXPORT AudioRendererImpl
   // Helper methods that schedule an asynchronous read from the decoder as long
   // as there isn't a pending read.
   //
-  // Must be called on |message_loop_|.
+  // Must be called on |task_runner_|.
   void AttemptRead();
   void AttemptRead_Locked();
   bool CanRead_Locked();
@@ -162,14 +182,9 @@ class MEDIA_EXPORT AudioRendererImpl
   // in the kPrerolling state.
   bool IsBeforePrerollTime(const scoped_refptr<AudioBuffer>& buffer);
 
-  // Called when |decoder_selector_| has selected |decoder| or is null if no
-  // decoder could be selected.
-  //
-  // |decrypting_demuxer_stream| is non-null if a DecryptingDemuxerStream was
-  // created to help decrypt the encrypted stream.
-  void OnDecoderSelected(
-      scoped_ptr<AudioDecoder> decoder,
-      scoped_ptr<DecryptingDemuxerStream> decrypting_demuxer_stream);
+  // Called upon AudioBufferStream initialization, or failure thereof (indicated
+  // by the value of |success|).
+  void OnAudioBufferStreamInitialized(bool succes);
 
   // Used to initiate the flush operation once all pending reads have
   // completed.
@@ -182,33 +197,38 @@ class MEDIA_EXPORT AudioRendererImpl
   // Called when the |decoder_|.Reset() has completed.
   void ResetDecoderDone();
 
-  scoped_refptr<base::MessageLoopProxy> message_loop_;
-  base::WeakPtrFactory<AudioRendererImpl> weak_factory_;
-  base::WeakPtr<AudioRendererImpl> weak_this_;
+  // Called by the AudioBufferStream when a splice buffer is demuxed.
+  void OnNewSpliceBuffer(base::TimeDelta);
+
+  // Called by the AudioBufferStream when a config change occurs.
+  void OnConfigChange();
+
+  scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
 
   scoped_ptr<AudioSplicer> splicer_;
+  scoped_ptr<AudioBufferConverter> buffer_converter_;
+
+  // Whether or not we expect to handle config changes.
+  bool expecting_config_changes_;
 
   // The sink (destination) for rendered audio. |sink_| must only be accessed
-  // on |message_loop_|. |sink_| must never be called under |lock_| or else we
-  // may deadlock between |message_loop_| and the audio callback thread.
+  // on |task_runner_|. |sink_| must never be called under |lock_| or else we
+  // may deadlock between |task_runner_| and the audio callback thread.
   scoped_refptr<media::AudioRendererSink> sink_;
 
-  scoped_ptr<AudioDecoderSelector> decoder_selector_;
+  AudioBufferStream audio_buffer_stream_;
 
-  // These two will be set by AudioDecoderSelector::SelectAudioDecoder().
-  scoped_ptr<AudioDecoder> decoder_;
-  scoped_ptr<DecryptingDemuxerStream> decrypting_demuxer_stream_;
+  // Interface to the hardware audio params.
+  const AudioHardwareConfig* const hardware_config_;
 
-  // AudioParameters constructed during Initialize() based on |decoder_|.
+  // Cached copy of hardware params from |hardware_config_|.
   AudioParameters audio_parameters_;
 
   // Callbacks provided during Initialize().
   PipelineStatusCB init_cb_;
-  StatisticsCB statistics_cb_;
   base::Closure underflow_cb_;
   TimeCB time_cb_;
   base::Closure ended_cb_;
-  base::Closure disabled_cb_;
   PipelineStatusCB error_cb_;
 
   // Callback provided to Flush().
@@ -230,7 +250,9 @@ class MEDIA_EXPORT AudioRendererImpl
   // Simple state tracking variable.
   State state_;
 
-  // Keep track of whether or not the sink is playing.
+  // Keep track of whether or not the sink is playing and whether we should be
+  // rendering.
+  bool rendering_;
   bool sink_playing_;
 
   // Keep track of our outstanding read to |decoder_|.
@@ -240,10 +262,7 @@ class MEDIA_EXPORT AudioRendererImpl
   bool received_end_of_stream_;
   bool rendered_end_of_stream_;
 
-  // The timestamp of the last frame (i.e. furthest in the future) buffered as
-  // well as the current time that takes current playback delay into account.
-  base::TimeDelta audio_time_buffered_;
-  base::TimeDelta current_time_;
+  scoped_ptr<AudioClock> audio_clock_;
 
   base::TimeDelta preroll_timestamp_;
 
@@ -264,13 +283,14 @@ class MEDIA_EXPORT AudioRendererImpl
   base::TimeTicks earliest_end_time_;
   size_t total_frames_filled_;
 
-  bool underflow_disabled_;
-
   // True if the renderer receives a buffer with kAborted status during preroll,
   // false otherwise. This flag is cleared on the next Preroll() call.
   bool preroll_aborted_;
 
   // End variables which must be accessed under |lock_|. ----------------------
+
+  // NOTE: Weak pointers must be invalidated before all other member variables.
+  base::WeakPtrFactory<AudioRendererImpl> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(AudioRendererImpl);
 };

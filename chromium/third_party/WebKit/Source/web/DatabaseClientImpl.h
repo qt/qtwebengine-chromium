@@ -36,13 +36,16 @@
 
 namespace blink {
 
-class DatabaseClientImpl : public WebCore::DatabaseClient {
+class DatabaseClientImpl FINAL : public NoBaseWillBeGarbageCollectedFinalized<DatabaseClientImpl>, public WebCore::DatabaseClient {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(DatabaseClientImpl);
 public:
-    static PassOwnPtr<DatabaseClientImpl> create();
+    static PassOwnPtrWillBeRawPtr<DatabaseClientImpl> create();
 
     virtual ~DatabaseClientImpl();
 
     virtual bool allowDatabase(WebCore::ExecutionContext*, const String& name, const String& displayName, unsigned long estimatedSize) OVERRIDE;
+
+    virtual void trace(WebCore::Visitor*) OVERRIDE { }
 
 private:
     DatabaseClientImpl();

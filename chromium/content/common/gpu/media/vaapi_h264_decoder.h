@@ -16,9 +16,9 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "content/common/gpu/media/h264_dpb.h"
-#include "content/common/gpu/media/h264_parser.h"
 #include "content/common/gpu/media/vaapi_wrapper.h"
 #include "media/base/limits.h"
+#include "media/filters/h264_parser.h"
 
 namespace content {
 
@@ -34,7 +34,7 @@ namespace content {
 //
 // This class must be created, called and destroyed on a single thread, and
 // does nothing internally on any other thread.
-class VaapiH264Decoder {
+class CONTENT_EXPORT VaapiH264Decoder {
  public:
   // Callback invoked on the client when a surface is to be displayed.
   // Arguments: input buffer id provided at the time of Decode()
@@ -91,7 +91,7 @@ class VaapiH264Decoder {
   // Set current stream data pointer to |ptr| and |size|. Output surfaces
   // that are decoded from data in this stream chunk are to be returned along
   // with the given |input_id|.
-  void SetStream(uint8* ptr, size_t size, int32 input_id);
+  void SetStream(const uint8* ptr, size_t size, int32 input_id);
 
   // Try to decode more of the stream, returning decoded frames asynchronously
   // via output_pic_cb_. Return when more stream is needed, when we run out
@@ -130,26 +130,28 @@ class VaapiH264Decoder {
   // Process H264 stream structures.
   bool ProcessSPS(int sps_id, bool* need_new_buffers);
   bool ProcessPPS(int pps_id);
-  bool ProcessSlice(H264SliceHeader* slice_hdr);
+  bool ProcessSlice(media::H264SliceHeader* slice_hdr);
 
   // Initialize the current picture according to data in |slice_hdr|.
-  bool InitCurrPicture(H264SliceHeader* slice_hdr);
+  bool InitCurrPicture(media::H264SliceHeader* slice_hdr);
 
   // Calculate picture order counts for the new picture
   // on initialization of a new frame (see spec).
-  bool CalculatePicOrderCounts(H264SliceHeader* slice_hdr);
+  bool CalculatePicOrderCounts(media::H264SliceHeader* slice_hdr);
 
   // Update PicNum values in pictures stored in DPB on creation of new
   // frame (see spec).
   void UpdatePicNums();
 
+  bool UpdateMaxNumReorderFrames(const media::H264SPS* sps);
+
   // Prepare reference picture lists (ref_pic_list[01]_).
-  bool PrepareRefPicLists(H264SliceHeader* slice_hdr);
+  bool PrepareRefPicLists(media::H264SliceHeader* slice_hdr);
 
   // Construct initial reference picture lists for use in decoding of
   // P and B pictures (see 8.2.4 in spec).
-  void ConstructReferencePicListsP(H264SliceHeader* slice_hdr);
-  void ConstructReferencePicListsB(H264SliceHeader* slice_hdr);
+  void ConstructReferencePicListsP(media::H264SliceHeader* slice_hdr);
+  void ConstructReferencePicListsB(media::H264SliceHeader* slice_hdr);
 
   // Helper functions for reference list construction, per spec.
   int PicNumF(H264Picture *pic);
@@ -159,7 +161,7 @@ class VaapiH264Decoder {
   // specified in spec (8.2.4).
   //
   // |list| indicates list number and should be either 0 or 1.
-  bool ModifyReferencePicList(H264SliceHeader *slice_hdr, int list);
+  bool ModifyReferencePicList(media::H264SliceHeader* slice_hdr, int list);
 
   // Perform reference picture memory management operations (marking/unmarking
   // of reference pictures, long term picture management, discarding, etc.).
@@ -168,7 +170,7 @@ class VaapiH264Decoder {
   void ReferencePictureMarking();
 
   // Start processing a new frame.
-  bool StartNewFrame(H264SliceHeader* slice_hdr);
+  bool StartNewFrame(media::H264SliceHeader* slice_hdr);
 
   // All data for a frame received, process it and decode.
   bool FinishPrevFrameIfPresent();
@@ -187,9 +189,9 @@ class VaapiH264Decoder {
   // These queue up data for HW decoder to be committed on running HW decode.
   bool SendPPS();
   bool SendIQMatrix();
-  bool SendVASliceParam(H264SliceHeader* slice_hdr);
+  bool SendVASliceParam(media::H264SliceHeader* slice_hdr);
   bool SendSliceData(const uint8* ptr, size_t size);
-  bool QueueSlice(H264SliceHeader* slice_hdr);
+  bool QueueSlice(media::H264SliceHeader* slice_hdr);
 
   // Helper methods for filling HW structures.
   void FillVAPicture(VAPictureH264 *va_pic, H264Picture* pic);
@@ -223,7 +225,7 @@ class VaapiH264Decoder {
   State state_;
 
   // Parser in use.
-  H264Parser parser_;
+  media::H264Parser parser_;
 
   // DPB in use.
   H264DPB dpb_;
@@ -241,6 +243,7 @@ class VaapiH264Decoder {
   int max_frame_num_;
   int max_pic_num_;
   int max_long_term_frame_idx_;
+  size_t max_num_reorder_frames_;
 
   int frame_num_;
   int prev_frame_num_;
@@ -283,9 +286,6 @@ class VaapiH264Decoder {
 
   // PicOrderCount of the previously outputted frame.
   int last_output_poc_;
-
-  // Maximum size of DPB required by codec level.
-  int max_dpb_size_;
 
   DISALLOW_COPY_AND_ASSIGN(VaapiH264Decoder);
 };

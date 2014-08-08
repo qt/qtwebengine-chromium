@@ -31,7 +31,7 @@
 #ifndef InspectorRuntimeAgent_h
 #define InspectorRuntimeAgent_h
 
-
+#include "core/InspectorFrontend.h"
 #include "core/inspector/InspectorBaseAgent.h"
 #include "wtf/Forward.h"
 #include "wtf/Noncopyable.h"
@@ -42,6 +42,7 @@ class InjectedScript;
 class InjectedScriptManager;
 class InstrumentingAgents;
 class JSONArray;
+class ScriptState;
 class ScriptDebugServer;
 
 typedef String ErrorString;
@@ -52,18 +53,18 @@ public:
     virtual ~InspectorRuntimeAgent();
 
     // Part of the protocol.
-    virtual void enable(ErrorString*) { m_enabled = true; }
-    virtual void disable(ErrorString*) { m_enabled = false; }
+    virtual void enable(ErrorString*) OVERRIDE;
+    virtual void disable(ErrorString*) OVERRIDE FINAL;
     virtual void evaluate(ErrorString*,
-                  const String& expression,
-                  const String* objectGroup,
-                  const bool* includeCommandLineAPI,
-                  const bool* doNotPauseOnExceptionsAndMuteConsole,
-                  const int* executionContextId,
-                  const bool* returnByValue,
-                  const bool* generatePreview,
-                  RefPtr<TypeBuilder::Runtime::RemoteObject>& result,
-                  TypeBuilder::OptOutput<bool>* wasThrown);
+        const String& expression,
+        const String* objectGroup,
+        const bool* includeCommandLineAPI,
+        const bool* doNotPauseOnExceptionsAndMuteConsole,
+        const int* executionContextId,
+        const bool* returnByValue,
+        const bool* generatePreview,
+        RefPtr<TypeBuilder::Runtime::RemoteObject>& result,
+        TypeBuilder::OptOutput<bool>* wasThrown) OVERRIDE FINAL;
     virtual void callFunctionOn(ErrorString*,
                         const String& objectId,
                         const String& expression,
@@ -72,21 +73,32 @@ public:
                         const bool* returnByValue,
                         const bool* generatePreview,
                         RefPtr<TypeBuilder::Runtime::RemoteObject>& result,
-                        TypeBuilder::OptOutput<bool>* wasThrown);
-    virtual void releaseObject(ErrorString*, const String& objectId);
-    virtual void getProperties(ErrorString*, const String& objectId, const bool* ownProperties, const bool* accessorPropertiesOnly, RefPtr<TypeBuilder::Array<TypeBuilder::Runtime::PropertyDescriptor> >& result, RefPtr<TypeBuilder::Array<TypeBuilder::Runtime::InternalPropertyDescriptor> >& internalProperties);
-    virtual void releaseObjectGroup(ErrorString*, const String& objectGroup);
-    virtual void run(ErrorString*);
+                        TypeBuilder::OptOutput<bool>* wasThrown) OVERRIDE FINAL;
+    virtual void releaseObject(ErrorString*, const String& objectId) OVERRIDE FINAL;
+    virtual void getProperties(ErrorString*, const String& objectId, const bool* ownProperties, const bool* accessorPropertiesOnly, RefPtr<TypeBuilder::Array<TypeBuilder::Runtime::PropertyDescriptor> >& result, RefPtr<TypeBuilder::Array<TypeBuilder::Runtime::InternalPropertyDescriptor> >& internalProperties) OVERRIDE FINAL;
+    virtual void releaseObjectGroup(ErrorString*, const String& objectGroup) OVERRIDE FINAL;
+    virtual void run(ErrorString*) OVERRIDE;
+    virtual void isRunRequired(ErrorString*, bool* out_result) OVERRIDE;
+
+    virtual void setFrontend(InspectorFrontend*) OVERRIDE FINAL;
+    virtual void clearFrontend() OVERRIDE FINAL;
+    virtual void restore() OVERRIDE FINAL;
 
 protected:
-    InspectorRuntimeAgent(InstrumentingAgents*, InspectorCompositeState*, InjectedScriptManager*, ScriptDebugServer*);
+    InspectorRuntimeAgent(InjectedScriptManager*, ScriptDebugServer*);
     virtual InjectedScript injectedScriptForEval(ErrorString*, const int* executionContextId) = 0;
 
     virtual void muteConsole() = 0;
     virtual void unmuteConsole() = 0;
 
     InjectedScriptManager* injectedScriptManager() { return m_injectedScriptManager; }
+    void addExecutionContextToFrontend(ScriptState*, bool isPageContext, const String& name, const String& frameId);
+
     bool m_enabled;
+    InspectorFrontend::Runtime* m_frontend;
+
+    typedef HashMap<RefPtr<ScriptState>, int> ScriptStateToId;
+    ScriptStateToId m_scriptStateToId;
 
 private:
     InjectedScriptManager* m_injectedScriptManager;

@@ -29,12 +29,12 @@
  */
 
 #include "config.h"
-#include "V8HTMLCollection.h"
+#include "bindings/core/v8/V8HTMLCollection.h"
 
-#include "V8HTMLAllCollection.h"
-#include "V8HTMLFormControlsCollection.h"
-#include "V8HTMLOptionsCollection.h"
-#include "V8Node.h"
+#include "bindings/core/v8/V8HTMLAllCollection.h"
+#include "bindings/core/v8/V8HTMLFormControlsCollection.h"
+#include "bindings/core/v8/V8HTMLOptionsCollection.h"
+#include "bindings/core/v8/V8Node.h"
 #include "bindings/v8/V8Binding.h"
 #include "core/html/HTMLCollection.h"
 
@@ -45,11 +45,11 @@ v8::Handle<v8::Object> wrap(HTMLCollection* impl, v8::Handle<v8::Object> creatio
     ASSERT(impl);
     switch (impl->type()) {
     case FormControls:
-        return wrap(static_cast<HTMLFormControlsCollection*>(impl), creationContext, isolate);
+        return wrap(toHTMLFormControlsCollection(impl), creationContext, isolate);
     case SelectOptions:
-        return wrap(static_cast<HTMLOptionsCollection*>(impl), creationContext, isolate);
+        return wrap(toHTMLOptionsCollection(impl), creationContext, isolate);
     case DocAll:
-        return wrap(static_cast<HTMLAllCollection*>(impl), creationContext, isolate);
+        return wrap(toHTMLAllCollection(impl), creationContext, isolate);
     default:
         break;
     }

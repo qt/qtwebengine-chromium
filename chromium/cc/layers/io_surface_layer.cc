@@ -17,7 +17,7 @@ IOSurfaceLayer::IOSurfaceLayer() : Layer(), io_surface_id_(0) {}
 IOSurfaceLayer::~IOSurfaceLayer() {}
 
 void IOSurfaceLayer::SetIOSurfaceProperties(uint32_t io_surface_id,
-                                            gfx::Size size) {
+                                            const gfx::Size& size) {
   io_surface_id_ = io_surface_id;
   io_surface_size_ = size;
   SetNeedsCommit();
@@ -41,7 +41,7 @@ void IOSurfaceLayer::PushPropertiesTo(LayerImpl* layer) {
 }
 
 bool IOSurfaceLayer::Update(ResourceUpdateQueue* queue,
-                            const OcclusionTracker* occlusion) {
+                            const OcclusionTracker<Layer>* occlusion) {
   bool updated = Layer::Update(queue, occlusion);
 
   // This layer doesn't update any resources from the main thread side,

@@ -34,41 +34,17 @@
 
 #include "core/events/EventListenerMap.h"
 #include "core/events/ThreadLocalEventNames.h"
-#include "wtf/Forward.h"
+#include "platform/heap/Handle.h"
 
 namespace WebCore {
 
-class ApplicationCache;
-class AudioContext;
-class DOMWindow;
-class DedicatedWorkerGlobalScope;
+class LocalDOMWindow;
 class Event;
-class EventListener;
-class EventSource;
 class ExceptionState;
-class FileReader;
-class FileWriter;
-class IDBDatabase;
-class IDBRequest;
-class IDBTransaction;
-class MIDIAccess;
-class MIDIInput;
-class MIDIPort;
-class MediaController;
-class MediaStream;
 class MessagePort;
-class NamedFlow;
 class Node;
-class Notification;
-class SVGElementInstance;
-class ExecutionContext;
-class ScriptProcessorNode;
-class SharedWorker;
-class SharedWorkerGlobalScope;
 class TextTrack;
 class TextTrackCue;
-class WebSocket;
-class Worker;
 class XMLHttpRequest;
 class XMLHttpRequestUpload;
 
@@ -96,36 +72,47 @@ public:
     OwnPtr<FiringEventIteratorVector> firingEventIterators;
 };
 
-class EventTarget {
+class EventTarget : public WillBeGarbageCollectedMixin {
 public:
+#if !ENABLE(OILPAN)
     void ref() { refEventTarget(); }
     void deref() { derefEventTarget(); }
+#endif
 
     virtual const AtomicString& interfaceName() const = 0;
     virtual ExecutionContext* executionContext() const = 0;
 
     virtual Node* toNode();
-    virtual DOMWindow* toDOMWindow();
+    virtual LocalDOMWindow* toDOMWindow();
     virtual MessagePort* toMessagePort();
 
-    virtual bool addEventListener(const AtomicString& eventType, PassRefPtr<EventListener>, bool useCapture);
-    virtual bool removeEventListener(const AtomicString& eventType, EventListener*, bool useCapture);
+    // FIXME: first 2 args to addEventListener and removeEventListener should
+    // be required (per spec), but throwing TypeError breaks legacy content.
+    // http://crbug.com/353484
+    bool addEventListener() { return false; }
+    bool addEventListener(const AtomicString& eventType) { return false; }
+    virtual bool addEventListener(const AtomicString& eventType, PassRefPtr<EventListener>, bool useCapture = false);
+    bool removeEventListener() { return false; }
+    bool removeEventListener(const AtomicString& eventType) { return false; }
+    virtual bool removeEventListener(const AtomicString& eventType, EventListener*, bool useCapture = false);
     virtual void removeAllEventListeners();
-    virtual bool dispatchEvent(PassRefPtr<Event>);
-    bool dispatchEvent(PassRefPtr<Event>, ExceptionState&); // DOM API
+    virtual bool dispatchEvent(PassRefPtrWillBeRawPtr<Event>);
+    bool dispatchEvent(PassRefPtrWillBeRawPtr<Event>, ExceptionState&); // DOM API
     virtual void uncaughtExceptionInEventHandler();
 
     // Used for legacy "onEvent" attribute APIs.
-    bool setAttributeEventListener(const AtomicString& eventType, PassRefPtr<EventListener>, DOMWrapperWorld* isolatedWorld = 0);
-    EventListener* getAttributeEventListener(const AtomicString& eventType, DOMWrapperWorld* isolatedWorld = 0);
+    bool setAttributeEventListener(const AtomicString& eventType, PassRefPtr<EventListener>);
+    EventListener* getAttributeEventListener(const AtomicString& eventType);
 
     bool hasEventListeners() const;
     bool hasEventListeners(const AtomicString& eventType) const;
     bool hasCapturingEventListeners(const AtomicString& eventType);
     const EventListenerVector& getEventListeners(const AtomicString& eventType);
+    Vector<AtomicString> eventTypes();
 
     bool fireEventListeners(Event*);
-    bool isFiringEventListeners();
+
+    virtual void trace(Visitor*) { }
 
 protected:
     virtual ~EventTarget();
@@ -135,15 +122,17 @@ protected:
     virtual EventTargetData& ensureEventTargetData() = 0;
 
 private:
+#if !ENABLE(OILPAN)
     // Subclasses should likely not override these themselves; instead, they should use the REFCOUNTED_EVENT_TARGET() macro.
     virtual void refEventTarget() = 0;
     virtual void derefEventTarget() = 0;
+#endif
 
-    DOMWindow* executingWindow();
+    LocalDOMWindow* executingWindow();
     void fireEventListeners(Event*, EventTargetData*, EventListenerVector&);
     void countLegacyEvents(const AtomicString& legacyTypeName, EventListenerVector*, EventListenerVector*);
 
-    bool clearAttributeEventListener(const AtomicString& eventType, DOMWrapperWorld* isolatedWorld);
+    bool clearAttributeEventListener(const AtomicString& eventType);
 
     friend class EventListenerIterator;
 };
@@ -159,56 +148,48 @@ private:
 // FIXME: These macros should be split into separate DEFINE and DECLARE
 // macros to avoid causing so many header includes.
 #define DEFINE_ATTRIBUTE_EVENT_LISTENER(attribute) \
-    EventListener* on##attribute(DOMWrapperWorld* isolatedWorld) { return getAttributeEventListener(EventTypeNames::attribute, isolatedWorld); } \
-    void setOn##attribute(PassRefPtr<EventListener> listener, DOMWrapperWorld* isolatedWorld = 0) { setAttributeEventListener(EventTypeNames::attribute, listener, isolatedWorld); } \
+    EventListener* on##attribute() { return getAttributeEventListener(EventTypeNames::attribute); } \
+    void setOn##attribute(PassRefPtr<EventListener> listener) { setAttributeEventListener(EventTypeNames::attribute, listener); } \
 
 #define DEFINE_STATIC_ATTRIBUTE_EVENT_LISTENER(attribute) \
-    static EventListener* on##attribute(EventTarget* eventTarget, DOMWrapperWorld* isolatedWorld) { return eventTarget->getAttributeEventListener(EventTypeNames::attribute, isolatedWorld); } \
-    static void setOn##attribute(EventTarget* eventTarget, PassRefPtr<EventListener> listener, DOMWrapperWorld* isolatedWorld = 0) { eventTarget->setAttributeEventListener(EventTypeNames::attribute, listener, isolatedWorld); } \
+    static EventListener* on##attribute(EventTarget& eventTarget) { return eventTarget.getAttributeEventListener(EventTypeNames::attribute); } \
+    static void setOn##attribute(EventTarget& eventTarget, PassRefPtr<EventListener> listener) { eventTarget.setAttributeEventListener(EventTypeNames::attribute, listener); } \
 
 #define DEFINE_WINDOW_ATTRIBUTE_EVENT_LISTENER(attribute) \
-    EventListener* on##attribute(DOMWrapperWorld* isolatedWorld) { return document().getWindowAttributeEventListener(EventTypeNames::attribute, isolatedWorld); } \
-    void setOn##attribute(PassRefPtr<EventListener> listener, DOMWrapperWorld* isolatedWorld) { document().setWindowAttributeEventListener(EventTypeNames::attribute, listener, isolatedWorld); } \
+    EventListener* on##attribute() { return document().getWindowAttributeEventListener(EventTypeNames::attribute); } \
+    void setOn##attribute(PassRefPtr<EventListener> listener) { document().setWindowAttributeEventListener(EventTypeNames::attribute, listener); } \
 
 #define DEFINE_STATIC_WINDOW_ATTRIBUTE_EVENT_LISTENER(attribute) \
-    static EventListener* on##attribute(EventTarget* eventTarget, DOMWrapperWorld* isolatedWorld) { \
-        if (Node* node = eventTarget->toNode()) \
-            return node->document().getWindowAttributeEventListener(EventTypeNames::attribute, isolatedWorld); \
-        ASSERT(eventTarget->toDOMWindow()); \
-        return eventTarget->getAttributeEventListener(EventTypeNames::attribute, isolatedWorld); \
+    static EventListener* on##attribute(EventTarget& eventTarget) { \
+        if (Node* node = eventTarget.toNode()) \
+            return node->document().getWindowAttributeEventListener(EventTypeNames::attribute); \
+        ASSERT(eventTarget.toDOMWindow()); \
+        return eventTarget.getAttributeEventListener(EventTypeNames::attribute); \
     } \
-    static void setOn##attribute(EventTarget* eventTarget, PassRefPtr<EventListener> listener, DOMWrapperWorld* isolatedWorld) { \
-        if (Node* node = eventTarget->toNode()) \
-            node->document().setWindowAttributeEventListener(EventTypeNames::attribute, listener, isolatedWorld); \
+    static void setOn##attribute(EventTarget& eventTarget, PassRefPtr<EventListener> listener) { \
+        if (Node* node = eventTarget.toNode()) \
+            node->document().setWindowAttributeEventListener(EventTypeNames::attribute, listener); \
         else { \
-            ASSERT(eventTarget->toDOMWindow()); \
-            eventTarget->setAttributeEventListener(EventTypeNames::attribute, listener, isolatedWorld); \
+            ASSERT(eventTarget.toDOMWindow()); \
+            eventTarget.setAttributeEventListener(EventTypeNames::attribute, listener); \
         } \
     }
 
 #define DEFINE_MAPPED_ATTRIBUTE_EVENT_LISTENER(attribute, eventName) \
-    EventListener* on##attribute(DOMWrapperWorld* isolatedWorld) { return getAttributeEventListener(EventTypeNames::eventName, isolatedWorld); } \
-    void setOn##attribute(PassRefPtr<EventListener> listener, DOMWrapperWorld* isolatedWorld) { setAttributeEventListener(EventTypeNames::eventName, listener, isolatedWorld); } \
+    EventListener* on##attribute() { return getAttributeEventListener(EventTypeNames::eventName); } \
+    void setOn##attribute(PassRefPtr<EventListener> listener) { setAttributeEventListener(EventTypeNames::eventName, listener); } \
 
 #define DECLARE_FORWARDING_ATTRIBUTE_EVENT_LISTENER(recipient, attribute) \
-    EventListener* on##attribute(DOMWrapperWorld* isolatedWorld); \
-    void setOn##attribute(PassRefPtr<EventListener> listener, DOMWrapperWorld* isolatedWorld);
+    EventListener* on##attribute(); \
+    void setOn##attribute(PassRefPtr<EventListener> listener);
 
 #define DEFINE_FORWARDING_ATTRIBUTE_EVENT_LISTENER(type, recipient, attribute) \
-    EventListener* type::on##attribute(DOMWrapperWorld* isolatedWorld) { return recipient ? recipient->getAttributeEventListener(EventTypeNames::attribute, isolatedWorld) : 0; } \
-    void type::setOn##attribute(PassRefPtr<EventListener> listener, DOMWrapperWorld* isolatedWorld) \
+    EventListener* type::on##attribute() { return recipient ? recipient->getAttributeEventListener(EventTypeNames::attribute) : 0; } \
+    void type::setOn##attribute(PassRefPtr<EventListener> listener) \
     { \
         if (recipient) \
-            recipient->setAttributeEventListener(EventTypeNames::attribute, listener, isolatedWorld); \
+            recipient->setAttributeEventListener(EventTypeNames::attribute, listener); \
     }
-
-inline bool EventTarget::isFiringEventListeners()
-{
-    EventTargetData* d = eventTargetData();
-    if (!d)
-        return false;
-    return d->firingEventIterators && !d->firingEventIterators->isEmpty();
-}
 
 inline bool EventTarget::hasEventListeners() const
 {
@@ -236,6 +217,15 @@ inline bool EventTarget::hasCapturingEventListeners(const AtomicString& eventTyp
 
 } // namespace WebCore
 
+#if ENABLE(OILPAN)
+#define DEFINE_EVENT_TARGET_REFCOUNTING(baseClass) \
+public: \
+    using baseClass::ref; \
+    using baseClass::deref; \
+private: \
+    typedef int thisIsHereToForceASemiColonAfterThisEventTargetMacro
+#define DEFINE_EVENT_TARGET_REFCOUNTING_WILL_BE_REMOVED(baseClass)
+#else
 #define DEFINE_EVENT_TARGET_REFCOUNTING(baseClass) \
 public: \
     using baseClass::ref; \
@@ -244,10 +234,12 @@ private: \
     virtual void refEventTarget() OVERRIDE FINAL { ref(); } \
     virtual void derefEventTarget() OVERRIDE FINAL { deref(); } \
     typedef int thisIsHereToForceASemiColonAfterThisEventTargetMacro
+#define DEFINE_EVENT_TARGET_REFCOUNTING_WILL_BE_REMOVED(baseClass) DEFINE_EVENT_TARGET_REFCOUNTING(baseClass)
+#endif
 
 // Use this macro if your EventTarget subclass is also a subclass of WTF::RefCounted.
 // A ref-counted class that uses a different method of refcounting should use DEFINE_EVENT_TARGET_REFCOUNTING directly.
 // Both of these macros are meant to be placed just before the "public:" section of the class declaration.
-#define REFCOUNTED_EVENT_TARGET(className) DEFINE_EVENT_TARGET_REFCOUNTING(RefCounted<className>)
+#define REFCOUNTED_EVENT_TARGET(className) DEFINE_EVENT_TARGET_REFCOUNTING(RefCountedWillBeRefCountedGarbageCollected<className>)
 
 #endif // EventTarget_h

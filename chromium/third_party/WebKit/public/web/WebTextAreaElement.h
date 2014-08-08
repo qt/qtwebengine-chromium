@@ -52,13 +52,10 @@ public:
     }
     void assign(const WebTextAreaElement& element) { WebFormControlElement::assign(element); }
 
-    BLINK_EXPORT void setValue(const WebString&);
-    BLINK_EXPORT WebString value() const;
-
 #if BLINK_IMPLEMENTATION
-    WebTextAreaElement(const WTF::PassRefPtr<WebCore::HTMLTextAreaElement>&);
-    WebTextAreaElement& operator=(const WTF::PassRefPtr<WebCore::HTMLTextAreaElement>&);
-    operator WTF::PassRefPtr<WebCore::HTMLTextAreaElement>() const;
+    WebTextAreaElement(const PassRefPtrWillBeRawPtr<WebCore::HTMLTextAreaElement>&);
+    WebTextAreaElement& operator=(const PassRefPtrWillBeRawPtr<WebCore::HTMLTextAreaElement>&);
+    operator PassRefPtrWillBeRawPtr<WebCore::HTMLTextAreaElement>() const;
 #endif
 };
 

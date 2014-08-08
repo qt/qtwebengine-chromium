@@ -4,6 +4,8 @@
 
 #include "media/filters/audio_file_reader.h"
 
+#include <cmath>
+
 #include "base/logging.h"
 #include "base/time/time.h"
 #include "media/base/audio_bus.h"
@@ -23,21 +25,6 @@ AudioFileReader::AudioFileReader(FFmpegURLProtocol* protocol)
 
 AudioFileReader::~AudioFileReader() {
   Close();
-}
-
-base::TimeDelta AudioFileReader::duration() const {
-  const AVRational av_time_base = {1, AV_TIME_BASE};
-
-  // Add one microsecond to avoid rounding-down errors which can occur when
-  // |duration| has been calculated from an exact number of sample-frames.
-  // One microsecond is much less than the time of a single sample-frame
-  // at any real-world sample-rate.
-  return ConvertFromTimeBase(
-      av_time_base, glue_->format_context()->duration + 1);
-}
-
-int64 AudioFileReader::number_of_frames() const {
-  return static_cast<int64>(duration().InSecondsF() * sample_rate());
 }
 
 bool AudioFileReader::Open() {
@@ -131,8 +118,7 @@ int AudioFileReader::Read(AudioBus* audio_bus) {
   size_t bytes_per_sample = av_get_bytes_per_sample(codec_context_->sample_fmt);
 
   // Holds decoded audio.
-  scoped_ptr_malloc<AVFrame, ScopedPtrAVFreeFrame> av_frame(
-      av_frame_alloc());
+  scoped_ptr<AVFrame, ScopedPtrAVFreeFrame> av_frame(av_frame_alloc());
 
   // Read until we hit EOF or we've read the requested number of frames.
   AVPacket packet;
@@ -140,19 +126,14 @@ int AudioFileReader::Read(AudioBus* audio_bus) {
   bool continue_decoding = true;
 
   while (current_frame < audio_bus->frames() && continue_decoding &&
-         av_read_frame(glue_->format_context(), &packet) >= 0 &&
-         av_dup_packet(&packet) >= 0) {
-    // Skip packets from other streams.
-    if (packet.stream_index != stream_index_) {
-      av_free_packet(&packet);
-      continue;
-    }
-
+         ReadPacket(&packet)) {
     // Make a shallow copy of packet so we can slide packet.data as frames are
     // decoded from the packet; otherwise av_free_packet() will corrupt memory.
     AVPacket packet_temp = packet;
     do {
-      avcodec_get_frame_defaults(av_frame.get());
+      // Reset frame to default values.
+      av_frame_unref(av_frame.get());
+
       int frame_decoded = 0;
       int result = avcodec_decode_audio4(
           codec_context_, av_frame.get(), &frame_decoded, &packet_temp);
@@ -161,7 +142,6 @@ int AudioFileReader::Read(AudioBus* audio_bus) {
         DLOG(WARNING)
             << "AudioFileReader::Read() : error in avcodec_decode_audio4() -"
             << result;
-        continue_decoding = false;
         break;
       }
 
@@ -203,8 +183,10 @@ int AudioFileReader::Read(AudioBus* audio_bus) {
       }
 
       // Truncate, if necessary, if the destination isn't big enough.
-      if (current_frame + frames_read > audio_bus->frames())
+      if (current_frame + frames_read > audio_bus->frames()) {
+        DLOG(ERROR) << "Truncating decoded data due to output size.";
         frames_read = audio_bus->frames() - current_frame;
+      }
 
       // Deinterleave each channel and convert to 32bit floating-point with
       // nominal range -1.0 -> +1.0.  If the output is already in float planar
@@ -241,6 +223,38 @@ int AudioFileReader::Read(AudioBus* audio_bus) {
   // Returns the actual number of sample-frames decoded.
   // Ideally this represents the "true" exact length of the file.
   return current_frame;
+}
+
+base::TimeDelta AudioFileReader::GetDuration() const {
+  const AVRational av_time_base = {1, AV_TIME_BASE};
+
+  // Add one microsecond to avoid rounding-down errors which can occur when
+  // |duration| has been calculated from an exact number of sample-frames.
+  // One microsecond is much less than the time of a single sample-frame
+  // at any real-world sample-rate.
+  return ConvertFromTimeBase(av_time_base,
+                             glue_->format_context()->duration + 1);
+}
+
+int AudioFileReader::GetNumberOfFrames() const {
+  return static_cast<int>(ceil(GetDuration().InSecondsF() * sample_rate()));
+}
+
+bool AudioFileReader::ReadPacketForTesting(AVPacket* output_packet) {
+  return ReadPacket(output_packet);
+}
+
+bool AudioFileReader::ReadPacket(AVPacket* output_packet) {
+  while (av_read_frame(glue_->format_context(), output_packet) >= 0 &&
+         av_dup_packet(output_packet) >= 0) {
+    // Skip packets from other streams.
+    if (output_packet->stream_index != stream_index_) {
+      av_free_packet(output_packet);
+      continue;
+    }
+    return true;
+  }
+  return false;
 }
 
 }  // namespace media

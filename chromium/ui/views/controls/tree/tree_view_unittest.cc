@@ -17,6 +17,8 @@ using ui::TreeModel;
 using ui::TreeModelNode;
 using ui::TreeNode;
 
+using base::ASCIIToUTF16;
+
 namespace views {
 
 class TestNode : public TreeNode<TestNode> {
@@ -68,7 +70,7 @@ class TreeViewTest : public ViewsTestBase {
  private:
   std::string InternalNodeAsString(TreeView::InternalNode* node);
 
-  TestNode* GetNodeByTitleImpl(TestNode* node, const string16& title);
+  TestNode* GetNodeByTitleImpl(TestNode* node, const base::string16& title);
 
   DISALLOW_COPY_AND_ASSIGN(TreeViewTest);
 };
@@ -88,12 +90,14 @@ std::string TreeViewTest::TreeViewContentsAsString() {
 
 std::string TreeViewTest::GetSelectedNodeTitle() {
   TreeModelNode* model_node = tree_.GetSelectedNode();
-  return model_node ? UTF16ToASCII(model_node->GetTitle()) : std::string();
+  return model_node ? base::UTF16ToASCII(model_node->GetTitle())
+                    : std::string();
 }
 
 std::string TreeViewTest::GetEditingNodeTitle() {
   TreeModelNode* model_node = tree_.GetEditingNode();
-  return model_node ? UTF16ToASCII(model_node->GetTitle()) : std::string();
+  return model_node ? base::UTF16ToASCII(model_node->GetTitle())
+                    : std::string();
 }
 
 TestNode* TreeViewTest::GetNodeByTitle(const std::string& title) {
@@ -118,7 +122,7 @@ int TreeViewTest::GetRowCount() {
 }
 
 TestNode* TreeViewTest::GetNodeByTitleImpl(TestNode* node,
-                                           const string16& title) {
+                                           const base::string16& title) {
   if (node->GetTitle() == title)
     return node;
   for (int i = 0; i < node->child_count(); ++i) {
@@ -131,7 +135,7 @@ TestNode* TreeViewTest::GetNodeByTitleImpl(TestNode* node,
 
 std::string TreeViewTest::InternalNodeAsString(
     TreeView::InternalNode* node) {
-  std::string result = UTF16ToASCII(node->model_node()->GetTitle());
+  std::string result = base::UTF16ToASCII(node->model_node()->GetTitle());
   if (node->is_expanded() && node->child_count()) {
     result += " [";
     for (int i = 0; i < node->child_count(); ++i) {

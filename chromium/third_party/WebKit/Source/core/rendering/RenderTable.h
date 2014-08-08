@@ -25,7 +25,7 @@
 #ifndef RenderTable_h
 #define RenderTable_h
 
-#include "CSSPropertyNames.h"
+#include "core/CSSPropertyNames.h"
 #include "core/rendering/RenderBlock.h"
 #include "core/rendering/style/CollapsedBorderValue.h"
 #include "wtf/Vector.h"
@@ -52,33 +52,33 @@ public:
 
     bool collapseBorders() const { return style()->borderCollapse(); }
 
-    int borderStart() const { return m_borderStart; }
-    int borderEnd() const { return m_borderEnd; }
-    int borderBefore() const;
-    int borderAfter() const;
+    virtual int borderStart() const OVERRIDE { return m_borderStart; }
+    virtual int borderEnd() const OVERRIDE { return m_borderEnd; }
+    virtual int borderBefore() const OVERRIDE;
+    virtual int borderAfter() const OVERRIDE;
 
-    int borderLeft() const
+    virtual int borderLeft() const OVERRIDE
     {
         if (style()->isHorizontalWritingMode())
             return style()->isLeftToRightDirection() ? borderStart() : borderEnd();
         return style()->isFlippedBlocksWritingMode() ? borderAfter() : borderBefore();
     }
 
-    int borderRight() const
+    virtual int borderRight() const OVERRIDE
     {
         if (style()->isHorizontalWritingMode())
             return style()->isLeftToRightDirection() ? borderEnd() : borderStart();
         return style()->isFlippedBlocksWritingMode() ? borderBefore() : borderAfter();
     }
 
-    int borderTop() const
+    virtual int borderTop() const OVERRIDE
     {
         if (style()->isHorizontalWritingMode())
             return style()->isFlippedBlocksWritingMode() ? borderAfter() : borderBefore();
         return style()->isLeftToRightDirection() ? borderStart() : borderEnd();
     }
 
-    int borderBottom() const
+    virtual int borderBottom() const OVERRIDE
     {
         if (style()->isHorizontalWritingMode())
             return style()->isFlippedBlocksWritingMode() ? borderBefore() : borderAfter();
@@ -124,7 +124,7 @@ public:
     int calcBorderEnd() const;
     void recalcBordersInRowDirection();
 
-    virtual void addChild(RenderObject* child, RenderObject* beforeChild = 0);
+    virtual void addChild(RenderObject* child, RenderObject* beforeChild = 0) OVERRIDE;
 
     struct ColumnStruct {
         explicit ColumnStruct(unsigned initialSpan = 1)
@@ -171,6 +171,9 @@ public:
 
     unsigned colToEffCol(unsigned column) const
     {
+        if (!m_hasCellColspanThatDeterminesTableWidth)
+            return column;
+
         unsigned effColumn = 0;
         unsigned numColumns = numEffCols();
         for (unsigned c = 0; effColumn < numColumns && c + m_columns[effColumn].span - 1 < column; ++effColumn)
@@ -180,6 +183,9 @@ public:
 
     unsigned effColToCol(unsigned effCol) const
     {
+        if (!m_hasCellColspanThatDeterminesTableWidth)
+            return effCol;
+
         unsigned c = 0;
         for (unsigned i = 0; i < effCol; i++)
             c += m_columns[i].span;
@@ -221,7 +227,7 @@ public:
         if (documentBeingDestroyed())
             return;
         m_needsSectionRecalc = true;
-        setNeedsLayout();
+        setNeedsLayoutAndFullPaintInvalidation();
     }
 
     RenderTableSection* sectionAbove(const RenderTableSection*, SkipEmptySectionsValue = DoNotSkipEmptySections) const;
@@ -263,22 +269,21 @@ public:
     void removeColumn(const RenderTableCol*);
 
 protected:
-    virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle);
-    virtual void simplifiedNormalFlowLayout();
+    virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle) OVERRIDE;
+    virtual void simplifiedNormalFlowLayout() OVERRIDE;
 
 private:
-    virtual const char* renderName() const { return "RenderTable"; }
+    virtual const char* renderName() const OVERRIDE { return "RenderTable"; }
 
-    virtual bool isTable() const { return true; }
+    virtual bool isTable() const OVERRIDE { return true; }
 
-    virtual bool avoidsFloats() const { return true; }
+    virtual bool avoidsFloats() const OVERRIDE { return true; }
 
-    virtual void paint(PaintInfo&, const LayoutPoint&);
-    virtual void paintObject(PaintInfo&, const LayoutPoint&);
-    virtual void paintBoxDecorations(PaintInfo&, const LayoutPoint&);
-    virtual void paintMask(PaintInfo&, const LayoutPoint&);
-    virtual void layout();
-    virtual bool supportsPartialLayout() const OVERRIDE { return false; }
+    virtual void paint(PaintInfo&, const LayoutPoint&) OVERRIDE;
+    virtual void paintObject(PaintInfo&, const LayoutPoint&) OVERRIDE;
+    virtual void paintBoxDecorations(PaintInfo&, const LayoutPoint&) OVERRIDE;
+    virtual void paintMask(PaintInfo&, const LayoutPoint&) OVERRIDE;
+    virtual void layout() OVERRIDE;
     virtual void computeIntrinsicLogicalWidths(LayoutUnit& minWidth, LayoutUnit& maxWidth) const OVERRIDE;
     virtual void computePreferredLogicalWidths() OVERRIDE;
     virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction) OVERRIDE;
@@ -292,17 +297,17 @@ private:
     void updateColumnCache() const;
     void invalidateCachedColumns();
 
-    virtual RenderBlock* firstLineBlock() const;
-    virtual void updateFirstLetter();
+    virtual RenderBlock* firstLineBlock() const OVERRIDE;
+    virtual void updateFirstLetter() OVERRIDE;
 
     virtual void updateLogicalWidth() OVERRIDE;
 
     LayoutUnit convertStyleLogicalWidthToComputedWidth(const Length& styleLogicalWidth, LayoutUnit availableWidth);
     LayoutUnit convertStyleLogicalHeightToComputedHeight(const Length& styleLogicalHeight);
 
-    virtual LayoutRect overflowClipRect(const LayoutPoint& location, RenderRegion*, OverlayScrollbarSizeRelevancy = IgnoreOverlayScrollbarSize);
+    virtual LayoutRect overflowClipRect(const LayoutPoint& location, OverlayScrollbarSizeRelevancy = IgnoreOverlayScrollbarSize) OVERRIDE;
 
-    virtual void addOverflowFromChildren();
+    virtual void addOverflowFromChildren() OVERRIDE;
 
     void subtractCaptionRect(LayoutRect&) const;
 
@@ -332,6 +337,15 @@ private:
 
     bool m_columnLogicalWidthChanged : 1;
     mutable bool m_columnRenderersValid: 1;
+    mutable bool m_hasCellColspanThatDeterminesTableWidth : 1;
+    bool hasCellColspanThatDeterminesTableWidth() const
+    {
+        for (unsigned c = 0; c < numEffCols(); c++) {
+            if (m_columns[c].span > 1)
+                return true;
+        }
+        return false;
+    }
 
     short m_hSpacing;
     short m_vSpacing;

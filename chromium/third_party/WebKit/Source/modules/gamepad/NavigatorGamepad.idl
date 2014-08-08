@@ -17,7 +17,9 @@
  * Boston, MA 02110-1301, USA.
  */
 
-partial interface Navigator {
-    [RuntimeEnabled=Gamepad] GamepadList webkitGetGamepads();
+[
+    RuntimeEnabled=Gamepad,
+] partial interface Navigator {
+    [DeprecateAs=PrefixedGamepad] WebKitGamepadList webkitGetGamepads();
+    GamepadList getGamepads();
 };
-

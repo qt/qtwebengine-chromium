@@ -20,6 +20,7 @@
 #include <AudioUnit/AudioUnit.h>
 #include <CoreAudio/CoreAudio.h>
 
+#include "base/cancelable_callback.h"
 #include "base/compiler_specific.h"
 #include "base/synchronization/lock.h"
 #include "media/audio/audio_io.h"
@@ -32,8 +33,7 @@ class AudioPullFifo;
 
 // Implementation of AudioOuputStream for Mac OS X using the
 // AUHAL Audio Unit present in OS 10.4 and later.
-// It is useful for low-latency output with optional synchronized
-// input.
+// It is useful for low-latency output.
 //
 // Overview of operation:
 // 1) An object of AUHALStream is created by the AudioManager
@@ -87,9 +87,6 @@ class AUHALStream : public AudioOutputStream {
   // Called by either |audio_fifo_| or Render() to provide audio data.
   void ProvideInput(int frame_delay, AudioBus* dest);
 
-  // Helper method to enable input and output.
-  bool EnableIO(bool enable, UInt32 scope);
-
   // Sets the stream format on the AUHAL to PCM Float32 non-interleaved
   // for the given number of channels on the given scope and element.
   // The created stream description will be stored in |desc|.
@@ -116,7 +113,6 @@ class AUHALStream : public AudioOutputStream {
 
   const AudioParameters params_;
   // For convenience - same as in params_.
-  const int input_channels_;
   const int output_channels_;
 
   // Buffer-size.
@@ -130,7 +126,6 @@ class AUHALStream : public AudioOutputStream {
   base::Lock source_lock_;
 
   // Holds the stream format details such as bitrate.
-  AudioStreamBasicDescription input_format_;
   AudioStreamBasicDescription output_format_;
 
   // The audio device to use with the AUHAL.
@@ -149,14 +144,7 @@ class AUHALStream : public AudioOutputStream {
   // The flag used to stop the streaming.
   bool stopped_;
 
-  // The input AudioUnit renders its data here.
-  scoped_ptr<uint8[]> input_buffer_list_storage_;
-  AudioBufferList* input_buffer_list_;
-
-  // Holds the actual data for |input_buffer_list_|.
-  scoped_ptr<AudioBus> input_bus_;
-
-  // Container for retrieving data from AudioSourceCallback::OnMoreIOData().
+  // Container for retrieving data from AudioSourceCallback::OnMoreData().
   scoped_ptr<AudioBus> output_bus_;
 
   // Dynamically allocated FIFO used when CoreAudio asks for unexpected frame
@@ -165,6 +153,9 @@ class AUHALStream : public AudioOutputStream {
 
   // Current buffer delay.  Set by Render().
   uint32 current_hardware_pending_bytes_;
+
+  // Used to defer Start() to workaround http://crbug.com/160920.
+  base::CancelableClosure deferred_start_cb_;
 
   DISALLOW_COPY_AND_ASSIGN(AUHALStream);
 };

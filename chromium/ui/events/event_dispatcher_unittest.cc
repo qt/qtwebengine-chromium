@@ -209,10 +209,8 @@ class TestEventDispatcher : public EventDispatcherDelegate {
 
   virtual ~TestEventDispatcher() {}
 
-  void ProcessEvent(EventTarget* target, Event* event) {
-    EventDispatchDetails details = DispatchEvent(target, event);
-    if (details.dispatcher_destroyed)
-      return;
+  EventDispatchDetails ProcessEvent(EventTarget* target, Event* event) {
+    return DispatchEvent(target, event);
   }
 
  private:
@@ -258,7 +256,7 @@ TEST(EventDispatcherTest, EventDispatchOrder) {
   h8.set_expect_post_target(true);
 
   MouseEvent mouse(ui::ET_MOUSE_MOVED, gfx::Point(3, 4),
-      gfx::Point(3, 4), 0);
+                   gfx::Point(3, 4), 0, 0);
   Event::DispatcherApi event_mod(&mouse);
   dispatcher.ProcessEvent(&child, &mouse);
   EXPECT_FALSE(mouse.stopped_propagation());
@@ -332,7 +330,7 @@ TEST(EventDispatcherTest, EventDispatchPhase) {
   handler.set_expect_post_target(true);
 
   MouseEvent mouse(ui::ET_MOUSE_MOVED, gfx::Point(3, 4),
-      gfx::Point(3, 4), 0);
+                   gfx::Point(3, 4), 0, 0);
   Event::DispatcherApi event_mod(&mouse);
   dispatcher.ProcessEvent(&target, &mouse);
   EXPECT_EQ(ER_UNHANDLED, mouse.result());
@@ -364,9 +362,9 @@ TEST(EventDispatcherTest, EventDispatcherDestroyedDuringDispatch) {
     h2.set_expect_pre_target(false);
 
     MouseEvent mouse(ui::ET_MOUSE_MOVED, gfx::Point(3, 4),
-        gfx::Point(3, 4), 0);
-    Event::DispatcherApi event_mod(&mouse);
-    dispatcher->ProcessEvent(&target, &mouse);
+                     gfx::Point(3, 4), 0, 0);
+    EventDispatchDetails details = dispatcher->ProcessEvent(&target, &mouse);
+    EXPECT_TRUE(details.dispatcher_destroyed);
     EXPECT_EQ(ER_CONSUMED, mouse.result());
     EXPECT_EQ(2U, target.handler_list().size());
     EXPECT_EQ(1, target.handler_list()[0]);
@@ -391,8 +389,8 @@ TEST(EventDispatcherTest, EventDispatcherDestroyedDuringDispatch) {
     h2.set_expect_pre_target(false);
 
     NonCancelableEvent event;
-    Event::DispatcherApi event_mod(&event);
-    dispatcher->ProcessEvent(&target, &event);
+    EventDispatchDetails details = dispatcher->ProcessEvent(&target, &event);
+    EXPECT_TRUE(details.dispatcher_destroyed);
     EXPECT_EQ(2U, target.handler_list().size());
     EXPECT_EQ(1, target.handler_list()[0]);
     EXPECT_EQ(5, target.handler_list()[1]);
@@ -416,9 +414,9 @@ TEST(EventDispatcherTest, EventDispatcherDestroyedDuringDispatch) {
     h2.set_expect_post_target(false);
 
     MouseEvent mouse(ui::ET_MOUSE_MOVED, gfx::Point(3, 4),
-        gfx::Point(3, 4), 0);
-    Event::DispatcherApi event_mod(&mouse);
-    dispatcher->ProcessEvent(&target, &mouse);
+                     gfx::Point(3, 4), 0, 0);
+    EventDispatchDetails details = dispatcher->ProcessEvent(&target, &mouse);
+    EXPECT_TRUE(details.dispatcher_destroyed);
     EXPECT_EQ(ER_CONSUMED, mouse.result());
     EXPECT_EQ(2U, target.handler_list().size());
     EXPECT_EQ(1, target.handler_list()[0]);
@@ -443,8 +441,8 @@ TEST(EventDispatcherTest, EventDispatcherDestroyedDuringDispatch) {
     h2.set_expect_post_target(false);
 
     NonCancelableEvent event;
-    Event::DispatcherApi event_mod(&event);
-    dispatcher->ProcessEvent(&target, &event);
+    EventDispatchDetails details = dispatcher->ProcessEvent(&target, &event);
+    EXPECT_TRUE(details.dispatcher_destroyed);
     EXPECT_EQ(2U, target.handler_list().size());
     EXPECT_EQ(1, target.handler_list()[0]);
     EXPECT_EQ(5, target.handler_list()[1]);
@@ -469,8 +467,11 @@ TEST(EventDispatcherTest, EventDispatcherInvalidateTarget) {
   // |h3| should not receive events as the target will be invalidated.
   h3.set_expect_pre_target(false);
 
-  MouseEvent mouse(ui::ET_MOUSE_MOVED, gfx::Point(3, 4), gfx::Point(3, 4), 0);
-  dispatcher.ProcessEvent(&target, &mouse);
+  MouseEvent mouse(ui::ET_MOUSE_MOVED, gfx::Point(3, 4), gfx::Point(3, 4), 0,
+                   0);
+  EventDispatchDetails details = dispatcher.ProcessEvent(&target, &mouse);
+  EXPECT_FALSE(details.dispatcher_destroyed);
+  EXPECT_TRUE(details.target_destroyed);
   EXPECT_FALSE(target.valid());
   EXPECT_TRUE(mouse.stopped_propagation());
   EXPECT_EQ(2U, target.handler_list().size());
@@ -480,9 +481,10 @@ TEST(EventDispatcherTest, EventDispatcherInvalidateTarget) {
   // Test for non-cancelable event.
   target.Reset();
   NonCancelableEvent event;
-  dispatcher.ProcessEvent(&target, &event);
+  details = dispatcher.ProcessEvent(&target, &event);
+  EXPECT_FALSE(details.dispatcher_destroyed);
+  EXPECT_TRUE(details.target_destroyed);
   EXPECT_FALSE(target.valid());
-  EXPECT_TRUE(mouse.stopped_propagation());
   EXPECT_EQ(2U, target.handler_list().size());
   EXPECT_EQ(1, target.handler_list()[0]);
   EXPECT_EQ(2, target.handler_list()[1]);
@@ -508,8 +510,11 @@ TEST(EventDispatcherTest, EventHandlerDestroyedDuringDispatch) {
     // destroyed it.
     h3->set_expect_pre_target(false);
 
-    MouseEvent mouse(ui::ET_MOUSE_MOVED, gfx::Point(3, 4), gfx::Point(3, 4), 0);
-    dispatcher.ProcessEvent(&target, &mouse);
+    MouseEvent mouse(ui::ET_MOUSE_MOVED, gfx::Point(3, 4), gfx::Point(3, 4), 0,
+                     0);
+    EventDispatchDetails details = dispatcher.ProcessEvent(&target, &mouse);
+    EXPECT_FALSE(details.dispatcher_destroyed);
+    EXPECT_FALSE(details.target_destroyed);
     EXPECT_FALSE(mouse.stopped_propagation());
     EXPECT_EQ(2U, target.handler_list().size());
     EXPECT_EQ(1, target.handler_list()[0]);
@@ -533,7 +538,9 @@ TEST(EventDispatcherTest, EventHandlerDestroyedDuringDispatch) {
     h3->set_expect_pre_target(false);
 
     NonCancelableEvent event;
-    dispatcher.ProcessEvent(&target, &event);
+    EventDispatchDetails details = dispatcher.ProcessEvent(&target, &event);
+    EXPECT_FALSE(details.dispatcher_destroyed);
+    EXPECT_FALSE(details.target_destroyed);
     EXPECT_EQ(2U, target.handler_list().size());
     EXPECT_EQ(1, target.handler_list()[0]);
     EXPECT_EQ(2, target.handler_list()[1]);
@@ -561,8 +568,10 @@ TEST(EventDispatcherTest, EventHandlerAndDispatcherDestroyedDuringDispatch) {
     // it.
     h3->set_expect_pre_target(false);
 
-    MouseEvent mouse(ui::ET_MOUSE_MOVED, gfx::Point(3, 4), gfx::Point(3, 4), 0);
-    dispatcher->ProcessEvent(&target, &mouse);
+    MouseEvent mouse(ui::ET_MOUSE_MOVED, gfx::Point(3, 4), gfx::Point(3, 4), 0,
+                     0);
+    EventDispatchDetails details = dispatcher->ProcessEvent(&target, &mouse);
+    EXPECT_TRUE(details.dispatcher_destroyed);
     EXPECT_TRUE(mouse.stopped_propagation());
     EXPECT_EQ(2U, target.handler_list().size());
     EXPECT_EQ(1, target.handler_list()[0]);
@@ -589,7 +598,8 @@ TEST(EventDispatcherTest, EventHandlerAndDispatcherDestroyedDuringDispatch) {
     h3->set_expect_pre_target(false);
 
     NonCancelableEvent event;
-    dispatcher->ProcessEvent(&target, &event);
+    EventDispatchDetails details = dispatcher->ProcessEvent(&target, &event);
+    EXPECT_TRUE(details.dispatcher_destroyed);
     EXPECT_EQ(2U, target.handler_list().size());
     EXPECT_EQ(1, target.handler_list()[0]);
     EXPECT_EQ(2, target.handler_list()[1]);

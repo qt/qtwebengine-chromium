@@ -172,6 +172,7 @@ public:
     void appendNumber(unsigned long);
     void appendNumber(long long);
     void appendNumber(unsigned long long);
+    void appendNumber(double, unsigned precision = 6, TrailingZerosTruncatingPolicy = TruncateTrailingZeros);
 
     String toString()
     {
@@ -265,7 +266,7 @@ public:
     {
         m_length = 0;
         m_string = String();
-        m_buffer = 0;
+        m_buffer = nullptr;
         m_bufferCharacters8 = 0;
         m_is8Bit = true;
     }

@@ -26,6 +26,7 @@
 #define NamedNodeMap_h
 
 #include "bindings/v8/ScriptWrappable.h"
+#include "core/dom/Element.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/text/AtomicString.h"
@@ -33,47 +34,50 @@
 namespace WebCore {
 
 class Node;
-class Element;
 class ExceptionState;
 
-class NamedNodeMap : public ScriptWrappable {
-    WTF_MAKE_FAST_ALLOCATED;
+class NamedNodeMap FINAL : public NoBaseWillBeGarbageCollectedFinalized<NamedNodeMap>, public ScriptWrappable {
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
     friend class Element;
 public:
-    static PassOwnPtr<NamedNodeMap> create(Element* element)
+    static PassOwnPtrWillBeRawPtr<NamedNodeMap> create(Element* element)
     {
-        return adoptPtr(new NamedNodeMap(element));
+        return adoptPtrWillBeNoop(new NamedNodeMap(element));
     }
 
+#if !ENABLE(OILPAN)
     void ref();
     void deref();
+#endif
 
     // Public DOM interface.
 
-    PassRefPtr<Node> getNamedItem(const AtomicString&) const;
-    PassRefPtr<Node> removeNamedItem(const AtomicString& name, ExceptionState&);
+    PassRefPtrWillBeRawPtr<Node> getNamedItem(const AtomicString&) const;
+    PassRefPtrWillBeRawPtr<Node> removeNamedItem(const AtomicString& name, ExceptionState&);
 
-    PassRefPtr<Node> getNamedItemNS(const AtomicString& namespaceURI, const AtomicString& localName) const;
-    PassRefPtr<Node> removeNamedItemNS(const AtomicString& namespaceURI, const AtomicString& localName, ExceptionState&);
+    PassRefPtrWillBeRawPtr<Node> getNamedItemNS(const AtomicString& namespaceURI, const AtomicString& localName) const;
+    PassRefPtrWillBeRawPtr<Node> removeNamedItemNS(const AtomicString& namespaceURI, const AtomicString& localName, ExceptionState&);
 
-    PassRefPtr<Node> setNamedItem(Node*, ExceptionState&);
-    PassRefPtr<Node> setNamedItemNS(Node*, ExceptionState&);
+    PassRefPtrWillBeRawPtr<Node> setNamedItem(Node*, ExceptionState&);
+    PassRefPtrWillBeRawPtr<Node> setNamedItemNS(Node*, ExceptionState&);
 
-    PassRefPtr<Node> item(unsigned index) const;
+    PassRefPtrWillBeRawPtr<Node> item(unsigned index) const;
     size_t length() const;
 
     Element* element() const { return m_element; }
+
+    void trace(Visitor*);
 
 private:
     explicit NamedNodeMap(Element* element)
         : m_element(element)
     {
-        // Only supports NamedNodeMaps with Element associated, DocumentType.entities and DocumentType.notations are not supported yet.
+        // Only supports NamedNodeMaps with Element associated.
         ASSERT(m_element);
         ScriptWrappable::init(this);
     }
 
-    Element* m_element;
+    RawPtrWillBeMember<Element> m_element;
 };
 
 } // namespace WebCore

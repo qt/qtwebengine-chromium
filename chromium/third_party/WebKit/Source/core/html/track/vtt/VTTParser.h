@@ -31,22 +31,21 @@
 #ifndef VTTParser_h
 #define VTTParser_h
 
-#include "HTMLNames.h"
-#include "RuntimeEnabledFeatures.h"
+#include "core/HTMLNames.h"
 #include "core/dom/DocumentFragment.h"
-#include "core/fetch/TextResourceDecoder.h"
+#include "core/html/parser/TextResourceDecoder.h"
 #include "core/html/track/vtt/BufferedLineReader.h"
 #include "core/html/track/vtt/VTTCue.h"
 #include "core/html/track/vtt/VTTRegion.h"
 #include "core/html/track/vtt/VTTTokenizer.h"
+#include "platform/heap/Handle.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/text/StringBuilder.h"
 
 namespace WebCore {
 
-using namespace HTMLNames;
-
 class Document;
+class VTTScanner;
 
 class VTTParserClient {
 public:
@@ -57,7 +56,7 @@ public:
     virtual void fileFailedToParse() = 0;
 };
 
-class VTTParser FINAL {
+class VTTParser FINAL : public NoBaseWillBeGarbageCollectedFinalized<VTTParser> {
 public:
     enum ParseState {
         Initial,
@@ -68,54 +67,53 @@ public:
         BadCue
     };
 
-    static PassOwnPtr<VTTParser> create(VTTParserClient* client, Document& document)
+    static PassOwnPtrWillBeRawPtr<VTTParser> create(VTTParserClient* client, Document& document)
     {
-        return adoptPtr(new VTTParser(client, document));
+        return adoptPtrWillBeNoop(new VTTParser(client, document));
     }
 
     static inline bool isRecognizedTag(const AtomicString& tagName)
     {
-        return tagName == iTag
-            || tagName == bTag
-            || tagName == uTag
-            || tagName == rubyTag
-            || tagName == rtTag;
+        return tagName == HTMLNames::iTag
+            || tagName == HTMLNames::bTag
+            || tagName == HTMLNames::uTag
+            || tagName == HTMLNames::rubyTag
+            || tagName == HTMLNames::rtTag;
     }
-
-    static inline bool isASpace(char c)
+    static inline bool isASpace(UChar c)
     {
         // WebVTT space characters are U+0020 SPACE, U+0009 CHARACTER TABULATION (tab), U+000A LINE FEED (LF), U+000C FORM FEED (FF), and U+000D CARRIAGE RETURN    (CR).
         return c == ' ' || c == '\t' || c == '\n' || c == '\f' || c == '\r';
     }
-    static inline bool isValidSettingDelimiter(char c)
+    static inline bool isValidSettingDelimiter(UChar c)
     {
         // ... a WebVTT cue consists of zero or more of the following components, in any order, separated from each other by one or more
         // U+0020 SPACE characters or U+0009 CHARACTER TABULATION (tab) characters.
         return c == ' ' || c == '\t';
     }
-    static unsigned collectDigitsToInt(const String& input, unsigned* position, int& number);
-    static String collectWord(const String&, unsigned*);
-    static bool collectTimeStamp(const String&, unsigned*, double& timeStamp);
+    static bool collectTimeStamp(const String&, double& timeStamp);
 
     // Useful functions for parsing percentage settings.
-    static bool parseFloatPercentageValue(const String&, float&);
-    static bool parseFloatPercentageValuePair(const String&, char, FloatPoint&);
+    static bool parseFloatPercentageValue(VTTScanner& valueScanner, float& percentage);
+    static bool parseFloatPercentageValuePair(VTTScanner&, char, FloatPoint&);
 
     // Create the DocumentFragment representation of the WebVTT cue text.
-    static PassRefPtr<DocumentFragment> createDocumentFragmentFromCueText(Document&, const String&);
+    static PassRefPtrWillBeRawPtr<DocumentFragment> createDocumentFragmentFromCueText(Document&, const String&);
 
     // Input data to the parser to parse.
     void parseBytes(const char* data, unsigned length);
     void flush();
 
     // Transfers ownership of last parsed cues to caller.
-    void getNewCues(Vector<RefPtr<VTTCue> >&);
-    void getNewRegions(Vector<RefPtr<VTTRegion> >&);
+    void getNewCues(WillBeHeapVector<RefPtrWillBeMember<VTTCue> >&);
+    void getNewRegions(WillBeHeapVector<RefPtrWillBeMember<VTTRegion> >&);
+
+    void trace(Visitor*);
 
 private:
     VTTParser(VTTParserClient*, Document&);
 
-    Document* m_document;
+    RawPtrWillBeMember<Document> m_document;
     ParseState m_state;
 
     void parse();
@@ -133,11 +131,11 @@ private:
     void collectMetadataHeader(const String&);
     void createNewRegion(const String& headerValue);
 
-    static void skipWhiteSpace(const String&, unsigned*);
+    static bool collectTimeStamp(VTTScanner& input, double& timeStamp);
 
     BufferedLineReader m_lineReader;
     OwnPtr<TextResourceDecoder> m_decoder;
-    String m_currentId;
+    AtomicString m_currentId;
     double m_currentStartTime;
     double m_currentEndTime;
     StringBuilder m_currentContent;
@@ -145,9 +143,9 @@ private:
 
     VTTParserClient* m_client;
 
-    Vector<RefPtr<VTTCue> > m_cuelist;
+    WillBeHeapVector<RefPtrWillBeMember<VTTCue> > m_cueList;
 
-    Vector<RefPtr<VTTRegion> > m_regionList;
+    WillBeHeapVector<RefPtrWillBeMember<VTTRegion> > m_regionList;
 };
 
 } // namespace WebCore

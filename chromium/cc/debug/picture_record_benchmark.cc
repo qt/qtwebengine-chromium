@@ -91,7 +91,7 @@ void PictureRecordBenchmark::RunOnLayer(PictureLayer* layer) {
   ContentLayerClient* painter = layer->client();
   gfx::Size content_bounds = layer->content_bounds();
 
-  SkTileGridPicture::TileGridInfo tile_grid_info;
+  SkTileGridFactory::TileGridInfo tile_grid_info;
   tile_grid_info.fTileInterval.set(kTileGridSize - 2 * kTileGridBorder,
                                    kTileGridSize - 2 * kTileGridBorder);
   tile_grid_info.fMargin.set(kTileGridBorder, kTileGridBorder);
@@ -110,8 +110,8 @@ void PictureRecordBenchmark::RunOnLayer(PictureLayer* layer) {
 
         base::TimeTicks start = base::TimeTicks::HighResNow();
 
-        scoped_refptr<Picture> picture = Picture::Create(rect);
-        picture->Record(painter, tile_grid_info);
+        scoped_refptr<Picture> picture = Picture::Create(
+            rect, painter, tile_grid_info, false, 0, Picture::RECORD_NORMALLY);
 
         base::TimeTicks end = base::TimeTicks::HighResNow();
         base::TimeDelta duration = end - start;

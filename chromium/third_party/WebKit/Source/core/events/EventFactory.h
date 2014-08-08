@@ -26,6 +26,7 @@
 #ifndef EventFactory_h
 #define EventFactory_h
 
+#include "platform/heap/Handle.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/text/AtomicString.h"
 
@@ -33,9 +34,23 @@ namespace WebCore {
 
 class Event;
 
-class EventFactory {
+class EventFactoryBase {
 public:
-    static PassRefPtr<Event> create(const String& eventType);
+    virtual PassRefPtrWillBeRawPtr<Event> create(const String& eventType) = 0;
+    virtual ~EventFactoryBase() { }
+
+protected:
+    EventFactoryBase() { }
+};
+
+class EventFactory FINAL : public EventFactoryBase {
+public:
+    static PassOwnPtr<EventFactory> create()
+    {
+        return adoptPtr(new EventFactory());
+    }
+
+    virtual PassRefPtrWillBeRawPtr<Event> create(const String& eventType) OVERRIDE;
 };
 
 }

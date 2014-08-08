@@ -9,6 +9,7 @@
 #include "net/base/net_util.h"
 #include "ui/base/clipboard/clipboard.h"
 #include "ui/base/clipboard/scoped_clipboard_writer.h"
+#include "ui/base/dragdrop/file_info.h"
 
 namespace ui {
 
@@ -33,6 +34,15 @@ OSExchangeData::Provider* OSExchangeDataProviderAura::Clone() const {
   return ret;
 }
 
+void OSExchangeDataProviderAura::MarkOriginatedFromRenderer() {
+  // TODO(dcheng): Currently unneeded because ChromeOS Aura correctly separates
+  // URL and filename metadata, and does not implement the DownloadURL protocol.
+}
+
+bool OSExchangeDataProviderAura::DidOriginateFromRenderer() const {
+  return false;
+}
+
 void OSExchangeDataProviderAura::SetString(const base::string16& data) {
   string_ = data;
   formats_ |= OSExchangeData::STRING;
@@ -44,17 +54,17 @@ void OSExchangeDataProviderAura::SetURL(const GURL& url,
   title_ = title;
   formats_ |= OSExchangeData::URL;
 
-  SetString(UTF8ToUTF16(url.spec()));
+  SetString(base::UTF8ToUTF16(url.spec()));
 }
 
 void OSExchangeDataProviderAura::SetFilename(const base::FilePath& path) {
   filenames_.clear();
-  filenames_.push_back(OSExchangeData::FileInfo(path, base::FilePath()));
+  filenames_.push_back(FileInfo(path, base::FilePath()));
   formats_ |= OSExchangeData::FILE_NAME;
 }
 
 void OSExchangeDataProviderAura::SetFilenames(
-    const std::vector<OSExchangeData::FileInfo>& filenames) {
+    const std::vector<FileInfo>& filenames) {
   filenames_ = filenames;
   formats_ |= OSExchangeData::FILE_NAME;
 }
@@ -100,7 +110,7 @@ bool OSExchangeDataProviderAura::GetFilename(base::FilePath* path) const {
 }
 
 bool OSExchangeDataProviderAura::GetFilenames(
-    std::vector<OSExchangeData::FileInfo>* filenames) const {
+    std::vector<FileInfo>* filenames) const {
   if ((formats_ & OSExchangeData::FILE_NAME) == 0)
     return false;
   *filenames = filenames_;
@@ -122,7 +132,9 @@ bool OSExchangeDataProviderAura::HasString() const {
   return (formats_ & OSExchangeData::STRING) != 0;
 }
 
-bool OSExchangeDataProviderAura::HasURL() const {
+bool OSExchangeDataProviderAura::HasURL(
+    OSExchangeData::FilenameToURLPolicy policy) const {
+  // TODO(dcheng): implement filename conversion.
   if ((formats_ & OSExchangeData::URL) != 0) {
     return true;
   }

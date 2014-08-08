@@ -24,8 +24,9 @@
 #include "config.h"
 #include "core/rendering/RenderFieldset.h"
 
-#include "CSSPropertyNames.h"
-#include "HTMLNames.h"
+#include "core/CSSPropertyNames.h"
+#include "core/HTMLNames.h"
+#include "core/html/HTMLLegendElement.h"
 #include "core/rendering/PaintInfo.h"
 #include "platform/graphics/GraphicsContextStateSaver.h"
 
@@ -43,7 +44,7 @@ RenderFieldset::RenderFieldset(Element* element)
 
 void RenderFieldset::computePreferredLogicalWidths()
 {
-    RenderBlock::computePreferredLogicalWidths();
+    RenderBlockFlow::computePreferredLogicalWidths();
     if (RenderBox* legend = findLegend()) {
         int legendMinWidth = legend->minPreferredLogicalWidth();
 
@@ -65,7 +66,7 @@ RenderObject* RenderFieldset::layoutSpecialExcludedChild(bool relayoutChildren, 
     RenderBox* legend = findLegend();
     if (legend) {
         if (relayoutChildren)
-            legend->setNeedsLayout();
+            legend->setNeedsLayoutAndFullPaintInvalidation();
         legend->layoutIfNeeded();
 
         LayoutUnit logicalLeft;
@@ -129,7 +130,7 @@ RenderBox* RenderFieldset::findLegend(FindLegendOption option) const
         if (option == IgnoreFloatingOrOutOfFlow && legend->isFloatingOrOutOfFlowPositioned())
             continue;
 
-        if (legend->node() && (legend->node()->hasTagName(legendTag)))
+        if (isHTMLLegendElement(legend->node()))
             return toRenderBox(legend);
     }
     return 0;
@@ -143,7 +144,7 @@ void RenderFieldset::paintBoxDecorations(PaintInfo& paintInfo, const LayoutPoint
     LayoutRect paintRect(paintOffset, size());
     RenderBox* legend = findLegend();
     if (!legend)
-        return RenderBlock::paintBoxDecorations(paintInfo, paintOffset);
+        return RenderBlockFlow::paintBoxDecorations(paintInfo, paintOffset);
 
     // FIXME: We need to work with "rl" and "bt" block flow directions.  In those
     // cases the legend is embedded in the right and bottom borders respectively.
@@ -194,7 +195,7 @@ void RenderFieldset::paintMask(PaintInfo& paintInfo, const LayoutPoint& paintOff
     LayoutRect paintRect = LayoutRect(paintOffset, size());
     RenderBox* legend = findLegend();
     if (!legend)
-        return RenderBlock::paintMask(paintInfo, paintOffset);
+        return RenderBlockFlow::paintMask(paintInfo, paintOffset);
 
     // FIXME: We need to work with "rl" and "bt" block flow directions.  In those
     // cases the legend is embedded in the right and bottom borders respectively.

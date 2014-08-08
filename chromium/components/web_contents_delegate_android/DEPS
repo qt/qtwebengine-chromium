@@ -1,6 +1,0 @@
-include_rules = [
-  "+content/public/browser",
-  "+jni",
-  "+ui/base",
-  "+ui/gfx",
-]

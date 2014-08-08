@@ -14,6 +14,7 @@
         'isolate_dependency_tracked': [
           '../testing/xvfb.py',
           '<(PRODUCT_DIR)/libffmpegsumo.so',
+          '<(PRODUCT_DIR)/libosmesa.so',
           '<(PRODUCT_DIR)/pyproto/google/__init__.py',
           '<(PRODUCT_DIR)/xdisplaycheck<(EXECUTABLE_SUFFIX)',
         ],
@@ -37,9 +38,9 @@
           '../third_party/pyftpdlib/',
           '../third_party/pywebsocket/src/mod_pywebsocket/',
           '../third_party/tlslite/tlslite/',
-          '../tools/swarming_client/',
           'test/data/',
         ],
+        'read_only': 1,
       },
     }],
     ['OS=="linux" or OS=="win"', {
@@ -48,6 +49,7 @@
           '<(PRODUCT_DIR)/chrome_100_percent.pak',
           '<(PRODUCT_DIR)/locales/en-US.pak',
           '<(PRODUCT_DIR)/locales/fr.pak',
+          '<(PRODUCT_DIR)/ui_test.pak',
         ],
       },
     }],
@@ -55,10 +57,11 @@
       'variables': {
         'isolate_dependency_tracked': [
           '<(PRODUCT_DIR)/ffmpegsumo.so',
+          '<(PRODUCT_DIR)/osmesa.so',
         ],
         'isolate_dependency_untracked': [
-          '<(PRODUCT_DIR)/Chromium Framework.framework/',
-          '<(PRODUCT_DIR)/Chromium.app/',
+          '<(PRODUCT_DIR)/<(mac_product_name) Framework.framework/',
+          '<(PRODUCT_DIR)/<(mac_product_name).app/',
         ],
       },
     }],
@@ -76,17 +79,21 @@
         'isolate_dependency_tracked': [
           '../net/data/ssl/certificates/foaf.me.chromium-test-cert.der',
           '../net/data/ssl/certificates/mit.davidben.der',
+          '<(PRODUCT_DIR)/chrome_elf.dll',
           '<(PRODUCT_DIR)/d3dcompiler_46.dll',
           '<(PRODUCT_DIR)/ffmpegsumo.dll',
-          '<(PRODUCT_DIR)/icudt.dll',
           '<(PRODUCT_DIR)/libEGL.dll',
           '<(PRODUCT_DIR)/libGLESv2.dll',
           '<(PRODUCT_DIR)/ppGoogleNaClPluginChrome.dll',
+          '<(PRODUCT_DIR)/osmesa.dll',
         ],
         'isolate_dependency_untracked': [
           '<(PRODUCT_DIR)/plugins/npapi_test_plugin.dll',
         ],
       },
     }],
+  ],
+  'includes': [
+    '../third_party/icu/icu.isolate',
   ],
 }

@@ -32,12 +32,13 @@
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/workers/DedicatedWorkerGlobalScope.h"
 #include "core/workers/WorkerClients.h"
+#include "core/workers/WorkerReportingProxy.h"
 #include "core/workers/WorkerThreadStartupData.h"
-#include "modules/webdatabase/DatabaseManager.h"
-#include "modules/webdatabase/DatabaseTask.h"
 #include "platform/PlatformThreadData.h"
+#include "platform/heap/ThreadState.h"
 #include "platform/weborigin/KURL.h"
 #include "public/platform/Platform.h"
+#include "public/platform/WebWaitableEvent.h"
 #include "public/platform/WebWorkerRunLoop.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/text/WTFString.h"
@@ -64,12 +65,13 @@ unsigned WorkerThread::workerThreadCount()
     return workerThreads().size();
 }
 
-WorkerThread::WorkerThread(WorkerLoaderProxy& workerLoaderProxy, WorkerReportingProxy& workerReportingProxy, PassOwnPtr<WorkerThreadStartupData> startupData)
+WorkerThread::WorkerThread(WorkerLoaderProxy& workerLoaderProxy, WorkerReportingProxy& workerReportingProxy, PassOwnPtrWillBeRawPtr<WorkerThreadStartupData> startupData)
     : m_threadID(0)
     , m_workerLoaderProxy(workerLoaderProxy)
     , m_workerReportingProxy(workerReportingProxy)
     , m_startupData(startupData)
     , m_notificationClient(0)
+    , m_shutdownEvent(adoptPtr(blink::Platform::current()->createWaitableEvent()))
 {
     MutexLocker lock(threadSetMutex());
     workerThreads().add(this);
@@ -108,8 +110,9 @@ void WorkerThread::workerThread()
 
     {
         MutexLocker lock(m_threadCreationMutex);
-
+        ThreadState::attach();
         m_workerGlobalScope = createWorkerGlobalScope(m_startupData.release());
+        m_runLoop.setWorkerGlobalScope(workerGlobalScope());
 
         if (m_runLoop.terminated()) {
             // The worker was terminated before the thread had a chance to run. Since the context didn't exist yet,
@@ -121,19 +124,44 @@ void WorkerThread::workerThread()
     // ~WorkerScriptController.
     blink::Platform::current()->didStartWorkerRunLoop(blink::WebWorkerRunLoop(&m_runLoop));
 
+    // Notify proxy that a new WorkerGlobalScope has been created and started.
+    m_workerReportingProxy.workerGlobalScopeStarted(m_workerGlobalScope.get());
+
     WorkerScriptController* script = m_workerGlobalScope->script();
+    if (!script->isExecutionForbidden())
+        script->initializeContextIfNeeded();
     InspectorInstrumentation::willEvaluateWorkerScript(workerGlobalScope(), startMode);
     script->evaluate(ScriptSourceCode(sourceCode, scriptURL));
 
     runEventLoop();
 
-    ThreadIdentifier threadID = m_threadID;
+    // This should be called before we start the shutdown procedure.
+    workerReportingProxy().willDestroyWorkerGlobalScope();
 
-    ASSERT(m_workerGlobalScope->hasOneRef());
+    ThreadIdentifier threadID = m_threadID;
 
     // The below assignment will destroy the context, which will in turn notify messaging proxy.
     // We cannot let any objects survive past thread exit, because no other thread will run GC or otherwise destroy them.
-    m_workerGlobalScope = 0;
+    // If Oilpan is enabled, we detach of the context/global scope, with the final heap cleanup below sweeping it out.
+#if !ENABLE(OILPAN)
+    ASSERT(m_workerGlobalScope->hasOneRef());
+#endif
+    m_workerGlobalScope->dispose();
+    m_workerGlobalScope = nullptr;
+
+    // Detach the ThreadState, cleaning out the thread's heap by
+    // performing a final GC. The cleanup operation will at the end
+    // assert that the heap is empty. If the heap does not become
+    // empty, there are still pointers into the heap and those
+    // pointers will be dangling after thread termination because we
+    // are destroying the heap. It is important to detach while the
+    // thread is still valid. In particular, finalizers for objects in
+    // the heap for this thread will need to access thread local data.
+    ThreadState::detach();
+
+    // Notify the proxy that the WorkerGlobalScope has been disposed of.
+    // This can free this thread object, hence it must not be touched afterwards.
+    workerReportingProxy().workerGlobalScopeDestroyed();
 
     // Clean up PlatformThreadData before WTF::WTFThreadData goes away!
     PlatformThreadData::current().destroy();
@@ -145,7 +173,7 @@ void WorkerThread::workerThread()
 void WorkerThread::runEventLoop()
 {
     // Does not return until terminated.
-    m_runLoop.run(m_workerGlobalScope.get());
+    m_runLoop.run();
 }
 
 class WorkerThreadShutdownFinishTask : public ExecutionContextTask {
@@ -176,22 +204,12 @@ public:
     virtual void performTask(ExecutionContext *context)
     {
         WorkerGlobalScope* workerGlobalScope = toWorkerGlobalScope(context);
-
-        // FIXME: Should we stop the databases as part of stopActiveDOMObjects() below?
-        DatabaseTaskSynchronizer cleanupSync;
-        DatabaseManager::manager().stopDatabases(workerGlobalScope, &cleanupSync);
-
+        workerGlobalScope->stopFetch();
         workerGlobalScope->stopActiveDOMObjects();
-
-        workerGlobalScope->notifyObserversOfStop();
 
         // Event listeners would keep DOMWrapperWorld objects alive for too long. Also, they have references to JS objects,
         // which become dangling once Heap is destroyed.
         workerGlobalScope->removeAllEventListeners();
-
-        // We wait for the database thread to clean up all its stuff so that we
-        // can do more stringent leak checks as we exit.
-        cleanupSync.waitForTaskCompletion();
 
         // Stick a shutdown command at the end of the queue, so that we deal
         // with all the cleanup tasks the databases post first.
@@ -203,14 +221,20 @@ public:
 
 void WorkerThread::stop()
 {
+    // Prevent the deadlock between GC and an attempt to stop a thread.
+    ThreadState::SafePointScope safePointScope(ThreadState::HeapPointersOnStack);
+
     // Mutex protection is necessary because stop() can be called before the context is fully created.
     MutexLocker lock(m_threadCreationMutex);
+
+    // Signal the thread to notify that the thread's stopping.
+    if (m_shutdownEvent)
+        m_shutdownEvent->signal();
 
     // Ensure that tasks are being handled by thread event loop. If script execution weren't forbidden, a while(1) loop in JS could keep the thread alive forever.
     if (m_workerGlobalScope) {
         m_workerGlobalScope->script()->scheduleExecutionTermination();
-
-        DatabaseManager::manager().interruptAllDatabasesForContext(m_workerGlobalScope.get());
+        m_workerGlobalScope->wasRequestedToTerminate();
         m_runLoop.postTaskAndTerminate(WorkerThreadShutdownStartTask::create());
         return;
     }
@@ -220,19 +244,6 @@ void WorkerThread::stop()
 bool WorkerThread::isCurrentThread() const
 {
     return m_threadID == currentThread();
-}
-
-class ReleaseFastMallocFreeMemoryTask : public ExecutionContextTask {
-    virtual void performTask(ExecutionContext*) OVERRIDE { WTF::releaseFastMallocFreeMemory(); }
-};
-
-void WorkerThread::releaseFastMallocFreeMemoryInAllThreads()
-{
-    MutexLocker lock(threadSetMutex());
-    HashSet<WorkerThread*>& threads = workerThreads();
-    HashSet<WorkerThread*>::iterator end = threads.end();
-    for (HashSet<WorkerThread*>::iterator it = threads.begin(); it != end; ++it)
-        (*it)->runLoop().postTask(adoptPtr(new ReleaseFastMallocFreeMemoryTask));
 }
 
 } // namespace WebCore

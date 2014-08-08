@@ -67,32 +67,28 @@ public:
 protected:
     virtual bool needsPreferredWidthsRecalculation() const OVERRIDE FINAL;
     virtual RenderBox* embeddedContentBox() const OVERRIDE FINAL;
-    virtual void computeIntrinsicRatioInformation(FloatSize& intrinsicSize, double& intrinsicRatio, bool& isPercentageIntrinsicSize) const OVERRIDE FINAL;
+    virtual void computeIntrinsicRatioInformation(FloatSize& intrinsicSize, double& intrinsicRatio) const OVERRIDE FINAL;
 
-    virtual void styleDidChange(StyleDifference, const RenderStyle*) OVERRIDE FINAL;
-
-    virtual void imageChanged(WrappedImagePtr, const IntRect* = 0);
+    virtual void imageChanged(WrappedImagePtr, const IntRect* = 0) OVERRIDE;
 
     void paintIntoRect(GraphicsContext*, const LayoutRect&);
     virtual void paint(PaintInfo&, const LayoutPoint&) OVERRIDE FINAL;
-    virtual void layout();
-    virtual void didLayout(ResourceLoadPriorityOptimizer&);
-    virtual void didScroll(ResourceLoadPriorityOptimizer&);
-    void updateImageLoadingPriority(ResourceLoadPriorityOptimizer&);
+    virtual void layout() OVERRIDE;
+    virtual bool updateImageLoadingPriorities() OVERRIDE FINAL;
 
-    virtual void intrinsicSizeChanged()
+    virtual void intrinsicSizeChanged() OVERRIDE
     {
         if (m_imageResource)
             imageChanged(m_imageResource->imagePtr());
     }
 
 private:
-    virtual const char* renderName() const { return "RenderImage"; }
+    virtual const char* renderName() const OVERRIDE { return "RenderImage"; }
 
-    virtual bool isImage() const { return true; }
+    virtual bool isImage() const OVERRIDE { return true; }
     virtual bool isRenderImage() const OVERRIDE FINAL { return true; }
 
-    virtual void paintReplaced(PaintInfo&, const LayoutPoint&);
+    virtual void paintReplaced(PaintInfo&, const LayoutPoint&) OVERRIDE;
 
     virtual bool foregroundIsKnownToBeOpaqueInRect(const LayoutRect& localRect, unsigned maxDepthToTest) const OVERRIDE FINAL;
     virtual bool computeBackgroundIsKnownToBeObscured() OVERRIDE FINAL;
@@ -105,8 +101,8 @@ private:
     virtual bool boxShadowShouldBeAppliedToBackground(BackgroundBleedAvoidance, InlineFlowBox*) const OVERRIDE FINAL;
 
     IntSize imageSizeForError(ImageResource*) const;
-    void imageDimensionsChanged(bool imageSizeChanged, const IntRect* = 0);
-    bool updateIntrinsicSizeIfNeeded(const LayoutSize&, bool imageSizeChanged);
+    void repaintOrMarkForLayout(bool imageSizeChanged, const IntRect* = 0);
+    void updateIntrinsicSizeIfNeeded(const LayoutSize&);
     // Update the size of the image to be rendered. Object-fit may cause this to be different from the CSS box's content rect.
     void updateInnerContentRect();
 
@@ -115,7 +111,6 @@ private:
     // Text to display as long as the image isn't available.
     String m_altText;
     OwnPtr<RenderImageResource> m_imageResource;
-    bool m_needsToSetSizeForAltText;
     bool m_didIncrementVisuallyNonEmptyPixelCount;
     bool m_isGeneratedContent;
     float m_imageDevicePixelRatio;

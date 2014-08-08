@@ -28,30 +28,29 @@
 
 #include "bindings/v8/ScriptWrappable.h"
 #include "core/html/canvas/WebGLExtension.h"
-#include "platform/graphics/GraphicsTypes3D.h"
 #include "wtf/PassRefPtr.h"
 
 namespace WebCore {
 
-class WebGLRenderingContext;
+class WebGLRenderingContextBase;
 class WebGLVertexArrayObjectOES;
 
-class OESVertexArrayObject : public WebGLExtension, public ScriptWrappable {
+class OESVertexArrayObject FINAL : public WebGLExtension, public ScriptWrappable {
 public:
-    static PassRefPtr<OESVertexArrayObject> create(WebGLRenderingContext*);
-    static bool supported(WebGLRenderingContext*);
+    static PassRefPtr<OESVertexArrayObject> create(WebGLRenderingContextBase*);
+    static bool supported(WebGLRenderingContextBase*);
     static const char* extensionName();
 
     virtual ~OESVertexArrayObject();
-    virtual ExtensionName name() const;
+    virtual WebGLExtensionName name() const OVERRIDE;
 
     PassRefPtr<WebGLVertexArrayObjectOES> createVertexArrayOES();
     void deleteVertexArrayOES(WebGLVertexArrayObjectOES*);
-    GC3Dboolean isVertexArrayOES(WebGLVertexArrayObjectOES*);
+    GLboolean isVertexArrayOES(WebGLVertexArrayObjectOES*);
     void bindVertexArrayOES(WebGLVertexArrayObjectOES*);
 
 private:
-    OESVertexArrayObject(WebGLRenderingContext*);
+    OESVertexArrayObject(WebGLRenderingContextBase*);
 };
 
 } // namespace WebCore

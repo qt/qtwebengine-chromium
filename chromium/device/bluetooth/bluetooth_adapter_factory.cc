@@ -12,27 +12,22 @@
 #include "base/memory/weak_ptr.h"
 #include "device/bluetooth/bluetooth_adapter.h"
 
-#if defined(OS_CHROMEOS)
-#include "device/bluetooth/bluetooth_adapter_chromeos.h"
-#elif defined(OS_WIN)
-#include "device/bluetooth/bluetooth_adapter_win.h"
-#elif defined(OS_MACOSX)
+#if defined(OS_MACOSX)
 #include "base/mac/mac_util.h"
-#include "device/bluetooth/bluetooth_adapter_mac.h"
 #endif
+
+namespace device {
 
 namespace {
 
-using device::BluetoothAdapter;
-using device::BluetoothAdapterFactory;
+// Shared default adapter instance.  We don't want to keep this class around
+// if nobody is using it, so use a WeakPtr and create the object when needed.
+// Since Google C++ Style (and clang's static analyzer) forbids us having
+// exit-time destructors, we use a leaky lazy instance for it.
+base::LazyInstance<base::WeakPtr<BluetoothAdapter> >::Leaky default_adapter =
+    LAZY_INSTANCE_INITIALIZER;
 
-// Shared default adapter instance, we don't want to keep this class around
-// if nobody is using it so use a WeakPtr and create the object when needed;
-// since Google C++ Style (and clang's static analyzer) forbids us having
-// exit-time destructors we use a leaky lazy instance for it.
-base::LazyInstance<base::WeakPtr<device::BluetoothAdapter> >::Leaky
-    default_adapter = LAZY_INSTANCE_INITIALIZER;
-
+#if defined(OS_WIN)
 typedef std::vector<BluetoothAdapterFactory::AdapterCallback>
     AdapterCallbackList;
 
@@ -42,9 +37,8 @@ typedef std::vector<BluetoothAdapterFactory::AdapterCallback>
 base::LazyInstance<AdapterCallbackList> adapter_callbacks =
     LAZY_INSTANCE_INITIALIZER;
 
-#if defined(OS_WIN)
 void RunAdapterCallbacks() {
-  CHECK(default_adapter.Get().get());
+  DCHECK(default_adapter.Get());
   scoped_refptr<BluetoothAdapter> adapter(default_adapter.Get().get());
   for (std::vector<BluetoothAdapterFactory::AdapterCallback>::const_iterator
            iter = adapter_callbacks.Get().begin();
@@ -58,49 +52,57 @@ void RunAdapterCallbacks() {
 
 }  // namespace
 
-namespace device {
-
 // static
 bool BluetoothAdapterFactory::IsBluetoothAdapterAvailable() {
-#if defined(OS_CHROMEOS)
-  return true;
-#elif defined(OS_WIN)
+  // SetAdapterForTesting() may be used to provide a test or mock adapter
+  // instance even on platforms that would otherwise not support it.
+  if (default_adapter.Get())
+    return true;
+#if defined(OS_CHROMEOS) || defined(OS_WIN)
   return true;
 #elif defined(OS_MACOSX)
   return base::mac::IsOSLionOrLater();
-#endif
+#else
   return false;
+#endif
 }
 
 // static
 void BluetoothAdapterFactory::GetAdapter(const AdapterCallback& callback) {
-  if (!default_adapter.Get().get()) {
-#if defined(OS_CHROMEOS)
-    chromeos::BluetoothAdapterChromeOS* new_adapter =
-        new chromeos::BluetoothAdapterChromeOS();
-    default_adapter.Get() = new_adapter->weak_ptr_factory_.GetWeakPtr();
-#elif defined(OS_WIN)
-    BluetoothAdapterWin* new_adapter = new BluetoothAdapterWin(
-        base::Bind(&RunAdapterCallbacks));
-    new_adapter->Init();
-    default_adapter.Get() = new_adapter->weak_ptr_factory_.GetWeakPtr();
-#elif defined(OS_MACOSX)
-    BluetoothAdapterMac* new_adapter = new BluetoothAdapterMac();
-    new_adapter->Init();
-    default_adapter.Get() = new_adapter->weak_ptr_factory_.GetWeakPtr();
-#endif
+  DCHECK(IsBluetoothAdapterAvailable());
+
+#if defined(OS_WIN)
+  if (!default_adapter.Get()) {
+    default_adapter.Get() =
+        BluetoothAdapter::CreateAdapter(base::Bind(&RunAdapterCallbacks));
+    DCHECK(!default_adapter.Get()->IsInitialized());
   }
 
-  if (default_adapter.Get()->IsInitialized()) {
-    callback.Run(scoped_refptr<BluetoothAdapter>(default_adapter.Get().get()));
-  } else {
+  if (!default_adapter.Get()->IsInitialized())
     adapter_callbacks.Get().push_back(callback);
+#else  // !defined(OS_WIN)
+  if (!default_adapter.Get()) {
+    default_adapter.Get() =
+        BluetoothAdapter::CreateAdapter(BluetoothAdapter::InitCallback());
   }
+
+  DCHECK(default_adapter.Get()->IsInitialized());
+#endif  // defined(OS_WIN)
+
+  if (default_adapter.Get()->IsInitialized())
+    callback.Run(scoped_refptr<BluetoothAdapter>(default_adapter.Get().get()));
+
 }
 
 // static
-scoped_refptr<BluetoothAdapter> BluetoothAdapterFactory::MaybeGetAdapter() {
-  return scoped_refptr<BluetoothAdapter>(default_adapter.Get().get());
+void BluetoothAdapterFactory::SetAdapterForTesting(
+    scoped_refptr<BluetoothAdapter> adapter) {
+  default_adapter.Get() = adapter->GetWeakPtrForTesting();
+}
+
+// static
+bool BluetoothAdapterFactory::HasSharedInstanceForTesting() {
+  return default_adapter.Get();
 }
 
 }  // namespace device

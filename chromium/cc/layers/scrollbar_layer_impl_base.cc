@@ -5,7 +5,7 @@
 #include "cc/layers/scrollbar_layer_impl_base.h"
 
 #include <algorithm>
-#include "cc/layers/layer.h"
+#include "cc/trees/layer_tree_impl.h"
 #include "ui/gfx/rect_conversions.h"
 
 namespace cc {
@@ -14,10 +14,12 @@ ScrollbarLayerImplBase::ScrollbarLayerImplBase(
     LayerTreeImpl* tree_impl,
     int id,
     ScrollbarOrientation orientation,
-    bool is_left_side_vertical_scrollbar)
+    bool is_left_side_vertical_scrollbar,
+    bool is_overlay)
     : LayerImpl(tree_impl, id),
-      scroll_layer_id_(Layer::INVALID_ID),
-      is_overlay_scrollbar_(false),
+      scroll_layer_(NULL),
+      clip_layer_(NULL),
+      is_overlay_scrollbar_(is_overlay),
       thumb_thickness_scale_factor_(1.f),
       current_pos_(0.f),
       maximum_(0),
@@ -26,16 +28,81 @@ ScrollbarLayerImplBase::ScrollbarLayerImplBase(
       vertical_adjust_(0.f),
       visible_to_total_length_ratio_(1.f) {}
 
+ScrollbarLayerImplBase::~ScrollbarLayerImplBase() {}
+
 void ScrollbarLayerImplBase::PushPropertiesTo(LayerImpl* layer) {
+  float active_opacity = layer->opacity();
   LayerImpl::PushPropertiesTo(layer);
+  layer->SetOpacity(active_opacity);
+  DCHECK(layer->ToScrollbarLayer());
+  layer->ToScrollbarLayer()->set_is_overlay_scrollbar(is_overlay_scrollbar_);
+  PushScrollClipPropertiesTo(layer);
+}
+
+void ScrollbarLayerImplBase::PushScrollClipPropertiesTo(LayerImpl* layer) {
+  DCHECK(layer->ToScrollbarLayer());
+  layer->ToScrollbarLayer()->SetScrollLayerById(ScrollLayerId());
+  layer->ToScrollbarLayer()->SetClipLayerById(ClipLayerId());
 }
 
 ScrollbarLayerImplBase* ScrollbarLayerImplBase::ToScrollbarLayer() {
   return this;
 }
 
+namespace {
+
+typedef void (LayerImpl::*ScrollbarRegistrationOperation)(
+    ScrollbarLayerImplBase*);
+
+void RegisterScrollbarWithLayers(ScrollbarLayerImplBase* scrollbar,
+                                 LayerImpl* container_layer,
+                                 LayerImpl* scroll_layer,
+                                 ScrollbarRegistrationOperation operation) {
+  if (!container_layer || !scroll_layer)
+    return;
+
+  DCHECK(scrollbar);
+
+  // Scrollbars must be notifed of changes to their scroll and container layers
+  // and all scrollable layers in between.
+  for (LayerImpl* current_layer = scroll_layer;
+       current_layer && current_layer != container_layer->parent();
+       current_layer = current_layer->parent()) {
+    // TODO(wjmaclean) We shouldn't need to exempt the scroll_layer from the
+    // scrollable() test below. https://crbug.com/367858.
+    if (current_layer->scrollable() || current_layer == container_layer ||
+        current_layer == scroll_layer)
+      (current_layer->*operation)(scrollbar);
+  }
+}
+}  // namespace
+
+void ScrollbarLayerImplBase::SetScrollLayerById(int id) {
+  LayerImpl* scroll_layer = layer_tree_impl()->LayerById(id);
+  if (scroll_layer_ == scroll_layer)
+    return;
+
+  RegisterScrollbarWithLayers(
+      this, clip_layer_, scroll_layer_, &LayerImpl::RemoveScrollbar);
+  scroll_layer_ = scroll_layer;
+  RegisterScrollbarWithLayers(
+      this, clip_layer_, scroll_layer_, &LayerImpl::AddScrollbar);
+}
+
+void ScrollbarLayerImplBase::SetClipLayerById(int id) {
+  LayerImpl* clip_layer = layer_tree_impl()->LayerById(id);
+  if (clip_layer_ == clip_layer)
+    return;
+
+  RegisterScrollbarWithLayers(
+      this, clip_layer_, scroll_layer_, &LayerImpl::RemoveScrollbar);
+  clip_layer_ = clip_layer;
+  RegisterScrollbarWithLayers(
+      this, clip_layer_, scroll_layer_, &LayerImpl::AddScrollbar);
+}
+
 gfx::Rect ScrollbarLayerImplBase::ScrollbarLayerRectToContentRect(
-    gfx::RectF layer_rect) const {
+    const gfx::RectF& layer_rect) const {
   // Don't intersect with the bounds as in LayerRectToContentRect() because
   // layer_rect here might be in coordinates of the containing layer.
   gfx::RectF content_rect = gfx::ScaleRect(layer_rect,
@@ -66,6 +133,9 @@ void ScrollbarLayerImplBase::SetVerticalAdjust(float vertical_adjust) {
 }
 
 void ScrollbarLayerImplBase::SetVisibleToTotalLengthRatio(float ratio) {
+  if (!IsThumbResizable())
+    return;
+
   if (visible_to_total_length_ratio_ == ratio)
     return;
   visible_to_total_length_ratio_ = ratio;
@@ -172,6 +242,13 @@ gfx::Rect ScrollbarLayerImplBase::ComputeThumbQuadRect() const {
   }
 
   return ScrollbarLayerRectToContentRect(thumb_rect);
+}
+
+void ScrollbarLayerImplBase::ScrollbarParametersDidChange() {
+  if (!clip_layer_ || !scroll_layer_)
+    return;
+
+  scroll_layer_->SetScrollbarPosition(this, clip_layer_);
 }
 
 }  // namespace cc

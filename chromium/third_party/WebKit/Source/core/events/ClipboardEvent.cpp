@@ -23,8 +23,7 @@
 #include "config.h"
 #include "core/events/ClipboardEvent.h"
 
-#include "core/dom/Clipboard.h"
-#include "core/events/ThreadLocalEventNames.h"
+#include "core/clipboard/Clipboard.h"
 
 namespace WebCore {
 
@@ -32,7 +31,7 @@ ClipboardEvent::ClipboardEvent()
 {
 }
 
-ClipboardEvent::ClipboardEvent(const AtomicString& eventType, bool canBubble, bool cancelable, PassRefPtr<Clipboard> clipboard)
+ClipboardEvent::ClipboardEvent(const AtomicString& eventType, bool canBubble, bool cancelable, PassRefPtrWillBeRawPtr<Clipboard> clipboard)
     : Event(eventType, canBubble, cancelable), m_clipboard(clipboard)
 {
 }
@@ -50,6 +49,12 @@ const AtomicString& ClipboardEvent::interfaceName() const
 bool ClipboardEvent::isClipboardEvent() const
 {
     return true;
+}
+
+void ClipboardEvent::trace(Visitor* visitor)
+{
+    visitor->trace(m_clipboard);
+    Event::trace(visitor);
 }
 
 } // namespace WebCore

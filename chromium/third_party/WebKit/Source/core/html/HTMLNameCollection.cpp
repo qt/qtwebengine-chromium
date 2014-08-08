@@ -23,83 +23,23 @@
 #include "config.h"
 #include "core/html/HTMLNameCollection.h"
 
-#include "HTMLNames.h"
-#include "core/dom/Element.h"
-#include "core/dom/ElementTraversal.h"
 #include "core/dom/NodeRareData.h"
-#include "core/html/HTMLEmbedElement.h"
-#include "core/html/HTMLObjectElement.h"
 
 namespace WebCore {
 
-using namespace HTMLNames;
-
-HTMLNameCollection::HTMLNameCollection(Node* document, CollectionType type, const AtomicString& name)
-    : HTMLCollection(document, type, OverridesItemAfter)
+HTMLNameCollection::HTMLNameCollection(ContainerNode& document, CollectionType type, const AtomicString& name)
+    : HTMLCollection(document, type, DoesNotOverrideItemAfter)
     , m_name(name)
 {
 }
 
 HTMLNameCollection::~HTMLNameCollection()
 {
-    ASSERT(ownerNode());
-    ASSERT(ownerNode()->isDocumentNode());
     ASSERT(type() == WindowNamedItems || type() == DocumentNamedItems);
-
-    ownerNode()->nodeLists()->removeCacheWithAtomicName(this, type(), m_name);
+#if !ENABLE(OILPAN)
+    ASSERT(ownerNode().isDocumentNode());
+    ownerNode().nodeLists()->removeCache(this, type(), m_name);
+#endif
 }
 
-Element* HTMLNameCollection::virtualItemAfter(unsigned& offsetInArray, Element* previous) const
-{
-    ASSERT_UNUSED(offsetInArray, !offsetInArray);
-    ASSERT(previous != ownerNode());
-
-    Element* current;
-    if (!previous)
-        current = ElementTraversal::firstWithin(*ownerNode());
-    else
-        current = ElementTraversal::next(*previous, ownerNode());
-
-    for (; current; current = ElementTraversal::next(*current, ownerNode())) {
-        switch (type()) {
-        case WindowNamedItems:
-            // find only images, forms, applets, embeds and objects by name,
-            // but anything by id
-            if (current->hasTagName(imgTag)
-                || current->hasTagName(formTag)
-                || current->hasTagName(appletTag)
-                || current->hasTagName(embedTag)
-                || current->hasTagName(objectTag)) {
-                if (current->getNameAttribute() == m_name)
-                    return current;
-            }
-            if (current->getIdAttribute() == m_name)
-                return current;
-            break;
-        case DocumentNamedItems:
-            // find images, forms, applets, embeds, objects and iframes by name,
-            // applets and object by id, and images by id but only if they have
-            // a name attribute (this very strange rule matches IE)
-            if (current->hasTagName(formTag)
-                || current->hasTagName(iframeTag)
-                || (current->hasTagName(embedTag) && toHTMLEmbedElement(current)->isExposed())) {
-                if (current->getNameAttribute() == m_name)
-                    return current;
-            } else if (current->hasTagName(appletTag)
-                || (current->hasTagName(objectTag) && toHTMLObjectElement(current)->isExposed())) {
-                if (current->getNameAttribute() == m_name || current->getIdAttribute() == m_name)
-                    return current;
-            } else if (current->hasTagName(imgTag)) {
-                if (current->getNameAttribute() == m_name || (current->getIdAttribute() == m_name && current->hasName()))
-                    return current;
-            }
-            break;
-        default:
-            ASSERT_NOT_REACHED();
-        }
-    }
-
-    return 0;
-}
-
-}
+} // namespace WebCore

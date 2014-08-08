@@ -25,10 +25,11 @@ def Format(root, lang='en', output_dir='.'):
   for child in root.ActiveDescendants():
     if isinstance(child, message.MessageNode):
       id = child.attrs['name']
-      if id.startswith('IDR_'):
+      if id.startswith('IDR_') or id.startswith('IDS_'):
         id = id[4:]
 
-      loc_message = encoder.encode(child.Translate(lang))
+      loc_message = encoder.encode(child.ws_at_start + child.Translate(lang) +
+                                   child.ws_at_end)
 
       if not first:
         yield ',\n'

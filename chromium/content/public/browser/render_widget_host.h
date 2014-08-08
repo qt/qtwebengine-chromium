@@ -12,12 +12,11 @@
 #include "ipc/ipc_sender.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "third_party/WebKit/public/web/WebTextDirection.h"
+#include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/size.h"
 #include "ui/surface/transport_dib.h"
 
-#if defined(TOOLKIT_GTK)
-#include "ui/base/x/x11_util.h"
-#elif defined(OS_MACOSX)
+#if defined(OS_MACOSX)
 #include "skia/ext/platform_device.h"
 #endif
 
@@ -107,12 +106,6 @@ class RenderWidgetHostView;
 // the RenderWidgetHost's IPC message map.
 class CONTENT_EXPORT RenderWidgetHost : public IPC::Sender {
  public:
-  // Free all backing stores used for rendering to drop memory usage.
-  static void RemoveAllBackingStores();
-
-  // Returns the size of all the backing stores used for rendering
-  static size_t BackingStoreMemorySize();
-
   // Returns the RenderWidgetHost given its ID and the ID of its render process.
   // Returns NULL if the IDs do not correspond to a live RenderWidgetHost.
   static RenderWidgetHost* FromID(int32 process_id, int32 routing_id);
@@ -122,18 +115,6 @@ class CONTENT_EXPORT RenderWidgetHost : public IPC::Sender {
   static scoped_ptr<RenderWidgetHostIterator> GetRenderWidgetHosts();
 
   virtual ~RenderWidgetHost() {}
-
-  // Edit operations.
-  virtual void Undo() = 0;
-  virtual void Redo() = 0;
-  virtual void Cut() = 0;
-  virtual void Copy() = 0;
-  virtual void CopyToFindPboard() = 0;
-  virtual void Paste() = 0;
-  virtual void PasteAndMatchStyle() = 0;
-  virtual void Delete() = 0;
-  virtual void SelectAll() = 0;
-  virtual void Unselect() = 0;
 
   // Update the text direction of the focused input element and notify it to a
   // renderer process.
@@ -199,19 +180,50 @@ class CONTENT_EXPORT RenderWidgetHost : public IPC::Sender {
   virtual void CopyFromBackingStore(
       const gfx::Rect& src_rect,
       const gfx::Size& accelerated_dst_size,
-      const base::Callback<void(bool, const SkBitmap&)>& callback) = 0;
-#if defined(TOOLKIT_GTK)
-  // Paint the backing store into the target's |dest_rect|.
-  virtual bool CopyFromBackingStoreToGtkWindow(const gfx::Rect& dest_rect,
-                                               GdkWindow* target) = 0;
-#elif defined(OS_MACOSX)
-  virtual gfx::Size GetBackingStoreSize() = 0;
-  virtual bool CopyFromBackingStoreToCGContext(const CGRect& dest_rect,
-                                               CGContextRef target) = 0;
+      const base::Callback<void(bool, const SkBitmap&)>& callback,
+      const SkBitmap::Config& bitmap_config) = 0;
+  // Ensures that the view does not drop the backing store even when hidden.
+  virtual bool CanCopyFromBackingStore() = 0;
+#if defined(OS_ANDROID)
+  virtual void LockBackingStore() = 0;
+  virtual void UnlockBackingStore() = 0;
 #endif
 
   // Send a command to the renderer to turn on full accessibility.
   virtual void EnableFullAccessibilityMode() = 0;
+
+  // Check whether this RenderWidget has full accessibility mode.
+  virtual bool IsFullAccessibilityModeForTesting() = 0;
+
+  // Send a command to the renderer to turn on tree only accessibility.
+  virtual void EnableTreeOnlyAccessibilityMode() = 0;
+
+  // Check whether this RenderWidget has tree-only accessibility mode.
+  virtual bool IsTreeOnlyAccessibilityModeForTesting() = 0;
+
+  // Relay a request from assistive technology to perform the default action
+  // on a given node.
+  virtual void AccessibilityDoDefaultAction(int object_id) = 0;
+
+  // Relay a request from assistive technology to set focus to a given node.
+  virtual void AccessibilitySetFocus(int object_id) = 0;
+
+  // Relay a request from assistive technology to make a given object
+  // visible by scrolling as many scrollable containers as necessary.
+  // In addition, if it's not possible to make the entire object visible,
+  // scroll so that the |subfocus| rect is visible at least. The subfocus
+  // rect is in local coordinates of the object itself.
+  virtual void AccessibilityScrollToMakeVisible(
+      int acc_obj_id, gfx::Rect subfocus) = 0;
+
+  // Relay a request from assistive technology to move a given object
+  // to a specific location, in the WebContents area coordinate space, i.e.
+  // (0, 0) is the top-left corner of the WebContents.
+  virtual void AccessibilityScrollToPoint(int acc_obj_id, gfx::Point point) = 0;
+
+  // Relay a request from assistive technology to set text selection.
+  virtual void AccessibilitySetTextSelection(
+      int acc_obj_id, int start_offset, int end_offset) = 0;
 
   // Forwards the given message to the renderer. These are called by
   // the view when it has received a message.
@@ -239,28 +251,6 @@ class CONTENT_EXPORT RenderWidgetHost : public IPC::Sender {
 
   // Returns true if this is a RenderViewHost, false if not.
   virtual bool IsRenderView() const = 0;
-
-  // This tells the renderer to paint into a bitmap and return it,
-  // regardless of whether the tab is hidden or not.  It resizes the
-  // web widget to match the |page_size| and then returns the bitmap
-  // scaled so it matches the |desired_size|, so that the scaling
-  // happens on the rendering thread.  When the bitmap is ready, the
-  // renderer sends a PaintAtSizeACK to this host, and a
-  // RENDER_WIDGET_HOST_DID_RECEIVE_PAINT_AT_SIZE_ACK notification is issued.
-  // Note that this bypasses most of the update logic that is normally invoked,
-  // and doesn't put the results into the backing store.
-  virtual void PaintAtSize(TransportDIB::Handle dib_handle,
-                           int tag,
-                           const gfx::Size& page_size,
-                           const gfx::Size& desired_size) = 0;
-
-  // Makes an IPC call to tell webkit to replace the currently selected word
-  // or a word around the cursor.
-  virtual void Replace(const base::string16& word) = 0;
-
-  // Makes an IPC call to tell webkit to replace the misspelling in the current
-  // selection.
-  virtual void ReplaceMisspelling(const base::string16& word) = 0;
 
   // Called to notify the RenderWidget that the resize rect has changed without
   // the size of the RenderWidget itself changing.
@@ -300,15 +290,7 @@ class CONTENT_EXPORT RenderWidgetHost : public IPC::Sender {
   // Get the screen info corresponding to this render widget.
   virtual void GetWebScreenInfo(blink::WebScreenInfo* result) = 0;
 
-  // Grabs snapshot from renderer side and returns the bitmap to a callback.
-  // If |src_rect| is empty, the whole contents is copied. This is an expensive
-  // operation due to the IPC, but it can be used as a fallback method when
-  // CopyFromBackingStore fails due to the backing store not being available or,
-  // in composited mode, when the accelerated surface is not available to the
-  // browser side.
-  virtual void GetSnapshotFromRenderer(
-      const gfx::Rect& src_subrect,
-      const base::Callback<void(bool, const SkBitmap&)>& callback) = 0;
+  virtual SkBitmap::Config PreferredReadbackFormat() = 0;
 
  protected:
   friend class RenderWidgetHostImpl;

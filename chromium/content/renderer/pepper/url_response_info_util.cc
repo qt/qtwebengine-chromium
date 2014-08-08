@@ -43,16 +43,14 @@ class HeaderFlattener : public WebHTTPHeaderVisitor {
   std::string buffer_;
 };
 
-bool IsRedirect(int32_t status) {
-  return status >= 300 && status <= 399;
-}
+bool IsRedirect(int32_t status) { return status >= 300 && status <= 399; }
 
 void DidCreateResourceHosts(const ppapi::URLResponseInfoData& in_data,
                             const base::FilePath& external_path,
                             int renderer_pending_host_id,
                             const DataFromWebURLResponseCallback& callback,
                             const std::vector<int>& browser_pending_host_ids) {
-  DCHECK(browser_pending_host_ids.size() == 1);
+  DCHECK_EQ(1U, browser_pending_host_ids.size());
   int browser_pending_host_id = 0;
 
   if (browser_pending_host_ids.size() == 1)
@@ -60,11 +58,11 @@ void DidCreateResourceHosts(const ppapi::URLResponseInfoData& in_data,
 
   ppapi::URLResponseInfoData data = in_data;
 
-  data.body_as_file_ref = ppapi::MakeExternalFileRefCreateInfo(
-      external_path,
-      std::string(),
-      browser_pending_host_id,
-      renderer_pending_host_id);
+  data.body_as_file_ref =
+      ppapi::MakeExternalFileRefCreateInfo(external_path,
+                                           std::string(),
+                                           browser_pending_host_id,
+                                           renderer_pending_host_id);
   callback.Run(data);
 }
 
@@ -79,8 +77,8 @@ void DataFromWebURLResponse(RendererPpapiHostImpl* host_impl,
   data.status_code = response.httpStatusCode();
   data.status_text = response.httpStatusText().utf8();
   if (IsRedirect(data.status_code)) {
-    data.redirect_url = response.httpHeaderField(
-        WebString::fromUTF8("Location")).utf8();
+    data.redirect_url =
+        response.httpHeaderField(WebString::fromUTF8("Location")).utf8();
   }
 
   HeaderFlattener flattener;
@@ -99,19 +97,17 @@ void DataFromWebURLResponse(RendererPpapiHostImpl* host_impl,
             scoped_ptr<ppapi::host::ResourceHost>(renderer_host));
 
     std::vector<IPC::Message> create_msgs;
-    create_msgs.push_back(PpapiHostMsg_FileRef_CreateExternal(external_path));
-    host_impl->CreateBrowserResourceHosts(
-        pp_instance,
-        create_msgs,
-        base::Bind(&DidCreateResourceHosts,
-                   data,
-                   external_path,
-                   renderer_pending_host_id,
-                   callback));
+    create_msgs.push_back(PpapiHostMsg_FileRef_CreateForRawFS(external_path));
+    host_impl->CreateBrowserResourceHosts(pp_instance,
+                                          create_msgs,
+                                          base::Bind(&DidCreateResourceHosts,
+                                                     data,
+                                                     external_path,
+                                                     renderer_pending_host_id,
+                                                     callback));
   } else {
-    base::MessageLoop::current()->PostTask(
-        FROM_HERE,
-        base::Bind(callback, data));
+    base::MessageLoop::current()->PostTask(FROM_HERE,
+                                           base::Bind(callback, data));
   }
 }
 

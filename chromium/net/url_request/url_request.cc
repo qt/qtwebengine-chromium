@@ -14,6 +14,7 @@
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
 #include "base/metrics/stats_counters.h"
+#include "base/metrics/user_metrics.h"
 #include "base/stl_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/synchronization/lock.h"
@@ -81,9 +82,8 @@ bool g_default_can_use_cookies = true;
 // at which each event occurred.  The API requires the time which the request
 // was blocked on each phase.  This function handles the conversion.
 //
-// In the case of reusing a SPDY session or HTTP pipeline, old proxy results may
-// have been reused, so proxy resolution times may be before the request was
-// started.
+// In the case of reusing a SPDY session, old proxy results may have been
+// reused, so proxy resolution times may be before the request was started.
 //
 // Due to preconnect and late binding, it is also possible for the connection
 // attempt to start before a request has been started, or proxy resolution
@@ -141,12 +141,6 @@ void ConvertRealLoadTimesToBlockingTimes(
 
 }  // namespace
 
-URLRequest::ProtocolFactory*
-URLRequest::Deprecated::RegisterProtocolFactory(const std::string& scheme,
-                                                ProtocolFactory* factory) {
-  return URLRequest::RegisterProtocolFactory(scheme, factory);
-}
-
 void URLRequest::Deprecated::RegisterRequestInterceptor(
     Interceptor* interceptor) {
   URLRequest::RegisterRequestInterceptor(interceptor);
@@ -197,6 +191,10 @@ void URLRequest::Delegate::OnSSLCertificateError(URLRequest* request,
   request->Cancel();
 }
 
+void URLRequest::Delegate::OnBeforeNetworkStart(URLRequest* request,
+                                                bool* defer) {
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // URLRequest
 
@@ -204,37 +202,17 @@ URLRequest::URLRequest(const GURL& url,
                        RequestPriority priority,
                        Delegate* delegate,
                        const URLRequestContext* context)
-    : context_(context),
-      network_delegate_(context->network_delegate()),
-      net_log_(BoundNetLog::Make(context->net_log(),
-                                 NetLog::SOURCE_URL_REQUEST)),
-      url_chain_(1, url),
-      method_("GET"),
-      referrer_policy_(CLEAR_REFERRER_ON_TRANSITION_FROM_SECURE_TO_INSECURE),
-      load_flags_(LOAD_NORMAL),
-      delegate_(delegate),
-      is_pending_(false),
-      is_redirecting_(false),
-      redirect_limit_(kMaxRedirects),
-      priority_(priority),
-      identifier_(GenerateURLRequestIdentifier()),
-      calling_delegate_(false),
-      use_blocked_by_as_load_param_(false),
-      before_request_callback_(base::Bind(&URLRequest::BeforeRequestComplete,
-                                          base::Unretained(this))),
-      has_notified_completion_(false),
-      received_response_content_length_(0),
-      creation_time_(base::TimeTicks::Now()) {
-  SIMPLE_STATS_COUNTER("URLRequestCount");
+    : identifier_(GenerateURLRequestIdentifier()) {
+  Init(url, priority, delegate, context, NULL);
+}
 
-  // Sanity check out environment.
-  DCHECK(base::MessageLoop::current())
-      << "The current base::MessageLoop must exist";
-
-  CHECK(context);
-  context->url_requests()->insert(this);
-
-  net_log_.BeginEvent(NetLog::TYPE_REQUEST_ALIVE);
+URLRequest::URLRequest(const GURL& url,
+                       RequestPriority priority,
+                       Delegate* delegate,
+                       const URLRequestContext* context,
+                       CookieStore* cookie_store)
+    : identifier_(GenerateURLRequestIdentifier()) {
+  Init(url, priority, delegate, context, cookie_store);
 }
 
 URLRequest::~URLRequest() {
@@ -261,13 +239,6 @@ URLRequest::~URLRequest() {
 }
 
 // static
-URLRequest::ProtocolFactory* URLRequest::RegisterProtocolFactory(
-    const string& scheme, ProtocolFactory* factory) {
-  return URLRequestJobManager::GetInstance()->RegisterProtocolFactory(scheme,
-                                                                      factory);
-}
-
-// static
 void URLRequest::RegisterRequestInterceptor(Interceptor* interceptor) {
   URLRequestJobManager::GetInstance()->RegisterRequestInterceptor(interceptor);
 }
@@ -276,6 +247,47 @@ void URLRequest::RegisterRequestInterceptor(Interceptor* interceptor) {
 void URLRequest::UnregisterRequestInterceptor(Interceptor* interceptor) {
   URLRequestJobManager::GetInstance()->UnregisterRequestInterceptor(
       interceptor);
+}
+
+void URLRequest::Init(const GURL& url,
+                      RequestPriority priority,
+                      Delegate* delegate,
+                      const URLRequestContext* context,
+                      CookieStore* cookie_store) {
+  context_ = context;
+  network_delegate_ = context->network_delegate();
+  net_log_ = BoundNetLog::Make(context->net_log(), NetLog::SOURCE_URL_REQUEST);
+  url_chain_.push_back(url);
+  method_ = "GET";
+  referrer_policy_ = CLEAR_REFERRER_ON_TRANSITION_FROM_SECURE_TO_INSECURE;
+  load_flags_ = LOAD_NORMAL;
+  delegate_ = delegate;
+  is_pending_ = false;
+  is_redirecting_ = false;
+  redirect_limit_ = kMaxRedirects;
+  priority_ = priority;
+  calling_delegate_ = false;
+  use_blocked_by_as_load_param_ =false;
+  before_request_callback_ = base::Bind(&URLRequest::BeforeRequestComplete,
+                                        base::Unretained(this));
+  has_notified_completion_ = false;
+  received_response_content_length_ = 0;
+  creation_time_ = base::TimeTicks::Now();
+  notified_before_network_start_ = false;
+
+  SIMPLE_STATS_COUNTER("URLRequestCount");
+
+  // Sanity check out environment.
+  DCHECK(base::MessageLoop::current())
+      << "The current base::MessageLoop must exist";
+
+  CHECK(context);
+  context->url_requests()->insert(this);
+  cookie_store_ = cookie_store;
+  if (cookie_store_ == NULL)
+    cookie_store_ = context->cookie_store();
+
+  net_log_.BeginEvent(NetLog::TYPE_REQUEST_ALIVE);
 }
 
 void URLRequest::EnableChunkedUpload() {
@@ -346,13 +358,20 @@ bool URLRequest::GetFullRequestHeaders(HttpRequestHeaders* headers) const {
   return job_->GetFullRequestHeaders(headers);
 }
 
+int64 URLRequest::GetTotalReceivedBytes() const {
+  if (!job_.get())
+    return 0;
+
+  return job_->GetTotalReceivedBytes();
+}
+
 LoadStateWithParam URLRequest::GetLoadState() const {
   // The !blocked_by_.empty() check allows |this| to report it's blocked on a
   // delegate before it has been started.
   if (calling_delegate_ || !blocked_by_.empty()) {
     return LoadStateWithParam(
         LOAD_STATE_WAITING_FOR_DELEGATE,
-        use_blocked_by_as_load_param_ ? UTF8ToUTF16(blocked_by_) :
+        use_blocked_by_as_load_param_ ? base::UTF8ToUTF16(blocked_by_) :
                                         base::string16());
   }
   return LoadStateWithParam(job_.get() ? job_->GetLoadState() : LOAD_STATE_IDLE,
@@ -360,11 +379,11 @@ LoadStateWithParam URLRequest::GetLoadState() const {
 }
 
 base::Value* URLRequest::GetStateAsValue() const {
-  DictionaryValue* dict = new DictionaryValue();
+  base::DictionaryValue* dict = new base::DictionaryValue();
   dict->SetString("url", original_url().possibly_invalid_spec());
 
   if (url_chain_.size() > 1) {
-    ListValue* list = new ListValue();
+    base::ListValue* list = new base::ListValue();
     for (std::vector<GURL>::const_iterator url = url_chain_.begin();
          url != url_chain_.end(); ++url) {
       list->AppendString(url->possibly_invalid_spec());
@@ -530,7 +549,7 @@ void URLRequest::SetDefaultCookiePolicyToBlock() {
 
 // static
 bool URLRequest::IsHandledProtocol(const std::string& scheme) {
-  return URLRequestJobManager::GetInstance()->SupportsScheme(scheme);
+  return URLRequestJobManager::SupportsScheme(scheme);
 }
 
 // static
@@ -575,20 +594,13 @@ std::string URLRequest::ComputeMethodForRedirect(
 
 void URLRequest::SetReferrer(const std::string& referrer) {
   DCHECK(!is_pending_);
-  referrer_ = referrer;
-  // Ensure that we do not send URL fragment, username and password
-  // fields in the referrer.
   GURL referrer_url(referrer);
   UMA_HISTOGRAM_BOOLEAN("Net.URLRequest_SetReferrer_IsEmptyOrValid",
                         referrer_url.is_empty() || referrer_url.is_valid());
-  if (referrer_url.is_valid() && (referrer_url.has_ref() ||
-      referrer_url.has_username() ||  referrer_url.has_password())) {
-    GURL::Replacements referrer_mods;
-    referrer_mods.ClearRef();
-    referrer_mods.ClearUsername();
-    referrer_mods.ClearPassword();
-    referrer_url = referrer_url.ReplaceComponents(referrer_mods);
-    referrer_ = referrer_url.spec();
+  if (referrer_url.is_valid()) {
+    referrer_ = referrer_url.GetAsReferrer().spec();
+  } else {
+    referrer_ = referrer;
   }
 }
 
@@ -602,6 +614,9 @@ void URLRequest::set_delegate(Delegate* delegate) {
 }
 
 void URLRequest::Start() {
+  // Some values can be NULL, but the job factory must not be.
+  DCHECK(context_->job_factory());
+
   DCHECK_EQ(network_delegate_, context_->network_delegate());
   // Anything that sets |blocked_by_| before start should have cleaned up after
   // itself.
@@ -654,7 +669,7 @@ void URLRequest::BeforeRequestComplete(int error) {
     URLRequestRedirectJob* job = new URLRequestRedirectJob(
         this, network_delegate_, new_url,
         // Use status code 307 to preserve the method, so POST requests work.
-        URLRequestRedirectJob::REDIRECT_307_TEMPORARY_REDIRECT);
+        URLRequestRedirectJob::REDIRECT_307_TEMPORARY_REDIRECT, "Delegate");
     StartJob(job);
   } else {
     StartJob(URLRequestJobManager::GetInstance()->CreateJob(
@@ -683,6 +698,20 @@ void URLRequest::StartJob(URLRequestJob* job) {
   is_redirecting_ = false;
 
   response_info_.was_cached = false;
+
+  // If the referrer is secure, but the requested URL is not, the referrer
+  // policy should be something non-default. If you hit this, please file a
+  // bug.
+  if (referrer_policy_ ==
+          CLEAR_REFERRER_ON_TRANSITION_FROM_SECURE_TO_INSECURE &&
+      GURL(referrer_).SchemeIsSecure() && !url().SchemeIsSecure()) {
+#if !defined(OFFICIAL_BUILD)
+    LOG(FATAL) << "Trying to send secure referrer for insecure load";
+#endif
+    referrer_.clear();
+    base::RecordAction(
+        base::UserMetricsAction("Net.URLRequest_StartJob_InvalidReferrer"));
+  }
 
   // Don't allow errors to be sent from within Start().
   // TODO(brettw) this may cause NotifyDone to be sent synchronously,
@@ -812,6 +841,24 @@ void URLRequest::NotifyReceivedRedirect(const GURL& location,
   }
 }
 
+void URLRequest::NotifyBeforeNetworkStart(bool* defer) {
+  if (delegate_ && !notified_before_network_start_) {
+    OnCallToDelegate();
+    delegate_->OnBeforeNetworkStart(this, defer);
+    if (!*defer)
+      OnCallToDelegateComplete();
+    notified_before_network_start_ = true;
+  }
+}
+
+void URLRequest::ResumeNetworkStart() {
+  DCHECK(job_);
+  DCHECK(notified_before_network_start_);
+
+  OnCallToDelegateComplete();
+  job_->ResumeNetworkStart();
+}
+
 void URLRequest::NotifyResponseStarted() {
   int net_error = OK;
   if (!status_.is_success())
@@ -915,7 +962,7 @@ void URLRequest::OrphanJob() {
 int URLRequest::Redirect(const GURL& location, int http_status_code) {
   // Matches call in NotifyReceivedRedirect.
   OnCallToDelegateComplete();
-  if (net_log_.IsLoggingAllEvents()) {
+  if (net_log_.IsLogging()) {
     net_log_.AddEvent(
         NetLog::TYPE_URL_REQUEST_REDIRECTED,
         NetLog::StringCallback("location", &location.possibly_invalid_spec()));
@@ -1007,17 +1054,14 @@ bool URLRequest::GetHSTSRedirect(GURL* redirect_url) const {
   const GURL& url = this->url();
   if (!url.SchemeIs("http"))
     return false;
-  TransportSecurityState::DomainState domain_state;
-  if (context()->transport_security_state() &&
-      context()->transport_security_state()->GetDomainState(
+  TransportSecurityState* state = context()->transport_security_state();
+  if (state &&
+      state->ShouldUpgradeToSSL(
           url.host(),
-          SSLConfigService::IsSNIAvailable(context()->ssl_config_service()),
-          &domain_state) &&
-      domain_state.ShouldUpgradeToSSL()) {
-    url_canon::Replacements<char> replacements;
+          SSLConfigService::IsSNIAvailable(context()->ssl_config_service()))) {
+    url::Replacements<char> replacements;
     const char kNewScheme[] = "https";
-    replacements.SetScheme(kNewScheme,
-                           url_parse::Component(0, strlen(kNewScheme)));
+    replacements.SetScheme(kNewScheme, url::Component(0, strlen(kNewScheme)));
     *redirect_url = url.ReplaceComponents(replacements);
     return true;
   }

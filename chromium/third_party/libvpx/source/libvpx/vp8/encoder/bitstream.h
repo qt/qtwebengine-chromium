@@ -9,8 +9,12 @@
  */
 
 
-#ifndef __INC_BITSTREAM_H
-#define __INC_BITSTREAM_H
+#ifndef VP8_ENCODER_BITSTREAM_H_
+#define VP8_ENCODER_BITSTREAM_H_
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 #if HAVE_EDSP
 void vp8cx_pack_tokens_armv5(vp8_writer *w, const TOKENEXTRA *p, int xcount,
@@ -43,4 +47,8 @@ void vp8_pack_tokens_c(vp8_writer *w, const TOKENEXTRA *p, int xcount);
 # define pack_mb_row_tokens(a,b)               pack_mb_row_tokens_c(a,b)
 #endif
 
+#ifdef __cplusplus
+}  // extern "C"
 #endif
+
+#endif  // VP8_ENCODER_BITSTREAM_H_

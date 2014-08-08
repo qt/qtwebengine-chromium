@@ -10,12 +10,16 @@
 
 #include "base/basictypes.h"
 #include "base/callback_forward.h"
+#include "base/files/file.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
-#include "base/platform_file.h"
 #include "url/gurl.h"
 #include "webkit/browser/webkit_storage_browser_export.h"
 #include "webkit/common/fileapi/file_system_types.h"
+
+namespace content {
+class QuotaReservationManagerTest;
+}
 
 namespace fileapi {
 
@@ -28,7 +32,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT QuotaReservationManager {
  public:
   // Callback for ReserveQuota. When this callback returns false, ReserveQuota
   // operation should be reverted.
-  typedef base::Callback<bool(base::PlatformFileError error)>
+  typedef base::Callback<bool(base::File::Error error, int64 delta)>
       ReserveQuotaCallback;
 
   // An abstraction of backing quota system.
@@ -83,7 +87,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT QuotaReservationManager {
 
   friend class QuotaReservation;
   friend class QuotaReservationBuffer;
-  friend class QuotaReservationManagerTest;
+  friend class content::QuotaReservationManagerTest;
 
   void ReserveQuota(const GURL& origin,
                     FileSystemType type,

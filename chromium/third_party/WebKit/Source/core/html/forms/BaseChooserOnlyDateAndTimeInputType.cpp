@@ -29,17 +29,16 @@
 
 #include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "core/dom/shadow/ShadowRoot.h"
+#include "core/frame/FrameHost.h"
 #include "core/html/HTMLDivElement.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/page/Chrome.h"
-#include "core/page/Page.h"
 #include "platform/UserGestureIndicator.h"
 
 namespace WebCore {
 
 BaseChooserOnlyDateAndTimeInputType::~BaseChooserOnlyDateAndTimeInputType()
 {
-    closeDateTimeChooser();
 }
 
 void BaseChooserOnlyDateAndTimeInputType::handleDOMActivateEvent(Event*)
@@ -54,25 +53,29 @@ void BaseChooserOnlyDateAndTimeInputType::handleDOMActivateEvent(Event*)
     DateTimeChooserParameters parameters;
     if (!element().setupDateTimeChooserParameters(parameters))
         return;
-    m_dateTimeChooser = element().document().page()->chrome().openDateTimeChooser(this, parameters);
+    m_dateTimeChooser = element().document().frameHost()->chrome().openDateTimeChooser(this, parameters);
 }
 
 void BaseChooserOnlyDateAndTimeInputType::createShadowSubtree()
 {
     DEFINE_STATIC_LOCAL(AtomicString, valueContainerPseudo, ("-webkit-date-and-time-value", AtomicString::ConstructFromLiteral));
 
-    RefPtr<HTMLDivElement> valueContainer = HTMLDivElement::create(element().document());
-    valueContainer->setPseudo(valueContainerPseudo);
+    RefPtrWillBeRawPtr<HTMLDivElement> valueContainer = HTMLDivElement::create(element().document());
+    valueContainer->setShadowPseudoId(valueContainerPseudo);
     element().userAgentShadowRoot()->appendChild(valueContainer.get());
-    updateAppearance();
+    updateView();
 }
 
-void BaseChooserOnlyDateAndTimeInputType::updateAppearance()
+void BaseChooserOnlyDateAndTimeInputType::updateView()
 {
     Node* node = element().userAgentShadowRoot()->firstChild();
     if (!node || !node->isHTMLElement())
         return;
-    String displayValue = visibleValue();
+    String displayValue;
+    if (!element().suggestedValue().isNull())
+        displayValue = element().suggestedValue();
+    else
+        displayValue = visibleValue();
     if (displayValue.isEmpty()) {
         // Need to put something to keep text baseline.
         displayValue = " ";
@@ -84,7 +87,7 @@ void BaseChooserOnlyDateAndTimeInputType::setValue(const String& value, bool val
 {
     BaseDateAndTimeInputType::setValue(value, valueChanged, eventBehavior);
     if (valueChanged)
-        updateAppearance();
+        updateView();
 }
 
 void BaseChooserOnlyDateAndTimeInputType::closePopupView()
@@ -136,6 +139,13 @@ void BaseChooserOnlyDateAndTimeInputType::accessKeyAction(bool sendMouseEvents)
 {
     BaseDateAndTimeInputType::accessKeyAction(sendMouseEvents);
     BaseClickableWithKeyInputType::accessKeyAction(element(), sendMouseEvents);
+}
+
+void BaseChooserOnlyDateAndTimeInputType::trace(Visitor* visitor)
+{
+    visitor->trace(m_dateTimeChooser);
+    BaseDateAndTimeInputType::trace(visitor);
+    DateTimeChooserClient::trace(visitor);
 }
 
 }

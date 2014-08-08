@@ -29,6 +29,10 @@ class StatsCollectionController
   StatsCollectionController();
   virtual ~StatsCollectionController();
 
+  // gin::WrappableBase
+  virtual gin::ObjectTemplateBuilder GetObjectTemplateBuilder(
+      v8::Isolate* isolate) OVERRIDE;
+
   // Retrieves a histogram and returns a JSON representation of it.
   std::string GetHistogram(const std::string& histogram_name);
 

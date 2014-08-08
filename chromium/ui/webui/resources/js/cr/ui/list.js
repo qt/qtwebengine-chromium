@@ -314,6 +314,7 @@ cr.define('cr.ui', function() {
 
       this.addEventListener('dblclick', this.handleDoubleClick_);
       this.addEventListener('mousedown', handleMouseDown);
+      this.addEventListener('dragstart', handleDragStart, true);
       this.addEventListener('mouseup', this.handlePointerDownUp_);
       this.addEventListener('keydown', this.handleKeyDown);
       this.addEventListener('focus', this.handleElementFocus_, true);
@@ -631,6 +632,7 @@ cr.define('cr.ui', function() {
         }
       }
       this.cachedItems_ = newCachedItems;
+      this.pinnedItem_ = null;
 
       var newCachedItemHeights = {};
       for (var index in this.cachedItemHeights_) {
@@ -1120,14 +1122,11 @@ cr.define('cr.ui', function() {
 
       // We don't set the lead or selected properties until after adding all
       // items, in case they force relayout in response to these events.
-      var listItem = null;
       if (leadIndex != -1 && this.cachedItems_[leadIndex])
         this.cachedItems_[leadIndex].lead = true;
       for (var y = firstIndex; y < lastIndex; y++) {
-        if (sm.getIndexSelected(y))
-          this.cachedItems_[y].selected = true;
-        else if (y != leadIndex)
-          listItem = this.cachedItems_[y];
+        if (sm.getIndexSelected(y) != this.cachedItems_[y].selected)
+          this.cachedItems_[y].selected = !this.cachedItems_[y].selected;
       }
 
       this.firstIndex_ = firstIndex;
@@ -1302,6 +1301,28 @@ cr.define('cr.ui', function() {
         listItem.contains(listItem.ownerDocument.activeElement)) {
       e.preventDefault();
     }
+  }
+
+  /**
+   * Dragstart event handler.
+   * If there is an item at starting position of drag operation and the item
+   * is not selected, select it.
+   * @this {List}
+   * @param {MouseEvent} e The event object for 'dragstart'.
+   */
+  function handleDragStart(e) {
+    var element = e.target.ownerDocument.elementFromPoint(e.clientX, e.clientY);
+    var listItem = this.getListItemAncestor(element);
+    if (!listItem)
+      return;
+
+    var index = this.getIndexOfListItem(listItem);
+    if (index == -1)
+      return;
+
+    var isAlreadySelected = this.selectionModel_.getIndexSelected(index);
+    if (!isAlreadySelected)
+      this.selectionModel_.selectedIndex = index;
   }
 
   /**

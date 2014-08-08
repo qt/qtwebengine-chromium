@@ -40,7 +40,7 @@ namespace net {
 // A browser may register a fetcher that is used by the dictionary managers to
 // get data from a specified URL.  This allows us to use very high level browser
 // functionality in this base (when the functionaity can be provided).
-class SdchFetcher {
+class NET_EXPORT SdchFetcher {
  public:
   SdchFetcher() {}
   virtual ~SdchFetcher() {}
@@ -49,6 +49,11 @@ class SdchFetcher {
   // from a server.  The callee is responsible for getting that dictionary_text,
   // and then calling back to AddSdchDictionary() to the SdchManager instance.
   virtual void Schedule(const GURL& dictionary_url) = 0;
+
+  // The Cancel() method is called to cancel all pending dictionary fetches.
+  // This is used for implementation of ClearData() below.
+  virtual void Cancel() = 0;
+
  private:
   DISALLOW_COPY_AND_ASSIGN(SdchFetcher);
 };
@@ -170,7 +175,7 @@ class NET_EXPORT SdchManager : public NON_EXPORTED_BASE(base::NonThreadSafe) {
    private:
     friend class base::RefCounted<Dictionary>;
     friend class SdchManager;  // Only manager can construct an instance.
-    FRIEND_TEST_ALL_PREFIXES(SdchFilterTest, PathMatch);
+    FRIEND_TEST_ALL_PREFIXES(SdchManagerTest, PathMatch);
 
     // Construct a vc-diff usable dictionary from the dictionary_text starting
     // at the given offset.  The supplied client_hash should be used to
@@ -234,11 +239,8 @@ class NET_EXPORT SdchManager : public NON_EXPORTED_BASE(base::NonThreadSafe) {
   SdchManager();
   ~SdchManager();
 
-  // Discontinue fetching of dictionaries, as we're now shutting down.
-  static void Shutdown();
-
-  // Provide access to the single instance of this class.
-  static SdchManager* Global();
+  // Clear data (for browser data removal).
+  void ClearData();
 
   // Record stats on various errors.
   static void SdchErrorRecovery(ProblemCodes problem);
@@ -251,6 +253,11 @@ class NET_EXPORT SdchManager : public NON_EXPORTED_BASE(base::NonThreadSafe) {
 
   static bool sdch_enabled() { return g_sdch_enabled_; }
 
+  // Enables or disables SDCH compression over secure connection.
+  static void EnableSecureSchemeSupport(bool enabled);
+
+  static bool secure_scheme_supported() { return g_secure_scheme_supported_; }
+
   // Briefly prevent further advertising of SDCH on this domain (if SDCH is
   // enabled). After enough calls to IsInSupportedDomain() the blacklisting
   // will be removed.  Additional blacklists take exponentially more calls
@@ -258,24 +265,24 @@ class NET_EXPORT SdchManager : public NON_EXPORTED_BASE(base::NonThreadSafe) {
   // Used when filter errors are found from a given domain, but it is plausible
   // that the cause is temporary (such as application startup, where cached
   // entries are used, but a dictionary is not yet loaded).
-  static void BlacklistDomain(const GURL& url);
+  void BlacklistDomain(const GURL& url);
 
   // Used when SEVERE filter errors are found from a given domain, to prevent
   // further use of SDCH on that domain.
-  static void BlacklistDomainForever(const GURL& url);
+  void BlacklistDomainForever(const GURL& url);
 
   // Unit test only, this function resets enabling of sdch, and clears the
   // blacklist.
-  static void ClearBlacklistings();
+  void ClearBlacklistings();
 
   // Unit test only, this function resets the blacklisting count for a domain.
-  static void ClearDomainBlacklisting(const std::string& domain);
+  void ClearDomainBlacklisting(const std::string& domain);
 
   // Unit test only: indicate how many more times a domain will be blacklisted.
-  static int BlackListDomainCount(const std::string& domain);
+  int BlackListDomainCount(const std::string& domain);
 
   // Unit test only: Indicate what current blacklist increment is for a domain.
-  static int BlacklistDomainExponential(const std::string& domain);
+  int BlacklistDomainExponential(const std::string& domain);
 
   // Check to see if SDCH is enabled (globally), and the given URL is in a
   // supported domain (i.e., not blacklisted, and either the specific supported
@@ -305,12 +312,10 @@ class NET_EXPORT SdchManager : public NON_EXPORTED_BASE(base::NonThreadSafe) {
   // to use to decompreses data that arrived as SDCH encoded content.  Check to
   // be sure the returned |dictionary| can be used for decoding content supplied
   // in response to a request for |referring_url|.
-  // Caller is responsible for AddRef()ing the dictionary, and Release()ing it
-  // when done.
   // Return null in |dictionary| if there is no matching legal dictionary.
   void GetVcdiffDictionary(const std::string& server_hash,
                            const GURL& referring_url,
-                           Dictionary** dictionary);
+                           scoped_refptr<Dictionary>* dictionary);
 
   // Get list of available (pre-cached) dictionaries that we have already loaded
   // into memory.  The list is a comma separated list of (client) hashes per
@@ -336,13 +341,14 @@ class NET_EXPORT SdchManager : public NON_EXPORTED_BASE(base::NonThreadSafe) {
   typedef std::set<std::string> ExperimentSet;
 
   // A map of dictionaries info indexed by the hash that the server provides.
-  typedef std::map<std::string, Dictionary*> DictionaryMap;
-
-  // The one global instance of that holds all the data.
-  static SdchManager* global_;
+  typedef std::map<std::string, scoped_refptr<Dictionary> > DictionaryMap;
 
   // Support SDCH compression, by advertising in headers.
   static bool g_sdch_enabled_;
+
+  // Support SDCH compression for HTTPS requests and responses. When supported,
+  // HTTPS applicable dictionaries MUST have been acquired securely via HTTPS.
+  static bool g_secure_scheme_supported_;
 
   // A simple implementation of a RFC 3548 "URL safe" base64 encoder.
   static void UrlSafeBase64Encode(const std::string& input,
@@ -358,7 +364,7 @@ class NET_EXPORT SdchManager : public NON_EXPORTED_BASE(base::NonThreadSafe) {
 
   // Support exponential backoff in number of domain accesses before
   // blacklisting expires.
-  DomainCounter exponential_blacklist_count;
+  DomainCounter exponential_blacklist_count_;
 
   // List of hostnames for which a latency experiment is allowed (because a
   // round trip test has recently passed).

@@ -24,6 +24,7 @@
 #include "bindings/v8/ScriptWrappable.h"
 #include "core/frame/DOMWindowProperty.h"
 #include "core/plugins/DOMMimeType.h"
+#include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
@@ -31,21 +32,26 @@
 
 namespace WebCore {
 
-class Frame;
+class LocalFrame;
 class PluginData;
 
-class DOMMimeTypeArray : public ScriptWrappable, public RefCounted<DOMMimeTypeArray>, public DOMWindowProperty {
+class DOMMimeTypeArray FINAL : public RefCountedWillBeGarbageCollectedFinalized<DOMMimeTypeArray>, public ScriptWrappable, public DOMWindowProperty {
 public:
-    static PassRefPtr<DOMMimeTypeArray> create(Frame* frame) { return adoptRef(new DOMMimeTypeArray(frame)); }
-    ~DOMMimeTypeArray();
+    static PassRefPtrWillBeRawPtr<DOMMimeTypeArray> create(LocalFrame* frame)
+    {
+        return adoptRefWillBeNoop(new DOMMimeTypeArray(frame));
+    }
+    virtual ~DOMMimeTypeArray();
 
     unsigned length() const;
-    PassRefPtr<DOMMimeType> item(unsigned index);
+    PassRefPtrWillBeRawPtr<DOMMimeType> item(unsigned index);
     bool canGetItemsForName(const AtomicString& propertyName);
-    PassRefPtr<DOMMimeType> namedItem(const AtomicString& propertyName);
+    PassRefPtrWillBeRawPtr<DOMMimeType> namedItem(const AtomicString& propertyName);
+
+    void trace(Visitor*) { }
 
 private:
-    explicit DOMMimeTypeArray(Frame*);
+    explicit DOMMimeTypeArray(LocalFrame*);
     PluginData* getPluginData() const;
 };
 

@@ -30,7 +30,7 @@ class OverlayScrollBarThumb : public BaseScrollBarThumb,
 
  protected:
   // View overrides:
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
   virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
 
   // gfx::AnimationDelegate overrides:
@@ -44,18 +44,16 @@ class OverlayScrollBarThumb : public BaseScrollBarThumb,
 OverlayScrollBarThumb::OverlayScrollBarThumb(BaseScrollBar* scroll_bar)
     : BaseScrollBarThumb(scroll_bar),
       animation_opacity_(0.0) {
-  if (get_use_acceleration_when_possible()) {
-    // This is necessary, otherwise the thumb will be rendered below the views
-    // if those views paint to their own layers.
-    SetPaintToLayer(true);
-    SetFillsBoundsOpaquely(false);
-  }
+  // This is necessary, otherwise the thumb will be rendered below the views if
+  // those views paint to their own layers.
+  SetPaintToLayer(true);
+  SetFillsBoundsOpaquely(false);
 }
 
 OverlayScrollBarThumb::~OverlayScrollBarThumb() {
 }
 
-gfx::Size OverlayScrollBarThumb::GetPreferredSize() {
+gfx::Size OverlayScrollBarThumb::GetPreferredSize() const {
   return gfx::Size(kThumbMinimumSize, kThumbMinimumSize);
 }
 
@@ -140,7 +138,7 @@ void OverlayScrollBar::OnGestureEvent(ui::GestureEvent* event) {
   BaseScrollBar::OnGestureEvent(event);
 }
 
-gfx::Size OverlayScrollBar::GetPreferredSize() {
+gfx::Size OverlayScrollBar::GetPreferredSize() const {
   return gfx::Size();
 }
 

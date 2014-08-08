@@ -42,16 +42,16 @@ namespace blink {
 // WGC3D types match the corresponding GL types as defined in OpenGL ES 2.0
 // header file gl2.h from khronos.org.
 typedef char WGC3Dchar;
-typedef unsigned int WGC3Denum;
+typedef unsigned WGC3Denum;
 typedef unsigned char WGC3Dboolean;
-typedef unsigned int WGC3Dbitfield;
+typedef unsigned WGC3Dbitfield;
 typedef signed char WGC3Dbyte;
 typedef unsigned char WGC3Dubyte;
 typedef short WGC3Dshort;
 typedef unsigned short WGC3Dushort;
 typedef int WGC3Dint;
 typedef int WGC3Dsizei;
-typedef unsigned int WGC3Duint;
+typedef unsigned WGC3Duint;
 typedef float WGC3Dfloat;
 typedef float WGC3Dclampf;
 typedef signed long int WGC3Dintptr;
@@ -203,12 +203,6 @@ public:
     // GL_CHROMIUM_rate_limit_offscreen_context
     virtual void rateLimitOffscreenContextCHROMIUM() { }
 
-    // GL_CHROMIUM_stream_texture
-    // Returns the stream end point identifier created for the given texture.
-    virtual WebGLId createStreamTextureCHROMIUM(WebGLId texture) { return 0; }
-    // Destroys the stream for the given texture.
-    virtual void destroyStreamTextureCHROMIUM(WebGLId texture) { }
-
     // GL_CHROMIUM_lose_context
     virtual void loseContextCHROMIUM(WGC3Denum current, WGC3Denum other) { }
 
@@ -268,7 +262,6 @@ public:
     virtual WGC3Dint getAttribLocation(WebGLId program, const WGC3Dchar* name) = 0;
     virtual void getBooleanv(WGC3Denum pname, WGC3Dboolean* value) = 0;
     virtual void getBufferParameteriv(WGC3Denum target, WGC3Denum pname, WGC3Dint* value) = 0;
-    virtual Attributes getContextAttributes() = 0;
     virtual WGC3Denum getError() = 0;
     virtual void getFloatv(WGC3Denum pname, WGC3Dfloat* value) = 0;
     virtual void getFramebufferAttachmentParameteriv(WGC3Denum target, WGC3Denum attachment, WGC3Denum pname, WGC3Dint* value) = 0;
@@ -397,9 +390,7 @@ public:
     // state is sticky, rather than reported only once.
     virtual WGC3Denum getGraphicsResetStatusARB() { return 0; /* GL_NO_ERROR */ }
 
-    // FIXME: make this function pure virtual once it is implemented in
-    // both command buffer port and in-process port.
-    virtual WebString getTranslatedShaderSourceANGLE(WebGLId shader) { return WebString(); }
+    virtual WebString getTranslatedShaderSourceANGLE(WebGLId shader) = 0;
 
     // GL_CHROMIUM_iosurface
     virtual void texImageIOSurface2DCHROMIUM(WGC3Denum target, WGC3Dint width, WGC3Dint height, WGC3Duint ioSurfaceId, WGC3Duint plane) { }
@@ -431,7 +422,10 @@ public:
     // GL_CHROMIUM_texture_mailbox
     virtual void genMailboxCHROMIUM(WGC3Dbyte* mailbox) { }
     virtual void produceTextureCHROMIUM(WGC3Denum target, const WGC3Dbyte* mailbox) { }
+    virtual void produceTextureDirectCHROMIUM(WebGLId texture, WGC3Denum target, const WGC3Dbyte* mailbox) { }
+
     virtual void consumeTextureCHROMIUM(WGC3Denum target, const WGC3Dbyte* mailbox) { }
+    virtual WebGLId createAndConsumeTextureCHROMIUM(WGC3Denum target, const WGC3Dbyte* mailbox) { return 0; }
 
     // GL_EXT_debug_marker
     virtual void insertEventMarkerEXT(const WGC3Dchar* marker) { }
@@ -463,16 +457,20 @@ public:
     virtual GrGLInterface* createGrGLInterface() { return 0; }
 
     // GL_CHROMIUM_map_image
-    virtual WGC3Duint createImageCHROMIUM(WGC3Dsizei width, WGC3Dsizei height, WGC3Denum internalformat) { return 0; }
+    virtual WGC3Duint createImageCHROMIUM(WGC3Dsizei width, WGC3Dsizei height, WGC3Denum internalformat, WGC3Denum usage) { return 0; }
     virtual void destroyImageCHROMIUM(WGC3Duint imageId) { }
     virtual void getImageParameterivCHROMIUM(WGC3Duint imageId, WGC3Denum pname, WGC3Dint* params) { }
-    virtual void* mapImageCHROMIUM(WGC3Duint imageId, WGC3Denum access) { return 0; }
+    virtual void* mapImageCHROMIUM(WGC3Duint imageId) { return 0; }
     virtual void unmapImageCHROMIUM(WGC3Duint imageId) { }
 
     // GL_ANGLE_instanced_arrays
     virtual void drawArraysInstancedANGLE(WGC3Denum mode, WGC3Dint first, WGC3Dsizei count, WGC3Dsizei primcount) { }
     virtual void drawElementsInstancedANGLE(WGC3Denum mode, WGC3Dsizei count, WGC3Denum type, WGC3Dintptr offset, WGC3Dsizei primcount) { }
     virtual void vertexAttribDivisorANGLE(WGC3Duint index, WGC3Duint divisor) { }
+
+    // GL_EXT_multisampled_render_to_texture
+    virtual void framebufferTexture2DMultisampleEXT(WGC3Denum target, WGC3Denum attachment, WGC3Denum textarget, WebGLId texture, WGC3Dint level, WGC3Dsizei samples) { }
+    virtual void renderbufferStorageMultisampleEXT(WGC3Denum target, WGC3Dsizei samples, WGC3Denum internalformat, WGC3Dsizei width, WGC3Dsizei height) { };
 };
 
 } // namespace blink

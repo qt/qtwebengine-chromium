@@ -25,9 +25,9 @@
 #include "config.h"
 #include "core/dom/DOMImplementation.h"
 
-#include "HTMLNames.h"
-#include "SVGNames.h"
 #include "bindings/v8/ExceptionState.h"
+#include "core/HTMLNames.h"
+#include "core/SVGNames.h"
 #include "core/css/CSSStyleSheet.h"
 #include "core/css/MediaList.h"
 #include "core/css/StyleSheetContents.h"
@@ -36,7 +36,10 @@
 #include "core/dom/DocumentType.h"
 #include "core/dom/Element.h"
 #include "core/dom/ExceptionCode.h"
+#include "core/dom/XMLDocument.h"
 #include "core/dom/custom/CustomElementRegistrationContext.h"
+#include "core/frame/LocalFrame.h"
+#include "core/frame/UseCounter.h"
 #include "core/html/HTMLDocument.h"
 #include "core/html/HTMLMediaElement.h"
 #include "core/html/HTMLViewSourceDocument.h"
@@ -45,9 +48,7 @@
 #include "core/html/PluginDocument.h"
 #include "core/html/TextDocument.h"
 #include "core/loader/FrameLoader.h"
-#include "core/frame/Frame.h"
 #include "core/page/Page.h"
-#include "core/svg/SVGDocument.h"
 #include "platform/ContentType.h"
 #include "platform/MIMETypeRegistry.h"
 #include "platform/graphics/Image.h"
@@ -132,7 +133,7 @@ static bool isSupportedSVG11Feature(const String& feature, const String& version
         addString(svgFeatures, "GraphicsAttribute");
         addString(svgFeatures, "BaseGraphicsAttribute");
         addString(svgFeatures, "Marker");
-//      addString(svgFeatures, "ColorProfile"); // requires color-profile, bug 6037
+//      addString(svgFeatures, "ColorProfile");
         addString(svgFeatures, "Gradient");
         addString(svgFeatures, "Pattern");
         addString(svgFeatures, "Clip");
@@ -146,7 +147,6 @@ static bool isSupportedSVG11Feature(const String& feature, const String& version
         addString(svgFeatures, "Cursor");
         addString(svgFeatures, "Hyperlinking");
         addString(svgFeatures, "XlinkAttribute");
-        addString(svgFeatures, "ExternalResourcesRequired");
         addString(svgFeatures, "View");
         addString(svgFeatures, "Script");
         addString(svgFeatures, "Animation");
@@ -178,42 +178,46 @@ bool DOMImplementation::hasFeature(const String& feature, const String& version)
     return true;
 }
 
-PassRefPtr<DocumentType> DOMImplementation::createDocumentType(const AtomicString& qualifiedName,
+bool DOMImplementation::hasFeatureForBindings(const String& feature, const String& version)
+{
+    if (!hasFeature(feature, version)) {
+        UseCounter::count(m_document, UseCounter::DOMImplementationHasFeatureReturnFalse);
+        return false;
+    }
+    return true;
+}
+
+PassRefPtrWillBeRawPtr<DocumentType> DOMImplementation::createDocumentType(const AtomicString& qualifiedName,
     const String& publicId, const String& systemId, ExceptionState& exceptionState)
 {
     AtomicString prefix, localName;
     if (!Document::parseQualifiedName(qualifiedName, prefix, localName, exceptionState))
-        return 0;
+        return nullptr;
 
-    return DocumentType::create(&m_document, qualifiedName, publicId, systemId);
+    return DocumentType::create(m_document, qualifiedName, publicId, systemId);
 }
 
-DOMImplementation* DOMImplementation::getInterface(const String& /*feature*/)
-{
-    return 0;
-}
-
-PassRefPtr<Document> DOMImplementation::createDocument(const AtomicString& namespaceURI,
+PassRefPtrWillBeRawPtr<XMLDocument> DOMImplementation::createDocument(const AtomicString& namespaceURI,
     const AtomicString& qualifiedName, DocumentType* doctype, ExceptionState& exceptionState)
 {
-    RefPtr<Document> doc;
-    DocumentInit init = DocumentInit::fromContext(m_document.contextDocument());
+    RefPtrWillBeRawPtr<XMLDocument> doc = nullptr;
+    DocumentInit init = DocumentInit::fromContext(document().contextDocument());
     if (namespaceURI == SVGNames::svgNamespaceURI) {
-        doc = SVGDocument::create(init);
+        doc = XMLDocument::createSVG(init);
     } else if (namespaceURI == HTMLNames::xhtmlNamespaceURI) {
-        doc = Document::createXHTML(init.withRegistrationContext(m_document.registrationContext()));
+        doc = XMLDocument::createXHTML(init.withRegistrationContext(document().registrationContext()));
     } else {
-        doc = Document::create(init);
+        doc = XMLDocument::create(init);
     }
 
-    doc->setSecurityOrigin(m_document.securityOrigin()->isolatedCopy());
-    doc->setContextFeatures(m_document.contextFeatures());
+    doc->setSecurityOrigin(document().securityOrigin()->isolatedCopy());
+    doc->setContextFeatures(document().contextFeatures());
 
-    RefPtr<Node> documentElement;
+    RefPtrWillBeRawPtr<Node> documentElement = nullptr;
     if (!qualifiedName.isEmpty()) {
         documentElement = doc->createElementNS(namespaceURI, qualifiedName, exceptionState);
         if (exceptionState.hadException())
-            return 0;
+            return nullptr;
     }
 
     if (doctype)
@@ -224,33 +228,21 @@ PassRefPtr<Document> DOMImplementation::createDocument(const AtomicString& names
     return doc.release();
 }
 
-PassRefPtr<CSSStyleSheet> DOMImplementation::createCSSStyleSheet(const String&, const String& media)
-{
-    // FIXME: Title should be set.
-    // FIXME: Media could have wrong syntax, in which case we should generate an exception.
-    RefPtr<CSSStyleSheet> sheet = CSSStyleSheet::create(StyleSheetContents::create());
-    sheet->setMediaQueries(MediaQuerySet::create(media));
-    return sheet;
-}
-
 bool DOMImplementation::isXMLMIMEType(const String& mimeType)
 {
-    if (mimeType == "text/xml" || mimeType == "application/xml" || mimeType == "text/xsl")
+    if (equalIgnoringCase(mimeType, "text/xml")
+        || equalIgnoringCase(mimeType, "application/xml")
+        || equalIgnoringCase(mimeType, "text/xsl"))
         return true;
 
-    // Per RFCs 3023 and 2045 a mime type is of the form:
+    // Per RFCs 3023 and 2045, an XML MIME type is of the form:
     // ^[0-9a-zA-Z_\\-+~!$\\^{}|.%'`#&*]+/[0-9a-zA-Z_\\-+~!$\\^{}|.%'`#&*]+\+xml$
 
     int length = mimeType.length();
     if (length < 7)
         return false;
 
-    if (mimeType[0] == '/' ||
-        mimeType[length - 5] == '/' ||
-        mimeType[length - 4] != '+' ||
-        mimeType[length - 3] != 'x' ||
-        mimeType[length - 2] != 'm' ||
-        mimeType[length - 1] != 'l')
+    if (mimeType[0] == '/' || mimeType[length - 5] == '/' || !mimeType.endsWith("+xml", false))
         return false;
 
     bool hasSlash = false;
@@ -294,37 +286,58 @@ bool DOMImplementation::isXMLMIMEType(const String& mimeType)
     return true;
 }
 
-bool DOMImplementation::isTextMIMEType(const String& mimeType)
+bool DOMImplementation::isJSONMIMEType(const String& mimeType)
 {
-    if (MIMETypeRegistry::isSupportedJavaScriptMIMEType(mimeType)
-        || mimeType == "application/json" // Render JSON as text/plain.
-        || (mimeType.startsWith("text/") && mimeType != "text/html"
-            && mimeType != "text/xml" && mimeType != "text/xsl"))
+    if (mimeType.startsWith("application/json", false))
         return true;
-
+    if (mimeType.startsWith("application/", false)) {
+        size_t subtype = mimeType.find("+json", 12, false);
+        if (subtype != kNotFound) {
+            // Just check that a parameter wasn't matched.
+            size_t parameterMarker = mimeType.find(";");
+            if (parameterMarker == kNotFound) {
+                unsigned endSubtype = static_cast<unsigned>(subtype) + 5;
+                return endSubtype == mimeType.length() || isASCIISpace(mimeType[endSubtype]);
+            }
+            return parameterMarker > subtype;
+        }
+    }
     return false;
 }
 
-PassRefPtr<HTMLDocument> DOMImplementation::createHTMLDocument(const String& title)
+static bool isTextPlainType(const String& mimeType)
 {
-    DocumentInit init = DocumentInit::fromContext(m_document.contextDocument())
-        .withRegistrationContext(m_document.registrationContext());
-    RefPtr<HTMLDocument> d = HTMLDocument::create(init);
+    return mimeType.startsWith("text/", false)
+        && !(equalIgnoringCase(mimeType, "text/html")
+            || equalIgnoringCase(mimeType, "text/xml")
+            || equalIgnoringCase(mimeType, "text/xsl"));
+}
+
+bool DOMImplementation::isTextMIMEType(const String& mimeType)
+{
+    return MIMETypeRegistry::isSupportedJavaScriptMIMEType(mimeType) || isJSONMIMEType(mimeType) || isTextPlainType(mimeType);
+}
+
+PassRefPtrWillBeRawPtr<HTMLDocument> DOMImplementation::createHTMLDocument(const String& title)
+{
+    DocumentInit init = DocumentInit::fromContext(document().contextDocument())
+        .withRegistrationContext(document().registrationContext());
+    RefPtrWillBeRawPtr<HTMLDocument> d = HTMLDocument::create(init);
     d->open();
     d->write("<!doctype html><html><body></body></html>");
     if (!title.isNull())
         d->setTitle(title);
-    d->setSecurityOrigin(m_document.securityOrigin()->isolatedCopy());
-    d->setContextFeatures(m_document.contextFeatures());
+    d->setSecurityOrigin(document().securityOrigin()->isolatedCopy());
+    d->setContextFeatures(document().contextFeatures());
     return d.release();
 }
 
-PassRefPtr<Document> DOMImplementation::createDocument(const String& type, Frame* frame, const KURL& url, bool inViewSourceMode)
+PassRefPtrWillBeRawPtr<Document> DOMImplementation::createDocument(const String& type, LocalFrame* frame, const KURL& url, bool inViewSourceMode)
 {
     return createDocument(type, DocumentInit(url, frame), inViewSourceMode);
 }
 
-PassRefPtr<Document> DOMImplementation::createDocument(const String& type, const DocumentInit& init, bool inViewSourceMode)
+PassRefPtrWillBeRawPtr<Document> DOMImplementation::createDocument(const String& type, const DocumentInit& init, bool inViewSourceMode)
 {
     if (inViewSourceMode)
         return HTMLViewSourceDocument::create(init, type);
@@ -333,7 +346,7 @@ PassRefPtr<Document> DOMImplementation::createDocument(const String& type, const
     if (type == "text/html")
         return HTMLDocument::create(init);
     if (type == "application/xhtml+xml")
-        return Document::createXHTML(init);
+        return XMLDocument::createXHTML(init);
 
     PluginData* pluginData = 0;
     if (init.frame() && init.frame()->page() && init.frame()->loader().allowPlugins(NotAboutToInstantiatePlugin))
@@ -358,11 +371,16 @@ PassRefPtr<Document> DOMImplementation::createDocument(const String& type, const
     if (isTextMIMEType(type))
         return TextDocument::create(init);
     if (type == "image/svg+xml")
-        return SVGDocument::create(init);
+        return XMLDocument::createSVG(init);
     if (isXMLMIMEType(type))
-        return Document::create(init);
+        return XMLDocument::create(init);
 
     return HTMLDocument::create(init);
+}
+
+void DOMImplementation::trace(Visitor* visitor)
+{
+    visitor->trace(m_document);
 }
 
 }

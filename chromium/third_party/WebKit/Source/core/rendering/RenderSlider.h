@@ -26,7 +26,6 @@
 namespace WebCore {
 
 class HTMLInputElement;
-class MouseEvent;
 class SliderThumbElement;
 
 class RenderSlider FINAL : public RenderFlexibleBox {
@@ -39,13 +38,13 @@ public:
     bool inDragMode() const;
 
 private:
-    virtual const char* renderName() const { return "RenderSlider"; }
-    virtual bool isSlider() const { return true; }
+    virtual const char* renderName() const OVERRIDE { return "RenderSlider"; }
+    virtual bool isSlider() const OVERRIDE { return true; }
 
-    virtual int baselinePosition(FontBaseline, bool firstLine, LineDirectionMode, LinePositionMode = PositionOnContainingLine) const;
+    virtual int baselinePosition(FontBaseline, bool firstLine, LineDirectionMode, LinePositionMode = PositionOnContainingLine) const OVERRIDE;
     virtual void computeIntrinsicLogicalWidths(LayoutUnit& minLogicalWidth, LayoutUnit& maxLogicalWidth) const OVERRIDE;
     virtual void computePreferredLogicalWidths() OVERRIDE;
-    virtual void layout();
+    virtual void layout() OVERRIDE;
 
     SliderThumbElement* sliderThumbElement() const;
 };

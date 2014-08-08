@@ -24,6 +24,8 @@ std::string FontToString(const gfx::Font& font) {
     font_string += "|bold";
   if (style & gfx::Font::ITALIC)
     font_string += "|italic";
+  if (style & gfx::Font::UNDERLINE)
+    font_string += "|underline";
   return font_string;
 }
 
@@ -43,9 +45,10 @@ TEST(FontListTest, FontDescString_FromFontNamesStyleAndSize) {
   std::vector<std::string> font_names;
   font_names.push_back("Arial");
   font_names.push_back("Droid Sans serif");
-  int font_style = Font::BOLD | Font::ITALIC;
+  int font_style = Font::BOLD | Font::ITALIC | Font::UNDERLINE;
   int font_size = 11;
   FontList font_list = FontList(font_names, font_style, font_size);
+  // "Underline" doesn't appear in the font description string.
   EXPECT_EQ("Arial,Droid Sans serif,Bold Italic 11px",
             font_list.GetFontDescriptionString());
 }
@@ -60,11 +63,15 @@ TEST(FontListTest, FontDescString_FromFont) {
 TEST(FontListTest, FontDescString_FromFontWithNonNormalStyle) {
   // Test init from Font with non-normal style.
   Font font("Arial", 8);
-  FontList font_list = FontList(font.DeriveFont(2, Font::BOLD));
+  FontList font_list = FontList(font.Derive(2, Font::BOLD));
   EXPECT_EQ("Arial,Bold 10px", font_list.GetFontDescriptionString());
 
-  font_list = FontList(font.DeriveFont(-2, Font::ITALIC));
+  font_list = FontList(font.Derive(-2, Font::ITALIC));
   EXPECT_EQ("Arial,Italic 6px", font_list.GetFontDescriptionString());
+
+  // "Underline" doesn't appear in the font description string.
+  font_list = FontList(font.Derive(-4, Font::UNDERLINE));
+  EXPECT_EQ("Arial,4px", font_list.GetFontDescriptionString());
 }
 
 TEST(FontListTest, FontDescString_FromFontVector) {
@@ -72,8 +79,8 @@ TEST(FontListTest, FontDescString_FromFontVector) {
   Font font("Arial", 8);
   Font font_1("Sans serif", 10);
   std::vector<Font> fonts;
-  fonts.push_back(font.DeriveFont(0, Font::BOLD));
-  fonts.push_back(font_1.DeriveFont(-2, Font::BOLD));
+  fonts.push_back(font.Derive(0, Font::BOLD));
+  fonts.push_back(font_1.Derive(-2, Font::BOLD));
   FontList font_list = FontList(fonts);
   EXPECT_EQ("Arial,Sans serif,Bold 8px", font_list.GetFontDescriptionString());
 }
@@ -118,12 +125,12 @@ TEST(FontListTest, Fonts_FromFont) {
 TEST(FontListTest, Fonts_FromFontWithNonNormalStyle) {
   // Test init from Font with non-normal style.
   Font font("Arial", 8);
-  FontList font_list = FontList(font.DeriveFont(2, Font::BOLD));
+  FontList font_list = FontList(font.Derive(2, Font::BOLD));
   std::vector<Font> fonts = font_list.GetFonts();
   EXPECT_EQ(1U, fonts.size());
   EXPECT_EQ("Arial|10|bold", FontToString(fonts[0]));
 
-  font_list = FontList(font.DeriveFont(-2, Font::ITALIC));
+  font_list = FontList(font.Derive(-2, Font::ITALIC));
   fonts = font_list.GetFonts();
   EXPECT_EQ(1U, fonts.size());
   EXPECT_EQ("Arial|6|italic", FontToString(fonts[0]));
@@ -134,8 +141,8 @@ TEST(FontListTest, Fonts_FromFontVector) {
   Font font("Arial", 8);
   Font font_1("Sans serif", 10);
   std::vector<Font> input_fonts;
-  input_fonts.push_back(font.DeriveFont(0, Font::BOLD));
-  input_fonts.push_back(font_1.DeriveFont(-2, Font::BOLD));
+  input_fonts.push_back(font.Derive(0, Font::BOLD));
+  input_fonts.push_back(font_1.Derive(-2, Font::BOLD));
   FontList font_list = FontList(input_fonts);
   const std::vector<Font>& fonts = font_list.GetFonts();
   EXPECT_EQ(2U, fonts.size());
@@ -161,8 +168,8 @@ TEST(FontListTest, Fonts_FontVector_RoundTrip) {
   Font font("Arial", 8);
   Font font_1("Sans serif", 10);
   std::vector<Font> input_fonts;
-  input_fonts.push_back(font.DeriveFont(0, Font::BOLD));
-  input_fonts.push_back(font_1.DeriveFont(-2, Font::BOLD));
+  input_fonts.push_back(font.Derive(0, Font::BOLD));
+  input_fonts.push_back(font_1.Derive(-2, Font::BOLD));
   FontList font_list = FontList(input_fonts);
 
   const std::string& desc_string = font_list.GetFontDescriptionString();
@@ -194,100 +201,59 @@ TEST(FontListTest, Fonts_GetStyle) {
   fonts.push_back(gfx::Font("Sans serif", 8));
   FontList font_list = FontList(fonts);
   EXPECT_EQ(Font::NORMAL, font_list.GetFontStyle());
-  fonts[0] = fonts[0].DeriveFont(0, Font::ITALIC | Font::BOLD);
-  fonts[1] = fonts[1].DeriveFont(0, Font::ITALIC | Font::BOLD);
+  fonts[0] = fonts[0].Derive(0, Font::ITALIC | Font::BOLD);
+  fonts[1] = fonts[1].Derive(0, Font::ITALIC | Font::BOLD);
   font_list = FontList(fonts);
   EXPECT_EQ(Font::ITALIC | Font::BOLD, font_list.GetFontStyle());
 }
 
-TEST(FontListTest, FontDescString_DeriveFontList) {
-  FontList font_list = FontList("Arial,Sans serif, 8px");
+TEST(FontListTest, FontDescString_Derive) {
+  FontList font_list = FontList("Arial,Sans serif,Bold Italic 8px");
 
-  FontList derived = font_list.DeriveFontList(Font::BOLD | Font::ITALIC);
-  EXPECT_EQ("Arial,Sans serif,Bold Italic 8px",
-            derived.GetFontDescriptionString());
+  FontList derived = font_list.Derive(10, Font::ITALIC | Font::UNDERLINE);
+  EXPECT_EQ("Arial,Sans serif,Italic 18px", derived.GetFontDescriptionString());
+  EXPECT_EQ(Font::ITALIC | Font::UNDERLINE, derived.GetFontStyle());
+
+  // FontList has a special case for Font::UNDERLINE.  See if the handling of
+  // Font::UNDERLINE in GetFonts() is okay or not.
+  derived.GetFonts();
+  EXPECT_EQ(Font::ITALIC | Font::UNDERLINE, derived.GetFontStyle());
 }
 
-TEST(FontListTest, Fonts_DeriveFontList) {
+TEST(FontListTest, Fonts_Derive) {
   std::vector<Font> fonts;
   fonts.push_back(gfx::Font("Arial", 8));
   fonts.push_back(gfx::Font("Sans serif", 8));
   FontList font_list = FontList(fonts);
 
-  FontList derived = font_list.DeriveFontList(Font::BOLD | Font::ITALIC);
+  FontList derived = font_list.Derive(5, Font::BOLD | Font::UNDERLINE);
   const std::vector<Font>& derived_fonts = derived.GetFonts();
 
   EXPECT_EQ(2U, derived_fonts.size());
-  EXPECT_EQ("Arial|8|bold|italic", FontToString(derived_fonts[0]));
-  EXPECT_EQ("Sans serif|8|bold|italic", FontToString(derived_fonts[1]));
+  EXPECT_EQ("Arial|13|bold|underline", FontToString(derived_fonts[0]));
+  EXPECT_EQ("Sans serif|13|bold|underline", FontToString(derived_fonts[1]));
 }
 
-TEST(FontListTest, FontDescString_DeriveFontListWithSize) {
-  FontList font_list = FontList("Arial,Sans serif,Bold Italic  8px");
-
-  FontList derived = font_list.DeriveFontListWithSize(10);
-  EXPECT_EQ("Arial,Sans serif,Bold Italic 10px",
-            derived.GetFontDescriptionString());
-}
-
-TEST(FontListTest, Fonts_DeriveFontListWithSize) {
-  std::vector<Font> fonts;
-  fonts.push_back(gfx::Font("Arial", 8));
-  fonts.push_back(gfx::Font("Sans serif", 8));
-  FontList font_list = FontList(fonts);
-
-  FontList derived = font_list.DeriveFontListWithSize(5);
-  const std::vector<Font>& derived_fonts = derived.GetFonts();
-
-  EXPECT_EQ(2U, derived_fonts.size());
-  EXPECT_EQ("Arial|5", FontToString(derived_fonts[0]));
-  EXPECT_EQ("Sans serif|5", FontToString(derived_fonts[1]));
-}
-
-TEST(FontListTest, FontDescString_DeriveFontListWithSizeDelta) {
+TEST(FontListTest, FontDescString_DeriveWithSizeDelta) {
   FontList font_list = FontList("Arial,Sans serif,Bold 18px");
 
-  FontList derived = font_list.DeriveFontListWithSizeDelta(-8);
+  FontList derived = font_list.DeriveWithSizeDelta(-8);
   EXPECT_EQ("Arial,Sans serif,Bold 10px",
             derived.GetFontDescriptionString());
 }
 
-TEST(FontListTest, Fonts_DeriveFontListWithSizeDelta) {
+TEST(FontListTest, Fonts_DeriveWithSizeDelta) {
   std::vector<Font> fonts;
-  fonts.push_back(gfx::Font("Arial", 18).DeriveFont(0, Font::ITALIC));
-  fonts.push_back(gfx::Font("Sans serif", 18).DeriveFont(0, Font::ITALIC));
+  fonts.push_back(gfx::Font("Arial", 18).Derive(0, Font::ITALIC));
+  fonts.push_back(gfx::Font("Sans serif", 18).Derive(0, Font::ITALIC));
   FontList font_list = FontList(fonts);
 
-  FontList derived = font_list.DeriveFontListWithSizeDelta(-5);
+  FontList derived = font_list.DeriveWithSizeDelta(-5);
   const std::vector<Font>& derived_fonts = derived.GetFonts();
 
   EXPECT_EQ(2U, derived_fonts.size());
   EXPECT_EQ("Arial|13|italic", FontToString(derived_fonts[0]));
   EXPECT_EQ("Sans serif|13|italic", FontToString(derived_fonts[1]));
-}
-
-TEST(FontListTest, FontDescString_DeriveFontListWithSizeDeltaAndStyle) {
-  FontList font_list = FontList("Arial,Sans serif,Bold Italic  8px");
-
-  FontList derived =
-      font_list.DeriveFontListWithSizeDeltaAndStyle(10, Font::ITALIC);
-  EXPECT_EQ("Arial,Sans serif,Italic 18px",
-            derived.GetFontDescriptionString());
-}
-
-TEST(FontListTest, Fonts_DeriveFontListWithSizeDeltaAndStyle) {
-  std::vector<Font> fonts;
-  fonts.push_back(gfx::Font("Arial", 8));
-  fonts.push_back(gfx::Font("Sans serif", 8));
-  FontList font_list = FontList(fonts);
-
-  FontList derived =
-      font_list.DeriveFontListWithSizeDeltaAndStyle(5, Font::BOLD);
-  const std::vector<Font>& derived_fonts = derived.GetFonts();
-
-  EXPECT_EQ(2U, derived_fonts.size());
-  EXPECT_EQ("Arial|13|bold", FontToString(derived_fonts[0]));
-  EXPECT_EQ("Sans serif|13|bold", FontToString(derived_fonts[1]));
 }
 
 TEST(FontListTest, Fonts_GetHeight_GetBaseline) {

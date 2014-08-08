@@ -22,8 +22,8 @@
       'type': 'static_library',
       'product_name': 'jtl_compiler',
       'dependencies': [
-        '../../../base/base.gyp:base',
         '../../../third_party/re2/re2.gyp:re2',
+        '../../../base/base.gyp:base',
       ],
       'sources': [
         '../../browser/profile_resetter/jtl_foundation.h',

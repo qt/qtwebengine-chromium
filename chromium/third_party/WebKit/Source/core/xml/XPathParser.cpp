@@ -29,6 +29,7 @@
 #include "core/xml/XPathParser.h"
 
 #include "bindings/v8/ExceptionState.h"
+#include "core/XPathGrammar.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/xml/XPathEvaluator.h"
 #include "core/xml/XPathNSResolver.h"
@@ -41,9 +42,6 @@ using namespace WTF;
 using namespace Unicode;
 using namespace XPath;
 
-extern int xpathyyparse(WebCore::XPath::Parser*);
-#include "XPathGrammar.h"
-
 Parser* Parser::currentParser = 0;
 
 enum XMLCat { NameStart, NameCont, NotPartOfName };
@@ -52,7 +50,7 @@ typedef HashMap<String, Step::Axis> AxisNamesMap;
 
 static XMLCat charCat(UChar aChar)
 {
-    //### might need to add some special cases from the XML spec.
+    // might need to add some special cases from the XML spec.
 
     if (aChar == '_')
         return NameStart;
@@ -208,7 +206,8 @@ Token Parser::lexNumber()
     // Go until end or a non-digits character.
     for (; m_nextPos < m_data.length(); ++m_nextPos) {
         UChar aChar = m_data[m_nextPos];
-        if (aChar >= 0xff) break;
+        if (aChar >= 0xff)
+            break;
 
         if (aChar < '0' || aChar > '9') {
             if (aChar == '.' && !seenDot)
@@ -231,9 +230,10 @@ bool Parser::lexNCName(String& name)
         return false;
 
     // Keep going until we get a character that's not good for names.
-    for (; m_nextPos < m_data.length(); ++m_nextPos)
+    for (; m_nextPos < m_data.length(); ++m_nextPos) {
         if (charCat(m_data[m_nextPos]) == NotPartOfName)
             break;
+    }
 
     name = m_data.substring(startPos, m_nextPos - startPos);
     return true;
@@ -297,19 +297,19 @@ Token Parser::nextTokenInternal()
     case '-':
         return makeTokenAndAdvance(MINUS);
     case '=':
-        return makeTokenAndAdvance(EQOP, EqTestOp::OP_EQ);
+        return makeTokenAndAdvance(EQOP, EqTestOp::OpcodeEqual);
     case '!':
         if (peekAheadHelper() == '=')
-            return makeTokenAndAdvance(EQOP, EqTestOp::OP_NE, 2);
+            return makeTokenAndAdvance(EQOP, EqTestOp::OpcodeNotEqual, 2);
         return Token(XPATH_ERROR);
     case '<':
         if (peekAheadHelper() == '=')
-            return makeTokenAndAdvance(RELOP, EqTestOp::OP_LE, 2);
-        return makeTokenAndAdvance(RELOP, EqTestOp::OP_LT);
+            return makeTokenAndAdvance(RELOP, EqTestOp::OpcodeLessOrEqual, 2);
+        return makeTokenAndAdvance(RELOP, EqTestOp::OpcodeLessThan);
     case '>':
         if (peekAheadHelper() == '=')
-            return makeTokenAndAdvance(RELOP, EqTestOp::OP_GE, 2);
-        return makeTokenAndAdvance(RELOP, EqTestOp::OP_GT);
+            return makeTokenAndAdvance(RELOP, EqTestOp::OpcodeGreaterOrEqual, 2);
+        return makeTokenAndAdvance(RELOP, EqTestOp::OpcodeGreaterThan);
     case '*':
         if (isBinaryOperatorContext())
             return makeTokenAndAdvance(MULOP, NumericOp::OP_Mul);
@@ -331,7 +331,7 @@ Token Parser::nextTokenInternal()
     skipWS();
     // If we're in an operator context, check for any operator names
     if (isBinaryOperatorContext()) {
-        if (name == "and") //### hash?
+        if (name == "and") // ### hash?
             return Token(AND);
         if (name == "or")
             return Token(OR);
@@ -348,7 +348,7 @@ Token Parser::nextTokenInternal()
         if (peekCurHelper() == ':') {
             m_nextPos++;
 
-            //It might be an axis name.
+            // It might be an axis name.
             Step::Axis axis;
             if (isAxisName(name, axis))
                 return Token(AXISNAME, axis);
@@ -356,7 +356,8 @@ Token Parser::nextTokenInternal()
             return Token(XPATH_ERROR);
         }
 
-        // Seems like this is a fully qualified qname, or perhaps the * modified one from NameTest
+        // Seems like this is a fully qualified qname, or perhaps the * modified
+        // one from NameTest
         skipWS();
         if (peekCurHelper() == '*') {
             m_nextPos++;
@@ -373,16 +374,16 @@ Token Parser::nextTokenInternal()
 
     skipWS();
     if (peekCurHelper() == '(') {
-        //note: we don't swallow the (here!
+        // Note: we don't swallow the ( here!
 
-        //either node type of function name
+        // Either node type of function name
         if (isNodeTypeName(name)) {
             if (name == "processing-instruction")
                 return Token(PI, name);
 
             return Token(NODETYPE, name);
         }
-        //must be a function name.
+        // Must be a function name.
         return Token(FUNCTIONNAME, name);
     }
 
@@ -412,7 +413,7 @@ void Parser::reset(const String& data)
     m_data = data;
     m_lastTokenType = 0;
 
-    m_topExpr = 0;
+    m_topExpr = nullptr;
     m_gotNamespaceError = false;
 }
 
@@ -464,7 +465,7 @@ bool Parser::expandQName(const String& qName, AtomicString& localName, AtomicStr
     return true;
 }
 
-Expression* Parser::parseStatement(const String& statement, PassRefPtr<XPathNSResolver> resolver, ExceptionState& exceptionState)
+PassOwnPtrWillBeRawPtr<Expression> Parser::parseStatement(const String& statement, PassRefPtrWillBeRawPtr<XPathNSResolver> resolver, ExceptionState& exceptionState)
 {
     reset(statement);
 
@@ -476,8 +477,9 @@ Expression* Parser::parseStatement(const String& statement, PassRefPtr<XPathNSRe
     currentParser = oldParser;
 
     if (parseError) {
-        deleteAllValues(m_parseNodes);
-        m_parseNodes.clear();
+#if !ENABLE(OILPAN)
+        while (!m_parseNodes.isEmpty())
+            delete m_parseNodes.takeAny();
 
         HashSet<Vector<OwnPtr<Predicate> >*>::iterator pend = m_predicateVectors.end();
         for (HashSet<Vector<OwnPtr<Predicate> >*>::iterator it = m_predicateVectors.begin(); it != pend; ++it)
@@ -489,67 +491,74 @@ Expression* Parser::parseStatement(const String& statement, PassRefPtr<XPathNSRe
             delete *it;
         m_expressionVectors.clear();
 
-        deleteAllValues(m_strings);
+        m_nodeTests.clear();
+#endif
+
         m_strings.clear();
 
-        deleteAllValues(m_nodeTests);
-        m_nodeTests.clear();
-
-        m_topExpr = 0;
+        m_topExpr = nullptr;
 
         if (m_gotNamespaceError)
             exceptionState.throwDOMException(NamespaceError, "The string '" + statement + "' contains unresolvable namespaces.");
         else
             exceptionState.throwDOMException(SyntaxError, "The string '" + statement + "' is not a valid XPath expression.");
-        return 0;
+        return nullptr;
     }
-
+    ASSERT(m_strings.size() == 0);
+#if !ENABLE(OILPAN)
     ASSERT(m_parseNodes.size() == 1);
     ASSERT(*m_parseNodes.begin() == m_topExpr);
     ASSERT(m_expressionVectors.size() == 0);
     ASSERT(m_predicateVectors.size() == 0);
-    ASSERT(m_strings.size() == 0);
     ASSERT(m_nodeTests.size() == 0);
-
     m_parseNodes.clear();
-    Expression* result = m_topExpr;
-    m_topExpr = 0;
+#endif
 
-    return result;
+    Expression* result = m_topExpr;
+    m_topExpr = nullptr;
+
+    return adoptPtrWillBeNoop(result);
 }
 
 void Parser::registerParseNode(ParseNode* node)
 {
+#if !ENABLE(OILPAN)
     if (node == 0)
         return;
 
     ASSERT(!m_parseNodes.contains(node));
 
     m_parseNodes.add(node);
+#endif
 }
 
 void Parser::unregisterParseNode(ParseNode* node)
 {
+#if !ENABLE(OILPAN)
     if (node == 0)
         return;
 
     ASSERT(m_parseNodes.contains(node));
 
     m_parseNodes.remove(node);
+#endif
 }
 
-void Parser::registerPredicateVector(Vector<OwnPtr<Predicate> >* vector)
+void Parser::registerPredicateVector(WillBeHeapVector<OwnPtrWillBeMember<Predicate> >* vector)
 {
+#if !ENABLE(OILPAN)
     if (vector == 0)
         return;
 
     ASSERT(!m_predicateVectors.contains(vector));
 
     m_predicateVectors.add(vector);
+#endif
 }
 
-void Parser::deletePredicateVector(Vector<OwnPtr<Predicate> >* vector)
+void Parser::deletePredicateVector(WillBeHeapVector<OwnPtrWillBeMember<Predicate> >* vector)
 {
+#if !ENABLE(OILPAN)
     if (vector == 0)
         return;
 
@@ -557,21 +566,25 @@ void Parser::deletePredicateVector(Vector<OwnPtr<Predicate> >* vector)
 
     m_predicateVectors.remove(vector);
     delete vector;
+#endif
 }
 
 
-void Parser::registerExpressionVector(Vector<OwnPtr<Expression> >* vector)
+void Parser::registerExpressionVector(WillBeHeapVector<OwnPtrWillBeMember<Expression> >* vector)
 {
+#if !ENABLE(OILPAN)
     if (vector == 0)
         return;
 
     ASSERT(!m_expressionVectors.contains(vector));
 
     m_expressionVectors.add(vector);
+#endif
 }
 
-void Parser::deleteExpressionVector(Vector<OwnPtr<Expression> >* vector)
+void Parser::deleteExpressionVector(WillBeHeapVector<OwnPtrWillBeMember<Expression> >* vector)
 {
+#if !ENABLE(OILPAN)
     if (vector == 0)
         return;
 
@@ -579,6 +592,7 @@ void Parser::deleteExpressionVector(Vector<OwnPtr<Expression> >* vector)
 
     m_expressionVectors.remove(vector);
     delete vector;
+#endif
 }
 
 void Parser::registerString(String* s)
@@ -588,7 +602,7 @@ void Parser::registerString(String* s)
 
     ASSERT(!m_strings.contains(s));
 
-    m_strings.add(s);
+    m_strings.add(adoptPtr(s));
 }
 
 void Parser::deleteString(String* s)
@@ -599,27 +613,29 @@ void Parser::deleteString(String* s)
     ASSERT(m_strings.contains(s));
 
     m_strings.remove(s);
-    delete s;
 }
 
 void Parser::registerNodeTest(Step::NodeTest* t)
 {
+#if !ENABLE(OILPAN)
     if (t == 0)
         return;
 
     ASSERT(!m_nodeTests.contains(t));
 
-    m_nodeTests.add(t);
+    m_nodeTests.add(adoptPtr(t));
+#endif
 }
 
 void Parser::deleteNodeTest(Step::NodeTest* t)
 {
+#if !ENABLE(OILPAN)
     if (t == 0)
         return;
 
     ASSERT(m_nodeTests.contains(t));
 
     m_nodeTests.remove(t);
-    delete t;
+#endif
 }
 

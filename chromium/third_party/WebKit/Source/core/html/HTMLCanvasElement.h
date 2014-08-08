@@ -28,15 +28,22 @@
 #ifndef HTMLCanvasElement_h
 #define HTMLCanvasElement_h
 
+#include "core/dom/Document.h"
 #include "core/html/HTMLElement.h"
+#include "core/html/canvas/CanvasImageSource.h"
 #include "platform/geometry/FloatRect.h"
 #include "platform/geometry/IntSize.h"
+#include "platform/graphics/Canvas2DLayerBridge.h"
+#include "platform/graphics/GraphicsTypes.h"
+#include "platform/graphics/ImageBufferClient.h"
+#include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
 
-#define DefaultInterpolationQuality InterpolationMedium
+#define CanvasDefaultInterpolationQuality InterpolationLow
 
 namespace WebCore {
 
+class AffineTransform;
 class CanvasContextAttributes;
 class CanvasRenderingContext;
 class GraphicsContext;
@@ -48,18 +55,22 @@ class ImageBuffer;
 class ImageBufferSurface;
 class IntSize;
 
-class CanvasObserver {
+class CanvasObserver : public WillBeGarbageCollectedMixin {
+    DECLARE_EMPTY_VIRTUAL_DESTRUCTOR_WILL_BE_REMOVED(CanvasObserver);
 public:
-    virtual ~CanvasObserver() { }
-
     virtual void canvasChanged(HTMLCanvasElement*, const FloatRect& changedRect) = 0;
     virtual void canvasResized(HTMLCanvasElement*) = 0;
+#if !ENABLE(OILPAN)
     virtual void canvasDestroyed(HTMLCanvasElement*) = 0;
+#endif
+
+    virtual void trace(Visitor*) { }
 };
 
-class HTMLCanvasElement FINAL : public HTMLElement {
+class HTMLCanvasElement FINAL : public HTMLElement, public DocumentVisibilityObserver, public CanvasImageSource, public ImageBufferClient {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(HTMLCanvasElement);
 public:
-    static PassRefPtr<HTMLCanvasElement> create(Document&);
+    DECLARE_NODE_FACTORY(HTMLCanvasElement);
     virtual ~HTMLCanvasElement();
 
     void addObserver(CanvasObserver*);
@@ -90,14 +101,14 @@ public:
     CanvasRenderingContext* getContext(const String&, CanvasContextAttributes* attributes = 0);
 
     static String toEncodingMimeType(const String& mimeType);
-    String toDataURL(const String& mimeType, const double* quality, ExceptionState&);
-    String toDataURL(const String& mimeType, ExceptionState& exceptionState) { return toDataURL(mimeType, 0, exceptionState); }
+    String toDataURL(const String& mimeType, const double* quality, ExceptionState&) const;
+    String toDataURL(const String& mimeType, ExceptionState& exceptionState) const { return toDataURL(mimeType, 0, exceptionState); }
 
     // Used for rendering
     void didDraw(const FloatRect&);
     void notifyObserversCanvasChanged(const FloatRect&);
 
-    void paint(GraphicsContext*, const LayoutRect&, bool useLowQualityScale = false);
+    void paint(GraphicsContext*, const LayoutRect&);
 
     GraphicsContext* drawingContext() const;
     GraphicsContext* existingDrawingContext() const;
@@ -108,56 +119,77 @@ public:
     ImageBuffer* buffer() const;
     Image* copiedImage() const;
     void clearCopiedImage();
-    PassRefPtr<ImageData> getImageData();
+    PassRefPtrWillBeRawPtr<ImageData> getImageData() const;
     void makePresentationCopy();
     void clearPresentationCopy();
 
     SecurityOrigin* securityOrigin() const;
-    void setOriginTainted() { m_originClean = false; }
     bool originClean() const { return m_originClean; }
+    void setOriginTainted() { m_originClean = false; }
 
     AffineTransform baseTransform() const;
 
     bool is3D() const;
 
-    bool hasImageBuffer() const { return m_imageBuffer.get(); }
+    bool hasImageBuffer() const { return m_imageBuffer; }
+    bool hasValidImageBuffer() const;
+    void discardImageBuffer();
 
     bool shouldAccelerate(const IntSize&) const;
 
-    InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
+    virtual const AtomicString imageSourceURL() const OVERRIDE;
+
+    virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
+
+    // DocumentVisibilityObserver implementation
+    virtual void didChangeVisibilityState(PageVisibilityState) OVERRIDE;
+
+    // CanvasImageSource implementation
+    virtual PassRefPtr<Image> getSourceImageForCanvas(SourceImageMode, SourceImageStatus*) const OVERRIDE;
+    virtual bool wouldTaintOrigin(SecurityOrigin*) const OVERRIDE;
+    virtual FloatSize sourceSize() const OVERRIDE;
+
+    // ImageBufferClient implementation
+    virtual void notifySurfaceInvalid() OVERRIDE;
+
+    virtual void trace(Visitor*) OVERRIDE;
+
+protected:
+    virtual void didMoveToNewDocument(Document& oldDocument) OVERRIDE;
 
 private:
     explicit HTMLCanvasElement(Document&);
 
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual RenderObject* createRenderer(RenderStyle*);
+    virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
     virtual bool areAuthorShadowsAllowed() const OVERRIDE { return false; }
 
     void reset();
 
     PassOwnPtr<ImageBufferSurface> createImageBufferSurface(const IntSize& deviceSize, int* msaaSampleCount);
     void createImageBuffer();
+    void createImageBufferInternal();
     void clearImageBuffer();
 
     void setSurfaceSize(const IntSize&);
 
     bool paintsIntoCanvasBuffer() const;
 
-    void setExternallyAllocatedMemory(intptr_t);
+    void updateExternallyAllocatedMemory() const;
 
-    HashSet<CanvasObserver*> m_observers;
+    String toDataURLInternal(const String& mimeType, const double* quality, bool isSaving = false) const;
+
+    WillBeHeapHashSet<RawPtrWillBeWeakMember<CanvasObserver> > m_observers;
 
     IntSize m_size;
 
-    OwnPtr<CanvasRenderingContext> m_context;
-
-    bool m_rendererIsCanvas;
+    OwnPtrWillBeMember<CanvasRenderingContext> m_context;
 
     bool m_ignoreReset;
     bool m_accelerationDisabled;
     FloatRect m_dirtyRect;
 
-    intptr_t m_externallyAllocatedMemory;
+    mutable intptr_t m_externallyAllocatedMemory;
 
     bool m_originClean;
 
@@ -171,8 +203,6 @@ private:
     mutable RefPtr<Image> m_presentedImage;
     mutable RefPtr<Image> m_copiedImage; // FIXME: This is temporary for platforms that have to copy the image buffer to render (and for CSSCanvasValue).
 };
-
-DEFINE_NODE_TYPE_CASTS(HTMLCanvasElement, hasTagName(HTMLNames::canvasTag));
 
 } //namespace
 

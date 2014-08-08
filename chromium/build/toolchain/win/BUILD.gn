@@ -2,26 +2,22 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/config/win/visual_studio_version.gni")
+import("//build/toolchain/goma.gni")
+
 # Should only be running on Windows.
 assert(is_win)
 
 # Setup the Visual Studio state.
 #
-# Its argument is the location to write the environment files.
-# It will write "environment.x86" and "environment.x64" to this directory,
-# and return a list to us.
-#
-# The list contains the include path as its only element. (I'm expecting to
-# add more so it's currently a list inside a list.)
-#exec_script("get_msvc_config.py",
-                     #     [relative_root_output_dir],
-                     #     "value")
-
-# This will save the environment block and and copy the gyp-win-tool to the
-# build directory. We pass in the source file of the win tool.
-gyp_win_tool_source =
-  rebase_path("//tools/gyp/pylib/gyp/win_tool.py", ".", root_build_dir)
-exec_script("setup_toolchain.py", [ gyp_win_tool_source ], "value")
+# Its arguments are the VS path and the compiler wrapper tool. It will write
+# "environment.x86" and "environment.x64" to the build directory and return a
+# list to us.
+gyp_win_tool_path = rebase_path("//tools/gyp/pylib/gyp/win_tool.py",
+                                root_build_dir)
+exec_script("setup_toolchain.py",
+            [ visual_studio_path, gyp_win_tool_path, windows_sdk_path ],
+            "string")
 
 stamp_command = "$python_path gyp-win-tool stamp \$out"
 copy_command = "$python_path gyp-win-tool recursive-mirror \$in \$out"
@@ -57,20 +53,20 @@ toolchain("32") {
     description = "ASM \$in"
   }
   tool("alink") {
-    command = "$python_path gyp-win-tool link-wrapper environment.x86 lib.exe /nologo /ignore:4221 /OUT:\$out @\$out.rsp"
+    command = "$python_path gyp-win-tool link-wrapper environment.x86 False lib.exe /nologo /ignore:4221 /OUT:\$out @\$out.rsp"
     description = "LIB \$out"
     rspfile = "\$out.rsp"
     rspfile_content = "\$in_newline \$libflags"
   }
   tool("solink") {
-    command = "cmd /c $python_path gyp-win-tool link-wrapper environment.x86 link.exe /nologo \$implibflag /DLL /OUT:\$dll /PDB:\$dll.pdb @\$dll.rsp && $python_path gyp-win-tool manifest-wrapper environment.x86 cmd /c if exist \$dll.manifest del \$dll.manifest && $python_path gyp-win-tool manifest-wrapper environment.x86 mt.exe -nologo -manifest \$manifests -out:\$dll.manifest"
+    command = "cmd /c $python_path gyp-win-tool link-wrapper environment.x86 False link.exe /nologo \$implibflag /DLL /OUT:\$dll /PDB:\$dll.pdb @\$dll.rsp && $python_path gyp-win-tool manifest-wrapper environment.x86 mt.exe -nologo -manifest \$manifests -out:\$dll.manifest"
     description = "LINK(DLL) \$dll"
     restat = "1"
     rspfile = "\$dll.rsp"
     rspfile_content = "\$libs \$in_newline \$ldflags"
   }
   tool("link") {
-    command = "cmd /c $python_path gyp-win-tool link-wrapper environment.x86 link.exe /nologo /OUT:\$out /PDB:\$out.pdb @\$out.rsp && $python_path gyp-win-tool manifest-wrapper environment.x86 cmd /c if exist \$out.manifest del \$out.manifest && $python_path gyp-win-tool manifest-wrapper environment.x86 mt.exe -nologo -manifest \$manifests -out:\$out.manifest"
+    command = "cmd /c $python_path gyp-win-tool link-wrapper environment.x86 False link.exe /nologo /OUT:\$out /PDB:\$out.pdb @\$out.rsp && $python_path gyp-win-tool manifest-wrapper environment.x86 mt.exe -nologo -manifest \$manifests -out:\$out.manifest"
     description = "LINK \$out"
     rspfile = "\$out.rsp"
     rspfile_content = "\$in_newline \$libs \$ldflags"
@@ -116,20 +112,20 @@ toolchain("64") {
     description = "ASM \$in"
   }
   tool("alink") {
-    command = "$python_path gyp-win-tool link-wrapper environment.x64 lib.exe /nologo /ignore:4221 /OUT:\$out @\$out.rsp"
+    command = "$python_path gyp-win-tool link-wrapper environment.x64 False lib.exe /nologo /ignore:4221 /OUT:\$out @\$out.rsp"
     description = "LIB \$out"
     rspfile = "\$out.rsp"
     rspfile_content = "\$in_newline \$libflags"
   }
   tool("solink") {
-    command = "cmd /c $python_path gyp-win-tool link-wrapper environment.x64 link.exe /nologo \$implibflag /DLL /OUT:\$dll /PDB:\$dll.pdb @\$dll.rsp && $python_path gyp-win-tool manifest-wrapper environment.x64 cmd /c if exist \$dll.manifest del \$dll.manifest && $python_path gyp-win-tool manifest-wrapper environment.x64 mt.exe -nologo -manifest \$manifests -out:\$dll.manifest"
+    command = "cmd /c $python_path gyp-win-tool link-wrapper environment.x64 False link.exe /nologo \$implibflag /DLL /OUT:\$dll /PDB:\$dll.pdb @\$dll.rsp && $python_path gyp-win-tool manifest-wrapper environment.x64 mt.exe -nologo -manifest \$manifests -out:\$dll.manifest"
     description = "LINK(DLL) \$dll"
     restat = "1"
     rspfile = "\$dll.rsp"
     rspfile_content = "\$libs \$in_newline \$ldflags"
   }
   tool("link") {
-    command = "cmd /c $python_path gyp-win-tool link-wrapper environment.x64 link.exe /nologo /OUT:\$out /PDB:\$out.pdb @\$out.rsp && $python_path gyp-win-tool manifest-wrapper environment.x64 cmd /c if exist \$out.manifest del \$out.manifest && $python_path gyp-win-tool manifest-wrapper environment.x64 mt.exe -nologo -manifest \$manifests -out:\$out.manifest"
+    command = "cmd /c $python_path gyp-win-tool link-wrapper environment.x64 False link.exe /nologo /OUT:\$out /PDB:\$out.pdb @\$out.rsp && $python_path gyp-win-tool manifest-wrapper environment.x64 mt.exe -nologo -manifest \$manifests -out:\$out.manifest"
     description = "LINK \$out"
     rspfile = "\$out.rsp"
     rspfile_content = "\$in_newline \$libs \$ldflags"

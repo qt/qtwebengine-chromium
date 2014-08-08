@@ -31,6 +31,7 @@
 
 #include "platform/PlatformExport.h"
 #include "platform/geometry/FloatPoint.h"
+#include "platform/graphics/Color.h"
 #include "platform/graphics/GraphicsTypes.h"
 #include "platform/transforms/AffineTransform.h"
 #include "wtf/PassRefPtr.h"
@@ -42,7 +43,6 @@ class SkShader;
 
 namespace WebCore {
 
-class Color;
 class FloatRect;
 class IntSize;
 
@@ -60,18 +60,15 @@ public:
 
     struct ColorStop {
         float stop;
-        float red;
-        float green;
-        float blue;
-        float alpha;
+        Color color;
 
-        ColorStop() : stop(0), red(0), green(0), blue(0), alpha(0) { }
-        ColorStop(float s, float r, float g, float b, float a) : stop(s), red(r), green(g), blue(b), alpha(a) { }
+        ColorStop(float s, const Color& c) : stop(s), color(c) { }
     };
     void addColorStop(const ColorStop&);
-    void addColorStop(float, const Color&);
+    void addColorStop(float value, const Color& color) { addColorStop(ColorStop(value, color)); }
 
     bool hasAlpha() const;
+    bool shaderChanged() const { return !m_gradient; }
 
     bool isRadial() const { return m_radial; }
     bool isZeroSize() const { return m_p0.x() == m_p1.x() && m_p0.y() == m_p1.y() && (!m_radial || m_r0 == m_r1); }
@@ -118,8 +115,6 @@ public:
 
     SkShader* shader();
 
-    void setStopsSorted(bool s) { m_stopsSorted = s; }
-
     void setDrawsInPMColorSpace(bool drawInPMColorSpace);
 
     void setSpreadMethod(GradientSpreadMethod);
@@ -135,19 +130,17 @@ private:
 
     void sortStopsIfNecessary();
 
-    // Keep any parameters relevant to rendering in sync with the structure in Gradient::hash().
-    bool m_radial;
     FloatPoint m_p0;
     FloatPoint m_p1;
     float m_r0;
     float m_r1;
     float m_aspectRatio; // For elliptical gradient, width / height.
-    mutable Vector<ColorStop, 2> m_stops;
-    mutable bool m_stopsSorted;
+    Vector<ColorStop, 2> m_stops;
+    bool m_radial;
+    bool m_stopsSorted;
+    bool m_drawInPMColorSpace;
     GradientSpreadMethod m_spreadMethod;
     AffineTransform m_gradientSpaceTransformation;
-
-    bool m_drawInPMColorSpace;
 
     RefPtr<SkShader> m_gradient;
 };

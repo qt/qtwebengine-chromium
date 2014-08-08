@@ -12,12 +12,11 @@
 #include <unistd.h>
 
 #include "base/file_util.h"
+#include "base/files/scoped_file.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "sandbox/linux/tests/unit_tests.h"
 #include "testing/gtest/include/gtest/gtest.h"
-
-using file_util::ScopedFD;
 
 namespace sandbox {
 
@@ -58,6 +57,18 @@ TEST(Credentials, CreateAndDestroy) {
   scoped_ptr<Credentials> cred2(new Credentials);
 }
 
+TEST(Credentials, CountOpenFds) {
+  base::ScopedFD proc_fd(open("/proc", O_RDONLY | O_DIRECTORY));
+  ASSERT_TRUE(proc_fd.is_valid());
+  Credentials creds;
+  int fd_count = creds.CountOpenFds(proc_fd.get());
+  int fd = open("/dev/null", O_RDONLY);
+  ASSERT_LE(0, fd);
+  EXPECT_EQ(fd_count + 1, creds.CountOpenFds(proc_fd.get()));
+  ASSERT_EQ(0, IGNORE_EINTR(close(fd)));
+  EXPECT_EQ(fd_count, creds.CountOpenFds(proc_fd.get()));
+}
+
 TEST(Credentials, HasOpenDirectory) {
   Credentials creds;
   // No open directory should exist at startup.
@@ -65,7 +76,7 @@ TEST(Credentials, HasOpenDirectory) {
   {
     // Have a "/dev" file descriptor around.
     int dev_fd = open("/dev", O_RDONLY | O_DIRECTORY);
-    ScopedFD dev_fd_closer(&dev_fd);
+    base::ScopedFD dev_fd_closer(dev_fd);
     EXPECT_TRUE(creds.HasOpenDirectory(-1));
   }
   EXPECT_FALSE(creds.HasOpenDirectory(-1));
@@ -75,7 +86,7 @@ TEST(Credentials, HasOpenDirectoryWithFD) {
   Credentials creds;
 
   int proc_fd = open("/proc", O_RDONLY | O_DIRECTORY);
-  ScopedFD proc_fd_closer(&proc_fd);
+  base::ScopedFD proc_fd_closer(proc_fd);
   ASSERT_LE(0, proc_fd);
 
   // Don't pass |proc_fd|, an open directory (proc_fd) should
@@ -87,7 +98,7 @@ TEST(Credentials, HasOpenDirectoryWithFD) {
   {
     // Have a "/dev" file descriptor around.
     int dev_fd = open("/dev", O_RDONLY | O_DIRECTORY);
-    ScopedFD dev_fd_closer(&dev_fd);
+    base::ScopedFD dev_fd_closer(dev_fd);
     EXPECT_TRUE(creds.HasOpenDirectory(proc_fd));
   }
 
@@ -112,11 +123,12 @@ SANDBOX_TEST(Credentials, GetCurrentCapString) {
 SANDBOX_TEST(Credentials, MoveToNewUserNS) {
   Credentials creds;
   creds.DropAllCapabilities();
-  bool userns_supported = creds.MoveToNewUserNS();
-  fprintf(stdout, "Unprivileged CLONE_NEWUSER supported: %s\n",
-          userns_supported ? "true." : "false.");
+  bool moved_to_new_ns = creds.MoveToNewUserNS();
+  fprintf(stdout,
+          "Unprivileged CLONE_NEWUSER supported: %s\n",
+          moved_to_new_ns ? "true." : "false.");
   fflush(stdout);
-  if (!userns_supported) {
+  if (!moved_to_new_ns) {
     fprintf(stdout, "This kernel does not support unprivileged namespaces. "
             "USERNS tests will succeed without running.\n");
     fflush(stdout);
@@ -125,6 +137,14 @@ SANDBOX_TEST(Credentials, MoveToNewUserNS) {
   CHECK(creds.HasAnyCapability());
   creds.DropAllCapabilities();
   CHECK(!creds.HasAnyCapability());
+}
+
+SANDBOX_TEST(Credentials, SupportsUserNS) {
+  Credentials creds;
+  creds.DropAllCapabilities();
+  bool user_ns_supported = Credentials::SupportsNewUserNS();
+  bool moved_to_new_ns = creds.MoveToNewUserNS();
+  CHECK_EQ(user_ns_supported, moved_to_new_ns);
 }
 
 SANDBOX_TEST(Credentials, UidIsPreserved) {
@@ -182,7 +202,7 @@ TEST(Credentials, CanDetectRoot) {
   ASSERT_TRUE(WorkingDirectoryIsRoot());
 }
 
-SANDBOX_TEST(Credentials, DropFileSystemAccessIsSafe) {
+SANDBOX_TEST(Credentials, DISABLE_ON_LSAN(DropFileSystemAccessIsSafe)) {
   Credentials creds;
   CHECK(creds.DropAllCapabilities());
   // Probably missing kernel support.
@@ -197,7 +217,7 @@ SANDBOX_TEST(Credentials, DropFileSystemAccessIsSafe) {
 
 // Check that after dropping filesystem access and dropping privileges
 // it is not possible to regain capabilities.
-SANDBOX_TEST(Credentials, CannotRegainPrivileges) {
+SANDBOX_TEST(Credentials, DISABLE_ON_LSAN(CannotRegainPrivileges)) {
   Credentials creds;
   CHECK(creds.DropAllCapabilities());
   // Probably missing kernel support.
@@ -207,6 +227,7 @@ SANDBOX_TEST(Credentials, CannotRegainPrivileges) {
 
   // The kernel should now prevent us from regaining capabilities because we
   // are in a chroot.
+  CHECK(!Credentials::SupportsNewUserNS());
   CHECK(!creds.MoveToNewUserNS());
 }
 

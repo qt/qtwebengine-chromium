@@ -22,26 +22,30 @@
 
 #include "core/frame/DOMWindowProperty.h"
 #include "platform/Supplementable.h"
+#include "platform/heap/Handle.h"
 
 namespace WebCore {
 
-class Frame;
+class LocalFrame;
 class Geolocation;
 class Navigator;
 
-class NavigatorGeolocation : public Supplement<Navigator>, public DOMWindowProperty {
+class NavigatorGeolocation FINAL : public NoBaseWillBeGarbageCollectedFinalized<NavigatorGeolocation>, public WillBeHeapSupplement<Navigator>, public DOMWindowProperty {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(NavigatorGeolocation);
 public:
     virtual ~NavigatorGeolocation();
-    static NavigatorGeolocation* from(Navigator*);
+    static NavigatorGeolocation& from(Navigator&);
 
-    static Geolocation* geolocation(Navigator*);
+    static Geolocation* geolocation(Navigator&);
     Geolocation* geolocation() const;
 
+    void trace(Visitor*);
+
 private:
-    NavigatorGeolocation(Frame*);
+    NavigatorGeolocation(LocalFrame*);
     static const char* supplementName();
 
-    mutable RefPtr<Geolocation> m_geolocation;
+    mutable PersistentWillBeMember<Geolocation> m_geolocation;
 };
 
 } // namespace WebCore

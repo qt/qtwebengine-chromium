@@ -178,12 +178,18 @@ cr.define('options', function() {
         chrome.send('setOrientation', [this.displays_[this.focusedIndex_].id,
                                        ev.target.value]);
       }.bind(this);
+      $('display-options-color-profile-selection').onchange = function(ev) {
+        chrome.send('setColorProfile', [this.displays_[this.focusedIndex_].id,
+                                        ev.target.value]);
+      }.bind(this);
       $('selected-display-start-calibrating-overscan').onclick = function() {
         // Passes the target display ID. Do not specify it through URL hash,
         // we do not care back/forward.
         var displayOverscan = options.DisplayOverscan.getInstance();
         displayOverscan.setDisplayId(this.displays_[this.focusedIndex_].id);
         OptionsPage.navigateToPage('displayOverscan');
+        chrome.send('coreOptionsUserMetricsAction',
+                    ['Options_DisplaySetOverscan']);
       }.bind(this);
 
       chrome.send('getDisplayInfo');
@@ -627,6 +633,23 @@ cr.define('options', function() {
           resolution.appendChild(option);
         }
         resolution.disabled = (display.resolutions.length <= 1);
+      }
+
+      if (display.availableColorProfiles.length <= 1) {
+        $('selected-display-color-profile-row').hidden = true;
+      } else {
+        $('selected-display-color-profile-row').hidden = false;
+        var profiles = $('display-options-color-profile-selection');
+        profiles.innerHTML = '';
+        for (var i = 0; i < display.availableColorProfiles.length; i++) {
+          var option = document.createElement('option');
+          var colorProfile = display.availableColorProfiles[i];
+          option.value = colorProfile.profileId;
+          option.textContent = colorProfile.name;
+          option.selected = (
+              display.colorProfile == colorProfile.profileId);
+          profiles.appendChild(option);
+        }
       }
     },
 

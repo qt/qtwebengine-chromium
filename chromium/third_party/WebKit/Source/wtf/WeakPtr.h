@@ -85,9 +85,17 @@ class WeakPtr {
     WTF_MAKE_FAST_ALLOCATED;
 public:
     WeakPtr() { }
+    WeakPtr(std::nullptr_t) { }
     WeakPtr(PassRefPtr<WeakReference<T> > ref) : m_ref(ref) { }
 
     T* get() const { return m_ref ? m_ref->get() : 0; }
+    void clear() { m_ref.clear(); }
+
+    T* operator->() const
+    {
+        ASSERT(get());
+        return get();
+    }
 
     typedef RefPtr<WeakReference<T> > (WeakPtr::*UnspecifiedBoolType);
     operator UnspecifiedBoolType() const { return get() ? &WeakPtr::m_ref : 0; }
@@ -95,6 +103,16 @@ public:
 private:
     RefPtr<WeakReference<T> > m_ref;
 };
+
+template<typename T, typename U> inline bool operator==(const WeakPtr<T>& a, const WeakPtr<U>& b)
+{
+    return a.get() == b.get();
+}
+
+template<typename T, typename U> inline bool operator!=(const WeakPtr<T>& a, const WeakPtr<U>& b)
+{
+    return a.get() != b.get();
+}
 
 template<typename T>
 class WeakPtrFactory {

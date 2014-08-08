@@ -27,16 +27,15 @@
 #include "config.h"
 #include "core/dom/ContextFeatures.h"
 
-#include "RuntimeEnabledFeatures.h"
 #include "core/dom/Document.h"
 #include "core/page/Page.h"
+#include "platform/RuntimeEnabledFeatures.h"
 
 namespace WebCore {
 
-ContextFeaturesClient* ContextFeaturesClient::empty()
+PassOwnPtr<ContextFeaturesClient> ContextFeaturesClient::empty()
 {
-    DEFINE_STATIC_LOCAL(ContextFeaturesClient, empty, ());
-    return &empty;
+    return adoptPtr(new ContextFeaturesClient());
 }
 
 const char* ContextFeatures::supplementName()
@@ -46,7 +45,11 @@ const char* ContextFeatures::supplementName()
 
 ContextFeatures* ContextFeatures::defaultSwitch()
 {
+#if ENABLE(OILPAN)
+    DEFINE_STATIC_LOCAL(Persistent<ContextFeatures>, instance, (ContextFeatures::create(ContextFeaturesClient::empty())));
+#else
     DEFINE_STATIC_REF(ContextFeatures, instance, (ContextFeatures::create(ContextFeaturesClient::empty())));
+#endif
     return instance;
 }
 
@@ -54,21 +57,14 @@ bool ContextFeatures::dialogElementEnabled(Document* document)
 {
     if (!document)
         return RuntimeEnabledFeatures::dialogElementEnabled();
-    return document->contextFeatures()->isEnabled(document, DialogElement, RuntimeEnabledFeatures::dialogElementEnabled());
-}
-
-bool ContextFeatures::styleScopedEnabled(Document* document)
-{
-    if (!document)
-        return RuntimeEnabledFeatures::styleScopedEnabled();
-    return document->contextFeatures()->isEnabled(document, StyleScoped, RuntimeEnabledFeatures::styleScopedEnabled());
+    return document->contextFeatures().isEnabled(document, DialogElement, RuntimeEnabledFeatures::dialogElementEnabled());
 }
 
 bool ContextFeatures::pagePopupEnabled(Document* document)
 {
     if (!document)
         return false;
-    return document->contextFeatures()->isEnabled(document, PagePopup, false);
+    return document->contextFeatures().isEnabled(document, PagePopup, false);
 }
 
 bool ContextFeatures::mutationEventsEnabled(Document* document)
@@ -76,25 +72,25 @@ bool ContextFeatures::mutationEventsEnabled(Document* document)
     ASSERT(document);
     if (!document)
         return true;
-    return document->contextFeatures()->isEnabled(document, MutationEvents, true);
+    return document->contextFeatures().isEnabled(document, MutationEvents, true);
 }
 
 bool ContextFeatures::pushStateEnabled(Document* document)
 {
-    return document->contextFeatures()->isEnabled(document, PushState, true);
+    return document->contextFeatures().isEnabled(document, PushState, true);
 }
 
-void provideContextFeaturesTo(Page* page, ContextFeaturesClient* client)
+void provideContextFeaturesTo(Page& page, PassOwnPtr<ContextFeaturesClient> client)
 {
-    RefCountedSupplement<Page, ContextFeatures>::provideTo(page, ContextFeatures::supplementName(), ContextFeatures::create(client));
+    ContextFeatures::SupplementType::provideTo(page, ContextFeatures::supplementName(), ContextFeatures::create(client));
 }
 
-void provideContextFeaturesToDocumentFrom(Document* document, Page* page)
+void provideContextFeaturesToDocumentFrom(Document& document, Page& page)
 {
-    ContextFeatures* provided = static_cast<ContextFeatures*>(RefCountedSupplement<Page, ContextFeatures>::from(page, ContextFeatures::supplementName()));
+    ContextFeatures* provided = static_cast<ContextFeatures*>(ContextFeatures::SupplementType::from(page, ContextFeatures::supplementName()));
     if (!provided)
         return;
-    document->setContextFeatures(provided);
+    document.setContextFeatures(*provided);
 }
 
 }

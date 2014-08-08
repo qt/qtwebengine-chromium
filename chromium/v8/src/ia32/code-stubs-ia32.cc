@@ -1,61 +1,45 @@
 // Copyright 2012 the V8 project authors. All rights reserved.
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-//       copyright notice, this list of conditions and the following
-//       disclaimer in the documentation and/or other materials provided
-//       with the distribution.
-//     * Neither the name of Google Inc. nor the names of its
-//       contributors may be used to endorse or promote products derived
-//       from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
-#include "v8.h"
+#include "src/v8.h"
 
 #if V8_TARGET_ARCH_IA32
 
-#include "bootstrapper.h"
-#include "code-stubs.h"
-#include "isolate.h"
-#include "jsregexp.h"
-#include "regexp-macro-assembler.h"
-#include "runtime.h"
-#include "stub-cache.h"
-#include "codegen.h"
-#include "runtime.h"
+#include "src/bootstrapper.h"
+#include "src/code-stubs.h"
+#include "src/isolate.h"
+#include "src/jsregexp.h"
+#include "src/regexp-macro-assembler.h"
+#include "src/runtime.h"
+#include "src/stub-cache.h"
+#include "src/codegen.h"
+#include "src/runtime.h"
 
 namespace v8 {
 namespace internal {
 
 
 void FastNewClosureStub::InitializeInterfaceDescriptor(
-    Isolate* isolate,
     CodeStubInterfaceDescriptor* descriptor) {
   static Register registers[] = { ebx };
   descriptor->register_param_count_ = 1;
   descriptor->register_params_ = registers;
   descriptor->deoptimization_handler_ =
-      Runtime::FunctionForId(Runtime::kNewClosureFromStubFailure)->entry;
+      Runtime::FunctionForId(Runtime::kHiddenNewClosureFromStubFailure)->entry;
+}
+
+
+void FastNewContextStub::InitializeInterfaceDescriptor(
+    CodeStubInterfaceDescriptor* descriptor) {
+  static Register registers[] = { edi };
+  descriptor->register_param_count_ = 1;
+  descriptor->register_params_ = registers;
+  descriptor->deoptimization_handler_ = NULL;
 }
 
 
 void ToNumberStub::InitializeInterfaceDescriptor(
-    Isolate* isolate,
     CodeStubInterfaceDescriptor* descriptor) {
   static Register registers[] = { eax };
   descriptor->register_param_count_ = 1;
@@ -65,50 +49,51 @@ void ToNumberStub::InitializeInterfaceDescriptor(
 
 
 void NumberToStringStub::InitializeInterfaceDescriptor(
-    Isolate* isolate,
     CodeStubInterfaceDescriptor* descriptor) {
   static Register registers[] = { eax };
   descriptor->register_param_count_ = 1;
   descriptor->register_params_ = registers;
   descriptor->deoptimization_handler_ =
-      Runtime::FunctionForId(Runtime::kNumberToString)->entry;
+      Runtime::FunctionForId(Runtime::kHiddenNumberToString)->entry;
 }
 
 
 void FastCloneShallowArrayStub::InitializeInterfaceDescriptor(
-    Isolate* isolate,
     CodeStubInterfaceDescriptor* descriptor) {
   static Register registers[] = { eax, ebx, ecx };
   descriptor->register_param_count_ = 3;
   descriptor->register_params_ = registers;
+  static Representation representations[] = {
+    Representation::Tagged(),
+    Representation::Smi(),
+    Representation::Tagged() };
+  descriptor->register_param_representations_ = representations;
   descriptor->deoptimization_handler_ =
-      Runtime::FunctionForId(Runtime::kCreateArrayLiteralStubBailout)->entry;
+      Runtime::FunctionForId(
+          Runtime::kHiddenCreateArrayLiteralStubBailout)->entry;
 }
 
 
 void FastCloneShallowObjectStub::InitializeInterfaceDescriptor(
-    Isolate* isolate,
     CodeStubInterfaceDescriptor* descriptor) {
   static Register registers[] = { eax, ebx, ecx, edx };
   descriptor->register_param_count_ = 4;
   descriptor->register_params_ = registers;
   descriptor->deoptimization_handler_ =
-      Runtime::FunctionForId(Runtime::kCreateObjectLiteral)->entry;
+      Runtime::FunctionForId(Runtime::kHiddenCreateObjectLiteral)->entry;
 }
 
 
 void CreateAllocationSiteStub::InitializeInterfaceDescriptor(
-    Isolate* isolate,
     CodeStubInterfaceDescriptor* descriptor) {
-  static Register registers[] = { ebx };
-  descriptor->register_param_count_ = 1;
+  static Register registers[] = { ebx, edx };
+  descriptor->register_param_count_ = 2;
   descriptor->register_params_ = registers;
   descriptor->deoptimization_handler_ = NULL;
 }
 
 
 void KeyedLoadFastElementStub::InitializeInterfaceDescriptor(
-    Isolate* isolate,
     CodeStubInterfaceDescriptor* descriptor) {
   static Register registers[] = { edx, ecx };
   descriptor->register_param_count_ = 2;
@@ -119,7 +104,6 @@ void KeyedLoadFastElementStub::InitializeInterfaceDescriptor(
 
 
 void KeyedLoadDictionaryElementStub::InitializeInterfaceDescriptor(
-    Isolate* isolate,
     CodeStubInterfaceDescriptor* descriptor) {
   static Register registers[] = { edx, ecx };
   descriptor->register_param_count_ = 2;
@@ -129,8 +113,27 @@ void KeyedLoadDictionaryElementStub::InitializeInterfaceDescriptor(
 }
 
 
+void RegExpConstructResultStub::InitializeInterfaceDescriptor(
+    CodeStubInterfaceDescriptor* descriptor) {
+  static Register registers[] = { ecx, ebx, eax };
+  descriptor->register_param_count_ = 3;
+  descriptor->register_params_ = registers;
+  descriptor->deoptimization_handler_ =
+      Runtime::FunctionForId(Runtime::kHiddenRegExpConstructResult)->entry;
+}
+
+
+void KeyedLoadGenericElementStub::InitializeInterfaceDescriptor(
+    CodeStubInterfaceDescriptor* descriptor) {
+  static Register registers[] = { edx, ecx };
+  descriptor->register_param_count_ = 2;
+  descriptor->register_params_ = registers;
+  descriptor->deoptimization_handler_ =
+      Runtime::FunctionForId(Runtime::kKeyedGetProperty)->entry;
+}
+
+
 void LoadFieldStub::InitializeInterfaceDescriptor(
-    Isolate* isolate,
     CodeStubInterfaceDescriptor* descriptor) {
   static Register registers[] = { edx };
   descriptor->register_param_count_ = 1;
@@ -140,7 +143,6 @@ void LoadFieldStub::InitializeInterfaceDescriptor(
 
 
 void KeyedLoadFieldStub::InitializeInterfaceDescriptor(
-    Isolate* isolate,
     CodeStubInterfaceDescriptor* descriptor) {
   static Register registers[] = { edx };
   descriptor->register_param_count_ = 1;
@@ -149,21 +151,25 @@ void KeyedLoadFieldStub::InitializeInterfaceDescriptor(
 }
 
 
-void KeyedArrayCallStub::InitializeInterfaceDescriptor(
-    Isolate* isolate,
+void StringLengthStub::InitializeInterfaceDescriptor(
     CodeStubInterfaceDescriptor* descriptor) {
-  static Register registers[] = { ecx };
-  descriptor->register_param_count_ = 1;
+  static Register registers[] = { edx, ecx };
+  descriptor->register_param_count_ = 2;
   descriptor->register_params_ = registers;
-  descriptor->continuation_type_ = TAIL_CALL_CONTINUATION;
-  descriptor->handler_arguments_mode_ = PASS_ARGUMENTS;
-  descriptor->deoptimization_handler_ =
-      FUNCTION_ADDR(KeyedCallIC_MissFromStubFailure);
+  descriptor->deoptimization_handler_ = NULL;
+}
+
+
+void KeyedStringLengthStub::InitializeInterfaceDescriptor(
+    CodeStubInterfaceDescriptor* descriptor) {
+  static Register registers[] = { edx, ecx };
+  descriptor->register_param_count_ = 2;
+  descriptor->register_params_ = registers;
+  descriptor->deoptimization_handler_ = NULL;
 }
 
 
 void KeyedStoreFastElementStub::InitializeInterfaceDescriptor(
-    Isolate* isolate,
     CodeStubInterfaceDescriptor* descriptor) {
   static Register registers[] = { edx, ecx, eax };
   descriptor->register_param_count_ = 3;
@@ -174,7 +180,6 @@ void KeyedStoreFastElementStub::InitializeInterfaceDescriptor(
 
 
 void TransitionElementsKindStub::InitializeInterfaceDescriptor(
-    Isolate* isolate,
     CodeStubInterfaceDescriptor* descriptor) {
   static Register registers[] = { eax, ebx };
   descriptor->register_param_count_ = 2;
@@ -191,7 +196,7 @@ static void InitializeArrayConstructorDescriptor(
   // register state
   // eax -- number of arguments
   // edi -- function
-  // ebx -- type info cell with elements kind
+  // ebx -- allocation site with elements kind
   static Register registers_variable_args[] = { edi, ebx, eax };
   static Register registers_no_args[] = { edi, ebx };
 
@@ -204,17 +209,21 @@ static void InitializeArrayConstructorDescriptor(
     descriptor->stack_parameter_count_ = eax;
     descriptor->register_param_count_ = 3;
     descriptor->register_params_ = registers_variable_args;
+    static Representation representations[] = {
+        Representation::Tagged(),
+        Representation::Tagged(),
+        Representation::Integer32() };
+    descriptor->register_param_representations_ = representations;
   }
 
   descriptor->hint_stack_parameter_count_ = constant_stack_parameter_count;
   descriptor->function_mode_ = JS_FUNCTION_STUB_MODE;
   descriptor->deoptimization_handler_ =
-      Runtime::FunctionForId(Runtime::kArrayConstructor)->entry;
+      Runtime::FunctionForId(Runtime::kHiddenArrayConstructor)->entry;
 }
 
 
 static void InitializeInternalArrayConstructorDescriptor(
-    Isolate* isolate,
     CodeStubInterfaceDescriptor* descriptor,
     int constant_stack_parameter_count) {
   // register state
@@ -232,59 +241,56 @@ static void InitializeInternalArrayConstructorDescriptor(
     descriptor->stack_parameter_count_ = eax;
     descriptor->register_param_count_ = 2;
     descriptor->register_params_ = registers_variable_args;
+    static Representation representations[] = {
+        Representation::Tagged(),
+        Representation::Integer32() };
+    descriptor->register_param_representations_ = representations;
   }
 
   descriptor->hint_stack_parameter_count_ = constant_stack_parameter_count;
   descriptor->function_mode_ = JS_FUNCTION_STUB_MODE;
   descriptor->deoptimization_handler_ =
-      Runtime::FunctionForId(Runtime::kInternalArrayConstructor)->entry;
+      Runtime::FunctionForId(Runtime::kHiddenInternalArrayConstructor)->entry;
 }
 
 
 void ArrayNoArgumentConstructorStub::InitializeInterfaceDescriptor(
-    Isolate* isolate,
     CodeStubInterfaceDescriptor* descriptor) {
-  InitializeArrayConstructorDescriptor(isolate, descriptor, 0);
+  InitializeArrayConstructorDescriptor(isolate(), descriptor, 0);
 }
 
 
 void ArraySingleArgumentConstructorStub::InitializeInterfaceDescriptor(
-    Isolate* isolate,
     CodeStubInterfaceDescriptor* descriptor) {
-  InitializeArrayConstructorDescriptor(isolate, descriptor, 1);
+  InitializeArrayConstructorDescriptor(isolate(), descriptor, 1);
 }
 
 
 void ArrayNArgumentsConstructorStub::InitializeInterfaceDescriptor(
-    Isolate* isolate,
     CodeStubInterfaceDescriptor* descriptor) {
-  InitializeArrayConstructorDescriptor(isolate, descriptor, -1);
+  InitializeArrayConstructorDescriptor(isolate(), descriptor, -1);
 }
 
 
 void InternalArrayNoArgumentConstructorStub::InitializeInterfaceDescriptor(
-    Isolate* isolate,
     CodeStubInterfaceDescriptor* descriptor) {
-  InitializeInternalArrayConstructorDescriptor(isolate, descriptor, 0);
+  InitializeInternalArrayConstructorDescriptor(descriptor, 0);
 }
 
 
 void InternalArraySingleArgumentConstructorStub::InitializeInterfaceDescriptor(
-    Isolate* isolate,
     CodeStubInterfaceDescriptor* descriptor) {
-  InitializeInternalArrayConstructorDescriptor(isolate, descriptor, 1);
+  InitializeInternalArrayConstructorDescriptor(descriptor, 1);
 }
 
 
 void InternalArrayNArgumentsConstructorStub::InitializeInterfaceDescriptor(
-    Isolate* isolate,
     CodeStubInterfaceDescriptor* descriptor) {
-  InitializeInternalArrayConstructorDescriptor(isolate, descriptor, -1);
+  InitializeInternalArrayConstructorDescriptor(descriptor, -1);
 }
 
 
 void CompareNilICStub::InitializeInterfaceDescriptor(
-    Isolate* isolate,
     CodeStubInterfaceDescriptor* descriptor) {
   static Register registers[] = { eax };
   descriptor->register_param_count_ = 1;
@@ -292,11 +298,10 @@ void CompareNilICStub::InitializeInterfaceDescriptor(
   descriptor->deoptimization_handler_ =
       FUNCTION_ADDR(CompareNilIC_Miss);
   descriptor->SetMissHandler(
-      ExternalReference(IC_Utility(IC::kCompareNilIC_Miss), isolate));
+      ExternalReference(IC_Utility(IC::kCompareNilIC_Miss), isolate()));
 }
 
 void ToBooleanStub::InitializeInterfaceDescriptor(
-    Isolate* isolate,
     CodeStubInterfaceDescriptor* descriptor) {
   static Register registers[] = { eax };
   descriptor->register_param_count_ = 1;
@@ -304,12 +309,11 @@ void ToBooleanStub::InitializeInterfaceDescriptor(
   descriptor->deoptimization_handler_ =
       FUNCTION_ADDR(ToBooleanIC_Miss);
   descriptor->SetMissHandler(
-      ExternalReference(IC_Utility(IC::kToBooleanIC_Miss), isolate));
+      ExternalReference(IC_Utility(IC::kToBooleanIC_Miss), isolate()));
 }
 
 
 void StoreGlobalStub::InitializeInterfaceDescriptor(
-    Isolate* isolate,
     CodeStubInterfaceDescriptor* descriptor) {
   static Register registers[] = { edx, ecx, eax };
   descriptor->register_param_count_ = 3;
@@ -320,7 +324,6 @@ void StoreGlobalStub::InitializeInterfaceDescriptor(
 
 
 void ElementsTransitionAndStoreStub::InitializeInterfaceDescriptor(
-    Isolate* isolate,
     CodeStubInterfaceDescriptor* descriptor) {
   static Register registers[] = { eax, ebx, ecx, edx };
   descriptor->register_param_count_ = 4;
@@ -331,25 +334,117 @@ void ElementsTransitionAndStoreStub::InitializeInterfaceDescriptor(
 
 
 void BinaryOpICStub::InitializeInterfaceDescriptor(
-    Isolate* isolate,
     CodeStubInterfaceDescriptor* descriptor) {
   static Register registers[] = { edx, eax };
   descriptor->register_param_count_ = 2;
   descriptor->register_params_ = registers;
   descriptor->deoptimization_handler_ = FUNCTION_ADDR(BinaryOpIC_Miss);
   descriptor->SetMissHandler(
-      ExternalReference(IC_Utility(IC::kBinaryOpIC_Miss), isolate));
+      ExternalReference(IC_Utility(IC::kBinaryOpIC_Miss), isolate()));
 }
 
 
-void NewStringAddStub::InitializeInterfaceDescriptor(
-    Isolate* isolate,
+void BinaryOpWithAllocationSiteStub::InitializeInterfaceDescriptor(
+    CodeStubInterfaceDescriptor* descriptor) {
+  static Register registers[] = { ecx, edx, eax };
+  descriptor->register_param_count_ = 3;
+  descriptor->register_params_ = registers;
+  descriptor->deoptimization_handler_ =
+      FUNCTION_ADDR(BinaryOpIC_MissWithAllocationSite);
+}
+
+
+void StringAddStub::InitializeInterfaceDescriptor(
     CodeStubInterfaceDescriptor* descriptor) {
   static Register registers[] = { edx, eax };
   descriptor->register_param_count_ = 2;
   descriptor->register_params_ = registers;
   descriptor->deoptimization_handler_ =
-      Runtime::FunctionForId(Runtime::kStringAdd)->entry;
+      Runtime::FunctionForId(Runtime::kHiddenStringAdd)->entry;
+}
+
+
+void CallDescriptors::InitializeForIsolate(Isolate* isolate) {
+  {
+    CallInterfaceDescriptor* descriptor =
+        isolate->call_descriptor(Isolate::ArgumentAdaptorCall);
+    static Register registers[] = { edi,  // JSFunction
+                                    esi,  // context
+                                    eax,  // actual number of arguments
+                                    ebx,  // expected number of arguments
+    };
+    static Representation representations[] = {
+        Representation::Tagged(),     // JSFunction
+        Representation::Tagged(),     // context
+        Representation::Integer32(),  // actual number of arguments
+        Representation::Integer32(),  // expected number of arguments
+    };
+    descriptor->register_param_count_ = 4;
+    descriptor->register_params_ = registers;
+    descriptor->param_representations_ = representations;
+  }
+  {
+    CallInterfaceDescriptor* descriptor =
+        isolate->call_descriptor(Isolate::KeyedCall);
+    static Register registers[] = { esi,  // context
+                                    ecx,  // key
+    };
+    static Representation representations[] = {
+        Representation::Tagged(),     // context
+        Representation::Tagged(),     // key
+    };
+    descriptor->register_param_count_ = 2;
+    descriptor->register_params_ = registers;
+    descriptor->param_representations_ = representations;
+  }
+  {
+    CallInterfaceDescriptor* descriptor =
+        isolate->call_descriptor(Isolate::NamedCall);
+    static Register registers[] = { esi,  // context
+                                    ecx,  // name
+    };
+    static Representation representations[] = {
+        Representation::Tagged(),     // context
+        Representation::Tagged(),     // name
+    };
+    descriptor->register_param_count_ = 2;
+    descriptor->register_params_ = registers;
+    descriptor->param_representations_ = representations;
+  }
+  {
+    CallInterfaceDescriptor* descriptor =
+        isolate->call_descriptor(Isolate::CallHandler);
+    static Register registers[] = { esi,  // context
+                                    edx,  // receiver
+    };
+    static Representation representations[] = {
+        Representation::Tagged(),  // context
+        Representation::Tagged(),  // receiver
+    };
+    descriptor->register_param_count_ = 2;
+    descriptor->register_params_ = registers;
+    descriptor->param_representations_ = representations;
+  }
+  {
+    CallInterfaceDescriptor* descriptor =
+        isolate->call_descriptor(Isolate::ApiFunctionCall);
+    static Register registers[] = { eax,  // callee
+                                    ebx,  // call_data
+                                    ecx,  // holder
+                                    edx,  // api_function_address
+                                    esi,  // context
+    };
+    static Representation representations[] = {
+        Representation::Tagged(),    // callee
+        Representation::Tagged(),    // call_data
+        Representation::Tagged(),    // holder
+        Representation::External(),  // api_function_address
+        Representation::Tagged(),    // context
+    };
+    descriptor->register_param_count_ = 5;
+    descriptor->register_params_ = registers;
+    descriptor->param_representations_ = representations;
+  }
 }
 
 
@@ -358,10 +453,9 @@ void NewStringAddStub::InitializeInterfaceDescriptor(
 
 void HydrogenCodeStub::GenerateLightweightMiss(MacroAssembler* masm) {
   // Update the static counter each time a new code stub is generated.
-  Isolate* isolate = masm->isolate();
-  isolate->counters()->code_stubs()->Increment();
+  isolate()->counters()->code_stubs()->Increment();
 
-  CodeStubInterfaceDescriptor* descriptor = GetInterfaceDescriptor(isolate);
+  CodeStubInterfaceDescriptor* descriptor = GetInterfaceDescriptor();
   int param_count = descriptor->register_param_count_;
   {
     // Call the runtime system in a fresh internal frame.
@@ -380,127 +474,14 @@ void HydrogenCodeStub::GenerateLightweightMiss(MacroAssembler* masm) {
 }
 
 
-void FastNewContextStub::Generate(MacroAssembler* masm) {
-  // Try to allocate the context in new space.
-  Label gc;
-  int length = slots_ + Context::MIN_CONTEXT_SLOTS;
-  __ Allocate((length * kPointerSize) + FixedArray::kHeaderSize,
-              eax, ebx, ecx, &gc, TAG_OBJECT);
-
-  // Get the function from the stack.
-  __ mov(ecx, Operand(esp, 1 * kPointerSize));
-
-  // Set up the object header.
-  Factory* factory = masm->isolate()->factory();
-  __ mov(FieldOperand(eax, HeapObject::kMapOffset),
-         factory->function_context_map());
-  __ mov(FieldOperand(eax, Context::kLengthOffset),
-         Immediate(Smi::FromInt(length)));
-
-  // Set up the fixed slots.
-  __ Set(ebx, Immediate(0));  // Set to NULL.
-  __ mov(Operand(eax, Context::SlotOffset(Context::CLOSURE_INDEX)), ecx);
-  __ mov(Operand(eax, Context::SlotOffset(Context::PREVIOUS_INDEX)), esi);
-  __ mov(Operand(eax, Context::SlotOffset(Context::EXTENSION_INDEX)), ebx);
-
-  // Copy the global object from the previous context.
-  __ mov(ebx, Operand(esi, Context::SlotOffset(Context::GLOBAL_OBJECT_INDEX)));
-  __ mov(Operand(eax, Context::SlotOffset(Context::GLOBAL_OBJECT_INDEX)), ebx);
-
-  // Initialize the rest of the slots to undefined.
-  __ mov(ebx, factory->undefined_value());
-  for (int i = Context::MIN_CONTEXT_SLOTS; i < length; i++) {
-    __ mov(Operand(eax, Context::SlotOffset(i)), ebx);
-  }
-
-  // Return and remove the on-stack parameter.
-  __ mov(esi, eax);
-  __ ret(1 * kPointerSize);
-
-  // Need to collect. Call into runtime system.
-  __ bind(&gc);
-  __ TailCallRuntime(Runtime::kNewFunctionContext, 1, 1);
-}
-
-
-void FastNewBlockContextStub::Generate(MacroAssembler* masm) {
-  // Stack layout on entry:
-  //
-  // [esp + (1 * kPointerSize)]: function
-  // [esp + (2 * kPointerSize)]: serialized scope info
-
-  // Try to allocate the context in new space.
-  Label gc;
-  int length = slots_ + Context::MIN_CONTEXT_SLOTS;
-  __ Allocate(FixedArray::SizeFor(length), eax, ebx, ecx, &gc, TAG_OBJECT);
-
-  // Get the function or sentinel from the stack.
-  __ mov(ecx, Operand(esp, 1 * kPointerSize));
-
-  // Get the serialized scope info from the stack.
-  __ mov(ebx, Operand(esp, 2 * kPointerSize));
-
-  // Set up the object header.
-  Factory* factory = masm->isolate()->factory();
-  __ mov(FieldOperand(eax, HeapObject::kMapOffset),
-         factory->block_context_map());
-  __ mov(FieldOperand(eax, Context::kLengthOffset),
-         Immediate(Smi::FromInt(length)));
-
-  // If this block context is nested in the native context we get a smi
-  // sentinel instead of a function. The block context should get the
-  // canonical empty function of the native context as its closure which
-  // we still have to look up.
-  Label after_sentinel;
-  __ JumpIfNotSmi(ecx, &after_sentinel, Label::kNear);
-  if (FLAG_debug_code) {
-    __ cmp(ecx, 0);
-    __ Assert(equal, kExpected0AsASmiSentinel);
-  }
-  __ mov(ecx, GlobalObjectOperand());
-  __ mov(ecx, FieldOperand(ecx, GlobalObject::kNativeContextOffset));
-  __ mov(ecx, ContextOperand(ecx, Context::CLOSURE_INDEX));
-  __ bind(&after_sentinel);
-
-  // Set up the fixed slots.
-  __ mov(ContextOperand(eax, Context::CLOSURE_INDEX), ecx);
-  __ mov(ContextOperand(eax, Context::PREVIOUS_INDEX), esi);
-  __ mov(ContextOperand(eax, Context::EXTENSION_INDEX), ebx);
-
-  // Copy the global object from the previous context.
-  __ mov(ebx, ContextOperand(esi, Context::GLOBAL_OBJECT_INDEX));
-  __ mov(ContextOperand(eax, Context::GLOBAL_OBJECT_INDEX), ebx);
-
-  // Initialize the rest of the slots to the hole value.
-  if (slots_ == 1) {
-    __ mov(ContextOperand(eax, Context::MIN_CONTEXT_SLOTS),
-           factory->the_hole_value());
-  } else {
-    __ mov(ebx, factory->the_hole_value());
-    for (int i = 0; i < slots_; i++) {
-      __ mov(ContextOperand(eax, i + Context::MIN_CONTEXT_SLOTS), ebx);
-    }
-  }
-
-  // Return and remove the on-stack parameters.
-  __ mov(esi, eax);
-  __ ret(2 * kPointerSize);
-
-  // Need to collect. Call into runtime system.
-  __ bind(&gc);
-  __ TailCallRuntime(Runtime::kPushBlockContext, 2, 1);
-}
-
-
 void StoreBufferOverflowStub::Generate(MacroAssembler* masm) {
   // We don't allow a GC during a store buffer overflow so there is no need to
   // store the registers in any particular way, but we do have to store and
   // restore them.
   __ pushad();
   if (save_doubles_ == kSaveFPRegs) {
-    CpuFeatureScope scope(masm, SSE2);
-    __ sub(esp, Immediate(kDoubleSize * XMMRegister::kNumRegisters));
-    for (int i = 0; i < XMMRegister::kNumRegisters; i++) {
+    __ sub(esp, Immediate(kDoubleSize * XMMRegister::kMaxNumRegisters));
+    for (int i = 0; i < XMMRegister::kMaxNumRegisters; i++) {
       XMMRegister reg = XMMRegister::from_code(i);
       __ movsd(Operand(esp, i * kDoubleSize), reg);
     }
@@ -510,17 +491,16 @@ void StoreBufferOverflowStub::Generate(MacroAssembler* masm) {
   AllowExternalCallThatCantCauseGC scope(masm);
   __ PrepareCallCFunction(argument_count, ecx);
   __ mov(Operand(esp, 0 * kPointerSize),
-         Immediate(ExternalReference::isolate_address(masm->isolate())));
+         Immediate(ExternalReference::isolate_address(isolate())));
   __ CallCFunction(
-      ExternalReference::store_buffer_overflow_function(masm->isolate()),
+      ExternalReference::store_buffer_overflow_function(isolate()),
       argument_count);
   if (save_doubles_ == kSaveFPRegs) {
-    CpuFeatureScope scope(masm, SSE2);
-    for (int i = 0; i < XMMRegister::kNumRegisters; i++) {
+    for (int i = 0; i < XMMRegister::kMaxNumRegisters; i++) {
       XMMRegister reg = XMMRegister::from_code(i);
       __ movsd(reg, Operand(esp, i * kDoubleSize));
     }
-    __ add(esp, Immediate(kDoubleSize * XMMRegister::kNumRegisters));
+    __ add(esp, Immediate(kDoubleSize * XMMRegister::kMaxNumRegisters));
   }
   __ popad();
   __ ret(0);
@@ -649,15 +629,7 @@ void DoubleToIStub::Generate(MacroAssembler* masm) {
     __ shrd(result_reg, scratch1);
     __ shr_cl(result_reg);
     __ test(ecx, Immediate(32));
-    if (CpuFeatures::IsSupported(CMOV)) {
-      CpuFeatureScope use_cmov(masm, CMOV);
-      __ cmov(not_equal, scratch1, result_reg);
-    } else {
-      Label skip_mov;
-      __ j(equal, &skip_mov, Label::kNear);
-      __ mov(scratch1, result_reg);
-      __ bind(&skip_mov);
-    }
+    __ cmov(not_equal, scratch1, result_reg);
   }
 
   // If the double was negative, negate the integer result.
@@ -669,15 +641,7 @@ void DoubleToIStub::Generate(MacroAssembler* masm) {
   } else {
     __ cmp(exponent_operand, Immediate(0));
   }
-  if (CpuFeatures::IsSupported(CMOV)) {
-    CpuFeatureScope use_cmov(masm, CMOV);
     __ cmov(greater, result_reg, scratch1);
-  } else {
-    Label skip_mov;
-    __ j(less_equal, &skip_mov, Label::kNear);
-    __ mov(result_reg, scratch1);
-    __ bind(&skip_mov);
-  }
 
   // Restore registers
   __ bind(&done);
@@ -692,316 +656,6 @@ void DoubleToIStub::Generate(MacroAssembler* masm) {
   __ pop(save_reg);
   __ pop(scratch1);
   __ ret(0);
-}
-
-
-void TranscendentalCacheStub::Generate(MacroAssembler* masm) {
-  // TAGGED case:
-  //   Input:
-  //     esp[4]: tagged number input argument (should be number).
-  //     esp[0]: return address.
-  //   Output:
-  //     eax: tagged double result.
-  // UNTAGGED case:
-  //   Input::
-  //     esp[0]: return address.
-  //     xmm1: untagged double input argument
-  //   Output:
-  //     xmm1: untagged double result.
-
-  Label runtime_call;
-  Label runtime_call_clear_stack;
-  Label skip_cache;
-  const bool tagged = (argument_type_ == TAGGED);
-  if (tagged) {
-    // Test that eax is a number.
-    Label input_not_smi;
-    Label loaded;
-    __ mov(eax, Operand(esp, kPointerSize));
-    __ JumpIfNotSmi(eax, &input_not_smi, Label::kNear);
-    // Input is a smi. Untag and load it onto the FPU stack.
-    // Then load the low and high words of the double into ebx, edx.
-    STATIC_ASSERT(kSmiTagSize == 1);
-    __ sar(eax, 1);
-    __ sub(esp, Immediate(2 * kPointerSize));
-    __ mov(Operand(esp, 0), eax);
-    __ fild_s(Operand(esp, 0));
-    __ fst_d(Operand(esp, 0));
-    __ pop(edx);
-    __ pop(ebx);
-    __ jmp(&loaded, Label::kNear);
-    __ bind(&input_not_smi);
-    // Check if input is a HeapNumber.
-    __ mov(ebx, FieldOperand(eax, HeapObject::kMapOffset));
-    Factory* factory = masm->isolate()->factory();
-    __ cmp(ebx, Immediate(factory->heap_number_map()));
-    __ j(not_equal, &runtime_call);
-    // Input is a HeapNumber. Push it on the FPU stack and load its
-    // low and high words into ebx, edx.
-    __ fld_d(FieldOperand(eax, HeapNumber::kValueOffset));
-    __ mov(edx, FieldOperand(eax, HeapNumber::kExponentOffset));
-    __ mov(ebx, FieldOperand(eax, HeapNumber::kMantissaOffset));
-
-    __ bind(&loaded);
-  } else {  // UNTAGGED.
-    CpuFeatureScope scope(masm, SSE2);
-    if (CpuFeatures::IsSupported(SSE4_1)) {
-      CpuFeatureScope sse4_scope(masm, SSE4_1);
-      __ pextrd(edx, xmm1, 0x1);  // copy xmm1[63..32] to edx.
-    } else {
-      __ pshufd(xmm0, xmm1, 0x1);
-      __ movd(edx, xmm0);
-    }
-    __ movd(ebx, xmm1);
-  }
-
-  // ST[0] or xmm1  == double value
-  // ebx = low 32 bits of double value
-  // edx = high 32 bits of double value
-  // Compute hash (the shifts are arithmetic):
-  //   h = (low ^ high); h ^= h >> 16; h ^= h >> 8; h = h & (cacheSize - 1);
-  __ mov(ecx, ebx);
-  __ xor_(ecx, edx);
-  __ mov(eax, ecx);
-  __ sar(eax, 16);
-  __ xor_(ecx, eax);
-  __ mov(eax, ecx);
-  __ sar(eax, 8);
-  __ xor_(ecx, eax);
-  ASSERT(IsPowerOf2(TranscendentalCache::SubCache::kCacheSize));
-  __ and_(ecx,
-          Immediate(TranscendentalCache::SubCache::kCacheSize - 1));
-
-  // ST[0] or xmm1 == double value.
-  // ebx = low 32 bits of double value.
-  // edx = high 32 bits of double value.
-  // ecx = TranscendentalCache::hash(double value).
-  ExternalReference cache_array =
-      ExternalReference::transcendental_cache_array_address(masm->isolate());
-  __ mov(eax, Immediate(cache_array));
-  int cache_array_index =
-      type_ * sizeof(masm->isolate()->transcendental_cache()->caches_[0]);
-  __ mov(eax, Operand(eax, cache_array_index));
-  // Eax points to the cache for the type type_.
-  // If NULL, the cache hasn't been initialized yet, so go through runtime.
-  __ test(eax, eax);
-  __ j(zero, &runtime_call_clear_stack);
-#ifdef DEBUG
-  // Check that the layout of cache elements match expectations.
-  { TranscendentalCache::SubCache::Element test_elem[2];
-    char* elem_start = reinterpret_cast<char*>(&test_elem[0]);
-    char* elem2_start = reinterpret_cast<char*>(&test_elem[1]);
-    char* elem_in0  = reinterpret_cast<char*>(&(test_elem[0].in[0]));
-    char* elem_in1  = reinterpret_cast<char*>(&(test_elem[0].in[1]));
-    char* elem_out = reinterpret_cast<char*>(&(test_elem[0].output));
-    CHECK_EQ(12, elem2_start - elem_start);  // Two uint_32's and a pointer.
-    CHECK_EQ(0, elem_in0 - elem_start);
-    CHECK_EQ(kIntSize, elem_in1 - elem_start);
-    CHECK_EQ(2 * kIntSize, elem_out - elem_start);
-  }
-#endif
-  // Find the address of the ecx'th entry in the cache, i.e., &eax[ecx*12].
-  __ lea(ecx, Operand(ecx, ecx, times_2, 0));
-  __ lea(ecx, Operand(eax, ecx, times_4, 0));
-  // Check if cache matches: Double value is stored in uint32_t[2] array.
-  Label cache_miss;
-  __ cmp(ebx, Operand(ecx, 0));
-  __ j(not_equal, &cache_miss, Label::kNear);
-  __ cmp(edx, Operand(ecx, kIntSize));
-  __ j(not_equal, &cache_miss, Label::kNear);
-  // Cache hit!
-  Counters* counters = masm->isolate()->counters();
-  __ IncrementCounter(counters->transcendental_cache_hit(), 1);
-  __ mov(eax, Operand(ecx, 2 * kIntSize));
-  if (tagged) {
-    __ fstp(0);
-    __ ret(kPointerSize);
-  } else {  // UNTAGGED.
-    CpuFeatureScope scope(masm, SSE2);
-    __ movsd(xmm1, FieldOperand(eax, HeapNumber::kValueOffset));
-    __ Ret();
-  }
-
-  __ bind(&cache_miss);
-  __ IncrementCounter(counters->transcendental_cache_miss(), 1);
-  // Update cache with new value.
-  // We are short on registers, so use no_reg as scratch.
-  // This gives slightly larger code.
-  if (tagged) {
-    __ AllocateHeapNumber(eax, edi, no_reg, &runtime_call_clear_stack);
-  } else {  // UNTAGGED.
-    CpuFeatureScope scope(masm, SSE2);
-    __ AllocateHeapNumber(eax, edi, no_reg, &skip_cache);
-    __ sub(esp, Immediate(kDoubleSize));
-    __ movsd(Operand(esp, 0), xmm1);
-    __ fld_d(Operand(esp, 0));
-    __ add(esp, Immediate(kDoubleSize));
-  }
-  GenerateOperation(masm, type_);
-  __ mov(Operand(ecx, 0), ebx);
-  __ mov(Operand(ecx, kIntSize), edx);
-  __ mov(Operand(ecx, 2 * kIntSize), eax);
-  __ fstp_d(FieldOperand(eax, HeapNumber::kValueOffset));
-  if (tagged) {
-    __ ret(kPointerSize);
-  } else {  // UNTAGGED.
-    CpuFeatureScope scope(masm, SSE2);
-    __ movsd(xmm1, FieldOperand(eax, HeapNumber::kValueOffset));
-    __ Ret();
-
-    // Skip cache and return answer directly, only in untagged case.
-    __ bind(&skip_cache);
-    __ sub(esp, Immediate(kDoubleSize));
-    __ movsd(Operand(esp, 0), xmm1);
-    __ fld_d(Operand(esp, 0));
-    GenerateOperation(masm, type_);
-    __ fstp_d(Operand(esp, 0));
-    __ movsd(xmm1, Operand(esp, 0));
-    __ add(esp, Immediate(kDoubleSize));
-    // We return the value in xmm1 without adding it to the cache, but
-    // we cause a scavenging GC so that future allocations will succeed.
-    {
-      FrameScope scope(masm, StackFrame::INTERNAL);
-      // Allocate an unused object bigger than a HeapNumber.
-      __ push(Immediate(Smi::FromInt(2 * kDoubleSize)));
-      __ CallRuntimeSaveDoubles(Runtime::kAllocateInNewSpace);
-    }
-    __ Ret();
-  }
-
-  // Call runtime, doing whatever allocation and cleanup is necessary.
-  if (tagged) {
-    __ bind(&runtime_call_clear_stack);
-    __ fstp(0);
-    __ bind(&runtime_call);
-    ExternalReference runtime =
-        ExternalReference(RuntimeFunction(), masm->isolate());
-    __ TailCallExternalReference(runtime, 1, 1);
-  } else {  // UNTAGGED.
-    CpuFeatureScope scope(masm, SSE2);
-    __ bind(&runtime_call_clear_stack);
-    __ bind(&runtime_call);
-    __ AllocateHeapNumber(eax, edi, no_reg, &skip_cache);
-    __ movsd(FieldOperand(eax, HeapNumber::kValueOffset), xmm1);
-    {
-      FrameScope scope(masm, StackFrame::INTERNAL);
-      __ push(eax);
-      __ CallRuntime(RuntimeFunction(), 1);
-    }
-    __ movsd(xmm1, FieldOperand(eax, HeapNumber::kValueOffset));
-    __ Ret();
-  }
-}
-
-
-Runtime::FunctionId TranscendentalCacheStub::RuntimeFunction() {
-  switch (type_) {
-    case TranscendentalCache::SIN: return Runtime::kMath_sin;
-    case TranscendentalCache::COS: return Runtime::kMath_cos;
-    case TranscendentalCache::TAN: return Runtime::kMath_tan;
-    case TranscendentalCache::LOG: return Runtime::kMath_log;
-    default:
-      UNIMPLEMENTED();
-      return Runtime::kAbort;
-  }
-}
-
-
-void TranscendentalCacheStub::GenerateOperation(
-    MacroAssembler* masm, TranscendentalCache::Type type) {
-  // Only free register is edi.
-  // Input value is on FP stack, and also in ebx/edx.
-  // Input value is possibly in xmm1.
-  // Address of result (a newly allocated HeapNumber) may be in eax.
-  if (type == TranscendentalCache::SIN ||
-      type == TranscendentalCache::COS ||
-      type == TranscendentalCache::TAN) {
-    // Both fsin and fcos require arguments in the range +/-2^63 and
-    // return NaN for infinities and NaN. They can share all code except
-    // the actual fsin/fcos operation.
-    Label in_range, done;
-    // If argument is outside the range -2^63..2^63, fsin/cos doesn't
-    // work. We must reduce it to the appropriate range.
-    __ mov(edi, edx);
-    __ and_(edi, Immediate(0x7ff00000));  // Exponent only.
-    int supported_exponent_limit =
-        (63 + HeapNumber::kExponentBias) << HeapNumber::kExponentShift;
-    __ cmp(edi, Immediate(supported_exponent_limit));
-    __ j(below, &in_range, Label::kNear);
-    // Check for infinity and NaN. Both return NaN for sin.
-    __ cmp(edi, Immediate(0x7ff00000));
-    Label non_nan_result;
-    __ j(not_equal, &non_nan_result, Label::kNear);
-    // Input is +/-Infinity or NaN. Result is NaN.
-    __ fstp(0);
-    // NaN is represented by 0x7ff8000000000000.
-    __ push(Immediate(0x7ff80000));
-    __ push(Immediate(0));
-    __ fld_d(Operand(esp, 0));
-    __ add(esp, Immediate(2 * kPointerSize));
-    __ jmp(&done, Label::kNear);
-
-    __ bind(&non_nan_result);
-
-    // Use fpmod to restrict argument to the range +/-2*PI.
-    __ mov(edi, eax);  // Save eax before using fnstsw_ax.
-    __ fldpi();
-    __ fadd(0);
-    __ fld(1);
-    // FPU Stack: input, 2*pi, input.
-    {
-      Label no_exceptions;
-      __ fwait();
-      __ fnstsw_ax();
-      // Clear if Illegal Operand or Zero Division exceptions are set.
-      __ test(eax, Immediate(5));
-      __ j(zero, &no_exceptions, Label::kNear);
-      __ fnclex();
-      __ bind(&no_exceptions);
-    }
-
-    // Compute st(0) % st(1)
-    {
-      Label partial_remainder_loop;
-      __ bind(&partial_remainder_loop);
-      __ fprem1();
-      __ fwait();
-      __ fnstsw_ax();
-      __ test(eax, Immediate(0x400 /* C2 */));
-      // If C2 is set, computation only has partial result. Loop to
-      // continue computation.
-      __ j(not_zero, &partial_remainder_loop);
-    }
-    // FPU Stack: input, 2*pi, input % 2*pi
-    __ fstp(2);
-    __ fstp(0);
-    __ mov(eax, edi);  // Restore eax (allocated HeapNumber pointer).
-
-    // FPU Stack: input % 2*pi
-    __ bind(&in_range);
-    switch (type) {
-      case TranscendentalCache::SIN:
-        __ fsin();
-        break;
-      case TranscendentalCache::COS:
-        __ fcos();
-        break;
-      case TranscendentalCache::TAN:
-        // FPTAN calculates tangent onto st(0) and pushes 1.0 onto the
-        // FP register stack.
-        __ fptan();
-        __ fstp(0);  // Pop FP register stack.
-        break;
-      default:
-        UNREACHABLE();
-    }
-    __ bind(&done);
-  } else {
-    ASSERT(type == TranscendentalCache::LOG);
-    __ fldln2();
-    __ fxch();
-    __ fyl2x();
-  }
 }
 
 
@@ -1078,8 +732,7 @@ void FloatingPointHelper::CheckFloatOperands(MacroAssembler* masm,
 
 
 void MathPowStub::Generate(MacroAssembler* masm) {
-  CpuFeatureScope use_sse2(masm, SSE2);
-  Factory* factory = masm->isolate()->factory();
+  Factory* factory = isolate()->factory();
   const Register exponent = eax;
   const Register base = edx;
   const Register scratch = ecx;
@@ -1144,8 +797,8 @@ void MathPowStub::Generate(MacroAssembler* masm) {
     __ bind(&try_arithmetic_simplification);
     // Skip to runtime if possibly NaN (indicated by the indefinite integer).
     __ cvttsd2si(exponent, Operand(double_exponent));
-    __ cmp(exponent, Immediate(0x80000000u));
-    __ j(equal, &call_runtime);
+    __ cmp(exponent, Immediate(0x1));
+    __ j(overflow, &call_runtime);
 
     if (exponent_type_ == ON_STACK) {
       // Detect square root case.  Crankshaft detects constant +/-0.5 at
@@ -1308,11 +961,11 @@ void MathPowStub::Generate(MacroAssembler* masm) {
   __ Cvtsi2sd(double_exponent, exponent);
 
   // Returning or bailing out.
-  Counters* counters = masm->isolate()->counters();
+  Counters* counters = isolate()->counters();
   if (exponent_type_ == ON_STACK) {
     // The arguments are still on the stack.
     __ bind(&call_runtime);
-    __ TailCallRuntime(Runtime::kMath_pow_cfunction, 2, 1);
+    __ TailCallRuntime(Runtime::kHiddenMathPow, 2, 1);
 
     // The stub is called from non-optimized code, which expects the result
     // as heap number in exponent.
@@ -1329,7 +982,7 @@ void MathPowStub::Generate(MacroAssembler* masm) {
       __ movsd(Operand(esp, 0 * kDoubleSize), double_base);
       __ movsd(Operand(esp, 1 * kDoubleSize), double_exponent);
       __ CallCFunction(
-          ExternalReference::power_double_double_function(masm->isolate()), 4);
+          ExternalReference::power_double_double_function(isolate()), 4);
     }
     // Return value is in st(0) on ia32.
     // Store it into the (fixed) result register.
@@ -1354,97 +1007,12 @@ void FunctionPrototypeStub::Generate(MacroAssembler* masm) {
   Label miss;
 
   if (kind() == Code::KEYED_LOAD_IC) {
-    __ cmp(ecx, Immediate(masm->isolate()->factory()->prototype_string()));
+    __ cmp(ecx, Immediate(isolate()->factory()->prototype_string()));
     __ j(not_equal, &miss);
   }
 
   StubCompiler::GenerateLoadFunctionPrototype(masm, edx, eax, ebx, &miss);
   __ bind(&miss);
-  StubCompiler::TailCallBuiltin(
-      masm, BaseLoadStoreStubCompiler::MissBuiltin(kind()));
-}
-
-
-void StringLengthStub::Generate(MacroAssembler* masm) {
-  // ----------- S t a t e -------------
-  //  -- ecx    : name
-  //  -- edx    : receiver
-  //  -- esp[0] : return address
-  // -----------------------------------
-  Label miss;
-
-  if (kind() == Code::KEYED_LOAD_IC) {
-    __ cmp(ecx, Immediate(masm->isolate()->factory()->length_string()));
-    __ j(not_equal, &miss);
-  }
-
-  StubCompiler::GenerateLoadStringLength(masm, edx, eax, ebx, &miss);
-  __ bind(&miss);
-  StubCompiler::TailCallBuiltin(
-      masm, BaseLoadStoreStubCompiler::MissBuiltin(kind()));
-}
-
-
-void StoreArrayLengthStub::Generate(MacroAssembler* masm) {
-  // ----------- S t a t e -------------
-  //  -- eax    : value
-  //  -- ecx    : name
-  //  -- edx    : receiver
-  //  -- esp[0] : return address
-  // -----------------------------------
-  //
-  // This accepts as a receiver anything JSArray::SetElementsLength accepts
-  // (currently anything except for external arrays which means anything with
-  // elements of FixedArray type).  Value must be a number, but only smis are
-  // accepted as the most common case.
-
-  Label miss;
-
-  Register receiver = edx;
-  Register value = eax;
-  Register scratch = ebx;
-
-  if (kind() == Code::KEYED_STORE_IC) {
-    __ cmp(ecx, Immediate(masm->isolate()->factory()->length_string()));
-    __ j(not_equal, &miss);
-  }
-
-  // Check that the receiver isn't a smi.
-  __ JumpIfSmi(receiver, &miss);
-
-  // Check that the object is a JS array.
-  __ CmpObjectType(receiver, JS_ARRAY_TYPE, scratch);
-  __ j(not_equal, &miss);
-
-  // Check that elements are FixedArray.
-  // We rely on StoreIC_ArrayLength below to deal with all types of
-  // fast elements (including COW).
-  __ mov(scratch, FieldOperand(receiver, JSArray::kElementsOffset));
-  __ CmpObjectType(scratch, FIXED_ARRAY_TYPE, scratch);
-  __ j(not_equal, &miss);
-
-  // Check that the array has fast properties, otherwise the length
-  // property might have been redefined.
-  __ mov(scratch, FieldOperand(receiver, JSArray::kPropertiesOffset));
-  __ CompareRoot(FieldOperand(scratch, FixedArray::kMapOffset),
-                 Heap::kHashTableMapRootIndex);
-  __ j(equal, &miss);
-
-  // Check that value is a smi.
-  __ JumpIfNotSmi(value, &miss);
-
-  // Prepare tail call to StoreIC_ArrayLength.
-  __ pop(scratch);
-  __ push(receiver);
-  __ push(value);
-  __ push(scratch);  // return address
-
-  ExternalReference ref =
-      ExternalReference(IC_Utility(IC::kStoreIC_ArrayLength), masm->isolate());
-  __ TailCallExternalReference(ref, 2, 1);
-
-  __ bind(&miss);
-
   StubCompiler::TailCallBuiltin(
       masm, BaseLoadStoreStubCompiler::MissBuiltin(kind()));
 }
@@ -1509,7 +1077,7 @@ void ArgumentsAccessStub::GenerateReadElement(MacroAssembler* masm) {
 }
 
 
-void ArgumentsAccessStub::GenerateNewNonStrictSlow(MacroAssembler* masm) {
+void ArgumentsAccessStub::GenerateNewSloppySlow(MacroAssembler* masm) {
   // esp[0] : return address
   // esp[4] : number of parameters
   // esp[8] : receiver displacement
@@ -1530,13 +1098,11 @@ void ArgumentsAccessStub::GenerateNewNonStrictSlow(MacroAssembler* masm) {
   __ mov(Operand(esp, 2 * kPointerSize), edx);
 
   __ bind(&runtime);
-  __ TailCallRuntime(Runtime::kNewArgumentsFast, 3, 1);
+  __ TailCallRuntime(Runtime::kHiddenNewSloppyArguments, 3, 1);
 }
 
 
-void ArgumentsAccessStub::GenerateNewNonStrictFast(MacroAssembler* masm) {
-  Isolate* isolate = masm->isolate();
-
+void ArgumentsAccessStub::GenerateNewSloppyFast(MacroAssembler* masm) {
   // esp[0] : return address
   // esp[4] : number of parameters (tagged)
   // esp[8] : receiver displacement
@@ -1594,7 +1160,7 @@ void ArgumentsAccessStub::GenerateNewNonStrictFast(MacroAssembler* masm) {
   __ lea(ebx, Operand(ebx, ecx, times_2, FixedArray::kHeaderSize));
 
   // 3. Arguments object.
-  __ add(ebx, Immediate(Heap::kArgumentsObjectSize));
+  __ add(ebx, Immediate(Heap::kSloppyArgumentsObjectSize));
 
   // Do the allocation of all three objects in one go.
   __ Allocate(ebx, eax, edx, edi, &runtime, TAG_OBJECT);
@@ -1612,7 +1178,7 @@ void ArgumentsAccessStub::GenerateNewNonStrictFast(MacroAssembler* masm) {
   __ test(ebx, ebx);
   __ j(not_zero, &has_mapped_parameters, Label::kNear);
   __ mov(edi, Operand(edi,
-         Context::SlotOffset(Context::ARGUMENTS_BOILERPLATE_INDEX)));
+         Context::SlotOffset(Context::SLOPPY_ARGUMENTS_BOILERPLATE_INDEX)));
   __ jmp(&copy, Label::kNear);
 
   __ bind(&has_mapped_parameters);
@@ -1649,7 +1215,7 @@ void ArgumentsAccessStub::GenerateNewNonStrictFast(MacroAssembler* masm) {
   // Set up the elements pointer in the allocated arguments object.
   // If we allocated a parameter map, edi will point there, otherwise to the
   // backing store.
-  __ lea(edi, Operand(eax, Heap::kArgumentsObjectSize));
+  __ lea(edi, Operand(eax, Heap::kSloppyArgumentsObjectSize));
   __ mov(FieldOperand(eax, JSObject::kElementsOffset), edi);
 
   // eax = address of new object (tagged)
@@ -1668,7 +1234,7 @@ void ArgumentsAccessStub::GenerateNewNonStrictFast(MacroAssembler* masm) {
   __ j(zero, &skip_parameter_map);
 
   __ mov(FieldOperand(edi, FixedArray::kMapOffset),
-         Immediate(isolate->factory()->non_strict_arguments_elements_map()));
+         Immediate(isolate()->factory()->sloppy_arguments_elements_map()));
   __ lea(eax, Operand(ebx, reinterpret_cast<intptr_t>(Smi::FromInt(2))));
   __ mov(FieldOperand(edi, FixedArray::kLengthOffset), eax);
   __ mov(FieldOperand(edi, FixedArray::kHeaderSize + 0 * kPointerSize), esi);
@@ -1689,7 +1255,7 @@ void ArgumentsAccessStub::GenerateNewNonStrictFast(MacroAssembler* masm) {
   __ mov(ebx, Immediate(Smi::FromInt(Context::MIN_CONTEXT_SLOTS)));
   __ add(ebx, Operand(esp, 4 * kPointerSize));
   __ sub(ebx, eax);
-  __ mov(ecx, isolate->factory()->the_hole_value());
+  __ mov(ecx, isolate()->factory()->the_hole_value());
   __ mov(edx, edi);
   __ lea(edi, Operand(edi, eax, times_2, kParameterMapHeaderSize));
   // eax = loop variable (tagged)
@@ -1724,7 +1290,7 @@ void ArgumentsAccessStub::GenerateNewNonStrictFast(MacroAssembler* masm) {
   // esp[16] = address of receiver argument
   // Copy arguments header and remaining slots (if there are any).
   __ mov(FieldOperand(edi, FixedArray::kMapOffset),
-         Immediate(isolate->factory()->fixed_array_map()));
+         Immediate(isolate()->factory()->fixed_array_map()));
   __ mov(FieldOperand(edi, FixedArray::kLengthOffset), ecx);
 
   Label arguments_loop, arguments_test;
@@ -1755,13 +1321,11 @@ void ArgumentsAccessStub::GenerateNewNonStrictFast(MacroAssembler* masm) {
   __ bind(&runtime);
   __ pop(eax);  // Remove saved parameter count.
   __ mov(Operand(esp, 1 * kPointerSize), ecx);  // Patch argument count.
-  __ TailCallRuntime(Runtime::kNewArgumentsFast, 3, 1);
+  __ TailCallRuntime(Runtime::kHiddenNewSloppyArguments, 3, 1);
 }
 
 
 void ArgumentsAccessStub::GenerateNewStrict(MacroAssembler* masm) {
-  Isolate* isolate = masm->isolate();
-
   // esp[0] : return address
   // esp[4] : number of parameters
   // esp[8] : receiver displacement
@@ -1794,7 +1358,7 @@ void ArgumentsAccessStub::GenerateNewStrict(MacroAssembler* masm) {
   __ j(zero, &add_arguments_object, Label::kNear);
   __ lea(ecx, Operand(ecx, times_2, FixedArray::kHeaderSize));
   __ bind(&add_arguments_object);
-  __ add(ecx, Immediate(Heap::kArgumentsObjectSizeStrict));
+  __ add(ecx, Immediate(Heap::kStrictArgumentsObjectSize));
 
   // Do the allocation of both objects in one go.
   __ Allocate(ecx, eax, edx, ebx, &runtime, TAG_OBJECT);
@@ -1803,7 +1367,7 @@ void ArgumentsAccessStub::GenerateNewStrict(MacroAssembler* masm) {
   __ mov(edi, Operand(esi, Context::SlotOffset(Context::GLOBAL_OBJECT_INDEX)));
   __ mov(edi, FieldOperand(edi, GlobalObject::kNativeContextOffset));
   const int offset =
-      Context::SlotOffset(Context::STRICT_MODE_ARGUMENTS_BOILERPLATE_INDEX);
+      Context::SlotOffset(Context::STRICT_ARGUMENTS_BOILERPLATE_INDEX);
   __ mov(edi, Operand(edi, offset));
 
   // Copy the JS object part.
@@ -1829,10 +1393,10 @@ void ArgumentsAccessStub::GenerateNewStrict(MacroAssembler* masm) {
 
   // Set up the elements pointer in the allocated arguments object and
   // initialize the header in the elements fixed array.
-  __ lea(edi, Operand(eax, Heap::kArgumentsObjectSizeStrict));
+  __ lea(edi, Operand(eax, Heap::kStrictArgumentsObjectSize));
   __ mov(FieldOperand(eax, JSObject::kElementsOffset), edi);
   __ mov(FieldOperand(edi, FixedArray::kMapOffset),
-         Immediate(isolate->factory()->fixed_array_map()));
+         Immediate(isolate()->factory()->fixed_array_map()));
 
   __ mov(FieldOperand(edi, FixedArray::kLengthOffset), ecx);
   // Untag the length for the loop below.
@@ -1854,7 +1418,7 @@ void ArgumentsAccessStub::GenerateNewStrict(MacroAssembler* masm) {
 
   // Do the runtime call to allocate the arguments object.
   __ bind(&runtime);
-  __ TailCallRuntime(Runtime::kNewStrictArgumentsFast, 3, 1);
+  __ TailCallRuntime(Runtime::kHiddenNewStrictArguments, 3, 1);
 }
 
 
@@ -1863,7 +1427,7 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
   // time or if regexp entry in generated code is turned off runtime switch or
   // at compilation.
 #ifdef V8_INTERPRETED_REGEXP
-  __ TailCallRuntime(Runtime::kRegExpExec, 4, 1);
+  __ TailCallRuntime(Runtime::kHiddenRegExpExec, 4, 1);
 #else  // V8_INTERPRETED_REGEXP
 
   // Stack frame on entry.
@@ -1879,14 +1443,13 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
   static const int kJSRegExpOffset = 4 * kPointerSize;
 
   Label runtime;
-  Factory* factory = masm->isolate()->factory();
+  Factory* factory = isolate()->factory();
 
   // Ensure that a RegExp stack is allocated.
   ExternalReference address_of_regexp_stack_memory_address =
-      ExternalReference::address_of_regexp_stack_memory_address(
-          masm->isolate());
+      ExternalReference::address_of_regexp_stack_memory_address(isolate());
   ExternalReference address_of_regexp_stack_memory_size =
-      ExternalReference::address_of_regexp_stack_memory_size(masm->isolate());
+      ExternalReference::address_of_regexp_stack_memory_size(isolate());
   __ mov(ebx, Operand::StaticVariable(address_of_regexp_stack_memory_size));
   __ test(ebx, ebx);
   __ j(zero, &runtime);
@@ -1926,7 +1489,7 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
   __ j(above, &runtime);
 
   // Reset offset for possibly sliced string.
-  __ Set(edi, Immediate(0));
+  __ Move(edi, Immediate(0));
   __ mov(eax, Operand(esp, kSubjectOffset));
   __ JumpIfSmi(eax, &runtime);
   __ mov(edx, eax);  // Make a copy of the original subject string.
@@ -2003,8 +1566,8 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
   // (5b) Is subject external?  If yes, go to (8).
   __ test_b(ebx, kStringRepresentationMask);
   // The underlying external string is never a short external string.
-  STATIC_CHECK(ExternalString::kMaxShortLength < ConsString::kMinLength);
-  STATIC_CHECK(ExternalString::kMaxShortLength < SlicedString::kMinLength);
+  STATIC_ASSERT(ExternalString::kMaxShortLength < ConsString::kMinLength);
+  STATIC_ASSERT(ExternalString::kMaxShortLength < SlicedString::kMinLength);
   __ j(not_zero, &external_string);  // Go to (8).
 
   // eax: sequential subject string (or look-alike, external string)
@@ -2020,7 +1583,7 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
   __ cmp(ebx, FieldOperand(edx, String::kLengthOffset));
   __ j(above_equal, &runtime);
   __ mov(edx, FieldOperand(ecx, JSRegExp::kDataAsciiCodeOffset));
-  __ Set(ecx, Immediate(1));  // Type is one byte.
+  __ Move(ecx, Immediate(1));  // Type is one byte.
 
   // (E) Carry on.  String handling is done.
   __ bind(&check_code);
@@ -2035,7 +1598,7 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
   // edx: code
   // ecx: encoding of subject string (1 if ASCII, 0 if two_byte);
   // All checks done. Now push arguments for native regexp code.
-  Counters* counters = masm->isolate()->counters();
+  Counters* counters = isolate()->counters();
   __ IncrementCounter(counters->regexp_entry_native(), 1);
 
   // Isolates: note we add an additional parameter here (isolate pointer).
@@ -2044,7 +1607,7 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
 
   // Argument 9: Pass current isolate address.
   __ mov(Operand(esp, 8 * kPointerSize),
-      Immediate(ExternalReference::isolate_address(masm->isolate())));
+      Immediate(ExternalReference::isolate_address(isolate())));
 
   // Argument 8: Indicate that this is a direct call from JavaScript.
   __ mov(Operand(esp, 7 * kPointerSize), Immediate(1));
@@ -2061,7 +1624,7 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
   // Argument 5: static offsets vector buffer.
   __ mov(Operand(esp, 4 * kPointerSize),
          Immediate(ExternalReference::address_of_static_offsets_vector(
-             masm->isolate())));
+             isolate())));
 
   // Argument 2: Previous index.
   __ SmiUntag(ebx);
@@ -2135,8 +1698,8 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
   // haven't created the exception yet. Handle that in the runtime system.
   // TODO(592): Rerunning the RegExp to get the stack overflow exception.
   ExternalReference pending_exception(Isolate::kPendingExceptionAddress,
-                                      masm->isolate());
-  __ mov(edx, Immediate(masm->isolate()->factory()->the_hole_value()));
+                                      isolate());
+  __ mov(edx, Immediate(isolate()->factory()->the_hole_value()));
   __ mov(eax, Operand::StaticVariable(pending_exception));
   __ cmp(edx, eax);
   __ j(equal, &runtime);
@@ -2217,7 +1780,7 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
 
   // Get the static offsets vector filled by the native regexp code.
   ExternalReference address_of_static_offsets_vector =
-      ExternalReference::address_of_static_offsets_vector(masm->isolate());
+      ExternalReference::address_of_static_offsets_vector(isolate());
   __ mov(ecx, Immediate(address_of_static_offsets_vector));
 
   // ebx: last_match_info backing store (FixedArray)
@@ -2247,7 +1810,7 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
 
   // Do the runtime call to execute the regexp.
   __ bind(&runtime);
-  __ TailCallRuntime(Runtime::kRegExpExec, 4, 1);
+  __ TailCallRuntime(Runtime::kHiddenRegExpExec, 4, 1);
 
   // Deferred code for string handling.
   // (7) Not a long external string?  If yes, go to (10).
@@ -2288,7 +1851,7 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
   __ cmp(ebx, FieldOperand(edx, String::kLengthOffset));
   __ j(above_equal, &runtime);
   __ mov(edx, FieldOperand(ecx, JSRegExp::kDataUC16CodeOffset));
-  __ Set(ecx, Immediate(0));  // Type is two byte.
+  __ Move(ecx, Immediate(0));  // Type is two byte.
   __ jmp(&check_code);  // Go to (E).
 
   // (10) Not a string or a short external string?  If yes, bail out to runtime.
@@ -2304,88 +1867,6 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
   __ mov(eax, FieldOperand(eax, SlicedString::kParentOffset));
   __ jmp(&check_underlying);  // Go to (5a).
 #endif  // V8_INTERPRETED_REGEXP
-}
-
-
-void RegExpConstructResultStub::Generate(MacroAssembler* masm) {
-  const int kMaxInlineLength = 100;
-  Label slowcase;
-  Label done;
-  __ mov(ebx, Operand(esp, kPointerSize * 3));
-  __ JumpIfNotSmi(ebx, &slowcase);
-  __ cmp(ebx, Immediate(Smi::FromInt(kMaxInlineLength)));
-  __ j(above, &slowcase);
-  // Smi-tagging is equivalent to multiplying by 2.
-  STATIC_ASSERT(kSmiTag == 0);
-  STATIC_ASSERT(kSmiTagSize == 1);
-  // Allocate RegExpResult followed by FixedArray with size in ebx.
-  // JSArray:   [Map][empty properties][Elements][Length-smi][index][input]
-  // Elements:  [Map][Length][..elements..]
-  __ Allocate(JSRegExpResult::kSize + FixedArray::kHeaderSize,
-              times_pointer_size,
-              ebx,  // In: Number of elements as a smi
-              REGISTER_VALUE_IS_SMI,
-              eax,  // Out: Start of allocation (tagged).
-              ecx,  // Out: End of allocation.
-              edx,  // Scratch register
-              &slowcase,
-              TAG_OBJECT);
-  // eax: Start of allocated area, object-tagged.
-
-  // Set JSArray map to global.regexp_result_map().
-  // Set empty properties FixedArray.
-  // Set elements to point to FixedArray allocated right after the JSArray.
-  // Interleave operations for better latency.
-  __ mov(edx, ContextOperand(esi, Context::GLOBAL_OBJECT_INDEX));
-  Factory* factory = masm->isolate()->factory();
-  __ mov(ecx, Immediate(factory->empty_fixed_array()));
-  __ lea(ebx, Operand(eax, JSRegExpResult::kSize));
-  __ mov(edx, FieldOperand(edx, GlobalObject::kNativeContextOffset));
-  __ mov(FieldOperand(eax, JSObject::kElementsOffset), ebx);
-  __ mov(FieldOperand(eax, JSObject::kPropertiesOffset), ecx);
-  __ mov(edx, ContextOperand(edx, Context::REGEXP_RESULT_MAP_INDEX));
-  __ mov(FieldOperand(eax, HeapObject::kMapOffset), edx);
-
-  // Set input, index and length fields from arguments.
-  __ mov(ecx, Operand(esp, kPointerSize * 1));
-  __ mov(FieldOperand(eax, JSRegExpResult::kInputOffset), ecx);
-  __ mov(ecx, Operand(esp, kPointerSize * 2));
-  __ mov(FieldOperand(eax, JSRegExpResult::kIndexOffset), ecx);
-  __ mov(ecx, Operand(esp, kPointerSize * 3));
-  __ mov(FieldOperand(eax, JSArray::kLengthOffset), ecx);
-
-  // Fill out the elements FixedArray.
-  // eax: JSArray.
-  // ebx: FixedArray.
-  // ecx: Number of elements in array, as smi.
-
-  // Set map.
-  __ mov(FieldOperand(ebx, HeapObject::kMapOffset),
-         Immediate(factory->fixed_array_map()));
-  // Set length.
-  __ mov(FieldOperand(ebx, FixedArray::kLengthOffset), ecx);
-  // Fill contents of fixed-array with undefined.
-  __ SmiUntag(ecx);
-  __ mov(edx, Immediate(factory->undefined_value()));
-  __ lea(ebx, FieldOperand(ebx, FixedArray::kHeaderSize));
-  // Fill fixed array elements with undefined.
-  // eax: JSArray.
-  // ecx: Number of elements to fill.
-  // ebx: Start of elements in FixedArray.
-  // edx: undefined.
-  Label loop;
-  __ test(ecx, ecx);
-  __ bind(&loop);
-  __ j(less_equal, &done, Label::kNear);  // Jump if ecx is negative or zero.
-  __ sub(ecx, Immediate(1));
-  __ mov(Operand(ebx, ecx, times_pointer_size, 0), edx);
-  __ jmp(&loop);
-
-  __ bind(&done);
-  __ ret(3 * kPointerSize);
-
-  __ bind(&slowcase);
-  __ TailCallRuntime(Runtime::kRegExpConstructResult, 3, 1);
 }
 
 
@@ -2465,9 +1946,9 @@ void ICCompareStub::GenerateGeneric(MacroAssembler* masm) {
       // Check for undefined.  undefined OP undefined is false even though
       // undefined == undefined.
       Label check_for_nan;
-      __ cmp(edx, masm->isolate()->factory()->undefined_value());
+      __ cmp(edx, isolate()->factory()->undefined_value());
       __ j(not_equal, &check_for_nan, Label::kNear);
-      __ Set(eax, Immediate(Smi::FromInt(NegativeComparisonResult(cc))));
+      __ Move(eax, Immediate(Smi::FromInt(NegativeComparisonResult(cc))));
       __ ret(0);
       __ bind(&check_for_nan);
     }
@@ -2475,14 +1956,14 @@ void ICCompareStub::GenerateGeneric(MacroAssembler* masm) {
     // Test for NaN. Compare heap numbers in a general way,
     // to hanlde NaNs correctly.
     __ cmp(FieldOperand(edx, HeapObject::kMapOffset),
-           Immediate(masm->isolate()->factory()->heap_number_map()));
+           Immediate(isolate()->factory()->heap_number_map()));
     __ j(equal, &generic_heap_number_comparison, Label::kNear);
     if (cc != equal) {
       // Call runtime on identical JSObjects.  Otherwise return equal.
       __ CmpObjectType(eax, FIRST_SPEC_OBJECT_TYPE, ecx);
       __ j(above_equal, &not_identical);
     }
-    __ Set(eax, Immediate(Smi::FromInt(EQUAL)));
+    __ Move(eax, Immediate(Smi::FromInt(EQUAL)));
     __ ret(0);
 
 
@@ -2520,7 +2001,7 @@ void ICCompareStub::GenerateGeneric(MacroAssembler* masm) {
 
     // Check if the non-smi operand is a heap number.
     __ cmp(FieldOperand(ebx, HeapObject::kMapOffset),
-           Immediate(masm->isolate()->factory()->heap_number_map()));
+           Immediate(isolate()->factory()->heap_number_map()));
     // If heap number, handle it in the slow case.
     __ j(equal, &slow, Label::kNear);
     // Return non-equal (ebx is not zero)
@@ -2565,48 +2046,18 @@ void ICCompareStub::GenerateGeneric(MacroAssembler* masm) {
   Label non_number_comparison;
   Label unordered;
   __ bind(&generic_heap_number_comparison);
-  if (CpuFeatures::IsSupported(SSE2)) {
-    CpuFeatureScope use_sse2(masm, SSE2);
-    CpuFeatureScope use_cmov(masm, CMOV);
 
-    FloatingPointHelper::LoadSSE2Operands(masm, &non_number_comparison);
-    __ ucomisd(xmm0, xmm1);
+  FloatingPointHelper::LoadSSE2Operands(masm, &non_number_comparison);
+  __ ucomisd(xmm0, xmm1);
+  // Don't base result on EFLAGS when a NaN is involved.
+  __ j(parity_even, &unordered, Label::kNear);
 
-    // Don't base result on EFLAGS when a NaN is involved.
-    __ j(parity_even, &unordered, Label::kNear);
-    // Return a result of -1, 0, or 1, based on EFLAGS.
-    __ mov(eax, 0);  // equal
-    __ mov(ecx, Immediate(Smi::FromInt(1)));
-    __ cmov(above, eax, ecx);
-    __ mov(ecx, Immediate(Smi::FromInt(-1)));
-    __ cmov(below, eax, ecx);
-    __ ret(0);
-  } else {
-    FloatingPointHelper::CheckFloatOperands(
-        masm, &non_number_comparison, ebx);
-    FloatingPointHelper::LoadFloatOperand(masm, eax);
-    FloatingPointHelper::LoadFloatOperand(masm, edx);
-    __ FCmp();
-
-    // Don't base result on EFLAGS when a NaN is involved.
-    __ j(parity_even, &unordered, Label::kNear);
-
-    Label below_label, above_label;
-    // Return a result of -1, 0, or 1, based on EFLAGS.
-    __ j(below, &below_label, Label::kNear);
-    __ j(above, &above_label, Label::kNear);
-
-    __ Set(eax, Immediate(0));
-    __ ret(0);
-
-    __ bind(&below_label);
-    __ mov(eax, Immediate(Smi::FromInt(-1)));
-    __ ret(0);
-
-    __ bind(&above_label);
-    __ mov(eax, Immediate(Smi::FromInt(1)));
-    __ ret(0);
-  }
+  __ mov(eax, 0);  // equal
+  __ mov(ecx, Immediate(Smi::FromInt(1)));
+  __ cmov(above, eax, ecx);
+  __ mov(ecx, Immediate(Smi::FromInt(-1)));
+  __ cmov(below, eax, ecx);
+  __ ret(0);
 
   // If one of the numbers was NaN, then the result is always false.
   // The cc is never not-equal.
@@ -2688,7 +2139,7 @@ void ICCompareStub::GenerateGeneric(MacroAssembler* masm) {
     __ j(zero, &return_unequal, Label::kNear);
     // The objects are both undetectable, so they both compare as the value
     // undefined, and are equal.
-    __ Set(eax, Immediate(EQUAL));
+    __ Move(eax, Immediate(EQUAL));
     __ bind(&return_unequal);
     // Return non-equal by returning the non-zero object pointer in eax,
     // or return equal if we fell through to here.
@@ -2723,165 +2174,136 @@ void ICCompareStub::GenerateGeneric(MacroAssembler* masm) {
 
 
 static void GenerateRecordCallTarget(MacroAssembler* masm) {
-  // Cache the called function in a global property cell.  Cache states
+  // Cache the called function in a feedback vector slot.  Cache states
   // are uninitialized, monomorphic (indicated by a JSFunction), and
   // megamorphic.
   // eax : number of arguments to the construct function
-  // ebx : cache cell for call target
+  // ebx : Feedback vector
+  // edx : slot in feedback vector (Smi)
   // edi : the function to call
   Isolate* isolate = masm->isolate();
   Label initialize, done, miss, megamorphic, not_array_function;
 
   // Load the cache state into ecx.
-  __ mov(ecx, FieldOperand(ebx, Cell::kValueOffset));
+  __ mov(ecx, FieldOperand(ebx, edx, times_half_pointer_size,
+                           FixedArray::kHeaderSize));
 
   // A monomorphic cache hit or an already megamorphic state: invoke the
   // function without changing the state.
   __ cmp(ecx, edi);
-  __ j(equal, &done);
-  __ cmp(ecx, Immediate(TypeFeedbackCells::MegamorphicSentinel(isolate)));
-  __ j(equal, &done);
+  __ j(equal, &done, Label::kFar);
+  __ cmp(ecx, Immediate(TypeFeedbackInfo::MegamorphicSentinel(isolate)));
+  __ j(equal, &done, Label::kFar);
 
-  // If we came here, we need to see if we are the array function.
-  // If we didn't have a matching function, and we didn't find the megamorph
-  // sentinel, then we have in the cell either some other function or an
-  // AllocationSite. Do a map check on the object in ecx.
-  Handle<Map> allocation_site_map =
-      masm->isolate()->factory()->allocation_site_map();
-  __ cmp(FieldOperand(ecx, 0), Immediate(allocation_site_map));
-  __ j(not_equal, &miss);
+  if (!FLAG_pretenuring_call_new) {
+    // If we came here, we need to see if we are the array function.
+    // If we didn't have a matching function, and we didn't find the megamorph
+    // sentinel, then we have in the slot either some other function or an
+    // AllocationSite. Do a map check on the object in ecx.
+    Handle<Map> allocation_site_map = isolate->factory()->allocation_site_map();
+    __ cmp(FieldOperand(ecx, 0), Immediate(allocation_site_map));
+    __ j(not_equal, &miss);
 
-  // Load the global or builtins object from the current context
-  __ LoadGlobalContext(ecx);
-  // Make sure the function is the Array() function
-  __ cmp(edi, Operand(ecx,
-                      Context::SlotOffset(Context::ARRAY_FUNCTION_INDEX)));
-  __ j(not_equal, &megamorphic);
-  __ jmp(&done);
+    // Make sure the function is the Array() function
+    __ LoadGlobalFunction(Context::ARRAY_FUNCTION_INDEX, ecx);
+    __ cmp(edi, ecx);
+    __ j(not_equal, &megamorphic);
+    __ jmp(&done, Label::kFar);
+  }
 
   __ bind(&miss);
 
   // A monomorphic miss (i.e, here the cache is not uninitialized) goes
   // megamorphic.
-  __ cmp(ecx, Immediate(TypeFeedbackCells::UninitializedSentinel(isolate)));
+  __ cmp(ecx, Immediate(TypeFeedbackInfo::UninitializedSentinel(isolate)));
   __ j(equal, &initialize);
   // MegamorphicSentinel is an immortal immovable object (undefined) so no
   // write-barrier is needed.
   __ bind(&megamorphic);
-  __ mov(FieldOperand(ebx, Cell::kValueOffset),
-         Immediate(TypeFeedbackCells::MegamorphicSentinel(isolate)));
-  __ jmp(&done, Label::kNear);
+  __ mov(FieldOperand(ebx, edx, times_half_pointer_size,
+                      FixedArray::kHeaderSize),
+         Immediate(TypeFeedbackInfo::MegamorphicSentinel(isolate)));
+  __ jmp(&done, Label::kFar);
 
   // An uninitialized cache is patched with the function or sentinel to
   // indicate the ElementsKind if function is the Array constructor.
   __ bind(&initialize);
-  __ LoadGlobalContext(ecx);
-  // Make sure the function is the Array() function
-  __ cmp(edi, Operand(ecx,
-                      Context::SlotOffset(Context::ARRAY_FUNCTION_INDEX)));
-  __ j(not_equal, &not_array_function);
+  if (!FLAG_pretenuring_call_new) {
+    // Make sure the function is the Array() function
+    __ LoadGlobalFunction(Context::ARRAY_FUNCTION_INDEX, ecx);
+    __ cmp(edi, ecx);
+    __ j(not_equal, &not_array_function);
 
-  // The target function is the Array constructor,
-  // Create an AllocationSite if we don't already have it, store it in the cell
-  {
-    FrameScope scope(masm, StackFrame::INTERNAL);
+    // The target function is the Array constructor,
+    // Create an AllocationSite if we don't already have it, store it in the
+    // slot.
+    {
+      FrameScope scope(masm, StackFrame::INTERNAL);
 
-    // Arguments register must be smi-tagged to call out.
-    __ SmiTag(eax);
-    __ push(eax);
-    __ push(edi);
-    __ push(ebx);
+      // Arguments register must be smi-tagged to call out.
+      __ SmiTag(eax);
+      __ push(eax);
+      __ push(edi);
+      __ push(edx);
+      __ push(ebx);
 
-    CreateAllocationSiteStub create_stub;
-    __ CallStub(&create_stub);
+      CreateAllocationSiteStub create_stub(isolate);
+      __ CallStub(&create_stub);
 
-    __ pop(ebx);
-    __ pop(edi);
-    __ pop(eax);
-    __ SmiUntag(eax);
+      __ pop(ebx);
+      __ pop(edx);
+      __ pop(edi);
+      __ pop(eax);
+      __ SmiUntag(eax);
+    }
+    __ jmp(&done);
+
+    __ bind(&not_array_function);
   }
-  __ jmp(&done);
 
-  __ bind(&not_array_function);
-  __ mov(FieldOperand(ebx, Cell::kValueOffset), edi);
-  // No need for a write barrier here - cells are rescanned.
+  __ mov(FieldOperand(ebx, edx, times_half_pointer_size,
+                      FixedArray::kHeaderSize),
+         edi);
+  // We won't need edx or ebx anymore, just save edi
+  __ push(edi);
+  __ push(ebx);
+  __ push(edx);
+  __ RecordWriteArray(ebx, edi, edx, kDontSaveFPRegs,
+                      EMIT_REMEMBERED_SET, OMIT_SMI_CHECK);
+  __ pop(edx);
+  __ pop(ebx);
+  __ pop(edi);
 
   __ bind(&done);
 }
 
 
-void CallFunctionStub::Generate(MacroAssembler* masm) {
-  // ebx : cache cell for call target
-  // edi : the function to call
-  Isolate* isolate = masm->isolate();
-  Label slow, non_function;
+static void EmitContinueIfStrictOrNative(MacroAssembler* masm, Label* cont) {
+  // Do not transform the receiver for strict mode functions.
+  __ mov(ecx, FieldOperand(edi, JSFunction::kSharedFunctionInfoOffset));
+  __ test_b(FieldOperand(ecx, SharedFunctionInfo::kStrictModeByteOffset),
+            1 << SharedFunctionInfo::kStrictModeBitWithinByte);
+  __ j(not_equal, cont);
 
-  // The receiver might implicitly be the global object. This is
-  // indicated by passing the hole as the receiver to the call
-  // function stub.
-  if (ReceiverMightBeImplicit()) {
-    Label receiver_ok;
-    // Get the receiver from the stack.
-    // +1 ~ return address
-    __ mov(eax, Operand(esp, (argc_ + 1) * kPointerSize));
-    // Call as function is indicated with the hole.
-    __ cmp(eax, isolate->factory()->the_hole_value());
-    __ j(not_equal, &receiver_ok, Label::kNear);
-    // Patch the receiver on the stack with the global receiver object.
-    __ mov(ecx, GlobalObjectOperand());
-    __ mov(ecx, FieldOperand(ecx, GlobalObject::kGlobalReceiverOffset));
-    __ mov(Operand(esp, (argc_ + 1) * kPointerSize), ecx);
-    __ bind(&receiver_ok);
-  }
+  // Do not transform the receiver for natives (shared already in ecx).
+  __ test_b(FieldOperand(ecx, SharedFunctionInfo::kNativeByteOffset),
+            1 << SharedFunctionInfo::kNativeBitWithinByte);
+  __ j(not_equal, cont);
+}
 
-  // Check that the function really is a JavaScript function.
-  __ JumpIfSmi(edi, &non_function);
-  // Goto slow case if we do not have a function.
-  __ CmpObjectType(edi, JS_FUNCTION_TYPE, ecx);
-  __ j(not_equal, &slow);
 
-  if (RecordCallTarget()) {
-    GenerateRecordCallTarget(masm);
-  }
-
-  // Fast-case: Just invoke the function.
-  ParameterCount actual(argc_);
-
-  if (ReceiverMightBeImplicit()) {
-    Label call_as_function;
-    __ cmp(eax, isolate->factory()->the_hole_value());
-    __ j(equal, &call_as_function);
-    __ InvokeFunction(edi,
-                      actual,
-                      JUMP_FUNCTION,
-                      NullCallWrapper(),
-                      CALL_AS_METHOD);
-    __ bind(&call_as_function);
-  }
-  __ InvokeFunction(edi,
-                    actual,
-                    JUMP_FUNCTION,
-                    NullCallWrapper(),
-                    CALL_AS_FUNCTION);
-
-  // Slow-case: Non-function called.
-  __ bind(&slow);
-  if (RecordCallTarget()) {
-    // If there is a call target cache, mark it megamorphic in the
-    // non-function case.  MegamorphicSentinel is an immortal immovable
-    // object (undefined) so no write barrier is needed.
-    __ mov(FieldOperand(ebx, Cell::kValueOffset),
-           Immediate(TypeFeedbackCells::MegamorphicSentinel(isolate)));
-  }
+static void EmitSlowCase(Isolate* isolate,
+                         MacroAssembler* masm,
+                         int argc,
+                         Label* non_function) {
   // Check for function proxy.
   __ CmpInstanceType(ecx, JS_FUNCTION_PROXY_TYPE);
-  __ j(not_equal, &non_function);
+  __ j(not_equal, non_function);
   __ pop(ecx);
   __ push(edi);  // put proxy as additional argument under return address
   __ push(ecx);
-  __ Set(eax, Immediate(argc_ + 1));
-  __ Set(ebx, Immediate(0));
-  __ SetCallKind(ecx, CALL_AS_FUNCTION);
+  __ Move(eax, Immediate(argc + 1));
+  __ Move(ebx, Immediate(0));
   __ GetBuiltinEntry(edx, Builtins::CALL_FUNCTION_PROXY);
   {
     Handle<Code> adaptor = isolate->builtins()->ArgumentsAdaptorTrampoline();
@@ -2890,20 +2312,93 @@ void CallFunctionStub::Generate(MacroAssembler* masm) {
 
   // CALL_NON_FUNCTION expects the non-function callee as receiver (instead
   // of the original receiver from the call site).
-  __ bind(&non_function);
-  __ mov(Operand(esp, (argc_ + 1) * kPointerSize), edi);
-  __ Set(eax, Immediate(argc_));
-  __ Set(ebx, Immediate(0));
-  __ SetCallKind(ecx, CALL_AS_METHOD);
+  __ bind(non_function);
+  __ mov(Operand(esp, (argc + 1) * kPointerSize), edi);
+  __ Move(eax, Immediate(argc));
+  __ Move(ebx, Immediate(0));
   __ GetBuiltinEntry(edx, Builtins::CALL_NON_FUNCTION);
   Handle<Code> adaptor = isolate->builtins()->ArgumentsAdaptorTrampoline();
   __ jmp(adaptor, RelocInfo::CODE_TARGET);
 }
 
 
+static void EmitWrapCase(MacroAssembler* masm, int argc, Label* cont) {
+  // Wrap the receiver and patch it back onto the stack.
+  { FrameScope frame_scope(masm, StackFrame::INTERNAL);
+    __ push(edi);
+    __ push(eax);
+    __ InvokeBuiltin(Builtins::TO_OBJECT, CALL_FUNCTION);
+    __ pop(edi);
+  }
+  __ mov(Operand(esp, (argc + 1) * kPointerSize), eax);
+  __ jmp(cont);
+}
+
+
+static void CallFunctionNoFeedback(MacroAssembler* masm,
+                                   int argc, bool needs_checks,
+                                   bool call_as_method) {
+  // edi : the function to call
+  Label slow, non_function, wrap, cont;
+
+  if (needs_checks) {
+    // Check that the function really is a JavaScript function.
+    __ JumpIfSmi(edi, &non_function);
+
+    // Goto slow case if we do not have a function.
+    __ CmpObjectType(edi, JS_FUNCTION_TYPE, ecx);
+    __ j(not_equal, &slow);
+  }
+
+  // Fast-case: Just invoke the function.
+  ParameterCount actual(argc);
+
+  if (call_as_method) {
+    if (needs_checks) {
+      EmitContinueIfStrictOrNative(masm, &cont);
+    }
+
+    // Load the receiver from the stack.
+    __ mov(eax, Operand(esp, (argc + 1) * kPointerSize));
+
+    if (call_as_method) {
+      __ JumpIfSmi(eax, &wrap);
+
+      __ CmpObjectType(eax, FIRST_SPEC_OBJECT_TYPE, ecx);
+      __ j(below, &wrap);
+    } else {
+      __ jmp(&wrap);
+    }
+
+    __ bind(&cont);
+  }
+
+  __ InvokeFunction(edi, actual, JUMP_FUNCTION, NullCallWrapper());
+
+  if (needs_checks) {
+    // Slow-case: Non-function called.
+    __ bind(&slow);
+    // (non_function is bound in EmitSlowCase)
+    EmitSlowCase(masm->isolate(), masm, argc, &non_function);
+  }
+
+  if (call_as_method) {
+    __ bind(&wrap);
+    EmitWrapCase(masm, argc, &cont);
+  }
+}
+
+
+void CallFunctionStub::Generate(MacroAssembler* masm) {
+  CallFunctionNoFeedback(masm, argc_, NeedsChecks(), CallAsMethod());
+}
+
+
 void CallConstructStub::Generate(MacroAssembler* masm) {
   // eax : number of arguments
-  // ebx : cache cell for call target
+  // ebx : feedback vector
+  // edx : (only if ebx is not the megamorphic symbol) slot in feedback
+  //       vector (Smi)
   // edi : constructor function
   Label slow, non_function_call;
 
@@ -2915,6 +2410,27 @@ void CallConstructStub::Generate(MacroAssembler* masm) {
 
   if (RecordCallTarget()) {
     GenerateRecordCallTarget(masm);
+
+    if (FLAG_pretenuring_call_new) {
+      // Put the AllocationSite from the feedback vector into ebx.
+      // By adding kPointerSize we encode that we know the AllocationSite
+      // entry is at the feedback vector slot given by edx + 1.
+      __ mov(ebx, FieldOperand(ebx, edx, times_half_pointer_size,
+                               FixedArray::kHeaderSize + kPointerSize));
+    } else {
+      Label feedback_register_initialized;
+      // Put the AllocationSite from the feedback vector into ebx, or undefined.
+      __ mov(ebx, FieldOperand(ebx, edx, times_half_pointer_size,
+                               FixedArray::kHeaderSize));
+      Handle<Map> allocation_site_map =
+          isolate()->factory()->allocation_site_map();
+      __ cmp(FieldOperand(ebx, 0), Immediate(allocation_site_map));
+      __ j(equal, &feedback_register_initialized);
+      __ mov(ebx, isolate()->factory()->undefined_value());
+      __ bind(&feedback_register_initialized);
+    }
+
+    __ AssertUndefinedOrAllocationSite(ebx);
   }
 
   // Jump to the function-specific construct stub.
@@ -2939,11 +2455,157 @@ void CallConstructStub::Generate(MacroAssembler* masm) {
   __ GetBuiltinEntry(edx, Builtins::CALL_NON_FUNCTION_AS_CONSTRUCTOR);
   __ bind(&do_call);
   // Set expected number of arguments to zero (not changing eax).
-  __ Set(ebx, Immediate(0));
+  __ Move(ebx, Immediate(0));
   Handle<Code> arguments_adaptor =
-      masm->isolate()->builtins()->ArgumentsAdaptorTrampoline();
-  __ SetCallKind(ecx, CALL_AS_METHOD);
+      isolate()->builtins()->ArgumentsAdaptorTrampoline();
   __ jmp(arguments_adaptor, RelocInfo::CODE_TARGET);
+}
+
+
+static void EmitLoadTypeFeedbackVector(MacroAssembler* masm, Register vector) {
+  __ mov(vector, Operand(ebp, JavaScriptFrameConstants::kFunctionOffset));
+  __ mov(vector, FieldOperand(vector, JSFunction::kSharedFunctionInfoOffset));
+  __ mov(vector, FieldOperand(vector,
+                              SharedFunctionInfo::kFeedbackVectorOffset));
+}
+
+
+void CallIC_ArrayStub::Generate(MacroAssembler* masm) {
+  // edi - function
+  // edx - slot id
+  Label miss;
+  int argc = state_.arg_count();
+  ParameterCount actual(argc);
+
+  EmitLoadTypeFeedbackVector(masm, ebx);
+
+  __ LoadGlobalFunction(Context::ARRAY_FUNCTION_INDEX, ecx);
+  __ cmp(edi, ecx);
+  __ j(not_equal, &miss);
+
+  __ mov(eax, arg_count());
+  __ mov(ebx, FieldOperand(ebx, edx, times_half_pointer_size,
+                           FixedArray::kHeaderSize));
+  // Verify that ecx contains an AllocationSite
+  __ AssertUndefinedOrAllocationSite(ebx);
+  ArrayConstructorStub stub(masm->isolate(), arg_count());
+  __ TailCallStub(&stub);
+
+  __ bind(&miss);
+  GenerateMiss(masm, IC::kCallIC_Customization_Miss);
+
+  // The slow case, we need this no matter what to complete a call after a miss.
+  CallFunctionNoFeedback(masm,
+                         arg_count(),
+                         true,
+                         CallAsMethod());
+
+  // Unreachable.
+  __ int3();
+}
+
+
+void CallICStub::Generate(MacroAssembler* masm) {
+  // edi - function
+  // edx - slot id
+  Isolate* isolate = masm->isolate();
+  Label extra_checks_or_miss, slow_start;
+  Label slow, non_function, wrap, cont;
+  Label have_js_function;
+  int argc = state_.arg_count();
+  ParameterCount actual(argc);
+
+  EmitLoadTypeFeedbackVector(masm, ebx);
+
+  // The checks. First, does edi match the recorded monomorphic target?
+  __ cmp(edi, FieldOperand(ebx, edx, times_half_pointer_size,
+                           FixedArray::kHeaderSize));
+  __ j(not_equal, &extra_checks_or_miss);
+
+  __ bind(&have_js_function);
+  if (state_.CallAsMethod()) {
+    EmitContinueIfStrictOrNative(masm, &cont);
+
+    // Load the receiver from the stack.
+    __ mov(eax, Operand(esp, (argc + 1) * kPointerSize));
+
+    __ JumpIfSmi(eax, &wrap);
+
+    __ CmpObjectType(eax, FIRST_SPEC_OBJECT_TYPE, ecx);
+    __ j(below, &wrap);
+
+    __ bind(&cont);
+  }
+
+  __ InvokeFunction(edi, actual, JUMP_FUNCTION, NullCallWrapper());
+
+  __ bind(&slow);
+  EmitSlowCase(isolate, masm, argc, &non_function);
+
+  if (state_.CallAsMethod()) {
+    __ bind(&wrap);
+    EmitWrapCase(masm, argc, &cont);
+  }
+
+  __ bind(&extra_checks_or_miss);
+  Label miss;
+
+  __ mov(ecx, FieldOperand(ebx, edx, times_half_pointer_size,
+                           FixedArray::kHeaderSize));
+  __ cmp(ecx, Immediate(TypeFeedbackInfo::MegamorphicSentinel(isolate)));
+  __ j(equal, &slow_start);
+  __ cmp(ecx, Immediate(TypeFeedbackInfo::UninitializedSentinel(isolate)));
+  __ j(equal, &miss);
+
+  if (!FLAG_trace_ic) {
+    // We are going megamorphic, and we don't want to visit the runtime.
+    __ mov(FieldOperand(ebx, edx, times_half_pointer_size,
+                        FixedArray::kHeaderSize),
+           Immediate(TypeFeedbackInfo::MegamorphicSentinel(isolate)));
+    __ jmp(&slow_start);
+  }
+
+  // We are here because tracing is on or we are going monomorphic.
+  __ bind(&miss);
+  GenerateMiss(masm, IC::kCallIC_Miss);
+
+  // the slow case
+  __ bind(&slow_start);
+
+  // Check that the function really is a JavaScript function.
+  __ JumpIfSmi(edi, &non_function);
+
+  // Goto slow case if we do not have a function.
+  __ CmpObjectType(edi, JS_FUNCTION_TYPE, ecx);
+  __ j(not_equal, &slow);
+  __ jmp(&have_js_function);
+
+  // Unreachable
+  __ int3();
+}
+
+
+void CallICStub::GenerateMiss(MacroAssembler* masm, IC::UtilityId id) {
+  // Get the receiver of the function from the stack; 1 ~ return address.
+  __ mov(ecx, Operand(esp, (state_.arg_count() + 1) * kPointerSize));
+
+  {
+    FrameScope scope(masm, StackFrame::INTERNAL);
+
+    // Push the receiver and the function and feedback info.
+    __ push(ecx);
+    __ push(edi);
+    __ push(ebx);
+    __ push(edx);
+
+    // Call the entry.
+    ExternalReference miss = ExternalReference(IC_Utility(id),
+                                               masm->isolate());
+    __ CallExternalReference(miss, 4);
+
+    // Move result to edi and exit the internal frame.
+    __ mov(edi, eax);
+  }
 }
 
 
@@ -2959,169 +2621,26 @@ void CodeStub::GenerateStubsAheadOfTime(Isolate* isolate) {
   // It is important that the store buffer overflow stubs are generated first.
   ArrayConstructorStubBase::GenerateStubsAheadOfTime(isolate);
   CreateAllocationSiteStub::GenerateAheadOfTime(isolate);
-  if (Serializer::enabled()) {
-    PlatformFeatureScope sse2(SSE2);
-    BinaryOpICStub::GenerateAheadOfTime(isolate);
-  } else {
-    BinaryOpICStub::GenerateAheadOfTime(isolate);
-  }
+  BinaryOpICStub::GenerateAheadOfTime(isolate);
+  BinaryOpICWithAllocationSiteStub::GenerateAheadOfTime(isolate);
 }
 
 
 void CodeStub::GenerateFPStubs(Isolate* isolate) {
-  if (CpuFeatures::IsSupported(SSE2)) {
-    CEntryStub save_doubles(1, kSaveFPRegs);
-    // Stubs might already be in the snapshot, detect that and don't regenerate,
-    // which would lead to code stub initialization state being messed up.
-    Code* save_doubles_code;
-    if (!save_doubles.FindCodeInCache(&save_doubles_code, isolate)) {
-      save_doubles_code = *(save_doubles.GetCode(isolate));
-    }
-    isolate->set_fp_stubs_generated(true);
+  CEntryStub save_doubles(isolate, 1, kSaveFPRegs);
+  // Stubs might already be in the snapshot, detect that and don't regenerate,
+  // which would lead to code stub initialization state being messed up.
+  Code* save_doubles_code;
+  if (!save_doubles.FindCodeInCache(&save_doubles_code)) {
+    save_doubles_code = *(save_doubles.GetCode());
   }
+  isolate->set_fp_stubs_generated(true);
 }
 
 
 void CEntryStub::GenerateAheadOfTime(Isolate* isolate) {
-  CEntryStub stub(1, kDontSaveFPRegs);
-  stub.GetCode(isolate);
-}
-
-
-static void JumpIfOOM(MacroAssembler* masm,
-                      Register value,
-                      Register scratch,
-                      Label* oom_label) {
-  __ mov(scratch, value);
-  STATIC_ASSERT(Failure::OUT_OF_MEMORY_EXCEPTION == 3);
-  STATIC_ASSERT(kFailureTag == 3);
-  __ and_(scratch, 0xf);
-  __ cmp(scratch, 0xf);
-  __ j(equal, oom_label);
-}
-
-
-void CEntryStub::GenerateCore(MacroAssembler* masm,
-                              Label* throw_normal_exception,
-                              Label* throw_termination_exception,
-                              Label* throw_out_of_memory_exception,
-                              bool do_gc,
-                              bool always_allocate_scope) {
-  // eax: result parameter for PerformGC, if any
-  // ebx: pointer to C function  (C callee-saved)
-  // ebp: frame pointer  (restored after C call)
-  // esp: stack pointer  (restored after C call)
-  // edi: number of arguments including receiver  (C callee-saved)
-  // esi: pointer to the first argument (C callee-saved)
-
-  // Result returned in eax, or eax+edx if result_size_ is 2.
-
-  // Check stack alignment.
-  if (FLAG_debug_code) {
-    __ CheckStackAlignment();
-  }
-
-  if (do_gc) {
-    // Pass failure code returned from last attempt as first argument to
-    // PerformGC. No need to use PrepareCallCFunction/CallCFunction here as the
-    // stack alignment is known to be correct. This function takes one argument
-    // which is passed on the stack, and we know that the stack has been
-    // prepared to pass at least one argument.
-    __ mov(Operand(esp, 1 * kPointerSize),
-           Immediate(ExternalReference::isolate_address(masm->isolate())));
-    __ mov(Operand(esp, 0 * kPointerSize), eax);  // Result.
-    __ call(FUNCTION_ADDR(Runtime::PerformGC), RelocInfo::RUNTIME_ENTRY);
-  }
-
-  ExternalReference scope_depth =
-      ExternalReference::heap_always_allocate_scope_depth(masm->isolate());
-  if (always_allocate_scope) {
-    __ inc(Operand::StaticVariable(scope_depth));
-  }
-
-  // Call C function.
-  __ mov(Operand(esp, 0 * kPointerSize), edi);  // argc.
-  __ mov(Operand(esp, 1 * kPointerSize), esi);  // argv.
-  __ mov(Operand(esp, 2 * kPointerSize),
-         Immediate(ExternalReference::isolate_address(masm->isolate())));
-  __ call(ebx);
-  // Result is in eax or edx:eax - do not destroy these registers!
-
-  if (always_allocate_scope) {
-    __ dec(Operand::StaticVariable(scope_depth));
-  }
-
-  // Runtime functions should not return 'the hole'.  Allowing it to escape may
-  // lead to crashes in the IC code later.
-  if (FLAG_debug_code) {
-    Label okay;
-    __ cmp(eax, masm->isolate()->factory()->the_hole_value());
-    __ j(not_equal, &okay, Label::kNear);
-    __ int3();
-    __ bind(&okay);
-  }
-
-  // Check for failure result.
-  Label failure_returned;
-  STATIC_ASSERT(((kFailureTag + 1) & kFailureTagMask) == 0);
-  __ lea(ecx, Operand(eax, 1));
-  // Lower 2 bits of ecx are 0 iff eax has failure tag.
-  __ test(ecx, Immediate(kFailureTagMask));
-  __ j(zero, &failure_returned);
-
-  ExternalReference pending_exception_address(
-      Isolate::kPendingExceptionAddress, masm->isolate());
-
-  // Check that there is no pending exception, otherwise we
-  // should have returned some failure value.
-  if (FLAG_debug_code) {
-    __ push(edx);
-    __ mov(edx, Immediate(masm->isolate()->factory()->the_hole_value()));
-    Label okay;
-    __ cmp(edx, Operand::StaticVariable(pending_exception_address));
-    // Cannot use check here as it attempts to generate call into runtime.
-    __ j(equal, &okay, Label::kNear);
-    __ int3();
-    __ bind(&okay);
-    __ pop(edx);
-  }
-
-  // Exit the JavaScript to C++ exit frame.
-  __ LeaveExitFrame(save_doubles_ == kSaveFPRegs);
-  __ ret(0);
-
-  // Handling of failure.
-  __ bind(&failure_returned);
-
-  Label retry;
-  // If the returned exception is RETRY_AFTER_GC continue at retry label
-  STATIC_ASSERT(Failure::RETRY_AFTER_GC == 0);
-  __ test(eax, Immediate(((1 << kFailureTypeTagSize) - 1) << kFailureTagSize));
-  __ j(zero, &retry, Label::kNear);
-
-  // Special handling of out of memory exceptions.
-  JumpIfOOM(masm, eax, ecx, throw_out_of_memory_exception);
-
-  // Retrieve the pending exception.
-  __ mov(eax, Operand::StaticVariable(pending_exception_address));
-
-  // See if we just retrieved an OOM exception.
-  JumpIfOOM(masm, eax, ecx, throw_out_of_memory_exception);
-
-  // Clear the pending exception.
-  __ mov(edx, Immediate(masm->isolate()->factory()->the_hole_value()));
-  __ mov(Operand::StaticVariable(pending_exception_address), edx);
-
-  // Special handling of termination exceptions which are uncatchable
-  // by javascript code.
-  __ cmp(eax, masm->isolate()->factory()->termination_exception());
-  __ j(equal, throw_termination_exception);
-
-  // Handle normal exception.
-  __ jmp(throw_normal_exception);
-
-  // Retry.
-  __ bind(&retry);
+  CEntryStub stub(isolate, 1, kDontSaveFPRegs);
+  stub.GetCode();
 }
 
 
@@ -3135,72 +2654,87 @@ void CEntryStub::Generate(MacroAssembler* masm) {
 
   ProfileEntryHookStub::MaybeCallEntryHook(masm);
 
-  // NOTE: Invocations of builtins may return failure objects instead
-  // of a proper result. The builtin entry handles this by performing
-  // a garbage collection and retrying the builtin (twice).
-
   // Enter the exit frame that transitions from JavaScript to C++.
   __ EnterExitFrame(save_doubles_ == kSaveFPRegs);
 
-  // eax: result parameter for PerformGC, if any (setup below)
-  // ebx: pointer to builtin function  (C callee-saved)
+  // ebx: pointer to C function  (C callee-saved)
   // ebp: frame pointer  (restored after C call)
   // esp: stack pointer  (restored after C call)
-  // edi: number of arguments including receiver (C callee-saved)
-  // esi: argv pointer (C callee-saved)
+  // edi: number of arguments including receiver  (C callee-saved)
+  // esi: pointer to the first argument (C callee-saved)
 
-  Label throw_normal_exception;
+  // Result returned in eax, or eax+edx if result_size_ is 2.
+
+  // Check stack alignment.
+  if (FLAG_debug_code) {
+    __ CheckStackAlignment();
+  }
+
+  // Call C function.
+  __ mov(Operand(esp, 0 * kPointerSize), edi);  // argc.
+  __ mov(Operand(esp, 1 * kPointerSize), esi);  // argv.
+  __ mov(Operand(esp, 2 * kPointerSize),
+         Immediate(ExternalReference::isolate_address(isolate())));
+  __ call(ebx);
+  // Result is in eax or edx:eax - do not destroy these registers!
+
+  // Runtime functions should not return 'the hole'.  Allowing it to escape may
+  // lead to crashes in the IC code later.
+  if (FLAG_debug_code) {
+    Label okay;
+    __ cmp(eax, isolate()->factory()->the_hole_value());
+    __ j(not_equal, &okay, Label::kNear);
+    __ int3();
+    __ bind(&okay);
+  }
+
+  // Check result for exception sentinel.
+  Label exception_returned;
+  __ cmp(eax, isolate()->factory()->exception());
+  __ j(equal, &exception_returned);
+
+  ExternalReference pending_exception_address(
+      Isolate::kPendingExceptionAddress, isolate());
+
+  // Check that there is no pending exception, otherwise we
+  // should have returned the exception sentinel.
+  if (FLAG_debug_code) {
+    __ push(edx);
+    __ mov(edx, Immediate(isolate()->factory()->the_hole_value()));
+    Label okay;
+    __ cmp(edx, Operand::StaticVariable(pending_exception_address));
+    // Cannot use check here as it attempts to generate call into runtime.
+    __ j(equal, &okay, Label::kNear);
+    __ int3();
+    __ bind(&okay);
+    __ pop(edx);
+  }
+
+  // Exit the JavaScript to C++ exit frame.
+  __ LeaveExitFrame(save_doubles_ == kSaveFPRegs);
+  __ ret(0);
+
+  // Handling of exception.
+  __ bind(&exception_returned);
+
+  // Retrieve the pending exception.
+  __ mov(eax, Operand::StaticVariable(pending_exception_address));
+
+  // Clear the pending exception.
+  __ mov(edx, Immediate(isolate()->factory()->the_hole_value()));
+  __ mov(Operand::StaticVariable(pending_exception_address), edx);
+
+  // Special handling of termination exceptions which are uncatchable
+  // by javascript code.
   Label throw_termination_exception;
-  Label throw_out_of_memory_exception;
+  __ cmp(eax, isolate()->factory()->termination_exception());
+  __ j(equal, &throw_termination_exception);
 
-  // Call into the runtime system.
-  GenerateCore(masm,
-               &throw_normal_exception,
-               &throw_termination_exception,
-               &throw_out_of_memory_exception,
-               false,
-               false);
-
-  // Do space-specific GC and retry runtime call.
-  GenerateCore(masm,
-               &throw_normal_exception,
-               &throw_termination_exception,
-               &throw_out_of_memory_exception,
-               true,
-               false);
-
-  // Do full GC and retry runtime call one final time.
-  Failure* failure = Failure::InternalError();
-  __ mov(eax, Immediate(reinterpret_cast<int32_t>(failure)));
-  GenerateCore(masm,
-               &throw_normal_exception,
-               &throw_termination_exception,
-               &throw_out_of_memory_exception,
-               true,
-               true);
-
-  __ bind(&throw_out_of_memory_exception);
-  // Set external caught exception to false.
-  Isolate* isolate = masm->isolate();
-  ExternalReference external_caught(Isolate::kExternalCaughtExceptionAddress,
-                                    isolate);
-  __ mov(Operand::StaticVariable(external_caught), Immediate(false));
-
-  // Set pending exception and eax to out of memory exception.
-  ExternalReference pending_exception(Isolate::kPendingExceptionAddress,
-                                      isolate);
-  Label already_have_failure;
-  JumpIfOOM(masm, eax, ecx, &already_have_failure);
-  __ mov(eax, reinterpret_cast<int32_t>(Failure::OutOfMemoryException(0x1)));
-  __ bind(&already_have_failure);
-  __ mov(Operand::StaticVariable(pending_exception), eax);
-  // Fall through to the next label.
+  // Handle normal exception.
+  __ Throw(eax);
 
   __ bind(&throw_termination_exception);
   __ ThrowUncatchable(eax);
-
-  __ bind(&throw_normal_exception);
-  __ Throw(eax);
 }
 
 
@@ -3224,12 +2758,11 @@ void JSEntryStub::GenerateBody(MacroAssembler* masm, bool is_construct) {
   __ push(ebx);
 
   // Save copies of the top frame descriptor on the stack.
-  ExternalReference c_entry_fp(Isolate::kCEntryFPAddress, masm->isolate());
+  ExternalReference c_entry_fp(Isolate::kCEntryFPAddress, isolate());
   __ push(Operand::StaticVariable(c_entry_fp));
 
   // If this is the outermost JS call, set js_entry_sp value.
-  ExternalReference js_entry_sp(Isolate::kJSEntrySPAddress,
-                                masm->isolate());
+  ExternalReference js_entry_sp(Isolate::kJSEntrySPAddress, isolate());
   __ cmp(Operand::StaticVariable(js_entry_sp), Immediate(0));
   __ j(not_equal, &not_outermost_js, Label::kNear);
   __ mov(Operand::StaticVariable(js_entry_sp), ebp);
@@ -3246,9 +2779,9 @@ void JSEntryStub::GenerateBody(MacroAssembler* masm, bool is_construct) {
   // Caught exception: Store result (exception) in the pending exception
   // field in the JSEnv and return a failure sentinel.
   ExternalReference pending_exception(Isolate::kPendingExceptionAddress,
-                                      masm->isolate());
+                                      isolate());
   __ mov(Operand::StaticVariable(pending_exception), eax);
-  __ mov(eax, reinterpret_cast<int32_t>(Failure::Exception()));
+  __ mov(eax, Immediate(isolate()->factory()->exception()));
   __ jmp(&exit);
 
   // Invoke: Link this frame into the handler chain.  There's only one
@@ -3257,7 +2790,7 @@ void JSEntryStub::GenerateBody(MacroAssembler* masm, bool is_construct) {
   __ PushTryHandler(StackHandler::JS_ENTRY, 0);
 
   // Clear any pending exceptions.
-  __ mov(edx, Immediate(masm->isolate()->factory()->the_hole_value()));
+  __ mov(edx, Immediate(isolate()->factory()->the_hole_value()));
   __ mov(Operand::StaticVariable(pending_exception), edx);
 
   // Fake a receiver (NULL).
@@ -3269,11 +2802,10 @@ void JSEntryStub::GenerateBody(MacroAssembler* masm, bool is_construct) {
   // builtin stubs may not have been generated yet.
   if (is_construct) {
     ExternalReference construct_entry(Builtins::kJSConstructEntryTrampoline,
-                                      masm->isolate());
+                                      isolate());
     __ mov(edx, Immediate(construct_entry));
   } else {
-    ExternalReference entry(Builtins::kJSEntryTrampoline,
-                            masm->isolate());
+    ExternalReference entry(Builtins::kJSEntryTrampoline, isolate());
     __ mov(edx, Immediate(entry));
   }
   __ mov(edx, Operand(edx, 0));  // deref address
@@ -3293,8 +2825,7 @@ void JSEntryStub::GenerateBody(MacroAssembler* masm, bool is_construct) {
 
   // Restore the top frame descriptor from the stack.
   __ pop(Operand::StaticVariable(ExternalReference(
-      Isolate::kCEntryFPAddress,
-      masm->isolate())));
+      Isolate::kCEntryFPAddress, isolate())));
 
   // Restore callee-saved registers (C calling conventions).
   __ pop(ebx);
@@ -3407,7 +2938,7 @@ void InstanceofStub::Generate(MacroAssembler* masm) {
   __ bind(&loop);
   __ cmp(scratch, prototype);
   __ j(equal, &is_instance, Label::kNear);
-  Factory* factory = masm->isolate()->factory();
+  Factory* factory = isolate()->factory();
   __ cmp(scratch, Immediate(factory->null_value()));
   __ j(equal, &is_not_instance, Label::kNear);
   __ mov(scratch, FieldOperand(scratch, HeapObject::kMapOffset));
@@ -3429,7 +2960,7 @@ void InstanceofStub::Generate(MacroAssembler* masm) {
     }
     __ mov(Operand(scratch, kDeltaToMovImmediate), eax);
     if (!ReturnTrueFalseObject()) {
-      __ Set(eax, Immediate(0));
+      __ Move(eax, Immediate(0));
     }
   }
   __ ret((HasArgsInRegisters() ? 0 : 2) * kPointerSize);
@@ -3449,7 +2980,7 @@ void InstanceofStub::Generate(MacroAssembler* masm) {
     }
     __ mov(Operand(scratch, kDeltaToMovImmediate), eax);
     if (!ReturnTrueFalseObject()) {
-      __ Set(eax, Immediate(Smi::FromInt(1)));
+      __ Move(eax, Immediate(Smi::FromInt(1)));
     }
   }
   __ ret((HasArgsInRegisters() ? 0 : 2) * kPointerSize);
@@ -3465,20 +2996,20 @@ void InstanceofStub::Generate(MacroAssembler* masm) {
   // Null is not instance of anything.
   __ cmp(object, factory->null_value());
   __ j(not_equal, &object_not_null, Label::kNear);
-  __ Set(eax, Immediate(Smi::FromInt(1)));
+  __ Move(eax, Immediate(Smi::FromInt(1)));
   __ ret((HasArgsInRegisters() ? 0 : 2) * kPointerSize);
 
   __ bind(&object_not_null);
   // Smi values is not instance of anything.
   __ JumpIfNotSmi(object, &object_not_null_or_smi, Label::kNear);
-  __ Set(eax, Immediate(Smi::FromInt(1)));
+  __ Move(eax, Immediate(Smi::FromInt(1)));
   __ ret((HasArgsInRegisters() ? 0 : 2) * kPointerSize);
 
   __ bind(&object_not_null_or_smi);
   // String values is not instance of anything.
   Condition is_string = masm->IsObjectStringType(object, scratch, scratch);
   __ j(NegateCondition(is_string), &slow, Label::kNear);
-  __ Set(eax, Immediate(Smi::FromInt(1)));
+  __ Move(eax, Immediate(Smi::FromInt(1)));
   __ ret((HasArgsInRegisters() ? 0 : 2) * kPointerSize);
 
   // Slow-case: Go through the JavaScript implementation.
@@ -3575,7 +3106,7 @@ void StringCharCodeAtGenerator::GenerateSlow(
   } else {
     ASSERT(index_flags_ == STRING_INDEX_IS_ARRAY_INDEX);
     // NumberToSmi discards numbers that are not exact integers.
-    __ CallRuntime(Runtime::kNumberToSmi, 1);
+    __ CallRuntime(Runtime::kHiddenNumberToSmi, 1);
   }
   if (!index_.is(eax)) {
     // Save the conversion result before the pop instructions below
@@ -3601,7 +3132,7 @@ void StringCharCodeAtGenerator::GenerateSlow(
   __ push(object_);
   __ SmiTag(index_);
   __ push(index_);
-  __ CallRuntime(Runtime::kStringCharCodeAt, 2);
+  __ CallRuntime(Runtime::kHiddenStringCharCodeAt, 2);
   if (!result_.is(eax)) {
     __ mov(result_, eax);
   }
@@ -3626,7 +3157,7 @@ void StringCharFromCodeGenerator::GenerateFast(MacroAssembler* masm) {
   __ j(not_zero, &slow_case_);
 
   Factory* factory = masm->isolate()->factory();
-  __ Set(result_, Immediate(factory->single_character_string_cache()));
+  __ Move(result_, Immediate(factory->single_character_string_cache()));
   STATIC_ASSERT(kSmiTag == 0);
   STATIC_ASSERT(kSmiTagSize == 1);
   STATIC_ASSERT(kSmiShiftSize == 0);
@@ -3659,408 +3190,12 @@ void StringCharFromCodeGenerator::GenerateSlow(
 }
 
 
-void StringAddStub::Generate(MacroAssembler* masm) {
-  Label call_runtime, call_builtin;
-  Builtins::JavaScript builtin_id = Builtins::ADD;
-
-  // Load the two arguments.
-  __ mov(eax, Operand(esp, 2 * kPointerSize));  // First argument.
-  __ mov(edx, Operand(esp, 1 * kPointerSize));  // Second argument.
-
-  // Make sure that both arguments are strings if not known in advance.
-  // Otherwise, at least one of the arguments is definitely a string,
-  // and we convert the one that is not known to be a string.
-  if ((flags_ & STRING_ADD_CHECK_BOTH) == STRING_ADD_CHECK_BOTH) {
-    ASSERT((flags_ & STRING_ADD_CHECK_LEFT) == STRING_ADD_CHECK_LEFT);
-    ASSERT((flags_ & STRING_ADD_CHECK_RIGHT) == STRING_ADD_CHECK_RIGHT);
-    __ JumpIfSmi(eax, &call_runtime);
-    __ CmpObjectType(eax, FIRST_NONSTRING_TYPE, ebx);
-    __ j(above_equal, &call_runtime);
-
-    // First argument is a a string, test second.
-    __ JumpIfSmi(edx, &call_runtime);
-    __ CmpObjectType(edx, FIRST_NONSTRING_TYPE, ebx);
-    __ j(above_equal, &call_runtime);
-  } else if ((flags_ & STRING_ADD_CHECK_LEFT) == STRING_ADD_CHECK_LEFT) {
-    ASSERT((flags_ & STRING_ADD_CHECK_RIGHT) == 0);
-    GenerateConvertArgument(masm, 2 * kPointerSize, eax, ebx, ecx, edi,
-                            &call_builtin);
-    builtin_id = Builtins::STRING_ADD_RIGHT;
-  } else if ((flags_ & STRING_ADD_CHECK_RIGHT) == STRING_ADD_CHECK_RIGHT) {
-    ASSERT((flags_ & STRING_ADD_CHECK_LEFT) == 0);
-    GenerateConvertArgument(masm, 1 * kPointerSize, edx, ebx, ecx, edi,
-                            &call_builtin);
-    builtin_id = Builtins::STRING_ADD_LEFT;
-  }
-
-  // Both arguments are strings.
-  // eax: first string
-  // edx: second string
-  // Check if either of the strings are empty. In that case return the other.
-  Label second_not_zero_length, both_not_zero_length;
-  __ mov(ecx, FieldOperand(edx, String::kLengthOffset));
-  STATIC_ASSERT(kSmiTag == 0);
-  __ test(ecx, ecx);
-  __ j(not_zero, &second_not_zero_length, Label::kNear);
-  // Second string is empty, result is first string which is already in eax.
-  Counters* counters = masm->isolate()->counters();
-  __ IncrementCounter(counters->string_add_native(), 1);
-  __ ret(2 * kPointerSize);
-  __ bind(&second_not_zero_length);
-  __ mov(ebx, FieldOperand(eax, String::kLengthOffset));
-  STATIC_ASSERT(kSmiTag == 0);
-  __ test(ebx, ebx);
-  __ j(not_zero, &both_not_zero_length, Label::kNear);
-  // First string is empty, result is second string which is in edx.
-  __ mov(eax, edx);
-  __ IncrementCounter(counters->string_add_native(), 1);
-  __ ret(2 * kPointerSize);
-
-  // Both strings are non-empty.
-  // eax: first string
-  // ebx: length of first string as a smi
-  // ecx: length of second string as a smi
-  // edx: second string
-  // Look at the length of the result of adding the two strings.
-  Label string_add_flat_result, longer_than_two;
-  __ bind(&both_not_zero_length);
-  __ add(ebx, ecx);
-  STATIC_ASSERT(Smi::kMaxValue == String::kMaxLength);
-  // Handle exceptionally long strings in the runtime system.
-  __ j(overflow, &call_runtime);
-  // Use the string table when adding two one character strings, as it
-  // helps later optimizations to return an internalized string here.
-  __ cmp(ebx, Immediate(Smi::FromInt(2)));
-  __ j(not_equal, &longer_than_two);
-
-  // Check that both strings are non-external ASCII strings.
-  __ JumpIfNotBothSequentialAsciiStrings(eax, edx, ebx, ecx, &call_runtime);
-
-  // Get the two characters forming the new string.
-  __ movzx_b(ebx, FieldOperand(eax, SeqOneByteString::kHeaderSize));
-  __ movzx_b(ecx, FieldOperand(edx, SeqOneByteString::kHeaderSize));
-
-  // Try to lookup two character string in string table. If it is not found
-  // just allocate a new one.
-  Label make_two_character_string, make_two_character_string_no_reload;
-  StringHelper::GenerateTwoCharacterStringTableProbe(
-      masm, ebx, ecx, eax, edx, edi,
-      &make_two_character_string_no_reload, &make_two_character_string);
-  __ IncrementCounter(counters->string_add_native(), 1);
-  __ ret(2 * kPointerSize);
-
-  // Allocate a two character string.
-  __ bind(&make_two_character_string);
-  // Reload the arguments.
-  __ mov(eax, Operand(esp, 2 * kPointerSize));  // First argument.
-  __ mov(edx, Operand(esp, 1 * kPointerSize));  // Second argument.
-  // Get the two characters forming the new string.
-  __ movzx_b(ebx, FieldOperand(eax, SeqOneByteString::kHeaderSize));
-  __ movzx_b(ecx, FieldOperand(edx, SeqOneByteString::kHeaderSize));
-  __ bind(&make_two_character_string_no_reload);
-  __ IncrementCounter(counters->string_add_make_two_char(), 1);
-  __ AllocateAsciiString(eax, 2, edi, edx, &call_runtime);
-  // Pack both characters in ebx.
-  __ shl(ecx, kBitsPerByte);
-  __ or_(ebx, ecx);
-  // Set the characters in the new string.
-  __ mov_w(FieldOperand(eax, SeqOneByteString::kHeaderSize), ebx);
-  __ IncrementCounter(counters->string_add_native(), 1);
-  __ ret(2 * kPointerSize);
-
-  __ bind(&longer_than_two);
-  // Check if resulting string will be flat.
-  __ cmp(ebx, Immediate(Smi::FromInt(ConsString::kMinLength)));
-  __ j(below, &string_add_flat_result);
-
-  // If result is not supposed to be flat allocate a cons string object. If both
-  // strings are ASCII the result is an ASCII cons string.
-  Label non_ascii, allocated, ascii_data;
-  __ mov(edi, FieldOperand(eax, HeapObject::kMapOffset));
-  __ movzx_b(ecx, FieldOperand(edi, Map::kInstanceTypeOffset));
-  __ mov(edi, FieldOperand(edx, HeapObject::kMapOffset));
-  __ movzx_b(edi, FieldOperand(edi, Map::kInstanceTypeOffset));
-  __ and_(ecx, edi);
-  STATIC_ASSERT((kStringEncodingMask & kOneByteStringTag) != 0);
-  STATIC_ASSERT((kStringEncodingMask & kTwoByteStringTag) == 0);
-  __ test(ecx, Immediate(kStringEncodingMask));
-  __ j(zero, &non_ascii);
-  __ bind(&ascii_data);
-  // Allocate an ASCII cons string.
-  __ AllocateAsciiConsString(ecx, edi, no_reg, &call_runtime);
-  __ bind(&allocated);
-  // Fill the fields of the cons string.
-  __ AssertSmi(ebx);
-  __ mov(FieldOperand(ecx, ConsString::kLengthOffset), ebx);
-  __ mov(FieldOperand(ecx, ConsString::kHashFieldOffset),
-         Immediate(String::kEmptyHashField));
-
-  Label skip_write_barrier, after_writing;
-  ExternalReference high_promotion_mode = ExternalReference::
-      new_space_high_promotion_mode_active_address(masm->isolate());
-  __ test(Operand::StaticVariable(high_promotion_mode), Immediate(1));
-  __ j(zero, &skip_write_barrier);
-
-  __ mov(FieldOperand(ecx, ConsString::kFirstOffset), eax);
-  __ RecordWriteField(ecx,
-                     ConsString::kFirstOffset,
-                     eax,
-                     ebx,
-                     kDontSaveFPRegs);
-  __ mov(FieldOperand(ecx, ConsString::kSecondOffset), edx);
-  __ RecordWriteField(ecx,
-                     ConsString::kSecondOffset,
-                     edx,
-                     ebx,
-                     kDontSaveFPRegs);
-  __ jmp(&after_writing);
-
-  __ bind(&skip_write_barrier);
-  __ mov(FieldOperand(ecx, ConsString::kFirstOffset), eax);
-  __ mov(FieldOperand(ecx, ConsString::kSecondOffset), edx);
-
-  __ bind(&after_writing);
-
-  __ mov(eax, ecx);
-  __ IncrementCounter(counters->string_add_native(), 1);
-  __ ret(2 * kPointerSize);
-  __ bind(&non_ascii);
-  // At least one of the strings is two-byte. Check whether it happens
-  // to contain only one byte characters.
-  // ecx: first instance type AND second instance type.
-  // edi: second instance type.
-  __ test(ecx, Immediate(kOneByteDataHintMask));
-  __ j(not_zero, &ascii_data);
-  __ mov(ecx, FieldOperand(eax, HeapObject::kMapOffset));
-  __ movzx_b(ecx, FieldOperand(ecx, Map::kInstanceTypeOffset));
-  __ xor_(edi, ecx);
-  STATIC_ASSERT(kOneByteStringTag != 0 && kOneByteDataHintTag != 0);
-  __ and_(edi, kOneByteStringTag | kOneByteDataHintTag);
-  __ cmp(edi, kOneByteStringTag | kOneByteDataHintTag);
-  __ j(equal, &ascii_data);
-  // Allocate a two byte cons string.
-  __ AllocateTwoByteConsString(ecx, edi, no_reg, &call_runtime);
-  __ jmp(&allocated);
-
-  // We cannot encounter sliced strings or cons strings here since:
-  STATIC_ASSERT(SlicedString::kMinLength >= ConsString::kMinLength);
-  // Handle creating a flat result from either external or sequential strings.
-  // Locate the first characters' locations.
-  // eax: first string
-  // ebx: length of resulting flat string as a smi
-  // edx: second string
-  Label first_prepared, second_prepared;
-  Label first_is_sequential, second_is_sequential;
-  __ bind(&string_add_flat_result);
-  __ mov(ecx, FieldOperand(eax, HeapObject::kMapOffset));
-  __ movzx_b(ecx, FieldOperand(ecx, Map::kInstanceTypeOffset));
-  // ecx: instance type of first string
-  STATIC_ASSERT(kSeqStringTag == 0);
-  __ test_b(ecx, kStringRepresentationMask);
-  __ j(zero, &first_is_sequential, Label::kNear);
-  // Rule out short external string and load string resource.
-  STATIC_ASSERT(kShortExternalStringTag != 0);
-  __ test_b(ecx, kShortExternalStringMask);
-  __ j(not_zero, &call_runtime);
-  __ mov(eax, FieldOperand(eax, ExternalString::kResourceDataOffset));
-  STATIC_ASSERT(SeqOneByteString::kHeaderSize == SeqTwoByteString::kHeaderSize);
-  __ jmp(&first_prepared, Label::kNear);
-  __ bind(&first_is_sequential);
-  __ add(eax, Immediate(SeqOneByteString::kHeaderSize - kHeapObjectTag));
-  __ bind(&first_prepared);
-
-  __ mov(edi, FieldOperand(edx, HeapObject::kMapOffset));
-  __ movzx_b(edi, FieldOperand(edi, Map::kInstanceTypeOffset));
-  // Check whether both strings have same encoding.
-  // edi: instance type of second string
-  __ xor_(ecx, edi);
-  __ test_b(ecx, kStringEncodingMask);
-  __ j(not_zero, &call_runtime);
-  STATIC_ASSERT(kSeqStringTag == 0);
-  __ test_b(edi, kStringRepresentationMask);
-  __ j(zero, &second_is_sequential, Label::kNear);
-  // Rule out short external string and load string resource.
-  STATIC_ASSERT(kShortExternalStringTag != 0);
-  __ test_b(edi, kShortExternalStringMask);
-  __ j(not_zero, &call_runtime);
-  __ mov(edx, FieldOperand(edx, ExternalString::kResourceDataOffset));
-  STATIC_ASSERT(SeqOneByteString::kHeaderSize == SeqTwoByteString::kHeaderSize);
-  __ jmp(&second_prepared, Label::kNear);
-  __ bind(&second_is_sequential);
-  __ add(edx, Immediate(SeqOneByteString::kHeaderSize - kHeapObjectTag));
-  __ bind(&second_prepared);
-
-  // Push the addresses of both strings' first characters onto the stack.
-  __ push(edx);
-  __ push(eax);
-
-  Label non_ascii_string_add_flat_result, call_runtime_drop_two;
-  // edi: instance type of second string
-  // First string and second string have the same encoding.
-  STATIC_ASSERT(kTwoByteStringTag == 0);
-  __ test_b(edi, kStringEncodingMask);
-  __ j(zero, &non_ascii_string_add_flat_result);
-
-  // Both strings are ASCII strings.
-  // ebx: length of resulting flat string as a smi
-  __ SmiUntag(ebx);
-  __ AllocateAsciiString(eax, ebx, ecx, edx, edi, &call_runtime_drop_two);
-  // eax: result string
-  __ mov(ecx, eax);
-  // Locate first character of result.
-  __ add(ecx, Immediate(SeqOneByteString::kHeaderSize - kHeapObjectTag));
-  // Load first argument's length and first character location.  Account for
-  // values currently on the stack when fetching arguments from it.
-  __ mov(edx, Operand(esp, 4 * kPointerSize));
-  __ mov(edi, FieldOperand(edx, String::kLengthOffset));
-  __ SmiUntag(edi);
-  __ pop(edx);
-  // eax: result string
-  // ecx: first character of result
-  // edx: first char of first argument
-  // edi: length of first argument
-  StringHelper::GenerateCopyCharacters(masm, ecx, edx, edi, ebx, true);
-  // Load second argument's length and first character location.  Account for
-  // values currently on the stack when fetching arguments from it.
-  __ mov(edx, Operand(esp, 2 * kPointerSize));
-  __ mov(edi, FieldOperand(edx, String::kLengthOffset));
-  __ SmiUntag(edi);
-  __ pop(edx);
-  // eax: result string
-  // ecx: next character of result
-  // edx: first char of second argument
-  // edi: length of second argument
-  StringHelper::GenerateCopyCharacters(masm, ecx, edx, edi, ebx, true);
-  __ IncrementCounter(counters->string_add_native(), 1);
-  __ ret(2 * kPointerSize);
-
-  // Handle creating a flat two byte result.
-  // eax: first string - known to be two byte
-  // ebx: length of resulting flat string as a smi
-  // edx: second string
-  __ bind(&non_ascii_string_add_flat_result);
-  // Both strings are two byte strings.
-  __ SmiUntag(ebx);
-  __ AllocateTwoByteString(eax, ebx, ecx, edx, edi, &call_runtime_drop_two);
-  // eax: result string
-  __ mov(ecx, eax);
-  // Locate first character of result.
-  __ add(ecx, Immediate(SeqTwoByteString::kHeaderSize - kHeapObjectTag));
-  // Load second argument's length and first character location.  Account for
-  // values currently on the stack when fetching arguments from it.
-  __ mov(edx, Operand(esp, 4 * kPointerSize));
-  __ mov(edi, FieldOperand(edx, String::kLengthOffset));
-  __ SmiUntag(edi);
-  __ pop(edx);
-  // eax: result string
-  // ecx: first character of result
-  // edx: first char of first argument
-  // edi: length of first argument
-  StringHelper::GenerateCopyCharacters(masm, ecx, edx, edi, ebx, false);
-  // Load second argument's length and first character location.  Account for
-  // values currently on the stack when fetching arguments from it.
-  __ mov(edx, Operand(esp, 2 * kPointerSize));
-  __ mov(edi, FieldOperand(edx, String::kLengthOffset));
-  __ SmiUntag(edi);
-  __ pop(edx);
-  // eax: result string
-  // ecx: next character of result
-  // edx: first char of second argument
-  // edi: length of second argument
-  StringHelper::GenerateCopyCharacters(masm, ecx, edx, edi, ebx, false);
-  __ IncrementCounter(counters->string_add_native(), 1);
-  __ ret(2 * kPointerSize);
-
-  // Recover stack pointer before jumping to runtime.
-  __ bind(&call_runtime_drop_two);
-  __ Drop(2);
-  // Just jump to runtime to add the two strings.
-  __ bind(&call_runtime);
-  __ TailCallRuntime(Runtime::kStringAdd, 2, 1);
-
-  if (call_builtin.is_linked()) {
-    __ bind(&call_builtin);
-    __ InvokeBuiltin(builtin_id, JUMP_FUNCTION);
-  }
-}
-
-
-void StringAddStub::GenerateRegisterArgsPush(MacroAssembler* masm) {
-  __ push(eax);
-  __ push(edx);
-}
-
-
-void StringAddStub::GenerateRegisterArgsPop(MacroAssembler* masm,
-                                            Register temp) {
-  __ pop(temp);
-  __ pop(edx);
-  __ pop(eax);
-  __ push(temp);
-}
-
-
-void StringAddStub::GenerateConvertArgument(MacroAssembler* masm,
-                                            int stack_offset,
-                                            Register arg,
-                                            Register scratch1,
-                                            Register scratch2,
-                                            Register scratch3,
-                                            Label* slow) {
-  // First check if the argument is already a string.
-  Label not_string, done;
-  __ JumpIfSmi(arg, &not_string);
-  __ CmpObjectType(arg, FIRST_NONSTRING_TYPE, scratch1);
-  __ j(below, &done);
-
-  // Check the number to string cache.
-  __ bind(&not_string);
-  // Puts the cached result into scratch1.
-  __ LookupNumberStringCache(arg, scratch1, scratch2, scratch3, slow);
-  __ mov(arg, scratch1);
-  __ mov(Operand(esp, stack_offset), arg);
-  __ bind(&done);
-}
-
-
 void StringHelper::GenerateCopyCharacters(MacroAssembler* masm,
                                           Register dest,
                                           Register src,
                                           Register count,
                                           Register scratch,
-                                          bool ascii) {
-  Label loop;
-  __ bind(&loop);
-  // This loop just copies one character at a time, as it is only used for very
-  // short strings.
-  if (ascii) {
-    __ mov_b(scratch, Operand(src, 0));
-    __ mov_b(Operand(dest, 0), scratch);
-    __ add(src, Immediate(1));
-    __ add(dest, Immediate(1));
-  } else {
-    __ mov_w(scratch, Operand(src, 0));
-    __ mov_w(Operand(dest, 0), scratch);
-    __ add(src, Immediate(2));
-    __ add(dest, Immediate(2));
-  }
-  __ sub(count, Immediate(1));
-  __ j(not_zero, &loop);
-}
-
-
-void StringHelper::GenerateCopyCharactersREP(MacroAssembler* masm,
-                                             Register dest,
-                                             Register src,
-                                             Register count,
-                                             Register scratch,
-                                             bool ascii) {
-  // Copy characters using rep movs of doublewords.
-  // The destination is aligned on a 4 byte boundary because we are
-  // copying to the beginning of a newly allocated string.
-  ASSERT(dest.is(edi));  // rep movs destination
-  ASSERT(src.is(esi));  // rep movs source
-  ASSERT(count.is(ecx));  // rep movs count
+                                          String::Encoding encoding) {
   ASSERT(!scratch.is(dest));
   ASSERT(!scratch.is(src));
   ASSERT(!scratch.is(count));
@@ -4071,163 +3206,20 @@ void StringHelper::GenerateCopyCharactersREP(MacroAssembler* masm,
   __ j(zero, &done);
 
   // Make count the number of bytes to copy.
-  if (!ascii) {
+  if (encoding == String::TWO_BYTE_ENCODING) {
     __ shl(count, 1);
   }
 
-  // Don't enter the rep movs if there are less than 4 bytes to copy.
-  Label last_bytes;
-  __ test(count, Immediate(~3));
-  __ j(zero, &last_bytes, Label::kNear);
-
-  // Copy from edi to esi using rep movs instruction.
-  __ mov(scratch, count);
-  __ sar(count, 2);  // Number of doublewords to copy.
-  __ cld();
-  __ rep_movs();
-
-  // Find number of bytes left.
-  __ mov(count, scratch);
-  __ and_(count, 3);
-
-  // Check if there are more bytes to copy.
-  __ bind(&last_bytes);
-  __ test(count, count);
-  __ j(zero, &done);
-
-  // Copy remaining characters.
   Label loop;
   __ bind(&loop);
   __ mov_b(scratch, Operand(src, 0));
   __ mov_b(Operand(dest, 0), scratch);
-  __ add(src, Immediate(1));
-  __ add(dest, Immediate(1));
-  __ sub(count, Immediate(1));
+  __ inc(src);
+  __ inc(dest);
+  __ dec(count);
   __ j(not_zero, &loop);
 
   __ bind(&done);
-}
-
-
-void StringHelper::GenerateTwoCharacterStringTableProbe(MacroAssembler* masm,
-                                                        Register c1,
-                                                        Register c2,
-                                                        Register scratch1,
-                                                        Register scratch2,
-                                                        Register scratch3,
-                                                        Label* not_probed,
-                                                        Label* not_found) {
-  // Register scratch3 is the general scratch register in this function.
-  Register scratch = scratch3;
-
-  // Make sure that both characters are not digits as such strings has a
-  // different hash algorithm. Don't try to look for these in the string table.
-  Label not_array_index;
-  __ mov(scratch, c1);
-  __ sub(scratch, Immediate(static_cast<int>('0')));
-  __ cmp(scratch, Immediate(static_cast<int>('9' - '0')));
-  __ j(above, &not_array_index, Label::kNear);
-  __ mov(scratch, c2);
-  __ sub(scratch, Immediate(static_cast<int>('0')));
-  __ cmp(scratch, Immediate(static_cast<int>('9' - '0')));
-  __ j(below_equal, not_probed);
-
-  __ bind(&not_array_index);
-  // Calculate the two character string hash.
-  Register hash = scratch1;
-  GenerateHashInit(masm, hash, c1, scratch);
-  GenerateHashAddCharacter(masm, hash, c2, scratch);
-  GenerateHashGetHash(masm, hash, scratch);
-
-  // Collect the two characters in a register.
-  Register chars = c1;
-  __ shl(c2, kBitsPerByte);
-  __ or_(chars, c2);
-
-  // chars: two character string, char 1 in byte 0 and char 2 in byte 1.
-  // hash:  hash of two character string.
-
-  // Load the string table.
-  Register string_table = c2;
-  __ LoadRoot(string_table, Heap::kStringTableRootIndex);
-
-  // Calculate capacity mask from the string table capacity.
-  Register mask = scratch2;
-  __ mov(mask, FieldOperand(string_table, StringTable::kCapacityOffset));
-  __ SmiUntag(mask);
-  __ sub(mask, Immediate(1));
-
-  // Registers
-  // chars:        two character string, char 1 in byte 0 and char 2 in byte 1.
-  // hash:         hash of two character string
-  // string_table: string table
-  // mask:         capacity mask
-  // scratch:      -
-
-  // Perform a number of probes in the string table.
-  static const int kProbes = 4;
-  Label found_in_string_table;
-  Label next_probe[kProbes], next_probe_pop_mask[kProbes];
-  Register candidate = scratch;  // Scratch register contains candidate.
-  for (int i = 0; i < kProbes; i++) {
-    // Calculate entry in string table.
-    __ mov(scratch, hash);
-    if (i > 0) {
-      __ add(scratch, Immediate(StringTable::GetProbeOffset(i)));
-    }
-    __ and_(scratch, mask);
-
-    // Load the entry from the string table.
-    STATIC_ASSERT(StringTable::kEntrySize == 1);
-    __ mov(candidate,
-           FieldOperand(string_table,
-                        scratch,
-                        times_pointer_size,
-                        StringTable::kElementsStartOffset));
-
-    // If entry is undefined no string with this hash can be found.
-    Factory* factory = masm->isolate()->factory();
-    __ cmp(candidate, factory->undefined_value());
-    __ j(equal, not_found);
-    __ cmp(candidate, factory->the_hole_value());
-    __ j(equal, &next_probe[i]);
-
-    // If length is not 2 the string is not a candidate.
-    __ cmp(FieldOperand(candidate, String::kLengthOffset),
-           Immediate(Smi::FromInt(2)));
-    __ j(not_equal, &next_probe[i]);
-
-    // As we are out of registers save the mask on the stack and use that
-    // register as a temporary.
-    __ push(mask);
-    Register temp = mask;
-
-    // Check that the candidate is a non-external ASCII string.
-    __ mov(temp, FieldOperand(candidate, HeapObject::kMapOffset));
-    __ movzx_b(temp, FieldOperand(temp, Map::kInstanceTypeOffset));
-    __ JumpIfInstanceTypeIsNotSequentialAscii(
-        temp, temp, &next_probe_pop_mask[i]);
-
-    // Check if the two characters match.
-    __ mov(temp, FieldOperand(candidate, SeqOneByteString::kHeaderSize));
-    __ and_(temp, 0x0000ffff);
-    __ cmp(chars, temp);
-    __ j(equal, &found_in_string_table);
-    __ bind(&next_probe_pop_mask[i]);
-    __ pop(mask);
-    __ bind(&next_probe[i]);
-  }
-
-  // No matching 2 character string found by probing.
-  __ jmp(not_found);
-
-  // Scratch register contains result when we fall through to here.
-  Register result = candidate;
-  __ bind(&found_in_string_table);
-  __ pop(mask);  // Pop saved mask from the stack.
-  if (!result.is(eax)) {
-    __ mov(eax, result);
-  }
 }
 
 
@@ -4236,7 +3228,7 @@ void StringHelper::GenerateHashInit(MacroAssembler* masm,
                                     Register character,
                                     Register scratch) {
   // hash = (seed + character) + ((seed + character) << 10);
-  if (Serializer::enabled()) {
+  if (masm->serializer_enabled()) {
     __ LoadRoot(scratch, Heap::kHashSeedRootIndex);
     __ SmiUntag(scratch);
     __ add(scratch, character);
@@ -4331,7 +3323,7 @@ void SubStringStub::Generate(MacroAssembler* masm) {
   // Longer than original string's length or negative: unsafe arguments.
   __ j(above, &runtime);
   // Return original string.
-  Counters* counters = masm->isolate()->counters();
+  Counters* counters = isolate()->counters();
   __ IncrementCounter(counters->sub_string_native(), 1);
   __ ret(3 * kPointerSize);
   __ bind(&not_original_string);
@@ -4353,7 +3345,7 @@ void SubStringStub::Generate(MacroAssembler* masm) {
   __ test(ebx, Immediate(kIsIndirectStringMask));
   __ j(zero, &seq_or_external_string, Label::kNear);
 
-  Factory* factory = masm->isolate()->factory();
+  Factory* factory = isolate()->factory();
   __ test(ebx, Immediate(kSlicedNotConsMask));
   __ j(not_zero, &sliced_string, Label::kNear);
   // Cons string.  Check whether it is flat, then fetch first part.
@@ -4431,7 +3423,7 @@ void SubStringStub::Generate(MacroAssembler* masm) {
 
   // Handle external string.
   // Rule out short external strings.
-  STATIC_CHECK(kShortExternalStringTag != 0);
+  STATIC_ASSERT(kShortExternalStringTag != 0);
   __ test_b(ebx, kShortExternalStringMask);
   __ j(not_zero, &runtime);
   __ mov(edi, FieldOperand(edi, ExternalString::kResourceDataOffset));
@@ -4453,23 +3445,21 @@ void SubStringStub::Generate(MacroAssembler* masm) {
 
   // eax: result string
   // ecx: result string length
-  __ mov(edx, esi);  // esi used by following code.
   // Locate first character of result.
   __ mov(edi, eax);
   __ add(edi, Immediate(SeqOneByteString::kHeaderSize - kHeapObjectTag));
   // Load string argument and locate character of sub string start.
-  __ pop(esi);
+  __ pop(edx);
   __ pop(ebx);
   __ SmiUntag(ebx);
-  __ lea(esi, FieldOperand(esi, ebx, times_1, SeqOneByteString::kHeaderSize));
+  __ lea(edx, FieldOperand(edx, ebx, times_1, SeqOneByteString::kHeaderSize));
 
   // eax: result string
   // ecx: result length
-  // edx: original value of esi
   // edi: first character of result
-  // esi: character of sub string start
-  StringHelper::GenerateCopyCharactersREP(masm, edi, esi, ecx, ebx, true);
-  __ mov(esi, edx);  // Restore esi.
+  // edx: character of sub string start
+  StringHelper::GenerateCopyCharacters(
+      masm, edi, edx, ecx, ebx, String::ONE_BYTE_ENCODING);
   __ IncrementCounter(counters->sub_string_native(), 1);
   __ ret(3 * kPointerSize);
 
@@ -4479,27 +3469,25 @@ void SubStringStub::Generate(MacroAssembler* masm) {
 
   // eax: result string
   // ecx: result string length
-  __ mov(edx, esi);  // esi used by following code.
   // Locate first character of result.
   __ mov(edi, eax);
   __ add(edi,
          Immediate(SeqTwoByteString::kHeaderSize - kHeapObjectTag));
   // Load string argument and locate character of sub string start.
-  __ pop(esi);
+  __ pop(edx);
   __ pop(ebx);
   // As from is a smi it is 2 times the value which matches the size of a two
   // byte character.
   STATIC_ASSERT(kSmiTag == 0);
   STATIC_ASSERT(kSmiTagSize + kSmiShiftSize == 1);
-  __ lea(esi, FieldOperand(esi, ebx, times_1, SeqTwoByteString::kHeaderSize));
+  __ lea(edx, FieldOperand(edx, ebx, times_1, SeqTwoByteString::kHeaderSize));
 
   // eax: result string
   // ecx: result length
-  // edx: original value of esi
   // edi: first character of result
-  // esi: character of sub string start
-  StringHelper::GenerateCopyCharactersREP(masm, edi, esi, ecx, ebx, false);
-  __ mov(esi, edx);  // Restore esi.
+  // edx: character of sub string start
+  StringHelper::GenerateCopyCharacters(
+      masm, edi, edx, ecx, ebx, String::TWO_BYTE_ENCODING);
   __ IncrementCounter(counters->sub_string_native(), 1);
   __ ret(3 * kPointerSize);
 
@@ -4509,7 +3497,7 @@ void SubStringStub::Generate(MacroAssembler* masm) {
 
   // Just jump to runtime to create the sub string.
   __ bind(&runtime);
-  __ TailCallRuntime(Runtime::kSubString, 3, 1);
+  __ TailCallRuntime(Runtime::kHiddenSubString, 3, 1);
 
   __ bind(&single_char);
   // eax: string
@@ -4537,7 +3525,7 @@ void StringCompareStub::GenerateFlatAsciiStringEquals(MacroAssembler* masm,
   __ cmp(length, FieldOperand(right, String::kLengthOffset));
   __ j(equal, &check_zero_length, Label::kNear);
   __ bind(&strings_not_equal);
-  __ Set(eax, Immediate(Smi::FromInt(NOT_EQUAL)));
+  __ Move(eax, Immediate(Smi::FromInt(NOT_EQUAL)));
   __ ret(0);
 
   // Check if the length is zero.
@@ -4546,7 +3534,7 @@ void StringCompareStub::GenerateFlatAsciiStringEquals(MacroAssembler* masm,
   STATIC_ASSERT(kSmiTag == 0);
   __ test(length, length);
   __ j(not_zero, &compare_chars, Label::kNear);
-  __ Set(eax, Immediate(Smi::FromInt(EQUAL)));
+  __ Move(eax, Immediate(Smi::FromInt(EQUAL)));
   __ ret(0);
 
   // Compare characters.
@@ -4555,7 +3543,7 @@ void StringCompareStub::GenerateFlatAsciiStringEquals(MacroAssembler* masm,
                                 &strings_not_equal, Label::kNear);
 
   // Characters are equal.
-  __ Set(eax, Immediate(Smi::FromInt(EQUAL)));
+  __ Move(eax, Immediate(Smi::FromInt(EQUAL)));
   __ ret(0);
 }
 
@@ -4603,7 +3591,7 @@ void StringCompareStub::GenerateCompareFlatAsciiStrings(MacroAssembler* masm,
   // Result is EQUAL.
   STATIC_ASSERT(EQUAL == 0);
   STATIC_ASSERT(kSmiTag == 0);
-  __ Set(eax, Immediate(Smi::FromInt(EQUAL)));
+  __ Move(eax, Immediate(Smi::FromInt(EQUAL)));
   __ ret(0);
 
   Label result_greater;
@@ -4616,12 +3604,12 @@ void StringCompareStub::GenerateCompareFlatAsciiStrings(MacroAssembler* masm,
   __ bind(&result_less);
 
   // Result is LESS.
-  __ Set(eax, Immediate(Smi::FromInt(LESS)));
+  __ Move(eax, Immediate(Smi::FromInt(LESS)));
   __ ret(0);
 
   // Result is GREATER.
   __ bind(&result_greater);
-  __ Set(eax, Immediate(Smi::FromInt(GREATER)));
+  __ Move(eax, Immediate(Smi::FromInt(GREATER)));
   __ ret(0);
 }
 
@@ -4672,8 +3660,8 @@ void StringCompareStub::Generate(MacroAssembler* masm) {
   __ j(not_equal, &not_same, Label::kNear);
   STATIC_ASSERT(EQUAL == 0);
   STATIC_ASSERT(kSmiTag == 0);
-  __ Set(eax, Immediate(Smi::FromInt(EQUAL)));
-  __ IncrementCounter(masm->isolate()->counters()->string_compare_native(), 1);
+  __ Move(eax, Immediate(Smi::FromInt(EQUAL)));
+  __ IncrementCounter(isolate()->counters()->string_compare_native(), 1);
   __ ret(2 * kPointerSize);
 
   __ bind(&not_same);
@@ -4691,7 +3679,35 @@ void StringCompareStub::Generate(MacroAssembler* masm) {
   // Call the runtime; it returns -1 (less), 0 (equal), or 1 (greater)
   // tagged as a small integer.
   __ bind(&runtime);
-  __ TailCallRuntime(Runtime::kStringCompare, 2, 1);
+  __ TailCallRuntime(Runtime::kHiddenStringCompare, 2, 1);
+}
+
+
+void BinaryOpICWithAllocationSiteStub::Generate(MacroAssembler* masm) {
+  // ----------- S t a t e -------------
+  //  -- edx    : left
+  //  -- eax    : right
+  //  -- esp[0] : return address
+  // -----------------------------------
+
+  // Load ecx with the allocation site.  We stick an undefined dummy value here
+  // and replace it with the real allocation site later when we instantiate this
+  // stub in BinaryOpICWithAllocationSiteStub::GetCodeCopyFromTemplate().
+  __ mov(ecx, handle(isolate()->heap()->undefined_value()));
+
+  // Make sure that we actually patched the allocation site.
+  if (FLAG_debug_code) {
+    __ test(ecx, Immediate(kSmiTagMask));
+    __ Assert(not_equal, kExpectedAllocationSite);
+    __ cmp(FieldOperand(ecx, HeapObject::kMapOffset),
+           isolate()->factory()->allocation_site_map());
+    __ Assert(equal, kExpectedAllocationSite);
+  }
+
+  // Tail call into the stub that handles binary operations with allocation
+  // sites.
+  BinaryOpWithAllocationSiteStub stub(isolate(), state_);
+  __ TailCallStub(&stub);
 }
 
 
@@ -4735,74 +3751,56 @@ void ICCompareStub::GenerateNumbers(MacroAssembler* masm) {
     __ JumpIfNotSmi(eax, &miss);
   }
 
-  // Inlining the double comparison and falling back to the general compare
-  // stub if NaN is involved or SSE2 or CMOV is unsupported.
-  if (CpuFeatures::IsSupported(SSE2) && CpuFeatures::IsSupported(CMOV)) {
-    CpuFeatureScope scope1(masm, SSE2);
-    CpuFeatureScope scope2(masm, CMOV);
+  // Load left and right operand.
+  Label done, left, left_smi, right_smi;
+  __ JumpIfSmi(eax, &right_smi, Label::kNear);
+  __ cmp(FieldOperand(eax, HeapObject::kMapOffset),
+         isolate()->factory()->heap_number_map());
+  __ j(not_equal, &maybe_undefined1, Label::kNear);
+  __ movsd(xmm1, FieldOperand(eax, HeapNumber::kValueOffset));
+  __ jmp(&left, Label::kNear);
+  __ bind(&right_smi);
+  __ mov(ecx, eax);  // Can't clobber eax because we can still jump away.
+  __ SmiUntag(ecx);
+  __ Cvtsi2sd(xmm1, ecx);
 
-    // Load left and right operand.
-    Label done, left, left_smi, right_smi;
-    __ JumpIfSmi(eax, &right_smi, Label::kNear);
-    __ cmp(FieldOperand(eax, HeapObject::kMapOffset),
-           masm->isolate()->factory()->heap_number_map());
-    __ j(not_equal, &maybe_undefined1, Label::kNear);
-    __ movsd(xmm1, FieldOperand(eax, HeapNumber::kValueOffset));
-    __ jmp(&left, Label::kNear);
-    __ bind(&right_smi);
-    __ mov(ecx, eax);  // Can't clobber eax because we can still jump away.
-    __ SmiUntag(ecx);
-    __ Cvtsi2sd(xmm1, ecx);
+  __ bind(&left);
+  __ JumpIfSmi(edx, &left_smi, Label::kNear);
+  __ cmp(FieldOperand(edx, HeapObject::kMapOffset),
+         isolate()->factory()->heap_number_map());
+  __ j(not_equal, &maybe_undefined2, Label::kNear);
+  __ movsd(xmm0, FieldOperand(edx, HeapNumber::kValueOffset));
+  __ jmp(&done);
+  __ bind(&left_smi);
+  __ mov(ecx, edx);  // Can't clobber edx because we can still jump away.
+  __ SmiUntag(ecx);
+  __ Cvtsi2sd(xmm0, ecx);
 
-    __ bind(&left);
-    __ JumpIfSmi(edx, &left_smi, Label::kNear);
-    __ cmp(FieldOperand(edx, HeapObject::kMapOffset),
-           masm->isolate()->factory()->heap_number_map());
-    __ j(not_equal, &maybe_undefined2, Label::kNear);
-    __ movsd(xmm0, FieldOperand(edx, HeapNumber::kValueOffset));
-    __ jmp(&done);
-    __ bind(&left_smi);
-    __ mov(ecx, edx);  // Can't clobber edx because we can still jump away.
-    __ SmiUntag(ecx);
-    __ Cvtsi2sd(xmm0, ecx);
+  __ bind(&done);
+  // Compare operands.
+  __ ucomisd(xmm0, xmm1);
 
-    __ bind(&done);
-    // Compare operands.
-    __ ucomisd(xmm0, xmm1);
+  // Don't base result on EFLAGS when a NaN is involved.
+  __ j(parity_even, &unordered, Label::kNear);
 
-    // Don't base result on EFLAGS when a NaN is involved.
-    __ j(parity_even, &unordered, Label::kNear);
-
-    // Return a result of -1, 0, or 1, based on EFLAGS.
-    // Performing mov, because xor would destroy the flag register.
-    __ mov(eax, 0);  // equal
-    __ mov(ecx, Immediate(Smi::FromInt(1)));
-    __ cmov(above, eax, ecx);
-    __ mov(ecx, Immediate(Smi::FromInt(-1)));
-    __ cmov(below, eax, ecx);
-    __ ret(0);
-  } else {
-    __ mov(ecx, edx);
-    __ and_(ecx, eax);
-    __ JumpIfSmi(ecx, &generic_stub, Label::kNear);
-
-    __ cmp(FieldOperand(eax, HeapObject::kMapOffset),
-           masm->isolate()->factory()->heap_number_map());
-    __ j(not_equal, &maybe_undefined1, Label::kNear);
-    __ cmp(FieldOperand(edx, HeapObject::kMapOffset),
-           masm->isolate()->factory()->heap_number_map());
-    __ j(not_equal, &maybe_undefined2, Label::kNear);
-  }
+  // Return a result of -1, 0, or 1, based on EFLAGS.
+  // Performing mov, because xor would destroy the flag register.
+  __ mov(eax, 0);  // equal
+  __ mov(ecx, Immediate(Smi::FromInt(1)));
+  __ cmov(above, eax, ecx);
+  __ mov(ecx, Immediate(Smi::FromInt(-1)));
+  __ cmov(below, eax, ecx);
+  __ ret(0);
 
   __ bind(&unordered);
   __ bind(&generic_stub);
-  ICCompareStub stub(op_, CompareIC::GENERIC, CompareIC::GENERIC,
+  ICCompareStub stub(isolate(), op_, CompareIC::GENERIC, CompareIC::GENERIC,
                      CompareIC::GENERIC);
-  __ jmp(stub.GetCode(masm->isolate()), RelocInfo::CODE_TARGET);
+  __ jmp(stub.GetCode(), RelocInfo::CODE_TARGET);
 
   __ bind(&maybe_undefined1);
   if (Token::IsOrderedRelationalCompareOp(op_)) {
-    __ cmp(eax, Immediate(masm->isolate()->factory()->undefined_value()));
+    __ cmp(eax, Immediate(isolate()->factory()->undefined_value()));
     __ j(not_equal, &miss);
     __ JumpIfSmi(edx, &unordered);
     __ CmpObjectType(edx, HEAP_NUMBER_TYPE, ecx);
@@ -4812,7 +3810,7 @@ void ICCompareStub::GenerateNumbers(MacroAssembler* masm) {
 
   __ bind(&maybe_undefined2);
   if (Token::IsOrderedRelationalCompareOp(op_)) {
-    __ cmp(edx, Immediate(masm->isolate()->factory()->undefined_value()));
+    __ cmp(edx, Immediate(isolate()->factory()->undefined_value()));
     __ j(equal, &unordered);
   }
 
@@ -4857,7 +3855,7 @@ void ICCompareStub::GenerateInternalizedStrings(MacroAssembler* masm) {
   __ j(not_equal, &done, Label::kNear);
   STATIC_ASSERT(EQUAL == 0);
   STATIC_ASSERT(kSmiTag == 0);
-  __ Set(eax, Immediate(Smi::FromInt(EQUAL)));
+  __ Move(eax, Immediate(Smi::FromInt(EQUAL)));
   __ bind(&done);
   __ ret(0);
 
@@ -4902,7 +3900,7 @@ void ICCompareStub::GenerateUniqueNames(MacroAssembler* masm) {
   __ j(not_equal, &done, Label::kNear);
   STATIC_ASSERT(EQUAL == 0);
   STATIC_ASSERT(kSmiTag == 0);
-  __ Set(eax, Immediate(Smi::FromInt(EQUAL)));
+  __ Move(eax, Immediate(Smi::FromInt(EQUAL)));
   __ bind(&done);
   __ ret(0);
 
@@ -4948,7 +3946,7 @@ void ICCompareStub::GenerateStrings(MacroAssembler* masm) {
   __ j(not_equal, &not_same, Label::kNear);
   STATIC_ASSERT(EQUAL == 0);
   STATIC_ASSERT(kSmiTag == 0);
-  __ Set(eax, Immediate(Smi::FromInt(EQUAL)));
+  __ Move(eax, Immediate(Smi::FromInt(EQUAL)));
   __ ret(0);
 
   // Handle not identical strings.
@@ -4993,7 +3991,7 @@ void ICCompareStub::GenerateStrings(MacroAssembler* masm) {
   if (equality) {
     __ TailCallRuntime(Runtime::kStringEquals, 2, 1);
   } else {
-    __ TailCallRuntime(Runtime::kStringCompare, 2, 1);
+    __ TailCallRuntime(Runtime::kHiddenStringCompare, 2, 1);
   }
 
   __ bind(&miss);
@@ -5047,7 +4045,7 @@ void ICCompareStub::GenerateMiss(MacroAssembler* masm) {
   {
     // Call the runtime system in a fresh internal frame.
     ExternalReference miss = ExternalReference(IC_Utility(IC::kCompareIC_Miss),
-                                               masm->isolate());
+                                               isolate());
     FrameScope scope(masm, StackFrame::INTERNAL);
     __ push(edx);  // Preserve edx and eax.
     __ push(eax);
@@ -5121,7 +4119,8 @@ void NameDictionaryLookupStub::GenerateNegativeLookup(MacroAssembler* masm,
     __ bind(&good);
   }
 
-  NameDictionaryLookupStub stub(properties, r0, r0, NEGATIVE_LOOKUP);
+  NameDictionaryLookupStub stub(masm->isolate(), properties, r0, r0,
+                                NEGATIVE_LOOKUP);
   __ push(Immediate(Handle<Object>(name)));
   __ push(Immediate(name->Hash()));
   __ CallStub(&stub);
@@ -5177,7 +4176,8 @@ void NameDictionaryLookupStub::GeneratePositiveLookup(MacroAssembler* masm,
     __ j(equal, done);
   }
 
-  NameDictionaryLookupStub stub(elements, r1, r0, POSITIVE_LOOKUP);
+  NameDictionaryLookupStub stub(masm->isolate(), elements, r1, r0,
+                                POSITIVE_LOOKUP);
   __ push(name);
   __ mov(r0, FieldOperand(name, Name::kHashFieldOffset));
   __ shr(r0, Name::kHashShift);
@@ -5237,7 +4237,7 @@ void NameDictionaryLookupStub::Generate(MacroAssembler* masm) {
                             index_,
                             times_pointer_size,
                             kElementsStartOffset - kHeapObjectTag));
-    __ cmp(scratch, masm->isolate()->factory()->undefined_value());
+    __ cmp(scratch, isolate()->factory()->undefined_value());
     __ j(equal, &not_in_dictionary);
 
     // Stop if found the property.
@@ -5280,17 +4280,10 @@ void NameDictionaryLookupStub::Generate(MacroAssembler* masm) {
 
 void StoreBufferOverflowStub::GenerateFixedRegStubsAheadOfTime(
     Isolate* isolate) {
-  StoreBufferOverflowStub stub(kDontSaveFPRegs);
-  stub.GetCode(isolate);
-  if (CpuFeatures::IsSafeForSnapshot(SSE2)) {
-    StoreBufferOverflowStub stub2(kSaveFPRegs);
-    stub2.GetCode(isolate);
-  }
-}
-
-
-bool CodeStub::CanUseFPRegisters() {
-  return CpuFeatures::IsSupported(SSE2);
+  StoreBufferOverflowStub stub(isolate, kDontSaveFPRegs);
+  stub.GetCode();
+  StoreBufferOverflowStub stub2(isolate, kSaveFPRegs);
+  stub2.GetCode();
 }
 
 
@@ -5355,7 +4348,7 @@ void RecordWriteStub::GenerateIncremental(MacroAssembler* masm, Mode mode) {
         masm,
         kUpdateRememberedSetOnNoNeedToInformIncrementalMarker,
         mode);
-    InformIncrementalMarker(masm, mode);
+    InformIncrementalMarker(masm);
     regs_.Restore(masm);
     __ RememberedSetHelper(object_,
                            address_,
@@ -5370,34 +4363,26 @@ void RecordWriteStub::GenerateIncremental(MacroAssembler* masm, Mode mode) {
       masm,
       kReturnOnNoNeedToInformIncrementalMarker,
       mode);
-  InformIncrementalMarker(masm, mode);
+  InformIncrementalMarker(masm);
   regs_.Restore(masm);
   __ ret(0);
 }
 
 
-void RecordWriteStub::InformIncrementalMarker(MacroAssembler* masm, Mode mode) {
+void RecordWriteStub::InformIncrementalMarker(MacroAssembler* masm) {
   regs_.SaveCallerSaveRegisters(masm, save_fp_regs_mode_);
   int argument_count = 3;
   __ PrepareCallCFunction(argument_count, regs_.scratch0());
   __ mov(Operand(esp, 0 * kPointerSize), regs_.object());
   __ mov(Operand(esp, 1 * kPointerSize), regs_.address());  // Slot.
   __ mov(Operand(esp, 2 * kPointerSize),
-         Immediate(ExternalReference::isolate_address(masm->isolate())));
+         Immediate(ExternalReference::isolate_address(isolate())));
 
   AllowExternalCallThatCantCauseGC scope(masm);
-  if (mode == INCREMENTAL_COMPACTION) {
-    __ CallCFunction(
-        ExternalReference::incremental_evacuation_record_write_function(
-            masm->isolate()),
-        argument_count);
-  } else {
-    ASSERT(mode == INCREMENTAL);
-    __ CallCFunction(
-        ExternalReference::incremental_marking_record_write_function(
-            masm->isolate()),
-        argument_count);
-  }
+  __ CallCFunction(
+      ExternalReference::incremental_marking_record_write_function(isolate()),
+      argument_count);
+
   regs_.RestoreCallerSaveRegisters(masm, save_fp_regs_mode_);
 }
 
@@ -5574,16 +4559,15 @@ void StoreArrayLiteralElementStub::Generate(MacroAssembler* masm) {
                                  ecx,
                                  edi,
                                  xmm0,
-                                 &slow_elements_from_double,
-                                 false);
+                                 &slow_elements_from_double);
   __ pop(edx);
   __ ret(0);
 }
 
 
 void StubFailureTrampolineStub::Generate(MacroAssembler* masm) {
-  CEntryStub ces(1, fp_registers_ ? kSaveFPRegs : kDontSaveFPRegs);
-  __ call(ces.GetCode(masm->isolate()), RelocInfo::CODE_TARGET);
+  CEntryStub ces(isolate(), 1, kSaveFPRegs);
+  __ call(ces.GetCode(), RelocInfo::CODE_TARGET);
   int parameter_count_offset =
       StubFailureTrampolineFrame::kCallerStackParameterCountFrameOffset;
   __ mov(ebx, MemOperand(ebp, parameter_count_offset));
@@ -5597,27 +4581,9 @@ void StubFailureTrampolineStub::Generate(MacroAssembler* masm) {
 }
 
 
-void StubFailureTailCallTrampolineStub::Generate(MacroAssembler* masm) {
-  CEntryStub ces(1, fp_registers_ ? kSaveFPRegs : kDontSaveFPRegs);
-  __ call(ces.GetCode(masm->isolate()), RelocInfo::CODE_TARGET);
-  __ mov(edi, eax);
-  int parameter_count_offset =
-      StubFailureTrampolineFrame::kCallerStackParameterCountFrameOffset;
-  __ mov(eax, MemOperand(ebp, parameter_count_offset));
-  // The parameter count above includes the receiver for the arguments passed to
-  // the deoptimization handler. Subtract the receiver for the parameter count
-  // for the call.
-  __ sub(eax, Immediate(1));
-  masm->LeaveFrame(StackFrame::STUB_FAILURE_TRAMPOLINE);
-  ParameterCount argument_count(eax);
-  __ InvokeFunction(
-      edi, argument_count, JUMP_FUNCTION, NullCallWrapper(), CALL_AS_METHOD);
-}
-
-
 void ProfileEntryHookStub::MaybeCallEntryHook(MacroAssembler* masm) {
   if (masm->isolate()->function_entry_hook() != NULL) {
-    ProfileEntryHookStub stub;
+    ProfileEntryHookStub stub(masm->isolate());
     masm->CallStub(&stub);
   }
 }
@@ -5641,8 +4607,8 @@ void ProfileEntryHookStub::Generate(MacroAssembler* masm) {
   __ push(eax);
 
   // Call the entry hook.
-  ASSERT(masm->isolate()->function_entry_hook() != NULL);
-  __ call(FUNCTION_ADDR(masm->isolate()->function_entry_hook()),
+  ASSERT(isolate()->function_entry_hook() != NULL);
+  __ call(FUNCTION_ADDR(isolate()->function_entry_hook()),
           RelocInfo::RUNTIME_ENTRY);
   __ add(esp, Immediate(2 * kPointerSize));
 
@@ -5659,8 +4625,8 @@ template<class T>
 static void CreateArrayDispatch(MacroAssembler* masm,
                                 AllocationSiteOverrideMode mode) {
   if (mode == DISABLE_ALLOCATION_SITES) {
-    T stub(GetInitialFastElementsKind(),
-           CONTEXT_CHECK_REQUIRED,
+    T stub(masm->isolate(),
+           GetInitialFastElementsKind(),
            mode);
     __ TailCallStub(&stub);
   } else if (mode == DONT_OVERRIDE) {
@@ -5671,7 +4637,7 @@ static void CreateArrayDispatch(MacroAssembler* masm,
       ElementsKind kind = GetFastElementsKindFromSequenceIndex(i);
       __ cmp(edx, kind);
       __ j(not_equal, &next);
-      T stub(kind);
+      T stub(masm->isolate(), kind);
       __ TailCallStub(&stub);
       __ bind(&next);
     }
@@ -5686,7 +4652,7 @@ static void CreateArrayDispatch(MacroAssembler* masm,
 
 static void CreateArrayDispatchOneArgument(MacroAssembler* masm,
                                            AllocationSiteOverrideMode mode) {
-  // ebx - type info cell (if mode != DISABLE_ALLOCATION_SITES)
+  // ebx - allocation site (if mode != DISABLE_ALLOCATION_SITES)
   // edx - kind (if mode != DISABLE_ALLOCATION_SITES)
   // eax - number of arguments
   // edi - constructor?
@@ -5715,33 +4681,33 @@ static void CreateArrayDispatchOneArgument(MacroAssembler* masm,
     ElementsKind initial = GetInitialFastElementsKind();
     ElementsKind holey_initial = GetHoleyElementsKind(initial);
 
-    ArraySingleArgumentConstructorStub stub_holey(holey_initial,
-                                                  CONTEXT_CHECK_REQUIRED,
+    ArraySingleArgumentConstructorStub stub_holey(masm->isolate(),
+                                                  holey_initial,
                                                   DISABLE_ALLOCATION_SITES);
     __ TailCallStub(&stub_holey);
 
     __ bind(&normal_sequence);
-    ArraySingleArgumentConstructorStub stub(initial,
-                                            CONTEXT_CHECK_REQUIRED,
+    ArraySingleArgumentConstructorStub stub(masm->isolate(),
+                                            initial,
                                             DISABLE_ALLOCATION_SITES);
     __ TailCallStub(&stub);
   } else if (mode == DONT_OVERRIDE) {
     // We are going to create a holey array, but our kind is non-holey.
     // Fix kind and retry.
     __ inc(edx);
-    __ mov(ecx, FieldOperand(ebx, Cell::kValueOffset));
+
     if (FLAG_debug_code) {
       Handle<Map> allocation_site_map =
           masm->isolate()->factory()->allocation_site_map();
-      __ cmp(FieldOperand(ecx, 0), Immediate(allocation_site_map));
-      __ Assert(equal, kExpectedAllocationSiteInCell);
+      __ cmp(FieldOperand(ebx, 0), Immediate(allocation_site_map));
+      __ Assert(equal, kExpectedAllocationSite);
     }
 
     // Save the resulting elements kind in type info. We can't just store r3
     // in the AllocationSite::transition_info field because elements kind is
     // restricted to a portion of the field...upper bits need to be left alone.
     STATIC_ASSERT(AllocationSite::ElementsKindBits::kShift == 0);
-    __ add(FieldOperand(ecx, AllocationSite::kTransitionInfoOffset),
+    __ add(FieldOperand(ebx, AllocationSite::kTransitionInfoOffset),
            Immediate(Smi::FromInt(kFastElementsKindPackedToHoley)));
 
     __ bind(&normal_sequence);
@@ -5752,7 +4718,7 @@ static void CreateArrayDispatchOneArgument(MacroAssembler* masm,
       ElementsKind kind = GetFastElementsKindFromSequenceIndex(i);
       __ cmp(edx, kind);
       __ j(not_equal, &next);
-      ArraySingleArgumentConstructorStub stub(kind);
+      ArraySingleArgumentConstructorStub stub(masm->isolate(), kind);
       __ TailCallStub(&stub);
       __ bind(&next);
     }
@@ -5767,20 +4733,15 @@ static void CreateArrayDispatchOneArgument(MacroAssembler* masm,
 
 template<class T>
 static void ArrayConstructorStubAheadOfTimeHelper(Isolate* isolate) {
-  ElementsKind initial_kind = GetInitialFastElementsKind();
-  ElementsKind initial_holey_kind = GetHoleyElementsKind(initial_kind);
-
   int to_index = GetSequenceIndexFromFastElementsKind(
       TERMINAL_FAST_ELEMENTS_KIND);
   for (int i = 0; i <= to_index; ++i) {
     ElementsKind kind = GetFastElementsKindFromSequenceIndex(i);
-    T stub(kind);
-    stub.GetCode(isolate);
-    if (AllocationSite::GetMode(kind) != DONT_TRACK_ALLOCATION_SITE ||
-        (!FLAG_track_allocation_sites &&
-         (kind == initial_kind || kind == initial_holey_kind))) {
-      T stub1(kind, CONTEXT_CHECK_REQUIRED, DISABLE_ALLOCATION_SITES);
-      stub1.GetCode(isolate);
+    T stub(isolate, kind);
+    stub.GetCode();
+    if (AllocationSite::GetMode(kind) != DONT_TRACK_ALLOCATION_SITE) {
+      T stub1(isolate, kind, DISABLE_ALLOCATION_SITES);
+      stub1.GetCode();
     }
   }
 }
@@ -5801,12 +4762,12 @@ void InternalArrayConstructorStubBase::GenerateStubsAheadOfTime(
   ElementsKind kinds[2] = { FAST_ELEMENTS, FAST_HOLEY_ELEMENTS };
   for (int i = 0; i < 2; i++) {
     // For internal arrays we only need a few things
-    InternalArrayNoArgumentConstructorStub stubh1(kinds[i]);
-    stubh1.GetCode(isolate);
-    InternalArraySingleArgumentConstructorStub stubh2(kinds[i]);
-    stubh2.GetCode(isolate);
-    InternalArrayNArgumentsConstructorStub stubh3(kinds[i]);
-    stubh3.GetCode(isolate);
+    InternalArrayNoArgumentConstructorStub stubh1(isolate, kinds[i]);
+    stubh1.GetCode();
+    InternalArraySingleArgumentConstructorStub stubh2(isolate, kinds[i]);
+    stubh2.GetCode();
+    InternalArrayNArgumentsConstructorStub stubh3(isolate, kinds[i]);
+    stubh3.GetCode();
   }
 }
 
@@ -5842,15 +4803,11 @@ void ArrayConstructorStub::GenerateDispatchToArrayStub(
 void ArrayConstructorStub::Generate(MacroAssembler* masm) {
   // ----------- S t a t e -------------
   //  -- eax : argc (only if argument_count_ == ANY)
-  //  -- ebx : type info cell
+  //  -- ebx : AllocationSite or undefined
   //  -- edi : constructor
   //  -- esp[0] : return address
   //  -- esp[4] : last argument
   // -----------------------------------
-  Handle<Object> undefined_sentinel(
-      masm->isolate()->heap()->undefined_value(),
-      masm->isolate());
-
   if (FLAG_debug_code) {
     // The array construct code is only set for the global and natives
     // builtin Array functions which always have maps.
@@ -5863,28 +4820,18 @@ void ArrayConstructorStub::Generate(MacroAssembler* masm) {
     __ CmpObjectType(ecx, MAP_TYPE, ecx);
     __ Assert(equal, kUnexpectedInitialMapForArrayFunction);
 
-    // We should either have undefined in ebx or a valid cell
-    Label okay_here;
-    Handle<Map> cell_map = masm->isolate()->factory()->cell_map();
-    __ cmp(ebx, Immediate(undefined_sentinel));
-    __ j(equal, &okay_here);
-    __ cmp(FieldOperand(ebx, 0), Immediate(cell_map));
-    __ Assert(equal, kExpectedPropertyCellInRegisterEbx);
-    __ bind(&okay_here);
+    // We should either have undefined in ebx or a valid AllocationSite
+    __ AssertUndefinedOrAllocationSite(ebx);
   }
 
   Label no_info;
-  // If the type cell is undefined, or contains anything other than an
-  // AllocationSite, call an array constructor that doesn't use AllocationSites.
-  __ cmp(ebx, Immediate(undefined_sentinel));
+  // If the feedback vector is the undefined value call an array constructor
+  // that doesn't use AllocationSites.
+  __ cmp(ebx, isolate()->factory()->undefined_value());
   __ j(equal, &no_info);
-  __ mov(edx, FieldOperand(ebx, Cell::kValueOffset));
-  __ cmp(FieldOperand(edx, 0), Immediate(
-      masm->isolate()->factory()->allocation_site_map()));
-  __ j(not_equal, &no_info);
 
   // Only look at the lower 16 bits of the transition info.
-  __ mov(edx, FieldOperand(edx, AllocationSite::kTransitionInfoOffset));
+  __ mov(edx, FieldOperand(ebx, AllocationSite::kTransitionInfoOffset));
   __ SmiUntag(edx);
   STATIC_ASSERT(AllocationSite::ElementsKindBits::kShift == 0);
   __ and_(edx, Immediate(AllocationSite::ElementsKindBits::kMask));
@@ -5902,7 +4849,7 @@ void InternalArrayConstructorStub::GenerateCase(
 
   __ test(eax, eax);
   __ j(not_zero, &not_zero_case);
-  InternalArrayNoArgumentConstructorStub stub0(kind);
+  InternalArrayNoArgumentConstructorStub stub0(isolate(), kind);
   __ TailCallStub(&stub0);
 
   __ bind(&not_zero_case);
@@ -5917,16 +4864,16 @@ void InternalArrayConstructorStub::GenerateCase(
     __ j(zero, &normal_sequence);
 
     InternalArraySingleArgumentConstructorStub
-        stub1_holey(GetHoleyElementsKind(kind));
+        stub1_holey(isolate(), GetHoleyElementsKind(kind));
     __ TailCallStub(&stub1_holey);
   }
 
   __ bind(&normal_sequence);
-  InternalArraySingleArgumentConstructorStub stub1(kind);
+  InternalArraySingleArgumentConstructorStub stub1(isolate(), kind);
   __ TailCallStub(&stub1);
 
   __ bind(&not_one_case);
-  InternalArrayNArgumentsConstructorStub stubN(kind);
+  InternalArrayNArgumentsConstructorStub stubN(isolate(), kind);
   __ TailCallStub(&stubN);
 }
 
@@ -5934,7 +4881,6 @@ void InternalArrayConstructorStub::GenerateCase(
 void InternalArrayConstructorStub::Generate(MacroAssembler* masm) {
   // ----------- S t a t e -------------
   //  -- eax : argc
-  //  -- ebx : type info cell
   //  -- edi : constructor
   //  -- esp[0] : return address
   //  -- esp[4] : last argument
@@ -5960,8 +4906,7 @@ void InternalArrayConstructorStub::Generate(MacroAssembler* masm) {
   // but the following masking takes care of that anyway.
   __ mov(ecx, FieldOperand(ecx, Map::kBitField2Offset));
   // Retrieve elements_kind from bit field 2.
-  __ and_(ecx, Map::kElementsKindMask);
-  __ shr(ecx, Map::kElementsKindShift);
+  __ DecodeField<Map::ElementsKindBits>(ecx);
 
   if (FLAG_debug_code) {
     Label done;
@@ -5980,6 +4925,165 @@ void InternalArrayConstructorStub::Generate(MacroAssembler* masm) {
 
   __ bind(&fast_elements_case);
   GenerateCase(masm, FAST_ELEMENTS);
+}
+
+
+void CallApiFunctionStub::Generate(MacroAssembler* masm) {
+  // ----------- S t a t e -------------
+  //  -- eax                 : callee
+  //  -- ebx                 : call_data
+  //  -- ecx                 : holder
+  //  -- edx                 : api_function_address
+  //  -- esi                 : context
+  //  --
+  //  -- esp[0]              : return address
+  //  -- esp[4]              : last argument
+  //  -- ...
+  //  -- esp[argc * 4]       : first argument
+  //  -- esp[(argc + 1) * 4] : receiver
+  // -----------------------------------
+
+  Register callee = eax;
+  Register call_data = ebx;
+  Register holder = ecx;
+  Register api_function_address = edx;
+  Register return_address = edi;
+  Register context = esi;
+
+  int argc = ArgumentBits::decode(bit_field_);
+  bool is_store = IsStoreBits::decode(bit_field_);
+  bool call_data_undefined = CallDataUndefinedBits::decode(bit_field_);
+
+  typedef FunctionCallbackArguments FCA;
+
+  STATIC_ASSERT(FCA::kContextSaveIndex == 6);
+  STATIC_ASSERT(FCA::kCalleeIndex == 5);
+  STATIC_ASSERT(FCA::kDataIndex == 4);
+  STATIC_ASSERT(FCA::kReturnValueOffset == 3);
+  STATIC_ASSERT(FCA::kReturnValueDefaultValueIndex == 2);
+  STATIC_ASSERT(FCA::kIsolateIndex == 1);
+  STATIC_ASSERT(FCA::kHolderIndex == 0);
+  STATIC_ASSERT(FCA::kArgsLength == 7);
+
+  __ pop(return_address);
+
+  // context save
+  __ push(context);
+  // load context from callee
+  __ mov(context, FieldOperand(callee, JSFunction::kContextOffset));
+
+  // callee
+  __ push(callee);
+
+  // call data
+  __ push(call_data);
+
+  Register scratch = call_data;
+  if (!call_data_undefined) {
+    // return value
+    __ push(Immediate(isolate()->factory()->undefined_value()));
+    // return value default
+    __ push(Immediate(isolate()->factory()->undefined_value()));
+  } else {
+    // return value
+    __ push(scratch);
+    // return value default
+    __ push(scratch);
+  }
+  // isolate
+  __ push(Immediate(reinterpret_cast<int>(isolate())));
+  // holder
+  __ push(holder);
+
+  __ mov(scratch, esp);
+
+  // return address
+  __ push(return_address);
+
+  // API function gets reference to the v8::Arguments. If CPU profiler
+  // is enabled wrapper function will be called and we need to pass
+  // address of the callback as additional parameter, always allocate
+  // space for it.
+  const int kApiArgc = 1 + 1;
+
+  // Allocate the v8::Arguments structure in the arguments' space since
+  // it's not controlled by GC.
+  const int kApiStackSpace = 4;
+
+  __ PrepareCallApiFunction(kApiArgc + kApiStackSpace);
+
+  // FunctionCallbackInfo::implicit_args_.
+  __ mov(ApiParameterOperand(2), scratch);
+  __ add(scratch, Immediate((argc + FCA::kArgsLength - 1) * kPointerSize));
+  // FunctionCallbackInfo::values_.
+  __ mov(ApiParameterOperand(3), scratch);
+  // FunctionCallbackInfo::length_.
+  __ Move(ApiParameterOperand(4), Immediate(argc));
+  // FunctionCallbackInfo::is_construct_call_.
+  __ Move(ApiParameterOperand(5), Immediate(0));
+
+  // v8::InvocationCallback's argument.
+  __ lea(scratch, ApiParameterOperand(2));
+  __ mov(ApiParameterOperand(0), scratch);
+
+  ExternalReference thunk_ref =
+      ExternalReference::invoke_function_callback(isolate());
+
+  Operand context_restore_operand(ebp,
+                                  (2 + FCA::kContextSaveIndex) * kPointerSize);
+  // Stores return the first js argument
+  int return_value_offset = 0;
+  if (is_store) {
+    return_value_offset = 2 + FCA::kArgsLength;
+  } else {
+    return_value_offset = 2 + FCA::kReturnValueOffset;
+  }
+  Operand return_value_operand(ebp, return_value_offset * kPointerSize);
+  __ CallApiFunctionAndReturn(api_function_address,
+                              thunk_ref,
+                              ApiParameterOperand(1),
+                              argc + FCA::kArgsLength + 1,
+                              return_value_operand,
+                              &context_restore_operand);
+}
+
+
+void CallApiGetterStub::Generate(MacroAssembler* masm) {
+  // ----------- S t a t e -------------
+  //  -- esp[0]                  : return address
+  //  -- esp[4]                  : name
+  //  -- esp[8 - kArgsLength*4]  : PropertyCallbackArguments object
+  //  -- ...
+  //  -- edx                    : api_function_address
+  // -----------------------------------
+
+  // array for v8::Arguments::values_, handler for name and pointer
+  // to the values (it considered as smi in GC).
+  const int kStackSpace = PropertyCallbackArguments::kArgsLength + 2;
+  // Allocate space for opional callback address parameter in case
+  // CPU profiler is active.
+  const int kApiArgc = 2 + 1;
+
+  Register api_function_address = edx;
+  Register scratch = ebx;
+
+  // load address of name
+  __ lea(scratch, Operand(esp, 1 * kPointerSize));
+
+  __ PrepareCallApiFunction(kApiArgc);
+  __ mov(ApiParameterOperand(0), scratch);  // name.
+  __ add(scratch, Immediate(kPointerSize));
+  __ mov(ApiParameterOperand(1), scratch);  // arguments pointer.
+
+  ExternalReference thunk_ref =
+      ExternalReference::invoke_accessor_getter_callback(isolate());
+
+  __ CallApiFunctionAndReturn(api_function_address,
+                              thunk_ref,
+                              ApiParameterOperand(2),
+                              kStackSpace,
+                              Operand(ebp, 7 * kPointerSize),
+                              NULL);
 }
 
 

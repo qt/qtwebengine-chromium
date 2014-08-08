@@ -34,6 +34,7 @@
 
 #include "bindings/v8/ScriptController.h"
 #include "core/events/Event.h"
+#include "core/frame/LocalFrame.h"
 #include "core/html/HTMLFormElement.h"
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/loader/DocumentLoader.h"
@@ -43,7 +44,6 @@
 #include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderClient.h"
 #include "core/loader/FrameLoaderStateMachine.h"
-#include "core/frame/Frame.h"
 #include "core/page/BackForwardClient.h"
 #include "core/page/Page.h"
 #include "platform/UserGestureIndicator.h"
@@ -67,9 +67,9 @@ public:
     }
     virtual ~ScheduledNavigation() { }
 
-    virtual void fire(Frame*) = 0;
+    virtual void fire(LocalFrame*) = 0;
 
-    virtual bool shouldStartTimer(Frame*) { return true; }
+    virtual bool shouldStartTimer(LocalFrame*) { return true; }
 
     double delay() const { return m_delay; }
     bool lockBackForwardList() const { return m_lockBackForwardList; }
@@ -96,7 +96,7 @@ private:
 
 class ScheduledURLNavigation : public ScheduledNavigation {
 protected:
-    ScheduledURLNavigation(double delay, Document* originDocument, const String& url, const String& referrer, bool lockBackForwardList, bool isLocationChange)
+    ScheduledURLNavigation(double delay, Document* originDocument, const String& url, const Referrer& referrer, bool lockBackForwardList, bool isLocationChange)
         : ScheduledNavigation(delay, lockBackForwardList, isLocationChange)
         , m_originDocument(originDocument)
         , m_url(url)
@@ -104,7 +104,7 @@ protected:
     {
     }
 
-    virtual void fire(Frame* frame)
+    virtual void fire(LocalFrame* frame) OVERRIDE
     {
         OwnPtr<UserGestureIndicator> gestureIndicator = createUserGestureIndicator();
         FrameLoadRequest request(m_originDocument.get(), ResourceRequest(KURL(ParsedURLString, m_url), m_referrer), "_self");
@@ -115,25 +115,25 @@ protected:
 
     Document* originDocument() const { return m_originDocument.get(); }
     String url() const { return m_url; }
-    String referrer() const { return m_referrer; }
+    const Referrer& referrer() const { return m_referrer; }
 
 private:
-    RefPtr<Document> m_originDocument;
+    RefPtrWillBePersistent<Document> m_originDocument;
     String m_url;
-    String m_referrer;
+    Referrer m_referrer;
 };
 
-class ScheduledRedirect : public ScheduledURLNavigation {
+class ScheduledRedirect FINAL : public ScheduledURLNavigation {
 public:
     ScheduledRedirect(double delay, Document* originDocument, const String& url, bool lockBackForwardList)
-        : ScheduledURLNavigation(delay, originDocument, url, String(), lockBackForwardList, false)
+        : ScheduledURLNavigation(delay, originDocument, url, Referrer(), lockBackForwardList, false)
     {
         clearUserGesture();
     }
 
-    virtual bool shouldStartTimer(Frame* frame) { return frame->loader().allAncestorsAreComplete(); }
+    virtual bool shouldStartTimer(LocalFrame* frame) OVERRIDE { return frame->loader().allAncestorsAreComplete(); }
 
-    virtual void fire(Frame* frame)
+    virtual void fire(LocalFrame* frame) OVERRIDE
     {
         OwnPtr<UserGestureIndicator> gestureIndicator = createUserGestureIndicator();
         FrameLoadRequest request(originDocument(), ResourceRequest(KURL(ParsedURLString, url()), referrer()), "_self");
@@ -145,20 +145,20 @@ public:
     }
 };
 
-class ScheduledLocationChange : public ScheduledURLNavigation {
+class ScheduledLocationChange FINAL : public ScheduledURLNavigation {
 public:
-    ScheduledLocationChange(Document* originDocument, const String& url, const String& referrer, bool lockBackForwardList)
+    ScheduledLocationChange(Document* originDocument, const String& url, const Referrer& referrer, bool lockBackForwardList)
         : ScheduledURLNavigation(0.0, originDocument, url, referrer, lockBackForwardList, true) { }
 };
 
-class ScheduledRefresh : public ScheduledURLNavigation {
+class ScheduledRefresh FINAL : public ScheduledURLNavigation {
 public:
-    ScheduledRefresh(Document* originDocument, const String& url, const String& referrer)
+    ScheduledRefresh(Document* originDocument, const String& url, const Referrer& referrer)
         : ScheduledURLNavigation(0.0, originDocument, url, referrer, true, true)
     {
     }
 
-    virtual void fire(Frame* frame)
+    virtual void fire(LocalFrame* frame) OVERRIDE
     {
         OwnPtr<UserGestureIndicator> gestureIndicator = createUserGestureIndicator();
         FrameLoadRequest request(originDocument(), ResourceRequest(KURL(ParsedURLString, url()), referrer(), ReloadIgnoringCacheData), "_self");
@@ -168,7 +168,7 @@ public:
     }
 };
 
-class ScheduledHistoryNavigation : public ScheduledNavigation {
+class ScheduledHistoryNavigation FINAL : public ScheduledNavigation {
 public:
     explicit ScheduledHistoryNavigation(int historySteps)
         : ScheduledNavigation(0, false, true)
@@ -176,7 +176,7 @@ public:
     {
     }
 
-    virtual void fire(Frame* frame)
+    virtual void fire(LocalFrame* frame) OVERRIDE
     {
         OwnPtr<UserGestureIndicator> gestureIndicator = createUserGestureIndicator();
 
@@ -190,23 +190,23 @@ public:
         }
         // go(i!=0) from a frame navigates into the history of the frame only,
         // in both IE and NS (but not in Mozilla). We can't easily do that.
-        frame->page()->mainFrame()->loader().client()->navigateBackForward(m_historySteps);
+        frame->page()->deprecatedLocalMainFrame()->loader().client()->navigateBackForward(m_historySteps);
     }
 
 private:
     int m_historySteps;
 };
 
-class ScheduledFormSubmission : public ScheduledNavigation {
+class ScheduledFormSubmission FINAL : public ScheduledNavigation {
 public:
-    ScheduledFormSubmission(PassRefPtr<FormSubmission> submission, bool lockBackForwardList)
+    ScheduledFormSubmission(PassRefPtrWillBeRawPtr<FormSubmission> submission, bool lockBackForwardList)
         : ScheduledNavigation(0, lockBackForwardList, true)
         , m_submission(submission)
     {
         ASSERT(m_submission->state());
     }
 
-    virtual void fire(Frame* frame)
+    virtual void fire(LocalFrame* frame) OVERRIDE
     {
         OwnPtr<UserGestureIndicator> gestureIndicator = createUserGestureIndicator();
         FrameLoadRequest frameRequest(m_submission->state()->sourceDocument());
@@ -217,14 +217,14 @@ public:
         frame->loader().load(frameRequest);
     }
 
-    virtual bool isForm() const { return true; }
+    virtual bool isForm() const OVERRIDE { return true; }
     FormSubmission* submission() const { return m_submission.get(); }
 
 private:
-    RefPtr<FormSubmission> m_submission;
+    RefPtrWillBePersistent<FormSubmission> m_submission;
 };
 
-NavigationScheduler::NavigationScheduler(Frame* frame)
+NavigationScheduler::NavigationScheduler(LocalFrame* frame)
     : m_frame(frame)
     , m_timer(this, &NavigationScheduler::timerFired)
 {
@@ -271,7 +271,7 @@ void NavigationScheduler::scheduleRedirect(double delay, const String& url)
         schedule(adoptPtr(new ScheduledRedirect(delay, m_frame->document(), url, delay <= 1)));
 }
 
-bool NavigationScheduler::mustLockBackForwardList(Frame* targetFrame)
+bool NavigationScheduler::mustLockBackForwardList(LocalFrame* targetFrame)
 {
     // Non-user navigation before the page has finished firing onload should not create a new back/forward item.
     // See https://webkit.org/b/42861 for the original motivation for this.
@@ -289,10 +289,11 @@ bool NavigationScheduler::mustLockBackForwardList(Frame* targetFrame)
     // Navigation of a subframe during loading of an ancestor frame does not create a new back/forward item.
     // The definition of "during load" is any time before all handlers for the load event have been run.
     // See https://bugs.webkit.org/show_bug.cgi?id=14957 for the original motivation for this.
-    return targetFrame->tree().parent() && !targetFrame->tree().parent()->loader().allAncestorsAreComplete();
+    Frame* parentFrame = targetFrame->tree().parent();
+    return parentFrame && parentFrame->isLocalFrame() && !toLocalFrame(parentFrame)->loader().allAncestorsAreComplete();
 }
 
-void NavigationScheduler::scheduleLocationChange(Document* originDocument, const String& url, const String& referrer, bool lockBackForwardList)
+void NavigationScheduler::scheduleLocationChange(Document* originDocument, const String& url, const Referrer& referrer, bool lockBackForwardList)
 {
     if (!shouldScheduleNavigation(url))
         return;
@@ -310,7 +311,8 @@ void NavigationScheduler::scheduleLocationChange(Document* originDocument, const
         if (parsedURL.hasFragmentIdentifier() && equalIgnoringFragmentIdentifier(m_frame->document()->url(), parsedURL)) {
             FrameLoadRequest request(originDocument, ResourceRequest(m_frame->document()->completeURL(url), referrer), "_self");
             request.setLockBackForwardList(lockBackForwardList);
-            request.setClientRedirect(ClientRedirect);
+            if (lockBackForwardList)
+                request.setClientRedirect(ClientRedirect);
             m_frame->loader().load(request);
             return;
         }
@@ -319,7 +321,7 @@ void NavigationScheduler::scheduleLocationChange(Document* originDocument, const
     schedule(adoptPtr(new ScheduledLocationChange(originDocument, url, referrer, lockBackForwardList)));
 }
 
-void NavigationScheduler::scheduleFormSubmission(PassRefPtr<FormSubmission> submission)
+void NavigationScheduler::scheduleFormSubmission(PassRefPtrWillBeRawPtr<FormSubmission> submission)
 {
     ASSERT(m_frame->page());
     schedule(adoptPtr(new ScheduledFormSubmission(submission, mustLockBackForwardList(m_frame))));
@@ -333,7 +335,7 @@ void NavigationScheduler::scheduleRefresh()
     if (url.isEmpty())
         return;
 
-    schedule(adoptPtr(new ScheduledRefresh(m_frame->document(), url.string(), m_frame->document()->outgoingReferrer())));
+    schedule(adoptPtr(new ScheduledRefresh(m_frame->document(), url.string(), Referrer(m_frame->document()->outgoingReferrer(), m_frame->document()->referrerPolicy()))));
 }
 
 void NavigationScheduler::scheduleHistoryNavigation(int steps)
@@ -362,7 +364,7 @@ void NavigationScheduler::timerFired(Timer<NavigationScheduler>*)
         return;
     }
 
-    RefPtr<Frame> protect(m_frame);
+    RefPtr<LocalFrame> protect(m_frame);
 
     OwnPtr<ScheduledNavigation> redirect(m_redirect.release());
     redirect->fire(m_frame);
@@ -372,6 +374,18 @@ void NavigationScheduler::timerFired(Timer<NavigationScheduler>*)
 void NavigationScheduler::schedule(PassOwnPtr<ScheduledNavigation> redirect)
 {
     ASSERT(m_frame->page());
+
+    // In a back/forward navigation, we sometimes restore history state to iframes, even though the state was generated
+    // dynamically and JS will try to put something different in the iframe. In this case, we will load stale things
+    // and/or confuse the JS when it shortly thereafter tries to schedule a location change. Let the JS have its way.
+    // FIXME: This check seems out of place.
+    if (!m_frame->loader().stateMachine()->committedFirstRealDocumentLoad() && m_frame->loader().provisionalDocumentLoader()) {
+        RefPtr<Frame> protect(m_frame);
+        m_frame->loader().provisionalDocumentLoader()->stopLoading();
+        if (!m_frame->host())
+            return;
+    }
+
     cancel();
     m_redirect = redirect;
     startTimer();
@@ -388,7 +402,7 @@ void NavigationScheduler::startTimer()
     if (!m_redirect->shouldStartTimer(m_frame))
         return;
 
-    m_timer.startOneShot(m_redirect->delay());
+    m_timer.startOneShot(m_redirect->delay(), FROM_HERE);
     InspectorInstrumentation::frameScheduledNavigation(m_frame, m_redirect->delay());
 }
 

@@ -150,4 +150,16 @@ interface PPB_PDF_0_1 {
   /* Returns PP_TRUE if the plugin is out of process. */
   PP_Bool IsOutOfProcess(
       [in] PP_Instance instance);
+
+  /* Sets the selected text of the plugin. If |selected_text| is empty, then no
+   * text is selected. */
+  void SetSelectedText(
+      [in] PP_Instance instance,
+      [in] str_t selected_text);
+
+  /* Sets the link under the cursor. If |url| is empty, then no link is under
+   * the cursor. */
+  void SetLinkUnderCursor(
+      [in] PP_Instance instance,
+      [in] str_t url);
 };

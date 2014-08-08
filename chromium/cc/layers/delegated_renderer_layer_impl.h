@@ -31,7 +31,7 @@ class CC_EXPORT DelegatedRendererLayerImpl : public LayerImpl {
   virtual RenderPass::Id FirstContributingRenderPassId() const OVERRIDE;
   virtual RenderPass::Id NextContributingRenderPassId(
       RenderPass::Id previous) const OVERRIDE;
-  virtual void DidLoseOutputSurface() OVERRIDE;
+  virtual void ReleaseResources() OVERRIDE;
   virtual bool WillDraw(DrawMode draw_mode,
                         ResourceProvider* resource_provider) OVERRIDE;
   virtual void AppendQuads(QuadSink* quad_sink,
@@ -46,9 +46,11 @@ class CC_EXPORT DelegatedRendererLayerImpl : public LayerImpl {
   void CreateChildIdIfNeeded(const ReturnCallback& return_callback);
 
   void SetFrameData(const DelegatedFrameData* frame_data,
-                    gfx::RectF damage_in_frame);
+                    const gfx::RectF& damage_in_frame);
 
-  void SetDisplaySize(gfx::Size size);
+  float inverse_device_scale_factor() const {
+    return inverse_device_scale_factor_;
+  }
 
  protected:
   DelegatedRendererLayerImpl(LayerTreeImpl* tree_impl, int id);
@@ -77,24 +79,21 @@ class CC_EXPORT DelegatedRendererLayerImpl : public LayerImpl {
       RenderPass::Id delegated_render_pass_id,
       RenderPass::Id* output_render_pass_id) const;
 
-  gfx::Transform DelegatedFrameToLayerSpaceTransform(gfx::Size frame_size)
-      const;
-
   void AppendRenderPassQuads(
       QuadSink* quad_sink,
       AppendQuadsData* append_quads_data,
       const RenderPass* delegated_render_pass,
-      gfx::Size frame_size) const;
+      const gfx::Size& frame_size) const;
 
   // LayerImpl overrides.
   virtual const char* LayerTypeAsString() const OVERRIDE;
 
   bool have_render_passes_to_push_;
+  float inverse_device_scale_factor_;
   ScopedPtrVector<RenderPass> render_passes_in_draw_order_;
   base::hash_map<RenderPass::Id, int> render_passes_index_by_id_;
   ResourceProvider::ResourceIdArray resources_;
 
-  gfx::Size display_size_;
   int child_id_;
   bool own_child_id_;
 

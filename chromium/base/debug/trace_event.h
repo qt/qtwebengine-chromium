@@ -195,6 +195,7 @@
 #include "base/debug/trace_event_impl.h"
 #include "base/debug/trace_event_memory.h"
 #include "base/debug/trace_event_system_stats_monitor.h"
+#include "base/time/time.h"
 #include "build/build_config.h"
 
 // By default, const char* argument values are assumed to have long-lived scope
@@ -725,12 +726,16 @@
     INTERNAL_TRACE_EVENT_ADD_WITH_ID(TRACE_EVENT_PHASE_DELETE_OBJECT, \
         category_group, name, TRACE_ID_DONT_MANGLE(id), TRACE_EVENT_FLAG_NONE)
 
+#define INTERNAL_TRACE_EVENT_CATEGORY_GROUP_ENABLED_FOR_RECORDING_MODE() \
+    UNLIKELY(*INTERNAL_TRACE_EVENT_UID(category_group_enabled) & \
+        (base::debug::TraceLog::ENABLED_FOR_RECORDING | \
+         base::debug::TraceLog::ENABLED_FOR_EVENT_CALLBACK))
 
 // Macro to efficiently determine if a given category group is enabled.
 #define TRACE_EVENT_CATEGORY_GROUP_ENABLED(category_group, ret) \
     do { \
       INTERNAL_TRACE_EVENT_GET_CATEGORY_INFO(category_group); \
-      if (*INTERNAL_TRACE_EVENT_UID(category_group_enabled)) { \
+      if (INTERNAL_TRACE_EVENT_CATEGORY_GROUP_ENABLED_FOR_RECORDING_MODE()) { \
         *ret = true; \
       } else { \
         *ret = false; \
@@ -850,7 +855,7 @@ TRACE_EVENT_API_CLASS_EXPORT extern \
     category_group_enabled = \
         reinterpret_cast<const unsigned char*>(TRACE_EVENT_API_ATOMIC_LOAD( \
             atomic)); \
-    if (!category_group_enabled) { \
+    if (UNLIKELY(!category_group_enabled)) { \
       category_group_enabled = \
           TRACE_EVENT_API_GET_CATEGORY_GROUP_ENABLED(category_group); \
       TRACE_EVENT_API_ATOMIC_STORE(atomic, \
@@ -870,7 +875,7 @@ TRACE_EVENT_API_CLASS_EXPORT extern \
 #define INTERNAL_TRACE_EVENT_ADD(phase, category_group, name, flags, ...) \
     do { \
       INTERNAL_TRACE_EVENT_GET_CATEGORY_INFO(category_group); \
-      if (*INTERNAL_TRACE_EVENT_UID(category_group_enabled)) { \
+      if (INTERNAL_TRACE_EVENT_CATEGORY_GROUP_ENABLED_FOR_RECORDING_MODE()) { \
         trace_event_internal::AddTraceEvent( \
             phase, INTERNAL_TRACE_EVENT_UID(category_group_enabled), name, \
             trace_event_internal::kNoEventId, flags, ##__VA_ARGS__); \
@@ -883,7 +888,7 @@ TRACE_EVENT_API_CLASS_EXPORT extern \
 #define INTERNAL_TRACE_EVENT_ADD_SCOPED(category_group, name, ...) \
     INTERNAL_TRACE_EVENT_GET_CATEGORY_INFO(category_group); \
     trace_event_internal::ScopedTracer INTERNAL_TRACE_EVENT_UID(tracer); \
-    if (*INTERNAL_TRACE_EVENT_UID(category_group_enabled)) { \
+    if (INTERNAL_TRACE_EVENT_CATEGORY_GROUP_ENABLED_FOR_RECORDING_MODE()) { \
       base::debug::TraceEventHandle h = trace_event_internal::AddTraceEvent( \
           TRACE_EVENT_PHASE_COMPLETE, \
           INTERNAL_TRACE_EVENT_UID(category_group_enabled), \
@@ -899,7 +904,7 @@ TRACE_EVENT_API_CLASS_EXPORT extern \
                                          flags, ...) \
     do { \
       INTERNAL_TRACE_EVENT_GET_CATEGORY_INFO(category_group); \
-      if (*INTERNAL_TRACE_EVENT_UID(category_group_enabled)) { \
+      if (INTERNAL_TRACE_EVENT_CATEGORY_GROUP_ENABLED_FOR_RECORDING_MODE()) { \
         unsigned char trace_event_flags = flags | TRACE_EVENT_FLAG_HAS_ID; \
         trace_event_internal::TraceID trace_event_trace_id( \
             id, &trace_event_flags); \
@@ -916,7 +921,7 @@ TRACE_EVENT_API_CLASS_EXPORT extern \
         category_group, name, id, thread_id, timestamp, flags, ...) \
     do { \
       INTERNAL_TRACE_EVENT_GET_CATEGORY_INFO(category_group); \
-      if (*INTERNAL_TRACE_EVENT_UID(category_group_enabled)) { \
+      if (INTERNAL_TRACE_EVENT_CATEGORY_GROUP_ENABLED_FOR_RECORDING_MODE()) { \
         unsigned char trace_event_flags = flags | TRACE_EVENT_FLAG_HAS_ID; \
         trace_event_internal::TraceID trace_event_trace_id( \
             id, &trace_event_flags); \
@@ -1092,7 +1097,7 @@ union TraceValueUnion {
 class TraceStringWithCopy {
  public:
   explicit TraceStringWithCopy(const char* str) : str_(str) {}
-  operator const char* () const { return str_; }
+  const char* str() const { return str_; }
  private:
   const char* str_;
 };
@@ -1101,6 +1106,7 @@ class TraceStringWithCopy {
 // value in the return arguments. This allows this API to avoid declaring any
 // structures so that it is portable to third_party libraries.
 #define INTERNAL_DECLARE_SET_TRACE_VALUE(actual_type, \
+                                         arg_expression, \
                                          union_member, \
                                          value_type_id) \
     static inline void SetTraceValue( \
@@ -1108,7 +1114,7 @@ class TraceStringWithCopy {
         unsigned char* type, \
         unsigned long long* value) { \
       TraceValueUnion type_value; \
-      type_value.union_member = arg; \
+      type_value.union_member = arg_expression; \
       *type = value_type_id; \
       *value = type_value.as_uint; \
     }
@@ -1133,14 +1139,15 @@ INTERNAL_DECLARE_SET_TRACE_VALUE_INT(long, TRACE_VALUE_TYPE_INT)
 INTERNAL_DECLARE_SET_TRACE_VALUE_INT(int, TRACE_VALUE_TYPE_INT)
 INTERNAL_DECLARE_SET_TRACE_VALUE_INT(short, TRACE_VALUE_TYPE_INT)
 INTERNAL_DECLARE_SET_TRACE_VALUE_INT(signed char, TRACE_VALUE_TYPE_INT)
-INTERNAL_DECLARE_SET_TRACE_VALUE(bool, as_bool, TRACE_VALUE_TYPE_BOOL)
-INTERNAL_DECLARE_SET_TRACE_VALUE(double, as_double, TRACE_VALUE_TYPE_DOUBLE)
-INTERNAL_DECLARE_SET_TRACE_VALUE(const void*, as_pointer,
+INTERNAL_DECLARE_SET_TRACE_VALUE(bool, arg, as_bool, TRACE_VALUE_TYPE_BOOL)
+INTERNAL_DECLARE_SET_TRACE_VALUE(double, arg, as_double,
+                                 TRACE_VALUE_TYPE_DOUBLE)
+INTERNAL_DECLARE_SET_TRACE_VALUE(const void*, arg, as_pointer,
                                  TRACE_VALUE_TYPE_POINTER)
-INTERNAL_DECLARE_SET_TRACE_VALUE(const char*, as_string,
+INTERNAL_DECLARE_SET_TRACE_VALUE(const char*, arg, as_string,
                                  TRACE_VALUE_TYPE_STRING)
-INTERNAL_DECLARE_SET_TRACE_VALUE(const TraceStringWithCopy&, as_string,
-                                 TRACE_VALUE_TYPE_COPY_STRING)
+INTERNAL_DECLARE_SET_TRACE_VALUE(const TraceStringWithCopy&, arg.str(),
+                                 as_string, TRACE_VALUE_TYPE_COPY_STRING)
 
 #undef INTERNAL_DECLARE_SET_TRACE_VALUE
 #undef INTERNAL_DECLARE_SET_TRACE_VALUE_INT
@@ -1153,6 +1160,22 @@ static inline void SetTraceValue(const std::string& arg,
   type_value.as_string = arg.c_str();
   *type = TRACE_VALUE_TYPE_COPY_STRING;
   *value = type_value.as_uint;
+}
+
+// base::Time and base::TimeTicks version of SetTraceValue to make it easier to
+// trace these types.
+static inline void SetTraceValue(const base::Time arg,
+                                 unsigned char* type,
+                                 unsigned long long* value) {
+  *type = TRACE_VALUE_TYPE_INT;
+  *value = arg.ToInternalValue();
+}
+
+static inline void SetTraceValue(const base::TimeTicks arg,
+                                 unsigned char* type,
+                                 unsigned long long* value) {
+  *type = TRACE_VALUE_TYPE_INT;
+  *value = arg.ToInternalValue();
 }
 
 // These AddTraceEvent and AddTraceEventWithThreadIdAndTimestamp template

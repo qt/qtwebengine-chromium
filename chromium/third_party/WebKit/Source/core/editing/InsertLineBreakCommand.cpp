@@ -26,7 +26,7 @@
 #include "config.h"
 #include "core/editing/InsertLineBreakCommand.h"
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 #include "core/dom/Document.h"
 #include "core/dom/Text.h"
 #include "core/editing/EditingStyle.h"
@@ -34,9 +34,8 @@
 #include "core/editing/VisiblePosition.h"
 #include "core/editing/VisibleUnits.h"
 #include "core/editing/htmlediting.h"
+#include "core/frame/LocalFrame.h"
 #include "core/html/HTMLElement.h"
-#include "core/html/HTMLTableElement.h"
-#include "core/frame/Frame.h"
 #include "core/rendering/RenderObject.h"
 
 namespace WebCore {
@@ -51,30 +50,6 @@ InsertLineBreakCommand::InsertLineBreakCommand(Document& document)
 bool InsertLineBreakCommand::preservesTypingStyle() const
 {
     return true;
-}
-
-void InsertLineBreakCommand::insertNodeAfterPosition(Node* node, const Position& pos)
-{
-    // Insert the BR after the caret position. In the case the
-    // position is a block, do an append. We don't want to insert
-    // the BR *after* the block.
-    Element* cb = pos.deprecatedNode()->enclosingBlockFlowElement();
-    if (cb == pos.deprecatedNode())
-        appendNode(node, cb);
-    else
-        insertNodeAfter(node, pos.deprecatedNode());
-}
-
-void InsertLineBreakCommand::insertNodeBeforePosition(Node* node, const Position& pos)
-{
-    // Insert the BR after the caret position. In the case the
-    // position is a block, do an append. We don't want to insert
-    // the BR *before* the block.
-    Element* cb = pos.deprecatedNode()->enclosingBlockFlowElement();
-    if (cb == pos.deprecatedNode())
-        appendNode(node, cb);
-    else
-        insertNodeBefore(node, pos.deprecatedNode());
 }
 
 // Whether we should insert a break element or a '\n'.
@@ -106,7 +81,7 @@ void InsertLineBreakCommand::doApply()
 
     pos = positionOutsideTabSpan(pos);
 
-    RefPtr<Node> nodeToInsert;
+    RefPtrWillBeRawPtr<Node> nodeToInsert = nullptr;
     if (shouldUseBreakElement(pos))
         nodeToInsert = createBreakElement(document());
     else
@@ -115,7 +90,7 @@ void InsertLineBreakCommand::doApply()
     // FIXME: Need to merge text nodes when inserting just after or before text.
 
     if (isEndOfParagraph(caret) && !lineBreakExistsAtVisiblePosition(caret)) {
-        bool needExtraLineBreak = !pos.deprecatedNode()->hasTagName(hrTag) && !isHTMLTableElement(pos.deprecatedNode());
+        bool needExtraLineBreak = !isHTMLHRElement(*pos.deprecatedNode()) && !isHTMLTableElement(*pos.deprecatedNode());
 
         insertNodeAt(nodeToInsert.get(), pos);
 
@@ -128,15 +103,15 @@ void InsertLineBreakCommand::doApply()
         insertNodeAt(nodeToInsert.get(), pos);
 
         // Insert an extra br or '\n' if the just inserted one collapsed.
-        if (!isStartOfParagraph(positionBeforeNode(nodeToInsert.get())))
+        if (!isStartOfParagraph(VisiblePosition(positionBeforeNode(nodeToInsert.get()))))
             insertNodeBefore(nodeToInsert->cloneNode(false).get(), nodeToInsert.get());
 
-        setEndingSelection(VisibleSelection(positionInParentAfterNode(nodeToInsert.get()), DOWNSTREAM, endingSelection().isDirectional()));
+        setEndingSelection(VisibleSelection(positionInParentAfterNode(*nodeToInsert), DOWNSTREAM, endingSelection().isDirectional()));
     // If we're inserting after all of the rendered text in a text node, or into a non-text node,
     // a simple insertion is sufficient.
     } else if (pos.deprecatedEditingOffset() >= caretMaxOffset(pos.deprecatedNode()) || !pos.deprecatedNode()->isTextNode()) {
         insertNodeAt(nodeToInsert.get(), pos);
-        setEndingSelection(VisibleSelection(positionInParentAfterNode(nodeToInsert.get()), DOWNSTREAM, endingSelection().isDirectional()));
+        setEndingSelection(VisibleSelection(positionInParentAfterNode(*nodeToInsert), DOWNSTREAM, endingSelection().isDirectional()));
     } else if (pos.deprecatedNode()->isTextNode()) {
         // Split a text node
         Text* textNode = toText(pos.deprecatedNode());
@@ -147,7 +122,7 @@ void InsertLineBreakCommand::doApply()
         // Handle whitespace that occurs after the split
         document().updateLayoutIgnorePendingStylesheets();
         if (!endingPosition.isRenderedCharacter()) {
-            Position positionBeforeTextNode(positionInParentBeforeNode(textNode));
+            Position positionBeforeTextNode(positionInParentBeforeNode(*textNode));
             // Clear out all whitespace and insert one non-breaking space
             deleteInsignificantTextDownstream(endingPosition);
             ASSERT(!textNode->renderer() || textNode->renderer()->style()->collapseWhiteSpace());
@@ -155,7 +130,7 @@ void InsertLineBreakCommand::doApply()
             if (textNode->inDocument())
                 insertTextIntoNode(textNode, 0, nonBreakingSpaceString());
             else {
-                RefPtr<Text> nbspNode = document().createTextNode(nonBreakingSpaceString());
+                RefPtrWillBeRawPtr<Text> nbspNode = document().createTextNode(nonBreakingSpaceString());
                 insertNodeAt(nbspNode.get(), positionBeforeTextNode);
                 endingPosition = firstPositionInNode(nbspNode.get());
             }
@@ -166,7 +141,7 @@ void InsertLineBreakCommand::doApply()
 
     // Handle the case where there is a typing style.
 
-    RefPtr<EditingStyle> typingStyle = document().frame()->selection().typingStyle();
+    RefPtrWillBeRawPtr<EditingStyle> typingStyle = document().frame()->selection().typingStyle();
 
     if (typingStyle && !typingStyle->isEmpty()) {
         // Apply the typing style to the inserted line break, so that if the selection

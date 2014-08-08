@@ -21,9 +21,8 @@
     Constructor,
     ConstructorCallWith=Document,
 ] interface DocumentFragment : Node {
-    // NodeSelector - Selector API
-    [RaisesException] Element querySelector(DOMString selectors);
-    [RaisesException] NodeList querySelectorAll(DOMString selectors);
+    // NonElementParentNode API.
+    Element getElementById(DOMString elementId);
 };
 
 DocumentFragment implements ParentNode;

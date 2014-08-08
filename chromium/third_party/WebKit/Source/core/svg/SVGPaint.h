@@ -23,88 +23,98 @@
 #ifndef SVGPaint_h
 #define SVGPaint_h
 
-#include "core/svg/SVGColor.h"
+#include "core/css/CSSValue.h"
+#include "core/css/StyleColor.h"
+#include "platform/graphics/Color.h"
 #include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
-class ExceptionState;
-
-class SVGPaint : public SVGColor {
+class SVGPaint : public CSSValue {
 public:
     enum SVGPaintType {
-        SVG_PAINTTYPE_UNKNOWN = 0,
-        SVG_PAINTTYPE_RGBCOLOR = 1,
-        SVG_PAINTTYPE_RGBCOLOR_ICCCOLOR = 2,
-        SVG_PAINTTYPE_NONE = 101,
-        SVG_PAINTTYPE_CURRENTCOLOR = 102,
-        SVG_PAINTTYPE_URI_NONE = 103,
-        SVG_PAINTTYPE_URI_CURRENTCOLOR = 104,
-        SVG_PAINTTYPE_URI_RGBCOLOR = 105,
-        SVG_PAINTTYPE_URI_RGBCOLOR_ICCCOLOR = 106,
-        SVG_PAINTTYPE_URI = 107
+        SVG_PAINTTYPE_UNKNOWN,
+        SVG_PAINTTYPE_RGBCOLOR,
+        SVG_PAINTTYPE_RGBCOLOR_ICCCOLOR,
+        SVG_PAINTTYPE_NONE,
+        SVG_PAINTTYPE_CURRENTCOLOR,
+        SVG_PAINTTYPE_URI_NONE,
+        SVG_PAINTTYPE_URI_CURRENTCOLOR,
+        SVG_PAINTTYPE_URI_RGBCOLOR,
+        SVG_PAINTTYPE_URI_RGBCOLOR_ICCCOLOR,
+        SVG_PAINTTYPE_URI
     };
 
-    static PassRefPtr<SVGPaint> createUnknown()
+    static PassRefPtrWillBeRawPtr<SVGPaint> createUnknown()
     {
-        return adoptRef(new SVGPaint(SVG_PAINTTYPE_UNKNOWN));
+        return adoptRefWillBeNoop(new SVGPaint(SVG_PAINTTYPE_UNKNOWN));
     }
 
-    static PassRefPtr<SVGPaint> createNone()
+    static PassRefPtrWillBeRawPtr<SVGPaint> createNone()
     {
-        return adoptRef(new SVGPaint(SVG_PAINTTYPE_NONE));
+        return adoptRefWillBeNoop(new SVGPaint(SVG_PAINTTYPE_NONE));
     }
 
-    static PassRefPtr<SVGPaint> createCurrentColor()
+    static PassRefPtrWillBeRawPtr<SVGPaint> createCurrentColor()
     {
-        return adoptRef(new SVGPaint(SVG_PAINTTYPE_CURRENTCOLOR));
+        return adoptRefWillBeNoop(new SVGPaint(SVG_PAINTTYPE_CURRENTCOLOR));
     }
 
-    static PassRefPtr<SVGPaint> createColor(const Color& color)
+    static PassRefPtrWillBeRawPtr<SVGPaint> createColor(const Color& color)
     {
-        RefPtr<SVGPaint> paint = adoptRef(new SVGPaint(SVG_PAINTTYPE_RGBCOLOR));
-        paint->setColor(color);
+        RefPtrWillBeRawPtr<SVGPaint> paint = adoptRefWillBeNoop(new SVGPaint(SVG_PAINTTYPE_RGBCOLOR));
+        paint->m_color = color;
         return paint.release();
     }
 
-    static PassRefPtr<SVGPaint> createURI(const String& uri)
+    static PassRefPtrWillBeRawPtr<SVGPaint> createURI(const String& uri)
     {
-        RefPtr<SVGPaint> paint = adoptRef(new SVGPaint(SVG_PAINTTYPE_URI, uri));
+        RefPtrWillBeRawPtr<SVGPaint> paint = adoptRefWillBeNoop(new SVGPaint(SVG_PAINTTYPE_URI, uri));
         return paint.release();
     }
 
-    static PassRefPtr<SVGPaint> createURIAndColor(const String& uri, const Color& color)
+    static PassRefPtrWillBeRawPtr<SVGPaint> createURIAndColor(const String& uri, const Color& color)
     {
-        RefPtr<SVGPaint> paint = adoptRef(new SVGPaint(SVG_PAINTTYPE_URI_RGBCOLOR, uri));
-        paint->setColor(color);
+        RefPtrWillBeRawPtr<SVGPaint> paint = adoptRefWillBeNoop(new SVGPaint(SVG_PAINTTYPE_URI_RGBCOLOR, uri));
+        paint->m_color = color;
         return paint.release();
     }
 
-    static PassRefPtr<SVGPaint> createURIAndNone(const String& uri)
+    static PassRefPtrWillBeRawPtr<SVGPaint> createURIAndNone(const String& uri)
     {
-        RefPtr<SVGPaint> paint = adoptRef(new SVGPaint(SVG_PAINTTYPE_URI_NONE, uri));
+        RefPtrWillBeRawPtr<SVGPaint> paint = adoptRefWillBeNoop(new SVGPaint(SVG_PAINTTYPE_URI_NONE, uri));
+        return paint.release();
+    }
+
+    static PassRefPtrWillBeRawPtr<SVGPaint> createURIAndCurrentColor(const String& uri)
+    {
+        RefPtrWillBeRawPtr<SVGPaint> paint = adoptRefWillBeNoop(new SVGPaint(SVG_PAINTTYPE_URI_CURRENTCOLOR, uri));
         return paint.release();
     }
 
     const SVGPaintType& paintType() const { return m_paintType; }
     String uri() const { return m_uri; }
 
-    void setUri(const String&);
-    void setPaint(unsigned short paintType, const String& uri, const String& rgbColor, const String& iccColor, ExceptionState&);
-
     String customCSSText() const;
 
-    PassRefPtr<SVGPaint> cloneForCSSOM() const;
+    PassRefPtrWillBeRawPtr<SVGPaint> cloneForCSSOM() const;
 
     bool equals(const SVGPaint&) const;
+
+    void traceAfterDispatch(Visitor* visitor) { CSSValue::traceAfterDispatch(visitor); }
+
+    Color color() const { return m_color; }
+    void setColor(const Color& color) { m_color = color; m_paintType = SVG_PAINTTYPE_RGBCOLOR; }
+
+    static StyleColor colorFromRGBColorString(const String&);
 
 private:
     friend class CSSComputedStyleDeclaration;
 
-    static PassRefPtr<SVGPaint> create(const SVGPaintType& type, const String& uri, const Color& color)
+    static PassRefPtrWillBeRawPtr<SVGPaint> create(const SVGPaintType& type, const String& uri, const Color& color)
     {
-        RefPtr<SVGPaint> paint = adoptRef(new SVGPaint(type, uri));
-        paint->setColor(color);
+        RefPtrWillBeRawPtr<SVGPaint> paint = adoptRefWillBeNoop(new SVGPaint(type, uri));
+        paint->m_color = color;
         return paint.release();
     }
 
@@ -113,6 +123,7 @@ private:
     SVGPaint(const SVGPaint& cloneFrom);
 
     SVGPaintType m_paintType;
+    Color m_color;
     String m_uri;
 };
 

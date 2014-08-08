@@ -26,26 +26,27 @@
 
 #include "bindings/v8/ScriptWrappable.h"
 #include "core/dom/DOMTimeStamp.h"
-#include "core/events/EventContext.h"
 #include "core/events/EventPath.h"
+#include "platform/heap/Handle.h"
 #include "wtf/RefCounted.h"
 #include "wtf/text/AtomicString.h"
 
 namespace WebCore {
 
-class Clipboard;
 class EventTarget;
 class EventDispatcher;
-class HTMLIFrameElement;
+class ExecutionContext;
 
 struct EventInit {
+    STACK_ALLOCATED();
+public:
     EventInit();
 
     bool bubbles;
     bool cancelable;
 };
 
-class Event : public ScriptWrappable, public RefCounted<Event> {
+class Event : public RefCountedWillBeGarbageCollectedFinalized<Event>,  public ScriptWrappable {
 public:
     enum PhaseType {
         NONE                = 0,
@@ -73,34 +74,34 @@ public:
         CHANGE              = 32768
     };
 
-    static PassRefPtr<Event> create()
+    static PassRefPtrWillBeRawPtr<Event> create()
     {
-        return adoptRef(new Event);
+        return adoptRefWillBeNoop(new Event);
     }
 
     // A factory for a simple event. The event doesn't bubble, and isn't
     // cancelable.
     // http://www.whatwg.org/specs/web-apps/current-work/multipage/webappapis.html#fire-a-simple-event
-    static PassRefPtr<Event> create(const AtomicString& type)
+    static PassRefPtrWillBeRawPtr<Event> create(const AtomicString& type)
     {
-        return adoptRef(new Event(type, false, false));
+        return adoptRefWillBeNoop(new Event(type, false, false));
     }
-    static PassRefPtr<Event> createCancelable(const AtomicString& type)
+    static PassRefPtrWillBeRawPtr<Event> createCancelable(const AtomicString& type)
     {
-        return adoptRef(new Event(type, false, true));
+        return adoptRefWillBeNoop(new Event(type, false, true));
     }
-    static PassRefPtr<Event> createBubble(const AtomicString& type)
+    static PassRefPtrWillBeRawPtr<Event> createBubble(const AtomicString& type)
     {
-        return adoptRef(new Event(type, true, false));
+        return adoptRefWillBeNoop(new Event(type, true, false));
     }
-    static PassRefPtr<Event> createCancelableBubble(const AtomicString& type)
+    static PassRefPtrWillBeRawPtr<Event> createCancelableBubble(const AtomicString& type)
     {
-        return adoptRef(new Event(type, true, true));
+        return adoptRefWillBeNoop(new Event(type, true, true));
     }
 
-    static PassRefPtr<Event> create(const AtomicString& type, const EventInit& initializer)
+    static PassRefPtrWillBeRawPtr<Event> create(const AtomicString& type, const EventInit& initializer)
     {
-        return adoptRef(new Event(type, initializer));
+        return adoptRefWillBeNoop(new Event(type, initializer));
     }
 
     virtual ~Event();
@@ -111,9 +112,9 @@ public:
     void setType(const AtomicString& type) { m_type = type; }
 
     EventTarget* target() const { return m_target.get(); }
-    void setTarget(PassRefPtr<EventTarget>);
+    void setTarget(PassRefPtrWillBeRawPtr<EventTarget>);
 
-    EventTarget* currentTarget() const { return m_currentTarget; }
+    EventTarget* currentTarget() const;
     void setCurrentTarget(EventTarget* currentTarget) { m_currentTarget = currentTarget; }
 
     unsigned short eventPhase() const { return m_eventPhase; }
@@ -129,10 +130,8 @@ public:
     // IE Extensions
     EventTarget* srcElement() const { return target(); } // MSIE extension - "the object that fired the event"
 
-    bool legacyReturnValue() const { return !defaultPrevented(); }
-    void setLegacyReturnValue(bool returnValue) { setDefaultPrevented(!returnValue); }
-
-    Clipboard* clipboardData() const { return isClipboardEvent() ? clipboard() : 0; }
+    bool legacyReturnValue(ExecutionContext*) const;
+    void setLegacyReturnValue(ExecutionContext*, bool returnValue);
 
     virtual const AtomicString& interfaceName() const;
     bool hasInterface(const AtomicString&) const;
@@ -159,7 +158,7 @@ public:
     bool immediatePropagationStopped() const { return m_immediatePropagationStopped; }
 
     bool defaultPrevented() const { return m_defaultPrevented; }
-    void preventDefault()
+    virtual void preventDefault()
     {
         if (m_cancelable)
             m_defaultPrevented = true;
@@ -173,14 +172,16 @@ public:
     void setCancelBubble(bool cancel) { m_cancelBubble = cancel; }
 
     Event* underlyingEvent() const { return m_underlyingEvent.get(); }
-    void setUnderlyingEvent(PassRefPtr<Event>);
+    void setUnderlyingEvent(PassRefPtrWillBeRawPtr<Event>);
 
-    EventPath& eventPath() { return m_eventPath; }
-    PassRefPtr<NodeList> path() const;
+    EventPath& eventPath() { ASSERT(m_eventPath); return *m_eventPath; }
+    EventPath& ensureEventPath();
 
-    virtual Clipboard* clipboard() const { return 0; }
+    PassRefPtrWillBeRawPtr<StaticNodeList> path() const;
 
     bool isBeingDispatched() const { return eventPhase(); }
+
+    virtual void trace(Visitor*);
 
 protected:
     Event();
@@ -202,11 +203,11 @@ private:
     bool m_cancelBubble;
 
     unsigned short m_eventPhase;
-    EventTarget* m_currentTarget;
-    RefPtr<EventTarget> m_target;
+    RawPtrWillBeMember<EventTarget> m_currentTarget;
+    RefPtrWillBeMember<EventTarget> m_target;
     DOMTimeStamp m_createTime;
-    RefPtr<Event> m_underlyingEvent;
-    EventPath m_eventPath;
+    RefPtrWillBeMember<Event> m_underlyingEvent;
+    OwnPtrWillBeMember<EventPath> m_eventPath;
 };
 
 #define DEFINE_EVENT_TYPE_CASTS(typeName) \

@@ -23,7 +23,7 @@
 #include "third_party/WebKit/public/web/WebDatabase.h"
 #include "third_party/WebKit/public/web/WebKit.h"
 #include "third_party/WebKit/public/web/WebRuntimeFeatures.h"
-#include "webkit/glue/webkit_glue.h"
+#include "v8/include/v8.h"
 
 using blink::WebRuntimeFeatures;
 
@@ -41,8 +41,9 @@ WorkerThread::WorkerThread() {
 
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
   if (command_line.HasSwitch(switches::kJavaScriptFlags)) {
-    webkit_glue::SetJavaScriptFlags(
+    std::string flags(
         command_line.GetSwitchValueASCII(switches::kJavaScriptFlags));
+    v8::V8::SetFlagsFromString(flags.c_str(), static_cast<int>(flags.size()));
   }
   SetRuntimeFeaturesDefaultsAndUpdateFromArgs(command_line);
 
@@ -116,12 +117,14 @@ bool WorkerThread::OnMessageReceived(const IPC::Message& msg) {
 
 void WorkerThread::OnCreateWorker(
     const WorkerProcessMsg_CreateWorker_Params& params) {
-  WorkerAppCacheInitInfo appcache_init_info(
-      params.creator_process_id,
-      params.shared_worker_appcache_id);
-
   // WebSharedWorkerStub own themselves.
-  new WebSharedWorkerStub(params.name, params.route_id, appcache_init_info);
+  new WebSharedWorkerStub(
+      params.url,
+      params.name,
+      params.content_security_policy,
+      params.security_policy_type,
+      params.pause_on_start,
+      params.route_id);
 }
 
 // The browser process is likely dead. Terminate all workers.

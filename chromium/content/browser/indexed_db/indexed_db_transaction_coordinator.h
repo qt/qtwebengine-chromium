@@ -25,7 +25,9 @@ class IndexedDBTransactionCoordinator {
 
   // Called by transactions as they start and finish.
   void DidCreateTransaction(scoped_refptr<IndexedDBTransaction> transaction);
-  void DidFinishTransaction(scoped_refptr<IndexedDBTransaction> transaction);
+  void DidFinishTransaction(IndexedDBTransaction* transaction);
+
+  bool IsRunningVersionChangeTransaction() const;
 
 #ifndef NDEBUG
   bool IsActive(IndexedDBTransaction* transaction);
@@ -45,6 +47,8 @@ class IndexedDBTransactionCoordinator {
   typedef list_set<scoped_refptr<IndexedDBTransaction> > TransactionSet;
   TransactionSet queued_transactions_;
   TransactionSet started_transactions_;
+
+  DISALLOW_COPY_AND_ASSIGN(IndexedDBTransactionCoordinator);
 };
 
 }  // namespace content

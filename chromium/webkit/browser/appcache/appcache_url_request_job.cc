@@ -25,7 +25,7 @@
 #include "webkit/browser/appcache/appcache_group.h"
 #include "webkit/browser/appcache/appcache_histograms.h"
 #include "webkit/browser/appcache/appcache_host.h"
-#include "webkit/browser/appcache/appcache_service.h"
+#include "webkit/browser/appcache/appcache_service_impl.h"
 
 namespace appcache {
 
@@ -33,13 +33,15 @@ AppCacheURLRequestJob::AppCacheURLRequestJob(
     net::URLRequest* request,
     net::NetworkDelegate* network_delegate,
     AppCacheStorage* storage,
-    AppCacheHost* host)
+    AppCacheHost* host,
+    bool is_main_resource)
     : net::URLRequestJob(request, network_delegate),
       host_(host),
       storage_(storage),
       has_been_started_(false), has_been_killed_(false),
       delivery_type_(AWAITING_DELIVERY_ORDERS),
-      group_id_(0), cache_id_(kNoCacheId), is_fallback_(false),
+      group_id_(0), cache_id_(kAppCacheNoCacheId), is_fallback_(false),
+      is_main_resource_(is_main_resource),
       cache_entry_not_found_(false),
       weak_factory_(this) {
   DCHECK(storage_);
@@ -254,7 +256,8 @@ void AppCacheURLRequestJob::OnExecutableResponseCallback(
 
 void AppCacheURLRequestJob::BeginErrorDelivery(const char* message) {
   if (host_)
-    host_->frontend()->OnLogMessage(host_->host_id(), LOG_ERROR, message);
+    host_->frontend()->OnLogMessage(host_->host_id(), APPCACHE_LOG_ERROR,
+                                    message);
   delivery_type_ = ERROR_DELIVERY;
   storage_ = NULL;
   BeginDelivery();
@@ -287,6 +290,8 @@ void AppCacheURLRequestJob::OnResponseInfoLoaded(
       // from the appcache.
       storage_->service()->CheckAppCacheResponse(manifest_url_, cache_id_,
                                                  entry_.response_id());
+      AppCacheHistograms::CountResponseRetrieval(
+          false, is_main_resource_, manifest_url_.GetOrigin());
     }
     cache_entry_not_found_ = true;
     NotifyRestartRequired();
@@ -310,8 +315,7 @@ void AppCacheURLRequestJob::SetupRangeResponse() {
     return;
   }
 
-  DCHECK(range_requested_.HasFirstBytePosition() &&
-         range_requested_.HasLastBytePosition());
+  DCHECK(range_requested_.IsValid());
   int offset = static_cast<int>(range_requested_.first_byte_position());
   int length = static_cast<int>(range_requested_.last_byte_position() -
                                 range_requested_.first_byte_position() + 1);
@@ -321,35 +325,27 @@ void AppCacheURLRequestJob::SetupRangeResponse() {
 
   // Make a copy of the full response headers and fix them up
   // for the range we'll be returning.
-  const char kLengthHeader[] = "Content-Length";
-  const char kRangeHeader[] = "Content-Range";
-  const char kPartialStatusLine[] = "HTTP/1.1 206 Partial Content";
   range_response_info_.reset(
       new net::HttpResponseInfo(*info_->http_response_info()));
   net::HttpResponseHeaders* headers = range_response_info_->headers.get();
-  headers->RemoveHeader(kLengthHeader);
-  headers->RemoveHeader(kRangeHeader);
-  headers->ReplaceStatusLine(kPartialStatusLine);
-  headers->AddHeader(
-      base::StringPrintf("%s: %d", kLengthHeader, length));
-  headers->AddHeader(
-      base::StringPrintf("%s: bytes %d-%d/%d",
-                         kRangeHeader,
-                         offset,
-                         offset + length - 1,
-                         resource_size));
+  headers->UpdateWithNewRange(
+      range_requested_, resource_size, true /* replace status line */);
 }
 
 void AppCacheURLRequestJob::OnReadComplete(int result) {
   DCHECK(is_delivering_appcache_response());
   if (result == 0) {
     NotifyDone(net::URLRequestStatus());
+    AppCacheHistograms::CountResponseRetrieval(
+        true, is_main_resource_, manifest_url_.GetOrigin());
   } else if (result < 0) {
     if (storage_->service()->storage() == storage_) {
       storage_->service()->CheckAppCacheResponse(manifest_url_, cache_id_,
                                                  entry_.response_id());
     }
     NotifyDone(net::URLRequestStatus(net::URLRequestStatus::FAILED, result));
+    AppCacheHistograms::CountResponseRetrieval(
+        false, is_main_resource_, manifest_url_.GetOrigin());
   } else {
     SetStatus(net::URLRequestStatus());  // Clear the IO_PENDING status
   }

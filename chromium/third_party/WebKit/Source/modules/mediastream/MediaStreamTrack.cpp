@@ -29,24 +29,26 @@
 #include "bindings/v8/ExceptionMessages.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/ExecutionContext.h"
-#include "core/events/Event.h"
-#include "core/platform/mediastream/MediaStreamCenter.h"
+#include "modules/mediastream/MediaStream.h"
 #include "modules/mediastream/MediaStreamTrackSourcesCallback.h"
-#include "modules/mediastream/MediaStreamTrackSourcesRequest.h"
+#include "modules/mediastream/MediaStreamTrackSourcesRequestImpl.h"
+#include "platform/mediastream/MediaStreamCenter.h"
 #include "platform/mediastream/MediaStreamComponent.h"
 #include "public/platform/WebSourceInfo.h"
 
 namespace WebCore {
 
-PassRefPtr<MediaStreamTrack> MediaStreamTrack::create(ExecutionContext* context, MediaStreamComponent* component)
+PassRefPtrWillBeRawPtr<MediaStreamTrack> MediaStreamTrack::create(ExecutionContext* context, MediaStreamComponent* component)
 {
-    RefPtr<MediaStreamTrack> track = adoptRef(new MediaStreamTrack(context, component));
+    RefPtrWillBeRawPtr<MediaStreamTrack> track = adoptRefWillBeRefCountedGarbageCollected(new MediaStreamTrack(context, component));
     track->suspendIfNeeded();
     return track.release();
 }
 
 MediaStreamTrack::MediaStreamTrack(ExecutionContext* context, MediaStreamComponent* component)
     : ActiveDOMObject(context)
+    , m_readyState(MediaStreamSource::ReadyStateLive)
+    , m_isIteratingRegisteredMediaStreams(false)
     , m_stopped(false)
     , m_component(component)
 {
@@ -92,23 +94,21 @@ bool MediaStreamTrack::enabled() const
 
 void MediaStreamTrack::setEnabled(bool enabled)
 {
-    if (m_stopped || enabled == m_component->enabled())
+    if (enabled == m_component->enabled())
         return;
 
     m_component->setEnabled(enabled);
 
-    if (m_component->stream()->ended())
-        return;
-
-    MediaStreamCenter::instance().didSetMediaStreamTrackEnabled(m_component->stream(), m_component.get());
+    if (!ended())
+        MediaStreamCenter::instance().didSetMediaStreamTrackEnabled(m_component.get());
 }
 
 String MediaStreamTrack::readyState() const
 {
-    if (m_stopped)
+    if (ended())
         return "ended";
 
-    switch (m_component->source()->readyState()) {
+    switch (m_readyState) {
     case MediaStreamSource::ReadyStateLive:
         return "live";
     case MediaStreamSource::ReadyStateMuted:
@@ -123,7 +123,7 @@ String MediaStreamTrack::readyState() const
 
 void MediaStreamTrack::getSources(ExecutionContext* context, PassOwnPtr<MediaStreamTrackSourcesCallback> callback, ExceptionState& exceptionState)
 {
-    RefPtr<MediaStreamTrackSourcesRequest> request = MediaStreamTrackSourcesRequest::create(context->securityOrigin()->toString(), callback);
+    RefPtrWillBeRawPtr<MediaStreamTrackSourcesRequest> request = MediaStreamTrackSourcesRequestImpl::create(context->securityOrigin()->toString(), callback);
     if (!MediaStreamCenter::instance().getMediaStreamTrackSources(request.release()))
         exceptionState.throwDOMException(NotSupportedError, ExceptionMessages::failedToExecute("getSources", "MediaStreamTrack", "Functionality not implemented yet"));
 }
@@ -133,21 +133,32 @@ void MediaStreamTrack::stopTrack(ExceptionState& exceptionState)
     if (ended())
         return;
 
-    if (!MediaStreamCenter::instance().didStopMediaStreamTrack(component()))
-        exceptionState.throwDOMException(NotSupportedError, ExceptionMessages::failedToExecute("stop", "MediaStreamTrack", "Functionality not implemented yet"));
+    m_readyState = MediaStreamSource::ReadyStateEnded;
+    MediaStreamCenter::instance().didStopMediaStreamTrack(component());
+    dispatchEvent(Event::create(EventTypeNames::ended));
+    propagateTrackEnded();
+}
+
+PassRefPtrWillBeRawPtr<MediaStreamTrack> MediaStreamTrack::clone(ExecutionContext* context)
+{
+    RefPtr<MediaStreamComponent> clonedComponent = MediaStreamComponent::create(component()->source());
+    RefPtrWillBeRawPtr<MediaStreamTrack> clonedTrack = MediaStreamTrack::create(context, clonedComponent.get());
+    MediaStreamCenter::instance().didCreateMediaStreamTrack(clonedComponent.get());
+    return clonedTrack.release();
 }
 
 bool MediaStreamTrack::ended() const
 {
-    return m_stopped || (m_component->source()->readyState() == MediaStreamSource::ReadyStateEnded);
+    return m_stopped || (m_readyState == MediaStreamSource::ReadyStateEnded);
 }
 
 void MediaStreamTrack::sourceChangedState()
 {
-    if (m_stopped)
+    if (ended())
         return;
 
-    switch (m_component->source()->readyState()) {
+    m_readyState = m_component->source()->readyState();
+    switch (m_readyState) {
     case MediaStreamSource::ReadyStateLive:
         dispatchEvent(Event::create(EventTypeNames::unmute));
         break;
@@ -156,22 +167,18 @@ void MediaStreamTrack::sourceChangedState()
         break;
     case MediaStreamSource::ReadyStateEnded:
         dispatchEvent(Event::create(EventTypeNames::ended));
-        didEndTrack();
+        propagateTrackEnded();
         break;
     }
 }
 
-void MediaStreamTrack::didEndTrack()
+void MediaStreamTrack::propagateTrackEnded()
 {
-    MediaStreamDescriptor* stream = m_component->stream();
-    if (!stream)
-        return;
-
-    MediaStreamDescriptorClient* client = stream->client();
-    if (!client)
-        return;
-
-    client->trackEnded();
+    RELEASE_ASSERT(!m_isIteratingRegisteredMediaStreams);
+    m_isIteratingRegisteredMediaStreams = true;
+    for (WillBeHeapHashSet<RawPtrWillBeMember<MediaStream> >::iterator iter = m_registeredMediaStreams.begin(); iter != m_registeredMediaStreams.end(); ++iter)
+        (*iter)->trackEnded();
+    m_isIteratingRegisteredMediaStreams = false;
 }
 
 MediaStreamComponent* MediaStreamTrack::component()
@@ -184,6 +191,26 @@ void MediaStreamTrack::stop()
     m_stopped = true;
 }
 
+PassOwnPtr<AudioSourceProvider> MediaStreamTrack::createWebAudioSource()
+{
+    return MediaStreamCenter::instance().createWebAudioSourceFromMediaStreamTrack(component());
+}
+
+void MediaStreamTrack::registerMediaStream(MediaStream* mediaStream)
+{
+    RELEASE_ASSERT(!m_isIteratingRegisteredMediaStreams);
+    RELEASE_ASSERT(!m_registeredMediaStreams.contains(mediaStream));
+    m_registeredMediaStreams.add(mediaStream);
+}
+
+void MediaStreamTrack::unregisterMediaStream(MediaStream* mediaStream)
+{
+    RELEASE_ASSERT(!m_isIteratingRegisteredMediaStreams);
+    WillBeHeapHashSet<RawPtrWillBeMember<MediaStream> >::iterator iter = m_registeredMediaStreams.find(mediaStream);
+    RELEASE_ASSERT(iter != m_registeredMediaStreams.end());
+    m_registeredMediaStreams.remove(iter);
+}
+
 const AtomicString& MediaStreamTrack::interfaceName() const
 {
     return EventTargetNames::MediaStreamTrack;
@@ -192,6 +219,12 @@ const AtomicString& MediaStreamTrack::interfaceName() const
 ExecutionContext* MediaStreamTrack::executionContext() const
 {
     return ActiveDOMObject::executionContext();
+}
+
+void MediaStreamTrack::trace(Visitor* visitor)
+{
+    visitor->trace(m_registeredMediaStreams);
+    EventTargetWithInlineData::trace(visitor);
 }
 
 } // namespace WebCore

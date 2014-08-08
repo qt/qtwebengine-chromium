@@ -29,9 +29,8 @@
  */
 
 [
-    ActiveDOMObject,
-    Custom=Wrap,
     NoInterfaceObject,
+    SetWrapperReferenceTo(MIDIAccess midiAccess),
 ] interface MIDIInput : MIDIPort {
     attribute EventHandler onmidimessage;
 };

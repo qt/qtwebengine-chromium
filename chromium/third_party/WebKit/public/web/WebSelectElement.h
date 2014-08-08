@@ -54,14 +54,12 @@ public:
     }
     void assign(const WebSelectElement& element) { WebFormControlElement::assign(element); }
 
-    BLINK_EXPORT void setValue(const WebString&);
-    BLINK_EXPORT WebString value() const;
     BLINK_EXPORT WebVector<WebElement> listItems() const;
 
 #if BLINK_IMPLEMENTATION
-    WebSelectElement(const WTF::PassRefPtr<WebCore::HTMLSelectElement>&);
-    WebSelectElement& operator=(const WTF::PassRefPtr<WebCore::HTMLSelectElement>&);
-    operator WTF::PassRefPtr<WebCore::HTMLSelectElement>() const;
+    WebSelectElement(const PassRefPtrWillBeRawPtr<WebCore::HTMLSelectElement>&);
+    WebSelectElement& operator=(const PassRefPtrWillBeRawPtr<WebCore::HTMLSelectElement>&);
+    operator PassRefPtrWillBeRawPtr<WebCore::HTMLSelectElement>() const;
 #endif
 };
 

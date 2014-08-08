@@ -28,52 +28,67 @@ public:
       kClampToBlack_TileMode,  /*!< Fill with transparent black. */
     };
 
-    /** Construct a matrix convolution image filter.
-        @param kernelSize  The kernel size in pixels, in each dimension (N by M).
-        @param kernel      The image processing kernel.  Must contain N * M
-                           elements, in row order.
-        @param gain        A scale factor applied to each pixel after
-                           convolution.  This can be used to normalize the
-                           kernel, if it does not sum to 1.
-        @param bias        A bias factor added to each pixel after convolution.
-        @param target      An offset applied to each pixel coordinate before
-                           convolution.  This can be used to center the kernel
-                           over the image (e.g., a 3x3 kernel should have a
-                           target of {1, 1}).
-        @param tileMode    How accesses outside the image are treated.  (@see
-                           TileMode).
-        @param convolveAlpha  If true, all channels are convolved.  If false,
-                           only the RGB channels are convolved, and
-                           alpha is copied from the source image.
-        @param input       The input image filter.  If NULL, the src bitmap
-                           passed to filterImage() is used instead.
-        @param cropRect    The rectangle to which the output processing will be limited.
-    */
-
-    SkMatrixConvolutionImageFilter(const SkISize& kernelSize,
-                                   const SkScalar* kernel,
-                                   SkScalar gain,
-                                   SkScalar bias,
-                                   const SkIPoint& target,
-                                   TileMode tileMode,
-                                   bool convolveAlpha,
-                                   SkImageFilter* input = NULL,
-                                   const CropRect* cropRect = NULL);
     virtual ~SkMatrixConvolutionImageFilter();
+
+    /** Construct a matrix convolution image filter.
+        @param kernelSize     The kernel size in pixels, in each dimension (N by M).
+        @param kernel         The image processing kernel.  Must contain N * M
+                              elements, in row order.
+        @param gain           A scale factor applied to each pixel after
+                              convolution.  This can be used to normalize the
+                              kernel, if it does not sum to 1.
+        @param bias           A bias factor added to each pixel after convolution.
+        @param kernelOffset   An offset applied to each pixel coordinate before
+                              convolution.  This can be used to center the kernel
+                              over the image (e.g., a 3x3 kernel should have an
+                              offset of {1, 1}).
+        @param tileMode       How accesses outside the image are treated.  (@see
+                              TileMode).
+        @param convolveAlpha  If true, all channels are convolved.  If false,
+                              only the RGB channels are convolved, and
+                              alpha is copied from the source image.
+        @param input          The input image filter.  If NULL, the src bitmap
+                              passed to filterImage() is used instead.
+        @param cropRect       The rectangle to which the output processing will be limited.
+    */
+    static SkMatrixConvolutionImageFilter* Create(const SkISize& kernelSize,
+                                                  const SkScalar* kernel,
+                                                  SkScalar gain,
+                                                  SkScalar bias,
+                                                  const SkIPoint& kernelOffset,
+                                                  TileMode tileMode,
+                                                  bool convolveAlpha,
+                                                  SkImageFilter* input = NULL,
+                                                  const CropRect* cropRect = NULL) {
+        return SkNEW_ARGS(SkMatrixConvolutionImageFilter, (kernelSize, kernel, gain, bias,
+                                                           kernelOffset, tileMode, convolveAlpha,
+                                                           input, cropRect));
+    }
 
     SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(SkMatrixConvolutionImageFilter)
 
 protected:
-    SkMatrixConvolutionImageFilter(SkFlattenableReadBuffer& buffer);
-    virtual void flatten(SkFlattenableWriteBuffer&) const SK_OVERRIDE;
+    SkMatrixConvolutionImageFilter(const SkISize& kernelSize,
+                                   const SkScalar* kernel,
+                                   SkScalar gain,
+                                   SkScalar bias,
+                                   const SkIPoint& kernelOffset,
+                                   TileMode tileMode,
+                                   bool convolveAlpha,
+                                   SkImageFilter* input,
+                                   const CropRect* cropRect);
+    explicit SkMatrixConvolutionImageFilter(SkReadBuffer& buffer);
+    virtual void flatten(SkWriteBuffer&) const SK_OVERRIDE;
 
-    virtual bool onFilterImage(Proxy*, const SkBitmap& src, const SkMatrix&,
-                               SkBitmap* result, SkIPoint* loc) SK_OVERRIDE;
+    virtual bool onFilterImage(Proxy*, const SkBitmap& src, const Context&,
+                               SkBitmap* result, SkIPoint* loc) const SK_OVERRIDE;
+    virtual bool onFilterBounds(const SkIRect&, const SkMatrix&, SkIRect*) const SK_OVERRIDE;
+
 
 #if SK_SUPPORT_GPU
     virtual bool asNewEffect(GrEffectRef** effect,
                              GrTexture*,
-                             const SkMatrix& matrix,
+                             const SkMatrix& ctm,
                              const SkIRect& bounds) const SK_OVERRIDE;
 #endif
 
@@ -82,7 +97,7 @@ private:
     SkScalar* fKernel;
     SkScalar  fGain;
     SkScalar  fBias;
-    SkIPoint  fTarget;
+    SkIPoint  fKernelOffset;
     TileMode  fTileMode;
     bool      fConvolveAlpha;
     typedef SkImageFilter INHERITED;
@@ -91,20 +106,20 @@ private:
     void filterPixels(const SkBitmap& src,
                       SkBitmap* result,
                       const SkIRect& rect,
-                      const SkIRect& bounds);
+                      const SkIRect& bounds) const;
     template <class PixelFetcher>
     void filterPixels(const SkBitmap& src,
                       SkBitmap* result,
                       const SkIRect& rect,
-                      const SkIRect& bounds);
+                      const SkIRect& bounds) const;
     void filterInteriorPixels(const SkBitmap& src,
                               SkBitmap* result,
                               const SkIRect& rect,
-                              const SkIRect& bounds);
+                              const SkIRect& bounds) const;
     void filterBorderPixels(const SkBitmap& src,
                             SkBitmap* result,
                             const SkIRect& rect,
-                            const SkIRect& bounds);
+                            const SkIRect& bounds) const;
 };
 
 #endif

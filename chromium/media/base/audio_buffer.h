@@ -11,6 +11,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/time/time.h"
+#include "media/base/channel_layout.h"
 #include "media/base/media_export.h"
 #include "media/base/sample_format.h"
 
@@ -33,27 +34,29 @@ class MEDIA_EXPORT AudioBuffer
   // number of buffers must be equal to |channel_count|. |frame_count| is the
   // number of frames in each buffer. |data| must not be null and |frame_count|
   // must be >= 0.
-  //
-  // TODO(jrummell): Compute duration rather than pass it in.
   static scoped_refptr<AudioBuffer> CopyFrom(SampleFormat sample_format,
+                                             ChannelLayout channel_layout,
                                              int channel_count,
+                                             int sample_rate,
                                              int frame_count,
                                              const uint8* const* data,
-                                             const base::TimeDelta timestamp,
-                                             const base::TimeDelta duration);
+                                             const base::TimeDelta timestamp);
 
   // Create an AudioBuffer with |frame_count| frames. Buffer is allocated, but
   // not initialized. Timestamp and duration are set to kNoTimestamp().
   static scoped_refptr<AudioBuffer> CreateBuffer(SampleFormat sample_format,
+                                                 ChannelLayout channel_layout,
                                                  int channel_count,
+                                                 int sample_rate,
                                                  int frame_count);
 
   // Create an empty AudioBuffer with |frame_count| frames.
   static scoped_refptr<AudioBuffer> CreateEmptyBuffer(
+      ChannelLayout channel_layout,
       int channel_count,
+      int sample_rate,
       int frame_count,
-      const base::TimeDelta timestamp,
-      const base::TimeDelta duration);
+      const base::TimeDelta timestamp);
 
   // Create a AudioBuffer indicating we've reached end of stream.
   // Calling any method other than end_of_stream() on the resulting buffer
@@ -80,21 +83,25 @@ class MEDIA_EXPORT AudioBuffer
   // Duration is adjusted to reflect the fewer frames.
   void TrimEnd(int frames_to_trim);
 
+  // Trim an AudioBuffer by removing |end - start| frames from [|start|, |end|).
+  // Even if |start| is zero, timestamp() is not adjusted, only duration().
+  void TrimRange(int start, int end);
+
   // Return the number of channels.
   int channel_count() const { return channel_count_; }
 
   // Return the number of frames held.
   int frame_count() const { return adjusted_frame_count_; }
 
-  // Access to constructor parameters.
+  // Return the sample rate.
+  int sample_rate() const { return sample_rate_; }
+
+  // Return the channel layout.
+  ChannelLayout channel_layout() const { return channel_layout_; }
+
   base::TimeDelta timestamp() const { return timestamp_; }
   base::TimeDelta duration() const { return duration_; }
-
-  // TODO(jrummell): Remove set_timestamp() and set_duration() once
-  // DecryptingAudioDecoder::EnqueueFrames() is changed to set them when
-  // creating the buffer. See http://crbug.com/255261.
   void set_timestamp(base::TimeDelta timestamp) { timestamp_ = timestamp; }
-  void set_duration(base::TimeDelta duration) { duration_ = duration; }
 
   // If there's no data in this buffer, it represents end of stream.
   bool end_of_stream() const { return end_of_stream_; }
@@ -112,17 +119,20 @@ class MEDIA_EXPORT AudioBuffer
   // data is copied. If |create_buffer| is false, no data buffer is created (or
   // copied to).
   AudioBuffer(SampleFormat sample_format,
+              ChannelLayout channel_layout,
               int channel_count,
+              int sample_rate,
               int frame_count,
               bool create_buffer,
               const uint8* const* data,
-              const base::TimeDelta timestamp,
-              const base::TimeDelta duration);
+              const base::TimeDelta timestamp);
 
   virtual ~AudioBuffer();
 
   const SampleFormat sample_format_;
+  const ChannelLayout channel_layout_;
   const int channel_count_;
+  const int sample_rate_;
   int adjusted_frame_count_;
   int trim_start_;
   const bool end_of_stream_;
@@ -130,7 +140,7 @@ class MEDIA_EXPORT AudioBuffer
   base::TimeDelta duration_;
 
   // Contiguous block of channel data.
-  scoped_ptr_malloc<uint8, base::ScopedPtrAlignedFree> data_;
+  scoped_ptr<uint8, base::AlignedFreeDeleter> data_;
 
   // For planar data, points to each channels data.
   std::vector<uint8*> channel_data_;

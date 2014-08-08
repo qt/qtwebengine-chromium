@@ -13,6 +13,10 @@ namespace base {
 class FilePath;
 }
 
+namespace IPC {
+class MessageFilter;
+}
+
 namespace content {
 
 class ChildProcessHostDelegate;
@@ -24,9 +28,12 @@ class CONTENT_EXPORT ChildProcessHost : public IPC::Sender {
  public:
   virtual ~ChildProcessHost() {}
 
+  // This is a value never returned as the unique id of any child processes of
+  // any kind, including the values returned by RenderProcessHost::GetID().
+  static int kInvalidUniqueID;
+
   // Used to create a child process host. The delegate must outlive this object.
-  static ChildProcessHost* Create(
-      ChildProcessHostDelegate* delegate);
+  static ChildProcessHost* Create(ChildProcessHostDelegate* delegate);
 
   // These flags may be passed to GetChildPath in order to alter its behavior,
   // causing it to return a child path more suited to a specific task.
@@ -87,7 +94,7 @@ class CONTENT_EXPORT ChildProcessHost : public IPC::Sender {
   virtual bool IsChannelOpening() = 0;
 
   // Adds an IPC message filter.  A reference will be kept to the filter.
-  virtual void AddFilter(IPC::ChannelProxy::MessageFilter* filter) = 0;
+  virtual void AddFilter(IPC::MessageFilter* filter) = 0;
 
 #if defined(OS_POSIX)
   // See IPC::Channel::TakeClientFileDescriptor.

@@ -10,17 +10,15 @@
 #include "content/browser/appcache/chrome_appcache_service.h"
 #include "content/browser/browser_thread_impl.h"
 #include "content/public/browser/resource_context.h"
+#include "content/public/test/mock_special_storage_policy.h"
 #include "content/public/test/test_browser_context.h"
+#include "content/test/appcache_test_helper.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "webkit/browser/appcache/appcache_database.h"
 #include "webkit/browser/appcache/appcache_storage_impl.h"
-#include "webkit/browser/appcache/appcache_test_helper.h"
-#include "webkit/browser/quota/mock_special_storage_policy.h"
 
 #include <set>
-
-using appcache::AppCacheTestHelper;
 
 namespace content {
 namespace {
@@ -63,8 +61,7 @@ class MockURLRequestContextGetter : public net::URLRequestContextGetter {
 class ChromeAppCacheServiceTest : public testing::Test {
  public:
   ChromeAppCacheServiceTest()
-      : message_loop_(base::MessageLoop::TYPE_IO),
-        kProtectedManifestURL(kProtectedManifest),
+      : kProtectedManifestURL(kProtectedManifest),
         kNormalManifestURL(kNormalManifest),
         kSessionOnlyManifestURL(kSessionOnlyManifest),
         file_thread_(BrowserThread::FILE, &message_loop_),
@@ -74,12 +71,12 @@ class ChromeAppCacheServiceTest : public testing::Test {
         io_thread_(BrowserThread::IO, &message_loop_) {}
 
  protected:
-  scoped_refptr<ChromeAppCacheService> CreateAppCacheService(
+  scoped_refptr<ChromeAppCacheService> CreateAppCacheServiceImpl(
       const base::FilePath& appcache_path,
       bool init_storage);
   void InsertDataIntoAppCache(ChromeAppCacheService* appcache_service);
 
-  base::MessageLoop message_loop_;
+  base::MessageLoopForIO message_loop_;
   base::ScopedTempDir temp_dir_;
   const GURL kProtectedManifestURL;
   const GURL kNormalManifestURL;
@@ -94,13 +91,13 @@ class ChromeAppCacheServiceTest : public testing::Test {
 };
 
 scoped_refptr<ChromeAppCacheService>
-ChromeAppCacheServiceTest::CreateAppCacheService(
+ChromeAppCacheServiceTest::CreateAppCacheServiceImpl(
     const base::FilePath& appcache_path,
     bool init_storage) {
   scoped_refptr<ChromeAppCacheService> appcache_service =
       new ChromeAppCacheService(NULL);
-  scoped_refptr<quota::MockSpecialStoragePolicy> mock_policy =
-      new quota::MockSpecialStoragePolicy;
+  scoped_refptr<MockSpecialStoragePolicy> mock_policy =
+      new MockSpecialStoragePolicy;
   mock_policy->AddProtected(kProtectedManifestURL.GetOrigin());
   mock_policy->AddSessionOnly(kSessionOnlyManifestURL.GetOrigin());
   scoped_refptr<MockURLRequestContextGetter> mock_request_context_getter =
@@ -153,7 +150,7 @@ TEST_F(ChromeAppCacheServiceTest, KeepOnDestruction) {
 
   // Create a ChromeAppCacheService and insert data into it
   scoped_refptr<ChromeAppCacheService> appcache_service =
-      CreateAppCacheService(appcache_path, true);
+      CreateAppCacheServiceImpl(appcache_path, true);
   ASSERT_TRUE(base::PathExists(appcache_path));
   ASSERT_TRUE(base::PathExists(appcache_path.AppendASCII("Index")));
   InsertDataIntoAppCache(appcache_service.get());
@@ -163,7 +160,7 @@ TEST_F(ChromeAppCacheServiceTest, KeepOnDestruction) {
   message_loop_.RunUntilIdle();
 
   // Recreate the appcache (for reading the data back)
-  appcache_service = CreateAppCacheService(appcache_path, false);
+  appcache_service = CreateAppCacheServiceImpl(appcache_path, false);
 
   // The directory is still there
   ASSERT_TRUE(base::PathExists(appcache_path));
@@ -190,7 +187,7 @@ TEST_F(ChromeAppCacheServiceTest, SaveSessionState) {
 
   // Create a ChromeAppCacheService and insert data into it
   scoped_refptr<ChromeAppCacheService> appcache_service =
-      CreateAppCacheService(appcache_path, true);
+      CreateAppCacheServiceImpl(appcache_path, true);
   ASSERT_TRUE(base::PathExists(appcache_path));
   ASSERT_TRUE(base::PathExists(appcache_path.AppendASCII("Index")));
   InsertDataIntoAppCache(appcache_service.get());
@@ -203,7 +200,7 @@ TEST_F(ChromeAppCacheServiceTest, SaveSessionState) {
   message_loop_.RunUntilIdle();
 
   // Recreate the appcache (for reading the data back)
-  appcache_service = CreateAppCacheService(appcache_path, false);
+  appcache_service = CreateAppCacheServiceImpl(appcache_path, false);
 
   // The directory is still there
   ASSERT_TRUE(base::PathExists(appcache_path));

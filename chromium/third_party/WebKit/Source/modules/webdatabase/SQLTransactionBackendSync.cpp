@@ -62,14 +62,28 @@ SQLTransactionBackendSync::SQLTransactionBackendSync(DatabaseSync* db, PassOwnPt
     ASSERT(m_database->executionContext()->isContextThread());
 }
 
-SQLTransactionBackendSync::~SQLTransactionBackendSync()
+void SQLTransactionBackendSync::rollbackIfInProgress()
 {
-    ASSERT(m_database->executionContext()->isContextThread());
+    ASSERT(!m_database->executionContext() || m_database->executionContext()->isContextThread());
     if (m_sqliteTransaction && m_sqliteTransaction->inProgress())
         rollback();
 }
 
-PassRefPtr<SQLResultSet> SQLTransactionBackendSync::executeSQL(const String& sqlStatement, const Vector<SQLValue>& arguments, ExceptionState& exceptionState)
+SQLTransactionBackendSync::~SQLTransactionBackendSync()
+{
+#if ENABLE(OILPAN)
+    ASSERT(!m_sqliteTransaction || !m_sqliteTransaction->inProgress());
+#else
+    rollbackIfInProgress();
+#endif
+}
+
+void SQLTransactionBackendSync::trace(Visitor* visitor)
+{
+    visitor->trace(m_database);
+}
+
+PassRefPtrWillBeRawPtr<SQLResultSet> SQLTransactionBackendSync::executeSQL(const String& sqlStatement, const Vector<SQLValue>& arguments, ExceptionState& exceptionState)
 {
     ASSERT(m_database->executionContext()->isContextThread());
 
@@ -78,17 +92,17 @@ PassRefPtr<SQLResultSet> SQLTransactionBackendSync::executeSQL(const String& sql
     if (!m_database->opened()) {
         m_database->setLastErrorMessage("cannot executeSQL because the database is not open");
         exceptionState.throwDOMException(UnknownError, SQLError::unknownErrorMessage);
-        return 0;
+        return nullptr;
     }
 
     if (m_hasVersionMismatch) {
         m_database->setLastErrorMessage("cannot executeSQL because there is a version mismatch");
         exceptionState.throwDOMException(VersionError, SQLError::versionErrorMessage);
-        return 0;
+        return nullptr;
     }
 
     if (sqlStatement.isEmpty())
-        return 0;
+        return nullptr;
 
     int permissions = DatabaseAuthorizer::ReadWriteMask;
     if (!m_database->databaseContext()->allowDatabaseAccess())
@@ -100,13 +114,13 @@ PassRefPtr<SQLResultSet> SQLTransactionBackendSync::executeSQL(const String& sql
 
     m_database->resetAuthorizer();
     bool retryStatement = true;
-    RefPtr<SQLResultSet> resultSet;
+    RefPtrWillBeRawPtr<SQLResultSet> resultSet;
     while (retryStatement) {
         retryStatement = false;
         resultSet = statement.execute(m_database.get(), exceptionState);
         if (!resultSet) {
             if (m_sqliteTransaction->wasRolledBackBySqlite())
-                return 0;
+                return nullptr;
 
             if (exceptionState.code() == QuotaExceededError) {
                 if (m_transactionClient->didExceedQuota(database())) {
@@ -114,7 +128,7 @@ PassRefPtr<SQLResultSet> SQLTransactionBackendSync::executeSQL(const String& sql
                     retryStatement = true;
                 } else {
                     m_database->setLastErrorMessage("there was not enough remaining storage space");
-                    return 0;
+                    return nullptr;
                 }
             }
         }
@@ -157,7 +171,7 @@ void SQLTransactionBackendSync::begin(ExceptionState& exceptionState)
         m_database->setLastErrorMessage("unable to begin transaction",
             m_database->sqliteDatabase().lastError(), m_database->sqliteDatabase().lastErrorMsg());
         m_sqliteTransaction.clear();
-        exceptionState.throwUninformativeAndGenericDOMException(SQLDatabaseError);
+        exceptionState.throwDOMException(SQLDatabaseError, "Unable to begin transaction.");
         return;
     }
 
@@ -170,7 +184,7 @@ void SQLTransactionBackendSync::begin(ExceptionState& exceptionState)
         m_database->setLastErrorMessage("unable to read version",
             m_database->sqliteDatabase().lastError(), m_database->sqliteDatabase().lastErrorMsg());
         rollback();
-        exceptionState.throwUninformativeAndGenericDOMException(SQLDatabaseError);
+        exceptionState.throwDOMException(SQLDatabaseError, "Unable to read version.");
         return;
     }
     m_hasVersionMismatch = !m_database->expectedVersion().isEmpty() && (m_database->expectedVersion() != actualVersion);
@@ -212,7 +226,7 @@ void SQLTransactionBackendSync::commit(ExceptionState& exceptionState)
         m_database->reportCommitTransactionResult(2, SQLError::DATABASE_ERR, m_database->sqliteDatabase().lastError());
         m_database->setLastErrorMessage("unable to commit transaction",
             m_database->sqliteDatabase().lastError(), m_database->sqliteDatabase().lastErrorMsg());
-        exceptionState.throwUninformativeAndGenericDOMException(SQLDatabaseError);
+        exceptionState.throwDOMException(SQLDatabaseError, "Unable to commit transaction.");
         return;
     }
 
@@ -229,9 +243,10 @@ void SQLTransactionBackendSync::commit(ExceptionState& exceptionState)
     m_database->reportCommitTransactionResult(0, -1, 0); // OK
 }
 
+// This can be called during GC. Do not allocate new on-heap objects.
 void SQLTransactionBackendSync::rollback()
 {
-    ASSERT(m_database->executionContext()->isContextThread());
+    ASSERT(!m_database->executionContext() || m_database->executionContext()->isContextThread());
     m_database->disableAuthorizer();
     if (m_sqliteTransaction) {
         m_sqliteTransaction->rollback();

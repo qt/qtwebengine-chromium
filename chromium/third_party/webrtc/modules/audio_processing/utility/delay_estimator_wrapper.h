@@ -52,6 +52,13 @@ void* WebRtc_CreateDelayEstimatorFarend(int spectrum_size, int history_size);
 //
 int WebRtc_InitDelayEstimatorFarend(void* handle);
 
+// Soft resets the far-end part of the delay estimation instance returned by
+// WebRtc_CreateDelayEstimatorFarend(...).
+// Input:
+//      - delay_shift   : The amount of blocks to shift history buffers.
+//
+void WebRtc_SoftResetDelayEstimatorFarend(void* handle, int delay_shift);
+
 // Adds the far-end spectrum to the far-end history buffer. This spectrum is
 // used as reference when calculating the delay using
 // WebRtc_ProcessSpectrum().
@@ -91,11 +98,18 @@ void WebRtc_FreeDelayEstimator(void* handle);
 //                        ownership of |farend_handle|, which has to be torn
 //                        down properly after this instance.
 //
-//      - lookahead     : Amount of non-causal lookahead to use. This can
-//                        detect cases in which a near-end signal occurs before
-//                        the corresponding far-end signal. It will delay the
-//                        estimate for the current block by an equal amount,
-//                        and the returned values will be offset by it.
+//      - max_lookahead : Maximum amount of non-causal lookahead allowed. The
+//                        actual amount of lookahead used can be controlled by
+//                        WebRtc_set_lookahead(...). The default |lookahead| is
+//                        set to |max_lookahead| at create time. Use
+//                        WebRtc_set_lookahead(...) before start if a different
+//                        value is desired.
+//
+//                        Using lookahead can detect cases in which a near-end
+//                        signal occurs before the corresponding far-end signal.
+//                        It will delay the estimate for the current block by an
+//                        equal amount, and the returned values will be offset
+//                        by it.
 //
 //                        A value of zero is the typical no-lookahead case.
 //                        This also represents the minimum delay which can be
@@ -111,7 +125,7 @@ void WebRtc_FreeDelayEstimator(void* handle);
 //                        if any of the input parameters are invalid NULL is
 //                        returned.
 //
-void* WebRtc_CreateDelayEstimator(void* farend_handle, int lookahead);
+void* WebRtc_CreateDelayEstimator(void* farend_handle, int max_lookahead);
 
 // Initializes the delay estimation instance returned by
 // WebRtc_CreateDelayEstimator(...)
@@ -123,17 +137,59 @@ void* WebRtc_CreateDelayEstimator(void* farend_handle, int lookahead);
 //
 int WebRtc_InitDelayEstimator(void* handle);
 
+// Soft resets the delay estimation instance returned by
+// WebRtc_CreateDelayEstimator(...)
+// Input:
+//      - delay_shift   : The amount of blocks to shift history buffers.
+//
+// Return value:
+//      - actual_shifts : The actual number of shifts performed.
+//
+int WebRtc_SoftResetDelayEstimator(void* handle, int delay_shift);
+
+// Sets the amount of |lookahead| to use. Valid values are [0, max_lookahead]
+// where |max_lookahead| was set at create time through
+// WebRtc_CreateDelayEstimator(...).
+//
+// Input:
+//      - lookahead     : The amount of blocks to shift history buffers.
+//
+// Return value:
+//      - new_lookahead : The actual number of shifts performed.
+//
+int WebRtc_set_lookahead(void* handle, int lookahead);
+
+// Returns the amount of lookahead we currently use.
+int WebRtc_lookahead(void* handle);
+
+// Sets the |allowed_offset| used in the robust validation scheme.  If the
+// delay estimator is used in an echo control component, this parameter is
+// related to the filter length.  In principle |allowed_offset| should be set to
+// the echo control filter length minus the expected echo duration, i.e., the
+// delay offset the echo control can handle without quality regression.  The
+// default value, used if not set manually, is zero.  Note that |allowed_offset|
+// has to be non-negative.
+// Inputs:
+//  - handle            : Pointer to the delay estimation instance.
+//  - allowed_offset    : The amount of delay offset, measured in partitions,
+//                        the echo control filter can handle.
+int WebRtc_set_allowed_offset(void* handle, int allowed_offset);
+
+// Returns the |allowed_offset| in number of partitions.
+int WebRtc_get_allowed_offset(const void* handle);
+
 // TODO(bjornv): Implement this functionality.  Currently, enabling it has no
 // impact, hence this is an empty API.
 // Enables/Disables a robust validation functionality in the delay estimation.
-// This is by default disabled upon initialization.
+// This is by default set to disabled at create time.  The state is preserved
+// over a reset.
 // Inputs:
 //      - handle        : Pointer to the delay estimation instance.
 //      - enable        : Enable (1) or disable (0) this feature.
 int WebRtc_enable_robust_validation(void* handle, int enable);
 
 // Returns 1 if robust validation is enabled and 0 if disabled.
-int WebRtc_is_robust_validation_enabled(void* handle);
+int WebRtc_is_robust_validation_enabled(const void* handle);
 
 // Estimates and returns the delay between the far-end and near-end blocks. The
 // value will be offset by the lookahead (i.e. the lookahead should be
@@ -179,18 +235,11 @@ int WebRtc_last_delay(void* handle);
 
 // Returns the estimation quality/probability of the last calculated delay
 // updated by the function WebRtc_DelayEstimatorProcess(...). The estimation
-// quality is a value in the interval [0, 1] in Q9. The higher the value, the
-// better quality.
-//
-// Input:
-//      - handle        : Pointer to the delay estimation instance.
+// quality is a value in the interval [0, 1]. The higher the value, the better
+// the quality.
 //
 // Return value:
-//      - delay_quality : >= 0  - Estimation quality (in Q9) of last calculated
-//                                delay value.
-//                        -1    - Error.
-//                        -2    - Insufficient data for estimation.
-//
-int WebRtc_last_delay_quality(void* handle);
+//      - delay_quality : >= 0  - Estimation quality of last calculated delay.
+float WebRtc_last_delay_quality(void* handle);
 
 #endif  // WEBRTC_MODULES_AUDIO_PROCESSING_UTILITY_DELAY_ESTIMATOR_WRAPPER_H_

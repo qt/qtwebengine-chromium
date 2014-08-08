@@ -5,6 +5,8 @@
 #ifndef CONTENT_COMMON_INDEXED_DB_INDEXED_DB_PARAM_TRAITS_H_
 #define CONTENT_COMMON_INDEXED_DB_INDEXED_DB_PARAM_TRAITS_H_
 
+#include <string>
+
 #include "ipc/ipc_message.h"
 #include "ipc/ipc_param_traits.h"
 
@@ -15,11 +17,6 @@ class IndexedDBKeyRange;
 }
 
 namespace IPC {
-
-// These datatypes are used by utility_messages.h and render_messages.h.
-// Unfortunately we can't move it to common: MSVC linker complains about
-// WebKit datatypes that are not linked on npchrome_frame (even though it's
-// never actually used by that target).
 
 template <>
 struct ParamTraits<content::IndexedDBKey> {
@@ -45,6 +42,6 @@ struct ParamTraits<content::IndexedDBKeyPath> {
   static void Log(const param_type& p, std::string* l);
 };
 
-} // namespace IPC
+}  // namespace IPC
 
 #endif  // CONTENT_COMMON_INDEXED_DB_INDEXED_DB_PARAM_TRAITS_H_

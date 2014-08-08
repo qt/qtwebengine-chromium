@@ -22,7 +22,7 @@
 #if ENABLE(SVG_FONTS)
 #include "core/svg/SVGFontFaceFormatElement.h"
 
-#include "SVGNames.h"
+#include "core/SVGNames.h"
 #include "core/svg/SVGFontFaceElement.h"
 
 namespace WebCore {
@@ -35,24 +35,21 @@ inline SVGFontFaceFormatElement::SVGFontFaceFormatElement(Document& document)
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<SVGFontFaceFormatElement> SVGFontFaceFormatElement::create(Document& document)
-{
-    return adoptRef(new SVGFontFaceFormatElement(document));
-}
+DEFINE_NODE_FACTORY(SVGFontFaceFormatElement)
 
 void SVGFontFaceFormatElement::childrenChanged(bool changedByParser, Node* beforeChange, Node* afterChange, int childCountDelta)
 {
     SVGElement::childrenChanged(changedByParser, beforeChange, afterChange, childCountDelta);
 
-    if (!parentNode() || !parentNode()->hasTagName(font_face_uriTag))
+    if (!isSVGFontFaceUriElement(parentNode()))
         return;
 
     ContainerNode* ancestor = parentNode()->parentNode();
-    if (!ancestor || !ancestor->hasTagName(font_face_srcTag))
+    if (!isSVGFontFaceSrcElement(ancestor))
         return;
 
     ancestor = ancestor->parentNode();
-    if (ancestor && ancestor->hasTagName(font_faceTag))
+    if (isSVGFontFaceElement(ancestor))
         toSVGFontFaceElement(ancestor)->rebuildFontFace();
 }
 

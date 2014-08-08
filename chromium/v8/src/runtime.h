@@ -1,35 +1,12 @@
 // Copyright 2012 the V8 project authors. All rights reserved.
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-//       copyright notice, this list of conditions and the following
-//       disclaimer in the documentation and/or other materials provided
-//       with the distribution.
-//     * Neither the name of Google Inc. nor the names of its
-//       contributors may be used to endorse or promote products derived
-//       from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
 #ifndef V8_RUNTIME_H_
 #define V8_RUNTIME_H_
 
-#include "allocation.h"
-#include "zone.h"
+#include "src/allocation.h"
+#include "src/zone.h"
 
 namespace v8 {
 namespace internal {
@@ -49,23 +26,22 @@ namespace internal {
   F(GetProperty, 2, 1) \
   F(KeyedGetProperty, 2, 1) \
   F(DeleteProperty, 3, 1) \
-  F(HasLocalProperty, 2, 1) \
+  F(HasOwnProperty, 2, 1) \
   F(HasProperty, 2, 1) \
   F(HasElement, 2, 1) \
   F(IsPropertyEnumerable, 2, 1) \
   F(GetPropertyNames, 1, 1) \
   F(GetPropertyNamesFast, 1, 1) \
-  F(GetLocalPropertyNames, 2, 1) \
-  F(GetLocalElementNames, 1, 1) \
+  F(GetOwnPropertyNames, 2, 1) \
+  F(GetOwnElementNames, 1, 1) \
   F(GetInterceptorInfo, 1, 1) \
   F(GetNamedInterceptorPropertyNames, 1, 1) \
   F(GetIndexedInterceptorElementNames, 1, 1) \
   F(GetArgumentsProperty, 1, 1) \
   F(ToFastProperties, 1, 1) \
   F(FinishArrayPrototypeSetup, 1, 1) \
-  F(SpecialArrayFunctions, 1, 1) \
-  F(IsCallable, 1, 1) \
-  F(IsClassicModeFunction, 1, 1) \
+  F(SpecialArrayFunctions, 0, 1) \
+  F(IsSloppyModeFunction, 1, 1) \
   F(GetDefaultReceiver, 1, 1) \
   \
   F(GetPrototype, 1, 1) \
@@ -84,14 +60,6 @@ namespace internal {
   F(Apply, 5, 1) \
   F(GetFunctionDelegate, 1, 1) \
   F(GetConstructorDelegate, 1, 1) \
-  F(NewArgumentsFast, 3, 1) \
-  F(NewStrictArgumentsFast, 3, 1) \
-  F(LazyCompile, 1, 1) \
-  F(LazyRecompile, 1, 1) \
-  F(ConcurrentRecompile, 1, 1) \
-  F(TryInstallRecompiledCode, 1, 1) \
-  F(NotifyDeoptimized, 1, 1) \
-  F(NotifyStubFailure, 0, 1) \
   F(DeoptimizeFunction, 1, 1) \
   F(ClearFunctionTypeFeedback, 1, 1) \
   F(RunningInSimulator, 0, 1) \
@@ -101,19 +69,18 @@ namespace internal {
   F(GetOptimizationStatus, -1, 1) \
   F(GetOptimizationCount, 1, 1) \
   F(UnblockConcurrentRecompilation, 0, 1) \
-  F(CompileForOnStackReplacement, 2, 1) \
-  F(SetAllocationTimeout, 2, 1) \
-  F(AllocateInNewSpace, 1, 1) \
-  F(AllocateInTargetSpace, 2, 1) \
+  F(CompileForOnStackReplacement, 1, 1) \
+  F(SetAllocationTimeout, -1 /* 2 || 3 */, 1) \
   F(SetNativeFlag, 1, 1) \
   F(SetInlineBuiltinFlag, 1, 1) \
   F(StoreArrayLiteralElement, 5, 1) \
-  F(DebugCallbackSupportsStepping, 1, 1) \
   F(DebugPrepareStepInIfStepping, 1, 1) \
+  F(DebugPromiseHandlePrologue, 1, 1) \
+  F(DebugPromiseHandleEpilogue, 0, 1) \
   F(FlattenString, 1, 1) \
-  F(MigrateInstance, 1, 1) \
+  F(LoadMutableDouble, 2, 1) \
+  F(TryMigrateInstance, 1, 1) \
   F(NotifyContextDisposed, 0, 1) \
-  F(MaxSmi, 0, 1) \
   \
   /* Array join support */ \
   F(PushIfAbsent, 2, 1) \
@@ -133,15 +100,10 @@ namespace internal {
   F(URIEscape, 1, 1) \
   F(URIUnescape, 1, 1) \
   \
-  F(NumberToString, 1, 1) \
-  F(NumberToStringSkipCache, 1, 1) \
   F(NumberToInteger, 1, 1) \
-  F(NumberToPositiveInteger, 1, 1) \
   F(NumberToIntegerMapMinusZero, 1, 1) \
   F(NumberToJSUint32, 1, 1) \
   F(NumberToJSInt32, 1, 1) \
-  F(NumberToSmi, 1, 1) \
-  F(AllocateHeapNumber, 0, 1) \
   \
   /* Arithmetic operations */ \
   F(NumberAdd, 2, 1) \
@@ -150,10 +112,8 @@ namespace internal {
   F(NumberDiv, 2, 1) \
   F(NumberMod, 2, 1) \
   F(NumberUnaryMinus, 1, 1) \
-  F(NumberAlloc, 0, 1) \
   F(NumberImul, 2, 1) \
   \
-  F(StringAdd, 2, 1) \
   F(StringBuilderConcat, 3, 1) \
   F(StringBuilderJoin, 3, 1) \
   F(SparseJoinWithSeparator, 3, 1) \
@@ -173,30 +133,21 @@ namespace internal {
   \
   F(NumberCompare, 3, 1) \
   F(SmiLexicographicCompare, 2, 1) \
-  F(StringCompare, 2, 1) \
   \
   /* Math */ \
-  F(Math_acos, 1, 1) \
-  F(Math_asin, 1, 1) \
-  F(Math_atan, 1, 1) \
-  F(Math_atan2, 2, 1) \
-  F(Math_cos, 1, 1) \
-  F(Math_exp, 1, 1) \
-  F(Math_floor, 1, 1) \
-  F(Math_log, 1, 1) \
-  F(Math_pow, 2, 1) \
-  F(Math_pow_cfunction, 2, 1) \
+  F(MathAcos, 1, 1) \
+  F(MathAsin, 1, 1) \
+  F(MathAtan, 1, 1) \
+  F(MathFloorRT, 1, 1) \
+  F(MathAtan2, 2, 1) \
+  F(MathExpRT, 1, 1) \
   F(RoundNumber, 1, 1) \
-  F(Math_sin, 1, 1) \
-  F(Math_sqrt, 1, 1) \
-  F(Math_tan, 1, 1) \
+  F(MathFround, 1, 1) \
   \
   /* Regular expressions */ \
   F(RegExpCompile, 3, 1) \
-  F(RegExpExec, 4, 1) \
   F(RegExpExecMultiple, 4, 1) \
   F(RegExpInitializeObject, 5, 1) \
-  F(RegExpConstructResult, 3, 1) \
   \
   /* JSON */ \
   F(ParseJson, 1, 1) \
@@ -204,11 +155,9 @@ namespace internal {
   F(QuoteJSONString, 1, 1) \
   \
   /* Strings */ \
-  F(StringCharCodeAt, 2, 1) \
   F(StringIndexOf, 3, 1) \
   F(StringLastIndexOf, 3, 1) \
   F(StringLocaleCompare, 2, 1) \
-  F(SubString, 3, 1) \
   F(StringReplaceGlobalRegExpWithString, 4, 1) \
   F(StringReplaceOneCharWithString, 3, 1) \
   F(StringMatch, 3, 1) \
@@ -231,7 +180,6 @@ namespace internal {
   F(FunctionSetInstanceClassName, 2, 1) \
   F(FunctionSetLength, 2, 1) \
   F(FunctionSetPrototype, 2, 1) \
-  F(FunctionSetReadOnlyPrototype, 1, 1) \
   F(FunctionGetName, 1, 1) \
   F(FunctionSetName, 2, 1) \
   F(FunctionNameShouldPrintAsAnonymous, 1, 1) \
@@ -251,11 +199,9 @@ namespace internal {
   F(GetAndClearOverflowedStackTrace, 1, 1) \
   F(GetV8Version, 0, 1) \
   \
-  F(ClassOf, 1, 1) \
   F(SetCode, 2, 1) \
-  F(SetExpectedNumberOfProperties, 2, 1) \
   \
-  F(CreateApiFunction, 1, 1) \
+  F(CreateApiFunction, 2, 1) \
   F(IsTemplate, 1, 1) \
   F(GetTemplateField, 2, 1) \
   F(DisableAccessChecks, 1, 1) \
@@ -269,46 +215,30 @@ namespace internal {
   F(DateToUTC, 1, 1) \
   F(DateMakeDay, 2, 1) \
   F(DateSetValue, 3, 1) \
-  \
-  /* Numbers */ \
+  F(DateCacheVersion, 0, 1) \
   \
   /* Globals */ \
   F(CompileString, 2, 1) \
-  F(GlobalPrint, 1, 1) \
   \
   /* Eval */ \
   F(GlobalReceiver, 1, 1) \
   F(IsAttachedGlobal, 1, 1) \
-  F(ResolvePossiblyDirectEval, 5, 2) \
   \
   F(SetProperty, -1 /* 4 or 5 */, 1) \
   F(DefineOrRedefineDataProperty, 4, 1) \
   F(DefineOrRedefineAccessorProperty, 5, 1) \
   F(IgnoreAttributesAndSetProperty, -1 /* 3 or 4 */, 1) \
   F(GetDataProperty, 2, 1) \
+  F(SetHiddenProperty, 3, 1) \
   \
   /* Arrays */ \
   F(RemoveArrayHoles, 2, 1) \
   F(GetArrayKeys, 2, 1) \
   F(MoveArrayContents, 2, 1) \
   F(EstimateNumberOfElements, 1, 1) \
-  F(ArrayConstructor, -1, 1) \
-  F(InternalArrayConstructor, -1, 1) \
   \
   /* Getters and Setters */ \
   F(LookupAccessor, 3, 1) \
-  \
-  /* Literals */ \
-  F(MaterializeRegExpLiteral, 4, 1)\
-  F(CreateObjectLiteral, 4, 1) \
-  F(CreateArrayLiteral, 4, 1) \
-  F(CreateArrayLiteralStubBailout, 3, 1) \
-  \
-  /* Harmony generators */ \
-  F(CreateJSGeneratorObject, 0, 1) \
-  F(SuspendJSGeneratorObject, 1, 1) \
-  F(ResumeJSGeneratorObject, 3, 1) \
-  F(ThrowGeneratorStateError, 1, 1) \
   \
   /* ES5 */ \
   F(ObjectFreeze, 1, 1) \
@@ -319,7 +249,10 @@ namespace internal {
   /* Harmony symbols */ \
   F(CreateSymbol, 1, 1) \
   F(CreatePrivateSymbol, 1, 1) \
-  F(SymbolName, 1, 1) \
+  F(CreateGlobalPrivateSymbol, 1, 1) \
+  F(NewSymbolWrapper, 1, 1) \
+  F(SymbolDescription, 1, 1) \
+  F(SymbolRegistry, 0, 1) \
   F(SymbolIsPrivate, 1, 1) \
   \
   /* Harmony proxies */ \
@@ -337,15 +270,23 @@ namespace internal {
   F(SetAdd, 2, 1) \
   F(SetHas, 2, 1) \
   F(SetDelete, 2, 1) \
+  F(SetClear, 1, 1) \
   F(SetGetSize, 1, 1) \
+  \
+  F(SetIteratorInitialize, 3, 1) \
+  F(SetIteratorNext, 1, 1) \
   \
   /* Harmony maps */ \
   F(MapInitialize, 1, 1) \
   F(MapGet, 2, 1) \
   F(MapHas, 2, 1) \
   F(MapDelete, 2, 1) \
+  F(MapClear, 1, 1) \
   F(MapSet, 3, 1) \
   F(MapGetSize, 1, 1) \
+  \
+  F(MapIteratorInitialize, 3, 1) \
+  F(MapIteratorNext, 1, 1) \
   \
   /* Harmony weak maps and sets */ \
   F(WeakCollectionInitialize, 1, 1) \
@@ -355,34 +296,31 @@ namespace internal {
   F(WeakCollectionSet, 3, 1) \
   \
   /* Harmony events */ \
-  F(SetMicrotaskPending, 1, 1) \
+  F(EnqueueMicrotask, 1, 1) \
+  F(RunMicrotasks, 0, 1) \
   \
   /* Harmony observe */ \
   F(IsObserved, 1, 1) \
   F(SetIsObserved, 1, 1) \
   F(GetObservationState, 0, 1) \
   F(ObservationWeakMapCreate, 0, 1) \
-  F(UnwrapGlobalProxy, 1, 1) \
-  F(IsAccessAllowedForObserver, 3, 1) \
+  F(ObserverObjectAndRecordHaveSameOrigin, 3, 1) \
+  F(ObjectWasCreatedInCurrentOrigin, 1, 1) \
+  F(GetObjectContextObjectObserve, 1, 1) \
+  F(GetObjectContextObjectGetNotifier, 1, 1) \
+  F(GetObjectContextNotifierPerformChange, 1, 1) \
   \
   /* Harmony typed arrays */ \
   F(ArrayBufferInitialize, 2, 1)\
-  F(ArrayBufferGetByteLength, 1, 1)\
   F(ArrayBufferSliceImpl, 3, 1) \
   F(ArrayBufferIsView, 1, 1) \
+  F(ArrayBufferNeuter, 1, 1) \
   \
-  F(TypedArrayInitialize, 5, 1) \
   F(TypedArrayInitializeFromArrayLike, 4, 1) \
   F(TypedArrayGetBuffer, 1, 1) \
-  F(TypedArrayGetByteLength, 1, 1) \
-  F(TypedArrayGetByteOffset, 1, 1) \
-  F(TypedArrayGetLength, 1, 1) \
   F(TypedArraySetFastCases, 3, 1) \
   \
-  F(DataViewInitialize, 4, 1) \
   F(DataViewGetBuffer, 1, 1) \
-  F(DataViewGetByteLength, 1, 1) \
-  F(DataViewGetByteOffset, 1, 1) \
   F(DataViewGetInt8, 3, 1) \
   F(DataViewGetUint8, 3, 1) \
   F(DataViewGetInt16, 3, 1) \
@@ -402,54 +340,22 @@ namespace internal {
   F(DataViewSetFloat64, 4, 1) \
   \
   /* Statements */ \
-  F(NewClosure, 3, 1) \
-  F(NewClosureFromStubFailure, 1, 1) \
-  F(NewObject, 1, 1) \
   F(NewObjectFromBound, 1, 1) \
-  F(FinalizeInstanceSize, 1, 1) \
-  F(Throw, 1, 1) \
-  F(ReThrow, 1, 1) \
-  F(ThrowReferenceError, 1, 1) \
-  F(ThrowNotDateError, 0, 1) \
-  F(ThrowMessage, 1, 1) \
-  F(StackGuard, 0, 1) \
-  F(Interrupt, 0, 1) \
-  F(PromoteScheduledException, 0, 1) \
-  \
-  /* Contexts */ \
-  F(NewGlobalContext, 2, 1) \
-  F(NewFunctionContext, 1, 1) \
-  F(PushWithContext, 2, 1) \
-  F(PushCatchContext, 3, 1) \
-  F(PushBlockContext, 2, 1) \
-  F(PushModuleContext, 2, 1) \
-  F(DeleteContextSlot, 2, 1) \
-  F(LoadContextSlot, 2, 2) \
-  F(LoadContextSlotNoReferenceError, 2, 2) \
-  F(StoreContextSlot, 4, 1) \
   \
   /* Declarations and initialization */ \
-  F(DeclareGlobals, 3, 1) \
-  F(DeclareModules, 1, 1) \
-  F(DeclareContextSlot, 4, 1) \
   F(InitializeVarGlobal, -1 /* 2 or 3 */, 1) \
-  F(InitializeConstGlobal, 2, 1) \
-  F(InitializeConstContextSlot, 3, 1) \
   F(OptimizeObjectForAddingMultipleProperties, 2, 1) \
   \
   /* Debugging */ \
   F(DebugPrint, 1, 1) \
+  F(GlobalPrint, 1, 1) \
   F(DebugTrace, 0, 1) \
   F(TraceEnter, 0, 1) \
   F(TraceExit, 1, 1) \
-  F(Abort, 2, 1) \
+  F(Abort, 1, 1) \
   F(AbortJS, 1, 1) \
-  /* Logging */ \
-  F(Log, 2, 1) \
   /* ES5 */ \
-  F(LocalKeys, 1, 1) \
-  /* Cache suport */ \
-  F(GetFromCache, 2, 1) \
+  F(OwnKeys, 1, 1) \
   \
   /* Message objects */ \
   F(MessageGetStartPosition, 1, 1) \
@@ -465,25 +371,33 @@ namespace internal {
   F(HasFastDoubleElements, 1, 1) \
   F(HasFastHoleyElements, 1, 1) \
   F(HasDictionaryElements, 1, 1) \
-  F(HasNonStrictArgumentsElements, 1, 1) \
-  F(HasExternalPixelElements, 1, 1) \
+  F(HasSloppyArgumentsElements, 1, 1) \
+  F(HasExternalUint8ClampedElements, 1, 1) \
   F(HasExternalArrayElements, 1, 1) \
-  F(HasExternalByteElements, 1, 1) \
-  F(HasExternalUnsignedByteElements, 1, 1) \
-  F(HasExternalShortElements, 1, 1) \
-  F(HasExternalUnsignedShortElements, 1, 1) \
-  F(HasExternalIntElements, 1, 1) \
-  F(HasExternalUnsignedIntElements, 1, 1) \
-  F(HasExternalFloatElements, 1, 1) \
-  F(HasExternalDoubleElements, 1, 1) \
+  F(HasExternalInt8Elements, 1, 1) \
+  F(HasExternalUint8Elements, 1, 1) \
+  F(HasExternalInt16Elements, 1, 1) \
+  F(HasExternalUint16Elements, 1, 1) \
+  F(HasExternalInt32Elements, 1, 1) \
+  F(HasExternalUint32Elements, 1, 1) \
+  F(HasExternalFloat32Elements, 1, 1) \
+  F(HasExternalFloat64Elements, 1, 1) \
+  F(HasFixedUint8ClampedElements, 1, 1) \
+  F(HasFixedInt8Elements, 1, 1) \
+  F(HasFixedUint8Elements, 1, 1) \
+  F(HasFixedInt16Elements, 1, 1) \
+  F(HasFixedUint16Elements, 1, 1) \
+  F(HasFixedInt32Elements, 1, 1) \
+  F(HasFixedUint32Elements, 1, 1) \
+  F(HasFixedFloat32Elements, 1, 1) \
+  F(HasFixedFloat64Elements, 1, 1) \
   F(HasFastProperties, 1, 1) \
   F(TransitionElementsKind, 2, 1) \
   F(HaveSameMap, 2, 1) \
-  F(IsAccessCheckNeeded, 1, 1)
+  F(IsJSGlobalProxy, 1, 1)
 
 
-#ifdef ENABLE_DEBUGGER_SUPPORT
-#define RUNTIME_FUNCTION_LIST_DEBUGGER_SUPPORT(F) \
+#define RUNTIME_FUNCTION_LIST_DEBUGGER(F) \
   /* Debugger support*/ \
   F(DebugBreak, 0, 1) \
   F(SetDebugEventListener, 2, 1) \
@@ -501,6 +415,7 @@ namespace internal {
   F(GetScopeCount, 2, 1) \
   F(GetStepInPositions, 2, 1) \
   F(GetScopeDetails, 4, 1) \
+  F(GetAllScopesDetails, 4, 1) \
   F(GetFunctionScopeCount, 1, 1) \
   F(GetFunctionScopeDetails, 2, 1) \
   F(SetScopeVariableValue, 6, 1) \
@@ -545,10 +460,6 @@ namespace internal {
   F(CollectGarbage, 1, 1) \
   F(GetHeapUsage, 0, 1) \
 
-#else
-#define RUNTIME_FUNCTION_LIST_DEBUGGER_SUPPORT(F)
-#endif
-
 
 #ifdef V8_I18N_SUPPORT
 #define RUNTIME_FUNCTION_LIST_I18N_SUPPORT(F) \
@@ -558,6 +469,10 @@ namespace internal {
   F(AvailableLocalesOf, 1, 1) \
   F(GetDefaultICULocale, 0, 1) \
   F(GetLanguageTagVariants, 1, 1) \
+  F(IsInitializedIntlObject, 1, 1) \
+  F(IsInitializedIntlObjectOfType, 2, 1) \
+  F(MarkAsInitializedIntlObjectOfType, 3, 1) \
+  F(GetImplFromInitializedIntlObject, 1, 1) \
   \
   /* Date format and parse. */ \
   F(CreateDateTimeFormat, 3, 1) \
@@ -572,6 +487,9 @@ namespace internal {
   /* Collator. */ \
   F(CreateCollator, 3, 1) \
   F(InternalCompare, 3, 1) \
+  \
+  /* String.prototype.normalize. */ \
+  F(StringNormalize, 2, 1) \
   \
   /* Break iterator. */ \
   F(CreateBreakIterator, 3, 1) \
@@ -598,13 +516,101 @@ namespace internal {
 // RUNTIME_FUNCTION_LIST defines all runtime functions accessed
 // either directly by id (via the code generator), or indirectly
 // via a native call by name (from within JS code).
+// Entries have the form F(name, number of arguments, number of return values).
 
 #define RUNTIME_FUNCTION_LIST(F) \
   RUNTIME_FUNCTION_LIST_ALWAYS_1(F) \
   RUNTIME_FUNCTION_LIST_ALWAYS_2(F) \
   RUNTIME_FUNCTION_LIST_DEBUG(F) \
-  RUNTIME_FUNCTION_LIST_DEBUGGER_SUPPORT(F) \
+  RUNTIME_FUNCTION_LIST_DEBUGGER(F) \
   RUNTIME_FUNCTION_LIST_I18N_SUPPORT(F)
+
+// RUNTIME_HIDDEN_FUNCTION_LIST defines all runtime functions accessed
+// by id from code generator, but not via native call by name.
+// Entries have the form F(name, number of arguments, number of return values).
+#define RUNTIME_HIDDEN_FUNCTION_LIST(F) \
+  /* String and Regexp */ \
+  F(NumberToString, 1, 1) \
+  F(RegExpConstructResult, 3, 1) \
+  F(RegExpExec, 4, 1) \
+  F(StringAdd, 2, 1)  \
+  F(SubString, 3, 1) \
+  F(StringCompare, 2, 1) \
+  F(StringCharCodeAt, 2, 1) \
+  F(GetFromCache, 2, 1) \
+  \
+  /* Compilation */ \
+  F(CompileUnoptimized, 1, 1) \
+  F(CompileOptimized, 2, 1) \
+  F(TryInstallOptimizedCode, 1, 1) \
+  F(NotifyDeoptimized, 1, 1) \
+  F(NotifyStubFailure, 0, 1) \
+  \
+  /* Utilities */ \
+  F(AllocateInNewSpace, 1, 1) \
+  F(AllocateInTargetSpace, 2, 1) \
+  F(AllocateHeapNumber, 0, 1) \
+  F(NumberToSmi, 1, 1) \
+  F(NumberToStringSkipCache, 1, 1) \
+  \
+  F(NewSloppyArguments, 3, 1) \
+  F(NewStrictArguments, 3, 1) \
+  \
+  /* Harmony generators */ \
+  F(CreateJSGeneratorObject, 0, 1) \
+  F(SuspendJSGeneratorObject, 1, 1) \
+  F(ResumeJSGeneratorObject, 3, 1) \
+  F(ThrowGeneratorStateError, 1, 1) \
+  \
+  /* Arrays */ \
+  F(ArrayConstructor, -1, 1) \
+  F(InternalArrayConstructor, -1, 1) \
+  \
+  /* Literals */ \
+  F(MaterializeRegExpLiteral, 4, 1)\
+  F(CreateObjectLiteral, 4, 1) \
+  F(CreateArrayLiteral, 4, 1) \
+  F(CreateArrayLiteralStubBailout, 3, 1) \
+  \
+  /* Statements */ \
+  F(NewClosure, 3, 1) \
+  F(NewClosureFromStubFailure, 1, 1) \
+  F(NewObject, 1, 1) \
+  F(NewObjectWithAllocationSite, 2, 1) \
+  F(FinalizeInstanceSize, 1, 1) \
+  F(Throw, 1, 1) \
+  F(ReThrow, 1, 1) \
+  F(ThrowReferenceError, 1, 1) \
+  F(ThrowNotDateError, 0, 1) \
+  F(StackGuard, 0, 1) \
+  F(Interrupt, 0, 1) \
+  F(PromoteScheduledException, 0, 1) \
+  \
+  /* Contexts */ \
+  F(NewGlobalContext, 2, 1) \
+  F(NewFunctionContext, 1, 1) \
+  F(PushWithContext, 2, 1) \
+  F(PushCatchContext, 3, 1) \
+  F(PushBlockContext, 2, 1) \
+  F(PushModuleContext, 2, 1) \
+  F(DeleteContextSlot, 2, 1) \
+  F(LoadContextSlot, 2, 2) \
+  F(LoadContextSlotNoReferenceError, 2, 2) \
+  F(StoreContextSlot, 4, 1) \
+  \
+  /* Declarations and initialization */ \
+  F(DeclareGlobals, 3, 1) \
+  F(DeclareModules, 1, 1) \
+  F(DeclareContextSlot, 4, 1) \
+  F(InitializeConstGlobal, 2, 1) \
+  F(InitializeConstContextSlot, 3, 1) \
+  \
+  /* Eval */ \
+  F(ResolvePossiblyDirectEval, 5, 2) \
+  \
+  /* Maths */ \
+  F(MathPowSlow, 2, 1) \
+  F(MathPow, 2, 1)
 
 // ----------------------------------------------------------------------------
 // INLINE_FUNCTION_LIST defines all inlined functions accessed
@@ -633,27 +639,15 @@ namespace internal {
   F(IsSpecObject, 1, 1)                                                      \
   F(IsStringWrapperSafeForDefaultValueOf, 1, 1)                              \
   F(MathPow, 2, 1)                                                           \
-  F(MathSqrt, 1, 1)                                                          \
-  F(MathLog, 1, 1)                                                           \
   F(IsMinusZero, 1, 1)                                                       \
-  F(IsRegExpEquivalent, 2, 1)                                                \
   F(HasCachedArrayIndex, 1, 1)                                               \
   F(GetCachedArrayIndex, 1, 1)                                               \
   F(FastAsciiArrayJoin, 2, 1)                                                \
   F(GeneratorNext, 2, 1)                                                     \
   F(GeneratorThrow, 2, 1)                                                    \
-  F(DebugBreakInOptimizedCode, 0, 1)
-
-
-// ----------------------------------------------------------------------------
-// INLINE_RUNTIME_FUNCTION_LIST defines all inlined functions accessed
-// with a native call of the form %_name from within JS code that also have
-// a corresponding runtime function, that is called for slow cases.
-// Entries have the form F(name, number of arguments, number of return values).
-#define INLINE_RUNTIME_FUNCTION_LIST(F) \
+  F(DebugBreakInOptimizedCode, 0, 1)                                         \
   F(ClassOf, 1, 1)                                                           \
   F(StringCharCodeAt, 2, 1)                                                  \
-  F(Log, 3, 1)                                                               \
   F(StringAdd, 2, 1)                                                         \
   F(SubString, 3, 1)                                                         \
   F(StringCompare, 2, 1)                                                     \
@@ -661,6 +655,34 @@ namespace internal {
   F(RegExpConstructResult, 3, 1)                                             \
   F(GetFromCache, 2, 1)                                                      \
   F(NumberToString, 1, 1)
+
+
+// ----------------------------------------------------------------------------
+// INLINE_OPTIMIZED_FUNCTION_LIST defines all inlined functions accessed
+// with a native call of the form %_name from within JS code that also have
+// a corresponding runtime function, that is called from non-optimized code.
+// For the benefit of (fuzz) tests, the runtime version can also be called
+// directly as %name (i.e. without the leading underscore).
+// Entries have the form F(name, number of arguments, number of return values).
+#define INLINE_OPTIMIZED_FUNCTION_LIST(F) \
+  /* Typed Arrays */                                                         \
+  F(TypedArrayInitialize, 5, 1)                                              \
+  F(DataViewInitialize, 4, 1)                                                \
+  F(MaxSmi, 0, 1)                                                            \
+  F(TypedArrayMaxSizeInHeap, 0, 1)                                           \
+  F(ArrayBufferViewGetByteLength, 1, 1)                                      \
+  F(ArrayBufferViewGetByteOffset, 1, 1)                                      \
+  F(TypedArrayGetLength, 1, 1)                                               \
+  /* ArrayBuffer */                                                          \
+  F(ArrayBufferGetByteLength, 1, 1)                                          \
+  /* Maths */                                                                \
+  F(ConstructDouble, 2, 1)                                                   \
+  F(DoubleHi, 1, 1)                                                          \
+  F(DoubleLo, 1, 1)                                                          \
+  F(MathSqrtRT, 1, 1)                                                        \
+  F(MathLogRT, 1, 1)                                                         \
+  /* Debugger */                                                             \
+  F(DebugCallbackSupportsStepping, 1, 1)
 
 
 //---------------------------------------------------------------------------
@@ -713,10 +735,16 @@ class Runtime : public AllStatic {
   enum FunctionId {
 #define F(name, nargs, ressize) k##name,
     RUNTIME_FUNCTION_LIST(F)
+    INLINE_OPTIMIZED_FUNCTION_LIST(F)
+#undef F
+#define F(name, nargs, ressize) kHidden##name,
+    RUNTIME_HIDDEN_FUNCTION_LIST(F)
 #undef F
 #define F(name, nargs, ressize) kInline##name,
     INLINE_FUNCTION_LIST(F)
-    INLINE_RUNTIME_FUNCTION_LIST(F)
+#undef F
+#define F(name, nargs, ressize) kInlineOptimized##name,
+    INLINE_OPTIMIZED_FUNCTION_LIST(F)
 #undef F
     kNumFunctions,
     kFirstInlineFunction = kInlineIsSmi
@@ -724,7 +752,9 @@ class Runtime : public AllStatic {
 
   enum IntrinsicType {
     RUNTIME,
-    INLINE
+    RUNTIME_HIDDEN,
+    INLINE,
+    INLINE_OPTIMIZED
   };
 
   // Intrinsic function descriptor.
@@ -748,11 +778,8 @@ class Runtime : public AllStatic {
 
   // Add internalized strings for all the intrinsic function names to a
   // StringDictionary.
-  // Returns failure if an allocation fails.  In this case, it must be
-  // retried with a new, empty StringDictionary, not with the same one.
-  // Alternatively, heap initialization can be completely restarted.
-  MUST_USE_RESULT static MaybeObject* InitializeIntrinsicFunctionNames(
-      Heap* heap, Object* dictionary);
+  static void InitializeIntrinsicFunctionNames(Isolate* isolate,
+                                               Handle<NameDictionary> dict);
 
   // Get the intrinsic function with the given name, which must be internalized.
   static const Function* FunctionForName(Handle<String> name);
@@ -773,47 +800,39 @@ class Runtime : public AllStatic {
 
   // Support getting the characters in a string using [] notation as
   // in Firefox/SpiderMonkey, Safari and Opera.
-  MUST_USE_RESULT static MaybeObject* GetElementOrCharAt(Isolate* isolate,
-                                                         Handle<Object> object,
-                                                         uint32_t index);
-
-  MUST_USE_RESULT static MaybeObject* GetElementOrCharAtOrFail(
+  MUST_USE_RESULT static MaybeHandle<Object> GetElementOrCharAt(
       Isolate* isolate,
       Handle<Object> object,
       uint32_t index);
 
-  static Handle<Object> SetObjectProperty(
+  MUST_USE_RESULT static MaybeHandle<Object> SetObjectProperty(
       Isolate* isolate,
       Handle<Object> object,
       Handle<Object> key,
       Handle<Object> value,
       PropertyAttributes attr,
-      StrictModeFlag strict_mode);
+      StrictMode strict_mode);
 
-  static Handle<Object> ForceSetObjectProperty(
-      Isolate* isolate,
+  MUST_USE_RESULT static MaybeHandle<Object> ForceSetObjectProperty(
       Handle<JSObject> object,
       Handle<Object> key,
       Handle<Object> value,
-      PropertyAttributes attr);
+      PropertyAttributes attr,
+      JSReceiver::StoreFromKeyed store_from_keyed
+        = JSReceiver::MAY_BE_STORE_FROM_KEYED);
 
-  MUST_USE_RESULT static MaybeObject* DeleteObjectProperty(
+  MUST_USE_RESULT static MaybeHandle<Object> DeleteObjectProperty(
       Isolate* isolate,
       Handle<JSReceiver> object,
       Handle<Object> key,
       JSReceiver::DeleteMode mode);
 
-  MUST_USE_RESULT static MaybeObject* HasObjectProperty(
+  MUST_USE_RESULT static MaybeHandle<Object> HasObjectProperty(
       Isolate* isolate,
       Handle<JSReceiver> object,
       Handle<Object> key);
 
-  MUST_USE_RESULT static MaybeObject* GetObjectProperty(
-      Isolate* isolate,
-      Handle<Object> object,
-      Handle<Object> key);
-
-  MUST_USE_RESULT static MaybeObject* GetObjectPropertyOrFail(
+  MUST_USE_RESULT static MaybeHandle<Object> GetObjectProperty(
       Isolate* isolate,
       Handle<Object> object,
       Handle<Object> key);
@@ -830,6 +849,8 @@ class Runtime : public AllStatic {
       size_t allocated_length,
       bool initialize = true);
 
+  static void NeuterArrayBuffer(Handle<JSArrayBuffer> array_buffer);
+
   static void FreeArrayBuffer(
       Isolate* isolate,
       JSArrayBuffer* phantom_array_buffer);
@@ -844,17 +865,20 @@ class Runtime : public AllStatic {
     ARRAY_ID_INT32 = 6,
     ARRAY_ID_FLOAT32 = 7,
     ARRAY_ID_FLOAT64 = 8,
-    ARRAY_ID_UINT8C = 9
+    ARRAY_ID_UINT8_CLAMPED = 9,
+
+    ARRAY_ID_FIRST = ARRAY_ID_UINT8,
+    ARRAY_ID_LAST = ARRAY_ID_UINT8_CLAMPED
   };
 
   static void ArrayIdToTypeAndSize(int array_id,
-      ExternalArrayType *type, size_t *element_size);
-
-  // Helper functions used stubs.
-  static void PerformGC(Object* result, Isolate* isolate);
+      ExternalArrayType *type,
+      ElementsKind* external_elements_kind,
+      ElementsKind* fixed_elements_kind,
+      size_t *element_size);
 
   // Used in runtime.cc and hydrogen's VisitArrayLiteral.
-  static Handle<Object> CreateArrayLiteralBoilerplate(
+  MUST_USE_RESULT static MaybeHandle<Object> CreateArrayLiteralBoilerplate(
       Isolate* isolate,
       Handle<FixedArray> literals,
       Handle<FixedArray> elements);
@@ -864,12 +888,12 @@ class Runtime : public AllStatic {
 //---------------------------------------------------------------------------
 // Constants used by interface to runtime functions.
 
-class AllocateDoubleAlignFlag:    public BitField<bool,            0, 1> {};
-class AllocateTargetSpace:        public BitField<AllocationSpace, 1, 3> {};
+class AllocateDoubleAlignFlag:  public BitField<bool,            0, 1> {};
+class AllocateTargetSpace:      public BitField<AllocationSpace, 1, 3> {};
 
-class DeclareGlobalsEvalFlag:     public BitField<bool,         0, 1> {};
-class DeclareGlobalsNativeFlag:   public BitField<bool,         1, 1> {};
-class DeclareGlobalsLanguageMode: public BitField<LanguageMode, 2, 2> {};
+class DeclareGlobalsEvalFlag:   public BitField<bool,       0, 1> {};
+class DeclareGlobalsNativeFlag: public BitField<bool,       1, 1> {};
+class DeclareGlobalsStrictMode: public BitField<StrictMode, 2, 1> {};
 
 } }  // namespace v8::internal
 

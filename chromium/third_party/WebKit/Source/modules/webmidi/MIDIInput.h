@@ -31,17 +31,16 @@
 #ifndef MIDIInput_h
 #define MIDIInput_h
 
-#include "core/events/EventTarget.h"
+#include "modules/EventTargetModules.h"
 #include "modules/webmidi/MIDIPort.h"
 
 namespace WebCore {
 
 class MIDIAccess;
-class ExecutionContext;
 
-class MIDIInput : public MIDIPort {
+class MIDIInput FINAL : public MIDIPort {
 public:
-    static PassRefPtr<MIDIInput> create(MIDIAccess*, ExecutionContext*, const String& id, const String& manufacturer, const String& name, const String& version);
+    static PassRefPtrWillBeRawPtr<MIDIInput> create(MIDIAccess*, const String& id, const String& manufacturer, const String& name, const String& version);
     virtual ~MIDIInput() { }
 
     DEFINE_ATTRIBUTE_EVENT_LISTENER(midimessage);
@@ -52,15 +51,13 @@ public:
     // |timeStamp| is a DOMHighResTimeStamp in the time coordinate system of performance.now().
     void didReceiveMIDIData(unsigned portIndex, const unsigned char* data, size_t length, double timeStamp);
 
-    MIDIAccess* midiAccess() const { return m_access; }
+    virtual void trace(Visitor*) OVERRIDE;
 
 private:
-    MIDIInput(MIDIAccess*, ExecutionContext*, const String& id, const String& manufacturer, const String& name, const String& version);
-
-    MIDIAccess* m_access;
+    MIDIInput(MIDIAccess*, const String& id, const String& manufacturer, const String& name, const String& version);
 };
 
-typedef Vector<RefPtr<MIDIInput> > MIDIInputVector;
+typedef WillBeHeapVector<RefPtrWillBeMember<MIDIInput> > MIDIInputVector;
 
 } // namespace WebCore
 

@@ -30,18 +30,14 @@
 
 namespace WebCore {
 
-class RenderThemeChromiumAndroid : public RenderThemeChromiumDefault {
+class RenderThemeChromiumAndroid FINAL : public RenderThemeChromiumDefault {
 public:
     static PassRefPtr<RenderTheme> create();
     virtual String extraDefaultStyleSheet() OVERRIDE;
 
-    virtual Color systemColor(CSSValueID) const OVERRIDE;
-
     virtual void adjustInnerSpinButtonStyle(RenderStyle*, Element*) const OVERRIDE;
 
     virtual bool delegatesMenuListRendering() const OVERRIDE { return true; }
-
-    virtual bool paintMediaOverlayPlayButton(RenderObject*, const PaintInfo&, const IntRect&) OVERRIDE;
 
     virtual String extraMediaControlsStyleSheet() OVERRIDE;
 

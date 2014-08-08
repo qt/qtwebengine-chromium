@@ -31,6 +31,7 @@
 #ifndef ScriptValue_h
 #define ScriptValue_h
 
+#include "bindings/v8/ScriptState.h"
 #include "bindings/v8/SharedPersistent.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
@@ -40,26 +41,36 @@
 namespace WebCore {
 
 class JSONValue;
-class ScriptState;
 
 class ScriptValue {
 public:
     ScriptValue()
         : m_isolate(0)
-    { }
+        , m_scriptState(nullptr)
+    {
+    }
 
     virtual ~ScriptValue();
 
-    ScriptValue(v8::Handle<v8::Value> value, v8::Isolate* isolate)
-        : m_isolate(isolate)
-        , m_value(value.IsEmpty() ? 0 : SharedPersistent<v8::Value>::create(value, isolate))
+    ScriptValue(ScriptState* scriptState, v8::Handle<v8::Value> value)
+        : m_isolate(scriptState->isolate())
+        , m_scriptState(scriptState)
+        , m_value(value.IsEmpty() ? nullptr : SharedPersistent<v8::Value>::create(value, scriptState->isolate()))
     {
+        ASSERT(isEmpty() || m_scriptState);
     }
 
     ScriptValue(const ScriptValue& value)
         : m_isolate(value.m_isolate)
+        , m_scriptState(value.m_scriptState)
         , m_value(value.m_value)
     {
+        ASSERT(isEmpty() || m_scriptState);
+    }
+
+    ScriptState* scriptState() const
+    {
+        return m_scriptState.get();
     }
 
     v8::Isolate* isolate() const
@@ -69,52 +80,23 @@ public:
         return m_isolate;
     }
 
-    static ScriptValue createUndefined(v8::Isolate* isolate)
-    {
-        return ScriptValue(v8::Undefined(isolate), isolate);
-    }
-
-    static ScriptValue createNull()
-    {
-        v8::Isolate* isolate = v8::Isolate::GetCurrent();
-        return ScriptValue(v8::Null(isolate), isolate);
-    }
-    static ScriptValue createBoolean(bool b)
-    {
-        v8::Isolate* isolate = v8::Isolate::GetCurrent();
-        return ScriptValue(b ? v8::True(isolate) : v8::False(isolate), isolate);
-    }
-
     ScriptValue& operator=(const ScriptValue& value)
     {
         if (this != &value) {
-            m_value = value.m_value;
             m_isolate = value.m_isolate;
+            m_scriptState = value.m_scriptState;
+            m_value = value.m_value;
         }
         return *this;
     }
 
     bool operator==(const ScriptValue& value) const
     {
-        if (hasNoValue())
-            return value.hasNoValue();
-        if (value.hasNoValue())
+        if (isEmpty())
+            return value.isEmpty();
+        if (value.isEmpty())
             return false;
         return *m_value == *value.m_value;
-    }
-
-    bool isEqual(ScriptState*, const ScriptValue& value) const
-    {
-        return operator==(value);
-    }
-
-    // Note: This creates a new local Handle; not to be used in cases where is
-    // is an efficiency problem.
-    bool isFunction() const
-    {
-        ASSERT(!hasNoValue());
-        v8::Handle<v8::Value> value = v8Value();
-        return !value.IsEmpty() && value->IsFunction();
     }
 
     bool operator!=(const ScriptValue& value) const
@@ -122,55 +104,56 @@ public:
         return !operator==(value);
     }
 
-    // Note: This creates a new local Handle; not to be used in cases where is
-    // is an efficiency problem.
+    // This creates a new local Handle; Don't use this in performance-sensitive places.
+    bool isFunction() const
+    {
+        ASSERT(!isEmpty());
+        v8::Handle<v8::Value> value = v8Value();
+        return !value.IsEmpty() && value->IsFunction();
+    }
+
+    // This creates a new local Handle; Don't use this in performance-sensitive places.
     bool isNull() const
     {
-        ASSERT(!hasNoValue());
+        ASSERT(!isEmpty());
         v8::Handle<v8::Value> value = v8Value();
         return !value.IsEmpty() && value->IsNull();
     }
 
-    // Note: This creates a new local Handle; not to be used in cases where is
-    // is an efficiency problem.
+    // This creates a new local Handle; Don't use this in performance-sensitive places.
     bool isUndefined() const
     {
-        ASSERT(!hasNoValue());
+        ASSERT(!isEmpty());
         v8::Handle<v8::Value> value = v8Value();
         return !value.IsEmpty() && value->IsUndefined();
     }
 
-    // Note: This creates a new local Handle; not to be used in cases where is
-    // is an efficiency problem.
+    // This creates a new local Handle; Don't use this in performance-sensitive places.
     bool isObject() const
     {
-        ASSERT(!hasNoValue());
+        ASSERT(!isEmpty());
         v8::Handle<v8::Value> value = v8Value();
         return !value.IsEmpty() && value->IsObject();
     }
 
-    bool hasNoValue() const
+    bool isEmpty() const
     {
         return !m_value.get() || m_value->isEmpty();
     }
 
     void clear()
     {
-        m_value = 0;
+        m_value = nullptr;
     }
 
-    v8::Handle<v8::Value> v8Value() const
-    {
-        return m_value.get() ? m_value->newLocal(m_isolate) : v8::Handle<v8::Value>();
-    }
+    v8::Handle<v8::Value> v8Value() const;
 
-    bool getString(String& result) const;
-    String toString() const;
-
+    bool toString(String&) const;
     PassRefPtr<JSONValue> toJSONValue(ScriptState*) const;
 
 private:
     mutable v8::Isolate* m_isolate;
+    mutable RefPtr<ScriptState> m_scriptState;
     RefPtr<SharedPersistent<v8::Value> > m_value;
 };
 

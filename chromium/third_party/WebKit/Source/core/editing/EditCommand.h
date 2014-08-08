@@ -28,6 +28,7 @@
 
 #include "core/editing/EditAction.h"
 #include "core/editing/VisibleSelection.h"
+#include "platform/heap/Handle.h"
 
 #ifndef NDEBUG
 #include "wtf/HashSet.h"
@@ -39,7 +40,7 @@ class CompositeEditCommand;
 class Document;
 class Element;
 
-class EditCommand : public RefCounted<EditCommand> {
+class EditCommand : public RefCountedWillBeGarbageCollectedFinalized<EditCommand> {
 public:
     virtual ~EditCommand();
 
@@ -52,10 +53,11 @@ public:
 
     virtual bool isSimpleEditCommand() const { return false; }
     virtual bool isCompositeEditCommand() const { return false; }
-    virtual bool isEditCommandComposition() const { return false; }
     bool isTopLevelCommand() const { return !m_parent; }
 
     virtual void doApply() = 0;
+
+    virtual void trace(Visitor*);
 
 protected:
     explicit EditCommand(Document&);
@@ -64,13 +66,15 @@ protected:
     Document& document() const { return *m_document.get(); }
     CompositeEditCommand* parent() const { return m_parent; }
     void setStartingSelection(const VisibleSelection&);
+    void setStartingSelection(const VisiblePosition&);
     void setEndingSelection(const VisibleSelection&);
+    void setEndingSelection(const VisiblePosition&);
 
 private:
-    RefPtr<Document> m_document;
+    RefPtrWillBeMember<Document> m_document;
     VisibleSelection m_startingSelection;
     VisibleSelection m_endingSelection;
-    CompositeEditCommand* m_parent;
+    RawPtrWillBeMember<CompositeEditCommand> m_parent;
 };
 
 enum ShouldAssumeContentIsAlwaysEditable {
@@ -87,7 +91,7 @@ protected:
     explicit SimpleEditCommand(Document& document) : EditCommand(document) { }
 
 private:
-    virtual bool isSimpleEditCommand() const OVERRIDE { return true; }
+    virtual bool isSimpleEditCommand() const OVERRIDE FINAL { return true; }
 };
 
 DEFINE_TYPE_CASTS(SimpleEditCommand, EditCommand, command, command->isSimpleEditCommand(), command.isSimpleEditCommand());

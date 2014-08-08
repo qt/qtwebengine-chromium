@@ -76,20 +76,15 @@ String CSSTransformValue::customCSSText() const
     return transformValueToCssString(m_type, CSSValueList::customCSSText());
 }
 
-String CSSTransformValue::customSerializeResolvingVariables(const HashMap<AtomicString, String>& variables) const
-{
-    return transformValueToCssString(m_type, CSSValueList::customSerializeResolvingVariables(variables));
-}
-
 CSSTransformValue::CSSTransformValue(const CSSTransformValue& cloneFrom)
     : CSSValueList(cloneFrom)
     , m_type(cloneFrom.m_type)
 {
 }
 
-PassRefPtr<CSSTransformValue> CSSTransformValue::cloneForCSSOM() const
+PassRefPtrWillBeRawPtr<CSSTransformValue> CSSTransformValue::cloneForCSSOM() const
 {
-    return adoptRef(new CSSTransformValue(*this));
+    return adoptRefWillBeNoop(new CSSTransformValue(*this));
 }
 
 }

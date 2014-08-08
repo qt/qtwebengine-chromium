@@ -49,8 +49,8 @@ public:
     BLINK_EXPORT void assign(const WebSpeechGrammar&);
 
 #if BLINK_IMPLEMENTATION
-    WebSpeechGrammar(const WTF::PassRefPtr<WebCore::SpeechGrammar>&);
-    WebSpeechGrammar& operator=(const WTF::PassRefPtr<WebCore::SpeechGrammar>&);
+    explicit WebSpeechGrammar(WebCore::SpeechGrammar*);
+    WebSpeechGrammar& operator=(WebCore::SpeechGrammar*);
 #endif
 
 private:

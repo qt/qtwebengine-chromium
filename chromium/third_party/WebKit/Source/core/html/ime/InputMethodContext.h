@@ -42,20 +42,21 @@
 
 namespace WebCore {
 
-class Composition;
 class ExecutionContext;
 class InputMethodController;
 class Node;
 
-class InputMethodContext : public ScriptWrappable, public EventTargetWithInlineData {
+class InputMethodContext FINAL : public NoBaseWillBeRefCountedGarbageCollected<InputMethodContext>, public ScriptWrappable, public EventTargetWithInlineData {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(InputMethodContext);
 public:
-    static PassOwnPtr<InputMethodContext> create(HTMLElement*);
-    ~InputMethodContext();
+    static PassOwnPtrWillBeRawPtr<InputMethodContext> create(HTMLElement*);
+    virtual ~InputMethodContext();
 
+#if !ENABLE(OILPAN)
     void ref() { m_element->ref(); }
     void deref() { m_element->deref(); }
+#endif
 
-    Composition* composition();
     String locale() const;
     HTMLElement* target() const;
     unsigned compositionStartOffset();
@@ -78,17 +79,20 @@ public:
     void dispatchCandidateWindowUpdateEvent();
     void dispatchCandidateWindowHideEvent();
 
+    virtual void trace(Visitor*) OVERRIDE;
+
 private:
     InputMethodContext(HTMLElement*);
     bool hasFocus() const;
     CompositionUnderline selectedSegment() const;
     InputMethodController& inputMethodController() const;
 
+#if !ENABLE(OILPAN)
     virtual void refEventTarget() OVERRIDE { ref(); }
     virtual void derefEventTarget() OVERRIDE { deref(); }
+#endif
 
-    HTMLElement* m_element;
-    OwnPtr<Composition> m_composition;
+    RawPtrWillBeMember<HTMLElement> m_element;
     Vector<unsigned> m_segments;
 };
 

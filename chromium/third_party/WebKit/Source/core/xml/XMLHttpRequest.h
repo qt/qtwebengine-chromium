@@ -26,11 +26,11 @@
 #include "bindings/v8/ScriptWrappable.h"
 #include "core/dom/ActiveDOMObject.h"
 #include "core/events/EventListener.h"
-#include "core/events/ThreadLocalEventNames.h"
 #include "core/loader/ThreadableLoaderClient.h"
 #include "core/xml/XMLHttpRequestEventTarget.h"
 #include "core/xml/XMLHttpRequestProgressEventThrottle.h"
 #include "platform/AsyncMethodRunner.h"
+#include "platform/heap/Handle.h"
 #include "platform/network/FormData.h"
 #include "platform/network/ResourceResponse.h"
 #include "platform/weborigin/SecurityOrigin.h"
@@ -53,12 +53,18 @@ class ThreadableLoader;
 
 typedef int ExceptionCode;
 
-class XMLHttpRequest : public ScriptWrappable, public RefCounted<XMLHttpRequest>, public XMLHttpRequestEventTarget, private ThreadableLoaderClient, public ActiveDOMObject {
-    WTF_MAKE_FAST_ALLOCATED;
+class XMLHttpRequest FINAL
+    : public RefCountedWillBeRefCountedGarbageCollected<XMLHttpRequest>
+    , public ScriptWrappable
+    , public XMLHttpRequestEventTarget
+    , private ThreadableLoaderClient
+    , public ActiveDOMObject {
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
     REFCOUNTED_EVENT_TARGET(XMLHttpRequest);
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(XMLHttpRequest);
 public:
-    static PassRefPtr<XMLHttpRequest> create(ExecutionContext*, PassRefPtr<SecurityOrigin> = 0);
-    ~XMLHttpRequest();
+    static PassRefPtrWillBeRawPtr<XMLHttpRequest> create(ExecutionContext*, PassRefPtr<SecurityOrigin> = nullptr);
+    virtual ~XMLHttpRequest();
 
     // These exact numeric values are important because JS expects them.
     enum State {
@@ -84,10 +90,10 @@ public:
         DropProtectionAsync,
     };
 
-    virtual void contextDestroyed();
-    virtual void suspend();
-    virtual void resume();
-    virtual void stop();
+    virtual void contextDestroyed() OVERRIDE;
+    virtual void suspend() OVERRIDE;
+    virtual void resume() OVERRIDE;
+    virtual void stop() OVERRIDE;
 
     virtual const AtomicString& interfaceName() const OVERRIDE;
     virtual ExecutionContext* executionContext() const OVERRIDE;
@@ -133,6 +139,8 @@ public:
     String responseType();
     ResponseTypeCode responseTypeCode() const { return m_responseTypeCode; }
 
+    String responseURL();
+
     // response attribute has custom getter.
     ArrayBuffer* responseArrayBuffer();
 
@@ -143,21 +151,23 @@ public:
 
     DEFINE_ATTRIBUTE_EVENT_LISTENER(readystatechange);
 
+    virtual void trace(Visitor*) OVERRIDE;
+
 private:
     XMLHttpRequest(ExecutionContext*, PassRefPtr<SecurityOrigin>);
 
     Document* document() const;
     SecurityOrigin* securityOrigin() const;
 
-    virtual void didSendData(unsigned long long bytesSent, unsigned long long totalBytesToBeSent);
-    virtual void didReceiveResponse(unsigned long identifier, const ResourceResponse&);
-    virtual void didReceiveData(const char* data, int dataLength);
-    // When "blob" is specified as the responseType attribute, didDownloadData
-    // is called instead of didReceiveData.
-    virtual void didDownloadData(int dataLength);
-    virtual void didFinishLoading(unsigned long identifier, double finishTime);
-    virtual void didFail(const ResourceError&);
-    virtual void didFailRedirectCheck();
+    virtual void didSendData(unsigned long long bytesSent, unsigned long long totalBytesToBeSent) OVERRIDE;
+    virtual void didReceiveResponse(unsigned long identifier, const ResourceResponse&) OVERRIDE;
+    virtual void didReceiveData(const char* data, int dataLength) OVERRIDE;
+    // When responseType is set to "blob", didDownloadData() is called instead
+    // of didReceiveData().
+    virtual void didDownloadData(int dataLength) OVERRIDE;
+    virtual void didFinishLoading(unsigned long identifier, double finishTime) OVERRIDE;
+    virtual void didFail(const ResourceError&) OVERRIDE;
+    virtual void didFailRedirectCheck() OVERRIDE;
 
     AtomicString responseMIMEType() const;
     bool responseIsXML() const;
@@ -186,17 +196,13 @@ private:
     void clearResponse();
     void clearRequest();
 
-    void createRequest(ExceptionState&);
+    void createRequest(PassRefPtr<FormData>, ExceptionState&);
 
-    // Dispatches an event of the specified type to m_progressEventThrottle.
-    void dispatchEventAndLoadEnd(const AtomicString&, long long, long long);
-
-    // Dispatches a response progress event to m_progressEventThrottle.
-    void dispatchThrottledProgressEvent(const AtomicString&, long long, long long);
-
-    // Dispatches a response progress event using values sampled from
+    // Dispatches a response ProgressEvent.
+    void dispatchProgressEvent(const AtomicString&, long long, long long);
+    // Dispatches a response ProgressEvent using values sampled from
     // m_receivedLength and m_response.
-    void dispatchThrottledProgressEventSnapshot(const AtomicString&);
+    void dispatchProgressEventFromSnapshot(const AtomicString&);
 
     // Does clean up common for all kind of didFail() call.
     void handleDidFailGeneric();
@@ -209,18 +215,17 @@ private:
 
     void handleRequestError(ExceptionCode, const AtomicString&, long long, long long);
 
-    OwnPtr<XMLHttpRequestUpload> m_upload;
+    OwnPtrWillBeMember<XMLHttpRequestUpload> m_upload;
 
     KURL m_url;
     AtomicString m_method;
     HTTPHeaderMap m_requestHeaders;
-    RefPtr<FormData> m_requestEntityBody;
     AtomicString m_mimeTypeOverride;
     bool m_async;
     bool m_includeCredentials;
     unsigned long m_timeoutMilliseconds;
-    RefPtr<Blob> m_responseBlob;
-    RefPtr<Stream> m_responseStream;
+    RefPtrWillBeMember<Blob> m_responseBlob;
+    RefPtrWillBeMember<Stream> m_responseStream;
 
     RefPtr<ThreadableLoader> m_loader;
     State m_state;
@@ -234,10 +239,11 @@ private:
     // Used to skip m_responseDocument creation if it's done previously. We need
     // this separate flag since m_responseDocument can be 0 for some cases.
     bool m_createdDocument;
-    RefPtr<Document> m_responseDocument;
+    RefPtrWillBeMember<Document> m_responseDocument;
 
     RefPtr<SharedBuffer> m_binaryResponseBuilder;
     long long m_downloadedBlobLength;
+
     RefPtr<ArrayBuffer> m_responseArrayBuffer;
 
     bool m_error;

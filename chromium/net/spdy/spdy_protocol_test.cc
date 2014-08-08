@@ -10,13 +10,14 @@
 #include "base/memory/scoped_ptr.h"
 #include "net/spdy/spdy_bitmasks.h"
 #include "net/spdy/spdy_framer.h"
+#include "net/test/gtest_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace {
 
 enum SpdyProtocolTestTypes {
-  SPDY2 = 2,
-  SPDY3 = 3,
+  SPDY2 = net::SPDY2,
+  SPDY3 = net::SPDY3,
 };
 
 }  // namespace
@@ -27,11 +28,11 @@ class SpdyProtocolTest
     : public ::testing::TestWithParam<SpdyProtocolTestTypes> {
  protected:
   virtual void SetUp() {
-    spdy_version_ = GetParam();
+    spdy_version_ = static_cast<SpdyMajorVersion>(GetParam());
   }
 
   // Version of SPDY protocol to be used.
-  int spdy_version_;
+  SpdyMajorVersion spdy_version_;
 };
 
 // All tests are run with two different SPDY versions: SPDY/2 and SPDY/3.
@@ -40,6 +41,7 @@ INSTANTIATE_TEST_CASE_P(SpdyProtocolTests,
                         ::testing::Values(SPDY2, SPDY3));
 
 // Test our protocol constants
+// TODO(hkhalil): Remove this test once we no longer rely on exact values.
 TEST_P(SpdyProtocolTest, ProtocolConstants) {
   EXPECT_EQ(1, SYN_STREAM);
   EXPECT_EQ(2, SYN_REPLY);
@@ -53,7 +55,10 @@ TEST_P(SpdyProtocolTest, ProtocolConstants) {
   EXPECT_EQ(10, CREDENTIAL);
   EXPECT_EQ(11, BLOCKED);
   EXPECT_EQ(12, PUSH_PROMISE);
-  EXPECT_EQ(12, LAST_CONTROL_TYPE);
+  EXPECT_EQ(13, CONTINUATION);
+  EXPECT_EQ(14, ALTSVC);
+  EXPECT_EQ(15, PRIORITY);
+  EXPECT_EQ(15, LAST_CONTROL_TYPE);
   EXPECT_EQ(std::numeric_limits<int32>::max(), kSpdyMaximumWindowSize);
 }
 
@@ -64,21 +69,16 @@ INSTANTIATE_TEST_CASE_P(SpdyProtocolDeathTests,
                         SpdyProtocolDeathTest,
                         ::testing::Values(SPDY2, SPDY3));
 
-#if GTEST_HAS_DEATH_TEST && !defined(NDEBUG)
 TEST_P(SpdyProtocolDeathTest, TestSpdySettingsAndIdOutOfBounds) {
   scoped_ptr<SettingsFlagsAndId> flags_and_id;
 
-  EXPECT_DEBUG_DEATH(
-      {
-        flags_and_id.reset(new SettingsFlagsAndId(1, ~0));
-      },
-      "SPDY setting ID too large.");
+  EXPECT_DFATAL(flags_and_id.reset(new SettingsFlagsAndId(1, ~0)),
+                "SPDY setting ID too large.");
   // Make sure that we get expected values in opt mode.
   if (flags_and_id.get() != NULL) {
     EXPECT_EQ(1, flags_and_id->flags());
     EXPECT_EQ(static_cast<SpdyPingId>(0xffffff), flags_and_id->id());
   }
 }
-#endif  // GTEST_HAS_DEATH_TEST && !defined(NDEBUG)
 
 }  // namespace net

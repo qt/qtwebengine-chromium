@@ -34,7 +34,7 @@ namespace webrtc {
 enum { kViEMinKeyRequestIntervalMs = 300 };
 
 // ViEBase
-enum { kViEMaxNumberOfChannels = 32 };
+enum { kViEMaxNumberOfChannels = 64 };
 enum { kViEVersionMaxMessageSize = 1024 };
 enum { kViEMaxModuleVersionSize = 960 };
 
@@ -50,14 +50,6 @@ enum { kViEMaxCodecWidth = 4096 };
 enum { kViEMaxCodecHeight = 3072 };
 enum { kViEMaxCodecFramerate = 60 };
 enum { kViEMinCodecBitrate = 30 };
-
-// ViEEncryption
-enum { kViEMaxSrtpKeyLength = 30 };
-enum { kViEMinSrtpEncryptLength = 16 };
-enum { kViEMaxSrtpEncryptLength = 256 };
-enum { kViEMaxSrtpAuthSh1Length = 20 };
-enum { kViEMaxSrtpTagAuthNullLength = 12 };
-enum { kViEMaxSrtpKeyAuthNullLength = 256 };
 
 // ViENetwork
 enum { kViEMaxMtu = 1500 };

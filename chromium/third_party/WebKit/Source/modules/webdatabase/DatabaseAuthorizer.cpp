@@ -33,9 +33,9 @@
 
 namespace WebCore {
 
-PassRefPtr<DatabaseAuthorizer> DatabaseAuthorizer::create(const String& databaseInfoTableName)
+PassRefPtrWillBeRawPtr<DatabaseAuthorizer> DatabaseAuthorizer::create(const String& databaseInfoTableName)
 {
-    return adoptRef(new DatabaseAuthorizer(databaseInfoTableName));
+    return adoptRefWillBeNoop(new DatabaseAuthorizer(databaseInfoTableName));
 }
 
 DatabaseAuthorizer::DatabaseAuthorizer(const String& databaseInfoTableName)
@@ -393,11 +393,6 @@ void DatabaseAuthorizer::enable()
 bool DatabaseAuthorizer::allowWrite()
 {
     return !(m_securityEnabled && (m_permissions & ReadOnlyMask || m_permissions & NoAccessMask));
-}
-
-void DatabaseAuthorizer::setReadOnly()
-{
-    m_permissions |= ReadOnlyMask;
 }
 
 void DatabaseAuthorizer::setPermissions(int permissions)

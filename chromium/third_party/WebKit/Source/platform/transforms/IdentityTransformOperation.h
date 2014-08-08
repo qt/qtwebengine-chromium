@@ -36,18 +36,23 @@ public:
         return adoptRef(new IdentityTransformOperation());
     }
 
+    virtual bool canBlendWith(const TransformOperation& other) const
+    {
+        return isSameType(other);
+    }
+
 private:
-    virtual bool isIdentity() const { return true; }
+    virtual bool isIdentity() const OVERRIDE FINAL { return true; }
     virtual OperationType type() const OVERRIDE { return Identity; }
 
-    virtual bool operator==(const TransformOperation& o) const
+    virtual bool operator==(const TransformOperation& o) const OVERRIDE
     {
         return isSameType(o);
     }
 
-    virtual void apply(TransformationMatrix&, const FloatSize&) const { }
+    virtual void apply(TransformationMatrix&, const FloatSize&) const OVERRIDE { }
 
-    virtual PassRefPtr<TransformOperation> blend(const TransformOperation*, double, bool = false)
+    virtual PassRefPtr<TransformOperation> blend(const TransformOperation*, double, bool = false) OVERRIDE
     {
         return this;
     }

@@ -32,17 +32,18 @@
 
 #include "bindings/v8/V8NPObject.h"
 
-#include "V8HTMLAppletElement.h"
-#include "V8HTMLEmbedElement.h"
-#include "V8HTMLObjectElement.h"
+#include "bindings/core/v8/V8HTMLAppletElement.h"
+#include "bindings/core/v8/V8HTMLEmbedElement.h"
+#include "bindings/core/v8/V8HTMLObjectElement.h"
 #include "bindings/v8/NPV8Object.h"
-#include "bindings/v8/UnsafePersistent.h"
 #include "bindings/v8/V8Binding.h"
 #include "bindings/v8/V8NPUtils.h"
 #include "bindings/v8/V8ObjectConstructor.h"
+#include "bindings/v8/V8PersistentValueMap.h"
 #include "bindings/v8/npruntime_impl.h"
 #include "bindings/v8/npruntime_priv.h"
 #include "core/html/HTMLPlugInElement.h"
+#include "v8-util.h"
 #include "wtf/OwnPtr.h"
 
 namespace WebCore {
@@ -69,21 +70,18 @@ struct IdentifierRep {
 static void npObjectInvokeImpl(const v8::FunctionCallbackInfo<v8::Value>& info, InvokeFunctionType functionId)
 {
     NPObject* npObject;
+    v8::Isolate* isolate = info.GetIsolate();
 
-    WrapperWorldType currentWorldType = worldType(info.GetIsolate());
     // These three types are subtypes of HTMLPlugInElement.
-    if (V8HTMLAppletElement::hasInstance(info.Holder(), info.GetIsolate(), currentWorldType) || V8HTMLEmbedElement::hasInstance(info.Holder(), info.GetIsolate(), currentWorldType)
-        || V8HTMLObjectElement::hasInstance(info.Holder(), info.GetIsolate(), currentWorldType)) {
-        // The holder object is a subtype of HTMLPlugInElement.
-        HTMLPlugInElement* element;
-        if (V8HTMLAppletElement::hasInstance(info.Holder(), info.GetIsolate(), currentWorldType))
-            element = V8HTMLAppletElement::toNative(info.Holder());
-        else if (V8HTMLEmbedElement::hasInstance(info.Holder(), info.GetIsolate(), currentWorldType))
-            element = V8HTMLEmbedElement::toNative(info.Holder());
-        else
-            element = V8HTMLObjectElement::toNative(info.Holder());
+    HTMLPlugInElement* element = V8HTMLAppletElement::toNativeWithTypeCheck(isolate, info.Holder());
+    if (!element) {
+        element = V8HTMLEmbedElement::toNativeWithTypeCheck(isolate, info.Holder());
+        if (!element) {
+            element = V8HTMLObjectElement::toNativeWithTypeCheck(isolate, info.Holder());
+        }
+    }
+    if (element) {
         if (RefPtr<SharedPersistent<v8::Object> > wrapper = element->pluginWrapper()) {
-            v8::Isolate* isolate = v8::Isolate::GetCurrent();
             v8::HandleScope handleScope(isolate);
             npObject = v8ObjectToNPObject(wrapper->newLocal(isolate));
         } else
@@ -101,7 +99,7 @@ static void npObjectInvokeImpl(const v8::FunctionCallbackInfo<v8::Value>& info, 
 
     // Verify that our wrapper wasn't using a NPObject which has already been deleted.
     if (!npObject || !_NPN_IsAlive(npObject)) {
-        throwError(v8ReferenceError, "NPObject deleted", info.GetIsolate());
+        throwError(v8ReferenceError, "NPObject deleted", isolate);
         return;
     }
 
@@ -110,7 +108,7 @@ static void npObjectInvokeImpl(const v8::FunctionCallbackInfo<v8::Value>& info, 
     OwnPtr<NPVariant[]> npArgs = adoptArrayPtr(new NPVariant[numArgs]);
 
     for (int i = 0; i < numArgs; i++)
-        convertV8ObjectToNPVariant(info[i], npObject, &npArgs[i], info.GetIsolate());
+        convertV8ObjectToNPVariant(info[i], npObject, &npArgs[i], isolate);
 
     NPVariant result;
     VOID_TO_NPVARIANT(result);
@@ -137,7 +135,7 @@ static void npObjectInvokeImpl(const v8::FunctionCallbackInfo<v8::Value>& info, 
     }
 
     if (!retval)
-        throwError(v8GeneralError, "Error calling method on NPObject.", info.GetIsolate());
+        throwError(v8GeneralError, "Error calling method on NPObject.", isolate);
 
     for (int i = 0; i < numArgs; i++)
         _NPN_ReleaseVariantValue(&npArgs[i]);
@@ -145,7 +143,7 @@ static void npObjectInvokeImpl(const v8::FunctionCallbackInfo<v8::Value>& info, 
     // Unwrap return values.
     v8::Handle<v8::Value> returnValue;
     if (_NPN_IsAlive(npObject))
-        returnValue = convertNPVariantToV8Object(&result, npObject, info.GetIsolate());
+        returnValue = convertNPVariantToV8Object(&result, npObject, isolate);
     _NPN_ReleaseVariantValue(&result);
 
     v8SetReturnValue(info, returnValue);
@@ -168,53 +166,71 @@ void npObjectInvokeDefaultHandler(const v8::FunctionCallbackInfo<v8::Value>& inf
     npObjectInvokeImpl(info, InvokeDefault);
 }
 
+class V8TemplateMapTraits : public V8PersistentValueMapTraits<PrivateIdentifier*, v8::FunctionTemplate, true> {
+public:
+    typedef v8::PersistentValueMap<PrivateIdentifier*, v8::FunctionTemplate, V8TemplateMapTraits> MapType;
+    typedef PrivateIdentifier WeakCallbackDataType;
+
+    static WeakCallbackDataType* WeakCallbackParameter(MapType* map, PrivateIdentifier* key, const v8::Local<v8::FunctionTemplate>& value)
+    {
+        return key;
+    }
+
+    static void DisposeCallbackData(WeakCallbackDataType* callbackData) { }
+
+    static MapType* MapFromWeakCallbackData(
+        const v8::WeakCallbackData<v8::FunctionTemplate, WeakCallbackDataType>&);
+
+    static PrivateIdentifier* KeyFromWeakCallbackData(
+        const v8::WeakCallbackData<v8::FunctionTemplate, WeakCallbackDataType>& data)
+    {
+        return data.GetParameter();
+    }
+
+    // Dispose traits:
+    static void Dispose(v8::Isolate* isolate, v8::UniquePersistent<v8::FunctionTemplate> value, PrivateIdentifier* key) { }
+};
+
+
 class V8NPTemplateMap {
 public:
     // NPIdentifier is PrivateIdentifier*.
-    typedef HashMap<PrivateIdentifier*, UnsafePersistent<v8::FunctionTemplate> > MapType;
+    typedef v8::PersistentValueMap<PrivateIdentifier*, v8::FunctionTemplate, V8TemplateMapTraits> MapType;
 
-    UnsafePersistent<v8::FunctionTemplate> get(PrivateIdentifier* key)
+    v8::Local<v8::FunctionTemplate> get(PrivateIdentifier* key)
     {
-        return m_map.get(key);
+        return m_map.Get(key);
     }
 
     void set(PrivateIdentifier* key, v8::Handle<v8::FunctionTemplate> handle)
     {
-        ASSERT(!m_map.contains(key));
-        v8::Persistent<v8::FunctionTemplate> wrapper(m_isolate, handle);
-        wrapper.SetWeak(key, &setWeakCallback);
-        m_map.set(key, UnsafePersistent<v8::FunctionTemplate>(wrapper));
+        ASSERT(!m_map.Contains(key));
+        m_map.Set(key, handle);
     }
 
     static V8NPTemplateMap& sharedInstance(v8::Isolate* isolate)
     {
         DEFINE_STATIC_LOCAL(V8NPTemplateMap, map, (isolate));
-        ASSERT(isolate == map.m_isolate);
+        ASSERT(isolate == map.m_map.GetIsolate());
         return map;
     }
 
+    friend class V8TemplateMapTraits;
+
 private:
     explicit V8NPTemplateMap(v8::Isolate* isolate)
-        : m_isolate(isolate)
+        : m_map(isolate)
     {
-    }
-
-    void clear(PrivateIdentifier* key)
-    {
-        MapType::iterator it = m_map.find(key);
-        ASSERT_WITH_SECURITY_IMPLICATION(it != m_map.end());
-        it->value.dispose();
-        m_map.remove(it);
-    }
-
-    static void setWeakCallback(const v8::WeakCallbackData<v8::FunctionTemplate, PrivateIdentifier>& data)
-    {
-        V8NPTemplateMap::sharedInstance(data.GetIsolate()).clear(data.GetParameter());
     }
 
     MapType m_map;
-    v8::Isolate* m_isolate;
 };
+
+V8TemplateMapTraits::MapType* V8TemplateMapTraits::MapFromWeakCallbackData(const v8::WeakCallbackData<v8::FunctionTemplate, WeakCallbackDataType>& data)
+{
+    return &V8NPTemplateMap::sharedInstance(data.GetIsolate()).m_map;
+}
+
 
 static v8::Handle<v8::Value> npObjectGetProperty(v8::Local<v8::Object> self, NPIdentifier identifier, v8::Local<v8::Value> key, v8::Isolate* isolate)
 {
@@ -251,19 +267,15 @@ static v8::Handle<v8::Value> npObjectGetProperty(v8::Local<v8::Object> self, NPI
             return throwError(v8ReferenceError, "NPObject deleted", isolate);
 
         PrivateIdentifier* id = static_cast<PrivateIdentifier*>(identifier);
-        UnsafePersistent<v8::FunctionTemplate> functionTemplate = V8NPTemplateMap::sharedInstance(isolate).get(id);
-        // FunctionTemplate caches function for each context.
-        v8::Local<v8::Function> v8Function;
+        v8::Local<v8::FunctionTemplate> functionTemplate = V8NPTemplateMap::sharedInstance(isolate).get(id);
         // Cache templates using identifier as the key.
-        if (functionTemplate.isEmpty()) {
+        if (functionTemplate.IsEmpty()) {
             // Create a new template.
-            v8::Local<v8::FunctionTemplate> temp = v8::FunctionTemplate::New(isolate);
-            temp->SetCallHandler(npObjectMethodHandler, key);
-            V8NPTemplateMap::sharedInstance(isolate).set(id, temp);
-            v8Function = temp->GetFunction();
-        } else {
-            v8Function = functionTemplate.newLocal(isolate)->GetFunction();
+            functionTemplate = v8::FunctionTemplate::New(isolate);
+            functionTemplate->SetCallHandler(npObjectMethodHandler, key);
+            V8NPTemplateMap::sharedInstance(isolate).set(id, functionTemplate);
         }
+        v8::Local<v8::Function> v8Function = functionTemplate->GetFunction();
         v8Function->SetName(v8::Handle<v8::String>::Cast(key));
         return v8Function;
     }
@@ -367,13 +379,22 @@ void npObjectPropertyEnumerator(const v8::PropertyCallbackInfo<v8::Array>& info,
         uint32_t count;
         NPIdentifier* identifiers;
         if (npObject->_class->enumerate(npObject, &identifiers, &count)) {
-            v8::Handle<v8::Array> properties = v8::Array::New(info.GetIsolate(), count);
+            uint32_t propertiesCount = 0;
             for (uint32_t i = 0; i < count; ++i) {
                 IdentifierRep* identifier = static_cast<IdentifierRep*>(identifiers[i]);
-                if (namedProperty)
-                    properties->Set(v8::Integer::New(i, info.GetIsolate()), v8AtomicString(info.GetIsolate(), identifier->string()));
-                else
-                    properties->Set(v8::Integer::New(i, info.GetIsolate()), v8::Integer::New(identifier->number(), info.GetIsolate()));
+                if (namedProperty == identifier->m_isString)
+                    ++propertiesCount;
+            }
+            v8::Handle<v8::Array> properties = v8::Array::New(info.GetIsolate(), propertiesCount);
+            for (uint32_t i = 0, propertyIndex = 0; i < count; ++i) {
+                IdentifierRep* identifier = static_cast<IdentifierRep*>(identifiers[i]);
+                if (namedProperty == identifier->m_isString) {
+                    ASSERT(propertyIndex < propertiesCount);
+                    if (namedProperty)
+                        properties->Set(v8::Integer::New(info.GetIsolate(), propertyIndex++), v8AtomicString(info.GetIsolate(), identifier->string()));
+                    else
+                        properties->Set(v8::Integer::New(info.GetIsolate(), propertyIndex++), v8::Integer::New(info.GetIsolate(), identifier->number()));
+                }
             }
 
             v8SetReturnValue(info, properties);
@@ -398,18 +419,13 @@ static DOMWrapperMap<NPObject>& staticNPObjectMap()
     return npObjectMap;
 }
 
-template<>
-inline void DOMWrapperMap<NPObject>::setWeakCallback(const v8::WeakCallbackData<v8::Object, DOMWrapperMap<NPObject> >& data)
+template <>
+inline void DOMWrapperMap<NPObject>::PersistentValueMapTraits::Dispose(
+    v8::Isolate* isolate,
+    v8::UniquePersistent<v8::Object> value,
+    NPObject* npObject)
 {
-    NPObject* npObject = static_cast<NPObject*>(toNative(data.GetValue()));
-
     ASSERT(npObject);
-    ASSERT(staticNPObjectMap().containsKeyAndValue(npObject, data.GetValue()));
-
-    // Must remove from our map before calling _NPN_ReleaseObject(). _NPN_ReleaseObject can
-    // call forgetV8ObjectForNPObject, which uses the table as well.
-    staticNPObjectMap().removeAndDispose(npObject);
-
     if (_NPN_IsAlive(npObject))
         _NPN_ReleaseObject(npObject);
 }
@@ -447,7 +463,7 @@ v8::Local<v8::Object> createV8ObjectForNPObject(NPObject* object, NPObject* root
     // V8DOMWrapper::associateObjectWithWrapper()
     // to create a wrapper object.
     v8::Handle<v8::Function> v8Function = npObjectDesc.Get(isolate)->GetFunction();
-    v8::Local<v8::Object> value = V8ObjectConstructor::newInstance(v8Function);
+    v8::Local<v8::Object> value = V8ObjectConstructor::newInstance(isolate, v8Function);
     if (value.IsEmpty())
         return value;
 
@@ -459,7 +475,7 @@ v8::Local<v8::Object> createV8ObjectForNPObject(NPObject* object, NPObject* root
 
     WrapperConfiguration configuration = buildWrapperConfiguration(object, WrapperConfiguration::Dependent);
     staticNPObjectMap().set(object, value, configuration);
-    ASSERT(V8DOMWrapper::maybeDOMWrapper(value));
+    ASSERT(V8DOMWrapper::isDOMWrapper(value));
     return value;
 }
 

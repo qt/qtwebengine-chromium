@@ -31,9 +31,11 @@
 #ifndef GraphicsContextRecorder_h
 #define GraphicsContextRecorder_h
 
+#include "platform/JSONValues.h"
 #include "platform/PlatformExport.h"
 #include "platform/graphics/GraphicsContext.h"
 #include "third_party/skia/include/core/SkPicture.h"
+#include "third_party/skia/include/core/SkPictureRecorder.h"
 #include "wtf/RefCounted.h"
 
 namespace WebCore {
@@ -43,8 +45,11 @@ WTF_MAKE_NONCOPYABLE(GraphicsContextSnapshot);
 public:
     typedef Vector<Vector<double> > Timings;
 
+    static PassRefPtr<GraphicsContextSnapshot> load(const char*, size_t);
+
     PassOwnPtr<ImageBuffer> replay(unsigned fromStep = 0, unsigned toStep = 0) const;
     PassOwnPtr<Timings> profile(unsigned minIterations, double minDuration) const;
+    PassRefPtr<JSONArray> snapshotCommandLog() const;
 
 private:
     friend class GraphicsContextRecorder;
@@ -66,6 +71,7 @@ public:
 private:
     RefPtr<SkPicture> m_picture;
     OwnPtr<GraphicsContext> m_context;
+    OwnPtr<SkPictureRecorder> m_recorder;
     bool m_isCertainlyOpaque;
 };
 

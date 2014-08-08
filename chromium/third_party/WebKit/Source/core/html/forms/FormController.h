@@ -22,7 +22,8 @@
 #ifndef FormController_h
 #define FormController_h
 
-#include "core/html/forms/CheckedRadioButtons.h"
+#include "core/html/forms/RadioButtonGroupScope.h"
+#include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
 #include "wtf/ListHashSet.h"
 #include "wtf/Vector.h"
@@ -71,21 +72,39 @@ inline void FormControlState::append(const String& value)
     m_values.append(value);
 }
 
-class FormController {
-    WTF_MAKE_FAST_ALLOCATED;
+typedef HashMap<AtomicString, OwnPtr<SavedFormState> > SavedFormStateMap;
+
+class DocumentState FINAL : public RefCountedWillBeGarbageCollected<DocumentState> {
+    DECLARE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(DocumentState);
 public:
-    static PassOwnPtr<FormController> create()
+    static PassRefPtrWillBeRawPtr<DocumentState> create();
+    void trace(Visitor*);
+
+    void addControl(HTMLFormControlElementWithState*);
+    void removeControl(HTMLFormControlElementWithState*);
+    Vector<String> toStateVector();
+
+private:
+    typedef WillBeHeapListHashSet<RefPtrWillBeMember<HTMLFormControlElementWithState>, 64> FormElementListHashSet;
+    FormElementListHashSet m_formControls;
+};
+
+class FormController FINAL : public NoBaseWillBeGarbageCollectedFinalized<FormController> {
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+public:
+    static PassOwnPtrWillBeRawPtr<FormController> create()
     {
-        return adoptPtr(new FormController);
+        return adoptPtrWillBeNoop(new FormController);
     }
     ~FormController();
+    void trace(Visitor*);
 
-    CheckedRadioButtons& checkedRadioButtons() { return m_checkedRadioButtons; }
+    RadioButtonGroupScope& radioButtonGroupScope() { return m_radioButtonGroupScope; }
 
-    void registerFormElementWithState(HTMLFormControlElementWithState*);
-    void unregisterFormElementWithState(HTMLFormControlElementWithState*);
+    void registerStatefulFormControl(HTMLFormControlElementWithState&);
+    void unregisterStatefulFormControl(HTMLFormControlElementWithState&);
     // This should be callled only by Document::formElementsState().
-    Vector<String> formElementsState() const;
+    DocumentState* formElementsState() const;
     // This should be callled only by Document::setStateForNewFormElements().
     void setStateForNewFormElements(const Vector<String>&);
     void willDeleteForm(HTMLFormElement*);
@@ -95,18 +114,14 @@ public:
     static Vector<String> getReferencedFilePaths(const Vector<String>& stateVector);
 
 private:
-    typedef ListHashSet<RefPtr<HTMLFormControlElementWithState>, 64> FormElementListHashSet;
-    typedef HashMap<AtomicString, OwnPtr<SavedFormState> > SavedFormStateMap;
-
     FormController();
-    static PassOwnPtr<SavedFormStateMap> createSavedFormStateMap(const FormElementListHashSet&);
     FormControlState takeStateForFormElement(const HTMLFormControlElementWithState&);
     static void formStatesFromStateVector(const Vector<String>&, SavedFormStateMap&);
 
-    CheckedRadioButtons m_checkedRadioButtons;
-    FormElementListHashSet m_formElementsWithState;
+    RadioButtonGroupScope m_radioButtonGroupScope;
+    RefPtrWillBeMember<DocumentState> m_documentState;
     SavedFormStateMap m_savedFormStateMap;
-    OwnPtr<FormKeyGenerator> m_formKeyGenerator;
+    OwnPtrWillBeMember<FormKeyGenerator> m_formKeyGenerator;
 };
 
 } // namespace WebCore

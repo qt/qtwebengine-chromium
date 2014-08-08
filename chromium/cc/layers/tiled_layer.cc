@@ -10,13 +10,13 @@
 #include "base/auto_reset.h"
 #include "base/basictypes.h"
 #include "build/build_config.h"
-#include "cc/debug/overdraw_metrics.h"
 #include "cc/layers/layer_impl.h"
 #include "cc/layers/tiled_layer_impl.h"
 #include "cc/resources/layer_updater.h"
 #include "cc/resources/prioritized_resource.h"
 #include "cc/resources/priority_calculator.h"
 #include "cc/trees/layer_tree_host.h"
+#include "cc/trees/occlusion_tracker.h"
 #include "third_party/khronos/GLES2/gl2.h"
 #include "ui/gfx/rect_conversions.h"
 
@@ -142,23 +142,24 @@ void TiledLayer::UpdateTileSizeAndTilingOption() {
 }
 
 void TiledLayer::UpdateBounds() {
-  gfx::Size old_bounds = tiler_->bounds();
-  gfx::Size new_bounds = content_bounds();
-  if (old_bounds == new_bounds)
+  gfx::Rect old_tiling_rect = tiler_->tiling_rect();
+  gfx::Rect new_tiling_rect = gfx::Rect(content_bounds());
+  if (old_tiling_rect == new_tiling_rect)
     return;
-  tiler_->SetBounds(new_bounds);
+  tiler_->SetTilingRect(new_tiling_rect);
 
   // Invalidate any areas that the new bounds exposes.
-  Region old_region = gfx::Rect(old_bounds);
-  Region new_region = gfx::Rect(new_bounds);
-  new_region.Subtract(old_region);
-  for (Region::Iterator new_rects(new_region);
-       new_rects.has_rect();
+  Region old_region = old_tiling_rect;
+  Region new_region = new_tiling_rect;
+  new_tiling_rect.Subtract(old_tiling_rect);
+  for (Region::Iterator new_rects(new_tiling_rect); new_rects.has_rect();
        new_rects.next())
     InvalidateContentRect(new_rects.rect());
 }
 
-void TiledLayer::SetTileSize(gfx::Size size) { tiler_->SetTileSize(size); }
+void TiledLayer::SetTileSize(const gfx::Size& size) {
+  tiler_->SetTileSize(size);
+}
 
 void TiledLayer::SetBorderTexelOption(
     LayerTilingData::BorderTexelOption border_texel_option) {
@@ -294,7 +295,7 @@ void TiledLayer::SetNeedsDisplayRect(const gfx::RectF& dirty_rect) {
   ContentsScalingLayer::SetNeedsDisplayRect(dirty_rect);
 }
 
-void TiledLayer::InvalidateContentRect(gfx::Rect content_rect) {
+void TiledLayer::InvalidateContentRect(const gfx::Rect& content_rect) {
   UpdateBounds();
   if (tiler_->is_empty() || content_rect.IsEmpty() || skips_draw_)
     return;
@@ -324,7 +325,7 @@ bool TiledLayer::UpdateTiles(int left,
                              int right,
                              int bottom,
                              ResourceUpdateQueue* queue,
-                             const OcclusionTracker* occlusion,
+                             const OcclusionTracker<Layer>* occlusion,
                              bool* updated) {
   CreateUpdaterIfNeeded();
 
@@ -338,9 +339,6 @@ bool TiledLayer::UpdateTiles(int left,
   gfx::Rect paint_rect;
   MarkTilesForUpdate(
     &update_rect, &paint_rect, left, top, right, bottom, ignore_occlusions);
-
-  if (occlusion)
-    occlusion->overdraw_metrics()->DidPaint(paint_rect);
 
   if (paint_rect.IsEmpty())
     return true;
@@ -356,13 +354,7 @@ void TiledLayer::MarkOcclusionsAndRequestTextures(
     int top,
     int right,
     int bottom,
-    const OcclusionTracker* occlusion) {
-  // There is some difficult dependancies between occlusions, recording
-  // occlusion metrics and requesting memory so those are encapsulated in this
-  // function: - We only want to call RequestLate on unoccluded textures (to
-  // preserve memory for other layers when near OOM).  - We only want to record
-  // occlusion metrics if all memory requests succeed.
-
+    const OcclusionTracker<Layer>* occlusion) {
   int occluded_tile_count = 0;
   bool succeeded = true;
   for (int j = top; j <= bottom; ++j) {
@@ -377,10 +369,9 @@ void TiledLayer::MarkOcclusionsAndRequestTextures(
       DCHECK(!tile->occluded);
       gfx::Rect visible_tile_rect = gfx::IntersectRects(
           tiler_->tile_bounds(i, j), visible_content_rect());
-      if (occlusion && occlusion->Occluded(render_target(),
-                                           visible_tile_rect,
-                                           draw_transform(),
-                                           draw_transform_is_animating())) {
+      if (!draw_transform_is_animating() && occlusion &&
+          occlusion->Occluded(
+              render_target(), visible_tile_rect, draw_transform())) {
         tile->occluded = true;
         occluded_tile_count++;
       } else {
@@ -388,11 +379,6 @@ void TiledLayer::MarkOcclusionsAndRequestTextures(
       }
     }
   }
-
-  if (!succeeded)
-    return;
-  if (occlusion)
-    occlusion->overdraw_metrics()->DidCullTilesForUpload(occluded_tile_count);
 }
 
 bool TiledLayer::HaveTexturesForTiles(int left,
@@ -468,14 +454,14 @@ void TiledLayer::MarkTilesForUpdate(gfx::Rect* update_rect,
   }
 }
 
-void TiledLayer::UpdateTileTextures(gfx::Rect update_rect,
-                                    gfx::Rect paint_rect,
+void TiledLayer::UpdateTileTextures(const gfx::Rect& update_rect,
+                                    const gfx::Rect& paint_rect,
                                     int left,
                                     int top,
                                     int right,
                                     int bottom,
                                     ResourceUpdateQueue* queue,
-                                    const OcclusionTracker* occlusion) {
+                                    const OcclusionTracker<Layer>* occlusion) {
   // The update_rect should be in layer space. So we have to convert the
   // paint_rect from content space to layer space.
   float width_scale =
@@ -564,10 +550,6 @@ void TiledLayer::UpdateTileTextures(gfx::Rect update_rect,
 
       tile->updater_resource()->Update(
           queue, source_rect, dest_offset, tile->partial_update);
-      if (occlusion) {
-        occlusion->overdraw_metrics()->
-            DidUpload(gfx::Transform(), source_rect, tile->opaque_rect());
-      }
     }
   }
 }
@@ -593,8 +575,8 @@ namespace {
 // TODO(epenner): Remove this and make this based on distance once distance can
 // be calculated for offscreen layers. For now, prioritize all small animated
 // layers after 512 pixels of pre-painting.
-void SetPriorityForTexture(gfx::Rect visible_rect,
-                           gfx::Rect tile_rect,
+void SetPriorityForTexture(const gfx::Rect& visible_rect,
+                           const gfx::Rect& tile_rect,
                            bool draws_to_root,
                            bool is_small_animated_layer,
                            PrioritizedResource* texture) {
@@ -684,7 +666,7 @@ void TiledLayer::ResetUpdateState() {
 }
 
 namespace {
-gfx::Rect ExpandRectByDelta(gfx::Rect rect, gfx::Vector2d delta) {
+gfx::Rect ExpandRectByDelta(const gfx::Rect& rect, const gfx::Vector2d& delta) {
   int width = rect.width() + std::abs(delta.x());
   int height = rect.height() + std::abs(delta.y());
   int x = rect.x() + ((delta.x() < 0) ? delta.x() : 0);
@@ -730,7 +712,7 @@ void TiledLayer::UpdateScrollPrediction() {
 }
 
 bool TiledLayer::Update(ResourceUpdateQueue* queue,
-                        const OcclusionTracker* occlusion) {
+                        const OcclusionTracker<Layer>* occlusion) {
   DCHECK(!skips_draw_ && !failed_update_);  // Did ResetUpdateState get skipped?
 
   // Tiled layer always causes commits to wait for activation, as it does

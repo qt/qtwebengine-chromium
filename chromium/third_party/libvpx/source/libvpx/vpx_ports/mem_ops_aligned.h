@@ -8,6 +8,10 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
+#ifndef VPX_PORTS_MEM_OPS_ALIGNED_H_
+#define VPX_PORTS_MEM_OPS_ALIGNED_H_
+
+#include "vpx/vpx_integer.h"
 
 /* \file
  * \brief Provides portable memory access primitives for operating on aligned
@@ -155,3 +159,5 @@ mem_put_le_aligned_generic(32)
 #undef swap_endian_32
 #undef swap_endian_16_se
 #undef swap_endian_32_se
+
+#endif  // VPX_PORTS_MEM_OPS_ALIGNED_H_

@@ -37,18 +37,16 @@ UserMediaController::UserMediaController(UserMediaClient* client)
 {
 }
 
-UserMediaController::~UserMediaController()
+DEFINE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(UserMediaController)
+
+PassOwnPtrWillBeRawPtr<UserMediaController> UserMediaController::create(UserMediaClient* client)
 {
+    return adoptPtrWillBeNoop(new UserMediaController(client));
 }
 
-PassOwnPtr<UserMediaController> UserMediaController::create(UserMediaClient* client)
+void provideUserMediaTo(LocalFrame& frame, UserMediaClient* client)
 {
-    return adoptPtr(new UserMediaController(client));
-}
-
-void provideUserMediaTo(Page* page, UserMediaClient* client)
-{
-    UserMediaController::provideTo(page, UserMediaController::supplementName(), UserMediaController::create(client));
+    UserMediaController::provideTo(frame, UserMediaController::supplementName(), UserMediaController::create(client));
 }
 
 } // namespace WebCore

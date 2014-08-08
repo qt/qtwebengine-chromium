@@ -26,92 +26,77 @@
 #include "config.h"
 #include "modules/indexeddb/IDBRequest.h"
 
+#include "bindings/v8/ScriptState.h"
+#include "bindings/v8/V8Binding.h"
 #include "core/dom/DOMError.h"
-#include "core/dom/Document.h"
-#include "core/events/EventQueue.h"
+#include "core/dom/ExecutionContext.h"
+#include "core/testing/NullExecutionContext.h"
 #include "modules/indexeddb/IDBDatabaseCallbacks.h"
+#include "modules/indexeddb/IDBKey.h"
 #include "modules/indexeddb/IDBKeyRange.h"
 #include "modules/indexeddb/IDBOpenDBRequest.h"
 #include "platform/SharedBuffer.h"
+#include "public/platform/WebBlobInfo.h"
 #include "public/platform/WebIDBDatabase.h"
+#include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
+#include "wtf/PassRefPtr.h"
+#include "wtf/Vector.h"
+#include "wtf/dtoa/utils.h"
 #include <gtest/gtest.h>
+#include <v8.h>
 
+using blink::WebBlobInfo;
 using namespace WebCore;
 
 namespace {
 
-class NullEventQueue : public EventQueue {
-public:
-    NullEventQueue() { }
-    virtual ~NullEventQueue() { }
-    virtual bool enqueueEvent(PassRefPtr<Event>) OVERRIDE { return true; }
-    virtual bool cancelEvent(Event*) OVERRIDE { return true; }
-    virtual void close() OVERRIDE { }
-};
-
-class NullExecutionContext : public ExecutionContext, public RefCounted<NullExecutionContext> {
-public:
-    using RefCounted<NullExecutionContext>::ref;
-    using RefCounted<NullExecutionContext>::deref;
-
-    virtual void refExecutionContext() OVERRIDE { ref(); }
-    virtual void derefExecutionContext() OVERRIDE { deref(); }
-    virtual EventQueue* eventQueue() const OVERRIDE { return m_queue.get(); }
-
-    NullExecutionContext();
-private:
-    OwnPtr<EventQueue> m_queue;
-};
-
-NullExecutionContext::NullExecutionContext()
-    : m_queue(adoptPtr(new NullEventQueue()))
-{
-}
-
 class IDBRequestTest : public testing::Test {
 public:
     IDBRequestTest()
-        : m_handleScope(v8::Isolate::GetCurrent())
-        , m_scope(v8::Context::New(v8::Isolate::GetCurrent()))
-        , m_context(adoptRef(new NullExecutionContext()))
+        : m_scope(v8::Isolate::GetCurrent())
+        , m_executionContext(adoptRefWillBeNoop(new NullExecutionContext()))
     {
+        m_scope.scriptState()->setExecutionContext(m_executionContext.get());
     }
 
-    ExecutionContext* executionContext()
+    ~IDBRequestTest()
     {
-        return m_context.get();
+        m_scope.scriptState()->setExecutionContext(0);
     }
+
+    v8::Isolate* isolate() const { return m_scope.isolate(); }
+    ScriptState* scriptState() const { return m_scope.scriptState(); }
+    ExecutionContext* executionContext() const { return m_scope.scriptState()->executionContext(); }
 
 private:
-    v8::HandleScope m_handleScope;
-    v8::Context::Scope m_scope;
-    RefPtr<ExecutionContext> m_context;
+    V8TestingScope m_scope;
+    RefPtrWillBePersistent<ExecutionContext> m_executionContext;
 };
 
 TEST_F(IDBRequestTest, EventsAfterStopping)
 {
     IDBTransaction* transaction = 0;
-    RefPtr<IDBRequest> request = IDBRequest::create(executionContext(), IDBAny::createUndefined(), transaction);
+    IDBRequest* request = IDBRequest::create(scriptState(), IDBAny::createUndefined(), transaction);
     EXPECT_EQ(request->readyState(), "pending");
     executionContext()->stopActiveDOMObjects();
 
     // Ensure none of the following raise assertions in stopped state:
     request->onError(DOMError::create(AbortError, "Description goes here."));
     request->onSuccess(Vector<String>());
-    request->onSuccess(nullptr, IDBKey::createInvalid(), IDBKey::createInvalid(), 0);
+    request->onSuccess(nullptr, IDBKey::createInvalid(), IDBKey::createInvalid(), nullptr, adoptPtr(new Vector<WebBlobInfo>()));
     request->onSuccess(IDBKey::createInvalid());
-    request->onSuccess(PassRefPtr<SharedBuffer>(0));
-    request->onSuccess(PassRefPtr<SharedBuffer>(0), IDBKey::createInvalid(), IDBKeyPath());
-    request->onSuccess(0LL);
+    request->onSuccess(PassRefPtr<SharedBuffer>(nullptr), adoptPtr(new Vector<WebBlobInfo>()));
+    request->onSuccess(PassRefPtr<SharedBuffer>(nullptr), adoptPtr(new Vector<WebBlobInfo>()), IDBKey::createInvalid(), IDBKeyPath());
+    request->onSuccess(static_cast<int64_t>(0));
     request->onSuccess();
-    request->onSuccess(IDBKey::createInvalid(), IDBKey::createInvalid(), 0);
+    request->onSuccess(IDBKey::createInvalid(), IDBKey::createInvalid(), nullptr, adoptPtr(new Vector<WebBlobInfo>()));
 }
 
 TEST_F(IDBRequestTest, AbortErrorAfterAbort)
 {
     IDBTransaction* transaction = 0;
-    RefPtr<IDBRequest> request = IDBRequest::create(executionContext(), IDBAny::createUndefined(), transaction);
+    IDBRequest* request = IDBRequest::create(scriptState(), IDBAny::createUndefined(), transaction);
     EXPECT_EQ(request->readyState(), "pending");
 
     // Simulate the IDBTransaction having received onAbort from back end and aborting the request:
@@ -154,11 +139,11 @@ TEST_F(IDBRequestTest, ConnectionsAfterStopping)
     const int64_t version = 1;
     const int64_t oldVersion = 0;
     const IDBDatabaseMetadata metadata;
-    RefPtr<IDBDatabaseCallbacks> callbacks = IDBDatabaseCallbacks::create();
+    Persistent<IDBDatabaseCallbacks> callbacks = IDBDatabaseCallbacks::create();
 
     {
         OwnPtr<MockWebIDBDatabase> backend = MockWebIDBDatabase::create();
-        RefPtr<IDBOpenDBRequest> request = IDBOpenDBRequest::create(executionContext(), callbacks, transactionId, version);
+        IDBOpenDBRequest* request = IDBOpenDBRequest::create(scriptState(), callbacks, transactionId, version);
         EXPECT_EQ(request->readyState(), "pending");
 
         executionContext()->stopActiveDOMObjects();
@@ -167,7 +152,7 @@ TEST_F(IDBRequestTest, ConnectionsAfterStopping)
 
     {
         OwnPtr<MockWebIDBDatabase> backend = MockWebIDBDatabase::create();
-        RefPtr<IDBOpenDBRequest> request = IDBOpenDBRequest::create(executionContext(), callbacks, transactionId, version);
+        IDBOpenDBRequest* request = IDBOpenDBRequest::create(scriptState(), callbacks, transactionId, version);
         EXPECT_EQ(request->readyState(), "pending");
 
         executionContext()->stopActiveDOMObjects();

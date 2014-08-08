@@ -67,7 +67,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT RecursiveOperationDelegate
   //
   // First, this tries to call ProcessFile with |root| regardless whether it is
   // actually a file or a directory. If it is a directory, ProcessFile should
-  // return PLATFORM_FILE_NOT_A_FILE.
+  // return File::FILE_NOT_A_FILE.
   //
   // For each directory, the recursive operation works as follows:
   // ProcessDirectory is called first for the directory.
@@ -88,7 +88,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT RecursiveOperationDelegate
   //         |
   //         +- b4_file
   // Then traverse order is:
-  // ProcessFile(a_dir) (This should return PLATFORM_FILE_NOT_A_FILE).
+  // ProcessFile(a_dir) (This should return File::FILE_NOT_A_FILE).
   // ProcessDirectory(a_dir).
   // ProcessFile(b3_file), ProcessFile(b4_file). (in parallel).
   // ProcessDirectory(b1_dir).
@@ -103,7 +103,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT RecursiveOperationDelegate
   // PostProcessDirectory(b2_dir)
   // PostProcessDirectory(a_dir)
   //
-  // |callback| is fired with base::PLATFORM_FILE_OK when every file/directory
+  // |callback| is fired with base::File::FILE_OK when every file/directory
   // under |root| is processed, or fired earlier when any suboperation fails.
   void StartRecursiveOperation(const FileSystemURL& root,
                                const StatusCallback& callback);
@@ -121,20 +121,20 @@ class WEBKIT_STORAGE_BROWSER_EXPORT RecursiveOperationDelegate
 
  private:
   void DidTryProcessFile(const FileSystemURL& root,
-                         base::PlatformFileError error);
+                         base::File::Error error);
   void ProcessNextDirectory();
-  void DidProcessDirectory(base::PlatformFileError error);
+  void DidProcessDirectory(base::File::Error error);
   void DidReadDirectory(const FileSystemURL& parent,
-                        base::PlatformFileError error,
+                        base::File::Error error,
                         const FileEntryList& entries,
                         bool has_more);
   void ProcessPendingFiles();
-  void DidProcessFile(base::PlatformFileError error);
+  void DidProcessFile(base::File::Error error);
   void ProcessSubDirectory();
-  void DidPostProcessDirectory(base::PlatformFileError error);
+  void DidPostProcessDirectory(base::File::Error error);
 
   // Called when all recursive operation is done (or an error occurs).
-  void Done(base::PlatformFileError error);
+  void Done(base::File::Error error);
 
   FileSystemContext* file_system_context_;
   StatusCallback callback_;

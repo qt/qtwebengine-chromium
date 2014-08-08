@@ -23,7 +23,7 @@
 #include "config.h"
 #include "core/html/HTMLMenuElement.h"
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 
 namespace WebCore {
 
@@ -35,9 +35,6 @@ inline HTMLMenuElement::HTMLMenuElement(Document& document)
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLMenuElement> HTMLMenuElement::create(Document& document)
-{
-    return adoptRef(new HTMLMenuElement(document));
-}
+DEFINE_NODE_FACTORY(HTMLMenuElement)
 
 }

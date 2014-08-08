@@ -122,7 +122,7 @@ public:
         kEmbeddedBitmapText_Flag  = 0x0004,
         kEmbolden_Flag            = 0x0008,
         kSubpixelPositioning_Flag = 0x0010,
-        kAutohinting_Flag         = 0x0020,
+        kForceAutohinting_Flag    = 0x0020,  // Use auto instead of bytcode hinting if hinting.
         kVertical_Flag            = 0x0040,
 
         // together, these two flags resulting in a two bit value which matches
@@ -184,6 +184,17 @@ public:
     void        getPath(const SkGlyph&, SkPath*);
     void        getFontMetrics(SkPaint::FontMetrics*);
 
+    /** Return the size in bytes of the associated gamma lookup table
+     */
+    static size_t GetGammaLUTSize(SkScalar contrast, SkScalar paintGamma, SkScalar deviceGamma,
+                                  int* width, int* height);
+
+    /** Get the associated gamma lookup table. The 'data' pointer must point to pre-allocated
+        memory, with size in bytes greater than or equal to the return value of getGammaLUTSize().
+     */
+    static void   GetGammaLUTData(SkScalar contrast, SkScalar paintGamma, SkScalar deviceGamma,
+                                  void* data);
+
 #ifdef SK_BUILD_FOR_ANDROID
     unsigned getBaseGlyphCount(SkUnichar charCode);
 
@@ -192,8 +203,8 @@ public:
     SkFontID findTypefaceIdForChar(SkUnichar uni);
 #endif
 
-    static inline void MakeRec(const SkPaint&, const SkDeviceProperties* deviceProperties,
-                               const SkMatrix*, Rec* rec);
+    static void MakeRec(const SkPaint&, const SkDeviceProperties* deviceProperties,
+                        const SkMatrix*, Rec* rec);
     static inline void PostMakeRec(const SkPaint&, Rec*);
 
     static SkMaskGamma::PreBlend GetMaskPreBlend(const Rec& rec);

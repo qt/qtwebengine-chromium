@@ -67,7 +67,7 @@ class TestTableModel2 : public ui::TableModel {
 
   // ui::TableModel:
   virtual int RowCount() OVERRIDE;
-  virtual string16 GetText(int row, int column_id) OVERRIDE;
+  virtual base::string16 GetText(int row, int column_id) OVERRIDE;
   virtual void SetObserver(ui::TableModelObserver* observer) OVERRIDE;
   virtual int CompareValues(int row1, int row2, int column_id) OVERRIDE;
 
@@ -115,7 +115,7 @@ int TestTableModel2::RowCount() {
   return static_cast<int>(rows_.size());
 }
 
-string16 TestTableModel2::GetText(int row, int column_id) {
+base::string16 TestTableModel2::GetText(int row, int column_id) {
   return base::IntToString16(rows_[row][column_id]);
 }
 
@@ -175,9 +175,9 @@ class TableViewTest : public testing::Test {
   virtual void SetUp() OVERRIDE {
     model_.reset(new TestTableModel2);
     std::vector<ui::TableColumn> columns(2);
-    columns[0].title = ASCIIToUTF16("Title Column 0");
+    columns[0].title = base::ASCIIToUTF16("Title Column 0");
     columns[0].sortable = true;
-    columns[1].title = ASCIIToUTF16("Title Column 1");
+    columns[1].title = base::ASCIIToUTF16("Title Column 1");
     columns[1].id = 1;
     columns[1].sortable = true;
     table_ = new TestTableView(model_.get(), columns);
@@ -191,7 +191,8 @@ class TableViewTest : public testing::Test {
     const int y = row * table_->row_height();
     const ui::MouseEvent pressed(ui::ET_MOUSE_PRESSED, gfx::Point(0, y),
                                  gfx::Point(0, y),
-                                 ui::EF_LEFT_MOUSE_BUTTON | flags);
+                                 ui::EF_LEFT_MOUSE_BUTTON | flags,
+                                 ui::EF_LEFT_MOUSE_BUTTON);
     table_->OnMousePressed(pressed);
   }
 
@@ -289,10 +290,12 @@ TEST_F(TableViewTest, Resize) {
   EXPECT_NE(0, x);
   // Drag the mouse 1 pixel to the left.
   const ui::MouseEvent pressed(ui::ET_MOUSE_PRESSED, gfx::Point(x, 0),
-                               gfx::Point(x, 0), ui::EF_LEFT_MOUSE_BUTTON);
+                               gfx::Point(x, 0), ui::EF_LEFT_MOUSE_BUTTON,
+                               ui::EF_LEFT_MOUSE_BUTTON);
   helper_->header()->OnMousePressed(pressed);
   const ui::MouseEvent dragged(ui::ET_MOUSE_DRAGGED, gfx::Point(x - 1, 0),
-                               gfx::Point(x - 1, 0), ui::EF_LEFT_MOUSE_BUTTON);
+                               gfx::Point(x - 1, 0), ui::EF_LEFT_MOUSE_BUTTON,
+                               0);
   helper_->header()->OnMouseDragged(dragged);
 
   // This should shrink the first column and pull the second column in.
@@ -378,11 +381,13 @@ TEST_F(TableViewTest, SortOnMouse) {
   EXPECT_NE(0, x);
   // Press and release the mouse.
   const ui::MouseEvent pressed(ui::ET_MOUSE_PRESSED, gfx::Point(x, 0),
-                               gfx::Point(x, 0), ui::EF_LEFT_MOUSE_BUTTON);
+                               gfx::Point(x, 0), ui::EF_LEFT_MOUSE_BUTTON,
+                               ui::EF_LEFT_MOUSE_BUTTON);
   // The header must return true, else it won't normally get the release.
   EXPECT_TRUE(helper_->header()->OnMousePressed(pressed));
   const ui::MouseEvent release(ui::ET_MOUSE_RELEASED, gfx::Point(x, 0),
-                               gfx::Point(x, 0), ui::EF_LEFT_MOUSE_BUTTON);
+                               gfx::Point(x, 0), ui::EF_LEFT_MOUSE_BUTTON,
+                               ui::EF_LEFT_MOUSE_BUTTON);
   helper_->header()->OnMouseReleased(release);
 
   ASSERT_EQ(1u, table_->sort_descriptors().size());

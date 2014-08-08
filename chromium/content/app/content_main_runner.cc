@@ -16,6 +16,7 @@
 #include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/scoped_vector.h"
 #include "base/metrics/stats_table.h"
 #include "base/path_service.h"
 #include "base/process/launch.h"
@@ -26,15 +27,13 @@
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "content/browser/browser_main.h"
-#include "content/browser/gpu/gpu_process_host.h"
 #include "content/common/set_process_title.h"
 #include "content/common/url_schemes.h"
 #include "content/gpu/in_process_gpu_thread.h"
+#include "content/public/app/content_main.h"
 #include "content/public/app/content_main_delegate.h"
 #include "content/public/app/startup_helper_win.h"
 #include "content/public/browser/content_browser_client.h"
-#include "content/public/browser/render_process_host.h"
-#include "content/public/browser/utility_process_host.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_constants.h"
 #include "content/public/common/content_paths.h"
@@ -44,13 +43,16 @@
 #include "content/renderer/in_process_renderer_thread.h"
 #include "content/utility/in_process_utility_thread.h"
 #include "crypto/nss_util.h"
+#include "ipc/ipc_descriptors.h"
 #include "ipc/ipc_switches.h"
 #include "media/base/media.h"
 #include "sandbox/win/src/sandbox_types.h"
 #include "ui/base/ui_base_paths.h"
 #include "ui/base/ui_base_switches.h"
-#include "ui/gfx/win/dpi.h"
-#include "webkit/common/user_agent/user_agent.h"
+
+#if defined(OS_ANDROID)
+#include "content/public/common/content_descriptors.h"
+#endif
 
 #if defined(USE_TCMALLOC)
 #include "third_party/tcmalloc/chromium/src/gperftools/malloc_extension.h"
@@ -61,16 +63,23 @@
 #endif
 
 #if !defined(OS_IOS)
+#include "content/app/mojo/mojo_init.h"
+#include "content/browser/gpu/gpu_process_host.h"
+#include "content/browser/renderer_host/render_process_host_impl.h"
+#include "content/browser/utility_process_host_impl.h"
 #include "content/public/plugin/content_plugin_client.h"
 #include "content/public/renderer/content_renderer_client.h"
 #include "content/public/utility/content_utility_client.h"
 #endif
 
 #if defined(OS_WIN)
-#include <atlbase.h>
-#include <atlapp.h>
 #include <malloc.h>
 #include <cstring>
+
+#include "base/strings/string_number_conversions.h"
+#include "ui/base/win/atl_module.h"
+#include "ui/base/win/dpi_setup.h"
+#include "ui/gfx/win/dpi.h"
 #elif defined(OS_MACOSX)
 #include "base/mac/scoped_nsautorelease_pool.h"
 #if !defined(OS_IOS)
@@ -104,7 +113,9 @@ int tc_set_new_mode(int mode);
 namespace content {
 extern int GpuMain(const content::MainFunctionParams&);
 #if defined(ENABLE_PLUGINS)
+#if !defined(OS_LINUX)
 extern int PluginMain(const content::MainFunctionParams&);
+#endif
 extern int PpapiPluginMain(const MainFunctionParams&);
 extern int PpapiBrokerMain(const MainFunctionParams&);
 #endif
@@ -112,64 +123,6 @@ extern int RendererMain(const content::MainFunctionParams&);
 extern int UtilityMain(const MainFunctionParams&);
 extern int WorkerMain(const MainFunctionParams&);
 }  // namespace content
-
-namespace {
-#if defined(OS_WIN)
-// In order to have Theme support, we need to connect to the theme service.
-// This needs to be done before we lock down the process. Officially this
-// can be done with OpenThemeData() but it fails unless you pass a valid
-// window at least the first time. Interestingly, the very act of creating a
-// window also sets the connection to the theme service.
-void EnableThemeSupportOnAllWindowStations() {
-  HDESK desktop_handle = ::OpenInputDesktop(0, FALSE, READ_CONTROL);
-  if (desktop_handle) {
-    // This means we are running in an input desktop, which implies WinSta0.
-    ::CloseDesktop(desktop_handle);
-    return;
-  }
-
-  HWINSTA current_station = ::GetProcessWindowStation();
-  DCHECK(current_station);
-
-  HWINSTA winsta0 = ::OpenWindowStationA("WinSta0", FALSE, GENERIC_READ);
-  if (!winsta0) {
-    DVLOG(0) << "Unable to open to WinSta0, we: "<< ::GetLastError();
-    return;
-  }
-  if (!::SetProcessWindowStation(winsta0)) {
-    // Could not set the alternate window station. There is a possibility
-    // that the theme wont be correctly initialized.
-    NOTREACHED() << "Unable to switch to WinSta0, we: "<< ::GetLastError();
-    ::CloseWindowStation(winsta0);
-    return;
-  }
-
-  HWND window = ::CreateWindowExW(0, L"Static", L"", WS_POPUP | WS_DISABLED,
-                                  CW_USEDEFAULT, 0, 0, 0,  HWND_MESSAGE, NULL,
-                                  ::GetModuleHandleA(NULL), NULL);
-  if (!window) {
-    DLOG(WARNING) << "failed to enable theme support";
-  } else {
-    ::DestroyWindow(window);
-    window = NULL;
-  }
-
-  // Revert the window station.
-  if (!::SetProcessWindowStation(current_station)) {
-    // We failed to switch back to the secure window station. This might
-    // confuse the process enough that we should kill it now.
-    LOG(FATAL) << "Failed to restore alternate window station";
-  }
-
-  if (!::CloseWindowStation(winsta0)) {
-    // We might be leaking a winsta0 handle.  This is a security risk, but
-    // since we allow fail over to no desktop protection in low memory
-    // condition, this is not a big risk.
-    NOTREACHED();
-  }
-}
-#endif  // defined(OS_WIN)
-}  // namespace
 
 namespace content {
 
@@ -185,8 +138,6 @@ base::LazyInstance<ContentUtilityClient>
 #endif  // !OS_IOS && !CHROME_MULTIPLE_DLL_BROWSER
 
 #if defined(OS_WIN)
-
-static CAppModule _Module;
 
 #endif  // defined(OS_WIN)
 
@@ -238,11 +189,11 @@ void CommonSubprocessInit(const std::string& process_type) {
 #endif
 }
 
+// Only needed on Windows for creating stats tables.
+#if defined(OS_WIN)
 static base::ProcessId GetBrowserPid(const CommandLine& command_line) {
   base::ProcessId browser_pid = base::GetCurrentProcId();
-#if !defined(OS_IOS)
   if (command_line.HasSwitch(switches::kProcessChannelID)) {
-#if defined(OS_WIN) || defined(OS_MACOSX)
     std::string channel_name =
         command_line.GetSwitchValueASCII(switches::kProcessChannelID);
 
@@ -250,27 +201,10 @@ static base::ProcessId GetBrowserPid(const CommandLine& command_line) {
     base::StringToInt(channel_name, &browser_pid_int);
     browser_pid = static_cast<base::ProcessId>(browser_pid_int);
     DCHECK_NE(browser_pid_int, 0);
-#elif defined(OS_ANDROID)
-    // On Android, the browser process isn't the parent. A bunch
-    // of work will be required before callers of this routine will
-    // get what they want.
-    //
-    // Note: On Linux, base::GetParentProcessId() is defined in
-    // process_util_linux.cc. Note that *_linux.cc is excluded from
-    // Android builds but a special exception is made in base.gypi
-    // for a few files including process_util_linux.cc.
-    LOG(ERROR) << "GetBrowserPid() not implemented for Android().";
-#elif defined(OS_POSIX)
-    // On linux, we're in a process forked from the zygote here; so we need the
-    // parent's parent process' id.
-    browser_pid =
-        base::GetParentProcessId(
-            base::GetParentProcessId(base::GetCurrentProcId()));
-#endif
   }
-#endif  // !OS_IOS
   return browser_pid;
 }
+#endif
 
 static void InitializeStatsTable(const CommandLine& command_line) {
   // Initialize the Stats Counters table.  With this initialized,
@@ -281,11 +215,25 @@ static void InitializeStatsTable(const CommandLine& command_line) {
   if (command_line.HasSwitch(switches::kEnableStatsTable)) {
     // NOTIMPLEMENTED: we probably need to shut this down correctly to avoid
     // leaking shared memory regions on posix platforms.
-    std::string statsfile =
+#if defined(OS_POSIX)
+    // Stats table is in the global file descriptors table on Posix.
+    base::GlobalDescriptors* global_descriptors =
+        base::GlobalDescriptors::GetInstance();
+    base::FileDescriptor table_ident;
+    if (global_descriptors->MaybeGet(kStatsTableSharedMemFd) != -1) {
+      // Open the shared memory file descriptor passed by the browser process.
+      table_ident = base::FileDescriptor(
+          global_descriptors->Get(kStatsTableSharedMemFd), false);
+    }
+#elif defined(OS_WIN)
+    // Stats table is in a named segment on Windows. Use the PID to make this
+    // unique on the system.
+    std::string table_ident =
       base::StringPrintf("%s-%u", kStatsFilename,
           static_cast<unsigned int>(GetBrowserPid(command_line)));
-    base::StatsTable* stats_table = new base::StatsTable(statsfile,
-        kStatsMaxThreads, kStatsMaxCounters);
+#endif
+    base::StatsTable* stats_table =
+        new base::StatsTable(table_ident, kStatsMaxThreads, kStatsMaxCounters);
     base::StatsTable::set_current(stats_table);
   }
 }
@@ -355,9 +303,9 @@ int RunZygote(const MainFunctionParams& main_function_params,
     { switches::kUtilityProcess,     UtilityMain },
   };
 
-  scoped_ptr<ZygoteForkDelegate> zygote_fork_delegate;
+  ScopedVector<ZygoteForkDelegate> zygote_fork_delegates;
   if (delegate) {
-    zygote_fork_delegate.reset(delegate->ZygoteStarting());
+    delegate->ZygoteStarting(&zygote_fork_delegates);
     // Each Renderer we spawn will re-attempt initialization of the media
     // libraries, at which point failure will be detected and handled, so
     // we do not need to cope with initialization failures here.
@@ -367,7 +315,7 @@ int RunZygote(const MainFunctionParams& main_function_params,
   }
 
   // This function call can return multiple times, once per fork().
-  if (!ZygoteMain(main_function_params, zygote_fork_delegate.get()))
+  if (!ZygoteMain(main_function_params, zygote_fork_delegates.Pass()))
     return 1;
 
   if (delegate) delegate->ZygoteForked();
@@ -378,14 +326,6 @@ int RunZygote(const MainFunctionParams& main_function_params,
   std::string process_type =
       command_line.GetSwitchValueASCII(switches::kProcessType);
   ContentClientInitializer::Set(process_type, delegate);
-
-  // If a custom user agent was passed on the command line, we need
-  // to (re)set it now, rather than using the default one the zygote
-  // initialized.
-  if (command_line.HasSwitch(switches::kUserAgent)) {
-    webkit_glue::SetUserAgent(
-        command_line.GetSwitchValueASCII(switches::kUserAgent), true);
-  }
 
   // The StatsTable must be initialized in each process; we already
   // initialized for the browser process, now we need to initialize
@@ -410,9 +350,9 @@ int RunZygote(const MainFunctionParams& main_function_params,
 #if !defined(OS_IOS)
 static void RegisterMainThreadFactories() {
 #if !defined(CHROME_MULTIPLE_DLL_BROWSER)
-  UtilityProcessHost::RegisterUtilityMainThreadFactory(
+  UtilityProcessHostImpl::RegisterUtilityMainThreadFactory(
       CreateInProcessUtilityThread);
-  RenderProcessHost::RegisterRendererMainThreadFactory(
+  RenderProcessHostImpl::RegisterRendererMainThreadFactory(
       CreateInProcessRendererThread);
   GpuProcessHost::RegisterGpuMainThreadFactory(
       CreateInProcessGpuThread);
@@ -442,7 +382,9 @@ int RunNamedProcessTypeMain(
 #endif
 #if !defined(CHROME_MULTIPLE_DLL_BROWSER)
 #if defined(ENABLE_PLUGINS)
+#if !defined(OS_LINUX)
     { switches::kPluginProcess,      PluginMain },
+#endif
     { switches::kWorkerProcess,      WorkerMain },
     { switches::kPpapiPluginProcess, PpapiPluginMain },
     { switches::kPpapiBrokerProcess, PpapiBrokerMain },
@@ -497,7 +439,8 @@ class ContentMainRunnerImpl : public ContentMainRunner {
       : is_initialized_(false),
         is_shutdown_(false),
         completed_basic_startup_(false),
-        delegate_(NULL) {
+        delegate_(NULL),
+        ui_task_(NULL) {
 #if defined(OS_WIN)
     memset(&sandbox_info_, 0, sizeof(sandbox_info_));
 #endif
@@ -533,22 +476,15 @@ class ContentMainRunnerImpl : public ContentMainRunner {
   }
 #endif
 
+  virtual int Initialize(const ContentMainParams& params) OVERRIDE {
+    ui_task_ = params.ui_task;
+
 #if defined(OS_WIN)
-  virtual int Initialize(HINSTANCE instance,
-                         sandbox::SandboxInterfaceInfo* sandbox_info,
-                         ContentMainDelegate* delegate) OVERRIDE {
-    // argc/argv are ignored on Windows; see command_line.h for details.
-    int argc = 0;
-    char** argv = NULL;
-
     RegisterInvalidParamHandler();
-    _Module.Init(NULL, static_cast<HINSTANCE>(instance));
+    ui::win::CreateATLModuleIfNeeded();
 
-    sandbox_info_ = *sandbox_info;
+    sandbox_info_ = *params.sandbox_info;
 #else  // !OS_WIN
-  virtual int Initialize(int argc,
-                         const char** argv,
-                         ContentMainDelegate* delegate) OVERRIDE {
 
 #if defined(OS_ANDROID)
     // See note at the initialization of ExitManager, below; basically,
@@ -590,7 +526,7 @@ class ContentMainRunnerImpl : public ContentMainRunner {
           MallocExtension::GetBytesAllocatedOnCurrentThread,
           tracked_objects::TIME_SOURCE_TYPE_TCMALLOC);
     }
-#endif
+#endif  // !OS_MACOSX && USE_TCMALLOC
 
     // On Android,
     // - setlocale() is not supported.
@@ -618,7 +554,7 @@ class ContentMainRunnerImpl : public ContentMainRunner {
 #endif  // !OS_WIN
 
     is_initialized_ = true;
-    delegate_ = delegate;
+    delegate_ = params.delegate;
 
     base::EnableTerminationOnHeapCorruption();
     base::EnableTerminationOnOutOfMemory();
@@ -629,7 +565,12 @@ class ContentMainRunnerImpl : public ContentMainRunner {
     // A consequence of this is that you can't use the ctor/dtor-based
     // TRACE_EVENT methods on Linux or iOS builds till after we set this up.
 #if !defined(OS_ANDROID) && !defined(OS_IOS)
-    exit_manager_.reset(new base::AtExitManager);
+    if (!ui_task_) {
+      // When running browser tests, don't create a second AtExitManager as that
+      // interfers with shutdown when objects created before ContentMain is
+      // called are destructed when it returns.
+      exit_manager_.reset(new base::AtExitManager);
+    }
 #endif  // !OS_ANDROID && !OS_IOS
 
 #if defined(OS_MACOSX)
@@ -643,11 +584,25 @@ class ContentMainRunnerImpl : public ContentMainRunner {
     // On Android, the command line is initialized when library is loaded and
     // we have already started our TRACE_EVENT0.
 #if !defined(OS_ANDROID)
+    // argc/argv are ignored on Windows and Android; see command_line.h for
+    // details.
+    int argc = 0;
+    const char** argv = NULL;
+
+#if !defined(OS_WIN)
+    argc = params.argc;
+    argv = params.argv;
+#endif
+
     CommandLine::Init(argc, argv);
+
+#if !defined(OS_IOS)
+    SetProcessTitleFromCommandLine(argv);
+#endif
 #endif // !OS_ANDROID
 
     int exit_code;
-    if (delegate && delegate->BasicStartupComplete(&exit_code))
+    if (delegate_ && delegate_->BasicStartupComplete(&exit_code))
       return exit_code;
 
     completed_basic_startup_ = true;
@@ -655,6 +610,11 @@ class ContentMainRunnerImpl : public ContentMainRunner {
     const CommandLine& command_line = *CommandLine::ForCurrentProcess();
     std::string process_type =
         command_line.GetSwitchValueASCII(switches::kProcessType);
+
+#if !defined(OS_IOS)
+    // Initialize mojo here so that services can be registered.
+    InitializeMojo();
+#endif
 
     if (!GetContentClient())
       SetContentClient(&empty_content_client_);
@@ -673,6 +633,7 @@ class ContentMainRunnerImpl : public ContentMainRunner {
           command_line.GetSwitchValueASCII(switches::kTraceStartup));
       base::debug::TraceLog::GetInstance()->SetEnabled(
           category_filter,
+          base::debug::TraceLog::RECORDING_MODE,
           base::debug::TraceLog::RECORD_UNTIL_FULL);
     }
 #if !defined(OS_ANDROID)
@@ -688,22 +649,32 @@ class ContentMainRunnerImpl : public ContentMainRunner {
     // It's important not to allocate the ports for processes which don't
     // register with the power monitor - see crbug.com/88867.
     if (process_type.empty() ||
-        (delegate &&
-         delegate->ProcessRegistersWithSystemProcess(process_type))) {
+        (delegate_ &&
+         delegate_->ProcessRegistersWithSystemProcess(process_type))) {
       base::PowerMonitorDeviceSource::AllocateSystemIOPorts();
     }
 
     if (!process_type.empty() &&
-        (!delegate || delegate->ShouldSendMachPort(process_type))) {
+        (!delegate_ || delegate_->ShouldSendMachPort(process_type))) {
       MachBroker::ChildSendTaskPortToParent();
     }
 #elif defined(OS_WIN)
     if (command_line.HasSwitch(switches::kEnableHighResolutionTime))
       base::TimeTicks::SetNowIsHighResNowIfSupported();
 
-    // This must be done early enough since some helper functions like
-    // IsTouchEnabled, needed to load resources, may call into the theme dll.
-    EnableThemeSupportOnAllWindowStations();
+    bool init_device_scale_factor = true;
+    if (command_line.HasSwitch(switches::kDeviceScaleFactor)) {
+      std::string scale_factor_string = command_line.GetSwitchValueASCII(
+          switches::kDeviceScaleFactor);
+      double scale_factor = 0;
+      if (base::StringToDouble(scale_factor_string, &scale_factor)) {
+        init_device_scale_factor = false;
+        gfx::InitDeviceScaleFactor(scale_factor);
+      }
+    }
+    if (init_device_scale_factor)
+      ui::win::InitDeviceScaleFactor();
+
     SetupCRT(command_line);
 #endif
 
@@ -733,30 +704,31 @@ class ContentMainRunnerImpl : public ContentMainRunner {
     RegisterPathProvider();
     RegisterContentSchemes(true);
 
+#if defined(OS_ANDROID)
+    int icudata_fd = base::GlobalDescriptors::GetInstance()->MaybeGet(
+        kAndroidICUDataDescriptor);
+    if (icudata_fd != -1)
+      CHECK(base::i18n::InitializeICUWithFileDescriptor(icudata_fd));
+    else
+      CHECK(base::i18n::InitializeICU());
+#else
     CHECK(base::i18n::InitializeICU());
+#endif
 
     InitializeStatsTable(command_line);
 
-    if (delegate)
-      delegate->PreSandboxStartup();
-
-    // Set any custom user agent passed on the command line now so the string
-    // doesn't change between calls to webkit_glue::GetUserAgent(), otherwise it
-    // defaults to the user agent set during SetContentClient().
-    if (command_line.HasSwitch(switches::kUserAgent)) {
-      webkit_glue::SetUserAgent(
-          command_line.GetSwitchValueASCII(switches::kUserAgent), true);
-    }
+    if (delegate_)
+      delegate_->PreSandboxStartup();
 
     if (!process_type.empty())
       CommonSubprocessInit(process_type);
 
 #if defined(OS_WIN)
-    CHECK(InitializeSandbox(sandbox_info));
+    CHECK(InitializeSandbox(params.sandbox_info));
 #elif defined(OS_MACOSX) && !defined(OS_IOS)
     if (process_type == switches::kRendererProcess ||
         process_type == switches::kPpapiPluginProcess ||
-        (delegate && delegate->DelaySandboxInitialization(process_type))) {
+        (delegate_ && delegate_->DelaySandboxInitialization(process_type))) {
       // On OS X the renderer sandbox needs to be initialized later in the
       // startup sequence in RendererMainPlatformDelegate::EnableSandbox().
     } else {
@@ -764,12 +736,8 @@ class ContentMainRunnerImpl : public ContentMainRunner {
     }
 #endif
 
-    if (delegate)
-      delegate->SandboxInitialized(process_type);
-
-#if defined(OS_POSIX) && !defined(OS_IOS)
-    SetProcessTitleFromCommandLine(argv);
-#endif
+    if (delegate_)
+      delegate_->SandboxInitialized(process_type);
 
     // Return -1 to indicate no early termination.
     return -1;
@@ -783,6 +751,7 @@ class ContentMainRunnerImpl : public ContentMainRunner {
           command_line.GetSwitchValueASCII(switches::kProcessType);
 
     MainFunctionParams main_params(command_line);
+    main_params.ui_task = ui_task_;
 #if defined(OS_WIN)
     main_params.sandbox_info = &sandbox_info_;
 #elif defined(OS_MACOSX)
@@ -812,8 +781,6 @@ class ContentMainRunnerImpl : public ContentMainRunner {
 #ifdef _CRTDBG_MAP_ALLOC
     _CrtDumpMemoryLeaks();
 #endif  // _CRTDBG_MAP_ALLOC
-
-    _Module.Term();
 #endif  // OS_WIN
 
 #if defined(OS_MACOSX)
@@ -848,6 +815,8 @@ class ContentMainRunnerImpl : public ContentMainRunner {
 #elif defined(OS_MACOSX)
   scoped_ptr<base::mac::ScopedNSAutoreleasePool> autorelease_pool_;
 #endif
+
+  base::Closure* ui_task_;
 
   DISALLOW_COPY_AND_ASSIGN(ContentMainRunnerImpl);
 };

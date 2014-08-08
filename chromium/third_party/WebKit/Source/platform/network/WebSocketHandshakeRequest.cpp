@@ -33,18 +33,30 @@
 
 namespace WebCore {
 
-WebSocketHandshakeRequest::WebSocketHandshakeRequest(const String& requestMethod, const KURL& url)
-    : HTTPRequest(requestMethod, url, HTTP_1_1)
+WebSocketHandshakeRequest::WebSocketHandshakeRequest(const KURL& url) : m_url(url)
 {
 }
 
 WebSocketHandshakeRequest::WebSocketHandshakeRequest()
-    : HTTPRequest()
+{
+}
+
+WebSocketHandshakeRequest::WebSocketHandshakeRequest(const WebSocketHandshakeRequest& request)
+    : m_url(request.m_url), m_headerFields(request.m_headerFields), m_headersText(request.m_headersText)
 {
 }
 
 WebSocketHandshakeRequest::~WebSocketHandshakeRequest()
 {
+}
+
+void WebSocketHandshakeRequest::addAndMergeHeader(HTTPHeaderMap* map, const AtomicString& name, const AtomicString& value)
+{
+    HTTPHeaderMap::AddResult result = map->add(name, value);
+    if (!result.isNewEntry) {
+        // Inspector expects the "\n" separated format.
+        result.storedValue->value = result.storedValue->value + "\n" + String(value);
+    }
 }
 
 } // namespace WebCore

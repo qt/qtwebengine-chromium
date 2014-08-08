@@ -28,15 +28,12 @@
 #include "core/rendering/style/DataRef.h"
 #include "core/rendering/style/RenderStyleConstants.h"
 #include "core/rendering/style/SVGRenderStyleDefs.h"
+#include "core/rendering/style/StyleDifference.h"
 #include "core/svg/SVGPaint.h"
 #include "platform/graphics/GraphicsTypes.h"
 #include "platform/graphics/Path.h"
 
 namespace WebCore {
-
-class FloatRect;
-class IntRect;
-class RenderObject;
 
 class SVGRenderStyle : public RefCounted<SVGRenderStyle> {
 public:
@@ -79,48 +76,41 @@ public:
     static SVGPaint::SVGPaintType initialStrokePaintType() { return SVGPaint::SVG_PAINTTYPE_NONE; }
     static Color initialStrokePaintColor() { return Color(); }
     static String initialStrokePaintUri() { return String(); }
-    static Vector<SVGLength> initialStrokeDashArray() { return Vector<SVGLength>(); }
+    static PassRefPtr<SVGLengthList> initialStrokeDashArray() { return SVGLengthList::create(); }
     static float initialStrokeMiterLimit() { return 4; }
     static float initialStopOpacity() { return 1; }
     static Color initialStopColor() { return Color(0, 0, 0); }
     static float initialFloodOpacity() { return 1; }
     static Color initialFloodColor() { return Color(0, 0, 0); }
     static Color initialLightingColor() { return Color(255, 255, 255); }
-    static String initialClipperResource() { return String(); }
-    static String initialFilterResource() { return String(); }
-    static String initialMaskerResource() { return String(); }
-    static String initialMarkerStartResource() { return String(); }
-    static String initialMarkerMidResource() { return String(); }
-    static String initialMarkerEndResource() { return String(); }
+    static const AtomicString& initialClipperResource() { return nullAtom; }
+    static const AtomicString& initialFilterResource() { return nullAtom; }
+    static const AtomicString& initialMaskerResource() { return nullAtom; }
+    static const AtomicString& initialMarkerStartResource() { return nullAtom; }
+    static const AtomicString& initialMarkerMidResource() { return nullAtom; }
+    static const AtomicString& initialMarkerEndResource() { return nullAtom; }
     static EMaskType initialMaskType() { return MT_LUMINANCE; }
     static EPaintOrder initialPaintOrder() { return PO_NORMAL; }
 
-    static SVGLength initialBaselineShiftValue()
+    static PassRefPtr<SVGLength> initialBaselineShiftValue()
     {
-        SVGLength length;
-        length.newValueSpecifiedUnits(LengthTypeNumber, 0, ASSERT_NO_EXCEPTION);
-        return length;
+        RefPtr<SVGLength> length = SVGLength::create();
+        length->newValueSpecifiedUnits(LengthTypeNumber, 0);
+        return length.release();
     }
 
-    static SVGLength initialKerning()
+    static PassRefPtr<SVGLength> initialStrokeDashOffset()
     {
-        SVGLength length;
-        length.newValueSpecifiedUnits(LengthTypeNumber, 0, ASSERT_NO_EXCEPTION);
-        return length;
+        RefPtr<SVGLength> length = SVGLength::create();
+        length->newValueSpecifiedUnits(LengthTypeNumber, 0);
+        return length.release();
     }
 
-    static SVGLength initialStrokeDashOffset()
+    static PassRefPtr<SVGLength> initialStrokeWidth()
     {
-        SVGLength length;
-        length.newValueSpecifiedUnits(LengthTypeNumber, 0, ASSERT_NO_EXCEPTION);
-        return length;
-    }
-
-    static SVGLength initialStrokeWidth()
-    {
-        SVGLength length;
-        length.newValueSpecifiedUnits(LengthTypeNumber, 1, ASSERT_NO_EXCEPTION);
-        return length;
+        RefPtr<SVGLength> length = SVGLength::create();
+        length->newValueSpecifiedUnits(LengthTypeNumber, 1);
+        return length.release();
     }
 
     // SVG CSS Property setters
@@ -196,7 +186,7 @@ public:
         }
     }
 
-    void setStrokeDashArray(const Vector<SVGLength>& obj)
+    void setStrokeDashArray(PassRefPtr<SVGLengthList> obj)
     {
         if (!(stroke->dashArray == obj))
             stroke.access()->dashArray = obj;
@@ -208,22 +198,16 @@ public:
             stroke.access()->miterLimit = obj;
     }
 
-    void setStrokeWidth(const SVGLength& obj)
+    void setStrokeWidth(PassRefPtr<SVGLength> obj)
     {
         if (!(stroke->width == obj))
             stroke.access()->width = obj;
     }
 
-    void setStrokeDashOffset(const SVGLength& obj)
+    void setStrokeDashOffset(PassRefPtr<SVGLength> obj)
     {
         if (!(stroke->dashOffset == obj))
             stroke.access()->dashOffset = obj;
-    }
-
-    void setKerning(const SVGLength& obj)
-    {
-        if (!(text->kerning == obj))
-            text.access()->kerning = obj;
     }
 
     void setStopOpacity(float obj)
@@ -256,45 +240,45 @@ public:
             misc.access()->lightingColor = obj;
     }
 
-    void setBaselineShiftValue(const SVGLength& obj)
+    void setBaselineShiftValue(PassRefPtr<SVGLength> obj)
     {
         if (!(misc->baselineShiftValue == obj))
             misc.access()->baselineShiftValue = obj;
     }
 
     // Setters for non-inherited resources
-    void setClipperResource(const String& obj)
+    void setClipperResource(const AtomicString& obj)
     {
         if (!(resources->clipper == obj))
             resources.access()->clipper = obj;
     }
 
-    void setFilterResource(const String& obj)
+    void setFilterResource(const AtomicString& obj)
     {
         if (!(resources->filter == obj))
             resources.access()->filter = obj;
     }
 
-    void setMaskerResource(const String& obj)
+    void setMaskerResource(const AtomicString& obj)
     {
         if (!(resources->masker == obj))
             resources.access()->masker = obj;
     }
 
     // Setters for inherited resources
-    void setMarkerStartResource(const String& obj)
+    void setMarkerStartResource(const AtomicString& obj)
     {
         if (!(inheritedResources->markerStart == obj))
             inheritedResources.access()->markerStart = obj;
     }
 
-    void setMarkerMidResource(const String& obj)
+    void setMarkerMidResource(const AtomicString& obj)
     {
         if (!(inheritedResources->markerMid == obj))
             inheritedResources.access()->markerMid = obj;
     }
 
-    void setMarkerEndResource(const String& obj)
+    void setMarkerEndResource(const AtomicString& obj)
     {
         if (!(inheritedResources->markerEnd == obj))
             inheritedResources.access()->markerEnd = obj;
@@ -326,23 +310,22 @@ public:
     const SVGPaint::SVGPaintType& strokePaintType() const { return stroke->paintType; }
     const Color& strokePaintColor() const { return stroke->paintColor; }
     const String& strokePaintUri() const { return stroke->paintUri; }
-    Vector<SVGLength> strokeDashArray() const { return stroke->dashArray; }
+    SVGLengthList* strokeDashArray() const { return stroke->dashArray.get(); }
     float strokeMiterLimit() const { return stroke->miterLimit; }
-    SVGLength strokeWidth() const { return stroke->width; }
-    SVGLength strokeDashOffset() const { return stroke->dashOffset; }
-    SVGLength kerning() const { return text->kerning; }
+    SVGLength* strokeWidth() const { return stroke->width.get(); }
+    SVGLength* strokeDashOffset() const { return stroke->dashOffset.get(); }
     float stopOpacity() const { return stops->opacity; }
     const Color& stopColor() const { return stops->color; }
     float floodOpacity() const { return misc->floodOpacity; }
     const Color& floodColor() const { return misc->floodColor; }
     const Color& lightingColor() const { return misc->lightingColor; }
-    SVGLength baselineShiftValue() const { return misc->baselineShiftValue; }
-    String clipperResource() const { return resources->clipper; }
-    String filterResource() const { return resources->filter; }
-    String maskerResource() const { return resources->masker; }
-    String markerStartResource() const { return inheritedResources->markerStart; }
-    String markerMidResource() const { return inheritedResources->markerMid; }
-    String markerEndResource() const { return inheritedResources->markerEnd; }
+    SVGLength* baselineShiftValue() const { return misc->baselineShiftValue.get(); }
+    const AtomicString& clipperResource() const { return resources->clipper; }
+    const AtomicString& filterResource() const { return resources->filter; }
+    const AtomicString& maskerResource() const { return resources->masker; }
+    const AtomicString& markerStartResource() const { return inheritedResources->markerStart; }
+    const AtomicString& markerMidResource() const { return inheritedResources->markerMid; }
+    const AtomicString& markerEndResource() const { return inheritedResources->markerEnd; }
     EMaskType maskType() const { return (EMaskType) svg_noninherited_flags.f.maskType; }
     EPaintOrder paintOrder() const { return (EPaintOrder) svg_inherited_flags._paintOrder; }
     EPaintOrderType paintOrderType(unsigned index) const;
@@ -360,7 +343,7 @@ public:
     bool hasFilter() const { return !filterResource().isEmpty(); }
     bool hasMarkers() const { return !markerStartResource().isEmpty() || !markerMidResource().isEmpty() || !markerEndResource().isEmpty(); }
     bool hasStroke() const { return strokePaintType() != SVGPaint::SVG_PAINTTYPE_NONE; }
-    bool hasVisibleStroke() const { return hasStroke() && !strokeWidth().isZero(); }
+    bool hasVisibleStroke() const { return hasStroke() && !strokeWidth()->isZero(); }
     bool hasFill() const { return fillPaintType() != SVGPaint::SVG_PAINTTYPE_NONE; }
     bool isVerticalWritingMode() const { return writingMode() == WM_TBRL || writingMode() == WM_TB; }
 
@@ -427,7 +410,6 @@ protected:
     // inherited attributes
     DataRef<StyleFillData> fill;
     DataRef<StyleStrokeData> stroke;
-    DataRef<StyleTextData> text;
     DataRef<StyleInheritedResourceData> inheritedResources;
 
     // non-inherited attributes
@@ -441,6 +423,9 @@ private:
     SVGRenderStyle();
     SVGRenderStyle(const SVGRenderStyle&);
     SVGRenderStyle(CreateDefaultType); // Used to create the default style.
+
+    bool diffNeedsLayoutAndRepaint(const SVGRenderStyle* other) const;
+    bool diffNeedsRepaint(const SVGRenderStyle* other) const;
 
     void setBitDefaults()
     {

@@ -29,18 +29,21 @@
 #include "config.h"
 #include "core/css/RuleSet.h"
 
-#include "HTMLNames.h"
-#include "RuntimeEnabledFeatures.h"
+#include "core/HTMLNames.h"
 #include "core/css/CSSFontSelector.h"
 #include "core/css/CSSSelector.h"
 #include "core/css/CSSSelectorList.h"
 #include "core/css/SelectorChecker.h"
-#include "core/css/SelectorCheckerFastPath.h"
 #include "core/css/SelectorFilter.h"
 #include "core/css/StyleRuleImport.h"
 #include "core/css/StyleSheetContents.h"
 #include "core/html/track/TextTrackCue.h"
+#include "platform/RuntimeEnabledFeatures.h"
+#include "platform/TraceEvent.h"
+#include "platform/heap/HeapTerminatedArrayBuilder.h"
 #include "platform/weborigin/SecurityOrigin.h"
+
+#include "wtf/TerminatedArrayBuilder.h"
 
 namespace WebCore {
 
@@ -48,20 +51,21 @@ using namespace HTMLNames;
 
 // -----------------------------------------------------------------
 
-static inline bool isSelectorMatchingHTMLBasedOnRuleHash(const CSSSelector* selector)
+static inline bool isSelectorMatchingHTMLBasedOnRuleHash(const CSSSelector& selector)
 {
-    ASSERT(selector);
-    if (selector->m_match == CSSSelector::Tag) {
-        const AtomicString& selectorNamespace = selector->tagQName().namespaceURI();
+    if (selector.match() == CSSSelector::Tag) {
+        const AtomicString& selectorNamespace = selector.tagQName().namespaceURI();
         if (selectorNamespace != starAtom && selectorNamespace != xhtmlNamespaceURI)
             return false;
-        if (selector->relation() == CSSSelector::SubSelector)
-            return isSelectorMatchingHTMLBasedOnRuleHash(selector->tagHistory());
+        if (selector.relation() == CSSSelector::SubSelector) {
+            ASSERT(selector.tagHistory());
+            return isSelectorMatchingHTMLBasedOnRuleHash(*selector.tagHistory());
+        }
         return true;
     }
     if (SelectorChecker::isCommonPseudoClassSelector(selector))
         return true;
-    return selector->m_match == CSSSelector::Id || selector->m_match == CSSSelector::Class;
+    return selector.match() == CSSSelector::Id || selector.match() == CSSSelector::Class;
 }
 
 static inline bool selectorListContainsUncommonAttributeSelector(const CSSSelector* selector)
@@ -69,7 +73,7 @@ static inline bool selectorListContainsUncommonAttributeSelector(const CSSSelect
     const CSSSelectorList* selectorList = selector->selectorList();
     if (!selectorList)
         return false;
-    for (const CSSSelector* selector = selectorList->first(); selector; selector = CSSSelectorList::next(selector)) {
+    for (const CSSSelector* selector = selectorList->first(); selector; selector = CSSSelectorList::next(*selector)) {
         for (const CSSSelector* component = selector; component; component = component->tagHistory()) {
             if (component->isAttributeSelector())
                 return true;
@@ -84,108 +88,39 @@ static inline bool isCommonAttributeSelectorAttribute(const QualifiedName& attri
     return attribute == typeAttr || attribute == readonlyAttr;
 }
 
-static inline bool containsUncommonAttributeSelector(const CSSSelector* selector)
+static inline bool containsUncommonAttributeSelector(const CSSSelector& selector)
 {
-    for (; selector; selector = selector->tagHistory()) {
+    const CSSSelector* current = &selector;
+    for (; current; current = current->tagHistory()) {
         // Allow certain common attributes (used in the default style) in the selectors that match the current element.
-        if (selector->isAttributeSelector() && !isCommonAttributeSelectorAttribute(selector->attribute()))
+        if (current->isAttributeSelector() && !isCommonAttributeSelectorAttribute(current->attribute()))
             return true;
-        if (selectorListContainsUncommonAttributeSelector(selector))
+        if (selectorListContainsUncommonAttributeSelector(current))
             return true;
-        if (selector->relation() != CSSSelector::SubSelector) {
-            selector = selector->tagHistory();
+        if (current->relation() != CSSSelector::SubSelector) {
+            current = current->tagHistory();
             break;
         }
     }
 
-    for (; selector; selector = selector->tagHistory()) {
-        if (selector->isAttributeSelector())
+    for (; current; current = current->tagHistory()) {
+        if (current->isAttributeSelector())
             return true;
-        if (selectorListContainsUncommonAttributeSelector(selector))
+        if (selectorListContainsUncommonAttributeSelector(current))
             return true;
     }
     return false;
 }
 
-static inline PropertyWhitelistType determinePropertyWhitelistType(const AddRuleFlags addRuleFlags, const CSSSelector* selector)
+static inline PropertyWhitelistType determinePropertyWhitelistType(const AddRuleFlags addRuleFlags, const CSSSelector& selector)
 {
-    if (addRuleFlags & RuleIsInRegionRule)
-        return PropertyWhitelistRegion;
-    for (const CSSSelector* component = selector; component; component = component->tagHistory()) {
-        if (component->pseudoType() == CSSSelector::PseudoCue || (component->m_match == CSSSelector::PseudoElement && component->value() == TextTrackCue::cueShadowPseudoId()))
+    for (const CSSSelector* component = &selector; component; component = component->tagHistory()) {
+        if (component->pseudoType() == CSSSelector::PseudoCue || (component->match() == CSSSelector::PseudoElement && component->value() == TextTrackCue::cueShadowPseudoId()))
             return PropertyWhitelistCue;
+        if (component->pseudoType() == CSSSelector::PseudoFirstLetter)
+            return PropertyWhitelistFirstLetter;
     }
     return PropertyWhitelistNone;
-}
-
-namespace {
-
-// FIXME: Should we move this class to WTF?
-template<typename T>
-class TerminatedArrayBuilder {
-public:
-    explicit TerminatedArrayBuilder(PassOwnPtr<T> array)
-        : m_array(array)
-        , m_count(0)
-        , m_capacity(0)
-    {
-        if (!m_array)
-            return;
-        for (T* item = m_array.get(); !item->isLastInArray(); ++item)
-            ++m_count;
-        ++m_count; // To count the last item itself.
-        m_capacity = m_count;
-    }
-
-    void grow(size_t count)
-    {
-        ASSERT(count);
-        if (!m_array) {
-            ASSERT(!m_count);
-            ASSERT(!m_capacity);
-            m_capacity = count;
-            m_array = adoptPtr(static_cast<T*>(fastMalloc(m_capacity * sizeof(T))));
-            return;
-        }
-        m_capacity += count;
-        m_array = adoptPtr(static_cast<T*>(fastRealloc(m_array.leakPtr(), m_capacity * sizeof(T))));
-        m_array.get()[m_count - 1].setLastInArray(false);
-    }
-
-    void append(const T& item)
-    {
-        RELEASE_ASSERT(m_count < m_capacity);
-        ASSERT(!item.isLastInArray());
-        m_array.get()[m_count++] = item;
-    }
-
-    PassOwnPtr<T> release()
-    {
-        RELEASE_ASSERT(m_count == m_capacity);
-        if (m_array)
-            m_array.get()[m_count - 1].setLastInArray(true);
-        assertValid();
-        return m_array.release();
-    }
-
-private:
-#ifndef NDEBUG
-    void assertValid()
-    {
-        for (size_t i = 0; i < m_count; ++i) {
-            bool isLastInArray = (i + 1 == m_count);
-            ASSERT(m_array.get()[i].isLastInArray() == isLastInArray);
-        }
-    }
-#else
-    void assertValid() { }
-#endif
-
-    OwnPtr<T> m_array;
-    size_t m_count;
-    size_t m_capacity;
-};
-
 }
 
 RuleData::RuleData(StyleRule* rule, unsigned selectorIndex, unsigned position, AddRuleFlags addRuleFlags)
@@ -193,9 +128,8 @@ RuleData::RuleData(StyleRule* rule, unsigned selectorIndex, unsigned position, A
     , m_selectorIndex(selectorIndex)
     , m_isLastInArray(false)
     , m_position(position)
-    , m_hasFastCheckableSelector((addRuleFlags & RuleCanUseFastCheckSelector) && SelectorCheckerFastPath::canUse(selector()))
-    , m_specificity(selector()->specificity())
-    , m_hasMultipartSelector(!!selector()->tagHistory())
+    , m_specificity(selector().specificity())
+    , m_hasMultipartSelector(!!selector().tagHistory())
     , m_hasRightmostSelectorMatchingHTMLBasedOnRuleHash(isSelectorMatchingHTMLBasedOnRuleHash(selector()))
     , m_containsUncommonAttributeSelector(WebCore::containsUncommonAttributeSelector(selector()))
     , m_linkMatchType(SelectorChecker::determineLinkMatchType(selector()))
@@ -207,66 +141,78 @@ RuleData::RuleData(StyleRule* rule, unsigned selectorIndex, unsigned position, A
     SelectorFilter::collectIdentifierHashes(selector(), m_descendantSelectorIdentifierHashes, maximumIdentifierCount);
 }
 
-static void collectFeaturesFromRuleData(RuleFeatureSet& features, const RuleData& ruleData)
+void RuleSet::addToRuleSet(const AtomicString& key, PendingRuleMap& map, const RuleData& ruleData)
 {
-    bool foundSiblingSelector = false;
-    unsigned maxDirectAdjacentSelectors = 0;
-    for (const CSSSelector* selector = ruleData.selector(); selector; selector = selector->tagHistory()) {
-        features.collectFeaturesFromSelector(selector);
-
-        if (const CSSSelectorList* selectorList = selector->selectorList()) {
-            for (const CSSSelector* subSelector = selectorList->first(); subSelector; subSelector = CSSSelectorList::next(subSelector)) {
-                // FIXME: Shouldn't this be checking subSelector->isSiblingSelector()?
-                if (!foundSiblingSelector && selector->isSiblingSelector())
-                    foundSiblingSelector = true;
-                if (subSelector->isDirectAdjacentSelector())
-                    maxDirectAdjacentSelectors++;
-                features.collectFeaturesFromSelector(subSelector);
-            }
-        } else {
-            if (!foundSiblingSelector && selector->isSiblingSelector())
-                foundSiblingSelector = true;
-            if (selector->isDirectAdjacentSelector())
-                maxDirectAdjacentSelectors++;
-        }
-    }
-    features.setMaxDirectAdjacentSelectors(maxDirectAdjacentSelectors);
-    if (foundSiblingSelector)
-        features.siblingRules.append(RuleFeature(ruleData.rule(), ruleData.selectorIndex(), ruleData.hasDocumentSecurityOrigin()));
-    if (ruleData.containsUncommonAttributeSelector())
-        features.uncommonAttributeRules.append(RuleFeature(ruleData.rule(), ruleData.selectorIndex(), ruleData.hasDocumentSecurityOrigin()));
-}
-
-void RuleSet::addToRuleSet(StringImpl* key, PendingRuleMap& map, const RuleData& ruleData)
-{
-    if (!key)
-        return;
-    OwnPtr<LinkedStack<RuleData> >& rules = map.add(key, nullptr).iterator->value;
+    OwnPtrWillBeMember<WillBeHeapLinkedStack<RuleData> >& rules = map.add(key, nullptr).storedValue->value;
     if (!rules)
-        rules = adoptPtr(new LinkedStack<RuleData>);
+        rules = adoptPtrWillBeNoop(new WillBeHeapLinkedStack<RuleData>);
     rules->push(ruleData);
 }
 
-bool RuleSet::findBestRuleSetAndAdd(const CSSSelector* component, RuleData& ruleData)
+static void extractValuesforSelector(const CSSSelector* selector, AtomicString& id, AtomicString& className, AtomicString& customPseudoElementName, AtomicString& tagName)
 {
-    if (component->m_match == CSSSelector::Id) {
-        addToRuleSet(component->value().impl(), ensurePendingRules()->idRules, ruleData);
+    switch (selector->match()) {
+    case CSSSelector::Id:
+        id = selector->value();
+        break;
+    case CSSSelector::Class:
+        className = selector->value();
+        break;
+    case CSSSelector::Tag:
+        if (selector->tagQName().localName() != starAtom)
+            tagName = selector->tagQName().localName();
+        break;
+    default:
+        break;
+    }
+    if (selector->isCustomPseudoElement())
+        customPseudoElementName = selector->value();
+}
+
+bool RuleSet::findBestRuleSetAndAdd(const CSSSelector& component, RuleData& ruleData)
+{
+    AtomicString id;
+    AtomicString className;
+    AtomicString customPseudoElementName;
+    AtomicString tagName;
+
+#ifndef NDEBUG
+    m_allRules.append(ruleData);
+#endif
+
+    const CSSSelector* it = &component;
+    for (; it && it->relation() == CSSSelector::SubSelector; it = it->tagHistory()) {
+        extractValuesforSelector(it, id, className, customPseudoElementName, tagName);
+    }
+    // FIXME: this null check should not be necessary. See crbug.com/358475
+    if (it)
+        extractValuesforSelector(it, id, className, customPseudoElementName, tagName);
+
+    // Prefer rule sets in order of most likely to apply infrequently.
+    if (!id.isEmpty()) {
+        addToRuleSet(id, ensurePendingRules()->idRules, ruleData);
         return true;
     }
-    if (component->m_match == CSSSelector::Class) {
-        addToRuleSet(component->value().impl(), ensurePendingRules()->classRules, ruleData);
+    if (!className.isEmpty()) {
+        addToRuleSet(className, ensurePendingRules()->classRules, ruleData);
         return true;
     }
-    if (component->isCustomPseudoElement()) {
-        addToRuleSet(component->value().impl(), ensurePendingRules()->shadowPseudoElementRules, ruleData);
+    if (!customPseudoElementName.isEmpty()) {
+        // Custom pseudos come before ids and classes in the order of tagHistory, and have a relation of
+        // ShadowPseudo between them. Therefore we should never be a situation where extractValuesforSelector
+        // finsd id and className in addition to custom pseudo.
+        ASSERT(id.isEmpty() && className.isEmpty());
+        addToRuleSet(customPseudoElementName, ensurePendingRules()->shadowPseudoElementRules, ruleData);
         return true;
     }
-    if (component->pseudoType() == CSSSelector::PseudoCue) {
+
+    if (component.pseudoType() == CSSSelector::PseudoCue) {
         m_cuePseudoRules.append(ruleData);
         return true;
     }
+
     if (SelectorChecker::isCommonPseudoClassSelector(component)) {
-        switch (component->pseudoType()) {
+        switch (component.pseudoType()) {
         case CSSSelector::PseudoLink:
         case CSSSelector::PseudoVisited:
         case CSSSelector::PseudoAnyLink:
@@ -281,25 +227,18 @@ bool RuleSet::findBestRuleSetAndAdd(const CSSSelector* component, RuleData& rule
         }
     }
 
-    if (component->m_match == CSSSelector::Tag) {
-        if (component->tagQName().localName() != starAtom) {
-            // If this is part of a subselector chain, recurse ahead to find a narrower set (ID/class.)
-            if (component->relation() == CSSSelector::SubSelector
-                && (component->tagHistory()->m_match == CSSSelector::Class || component->tagHistory()->m_match == CSSSelector::Id || SelectorChecker::isCommonPseudoClassSelector(component->tagHistory()))
-                && findBestRuleSetAndAdd(component->tagHistory(), ruleData))
-                return true;
-
-            addToRuleSet(component->tagQName().localName().impl(), ensurePendingRules()->tagRules, ruleData);
-            return true;
-        }
+    if (!tagName.isEmpty()) {
+        addToRuleSet(tagName, ensurePendingRules()->tagRules, ruleData);
+        return true;
     }
+
     return false;
 }
 
 void RuleSet::addRule(StyleRule* rule, unsigned selectorIndex, AddRuleFlags addRuleFlags)
 {
     RuleData ruleData(rule, selectorIndex, m_ruleCount++, addRuleFlags);
-    collectFeaturesFromRuleData(m_features, ruleData);
+    m_features.collectFeaturesFromRuleData(ruleData);
 
     if (!findBestRuleSetAndAdd(ruleData.selector(), ruleData)) {
         // If we didn't find a specialized map to stick it in, file under universal rules.
@@ -331,32 +270,7 @@ void RuleSet::addKeyframesRule(StyleRuleKeyframes* rule)
     m_keyframesRules.append(rule);
 }
 
-void RuleSet::addRegionRule(StyleRuleRegion* regionRule, bool hasDocumentSecurityOrigin)
-{
-    ensurePendingRules(); // So that m_regionSelectorsAndRuleSets.shrinkToFit() gets called.
-    OwnPtr<RuleSet> regionRuleSet = RuleSet::create();
-    // The region rule set should take into account the position inside the parent rule set.
-    // Otherwise, the rules inside region block might be incorrectly positioned before other similar rules from
-    // the stylesheet that contains the region block.
-    regionRuleSet->m_ruleCount = m_ruleCount;
-
-    // Collect the region rules into a rule set
-    // FIXME: Should this add other types of rules? (i.e. use addChildRules() directly?)
-    const Vector<RefPtr<StyleRuleBase> >& childRules = regionRule->childRules();
-    AddRuleFlags addRuleFlags = hasDocumentSecurityOrigin ? RuleHasDocumentSecurityOrigin : RuleHasNoSpecialState;
-    addRuleFlags = static_cast<AddRuleFlags>(addRuleFlags | RuleIsInRegionRule | RuleCanUseFastCheckSelector);
-    for (unsigned i = 0; i < childRules.size(); ++i) {
-        StyleRuleBase* regionStylingRule = childRules[i].get();
-        if (regionStylingRule->isStyleRule())
-            regionRuleSet->addStyleRule(toStyleRule(regionStylingRule), addRuleFlags);
-    }
-    // Update the "global" rule count so that proper order is maintained
-    m_ruleCount = regionRuleSet->m_ruleCount;
-
-    m_regionSelectorsAndRuleSets.append(RuleSetSelectorPair(regionRule->selectorList().first(), regionRuleSet.release()));
-}
-
-void RuleSet::addChildRules(const Vector<RefPtr<StyleRuleBase> >& rules, const MediaQueryEvaluator& medium, AddRuleFlags addRuleFlags)
+void RuleSet::addChildRules(const WillBeHeapVector<RefPtrWillBeMember<StyleRuleBase> >& rules, const MediaQueryEvaluator& medium, AddRuleFlags addRuleFlags)
 {
     for (unsigned i = 0; i < rules.size(); ++i) {
         StyleRuleBase* rule = rules[i].get();
@@ -366,7 +280,7 @@ void RuleSet::addChildRules(const Vector<RefPtr<StyleRuleBase> >& rules, const M
 
             const CSSSelectorList& selectorList = styleRule->selectorList();
             for (size_t selectorIndex = 0; selectorIndex != kNotFound; selectorIndex = selectorList.indexOfNextSelectorAfter(selectorIndex)) {
-                if (selectorList.hasCombinatorCrossingTreeBoundaryAt(selectorIndex)) {
+                if (selectorList.selectorCrossesTreeScopes(selectorIndex)) {
                     m_treeBoundaryCrossingRules.append(MinimalRuleData(styleRule, selectorIndex, addRuleFlags));
                 } else if (selectorList.hasShadowDistributedAt(selectorIndex)) {
                     m_shadowDistributedRules.append(MinimalRuleData(styleRule, selectorIndex, addRuleFlags));
@@ -384,8 +298,6 @@ void RuleSet::addChildRules(const Vector<RefPtr<StyleRuleBase> >& rules, const M
             addFontFaceRule(toStyleRuleFontFace(rule));
         } else if (rule->isKeyframesRule()) {
             addKeyframesRule(toStyleRuleKeyframes(rule));
-        } else if (rule->isRegionRule()) {
-            addRegionRule(toStyleRuleRegion(rule), addRuleFlags & RuleHasDocumentSecurityOrigin);
         } else if (rule->isViewportRule()) {
             addViewportRule(toStyleRuleViewport(rule));
         } else if (rule->isSupportsRule() && toStyleRuleSupports(rule)->conditionIsSupported()) {
@@ -396,10 +308,12 @@ void RuleSet::addChildRules(const Vector<RefPtr<StyleRuleBase> >& rules, const M
 
 void RuleSet::addRulesFromSheet(StyleSheetContents* sheet, const MediaQueryEvaluator& medium, AddRuleFlags addRuleFlags)
 {
+    TRACE_EVENT0("webkit", "RuleSet::addRulesFromSheet");
+
     ASSERT(sheet);
 
     addRuleFlags = static_cast<AddRuleFlags>(addRuleFlags | RuleCanUseFastCheckSelector);
-    const Vector<RefPtr<StyleRuleImport> >& importRules = sheet->importRules();
+    const WillBeHeapVector<RefPtrWillBeMember<StyleRuleImport> >& importRules = sheet->importRules();
     for (unsigned i = 0; i < importRules.size(); ++i) {
         StyleRuleImport* importRule = importRules[i].get();
         if (importRule->styleSheet() && (!importRule->mediaQueries() || medium.eval(importRule->mediaQueries(), &m_viewportDependentMediaQueryResults)))
@@ -419,10 +333,10 @@ void RuleSet::compactPendingRules(PendingRuleMap& pendingMap, CompactRuleMap& co
 {
     PendingRuleMap::iterator end = pendingMap.end();
     for (PendingRuleMap::iterator it = pendingMap.begin(); it != end; ++it) {
-        OwnPtr<LinkedStack<RuleData> > pendingRules = it->value.release();
-        CompactRuleMap::iterator compactRules = compactMap.add(it->key, nullptr).iterator;
+        OwnPtrWillBeRawPtr<WillBeHeapLinkedStack<RuleData> > pendingRules = it->value.release();
+        CompactRuleMap::ValueType* compactRules = compactMap.add(it->key, nullptr).storedValue;
 
-        TerminatedArrayBuilder<RuleData> builder(compactRules->value.release());
+        WillBeHeapTerminatedArrayBuilder<RuleData> builder(compactRules->value.release());
         builder.grow(pendingRules->size());
         while (!pendingRules->isEmpty()) {
             builder.append(pendingRules->peek());
@@ -436,7 +350,7 @@ void RuleSet::compactPendingRules(PendingRuleMap& pendingMap, CompactRuleMap& co
 void RuleSet::compactRules()
 {
     ASSERT(m_pendingRules);
-    OwnPtr<PendingRuleMaps> pendingRules = m_pendingRules.release();
+    OwnPtrWillBeRawPtr<PendingRuleMaps> pendingRules = m_pendingRules.release();
     compactPendingRules(pendingRules->idRules, m_idRules);
     compactPendingRules(pendingRules->classRules, m_classRules);
     compactPendingRules(pendingRules->tagRules, m_tagRules);
@@ -452,5 +366,57 @@ void RuleSet::compactRules()
     m_treeBoundaryCrossingRules.shrinkToFit();
     m_shadowDistributedRules.shrinkToFit();
 }
+
+void MinimalRuleData::trace(Visitor* visitor)
+{
+    visitor->trace(m_rule);
+}
+
+void RuleData::trace(Visitor* visitor)
+{
+    visitor->trace(m_rule);
+}
+
+void RuleSet::PendingRuleMaps::trace(Visitor* visitor)
+{
+    visitor->trace(idRules);
+    visitor->trace(classRules);
+    visitor->trace(tagRules);
+    visitor->trace(shadowPseudoElementRules);
+}
+
+void RuleSet::trace(Visitor* visitor)
+{
+#if ENABLE(OILPAN)
+    visitor->trace(m_idRules);
+    visitor->trace(m_classRules);
+    visitor->trace(m_tagRules);
+    visitor->trace(m_shadowPseudoElementRules);
+    visitor->trace(m_linkPseudoClassRules);
+    visitor->trace(m_cuePseudoRules);
+    visitor->trace(m_focusPseudoClassRules);
+    visitor->trace(m_universalRules);
+    visitor->trace(m_features);
+    visitor->trace(m_pageRules);
+    visitor->trace(m_viewportRules);
+    visitor->trace(m_fontFaceRules);
+    visitor->trace(m_keyframesRules);
+    visitor->trace(m_treeBoundaryCrossingRules);
+    visitor->trace(m_shadowDistributedRules);
+    visitor->trace(m_viewportDependentMediaQueryResults);
+    visitor->trace(m_pendingRules);
+#ifndef NDEBUG
+    visitor->trace(m_allRules);
+#endif
+#endif
+}
+
+#ifndef NDEBUG
+void RuleSet::show()
+{
+    for (WillBeHeapVector<RuleData>::const_iterator it = m_allRules.begin(); it != m_allRules.end(); ++it)
+        it->selector().show();
+}
+#endif
 
 } // namespace WebCore

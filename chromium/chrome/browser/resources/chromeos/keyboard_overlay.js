@@ -97,8 +97,16 @@ var KEYCODE_TO_LABEL = {
   222: '\'',
 };
 
+var IME_ID_PREFIX = '_comp_ime_';
+var EXTENSION_ID_LEN = 32;
+
 var keyboardOverlayId = 'en_US';
 var identifierMap = {};
+
+/**
+ * True after at least one keydown event has been received.
+ */
+var gotKeyDown = false;
 
 /**
  * Returns the layout name.
@@ -457,6 +465,18 @@ function handleKeyEvent(e) {
   if (!getKeyboardOverlayId()) {
     return;
   }
+
+  // To avoid flickering as the user releases the modifier keys that were held
+  // to trigger the overlay, avoid updating in response to keyup events until at
+  // least one keydown event has been received.
+  if (!gotKeyDown) {
+    if (e.type == 'keyup') {
+      return;
+    } else if (e.type == 'keydown') {
+      gotKeyDown = true;
+    }
+  }
+
   var modifiers = getModifiers(e);
   update(modifiers);
   KeyboardOverlayAccessibilityHelper.maybeSpeakAllShortcuts(modifiers);
@@ -663,6 +683,13 @@ function initKeyboardOverlayId(inputMethodId) {
   var inputMethodIdToOverlayId =
       keyboardOverlayData['inputMethodIdToOverlayId'];
   if (inputMethodId) {
+    if (inputMethodId.indexOf(IME_ID_PREFIX) == 0) {
+      // If the input method is a component extension IME, remove the prefix:
+      //   _comp_ime_<ext_id>
+      // The extension id is a hash value with 32 characters.
+      inputMethodId = inputMethodId.slice(
+          IME_ID_PREFIX.length + EXTENSION_ID_LEN);
+    }
     keyboardOverlayId = inputMethodIdToOverlayId[inputMethodId];
   }
   if (!keyboardOverlayId) {
@@ -689,7 +716,7 @@ function initKeyboardOverlayId(inputMethodId) {
  */
 function learnMoreClicked(e) {
   chrome.send('openLearnMorePage');
-  chrome.send('DialogClose');
+  chrome.send('dialogClose');
   e.preventDefault();
 }
 

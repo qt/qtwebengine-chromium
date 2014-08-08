@@ -10,7 +10,7 @@
 #define GrAtlas_DEFINED
 
 
-#include "GrPoint.h"
+#include "SkPoint.h"
 #include "GrTexture.h"
 #include "GrDrawTarget.h"
 
@@ -31,77 +31,92 @@ class GrAtlas;
 
 class GrPlot {
 public:
-    int getOffsetX() const { return fOffset.fX; }
-    int getOffsetY() const { return fOffset.fY; }
+    SK_DECLARE_INTERNAL_LLIST_INTERFACE(GrPlot);
 
     GrTexture* texture() const { return fTexture; }
 
-    bool addSubImage(int width, int height, const void*, GrIPoint16*);
+    bool addSubImage(int width, int height, const void*, SkIPoint16*);
 
     GrDrawTarget::DrawToken drawToken() const { return fDrawToken; }
     void setDrawToken(GrDrawTarget::DrawToken draw) { fDrawToken = draw; }
 
+    void uploadToTexture();
+
+    void resetRects();
+
 private:
     GrPlot();
     ~GrPlot(); // does not try to delete the fNext field
+    void init(GrAtlasMgr* mgr, int offX, int offY, int width, int height, size_t bpp,
+              bool batchUploads);
 
     // for recycling
     GrDrawTarget::DrawToken fDrawToken;
 
-    GrPlot*                 fNext;
-
+    unsigned char*          fPlotData;
     GrTexture*              fTexture;
     GrRectanizer*           fRects;
     GrAtlasMgr*             fAtlasMgr;
-    GrIPoint16              fOffset;
+    SkIPoint16              fOffset;        // the offset of the plot in the backing texture
     size_t                  fBytesPerPixel;
+    SkIRect                 fDirtyRect;
+    bool                    fDirty;
+    bool                    fBatchUploads;
 
     friend class GrAtlasMgr;
 };
 
+typedef SkTInternalLList<GrPlot> GrPlotList;
+
 class GrAtlasMgr {
 public:
-    GrAtlasMgr(GrGpu*, GrPixelConfig);
+    GrAtlasMgr(GrGpu*, GrPixelConfig, const SkISize& backingTextureSize,
+               int numPlotsX, int numPlotsY, bool batchUploads);
     ~GrAtlasMgr();
 
     // add subimage of width, height dimensions to atlas
     // returns the containing GrPlot and location relative to the backing texture
-    GrPlot* addToAtlas(GrAtlas*, int width, int height, const void*, GrIPoint16*);
+    GrPlot* addToAtlas(GrAtlas*, int width, int height, const void*, SkIPoint16*);
 
-    // free up any plots that are not waiting on a draw call
-    bool removeUnusedPlots(GrAtlas* atlas);
+    // remove reference to this plot
+    bool removePlot(GrAtlas* atlas, const GrPlot* plot);
 
-    // to be called by ~GrAtlas()
-    void deletePlotList(GrPlot* plot);
+    // get a plot that's not being used by the current draw
+    // this allows us to overwrite this plot without flushing
+    GrPlot* getUnusedPlot();
 
     GrTexture* getTexture() const {
         return fTexture;
     }
 
+    void uploadPlotsToTexture();
+
 private:
-    GrPlot* allocPlot();
-    void freePlot(GrPlot* plot);
+    void moveToHead(GrPlot* plot);
 
     GrGpu*        fGpu;
     GrPixelConfig fPixelConfig;
     GrTexture*    fTexture;
+    SkISize       fBackingTextureSize;
+    int           fNumPlotsX;
+    int           fNumPlotsY;
+    bool          fBatchUploads;
 
     // allocated array of GrPlots
-    GrPlot*       fPlots;
-    // linked list of free GrPlots
-    GrPlot*       fFreePlots;
+    GrPlot*       fPlotArray;
+    // LRU list of GrPlots
+    GrPlotList    fPlotList;
 };
 
 class GrAtlas {
 public:
-    GrAtlas(GrAtlasMgr* mgr) : fPlots(NULL), fAtlasMgr(mgr) { }
-    ~GrAtlas() { fAtlasMgr->deletePlotList(fPlots); }
+    GrAtlas() { }
+    ~GrAtlas() { }
 
-    bool isEmpty() { return NULL == fPlots; }
+    bool isEmpty() { return 0 == fPlots.count(); }
 
 private:
-    GrPlot*     fPlots;
-    GrAtlasMgr* fAtlasMgr;
+    SkTDArray<GrPlot*> fPlots;
 
     friend class GrAtlasMgr;
 };

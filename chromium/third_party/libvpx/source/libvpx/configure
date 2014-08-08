@@ -24,14 +24,14 @@ Advanced options:
   ${toggle_examples}              examples
   ${toggle_docs}                  documentation
   ${toggle_unit_tests}            unit tests
+  ${toggle_decode_perf_tests}     build decoder perf tests with unit tests
   --libc=PATH                     path to alternate libc
   --as={yasm|nasm|auto}           use specified assembler [auto, yasm preferred]
-  --sdk-path=PATH                 path to root of sdk (iOS, android builds only)
+  --sdk-path=PATH                 path to root of sdk (android builds only)
   ${toggle_fast_unaligned}        don't use unaligned accesses, even when
                                   supported by hardware [auto]
   ${toggle_codec_srcs}            in/exclude codec library source code
   ${toggle_debug_libs}            in/exclude debug version of libraries
-  ${toggle_md5}                   support for output of checksum data
   ${toggle_static_msvcrt}         use static MSVCRT (VS builds only)
   ${toggle_vp8}                   VP8 codec support
   ${toggle_vp9}                   VP9 codec support
@@ -51,6 +51,7 @@ Advanced options:
   ${toggle_postproc_visualizer}   macro block / block level visualizers
   ${toggle_multi_res_encoding}    enable multiple-resolution encoding
   ${toggle_temporal_denoising}    enable temporal denoising and disable the spatial denoiser
+  ${toggle_webm_io}               enable input from and output to WebM container
 
 Codecs:
   Codecs can be selectively enabled or disabled individually, or by family:
@@ -100,6 +101,7 @@ all_platforms="${all_platforms} armv7-linux-rvct"    #neon Cortex-A8
 all_platforms="${all_platforms} armv7-linux-gcc"     #neon Cortex-A8
 all_platforms="${all_platforms} armv7-none-rvct"     #neon Cortex-A8
 all_platforms="${all_platforms} armv7-win32-vs11"
+all_platforms="${all_platforms} armv7-win32-vs12"
 all_platforms="${all_platforms} mips32-linux-gcc"
 all_platforms="${all_platforms} ppc32-darwin8-gcc"
 all_platforms="${all_platforms} ppc32-darwin9-gcc"
@@ -127,6 +129,7 @@ all_platforms="${all_platforms} x86-win32-vs8"
 all_platforms="${all_platforms} x86-win32-vs9"
 all_platforms="${all_platforms} x86-win32-vs10"
 all_platforms="${all_platforms} x86-win32-vs11"
+all_platforms="${all_platforms} x86-win32-vs12"
 all_platforms="${all_platforms} x86_64-darwin9-gcc"
 all_platforms="${all_platforms} x86_64-darwin10-gcc"
 all_platforms="${all_platforms} x86_64-darwin11-gcc"
@@ -140,6 +143,7 @@ all_platforms="${all_platforms} x86_64-win64-vs8"
 all_platforms="${all_platforms} x86_64-win64-vs9"
 all_platforms="${all_platforms} x86_64-win64-vs10"
 all_platforms="${all_platforms} x86_64-win64-vs11"
+all_platforms="${all_platforms} x86_64-win64-vs12"
 all_platforms="${all_platforms} universal-darwin8-gcc"
 all_platforms="${all_platforms} universal-darwin9-gcc"
 all_platforms="${all_platforms} universal-darwin10-gcc"
@@ -154,8 +158,20 @@ all_targets="libs examples docs"
 
 # all targets available are enabled, by default.
 for t in ${all_targets}; do
-    [ -f ${source_path}/${t}.mk ] && enable_feature ${t}
+    [ -f "${source_path}/${t}.mk" ] && enable_feature ${t}
 done
+
+if ! perl --version >/dev/null; then
+    die "Perl is required to build"
+fi
+
+
+if [ "`cd \"${source_path}\" && pwd`" != "`pwd`" ]; then
+  # test to see if source_path already configured
+  if [ -f "${source_path}/vpx_config.h" ]; then
+    die "source directory already configured; run 'make distclean' there first"
+  fi
+fi
 
 # check installed doxygen version
 doxy_version=$(doxygen --version 2>/dev/null)
@@ -173,40 +189,39 @@ fi
 # install everything except the sources, by default. sources will have
 # to be enabled when doing dist builds, since that's no longer a common
 # case.
-enabled doxygen && php -v >/dev/null 2>&1 && enable_feature install_docs
+enabled doxygen && enable_feature install_docs
 enable_feature install_bins
 enable_feature install_libs
 
 enable_feature static
 enable_feature optimizations
 enable_feature fast_unaligned #allow unaligned accesses, if supported by hw
-enable_feature md5
 enable_feature spatial_resampling
 enable_feature multithread
 enable_feature os_support
 enable_feature temporal_denoising
 
-[ -d ${source_path}/../include ] && enable_feature alt_tree_layout
+[ -d "${source_path}/../include" ] && enable_feature alt_tree_layout
 for d in vp8 vp9; do
-    [ -d ${source_path}/${d} ] && disable_feature alt_tree_layout;
+    [ -d "${source_path}/${d}" ] && disable_feature alt_tree_layout;
 done
 
 if ! enabled alt_tree_layout; then
 # development environment
-[ -d ${source_path}/vp8 ] && CODECS="${CODECS} vp8_encoder vp8_decoder"
-[ -d ${source_path}/vp9 ] && CODECS="${CODECS} vp9_encoder vp9_decoder"
+[ -d "${source_path}/vp8" ] && CODECS="${CODECS} vp8_encoder vp8_decoder"
+[ -d "${source_path}/vp9" ] && CODECS="${CODECS} vp9_encoder vp9_decoder"
 else
 # customer environment
-[ -f ${source_path}/../include/vpx/vp8cx.h ] && CODECS="${CODECS} vp8_encoder"
-[ -f ${source_path}/../include/vpx/vp8dx.h ] && CODECS="${CODECS} vp8_decoder"
-[ -f ${source_path}/../include/vpx/vp9cx.h ] && CODECS="${CODECS} vp9_encoder"
-[ -f ${source_path}/../include/vpx/vp9dx.h ] && CODECS="${CODECS} vp9_decoder"
-[ -f ${source_path}/../include/vpx/vp8cx.h ] || disable_feature vp8_encoder
-[ -f ${source_path}/../include/vpx/vp8dx.h ] || disable_feature vp8_decoder
-[ -f ${source_path}/../include/vpx/vp9cx.h ] || disable_feature vp9_encoder
-[ -f ${source_path}/../include/vpx/vp9dx.h ] || disable_feature vp9_decoder
+[ -f "${source_path}/../include/vpx/vp8cx.h" ] && CODECS="${CODECS} vp8_encoder"
+[ -f "${source_path}/../include/vpx/vp8dx.h" ] && CODECS="${CODECS} vp8_decoder"
+[ -f "${source_path}/../include/vpx/vp9cx.h" ] && CODECS="${CODECS} vp9_encoder"
+[ -f "${source_path}/../include/vpx/vp9dx.h" ] && CODECS="${CODECS} vp9_decoder"
+[ -f "${source_path}/../include/vpx/vp8cx.h" ] || disable_feature vp8_encoder
+[ -f "${source_path}/../include/vpx/vp8dx.h" ] || disable_feature vp8_decoder
+[ -f "${source_path}/../include/vpx/vp9cx.h" ] || disable_feature vp9_encoder
+[ -f "${source_path}/../include/vpx/vp9dx.h" ] || disable_feature vp9_decoder
 
-[ -f ${source_path}/../lib/*/*mt.lib ] && soft_enable static_msvcrt
+[ -f "${source_path}/../lib/*/*mt.lib" ] && soft_enable static_msvcrt
 fi
 
 CODECS="$(echo ${CODECS} | tr ' ' '\n')"
@@ -224,6 +239,7 @@ ARCH_EXT_LIST="
     edsp
     media
     neon
+    neon_asm
 
     mips32
     dspr2
@@ -249,9 +265,7 @@ HAVE_LIST="
     unistd_h
 "
 EXPERIMENT_LIST="
-    oneshotq
     multiple_arf
-    non420
     alpha
 "
 CONFIG_LIST="
@@ -276,7 +290,6 @@ CONFIG_LIST="
     mem_manager
     mem_tracker
     mem_checks
-    md5
 
     dequant_tokens
     dc_recon
@@ -300,10 +313,11 @@ CONFIG_LIST="
     postproc_visualizer
     os_support
     unit_tests
+    webm_io
+    decode_perf_tests
     multi_res_encoding
     temporal_denoising
     experimental
-    decrypt
     ${EXPERIMENT_LIST}
 "
 CMDLINE_SELECT="
@@ -332,7 +346,6 @@ CMDLINE_SELECT="
     fast_unaligned
     codec_srcs
     debug_libs
-    md5
 
     dequant_tokens
     dc_recon
@@ -353,10 +366,11 @@ CMDLINE_SELECT="
     small
     postproc_visualizer
     unit_tests
+    webm_io
+    decode_perf_tests
     multi_res_encoding
     temporal_denoising
     experimental
-    decrypt
 "
 
 process_cmdline() {
@@ -453,7 +467,7 @@ process_targets() {
           ;;
     esac
     if [ -f "${source_path}/build/make/version.sh" ]; then
-        local ver=`"$source_path/build/make/version.sh" --bare $source_path`
+        local ver=`"$source_path/build/make/version.sh" --bare "$source_path"`
         DIST_DIR="${DIST_DIR}-${ver}"
         VERSION_STRING=${ver}
         ver=${ver%%-*}
@@ -671,9 +685,10 @@ process_toolchain() {
                  VCPROJ_SFX=vcproj
                  gen_vcproj_cmd=${source_path}/build/make/gen_msvs_proj.sh
                  ;;
-             10|11)
+             10|11|12)
                  VCPROJ_SFX=vcxproj
                  gen_vcproj_cmd=${source_path}/build/make/gen_msvs_vcxproj.sh
+                 enabled werror && gen_vcproj_cmd="${gen_vcproj_cmd} --enable-werror"
                  ;;
              esac
              all_targets="${all_targets} solution"
@@ -692,8 +707,10 @@ process_toolchain() {
     case "$toolchain" in
         *-vs*)
             soft_enable unit_tests
+            soft_enable webm_io
         ;;
         *-android-*)
+            soft_enable webm_io
             # GTestLog must be modified to use Android logging utilities.
         ;;
         *-darwin-*)
@@ -707,13 +724,21 @@ process_toolchain() {
             check_cxx "$@" <<EOF && soft_enable unit_tests
 int z;
 EOF
+            check_cxx "$@" <<EOF && soft_enable webm_io
+int z;
+EOF
         ;;
         *)
             enabled pthread_h && check_cxx "$@" <<EOF && soft_enable unit_tests
 int z;
 EOF
+            check_cxx "$@" <<EOF && soft_enable webm_io
+int z;
+EOF
         ;;
     esac
+    # libwebm needs to be linked with C++ standard library
+    enabled webm_io && LD=${CXX}
 }
 
 

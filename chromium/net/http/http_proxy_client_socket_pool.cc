@@ -206,7 +206,7 @@ int HttpProxyConnectJob::DoSSLConnect() {
   if (params_->tunnel()) {
     SpdySessionKey key(params_->destination().host_port_pair(),
                        ProxyServer::Direct(),
-                       kPrivacyModeDisabled);
+                       PRIVACY_MODE_DISABLED);
     if (params_->spdy_session_pool()->FindAvailableSession(key, net_log())) {
       using_spdy_ = true;
       next_state_ = STATE_SPDY_PROXY_CREATE_STREAM;
@@ -236,6 +236,13 @@ int HttpProxyConnectJob::DoSSLConnectComplete(int result) {
       transport_socket_handle_->socket()->Disconnect();
       return ERR_PROXY_CERTIFICATE_INVALID;
     }
+  }
+  // A SPDY session to the proxy completed prior to resolving the proxy
+  // hostname. Surface this error, and allow the delegate to retry.
+  // See crbug.com/334413.
+  if (result == ERR_SPDY_SESSION_ALREADY_EXISTS) {
+    DCHECK(!transport_socket_handle_->socket());
+    return ERR_SPDY_SESSION_ALREADY_EXISTS;
   }
   if (result < 0) {
     if (transport_socket_handle_->socket())
@@ -302,7 +309,7 @@ int HttpProxyConnectJob::DoSpdyProxyCreateStream() {
   DCHECK(params_->tunnel());
   SpdySessionKey key(params_->destination().host_port_pair(),
                      ProxyServer::Direct(),
-                     kPrivacyModeDisabled);
+                     PRIVACY_MODE_DISABLED);
   SpdySessionPool* spdy_pool = params_->spdy_session_pool();
   base::WeakPtr<SpdySession> spdy_session =
       spdy_pool->FindAvailableSession(key, net_log());
@@ -315,11 +322,11 @@ int HttpProxyConnectJob::DoSpdyProxyCreateStream() {
     }
   } else {
     // Create a session direct to the proxy itself
-    int rv = spdy_pool->CreateAvailableSessionFromSocket(
-        key, transport_socket_handle_.Pass(),
-        net_log(), OK, &spdy_session, /*using_ssl_*/ true);
-    if (rv < 0)
-      return rv;
+    spdy_session =
+        spdy_pool->CreateAvailableSessionFromSocket(
+            key, transport_socket_handle_.Pass(),
+            net_log(), OK, /*using_ssl_*/ true);
+    DCHECK(spdy_session);
   }
 
   next_state_ = STATE_SPDY_PROXY_CREATE_STREAM_COMPLETE;

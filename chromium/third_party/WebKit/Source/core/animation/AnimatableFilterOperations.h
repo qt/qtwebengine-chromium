@@ -36,18 +36,20 @@
 
 namespace WebCore {
 
-class AnimatableFilterOperations : public AnimatableValue {
+class AnimatableFilterOperations FINAL : public AnimatableValue {
 public:
     virtual ~AnimatableFilterOperations() { }
-    static PassRefPtr<AnimatableFilterOperations> create(const FilterOperations& operations)
+    static PassRefPtrWillBeRawPtr<AnimatableFilterOperations> create(const FilterOperations& operations)
     {
-        return adoptRef(new AnimatableFilterOperations(operations));
+        return adoptRefWillBeNoop(new AnimatableFilterOperations(operations));
     }
     const FilterOperations& operations() const { return m_operations; }
 
+    virtual void trace(Visitor* visitor) OVERRIDE { AnimatableValue::trace(visitor); }
+
 protected:
-    virtual PassRefPtr<AnimatableValue> interpolateTo(const AnimatableValue*, double fraction) const OVERRIDE;
-    virtual PassRefPtr<AnimatableValue> addWith(const AnimatableValue*) const OVERRIDE;
+    virtual PassRefPtrWillBeRawPtr<AnimatableValue> interpolateTo(const AnimatableValue*, double fraction) const OVERRIDE;
+    virtual bool usesDefaultInterpolationWith(const AnimatableValue*) const OVERRIDE;
 
 private:
     AnimatableFilterOperations(const FilterOperations& operations)

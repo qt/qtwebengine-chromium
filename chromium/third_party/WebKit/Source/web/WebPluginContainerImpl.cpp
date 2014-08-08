@@ -29,44 +29,43 @@
  */
 
 #include "config.h"
-#include "WebPluginContainerImpl.h"
+#include "web/WebPluginContainerImpl.h"
 
-#include "ChromeClientImpl.h"
-#include "ScrollbarGroup.h"
-#include "WebDataSourceImpl.h"
-#include "WebElement.h"
-#include "WebInputEvent.h"
-#include "WebInputEventConversion.h"
-#include "WebPlugin.h"
-#include "WebViewClient.h"
-#include "WebViewImpl.h"
 #include "core/page/Chrome.h"
 #include "core/page/EventHandler.h"
 #include "platform/exported/WrappedResourceResponse.h"
+#include "public/web/WebElement.h"
+#include "public/web/WebInputEvent.h"
+#include "public/web/WebPlugin.h"
+#include "public/web/WebViewClient.h"
+#include "web/ChromeClientImpl.h"
+#include "web/ScrollbarGroup.h"
+#include "web/WebDataSourceImpl.h"
+#include "web/WebInputEventConversion.h"
+#include "web/WebViewImpl.h"
 
-#include "HTMLNames.h"
-#include "WebPrintParams.h"
 #include "bindings/v8/ScriptController.h"
-#include "core/dom/Clipboard.h"
+#include "core/HTMLNames.h"
+#include "core/clipboard/Clipboard.h"
+#include "core/clipboard/DataObject.h"
 #include "core/events/GestureEvent.h"
 #include "core/events/KeyboardEvent.h"
 #include "core/events/MouseEvent.h"
-#include "core/events/ThreadLocalEventNames.h"
 #include "core/events/TouchEvent.h"
 #include "core/events/WheelEvent.h"
+#include "core/frame/FrameView.h"
+#include "core/frame/LocalFrame.h"
 #include "core/html/HTMLFormElement.h"
 #include "core/html/HTMLPlugInElement.h"
 #include "core/loader/FormState.h"
 #include "core/loader/FrameLoadRequest.h"
 #include "core/page/FocusController.h"
-#include "core/frame/Frame.h"
-#include "core/frame/FrameView.h"
 #include "core/page/Page.h"
 #include "core/page/scrolling/ScrollingCoordinator.h"
-#include "core/platform/chromium/ChromiumDataObject.h"
 #include "core/plugins/PluginOcclusionSupport.h"
 #include "core/rendering/HitTestResult.h"
 #include "core/rendering/RenderBox.h"
+#include "core/rendering/RenderLayer.h"
 #include "platform/HostWindow.h"
 #include "platform/KeyboardCodes.h"
 #include "platform/PlatformGestureEvent.h"
@@ -88,6 +87,7 @@
 #include "public/platform/WebURLError.h"
 #include "public/platform/WebURLRequest.h"
 #include "public/platform/WebVector.h"
+#include "public/web/WebPrintParams.h"
 
 using namespace WebCore;
 
@@ -149,7 +149,7 @@ void WebPluginContainerImpl::invalidateRect(const IntRect& rect)
     IntRect dirtyRect = rect;
     dirtyRect.move(renderer->borderLeft() + renderer->paddingLeft(),
                    renderer->borderTop() + renderer->paddingTop());
-    renderer->repaintRectangle(dirtyRect);
+    renderer->invalidatePaintRectangle(dirtyRect);
 }
 
 void WebPluginContainerImpl::setFocus(bool focused)
@@ -178,9 +178,6 @@ void WebPluginContainerImpl::handleEvent(Event* event)
 {
     if (!m_webPlugin->acceptsInputEvents())
         return;
-
-    const WebInputEvent* currentInputEvent = WebViewImpl::currentInputEvent();
-    UserGestureIndicator gestureIndicator(currentInputEvent && WebInputEvent::isUserGestureEventType(currentInputEvent->type) ? DefinitelyProcessingNewUserGesture : PossiblyProcessingUserGesture);
 
     RefPtr<WebPluginContainerImpl> protector(this);
     // The events we pass are defined at:
@@ -213,11 +210,6 @@ void WebPluginContainerImpl::frameRectsChanged()
 void WebPluginContainerImpl::widgetPositionsUpdated()
 {
     Widget::widgetPositionsUpdated();
-    reportGeometry();
-}
-
-void WebPluginContainerImpl::clipRectChanged()
-{
     reportGeometry();
 }
 
@@ -256,6 +248,8 @@ void WebPluginContainerImpl::setParent(Widget* widget)
     Widget::setParent(widget);
     if (widget)
         reportGeometry();
+    else if (m_webPlugin)
+        m_webPlugin->containerDidDetachFromParent();
 }
 
 void WebPluginContainerImpl::setPlugin(WebPlugin* plugin)
@@ -284,7 +278,7 @@ float WebPluginContainerImpl::pageScaleFactor()
 
 float WebPluginContainerImpl::pageZoomFactor()
 {
-    Frame* frame = m_element->document().frame();
+    LocalFrame* frame = m_element->document().frame();
     if (!frame)
         return 1.0;
     return frame->pageZoomFactor();
@@ -295,15 +289,27 @@ void WebPluginContainerImpl::setWebLayer(WebLayer* layer)
     if (m_webLayer == layer)
         return;
 
-    // If anyone of the layers is null we need to switch between hardware
-    // and software compositing.
-    if (!m_webLayer || !layer)
-        m_element->scheduleLayerUpdate();
     if (m_webLayer)
         GraphicsLayer::unregisterContentsLayer(m_webLayer);
     if (layer)
         GraphicsLayer::registerContentsLayer(layer);
+
+    // If either of the layers is null we need to switch between hardware
+    // and software compositing.
+    bool needsCompositingUpdate = !m_webLayer || !layer;
+
     m_webLayer = layer;
+
+    if (!needsCompositingUpdate)
+        return;
+
+    m_element->setNeedsCompositingUpdate();
+    // Being composited or not affects the self painting layer bit
+    // on the RenderLayer.
+    if (RenderPart* renderer = m_element->renderPart()) {
+        ASSERT(renderer->hasLayer());
+        renderer->layer()->updateSelfPaintingLayer();
+    }
 }
 
 bool WebPluginContainerImpl::supportsPaginatedPrint() const
@@ -324,6 +330,8 @@ int WebPluginContainerImpl::printBegin(const WebPrintParams& printParams) const
 bool WebPluginContainerImpl::printPage(int pageNumber,
                                        WebCore::GraphicsContext* gc)
 {
+    if (gc->paintingDisabled())
+        return true;
     gc->save();
     WebCanvas* canvas = gc->canvas();
     bool ret = m_webPlugin->printPage(pageNumber, canvas);
@@ -418,7 +426,7 @@ void WebPluginContainerImpl::allowScriptObjects()
 
 void WebPluginContainerImpl::clearScriptObjects()
 {
-    Frame* frame = m_element->document().frame();
+    LocalFrame* frame = m_element->document().frame();
     if (!frame)
         return;
     frame->script().cleanupScriptObjectsForPlugin(this);
@@ -431,7 +439,7 @@ NPObject* WebPluginContainerImpl::scriptableObjectForElement()
 
 WebString WebPluginContainerImpl::executeScriptURL(const WebURL& url, bool popupsAllowed)
 {
-    Frame* frame = m_element->document().frame();
+    LocalFrame* frame = m_element->document().frame();
     if (!frame)
         return WebString();
 
@@ -442,17 +450,18 @@ WebString WebPluginContainerImpl::executeScriptURL(const WebURL& url, bool popup
         kurl.string().substring(strlen("javascript:")));
 
     UserGestureIndicator gestureIndicator(popupsAllowed ? DefinitelyProcessingNewUserGesture : PossiblyProcessingUserGesture);
-    ScriptValue result = frame->script().executeScriptInMainWorldAndReturnValue(ScriptSourceCode(script));
+    v8::HandleScope handleScope(toIsolate(frame));
+    v8::Local<v8::Value> result = frame->script().executeScriptInMainWorldAndReturnValue(ScriptSourceCode(script));
 
     // Failure is reported as a null string.
-    String resultStr;
-    result.getString(resultStr);
-    return resultStr;
+    if (result.IsEmpty() || !result->IsString())
+        return WebString();
+    return toCoreString(v8::Handle<v8::String>::Cast(result));
 }
 
 void WebPluginContainerImpl::loadFrameRequest(const WebURLRequest& request, const WebString& target, bool notifyNeeded, void* notifyData)
 {
-    Frame* frame = m_element->document().frame();
+    LocalFrame* frame = m_element->document().frame();
     if (!frame || !frame->loader().documentLoader())
         return;  // FIXME: send a notification in this case?
 
@@ -479,7 +488,7 @@ void WebPluginContainerImpl::zoomLevelChanged(double zoomLevel)
 
 bool WebPluginContainerImpl::isRectTopmost(const WebRect& rect)
 {
-    Frame* frame = m_element->document().frame();
+    LocalFrame* frame = m_element->document().frame();
     if (!frame)
         return false;
 
@@ -707,8 +716,7 @@ void WebPluginContainerImpl::handleMouseEvent(MouseEvent* event)
     Page* page = parentView->frame().page();
     if (!page)
         return;
-    ChromeClientImpl* chromeClient = toChromeClientImpl(page->chrome().client());
-    chromeClient->setCursorForPlugin(cursorInfo);
+    toChromeClientImpl(page->chrome().client()).setCursorForPlugin(cursorInfo);
 }
 
 void WebPluginContainerImpl::handleDragEvent(MouseEvent* event)
@@ -729,7 +737,7 @@ void WebPluginContainerImpl::handleDragEvent(MouseEvent* event)
         return;
 
     Clipboard* clipboard = event->dataTransfer();
-    WebDragData dragData = clipboard->dataObject();
+    WebDragData dragData(clipboard->dataObject());
     WebDragOperationsMask dragOperationMask = static_cast<WebDragOperationsMask>(clipboard->sourceOperation());
     WebPoint dragScreenLocation(event->screenX(), event->screenY());
     WebPoint dragLocation(event->absoluteLocation().x() - location().x(), event->absoluteLocation().y() - location().y());
@@ -829,6 +837,8 @@ void WebPluginContainerImpl::handleGestureEvent(GestureEvent* event)
     WebGestureEventBuilder webEvent(this, m_element->renderer(), *event);
     if (webEvent.type == WebInputEvent::Undefined)
         return;
+    if (event->type() == EventTypeNames::gesturetapdown)
+        focusPlugin();
     WebCursorInfo cursorInfo;
     if (m_webPlugin->handleInputEvent(webEvent, cursorInfo)) {
         event->setDefaultHandled();
@@ -859,7 +869,7 @@ void WebPluginContainerImpl::synthesizeMouseEventIfPossible(TouchEvent* event)
 
 void WebPluginContainerImpl::focusPlugin()
 {
-    Frame& containingFrame = toFrameView(parent())->frame();
+    LocalFrame& containingFrame = toFrameView(parent())->frame();
     if (Page* currentPage = containingFrame.page())
         currentPage->focusController().setFocusedElement(m_element, &containingFrame);
     else
@@ -889,17 +899,22 @@ WebCore::IntRect WebPluginContainerImpl::windowClipRect() const
     IntRect clipRect =
         convertToContainingWindow(IntRect(0, 0, width(), height()));
 
-    // document().renderer() can be 0 when we receive messages from the
+    // document().renderView() can be 0 when we receive messages from the
     // plugins while we are destroying a frame.
     // FIXME: Can we just check m_element->document().isActive() ?
-    if (m_element->renderer()->document().renderer()) {
+    if (m_element->renderer()->document().renderView()) {
         // Take our element and get the clip rect from the enclosing layer and
         // frame view.
         clipRect.intersect(
-            m_element->document().view()->windowClipRectForFrameOwner(m_element, true));
+            m_element->document().view()->windowClipRectForFrameOwner(m_element));
     }
 
     return clipRect;
+}
+
+bool WebPluginContainerImpl::pluginShouldPersist() const
+{
+    return m_webPlugin->shouldPersist();
 }
 
 } // namespace blink

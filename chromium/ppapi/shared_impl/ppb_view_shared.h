@@ -27,11 +27,11 @@ struct PPAPI_SHARED_EXPORT ViewData {
   PP_Rect clip_rect;
   float device_scale;
   float css_scale;
+  PP_Point scroll_offset;
 };
 
-class PPAPI_SHARED_EXPORT PPB_View_Shared
-    : public Resource,
-      public thunk::PPB_View_API {
+class PPAPI_SHARED_EXPORT PPB_View_Shared : public Resource,
+                                            public thunk::PPB_View_API {
  public:
   PPB_View_Shared(ResourceObjectType type,
                   PP_Instance instance,
@@ -47,10 +47,10 @@ class PPAPI_SHARED_EXPORT PPB_View_Shared
   virtual PP_Bool IsFullscreen() const OVERRIDE;
   virtual PP_Bool IsVisible() const OVERRIDE;
   virtual PP_Bool IsPageVisible() const OVERRIDE;
-  virtual PP_Bool GetClipRect(PP_Rect* clip) const
-      OVERRIDE;
+  virtual PP_Bool GetClipRect(PP_Rect* clip) const OVERRIDE;
   virtual float GetDeviceScale() const OVERRIDE;
   virtual float GetCSSScale() const OVERRIDE;
+  virtual PP_Bool GetScrollOffset(PP_Point* scroll_offset) const OVERRIDE;
 
  private:
   ViewData data_;

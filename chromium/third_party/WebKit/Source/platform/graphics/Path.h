@@ -33,6 +33,7 @@
 #include "platform/geometry/RoundedRect.h"
 #include "platform/graphics/WindRule.h"
 #include "third_party/skia/include/core/SkPath.h"
+#include "third_party/skia/include/core/SkPathMeasure.h"
 #include "wtf/FastAllocBase.h"
 #include "wtf/Forward.h"
 
@@ -85,6 +86,25 @@ public:
     float normalAngleAtLength(float length, bool& ok) const;
     bool pointAndNormalAtLength(float length, FloatPoint&, float&) const;
 
+    // Helper for computing a sequence of positions and normals (normal angles) on a path.
+    // The best possible access pattern will be one where the |length| value is
+    // strictly increasing.
+    // For other access patterns, performance will vary depending on curvature
+    // and number of segments, but should never be worse than that of the
+    // state-less method on Path.
+    class PLATFORM_EXPORT PositionCalculator {
+        WTF_MAKE_NONCOPYABLE(PositionCalculator);
+    public:
+        explicit PositionCalculator(const Path&);
+
+        bool pointAndNormalAtLength(float length, FloatPoint&, float&);
+
+    private:
+        SkPath m_path;
+        SkPathMeasure m_pathMeasure;
+        SkScalar m_accumulatedLength;
+    };
+
     void clear();
     bool isEmpty() const;
     // Gets the current point of the current path, which is conceptually the final point reached by the path so far.
@@ -111,6 +131,8 @@ public:
     void addRoundedRect(const FloatRect&, const FloatSize& topLeftRadius, const FloatSize& topRightRadius, const FloatSize& bottomLeftRadius, const FloatSize& bottomRightRadius);
     void addRoundedRect(const RoundedRect&);
 
+    void addPath(const Path&, const AffineTransform&);
+
     void translate(const FloatSize&);
 
     const SkPath& skPath() const { return m_path; }
@@ -130,7 +152,7 @@ private:
     SkPath m_path;
 };
 
-#if !ASSERT_DISABLED
+#if ASSERT_ENABLED
 PLATFORM_EXPORT bool ellipseIsRenderable(float startAngle, float endAngle);
 #endif
 

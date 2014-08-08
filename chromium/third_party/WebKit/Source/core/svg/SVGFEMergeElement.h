@@ -28,12 +28,12 @@ namespace WebCore {
 
 class SVGFEMergeElement FINAL : public SVGFilterPrimitiveStandardAttributes {
 public:
-    static PassRefPtr<SVGFEMergeElement> create(Document&);
+    DECLARE_NODE_FACTORY(SVGFEMergeElement);
 
 private:
     explicit SVGFEMergeElement(Document&);
 
-    virtual PassRefPtr<FilterEffect> build(SVGFilterBuilder*, Filter*);
+    virtual PassRefPtr<FilterEffect> build(SVGFilterBuilder*, Filter*) OVERRIDE;
 };
 
 } // namespace WebCore

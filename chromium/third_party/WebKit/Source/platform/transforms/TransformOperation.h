@@ -59,13 +59,13 @@ public:
 
     virtual bool isIdentity() const = 0;
 
-    // Return true if the borderBoxSize was used in the computation, false otherwise.
     virtual void apply(TransformationMatrix&, const FloatSize& borderBoxSize) const = 0;
 
     virtual PassRefPtr<TransformOperation> blend(const TransformOperation* from, double progress, bool blendToIdentity = false) = 0;
 
     virtual OperationType type() const = 0;
     bool isSameType(const TransformOperation& other) const { return other.type() == type(); }
+    virtual bool canBlendWith(const TransformOperation& other) const = 0;
 
     bool is3DOperation() const
     {

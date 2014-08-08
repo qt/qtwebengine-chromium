@@ -33,6 +33,10 @@ struct GPU_EXPORT GPUInfo {
     // Device ids are unique to vendor, not to one another.
     uint32 device_id;
 
+    // Whether this GPU is the currently used one.
+    // Currently this field is only supported and meaningful on OS X.
+    bool active;
+
     // The strings that describe the GPU.
     // In Linux these strings are obtained through libpci.
     // In Win/MacOSX, these two strings are not filled at the moment.
@@ -96,24 +100,28 @@ struct GPU_EXPORT GPUInfo {
   // The version of the vertex shader used by the gpu.
   std::string vertex_shader_version;
 
-  // The machine model identifier with format "name major.minor".
-  // Name should not contain any whitespaces.
-  std::string machine_model;
+  // The machine model identifier. They can contain any character, including
+  // whitespaces.  Currently it is supported on MacOSX and Android.
+  // Android examples: "Naxus 5", "XT1032".
+  // On MacOSX, the version is stripped out of the model identifier, for
+  // example, the original identifier is "MacBookPro7,2", and we put
+  // "MacBookPro" as machine_model_name, and "7.2" as machine_model_version.
+  std::string machine_model_name;
 
-  // The version of OpenGL we are using.
-  // TODO(zmo): should be able to tell if it's GL or GLES.
+  // The version of the machine model. Currently it is supported on MacOSX.
+  // See machine_model_name's comment.
+  std::string machine_model_version;
+
+  // The GL_VERSION string.
   std::string gl_version;
 
-  // The GL_VERSION string.  "" if we are not using OpenGL.
-  std::string gl_version_string;
-
-  // The GL_VENDOR string.  "" if we are not using OpenGL.
+  // The GL_VENDOR string.
   std::string gl_vendor;
 
-  // The GL_RENDERER string.  "" if we are not using OpenGL.
+  // The GL_RENDERER string.
   std::string gl_renderer;
 
-  // The GL_EXTENSIONS string.  "" if we are not using OpenGL.
+  // The GL_EXTENSIONS string.
   std::string gl_extensions;
 
   // GL window system binding vendor.  "" if not available.
@@ -137,6 +145,10 @@ struct GPU_EXPORT GPUInfo {
   GpuPerformanceStats performance_stats;
 
   bool software_rendering;
+
+  // Whether the driver uses direct rendering. True on most platforms, false on
+  // X11 when using remote X.
+  bool direct_rendering;
 
   // Whether the gpu process is running in a sandbox.
   bool sandboxed;

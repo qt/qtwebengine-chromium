@@ -31,7 +31,9 @@
 #ifndef WorkerPerformance_h
 #define WorkerPerformance_h
 
+#include "bindings/v8/ScriptWrappable.h"
 #include "core/dom/ContextLifecycleObserver.h"
+#include "platform/heap/Handle.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
@@ -39,16 +41,23 @@
 namespace WebCore {
 
 class ExecutionContext;
+class MemoryInfo;
 
-class WorkerPerformance : public RefCounted<WorkerPerformance>, public ContextLifecycleObserver {
+class WorkerPerformance : public GarbageCollectedFinalized<WorkerPerformance>, public ScriptWrappable {
 public:
-    static PassRefPtr<WorkerPerformance> create(ExecutionContext* context) { return adoptRef(new WorkerPerformance(context)); }
+    static WorkerPerformance* create()
+    {
+        return new WorkerPerformance();
+    }
     ~WorkerPerformance();
 
-    double now() const;
+    double now(ExecutionContext*) const;
+    PassRefPtrWillBeRawPtr<MemoryInfo> memory() const;
+
+    void trace(Visitor*) { }
 
 private:
-    explicit WorkerPerformance(ExecutionContext*);
+    WorkerPerformance();
 };
 
 }

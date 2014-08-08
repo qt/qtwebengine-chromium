@@ -13,14 +13,13 @@
 #include "SkErrorInternals.h"
 #include "SkWriter32.h"
 
-#define CANVAS_STATE_VERSION 1
 /*
  * WARNING: The structs below are part of a stable ABI and as such we explicitly
  * use unambigious primitives (e.g. int32_t instead of an enum).
  *
- * ANY CHANGES TO THE STRUCTS BELOW THAT IMPACT THE ABI SHOULD RESULT IN AN
- * UPDATE OF THE CANVAS_STATE_VERSION. SUCH CHANGES SHOULD ONLY BE MADE IF
- * ABSOLUTELY NECESSARY!
+ * ANY CHANGES TO THE STRUCTS BELOW THAT IMPACT THE ABI SHOULD RESULT IN A NEW
+ * NEW SUBCLASS OF SkCanvasState. SUCH CHANGES SHOULD ONLY BE MADE IF ABSOLUTELY
+ * NECESSARY!
  */
 enum RasterConfigs {
   kUnknown_RasterConfig   = 0,
@@ -48,7 +47,8 @@ struct SkMCState {
     ClipRect* clipRects;
 };
 
-// NOTE: If you add more members, bump CanvasState::version.
+// NOTE: If you add more members, create a new subclass of SkCanvasState with a
+// new CanvasState::version.
 struct SkCanvasLayerState {
     CanvasBackend type;
     int32_t x, y;
@@ -60,7 +60,7 @@ struct SkCanvasLayerState {
     union {
         struct {
             RasterConfig config; // pixel format: a value from RasterConfigs.
-            size_t rowBytes;     // Number of bytes from start of one line to next.
+            uint64_t rowBytes;   // Number of bytes from start of one line to next.
             void* pixels;        // The pixels, all (height * rowBytes) of them.
         } raster;
         struct {
@@ -71,20 +71,41 @@ struct SkCanvasLayerState {
 
 class SkCanvasState {
 public:
-    SkCanvasState(SkCanvas* canvas) {
+    SkCanvasState(int32_t version, SkCanvas* canvas) {
         SkASSERT(canvas);
-        version = CANVAS_STATE_VERSION;
-        width = canvas->getDeviceSize().width();
-        height = canvas->getDeviceSize().height();
-        layerCount = 0;
-        layers = NULL;
-        originalCanvas = SkRef(canvas);
+        this->version = version;
+        width = canvas->getBaseLayerSize().width();
+        height = canvas->getBaseLayerSize().height();
 
-        mcState.clipRectCount = 0;
-        mcState.clipRects = NULL;
     }
 
-    ~SkCanvasState() {
+    /**
+     * The version this struct was built with.  This field must always appear
+     * first in the struct so that when the versions don't match (and the
+     * remaining contents and size are potentially different) we can still
+     * compare the version numbers.
+     */
+    int32_t version;
+    int32_t width;
+    int32_t height;
+    int32_t alignmentPadding;
+};
+
+class SkCanvasState_v1 : public SkCanvasState {
+public:
+    static const int32_t kVersion = 1;
+
+    SkCanvasState_v1(SkCanvas* canvas)
+    : INHERITED(kVersion, canvas)
+    {
+        layerCount = 0;
+        layers = NULL;
+        mcState.clipRectCount = 0;
+        mcState.clipRects = NULL;
+        originalCanvas = SkRef(canvas);
+    }
+
+    ~SkCanvasState_v1() {
         // loop through the layers and free the data allocated to the clipRects
         for (int i = 0; i < layerCount; ++i) {
             sk_free(layers[i].mcState.clipRects);
@@ -98,24 +119,13 @@ public:
         originalCanvas->unref();
     }
 
-    /**
-     * The version this struct was built with.  This field must always appear
-     * first in the struct so that when the versions don't match (and the
-     * remaining contents and size are potentially different) we can still
-     * compare the version numbers.
-     */
-    int32_t version;
-
-    int32_t width;
-    int32_t height;
-
     SkMCState mcState;
 
     int32_t layerCount;
     SkCanvasLayerState* layers;
-
 private:
     SkCanvas* originalCanvas;
+    typedef SkCanvasState INHERITED;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -127,6 +137,10 @@ public:
 
     // ClipVisitor
     virtual void clipRect(const SkRect& rect, SkRegion::Op op, bool antialias) SK_OVERRIDE {
+        fFailed |= antialias;
+    }
+
+    virtual void clipRRect(const SkRRect& rrect, SkRegion::Op op, bool antialias) SK_OVERRIDE {
         fFailed |= antialias;
     }
 
@@ -155,9 +169,7 @@ static void setup_MC_state(SkMCState* state, const SkMatrix& matrix, const SkReg
      * and some more common complex clips (e.g. a clipRect with a sub-rect
      * clipped out of its interior) without needing to malloc any additional memory.
      */
-    const int clipBufferSize = 4 * sizeof(ClipRect);
-    char clipBuffer[clipBufferSize];
-    SkWriter32 clipWriter(sizeof(ClipRect), clipBuffer, clipBufferSize);
+    SkSWriter32<4*sizeof(ClipRect)> clipWriter;
 
     if (!clip.isEmpty()) {
         // only returns the b/w clip so aa clips fail
@@ -189,10 +201,11 @@ SkCanvasState* SkCanvasStateUtils::CaptureCanvasState(SkCanvas* canvas) {
         return NULL;
     }
 
-    SkAutoTDelete<SkCanvasState> canvasState(SkNEW_ARGS(SkCanvasState, (canvas)));
+    SkAutoTDelete<SkCanvasState_v1> canvasState(SkNEW_ARGS(SkCanvasState_v1, (canvas)));
 
     // decompose the total matrix and clip
-    setup_MC_state(&canvasState->mcState, canvas->getTotalMatrix(), canvas->getTotalClip());
+    setup_MC_state(&canvasState->mcState, canvas->getTotalMatrix(),
+                   canvas->internal_private_getTotalClip());
 
     /*
      * decompose the layers
@@ -201,9 +214,7 @@ SkCanvasState* SkCanvasStateUtils::CaptureCanvasState(SkCanvas* canvas) {
      * some view systems (e.g. Android) that a few non-clipped layers are present
      * and we will not need to malloc any additional memory in those cases.
      */
-    const int layerBufferSize = 3 * sizeof(SkCanvasLayerState);
-    char layerBuffer[layerBufferSize];
-    SkWriter32 layerWriter(sizeof(SkCanvasLayerState), layerBuffer, layerBufferSize);
+    SkSWriter32<3*sizeof(SkCanvasLayerState)> layerWriter;
     int layerCount = 0;
     for (SkCanvas::LayerIter layer(canvas, true/*skipEmptyClips*/); !layer.done(); layer.next()) {
 
@@ -221,11 +232,11 @@ SkCanvasState* SkCanvasStateUtils::CaptureCanvasState(SkCanvas* canvas) {
         layerState->width = bitmap.width();
         layerState->height = bitmap.height();
 
-        switch (bitmap.config()) {
-            case SkBitmap::kARGB_8888_Config:
+        switch (bitmap.colorType()) {
+            case kN32_SkColorType:
                 layerState->raster.config = kARGB_8888_RasterConfig;
                 break;
-            case SkBitmap::kRGB_565_Config:
+            case kRGB_565_SkColorType:
                 layerState->raster.config = kRGB_565_RasterConfig;
                 break;
             default:
@@ -246,7 +257,7 @@ SkCanvasState* SkCanvasStateUtils::CaptureCanvasState(SkCanvas* canvas) {
 
     // for now, just ignore any client supplied DrawFilter.
     if (canvas->getDrawFilter()) {
-//        SkDEBUGF(("CaptureCanvasState will ignore the canvases draw filter.\n"));
+//        SkDEBUGF(("CaptureCanvasState will ignore the canvas's draw filter.\n"));
     }
 
     return canvasState.detach();
@@ -279,25 +290,23 @@ static SkCanvas* create_canvas_from_canvas_layer(const SkCanvasLayerState& layer
     SkASSERT(kRaster_CanvasBackend == layerState.type);
 
     SkBitmap bitmap;
-    SkBitmap::Config config =
-        layerState.raster.config == kARGB_8888_RasterConfig ? SkBitmap::kARGB_8888_Config :
-        layerState.raster.config == kRGB_565_RasterConfig ? SkBitmap::kRGB_565_Config :
-        SkBitmap::kNo_Config;
+    SkColorType colorType =
+        layerState.raster.config == kARGB_8888_RasterConfig ? kN32_SkColorType :
+        layerState.raster.config == kRGB_565_RasterConfig ? kRGB_565_SkColorType :
+        kUnknown_SkColorType;
 
-    if (config == SkBitmap::kNo_Config) {
+    if (colorType == kUnknown_SkColorType) {
         return NULL;
     }
 
-    bitmap.setConfig(config, layerState.width, layerState.height,
-                     layerState.raster.rowBytes);
-    bitmap.setPixels(layerState.raster.pixels);
+    bitmap.installPixels(SkImageInfo::Make(layerState.width, layerState.height,
+                                           colorType, kPremul_SkAlphaType),
+                         layerState.raster.pixels, (size_t) layerState.raster.rowBytes);
 
     SkASSERT(!bitmap.empty());
     SkASSERT(!bitmap.isNull());
 
-    // create a device & canvas
-    SkAutoTUnref<SkBitmapDevice> device(SkNEW_ARGS(SkBitmapDevice, (bitmap)));
-    SkAutoTUnref<SkCanvas> canvas(SkNEW_ARGS(SkCanvas, (device.get())));
+    SkAutoTUnref<SkCanvas> canvas(SkNEW_ARGS(SkCanvas, (bitmap)));
 
     // setup the matrix and clip
     setup_canvas_from_MC_state(layerState.mcState, canvas.get());
@@ -307,30 +316,28 @@ static SkCanvas* create_canvas_from_canvas_layer(const SkCanvasLayerState& layer
 
 SkCanvas* SkCanvasStateUtils::CreateFromCanvasState(const SkCanvasState* state) {
     SkASSERT(state);
+    // Currently there is only one possible version.
+    SkASSERT(SkCanvasState_v1::kVersion == state->version);
 
-    // check that the versions match
-    if (CANVAS_STATE_VERSION != state->version) {
-        SkDebugf("CreateFromCanvasState version does not match the one use to create the input");
-        return NULL;
-    }
+    const SkCanvasState_v1* state_v1 = static_cast<const SkCanvasState_v1*>(state);
 
-    if (state->layerCount < 1) {
+    if (state_v1->layerCount < 1) {
         return NULL;
     }
 
     SkAutoTUnref<SkCanvasStack> canvas(SkNEW_ARGS(SkCanvasStack, (state->width, state->height)));
 
     // setup the matrix and clip on the n-way canvas
-    setup_canvas_from_MC_state(state->mcState, canvas);
+    setup_canvas_from_MC_state(state_v1->mcState, canvas);
 
     // Iterate over the layers and add them to the n-way canvas
-    for (int i = state->layerCount - 1; i >= 0; --i) {
-        SkAutoTUnref<SkCanvas> canvasLayer(create_canvas_from_canvas_layer(state->layers[i]));
+    for (int i = state_v1->layerCount - 1; i >= 0; --i) {
+        SkAutoTUnref<SkCanvas> canvasLayer(create_canvas_from_canvas_layer(state_v1->layers[i]));
         if (!canvasLayer.get()) {
             return NULL;
         }
-        canvas->pushCanvas(canvasLayer.get(), SkIPoint::Make(state->layers[i].x,
-                                                             state->layers[i].y));
+        canvas->pushCanvas(canvasLayer.get(), SkIPoint::Make(state_v1->layers[i].x,
+                                                             state_v1->layers[i].y));
     }
 
     return canvas.detach();
@@ -339,5 +346,9 @@ SkCanvas* SkCanvasStateUtils::CreateFromCanvasState(const SkCanvasState* state) 
 ////////////////////////////////////////////////////////////////////////////////
 
 void SkCanvasStateUtils::ReleaseCanvasState(SkCanvasState* state) {
-    SkDELETE(state);
+    SkASSERT(!state || SkCanvasState_v1::kVersion == state->version);
+    // Upcast to the correct version of SkCanvasState. This avoids having a virtual destructor on
+    // SkCanvasState. That would be strange since SkCanvasState has no other virtual functions, and
+    // instead uses the field "version" to determine how to behave.
+    SkDELETE(static_cast<SkCanvasState_v1*>(state));
 }

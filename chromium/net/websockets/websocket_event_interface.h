@@ -12,7 +12,13 @@
 #include "base/compiler_specific.h"  // for WARN_UNUSED_RESULT
 #include "net/base/net_export.h"
 
+class GURL;
+
 namespace net {
+
+class SSLInfo;
+struct WebSocketHandshakeRequestInfo;
+struct WebSocketHandshakeResponseInfo;
 
 // Interface for events sent from the network layer to the content layer. These
 // events will generally be sent as-is to the renderer process.
@@ -29,13 +35,15 @@ class NET_EXPORT WebSocketEventInterface {
   };
 
   virtual ~WebSocketEventInterface() {}
+
   // Called in response to an AddChannelRequest. This generally means that a
   // response has been received from the remote server, but the response might
   // have been generated internally. If |fail| is true, the channel cannot be
   // used and should be deleted, returning CHANNEL_DELETED.
   virtual ChannelState OnAddChannelResponse(
       bool fail,
-      const std::string& selected_subprotocol) WARN_UNUSED_RESULT = 0;
+      const std::string& selected_subprotocol,
+      const std::string& extensions) WARN_UNUSED_RESULT = 0;
 
   // Called when a data frame has been received from the remote host and needs
   // to be forwarded to the renderer process.
@@ -63,13 +71,62 @@ class NET_EXPORT WebSocketEventInterface {
   // callers must take care not to provide details that could be useful to
   // attackers attempting to use WebSockets to probe networks.
   //
+  // |was_clean| should be true if the closing handshake completed successfully.
+  //
   // The channel should not be used again after OnDropChannel() has been
   // called.
   //
   // This method returns a ChannelState for consistency, but all implementations
   // must delete the Channel and return CHANNEL_DELETED.
-  virtual ChannelState OnDropChannel(uint16 code, const std::string& reason)
+  virtual ChannelState OnDropChannel(bool was_clean,
+                                     uint16 code,
+                                     const std::string& reason)
       WARN_UNUSED_RESULT = 0;
+
+  // Called when the browser fails the channel, as specified in the spec.
+  //
+  // The channel should not be used again after OnFailChannel() has been
+  // called.
+  //
+  // This method returns a ChannelState for consistency, but all implementations
+  // must delete the Channel and return CHANNEL_DELETED.
+  virtual ChannelState OnFailChannel(const std::string& message)
+      WARN_UNUSED_RESULT = 0;
+
+  // Called when the browser starts the WebSocket Opening Handshake.
+  virtual ChannelState OnStartOpeningHandshake(
+      scoped_ptr<WebSocketHandshakeRequestInfo> request) WARN_UNUSED_RESULT = 0;
+
+  // Called when the browser finishes the WebSocket Opening Handshake.
+  virtual ChannelState OnFinishOpeningHandshake(
+      scoped_ptr<WebSocketHandshakeResponseInfo> response)
+      WARN_UNUSED_RESULT = 0;
+
+  // Callbacks to be used in response to a call to OnSSLCertificateError. Very
+  // similar to content::SSLErrorHandler::Delegate (which we can't use directly
+  // due to layering constraints).
+  class NET_EXPORT SSLErrorCallbacks {
+   public:
+    virtual ~SSLErrorCallbacks() {}
+
+    // Cancels the SSL response in response to the error.
+    virtual void CancelSSLRequest(int error, const SSLInfo* ssl_info) = 0;
+
+    // Continue with the SSL connection despite the error.
+    virtual void ContinueSSLRequest() = 0;
+  };
+
+  // Called on SSL Certificate Error during the SSL handshake. Should result in
+  // a call to either ssl_error_callbacks->ContinueSSLRequest() or
+  // ssl_error_callbacks->CancelSSLRequest(). Normally the implementation of
+  // this method will delegate to content::SSLManager::OnSSLCertificateError to
+  // make the actual decision. The callbacks must not be called after the
+  // WebSocketChannel has been destroyed.
+  virtual ChannelState OnSSLCertificateError(
+      scoped_ptr<SSLErrorCallbacks> ssl_error_callbacks,
+      const GURL& url,
+      const SSLInfo& ssl_info,
+      bool fatal) WARN_UNUSED_RESULT = 0;
 
  protected:
   WebSocketEventInterface() {}

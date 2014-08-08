@@ -18,6 +18,7 @@
 #include "net/socket/tcp_client_socket.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
+#include "third_party/libjingle/source/talk/base/asyncpacketsocket.h"
 
 namespace {
 
@@ -44,9 +45,11 @@ bool IsPseudoTlsClientSocket(content::P2PSocketType type) {
 namespace content {
 
 P2PSocketHostTcpBase::P2PSocketHostTcpBase(
-    IPC::Sender* message_sender, int id,
-    P2PSocketType type, net::URLRequestContextGetter* url_context)
-    : P2PSocketHost(message_sender, id),
+    IPC::Sender* message_sender,
+    int socket_id,
+    P2PSocketType type,
+    net::URLRequestContextGetter* url_context)
+    : P2PSocketHost(message_sender, socket_id),
       write_pending_(false),
       connected_(false),
       type_(type),
@@ -65,7 +68,7 @@ bool P2PSocketHostTcpBase::InitAccepted(const net::IPEndPoint& remote_address,
   DCHECK(socket);
   DCHECK_EQ(state_, STATE_UNINITIALIZED);
 
-  remote_address_ = remote_address;
+  remote_address_.ip_address = remote_address;
   // TODO(ronghuawu): Add FakeSSLServerSocket.
   socket_.reset(socket);
   state_ = STATE_OPEN;
@@ -74,14 +77,14 @@ bool P2PSocketHostTcpBase::InitAccepted(const net::IPEndPoint& remote_address,
 }
 
 bool P2PSocketHostTcpBase::Init(const net::IPEndPoint& local_address,
-                                const net::IPEndPoint& remote_address) {
+                                const P2PHostAndIPEndPoint& remote_address) {
   DCHECK_EQ(state_, STATE_UNINITIALIZED);
 
   remote_address_ = remote_address;
   state_ = STATE_CONNECTING;
 
   net::HostPortPair dest_host_port_pair =
-      net::HostPortPair::FromIPEndPoint(remote_address);
+      net::HostPortPair::FromIPEndPoint(remote_address.ip_address);
   // TODO(mallinath) - We are ignoring local_address altogether. We should
   // find a way to inject this into ProxyResolvingClientSocket. This could be
   // a problem on multi-homed host.
@@ -173,7 +176,10 @@ void P2PSocketHostTcpBase::StartTls() {
   // Default ssl config.
   const net::SSLConfig ssl_config;
   net::HostPortPair dest_host_port_pair =
-      net::HostPortPair::FromIPEndPoint(remote_address_);
+      net::HostPortPair::FromIPEndPoint(remote_address_.ip_address);
+  if (!remote_address_.hostname.empty())
+    dest_host_port_pair.set_host(remote_address_.hostname);
+
   net::ClientSocketFactory* socket_factory =
       net::ClientSocketFactory::GetDefaultFactory();
   DCHECK(socket_factory);
@@ -201,12 +207,12 @@ void P2PSocketHostTcpBase::ProcessTlsSslConnectDone(int status) {
 void P2PSocketHostTcpBase::OnOpen() {
   state_ = STATE_OPEN;
   // Setting socket send and receive buffer size.
-  if (!socket_->SetReceiveBufferSize(kRecvSocketBufferSize)) {
+  if (net::OK != socket_->SetReceiveBufferSize(kRecvSocketBufferSize)) {
     LOG(WARNING) << "Failed to set socket receive buffer size to "
                  << kRecvSocketBufferSize;
   }
 
-  if (!socket_->SetSendBufferSize(kSendSocketBufferSize)) {
+  if (net::OK != socket_->SetSendBufferSize(kSendSocketBufferSize)) {
     LOG(WARNING) << "Failed to set socket send buffer size to "
                  << kSendSocketBufferSize;
   }
@@ -273,7 +279,7 @@ void P2PSocketHostTcpBase::OnPacket(const std::vector<char>& data) {
       connected_ = true;
     } else if (!stun || type == STUN_DATA_INDICATION) {
       LOG(ERROR) << "Received unexpected data packet from "
-                 << remote_address_.ToString()
+                 << remote_address_.ip_address.ToString()
                  << " before STUN binding is finished. "
                  << "Terminating connection.";
       OnError();
@@ -282,14 +288,17 @@ void P2PSocketHostTcpBase::OnPacket(const std::vector<char>& data) {
   }
 
   message_sender_->Send(new P2PMsg_OnDataReceived(
-      id_, remote_address_, data, base::TimeTicks::Now()));
+      id_, remote_address_.ip_address, data, base::TimeTicks::Now()));
+
+  if (dump_incoming_rtp_packet_)
+    DumpRtpPacket(&data[0], data.size(), true);
 }
 
 // Note: dscp is not actually used on TCP sockets as this point,
 // but may be honored in the future.
 void P2PSocketHostTcpBase::Send(const net::IPEndPoint& to,
                                 const std::vector<char>& data,
-                                net::DiffServCodePoint dscp,
+                                const talk_base::PacketOptions& options,
                                 uint64 packet_id) {
   if (!socket_) {
     // The Send message may be sent after the an OnError message was
@@ -297,7 +306,7 @@ void P2PSocketHostTcpBase::Send(const net::IPEndPoint& to,
     return;
   }
 
-  if (!(to == remote_address_)) {
+  if (!(to == remote_address_.ip_address)) {
     // Renderer should use this socket only to send data to |remote_address_|.
     NOTREACHED();
     OnError();
@@ -315,7 +324,7 @@ void P2PSocketHostTcpBase::Send(const net::IPEndPoint& to,
     }
   }
 
-  DoSend(to, data);
+  DoSend(to, data, options);
 }
 
 void P2PSocketHostTcpBase::WriteOrQueue(
@@ -404,10 +413,26 @@ void P2PSocketHostTcpBase::DidCompleteRead(int result) {
   }
 }
 
-P2PSocketHostTcp::P2PSocketHostTcp(
-    IPC::Sender* message_sender, int id,
-    P2PSocketType type, net::URLRequestContextGetter* url_context)
-    : P2PSocketHostTcpBase(message_sender, id, type, url_context) {
+bool P2PSocketHostTcpBase::SetOption(P2PSocketOption option, int value) {
+  DCHECK_EQ(STATE_OPEN, state_);
+  switch (option) {
+    case P2P_SOCKET_OPT_RCVBUF:
+      return socket_->SetReceiveBufferSize(value) == net::OK;
+    case P2P_SOCKET_OPT_SNDBUF:
+      return socket_->SetSendBufferSize(value) == net::OK;
+    case P2P_SOCKET_OPT_DSCP:
+      return false;  // For TCP sockets DSCP setting is not available.
+    default:
+      NOTREACHED();
+      return false;
+  }
+}
+
+P2PSocketHostTcp::P2PSocketHostTcp(IPC::Sender* message_sender,
+                                   int socket_id,
+                                   P2PSocketType type,
+                                   net::URLRequestContextGetter* url_context)
+    : P2PSocketHostTcpBase(message_sender, socket_id, type, url_context) {
   DCHECK(type == P2P_SOCKET_TCP_CLIENT ||
          type == P2P_SOCKET_SSLTCP_CLIENT ||
          type == P2P_SOCKET_TLS_CLIENT);
@@ -432,21 +457,29 @@ int P2PSocketHostTcp::ProcessInput(char* input, int input_len) {
 }
 
 void P2PSocketHostTcp::DoSend(const net::IPEndPoint& to,
-                              const std::vector<char>& data) {
+                              const std::vector<char>& data,
+                              const talk_base::PacketOptions& options) {
   int size = kPacketHeaderSize + data.size();
   scoped_refptr<net::DrainableIOBuffer> buffer =
       new net::DrainableIOBuffer(new net::IOBuffer(size), size);
   *reinterpret_cast<uint16*>(buffer->data()) = base::HostToNet16(data.size());
   memcpy(buffer->data() + kPacketHeaderSize, &data[0], data.size());
 
+  packet_processing_helpers::ApplyPacketOptions(
+      buffer->data() + kPacketHeaderSize,
+      buffer->BytesRemaining() - kPacketHeaderSize,
+      options, 0);
+
   WriteOrQueue(buffer);
 }
 
 // P2PSocketHostStunTcp
 P2PSocketHostStunTcp::P2PSocketHostStunTcp(
-    IPC::Sender* message_sender, int id,
-    P2PSocketType type, net::URLRequestContextGetter* url_context)
-    : P2PSocketHostTcpBase(message_sender, id, type, url_context) {
+    IPC::Sender* message_sender,
+    int socket_id,
+    P2PSocketType type,
+    net::URLRequestContextGetter* url_context)
+    : P2PSocketHostTcpBase(message_sender, socket_id, type, url_context) {
   DCHECK(type == P2P_SOCKET_STUN_TCP_CLIENT ||
          type == P2P_SOCKET_STUN_SSLTCP_CLIENT ||
          type == P2P_SOCKET_STUN_TLS_CLIENT);
@@ -477,7 +510,8 @@ int P2PSocketHostStunTcp::ProcessInput(char* input, int input_len) {
 }
 
 void P2PSocketHostStunTcp::DoSend(const net::IPEndPoint& to,
-                                  const std::vector<char>& data) {
+                                  const std::vector<char>& data,
+                                  const talk_base::PacketOptions& options) {
   // Each packet is expected to have header (STUN/TURN ChannelData), where
   // header contains message type and and length of message.
   if (data.size() < kPacketHeaderSize + kPacketLengthOffset) {
@@ -504,12 +538,18 @@ void P2PSocketHostStunTcp::DoSend(const net::IPEndPoint& to,
       new net::DrainableIOBuffer(new net::IOBuffer(size), size);
   memcpy(buffer->data(), &data[0], data.size());
 
+  packet_processing_helpers::ApplyPacketOptions(
+      buffer->data(), data.size(), options, 0);
+
   if (pad_bytes) {
     char padding[4] = {0};
     DCHECK_LE(pad_bytes, 4);
     memcpy(buffer->data() + data.size(), padding, pad_bytes);
   }
   WriteOrQueue(buffer);
+
+  if (dump_outgoing_rtp_packet_)
+    DumpRtpPacket(buffer->data(), data.size(), false);
 }
 
 int P2PSocketHostStunTcp::GetExpectedPacketSize(

@@ -23,31 +23,45 @@
         '../src/utils',
       ],
       'sources': [
+        '../src/ports/SkAtomics_sync.h',
+        '../src/ports/SkAtomics_win.h',
+        '../src/ports/SkMutex_pthread.h',
+        '../src/ports/SkMutex_win.h',
         '../src/ports/SkDebug_nacl.cpp',
         '../src/ports/SkDebug_stdio.cpp',
         '../src/ports/SkDebug_win.cpp',
 
+        '../src/fonts/SkFontMgr_indirect.cpp',
+        '../src/fonts/SkRemotableFontMgr.cpp',
         '../src/ports/SkFontHost_win.cpp',
-        '../src/ports/SkFontHost_win_dw.cpp',
         '../src/ports/SkFontMgr_default_gdi.cpp',
         '../src/ports/SkFontMgr_default_dw.cpp',
+        '../src/ports/SkFontMgr_win_dw.cpp',
+        '../src/ports/SkRemotableFontMgr_win_dw.cpp',
+        '../src/ports/SkScalerContext_win_dw.cpp',
+        '../src/ports/SkScalerContext_win_dw.h',
+        '../src/ports/SkTypeface_win_dw.cpp',
+        '../src/ports/SkTypeface_win_dw.h',
 
         '../src/ports/SkGlobalInitialization_default.cpp',
         '../src/ports/SkMemory_malloc.cpp',
+        '../src/ports/SkMutex_pthread.h',
+        '../src/ports/SkMutex_win.h',
         '../src/ports/SkOSFile_posix.cpp',
         '../src/ports/SkOSFile_stdio.cpp',
         '../src/ports/SkOSFile_win.cpp',
         '../src/ports/SkDiscardableMemory_none.cpp',
-        '../src/ports/SkPurgeableMemoryBlock_none.cpp',
-       #'../src/ports/SkThread_none.cpp',
-        '../src/ports/SkThread_pthread.cpp',
-        '../src/ports/SkThread_win.cpp',
         '../src/ports/SkTime_Unix.cpp',
         '../src/ports/SkTime_win.cpp',
-       #'../src/ports/SkTLS_none.cpp',
         '../src/ports/SkTLS_pthread.cpp',
         '../src/ports/SkTLS_win.cpp',
         '../src/ports/SkXMLParser_empty.cpp',
+
+        '../include/ports/SkFontConfigInterface.h',
+        '../include/ports/SkFontMgr.h',
+        '../include/ports/SkFontMgr_indirect.h',
+        '../include/ports/SkFontStyle.h',
+        '../include/ports/SkRemotableFontMgr.h',
       ],
       'conditions': [
         [ 'skia_os in ["linux", "freebsd", "openbsd", "solaris", "chromeos", "nacl", "android"]', {
@@ -60,16 +74,29 @@
           ],
         }],
         [ 'skia_os in ["linux", "freebsd", "openbsd", "solaris", "chromeos"]', {
-          'link_settings': {
-            'libraries': [
-              '-lfontconfig',
-              '-ldl',
-            ],
-          },
-          'sources': [
-            '../src/fonts/SkFontMgr_fontconfig.cpp',
-            '../src/ports/SkFontHost_fontconfig.cpp',
-            '../src/ports/SkFontConfigInterface_direct.cpp',
+          'conditions': [
+            [ 'skia_no_fontconfig', {
+              'link_settings': {
+                'libraries': [
+                  '-ldl',
+                ],
+              },
+              'sources': [
+                '../src/ports/SkFontHost_linux.cpp',
+              ],
+            }, {
+              'link_settings': {
+                'libraries': [
+                  '-lfontconfig',
+                  '-ldl',
+                ],
+              },
+              'sources': [
+                '../src/fonts/SkFontMgr_fontconfig.cpp',
+                '../src/ports/SkFontHost_fontconfig.cpp',
+                '../src/ports/SkFontConfigInterface_direct.cpp',
+              ],
+            }]
           ],
         }],
         [ 'skia_os == "nacl"', {
@@ -90,11 +117,9 @@
           ],
           'sources': [
             '../src/ports/SkFontHost_mac.cpp',
-            '../src/ports/SkPurgeableMemoryBlock_mac.cpp',
             '../src/utils/mac/SkStream_mac.cpp',
           ],
           'sources!': [
-            '../src/ports/SkPurgeableMemoryBlock_none.cpp',
             '../src/ports/SkFontHost_tables.cpp',
           ],
         }],
@@ -105,11 +130,9 @@
           ],
           'sources': [
             '../src/ports/SkFontHost_mac.cpp',
-            '../src/ports/SkPurgeableMemoryBlock_mac.cpp',
             '../src/utils/mac/SkStream_mac.cpp',
           ],
           'sources!': [
-            '../src/ports/SkPurgeableMemoryBlock_none.cpp',
             '../src/ports/SkFontHost_tables.cpp',
           ],
         }],
@@ -121,7 +144,6 @@
           'sources!': [ # these are used everywhere but windows
             '../src/ports/SkDebug_stdio.cpp',
             '../src/ports/SkOSFile_posix.cpp',
-            '../src/ports/SkThread_pthread.cpp',
             '../src/ports/SkTime_Unix.cpp',
             '../src/ports/SkTLS_pthread.cpp',
           ],
@@ -141,28 +163,28 @@
           'sources!': [
             '../src/ports/SkDebug_win.cpp',
             '../src/ports/SkFontHost_win.cpp',
-            '../src/ports/SkFontHost_win_dw.cpp',
             '../src/ports/SkFontMgr_default_gdi.cpp',
             '../src/ports/SkFontMgr_default_dw.cpp',
+            '../src/ports/SkFontMgr_win_dw.cpp',
             '../src/ports/SkOSFile_win.cpp',
-            '../src/ports/SkThread_win.cpp',
+            '../src/ports/SkRemotableFontMgr_win_dw.cpp',
             '../src/ports/SkTime_win.cpp',
             '../src/ports/SkTLS_win.cpp',
+            '../src/ports/SkScalerContext_win_dw.cpp',
+            '../src/ports/SkScalerContext_win_dw.h',
+            '../src/ports/SkTypeface_win_dw.cpp',
+            '../src/ports/SkTypeface_win_dw.h',
           ],
         }],
         [ 'skia_os == "android"', {
           'sources!': [
             '../src/ports/SkDebug_stdio.cpp',
-            '../src/ports/SkDiscardableMemory_none.cpp',
-            '../src/ports/SkPurgeableMemoryBlock_none.cpp',
           ],
           'sources': [
             '../src/ports/SkDebug_android.cpp',
-            '../src/ports/SkDiscardableMemory_ashmem.cpp',
             '../src/ports/SkFontConfigInterface_android.cpp',
             '../src/ports/SkFontConfigParser_android.cpp',
             '../src/ports/SkFontHost_fontconfig.cpp',
-            '../src/ports/SkPurgeableMemoryBlock_android.cpp',
           ],
           'dependencies': [
              'android_deps.gyp:expat',

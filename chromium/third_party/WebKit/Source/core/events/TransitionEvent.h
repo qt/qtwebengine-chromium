@@ -39,19 +39,19 @@ struct TransitionEventInit : public EventInit {
     String pseudoElement;
 };
 
-class TransitionEvent : public Event {
+class TransitionEvent FINAL : public Event {
 public:
-    static PassRefPtr<TransitionEvent> create()
+    static PassRefPtrWillBeRawPtr<TransitionEvent> create()
     {
-        return adoptRef(new TransitionEvent);
+        return adoptRefWillBeNoop(new TransitionEvent);
     }
-    static PassRefPtr<TransitionEvent> create(const AtomicString& type, const String& propertyName, double elapsedTime, const String& pseudoElement)
+    static PassRefPtrWillBeRawPtr<TransitionEvent> create(const AtomicString& type, const String& propertyName, double elapsedTime, const String& pseudoElement)
     {
-        return adoptRef(new TransitionEvent(type, propertyName, elapsedTime, pseudoElement));
+        return adoptRefWillBeNoop(new TransitionEvent(type, propertyName, elapsedTime, pseudoElement));
     }
-    static PassRefPtr<TransitionEvent> create(const AtomicString& type, const TransitionEventInit& initializer)
+    static PassRefPtrWillBeRawPtr<TransitionEvent> create(const AtomicString& type, const TransitionEventInit& initializer)
     {
-        return adoptRef(new TransitionEvent(type, initializer));
+        return adoptRefWillBeNoop(new TransitionEvent(type, initializer));
     }
 
     virtual ~TransitionEvent();
@@ -60,7 +60,9 @@ public:
     double elapsedTime() const;
     const String& pseudoElement() const;
 
-    virtual const AtomicString& interfaceName() const;
+    virtual const AtomicString& interfaceName() const OVERRIDE;
+
+    virtual void trace(Visitor*) OVERRIDE;
 
 private:
     TransitionEvent();

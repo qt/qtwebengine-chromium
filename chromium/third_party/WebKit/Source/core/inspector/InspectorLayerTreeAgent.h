@@ -31,8 +31,8 @@
 #define InspectorLayerTreeAgent_h
 
 
-#include "InspectorFrontend.h"
-#include "InspectorTypeBuilder.h"
+#include "core/InspectorFrontend.h"
+#include "core/InspectorTypeBuilder.h"
 #include "core/inspector/InspectorBaseAgent.h"
 #include "core/rendering/RenderLayer.h"
 #include "platform/Timer.h"
@@ -42,59 +42,66 @@
 
 namespace WebCore {
 
-class InspectorDOMAgent;
+class GraphicsContextSnapshot;
 class InstrumentingAgents;
 class Page;
 class RenderLayerCompositor;
 
-struct LayerSnapshot;
-
 typedef String ErrorString;
 
-class InspectorLayerTreeAgent : public InspectorBaseAgent<InspectorLayerTreeAgent>, public InspectorBackendDispatcher::LayerTreeCommandHandler {
+class InspectorLayerTreeAgent FINAL : public InspectorBaseAgent<InspectorLayerTreeAgent>, public InspectorBackendDispatcher::LayerTreeCommandHandler {
 public:
-    static PassOwnPtr<InspectorLayerTreeAgent> create(InstrumentingAgents* instrumentingAgents, InspectorCompositeState* state, InspectorDOMAgent* domAgent, Page* page)
+    static PassOwnPtr<InspectorLayerTreeAgent> create(Page* page)
     {
-        return adoptPtr(new InspectorLayerTreeAgent(instrumentingAgents, state, domAgent, page));
+        return adoptPtr(new InspectorLayerTreeAgent(page));
     }
-    ~InspectorLayerTreeAgent();
+    virtual ~InspectorLayerTreeAgent();
 
-    virtual void setFrontend(InspectorFrontend*);
-    virtual void clearFrontend();
-    virtual void restore();
+    virtual void setFrontend(InspectorFrontend*) OVERRIDE;
+    virtual void clearFrontend() OVERRIDE;
+    virtual void restore() OVERRIDE;
+
+    // Called from InspectorController
+    void willAddPageOverlay(const GraphicsLayer*);
+    void didRemovePageOverlay(const GraphicsLayer*);
 
     // Called from InspectorInstrumentation
     void layerTreeDidChange();
     void didPaint(RenderObject*, const GraphicsLayer*, GraphicsContext*, const LayoutRect&);
 
     // Called from the front-end.
-    virtual void enable(ErrorString*);
-    virtual void disable(ErrorString*);
-    virtual void compositingReasons(ErrorString*, const String& layerId, RefPtr<TypeBuilder::Array<String> >&);
-    virtual void makeSnapshot(ErrorString*, const String& layerId, String* snapshotId);
-    virtual void releaseSnapshot(ErrorString*, const String& snapshotId);
-    virtual void replaySnapshot(ErrorString*, const String& snapshotId, const int* fromStep, const int* toStep, String* dataURL);
-    virtual void profileSnapshot(ErrorString*, const String& snapshotId, const int* minRepeatCount, const double* minDuration, RefPtr<TypeBuilder::Array<TypeBuilder::Array<double> > >&);
+    virtual void enable(ErrorString*) OVERRIDE;
+    virtual void disable(ErrorString*) OVERRIDE;
+    virtual void compositingReasons(ErrorString*, const String& layerId, RefPtr<TypeBuilder::Array<String> >&) OVERRIDE;
+    virtual void makeSnapshot(ErrorString*, const String& layerId, String* snapshotId) OVERRIDE;
+    virtual void loadSnapshot(ErrorString*, const String& data, String* snapshotId) OVERRIDE;
+    virtual void releaseSnapshot(ErrorString*, const String& snapshotId) OVERRIDE;
+    virtual void replaySnapshot(ErrorString*, const String& snapshotId, const int* fromStep, const int* toStep, String* dataURL) OVERRIDE;
+    virtual void profileSnapshot(ErrorString*, const String& snapshotId, const int* minRepeatCount, const double* minDuration, RefPtr<TypeBuilder::Array<TypeBuilder::Array<double> > >&) OVERRIDE;
+    virtual void snapshotCommandLog(ErrorString*, const String& snapshotId, RefPtr<TypeBuilder::Array<JSONObject> >&) OVERRIDE;
+
+    // Called by other agents.
+    PassRefPtr<TypeBuilder::Array<TypeBuilder::LayerTree::Layer> > buildLayerTree();
 
 private:
     static unsigned s_lastSnapshotId;
 
-    InspectorLayerTreeAgent(InstrumentingAgents*, InspectorCompositeState*, InspectorDOMAgent*, Page*);
+    explicit InspectorLayerTreeAgent(Page*);
 
     RenderLayerCompositor* renderLayerCompositor();
     GraphicsLayer* layerById(ErrorString*, const String& layerId);
-    const LayerSnapshot* snapshotById(ErrorString*, const String& snapshotId);
-    PassRefPtr<TypeBuilder::Array<TypeBuilder::LayerTree::Layer> > buildLayerTree();
+    const GraphicsContextSnapshot* snapshotById(ErrorString*, const String& snapshotId);
 
     typedef HashMap<int, int> LayerIdToNodeIdMap;
     void buildLayerIdToNodeIdMap(RenderLayer*, LayerIdToNodeIdMap&);
+    void gatherGraphicsLayers(GraphicsLayer*, HashMap<int, int>& layerIdToNodeIdMap, RefPtr<TypeBuilder::Array<TypeBuilder::LayerTree::Layer> >&);
     int idForNode(Node*);
 
     InspectorFrontend::LayerTree* m_frontend;
     Page* m_page;
-    InspectorDOMAgent* m_domAgent;
+    Vector<int, 2> m_pageOverlayLayerIds;
 
-    typedef HashMap<String, LayerSnapshot> SnapshotById;
+    typedef HashMap<String, RefPtr<GraphicsContextSnapshot> > SnapshotById;
     SnapshotById m_snapshotById;
 };
 

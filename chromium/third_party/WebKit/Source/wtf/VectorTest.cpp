@@ -25,14 +25,16 @@
 
 #include "config.h"
 
+#include "wtf/HashSet.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
+#include "wtf/text/WTFString.h"
 #include "wtf/Vector.h"
 #include <gtest/gtest.h>
 
 namespace {
 
-TEST(WTF_Vector, Basic)
+TEST(VectorTest, Basic)
 {
     Vector<int> intVector;
     EXPECT_TRUE(intVector.isEmpty());
@@ -40,7 +42,7 @@ TEST(WTF_Vector, Basic)
     EXPECT_EQ(0ul, intVector.capacity());
 }
 
-TEST(WTF_Vector, Reverse)
+TEST(VectorTest, Reverse)
 {
     Vector<int> intVector;
     intVector.append(10);
@@ -64,7 +66,7 @@ TEST(WTF_Vector, Reverse)
     EXPECT_EQ(13, intVector[4]);
 }
 
-TEST(WTF_Vector, Iterator)
+TEST(VectorTest, Iterator)
 {
     Vector<int> intVector;
     intVector.append(10);
@@ -88,7 +90,7 @@ TEST(WTF_Vector, Iterator)
     EXPECT_TRUE(end == it);
 }
 
-TEST(WTF_Vector, ReverseIterator)
+TEST(VectorTest, ReverseIterator)
 {
     Vector<int> intVector;
     intVector.append(10);
@@ -129,51 +131,51 @@ private:
 
 typedef WTF::Vector<OwnPtr<DestructCounter> > OwnPtrVector;
 
-TEST(WTF_Vector, OwnPtr)
+TEST(VectorTest, OwnPtr)
 {
     int destructNumber = 0;
     OwnPtrVector vector;
     vector.append(adoptPtr(new DestructCounter(0, &destructNumber)));
     vector.append(adoptPtr(new DestructCounter(1, &destructNumber)));
-    ASSERT_EQ(2u, vector.size());
+    EXPECT_EQ(2u, vector.size());
 
     OwnPtr<DestructCounter>& counter0 = vector.first();
     ASSERT_EQ(0, counter0->get());
-    OwnPtr<DestructCounter>& counter1 = vector.last();
-    ASSERT_EQ(1, counter1->get());
+    int counter1 = vector.last()->get();
+    ASSERT_EQ(1, counter1);
     ASSERT_EQ(0, destructNumber);
 
     size_t index = 0;
     for (OwnPtrVector::iterator iter = vector.begin(); iter != vector.end(); ++iter) {
         OwnPtr<DestructCounter>* refCounter = iter;
-        ASSERT_EQ(index, static_cast<size_t>(refCounter->get()->get()));
-        ASSERT_EQ(index, static_cast<size_t>((*refCounter)->get()));
+        EXPECT_EQ(index, static_cast<size_t>(refCounter->get()->get()));
+        EXPECT_EQ(index, static_cast<size_t>((*refCounter)->get()));
         index++;
     }
-    ASSERT_EQ(0, destructNumber);
+    EXPECT_EQ(0, destructNumber);
 
     for (index = 0; index < vector.size(); index++) {
         OwnPtr<DestructCounter>& refCounter = vector[index];
-        ASSERT_EQ(index, static_cast<size_t>(refCounter->get()));
+        EXPECT_EQ(index, static_cast<size_t>(refCounter->get()));
         index++;
     }
-    ASSERT_EQ(0, destructNumber);
+    EXPECT_EQ(0, destructNumber);
 
-    ASSERT_EQ(0, vector[0]->get());
-    ASSERT_EQ(1, vector[1]->get());
+    EXPECT_EQ(0, vector[0]->get());
+    EXPECT_EQ(1, vector[1]->get());
     vector.remove(0);
-    ASSERT_EQ(1, vector[0]->get());
-    ASSERT_EQ(1u, vector.size());
-    ASSERT_EQ(1, destructNumber);
+    EXPECT_EQ(1, vector[0]->get());
+    EXPECT_EQ(1u, vector.size());
+    EXPECT_EQ(1, destructNumber);
 
     OwnPtr<DestructCounter> ownCounter1 = vector[0].release();
     vector.remove(0);
-    ASSERT_EQ(counter1.get(), ownCounter1.get());
+    ASSERT_EQ(counter1, ownCounter1->get());
     ASSERT_EQ(0u, vector.size());
     ASSERT_EQ(1, destructNumber);
 
     ownCounter1.clear();
-    ASSERT_EQ(2, destructNumber);
+    EXPECT_EQ(2, destructNumber);
 
     size_t count = 1025;
     destructNumber = 0;
@@ -181,17 +183,123 @@ TEST(WTF_Vector, OwnPtr)
         vector.prepend(adoptPtr(new DestructCounter(i, &destructNumber)));
 
     // Vector relocation must not destruct OwnPtr element.
-    ASSERT_EQ(0, destructNumber);
-    ASSERT_EQ(count, vector.size());
+    EXPECT_EQ(0, destructNumber);
+    EXPECT_EQ(count, vector.size());
 
     OwnPtrVector copyVector;
     vector.swap(copyVector);
-    ASSERT_EQ(0, destructNumber);
-    ASSERT_EQ(count, copyVector.size());
-    ASSERT_EQ(0u, vector.size());
+    EXPECT_EQ(0, destructNumber);
+    EXPECT_EQ(count, copyVector.size());
+    EXPECT_EQ(0u, vector.size());
 
     copyVector.clear();
-    ASSERT_EQ(count, static_cast<size_t>(destructNumber));
+    EXPECT_EQ(count, static_cast<size_t>(destructNumber));
 }
 
+// WrappedInt class will fail if it was memmoved or memcpyed.
+static HashSet<void*> constructedWrappedInts;
+class WrappedInt {
+public:
+    WrappedInt(int i = 0)
+        : m_originalThisPtr(this)
+        , m_i(i)
+    {
+        constructedWrappedInts.add(this);
+    }
+
+    WrappedInt(const WrappedInt& other)
+        : m_originalThisPtr(this)
+        , m_i(other.m_i)
+    {
+        constructedWrappedInts.add(this);
+    }
+
+    WrappedInt& operator=(const WrappedInt& other)
+    {
+        m_i = other.m_i;
+        return *this;
+    }
+
+    ~WrappedInt()
+    {
+        EXPECT_EQ(m_originalThisPtr, this);
+        EXPECT_TRUE(constructedWrappedInts.contains(this));
+        constructedWrappedInts.remove(this);
+    }
+
+    int get() const { return m_i; }
+
+private:
+    void* m_originalThisPtr;
+    int m_i;
+};
+
+TEST(VectorTest, SwapWithInlineCapacity)
+{
+    const size_t inlineCapacity = 2;
+    Vector<WrappedInt, inlineCapacity> vectorA;
+    vectorA.append(WrappedInt(1));
+    Vector<WrappedInt, inlineCapacity> vectorB;
+    vectorB.append(WrappedInt(2));
+
+    EXPECT_EQ(vectorA.size(), vectorB.size());
+    vectorA.swap(vectorB);
+
+    EXPECT_EQ(1u, vectorA.size());
+    EXPECT_EQ(2, vectorA.at(0).get());
+    EXPECT_EQ(1u, vectorB.size());
+    EXPECT_EQ(1, vectorB.at(0).get());
+
+    vectorA.append(WrappedInt(3));
+
+    EXPECT_GT(vectorA.size(), vectorB.size());
+    vectorA.swap(vectorB);
+
+    EXPECT_EQ(1u, vectorA.size());
+    EXPECT_EQ(1, vectorA.at(0).get());
+    EXPECT_EQ(2u, vectorB.size());
+    EXPECT_EQ(2, vectorB.at(0).get());
+    EXPECT_EQ(3, vectorB.at(1).get());
+
+    EXPECT_LT(vectorA.size(), vectorB.size());
+    vectorA.swap(vectorB);
+
+    EXPECT_EQ(2u, vectorA.size());
+    EXPECT_EQ(2, vectorA.at(0).get());
+    EXPECT_EQ(3, vectorA.at(1).get());
+    EXPECT_EQ(1u, vectorB.size());
+    EXPECT_EQ(1, vectorB.at(0).get());
+
+    vectorA.append(WrappedInt(4));
+    EXPECT_GT(vectorA.size(), inlineCapacity);
+    vectorA.swap(vectorB);
+
+    EXPECT_EQ(1u, vectorA.size());
+    EXPECT_EQ(1, vectorA.at(0).get());
+    EXPECT_EQ(3u, vectorB.size());
+    EXPECT_EQ(2, vectorB.at(0).get());
+    EXPECT_EQ(3, vectorB.at(1).get());
+    EXPECT_EQ(4, vectorB.at(2).get());
+
+    vectorB.swap(vectorA);
+}
+
+class Comparable {
+};
+bool operator==(const Comparable& a, const Comparable& b) { return true; }
+
+template<typename T> void compare()
+{
+    EXPECT_TRUE(Vector<T>() == Vector<T>());
+    EXPECT_FALSE(Vector<T>(1) == Vector<T>(0));
+    EXPECT_FALSE(Vector<T>() == Vector<T>(1));
+    EXPECT_TRUE(Vector<T>(1) == Vector<T>(1));
+}
+
+TEST(VectorTest, Compare)
+{
+    compare<int>();
+    compare<Comparable>();
+    compare<WTF::String>();
+}
 } // namespace

@@ -29,6 +29,7 @@
 #define Widget_h
 
 #include "platform/PlatformExport.h"
+#include "platform/geometry/FloatPoint.h"
 #include "platform/geometry/IntRect.h"
 #include "wtf/Forward.h"
 #include "wtf/RefCounted.h"
@@ -83,8 +84,10 @@ public:
     void setSelfVisible(bool v) { m_selfVisible = v; }
 
     virtual bool isFrameView() const { return false; }
+    virtual bool isRemoteFrameView() const { return false; }
     virtual bool isPluginView() const { return false; }
     virtual bool isPluginContainer() const { return false; }
+    virtual bool pluginShouldPersist() const { return false; }
     virtual bool isScrollbar() const { return false; }
     virtual bool isScrollView() const { return false; }
 
@@ -110,14 +113,12 @@ public:
 
     IntPoint convertToContainingWindow(const IntPoint&) const;
     IntPoint convertFromContainingWindow(const IntPoint&) const;
+    FloatPoint convertFromContainingWindow(const FloatPoint&) const;
 
     virtual void frameRectsChanged() { }
 
     // Notifies this widget that other widgets on the page have been repositioned.
     virtual void widgetPositionsUpdated() { }
-
-    // Notifies this widget that its clip rect changed.
-    virtual void clipRectChanged() { }
 
     // Virtual methods to convert points to/from the containing ScrollView
     virtual IntRect convertToContainingView(const IntRect&) const;

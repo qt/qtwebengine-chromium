@@ -40,12 +40,12 @@ const unsigned DefaultNumberOfOutputChannels = 1;
 
 namespace WebCore {
 
-PassRefPtr<ChannelMergerNode> ChannelMergerNode::create(AudioContext* context, float sampleRate, unsigned numberOfInputs)
+PassRefPtrWillBeRawPtr<ChannelMergerNode> ChannelMergerNode::create(AudioContext* context, float sampleRate, unsigned numberOfInputs)
 {
     if (!numberOfInputs || numberOfInputs > AudioContext::maxNumberOfChannels())
-        return 0;
+        return nullptr;
 
-    return adoptRef(new ChannelMergerNode(context, sampleRate, numberOfInputs));
+    return adoptRefWillBeNoop(new ChannelMergerNode(context, sampleRate, numberOfInputs));
 }
 
 ChannelMergerNode::ChannelMergerNode(AudioContext* context, float sampleRate, unsigned numberOfInputs)
@@ -76,27 +76,31 @@ void ChannelMergerNode::process(size_t framesToProcess)
 
     // Merge all the channels from all the inputs into one output.
     unsigned outputChannelIndex = 0;
+    unsigned maxAllowedOutputChannels = output->numberOfChannels();
+
     for (unsigned i = 0; i < numberOfInputs(); ++i) {
         AudioNodeInput* input = this->input(i);
         if (input->isConnected()) {
             unsigned numberOfInputChannels = input->bus()->numberOfChannels();
 
-            // Merge channels from this particular input.
+            // Merge channels from this particular input, but be careful not to exceed the number of
+            // output channels.  (This can happen if there are many inputs with each input
+            // containing many channels.)
             for (unsigned j = 0; j < numberOfInputChannels; ++j) {
-                AudioChannel* inputChannel = input->bus()->channel(j);
-                AudioChannel* outputChannel = output->bus()->channel(outputChannelIndex);
-                outputChannel->copyFrom(inputChannel);
+                if (outputChannelIndex < maxAllowedOutputChannels) {
+                    AudioChannel* inputChannel = input->bus()->channel(j);
+                    AudioChannel* outputChannel = output->bus()->channel(outputChannelIndex);
+                    outputChannel->copyFrom(inputChannel);
 
-                ++outputChannelIndex;
+                    ++outputChannelIndex;
+                }
             }
         }
+        if (outputChannelIndex >= maxAllowedOutputChannels)
+            break;
     }
 
     ASSERT(outputChannelIndex == output->numberOfChannels());
-}
-
-void ChannelMergerNode::reset()
-{
 }
 
 // Any time a connection or disconnection happens on any of our inputs, we potentially need to change the
@@ -112,6 +116,9 @@ void ChannelMergerNode::checkNumberOfChannelsForInput(AudioNodeInput* input)
         if (input->isConnected())
             numberOfOutputChannels += input->numberOfChannels();
     }
+
+    // If the actual number of channels exceeds the max allowed, just drop the excess.
+    numberOfOutputChannels = std::min(numberOfOutputChannels, AudioContext::maxNumberOfChannels());
 
     // Set the correct number of channels on the output
     AudioNodeOutput* output = this->output(0);

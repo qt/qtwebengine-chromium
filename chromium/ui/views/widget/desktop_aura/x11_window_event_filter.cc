@@ -9,15 +9,20 @@
 #include <X11/Xatom.h>
 #include <X11/Xlib.h>
 
-#include "ui/aura/root_window.h"
+#include "ui/aura/client/aura_constants.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_delegate.h"
+#include "ui/aura/window_tree_host.h"
 #include "ui/base/hit_test.h"
 #include "ui/events/event.h"
 #include "ui/events/event_utils.h"
+#include "ui/gfx/display.h"
+#include "ui/gfx/screen.h"
 #include "ui/gfx/x/x11_types.h"
-#include "ui/views/widget/desktop_aura/desktop_root_window_host.h"
+#include "ui/views/linux_ui/linux_ui.h"
+#include "ui/views/widget/desktop_aura/desktop_window_tree_host.h"
 #include "ui/views/widget/native_widget_aura.h"
+#include "ui/views/widget/widget.h"
 
 namespace {
 
@@ -33,24 +38,7 @@ const int k_NET_WM_MOVERESIZE_SIZE_BOTTOMLEFT =  6;
 const int k_NET_WM_MOVERESIZE_SIZE_LEFT =        7;
 const int k_NET_WM_MOVERESIZE_MOVE =             8;
 
-// This data structure represents additional hints that we send to the window
-// manager and has a direct lineage back to Motif, which defined this de facto
-// standard. This struct doesn't seem 64-bit safe though, but it's what GDK
-// does.
-typedef struct {
-  unsigned long flags;
-  unsigned long functions;
-  unsigned long decorations;
-  long input_mode;
-  unsigned long status;
-} MotifWmHints;
-
-// The bitflag in |flags| in MotifWmHints that signals that the reader should
-// pay attention to the value in |decorations|.
-const unsigned long kHintsDecorations = (1L << 1);
-
 const char* kAtomsToCache[] = {
-  "_MOTIF_WM_HINTS",
   "_NET_WM_MOVERESIZE",
   NULL
 };
@@ -60,68 +48,132 @@ const char* kAtomsToCache[] = {
 namespace views {
 
 X11WindowEventFilter::X11WindowEventFilter(
-    aura::RootWindow* root_window,
-    DesktopRootWindowHost* root_window_host)
+    DesktopWindowTreeHost* window_tree_host)
     : xdisplay_(gfx::GetXDisplay()),
-      xwindow_(root_window->host()->GetAcceleratedWidget()),
+      xwindow_(window_tree_host->AsWindowTreeHost()->GetAcceleratedWidget()),
       x_root_window_(DefaultRootWindow(xdisplay_)),
       atom_cache_(xdisplay_, kAtomsToCache),
-      root_window_host_(root_window_host),
-      is_active_(false) {
+      window_tree_host_(window_tree_host),
+      is_active_(false),
+      click_component_(HTNOWHERE) {
 }
 
 X11WindowEventFilter::~X11WindowEventFilter() {
-}
-
-void X11WindowEventFilter::SetUseHostWindowBorders(bool use_os_border) {
-  MotifWmHints motif_hints;
-  memset(&motif_hints, 0, sizeof(motif_hints));
-  motif_hints.flags = kHintsDecorations;
-  motif_hints.decorations = use_os_border ? 1 : 0;
-
-  ::Atom hint_atom = atom_cache_.GetAtom("_MOTIF_WM_HINTS");
-  XChangeProperty(gfx::GetXDisplay(),
-                  xwindow_,
-                  hint_atom,
-                  hint_atom,
-                  32,
-                  PropModeReplace,
-                  reinterpret_cast<unsigned char*>(&motif_hints),
-                  sizeof(MotifWmHints)/sizeof(long));
 }
 
 void X11WindowEventFilter::OnMouseEvent(ui::MouseEvent* event) {
   if (event->type() != ui::ET_MOUSE_PRESSED)
     return;
 
-  if (!event->IsLeftMouseButton())
+  aura::Window* target = static_cast<aura::Window*>(event->target());
+  if (!target->delegate())
     return;
 
-  aura::Window* target = static_cast<aura::Window*>(event->target());
+  int previous_click_component = HTNOWHERE;
   int component =
       target->delegate()->GetNonClientComponent(event->location());
-  if (component == HTCLIENT)
-    return;
+  if (event->IsLeftMouseButton()) {
+    previous_click_component = click_component_;
+    click_component_ = component;
+  }
 
-  if (event->flags() & ui::EF_IS_DOUBLE_CLICK && component == HTCAPTION) {
-    // Our event is a double click in the caption area. We are responsible for
-    // dispatching this as a minimize/maximize on X11 (Windows converts this to
-    // min/max events for us).
-    if (root_window_host_->IsMaximized())
-      root_window_host_->Restore();
-    else
-      root_window_host_->Maximize();
+  if (component == HTCAPTION) {
+    OnClickedCaption(event, previous_click_component);
+  } else if (component == HTMAXBUTTON) {
+    OnClickedMaximizeButton(event);
+  } else {
+    // Get the |x_root_window_| location out of the native event.
+    if (event->IsLeftMouseButton() && event->native_event()) {
+      const gfx::Point x_root_location =
+          ui::EventSystemLocationFromNative(event->native_event());
+      if (target->GetProperty(aura::client::kCanResizeKey) &&
+          DispatchHostWindowDragMovement(component, x_root_location)) {
+        event->StopPropagation();
+      }
+    }
+  }
+}
+
+void X11WindowEventFilter::OnClickedCaption(ui::MouseEvent* event,
+                                            int previous_click_component) {
+  aura::Window* target = static_cast<aura::Window*>(event->target());
+
+  if (event->IsMiddleMouseButton()) {
+    LinuxUI::NonClientMiddleClickAction action =
+        LinuxUI::MIDDLE_CLICK_ACTION_LOWER;
+    LinuxUI* linux_ui = LinuxUI::instance();
+    if (linux_ui)
+      action = linux_ui->GetNonClientMiddleClickAction();
+
+    switch (action) {
+      case LinuxUI::MIDDLE_CLICK_ACTION_NONE:
+        break;
+      case LinuxUI::MIDDLE_CLICK_ACTION_LOWER:
+        XLowerWindow(xdisplay_, xwindow_);
+        break;
+      case LinuxUI::MIDDLE_CLICK_ACTION_MINIMIZE:
+        window_tree_host_->Minimize();
+        break;
+      case LinuxUI::MIDDLE_CLICK_ACTION_TOGGLE_MAXIMIZE:
+        if (target->GetProperty(aura::client::kCanMaximizeKey))
+          ToggleMaximizedState();
+        break;
+    }
+
     event->SetHandled();
     return;
   }
 
+  if (event->IsLeftMouseButton() && event->flags() & ui::EF_IS_DOUBLE_CLICK) {
+    click_component_ = HTNOWHERE;
+    if (target->GetProperty(aura::client::kCanMaximizeKey) &&
+        previous_click_component == HTCAPTION) {
+      // Our event is a double click in the caption area in a window that can be
+      // maximized. We are responsible for dispatching this as a minimize/
+      // maximize on X11 (Windows converts this to min/max events for us).
+      ToggleMaximizedState();
+      event->SetHandled();
+      return;
+    }
+  }
+
   // Get the |x_root_window_| location out of the native event.
-  if (event->native_event()) {
+  if (event->IsLeftMouseButton() && event->native_event()) {
     const gfx::Point x_root_location =
         ui::EventSystemLocationFromNative(event->native_event());
-    if (DispatchHostWindowDragMovement(component, x_root_location))
+    if (DispatchHostWindowDragMovement(HTCAPTION, x_root_location))
       event->StopPropagation();
   }
+}
+
+void X11WindowEventFilter::OnClickedMaximizeButton(ui::MouseEvent* event) {
+  aura::Window* target = static_cast<aura::Window*>(event->target());
+  views::Widget* widget = views::Widget::GetWidgetForNativeView(target);
+  if (!widget)
+    return;
+
+  gfx::Screen* screen = gfx::Screen::GetNativeScreen();
+  gfx::Rect display_work_area =
+      screen->GetDisplayNearestWindow(target).work_area();
+  gfx::Rect bounds = widget->GetWindowBoundsInScreen();
+  if (event->IsMiddleMouseButton()) {
+    bounds.set_y(display_work_area.y());
+    bounds.set_height(display_work_area.height());
+    widget->SetBounds(bounds);
+    event->StopPropagation();
+  } else if (event->IsRightMouseButton()) {
+    bounds.set_x(display_work_area.x());
+    bounds.set_width(display_work_area.width());
+    widget->SetBounds(bounds);
+    event->StopPropagation();
+  }
+}
+
+void X11WindowEventFilter::ToggleMaximizedState() {
+  if (window_tree_host_->IsMaximized())
+    window_tree_host_->Restore();
+  else
+    window_tree_host_->Maximize();
 }
 
 bool X11WindowEventFilter::DispatchHostWindowDragMovement(

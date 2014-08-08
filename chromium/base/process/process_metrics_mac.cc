@@ -11,8 +11,26 @@
 
 #include "base/containers/hash_tables.h"
 #include "base/logging.h"
+#include "base/mac/mach_logging.h"
 #include "base/mac/scoped_mach_port.h"
 #include "base/sys_info.h"
+
+#if !defined(TASK_POWER_INFO)
+// Doesn't exist in the 10.6 or 10.7 SDKs.
+#define TASK_POWER_INFO        21
+struct task_power_info {
+        uint64_t                total_user;
+        uint64_t                total_system;
+        uint64_t                task_interrupt_wakeups;
+        uint64_t                task_platform_idle_wakeups;
+        uint64_t                task_timer_wakeups_bin_1;
+        uint64_t                task_timer_wakeups_bin_2;
+};
+typedef struct task_power_info        task_power_info_data_t;
+typedef struct task_power_info        *task_power_info_t;
+#define TASK_POWER_INFO_COUNT        ((mach_msg_type_number_t) \
+                (sizeof (task_power_info_data_t) / sizeof (natural_t)))
+#endif
 
 namespace base {
 
@@ -99,7 +117,6 @@ size_t ProcessMetrics::GetPeakWorkingSetSize() const {
 // shared_bytes is the size of shared resident memory.
 bool ProcessMetrics::GetMemoryBytes(size_t* private_bytes,
                                     size_t* shared_bytes) {
-  kern_return_t kr;
   size_t private_pages_count = 0;
   size_t shared_pages_count = 0;
 
@@ -136,21 +153,25 @@ bool ProcessMetrics::GetMemoryBytes(size_t* private_bytes,
     vm_region_top_info_data_t info;
     mach_msg_type_number_t info_count = VM_REGION_TOP_INFO_COUNT;
     mach_port_t object_name;
-    kr = mach_vm_region(task,
-                        &address,
-                        &size,
-                        VM_REGION_TOP_INFO,
-                        (vm_region_info_t)&info,
-                        &info_count,
-                        &object_name);
+    kern_return_t kr = mach_vm_region(task,
+                                      &address,
+                                      &size,
+                                      VM_REGION_TOP_INFO,
+                                      reinterpret_cast<vm_region_info_t>(&info),
+                                      &info_count,
+                                      &object_name);
     if (kr == KERN_INVALID_ADDRESS) {
       // We're at the end of the address space.
       break;
     } else if (kr != KERN_SUCCESS) {
-      DLOG(ERROR) << "Calling mach_vm_region failed with error: "
-                 << mach_error_string(kr);
+      MACH_DLOG(ERROR, kr) << "mach_vm_region";
       return false;
     }
+
+    // The kernel always returns a null object for VM_REGION_TOP_INFO, but
+    // balance it with a deallocate in case this ever changes. See 10.9.2
+    // xnu-2422.90.20/osfmk/vm/vm_map.c vm_map_region.
+    mach_port_deallocate(mach_task_self(), object_name);
 
     if (IsAddressInSharedRegion(address, cpu_type) &&
         info.share_mode != SM_PRIVATE)
@@ -179,18 +200,10 @@ bool ProcessMetrics::GetMemoryBytes(size_t* private_bytes,
     }
   }
 
-  vm_size_t page_size;
-  kr = host_page_size(task, &page_size);
-  if (kr != KERN_SUCCESS) {
-    DLOG(ERROR) << "Failed to fetch host page size, error: "
-               << mach_error_string(kr);
-    return false;
-  }
-
   if (private_bytes)
-    *private_bytes = private_pages_count * page_size;
+    *private_bytes = private_pages_count * PAGE_SIZE;
   if (shared_bytes)
-    *shared_bytes = shared_pages_count * page_size;
+    *shared_bytes = shared_pages_count * PAGE_SIZE;
 
   return true;
 }
@@ -218,16 +231,14 @@ double ProcessMetrics::GetCPUUsage() {
   if (task == MACH_PORT_NULL)
     return 0;
 
-  kern_return_t kr;
-
   // Libtop explicitly loops over the threads (libtop_pinfo_update_cpu_usage()
   // in libtop.c), but this is more concise and gives the same results:
   task_thread_times_info thread_info_data;
   mach_msg_type_number_t thread_info_count = TASK_THREAD_TIMES_INFO_COUNT;
-  kr = task_info(task,
-                 TASK_THREAD_TIMES_INFO,
-                 reinterpret_cast<task_info_t>(&thread_info_data),
-                 &thread_info_count);
+  kern_return_t kr = task_info(task,
+                               TASK_THREAD_TIMES_INFO,
+                               reinterpret_cast<task_info_t>(&thread_info_data),
+                               &thread_info_count);
   if (kr != KERN_SUCCESS) {
     // Most likely cause: |task| is a zombie.
     return 0;
@@ -250,31 +261,67 @@ double ProcessMetrics::GetCPUUsage() {
   timeradd(&user_timeval, &task_timeval, &task_timeval);
   timeradd(&system_timeval, &task_timeval, &task_timeval);
 
-  struct timeval now;
-  int retval = gettimeofday(&now, NULL);
-  if (retval)
-    return 0;
-
-  int64 time = TimeValToMicroseconds(now);
+  TimeTicks time = TimeTicks::Now();
   int64 task_time = TimeValToMicroseconds(task_timeval);
 
-  if ((last_system_time_ == 0) || (last_time_ == 0)) {
+  if (last_system_time_ == 0) {
     // First call, just set the last values.
+    last_cpu_time_ = time;
     last_system_time_ = task_time;
-    last_time_ = time;
     return 0;
   }
 
   int64 system_time_delta = task_time - last_system_time_;
-  int64 time_delta = time - last_time_;
+  int64 time_delta = (time - last_cpu_time_).InMicroseconds();
   DCHECK_NE(0U, time_delta);
   if (time_delta == 0)
     return 0;
 
+  last_cpu_time_ = time;
   last_system_time_ = task_time;
-  last_time_ = time;
 
   return static_cast<double>(system_time_delta * 100.0) / time_delta;
+}
+
+int ProcessMetrics::GetIdleWakeupsPerSecond() {
+  mach_port_t task = TaskForPid(process_);
+  if (task == MACH_PORT_NULL)
+    return 0;
+
+  task_power_info power_info_data;
+  mach_msg_type_number_t power_info_count = TASK_POWER_INFO_COUNT;
+  kern_return_t kr = task_info(task,
+                               TASK_POWER_INFO,
+                               reinterpret_cast<task_info_t>(&power_info_data),
+                               &power_info_count);
+  if (kr != KERN_SUCCESS) {
+    // Most likely cause: |task| is a zombie, or this is on a pre-10.8.4 system
+    // where TASK_POWER_INFO isn't supported yet.
+    return 0;
+  }
+  uint64_t absolute_idle_wakeups = power_info_data.task_platform_idle_wakeups;
+
+  TimeTicks time = TimeTicks::Now();
+
+  if (last_absolute_idle_wakeups_ == 0) {
+    // First call, just set the last values.
+    last_idle_wakeups_time_ = time;
+    last_absolute_idle_wakeups_ = absolute_idle_wakeups;
+    return 0;
+  }
+
+  int64 wakeups_delta = absolute_idle_wakeups - last_absolute_idle_wakeups_;
+  int64 time_delta = (time - last_idle_wakeups_time_).InMicroseconds();
+  DCHECK_NE(0U, time_delta);
+  if (time_delta == 0)
+    return 0;
+
+  last_idle_wakeups_time_ = time;
+  last_absolute_idle_wakeups_ = absolute_idle_wakeups;
+
+  // Round to average wakeups per second.
+  const int kMicrosecondsPerSecond = 1000 * 1000;
+  return (wakeups_delta * kMicrosecondsPerSecond + time_delta/2) / time_delta;
 }
 
 bool ProcessMetrics::GetIOCounters(IoCounters* io_counters) const {
@@ -284,8 +331,8 @@ bool ProcessMetrics::GetIOCounters(IoCounters* io_counters) const {
 ProcessMetrics::ProcessMetrics(ProcessHandle process,
                                ProcessMetrics::PortProvider* port_provider)
     : process_(process),
-      last_time_(0),
       last_system_time_(0),
+      last_absolute_idle_wakeups_(0),
       port_provider_(port_provider) {
   processor_count_ = SysInfo::NumberOfProcessors();
 }
@@ -301,25 +348,18 @@ mach_port_t ProcessMetrics::TaskForPid(ProcessHandle process) const {
 
 // Bytes committed by the system.
 size_t GetSystemCommitCharge() {
-  base::mac::ScopedMachPort host(mach_host_self());
+  base::mac::ScopedMachSendRight host(mach_host_self());
   mach_msg_type_number_t count = HOST_VM_INFO_COUNT;
   vm_statistics_data_t data;
   kern_return_t kr = host_statistics(host, HOST_VM_INFO,
                                      reinterpret_cast<host_info_t>(&data),
                                      &count);
-  if (kr) {
-    DLOG(WARNING) << "Failed to fetch host statistics.";
+  if (kr != KERN_SUCCESS) {
+    MACH_DLOG(WARNING, kr) << "host_statistics";
     return 0;
   }
 
-  vm_size_t page_size;
-  kr = host_page_size(host, &page_size);
-  if (kr) {
-    DLOG(ERROR) << "Failed to fetch host page size.";
-    return 0;
-  }
-
-  return (data.active_count * page_size) / 1024;
+  return (data.active_count * PAGE_SIZE) / 1024;
 }
 
 }  // namespace base

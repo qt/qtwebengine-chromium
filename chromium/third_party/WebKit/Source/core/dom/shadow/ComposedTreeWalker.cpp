@@ -30,8 +30,7 @@
 
 #include "core/dom/Element.h"
 #include "core/dom/shadow/ElementShadow.h"
-#include "core/html/shadow/HTMLContentElement.h"
-#include "core/html/shadow/HTMLShadowElement.h"
+#include "core/html/HTMLShadowElement.h"
 
 namespace WebCore {
 
@@ -73,7 +72,7 @@ Node* ComposedTreeWalker::traverseNode(const Node* node, TraversalDirection dire
     const InsertionPoint* insertionPoint = toInsertionPoint(node);
     if (Node* found = traverseDistributedNodes(direction == TraversalDirectionForward ? insertionPoint->first() : insertionPoint->last(), insertionPoint, direction))
         return found;
-    ASSERT(isHTMLShadowElement(node) || (isHTMLContentElement(node) && !node->hasChildNodes()));
+    ASSERT(isHTMLShadowElement(node) || (isHTMLContentElement(node) && !node->hasChildren()));
     return 0;
 }
 
@@ -140,14 +139,14 @@ Node* ComposedTreeWalker::traverseParent(const Node* node, ParentTraversalDetail
             // The node is distributed. But the distribution was stopped at this insertion point.
             if (shadowWhereNodeCanBeDistributed(*insertionPoint))
                 return 0;
-            return traverseParentOrHost(insertionPoint, details);
+            return traverseParentOrHost(insertionPoint);
         }
         return 0;
     }
-    return traverseParentOrHost(node, details);
+    return traverseParentOrHost(node);
 }
 
-inline Node* ComposedTreeWalker::traverseParentOrHost(const Node* node, ParentTraversalDetails* details) const
+inline Node* ComposedTreeWalker::traverseParentOrHost(const Node* node) const
 {
     Node* parent = node->parentNode();
     if (!parent)
@@ -158,8 +157,6 @@ inline Node* ComposedTreeWalker::traverseParentOrHost(const Node* node, ParentTr
     ASSERT(!shadowRoot->shadowInsertionPointOfYoungerShadowRoot());
     if (!shadowRoot->isYoungest())
         return 0;
-    if (details)
-        details->didTraverseShadowRoot(shadowRoot);
     return shadowRoot->host();
 }
 

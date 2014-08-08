@@ -178,12 +178,12 @@ class FakeSocket : public StreamSocket {
     return outgoing_->Write(buf, buf_len, callback);
   }
 
-  virtual bool SetReceiveBufferSize(int32 size) OVERRIDE {
-    return true;
+  virtual int SetReceiveBufferSize(int32 size) OVERRIDE {
+    return net::OK;
   }
 
-  virtual bool SetSendBufferSize(int32 size) OVERRIDE {
-    return true;
+  virtual int SetSendBufferSize(int32 size) OVERRIDE {
+    return net::OK;
   }
 
   virtual int Connect(const CompletionCallback& callback) OVERRIDE {
@@ -331,7 +331,6 @@ class SSLServerSocketTest : public PlatformTest {
         crypto::RSAPrivateKey::CreateFromPrivateKeyInfo(key_vector));
 
     net::SSLConfig ssl_config;
-    ssl_config.cached_info_enabled = false;
     ssl_config.false_start_enabled = false;
     ssl_config.channel_id_enabled = false;
 
@@ -361,9 +360,6 @@ class SSLServerSocketTest : public PlatformTest {
   scoped_ptr<net::MockCertVerifier> cert_verifier_;
   scoped_ptr<net::TransportSecurityState> transport_security_state_;
 };
-
-// SSLServerSocket is only implemented using NSS.
-#if defined(USE_NSS) || defined(OS_WIN) || defined(OS_MACOSX)
 
 // This test only executes creation of client and server sockets. This is to
 // test that creation of sockets doesn't crash and have minimal code to run
@@ -481,11 +477,17 @@ TEST_F(SSLServerSocketTest, DataTransfer) {
   EXPECT_EQ(0, memcmp(write_buf->data(), read_buf->data(), write_buf->size()));
 }
 
+// Flaky on Android: http://crbug.com/381147
+#if defined(OS_ANDROID)
+#define MAYBE_ClientWriteAfterServerClose DISABLED_ClientWriteAfterServerClose
+#else
+#define MAYBE_ClientWriteAfterServerClose ClientWriteAfterServerClose
+#endif
 // A regression test for bug 127822 (http://crbug.com/127822).
 // If the server closes the connection after the handshake is finished,
 // the client's Write() call should not cause an infinite loop.
 // NOTE: this is a test for SSLClientSocket rather than SSLServerSocket.
-TEST_F(SSLServerSocketTest, ClientWriteAfterServerClose) {
+TEST_F(SSLServerSocketTest, MAYBE_ClientWriteAfterServerClose) {
   Initialize();
 
   TestCompletionCallback connect_callback;
@@ -581,6 +583,5 @@ TEST_F(SSLServerSocketTest, ExportKeyingMaterial) {
   ASSERT_EQ(rv, net::OK);
   EXPECT_NE(0, memcmp(server_out, client_bad, sizeof(server_out)));
 }
-#endif
 
 }  // namespace net

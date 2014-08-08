@@ -9,13 +9,13 @@
 
 try() {
   echo "$@"
-  $@ || exit 1
+  "$@" || exit 1
 }
 
 try rm -rf out
 try mkdir out
 
-try echo 1 > out/2048-sha1-root-serial
+try /bin/sh -c "echo 01 > out/2048-sha1-root-serial"
 touch out/2048-sha1-root-index.txt
 
 # Generate the key
@@ -34,10 +34,10 @@ CA_COMMON_NAME="Test Root CA" \
     -req -days 3650 \
     -in out/2048-sha1-root.req \
     -out out/2048-sha1-root.pem \
-    -text \
     -signkey out/2048-sha1-root.key \
     -extfile ca.cnf \
-    -extensions ca_cert
+    -extensions ca_cert \
+    -text
 
 # Generate the leaf certificate requests
 try openssl req \
@@ -72,10 +72,10 @@ CA_COMMON_NAME="Test Root CA" \
     -out out/ok_cert.pem \
     -config ca.cnf
 
-cat out/ok_cert.key out/ok_cert.pem \
-    > ../certificates/ok_cert.pem
-cat out/expired_cert.key out/expired_cert.pem \
-    > ../certificates/expired_cert.pem
-cat out/2048-sha1-root.key out/2048-sha1-root.pem \
-    > ../certificates/root_ca_cert.pem
+try /bin/sh -c "cat out/ok_cert.key out/ok_cert.pem \
+    > ../certificates/ok_cert.pem"
+try /bin/sh -c "cat out/expired_cert.key out/expired_cert.pem \
+    > ../certificates/expired_cert.pem"
+try /bin/sh -c "cat out/2048-sha1-root.key out/2048-sha1-root.pem \
+    > ../certificates/root_ca_cert.pem"
 

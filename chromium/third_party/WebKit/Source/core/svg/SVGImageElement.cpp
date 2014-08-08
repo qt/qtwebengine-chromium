@@ -23,50 +23,40 @@
 
 #include "core/svg/SVGImageElement.h"
 
-#include "CSSPropertyNames.h"
-#include "XLinkNames.h"
+#include "core/CSSPropertyNames.h"
+#include "core/XLinkNames.h"
 #include "core/rendering/RenderImageResource.h"
 #include "core/rendering/svg/RenderSVGImage.h"
 #include "core/rendering/svg/RenderSVGResource.h"
-#include "core/svg/SVGElementInstance.h"
 
 namespace WebCore {
 
-// Animated property definitions
-DEFINE_ANIMATED_LENGTH(SVGImageElement, SVGNames::xAttr, X, x)
-DEFINE_ANIMATED_LENGTH(SVGImageElement, SVGNames::yAttr, Y, y)
-DEFINE_ANIMATED_LENGTH(SVGImageElement, SVGNames::widthAttr, Width, width)
-DEFINE_ANIMATED_LENGTH(SVGImageElement, SVGNames::heightAttr, Height, height)
-DEFINE_ANIMATED_PRESERVEASPECTRATIO(SVGImageElement, SVGNames::preserveAspectRatioAttr, PreserveAspectRatio, preserveAspectRatio)
-DEFINE_ANIMATED_STRING(SVGImageElement, XLinkNames::hrefAttr, Href, href)
-DEFINE_ANIMATED_BOOLEAN(SVGImageElement, SVGNames::externalResourcesRequiredAttr, ExternalResourcesRequired, externalResourcesRequired)
-
-BEGIN_REGISTER_ANIMATED_PROPERTIES(SVGImageElement)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(x)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(y)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(width)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(height)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(preserveAspectRatio)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(href)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(externalResourcesRequired)
-    REGISTER_PARENT_ANIMATED_PROPERTIES(SVGGraphicsElement)
-END_REGISTER_ANIMATED_PROPERTIES
-
 inline SVGImageElement::SVGImageElement(Document& document)
     : SVGGraphicsElement(SVGNames::imageTag, document)
-    , m_x(LengthModeWidth)
-    , m_y(LengthModeHeight)
-    , m_width(LengthModeWidth)
-    , m_height(LengthModeHeight)
-    , m_imageLoader(this)
+    , SVGURIReference(this)
+    , m_x(SVGAnimatedLength::create(this, SVGNames::xAttr, SVGLength::create(LengthModeWidth), AllowNegativeLengths))
+    , m_y(SVGAnimatedLength::create(this, SVGNames::yAttr, SVGLength::create(LengthModeHeight), AllowNegativeLengths))
+    , m_width(SVGAnimatedLength::create(this, SVGNames::widthAttr, SVGLength::create(LengthModeWidth), ForbidNegativeLengths))
+    , m_height(SVGAnimatedLength::create(this, SVGNames::heightAttr, SVGLength::create(LengthModeHeight), ForbidNegativeLengths))
+    , m_preserveAspectRatio(SVGAnimatedPreserveAspectRatio::create(this, SVGNames::preserveAspectRatioAttr, SVGPreserveAspectRatio::create()))
+    , m_imageLoader(SVGImageLoader::create(this))
+    , m_needsLoaderURIUpdate(true)
 {
     ScriptWrappable::init(this);
-    registerAnimatedPropertiesForSVGImageElement();
+
+    addToPropertyMap(m_x);
+    addToPropertyMap(m_y);
+    addToPropertyMap(m_width);
+    addToPropertyMap(m_height);
+    addToPropertyMap(m_preserveAspectRatio);
 }
 
-PassRefPtr<SVGImageElement> SVGImageElement::create(Document& document)
+DEFINE_NODE_FACTORY(SVGImageElement)
+
+void SVGImageElement::trace(Visitor* visitor)
 {
-    return adoptRef(new SVGImageElement(document));
+    visitor->trace(m_imageLoader);
+    SVGGraphicsElement::trace(visitor);
 }
 
 bool SVGImageElement::currentFrameHasSingleSecurityOrigin() const
@@ -85,7 +75,6 @@ bool SVGImageElement::isSupportedAttribute(const QualifiedName& attrName)
 {
     DEFINE_STATIC_LOCAL(HashSet<QualifiedName>, supportedAttributes, ());
     if (supportedAttributes.isEmpty()) {
-        SVGExternalResourcesRequired::addSupportedAttributes(supportedAttributes);
         SVGURIReference::addSupportedAttributes(supportedAttributes);
         supportedAttributes.add(SVGNames::xAttr);
         supportedAttributes.add(SVGNames::yAttr);
@@ -117,24 +106,22 @@ void SVGImageElement::parseAttribute(const QualifiedName& name, const AtomicStri
 {
     SVGParsingError parseError = NoError;
 
-    if (!isSupportedAttribute(name))
+    if (!isSupportedAttribute(name)) {
         SVGGraphicsElement::parseAttribute(name, value);
-    else if (name == SVGNames::xAttr)
-        setXBaseValue(SVGLength::construct(LengthModeWidth, value, parseError));
-    else if (name == SVGNames::yAttr)
-        setYBaseValue(SVGLength::construct(LengthModeHeight, value, parseError));
-    else if (name == SVGNames::preserveAspectRatioAttr) {
-        SVGPreserveAspectRatio preserveAspectRatio;
-        preserveAspectRatio.parse(value);
-        setPreserveAspectRatioBaseValue(preserveAspectRatio);
-    } else if (name == SVGNames::widthAttr)
-        setWidthBaseValue(SVGLength::construct(LengthModeWidth, value, parseError, ForbidNegativeLengths));
-    else if (name == SVGNames::heightAttr)
-        setHeightBaseValue(SVGLength::construct(LengthModeHeight, value, parseError, ForbidNegativeLengths));
-    else if (SVGExternalResourcesRequired::parseAttribute(name, value)
-             || SVGURIReference::parseAttribute(name, value)) {
-    } else
+    } else if (name == SVGNames::xAttr) {
+        m_x->setBaseValueAsString(value, parseError);
+    } else if (name == SVGNames::yAttr) {
+        m_y->setBaseValueAsString(value, parseError);
+    } else if (name == SVGNames::widthAttr) {
+        m_width->setBaseValueAsString(value, parseError);
+    } else if (name == SVGNames::heightAttr) {
+        m_height->setBaseValueAsString(value, parseError);
+    } else if (name == SVGNames::preserveAspectRatioAttr) {
+        m_preserveAspectRatio->setBaseValueAsString(value, parseError);
+    } else if (SVGURIReference::parseAttribute(name, value, parseError)) {
+    } else {
         ASSERT_NOT_REACHED();
+    }
 
     reportAttributeParsingError(parseError, name, value);
 }
@@ -146,7 +133,7 @@ void SVGImageElement::svgAttributeChanged(const QualifiedName& attrName)
         return;
     }
 
-    SVGElementInstance::InvalidationGuard invalidationGuard(this);
+    SVGElement::InvalidationGuard invalidationGuard(this);
 
     bool isLengthAttribute = attrName == SVGNames::xAttr
                           || attrName == SVGNames::yAttr
@@ -157,7 +144,10 @@ void SVGImageElement::svgAttributeChanged(const QualifiedName& attrName)
         updateRelativeLengthsInformation();
 
     if (SVGURIReference::isKnownAttribute(attrName)) {
-        m_imageLoader.updateFromElementIgnoringPreviousError();
+        if (inDocument())
+            imageLoader().updateFromElementIgnoringPreviousError();
+        else
+            m_needsLoaderURIUpdate = true;
         return;
     }
 
@@ -171,8 +161,7 @@ void SVGImageElement::svgAttributeChanged(const QualifiedName& attrName)
         return;
     }
 
-    if (attrName == SVGNames::preserveAspectRatioAttr
-        || SVGExternalResourcesRequired::isKnownAttribute(attrName)) {
+    if (attrName == SVGNames::preserveAspectRatioAttr) {
         RenderSVGResource::markForLayoutAndParentResourceInvalidation(renderer);
         return;
     }
@@ -182,10 +171,10 @@ void SVGImageElement::svgAttributeChanged(const QualifiedName& attrName)
 
 bool SVGImageElement::selfHasRelativeLengths() const
 {
-    return xCurrentValue().isRelative()
-        || yCurrentValue().isRelative()
-        || widthCurrentValue().isRelative()
-        || heightCurrentValue().isRelative();
+    return m_x->currentValue()->isRelative()
+        || m_y->currentValue()->isRelative()
+        || m_width->currentValue()->isRelative()
+        || m_height->currentValue()->isRelative();
 }
 
 RenderObject* SVGImageElement::createRenderer(RenderStyle*)
@@ -195,7 +184,7 @@ RenderObject* SVGImageElement::createRenderer(RenderStyle*)
 
 bool SVGImageElement::haveLoadedRequiredResources()
 {
-    return !externalResourcesRequiredBaseValue() || !m_imageLoader.hasPendingActivity();
+    return !m_needsLoaderURIUpdate && !imageLoader().hasPendingActivity();
 }
 
 void SVGImageElement::attach(const AttachContext& context)
@@ -206,7 +195,7 @@ void SVGImageElement::attach(const AttachContext& context)
         if (imageObj->imageResource()->hasImage())
             return;
 
-        imageObj->imageResource()->setImageResource(m_imageLoader.image());
+        imageObj->imageResource()->setImageResource(imageLoader().image());
     }
 }
 
@@ -215,27 +204,30 @@ Node::InsertionNotificationRequest SVGImageElement::insertedInto(ContainerNode* 
     SVGGraphicsElement::insertedInto(rootParent);
     if (!rootParent->inDocument())
         return InsertionDone;
-    // Update image loader, as soon as we're living in the tree.
-    // We can only resolve base URIs properly, after that!
-    m_imageLoader.updateFromElement();
+
+    // We can only resolve base URIs properly after tree insertion - hence, URI mutations while
+    // detached are deferred until this point.
+    if (m_needsLoaderURIUpdate) {
+        imageLoader().updateFromElementIgnoringPreviousError();
+        m_needsLoaderURIUpdate = false;
+    } else {
+        // A previous loader update may have failed to actually fetch the image if the document
+        // was inactive. In that case, force a re-update (but don't clear previous errors).
+        if (!imageLoader().image())
+            imageLoader().updateFromElement();
+    }
+
     return InsertionDone;
 }
 
 const AtomicString SVGImageElement::imageSourceURL() const
 {
-    return hrefCurrentValue();
-}
-
-void SVGImageElement::addSubresourceAttributeURLs(ListHashSet<KURL>& urls) const
-{
-    SVGGraphicsElement::addSubresourceAttributeURLs(urls);
-
-    addSubresourceURL(urls, document().completeURL(hrefCurrentValue()));
+    return AtomicString(hrefString());
 }
 
 void SVGImageElement::didMoveToNewDocument(Document& oldDocument)
 {
-    m_imageLoader.elementDidMoveToNewDocument();
+    imageLoader().elementDidMoveToNewDocument();
     SVGGraphicsElement::didMoveToNewDocument(oldDocument);
 }
 

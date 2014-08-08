@@ -26,7 +26,7 @@
 #include "media/audio/audio_parameters.h"
 
 namespace base {
-class MessageLoopProxy;
+class SingleThreadTaskRunner;
 }
 
 namespace media {
@@ -38,8 +38,7 @@ class MEDIA_EXPORT AudioOutputDispatcher
  public:
   AudioOutputDispatcher(AudioManager* audio_manager,
                         const AudioParameters& params,
-                        const std::string& output_device_id,
-                        const std::string& input_device_id);
+                        const std::string& device_id);
 
   // Called by AudioOutputProxy to open the stream.
   // Returns false, if it fails to open it.
@@ -66,15 +65,7 @@ class MEDIA_EXPORT AudioOutputDispatcher
   // Called on the audio thread when the AudioManager is shutting down.
   virtual void Shutdown() = 0;
 
-  // Called by the AudioManager to restart streams when a wedge is detected.  A
-  // wedge means the OS failed to request any audio after StartStream().  When a
-  // wedge is detected all streams across all dispatchers must be closed.  After
-  // all streams are closed, streams are restarted.  See http://crbug.com/160920
-  virtual void CloseStreamsForWedgeFix() = 0;
-  virtual void RestartStreamsForWedgeFix() = 0;
-
-  // Accessor to the input device id used by unified IO.
-  const std::string& input_device_id() const { return input_device_id_; }
+  const std::string& device_id() const { return device_id_; }
 
  protected:
   friend class base::RefCountedThreadSafe<AudioOutputDispatcher>;
@@ -83,10 +74,9 @@ class MEDIA_EXPORT AudioOutputDispatcher
   // A no-reference-held pointer (we don't want circular references) back to the
   // AudioManager that owns this object.
   AudioManager* audio_manager_;
-  const scoped_refptr<base::MessageLoopProxy> message_loop_;
+  const scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
   const AudioParameters params_;
-  std::string output_device_id_;
-  const std::string input_device_id_;
+  std::string device_id_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(AudioOutputDispatcher);

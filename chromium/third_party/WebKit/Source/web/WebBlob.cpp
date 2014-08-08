@@ -29,7 +29,7 @@
  */
 
 #include "config.h"
-#include "WebBlob.h"
+#include "public/web/WebBlob.h"
 
 #include "V8Blob.h"
 #include "bindings/v8/V8Binding.h"
@@ -41,17 +41,23 @@ using namespace WebCore;
 
 namespace blink {
 
+WebBlob WebBlob::createFromUUID(const WebString& uuid, const WebString& type, long long size)
+{
+    RefPtrWillBeRawPtr<Blob> blob = Blob::create(BlobDataHandle::create(uuid, type, size));
+    return WebBlob(blob);
+}
+
 WebBlob WebBlob::createFromFile(const WebString& path, long long size)
 {
     OwnPtr<BlobData> blobData = BlobData::create();
     blobData->appendFile(path);
-    RefPtr<Blob> blob = Blob::create(BlobDataHandle::create(blobData.release(), size));
+    RefPtrWillBeRawPtr<Blob> blob = Blob::create(BlobDataHandle::create(blobData.release(), size));
     return WebBlob(blob);
 }
 
 WebBlob WebBlob::fromV8Value(v8::Handle<v8::Value> value)
 {
-    if (V8Blob::hasInstanceInAnyWorld(value, v8::Isolate::GetCurrent())) {
+    if (V8Blob::hasInstance(value, v8::Isolate::GetCurrent())) {
         v8::Handle<v8::Object> object = v8::Handle<v8::Object>::Cast(value);
         Blob* blob = V8Blob::toNative(object);
         ASSERT(blob);
@@ -77,27 +83,22 @@ WebString WebBlob::uuid()
     return m_private->uuid();
 }
 
-v8::Handle<v8::Value>  WebBlob::toV8Value()
+v8::Handle<v8::Value> WebBlob::toV8Value(v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)
 {
     if (!m_private.get())
         return v8::Handle<v8::Value>();
-    return toV8(m_private.get(), v8::Handle<v8::Object>(), v8::Isolate::GetCurrent());
+    return toV8(m_private.get(), creationContext, isolate);
 }
 
-WebBlob::WebBlob(const WTF::PassRefPtr<WebCore::Blob>& blob)
+WebBlob::WebBlob(const PassRefPtrWillBeRawPtr<WebCore::Blob>& blob)
     : m_private(blob)
 {
 }
 
-WebBlob& WebBlob::operator=(const WTF::PassRefPtr<WebCore::Blob>& blob)
+WebBlob& WebBlob::operator=(const PassRefPtrWillBeRawPtr<WebCore::Blob>& blob)
 {
     m_private = blob;
     return *this;
-}
-
-WebBlob::operator WTF::PassRefPtr<WebCore::Blob>() const
-{
-    return m_private.get();
 }
 
 } // namespace blink

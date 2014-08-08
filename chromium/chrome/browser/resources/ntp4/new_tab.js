@@ -341,16 +341,25 @@ cr.define('ntp', function() {
   }
 
   /**
-   * Fills in an invisible div with the 'Most Visited' string so that
+   * Measure the width of a nav dot with a given title.
+   * @param {string} id The loadTimeData ID of the desired title.
+   * @return {number} The width of the nav dot.
+   */
+  function measureNavDot(id) {
+    var measuringDiv = $('fontMeasuringDiv');
+    measuringDiv.textContent = loadTimeData.getString(id);
+    // The 4 is for border and padding.
+    return Math.max(measuringDiv.clientWidth * 1.15 + 4, 80);
+  }
+
+  /**
+   * Fills in an invisible div with the longest dot title string so that
    * its length may be measured and the nav dots sized accordingly.
    */
   function measureNavDots() {
-    var measuringDiv = $('fontMeasuringDiv');
+    var pxWidth = measureNavDot('appDefaultPageName');
     if (loadTimeData.getBoolean('showMostvisited'))
-      measuringDiv.textContent = loadTimeData.getString('mostvisited');
-
-    // The 4 is for border and padding.
-    var pxWidth = Math.max(measuringDiv.clientWidth * 1.15 + 4, 80);
+      pxWidth = Math.max(measureNavDot('mostvisited'), pxWidth);
 
     var styleElement = document.createElement('style');
     styleElement.type = 'text/css';
@@ -364,12 +373,19 @@ cr.define('ntp', function() {
    * Layout the footer so that the nav dots stay centered.
    */
   function layoutFooter() {
-    var menu = $('footer-menu-container');
+    // We need the image to be loaded.
     var logo = $('logo-img');
-    if (menu.clientWidth > logo.clientWidth)
+    var logoImg = logo.querySelector('img');
+    if (!logoImg.complete) {
+      logoImg.onload = layoutFooter;
+      return;
+    }
+
+    var menu = $('footer-menu-container');
+    if (menu.clientWidth > logoImg.width)
       logo.style.WebkitFlex = '0 1 ' + menu.clientWidth + 'px';
     else
-      menu.style.WebkitFlex = '0 1 ' + logo.clientWidth + 'px';
+      menu.style.WebkitFlex = '0 1 ' + logoImg.width + 'px';
   }
 
   function themeChanged(opt_hasAttribution) {

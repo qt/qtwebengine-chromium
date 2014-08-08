@@ -19,13 +19,14 @@ MONITORINFOEX GetMonitorInfoForMonitor(HMONITOR monitor) {
   MONITORINFOEX monitor_info;
   ZeroMemory(&monitor_info, sizeof(MONITORINFOEX));
   monitor_info.cbSize = sizeof(monitor_info);
-  base::win::GetMonitorInfoWrapper(monitor, &monitor_info);
+  GetMonitorInfo(monitor, &monitor_info);
   return monitor_info;
 }
 
 gfx::Display GetDisplay(MONITORINFOEX& monitor_info) {
   // TODO(oshima): Implement Observer.
-  int64 id = static_cast<int64>(base::Hash(WideToUTF8(monitor_info.szDevice)));
+  int64 id = static_cast<int64>(
+      base::Hash(base::WideToUTF8(monitor_info.szDevice)));
   gfx::Rect bounds = gfx::Rect(monitor_info.rcMonitor);
   gfx::Display display(id, bounds);
   display.set_work_area(gfx::Rect(monitor_info.rcWork));
@@ -64,7 +65,8 @@ bool ScreenWin::IsDIPEnabled() {
 gfx::Point ScreenWin::GetCursorScreenPoint() {
   POINT pt;
   GetCursorPos(&pt);
-  return gfx::Point(pt);
+  gfx::Point cursor_pos_pixels(pt);
+  return gfx::win::ScreenToDIPPoint(cursor_pos_pixels);
 }
 
 gfx::NativeWindow ScreenWin::GetWindowUnderCursor() {
@@ -74,7 +76,8 @@ gfx::NativeWindow ScreenWin::GetWindowUnderCursor() {
 }
 
 gfx::NativeWindow ScreenWin::GetWindowAtScreenPoint(const gfx::Point& point) {
-  return GetNativeWindowFromHWND(WindowFromPoint(point.ToPOINT()));
+  gfx::Point point_in_pixels = gfx::win::DIPToScreenPoint(point);
+  return GetNativeWindowFromHWND(WindowFromPoint(point_in_pixels.ToPOINT()));
 }
 
 int ScreenWin::GetNumDisplays() const {
@@ -99,8 +102,8 @@ gfx::Display ScreenWin::GetDisplayNearestWindow(gfx::NativeView window) const {
 
   MONITORINFOEX monitor_info;
   monitor_info.cbSize = sizeof(monitor_info);
-  base::win::GetMonitorInfoWrapper(
-      MonitorFromWindow(window_hwnd, MONITOR_DEFAULTTONEAREST), &monitor_info);
+  GetMonitorInfo(MonitorFromWindow(window_hwnd, MONITOR_DEFAULTTONEAREST),
+                 &monitor_info);
   return GetDisplay(monitor_info);
 }
 
@@ -110,7 +113,7 @@ gfx::Display ScreenWin::GetDisplayNearestPoint(const gfx::Point& point) const {
   MONITORINFOEX mi;
   ZeroMemory(&mi, sizeof(MONITORINFOEX));
   mi.cbSize = sizeof(mi);
-  if (monitor && base::win::GetMonitorInfoWrapper(monitor, &mi)) {
+  if (monitor && GetMonitorInfo(monitor, &mi)) {
     return GetDisplay(mi);
   }
   return gfx::Display();
@@ -129,7 +132,7 @@ gfx::Display ScreenWin::GetPrimaryDisplay() const {
   gfx::Display display = GetDisplay(mi);
   // TODO(kevers|girard): Test if these checks can be reintroduced for high-DIP
   // once more of the app is DIP-aware.
-  if (!IsInHighDPIMode()) {
+  if (!(IsInHighDPIMode() || IsHighDPIEnabled())) {
     DCHECK_EQ(GetSystemMetrics(SM_CXSCREEN), display.size().width());
     DCHECK_EQ(GetSystemMetrics(SM_CYSCREEN), display.size().height());
   }
@@ -145,27 +148,13 @@ void ScreenWin::RemoveObserver(DisplayObserver* observer) {
 }
 
 HWND ScreenWin::GetHWNDFromNativeView(NativeView window) const {
-#if defined(USE_AURA)
   NOTREACHED();
   return NULL;
-#else
-  return window;
-#endif  // USE_AURA
 }
 
 NativeWindow ScreenWin::GetNativeWindowFromHWND(HWND hwnd) const {
-#if defined(USE_AURA)
   NOTREACHED();
   return NULL;
-#else
-  return hwnd;
-#endif  // USE_AURA
 }
-
-#if !defined(USE_AURA)
-Screen* CreateNativeScreen() {
-  return new ScreenWin;
-}
-#endif  // !USE_AURA
 
 }  // namespace gfx

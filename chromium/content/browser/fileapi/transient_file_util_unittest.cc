@@ -7,7 +7,6 @@
 #include "base/files/file_path.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/platform_file.h"
 #include "base/run_loop.h"
 #include "content/public/test/test_file_system_context.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -17,7 +16,9 @@
 #include "webkit/browser/fileapi/transient_file_util.h"
 #include "webkit/common/blob/scoped_file.h"
 
-namespace fileapi {
+using fileapi::FileSystemURL;
+
+namespace content {
 
 class TransientFileUtilTest : public testing::Test {
  public:
@@ -27,7 +28,7 @@ class TransientFileUtilTest : public testing::Test {
   virtual void SetUp() OVERRIDE {
     file_system_context_ = CreateFileSystemContextForTesting(
         NULL, base::FilePath(FILE_PATH_LITERAL("dummy")));
-    transient_file_util_.reset(new TransientFileUtil);
+    transient_file_util_.reset(new fileapi::TransientFileUtil);
 
     ASSERT_TRUE(data_dir_.CreateUniqueTempDir());
   }
@@ -41,10 +42,12 @@ class TransientFileUtilTest : public testing::Test {
       FileSystemURL* file_url,
       base::FilePath* file_path) {
     EXPECT_TRUE(base::CreateTemporaryFileInDir(data_dir_.path(), file_path));
-    IsolatedContext* isolated_context = IsolatedContext::GetInstance();
+    fileapi::IsolatedContext* isolated_context =
+        fileapi::IsolatedContext::GetInstance();
     std::string name = "tmp";
     std::string fsid = isolated_context->RegisterFileSystemForPath(
-        kFileSystemTypeForTransientFile,
+        fileapi::kFileSystemTypeForTransientFile,
+        std::string(),
         *file_path,
         &name);
     ASSERT_TRUE(!fsid.empty());
@@ -52,22 +55,24 @@ class TransientFileUtilTest : public testing::Test {
         fsid).AppendASCII(name);
     *file_url = file_system_context_->CreateCrackedFileSystemURL(
         GURL("http://foo"),
-        kFileSystemTypeIsolated,
+        fileapi::kFileSystemTypeIsolated,
         virtual_path);
   }
 
-  scoped_ptr<FileSystemOperationContext> NewOperationContext() {
+  scoped_ptr<fileapi::FileSystemOperationContext> NewOperationContext() {
     return make_scoped_ptr(
-        new FileSystemOperationContext(file_system_context_.get()));
+        new fileapi::FileSystemOperationContext(file_system_context_.get()));
   }
 
-  FileSystemFileUtil* file_util() { return transient_file_util_.get(); }
+  fileapi::FileSystemFileUtil* file_util() {
+    return transient_file_util_.get();
+  }
 
  private:
   base::MessageLoop message_loop_;
   base::ScopedTempDir data_dir_;
-  scoped_refptr<FileSystemContext> file_system_context_;
-  scoped_ptr<TransientFileUtil> transient_file_util_;
+  scoped_refptr<fileapi::FileSystemContext> file_system_context_;
+  scoped_ptr<fileapi::TransientFileUtil> transient_file_util_;
 
   DISALLOW_COPY_AND_ASSIGN(TransientFileUtilTest);
 };
@@ -78,8 +83,8 @@ TEST_F(TransientFileUtilTest, TransientFile) {
 
   CreateAndRegisterTemporaryFile(&temp_url, &temp_path);
 
-  base::PlatformFileError error;
-  base::PlatformFileInfo file_info;
+  base::File::Error error;
+  base::File::Info file_info;
   base::FilePath path;
 
   // Make sure the file is there.
@@ -95,13 +100,13 @@ TEST_F(TransientFileUtilTest, TransientFile) {
                                         &error,
                                         &file_info,
                                         &path);
-    ASSERT_EQ(base::PLATFORM_FILE_OK, error);
+    ASSERT_EQ(base::File::FILE_OK, error);
     ASSERT_EQ(temp_path, path);
     ASSERT_FALSE(file_info.is_directory);
 
     // The file should be still there.
     ASSERT_TRUE(base::PathExists(temp_path));
-    ASSERT_EQ(base::PLATFORM_FILE_OK,
+    ASSERT_EQ(base::File::FILE_OK,
               file_util()->GetFileInfo(NewOperationContext().get(),
                                        temp_url, &file_info, &path));
     ASSERT_EQ(temp_path, path);
@@ -113,9 +118,9 @@ TEST_F(TransientFileUtilTest, TransientFile) {
 
   // Now the temporary file and the transient filesystem must be gone too.
   ASSERT_FALSE(base::PathExists(temp_path));
-  ASSERT_EQ(base::PLATFORM_FILE_ERROR_NOT_FOUND,
+  ASSERT_EQ(base::File::FILE_ERROR_NOT_FOUND,
             file_util()->GetFileInfo(NewOperationContext().get(),
                                      temp_url, &file_info, &path));
 }
 
-}  // namespace fileapi
+}  // namespace content

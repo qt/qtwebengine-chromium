@@ -28,13 +28,14 @@
 #include "core/page/CreateWindow.h"
 
 #include "core/dom/Document.h"
-#include "core/frame/Frame.h"
+#include "core/frame/FrameHost.h"
+#include "core/frame/LocalFrame.h"
+#include "core/frame/Settings.h"
 #include "core/loader/FrameLoadRequest.h"
 #include "core/page/Chrome.h"
 #include "core/page/ChromeClient.h"
 #include "core/page/FocusController.h"
 #include "core/page/Page.h"
-#include "core/frame/Settings.h"
 #include "core/page/WindowFeatures.h"
 #include "platform/network/ResourceRequest.h"
 #include "platform/weborigin/KURL.h"
@@ -43,12 +44,12 @@
 
 namespace WebCore {
 
-static Frame* createWindow(Frame* openerFrame, Frame* lookupFrame, const FrameLoadRequest& request, const WindowFeatures& features, NavigationPolicy policy, ShouldSendReferrer shouldSendReferrer, bool& created)
+static LocalFrame* createWindow(LocalFrame& openerFrame, LocalFrame& lookupFrame, const FrameLoadRequest& request, const WindowFeatures& features, NavigationPolicy policy, ShouldSendReferrer shouldSendReferrer, bool& created)
 {
     ASSERT(!features.dialog || request.frameName().isEmpty());
 
     if (!request.frameName().isEmpty() && request.frameName() != "_blank" && policy == NavigationPolicyIgnore) {
-        if (Frame* frame = lookupFrame->loader().findFrameForNavigation(request.frameName(), openerFrame->document())) {
+        if (LocalFrame* frame = lookupFrame.loader().findFrameForNavigation(request.frameName(), openerFrame.document())) {
             if (request.frameName() != "_self")
                 frame->page()->focusController().setFocusedFrame(frame);
             created = false;
@@ -57,40 +58,42 @@ static Frame* createWindow(Frame* openerFrame, Frame* lookupFrame, const FrameLo
     }
 
     // Sandboxed frames cannot open new auxiliary browsing contexts.
-    if (openerFrame->document()->isSandboxed(SandboxPopups)) {
+    if (openerFrame.document()->isSandboxed(SandboxPopups)) {
         // FIXME: This message should be moved off the console once a solution to https://bugs.webkit.org/show_bug.cgi?id=103274 exists.
-        openerFrame->document()->addConsoleMessage(SecurityMessageSource, ErrorMessageLevel, "Blocked opening '" + request.resourceRequest().url().elidedString() + "' in a new window because the request was made in a sandboxed frame whose 'allow-popups' permission is not set.");
+        openerFrame.document()->addConsoleMessage(SecurityMessageSource, ErrorMessageLevel, "Blocked opening '" + request.resourceRequest().url().elidedString() + "' in a new window because the request was made in a sandboxed frame whose 'allow-popups' permission is not set.");
         return 0;
     }
 
-    if (openerFrame->settings() && !openerFrame->settings()->supportsMultipleWindows()) {
+    if (openerFrame.settings() && !openerFrame.settings()->supportsMultipleWindows()) {
         created = false;
-        return openerFrame->tree().top();
+        if (!openerFrame.tree().top()->isLocalFrame())
+            return 0;
+        return toLocalFrame(openerFrame.tree().top());
     }
 
-    Page* oldPage = openerFrame->page();
+    Page* oldPage = openerFrame.page();
     if (!oldPage)
         return 0;
 
-    Page* page = oldPage->chrome().client().createWindow(openerFrame, request, features, policy, shouldSendReferrer);
-    if (!page)
+    Page* page = oldPage->chrome().client().createWindow(&openerFrame, request, features, policy, shouldSendReferrer);
+    if (!page || !page->mainFrame()->isLocalFrame())
         return 0;
+    FrameHost* host = &page->frameHost();
 
-    Frame* frame = page->mainFrame();
-
-    frame->loader().forceSandboxFlags(openerFrame->document()->sandboxFlags());
+    ASSERT(page->mainFrame());
+    LocalFrame& frame = *page->deprecatedLocalMainFrame();
 
     if (request.frameName() != "_blank")
-        frame->tree().setName(request.frameName());
+        frame.tree().setName(request.frameName());
 
-    page->chrome().setWindowFeatures(features);
+    host->chrome().setWindowFeatures(features);
 
     // 'x' and 'y' specify the location of the window, while 'width' and 'height'
     // specify the size of the viewport. We can only resize the window, so adjust
     // for the difference between the window size and the viewport size.
 
-    FloatRect windowRect = page->chrome().windowRect();
-    FloatSize viewportSize = page->chrome().pageRect().size();
+    FloatRect windowRect = host->chrome().windowRect();
+    FloatSize viewportSize = host->chrome().pageRect().size();
 
     if (features.xSet)
         windowRect.setX(features.x);
@@ -102,68 +105,71 @@ static Frame* createWindow(Frame* openerFrame, Frame* lookupFrame, const FrameLo
         windowRect.setHeight(features.height + (windowRect.height() - viewportSize.height()));
 
     // Ensure non-NaN values, minimum size as well as being within valid screen area.
-    FloatRect newWindowRect = DOMWindow::adjustWindowRect(page, windowRect);
+    FloatRect newWindowRect = LocalDOMWindow::adjustWindowRect(frame, windowRect);
 
-    page->chrome().setWindowRect(newWindowRect);
-    page->chrome().show(policy);
+    host->chrome().setWindowRect(newWindowRect);
+    host->chrome().show(policy);
 
     created = true;
-    return frame;
+    return &frame;
 }
 
-Frame* createWindow(const String& urlString, const AtomicString& frameName, const WindowFeatures& windowFeatures,
-    DOMWindow* activeWindow, Frame* firstFrame, Frame* openerFrame, DOMWindow::PrepareDialogFunction function, void* functionContext)
+LocalFrame* createWindow(const String& urlString, const AtomicString& frameName, const WindowFeatures& windowFeatures,
+    LocalDOMWindow& callingWindow, LocalFrame& firstFrame, LocalFrame& openerFrame, LocalDOMWindow::PrepareDialogFunction function, void* functionContext)
 {
-    Frame* activeFrame = activeWindow->frame();
+    LocalFrame* activeFrame = callingWindow.frame();
+    ASSERT(activeFrame);
 
-    KURL completedURL = urlString.isEmpty() ? KURL(ParsedURLString, emptyString()) : firstFrame->document()->completeURL(urlString);
+    KURL completedURL = urlString.isEmpty() ? KURL(ParsedURLString, emptyString()) : firstFrame.document()->completeURL(urlString);
     if (!completedURL.isEmpty() && !completedURL.isValid()) {
         // Don't expose client code to invalid URLs.
-        activeWindow->printErrorMessage("Unable to open a window with invalid URL '" + completedURL.string() + "'.\n");
+        callingWindow.printErrorMessage("Unable to open a window with invalid URL '" + completedURL.string() + "'.\n");
         return 0;
     }
 
     // For whatever reason, Firefox uses the first frame to determine the outgoingReferrer. We replicate that behavior here.
-    String referrer = SecurityPolicy::generateReferrerHeader(firstFrame->document()->referrerPolicy(), completedURL, firstFrame->document()->outgoingReferrer());
+    Referrer referrer(SecurityPolicy::generateReferrerHeader(firstFrame.document()->referrerPolicy(), completedURL, firstFrame.document()->outgoingReferrer()), firstFrame.document()->referrerPolicy());
 
     ResourceRequest request(completedURL, referrer);
-    FrameLoader::addHTTPOriginIfNeeded(request, firstFrame->document()->outgoingOrigin());
-    FrameLoadRequest frameRequest(activeWindow->document(), request, frameName);
+    FrameLoader::addHTTPOriginIfNeeded(request, AtomicString(firstFrame.document()->outgoingOrigin()));
+    FrameLoadRequest frameRequest(callingWindow.document(), request, frameName);
 
     // We pass the opener frame for the lookupFrame in case the active frame is different from
     // the opener frame, and the name references a frame relative to the opener frame.
     bool created;
-    Frame* newFrame = createWindow(activeFrame, openerFrame, frameRequest, windowFeatures, NavigationPolicyIgnore, MaybeSendReferrer, created);
+    LocalFrame* newFrame = createWindow(*activeFrame, openerFrame, frameRequest, windowFeatures, NavigationPolicyIgnore, MaybeSendReferrer, created);
     if (!newFrame)
         return 0;
 
-    newFrame->loader().setOpener(openerFrame);
-    newFrame->page()->setOpenedByDOM();
+    if (newFrame != &openerFrame && newFrame != openerFrame.tree().top())
+        newFrame->loader().forceSandboxFlags(openerFrame.document()->sandboxFlags());
 
-    if (newFrame->domWindow()->isInsecureScriptAccess(activeWindow, completedURL))
+    newFrame->loader().setOpener(&openerFrame);
+
+    if (newFrame->domWindow()->isInsecureScriptAccess(callingWindow, completedURL))
         return newFrame;
 
     if (function)
         function(newFrame->domWindow(), functionContext);
 
     if (created) {
-        FrameLoadRequest request(activeWindow->document(), ResourceRequest(completedURL, referrer));
+        FrameLoadRequest request(callingWindow.document(), ResourceRequest(completedURL, referrer));
         newFrame->loader().load(request);
     } else if (!urlString.isEmpty()) {
-        newFrame->navigationScheduler().scheduleLocationChange(activeWindow->document(), completedURL.string(), referrer, false);
+        newFrame->navigationScheduler().scheduleLocationChange(callingWindow.document(), completedURL.string(), referrer, false);
     }
     return newFrame;
 }
 
-void createWindowForRequest(const FrameLoadRequest& request, Frame* openerFrame, NavigationPolicy policy, ShouldSendReferrer shouldSendReferrer)
+void createWindowForRequest(const FrameLoadRequest& request, LocalFrame& openerFrame, NavigationPolicy policy, ShouldSendReferrer shouldSendReferrer)
 {
-    if (openerFrame->document()->pageDismissalEventBeingDispatched() != Document::NoDismissal)
+    if (openerFrame.document()->pageDismissalEventBeingDispatched() != Document::NoDismissal)
         return;
 
-    if (openerFrame->document() && openerFrame->document()->isSandboxed(SandboxPopups))
+    if (openerFrame.document() && openerFrame.document()->isSandboxed(SandboxPopups))
         return;
 
-    if (!DOMWindow::allowPopUp(openerFrame))
+    if (!LocalDOMWindow::allowPopUp(openerFrame))
         return;
 
     if (policy == NavigationPolicyCurrentTab)
@@ -171,13 +177,12 @@ void createWindowForRequest(const FrameLoadRequest& request, Frame* openerFrame,
 
     WindowFeatures features;
     bool created;
-    Frame* newFrame = createWindow(openerFrame, openerFrame, request, features, policy, shouldSendReferrer, created);
+    LocalFrame* newFrame = createWindow(openerFrame, openerFrame, request, features, policy, shouldSendReferrer, created);
     if (!newFrame)
         return;
-    newFrame->page()->setOpenedByDOM();
     if (shouldSendReferrer == MaybeSendReferrer) {
-        newFrame->loader().setOpener(openerFrame);
-        newFrame->document()->setReferrerPolicy(openerFrame->document()->referrerPolicy());
+        newFrame->loader().setOpener(&openerFrame);
+        newFrame->document()->setReferrerPolicy(openerFrame.document()->referrerPolicy());
     }
     FrameLoadRequest newRequest(0, request.resourceRequest());
     newRequest.setFormState(request.formState());

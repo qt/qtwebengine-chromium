@@ -34,19 +34,19 @@ namespace WebCore {
 
 class WebGLShader;
 
-class WebGLDebugShaders : public WebGLExtension, public ScriptWrappable {
+class WebGLDebugShaders FINAL : public WebGLExtension, public ScriptWrappable {
 public:
-    static PassRefPtr<WebGLDebugShaders> create(WebGLRenderingContext*);
-    static bool supported(WebGLRenderingContext*);
+    static PassRefPtr<WebGLDebugShaders> create(WebGLRenderingContextBase*);
+    static bool supported(WebGLRenderingContextBase*);
     static const char* extensionName();
 
     virtual ~WebGLDebugShaders();
-    virtual ExtensionName name() const;
+    virtual WebGLExtensionName name() const OVERRIDE;
 
     String getTranslatedShaderSource(WebGLShader*);
 
 private:
-    WebGLDebugShaders(WebGLRenderingContext*);
+    WebGLDebugShaders(WebGLRenderingContextBase*);
 };
 
 } // namespace WebCore

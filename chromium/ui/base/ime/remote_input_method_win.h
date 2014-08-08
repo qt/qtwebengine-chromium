@@ -13,7 +13,7 @@
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/string16.h"
-#include "ui/base/ui_export.h"
+#include "ui/base/ui_base_export.h"
 #include "ui/gfx/native_widget_types.h"
 
 namespace ui {
@@ -32,7 +32,7 @@ struct CompositionText;
 //   metro_driver process via RemoteInputMethodDelegateWin.
 // - Data retrieval from RemoteInputMethodPrivateWin is implemented with
 //   data cache. Whenever the IME state in the metro_driver process is changed,
-//   RemoteRootWindowHostWin, which receives IPCs from metro_driver process,
+//   RemoteWindowTreeHostWin, which receives IPCs from metro_driver process,
 //   will call RemoteInputMethodPrivateWin::OnCandidatePopupChanged and/or
 //   RemoteInputMethodPrivateWin::OnInputSourceChanged accordingly so that
 //   the state cache should be updated.
@@ -46,11 +46,11 @@ bool IsRemoteInputMethodWinRequired(gfx::AcceleratedWidget widget);
 // Returns the public interface of RemoteInputMethodWin.
 // Caveats: Currently only one instance of RemoteInputMethodWin is able to run
 // at the same time.
-UI_EXPORT scoped_ptr<InputMethod> CreateRemoteInputMethodWin(
+UI_BASE_EXPORT scoped_ptr<InputMethod> CreateRemoteInputMethodWin(
     internal::InputMethodDelegate* delegate);
 
 // Private interface of RemoteInputMethodWin.
-class UI_EXPORT RemoteInputMethodPrivateWin {
+class UI_BASE_EXPORT RemoteInputMethodPrivateWin {
  public:
   RemoteInputMethodPrivateWin();
 
@@ -72,9 +72,8 @@ class UI_EXPORT RemoteInputMethodPrivateWin {
   virtual void OnCandidatePopupChanged(bool visible) = 0;
 
   // Updates internal cache so that subsequent calls of
-  // RemoteInputMethodWin::GetInputLocale and
-  // RemoteInputMethodWin::GetInputTextDirection can return the correct
-  // values based on remote IME activities in the metro_driver process.
+  // RemoteInputMethodWin::GetInputLocale can return the correct values based on
+  // remote IME activities in the metro_driver process.
   virtual void OnInputSourceChanged(LANGID langid, bool is_ime) = 0;
 
   // Handles composition-update events occurred in the metro_driver process.

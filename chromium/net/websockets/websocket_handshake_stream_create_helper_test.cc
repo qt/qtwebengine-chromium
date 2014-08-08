@@ -4,6 +4,9 @@
 
 #include "net/websockets/websocket_handshake_stream_create_helper.h"
 
+#include <string>
+#include <vector>
+
 #include "net/base/completion_callback.h"
 #include "net/base/net_errors.h"
 #include "net/http/http_request_headers.h"
@@ -54,6 +57,23 @@ class MockClientSocketHandleFactory {
   DISALLOW_COPY_AND_ASSIGN(MockClientSocketHandleFactory);
 };
 
+class TestConnectDelegate : public WebSocketStream::ConnectDelegate {
+ public:
+  virtual ~TestConnectDelegate() {}
+
+  virtual void OnSuccess(scoped_ptr<WebSocketStream> stream) OVERRIDE {}
+  virtual void OnFailure(const std::string& failure_message) OVERRIDE {}
+  virtual void OnStartOpeningHandshake(
+      scoped_ptr<WebSocketHandshakeRequestInfo> request) OVERRIDE {}
+  virtual void OnFinishOpeningHandshake(
+      scoped_ptr<WebSocketHandshakeResponseInfo> response) OVERRIDE {}
+  virtual void OnSSLCertificateError(
+      scoped_ptr<WebSocketEventInterface::SSLErrorCallbacks>
+          ssl_error_callbacks,
+      const SSLInfo& ssl_info,
+      bool fatal) OVERRIDE {}
+};
+
 class WebSocketHandshakeStreamCreateHelperTest : public ::testing::Test {
  protected:
   scoped_ptr<WebSocketStream> CreateAndInitializeStream(
@@ -63,7 +83,9 @@ class WebSocketHandshakeStreamCreateHelperTest : public ::testing::Test {
       const std::string& origin,
       const std::string& extra_request_headers,
       const std::string& extra_response_headers) {
-    WebSocketHandshakeStreamCreateHelper create_helper(sub_protocols);
+    WebSocketHandshakeStreamCreateHelper create_helper(&connect_delegate_,
+                                                       sub_protocols);
+    create_helper.set_failure_message(&failure_message_);
 
     scoped_ptr<ClientSocketHandle> socket_handle =
         socket_handle_factory_.CreateClientSocketHandle(
@@ -91,6 +113,8 @@ class WebSocketHandshakeStreamCreateHelperTest : public ::testing::Test {
     HttpRequestHeaders headers;
     headers.SetHeader("Host", "localhost");
     headers.SetHeader("Connection", "Upgrade");
+    headers.SetHeader("Pragma", "no-cache");
+    headers.SetHeader("Cache-Control", "no-cache");
     headers.SetHeader("Upgrade", "websocket");
     headers.SetHeader("Origin", origin);
     headers.SetHeader("Sec-WebSocket-Version", "13");
@@ -114,6 +138,8 @@ class WebSocketHandshakeStreamCreateHelperTest : public ::testing::Test {
   }
 
   MockClientSocketHandleFactory socket_handle_factory_;
+  TestConnectDelegate connect_delegate_;
+  std::string failure_message_;
 };
 
 // Confirm that the basic case works as expected.
@@ -132,14 +158,47 @@ TEST_F(WebSocketHandshakeStreamCreateHelperTest, SubProtocols) {
   sub_protocols.push_back("chat");
   sub_protocols.push_back("superchat");
   scoped_ptr<WebSocketStream> stream =
-      CreateAndInitializeStream("ws://localhost/", "/",
-                                sub_protocols, "http://localhost/",
+      CreateAndInitializeStream("ws://localhost/",
+                                "/",
+                                sub_protocols,
+                                "http://localhost/",
                                 "Sec-WebSocket-Protocol: chat, superchat\r\n",
                                 "Sec-WebSocket-Protocol: superchat\r\n");
   EXPECT_EQ("superchat", stream->GetSubProtocol());
 }
 
-// TODO(ricea): Test extensions once they are implemented.
+// Verify that extension name is available. Bad extension names are tested in
+// websocket_stream_test.cc.
+TEST_F(WebSocketHandshakeStreamCreateHelperTest, Extensions) {
+  scoped_ptr<WebSocketStream> stream = CreateAndInitializeStream(
+      "ws://localhost/",
+      "/",
+      std::vector<std::string>(),
+      "http://localhost/",
+      "",
+      "Sec-WebSocket-Extensions: permessage-deflate\r\n");
+  EXPECT_EQ("permessage-deflate", stream->GetExtensions());
+}
+
+// Verify that extension parameters are available. Bad parameters are tested in
+// websocket_stream_test.cc.
+TEST_F(WebSocketHandshakeStreamCreateHelperTest, ExtensionParameters) {
+  scoped_ptr<WebSocketStream> stream = CreateAndInitializeStream(
+      "ws://localhost/",
+      "/",
+      std::vector<std::string>(),
+      "http://localhost/",
+      "",
+      "Sec-WebSocket-Extensions: permessage-deflate;"
+      " client_max_window_bits=14; server_max_window_bits=14;"
+      " server_no_context_takeover; client_no_context_takeover\r\n");
+
+  EXPECT_EQ(
+      "permessage-deflate;"
+      " client_max_window_bits=14; server_max_window_bits=14;"
+      " server_no_context_takeover; client_no_context_takeover",
+      stream->GetExtensions());
+}
 
 }  // namespace
 }  // namespace net

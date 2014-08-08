@@ -36,7 +36,7 @@ namespace WebCore {
 
 // BiquadProcessor is an AudioDSPKernelProcessor which uses Biquad objects to implement several common filters.
 
-class BiquadProcessor : public AudioDSPKernelProcessor {
+class BiquadProcessor FINAL : public AudioDSPKernelProcessor {
 public:
     enum FilterType {
         LowPass = 0,
@@ -53,9 +53,9 @@ public:
 
     virtual ~BiquadProcessor();
 
-    virtual PassOwnPtr<AudioDSPKernel> createKernel();
+    virtual PassOwnPtr<AudioDSPKernel> createKernel() OVERRIDE;
 
-    virtual void process(const AudioBus* source, AudioBus* destination, size_t framesToProcess);
+    virtual void process(const AudioBus* source, AudioBus* destination, size_t framesToProcess) OVERRIDE;
 
     // Get the magnitude and phase response of the filter at the given
     // set of frequencies (in Hz). The phase response is in radians.
@@ -80,10 +80,10 @@ public:
 private:
     FilterType m_type;
 
-    RefPtr<AudioParam> m_parameter1;
-    RefPtr<AudioParam> m_parameter2;
-    RefPtr<AudioParam> m_parameter3;
-    RefPtr<AudioParam> m_parameter4;
+    RefPtrWillBePersistent<AudioParam> m_parameter1;
+    RefPtrWillBePersistent<AudioParam> m_parameter2;
+    RefPtrWillBePersistent<AudioParam> m_parameter3;
+    RefPtrWillBePersistent<AudioParam> m_parameter4;
 
     // so DSP kernels know when to re-compute coefficients
     bool m_filterCoefficientsDirty;

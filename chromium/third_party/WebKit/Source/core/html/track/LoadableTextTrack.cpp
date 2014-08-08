@@ -26,14 +26,18 @@
 #include "config.h"
 #include "core/html/track/LoadableTextTrack.h"
 
+#include "core/dom/ElementTraversal.h"
+#include "core/html/HTMLMediaElement.h"
 #include "core/html/HTMLTrackElement.h"
 #include "core/html/track/TextTrackCueList.h"
 #include "core/html/track/vtt/VTTRegionList.h"
 
 namespace WebCore {
 
+using namespace HTMLNames;
+
 LoadableTextTrack::LoadableTextTrack(HTMLTrackElement* track)
-    : TextTrack(track->document(), track, emptyAtom, emptyAtom, emptyAtom, emptyAtom, TrackElement)
+    : TextTrack(track->document(), emptyAtom, emptyAtom, emptyAtom, emptyAtom, TrackElement)
     , m_trackElement(track)
     , m_loadTimer(this, &LoadableTextTrack::loadTimerFired)
     , m_isDefault(false)
@@ -42,12 +46,26 @@ LoadableTextTrack::LoadableTextTrack(HTMLTrackElement* track)
 
 LoadableTextTrack::~LoadableTextTrack()
 {
+#if !ENABLE(OILPAN)
+    ASSERT(!m_trackElement);
+#endif
 }
 
-void LoadableTextTrack::clearClient()
+#if !ENABLE(OILPAN)
+void LoadableTextTrack::clearTrackElement()
 {
-    m_trackElement = 0;
-    TextTrack::clearClient();
+    m_trackElement = nullptr;
+}
+#endif
+
+void LoadableTextTrack::setMode(const AtomicString& mode)
+{
+    TextTrack::setMode(mode);
+    if (!m_trackElement)
+        return;
+
+    if (m_trackElement->readyState() == HTMLTrackElement::NONE)
+        m_trackElement->scheduleLoad();
 }
 
 void LoadableTextTrack::scheduleLoad(const KURL& url)
@@ -72,7 +90,7 @@ void LoadableTextTrack::scheduleLoad(const KURL& url)
     // 3. Asynchronously run the remaining steps, while continuing with whatever task
     // was responsible for creating the text track or changing the text track mode.
     if (!m_loadTimer.isActive())
-        m_loadTimer.startOneShot(0);
+        m_loadTimer.startOneShot(0, FROM_HERE);
 }
 
 void LoadableTextTrack::loadTimerFired(Timer<LoadableTextTrack>*)
@@ -97,7 +115,7 @@ void LoadableTextTrack::newCuesAvailable(TextTrackLoader* loader)
 {
     ASSERT_UNUSED(loader, m_loader == loader);
 
-    Vector<RefPtr<VTTCue> > newCues;
+    WillBeHeapVector<RefPtrWillBeMember<VTTCue> > newCues;
     m_loader->getNewCues(newCues);
 
     if (!m_cues)
@@ -105,11 +123,11 @@ void LoadableTextTrack::newCuesAvailable(TextTrackLoader* loader)
 
     for (size_t i = 0; i < newCues.size(); ++i) {
         newCues[i]->setTrack(this);
-        m_cues->add(newCues[i]);
+        m_cues->add(newCues[i].release());
     }
 
-    if (client())
-        client()->textTrackAddCues(this, m_cues.get());
+    if (mediaElement())
+        mediaElement()->textTrackAddCues(this, m_cues.get());
 }
 
 void LoadableTextTrack::cueLoadingCompleted(TextTrackLoader* loader, bool loadingFailed)
@@ -126,7 +144,7 @@ void LoadableTextTrack::newRegionsAvailable(TextTrackLoader* loader)
 {
     ASSERT_UNUSED(loader, m_loader == loader);
 
-    Vector<RefPtr<VTTRegion> > newRegions;
+    WillBeHeapVector<RefPtrWillBeMember<VTTRegion> > newRegions;
     m_loader->getNewRegions(newRegions);
 
     for (size_t i = 0; i < newRegions.size(); ++i) {
@@ -141,10 +159,10 @@ size_t LoadableTextTrack::trackElementIndex()
     ASSERT(m_trackElement->parentNode());
 
     size_t index = 0;
-    for (Node* node = m_trackElement->parentNode()->firstChild(); node; node = node->nextSibling()) {
-        if (!node->hasTagName(trackTag) || !node->parentNode())
+    for (HTMLTrackElement* track = Traversal<HTMLTrackElement>::firstChild(*m_trackElement->parentNode()); track; track = Traversal<HTMLTrackElement>::nextSibling(*track)) {
+        if (!track->parentNode())
             continue;
-        if (node == m_trackElement)
+        if (track == m_trackElement)
             return index;
         ++index;
     }
@@ -153,5 +171,11 @@ size_t LoadableTextTrack::trackElementIndex()
     return 0;
 }
 
-} // namespace WebCore
+void LoadableTextTrack::trace(Visitor* visitor)
+{
+    visitor->trace(m_trackElement);
+    visitor->trace(m_loader);
+    TextTrack::trace(visitor);
+}
 
+} // namespace WebCore

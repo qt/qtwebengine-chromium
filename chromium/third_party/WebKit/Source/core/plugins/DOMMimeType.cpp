@@ -19,15 +19,15 @@
 #include "config.h"
 #include "core/plugins/DOMMimeType.h"
 
+#include "core/frame/LocalFrame.h"
 #include "core/loader/FrameLoader.h"
-#include "core/frame/Frame.h"
 #include "core/page/Page.h"
 #include "core/plugins/DOMPlugin.h"
 #include "wtf/text/StringBuilder.h"
 
 namespace WebCore {
 
-DOMMimeType::DOMMimeType(PassRefPtr<PluginData> pluginData, Frame* frame, unsigned index)
+DOMMimeType::DOMMimeType(PassRefPtr<PluginData> pluginData, LocalFrame* frame, unsigned index)
     : FrameDestructionObserver(frame)
     , m_pluginData(pluginData)
     , m_index(index)
@@ -62,13 +62,13 @@ const String &DOMMimeType::description() const
     return mimeClassInfo().desc;
 }
 
-PassRefPtr<DOMPlugin> DOMMimeType::enabledPlugin() const
+PassRefPtrWillBeRawPtr<DOMPlugin> DOMMimeType::enabledPlugin() const
 {
     // FIXME: allowPlugins is just a client call. We should not need
-    // to bounce through the page or mainframe or loader to get there.
+    // to bounce through the loader to get there.
     // Something like: m_frame->host()->client()->allowPlugins().
-    if (!m_frame || !m_frame->page() || !m_frame->page()->mainFrame()->loader().allowPlugins(NotAboutToInstantiatePlugin))
-        return 0;
+    if (!m_frame || !m_frame->loader().allowPlugins(NotAboutToInstantiatePlugin))
+        return nullptr;
 
     return DOMPlugin::create(m_pluginData.get(), m_frame, m_pluginData->mimePluginIndices()[m_index]);
 }

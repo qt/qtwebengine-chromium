@@ -16,6 +16,8 @@ template <class ObserverType> class ObserverListThreadSafe;
 
 namespace net {
 
+class NSSCertDatabase;
+
 // This class provides cross-platform functions to verify and add user
 // certificates, and to observe changes to the underlying certificate stores.
 
@@ -80,9 +82,21 @@ class NET_EXPORT CertDatabase {
 #endif
 
 #if defined(OS_ANDROID)
-  // On android, the system database is used. When the system notifies the
+  // On Android, the system key store may be replaced with a device-specific
+  // KeyStore used for storing client certificates. When the Java side replaces
+  // the KeyStore used for client certificates, notifies the observers as if a
+  // new client certificate was added.
+  void OnAndroidKeyStoreChanged();
+
+  // On Android, the system database is used. When the system notifies the
   // application that the certificates changed, the observers must be notified.
   void OnAndroidKeyChainChanged();
+#endif
+
+#if defined(USE_NSS)
+  // Observe events from the |source| and forward them to observers of this
+  // CertDatabase.
+  void ObserveNSSCertDatabase(NSSCertDatabase* source);
 #endif
 
  private:

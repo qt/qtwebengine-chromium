@@ -70,16 +70,23 @@ ProxyResolvingClientSocket::ProxyResolvingClientSocket(
   const net::HttpNetworkSession::Params* reference_params =
       request_context->GetNetworkSessionParams();
   if (reference_params) {
+    // TODO(mmenke):  Just copying specific parameters seems highly regression
+    // prone.  Should have a better way to do this.
     session_params.host_mapping_rules = reference_params->host_mapping_rules;
     session_params.ignore_certificate_errors =
         reference_params->ignore_certificate_errors;
-    session_params.http_pipelining_enabled =
-        reference_params->http_pipelining_enabled;
     session_params.testing_fixed_http_port =
         reference_params->testing_fixed_http_port;
     session_params.testing_fixed_https_port =
         reference_params->testing_fixed_https_port;
+    session_params.next_protos = reference_params->next_protos;
     session_params.trusted_spdy_proxy = reference_params->trusted_spdy_proxy;
+    session_params.force_spdy_over_ssl = reference_params->force_spdy_over_ssl;
+    session_params.force_spdy_always = reference_params->force_spdy_always;
+    session_params.forced_spdy_exclusions =
+        reference_params->forced_spdy_exclusions;
+    session_params.use_alternate_protocols =
+        reference_params->use_alternate_protocols;
   }
 
   network_session_ = new net::HttpNetworkSession(session_params);
@@ -107,18 +114,18 @@ int ProxyResolvingClientSocket::Write(
   return net::ERR_SOCKET_NOT_CONNECTED;
 }
 
-bool ProxyResolvingClientSocket::SetReceiveBufferSize(int32 size) {
+int ProxyResolvingClientSocket::SetReceiveBufferSize(int32 size) {
   if (transport_.get() && transport_->socket())
     return transport_->socket()->SetReceiveBufferSize(size);
   NOTREACHED();
-  return false;
+  return net::ERR_SOCKET_NOT_CONNECTED;
 }
 
-bool ProxyResolvingClientSocket::SetSendBufferSize(int32 size) {
+int ProxyResolvingClientSocket::SetSendBufferSize(int32 size) {
   if (transport_.get() && transport_->socket())
     return transport_->socket()->SetSendBufferSize(size);
   NOTREACHED();
-  return false;
+  return net::ERR_SOCKET_NOT_CONNECTED;
 }
 
 int ProxyResolvingClientSocket::Connect(
@@ -192,7 +199,7 @@ void ProxyResolvingClientSocket::ProcessProxyResolveDone(int status) {
   // Now that we have resolved the proxy, we need to connect.
   status = net::InitSocketHandleForRawConnect(
       dest_host_port_pair_, network_session_.get(), proxy_info_, ssl_config_,
-      ssl_config_, net::kPrivacyModeDisabled, bound_net_log_, transport_.get(),
+      ssl_config_, net::PRIVACY_MODE_DISABLED, bound_net_log_, transport_.get(),
       connect_callback_);
   if (status != net::ERR_IO_PENDING) {
     // Since this method is always called asynchronously. it is OK to call
@@ -266,11 +273,11 @@ int ProxyResolvingClientSocket::ReconsiderProxyAfterError(int error) {
 
   if (proxy_info_.is_https() && ssl_config_.send_client_cert) {
     network_session_->ssl_client_auth_cache()->Remove(
-        proxy_info_.proxy_server().host_port_pair().ToString());
+        proxy_info_.proxy_server().host_port_pair());
   }
 
   int rv = network_session_->proxy_service()->ReconsiderProxyAfterError(
-      proxy_url_, &proxy_info_, proxy_resolve_callback_, &pac_request_,
+      proxy_url_, error, &proxy_info_, proxy_resolve_callback_, &pac_request_,
       bound_net_log_);
   if (rv == net::OK || rv == net::ERR_IO_PENDING) {
     CloseTransportSocket();

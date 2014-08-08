@@ -79,7 +79,7 @@ enum PostType { PostSynchronously, PostAsynchronously };
 class AXObjectCache {
     WTF_MAKE_NONCOPYABLE(AXObjectCache); WTF_MAKE_FAST_ALLOCATED;
 public:
-    explicit AXObjectCache(const Document*);
+    explicit AXObjectCache(Document&);
     ~AXObjectCache();
 
     static AXObject* focusedUIElementForPage(const Page*);
@@ -108,6 +108,8 @@ public:
     void remove(AbstractInlineTextBox*);
     void remove(AXID);
 
+    void clearWeakMembers(Visitor*);
+
     void detachWrapper(AXObject*);
     void attachWrapper(AXObject*);
     void childrenChanged(Node*);
@@ -128,10 +130,20 @@ public:
     void handleFocusedUIElementChanged(Node* oldFocusedNode, Node* newFocusedNode);
     void handleScrolledToAnchor(const Node* anchorNode);
     void handleAriaExpandedChange(Node*);
+
+    // Called when scroll bars are added / removed (as the view resizes).
     void handleScrollbarUpdate(ScrollView*);
+
+    void handleLayoutComplete(RenderObject*);
+
+    // Called when the scroll offset changes.
+    void handleScrollPositionChanged(ScrollView*);
+    void handleScrollPositionChanged(RenderObject*);
 
     void handleAttributeChanged(const QualifiedName& attrName, Element*);
     void recomputeIsIgnored(RenderObject* renderer);
+
+    void inlineTextBoxesUpdated(RenderObject* renderer);
 
     static void enableAccessibility() { gAccessibilityEnabled = true; }
     static bool accessibilityEnabled() { return gAccessibilityEnabled; }
@@ -147,10 +159,6 @@ public:
 
     AXID platformGenerateAXID() const;
     AXObject* objectFromAXID(AXID id) const { return m_objects.get(id); }
-
-    // Text marker utilities.
-    void textMarkerDataForVisiblePosition(TextMarkerData&, const VisiblePosition&);
-    VisiblePosition visiblePositionForTextMarkerData(TextMarkerData&);
 
     enum AXNotification {
         AXActiveDescendantChanged,
@@ -172,6 +180,7 @@ public:
         AXRowCollapsed,
         AXRowCountChanged,
         AXRowExpanded,
+        AXScrollPositionChanged,
         AXScrolledToAnchor,
         AXSelectedChildrenChanged,
         AXSelectedTextChanged,
@@ -188,9 +197,6 @@ public:
 
     bool nodeHasRole(Node*, const AtomicString& role);
 
-    void startCachingComputedObjectAttributesUntilTreeMutates();
-    void stopCachingComputedObjectAttributes();
-
     AXComputedObjectAttributeCache* computedObjectAttributeCache() { return m_computedObjectAttributeCache.get(); }
 
 protected:
@@ -204,7 +210,7 @@ protected:
     bool isNodeInUse(Node* n) { return m_textMarkerNodes.contains(n); }
 
 private:
-    Document* m_document;
+    Document& m_document;
     HashMap<AXID, RefPtr<AXObject> > m_objects;
     HashMap<RenderObject*, AXID> m_renderObjectMapping;
     HashMap<Widget*, AXID> m_widgetObjectMapping;

@@ -28,7 +28,8 @@
 #include "config.h"
 #include "core/css/resolver/CSSToStyleMap.h"
 
-#include "CSSValueKeywords.h"
+#include "core/CSSValueKeywords.h"
+#include "core/animation/css/CSSAnimationData.h"
 #include "core/css/CSSBorderImageSliceValue.h"
 #include "core/css/CSSPrimitiveValue.h"
 #include "core/css/CSSPrimitiveValueMappings.h"
@@ -36,7 +37,6 @@
 #include "core/css/Pair.h"
 #include "core/css/Rect.h"
 #include "core/css/resolver/StyleResolverState.h"
-#include "core/platform/animation/CSSAnimationData.h"
 #include "core/rendering/style/BorderImageLengthBox.h"
 #include "core/rendering/style/FillLayer.h"
 
@@ -47,14 +47,9 @@ const CSSToLengthConversionData& CSSToStyleMap::cssToLengthConversionData() cons
     return m_state.cssToLengthConversionData();
 }
 
-bool CSSToStyleMap::useSVGZoomRules() const
-{
-    return m_state.useSVGZoomRules();
-}
-
 PassRefPtr<StyleImage> CSSToStyleMap::styleImage(CSSPropertyID propertyId, CSSValue* value)
 {
-    return m_elementStyleResources.styleImage(m_state.document().textLinkColors(), m_state.style()->color(), propertyId, value);
+    return m_elementStyleResources.styleImage(m_state.document(), m_state.document().textLinkColors(), m_state.style()->color(), propertyId, value);
 }
 
 void CSSToStyleMap::mapFillAttachment(CSSPropertyID, FillLayer* layer, CSSValue* value) const
@@ -215,9 +210,6 @@ void CSSToStyleMap::mapFillSize(CSSPropertyID, FillLayer* layer, CSSValue* value
         secondLength = Length();
     }
 
-    if (firstLength.isUndefined() || secondLength.isUndefined())
-        return;
-
     b.setWidth(firstLength);
     b.setHeight(secondLength);
     layer->setSizeLength(b);
@@ -241,7 +233,6 @@ void CSSToStyleMap::mapFillXPosition(CSSPropertyID propertyID, FillLayer* layer,
     }
 
     Length length = primitiveValue->convertToLength<FixedConversion | PercentConversion>(cssToLengthConversionData());
-    ASSERT(!length.isUndefined());
 
     layer->setXPosition(length);
     if (pair)
@@ -266,7 +257,6 @@ void CSSToStyleMap::mapFillYPosition(CSSPropertyID propertyID, FillLayer* layer,
     }
 
     Length length = primitiveValue->convertToLength<FixedConversion | PercentConversion>(cssToLengthConversionData());
-    ASSERT(!length.isUndefined());
 
     layer->setYPosition(length);
     if (pair)
@@ -300,207 +290,150 @@ void CSSToStyleMap::mapFillMaskSourceType(CSSPropertyID, FillLayer* layer, CSSVa
     layer->setMaskSourceType(type);
 }
 
-void CSSToStyleMap::mapAnimationDelay(CSSAnimationData* animation, CSSValue* value) const
+double CSSToStyleMap::mapAnimationDelay(CSSValue* value)
 {
-    if (value->isInitialValue()) {
-        animation->setDelay(CSSAnimationData::initialAnimationDelay());
-        return;
-    }
-
-    if (!value->isPrimitiveValue())
-        return;
-
-    animation->setDelay(toCSSPrimitiveValue(value)->computeTime<double, CSSPrimitiveValue::Seconds>());
+    if (value->isInitialValue())
+        return CSSTimingData::initialDelay();
+    return toCSSPrimitiveValue(value)->computeTime<double, CSSPrimitiveValue::Seconds>();
 }
 
-void CSSToStyleMap::mapAnimationDirection(CSSAnimationData* layer, CSSValue* value) const
+Timing::PlaybackDirection CSSToStyleMap::mapAnimationDirection(CSSValue* value)
 {
-    if (value->isInitialValue()) {
-        layer->setDirection(CSSAnimationData::initialAnimationDirection());
-        return;
-    }
-
-    if (!value->isPrimitiveValue())
-        return;
+    if (value->isInitialValue())
+        return CSSAnimationData::initialDirection();
 
     switch (toCSSPrimitiveValue(value)->getValueID()) {
     case CSSValueNormal:
-        layer->setDirection(CSSAnimationData::AnimationDirectionNormal);
-        break;
+        return Timing::PlaybackDirectionNormal;
     case CSSValueAlternate:
-        layer->setDirection(CSSAnimationData::AnimationDirectionAlternate);
-        break;
+        return Timing::PlaybackDirectionAlternate;
     case CSSValueReverse:
-        layer->setDirection(CSSAnimationData::AnimationDirectionReverse);
-        break;
+        return Timing::PlaybackDirectionReverse;
     case CSSValueAlternateReverse:
-        layer->setDirection(CSSAnimationData::AnimationDirectionAlternateReverse);
-        break;
+        return Timing::PlaybackDirectionAlternateReverse;
     default:
-        break;
+        ASSERT_NOT_REACHED();
+        return CSSAnimationData::initialDirection();
     }
 }
 
-void CSSToStyleMap::mapAnimationDuration(CSSAnimationData* animation, CSSValue* value) const
+double CSSToStyleMap::mapAnimationDuration(CSSValue* value)
 {
-    if (value->isInitialValue()) {
-        animation->setDuration(CSSAnimationData::initialAnimationDuration());
-        return;
-    }
-
-    if (!value->isPrimitiveValue())
-        return;
-
-    CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value);
-    animation->setDuration(primitiveValue->computeTime<double, CSSPrimitiveValue::Seconds>());
+    if (value->isInitialValue())
+        return CSSTimingData::initialDuration();
+    return toCSSPrimitiveValue(value)->computeTime<double, CSSPrimitiveValue::Seconds>();
 }
 
-void CSSToStyleMap::mapAnimationFillMode(CSSAnimationData* layer, CSSValue* value) const
+Timing::FillMode CSSToStyleMap::mapAnimationFillMode(CSSValue* value)
 {
-    if (value->isInitialValue()) {
-        layer->setFillMode(CSSAnimationData::initialAnimationFillMode());
-        return;
-    }
+    if (value->isInitialValue())
+        return CSSAnimationData::initialFillMode();
 
-    if (!value->isPrimitiveValue())
-        return;
-
-    CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value);
-    switch (primitiveValue->getValueID()) {
+    switch (toCSSPrimitiveValue(value)->getValueID()) {
     case CSSValueNone:
-        layer->setFillMode(AnimationFillModeNone);
-        break;
+        return Timing::FillModeNone;
     case CSSValueForwards:
-        layer->setFillMode(AnimationFillModeForwards);
-        break;
+        return Timing::FillModeForwards;
     case CSSValueBackwards:
-        layer->setFillMode(AnimationFillModeBackwards);
-        break;
+        return Timing::FillModeBackwards;
     case CSSValueBoth:
-        layer->setFillMode(AnimationFillModeBoth);
-        break;
+        return Timing::FillModeBoth;
     default:
-        break;
+        ASSERT_NOT_REACHED();
+        return CSSAnimationData::initialFillMode();
     }
 }
 
-void CSSToStyleMap::mapAnimationIterationCount(CSSAnimationData* animation, CSSValue* value) const
+double CSSToStyleMap::mapAnimationIterationCount(CSSValue* value)
 {
-    if (value->isInitialValue()) {
-        animation->setIterationCount(CSSAnimationData::initialAnimationIterationCount());
-        return;
-    }
-
-    if (!value->isPrimitiveValue())
-        return;
-
+    if (value->isInitialValue())
+        return CSSAnimationData::initialIterationCount();
     CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value);
     if (primitiveValue->getValueID() == CSSValueInfinite)
-        animation->setIterationCount(CSSAnimationData::IterationCountInfinite);
-    else
-        animation->setIterationCount(primitiveValue->getFloatValue());
+        return std::numeric_limits<double>::infinity();
+    return primitiveValue->getFloatValue();
 }
 
-void CSSToStyleMap::mapAnimationName(CSSAnimationData* layer, CSSValue* value) const
+AtomicString CSSToStyleMap::mapAnimationName(CSSValue* value)
 {
-    if (value->isInitialValue()) {
-        layer->setName(CSSAnimationData::initialAnimationName());
-        return;
-    }
-
-    if (!value->isPrimitiveValue())
-        return;
-
+    if (value->isInitialValue())
+        return CSSAnimationData::initialName();
     CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value);
     if (primitiveValue->getValueID() == CSSValueNone)
-        layer->setIsNoneAnimation(true);
-    else
-        layer->setName(AtomicString(primitiveValue->getStringValue()));
+        return CSSAnimationData::initialName();
+    return AtomicString(primitiveValue->getStringValue());
 }
 
-void CSSToStyleMap::mapAnimationPlayState(CSSAnimationData* layer, CSSValue* value) const
+EAnimPlayState CSSToStyleMap::mapAnimationPlayState(CSSValue* value)
 {
-    if (value->isInitialValue()) {
-        layer->setPlayState(CSSAnimationData::initialAnimationPlayState());
-        return;
-    }
+    if (value->isInitialValue())
+        return CSSAnimationData::initialPlayState();
+    if (toCSSPrimitiveValue(value)->getValueID() == CSSValuePaused)
+        return AnimPlayStatePaused;
+    ASSERT(toCSSPrimitiveValue(value)->getValueID() == CSSValueRunning);
+    return AnimPlayStatePlaying;
+}
 
-    if (!value->isPrimitiveValue())
-        return;
-
+CSSTransitionData::TransitionProperty CSSToStyleMap::mapAnimationProperty(CSSValue* value)
+{
+    if (value->isInitialValue())
+        return CSSTransitionData::initialProperty();
     CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value);
-    EAnimPlayState playState = (primitiveValue->getValueID() == CSSValuePaused) ? AnimPlayStatePaused : AnimPlayStatePlaying;
-    layer->setPlayState(playState);
+    if (primitiveValue->isString())
+        return CSSTransitionData::TransitionProperty(primitiveValue->getStringValue());
+    if (primitiveValue->getValueID() == CSSValueAll)
+        return CSSTransitionData::TransitionProperty(CSSTransitionData::TransitionAll);
+    if (primitiveValue->getValueID() == CSSValueNone)
+        return CSSTransitionData::TransitionProperty(CSSTransitionData::TransitionNone);
+    return CSSTransitionData::TransitionProperty(primitiveValue->getPropertyID());
 }
 
-void CSSToStyleMap::mapAnimationProperty(CSSAnimationData* animation, CSSValue* value) const
+PassRefPtr<TimingFunction> CSSToStyleMap::mapAnimationTimingFunction(CSSValue* value, bool allowStepMiddle)
 {
-    if (value->isInitialValue()) {
-        animation->setAnimationMode(CSSAnimationData::AnimateAll);
-        animation->setProperty(CSSPropertyInvalid);
-        return;
-    }
-
-    if (!value->isPrimitiveValue())
-        return;
-
-    CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value);
-    if (primitiveValue->getValueID() == CSSValueAll) {
-        animation->setAnimationMode(CSSAnimationData::AnimateAll);
-        animation->setProperty(CSSPropertyInvalid);
-    } else if (primitiveValue->getValueID() == CSSValueNone) {
-        animation->setAnimationMode(CSSAnimationData::AnimateNone);
-        animation->setProperty(CSSPropertyInvalid);
-    } else {
-        animation->setAnimationMode(CSSAnimationData::AnimateSingleProperty);
-        animation->setProperty(primitiveValue->getPropertyID());
-    }
-}
-
-void CSSToStyleMap::mapAnimationTimingFunction(CSSAnimationData* animation, CSSValue* value) const
-{
-    if (value->isInitialValue()) {
-        animation->setTimingFunction(CSSAnimationData::initialAnimationTimingFunction());
-        return;
-    }
+    // FIXME: We should probably only call into this function with a valid
+    // single timing function value which isn't initial or inherit. We can
+    // currently get into here with initial since the parser expands unset
+    // properties in shorthands to initial.
 
     if (value->isPrimitiveValue()) {
         CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value);
         switch (primitiveValue->getValueID()) {
         case CSSValueLinear:
-            animation->setTimingFunction(LinearTimingFunction::create());
-            break;
+            return LinearTimingFunction::shared();
         case CSSValueEase:
-            animation->setTimingFunction(CubicBezierTimingFunction::preset(CubicBezierTimingFunction::Ease));
-            break;
+            return CubicBezierTimingFunction::preset(CubicBezierTimingFunction::Ease);
         case CSSValueEaseIn:
-            animation->setTimingFunction(CubicBezierTimingFunction::preset(CubicBezierTimingFunction::EaseIn));
-            break;
+            return CubicBezierTimingFunction::preset(CubicBezierTimingFunction::EaseIn);
         case CSSValueEaseOut:
-            animation->setTimingFunction(CubicBezierTimingFunction::preset(CubicBezierTimingFunction::EaseOut));
-            break;
+            return CubicBezierTimingFunction::preset(CubicBezierTimingFunction::EaseOut);
         case CSSValueEaseInOut:
-            animation->setTimingFunction(CubicBezierTimingFunction::preset(CubicBezierTimingFunction::EaseInOut));
-            break;
+            return CubicBezierTimingFunction::preset(CubicBezierTimingFunction::EaseInOut);
         case CSSValueStepStart:
-            animation->setTimingFunction(StepsTimingFunction::preset(StepsTimingFunction::Start));
-            break;
+            return StepsTimingFunction::preset(StepsTimingFunction::Start);
+        case CSSValueStepMiddle:
+            if (allowStepMiddle)
+                return StepsTimingFunction::preset(StepsTimingFunction::Middle);
+            return CSSTimingData::initialTimingFunction();
         case CSSValueStepEnd:
-            animation->setTimingFunction(StepsTimingFunction::preset(StepsTimingFunction::End));
-            break;
+            return StepsTimingFunction::preset(StepsTimingFunction::End);
         default:
-            break;
+            ASSERT_NOT_REACHED();
+            return CSSTimingData::initialTimingFunction();
         }
-        return;
     }
 
     if (value->isCubicBezierTimingFunctionValue()) {
         CSSCubicBezierTimingFunctionValue* cubicTimingFunction = toCSSCubicBezierTimingFunctionValue(value);
-        animation->setTimingFunction(CubicBezierTimingFunction::create(cubicTimingFunction->x1(), cubicTimingFunction->y1(), cubicTimingFunction->x2(), cubicTimingFunction->y2()));
-    } else if (value->isStepsTimingFunctionValue()) {
-        CSSStepsTimingFunctionValue* stepsTimingFunction = toCSSStepsTimingFunctionValue(value);
-        animation->setTimingFunction(StepsTimingFunction::create(stepsTimingFunction->numberOfSteps(), stepsTimingFunction->stepAtStart()));
+        return CubicBezierTimingFunction::create(cubicTimingFunction->x1(), cubicTimingFunction->y1(), cubicTimingFunction->x2(), cubicTimingFunction->y2());
     }
+
+    if (value->isInitialValue())
+        return CSSTimingData::initialTimingFunction();
+
+    CSSStepsTimingFunctionValue* stepsTimingFunction = toCSSStepsTimingFunctionValue(value);
+    if (stepsTimingFunction->stepAtPosition() == StepsTimingFunction::StepAtMiddle && !allowStepMiddle)
+        return CSSTimingData::initialTimingFunction();
+    return StepsTimingFunction::create(stepsTimingFunction->numberOfSteps(), stepsTimingFunction->stepAtPosition());
 }
 
 void CSSToStyleMap::mapNinePieceImage(RenderStyle* mutableStyle, CSSPropertyID property, CSSValue* value, NinePieceImage& image)
@@ -611,16 +544,14 @@ BorderImageLengthBox CSSToStyleMap::mapNinePieceImageQuad(CSSValue* value) const
     if (!value || !value->isPrimitiveValue())
         return BorderImageLengthBox(Length(Auto));
 
-    float zoom = useSVGZoomRules() ? 1.0f : cssToLengthConversionData().zoom();
     Quad* slices = toCSSPrimitiveValue(value)->getQuadValue();
 
     // Set up a border image length box to represent our image slices.
-    const CSSToLengthConversionData& conversionData = cssToLengthConversionData().copyWithAdjustedZoom(zoom);
     return BorderImageLengthBox(
-        toBorderImageLength(*slices->top(), conversionData),
-        toBorderImageLength(*slices->right(), conversionData),
-        toBorderImageLength(*slices->bottom(), conversionData),
-        toBorderImageLength(*slices->left(), conversionData));
+        toBorderImageLength(*slices->top(), cssToLengthConversionData()),
+        toBorderImageLength(*slices->right(), cssToLengthConversionData()),
+        toBorderImageLength(*slices->bottom(), cssToLengthConversionData()),
+        toBorderImageLength(*slices->left(), cssToLengthConversionData()));
 }
 
 void CSSToStyleMap::mapNinePieceImageRepeat(CSSValue* value, NinePieceImage& image) const

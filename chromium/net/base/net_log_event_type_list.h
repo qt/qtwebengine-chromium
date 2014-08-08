@@ -549,6 +549,10 @@ EVENT_TYPE(SSL_SOCKET_BYTES_RECEIVED)
 EVENT_TYPE(SOCKET_READ_ERROR)
 EVENT_TYPE(SOCKET_WRITE_ERROR)
 
+// The socket was closed locally (The socket may or may not have been closed
+// by the remote side already)
+EVENT_TYPE(SOCKET_CLOSED)
+
 // Certificates were received from the SSL server (during a handshake or
 // renegotiation). This event is only present when logging at LOG_ALL.
 // The following parameters are attached to the event:
@@ -781,12 +785,18 @@ EVENT_TYPE(URL_REQUEST_JOB_BYTES_READ)
 EVENT_TYPE(URL_REQUEST_JOB_FILTERED_BYTES_READ)
 
 // This event is sent when the priority of a net::URLRequest is
-// changed after it has started. The parameters attached to this event
-// are:
+// changed after it has started. The following parameters are attached:
 //   {
 //     "priority": <Numerical value of the priority (higher is more important)>,
 //   }
 EVENT_TYPE(URL_REQUEST_SET_PRIORITY)
+
+EVENT_TYPE(URL_REQUEST_REDIRECT_JOB)
+// This event is logged when a URLRequestRedirectJob is started for a request.
+// The following parameters are attached:
+//   {
+//     "reason": <Reason for the redirect, as a string>,
+//   }
 
 // ------------------------------------------------------------------------
 // HttpCache
@@ -989,6 +999,15 @@ EVENT_TYPE(HTTP_TRANSACTION_SEND_REQUEST_BODY)
 //   }
 EVENT_TYPE(HTTP_TRANSACTION_SPDY_SEND_REQUEST_HEADERS)
 
+// This event is sent for a HTTP request over a SPDY stream.
+// The following parameters are attached:
+//   {
+//     "headers": <The list of header:value pairs>,
+//     "quic_priority": <Integer representing the priority of this request>,
+//     "quic_stream_id": <Id of the QUIC stream sending this request>,
+//   }
+EVENT_TYPE(HTTP_TRANSACTION_QUIC_SEND_REQUEST_HEADERS)
+
 // Measures the time to read HTTP response headers from the server.
 EVENT_TYPE(HTTP_TRANSACTION_READ_HEADERS)
 
@@ -1009,7 +1028,9 @@ EVENT_TYPE(HTTP_TRANSACTION_DRAIN_BODY_FOR_AUTH_RESTART)
 // This event is sent when we try to restart a transaction after an error.
 // The following parameters are attached:
 //   {
-//     "net_error": <The net error code integer for the failure>,
+//     "net_error": <The net error code integer for the failure, if applicable>,
+//     "http_status_code": <HTTP status code indicating an error, if
+//                          applicable>,
 //   }
 EVENT_TYPE(HTTP_TRANSACTION_RESTART_AFTER_ERROR)
 
@@ -1189,6 +1210,15 @@ EVENT_TYPE(SPDY_SESSION_SEND_DATA)
 //   }
 EVENT_TYPE(SPDY_SESSION_RECV_DATA)
 
+// This event is sent for a receiving SPDY PUSH_PROMISE frame.
+// The following parameters are attached:
+//   {
+//     "headers": <The list of header:value pairs>,
+//     "id": <The stream id>,
+//     "promised_stream_id": <The stream id>,
+//   }
+EVENT_TYPE(SPDY_SESSION_RECV_PUSH_PROMISE)
+
 // A stream is stalled by the session send window being closed.
 EVENT_TYPE(SPDY_SESSION_STREAM_STALLED_BY_SESSION_SEND_WINDOW)
 
@@ -1330,12 +1360,13 @@ EVENT_TYPE(QUIC_SESSION_PACKET_RECEIVED)
 
 // Session sent a QUIC packet.
 //   {
-//     "encryption_level": <The EncryptionLevel of the packet>
+//     "encryption_level": <The EncryptionLevel of the packet>,
+//     "transmission_type": <The TransmissionType of the packet>,
 //     "packet_sequence_number": <The packet's full 64-bit sequence number,
 //                                as a base-10 string.>,
 //     "size": <The size of the packet in bytes>
 //   }
-EVENT_TYPE(QUIC_SESSION_PACKET_RETRANSMITTED)
+EVENT_TYPE(QUIC_SESSION_PACKET_SENT)
 
 // Session retransmitted a QUIC packet.
 //   {
@@ -1344,11 +1375,12 @@ EVENT_TYPE(QUIC_SESSION_PACKET_RETRANSMITTED)
 //     "new_packet_sequence_number": <The new packet's full 64-bit sequence
 //                                    number, as a base-10 string.>,
 //   }
-EVENT_TYPE(QUIC_SESSION_PACKET_SENT)
+EVENT_TYPE(QUIC_SESSION_PACKET_RETRANSMITTED)
 
 // Session received a QUIC packet header for a valid packet.
 //   {
-//     "guid": <The 64-bit GUID for this connection, as a base-10 string>,
+//     "connection_id": <The 64-bit CONNECTION_ID for this connection, as a
+//                       base-10 string>,
 //     "public_flags": <The public flags set for this packet>,
 //     "packet_sequence_number": <The packet's full 64-bit sequence number,
 //                                as a base-10 string.>,
@@ -1410,6 +1442,74 @@ EVENT_TYPE(QUIC_SESSION_ACK_FRAME_RECEIVED)
 //       }
 //   }
 EVENT_TYPE(QUIC_SESSION_ACK_FRAME_SENT)
+
+// Session received a WINDOW_UPDATE frame.
+//   {
+//     "stream_id": <The id of the stream which this data is for>,
+//     "byte_offset": <Byte offset in the stream>,
+//   }
+EVENT_TYPE(QUIC_SESSION_WINDOW_UPDATE_FRAME_RECEIVED)
+
+// Session sent a WINDOW_UPDATE frame.
+//   {
+//     "stream_id": <The id of the stream which this data is for>,
+//     "byte_offset": <Byte offset in the stream>,
+//   }
+EVENT_TYPE(QUIC_SESSION_WINDOW_UPDATE_FRAME_SENT)
+
+// Session received a BLOCKED frame.
+//   {
+//     "stream_id": <The id of the stream which this data is for>,
+//   }
+EVENT_TYPE(QUIC_SESSION_BLOCKED_FRAME_RECEIVED)
+
+// Session sent a BLOCKED frame.
+//   {
+//     "stream_id": <The id of the stream which this data is for>,
+//   }
+EVENT_TYPE(QUIC_SESSION_BLOCKED_FRAME_SENT)
+
+// Session received a GOAWAY frame.
+//   {
+//     "quic_error":          <QuicErrorCode in the frame>,
+//     "last_good_stream_id": <Last correctly received stream id by the server>,
+//     "reason_phrase":       <Prose justifying go-away request>,
+//   }
+EVENT_TYPE(QUIC_SESSION_GOAWAY_FRAME_RECEIVED)
+
+// Session sent a GOAWAY frame.
+//   {
+//     "quic_error":          <QuicErrorCode in the frame>,
+//     "last_good_stream_id": <Last correctly received stream id by the server>,
+//     "reason_phrase":       <Prose justifying go-away request>,
+//   }
+EVENT_TYPE(QUIC_SESSION_GOAWAY_FRAME_SENT)
+
+// Session received a PING frame.
+EVENT_TYPE(QUIC_SESSION_PING_FRAME_RECEIVED)
+
+// Session sent a PING frame.
+EVENT_TYPE(QUIC_SESSION_PING_FRAME_SENT)
+
+// Session received a STOP_WAITING frame.
+//   {
+//     "sent_info": <Details of packet sent by the peer>
+//       {
+//         "least_unacked": <Lowest sequence number of a packet sent by the peer
+//                           for which it has not received an ACK>,
+//       }
+//   }
+EVENT_TYPE(QUIC_SESSION_STOP_WAITING_FRAME_RECEIVED)
+
+// Session sent an STOP_WAITING frame.
+//   {
+//     "sent_info": <Details of packet sent by the peer>
+//       {
+//         "least_unacked": <Lowest sequence number of a packet sent by the peer
+//                           for which it has not received an ACK>,
+//       }
+//   }
+EVENT_TYPE(QUIC_SESSION_STOP_WAITING_FRAME_SENT)
 
 // Session recevied a RST_STREAM frame.
 //   {
@@ -1502,7 +1602,8 @@ EVENT_TYPE(QUIC_SESSION_VERSION_NEGOTIATED)
 
 // Session revived a QUIC packet packet via FEC.
 //   {
-//     "guid": <The 64-bit GUID for this connection, as a base-10 string>,
+//     "connection_id": <The 64-bit CONNECTION_ID for this connection, as a
+//                       base-10 string>,
 //     "public_flags": <The public flags set for this packet>,
 //     "packet_sequence_number": <The packet's full 64-bit sequence number,
 //                                as a base-10 string.>,
@@ -1830,12 +1931,51 @@ EVENT_TYPE(CHROME_POLICY_ABORTED_REQUEST)
 EVENT_TYPE(CERT_VERIFIER_REQUEST)
 
 // This event is created when we start a CertVerifier job.
+// The BEGIN phase event parameters are:
+// {
+//   "certificates": <A list of PEM encoded certificates, the first one
+//                    being the certificate to verify and the remaining
+//                    being intermediate certificates to assist path
+//                    building. Only present when byte logging is enabled.>
+// }
+//
 // The END phase event parameters are:
 //   {
-//     "certificates": <A list of PEM encoded certificates, the first one
-//                      being the certificate to verify and the remaining
-//                      being intermediate certificates to assist path
-//                      building. Only present when byte logging is enabled.>
+//     "cert_status": <Bitmask of CERT_STATUS_*
+//                     from net/base/cert_status_flags.h>
+//     "common_name_fallback_used": <True if a fallback to the common name
+//                                   was used when matching the host
+//                                   name, rather than using the
+//                                   subjectAltName.>
+//     "has_md2": <True if a certificate in the certificate chain is signed with
+//                 a MD2 signature.>
+//     "has_md4": <True if a certificate in the certificate chain is signed with
+//                 a MD4 signature.>
+//     "has_md5": <True if a certificate in the certificate chain is signed with
+//                 a MD5 signature.>
+//     "is_issued_by_additional_trust_anchor": <True if the root CA used for
+//                                              this verification came from the
+//                                              list of additional trust
+//                                              anchors.>
+//     "is_issued_by_known_root": <True if we recognise the root CA as a
+//                                 standard root.  If it isn't then it's
+//                                 probably the case that this certificate
+//                                 was generated by a MITM proxy whose root
+//                                 has been installed locally. This is
+//                                 meaningless if the certificate was not
+//                                 trusted.>
+//     "public_key_hashes": <If the certificate was successfully verified then
+//                           this contains the hashes, in several hash
+//                           algorithms, of the SubjectPublicKeyInfos of the
+//                           chain.>
+//     "verified_cert": <The certificate chain that was constructed
+//                       during verification. Note that though the verified
+//                       certificate will match the originally supplied
+//                       certificate, the intermediate certificates stored
+//                       within may be substantially different. In the event
+//                       of a verification failure, this will contain the
+//                       chain as supplied by the server. This may be NULL
+//                       if running within the sandbox.>
 //   }
 EVENT_TYPE(CERT_VERIFIER_JOB)
 
@@ -1846,38 +1986,6 @@ EVENT_TYPE(CERT_VERIFIER_JOB)
 //      "source_dependency": <Source identifer for the job we are bound to>,
 //   }
 EVENT_TYPE(CERT_VERIFIER_REQUEST_BOUND_TO_JOB)
-
-// ------------------------------------------------------------------------
-// HttpPipelinedConnection
-// ------------------------------------------------------------------------
-
-// The start/end of a HttpPipelinedConnection.
-//   {
-//     "host_and_port": <The host-port string>,
-//   }
-EVENT_TYPE(HTTP_PIPELINED_CONNECTION)
-
-// This event is created when a pipelined connection finishes sending a request.
-//   {
-//     "source_dependency": <Source id of the requesting stream>,
-//   }
-EVENT_TYPE(HTTP_PIPELINED_CONNECTION_SENT_REQUEST)
-
-// This event is created when a pipelined connection finishes receiving the
-// response headers.
-//   {
-//     "source_dependency": <Source id of the requesting stream>,
-//     "feedback": <The value of HttpPipelinedConnection::Feedback indicating
-//                  pipeline capability>,
-//   }
-EVENT_TYPE(HTTP_PIPELINED_CONNECTION_RECEIVED_HEADERS)
-
-// This event is created when a pipelined stream closes.
-//   {
-//     "source_dependency": <Source id of the requesting stream>,
-//     "must_close": <True if the pipeline must shut down>,
-//   }
-EVENT_TYPE(HTTP_PIPELINED_CONNECTION_STREAM_CLOSED)
 
 // ------------------------------------------------------------------------
 // Download start events.
@@ -2267,3 +2375,7 @@ EVENT_TYPE(SIMPLE_CACHE_ENTRY_CLOSE_BEGIN)
 // This event is created when the Simple Cache finishes a CloseEntry call.  It
 // contains no parameters.
 EVENT_TYPE(SIMPLE_CACHE_ENTRY_CLOSE_END)
+
+// This event is created (in a source of the same name) when the internal DNS
+// resolver creates a UDP socket to check for global IPv6 connectivity.
+EVENT_TYPE(IPV6_REACHABILITY_CHECK)

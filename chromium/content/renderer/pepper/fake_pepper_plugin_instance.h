@@ -36,9 +36,13 @@ class FakePepperPluginInstance : public PepperPluginInstance {
   virtual int32_t Navigate(const ppapi::URLRequestInfoData& request,
                            const char* target,
                            bool from_user_action) OVERRIDE;
-  virtual int MakePendingFileRefRendererHost(
-      const base::FilePath& path) OVERRIDE;
+  virtual int MakePendingFileRefRendererHost(const base::FilePath& path)
+      OVERRIDE;
   virtual void SetEmbedProperty(PP_Var key, PP_Var value) OVERRIDE;
+  virtual void SetSelectedText(const base::string16& selected_text) OVERRIDE;
+  virtual void SetLinkUnderCursor(const std::string& url) OVERRIDE;
+  virtual void SetTextInputType(ui::TextInputType type) OVERRIDE;
+  virtual void PostMessageToJavaScript(PP_Var message) OVERRIDE;
 
  private:
   GURL gurl_;

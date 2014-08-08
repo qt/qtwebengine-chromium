@@ -68,6 +68,12 @@ void DelayedCookieMonster::GetCookiesWithOptionsAsync(
       base::TimeDelta::FromMilliseconds(kDelayedTime));
 }
 
+void DelayedCookieMonster::GetAllCookiesForURLAsync(
+    const GURL& url,
+    const GetCookieListCallback& callback) {
+  cookie_monster_->GetAllCookiesForURLAsync(url, callback);
+}
+
 void DelayedCookieMonster::InvokeSetCookiesCallback(
     const CookieMonster::SetCookiesCallback& callback) {
   if (!callback.is_null())
@@ -109,6 +115,14 @@ void DelayedCookieMonster::DeleteCookieAsync(const GURL& url,
 void DelayedCookieMonster::DeleteAllCreatedBetweenAsync(
     const base::Time& delete_begin,
     const base::Time& delete_end,
+    const DeleteCallback& callback) {
+  ADD_FAILURE();
+}
+
+void DelayedCookieMonster::DeleteAllCreatedBetweenForHostAsync(
+    const base::Time delete_begin,
+    const base::Time delete_end,
+    const GURL& url,
     const DeleteCallback& callback) {
   ADD_FAILURE();
 }

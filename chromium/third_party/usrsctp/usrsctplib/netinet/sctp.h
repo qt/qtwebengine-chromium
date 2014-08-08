@@ -32,7 +32,7 @@
 
 #ifdef __FreeBSD__
 #include <sys/cdefs.h>
-__FBSDID("$FreeBSD: head/sys/netinet/sctp.h 254248 2013-08-12 13:52:15Z tuexen $");
+__FBSDID("$FreeBSD: head/sys/netinet/sctp.h 264679 2014-04-19 19:21:06Z tuexen $");
 #endif
 
 #ifndef _NETINET_SCTP_H_
@@ -53,13 +53,13 @@ __FBSDID("$FreeBSD: head/sys/netinet/sctp.h 254248 2013-08-12 13:52:15Z tuexen $
 #endif
 
 /*
- * SCTP protocol - RFC2960.
+ * SCTP protocol - RFC4960.
  */
 struct sctphdr {
 	uint16_t src_port;	/* source port */
 	uint16_t dest_port;	/* destination port */
 	uint32_t v_tag;		/* verification tag of packet */
-	uint32_t checksum;	/* Adler32 C-Sum */
+	uint32_t checksum;	/* CRC32C checksum */
 	/* chunks follow... */
 } SCTP_PACKED;
 
@@ -379,6 +379,12 @@ struct sctp_paramhdr {
 /*
  * error cause parameters (user visible)
  */
+struct sctp_gen_error_cause {
+	uint16_t code;
+	uint16_t length;
+	uint8_t info[];
+} SCTP_PACKED;
+
 struct sctp_error_cause {
 	uint16_t code;
 	uint16_t length;
@@ -414,6 +420,11 @@ struct sctp_error_unresolv_addr {
 struct sctp_error_unrecognized_chunk {
 	struct sctp_error_cause cause;	/* code=SCTP_ERROR_UNRECOG_CHUNK */
 	struct sctp_chunkhdr ch;/* header from chunk in error */
+} SCTP_PACKED;
+
+struct sctp_error_no_user_data {
+	struct sctp_error_cause cause;	/* code=SCTP_CAUSE_NO_USER_DATA */
+	uint32_t tsn;			/* TSN of the empty data chunk */
 } SCTP_PACKED;
 
 /*

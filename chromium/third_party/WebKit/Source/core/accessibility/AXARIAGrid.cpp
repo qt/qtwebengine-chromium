@@ -34,7 +34,6 @@
 #include "core/accessibility/AXTableRow.h"
 #include "core/rendering/RenderObject.h"
 
-using namespace std;
 
 namespace WebCore {
 
@@ -74,7 +73,7 @@ bool AXARIAGrid::addTableCellChild(AXObject* child, HashSet<AXObject*>& appended
     if (!row->accessibilityIsIgnored())
         m_children.append(row);
     else
-        m_children.append(row->children());
+        m_children.appendVector(row->children());
 
     appendedRows.add(row);
     return true;

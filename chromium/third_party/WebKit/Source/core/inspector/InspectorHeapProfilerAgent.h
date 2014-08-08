@@ -31,7 +31,7 @@
 #ifndef InspectorHeapProfilerAgent_h
 #define InspectorHeapProfilerAgent_h
 
-#include "InspectorFrontend.h"
+#include "core/InspectorFrontend.h"
 #include "core/inspector/InspectorBaseAgent.h"
 #include "wtf/Forward.h"
 #include "wtf/HashMap.h"
@@ -48,50 +48,43 @@ class ScriptHeapSnapshot;
 
 typedef String ErrorString;
 
-class InspectorHeapProfilerAgent : public InspectorBaseAgent<InspectorHeapProfilerAgent>, public InspectorBackendDispatcher::HeapProfilerCommandHandler {
+class InspectorHeapProfilerAgent FINAL : public InspectorBaseAgent<InspectorHeapProfilerAgent>, public InspectorBackendDispatcher::HeapProfilerCommandHandler {
     WTF_MAKE_NONCOPYABLE(InspectorHeapProfilerAgent); WTF_MAKE_FAST_ALLOCATED;
 public:
-    static PassOwnPtr<InspectorHeapProfilerAgent> create(InstrumentingAgents*, InspectorCompositeState*, InjectedScriptManager*);
+    static PassOwnPtr<InspectorHeapProfilerAgent> create(InjectedScriptManager*);
     virtual ~InspectorHeapProfilerAgent();
 
-    virtual void collectGarbage(ErrorString*);
-    virtual void clearProfiles(ErrorString*);
+    virtual void collectGarbage(ErrorString*) OVERRIDE;
 
-    virtual void enable(ErrorString*);
-    virtual void disable(ErrorString*);
-    virtual void getHeapSnapshot(ErrorString*, int uid);
-    virtual void removeProfile(ErrorString*, int uid);
-    virtual void startTrackingHeapObjects(ErrorString*);
-    virtual void stopTrackingHeapObjects(ErrorString*, const bool* reportProgress);
+    virtual void enable(ErrorString*) OVERRIDE;
+    virtual void disable(ErrorString*) OVERRIDE;
+    virtual void startTrackingHeapObjects(ErrorString*, const bool* trackAllocations) OVERRIDE;
+    virtual void stopTrackingHeapObjects(ErrorString*, const bool* reportProgress) OVERRIDE;
 
-    virtual void setFrontend(InspectorFrontend*);
-    virtual void clearFrontend();
-    virtual void restore();
+    virtual void setFrontend(InspectorFrontend*) OVERRIDE;
+    virtual void clearFrontend() OVERRIDE;
+    virtual void restore() OVERRIDE;
 
-    virtual void takeHeapSnapshot(ErrorString*, const bool* reportProgress);
+    virtual void takeHeapSnapshot(ErrorString*, const bool* reportProgress) OVERRIDE;
 
-    virtual void getObjectByHeapObjectId(ErrorString*, const String& heapSnapshotObjectId, const String* objectGroup, RefPtr<TypeBuilder::Runtime::RemoteObject>& result);
-    virtual void getHeapObjectId(ErrorString*, const String& objectId, String* heapSnapshotObjectId);
+    virtual void getObjectByHeapObjectId(ErrorString*, const String& heapSnapshotObjectId, const String* objectGroup, RefPtr<TypeBuilder::Runtime::RemoteObject>& result) OVERRIDE;
+    virtual void getHeapObjectId(ErrorString*, const String& objectId, String* heapSnapshotObjectId) OVERRIDE;
 
 private:
     class HeapStatsStream;
     class HeapStatsUpdateTask;
 
-    InspectorHeapProfilerAgent(InstrumentingAgents*, InspectorCompositeState*, InjectedScriptManager*);
+    explicit InspectorHeapProfilerAgent(InjectedScriptManager*);
 
-    typedef HashMap<unsigned, RefPtr<ScriptHeapSnapshot> > IdToHeapSnapshotMap;
-
-    void resetFrontendProfiles();
     void requestHeapStatsUpdate();
     void pushHeapStatsUpdate(const uint32_t* const data, const int size);
 
-    PassRefPtr<TypeBuilder::HeapProfiler::ProfileHeader> createSnapshotHeader(const ScriptHeapSnapshot&);
+    void startTrackingHeapObjectsInternal(bool trackAllocations);
     void stopTrackingHeapObjectsInternal();
 
     InjectedScriptManager* m_injectedScriptManager;
     InspectorFrontend::HeapProfiler* m_frontend;
     unsigned m_nextUserInitiatedHeapSnapshotNumber;
-    IdToHeapSnapshotMap m_snapshots;
     OwnPtr<HeapStatsUpdateTask> m_heapStatsUpdateTask;
 };
 

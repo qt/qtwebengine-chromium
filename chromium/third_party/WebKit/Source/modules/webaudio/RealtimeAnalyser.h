@@ -26,6 +26,7 @@
 #define RealtimeAnalyser_h
 
 #include "platform/audio/AudioArray.h"
+#include "platform/audio/FFTFrame.h"
 #include "wtf/Forward.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/OwnPtr.h"
@@ -33,31 +34,29 @@
 namespace WebCore {
 
 class AudioBus;
-class FFTFrame;
 
 class RealtimeAnalyser FINAL {
     WTF_MAKE_NONCOPYABLE(RealtimeAnalyser);
 public:
     RealtimeAnalyser();
 
-    void reset();
-
     size_t fftSize() const { return m_fftSize; }
     bool setFftSize(size_t);
 
     unsigned frequencyBinCount() const { return m_fftSize / 2; }
 
-    void setMinDecibels(float k) { m_minDecibels = k; }
-    float minDecibels() const { return static_cast<float>(m_minDecibels); }
+    void setMinDecibels(double k) { m_minDecibels = k; }
+    double minDecibels() const { return m_minDecibels; }
 
-    void setMaxDecibels(float k) { m_maxDecibels = k; }
-    float maxDecibels() const { return static_cast<float>(m_maxDecibels); }
+    void setMaxDecibels(double k) { m_maxDecibels = k; }
+    double maxDecibels() const { return m_maxDecibels; }
 
-    void setSmoothingTimeConstant(float k) { m_smoothingTimeConstant = k; }
-    float smoothingTimeConstant() const { return static_cast<float>(m_smoothingTimeConstant); }
+    void setSmoothingTimeConstant(double k) { m_smoothingTimeConstant = k; }
+    double smoothingTimeConstant() const { return m_smoothingTimeConstant; }
 
     void getFloatFrequencyData(Float32Array*);
     void getByteFrequencyData(Uint8Array*);
+    void getFloatTimeDomainData(Float32Array*);
     void getByteTimeDomainData(Uint8Array*);
 
     // The audio thread writes input data here.

@@ -26,8 +26,6 @@
 #include "config.h"
 #include "core/events/ProgressEvent.h"
 
-#include "core/events/ThreadLocalEventNames.h"
-
 namespace WebCore {
 
 ProgressEventInit::ProgressEventInit()
@@ -66,6 +64,11 @@ ProgressEvent::ProgressEvent(const AtomicString& type, bool lengthComputable, un
 const AtomicString& ProgressEvent::interfaceName() const
 {
     return EventNames::ProgressEvent;
+}
+
+void ProgressEvent::trace(Visitor* visitor)
+{
+    Event::trace(visitor);
 }
 
 }

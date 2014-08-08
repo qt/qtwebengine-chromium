@@ -28,6 +28,7 @@
 #include "platform/graphics/BitmapImage.h"
 
 #include "platform/Timer.h"
+#include "platform/TraceEvent.h"
 #include "platform/geometry/FloatRect.h"
 #include "platform/graphics/GraphicsContextStateSaver.h"
 #include "platform/graphics/ImageObserver.h"
@@ -235,11 +236,22 @@ bool BitmapImage::dataChanged(bool allDataReceived)
 
     // Feed all the data we've seen so far to the image decoder.
     m_allDataReceived = allDataReceived;
-    m_source.setData(data(), allDataReceived);
+    ASSERT(data());
+    m_source.setData(*data(), allDataReceived);
 
     m_haveFrameCount = false;
     m_hasUniformFrameSize = true;
     return isSizeAvailable();
+}
+
+bool BitmapImage::isAllDataReceived() const
+{
+    return m_allDataReceived;
+}
+
+bool BitmapImage::hasColorProfile() const
+{
+    return m_source.hasColorProfile();
 }
 
 String BitmapImage::filenameExtension() const
@@ -332,7 +344,7 @@ bool BitmapImage::ensureFrameIsCached(size_t index)
 PassRefPtr<NativeImageSkia> BitmapImage::frameAtIndex(size_t index)
 {
     if (!ensureFrameIsCached(index))
-        return 0;
+        return nullptr;
     return m_frames[index].m_frame;
 }
 
@@ -387,7 +399,7 @@ ImageOrientation BitmapImage::frameOrientationAtIndex(size_t index)
     return m_source.orientationAtIndex(index);
 }
 
-#if !ASSERT_DISABLED
+#if ASSERT_ENABLED
 bool BitmapImage::notSolidColor()
 {
     return size().width() != 1 || size().height() != 1 || frameCount() > 1;
@@ -414,7 +426,7 @@ bool BitmapImage::shouldAnimate()
     return (repetitionCount(false) != cAnimationNone && !m_animationFinished && imageObserver());
 }
 
-void BitmapImage::startAnimation(bool catchUpIfNecessary)
+void BitmapImage::startAnimation(CatchUpAnimation catchUpIfNecessary)
 {
     if (m_frameTimer || !shouldAnimate() || frameCount() <= 1)
         return;
@@ -462,10 +474,10 @@ void BitmapImage::startAnimation(bool catchUpIfNecessary)
     if (nextFrame == 0 && m_repetitionsComplete == 0 && m_desiredFrameStartTime < time)
         m_desiredFrameStartTime = time;
 
-    if (!catchUpIfNecessary || time < m_desiredFrameStartTime) {
+    if (catchUpIfNecessary == DoNotCatchUp || time < m_desiredFrameStartTime) {
         // Haven't yet reached time for next frame to start; delay until then.
         m_frameTimer = new Timer<BitmapImage>(this, &BitmapImage::advanceAnimation);
-        m_frameTimer->startOneShot(std::max(m_desiredFrameStartTime - time, 0.));
+        m_frameTimer->startOneShot(std::max(m_desiredFrameStartTime - time, 0.), FROM_HERE);
     } else {
         // We've already reached or passed the time for the next frame to start.
         // See if we've also passed the time for frames after that to start, in
@@ -505,7 +517,7 @@ void BitmapImage::startAnimation(bool catchUpIfNecessary)
             // situation the best we can do is to simply change frames as fast
             // as possible, so force startAnimation() to set a zero-delay timer
             // and bail out if we're not caught up.
-            startAnimation(false);
+            startAnimation(DoNotCatchUp);
         }
     }
 }
@@ -528,6 +540,15 @@ void BitmapImage::resetAnimation()
 
     // For extremely large animations, when the animation is reset, we just throw everything away.
     destroyDecodedDataIfNecessary();
+}
+
+bool BitmapImage::maybeAnimated()
+{
+    if (m_animationFinished)
+        return false;
+    if (frameCount() > 1)
+        return true;
+    return m_source.repetitionCount() != cAnimationNone;
 }
 
 void BitmapImage::advanceAnimation(Timer<BitmapImage>*)

@@ -23,11 +23,9 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-[
-    RuntimeEnabled=VideoTrack
-] interface HTMLTrackElement : HTMLElement {
+interface HTMLTrackElement : HTMLElement {
     attribute DOMString kind;
-    [Reflect, URL, PerWorldBindings, ActivityLogging=SetterForIsolatedWorlds] attribute DOMString src;
+    [Reflect, URL, LogActivity=SetterOnly] attribute DOMString src;
     [Reflect] attribute DOMString srclang;
     [Reflect] attribute DOMString label;
     [Reflect] attribute boolean default;
@@ -40,4 +38,6 @@
     readonly attribute unsigned short readyState;
 
     readonly attribute TextTrack track;
+
+    [Reflect, RuntimeEnabled=SubresourceIntegrity] attribute DOMString integrity;
 };

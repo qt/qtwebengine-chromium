@@ -32,66 +32,81 @@
 #define Animation_h
 
 #include "core/animation/AnimationEffect.h"
-#include "core/animation/TimedItem.h"
+#include "core/animation/AnimationNode.h"
+#include "core/animation/EffectInput.h"
+#include "core/animation/TimingInput.h"
+#include "platform/heap/Handle.h"
 #include "wtf/RefPtr.h"
 
 namespace WebCore {
 
+class Dictionary;
 class Element;
+class ExceptionState;
+class SampledEffect;
 
-class Animation FINAL : public TimedItem {
-
+class Animation FINAL : public AnimationNode {
 public:
     enum Priority { DefaultPriority, TransitionPriority };
 
-    static PassRefPtr<Animation> create(PassRefPtr<Element>, PassRefPtr<AnimationEffect>, const Timing&, Priority = DefaultPriority, PassOwnPtr<EventDelegate> = nullptr);
-    virtual bool isAnimation() const OVERRIDE FINAL { return true; }
+    static PassRefPtrWillBeRawPtr<Animation> create(Element*, PassRefPtrWillBeRawPtr<AnimationEffect>, const Timing&, Priority = DefaultPriority, PassOwnPtr<EventDelegate> = nullptr);
+    // Web Animations API Bindings constructors.
+    static PassRefPtrWillBeRawPtr<Animation> create(Element*, PassRefPtrWillBeRawPtr<AnimationEffect>, const Dictionary& timingInputDictionary);
+    static PassRefPtrWillBeRawPtr<Animation> create(Element*, PassRefPtrWillBeRawPtr<AnimationEffect>, double duration);
+    static PassRefPtrWillBeRawPtr<Animation> create(Element*, PassRefPtrWillBeRawPtr<AnimationEffect>);
+    static PassRefPtrWillBeRawPtr<Animation> create(Element*, const Vector<Dictionary>& keyframeDictionaryVector, const Dictionary& timingInputDictionary, ExceptionState&);
+    static PassRefPtrWillBeRawPtr<Animation> create(Element*, const Vector<Dictionary>& keyframeDictionaryVector, double duration, ExceptionState&);
+    static PassRefPtrWillBeRawPtr<Animation> create(Element*, const Vector<Dictionary>& keyframeDictionaryVector, ExceptionState&);
 
-    const AnimationEffect::CompositableValueList* compositableValues() const
-    {
-        ASSERT(m_compositableValues);
-        return m_compositableValues.get();
-    }
+    virtual ~Animation();
+
+    virtual bool isAnimation() const OVERRIDE { return true; }
 
     bool affects(CSSPropertyID) const;
     const AnimationEffect* effect() const { return m_effect.get(); }
+    AnimationEffect* effect() { return m_effect.get(); }
     Priority priority() const { return m_priority; }
-    Element* target() { return m_target.get(); }
+    Element* target() { return m_target; }
+
+    void notifySampledEffectRemovedFromAnimationStack();
+#if !ENABLE(OILPAN)
+    void notifyElementDestroyed();
+#endif
 
     bool isCandidateForAnimationOnCompositor() const;
-    // Must only be called once and assumes to be part of a player without a start time.
-    bool maybeStartAnimationOnCompositor();
+    // Must only be called once.
+    bool maybeStartAnimationOnCompositor(double startTime);
     bool hasActiveAnimationsOnCompositor() const;
     bool hasActiveAnimationsOnCompositor(CSSPropertyID) const;
     void cancelAnimationOnCompositor();
     void pauseAnimationForTestingOnCompositor(double pauseTime);
 
+    virtual void trace(Visitor*);
+
 protected:
-    // Returns whether style recalc was triggered.
-    virtual bool applyEffects(bool previouslyInEffect);
-    virtual void clearEffects();
-    virtual bool updateChildrenAndEffects() const OVERRIDE FINAL;
-    virtual void didAttach() OVERRIDE FINAL;
-    virtual void willDetach() OVERRIDE FINAL;
-    virtual double calculateTimeToEffectChange(double inheritedTime, double timeToNextIteration) const OVERRIDE FINAL;
+    void applyEffects();
+    void clearEffects();
+    virtual void updateChildrenAndEffects() const OVERRIDE;
+    virtual void attach(AnimationPlayer*) OVERRIDE;
+    virtual void detach() OVERRIDE;
+    virtual void specifiedTimingChanged() OVERRIDE;
+    virtual double calculateTimeToEffectChange(bool forwards, double inheritedTime, double timeToNextIteration) const OVERRIDE;
 
 private:
-    Animation(PassRefPtr<Element>, PassRefPtr<AnimationEffect>, const Timing&, Priority, PassOwnPtr<EventDelegate>);
+    Animation(Element*, PassRefPtrWillBeRawPtr<AnimationEffect>, const Timing&, Priority, PassOwnPtr<EventDelegate>);
 
-    RefPtr<Element> m_target;
-    RefPtr<AnimationEffect> m_effect;
-
-    bool m_activeInAnimationStack;
-    OwnPtr<AnimationEffect::CompositableValueList> m_compositableValues;
+    RawPtrWillBeMember<Element> m_target;
+    RefPtrWillBeMember<AnimationEffect> m_effect;
+    RawPtrWillBeMember<SampledEffect> m_sampledEffect;
 
     Priority m_priority;
 
     Vector<int> m_compositorAnimationIds;
 
-    friend class CSSAnimations;
+    friend class AnimationAnimationV8Test;
 };
 
-DEFINE_TYPE_CASTS(Animation, TimedItem, timedItem, timedItem->isAnimation(), timedItem.isAnimation());
+DEFINE_TYPE_CASTS(Animation, AnimationNode, animationNode, animationNode->isAnimation(), animationNode.isAnimation());
 
 } // namespace WebCore
 

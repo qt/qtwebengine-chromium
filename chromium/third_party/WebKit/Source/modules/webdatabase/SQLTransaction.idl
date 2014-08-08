@@ -27,10 +27,11 @@
  */
 
 [
-    NoInterfaceObject
+    WillBeGarbageCollected,
+    NoInterfaceObject,
 ] interface SQLTransaction {
     [Custom] void executeSql(DOMString sqlStatement,
-                             ObjectArray arguments,
+                             object[] arguments,
                              optional SQLStatementCallback callback,
                              optional SQLStatementErrorCallback errorCallback);
 

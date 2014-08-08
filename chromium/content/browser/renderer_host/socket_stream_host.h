@@ -29,14 +29,15 @@ namespace content {
 class SocketStreamHost {
  public:
   SocketStreamHost(net::SocketStream::Delegate* delegate,
-                   int render_view_id,
+                   int child_id,
+                   int render_frame_id,
                    int socket_id);
   ~SocketStreamHost();
 
   // Gets socket_id associated with |socket|.
   static int SocketIdFromSocketStream(const net::SocketStream* socket);
 
-  int render_view_id() const { return render_view_id_; }
+  int render_frame_id() const { return render_frame_id_; }
   int socket_id() const { return socket_id_; }
 
   // Starts to open connection to |url|.
@@ -66,7 +67,8 @@ class SocketStreamHost {
 
  private:
   net::SocketStream::Delegate* delegate_;
-  int render_view_id_;
+  int child_id_;
+  int render_frame_id_;
   int socket_id_;
 
   scoped_refptr<net::SocketStreamJob> job_;

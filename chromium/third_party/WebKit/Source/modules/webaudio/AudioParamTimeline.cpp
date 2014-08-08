@@ -29,6 +29,8 @@
 
 #include "modules/webaudio/AudioParamTimeline.h"
 
+#include "bindings/v8/ExceptionState.h"
+#include "core/dom/ExceptionCode.h"
 #include "platform/audio/AudioUtilities.h"
 #include "platform/FloatConversion.h"
 #include "wtf/MathExtras.h"
@@ -40,22 +42,30 @@ namespace WebCore {
 
 void AudioParamTimeline::setValueAtTime(float value, double time)
 {
-    insertEvent(ParamEvent(ParamEvent::SetValue, value, time, 0, 0, 0));
+    insertEvent(ParamEvent(ParamEvent::SetValue, value, time, 0, 0, nullptr));
 }
 
 void AudioParamTimeline::linearRampToValueAtTime(float value, double time)
 {
-    insertEvent(ParamEvent(ParamEvent::LinearRampToValue, value, time, 0, 0, 0));
+    insertEvent(ParamEvent(ParamEvent::LinearRampToValue, value, time, 0, 0, nullptr));
 }
 
-void AudioParamTimeline::exponentialRampToValueAtTime(float value, double time)
+void AudioParamTimeline::exponentialRampToValueAtTime(float value, double time, ExceptionState& exceptionState)
 {
-    insertEvent(ParamEvent(ParamEvent::ExponentialRampToValue, value, time, 0, 0, 0));
+    ASSERT(isMainThread());
+    if (value <= 0) {
+        exceptionState.throwDOMException(
+            InvalidStateError,
+            "Target value for exponential ramp must be positive: " + String::number(value));
+        return;
+    }
+
+    insertEvent(ParamEvent(ParamEvent::ExponentialRampToValue, value, time, 0, 0, nullptr));
 }
 
 void AudioParamTimeline::setTargetAtTime(float target, double time, double timeConstant)
 {
-    insertEvent(ParamEvent(ParamEvent::SetTarget, target, time, timeConstant, 0, 0));
+    insertEvent(ParamEvent(ParamEvent::SetTarget, target, time, timeConstant, 0, nullptr));
 }
 
 void AudioParamTimeline::setValueCurveAtTime(Float32Array* curve, double time, double duration)

@@ -8,7 +8,8 @@
     "description": "Use the <code>webview</code> tag to actively load live content from the web over the network and embed it in your Chrome App. Your app can control the appearance of the <code>webview</code> and interact with the web content, initiate navigations in an embedded web page, react to error events that happen within it, and more (see <a href=\"#usage\">Usage</a>).",
     "documentation_options": {
       "title": "<webview> Tag",
-      "namespace": "<webview>"
+      "namespace": "<webview>",
+      "documented_in": "tags/webview"
     },
     "types": [
       {
@@ -29,17 +30,10 @@
         "description": "A set of data types. Missing properties are interpreted as <code>false</code>.",
         "properties": {
           "appcache": { "type": "boolean", "optional": true, "description": "Websites' appcaches." },
-          "cache": { "type": "boolean", "optional": true, "description": "The partition's cache. Note: This clears the entire cache regardless of the age passed to <code>clearData</code>." },
           "cookies": { "type": "boolean", "optional": true, "description": "The partition's cookies." },
-          "downloads": { "type": "boolean", "optional": true, "description": "The partition's download list." },
           "fileSystems": { "type": "boolean", "optional": true, "description": "Websites' filesystems." },
-          "formData": { "type": "boolean", "optional": true, "description": "The partition's stored form data." },
-          "history": { "type": "boolean", "optional": true, "description": "The partition's history." },
           "indexedDB": { "type": "boolean", "optional": true, "description": "Websites' IndexedDB data." },
           "localStorage": { "type": "boolean", "optional": true, "description": "Websites' local storage data." },
-          "serverBoundCertificates": { "type": "boolean", "optional": true, "description": "Server-bound certificates." },
-          "pluginData": { "type": "boolean", "optional": true, "description": "Plugins' data." },
-          "passwords": { "type": "boolean", "optional": true, "description": "Stored passwords." },
           "webSQL": { "type": "boolean", "optional": true, "description": "Websites' WebSQL data." }
         }
       },
@@ -51,7 +45,7 @@
           "code": {
             "type": "string",
             "optional": true,
-            "description": "JavaScript or CSS code to inject."
+            "description": "JavaScript or CSS code to inject.<br><br><b>Warning:</b><br>Be careful using the <code>code</code> parameter. Incorrect use of it may open your app to <a href=\"https://en.wikipedia.org/wiki/Cross-site_scripting\">cross site scripting</a> attacks."
           },
           "file": {
             "type": "string",
@@ -105,6 +99,46 @@
             "description": "Reject the dialog. Equivalent to clicking Cancel in a <code>confirm</code> or <code>prompt</code> dialog."
           }
         ]
+      },
+      {
+        "id": "FindCallbackResults",
+        "type": "object",
+        "description": "Contains all of the results of the find request.",
+        "properties": {
+          "numberOfMatches": {
+            "type": "integer",
+            "description": "The number of times <code>searchText</code> was matched on the page."
+          },
+          "activeMatchOrdinal": {
+            "type": "integer",
+            "description": "The ordinal number of the current match."
+          },
+          "selectionRect": {
+            "$ref": "SelectionRect",
+            "description": "Describes a rectangle around the active match in screen coordinates."
+          },
+          "canceled": {
+            "type": "boolean",
+            "description": "Indicates whether this find request was canceled."
+          }
+        }
+      },
+      {
+        "id": "FindOptions",
+        "type": "object",
+        "description": "Options for the find request.",
+        "properties": {
+          "backward": {
+            "type": "boolean",
+            "description": "Flag to find matches in reverse order. The default value is <code>false</code>.",
+            "optional": true
+          },
+          "matchCase": {
+            "type": "boolean",
+            "description": "Flag to match with case-sensitivity. The default value is <code>false</code>.",
+            "optional": true
+          }
+        }
       },
       {
         "id": "NewWindow",
@@ -202,6 +236,21 @@
         ]
       },
       {
+        "id": "FileSystemPermissionRequest",
+        "type": "object",
+        "description": "The type of <code>request</code> object which accompanies a <code>filesystem</code> <a href=\"#event-permissionrequest\">permissionrequest</a></code> DOM event.",
+        "properties": {
+          "url": {
+            "description": "The URL of the frame requesting access to local file system.",
+            "type": "string"
+          }
+        },
+        "functions": [
+          { "name": "allow", "description": "Allow the permission request." },
+          { "name": "deny", "description": "Deny the permission request." }
+        ]
+      },
+      {
         "id": "LoadPluginPermissionRequest",
         "type": "object",
         "description": "The type of <code>request</code> object which accompanies a <code>loadplugin</code> <a href=\"#event-permissionrequest\">permissionrequest</a> DOM event.<p>",
@@ -221,9 +270,32 @@
         ]
       },
       {
+        "id": "SelectionRect",
+        "type": "object",
+        "description": "<p>Describes a rectangle in screen coordinates.</p><p>The containment semantics are array-like; that is, the coordinate <code>(left, top)</code> is considered to be contained by the rectangle, but the coordinate <code>(left + width, top)</code> is not.</p>",
+        "properties": {
+          "left": {
+            "type": "integer",
+            "description": "Distance from the left edge of the screen to the left edge of the rectangle."
+          },
+          "top": {
+            "type": "integer",
+            "description": "Distance from the top edge of the screen to the top edge of the rectangle."
+          },
+          "width": {
+            "type": "integer",
+            "description": "Width of the rectangle."
+          },
+          "height": {
+            "type": "integer",
+            "description": "Height of the rectangle."
+          }
+        }
+      },
+      {
         "id": "WebRequestEventInteface",
         "type": "object",
-        "description": "Interface which provides access to webRequest events on the guest page. See the <a href=\"http://developer.chrome.com/extensions/webRequest.html\">chrome.webRequest</a> extensions API for details on webRequest life cycle and related concepts.<p>To illustrate how usage differs from the extensions webRequest API, consider the following example code which blocks any guest requests for URLs which match <code>*://www.evil.com/*</code>:</p><pre>webview.request.onBeforeRequest.addListener(\r  function(details) { return {cancel: true}; },\r  {urls: [\"*://www.evil.com/*\"]},\r  [\"blocking\"]);</pre><p>Additionally, this interface supports declarative webRequest rules through <code>onRequest</code> and <code>onMessage</code> events. See <a href=\"http://developer.chrome.com/extensions/declarativeWebRequest.html\">declarativeWebRequest</a> for API details.</p>Note that conditions and actions for declarative webview webRequests should be instantiated from their <code>chrome.webViewRequest.*</code> counterparts. The following example code declaratively blocks all requests to <code>\"example.com\"</code> on the webview <code>myWebview</code>:</p><pre>var rule = {\r  conditions: [\r    new chrome.webViewRequest.RequestMatcher({ url: { hostSuffix: 'example.com' } })\r  ],\r  actions: [ new chrome.webViewRequest.CancelRequest() ]\r};\rmyWebview.request.onRequest.addRules([rule]);</pre>",
+        "description": "Interface which provides access to webRequest events on the guest page. See the <a href=\"http://developer.chrome.com/extensions/webRequest\">chrome.webRequest</a> extensions API for details on webRequest life cycle and related concepts.<p>To illustrate how usage differs from the extensions webRequest API, consider the following example code which blocks any guest requests for URLs which match <code>*://www.evil.com/*</code>:</p><pre>webview.request.onBeforeRequest.addListener(\r  function(details) { return {cancel: true}; },\r  {urls: [\"*://www.evil.com/*\"]},\r  [\"blocking\"]);</pre><p>Additionally, this interface supports declarative webRequest rules through <code>onRequest</code> and <code>onMessage</code> events. See <a href=\"http://developer.chrome.com/extensions/declarativeWebRequest.html\">declarativeWebRequest</a> for API details.</p>Note that conditions and actions for declarative webview webRequests should be instantiated from their <code>chrome.webViewRequest.*</code> counterparts. The following example code declaratively blocks all requests to <code>\"example.com\"</code> on the webview <code>myWebview</code>:</p><pre>var rule = {\r  conditions: [\r    new chrome.webViewRequest.RequestMatcher({ url: { hostSuffix: 'example.com' } })\r  ],\r  actions: [ new chrome.webViewRequest.CancelRequest() ]\r};\rmyWebview.request.onRequest.addRules([rule]);</pre>",
         "properties": {}
       }
     ],
@@ -272,7 +344,7 @@
       {
         "name": "executeScript",
         "type": "function",
-        "description": "<p>Injects JavaScript code into the guest page.</p><p>The following sample code uses script injection to set the guest page's background color to red:</p><pre>webview.executeScript({ code: \"document.body.bgColor = 'red'\" });</pre>",
+        "description": "<p>Injects JavaScript code into the guest page.</p><p>The following sample code uses script injection to set the guest page's background color to red:</p><pre>webview.executeScript({ code: \"document.body.style.backgroundColor = 'red'\" });</pre>",
         "parameters": [
           {
             "$ref": "InjectDetails",
@@ -297,6 +369,38 @@
         ]
       },
       {
+        "name": "find",
+        "type": "function",
+        "description": "Initiates a find-in-page request.",
+        "parameters": [
+          {
+            "type": "string",
+            "name": "searchText",
+            "description": "The string to find in the page."
+          },
+          {
+            "$ref": "FindOptions",
+            "name": "options",
+            "optional": true,
+            "description": "Options for the find request."
+          },
+          {
+            "type": "function",
+            "name": "callback",
+            "description": "Called after all find results have been returned for this find request.",
+            "optional": true,
+            "parameters": [
+              {
+                "$ref": "FindCallbackResults",
+                "name": "results",
+                "description": "Contains all of the results of the find request. <code>results</code> can be omitted if it is not utilized in the callback function body; for example, if the callback is only used to discern when the find request has completed.",
+                "optional": true
+              }
+            ]
+          }
+        ]
+      },
+      {
         "name": "forward",
         "type": "function",
         "description": "Navigates forward one history entry if possible. Equivalent to <code>go(1)</code>.",
@@ -315,6 +419,25 @@
         "returns": { "type": "string" },
         "description": "Returns the user agent string used by the webview for guest page requests.",
         "parameters": []
+      },
+      {
+        "name": "getZoom",
+	"type": "function",
+        "description": "Gets the current zoom factor.",
+	"parameters": [
+	  {
+            "type": "function",
+            "name": "callback",
+            "description": "Called after the current zoom factor is retreived.",
+            "parameters": [
+              {
+                "type": "number",
+                "name": "zoomFactor",
+                "description": "The current zoom factor."
+              }
+            ]
+	  }
+        ]
       },
       {
         "name": "go",
@@ -350,7 +473,7 @@
       {
         "name": "isUserAgentOverridden",
         "type": "function",
-        "description": "Indicates whether or not the webview's user agent string has been overridden by $ref:setUserAgentOverride"
+        "description": "Indicates whether or not the webview's user agent string has been overridden by $(ref:webviewTag.setUserAgentOverride)"
       },
       {
         "name": "reload",
@@ -371,10 +494,43 @@
         ]
       },
       {
+        "name": "setZoom",
+        "type": "function",
+        "description": "Changes the zoom factor of the page. This zoom will persist for the page's origin, even after navigation.",
+        "parameters": [
+          {
+            "type": "number",
+            "name": "zoomFactor",
+            "description" : "The new zoom factor."
+          },
+	  {
+            "type": "function",
+            "name": "callback",
+            "description": "Called after the page has been zoomed.",
+            "optional": true,
+            "parameters": []
+	  }
+        ]
+      },
+      {
         "name": "stop",
         "type": "function",
         "description": "Stops loading the current &lt;webview> navigation if in progress.",
         "parameters": []
+      },
+      {
+        "name": "stopFinding",
+        "type": "function",
+        "description": "Ends the current find session (clearing all highlighting) and cancels all find requests in progress.",
+        "parameters": [
+          {
+            "type": "string",
+            "name": "action",
+            "description": "Determines what to do with the active match after the find session has ended. <code>clear</code> will clear the highlighting over the active match; <code>keep</code> will keep the active match highlighted; <code>activate</code> will keep the active match highlighted and simulate a user click on that match. The default action is <code>keep</code>.",
+            "optional": true,
+            "enum": ["clear", "keep", "activate"]
+          }
+        ]
       },
       {
         "name": "terminate",
@@ -420,7 +576,7 @@
       {
         "name": "contentload",
         "options": { "supportsDom": true },
-        "description": "Fired when the guest window fires a <code>load</code> event.<p>The following example code modifies the default font size of the guest's <code>body</code> element after the page loads:</p><pre>webview.addEventListener('contentload', function() {\r  webview.executeScript({ code: 'document.body.style.fontSize = \"42px\"' });\r});</pre>",
+        "description": "Fired when the guest window fires a <code>load</code> event, i.e., when a new document is loaded. This does <em>not</em> include page navigation within the current document or asynchronous resource loads. <p>The following example code modifies the default font size of the guest's <code>body</code> element after the page loads:</p><pre>webview.addEventListener('contentload', function() {\r  webview.executeScript({ code: 'document.body.style.fontSize = \"42px\"' });\r});</pre>",
         "parameters": []
       },
       {
@@ -465,9 +621,46 @@
         ]
       },
       {
+        "name": "findupdate",
+        "options": { "supportsDom": true },
+        "description": "Fired when new find results are available for an active find request. This might happen multiple times for a single find request as matches are found.",
+        "parameters": [
+          {
+            "name": "searchText",
+            "type": "string",
+            "description": "The string that is being searched for in the page."
+          },
+          {
+            "name": "numberOfMatches",
+            "type": "integer",
+            "description": "The number of matches found for <code>searchText</code> on the page so far."
+          },
+          {
+            "name": "activeMatchOrdinal",
+            "type": "integer",
+            "description": "The ordinal number of the current active match, if it has been found. This will be <code>0</code> until then."
+          },
+          {
+            "name": "selectionRect",
+            "$ref": "SelectionRect",
+            "description": "Describes a rectangle around the active match, if it has been found, in screen coordinates."
+          },
+          {
+            "name": "canceled",
+            "type": "boolean",
+            "description": "Indicates whether the find request was canceled."
+          },
+          {
+            "name": "finalUpdate",
+            "type": "string",
+            "description": "Indicates that all find requests have completed and that no more <code>findupdate</code> events will be fired until more find requests are made."
+          }
+        ]
+      },
+      {
         "name": "loadabort",
         "options": { "supportsDom": true },
-        "description": "Fired when a top-level load has aborted without committing.",
+        "description": "Fired when a top-level load has aborted without committing. <p class=\"note\"><strong>Note:</strong> When a resource load is aborted, a <code>loadabort</code> event will eventually be followed by a <code>loadstop</code> event, even if all committed loads since the last <code>loadstop</code> event (if any) were aborted.</p>",
         "parameters": [
           {
             "name": "url",
@@ -490,7 +683,7 @@
       {
         "name": "loadcommit",
         "options": { "supportsDom": true },
-        "description": "Fired when a load has committed.",
+        "description": "Fired when a load has committed. This includes navigation within the current document as well as subframe document-level loads, but does <em>not</em> include asynchronous resource loads.",
         "parameters": [
           {
             "name": "url",
@@ -546,7 +739,7 @@
       {
         "name": "loadstop",
         "options": { "supportsDom": true },
-        "description": "Fired when all loads in the guest page (including all subframes) have completed. Fires in addition to any related <code>loadcommit</code> or <code>loadabort</code> events, which occur per-frame.",
+        "description": "Fired when all frame-level loads in a guest page (including all its subframes) have completed. This includes navigation within the current document as well as subframe document-level loads, but does <em>not</em> include asynchronous resource loads. This event fires every time the number of document-level loads transitions from one (or more) to zero. For example, if a page that has already finished loading (i.e., <code>loadstop</code> already fired once) creates a new iframe which loads a page, then a second <code>loadstop</code> will fire when the iframe page load completes. This pattern is commonly observed on pages that load ads. <p class=\"note\"><strong>Note:</strong> When a committed load is aborted, a <code>loadstop</code> event will eventually follow a <code>loadabort</code> event, even if all committed loads since the last <code>loadstop</code> event (if any) were aborted.</p>",
         "parameters": []
       },
       {
@@ -596,7 +789,7 @@
             "name": "permission",
             "description": "The type of permission being requested.",
             "type": "string",
-            "enum": ["media", "geolocation", "pointerLock", "download", "loadplugin"]
+            "enum": ["media", "geolocation", "pointerLock", "download", "loadplugin", "filesystem"]
           },
           {
             "name": "requestId",
@@ -607,7 +800,7 @@
             "name": "request",
             "type": "object",
             "properties": {},
-            "description": "An object which holds details of the requested permission. Depending on the type of permission requested, this may be a $ref:MediaPermissionRequest, $ref:GeolocationPermissionRequest, $ref:PointerLockPermissionRequest, $ref:DownloadPermissionRequest, or $ref:LoadPluginPermissionRequest."
+            "description": "An object which holds details of the requested permission. Depending on the type of permission requested, this may be a $(ref:webviewTag.MediaPermissionRequest), $(ref:webviewTag.GeolocationPermissionRequest), $(ref:webviewTag.PointerLockPermissionRequest), $(ref:webviewTag.DownloadPermissionRequest), or $(ref:webviewTag.LoadPluginPermissionRequest)."
           }
         ]
       },
@@ -661,6 +854,23 @@
             "type": "integer"
           }
         ]
+      },
+      {
+        "name": "zoomchange",
+        "options": { "supportsDom": true },
+        "description": "Fired when the page's zoom changes.",
+        "parameters": [
+          {
+            "name": "oldZoomFactor",
+            "type": "number",
+            "description": "The page's previous zoom factor."
+          },
+          {
+            "name": "newZoomFactor",
+            "type": "number",
+            "description": "The new zoom factor that the page was zoomed to."
+          }
+        ]
       }
     ],
     "properties": {
@@ -675,4 +885,3 @@
     }
   }
 ]
-

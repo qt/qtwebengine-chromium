@@ -32,7 +32,7 @@
 #include "config.h"
 #include "core/html/forms/CheckboxInputType.h"
 
-#include "InputTypeNames.h"
+#include "core/InputTypeNames.h"
 #include "core/events/KeyboardEvent.h"
 #include "core/html/HTMLInputElement.h"
 #include "platform/text/PlatformLocale.h"
@@ -40,9 +40,9 @@
 
 namespace WebCore {
 
-PassRefPtr<InputType> CheckboxInputType::create(HTMLInputElement& element)
+PassRefPtrWillBeRawPtr<InputType> CheckboxInputType::create(HTMLInputElement& element)
 {
-    return adoptRef(new CheckboxInputType(element));
+    return adoptRefWillBeNoop(new CheckboxInputType(element));
 }
 
 const AtomicString& CheckboxInputType::formControlType() const
@@ -68,12 +68,12 @@ void CheckboxInputType::handleKeyupEvent(KeyboardEvent* event)
     dispatchSimulatedClickIfActive(event);
 }
 
-PassOwnPtr<ClickHandlingState> CheckboxInputType::willDispatchClick()
+PassOwnPtrWillBeRawPtr<ClickHandlingState> CheckboxInputType::willDispatchClick()
 {
     // An event handler can use preventDefault or "return false" to reverse the checking we do here.
     // The ClickHandlingState object contains what we need to undo what we did here in didDispatchClick.
 
-    OwnPtr<ClickHandlingState> state = adoptPtr(new ClickHandlingState);
+    OwnPtrWillBeRawPtr<ClickHandlingState> state = adoptPtrWillBeNoop(new ClickHandlingState);
 
     state->checked = element().checked();
     state->indeterminate = element().indeterminate();

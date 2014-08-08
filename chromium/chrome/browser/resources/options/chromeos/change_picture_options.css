@@ -54,13 +54,17 @@
  */
 
 #user-image-preview {
-  margin: 20px 10px 0 0;
+  margin: 18px 10px 0 0;
   max-width: 220px;
   position: relative;
 }
 
 #user-image-preview .perspective-box {
   -webkit-perspective: 600px;
+  border: solid 1px #cacaca;
+  border-radius: 4px;
+  padding: 3px;
+  width: 220px;
 }
 
 #user-image-preview-img {
@@ -69,7 +73,7 @@
   border-radius: 4px;
   max-height: 220px;
   max-width: 220px;
-  padding: 2px;
+  padding: 3px;
 }
 
 .camera.live #user-image-preview-img {
@@ -168,14 +172,14 @@ html[dir=rtl] #flip-photo {
 #take-photo {
   display: none;
   height: 25px;
-  margin: 4px 1px;
+  margin: 4px;
   padding: 0;
   width: 220px;
 }
 
 .camera:not(.live) #discard-photo {
   background: url('chrome://theme/IDR_USER_IMAGE_RECYCLE')
-      no-repeat center 0;
+      no-repeat center center;
   display: block;
 }
 

@@ -29,9 +29,10 @@ class CC_EXPORT LayerUpdater : public base::RefCounted<LayerUpdater> {
     // TODO(reveman): partial_update should be a property of this class
     // instead of an argument passed to Update().
     virtual void Update(ResourceUpdateQueue* queue,
-                        gfx::Rect source_rect,
-                        gfx::Vector2d dest_offset,
+                        const gfx::Rect& source_rect,
+                        const gfx::Vector2d& dest_offset,
                         bool partial_update) = 0;
+
    protected:
     explicit Resource(scoped_ptr<PrioritizedResource> texture);
 
@@ -48,8 +49,8 @@ class CC_EXPORT LayerUpdater : public base::RefCounted<LayerUpdater> {
   // The |resulting_opaque_rect| gives back a region of the layer that was
   // painted opaque. If the layer is marked opaque in the updater, then this
   // region should be ignored in preference for the entire layer's area.
-  virtual void PrepareToUpdate(gfx::Rect content_rect,
-                               gfx::Size tile_size,
+  virtual void PrepareToUpdate(const gfx::Rect& content_rect,
+                               const gfx::Size& tile_size,
                                float contents_width_scale,
                                float contents_height_scale,
                                gfx::Rect* resulting_opaque_rect) {}
@@ -58,6 +59,9 @@ class CC_EXPORT LayerUpdater : public base::RefCounted<LayerUpdater> {
   // Set true by the layer when it is known that the entire output is going to
   // be opaque.
   virtual void SetOpaque(bool opaque) {}
+  // Set true by the layer when it is known that the entire output bounds will
+  // be rasterized.
+  virtual void SetFillsBoundsCompletely(bool fills_bounds) {}
 
  protected:
   virtual ~LayerUpdater() {}

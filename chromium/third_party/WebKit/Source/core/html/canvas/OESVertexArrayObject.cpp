@@ -28,29 +28,28 @@
 #include "core/html/canvas/OESVertexArrayObject.h"
 
 #include "bindings/v8/ExceptionState.h"
-#include "core/html/canvas/WebGLRenderingContext.h"
+#include "core/html/canvas/WebGLRenderingContextBase.h"
 #include "core/html/canvas/WebGLVertexArrayObjectOES.h"
-#include "platform/graphics/Extensions3D.h"
 
 namespace WebCore {
 
-OESVertexArrayObject::OESVertexArrayObject(WebGLRenderingContext* context)
+OESVertexArrayObject::OESVertexArrayObject(WebGLRenderingContextBase* context)
     : WebGLExtension(context)
 {
     ScriptWrappable::init(this);
-    context->graphicsContext3D()->extensions()->ensureEnabled("GL_OES_vertex_array_object");
+    context->extensionsUtil()->ensureExtensionEnabled("GL_OES_vertex_array_object");
 }
 
 OESVertexArrayObject::~OESVertexArrayObject()
 {
 }
 
-WebGLExtension::ExtensionName OESVertexArrayObject::name() const
+WebGLExtensionName OESVertexArrayObject::name() const
 {
     return OESVertexArrayObjectName;
 }
 
-PassRefPtr<OESVertexArrayObject> OESVertexArrayObject::create(WebGLRenderingContext* context)
+PassRefPtr<OESVertexArrayObject> OESVertexArrayObject::create(WebGLRenderingContextBase* context)
 {
     return adoptRef(new OESVertexArrayObject(context));
 }
@@ -58,7 +57,7 @@ PassRefPtr<OESVertexArrayObject> OESVertexArrayObject::create(WebGLRenderingCont
 PassRefPtr<WebGLVertexArrayObjectOES> OESVertexArrayObject::createVertexArrayOES()
 {
     if (isLost())
-        return 0;
+        return nullptr;
 
     RefPtr<WebGLVertexArrayObjectOES> o = WebGLVertexArrayObjectOES::create(m_context, WebGLVertexArrayObjectOES::VaoTypeUser);
     m_context->addContextObject(o.get());
@@ -71,12 +70,12 @@ void OESVertexArrayObject::deleteVertexArrayOES(WebGLVertexArrayObjectOES* array
         return;
 
     if (!arrayObject->isDefaultObject() && arrayObject == m_context->m_boundVertexArrayObject)
-        m_context->setBoundVertexArrayObject(0);
+        m_context->setBoundVertexArrayObject(nullptr);
 
-    arrayObject->deleteObject(m_context->graphicsContext3D());
+    arrayObject->deleteObject(m_context->webContext());
 }
 
-GC3Dboolean OESVertexArrayObject::isVertexArrayOES(WebGLVertexArrayObjectOES* arrayObject)
+GLboolean OESVertexArrayObject::isVertexArrayOES(WebGLVertexArrayObjectOES* arrayObject)
 {
     if (!arrayObject || isLost())
         return 0;
@@ -84,8 +83,7 @@ GC3Dboolean OESVertexArrayObject::isVertexArrayOES(WebGLVertexArrayObjectOES* ar
     if (!arrayObject->hasEverBeenBound())
         return 0;
 
-    Extensions3D* extensions = m_context->graphicsContext3D()->extensions();
-    return extensions->isVertexArrayOES(arrayObject->object());
+    return m_context->webContext()->isVertexArrayOES(arrayObject->object());
 }
 
 void OESVertexArrayObject::bindVertexArrayOES(WebGLVertexArrayObjectOES* arrayObject)
@@ -94,26 +92,24 @@ void OESVertexArrayObject::bindVertexArrayOES(WebGLVertexArrayObjectOES* arrayOb
         return;
 
     if (arrayObject && (arrayObject->isDeleted() || !arrayObject->validate(0, context()))) {
-        m_context->graphicsContext3D()->synthesizeGLError(GL_INVALID_OPERATION);
+        m_context->webContext()->synthesizeGLError(GL_INVALID_OPERATION);
         return;
     }
 
-    Extensions3D* extensions = m_context->graphicsContext3D()->extensions();
     if (arrayObject && !arrayObject->isDefaultObject() && arrayObject->object()) {
-        extensions->bindVertexArrayOES(arrayObject->object());
+        m_context->webContext()->bindVertexArrayOES(arrayObject->object());
 
         arrayObject->setHasEverBeenBound();
         m_context->setBoundVertexArrayObject(arrayObject);
     } else {
-        extensions->bindVertexArrayOES(0);
-        m_context->setBoundVertexArrayObject(0);
+        m_context->webContext()->bindVertexArrayOES(0);
+        m_context->setBoundVertexArrayObject(nullptr);
     }
 }
 
-bool OESVertexArrayObject::supported(WebGLRenderingContext* context)
+bool OESVertexArrayObject::supported(WebGLRenderingContextBase* context)
 {
-    Extensions3D* extensions = context->graphicsContext3D()->extensions();
-    return extensions->supports("GL_OES_vertex_array_object");
+    return context->extensionsUtil()->supportsExtension("GL_OES_vertex_array_object");
 }
 
 const char* OESVertexArrayObject::extensionName()

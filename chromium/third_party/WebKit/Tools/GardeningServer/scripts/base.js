@@ -76,7 +76,7 @@ base.flattenArray = function(arrayOfArrays)
     if (!arrayOfArrays.length)
         return [];
     return arrayOfArrays.reduce(function(left, right) {
-        return left.concat(right);  
+        return left.concat(right);
     });
 };
 
@@ -156,79 +156,30 @@ base.parseJSONP = function(jsonp)
     return JSON.parse(jsonp.substr(startIndex, endIndex - startIndex));
 };
 
-base.RequestTracker = function(requestsInFlight, callback, args)
-{
-    this._requestsInFlight = requestsInFlight;
-    this._callback = callback;
-    this._args = args || [];
-    this._tryCallback();
-};
-
-base.RequestTracker.prototype = {
-    _tryCallback: function()
-    {
-        if (!this._requestsInFlight && this._callback)
-            this._callback.apply(null, this._args);
-    },
-    requestComplete: function()
-    {
-        --this._requestsInFlight;
-        this._tryCallback();
-    }
-}
-
-base.callInParallel = function(functionList, callback)
-{
-    var requestTracker = new base.RequestTracker(functionList.length, callback);
-
-    $.each(functionList, function(index, func) {
-        func(function() {
-            requestTracker.requestComplete();
-        });
-    });
-};
-
+// This is effectively a cache of possibly-resolved promises.
 base.AsynchronousCache = function(fetch)
 {
     this._fetch = fetch;
-    this._dataCache = {};
-    this._callbackCache = {};
+    this._promiseCache = {};
 };
 
-base.AsynchronousCache.prototype.get = function(key, callback)
+base.AsynchronousCache._sentinel = new Object();
+base.AsynchronousCache.prototype.get = function(key)
 {
-    var self = this;
-
-    if (self._dataCache[key]) {
-        // FIXME: Consider always calling callback asynchronously.
-        callback(self._dataCache[key]);
-        return;
+    if (!(key in this._promiseCache)) {
+        this._promiseCache[key] = base.AsynchronousCache._sentinel;
+        this._promiseCache[key] = this._fetch.call(null, key);
     }
+    if (this._promiseCache[key] === base.AsynchronousCache._sentinel)
+        return Promise.reject(Error("Reentrant request for ", key));
 
-    if (key in self._callbackCache) {
-        self._callbackCache[key].push(callback);
-        return;
-    }
-
-    self._callbackCache[key] = [callback];
-
-    self._fetch.call(null, key, function(data) {
-        self._dataCache[key] = data;
-
-        var callbackList = self._callbackCache[key];
-        delete self._callbackCache[key];
-
-        callbackList.forEach(function(cachedCallback) {
-            cachedCallback(data);
-        });
-    });
+    return this._promiseCache[key];
 };
 
 base.AsynchronousCache.prototype.clear = function()
 {
-    this._dataCache = {};
-    this._callbackCache = {};
-}
+    this._promiseCache = {};
+};
 
 /*
     Maintains a dictionary of items, tracking their updates and removing items that haven't been updated.
@@ -310,55 +261,6 @@ base.extends = function(base, prototype)
     return extended;
 }
 
-function createRelativeTimeDescriptor(divisorInMilliseconds, unit)
-{
-    return function(delta) {
-        var deltaInUnits = delta / divisorInMilliseconds;
-        return (deltaInUnits).toFixed(0) + ' ' + unit + (deltaInUnits >= 1.5 ? 's' : '') + ' ago';
-    }
-}
-
-var kMinuteInMilliseconds = 60 * 1000;
-var kRelativeTimeSlots = [
-    {
-        maxMilliseconds: kMinuteInMilliseconds,
-        describe: function(delta) { return 'Just now'; }
-    },
-    {
-        maxMilliseconds: 60 * kMinuteInMilliseconds,
-        describe: createRelativeTimeDescriptor(kMinuteInMilliseconds, 'minute')
-    },
-    {
-        maxMilliseconds: 24 * 60 * kMinuteInMilliseconds,
-        describe: createRelativeTimeDescriptor(60 * kMinuteInMilliseconds, 'hour')
-    },
-    {
-        maxMilliseconds: Number.MAX_VALUE,
-        describe: createRelativeTimeDescriptor(24 * 60 * kMinuteInMilliseconds, 'day')
-    }
-];
-
-/*
-    Represent time as descriptive text, relative to now and gradually decreasing in precision:
-        delta < 1 minutes => Just Now
-        delta < 60 minutes => X minute[s] ago
-        delta < 24 hours => X hour[s] ago
-        delta < inf => X day[s] ago
-*/
-base.relativizeTime = function(time)
-{
-    var result;
-    var delta = new Date().getTime() - time;
-    kRelativeTimeSlots.some(function(slot) {
-        if (delta >= slot.maxMilliseconds)
-            return false;
-
-        result = slot.describe(delta);
-        return true;
-    });
-    return result;
-}
-
 base.getURLParameter = function(name)
 {
     var match = RegExp(name + '=' + '(.+?)(&|$)').exec(location.search);
@@ -370,16 +272,6 @@ base.getURLParameter = function(name)
 base.underscoredBuilderName = function(builderName)
 {
     return builderName.replace(/[ .()]/g, '_');
-}
-
-base.createLinkNode = function(url, textContent, opt_target)
-{
-    var link = document.createElement('a');
-    link.href = url;
-    if (opt_target)
-        link.target = opt_target;
-    link.appendChild(document.createTextNode(textContent));
-    return link;
 }
 
 })();

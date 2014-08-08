@@ -8,8 +8,8 @@
 #include <string>
 #include <vector>
 
+#include "base/files/file.h"
 #include "base/files/file_path.h"
-#include "base/platform_file.h"
 #include "third_party/WebKit/public/platform/WebFileError.h"
 #include "third_party/WebKit/public/platform/WebFileSystemType.h"
 #include "webkit/common/fileapi/file_system_info.h"
@@ -64,6 +64,16 @@ class WEBKIT_STORAGE_COMMON_EXPORT VirtualPath {
   // Returns true if the given path points to the root.
   static bool IsRootPath(const base::FilePath& path);
 };
+
+// Parses filesystem scheme |url| into uncracked file system URL components.
+// Example: For a URL 'filesystem:http://foo.com/temporary/foo/bar',
+// |origin_url| is set to 'http://foo.com', |type| is set to
+// kFileSystemTypeTemporary, and |virtual_path| is set to 'foo/bar'.
+WEBKIT_STORAGE_COMMON_EXPORT bool ParseFileSystemSchemeURL(
+    const GURL& url,
+    GURL* origin_url,
+    FileSystemType* type,
+    base::FilePath* virtual_path);
 
 // Returns the root URI of the filesystem that can be specified by a pair of
 // |origin_url| and |type|.  The returned URI can be used as a root path
@@ -129,7 +139,7 @@ WEBKIT_STORAGE_COMMON_EXPORT base::FilePath StringToFilePath(
 
 // File error conversion
 WEBKIT_STORAGE_COMMON_EXPORT blink::WebFileError
-PlatformFileErrorToWebFileError(base::PlatformFileError error_code);
+FileErrorToWebFileError(base::File::Error error_code);
 
 // Generate a file system name for the given arguments. Should only be used by
 // platform apps.
@@ -163,18 +173,9 @@ WEBKIT_STORAGE_COMMON_EXPORT std::string GetExternalFileSystemRootURIString(
     const GURL& origin_url,
     const std::string& mount_name);
 
-// Translates the net::Error to base::PlatformFileError.
-WEBKIT_STORAGE_COMMON_EXPORT base::PlatformFileError
-NetErrorToPlatformFileError(int error);
-
-#if defined(OS_CHROMEOS)
-// Returns the filesystem info that can be specified by |origin_url|.
-// TODO(nhiroki): This should be deprecated and use
-// GetExternalFileSystemRootURIString() to get separate file systems for each
-// mount type. http://crbug.com/284963.
-WEBKIT_STORAGE_COMMON_EXPORT FileSystemInfo
-GetFileSystemInfoForChromeOS(const GURL& origin_url);
-#endif
+// Translates the net::Error to base::File::Error.
+WEBKIT_STORAGE_COMMON_EXPORT base::File::Error
+NetErrorToFileError(int error);
 
 }  // namespace fileapi
 

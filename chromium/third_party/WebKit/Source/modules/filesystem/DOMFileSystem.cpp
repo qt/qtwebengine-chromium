@@ -54,14 +54,14 @@
 namespace WebCore {
 
 // static
-PassRefPtr<DOMFileSystem> DOMFileSystem::create(ExecutionContext* context, const String& name, FileSystemType type, const KURL& rootURL)
+DOMFileSystem* DOMFileSystem::create(ExecutionContext* context, const String& name, FileSystemType type, const KURL& rootURL)
 {
-    RefPtr<DOMFileSystem> fileSystem(adoptRef(new DOMFileSystem(context, name, type, rootURL)));
+    DOMFileSystem* fileSystem(new DOMFileSystem(context, name, type, rootURL));
     fileSystem->suspendIfNeeded();
-    return fileSystem.release();
+    return fileSystem;
 }
 
-PassRefPtr<DOMFileSystem> DOMFileSystem::createIsolatedFileSystem(ExecutionContext* context, const String& filesystemId)
+DOMFileSystem* DOMFileSystem::createIsolatedFileSystem(ExecutionContext* context, const String& filesystemId)
 {
     if (filesystemId.isEmpty())
         return 0;
@@ -88,26 +88,34 @@ PassRefPtr<DOMFileSystem> DOMFileSystem::createIsolatedFileSystem(ExecutionConte
 DOMFileSystem::DOMFileSystem(ExecutionContext* context, const String& name, FileSystemType type, const KURL& rootURL)
     : DOMFileSystemBase(context, name, type, rootURL)
     , ActiveDOMObject(context)
+    , m_numberOfPendingCallbacks(0)
 {
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<DirectoryEntry> DOMFileSystem::root()
+DirectoryEntry* DOMFileSystem::root()
 {
     return DirectoryEntry::create(this, DOMFilePath::root);
 }
 
 void DOMFileSystem::addPendingCallbacks()
 {
-    setPendingActivity(this);
+    ++m_numberOfPendingCallbacks;
 }
 
 void DOMFileSystem::removePendingCallbacks()
 {
-    unsetPendingActivity(this);
+    ASSERT(m_numberOfPendingCallbacks > 0);
+    --m_numberOfPendingCallbacks;
 }
 
-void DOMFileSystem::reportError(PassOwnPtr<ErrorCallback> errorCallback, PassRefPtr<FileError> fileError)
+bool DOMFileSystem::hasPendingActivity() const
+{
+    ASSERT(m_numberOfPendingCallbacks >= 0);
+    return m_numberOfPendingCallbacks;
+}
+
+void DOMFileSystem::reportError(PassOwnPtr<ErrorCallback> errorCallback, PassRefPtrWillBeRawPtr<FileError> fileError)
 {
     scheduleCallback(errorCallback, fileError);
 }
@@ -139,19 +147,19 @@ void DOMFileSystem::createWriter(const FileEntry* fileEntry, PassOwnPtr<FileWrit
 {
     ASSERT(fileEntry);
 
-    RefPtr<FileWriter> fileWriter = FileWriter::create(executionContext());
+    FileWriter* fileWriter = FileWriter::create(executionContext());
     OwnPtr<FileWriterBaseCallback> conversionCallback = ConvertToFileWriterCallback::create(successCallback);
-    OwnPtr<AsyncFileSystemCallbacks> callbacks = FileWriterBaseCallbacks::create(fileWriter, conversionCallback.release(), errorCallback);
-    fileSystem()->createFileWriter(createFileSystemURL(fileEntry), fileWriter.get(), callbacks.release());
+    OwnPtr<AsyncFileSystemCallbacks> callbacks = FileWriterBaseCallbacks::create(fileWriter, conversionCallback.release(), errorCallback, m_context);
+    fileSystem()->createFileWriter(createFileSystemURL(fileEntry), fileWriter, callbacks.release());
 }
 
 namespace {
 
 class SnapshotFileCallback : public FileSystemCallbacksBase {
 public:
-    static PassOwnPtr<AsyncFileSystemCallbacks> create(PassRefPtr<DOMFileSystem> filesystem, const String& name, const KURL& url, PassOwnPtr<FileCallback> successCallback, PassOwnPtr<ErrorCallback> errorCallback)
+    static PassOwnPtr<AsyncFileSystemCallbacks> create(DOMFileSystem* filesystem, const String& name, const KURL& url, PassOwnPtr<FileCallback> successCallback, PassOwnPtr<ErrorCallback> errorCallback, ExecutionContext* context)
     {
-        return adoptPtr(static_cast<AsyncFileSystemCallbacks*>(new SnapshotFileCallback(filesystem, name, url, successCallback, errorCallback)));
+        return adoptPtr(static_cast<AsyncFileSystemCallbacks*>(new SnapshotFileCallback(filesystem, name, url, successCallback, errorCallback, context)));
     }
 
     virtual void didCreateSnapshotFile(const FileMetadata& metadata, PassRefPtr<BlobDataHandle> snapshot)
@@ -182,8 +190,8 @@ public:
     }
 
 private:
-    SnapshotFileCallback(PassRefPtr<DOMFileSystem> filesystem, const String& name,  const KURL& url, PassOwnPtr<FileCallback> successCallback, PassOwnPtr<ErrorCallback> errorCallback)
-        : FileSystemCallbacksBase(errorCallback, filesystem.get())
+    SnapshotFileCallback(DOMFileSystem* filesystem, const String& name, const KURL& url, PassOwnPtr<FileCallback> successCallback, PassOwnPtr<ErrorCallback> errorCallback, ExecutionContext* context)
+        : FileSystemCallbacksBase(errorCallback, filesystem, context)
         , m_name(name)
         , m_url(url)
         , m_successCallback(successCallback)
@@ -200,7 +208,7 @@ private:
 void DOMFileSystem::createFile(const FileEntry* fileEntry, PassOwnPtr<FileCallback> successCallback, PassOwnPtr<ErrorCallback> errorCallback)
 {
     KURL fileSystemURL = createFileSystemURL(fileEntry);
-    fileSystem()->createSnapshotFileAndReadMetadata(fileSystemURL, SnapshotFileCallback::create(this, fileEntry->name(), fileSystemURL, successCallback, errorCallback));
+    fileSystem()->createSnapshotFileAndReadMetadata(fileSystemURL, SnapshotFileCallback::create(this, fileEntry->name(), fileSystemURL, successCallback, errorCallback, m_context));
 }
 
 } // namespace WebCore

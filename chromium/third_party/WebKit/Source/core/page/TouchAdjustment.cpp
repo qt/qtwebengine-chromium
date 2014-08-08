@@ -26,9 +26,9 @@
 #include "core/dom/NodeRenderStyle.h"
 #include "core/dom/Text.h"
 #include "core/editing/Editor.h"
-#include "core/html/HTMLFrameOwnerElement.h"
-#include "core/frame/Frame.h"
 #include "core/frame/FrameView.h"
+#include "core/frame/LocalFrame.h"
+#include "core/html/HTMLFrameOwnerElement.h"
 #include "core/rendering/RenderBox.h"
 #include "core/rendering/RenderObject.h"
 #include "core/rendering/RenderText.h"
@@ -46,22 +46,34 @@ const float zeroTolerance = 1e-6f;
 
 // Class for remembering absolute quads of a target node and what node they represent.
 class SubtargetGeometry {
+    ALLOW_ONLY_INLINE_ALLOCATION();
 public:
     SubtargetGeometry(Node* node, const FloatQuad& quad)
         : m_node(node)
         , m_quad(quad)
     { }
+    void trace(Visitor* visitor) { visitor->trace(m_node); }
 
     Node* node() const { return m_node; }
     FloatQuad quad() const { return m_quad; }
     IntRect boundingBox() const { return m_quad.enclosingBoundingBox(); }
 
 private:
-    Node* m_node;
+    RawPtrWillBeMember<Node> m_node;
     FloatQuad m_quad;
 };
 
-typedef Vector<SubtargetGeometry> SubtargetGeometryList;
+}
+
+}
+
+WTF_ALLOW_MOVE_INIT_AND_COMPARE_WITH_MEM_FUNCTIONS(WebCore::TouchAdjustment::SubtargetGeometry)
+
+namespace WebCore {
+
+namespace TouchAdjustment {
+
+typedef WillBeHeapVector<SubtargetGeometry> SubtargetGeometryList;
 typedef bool (*NodeFilter)(Node*);
 typedef void (*AppendSubtargetsForNode)(Node*, SubtargetGeometryList&);
 typedef float (*DistanceFunction)(const IntPoint&, const IntRect&, const SubtargetGeometry&);
@@ -76,7 +88,7 @@ bool nodeRespondsToTapGesture(Node* node)
         if (element->isMouseFocusable())
             return true;
         // Accept nodes that has a CSS effect when touched.
-        if (element->childrenAffectedByActive() || element->childrenAffectedByHover())
+        if (element->childrenOrSiblingsAffectedByActive() || element->childrenOrSiblingsAffectedByHover())
             return true;
     }
     if (RenderStyle* renderStyle = node->renderStyle()) {
@@ -229,20 +241,20 @@ static inline Node* parentShadowHostOrOwner(const Node* node)
 }
 
 // Compiles a list of subtargets of all the relevant target nodes.
-void compileSubtargetList(const Vector<RefPtr<Node> >& intersectedNodes, SubtargetGeometryList& subtargets, NodeFilter nodeFilter, AppendSubtargetsForNode appendSubtargetsForNode)
+void compileSubtargetList(const WillBeHeapVector<RefPtrWillBeMember<Node> >& intersectedNodes, SubtargetGeometryList& subtargets, NodeFilter nodeFilter, AppendSubtargetsForNode appendSubtargetsForNode)
 {
     // Find candidates responding to tap gesture events in O(n) time.
-    HashMap<Node*, Node*> responderMap;
-    HashSet<Node*> ancestorsToRespondersSet;
-    Vector<Node*> candidates;
-    HashSet<Node*> editableAncestors;
+    WillBeHeapHashMap<RawPtrWillBeMember<Node>, RawPtrWillBeMember<Node> > responderMap;
+    WillBeHeapHashSet<RawPtrWillBeMember<Node> > ancestorsToRespondersSet;
+    WillBeHeapVector<RawPtrWillBeMember<Node> > candidates;
+    WillBeHeapHashSet<RawPtrWillBeMember<Node> > editableAncestors;
 
     // A node matching the NodeFilter is called a responder. Candidate nodes must either be a
     // responder or have an ancestor that is a responder.
     // This iteration tests all ancestors at most once by caching earlier results.
     for (unsigned i = 0; i < intersectedNodes.size(); ++i) {
         Node* node = intersectedNodes[i].get();
-        Vector<Node*> visitedNodes;
+        WillBeHeapVector<RawPtrWillBeMember<Node> > visitedNodes;
         Node* respondingNode = 0;
         for (Node* visitedNode = node; visitedNode; visitedNode = visitedNode->parentOrShadowHostNode()) {
             // Check if we already have a result for a common ancestor from another candidate.
@@ -255,7 +267,7 @@ void compileSubtargetList(const Vector<RefPtr<Node> >& intersectedNodes, Subtarg
                 respondingNode = visitedNode;
                 // Continue the iteration to collect the ancestors of the responder, which we will need later.
                 for (visitedNode = parentShadowHostOrOwner(visitedNode); visitedNode; visitedNode = parentShadowHostOrOwner(visitedNode)) {
-                    HashSet<Node*>::AddResult addResult = ancestorsToRespondersSet.add(visitedNode);
+                    WillBeHeapHashSet<RawPtrWillBeMember<Node> >::AddResult addResult = ancestorsToRespondersSet.add(visitedNode);
                     if (!addResult.isNewEntry)
                         break;
                 }
@@ -304,7 +316,7 @@ void compileSubtargetList(const Vector<RefPtr<Node> >& intersectedNodes, Subtarg
 }
 
 // Compiles a list of zoomable subtargets.
-void compileZoomableSubtargets(const Vector<RefPtr<Node> >& intersectedNodes, SubtargetGeometryList& subtargets)
+void compileZoomableSubtargets(const WillBeHeapVector<RefPtrWillBeMember<Node> >& intersectedNodes, SubtargetGeometryList& subtargets)
 {
     for (unsigned i = 0; i < intersectedNodes.size(); ++i) {
         Node* candidate = intersectedNodes[i].get();
@@ -469,7 +481,7 @@ bool findNodeWithLowestDistanceMetric(Node*& targetNode, IntPoint& targetPoint, 
 
 } // namespace TouchAdjustment
 
-bool findBestClickableCandidate(Node*& targetNode, IntPoint &targetPoint, const IntPoint &touchHotspot, const IntRect &touchArea, const Vector<RefPtr<Node> >& nodes)
+bool findBestClickableCandidate(Node*& targetNode, IntPoint& targetPoint, const IntPoint& touchHotspot, const IntRect& touchArea, const WillBeHeapVector<RefPtrWillBeMember<Node> >& nodes)
 {
     IntRect targetArea;
     TouchAdjustment::SubtargetGeometryList subtargets;
@@ -477,7 +489,7 @@ bool findBestClickableCandidate(Node*& targetNode, IntPoint &targetPoint, const 
     return TouchAdjustment::findNodeWithLowestDistanceMetric(targetNode, targetPoint, targetArea, touchHotspot, touchArea, subtargets, TouchAdjustment::hybridDistanceFunction);
 }
 
-bool findBestContextMenuCandidate(Node*& targetNode, IntPoint &targetPoint, const IntPoint &touchHotspot, const IntRect &touchArea, const Vector<RefPtr<Node> >& nodes)
+bool findBestContextMenuCandidate(Node*& targetNode, IntPoint& targetPoint, const IntPoint& touchHotspot, const IntRect& touchArea, const WillBeHeapVector<RefPtrWillBeMember<Node> >& nodes)
 {
     IntRect targetArea;
     TouchAdjustment::SubtargetGeometryList subtargets;
@@ -485,7 +497,7 @@ bool findBestContextMenuCandidate(Node*& targetNode, IntPoint &targetPoint, cons
     return TouchAdjustment::findNodeWithLowestDistanceMetric(targetNode, targetPoint, targetArea, touchHotspot, touchArea, subtargets, TouchAdjustment::hybridDistanceFunction);
 }
 
-bool findBestZoomableArea(Node*& targetNode, IntRect& targetArea, const IntPoint& touchHotspot, const IntRect& touchArea, const Vector<RefPtr<Node> >& nodes)
+bool findBestZoomableArea(Node*& targetNode, IntRect& targetArea, const IntPoint& touchHotspot, const IntRect& touchArea, const WillBeHeapVector<RefPtrWillBeMember<Node> >& nodes)
 {
     IntPoint targetPoint;
     TouchAdjustment::SubtargetGeometryList subtargets;

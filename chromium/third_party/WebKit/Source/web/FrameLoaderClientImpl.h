@@ -39,138 +39,141 @@
 
 namespace blink {
 
-class WebFrameImpl;
+class WebLocalFrameImpl;
 class WebPluginContainerImpl;
 class WebPluginLoadObserver;
 
-class FrameLoaderClientImpl : public WebCore::FrameLoaderClient {
+class FrameLoaderClientImpl FINAL : public WebCore::FrameLoaderClient {
 public:
-    FrameLoaderClientImpl(WebFrameImpl* webFrame);
-    ~FrameLoaderClientImpl();
+    FrameLoaderClientImpl(WebLocalFrameImpl* webFrame);
+    virtual ~FrameLoaderClientImpl();
 
-    WebFrameImpl* webFrame() const { return m_webFrame; }
+    WebLocalFrameImpl* webFrame() const { return m_webFrame; }
 
     // WebCore::FrameLoaderClient ----------------------------------------------
-
-    virtual void frameLoaderDestroyed();
 
     // Notifies the WebView delegate that the JS window object has been cleared,
     // giving it a chance to bind native objects to the window before script
     // parsing begins.
-    virtual void dispatchDidClearWindowObjectInWorld(WebCore::DOMWrapperWorld*);
-    virtual void documentElementAvailable();
+    virtual void dispatchDidClearWindowObjectInMainWorld() OVERRIDE;
+    virtual void documentElementAvailable() OVERRIDE;
 
-    // Script in the page tried to allocate too much memory.
-    virtual void didExhaustMemoryAvailableForScript();
-
-    virtual void didCreateScriptContext(v8::Handle<v8::Context>, int extensionGroup, int worldId);
-    virtual void willReleaseScriptContext(v8::Handle<v8::Context>, int worldId);
+    virtual void didCreateScriptContext(v8::Handle<v8::Context>, int extensionGroup, int worldId) OVERRIDE;
+    virtual void willReleaseScriptContext(v8::Handle<v8::Context>, int worldId) OVERRIDE;
 
     // Returns true if we should allow the given V8 extension to be added to
     // the script context at the currently loading page and given extension group.
-    virtual bool allowScriptExtension(const String& extensionName, int extensionGroup, int worldId);
+    virtual bool allowScriptExtension(const String& extensionName, int extensionGroup, int worldId) OVERRIDE;
 
-    virtual bool hasWebView() const;
-    virtual bool hasFrameView() const;
-    virtual void detachedFromParent();
-    virtual void dispatchWillRequestAfterPreconnect(WebCore::ResourceRequest&);
-    virtual void dispatchWillSendRequest(WebCore::DocumentLoader*, unsigned long identifier, WebCore::ResourceRequest&, const WebCore::ResourceResponse& redirectResponse);
-    virtual void dispatchDidReceiveResponse(WebCore::DocumentLoader*, unsigned long identifier, const WebCore::ResourceResponse&);
-    virtual void dispatchDidChangeResourcePriority(unsigned long identifier, WebCore::ResourceLoadPriority);
-    virtual void dispatchDidFinishLoading(WebCore::DocumentLoader*, unsigned long identifier);
-    virtual void dispatchDidLoadResourceFromMemoryCache(const WebCore::ResourceRequest&, const WebCore::ResourceResponse&);
-    virtual void dispatchDidHandleOnloadEvents();
-    virtual void dispatchDidReceiveServerRedirectForProvisionalLoad();
-    virtual void dispatchDidNavigateWithinPage(WebCore::NavigationHistoryPolicy, WebCore::HistoryItem*);
-    virtual void dispatchWillClose();
-    virtual void dispatchDidStartProvisionalLoad();
-    virtual void dispatchDidReceiveTitle(const String&);
-    virtual void dispatchDidChangeIcons(WebCore::IconType);
-    virtual void dispatchDidCommitLoad(WebCore::Frame*, WebCore::HistoryItem*, WebCore::NavigationHistoryPolicy);
-    virtual void dispatchDidFailProvisionalLoad(const WebCore::ResourceError&);
-    virtual void dispatchDidFailLoad(const WebCore::ResourceError&);
-    virtual void dispatchDidFinishDocumentLoad();
-    virtual void dispatchDidFinishLoad();
+    virtual bool hasWebView() const OVERRIDE;
+    virtual WebCore::Frame* opener() const OVERRIDE;
+    virtual void setOpener(WebCore::Frame*) OVERRIDE;
+    virtual WebCore::Frame* parent() const OVERRIDE;
+    virtual WebCore::Frame* top() const OVERRIDE;
+    virtual WebCore::Frame* previousSibling() const OVERRIDE;
+    virtual WebCore::Frame* nextSibling() const OVERRIDE;
+    virtual WebCore::Frame* firstChild() const OVERRIDE;
+    virtual WebCore::Frame* lastChild() const OVERRIDE;
+    virtual void detachedFromParent() OVERRIDE;
+    virtual void dispatchWillRequestAfterPreconnect(WebCore::ResourceRequest&) OVERRIDE;
+    virtual void dispatchWillSendRequest(WebCore::DocumentLoader*, unsigned long identifier, WebCore::ResourceRequest&, const WebCore::ResourceResponse& redirectResponse) OVERRIDE;
+    virtual void dispatchDidReceiveResponse(WebCore::DocumentLoader*, unsigned long identifier, const WebCore::ResourceResponse&) OVERRIDE;
+    virtual void dispatchDidChangeResourcePriority(unsigned long identifier, WebCore::ResourceLoadPriority, int intraPriorityValue) OVERRIDE;
+    virtual void dispatchDidFinishLoading(WebCore::DocumentLoader*, unsigned long identifier) OVERRIDE;
+    virtual void dispatchDidLoadResourceFromMemoryCache(const WebCore::ResourceRequest&, const WebCore::ResourceResponse&) OVERRIDE;
+    virtual void dispatchDidHandleOnloadEvents() OVERRIDE;
+    virtual void dispatchDidReceiveServerRedirectForProvisionalLoad() OVERRIDE;
+    virtual void dispatchDidNavigateWithinPage(WebCore::HistoryItem*, WebCore::HistoryCommitType) OVERRIDE;
+    virtual void dispatchWillClose() OVERRIDE;
+    virtual void dispatchDidStartProvisionalLoad() OVERRIDE;
+    virtual void dispatchDidReceiveTitle(const String&) OVERRIDE;
+    virtual void dispatchDidChangeIcons(WebCore::IconType) OVERRIDE;
+    virtual void dispatchDidCommitLoad(WebCore::LocalFrame*, WebCore::HistoryItem*, WebCore::HistoryCommitType) OVERRIDE;
+    virtual void dispatchDidFailProvisionalLoad(const WebCore::ResourceError&) OVERRIDE;
+    virtual void dispatchDidFailLoad(const WebCore::ResourceError&) OVERRIDE;
+    virtual void dispatchDidFinishDocumentLoad() OVERRIDE;
+    virtual void dispatchDidFinishLoad() OVERRIDE;
     virtual void dispatchDidFirstVisuallyNonEmptyLayout() OVERRIDE;
-    virtual WebCore::NavigationPolicy decidePolicyForNavigation(const WebCore::ResourceRequest&, WebCore::DocumentLoader*, WebCore::NavigationPolicy);
-    virtual void dispatchWillRequestResource(WebCore::FetchRequest*);
-    virtual void dispatchWillSendSubmitEvent(PassRefPtr<WebCore::FormState>);
-    virtual void dispatchWillSubmitForm(PassRefPtr<WebCore::FormState>);
-    virtual void postProgressStartedNotification();
-    virtual void postProgressEstimateChangedNotification();
-    virtual void postProgressFinishedNotification();
-    virtual void loadURLExternally(const WebCore::ResourceRequest&, WebCore::NavigationPolicy, const String& suggestedName = String());
-    virtual bool navigateBackForward(int offset) const;
-    virtual void didAccessInitialDocument();
-    virtual void didDisownOpener();
-    virtual void didDisplayInsecureContent();
-    virtual void didRunInsecureContent(WebCore::SecurityOrigin*, const WebCore::KURL& insecureURL);
-    virtual void didDetectXSS(const WebCore::KURL&, bool didBlockEntirePage);
-    virtual void didDispatchPingLoader(const WebCore::KURL&);
-    virtual void selectorMatchChanged(const Vector<String>& addedSelectors, const Vector<String>& removedSelectors);
-    virtual PassRefPtr<WebCore::DocumentLoader> createDocumentLoader(
-        const WebCore::ResourceRequest&, const WebCore::SubstituteData&);
-    virtual WTF::String userAgent(const WebCore::KURL&);
-    virtual WTF::String doNotTrackValue();
-    virtual void transitionToCommittedForNewPage();
-    virtual PassRefPtr<WebCore::Frame> createFrame(const WebCore::KURL&, const WTF::String& name, const WTF::String& referrer, WebCore::HTMLFrameOwnerElement*);
+    virtual void dispatchDidChangeThemeColor() OVERRIDE;
+    virtual WebCore::NavigationPolicy decidePolicyForNavigation(const WebCore::ResourceRequest&, WebCore::DocumentLoader*, WebCore::NavigationPolicy) OVERRIDE;
+    virtual void dispatchWillRequestResource(WebCore::FetchRequest*) OVERRIDE;
+    virtual void dispatchWillSendSubmitEvent(WebCore::HTMLFormElement*) OVERRIDE;
+    virtual void dispatchWillSubmitForm(WebCore::HTMLFormElement*) OVERRIDE;
+    virtual void didStartLoading(WebCore::LoadStartType) OVERRIDE;
+    virtual void didStopLoading() OVERRIDE;
+    virtual void progressEstimateChanged(double progressEstimate) OVERRIDE;
+    virtual void loadURLExternally(const WebCore::ResourceRequest&, WebCore::NavigationPolicy, const String& suggestedName = String()) OVERRIDE;
+    virtual bool navigateBackForward(int offset) const OVERRIDE;
+    virtual void didAccessInitialDocument() OVERRIDE;
+    virtual void didDisplayInsecureContent() OVERRIDE;
+    virtual void didRunInsecureContent(WebCore::SecurityOrigin*, const WebCore::KURL& insecureURL) OVERRIDE;
+    virtual void didDetectXSS(const WebCore::KURL&, bool didBlockEntirePage) OVERRIDE;
+    virtual void didDispatchPingLoader(const WebCore::KURL&) OVERRIDE;
+    virtual void selectorMatchChanged(const Vector<String>& addedSelectors, const Vector<String>& removedSelectors) OVERRIDE;
+    virtual PassRefPtr<WebCore::DocumentLoader> createDocumentLoader(WebCore::LocalFrame*, const WebCore::ResourceRequest&, const WebCore::SubstituteData&) OVERRIDE;
+    virtual WTF::String userAgent(const WebCore::KURL&) OVERRIDE;
+    virtual WTF::String doNotTrackValue() OVERRIDE;
+    virtual void transitionToCommittedForNewPage() OVERRIDE;
+    virtual PassRefPtr<WebCore::LocalFrame> createFrame(const WebCore::KURL&, const WTF::AtomicString& name, const WebCore::Referrer&, WebCore::HTMLFrameOwnerElement*) OVERRIDE;
+    virtual bool canCreatePluginWithoutRenderer(const String& mimeType) const;
     virtual PassRefPtr<WebCore::Widget> createPlugin(
-        const WebCore::IntSize&, WebCore::HTMLPlugInElement*, const WebCore::KURL&,
+        WebCore::HTMLPlugInElement*, const WebCore::KURL&,
         const Vector<WTF::String>&, const Vector<WTF::String>&,
-        const WTF::String&, bool loadManually);
+        const WTF::String&, bool loadManually, DetachedPluginPolicy) OVERRIDE;
     virtual PassRefPtr<WebCore::Widget> createJavaAppletWidget(
-        const WebCore::IntSize&,
         WebCore::HTMLAppletElement*,
         const WebCore::KURL& /* base_url */,
         const Vector<WTF::String>& paramNames,
-        const Vector<WTF::String>& paramValues);
+        const Vector<WTF::String>& paramValues) OVERRIDE;
     virtual WebCore::ObjectContentType objectContentType(
-        const WebCore::KURL&, const WTF::String& mimeType, bool shouldPreferPlugInsForImages);
-    virtual void didChangeScrollOffset();
-    virtual bool allowScript(bool enabledPerSettings);
-    virtual bool allowScriptFromSource(bool enabledPerSettings, const WebCore::KURL& scriptURL);
-    virtual bool allowPlugins(bool enabledPerSettings);
-    virtual bool allowImage(bool enabledPerSettings, const WebCore::KURL& imageURL);
-    virtual bool allowDisplayingInsecureContent(bool enabledPerSettings, WebCore::SecurityOrigin*, const WebCore::KURL&);
-    virtual bool allowRunningInsecureContent(bool enabledPerSettings, WebCore::SecurityOrigin*, const WebCore::KURL&);
-    virtual void didNotAllowScript();
-    virtual void didNotAllowPlugins();
+        const WebCore::KURL&, const WTF::String& mimeType, bool shouldPreferPlugInsForImages) OVERRIDE;
+    virtual void didChangeScrollOffset() OVERRIDE;
+    virtual void didUpdateCurrentHistoryItem() OVERRIDE;
+    virtual bool allowScript(bool enabledPerSettings) OVERRIDE;
+    virtual bool allowScriptFromSource(bool enabledPerSettings, const WebCore::KURL& scriptURL) OVERRIDE;
+    virtual bool allowPlugins(bool enabledPerSettings) OVERRIDE;
+    virtual bool allowImage(bool enabledPerSettings, const WebCore::KURL& imageURL) OVERRIDE;
+    virtual bool allowDisplayingInsecureContent(bool enabledPerSettings, WebCore::SecurityOrigin*, const WebCore::KURL&) OVERRIDE;
+    virtual bool allowRunningInsecureContent(bool enabledPerSettings, WebCore::SecurityOrigin*, const WebCore::KURL&) OVERRIDE;
+    virtual void didNotAllowScript() OVERRIDE;
+    virtual void didNotAllowPlugins() OVERRIDE;
 
-    virtual WebCookieJar* cookieJar() const;
-    virtual bool willCheckAndDispatchMessageEvent(WebCore::SecurityOrigin* target, WebCore::MessageEvent*) const;
-    virtual void didChangeName(const String&);
+    virtual WebCookieJar* cookieJar() const OVERRIDE;
+    virtual bool willCheckAndDispatchMessageEvent(WebCore::SecurityOrigin* target, WebCore::MessageEvent*) const OVERRIDE;
+    virtual void didChangeName(const String&) OVERRIDE;
 
     virtual void dispatchWillOpenSocketStream(WebCore::SocketStreamHandle*) OVERRIDE;
+    virtual void dispatchWillOpenWebSocket(blink::WebSocketHandle*) OVERRIDE;
 
-    virtual void dispatchWillStartUsingPeerConnectionHandler(WebCore::RTCPeerConnectionHandler*) OVERRIDE;
+    virtual void dispatchWillStartUsingPeerConnectionHandler(blink::WebRTCPeerConnectionHandler*) OVERRIDE;
 
-    virtual void didRequestAutocomplete(PassRefPtr<WebCore::FormState>) OVERRIDE;
+    virtual void didRequestAutocomplete(WebCore::HTMLFormElement*) OVERRIDE;
 
     virtual bool allowWebGL(bool enabledPerSettings) OVERRIDE;
     virtual void didLoseWebGLContext(int arbRobustnessContextLostReason) OVERRIDE;
-    virtual bool allowWebGLDebugRendererInfo() OVERRIDE;
 
     virtual void dispatchWillInsertBody() OVERRIDE;
 
-    virtual PassOwnPtr<WebServiceWorkerProvider> createServiceWorkerProvider(PassOwnPtr<WebServiceWorkerProviderClient>) OVERRIDE;
+    virtual PassOwnPtr<WebServiceWorkerProvider> createServiceWorkerProvider() OVERRIDE;
+    virtual WebCore::SharedWorkerRepositoryClient* sharedWorkerRepositoryClient() OVERRIDE;
+
+    virtual PassOwnPtr<WebApplicationCacheHost> createApplicationCacheHost(WebApplicationCacheHostClient*) OVERRIDE;
 
     virtual void didStopAllLoaders() OVERRIDE;
+
+    virtual void dispatchDidChangeManifest() OVERRIDE;
 
 private:
     virtual bool isFrameLoaderClientImpl() const OVERRIDE { return true; }
 
-    PassOwnPtr<WebPluginLoadObserver> pluginLoadObserver();
+    PassOwnPtr<WebPluginLoadObserver> pluginLoadObserver(WebCore::DocumentLoader*);
 
     // The WebFrame that owns this object and manages its lifetime. Therefore,
     // the web frame object is guaranteed to exist.
-    WebFrameImpl* m_webFrame;
+    WebLocalFrameImpl* m_webFrame;
 };
 
-inline FrameLoaderClientImpl* toFrameLoaderClientImpl(WebCore::FrameLoaderClient* client)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!client || client->isFrameLoaderClientImpl());
-    return static_cast<FrameLoaderClientImpl*>(client);
-}
+DEFINE_TYPE_CASTS(FrameLoaderClientImpl, WebCore::FrameLoaderClient, client, client->isFrameLoaderClientImpl(), client.isFrameLoaderClientImpl());
 
 } // namespace blink
 

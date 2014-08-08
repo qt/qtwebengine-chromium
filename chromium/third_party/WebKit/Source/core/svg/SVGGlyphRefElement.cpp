@@ -22,44 +22,31 @@
 #if ENABLE(SVG_FONTS)
 #include "core/svg/SVGGlyphRefElement.h"
 
-#include "XLinkNames.h"
+#include "core/XLinkNames.h"
 #include "core/svg/SVGParserUtilities.h"
 #include "wtf/text/AtomicString.h"
 
 namespace WebCore {
 
-// Animated property definitions
-DEFINE_ANIMATED_STRING(SVGGlyphRefElement, XLinkNames::hrefAttr, Href, href)
-
-BEGIN_REGISTER_ANIMATED_PROPERTIES(SVGGlyphRefElement)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(href)
-    REGISTER_PARENT_ANIMATED_PROPERTIES(SVGElement)
-END_REGISTER_ANIMATED_PROPERTIES
-
 inline SVGGlyphRefElement::SVGGlyphRefElement(Document& document)
     : SVGElement(SVGNames::glyphRefTag, document)
+    , SVGURIReference(this)
     , m_x(0)
     , m_y(0)
     , m_dx(0)
     , m_dy(0)
 {
     ScriptWrappable::init(this);
-    registerAnimatedPropertiesForSVGGlyphRefElement();
 }
 
-PassRefPtr<SVGGlyphRefElement> SVGGlyphRefElement::create(Document& document)
-{
-    return adoptRef(new SVGGlyphRefElement(document));
-}
+DEFINE_NODE_FACTORY(SVGGlyphRefElement)
 
-bool SVGGlyphRefElement::hasValidGlyphElement(String& glyphName) const
+bool SVGGlyphRefElement::hasValidGlyphElement(AtomicString& glyphName) const
 {
     // FIXME: We only support xlink:href so far.
     // https://bugs.webkit.org/show_bug.cgi?id=64787
     Element* element = targetElementFromIRIString(getAttribute(XLinkNames::hrefAttr), document(), &glyphName);
-    if (!element || !element->hasTagName(SVGNames::glyphTag))
-        return false;
-    return true;
+    return isSVGGlyphElement(element);
 }
 
 template<typename CharType>
@@ -69,6 +56,7 @@ void SVGGlyphRefElement::parseAttributeInternal(const QualifiedName& name, const
     const CharType* end = ptr + value.length();
 
     // FIXME: We need some error handling here.
+    SVGParsingError parseError = NoError;
     if (name == SVGNames::xAttr) {
         parseNumber(ptr, end, m_x);
     } else if (name == SVGNames::yAttr) {
@@ -77,11 +65,11 @@ void SVGGlyphRefElement::parseAttributeInternal(const QualifiedName& name, const
         parseNumber(ptr, end, m_dx);
     } else if (name == SVGNames::dyAttr) {
         parseNumber(ptr, end, m_dy);
+    } else if (SVGURIReference::parseAttribute(name, value, parseError)) {
     } else {
-        if (SVGURIReference::parseAttribute(name, value))
-            return;
         SVGElement::parseAttribute(name, value);
     }
+    reportAttributeParsingError(parseError, name, value);
 }
 
 void SVGGlyphRefElement::parseAttribute(const QualifiedName& name, const AtomicString& value)

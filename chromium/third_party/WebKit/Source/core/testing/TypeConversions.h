@@ -32,9 +32,12 @@
 
 namespace WebCore {
 
-class TypeConversions : public RefCounted<TypeConversions> {
+class TypeConversions : public RefCountedWillBeGarbageCollectedFinalized<TypeConversions> {
 public:
-    static PassRefPtr<TypeConversions> create() { return adoptRef(new TypeConversions()); }
+    static PassRefPtrWillBeRawPtr<TypeConversions> create()
+    {
+        return adoptRefWillBeNoop(new TypeConversions());
+    }
 
     long testLong() { return m_long; }
     void setTestLong(long value) { m_long = value; }
@@ -56,6 +59,14 @@ public:
     uint16_t testUnsignedShort() { return m_unsignedShort; }
     void setTestUnsignedShort(uint16_t value) { m_unsignedShort = value; }
 
+    const String& testByteString() const { return m_byteString; }
+    void setTestByteString(const String& value) { m_byteString = value; }
+
+    const String& testScalarValueString() const { return m_scalarValueString; }
+    void setTestScalarValueString(const String& value) { m_scalarValueString = value; }
+
+    void trace(Visitor*) { }
+
 private:
     TypeConversions()
     {
@@ -69,6 +80,8 @@ private:
     uint8_t m_octet;
     int16_t m_short;
     uint16_t m_unsignedShort;
+    String m_byteString;
+    String m_scalarValueString;
 };
 
 } // namespace WebCore

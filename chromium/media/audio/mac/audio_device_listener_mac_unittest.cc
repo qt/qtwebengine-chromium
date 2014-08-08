@@ -9,7 +9,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "media/audio/mac/audio_device_listener_mac.h"
-#include "media/base/bind_to_loop.h"
+#include "media/base/bind_to_current_loop.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -36,12 +36,11 @@ class AudioDeviceListenerMacTest : public testing::Test {
   }
 
   void CreateDeviceListener() {
-    // Force a post task using BindToLoop to ensure device listener internals
-    // are working correctly.
-    output_device_listener_.reset(new AudioDeviceListenerMac(BindToLoop(
-        message_loop_.message_loop_proxy(), base::Bind(
-            &AudioDeviceListenerMacTest::OnDeviceChange,
-            base::Unretained(this)))));
+    // Force a post task using BindToCurrentLoop() to ensure device listener
+    // internals are working correctly.
+    output_device_listener_.reset(new AudioDeviceListenerMac(BindToCurrentLoop(
+        base::Bind(&AudioDeviceListenerMacTest::OnDeviceChange,
+                   base::Unretained(this)))));
   }
 
   void DestroyDeviceListener() {

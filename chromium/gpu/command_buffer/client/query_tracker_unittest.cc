@@ -18,6 +18,11 @@
 namespace gpu {
 namespace gles2 {
 
+namespace {
+void EmptyPoll() {
+}
+}
+
 class QuerySyncManagerTest : public testing::Test {
  protected:
   static const int32 kNumCommandEntries = 400;
@@ -29,7 +34,7 @@ class QuerySyncManagerTest : public testing::Test {
     helper_.reset(new GLES2CmdHelper(command_buffer_.get()));
     helper_->Initialize(kCommandBufferSizeBytes);
     mapped_memory_.reset(new MappedMemoryManager(
-        helper_.get(), MappedMemoryManager::kNoLimit));
+        helper_.get(), base::Bind(&EmptyPoll), MappedMemoryManager::kNoLimit));
     sync_manager_.reset(new QuerySyncManager(mapped_memory_.get()));
   }
 
@@ -54,7 +59,7 @@ TEST_F(QuerySyncManagerTest, Basic) {
     EXPECT_TRUE(sync_manager_->Alloc(&infos[ii]));
     EXPECT_NE(0, infos[ii].shm_id);
     ASSERT_TRUE(infos[ii].sync != NULL);
-    EXPECT_EQ(0u, infos[ii].sync->process_count);
+    EXPECT_EQ(0, infos[ii].sync->process_count);
     EXPECT_EQ(0u, infos[ii].sync->result);
   }
 
@@ -83,7 +88,7 @@ class QueryTrackerTest : public testing::Test {
     helper_.reset(new GLES2CmdHelper(command_buffer_.get()));
     helper_->Initialize(kCommandBufferSizeBytes);
     mapped_memory_.reset(new MappedMemoryManager(
-        helper_.get(), MappedMemoryManager::kNoLimit));
+        helper_.get(), base::Bind(&EmptyPoll), MappedMemoryManager::kNoLimit));
     query_tracker_.reset(new QueryTracker(mapped_memory_.get()));
   }
 
@@ -101,6 +106,8 @@ class QueryTrackerTest : public testing::Test {
   QuerySyncManager::Bucket* GetBucket(QueryTracker::Query* query) {
     return query->info_.bucket;
   }
+
+  uint32 GetFlushGeneration() { return helper_->flush_generation(); }
 
   scoped_ptr<CommandBuffer> command_buffer_;
   scoped_ptr<GLES2CmdHelper> helper_;
@@ -138,26 +145,47 @@ TEST_F(QueryTrackerTest, Query) {
   EXPECT_TRUE(query->NeverUsed());
   EXPECT_FALSE(query->Pending());
   EXPECT_EQ(0, query->token());
-  EXPECT_EQ(0u, query->submit_count());
+  EXPECT_EQ(0, query->submit_count());
 
   // Check MarkAsActive.
   query->MarkAsActive();
   EXPECT_FALSE(query->NeverUsed());
   EXPECT_FALSE(query->Pending());
   EXPECT_EQ(0, query->token());
-  EXPECT_EQ(1u, query->submit_count());
+  EXPECT_EQ(1, query->submit_count());
 
   // Check MarkAsPending.
   query->MarkAsPending(kToken);
   EXPECT_FALSE(query->NeverUsed());
   EXPECT_TRUE(query->Pending());
   EXPECT_EQ(kToken, query->token());
-  EXPECT_EQ(1u, query->submit_count());
+  EXPECT_EQ(1, query->submit_count());
 
   // Check CheckResultsAvailable.
   EXPECT_FALSE(query->CheckResultsAvailable(helper_.get()));
   EXPECT_FALSE(query->NeverUsed());
   EXPECT_TRUE(query->Pending());
+
+  // Flush only once if no more flushes happened between a call to
+  // EndQuery command and CheckResultsAvailable
+  // Advance put_ so flush calls in CheckResultsAvailable go through
+  // and updates flush_generation count
+  helper_->Noop(1);
+  // Set Query in pending state_ to simulate EndQuery command is called
+  query->MarkAsPending(kToken);
+  EXPECT_TRUE(query->Pending());
+  // Store FlushGeneration count after EndQuery is called
+  uint32 gen1 = GetFlushGeneration();
+  EXPECT_FALSE(query->CheckResultsAvailable(helper_.get()));
+  uint32 gen2 = GetFlushGeneration();
+  EXPECT_NE(gen1, gen2);
+  // Repeated calls to CheckResultsAvailable should not flush unnecessarily
+  EXPECT_FALSE(query->CheckResultsAvailable(helper_.get()));
+  gen1 = GetFlushGeneration();
+  EXPECT_EQ(gen1, gen2);
+  EXPECT_FALSE(query->CheckResultsAvailable(helper_.get()));
+  gen1 = GetFlushGeneration();
+  EXPECT_EQ(gen1, gen2);
 
   // Simulate GPU process marking it as available.
   QuerySync* sync = GetSync(query);

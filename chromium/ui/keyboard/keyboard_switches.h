@@ -13,8 +13,28 @@ namespace switches {
 // Enables the swipe selection feature on the virtual keyboard.
 KEYBOARD_EXPORT extern const char kEnableSwipeSelection[];
 
+// Disables IME extension APIs from overriding the URL for specifying the
+// contents of the virtual keyboard container.
+KEYBOARD_EXPORT extern const char kDisableInputView[];
+
+// Enables an IME extension API to set a URL for specifying the contents
+// of the virtual keyboard container.
+KEYBOARD_EXPORT extern const char kEnableInputView[];
+
+// Enables experimental features for IME extensions.
+KEYBOARD_EXPORT extern const char kEnableExperimentalInputViewFeatures[];
+
 // Enables the virtual keyboard.
 KEYBOARD_EXPORT extern const char kEnableVirtualKeyboard[];
+
+// Disabled overscrolling of web content when the virtual keyboard is displayed.
+// If disabled, the work area is resized to restrict windows from overlapping
+// with the keybaord area.
+KEYBOARD_EXPORT extern const char kDisableVirtualKeyboardOverscroll[];
+
+// Enable overscrolling of web content when the virtual keyboard is displayed
+// to provide access to content that would otherwise be occluded.
+KEYBOARD_EXPORT extern const char kEnableVirtualKeyboardOverscroll[];
 
 // Enables the keyboard usability experiment. This is an experimental mode for
 // testing the usability of various experimental keyboard layouts.

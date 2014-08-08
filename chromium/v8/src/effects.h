@@ -1,36 +1,13 @@
 // Copyright 2013 the V8 project authors. All rights reserved.
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-//       copyright notice, this list of conditions and the following
-//       disclaimer in the documentation and/or other materials provided
-//       with the distribution.
-//     * Neither the name of Google Inc. nor the names of its
-//       contributors may be used to endorse or promote products derived
-//       from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
 #ifndef V8_EFFECTS_H_
 #define V8_EFFECTS_H_
 
-#include "v8.h"
+#include "src/v8.h"
 
-#include "types.h"
+#include "src/types.h"
 
 namespace v8 {
 namespace internal {
@@ -59,24 +36,24 @@ struct Effect {
   Effect(Bounds b, Modality m = DEFINITE) : modality(m), bounds(b) {}
 
   // The unknown effect.
-  static Effect Unknown(Isolate* isolate) {
-    return Effect(Bounds::Unbounded(isolate), POSSIBLE);
+  static Effect Unknown(Zone* zone) {
+    return Effect(Bounds::Unbounded(zone), POSSIBLE);
   }
 
-  static Effect Forget(Isolate* isolate) {
-    return Effect(Bounds::Unbounded(isolate), DEFINITE);
+  static Effect Forget(Zone* zone) {
+    return Effect(Bounds::Unbounded(zone), DEFINITE);
   }
 
   // Sequential composition, as in 'e1; e2'.
-  static Effect Seq(Effect e1, Effect e2, Isolate* isolate) {
+  static Effect Seq(Effect e1, Effect e2, Zone* zone) {
     if (e2.modality == DEFINITE) return e2;
-    return Effect(Bounds::Either(e1.bounds, e2.bounds, isolate), e1.modality);
+    return Effect(Bounds::Either(e1.bounds, e2.bounds, zone), e1.modality);
   }
 
   // Alternative composition, as in 'cond ? e1 : e2'.
-  static Effect Alt(Effect e1, Effect e2, Isolate* isolate) {
+  static Effect Alt(Effect e1, Effect e2, Zone* zone) {
     return Effect(
-        Bounds::Either(e1.bounds, e2.bounds, isolate),
+        Bounds::Either(e1.bounds, e2.bounds, zone),
         e1.modality == POSSIBLE ? POSSIBLE : e2.modality);
   }
 };
@@ -106,20 +83,20 @@ class EffectsMixin: public Base {
   Effect Lookup(Var var) {
     Locator locator;
     return this->Find(var, &locator)
-        ? locator.value() : Effect::Unknown(Base::isolate());
+        ? locator.value() : Effect::Unknown(Base::zone());
   }
 
   Bounds LookupBounds(Var var) {
     Effect effect = Lookup(var);
     return effect.modality == Effect::DEFINITE
-        ? effect.bounds : Bounds::Unbounded(Base::isolate());
+        ? effect.bounds : Bounds::Unbounded(Base::zone());
   }
 
   // Sequential composition.
   void Seq(Var var, Effect effect) {
     Locator locator;
     if (!this->Insert(var, &locator)) {
-      effect = Effect::Seq(locator.value(), effect, Base::isolate());
+      effect = Effect::Seq(locator.value(), effect, Base::zone());
     }
     locator.set_value(effect);
   }
@@ -133,7 +110,7 @@ class EffectsMixin: public Base {
   void Alt(Var var, Effect effect) {
     Locator locator;
     if (!this->Insert(var, &locator)) {
-      effect = Effect::Alt(locator.value(), effect, Base::isolate());
+      effect = Effect::Alt(locator.value(), effect, Base::zone());
     }
     locator.set_value(effect);
   }
@@ -148,7 +125,7 @@ class EffectsMixin: public Base {
   // Invalidation.
   void Forget() {
     Overrider override = {
-        Effect::Forget(Base::isolate()), Effects(Base::zone()) };
+        Effect::Forget(Base::zone()), Effects(Base::zone()) };
     this->ForEach(&override);
     Seq(override.effects);
   }
@@ -206,7 +183,6 @@ class EffectsBase {
       EffectsMixin<Var, NestedEffectsBase<Var, kNoVar>, Effects<Var, kNoVar> >;
 
   Zone* zone() { return map_->allocator().zone(); }
-  Isolate* isolate() { return zone()->isolate(); }
 
   struct SplayTreeConfig {
     typedef Var Key;
@@ -277,7 +253,6 @@ class NestedEffectsBase {
   typedef typename EffectsBase<Var, kNoVar>::Locator Locator;
 
   Zone* zone() { return node_->zone; }
-  Isolate* isolate() { return zone()->isolate(); }
 
   void push() { node_ = new(node_->zone) Node(node_->zone, node_); }
   void pop() { node_ = node_->previous; }

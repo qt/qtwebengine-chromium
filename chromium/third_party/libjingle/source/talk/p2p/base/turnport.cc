@@ -43,7 +43,6 @@ namespace cricket {
 
 // TODO(juberti): Move to stun.h when relay messages have been renamed.
 static const int TURN_ALLOCATE_REQUEST = STUN_ALLOCATE_REQUEST;
-static const int TURN_ALLOCATE_ERROR_RESPONSE = STUN_ALLOCATE_ERROR_RESPONSE;
 
 // TODO(juberti): Extract to turnmessage.h
 static const int TURN_DEFAULT_PORT = 3478;
@@ -153,7 +152,7 @@ class TurnEntry : public sigslot::has_slots<> {
   // Sends a packet to the given destination address.
   // This will wrap the packet in STUN if necessary.
   int Send(const void* data, size_t size, bool payload,
-           talk_base::DiffServCodePoint dscp);
+           const talk_base::PacketOptions& options);
 
   void OnCreatePermissionSuccess();
   void OnCreatePermissionError(StunMessage* response, int code);
@@ -172,6 +171,27 @@ class TurnEntry : public sigslot::has_slots<> {
 TurnPort::TurnPort(talk_base::Thread* thread,
                    talk_base::PacketSocketFactory* factory,
                    talk_base::Network* network,
+                   talk_base::AsyncPacketSocket* socket,
+                   const std::string& username,
+                   const std::string& password,
+                   const ProtocolAddress& server_address,
+                   const RelayCredentials& credentials)
+    : Port(thread, factory, network, socket->GetLocalAddress().ipaddr(),
+           username, password),
+      server_address_(server_address),
+      credentials_(credentials),
+      socket_(socket),
+      resolver_(NULL),
+      error_(0),
+      request_manager_(thread),
+      next_channel_number_(TURN_CHANNEL_NUMBER_START),
+      connected_(false) {
+  request_manager_.SignalSendPacket.connect(this, &TurnPort::OnSendStunPacket);
+}
+
+TurnPort::TurnPort(talk_base::Thread* thread,
+                   talk_base::PacketSocketFactory* factory,
+                   talk_base::Network* network,
                    const talk_base::IPAddress& ip,
                    int min_port, int max_port,
                    const std::string& username,
@@ -182,6 +202,7 @@ TurnPort::TurnPort(talk_base::Thread* thread,
            username, password),
       server_address_(server_address),
       credentials_(credentials),
+      socket_(NULL),
       resolver_(NULL),
       error_(0),
       request_manager_(thread),
@@ -194,6 +215,12 @@ TurnPort::~TurnPort() {
   // TODO(juberti): Should this even be necessary?
   while (!entries_.empty()) {
     DestroyEntry(entries_.front()->address());
+  }
+  if (resolver_) {
+    resolver_->Destroy(false);
+  }
+  if (!SharedSocket()) {
+    delete socket_;
   }
 }
 
@@ -225,19 +252,19 @@ void TurnPort::PrepareAddress() {
     LOG_J(LS_INFO, this) << "Trying to connect to TURN server via "
                          << ProtoToString(server_address_.proto) << " @ "
                          << server_address_.address.ToSensitiveString();
-    if (server_address_.proto == PROTO_UDP) {
-      socket_.reset(socket_factory()->CreateUdpSocket(
-          talk_base::SocketAddress(ip(), 0), min_port(), max_port()));
+    if (server_address_.proto == PROTO_UDP && !SharedSocket()) {
+      socket_ = socket_factory()->CreateUdpSocket(
+          talk_base::SocketAddress(ip(), 0), min_port(), max_port());
     } else if (server_address_.proto == PROTO_TCP) {
+      ASSERT(!SharedSocket());
       int opts = talk_base::PacketSocketFactory::OPT_STUN;
       // If secure bit is enabled in server address, use TLS over TCP.
       if (server_address_.secure) {
         opts |= talk_base::PacketSocketFactory::OPT_TLS;
       }
-
-      socket_.reset(socket_factory()->CreateClientTcpSocket(
+      socket_ = socket_factory()->CreateClientTcpSocket(
           talk_base::SocketAddress(ip(), 0), server_address_.address,
-          proxy(), user_agent(), opts));
+          proxy(), user_agent(), opts);
     }
 
     if (!socket_) {
@@ -251,7 +278,11 @@ void TurnPort::PrepareAddress() {
       socket_->SetOption(iter->first, iter->second);
     }
 
-    socket_->SignalReadPacket.connect(this, &TurnPort::OnReadPacket);
+    if (!SharedSocket()) {
+      // If socket is shared, AllocationSequence will receive the packet.
+      socket_->SignalReadPacket.connect(this, &TurnPort::OnReadPacket);
+    }
+
     socket_->SignalReadyToSend.connect(this, &TurnPort::OnReadyToSend);
 
     if (server_address_.proto == PROTO_TCP) {
@@ -266,6 +297,18 @@ void TurnPort::PrepareAddress() {
 }
 
 void TurnPort::OnSocketConnect(talk_base::AsyncPacketSocket* socket) {
+  ASSERT(server_address_.proto == PROTO_TCP);
+  // Do not use this port if the socket bound to a different address than
+  // the one we asked for. This is seen in Chrome, where TCP sockets cannot be
+  // given a binding address, and the platform is expected to pick the
+  // correct local address.
+  if (socket->GetLocalAddress().ipaddr() != ip()) {
+    LOG(LS_WARNING) << "Socket is bound to a different address then the "
+                    << "local port. Discarding TURN port.";
+    OnAllocateError();
+    return;
+  }
+
   LOG(LS_INFO) << "TurnPort connected to " << socket->GetRemoteAddress()
                << " using tcp.";
   SendRequest(new TurnAllocateRequest(this), 0);
@@ -292,23 +335,21 @@ Connection* TurnPort::CreateConnection(const Candidate& address,
   // Create an entry, if needed, so we can get our permissions set up correctly.
   CreateEntry(address.address());
 
-  // TODO(juberti): The '0' index will need to change if we start gathering STUN
-  // candidates on this port.
-  ProxyConnection* conn = new ProxyConnection(this, 0, address);
-  conn->SignalDestroyed.connect(this, &TurnPort::OnConnectionDestroyed);
-  AddConnection(conn);
-  return conn;
+  // A TURN port will have two candiates, STUN and TURN. STUN may not
+  // present in all cases. If present stun candidate will be added first
+  // and TURN candidate later.
+  for (size_t index = 0; index < Candidates().size(); ++index) {
+    if (Candidates()[index].type() == RELAY_PORT_TYPE) {
+      ProxyConnection* conn = new ProxyConnection(this, index, address);
+      conn->SignalDestroyed.connect(this, &TurnPort::OnConnectionDestroyed);
+      AddConnection(conn);
+      return conn;
+    }
+  }
+  return NULL;
 }
 
 int TurnPort::SetOption(talk_base::Socket::Option opt, int value) {
-  // DSCP option is not passed to the socket.
-  // TODO(mallinath) - After we have the support on socket,
-  // remove this specialization.
-  if (opt == talk_base::Socket::OPT_DSCP) {
-    SetDefaultDscpValue(static_cast<talk_base::DiffServCodePoint>(value));
-    return 0;
-  }
-
   if (!socket_) {
     // If socket is not created yet, these options will be applied during socket
     // creation.
@@ -319,8 +360,14 @@ int TurnPort::SetOption(talk_base::Socket::Option opt, int value) {
 }
 
 int TurnPort::GetOption(talk_base::Socket::Option opt, int* value) {
-  if (!socket_)
-    return -1;
+  if (!socket_) {
+    SocketOptionsMap::const_iterator it = socket_options_.find(opt);
+    if (it == socket_options_.end()) {
+      return -1;
+    }
+    *value = it->second;
+    return 0;
+  }
 
   return socket_->GetOption(opt, value);
 }
@@ -331,7 +378,7 @@ int TurnPort::GetError() {
 
 int TurnPort::SendTo(const void* data, size_t size,
                      const talk_base::SocketAddress& addr,
-                     talk_base::DiffServCodePoint dscp,
+                     const talk_base::PacketOptions& options,
                      bool payload) {
   // Try to find an entry for this specific address; we should have one.
   TurnEntry* entry = FindEntry(addr);
@@ -346,7 +393,7 @@ int TurnPort::SendTo(const void* data, size_t size,
   }
 
   // Send the actual contents to the server using the usual mechanism.
-  int sent = entry->Send(data, size, payload, dscp);
+  int sent = entry->Send(data, size, payload, options);
   if (sent <= 0) {
     return SOCKET_ERROR;
   }
@@ -360,7 +407,7 @@ void TurnPort::OnReadPacket(
     talk_base::AsyncPacketSocket* socket, const char* data, size_t size,
     const talk_base::SocketAddress& remote_addr,
     const talk_base::PacketTime& packet_time) {
-  ASSERT(socket == socket_.get());
+  ASSERT(socket == socket_);
   ASSERT(remote_addr == server_address_.address);
 
   // The message must be at least the size of a channel header.
@@ -407,35 +454,51 @@ void TurnPort::ResolveTurnAddress(const talk_base::SocketAddress& address) {
 
 void TurnPort::OnResolveResult(talk_base::AsyncResolverInterface* resolver) {
   ASSERT(resolver == resolver_);
+  // Copy the original server address in |resolved_address|. For TLS based
+  // sockets we need hostname along with resolved address.
+  talk_base::SocketAddress resolved_address = server_address_.address;
   if (resolver_->GetError() != 0 ||
-      !resolver_->GetResolvedAddress(ip().family(), &server_address_.address)) {
+      !resolver_->GetResolvedAddress(ip().family(), &resolved_address)) {
     LOG_J(LS_WARNING, this) << "TURN host lookup received error "
                             << resolver_->GetError();
     OnAllocateError();
     return;
   }
-
+  // Signal needs both resolved and unresolved address. After signal is sent
+  // we can copy resolved address back into |server_address_|.
+  SignalResolvedServerAddress(this, server_address_.address,
+                              resolved_address);
+  server_address_.address = resolved_address;
   PrepareAddress();
 }
 
 void TurnPort::OnSendStunPacket(const void* data, size_t size,
                                 StunRequest* request) {
-  if (Send(data, size, DefaultDscpValue()) < 0) {
+  talk_base::PacketOptions options(DefaultDscpValue());
+  if (Send(data, size, options) < 0) {
     LOG_J(LS_ERROR, this) << "Failed to send TURN message, err="
                           << socket_->GetError();
   }
 }
 
 void TurnPort::OnStunAddress(const talk_base::SocketAddress& address) {
-  // For relay, mapped address is rel-addr.
-  set_related_address(address);
+  // STUN Port will discover STUN candidate, as it's supplied with first TURN
+  // server address.
+  // Why not using this address? - P2PTransportChannel will start creating
+  // connections after first candidate, which means it could start creating the
+  // connections before TURN candidate added. For that to handle, we need to
+  // supply STUN candidate from this port to UDPPort, and TurnPort should have
+  // handle to UDPPort to pass back the address.
 }
 
-void TurnPort::OnAllocateSuccess(const talk_base::SocketAddress& address) {
+void TurnPort::OnAllocateSuccess(const talk_base::SocketAddress& address,
+                                 const talk_base::SocketAddress& stun_address) {
   connected_ = true;
-  AddAddress(address,
-             socket_->GetLocalAddress(),
-             "udp",
+  // For relayed candidate, Base is the candidate itself.
+  AddAddress(address,  // Candidate address.
+             address,  // Base address.
+             stun_address,  // Related address.
+             UDP_PROTOCOL_NAME,
              RELAY_PORT_TYPE,
              GetRelayPreference(server_address_.proto, server_address_.secure),
              true);
@@ -577,8 +640,8 @@ void TurnPort::AddRequestAuthInfo(StunMessage* msg) {
 }
 
 int TurnPort::Send(const void* data, size_t len,
-                   talk_base::DiffServCodePoint dscp) {
-  return socket_->SendTo(data, len, server_address_.address, dscp);
+                   const talk_base::PacketOptions& options) {
+  return socket_->SendTo(data, len, server_address_.address, options);
 }
 
 void TurnPort::UpdateHash() {
@@ -682,8 +745,7 @@ void TurnAllocateRequest::OnResponse(StunMessage* response) {
                              << "attribute in allocate success response";
     return;
   }
-
-  // TODO(mallinath) - Use mapped address for STUN candidate.
+  // Using XOR-Mapped-Address for stun.
   port_->OnStunAddress(mapped_attr->GetAddress());
 
   const StunAddressAttribute* relayed_attr =
@@ -702,7 +764,8 @@ void TurnAllocateRequest::OnResponse(StunMessage* response) {
     return;
   }
   // Notify the port the allocate succeeded, and schedule a refresh request.
-  port_->OnAllocateSuccess(relayed_attr->GetAddress());
+  port_->OnAllocateSuccess(relayed_attr->GetAddress(),
+                           mapped_attr->GetAddress());
   port_->ScheduleRefresh(lifetime_attr->value());
 }
 
@@ -911,7 +974,7 @@ void TurnEntry::SendChannelBindRequest(int delay) {
 }
 
 int TurnEntry::Send(const void* data, size_t size, bool payload,
-                    talk_base::DiffServCodePoint dscp) {
+                    const talk_base::PacketOptions& options) {
   talk_base::ByteBuffer buf;
   if (state_ != STATE_BOUND) {
     // If we haven't bound the channel yet, we have to use a Send Indication.
@@ -936,7 +999,7 @@ int TurnEntry::Send(const void* data, size_t size, bool payload,
     buf.WriteUInt16(static_cast<uint16>(size));
     buf.WriteBytes(reinterpret_cast<const char*>(data), size);
   }
-  return port_->Send(buf.Data(), buf.Length(), dscp);
+  return port_->Send(buf.Data(), buf.Length(), options);
 }
 
 void TurnEntry::OnCreatePermissionSuccess() {

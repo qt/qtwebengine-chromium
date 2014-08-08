@@ -67,9 +67,9 @@ private:
 };
 
 {% for property_id, property in properties.items() %}
-{%- set camel_case_name = property.camel_case_name %}
-const StylePropertyShorthand& {{ camel_case_name }}Shorthand();
-{%- endfor %}
+{% set camel_case_name = property.camel_case_name %}
+const StylePropertyShorthand& {{camel_case_name}}Shorthand();
+{% endfor %}
 
 // Returns an empty list if the property is not a shorthand, otherwise the list of longhands for parsing.
 const StylePropertyShorthand& parsingShorthandForProperty(CSSPropertyID);
@@ -84,6 +84,8 @@ void getMatchingShorthandsForLonghand(CSSPropertyID, Vector<StylePropertyShortha
 unsigned indexOfShorthandForLonghand(CSSPropertyID, const Vector<StylePropertyShorthand, 4>&);
 
 bool isExpandedShorthand(CSSPropertyID);
+
+bool isExpandedShorthandForAll(CSSPropertyID);
 
 } // namespace WebCore
 

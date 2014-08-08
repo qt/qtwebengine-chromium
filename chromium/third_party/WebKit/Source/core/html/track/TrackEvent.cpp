@@ -27,8 +27,6 @@
 
 #include "core/html/track/TrackEvent.h"
 
-#include "core/events/ThreadLocalEventNames.h"
-
 namespace WebCore {
 
 TrackEventInit::TrackEventInit()
@@ -55,6 +53,12 @@ TrackEvent::~TrackEvent()
 const AtomicString& TrackEvent::interfaceName() const
 {
     return EventNames::TrackEvent;
+}
+
+void TrackEvent::trace(Visitor* visitor)
+{
+    visitor->trace(m_track);
+    Event::trace(visitor);
 }
 
 } // namespace WebCore

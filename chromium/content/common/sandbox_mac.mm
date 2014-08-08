@@ -17,6 +17,7 @@ extern "C" {
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
 #include "base/file_util.h"
+#include "base/files/scoped_file.h"
 #include "base/mac/bundle_locations.h"
 #include "base/mac/mac_util.h"
 #include "base/mac/scoped_cftyperef.h"
@@ -36,7 +37,6 @@ extern "C" {
 #include "third_party/icu/source/common/unicode/uchar.h"
 #include "ui/base/layout.h"
 #include "ui/gl/gl_surface.h"
-#include "ui/gl/io_surface_support_mac.h"
 
 namespace content {
 namespace {
@@ -277,11 +277,6 @@ void Sandbox::SandboxWarmup(int sandbox_type) {
         CGColorSpaceCreateWithName(kCGColorSpaceGenericCMYK));
   }
 
-  { // [-NSColor colorUsingColorSpaceName] - 10.5.6
-    NSColor* color = [NSColor controlTextColor];
-    [color colorUsingColorSpaceName:NSCalibratedRGBColorSpace];
-  }
-
   { // localtime() - 10.5.6
     time_t tv = {0};
     localtime(&tv);
@@ -310,11 +305,7 @@ void Sandbox::SandboxWarmup(int sandbox_type) {
 
   { // IOSurfaceLookup() - 10.7
     // Needed by zero-copy texture update framework - crbug.com/323338
-    IOSurfaceSupport* io_surface_support = IOSurfaceSupport::Initialize();
-    if (io_surface_support) {
-      base::ScopedCFTypeRef<CFTypeRef> io_surface(
-          io_surface_support->IOSurfaceLookup(0));
-    }
+    base::ScopedCFTypeRef<IOSurfaceRef> io_surface(IOSurfaceLookup(0));
   }
 
   // Process-type dependent warm-up.
@@ -328,6 +319,12 @@ void Sandbox::SandboxWarmup(int sandbox_type) {
     // Preload either the desktop GL or the osmesa so, depending on the
     // --use-gl flag.
     gfx::GLSurface::InitializeOneOff();
+  }
+
+  if (sandbox_type == SANDBOX_TYPE_PPAPI) {
+    // Preload AppKit color spaces used for Flash/ppapi. http://crbug.com/348304
+    NSColor* color = [NSColor controlTextColor];
+    [color colorUsingColorSpaceName:NSCalibratedRGBColorSpace];
   }
 }
 
@@ -606,16 +603,15 @@ bool Sandbox::SandboxIsCurrentlyActive() {
 
 // static
 base::FilePath Sandbox::GetCanonicalSandboxPath(const base::FilePath& path) {
-  int fd = HANDLE_EINTR(open(path.value().c_str(), O_RDONLY));
-  if (fd < 0) {
+  base::ScopedFD fd(HANDLE_EINTR(open(path.value().c_str(), O_RDONLY)));
+  if (!fd.is_valid()) {
     DPLOG(FATAL) << "GetCanonicalSandboxPath() failed for: "
                  << path.value();
     return path;
   }
-  file_util::ScopedFD file_closer(&fd);
 
   base::FilePath::CharType canonical_path[MAXPATHLEN];
-  if (HANDLE_EINTR(fcntl(fd, F_GETPATH, canonical_path)) != 0) {
+  if (HANDLE_EINTR(fcntl(fd.get(), F_GETPATH, canonical_path)) != 0) {
     DPLOG(FATAL) << "GetCanonicalSandboxPath() failed for: "
                  << path.value();
     return path;

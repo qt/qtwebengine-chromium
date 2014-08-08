@@ -29,7 +29,7 @@ namespace WebCore {
 
 class HTMLBaseElement FINAL : public HTMLElement {
 public:
-    static PassRefPtr<HTMLBaseElement> create(Document&);
+    DECLARE_NODE_FACTORY(HTMLBaseElement);
 
     KURL href() const;
     void setHref(const AtomicString&);
@@ -37,7 +37,6 @@ public:
 private:
     explicit HTMLBaseElement(Document&);
 
-    virtual String target() const;
     virtual bool isURLAttribute(const Attribute&) const OVERRIDE;
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;

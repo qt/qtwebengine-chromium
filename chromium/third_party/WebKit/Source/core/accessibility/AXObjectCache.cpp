@@ -30,7 +30,7 @@
 
 #include "core/accessibility/AXObjectCache.h"
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 #include "core/accessibility/AXARIAGrid.h"
 #include "core/accessibility/AXARIAGridCell.h"
 #include "core/accessibility/AXARIAGridRow.h"
@@ -56,7 +56,7 @@
 #include "core/accessibility/AXTableHeaderContainer.h"
 #include "core/accessibility/AXTableRow.h"
 #include "core/dom/Document.h"
-#include "core/frame/Frame.h"
+#include "core/frame/LocalFrame.h"
 #include "core/html/HTMLAreaElement.h"
 #include "core/html/HTMLImageElement.h"
 #include "core/html/HTMLInputElement.h"
@@ -107,10 +107,10 @@ void AXComputedObjectAttributeCache::clear()
 bool AXObjectCache::gAccessibilityEnabled = false;
 bool AXObjectCache::gInlineTextBoxAccessibility = false;
 
-AXObjectCache::AXObjectCache(const Document* doc)
-    : m_notificationPostTimer(this, &AXObjectCache::notificationPostTimerFired)
+AXObjectCache::AXObjectCache(Document& document)
+    : m_document(document)
+    , m_notificationPostTimer(this, &AXObjectCache::notificationPostTimerFired)
 {
-    m_document = const_cast<Document*>(doc);
     m_computedObjectAttributeCache = AXComputedObjectAttributeCache::create();
 }
 
@@ -161,13 +161,17 @@ AXObject* AXObjectCache::focusedUIElementForPage(const Page* page)
     if (!gAccessibilityEnabled)
         return 0;
 
+    // Cross-process accessibility is not yet implemented.
+    if (!page->focusController().focusedOrMainFrame()->isLocalFrame())
+        return 0;
+
     // get the focused node in the page
-    Document* focusedDocument = page->focusController().focusedOrMainFrame()->document();
+    Document* focusedDocument = toLocalFrame(page->focusController().focusedOrMainFrame())->document();
     Node* focusedNode = focusedDocument->focusedElement();
     if (!focusedNode)
         focusedNode = focusedDocument;
 
-    if (isHTMLAreaElement(focusedNode))
+    if (isHTMLAreaElement(*focusedNode))
         return focusedImageMapUIElement(toHTMLAreaElement(focusedNode));
 
     AXObject* obj = focusedNode->document().axObjectCache()->getOrCreate(focusedNode);
@@ -271,7 +275,7 @@ static PassRefPtr<AXObject> createFromRenderer(RenderObject* renderer)
     // If the node is aria role="list" or the aria role is empty and its a
     // ul/ol/dl type (it shouldn't be a list if aria says otherwise).
     if (node && ((nodeHasRole(node, "list") || nodeHasRole(node, "directory"))
-        || (nodeHasRole(node, nullAtom) && (node->hasTagName(ulTag) || node->hasTagName(olTag) || node->hasTagName(dlTag)))))
+        || (nodeHasRole(node, nullAtom) && (isHTMLUListElement(*node) || isHTMLOListElement(*node) || isHTMLDListElement(*node)))))
         return AXList::create(renderer);
 
     // aria tables
@@ -334,7 +338,7 @@ AXObject* AXObjectCache::getOrCreate(Widget* widget)
     if (AXObject* obj = get(widget))
         return obj;
 
-    RefPtr<AXObject> newObj = 0;
+    RefPtr<AXObject> newObj = nullptr;
     if (widget->isFrameView())
         newObj = AXScrollView::create(toScrollView(widget));
     else if (widget->isScrollbar())
@@ -342,6 +346,11 @@ AXObject* AXObjectCache::getOrCreate(Widget* widget)
 
     // Will crash later if we have two objects for the same widget.
     ASSERT(!get(widget));
+
+    // Catch the case if an (unsupported) widget type is used. Only FrameView and ScrollBar are supported now.
+    ASSERT(newObj);
+    if (!newObj)
+        return 0;
 
     getAXID(newObj.get());
 
@@ -442,12 +451,12 @@ AXObject* AXObjectCache::rootObject()
     if (!gAccessibilityEnabled)
         return 0;
 
-    return getOrCreate(m_document->view());
+    return getOrCreate(m_document.view());
 }
 
 AXObject* AXObjectCache::getOrCreate(AccessibilityRole role)
 {
-    RefPtr<AXObject> obj = 0;
+    RefPtr<AXObject> obj = nullptr;
 
     // will be filled in...
     switch (role) {
@@ -479,7 +488,7 @@ AXObject* AXObjectCache::getOrCreate(AccessibilityRole role)
         obj = AXSpinButtonPart::create();
         break;
     default:
-        obj = 0;
+        obj = nullptr;
     }
 
     if (obj)
@@ -560,6 +569,18 @@ void AXObjectCache::remove(AbstractInlineTextBox* inlineTextBox)
     AXID axID = m_inlineTextBoxObjectMapping.get(inlineTextBox);
     remove(axID);
     m_inlineTextBoxObjectMapping.remove(inlineTextBox);
+}
+
+// FIXME: Oilpan: Use a weak hashmap for this instead.
+void AXObjectCache::clearWeakMembers(Visitor* visitor)
+{
+    Vector<Node*> deadNodes;
+    for (HashMap<Node*, AXID>::iterator it = m_nodeObjectMapping.begin(); it != m_nodeObjectMapping.end(); ++it) {
+        if (!visitor->isAlive(it->key))
+            deadNodes.append(it->key);
+    }
+    for (unsigned i = 0; i < deadNodes.size(); ++i)
+        remove(deadNodes[i]);
 }
 
 AXID AXObjectCache::platformGenerateAXID() const
@@ -670,7 +691,7 @@ void AXObjectCache::childrenChanged(AXObject* obj)
 
 void AXObjectCache::notificationPostTimerFired(Timer<AXObjectCache>*)
 {
-    RefPtr<Document> protectorForCacheOwner(m_document);
+    RefPtrWillBeRawPtr<Document> protectorForCacheOwner(m_document);
 
     m_notificationPostTimer.stop();
 
@@ -754,7 +775,7 @@ void AXObjectCache::postNotification(AXObject* object, Document* document, AXNot
         object = object->observableObject();
 
     if (!object && document)
-        object = get(document->renderer());
+        object = get(document->renderView());
 
     if (!object)
         return;
@@ -762,7 +783,7 @@ void AXObjectCache::postNotification(AXObject* object, Document* document, AXNot
     if (postType == PostAsynchronously) {
         m_notificationsToPost.append(std::make_pair(object, notification));
         if (!m_notificationPostTimer.isActive())
-            m_notificationPostTimer.startOneShot(0);
+            m_notificationPostTimer.startOneShot(0, FROM_HERE);
     } else {
         postPlatformNotification(object, notification);
     }
@@ -799,6 +820,20 @@ void AXObjectCache::handleScrollbarUpdate(ScrollView* view)
     }
 }
 
+void AXObjectCache::handleLayoutComplete(RenderObject* renderer)
+{
+    if (!renderer)
+        return;
+
+    m_computedObjectAttributeCache->clear();
+
+    // Create the AXObject if it didn't yet exist - that's always safe at the end of a layout, and it
+    // allows an AX notification to be sent when a page has its first layout, rather than when the
+    // document first loads.
+    if (AXObject* obj = getOrCreate(renderer))
+        postNotification(obj, obj->document(), AXLayoutComplete, true);
+}
+
 void AXObjectCache::handleAriaExpandedChange(Node* node)
 {
     if (AXObject* obj = getOrCreate(node))
@@ -826,7 +861,7 @@ void AXObjectCache::handleAttributeChanged(const QualifiedName& attrName, Elemen
         handleAriaRoleChanged(element);
     else if (attrName == altAttr || attrName == titleAttr)
         textChanged(element);
-    else if (attrName == forAttr && isHTMLLabelElement(element))
+    else if (attrName == forAttr && isHTMLLabelElement(*element))
         labelChanged(element);
 
     if (!attrName.localName().string().startsWith("aria-"))
@@ -863,71 +898,19 @@ void AXObjectCache::recomputeIsIgnored(RenderObject* renderer)
         obj->notifyIfIgnoredValueChanged();
 }
 
-void AXObjectCache::startCachingComputedObjectAttributesUntilTreeMutates()
+void AXObjectCache::inlineTextBoxesUpdated(RenderObject* renderer)
 {
-    // FIXME: no longer needed. When Chromium no longer calls
-    // WebAXObject::startCachingComputedObjectAttributesUntilTreeMutates,
-    // delete this function and the WebAXObject interfaces.
-}
-
-void AXObjectCache::stopCachingComputedObjectAttributes()
-{
-    // FIXME: no longer needed (see above).
-}
-
-VisiblePosition AXObjectCache::visiblePositionForTextMarkerData(TextMarkerData& textMarkerData)
-{
-    if (!isNodeInUse(textMarkerData.node))
-        return VisiblePosition();
-
-    // FIXME: Accessability should make it clear these are DOM-compliant offsets or store Position objects.
-    VisiblePosition visiblePos = VisiblePosition(createLegacyEditingPosition(textMarkerData.node, textMarkerData.offset), textMarkerData.affinity);
-    Position deepPos = visiblePos.deepEquivalent();
-    if (deepPos.isNull())
-        return VisiblePosition();
-
-    RenderObject* renderer = deepPos.deprecatedNode()->renderer();
-    if (!renderer)
-        return VisiblePosition();
-
-    AXObjectCache* cache = renderer->document().axObjectCache();
-    if (!cache->isIDinUse(textMarkerData.axID))
-        return VisiblePosition();
-
-    if (deepPos.deprecatedNode() != textMarkerData.node || deepPos.deprecatedEditingOffset() != textMarkerData.offset)
-        return VisiblePosition();
-
-    return visiblePos;
-}
-
-void AXObjectCache::textMarkerDataForVisiblePosition(TextMarkerData& textMarkerData, const VisiblePosition& visiblePos)
-{
-    // This memory must be bzero'd so instances of TextMarkerData can be tested for byte-equivalence.
-    // This also allows callers to check for failure by looking at textMarkerData upon return.
-    memset(&textMarkerData, 0, sizeof(TextMarkerData));
-
-    if (visiblePos.isNull())
+    if (!gInlineTextBoxAccessibility)
         return;
 
-    Position deepPos = visiblePos.deepEquivalent();
-    Node* domNode = deepPos.deprecatedNode();
-    ASSERT(domNode);
-    if (!domNode)
-        return;
-
-    if (domNode->hasTagName(inputTag) && toHTMLInputElement(domNode)->isPasswordField())
-        return;
-
-    // find or create an accessibility object for this node
-    AXObjectCache* cache = domNode->document().axObjectCache();
-    RefPtr<AXObject> obj = cache->getOrCreate(domNode);
-
-    textMarkerData.axID = obj.get()->axObjectID();
-    textMarkerData.node = domNode;
-    textMarkerData.offset = deepPos.deprecatedEditingOffset();
-    textMarkerData.affinity = visiblePos.affinity();
-
-    cache->setNodeInUse(domNode);
+    // Only update if the accessibility object already exists and it's
+    // not already marked as dirty.
+    if (AXObject* obj = get(renderer)) {
+        if (!obj->needsToUpdateChildren()) {
+            obj->setNeedsToUpdateChildren();
+            postNotification(renderer, AXChildrenChanged, true);
+        }
+    }
 }
 
 const Element* AXObjectCache::rootAXEditableElement(const Node* node)
@@ -983,7 +966,7 @@ void AXObjectCache::postPlatformNotification(AXObject* obj, AXNotification notif
         Document* document = toFrameView(scrollBar->parent())->frame().document();
         if (document != document->topDocument())
             return;
-        obj = get(document->renderer());
+        obj = get(document->renderView());
     }
 
     if (!obj || !obj->document() || !obj->documentFrameView() || !obj->documentFrameView()->frame().page())
@@ -1023,6 +1006,16 @@ void AXObjectCache::handleScrolledToAnchor(const Node* anchorNode)
     // The anchor node may not be accessible. Post the notification for the
     // first accessible object.
     postPlatformNotification(AXObject::firstAccessibleObjectFromNode(anchorNode), AXScrolledToAnchor);
+}
+
+void AXObjectCache::handleScrollPositionChanged(ScrollView* scrollView)
+{
+    postPlatformNotification(getOrCreate(scrollView), AXScrollPositionChanged);
+}
+
+void AXObjectCache::handleScrollPositionChanged(RenderObject* renderObject)
+{
+    postPlatformNotification(getOrCreate(renderObject), AXScrollPositionChanged);
 }
 
 } // namespace WebCore

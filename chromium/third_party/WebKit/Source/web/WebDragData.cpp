@@ -30,10 +30,11 @@
 
 #include "config.h"
 
-#include "core/dom/DataTransferItem.h"
-#include "core/platform/chromium/ChromiumDataObject.h"
+#include "core/clipboard/DataObject.h"
+#include "core/clipboard/DataTransferItem.h"
 #include "modules/filesystem/DraggedIsolatedFileSystem.h"
 #include "platform/clipboard/ClipboardMimeTypes.h"
+#include "platform/heap/Handle.h"
 #include "public/platform/WebData.h"
 #include "public/platform/WebDragData.h"
 #include "public/platform/WebString.h"
@@ -46,48 +47,71 @@ using namespace WebCore;
 
 namespace blink {
 
-class WebDragDataPrivate : public ChromiumDataObject {
-};
-
 void WebDragData::initialize()
 {
-    assign(static_cast<WebDragDataPrivate*>(ChromiumDataObject::create().leakRef()));
+    m_private = DataObject::create();
 }
 
 void WebDragData::reset()
 {
-    assign(0);
+    m_private.reset();
 }
 
 void WebDragData::assign(const WebDragData& other)
 {
-    WebDragDataPrivate* p = const_cast<WebDragDataPrivate*>(other.m_private);
-    if (p)
-        p->ref();
-    assign(p);
+    m_private = other.m_private;
+}
+
+WebDragData::WebDragData(const PassRefPtrWillBeRawPtr<WebCore::DataObject>& object)
+{
+    m_private = object;
+}
+
+WebDragData& WebDragData::operator=(const PassRefPtrWillBeRawPtr<WebCore::DataObject>& object)
+{
+    m_private = object;
+    return *this;
+}
+
+DataObject* WebDragData::getValue() const
+{
+    return m_private.get();
+}
+
+void WebDragData::ensureMutable()
+{
+    ASSERT(!isNull());
 }
 
 WebVector<WebDragData::Item> WebDragData::items() const
 {
     Vector<Item> itemList;
     for (size_t i = 0; i < m_private->length(); ++i) {
-        ChromiumDataObjectItem* originalItem = m_private->item(i).get();
+        DataObjectItem* originalItem = m_private->item(i).get();
         WebDragData::Item item;
-        if (originalItem->kind() == ChromiumDataObjectItem::StringKind) {
+        if (originalItem->kind() == DataObjectItem::StringKind) {
             item.storageType = Item::StorageTypeString;
             item.stringType = originalItem->type();
-            item.stringData = originalItem->internalGetAsString();
-        } else if (originalItem->kind() == ChromiumDataObjectItem::FileKind) {
+            item.stringData = originalItem->getAsString();
+        } else if (originalItem->kind() == DataObjectItem::FileKind) {
             if (originalItem->sharedBuffer()) {
                 item.storageType = Item::StorageTypeBinaryData;
                 item.binaryData = originalItem->sharedBuffer();
             } else if (originalItem->isFilename()) {
-                item.storageType = Item::StorageTypeFilename;
-                RefPtr<WebCore::Blob> blob = originalItem->getAsFile();
+                RefPtrWillBeRawPtr<WebCore::Blob> blob = originalItem->getAsFile();
                 if (blob->isFile()) {
                     File* file = toFile(blob.get());
-                    item.filenameData = file->path();
-                    item.displayNameData = file->name();
+                    if (!file->path().isEmpty()) {
+                        item.storageType = Item::StorageTypeFilename;
+                        item.filenameData = file->path();
+                        item.displayNameData = file->name();
+                    } else if (!file->fileSystemURL().isEmpty()) {
+                        item.storageType = Item::StorageTypeFileSystemFile;
+                        item.fileSystemURL = file->fileSystemURL();
+                        item.fileSystemFileSize = file->size();
+                    } else {
+                        ASSERT_NOT_REACHED();
+                    }
                 } else
                     ASSERT_NOT_REACHED();
             } else
@@ -126,53 +150,28 @@ void WebDragData::addItem(const Item& item)
     case Item::StorageTypeBinaryData:
         // This should never happen when dragging in.
         ASSERT_NOT_REACHED();
+        return;
+    case Item::StorageTypeFileSystemFile:
+        {
+            FileMetadata fileMetadata;
+            fileMetadata.length = item.fileSystemFileSize;
+            m_private->add(File::createForFileSystemFile(item.fileSystemURL, fileMetadata));
+        }
+        return;
     }
 }
 
 WebString WebDragData::filesystemId() const
 {
     ASSERT(!isNull());
-    DraggedIsolatedFileSystem* filesystem = DraggedIsolatedFileSystem::from(m_private);
-    if (filesystem)
-        return filesystem->filesystemId();
-    return WebString();
+    return m_private.get()->filesystemId();
 }
 
 void WebDragData::setFilesystemId(const WebString& filesystemId)
 {
     // The ID is an opaque string, given by and validated by chromium port.
     ensureMutable();
-    DraggedIsolatedFileSystem::provideTo(m_private, DraggedIsolatedFileSystem::supplementName(), DraggedIsolatedFileSystem::create(filesystemId));
-}
-
-WebDragData::WebDragData(const WTF::PassRefPtr<WebCore::ChromiumDataObject>& data)
-    : m_private(static_cast<WebDragDataPrivate*>(data.leakRef()))
-{
-}
-
-WebDragData& WebDragData::operator=(const WTF::PassRefPtr<WebCore::ChromiumDataObject>& data)
-{
-    assign(static_cast<WebDragDataPrivate*>(data.leakRef()));
-    return *this;
-}
-
-WebDragData::operator WTF::PassRefPtr<WebCore::ChromiumDataObject>() const
-{
-    return PassRefPtr<ChromiumDataObject>(const_cast<WebDragDataPrivate*>(m_private));
-}
-
-void WebDragData::assign(WebDragDataPrivate* p)
-{
-    // p is already ref'd for us by the caller
-    if (m_private)
-        m_private->deref();
-    m_private = p;
-}
-
-void WebDragData::ensureMutable()
-{
-    ASSERT(!isNull());
-    ASSERT(m_private->hasOneRef());
+    DraggedIsolatedFileSystem::provideTo(*m_private.get(), DraggedIsolatedFileSystem::supplementName(), DraggedIsolatedFileSystem::create(*m_private.get(), filesystemId));
 }
 
 } // namespace blink

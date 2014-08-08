@@ -44,6 +44,8 @@ namespace WTF {
 //  * It ASSERT()s invalid input. The callers have to ensure that given parameter is sound.
 //  * There is no branch-leaf difference. Every node can be a parent of other node.
 //
+// FIXME: oilpan: Trace tree node edges to ensure we don't have dangling pointers.
+// As it is used in HTMLImport it is safe since they all die together.
 template <class T>
 class TreeNode {
 public:
@@ -133,6 +135,16 @@ public:
             oldPrevious->m_next = oldNext;
 
         return child;
+    }
+
+    void takeChildrenFrom(NodeType* oldParent)
+    {
+        ASSERT(oldParent != this);
+        while (oldParent->hasChildren()) {
+            NodeType* child = oldParent->firstChild();
+            oldParent->removeChild(child);
+            this->appendChild(child);
+        }
     }
 
 private:

@@ -10,14 +10,21 @@
   min-width: 500px;
 }
 
-#full-name-list input,
-#company-name,
-#addr-line-1,
-#addr-line-2 {
+#autofill-edit-address-overlay .long div[role='listitem'] > div > div,
+#autofill-edit-address-overlay .long input,
+#autofill-edit-address-overlay textarea.long,
+#autofill-edit-address-overlay input.long {
   width: 16em;
 }
 
-#country {
+#autofill-edit-address-overlay .short div[role='listitem'] > div > div,
+#autofill-edit-address-overlay .short input,
+#autofill-edit-address-overlay textarea.short,
+#autofill-edit-address-overlay input.short {
+  width: 14em;
+}
+
+#autofill-edit-address-overlay .country {
   max-width: 450px;
 }
 
@@ -33,43 +40,17 @@
   -webkit-padding-end: 4px;
   -webkit-padding-start: 4px;
   border: 1px solid darkGray;
+  /* Border should go "inside" the height. */
+  box-sizing: border-box;
   /* Set the line-height and min-height to match the height of an input element,
    * so that even empty cells renderer with the correct height. */
-  line-height: 1.75em;
-  min-height: 1.75em;
+  height: 2em;
+  line-height: 2em;
 }
 
 :-webkit-any(#autofill-edit-credit-card-overlay, #autofill-edit-address-overlay)
-    .settings-row div + :-webkit-any(input, select) {
+    .settings-row label > :-webkit-any(input, select, textarea, list) {
   margin-top: 4px;
-}
-
-#autofill-name-labels {
-  display: -webkit-inline-box;
-}
-
-#autofill-name-labels span {
-  -webkit-box-flex: 1;
-  display: block;
-}
-
-#full-name-list {
-  display: inline-block;
-}
-
-#full-name-list div[role='listitem'] > div {
-  display: -webkit-box;
-}
-
-#full-name-list div[role='listitem'] > div > div,
-#autofill-name-labels span {
-  -webkit-margin-end: 5px;
-  width: 16em;
-}
-
-:-webkit-any(#phone-list, #email-list) div[role='listitem'] > div > div,
-:-webkit-any(#phone-list, #email-list) input {
-  width: 14em;
 }
 
 .input-group > * {

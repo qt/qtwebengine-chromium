@@ -47,17 +47,13 @@ class TypedArrayTraits
 template<typename TypedArray>
 class V8TypedArray {
 public:
-    static bool hasInstance(v8::Handle<v8::Value> value, v8::Isolate*, WrapperWorldType)
-    {
-        return TypedArrayTraits<TypedArray>::IsInstance(value);
-    }
-
-    static bool hasInstanceInAnyWorld(v8::Handle<v8::Value> value, v8::Isolate*)
+    static bool hasInstance(v8::Handle<v8::Value> value, v8::Isolate*)
     {
         return TypedArrayTraits<TypedArray>::IsInstance(value);
     }
 
     static TypedArray* toNative(v8::Handle<v8::Object>);
+    static TypedArray* toNativeWithTypeCheck(v8::Isolate*, v8::Handle<v8::Value>);
     static void derefObject(void*);
     static const WrapperTypeInfo wrapperTypeInfo;
     static const int internalFieldCount = v8DefaultWrapperInternalFieldCount;
@@ -95,7 +91,7 @@ public:
     template<typename CallbackInfo>
     static void v8SetReturnValueForMainWorld(const CallbackInfo& info, TypedArray* impl)
     {
-        ASSERT(worldType(info.GetIsolate()) == MainWorld);
+        ASSERT(DOMWrapperWorld::current(info.GetIsolate()).isMainWorld());
         if (UNLIKELY(!impl)) {
             v8SetReturnValueNull(info);
             return;
@@ -174,12 +170,17 @@ TypedArray* V8TypedArray<TypedArray>::toNative(v8::Handle<v8::Object> object)
     return reinterpret_cast<TypedArray*>(typedarrayPtr);
 }
 
+template <typename TypedArray>
+TypedArray* V8TypedArray<TypedArray>::toNativeWithTypeCheck(v8::Isolate* isolate, v8::Handle<v8::Value> value)
+{
+    return V8TypedArray<TypedArray>::hasInstance(value, isolate) ? V8TypedArray<TypedArray>::toNative(v8::Handle<v8::Object>::Cast(value)) : 0;
+}
 
 template <typename TypedArray>
 const WrapperTypeInfo V8TypedArray<TypedArray>::wrapperTypeInfo = {
     gin::kEmbedderBlink,
     0, V8TypedArray<TypedArray>::derefObject,
-    0, 0, 0, 0, 0, WrapperTypeObjectPrototype
+    0, 0, 0, 0, 0, WrapperTypeObjectPrototype, RefCountedObject
 };
 
 template <typename TypedArray>

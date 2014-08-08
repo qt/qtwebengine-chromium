@@ -4,11 +4,16 @@
 
 #include "base/process/process_metrics.h"
 
+#include <sys/sysctl.h>
+#include <sys/user.h>
+#include <unistd.h>
+
+#include "base/sys_info.h"
+
 namespace base {
 
 ProcessMetrics::ProcessMetrics(ProcessHandle process)
     : process_(process),
-      last_time_(0),
       last_system_time_(0),
       last_cpu_(0) {
   processor_count_ = base::SysInfo::NumberOfProcessors();
@@ -80,11 +85,6 @@ double ProcessMetrics::GetCPUUsage() {
   struct kinfo_proc info;
   int mib[] = { CTL_KERN, KERN_PROC, KERN_PROC_PID, process_ };
   size_t length = sizeof(info);
-
-  struct timeval now;
-  int retval = gettimeofday(&now, NULL);
-  if (retval)
-    return 0;
 
   if (sysctl(mib, arraysize(mib), &info, &length, NULL, 0) < 0)
     return 0;

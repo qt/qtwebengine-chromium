@@ -31,8 +31,8 @@
 #ifndef ScriptGCEvent_h
 #define ScriptGCEvent_h
 
-#include "v8.h"
 #include "wtf/Vector.h"
+#include <v8.h>
 
 namespace WebCore {
 
@@ -80,6 +80,7 @@ private:
 };
 
 
+// FIXME(361045): remove ScriptGCEvent once DevTools Timeline migrates to tracing.
 class ScriptGCEvent
 {
 public:

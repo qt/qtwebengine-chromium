@@ -31,9 +31,9 @@ class RenderWidget : public RenderReplaced {
 public:
     virtual ~RenderWidget();
 
-    Widget* widget() const { return m_widget.get(); }
-    virtual void setWidget(PassRefPtr<Widget>);
+    Widget* widget() const;
 
+    void updateOnWidgetChange();
     void updateWidgetPosition();
     void widgetPositionsUpdated();
 
@@ -42,37 +42,26 @@ public:
     void ref() { ++m_refCount; }
     void deref();
 
-    class UpdateSuspendScope {
-    public:
-        UpdateSuspendScope();
-        ~UpdateSuspendScope();
-    };
+    virtual bool isWidget() const OVERRIDE FINAL { return true; }
+    bool updateWidgetGeometry();
 
 protected:
     explicit RenderWidget(Element*);
 
-    void clearWidget();
-
     virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle) OVERRIDE FINAL;
-    virtual void layout();
-    virtual void paint(PaintInfo&, const LayoutPoint&);
-    virtual CursorDirective getCursor(const LayoutPoint&, Cursor&) const;
+    virtual void layout() OVERRIDE;
+    virtual void paint(PaintInfo&, const LayoutPoint&) OVERRIDE;
+    virtual CursorDirective getCursor(const LayoutPoint&, Cursor&) const OVERRIDE FINAL;
     virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction) OVERRIDE;
 
     virtual void paintContents(PaintInfo&, const LayoutPoint&);
 
 private:
-    virtual bool isWidget() const OVERRIDE FINAL { return true; }
-
     virtual void willBeDestroyed() OVERRIDE FINAL;
     virtual void destroy() OVERRIDE FINAL;
 
     bool setWidgetGeometry(const LayoutRect&);
-    bool updateWidgetGeometry();
 
-    RefPtr<Widget> m_widget;
-    FrameView* m_frameView;
-    IntRect m_clipRect; // The rectangle needs to remain correct after scrolling, so it is stored in content view coordinates, and not clipped to window.
     int m_refCount;
 };
 

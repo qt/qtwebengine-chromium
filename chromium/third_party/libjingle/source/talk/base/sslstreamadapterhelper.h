@@ -59,7 +59,6 @@ class SSLStreamAdapterHelper : public SSLStreamAdapter {
   virtual int StartSSLWithServer(const char* server_name);
   virtual int StartSSLWithPeer();
 
-  virtual void SetPeerCertificate(SSLCertificate* cert);
   virtual bool SetPeerCertificateDigest(const std::string& digest_alg,
                                         const unsigned char* digest_val,
                                         size_t digest_len);
@@ -88,8 +87,8 @@ class SSLStreamAdapterHelper : public SSLStreamAdapter {
   // Must be implemented by descendents
   virtual int BeginSSL() = 0;
   virtual void Cleanup() = 0;
-  virtual bool GetDigestLength(const std::string &algorithm,
-                               std::size_t *length) = 0;
+  virtual bool GetDigestLength(const std::string& algorithm,
+                               size_t* length) = 0;
 
   enum SSLState {
     // Before calling one of the StartSSL methods, data flows
@@ -114,12 +113,10 @@ class SSLStreamAdapterHelper : public SSLStreamAdapter {
   // in traditional mode, the server name that the server's certificate
   // must specify. Empty in peer-to-peer mode.
   std::string ssl_server_name_;
-  // In peer-to-peer mode, the certificate that the peer must
-  // present. Empty in traditional mode.
+  // The peer's certificate. Only used for GetPeerCertificate.
   scoped_ptr<SSLCertificate> peer_certificate_;
 
-  // In peer-to-peer mode, the digest of the certificate that
-  // the peer must present.
+  // The digest of the certificate that the peer must present.
   Buffer peer_certificate_digest_value_;
   std::string peer_certificate_digest_algorithm_;
 

@@ -53,7 +53,7 @@ class SpdyStreamTest : public ::testing::Test,
   base::WeakPtr<SpdySession> CreateDefaultSpdySession() {
     SpdySessionKey key(HostPortPair("www.google.com", 80),
                        ProxyServer::Direct(),
-                       kPrivacyModeDisabled);
+                       PRIVACY_MODE_DISABLED);
     return CreateInsecureSpdySession(session_, key, BoundNetLog());
   }
 
@@ -113,8 +113,7 @@ INSTANTIATE_TEST_CASE_P(
     NextProto,
     SpdyStreamTest,
     testing::Values(kProtoDeprecatedSPDY2,
-                    kProtoSPDY3, kProtoSPDY31, kProtoSPDY4a2,
-                    kProtoHTTP2Draft04));
+                    kProtoSPDY3, kProtoSPDY31, kProtoSPDY4));
 
 TEST_P(SpdyStreamTest, SendDataAfterOpen) {
   GURL url(kStreamUrl);
@@ -170,8 +169,6 @@ TEST_P(SpdyStreamTest, SendDataAfterOpen) {
 
   EXPECT_TRUE(delegate.send_headers_completed());
   EXPECT_EQ("200", delegate.GetResponseHeaderValue(spdy_util_.GetStatusKey()));
-  EXPECT_EQ("HTTP/1.1",
-            delegate.GetResponseHeaderValue(spdy_util_.GetVersionKey()));
   EXPECT_EQ(std::string(kPostBody, kPostBodyLength),
             delegate.TakeReceivedData());
   EXPECT_TRUE(data.at_write_eof());
@@ -202,16 +199,22 @@ TEST_P(SpdyStreamTest, PushedStream) {
   stream.set_stream_id(2);
   EXPECT_FALSE(stream.HasUrlFromHeaders());
 
-  // Set a couple of headers.
+  // Set required request headers.
+  SpdyHeaderBlock request_headers;
+  spdy_util_.AddUrlToHeaderBlock(kStreamUrl, &request_headers);
+  stream.OnPushPromiseHeadersReceived(request_headers);
+
+  // Send some basic response headers.
   SpdyHeaderBlock response;
-  spdy_util_.AddUrlToHeaderBlock(kStreamUrl, &response);
+  response[spdy_util_.GetStatusKey()] = "200";
+  response[spdy_util_.GetVersionKey()] = "OK";
   stream.OnInitialResponseHeadersReceived(
       response, base::Time::Now(), base::TimeTicks::Now());
 
-  // Send some basic headers.
+  // And some more headers.
+  // TODO(baranovich): not valid for HTTP 2.
   SpdyHeaderBlock headers;
-  headers[spdy_util_.GetStatusKey()] = "200";
-  headers[spdy_util_.GetVersionKey()] = "OK";
+  headers["alpha"] = "beta";
   stream.OnAdditionalResponseHeadersReceived(headers);
 
   EXPECT_TRUE(stream.HasUrlFromHeaders());
@@ -223,6 +226,7 @@ TEST_P(SpdyStreamTest, PushedStream) {
   base::MessageLoop::current()->RunUntilIdle();
 
   EXPECT_EQ("200", delegate.GetResponseHeaderValue(spdy_util_.GetStatusKey()));
+  EXPECT_EQ("beta", delegate.GetResponseHeaderValue("alpha"));
 
   EXPECT_TRUE(spdy_session == NULL);
 }
@@ -285,8 +289,6 @@ TEST_P(SpdyStreamTest, StreamError) {
 
   EXPECT_TRUE(delegate.send_headers_completed());
   EXPECT_EQ("200", delegate.GetResponseHeaderValue(spdy_util_.GetStatusKey()));
-  EXPECT_EQ("HTTP/1.1",
-            delegate.GetResponseHeaderValue(spdy_util_.GetVersionKey()));
   EXPECT_EQ(std::string(kPostBody, kPostBodyLength),
             delegate.TakeReceivedData());
   EXPECT_TRUE(data.at_write_eof());
@@ -368,8 +370,6 @@ TEST_P(SpdyStreamTest, SendLargeDataAfterOpenRequestResponse) {
 
   EXPECT_TRUE(delegate.send_headers_completed());
   EXPECT_EQ("200", delegate.GetResponseHeaderValue(spdy_util_.GetStatusKey()));
-  EXPECT_EQ("HTTP/1.1",
-            delegate.GetResponseHeaderValue(spdy_util_.GetVersionKey()));
   EXPECT_EQ(std::string(), delegate.TakeReceivedData());
   EXPECT_TRUE(data.at_write_eof());
 }
@@ -431,8 +431,6 @@ TEST_P(SpdyStreamTest, SendLargeDataAfterOpenBidirectional) {
 
   EXPECT_TRUE(delegate.send_headers_completed());
   EXPECT_EQ("200", delegate.GetResponseHeaderValue(spdy_util_.GetStatusKey()));
-  EXPECT_EQ("HTTP/1.1",
-            delegate.GetResponseHeaderValue(spdy_util_.GetVersionKey()));
   EXPECT_EQ(std::string(), delegate.TakeReceivedData());
   EXPECT_TRUE(data.at_write_eof());
 }
@@ -876,7 +874,6 @@ void SpdyStreamTest::RunResumeAfterUnstallRequestResponseTest(
 
   EXPECT_TRUE(delegate.send_headers_completed());
   EXPECT_EQ("200", delegate.GetResponseHeaderValue(":status"));
-  EXPECT_EQ("HTTP/1.1", delegate.GetResponseHeaderValue(":version"));
   EXPECT_EQ(std::string(), delegate.TakeReceivedData());
   EXPECT_TRUE(data.at_write_eof());
 }
@@ -971,7 +968,6 @@ void SpdyStreamTest::RunResumeAfterUnstallBidirectionalTest(
 
   EXPECT_TRUE(delegate.send_headers_completed());
   EXPECT_EQ("200", delegate.GetResponseHeaderValue(":status"));
-  EXPECT_EQ("HTTP/1.1", delegate.GetResponseHeaderValue(":version"));
   EXPECT_EQ(std::string(kPostBody, kPostBodyLength),
             delegate.TakeReceivedData());
   EXPECT_TRUE(data.at_write_eof());
@@ -1041,7 +1037,8 @@ TEST_P(SpdyStreamTest, ReceivedBytes) {
   EXPECT_EQ(kStreamUrl, stream->GetUrlFromHeaders().spec());
 
   int64 reply_frame_len = reply->size();
-  int64 data_header_len = spdy_util_.CreateFramer()->GetDataFrameMinimumSize();
+  int64 data_header_len = spdy_util_.CreateFramer(false)
+      ->GetDataFrameMinimumSize();
   int64 data_frame_len = data_header_len + kPostBodyLength;
   int64 response_len = reply_frame_len + data_frame_len;
 

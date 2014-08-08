@@ -31,36 +31,44 @@
 #ifndef AnimatableUnknown_h
 #define AnimatableUnknown_h
 
-#include "CSSValueKeywords.h"
+#include "core/CSSValueKeywords.h"
 #include "core/animation/AnimatableValue.h"
 #include "core/css/CSSValuePool.h"
 
 namespace WebCore {
 
-class AnimatableUnknown : public AnimatableValue {
+class AnimatableUnknown FINAL : public AnimatableValue {
 public:
     virtual ~AnimatableUnknown() { }
 
-    static PassRefPtr<AnimatableUnknown> create(PassRefPtr<CSSValue> value)
+    static PassRefPtrWillBeRawPtr<AnimatableUnknown> create(PassRefPtrWillBeRawPtr<CSSValue> value)
     {
-        return adoptRef(new AnimatableUnknown(value));
+        return adoptRefWillBeNoop(new AnimatableUnknown(value));
     }
-    static PassRefPtr<AnimatableUnknown> create(CSSValueID value)
+    static PassRefPtrWillBeRawPtr<AnimatableUnknown> create(CSSValueID value)
     {
-        return adoptRef(new AnimatableUnknown(cssValuePool().createIdentifierValue(value)));
+        return adoptRefWillBeNoop(new AnimatableUnknown(cssValuePool().createIdentifierValue(value)));
     }
 
-    PassRefPtr<CSSValue> toCSSValue() const { return m_value; }
+    PassRefPtrWillBeRawPtr<CSSValue> toCSSValue() const { return m_value; }
     CSSValueID toCSSValueID() const { return toCSSPrimitiveValue(m_value.get())->getValueID(); }
 
+    virtual void trace(Visitor* visitor) OVERRIDE
+    {
+        visitor->trace(m_value);
+        AnimatableValue::trace(visitor);
+    }
+
 protected:
-    virtual PassRefPtr<AnimatableValue> interpolateTo(const AnimatableValue* value, double fraction) const OVERRIDE
+    virtual PassRefPtrWillBeRawPtr<AnimatableValue> interpolateTo(const AnimatableValue* value, double fraction) const OVERRIDE
     {
         return defaultInterpolateTo(this, value, fraction);
     }
 
+    virtual bool usesDefaultInterpolationWith(const AnimatableValue*) const OVERRIDE { return true; }
+
 private:
-    explicit AnimatableUnknown(PassRefPtr<CSSValue> value)
+    explicit AnimatableUnknown(PassRefPtrWillBeRawPtr<CSSValue> value)
         : m_value(value)
     {
         ASSERT(m_value);
@@ -68,7 +76,7 @@ private:
     virtual AnimatableType type() const OVERRIDE { return TypeUnknown; }
     virtual bool equalTo(const AnimatableValue*) const OVERRIDE;
 
-    const RefPtr<CSSValue> m_value;
+    const RefPtrWillBeMember<CSSValue> m_value;
 };
 
 DEFINE_ANIMATABLE_VALUE_TYPE_CASTS(AnimatableUnknown, isUnknown());

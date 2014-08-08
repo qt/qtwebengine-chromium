@@ -26,65 +26,95 @@
 #include "core/svg/graphics/filters/SVGFEImage.h"
 
 #include "SkBitmapSource.h"
+#include "SkPictureImageFilter.h"
 #include "core/rendering/RenderObject.h"
 #include "core/rendering/svg/SVGRenderingContext.h"
 #include "core/svg/SVGElement.h"
 #include "core/svg/SVGURIReference.h"
+#include "platform/graphics/DisplayList.h"
 #include "platform/graphics/GraphicsContext.h"
 #include "platform/graphics/filters/Filter.h"
+#include "platform/graphics/filters/SkiaImageFilterBuilder.h"
 #include "platform/text/TextStream.h"
 #include "platform/transforms/AffineTransform.h"
 
 namespace WebCore {
 
-FEImage::FEImage(Filter* filter, PassRefPtr<Image> image, const SVGPreserveAspectRatio& preserveAspectRatio)
+FEImage::FEImage(Filter* filter, PassRefPtr<Image> image, PassRefPtr<SVGPreserveAspectRatio> preserveAspectRatio)
     : FilterEffect(filter)
     , m_image(image)
-    , m_document(0)
+    , m_treeScope(0)
     , m_preserveAspectRatio(preserveAspectRatio)
 {
 }
 
-FEImage::FEImage(Filter* filter, Document& document, const String& href, const SVGPreserveAspectRatio& preserveAspectRatio)
+FEImage::FEImage(Filter* filter, TreeScope& treeScope, const String& href, PassRefPtr<SVGPreserveAspectRatio> preserveAspectRatio)
     : FilterEffect(filter)
-    , m_document(&document)
+    , m_treeScope(&treeScope)
     , m_href(href)
     , m_preserveAspectRatio(preserveAspectRatio)
 {
 }
 
-PassRefPtr<FEImage> FEImage::createWithImage(Filter* filter, PassRefPtr<Image> image, const SVGPreserveAspectRatio& preserveAspectRatio)
+PassRefPtr<FEImage> FEImage::createWithImage(Filter* filter, PassRefPtr<Image> image, PassRefPtr<SVGPreserveAspectRatio> preserveAspectRatio)
 {
     return adoptRef(new FEImage(filter, image, preserveAspectRatio));
 }
 
-PassRefPtr<FEImage> FEImage::createWithIRIReference(Filter* filter, Document& document, const String& href, const SVGPreserveAspectRatio& preserveAspectRatio)
+PassRefPtr<FEImage> FEImage::createWithIRIReference(Filter* filter, TreeScope& treeScope, const String& href, PassRefPtr<SVGPreserveAspectRatio> preserveAspectRatio)
 {
-    return adoptRef(new FEImage(filter, document, href, preserveAspectRatio));
+    return adoptRef(new FEImage(filter, treeScope, href, preserveAspectRatio));
 }
 
-void FEImage::determineAbsolutePaintRect()
+static FloatRect getRendererRepaintRect(RenderObject* renderer)
 {
-    FloatRect paintRect = filter()->absoluteTransform().mapRect(filterPrimitiveSubregion());
-    FloatRect srcRect;
-    if (m_image) {
-        srcRect.setSize(m_image->size());
-        m_preserveAspectRatio.transformRect(paintRect, srcRect);
-    } else if (RenderObject* renderer = referencedRenderer())
-        srcRect = filter()->absoluteTransform().mapRect(renderer->repaintRectInLocalCoordinates());
+    return renderer->localToParentTransform().mapRect(
+        renderer->paintInvalidationRectInLocalCoordinates());
+}
 
+FloatRect FEImage::determineAbsolutePaintRect(const FloatRect& originalRequestedRect)
+{
+    RenderObject* renderer = referencedRenderer();
+    if (!m_image && !renderer)
+        return FloatRect();
+
+    FloatRect requestedRect = originalRequestedRect;
     if (clipsToBounds())
-        paintRect.intersect(maxEffectRect());
-    else
-        paintRect.unite(maxEffectRect());
-    setAbsolutePaintRect(enclosingIntRect(paintRect));
+        requestedRect.intersect(maxEffectRect());
+
+    FloatRect destRect = filter()->mapLocalRectToAbsoluteRect(filterPrimitiveSubregion());
+    FloatRect srcRect;
+    if (renderer) {
+        srcRect = getRendererRepaintRect(renderer);
+        SVGElement* contextNode = toSVGElement(renderer->node());
+
+        if (contextNode->hasRelativeLengths()) {
+            // FIXME: This fixes relative lengths but breaks non-relative ones (see crbug/260709).
+            SVGLengthContext lengthContext(contextNode);
+            FloatSize viewportSize;
+            if (lengthContext.determineViewport(viewportSize)) {
+                srcRect = makeMapBetweenRects(FloatRect(FloatPoint(), viewportSize), destRect).mapRect(srcRect);
+            }
+        } else {
+            srcRect = filter()->mapLocalRectToAbsoluteRect(srcRect);
+            srcRect.move(destRect.x(), destRect.y());
+        }
+        destRect.intersect(srcRect);
+    } else {
+        srcRect = FloatRect(FloatPoint(), m_image->size());
+        m_preserveAspectRatio->transformRect(destRect, srcRect);
+    }
+
+    destRect.intersect(requestedRect);
+    addAbsolutePaintRect(destRect);
+    return destRect;
 }
 
 RenderObject* FEImage::referencedRenderer() const
 {
-    if (!m_document)
+    if (!m_treeScope)
         return 0;
-    Element* hrefElement = SVGURIReference::targetElementFromIRIString(m_href, *m_document);
+    Element* hrefElement = SVGURIReference::targetElementFromIRIString(m_href, *m_treeScope);
     if (!hrefElement || !hrefElement->isSVGElement())
         return 0;
     return hrefElement->renderer();
@@ -99,44 +129,40 @@ void FEImage::applySoftware()
     ImageBuffer* resultImage = createImageBufferResult();
     if (!resultImage)
         return;
-
-    FloatRect destRect = filter()->absoluteTransform().mapRect(filterPrimitiveSubregion());
-
-    FloatRect srcRect;
-    if (renderer)
-        srcRect = filter()->absoluteTransform().mapRect(renderer->repaintRectInLocalCoordinates());
-    else {
-        srcRect = FloatRect(FloatPoint(), m_image->size());
-        m_preserveAspectRatio.transformRect(destRect, srcRect);
-    }
-
     IntPoint paintLocation = absolutePaintRect().location();
-    destRect.move(-paintLocation.x(), -paintLocation.y());
+    resultImage->context()->translate(-paintLocation.x(), -paintLocation.y());
 
     // FEImage results are always in ColorSpaceDeviceRGB
     setResultColorSpace(ColorSpaceDeviceRGB);
 
-    if (renderer) {
-        SVGElement* contextNode = toSVGElement(renderer->node());
-        if (contextNode->hasRelativeLengths()) {
-            SVGLengthContext lengthContext(contextNode);
-            FloatSize viewportSize;
+    FloatRect destRect = filter()->mapLocalRectToAbsoluteRect(filterPrimitiveSubregion());
+    FloatRect srcRect;
 
-            // If we're referencing an element with percentage units, eg. <rect with="30%"> those values were resolved against the viewport.
-            // Build up a transformation that maps from the viewport space to the filter primitive subregion.
-            if (lengthContext.determineViewport(viewportSize))
-                resultImage->context()->concatCTM(makeMapBetweenRects(FloatRect(FloatPoint(), viewportSize), destRect));
-        } else {
-            const AffineTransform& absoluteTransform = filter()->absoluteTransform();
-            resultImage->context()->concatCTM(absoluteTransform);
-        }
+    if (!renderer) {
+        srcRect = FloatRect(FloatPoint(), m_image->size());
+        m_preserveAspectRatio->transformRect(destRect, srcRect);
 
-        AffineTransform contentTransformation;
-        SVGRenderingContext::renderSubtree(resultImage->context(), renderer, contentTransformation);
+        resultImage->context()->drawImage(m_image.get(), destRect, srcRect);
         return;
     }
 
-    resultImage->context()->drawImage(m_image.get(), destRect, srcRect);
+    SVGElement* contextNode = toSVGElement(renderer->node());
+    if (contextNode->hasRelativeLengths()) {
+        // FIXME: This fixes relative lengths but breaks non-relative ones (see crbug/260709).
+        SVGLengthContext lengthContext(contextNode);
+        FloatSize viewportSize;
+
+        // If we're referencing an element with percentage units, eg. <rect with="30%"> those values were resolved against the viewport.
+        // Build up a transformation that maps from the viewport space to the filter primitive subregion.
+        if (lengthContext.determineViewport(viewportSize))
+            resultImage->context()->concatCTM(makeMapBetweenRects(FloatRect(FloatPoint(), viewportSize), destRect));
+    } else {
+        resultImage->context()->translate(destRect.x(), destRect.y());
+        resultImage->context()->concatCTM(filter()->absoluteTransform());
+    }
+
+    AffineTransform contentTransformation;
+    SVGRenderingContext::renderSubtree(resultImage->context(), renderer, contentTransformation);
 }
 
 TextStream& FEImage::externalRepresentation(TextStream& ts, int indent) const
@@ -145,7 +171,7 @@ TextStream& FEImage::externalRepresentation(TextStream& ts, int indent) const
     if (m_image)
         imageSize = m_image->size();
     else if (RenderObject* renderer = referencedRenderer())
-        imageSize = enclosingIntRect(renderer->repaintRectInLocalCoordinates()).size();
+        imageSize = enclosingIntRect(getRendererRepaintRect(renderer)).size();
     writeIndent(ts, indent);
     ts << "[feImage";
     FilterEffect::externalRepresentation(ts);
@@ -154,15 +180,65 @@ TextStream& FEImage::externalRepresentation(TextStream& ts, int indent) const
     return ts;
 }
 
+PassRefPtr<SkImageFilter> FEImage::createImageFilterForRenderer(RenderObject* renderer, SkiaImageFilterBuilder* builder)
+{
+    FloatRect dstRect = filterPrimitiveSubregion();
+
+    AffineTransform transform;
+    SVGElement* contextNode = toSVGElement(renderer->node());
+
+    if (contextNode->hasRelativeLengths()) {
+        SVGLengthContext lengthContext(contextNode);
+        FloatSize viewportSize;
+
+        // If we're referencing an element with percentage units, eg. <rect with="30%"> those values were resolved against the viewport.
+        // Build up a transformation that maps from the viewport space to the filter primitive subregion.
+        if (lengthContext.determineViewport(viewportSize))
+            transform = makeMapBetweenRects(FloatRect(FloatPoint(), viewportSize), dstRect);
+    } else {
+        transform.translate(dstRect.x(), dstRect.y());
+    }
+
+    GraphicsContext* context = builder->context();
+    if (!context)
+        return adoptRef(SkBitmapSource::Create(SkBitmap()));
+    AffineTransform contentTransformation;
+    context->save();
+    context->beginRecording(FloatRect(FloatPoint(), dstRect.size()));
+    context->concatCTM(transform);
+    SVGRenderingContext::renderSubtree(context, renderer, contentTransformation);
+    RefPtr<DisplayList> displayList = context->endRecording();
+    context->restore();
+    RefPtr<SkImageFilter> result = adoptRef(SkPictureImageFilter::Create(displayList->picture(), dstRect));
+    return result.release();
+}
+
 PassRefPtr<SkImageFilter> FEImage::createImageFilter(SkiaImageFilterBuilder* builder)
 {
-    if (!m_image)
-        return 0;
+    RenderObject* renderer = referencedRenderer();
+    if (!m_image && !renderer)
+        return adoptRef(SkBitmapSource::Create(SkBitmap()));
+
+    setOperatingColorSpace(ColorSpaceDeviceRGB);
+
+    if (renderer)
+        return createImageFilterForRenderer(renderer, builder);
+
+    FloatRect srcRect = FloatRect(FloatPoint(), m_image->size());
+    FloatRect dstRect = filterPrimitiveSubregion();
+
+    // FIXME: CSS image filters currently do not seem to set filter primitive
+    // subregion correctly if unspecified. So default to srcRect size if so.
+    if (dstRect.isEmpty())
+        dstRect = srcRect;
+
+    m_preserveAspectRatio->transformRect(dstRect, srcRect);
 
     if (!m_image->nativeImageForCurrentFrame())
-        return 0;
+        return adoptRef(SkBitmapSource::Create(SkBitmap()));
 
-    return adoptRef(new SkBitmapSource(m_image->nativeImageForCurrentFrame()->bitmap()));
+    RefPtr<SkImageFilter> result = adoptRef(SkBitmapSource::Create(m_image->nativeImageForCurrentFrame()->bitmap(), srcRect, dstRect));
+    return result.release();
 }
 
 } // namespace WebCore

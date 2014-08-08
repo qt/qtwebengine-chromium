@@ -5,25 +5,43 @@
 {
   'variables': {
     'conditions': [
-      ['OS=="win"', {
+      ['disable_nacl==1', {
         'nacl_defines': [
-          'NACL_WINDOWS=1',
-          'NACL_LINUX=0',
-          'NACL_OSX=0',
         ],
-      }],
-      ['OS=="linux"', {
-        'nacl_defines': [
-          'NACL_WINDOWS=0',
-          'NACL_LINUX=1',
-          'NACL_OSX=0',
-        ],
-      }],
-      ['OS=="mac"', {
-        'nacl_defines': [
-          'NACL_WINDOWS=0',
-          'NACL_LINUX=0',
-          'NACL_OSX=1',
+      }, {
+        'conditions': [
+          ['OS=="win"', {
+            'nacl_defines': [
+              'NACL_WINDOWS=1',
+              'NACL_LINUX=0',
+              'NACL_OSX=0',
+              'NACL_ANDROID=0',
+            ],
+          }],
+          ['OS=="linux"', {
+            'nacl_defines': [
+              'NACL_WINDOWS=0',
+              'NACL_LINUX=1',
+              'NACL_OSX=0',
+              'NACL_ANDROID=0',
+            ],
+          }],
+          ['OS=="mac"', {
+            'nacl_defines': [
+              'NACL_WINDOWS=0',
+              'NACL_LINUX=0',
+              'NACL_OSX=1',
+              'NACL_ANDROID=0',
+            ],
+          }],
+          ['OS=="android"', {
+            'nacl_defines': [
+              'NACL_WINDOWS=0',
+              'NACL_LINUX=1',
+              'NACL_OSX=0',
+              'NACL_ANDROID=1',
+            ],
+          }],
         ],
       }],
       # TODO(mcgrathr): This duplicates native_client/build/common.gypi;
@@ -54,6 +72,10 @@
       }],
       ['target_arch=="mipsel"', {
         'nacl_defines': [
+          'NACL_BUILD_ARCH=mips',
+          'NACL_BUILD_SUBARCH=32',
+          'NACL_TARGET_ARCH=mips',
+          'NACL_TARGET_SUBARCH=32',
         ],
       }],
     ],

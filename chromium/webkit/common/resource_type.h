@@ -30,6 +30,7 @@ class ResourceType {
     FAVICON,         // a favicon
     XHR,             // a XMLHttpRequest
     PING,            // a ping request for <a ping>
+    SERVICE_WORKER,  // the main resource of a service worker.
     LAST_TYPE        // Place holder so we don't need to change ValidType
                      // everytime.
   };
@@ -51,6 +52,10 @@ class ResourceType {
 
   static bool IsSharedWorker(ResourceType::Type type) {
     return type == SHARED_WORKER;
+  }
+
+  static bool IsServiceWorker(ResourceType::Type type) {
+    return type == SERVICE_WORKER;
   }
 
   static bool IsSubresource(ResourceType::Type type) {

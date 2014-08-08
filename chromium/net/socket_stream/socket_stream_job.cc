@@ -24,19 +24,20 @@ SocketStreamJob* SocketStreamJob::CreateSocketStreamJob(
     const GURL& url,
     SocketStream::Delegate* delegate,
     TransportSecurityState* sts,
-    SSLConfigService* ssl) {
+    SSLConfigService* ssl,
+    URLRequestContext* context,
+    CookieStore* cookie_store) {
   GURL socket_url(url);
-  TransportSecurityState::DomainState domain_state;
-  if (url.scheme() == "ws" && sts && sts->GetDomainState(
-          url.host(), SSLConfigService::IsSNIAvailable(ssl), &domain_state) &&
-      domain_state.ShouldUpgradeToSSL()) {
-    url_canon::Replacements<char> replacements;
+  if (url.scheme() == "ws" && sts &&
+      sts->ShouldUpgradeToSSL(url.host(),
+                              SSLConfigService::IsSNIAvailable(ssl))) {
+    url::Replacements<char> replacements;
     static const char kNewScheme[] = "wss";
-    replacements.SetScheme(kNewScheme,
-                           url_parse::Component(0, strlen(kNewScheme)));
+    replacements.SetScheme(kNewScheme, url::Component(0, strlen(kNewScheme)));
     socket_url = url.ReplaceComponents(replacements);
   }
-  return SocketStreamJobManager::GetInstance()->CreateJob(socket_url, delegate);
+  return SocketStreamJobManager::GetInstance()->CreateJob(
+      socket_url, delegate, context, cookie_store);
 }
 
 SocketStreamJob::SocketStreamJob() {}
@@ -80,6 +81,11 @@ void SocketStreamJob::ContinueDespiteError() {
 
 void SocketStreamJob::DetachDelegate() {
   socket_->DetachDelegate();
+}
+
+void SocketStreamJob::DetachContext() {
+  if (socket_.get())
+    socket_->DetachContext();
 }
 
 SocketStreamJob::~SocketStreamJob() {}

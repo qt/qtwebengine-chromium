@@ -24,7 +24,7 @@
 #include "config.h"
 #include "core/html/LabelsNodeList.h"
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 #include "core/dom/Element.h"
 #include "core/dom/NodeRareData.h"
 #include "core/html/HTMLLabelElement.h"
@@ -33,19 +33,21 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-LabelsNodeList::LabelsNodeList(Node* ownerNode)
+LabelsNodeList::LabelsNodeList(ContainerNode& ownerNode)
     : LiveNodeList(ownerNode, LabelsNodeListType, InvalidateOnForAttrChange, NodeListIsRootedAtDocument)
 {
 }
 
 LabelsNodeList::~LabelsNodeList()
 {
-    ownerNode()->nodeLists()->removeCacheWithAtomicName(this, LabelsNodeListType, starAtom);
+#if !ENABLE(OILPAN)
+    ownerNode().nodeLists()->removeCache(this, LabelsNodeListType);
+#endif
 }
 
-bool LabelsNodeList::nodeMatches(Element* testNode) const
+bool LabelsNodeList::elementMatches(const Element& element) const
 {
-    return isHTMLLabelElement(testNode) && toHTMLLabelElement(testNode)->control() == ownerNode();
+    return isHTMLLabelElement(element) && toHTMLLabelElement(element).control() == ownerNode();
 }
 
 } // namespace WebCore

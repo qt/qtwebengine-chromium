@@ -131,12 +131,12 @@ static int max_glyphid_for_typeface(SkTypeface* typeface) {
 
 typedef SkAutoSTMalloc<128, uint16_t> SkGlyphStorage;
 
-static size_t force_glyph_encoding(const SkPaint& paint, const void* text,
-                                   size_t len, SkGlyphStorage* storage,
-                                   uint16_t** glyphIDs) {
+static int force_glyph_encoding(const SkPaint& paint, const void* text,
+                                size_t len, SkGlyphStorage* storage,
+                                uint16_t** glyphIDs) {
     // Make sure we have a glyph id encoding.
     if (paint.getTextEncoding() != SkPaint::kGlyphID_TextEncoding) {
-        size_t numGlyphs = paint.textToGlyphs(text, len, NULL);
+        int numGlyphs = paint.textToGlyphs(text, len, NULL);
         storage->reset(numGlyphs);
         paint.textToGlyphs(text, len, storage->get());
         *glyphIDs = storage->get();
@@ -145,12 +145,12 @@ static size_t force_glyph_encoding(const SkPaint& paint, const void* text,
 
     // For user supplied glyph ids we need to validate them.
     SkASSERT((len & 1) == 0);
-    size_t numGlyphs = len / 2;
+    int numGlyphs = SkToInt(len / 2);
     const uint16_t* input =
         reinterpret_cast<uint16_t*>(const_cast<void*>((text)));
 
     int maxGlyphID = max_glyphid_for_typeface(paint.getTypeface());
-    size_t validated;
+    int validated;
     for (validated = 0; validated < numGlyphs; ++validated) {
         if (input[validated] > maxGlyphID) {
             break;
@@ -167,7 +167,7 @@ static size_t force_glyph_encoding(const SkPaint& paint, const void* text,
         memcpy(storage->get(), input, validated * sizeof(uint16_t));
     }
 
-    for (size_t i = validated; i < numGlyphs; ++i) {
+    for (int i = validated; i < numGlyphs; ++i) {
         storage->get()[i] = input[i];
         if (input[i] > maxGlyphID) {
             storage->get()[i] = 0;
@@ -232,15 +232,14 @@ GraphicStateEntry::GraphicStateEntry() : fColor(SK_ColorBLACK),
     fMatrix.reset();
 }
 
-bool GraphicStateEntry::compareInitialState(const GraphicStateEntry& b) {
-    return fColor == b.fColor &&
-           fShaderIndex == b.fShaderIndex &&
-           fGraphicStateIndex == b.fGraphicStateIndex &&
-           fMatrix == b.fMatrix &&
-           fClipStack == b.fClipStack &&
-               (fTextScaleX == 0 ||
-                b.fTextScaleX == 0 ||
-                (fTextScaleX == b.fTextScaleX && fTextFill == b.fTextFill));
+bool GraphicStateEntry::compareInitialState(const GraphicStateEntry& cur) {
+    return fColor == cur.fColor &&
+           fShaderIndex == cur.fShaderIndex &&
+           fGraphicStateIndex == cur.fGraphicStateIndex &&
+           fMatrix == cur.fMatrix &&
+           fClipStack == cur.fClipStack &&
+           (fTextScaleX == 0 ||
+               (fTextScaleX == cur.fTextScaleX && fTextFill == cur.fTextFill));
 }
 
 class GraphicStackState {
@@ -405,10 +404,8 @@ static bool get_clip_stack_path(const SkMatrix& transform,
             outClipPath->reset();
             outClipPath->setFillType(SkPath::kInverseWinding_FillType);
             continue;
-        } else if (SkClipStack::Element::kRect_Type == clipEntry->getType()) {
-            entryPath.addRect(clipEntry->getRect());
-        } else if (SkClipStack::Element::kPath_Type == clipEntry->getType()) {
-            entryPath = clipEntry->getPath();
+        } else {
+            clipEntry->asPath(&entryPath);
         }
         entryPath.transform(transform);
 
@@ -506,14 +503,13 @@ void GraphicStackState::updateClip(const SkClipStack& clipStack,
                     emit_clip(NULL, &translatedClip, fContentStream);
                     break;
                 }
-                case SkClipStack::Element::kPath_Type: {
+                default: {
                     SkPath translatedPath;
-                    clipEntry->getPath().transform(transform, &translatedPath);
+                    clipEntry->asPath(&translatedPath);
+                    translatedPath.transform(transform, &translatedPath);
                     emit_clip(&translatedPath, NULL, fContentStream);
                     break;
                 }
-                default:
-                    SkASSERT(false);
             }
         }
     }
@@ -586,13 +582,10 @@ void GraphicStackState::updateDrawingState(const GraphicStateEntry& state) {
     }
 }
 
-SkBaseDevice* SkPDFDevice::onCreateCompatibleDevice(SkBitmap::Config config,
-                                                    int width, int height,
-                                                    bool isOpaque,
-                                                    Usage usage) {
+SkBaseDevice* SkPDFDevice::onCreateDevice(const SkImageInfo& info, Usage usage) {
     SkMatrix initialTransform;
     initialTransform.reset();
-    SkISize size = SkISize::Make(width, height);
+    SkISize size = SkISize::Make(info.width(), info.height());
     return SkNEW_ARGS(SkPDFDevice, (size, size, initialTransform));
 }
 
@@ -711,7 +704,7 @@ private:
 
 static inline SkBitmap makeContentBitmap(const SkISize& contentSize,
                                          const SkMatrix* initialTransform) {
-    SkBitmap bitmap;
+    SkImageInfo info;
     if (initialTransform) {
         // Compute the size of the drawing area.
         SkVector drawingSize;
@@ -725,17 +718,19 @@ static inline SkBitmap makeContentBitmap(const SkISize& contentSize,
         }
         inverse.mapVectors(&drawingSize, 1);
         SkISize size = SkSize::Make(drawingSize.fX, drawingSize.fY).toRound();
-        bitmap.setConfig(SkBitmap::kNo_Config, abs(size.fWidth),
-                         abs(size.fHeight));
+        info = SkImageInfo::MakeUnknown(abs(size.fWidth), abs(size.fHeight));
     } else {
-        bitmap.setConfig(SkBitmap::kNo_Config, abs(contentSize.fWidth),
-                         abs(contentSize.fHeight));
+        info = SkImageInfo::MakeUnknown(abs(contentSize.fWidth),
+                                        abs(contentSize.fHeight));
     }
 
+    SkBitmap bitmap;
+    bitmap.setInfo(info);
     return bitmap;
 }
 
 // TODO(vandebo) change pageSize to SkSize.
+// TODO: inherit from SkBaseDevice instead of SkBitmapDevice
 SkPDFDevice::SkPDFDevice(const SkISize& pageSize, const SkISize& contentSize,
                          const SkMatrix& initialTransform)
     : SkBitmapDevice(makeContentBitmap(contentSize, &initialTransform)),
@@ -810,10 +805,6 @@ void SkPDFDevice::cleanUp(bool clearFontUsage) {
     if (clearFontUsage) {
         fFontGlyphUsage->reset();
     }
-}
-
-uint32_t SkPDFDevice::getDeviceCapabilities() {
-    return kVector_Capability;
 }
 
 void SkPDFDevice::clear(SkColor color) {
@@ -992,10 +983,7 @@ void SkPDFDevice::drawPath(const SkDraw& d, const SkPath& origPath,
             }
             origPath.transform(*prePathMatrix, pathPtr);
         } else {
-            if (!matrix.preConcat(*prePathMatrix)) {
-                // TODO(edisonn): report somehow why we failed?
-                return;
-            }
+            matrix.preConcat(*prePathMatrix);
         }
     }
 
@@ -1138,8 +1126,7 @@ void SkPDFDevice::drawText(const SkDraw& d, const void* text, size_t len,
 
     SkGlyphStorage storage(0);
     uint16_t* glyphIDs = NULL;
-    size_t numGlyphs = force_glyph_encoding(paint, text, len, &storage,
-                                            &glyphIDs);
+    int numGlyphs = force_glyph_encoding(paint, text, len, &storage, &glyphIDs);
     textPaint.setTextEncoding(SkPaint::kGlyphID_TextEncoding);
 
     SkDrawCacheProc glyphCacheProc = textPaint.getDrawCacheProc();
@@ -1147,11 +1134,11 @@ void SkPDFDevice::drawText(const SkDraw& d, const void* text, size_t len,
     content.entry()->fContent.writeText("BT\n");
     set_text_transform(x, y, textPaint.getTextSkewX(),
                        &content.entry()->fContent);
-    size_t consumedGlyphCount = 0;
+    int consumedGlyphCount = 0;
     while (numGlyphs > consumedGlyphCount) {
         updateFont(textPaint, glyphIDs[consumedGlyphCount], content.entry());
         SkPDFFont* font = content.entry()->fState.fFont;
-        size_t availableGlyphs =
+        int availableGlyphs =
             font->glyphsToPDFFontEncoding(glyphIDs + consumedGlyphCount,
                                           numGlyphs - consumedGlyphCount);
         fFontGlyphUsage->noteGlyphUsage(font, glyphIDs + consumedGlyphCount,
@@ -1341,18 +1328,12 @@ void SkPDFDevice::drawVertices(const SkDraw& d, SkCanvas::VertexMode,
     if (d.fClip->isEmpty()) {
         return;
     }
-    NOT_IMPLEMENTED("drawVerticies", true);
+    // TODO: implement drawVertices
 }
 
 void SkPDFDevice::drawDevice(const SkDraw& d, SkBaseDevice* device,
                              int x, int y, const SkPaint& paint) {
-    if ((device->getDeviceCapabilities() & kVector_Capability) == 0) {
-        // If we somehow get a raster device, do what our parent would do.
-        INHERITED::drawDevice(d, device, x, y, paint);
-        return;
-    }
-
-    // Assume that a vector capable device means that it's a PDF Device.
+    // our onCreateDevice() always creates SkPDFDevice subclasses.
     SkPDFDevice* pdfDevice = static_cast<SkPDFDevice*>(device);
     if (pdfDevice->isContentEmpty()) {
         return;
@@ -2047,8 +2028,7 @@ void SkPDFDevice::populateGraphicStateEntryFromPaint(
         const SkPaint& paint,
         bool hasText,
         GraphicStateEntry* entry) {
-    SkASSERT(paint.getPathEffect() == NULL);
-
+    NOT_IMPLEMENTED(paint.getPathEffect() != NULL, false);
     NOT_IMPLEMENTED(paint.getMaskFilter() != NULL, false);
     NOT_IMPLEMENTED(paint.getColorFilter() != NULL, false);
 
@@ -2250,13 +2230,11 @@ void SkPDFDevice::internalDrawBitmap(const SkMatrix& origMatrix,
         // the image.  Avoiding alpha will reduce the pdf size and generation
         // CPU time some.
 
-        perspectiveBitmap.setConfig(
-                SkBitmap::kARGB_8888_Config,
-                SkScalarCeilToInt(
-                        physicalPerspectiveOutline.getBounds().width()),
-                SkScalarCeilToInt(
-                        physicalPerspectiveOutline.getBounds().height()));
-        perspectiveBitmap.allocPixels();
+        const int w = SkScalarCeilToInt(physicalPerspectiveOutline.getBounds().width());
+        const int h = SkScalarCeilToInt(physicalPerspectiveOutline.getBounds().height());
+        if (!perspectiveBitmap.allocPixels(SkImageInfo::MakeN32Premul(w, h))) {
+            return;
+        }
         perspectiveBitmap.eraseColor(SK_ColorTRANSPARENT);
 
         SkBitmapDevice device(perspectiveBitmap);
@@ -2327,11 +2305,6 @@ void SkPDFDevice::internalDrawBitmap(const SkMatrix& origMatrix,
                                 &content.entry()->fContent);
 }
 
-bool SkPDFDevice::onReadPixels(const SkBitmap& bitmap, int x, int y,
-                               SkCanvas::Config8888) {
-    return false;
-}
-
-bool SkPDFDevice::allowImageFilter(SkImageFilter*) {
+bool SkPDFDevice::allowImageFilter(const SkImageFilter*) {
     return false;
 }

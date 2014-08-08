@@ -30,9 +30,9 @@
  */
 
 [
-    NoInterfaceObject,
-    LegacyImplementedInBaseClass
+    LegacyTreatAsPartialInterface,
+    NoInterfaceObject, // Always used on target of 'implements'
+    WillBeGarbageCollected,
 ] interface AbstractWorker {
     attribute EventHandler onerror;
 };
-

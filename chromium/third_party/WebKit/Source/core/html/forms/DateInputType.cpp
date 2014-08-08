@@ -31,8 +31,8 @@
 #include "config.h"
 #include "core/html/forms/DateInputType.h"
 
-#include "HTMLNames.h"
-#include "InputTypeNames.h"
+#include "core/HTMLNames.h"
+#include "core/InputTypeNames.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/forms/DateTimeFieldsState.h"
 #include "platform/DateComponents.h"
@@ -53,9 +53,9 @@ inline DateInputType::DateInputType(HTMLInputElement& element)
 {
 }
 
-PassRefPtr<InputType> DateInputType::create(HTMLInputElement& element)
+PassRefPtrWillBeRawPtr<InputType> DateInputType::create(HTMLInputElement& element)
 {
-    return adoptRef(new DateInputType(element));
+    return adoptRefWillBeNoop(new DateInputType(element));
 }
 
 void DateInputType::countUsage()
@@ -72,7 +72,7 @@ StepRange DateInputType::createStepRange(AnyStepHandling anyStepHandling) const
 {
     DEFINE_STATIC_LOCAL(const StepRange::StepDescription, stepDescription, (dateDefaultStep, dateDefaultStepBase, dateStepScaleFactor, StepRange::ParsedStepValueShouldBeInteger));
 
-    return InputType::createStepRange(anyStepHandling, 0, Decimal::fromDouble(DateComponents::minimumDate()), Decimal::fromDouble(DateComponents::maximumDate()), stepDescription);
+    return InputType::createStepRange(anyStepHandling, dateDefaultStepBase, Decimal::fromDouble(DateComponents::minimumDate()), Decimal::fromDouble(DateComponents::maximumDate()), stepDescription);
 }
 
 bool DateInputType::parseToDateComponentsInternal(const String& string, DateComponents* out) const

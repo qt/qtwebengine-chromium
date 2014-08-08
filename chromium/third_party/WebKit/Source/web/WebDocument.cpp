@@ -29,16 +29,8 @@
  */
 
 #include "config.h"
-#include "WebDocument.h"
+#include "public/web/WebDocument.h"
 
-#include "WebAXObject.h"
-#include "WebDOMEvent.h"
-#include "WebDocumentType.h"
-#include "WebElement.h"
-#include "WebFormElement.h"
-#include "WebFrameImpl.h"
-#include "WebNodeCollection.h"
-#include "WebNodeList.h"
 #include "bindings/v8/Dictionary.h"
 #include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/ScriptState.h"
@@ -51,7 +43,6 @@
 #include "core/dom/DocumentType.h"
 #include "core/dom/Element.h"
 #include "core/dom/FullscreenElementStack.h"
-#include "core/dom/NodeList.h"
 #include "core/dom/StyleEngine.h"
 #include "core/html/HTMLAllCollection.h"
 #include "core/html/HTMLBodyElement.h"
@@ -61,8 +52,17 @@
 #include "core/html/HTMLHeadElement.h"
 #include "core/loader/DocumentLoader.h"
 #include "core/rendering/RenderObject.h"
+#include "core/rendering/RenderView.h"
 #include "platform/weborigin/SecurityOrigin.h"
 #include "public/platform/WebURL.h"
+#include "public/web/WebAXObject.h"
+#include "public/web/WebDOMEvent.h"
+#include "public/web/WebDocumentType.h"
+#include "public/web/WebElement.h"
+#include "public/web/WebElementCollection.h"
+#include "public/web/WebFormElement.h"
+#include "public/web/WebNodeList.h"
+#include "web/WebLocalFrameImpl.h"
 #include "wtf/PassRefPtr.h"
 #include <v8.h>
 
@@ -97,14 +97,19 @@ WebString WebDocument::referrer() const
     return constUnwrap<Document>()->referrer();
 }
 
+WebColor WebDocument::themeColor() const
+{
+    return constUnwrap<Document>()->themeColor().rgb();
+}
+
 WebURL WebDocument::openSearchDescriptionURL() const
 {
     return const_cast<Document*>(constUnwrap<Document>())->openSearchDescriptionURL();
 }
 
-WebFrame* WebDocument::frame() const
+WebLocalFrame* WebDocument::frame() const
 {
-    return WebFrameImpl::fromFrame(constUnwrap<Document>()->frame());
+    return WebLocalFrameImpl::fromFrame(constUnwrap<Document>()->frame());
 }
 
 bool WebDocument::isHTMLDocument() const
@@ -152,36 +157,36 @@ WebString WebDocument::title() const
     return WebString(constUnwrap<Document>()->title());
 }
 
-WebNodeCollection WebDocument::all()
+WebElementCollection WebDocument::all()
 {
-    return WebNodeCollection(unwrap<Document>()->all());
+    return WebElementCollection(unwrap<Document>()->all());
 }
 
 void WebDocument::images(WebVector<WebElement>& results)
 {
-    RefPtr<HTMLCollection> images = unwrap<Document>()->images();
+    RefPtrWillBeRawPtr<HTMLCollection> images = unwrap<Document>()->images();
     size_t sourceLength = images->length();
     Vector<WebElement> temp;
     temp.reserveCapacity(sourceLength);
     for (size_t i = 0; i < sourceLength; ++i) {
-        Node* node = images->item(i);
-        if (node && node->isHTMLElement())
-            temp.append(WebElement(toElement(node)));
+        Element* element = images->item(i);
+        if (element && element->isHTMLElement())
+            temp.append(WebElement(element));
     }
     results.assign(temp);
 }
 
 void WebDocument::forms(WebVector<WebFormElement>& results) const
 {
-    RefPtr<HTMLCollection> forms = const_cast<Document*>(constUnwrap<Document>())->forms();
+    RefPtrWillBeRawPtr<HTMLCollection> forms = const_cast<Document*>(constUnwrap<Document>())->forms();
     size_t sourceLength = forms->length();
     Vector<WebFormElement> temp;
     temp.reserveCapacity(sourceLength);
     for (size_t i = 0; i < sourceLength; ++i) {
-        Node* node = forms->item(i);
+        Element* element = forms->item(i);
         // Strange but true, sometimes node can be 0.
-        if (node && node->isHTMLElement())
-            temp.append(WebFormElement(toHTMLFormElement(node)));
+        if (element && element->isHTMLElement())
+            temp.append(WebFormElement(toHTMLFormElement(element)));
     }
     results.assign(temp);
 }
@@ -196,9 +201,9 @@ WebElement WebDocument::getElementById(const WebString& id) const
     return WebElement(constUnwrap<Document>()->getElementById(id));
 }
 
-WebNode WebDocument::focusedNode() const
+WebElement WebDocument::focusedElement() const
 {
-    return WebNode(constUnwrap<Document>()->focusedElement());
+    return WebElement(constUnwrap<Document>()->focusedElement());
 }
 
 WebDocumentType WebDocument::doctype() const
@@ -206,23 +211,18 @@ WebDocumentType WebDocument::doctype() const
     return WebDocumentType(constUnwrap<Document>()->doctype());
 }
 
-void WebDocument::insertUserStyleSheet(const WebString& sourceCode, UserStyleLevel)
-{
-    insertStyleSheet(sourceCode);
-}
-
 void WebDocument::insertStyleSheet(const WebString& sourceCode)
 {
-    RefPtr<Document> document = unwrap<Document>();
+    RefPtrWillBeRawPtr<Document> document = unwrap<Document>();
     ASSERT(document);
-    RefPtr<StyleSheetContents> parsedSheet = StyleSheetContents::create(*document.get());
+    RefPtrWillBeRawPtr<StyleSheetContents> parsedSheet = StyleSheetContents::create(CSSParserContext(*document, 0));
     parsedSheet->parseString(sourceCode);
     document->styleEngine()->addAuthorSheet(parsedSheet);
 }
 
 void WebDocument::watchCSSSelectors(const WebVector<WebString>& webSelectors)
 {
-    RefPtr<Document> document = unwrap<Document>();
+    RefPtrWillBeRawPtr<Document> document = unwrap<Document>();
     Vector<String> selectors;
     selectors.append(webSelectors.data(), webSelectors.size());
     CSSSelectorWatch::from(*document).watchCSSSelectors(selectors);
@@ -230,14 +230,14 @@ void WebDocument::watchCSSSelectors(const WebVector<WebString>& webSelectors)
 
 void WebDocument::cancelFullScreen()
 {
-    if (FullscreenElementStack* fullscreen = FullscreenElementStack::fromIfExists(unwrap<Document>()))
+    if (FullscreenElementStack* fullscreen = FullscreenElementStack::fromIfExists(*unwrap<Document>()))
         fullscreen->webkitCancelFullScreen();
 }
 
 WebElement WebDocument::fullScreenElement() const
 {
     Element* fullScreenElement = 0;
-    if (FullscreenElementStack* fullscreen = FullscreenElementStack::fromIfExists(const_cast<WebDocument*>(this)->unwrap<Document>()))
+    if (FullscreenElementStack* fullscreen = FullscreenElementStack::fromIfExists(*const_cast<WebDocument*>(this)->unwrap<Document>()))
         fullScreenElement = fullscreen->webkitCurrentFullScreenElement();
     return WebElement(fullScreenElement);
 }
@@ -268,7 +268,7 @@ WebElement WebDocument::createElement(const WebString& tagName)
 WebAXObject WebDocument::accessibilityObject() const
 {
     const Document* document = constUnwrap<Document>();
-    return WebAXObject(document->axObjectCache()->getOrCreate(document->renderer()));
+    return WebAXObject(document->axObjectCache()->getOrCreate(document->renderView()));
 }
 
 WebAXObject WebDocument::accessibilityObjectFromID(int axID) const
@@ -295,28 +295,29 @@ WebVector<WebDraggableRegion> WebDocument::draggableRegions() const
 
 v8::Handle<v8::Value> WebDocument::registerEmbedderCustomElement(const WebString& name, v8::Handle<v8::Value> options, WebExceptionCode& ec)
 {
+    v8::Isolate* isolate = v8::Isolate::GetCurrent();
     Document* document = unwrap<Document>();
-    Dictionary dictionary(options, v8::Isolate::GetCurrent());
+    Dictionary dictionary(options, isolate);
     TrackExceptionState exceptionState;
-    ScriptValue constructor = document->registerElement(ScriptState::current(), name, dictionary, exceptionState, CustomElement::EmbedderNames);
+    ScriptValue constructor = document->registerElement(ScriptState::current(isolate), name, dictionary, exceptionState, CustomElement::EmbedderNames);
     ec = exceptionState.code();
     if (exceptionState.hadException())
         return v8::Handle<v8::Value>();
     return constructor.v8Value();
 }
 
-WebDocument::WebDocument(const PassRefPtr<Document>& elem)
+WebDocument::WebDocument(const PassRefPtrWillBeRawPtr<Document>& elem)
     : WebNode(elem)
 {
 }
 
-WebDocument& WebDocument::operator=(const PassRefPtr<Document>& elem)
+WebDocument& WebDocument::operator=(const PassRefPtrWillBeRawPtr<Document>& elem)
 {
     m_private = elem;
     return *this;
 }
 
-WebDocument::operator PassRefPtr<Document>() const
+WebDocument::operator PassRefPtrWillBeRawPtr<Document>() const
 {
     return toDocument(m_private.get());
 }

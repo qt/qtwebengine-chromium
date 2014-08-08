@@ -58,6 +58,14 @@ namespace WTF {
 #else
         static const unsigned minimumTableSize = 8;
 #endif
+
+        template<typename U = void>
+        struct NeedsTracingLazily {
+            static const bool value = NeedsTracing<T>::value;
+        };
+        static const WeakHandlingFlag weakHandlingFlag = IsWeak<T>::value ? WeakHandlingInCollections : NoWeakHandlingInCollections;
+        template<typename Visitor>
+        static bool shouldRemoveFromCollection(Visitor*, T&) { return false; }
     };
 
     // Default integer traits disallow both 0 and -1 as keys (max value instead of -1 for unsigned).
@@ -74,23 +82,29 @@ namespace WTF {
 
         static T emptyValue() { return T(); }
 
+        // Type for functions that do not take ownership, such as contains.
+        typedef const T& PeekInType;
+        typedef T* IteratorGetType;
+        typedef const T* IteratorConstGetType;
+        typedef T& IteratorReferenceType;
+        typedef const T& IteratorConstReferenceType;
+        static IteratorReferenceType getToReferenceConversion(IteratorGetType x) { return *x; }
+        static IteratorConstReferenceType getToReferenceConstConversion(IteratorConstGetType x) { return *x; }
         // Type for functions that take ownership, such as add.
         // The store function either not be called or called once to store something passed in.
-        // The value passed to the store function will be either PassInType or PassInType&.
+        // The value passed to the store function will be PassInType.
         typedef const T& PassInType;
         static void store(const T& value, T& storage) { storage = value; }
 
         // Type for return value of functions that transfer ownership, such as take.
         typedef T PassOutType;
-        static PassOutType passOut(const T& value) { return value; }
-        static T& passOut(T& value) { return value; } // Overloaded to avoid copying of non-temporary values.
+        static const T& passOut(const T& value) { return value; }
 
         // Type for return value of functions that do not transfer ownership, such as get.
         // FIXME: We could change this type to const T& for better performance if we figured out
         // a way to handle the return value from emptyValue, which is a temporary.
-        typedef T PeekType;
-        static PeekType peek(const T& value) { return value; }
-        static T& peek(T& value) { return value; } // Overloaded to avoid copying of non-temporary values.
+        typedef T PeekOutType;
+        static const T& peek(const T& value) { return value; }
     };
 
     template<typename T> struct HashTraits : GenericHashTraits<T> { };
@@ -132,6 +146,11 @@ namespace WTF {
 
         static EmptyValueType emptyValue() { return nullptr; }
 
+        static const bool hasIsEmptyValueFunction = true;
+        static bool isEmptyValue(const OwnPtr<P>& value) { return !value; }
+
+        typedef typename OwnPtr<P>::PtrType PeekInType;
+
         typedef PassOwnPtr<P> PassInType;
         static void store(PassOwnPtr<P> value, OwnPtr<P>& storage) { storage = value; }
 
@@ -139,25 +158,39 @@ namespace WTF {
         static PassOwnPtr<P> passOut(OwnPtr<P>& value) { return value.release(); }
         static PassOwnPtr<P> passOut(std::nullptr_t) { return nullptr; }
 
-        typedef typename OwnPtr<P>::PtrType PeekType;
-        static PeekType peek(const OwnPtr<P>& value) { return value.get(); }
-        static PeekType peek(std::nullptr_t) { return 0; }
+        typedef typename OwnPtr<P>::PtrType PeekOutType;
+        static PeekOutType peek(const OwnPtr<P>& value) { return value.get(); }
+        static PeekOutType peek(std::nullptr_t) { return 0; }
     };
 
     template<typename P> struct HashTraits<RefPtr<P> > : SimpleClassHashTraits<RefPtr<P> > {
-        static P* emptyValue() { return 0; }
+        typedef std::nullptr_t EmptyValueType;
+        static EmptyValueType emptyValue() { return nullptr; }
+
+        static const bool hasIsEmptyValueFunction = true;
+        static bool isEmptyValue(const RefPtr<P>& value) { return !value; }
+
+        typedef RefPtrValuePeeker<P> PeekInType;
+        typedef RefPtr<P>* IteratorGetType;
+        typedef const RefPtr<P>* IteratorConstGetType;
+        typedef RefPtr<P>& IteratorReferenceType;
+        typedef const RefPtr<P>& IteratorConstReferenceType;
+        static IteratorReferenceType getToReferenceConversion(IteratorGetType x) { return *x; }
+        static IteratorConstReferenceType getToReferenceConstConversion(IteratorConstGetType x) { return *x; }
 
         typedef PassRefPtr<P> PassInType;
         static void store(PassRefPtr<P> value, RefPtr<P>& storage) { storage = value; }
 
         typedef PassRefPtr<P> PassOutType;
-        static PassRefPtr<P> passOut(RefPtr<P>& value) { return value.release(); }
-        static PassRefPtr<P> passOut(P* value) { return value; }
+        static PassOutType passOut(RefPtr<P>& value) { return value.release(); }
+        static PassOutType passOut(std::nullptr_t) { return nullptr; }
 
-        typedef P* PeekType;
-        static PeekType peek(const RefPtr<P>& value) { return value.get(); }
-        static PeekType peek(P* value) { return value; }
+        typedef P* PeekOutType;
+        static PeekOutType peek(const RefPtr<P>& value) { return value.get(); }
+        static PeekOutType peek(std::nullptr_t) { return 0; }
     };
+
+    template<typename T> struct HashTraits<RawPtr<T> > : HashTraits<T*> { };
 
     template<> struct HashTraits<String> : SimpleClassHashTraits<String> {
         static const bool hasIsEmptyValueFunction = true;
@@ -235,11 +268,22 @@ namespace WTF {
         static EmptyValueType emptyValue() { return KeyValuePair<typename KeyTraits::EmptyValueType, typename ValueTraits::EmptyValueType>(KeyTraits::emptyValue(), ValueTraits::emptyValue()); }
 
         static const bool needsDestruction = KeyTraits::needsDestruction || ValueTraits::needsDestruction;
+        template<typename U = void>
+        struct NeedsTracingLazily {
+            static const bool value = ShouldBeTraced<KeyTraits>::value || ShouldBeTraced<ValueTraits>::value;
+        };
+        static const WeakHandlingFlag weakHandlingFlag = (KeyTraits::weakHandlingFlag == WeakHandlingInCollections || ValueTraits::weakHandlingFlag == WeakHandlingInCollections) ? WeakHandlingInCollections : NoWeakHandlingInCollections;
 
         static const unsigned minimumTableSize = KeyTraits::minimumTableSize;
 
         static void constructDeletedValue(TraitType& slot) { KeyTraits::constructDeletedValue(slot.key); }
         static bool isDeletedValue(const TraitType& value) { return KeyTraits::isDeletedValue(value.key); }
+        template<typename Visitor>
+        static bool shouldRemoveFromCollection(Visitor* visitor, TraitType& pair)
+        {
+            return KeyTraits::shouldRemoveFromCollection(visitor, pair.key)
+                || ValueTraits::shouldRemoveFromCollection(visitor, pair.value);
+        }
     };
 
     template<typename Key, typename Value>

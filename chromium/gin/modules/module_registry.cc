@@ -10,6 +10,8 @@
 #include "base/logging.h"
 #include "gin/arguments.h"
 #include "gin/converter.h"
+#include "gin/modules/module_registry_observer.h"
+#include "gin/per_context_data.h"
 #include "gin/per_isolate_data.h"
 #include "gin/public/wrapper_info.h"
 #include "gin/runner.h"
@@ -46,6 +48,13 @@ PendingModule::~PendingModule() {
 }
 
 namespace {
+
+// Key for base::SupportsUserData::Data.
+const char kModuleRegistryKey[] = "ModuleRegistry";
+
+struct ModuleRegistryData : public base::SupportsUserData::Data {
+  scoped_ptr<ModuleRegistry> registry;
+};
 
 void Define(const v8::FunctionCallbackInfo<Value>& info) {
   Arguments args(info);
@@ -87,52 +96,67 @@ Local<FunctionTemplate> GetDefineTemplate(Isolate* isolate) {
   return templ;
 }
 
-v8::Handle<String> GetHiddenValueKey(Isolate* isolate) {
-  return StringToSymbol(isolate, "::gin::ModuleRegistry");
-}
-
 }  // namespace
 
 ModuleRegistry::ModuleRegistry(Isolate* isolate)
-    : modules_(isolate, Object::New()) {
+    : modules_(isolate, Object::New(isolate)) {
 }
 
 ModuleRegistry::~ModuleRegistry() {
   modules_.Reset();
 }
 
+// static
 void ModuleRegistry::RegisterGlobals(Isolate* isolate,
                                      v8::Handle<ObjectTemplate> templ) {
   templ->Set(StringToSymbol(isolate, "define"), GetDefineTemplate(isolate));
 }
 
-ModuleRegistry* ModuleRegistry::From(v8::Handle<Context> context) {
-  Isolate* isolate = context->GetIsolate();
-  v8::Handle<String> key = GetHiddenValueKey(isolate);
-  v8::Handle<Value> value = context->Global()->GetHiddenValue(key);
-  v8::Handle<External> external;
-  if (value.IsEmpty() || !ConvertFromV8(isolate, value, &external)) {
-    PerContextData* data = PerContextData::From(context);
-    if (!data)
-      return NULL;
-    ModuleRegistry* registry = new ModuleRegistry(isolate);
-    context->Global()->SetHiddenValue(key, External::New(isolate, registry));
-    data->AddSupplement(scoped_ptr<ContextSupplement>(registry));
-    return registry;
-  }
-  return static_cast<ModuleRegistry*>(external->Value());
+// static
+void ModuleRegistry::InstallGlobals(v8::Isolate* isolate,
+                                    v8::Handle<v8::Object> obj) {
+  obj->Set(StringToSymbol(isolate, "define"),
+           GetDefineTemplate(isolate)->GetFunction());
 }
 
-void ModuleRegistry::AddBuiltinModule(Isolate* isolate,
-                                      const std::string& id,
-                                      v8::Handle<ObjectTemplate> templ) {
+// static
+ModuleRegistry* ModuleRegistry::From(v8::Handle<Context> context) {
+  PerContextData* data = PerContextData::From(context);
+  if (!data)
+    return NULL;
+
+  ModuleRegistryData* registry_data = static_cast<ModuleRegistryData*>(
+      data->GetUserData(kModuleRegistryKey));
+  if (!registry_data) {
+    // PerContextData takes ownership of ModuleRegistryData.
+    registry_data = new ModuleRegistryData;
+    registry_data->registry.reset(new ModuleRegistry(context->GetIsolate()));
+    data->SetUserData(kModuleRegistryKey, registry_data);
+  }
+  return registry_data->registry.get();
+}
+
+void ModuleRegistry::AddObserver(ModuleRegistryObserver* observer) {
+  observer_list_.AddObserver(observer);
+}
+
+void ModuleRegistry::RemoveObserver(ModuleRegistryObserver* observer) {
+  observer_list_.RemoveObserver(observer);
+}
+
+void ModuleRegistry::AddBuiltinModule(Isolate* isolate, const std::string& id,
+                                      v8::Handle<Value> module) {
   DCHECK(!id.empty());
-  RegisterModule(isolate, id, templ->NewInstance());
+  RegisterModule(isolate, id, module);
 }
 
 void ModuleRegistry::AddPendingModule(Isolate* isolate,
                                       scoped_ptr<PendingModule> pending) {
+  const std::string pending_id = pending->id;
+  const std::vector<std::string> pending_dependencies = pending->dependencies;
   AttemptToLoad(isolate, pending.Pass());
+  FOR_EACH_OBSERVER(ModuleRegistryObserver, observer_list_,
+                    OnDidAddPendingModule(pending_id, pending_dependencies));
 }
 
 void ModuleRegistry::LoadModule(Isolate* isolate,
@@ -167,11 +191,6 @@ void ModuleRegistry::RegisterModule(Isolate* isolate,
   waiting_callbacks_.erase(it);
   // Should we call the callback asynchronously?
   callback.Run(module);
-}
-
-void ModuleRegistry::Detach(v8::Handle<Context> context) {
-  context->Global()->SetHiddenValue(GetHiddenValueKey(context->GetIsolate()),
-                                    v8::Handle<Value>());
 }
 
 bool ModuleRegistry::CheckDependencies(PendingModule* pending) {

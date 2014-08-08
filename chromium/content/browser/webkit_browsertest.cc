@@ -4,9 +4,9 @@
 
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/test/content_browser_test.h"
+#include "content/public/test/content_browser_test_utils.h"
 #include "content/shell/browser/shell.h"
-#include "content/test/content_browser_test.h"
-#include "content/test/content_browser_test_utils.h"
 #include "content/test/net/url_request_abort_on_end_job.h"
 
 namespace content {
@@ -70,21 +70,6 @@ const char kPrerenderNoCrashPage[] =
 IN_PROC_BROWSER_TEST_F(WebKitBrowserTest, PrerenderNoCrash) {
   ASSERT_TRUE(test_server()->Start());
   GURL url = test_server()->GetURL(kPrerenderNoCrashPage);
-
-  NavigateToURL(shell(), url);
-
-  EXPECT_FALSE(shell()->web_contents()->IsCrashed());
-}
-
-// This is a browser test because DumpRenderTree doesn't run nested message
-// loops. The failure case was that a nested message triggered from an element
-// that has signalled an error but had an open request would receive a body for
-// the request and crash/fail an assertion.
-const char kErrorBodyNoCrash[] =
-    "files/error-body-no-crash.html";
-IN_PROC_BROWSER_TEST_F(WebKitBrowserTest, ErrorBodyNoCrash) {
-  ASSERT_TRUE(test_server()->Start());
-  GURL url = test_server()->GetURL(kErrorBodyNoCrash);
 
   NavigateToURL(shell(), url);
 

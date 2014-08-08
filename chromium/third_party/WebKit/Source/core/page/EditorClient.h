@@ -33,7 +33,7 @@
 namespace WebCore {
 
 class Element;
-class Frame;
+class LocalFrame;
 class UndoStep;
 
 class EditorClient {
@@ -41,12 +41,11 @@ public:
     virtual ~EditorClient() { }
 
     virtual void respondToChangedContents() = 0;
-    virtual void respondToChangedSelection(SelectionType) = 0;
+    virtual void respondToChangedSelection(LocalFrame*, SelectionType) = 0;
 
-    virtual bool canCopyCut(Frame*, bool defaultValue) const = 0;
-    virtual bool canPaste(Frame*, bool defaultValue) const = 0;
+    virtual bool canCopyCut(LocalFrame*, bool defaultValue) const = 0;
+    virtual bool canPaste(LocalFrame*, bool defaultValue) const = 0;
 
-    virtual void didExecuteCommand(String) = 0;
     virtual bool handleKeyboardEvent() = 0;
 };
 

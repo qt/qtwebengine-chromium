@@ -26,9 +26,9 @@
 #ifndef HTMLStackItem_h
 #define HTMLStackItem_h
 
-#include "HTMLNames.h"
-#include "MathMLNames.h"
-#include "SVGNames.h"
+#include "core/HTMLNames.h"
+#include "core/MathMLNames.h"
+#include "core/SVGNames.h"
 #include "core/dom/Element.h"
 #include "core/html/parser/AtomicHTMLToken.h"
 #include "wtf/RefCounted.h"
@@ -39,7 +39,7 @@ namespace WebCore {
 
 class ContainerNode;
 
-class HTMLStackItem : public RefCounted<HTMLStackItem> {
+class HTMLStackItem : public RefCountedWillBeGarbageCollectedFinalized<HTMLStackItem> {
 public:
     enum ItemType {
         ItemForContextElement,
@@ -47,15 +47,15 @@ public:
     };
 
     // Used by document fragment node and context element.
-    static PassRefPtr<HTMLStackItem> create(PassRefPtr<ContainerNode> node, ItemType type)
+    static PassRefPtrWillBeRawPtr<HTMLStackItem> create(PassRefPtrWillBeRawPtr<ContainerNode> node, ItemType type)
     {
-        return adoptRef(new HTMLStackItem(node, type));
+        return adoptRefWillBeNoop(new HTMLStackItem(node, type));
     }
 
     // Used by HTMLElementStack and HTMLFormattingElementList.
-    static PassRefPtr<HTMLStackItem> create(PassRefPtr<ContainerNode> node, AtomicHTMLToken* token, const AtomicString& namespaceURI = HTMLNames::xhtmlNamespaceURI)
+    static PassRefPtrWillBeRawPtr<HTMLStackItem> create(PassRefPtrWillBeRawPtr<ContainerNode> node, AtomicHTMLToken* token, const AtomicString& namespaceURI = HTMLNames::xhtmlNamespaceURI)
     {
-        return adoptRef(new HTMLStackItem(node, token, namespaceURI));
+        return adoptRefWillBeNoop(new HTMLStackItem(node, token, namespaceURI));
     }
 
     Element* element() const { return toElement(m_node.get()); }
@@ -172,7 +172,6 @@ public:
             || tagName == HTMLNames::iframeTag
             || tagName == HTMLNames::imgTag
             || tagName == HTMLNames::inputTag
-            || tagName == HTMLNames::isindexTag
             || tagName == HTMLNames::liTag
             || tagName == HTMLNames::linkTag
             || tagName == HTMLNames::listingTag
@@ -208,8 +207,10 @@ public:
             || tagName == HTMLNames::xmpTag;
     }
 
+    void trace(Visitor* visitor) { visitor->trace(m_node); }
+
 private:
-    HTMLStackItem(PassRefPtr<ContainerNode> node, ItemType type)
+    HTMLStackItem(PassRefPtrWillBeRawPtr<ContainerNode> node, ItemType type)
         : m_node(node)
     {
         switch (type) {
@@ -224,7 +225,7 @@ private:
         }
     }
 
-    HTMLStackItem(PassRefPtr<ContainerNode> node, AtomicHTMLToken* token, const AtomicString& namespaceURI = HTMLNames::xhtmlNamespaceURI)
+    HTMLStackItem(PassRefPtrWillBeRawPtr<ContainerNode> node, AtomicHTMLToken* token, const AtomicString& namespaceURI = HTMLNames::xhtmlNamespaceURI)
         : m_node(node)
         , m_tokenLocalName(token->name())
         , m_tokenAttributes(token->attributes())
@@ -233,7 +234,7 @@ private:
     {
     }
 
-    RefPtr<ContainerNode> m_node;
+    RefPtrWillBeMember<ContainerNode> m_node;
 
     AtomicString m_tokenLocalName;
     Vector<Attribute> m_tokenAttributes;

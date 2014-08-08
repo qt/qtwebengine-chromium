@@ -16,24 +16,25 @@
 #include "base/strings/nullable_string16.h"
 #include "content/common/content_export.h"
 #include "third_party/WebKit/public/platform/WebReferrerPolicy.h"
+#include "ui/base/dragdrop/file_info.h"
 #include "url/gurl.h"
 
 namespace content {
 
 struct CONTENT_EXPORT DropData {
-  // The struct is used to represent a file in the drop data.
-  struct CONTENT_EXPORT FileInfo {
-    FileInfo();
-    FileInfo(const base::string16& path, const base::string16& display_name);
+  struct FileSystemFileInfo {
+    FileSystemFileInfo() : size(0) {}
+    ~FileSystemFileInfo() {}
 
-    // The path of the file.
-    base::string16 path;
-    // The display name of the file. This field is optional.
-    base::string16 display_name;
+    GURL url;
+    int64 size;
   };
 
   DropData();
   ~DropData();
+
+  // Whether this drag originated from a renderer.
+  bool did_originate_from_renderer;
 
   // User is dragging a link into the webview.
   GURL url;
@@ -46,11 +47,16 @@ struct CONTENT_EXPORT DropData {
   // a download.
   blink::WebReferrerPolicy referrer_policy;
 
-  // User is dropping one or more files on the webview.
-  std::vector<FileInfo> filenames;
+  // User is dropping one or more files on the webview. This field is only
+  // populated if the drag is not renderer tainted, as this allows File access
+  // from web content.
+  std::vector<ui::FileInfo> filenames;
 
   // Isolated filesystem ID for the files being dragged on the webview.
   base::string16 filesystem_id;
+
+  // User is dragging files specified with filesystem: URLs.
+  std::vector<FileSystemFileInfo> file_system_files;
 
   // User is dragging plain text into the webview.
   base::NullableString16 text;

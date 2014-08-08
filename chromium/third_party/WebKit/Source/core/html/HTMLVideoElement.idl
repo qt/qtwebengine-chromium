@@ -30,17 +30,17 @@
     [Reflect] attribute unsigned long height;
     readonly attribute unsigned long videoWidth;
     readonly attribute unsigned long videoHeight;
-    [Reflect, URL, PerWorldBindings, ActivityLogging=SetterForIsolatedWorlds] attribute DOMString poster;
+    [Reflect, URL, LogActivity=SetterOnly] attribute DOMString poster;
 
-    [MeasureAs=PrefixedVideoSupportsFullscreen] readonly attribute boolean webkitSupportsFullscreen;
-    [MeasureAs=PrefixedVideoDisplayingFullscreen] readonly attribute boolean webkitDisplayingFullscreen;
+    [RuntimeEnabled=PrefixedVideoFullscreen, DeprecateAs=PrefixedVideoSupportsFullscreen] readonly attribute boolean webkitSupportsFullscreen;
+    [RuntimeEnabled=PrefixedVideoFullscreen, DeprecateAs=PrefixedVideoDisplayingFullscreen] readonly attribute boolean webkitDisplayingFullscreen;
 
-    [MeasureAs=PrefixedVideoEnterFullscreen, RaisesException, PerWorldBindings, ActivityLogging=ForAllWorlds] void webkitEnterFullscreen();
-    [MeasureAs=PrefixedVideoExitFullscreen] void webkitExitFullscreen();
+    [RuntimeEnabled=PrefixedVideoFullscreen, DeprecateAs=PrefixedVideoEnterFullscreen, RaisesException, LogActivity, LogAllWorlds] void webkitEnterFullscreen();
+    [RuntimeEnabled=PrefixedVideoFullscreen, DeprecateAs=PrefixedVideoExitFullscreen] void webkitExitFullscreen();
 
     // Note the different capitalization of the "S" in FullScreen.
-    [MeasureAs=PrefixedVideoEnterFullScreen, ImplementedAs=webkitEnterFullscreen, RaisesException, PerWorldBindings, ActivityLogging=ForAllWorlds] void webkitEnterFullScreen();
-    [MeasureAs=PrefixedVideoExitFullScreen, ImplementedAs=webkitExitFullscreen] void webkitExitFullScreen();
+    [RuntimeEnabled=PrefixedVideoFullscreen, DeprecateAs=PrefixedVideoEnterFullScreen, ImplementedAs=webkitEnterFullscreen, RaisesException, LogActivity, LogAllWorlds] void webkitEnterFullScreen();
+    [RuntimeEnabled=PrefixedVideoFullscreen, DeprecateAs=PrefixedVideoExitFullScreen, ImplementedAs=webkitExitFullscreen] void webkitExitFullScreen();
 
     // The number of frames that have been decoded and made available for
     // playback.

@@ -32,6 +32,7 @@
 #include "core/css/CSSPrimitiveValueMappings.h"
 #include "core/css/CSSTransformValue.h"
 #include "core/rendering/style/RenderStyle.h"
+#include "platform/heap/Handle.h"
 #include "platform/transforms/Matrix3DTransformOperation.h"
 #include "platform/transforms/MatrixTransformOperation.h"
 #include "platform/transforms/PerspectiveTransformOperation.h"
@@ -43,17 +44,10 @@
 
 namespace WebCore {
 
-TransformBuilder::TransformBuilder()
-{
-}
-
-TransformBuilder::~TransformBuilder()
-{
-}
-
 static Length convertToFloatLength(CSSPrimitiveValue* primitiveValue, const CSSToLengthConversionData& conversionData)
 {
-    return primitiveValue ? primitiveValue->convertToLength<FixedConversion | PercentConversion>(conversionData) : Length(Undefined);
+    ASSERT(primitiveValue);
+    return primitiveValue->convertToLength<FixedConversion | PercentConversion>(conversionData);
 }
 
 static TransformOperation::OperationType getTransformOperationType(CSSTransformValue::TransformOperationType type)
@@ -180,19 +174,16 @@ bool TransformBuilder::createTransformOperations(CSSValue* inValue, const CSSToL
                 }
             }
 
-            if (tx.isUndefined() || ty.isUndefined())
-                return false;
-
-            operations.operations().append(TranslateTransformOperation::create(tx, ty, Length(0, Fixed), getTransformOperationType(transformValue->operationType())));
+            operations.operations().append(TranslateTransformOperation::create(tx, ty, 0, getTransformOperationType(transformValue->operationType())));
             break;
         }
         case CSSTransformValue::TranslateZTransformOperation:
         case CSSTransformValue::Translate3DTransformOperation: {
             Length tx = Length(0, Fixed);
             Length ty = Length(0, Fixed);
-            Length tz = Length(0, Fixed);
+            double tz = 0;
             if (transformValue->operationType() == CSSTransformValue::TranslateZTransformOperation)
-                tz = convertToFloatLength(firstValue, conversionData);
+                tz = firstValue->computeLength<double>(conversionData);
             else if (transformValue->operationType() == CSSTransformValue::TranslateYTransformOperation)
                 ty = convertToFloatLength(firstValue, conversionData);
             else {
@@ -200,7 +191,7 @@ bool TransformBuilder::createTransformOperations(CSSValue* inValue, const CSSToL
                 if (transformValue->operationType() != CSSTransformValue::TranslateXTransformOperation) {
                     if (transformValue->length() > 2) {
                         CSSPrimitiveValue* thirdValue = toCSSPrimitiveValue(transformValue->itemWithoutBoundsCheck(2));
-                        tz = convertToFloatLength(thirdValue, conversionData);
+                        tz = thirdValue->computeLength<double>(conversionData);
                     }
                     if (transformValue->length() > 1) {
                         CSSPrimitiveValue* secondValue = toCSSPrimitiveValue(transformValue->itemWithoutBoundsCheck(1));
@@ -208,9 +199,6 @@ bool TransformBuilder::createTransformOperations(CSSValue* inValue, const CSSToL
                     }
                 }
             }
-
-            if (tx.isUndefined() || ty.isUndefined() || tz.isUndefined())
-                return false;
 
             operations.operations().append(TranslateTransformOperation::create(tx, ty, tz, getTransformOperationType(transformValue->operationType())));
             break;
@@ -305,17 +293,16 @@ bool TransformBuilder::createTransformOperations(CSSValue* inValue, const CSSToL
             break;
         }
         case CSSTransformValue::PerspectiveTransformOperation: {
-            Length p = Length(0, Fixed);
+            double p;
             if (firstValue->isLength())
-                p = convertToFloatLength(firstValue, conversionData);
+                p = firstValue->computeLength<double>(conversionData);
             else {
                 // This is a quirk that should go away when 3d transforms are finalized.
                 double val = firstValue->getDoubleValue();
-                p = val >= 0 ? Length(clampToPositiveInteger(val), Fixed) : Length(Undefined);
+                if (val < 0)
+                    return false;
+                p = clampToPositiveInteger(val);
             }
-
-            if (p.isUndefined())
-                return false;
 
             operations.operations().append(PerspectiveTransformOperation::create(p));
             break;

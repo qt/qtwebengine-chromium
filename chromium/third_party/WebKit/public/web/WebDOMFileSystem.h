@@ -35,8 +35,15 @@
 #include "../platform/WebPrivatePtr.h"
 #include "../platform/WebString.h"
 #include "../platform/WebURL.h"
+#include "WebFrame.h"
+
+#if BLINK_IMPLEMENTATION
+#include "platform/heap/Handle.h"
+#endif
 
 namespace v8 {
+class Isolate;
+class Object;
 class Value;
 template <class T> class Handle;
 }
@@ -47,6 +54,15 @@ namespace blink {
 
 class WebDOMFileSystem {
 public:
+    enum SerializableType {
+        SerializableTypeSerializable,
+        SerializableTypeNotSerializable,
+    };
+    enum EntryType {
+        EntryTypeFile,
+        EntryTypeDirectory,
+    };
+
     ~WebDOMFileSystem() { reset(); }
 
     WebDOMFileSystem() { }
@@ -58,6 +74,17 @@ public:
     }
 
     BLINK_EXPORT static WebDOMFileSystem fromV8Value(v8::Handle<v8::Value>);
+    // Create file system URL from the given entry.
+    BLINK_EXPORT static WebURL createFileSystemURL(v8::Handle<v8::Value> entry);
+
+    // FIXME: Deprecate the last argument when all filesystems become
+    // serializable.
+    BLINK_EXPORT static WebDOMFileSystem create(
+        WebLocalFrame*,
+        WebFileSystemType,
+        const WebString& name,
+        const WebURL& rootURL,
+        SerializableType = SerializableTypeNotSerializable);
 
     BLINK_EXPORT void reset();
     BLINK_EXPORT void assign(const WebDOMFileSystem&);
@@ -66,12 +93,17 @@ public:
     BLINK_EXPORT WebFileSystem::Type type() const;
     BLINK_EXPORT WebURL rootURL() const;
 
+    BLINK_EXPORT v8::Handle<v8::Value> toV8Value(v8::Handle<v8::Object> creationContext, v8::Isolate*);
+    BLINK_EXPORT v8::Handle<v8::Value> createV8Entry(
+        const WebString& path,
+        EntryType,
+        v8::Handle<v8::Object> creationContext, v8::Isolate*);
+
     bool isNull() const { return m_private.isNull(); }
 
 #if BLINK_IMPLEMENTATION
-    WebDOMFileSystem(const WTF::PassRefPtr<WebCore::DOMFileSystem>&);
-    WebDOMFileSystem& operator=(const WTF::PassRefPtr<WebCore::DOMFileSystem>&);
-    operator WTF::PassRefPtr<WebCore::DOMFileSystem>() const;
+    WebDOMFileSystem(WebCore::DOMFileSystem*);
+    WebDOMFileSystem& operator=(WebCore::DOMFileSystem*);
 #endif
 
 private:

@@ -22,54 +22,6 @@
 
 namespace WebCore {
 
-SegmentedString::SegmentedString(const SegmentedString& other)
-    : m_pushedChar1(other.m_pushedChar1)
-    , m_pushedChar2(other.m_pushedChar2)
-    , m_currentString(other.m_currentString)
-    , m_numberOfCharactersConsumedPriorToCurrentString(other.m_numberOfCharactersConsumedPriorToCurrentString)
-    , m_numberOfCharactersConsumedPriorToCurrentLine(other.m_numberOfCharactersConsumedPriorToCurrentLine)
-    , m_currentLine(other.m_currentLine)
-    , m_substrings(other.m_substrings)
-    , m_closed(other.m_closed)
-    , m_empty(other.m_empty)
-    , m_fastPathFlags(other.m_fastPathFlags)
-    , m_advanceFunc(other.m_advanceFunc)
-    , m_advanceAndUpdateLineNumberFunc(other.m_advanceAndUpdateLineNumberFunc)
-{
-    if (m_pushedChar2)
-        m_currentChar = m_pushedChar2;
-    else if (m_pushedChar1)
-        m_currentChar = m_pushedChar1;
-    else
-        m_currentChar = m_currentString.m_length ? m_currentString.getCurrentChar() : 0;
-}
-
-const SegmentedString& SegmentedString::operator=(const SegmentedString& other)
-{
-    m_pushedChar1 = other.m_pushedChar1;
-    m_pushedChar2 = other.m_pushedChar2;
-    m_currentString = other.m_currentString;
-    m_substrings = other.m_substrings;
-    if (m_pushedChar2)
-        m_currentChar = m_pushedChar2;
-    else if (m_pushedChar1)
-        m_currentChar = m_pushedChar1;
-    else
-        m_currentChar = m_currentString.m_length ? m_currentString.getCurrentChar() : 0;
-
-    m_closed = other.m_closed;
-    m_empty = other.m_empty;
-    m_fastPathFlags = other.m_fastPathFlags;
-    m_numberOfCharactersConsumedPriorToCurrentString = other.m_numberOfCharactersConsumedPriorToCurrentString;
-    m_numberOfCharactersConsumedPriorToCurrentLine = other.m_numberOfCharactersConsumedPriorToCurrentLine;
-    m_currentLine = other.m_currentLine;
-
-    m_advanceFunc = other.m_advanceFunc;
-    m_advanceAndUpdateLineNumberFunc = other.m_advanceAndUpdateLineNumberFunc;
-
-    return *this;
-}
-
 unsigned SegmentedString::length() const
 {
     unsigned length = m_currentString.m_length;
@@ -167,7 +119,14 @@ void SegmentedString::close()
 void SegmentedString::append(const SegmentedString& s)
 {
     ASSERT(!m_closed);
-    ASSERT(!s.escaped());
+    if (s.m_pushedChar1) {
+        Vector<UChar, 2> unconsumedData;
+        unconsumedData.append(s.m_pushedChar1);
+        if (s.m_pushedChar2)
+            unconsumedData.append(s.m_pushedChar2);
+        append(SegmentedSubstring(String(unconsumedData)));
+    }
+
     append(s.m_currentString);
     if (s.isComposite()) {
         Deque<SegmentedSubstring>::const_iterator it = s.m_substrings.begin();
@@ -189,7 +148,7 @@ void SegmentedString::prepend(const SegmentedString& s)
             prepend(*it);
     }
     prepend(s.m_currentString);
-    m_currentChar = m_pushedChar1 ? m_pushedChar1 : (m_currentString.m_length ? m_currentString.getCurrentChar() : 0);
+    m_currentChar = m_currentString.m_length ? m_currentString.getCurrentChar() : 0;
 }
 
 void SegmentedString::advanceSubstring()

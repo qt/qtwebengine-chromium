@@ -27,6 +27,7 @@
 #define InbandTextTrack_h
 
 #include "core/html/track/TextTrack.h"
+#include "platform/heap/Handle.h"
 #include "public/platform/WebInbandTextTrackClient.h"
 #include "wtf/RefPtr.h"
 
@@ -41,16 +42,16 @@ class Document;
 class MediaPlayer;
 class TextTrackCue;
 
-class InbandTextTrack : public TextTrack, public blink::WebInbandTextTrackClient {
+class InbandTextTrack FINAL : public TextTrack, public blink::WebInbandTextTrackClient {
 public:
-    static PassRefPtr<InbandTextTrack> create(Document&, TextTrackClient*, blink::WebInbandTextTrack*);
+    static PassRefPtrWillBeRawPtr<InbandTextTrack> create(Document&, blink::WebInbandTextTrack*);
     virtual ~InbandTextTrack();
 
     size_t inbandTrackIndex();
-    void trackRemoved();
+    virtual void setTrackList(TextTrackList*) OVERRIDE FINAL;
 
 private:
-    InbandTextTrack(Document&, TextTrackClient*, blink::WebInbandTextTrack*);
+    InbandTextTrack(Document&, blink::WebInbandTextTrack*);
 
     virtual void addWebVTTCue(double, double, const blink::WebString&, const blink::WebString&, const blink::WebString&) OVERRIDE;
 

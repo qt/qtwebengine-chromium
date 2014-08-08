@@ -28,10 +28,11 @@
 
 #include "core/dom/Document.h"
 #include "core/editing/htmlediting.h"
-#include "core/frame/Frame.h"
+#include "core/frame/LocalFrame.h"
 #include "core/frame/Settings.h"
 #include "core/rendering/RenderBlock.h"
 #include "core/rendering/RenderView.h"
+#include "platform/graphics/GraphicsContext.h"
 
 namespace WebCore {
 
@@ -46,9 +47,9 @@ DragCaretController::DragCaretController()
 {
 }
 
-PassOwnPtr<DragCaretController> DragCaretController::create()
+PassOwnPtrWillBeRawPtr<DragCaretController> DragCaretController::create()
 {
-    return adoptPtr(new DragCaretController);
+    return adoptPtrWillBeNoop(new DragCaretController);
 }
 
 bool DragCaretController::isContentRichlyEditable() const
@@ -100,6 +101,11 @@ void DragCaretController::nodeWillBeRemoved(Node& node)
     clear();
 }
 
+void DragCaretController::trace(Visitor* visitor)
+{
+    visitor->trace(m_position);
+}
+
 void CaretBase::clearCaretRect()
 {
     m_caretLocalRect = LayoutRect();
@@ -126,7 +132,7 @@ RenderObject* CaretBase::caretRenderer(Node* node)
 
 bool CaretBase::updateCaretRect(Document* document, const VisiblePosition& caretPosition)
 {
-    document->updateStyleIfNeeded();
+    document->updateRenderTreeIfNeeded();
     m_caretLocalRect = LayoutRect();
 
     m_caretRectNeedsUpdate = false;
@@ -190,7 +196,7 @@ void CaretBase::repaintCaretForLocalRect(Node* node, const LayoutRect& rect)
     LayoutRect inflatedRect = rect;
     inflatedRect.inflate(1);
 
-    caretPainter->repaintRectangle(inflatedRect);
+    caretPainter->invalidatePaintRectangle(inflatedRect);
 }
 
 bool CaretBase::shouldRepaintCaret(const RenderView* view, bool isContentEditable) const
@@ -198,7 +204,7 @@ bool CaretBase::shouldRepaintCaret(const RenderView* view, bool isContentEditabl
     ASSERT(view);
     bool caretBrowsing = false;
     if (FrameView* frameView = view->frameView()) {
-        Frame& frame = frameView->frame(); // The frame where the selection started
+        LocalFrame& frame = frameView->frame(); // The frame where the selection started
         caretBrowsing = frame.settings() && frame.settings()->caretBrowsingEnabled();
     }
     return (caretBrowsing || isContentEditable);
@@ -256,7 +262,7 @@ void CaretBase::paintCaret(Node* node, GraphicsContext* context, const LayoutPoi
     context->fillRect(caret, caretColor);
 }
 
-void DragCaretController::paintDragCaret(Frame* frame, GraphicsContext* p, const LayoutPoint& paintOffset, const LayoutRect& clipRect) const
+void DragCaretController::paintDragCaret(LocalFrame* frame, GraphicsContext* p, const LayoutPoint& paintOffset, const LayoutRect& clipRect) const
 {
     if (m_position.deepEquivalent().deprecatedNode()->document().frame() == frame)
         paintCaret(m_position.deepEquivalent().deprecatedNode(), p, paintOffset, clipRect);

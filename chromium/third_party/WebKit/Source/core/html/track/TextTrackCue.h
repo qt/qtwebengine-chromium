@@ -34,17 +34,17 @@
 
 #include "core/events/EventTarget.h"
 #include "core/html/HTMLDivElement.h"
+#include "platform/heap/Handle.h"
 #include "wtf/RefCounted.h"
 
 namespace WebCore {
 
 class ExceptionState;
 
-class TextTrackCue : public RefCounted<TextTrackCue>, public EventTargetWithInlineData {
+class TextTrackCue : public RefCountedWillBeRefCountedGarbageCollected<TextTrackCue>, public EventTargetWithInlineData {
     REFCOUNTED_EVENT_TARGET(TextTrackCue);
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(TextTrackCue);
 public:
-    static bool isInfiniteOrNonNumber(double value, ExceptionState&);
-
     static const AtomicString& cueShadowPseudoId()
     {
         DEFINE_STATIC_LOCAL(const AtomicString, cue, ("cue", AtomicString::ConstructFromLiteral));
@@ -56,14 +56,16 @@ public:
     TextTrack* track() const;
     void setTrack(TextTrack*);
 
-    const String& id() const { return m_id; }
-    void setId(const String&);
+    Node* owner() const;
+
+    const AtomicString& id() const { return m_id; }
+    void setId(const AtomicString&);
 
     double startTime() const { return m_startTime; }
-    void setStartTime(double, ExceptionState&);
+    void setStartTime(double);
 
     double endTime() const { return m_endTime; }
-    void setEndTime(double, ExceptionState&);
+    void setEndTime(double);
 
     bool pauseOnExit() const { return m_pauseOnExit; }
     void setPauseOnExit(bool);
@@ -72,7 +74,7 @@ public:
     void invalidateCueIndex();
 
     using EventTarget::dispatchEvent;
-    virtual bool dispatchEvent(PassRefPtr<Event>) OVERRIDE;
+    virtual bool dispatchEvent(PassRefPtrWillBeRawPtr<Event>) OVERRIDE;
 
     bool isActive();
     void setIsActive(bool);
@@ -94,6 +96,8 @@ public:
     DEFINE_ATTRIBUTE_EVENT_LISTENER(enter);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(exit);
 
+    virtual void trace(Visitor*) OVERRIDE;
+
 protected:
     TextTrackCue(double start, double end);
 
@@ -101,12 +105,12 @@ protected:
     virtual void cueDidChange();
 
 private:
-    String m_id;
+    AtomicString m_id;
     double m_startTime;
     double m_endTime;
     int m_cueIndex;
 
-    TextTrack* m_track;
+    RawPtrWillBeMember<TextTrack> m_track;
 
     bool m_isActive : 1;
     bool m_pauseOnExit : 1;

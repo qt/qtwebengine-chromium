@@ -26,7 +26,6 @@
 #include "base/timer/timer.h"
 #include "content/browser/download/download_resource_handler.h"
 #include "content/browser/loader/global_routing_id.h"
-#include "content/browser/loader/offline_policy.h"
 #include "content/browser/loader/resource_loader.h"
 #include "content/browser/loader/resource_loader_delegate.h"
 #include "content/browser/loader/resource_scheduler.h"
@@ -78,7 +77,7 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
   // ResourceDispatcherHost implementation:
   virtual void SetDelegate(ResourceDispatcherHostDelegate* delegate) OVERRIDE;
   virtual void SetAllowCrossOriginAuthPrompt(bool value) OVERRIDE;
-  virtual net::Error BeginDownload(
+  virtual DownloadInterruptReason BeginDownload(
       scoped_ptr<net::URLRequest> request,
       const Referrer& referrer,
       bool is_content_initiated,
@@ -110,10 +109,8 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
   void CancelRequestsForContext(ResourceContext* context);
 
   // Returns true if the message was a resource message that was processed.
-  // If it was, message_was_ok will be false iff the message was corrupt.
   bool OnMessageReceived(const IPC::Message& message,
-                         ResourceMessageFilter* filter,
-                         bool* message_was_ok);
+                         ResourceMessageFilter* filter);
 
   // Initiates a save file from the browser process (as opposed to a resource
   // request from the renderer or another child process).
@@ -123,16 +120,16 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
                      int route_id,
                      ResourceContext* context);
 
-  // Cancels the given request if it still exists. We ignore cancels from the
-  // renderer in the event of a download.
-  void CancelRequest(int child_id,
-                     int request_id,
-                     bool from_renderer);
+  // Cancels the given request if it still exists.
+  void CancelRequest(int child_id, int request_id);
 
   // Marks the request as "parked". This happens if a request is
   // redirected cross-site and needs to be resumed by a new render view.
-  void MarkAsTransferredNavigation(const GlobalRequestID& id,
-                                   const GURL& target_url);
+  void MarkAsTransferredNavigation(const GlobalRequestID& id);
+
+  // Cancels a request previously marked as being transferred, for use when a
+  // navigation was cancelled.
+  void CancelTransferringNavigation(const GlobalRequestID& id);
 
   // Resumes the request without transferring it to a new render view.
   void ResumeDeferredNavigation(const GlobalRequestID& id);
@@ -186,7 +183,7 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
   // no longer needed.
   void RegisterDownloadedTempFile(
       int child_id, int request_id,
-      webkit_blob::ShareableFileReference* reference);
+      const base::FilePath& file_path);
   void UnregisterDownloadedTempFile(int child_id, int request_id);
 
   // Needed for the sync IPC message dispatcher macros.
@@ -213,10 +210,13 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
       const DownloadUrlParameters::OnStartedCallback& started_cb);
 
   // Must be called after the ResourceRequestInfo has been created
-  // and associated with the request.
+  // and associated with the request.  If |payload| is set to a non-empty value,
+  // the value will be sent to the old resource handler instead of cancelling
+  // it, except on HTTP errors.
   scoped_ptr<ResourceHandler> MaybeInterceptAsStream(
       net::URLRequest* request,
-      ResourceResponse* response);
+      ResourceResponse* response,
+      std::string* payload);
 
   void ClearSSLClientAuthHandlerForRequest(net::URLRequest* request);
 
@@ -234,6 +234,8 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
   void FinishedWithResourcesForRequest(const net::URLRequest* request_);
 
  private:
+  friend class ResourceDispatcherHostTest;
+
   FRIEND_TEST_ALL_PREFIXES(ResourceDispatcherHostTest,
                            TestBlockedRequestsProcessDies);
   FRIEND_TEST_ALL_PREFIXES(ResourceDispatcherHostTest,
@@ -257,12 +259,6 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
   virtual ResourceDispatcherHostLoginDelegate* CreateLoginDelegate(
       ResourceLoader* loader,
       net::AuthChallengeInfo* auth_info) OVERRIDE;
-  virtual bool AcceptAuthRequest(
-      ResourceLoader* loader,
-      net::AuthChallengeInfo* auth_info) OVERRIDE;
-  virtual bool AcceptSSLClientCertificateRequest(
-      ResourceLoader* loader,
-      net::SSLCertRequestInfo* cert_info) OVERRIDE;
   virtual bool HandleExternalProtocol(ResourceLoader* loader,
                                       const GURL& url) OVERRIDE;
   virtual void DidStartRequest(ResourceLoader* loader) OVERRIDE;
@@ -270,14 +266,6 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
                                   const GURL& new_url) OVERRIDE;
   virtual void DidReceiveResponse(ResourceLoader* loader) OVERRIDE;
   virtual void DidFinishLoading(ResourceLoader* loader) OVERRIDE;
-
-  // Extracts the render view/process host's identifiers from the given request
-  // and places them in the given out params (both required). If there are no
-  // such IDs associated with the request (such as non-page-related requests),
-  // this function will return false and both out params will be -1.
-  static bool RenderViewForRequest(const net::URLRequest* request,
-                                   int* render_process_host_id,
-                                   int* render_view_host_id);
 
   // An init helper that runs on the IO thread.
   void OnInit();
@@ -353,7 +341,7 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
                                       int route_id,
                                       bool cancel_requests);
 
-  void OnRequestResource(const IPC::Message& msg,
+  void OnRequestResource(int routing_id,
                          int request_id,
                          const ResourceHostMsg_Request& request_data);
   void OnSyncLoad(int request_id,
@@ -517,10 +505,6 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
   DelegateMap delegate_map_;
 
   scoped_ptr<ResourceScheduler> scheduler_;
-
-  typedef std::map<GlobalRoutingID, OfflinePolicy*> OfflineMap;
-
-  OfflineMap offline_policy_map_;
 
   DISALLOW_COPY_AND_ASSIGN(ResourceDispatcherHostImpl);
 };

@@ -33,39 +33,61 @@
 #endif  // defined(NDEBUG)
 #endif  // defined(GTEST_HAS_DEATH_TEST) && !defined(OS_ANDROID)
 
+namespace content {
+
 using blink::WebString;
 
 // These are the (fake) key systems that are registered for these tests.
 // kUsesAes uses the AesDecryptor like Clear Key.
 // kExternal uses an external CDM, such as Pepper-based or Android platform CDM.
-static const char kUsesAes[] = "org.example.clear";
-static const char kUsesAesParent[] = "org.example";  // Not registered.
-static const char kExternal[] = "com.example.test";
-static const char kExternalParent[] = "com.example";
+const char kUsesAes[] = "org.example.clear";
+const char kUsesAesParent[] = "org.example";  // Not registered.
+const char kExternal[] = "com.example.test";
+const char kExternalParent[] = "com.example";
 
-static const char kPrefixedClearKey[] = "webkit-org.w3.clearkey";
-static const char kUnprefixedClearKey[] = "org.w3.clearkey";
-static const char kExternalClearKey[] = "org.chromium.externalclearkey";
+const char kClearKey[] = "org.w3.clearkey";
+const char kPrefixedClearKey[] = "webkit-org.w3.clearkey";
+const char kExternalClearKey[] = "org.chromium.externalclearkey";
 
-static const char kAudioWebM[] = "audio/webm";
-static const char kVideoWebM[] = "video/webm";
-static const char kWebMAudioCodecs[] = "vorbis";
-static const char kWebMVideoCodecs[] = "vorbis,vp8,vp8.0";
+const char kAudioWebM[] = "audio/webm";
+const char kVideoWebM[] = "video/webm";
+const char kAudioFoo[] = "audio/foo";
+const char kVideoFoo[] = "video/foo";
 
-static const char kAudioFoo[] = "audio/foo";
-static const char kVideoFoo[] = "video/foo";
-static const char kFooAudioCodecs[] = "fooaudio";
-static const char kFooVideoCodecs[] = "fooaudio,foovideo";
+// Pick some arbitrary bit fields as long as they are not in conflict with the
+// real ones.
+enum TestCodec {
+  TEST_CODEC_FOO_AUDIO = 1 << 10,  // An audio codec for foo container.
+  TEST_CODEC_FOO_AUDIO_ALL = TEST_CODEC_FOO_AUDIO,
+  TEST_CODEC_FOO_VIDEO = 1 << 11,  // A video codec for foo container.
+  TEST_CODEC_FOO_VIDEO_ALL = TEST_CODEC_FOO_VIDEO,
+  TEST_CODEC_FOO_ALL = TEST_CODEC_FOO_AUDIO_ALL | TEST_CODEC_FOO_VIDEO_ALL
+};
 
-namespace content {
+COMPILE_ASSERT((TEST_CODEC_FOO_ALL & EME_CODEC_ALL) == EME_CODEC_NONE,
+                test_codec_masks_should_only_use_invalid_codec_masks);
 
-// Helper functions that handle the WebString conversion to simplify tests.
-static std::string KeySystemNameForUMAUTF8(const std::string& key_system) {
-  return KeySystemNameForUMA(WebString::fromUTF8(key_system));
-}
+// Adds test container and codec masks.
+// This function must be called after SetContentClient() is called.
+// More details: AddXxxMask() will create KeySystems if it hasn't been created.
+// During KeySystems's construction GetContentClient() will be used to add key
+// systems. In test code, the content client is set by SetContentClient().
+// Therefore, SetContentClient() must be called before this function to avoid
+// access violation.
+static void AddContainerAndCodecMasksForTest() {
+  // Since KeySystems is a singleton. Make sure we only add test container and
+  // codec masks once per process.
+  static bool is_test_masks_added = false;
 
-static bool IsConcreteSupportedKeySystemUTF8(const std::string& key_system) {
-  return IsConcreteSupportedKeySystem(WebString::fromUTF8(key_system));
+  if (is_test_masks_added)
+    return;
+
+  AddContainerMask("audio/foo", TEST_CODEC_FOO_AUDIO_ALL);
+  AddContainerMask("video/foo", TEST_CODEC_FOO_ALL);
+  AddCodecMask("fooaudio", TEST_CODEC_FOO_AUDIO);
+  AddCodecMask("foovideo", TEST_CODEC_FOO_VIDEO);
+
+  is_test_masks_added = true;
 }
 
 class TestContentRendererClient : public ContentRendererClient {
@@ -75,40 +97,19 @@ class TestContentRendererClient : public ContentRendererClient {
 
 void TestContentRendererClient::AddKeySystems(
     std::vector<content::KeySystemInfo>* key_systems) {
-#if defined(OS_ANDROID)
-  static const uint8 kExternalUuid[16] = {
-      0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF,
-      0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF };
-#endif
-
   KeySystemInfo aes(kUsesAes);
-
-  aes.supported_types.push_back(std::make_pair(kAudioWebM, kWebMAudioCodecs));
-  aes.supported_types.push_back(std::make_pair(kVideoWebM, kWebMVideoCodecs));
-
-  aes.supported_types.push_back(std::make_pair(kAudioFoo, kFooAudioCodecs));
-  aes.supported_types.push_back(std::make_pair(kVideoFoo, kFooVideoCodecs));
-
+  aes.supported_codecs = EME_CODEC_WEBM_ALL;
+  aes.supported_codecs |= TEST_CODEC_FOO_ALL;
   aes.use_aes_decryptor = true;
-
   key_systems->push_back(aes);
 
   KeySystemInfo ext(kExternal);
-
-  ext.supported_types.push_back(std::make_pair(kAudioWebM, kWebMAudioCodecs));
-  ext.supported_types.push_back(std::make_pair(kVideoWebM, kWebMVideoCodecs));
-
-  ext.supported_types.push_back(std::make_pair(kAudioFoo, kFooAudioCodecs));
-  ext.supported_types.push_back(std::make_pair(kVideoFoo, kFooVideoCodecs));
-
+  ext.supported_codecs = EME_CODEC_WEBM_ALL;
+  ext.supported_codecs |= TEST_CODEC_FOO_ALL;
   ext.parent_key_system = kExternalParent;
-
 #if defined(ENABLE_PEPPER_CDMS)
   ext.pepper_type = "application/x-ppapi-external-cdm";
-#elif defined(OS_ANDROID)
-  ext.uuid.assign(kExternalUuid, kExternalUuid + arraysize(kExternalUuid));
 #endif  // defined(ENABLE_PEPPER_CDMS)
-
   key_systems->push_back(ext);
 }
 
@@ -119,10 +120,17 @@ class KeySystemsTest : public testing::Test {
 
     vp80_codec_.push_back("vp8.0");
 
+    vp9_codec_.push_back("vp9");
+
+    vp90_codec_.push_back("vp9.0");
+
     vorbis_codec_.push_back("vorbis");
 
     vp8_and_vorbis_codecs_.push_back("vp8");
     vp8_and_vorbis_codecs_.push_back("vorbis");
+
+    vp9_and_vorbis_codecs_.push_back("vp9");
+    vp9_and_vorbis_codecs_.push_back("vorbis");
 
     foovideo_codec_.push_back("foovideo");
 
@@ -151,6 +159,10 @@ class KeySystemsTest : public testing::Test {
     SetRendererClientForTesting(&content_renderer_client_);
   }
 
+  virtual void SetUp() OVERRIDE {
+    AddContainerAndCodecMasksForTest();
+  }
+
   virtual ~KeySystemsTest() {
     // Clear the use of content_client_, which was set in SetUp().
     SetContentClient(NULL);
@@ -162,9 +174,16 @@ class KeySystemsTest : public testing::Test {
 
   const CodecVector& vp8_codec() const { return vp8_codec_; }
   const CodecVector& vp80_codec() const { return vp80_codec_; }
+  const CodecVector& vp9_codec() const { return vp9_codec_; }
+  const CodecVector& vp90_codec() const { return vp90_codec_; }
+
   const CodecVector& vorbis_codec() const { return vorbis_codec_; }
+
   const CodecVector& vp8_and_vorbis_codecs() const {
     return vp8_and_vorbis_codecs_;
+  }
+  const CodecVector& vp9_and_vorbis_codecs() const {
+    return vp9_and_vorbis_codecs_;
   }
 
   const CodecVector& foovideo_codec() const { return foovideo_codec_; }
@@ -183,11 +202,13 @@ class KeySystemsTest : public testing::Test {
 
  private:
   const CodecVector no_codecs_;
-
   CodecVector vp8_codec_;
   CodecVector vp80_codec_;
+  CodecVector vp9_codec_;
+  CodecVector vp90_codec_;
   CodecVector vorbis_codec_;
   CodecVector vp8_and_vorbis_codecs_;
+  CodecVector vp9_and_vorbis_codecs_;
 
   CodecVector foovideo_codec_;
   CodecVector foovideo_extended_codec_;
@@ -203,33 +224,39 @@ class KeySystemsTest : public testing::Test {
   TestContentRendererClient content_renderer_client_;
 };
 
-// TODO(ddorwin): Consider moving GetUUID() into these tests or moving
-// GetPepperType() calls out to their own test.
+// TODO(ddorwin): Consider moving GetPepperType() calls out to their own test.
+
+TEST_F(KeySystemsTest, EmptyKeySystem) {
+  EXPECT_FALSE(IsConcreteSupportedKeySystem(std::string()));
+  EXPECT_FALSE(IsSupportedKeySystemWithMediaMimeType(
+      kVideoWebM, no_codecs(), std::string()));
+  EXPECT_EQ("Unknown", KeySystemNameForUMA(std::string()));
+}
 
 // Clear Key is the only key system registered in content.
 TEST_F(KeySystemsTest, ClearKey) {
-  EXPECT_TRUE(IsConcreteSupportedKeySystemUTF8(kPrefixedClearKey));
+  EXPECT_TRUE(IsConcreteSupportedKeySystem(kClearKey));
   EXPECT_TRUE(IsSupportedKeySystemWithMediaMimeType(
-      kVideoWebM, no_codecs(), kPrefixedClearKey));
+      kVideoWebM, no_codecs(), kClearKey));
 
-  EXPECT_EQ("ClearKey", KeySystemNameForUMAUTF8(kPrefixedClearKey));
+  EXPECT_EQ("ClearKey", KeySystemNameForUMA(kClearKey));
 
-  // Not yet out from behind the vendor prefix.
-  EXPECT_FALSE(IsConcreteSupportedKeySystem(kUnprefixedClearKey));
+  // Prefixed Clear Key is not supported internally.
+  EXPECT_FALSE(IsConcreteSupportedKeySystem(kPrefixedClearKey));
   EXPECT_FALSE(IsSupportedKeySystemWithMediaMimeType(
-      kVideoWebM, no_codecs(), kUnprefixedClearKey));
-  EXPECT_EQ("Unknown", KeySystemNameForUMAUTF8(kUnprefixedClearKey));
+      kVideoWebM, no_codecs(), kPrefixedClearKey));
+  EXPECT_EQ("Unknown", KeySystemNameForUMA(kPrefixedClearKey));
 }
 
 // The key system is not registered and therefore is unrecognized.
 TEST_F(KeySystemsTest, Basic_UnrecognizedKeySystem) {
   static const char* const kUnrecognized = "org.example.unrecognized";
 
-  EXPECT_FALSE(IsConcreteSupportedKeySystemUTF8(kUnrecognized));
+  EXPECT_FALSE(IsConcreteSupportedKeySystem(kUnrecognized));
   EXPECT_FALSE(IsSupportedKeySystemWithMediaMimeType(
       kVideoWebM, no_codecs(), kUnrecognized));
 
-  EXPECT_EQ("Unknown", KeySystemNameForUMAUTF8(kUnrecognized));
+  EXPECT_EQ("Unknown", KeySystemNameForUMA(kUnrecognized));
 
   bool can_use = false;
   EXPECT_DEBUG_DEATH_PORTABLE(
@@ -246,12 +273,12 @@ TEST_F(KeySystemsTest, Basic_UnrecognizedKeySystem) {
 }
 
 TEST_F(KeySystemsTest, Basic_UsesAesDecryptor) {
-  EXPECT_TRUE(IsConcreteSupportedKeySystemUTF8(kUsesAes));
+  EXPECT_TRUE(IsConcreteSupportedKeySystem(kUsesAes));
   EXPECT_TRUE(IsSupportedKeySystemWithMediaMimeType(
       kVideoWebM, no_codecs(), kUsesAes));
 
   // No UMA value for this test key system.
-  EXPECT_EQ("Unknown", KeySystemNameForUMAUTF8(kUsesAes));
+  EXPECT_EQ("Unknown", KeySystemNameForUMA(kUsesAes));
 
   EXPECT_TRUE(CanUseAesDecryptor(kUsesAes));
 #if defined(ENABLE_PEPPER_CDMS)
@@ -271,6 +298,12 @@ TEST_F(KeySystemsTest,
       kVideoWebM, vp80_codec(), kUsesAes));
   EXPECT_TRUE(IsSupportedKeySystemWithMediaMimeType(
       kVideoWebM, vp8_and_vorbis_codecs(), kUsesAes));
+  EXPECT_TRUE(IsSupportedKeySystemWithMediaMimeType(
+      kVideoWebM, vp9_codec(), kUsesAes));
+  EXPECT_TRUE(IsSupportedKeySystemWithMediaMimeType(
+      kVideoWebM, vp90_codec(), kUsesAes));
+  EXPECT_TRUE(IsSupportedKeySystemWithMediaMimeType(
+      kVideoWebM, vp9_and_vorbis_codecs(), kUsesAes));
   EXPECT_TRUE(IsSupportedKeySystemWithMediaMimeType(
       kVideoWebM, vorbis_codec(), kUsesAes));
 
@@ -293,6 +326,10 @@ TEST_F(KeySystemsTest,
       kAudioWebM, vp8_codec(), kUsesAes));
   EXPECT_FALSE(IsSupportedKeySystemWithMediaMimeType(
       kAudioWebM, vp8_and_vorbis_codecs(), kUsesAes));
+  EXPECT_FALSE(IsSupportedKeySystemWithMediaMimeType(
+      kAudioWebM, vp9_codec(), kUsesAes));
+  EXPECT_FALSE(IsSupportedKeySystemWithMediaMimeType(
+      kAudioWebM, vp9_and_vorbis_codecs(), kUsesAes));
 
   // Non-Webm codec.
   EXPECT_FALSE(IsSupportedKeySystemWithMediaMimeType(
@@ -301,12 +338,12 @@ TEST_F(KeySystemsTest,
 
 // No parent is registered for UsesAes.
 TEST_F(KeySystemsTest, Parent_NoParentRegistered) {
-  EXPECT_FALSE(IsConcreteSupportedKeySystemUTF8(kUsesAesParent));
+  EXPECT_FALSE(IsConcreteSupportedKeySystem(kUsesAesParent));
   EXPECT_FALSE(IsSupportedKeySystemWithMediaMimeType(
       kVideoWebM, no_codecs(), kUsesAesParent));
 
   // The parent is not supported for most things.
-  EXPECT_EQ("Unknown", KeySystemNameForUMAUTF8(kUsesAesParent));
+  EXPECT_EQ("Unknown", KeySystemNameForUMA(kUsesAesParent));
   bool result = false;
   EXPECT_DEBUG_DEATH_PORTABLE(result = CanUseAesDecryptor(kUsesAesParent),
                               "org.example is not a known concrete system");
@@ -321,7 +358,7 @@ TEST_F(KeySystemsTest, Parent_NoParentRegistered) {
 
 TEST_F(KeySystemsTest, IsSupportedKeySystem_InvalidVariants) {
   // Case sensitive.
-  EXPECT_FALSE(IsConcreteSupportedKeySystemUTF8("org.example.ClEaR"));
+  EXPECT_FALSE(IsConcreteSupportedKeySystem("org.example.ClEaR"));
   EXPECT_FALSE(IsSupportedKeySystemWithMediaMimeType(
       kVideoWebM, no_codecs(), "org.example.ClEaR"));
 
@@ -422,7 +459,7 @@ TEST_F(KeySystemsTest,
 //
 
 TEST_F(KeySystemsTest, Basic_ExternalDecryptor) {
-  EXPECT_TRUE(IsConcreteSupportedKeySystemUTF8(kExternal));
+  EXPECT_TRUE(IsConcreteSupportedKeySystem(kExternal));
   EXPECT_TRUE(IsSupportedKeySystemWithMediaMimeType(
       kVideoWebM, no_codecs(), kExternal));
 
@@ -435,12 +472,12 @@ TEST_F(KeySystemsTest, Basic_ExternalDecryptor) {
 
 TEST_F(KeySystemsTest, Parent_ParentRegistered) {
   // The parent system is not a concrete system but is supported.
-  EXPECT_FALSE(IsConcreteSupportedKeySystemUTF8(kExternalParent));
+  EXPECT_FALSE(IsConcreteSupportedKeySystem(kExternalParent));
   EXPECT_TRUE(IsSupportedKeySystemWithMediaMimeType(
       kVideoWebM, no_codecs(), kExternalParent));
 
   // The parent is not supported for most things.
-  EXPECT_EQ("Unknown", KeySystemNameForUMAUTF8(kExternalParent));
+  EXPECT_EQ("Unknown", KeySystemNameForUMA(kExternalParent));
   bool result = false;
   EXPECT_DEBUG_DEATH_PORTABLE(result = CanUseAesDecryptor(kExternalParent),
                               "com.example is not a known concrete system");
@@ -466,6 +503,12 @@ TEST_F(
   EXPECT_TRUE(IsSupportedKeySystemWithMediaMimeType(
       kVideoWebM, vp8_and_vorbis_codecs(), kExternal));
   EXPECT_TRUE(IsSupportedKeySystemWithMediaMimeType(
+      kVideoWebM, vp9_codec(), kExternal));
+  EXPECT_TRUE(IsSupportedKeySystemWithMediaMimeType(
+      kVideoWebM, vp90_codec(), kExternal));
+  EXPECT_TRUE(IsSupportedKeySystemWithMediaMimeType(
+      kVideoWebM, vp9_and_vorbis_codecs(), kExternal));
+  EXPECT_TRUE(IsSupportedKeySystemWithMediaMimeType(
       kVideoWebM, vorbis_codec(), kExternal));
 
   // Valid video types - parent key system.
@@ -477,6 +520,12 @@ TEST_F(
       kVideoWebM, vp80_codec(), kExternalParent));
   EXPECT_TRUE(IsSupportedKeySystemWithMediaMimeType(
       kVideoWebM, vp8_and_vorbis_codecs(), kExternalParent));
+  EXPECT_TRUE(IsSupportedKeySystemWithMediaMimeType(
+      kVideoWebM, vp9_codec(), kExternalParent));
+  EXPECT_TRUE(IsSupportedKeySystemWithMediaMimeType(
+      kVideoWebM, vp90_codec(), kExternalParent));
+  EXPECT_TRUE(IsSupportedKeySystemWithMediaMimeType(
+      kVideoWebM, vp9_and_vorbis_codecs(), kExternalParent));
   EXPECT_TRUE(IsSupportedKeySystemWithMediaMimeType(
       kVideoWebM, vorbis_codec(), kExternalParent));
 
@@ -505,6 +554,10 @@ TEST_F(
       kAudioWebM, vp8_codec(), kExternal));
   EXPECT_FALSE(IsSupportedKeySystemWithMediaMimeType(
       kAudioWebM, vp8_and_vorbis_codecs(), kExternal));
+  EXPECT_FALSE(IsSupportedKeySystemWithMediaMimeType(
+      kAudioWebM, vp9_codec(), kExternal));
+  EXPECT_FALSE(IsSupportedKeySystemWithMediaMimeType(
+      kAudioWebM, vp9_and_vorbis_codecs(), kExternal));
 
   // Non-Webm codec.
   EXPECT_FALSE(IsSupportedKeySystemWithMediaMimeType(
@@ -574,43 +627,20 @@ TEST_F(
       kAudioFoo, vorbis_codec(), kExternal));
 }
 
-#if defined(OS_ANDROID)
-TEST_F(KeySystemsTest, GetUUID_RegisteredExternalDecryptor) {
-  std::vector<uint8> uuid = GetUUID(kExternal);
-  EXPECT_EQ(16u, uuid.size());
-  EXPECT_EQ(0xef, uuid[15]);
-}
-
-TEST_F(KeySystemsTest, GetUUID_RegisteredAesDecryptor) {
-  EXPECT_TRUE(GetUUID(kUsesAes).empty());
-}
-
-TEST_F(KeySystemsTest, GetUUID_Unrecognized) {
-  std::vector<uint8> uuid;
-  EXPECT_DEBUG_DEATH_PORTABLE(uuid = GetUUID(kExternalParent),
-                              "com.example is not a known concrete system");
-  EXPECT_TRUE(uuid.empty());
-
-  EXPECT_DEBUG_DEATH_PORTABLE(uuid = GetUUID(""), " is not a concrete system");
-  EXPECT_TRUE(uuid.empty());
-}
-#endif  // defined(OS_ANDROID)
-
 TEST_F(KeySystemsTest, KeySystemNameForUMA) {
-  EXPECT_EQ("ClearKey", KeySystemNameForUMAUTF8(kPrefixedClearKey));
-  // Unprefixed is not yet supported.
-  EXPECT_EQ("Unknown", KeySystemNameForUMAUTF8(kUnprefixedClearKey));
+  EXPECT_EQ("ClearKey", KeySystemNameForUMA(kClearKey));
+  // Prefixed is not supported internally.
+  EXPECT_EQ("Unknown", KeySystemNameForUMA(kPrefixedClearKey));
 
   // External Clear Key never has a UMA name.
-  EXPECT_EQ("Unknown", KeySystemNameForUMAUTF8(kExternalClearKey));
+  EXPECT_EQ("Unknown", KeySystemNameForUMA(kExternalClearKey));
 
 #if defined(WIDEVINE_CDM_AVAILABLE)
   const char* const kTestWidevineUmaName = "Widevine";
 #else
   const char* const kTestWidevineUmaName = "Unknown";
 #endif
-  EXPECT_EQ(kTestWidevineUmaName,
-            KeySystemNameForUMAUTF8("com.widevine.alpha"));
+  EXPECT_EQ(kTestWidevineUmaName, KeySystemNameForUMA("com.widevine.alpha"));
 }
 
 }  // namespace content

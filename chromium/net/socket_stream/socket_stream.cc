@@ -87,18 +87,20 @@ void SocketStream::ResponseHeaders::Realloc(size_t new_size) {
 
 SocketStream::ResponseHeaders::~ResponseHeaders() { data_ = NULL; }
 
-SocketStream::SocketStream(const GURL& url, Delegate* delegate)
+SocketStream::SocketStream(const GURL& url, Delegate* delegate,
+                           URLRequestContext* context,
+                           CookieStore* cookie_store)
     : delegate_(delegate),
       url_(url),
       max_pending_send_allowed_(kMaxPendingSendAllowed),
-      context_(NULL),
+      context_(context),
       next_state_(STATE_NONE),
       factory_(ClientSocketFactory::GetDefaultFactory()),
       proxy_mode_(kDirectConnection),
       proxy_url_(url),
       pac_request_(NULL),
       connection_(new ClientSocketHandle),
-      privacy_mode_(kPrivacyModeDisabled),
+      privacy_mode_(PRIVACY_MODE_DISABLED),
       // Unretained() is required; without it, Bind() creates a circular
       // dependency and the SocketStream object will not be freed.
       io_callback_(base::Bind(&SocketStream::OnIOCompleted,
@@ -108,12 +110,24 @@ SocketStream::SocketStream(const GURL& url, Delegate* delegate)
       waiting_for_write_completion_(false),
       closing_(false),
       server_closed_(false),
-      metrics_(new SocketStreamMetrics(url)) {
+      metrics_(new SocketStreamMetrics(url)),
+      cookie_store_(cookie_store) {
   DCHECK(base::MessageLoop::current())
       << "The current base::MessageLoop must exist";
-  DCHECK_EQ(base::MessageLoop::TYPE_IO, base::MessageLoop::current()->type())
+  DCHECK(base::MessageLoopForIO::IsCurrent())
       << "The current base::MessageLoop must be TYPE_IO";
   DCHECK(delegate_);
+
+  if (context_) {
+    if (!cookie_store_)
+      cookie_store_ = context_->cookie_store();
+
+    net_log_ = BoundNetLog::Make(
+        context->net_log(),
+        NetLog::SOURCE_SOCKET_STREAM);
+
+    net_log_.BeginEvent(NetLog::TYPE_REQUEST_ALIVE);
+  }
 }
 
 SocketStream::UserData* SocketStream::GetUserData(
@@ -132,35 +146,27 @@ bool SocketStream::is_secure() const {
   return url_.SchemeIs("wss");
 }
 
-void SocketStream::set_context(URLRequestContext* context) {
-  const URLRequestContext* prev_context = context_;
+void SocketStream::DetachContext() {
+  if (!context_)
+    return;
 
-  context_ = context;
-
-  if (prev_context != context) {
-    if (prev_context && pac_request_) {
-      prev_context->proxy_service()->CancelPacRequest(pac_request_);
-      pac_request_ = NULL;
-    }
-
-    net_log_.EndEvent(NetLog::TYPE_REQUEST_ALIVE);
-    net_log_ = BoundNetLog();
-
-    if (context) {
-      net_log_ = BoundNetLog::Make(
-          context->net_log(),
-          NetLog::SOURCE_SOCKET_STREAM);
-
-      net_log_.BeginEvent(NetLog::TYPE_REQUEST_ALIVE);
-    }
+  if (pac_request_) {
+    context_->proxy_service()->CancelPacRequest(pac_request_);
+    pac_request_ = NULL;
   }
+
+  net_log_.EndEvent(NetLog::TYPE_REQUEST_ALIVE);
+  net_log_ = BoundNetLog();
+
+  context_ = NULL;
+  cookie_store_ = NULL;
 }
 
 void SocketStream::CheckPrivacyMode() {
   if (context_ && context_->network_delegate()) {
     bool enable = context_->network_delegate()->CanEnablePrivacyMode(url_,
                                                                      url_);
-    privacy_mode_ = enable ? kPrivacyModeEnabled : kPrivacyModeDisabled;
+    privacy_mode_ = enable ? PRIVACY_MODE_ENABLED : PRIVACY_MODE_DISABLED;
     // Disable Channel ID if privacy mode is enabled.
     if (enable)
       server_ssl_config_.channel_id_enabled = false;
@@ -170,7 +176,7 @@ void SocketStream::CheckPrivacyMode() {
 void SocketStream::Connect() {
   DCHECK(base::MessageLoop::current())
       << "The current base::MessageLoop must exist";
-  DCHECK_EQ(base::MessageLoop::TYPE_IO, base::MessageLoop::current()->type())
+  DCHECK(base::MessageLoopForIO::IsCurrent())
       << "The current base::MessageLoop must be TYPE_IO";
   if (context_) {
     context_->ssl_config_service()->GetSSLConfig(&server_ssl_config_);
@@ -203,7 +209,7 @@ size_t SocketStream::GetTotalSizeOfPendingWriteBufs() const {
 bool SocketStream::SendData(const char* data, int len) {
   DCHECK(base::MessageLoop::current())
       << "The current base::MessageLoop must exist";
-  DCHECK_EQ(base::MessageLoop::TYPE_IO, base::MessageLoop::current()->type())
+  DCHECK(base::MessageLoopForIO::IsCurrent())
       << "The current base::MessageLoop must be TYPE_IO";
   DCHECK_GT(len, 0);
 
@@ -250,7 +256,7 @@ bool SocketStream::SendData(const char* data, int len) {
 void SocketStream::Close() {
   DCHECK(base::MessageLoop::current())
       << "The current base::MessageLoop must exist";
-  DCHECK_EQ(base::MessageLoop::TYPE_IO, base::MessageLoop::current()->type())
+  DCHECK(base::MessageLoopForIO::IsCurrent())
       << "The current base::MessageLoop must be TYPE_IO";
   // If next_state_ is STATE_NONE, the socket was not opened, or already
   // closed.  So, return immediately.
@@ -265,7 +271,7 @@ void SocketStream::Close() {
 void SocketStream::RestartWithAuth(const AuthCredentials& credentials) {
   DCHECK(base::MessageLoop::current())
       << "The current base::MessageLoop must exist";
-  DCHECK_EQ(base::MessageLoop::TYPE_IO, base::MessageLoop::current()->type())
+  DCHECK(base::MessageLoopForIO::IsCurrent())
       << "The current base::MessageLoop must be TYPE_IO";
   DCHECK(proxy_auth_controller_.get());
   if (!connection_->socket()) {
@@ -318,7 +324,7 @@ void SocketStream::ContinueDespiteError() {
 }
 
 SocketStream::~SocketStream() {
-  set_context(NULL);
+  DetachContext();
   DCHECK(!delegate_);
   DCHECK(!pac_request_);
 }
@@ -358,7 +364,7 @@ void SocketStream::DoClose() {
 void SocketStream::Finish(int result) {
   DCHECK(base::MessageLoop::current())
       << "The current base::MessageLoop must exist";
-  DCHECK_EQ(base::MessageLoop::TYPE_IO, base::MessageLoop::current()->type())
+  DCHECK(base::MessageLoopForIO::IsCurrent())
       << "The current base::MessageLoop must be TYPE_IO";
   DCHECK_LE(result, OK);
   if (result == OK)
@@ -1331,15 +1337,19 @@ int SocketStream::HandleCertificateError(int result) {
   SSLInfo ssl_info;
   ssl_socket->GetSSLInfo(&ssl_info);
 
-  TransportSecurityState::DomainState domain_state;
-  const bool fatal = context_->transport_security_state() &&
-      context_->transport_security_state()->GetDomainState(url_.host(),
-          SSLConfigService::IsSNIAvailable(context_->ssl_config_service()),
-          &domain_state) &&
-      domain_state.ShouldSSLErrorsBeFatal();
+  TransportSecurityState* state = context_->transport_security_state();
+  const bool fatal =
+      state &&
+      state->ShouldSSLErrorsBeFatal(
+          url_.host(),
+          SSLConfigService::IsSNIAvailable(context_->ssl_config_service()));
 
   delegate_->OnSSLCertificateError(this, ssl_info, fatal);
   return ERR_IO_PENDING;
+}
+
+CookieStore* SocketStream::cookie_store() const {
+  return cookie_store_;
 }
 
 }  // namespace net

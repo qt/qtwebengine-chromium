@@ -30,13 +30,13 @@
 #include "core/dom/NodeTraversal.h"
 #include "core/editing/CompositeEditCommand.h"
 #include "core/editing/FrameSelection.h"
-#include "core/frame/Frame.h"
+#include "core/frame/LocalFrame.h"
 
 namespace WebCore {
 
 EditCommand::EditCommand(Document& document)
     : m_document(&document)
-    , m_parent(0)
+    , m_parent(nullptr)
 {
     ASSERT(m_document);
     ASSERT(m_document->frame());
@@ -46,7 +46,7 @@ EditCommand::EditCommand(Document& document)
 
 EditCommand::EditCommand(Document* document, const VisibleSelection& startingSelection, const VisibleSelection& endingSelection)
     : m_document(document)
-    , m_parent(0)
+    , m_parent(nullptr)
 {
     ASSERT(m_document);
     ASSERT(m_document->frame());
@@ -70,28 +70,38 @@ static inline EditCommandComposition* compositionIfPossible(EditCommand* command
     return toCompositeEditCommand(command)->composition();
 }
 
-void EditCommand::setStartingSelection(const VisibleSelection& s)
+void EditCommand::setStartingSelection(const VisibleSelection& selection)
 {
-    for (EditCommand* cmd = this; ; cmd = cmd->m_parent) {
-        if (EditCommandComposition* composition = compositionIfPossible(cmd)) {
-            ASSERT(cmd->isTopLevelCommand());
-            composition->setStartingSelection(s);
+    for (EditCommand* command = this; ; command = command->m_parent) {
+        if (EditCommandComposition* composition = compositionIfPossible(command)) {
+            ASSERT(command->isTopLevelCommand());
+            composition->setStartingSelection(selection);
         }
-        cmd->m_startingSelection = s;
-        if (!cmd->m_parent || cmd->m_parent->isFirstCommand(cmd))
+        command->m_startingSelection = selection;
+        if (!command->m_parent || command->m_parent->isFirstCommand(command))
             break;
     }
 }
 
-void EditCommand::setEndingSelection(const VisibleSelection &s)
+void EditCommand::setStartingSelection(const VisiblePosition& position)
 {
-    for (EditCommand* cmd = this; cmd; cmd = cmd->m_parent) {
-        if (EditCommandComposition* composition = compositionIfPossible(cmd)) {
-            ASSERT(cmd->isTopLevelCommand());
-            composition->setEndingSelection(s);
+    setStartingSelection(VisibleSelection(position));
+}
+
+void EditCommand::setEndingSelection(const VisibleSelection& selection)
+{
+    for (EditCommand* command = this; command; command = command->m_parent) {
+        if (EditCommandComposition* composition = compositionIfPossible(command)) {
+            ASSERT(command->isTopLevelCommand());
+            composition->setEndingSelection(selection);
         }
-        cmd->m_endingSelection = s;
+        command->m_endingSelection = selection;
     }
+}
+
+void EditCommand::setEndingSelection(const VisiblePosition& position)
+{
+    setEndingSelection(VisibleSelection(position));
 }
 
 void EditCommand::setParent(CompositeEditCommand* parent)
@@ -108,6 +118,14 @@ void EditCommand::setParent(CompositeEditCommand* parent)
 void SimpleEditCommand::doReapply()
 {
     doApply();
+}
+
+void EditCommand::trace(Visitor* visitor)
+{
+    visitor->trace(m_document);
+    visitor->trace(m_startingSelection);
+    visitor->trace(m_endingSelection);
+    visitor->trace(m_parent);
 }
 
 } // namespace WebCore

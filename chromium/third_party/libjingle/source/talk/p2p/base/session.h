@@ -102,7 +102,9 @@ class TransportProxy : public sigslot::has_slots<>,
         connecting_(false),
         negotiated_(false),
         sent_candidates_(false),
-        candidates_allocated_(false) {
+        candidates_allocated_(false),
+        local_description_set_(false),
+        remote_description_set_(false) {
     transport_->get()->SignalCandidatesReady.connect(
         this, &TransportProxy::OnTransportCandidatesReady);
   }
@@ -145,9 +147,11 @@ class TransportProxy : public sigslot::has_slots<>,
   void SetIceRole(IceRole role);
   void SetIdentity(talk_base::SSLIdentity* identity);
   bool SetLocalTransportDescription(const TransportDescription& description,
-                                    ContentAction action);
+                                    ContentAction action,
+                                    std::string* error_desc);
   bool SetRemoteTransportDescription(const TransportDescription& description,
-                                     ContentAction action);
+                                     ContentAction action,
+                                     std::string* error_desc);
   void OnSignalingReady();
   bool OnRemoteCandidates(const Candidates& candidates, std::string* error);
 
@@ -161,6 +165,13 @@ class TransportProxy : public sigslot::has_slots<>,
   void OnTransportCandidatesReady(cricket::Transport* transport,
                                   const Candidates& candidates) {
     SignalCandidatesReady(this, candidates);
+  }
+
+  bool local_description_set() const {
+    return local_description_set_;
+  }
+  bool remote_description_set() const {
+    return remote_description_set_;
   }
 
   // Handles sending of ready candidates and receiving of remote candidates.
@@ -194,6 +205,8 @@ class TransportProxy : public sigslot::has_slots<>,
   Candidates sent_candidates_;
   Candidates unsent_candidates_;
   bool candidates_allocated_;
+  bool local_description_set_;
+  bool remote_description_set_;
 };
 
 typedef std::map<std::string, TransportProxy*> TransportMap;
@@ -327,13 +340,15 @@ class BaseSession : public sigslot::has_slots<>,
   // Returns the last error in the session.  See the enum above for details.
   // Each time the an error occurs, we will fire this signal.
   Error error() const { return error_; }
+  const std::string& error_desc() const { return error_desc_; }
   sigslot::signal2<BaseSession* , Error> SignalError;
 
   // Updates the state, signaling if necessary.
   virtual void SetState(State state);
 
   // Updates the error state, signaling if necessary.
-  virtual void SetError(Error error);
+  // TODO(ronghuawu): remove the SetError method that doesn't take |error_desc|.
+  virtual void SetError(Error error, const std::string& error_desc);
 
   // Fired when the remote description is updated, with the updated
   // contents.
@@ -384,7 +399,8 @@ class BaseSession : public sigslot::has_slots<>,
   bool SetIdentity(talk_base::SSLIdentity* identity);
 
   bool PushdownTransportDescription(ContentSource source,
-                                    ContentAction action);
+                                    ContentAction action,
+                                    std::string* error_desc);
   void set_initiator(bool initiator) { initiator_ = initiator; }
 
   const TransportMap& transport_proxies() const { return transports_; }
@@ -427,6 +443,14 @@ class BaseSession : public sigslot::has_slots<>,
   virtual void OnTransportReadable(Transport* transport) {
   }
 
+  // Called when a transport has found its steady-state connections.
+  virtual void OnTransportCompleted(Transport* transport) {
+  }
+
+  // Called when a transport has failed permanently.
+  virtual void OnTransportFailed(Transport* transport) {
+  }
+
   // Called when a transport signals that it has new candidates.
   virtual void OnTransportProxyCandidatesReady(TransportProxy* proxy,
                                                const Candidates& candidates) {
@@ -466,13 +490,16 @@ class BaseSession : public sigslot::has_slots<>,
  protected:
   State state_;
   Error error_;
+  std::string error_desc_;
 
  private:
   // Helper methods to push local and remote transport descriptions.
   bool PushdownLocalTransportDescription(
-      const SessionDescription* sdesc, ContentAction action);
+      const SessionDescription* sdesc, ContentAction action,
+      std::string* error_desc);
   bool PushdownRemoteTransportDescription(
-      const SessionDescription* sdesc, ContentAction action);
+      const SessionDescription* sdesc, ContentAction action,
+      std::string* error_desc);
 
   bool IsCandidateAllocationDone() const;
   void MaybeCandidateAllocationDone();
@@ -553,7 +580,7 @@ class Session : public BaseSession {
   }
 
   // Updates the error state, signaling if necessary.
-  virtual void SetError(Error error);
+  virtual void SetError(Error error, const std::string& error_desc);
 
   // When the session needs to send signaling messages, it beings by requesting
   // signaling.  The client should handle this by calling OnSignalingReady once

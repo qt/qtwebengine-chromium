@@ -13,11 +13,15 @@
 #include "base/files/file_path.h"
 #include "base/memory/linked_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "base/timer/timer.h"
 #include "google_apis/gcm/base/gcm_export.h"
 #include "google_apis/gcm/base/mcs_message.h"
 #include "google_apis/gcm/engine/connection_handler.h"
-#include "google_apis/gcm/engine/rmq_store.h"
+#include "google_apis/gcm/engine/gcm_store.h"
+#include "google_apis/gcm/engine/heartbeat_manager.h"
+
+namespace base {
+class Clock;
+}  // namespace base
 
 namespace google {
 namespace protobuf {
@@ -31,7 +35,9 @@ class LoginRequest;
 
 namespace gcm {
 
+class CollapseKey;
 class ConnectionFactory;
+class GCMStatsRecorder;
 struct ReliablePacketInfo;
 
 // An MCS client. This client is in charge of all communications with an
@@ -40,48 +46,74 @@ struct ReliablePacketInfo;
 // network requests are performed on.
 class GCM_EXPORT MCSClient {
  public:
+  // Any change made to this enum should have corresponding change in the
+  // GetStateString(...) function.
   enum State {
-    UNINITIALIZED,    // Uninitialized.
-    LOADING,          // Waiting for RMQ load to finish.
-    LOADED,           // RMQ Load finished, waiting to connect.
-    CONNECTING,       // Connection in progress.
-    CONNECTED,        // Connected and running.
+    UNINITIALIZED,  // Uninitialized.
+    LOADED,         // GCM Load finished, waiting to connect.
+    CONNECTING,     // Connection in progress.
+    CONNECTED,      // Connected and running.
   };
 
-  // Callback for informing MCSClient status. It is valid for this to be
-  // invoked more than once if a permanent error is encountered after a
-  // successful login was initiated.
-  typedef base::Callback<
-      void(bool success,
-           uint64 restored_android_id,
-           uint64 restored_security_token)> InitializationCompleteCallback;
+  // Any change made to this enum should have corresponding change in the
+  // GetMessageSendStatusString(...) function in mcs_client.cc.
+  enum MessageSendStatus {
+    // Message was queued succcessfully.
+    QUEUED,
+    // Message was sent to the server and the ACK was received.
+    SENT,
+    // Message not saved, because total queue size limit reached.
+    QUEUE_SIZE_LIMIT_REACHED,
+    // Message not saved, because app queue size limit reached.
+    APP_QUEUE_SIZE_LIMIT_REACHED,
+    // Message too large to send.
+    MESSAGE_TOO_LARGE,
+    // Message not send becuase of TTL = 0 and no working connection.
+    NO_CONNECTION_ON_ZERO_TTL,
+    // Message exceeded TTL.
+    TTL_EXCEEDED,
+
+    // NOTE: always keep this entry at the end. Add new status types only
+    // immediately above this line. Make sure to update the corresponding
+    // histogram enum accordingly.
+    SEND_STATUS_COUNT
+  };
+
+  // Callback for MCSClient's error conditions.
+  // TODO(fgorski): Keeping it as a callback with intention to add meaningful
+  // error information.
+  typedef base::Callback<void()> ErrorCallback;
   // Callback when a message is received.
   typedef base::Callback<void(const MCSMessage& message)>
       OnMessageReceivedCallback;
   // Callback when a message is sent (and receipt has been acknowledged by
   // the MCS endpoint).
-  // TODO(zea): pass some sort of structure containing more details about
-  // send failures.
-  typedef base::Callback<void(const std::string& message_id)>
-      OnMessageSentCallback;
+  typedef base::Callback<
+      void(int64 user_serial_number,
+           const std::string& app_id,
+           const std::string& message_id,
+           MessageSendStatus status)> OnMessageSentCallback;
 
-  MCSClient(const base::FilePath& rmq_path,
+  MCSClient(const std::string& version_string,
+            base::Clock* clock,
             ConnectionFactory* connection_factory,
-            scoped_refptr<base::SequencedTaskRunner> blocking_task_runner);
+            GCMStore* gcm_store,
+            GCMStatsRecorder* recorder);
   virtual ~MCSClient();
 
   // Initialize the client. Will load any previous id/token information as well
-  // as unacknowledged message information from the RMQ storage, if it exists,
+  // as unacknowledged message information from the GCM storage, if it exists,
   // passing the id/token information back via |initialization_callback| along
-  // with a |success == true| result. If no RMQ information is present (and
-  // this is therefore a fresh client), a clean RMQ store will be created and
+  // with a |success == true| result. If no GCM information is present (and
+  // this is therefore a fresh client), a clean GCM store will be created and
   // values of 0 will be returned via |initialization_callback| with
   // |success == true|.
-  /// If an error loading the RMQ store is encountered,
+  /// If an error loading the GCM store is encountered,
   // |initialization_callback| will be invoked with |success == false|.
-  void Initialize(const InitializationCompleteCallback& initialization_callback,
+  void Initialize(const ErrorCallback& initialization_callback,
                   const OnMessageReceivedCallback& message_received_callback,
-                  const OnMessageSentCallback& message_sent_callback);
+                  const OnMessageSentCallback& message_sent_callback,
+                  scoped_ptr<GCMStore::LoadResult> load_result);
 
   // Logs the client into the server. Client must be initialized.
   // |android_id| and |security_token| are optional if this is not a new
@@ -90,20 +122,28 @@ class GCM_EXPORT MCSClient {
   // with a valid LoginResponse.
   // Login failure (typically invalid id/token) will shut down the client, and
   // |initialization_callback| to be invoked with |success = false|.
-  void Login(uint64 android_id, uint64 security_token);
+  virtual void Login(uint64 android_id, uint64 security_token);
 
   // Sends a message, with or without reliable message queueing (RMQ) support.
   // Will asynchronously invoke the OnMessageSent callback regardless.
-  // TODO(zea): support TTL.
-  void SendMessage(const MCSMessage& message, bool use_rmq);
-
-  // Disconnects the client and permanently destroys the persistent RMQ store.
-  // WARNING: This is permanent, and the client must be recreated with new
-  // credentials afterwards.
-  void Destroy();
+  // Whether to use RMQ depends on whether the protobuf has |ttl| set or not.
+  // |ttl == 0| denotes the message should only be sent if the connection is
+  // open. |ttl > 0| will keep the message saved for |ttl| seconds, after which
+  // it will be dropped if it was unable to be sent. When a message is dropped,
+  // |message_sent_callback_| is invoked with a TTL expiration error.
+  virtual void SendMessage(const MCSMessage& message);
 
   // Returns the current state of the client.
   State state() const { return state_; }
+
+  // Returns the size of the send message queue.
+  int GetSendQueueSize() const;
+
+  // Returns the size of the resend messaage queue.
+  int GetResendQueueSize() const;
+
+  // Returns text representation of the state enum.
+  std::string GetStateString() const;
 
  private:
   typedef uint32 StreamId;
@@ -122,9 +162,8 @@ class GCM_EXPORT MCSClient {
   // Send a heartbeat to the MCS server.
   void SendHeartbeat();
 
-  // RMQ Store callbacks.
-  void OnRMQLoadFinished(const RMQStore::LoadResult& result);
-  void OnRMQUpdateFinished(bool success);
+  // GCM Store callback.
+  void OnGCMUpdateFinished(bool success);
 
   // Attempt to send a message.
   void MaybeSendMessage();
@@ -155,11 +194,28 @@ class GCM_EXPORT MCSClient {
   // Virtual for testing.
   virtual PersistentId GetNextPersistentId();
 
+  // Helper for the heartbeat manager to signal a connection reset.
+  void OnConnectionResetByHeartbeat();
+
+  // Runs the message_sent_callback_ with send |status| of the |protobuf|.
+  void NotifyMessageSendStatus(const google::protobuf::MessageLite& protobuf,
+                               MessageSendStatus status);
+
+  // Pops the next message from the front of the send queue (cleaning up
+  // any associated state).
+  MCSPacketInternal PopMessageForSend();
+
+  // Local version string. Sent on login.
+  const std::string version_string_;
+
+  // Clock for enforcing TTL. Passed in for testing.
+  base::Clock* const clock_;
+
   // Client state.
   State state_;
 
   // Callbacks for owner.
-  InitializationCompleteCallback initialization_callback_;
+  ErrorCallback mcs_error_callback_;
   OnMessageReceivedCallback message_received_callback_;
   OnMessageSentCallback message_sent_callback_;
 
@@ -181,6 +237,9 @@ class GCM_EXPORT MCSClient {
   // Send/acknowledge queues.
   std::deque<MCSPacketInternal> to_send_;
   std::deque<MCSPacketInternal> to_resend_;
+
+  // Map of collapse keys to their pending messages.
+  std::map<CollapseKey, ReliablePacketInfo*> collapse_key_map_;
 
   // Last device_to_server stream id acknowledged by the server.
   StreamId last_device_to_server_stream_id_received_;
@@ -209,17 +268,14 @@ class GCM_EXPORT MCSClient {
   // acknowledged on the next login attempt.
   PersistentIdList restored_unackeds_server_ids_;
 
-  // The reliable message queue persistent store.
-  RMQStore rmq_store_;
+  // The GCM persistent store. Not owned.
+  GCMStore* gcm_store_;
 
-  // ----- Heartbeats -----
-  // The current heartbeat interval.
-  base::TimeDelta heartbeat_interval_;
-  // Timer for triggering heartbeats.
-  base::Timer heartbeat_timer_;
+  // Manager to handle triggering/detecting heartbeats.
+  HeartbeatManager heartbeat_manager_;
 
-  // The task runner for blocking tasks (i.e. persisting RMQ state to disk).
-  scoped_refptr<base::SequencedTaskRunner> blocking_task_runner_;
+  // Recorder that records GCM activities for debugging purpose. Not owned.
+  GCMStatsRecorder* recorder_;
 
   base::WeakPtrFactory<MCSClient> weak_ptr_factory_;
 

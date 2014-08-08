@@ -35,7 +35,6 @@
 namespace WebCore {
 
 class IntPoint;
-class Page;
 class PlatformKeyboardEvent;
 class PlatformMouseEvent;
 
@@ -50,12 +49,17 @@ public:
     typedef void (*TraceEventCallback)(char phase, const unsigned char*, const char* name, unsigned long long id,
         int numArgs, const char* const* argNames, const unsigned char* argTypes, const unsigned long long* argValues,
         unsigned char flags, double timestamp);
-    virtual void setTraceEventCallback(TraceEventCallback) { }
+    virtual void setTraceEventCallback(const String& categoryFilter, TraceEventCallback) { }
+    virtual void resetTraceEventCallback() { }
+    virtual void enableTracing(const String& categoryFilter) { }
+    virtual void disableTracing() { }
 
     virtual void startGPUEventsRecording() { }
     virtual void stopGPUEventsRecording() { }
 
-    virtual void overrideDeviceMetrics(int /*width*/, int /*height*/, float /*deviceScaleFactor*/, bool /*emulateViewport*/, bool /*fitWindow*/) { }
+    virtual void setDeviceMetricsOverride(int /*width*/, int /*height*/, float /*deviceScaleFactor*/, bool /*emulateViewport*/, bool /*fitWindow*/) { }
+    virtual void clearDeviceMetricsOverride() { }
+    virtual void setTouchEventEmulationEnabled(bool) { }
 
     virtual bool overridesShowPaintRects() { return false; }
     virtual void setShowPaintRects(bool) { }
@@ -70,8 +74,6 @@ public:
 
     virtual void dispatchKeyEvent(const PlatformKeyboardEvent&) { }
     virtual void dispatchMouseEvent(const PlatformMouseEvent&) { }
-
-    static bool doDispatchMessageOnFrontendPage(Page* frontendPage, const String& message);
 
 protected:
     virtual ~InspectorClient() { }

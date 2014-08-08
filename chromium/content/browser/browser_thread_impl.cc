@@ -16,6 +16,10 @@
 #include "base/threading/thread_restrictions.h"
 #include "content/public/browser/browser_thread_delegate.h"
 
+#if defined(OS_ANDROID)
+#include "base/android/jni_android.h"
+#endif
+
 namespace content {
 
 namespace {
@@ -30,6 +34,57 @@ static const char* g_browser_thread_names[BrowserThread::ID_COUNT] = {
   "Chrome_CacheThread",  // CACHE
   "Chrome_IOThread",  // IO
 };
+
+// An implementation of MessageLoopProxy to be used in conjunction
+// with BrowserThread.
+class BrowserThreadMessageLoopProxy : public base::MessageLoopProxy {
+ public:
+  explicit BrowserThreadMessageLoopProxy(BrowserThread::ID identifier)
+      : id_(identifier) {
+  }
+
+  // MessageLoopProxy implementation.
+  virtual bool PostDelayedTask(
+      const tracked_objects::Location& from_here,
+      const base::Closure& task, base::TimeDelta delay) OVERRIDE {
+    return BrowserThread::PostDelayedTask(id_, from_here, task, delay);
+  }
+
+  virtual bool PostNonNestableDelayedTask(
+      const tracked_objects::Location& from_here,
+      const base::Closure& task,
+      base::TimeDelta delay) OVERRIDE {
+    return BrowserThread::PostNonNestableDelayedTask(id_, from_here, task,
+                                                     delay);
+  }
+
+  virtual bool RunsTasksOnCurrentThread() const OVERRIDE {
+    return BrowserThread::CurrentlyOn(id_);
+  }
+
+ protected:
+  virtual ~BrowserThreadMessageLoopProxy() {}
+
+ private:
+  BrowserThread::ID id_;
+  DISALLOW_COPY_AND_ASSIGN(BrowserThreadMessageLoopProxy);
+};
+
+// A separate helper is used just for the proxies, in order to avoid needing
+// to initialize the globals to create a proxy.
+struct BrowserThreadProxies {
+  BrowserThreadProxies() {
+    for (int i = 0; i < BrowserThread::ID_COUNT; ++i) {
+      proxies[i] =
+          new BrowserThreadMessageLoopProxy(static_cast<BrowserThread::ID>(i));
+    }
+  }
+
+  scoped_refptr<base::MessageLoopProxy> proxies[BrowserThread::ID_COUNT];
+};
+
+base::LazyInstance<BrowserThreadProxies>::Leaky
+    g_proxies = LAZY_INSTANCE_INITIALIZER;
 
 struct BrowserThreadGlobals {
   BrowserThreadGlobals()
@@ -69,7 +124,7 @@ BrowserThreadImpl::BrowserThreadImpl(ID identifier)
 
 BrowserThreadImpl::BrowserThreadImpl(ID identifier,
                                      base::MessageLoop* message_loop)
-    : Thread(message_loop->thread_name().c_str()), identifier_(identifier) {
+    : Thread(message_loop->thread_name()), identifier_(identifier) {
   set_message_loop(message_loop);
   Initialize();
 }
@@ -167,6 +222,15 @@ MSVC_POP_WARNING()
 MSVC_ENABLE_OPTIMIZE();
 
 void BrowserThreadImpl::Run(base::MessageLoop* message_loop) {
+#if defined(OS_ANDROID)
+  // Not to reset thread name to "Thread-???" by VM, attach VM with thread name.
+  // Though it may create unnecessary VM thread objects, keeping thread name
+  // gives more benefit in debugging in the platform.
+  if (!thread_name().empty()) {
+    base::android::AttachCurrentThreadWithName(thread_name());
+  }
+#endif
+
   BrowserThread::ID thread_id = ID_COUNT;
   if (!GetCurrentThreadIdentifier(&thread_id))
     return Thread::Run(message_loop);
@@ -274,41 +338,6 @@ bool BrowserThreadImpl::PostTaskHelper(
   return !!message_loop;
 }
 
-// An implementation of MessageLoopProxy to be used in conjunction
-// with BrowserThread.
-class BrowserThreadMessageLoopProxy : public base::MessageLoopProxy {
- public:
-  explicit BrowserThreadMessageLoopProxy(BrowserThread::ID identifier)
-      : id_(identifier) {
-  }
-
-  // MessageLoopProxy implementation.
-  virtual bool PostDelayedTask(
-      const tracked_objects::Location& from_here,
-      const base::Closure& task, base::TimeDelta delay) OVERRIDE {
-    return BrowserThread::PostDelayedTask(id_, from_here, task, delay);
-  }
-
-  virtual bool PostNonNestableDelayedTask(
-      const tracked_objects::Location& from_here,
-      const base::Closure& task,
-      base::TimeDelta delay) OVERRIDE {
-    return BrowserThread::PostNonNestableDelayedTask(id_, from_here, task,
-                                                     delay);
-  }
-
-  virtual bool RunsTasksOnCurrentThread() const OVERRIDE {
-    return BrowserThread::CurrentlyOn(id_);
-  }
-
- protected:
-  virtual ~BrowserThreadMessageLoopProxy() {}
-
- private:
-  BrowserThread::ID id_;
-  DISALLOW_COPY_AND_ASSIGN(BrowserThreadMessageLoopProxy);
-};
-
 // static
 bool BrowserThread::PostBlockingPoolTask(
     const tracked_objects::Location& from_here,
@@ -363,6 +392,33 @@ bool BrowserThread::CurrentlyOn(ID identifier) {
   return globals.threads[identifier] &&
          globals.threads[identifier]->message_loop() ==
              base::MessageLoop::current();
+}
+
+static const char* GetThreadName(BrowserThread::ID thread) {
+  if (BrowserThread::UI < thread && thread < BrowserThread::ID_COUNT)
+    return g_browser_thread_names[thread];
+  if (thread == BrowserThread::UI)
+    return "Chrome_UIThread";
+  return "Unknown Thread";
+}
+
+// static
+std::string BrowserThread::GetDCheckCurrentlyOnErrorMessage(ID expected) {
+  const std::string& message_loop_name =
+      base::MessageLoop::current()->thread_name();
+  ID actual_browser_thread;
+  const char* actual_name = "Unknown Thread";
+  if (!message_loop_name.empty()) {
+    actual_name = message_loop_name.c_str();
+  } else if (GetCurrentThreadIdentifier(&actual_browser_thread)) {
+    actual_name = GetThreadName(actual_browser_thread);
+  }
+  std::string result = "Must be called on ";
+  result += GetThreadName(expected);
+  result += "; actually called on ";
+  result += actual_name;
+  result += ".";
+  return result;
 }
 
 // static
@@ -450,7 +506,7 @@ bool BrowserThread::GetCurrentThreadIdentifier(ID* identifier) {
 // static
 scoped_refptr<base::MessageLoopProxy>
 BrowserThread::GetMessageLoopProxyForThread(ID identifier) {
-  return make_scoped_refptr(new BrowserThreadMessageLoopProxy(identifier));
+  return g_proxies.Get().proxies[identifier];
 }
 
 // static

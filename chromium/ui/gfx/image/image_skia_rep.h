@@ -12,14 +12,20 @@
 namespace gfx {
 
 // An ImageSkiaRep represents a bitmap and the scale factor it is intended for.
+// 0.0f scale is used to indicate that this ImageSkiaRep is used for unscaled
+// image (the image that only returns 1.0f scale image).
 class GFX_EXPORT ImageSkiaRep {
  public:
   // Create null bitmap.
   ImageSkiaRep();
   ~ImageSkiaRep();
 
+  // Note: This is for testing purpose only.
   // Creates a bitmap with kARGB_8888_Config config with given |size| in DIP.
-  // This allocates pixels in the bitmap.
+  // This allocates pixels in the bitmap. It is guaranteed that the data in the
+  // bitmap are initialized but the actual values are undefined.
+  // Specifying 0 scale means the image is for unscaled image. (unscaled()
+  // returns truen, and scale() returns 1.0f;)
   ImageSkiaRep(const gfx::Size& size, float scale);
 
   // Creates a bitmap with given scale.
@@ -41,7 +47,12 @@ class GFX_EXPORT ImageSkiaRep {
   }
 
   // Retrieves the scale that the bitmap will be painted at.
-  float scale() const { return scale_; }
+  float scale() const { return unscaled() ? 1.0f : scale_; }
+
+  bool unscaled() const { return scale_ == 0.0f; }
+
+  // Mark the image to be used as scaled image.
+  void SetScaled();
 
   // Returns backing bitmap.
   const SkBitmap& sk_bitmap() const { return bitmap_; }
@@ -51,6 +62,7 @@ class GFX_EXPORT ImageSkiaRep {
   SkBitmap& mutable_sk_bitmap() { return bitmap_; }
 
   SkBitmap bitmap_;
+
   float scale_;
 };
 

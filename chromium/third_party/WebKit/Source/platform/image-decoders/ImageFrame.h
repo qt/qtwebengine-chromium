@@ -119,7 +119,7 @@ public:
     AlphaBlendSource alphaBlendSource() const { return m_alphaBlendSource; }
     bool premultiplyAlpha() const { return m_premultiplyAlpha; }
     SkBitmap::Allocator* allocator() const { return m_allocator; }
-    const SkBitmap& getSkBitmap() const { return m_bitmap->bitmap(); }
+    const SkBitmap& getSkBitmap() const { return m_bitmap; }
     // Returns true if the pixels changed, but the bitmap has not yet been notified.
     bool pixelsChanged() const { return m_pixelsChanged; }
 
@@ -128,7 +128,7 @@ public:
         ASSERT(m_requiredPreviousFrameIndexValid);
         return m_requiredPreviousFrameIndex;
     }
-#if !ASSERT_DISABLED
+#if ASSERT_ENABLED
     bool requiredPreviousFrameIndexValid() const { return m_requiredPreviousFrameIndexValid; }
 #endif
     void setHasAlpha(bool alpha);
@@ -139,7 +139,7 @@ public:
     void setAlphaBlendSource(AlphaBlendSource alphaBlendSource) { m_alphaBlendSource = alphaBlendSource; }
     void setPremultiplyAlpha(bool premultiplyAlpha) { m_premultiplyAlpha = premultiplyAlpha; }
     void setMemoryAllocator(SkBitmap::Allocator* allocator) { m_allocator = allocator; }
-    void setSkBitmap(const SkBitmap& bitmap) { m_bitmap = NativeImageSkia::create(bitmap); }
+    void setSkBitmap(const SkBitmap& bitmap) { m_bitmap = bitmap; }
     // The pixelsChanged flag needs to be set when the raw pixel data was directly modified
     // (e.g. through a pointer or setRGBA). The flag is usually set after a batch of changes was made.
     void setPixelsChanged(bool pixelsChanged) { m_pixelsChanged = pixelsChanged; }
@@ -147,14 +147,14 @@ public:
     void setRequiredPreviousFrameIndex(size_t previousFrameIndex)
     {
         m_requiredPreviousFrameIndex = previousFrameIndex;
-#if !ASSERT_DISABLED
+#if ASSERT_ENABLED
         m_requiredPreviousFrameIndexValid = true;
 #endif
     }
 
     inline PixelData* getAddr(int x, int y)
     {
-        return m_bitmap->bitmap().getAddr32(x, y);
+        return m_bitmap.getAddr32(x, y);
     }
 
     inline void setRGBA(int x, int y, unsigned r, unsigned g, unsigned b, unsigned a)
@@ -162,11 +162,19 @@ public:
         setRGBA(getAddr(x, y), r, g, b, a);
     }
 
-    static const unsigned div255 = static_cast<unsigned>(1.0 / 255 * (1 << 24)) + 1;
-
     inline void setRGBA(PixelData* dest, unsigned r, unsigned g, unsigned b, unsigned a)
     {
-        if (m_premultiplyAlpha && a < 255) {
+        if (m_premultiplyAlpha)
+            setRGBAPremultiply(dest, r, g, b, a);
+        else
+            *dest = SkPackARGB32NoCheck(a, r, g, b);
+    }
+
+    static const unsigned div255 = static_cast<unsigned>(1.0 / 255 * (1 << 24)) + 1;
+
+    static inline void setRGBAPremultiply(PixelData* dest, unsigned r, unsigned g, unsigned b, unsigned a)
+    {
+        if (a < 255) {
             if (!a) {
                 *dest = 0;
                 return;
@@ -183,7 +191,7 @@ public:
         *dest = SkPackARGB32NoCheck(a, r, g, b);
     }
 
-    inline void setRGBARaw(PixelData* dest, unsigned r, unsigned g, unsigned b, unsigned a)
+    static inline void setRGBARaw(PixelData* dest, unsigned r, unsigned g, unsigned b, unsigned a)
     {
         *dest = SkPackARGB32NoCheck(a, r, g, b);
     }
@@ -192,22 +200,22 @@ public:
     inline void notifyBitmapIfPixelsChanged()
     {
         if (m_pixelsChanged)
-            m_bitmap->bitmap().notifyPixelsChanged();
+            m_bitmap.notifyPixelsChanged();
         m_pixelsChanged = false;
     }
 
 private:
     int width() const
     {
-        return m_bitmap->bitmap().width();
+        return m_bitmap.width();
     }
 
     int height() const
     {
-        return m_bitmap->bitmap().height();
+        return m_bitmap.height();
     }
 
-    RefPtr<NativeImageSkia> m_bitmap;
+    SkBitmap m_bitmap;
     SkBitmap::Allocator* m_allocator;
     bool m_hasAlpha;
     // This will always just be the entire buffer except for GIF or WebP
@@ -226,7 +234,7 @@ private:
     // This is used by ImageDecoder::clearCacheExceptFrame(), and will never
     // be read for image formats that do not have multiple frames.
     size_t m_requiredPreviousFrameIndex;
-#if !ASSERT_DISABLED
+#if ASSERT_ENABLED
     bool m_requiredPreviousFrameIndexValid;
 #endif
 };

@@ -38,14 +38,16 @@ namespace WebCore {
 
 class CSSGridLineNamesValue : public CSSValueList {
 public:
-    static PassRefPtr<CSSGridLineNamesValue> create()
+    static PassRefPtrWillBeRawPtr<CSSGridLineNamesValue> create()
     {
-        return adoptRef(new CSSGridLineNamesValue());
+        return adoptRefWillBeNoop(new CSSGridLineNamesValue());
     }
 
     String customCSSText() const;
 
-    PassRefPtr<CSSGridLineNamesValue> cloneForCSSOM() const;
+    PassRefPtrWillBeRawPtr<CSSGridLineNamesValue> cloneForCSSOM() const;
+
+    void traceAfterDispatch(Visitor* visitor) { CSSValueList::traceAfterDispatch(visitor); }
 
 private:
     CSSGridLineNamesValue();

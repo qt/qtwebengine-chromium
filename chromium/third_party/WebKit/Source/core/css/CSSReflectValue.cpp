@@ -28,8 +28,6 @@
 
 #include "core/css/CSSPrimitiveValue.h"
 
-using namespace std;
-
 namespace WebCore {
 
 String CSSReflectValue::customCSSText() const
@@ -39,24 +37,19 @@ String CSSReflectValue::customCSSText() const
     return m_direction->cssText() + ' ' + m_offset->cssText();
 }
 
-String CSSReflectValue::customSerializeResolvingVariables(const HashMap<AtomicString, String>& variables) const
-{
-    if (m_mask)
-        return m_direction->customSerializeResolvingVariables(variables) + ' ' + m_offset->customSerializeResolvingVariables(variables) + ' ' + m_mask->serializeResolvingVariables(variables);
-    return m_direction->customSerializeResolvingVariables(variables) + ' ' + m_offset->customSerializeResolvingVariables(variables);
-}
-
-void CSSReflectValue::addSubresourceStyleURLs(ListHashSet<KURL>& urls, const StyleSheetContents* styleSheet) const
-{
-    if (m_mask)
-        m_mask->addSubresourceStyleURLs(urls, styleSheet);
-}
-
 bool CSSReflectValue::equals(const CSSReflectValue& other) const
 {
     return m_direction == other.m_direction
         && compareCSSValuePtr(m_offset, other.m_offset)
         && compareCSSValuePtr(m_mask, other.m_mask);
+}
+
+void CSSReflectValue::traceAfterDispatch(Visitor* visitor)
+{
+    visitor->trace(m_direction);
+    visitor->trace(m_offset);
+    visitor->trace(m_mask);
+    CSSValue::traceAfterDispatch(visitor);
 }
 
 } // namespace WebCore

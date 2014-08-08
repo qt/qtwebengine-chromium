@@ -36,11 +36,11 @@
 #include "core/fetch/ResourceOwner.h"
 #include "core/loader/ThreadableLoader.h"
 #include "platform/Timer.h"
+#include "platform/network/HTTPHeaderMap.h"
 #include "platform/network/ResourceError.h"
 #include "wtf/Forward.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassRefPtr.h"
-#include "wtf/RefCounted.h"
 #include "wtf/text/WTFString.h"
 
 namespace WebCore {
@@ -51,22 +51,15 @@ class ResourceRequest;
 class SecurityOrigin;
 class ThreadableLoaderClient;
 
-class DocumentThreadableLoader : public RefCounted<DocumentThreadableLoader>, public ThreadableLoader, private ResourceOwner<RawResource>  {
+class DocumentThreadableLoader FINAL : public ThreadableLoader, private ResourceOwner<RawResource>  {
     WTF_MAKE_FAST_ALLOCATED;
     public:
-        static void loadResourceSynchronously(Document*, const ResourceRequest&, ThreadableLoaderClient&, const ThreadableLoaderOptions&);
-        static PassRefPtr<DocumentThreadableLoader> create(Document*, ThreadableLoaderClient*, const ResourceRequest&, const ThreadableLoaderOptions&);
+        static void loadResourceSynchronously(Document&, const ResourceRequest&, ThreadableLoaderClient&, const ThreadableLoaderOptions&, const ResourceLoaderOptions&);
+        static PassRefPtr<DocumentThreadableLoader> create(Document&, ThreadableLoaderClient*, const ResourceRequest&, const ThreadableLoaderOptions&, const ResourceLoaderOptions&);
         virtual ~DocumentThreadableLoader();
 
-        virtual void cancel();
-        virtual void setDefersLoading(bool);
-
-        using RefCounted<DocumentThreadableLoader>::ref;
-        using RefCounted<DocumentThreadableLoader>::deref;
-
-    protected:
-        virtual void refThreadableLoader() { ref(); }
-        virtual void derefThreadableLoader() { deref(); }
+        virtual void cancel() OVERRIDE;
+        void setDefersLoading(bool);
 
     private:
         enum BlockingBehavior {
@@ -74,42 +67,67 @@ class DocumentThreadableLoader : public RefCounted<DocumentThreadableLoader>, pu
             LoadAsynchronously
         };
 
-        DocumentThreadableLoader(Document*, ThreadableLoaderClient*, BlockingBehavior, const ResourceRequest&, const ThreadableLoaderOptions&);
+        DocumentThreadableLoader(Document&, ThreadableLoaderClient*, BlockingBehavior, const ResourceRequest&, const ThreadableLoaderOptions&, const ResourceLoaderOptions&);
 
-        // RawResourceClient
-        virtual void dataSent(Resource*, unsigned long long bytesSent, unsigned long long totalBytesToBeSent);
-        virtual void responseReceived(Resource*, const ResourceResponse&);
-        virtual void dataReceived(Resource*, const char* data, int dataLength);
-        virtual void redirectReceived(Resource*, ResourceRequest&, const ResourceResponse&);
-        virtual void notifyFinished(Resource*);
-        virtual void dataDownloaded(Resource*, int);
+        // RawResourceClient implementation
+        virtual void dataSent(Resource*, unsigned long long bytesSent, unsigned long long totalBytesToBeSent) OVERRIDE;
+        virtual void responseReceived(Resource*, const ResourceResponse&) OVERRIDE;
+        virtual void dataReceived(Resource*, const char* data, int dataLength) OVERRIDE;
+        virtual void redirectReceived(Resource*, ResourceRequest&, const ResourceResponse&) OVERRIDE;
+        virtual void notifyFinished(Resource*) OVERRIDE;
+        virtual void dataDownloaded(Resource*, int) OVERRIDE;
 
         void cancelWithError(const ResourceError&);
-        void didReceiveResponse(unsigned long identifier, const ResourceResponse&);
-        void didReceiveData(unsigned long identifier, const char* data, int dataLength);
-        void didFinishLoading(unsigned long identifier, double finishTime);
-        void didFail(unsigned long identifier, const ResourceError&);
+
+        // Methods containing code to handle resource fetch results which is
+        // common to both sync and async mode.
+        void handleResponse(unsigned long identifier, const ResourceResponse&);
+        void handleReceivedData(const char* data, int dataLength);
+        void handleSuccessfulFinish(unsigned long identifier, double finishTime);
+
         void didTimeout(Timer<DocumentThreadableLoader>*);
         void makeCrossOriginAccessRequest(const ResourceRequest&);
-        void makeSimpleCrossOriginAccessRequest(const ResourceRequest&);
-        void makeCrossOriginAccessRequestWithPreflight(const ResourceRequest&);
-        void preflightSuccess();
-        void preflightFailure(unsigned long identifier, const String& url, const String& errorDescription);
+        // Loads m_actualRequest.
+        void loadActualRequest();
+        // Clears m_actualRequest and reports access control check failure to
+        // m_client.
+        void handlePreflightFailure(const String& url, const String& errorDescription);
+        // Investigates the response for the preflight request. If successful,
+        // the actual request will be made later in handleSuccessfulFinish().
+        void handlePreflightResponse(unsigned long identifier, const ResourceResponse&);
 
-        void loadRequest(const ResourceRequest&, SecurityCheckPolicy);
+        void loadRequest(const ResourceRequest&, ResourceLoaderOptions);
         bool isAllowedRedirect(const KURL&) const;
         bool isAllowedByPolicy(const KURL&) const;
+        // Returns DoNotAllowStoredCredentials
+        // if m_forceDoNotAllowStoredCredentials is set. Otherwise, just
+        // returns allowCredentials value of m_resourceLoaderOptions.
+        StoredCredentials effectiveAllowCredentials() const;
 
         SecurityOrigin* securityOrigin() const;
-        bool checkCrossOriginAccessRedirectionUrl(const KURL&, String& errorDescription);
 
         ThreadableLoaderClient* m_client;
-        Document* m_document;
-        ThreadableLoaderOptions m_options;
+        Document& m_document;
+
+        const ThreadableLoaderOptions m_options;
+        // Some items may be overridden by m_forceDoNotAllowStoredCredentials
+        // and m_securityOrigin. In such a case, build a ResourceLoaderOptions
+        // with up-to-date values from them and this variable, and use it.
+        const ResourceLoaderOptions m_resourceLoaderOptions;
+
+        bool m_forceDoNotAllowStoredCredentials;
+        RefPtr<SecurityOrigin> m_securityOrigin;
+
         bool m_sameOriginRequest;
         bool m_simpleRequest;
         bool m_async;
-        OwnPtr<ResourceRequest> m_actualRequest; // non-null during Access Control preflight checks
+
+        // Holds the original request and options for it during preflight
+        // request handling phase.
+        OwnPtr<ResourceRequest> m_actualRequest;
+        OwnPtr<ResourceLoaderOptions> m_actualOptions;
+
+        HTTPHeaderMap m_simpleRequestHeaders; // stores simple request headers in case of a cross-origin redirect.
         Timer<DocumentThreadableLoader> m_timeoutTimer;
     };
 

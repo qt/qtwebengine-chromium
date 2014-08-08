@@ -29,14 +29,14 @@
  */
 
 #include "config.h"
-#include "V8CanvasRenderingContext2D.h"
+#include "bindings/core/v8/V8CanvasRenderingContext2D.h"
 
-#include "V8CanvasGradient.h"
-#include "V8CanvasPattern.h"
-#include "V8HTMLCanvasElement.h"
-#include "V8HTMLImageElement.h"
-#include "V8HTMLVideoElement.h"
-#include "V8ImageData.h"
+#include "bindings/core/v8/V8CanvasGradient.h"
+#include "bindings/core/v8/V8CanvasPattern.h"
+#include "bindings/core/v8/V8HTMLCanvasElement.h"
+#include "bindings/core/v8/V8HTMLImageElement.h"
+#include "bindings/core/v8/V8HTMLVideoElement.h"
+#include "bindings/core/v8/V8ImageData.h"
 #include "bindings/v8/V8Binding.h"
 #include "core/html/canvas/CanvasGradient.h"
 #include "core/html/canvas/CanvasPattern.h"
@@ -59,13 +59,10 @@ static v8::Handle<v8::Value> toV8Object(CanvasStyle* style, v8::Handle<v8::Objec
 
 static PassRefPtr<CanvasStyle> toCanvasStyle(v8::Handle<v8::Value> value, v8::Isolate* isolate)
 {
-    if (V8CanvasGradient::hasInstance(value, isolate, worldType(isolate)))
-        return CanvasStyle::createFromGradient(V8CanvasGradient::toNative(v8::Handle<v8::Object>::Cast(value)));
-
-    if (V8CanvasPattern::hasInstance(value, isolate, worldType(isolate)))
-        return CanvasStyle::createFromPattern(V8CanvasPattern::toNative(v8::Handle<v8::Object>::Cast(value)));
-
-    return 0;
+    RefPtr<CanvasStyle> canvasStyle = CanvasStyle::createFromGradient(V8CanvasGradient::toNativeWithTypeCheck(isolate, value));
+    if (canvasStyle)
+        return canvasStyle;
+    return CanvasStyle::createFromPattern(V8CanvasPattern::toNativeWithTypeCheck(isolate, value));
 }
 
 void V8CanvasRenderingContext2D::strokeStyleAttributeGetterCustom(const v8::PropertyCallbackInfo<v8::Value>& info)
@@ -77,10 +74,12 @@ void V8CanvasRenderingContext2D::strokeStyleAttributeGetterCustom(const v8::Prop
 void V8CanvasRenderingContext2D::strokeStyleAttributeSetterCustom(v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void>& info)
 {
     CanvasRenderingContext2D* impl = V8CanvasRenderingContext2D::toNative(info.Holder());
-    if (value->IsString())
-        impl->setStrokeColor(toCoreString(value.As<v8::String>()));
-    else
-        impl->setStrokeStyle(toCanvasStyle(value, info.GetIsolate()));
+    if (RefPtr<CanvasStyle> canvasStyle = toCanvasStyle(value, info.GetIsolate())) {
+        impl->setStrokeStyle(canvasStyle);
+    } else {
+        TOSTRING_VOID(V8StringResource<>, colorString, value);
+        impl->setStrokeColor(colorString);
+    }
 }
 
 void V8CanvasRenderingContext2D::fillStyleAttributeGetterCustom(const v8::PropertyCallbackInfo<v8::Value>& info)
@@ -92,10 +91,12 @@ void V8CanvasRenderingContext2D::fillStyleAttributeGetterCustom(const v8::Proper
 void V8CanvasRenderingContext2D::fillStyleAttributeSetterCustom(v8::Local<v8::Value> value, const v8::PropertyCallbackInfo<void>& info)
 {
     CanvasRenderingContext2D* impl = V8CanvasRenderingContext2D::toNative(info.Holder());
-    if (value->IsString())
-        impl->setFillColor(toCoreString(value.As<v8::String>()));
-    else
-        impl->setFillStyle(toCanvasStyle(value, info.GetIsolate()));
+    if (RefPtr<CanvasStyle> canvasStyle = toCanvasStyle(value, info.GetIsolate())) {
+        impl->setFillStyle(canvasStyle);
+    } else {
+        TOSTRING_VOID(V8StringResource<>, colorString, value);
+        impl->setFillColor(colorString);
+    }
 }
 
 } // namespace WebCore

@@ -17,6 +17,6 @@
 #ifndef INVALIDATION_BUILD_CONSTANTS_H_
 #define INVALIDATION_BUILD_CONSTANTS_H_
 namespace invalidation {
-const int BUILD_DATESTAMP = 20130807;
+const int BUILD_DATESTAMP = 20140204;
 }  // namespace invalidation
 #endif  // INVALIDATION_BUILD_CONSTANTS_H_

@@ -25,8 +25,8 @@
 #include "config.h"
 #include "core/html/HTMLTableColElement.h"
 
-#include "CSSPropertyNames.h"
-#include "HTMLNames.h"
+#include "core/CSSPropertyNames.h"
+#include "core/HTMLNames.h"
 #include "core/html/HTMLTableElement.h"
 #include "core/rendering/RenderTableCol.h"
 
@@ -41,10 +41,7 @@ inline HTMLTableColElement::HTMLTableColElement(const QualifiedName& tagName, Do
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLTableColElement> HTMLTableColElement::create(const QualifiedName& tagName, Document& document)
-{
-    return adoptRef(new HTMLTableColElement(tagName, document));
-}
+DEFINE_ELEMENT_FACTORY_WITH_TAGNAME(HTMLTableColElement)
 
 bool HTMLTableColElement::isPresentationAttribute(const QualifiedName& name) const
 {
@@ -64,7 +61,10 @@ void HTMLTableColElement::collectStyleForPresentationAttribute(const QualifiedNa
 void HTMLTableColElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
 {
     if (name == spanAttr) {
-        m_span = !value.isNull() ? value.toInt() : 1;
+        int newSpan = value.toInt();
+        // If the value of span is not a valid non-negative integer greater than zero,
+        // set it to 1.
+        m_span = newSpan ? newSpan : 1;
         if (renderer() && renderer()->isRenderTableCol())
             renderer()->updateFromElement();
     } else if (name == widthAttr) {
@@ -73,7 +73,7 @@ void HTMLTableColElement::parseAttribute(const QualifiedName& name, const Atomic
                 RenderTableCol* col = toRenderTableCol(renderer());
                 int newWidth = width().toInt();
                 if (newWidth != col->width())
-                    col->setNeedsLayoutAndPrefWidthsRecalc();
+                    col->setNeedsLayoutAndPrefWidthsRecalcAndFullPaintInvalidation();
             }
         }
     } else

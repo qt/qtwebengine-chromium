@@ -40,6 +40,10 @@ public:
     RenderObject* firstChild() const { ASSERT(children() == virtualChildren()); return children()->firstChild(); }
     RenderObject* lastChild() const { ASSERT(children() == virtualChildren()); return children()->lastChild(); }
 
+    // If you have a RenderTableCol, use firstChild or lastChild instead.
+    void slowFirstChild() const WTF_DELETED_FUNCTION;
+    void slowLastChild() const WTF_DELETED_FUNCTION;
+
     const RenderObjectChildList* children() const { return &m_children; }
     RenderObjectChildList* children() { return &m_children; }
 
@@ -77,25 +81,25 @@ public:
     const BorderValue& borderAdjoiningCellAfter(const RenderTableCell*) const;
 
 private:
-    virtual RenderObjectChildList* virtualChildren() { return children(); }
-    virtual const RenderObjectChildList* virtualChildren() const { return children(); }
+    virtual RenderObjectChildList* virtualChildren() OVERRIDE { return children(); }
+    virtual const RenderObjectChildList* virtualChildren() const OVERRIDE { return children(); }
 
-    virtual const char* renderName() const { return "RenderTableCol"; }
+    virtual const char* renderName() const OVERRIDE { return "RenderTableCol"; }
     virtual bool isRenderTableCol() const OVERRIDE { return true; }
-    virtual void updateFromElement();
+    virtual void updateFromElement() OVERRIDE;
     virtual void computePreferredLogicalWidths() OVERRIDE { ASSERT_NOT_REACHED(); }
 
     virtual void insertedIntoTree() OVERRIDE;
     virtual void willBeRemovedFromTree() OVERRIDE;
 
-    virtual bool isChildAllowed(RenderObject*, RenderStyle*) const;
-    virtual bool canHaveChildren() const;
-    virtual bool requiresLayer() const { return false; }
+    virtual bool isChildAllowed(RenderObject*, RenderStyle*) const OVERRIDE;
+    virtual bool canHaveChildren() const OVERRIDE;
+    virtual LayerType layerTypeRequired() const OVERRIDE { return NoLayer; }
 
-    virtual LayoutRect clippedOverflowRectForRepaint(const RenderLayerModelObject* repaintContainer) const OVERRIDE;
-    virtual void imageChanged(WrappedImagePtr, const IntRect* = 0);
+    virtual LayoutRect clippedOverflowRectForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer) const OVERRIDE;
+    virtual void imageChanged(WrappedImagePtr, const IntRect* = 0) OVERRIDE;
 
-    virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle);
+    virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle) OVERRIDE;
 
     RenderTable* table() const;
 

@@ -11,6 +11,7 @@
 #include "GrGLEffect.h"
 #include "GrDrawState.h"
 #include "GrGLShaderBuilder.h"
+#include "GrGpu.h"
 
 class GrGpuGL;
 
@@ -64,7 +65,7 @@ public:
      * be treated as color stages in the output.
      */
     static void Build(const GrDrawState&,
-                      bool isPoints,
+                      GrGpu::DrawType drawType,
                       GrDrawState::BlendOptFlags,
                       GrBlendCoeff srcCoeff,
                       GrBlendCoeff dstCoeff,
@@ -150,9 +151,6 @@ private:
         GrGLShaderBuilder::FragPosKey fFragPosKey;      // set by GrGLShaderBuilder if there are
                                                         // effects that read the fragment position.
                                                         // Otherwise, 0.
-
-        // should the FS discard if the coverage is zero (to avoid stencil manipulation)
-        SkBool8                     fDiscardIfZeroCoverage;
 
         ColorInput                  fColorInput : 8;
         ColorInput                  fCoverageInput : 8;

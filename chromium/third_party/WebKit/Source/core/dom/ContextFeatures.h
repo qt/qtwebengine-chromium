@@ -35,11 +35,18 @@ class ContextFeaturesClient;
 class Document;
 class Page;
 
+#if ENABLE(OILPAN)
+class ContextFeatures FINAL : public GarbageCollectedFinalized<ContextFeatures>, public HeapSupplement<Page> {
+    USING_GARBAGE_COLLECTED_MIXIN(ContextFeatures);
+public:
+    typedef HeapSupplement<Page> SupplementType;
+#else
 class ContextFeatures : public RefCountedSupplement<Page, ContextFeatures> {
 public:
+    typedef RefCountedSupplement<Page, ContextFeatures> SupplementType;
+#endif
     enum FeatureType {
         DialogElement = 0,
-        StyleScoped,
         PagePopup,
         MutationEvents,
         PushState,
@@ -48,10 +55,9 @@ public:
 
     static const char* supplementName();
     static ContextFeatures* defaultSwitch();
-    static PassRefPtr<ContextFeatures> create(ContextFeaturesClient*);
+    static PassRefPtrWillBeRawPtr<ContextFeatures> create(PassOwnPtr<ContextFeaturesClient>);
 
     static bool dialogElementEnabled(Document*);
-    static bool styleScopedEnabled(Document*);
     static bool pagePopupEnabled(Document*);
     static bool mutationEventsEnabled(Document*);
     static bool pushStateEnabled(Document*);
@@ -59,38 +65,34 @@ public:
     bool isEnabled(Document*, FeatureType, bool) const;
     void urlDidChange(Document*);
 
+#if ENABLE(OILPAN)
+    virtual void trace(Visitor* visitor) OVERRIDE { HeapSupplement<Page>::trace(visitor); }
+#endif
+
 private:
-    explicit ContextFeatures(ContextFeaturesClient* client)
+    explicit ContextFeatures(PassOwnPtr<ContextFeaturesClient> client)
         : m_client(client)
     { }
 
-    virtual void hostDestroyed() OVERRIDE;
-
-    ContextFeaturesClient* m_client;
+    OwnPtr<ContextFeaturesClient> m_client;
 };
-
-inline void ContextFeatures::hostDestroyed()
-{
-    m_client = 0;
-}
-
 
 class ContextFeaturesClient {
     WTF_MAKE_FAST_ALLOCATED;
 public:
-    static ContextFeaturesClient* empty();
+    static PassOwnPtr<ContextFeaturesClient> empty();
 
     virtual ~ContextFeaturesClient() { }
     virtual bool isEnabled(Document*, ContextFeatures::FeatureType, bool defaultValue) { return defaultValue; }
     virtual void urlDidChange(Document*) { }
 };
 
-void provideContextFeaturesTo(Page*, ContextFeaturesClient*);
-void provideContextFeaturesToDocumentFrom(Document*, Page*);
+void provideContextFeaturesTo(Page&, PassOwnPtr<ContextFeaturesClient>);
+void provideContextFeaturesToDocumentFrom(Document&, Page&);
 
-inline PassRefPtr<ContextFeatures> ContextFeatures::create(ContextFeaturesClient* client)
+inline PassRefPtrWillBeRawPtr<ContextFeatures> ContextFeatures::create(PassOwnPtr<ContextFeaturesClient> client)
 {
-    return adoptRef(new ContextFeatures(client));
+    return adoptRefWillBeNoop(new ContextFeatures(client));
 }
 
 inline bool ContextFeatures::isEnabled(Document* document, FeatureType type, bool defaultValue) const

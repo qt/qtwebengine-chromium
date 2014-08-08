@@ -9,9 +9,8 @@
 
 #include "base/strings/string16.h"
 #include "base/time/time.h"
-#include "ui/gfx/font.h"
 #include "ui/views/background.h"
-#include "ui/views/controls/button/text_button.h"
+#include "ui/views/controls/button/label_button.h"
 
 namespace views {
 
@@ -24,7 +23,7 @@ class MenuButtonListener;
 //  A button that shows a menu when the left mouse button is pushed
 //
 ////////////////////////////////////////////////////////////////////////////////
-class VIEWS_EXPORT MenuButton : public TextButton {
+class VIEWS_EXPORT MenuButton : public LabelButton {
  public:
   static const char kViewClassName[];
 
@@ -34,7 +33,7 @@ class VIEWS_EXPORT MenuButton : public TextButton {
 
   // Create a Button.
   MenuButton(ButtonListener* listener,
-             const string16& text,
+             const base::string16& text,
              MenuButtonListener* menu_button_listener,
              bool show_menu_marker);
   virtual ~MenuButton();
@@ -51,23 +50,24 @@ class VIEWS_EXPORT MenuButton : public TextButton {
   // Activate the button (called when the button is pressed).
   virtual bool Activate();
 
-  // Overridden from TextButton for the potential use of a drop marker.
-  virtual void PaintButton(gfx::Canvas* canvas, PaintButtonMode mode) OVERRIDE;
-
   // Overridden from View:
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
   virtual const char* GetClassName() const OVERRIDE;
+  virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
   virtual bool OnMousePressed(const ui::MouseEvent& event) OVERRIDE;
   virtual void OnMouseReleased(const ui::MouseEvent& event) OVERRIDE;
   virtual void OnMouseExited(const ui::MouseEvent& event) OVERRIDE;
   virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
   virtual bool OnKeyPressed(const ui::KeyEvent& event) OVERRIDE;
   virtual bool OnKeyReleased(const ui::KeyEvent& event) OVERRIDE;
-  virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
+  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
 
  protected:
   // Paint the menu marker image.
   void PaintMenuMarker(gfx::Canvas* canvas);
+
+  // Overridden from LabelButton:
+  virtual gfx::Rect GetChildAreaBounds() OVERRIDE;
 
   // True if the menu is currently visible.
   bool menu_visible_;

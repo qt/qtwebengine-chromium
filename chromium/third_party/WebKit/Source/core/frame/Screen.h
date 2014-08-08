@@ -32,16 +32,22 @@
 
 #include "bindings/v8/ScriptWrappable.h"
 #include "core/frame/DOMWindowProperty.h"
+#include "platform/Supplementable.h"
+#include "platform/heap/Handle.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 
 namespace WebCore {
 
-    class Frame;
+    class LocalFrame;
 
-    class Screen : public ScriptWrappable, public RefCounted<Screen>, public DOMWindowProperty {
+    class Screen FINAL : public RefCountedWillBeGarbageCollectedFinalized<Screen>, public ScriptWrappable, public DOMWindowProperty, public WillBeHeapSupplementable<Screen> {
+        WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(Screen);
     public:
-        static PassRefPtr<Screen> create(Frame *frame) { return adoptRef(new Screen(frame)); }
+        static PassRefPtrWillBeRawPtr<Screen> create(LocalFrame* frame)
+        {
+            return adoptRefWillBeNoop(new Screen(frame));
+        }
 
         unsigned height() const;
         unsigned width() const;
@@ -52,8 +58,10 @@ namespace WebCore {
         unsigned availHeight() const;
         unsigned availWidth() const;
 
+        void trace(Visitor*);
+
     private:
-        explicit Screen(Frame*);
+        explicit Screen(LocalFrame*);
     };
 
 } // namespace WebCore

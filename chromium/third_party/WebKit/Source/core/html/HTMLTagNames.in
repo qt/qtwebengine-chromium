@@ -11,7 +11,7 @@ applet constructorNeedsCreatedByParser
 area
 article interfaceName=HTMLElement
 aside interfaceName=HTMLElement
-audio runtimeEnabled=media, constructorNeedsCreatedByParser
+audio runtimeEnabled=media
 b interfaceName=HTMLElement
 base
 basefont interfaceName=HTMLElement
@@ -66,10 +66,9 @@ html
 i interfaceName=HTMLElement
 iframe interfaceName=HTMLIFrameElement
 image interfaceName=HTMLUnknownElement
-img interfaceName=HTMLImageElement, constructorNeedsFormElement
+img interfaceName=HTMLImageElement, constructorNeedsFormElement, constructorNeedsCreatedByParser
 input constructorNeedsFormElement, constructorNeedsCreatedByParser
 ins interfaceName=HTMLModElement
-isindex interfaceName=HTMLUnknownElement
 kbd interfaceName=HTMLElement
 keygen constructorNeedsFormElement
 label
@@ -87,7 +86,7 @@ meta
 meter interfaceName=HTMLMeterElement
 nav interfaceName=HTMLElement
 nobr interfaceName=HTMLElement
-noembed interfaceName=HTMLElement
+noembed interfaceName=HTMLNoEmbedElement, JSInterfaceName=HTMLElement
 noframes interfaceName=HTMLElement
 nolayer interfaceName=HTMLElement
 object constructorNeedsFormElement, constructorNeedsCreatedByParser
@@ -98,18 +97,19 @@ output constructorNeedsFormElement
 shadow interfaceName=HTMLShadowElement
 p interfaceName=HTMLParagraphElement
 param
+picture interfaceName=HTMLPictureElement, runtimeEnabled=picture
 plaintext interfaceName=HTMLElement
 pre
 progress interfaceName=HTMLProgressElement
 q interfaceName=HTMLQuoteElement
 rp interfaceName=HTMLElement
-rt interfaceName=HTMLElement
-ruby interfaceName=HTMLElement
+rt interfaceName=HTMLRTElement, JSInterfaceName=HTMLElement
+ruby interfaceName=HTMLRubyElement, JSInterfaceName=HTMLElement
 s interfaceName=HTMLElement
 samp interfaceName=HTMLElement
 script constructorNeedsCreatedByParser
 section interfaceName=HTMLElement
-select constructorNeedsFormElement, constructorNeedsCreatedByParser
+select constructorNeedsFormElement
 small interfaceName=HTMLElement
 source runtimeEnabled=media
 span
@@ -129,12 +129,12 @@ th interfaceName=HTMLTableCellElement
 thead interfaceName=HTMLTableSectionElement
 title
 tr interfaceName=HTMLTableRowElement
-track runtimeEnabled=videoTrack
+track
 tt interfaceName=HTMLElement
 u interfaceName=HTMLElement
 ul interfaceName=HTMLUListElement
 var interfaceName=HTMLElement
-video runtimeEnabled=media, constructorNeedsCreatedByParser
-wbr interfaceName=HTMLElement
+video runtimeEnabled=media
+wbr interfaceName=HTMLWBRElement, JSInterfaceName=HTMLElement
 xmp interfaceName=HTMLPreElement
-noscript interfaceName=HTMLElement
+noscript interfaceName=HTMLNoScriptElement, JSInterfaceName=HTMLElement

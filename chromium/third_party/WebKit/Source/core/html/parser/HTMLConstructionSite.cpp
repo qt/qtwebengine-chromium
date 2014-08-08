@@ -25,19 +25,20 @@
  */
 
 #include "config.h"
-#include "core/html/parser/HTMLTreeBuilder.h"
+#include "core/html/parser/HTMLConstructionSite.h"
 
-#include "HTMLElementFactory.h"
-#include "HTMLNames.h"
+#include "core/HTMLElementFactory.h"
+#include "core/HTMLNames.h"
 #include "core/dom/Comment.h"
 #include "core/dom/DocumentFragment.h"
 #include "core/dom/DocumentType.h"
 #include "core/dom/Element.h"
 #include "core/dom/ScriptLoader.h"
 #include "core/dom/Text.h"
+#include "core/frame/LocalFrame.h"
 #include "core/html/HTMLFormElement.h"
 #include "core/html/HTMLHtmlElement.h"
-#include "core/html/HTMLOptGroupElement.h"
+#include "core/html/HTMLPlugInElement.h"
 #include "core/html/HTMLScriptElement.h"
 #include "core/html/HTMLTemplateElement.h"
 #include "core/html/parser/AtomicHTMLToken.h"
@@ -46,7 +47,7 @@
 #include "core/html/parser/HTMLToken.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderClient.h"
-#include "core/frame/Frame.h"
+#include "core/svg/SVGScriptElement.h"
 #include "platform/NotImplemented.h"
 #include "platform/text/TextBreakIterator.h"
 #include <limits>
@@ -70,20 +71,20 @@ static bool hasImpliedEndTag(const HTMLStackItem* item)
         || item->hasTagName(dtTag)
         || item->hasTagName(liTag)
         || item->hasTagName(optionTag)
-        || isHTMLOptGroupElement(item->node())
+        || item->hasTagName(optgroupTag)
         || item->hasTagName(pTag)
         || item->hasTagName(rpTag)
         || item->hasTagName(rtTag);
 }
 
-static bool shouldUseLengthLimit(const ContainerNode* node)
+static bool shouldUseLengthLimit(const ContainerNode& node)
 {
-    return !node->hasTagName(scriptTag)
-        && !node->hasTagName(styleTag)
-        && !node->hasTagName(SVGNames::scriptTag);
+    return !isHTMLScriptElement(node)
+        && !isHTMLStyleElement(node)
+        && !isSVGScriptElement(node);
 }
 
-static unsigned textLengthLimitForContainer(const ContainerNode* node)
+static unsigned textLengthLimitForContainer(const ContainerNode& node)
 {
     return shouldUseLengthLimit(node) ? Text::defaultLengthLimit : std::numeric_limits<unsigned>::max();
 }
@@ -95,7 +96,7 @@ static inline bool isAllWhitespace(const String& string)
 
 static inline void insert(HTMLConstructionSiteTask& task)
 {
-    if (task.parent->hasTagName(templateTag))
+    if (isHTMLTemplateElement(*task.parent))
         task.parent = toHTMLTemplateElement(task.parent.get())->content();
 
     if (ContainerNode* parent = task.child->parentNode())
@@ -113,10 +114,12 @@ static inline void executeInsertTask(HTMLConstructionSiteTask& task)
 
     insert(task);
 
-    task.child->beginParsingChildren();
-
-    if (task.selfClosing)
-        task.child->finishParsingChildren();
+    if (task.child->isElementNode()) {
+        Element& child = toElement(*task.child);
+        child.beginParsingChildren();
+        if (task.selfClosing)
+            child.finishParsingChildren();
+    }
 }
 
 static inline void executeInsertTextTask(HTMLConstructionSiteTask& task)
@@ -130,7 +133,7 @@ static inline void executeInsertTextTask(HTMLConstructionSiteTask& task)
     Node* previousChild = task.nextChild ? task.nextChild->previousSibling() : task.parent->lastChild();
     if (previousChild && previousChild->isTextNode()) {
         Text* previousText = toText(previousChild);
-        unsigned lengthLimit = textLengthLimitForContainer(task.parent.get());
+        unsigned lengthLimit = textLengthLimitForContainer(*task.parent);
         if (previousText->length() + newText->length() < lengthLimit) {
             previousText->parserAppendData(newText->data());
             return;
@@ -238,7 +241,7 @@ void HTMLConstructionSite::flushPendingText()
 
     // Splitting text nodes into smaller chunks contradicts HTML5 spec, but is necessary
     // for performance, see: https://bugs.webkit.org/show_bug.cgi?id=55898
-    unsigned lengthLimit = textLengthLimitForContainer(pendingText.parent.get());
+    unsigned lengthLimit = textLengthLimitForContainer(*pendingText.parent);
 
     unsigned currentPosition = 0;
     const StringBuilder& string = pendingText.stringBuilder;
@@ -269,10 +272,10 @@ void HTMLConstructionSite::queueTask(const HTMLConstructionSiteTask& task)
     m_taskQueue.append(task);
 }
 
-void HTMLConstructionSite::attachLater(ContainerNode* parent, PassRefPtr<Node> prpChild, bool selfClosing)
+void HTMLConstructionSite::attachLater(ContainerNode* parent, PassRefPtrWillBeRawPtr<Node> prpChild, bool selfClosing)
 {
     ASSERT(scriptingContentIsAllowed(m_parserContentPolicy) || !prpChild.get()->isElementNode() || !toScriptLoaderIfPossible(toElement(prpChild.get())));
-    ASSERT(pluginContentIsAllowed(m_parserContentPolicy) || !prpChild->isPluginElement());
+    ASSERT(pluginContentIsAllowed(m_parserContentPolicy) || !isHTMLPlugInElement(prpChild));
 
     HTMLConstructionSiteTask task(HTMLConstructionSiteTask::Insert);
     task.parent = parent;
@@ -343,14 +346,26 @@ HTMLConstructionSite::~HTMLConstructionSite()
     ASSERT(m_pendingText.isEmpty());
 }
 
+void HTMLConstructionSite::trace(Visitor* visitor)
+{
+    visitor->trace(m_document);
+    visitor->trace(m_attachmentRoot);
+    visitor->trace(m_head);
+    visitor->trace(m_form);
+    visitor->trace(m_openElements);
+    visitor->trace(m_activeFormattingElements);
+    visitor->trace(m_taskQueue);
+    visitor->trace(m_pendingText);
+}
+
 void HTMLConstructionSite::detach()
 {
     // FIXME: We'd like to ASSERT here that we're canceling and not just discarding
     // text that really should have made it into the DOM earlier, but there
     // doesn't seem to be a nice way to do that.
     m_pendingText.discard();
-    m_document = 0;
-    m_attachmentRoot = 0;
+    m_document = nullptr;
+    m_attachmentRoot = nullptr;
 }
 
 void HTMLConstructionSite::setForm(HTMLFormElement* form)
@@ -360,7 +375,7 @@ void HTMLConstructionSite::setForm(HTMLFormElement* form)
     m_form = form;
 }
 
-PassRefPtr<HTMLFormElement> HTMLConstructionSite::takeForm()
+PassRefPtrWillBeRawPtr<HTMLFormElement> HTMLConstructionSite::takeForm()
 {
     return m_form.release();
 }
@@ -375,7 +390,7 @@ void HTMLConstructionSite::dispatchDocumentElementAvailableIfNeeded()
 void HTMLConstructionSite::insertHTMLHtmlStartTagBeforeHTML(AtomicHTMLToken* token)
 {
     ASSERT(m_document);
-    RefPtr<HTMLHtmlElement> element = HTMLHtmlElement::create(*m_document);
+    RefPtrWillBeRawPtr<HTMLHtmlElement> element = HTMLHtmlElement::create(*m_document);
     setAttributes(element.get(), token, m_parserContentPolicy);
     attachLater(m_attachmentRoot, element);
     m_openElements.pushHTMLHtmlElement(HTMLStackItem::create(element, token));
@@ -392,7 +407,7 @@ void HTMLConstructionSite::mergeAttributesFromTokenIntoElement(AtomicHTMLToken* 
 
     for (unsigned i = 0; i < token->attributes().size(); ++i) {
         const Attribute& tokenAttribute = token->attributes().at(i);
-        if (!element->elementData() || !element->getAttributeItem(tokenAttribute.name()))
+        if (!element->elementData() || !element->findAttributeByName(tokenAttribute.name()))
             element->setAttribute(tokenAttribute.name(), tokenAttribute.value());
     }
 }
@@ -415,8 +430,6 @@ void HTMLConstructionSite::insertHTMLBodyStartTagInBody(AtomicHTMLToken* token)
 void HTMLConstructionSite::setDefaultCompatibilityMode()
 {
     if (m_isParsingFragment)
-        return;
-    if (m_document->isSrcdocDocument())
         return;
     setCompatibilityMode(Document::QuirksMode);
 }
@@ -536,7 +549,7 @@ void HTMLConstructionSite::insertDoctype(AtomicHTMLToken* token)
 
     const String& publicId = StringImpl::create8BitIfPossible(token->publicIdentifier());
     const String& systemId = StringImpl::create8BitIfPossible(token->systemIdentifier());
-    RefPtr<DocumentType> doctype = DocumentType::create(m_document, token->name(), publicId, systemId);
+    RefPtrWillBeRawPtr<DocumentType> doctype = DocumentType::create(m_document, token->name(), publicId, systemId);
     attachLater(m_attachmentRoot, doctype.release());
 
     // DOCTYPE nodes are only processed when parsing fragments w/o contextElements, which
@@ -586,26 +599,26 @@ void HTMLConstructionSite::insertHTMLHeadElement(AtomicHTMLToken* token)
 void HTMLConstructionSite::insertHTMLBodyElement(AtomicHTMLToken* token)
 {
     ASSERT(!shouldFosterParent());
-    RefPtr<Element> body = createHTMLElement(token);
+    RefPtrWillBeRawPtr<Element> body = createHTMLElement(token);
     attachLater(currentNode(), body);
     m_openElements.pushHTMLBodyElement(HTMLStackItem::create(body.release(), token));
-    if (Frame* frame = m_document->frame())
+    if (LocalFrame* frame = m_document->frame())
         frame->loader().client()->dispatchWillInsertBody();
 }
 
 void HTMLConstructionSite::insertHTMLFormElement(AtomicHTMLToken* token, bool isDemoted)
 {
-    RefPtr<Element> element = createHTMLElement(token);
-    ASSERT(element->hasTagName(formTag));
+    RefPtrWillBeRawPtr<Element> element = createHTMLElement(token);
+    ASSERT(isHTMLFormElement(element));
     m_form = static_pointer_cast<HTMLFormElement>(element.release());
     m_form->setDemoted(isDemoted);
-    attachLater(currentNode(), m_form);
-    m_openElements.push(HTMLStackItem::create(m_form, token));
+    attachLater(currentNode(), m_form.get());
+    m_openElements.push(HTMLStackItem::create(m_form.get(), token));
 }
 
 void HTMLConstructionSite::insertHTMLElement(AtomicHTMLToken* token)
 {
-    RefPtr<Element> element = createHTMLElement(token);
+    RefPtrWillBeRawPtr<Element> element = createHTMLElement(token);
     attachLater(currentNode(), element);
     m_openElements.push(HTMLStackItem::create(element.release(), token));
 }
@@ -639,7 +652,7 @@ void HTMLConstructionSite::insertScriptElement(AtomicHTMLToken* token)
     // those flags or effects thereof.
     const bool parserInserted = m_parserContentPolicy != AllowScriptingContentAndDoNotMarkAlreadyStarted;
     const bool alreadyStarted = m_isParsingFragment && parserInserted;
-    RefPtr<HTMLScriptElement> element = HTMLScriptElement::create(ownerDocumentForCurrentNode(), parserInserted, alreadyStarted);
+    RefPtrWillBeRawPtr<HTMLScriptElement> element = HTMLScriptElement::create(ownerDocumentForCurrentNode(), parserInserted, alreadyStarted);
     setAttributes(element.get(), token, m_parserContentPolicy);
     if (scriptingContentIsAllowed(m_parserContentPolicy))
         attachLater(currentNode(), element);
@@ -651,7 +664,7 @@ void HTMLConstructionSite::insertForeignElement(AtomicHTMLToken* token, const At
     ASSERT(token->type() == HTMLToken::StartTag);
     notImplemented(); // parseError when xmlns or xmlns:xlink are wrong.
 
-    RefPtr<Element> element = createElement(token, namespaceURI);
+    RefPtrWillBeRawPtr<Element> element = createElement(token, namespaceURI);
     if (scriptingContentIsAllowed(m_parserContentPolicy) || !toScriptLoaderIfPossible(element.get()))
         attachLater(currentNode(), element, token->selfClosing());
     if (!token->selfClosing())
@@ -667,7 +680,7 @@ void HTMLConstructionSite::insertTextNode(const String& string, WhitespaceMode w
         findFosterSite(dummyTask);
 
     // FIXME: This probably doesn't need to be done both here and in insert(Task).
-    if (dummyTask.parent->hasTagName(templateTag))
+    if (isHTMLTemplateElement(*dummyTask.parent))
         dummyTask.parent = toHTMLTemplateElement(dummyTask.parent.get())->content();
 
     // Unclear when parent != case occurs. Somehow we insert text into two separate nodes while processing the same Token.
@@ -715,22 +728,22 @@ void HTMLConstructionSite::takeAllChildren(HTMLStackItem* newParent, HTMLElement
     queueTask(task);
 }
 
-PassRefPtr<Element> HTMLConstructionSite::createElement(AtomicHTMLToken* token, const AtomicString& namespaceURI)
+PassRefPtrWillBeRawPtr<Element> HTMLConstructionSite::createElement(AtomicHTMLToken* token, const AtomicString& namespaceURI)
 {
     QualifiedName tagName(nullAtom, token->name(), namespaceURI);
-    RefPtr<Element> element = ownerDocumentForCurrentNode().createElement(tagName, true);
+    RefPtrWillBeRawPtr<Element> element = ownerDocumentForCurrentNode().createElement(tagName, true);
     setAttributes(element.get(), token, m_parserContentPolicy);
     return element.release();
 }
 
 inline Document& HTMLConstructionSite::ownerDocumentForCurrentNode()
 {
-    if (currentNode()->hasTagName(templateTag))
+    if (isHTMLTemplateElement(*currentNode()))
         return toHTMLTemplateElement(currentElement())->content()->document();
     return currentNode()->document();
 }
 
-PassRefPtr<Element> HTMLConstructionSite::createHTMLElement(AtomicHTMLToken* token)
+PassRefPtrWillBeRawPtr<Element> HTMLConstructionSite::createHTMLElement(AtomicHTMLToken* token)
 {
     Document& document = ownerDocumentForCurrentNode();
     // Only associate the element with the current form if we're creating the new element
@@ -739,15 +752,15 @@ PassRefPtr<Element> HTMLConstructionSite::createHTMLElement(AtomicHTMLToken* tok
     // FIXME: This can't use HTMLConstructionSite::createElement because we
     // have to pass the current form element.  We should rework form association
     // to occur after construction to allow better code sharing here.
-    RefPtr<Element> element = HTMLElementFactory::createHTMLElement(token->name(), document, form, true);
+    RefPtrWillBeRawPtr<Element> element = HTMLElementFactory::createHTMLElement(token->name(), document, form, true);
     setAttributes(element.get(), token, m_parserContentPolicy);
     ASSERT(element->isHTMLElement());
     return element.release();
 }
 
-PassRefPtr<HTMLStackItem> HTMLConstructionSite::createElementFromSavedToken(HTMLStackItem* item)
+PassRefPtrWillBeRawPtr<HTMLStackItem> HTMLConstructionSite::createElementFromSavedToken(HTMLStackItem* item)
 {
-    RefPtr<Element> element;
+    RefPtrWillBeRawPtr<Element> element;
     // NOTE: Moving from item -> token -> item copies the Attribute vector twice!
     AtomicHTMLToken fakeToken(HTMLToken::StartTag, item->localName(), item->attributes());
     if (item->namespaceURI() == HTMLNames::xhtmlNamespaceURI)
@@ -784,7 +797,7 @@ void HTMLConstructionSite::reconstructTheActiveFormattingElements()
     ASSERT(unopenEntryIndex < m_activeFormattingElements.size());
     for (; unopenEntryIndex < m_activeFormattingElements.size(); ++unopenEntryIndex) {
         HTMLFormattingElementList::Entry& unopenedEntry = m_activeFormattingElements.at(unopenEntryIndex);
-        RefPtr<HTMLStackItem> reconstructed = createElementFromSavedToken(unopenedEntry.stackItem().get());
+        RefPtrWillBeRawPtr<HTMLStackItem> reconstructed = createElementFromSavedToken(unopenedEntry.stackItem().get());
         attachLater(currentNode(), reconstructed->node());
         m_openElements.push(reconstructed);
         unopenedEntry.replaceElement(reconstructed.release());
@@ -847,7 +860,7 @@ bool HTMLConstructionSite::shouldFosterParent() const
         && currentStackItem()->causesFosterParenting();
 }
 
-void HTMLConstructionSite::fosterParent(PassRefPtr<Node> node)
+void HTMLConstructionSite::fosterParent(PassRefPtrWillBeRawPtr<Node> node)
 {
     HTMLConstructionSiteTask task(HTMLConstructionSiteTask::Insert);
     findFosterSite(task);
@@ -855,5 +868,12 @@ void HTMLConstructionSite::fosterParent(PassRefPtr<Node> node)
     ASSERT(task.parent);
     queueTask(task);
 }
+
+void HTMLConstructionSite::PendingText::trace(Visitor* visitor)
+{
+    visitor->trace(parent);
+    visitor->trace(nextChild);
+}
+
 
 }

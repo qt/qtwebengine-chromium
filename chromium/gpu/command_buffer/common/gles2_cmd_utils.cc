@@ -5,7 +5,7 @@
 // This file is here so other GLES2 related files can have a common set of
 // includes where appropriate.
 
-#include <stdio.h>
+#include <sstream>
 #include <GLES2/gl2.h>
 #include <GLES2/gl2ext.h>
 #include <GLES2/gl2extchromium.h>
@@ -324,6 +324,10 @@ int GLES2Util::GLGetNumValuesReturned(int id) const {
 
     // -- glHint with GL_OES_standard_derivatives
     case GL_FRAGMENT_SHADER_DERIVATIVE_HINT_OES:
+      return 1;
+
+    // Chromium internal bind_generates_resource query
+    case GL_BIND_GENERATES_RESOURCE_CHROMIUM:
       return 1;
 
     // bad enum
@@ -692,9 +696,11 @@ std::string GLES2Util::GetStringEnum(uint32 value) {
       return entry->name;
     }
   }
-  char buffer[20];
-  sprintf(buffer, (value < 0x10000) ? "0x%04x" : "0x%08x", value);
-  return buffer;
+  std::stringstream ss;
+  ss.fill('0');
+  ss.width(value < 0x10000 ? 4 : 8);
+  ss << std::hex << value;
+  return "0x" + ss.str();
 }
 
 std::string GLES2Util::GetStringError(uint32 value) {
@@ -772,23 +778,24 @@ const int32 kBufferDestroyed = 0x3095;  // EGL_BUFFER_DESTROYED
 const int32 kShareResources        = 0x10000;
 const int32 kBindGeneratesResource = 0x10001;
 const int32 kFailIfMajorPerfCaveat = 0x10002;
+const int32 kLoseContextWhenOutOfMemory = 0x10003;
 
 }  // namespace
 
 ContextCreationAttribHelper::ContextCreationAttribHelper()
-  : alpha_size_(-1),
-    blue_size_(-1),
-    green_size_(-1),
-    red_size_(-1),
-    depth_size_(-1),
-    stencil_size_(-1),
-    samples_(-1),
-    sample_buffers_(-1),
-    buffer_preserved_(true),
-    share_resources_(false),
-    bind_generates_resource_(true),
-    fail_if_major_perf_caveat_(false) {
-}
+    : alpha_size_(-1),
+      blue_size_(-1),
+      green_size_(-1),
+      red_size_(-1),
+      depth_size_(-1),
+      stencil_size_(-1),
+      samples_(-1),
+      sample_buffers_(-1),
+      buffer_preserved_(true),
+      share_resources_(false),
+      bind_generates_resource_(true),
+      fail_if_major_perf_caveat_(false),
+      lose_context_when_out_of_memory_(false) {}
 
 void ContextCreationAttribHelper::Serialize(std::vector<int32>* attribs) {
   if (alpha_size_ != -1) {
@@ -831,6 +838,8 @@ void ContextCreationAttribHelper::Serialize(std::vector<int32>* attribs) {
   attribs->push_back(bind_generates_resource_ ? 1 : 0);
   attribs->push_back(kFailIfMajorPerfCaveat);
   attribs->push_back(fail_if_major_perf_caveat_ ? 1 : 0);
+  attribs->push_back(kLoseContextWhenOutOfMemory);
+  attribs->push_back(lose_context_when_out_of_memory_ ? 1 : 0);
   attribs->push_back(kNone);
 }
 
@@ -884,6 +893,9 @@ bool ContextCreationAttribHelper::Parse(const std::vector<int32>& attribs) {
         break;
       case kFailIfMajorPerfCaveat:
         fail_if_major_perf_caveat_ = value != 0;
+        break;
+      case kLoseContextWhenOutOfMemory:
+        lose_context_when_out_of_memory_ = value != 0;
         break;
       case kNone:
         // Terminate list, even if more attributes.

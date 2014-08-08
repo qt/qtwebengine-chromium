@@ -34,28 +34,27 @@ namespace WebCore {
 // only want to walk the child list to figure out the index once.
 class NodeWithIndex {
 public:
-    explicit NodeWithIndex(Node* node)
+    explicit NodeWithIndex(Node& node)
         : m_node(node)
-        , m_haveIndex(false)
+        , m_index(-1)
     {
-        ASSERT(node);
     }
 
-    Node* node() const { return m_node; }
+    Node& node() const { return m_node; }
 
     int index() const
     {
-        if (!m_haveIndex) {
-            m_index = m_node->nodeIndex();
-            m_haveIndex = true;
-        }
-        ASSERT(m_index == static_cast<int>(m_node->nodeIndex()));
+        if (!hasIndex())
+            m_index = m_node.nodeIndex();
+        ASSERT(hasIndex());
+        ASSERT(m_index == static_cast<int>(m_node.nodeIndex()));
         return m_index;
     }
 
 private:
-    Node* m_node;
-    mutable bool m_haveIndex;
+    bool hasIndex() const { return m_index >= 0; }
+
+    Node& m_node;
     mutable int m_index;
 };
 

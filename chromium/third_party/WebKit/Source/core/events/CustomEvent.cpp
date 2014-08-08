@@ -27,7 +27,6 @@
 #include "core/events/CustomEvent.h"
 
 #include "bindings/v8/SerializedScriptValue.h"
-#include "core/events/ThreadLocalEventNames.h"
 
 namespace WebCore {
 
@@ -59,6 +58,11 @@ void CustomEvent::initCustomEvent(const AtomicString& type, bool canBubble, bool
 const AtomicString& CustomEvent::interfaceName() const
 {
     return EventNames::CustomEvent;
+}
+
+void CustomEvent::trace(Visitor* visitor)
+{
+    Event::trace(visitor);
 }
 
 } // namespace WebCore

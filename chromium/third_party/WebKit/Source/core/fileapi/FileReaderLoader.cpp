@@ -32,12 +32,12 @@
 
 #include "core/fileapi/FileReaderLoader.h"
 
-#include "FetchInitiatorTypeNames.h"
+#include "core/FetchInitiatorTypeNames.h"
 #include "core/dom/ExecutionContext.h"
-#include "core/fetch/TextResourceDecoder.h"
 #include "core/fileapi/Blob.h"
 #include "core/fileapi/FileReaderLoaderClient.h"
 #include "core/fileapi/Stream.h"
+#include "core/html/parser/TextResourceDecoder.h"
 #include "core/loader/ThreadableLoader.h"
 #include "platform/blob/BlobRegistry.h"
 #include "platform/blob/BlobURL.h"
@@ -49,8 +49,6 @@
 #include "wtf/Vector.h"
 #include "wtf/text/Base64.h"
 #include "wtf/text/StringBuilder.h"
-
-using namespace std;
 
 namespace WebCore {
 
@@ -81,10 +79,10 @@ FileReaderLoader::~FileReaderLoader()
     }
 }
 
-void FileReaderLoader::startInternal(ExecutionContext* executionContext, const Stream* stream, PassRefPtr<BlobDataHandle> blobData)
+void FileReaderLoader::startInternal(ExecutionContext& executionContext, const Stream* stream, PassRefPtr<BlobDataHandle> blobData)
 {
     // The blob is read by routing through the request handling layer given a temporary public url.
-    m_urlForReading = BlobURL::createPublicURL(executionContext->securityOrigin());
+    m_urlForReading = BlobURL::createPublicURL(executionContext.securityOrigin());
     if (m_urlForReading.isEmpty()) {
         failed(FileError::SECURITY_ERR);
         return;
@@ -92,43 +90,45 @@ void FileReaderLoader::startInternal(ExecutionContext* executionContext, const S
 
     if (blobData) {
         ASSERT(!stream);
-        BlobRegistry::registerPublicBlobURL(executionContext->securityOrigin(), m_urlForReading, blobData);
+        BlobRegistry::registerPublicBlobURL(executionContext.securityOrigin(), m_urlForReading, blobData);
     } else {
         ASSERT(stream);
-        BlobRegistry::registerStreamURL(executionContext->securityOrigin(), m_urlForReading, stream->url());
+        BlobRegistry::registerStreamURL(executionContext.securityOrigin(), m_urlForReading, stream->url());
     }
 
     // Construct and load the request.
     ResourceRequest request(m_urlForReading);
     request.setHTTPMethod("GET");
     if (m_hasRange)
-        request.setHTTPHeaderField("Range", String::format("bytes=%d-%d", m_rangeStart, m_rangeEnd));
+        request.setHTTPHeaderField("Range", AtomicString(String::format("bytes=%d-%d", m_rangeStart, m_rangeEnd)));
 
     ThreadableLoaderOptions options;
-    options.sendLoadCallbacks = SendCallbacks;
-    options.sniffContent = DoNotSniffContent;
     options.preflightPolicy = ConsiderPreflight;
-    options.allowCredentials = AllowStoredCredentials;
     options.crossOriginRequestPolicy = DenyCrossOriginRequests;
     // FIXME: Is there a directive to which this load should be subject?
     options.contentSecurityPolicyEnforcement = DoNotEnforceContentSecurityPolicy;
     // Use special initiator to hide the request from the inspector.
     options.initiator = FetchInitiatorTypeNames::internal;
 
+    ResourceLoaderOptions resourceLoaderOptions;
+    resourceLoaderOptions.allowCredentials = AllowStoredCredentials;
+
     if (m_client)
-        m_loader = ThreadableLoader::create(executionContext, this, request, options);
+        m_loader = ThreadableLoader::create(executionContext, this, request, options, resourceLoaderOptions);
     else
-        ThreadableLoader::loadResourceSynchronously(executionContext, request, *this, options);
+        ThreadableLoader::loadResourceSynchronously(executionContext, request, *this, options, resourceLoaderOptions);
 }
 
 void FileReaderLoader::start(ExecutionContext* executionContext, PassRefPtr<BlobDataHandle> blobData)
 {
+    ASSERT(executionContext);
     m_urlForReadingIsStream = false;
-    startInternal(executionContext, 0, blobData);
+    startInternal(*executionContext, 0, blobData);
 }
 
 void FileReaderLoader::start(ExecutionContext* executionContext, const Stream& stream, unsigned readSize)
 {
+    ASSERT(executionContext);
     if (readSize > 0) {
         m_hasRange = true;
         m_rangeStart = 0;
@@ -136,7 +136,7 @@ void FileReaderLoader::start(ExecutionContext* executionContext, const Stream& s
     }
 
     m_urlForReadingIsStream = true;
-    startInternal(executionContext, &stream, 0);
+    startInternal(*executionContext, &stream, nullptr);
 }
 
 void FileReaderLoader::cancel()
@@ -155,7 +155,7 @@ void FileReaderLoader::terminate()
 
 void FileReaderLoader::cleanup()
 {
-    m_loader = 0;
+    m_loader = nullptr;
 
     // If we get any error, we do not need to keep a buffer around.
     if (m_errorCode) {
@@ -197,22 +197,24 @@ void FileReaderLoader::didReceiveResponse(unsigned long, const ResourceResponse&
         // Check that we can cast to unsigned since we have to do
         // so to call ArrayBuffer's create function.
         // FIXME: Support reading more than the current size limit of ArrayBuffer.
-        if (initialBufferLength > numeric_limits<unsigned>::max()) {
+        if (initialBufferLength > std::numeric_limits<unsigned>::max()) {
             failed(FileError::NOT_READABLE_ERR);
             return;
         }
 
-        if (initialBufferLength < 0) {
+        if (initialBufferLength < 0)
             m_rawData = adoptPtr(new ArrayBufferBuilder());
-        } else {
+        else
             m_rawData = adoptPtr(new ArrayBufferBuilder(static_cast<unsigned>(initialBufferLength)));
+
+        if (!m_rawData || !m_rawData->isValid()) {
+            failed(FileError::NOT_READABLE_ERR);
+            return;
+        }
+
+        if (initialBufferLength >= 0) {
             // Total size is known. Set m_rawData to ignore overflowed data.
             m_rawData->setVariableCapacity(false);
-        }
-
-        if (!m_rawData) {
-            failed(FileError::NOT_READABLE_ERR);
-            return;
         }
     }
 
@@ -305,7 +307,7 @@ PassRefPtr<ArrayBuffer> FileReaderLoader::arrayBufferResult() const
 
     // If the loading is not started or an error occurs, return an empty result.
     if (!m_rawData || m_errorCode)
-        return 0;
+        return nullptr;
 
     return m_rawData->toArrayBuffer();
 }

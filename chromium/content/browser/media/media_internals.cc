@@ -5,6 +5,7 @@
 #include "content/browser/media/media_internals.h"
 
 #include "base/strings/string16.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/web_ui.h"
@@ -23,6 +24,38 @@ base::string16 SerializeUpdate(const std::string& function,
       function, std::vector<const base::Value*>(1, value));
 }
 
+std::string EffectsToString(int effects) {
+  if (effects == media::AudioParameters::NO_EFFECTS)
+    return "NO_EFFECTS";
+
+  struct {
+    int flag;
+    const char* name;
+  } flags[] = {
+    { media::AudioParameters::ECHO_CANCELLER, "ECHO_CANCELLER" },
+    { media::AudioParameters::DUCKING, "DUCKING" },
+    { media::AudioParameters::KEYBOARD_MIC, "KEYBOARD_MIC" },
+  };
+
+  std::string ret;
+  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(flags); ++i) {
+    if (effects & flags[i].flag) {
+      if (!ret.empty())
+        ret += " | ";
+      ret += flags[i].name;
+      effects &= ~flags[i].flag;
+    }
+  }
+
+  if (effects) {
+    if (!ret.empty())
+      ret += " | ";
+    ret += base::IntToString(effects);
+  }
+
+  return ret;
+}
+
 const char kAudioLogStatusKey[] = "status";
 const char kAudioLogUpdateFunction[] = "media.updateAudioComponent";
 
@@ -39,8 +72,7 @@ class AudioLogImpl : public media::AudioLog {
 
   virtual void OnCreated(int component_id,
                          const media::AudioParameters& params,
-                         const std::string& input_device_id,
-                         const std::string& output_device_id) OVERRIDE;
+                         const std::string& device_id) OVERRIDE;
   virtual void OnStarted(int component_id) OVERRIDE;
   virtual void OnStopped(int component_id) OVERRIDE;
   virtual void OnClosed(int component_id) OVERRIDE;
@@ -72,20 +104,19 @@ AudioLogImpl::~AudioLogImpl() {}
 
 void AudioLogImpl::OnCreated(int component_id,
                              const media::AudioParameters& params,
-                             const std::string& input_device_id,
-                             const std::string& output_device_id) {
+                             const std::string& device_id) {
   base::DictionaryValue dict;
   StoreComponentMetadata(component_id, &dict);
 
   dict.SetString(kAudioLogStatusKey, "created");
-  dict.SetString("input_device_id", input_device_id);
+  dict.SetString("device_id", device_id);
   dict.SetInteger("input_channels", params.input_channels());
   dict.SetInteger("frames_per_buffer", params.frames_per_buffer());
   dict.SetInteger("sample_rate", params.sample_rate());
-  dict.SetString("output_device_id", output_device_id);
   dict.SetInteger("channels", params.channels());
   dict.SetString("channel_layout",
                  ChannelLayoutToString(params.channel_layout()));
+  dict.SetString("effects", EffectsToString(params.effects()));
 
   media_internals_->SendUpdateAndCache(
       FormatCacheKey(component_id), kAudioLogUpdateFunction, &dict);

@@ -38,7 +38,6 @@ class TestLayer : public Layer {
   TestLayer() : Layer(), draws_content_(true) {
     SetBounds(gfx::Size(100, 100));
     SetPosition(gfx::Point());
-    SetAnchorPoint(gfx::Point());
   }
   virtual ~TestLayer() {}
 
@@ -50,10 +49,7 @@ class TestLayer : public Layer {
   EXPECT_EQ(contrib, layer->count_representing_contributing_surface_);         \
   EXPECT_EQ(itself, layer->count_representing_itself_);
 
-typedef LayerIterator<Layer,
-                      RenderSurfaceLayerList,
-                      RenderSurface,
-                      LayerIteratorActions::FrontToBack> FrontToBack;
+typedef LayerIterator<Layer> FrontToBack;
 
 void ResetCounts(RenderSurfaceLayerList* render_surface_layer_list) {
   for (unsigned surface_index = 0;
@@ -71,7 +67,7 @@ void ResetCounts(RenderSurfaceLayerList* render_surface_layer_list) {
          layer_index < render_surface->layer_list().size();
          ++layer_index) {
       TestLayer* layer = static_cast<TestLayer*>(
-          render_surface->layer_list().at(layer_index));
+          render_surface->layer_list().at(layer_index).get());
 
       layer->count_representing_target_surface_ = -1;
       layer->count_representing_contributing_surface_ = -1;

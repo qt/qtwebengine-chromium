@@ -21,6 +21,7 @@
 #ifndef SVGTextPositioningElement_h
 #define SVGTextPositioningElement_h
 
+#include "core/SVGNames.h"
 #include "core/svg/SVGAnimatedLengthList.h"
 #include "core/svg/SVGAnimatedNumberList.h"
 #include "core/svg/SVGTextContentElement.h"
@@ -31,21 +32,33 @@ class SVGTextPositioningElement : public SVGTextContentElement {
 public:
     static SVGTextPositioningElement* elementFromRenderer(RenderObject*);
 
+    SVGAnimatedLengthList* x() { return m_x.get(); }
+    SVGAnimatedLengthList* y() { return m_y.get(); }
+    SVGAnimatedLengthList* dx() { return m_dx.get(); }
+    SVGAnimatedLengthList* dy() { return m_dy.get(); }
+    SVGAnimatedNumberList* rotate() { return m_rotate.get(); }
+
 protected:
     SVGTextPositioningElement(const QualifiedName&, Document&);
 
     bool isSupportedAttribute(const QualifiedName&);
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual void svgAttributeChanged(const QualifiedName&);
+    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE FINAL;
+    virtual void svgAttributeChanged(const QualifiedName&) OVERRIDE FINAL;
+    virtual bool isTextPositioning() const OVERRIDE FINAL { return true; }
 
-    BEGIN_DECLARE_ANIMATED_PROPERTIES(SVGTextPositioningElement)
-        DECLARE_ANIMATED_LENGTH_LIST(X, x)
-        DECLARE_ANIMATED_LENGTH_LIST(Y, y)
-        DECLARE_ANIMATED_LENGTH_LIST(Dx, dx)
-        DECLARE_ANIMATED_LENGTH_LIST(Dy, dy)
-        DECLARE_ANIMATED_NUMBER_LIST(Rotate, rotate)
-    END_DECLARE_ANIMATED_PROPERTIES
+    RefPtr<SVGAnimatedLengthList> m_x;
+    RefPtr<SVGAnimatedLengthList> m_y;
+    RefPtr<SVGAnimatedLengthList> m_dx;
+    RefPtr<SVGAnimatedLengthList> m_dy;
+    RefPtr<SVGAnimatedNumberList> m_rotate;
 };
+
+inline bool isSVGTextPositioningElement(const Node& node)
+{
+    return node.isSVGElement() && toSVGElement(node).isTextPositioning();
+}
+
+DEFINE_ELEMENT_TYPE_CASTS_WITH_FUNCTION(SVGTextPositioningElement);
 
 } // namespace WebCore
 

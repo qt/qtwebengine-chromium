@@ -37,7 +37,7 @@ namespace WebCore {
 
 void CachedMatchedProperties::set(const RenderStyle* style, const RenderStyle* parentStyle, const MatchResult& matchResult)
 {
-    matchedProperties.append(matchResult.matchedProperties);
+    matchedProperties.appendVector(matchResult.matchedProperties);
     ranges = matchResult.ranges;
 
     // Note that we don't cache the original RenderStyle instance. It may be further modified.
@@ -49,8 +49,8 @@ void CachedMatchedProperties::set(const RenderStyle* style, const RenderStyle* p
 void CachedMatchedProperties::clear()
 {
     matchedProperties.clear();
-    renderStyle = 0;
-    parentRenderStyle = 0;
+    renderStyle = nullptr;
+    parentRenderStyle = nullptr;
 }
 
 MatchedPropertiesCache::MatchedPropertiesCache()
@@ -89,15 +89,15 @@ void MatchedPropertiesCache::add(const RenderStyle* style, const RenderStyle* pa
     if (++m_additionsSinceLastSweep >= maxAdditionsBetweenSweeps
         && !m_sweepTimer.isActive()) {
         static const unsigned sweepTimeInSeconds = 60;
-        m_sweepTimer.startOneShot(sweepTimeInSeconds);
+        m_sweepTimer.startOneShot(sweepTimeInSeconds, FROM_HERE);
     }
 
     ASSERT(hash);
     Cache::AddResult addResult = m_cache.add(hash, nullptr);
     if (addResult.isNewEntry)
-        addResult.iterator->value = adoptPtr(new CachedMatchedProperties);
+        addResult.storedValue->value = adoptPtr(new CachedMatchedProperties);
 
-    CachedMatchedProperties* cacheItem = addResult.iterator->value.get();
+    CachedMatchedProperties* cacheItem = addResult.storedValue->value.get();
     if (!addResult.isNewEntry)
         cacheItem->clear();
 
@@ -107,6 +107,17 @@ void MatchedPropertiesCache::add(const RenderStyle* style, const RenderStyle* pa
 void MatchedPropertiesCache::clear()
 {
     m_cache.clear();
+}
+
+void MatchedPropertiesCache::clearViewportDependent()
+{
+    Vector<unsigned, 16> toRemove;
+    for (Cache::iterator it = m_cache.begin(); it != m_cache.end(); ++it) {
+        CachedMatchedProperties* cacheItem = it->value.get();
+        if (cacheItem->renderStyle->hasViewportUnits())
+            toRemove.append(it->key);
+    }
+    m_cache.removeAll(toRemove);
 }
 
 void MatchedPropertiesCache::sweep(Timer<MatchedPropertiesCache>*)
@@ -127,9 +138,7 @@ void MatchedPropertiesCache::sweep(Timer<MatchedPropertiesCache>*)
             }
         }
     }
-    for (size_t i = 0; i < toRemove.size(); ++i)
-        m_cache.remove(toRemove[i]);
-
+    m_cache.removeAll(toRemove);
     m_additionsSinceLastSweep = 0;
 }
 

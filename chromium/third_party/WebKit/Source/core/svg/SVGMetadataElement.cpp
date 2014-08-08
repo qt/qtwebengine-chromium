@@ -19,8 +19,9 @@
  */
 
 #include "config.h"
-#include "SVGNames.h"
 #include "core/svg/SVGMetadataElement.h"
+
+#include "core/SVGNames.h"
 
 namespace WebCore {
 
@@ -30,9 +31,6 @@ inline SVGMetadataElement::SVGMetadataElement(Document& document)
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<SVGMetadataElement> SVGMetadataElement::create(Document& document)
-{
-    return adoptRef(new SVGMetadataElement(document));
-}
+DEFINE_NODE_FACTORY(SVGMetadataElement)
 
 }

@@ -41,16 +41,19 @@ namespace WebCore {
 class AudioBus;
 class ExceptionState;
 
-class AudioBuffer : public ScriptWrappable, public RefCounted<AudioBuffer> {
+class AudioBuffer : public RefCountedWillBeGarbageCollectedFinalized<AudioBuffer>, public ScriptWrappable {
 public:
-    static PassRefPtr<AudioBuffer> create(unsigned numberOfChannels, size_t numberOfFrames, float sampleRate);
+    static PassRefPtrWillBeRawPtr<AudioBuffer> create(unsigned numberOfChannels, size_t numberOfFrames, float sampleRate);
+    static PassRefPtrWillBeRawPtr<AudioBuffer> create(unsigned numberOfChannels, size_t numberOfFrames, float sampleRate, ExceptionState&);
 
     // Returns 0 if data is not a valid audio file.
-    static PassRefPtr<AudioBuffer> createFromAudioFileData(const void* data, size_t dataSize, bool mixToMono, float sampleRate);
+    static PassRefPtrWillBeRawPtr<AudioBuffer> createFromAudioFileData(const void* data, size_t dataSize, bool mixToMono, float sampleRate);
+
+    static PassRefPtrWillBeRawPtr<AudioBuffer> createFromAudioBus(AudioBus*);
 
     // Format
     size_t length() const { return m_length; }
-    double duration() const { return length() / sampleRate(); }
+    double duration() const { return length() / static_cast<double>(sampleRate()); }
     float sampleRate() const { return m_sampleRate; }
 
     // Channel data access
@@ -59,23 +62,16 @@ public:
     Float32Array* getChannelData(unsigned channelIndex);
     void zero();
 
-    // Scalar gain
-    double gain() const { return m_gain; }
-    void setGain(double gain) { m_gain = gain; }
-
-    // Because an AudioBuffer has a JavaScript wrapper, which will be garbage collected, it may take awhile for this object to be deleted.
-    // releaseMemory() can be called when the AudioContext goes away, so we can release the memory earlier than when the garbage collection happens.
-    // Careful! Only call this when the page unloads, after the AudioContext is no longer processing.
-    void releaseMemory();
-
     static float minAllowedSampleRate();
     static float maxAllowedSampleRate();
+
+    void trace(Visitor*) { }
+
 protected:
     AudioBuffer(unsigned numberOfChannels, size_t numberOfFrames, float sampleRate);
     explicit AudioBuffer(AudioBus*);
     bool createdSuccessfully(unsigned desiredNumberOfChannels) const;
 
-    double m_gain; // scalar gain
     float m_sampleRate;
     size_t m_length;
 

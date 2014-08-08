@@ -39,12 +39,16 @@ int NetworkDelegate::NotifyHeadersReceived(
     URLRequest* request,
     const CompletionCallback& callback,
     const HttpResponseHeaders* original_response_headers,
-    scoped_refptr<HttpResponseHeaders>* override_response_headers) {
+    scoped_refptr<HttpResponseHeaders>* override_response_headers,
+    GURL* allowed_unsafe_redirect_url) {
   DCHECK(CalledOnValidThread());
   DCHECK(original_response_headers);
   DCHECK(!callback.is_null());
-  return OnHeadersReceived(request, callback, original_response_headers,
-                           override_response_headers);
+  return OnHeadersReceived(request,
+                           callback,
+                           original_response_headers,
+                           override_response_headers,
+                           allowed_unsafe_redirect_url);
 }
 
 void NetworkDelegate::NotifyResponseStarted(URLRequest* request) {
@@ -102,12 +106,6 @@ int NetworkDelegate::NotifyBeforeSocketStreamConnect(
   return OnBeforeSocketStreamConnect(socket, callback);
 }
 
-void NetworkDelegate::NotifyRequestWaitStateChange(const URLRequest& request,
-                                                   RequestWaitState state) {
-  DCHECK(CalledOnValidThread());
-  OnRequestWaitStateChange(request, state);
-}
-
 bool NetworkDelegate::CanGetCookies(const URLRequest& request,
                                     const CookieList& cookie_list) {
   DCHECK(CalledOnValidThread());
@@ -161,7 +159,8 @@ int NetworkDelegate::OnHeadersReceived(
     URLRequest* request,
     const CompletionCallback& callback,
     const HttpResponseHeaders* original_response_headers,
-    scoped_refptr<HttpResponseHeaders>* override_response_headers) {
+    scoped_refptr<HttpResponseHeaders>* override_response_headers,
+    GURL* allowed_unsafe_redirect_url) {
   return OK;
 }
 
@@ -224,10 +223,6 @@ int NetworkDelegate::OnBeforeSocketStreamConnect(
     SocketStream* socket,
     const CompletionCallback& callback) {
   return OK;
-}
-
-void NetworkDelegate::OnRequestWaitStateChange(const URLRequest& request,
-                                               RequestWaitState state) {
 }
 
 }  // namespace net

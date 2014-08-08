@@ -4,7 +4,7 @@
 
 #include "net/quic/crypto/crypto_framer.h"
 
-#include "net/quic/crypto/crypto_handshake.h"
+#include "net/quic/crypto/crypto_protocol.h"
 #include "net/quic/quic_data_reader.h"
 #include "net/quic/quic_data_writer.h"
 
@@ -24,22 +24,21 @@ const size_t kNumEntriesSize = sizeof(uint16);
 // OneShotVisitor is a framer visitor that records a single handshake message.
 class OneShotVisitor : public CryptoFramerVisitorInterface {
  public:
-  explicit OneShotVisitor(CryptoHandshakeMessage* out)
-      : out_(out),
-        error_(false) {
-  }
+  OneShotVisitor() : error_(false) {}
 
   virtual void OnError(CryptoFramer* framer) OVERRIDE { error_ = true; }
 
   virtual void OnHandshakeMessage(
       const CryptoHandshakeMessage& message) OVERRIDE {
-    *out_ = message;
+    out_.reset(new CryptoHandshakeMessage(message));
   }
 
   bool error() const { return error_; }
 
+  CryptoHandshakeMessage* release() { return out_.release(); }
+
  private:
-  CryptoHandshakeMessage* const out_;
+  scoped_ptr<CryptoHandshakeMessage> out_;
   bool error_;
 };
 
@@ -56,8 +55,7 @@ CryptoFramer::~CryptoFramer() {}
 
 // static
 CryptoHandshakeMessage* CryptoFramer::ParseMessage(StringPiece in) {
-  scoped_ptr<CryptoHandshakeMessage> msg(new CryptoHandshakeMessage);
-  OneShotVisitor visitor(msg.get());
+  OneShotVisitor visitor;
   CryptoFramer framer;
 
   framer.set_visitor(&visitor);
@@ -66,7 +64,7 @@ CryptoHandshakeMessage* CryptoFramer::ParseMessage(StringPiece in) {
     return NULL;
   }
 
-  return msg.release();
+  return visitor.release();
 }
 
 bool CryptoFramer::ProcessInput(StringPiece input) {

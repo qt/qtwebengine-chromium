@@ -92,8 +92,8 @@ class SiteInstanceTest : public testing::Test {
 
   virtual void SetUp() {
     old_browser_client_ = SetBrowserClientForTesting(&browser_client_);
-    url_util::AddStandardScheme(kPrivilegedScheme);
-    url_util::AddStandardScheme(chrome::kChromeUIScheme);
+    url::AddStandardScheme(kPrivilegedScheme);
+    url::AddStandardScheme(kChromeUIScheme);
 
     SiteInstanceImpl::set_render_process_host_factory(&rph_factory_);
   }
@@ -557,6 +557,11 @@ static SiteInstanceImpl* CreateSiteInstance(BrowserContext* browser_context,
 // Test to ensure that pages that require certain privileges are grouped
 // in processes with similar pages.
 TEST_F(SiteInstanceTest, ProcessSharingByType) {
+  // This test shouldn't run with --site-per-process mode, since it doesn't
+  // allow render process reuse, which this test explicitly exercises.
+  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kSitePerProcess))
+    return;
+
   ChildProcessSecurityPolicyImpl* policy =
       ChildProcessSecurityPolicyImpl::GetInstance();
 
@@ -583,13 +588,12 @@ TEST_F(SiteInstanceTest, ProcessSharingByType) {
 
   // Create some WebUI instances and make sure they share a process.
   scoped_refptr<SiteInstanceImpl> webui1_instance(CreateSiteInstance(
-      browser_context.get(),
-      GURL(chrome::kChromeUIScheme + std::string("://newtab"))));
+      browser_context.get(), GURL(kChromeUIScheme + std::string("://newtab"))));
   policy->GrantWebUIBindings(webui1_instance->GetProcess()->GetID());
 
-  scoped_refptr<SiteInstanceImpl> webui2_instance(CreateSiteInstance(
-      browser_context.get(),
-      GURL(chrome::kChromeUIScheme + std::string("://history"))));
+  scoped_refptr<SiteInstanceImpl> webui2_instance(
+      CreateSiteInstance(browser_context.get(),
+                         GURL(kChromeUIScheme + std::string("://history"))));
 
   scoped_ptr<RenderProcessHost> dom_host(webui1_instance->GetProcess());
   EXPECT_EQ(webui1_instance->GetProcess(), webui2_instance->GetProcess());

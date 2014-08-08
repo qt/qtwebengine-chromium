@@ -15,7 +15,6 @@
 #include "base/compiler_specific.h"
 #include "base/location.h"
 #include "base/logging.h"
-#include "base/memory/weak_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/message_loop/message_pump_libevent.h"
 #include "base/single_thread_task_runner.h"
@@ -23,6 +22,7 @@
 #include "media/base/keyboard_event_counter.h"
 #include "third_party/skia/include/core/SkPoint.h"
 #include "ui/events/keycodes/keyboard_code_conversion_x.h"
+#include "ui/gfx/x/x11_types.h"
 
 // These includes need to be later than dictated by the style guide due to
 // Xlib header pollution, specifically the min, max, and Status macros.
@@ -148,10 +148,10 @@ void UserInputMonitorLinuxCore::StartMonitor(EventType type) {
   // them with something like the following:
   //   XOpenDisplay(DisplayString(display));
   if (!x_control_display_)
-    x_control_display_ = XOpenDisplay(NULL);
+    x_control_display_ = gfx::OpenNewXDisplay();
 
   if (!x_record_display_)
-    x_record_display_ = XOpenDisplay(NULL);
+    x_record_display_ = gfx::OpenNewXDisplay();
 
   if (!x_control_display_ || !x_record_display_) {
     LOG(ERROR) << "Couldn't open X display";

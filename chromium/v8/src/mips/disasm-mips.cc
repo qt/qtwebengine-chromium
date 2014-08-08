@@ -1,29 +1,6 @@
 // Copyright 2012 the V8 project authors. All rights reserved.
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-//       copyright notice, this list of conditions and the following
-//       disclaimer in the documentation and/or other materials provided
-//       with the distribution.
-//     * Neither the name of Google Inc. nor the names of its
-//       contributors may be used to endorse or promote products derived
-//       from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
 // A Disassembler object is used to disassemble a block of code instruction by
 // instruction. The default implementation of the NameConverter object can be
@@ -51,14 +28,14 @@
 #include <stdarg.h>
 #include <string.h>
 
-#include "v8.h"
+#include "src/v8.h"
 
 #if V8_TARGET_ARCH_MIPS
 
-#include "mips/constants-mips.h"
-#include "disasm.h"
-#include "macro-assembler.h"
-#include "platform.h"
+#include "src/mips/constants-mips.h"
+#include "src/disasm.h"
+#include "src/macro-assembler.h"
+#include "src/platform.h"
 
 namespace v8 {
 namespace internal {
@@ -207,21 +184,21 @@ void Decoder::PrintFd(Instruction* instr) {
 // Print the integer value of the sa field.
 void Decoder::PrintSa(Instruction* instr) {
   int sa = instr->SaValue();
-  out_buffer_pos_ += OS::SNPrintF(out_buffer_ + out_buffer_pos_, "%d", sa);
+  out_buffer_pos_ += SNPrintF(out_buffer_ + out_buffer_pos_, "%d", sa);
 }
 
 
 // Print the integer value of the rd field, when it is not used as reg.
 void Decoder::PrintSd(Instruction* instr) {
   int sd = instr->RdValue();
-  out_buffer_pos_ += OS::SNPrintF(out_buffer_ + out_buffer_pos_, "%d", sd);
+  out_buffer_pos_ += SNPrintF(out_buffer_ + out_buffer_pos_, "%d", sd);
 }
 
 
 // Print the integer value of the rd field, when used as 'ext' size.
 void Decoder::PrintSs1(Instruction* instr) {
   int ss = instr->RdValue();
-  out_buffer_pos_ += OS::SNPrintF(out_buffer_ + out_buffer_pos_, "%d", ss + 1);
+  out_buffer_pos_ += SNPrintF(out_buffer_ + out_buffer_pos_, "%d", ss + 1);
 }
 
 
@@ -230,49 +207,49 @@ void Decoder::PrintSs2(Instruction* instr) {
   int ss = instr->RdValue();
   int pos = instr->SaValue();
   out_buffer_pos_ +=
-      OS::SNPrintF(out_buffer_ + out_buffer_pos_, "%d", ss - pos + 1);
+      SNPrintF(out_buffer_ + out_buffer_pos_, "%d", ss - pos + 1);
 }
 
 
 // Print the integer value of the cc field for the bc1t/f instructions.
 void Decoder::PrintBc(Instruction* instr) {
   int cc = instr->FBccValue();
-  out_buffer_pos_ += OS::SNPrintF(out_buffer_ + out_buffer_pos_, "%d", cc);
+  out_buffer_pos_ += SNPrintF(out_buffer_ + out_buffer_pos_, "%d", cc);
 }
 
 
 // Print the integer value of the cc field for the FP compare instructions.
 void Decoder::PrintCc(Instruction* instr) {
   int cc = instr->FCccValue();
-  out_buffer_pos_ += OS::SNPrintF(out_buffer_ + out_buffer_pos_, "cc(%d)", cc);
+  out_buffer_pos_ += SNPrintF(out_buffer_ + out_buffer_pos_, "cc(%d)", cc);
 }
 
 
 // Print 16-bit unsigned immediate value.
 void Decoder::PrintUImm16(Instruction* instr) {
   int32_t imm = instr->Imm16Value();
-  out_buffer_pos_ += OS::SNPrintF(out_buffer_ + out_buffer_pos_, "%u", imm);
+  out_buffer_pos_ += SNPrintF(out_buffer_ + out_buffer_pos_, "%u", imm);
 }
 
 
 // Print 16-bit signed immediate value.
 void Decoder::PrintSImm16(Instruction* instr) {
   int32_t imm = ((instr->Imm16Value()) << 16) >> 16;
-  out_buffer_pos_ += OS::SNPrintF(out_buffer_ + out_buffer_pos_, "%d", imm);
+  out_buffer_pos_ += SNPrintF(out_buffer_ + out_buffer_pos_, "%d", imm);
 }
 
 
 // Print 16-bit hexa immediate value.
 void Decoder::PrintXImm16(Instruction* instr) {
   int32_t imm = instr->Imm16Value();
-  out_buffer_pos_ += OS::SNPrintF(out_buffer_ + out_buffer_pos_, "0x%x", imm);
+  out_buffer_pos_ += SNPrintF(out_buffer_ + out_buffer_pos_, "0x%x", imm);
 }
 
 
 // Print 26-bit immediate value.
 void Decoder::PrintXImm26(Instruction* instr) {
   uint32_t imm = instr->Imm26Value() << kImmFieldShift;
-  out_buffer_pos_ += OS::SNPrintF(out_buffer_ + out_buffer_pos_, "0x%x", imm);
+  out_buffer_pos_ += SNPrintF(out_buffer_ + out_buffer_pos_, "0x%x", imm);
 }
 
 
@@ -283,8 +260,8 @@ void Decoder::PrintCode(Instruction* instr) {
   switch (instr->FunctionFieldRaw()) {
     case BREAK: {
       int32_t code = instr->Bits(25, 6);
-      out_buffer_pos_ += OS::SNPrintF(out_buffer_ + out_buffer_pos_,
-                                      "0x%05x (%d)", code, code);
+      out_buffer_pos_ += SNPrintF(out_buffer_ + out_buffer_pos_,
+                                  "0x%05x (%d)", code, code);
       break;
                 }
     case TGE:
@@ -295,12 +272,12 @@ void Decoder::PrintCode(Instruction* instr) {
     case TNE: {
       int32_t code = instr->Bits(15, 6);
       out_buffer_pos_ +=
-          OS::SNPrintF(out_buffer_ + out_buffer_pos_, "0x%03x", code);
+          SNPrintF(out_buffer_ + out_buffer_pos_, "0x%03x", code);
       break;
     }
     default:  // Not a break or trap instruction.
     break;
-  };
+  }
 }
 
 
@@ -430,7 +407,7 @@ int Decoder::FormatOption(Instruction* instr, const char* format) {
       PrintCc(instr);
       return 2;
     }
-  };
+  }
   UNREACHABLE();
   return -1;
 }
@@ -626,7 +603,7 @@ void Decoder::DecodeTypeRegister(Instruction* instr) {
           break;
         default:
           UNREACHABLE();
-      };
+      }
       break;
     case SPECIAL:
       switch (instr->FunctionFieldRaw()) {
@@ -819,7 +796,7 @@ void Decoder::DecodeTypeImmediate(Instruction* instr) {
           break;
         default:
           UNREACHABLE();
-      };
+      }
       break;  // Case COP1.
     case REGIMM:
       switch (instr->RtFieldRaw()) {
@@ -899,6 +876,9 @@ void Decoder::DecodeTypeImmediate(Instruction* instr) {
     case LWR:
       Format(instr, "lwr     'rt, 'imm16s('rs)");
       break;
+    case PREF:
+      Format(instr, "pref    'rt, 'imm16s('rs)");
+      break;
     case SB:
       Format(instr, "sb      'rt, 'imm16s('rs)");
       break;
@@ -929,7 +909,7 @@ void Decoder::DecodeTypeImmediate(Instruction* instr) {
     default:
       UNREACHABLE();
       break;
-  };
+  }
 }
 
 
@@ -951,9 +931,9 @@ void Decoder::DecodeTypeJump(Instruction* instr) {
 int Decoder::InstructionDecode(byte* instr_ptr) {
   Instruction* instr = Instruction::At(instr_ptr);
   // Print raw instruction bytes.
-  out_buffer_pos_ += OS::SNPrintF(out_buffer_ + out_buffer_pos_,
-                                       "%08x       ",
-                                       instr->InstructionBits());
+  out_buffer_pos_ += SNPrintF(out_buffer_ + out_buffer_pos_,
+                                   "%08x       ",
+                                   instr->InstructionBits());
   switch (instr->InstructionType()) {
     case Instruction::kRegisterType: {
       DecodeTypeRegister(instr);
@@ -985,7 +965,7 @@ int Decoder::InstructionDecode(byte* instr_ptr) {
 namespace disasm {
 
 const char* NameConverter::NameOfAddress(byte* addr) const {
-  v8::internal::OS::SNPrintF(tmp_buffer_, "%p", addr);
+  v8::internal::SNPrintF(tmp_buffer_, "%p", addr);
   return tmp_buffer_.start();
 }
 

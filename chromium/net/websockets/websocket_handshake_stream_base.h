@@ -9,6 +9,8 @@
 // Since net/http can be built without linking net/websockets code,
 // this file must not introduce any link-time dependencies on websockets.
 
+#include <string>
+
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"

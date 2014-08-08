@@ -21,6 +21,8 @@ extern "C" {
 #include "base/threading/thread.h"
 #include "base/time/time.h"
 #include "third_party/mesa/src/include/GL/osmesa.h"
+#include "ui/events/platform/platform_event_source.h"
+#include "ui/gfx/x/x11_connection.h"
 #include "ui/gfx/x/x11_types.h"
 #include "ui/gl/gl_bindings.h"
 #include "ui/gl/gl_implementation.h"
@@ -31,10 +33,9 @@ namespace gfx {
 namespace {
 
 // scoped_ptr functor for XFree(). Use as follows:
-//   scoped_ptr_malloc<XVisualInfo, ScopedPtrXFree> foo(...);
+//   scoped_ptr<XVisualInfo, ScopedPtrXFree> foo(...);
 // where "XVisualInfo" is any X type that is freed with XFree.
-class ScopedPtrXFree {
- public:
+struct ScopedPtrXFree {
   void operator()(void* x) const {
     ::XFree(x);
   }
@@ -165,7 +166,7 @@ class SGIVideoSyncProviderThreadShim {
     visual_info_template.visualid = XVisualIDFromVisual(attributes.visual);
 
     int visual_info_count = 0;
-    scoped_ptr_malloc<XVisualInfo, ScopedPtrXFree> visual_info_list(
+    scoped_ptr<XVisualInfo, ScopedPtrXFree> visual_info_list(
         XGetVisualInfo(display_, VisualIDMask,
                        &visual_info_template, &visual_info_count));
 
@@ -300,73 +301,6 @@ SGIVideoSyncThread* SGIVideoSyncThread::g_video_sync_thread = NULL;
 // goes up (rather than on-demand when we start the thread).
 Display* SGIVideoSyncProviderThreadShim::display_ = NULL;
 
-#if defined(TOOLKIT_GTK)
-// A mechanism for forwarding XExpose events from one window to another.
-// Because in the workaround for http://crbug.com/145600 the child window
-// is placed on top of the parent window, only the child window will receive
-// all expose events. These need to be forwared to the parent window to inform
-// it that it should paint.
-class XExposeEventForwarder : public base::MessagePumpObserver {
- public:
-  XExposeEventForwarder() {}
-  virtual ~XExposeEventForwarder() {
-    DCHECK(child_to_parent_map_.empty());
-  }
-  void AddParentChildPair(gfx::AcceleratedWidget parent_window,
-                          gfx::AcceleratedWidget child_window) {
-    if (child_to_parent_map_.empty())
-      base::MessagePumpX11::Current()->AddObserver(this);
-
-    DCHECK(child_to_parent_map_.find(child_window) ==
-           child_to_parent_map_.end());
-    child_to_parent_map_.insert(std::make_pair(
-        child_window, parent_window));
-  }
-  void RemoveParentChildPair(gfx::AcceleratedWidget parent_window,
-                             gfx::AcceleratedWidget child_window) {
-    DCHECK(child_to_parent_map_.find(child_window) !=
-           child_to_parent_map_.end());
-    child_to_parent_map_.erase(child_window);
-
-    if (child_to_parent_map_.empty())
-      base::MessagePumpX11::Current()->RemoveObserver(this);
-  }
-
- private:
-  virtual base::EventStatus WillProcessEvent (
-      const base::NativeEvent& xevent) OVERRIDE {
-    if (xevent->type != Expose)
-      return base::EVENT_CONTINUE;
-
-    WindowMap::const_iterator found = child_to_parent_map_.find(
-        xevent->xexpose.window);
-    if (found == child_to_parent_map_.end())
-      return base::EVENT_CONTINUE;
-
-    gfx::AcceleratedWidget target_window = found->second;
-    XEvent forwarded_event = *xevent;
-    forwarded_event.xexpose.window = target_window;
-    XSendEvent(g_display, target_window, False, ExposureMask,
-               &forwarded_event);
-    return base::EVENT_CONTINUE;
-  }
-  virtual void DidProcessEvent(const base::NativeEvent& xevent) OVERRIDE {
-  }
-
-  typedef std::map<gfx::AcceleratedWidget, gfx::AcceleratedWidget> WindowMap;
-  WindowMap child_to_parent_map_;
-
-  DISALLOW_COPY_AND_ASSIGN(XExposeEventForwarder);
-};
-
-static base::LazyInstance<XExposeEventForwarder> g_xexpose_event_forwarder =
-    LAZY_INSTANCE_INITIALIZER;
-
-// Do not use this workaround when running in test harnesses that do not have
-// a message loop or do not have a TYPE_GPU message loop.
-bool g_create_child_windows = false;
-#endif
-
 }  // namespace
 
 GLSurfaceGLX::GLSurfaceGLX() {}
@@ -381,22 +315,8 @@ bool GLSurfaceGLX::InitializeOneOff() {
 
   // SGIVideoSyncProviderShim (if instantiated) will issue X commands on
   // it's own thread.
-  XInitThreads();
-
-#if defined(TOOLKIT_GTK)
-  // Be sure to use the X display handle and not the GTK display handle if this
-  // is the GPU process.
-  g_create_child_windows =
-      base::MessageLoop::current() &&
-      base::MessageLoop::current()->type() == base::MessageLoop::TYPE_GPU;
-
-  if (g_create_child_windows)
-    g_display = base::MessagePumpX11::GetDefaultXDisplay();
-  else
-    g_display = base::MessagePumpForUI::GetDefaultXDisplay();
-#else
-  g_display = base::MessagePumpForUI::GetDefaultXDisplay();
-#endif
+  gfx::InitializeThreadedX11();
+  g_display = gfx::GetXDisplay();
 
   if (!g_display) {
     LOG(ERROR) << "XOpenDisplay failed.";
@@ -428,7 +348,7 @@ bool GLSurfaceGLX::InitializeOneOff() {
       HasGLXExtension("GLX_SGI_video_sync");
 
   if (!g_glx_get_msc_rate_oml_supported && g_glx_sgi_video_sync_supported)
-    SGIVideoSyncProviderThreadShim::display_ = XOpenDisplay(NULL);
+    SGIVideoSyncProviderThreadShim::display_ = gfx::OpenNewXDisplay();
 
   initialized = true;
   return true;
@@ -470,79 +390,14 @@ void* GLSurfaceGLX::GetDisplay() {
 
 GLSurfaceGLX::~GLSurfaceGLX() {}
 
-#if defined(TOOLKIT_GTK)
-bool NativeViewGLSurfaceGLX::SetBackbufferAllocation(bool allocated) {
-  backbuffer_allocated_ = allocated;
-  AdjustBufferAllocation();
-  return true;
-}
-
-void NativeViewGLSurfaceGLX::SetFrontbufferAllocation(bool allocated) {
-  frontbuffer_allocated_ = allocated;
-  AdjustBufferAllocation();
-}
-
-void NativeViewGLSurfaceGLX::AdjustBufferAllocation() {
-  if (!g_create_child_windows)
-    return;
-
-  if (frontbuffer_allocated_ || backbuffer_allocated_)
-    CreateChildWindow();
-  else
-    DestroyChildWindow();
-}
-
-void NativeViewGLSurfaceGLX::CreateChildWindow() {
-  DCHECK(g_create_child_windows);
-
-  if (child_window_)
-    return;
-
-  XSetWindowAttributes set_window_attributes;
-  set_window_attributes.event_mask = ExposureMask;
-  child_window_ = XCreateWindow(
-      g_display, parent_window_, 0, 0, size_.width(), size_.height(), 0,
-      CopyFromParent, InputOutput, CopyFromParent, CWEventMask,
-      &set_window_attributes);
-  g_xexpose_event_forwarder.Pointer()->AddParentChildPair(
-      parent_window_, child_window_);
-
-  XMapWindow(g_display, child_window_);
-  XFlush(g_display);
-}
-
-void NativeViewGLSurfaceGLX::DestroyChildWindow() {
-  if (!child_window_)
-    return;
-
-  g_xexpose_event_forwarder.Pointer()->RemoveParentChildPair(
-      parent_window_, child_window_);
-  XDestroyWindow(g_display, child_window_);
-  XFlush(g_display);
-  child_window_ = 0;
-}
-#endif
-
 NativeViewGLSurfaceGLX::NativeViewGLSurfaceGLX(gfx::AcceleratedWidget window)
   : parent_window_(window),
-#if defined(TOOLKIT_GTK)
-    child_window_(0),
-    dummy_window_(0),
-    backbuffer_allocated_(true),
-    frontbuffer_allocated_(true),
-#endif
+    window_(0),
     config_(NULL) {
 }
 
 gfx::AcceleratedWidget NativeViewGLSurfaceGLX::GetDrawableHandle() const {
-#if defined(TOOLKIT_GTK)
-  if (g_create_child_windows) {
-    if (child_window_)
-      return child_window_;
-    return dummy_window_;
-  }
-#endif
-  return parent_window_;
+  return window_;
 }
 
 bool NativeViewGLSurfaceGLX::Initialize() {
@@ -553,19 +408,34 @@ bool NativeViewGLSurfaceGLX::Initialize() {
     return false;
   }
   size_ = gfx::Size(attributes.width, attributes.height);
+  // Create a child window, with a CopyFromParent visual (to avoid inducing
+  // extra blits in the driver), that we can resize exactly in Resize(),
+  // correctly ordered with GL, so that we don't have invalid transient states.
+  // See https://crbug.com/326995.
+  window_ = XCreateWindow(g_display,
+                          parent_window_,
+                          0,
+                          0,
+                          size_.width(),
+                          size_.height(),
+                          0,
+                          CopyFromParent,
+                          InputOutput,
+                          CopyFromParent,
+                          0,
+                          NULL);
+  XMapWindow(g_display, window_);
 
-  gfx::AcceleratedWidget window_for_vsync = parent_window_;
-
-#if defined(TOOLKIT_GTK)
-  if (g_create_child_windows) {
-    dummy_window_ = XCreateWindow(
-        g_display,
-        RootWindow(g_display, XScreenNumberOfScreen(attributes.screen)),
-        0, 0, 1, 1, 0, CopyFromParent, InputOutput, attributes.visual, 0, NULL);
-    window_for_vsync = dummy_window_;
-    CreateChildWindow();
+  ui::PlatformEventSource* event_source =
+      ui::PlatformEventSource::GetInstance();
+  // Can be NULL in tests, when we don't care about Exposes.
+  if (event_source) {
+    XSelectInput(g_display, window_, ExposureMask);
+    ui::PlatformEventSource::GetInstance()->AddPlatformEventDispatcher(this);
   }
-#endif
+  XFlush(g_display);
+
+  gfx::AcceleratedWidget window_for_vsync = window_;
 
   if (g_glx_oml_sync_control_supported)
     vsync_provider_.reset(new OMLSyncControlVSyncProvider(window_for_vsync));
@@ -576,22 +446,34 @@ bool NativeViewGLSurfaceGLX::Initialize() {
 }
 
 void NativeViewGLSurfaceGLX::Destroy() {
-#if defined(TOOLKIT_GTK)
-  DestroyChildWindow();
-  if (dummy_window_)
-    XDestroyWindow(g_display, dummy_window_);
-  dummy_window_ = 0;
-#endif
+  if (window_) {
+    ui::PlatformEventSource* event_source =
+        ui::PlatformEventSource::GetInstance();
+    if (event_source)
+      event_source->RemovePlatformEventDispatcher(this);
+    XDestroyWindow(g_display, window_);
+    XFlush(g_display);
+  }
+}
+
+bool NativeViewGLSurfaceGLX::CanDispatchEvent(const ui::PlatformEvent& event) {
+  return event->type == Expose && event->xexpose.window == window_;
+}
+
+uint32_t NativeViewGLSurfaceGLX::DispatchEvent(const ui::PlatformEvent& event) {
+  XEvent forwarded_event = *event;
+  forwarded_event.xexpose.window = parent_window_;
+  XSendEvent(g_display, parent_window_, False, ExposureMask,
+             &forwarded_event);
+  XFlush(g_display);
+  return ui::POST_DISPATCH_STOP_PROPAGATION;
 }
 
 bool NativeViewGLSurfaceGLX::Resize(const gfx::Size& size) {
-#if defined(TOOLKIT_GTK)
-  if (child_window_) {
-    XResizeWindow(g_display, child_window_, size.width(), size.height());
-    XFlush(g_display);
-  }
-#endif
   size_ = size;
+  glXWaitGL();
+  XResizeWindow(g_display, window_, size.width(), size.height());
+  glXWaitX();
   return true;
 }
 
@@ -600,6 +482,10 @@ bool NativeViewGLSurfaceGLX::IsOffscreen() {
 }
 
 bool NativeViewGLSurfaceGLX::SwapBuffers() {
+  TRACE_EVENT2("gpu", "NativeViewGLSurfaceGLX:RealSwapBuffers",
+      "width", GetSize().width(),
+      "height", GetSize().height());
+
   glXSwapBuffers(g_display, GetDrawableHandle());
   return true;
 }
@@ -612,13 +498,8 @@ void* NativeViewGLSurfaceGLX::GetHandle() {
   return reinterpret_cast<void*>(GetDrawableHandle());
 }
 
-std::string NativeViewGLSurfaceGLX::GetExtensions() {
-  std::string extensions = GLSurface::GetExtensions();
-  if (gfx::g_driver_glx.ext.b_GLX_MESA_copy_sub_buffer) {
-    extensions += extensions.empty() ? "" : " ";
-    extensions += "GL_CHROMIUM_post_sub_buffer";
-  }
-  return extensions;
+bool NativeViewGLSurfaceGLX::SupportsPostSubBuffer() {
+  return gfx::g_driver_glx.ext.b_GLX_MESA_copy_sub_buffer;
 }
 
 void* NativeViewGLSurfaceGLX::GetConfig() {
@@ -638,17 +519,17 @@ void* NativeViewGLSurfaceGLX::GetConfig() {
     XWindowAttributes attributes;
     if (!XGetWindowAttributes(
         g_display,
-        parent_window_,
+        window_,
         &attributes)) {
       LOG(ERROR) << "XGetWindowAttributes failed for window " <<
-          parent_window_ << ".";
+          window_ << ".";
       return NULL;
     }
 
     int visual_id = XVisualIDFromVisual(attributes.visual);
 
     int num_elements = 0;
-    scoped_ptr_malloc<GLXFBConfig, ScopedPtrXFree> configs(
+    scoped_ptr<GLXFBConfig, ScopedPtrXFree> configs(
         glXGetFBConfigs(g_display,
                         DefaultScreen(g_display),
                         &num_elements));
@@ -693,17 +574,6 @@ VSyncProvider* NativeViewGLSurfaceGLX::GetVSyncProvider() {
   return vsync_provider_.get();
 }
 
-NativeViewGLSurfaceGLX::NativeViewGLSurfaceGLX()
-  : parent_window_(0),
-#if defined(TOOLKIT_GTK)
-    child_window_(0),
-    dummy_window_(0),
-    backbuffer_allocated_(true),
-    frontbuffer_allocated_(true),
-#endif
-    config_(NULL) {
-}
-
 NativeViewGLSurfaceGLX::~NativeViewGLSurfaceGLX() {
   Destroy();
 }
@@ -712,6 +582,10 @@ PbufferGLSurfaceGLX::PbufferGLSurfaceGLX(const gfx::Size& size)
   : size_(size),
     config_(NULL),
     pbuffer_(0) {
+  // Some implementations of Pbuffer do not support having a 0 size. For such
+  // cases use a (1, 1) surface.
+  if (size_.GetArea() == 0)
+    size_.SetSize(1, 1);
 }
 
 bool PbufferGLSurfaceGLX::Initialize() {
@@ -730,7 +604,7 @@ bool PbufferGLSurfaceGLX::Initialize() {
   };
 
   int num_elements = 0;
-  scoped_ptr_malloc<GLXFBConfig, ScopedPtrXFree> configs(
+  scoped_ptr<GLXFBConfig, ScopedPtrXFree> configs(
       glXChooseFBConfig(g_display,
                         DefaultScreen(g_display),
                         config_attributes,

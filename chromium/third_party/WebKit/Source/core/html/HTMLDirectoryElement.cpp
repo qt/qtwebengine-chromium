@@ -23,7 +23,7 @@
 #include "config.h"
 #include "core/html/HTMLDirectoryElement.h"
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 
 namespace WebCore {
 
@@ -35,9 +35,6 @@ inline HTMLDirectoryElement::HTMLDirectoryElement(Document& document)
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLDirectoryElement> HTMLDirectoryElement::create(Document& document)
-{
-    return adoptRef(new HTMLDirectoryElement(document));
-}
+DEFINE_NODE_FACTORY(HTMLDirectoryElement)
 
 }

@@ -1,13 +1,13 @@
 Name: libvpx
 URL: http://www.webmproject.org
-Version: v1.2.0
+Version: v1.3.0
 License: BSD
 License File: source/libvpx/LICENSE
 Security Critical: yes
 
-Date: Thursday October 31 2013
+Date: Friday May 16 2014
 Branch: master
-Commit: 25a2740abb59c90f481f170b10397728a54e3550
+Commit: ed83c2a94c8664a6d2e54b21771c0560b2bb90ac
 
 Description:
 Contains the sources used to compile libvpx binaries used by Google Chrome and
@@ -61,6 +61,6 @@ prints the final configuration after checking.
 Unpack a static library of .a type. This tool takes a list of possible
 locations of the library file and extract the content.
 
-- copy_obj.sh
+- copy_obj.py
 
 A copy utility from a list of candidate locations.

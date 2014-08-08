@@ -4,12 +4,20 @@
 
 #include "content/common/gpu/sync_point_manager.h"
 
+#include <climits>
+
 #include "base/logging.h"
+#include "base/rand_util.h"
 
 namespace content {
 
+static const int kMaxSyncBase = INT_MAX;
+
 SyncPointManager::SyncPointManager()
-    : next_sync_point_(1) {
+    : next_sync_point_(base::RandInt(1, kMaxSyncBase)) {
+  // To reduce the risk that a sync point created in a previous GPU process
+  // will be in flight in the next GPU process, randomize the starting sync
+  // point number. http://crbug.com/373452
 }
 
 SyncPointManager::~SyncPointManager() {
@@ -18,6 +26,9 @@ SyncPointManager::~SyncPointManager() {
 uint32 SyncPointManager::GenerateSyncPoint() {
   base::AutoLock lock(lock_);
   uint32 sync_point = next_sync_point_++;
+  // When an integer overflow occurs, don't return 0.
+  if (!sync_point)
+    sync_point = next_sync_point_++;
 
   // Note: wrapping would take days for a buggy/compromized renderer that would
   // insert sync points in a loop, but if that were to happen, better explicitly
@@ -55,6 +66,15 @@ void SyncPointManager::AddSyncPointCallback(uint32 sync_point,
     }
   }
   callback.Run();
+}
+
+bool SyncPointManager::IsSyncPointRetired(uint32 sync_point) {
+  DCHECK(thread_checker_.CalledOnValidThread());
+  {
+    base::AutoLock lock(lock_);
+    SyncPointMap::iterator it = sync_point_map_.find(sync_point);
+    return it == sync_point_map_.end();
+  }
 }
 
 }  // namespace content

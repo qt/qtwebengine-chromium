@@ -118,13 +118,28 @@ cr.define('print_preview', function() {
         this.appState_, this.documentInfo_, this.customMargins_);
 
     /**
+     * Media size ticket item.
+     * @type {!print_preview.ticket_items.MediaSize}
+     * @private
+     */
+    this.mediaSize_ = new print_preview.ticket_items.MediaSize(
+        this.appState_,
+        this.destinationStore_,
+        this.documentInfo_,
+        this.marginsType_,
+        this.customMargins_);
+
+    /**
      * Landscape ticket item.
      * @type {!print_preview.ticket_items.Landscape}
      * @private
      */
     this.landscape_ = new print_preview.ticket_items.Landscape(
-        this.appState_, this.destinationStore_, this.documentInfo_,
-        this.marginsType_, this.customMargins_);
+        this.appState_,
+        this.destinationStore_,
+        this.documentInfo_,
+        this.marginsType_,
+        this.customMargins_);
 
     /**
      * Header-footer ticket item.
@@ -132,7 +147,9 @@ cr.define('print_preview', function() {
      * @private
      */
     this.headerFooter_ = new print_preview.ticket_items.HeaderFooter(
-        this.appState_, this.documentInfo_, this.marginsType_,
+        this.appState_,
+        this.documentInfo_,
+        this.marginsType_,
         this.customMargins_);
 
     /**
@@ -230,6 +247,10 @@ cr.define('print_preview', function() {
       return this.headerFooter_;
     },
 
+    get mediaSize() {
+      return this.mediaSize_;
+    },
+
     get landscape() {
       return this.landscape_;
     },
@@ -280,6 +301,10 @@ cr.define('print_preview', function() {
         this.duplex_.updateValue(this.appState_.getField(
             print_preview.AppState.Field.IS_DUPLEX_ENABLED));
       }
+      if (this.appState_.hasField(print_preview.AppState.Field.MEDIA_SIZE)) {
+        this.mediaSize_.updateValue(this.appState_.getField(
+            print_preview.AppState.Field.MEDIA_SIZE));
+      }
       if (this.appState_.hasField(
           print_preview.AppState.Field.IS_LANDSCAPE_ENABLED)) {
         this.landscape_.updateValue(this.appState_.getField(
@@ -318,14 +343,14 @@ cr.define('print_preview', function() {
      */
     isTicketValid: function() {
       return this.isTicketValidForPreview() &&
+          (!this.copies_.isCapabilityAvailable() || this.copies_.isValid()) &&
           (!this.pageRange_.isCapabilityAvailable() ||
               this.pageRange_.isValid());
     },
 
     /** @return {boolean} Whether the ticket is valid for preview generation. */
     isTicketValidForPreview: function() {
-      return (!this.copies.isCapabilityAvailable() || this.copies.isValid()) &&
-          (!this.marginsType_.isCapabilityAvailable() ||
+      return (!this.marginsType_.isCapabilityAvailable() ||
               !this.marginsType_.isValueEqual(
                   print_preview.ticket_items.MarginsType.Value.CUSTOM) ||
               this.customMargins_.isValid());
@@ -349,22 +374,16 @@ cr.define('print_preview', function() {
         print: {}
       };
       if (this.collate.isCapabilityAvailable() && this.collate.isUserEdited()) {
-        cjt.print.collate = {collate: this.collate.getValue() == 'true'};
+        cjt.print.collate = {collate: this.collate.getValue()};
       }
       if (this.color.isCapabilityAvailable() && this.color.isUserEdited()) {
-        var colorType = this.color.getValue() ?
-            'STANDARD_COLOR' : 'STANDARD_MONOCHROME';
-        // Find option with this colorType to read its vendor_id.
-        var selectedOptions = destination.capabilities.printer.color.option.
-            filter(function(option) {
-              return option.type == colorType;
-            });
-        if (selectedOptions.length == 0) {
+        var selectedOption = this.color.getSelectedOption();
+        if (!selectedOption) {
           console.error('Could not find correct color option');
         } else {
-          cjt.print.color = {type: colorType};
-          if (selectedOptions[0].hasOwnProperty('vendor_id')) {
-            cjt.print.color.vendor_id = selectedOptions[0].vendor_id;
+          cjt.print.color = {type: selectedOption.type};
+          if (selectedOption.hasOwnProperty('vendor_id')) {
+            cjt.print.color.vendor_id = selectedOption.vendor_id;
           }
         }
       }
@@ -374,6 +393,15 @@ cr.define('print_preview', function() {
       if (this.duplex.isCapabilityAvailable() && this.duplex.isUserEdited()) {
         cjt.print.duplex =
             {type: this.duplex.getValue() ? 'LONG_EDGE' : 'NO_DUPLEX'};
+      }
+      if (this.mediaSize.isCapabilityAvailable()) {
+        var value = this.mediaSize.getValue();
+        cjt.print.media_size = {
+          width_microns: value.width_microns,
+          height_microns: value.height_microns,
+          is_continuous_feed: value.is_continuous_feed,
+          vendor_id: value.vendor_id
+        };
       }
       if (this.landscape.isCapabilityAvailable() &&
           this.landscape.isUserEdited()) {

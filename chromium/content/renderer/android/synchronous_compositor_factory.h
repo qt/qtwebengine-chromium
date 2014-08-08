@@ -7,6 +7,7 @@
 
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
 
 namespace base {
 class MessageLoopProxy;
@@ -15,6 +16,12 @@ class MessageLoopProxy;
 namespace cc {
 class ContextProvider;
 class OutputSurface;
+}
+
+namespace webkit {
+namespace gpu {
+class ContextProviderWebContext;
+}
 }
 
 namespace content {
@@ -35,22 +42,23 @@ class SynchronousCompositorFactory {
 
   virtual scoped_refptr<base::MessageLoopProxy>
       GetCompositorMessageLoop() = 0;
+  virtual bool RecordFullLayer() = 0;
   virtual scoped_ptr<cc::OutputSurface> CreateOutputSurface(
       int routing_id) = 0;
 
   // The factory maintains ownership of the returned interface.
   virtual InputHandlerManagerClient* GetInputHandlerManagerClient() = 0;
 
-  virtual scoped_refptr<cc::ContextProvider>
-      GetOffscreenContextProviderForMainThread() = 0;
-  virtual scoped_refptr<cc::ContextProvider>
-      GetOffscreenContextProviderForCompositorThread() = 0;
-  virtual scoped_ptr<StreamTextureFactory> CreateStreamTextureFactory(
-      int view_id) = 0;
+  virtual scoped_refptr<webkit::gpu::ContextProviderWebContext>
+      GetSharedOffscreenContextProviderForMainThread() = 0;
+  virtual scoped_refptr<StreamTextureFactory> CreateStreamTextureFactory(
+      int frame_id) = 0;
+  virtual blink::WebGraphicsContext3D* CreateOffscreenGraphicsContext3D(
+      const blink::WebGraphicsContext3D::Attributes& attributes) = 0;
 
  protected:
   SynchronousCompositorFactory() {}
-  ~SynchronousCompositorFactory() {}
+  virtual ~SynchronousCompositorFactory() {}
 };
 
 }

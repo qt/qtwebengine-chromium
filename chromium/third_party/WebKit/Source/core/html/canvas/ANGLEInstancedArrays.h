@@ -32,28 +32,27 @@
 
 #include "bindings/v8/ScriptWrappable.h"
 #include "core/html/canvas/WebGLExtension.h"
-#include "platform/graphics/GraphicsTypes3D.h"
 #include "wtf/PassRefPtr.h"
 
 namespace WebCore {
 
-class WebGLRenderingContext;
+class WebGLRenderingContextBase;
 
-class ANGLEInstancedArrays : public WebGLExtension, public ScriptWrappable {
+class ANGLEInstancedArrays FINAL : public WebGLExtension, public ScriptWrappable {
 public:
-    static PassRefPtr<ANGLEInstancedArrays> create(WebGLRenderingContext*);
-    static bool supported(WebGLRenderingContext*);
+    static PassRefPtr<ANGLEInstancedArrays> create(WebGLRenderingContextBase*);
+    static bool supported(WebGLRenderingContextBase*);
     static const char* extensionName();
 
     virtual ~ANGLEInstancedArrays();
-    virtual ExtensionName name() const;
+    virtual WebGLExtensionName name() const OVERRIDE;
 
-    void drawArraysInstancedANGLE(GC3Denum mode, GC3Dint first, GC3Dsizei count, GC3Dsizei primcount);
-    void drawElementsInstancedANGLE(GC3Denum mode, GC3Dsizei count, GC3Denum type, GC3Dintptr offset, GC3Dsizei primcount);
-    void vertexAttribDivisorANGLE(GC3Duint index, GC3Duint divisor);
+    void drawArraysInstancedANGLE(GLenum mode, GLint first, GLsizei count, GLsizei primcount);
+    void drawElementsInstancedANGLE(GLenum mode, GLsizei count, GLenum type, long long offset, GLsizei primcount);
+    void vertexAttribDivisorANGLE(GLuint index, GLuint divisor);
 
 private:
-    ANGLEInstancedArrays(WebGLRenderingContext*);
+    ANGLEInstancedArrays(WebGLRenderingContextBase*);
 };
 
 } // namespace WebCore

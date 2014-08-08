@@ -21,8 +21,8 @@
 PRUint32 ssl_sid_timeout = 100;
 PRUint32 ssl3_sid_timeout = 86400L; /* 24 hours */
 
-sslSessionID *cache = NULL;
-PZLock *      cacheLock = NULL;
+static sslSessionID *cache = NULL;
+static PZLock *      cacheLock = NULL;
 
 /* sids can be in one of 4 states:
  *
@@ -114,27 +114,30 @@ ssl_DestroySID(sslSessionID *sid)
 {
     int i;
     SSL_TRC(8, ("SSL: destroy sid: sid=0x%x cached=%d", sid, sid->cached));
-    PORT_Assert((sid->references == 0));
-
-    if (sid->cached == in_client_cache)
-    	return;	/* it will get taken care of next time cache is traversed. */
+    PORT_Assert(sid->references == 0);
+    PORT_Assert(sid->cached != in_client_cache);
 
     if (sid->version < SSL_LIBRARY_VERSION_3_0) {
 	SECITEM_ZfreeItem(&sid->u.ssl2.masterKey, PR_FALSE);
 	SECITEM_ZfreeItem(&sid->u.ssl2.cipherArg, PR_FALSE);
     } else {
-	if (sid->u.ssl3.sessionTicket.ticket.data) {
-	    SECITEM_FreeItem(&sid->u.ssl3.sessionTicket.ticket, PR_FALSE);
-	}
-	if (sid->u.ssl3.srvName.data) {
-	    SECITEM_FreeItem(&sid->u.ssl3.srvName, PR_FALSE);
-	}
-	if (sid->u.ssl3.signedCertTimestamps.data) {
-	    SECITEM_FreeItem(&sid->u.ssl3.signedCertTimestamps, PR_FALSE);
-	}
-	if (sid->u.ssl3.originalHandshakeHash.data) {
-	  SECITEM_FreeItem(&sid->u.ssl3.originalHandshakeHash, PR_FALSE);
-	}
+        if (sid->u.ssl3.locked.sessionTicket.ticket.data) {
+            SECITEM_FreeItem(&sid->u.ssl3.locked.sessionTicket.ticket,
+                             PR_FALSE);
+        }
+        if (sid->u.ssl3.srvName.data) {
+            SECITEM_FreeItem(&sid->u.ssl3.srvName, PR_FALSE);
+        }
+        if (sid->u.ssl3.originalHandshakeHash.data) {
+            SECITEM_FreeItem(&sid->u.ssl3.originalHandshakeHash, PR_FALSE);
+        }
+        if (sid->u.ssl3.signedCertTimestamps.data) {
+            SECITEM_FreeItem(&sid->u.ssl3.signedCertTimestamps, PR_FALSE);
+        }
+
+        if (sid->u.ssl3.lock) {
+            NSSRWLock_Destroy(sid->u.ssl3.lock);
+        }
     }
 
     if (sid->peerID != NULL)
@@ -156,7 +159,7 @@ ssl_DestroySID(sslSessionID *sid)
     if ( sid->localCert ) {
 	CERT_DestroyCertificate(sid->localCert);
     }
-
+    
     PORT_ZFree(sid, sizeof(sslSessionID));
 }
 
@@ -217,9 +220,9 @@ ssl_LookupSID(const PRIPv6Addr *addr, PRUint16 port, const char *peerID,
 
 	SSL_TRC(8, ("SSL: Lookup1: sid=0x%x", sid));
 
-	if (sid->expirationTime < now || !sid->references) {
+	if (sid->expirationTime < now) {
 	    /*
-	    ** This session-id timed out, or was orphaned.
+	    ** This session-id timed out.
 	    ** Don't even care who it belongs to, blow it out of our cache.
 	    */
 	    SSL_TRC(7, ("SSL: lookup1, throwing sid out, age=%d refs=%d",
@@ -227,11 +230,7 @@ ssl_LookupSID(const PRIPv6Addr *addr, PRUint16 port, const char *peerID,
 
 	    *sidp = sid->next; 			/* delink it from the list. */
 	    sid->cached = invalid_cache;	/* mark not on list. */
-	    if (!sid->references)
-	    	ssl_DestroySID(sid);
-	    else
-		ssl_FreeLockedSID(sid);		/* drop ref count, free. */
-
+	    ssl_FreeLockedSID(sid);		/* drop ref count, free. */
 	} else if (!memcmp(&sid->addr, addr, sizeof(PRIPv6Addr)) && /* server IP addr matches */
 	           (sid->port == port) && /* server port matches */
 		   /* proxy (peerID) matches */
@@ -267,15 +266,15 @@ static void
 CacheSID(sslSessionID *sid)
 {
     PRUint32  expirationPeriod;
+
+    PORT_Assert(sid->cached == never_cached);
+
     SSL_TRC(8, ("SSL: Cache: sid=0x%x cached=%d addr=0x%08x%08x%08x%08x port=0x%04x "
 		"time=%x cached=%d",
 		sid, sid->cached, sid->addr.pr_s6_addr32[0], 
 		sid->addr.pr_s6_addr32[1], sid->addr.pr_s6_addr32[2],
 		sid->addr.pr_s6_addr32[3],  sid->port, sid->creationTime,
 		sid->cached));
-
-    if (sid->cached == in_client_cache)
-	return;
 
     if (!sid->urlSvrName) {
         /* don't cache this SID because it can never be matched */
@@ -293,8 +292,9 @@ CacheSID(sslSessionID *sid)
 		  sid->u.ssl2.cipherArg.data, sid->u.ssl2.cipherArg.len));
     } else {
 	if (sid->u.ssl3.sessionIDLength == 0 &&
-	    sid->u.ssl3.sessionTicket.ticket.data == NULL)
+	    sid->u.ssl3.locked.sessionTicket.ticket.data == NULL)
 	    return;
+
 	/* Client generates the SessionID if this was a stateless resume. */
 	if (sid->u.ssl3.sessionIDLength == 0) {
 	    SECStatus rv;
@@ -307,6 +307,11 @@ CacheSID(sslSessionID *sid)
 	expirationPeriod = ssl3_sid_timeout;
 	PRINT_BUF(8, (0, "sessionID:",
 		      sid->u.ssl3.sessionID, sid->u.ssl3.sessionIDLength));
+
+	sid->u.ssl3.lock = NSSRWLock_New(NSS_RWLOCK_RANK_NONE, NULL);
+	if (!sid->u.ssl3.lock) {
+	    return;
+	}
     }
     PORT_Assert(sid->creationTime != 0 && sid->expirationTime != 0);
     if (!sid->creationTime)
@@ -430,41 +435,38 @@ ssl_Time(void)
     return myTime;
 }
 
-SECStatus
-ssl3_SetSIDSessionTicket(sslSessionID *sid, NewSessionTicket *session_ticket)
+void
+ssl3_SetSIDSessionTicket(sslSessionID *sid,
+                         /*in/out*/ NewSessionTicket *newSessionTicket)
 {
-    SECStatus rv;
+    PORT_Assert(sid);
+    PORT_Assert(newSessionTicket);
 
-    /* We need to lock the cache, as this sid might already be in the cache. */
-    LOCK_CACHE;
-
-    /* Don't modify sid if it has ever been cached. */
-    if (sid->cached != never_cached) {
-	UNLOCK_CACHE;
-	return SECSuccess;
-    }
-
-    /* A server might have sent us an empty ticket, which has the
-     * effect of clearing the previously known ticket.
+    /* if sid->u.ssl3.lock, we are updating an existing entry that is already
+     * cached or was once cached, so we need to acquire and release the write
+     * lock. Otherwise, this is a new session that isn't shared with anything
+     * yet, so no locking is needed.
      */
-    if (sid->u.ssl3.sessionTicket.ticket.data)
-	SECITEM_FreeItem(&sid->u.ssl3.sessionTicket.ticket, PR_FALSE);
-    if (session_ticket->ticket.len > 0) {
-	rv = SECITEM_CopyItem(NULL, &sid->u.ssl3.sessionTicket.ticket,
-	    &session_ticket->ticket);
-	if (rv != SECSuccess) {
-	    UNLOCK_CACHE;
-	    return rv;
-	}
-    } else {
-	sid->u.ssl3.sessionTicket.ticket.data = NULL;
-	sid->u.ssl3.sessionTicket.ticket.len = 0;
-    }
-    sid->u.ssl3.sessionTicket.received_timestamp =
-	session_ticket->received_timestamp;
-    sid->u.ssl3.sessionTicket.ticket_lifetime_hint =
-	session_ticket->ticket_lifetime_hint;
+    if (sid->u.ssl3.lock) {
+	NSSRWLock_LockWrite(sid->u.ssl3.lock);
 
-    UNLOCK_CACHE;
-    return SECSuccess;
+	/* A server might have sent us an empty ticket, which has the
+	 * effect of clearing the previously known ticket.
+	 */
+	if (sid->u.ssl3.locked.sessionTicket.ticket.data) {
+	    SECITEM_FreeItem(&sid->u.ssl3.locked.sessionTicket.ticket,
+			     PR_FALSE);
+	}
+    }
+
+    PORT_Assert(!sid->u.ssl3.locked.sessionTicket.ticket.data);
+
+    /* Do a shallow copy, moving the ticket data. */
+    sid->u.ssl3.locked.sessionTicket = *newSessionTicket;
+    newSessionTicket->ticket.data = NULL;
+    newSessionTicket->ticket.len = 0;
+
+    if (sid->u.ssl3.lock) {
+	NSSRWLock_UnlockWrite(sid->u.ssl3.lock);
+    }
 }

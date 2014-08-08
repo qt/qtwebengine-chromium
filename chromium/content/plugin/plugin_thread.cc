@@ -6,9 +6,7 @@
 
 #include "build/build_config.h"
 
-#if defined(TOOLKIT_GTK)
-#include <gtk/gtk.h>
-#elif defined(OS_MACOSX)
+#if defined(OS_MACOSX)
 #include <CoreFoundation/CoreFoundation.h>
 #endif
 
@@ -21,34 +19,29 @@
 #include "base/process/kill.h"
 #include "base/process/process_handle.h"
 #include "base/threading/thread_local.h"
+#include "content/child/blink_platform_impl.h"
 #include "content/child/child_process.h"
 #include "content/child/npapi/npobject_util.h"
 #include "content/child/npapi/plugin_lib.h"
 #include "content/common/plugin_process_messages.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/plugin/content_plugin_client.h"
+#include "third_party/WebKit/public/web/WebKit.h"
 #include "ipc/ipc_channel_handle.h"
-
-#if defined(TOOLKIT_GTK)
-#include "ui/gfx/gtk_util.h"
-#endif
-
-#if defined(USE_X11)
-#include "ui/base/x/x11_util.h"
-#endif
+#include "ipc/message_filter.h"
 
 namespace content {
 
 namespace {
 
-class EnsureTerminateMessageFilter : public IPC::ChannelProxy::MessageFilter {
+class EnsureTerminateMessageFilter : public IPC::MessageFilter {
  public:
   EnsureTerminateMessageFilter() {}
 
  protected:
   virtual ~EnsureTerminateMessageFilter() {}
 
-  // IPC::ChannelProxy::MessageFilter:
+  // IPC::MessageFilter:
   virtual void OnChannelError() OVERRIDE {
     // How long we wait before forcibly shutting down the process.
     const base::TimeDelta kPluginProcessTerminateTimeout =
@@ -81,33 +74,6 @@ PluginThread::PluginThread()
           switches::kPluginPath);
 
   lazy_tls.Pointer()->Set(this);
-#if defined(USE_AURA)
-  // TODO(saintlou):
-#elif defined(TOOLKIT_GTK)
-  {
-    // XEmbed plugins assume they are hosted in a Gtk application, so we need
-    // to initialize Gtk in the plugin process.
-    // g_thread_init API is deprecated since glib 2.31.0, see release note:
-    // http://mail.gnome.org/archives/gnome-announce-list/2011-October/msg00041.html
-#if !(GLIB_CHECK_VERSION(2, 31, 0))
-    g_thread_init(NULL);
-#endif
-
-    // Flash has problems receiving clicks with newer GTKs due to the
-    // client-side windows change.  To be safe, we just always set the
-    // backwards-compat environment variable.
-    setenv("GDK_NATIVE_WINDOWS", "1", 1);
-
-    gfx::GtkInitFromCommandLine(*CommandLine::ForCurrentProcess());
-
-    // GTK after 2.18 resets the environment variable.  But if we're using
-    // nspluginwrapper, that means it'll spawn its subprocess without the
-    // environment variable!  So set it again.
-    setenv("GDK_NATIVE_WINDOWS", "1", 1);
-  }
-
-  ui::SetDefaultX11ErrorHandlers();
-#endif
 
   PatchNPNFunctions();
 
@@ -125,10 +91,11 @@ PluginThread::PluginThread()
   GetContentClient()->plugin()->PluginProcessStarted(
       plugin.get() ? plugin->plugin_info().name : base::string16());
 
-  // Certain plugins, such as flash, steal the unhandled exception filter
-  // thus we never get crash reports when they fault. This call fixes it.
-  message_loop()->set_exception_restoration(true);
   channel()->AddFilter(new EnsureTerminateMessageFilter());
+
+  // This is needed because we call some code which uses WebKit strings.
+  webkit_platform_support_.reset(new BlinkPlatformImpl);
+  blink::initialize(webkit_platform_support_.get());
 }
 
 PluginThread::~PluginThread() {

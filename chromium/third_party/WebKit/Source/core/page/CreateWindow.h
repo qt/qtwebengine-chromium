@@ -27,20 +27,20 @@
 #ifndef CreateWindow_h
 #define CreateWindow_h
 
-#include "core/frame/DOMWindow.h"
+#include "core/frame/LocalDOMWindow.h"
 #include "core/loader/FrameLoaderTypes.h"
 #include "core/loader/NavigationPolicy.h"
 #include "wtf/text/WTFString.h"
 
 namespace WebCore {
-class Frame;
+class LocalFrame;
 struct FrameLoadRequest;
 struct WindowFeatures;
 
-Frame* createWindow(const String& urlString, const AtomicString& frameName, const WindowFeatures&,
-    DOMWindow* activeWindow, Frame* firstFrame, Frame* openerFrame, DOMWindow::PrepareDialogFunction = 0, void* functionContext = 0);
+LocalFrame* createWindow(const String& urlString, const AtomicString& frameName, const WindowFeatures&,
+    LocalDOMWindow& callingWindow, LocalFrame& firstFrame, LocalFrame& openerFrame, LocalDOMWindow::PrepareDialogFunction = 0, void* functionContext = 0);
 
-void createWindowForRequest(const FrameLoadRequest&, Frame* openerFrame, NavigationPolicy, ShouldSendReferrer);
+void createWindowForRequest(const FrameLoadRequest&, LocalFrame& openerFrame, NavigationPolicy, ShouldSendReferrer);
 
 } // namespace WebCore
 

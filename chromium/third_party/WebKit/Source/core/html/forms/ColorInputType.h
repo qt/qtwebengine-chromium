@@ -36,9 +36,11 @@
 
 namespace WebCore {
 
-class ColorInputType : public BaseClickableWithKeyInputType, public ColorChooserClient {
+class ColorChooser;
+
+class ColorInputType FINAL : public BaseClickableWithKeyInputType, public ColorChooserClient {
 public:
-    static PassRefPtr<InputType> create(HTMLInputElement&);
+    static PassRefPtrWillBeRawPtr<InputType> create(HTMLInputElement&);
     virtual ~ColorInputType();
 
     // ColorChooserClient implementation.
@@ -63,10 +65,10 @@ private:
     virtual void closePopupView() OVERRIDE;
     virtual bool shouldRespectListAttribute() OVERRIDE;
     virtual bool typeMismatchFor(const String&) const OVERRIDE;
+    virtual void updateView() OVERRIDE;
 
     Color valueAsColor() const;
     void endColorChooser();
-    void updateColorSwatch();
     HTMLElement* shadowColorSwatch() const;
 
     OwnPtr<ColorChooser> m_chooser;

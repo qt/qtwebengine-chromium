@@ -64,8 +64,8 @@ class NET_EXPORT_PRIVATE SOCKS5ClientSocket : public StreamSocket {
                     int buf_len,
                     const CompletionCallback& callback) OVERRIDE;
 
-  virtual bool SetReceiveBufferSize(int32 size) OVERRIDE;
-  virtual bool SetSendBufferSize(int32 size) OVERRIDE;
+  virtual int SetReceiveBufferSize(int32 size) OVERRIDE;
+  virtual int SetSendBufferSize(int32 size) OVERRIDE;
 
   virtual int GetPeerAddress(IPEndPoint* address) const OVERRIDE;
   virtual int GetLocalAddress(IPEndPoint* address) const OVERRIDE;
@@ -99,6 +99,7 @@ class NET_EXPORT_PRIVATE SOCKS5ClientSocket : public StreamSocket {
 
   void DoCallback(int result);
   void OnIOComplete(int result);
+  void OnReadWriteComplete(const CompletionCallback& callback, int result);
 
   int DoLoop(int last_io_result);
   int DoHandshakeRead();
@@ -142,6 +143,8 @@ class NET_EXPORT_PRIVATE SOCKS5ClientSocket : public StreamSocket {
   size_t bytes_received_;
 
   size_t read_header_size;
+
+  bool was_ever_used_;
 
   HostResolver::RequestInfo host_request_info_;
 

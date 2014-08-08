@@ -42,13 +42,14 @@ public:
     virtual ~PNGImageDecoder();
 
     // ImageDecoder
-    virtual String filenameExtension() const { return "png"; }
-    virtual bool isSizeAvailable();
-    virtual ImageFrame* frameBufferAtIndex(size_t);
+    virtual String filenameExtension() const OVERRIDE { return "png"; }
+    virtual bool isSizeAvailable() OVERRIDE;
+    virtual bool hasColorProfile() const OVERRIDE { return m_hasColorProfile; }
+    virtual ImageFrame* frameBufferAtIndex(size_t) OVERRIDE;
     // CAUTION: setFailed() deletes |m_reader|.  Be careful to avoid
     // accessing deleted memory, especially when calling this from inside
     // PNGImageReader!
-    virtual bool setFailed();
+    virtual bool setFailed() OVERRIDE;
 
     // Callbacks from libpng
     void headerAvailable();
@@ -68,6 +69,7 @@ private:
 
     OwnPtr<PNGImageReader> m_reader;
     bool m_doNothingOnFailure;
+    bool m_hasColorProfile;
 };
 
 } // namespace WebCore

@@ -28,65 +28,30 @@
 
 namespace WebCore {
 
-class SVGPathByteStreamBuilder : public SVGPathConsumer {
+class SVGPathByteStreamBuilder FINAL : public SVGPathConsumer {
 public:
     SVGPathByteStreamBuilder();
 
     void setCurrentByteStream(SVGPathByteStream* byteStream) { m_byteStream = byteStream; }
 
 private:
-    virtual void incrementPathSegmentCount() { }
-    virtual bool continueConsuming() { return true; }
-    virtual void cleanup() { m_byteStream = 0; }
+    virtual void incrementPathSegmentCount() OVERRIDE { }
+    virtual bool continueConsuming() OVERRIDE { return true; }
+    virtual void cleanup() OVERRIDE { m_byteStream = 0; }
 
     // Used in UnalteredParsing/NormalizedParsing modes.
-    virtual void moveTo(const FloatPoint&, bool closed, PathCoordinateMode);
-    virtual void lineTo(const FloatPoint&, PathCoordinateMode);
-    virtual void curveToCubic(const FloatPoint&, const FloatPoint&, const FloatPoint&, PathCoordinateMode);
-    virtual void closePath();
+    virtual void moveTo(const FloatPoint&, bool closed, PathCoordinateMode) OVERRIDE;
+    virtual void lineTo(const FloatPoint&, PathCoordinateMode) OVERRIDE;
+    virtual void curveToCubic(const FloatPoint&, const FloatPoint&, const FloatPoint&, PathCoordinateMode) OVERRIDE;
+    virtual void closePath() OVERRIDE;
 
     // Only used in UnalteredParsing mode.
-    virtual void lineToHorizontal(float, PathCoordinateMode);
-    virtual void lineToVertical(float, PathCoordinateMode);
-    virtual void curveToCubicSmooth(const FloatPoint&, const FloatPoint&, PathCoordinateMode);
-    virtual void curveToQuadratic(const FloatPoint&, const FloatPoint&, PathCoordinateMode);
-    virtual void curveToQuadraticSmooth(const FloatPoint&, PathCoordinateMode);
-    virtual void arcTo(float, float, float, bool largeArcFlag, bool sweepFlag, const FloatPoint&, PathCoordinateMode);
-
-    template<typename ByteType>
-    void writeType(const ByteType& type)
-    {
-        size_t typeSize = sizeof(ByteType);
-        for (size_t i = 0; i < typeSize; ++i)
-            m_byteStream->append(type.bytes[i]);
-    }
-
-    void writeFlag(bool value)
-    {
-        BoolByte data;
-        data.value = value;
-        writeType(data);
-    }
-
-    void writeFloat(float value)
-    {
-        FloatByte data;
-        data.value = value;
-        writeType(data);
-    }
-
-    void writeFloatPoint(const FloatPoint& point)
-    {
-        writeFloat(point.x());
-        writeFloat(point.y());
-    }
-
-    void writeSegmentType(unsigned short value)
-    {
-        UnsignedShortByte data;
-        data.value = value;
-        writeType(data);
-    }
+    virtual void lineToHorizontal(float, PathCoordinateMode) OVERRIDE;
+    virtual void lineToVertical(float, PathCoordinateMode) OVERRIDE;
+    virtual void curveToCubicSmooth(const FloatPoint&, const FloatPoint&, PathCoordinateMode) OVERRIDE;
+    virtual void curveToQuadratic(const FloatPoint&, const FloatPoint&, PathCoordinateMode) OVERRIDE;
+    virtual void curveToQuadraticSmooth(const FloatPoint&, PathCoordinateMode) OVERRIDE;
+    virtual void arcTo(float, float, float, bool largeArcFlag, bool sweepFlag, const FloatPoint&, PathCoordinateMode) OVERRIDE;
 
     SVGPathByteStream* m_byteStream;
 };

@@ -31,6 +31,7 @@
 #include "config.h"
 #include "public/platform/linux/WebFontInfo.h"
 
+#include "public/platform/linux/WebFallbackFont.h"
 #include "public/platform/linux/WebFontFamily.h"
 #include "public/platform/linux/WebFontRenderStyle.h"
 #include <fontconfig/fontconfig.h>
@@ -46,7 +47,7 @@ void WebFontInfo::setSubpixelPositioning(bool subpixelPositioning)
     useSubpixelPositioning = subpixelPositioning;
 }
 
-void WebFontInfo::familyForChar(WebUChar32 c, const char* preferredLocale, WebFontFamily* family)
+void WebFontInfo::fallbackFontForChar(WebUChar32 c, const char* preferredLocale, WebFallbackFont* fallbackFont)
 {
     FcCharSet* cset = FcCharSetCreate();
     FcCharSetAddChar(cset, c);
@@ -77,9 +78,9 @@ void WebFontInfo::familyForChar(WebUChar32 c, const char* preferredLocale, WebFo
     FcCharSetDestroy(cset);
 
     if (!fontSet) {
-        family->name = WebCString();
-        family->isBold = false;
-        family->isItalic = false;
+        fallbackFont->name = WebCString();
+        fallbackFont->isBold = false;
+        fallbackFont->isItalic = false;
         return;
     }
     // Older versions of fontconfig have a bug where they cannot select
@@ -100,21 +101,30 @@ void WebFontInfo::familyForChar(WebUChar32 c, const char* preferredLocale, WebFo
         if (access(reinterpret_cast<char*>(cFilename), R_OK))
             continue;
 
+        const char* fontFilename = reinterpret_cast<char*>(cFilename);
+        fallbackFont->filename = WebCString(fontFilename, strlen(fontFilename));
+
+        // Index into font collection.
+        int ttcIndex;
+        if (FcPatternGetInteger(current, FC_INDEX, 0, &ttcIndex) != FcResultMatch && ttcIndex < 0)
+            continue;
+        fallbackFont->ttcIndex = ttcIndex;
+
         FcChar8* familyName;
         if (FcPatternGetString(current, FC_FAMILY, 0, &familyName) == FcResultMatch) {
             const char* charFamily = reinterpret_cast<char*>(familyName);
-            family->name = WebCString(charFamily, strlen(charFamily));
+            fallbackFont->name = WebCString(charFamily, strlen(charFamily));
         }
         int weight;
         if (FcPatternGetInteger(current, FC_WEIGHT, 0, &weight) == FcResultMatch)
-            family->isBold = weight >= FC_WEIGHT_BOLD;
+            fallbackFont->isBold = weight >= FC_WEIGHT_BOLD;
         else
-            family->isBold = false;
+            fallbackFont->isBold = false;
         int slant;
         if (FcPatternGetInteger(current, FC_SLANT, 0, &slant) == FcResultMatch)
-            family->isItalic = slant != FC_SLANT_ROMAN;
+            fallbackFont->isItalic = slant != FC_SLANT_ROMAN;
         else
-            family->isItalic = false;
+            fallbackFont->isItalic = false;
         FcFontSetDestroy(fontSet);
         return;
     }

@@ -26,27 +26,64 @@
 #ifndef NavigatorGamepad_h
 #define NavigatorGamepad_h
 
+#include "core/frame/DOMWindowLifecycleObserver.h"
+#include "core/frame/DOMWindowProperty.h"
+#include "core/frame/DeviceEventControllerBase.h"
 #include "platform/Supplementable.h"
+#include "platform/heap/Handle.h"
+#include "public/platform/WebGamepads.h"
+
+namespace blink {
+class WebGamepad;
+class WebGamepads;
+}
 
 namespace WebCore {
 
+class Document;
 class GamepadList;
 class Navigator;
+class WebKitGamepadList;
 
-class NavigatorGamepad : public Supplement<Navigator> {
+class NavigatorGamepad FINAL : public NoBaseWillBeGarbageCollectedFinalized<NavigatorGamepad>, public WillBeHeapSupplement<Navigator>, public DOMWindowProperty, public DeviceEventControllerBase, public DOMWindowLifecycleObserver {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(NavigatorGamepad);
 public:
+    static NavigatorGamepad* from(Document&);
+    static NavigatorGamepad& from(Navigator&);
     virtual ~NavigatorGamepad();
-    static NavigatorGamepad* from(Navigator*);
 
-    static GamepadList* webkitGetGamepads(Navigator*);
+    static WebKitGamepadList* webkitGetGamepads(Navigator&);
+    static GamepadList* getGamepads(Navigator&);
 
+    WebKitGamepadList* webkitGamepads();
     GamepadList* gamepads();
 
+    virtual void trace(Visitor*);
+
+    void didConnectOrDisconnectGamepad(unsigned index, const blink::WebGamepad&, bool connected);
+
 private:
-    NavigatorGamepad();
+    explicit NavigatorGamepad(LocalFrame*);
+
     static const char* supplementName();
 
-    RefPtr<GamepadList> m_gamepads;
+    // DOMWindowProperty
+    virtual void willDestroyGlobalObjectInFrame() OVERRIDE;
+    virtual void willDetachGlobalObjectFromFrame() OVERRIDE;
+
+    // DeviceEventControllerBase
+    virtual void registerWithDispatcher() OVERRIDE;
+    virtual void unregisterWithDispatcher() OVERRIDE;
+    virtual bool hasLastData() OVERRIDE;
+    virtual void didUpdateData() OVERRIDE;
+
+    // DOMWindowLifecycleObserver
+    virtual void didAddEventListener(LocalDOMWindow*, const AtomicString&) OVERRIDE;
+    virtual void didRemoveEventListener(LocalDOMWindow*, const AtomicString&) OVERRIDE;
+    virtual void didRemoveAllEventListeners(LocalDOMWindow*) OVERRIDE;
+
+    PersistentWillBeMember<GamepadList> m_gamepads;
+    PersistentWillBeMember<WebKitGamepadList> m_webkitGamepads;
 };
 
 } // namespace WebCore

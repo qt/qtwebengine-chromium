@@ -22,13 +22,12 @@
 #include "config.h"
 #include "core/html/HTMLImageLoader.h"
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 #include "core/dom/Element.h"
 #include "core/events/Event.h"
-#include "core/events/ThreadLocalEventNames.h"
 #include "core/fetch/ImageResource.h"
+#include "core/html/HTMLImageElement.h"
 #include "core/html/HTMLObjectElement.h"
-#include "core/html/HTMLVideoElement.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 
 namespace WebCore {
@@ -45,12 +44,12 @@ HTMLImageLoader::~HTMLImageLoader()
 void HTMLImageLoader::dispatchLoadEvent()
 {
     // HTMLVideoElement uses this class to load the poster image, but it should not fire events for loading or failure.
-    if (isHTMLVideoElement(element()))
+    if (isHTMLVideoElement(*element()))
         return;
 
     bool errorOccurred = image()->errorOccurred();
-    if (!errorOccurred && image()->response().httpStatusCode() >= 400)
-        errorOccurred = element()->hasTagName(HTMLNames::objectTag); // An <object> considers a 404 to be an error and should fire onerror.
+    if (isHTMLObjectElement(*element()) && !errorOccurred)
+        errorOccurred = (image()->response().httpStatusCode() >= 400); // An <object> considers a 404 to be an error and should fire onerror.
     element()->dispatchEvent(Event::create(errorOccurred ? EventTypeNames::error : EventTypeNames::load));
 }
 
@@ -63,12 +62,12 @@ void HTMLImageLoader::notifyFinished(Resource*)
 {
     ImageResource* cachedImage = image();
 
-    RefPtr<Element> element = this->element();
+    RefPtrWillBeRawPtr<Element> element = this->element();
     ImageLoader::notifyFinished(cachedImage);
 
     bool loadError = cachedImage->errorOccurred() || cachedImage->response().httpStatusCode() >= 400;
 
-    if (loadError && element->hasTagName(HTMLNames::objectTag))
+    if (loadError && isHTMLObjectElement(*element))
         toHTMLObjectElement(element)->renderFallbackContent();
 }
 

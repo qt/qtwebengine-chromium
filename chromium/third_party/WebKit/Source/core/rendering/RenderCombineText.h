@@ -34,17 +34,18 @@ public:
     void adjustTextOrigin(FloatPoint& textOrigin, const FloatRect& boxRect) const;
     void getStringToRender(int, StringView&, int& length) const;
     bool isCombined() const { return m_isCombined; }
-    float combinedTextWidth(const Font& font) const { return font.size(); }
+    float combinedTextWidth(const Font& font) const { return font.fontDescription().computedSize(); }
     const Font& originalFont() const { return parent()->style()->font(); }
 
 private:
-    virtual bool isCombineText() const { return true; }
-    virtual float width(unsigned from, unsigned length, const Font&, float xPosition, HashSet<const SimpleFontData*>* fallbackFonts = 0, GlyphOverflow* = 0) const;
-    virtual const char* renderName() const { return "RenderCombineText"; }
-    virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle);
-    virtual void setTextInternal(PassRefPtr<StringImpl>);
+    virtual bool isCombineText() const OVERRIDE { return true; }
+    virtual float width(unsigned from, unsigned length, const Font&, float xPosition, TextDirection, HashSet<const SimpleFontData*>* fallbackFonts = 0, GlyphOverflow* = 0) const OVERRIDE;
+    virtual const char* renderName() const OVERRIDE { return "RenderCombineText"; }
+    virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle) OVERRIDE;
+    virtual void setTextInternal(PassRefPtr<StringImpl>) OVERRIDE;
 
     float m_combinedTextWidth;
+    String m_renderingText;
     bool m_isCombined : 1;
     bool m_needsFontUpdate : 1;
 };

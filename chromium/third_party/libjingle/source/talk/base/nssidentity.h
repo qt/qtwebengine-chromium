@@ -84,16 +84,21 @@ class NSSCertificate : public SSLCertificate {
   virtual bool GetSignatureDigestAlgorithm(std::string* algorithm) const;
 
   virtual bool ComputeDigest(const std::string& algorithm,
-                             unsigned char* digest, std::size_t size,
-                             std::size_t* length) const;
+                             unsigned char* digest,
+                             size_t size,
+                             size_t* length) const;
 
   virtual bool GetChain(SSLCertChain** chain) const;
 
   CERTCertificate* certificate() { return certificate_; }
 
+  // Performs minimal checks to determine if the list is a valid chain.  This
+  // only checks that each certificate certifies the preceding certificate,
+  // and ignores many other certificate features such as expiration dates.
+  static bool IsValidChain(const CERTCertList* cert_list);
+
   // Helper function to get the length of a digest
-  static bool GetDigestLength(const std::string& algorithm,
-                              std::size_t* length);
+  static bool GetDigestLength(const std::string& algorithm, size_t* length);
 
   // Comparison.  Only the certificate itself is considered, not the chain.
   bool Equals(const NSSCertificate* tocompare) const;
@@ -113,6 +118,7 @@ class NSSCertificate : public SSLCertificate {
 class NSSIdentity : public SSLIdentity {
  public:
   static NSSIdentity* Generate(const std::string& common_name);
+  static NSSIdentity* GenerateForTest(const SSLIdentityParams& params);
   static SSLIdentity* FromPEMStrings(const std::string& private_key,
                                      const std::string& certificate);
   virtual ~NSSIdentity() {
@@ -127,6 +133,8 @@ class NSSIdentity : public SSLIdentity {
  private:
   NSSIdentity(NSSKeyPair* keypair, NSSCertificate* cert) :
       keypair_(keypair), certificate_(cert) {}
+
+  static NSSIdentity* GenerateInternal(const SSLIdentityParams& params);
 
   talk_base::scoped_ptr<NSSKeyPair> keypair_;
   talk_base::scoped_ptr<NSSCertificate> certificate_;

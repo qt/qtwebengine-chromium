@@ -115,6 +115,12 @@ void NotifyPluginDirChanged(const base::FilePath& path, bool error) {
 }
 #endif
 
+void ForwardCallback(base::MessageLoopProxy* target_loop,
+                     const PluginService::GetPluginsCallback& callback,
+                     const std::vector<WebPluginInfo>& plugins) {
+  target_loop->PostTask(FROM_HERE, base::Bind(callback, plugins));
+}
+
 }  // namespace
 
 // static
@@ -292,7 +298,7 @@ PluginProcessHost* PluginServiceImpl::FindOrStartNpapiPluginProcess(
 
   // Record when NPAPI Flash process is started for the first time.
   static bool counted = false;
-  if (!counted && UTF16ToUTF8(info.name) == kFlashPluginName) {
+  if (!counted && base::UTF16ToUTF8(info.name) == kFlashPluginName) {
     counted = true;
     UMA_HISTOGRAM_ENUMERATION("Plugin.FlashUsage",
                               START_NPAPI_FLASH_AT_LEAST_ONCE,
@@ -574,7 +580,7 @@ base::string16 PluginServiceImpl::GetPluginDisplayNameByPath(
     // Many plugins on the Mac have .plugin in the actual name, which looks
     // terrible, so look for that and strip it off if present.
     const std::string kPluginExtension = ".plugin";
-    if (EndsWith(plugin_name, ASCIIToUTF16(kPluginExtension), true))
+    if (EndsWith(plugin_name, base::ASCIIToUTF16(kPluginExtension), true))
       plugin_name.erase(plugin_name.length() - kPluginExtension.length());
 #endif  // OS_MACOSX
   }
@@ -597,20 +603,9 @@ void PluginServiceImpl::GetPlugins(const GetPluginsCallback& callback) {
     return;
   }
 #if defined(OS_POSIX)
-  std::vector<WebPluginInfo> cached_plugins;
-  if (PluginList::Singleton()->GetPluginsNoRefresh(&cached_plugins)) {
-    // Can't assume the caller is reentrant.
-    target_loop->PostTask(FROM_HERE,
-        base::Bind(callback, cached_plugins));
-  } else {
-    // If we switch back to loading plugins in process, then we need to make
-    // sure g_thread_init() gets called since plugins may call glib at load.
-    if (!plugin_loader_.get())
-      plugin_loader_ = new PluginLoaderPosix;
-    BrowserThread::PostTask(BrowserThread::IO, FROM_HERE,
-        base::Bind(&PluginLoaderPosix::LoadPlugins, plugin_loader_,
-                   target_loop, callback));
-  }
+  BrowserThread::PostTask(BrowserThread::IO, FROM_HERE,
+      base::Bind(&PluginServiceImpl::GetPluginsOnIOThread,
+                 base::Unretained(this), target_loop, callback));
 #else
   NOTREACHED();
 #endif
@@ -628,6 +623,23 @@ void PluginServiceImpl::GetPluginsInternal(
   target_loop->PostTask(FROM_HERE,
       base::Bind(callback, plugins));
 }
+
+#if defined(OS_POSIX)
+void PluginServiceImpl::GetPluginsOnIOThread(
+    base::MessageLoopProxy* target_loop,
+    const GetPluginsCallback& callback) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+
+  // If we switch back to loading plugins in process, then we need to make
+  // sure g_thread_init() gets called since plugins may call glib at load.
+
+  if (!plugin_loader_)
+    plugin_loader_ = new PluginLoaderPosix;
+
+  plugin_loader_->GetPlugins(
+      base::Bind(&ForwardCallback, make_scoped_refptr(target_loop), callback));
+}
+#endif
 
 void PluginServiceImpl::OnWaitableEventSignaled(
     base::WaitableEvent* waitable_event) {
@@ -749,7 +761,7 @@ void PluginServiceImpl::RefreshPlugins() {
 }
 
 void PluginServiceImpl::AddExtraPluginPath(const base::FilePath& path) {
- if (!NPAPIPluginsSupported()) {
+  if (!NPAPIPluginsSupported()) {
     // TODO(jam): remove and just have CHECK once we're sure this doesn't get
     // triggered.
     DVLOG(0) << "NPAPI plugins not supported";
@@ -787,8 +799,7 @@ void PluginServiceImpl::GetInternalPlugins(
 }
 
 bool PluginServiceImpl::NPAPIPluginsSupported() {
-#if defined(OS_WIN) || defined(OS_MACOSX) || defined(OS_BSD) || \
-    (defined(OS_LINUX) && !defined(USE_AURA))
+#if defined(OS_WIN) || defined(OS_MACOSX)
   return true;
 #else
   return false;
@@ -841,9 +852,11 @@ bool PluginServiceImpl::IsPluginWindow(HWND window) {
 }
 #endif
 
-bool PluginServiceImpl::PpapiDevChannelSupported() {
+bool PluginServiceImpl::PpapiDevChannelSupported(
+    BrowserContext* browser_context,
+    const GURL& document_url) {
   return content::GetContentClient()->browser()->
-      IsPluginAllowedToUseDevChannelAPIs();
+      IsPluginAllowedToUseDevChannelAPIs(browser_context, document_url);
 }
 
 }  // namespace content

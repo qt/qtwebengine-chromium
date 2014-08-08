@@ -5,11 +5,13 @@
 #include "webkit/browser/appcache/appcache_database.h"
 
 #include "base/auto_reset.h"
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/file_util.h"
 #include "base/logging.h"
 #include "base/strings/utf_string_conversions.h"
 #include "sql/connection.h"
+#include "sql/error_delegate_util.h"
 #include "sql/meta_table.h"
 #include "sql/statement.h"
 #include "sql/transaction.h"
@@ -200,17 +202,13 @@ AppCacheDatabase::NamespaceRecord::~NamespaceRecord() {
 
 
 AppCacheDatabase::AppCacheDatabase(const base::FilePath& path)
-    : db_file_path_(path), is_disabled_(false), is_recreating_(false) {
+    : db_file_path_(path),
+      is_disabled_(false),
+      is_recreating_(false),
+      was_corruption_detected_(false) {
 }
 
 AppCacheDatabase::~AppCacheDatabase() {
-}
-
-void AppCacheDatabase::CloseConnection() {
-  // We can't close the connection for an in-memory database w/o
-  // losing all of the data, so we don't do that.
-  if (!db_file_path_.empty())
-    ResetConnectionAndTables();
 }
 
 void AppCacheDatabase::Disable() {
@@ -953,9 +951,10 @@ void AppCacheDatabase::ReadNamespaceRecords(
       NamespaceRecordVector* intercepts,
       NamespaceRecordVector* fallbacks) {
   while (statement->Step()) {
-    NamespaceType type = static_cast<NamespaceType>(statement->ColumnInt(2));
+    AppCacheNamespaceType type = static_cast<AppCacheNamespaceType>(
+        statement->ColumnInt(2));
     NamespaceRecordVector* records =
-        (type == FALLBACK_NAMESPACE) ? fallbacks : intercepts;
+        (type == APPCACHE_FALLBACK_NAMESPACE) ? fallbacks : intercepts;
     records->push_back(NamespaceRecord());
     ReadNamespaceRecord(statement, &records->back());
   }
@@ -972,7 +971,7 @@ void AppCacheDatabase::ReadNamespaceRecord(
 
   // Note: quick and dirty storage for the 'executable' bit w/o changing
   // schemas, we use the high bit of 'type' field.
-  record->namespace_.type = static_cast<NamespaceType>
+  record->namespace_.type = static_cast<AppCacheNamespaceType>
       (type_with_executable_bit & 0x7ffffff);
   record->namespace_.is_executable =
       (type_with_executable_bit & 0x80000000) != 0;
@@ -1036,6 +1035,9 @@ bool AppCacheDatabase::LazyOpen(bool create_if_needed) {
   }
 
   AppCacheHistograms::CountInitResult(AppCacheHistograms::INIT_OK);
+  was_corruption_detected_ = false;
+  db_->set_error_callback(
+      base::Bind(&AppCacheDatabase::OnDatabaseError, base::Unretained(this)));
   return true;
 }
 
@@ -1127,8 +1129,9 @@ bool AppCacheDatabase::UpgradeSchema() {
     }
 
     // Move data from the old table to the new table, setting the
-    // 'type' for all current records to the value for FALLBACK_NAMESPACE.
-    DCHECK_EQ(0, static_cast<int>(FALLBACK_NAMESPACE));
+    // 'type' for all current records to the value for
+    // APPCACHE_FALLBACK_NAMESPACE.
+    DCHECK_EQ(0, static_cast<int>(APPCACHE_FALLBACK_NAMESPACE));
     if (!db_->Execute(
             "INSERT INTO Namespaces"
             "  SELECT cache_id, origin, 0, namespace_url, fallback_entry_url"
@@ -1195,13 +1198,14 @@ bool AppCacheDatabase::DeleteExistingAndCreateNewDatabase() {
 
   // This also deletes the disk cache data.
   base::FilePath directory = db_file_path_.DirName();
-  if (!base::DeleteFile(directory, true) ||
-      !base::CreateDirectory(directory)) {
+  if (!base::DeleteFile(directory, true))
     return false;
-  }
 
   // Make sure the steps above actually deleted things.
-  if (base::PathExists(db_file_path_))
+  if (base::PathExists(directory))
+    return false;
+
+  if (!base::CreateDirectory(directory))
     return false;
 
   // So we can't go recursive.
@@ -1210,6 +1214,13 @@ bool AppCacheDatabase::DeleteExistingAndCreateNewDatabase() {
 
   base::AutoReset<bool> auto_reset(&is_recreating_, true);
   return LazyOpen(true);
+}
+
+void AppCacheDatabase::OnDatabaseError(int err, sql::Statement* stmt) {
+  was_corruption_detected_ |= sql::IsErrorCatastrophic(err);
+  if (!db_->ShouldIgnoreSqliteError(err))
+    DLOG(ERROR) << db_->GetErrorMessage();
+  // TODO: Maybe use non-catostrophic errors to trigger a full integrity check?
 }
 
 }  // namespace appcache

@@ -29,23 +29,22 @@
  */
 
 #include "config.h"
-#include "DatabaseClientImpl.h"
+#include "web/DatabaseClientImpl.h"
 
-#include "WebFrameImpl.h"
-#include "WebPermissionClient.h"
-#include "WebViewImpl.h"
-#include "WorkerPermissionClient.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExecutionContext.h"
 #include "core/workers/WorkerGlobalScope.h"
+#include "public/web/WebPermissionClient.h"
+#include "web/WebLocalFrameImpl.h"
+#include "web/WorkerPermissionClient.h"
 
 using namespace WebCore;
 
 namespace blink {
 
-PassOwnPtr<DatabaseClientImpl> DatabaseClientImpl::create()
+PassOwnPtrWillBeRawPtr<DatabaseClientImpl> DatabaseClientImpl::create()
 {
-    return adoptPtr(new DatabaseClientImpl());
+    return adoptPtrWillBeNoop(new DatabaseClientImpl());
 }
 
 DatabaseClientImpl::~DatabaseClientImpl()
@@ -58,19 +57,13 @@ bool DatabaseClientImpl::allowDatabase(ExecutionContext* executionContext, const
     ASSERT(executionContext->isDocument() || executionContext->isWorkerGlobalScope());
     if (executionContext->isDocument()) {
         Document* document = toDocument(executionContext);
-        WebFrameImpl* webFrame = WebFrameImpl::fromFrame(document->frame());
+        WebLocalFrameImpl* webFrame = WebLocalFrameImpl::fromFrame(document->frame());
         if (!webFrame)
             return false;
         if (webFrame->permissionClient())
-            return webFrame->permissionClient()->allowDatabase(webFrame, name, displayName, estimatedSize);
-
-        WebViewImpl* webView = webFrame->viewImpl();
-        if (!webView)
-            return false;
-        if (webView->permissionClient())
-            return webView->permissionClient()->allowDatabase(webFrame, name, displayName, estimatedSize);
+            return webFrame->permissionClient()->allowDatabase(name, displayName, estimatedSize);
     } else {
-        WorkerGlobalScope* workerGlobalScope = toWorkerGlobalScope(executionContext);
+        WorkerGlobalScope& workerGlobalScope = *toWorkerGlobalScope(executionContext);
         return WorkerPermissionClient::from(workerGlobalScope)->allowDatabase(name, displayName, estimatedSize);
     }
     return true;

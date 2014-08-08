@@ -26,11 +26,11 @@
 #ifndef CSSFontSelector_h
 #define CSSFontSelector_h
 
-#include "core/css/CSSSegmentedFontFaceCache.h"
-#include "core/fetch/ResourcePtr.h"
-#include "platform/Timer.h"
+#include "core/css/FontFaceCache.h"
+#include "core/css/FontLoader.h"
 #include "platform/fonts/FontSelector.h"
 #include "platform/fonts/GenericFontFamilySettings.h"
+#include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
 #include "wtf/HashMap.h"
 #include "wtf/HashSet.h"
@@ -39,72 +39,63 @@ namespace WebCore {
 
 class CSSFontFace;
 class CSSFontFaceRule;
+class CSSFontSelectorClient;
 class CSSSegmentedFontFace;
-class FontResource;
 class Document;
 class FontDescription;
 class StyleRuleFontFace;
 
-class FontLoader {
+class CSSFontSelector FINAL : public FontSelector {
 public:
-    explicit FontLoader(ResourceFetcher*);
-
-    void addFontToBeginLoading(FontResource*);
-    void loadPendingFonts();
-
-    void clearResourceFetcher();
-
-private:
-    void beginLoadTimerFired(Timer<FontLoader>*);
-
-    Timer<FontLoader> m_beginLoadingTimer;
-    Vector<ResourcePtr<FontResource> > m_fontsToBeginLoading;
-    ResourceFetcher* m_resourceFetcher;
-};
-
-class CSSFontSelector : public FontSelector {
-public:
-    static PassRefPtr<CSSFontSelector> create(Document* document)
+    static PassRefPtrWillBeRawPtr<CSSFontSelector> create(Document* document)
     {
-        return adoptRef(new CSSFontSelector(document));
+        return adoptRefWillBeNoop(new CSSFontSelector(document));
     }
     virtual ~CSSFontSelector();
 
-    virtual unsigned version() const OVERRIDE { return m_cssSegmentedFontFaceCache.version(); }
+    virtual unsigned version() const OVERRIDE { return m_fontFaceCache.version(); }
 
-    virtual PassRefPtr<FontData> getFontData(const FontDescription&, const AtomicString&);
-    CSSSegmentedFontFace* getFontFace(const FontDescription&, const AtomicString& family);
-    virtual void willUseFontData(const FontDescription&, const AtomicString& family) OVERRIDE;
+    virtual PassRefPtr<FontData> getFontData(const FontDescription&, const AtomicString&) OVERRIDE;
+    virtual void willUseFontData(const FontDescription&, const AtomicString& family, UChar32) OVERRIDE;
+    bool isPlatformFontAvailable(const FontDescription&, const AtomicString& family);
 
+#if !ENABLE(OILPAN)
     void clearDocument();
+#endif
 
-    void addFontFaceRule(const StyleRuleFontFace*, PassRefPtr<CSSFontFace>);
-    void removeFontFaceRule(const StyleRuleFontFace*);
+    void fontFaceInvalidated();
 
-    void fontLoaded();
-    virtual void fontCacheInvalidated();
+    // FontCacheClient implementation
+    virtual void fontCacheInvalidated() OVERRIDE;
 
-    virtual void registerForInvalidationCallbacks(FontSelectorClient*);
-    virtual void unregisterForInvalidationCallbacks(FontSelectorClient*);
+    void registerForInvalidationCallbacks(CSSFontSelectorClient*);
+#if !ENABLE(OILPAN)
+    void unregisterForInvalidationCallbacks(CSSFontSelectorClient*);
+#endif
 
     Document* document() const { return m_document; }
+    FontFaceCache* fontFaceCache() { return &m_fontFaceCache; }
+    FontLoader* fontLoader() { return m_fontLoader.get(); }
 
     const GenericFontFamilySettings& genericFontFamilySettings() const { return m_genericFontFamilySettings; }
+    void updateGenericFontFamilySettings(Document&);
 
-    void beginLoadingFontSoon(FontResource*);
-    void loadPendingFonts();
+    virtual void trace(Visitor*);
 
 private:
     explicit CSSFontSelector(Document*);
 
     void dispatchInvalidationCallbacks();
 
-    Document* m_document;
+    // FIXME: Oilpan: Ideally this should just be a traced Member but that will
+    // currently leak because RenderStyle and its data are not on the heap.
+    // See crbug.com/383860 for details.
+    RawPtrWillBeWeakMember<Document> m_document;
     // FIXME: Move to Document or StyleEngine.
-    CSSSegmentedFontFaceCache m_cssSegmentedFontFaceCache;
-    HashSet<FontSelectorClient*> m_clients;
+    FontFaceCache m_fontFaceCache;
+    WillBeHeapHashSet<RawPtrWillBeWeakMember<CSSFontSelectorClient> > m_clients;
 
-    FontLoader m_fontLoader;
+    RefPtrWillBeMember<FontLoader> m_fontLoader;
     GenericFontFamilySettings m_genericFontFamilySettings;
 };
 

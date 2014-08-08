@@ -10,11 +10,11 @@ namespace cc {
 
 TransferableResource::TransferableResource()
     : id(0),
-      sync_point(0),
       format(RGBA_8888),
-      target(0),
       filter(0),
-      is_software(false) {}
+      is_repeated(false),
+      is_software(false) {
+}
 
 TransferableResource::~TransferableResource() {
 }
@@ -22,7 +22,7 @@ TransferableResource::~TransferableResource() {
 ReturnedResource TransferableResource::ToReturnedResource() const {
   ReturnedResource returned;
   returned.id = id;
-  returned.sync_point = sync_point;
+  returned.sync_point = mailbox_holder.sync_point;
   returned.count = 1;
   return returned;
 }

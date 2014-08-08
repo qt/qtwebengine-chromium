@@ -22,7 +22,8 @@
 #if ENABLE(SVG_FONTS)
 #include "core/svg/SVGAltGlyphDefElement.h"
 
-#include "SVGNames.h"
+#include "core/SVGNames.h"
+#include "core/dom/ElementTraversal.h"
 #include "core/svg/SVGAltGlyphItemElement.h"
 #include "core/svg/SVGGlyphRefElement.h"
 
@@ -34,12 +35,9 @@ inline SVGAltGlyphDefElement::SVGAltGlyphDefElement(Document& document)
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<SVGAltGlyphDefElement> SVGAltGlyphDefElement::create(Document& document)
-{
-    return adoptRef(new SVGAltGlyphDefElement(document));
-}
+DEFINE_NODE_FACTORY(SVGAltGlyphDefElement)
 
-bool SVGAltGlyphDefElement::hasValidGlyphElements(Vector<String>& glyphNames) const
+bool SVGAltGlyphDefElement::hasValidGlyphElements(Vector<AtomicString>& glyphNames) const
 {
     // Spec: http://www.w3.org/TR/SVG/text.html#AltGlyphDefElement
     // An 'altGlyphDef' can contain either of the following:
@@ -88,10 +86,10 @@ bool SVGAltGlyphDefElement::hasValidGlyphElements(Vector<String>& glyphNames) co
     bool fountFirstGlyphRef = false;
     bool foundFirstAltGlyphItem = false;
 
-    for (Node* child = firstChild(); child; child = child->nextSibling()) {
-        if (!foundFirstAltGlyphItem && child->hasTagName(SVGNames::glyphRefTag)) {
+    for (SVGElement* child = Traversal<SVGElement>::firstChild(*this); child; child = Traversal<SVGElement>::nextSibling(*child)) {
+        if (!foundFirstAltGlyphItem && isSVGGlyphRefElement(*child)) {
             fountFirstGlyphRef = true;
-            String referredGlyphName;
+            AtomicString referredGlyphName;
 
             if (toSVGGlyphRefElement(child)->hasValidGlyphElement(referredGlyphName))
                 glyphNames.append(referredGlyphName);
@@ -103,13 +101,13 @@ bool SVGAltGlyphDefElement::hasValidGlyphElements(Vector<String>& glyphNames) co
                 glyphNames.clear();
                 return false;
             }
-        } else if (!fountFirstGlyphRef && child->hasTagName(SVGNames::altGlyphItemTag)) {
+        } else if (!fountFirstGlyphRef && isSVGAltGlyphItemElement(*child)) {
             foundFirstAltGlyphItem = true;
-            Vector<String> referredGlyphNames;
+            Vector<AtomicString> referredGlyphNames;
 
             // As the spec says "The first 'altGlyphItem' in which all referenced glyphs
             // are available is chosen."
-            if (static_cast<SVGAltGlyphItemElement*>(child)->hasValidGlyphElements(glyphNames) && !glyphNames.isEmpty())
+            if (toSVGAltGlyphItemElement(child)->hasValidGlyphElements(glyphNames) && !glyphNames.isEmpty())
                 return true;
         }
     }

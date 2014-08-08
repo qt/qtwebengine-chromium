@@ -6,10 +6,13 @@
   "version": "1",
   "description": "Chrome PDF Viewer",
   "offline_enabled": true,
+  "incognito": "split",
   "permissions": [
     "file://*/",
+    "ftp://*/",
     "http://*/",
     "https://*/",
+    "chrome://*/",
     "streamsPrivate"
   ],
   "background": {
@@ -17,11 +20,10 @@
     "transient": true,
     "persistent": false
   },
-  "offline_enabled": true,
   "mime_types": [
     "application/pdf"
   ],
   "web_accessible_resources": [
-    "pdf.html"
+    "index.html"
   ]
 }

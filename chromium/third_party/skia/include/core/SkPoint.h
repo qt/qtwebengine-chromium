@@ -11,6 +11,28 @@
 #include "SkMath.h"
 #include "SkScalar.h"
 
+/** \struct SkIPoint16
+
+    SkIPoint holds two 16 bit integer coordinates
+*/
+struct SkIPoint16 {
+    int16_t fX, fY;
+
+    static SkIPoint16 Make(int x, int y) {
+        SkIPoint16 pt;
+        pt.set(x, y);
+        return pt;
+    }
+
+    int16_t x() const { return fX; }
+    int16_t y() const { return fY; }
+
+    void set(int x, int y) {
+        fX = SkToS16(x);
+        fY = SkToS16(y);
+    }
+};
+
 /** \struct SkIPoint
 
     SkIPoint holds two 32 bit integer coordinates
@@ -411,13 +433,13 @@ struct SK_API SkPoint {
     /** Returns the dot product of a and b, treating them as 2D vectors
     */
     static SkScalar DotProduct(const SkPoint& a, const SkPoint& b) {
-        return SkScalarMul(a.fX, b.fX) + SkScalarMul(a.fY, b.fY);
+        return a.fX * b.fX + a.fY * b.fY;
     }
 
     /** Returns the cross product of a and b, treating them as 2D vectors
     */
     static SkScalar CrossProduct(const SkPoint& a, const SkPoint& b) {
-        return SkScalarMul(a.fX, b.fY) - SkScalarMul(a.fY, b.fX);
+        return a.fX * b.fY - a.fY * b.fX;
     }
 
     SkScalar cross(const SkPoint& vec) const {
@@ -435,7 +457,7 @@ struct SK_API SkPoint {
     SkScalar distanceToSqd(const SkPoint& pt) const {
         SkScalar dx = fX - pt.fX;
         SkScalar dy = fY - pt.fY;
-        return SkScalarMul(dx, dx) + SkScalarMul(dy, dy);
+        return dx * dx + dy * dy;
     }
 
     /**

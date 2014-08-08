@@ -132,11 +132,11 @@ class BypassIPBlockRule : public ProxyBypassRules::Rule {
 // Returns true if the given string represents an IP address.
 bool IsIPAddress(const std::string& domain) {
   // From GURL::HostIsIPAddress()
-  url_canon::RawCanonOutputT<char, 128> ignored_output;
-  url_canon::CanonHostInfo host_info;
-  url_parse::Component domain_comp(0, domain.size());
-  url_canon::CanonicalizeIPAddress(domain.c_str(), domain_comp,
-                                   &ignored_output, &host_info);
+  url::RawCanonOutputT<char, 128> ignored_output;
+  url::CanonHostInfo host_info;
+  url::Component domain_comp(0, domain.size());
+  url::CanonicalizeIPAddress(domain.c_str(), domain_comp, &ignored_output,
+                             &host_info);
   return host_info.IsIPAddress();
 }
 
@@ -262,7 +262,7 @@ bool ProxyBypassRules::AddRuleFromStringInternal(
     const std::string& raw_untrimmed,
     bool use_hostname_suffix_matching) {
   std::string raw;
-  TrimWhitespaceASCII(raw_untrimmed, TRIM_ALL, &raw);
+  base::TrimWhitespaceASCII(raw_untrimmed, base::TRIM_ALL, &raw);
 
   // This is the special syntax used by WinInet's bypass list -- we allow it
   // on all platforms and interpret it the same way.

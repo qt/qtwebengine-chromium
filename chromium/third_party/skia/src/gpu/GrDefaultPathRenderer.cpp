@@ -13,7 +13,7 @@
 #include "SkString.h"
 #include "SkStrokeRec.h"
 #include "SkTLazy.h"
-#include "SkTrace.h"
+#include "SkTraceEvent.h"
 
 
 GrDefaultPathRenderer::GrDefaultPathRenderer(bool separateStencilSupport,
@@ -196,8 +196,6 @@ bool GrDefaultPathRenderer::createGeom(const SkPath& path,
                                        int* indexCnt,
                                        GrDrawTarget::AutoReleaseGeometry* arg) {
     {
-    SK_TRACE_EVENT0("GrDefaultPathRenderer::createGeom");
-
     SkScalar srcSpaceTolSqd = SkScalarMul(srcSpaceTol, srcSpaceTol);
     int contourCnt;
     int maxPts = GrPathUtils::worstCasePointCount(path, &contourCnt,
@@ -241,11 +239,11 @@ bool GrDefaultPathRenderer::createGeom(const SkPath& path,
     uint16_t* idx = idxBase;
     uint16_t subpathIdxStart = 0;
 
-    GrPoint* base = reinterpret_cast<GrPoint*>(arg->vertices());
+    SkPoint* base = reinterpret_cast<SkPoint*>(arg->vertices());
     SkASSERT(NULL != base);
-    GrPoint* vert = base;
+    SkPoint* vert = base;
 
-    GrPoint pts[4];
+    SkPoint pts[4];
 
     bool first = true;
     int subpath = 0;

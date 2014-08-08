@@ -90,11 +90,10 @@ public:
     BLINK_EXPORT bool isPopStateEvent() const;
     BLINK_EXPORT bool isProgressEvent() const;
     BLINK_EXPORT bool isXMLHttpRequestProgressEvent() const;
-    BLINK_EXPORT bool isBeforeLoadEvent() const;
 
 #if BLINK_IMPLEMENTATION
-    WebDOMEvent(const WTF::PassRefPtr<WebCore::Event>&);
-    operator WTF::PassRefPtr<WebCore::Event>() const;
+    WebDOMEvent(const PassRefPtrWillBeRawPtr<WebCore::Event>&);
+    operator PassRefPtrWillBeRawPtr<WebCore::Event>() const;
 #endif
 
     template<typename T> T to()
@@ -112,9 +111,8 @@ public:
     }
 
 protected:
-    typedef WebCore::Event WebDOMEventPrivate;
 #if BLINK_IMPLEMENTATION
-    void assign(const WTF::PassRefPtr<WebDOMEventPrivate>&);
+    void assign(const PassRefPtrWillBeRawPtr<WebCore::Event>&);
 
     template<typename T> T* unwrap()
     {
@@ -127,7 +125,7 @@ protected:
     }
 #endif
 
-    WebPrivatePtr<WebDOMEventPrivate> m_private;
+    WebPrivatePtr<WebCore::Event> m_private;
 };
 
 } // namespace blink

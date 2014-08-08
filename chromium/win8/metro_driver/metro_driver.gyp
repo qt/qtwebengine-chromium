@@ -8,17 +8,31 @@
         'chromium_code': 1,
       },
       'includes': [
+        '../../build/util/version.gypi',
         '../../build/win_precompile.gypi',
-        '../../chrome/version.gypi',
       ],
       'target_defaults': {
+        # This and the force include below is a workaround for intsafe.h in
+        # VS 2010.
+        'msvs_system_include_dirs': [
+          '<(DEPTH)/build',
+        ],
         'msvs_settings': {
-            'VCLinkerTool': {
-                'AdditionalDependencies': [
-                    'D2D1.lib',
-                    'D3D11.lib',
-                ],
-            },
+          'VCLinkerTool': {
+            'AdditionalDependencies': [
+              'D2D1.lib',
+              'D3D11.lib',
+              'runtimeobject.lib',
+            ],
+            'DelayLoadDLLs': [
+              'API-MS-WIN-CORE-WINRT-ERROR-L1-1-0.DLL',
+              'API-MS-WIN-CORE-WINRT-L1-1-0.DLL',
+              'API-MS-WIN-CORE-WINRT-STRING-L1-1-0.DLL',
+            ],
+          },
+          'VCCLCompilerTool': {
+            'ForcedIncludeFiles': [ 'intsafe_workaround.h', ],
+          },
         },
       },
       'targets': [
@@ -59,14 +73,17 @@
             '../../ipc/ipc.gyp:ipc',
             '../../sandbox/sandbox.gyp:sandbox',
             '../../ui/metro_viewer/metro_viewer.gyp:metro_viewer_messages',
+            '../../ui/gfx/gfx.gyp:gfx',
+            '../../ui/gfx/gfx.gyp:gfx_geometry',
             '../../url/url.gyp:url_lib',
-            '../win8.gyp:check_sdk_patch',
             'metro_driver_version_resources',
           ],
           'sources': [
             'display_properties.cc',
+            'display_properties.h',
             'metro_driver.cc',
             'metro_driver.h',
+            'metro_driver_win7.cc',
             'stdafx.h',
             'winrt_utils.cc',
             'winrt_utils.h',

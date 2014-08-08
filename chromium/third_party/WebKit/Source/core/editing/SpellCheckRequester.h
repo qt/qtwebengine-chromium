@@ -38,23 +38,22 @@
 
 namespace WebCore {
 
-class Frame;
+class LocalFrame;
 class Node;
 class SpellCheckRequester;
 class TextCheckerClient;
 
-class SpellCheckRequest : public TextCheckingRequest {
+class SpellCheckRequest FINAL : public TextCheckingRequest {
 public:
-    static PassRefPtr<SpellCheckRequest> create(TextCheckingTypeMask, TextCheckingProcessType, PassRefPtr<Range> checkingRange, PassRefPtr<Range> paragraphRange, int requestNumber = 0);
+    static PassRefPtr<SpellCheckRequest> create(TextCheckingTypeMask, TextCheckingProcessType, PassRefPtrWillBeRawPtr<Range> checkingRange, PassRefPtrWillBeRawPtr<Range> paragraphRange, int requestNumber = 0);
     virtual ~SpellCheckRequest();
 
-    PassRefPtr<Range> checkingRange() const { return m_checkingRange; }
-    PassRefPtr<Range> paragraphRange() const { return m_paragraphRange; }
-    PassRefPtr<Element> rootEditableElement() const { return m_rootEditableElement; }
+    PassRefPtrWillBeRawPtr<Range> checkingRange() const { return m_checkingRange; }
+    PassRefPtrWillBeRawPtr<Range> paragraphRange() const { return m_paragraphRange; }
+    PassRefPtrWillBeRawPtr<Element> rootEditableElement() const { return m_rootEditableElement; }
 
     void setCheckerAndSequence(SpellCheckRequester*, int sequence);
     void requesterDestroyed();
-    bool isStarted() const { return m_requester; }
 
     virtual const TextCheckingRequestData& data() const OVERRIDE;
     virtual void didSucceed(const Vector<TextCheckingResult>&) OVERRIDE;
@@ -63,12 +62,12 @@ public:
     int requestNumber() const { return m_requestNumber; }
 
 private:
-    SpellCheckRequest(PassRefPtr<Range> checkingRange, PassRefPtr<Range> paragraphRange, const String&, TextCheckingTypeMask, TextCheckingProcessType, const Vector<uint32_t>& documentMarkersInRange, const Vector<unsigned>& documentMarkerOffsets, int requestNumber);
+    SpellCheckRequest(PassRefPtrWillBeRawPtr<Range> checkingRange, PassRefPtrWillBeRawPtr<Range> paragraphRange, const String&, TextCheckingTypeMask, TextCheckingProcessType, const Vector<uint32_t>& documentMarkersInRange, const Vector<unsigned>& documentMarkerOffsets, int requestNumber);
 
     SpellCheckRequester* m_requester;
-    RefPtr<Range> m_checkingRange;
-    RefPtr<Range> m_paragraphRange;
-    RefPtr<Element> m_rootEditableElement;
+    RefPtrWillBePersistent<Range> m_checkingRange;
+    RefPtrWillBePersistent<Range> m_paragraphRange;
+    RefPtrWillBePersistent<Element> m_rootEditableElement;
     TextCheckingRequestData m_requestData;
     int m_requestNumber;
 };
@@ -78,7 +77,7 @@ class SpellCheckRequester {
 public:
     friend class SpellCheckRequest;
 
-    explicit SpellCheckRequester(Frame&);
+    explicit SpellCheckRequester(LocalFrame&);
     ~SpellCheckRequester();
 
     bool isAsynchronousEnabled() const;
@@ -109,7 +108,7 @@ private:
     void didCheckCancel(int sequence);
     void didCheck(int sequence, const Vector<TextCheckingResult>&);
 
-    Frame& m_frame;
+    LocalFrame& m_frame;
     int m_lastRequestSequence;
     int m_lastProcessedSequence;
 

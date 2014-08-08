@@ -23,31 +23,45 @@
 
 #include "core/css/CSSValue.h"
 #include "core/fetch/ResourceFetcher.h"
+#include "platform/weborigin/Referrer.h"
 #include "wtf/RefPtr.h"
 
 namespace WebCore {
 
+class Document;
 class Element;
+class KURL;
 class StyleFetchedImage;
 class StyleImage;
 class RenderObject;
 
 class CSSImageValue : public CSSValue {
 public:
-    static PassRefPtr<CSSImageValue> create(const String& url) { return adoptRef(new CSSImageValue(url)); }
-    static PassRefPtr<CSSImageValue> create(const String& url, StyleImage* image) { return adoptRef(new CSSImageValue(url, image)); }
+    static PassRefPtrWillBeRawPtr<CSSImageValue> create(const KURL& url, StyleImage* image = 0)
+    {
+        return adoptRefWillBeNoop(new CSSImageValue(url, url, image));
+    }
+    static PassRefPtrWillBeRawPtr<CSSImageValue> create(const String& rawValue, const KURL& url, StyleImage* image = 0)
+    {
+        return adoptRefWillBeNoop(new CSSImageValue(rawValue, url, image));
+    }
     ~CSSImageValue();
 
-    StyleFetchedImage* cachedImage(ResourceFetcher*, const ResourceLoaderOptions&, CORSEnabled);
-    StyleFetchedImage* cachedImage(ResourceFetcher* fetcher) { return cachedImage(fetcher, ResourceFetcher::defaultResourceOptions(), NotCORSEnabled); }
+    StyleFetchedImage* cachedImage(ResourceFetcher*, const ResourceLoaderOptions&);
+    StyleFetchedImage* cachedImage(ResourceFetcher* fetcher) { return cachedImage(fetcher, ResourceFetcher::defaultResourceOptions()); }
     // Returns a StyleFetchedImage if the image is cached already, otherwise a StylePendingImage.
     StyleImage* cachedOrPendingImage();
 
-    const String& url() { return m_url; }
+    const String& url() { return m_absoluteURL; }
+
+    void setReferrer(const Referrer& referrer) { m_referrer = referrer; }
+    const Referrer& referrer() const { return m_referrer; }
+
+    void reResolveURL(const Document&);
 
     String customCSSText() const;
 
-    PassRefPtr<CSSValue> cloneForCSSOM() const;
+    PassRefPtrWillBeRawPtr<CSSValue> cloneForCSSOM() const;
 
     bool hasFailedOrCanceledSubresources() const;
 
@@ -57,11 +71,15 @@ public:
 
     void setInitiator(const AtomicString& name) { m_initiatorName = name; }
 
-private:
-    explicit CSSImageValue(const String& url);
-    CSSImageValue(const String& url, StyleImage*);
+    void traceAfterDispatch(Visitor*);
+    void restoreCachedResourceIfNeeded(Document&);
 
-    String m_url;
+private:
+    CSSImageValue(const String& rawValue, const KURL&, StyleImage*);
+
+    String m_relativeURL;
+    String m_absoluteURL;
+    Referrer m_referrer;
     RefPtr<StyleImage> m_image;
     bool m_accessedImage;
     AtomicString m_initiatorName;

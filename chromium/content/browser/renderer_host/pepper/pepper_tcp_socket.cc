@@ -37,12 +37,11 @@ using ppapi::NetAddressPrivateImpl;
 
 namespace content {
 
-PepperTCPSocket::PepperTCPSocket(
-    PepperMessageFilter* manager,
-    int32 routing_id,
-    uint32 plugin_dispatcher_id,
-    uint32 socket_id,
-    bool private_api)
+PepperTCPSocket::PepperTCPSocket(PepperMessageFilter* manager,
+                                 int32 routing_id,
+                                 uint32 plugin_dispatcher_id,
+                                 uint32 socket_id,
+                                 bool private_api)
     : manager_(manager),
       routing_id_(routing_id),
       plugin_dispatcher_id_(plugin_dispatcher_id),
@@ -53,13 +52,12 @@ PepperTCPSocket::PepperTCPSocket(
   DCHECK(manager);
 }
 
-PepperTCPSocket::PepperTCPSocket(
-    PepperMessageFilter* manager,
-    int32 routing_id,
-    uint32 plugin_dispatcher_id,
-    uint32 socket_id,
-    net::StreamSocket* socket,
-    bool private_api)
+PepperTCPSocket::PepperTCPSocket(PepperMessageFilter* manager,
+                                 int32 routing_id,
+                                 uint32 plugin_dispatcher_id,
+                                 uint32 socket_id,
+                                 net::StreamSocket* socket,
+                                 bool private_api)
     : manager_(manager),
       routing_id_(routing_id),
       plugin_dispatcher_id_(plugin_dispatcher_id),
@@ -78,7 +76,7 @@ PepperTCPSocket::~PepperTCPSocket() {
 }
 
 void PepperTCPSocket::Connect(const std::string& host, uint16_t port) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   if (connection_state_ != BEFORE_CONNECT) {
     SendConnectACKError(PP_ERROR_FAILED);
@@ -101,7 +99,7 @@ void PepperTCPSocket::Connect(const std::string& host, uint16_t port) {
 
 void PepperTCPSocket::ConnectWithNetAddress(
     const PP_NetAddress_Private& net_addr) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   if (connection_state_ != BEFORE_CONNECT) {
     SendConnectACKError(PP_ERROR_FAILED);
@@ -110,8 +108,8 @@ void PepperTCPSocket::ConnectWithNetAddress(
 
   net::IPAddressNumber address;
   int port;
-  if (!NetAddressPrivateImpl::NetAddressToIPEndPoint(net_addr, &address,
-                                                     &port)) {
+  if (!NetAddressPrivateImpl::NetAddressToIPEndPoint(
+          net_addr, &address, &port)) {
     SendConnectACKError(PP_ERROR_ADDRESS_INVALID);
     return;
   }
@@ -128,7 +126,7 @@ void PepperTCPSocket::SSLHandshake(
     uint16_t server_port,
     const std::vector<std::vector<char> >& trusted_certs,
     const std::vector<std::vector<char> >& untrusted_certs) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   // Allow to do SSL handshake only if currently the socket has been connected
   // and there isn't pending read or write.
@@ -159,15 +157,14 @@ void PepperTCPSocket::SSLHandshake(
     return;
   }
 
-  int net_result = socket_->Connect(
-      base::Bind(&PepperTCPSocket::OnSSLHandshakeCompleted,
-                 base::Unretained(this)));
+  int net_result = socket_->Connect(base::Bind(
+      &PepperTCPSocket::OnSSLHandshakeCompleted, base::Unretained(this)));
   if (net_result != net::ERR_IO_PENDING)
     OnSSLHandshakeCompleted(net_result);
 }
 
 void PepperTCPSocket::Read(int32 bytes_to_read) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   if (!IsConnected() || end_of_file_reached_) {
     SendReadACKError(PP_ERROR_FAILED);
@@ -195,7 +192,7 @@ void PepperTCPSocket::Read(int32 bytes_to_read) {
 }
 
 void PepperTCPSocket::Write(const std::string& data) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   if (!IsConnected()) {
     SendWriteACKError(PP_ERROR_FAILED);
@@ -223,7 +220,7 @@ void PepperTCPSocket::Write(const std::string& data) {
 
 void PepperTCPSocket::SetOption(PP_TCPSocket_Option name,
                                 const ppapi::SocketOptionData& value) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   if (!IsConnected() || IsSsl()) {
     SendSetOptionACK(PP_ERROR_FAILED);
@@ -242,8 +239,8 @@ void PepperTCPSocket::SetOption(PP_TCPSocket_Option name,
         return;
       }
 
-      SendSetOptionACK(
-          tcp_socket->SetNoDelay(boolean_value) ? PP_OK : PP_ERROR_FAILED);
+      SendSetOptionACK(tcp_socket->SetNoDelay(boolean_value) ? PP_OK
+                                                             : PP_ERROR_FAILED);
       return;
     }
     case PP_TCPSOCKET_OPTION_SEND_BUFFER_SIZE:
@@ -254,21 +251,22 @@ void PepperTCPSocket::SetOption(PP_TCPSocket_Option name,
         return;
       }
 
-      bool result = false;
+      int net_result = net::OK;
       if (name == PP_TCPSOCKET_OPTION_SEND_BUFFER_SIZE) {
         if (integer_value > ppapi::TCPSocketShared::kMaxSendBufferSize) {
           SendSetOptionACK(PP_ERROR_BADARGUMENT);
           return;
         }
-        result = tcp_socket->SetSendBufferSize(integer_value);
+        net_result = tcp_socket->SetSendBufferSize(integer_value);
       } else {
         if (integer_value > ppapi::TCPSocketShared::kMaxReceiveBufferSize) {
           SendSetOptionACK(PP_ERROR_BADARGUMENT);
           return;
         }
-        result = tcp_socket->SetReceiveBufferSize(integer_value);
+        net_result = tcp_socket->SetReceiveBufferSize(integer_value);
       }
-      SendSetOptionACK(result ? PP_OK : PP_ERROR_FAILED);
+      // TODO(wtc): Add error mapping.
+      SendSetOptionACK((net_result == net::OK) ? PP_OK : PP_ERROR_FAILED);
       return;
     }
     default: {
@@ -282,18 +280,20 @@ void PepperTCPSocket::SetOption(PP_TCPSocket_Option name,
 void PepperTCPSocket::StartConnect(const net::AddressList& addresses) {
   DCHECK(connection_state_ == CONNECT_IN_PROGRESS);
 
-  socket_.reset(new net::TCPClientSocket(addresses, NULL,
-                                         net::NetLog::Source()));
+  socket_.reset(
+      new net::TCPClientSocket(addresses, NULL, net::NetLog::Source()));
   int net_result = socket_->Connect(
-      base::Bind(&PepperTCPSocket::OnConnectCompleted,
-                 base::Unretained(this)));
+      base::Bind(&PepperTCPSocket::OnConnectCompleted, base::Unretained(this)));
   if (net_result != net::ERR_IO_PENDING)
     OnConnectCompleted(net_result);
 }
 
 void PepperTCPSocket::SendConnectACKError(int32_t error) {
   manager_->Send(new PpapiMsg_PPBTCPSocket_ConnectACK(
-      routing_id_, plugin_dispatcher_id_, socket_id_, error,
+      routing_id_,
+      plugin_dispatcher_id_,
+      socket_id_,
+      error,
       NetAddressPrivateImpl::kInvalidNetAddress,
       NetAddressPrivateImpl::kInvalidNetAddress));
 }
@@ -304,43 +304,48 @@ bool PepperTCPSocket::GetCertificateFields(
     ppapi::PPB_X509Certificate_Fields* fields) {
   const net::CertPrincipal& issuer = cert.issuer();
   fields->SetField(PP_X509CERTIFICATE_PRIVATE_ISSUER_COMMON_NAME,
-      new base::StringValue(issuer.common_name));
+                   new base::StringValue(issuer.common_name));
   fields->SetField(PP_X509CERTIFICATE_PRIVATE_ISSUER_LOCALITY_NAME,
-      new base::StringValue(issuer.locality_name));
+                   new base::StringValue(issuer.locality_name));
   fields->SetField(PP_X509CERTIFICATE_PRIVATE_ISSUER_STATE_OR_PROVINCE_NAME,
-      new base::StringValue(issuer.state_or_province_name));
+                   new base::StringValue(issuer.state_or_province_name));
   fields->SetField(PP_X509CERTIFICATE_PRIVATE_ISSUER_COUNTRY_NAME,
-      new base::StringValue(issuer.country_name));
-  fields->SetField(PP_X509CERTIFICATE_PRIVATE_ISSUER_ORGANIZATION_NAME,
+                   new base::StringValue(issuer.country_name));
+  fields->SetField(
+      PP_X509CERTIFICATE_PRIVATE_ISSUER_ORGANIZATION_NAME,
       new base::StringValue(JoinString(issuer.organization_names, '\n')));
-  fields->SetField(PP_X509CERTIFICATE_PRIVATE_ISSUER_ORGANIZATION_UNIT_NAME,
+  fields->SetField(
+      PP_X509CERTIFICATE_PRIVATE_ISSUER_ORGANIZATION_UNIT_NAME,
       new base::StringValue(JoinString(issuer.organization_unit_names, '\n')));
 
   const net::CertPrincipal& subject = cert.subject();
   fields->SetField(PP_X509CERTIFICATE_PRIVATE_SUBJECT_COMMON_NAME,
-      new base::StringValue(subject.common_name));
+                   new base::StringValue(subject.common_name));
   fields->SetField(PP_X509CERTIFICATE_PRIVATE_SUBJECT_LOCALITY_NAME,
-      new base::StringValue(subject.locality_name));
+                   new base::StringValue(subject.locality_name));
   fields->SetField(PP_X509CERTIFICATE_PRIVATE_SUBJECT_STATE_OR_PROVINCE_NAME,
-      new base::StringValue(subject.state_or_province_name));
+                   new base::StringValue(subject.state_or_province_name));
   fields->SetField(PP_X509CERTIFICATE_PRIVATE_SUBJECT_COUNTRY_NAME,
-      new base::StringValue(subject.country_name));
-  fields->SetField(PP_X509CERTIFICATE_PRIVATE_SUBJECT_ORGANIZATION_NAME,
+                   new base::StringValue(subject.country_name));
+  fields->SetField(
+      PP_X509CERTIFICATE_PRIVATE_SUBJECT_ORGANIZATION_NAME,
       new base::StringValue(JoinString(subject.organization_names, '\n')));
-  fields->SetField(PP_X509CERTIFICATE_PRIVATE_SUBJECT_ORGANIZATION_UNIT_NAME,
+  fields->SetField(
+      PP_X509CERTIFICATE_PRIVATE_SUBJECT_ORGANIZATION_UNIT_NAME,
       new base::StringValue(JoinString(subject.organization_unit_names, '\n')));
 
   const std::string& serial_number = cert.serial_number();
   fields->SetField(PP_X509CERTIFICATE_PRIVATE_SERIAL_NUMBER,
-      base::BinaryValue::CreateWithCopiedBuffer(serial_number.data(),
-                                                serial_number.length()));
+                   base::BinaryValue::CreateWithCopiedBuffer(
+                       serial_number.data(), serial_number.length()));
   fields->SetField(PP_X509CERTIFICATE_PRIVATE_VALIDITY_NOT_BEFORE,
-      new base::FundamentalValue(cert.valid_start().ToDoubleT()));
+                   new base::FundamentalValue(cert.valid_start().ToDoubleT()));
   fields->SetField(PP_X509CERTIFICATE_PRIVATE_VALIDITY_NOT_AFTER,
-      new base::FundamentalValue(cert.valid_expiry().ToDoubleT()));
+                   new base::FundamentalValue(cert.valid_expiry().ToDoubleT()));
   std::string der;
   net::X509Certificate::GetDEREncoded(cert.os_cert_handle(), &der);
-  fields->SetField(PP_X509CERTIFICATE_PRIVATE_RAW,
+  fields->SetField(
+      PP_X509CERTIFICATE_PRIVATE_RAW,
       base::BinaryValue::CreateWithCopiedBuffer(der.data(), der.length()));
   return true;
 }
@@ -359,7 +364,7 @@ bool PepperTCPSocket::GetCertificateFields(
 
 void PepperTCPSocket::SendReadACKError(int32_t error) {
   manager_->Send(new PpapiMsg_PPBTCPSocket_ReadACK(
-    routing_id_, plugin_dispatcher_id_, socket_id_, error, std::string()));
+      routing_id_, plugin_dispatcher_id_, socket_id_, error, std::string()));
 }
 
 void PepperTCPSocket::SendWriteACKError(int32_t error) {
@@ -379,12 +384,12 @@ void PepperTCPSocket::SendSSLHandshakeACK(bool succeeded) {
     if (ssl_info.cert.get())
       GetCertificateFields(*ssl_info.cert.get(), &certificate_fields);
   }
-  manager_->Send(new PpapiMsg_PPBTCPSocket_SSLHandshakeACK(
-      routing_id_,
-      plugin_dispatcher_id_,
-      socket_id_,
-      succeeded,
-      certificate_fields));
+  manager_->Send(
+      new PpapiMsg_PPBTCPSocket_SSLHandshakeACK(routing_id_,
+                                                plugin_dispatcher_id_,
+                                                socket_id_,
+                                                succeeded,
+                                                certificate_fields));
 }
 
 void PepperTCPSocket::SendSetOptionACK(int32_t result) {
@@ -414,12 +419,12 @@ void PepperTCPSocket::OnConnectCompleted(int net_result) {
 
     net::IPEndPoint ip_end_point_local;
     net::IPEndPoint ip_end_point_remote;
-    pp_result = NetErrorToPepperError(
-        socket_->GetLocalAddress(&ip_end_point_local));
+    pp_result =
+        NetErrorToPepperError(socket_->GetLocalAddress(&ip_end_point_local));
     if (pp_result != PP_OK)
       break;
-    pp_result = NetErrorToPepperError(
-        socket_->GetPeerAddress(&ip_end_point_remote));
+    pp_result =
+        NetErrorToPepperError(socket_->GetPeerAddress(&ip_end_point_remote));
     if (pp_result != PP_OK)
       break;
 
@@ -439,9 +444,12 @@ void PepperTCPSocket::OnConnectCompleted(int net_result) {
       break;
     }
 
-    manager_->Send(new PpapiMsg_PPBTCPSocket_ConnectACK(
-        routing_id_, plugin_dispatcher_id_, socket_id_, PP_OK,
-        local_addr, remote_addr));
+    manager_->Send(new PpapiMsg_PPBTCPSocket_ConnectACK(routing_id_,
+                                                        plugin_dispatcher_id_,
+                                                        socket_id_,
+                                                        PP_OK,
+                                                        local_addr,
+                                                        remote_addr));
     connection_state_ = CONNECTED;
     return;
   } while (false);
@@ -463,7 +471,10 @@ void PepperTCPSocket::OnReadCompleted(int net_result) {
 
   if (net_result > 0) {
     manager_->Send(new PpapiMsg_PPBTCPSocket_ReadACK(
-        routing_id_, plugin_dispatcher_id_, socket_id_, PP_OK,
+        routing_id_,
+        plugin_dispatcher_id_,
+        socket_id_,
+        PP_OK,
         std::string(read_buffer_->data(), net_result)));
   } else if (net_result == 0) {
     end_of_file_reached_ = true;
@@ -490,9 +501,11 @@ void PepperTCPSocket::OnWriteCompleted(int net_result) {
   }
 
   if (net_result >= 0) {
-    manager_->Send(new PpapiMsg_PPBTCPSocket_WriteACK(
-        routing_id_, plugin_dispatcher_id_, socket_id_,
-        write_buffer_->BytesConsumed()));
+    manager_->Send(
+        new PpapiMsg_PPBTCPSocket_WriteACK(routing_id_,
+                                           plugin_dispatcher_id_,
+                                           socket_id_,
+                                           write_buffer_->BytesConsumed()));
   } else {
     SendWriteACKError(NetErrorToPepperError(net_result));
   }
@@ -506,9 +519,9 @@ bool PepperTCPSocket::IsConnected() const {
 }
 
 bool PepperTCPSocket::IsSsl() const {
- return connection_state_ == SSL_HANDSHAKE_IN_PROGRESS ||
-     connection_state_ == SSL_CONNECTED ||
-     connection_state_ == SSL_HANDSHAKE_FAILED;
+  return connection_state_ == SSL_HANDSHAKE_IN_PROGRESS ||
+         connection_state_ == SSL_CONNECTED ||
+         connection_state_ == SSL_HANDSHAKE_FAILED;
 }
 
 void PepperTCPSocket::DoWrite() {

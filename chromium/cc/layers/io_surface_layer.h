@@ -14,14 +14,14 @@ class CC_EXPORT IOSurfaceLayer : public Layer {
  public:
   static scoped_refptr<IOSurfaceLayer> Create();
 
-  void SetIOSurfaceProperties(uint32_t io_surface_id, gfx::Size size);
+  void SetIOSurfaceProperties(uint32_t io_surface_id, const gfx::Size& size);
 
   virtual scoped_ptr<LayerImpl> CreateLayerImpl(LayerTreeImpl* tree_impl)
       OVERRIDE;
   virtual bool DrawsContent() const OVERRIDE;
   virtual void PushPropertiesTo(LayerImpl* layer) OVERRIDE;
   virtual bool Update(ResourceUpdateQueue* queue,
-                      const OcclusionTracker* occlusion) OVERRIDE;
+                      const OcclusionTracker<Layer>* occlusion) OVERRIDE;
 
  protected:
   IOSurfaceLayer();

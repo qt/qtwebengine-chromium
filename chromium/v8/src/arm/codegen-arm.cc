@@ -1,52 +1,17 @@
 // Copyright 2012 the V8 project authors. All rights reserved.
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-//       copyright notice, this list of conditions and the following
-//       disclaimer in the documentation and/or other materials provided
-//       with the distribution.
-//     * Neither the name of Google Inc. nor the names of its
-//       contributors may be used to endorse or promote products derived
-//       from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
-#include "v8.h"
+#include "src/v8.h"
 
 #if V8_TARGET_ARCH_ARM
 
-#include "codegen.h"
-#include "macro-assembler.h"
-#include "simulator-arm.h"
+#include "src/codegen.h"
+#include "src/macro-assembler.h"
+#include "src/arm/simulator-arm.h"
 
 namespace v8 {
 namespace internal {
-
-
-UnaryMathFunction CreateTranscendentalFunction(TranscendentalCache::Type type) {
-  switch (type) {
-    case TranscendentalCache::SIN: return &sin;
-    case TranscendentalCache::COS: return &cos;
-    case TranscendentalCache::TAN: return &tan;
-    case TranscendentalCache::LOG: return &log;
-    default: UNIMPLEMENTED();
-  }
-  return NULL;
-}
 
 
 #define __ masm.
@@ -62,10 +27,10 @@ double fast_exp_simulator(double x) {
 
 
 UnaryMathFunction CreateExpFunction() {
-  if (!FLAG_fast_math) return &exp;
+  if (!FLAG_fast_math) return &std::exp;
   size_t actual_size;
   byte* buffer = static_cast<byte*>(OS::Allocate(1 * KB, &actual_size, true));
-  if (buffer == NULL) return &exp;
+  if (buffer == NULL) return &std::exp;
   ExternalReference::InitializeMathExpData();
 
   MacroAssembler masm(NULL, buffer, static_cast<int>(actual_size));
@@ -113,14 +78,11 @@ UnaryMathFunction CreateExpFunction() {
 }
 
 #if defined(V8_HOST_ARCH_ARM)
-OS::MemCopyUint8Function CreateMemCopyUint8Function(
-      OS::MemCopyUint8Function stub) {
+MemCopyUint8Function CreateMemCopyUint8Function(MemCopyUint8Function stub) {
 #if defined(USE_SIMULATOR)
   return stub;
 #else
-  if (Serializer::enabled() || !CpuFeatures::IsSupported(UNALIGNED_ACCESSES)) {
-    return stub;
-  }
+  if (!CpuFeatures::IsSupported(UNALIGNED_ACCESSES)) return stub;
   size_t actual_size;
   byte* buffer = static_cast<byte*>(OS::Allocate(1 * KB, &actual_size, true));
   if (buffer == NULL) return stub;
@@ -265,20 +227,18 @@ OS::MemCopyUint8Function CreateMemCopyUint8Function(
 
   CPU::FlushICache(buffer, actual_size);
   OS::ProtectCode(buffer, actual_size);
-  return FUNCTION_CAST<OS::MemCopyUint8Function>(buffer);
+  return FUNCTION_CAST<MemCopyUint8Function>(buffer);
 #endif
 }
 
 
 // Convert 8 to 16. The number of character to copy must be at least 8.
-OS::MemCopyUint16Uint8Function CreateMemCopyUint16Uint8Function(
-      OS::MemCopyUint16Uint8Function stub) {
+MemCopyUint16Uint8Function CreateMemCopyUint16Uint8Function(
+    MemCopyUint16Uint8Function stub) {
 #if defined(USE_SIMULATOR)
   return stub;
 #else
-  if (Serializer::enabled() || !CpuFeatures::IsSupported(UNALIGNED_ACCESSES)) {
-    return stub;
-  }
+  if (!CpuFeatures::IsSupported(UNALIGNED_ACCESSES)) return stub;
   size_t actual_size;
   byte* buffer = static_cast<byte*>(OS::Allocate(1 * KB, &actual_size, true));
   if (buffer == NULL) return stub;
@@ -354,17 +314,37 @@ OS::MemCopyUint16Uint8Function CreateMemCopyUint16Uint8Function(
   CPU::FlushICache(buffer, actual_size);
   OS::ProtectCode(buffer, actual_size);
 
-  return FUNCTION_CAST<OS::MemCopyUint16Uint8Function>(buffer);
+  return FUNCTION_CAST<MemCopyUint16Uint8Function>(buffer);
 #endif
 }
 #endif
-
-#undef __
-
 
 UnaryMathFunction CreateSqrtFunction() {
-  return &sqrt;
+#if defined(USE_SIMULATOR)
+  return &std::sqrt;
+#else
+  size_t actual_size;
+  byte* buffer = static_cast<byte*>(OS::Allocate(1 * KB, &actual_size, true));
+  if (buffer == NULL) return &std::sqrt;
+
+  MacroAssembler masm(NULL, buffer, static_cast<int>(actual_size));
+
+  __ MovFromFloatParameter(d0);
+  __ vsqrt(d0, d0);
+  __ MovToFloatResult(d0);
+  __ Ret();
+
+  CodeDesc desc;
+  masm.GetCode(&desc);
+  ASSERT(!RelocInfo::RequiresRelocation(desc));
+
+  CPU::FlushICache(buffer, actual_size);
+  OS::ProtectCode(buffer, actual_size);
+  return FUNCTION_CAST<UnaryMathFunction>(buffer);
+#endif
 }
+
+#undef __
 
 
 // -------------------------------------------------------------------------
@@ -728,7 +708,7 @@ void StringCharLoadGenerator::Generate(MacroAssembler* masm,
     __ Assert(eq, kExternalStringExpectedButNotFound);
   }
   // Rule out short external strings.
-  STATIC_CHECK(kShortExternalStringTag != 0);
+  STATIC_ASSERT(kShortExternalStringTag != 0);
   __ tst(result, Operand(kShortExternalStringMask));
   __ b(ne, call_runtime);
   __ ldr(string, FieldMemOperand(string, ExternalString::kResourceDataOffset));
@@ -836,47 +816,51 @@ void MathExpGenerator::EmitMathExp(MacroAssembler* masm,
 
 #undef __
 
+#ifdef DEBUG
 // add(r0, pc, Operand(-8))
 static const uint32_t kCodeAgePatchFirstInstruction = 0xe24f0008;
+#endif
 
-static byte* GetNoCodeAgeSequence(uint32_t* length) {
-  // The sequence of instructions that is patched out for aging code is the
-  // following boilerplate stack-building prologue that is found in FUNCTIONS
-  static bool initialized = false;
-  static uint32_t sequence[kNoCodeAgeSequenceLength];
-  byte* byte_sequence = reinterpret_cast<byte*>(sequence);
-  *length = kNoCodeAgeSequenceLength * Assembler::kInstrSize;
-  if (!initialized) {
-    CodePatcher patcher(byte_sequence, kNoCodeAgeSequenceLength);
-    PredictableCodeSizeScope scope(patcher.masm(), *length);
-    patcher.masm()->stm(db_w, sp, r1.bit() | cp.bit() | fp.bit() | lr.bit());
-    patcher.masm()->nop(ip.code());
-    patcher.masm()->add(fp, sp,
-                        Operand(StandardFrameConstants::kFixedFrameSizeFromFp));
-    initialized = true;
-  }
-  return byte_sequence;
+CodeAgingHelper::CodeAgingHelper() {
+  ASSERT(young_sequence_.length() == kNoCodeAgeSequenceLength);
+  // Since patcher is a large object, allocate it dynamically when needed,
+  // to avoid overloading the stack in stress conditions.
+  // DONT_FLUSH is used because the CodeAgingHelper is initialized early in
+  // the process, before ARM simulator ICache is setup.
+  SmartPointer<CodePatcher> patcher(
+      new CodePatcher(young_sequence_.start(),
+                      young_sequence_.length() / Assembler::kInstrSize,
+                      CodePatcher::DONT_FLUSH));
+  PredictableCodeSizeScope scope(patcher->masm(), young_sequence_.length());
+  patcher->masm()->PushFixedFrame(r1);
+  patcher->masm()->nop(ip.code());
+  patcher->masm()->add(
+      fp, sp, Operand(StandardFrameConstants::kFixedFrameSizeFromFp));
 }
 
 
-bool Code::IsYoungSequence(byte* sequence) {
-  uint32_t young_length;
-  byte* young_sequence = GetNoCodeAgeSequence(&young_length);
-  bool result = !memcmp(sequence, young_sequence, young_length);
-  ASSERT(result ||
-         Memory::uint32_at(sequence) == kCodeAgePatchFirstInstruction);
+#ifdef DEBUG
+bool CodeAgingHelper::IsOld(byte* candidate) const {
+  return Memory::uint32_at(candidate) == kCodeAgePatchFirstInstruction;
+}
+#endif
+
+
+bool Code::IsYoungSequence(Isolate* isolate, byte* sequence) {
+  bool result = isolate->code_aging_helper()->IsYoung(sequence);
+  ASSERT(result || isolate->code_aging_helper()->IsOld(sequence));
   return result;
 }
 
 
-void Code::GetCodeAgeAndParity(byte* sequence, Age* age,
+void Code::GetCodeAgeAndParity(Isolate* isolate, byte* sequence, Age* age,
                                MarkingParity* parity) {
-  if (IsYoungSequence(sequence)) {
+  if (IsYoungSequence(isolate, sequence)) {
     *age = kNoAgeCodeAge;
     *parity = NO_MARKING_PARITY;
   } else {
     Address target_address = Memory::Address_at(
-        sequence + Assembler::kInstrSize * (kNoCodeAgeSequenceLength - 1));
+        sequence + (kNoCodeAgeSequenceLength - Assembler::kInstrSize));
     Code* stub = GetCodeFromTargetAddress(target_address);
     GetCodeAgeAndParity(stub, age, parity);
   }
@@ -887,10 +871,9 @@ void Code::PatchPlatformCodeAge(Isolate* isolate,
                                 byte* sequence,
                                 Code::Age age,
                                 MarkingParity parity) {
-  uint32_t young_length;
-  byte* young_sequence = GetNoCodeAgeSequence(&young_length);
+  uint32_t young_length = isolate->code_aging_helper()->young_sequence_length();
   if (age == kNoAgeCodeAge) {
-    CopyBytes(sequence, young_sequence, young_length);
+    isolate->code_aging_helper()->CopyYoungSequenceTo(sequence);
     CPU::FlushICache(sequence, young_length);
   } else {
     Code* stub = GetCodeAgeStub(isolate, age, parity);

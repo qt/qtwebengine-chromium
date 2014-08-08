@@ -26,6 +26,7 @@
 #define DOMTokenList_h
 
 #include "bindings/v8/ScriptWrappable.h"
+#include "platform/heap/Handle.h"
 #include "wtf/Vector.h"
 #include "wtf/text/AtomicString.h"
 
@@ -34,17 +35,20 @@ namespace WebCore {
 class Element;
 class ExceptionState;
 
-class DOMTokenList : public ScriptWrappable {
-    WTF_MAKE_NONCOPYABLE(DOMTokenList); WTF_MAKE_FAST_ALLOCATED;
+class DOMTokenList : public NoBaseWillBeGarbageCollectedFinalized<DOMTokenList>, public ScriptWrappable {
+    WTF_MAKE_NONCOPYABLE(DOMTokenList);
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
 public:
     DOMTokenList()
     {
         ScriptWrappable::init(this);
     }
-    virtual ~DOMTokenList() { };
+    virtual ~DOMTokenList() { }
 
+#if !ENABLE(OILPAN)
     virtual void ref() = 0;
     virtual void deref() = 0;
+#endif
 
     virtual unsigned length() const = 0;
     virtual const AtomicString item(unsigned index) const = 0;
@@ -57,24 +61,26 @@ public:
     bool toggle(const AtomicString&, ExceptionState&);
     bool toggle(const AtomicString&, bool force, ExceptionState&);
 
-    AtomicString toString() const { return value(); }
+    const AtomicString& toString() const { return value(); }
 
     virtual Element* element() { return 0; }
 
+    virtual void trace(Visitor*) { }
+
 protected:
-    virtual AtomicString value() const = 0;
+    virtual const AtomicString& value() const = 0;
     virtual void setValue(const AtomicString&) = 0;
 
     virtual void addInternal(const AtomicString&);
     virtual bool containsInternal(const AtomicString&) const = 0;
     virtual void removeInternal(const AtomicString&);
 
-    static bool validateToken(const AtomicString&, ExceptionState&);
+    static bool validateToken(const String&, ExceptionState&);
     static bool validateTokens(const Vector<String>&, ExceptionState&);
-    static String addToken(const AtomicString&, const AtomicString&);
-    static String addTokens(const AtomicString&, const Vector<String>&);
-    static String removeToken(const AtomicString&, const AtomicString&);
-    static String removeTokens(const AtomicString&, const Vector<String>&);
+    static AtomicString addToken(const AtomicString&, const AtomicString&);
+    static AtomicString addTokens(const AtomicString&, const Vector<String>&);
+    static AtomicString removeToken(const AtomicString&, const AtomicString&);
+    static AtomicString removeTokens(const AtomicString&, const Vector<String>&);
 };
 
 } // namespace WebCore

@@ -28,33 +28,31 @@
 #define TextEvent_h
 
 #include "core/events/TextEventInputType.h"
-#include "core/events/ThreadLocalEventNames.h"
 #include "core/events/UIEvent.h"
 
 namespace WebCore {
 
     class DocumentFragment;
 
-    class TextEvent : public UIEvent {
+    class TextEvent FINAL : public UIEvent {
     public:
 
-        static PassRefPtr<TextEvent> create();
-        static PassRefPtr<TextEvent> create(PassRefPtr<AbstractView>, const String& data, TextEventInputType = TextEventInputKeyboard);
-        static PassRefPtr<TextEvent> createForPlainTextPaste(PassRefPtr<AbstractView> view, const String& data, bool shouldSmartReplace);
-        static PassRefPtr<TextEvent> createForFragmentPaste(PassRefPtr<AbstractView> view, PassRefPtr<DocumentFragment> data, bool shouldSmartReplace, bool shouldMatchStyle);
-        static PassRefPtr<TextEvent> createForDrop(PassRefPtr<AbstractView> view, const String& data);
+        static PassRefPtrWillBeRawPtr<TextEvent> create();
+        static PassRefPtrWillBeRawPtr<TextEvent> create(PassRefPtrWillBeRawPtr<AbstractView>, const String& data, TextEventInputType = TextEventInputKeyboard);
+        static PassRefPtrWillBeRawPtr<TextEvent> createForPlainTextPaste(PassRefPtrWillBeRawPtr<AbstractView>, const String& data, bool shouldSmartReplace);
+        static PassRefPtrWillBeRawPtr<TextEvent> createForFragmentPaste(PassRefPtrWillBeRawPtr<AbstractView>, PassRefPtrWillBeRawPtr<DocumentFragment> data, bool shouldSmartReplace, bool shouldMatchStyle);
+        static PassRefPtrWillBeRawPtr<TextEvent> createForDrop(PassRefPtrWillBeRawPtr<AbstractView>, const String& data);
 
         virtual ~TextEvent();
 
-        void initTextEvent(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtr<AbstractView>, const String& data);
+        void initTextEvent(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtrWillBeRawPtr<AbstractView>, const String& data);
 
         String data() const { return m_data; }
 
-        virtual const AtomicString& interfaceName() const;
+        virtual const AtomicString& interfaceName() const OVERRIDE;
 
         bool isLineBreak() const { return m_inputType == TextEventInputLineBreak; }
         bool isComposition() const { return m_inputType == TextEventInputComposition; }
-        bool isBackTab() const { return m_inputType == TextEventInputBackTab; }
         bool isPaste() const { return m_inputType == TextEventInputPaste; }
         bool isDrop() const { return m_inputType == TextEventInputDrop; }
 
@@ -62,17 +60,19 @@ namespace WebCore {
         bool shouldMatchStyle() const { return m_shouldMatchStyle; }
         DocumentFragment* pastingFragment() const { return m_pastingFragment.get(); }
 
+        virtual void trace(Visitor*) OVERRIDE;
+
     private:
         TextEvent();
 
-        TextEvent(PassRefPtr<AbstractView>, const String& data, TextEventInputType = TextEventInputKeyboard);
-        TextEvent(PassRefPtr<AbstractView>, const String& data, PassRefPtr<DocumentFragment>,
+        TextEvent(PassRefPtrWillBeRawPtr<AbstractView>, const String& data, TextEventInputType = TextEventInputKeyboard);
+        TextEvent(PassRefPtrWillBeRawPtr<AbstractView>, const String& data, PassRefPtrWillBeRawPtr<DocumentFragment>,
                   bool shouldSmartReplace, bool shouldMatchStyle);
 
         TextEventInputType m_inputType;
         String m_data;
 
-        RefPtr<DocumentFragment> m_pastingFragment;
+        RefPtrWillBeMember<DocumentFragment> m_pastingFragment;
         bool m_shouldSmartReplace;
         bool m_shouldMatchStyle;
     };

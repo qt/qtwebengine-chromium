@@ -26,8 +26,8 @@ namespace {
 
 template <typename Color, typename ColorPacker>
 void highQualityFilter(ColorPacker pack, const SkBitmapProcState& s, int x, int y, Color* SK_RESTRICT colors, int count) {
-    const int maxX = s.fBitmap->width() - 1;
-    const int maxY = s.fBitmap->height() - 1;
+    const int maxX = s.fBitmap->width();
+    const int maxY = s.fBitmap->height();
 
     while (count-- > 0) {
         SkPoint srcPt;
@@ -123,8 +123,8 @@ bool SkBitmapProcState::setBitmapFilterProcs() {
         return false;
     }
 
-    // TODO: consider supporting other configs (e.g. 565, A8)
-    if (fBitmap->config() != SkBitmap::kARGB_8888_Config) {
+    // TODO: consider supporting other colortypes (e.g. 565, A8)
+    if (fBitmap->colorType() != kN32_SkColorType) {
         return false;
     }
 

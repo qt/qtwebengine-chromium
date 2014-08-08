@@ -10,6 +10,7 @@
 
 #include "base/command_line.h"
 #include "base/file_util.h"
+#include "base/files/scoped_file.h"
 #include "base/logging.h"
 #include "base/process/kill.h"
 #include "base/process/launch.h"
@@ -105,7 +106,7 @@ bool LocalTestServer::LaunchPython(const base::FilePath& testserver_path) {
   // the same environment as the TestServer.
   VLOG(1) << "LaunchPython called with PYTHONPATH = " << getenv(kPythonPathEnv);
 
-  CommandLine python_command(CommandLine::NO_PROGRAM);
+  base::CommandLine python_command(base::CommandLine::NO_PROGRAM);
   if (!GetPythonCommand(&python_command))
     return false;
 
@@ -120,9 +121,8 @@ bool LocalTestServer::LaunchPython(const base::FilePath& testserver_path) {
   }
 
   // Save the read half. The write half is sent to the child.
-  child_fd_ = pipefd[0];
-  child_fd_closer_.reset(&child_fd_);
-  file_util::ScopedFD write_closer(&pipefd[1]);
+  child_fd_.reset(pipefd[0]);
+  base::ScopedFD write_closer(pipefd[1]);
   base::FileHandleMappingVector map_write_fd;
   map_write_fd.push_back(std::make_pair(pipefd[1], pipefd[1]));
 
@@ -148,19 +148,19 @@ bool LocalTestServer::LaunchPython(const base::FilePath& testserver_path) {
 }
 
 bool LocalTestServer::WaitToStart() {
-  file_util::ScopedFD child_fd_closer(child_fd_closer_.release());
+  base::ScopedFD our_fd(child_fd_.release());
 
   base::TimeDelta remaining_time = TestTimeouts::action_timeout();
 
   uint32 server_data_len = 0;
-  if (!ReadData(child_fd_, sizeof(server_data_len),
+  if (!ReadData(our_fd.get(), sizeof(server_data_len),
                 reinterpret_cast<uint8*>(&server_data_len),
                 &remaining_time)) {
     LOG(ERROR) << "Could not read server_data_len";
     return false;
   }
   std::string server_data(server_data_len, '\0');
-  if (!ReadData(child_fd_, server_data_len,
+  if (!ReadData(our_fd.get(), server_data_len,
                 reinterpret_cast<uint8*>(&server_data[0]),
                 &remaining_time)) {
     LOG(ERROR) << "Could not read server_data (" << server_data_len

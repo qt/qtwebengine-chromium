@@ -21,10 +21,8 @@
 #ifndef CSSStyleDeclaration_h
 #define CSSStyleDeclaration_h
 
-#include "CSSPropertyNames.h"
 #include "bindings/v8/ScriptWrappable.h"
-#include "core/css/CSSVariablesIterator.h"
-#include "core/css/CSSVariablesMap.h"
+#include "core/CSSPropertyNames.h"
 #include "wtf/Forward.h"
 #include "wtf/Noncopyable.h"
 
@@ -36,22 +34,23 @@ class CSSStyleSheet;
 class CSSValue;
 class ExceptionState;
 class MutableStylePropertySet;
-class VariablesIterator;
 
-class CSSStyleDeclaration : public ScriptWrappable {
-    WTF_MAKE_NONCOPYABLE(CSSStyleDeclaration); WTF_MAKE_FAST_ALLOCATED;
+class CSSStyleDeclaration : public NoBaseWillBeGarbageCollectedFinalized<CSSStyleDeclaration>, public ScriptWrappable {
+    WTF_MAKE_NONCOPYABLE(CSSStyleDeclaration); WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
 public:
-    virtual ~CSSStyleDeclaration();
+    virtual ~CSSStyleDeclaration() { }
 
+#if !ENABLE(OILPAN)
     virtual void ref() = 0;
     virtual void deref() = 0;
+#endif
 
     virtual CSSRule* parentRule() const = 0;
     virtual String cssText() const = 0;
     virtual void setCSSText(const String&, ExceptionState&) = 0;
     virtual unsigned length() const = 0;
     virtual String item(unsigned index) const = 0;
-    virtual PassRefPtr<CSSValue> getPropertyCSSValue(const String& propertyName) = 0;
+    virtual PassRefPtrWillBeRawPtr<CSSValue> getPropertyCSSValue(const String& propertyName) = 0;
     virtual String getPropertyValue(const String& propertyName) = 0;
     virtual String getPropertyPriority(const String& propertyName) = 0;
     virtual String getPropertyShorthand(const String& propertyName) = 0;
@@ -59,32 +58,25 @@ public:
     virtual void setProperty(const String& propertyName, const String& value, const String& priority, ExceptionState&) = 0;
     virtual String removeProperty(const String& propertyName, ExceptionState&) = 0;
 
-    PassRefPtr<CSSVariablesMap> var();
-    virtual unsigned variableCount() const = 0;
-    virtual String variableValue(const AtomicString& name) const = 0;
-    virtual bool setVariableValue(const AtomicString& name, const String& value, ExceptionState&) = 0; // Return value indicates whether variable was added.
-    virtual bool removeVariable(const AtomicString& name) = 0;
-    virtual bool clearVariables(ExceptionState&) = 0;
-    virtual PassRefPtr<CSSVariablesIterator> variablesIterator() const = 0;
-
     // CSSPropertyID versions of the CSSOM functions to support bindings and editing.
     // Use the non-virtual methods in the concrete subclasses when possible.
     // The CSSValue returned by this function should not be exposed to the web as it may be used by multiple documents at the same time.
-    virtual PassRefPtr<CSSValue> getPropertyCSSValueInternal(CSSPropertyID) = 0;
+    virtual PassRefPtrWillBeRawPtr<CSSValue> getPropertyCSSValueInternal(CSSPropertyID) = 0;
     virtual String getPropertyValueInternal(CSSPropertyID) = 0;
     virtual void setPropertyInternal(CSSPropertyID, const String& value, bool important, ExceptionState&) = 0;
 
-    virtual PassRefPtr<MutableStylePropertySet> copyProperties() const = 0;
+    virtual PassRefPtrWillBeRawPtr<MutableStylePropertySet> copyProperties() const = 0;
 
     virtual bool cssPropertyMatches(CSSPropertyID, const CSSValue*) const = 0;
     virtual CSSStyleSheet* parentStyleSheet() const { return 0; }
+
+    virtual void trace(Visitor*) { }
 
 protected:
     CSSStyleDeclaration()
     {
         ScriptWrappable::init(this);
     }
-    RefPtr<CSSVariablesMap> m_variablesMap;
 };
 
 } // namespace WebCore

@@ -38,10 +38,14 @@
 #include "WebAudioDevice.h"
 #include "WebCommon.h"
 #include "WebData.h"
+#include "WebGamepadListener.h"
 #include "WebGamepads.h"
+#include "WebGestureDevice.h"
 #include "WebGraphicsContext3D.h"
 #include "WebLocalizedString.h"
+#include "WebLockOrientationCallback.h"
 #include "WebSpeechSynthesizer.h"
+#include "WebStorageQuotaCallbacks.h"
 #include "WebStorageQuotaType.h"
 #include "WebString.h"
 #include "WebURLError.h"
@@ -52,13 +56,16 @@ class GrContext;
 namespace blink {
 
 class WebAudioBus;
+class WebBatteryStatusListener;
 class WebBlobRegistry;
 class WebContentDecryptionModule;
 class WebClipboard;
 class WebCompositorSupport;
+class WebConvertableToTraceFormat;
 class WebCookieJar;
 class WebCrypto;
 class WebDatabaseObserver;
+class WebDeviceLightListener;
 class WebDeviceMotionListener;
 class WebDeviceOrientationListener;
 class WebDiscardableMemory;
@@ -82,19 +89,20 @@ class WebPublicSuffixList;
 class WebRTCPeerConnectionHandler;
 class WebRTCPeerConnectionHandlerClient;
 class WebSandboxSupport;
+class WebScrollbarBehavior;
 class WebSocketHandle;
 class WebSocketStreamHandle;
 class WebSpeechSynthesizer;
 class WebSpeechSynthesizerClient;
 class WebStorageNamespace;
-class WebStorageQuotaCallbacks;
-class WebUnitTestSupport;
+struct WebFloatPoint;
 class WebThemeEngine;
 class WebThread;
 class WebURL;
 class WebURLLoader;
+class WebUnitTestSupport;
+class WebWaitableEvent;
 class WebWorkerRunLoop;
-struct WebFloatPoint;
 struct WebLocalizedString;
 struct WebSize;
 
@@ -136,12 +144,6 @@ public:
     virtual WebSpeechSynthesizer* createSpeechSynthesizer(WebSpeechSynthesizerClient*) { return 0; }
 
 
-    // Media --------------------------------------------------------------
-
-    // May return null.
-    virtual WebContentDecryptionModule* createContentDecryptionModule(const WebString& keySystem) { return 0; }
-
-
     // Audio --------------------------------------------------------------
 
     virtual double audioHardwareSampleRate() { return 0; }
@@ -152,16 +154,18 @@ public:
     // Pass in (numberOfInputChannels > 0) if live/local audio input is desired.
     virtual WebAudioDevice* createAudioDevice(size_t bufferSize, unsigned numberOfInputChannels, unsigned numberOfChannels, double sampleRate, WebAudioDevice::RenderCallback*, const WebString& deviceId) { return 0; }
 
-    // FIXME: remove deprecated APIs once chromium switches over to new method.
-    virtual WebAudioDevice* createAudioDevice(size_t bufferSize, unsigned numberOfChannels, double sampleRate, WebAudioDevice::RenderCallback*) { return 0; }
-    virtual WebAudioDevice* createAudioDevice(size_t bufferSize, unsigned numberOfInputChannels, unsigned numberOfChannels, double sampleRate, WebAudioDevice::RenderCallback*) { return 0; }
-
 
     // MIDI ----------------------------------------------------------------
 
     // Creates a platform dependent WebMIDIAccessor. MIDIAccessor under platform
     // creates and owns it.
     virtual WebMIDIAccessor* createMIDIAccessor(WebMIDIAccessorClient*) { return 0; }
+
+
+    // Battery -------------------------------------------------------------
+
+    // Sets the listener for watching battery status updates.
+    virtual void setBatteryStatusListener(blink::WebBatteryStatusListener*) { }
 
 
     // Blob ----------------------------------------------------------------
@@ -216,6 +220,8 @@ public:
 
     virtual void sampleGamepads(WebGamepads& into) { into.length = 0; }
 
+    virtual void setGamepadListener(WebGamepadListener*) { }
+
 
     // History -------------------------------------------------------------
 
@@ -251,6 +257,10 @@ public:
 
     // Return the physical memory of the current machine, in MB.
     virtual size_t physicalMemoryMB() { return 0; }
+
+    // Return the available virtual memory of the current machine, in MB. Or
+    // zero, if there is no limit.
+    virtual size_t virtualMemoryLimitMB() { return 0; }
 
     // Return the number of of processors of the current machine.
     virtual size_t numberOfProcessors() { return 0; }
@@ -301,9 +311,9 @@ public:
 
     // Message Ports -------------------------------------------------------
 
-    // Creates a Message Port Channel. This can be called on any thread.
-    // The returned object should only be used on the thread it was created on.
-    virtual WebMessagePortChannel* createMessagePortChannel() { return 0; }
+    // Creates a Message Port Channel pair. This can be called on any thread.
+    // The returned objects should only be used on the thread they were created on.
+    virtual void createMessageChannel(WebMessagePortChannel** channel1, WebMessagePortChannel** channel2) { *channel1 = 0; *channel2 = 0; }
 
 
     // Network -------------------------------------------------------------
@@ -320,8 +330,8 @@ public:
     // Returns a new WebSocketHandle instance.
     virtual WebSocketHandle* createWebSocketHandle() { return 0; }
 
-    // Returns the User-Agent string that should be used for the given URL.
-    virtual WebString userAgent(const WebURL&) { return WebString(); }
+    // Returns the User-Agent string.
+    virtual WebString userAgent() { return WebString(); }
 
     // A suggestion to cache this metadata in association with this URL.
     virtual void cacheMetadata(const WebURL&, double responseTime, const char* data, size_t dataSize) { }
@@ -363,6 +373,18 @@ public:
     virtual WebThread* currentThread() { return 0; }
 
 
+    // WaitableEvent -------------------------------------------------------
+
+    // Creates an embedder-defined waitable event object.
+    virtual WebWaitableEvent* createWaitableEvent() { return 0; }
+
+    // Waits on multiple events and returns the event object that has been
+    // signaled. This may return 0 if it fails to wait events.
+    // Any event objects given to this method must not deleted while this
+    // wait is happening.
+    virtual WebWaitableEvent* waitMultipleEvents(const WebVector<WebWaitableEvent*>& events) { return 0; }
+
+
     // Profiling -----------------------------------------------------------
 
     virtual void decrementStatsCounter(const char* name) { }
@@ -377,13 +399,18 @@ public:
     // Decodes the in-memory audio file data and returns the linear PCM audio data in the destinationBus.
     // A sample-rate conversion to sampleRate will occur if the file data is at a different sample-rate.
     // Returns true on success.
-    virtual bool loadAudioResource(WebAudioBus* destinationBus, const char* audioFileData, size_t dataSize, double sampleRate) { return false; }
-
+    virtual bool loadAudioResource(WebAudioBus* destinationBus, const char* audioFileData, size_t dataSize) { return false; }
 
     // Screen -------------------------------------------------------------
 
     // Supplies the system monitor color profile.
     virtual void screenColorProfile(WebVector<char>* profile) { }
+
+
+    // Scrollbar ----------------------------------------------------------
+
+    // Must return non-null.
+    virtual WebScrollbarBehavior* scrollbarBehavior() { return 0; }
 
 
     // Sudden Termination --------------------------------------------------
@@ -430,7 +457,6 @@ public:
 
     // Testing -------------------------------------------------------------
 
-#define HAVE_WEBUNITTESTSUPPORT 1
     // Get a pointer to testing support interfaces. Will not be available in production builds.
     virtual WebUnitTestSupport* unitTestSupport() { return 0; }
 
@@ -491,8 +517,12 @@ public:
     //   - POINTER (5): void*
     //   - STRING (6): char* (long-lived null-terminated char* string)
     //   - COPY_STRING (7): char* (temporary null-terminated char* string)
+    //   - CONVERTABLE (8): WebConvertableToTraceFormat
     // - argValues is the array of argument values. Each value is the unsigned
     //   long long member of a union of all supported types.
+    // - convertableValues is the array of WebConvertableToTraceFormat classes
+    //   that may be converted to trace format by calling asTraceFormat method.
+    //   ConvertableToTraceFormat interface.
     // - thresholdBeginId optionally specifies the value returned by a previous
     //   call to addTraceEvent with a BEGIN phase.
     // - threshold is used on an END phase event in conjunction with the
@@ -516,6 +546,7 @@ public:
         const char** argNames,
         const unsigned char* argTypes,
         const unsigned long long* argValues,
+        const WebConvertableToTraceFormat* convertableValues,
         unsigned char flags)
     {
         return 0;
@@ -537,6 +568,8 @@ public:
     //
     // May return null if GPU is not supported.
     // Returns newly allocated and initialized offscreen WebGraphicsContext3D instance.
+    // Passing an existing context to shareContext will create the new context in the same share group as the passed context.
+    virtual WebGraphicsContext3D* createOffscreenGraphicsContext3D(const WebGraphicsContext3D::Attributes&, WebGraphicsContext3D* shareContext) { return 0; }
     virtual WebGraphicsContext3D* createOffscreenGraphicsContext3D(const WebGraphicsContext3D::Attributes&) { return 0; }
 
     // Returns a newly allocated and initialized offscreen context provider. The provider may return a null
@@ -558,8 +591,7 @@ public:
 
     // Creates a new fling animation curve instance for device |deviceSource|
     // with |velocity| and already scrolled |cumulativeScroll| pixels.
-    virtual WebGestureCurve* createFlingAnimationCurve(int deviceSource, const WebFloatPoint& velocity, const WebSize& cumulativeScroll) { return 0; }
-
+    virtual WebGestureCurve* createFlingAnimationCurve(WebGestureDevice deviceSource, const WebFloatPoint& velocity, const WebSize& cumulativeScroll) { return 0; }
 
     // WebRTC ----------------------------------------------------------
 
@@ -582,15 +614,19 @@ public:
     virtual WebCrypto* crypto() { return 0; }
 
 
-    // Device Motion / Orientation ----------------------------------------
+    // Device Motion / Orientation / Light ----------------------------------------
 
     // Sets a Listener to listen for device motion data updates.
     // If null, the platform stops providing device motion data to the current listener.
     virtual void setDeviceMotionListener(blink::WebDeviceMotionListener*) { }
 
     // Sets a Listener to listen for device orientation data updates.
-    // If null, the platform stops proving device orientation data to the current listener.
+    // If null, the platform stops providing device orientation data to the current listener.
     virtual void setDeviceOrientationListener(blink::WebDeviceOrientationListener*) { }
+
+    // Sets a Listener to listen for device light data updates.
+    // If null, the platform stops providing device light data to the current listener.
+    virtual void setDeviceLightListener(blink::WebDeviceLightListener*) { }
 
 
     // Quota -----------------------------------------------------------
@@ -600,12 +636,10 @@ public:
     // with the current usage and quota information for the partition. When
     // an error occurs WebStorageQuotaCallbacks::didFail is called with an
     // error code.
-    // The callbacks object is deleted when the callback method is called
-    // and does not need to be (and should not be) deleted manually.
     virtual void queryStorageUsageAndQuota(
         const WebURL& storagePartition,
         WebStorageQuotaType,
-        WebStorageQuotaCallbacks*) { }
+        WebStorageQuotaCallbacks) { }
 
 
     // WebDatabase --------------------------------------------------------

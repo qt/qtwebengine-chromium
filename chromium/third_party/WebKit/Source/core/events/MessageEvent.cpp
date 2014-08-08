@@ -30,7 +30,6 @@
 
 #include "bindings/v8/ExceptionMessages.h"
 #include "bindings/v8/ExceptionState.h"
-#include "core/events/ThreadLocalEventNames.h"
 
 namespace WebCore {
 
@@ -54,14 +53,14 @@ MessageEvent::MessageEvent(const AtomicString& type, const MessageEventInit& ini
     , m_dataType(DataTypeScriptValue)
     , m_origin(initializer.origin)
     , m_lastEventId(initializer.lastEventId)
-    , m_source(isValidSource(initializer.source.get()) ? initializer.source : 0)
+    , m_source(isValidSource(initializer.source.get()) ? initializer.source : nullptr)
     , m_ports(adoptPtr(new MessagePortArray(initializer.ports)))
 {
     ScriptWrappable::init(this);
     ASSERT(isValidSource(m_source.get()));
 }
 
-MessageEvent::MessageEvent(const String& origin, const String& lastEventId, PassRefPtr<EventTarget> source, PassOwnPtr<MessagePortArray> ports)
+MessageEvent::MessageEvent(const String& origin, const String& lastEventId, PassRefPtrWillBeRawPtr<EventTarget> source, PassOwnPtr<MessagePortArray> ports)
     : Event(EventTypeNames::message, false, false)
     , m_dataType(DataTypeScriptValue)
     , m_origin(origin)
@@ -73,7 +72,7 @@ MessageEvent::MessageEvent(const String& origin, const String& lastEventId, Pass
     ASSERT(isValidSource(m_source.get()));
 }
 
-MessageEvent::MessageEvent(PassRefPtr<SerializedScriptValue> data, const String& origin, const String& lastEventId, PassRefPtr<EventTarget> source, PassOwnPtr<MessagePortArray> ports)
+MessageEvent::MessageEvent(PassRefPtr<SerializedScriptValue> data, const String& origin, const String& lastEventId, PassRefPtrWillBeRawPtr<EventTarget> source, PassOwnPtr<MessagePortArray> ports)
     : Event(EventTypeNames::message, false, false)
     , m_dataType(DataTypeSerializedScriptValue)
     , m_dataAsSerializedScriptValue(data)
@@ -88,7 +87,7 @@ MessageEvent::MessageEvent(PassRefPtr<SerializedScriptValue> data, const String&
     ASSERT(isValidSource(m_source.get()));
 }
 
-MessageEvent::MessageEvent(PassRefPtr<SerializedScriptValue> data, const String& origin, const String& lastEventId, PassRefPtr<EventTarget> source, PassOwnPtr<MessagePortChannelArray> channels)
+MessageEvent::MessageEvent(PassRefPtr<SerializedScriptValue> data, const String& origin, const String& lastEventId, PassRefPtrWillBeRawPtr<EventTarget> source, PassOwnPtr<MessagePortChannelArray> channels)
     : Event(EventTypeNames::message, false, false)
     , m_dataType(DataTypeSerializedScriptValue)
     , m_dataAsSerializedScriptValue(data)
@@ -112,7 +111,7 @@ MessageEvent::MessageEvent(const String& data, const String& origin)
     ScriptWrappable::init(this);
 }
 
-MessageEvent::MessageEvent(PassRefPtr<Blob> data, const String& origin)
+MessageEvent::MessageEvent(PassRefPtrWillBeRawPtr<Blob> data, const String& origin)
     : Event(EventTypeNames::message, false, false)
     , m_dataType(DataTypeBlob)
     , m_dataAsBlob(data)
@@ -134,16 +133,16 @@ MessageEvent::~MessageEvent()
 {
 }
 
-PassRefPtr<MessageEvent> MessageEvent::create(const AtomicString& type, const MessageEventInit& initializer, ExceptionState& exceptionState)
+PassRefPtrWillBeRawPtr<MessageEvent> MessageEvent::create(const AtomicString& type, const MessageEventInit& initializer, ExceptionState& exceptionState)
 {
     if (initializer.source.get() && !isValidSource(initializer.source.get())) {
         exceptionState.throwTypeError("The optional 'source' property is neither a Window nor MessagePort.");
-        return 0;
+        return nullptr;
     }
-    return adoptRef(new MessageEvent(type, initializer));
+    return adoptRefWillBeNoop(new MessageEvent(type, initializer));
 }
 
-void MessageEvent::initMessageEvent(const AtomicString& type, bool canBubble, bool cancelable, const String& origin, const String& lastEventId, DOMWindow* source, PassOwnPtr<MessagePortArray> ports)
+void MessageEvent::initMessageEvent(const AtomicString& type, bool canBubble, bool cancelable, const String& origin, const String& lastEventId, LocalDOMWindow* source, PassOwnPtr<MessagePortArray> ports)
 {
     if (dispatched())
         return;
@@ -157,7 +156,7 @@ void MessageEvent::initMessageEvent(const AtomicString& type, bool canBubble, bo
     m_ports = ports;
 }
 
-void MessageEvent::initMessageEvent(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtr<SerializedScriptValue> data, const String& origin, const String& lastEventId, DOMWindow* source, PassOwnPtr<MessagePortArray> ports)
+void MessageEvent::initMessageEvent(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtr<SerializedScriptValue> data, const String& origin, const String& lastEventId, LocalDOMWindow* source, PassOwnPtr<MessagePortArray> ports)
 {
     if (dispatched())
         return;
@@ -183,6 +182,13 @@ const AtomicString& MessageEvent::interfaceName() const
 void MessageEvent::entangleMessagePorts(ExecutionContext* context)
 {
     m_ports = MessagePort::entanglePorts(*context, m_channels.release());
+}
+
+void MessageEvent::trace(Visitor* visitor)
+{
+    visitor->trace(m_dataAsBlob);
+    visitor->trace(m_source);
+    Event::trace(visitor);
 }
 
 } // namespace WebCore

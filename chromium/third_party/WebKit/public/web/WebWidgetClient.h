@@ -58,12 +58,6 @@ public:
     // Called when the Widget has changed size as a result of an auto-resize.
     virtual void didAutoResize(const WebSize& newSize) { }
 
-    // Called when the compositor is enabled or disabled. The parameter to
-    // didActivateCompositor() is meaningless.
-    // FIXME: Remove parameter from didActivateCompositor().
-    virtual void didActivateCompositor(int deprecated) { }
-    virtual void didDeactivateCompositor() { }
-
     // Attempt to initialize compositing for this widget. If this is successful,
     // layerTreeView() will return a valid WebLayerTreeView.
     virtual void initializeLayerTreeView() { }
@@ -71,6 +65,8 @@ public:
     // Return a compositing view used for this widget. This is owned by the
     // WebWidgetClient.
     virtual WebLayerTreeView* layerTreeView() { return 0; }
+    // FIXME: Remove all overrides of this and change layerTreeView() above to ASSERT_NOT_REACHED.
+    virtual bool allowsBrokenNullLayerTreeView() const { return false; }
 
     // Sometimes the WebWidget enters a state where it will generate a sequence
     // of invalidations that should not, by themselves, trigger the compositor
@@ -100,11 +96,6 @@ public:
 
     // Called when a call to WebWidget::animate is required
     virtual void scheduleAnimation() { }
-
-    // Called to query the state of the rendering back-end. Should return true
-    // when scheduleAnimation (or possibly some other cause for another frame)
-    // was called, but before WebWidget::animate actually does a frame.
-    virtual bool isCompositorFramePending() const { return false; }
 
     // Called when the widget acquires or loses focus, respectively.
     virtual void didFocus() { }
@@ -181,6 +172,10 @@ public:
     // Called during WebWidget::HandleInputEvent for a TouchStart event to inform the embedder
     // of the touch actions that are permitted for this touch.
     virtual void setTouchAction(WebTouchAction touchAction) { }
+
+    // Called when value of focused text field gets dirty, e.g. value is
+    // modified by script, not by user input.
+    virtual void didUpdateTextOfFocusedElementByNonUserInput() { }
 
 protected:
     ~WebWidgetClient() { }

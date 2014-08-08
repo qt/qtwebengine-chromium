@@ -30,6 +30,7 @@
 
 #if OS(MACOSX)
 #import "platform/fonts/harfbuzz/HarfBuzzFace.h"
+#include "third_party/skia/include/ports/SkTypeface_mac.h"
 #endif
 
 namespace WebCore {
@@ -37,7 +38,7 @@ namespace WebCore {
 // These CoreText Text Spacing feature selectors are not defined in CoreText.
 enum TextSpacingCTFeatureSelector { TextSpacingProportional, TextSpacingFullWidth, TextSpacingHalfWidth, TextSpacingThirdWidth, TextSpacingQuarterWidth };
 
-FontPlatformData::FontPlatformData(NSFont *nsFont, float size, bool isPrinterFont, bool syntheticBold, bool syntheticOblique, FontOrientation orientation, FontWidthVariant widthVariant)
+FontPlatformData::FontPlatformData(NSFont *nsFont, float size, bool syntheticBold, bool syntheticOblique, FontOrientation orientation, FontWidthVariant widthVariant)
     : m_syntheticBold(syntheticBold)
     , m_syntheticOblique(syntheticOblique)
     , m_orientation(orientation)
@@ -46,13 +47,12 @@ FontPlatformData::FontPlatformData(NSFont *nsFont, float size, bool isPrinterFon
     , m_font(nsFont)
     , m_isColorBitmapFont(false)
     , m_isCompositeFontReference(false)
-    , m_isPrinterFont(isPrinterFont)
 {
     ASSERT_ARG(nsFont, nsFont);
 
     CGFontRef cgFont = 0;
     loadFont(nsFont, size, m_font, cgFont);
-    
+
 #if __MAC_OS_X_VERSION_MIN_REQUIRED >= 1070
     // FIXME: Chromium: The following code isn't correct for the Chromium port since the sandbox might
     // have blocked font loading, in which case we'll only have the real loaded font file after the call to loadFont().
@@ -87,6 +87,7 @@ void FontPlatformData::platformDataInit(const FontPlatformData& f)
 #if OS(MACOSX)
     m_inMemoryFont = f.m_inMemoryFont;
     m_harfBuzzFace = f.m_harfBuzzFace;
+    m_typeface = f.m_typeface;
 #endif
 }
 
@@ -104,6 +105,7 @@ const FontPlatformData& FontPlatformData::platformDataAssign(const FontPlatformD
 #if OS(MACOSX)
     m_inMemoryFont = f.m_inMemoryFont;
     m_harfBuzzFace = f.m_harfBuzzFace;
+    m_typeface = f.m_typeface;
 #endif
     return *this;
 }
@@ -128,11 +130,11 @@ void FontPlatformData::setFont(NSFont *font)
         CFRelease(m_font);
     m_font = font;
     m_size = [font pointSize];
-    
+
     CGFontRef cgFont = 0;
     NSFont* loadedFont = 0;
     loadFont(m_font, m_size, loadedFont, cgFont);
-    
+
 #if OS(MACOSX)
     // If loadFont replaced m_font with a fallback font, then release the
     // previous font to counter the retain above. Then retain the new font.
@@ -142,7 +144,7 @@ void FontPlatformData::setFont(NSFont *font)
         m_font = loadedFont;
     }
 #endif
-    
+
     m_cgFont.adoptCF(cgFont);
 #if __MAC_OS_X_VERSION_MIN_REQUIRED >= 1070
     {
@@ -276,6 +278,14 @@ CTFontRef FontPlatformData::ctFont() const
     }
 
     return m_CTFont.get();
+}
+
+SkTypeface* FontPlatformData::typeface() const{
+    if (m_typeface)
+        return m_typeface.get();
+
+    m_typeface = adoptRef(SkCreateTypefaceFromCTFont(ctFont()));
+    return m_typeface.get();
 }
 
 #if OS(MACOSX)

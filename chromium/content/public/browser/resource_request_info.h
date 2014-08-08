@@ -9,6 +9,7 @@
 #include "content/common/content_export.h"
 #include "content/public/common/page_transition_types.h"
 #include "third_party/WebKit/public/platform/WebReferrerPolicy.h"
+#include "third_party/WebKit/public/web/WebPageVisibilityState.h"
 #include "webkit/common/resource_type.h"
 
 namespace net {
@@ -35,16 +36,17 @@ class ResourceRequestInfo {
       ResourceContext* context,
       int render_process_id,
       int render_view_id,
+      int render_frame_id,
       bool is_async);
 
-  // Returns the associated RenderView for a given process. Returns false, if
-  // there is no associated RenderView. This method does not rely on the
+  // Returns the associated RenderFrame for a given process. Returns false, if
+  // there is no associated RenderFrame. This method does not rely on the
   // request being allocated by the ResourceDispatcherHost, but works for all
-  // URLRequests that are associated with a RenderView.
-  CONTENT_EXPORT static bool GetRenderViewForRequest(
+  // URLRequests that are associated with a RenderFrame.
+  CONTENT_EXPORT static bool GetRenderFrameForRequest(
       const net::URLRequest* request,
       int* render_process_id,
-      int* render_view_id);
+      int* render_frame_id);
 
   // Returns the associated ResourceContext.
   virtual ResourceContext* GetContext() const = 0;
@@ -69,24 +71,28 @@ class ResourceRequestInfo {
   // just use GetRouteID above.
   virtual int GetRenderFrameID() const = 0;
 
-  // True if GetFrameID() represents a main frame in the RenderView.
+  // True if GetRenderFrameID() represents a main frame in the RenderView.
   virtual bool IsMainFrame() const = 0;
 
-  // Frame ID that sent this resource request. -1 if unknown / invalid.
-  virtual int64 GetFrameID() const = 0;
-
-  // True if GetParentFrameID() represents a main frame in the RenderView.
+  // True if GetParentRenderFrameID() represents a main frame in the RenderView.
   virtual bool ParentIsMainFrame() const = 0;
 
-  // Frame ID of parent frame of frame that sent this resource request.
+  // Routing ID of parent frame of frame that sent this resource request.
   // -1 if unknown / invalid.
-  virtual int64 GetParentFrameID() const = 0;
+  virtual int GetParentRenderFrameID() const = 0;
 
   // Returns the associated resource type.
   virtual ResourceType::Type GetResourceType() const = 0;
 
+  // Returns the process type that initiated this request.
+  virtual int GetProcessType() const = 0;
+
   // Returns the associated referrer policy.
   virtual blink::WebReferrerPolicy GetReferrerPolicy() const = 0;
+
+  // Returns the associated visibility state at the time the request was started
+  // in the renderer.
+  virtual blink::WebPageVisibilityState GetVisibilityState() const = 0;
 
   // Returns the associated page transition type.
   virtual PageTransition GetPageTransition() const = 0;
@@ -99,9 +105,9 @@ class ResourceRequestInfo {
   // the requested URL may be being loaded by an external program.
   virtual bool WasIgnoredByHandler() const = 0;
 
-  // Returns false if there is NOT an associated render view.
-  virtual bool GetAssociatedRenderView(int* render_process_id,
-                                       int* render_view_id) const = 0;
+  // Returns false if there is NOT an associated render frame.
+  virtual bool GetAssociatedRenderFrame(int* render_process_id,
+                                        int* render_frame_id) const = 0;
 
   // Returns true if this is associated with an asynchronous request.
   virtual bool IsAsync() const = 0;

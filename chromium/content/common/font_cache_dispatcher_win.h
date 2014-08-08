@@ -9,15 +9,15 @@
 
 #include "base/basictypes.h"
 #include "base/memory/singleton.h"
-#include "ipc/ipc_channel_proxy.h"
+#include "ipc/ipc_sender.h"
+#include "ipc/message_filter.h"
 
 namespace content {
 
 // Dispatches messages used for font caching on Windows. This is needed because
 // Windows can't load fonts into its kernel cache in sandboxed processes. So the
 // sandboxed process asks the browser process to do this for it.
-class FontCacheDispatcher : public IPC::ChannelProxy::MessageFilter,
-                            public IPC::Sender {
+class FontCacheDispatcher : public IPC::MessageFilter, public IPC::Sender {
  public:
   FontCacheDispatcher();
   virtual ~FontCacheDispatcher();
@@ -26,8 +26,8 @@ class FontCacheDispatcher : public IPC::ChannelProxy::MessageFilter,
   virtual bool Send(IPC::Message* message) OVERRIDE;
 
  private:
-  // IPC::ChannelProxy::MessageFilter implementation:
-  virtual void OnFilterAdded(IPC::Channel* channel) OVERRIDE;
+  // IPC::MessageFilter implementation:
+  virtual void OnFilterAdded(IPC::Sender* sender) OVERRIDE;
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
   virtual void OnChannelClosing() OVERRIDE;
 
@@ -35,7 +35,7 @@ class FontCacheDispatcher : public IPC::ChannelProxy::MessageFilter,
   void OnPreCacheFont(const LOGFONT& font);
   void OnReleaseCachedFonts();
 
-  IPC::Channel* channel_;
+  IPC::Sender* sender_;
 
   DISALLOW_COPY_AND_ASSIGN(FontCacheDispatcher);
 };

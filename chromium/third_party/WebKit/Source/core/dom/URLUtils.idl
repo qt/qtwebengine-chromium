@@ -23,15 +23,17 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+// http://url.spec.whatwg.org/#urlutils
+
 [
-    NoInterfaceObject,
-    ImplementedAs=DOMURLUtils
+    NoInterfaceObject, // Always used on target of 'implements'
 ] interface URLUtils {
-    attribute DOMString href;
-
+    // FIXME: should be stringifier: http://crbug.com/306606
+    // stringifier attribute DOMString href;
+    [PerWorldBindings, LogActivity=SetterOnly, LogPreviousValue] attribute DOMString href;
     [NotEnumerable, ImplementedAs=href] DOMString toString();
-
     readonly attribute DOMString origin;
+
     attribute DOMString protocol;
     attribute DOMString username;
     attribute DOMString password;
@@ -40,10 +42,7 @@
     attribute DOMString port;
     attribute DOMString pathname;
     attribute DOMString search;
-
     // Not yet implemented.
-    // attribute URLQuery? query;
-
+    // attribute URLSearchParams searchParams;
     attribute DOMString hash;
 };
-

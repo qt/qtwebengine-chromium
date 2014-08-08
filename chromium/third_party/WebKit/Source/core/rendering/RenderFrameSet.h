@@ -30,7 +30,6 @@ namespace WebCore {
 class HTMLDimension;
 class HTMLFrameSetElement;
 class MouseEvent;
-class RenderFrame;
 
 enum FrameEdge { LeftFrameEdge, RightFrameEdge, TopFrameEdge, BottomFrameEdge };
 
@@ -62,15 +61,16 @@ public:
     RenderObject* firstChild() const { ASSERT(children() == virtualChildren()); return children()->firstChild(); }
     RenderObject* lastChild() const { ASSERT(children() == virtualChildren()); return children()->lastChild(); }
 
+    // If you have a RenderFrameSet, use firstChild or lastChild instead.
+    void slowFirstChild() const WTF_DELETED_FUNCTION;
+    void slowLastChild() const WTF_DELETED_FUNCTION;
+
     const RenderObjectChildList* children() const { return &m_children; }
     RenderObjectChildList* children() { return &m_children; }
 
     FrameEdgeInfo edgeInfo() const;
 
     bool userResize(MouseEvent*);
-
-    bool isResizingRow() const;
-    bool isResizingColumn() const;
 
     bool canResizeRow(const IntPoint&) const;
     bool canResizeColumn(const IntPoint&) const;
@@ -94,16 +94,16 @@ private:
         int m_splitResizeOffset;
     };
 
-    virtual RenderObjectChildList* virtualChildren() { return children(); }
-    virtual const RenderObjectChildList* virtualChildren() const { return children(); }
+    virtual RenderObjectChildList* virtualChildren() OVERRIDE { return children(); }
+    virtual const RenderObjectChildList* virtualChildren() const OVERRIDE { return children(); }
 
-    virtual const char* renderName() const { return "RenderFrameSet"; }
-    virtual bool isFrameSet() const { return true; }
+    virtual const char* renderName() const OVERRIDE { return "RenderFrameSet"; }
+    virtual bool isFrameSet() const OVERRIDE { return true; }
 
-    virtual void layout();
-    virtual void paint(PaintInfo&, const LayoutPoint&);
-    virtual bool isChildAllowed(RenderObject*, RenderStyle*) const;
-    virtual CursorDirective getCursor(const LayoutPoint&, Cursor&) const;
+    virtual void layout() OVERRIDE;
+    virtual void paint(PaintInfo&, const LayoutPoint&) OVERRIDE;
+    virtual bool isChildAllowed(RenderObject*, RenderStyle*) const OVERRIDE;
+    virtual CursorDirective getCursor(const LayoutPoint&, Cursor&) const OVERRIDE;
 
     inline HTMLFrameSetElement* frameSet() const;
 

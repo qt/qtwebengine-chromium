@@ -3,8 +3,9 @@
 // found in the LICENSE file.
 
 // MacOSX implementation of generic VideoCaptureDevice, using either QTKit or
-// AVFoundation as native capture API. QTKit is used in OSX versions 10.6 and
-// previous, and AVFoundation is used in the rest.
+// AVFoundation as native capture API. QTKit is available in all OSX versions,
+// although namely deprecated in 10.9, and AVFoundation is available in versions
+// 10.7 (Lion) and later.
 
 #ifndef MEDIA_VIDEO_CAPTURE_MAC_VIDEO_CAPTURE_DEVICE_MAC_H_
 #define MEDIA_VIDEO_CAPTURE_MAC_VIDEO_CAPTURE_DEVICE_MAC_H_
@@ -14,28 +15,31 @@
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
-#include "base/message_loop/message_loop_proxy.h"
 #include "media/video/capture/video_capture_device.h"
 #include "media/video/capture/video_capture_types.h"
 
 @protocol PlatformVideoCapturingMac;
 
+namespace base {
+class SingleThreadTaskRunner;
+}
+
 namespace media {
 
-// Called by VideoCaptureManager to open, close and start, stop video capture
-// devices.
+// Called by VideoCaptureManager to open, close and start, stop Mac video
+// capture devices.
 class VideoCaptureDeviceMac : public VideoCaptureDevice {
  public:
   explicit VideoCaptureDeviceMac(const Name& device_name);
   virtual ~VideoCaptureDeviceMac();
 
   // VideoCaptureDevice implementation.
-  virtual void AllocateAndStart(const VideoCaptureParams& params,
-                                scoped_ptr<VideoCaptureDevice::Client> client)
-      OVERRIDE;
+  virtual void AllocateAndStart(
+      const VideoCaptureParams& params,
+      scoped_ptr<VideoCaptureDevice::Client> client) OVERRIDE;
   virtual void StopAndDeAllocate() OVERRIDE;
 
-  bool Init();
+  bool Init(VideoCaptureDevice::Name::CaptureApiType capture_api_type);
 
   // Called to deliver captured video frames.
   void ReceiveFrame(const uint8* video_frame,
@@ -48,6 +52,7 @@ class VideoCaptureDeviceMac : public VideoCaptureDevice {
 
  private:
   void SetErrorState(const std::string& reason);
+  void LogMessage(const std::string& message);
   bool UpdateCaptureResolution();
 
   // Flag indicating the internal state.
@@ -62,19 +67,23 @@ class VideoCaptureDeviceMac : public VideoCaptureDevice {
   scoped_ptr<VideoCaptureDevice::Client> client_;
 
   VideoCaptureFormat capture_format_;
-  bool sent_frame_info_;
+  // These variables control the two-step configure-start process for QTKit HD:
+  // the device is first started with no configuration and the captured frames
+  // are inspected to check if the camera really supports HD. AVFoundation does
+  // not need this process so |final_resolution_selected_| is false then.
+  bool final_resolution_selected_;
   bool tried_to_square_pixels_;
 
   // Only read and write state_ from inside this loop.
-  const scoped_refptr<base::MessageLoopProxy> loop_proxy_;
+  const scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
   InternalState state_;
 
-  // Used with Bind and PostTask to ensure that methods aren't called
-  // after the VideoCaptureDeviceMac is destroyed.
-  base::WeakPtrFactory<VideoCaptureDeviceMac> weak_factory_;
-  base::WeakPtr<VideoCaptureDeviceMac> weak_this_;
-
   id<PlatformVideoCapturingMac> capture_device_;
+
+  // Used with Bind and PostTask to ensure that methods aren't called after the
+  // VideoCaptureDeviceMac is destroyed.
+  // NOTE: Weak pointers must be invalidated before all other member variables.
+  base::WeakPtrFactory<VideoCaptureDeviceMac> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(VideoCaptureDeviceMac);
 };

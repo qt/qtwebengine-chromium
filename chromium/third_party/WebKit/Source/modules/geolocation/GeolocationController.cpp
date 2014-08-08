@@ -24,20 +24,44 @@
  */
 
 #include "config.h"
+
 #include "modules/geolocation/GeolocationController.h"
 
-#include "core/inspector/InspectorInstrumentation.h"
+#include "core/inspector/InspectorController.h"
+#include "core/page/Page.h"
 #include "modules/geolocation/GeolocationClient.h"
 #include "modules/geolocation/GeolocationError.h"
+#include "modules/geolocation/GeolocationInspectorAgent.h"
 #include "modules/geolocation/GeolocationPosition.h"
 
 namespace WebCore {
 
-GeolocationController::GeolocationController(Page* page, GeolocationClient* client)
-    : PageLifecycleObserver(page)
+GeolocationController::GeolocationController(LocalFrame& frame, GeolocationClient* client)
+    : PageLifecycleObserver(frame.page())
     , m_client(client)
+    , m_hasClientForTest(false)
     , m_isClientUpdating(false)
+    , m_inspectorAgent()
 {
+    // FIXME: Once GeolocationInspectorAgent is per frame, there will be a 1:1 relationship between
+    // it and this class. Until then, there's one GeolocationInspectorAgent per page that the main
+    // frame is responsible for creating.
+    if (frame.isMainFrame()) {
+        OwnPtr<GeolocationInspectorAgent> geolocationAgent(GeolocationInspectorAgent::create());
+        m_inspectorAgent = geolocationAgent.get();
+        frame.page()->inspectorController().registerModuleAgent(geolocationAgent.release());
+    } else {
+        m_inspectorAgent = GeolocationController::from(frame.page()->deprecatedLocalMainFrame())->m_inspectorAgent;
+    }
+
+    m_inspectorAgent->AddController(this);
+
+    if (!frame.isMainFrame()) {
+        // internals.setGeolocationClientMock is per page.
+        GeolocationController* mainController = GeolocationController::from(frame.page()->deprecatedLocalMainFrame());
+        if (mainController->hasClientForTest())
+            setClientForTest(mainController->client());
+    }
 }
 
 void GeolocationController::startUpdatingIfNeeded()
@@ -59,14 +83,29 @@ void GeolocationController::stopUpdatingIfNeeded()
 GeolocationController::~GeolocationController()
 {
     ASSERT(m_observers.isEmpty());
+    if (page())
+        m_inspectorAgent->RemoveController(this);
 
+    if (m_hasClientForTest)
+        m_client->controllerForTestRemoved(this);
+}
+
+// FIXME: Oilpan: Once GeolocationClient is on-heap m_client should be a strong
+// pointer and |willBeDestroyed| can potentially be removed from Supplement.
+void GeolocationController::willBeDestroyed()
+{
     if (m_client)
         m_client->geolocationDestroyed();
 }
 
-PassOwnPtr<GeolocationController> GeolocationController::create(Page* page, GeolocationClient* client)
+void GeolocationController::persistentHostHasBeenDestroyed()
 {
-    return adoptPtr(new GeolocationController(page, client));
+    observeContext(0);
+}
+
+PassOwnPtrWillBeRawPtr<GeolocationController> GeolocationController::create(LocalFrame& frame, GeolocationClient* client)
+{
+    return adoptPtrWillBeNoop(new GeolocationController(frame, client));
 }
 
 void GeolocationController::addObserver(Geolocation* observer, bool enableHighAccuracy)
@@ -116,13 +155,13 @@ void GeolocationController::cancelPermissionRequest(Geolocation* geolocation)
 
 void GeolocationController::positionChanged(GeolocationPosition* position)
 {
-    position = InspectorInstrumentation::overrideGeolocationPosition(page(), position);
+    position = m_inspectorAgent->overrideGeolocationPosition(position);
     if (!position) {
-        errorOccurred(GeolocationError::create(GeolocationError::PositionUnavailable, "PositionUnavailable").get());
+        errorOccurred(GeolocationError::create(GeolocationError::PositionUnavailable, "PositionUnavailable"));
         return;
     }
     m_lastPosition = position;
-    Vector<RefPtr<Geolocation> > observersVector;
+    HeapVector<Member<Geolocation> > observersVector;
     copyToVector(m_observers, observersVector);
     for (size_t i = 0; i < observersVector.size(); ++i)
         observersVector[i]->positionChanged();
@@ -130,7 +169,7 @@ void GeolocationController::positionChanged(GeolocationPosition* position)
 
 void GeolocationController::errorOccurred(GeolocationError* error)
 {
-    Vector<RefPtr<Geolocation> > observersVector;
+    HeapVector<Member<Geolocation> > observersVector;
     copyToVector(m_observers, observersVector);
     for (size_t i = 0; i < observersVector.size(); ++i)
         observersVector[i]->setError(error);
@@ -145,6 +184,16 @@ GeolocationPosition* GeolocationController::lastPosition()
         return 0;
 
     return m_client->lastPosition();
+}
+
+void GeolocationController::setClientForTest(GeolocationClient* client)
+{
+    if (m_hasClientForTest)
+        m_client->controllerForTestRemoved(this);
+    m_client = client;
+    m_hasClientForTest = true;
+
+    client->controllerForTestAdded(this);
 }
 
 void GeolocationController::pageVisibilityChanged()
@@ -163,9 +212,17 @@ const char* GeolocationController::supplementName()
     return "GeolocationController";
 }
 
-void provideGeolocationTo(Page* page, GeolocationClient* client)
+void GeolocationController::trace(Visitor* visitor)
 {
-    Supplement<Page>::provideTo(page, GeolocationController::supplementName(), GeolocationController::create(page, client));
+    visitor->trace(m_lastPosition);
+    visitor->trace(m_observers);
+    visitor->trace(m_highAccuracyObservers);
+    WillBeHeapSupplement<LocalFrame>::trace(visitor);
+}
+
+void provideGeolocationTo(LocalFrame& frame, GeolocationClient* client)
+{
+    WillBeHeapSupplement<LocalFrame>::provideTo(frame, GeolocationController::supplementName(), GeolocationController::create(frame, client));
 }
 
 } // namespace WebCore

@@ -4,8 +4,9 @@
 
 #include "ui/views/widget/desktop_aura/desktop_capture_client.h"
 
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
+#include "ui/aura/window_tree_host.h"
 
 namespace views {
 
@@ -52,7 +53,7 @@ void DesktopCaptureClient::SetCapture(aura::Window* new_capture_window) {
 
   capture_window_ = new_capture_window;
 
-  aura::client::CaptureDelegate* delegate = root_->GetDispatcher();
+  aura::client::CaptureDelegate* delegate = root_->GetHost()->dispatcher();
   delegate->UpdateCapture(old_capture_window, new_capture_window);
 
   // Initiate native capture updating.
@@ -67,7 +68,8 @@ void DesktopCaptureClient::SetCapture(aura::Window* new_capture_window) {
     for (CaptureClients::iterator i = capture_clients.begin();
          i != capture_clients.end(); ++i) {
       if (*i != this) {
-        aura::client::CaptureDelegate* delegate = (*i)->root_->GetDispatcher();
+        aura::client::CaptureDelegate* delegate =
+            (*i)->root_->GetHost()->dispatcher();
         delegate->OnOtherRootGotCapture();
       }
     }

@@ -5,6 +5,8 @@
 #ifndef CONTENT_BROWSER_INDEXED_DB_MOCK_INDEXED_DB_CALLBACKS_H_
 #define CONTENT_BROWSER_INDEXED_DB_MOCK_INDEXED_DB_CALLBACKS_H_
 
+#include <vector>
+
 #include "content/browser/indexed_db/indexed_db_callbacks.h"
 #include "content/browser/indexed_db/indexed_db_connection.h"
 
@@ -13,10 +15,12 @@ namespace content {
 class MockIndexedDBCallbacks : public IndexedDBCallbacks {
  public:
   MockIndexedDBCallbacks();
-  MockIndexedDBCallbacks(bool expect_connection);
+  explicit MockIndexedDBCallbacks(bool expect_connection);
 
   virtual void OnSuccess() OVERRIDE;
-  virtual void OnSuccess(const std::vector<base::string16>&) OVERRIDE;
+  virtual void OnSuccess(int64 result) OVERRIDE;
+  virtual void OnSuccess(const std::vector<base::string16>& result) OVERRIDE;
+  virtual void OnSuccess(const IndexedDBKey& key) OVERRIDE;
   virtual void OnSuccess(scoped_ptr<IndexedDBConnection> connection,
                          const IndexedDBDatabaseMetadata& metadata) OVERRIDE;
   IndexedDBConnection* connection() { return connection_.get(); }

@@ -33,6 +33,7 @@
 #define SQLTransactionBackendSync_h
 
 #include "modules/webdatabase/DatabaseBasicTypes.h"
+#include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
 #include "wtf/RefCounted.h"
 #include "wtf/Vector.h"
@@ -49,24 +50,25 @@ class SQLiteTransaction;
 class ExceptionState;
 
 // Instances of this class should be created and used only on the worker's context thread.
-class SQLTransactionBackendSync : public RefCounted<SQLTransactionBackendSync> {
+class SQLTransactionBackendSync : public RefCountedWillBeGarbageCollectedFinalized<SQLTransactionBackendSync> {
 public:
     ~SQLTransactionBackendSync();
+    void trace(Visitor*);
 
-    PassRefPtr<SQLResultSet> executeSQL(const String& sqlStatement, const Vector<SQLValue>& arguments, ExceptionState&);
+    PassRefPtrWillBeRawPtr<SQLResultSet> executeSQL(const String& sqlStatement, const Vector<SQLValue>& arguments, ExceptionState&);
 
     DatabaseSync* database() { return m_database.get(); }
-    bool isReadOnly() const { return m_readOnly; }
 
     void begin(ExceptionState&);
     void execute(ExceptionState&);
     void commit(ExceptionState&);
     void rollback();
+    void rollbackIfInProgress();
 
 private:
     SQLTransactionBackendSync(DatabaseSync*, PassOwnPtr<SQLTransactionSyncCallback>, bool readOnly);
 
-    RefPtr<DatabaseSync> m_database;
+    RefPtrWillBeMember<DatabaseSync> m_database;
     OwnPtr<SQLTransactionSyncCallback> m_callback;
     bool m_readOnly;
     bool m_hasVersionMismatch;

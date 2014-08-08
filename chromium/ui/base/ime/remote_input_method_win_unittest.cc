@@ -30,7 +30,10 @@ class MockTextInputClient : public DummyTextInputClient {
         text_input_mode_(TEXT_INPUT_MODE_DEFAULT),
         call_count_set_composition_text_(0),
         call_count_insert_char_(0),
-        call_count_insert_text_(0) {
+        call_count_insert_text_(0),
+        emulate_pepper_flash_(false),
+        is_candidate_window_shown_called_(false),
+        is_candidate_window_hidden_called_(false) {
   }
 
   size_t call_count_set_composition_text() const {
@@ -45,6 +48,12 @@ class MockTextInputClient : public DummyTextInputClient {
   size_t call_count_insert_text() const {
     return call_count_insert_text_;
   }
+  bool is_candidate_window_shown_called() const {
+    return is_candidate_window_shown_called_;
+  }
+  bool is_candidate_window_hidden_called() const {
+    return is_candidate_window_hidden_called_;
+  }
   void Reset() {
     text_input_type_ = TEXT_INPUT_TYPE_NONE;
     text_input_mode_ = TEXT_INPUT_MODE_DEFAULT;
@@ -54,6 +63,9 @@ class MockTextInputClient : public DummyTextInputClient {
     call_count_insert_text_ = 0;
     caret_bounds_ = gfx::Rect();
     composition_character_bounds_.clear();
+    emulate_pepper_flash_ = false;
+    is_candidate_window_shown_called_ = false;
+    is_candidate_window_hidden_called_ = false;
   }
   void set_text_input_type(ui::TextInputType type) {
     text_input_type_ = type;
@@ -68,6 +80,9 @@ class MockTextInputClient : public DummyTextInputClient {
       const std::vector<gfx::Rect>& composition_character_bounds) {
     composition_character_bounds_ = composition_character_bounds;
   }
+  void set_emulate_pepper_flash(bool enabled) {
+    emulate_pepper_flash_ = enabled;
+  }
 
  private:
   // Overriden from DummyTextInputClient.
@@ -75,11 +90,11 @@ class MockTextInputClient : public DummyTextInputClient {
       const ui::CompositionText& composition) OVERRIDE {
     ++call_count_set_composition_text_;
   }
-  virtual void InsertChar(char16 ch, int flags) OVERRIDE{
+  virtual void InsertChar(base::char16 ch, int flags) OVERRIDE {
     inserted_text_.append(1, ch);
     ++call_count_insert_char_;
   }
-  virtual void InsertText(const string16& text) OVERRIDE{
+  virtual void InsertText(const base::string16& text) OVERRIDE {
     inserted_text_.append(text);
     ++call_count_insert_text_;
   }
@@ -94,6 +109,9 @@ class MockTextInputClient : public DummyTextInputClient {
   }
   virtual bool GetCompositionCharacterBounds(uint32 index,
                                              gfx::Rect* rect) const OVERRIDE {
+    // Emulate the situation of crbug.com/328237.
+    if (emulate_pepper_flash_)
+      return false;
     if (!rect || composition_character_bounds_.size() <= index)
       return false;
     *rect = composition_character_bounds_[index];
@@ -101,6 +119,18 @@ class MockTextInputClient : public DummyTextInputClient {
   }
   virtual bool HasCompositionText() const OVERRIDE {
     return !composition_character_bounds_.empty();
+  }
+  virtual bool GetCompositionTextRange(gfx::Range* range) const OVERRIDE {
+    if (composition_character_bounds_.empty())
+      return false;
+    *range = gfx::Range(0, composition_character_bounds_.size());
+    return true;
+  }
+  virtual void OnCandidateWindowShown() OVERRIDE {
+    is_candidate_window_shown_called_ = true;
+  }
+  virtual void OnCandidateWindowHidden() OVERRIDE {
+    is_candidate_window_hidden_called_ = true;
   }
 
   ui::TextInputType text_input_type_;
@@ -111,6 +141,9 @@ class MockTextInputClient : public DummyTextInputClient {
   size_t call_count_set_composition_text_;
   size_t call_count_insert_char_;
   size_t call_count_insert_text_;
+  bool emulate_pepper_flash_;
+  bool is_candidate_window_shown_called_;
+  bool is_candidate_window_hidden_called_;
   DISALLOW_COPY_AND_ASSIGN(MockTextInputClient);
 };
 
@@ -126,15 +159,9 @@ class MockInputMethodDelegate : public internal::InputMethodDelegate {
   }
 
  private:
-  virtual bool DispatchKeyEventPostIME(
-      const base::NativeEvent& native_key_event) OVERRIDE {
-    EXPECT_TRUE(false) << "Not reach here";
-    return true;
-  }
-  virtual bool DispatchFabricatedKeyEventPostIME(ui::EventType type,
-                                                 ui::KeyboardCode key_code,
-                                                 int flags) OVERRIDE {
-    fabricated_key_events_.push_back(key_code);
+  virtual bool DispatchKeyEventPostIME(const ui::KeyEvent& event) OVERRIDE {
+    EXPECT_FALSE(event.HasNativeEvent());
+    fabricated_key_events_.push_back(event.key_code());
     return true;
   }
 
@@ -224,6 +251,8 @@ class MockInputMethodObserver : public InputMethodObserver {
   virtual void OnInputMethodDestroyed(const InputMethod* client) OVERRIDE {
     ++on_input_method_destroyed_changed_;
   }
+  virtual void OnShowImeIfNeeded() {
+  }
 
   size_t on_text_input_state_changed_;
   size_t on_input_method_destroyed_changed_;
@@ -260,14 +289,10 @@ TEST(RemoteInputMethodWinTest, OnInputSourceChanged) {
   private_ptr->OnInputSourceChanged(
       MAKELANGID(LANG_JAPANESE, SUBLANG_JAPANESE_JAPAN), true);
   EXPECT_EQ("ja-JP", input_method->GetInputLocale());
-  EXPECT_EQ(base::i18n::LEFT_TO_RIGHT,
-           input_method->GetInputTextDirection());
 
   private_ptr->OnInputSourceChanged(
       MAKELANGID(LANG_ARABIC, SUBLANG_ARABIC_QATAR), true);
   EXPECT_EQ("ar-QA", input_method->GetInputLocale());
-  EXPECT_EQ(base::i18n::RIGHT_TO_LEFT,
-            input_method->GetInputTextDirection());
 }
 
 TEST(RemoteInputMethodWinTest, OnCandidatePopupChanged) {
@@ -280,11 +305,28 @@ TEST(RemoteInputMethodWinTest, OnCandidatePopupChanged) {
   // Initial value
   EXPECT_FALSE(input_method->IsCandidatePopupOpen());
 
+  // RemoteInputMethodWin::OnCandidatePopupChanged can be called even when the
+  // focused text input client is NULL.
+  ASSERT_TRUE(input_method->GetTextInputClient() == NULL);
+  private_ptr->OnCandidatePopupChanged(false);
+  private_ptr->OnCandidatePopupChanged(true);
+
+  MockTextInputClient mock_text_input_client;
+  input_method->SetFocusedTextInputClient(&mock_text_input_client);
+
+  ASSERT_FALSE(mock_text_input_client.is_candidate_window_shown_called());
+  ASSERT_FALSE(mock_text_input_client.is_candidate_window_hidden_called());
+  mock_text_input_client.Reset();
+
   private_ptr->OnCandidatePopupChanged(true);
   EXPECT_TRUE(input_method->IsCandidatePopupOpen());
+  EXPECT_TRUE(mock_text_input_client.is_candidate_window_shown_called());
+  EXPECT_FALSE(mock_text_input_client.is_candidate_window_hidden_called());
 
   private_ptr->OnCandidatePopupChanged(false);
   EXPECT_FALSE(input_method->IsCandidatePopupOpen());
+  EXPECT_TRUE(mock_text_input_client.is_candidate_window_shown_called());
+  EXPECT_TRUE(mock_text_input_client.is_candidate_window_hidden_called());
 }
 
 TEST(RemoteInputMethodWinTest, CancelComposition) {
@@ -422,6 +464,38 @@ TEST(RemoteInputMethodWinTest, OnCaretBoundsChanged) {
     EXPECT_TRUE(mock_remote_delegate.text_input_client_updated_called());
     EXPECT_EQ(bounds, mock_remote_delegate.composition_character_bounds());
   }
+}
+
+// Test case against crbug.com/328237.
+TEST(RemoteInputMethodWinTest, OnCaretBoundsChangedForPepperFlash) {
+  MockInputMethodDelegate delegate_;
+  MockTextInputClient mock_text_input_client;
+  scoped_ptr<InputMethod> input_method(CreateRemoteInputMethodWin(&delegate_));
+  input_method->SetFocusedTextInputClient(&mock_text_input_client);
+
+  RemoteInputMethodPrivateWin* private_ptr =
+      RemoteInputMethodPrivateWin::Get(input_method.get());
+  ASSERT_TRUE(private_ptr != NULL);
+  MockRemoteInputMethodDelegateWin mock_remote_delegate;
+  private_ptr->SetRemoteDelegate(&mock_remote_delegate);
+
+  mock_remote_delegate.Reset();
+  mock_text_input_client.Reset();
+  mock_text_input_client.set_emulate_pepper_flash(true);
+
+  std::vector<gfx::Rect> caret_bounds;
+  caret_bounds.push_back(gfx::Rect(5, 15, 25, 35));
+  mock_text_input_client.set_caret_bounds(caret_bounds[0]);
+
+  std::vector<gfx::Rect> composition_bounds;
+  composition_bounds.push_back(gfx::Rect(10, 20, 30, 40));
+  composition_bounds.push_back(gfx::Rect(40, 30, 20, 10));
+  mock_text_input_client.set_composition_character_bounds(composition_bounds);
+  input_method->OnCaretBoundsChanged(&mock_text_input_client);
+  EXPECT_TRUE(mock_remote_delegate.text_input_client_updated_called());
+  // The caret bounds must be used when
+  // TextInputClient::GetCompositionCharacterBounds failed.
+  EXPECT_EQ(caret_bounds, mock_remote_delegate.composition_character_bounds());
 }
 
 TEST(RemoteInputMethodWinTest, OnTextInputTypeChanged) {

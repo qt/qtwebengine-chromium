@@ -9,8 +9,8 @@
  */
 
 
-#ifndef VPX_INTEGER_H
-#define VPX_INTEGER_H
+#ifndef VPX_VPX_INTEGER_H_
+#define VPX_VPX_INTEGER_H_
 
 /* get ptrdiff_t, size_t, wchar_t, NULL */
 #include <stddef.h>
@@ -48,10 +48,10 @@ typedef size_t uintptr_t;
 #endif
 
 /* VS2010 defines stdint.h, but not inttypes.h */
-#if defined(_MSC_VER)
+#if defined(_MSC_VER) && _MSC_VER < 1800
 #define PRId64 "I64d"
 #else
 #include <inttypes.h>
 #endif
 
-#endif
+#endif  // VPX_VPX_INTEGER_H_

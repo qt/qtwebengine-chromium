@@ -34,10 +34,10 @@ class HTMLSelectElement;
 
 class HTMLOptionsCollection FINAL : public HTMLCollection {
 public:
-    static PassRefPtr<HTMLOptionsCollection> create(Node*, CollectionType);
+    static PassRefPtrWillBeRawPtr<HTMLOptionsCollection> create(ContainerNode&, CollectionType);
 
-    void add(PassRefPtr<HTMLOptionElement>, ExceptionState&);
-    void add(PassRefPtr<HTMLOptionElement>, int index, ExceptionState&);
+    void add(PassRefPtrWillBeRawPtr<HTMLOptionElement>, ExceptionState&);
+    void add(PassRefPtrWillBeRawPtr<HTMLOptionElement>, int index, ExceptionState&);
     void remove(int index);
     void remove(HTMLOptionElement*);
 
@@ -45,13 +45,16 @@ public:
     void setSelectedIndex(int);
 
     void setLength(unsigned, ExceptionState&);
-    void anonymousNamedGetter(const AtomicString& name, bool&, RefPtr<NodeList>&, bool&, RefPtr<Node>&);
-    bool anonymousIndexedSetter(unsigned, PassRefPtr<HTMLOptionElement>, ExceptionState&);
-    bool anonymousIndexedSetterRemove(unsigned, ExceptionState&);
+    void namedGetter(const AtomicString& name, bool&, RefPtrWillBeRawPtr<NodeList>&, bool&, RefPtrWillBeRawPtr<Element>&);
+    bool anonymousIndexedSetter(unsigned, PassRefPtrWillBeRawPtr<HTMLOptionElement>, ExceptionState&);
 
 private:
-    explicit HTMLOptionsCollection(Node*);
+    explicit HTMLOptionsCollection(ContainerNode&);
+
+    virtual void supportedPropertyNames(Vector<String>& names) OVERRIDE;
 };
+
+DEFINE_TYPE_CASTS(HTMLOptionsCollection, LiveNodeListBase, collection, collection->type() == SelectOptions, collection.type() == SelectOptions);
 
 } //namespace
 

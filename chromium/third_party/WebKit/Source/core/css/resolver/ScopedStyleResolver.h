@@ -31,6 +31,7 @@
 #include "core/css/RuleSet.h"
 #include "core/dom/ContainerNode.h"
 #include "wtf/HashMap.h"
+#include "wtf/HashSet.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
 
@@ -38,7 +39,6 @@ namespace WebCore {
 
 class MediaQueryEvaluator;
 class PageRuleCollector;
-class ShadowRoot;
 class StyleSheetContents;
 
 // This class selects a RenderStyle for a given element based on a collection of stylesheets.
@@ -55,28 +55,25 @@ public:
     ScopedStyleResolver* parent() { return m_parent; }
 
 public:
-    bool checkRegionStyle(Element*);
     const StyleRuleKeyframes* keyframeStylesForAnimation(const StringImpl* animationName);
-    void addKeyframeStyle(PassRefPtr<StyleRuleKeyframes>);
+    void addKeyframeStyle(PassRefPtrWillBeRawPtr<StyleRuleKeyframes>);
 
     void collectMatchingAuthorRules(ElementRuleCollector&, bool includeEmptyRules, bool applyAuthorStyles, CascadeScope, CascadeOrder = ignoreCascadeOrder);
     void matchPageRules(PageRuleCollector&);
-    void addRulesFromSheet(StyleSheetContents*, const MediaQueryEvaluator&, StyleResolver*);
-    void collectFeaturesTo(RuleFeatureSet&);
+    void addRulesFromSheet(CSSStyleSheet*, const MediaQueryEvaluator&, StyleResolver*);
+    void collectFeaturesTo(RuleFeatureSet&, HashSet<const StyleSheetContents*>& visitedSharedStyleSheetContents);
     void resetAuthorStyle();
     void collectViewportRulesTo(StyleResolver*) const;
 
 private:
     explicit ScopedStyleResolver(ContainerNode& scopingNode) : m_scopingNode(scopingNode), m_parent(0) { }
 
-    RuleSet* ensureAuthorStyle();
-
     ContainerNode& m_scopingNode;
     ScopedStyleResolver* m_parent;
 
-    Vector<StyleSheetContents*> m_authorStyleSheets;
+    WillBePersistentHeapVector<RawPtrWillBeMember<CSSStyleSheet> > m_authorStyleSheets;
 
-    typedef HashMap<const StringImpl*, RefPtr<StyleRuleKeyframes> > KeyframesRuleMap;
+    typedef WillBePersistentHeapHashMap<const StringImpl*, RefPtrWillBeMember<StyleRuleKeyframes> > KeyframesRuleMap;
     KeyframesRuleMap m_keyframesRuleMap;
 };
 

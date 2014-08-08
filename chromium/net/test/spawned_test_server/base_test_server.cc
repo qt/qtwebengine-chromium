@@ -40,6 +40,27 @@ std::string GetHostname(BaseTestServer::Type type,
   return BaseTestServer::kLocalhost;
 }
 
+std::string GetClientCertType(SSLClientCertType type) {
+  switch (type) {
+    case CLIENT_CERT_RSA_SIGN:
+      return "rsa_sign";
+    case CLIENT_CERT_DSS_SIGN:
+      return "dss_sign";
+    case CLIENT_CERT_ECDSA_SIGN:
+      return "ecdsa_sign";
+    default:
+      NOTREACHED();
+      return "";
+  }
+}
+
+void GetKeyExchangesList(int key_exchange, base::ListValue* values) {
+  if (key_exchange & BaseTestServer::SSLOptions::KEY_EXCHANGE_RSA)
+    values->Append(new base::StringValue("rsa"));
+  if (key_exchange & BaseTestServer::SSLOptions::KEY_EXCHANGE_DHE_RSA)
+    values->Append(new base::StringValue("dhe_rsa"));
+}
+
 void GetCiphersList(int cipher, base::ListValue* values) {
   if (cipher & BaseTestServer::SSLOptions::BULK_CIPHER_RC4)
     values->Append(new base::StringValue("rc4"));
@@ -58,11 +79,13 @@ BaseTestServer::SSLOptions::SSLOptions()
       ocsp_status(OCSP_OK),
       cert_serial(0),
       request_client_certificate(false),
+      key_exchanges(SSLOptions::KEY_EXCHANGE_ANY),
       bulk_ciphers(SSLOptions::BULK_CIPHER_ANY),
       record_resume(false),
       tls_intolerant(TLS_INTOLERANT_NONE),
       fallback_scsv_enabled(false),
-      staple_ocsp_response(false) {}
+      staple_ocsp_response(false),
+      enable_npn(false) {}
 
 BaseTestServer::SSLOptions::SSLOptions(
     BaseTestServer::SSLOptions::ServerCertificate cert)
@@ -70,11 +93,13 @@ BaseTestServer::SSLOptions::SSLOptions(
       ocsp_status(OCSP_OK),
       cert_serial(0),
       request_client_certificate(false),
+      key_exchanges(SSLOptions::KEY_EXCHANGE_ANY),
       bulk_ciphers(SSLOptions::BULK_CIPHER_ANY),
       record_resume(false),
       tls_intolerant(TLS_INTOLERANT_NONE),
       fallback_scsv_enabled(false),
-      staple_ocsp_response(false) {}
+      staple_ocsp_response(false),
+      enable_npn(false) {}
 
 BaseTestServer::SSLOptions::~SSLOptions() {}
 
@@ -375,6 +400,14 @@ bool BaseTestServer::GenerateArguments(base::DictionaryValue* arguments) const {
 
     if (ssl_client_certs->GetSize())
       arguments->Set("ssl-client-ca", ssl_client_certs.release());
+
+    scoped_ptr<base::ListValue> client_cert_types(new base::ListValue());
+    for (size_t i = 0; i < ssl_options_.client_cert_types.size(); i++) {
+      client_cert_types->Append(new base::StringValue(
+          GetClientCertType(ssl_options_.client_cert_types[i])));
+    }
+    if (client_cert_types->GetSize())
+      arguments->Set("ssl-client-cert-type", client_cert_types.release());
   }
 
   if (type_ == TYPE_HTTPS) {
@@ -389,6 +422,11 @@ bool BaseTestServer::GenerateArguments(base::DictionaryValue* arguments) const {
                      base::Value::CreateIntegerValue(ssl_options_.cert_serial));
     }
 
+    // Check key exchange argument.
+    scoped_ptr<base::ListValue> key_exchange_values(new base::ListValue());
+    GetKeyExchangesList(ssl_options_.key_exchanges, key_exchange_values.get());
+    if (key_exchange_values->GetSize())
+      arguments->Set("ssl-key-exchange", key_exchange_values.release());
     // Check bulk cipher argument.
     scoped_ptr<base::ListValue> bulk_cipher_values(new base::ListValue());
     GetCiphersList(ssl_options_.bulk_ciphers, bulk_cipher_values.get());
@@ -410,6 +448,8 @@ bool BaseTestServer::GenerateArguments(base::DictionaryValue* arguments) const {
     }
     if (ssl_options_.staple_ocsp_response)
       arguments->Set("staple-ocsp-response", base::Value::CreateNullValue());
+    if (ssl_options_.enable_npn)
+      arguments->Set("enable-npn", base::Value::CreateNullValue());
   }
 
   return GenerateAdditionalArguments(arguments);

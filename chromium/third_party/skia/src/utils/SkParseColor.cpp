@@ -487,8 +487,8 @@ const char* SkParse::FindColor(const char* value, SkColor* colorPtr) {
 //      if (end == NULL)
 //          return NULL;
         // !!! range check for errors?
-//      *colorPtr = SkColorSetARGB(SkScalarRound(array[0]), SkScalarRound(array[1]),
-//          SkScalarRound(array[2]), SkScalarRound(array[3]));
+//      *colorPtr = SkColorSetARGB(SkScalarRoundToInt(array[0]), SkScalarRoundToInt(array[1]),
+//          SkScalarRoundToInt(array[2]), SkScalarRoundToInt(array[3]));
 //      return end;
     } else
         return FindNamedColor(value, strlen(value), colorPtr);
@@ -513,9 +513,9 @@ void SkParse::TestColor() {
         size_t len = strlen(nameRGB.name);
         memcpy(bad, nameRGB.name, len);
         bad[len - 1] -= 1;
-        SkASSERT(FindColor(bad, &result) == false);
+        SkASSERT(FindColor(bad, &result) == NULL);
         bad[len - 1] += 2;
-        SkASSERT(FindColor(bad, &result) == false);
+        SkASSERT(FindColor(bad, &result) == NULL);
     }
     result = SK_ColorBLACK;
     SkASSERT(FindColor("lightGrey", &result));

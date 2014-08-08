@@ -93,6 +93,38 @@ class FilesGetRequest : public DriveApiDataRequest {
   DISALLOW_COPY_AND_ASSIGN(FilesGetRequest);
 };
 
+//============================ FilesAuthorizeRequest ===========================
+
+// This class performs request for authorizing an app to access a file.
+// This request is mapped to /drive/v2internal/file/authorize internal endpoint.
+class FilesAuthorizeRequest : public DriveApiDataRequest {
+ public:
+  FilesAuthorizeRequest(RequestSender* sender,
+                        const DriveApiUrlGenerator& url_generator,
+                        const FileResourceCallback& callback);
+  virtual ~FilesAuthorizeRequest();
+
+  // Required parameter.
+  const std::string& file_id() const { return file_id_; }
+  void set_file_id(const std::string& file_id) { file_id_ = file_id; }
+  const std::string& app_id() const { return app_id_; }
+  void set_app_id(const std::string& app_id) { app_id_ = app_id; }
+
+ protected:
+  // Overridden from GetDataRequest.
+  virtual net::URLFetcher::RequestType GetRequestType() const OVERRIDE;
+
+  // Overridden from DriveApiDataRequest.
+  virtual GURL GetURLInternal() const OVERRIDE;
+
+ private:
+  const DriveApiUrlGenerator url_generator_;
+  std::string file_id_;
+  std::string app_id_;
+
+  DISALLOW_COPY_AND_ASSIGN(FilesAuthorizeRequest);
+};
+
 //============================ FilesInsertRequest =============================
 
 // This class performs the request for creating a resource.
@@ -108,9 +140,21 @@ class FilesInsertRequest : public DriveApiDataRequest {
   virtual ~FilesInsertRequest();
 
   // Optional request body.
+  const base::Time& last_viewed_by_me_date() const {
+    return last_viewed_by_me_date_;
+  }
+  void set_last_viewed_by_me_date(const base::Time& last_viewed_by_me_date) {
+    last_viewed_by_me_date_ = last_viewed_by_me_date;
+  }
+
   const std::string& mime_type() const { return mime_type_; }
   void set_mime_type(const std::string& mime_type) {
     mime_type_ = mime_type;
+  }
+
+  const base::Time& modified_date() const { return modified_date_; }
+  void set_modified_date(const base::Time& modified_date) {
+    modified_date_ = modified_date;
   }
 
   const std::vector<std::string>& parents() const { return parents_; }
@@ -131,7 +175,9 @@ class FilesInsertRequest : public DriveApiDataRequest {
  private:
   const DriveApiUrlGenerator url_generator_;
 
+  base::Time last_viewed_by_me_date_;
   std::string mime_type_;
+  base::Time modified_date_;
   std::vector<std::string> parents_;
   std::string title_;
 
@@ -491,6 +537,7 @@ class AppsListRequest : public DriveApiDataRequest {
  public:
   AppsListRequest(RequestSender* sender,
                   const DriveApiUrlGenerator& url_generator,
+                  bool use_internal_endpoint,
                   const AppListCallback& callback);
   virtual ~AppsListRequest();
 
@@ -500,8 +547,37 @@ class AppsListRequest : public DriveApiDataRequest {
 
  private:
   const DriveApiUrlGenerator url_generator_;
+  bool use_internal_endpoint_;
 
   DISALLOW_COPY_AND_ASSIGN(AppsListRequest);
+};
+
+//============================= AppsDeleteRequest ==============================
+
+// This class performs the request for deleting a Drive app.
+// This request is mapped to
+// https://developers.google.com/drive/v2/reference/files/trash
+class AppsDeleteRequest : public EntryActionRequest {
+ public:
+  AppsDeleteRequest(RequestSender* sender,
+                    const DriveApiUrlGenerator& url_generator,
+                    const EntryActionCallback& callback);
+  virtual ~AppsDeleteRequest();
+
+  // Required parameter.
+  const std::string& app_id() const { return app_id_; }
+  void set_app_id(const std::string& app_id) { app_id_ = app_id; }
+
+ protected:
+  // Overridden from UrlFetchRequestBase.
+  virtual net::URLFetcher::RequestType GetRequestType() const OVERRIDE;
+  virtual GURL GetURL() const OVERRIDE;
+
+ private:
+  const DriveApiUrlGenerator url_generator_;
+  std::string app_id_;
+
+  DISALLOW_COPY_AND_ASSIGN(AppsDeleteRequest);
 };
 
 //========================== ChildrenInsertRequest ============================
@@ -596,6 +672,18 @@ class InitiateUploadNewFileRequest : public InitiateUploadRequestBase {
                                const InitiateUploadCallback& callback);
   virtual ~InitiateUploadNewFileRequest();
 
+  // Optional parameters.
+  const base::Time& modified_date() const { return modified_date_; }
+  void set_modified_date(const base::Time& modified_date) {
+    modified_date_ = modified_date;
+  }
+  const base::Time& last_viewed_by_me_date() const {
+    return last_viewed_by_me_date_;
+  }
+  void set_last_viewed_by_me_date(const base::Time& last_viewed_by_me_date) {
+    last_viewed_by_me_date_ = last_viewed_by_me_date;
+  }
+
  protected:
   // UrlFetchRequestBase overrides.
   virtual GURL GetURL() const OVERRIDE;
@@ -607,6 +695,9 @@ class InitiateUploadNewFileRequest : public InitiateUploadRequestBase {
   const DriveApiUrlGenerator url_generator_;
   const std::string parent_resource_id_;
   const std::string title_;
+
+  base::Time modified_date_;
+  base::Time last_viewed_by_me_date_;
 
   DISALLOW_COPY_AND_ASSIGN(InitiateUploadNewFileRequest);
 };
@@ -631,16 +722,42 @@ class InitiateUploadExistingFileRequest : public InitiateUploadRequestBase {
                                     const InitiateUploadCallback& callback);
   virtual ~InitiateUploadExistingFileRequest();
 
+
+  // Optional parameters.
+  const std::string& parent_resource_id() const { return parent_resource_id_; }
+  void set_parent_resource_id(const std::string& parent_resource_id) {
+    parent_resource_id_ = parent_resource_id;
+  }
+  const std::string& title() const { return title_; }
+  void set_title(const std::string& title) { title_ = title; }
+  const base::Time& modified_date() const { return modified_date_; }
+  void set_modified_date(const base::Time& modified_date) {
+    modified_date_ = modified_date;
+  }
+  const base::Time& last_viewed_by_me_date() const {
+    return last_viewed_by_me_date_;
+  }
+  void set_last_viewed_by_me_date(const base::Time& last_viewed_by_me_date) {
+    last_viewed_by_me_date_ = last_viewed_by_me_date;
+  }
+
  protected:
   // UrlFetchRequestBase overrides.
   virtual GURL GetURL() const OVERRIDE;
   virtual net::URLFetcher::RequestType GetRequestType() const OVERRIDE;
   virtual std::vector<std::string> GetExtraRequestHeaders() const OVERRIDE;
+  virtual bool GetContentData(std::string* upload_content_type,
+                              std::string* upload_content) OVERRIDE;
 
  private:
   const DriveApiUrlGenerator url_generator_;
   const std::string resource_id_;
   const std::string etag_;
+
+  std::string parent_resource_id_;
+  std::string title_;
+  base::Time modified_date_;
+  base::Time last_viewed_by_me_date_;
 
   DISALLOW_COPY_AND_ASSIGN(InitiateUploadExistingFileRequest);
 };
@@ -725,6 +842,54 @@ class DownloadFileRequest : public DownloadFileRequestBase {
   virtual ~DownloadFileRequest();
 
   DISALLOW_COPY_AND_ASSIGN(DownloadFileRequest);
+};
+
+//========================== PermissionsInsertRequest ==========================
+
+// Enumeration type for specifying type of permissions.
+enum PermissionType {
+  PERMISSION_TYPE_ANYONE,
+  PERMISSION_TYPE_DOMAIN,
+  PERMISSION_TYPE_GROUP,
+  PERMISSION_TYPE_USER,
+};
+
+// Enumeration type for specifying the role of permissions.
+enum PermissionRole {
+  PERMISSION_ROLE_OWNER,
+  PERMISSION_ROLE_READER,
+  PERMISSION_ROLE_WRITER,
+  PERMISSION_ROLE_COMMENTER,
+};
+
+// This class performs the request for adding permission on a specified file.
+class PermissionsInsertRequest : public EntryActionRequest {
+ public:
+  // See https://developers.google.com/drive/v2/reference/permissions/insert.
+  PermissionsInsertRequest(RequestSender* sender,
+                           const DriveApiUrlGenerator& url_generator,
+                           const EntryActionCallback& callback);
+  virtual ~PermissionsInsertRequest();
+
+  void set_id(const std::string& id) { id_ = id; }
+  void set_type(PermissionType type) { type_ = type; }
+  void set_role(PermissionRole role) { role_ = role; }
+  void set_value(const std::string& value) { value_ = value; }
+
+  // UrlFetchRequestBase overrides.
+  virtual GURL GetURL() const OVERRIDE;
+  virtual net::URLFetcher::RequestType GetRequestType() const OVERRIDE;
+  virtual bool GetContentData(std::string* upload_content_type,
+                              std::string* upload_content) OVERRIDE;
+
+ private:
+  const DriveApiUrlGenerator url_generator_;
+  std::string id_;
+  PermissionType type_;
+  PermissionRole role_;
+  std::string value_;
+
+  DISALLOW_COPY_AND_ASSIGN(PermissionsInsertRequest);
 };
 
 }  // namespace drive

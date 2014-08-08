@@ -182,7 +182,7 @@ class GritNode(base.Node):
     if name not in ['base_dir', 'first_ids_file', 'source_lang_id',
                     'latest_public_release', 'current_release',
                     'enc_check', 'tc_project', 'grit_version',
-                    'output_all_resource_defines']:
+                    'output_all_resource_defines', 'rc_header_format']:
       return False
     if name in ['latest_public_release', 'current_release'] and value.strip(
       '0123456789') != '':
@@ -200,7 +200,8 @@ class GritNode(base.Node):
       'source_lang_id' : 'en',
       'enc_check' : constants.ENCODING_CHECK,
       'tc_project' : 'NEED_TO_SET_tc_project_ATTRIBUTE',
-      'output_all_resource_defines': 'true'
+      'output_all_resource_defines': 'true',
+      'rc_header_format': None
     }
 
   def EndParsing(self):
@@ -297,6 +298,12 @@ class GritNode(base.Node):
     skipped.
     """
     return self.attrs['output_all_resource_defines'] == 'true'
+
+  def GetRcHeaderFormat(self):
+    return self.attrs['rc_header_format']
+
+  def AssignRcHeaderFormat(self, rc_header_format):
+    self.attrs['rc_header_format'] = rc_header_format
 
   def GetInputFiles(self):
     """Returns the list of files that are read to produce the output."""

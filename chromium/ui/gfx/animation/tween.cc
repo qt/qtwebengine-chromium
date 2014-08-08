@@ -14,6 +14,7 @@
 
 #include "base/basictypes.h"
 #include "base/logging.h"
+#include "ui/gfx/geometry/cubic_bezier.h"
 #include "ui/gfx/safe_integer_conversions.h"
 
 namespace gfx {
@@ -50,6 +51,15 @@ double Tween::CalculateValue(Tween::Type type, double state) {
 
     case SMOOTH_IN_OUT:
       return sin(state);
+
+    case FAST_OUT_SLOW_IN:
+      return gfx::CubicBezier(0.4, 0, 0.2, 1).Solve(state);
+
+    case LINEAR_OUT_SLOW_IN:
+      return gfx::CubicBezier(0, 0, .2, 1).Solve(state);
+
+    case FAST_OUT_LINEAR_IN:
+      return gfx::CubicBezier(0.4, 0, 1, 1).Solve(state);
 
     case ZERO:
       return 0;

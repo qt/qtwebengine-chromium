@@ -28,7 +28,7 @@
 #define TreeScope_h
 
 #include "core/dom/DocumentOrderedMap.h"
-#include "wtf/Forward.h"
+#include "platform/heap/Handle.h"
 #include "wtf/text/AtomicString.h"
 
 namespace WebCore {
@@ -39,6 +39,7 @@ class Document;
 class Element;
 class HTMLLabelElement;
 class HTMLMapElement;
+class HitTestResult;
 class LayoutPoint;
 class IdTargetObserverRegistry;
 class Node;
@@ -47,22 +48,26 @@ class RenderObject;
 // A class which inherits both Node and TreeScope must call clearRareData() in its destructor
 // so that the Node destructor no longer does problematic NodeList cache manipulation in
 // the destructor.
-class TreeScope {
-    friend class Document;
-    friend class TreeScopeAdopter;
-
+class TreeScope : public WillBeGarbageCollectedMixin {
 public:
     TreeScope* parentTreeScope() const { return m_parentTreeScope; }
-    void setParentTreeScope(TreeScope*);
+
+    TreeScope* olderShadowRootOrParentTreeScope() const;
+    bool isInclusiveOlderSiblingShadowRootOrAncestorTreeScopeOf(const TreeScope&) const;
 
     Element* adjustedFocusedElement() const;
     Element* getElementById(const AtomicString&) const;
+    const Vector<Element*>& getAllElementsById(const AtomicString&) const;
     bool hasElementWithId(StringImpl* id) const;
     bool containsMultipleElementsWithId(const AtomicString& id) const;
     void addElementById(const AtomicString& elementId, Element*);
     void removeElementById(const AtomicString& elementId, Element*);
 
-    Document* documentScope() const { return m_documentScope; }
+    Document& document() const
+    {
+        ASSERT(m_document);
+        return *m_document;
+    }
 
     Node* ancestorInThisScope(Node*) const;
 
@@ -92,10 +97,12 @@ public:
     // Used by the basic DOM mutation methods (e.g., appendChild()).
     void adoptIfNeeded(Node&);
 
-    Node* rootNode() const { return m_rootNode; }
+    Node& rootNode() const { return *m_rootNode; }
 
     IdTargetObserverRegistry& idTargetObserverRegistry() const { return *m_idTargetObserverRegistry.get(); }
 
+
+#if !ENABLE(OILPAN)
     // Nodes belonging to this scope hold guard references -
     // these are enough to keep the scope from being destroyed, but
     // not enough to keep it from removing its children. This allows a
@@ -109,6 +116,7 @@ public:
 
     void guardDeref()
     {
+        ASSERT(m_guardRefCount > 0);
         ASSERT(!deletionHasBegun());
         --m_guardRefCount;
         if (!m_guardRefCount && !refCount() && !rootNodeHasTreeSharedParent()) {
@@ -116,35 +124,44 @@ public:
             delete this;
         }
     }
+#endif
 
     void removedLastRefToScope();
 
     bool isInclusiveAncestorOf(const TreeScope&) const;
     unsigned short comparePosition(const TreeScope&) const;
 
+    const TreeScope* commonAncestorTreeScope(const TreeScope& other) const;
+    TreeScope* commonAncestorTreeScope(TreeScope& other);
+
     Element* getElementByAccessKey(const String& key) const;
 
+    virtual void trace(Visitor*);
+
 protected:
-    TreeScope(ContainerNode*, Document*);
-    TreeScope(Document*);
+    TreeScope(ContainerNode&, Document&);
+    TreeScope(Document&);
     virtual ~TreeScope();
 
+#if !ENABLE(OILPAN)
     void destroyTreeScopeData();
-    void clearDocumentScope();
-    void setDocumentScope(Document* document)
-    {
-        ASSERT(document);
-        m_documentScope = document;
-    }
+#endif
 
+    void setDocument(Document& document) { m_document = &document; }
+    void setParentTreeScope(TreeScope&);
+
+#if !ENABLE(OILPAN)
     bool hasGuardRefCount() const { return m_guardRefCount; }
+#endif
+
+    void setNeedsStyleRecalcForViewportUnits();
 
 private:
-    TreeScope();
-
     virtual void dispose() { }
 
+#if !ENABLE(OILPAN)
     int refCount() const;
+
 #if SECURITY_ASSERT_ENABLED
     bool deletionHasBegun();
     void beginDeletion();
@@ -152,21 +169,25 @@ private:
     bool deletionHasBegun() { return false; }
     void beginDeletion() { }
 #endif
+#endif
 
     bool rootNodeHasTreeSharedParent() const;
 
-    Node* m_rootNode;
-    Document* m_documentScope;
-    TreeScope* m_parentTreeScope;
+    RawPtrWillBeMember<Node> m_rootNode;
+    RawPtrWillBeMember<Document> m_document;
+    RawPtrWillBeMember<TreeScope> m_parentTreeScope;
+
+#if !ENABLE(OILPAN)
     int m_guardRefCount;
+#endif
 
     OwnPtr<DocumentOrderedMap> m_elementsById;
     OwnPtr<DocumentOrderedMap> m_imageMapsByName;
     OwnPtr<DocumentOrderedMap> m_labelsByForAttribute;
 
-    OwnPtr<IdTargetObserverRegistry> m_idTargetObserverRegistry;
+    OwnPtrWillBeMember<IdTargetObserverRegistry> m_idTargetObserverRegistry;
 
-    mutable RefPtr<DOMSelection> m_selection;
+    mutable RefPtrWillBeMember<DOMSelection> m_selection;
 };
 
 inline bool TreeScope::hasElementWithId(StringImpl* id) const
@@ -187,7 +208,7 @@ inline bool operator!=(const TreeScope& a, const TreeScope& b) { return !(a == b
 inline bool operator!=(const TreeScope& a, const TreeScope* b) { return !(a == b); }
 inline bool operator!=(const TreeScope* a, const TreeScope& b) { return !(a == b); }
 
-RenderObject* rendererFromPoint(Document*, int x, int y, LayoutPoint* localPoint = 0);
+HitTestResult hitTestInDocument(const Document*, int x, int y);
 TreeScope* commonTreeScope(Node*, Node*);
 
 } // namespace WebCore

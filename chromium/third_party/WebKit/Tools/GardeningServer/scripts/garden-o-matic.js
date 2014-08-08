@@ -36,6 +36,9 @@ var g_failuresController = null;
 
 var g_nonLayoutTestFailureBuilders = null;
 
+var g_updating = false;
+var g_updateButton = null;
+
 function updatePartyTime()
 {
     if (!g_unexpectedFailuresController.length() && !g_nonLayoutTestFailureBuilders.hasFailures())
@@ -55,12 +58,15 @@ function updateTreeStatus()
 
 function update()
 {
+    if (g_updating)
+        return;
+
+    g_updating = true;
+    if (g_updateButton)
+        g_updateButton.disabled = true;
+
     if (g_revisionHint)
         g_revisionHint.dismiss();
-
-    var gtestIframe = document.querySelector('#chromium-gtests iframe');
-    if (gtestIframe)
-        gtestIframe.src = gtestIframe.src;
 
     // FIXME: This should be a button with a progress element.
     var numberOfTestsAnalyzed = 0;
@@ -68,27 +74,27 @@ function update()
 
     g_info.add(updating);
 
-    builders.buildersFailingNonLayoutTests(function(failuresList) {
+    builders.buildersFailingNonLayoutTests().then(function(failuresList) {
         g_nonLayoutTestFailureBuilders.update(failuresList);
         updatePartyTime();
     });
 
-    base.callInParallel([model.updateRecentCommits, model.updateResultsByBuilder], function() {
+    Promise.all([model.updateRecentCommits(), model.updateResultsByBuilder()]).then(function() {
         if (g_failuresController)
             g_failuresController.update();
 
         updating.update('Analyzing test failures ...');
 
-        model.analyzeUnexpectedFailures(function(failureAnalysis) {
-            updating.update('Analyzing test failures ... ' + ++numberOfTestsAnalyzed + ' tests analyzed.');
+        model.analyzeUnexpectedFailures(function(failureAnalysis, total) {
+            updating.update('Analyzing test failures ... ' + ++numberOfTestsAnalyzed + '/' + total + ' tests analyzed.');
             g_unexpectedFailuresController.update(failureAnalysis);
-        }, function() {
+        }).then(function() {
             updatePartyTime();
             g_unexpectedFailuresController.purge();
 
-            Object.keys(config.currentBuilders()).forEach(function(builderName) {
+            Object.keys(config.builders).forEach(function(builderName) {
                 if (!model.state.resultsByBuilder[builderName])
-                    g_info.add(new ui.notifications.Info('Could not find test results for ' + builderName + ' in the last ' + config.kBuildNumberLimit + ' runs.'));
+                    g_info.add(new ui.notifications.Info('Could not find test results for ' + builderName + '.'));
             });
 
             updating.dismiss();
@@ -96,6 +102,10 @@ function update()
             g_revisionHint = new ui.notifications.Info('');
             g_revisionHint.updateWithNode(new ui.revisionDetails());
             g_info.add(g_revisionHint);
+
+            g_updating = false;
+            if (g_updateButton)
+                g_updateButton.disabled = false;
         });
     });
 }
@@ -136,6 +146,7 @@ $(document).ready(function() {
     updateButton.addEventListener("click", update);
     updateButton.textContent = 'update';
     topBar.appendChild(updateButton);
+    g_updateButton = updateButton;
 
     var treeStatus = new ui.TreeStatus();
     topBar.appendChild(treeStatus);

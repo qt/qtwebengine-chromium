@@ -28,6 +28,7 @@
 
 #include "core/css/CSSValue.h"
 #include "core/fetch/ResourcePtr.h"
+#include "platform/weborigin/Referrer.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/text/WTFString.h"
 
@@ -39,13 +40,13 @@ class SVGFontFaceElement;
 
 class CSSFontFaceSrcValue : public CSSValue {
 public:
-    static PassRefPtr<CSSFontFaceSrcValue> create(const String& resource)
+    static PassRefPtrWillBeRawPtr<CSSFontFaceSrcValue> create(const String& resource)
     {
-        return adoptRef(new CSSFontFaceSrcValue(resource, false));
+        return adoptRefWillBeNoop(new CSSFontFaceSrcValue(resource, false));
     }
-    static PassRefPtr<CSSFontFaceSrcValue> createLocal(const String& resource)
+    static PassRefPtrWillBeRawPtr<CSSFontFaceSrcValue> createLocal(const String& resource)
     {
-        return adoptRef(new CSSFontFaceSrcValue(resource, true));
+        return adoptRefWillBeNoop(new CSSFontFaceSrcValue(resource, true));
     }
 
     const String& resource() const { return m_resource; }
@@ -53,6 +54,7 @@ public:
     bool isLocal() const { return m_isLocal; }
 
     void setFormat(const String& format) { m_format = format; }
+    void setReferrer(const Referrer& referrer) { m_referrer = referrer; }
 
     bool isSupportedFormat() const;
 
@@ -65,13 +67,13 @@ public:
 
     String customCSSText() const;
 
-    void addSubresourceStyleURLs(ListHashSet<KURL>&, const StyleSheetContents*) const;
-
     bool hasFailedOrCanceledSubresources() const;
 
     FontResource* fetch(Document*);
 
     bool equals(const CSSFontFaceSrcValue&) const;
+
+    void traceAfterDispatch(Visitor* visitor) { CSSValue::traceAfterDispatch(visitor); }
 
 private:
     CSSFontFaceSrcValue(const String& resource, bool local)
@@ -84,8 +86,12 @@ private:
     {
     }
 
+    void restoreCachedResourceIfNeeded(Document*);
+    bool shouldSetCrossOriginAccessControl(const KURL& resource, SecurityOrigin*);
+
     String m_resource;
     String m_format;
+    Referrer m_referrer;
     bool m_isLocal;
 
     ResourcePtr<FontResource> m_fetched;

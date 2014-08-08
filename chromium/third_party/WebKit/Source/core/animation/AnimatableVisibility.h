@@ -36,18 +36,21 @@
 
 namespace WebCore {
 
-class AnimatableVisibility : public AnimatableValue {
+class AnimatableVisibility FINAL : public AnimatableValue {
 public:
     virtual ~AnimatableVisibility() { }
-    static PassRefPtr<AnimatableVisibility> create(EVisibility visibility)
+    static PassRefPtrWillBeRawPtr<AnimatableVisibility> create(EVisibility visibility)
     {
-        return adoptRef(new AnimatableVisibility(visibility));
+        return adoptRefWillBeNoop(new AnimatableVisibility(visibility));
     }
 
     EVisibility visibility() const { return m_visibility; }
 
+    virtual void trace(Visitor* visitor) OVERRIDE { AnimatableValue::trace(visitor); }
+
 protected:
-    virtual PassRefPtr<AnimatableValue> interpolateTo(const AnimatableValue*, double fraction) const OVERRIDE;
+    virtual PassRefPtrWillBeRawPtr<AnimatableValue> interpolateTo(const AnimatableValue*, double fraction) const OVERRIDE;
+    virtual bool usesDefaultInterpolationWith(const AnimatableValue*) const OVERRIDE;
 
 private:
     explicit AnimatableVisibility(EVisibility visibility)

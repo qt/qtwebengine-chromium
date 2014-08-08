@@ -45,6 +45,7 @@
 #error "Bogus include."
 #endif
 
+
 namespace webrtc {
 class VideoCaptureModule;
 class VideoDecoder;
@@ -60,12 +61,13 @@ class CpuMonitor;
 
 namespace cricket {
 
+class CoordinatedVideoAdapter;
+class ViETraceWrapper;
+class ViEWrapper;
 class VideoCapturer;
 class VideoFrame;
 class VideoProcessor;
 class VideoRenderer;
-class ViETraceWrapper;
-class ViEWrapper;
 class VoiceMediaChannel;
 class WebRtcDecoderObserver;
 class WebRtcEncoderObserver;
@@ -199,6 +201,7 @@ class WebRtcVideoEngine : public sigslot::has_slots<>,
   void SetTraceFilter(int filter);
   void SetTraceOptions(const std::string& options);
   bool InitVideoEngine();
+  bool VerifyApt(const VideoCodec& in, int expected_apt) const;
 
   // webrtc::TraceCallback implementation.
   virtual void Print(webrtc::TraceLevel level, const char* trace, int length);
@@ -227,10 +230,6 @@ class WebRtcVideoEngine : public sigslot::has_slots<>,
   int local_renderer_h_;
   VideoRenderer* local_renderer_;
 
-  // Critical section to protect the media processor register/unregister
-  // while processing a frame
-  talk_base::CriticalSection signal_media_critical_;
-
   talk_base::scoped_ptr<talk_base::CpuMonitor> cpu_monitor_;
 };
 
@@ -248,6 +247,9 @@ class WebRtcVideoMediaChannel : public talk_base::MessageHandler,
   int video_channel() const { return vie_channel_; }
   bool sending() const { return sending_; }
 
+  // Public for testing purpose.
+  uint32 GetDefaultChannelSsrc();
+
   // VideoMediaChannel implementation
   virtual bool SetRecvCodecs(const std::vector<VideoCodec> &codecs);
   virtual bool SetSendCodecs(const std::vector<VideoCodec> &codecs);
@@ -261,7 +263,7 @@ class WebRtcVideoMediaChannel : public talk_base::MessageHandler,
   virtual bool AddRecvStream(const StreamParams& sp);
   virtual bool RemoveRecvStream(uint32 ssrc);
   virtual bool SetRenderer(uint32 ssrc, VideoRenderer* renderer);
-  virtual bool GetStats(VideoMediaInfo* info);
+  virtual bool GetStats(const StatsOptions& options, VideoMediaInfo* info);
   virtual bool SetCapturer(uint32 ssrc, VideoCapturer* capturer);
   virtual bool SendIntraFrame();
   virtual bool RequestIntraFrame();
@@ -276,7 +278,9 @@ class WebRtcVideoMediaChannel : public talk_base::MessageHandler,
       const std::vector<RtpHeaderExtension>& extensions);
   virtual bool SetSendRtpHeaderExtensions(
       const std::vector<RtpHeaderExtension>& extensions);
-  virtual bool SetSendBandwidth(bool autobw, int bps);
+  virtual int GetRtpSendTimeExtnId() const;
+  virtual bool SetStartSendBandwidth(int bps);
+  virtual bool SetMaxSendBandwidth(int bps);
   virtual bool SetOptions(const VideoOptions &options);
   virtual bool GetOptions(VideoOptions *options) const {
     *options = options_;
@@ -288,6 +292,7 @@ class WebRtcVideoMediaChannel : public talk_base::MessageHandler,
   // Public functions for use by tests and other specialized code.
   uint32 send_ssrc() const { return 0; }
   bool GetRenderer(uint32 ssrc, VideoRenderer** renderer);
+  bool GetVideoAdapter(uint32 ssrc, CoordinatedVideoAdapter** video_adapter);
   void SendFrame(VideoCapturer* capturer, const VideoFrame* frame);
   bool SendFrame(WebRtcVideoChannelSendInfo* channel_info,
                  const VideoFrame* frame, bool is_screencast);
@@ -309,6 +314,7 @@ class WebRtcVideoMediaChannel : public talk_base::MessageHandler,
  private:
   typedef std::map<uint32, WebRtcVideoChannelRecvInfo*> RecvChannelMap;
   typedef std::map<uint32, WebRtcVideoChannelSendInfo*> SendChannelMap;
+  typedef std::map<uint32, uint32> SsrcMap;
   typedef int (webrtc::ViERTP_RTCP::* ExtensionSetterFunction)(int, bool, int);
 
   enum MediaDirection { MD_RECV, MD_SEND, MD_SENDRECV };
@@ -323,32 +329,32 @@ class WebRtcVideoMediaChannel : public talk_base::MessageHandler,
   // returning false.
   bool CreateChannel(uint32 ssrc_key, MediaDirection direction,
                      int* channel_id);
+  bool CreateUnsignalledRecvChannel(uint32 ssrc_key, int* channel_id);
   bool ConfigureChannel(int channel_id, MediaDirection direction,
                         uint32 ssrc_key);
   bool ConfigureReceiving(int channel_id, uint32 remote_ssrc_key);
   bool ConfigureSending(int channel_id, uint32 local_ssrc_key);
   bool SetNackFec(int channel_id, int red_payload_type, int fec_payload_type,
                   bool nack_enabled);
-  bool SetSendCodec(const webrtc::VideoCodec& codec, int min_bitrate,
-                    int start_bitrate, int max_bitrate);
+  bool SetSendCodec(const webrtc::VideoCodec& codec);
   bool SetSendCodec(WebRtcVideoChannelSendInfo* send_channel,
-                    const webrtc::VideoCodec& codec, int min_bitrate,
-                    int start_bitrate, int max_bitrate);
+                    const webrtc::VideoCodec& codec);
   void LogSendCodecChange(const std::string& reason);
   // Prepares the channel with channel id |info->channel_id()| to receive all
   // codecs in |receive_codecs_| and start receive packets.
   bool SetReceiveCodecs(WebRtcVideoChannelRecvInfo* info);
   // Returns the channel number that receives the stream with SSRC |ssrc|.
   int GetRecvChannelNum(uint32 ssrc);
+  bool MaybeSetRtxSsrc(const StreamParams& sp, int channel_id);
   // Given captured video frame size, checks if we need to reset vie send codec.
   // |reset| is set to whether resetting has happened on vie or not.
   // Returns false on error.
   bool MaybeResetVieSendCodec(WebRtcVideoChannelSendInfo* send_channel,
                               int new_width, int new_height, bool is_screencast,
                               bool* reset);
-  // Checks the current bitrate estimate and modifies the start bitrate
-  // accordingly.
-  void MaybeChangeStartBitrate(int channel_id, webrtc::VideoCodec* video_codec);
+  // Checks the current bitrate estimate and modifies the bitrates
+  // accordingly, including converting kAutoBandwidth to the correct defaults.
+  void MaybeChangeBitrates(int channel_id, webrtc::VideoCodec* video_codec);
   // Helper function for starting the sending of media on all channels or
   // |channel_id|. Note that these two function do not change |sending_|.
   bool StartSend();
@@ -376,7 +382,6 @@ class WebRtcVideoMediaChannel : public talk_base::MessageHandler,
   bool IsDefaultChannel(int channel_id) const {
     return channel_id == vie_channel_;
   }
-  uint32 GetDefaultChannelSsrc();
 
   bool DeleteSendChannel(uint32 ssrc_key);
 
@@ -412,6 +417,8 @@ class WebRtcVideoMediaChannel : public talk_base::MessageHandler,
   // to one send channel, i.e. the last send channel.
   void MaybeDisconnectCapturer(VideoCapturer* capturer);
 
+  bool RemoveRecvStreamInternal(uint32 ssrc);
+
   // Global state.
   WebRtcVideoEngine* engine_;
   VoiceMediaChannel* voice_channel_;
@@ -427,10 +434,20 @@ class WebRtcVideoMediaChannel : public talk_base::MessageHandler,
   // work properly), resides in both recv_channels_ and send_channels_ with the
   // ssrc key 0.
   RecvChannelMap recv_channels_;  // Contains all receive channels.
+  // A map from the SSRCs on which RTX packets are received to the media SSRCs
+  // the RTX packets are associated with. RTX packets will be delivered to the
+  // streams matching the primary SSRC.
+  SsrcMap rtx_to_primary_ssrc_;
   std::vector<webrtc::VideoCodec> receive_codecs_;
+  // A map from codec payload types to their associated payload types, if any.
+  // TODO(holmer): This is a temporary solution until webrtc::VideoCodec has
+  // an associated payload type member, when it does we can rely on
+  // receive_codecs_.
+  std::map<int, int> associated_payload_types_;
   bool render_started_;
   uint32 first_receive_ssrc_;
   std::vector<RtpHeaderExtension> receive_extensions_;
+  int num_unsignalled_recv_channels_;
 
   // Global send side state.
   SendChannelMap send_channels_;
@@ -438,9 +455,6 @@ class WebRtcVideoMediaChannel : public talk_base::MessageHandler,
   int send_rtx_type_;
   int send_red_type_;
   int send_fec_type_;
-  int send_min_bitrate_;
-  int send_start_bitrate_;
-  int send_max_bitrate_;
   bool sending_;
   std::vector<RtpHeaderExtension> send_extensions_;
 

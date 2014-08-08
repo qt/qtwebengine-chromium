@@ -72,11 +72,15 @@ cr.define('print_preview', function() {
     /** @override */
     enterDocument: function() {
       print_preview.Component.prototype.enterDocument.call(this);
-
+      fadeOutOption(this.getElement(), true);
       this.tracker.add(
           this.getChildElement('input.copies'),
-          'keyup',
-          this.onTextfieldKeyUp_.bind(this));
+          'keydown',
+          this.onTextfieldKeyDown_.bind(this));
+      this.tracker.add(
+          this.getChildElement('input.copies'),
+          'input',
+          this.onTextfieldInput_.bind(this));
       this.tracker.add(
           this.getChildElement('input.copies'),
           'blur',
@@ -168,6 +172,7 @@ cr.define('print_preview', function() {
      * @private
      */
     onTextfieldTimeout_: function() {
+      this.textfieldTimeout_ = null;
       var copiesVal = this.getChildElement('input.copies').value;
       if (copiesVal != '') {
         this.copiesTicketItem_.updateValue(copiesVal);
@@ -175,12 +180,25 @@ cr.define('print_preview', function() {
     },
 
     /**
-     * Called when a keyup event occurs on the textfield. Starts an input
-     * timeout.
-     * @param {Event} event Contains the pressed key.
+     * Called when a key is pressed on the custom input.
+     * @param {Event} event Contains the key that was pressed.
      * @private
      */
-    onTextfieldKeyUp_: function(event) {
+    onTextfieldKeyDown_: function(event) {
+      if (event.keyCode == 13 /*enter*/) {
+        if (this.textfieldTimeout_) {
+          clearTimeout(this.textfieldTimeout_);
+        }
+        this.onTextfieldTimeout_();
+      }
+    },
+
+    /**
+     * Called when a input event occurs on the textfield. Starts an input
+     * timeout.
+     * @private
+     */
+    onTextfieldInput_: function() {
       if (this.textfieldTimeout_) {
         clearTimeout(this.textfieldTimeout_);
       }

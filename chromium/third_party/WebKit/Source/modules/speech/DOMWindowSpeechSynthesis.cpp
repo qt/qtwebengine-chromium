@@ -31,14 +31,14 @@
 #include "config.h"
 #include "modules/speech/DOMWindowSpeechSynthesis.h"
 
-#include "core/frame/DOMWindow.h"
-#include "core/frame/Frame.h"
+#include "core/frame/LocalDOMWindow.h"
+#include "core/frame/LocalFrame.h"
 #include "wtf/PassRefPtr.h"
 
 namespace WebCore {
 
-DOMWindowSpeechSynthesis::DOMWindowSpeechSynthesis(DOMWindow* window)
-    : DOMWindowProperty(window->frame())
+DOMWindowSpeechSynthesis::DOMWindowSpeechSynthesis(LocalDOMWindow& window)
+    : DOMWindowProperty(window.frame())
 {
 }
 
@@ -52,20 +52,20 @@ const char* DOMWindowSpeechSynthesis::supplementName()
 }
 
 // static
-DOMWindowSpeechSynthesis* DOMWindowSpeechSynthesis::from(DOMWindow* window)
+DOMWindowSpeechSynthesis& DOMWindowSpeechSynthesis::from(LocalDOMWindow& window)
 {
-    DOMWindowSpeechSynthesis* supplement = static_cast<DOMWindowSpeechSynthesis*>(Supplement<DOMWindow>::from(window, supplementName()));
+    DOMWindowSpeechSynthesis* supplement = static_cast<DOMWindowSpeechSynthesis*>(WillBeHeapSupplement<LocalDOMWindow>::from(window, supplementName()));
     if (!supplement) {
         supplement = new DOMWindowSpeechSynthesis(window);
-        provideTo(window, supplementName(), adoptPtr(supplement));
+        provideTo(window, supplementName(), adoptPtrWillBeNoop(supplement));
     }
-    return supplement;
+    return *supplement;
 }
 
 // static
-SpeechSynthesis* DOMWindowSpeechSynthesis::speechSynthesis(DOMWindow* window)
+SpeechSynthesis* DOMWindowSpeechSynthesis::speechSynthesis(LocalDOMWindow& window)
 {
-    return DOMWindowSpeechSynthesis::from(window)->speechSynthesis();
+    return DOMWindowSpeechSynthesis::from(window).speechSynthesis();
 }
 
 SpeechSynthesis* DOMWindowSpeechSynthesis::speechSynthesis()
@@ -73,6 +73,12 @@ SpeechSynthesis* DOMWindowSpeechSynthesis::speechSynthesis()
     if (!m_speechSynthesis && frame())
         m_speechSynthesis = SpeechSynthesis::create(frame()->domWindow()->executionContext());
     return m_speechSynthesis.get();
+}
+
+void DOMWindowSpeechSynthesis::trace(Visitor* visitor)
+{
+    visitor->trace(m_speechSynthesis);
+    WillBeHeapSupplement<LocalDOMWindow>::trace(visitor);
 }
 
 } // namespace WebCore

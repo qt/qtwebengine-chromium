@@ -26,6 +26,7 @@
 #define AudioSummingJunction_h
 
 #include "platform/audio/AudioBus.h"
+#include "platform/heap/Handle.h"
 #include "wtf/HashSet.h"
 #include "wtf/Vector.h"
 
@@ -54,22 +55,17 @@ public:
     // Rendering code accesses its version of the current connections here.
     unsigned numberOfRenderingConnections() const { return m_renderingOutputs.size(); }
     AudioNodeOutput* renderingOutput(unsigned i) { return m_renderingOutputs[i]; }
-    const AudioNodeOutput* renderingOutput(unsigned i) const { return m_renderingOutputs[i]; }
     bool isConnected() const { return numberOfRenderingConnections() > 0; }
 
     virtual bool canUpdateState() = 0;
     virtual void didUpdate() = 0;
 
 protected:
-    RefPtr<AudioContext> m_context;
+    RefPtrWillBePersistent<AudioContext> m_context;
 
     // m_outputs contains the AudioNodeOutputs representing current connections which are not disabled.
     // The rendering code should never use this directly, but instead uses m_renderingOutputs.
     HashSet<AudioNodeOutput*> m_outputs;
-
-    // numberOfConnections() should never be called from the audio rendering thread.
-    // Instead numberOfRenderingConnections() and renderingOutput() should be used.
-    unsigned numberOfConnections() const { return m_outputs.size(); }
 
     // m_renderingOutputs is a copy of m_outputs which will never be modified during the graph rendering on the audio thread.
     // This is the list which is used by the rendering code.

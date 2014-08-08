@@ -39,16 +39,17 @@ class CC_EXPORT PicturePileImpl : public PicturePileBase {
   // measured value over all runs.
   void RasterDirect(
       SkCanvas* canvas,
-      gfx::Rect canvas_rect,
+      const gfx::Rect& canvas_rect,
       float contents_scale,
       RenderingStatsInstrumentation* rendering_stats_instrumentation);
 
   // Similar to the above RasterDirect method, but this is a convenience method
   // for when it is known that the raster is going to an intermediate bitmap
   // that itself will then be blended and thus that a canvas clear is required.
+  // Note that this function may write outside the canvas_rect.
   void RasterToBitmap(
       SkCanvas* canvas,
-      gfx::Rect canvas_rect,
+      const gfx::Rect& canvas_rect,
       float contents_scale,
       RenderingStatsInstrumentation* stats_instrumentation);
 
@@ -56,7 +57,7 @@ class CC_EXPORT PicturePileImpl : public PicturePileBase {
   // SkDrawPictureCallback, which allows us to early out from analysis.
   void RasterForAnalysis(
       skia::AnalysisCanvas* canvas,
-      gfx::Rect canvas_rect,
+      const gfx::Rect& canvas_rect,
       float contents_scale,
       RenderingStatsInstrumentation* stats_instrumentation);
 
@@ -67,28 +68,27 @@ class CC_EXPORT PicturePileImpl : public PicturePileBase {
     ~Analysis();
 
     bool is_solid_color;
-    bool has_text;
     SkColor solid_color;
   };
 
-  void AnalyzeInRect(gfx::Rect content_rect,
+  void AnalyzeInRect(const gfx::Rect& content_rect,
                      float contents_scale,
                      Analysis* analysis);
 
-  void AnalyzeInRect(gfx::Rect content_rect,
+  void AnalyzeInRect(const gfx::Rect& content_rect,
                      float contents_scale,
                      Analysis* analysis,
                      RenderingStatsInstrumentation* stats_instrumentation);
 
   class CC_EXPORT PixelRefIterator {
    public:
-    PixelRefIterator(gfx::Rect content_rect,
+    PixelRefIterator(const gfx::Rect& content_rect,
                      float contents_scale,
                      const PicturePileImpl* picture_pile);
     ~PixelRefIterator();
 
-    skia::LazyPixelRef* operator->() const { return *pixel_ref_iterator_; }
-    skia::LazyPixelRef* operator*() const { return *pixel_ref_iterator_; }
+    SkPixelRef* operator->() const { return *pixel_ref_iterator_; }
+    SkPixelRef* operator*() const { return *pixel_ref_iterator_; }
     PixelRefIterator& operator++();
     operator bool() const { return pixel_ref_iterator_; }
 
@@ -129,15 +129,15 @@ class CC_EXPORT PicturePileImpl : public PicturePileBase {
 
  private:
   typedef std::map<Picture*, Region> PictureRegionMap;
-  void CoalesceRasters(gfx::Rect canvas_rect,
-                       gfx::Rect content_rect,
+  void CoalesceRasters(const gfx::Rect& canvas_rect,
+                       const gfx::Rect& content_rect,
                        float contents_scale,
                        PictureRegionMap* result);
 
   void RasterCommon(
       SkCanvas* canvas,
       SkDrawPictureCallback* callback,
-      gfx::Rect canvas_rect,
+      const gfx::Rect& canvas_rect,
       float contents_scale,
       RenderingStatsInstrumentation* rendering_stats_instrumentation,
       bool is_analysis);

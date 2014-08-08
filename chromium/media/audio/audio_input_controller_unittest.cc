@@ -51,9 +51,13 @@ class MockAudioInputControllerEventHandler
 
   MOCK_METHOD1(OnCreated, void(AudioInputController* controller));
   MOCK_METHOD1(OnRecording, void(AudioInputController* controller));
-  MOCK_METHOD1(OnError, void(AudioInputController* controller));
-  MOCK_METHOD3(OnData, void(AudioInputController* controller,
-                            const uint8* data, uint32 size));
+  MOCK_METHOD2(OnError, void(AudioInputController* controller,
+                             AudioInputController::ErrorCode error_code));
+  MOCK_METHOD2(OnData,
+               void(AudioInputController* controller, const AudioBus* data));
+  MOCK_METHOD2(OnLog,
+               void(AudioInputController* controller,
+                    const std::string& message));
 
  private:
   DISALLOW_COPY_AND_ASSIGN(MockAudioInputControllerEventHandler);
@@ -113,10 +117,10 @@ TEST_F(AudioInputControllerTest, RecordAndClose) {
       .Times(Exactly(1));
 
   // OnData() shall be called ten times.
-  EXPECT_CALL(event_handler, OnData(NotNull(), NotNull(), _))
+  EXPECT_CALL(event_handler, OnData(NotNull(), NotNull()))
       .Times(AtLeast(10))
-      .WillRepeatedly(CheckCountAndPostQuitTask(&count, 10,
-          message_loop_.message_loop_proxy()));
+      .WillRepeatedly(CheckCountAndPostQuitTask(
+          &count, 10, message_loop_.message_loop_proxy()));
 
   scoped_ptr<AudioManager> audio_manager(AudioManager::CreateForTesting());
   AudioParameters params(AudioParameters::AUDIO_FAKE, kChannelLayout,
@@ -142,9 +146,11 @@ TEST_F(AudioInputControllerTest, RecordAndClose) {
 }
 
 // Test that the AudioInputController reports an error when the input stream
-// stops without an OnClose() callback. This can happen when the underlying
-// audio layer stops feeding data as a result of a removed microphone device.
-TEST_F(AudioInputControllerTest, RecordAndError) {
+// stops. This can happen when the underlying audio layer stops feeding data as
+// a result of a removed microphone device.
+// Disabled due to crbug.com/357569 and crbug.com/357501.
+// TODO(henrika): Remove the test when the timer workaround has been removed.
+TEST_F(AudioInputControllerTest, DISABLED_RecordAndError) {
   MockAudioInputControllerEventHandler event_handler;
   int count = 0;
 
@@ -157,14 +163,15 @@ TEST_F(AudioInputControllerTest, RecordAndError) {
       .Times(Exactly(1));
 
   // OnData() shall be called ten times.
-  EXPECT_CALL(event_handler, OnData(NotNull(), NotNull(), _))
+  EXPECT_CALL(event_handler, OnData(NotNull(), NotNull()))
       .Times(AtLeast(10))
-      .WillRepeatedly(CheckCountAndPostQuitTask(&count, 10,
-          message_loop_.message_loop_proxy()));
+      .WillRepeatedly(CheckCountAndPostQuitTask(
+          &count, 10, message_loop_.message_loop_proxy()));
 
   // OnError() will be called after the data stream stops while the
   // controller is in a recording state.
-  EXPECT_CALL(event_handler, OnError(NotNull()))
+  EXPECT_CALL(event_handler, OnError(NotNull(),
+                                     AudioInputController::NO_DATA_ERROR))
       .Times(Exactly(1))
       .WillOnce(QuitMessageLoop(&message_loop_));
 

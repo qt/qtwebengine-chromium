@@ -23,7 +23,6 @@ CastMessageBuilder::CastMessageBuilder(
       decoder_faster_than_max_frame_rate_(decoder_faster_than_max_frame_rate),
       max_unacked_frames_(max_unacked_frames),
       cast_msg_(media_ssrc),
-      waiting_for_key_frame_(true),
       slowing_down_ack_(false),
       acked_last_frame_(true),
       last_acked_frame_id_(kStartFrameId) {
@@ -32,65 +31,61 @@ CastMessageBuilder::CastMessageBuilder(
 
 CastMessageBuilder::~CastMessageBuilder() {}
 
-void CastMessageBuilder::CompleteFrameReceived(uint32 frame_id,
-                                               bool is_key_frame) {
+void CastMessageBuilder::CompleteFrameReceived(uint32 frame_id) {
+  DCHECK_GE(static_cast<int32>(frame_id - last_acked_frame_id_), 0);
+  VLOG(2) << "CompleteFrameReceived: " << frame_id;
   if (last_update_time_.is_null()) {
     // Our first update.
     last_update_time_ = clock_->NowTicks();
   }
-  if (waiting_for_key_frame_) {
-    if (!is_key_frame) {
-      // Ignore that we have received this complete frame since we are
-      // waiting on a key frame.
-      return;
-    }
-    waiting_for_key_frame_ = false;
-    cast_msg_.missing_frames_and_packets_.clear();
-    cast_msg_.ack_frame_id_ = frame_id;
-    last_update_time_ = clock_->NowTicks();
-    // We might have other complete frames waiting after we receive the last
-    // packet in the key-frame.
-    UpdateAckMessage();
-  } else {
-    if (!UpdateAckMessage()) return;
 
-    BuildPacketList();
+  if (!UpdateAckMessage(frame_id)) {
+    return;
   }
+  BuildPacketList();
+
   // Send cast message.
-  VLOG(1) << "Send cast message Ack:" << static_cast<int>(frame_id);
+  VLOG(2) << "Send cast message Ack:" << static_cast<int>(frame_id);
   cast_feedback_->CastFeedback(cast_msg_);
 }
 
-bool CastMessageBuilder::UpdateAckMessage() {
+bool CastMessageBuilder::UpdateAckMessage(uint32 frame_id) {
   if (!decoder_faster_than_max_frame_rate_) {
     int complete_frame_count = frame_id_map_->NumberOfCompleteFrames();
     if (complete_frame_count > max_unacked_frames_) {
       // We have too many frames pending in our framer; slow down ACK.
-      slowing_down_ack_ = true;
+      if (!slowing_down_ack_) {
+        slowing_down_ack_ = true;
+        ack_queue_.push_back(last_acked_frame_id_);
+      }
     } else if (complete_frame_count <= 1) {
       // We are down to one or less frames in our framer; ACK normally.
       slowing_down_ack_ = false;
+      ack_queue_.clear();
     }
   }
+
   if (slowing_down_ack_) {
     // We are slowing down acknowledgment by acknowledging every other frame.
-    if (acked_last_frame_) {
-      acked_last_frame_ = false;
-    } else {
-      acked_last_frame_ = true;
-      last_acked_frame_id_++;
-      // Note: frame skipping and slowdown ACK is not supported at the same
-      // time; and it's not needed since we can skip frames to catch up.
+    // Note: frame skipping and slowdown ACK is not supported at the same
+    // time; and it's not needed since we can skip frames to catch up.
+    if (!ack_queue_.empty() && ack_queue_.back() == frame_id) {
+      return false;
     }
-  } else {
-    uint32 frame_id = frame_id_map_->LastContinuousFrame();
-
-    // Is it a new frame?
-    if (last_acked_frame_id_ == frame_id) return false;
-
-    last_acked_frame_id_ = frame_id;
-    acked_last_frame_ = true;
+    ack_queue_.push_back(frame_id);
+    if (!acked_last_frame_) {
+      ack_queue_.pop_front();
+    }
+    frame_id = ack_queue_.front();
   }
+
+  acked_last_frame_ = false;
+  // Is it a new frame?
+  if (last_acked_frame_id_ == frame_id) {
+    return false;
+  }
+  acked_last_frame_ = true;
+  last_acked_frame_id_ = frame_id;
   cast_msg_.ack_frame_id_ = last_acked_frame_id_;
   cast_msg_.missing_frames_and_packets_.clear();
   last_update_time_ = clock_->NowTicks();
@@ -100,23 +95,24 @@ bool CastMessageBuilder::UpdateAckMessage() {
 bool CastMessageBuilder::TimeToSendNextCastMessage(
     base::TimeTicks* time_to_send) {
   // We haven't received any packets.
-  if (last_update_time_.is_null() && frame_id_map_->Empty()) return false;
+  if (last_update_time_.is_null() && frame_id_map_->Empty())
+    return false;
 
-  *time_to_send = last_update_time_ +
-      base::TimeDelta::FromMilliseconds(kCastMessageUpdateIntervalMs);
+  *time_to_send = last_update_time_ + base::TimeDelta::FromMilliseconds(
+                                          kCastMessageUpdateIntervalMs);
   return true;
 }
 
 void CastMessageBuilder::UpdateCastMessage() {
   RtcpCastMessage message(media_ssrc_);
-  if (!UpdateCastMessageInternal(&message)) return;
+  if (!UpdateCastMessageInternal(&message))
+    return;
 
   // Send cast message.
   cast_feedback_->CastFeedback(message);
 }
 
 void CastMessageBuilder::Reset() {
-  waiting_for_key_frame_ = true;
   cast_msg_.ack_frame_id_ = kStartFrameId;
   cast_msg_.missing_frames_and_packets_.clear();
   time_last_nacked_map_.clear();
@@ -138,9 +134,10 @@ bool CastMessageBuilder::UpdateCastMessageInternal(RtcpCastMessage* message) {
   }
   last_update_time_ = now;
 
-  UpdateAckMessage();  // Needed to cover when a frame is skipped.
+  // Needed to cover when a frame is skipped.
+  UpdateAckMessage(last_acked_frame_id_);
   BuildPacketList();
-  *message = cast_msg_;
+  message->Copy(cast_msg_);
   return true;
 }
 
@@ -151,7 +148,8 @@ void CastMessageBuilder::BuildPacketList() {
   cast_msg_.missing_frames_and_packets_.clear();
 
   // Are we missing packets?
-  if (frame_id_map_->Empty()) return;
+  if (frame_id_map_->Empty())
+    return;
 
   uint32 newest_frame_id = frame_id_map_->NewestFrameId();
   uint32 next_expected_frame_id = cast_msg_.ack_frame_id_ + 1;
@@ -173,8 +171,8 @@ void CastMessageBuilder::BuildPacketList() {
     PacketIdSet missing;
     if (frame_id_map_->FrameExists(next_expected_frame_id)) {
       bool last_frame = (newest_frame_id == next_expected_frame_id);
-      frame_id_map_->GetMissingPackets(next_expected_frame_id, last_frame,
-                                       &missing);
+      frame_id_map_->GetMissingPackets(
+          next_expected_frame_id, last_frame, &missing);
       if (!missing.empty()) {
         time_last_nacked_map_[next_expected_frame_id] = now;
         cast_msg_.missing_frames_and_packets_.insert(

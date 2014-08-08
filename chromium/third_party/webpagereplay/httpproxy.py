@@ -15,11 +15,13 @@
 
 import BaseHTTPServer
 import daemonserver
+import errno
 import httparchive
 import logging
 import os
 import proxyshaper
 import re
+import socket
 import SocketServer
 import ssl
 import subprocess
@@ -121,12 +123,15 @@ class HttpArchiveHandler(BaseHTTPServer.BaseHTTPRequestHandler):
       self.send_response(response.status, response.reason)
       # TODO(mbelshe): This is lame - each write is a packet!
       for header, value in response.headers:
-        if header != 'server':
+        if header in ('last-modified', 'expires'):
+          self.send_header(header, response.update_date(value))
+        elif header not in ('date', 'server'):
           self.send_header(header, value)
       self.end_headers()
 
       for chunk, delay in zip(response.response_data, delays):
         if delay:
+          self.wfile.flush()
           time.sleep(delay / 1000.0)
         if is_chunked:
           # Write chunk length (hex) and data (e.g. "A\r\nTESSELATED\r\n").
@@ -145,51 +150,61 @@ class HttpArchiveHandler(BaseHTTPServer.BaseHTTPRequestHandler):
       logging.error('Error sending response for %s%s: %s',
                     self.headers['host'], self.path, e)
 
-  def _manage_request_count(fn):
-    """Keep track of the current number active requests.
-
-    This is used for traffic shaping. The request and response are
-    wrapped separately because no single BaseHTTPRequestHandler
-    function handles an entire active request.
-    BaseHTTPRequestHandler.process_one_request() does not work because
-    when one request finishes it is called again to wait for another
-    request -- and another request may never arrive.
-    """
-    def wrapped(self, *args, **kwargs):
-      self.server.num_active_requests += 1
-      try:
-        return fn(self, *args, **kwargs)
-      finally:
-        self.server.num_active_requests -= 1
-    return wrapped
-
-  @_manage_request_count
-  def parse_request(self):
-    return BaseHTTPServer.BaseHTTPRequestHandler.parse_request(self)
-
-  def do_POST(self):
-    self.do_GET()
-
-  def do_HEAD(self):
-    self.do_GET()
-
-  @_manage_request_count
-  def do_GET(self):
-    start_time = time.time()
-    request = self.get_archived_http_request()
-    if request is None:
-      self.send_error(500)
+  def handle_one_request(self):
+    """Handle a single HTTP request."""
+    try:
+      self.raw_requestline = self.rfile.readline(65537)
+      self.do_parse_and_handle_one_request()
+    except socket.timeout, e:
+      # A read or a write timed out.  Discard this connection
+      self.log_error("Request timed out: %r", e)
+      self.close_connection = 1
       return
-    response = self.server.custom_handlers.handle(request)
-    if not response:
-      response = self.server.http_archive_fetch(request)
-    if response:
-      self.send_archived_http_response(response)
+    except socket.error, e:
+      # Connection reset errors happen all the time due to the browser closing
+      # without terminating the connection properly.  They can be safely
+      # ignored.
+      if e[0] != errno.ECONNRESET:
+        raise
+
+  def do_parse_and_handle_one_request(self):
+    start_time = time.time()
+    self.server.num_active_requests += 1
+    request = None
+    try:
+      if len(self.raw_requestline) > 65536:
+        self.requestline = ''
+        self.request_version = ''
+        self.command = ''
+        self.send_error(414)
+        return
+      if not self.raw_requestline:
+        self.close_connection = 1
+        return
+      if not self.parse_request():
+        # An error code has been sent, just exit
+        return
+
+      try:
+        request = self.get_archived_http_request()
+        if request is None:
+          self.send_error(500)
+          return
+        response = self.server.custom_handlers.handle(request)
+        if not response:
+          response = self.server.http_archive_fetch(request)
+        if response:
+          self.send_archived_http_response(response)
+        else:
+          self.send_error(404)
+      finally:
+        self.wfile.flush()  # Actually send the response if not already done.
+    finally:
       request_time_ms = (time.time() - start_time) * 1000.0;
-      logging.debug('Served: %s (%dms)', request, request_time_ms)
+      if request:
+        logging.debug('Served: %s (%dms)', request, request_time_ms)
       self.server.total_request_time += request_time_ms
-    else:
-      self.send_error(404)
+      self.server.num_active_requests -= 1
 
   def send_error(self, status, body=None):
     """Override the default send error with a version that doesn't unnecessarily
@@ -215,6 +230,7 @@ class HttpProxyServer(SocketServer.ThreadingMixIn,
 
   def __init__(self, http_archive_fetch, custom_handlers,
                host='localhost', port=80, use_delays=False, is_ssl=False,
+               protocol='HTTP',
                down_bandwidth='0', up_bandwidth='0', delay_ms='0'):
     """Start HTTP server.
 
@@ -242,7 +258,7 @@ class HttpProxyServer(SocketServer.ThreadingMixIn,
     self.traffic_shaping_delay_ms = int(delay_ms)
     self.num_active_requests = 0
     self.total_request_time = 0
-    self.protocol = 'HTTPS' if self.is_ssl else 'HTTP'
+    self.protocol = protocol
 
     # Note: This message may be scraped. Do not change it.
     logging.warning(
@@ -265,7 +281,15 @@ class HttpsProxyServer(HttpProxyServer):
 
   def __init__(self, http_archive_fetch, custom_handlers, certfile, **kwargs):
     HttpProxyServer.__init__(self, http_archive_fetch, custom_handlers,
-                             is_ssl=True, **kwargs)
+                             is_ssl=True, protocol='HTTPS', **kwargs)
     self.socket = ssl.wrap_socket(
-        self.socket, certfile=certfile, server_side=True)
-    # Ancestor class, deamonserver, calls serve_forever() during its __init__.
+        self.socket, certfile=certfile, server_side=True,
+        do_handshake_on_connect=False)
+    # Ancestor class, DaemonServer, calls serve_forever() during its __init__.
+
+class HttpToHttpsProxyServer(HttpProxyServer):
+  """Listens for HTTP requests but sends them to the target as HTTPS requests"""
+
+  def __init__(self, http_archive_fetch, custom_handlers, **kwargs):
+    HttpProxyServer.__init__(self, http_archive_fetch, custom_handlers,
+                             is_ssl=True, protocol='HTTP-to-HTTPS', **kwargs)

@@ -49,7 +49,7 @@ void UIResourceLayerImpl::SetUIResourceId(UIResourceId uid) {
   NoteLayerPropertyChanged();
 }
 
-void UIResourceLayerImpl::SetImageBounds(gfx::Size image_bounds) {
+void UIResourceLayerImpl::SetImageBounds(const gfx::Size& image_bounds) {
   // This check imposes an ordering on the call sequence.  An UIResource must
   // exist before SetImageBounds can be called.
   DCHECK(ui_resource_id_);
@@ -62,8 +62,8 @@ void UIResourceLayerImpl::SetImageBounds(gfx::Size image_bounds) {
   NoteLayerPropertyChanged();
 }
 
-void UIResourceLayerImpl::SetUV(gfx::PointF top_left,
-                                gfx::PointF bottom_right) {
+void UIResourceLayerImpl::SetUV(const gfx::PointF& top_left,
+                                const gfx::PointF& bottom_right) {
   if (uv_top_left_ == top_left && uv_bottom_right_ == bottom_right)
     return;
   uv_top_left_ = top_left;
@@ -93,9 +93,11 @@ bool UIResourceLayerImpl::WillDraw(DrawMode draw_mode,
 
 void UIResourceLayerImpl::AppendQuads(QuadSink* quad_sink,
                                      AppendQuadsData* append_quads_data) {
-  SharedQuadState* shared_quad_state =
-      quad_sink->UseSharedQuadState(CreateSharedQuadState());
-  AppendDebugBorderQuad(quad_sink, shared_quad_state, append_quads_data);
+  SharedQuadState* shared_quad_state = quad_sink->CreateSharedQuadState();
+  PopulateSharedQuadState(shared_quad_state);
+
+  AppendDebugBorderQuad(
+      quad_sink, content_bounds(), shared_quad_state, append_quads_data);
 
   if (!ui_resource_id_)
     return;
@@ -111,17 +113,21 @@ void UIResourceLayerImpl::AppendQuads(QuadSink* quad_sink,
 
   DCHECK(!bounds().IsEmpty());
 
-  gfx::Rect quad_rect(bounds());
-
   bool opaque = layer_tree_impl()->IsUIResourceOpaque(ui_resource_id_) ||
                 contents_opaque();
-  gfx::Rect opaque_rect(opaque ? quad_rect : gfx::Rect());
-  scoped_ptr<TextureDrawQuad> quad;
 
-  quad = TextureDrawQuad::Create();
+  gfx::Rect quad_rect(bounds());
+  gfx::Rect opaque_rect(opaque ? quad_rect : gfx::Rect());
+  gfx::Rect visible_quad_rect = quad_sink->UnoccludedContentRect(
+      quad_rect, draw_properties().target_space_transform);
+  if (visible_quad_rect.IsEmpty())
+    return;
+
+  scoped_ptr<TextureDrawQuad> quad = TextureDrawQuad::Create();
   quad->SetNew(shared_quad_state,
                quad_rect,
                opaque_rect,
+               visible_quad_rect,
                resource,
                premultiplied_alpha,
                uv_top_left_,
@@ -129,7 +135,7 @@ void UIResourceLayerImpl::AppendQuads(QuadSink* quad_sink,
                SK_ColorTRANSPARENT,
                vertex_opacity_,
                flipped);
-  quad_sink->Append(quad.PassAs<DrawQuad>(), append_quads_data);
+  quad_sink->Append(quad.PassAs<DrawQuad>());
 }
 
 const char* UIResourceLayerImpl::LayerTypeAsString() const {

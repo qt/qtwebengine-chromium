@@ -54,7 +54,7 @@ void TextLinkColors::resetVisitedLinkColor()
 
 void TextLinkColors::resetActiveLinkColor()
 {
-    m_activeLinkColor.setNamedColor("red");
+    m_activeLinkColor = Color(255, 0, 0);
 }
 
 static Color colorForCSSValue(CSSValueID cssValueId)
@@ -110,7 +110,8 @@ Color TextLinkColors::colorFromPrimitiveValue(const CSSPrimitiveValue* value, Co
     case CSSValueWebkitActivelink:
         return activeLinkColor();
     case CSSValueWebkitFocusRingColor:
-        return RenderTheme::focusRingColor();
+        return RenderTheme::theme().focusRingColor();
+    case CSSValueInvert: // We don't support outline-color: invert
     case CSSValueCurrentcolor:
         return currentColor;
     default:

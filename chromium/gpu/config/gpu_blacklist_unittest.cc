@@ -61,7 +61,8 @@ class GpuBlacklistTest : public testing::Test {
     gpu_info_.driver_vendor = "NVIDIA";
     gpu_info_.driver_version = "1.6.18";
     gpu_info_.driver_date = "7-14-2009";
-    gpu_info_.machine_model = "MacBookPro 7.1";
+    gpu_info_.machine_model_name = "MacBookPro";
+    gpu_info_.machine_model_version = "7.1";
     gpu_info_.gl_vendor = "NVIDIA Corporation";
     gpu_info_.gl_renderer = "NVIDIA GeForce GT 120 OpenGL Engine";
     gpu_info_.performance_stats.graphics = 5.0;
@@ -91,17 +92,13 @@ GPU_BLACKLIST_FEATURE_TEST(Accelerated2DCanvas,
                            "accelerated_2d_canvas",
                            GPU_FEATURE_TYPE_ACCELERATED_2D_CANVAS)
 
-GPU_BLACKLIST_FEATURE_TEST(AcceleratedCompositing,
-                           "accelerated_compositing",
-                           GPU_FEATURE_TYPE_ACCELERATED_COMPOSITING)
+GPU_BLACKLIST_FEATURE_TEST(GpuCompositing,
+                           "gpu_compositing",
+                           GPU_FEATURE_TYPE_GPU_COMPOSITING)
 
 GPU_BLACKLIST_FEATURE_TEST(WebGL,
                            "webgl",
                            GPU_FEATURE_TYPE_WEBGL)
-
-GPU_BLACKLIST_FEATURE_TEST(Multisampling,
-                           "multisampling",
-                           GPU_FEATURE_TYPE_MULTISAMPLING)
 
 GPU_BLACKLIST_FEATURE_TEST(Flash3D,
                            "flash_3d",
@@ -115,10 +112,6 @@ GPU_BLACKLIST_FEATURE_TEST(FlashStage3DBaseline,
                            "flash_stage3d_baseline",
                            GPU_FEATURE_TYPE_FLASH_STAGE3D_BASELINE)
 
-GPU_BLACKLIST_FEATURE_TEST(TextureSharing,
-                           "texture_sharing",
-                           GPU_FEATURE_TYPE_TEXTURE_SHARING)
-
 GPU_BLACKLIST_FEATURE_TEST(AcceleratedVideoDecode,
                            "accelerated_video_decode",
                            GPU_FEATURE_TYPE_ACCELERATED_VIDEO_DECODE)
@@ -127,20 +120,16 @@ GPU_BLACKLIST_FEATURE_TEST(AcceleratedVideoEncode,
                            "accelerated_video_encode",
                            GPU_FEATURE_TYPE_ACCELERATED_VIDEO_ENCODE)
 
-GPU_BLACKLIST_FEATURE_TEST(Css3D,
-                           "3d_css",
-                           GPU_FEATURE_TYPE_3D_CSS)
-
-GPU_BLACKLIST_FEATURE_TEST(AcceleratedVideo,
-                           "accelerated_video",
-                           GPU_FEATURE_TYPE_ACCELERATED_VIDEO)
-
 GPU_BLACKLIST_FEATURE_TEST(PanelFitting,
                            "panel_fitting",
                            GPU_FEATURE_TYPE_PANEL_FITTING)
 
-GPU_BLACKLIST_FEATURE_TEST(ForceCompositingMode,
-                           "force_compositing_mode",
-                           GPU_FEATURE_TYPE_FORCE_COMPOSITING_MODE)
+GPU_BLACKLIST_FEATURE_TEST(GpuRasterization,
+                           "gpu_rasterization",
+                           GPU_FEATURE_TYPE_GPU_RASTERIZATION)
+
+GPU_BLACKLIST_FEATURE_TEST(GpuRasterizationFieldTrial,
+                           "gpu_rasterization_field_trial",
+                           GPU_FEATURE_TYPE_GPU_RASTERIZATION_FIELD_TRIAL)
 
 }  // namespace gpu

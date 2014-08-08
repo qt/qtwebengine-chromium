@@ -29,7 +29,7 @@ namespace WebCore {
 
 class HTMLLIElement FINAL : public HTMLElement {
 public:
-    static PassRefPtr<HTMLLIElement> create(Document&);
+    DECLARE_NODE_FACTORY(HTMLLIElement);
 
 private:
     explicit HTMLLIElement(Document&);

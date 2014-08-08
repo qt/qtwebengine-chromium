@@ -29,6 +29,7 @@
 #ifndef XMLErrors_h
 #define XMLErrors_h
 
+#include "platform/heap/Handle.h"
 #include "wtf/text/StringBuilder.h"
 #include "wtf/text/TextPosition.h"
 
@@ -37,11 +38,13 @@ namespace WebCore {
 class Document;
 
 class XMLErrors {
+    DISALLOW_ALLOCATION();
 public:
     explicit XMLErrors(Document*);
+    void trace(Visitor*);
 
     // Exposed for callbacks:
-    enum ErrorType { warning, nonFatal, fatal };
+    enum ErrorType { ErrorTypeWarning, ErrorTypeNonFatal, ErrorTypeFatal };
     void handleError(ErrorType, const char* message, int lineNumber, int columnNumber);
     void handleError(ErrorType, const char* message, TextPosition);
 
@@ -50,7 +53,7 @@ public:
 private:
     void appendErrorMessage(const String& typeString, TextPosition, const char* message);
 
-    Document* m_document;
+    RawPtrWillBeMember<Document> m_document;
 
     int m_errorCount;
     TextPosition m_lastErrorPosition;

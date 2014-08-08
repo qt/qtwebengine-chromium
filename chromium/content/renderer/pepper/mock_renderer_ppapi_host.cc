@@ -16,11 +16,9 @@ MockRendererPpapiHost::MockRendererPpapiHost(RenderView* render_view,
       render_view_(render_view),
       pp_instance_(instance),
       has_user_gesture_(false),
-      plugin_instance_(new FakePepperPluginInstance) {
-}
+      plugin_instance_(new FakePepperPluginInstance) {}
 
-MockRendererPpapiHost::~MockRendererPpapiHost() {
-}
+MockRendererPpapiHost::~MockRendererPpapiHost() {}
 
 ppapi::host::PpapiHost* MockRendererPpapiHost::GetPpapiHost() {
   return &ppapi_host_;
@@ -79,8 +77,14 @@ IPC::PlatformFileForTransit MockRendererPpapiHost::ShareHandleWithRemote(
   return IPC::InvalidPlatformFileForTransit();
 }
 
-bool MockRendererPpapiHost::IsRunningInProcess() const {
-  return false;
+bool MockRendererPpapiHost::IsRunningInProcess() const { return false; }
+
+std::string MockRendererPpapiHost::GetPluginName() const {
+  return std::string();
+}
+
+void MockRendererPpapiHost::SetToExternalPluginHost() {
+  NOTIMPLEMENTED();
 }
 
 void MockRendererPpapiHost::CreateBrowserResourceHosts(

@@ -34,8 +34,8 @@ class RenderTextControlSingleLine : public RenderTextControl {
 public:
     RenderTextControlSingleLine(HTMLInputElement*);
     virtual ~RenderTextControlSingleLine();
-    // FIXME: Move createInnerTextStyle() to TextControlInnerTextElement.
-    virtual PassRefPtr<RenderStyle> createInnerTextStyle(const RenderStyle* startStyle) const;
+    // FIXME: Move createInnerEditorStyle() to TextControlInnerEditorElement.
+    virtual PassRefPtr<RenderStyle> createInnerEditorStyle(const RenderStyle* startStyle) const OVERRIDE FINAL;
 
     void capsLockStateMayHaveChanged();
 
@@ -45,41 +45,40 @@ protected:
     Element* containerElement() const;
     Element* editingViewPortElement() const;
     HTMLInputElement* inputElement() const;
-    virtual void updateFromElement() OVERRIDE;
 
 private:
-    virtual bool hasControlClip() const;
-    virtual LayoutRect controlClipRect(const LayoutPoint&) const;
-    virtual bool isTextField() const { return true; }
+    virtual bool hasControlClip() const OVERRIDE FINAL;
+    virtual LayoutRect controlClipRect(const LayoutPoint&) const OVERRIDE FINAL;
+    virtual bool isTextField() const OVERRIDE FINAL { return true; }
 
-    virtual void paint(PaintInfo&, const LayoutPoint&);
-    virtual void layout();
+    virtual void paint(PaintInfo&, const LayoutPoint&) OVERRIDE;
+    virtual void layout() OVERRIDE;
 
-    virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction) OVERRIDE;
+    virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction) OVERRIDE FINAL;
 
-    virtual void autoscroll(const IntPoint&);
+    virtual void autoscroll(const IntPoint&) OVERRIDE FINAL;
 
     // Subclassed to forward to our inner div.
-    virtual int scrollLeft() const;
-    virtual int scrollTop() const;
-    virtual int scrollWidth() const;
-    virtual int scrollHeight() const;
-    virtual void setScrollLeft(int);
-    virtual void setScrollTop(int);
+    virtual LayoutUnit scrollLeft() const OVERRIDE FINAL;
+    virtual LayoutUnit scrollTop() const OVERRIDE FINAL;
+    virtual LayoutUnit scrollWidth() const OVERRIDE FINAL;
+    virtual LayoutUnit scrollHeight() const OVERRIDE FINAL;
+    virtual void setScrollLeft(LayoutUnit) OVERRIDE FINAL;
+    virtual void setScrollTop(LayoutUnit) OVERRIDE FINAL;
 
     int textBlockWidth() const;
-    virtual float getAvgCharWidth(AtomicString family);
-    virtual LayoutUnit preferredContentLogicalWidth(float charWidth) const;
+    virtual float getAvgCharWidth(AtomicString family) OVERRIDE FINAL;
+    virtual LayoutUnit preferredContentLogicalWidth(float charWidth) const OVERRIDE FINAL;
     virtual LayoutUnit computeControlLogicalHeight(LayoutUnit lineHeight, LayoutUnit nonContentHeight) const OVERRIDE;
 
-    virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle);
+    virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle) OVERRIDE FINAL;
 
     bool textShouldBeTruncated() const;
 
     HTMLElement* innerSpinButtonElement() const;
 
     bool m_shouldDrawCapsLockIndicator;
-    LayoutUnit m_desiredInnerTextLogicalHeight;
+    LayoutUnit m_desiredInnerEditorLogicalHeight;
 };
 
 DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderTextControlSingleLine, isTextField());

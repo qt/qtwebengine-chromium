@@ -59,10 +59,6 @@ body {
     margin: 8px
 }
 
-body:-webkit-seamless-document {
-    margin: 0px
-}
-
 body:-webkit-full-page-media {
     background-color: rgb(0, 0, 0)
 }
@@ -394,11 +390,11 @@ button {
 }
 
 /* Form controls don't go vertical. */
-input, textarea, keygen, select, button, isindex, meter, progress {
+input, textarea, keygen, select, button, meter, progress {
     -webkit-writing-mode: horizontal-tb !important;
 }
 
-input, textarea, keygen, select, button, isindex {
+input, textarea, keygen, select, button {
     margin: 0__qem;
     font: -webkit-small-control;
     color: initial;
@@ -416,7 +412,7 @@ input[type="hidden"] {
     display: none
 }
 
-input, input[type="password"], input[type="search"], isindex {
+input, input[type="password"], input[type="search"] {
     -webkit-appearance: textfield;
     padding: 1px;
     background-color: white;
@@ -577,8 +573,8 @@ input[type="datetime-local"]::-webkit-inner-spin-button,
 input[type="month"]::-webkit-inner-spin-button,
 input[type="time"]::-webkit-inner-spin-button,
 input[type="week"]::-webkit-inner-spin-button {
-    display: inline-block;
-    position: static;
+    /* FIXME: Remove height. */
+    height: 1.5em;
     -webkit-margin-start: 2px;
 }
 
@@ -589,7 +585,9 @@ input[type="month"],
 input[type="time"],
 input[type="week"] {
     align-items: center;
-    -webkit-appearance: menulist-button;
+    -webkit-appearance: menulist;
+    background-color: ButtonFace;
+    border: 1px solid #a9a9a9;
     display: -webkit-inline-flex;
     overflow: hidden;
     width: 10em;
@@ -603,15 +601,10 @@ input::-webkit-date-and-time-value {
 
 input::-webkit-inner-spin-button {
     -webkit-appearance: inner-spin-button;
-    display: block;
-    position: relative;
+    display: inline-block;
     cursor: default;
-    /* This height property is ignored for input type "number" and others which
-     * use RenderTextControlSingleLine as renderer which sets height of spin
-     * button in layout(). */
-    height: 1.5em;
-    vertical-align: top;
     flex: none;
+    align-self: stretch;
     -webkit-user-select: none;
     -webkit-user-modify: read-only !important;
     opacity: 0;
@@ -622,18 +615,6 @@ input:enabled:read-write:-webkit-any(:focus,:hover)::-webkit-inner-spin-button {
     opacity: 1;
     pointer-events: auto;
 }
-
-#if defined(ENABLE_INPUT_SPEECH) && ENABLE_INPUT_SPEECH
-input::-webkit-input-speech-button {
-    -webkit-appearance: -webkit-input-speech-button;
-    display: block;
-    vertical-align: top;
-    flex: none;
-    -webkit-user-modify: read-only !important;
-    -webkit-align-self: flex-start;
-    margin: auto 0;
-}
-#endif
 
 keygen, select {
     border-radius: 5px;
@@ -664,7 +645,7 @@ textarea {
     pointer-events: none !important;
 }
 
-input::-webkit-input-placeholder, isindex::-webkit-input-placeholder {
+input::-webkit-input-placeholder {
     white-space: pre;
     word-wrap: normal;
     overflow: hidden;
@@ -688,7 +669,7 @@ input[type="file"] {
     text-align: start !important;
 }
 
-input:-webkit-autofill, textarea:-webkit-autofill {
+input:-webkit-autofill, textarea:-webkit-autofill, select:-webkit-autofill {
     background-color: #FAFFBD !important;
     background-image:none !important;
     color: #000000 !important;
@@ -773,6 +754,10 @@ input[type="button"]:active:disabled, input[type="submit"]:active:disabled, inpu
     border-style: outset
 }
 
+datalist {
+    display: none
+}
+
 area, param {
     display: none
 }
@@ -791,6 +776,10 @@ input[type="color"] {
     -webkit-appearance: square-button;
     width: 44px;
     height: 23px;
+    background-color: ButtonFace;
+    /* Same as native_theme_base. */
+    border: 1px #a9a9a9 solid;
+    padding: 1px 2px;
 }
 
 input[type="color"]::-webkit-color-swatch-wrapper {
@@ -807,6 +796,21 @@ input[type="color"]::-webkit-color-swatch {
     border: 1px solid #777777;
     flex: 1;
     -webkit-user-modify: read-only !important;
+}
+
+input[type="color"][list] {
+    -webkit-appearance: menulist;
+    width: 88px;
+    height: 23px
+}
+
+input[type="color"][list]::-webkit-color-swatch-wrapper {
+    padding-left: 8px;
+    padding-right: 24px;
+}
+
+input[type="color"][list]::-webkit-color-swatch {
+    border-color: #000000;
 }
 
 input::-webkit-calendar-picker-indicator {
@@ -912,7 +916,7 @@ meter::-webkit-meter-inner-element {
 }
 
 meter::-webkit-meter-bar {
-    background: -webkit-gradient(linear, left top, left bottom, from(#ddd), to(#ddd), color-stop(0.20, #eee), color-stop(0.45, #ccc), color-stop(0.55, #ccc));
+    background: linear-gradient(to bottom, #ddd, #eee 20%, #ccc 45%, #ccc 55%, #ddd);
     height: 100%;
     width: 100%;
     -webkit-user-modify: read-only !important;
@@ -920,21 +924,21 @@ meter::-webkit-meter-bar {
 }
 
 meter::-webkit-meter-optimum-value {
-    background: -webkit-gradient(linear, left top, left bottom, from(#ad7), to(#ad7), color-stop(0.20, #cea), color-stop(0.45, #7a3), color-stop(0.55, #7a3));
+    background: linear-gradient(to bottom, #ad7, #cea 20%, #7a3 45%, #7a3 55%, #ad7);
     height: 100%;
     -webkit-user-modify: read-only !important;
     box-sizing: border-box;
 }
 
 meter::-webkit-meter-suboptimum-value {
-    background: -webkit-gradient(linear, left top, left bottom, from(#fe7), to(#fe7), color-stop(0.20, #ffc), color-stop(0.45, #db3), color-stop(0.55, #db3));
+    background: linear-gradient(to bottom, #fe7, #ffc 20%, #db3 45%, #db3 55%, #fe7);
     height: 100%;
     -webkit-user-modify: read-only !important;
     box-sizing: border-box;
 }
 
 meter::-webkit-meter-even-less-good-value {
-    background: -webkit-gradient(linear, left top, left bottom, from(#f77), to(#f77), color-stop(0.20, #fcc), color-stop(0.45, #d44), color-stop(0.55, #d44));
+    background: linear-gradient(to bottom, #f77, #fcc 20%, #d44 45%, #d44 55%, #f77);
     height: 100%;
     -webkit-user-modify: read-only !important;
     box-sizing: border-box;
@@ -1046,7 +1050,7 @@ applet:focus, embed:focus, iframe:focus, object:focus {
     outline: none
 }
   
-input:focus, textarea:focus, isindex:focus, keygen:focus, select:focus {
+input:focus, textarea:focus, keygen:focus, select:focus {
     outline-offset: -2px
 }
 
@@ -1108,12 +1112,8 @@ frameset {
     border-color: inherit
 }
 
-iframe:not([seamless]) {
+iframe {
     border: 2px inset
-}
-
-iframe[seamless] {
-    display: block
 }
 
 details {
@@ -1128,7 +1128,7 @@ summary::-webkit-details-marker {
     display: inline-block;
     width: 0.66em;
     height: 0.66em;
-    margin-right: 0.4em;
+    -webkit-margin-end: 0.4em;
 }
 
 template {

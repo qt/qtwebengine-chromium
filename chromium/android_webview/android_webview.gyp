@@ -5,13 +5,6 @@
   'variables': {
     'chromium_code': 1,
   },
-  'conditions': [
-    ['android_webview_build==0', {
-      'includes': [
-        'android_webview_tests.gypi',
-      ],
-    }],
-  ],
   'targets': [
     {
       'target_name': 'libwebviewchromium',
@@ -26,12 +19,28 @@
         [ 'android_webview_build==0', {
           'product_prefix': 'libstandalone',
         }],
-        # The general approach is to allow the executable target to choose
-        # the allocator, but as in the WebView case we are building a library
-        # only, put the dependency on the allocator here
-        [ 'android_webview_build==1 and android_use_tcmalloc==1', {
+        [ 'android_webview_build==1', {
+          # When building inside the android tree we also need to depend on all
+          # the java sources generated from templates which will be needed by
+          # android_webview_java in android_webview/Android.mk.
           'dependencies': [
-            '../base/allocator/allocator.gyp:allocator', ],
+            '../base/base.gyp:base_java_application_state',
+            '../base/base.gyp:base_java_memory_pressure_level_list',
+            '../content/content.gyp:content_gamepad_mapping',
+            '../content/content.gyp:gesture_event_type_java',
+            '../content/content.gyp:page_transition_types_java',
+            '../content/content.gyp:popup_item_type_java',
+            '../content/content.gyp:result_codes_java',
+            '../content/content.gyp:screen_orientation_values_java',
+            '../content/content.gyp:speech_recognition_error_java',
+            '../media/media.gyp:media_android_imageformat_list',
+            '../net/net.gyp:cert_verify_status_android_java',
+            '../net/net.gyp:certificate_mime_types_java',
+            '../net/net.gyp:net_errors_java',
+            '../net/net.gyp:private_key_types_java',
+            '../ui/android/ui_android.gyp:bitmap_format_java',
+            '../ui/android/ui_android.gyp:window_open_disposition_java',
+          ],
         }],
         [ 'android_webview_build==1 and use_system_skia==0', {
           # When not using the system skia there are linker warnings about
@@ -58,9 +67,6 @@
         '<(DEPTH)/ui/resources/ui_resources.gyp:ui_resources',
         '<(DEPTH)/webkit/webkit_resources.gyp:webkit_resources',
       ],
-      'variables': {
-        'repack_path': '<(DEPTH)/tools/grit/grit/format/repack.py',
-      },
       'actions': [
         {
           'action_name': 'repack_android_webview_pack',
@@ -72,16 +78,9 @@
               '<(SHARED_INTERMEDIATE_DIR)/webkit/blink_resources.pak',
               '<(SHARED_INTERMEDIATE_DIR)/webkit/webkit_resources_100_percent.pak',
             ],
+            'pak_output': '<(PRODUCT_DIR)/android_webview_apk/assets/webviewchromium.pak',
           },
-          'inputs': [
-            '<(repack_path)',
-            '<@(pak_inputs)',
-          ],
-          'outputs': [
-            '<(PRODUCT_DIR)/android_webview_apk/assets/webviewchromium.pak',
-          ],
-          'action': ['python', '<(repack_path)', '<@(_outputs)',
-                     '<@(pak_inputs)'],
+         'includes': [ '../build/repack_action.gypi' ],
         }
       ],
     },
@@ -92,6 +91,9 @@
         '../android_webview/native/webview_native.gyp:webview_native',
         '../components/components.gyp:auto_login_parser',
         '../components/components.gyp:autofill_content_renderer',
+        '../components/components.gyp:cdm_browser',
+        '../components/components.gyp:cdm_renderer',
+        '../components/components.gyp:data_reduction_proxy_browser',
         '../components/components.gyp:navigation_interception',
         '../components/components.gyp:visitedlink_browser',
         '../components/components.gyp:visitedlink_renderer',
@@ -99,9 +101,12 @@
         '../content/content.gyp:content_app_both',
         '../gpu/gpu.gyp:command_buffer_service',
         '../gpu/gpu.gyp:gles2_implementation',
+        '../gpu/gpu.gyp:gl_in_process_context',
+        '../media/media.gyp:media',
         '../printing/printing.gyp:printing',
         '../skia/skia.gyp:skia',
         '../third_party/WebKit/public/blink.gyp:blink',
+        '../v8/tools/gyp/v8.gyp:v8',
         '../ui/gl/gl.gyp:gl',
         '../ui/shell_dialogs/shell_dialogs.gyp:shell_dialogs',
         '../webkit/common/gpu/webkit_gpu.gyp:webkit_gpu',
@@ -117,6 +122,7 @@
         'browser/aw_browser_context.h',
         'browser/aw_browser_main_parts.cc',
         'browser/aw_browser_main_parts.h',
+        'browser/aw_browser_permission_request_delegate.h',
         'browser/aw_contents_client_bridge_base.cc',
         'browser/aw_contents_client_bridge_base.h',
         'browser/aw_content_browser_client.cc',
@@ -149,18 +155,25 @@
         'browser/aw_result_codes.h',
         'browser/aw_web_preferences_populater.cc',
         'browser/aw_web_preferences_populater.h',
+        'browser/aw_web_resource_response.cc',
+        'browser/aw_web_resource_response.h',
+        'browser/browser_view_renderer.cc',
         'browser/browser_view_renderer.h',
+        'browser/browser_view_renderer_client.h',
+        'browser/deferred_gpu_command_service.cc',
+        'browser/deferred_gpu_command_service.h',
         'browser/find_helper.cc',
         'browser/find_helper.h',
+        'browser/global_tile_manager.cc',
+        'browser/global_tile_manager.h',
+        'browser/global_tile_manager_client.h',
         'browser/gpu_memory_buffer_factory_impl.cc',
         'browser/gpu_memory_buffer_factory_impl.h',
+        'browser/hardware_renderer.cc',
+        'browser/hardware_renderer.h',
         'browser/icon_helper.cc',
         'browser/icon_helper.h',
-        'browser/in_process_view_renderer.cc',
-        'browser/in_process_view_renderer.h',
         'browser/input_stream.h',
-        'browser/intercepted_request_data.cc',
-        'browser/intercepted_request_data.h',
         'browser/jni_dependency_factory.h',
         'browser/gl_view_renderer_manager.cc',
         'browser/gl_view_renderer_manager.h',
@@ -177,6 +190,8 @@
         'browser/net/init_native_callback.h',
         'browser/net/input_stream_reader.cc',
         'browser/net/input_stream_reader.h',
+        'browser/parent_output_surface.cc',
+        'browser/parent_output_surface.h',
         'browser/renderer_host/aw_render_view_host_ext.cc',
         'browser/renderer_host/aw_render_view_host_ext.h',
         'browser/renderer_host/aw_resource_dispatcher_host_delegate.cc',
@@ -186,6 +201,8 @@
         'browser/scoped_allow_wait_for_legacy_web_view_api.h',
         'browser/scoped_app_gl_state_restore.cc',
         'browser/scoped_app_gl_state_restore.h',
+        'browser/shared_renderer_state.cc',
+        'browser/shared_renderer_state.h',
         'common/android_webview_message_generator.cc',
         'common/android_webview_message_generator.h',
         'common/aw_content_client.cc',
@@ -195,6 +212,7 @@
         'common/aw_resource.h',
         'common/aw_switches.cc',
         'common/aw_switches.h',
+        'common/devtools_instrumentation.h',
         'common/print_messages.cc',
         'common/print_messages.h',
         'common/render_view_messages.cc',
@@ -208,31 +226,82 @@
         'public/browser/draw_gl.h',
         'renderer/aw_content_renderer_client.cc',
         'renderer/aw_content_renderer_client.h',
+        'renderer/aw_execution_termination_filter.cc',
+        'renderer/aw_execution_termination_filter.h',
         'renderer/aw_key_systems.cc',
         'renderer/aw_key_systems.h',
+        'renderer/aw_permission_client.cc',
+        'renderer/aw_permission_client.h',
         'renderer/aw_render_process_observer.cc',
         'renderer/aw_render_process_observer.h',
+        'renderer/aw_render_frame_ext.cc',
+        'renderer/aw_render_frame_ext.h',
         'renderer/aw_render_view_ext.cc',
         'renderer/aw_render_view_ext.h',
         'renderer/print_web_view_helper.cc',
         'renderer/print_web_view_helper.h',
         'renderer/print_web_view_helper_android.cc',
         'renderer/print_web_view_helper_linux.cc',
+        'renderer/print_render_frame_observer.cc',
+        'renderer/print_render_frame_observer.h',
       ],
     },
-    {
-      'target_name': 'android_webview_java',
-      'type': 'none',
-      'dependencies': [
-        '../components/components.gyp:navigation_interception_java',
-        '../components/components.gyp:web_contents_delegate_android_java',
-        '../content/content.gyp:content_java',
-        '../ui/android/ui_android.gyp:ui_java',
+  ],
+  'conditions': [
+    ['android_webview_build==0', {
+      'includes': [
+        'android_webview_tests.gypi',
       ],
-      'variables': {
-        'java_in_dir': '../android_webview/java',
-      },
-      'includes': [ '../build/java.gypi' ],
-    },
+      'targets': [
+        {
+          'target_name': 'android_webview_java',
+          'type': 'none',
+          'dependencies': [
+            '../components/components.gyp:navigation_interception_java',
+            '../components/components.gyp:web_contents_delegate_android_java',
+            '../content/content.gyp:content_java',
+            '../ui/android/ui_android.gyp:ui_java',
+          ],
+          'variables': {
+            'java_in_dir': '../android_webview/java',
+          },
+          'includes': [ '../build/java.gypi' ],
+        },
+      ],
+     }, { # android_webview_build==1
+      'targets': [
+        {
+          'target_name': 'android_webview_jarjar_ui_resources',
+          'android_unmangled_name': 1,
+          'type': 'none',
+          'variables': {
+            'res_dir': '../ui/android/java/res',
+            'rules_file': '../android_webview/build/jarjar-rules.txt',
+          },
+          'includes': ['../android_webview/build/jarjar_resources.gypi'],
+        },
+        {
+          'target_name': 'android_webview_jarjar_content_resources',
+          'android_unmangled_name': 1,
+          'type': 'none',
+          'variables': {
+            'res_dir': '../content/public/android/java/res',
+            'rules_file': '../android_webview/build/jarjar-rules.txt',
+          },
+          'includes': ['../android_webview/build/jarjar_resources.gypi'],
+        },
+        {
+          'target_name': 'android_webview_resources',
+          'type': 'none',
+          'android_unmangled_name': 1,
+          'dependencies': [
+            '../content/content.gyp:content_strings_grd',
+            '../ui/android/ui_android.gyp:ui_strings_grd',
+            'android_webview_jarjar_ui_resources',
+            'android_webview_jarjar_content_resources'
+          ],
+        },
+      ],
+    }],
   ],
 }

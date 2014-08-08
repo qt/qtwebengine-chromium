@@ -5,6 +5,7 @@
 {
   'dependencies': [
     '../base/base.gyp:base',
+    '../mojo/mojo.gyp:mojo_service_provider_bindings',
     '../skia/skia.gyp:skia',
     '../ui/gl/gl.gyp:gl',
   ],
@@ -62,7 +63,6 @@
             '<(output)',
             '<(PRODUCT_DIR)',
           ],
-          'msvs_cygwin_shell': 1,
         },
       ],
     }],

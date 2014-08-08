@@ -3,14 +3,15 @@
 // found in the LICENSE file.
 
 #include "base/bind.h"
-#include "ui/gfx/ozone/surface_factory_ozone.h"
 #include "ui/gl/gl_bindings.h"
+#include "ui/gl/gl_context_stub_with_extensions.h"
 #include "ui/gl/gl_egl_api_implementation.h"
 #include "ui/gl/gl_gl_api_implementation.h"
 #include "ui/gl/gl_implementation.h"
-#include "ui/gl/gl_implementation_linux.h"
+#include "ui/gl/gl_implementation_osmesa.h"
 #include "ui/gl/gl_osmesa_api_implementation.h"
 #include "ui/ozone/ozone_platform.h"
+#include "ui/ozone/public/surface_factory_ozone.h"
 
 namespace gfx {
 
@@ -32,25 +33,24 @@ void GetAllowedGLImplementations(std::vector<GLImplementation>* impls) {
   impls->push_back(kGLImplementationOSMesaGL);
 }
 
-bool InitializeGLBindings(GLImplementation implementation) {
+bool InitializeStaticGLBindings(GLImplementation implementation) {
   // Prevent reinitialization with a different implementation. Once the gpu
   // unit tests have initialized with kGLImplementationMock, we don't want to
   // later switch to another GL implementation.
-  if (GetGLImplementation() != kGLImplementationNone)
-    return true;
+  DCHECK_EQ(kGLImplementationNone, GetGLImplementation());
 
   switch (implementation) {
     case kGLImplementationOSMesaGL:
-      return InitializeGLBindingsOSMesaGL();
+      return InitializeStaticGLBindingsOSMesaGL();
     case kGLImplementationEGLGLES2:
-      ui::OzonePlatform::Initialize();
-      if (!gfx::SurfaceFactoryOzone::GetInstance()->LoadEGLGLES2Bindings(
+      ui::OzonePlatform::InitializeForGPU();
+      if (!ui::SurfaceFactoryOzone::GetInstance()->LoadEGLGLES2Bindings(
               base::Bind(&AddGLNativeLibrary),
               base::Bind(&SetGLGetProcAddressProc)))
         return false;
       SetGLImplementation(kGLImplementationEGLGLES2);
-      InitializeGLBindingsGL();
-      InitializeGLBindingsEGL();
+      InitializeStaticGLBindingsGL();
+      InitializeStaticGLBindingsEGL();
 
       // These two functions take single precision float rather than double
       // precision float parameters in GLES.
@@ -58,9 +58,8 @@ bool InitializeGLBindings(GLImplementation implementation) {
       ::gfx::g_driver_gl.fn.glDepthRangeFn = MarshalDepthRangeToDepthRangef;
       break;
     case kGLImplementationMockGL: {
-      SetGLGetProcAddressProc(GetMockGLProcAddress);
       SetGLImplementation(kGLImplementationMockGL);
-      InitializeGLBindingsGL();
+      InitializeStaticGLBindingsGL();
       break;
     }
     default:
@@ -72,19 +71,25 @@ bool InitializeGLBindings(GLImplementation implementation) {
   return true;
 }
 
-bool InitializeGLExtensionBindings(GLImplementation implementation,
-                                   GLContext* context) {
+bool InitializeDynamicGLBindings(GLImplementation implementation,
+                                 GLContext* context) {
   switch (implementation) {
     case kGLImplementationOSMesaGL:
-      InitializeGLExtensionBindingsGL(context);
-      InitializeGLExtensionBindingsOSMESA(context);
+      InitializeDynamicGLBindingsGL(context);
+      InitializeDynamicGLBindingsOSMESA(context);
       break;
     case kGLImplementationEGLGLES2:
-      InitializeGLExtensionBindingsGL(context);
-      InitializeGLExtensionBindingsEGL(context);
+      InitializeDynamicGLBindingsGL(context);
+      InitializeDynamicGLBindingsEGL(context);
       break;
     case kGLImplementationMockGL:
-      InitializeGLExtensionBindingsGL(context);
+      if (!context) {
+        scoped_refptr<GLContextStubWithExtensions> mock_context(
+            new GLContextStubWithExtensions());
+        mock_context->SetGLVersionString("3.0");
+        InitializeDynamicGLBindingsGL(mock_context.get());
+      } else
+        InitializeDynamicGLBindingsGL(context);
       break;
     default:
       return false;

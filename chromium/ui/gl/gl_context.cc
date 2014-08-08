@@ -14,6 +14,7 @@
 #include "ui/gl/gl_implementation.h"
 #include "ui/gl/gl_surface.h"
 #include "ui/gl/gl_switches.h"
+#include "ui/gl/gl_version_info.h"
 
 namespace gfx {
 
@@ -24,6 +25,32 @@ base::LazyInstance<base::ThreadLocalPointer<GLContext> >::Leaky
 base::LazyInstance<base::ThreadLocalPointer<GLContext> >::Leaky
     current_real_context_ = LAZY_INSTANCE_INITIALIZER;
 }  // namespace
+
+GLContext::ScopedReleaseCurrent::ScopedReleaseCurrent() : canceled_(false) {}
+
+GLContext::ScopedReleaseCurrent::~ScopedReleaseCurrent() {
+  if (!canceled_ && GetCurrent()) {
+    GetCurrent()->ReleaseCurrent(NULL);
+  }
+}
+
+void GLContext::ScopedReleaseCurrent::Cancel() {
+  canceled_ = true;
+}
+
+GLContext::FlushEvent::FlushEvent() {
+}
+
+GLContext::FlushEvent::~FlushEvent() {
+}
+
+void GLContext::FlushEvent::Signal() {
+  flag_.Set();
+}
+
+bool GLContext::FlushEvent::IsSignaled() {
+  return flag_.IsSet();
+}
 
 GLContext::GLContext(GLShareGroup* share_group) : share_group_(share_group) {
   if (!share_group_.get())
@@ -37,6 +64,13 @@ GLContext::~GLContext() {
   if (GetCurrent() == this) {
     SetCurrent(NULL);
   }
+}
+
+scoped_refptr<GLContext::FlushEvent> GLContext::SignalFlush() {
+  DCHECK(IsCurrent(NULL));
+  scoped_refptr<FlushEvent> flush_event = new FlushEvent();
+  flush_events_.push_back(flush_event);
+  return flush_event;
 }
 
 bool GLContext::GetTotalGpuMemory(size_t* bytes) {
@@ -58,6 +92,20 @@ std::string GLContext::GetExtensions() {
   return std::string(ext ? ext : "");
 }
 
+std::string GLContext::GetGLVersion() {
+  DCHECK(IsCurrent(NULL));
+  const char *version =
+      reinterpret_cast<const char*>(glGetString(GL_VERSION));
+  return std::string(version ? version : "");
+}
+
+std::string GLContext::GetGLRenderer() {
+  DCHECK(IsCurrent(NULL));
+  const char *renderer =
+      reinterpret_cast<const char*>(glGetString(GL_RENDERER));
+  return std::string(renderer ? renderer : "");
+}
+
 bool GLContext::HasExtension(const char* name) {
   std::string extensions = GetExtensions();
   extensions += " ";
@@ -66,6 +114,16 @@ bool GLContext::HasExtension(const char* name) {
   delimited_name += " ";
 
   return extensions.find(delimited_name) != std::string::npos;
+}
+
+const GLVersionInfo* GLContext::GetVersionInfo() {
+  if(!version_info_) {
+    std::string version = GetGLVersion();
+    std::string renderer = GetGLRenderer();
+    version_info_ = scoped_ptr<GLVersionInfo>(
+        new GLVersionInfo(version.c_str(), renderer.c_str()));
+  }
+  return version_info_.get();
 }
 
 GLShareGroup* GLContext::share_group() {
@@ -100,6 +158,12 @@ GLContext* GLContext::GetRealCurrent() {
 void GLContext::SetCurrent(GLSurface* surface) {
   current_context_.Pointer()->Set(surface ? this : NULL);
   GLSurface::SetCurrent(surface);
+  // Leave the real GL api current so that unit tests work correctly.
+  // TODO(sievers): Remove this, but needs all gpu_unittest classes
+  // to create and make current a context.
+  if (!surface && GetGLImplementation() != kGLImplementationMockGL) {
+    SetGLApiToNoContext();
+  }
 }
 
 GLStateRestorer* GLContext::GetGLStateRestorer() {
@@ -114,14 +178,14 @@ bool GLContext::WasAllocatedUsingRobustnessExtension() {
   return false;
 }
 
-bool GLContext::InitializeExtensionBindings() {
+bool GLContext::InitializeDynamicBindings() {
   DCHECK(IsCurrent(NULL));
   static bool initialized = false;
   if (initialized)
     return initialized;
-  initialized = InitializeGLExtensionBindings(GetGLImplementation(), this);
+  initialized = InitializeDynamicGLBindings(GetGLImplementation(), this);
   if (!initialized)
-    LOG(ERROR) << "Could not initialize extension bindings.";
+    LOG(ERROR) << "Could not initialize dynamic bindings.";
   return initialized;
 }
 
@@ -145,6 +209,12 @@ void GLContext::OnReleaseVirtuallyCurrent(GLContext* virtual_context) {
 
 void GLContext::SetRealGLApi() {
   SetGLToRealGLApi();
+}
+
+void GLContext::OnFlush() {
+  for (size_t n = 0; n < flush_events_.size(); n++)
+    flush_events_[n]->Signal();
+  flush_events_.clear();
 }
 
 GLContextReal::GLContextReal(GLShareGroup* share_group)

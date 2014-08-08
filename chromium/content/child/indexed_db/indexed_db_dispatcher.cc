@@ -4,6 +4,8 @@
 
 #include "content/child/indexed_db/indexed_db_dispatcher.h"
 
+#include <utility>
+
 #include "base/format_macros.h"
 #include "base/lazy_instance.h"
 #include "base/strings/stringprintf.h"
@@ -19,8 +21,10 @@
 #include "third_party/WebKit/public/platform/WebIDBDatabaseError.h"
 #include "third_party/WebKit/public/platform/WebIDBDatabaseException.h"
 
+using blink::WebBlobInfo;
 using blink::WebData;
 using blink::WebIDBCallbacks;
+using blink::WebIDBCursor;
 using blink::WebIDBDatabase;
 using blink::WebIDBDatabaseCallbacks;
 using blink::WebIDBDatabaseError;
@@ -29,7 +33,6 @@ using blink::WebIDBMetadata;
 using blink::WebString;
 using blink::WebVector;
 using base::ThreadLocalPointer;
-using webkit_glue::WorkerTaskRunner;
 
 namespace content {
 static base::LazyInstance<ThreadLocalPointer<IndexedDBDispatcher> >::Leaky
@@ -42,7 +45,9 @@ IndexedDBDispatcher* const kHasBeenDeleted =
 
 }  // unnamed namespace
 
-const size_t kMaxIDBValueSizeInBytes = 64 * 1024 * 1024;
+const size_t kMaxIDBMessageOverhead = 1024 * 1024;  // 1MB; arbitrarily chosen.
+const size_t kMaxIDBValueSizeInBytes =
+    IPC::Channel::kMaximumMessageSize - kMaxIDBMessageOverhead;
 
 IndexedDBDispatcher::IndexedDBDispatcher(ThreadSafeSender* thread_safe_sender)
     : thread_safe_sender_(thread_safe_sender) {
@@ -72,7 +77,7 @@ IndexedDBDispatcher* IndexedDBDispatcher::ThreadSpecificInstance(
 
   IndexedDBDispatcher* dispatcher = new IndexedDBDispatcher(thread_safe_sender);
   if (WorkerTaskRunner::Instance()->CurrentWorkerId())
-    webkit_glue::WorkerTaskRunner::Instance()->AddStopObserver(dispatcher);
+    WorkerTaskRunner::Instance()->AddStopObserver(dispatcher);
   return dispatcher;
 }
 
@@ -168,9 +173,10 @@ bool IndexedDBDispatcher::Send(IPC::Message* msg) {
 void IndexedDBDispatcher::RequestIDBCursorAdvance(
     unsigned long count,
     WebIDBCallbacks* callbacks_ptr,
-    int32 ipc_cursor_id) {
+    int32 ipc_cursor_id,
+    int64 transaction_id) {
   // Reset all cursor prefetch caches except for this cursor.
-  ResetCursorPrefetchCaches(ipc_cursor_id);
+  ResetCursorPrefetchCaches(transaction_id, ipc_cursor_id);
 
   scoped_ptr<WebIDBCallbacks> callbacks(callbacks_ptr);
 
@@ -183,9 +189,10 @@ void IndexedDBDispatcher::RequestIDBCursorContinue(
     const IndexedDBKey& key,
     const IndexedDBKey& primary_key,
     WebIDBCallbacks* callbacks_ptr,
-    int32 ipc_cursor_id) {
+    int32 ipc_cursor_id,
+    int64 transaction_id) {
   // Reset all cursor prefetch caches except for this cursor.
-  ResetCursorPrefetchCaches(ipc_cursor_id);
+  ResetCursorPrefetchCaches(transaction_id, ipc_cursor_id);
 
   scoped_ptr<WebIDBCallbacks> callbacks(callbacks_ptr);
 
@@ -219,7 +226,6 @@ void IndexedDBDispatcher::RequestIDBFactoryOpen(
     WebIDBCallbacks* callbacks_ptr,
     WebIDBDatabaseCallbacks* database_callbacks_ptr,
     const std::string& database_identifier) {
-  ResetCursorPrefetchCaches();
   scoped_ptr<WebIDBCallbacks> callbacks(callbacks_ptr);
   scoped_ptr<WebIDBDatabaseCallbacks> database_callbacks(
       database_callbacks_ptr);
@@ -239,7 +245,6 @@ void IndexedDBDispatcher::RequestIDBFactoryOpen(
 void IndexedDBDispatcher::RequestIDBFactoryGetDatabaseNames(
     WebIDBCallbacks* callbacks_ptr,
     const std::string& database_identifier) {
-  ResetCursorPrefetchCaches();
   scoped_ptr<WebIDBCallbacks> callbacks(callbacks_ptr);
 
   IndexedDBHostMsg_FactoryGetDatabaseNames_Params params;
@@ -253,7 +258,6 @@ void IndexedDBDispatcher::RequestIDBFactoryDeleteDatabase(
     const base::string16& name,
     WebIDBCallbacks* callbacks_ptr,
     const std::string& database_identifier) {
-  ResetCursorPrefetchCaches();
   scoped_ptr<WebIDBCallbacks> callbacks(callbacks_ptr);
 
   IndexedDBHostMsg_FactoryDeleteDatabase_Params params;
@@ -267,7 +271,6 @@ void IndexedDBDispatcher::RequestIDBFactoryDeleteDatabase(
 void IndexedDBDispatcher::RequestIDBDatabaseClose(
     int32 ipc_database_id,
     int32 ipc_database_callbacks_id) {
-  ResetCursorPrefetchCaches();
   Send(new IndexedDBHostMsg_DatabaseClose(ipc_database_id));
   // There won't be pending database callbacks if the transaction was aborted in
   // the initial upgradeneeded event handler.
@@ -280,7 +283,7 @@ void IndexedDBDispatcher::RequestIDBDatabaseCreateTransaction(
     int64 transaction_id,
     WebIDBDatabaseCallbacks* database_callbacks_ptr,
     WebVector<long long> object_store_ids,
-    unsigned short mode) {
+    WebIDBDatabase::TransactionMode mode) {
   scoped_ptr<WebIDBDatabaseCallbacks> database_callbacks(
       database_callbacks_ptr);
   IndexedDBHostMsg_DatabaseCreateTransaction_Params params;
@@ -305,9 +308,9 @@ void IndexedDBDispatcher::RequestIDBDatabaseGet(
     const IndexedDBKeyRange& key_range,
     bool key_only,
     WebIDBCallbacks* callbacks) {
-  ResetCursorPrefetchCaches();
+  ResetCursorPrefetchCaches(transaction_id, kAllCursors);
   IndexedDBHostMsg_DatabaseGet_Params params;
-  init_params(params, callbacks);
+  init_params(&params, callbacks);
   params.ipc_database_id = ipc_database_id;
   params.transaction_id = transaction_id;
   params.object_store_id = object_store_id;
@@ -322,13 +325,14 @@ void IndexedDBDispatcher::RequestIDBDatabasePut(
     int64 transaction_id,
     int64 object_store_id,
     const WebData& value,
+    const blink::WebVector<WebBlobInfo>& web_blob_info,
     const IndexedDBKey& key,
     WebIDBDatabase::PutMode put_mode,
     WebIDBCallbacks* callbacks,
     const WebVector<long long>& index_ids,
     const WebVector<WebVector<WebIDBKey> >& index_keys) {
 
-  if (value.size() > kMaxIDBValueSizeInBytes) {
+  if (value.size() + key.size_estimate() > kMaxIDBValueSizeInBytes) {
     callbacks->onError(WebIDBDatabaseError(
         blink::WebIDBDatabaseExceptionUnknownError,
         WebString::fromUTF8(base::StringPrintf(
@@ -339,9 +343,9 @@ void IndexedDBDispatcher::RequestIDBDatabasePut(
     return;
   }
 
-  ResetCursorPrefetchCaches();
+  ResetCursorPrefetchCaches(transaction_id, kAllCursors);
   IndexedDBHostMsg_DatabasePut_Params params;
-  init_params(params, callbacks);
+  init_params(&params, callbacks);
   params.ipc_database_id = ipc_database_id;
   params.transaction_id = transaction_id;
   params.object_store_id = object_store_id;
@@ -350,19 +354,34 @@ void IndexedDBDispatcher::RequestIDBDatabasePut(
   params.key = key;
   params.put_mode = put_mode;
 
-  COMPILE_ASSERT(sizeof(params.index_ids[0]) == sizeof(index_ids[0]),
-                 Cant_copy);
-  params.index_ids
-      .assign(index_ids.data(), index_ids.data() + index_ids.size());
-
-  params.index_keys.resize(index_keys.size());
-  for (size_t i = 0; i < index_keys.size(); ++i) {
-    params.index_keys[i].resize(index_keys[i].size());
+  DCHECK_EQ(index_ids.size(), index_keys.size());
+  params.index_keys.resize(index_ids.size());
+  for (size_t i = 0, len = index_ids.size(); i < len; ++i) {
+    params.index_keys[i].first = index_ids[i];
+    params.index_keys[i].second.resize(index_keys[i].size());
     for (size_t j = 0; j < index_keys[i].size(); ++j) {
-      params.index_keys[i][j] =
+      params.index_keys[i].second[j] =
           IndexedDBKey(IndexedDBKeyBuilder::Build(index_keys[i][j]));
     }
   }
+
+  params.blob_or_file_info.resize(web_blob_info.size());
+  for (size_t i = 0; i < web_blob_info.size(); ++i) {
+    const WebBlobInfo& info = web_blob_info[i];
+    IndexedDBMsg_BlobOrFileInfo& blob_or_file_info =
+        params.blob_or_file_info[i];
+    blob_or_file_info.is_file = info.isFile();
+    if (info.isFile()) {
+      blob_or_file_info.file_path = info.filePath();
+      blob_or_file_info.file_name = info.fileName();
+      blob_or_file_info.last_modified = info.lastModified();
+    }
+    blob_or_file_info.size = info.size();
+    blob_or_file_info.uuid = info.uuid().latin1();
+    DCHECK(blob_or_file_info.uuid.size());
+    blob_or_file_info.mime_type = info.type();
+  }
+
   Send(new IndexedDBHostMsg_DatabasePut(params));
 }
 
@@ -372,13 +391,13 @@ void IndexedDBDispatcher::RequestIDBDatabaseOpenCursor(
     int64 object_store_id,
     int64 index_id,
     const IndexedDBKeyRange& key_range,
-    unsigned short direction,
+    WebIDBCursor::Direction direction,
     bool key_only,
     WebIDBDatabase::TaskType task_type,
     WebIDBCallbacks* callbacks) {
-  ResetCursorPrefetchCaches();
+  ResetCursorPrefetchCaches(transaction_id, kAllCursors);
   IndexedDBHostMsg_DatabaseOpenCursor_Params params;
-  init_params(params, callbacks);
+  init_params(&params, callbacks);
   params.ipc_database_id = ipc_database_id;
   params.transaction_id = transaction_id;
   params.object_store_id = object_store_id;
@@ -388,6 +407,10 @@ void IndexedDBDispatcher::RequestIDBDatabaseOpenCursor(
   params.key_only = key_only;
   params.task_type = task_type;
   Send(new IndexedDBHostMsg_DatabaseOpenCursor(params));
+
+  DCHECK(cursor_transaction_ids_.find(params.ipc_callbacks_id) ==
+         cursor_transaction_ids_.end());
+  cursor_transaction_ids_[params.ipc_callbacks_id] = transaction_id;
 }
 
 void IndexedDBDispatcher::RequestIDBDatabaseCount(
@@ -397,9 +420,9 @@ void IndexedDBDispatcher::RequestIDBDatabaseCount(
     int64 index_id,
     const IndexedDBKeyRange& key_range,
     WebIDBCallbacks* callbacks) {
-  ResetCursorPrefetchCaches();
+  ResetCursorPrefetchCaches(transaction_id, kAllCursors);
   IndexedDBHostMsg_DatabaseCount_Params params;
-  init_params(params, callbacks);
+  init_params(&params, callbacks);
   params.ipc_database_id = ipc_database_id;
   params.transaction_id = transaction_id;
   params.object_store_id = object_store_id;
@@ -414,9 +437,9 @@ void IndexedDBDispatcher::RequestIDBDatabaseDeleteRange(
     int64 object_store_id,
     const IndexedDBKeyRange& key_range,
     WebIDBCallbacks* callbacks) {
-  ResetCursorPrefetchCaches();
+  ResetCursorPrefetchCaches(transaction_id, kAllCursors);
   IndexedDBHostMsg_DatabaseDeleteRange_Params params;
-  init_params(params, callbacks);
+  init_params(&params, callbacks);
   params.ipc_database_id = ipc_database_id;
   params.transaction_id = transaction_id;
   params.object_store_id = object_store_id;
@@ -429,6 +452,7 @@ void IndexedDBDispatcher::RequestIDBDatabaseClear(
     int64 transaction_id,
     int64 object_store_id,
     WebIDBCallbacks* callbacks_ptr) {
+  ResetCursorPrefetchCaches(transaction_id, kAllCursors);
   scoped_ptr<WebIDBCallbacks> callbacks(callbacks_ptr);
   int32 ipc_callbacks_id = pending_callbacks_.Add(callbacks.release());
   Send(new IndexedDBHostMsg_DatabaseClear(CurrentWorkerId(),
@@ -496,37 +520,66 @@ void IndexedDBDispatcher::OnSuccessStringList(
   pending_callbacks_.Remove(ipc_callbacks_id);
 }
 
-void IndexedDBDispatcher::OnSuccessValue(int32 ipc_thread_id,
-                                         int32 ipc_callbacks_id,
-                                         const std::string& value) {
-  DCHECK_EQ(ipc_thread_id, CurrentWorkerId());
-  WebIDBCallbacks* callbacks = pending_callbacks_.Lookup(ipc_callbacks_id);
+static void PrepareWebValueAndBlobInfo(
+    const std::string& value,
+    const std::vector<IndexedDBMsg_BlobOrFileInfo>& blob_info,
+    WebData* web_value,
+    blink::WebVector<WebBlobInfo>* web_blob_info) {
+
+  if (value.empty())
+    return;
+
+  web_value->assign(&*value.begin(), value.size());
+  blink::WebVector<WebBlobInfo> local_blob_info(blob_info.size());
+  for (size_t i = 0; i < blob_info.size(); ++i) {
+    const IndexedDBMsg_BlobOrFileInfo& info = blob_info[i];
+    if (info.is_file) {
+      local_blob_info[i] = WebBlobInfo(WebString::fromUTF8(info.uuid.c_str()),
+                                       info.file_path,
+                                       info.file_name,
+                                       info.mime_type,
+                                       info.last_modified,
+                                       info.size);
+    } else {
+      local_blob_info[i] = WebBlobInfo(
+          WebString::fromUTF8(info.uuid.c_str()), info.mime_type, info.size);
+    }
+  }
+  web_blob_info->swap(local_blob_info);
+}
+
+void IndexedDBDispatcher::OnSuccessValue(
+    const IndexedDBMsg_CallbacksSuccessValue_Params& params) {
+  DCHECK_EQ(params.ipc_thread_id, CurrentWorkerId());
+  WebIDBCallbacks* callbacks =
+      pending_callbacks_.Lookup(params.ipc_callbacks_id);
   if (!callbacks)
     return;
   WebData web_value;
-  if (value.size())
-    web_value.assign(&*value.begin(), value.size());
-  callbacks->onSuccess(web_value);
-  pending_callbacks_.Remove(ipc_callbacks_id);
+  WebVector<WebBlobInfo> web_blob_info;
+  PrepareWebValueAndBlobInfo(
+      params.value, params.blob_or_file_info, &web_value, &web_blob_info);
+  callbacks->onSuccess(web_value, web_blob_info);
+  pending_callbacks_.Remove(params.ipc_callbacks_id);
+  cursor_transaction_ids_.erase(params.ipc_callbacks_id);
 }
 
 void IndexedDBDispatcher::OnSuccessValueWithKey(
-    int32 ipc_thread_id,
-    int32 ipc_callbacks_id,
-    const std::string& value,
-    const IndexedDBKey& primary_key,
-    const IndexedDBKeyPath& key_path) {
-  DCHECK_EQ(ipc_thread_id, CurrentWorkerId());
-  WebIDBCallbacks* callbacks = pending_callbacks_.Lookup(ipc_callbacks_id);
+    const IndexedDBMsg_CallbacksSuccessValueWithKey_Params& params) {
+  DCHECK_EQ(params.ipc_thread_id, CurrentWorkerId());
+  WebIDBCallbacks* callbacks =
+      pending_callbacks_.Lookup(params.ipc_callbacks_id);
   if (!callbacks)
     return;
   WebData web_value;
-  if (value.size())
-    web_value.assign(&*value.begin(), value.size());
+  WebVector<WebBlobInfo> web_blob_info;
+  PrepareWebValueAndBlobInfo(
+      params.value, params.blob_or_file_info, &web_value, &web_blob_info);
   callbacks->onSuccess(web_value,
-                       WebIDBKeyBuilder::Build(primary_key),
-                       WebIDBKeyPathBuilder::Build(key_path));
-  pending_callbacks_.Remove(ipc_callbacks_id);
+                       web_blob_info,
+                       WebIDBKeyBuilder::Build(params.primary_key),
+                       WebIDBKeyPathBuilder::Build(params.key_path));
+  pending_callbacks_.Remove(params.ipc_callbacks_id);
 }
 
 void IndexedDBDispatcher::OnSuccessInteger(int32 ipc_thread_id,
@@ -558,18 +611,27 @@ void IndexedDBDispatcher::OnSuccessOpenCursor(
   const IndexedDBKey& key = p.key;
   const IndexedDBKey& primary_key = p.primary_key;
   WebData web_value;
-  if (p.value.size())
-    web_value.assign(&*p.value.begin(), p.value.size());
+  WebVector<WebBlobInfo> web_blob_info;
+  PrepareWebValueAndBlobInfo(
+      p.value, p.blob_or_file_info, &web_value, &web_blob_info);
+
+  DCHECK(cursor_transaction_ids_.find(ipc_callbacks_id) !=
+         cursor_transaction_ids_.end());
+  int64 transaction_id = cursor_transaction_ids_[ipc_callbacks_id];
+  cursor_transaction_ids_.erase(ipc_callbacks_id);
 
   WebIDBCallbacks* callbacks = pending_callbacks_.Lookup(ipc_callbacks_id);
   if (!callbacks)
     return;
 
-  WebIDBCursorImpl* cursor =
-      new WebIDBCursorImpl(ipc_object_id, thread_safe_sender_.get());
+  WebIDBCursorImpl* cursor = new WebIDBCursorImpl(
+      ipc_object_id, transaction_id, thread_safe_sender_.get());
   cursors_[ipc_object_id] = cursor;
-  callbacks->onSuccess(cursor, WebIDBKeyBuilder::Build(key),
-                       WebIDBKeyBuilder::Build(primary_key), web_value);
+  callbacks->onSuccess(cursor,
+                       WebIDBKeyBuilder::Build(key),
+                       WebIDBKeyBuilder::Build(primary_key),
+                       web_value,
+                       web_blob_info);
 
   pending_callbacks_.Remove(ipc_callbacks_id);
 }
@@ -583,18 +645,21 @@ void IndexedDBDispatcher::OnSuccessCursorContinue(
   const IndexedDBKey& primary_key = p.primary_key;
   const std::string& value = p.value;
 
-  WebIDBCursorImpl* cursor = cursors_[ipc_cursor_id];
-  DCHECK(cursor);
+  if (cursors_.find(ipc_cursor_id) == cursors_.end())
+    return;
 
   WebIDBCallbacks* callbacks = pending_callbacks_.Lookup(ipc_callbacks_id);
   if (!callbacks)
     return;
 
   WebData web_value;
-  if (value.size())
-    web_value.assign(&*value.begin(), value.size());
+  WebVector<WebBlobInfo> web_blob_info;
+  PrepareWebValueAndBlobInfo(
+      value, p.blob_or_file_info, &web_value, &web_blob_info);
   callbacks->onSuccess(WebIDBKeyBuilder::Build(key),
-                       WebIDBKeyBuilder::Build(primary_key), web_value);
+                       WebIDBKeyBuilder::Build(primary_key),
+                       web_value,
+                       web_blob_info);
 
   pending_callbacks_.Remove(ipc_callbacks_id);
 }
@@ -607,17 +672,22 @@ void IndexedDBDispatcher::OnSuccessCursorPrefetch(
   const std::vector<IndexedDBKey>& keys = p.keys;
   const std::vector<IndexedDBKey>& primary_keys = p.primary_keys;
   std::vector<WebData> values(p.values.size());
+  DCHECK_EQ(p.values.size(), p.blob_or_file_infos.size());
+  std::vector<WebVector<WebBlobInfo> > blob_infos(p.blob_or_file_infos.size());
   for (size_t i = 0; i < p.values.size(); ++i) {
-    if (p.values[i].size())
-      values[i].assign(&*p.values[i].begin(), p.values[i].size());
+    PrepareWebValueAndBlobInfo(
+        p.values[i], p.blob_or_file_infos[i], &values[i], &blob_infos[i]);
   }
-  WebIDBCursorImpl* cursor = cursors_[ipc_cursor_id];
-  DCHECK(cursor);
-  cursor->SetPrefetchData(keys, primary_keys, values);
+  std::map<int32, WebIDBCursorImpl*>::const_iterator cur_iter =
+      cursors_.find(ipc_cursor_id);
+  if (cur_iter == cursors_.end())
+    return;
+
+  cur_iter->second->SetPrefetchData(keys, primary_keys, values, blob_infos);
 
   WebIDBCallbacks* callbacks = pending_callbacks_.Lookup(ipc_callbacks_id);
   DCHECK(callbacks);
-  cursor->CachedContinue(callbacks);
+  cur_iter->second->CachedContinue(callbacks);
   pending_callbacks_.Remove(ipc_callbacks_id);
 }
 
@@ -662,6 +732,7 @@ void IndexedDBDispatcher::OnError(int32 ipc_thread_id,
   else
     callbacks->onError(WebIDBDatabaseError(code, message));
   pending_callbacks_.Remove(ipc_callbacks_id);
+  cursor_transaction_ids_.erase(ipc_callbacks_id);
 }
 
 void IndexedDBDispatcher::OnAbort(int32 ipc_thread_id,
@@ -716,10 +787,12 @@ void IndexedDBDispatcher::OnIntVersionChange(int32 ipc_thread_id,
 }
 
 void IndexedDBDispatcher::ResetCursorPrefetchCaches(
+    int64 transaction_id,
     int32 ipc_exception_cursor_id) {
   typedef std::map<int32, WebIDBCursorImpl*>::iterator Iterator;
   for (Iterator i = cursors_.begin(); i != cursors_.end(); ++i) {
-    if (i->first == ipc_exception_cursor_id)
+    if (i->first == ipc_exception_cursor_id ||
+        i->second->transaction_id() != transaction_id)
       continue;
     i->second->ResetPrefetchCache();
   }

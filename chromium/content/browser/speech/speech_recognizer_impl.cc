@@ -37,10 +37,10 @@ class SpeechRecognizerImpl::OnDataConverter
                   const AudioParameters& output_params);
   virtual ~OnDataConverter();
 
-  // Converts input |data| buffer into an AudioChunk where the input format
+  // Converts input audio |data| bus into an AudioChunk where the input format
   // is given by |input_parameters_| and the output format by
   // |output_parameters_|.
-  scoped_refptr<AudioChunk> Convert(const uint8* data, size_t size);
+  scoped_refptr<AudioChunk> Convert(const AudioBus* data);
 
  private:
   // media::AudioConverter::InputCallback implementation.
@@ -132,11 +132,10 @@ SpeechRecognizerImpl::OnDataConverter::~OnDataConverter() {
 }
 
 scoped_refptr<AudioChunk> SpeechRecognizerImpl::OnDataConverter::Convert(
-    const uint8* data, size_t size) {
-  CHECK_EQ(size, static_cast<size_t>(input_parameters_.GetBytesPerBuffer()));
+    const AudioBus* data) {
+  CHECK_EQ(data->frames(), input_parameters_.frames_per_buffer());
 
-  input_bus_->FromInterleaved(
-      data, input_bus_->frames(), input_parameters_.bits_per_sample() / 8);
+  data->CopyTo(input_bus_.get());
 
   waiting_for_input_ = true;
   audio_converter_.Convert(output_bus_.get());
@@ -173,17 +172,19 @@ double SpeechRecognizerImpl::OnDataConverter::ProvideInput(
 SpeechRecognizerImpl::SpeechRecognizerImpl(
     SpeechRecognitionEventListener* listener,
     int session_id,
-    bool is_single_shot,
+    bool continuous,
+    bool provisional_results,
     SpeechRecognitionEngine* engine)
     : SpeechRecognizer(listener, session_id),
       recognition_engine_(engine),
       endpointer_(kAudioSampleRate),
       is_dispatching_event_(false),
-      is_single_shot_(is_single_shot),
+      provisional_results_(provisional_results),
       state_(STATE_IDLE) {
   DCHECK(recognition_engine_ != NULL);
-  if (is_single_shot) {
-    // In single shot recognition, the session is automatically ended after:
+  if (!continuous) {
+    // In single shot (non-continous) recognition,
+    // the session is automatically ended after:
     //  - 0.5 seconds of silence if time <  3 seconds
     //  - 1   seconds of silence if time >= 3 seconds
     endpointer_.set_speech_input_complete_silence_length(
@@ -252,6 +253,7 @@ SpeechRecognizerImpl::recognition_engine() const {
 }
 
 SpeechRecognizerImpl::~SpeechRecognizerImpl() {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   endpointer_.EndSession();
   if (audio_controller_.get()) {
     audio_controller_->Close(
@@ -260,7 +262,8 @@ SpeechRecognizerImpl::~SpeechRecognizerImpl() {
 }
 
 // Invoked in the audio thread.
-void SpeechRecognizerImpl::OnError(AudioInputController* controller) {
+void SpeechRecognizerImpl::OnError(AudioInputController* controller,
+    media::AudioInputController::ErrorCode error_code) {
   FSMEventArgs event_args(EVENT_AUDIO_ERROR);
   BrowserThread::PostTask(BrowserThread::IO, FROM_HERE,
                           base::Bind(&SpeechRecognizerImpl::DispatchEvent,
@@ -268,13 +271,10 @@ void SpeechRecognizerImpl::OnError(AudioInputController* controller) {
 }
 
 void SpeechRecognizerImpl::OnData(AudioInputController* controller,
-                                  const uint8* data, uint32 size) {
-  if (size == 0)  // This could happen when audio capture stops and is normal.
-    return;
-
+                                  const AudioBus* data) {
   // Convert audio from native format to fixed format used by WebSpeech.
   FSMEventArgs event_args(EVENT_AUDIO_DATA);
-  event_args.audio_data = audio_converter_->Convert(data, size);
+  event_args.audio_data = audio_converter_->Convert(data);
 
   BrowserThread::PostTask(BrowserThread::IO, FROM_HERE,
                           base::Bind(&SpeechRecognizerImpl::DispatchEvent,
@@ -685,10 +685,8 @@ SpeechRecognizerImpl::FSMState SpeechRecognizerImpl::Abort(
 
 SpeechRecognizerImpl::FSMState SpeechRecognizerImpl::ProcessIntermediateResult(
     const FSMEventArgs& event_args) {
-  // Provisional results can occur only during continuous (non one-shot) mode.
-  // If this check is reached it means that a continuous speech recognition
-  // engine is being used for a one shot recognition.
-  DCHECK_EQ(false, is_single_shot_);
+  // Provisional results can occur only if explicitly enabled in the JS API.
+  DCHECK(provisional_results_);
 
   // In continuous recognition, intermediate results can occur even when we are
   // in the ESTIMATING_ENVIRONMENT or WAITING_FOR_SPEECH states (if the
@@ -718,8 +716,8 @@ SpeechRecognizerImpl::ProcessFinalResult(const FSMEventArgs& event_args) {
   for (; i != results.end(); ++i) {
     const SpeechRecognitionResult& result = *i;
     if (result.is_provisional) {
+      DCHECK(provisional_results_);
       provisional_results_pending = true;
-      DCHECK(!is_single_shot_);
     } else if (results_are_empty) {
       results_are_empty = result.hypotheses.empty();
     }

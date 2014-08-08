@@ -44,7 +44,7 @@ class WebDOMEventListener;
 class WebDOMEventListenerPrivate;
 class WebDocument;
 class WebElement;
-class WebFrame;
+class WebElementCollection;
 class WebNodeList;
 class WebPluginContainer;
 
@@ -80,15 +80,15 @@ public:
         AttributeNode = 2,
         TextNode = 3,
         CDataSectionNode = 4,
-        // EntityReferenceNodes are deprecated and impossible to create in WebKit.
-        EntityNode = 6,
+        // EntityReferenceNodes are impossible to create in Blink.
+        // EntityNodes are impossible to create in Blink.
         ProcessingInstructionsNode = 7,
         CommentNode = 8,
         DocumentNode = 9,
         DocumentTypeNode = 10,
         DocumentFragmentNode = 11,
-        NotationNode = 12,
-        XPathNamespaceNode = 13,
+        // NotationNodes are impossible to create in Blink.
+        // XPathNamespaceNodes are impossible to create in Blink.
         ShadowRootNode = 14
     };
 
@@ -113,7 +113,7 @@ public:
     BLINK_EXPORT void addEventListener(const WebString& eventType, WebDOMEventListener* listener, bool useCapture);
     BLINK_EXPORT bool dispatchEvent(const WebDOMEvent&);
     BLINK_EXPORT void simulateClick();
-    BLINK_EXPORT WebNodeList getElementsByTagName(const WebString&) const;
+    BLINK_EXPORT WebElementCollection getElementsByTagName(const WebString&) const;
     BLINK_EXPORT WebElement querySelector(const WebString&, WebExceptionCode&) const;
     BLINK_EXPORT WebElement rootEditableElement() const;
     BLINK_EXPORT bool focused() const;
@@ -141,9 +141,21 @@ public:
     }
 
 #if BLINK_IMPLEMENTATION
-    WebNode(const WTF::PassRefPtr<WebCore::Node>&);
-    WebNode& operator=(const WTF::PassRefPtr<WebCore::Node>&);
-    operator WTF::PassRefPtr<WebCore::Node>() const;
+    WebNode(const PassRefPtrWillBeRawPtr<WebCore::Node>&);
+    WebNode& operator=(const PassRefPtrWillBeRawPtr<WebCore::Node>&);
+    operator PassRefPtrWillBeRawPtr<WebCore::Node>() const;
+#if ENABLE(OILPAN)
+    // This constructor enables creation of WebNodes from Members
+    // holding WebCore::Node-derived objects (this shows up in WebVector
+    // assignments, for instance.) It is needed because a RawPtr<T> constructor
+    // from a Member<U> isn't provided, hence the above constructor
+    // won't be usable.
+    template<typename U>
+    WebNode(const WebCore::Member<U>& other, EnsurePtrConvertibleArgDecl(U, WebCore::Node))
+        : m_private(other.get())
+    {
+    }
+#endif
 #endif
 
 #if BLINK_IMPLEMENTATION

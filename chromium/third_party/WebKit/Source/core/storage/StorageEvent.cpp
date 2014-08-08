@@ -26,7 +26,6 @@
 #include "config.h"
 #include "core/storage/StorageEvent.h"
 
-#include "core/events/ThreadLocalEventNames.h"
 #include "core/storage/Storage.h"
 
 namespace WebCore {
@@ -35,9 +34,9 @@ StorageEventInit::StorageEventInit()
 {
 }
 
-PassRefPtr<StorageEvent> StorageEvent::create()
+PassRefPtrWillBeRawPtr<StorageEvent> StorageEvent::create()
 {
-    return adoptRef(new StorageEvent);
+    return adoptRefWillBeNoop(new StorageEvent);
 }
 
 StorageEvent::StorageEvent()
@@ -49,14 +48,14 @@ StorageEvent::~StorageEvent()
 {
 }
 
-PassRefPtr<StorageEvent> StorageEvent::create(const AtomicString& type, const String& key, const String& oldValue, const String& newValue, const String& url, Storage* storageArea)
+PassRefPtrWillBeRawPtr<StorageEvent> StorageEvent::create(const AtomicString& type, const String& key, const String& oldValue, const String& newValue, const String& url, Storage* storageArea)
 {
-    return adoptRef(new StorageEvent(type, key, oldValue, newValue, url, storageArea));
+    return adoptRefWillBeNoop(new StorageEvent(type, key, oldValue, newValue, url, storageArea));
 }
 
-PassRefPtr<StorageEvent> StorageEvent::create(const AtomicString& type, const StorageEventInit& initializer)
+PassRefPtrWillBeRawPtr<StorageEvent> StorageEvent::create(const AtomicString& type, const StorageEventInit& initializer)
 {
-    return adoptRef(new StorageEvent(type, initializer));
+    return adoptRefWillBeNoop(new StorageEvent(type, initializer));
 }
 
 StorageEvent::StorageEvent(const AtomicString& type, const String& key, const String& oldValue, const String& newValue, const String& url, Storage* storageArea)
@@ -98,6 +97,12 @@ void StorageEvent::initStorageEvent(const AtomicString& type, bool canBubble, bo
 const AtomicString& StorageEvent::interfaceName() const
 {
     return EventNames::StorageEvent;
+}
+
+void StorageEvent::trace(Visitor* visitor)
+{
+    visitor->trace(m_storageArea);
+    Event::trace(visitor);
 }
 
 } // namespace WebCore

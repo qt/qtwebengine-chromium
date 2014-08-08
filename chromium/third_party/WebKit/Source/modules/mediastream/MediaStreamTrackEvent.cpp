@@ -25,19 +25,18 @@
 #include "config.h"
 #include "modules/mediastream/MediaStreamTrackEvent.h"
 
-#include "core/events/ThreadLocalEventNames.h"
 #include "modules/mediastream/MediaStreamTrack.h"
 
 namespace WebCore {
 
-PassRefPtr<MediaStreamTrackEvent> MediaStreamTrackEvent::create()
+PassRefPtrWillBeRawPtr<MediaStreamTrackEvent> MediaStreamTrackEvent::create()
 {
-    return adoptRef(new MediaStreamTrackEvent);
+    return adoptRefWillBeNoop(new MediaStreamTrackEvent);
 }
 
-PassRefPtr<MediaStreamTrackEvent> MediaStreamTrackEvent::create(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtr<MediaStreamTrack> track)
+PassRefPtrWillBeRawPtr<MediaStreamTrackEvent> MediaStreamTrackEvent::create(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtrWillBeRawPtr<MediaStreamTrack> track)
 {
-    return adoptRef(new MediaStreamTrackEvent(type, canBubble, cancelable, track));
+    return adoptRefWillBeNoop(new MediaStreamTrackEvent(type, canBubble, cancelable, track));
 }
 
 
@@ -46,7 +45,7 @@ MediaStreamTrackEvent::MediaStreamTrackEvent()
     ScriptWrappable::init(this);
 }
 
-MediaStreamTrackEvent::MediaStreamTrackEvent(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtr<MediaStreamTrack> track)
+MediaStreamTrackEvent::MediaStreamTrackEvent(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtrWillBeRawPtr<MediaStreamTrack> track)
     : Event(type, canBubble, cancelable)
     , m_track(track)
 {
@@ -67,5 +66,10 @@ const AtomicString& MediaStreamTrackEvent::interfaceName() const
     return EventNames::MediaStreamTrackEvent;
 }
 
-} // namespace WebCore
+void MediaStreamTrackEvent::trace(Visitor* visitor)
+{
+    visitor->trace(m_track);
+    Event::trace(visitor);
+}
 
+} // namespace WebCore

@@ -5,8 +5,6 @@
 #ifndef UI_BASE_RESOURCE_RESOURCE_BUNDLE_H_
 #define UI_BASE_RESOURCE_RESOURCE_BUNDLE_H_
 
-#include "build/build_config.h"
-
 #include <map>
 #include <string>
 
@@ -15,11 +13,11 @@
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
-#include "base/platform_file.h"
 #include "base/strings/string16.h"
 #include "base/strings/string_piece.h"
+#include "build/build_config.h"
 #include "ui/base/layout.h"
-#include "ui/base/ui_export.h"
+#include "ui/base/ui_base_export.h"
 #include "ui/gfx/font_list.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/native_widget_types.h"
@@ -27,6 +25,7 @@
 class SkBitmap;
 
 namespace base {
+class File;
 class Lock;
 class RefCountedStaticMemory;
 }
@@ -38,7 +37,7 @@ class ResourceHandle;
 
 // ResourceBundle is a central facility to load images and other resources,
 // such as theme graphics. Every resource is loaded only once.
-class UI_EXPORT ResourceBundle {
+class UI_BASE_EXPORT ResourceBundle {
  public:
   // An enumeration of the various font styles used throughout Chrome.
   // The following holds true for the font sizes:
@@ -135,8 +134,8 @@ class UI_EXPORT ResourceBundle {
   // controls whether or not ResourceBundle::LoadCommonResources is called.
   // This allows the use of this function in a sandbox without local file
   // access (as on Android).
-  static void InitSharedInstanceWithPakFile(
-      base::PlatformFile file, bool should_load_common_resources);
+  static void InitSharedInstanceWithPakFile(base::File file,
+                                            bool should_load_common_resources);
 
   // Initialize the ResourceBundle using given data pack path for testing.
   static void InitSharedInstanceWithPakPath(const base::FilePath& path);
@@ -164,7 +163,7 @@ class UI_EXPORT ResourceBundle {
                            ScaleFactor scale_factor);
 
   // Same as above but using an already open file.
-  void AddDataPackFromFile(base::PlatformFile file, ScaleFactor scale_factor);
+  void AddDataPackFromFile(base::File file, ScaleFactor scale_factor);
 
   // Same as AddDataPackFromPath but does not log an error if the pack fails to
   // load.
@@ -256,6 +255,10 @@ class UI_EXPORT ResourceBundle {
   // Returns the maximum scale factor currently loaded.
   // Returns SCALE_FACTOR_100P if no resource is loaded.
   ScaleFactor GetMaxScaleFactor() const;
+
+ protected:
+  // Returns true if |scale_factor| is supported by this platform.
+  static bool IsScaleFactorSupported(ScaleFactor scale_factor);
 
  private:
   FRIEND_TEST_ALL_PREFIXES(ResourceBundleTest, DelegateGetPathForLocalePack);

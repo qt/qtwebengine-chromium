@@ -9,6 +9,7 @@
 #include "base/message_loop/message_loop.h"
 #include "media/audio/clockless_audio_sink.h"
 #include "media/audio/null_audio_sink.h"
+#include "media/base/audio_hardware_config.h"
 #include "media/base/demuxer.h"
 #include "media/base/filter_collection.h"
 #include "media/base/media_keys.h"
@@ -109,6 +110,8 @@ class PipelineIntegrationTestBase {
   Demuxer::NeedKeyCB need_key_cb_;
   VideoFrame::Format last_video_frame_format_;
   DummyTickClock dummy_clock_;
+  AudioHardwareConfig hardware_config_;
+  PipelineMetadata metadata_;
 
   void OnStatusCallbackChecked(PipelineStatus expected_status,
                                PipelineStatus status);
@@ -130,8 +133,8 @@ class PipelineIntegrationTestBase {
                     const DecryptorReadyCB& decryptor_ready_cb);
   void OnVideoRendererPaint(const scoped_refptr<VideoFrame>& frame);
 
-  MOCK_METHOD1(OnSetOpaque, void(bool));
-  MOCK_METHOD1(OnBufferingState, void(Pipeline::BufferingState));
+  MOCK_METHOD1(OnMetadata, void(PipelineMetadata));
+  MOCK_METHOD0(OnPrerollCompleted, void());
 };
 
 }  // namespace media

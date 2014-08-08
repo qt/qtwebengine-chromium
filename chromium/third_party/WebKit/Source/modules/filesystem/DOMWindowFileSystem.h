@@ -26,20 +26,19 @@
 #ifndef DOMWindowFileSystem_h
 #define DOMWindowFileSystem_h
 
-#include "wtf/PassRefPtr.h"
 #include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
-class DOMWindow;
+class LocalDOMWindow;
 class EntryCallback;
 class ErrorCallback;
 class FileSystemCallback;
 
 class DOMWindowFileSystem {
 public:
-    static void webkitRequestFileSystem(DOMWindow*, int type, long long size, PassOwnPtr<FileSystemCallback>, PassOwnPtr<ErrorCallback>);
-    static void webkitResolveLocalFileSystemURL(DOMWindow*, const String&, PassOwnPtr<EntryCallback>, PassOwnPtr<ErrorCallback>);
+    static void webkitRequestFileSystem(LocalDOMWindow&, int type, long long size, PassOwnPtr<FileSystemCallback>, PassOwnPtr<ErrorCallback>);
+    static void webkitResolveLocalFileSystemURL(LocalDOMWindow&, const String&, PassOwnPtr<EntryCallback>, PassOwnPtr<ErrorCallback>);
 
     // They are placed here and in all capital letters so they can be checked against the constants in the
     // IDL at compile time.

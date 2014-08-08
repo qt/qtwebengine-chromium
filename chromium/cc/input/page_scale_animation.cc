@@ -16,22 +16,22 @@ namespace {
 
 // This takes a viewport-relative vector and returns a vector whose values are
 // between 0 and 1, representing the percentage position within the viewport.
-gfx::Vector2dF NormalizeFromViewport(gfx::Vector2dF denormalized,
-                                     gfx::SizeF viewport_size) {
+gfx::Vector2dF NormalizeFromViewport(const gfx::Vector2dF& denormalized,
+                                     const gfx::SizeF& viewport_size) {
   return gfx::ScaleVector2d(denormalized,
                             1.f / viewport_size.width(),
                             1.f / viewport_size.height());
 }
 
-gfx::Vector2dF DenormalizeToViewport(gfx::Vector2dF normalized,
-                                     gfx::SizeF viewport_size) {
+gfx::Vector2dF DenormalizeToViewport(const gfx::Vector2dF& normalized,
+                                     const gfx::SizeF& viewport_size) {
   return gfx::ScaleVector2d(normalized,
                             viewport_size.width(),
                             viewport_size.height());
 }
 
-gfx::Vector2dF InterpolateBetween(gfx::Vector2dF start,
-                                  gfx::Vector2dF end,
+gfx::Vector2dF InterpolateBetween(const gfx::Vector2dF& start,
+                                  const gfx::Vector2dF& end,
                                   float interp) {
   return start + gfx::ScaleVector2d(end - start, interp);
 }
@@ -40,11 +40,14 @@ gfx::Vector2dF InterpolateBetween(gfx::Vector2dF start,
 
 namespace cc {
 
+using base::TimeTicks;
+using base::TimeDelta;
+
 scoped_ptr<PageScaleAnimation> PageScaleAnimation::Create(
-    gfx::Vector2dF start_scroll_offset,
+    const gfx::Vector2dF& start_scroll_offset,
     float start_page_scale_factor,
-    gfx::SizeF viewport_size,
-    gfx::SizeF root_layer_size,
+    const gfx::SizeF& viewport_size,
+    const gfx::SizeF& root_layer_size,
     scoped_ptr<TimingFunction> timing_function) {
   return make_scoped_ptr(new PageScaleAnimation(start_scroll_offset,
                                                 start_page_scale_factor,
@@ -54,10 +57,10 @@ scoped_ptr<PageScaleAnimation> PageScaleAnimation::Create(
 }
 
 PageScaleAnimation::PageScaleAnimation(
-    gfx::Vector2dF start_scroll_offset,
+    const gfx::Vector2dF& start_scroll_offset,
     float start_page_scale_factor,
-    gfx::SizeF viewport_size,
-    gfx::SizeF root_layer_size,
+    const gfx::SizeF& viewport_size,
+    const gfx::SizeF& root_layer_size,
     scoped_ptr<TimingFunction> timing_function)
     : start_page_scale_factor_(start_page_scale_factor),
       target_page_scale_factor_(0.f),
@@ -66,19 +69,18 @@ PageScaleAnimation::PageScaleAnimation(
       target_anchor_(),
       viewport_size_(viewport_size),
       root_layer_size_(root_layer_size),
-      start_time_(-1.0),
-      duration_(0.0),
-      timing_function_(timing_function.Pass()) {}
+      timing_function_(timing_function.Pass()) {
+}
 
 PageScaleAnimation::~PageScaleAnimation() {}
 
-void PageScaleAnimation::ZoomTo(gfx::Vector2dF target_scroll_offset,
+void PageScaleAnimation::ZoomTo(const gfx::Vector2dF& target_scroll_offset,
                                 float target_page_scale_factor,
                                 double duration) {
   target_page_scale_factor_ = target_page_scale_factor;
   target_scroll_offset_ = target_scroll_offset;
   ClampTargetScrollOffset();
-  duration_ = duration;
+  duration_ = TimeDelta::FromSecondsD(duration);
 
   if (start_page_scale_factor_ == target_page_scale_factor) {
     start_anchor_ = start_scroll_offset_;
@@ -92,12 +94,12 @@ void PageScaleAnimation::ZoomTo(gfx::Vector2dF target_scroll_offset,
   start_anchor_ = target_anchor_;
 }
 
-void PageScaleAnimation::ZoomWithAnchor(gfx::Vector2dF anchor,
+void PageScaleAnimation::ZoomWithAnchor(const gfx::Vector2dF& anchor,
                                         float target_page_scale_factor,
                                         double duration) {
   start_anchor_ = anchor;
   target_page_scale_factor_ = target_page_scale_factor;
-  duration_ = duration;
+  duration_ = TimeDelta::FromSecondsD(duration);
 
   // We start zooming out from the anchor tapped by the user. But if
   // the target scale is impossible to attain without hitting the root layer
@@ -163,36 +165,37 @@ gfx::SizeF PageScaleAnimation::ViewportSizeAt(float interp) const {
 }
 
 bool PageScaleAnimation::IsAnimationStarted() const {
-  return start_time_ >= 0;
+  return start_time_ > base::TimeTicks();
 }
 
-void PageScaleAnimation::StartAnimation(double time) {
-  DCHECK_GT(0, start_time_);
+void PageScaleAnimation::StartAnimation(base::TimeTicks time) {
+  DCHECK(start_time_.is_null());
   start_time_ = time;
 }
 
-gfx::Vector2dF PageScaleAnimation::ScrollOffsetAtTime(double time) const {
-  DCHECK_GE(start_time_, 0);
+gfx::Vector2dF PageScaleAnimation::ScrollOffsetAtTime(
+    base::TimeTicks time) const {
+  DCHECK(!start_time_.is_null());
   return ScrollOffsetAt(InterpAtTime(time));
 }
 
-float PageScaleAnimation::PageScaleFactorAtTime(double time) const {
-  DCHECK_GE(start_time_, 0);
+float PageScaleAnimation::PageScaleFactorAtTime(base::TimeTicks time) const {
+  DCHECK(!start_time_.is_null());
   return PageScaleFactorAt(InterpAtTime(time));
 }
 
-bool PageScaleAnimation::IsAnimationCompleteAtTime(double time) const {
-  DCHECK_GE(start_time_, 0);
+bool PageScaleAnimation::IsAnimationCompleteAtTime(base::TimeTicks time) const {
+  DCHECK(!start_time_.is_null());
   return time >= end_time();
 }
 
-float PageScaleAnimation::InterpAtTime(double time) const {
-  DCHECK_GE(start_time_, 0);
-  DCHECK_GE(time, start_time_);
-  if (IsAnimationCompleteAtTime(time))
+float PageScaleAnimation::InterpAtTime(base::TimeTicks monotonic_time) const {
+  DCHECK(!start_time_.is_null());
+  DCHECK(monotonic_time >= start_time_);
+  if (IsAnimationCompleteAtTime(monotonic_time))
     return 1.f;
-
-  const double normalized_time = (time - start_time_) / duration_;
+  const double normalized_time =
+      (monotonic_time - start_time_).InSecondsF() / duration_.InSecondsF();
   return timing_function_->GetValue(normalized_time);
 }
 

@@ -39,17 +39,17 @@ namespace WebCore {
 
 namespace {
 
-class UndoableStateMark : public InspectorHistory::Action {
+class UndoableStateMark FINAL : public InspectorHistory::Action {
 public:
     UndoableStateMark() : InspectorHistory::Action("[UndoableState]") { }
 
-    virtual bool perform(ExceptionState&) { return true; }
+    virtual bool perform(ExceptionState&) OVERRIDE { return true; }
 
-    virtual bool undo(ExceptionState&) { return true; }
+    virtual bool undo(ExceptionState&) OVERRIDE { return true; }
 
-    virtual bool redo(ExceptionState&) { return true; }
+    virtual bool redo(ExceptionState&) OVERRIDE { return true; }
 
-    virtual bool isUndoableStateMark() { return true; }
+    virtual bool isUndoableStateMark() OVERRIDE { return true; }
 };
 
 }
@@ -59,6 +59,10 @@ InspectorHistory::Action::Action(const String& name) : m_name(name)
 }
 
 InspectorHistory::Action::~Action()
+{
+}
+
+void InspectorHistory::Action::trace(Visitor* visitor)
 {
 }
 
@@ -77,13 +81,13 @@ String InspectorHistory::Action::mergeId()
     return "";
 }
 
-void InspectorHistory::Action::merge(PassOwnPtr<Action>)
+void InspectorHistory::Action::merge(PassRefPtrWillBeRawPtr<Action>)
 {
 }
 
 InspectorHistory::InspectorHistory() : m_afterLastActionIndex(0) { }
 
-bool InspectorHistory::perform(PassOwnPtr<Action> action, ExceptionState& exceptionState)
+bool InspectorHistory::perform(PassRefPtrWillBeRawPtr<Action> action, ExceptionState& exceptionState)
 {
     if (!action->perform(exceptionState))
         return false;
@@ -100,7 +104,7 @@ bool InspectorHistory::perform(PassOwnPtr<Action> action, ExceptionState& except
 
 void InspectorHistory::markUndoableState()
 {
-    perform(adoptPtr(new UndoableStateMark()), IGNORE_EXCEPTION);
+    perform(adoptRefWillBeNoop(new UndoableStateMark()), IGNORE_EXCEPTION);
 }
 
 bool InspectorHistory::undo(ExceptionState& exceptionState)
@@ -144,6 +148,11 @@ void InspectorHistory::reset()
 {
     m_afterLastActionIndex = 0;
     m_history.clear();
+}
+
+void InspectorHistory::trace(Visitor* visitor)
+{
+    visitor->trace(m_history);
 }
 
 } // namespace WebCore

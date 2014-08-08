@@ -121,6 +121,7 @@ void TCPPort::PrepareAddress() {
     if (socket_->GetState() == talk_base::AsyncPacketSocket::STATE_BOUND ||
         socket_->GetState() == talk_base::AsyncPacketSocket::STATE_CLOSED)
       AddAddress(socket_->GetLocalAddress(), socket_->GetLocalAddress(),
+                 talk_base::SocketAddress(),
                  TCP_PROTOCOL_NAME, LOCAL_PORT_TYPE,
                  ICE_TYPE_PREFERENCE_HOST_TCP, true);
   } else {
@@ -128,14 +129,15 @@ void TCPPort::PrepareAddress() {
     // Note: We still add the address, since otherwise the remote side won't
     // recognize our incoming TCP connections.
     AddAddress(talk_base::SocketAddress(ip(), 0),
-               talk_base::SocketAddress(ip(), 0), TCP_PROTOCOL_NAME,
-               LOCAL_PORT_TYPE, ICE_TYPE_PREFERENCE_HOST_TCP, true);
+               talk_base::SocketAddress(ip(), 0), talk_base::SocketAddress(),
+               TCP_PROTOCOL_NAME, LOCAL_PORT_TYPE, ICE_TYPE_PREFERENCE_HOST_TCP,
+               true);
   }
 }
 
 int TCPPort::SendTo(const void* data, size_t size,
                     const talk_base::SocketAddress& addr,
-                    talk_base::DiffServCodePoint dscp,
+                    const talk_base::PacketOptions& options,
                     bool payload) {
   talk_base::AsyncPacketSocket * socket = NULL;
   if (TCPConnection * conn = static_cast<TCPConnection*>(GetConnection(addr))) {
@@ -149,7 +151,7 @@ int TCPPort::SendTo(const void* data, size_t size,
     return -1;  // TODO: Set error_
   }
 
-  int sent = socket->Send(data, size, dscp);
+  int sent = socket->Send(data, size, options);
   if (sent < 0) {
     error_ = socket->GetError();
     LOG_J(LS_ERROR, this) << "TCP send of " << size
@@ -167,14 +169,6 @@ int TCPPort::GetOption(talk_base::Socket::Option opt, int* value) {
 }
 
 int TCPPort::SetOption(talk_base::Socket::Option opt, int value) {
-  // If we are setting DSCP value, pass value to base Port and return.
-  // TODO(mallinath) - After we have the support on socket,
-  // remove this specialization.
-  if (opt == talk_base::Socket::OPT_DSCP) {
-    SetDefaultDscpValue(static_cast<talk_base::DiffServCodePoint>(value));
-    return 0;
-  }
-
   if (socket_) {
     return socket_->SetOption(opt, value);
   } else {
@@ -229,7 +223,7 @@ void TCPPort::OnReadyToSend(talk_base::AsyncPacketSocket* socket) {
 
 void TCPPort::OnAddressReady(talk_base::AsyncPacketSocket* socket,
                              const talk_base::SocketAddress& address) {
-  AddAddress(address, address, "tcp",
+  AddAddress(address, address, talk_base::SocketAddress(), "tcp",
              LOCAL_PORT_TYPE, ICE_TYPE_PREFERENCE_HOST_TCP,
              true);
 }
@@ -243,7 +237,7 @@ TCPConnection::TCPConnection(TCPPort* port, const Candidate& candidate,
     int opts = (candidate.protocol() == SSLTCP_PROTOCOL_NAME) ?
         talk_base::PacketSocketFactory::OPT_SSLTCP : 0;
     socket_ = port->socket_factory()->CreateClientTcpSocket(
-        talk_base::SocketAddress(port_->Network()->ip(), 0),
+        talk_base::SocketAddress(port->ip(), 0),
         candidate.address(), port->proxy(), port->user_agent(), opts);
     if (socket_) {
       LOG_J(LS_VERBOSE, this) << "Connecting from "
@@ -273,7 +267,7 @@ TCPConnection::~TCPConnection() {
 }
 
 int TCPConnection::Send(const void* data, size_t size,
-                        talk_base::DiffServCodePoint dscp) {
+                        const talk_base::PacketOptions& options) {
   if (!socket_) {
     error_ = ENOTCONN;
     return SOCKET_ERROR;
@@ -284,7 +278,7 @@ int TCPConnection::Send(const void* data, size_t size,
     error_ = EWOULDBLOCK;
     return SOCKET_ERROR;
   }
-  int sent = socket_->Send(data, size, dscp);
+  int sent = socket_->Send(data, size, options);
   if (sent < 0) {
     error_ = socket_->GetError();
   } else {
@@ -299,9 +293,19 @@ int TCPConnection::GetError() {
 
 void TCPConnection::OnConnect(talk_base::AsyncPacketSocket* socket) {
   ASSERT(socket == socket_);
-  LOG_J(LS_VERBOSE, this) << "Connection established to "
-                          << socket->GetRemoteAddress().ToSensitiveString();
-  set_connected(true);
+  // Do not use this connection if the socket bound to a different address than
+  // the one we asked for. This is seen in Chrome, where TCP sockets cannot be
+  // given a binding address, and the platform is expected to pick the
+  // correct local address.
+  if (socket->GetLocalAddress().ipaddr() == port()->ip()) {
+    LOG_J(LS_VERBOSE, this) << "Connection established to "
+                            << socket->GetRemoteAddress().ToSensitiveString();
+    set_connected(true);
+  } else {
+    LOG_J(LS_WARNING, this) << "Dropping connection as TCP socket bound to a "
+                            << "different address from the local candidate.";
+    socket_->Close();
+  }
 }
 
 void TCPConnection::OnClose(talk_base::AsyncPacketSocket* socket, int error) {

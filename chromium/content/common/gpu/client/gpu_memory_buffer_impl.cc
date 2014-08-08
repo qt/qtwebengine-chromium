@@ -8,22 +8,30 @@
 
 namespace content {
 
-GpuMemoryBufferImpl::GpuMemoryBufferImpl(
-    gfx::Size size, unsigned internalformat)
-    : size_(size),
-      internalformat_(internalformat),
-      mapped_(false) {
+GpuMemoryBufferImpl::GpuMemoryBufferImpl(const gfx::Size& size,
+                                         unsigned internalformat)
+    : size_(size), internalformat_(internalformat), mapped_(false) {
   DCHECK(IsFormatValid(internalformat));
 }
 
-GpuMemoryBufferImpl::~GpuMemoryBufferImpl() {
-}
+GpuMemoryBufferImpl::~GpuMemoryBufferImpl() {}
 
 // static
 bool GpuMemoryBufferImpl::IsFormatValid(unsigned internalformat) {
   switch (internalformat) {
     case GL_BGRA8_EXT:
     case GL_RGBA8_OES:
+      return true;
+    default:
+      return false;
+  }
+}
+
+// static
+bool GpuMemoryBufferImpl::IsUsageValid(unsigned usage) {
+  switch (usage) {
+    case GL_IMAGE_MAP_CHROMIUM:
+    case GL_IMAGE_SCANOUT_CHROMIUM:
       return true;
     default:
       return false;
@@ -42,12 +50,6 @@ size_t GpuMemoryBufferImpl::BytesPerPixel(unsigned internalformat) {
   }
 }
 
-bool GpuMemoryBufferImpl::IsMapped() const {
-  return mapped_;
-}
-
-uint32 GpuMemoryBufferImpl::GetStride() const {
-  return size_.width() * BytesPerPixel(internalformat_);
-}
+bool GpuMemoryBufferImpl::IsMapped() const { return mapped_; }
 
 }  // namespace content

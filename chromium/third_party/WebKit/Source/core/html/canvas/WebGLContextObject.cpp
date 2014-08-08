@@ -27,11 +27,11 @@
 
 #include "core/html/canvas/WebGLContextObject.h"
 
-#include "core/html/canvas/WebGLRenderingContext.h"
+#include "core/html/canvas/WebGLRenderingContextBase.h"
 
 namespace WebCore {
 
-WebGLContextObject::WebGLContextObject(WebGLRenderingContext* context)
+WebGLContextObject::WebGLContextObject(WebGLRenderingContextBase* context)
     : WebGLObject(context)
     , m_context(context)
 {
@@ -47,15 +47,15 @@ void WebGLContextObject::detachContext()
 {
     detach();
     if (m_context) {
-        deleteObject(m_context->graphicsContext3D());
+        deleteObject(m_context->webContext());
         m_context->removeContextObject(this);
         m_context = 0;
     }
 }
 
-GraphicsContext3D* WebGLContextObject::getAGraphicsContext3D() const
+blink::WebGraphicsContext3D* WebGLContextObject::getAWebGraphicsContext3D() const
 {
-    return m_context ? m_context->graphicsContext3D() : 0;
+    return m_context ? m_context->webContext() : 0;
 }
 
 }

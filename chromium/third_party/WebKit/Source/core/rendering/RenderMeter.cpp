@@ -44,7 +44,7 @@ HTMLMeterElement* RenderMeter::meterElement() const
 {
     ASSERT(node());
 
-    if (isHTMLMeterElement(node()))
+    if (isHTMLMeterElement(*node()))
         return toHTMLMeterElement(node());
 
     ASSERT(node()->shadowHost());
@@ -79,7 +79,7 @@ double RenderMeter::valueRatio() const
 
 void RenderMeter::updateFromElement()
 {
-    repaint();
+    paintInvalidationForWholeRenderer();
 }
 
 } // namespace WebCore

@@ -21,7 +21,7 @@
 #include "config.h"
 #include "core/css/CSSProperty.h"
 
-#include "StylePropertyShorthand.h"
+#include "core/StylePropertyShorthand.h"
 #include "core/css/CSSValueList.h"
 #include "core/rendering/style/RenderStyleConstants.h"
 
@@ -47,7 +47,7 @@ CSSPropertyID StylePropertyMetadata::shorthandID() const
 
 void CSSProperty::wrapValueInCommaSeparatedList()
 {
-    RefPtr<CSSValue> value = m_value.release();
+    RefPtrWillBeRawPtr<CSSValue> value = m_value.release();
     m_value = CSSValueList::createCommaSeparated();
     toCSSValueList(m_value.get())->append(value.release());
 }
@@ -282,7 +282,6 @@ bool CSSProperty::isInheritedProperty(CSSPropertyID propertyID)
     case CSSPropertyGlyphOrientationHorizontal:
     case CSSPropertyGlyphOrientationVertical:
     case CSSPropertyImageRendering:
-    case CSSPropertyKerning:
     case CSSPropertyLetterSpacing:
     case CSSPropertyLineHeight:
     case CSSPropertyListStyle:
@@ -317,7 +316,6 @@ bool CSSProperty::isInheritedProperty(CSSPropertyID propertyID)
     case CSSPropertyTextShadow:
     case CSSPropertyTextTransform:
     case CSSPropertyTouchActionDelay:
-    case CSSPropertyVariable:
     case CSSPropertyVisibility:
     case CSSPropertyWebkitAspectRatio:
     case CSSPropertyWebkitBorderHorizontalSpacing:
@@ -326,15 +324,12 @@ bool CSSProperty::isInheritedProperty(CSSPropertyID propertyID)
     case CSSPropertyWebkitFontFeatureSettings:
     case CSSPropertyFontKerning:
     case CSSPropertyWebkitFontSmoothing:
-    case CSSPropertyWebkitFontVariantLigatures:
+    case CSSPropertyFontVariantLigatures:
     case CSSPropertyWebkitLocale:
     case CSSPropertyWebkitHighlight:
     case CSSPropertyWebkitHyphenateCharacter:
-    case CSSPropertyWebkitLineAlign:
     case CSSPropertyWebkitLineBoxContain:
     case CSSPropertyWebkitLineBreak:
-    case CSSPropertyWebkitLineGrid:
-    case CSSPropertyWebkitLineSnap:
     case CSSPropertyWebkitPrintColorAdjust:
     case CSSPropertyWebkitRtlOrdering:
     case CSSPropertyWebkitRubyPosition:
@@ -425,7 +420,6 @@ bool CSSProperty::isInheritedProperty(CSSPropertyID propertyID)
     case CSSPropertyClear:
     case CSSPropertyClip:
     case CSSPropertyClipPath:
-    case CSSPropertyColorProfile:
     case CSSPropertyContent:
     case CSSPropertyCounterIncrement:
     case CSSPropertyCounterReset:
@@ -439,6 +433,7 @@ bool CSSProperty::isInheritedProperty(CSSPropertyID propertyID)
     case CSSPropertyFontStretch:
     case CSSPropertyHeight:
     case CSSPropertyIsolation:
+    case CSSPropertyJustifySelf:
     case CSSPropertyLeft:
     case CSSPropertyLightingColor:
     case CSSPropertyMargin:
@@ -478,6 +473,7 @@ bool CSSProperty::isInheritedProperty(CSSPropertyID propertyID)
     case CSSPropertyPaintOrder:
     case CSSPropertyPosition:
     case CSSPropertyRight:
+    case CSSPropertyScrollBehavior:
     case CSSPropertySize:
     case CSSPropertySrc:
     case CSSPropertyStopColor:
@@ -524,6 +520,7 @@ bool CSSProperty::isInheritedProperty(CSSPropertyID propertyID)
     case CSSPropertyWebkitAnimationPlayState:
     case CSSPropertyWebkitAnimationTimingFunction:
     case CSSPropertyWebkitAppearance:
+    case CSSPropertyBackfaceVisibility:
     case CSSPropertyWebkitBackfaceVisibility:
     case CSSPropertyWebkitBackgroundClip:
     case CSSPropertyWebkitBackgroundComposite:
@@ -560,14 +557,12 @@ bool CSSProperty::isInheritedProperty(CSSPropertyID propertyID)
     case CSSPropertyWebkitBoxShadow:
     case CSSPropertyInternalCallback:
     case CSSPropertyWebkitClipPath:
-    case CSSPropertyWebkitColumnAxis:
     case CSSPropertyWebkitColumnBreakAfter:
     case CSSPropertyWebkitColumnBreakBefore:
     case CSSPropertyWebkitColumnBreakInside:
     case CSSPropertyWebkitColumnCount:
     case CSSPropertyColumnFill:
     case CSSPropertyWebkitColumnGap:
-    case CSSPropertyWebkitColumnProgression:
     case CSSPropertyWebkitColumnRule:
     case CSSPropertyWebkitColumnRuleColor:
     case CSSPropertyWebkitColumnRuleStyle:
@@ -591,12 +586,14 @@ bool CSSProperty::isInheritedProperty(CSSPropertyID propertyID)
     case CSSPropertyGridColumn:
     case CSSPropertyGridColumnEnd:
     case CSSPropertyGridColumnStart:
-    case CSSPropertyGridDefinitionColumns:
-    case CSSPropertyGridDefinitionRows:
+    case CSSPropertyGrid:
+    case CSSPropertyGridTemplate:
+    case CSSPropertyGridTemplateColumns:
+    case CSSPropertyGridTemplateRows:
     case CSSPropertyGridRow:
     case CSSPropertyGridRowEnd:
     case CSSPropertyGridRowStart:
-    case CSSPropertyGridTemplate:
+    case CSSPropertyGridTemplateAreas:
     case CSSPropertyJustifyContent:
     case CSSPropertyWebkitLineClamp:
     case CSSPropertyWebkitLogicalHeight:
@@ -642,15 +639,20 @@ bool CSSProperty::isInheritedProperty(CSSPropertyID propertyID)
     case CSSPropertyWebkitPaddingBefore:
     case CSSPropertyWebkitPaddingEnd:
     case CSSPropertyWebkitPaddingStart:
+    case CSSPropertyPerspective:
     case CSSPropertyWebkitPerspective:
+    case CSSPropertyPerspectiveOrigin:
     case CSSPropertyWebkitPerspectiveOrigin:
     case CSSPropertyWebkitPerspectiveOriginX:
     case CSSPropertyWebkitPerspectiveOriginY:
+    case CSSPropertyTransform:
     case CSSPropertyWebkitTransform:
+    case CSSPropertyTransformOrigin:
     case CSSPropertyWebkitTransformOrigin:
     case CSSPropertyWebkitTransformOriginX:
     case CSSPropertyWebkitTransformOriginY:
     case CSSPropertyWebkitTransformOriginZ:
+    case CSSPropertyTransformStyle:
     case CSSPropertyWebkitTransformStyle:
     case CSSPropertyWebkitTransition:
     case CSSPropertyWebkitTransitionDelay:
@@ -658,27 +660,21 @@ bool CSSProperty::isInheritedProperty(CSSPropertyID propertyID)
     case CSSPropertyWebkitTransitionProperty:
     case CSSPropertyWebkitTransitionTimingFunction:
     case CSSPropertyWebkitUserDrag:
-    case CSSPropertyWebkitFlowInto:
-    case CSSPropertyWebkitFlowFrom:
-    case CSSPropertyWebkitRegionBreakAfter:
-    case CSSPropertyWebkitRegionBreakBefore:
-    case CSSPropertyWebkitRegionBreakInside:
-    case CSSPropertyWebkitRegionFragment:
     case CSSPropertyWebkitWrapFlow:
     case CSSPropertyShapeMargin:
     case CSSPropertyShapeImageThreshold:
-    case CSSPropertyShapePadding:
-    case CSSPropertyShapeInside:
     case CSSPropertyShapeOutside:
     case CSSPropertyWebkitWrapThrough:
     case CSSPropertyWebkitAppRegion:
     case CSSPropertyWidth:
+    case CSSPropertyWillChange:
     case CSSPropertyMaxZoom:
     case CSSPropertyMinZoom:
     case CSSPropertyOrientation:
     case CSSPropertyUserZoom:
     case CSSPropertyZIndex:
     case CSSPropertyZoom:
+    case CSSPropertyAll:
         return false;
     case CSSPropertyInvalid:
         ASSERT_NOT_REACHED();
@@ -686,6 +682,20 @@ bool CSSProperty::isInheritedProperty(CSSPropertyID propertyID)
     }
     ASSERT_NOT_REACHED();
     return false;
+}
+
+bool CSSProperty::isAffectedByAllProperty(CSSPropertyID propertyID)
+{
+    if (propertyID == CSSPropertyAll)
+        return false;
+
+    // all shorthand spec says:
+    // The all property is a shorthand that resets all CSS properties except
+    // direction and unicode-bidi. It only accepts the CSS-wide keywords.
+    // c.f. http://dev.w3.org/csswg/css-cascade/#all-shorthand
+    // So CSSPropertyUnicodeBidi and CSSPropertyDirection are not
+    // affected by all property.
+    return propertyID != CSSPropertyUnicodeBidi && propertyID != CSSPropertyDirection;
 }
 
 } // namespace WebCore

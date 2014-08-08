@@ -27,9 +27,10 @@
 #include "core/css/CSSKeyframeRule.h"
 
 #include "core/css/CSSKeyframesRule.h"
-#include "core/css/CSSParser.h"
+#include "core/css/parser/BisonCSSParser.h"
 #include "core/css/PropertySetCSSStyleDeclaration.h"
 #include "core/css/StylePropertySet.h"
+#include "core/frame/UseCounter.h"
 #include "wtf/text/StringBuilder.h"
 
 namespace WebCore {
@@ -76,7 +77,7 @@ const Vector<double>& StyleKeyframe::keys() const
         // Keys can only be cleared by setting the key text from JavaScript
         // and this can never be null.
         ASSERT(!m_keyText.isNull());
-        m_keys = CSSParser(HTMLStandardMode).parseKeyframeKeyList(m_keyText);
+        m_keys = BisonCSSParser(strictCSSParserContext()).parseKeyframeKeyList(m_keyText);
     }
     // If an invalid key string was set, m_keys may be empty.
     ASSERT(m_keys);
@@ -91,15 +92,16 @@ void StyleKeyframe::setKeys(PassOwnPtr<Vector<double> > keys)
     ASSERT(m_keyText.isNull());
 }
 
-MutableStylePropertySet* StyleKeyframe::mutableProperties()
+MutableStylePropertySet& StyleKeyframe::mutableProperties()
 {
     if (!m_properties->isMutable())
         m_properties = m_properties->mutableCopy();
-    return toMutableStylePropertySet(m_properties);
+    return *toMutableStylePropertySet(m_properties);
 }
 
 void StyleKeyframe::setProperties(PassRefPtr<StylePropertySet> properties)
 {
+    ASSERT(properties);
     m_properties = properties;
 }
 
@@ -144,8 +146,10 @@ CSSKeyframeRule::CSSKeyframeRule(StyleKeyframe* keyframe, CSSKeyframesRule* pare
 
 CSSKeyframeRule::~CSSKeyframeRule()
 {
+#if !ENABLE(OILPAN)
     if (m_propertiesCSSOMWrapper)
         m_propertiesCSSOMWrapper->clearParentRule();
+#endif
 }
 
 CSSStyleDeclaration* CSSKeyframeRule::style() const
@@ -159,6 +163,13 @@ void CSSKeyframeRule::reattach(StyleRuleBase*)
 {
     // No need to reattach, the underlying data is shareable on mutation.
     ASSERT_NOT_REACHED();
+}
+
+void CSSKeyframeRule::trace(Visitor* visitor)
+{
+    visitor->trace(m_keyframe);
+    visitor->trace(m_propertiesCSSOMWrapper);
+    CSSRule::trace(visitor);
 }
 
 } // namespace WebCore

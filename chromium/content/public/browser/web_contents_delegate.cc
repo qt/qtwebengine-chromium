@@ -27,8 +27,6 @@ bool WebContentsDelegate::IsPopupOrPanel(const WebContents* source) const {
   return false;
 }
 
-bool WebContentsDelegate::CanLoadDataURLsInWebUI() const { return false; }
-
 bool WebContentsDelegate::CanOverscrollContent() const { return false; }
 
 gfx::Rect WebContentsDelegate::GetRootWindowResizerRect() const {
@@ -36,6 +34,10 @@ gfx::Rect WebContentsDelegate::GetRootWindowResizerRect() const {
 }
 
 bool WebContentsDelegate::ShouldSuppressDialogs() {
+  return false;
+}
+
+bool WebContentsDelegate::ShouldPreserveAbortedURLs(WebContents* source) {
   return false;
 }
 
@@ -71,7 +73,7 @@ int WebContentsDelegate::GetExtraRenderViewHeight() const {
 
 void WebContentsDelegate::CanDownload(
     RenderViewHost* render_view_host,
-    int request_id,
+    const GURL& url,
     const std::string& request_method,
     const base::Callback<void(bool)>& callback) {
   callback.Run(true);
@@ -107,6 +109,12 @@ bool WebContentsDelegate::PreHandleKeyboardEvent(
     WebContents* source,
     const NativeWebKeyboardEvent& event,
     bool* is_keyboard_shortcut) {
+  return false;
+}
+
+bool WebContentsDelegate::PreHandleGestureEvent(
+    WebContents* source,
+    const blink::WebGestureEvent& event) {
   return false;
 }
 
@@ -156,7 +164,9 @@ void WebContentsDelegate::RequestMediaAccessPermission(
     WebContents* web_contents,
     const MediaStreamRequest& request,
     const MediaResponseCallback& callback) {
-  callback.Run(MediaStreamDevices(), scoped_ptr<MediaStreamUI>());
+  callback.Run(MediaStreamDevices(),
+               MEDIA_DEVICE_INVALID_STATE,
+               scoped_ptr<MediaStreamUI>());
 }
 
 bool WebContentsDelegate::RequestPpapiBrokerPermission(
@@ -186,8 +196,12 @@ void WebContentsDelegate::Detach(WebContents* web_contents) {
 }
 
 gfx::Size WebContentsDelegate::GetSizeForNewRenderView(
-    const WebContents* web_contents) const {
+   WebContents* web_contents) const {
   return gfx::Size();
+}
+
+bool WebContentsDelegate::IsNeverVisible(WebContents* web_contents) {
+  return false;
 }
 
 }  // namespace content

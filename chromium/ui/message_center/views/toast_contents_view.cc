@@ -10,7 +10,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
-#include "ui/base/accessibility/accessible_view_state.h"
+#include "ui/accessibility/ax_view_state.h"
 #include "ui/gfx/animation/animation_delegate.h"
 #include "ui/gfx/animation/slide_animation.h"
 #include "ui/gfx/display.h"
@@ -24,9 +24,11 @@
 #include "ui/views/widget/widget.h"
 #include "ui/views/widget/widget_delegate.h"
 
-#if defined(OS_WIN) && defined(USE_ASH)
+#if defined(OS_WIN)
 #include "ui/views/widget/desktop_aura/desktop_native_widget_aura.h"
 #endif
+
+using gfx::Screen;
 
 namespace message_center {
 namespace {
@@ -40,7 +42,7 @@ const int kFadeInOutDuration = 200;
 }  // namespace.
 
 // static
-gfx::Size ToastContentsView::GetToastSizeForView(views::View* view) {
+gfx::Size ToastContentsView::GetToastSizeForView(const views::View* view) {
   int width = kNotificationWidth + view->GetInsets().width();
   return gfx::Size(width, view->GetHeightForWidth(width));
 }
@@ -84,7 +86,16 @@ void ToastContentsView::SetContents(MessageView* view,
   // The notification type should be ALERT, otherwise the accessibility message
   // won't be read for this view which returns ROLE_WINDOW.
   if (already_has_contents && a11y_feedback_for_updates)
-    NotifyAccessibilityEvent(ui::AccessibilityTypes::EVENT_ALERT, false);
+    NotifyAccessibilityEvent(ui::AX_EVENT_ALERT, false);
+}
+
+void ToastContentsView::UpdateContents(const Notification& notification,
+                                       bool a11y_feedback_for_updates) {
+  DCHECK_GT(child_count(), 0);
+  MessageView* message_view = static_cast<MessageView*>(child_at(0));
+  message_view->UpdateWithNotification(notification);
+  if (a11y_feedback_for_updates)
+    NotifyAccessibilityEvent(ui::AX_EVENT_ALERT, false);
 }
 
 void ToastContentsView::RevealWithAnimation(gfx::Point origin) {
@@ -152,7 +163,7 @@ void ToastContentsView::StartFadeIn() {
   fade_animation_->Stop();
 
   GetWidget()->SetOpacity(0);
-  GetWidget()->Show();
+  GetWidget()->ShowInactive();
   fade_animation_->Reset(0);
   fade_animation_->Show();
 }
@@ -172,16 +183,16 @@ void ToastContentsView::OnBoundsAnimationEndedOrCancelled(
     const gfx::Animation* animation) {
   if (is_closing_ && closing_animation_ == animation && GetWidget()) {
     views::Widget* widget = GetWidget();
-#if defined(USE_AURA)
+
     // TODO(dewittj): This is a workaround to prevent a nasty bug where
     // closing a transparent widget doesn't actually remove the window,
     // causing entire areas of the screen to become unresponsive to clicks.
     // See crbug.com/243469
     widget->Hide();
-# if defined(OS_WIN)
+#if defined(OS_WIN)
     widget->SetOpacity(0xFF);
-# endif
 #endif
+
     widget->Close();
   }
 
@@ -225,14 +236,6 @@ void ToastContentsView::WindowClosing() {
     collection_->ForgetToast(this);
 }
 
-bool ToastContentsView::CanActivate() const {
-#if defined(OS_WIN) && defined(USE_AURA)
-  return true;
-#else
-  return false;
-#endif
-}
-
 void ToastContentsView::OnDisplayChanged() {
   views::Widget* widget = GetWidget();
   if (!widget)
@@ -242,8 +245,10 @@ void ToastContentsView::OnDisplayChanged() {
   if (!native_view || !collection_.get())
     return;
 
-  collection_->OnDisplayBoundsChanged(gfx::Screen::GetScreenFor(
-      native_view)->GetDisplayNearestWindow(native_view));
+  collection_->OnDisplayMetricsChanged(
+      Screen::GetScreenFor(native_view)->GetDisplayNearestWindow(native_view),
+      gfx::DisplayObserver::DISPLAY_METRIC_BOUNDS |
+          gfx::DisplayObserver::DISPLAY_METRIC_WORK_AREA);
 }
 
 void ToastContentsView::OnWorkAreaChanged() {
@@ -255,8 +260,9 @@ void ToastContentsView::OnWorkAreaChanged() {
   if (!native_view || !collection_.get())
     return;
 
-  collection_->OnDisplayBoundsChanged(gfx::Screen::GetScreenFor(
-      native_view)->GetDisplayNearestWindow(native_view));
+  collection_->OnDisplayMetricsChanged(
+      Screen::GetScreenFor(native_view)->GetDisplayNearestWindow(native_view),
+      gfx::DisplayObserver::DISPLAY_METRIC_WORK_AREA);
 }
 
 // views::View
@@ -277,14 +283,14 @@ void ToastContentsView::Layout() {
   }
 }
 
-gfx::Size ToastContentsView::GetPreferredSize() {
+gfx::Size ToastContentsView::GetPreferredSize() const {
   return child_count() ? GetToastSizeForView(child_at(0)) : gfx::Size();
 }
 
-void ToastContentsView::GetAccessibleState(ui::AccessibleViewState* state) {
+void ToastContentsView::GetAccessibleState(ui::AXViewState* state) {
   if (child_count() > 0)
     child_at(0)->GetAccessibleState(state);
-  state->role = ui::AccessibilityTypes::ROLE_WINDOW;
+  state->role = ui::AX_ROLE_WINDOW;
 }
 
 void ToastContentsView::ClickOnNotification(
@@ -300,15 +306,13 @@ void ToastContentsView::RemoveNotification(
     collection_->RemoveNotification(notification_id, by_user);
 }
 
-void ToastContentsView::DisableNotificationsFromThisSource(
-    const NotifierId& notifier_id) {
-  if (collection_)
-    collection_->DisableNotificationsFromThisSource(notifier_id);
-}
-
-void ToastContentsView::ShowNotifierSettingsBubble() {
-  if (collection_)
-    collection_->ShowNotifierSettingsBubble();
+scoped_ptr<ui::MenuModel> ToastContentsView::CreateMenuModel(
+      const NotifierId& notifier_id,
+      const base::string16& display_source) {
+  // Should not reach, the context menu should be handled in
+  // MessagePopupCollection.
+  NOTREACHED();
+  return scoped_ptr<ui::MenuModel>();
 }
 
 bool ToastContentsView::HasClickedListener(
@@ -325,43 +329,17 @@ void ToastContentsView::ClickOnNotificationButton(
     collection_->ClickOnNotificationButton(notification_id, button_index);
 }
 
-void ToastContentsView::ExpandNotification(
-    const std::string& notification_id) {
-  if (collection_)
-    collection_->ExpandNotification(notification_id);
-}
-
-void ToastContentsView::GroupBodyClicked(
-    const std::string& last_notification_id) {
-  // No group views in popup collection.
-  NOTREACHED();
-}
-
-// When clicked on the "N more" button, perform some reasonable action.
-// TODO(dimich): find out what the reasonable action could be.
-void ToastContentsView::ExpandGroup(const NotifierId& notifier_id) {
-  // No group views in popup collection.
-  NOTREACHED();
-}
-
-void ToastContentsView::RemoveGroup(const NotifierId& notifier_id) {
-  // No group views in popup collection.
-  NOTREACHED();
-}
-
 void ToastContentsView::CreateWidget(gfx::NativeView parent) {
   views::Widget::InitParams params(views::Widget::InitParams::TYPE_POPUP);
   params.keep_on_top = true;
   if (parent)
     params.parent = parent;
-  else
-    params.top_level = true;
   params.opacity = views::Widget::InitParams::TRANSLUCENT_WINDOW;
   params.delegate = this;
   views::Widget* widget = new views::Widget();
   widget->set_focus_on_creation(false);
 
-#if defined(OS_WIN) && defined(USE_ASH)
+#if defined(OS_WIN)
   // We want to ensure that this toast always goes to the native desktop,
   // not the Ash desktop (since there is already another toast contents view
   // there.

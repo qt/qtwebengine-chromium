@@ -27,9 +27,11 @@
 #define V8PerIsolateData_h
 
 #include "bindings/v8/ScopedPersistent.h"
-#include "bindings/v8/UnsafePersistent.h"
+#include "bindings/v8/ScriptState.h"
+#include "bindings/v8/V8HiddenValue.h"
 #include "bindings/v8/WrapperTypeInfo.h"
 #include "gin/public/gin_embedders.h"
+#include "gin/public/isolate_holder.h"
 #include <v8.h>
 #include "wtf/Forward.h"
 #include "wtf/HashMap.h"
@@ -41,21 +43,15 @@ namespace WebCore {
 class DOMDataStore;
 class GCEventData;
 class StringCache;
-class V8HiddenPropertyName;
 struct WrapperTypeInfo;
 
 class ExternalStringVisitor;
 
-typedef WTF::Vector<DOMDataStore*> DOMDataList;
+typedef WTF::Vector<DOMDataStore*> DOMDataStoreList;
 
 class V8PerIsolateData {
 public:
-    static V8PerIsolateData* create(v8::Isolate*);
     static void ensureInitialized(v8::Isolate*);
-    static V8PerIsolateData* current()
-    {
-        return from(v8::Isolate::GetCurrent());
-    }
     static V8PerIsolateData* from(v8::Isolate* isolate)
     {
         ASSERT(isolate);
@@ -63,56 +59,22 @@ public:
         return static_cast<V8PerIsolateData*>(isolate->GetData(gin::kEmbedderBlink));
     }
     static void dispose(v8::Isolate*);
+    static v8::Isolate* mainThreadIsolate();
 
-    typedef HashMap<const void*, UnsafePersistent<v8::FunctionTemplate> > TemplateMap;
-
-    TemplateMap& rawDOMTemplateMap(WrapperWorldType worldType)
-    {
-        if (worldType == MainWorld)
-            return m_rawDOMTemplatesForMainWorld;
-        return m_rawDOMTemplatesForNonMainWorld;
-    }
-
-    TemplateMap& templateMap(WrapperWorldType worldType)
-    {
-        if (worldType == MainWorld)
-            return m_templatesForMainWorld;
-        return m_templatesForNonMainWorld;
-    }
+    v8::Isolate* isolate() { return m_isolate; }
 
     v8::Handle<v8::FunctionTemplate> toStringTemplate();
-    v8::Handle<v8::FunctionTemplate> lazyEventListenerToStringTemplate()
-    {
-        return v8::Local<v8::FunctionTemplate>::New(m_isolate, m_lazyEventListenerToStringTemplate);
-    }
 
     StringCache* stringCache() { return m_stringCache.get(); }
 
     v8::Persistent<v8::Value>& ensureLiveRoot();
 
-    DOMDataList& allStores() { return m_domDataList; }
-
-    V8HiddenPropertyName* hiddenPropertyName() { return m_hiddenPropertyName.get(); }
-
-    void registerDOMDataStore(DOMDataStore* domDataStore)
-    {
-        ASSERT(m_domDataList.find(domDataStore) == kNotFound);
-        m_domDataList.append(domDataStore);
-    }
-
-    void unregisterDOMDataStore(DOMDataStore* domDataStore)
-    {
-        ASSERT(m_domDataList.find(domDataStore) != kNotFound);
-        m_domDataList.remove(m_domDataList.find(domDataStore));
-    }
-
-    // DOMDataStore is owned outside V8PerIsolateData.
-    DOMDataStore* workerDOMDataStore() { return m_workerDomDataStore; }
-    void setWorkerDOMDataStore(DOMDataStore* store) { m_workerDomDataStore = store; }
-
     int recursionLevel() const { return m_recursionLevel; }
     int incrementRecursionLevel() { return ++m_recursionLevel; }
     int decrementRecursionLevel() { return --m_recursionLevel; }
+
+    bool performingMicrotaskCheckpoint() const { return m_performingMicrotaskCheckpoint; }
+    void setPerformingMicrotaskCheckpoint(bool performingMicrotaskCheckpoint) { m_performingMicrotaskCheckpoint = performingMicrotaskCheckpoint; }
 
 #ifndef NDEBUG
     int internalScriptRecursionLevel() const { return m_internalScriptRecursionLevel; }
@@ -121,24 +83,16 @@ public:
 #endif
 
     GCEventData* gcEventData() { return m_gcEventData.get(); }
+    V8HiddenValue* hiddenValue() { return m_hiddenValue.get(); }
 
-    // Gives the system a hint that we should request garbage collection
-    // upon the next close or navigation event, because some expensive
-    // objects have been allocated that we want to take every opportunity
-    // to collect.
-    void setShouldCollectGarbageSoon() { m_shouldCollectGarbageSoon = true; }
-    void clearShouldCollectGarbageSoon() { m_shouldCollectGarbageSoon = false; }
-    bool shouldCollectGarbageSoon() const { return m_shouldCollectGarbageSoon; }
+    v8::Handle<v8::FunctionTemplate> domTemplate(void* domTemplateKey, v8::FunctionCallback = 0, v8::Handle<v8::Value> data = v8::Handle<v8::Value>(), v8::Handle<v8::Signature> = v8::Handle<v8::Signature>(), int length = 0);
+    v8::Handle<v8::FunctionTemplate> existingDOMTemplate(void* domTemplateKey);
+    void setDOMTemplate(void* domTemplateKey, v8::Handle<v8::FunctionTemplate>);
 
-    v8::Handle<v8::FunctionTemplate> privateTemplate(WrapperWorldType, void* privatePointer, v8::FunctionCallback = 0, v8::Handle<v8::Value> data = v8::Handle<v8::Value>(), v8::Handle<v8::Signature> = v8::Handle<v8::Signature>(), int length = 0);
-    v8::Handle<v8::FunctionTemplate> privateTemplateIfExists(WrapperWorldType, void* privatePointer);
-    void setPrivateTemplate(WrapperWorldType, void* privatePointer, v8::Handle<v8::FunctionTemplate>);
+    bool hasInstance(const WrapperTypeInfo*, v8::Handle<v8::Value>);
+    v8::Handle<v8::Object> findInstanceInPrototypeChain(const WrapperTypeInfo*, v8::Handle<v8::Value>);
 
-    v8::Handle<v8::FunctionTemplate> rawDOMTemplate(const WrapperTypeInfo*, WrapperWorldType);
-
-    bool hasInstance(const WrapperTypeInfo*, v8::Handle<v8::Value>, WrapperWorldType);
-
-    v8::Local<v8::Context> ensureRegexContext();
+    v8::Local<v8::Context> ensureScriptRegexpContext();
 
     const char* previousSamplingState() const { return m_previousSamplingState; }
     void setPreviousSamplingState(const char* name) { m_previousSamplingState = name; }
@@ -146,23 +100,21 @@ public:
 private:
     explicit V8PerIsolateData(v8::Isolate*);
     ~V8PerIsolateData();
-    static void constructorOfToString(const v8::FunctionCallbackInfo<v8::Value>&);
+
+    typedef HashMap<const void*, v8::Eternal<v8::FunctionTemplate> > DOMTemplateMap;
+    DOMTemplateMap& currentDOMTemplateMap();
+    bool hasInstance(const WrapperTypeInfo*, v8::Handle<v8::Value>, DOMTemplateMap&);
+    v8::Handle<v8::Object> findInstanceInPrototypeChain(const WrapperTypeInfo*, v8::Handle<v8::Value>, DOMTemplateMap&);
 
     v8::Isolate* m_isolate;
-    TemplateMap m_rawDOMTemplatesForMainWorld;
-    TemplateMap m_rawDOMTemplatesForNonMainWorld;
-    TemplateMap m_templatesForMainWorld;
-    TemplateMap m_templatesForNonMainWorld;
+    OwnPtr<gin::IsolateHolder> m_isolateHolder;
+    DOMTemplateMap m_domTemplateMapForMainWorld;
+    DOMTemplateMap m_domTemplateMapForNonMainWorld;
     ScopedPersistent<v8::FunctionTemplate> m_toStringTemplate;
-    v8::Persistent<v8::FunctionTemplate> m_lazyEventListenerToStringTemplate;
     OwnPtr<StringCache> m_stringCache;
-
-    Vector<DOMDataStore*> m_domDataList;
-    DOMDataStore* m_workerDomDataStore;
-
-    OwnPtr<V8HiddenPropertyName> m_hiddenPropertyName;
+    OwnPtr<V8HiddenValue> m_hiddenValue;
     ScopedPersistent<v8::Value> m_liveRoot;
-    ScopedPersistent<v8::Context> m_regexContext;
+    RefPtr<ScriptState> m_scriptRegexpScriptState;
 
     const char* m_previousSamplingState;
 
@@ -175,7 +127,7 @@ private:
     int m_internalScriptRecursionLevel;
 #endif
     OwnPtr<GCEventData> m_gcEventData;
-    bool m_shouldCollectGarbageSoon;
+    bool m_performingMicrotaskCheckpoint;
 };
 
 } // namespace WebCore

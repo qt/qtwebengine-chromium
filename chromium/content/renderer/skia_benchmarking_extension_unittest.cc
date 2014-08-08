@@ -50,7 +50,7 @@ TEST(SkiaBenchmarkingExtensionTest, SkDebugCanvas) {
                                      SkIntToScalar(50), SkIntToScalar(50));
 
   // Draw a trivial scene.
-  canvas.save(SkCanvas::kMatrixClip_SaveFlag);
+  canvas.save();
   canvas.clipRect(fullRect, SkRegion::kIntersect_Op, false);
   canvas.translate(SkIntToScalar(10), SkIntToScalar(10));
   canvas.scale(SkIntToScalar(2), SkIntToScalar(2));
@@ -66,7 +66,6 @@ TEST(SkiaBenchmarkingExtensionTest, SkDebugCanvas) {
   cmd = canvas.getDrawCommandAt(idx)->getType();
   EXPECT_EQ(cmd, SAVE);
   EXPECT_STREQ(SkDrawCommand::GetCommandString(cmd), "Save");
-  EXPECT_TRUE(HasInfoField(canvas, idx, "SaveFlags"));
 
   ASSERT_TRUE(canvas.getDrawCommandAt(++idx) != NULL);
   cmd = canvas.getDrawCommandAt(idx)->getType();

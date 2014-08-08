@@ -8,16 +8,16 @@
 #include "base/bind_helpers.h"
 #include "base/stl_util.h"
 #include "webkit/browser/appcache/appcache_response.h"
-#include "webkit/browser/appcache/appcache_service.h"
+#include "webkit/browser/appcache/appcache_service_impl.h"
 #include "webkit/browser/quota/quota_client.h"
-#include "webkit/browser/quota/quota_manager.h"
+#include "webkit/browser/quota/quota_manager_proxy.h"
 
 namespace appcache {
 
 // static
 const int64 AppCacheStorage::kUnitializedId = -1;
 
-AppCacheStorage::AppCacheStorage(AppCacheService* service)
+AppCacheStorage::AppCacheStorage(AppCacheServiceImpl* service)
     : last_cache_id_(kUnitializedId), last_group_id_(kUnitializedId),
       last_response_id_(kUnitializedId), service_(service)  {
 }

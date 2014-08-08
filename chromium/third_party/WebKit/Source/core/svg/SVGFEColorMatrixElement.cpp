@@ -22,37 +22,38 @@
 
 #include "core/svg/SVGFEColorMatrixElement.h"
 
-#include "SVGNames.h"
+#include "core/SVGNames.h"
 #include "platform/graphics/filters/FilterEffect.h"
-#include "core/svg/SVGElementInstance.h"
 #include "core/svg/graphics/filters/SVGFilterBuilder.h"
 
 namespace WebCore {
 
-// Animated property definitions
-DEFINE_ANIMATED_STRING(SVGFEColorMatrixElement, SVGNames::inAttr, In1, in1)
-DEFINE_ANIMATED_ENUMERATION(SVGFEColorMatrixElement, SVGNames::typeAttr, Type, type, ColorMatrixType)
-DEFINE_ANIMATED_NUMBER_LIST(SVGFEColorMatrixElement, SVGNames::valuesAttr, Values, values)
-
-BEGIN_REGISTER_ANIMATED_PROPERTIES(SVGFEColorMatrixElement)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(in1)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(type)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(values)
-    REGISTER_PARENT_ANIMATED_PROPERTIES(SVGFilterPrimitiveStandardAttributes)
-END_REGISTER_ANIMATED_PROPERTIES
+template<> const SVGEnumerationStringEntries& getStaticStringEntries<ColorMatrixType>()
+{
+    DEFINE_STATIC_LOCAL(SVGEnumerationStringEntries, entries, ());
+    if (entries.isEmpty()) {
+        entries.append(std::make_pair(FECOLORMATRIX_TYPE_MATRIX, "matrix"));
+        entries.append(std::make_pair(FECOLORMATRIX_TYPE_SATURATE, "saturate"));
+        entries.append(std::make_pair(FECOLORMATRIX_TYPE_HUEROTATE, "hueRotate"));
+        entries.append(std::make_pair(FECOLORMATRIX_TYPE_LUMINANCETOALPHA, "luminanceToAlpha"));
+    }
+    return entries;
+}
 
 inline SVGFEColorMatrixElement::SVGFEColorMatrixElement(Document& document)
     : SVGFilterPrimitiveStandardAttributes(SVGNames::feColorMatrixTag, document)
-    , m_type(FECOLORMATRIX_TYPE_MATRIX)
+    , m_values(SVGAnimatedNumberList::create(this, SVGNames::valuesAttr, SVGNumberList::create()))
+    , m_in1(SVGAnimatedString::create(this, SVGNames::inAttr, SVGString::create()))
+    , m_type(SVGAnimatedEnumeration<ColorMatrixType>::create(this, SVGNames::typeAttr, FECOLORMATRIX_TYPE_MATRIX))
 {
     ScriptWrappable::init(this);
-    registerAnimatedPropertiesForSVGFEColorMatrixElement();
+
+    addToPropertyMap(m_values);
+    addToPropertyMap(m_in1);
+    addToPropertyMap(m_type);
 }
 
-PassRefPtr<SVGFEColorMatrixElement> SVGFEColorMatrixElement::create(Document& document)
-{
-    return adoptRef(new SVGFEColorMatrixElement(document));
-}
+DEFINE_NODE_FACTORY(SVGFEColorMatrixElement)
 
 bool SVGFEColorMatrixElement::isSupportedAttribute(const QualifiedName& attrName)
 {
@@ -72,36 +73,27 @@ void SVGFEColorMatrixElement::parseAttribute(const QualifiedName& name, const At
         return;
     }
 
-    if (name == SVGNames::typeAttr) {
-        ColorMatrixType propertyValue = SVGPropertyTraits<ColorMatrixType>::fromString(value);
-        if (propertyValue > 0)
-            setTypeBaseValue(propertyValue);
-        return;
-    }
+    SVGParsingError parseError = NoError;
 
-    if (name == SVGNames::inAttr) {
-        setIn1BaseValue(value);
-        return;
-    }
+    if (name == SVGNames::inAttr)
+        m_in1->setBaseValueAsString(value, parseError);
+    else if (name == SVGNames::valuesAttr)
+        m_values->setBaseValueAsString(value, parseError);
+    else if (name == SVGNames::typeAttr)
+        m_type->setBaseValueAsString(value, parseError);
+    else
+        ASSERT_NOT_REACHED();
 
-    if (name == SVGNames::valuesAttr) {
-        SVGNumberList newList;
-        newList.parse(value);
-        detachAnimatedValuesListWrappers(newList.size());
-        setValuesBaseValue(newList);
-        return;
-    }
-
-    ASSERT_NOT_REACHED();
+    reportAttributeParsingError(parseError, name, value);
 }
 
 bool SVGFEColorMatrixElement::setFilterEffectAttribute(FilterEffect* effect, const QualifiedName& attrName)
 {
     FEColorMatrix* colorMatrix = static_cast<FEColorMatrix*>(effect);
     if (attrName == SVGNames::typeAttr)
-        return colorMatrix->setType(typeCurrentValue());
+        return colorMatrix->setType(m_type->currentValue()->enumValue());
     if (attrName == SVGNames::valuesAttr)
-        return colorMatrix->setValues(valuesCurrentValue().toFloatVector());
+        return colorMatrix->setValues(m_values->currentValue()->toFloatVector());
 
     ASSERT_NOT_REACHED();
     return false;
@@ -114,7 +106,7 @@ void SVGFEColorMatrixElement::svgAttributeChanged(const QualifiedName& attrName)
         return;
     }
 
-    SVGElementInstance::InvalidationGuard invalidationGuard(this);
+    SVGElement::InvalidationGuard invalidationGuard(this);
 
     if (attrName == SVGNames::typeAttr || attrName == SVGNames::valuesAttr) {
         primitiveAttributeChanged(attrName);
@@ -131,13 +123,13 @@ void SVGFEColorMatrixElement::svgAttributeChanged(const QualifiedName& attrName)
 
 PassRefPtr<FilterEffect> SVGFEColorMatrixElement::build(SVGFilterBuilder* filterBuilder, Filter* filter)
 {
-    FilterEffect* input1 = filterBuilder->getEffectById(in1CurrentValue());
+    FilterEffect* input1 = filterBuilder->getEffectById(AtomicString(m_in1->currentValue()->value()));
 
     if (!input1)
-        return 0;
+        return nullptr;
 
     Vector<float> filterValues;
-    ColorMatrixType filterType = typeCurrentValue();
+    ColorMatrixType filterType = m_type->currentValue()->enumValue();
 
     // Use defaults if values is empty (SVG 1.1 15.10).
     if (!hasAttribute(SVGNames::valuesAttr)) {
@@ -156,15 +148,15 @@ PassRefPtr<FilterEffect> SVGFEColorMatrixElement::build(SVGFilterBuilder* filter
             break;
         }
     } else {
-        SVGNumberList& values = valuesCurrentValue();
-        unsigned size = values.size();
+        RefPtr<SVGNumberList> values = m_values->currentValue();
+        size_t size = values->length();
 
         if ((filterType == FECOLORMATRIX_TYPE_MATRIX && size != 20)
             || (filterType == FECOLORMATRIX_TYPE_HUEROTATE && size != 1)
             || (filterType == FECOLORMATRIX_TYPE_SATURATE && size != 1))
-            return 0;
+            return nullptr;
 
-        filterValues = values.toFloatVector();
+        filterValues = values->toFloatVector();
     }
 
     RefPtr<FilterEffect> effect = FEColorMatrix::create(filter, filterType, filterValues);

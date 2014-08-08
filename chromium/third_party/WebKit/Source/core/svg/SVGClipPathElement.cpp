@@ -24,40 +24,25 @@
 #include "core/svg/SVGClipPathElement.h"
 
 #include "core/rendering/svg/RenderSVGResourceClipper.h"
-#include "core/svg/SVGElementInstance.h"
 
 namespace WebCore {
 
-// Animated property definitions
-DEFINE_ANIMATED_ENUMERATION(SVGClipPathElement, SVGNames::clipPathUnitsAttr, ClipPathUnits, clipPathUnits, SVGUnitTypes::SVGUnitType)
-DEFINE_ANIMATED_BOOLEAN(SVGClipPathElement, SVGNames::externalResourcesRequiredAttr, ExternalResourcesRequired, externalResourcesRequired)
-
-BEGIN_REGISTER_ANIMATED_PROPERTIES(SVGClipPathElement)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(clipPathUnits)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(externalResourcesRequired)
-    REGISTER_PARENT_ANIMATED_PROPERTIES(SVGGraphicsElement)
-END_REGISTER_ANIMATED_PROPERTIES
-
 inline SVGClipPathElement::SVGClipPathElement(Document& document)
     : SVGGraphicsElement(SVGNames::clipPathTag, document)
-    , m_clipPathUnits(SVGUnitTypes::SVG_UNIT_TYPE_USERSPACEONUSE)
+    , m_clipPathUnits(SVGAnimatedEnumeration<SVGUnitTypes::SVGUnitType>::create(this, SVGNames::clipPathUnitsAttr, SVGUnitTypes::SVG_UNIT_TYPE_USERSPACEONUSE))
 {
     ScriptWrappable::init(this);
-    registerAnimatedPropertiesForSVGClipPathElement();
+    addToPropertyMap(m_clipPathUnits);
 }
 
-PassRefPtr<SVGClipPathElement> SVGClipPathElement::create(Document& document)
-{
-    return adoptRef(new SVGClipPathElement(document));
-}
+DEFINE_NODE_FACTORY(SVGClipPathElement)
 
 bool SVGClipPathElement::isSupportedAttribute(const QualifiedName& attrName)
 {
     DEFINE_STATIC_LOCAL(HashSet<QualifiedName>, supportedAttributes, ());
-    if (supportedAttributes.isEmpty()) {
-        SVGExternalResourcesRequired::addSupportedAttributes(supportedAttributes);
+    if (supportedAttributes.isEmpty())
         supportedAttributes.add(SVGNames::clipPathUnitsAttr);
-    }
+
     return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
 }
 
@@ -68,17 +53,14 @@ void SVGClipPathElement::parseAttribute(const QualifiedName& name, const AtomicS
         return;
     }
 
-    if (name == SVGNames::clipPathUnitsAttr) {
-        SVGUnitTypes::SVGUnitType propertyValue = SVGPropertyTraits<SVGUnitTypes::SVGUnitType>::fromString(value);
-        if (propertyValue > 0)
-            setClipPathUnitsBaseValue(propertyValue);
-        return;
-    }
+    SVGParsingError parseError = NoError;
 
-    if (SVGExternalResourcesRequired::parseAttribute(name, value))
-        return;
+    if (name == SVGNames::clipPathUnitsAttr)
+        m_clipPathUnits->setBaseValueAsString(value, parseError);
+    else
+        ASSERT_NOT_REACHED();
 
-    ASSERT_NOT_REACHED();
+    reportAttributeParsingError(parseError, name, value);
 }
 
 void SVGClipPathElement::svgAttributeChanged(const QualifiedName& attrName)
@@ -88,7 +70,7 @@ void SVGClipPathElement::svgAttributeChanged(const QualifiedName& attrName)
         return;
     }
 
-    SVGElementInstance::InvalidationGuard invalidationGuard(this);
+    SVGElement::InvalidationGuard invalidationGuard(this);
 
     RenderSVGResourceContainer* renderer = toRenderSVGResourceContainer(this->renderer());
     if (renderer)
@@ -103,7 +85,7 @@ void SVGClipPathElement::childrenChanged(bool changedByParser, Node* beforeChang
         return;
 
     if (RenderObject* object = renderer())
-        object->setNeedsLayout();
+        object->setNeedsLayoutAndFullPaintInvalidation();
 }
 
 RenderObject* SVGClipPathElement::createRenderer(RenderStyle*)

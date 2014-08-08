@@ -219,7 +219,7 @@ static void readColorProfile(jpeg_decompress_struct* info, ColorProfile& colorPr
 {
 #if USE(ICCJPEG)
     JOCTET* profile;
-    unsigned int profileLength;
+    unsigned profileLength;
 
     if (!read_icc_profile(info, &profile, &profileLength))
         return;
@@ -266,7 +266,7 @@ public:
 
         decoder_source_mgr* src = 0;
         if (!m_info.src) {
-            src = (decoder_source_mgr*)fastCalloc(sizeof(decoder_source_mgr), 1);
+            src = (decoder_source_mgr*)fastZeroedMalloc(sizeof(decoder_source_mgr));
             if (!src) {
                 m_state = JPEG_ERROR;
                 return;
@@ -377,6 +377,12 @@ public:
             if (!m_decoder->setSize(m_info.image_width, m_info.image_height))
                 return false;
 
+            // Calculate and set decoded size.
+            m_info.scale_num = m_decoder->desiredScaleNumerator();
+            m_info.scale_denom = scaleDenominator;
+            jpeg_calc_output_dimensions(&m_info);
+            m_decoder->setDecodedSize(m_info.output_width, m_info.output_height);
+
             m_decoder->setOrientation(readImageOrientation(info()));
 
 #if USE(QCMSLIB)
@@ -390,6 +396,7 @@ public:
                 if (m_transform && m_info.out_color_space == JCS_EXT_BGRA)
                     m_info.out_color_space = JCS_EXT_RGBA;
 #endif
+                m_decoder->setHasColorProfile(!!m_transform);
             }
 #endif
             // Don't allocate a giant and superfluous memory buffer when the
@@ -413,14 +420,6 @@ public:
             m_info.do_fancy_upsampling = doFancyUpsampling();
             m_info.enable_2pass_quant = false;
             m_info.do_block_smoothing = true;
-
-            if (m_decoder->size() != m_decoder->decodedSize()) {
-                m_info.scale_denom = scaleDenominator;
-                m_info.scale_num = m_decoder->decodedSize().width() * scaleDenominator / m_info.image_width;
-            }
-
-            // Used to set up image size so arrays can be allocated.
-            jpeg_calc_output_dimensions(&m_info);
 
             // Make a one-row-high sample array that will go away when done with
             // image. Always make it big enough to hold an RGB row. Since this
@@ -597,6 +596,7 @@ JPEGImageDecoder::JPEGImageDecoder(ImageSource::AlphaOption alphaOption,
     ImageSource::GammaAndColorProfileOption gammaAndColorProfileOption,
     size_t maxDecodedBytes)
     : ImageDecoder(alphaOption, gammaAndColorProfileOption, maxDecodedBytes)
+    , m_hasColorProfile(false)
 {
 }
 
@@ -617,25 +617,31 @@ bool JPEGImageDecoder::setSize(unsigned width, unsigned height)
     if (!ImageDecoder::setSize(width, height))
         return false;
 
-    size_t originalBytes = width * height * 4;
+    if (!desiredScaleNumerator())
+        return setFailed();
+
+    setDecodedSize(width, height);
+    return true;
+}
+
+void JPEGImageDecoder::setDecodedSize(unsigned width, unsigned height)
+{
+    m_decodedSize = IntSize(width, height);
+}
+
+unsigned JPEGImageDecoder::desiredScaleNumerator() const
+{
+    size_t originalBytes = size().width() * size().height() * 4;
     if (originalBytes <= m_maxDecodedBytes) {
-        m_decodedSize = IntSize(width, height);
-        return true;
+        return scaleDenominator;
     }
 
     // Downsample according to the maximum decoded size.
     unsigned scaleNumerator = static_cast<unsigned>(floor(sqrt(
         // MSVC needs explicit parameter type for sqrt().
         static_cast<float>(m_maxDecodedBytes * scaleDenominator * scaleDenominator / originalBytes))));
-    m_decodedSize = IntSize((scaleNumerator * width + scaleDenominator - 1) / scaleDenominator,
-        (scaleNumerator * height + scaleDenominator - 1) / scaleDenominator);
 
-    // The image is too big to be downsampled by libjpeg.
-    // FIXME: Post-process to downsample the image.
-    if (m_decodedSize.isEmpty())
-        return setFailed();
-
-    return true;
+    return scaleNumerator;
 }
 
 ImageFrame* JPEGImageDecoder::frameBufferAtIndex(size_t index)

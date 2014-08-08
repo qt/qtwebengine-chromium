@@ -5,14 +5,11 @@
 #include "content/browser/loader/redirect_to_file_resource_handler.h"
 
 #include "base/bind.h"
-#include "base/files/file_util_proxy.h"
 #include "base/logging.h"
-#include "base/message_loop/message_loop_proxy.h"
-#include "base/platform_file.h"
 #include "base/threading/thread_restrictions.h"
-#include "content/browser/loader/resource_dispatcher_host_impl.h"
 #include "content/browser/loader/resource_request_info_impl.h"
-#include "content/public/browser/browser_thread.h"
+#include "content/browser/loader/temporary_file_stream.h"
+#include "content/public/browser/resource_controller.h"
 #include "content/public/common/resource_response.h"
 #include "net/base/file_stream.h"
 #include "net/base/io_buffer.h"
@@ -53,57 +50,142 @@ namespace content {
 static const int kInitialReadBufSize = 32768;
 static const int kMaxReadBufSize = 524288;
 
+// A separate IO thread object to manage the lifetime of the net::FileStream and
+// the ShareableFileReference. When the handler is destroyed, it asynchronously
+// closes net::FileStream after all pending writes complete. Only after the
+// stream is closed is the ShareableFileReference released, to ensure the
+// temporary is not deleted before it is closed.
+class RedirectToFileResourceHandler::Writer {
+ public:
+  Writer(RedirectToFileResourceHandler* handler,
+         scoped_ptr<net::FileStream> file_stream,
+         ShareableFileReference* deletable_file)
+      : handler_(handler),
+        file_stream_(file_stream.Pass()),
+        is_writing_(false),
+        deletable_file_(deletable_file) {
+    DCHECK(!deletable_file_->path().empty());
+  }
+
+  bool is_writing() const { return is_writing_; }
+  const base::FilePath& path() const { return deletable_file_->path(); }
+
+  int Write(net::IOBuffer* buf, int buf_len) {
+    DCHECK(!is_writing_);
+    DCHECK(handler_);
+    int result = file_stream_->Write(
+        buf, buf_len,
+        base::Bind(&Writer::DidWriteToFile, base::Unretained(this)));
+    if (result == net::ERR_IO_PENDING)
+      is_writing_ = true;
+    return result;
+  }
+
+  void Close() {
+    handler_ = NULL;
+    if (!is_writing_)
+      CloseAndDelete();
+  }
+
+ private:
+  // Only DidClose can delete this.
+  ~Writer() {
+  }
+
+  void DidWriteToFile(int result) {
+    DCHECK(is_writing_);
+    is_writing_ = false;
+    if (handler_) {
+      handler_->DidWriteToFile(result);
+    } else {
+      CloseAndDelete();
+    }
+  }
+
+  void CloseAndDelete() {
+    DCHECK(!is_writing_);
+    int result = file_stream_->Close(base::Bind(&Writer::DidClose,
+                                                base::Unretained(this)));
+    if (result != net::ERR_IO_PENDING)
+      DidClose(result);
+  }
+
+  void DidClose(int result) {
+    delete this;
+  }
+
+  RedirectToFileResourceHandler* handler_;
+
+  scoped_ptr<net::FileStream> file_stream_;
+  bool is_writing_;
+
+  // We create a ShareableFileReference that's deletable for the temp file
+  // created as a result of the download.
+  scoped_refptr<webkit_blob::ShareableFileReference> deletable_file_;
+
+  DISALLOW_COPY_AND_ASSIGN(Writer);
+};
+
 RedirectToFileResourceHandler::RedirectToFileResourceHandler(
     scoped_ptr<ResourceHandler> next_handler,
-    net::URLRequest* request,
-    ResourceDispatcherHostImpl* host)
+    net::URLRequest* request)
     : LayeredResourceHandler(request, next_handler.Pass()),
-      weak_factory_(this),
-      host_(host),
       buf_(new net::GrowableIOBuffer()),
       buf_write_pending_(false),
       write_cursor_(0),
-      write_callback_pending_(false),
+      writer_(NULL),
       next_buffer_size_(kInitialReadBufSize),
       did_defer_(false),
-      completed_during_write_(false) {
+      completed_during_write_(false),
+      weak_factory_(this) {
 }
 
 RedirectToFileResourceHandler::~RedirectToFileResourceHandler() {
+  // Orphan the writer to asynchronously close and release the temporary file.
+  if (writer_) {
+    writer_->Close();
+    writer_ = NULL;
+  }
+}
+
+void RedirectToFileResourceHandler::
+    SetCreateTemporaryFileStreamFunctionForTesting(
+        const CreateTemporaryFileStreamFunction& create_temporary_file_stream) {
+  create_temporary_file_stream_ = create_temporary_file_stream;
 }
 
 bool RedirectToFileResourceHandler::OnResponseStarted(
-    int request_id,
     ResourceResponse* response,
     bool* defer) {
   if (response->head.error_code == net::OK ||
       response->head.error_code == net::ERR_IO_PENDING) {
-    DCHECK(deletable_file_.get() && !deletable_file_->path().empty());
-    response->head.download_file_path = deletable_file_->path();
+    DCHECK(writer_);
+    response->head.download_file_path = writer_->path();
   }
-  return next_handler_->OnResponseStarted(request_id, response, defer);
+  return next_handler_->OnResponseStarted(response, defer);
 }
 
-bool RedirectToFileResourceHandler::OnWillStart(int request_id,
-                                                const GURL& url,
-                                                bool* defer) {
-  if (!deletable_file_.get()) {
-    // Defer starting the request until we have created the temporary file.
-    // TODO(darin): This is sub-optimal.  We should not delay starting the
-    // network request like this.
-    did_defer_ = *defer = true;
-    base::FileUtilProxy::CreateTemporary(
-        BrowserThread::GetMessageLoopProxyForThread(BrowserThread::FILE).get(),
-        base::PLATFORM_FILE_ASYNC,
+bool RedirectToFileResourceHandler::OnWillStart(const GURL& url, bool* defer) {
+  DCHECK(!writer_);
+
+  // Defer starting the request until we have created the temporary file.
+  // TODO(darin): This is sub-optimal.  We should not delay starting the
+  // network request like this.
+  will_start_url_ = url;
+  did_defer_ = *defer = true;
+  if (create_temporary_file_stream_.is_null()) {
+    CreateTemporaryFileStream(
         base::Bind(&RedirectToFileResourceHandler::DidCreateTemporaryFile,
                    weak_factory_.GetWeakPtr()));
-    return true;
+  } else {
+    create_temporary_file_stream_.Run(
+        base::Bind(&RedirectToFileResourceHandler::DidCreateTemporaryFile,
+                   weak_factory_.GetWeakPtr()));
   }
-  return next_handler_->OnWillStart(request_id, url, defer);
+  return true;
 }
 
 bool RedirectToFileResourceHandler::OnWillRead(
-    int request_id,
     scoped_refptr<net::IOBuffer>* buf,
     int* buf_size,
     int min_size) {
@@ -122,8 +204,7 @@ bool RedirectToFileResourceHandler::OnWillRead(
   return true;
 }
 
-bool RedirectToFileResourceHandler::OnReadCompleted(int request_id,
-                                                    int bytes_read,
+bool RedirectToFileResourceHandler::OnReadCompleted(int bytes_read,
                                                     bool* defer) {
   DCHECK(buf_write_pending_);
   buf_write_pending_ = false;
@@ -147,11 +228,10 @@ bool RedirectToFileResourceHandler::OnReadCompleted(int request_id,
 }
 
 void RedirectToFileResourceHandler::OnResponseCompleted(
-    int request_id,
     const net::URLRequestStatus& status,
     const std::string& security_info,
     bool* defer) {
-  if (write_callback_pending_) {
+  if (writer_ && writer_->is_writing()) {
     completed_during_write_ = true;
     completed_status_ = status;
     completed_security_info_ = security_info;
@@ -159,34 +239,38 @@ void RedirectToFileResourceHandler::OnResponseCompleted(
     *defer = true;
     return;
   }
-  next_handler_->OnResponseCompleted(request_id, status, security_info, defer);
+  next_handler_->OnResponseCompleted(status, security_info, defer);
 }
 
 void RedirectToFileResourceHandler::DidCreateTemporaryFile(
-    base::PlatformFileError /*error_code*/,
-    base::PassPlatformFile file_handle,
-    const base::FilePath& file_path) {
-  deletable_file_ = ShareableFileReference::GetOrCreate(
-      file_path,
-      ShareableFileReference::DELETE_ON_FINAL_RELEASE,
-      BrowserThread::GetMessageLoopProxyForThread(BrowserThread::FILE).get());
-  file_stream_.reset(
-      new net::FileStream(file_handle.ReleaseValue(),
-                          base::PLATFORM_FILE_WRITE | base::PLATFORM_FILE_ASYNC,
-                          NULL));
-  const ResourceRequestInfo* info = GetRequestInfo();
-  host_->RegisterDownloadedTempFile(
-      info->GetChildID(), info->GetRequestID(), deletable_file_.get());
-  ResumeIfDeferred();
+    base::File::Error error_code,
+    scoped_ptr<net::FileStream> file_stream,
+    ShareableFileReference* deletable_file) {
+  DCHECK(!writer_);
+  if (error_code != base::File::FILE_OK) {
+    controller()->CancelWithError(net::FileErrorToNetError(error_code));
+    return;
+  }
+
+  writer_ = new Writer(this, file_stream.Pass(), deletable_file);
+
+  // Resume the request.
+  DCHECK(did_defer_);
+  bool defer = false;
+  if (!next_handler_->OnWillStart(will_start_url_, &defer)) {
+    controller()->Cancel();
+  } else if (!defer) {
+    ResumeIfDeferred();
+  } else {
+    did_defer_ = false;
+  }
+  will_start_url_ = GURL();
 }
 
 void RedirectToFileResourceHandler::DidWriteToFile(int result) {
-  write_callback_pending_ = false;
-  int request_id = GetRequestID();
-
   bool failed = false;
   if (result > 0) {
-    next_handler_->OnDataDownloaded(request_id, result);
+    next_handler_->OnDataDownloaded(result);
     write_cursor_ += result;
     failed = !WriteMore();
   } else {
@@ -194,20 +278,37 @@ void RedirectToFileResourceHandler::DidWriteToFile(int result) {
   }
 
   if (failed) {
-    ResumeIfDeferred();
-  } else if (completed_during_write_) {
+    DCHECK(!writer_->is_writing());
+    // TODO(davidben): Recover the error code from WriteMore or |result|, as
+    // appropriate.
+    if (completed_during_write_ && completed_status_.is_success()) {
+      // If the request successfully completed mid-write, but the write failed,
+      // convert the status to a failure for downstream.
+      completed_status_.set_status(net::URLRequestStatus::CANCELED);
+      completed_status_.set_error(net::ERR_FAILED);
+    }
+    if (!completed_during_write_)
+      controller()->CancelWithError(net::ERR_FAILED);
+  }
+
+  if (completed_during_write_ && !writer_->is_writing()) {
+    // Resume shutdown now that all data has been written to disk. Note that
+    // this should run even in the |failed| case above, otherwise a failed write
+    // leaves the handler stuck.
     bool defer = false;
-    next_handler_->OnResponseCompleted(request_id,
-                                       completed_status_,
+    next_handler_->OnResponseCompleted(completed_status_,
                                        completed_security_info_,
                                        &defer);
-    if (!defer)
+    if (!defer) {
       ResumeIfDeferred();
+    } else {
+      did_defer_ = false;
+    }
   }
 }
 
 bool RedirectToFileResourceHandler::WriteMore() {
-  DCHECK(file_stream_.get());
+  DCHECK(writer_);
   for (;;) {
     if (write_cursor_ == buf_->offset()) {
       // We've caught up to the network load, but it may be in the process of
@@ -220,7 +321,7 @@ bool RedirectToFileResourceHandler::WriteMore() {
       }
       return true;
     }
-    if (write_callback_pending_)
+    if (writer_->is_writing())
       return true;
     DCHECK(write_cursor_ < buf_->offset());
 
@@ -242,18 +343,12 @@ bool RedirectToFileResourceHandler::WriteMore() {
         buf_.get(), buf_->StartOfBuffer() + write_cursor_);
     int write_len = buf_->offset() - write_cursor_;
 
-    int rv = file_stream_->Write(
-        wrapped.get(),
-        write_len,
-        base::Bind(&RedirectToFileResourceHandler::DidWriteToFile,
-                   base::Unretained(this)));
-    if (rv == net::ERR_IO_PENDING) {
-      write_callback_pending_ = true;
+    int rv = writer_->Write(wrapped.get(), write_len);
+    if (rv == net::ERR_IO_PENDING)
       return true;
-    }
     if (rv <= 0)
       return false;
-    next_handler_->OnDataDownloaded(GetRequestID(), rv);
+    next_handler_->OnDataDownloaded(rv);
     write_cursor_ += rv;
   }
 }

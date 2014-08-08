@@ -23,8 +23,7 @@ using ppapi::host::ResourceHost;
 
 namespace content {
 
-PepperFileRefBackend::~PepperFileRefBackend() {
-}
+PepperFileRefBackend::~PepperFileRefBackend() {}
 
 PepperFileRefHost::PepperFileRefHost(BrowserPpapiHost* host,
                                      PP_Instance instance,
@@ -39,9 +38,8 @@ PepperFileRefHost::PepperFileRefHost(BrowserPpapiHost* host,
 
   int render_process_id;
   int unused;
-  if (!host->GetRenderViewIDsForInstance(instance,
-                                         &render_process_id,
-                                         &unused)) {
+  if (!host->GetRenderFrameIDsForInstance(
+          instance, &render_process_id, &unused)) {
     return;
   }
 
@@ -64,16 +62,22 @@ PepperFileRefHost::PepperFileRefHost(BrowserPpapiHost* host,
   fs_type_ = file_system_host->GetType();
   if ((fs_type_ != PP_FILESYSTEMTYPE_LOCALPERSISTENT) &&
       (fs_type_ != PP_FILESYSTEMTYPE_LOCALTEMPORARY) &&
+      (fs_type_ != PP_FILESYSTEMTYPE_EXTERNAL) &&
       (fs_type_ != PP_FILESYSTEMTYPE_ISOLATED)) {
     DLOG(ERROR) << "Unsupported filesystem type: " << fs_type_;
     return;
   }
+  if ((fs_type_ == PP_FILESYSTEMTYPE_EXTERNAL) &&
+      (!file_system_host->GetRootUrl().is_valid())) {
+    DLOG(ERROR) << "Native external filesystems are not supported by this "
+                << "constructor.";
+    return;
+  }
 
-  backend_.reset(new PepperInternalFileRefBackend(
-      host->GetPpapiHost(),
-      render_process_id,
-      file_system_host->AsWeakPtr(),
-      path));
+  backend_.reset(new PepperInternalFileRefBackend(host->GetPpapiHost(),
+                                                  render_process_id,
+                                                  file_system_host->AsWeakPtr(),
+                                                  path));
 }
 
 PepperFileRefHost::PepperFileRefHost(BrowserPpapiHost* host,
@@ -88,23 +92,18 @@ PepperFileRefHost::PepperFileRefHost(BrowserPpapiHost* host,
 
   int render_process_id;
   int unused;
-  if (!host->GetRenderViewIDsForInstance(instance,
-                                         &render_process_id,
-                                         &unused)) {
+  if (!host->GetRenderFrameIDsForInstance(
+          instance, &render_process_id, &unused)) {
     return;
   }
 
-  backend_.reset(new PepperExternalFileRefBackend(host->GetPpapiHost(),
-                                                  render_process_id,
-                                                  external_path));
+  backend_.reset(new PepperExternalFileRefBackend(
+      host->GetPpapiHost(), render_process_id, external_path));
 }
 
-PepperFileRefHost::~PepperFileRefHost() {
-}
+PepperFileRefHost::~PepperFileRefHost() {}
 
-bool PepperFileRefHost::IsFileRefHost() {
-  return true;
-}
+bool PepperFileRefHost::IsFileRefHost() { return true; }
 
 PP_FileSystemType PepperFileRefHost::GetFileSystemType() const {
   return fs_type_;
@@ -157,35 +156,29 @@ int32_t PepperFileRefHost::OnResourceMessageReceived(
   if (!backend_)
     return PP_ERROR_FAILED;
 
-  IPC_BEGIN_MESSAGE_MAP(PepperFileRefHost, msg)
+  PPAPI_BEGIN_MESSAGE_MAP(PepperFileRefHost, msg)
     PPAPI_DISPATCH_HOST_RESOURCE_CALL(PpapiHostMsg_FileRef_MakeDirectory,
-                                      OnMakeDirectory);
-    PPAPI_DISPATCH_HOST_RESOURCE_CALL(PpapiHostMsg_FileRef_Touch,
-                                      OnTouch);
-    PPAPI_DISPATCH_HOST_RESOURCE_CALL_0(PpapiHostMsg_FileRef_Delete,
-                                        OnDelete);
-    PPAPI_DISPATCH_HOST_RESOURCE_CALL(PpapiHostMsg_FileRef_Rename,
-                                      OnRename);
-    PPAPI_DISPATCH_HOST_RESOURCE_CALL_0(PpapiHostMsg_FileRef_Query,
-                                        OnQuery);
+                                      OnMakeDirectory)
+    PPAPI_DISPATCH_HOST_RESOURCE_CALL(PpapiHostMsg_FileRef_Touch, OnTouch)
+    PPAPI_DISPATCH_HOST_RESOURCE_CALL_0(PpapiHostMsg_FileRef_Delete, OnDelete)
+    PPAPI_DISPATCH_HOST_RESOURCE_CALL(PpapiHostMsg_FileRef_Rename, OnRename)
+    PPAPI_DISPATCH_HOST_RESOURCE_CALL_0(PpapiHostMsg_FileRef_Query, OnQuery)
     PPAPI_DISPATCH_HOST_RESOURCE_CALL_0(
-        PpapiHostMsg_FileRef_ReadDirectoryEntries,
-        OnReadDirectoryEntries);
+        PpapiHostMsg_FileRef_ReadDirectoryEntries, OnReadDirectoryEntries)
     PPAPI_DISPATCH_HOST_RESOURCE_CALL_0(PpapiHostMsg_FileRef_GetAbsolutePath,
-                                        OnGetAbsolutePath);
-
-  IPC_END_MESSAGE_MAP()
+                                        OnGetAbsolutePath)
+  PPAPI_END_MESSAGE_MAP()
   return PP_ERROR_FAILED;
 }
 
 int32_t PepperFileRefHost::OnMakeDirectory(
     ppapi::host::HostMessageContext* context,
-    bool make_ancestors) {
+    int32_t make_directory_flags) {
   int32_t rv = CanCreate();
   if (rv != PP_OK)
     return rv;
   return backend_->MakeDirectory(context->MakeReplyMessageContext(),
-                                 make_ancestors);
+                                 make_directory_flags);
 }
 
 int32_t PepperFileRefHost::OnTouch(ppapi::host::HostMessageContext* context,
@@ -196,9 +189,8 @@ int32_t PepperFileRefHost::OnTouch(ppapi::host::HostMessageContext* context,
   int32_t rv = CanCreate();
   if (rv != PP_OK)
     return rv;
-  return backend_->Touch(context->MakeReplyMessageContext(),
-                         last_access_time,
-                         last_modified_time);
+  return backend_->Touch(
+      context->MakeReplyMessageContext(), last_access_time, last_modified_time);
 }
 
 int32_t PepperFileRefHost::OnDelete(ppapi::host::HostMessageContext* context) {
@@ -229,8 +221,7 @@ int32_t PepperFileRefHost::OnRename(ppapi::host::HostMessageContext* context,
   if (rv != PP_OK)
     return rv;
 
-  return backend_->Rename(context->MakeReplyMessageContext(),
-                          file_ref_host);
+  return backend_->Rename(context->MakeReplyMessageContext(), file_ref_host);
 }
 
 int32_t PepperFileRefHost::OnQuery(ppapi::host::HostMessageContext* context) {
@@ -251,7 +242,7 @@ int32_t PepperFileRefHost::OnReadDirectoryEntries(
 int32_t PepperFileRefHost::OnGetAbsolutePath(
     ppapi::host::HostMessageContext* context) {
   if (!host_->GetPpapiHost()->permissions().HasPermission(
-      ppapi::PERMISSION_PRIVATE))
+          ppapi::PERMISSION_PRIVATE))
     return PP_ERROR_NOACCESS;
   return backend_->GetAbsolutePath(context->MakeReplyMessageContext());
 }

@@ -21,10 +21,9 @@
 #ifndef SVGClipPathElement_h
 #define SVGClipPathElement_h
 
-#include "SVGNames.h"
+#include "core/SVGNames.h"
 #include "core/svg/SVGAnimatedBoolean.h"
 #include "core/svg/SVGAnimatedEnumeration.h"
-#include "core/svg/SVGExternalResourcesRequired.h"
 #include "core/svg/SVGGraphicsElement.h"
 #include "core/svg/SVGUnitTypes.h"
 
@@ -32,31 +31,27 @@ namespace WebCore {
 
 class RenderObject;
 
-class SVGClipPathElement FINAL : public SVGGraphicsElement,
-                                 public SVGExternalResourcesRequired {
+class SVGClipPathElement FINAL : public SVGGraphicsElement {
 public:
-    static PassRefPtr<SVGClipPathElement> create(Document&);
+    DECLARE_NODE_FACTORY(SVGClipPathElement);
+    SVGAnimatedEnumeration<SVGUnitTypes::SVGUnitType>* clipPathUnits() { return m_clipPathUnits.get(); }
+
+    virtual bool supportsFocus() const OVERRIDE { return false; }
 
 private:
     explicit SVGClipPathElement(Document&);
 
-    virtual bool isValid() const { return SVGTests::isValid(); }
-    virtual bool needsPendingResourceHandling() const { return false; }
+    virtual bool needsPendingResourceHandling() const OVERRIDE { return false; }
 
     bool isSupportedAttribute(const QualifiedName&);
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual void svgAttributeChanged(const QualifiedName&);
-    virtual void childrenChanged(bool changedByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0);
+    virtual void svgAttributeChanged(const QualifiedName&) OVERRIDE;
+    virtual void childrenChanged(bool changedByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0) OVERRIDE;
 
-    virtual RenderObject* createRenderer(RenderStyle*);
+    virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
 
-    BEGIN_DECLARE_ANIMATED_PROPERTIES(SVGClipPathElement)
-        DECLARE_ANIMATED_ENUMERATION(ClipPathUnits, clipPathUnits, SVGUnitTypes::SVGUnitType)
-        DECLARE_ANIMATED_BOOLEAN(ExternalResourcesRequired, externalResourcesRequired)
-    END_DECLARE_ANIMATED_PROPERTIES
+    RefPtr<SVGAnimatedEnumeration<SVGUnitTypes::SVGUnitType> > m_clipPathUnits;
 };
-
-DEFINE_NODE_TYPE_CASTS(SVGClipPathElement, hasTagName(SVGNames::clipPathTag));
 
 }
 

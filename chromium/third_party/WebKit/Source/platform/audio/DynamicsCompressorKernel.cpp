@@ -201,7 +201,7 @@ float DynamicsCompressorKernel::updateStaticCurveParameters(float dbThreshold, f
     return m_K;
 }
 
-void DynamicsCompressorKernel::process(float* sourceChannels[],
+void DynamicsCompressorKernel::process(const float* sourceChannels[],
                                        float* destinationChannels[],
                                        unsigned numberOfChannels,
                                        unsigned framesToProcess,
@@ -294,7 +294,7 @@ void DynamicsCompressorKernel::process(float* sourceChannels[],
         float desiredGain = m_detectorAverage;
 
         // Pre-warp so we get desiredGain after sin() warp below.
-        float scaledDesiredGain = asinf(desiredGain) / (0.5f * piFloat);
+        float scaledDesiredGain = asinf(desiredGain) / (piOverTwoFloat);
 
         // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
         // Deal with envelopes
@@ -426,7 +426,7 @@ void DynamicsCompressorKernel::process(float* sourceChannels[],
                 }
 
                 // Warp pre-compression gain to smooth out sharp exponential transition points.
-                float postWarpCompressorGain = sinf(0.5f * piFloat * compressorGain);
+                float postWarpCompressorGain = sinf(piOverTwoFloat * compressorGain);
 
                 // Calculate total gain using master gain and effect blend.
                 float totalGain = dryMix + wetMix * masterLinearGain * postWarpCompressorGain;

@@ -29,6 +29,7 @@
 
 #import "RTCTypes.h"
 
+@class RTCDataChannel;
 @class RTCICECandidate;
 @class RTCMediaStream;
 @class RTCPeerConnection;
@@ -52,7 +53,7 @@
 - (void)peerConnection:(RTCPeerConnection *)peerConnection
         removedStream:(RTCMediaStream *)stream;
 
-// Triggered when renegotation is needed, for example the ICE has restarted.
+// Triggered when renegotiation is needed, for example the ICE has restarted.
 - (void)peerConnectionOnRenegotiationNeeded:(RTCPeerConnection *)peerConnection;
 
 // Called any time the ICEConnectionState changes.
@@ -66,5 +67,9 @@
 // New Ice candidate have been found.
 - (void)peerConnection:(RTCPeerConnection *)peerConnection
         gotICECandidate:(RTCICECandidate *)candidate;
+
+// New data channel has been opened.
+- (void)peerConnection:(RTCPeerConnection*)peerConnection
+    didOpenDataChannel:(RTCDataChannel*)dataChannel;
 
 @end

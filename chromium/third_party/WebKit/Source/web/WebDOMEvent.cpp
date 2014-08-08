@@ -29,21 +29,18 @@
  */
 
 #include "config.h"
-#include "WebDOMEvent.h"
+#include "public/web/WebDOMEvent.h"
 
-#include "EventNames.h"
+#include "core/EventNames.h"
 #include "core/dom/Node.h"
 #include "core/events/Event.h"
 #include "wtf/PassRefPtr.h"
 
 namespace blink {
 
-class WebDOMEventPrivate : public WebCore::Event {
-};
-
 void WebDOMEvent::reset()
 {
-    assign(0);
+    assign(nullptr);
 }
 
 void WebDOMEvent::assign(const WebDOMEvent& other)
@@ -51,17 +48,17 @@ void WebDOMEvent::assign(const WebDOMEvent& other)
     m_private = other.m_private;
 }
 
-void WebDOMEvent::assign(const WTF::PassRefPtr<WebDOMEventPrivate>& event)
+void WebDOMEvent::assign(const PassRefPtrWillBeRawPtr<WebCore::Event>& event)
 {
     m_private = event;
 }
 
-WebDOMEvent::WebDOMEvent(const WTF::PassRefPtr<WebCore::Event>& event)
+WebDOMEvent::WebDOMEvent(const PassRefPtrWillBeRawPtr<WebCore::Event>& event)
     : m_private(event)
 {
 }
 
-WebDOMEvent::operator WTF::PassRefPtr<WebCore::Event>() const
+WebDOMEvent::operator PassRefPtrWillBeRawPtr<WebCore::Event>() const
 {
     return m_private.get();
 }
@@ -196,12 +193,6 @@ bool WebDOMEvent::isXMLHttpRequestProgressEvent() const
 {
     ASSERT(m_private.get());
     return m_private->hasInterface(WebCore::EventNames::XMLHttpRequestProgressEvent);
-}
-
-bool WebDOMEvent::isBeforeLoadEvent() const
-{
-    ASSERT(m_private.get());
-    return m_private->hasInterface(WebCore::EventNames::BeforeLoadEvent);
 }
 
 } // namespace blink

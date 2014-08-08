@@ -10,10 +10,8 @@
 #include "ppapi/proxy/ppapi_messages.h"
 #include "ppapi/proxy/ppb_video_decoder_proxy.h"
 #include "ppapi/thunk/enter.h"
-#include "ppapi/thunk/ppb_video_decoder_api.h"
+#include "ppapi/thunk/ppb_video_decoder_dev_api.h"
 #include "ppapi/thunk/thunk.h"
-
-using ppapi::thunk::PPB_VideoDecoder_API;
 
 namespace ppapi {
 namespace proxy {
@@ -77,10 +75,6 @@ static const PPP_VideoDecoder_Dev video_decoder_interface = {
   &NotifyError
 };
 
-InterfaceProxy* CreateVideoDecoderPPPProxy(Dispatcher* dispatcher) {
-  return new PPP_VideoDecoder_Proxy(dispatcher);
-}
-
 }  // namespace
 
 PPP_VideoDecoder_Proxy::PPP_VideoDecoder_Proxy(Dispatcher* dispatcher)
@@ -96,15 +90,8 @@ PPP_VideoDecoder_Proxy::~PPP_VideoDecoder_Proxy() {
 }
 
 // static
-const InterfaceProxy::Info* PPP_VideoDecoder_Proxy::GetInfo() {
-  static const Info info = {
-    &video_decoder_interface,
-    PPP_VIDEODECODER_DEV_INTERFACE,
-    API_ID_PPP_VIDEO_DECODER_DEV,
-    false,
-    &CreateVideoDecoderPPPProxy,
-  };
-  return &info;
+const PPP_VideoDecoder_Dev* PPP_VideoDecoder_Proxy::GetProxyInterface() {
+  return &video_decoder_interface;
 }
 
 bool PPP_VideoDecoder_Proxy::OnMessageReceived(const IPC::Message& msg) {

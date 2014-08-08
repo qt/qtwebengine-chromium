@@ -4,6 +4,7 @@
 
 #include "content/renderer/media/webrtc_logging.h"
 
+#include "base/time/time.h"
 #include "content/public/renderer/webrtc_log_message_delegate.h"
 #include "third_party/libjingle/overrides/talk/base/logging.h"
 
@@ -20,7 +21,8 @@ void InitWebRtcLoggingDelegate(WebRtcLogMessageDelegate* delegate) {
 }
 
 void InitWebRtcLogging() {
-  talk_base::InitDiagnosticLoggingDelegateFunction(WebRtcLogMessage);
+  // Log messages from Libjingle should not have timestamps.
+  talk_base::InitDiagnosticLoggingDelegateFunction(&WebRtcLogMessage);
 }
 
 void WebRtcLogMessage(const std::string& message) {

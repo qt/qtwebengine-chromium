@@ -1,29 +1,6 @@
 // Copyright 2012 the V8 project authors. All rights reserved.
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-//       copyright notice, this list of conditions and the following
-//       disclaimer in the documentation and/or other materials provided
-//       with the distribution.
-//     * Neither the name of Google Inc. nor the names of its
-//       contributors may be used to endorse or promote products derived
-//       from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
 // This module contains the platform-specific code. This make the rest of the
 // code less dependent on operating system, compilers and runtime libraries.
@@ -44,12 +21,13 @@
 #ifndef V8_PLATFORM_H_
 #define V8_PLATFORM_H_
 
-#include <cstdarg>
+#include <stdarg.h>
+#include <string>
+#include <vector>
 
-#include "platform/mutex.h"
-#include "platform/semaphore.h"
-#include "utils.h"
-#include "v8globals.h"
+#include "src/base/build_config.h"
+#include "src/platform/mutex.h"
+#include "src/platform/semaphore.h"
 
 #ifdef __sun
 # ifndef signbit
@@ -59,11 +37,15 @@ int signbit(double x);
 # endif
 #endif
 
-// Microsoft Visual C++ specific stuff.
-#if V8_CC_MSVC
+#if V8_OS_QNX
+#include "src/qnx-math.h"
+#endif
 
-#include "win32-headers.h"
-#include "win32-math.h"
+// Microsoft Visual C++ specific stuff.
+#if V8_LIBC_MSVCRT
+
+#include "src/base/win32-headers.h"
+#include "src/win32-math.h"
 
 int strncasecmp(const char* s1, const char* s2, int n);
 
@@ -71,7 +53,7 @@ int strncasecmp(const char* s1, const char* s2, int n);
 #if (_MSC_VER < 1800)
 inline int lrint(double flt) {
   int intgr;
-#if V8_TARGET_ARCH_IA32
+#if V8_TARGET_ARCH_IA32 || V8_TARGET_ARCH_X87
   __asm {
     fld flt
     fistp intgr
@@ -85,33 +67,19 @@ inline int lrint(double flt) {
 #endif
   return intgr;
 }
-
 #endif  // _MSC_VER < 1800
 
-#endif  // V8_CC_MSVC
+#endif  // V8_LIBC_MSVCRT
 
 namespace v8 {
 namespace internal {
-
-double modulo(double x, double y);
-
-// Custom implementation of math functions.
-double fast_sin(double input);
-double fast_cos(double input);
-double fast_tan(double input);
-double fast_log(double input);
-double fast_exp(double input);
-double fast_sqrt(double input);
-// The custom exp implementation needs 16KB of lookup data; initialize it
-// on demand.
-void lazily_initialize_fast_exp();
 
 // ----------------------------------------------------------------------------
 // Fast TLS support
 
 #ifndef V8_NO_FAST_TLS
 
-#if defined(_MSC_VER) && V8_HOST_ARCH_IA32
+#if defined(_MSC_VER) && (V8_HOST_ARCH_IA32)
 
 #define V8_FAST_TLS_SUPPORTED 1
 
@@ -122,6 +90,7 @@ inline intptr_t InternalGetExistingThreadLocal(intptr_t index) {
   const intptr_t kTibExtraTlsOffset = 0xF94;
   const intptr_t kMaxInlineSlots = 64;
   const intptr_t kMaxSlots = kMaxInlineSlots + 1024;
+  const intptr_t kPointerSize = sizeof(void*);
   ASSERT(0 <= index && index < kMaxSlots);
   if (index < kMaxInlineSlots) {
     return static_cast<intptr_t>(__readfsdword(kTibInlineTlsOffset +
@@ -160,6 +129,9 @@ inline intptr_t InternalGetExistingThreadLocal(intptr_t index) {
 #endif  // V8_NO_FAST_TLS
 
 
+class TimezoneCache;
+
+
 // ----------------------------------------------------------------------------
 // OS
 //
@@ -169,10 +141,6 @@ inline intptr_t InternalGetExistingThreadLocal(intptr_t index) {
 
 class OS {
  public:
-  // Initializes the platform OS support that depend on CPU features. This is
-  // called after CPU initialization.
-  static void PostSetUp();
-
   // Returns the accumulated user time for thread. This routine
   // can be used for profiling. The implementation should
   // strive for high-precision timer resolution, preferable
@@ -183,16 +151,20 @@ class OS {
   // 00:00:00 UTC, January 1, 1970.
   static double TimeCurrentMillis();
 
+  static TimezoneCache* CreateTimezoneCache();
+  static void DisposeTimezoneCache(TimezoneCache* cache);
+  static void ClearTimezoneCache(TimezoneCache* cache);
+
   // Returns a string identifying the current time zone. The
   // timestamp is used for determining if DST is in effect.
-  static const char* LocalTimezone(double time);
+  static const char* LocalTimezone(double time, TimezoneCache* cache);
 
   // Returns the local time offset in milliseconds east of UTC without
   // taking daylight savings time into account.
-  static double LocalTimeOffset();
+  static double LocalTimeOffset(TimezoneCache* cache);
 
   // Returns the daylight savings offset for the given time.
-  static double DaylightSavingsOffset(double time);
+  static double DaylightSavingsOffset(double time, TimezoneCache* cache);
 
   // Returns last OS error.
   static int GetLastError();
@@ -275,17 +247,28 @@ class OS {
 
   // Safe formatting print. Ensures that str is always null-terminated.
   // Returns the number of chars written, or -1 if output was truncated.
-  static int SNPrintF(Vector<char> str, const char* format, ...);
-  static int VSNPrintF(Vector<char> str,
+  static int SNPrintF(char* str, int length, const char* format, ...);
+  static int VSNPrintF(char* str,
+                       int length,
                        const char* format,
                        va_list args);
 
   static char* StrChr(char* str, int c);
-  static void StrNCpy(Vector<char> dest, const char* src, size_t n);
+  static void StrNCpy(char* dest, int length, const char* src, size_t n);
 
   // Support for the profiler.  Can do nothing, in which case ticks
   // occuring in shared libraries will not be properly accounted for.
-  static void LogSharedLibraryAddresses(Isolate* isolate);
+  struct SharedLibraryAddress {
+    SharedLibraryAddress(
+        const std::string& library_path, uintptr_t start, uintptr_t end)
+        : library_path(library_path), start(start), end(end) {}
+
+    std::string library_path;
+    uintptr_t start;
+    uintptr_t end;
+  };
+
+  static std::vector<SharedLibraryAddress> GetSharedLibraryAddresses();
 
   // Support for the profiler.  Notifies the external profiling
   // process that a code moving garbage collection starts.  Can do
@@ -293,13 +276,8 @@ class OS {
   // using --never-compact) if accurate profiling is desired.
   static void SignalCodeMovingGC();
 
-  // The return value indicates the CPU features we are sure of because of the
-  // OS.  For example MacOSX doesn't run on any x86 CPUs that don't have SSE2
-  // instructions.
-  // This is a little messy because the interpretation is subject to the cross
-  // of the CPU and the OS.  The bits in the answer correspond to the bit
-  // positions indicated by the members of the CpuFeature enum from globals.h
-  static uint64_t CpuFeaturesImpliedByPlatform();
+  // Returns the number of processors online.
+  static int NumberOfProcessorsOnline();
 
   // The total amount of physical memory available on the current system.
   static uint64_t TotalPhysicalMemory();
@@ -318,66 +296,6 @@ class OS {
   // Returns the activation frame alignment constraint or zero if
   // the platform doesn't care. Guaranteed to be a power of two.
   static int ActivationFrameAlignment();
-
-#if defined(V8_TARGET_ARCH_IA32)
-  // Limit below which the extra overhead of the MemCopy function is likely
-  // to outweigh the benefits of faster copying.
-  static const int kMinComplexMemCopy = 64;
-
-  // Copy memory area. No restrictions.
-  static void MemMove(void* dest, const void* src, size_t size);
-  typedef void (*MemMoveFunction)(void* dest, const void* src, size_t size);
-
-  // Keep the distinction of "move" vs. "copy" for the benefit of other
-  // architectures.
-  static void MemCopy(void* dest, const void* src, size_t size) {
-    MemMove(dest, src, size);
-  }
-#elif defined(V8_HOST_ARCH_ARM)
-  typedef void (*MemCopyUint8Function)(uint8_t* dest,
-                                       const uint8_t* src,
-                                       size_t size);
-  static MemCopyUint8Function memcopy_uint8_function;
-  static void MemCopyUint8Wrapper(uint8_t* dest,
-                                  const uint8_t* src,
-                                  size_t chars) {
-    memcpy(dest, src, chars);
-  }
-  // For values < 16, the assembler function is slower than the inlined C code.
-  static const int kMinComplexMemCopy = 16;
-  static void MemCopy(void* dest, const void* src, size_t size) {
-    (*memcopy_uint8_function)(reinterpret_cast<uint8_t*>(dest),
-                              reinterpret_cast<const uint8_t*>(src),
-                              size);
-  }
-  static void MemMove(void* dest, const void* src, size_t size) {
-    memmove(dest, src, size);
-  }
-
-  typedef void (*MemCopyUint16Uint8Function)(uint16_t* dest,
-                                             const uint8_t* src,
-                                             size_t size);
-  static MemCopyUint16Uint8Function memcopy_uint16_uint8_function;
-  static void MemCopyUint16Uint8Wrapper(uint16_t* dest,
-                                        const uint8_t* src,
-                                        size_t chars);
-  // For values < 12, the assembler function is slower than the inlined C code.
-  static const int kMinComplexConvertMemCopy = 12;
-  static void MemCopyUint16Uint8(uint16_t* dest,
-                                 const uint8_t* src,
-                                 size_t size) {
-    (*memcopy_uint16_uint8_function)(dest, src, size);
-  }
-#else
-  // Copy memory area to disjoint memory area.
-  static void MemCopy(void* dest, const void* src, size_t size) {
-    memcpy(dest, src, size);
-  }
-  static void MemMove(void* dest, const void* src, size_t size) {
-    memmove(dest, src, size);
-  }
-  static const int kMinComplexMemCopy = 16 * kPointerSize;
-#endif  // V8_TARGET_ARCH_IA32
 
   static int GetCurrentProcessId();
 
@@ -491,13 +409,7 @@ class VirtualMemory {
 class Thread {
  public:
   // Opaque data type for thread-local storage keys.
-  // LOCAL_STORAGE_KEY_MIN_VALUE and LOCAL_STORAGE_KEY_MAX_VALUE are specified
-  // to ensure that enumeration type has correct value range (see Issue 830 for
-  // more details).
-  enum LocalStorageKey {
-    LOCAL_STORAGE_KEY_MIN_VALUE = kMinInt,
-    LOCAL_STORAGE_KEY_MAX_VALUE = kMaxInt
-  };
+  typedef int32_t LocalStorageKey;
 
   class Options {
    public:

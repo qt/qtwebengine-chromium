@@ -42,10 +42,10 @@
 #include "core/dom/ExecutionContext.h"
 #include "core/events/Event.h"
 #include "core/events/MessageEvent.h"
-#include "core/fetch/TextResourceDecoder.h"
-#include "core/frame/ContentSecurityPolicy.h"
-#include "core/frame/DOMWindow.h"
-#include "core/frame/Frame.h"
+#include "core/frame/LocalDOMWindow.h"
+#include "core/frame/LocalFrame.h"
+#include "core/frame/csp/ContentSecurityPolicy.h"
+#include "core/html/parser/TextResourceDecoder.h"
 #include "core/loader/ThreadableLoader.h"
 #include "platform/network/ResourceError.h"
 #include "platform/network/ResourceRequest.h"
@@ -72,17 +72,17 @@ inline EventSource::EventSource(ExecutionContext* context, const KURL& url, cons
     eventSourceInit.get("withCredentials", m_withCredentials);
 }
 
-PassRefPtr<EventSource> EventSource::create(ExecutionContext* context, const String& url, const Dictionary& eventSourceInit, ExceptionState& exceptionState)
+PassRefPtrWillBeRawPtr<EventSource> EventSource::create(ExecutionContext* context, const String& url, const Dictionary& eventSourceInit, ExceptionState& exceptionState)
 {
     if (url.isEmpty()) {
         exceptionState.throwDOMException(SyntaxError, "Cannot open an EventSource to an empty URL.");
-        return 0;
+        return nullptr;
     }
 
     KURL fullURL = context->completeURL(url);
     if (!fullURL.isValid()) {
         exceptionState.throwDOMException(SyntaxError, "Cannot open an EventSource to '" + url + "'. The URL is invalid.");
-        return 0;
+        return nullptr;
     }
 
     // FIXME: Convert this to check the isolated world's Content Security Policy once webkit.org/b/104520 is solved.
@@ -94,10 +94,10 @@ PassRefPtr<EventSource> EventSource::create(ExecutionContext* context, const Str
     if (!shouldBypassMainWorldContentSecurityPolicy && !context->contentSecurityPolicy()->allowConnectToSource(fullURL)) {
         // We can safely expose the URL to JavaScript, as this exception is generate synchronously before any redirects take place.
         exceptionState.throwSecurityError("Refused to connect to '" + fullURL.elidedString() + "' because it violates the document's Content Security Policy.");
-        return 0;
+        return nullptr;
     }
 
-    RefPtr<EventSource> source = adoptRef(new EventSource(context, fullURL, eventSourceInit));
+    RefPtrWillBeRawPtr<EventSource> source = adoptRefWillBeRefCountedGarbageCollected(new EventSource(context, fullURL, eventSourceInit));
 
     source->setPendingActivity(source.get());
     source->scheduleInitialConnect();
@@ -117,14 +117,16 @@ void EventSource::scheduleInitialConnect()
     ASSERT(m_state == CONNECTING);
     ASSERT(!m_requestInFlight);
 
-    m_connectTimer.startOneShot(0);
+    m_connectTimer.startOneShot(0, FROM_HERE);
 }
 
 void EventSource::connect()
 {
     ASSERT(m_state == CONNECTING);
     ASSERT(!m_requestInFlight);
+    ASSERT(executionContext());
 
+    ExecutionContext& executionContext = *this->executionContext();
     ResourceRequest request(m_url);
     request.setHTTPMethod("GET");
     request.setHTTPHeaderField("Accept", "text/event-stream");
@@ -132,20 +134,20 @@ void EventSource::connect()
     if (!m_lastEventId.isEmpty())
         request.setHTTPHeaderField("Last-Event-ID", m_lastEventId);
 
-    SecurityOrigin* origin = executionContext()->securityOrigin();
+    SecurityOrigin* origin = executionContext.securityOrigin();
 
     ThreadableLoaderOptions options;
-    options.sendLoadCallbacks = SendCallbacks;
-    options.sniffContent = DoNotSniffContent;
-    options.allowCredentials = (origin->canRequest(m_url) || m_withCredentials) ? AllowStoredCredentials : DoNotAllowStoredCredentials;
-    options.credentialsRequested = m_withCredentials ? ClientRequestedCredentials : ClientDidNotRequestCredentials;
     options.preflightPolicy = PreventPreflight;
     options.crossOriginRequestPolicy = UseAccessControl;
-    options.dataBufferingPolicy = DoNotBufferData;
-    options.securityOrigin = origin;
-    options.contentSecurityPolicyEnforcement = ContentSecurityPolicy::shouldBypassMainWorld(executionContext()) ? DoNotEnforceContentSecurityPolicy : EnforceConnectSrcDirective;
+    options.contentSecurityPolicyEnforcement = ContentSecurityPolicy::shouldBypassMainWorld(&executionContext) ? DoNotEnforceContentSecurityPolicy : EnforceConnectSrcDirective;
 
-    m_loader = ThreadableLoader::create(executionContext(), this, request, options);
+    ResourceLoaderOptions resourceLoaderOptions;
+    resourceLoaderOptions.allowCredentials = (origin->canRequest(m_url) || m_withCredentials) ? AllowStoredCredentials : DoNotAllowStoredCredentials;
+    resourceLoaderOptions.credentialsRequested = m_withCredentials ? ClientRequestedCredentials : ClientDidNotRequestCredentials;
+    resourceLoaderOptions.dataBufferingPolicy = DoNotBufferData;
+    resourceLoaderOptions.securityOrigin = origin;
+
+    m_loader = ThreadableLoader::create(executionContext, this, request, options, resourceLoaderOptions);
 
     if (m_loader)
         m_requestInFlight = true;
@@ -167,7 +169,7 @@ void EventSource::networkRequestEnded()
 void EventSource::scheduleReconnect()
 {
     m_state = CONNECTING;
-    m_connectTimer.startOneShot(m_reconnectDelay / 1000.0);
+    m_connectTimer.startOneShot(m_reconnectDelay / 1000.0, FROM_HERE);
     dispatchEvent(Event::create(EventTypeNames::error));
 }
 
@@ -282,8 +284,8 @@ void EventSource::didFinishLoading(unsigned long, double)
         // Discard everything that has not been dispatched by now.
         m_receiveBuf.clear();
         m_data.clear();
-        m_eventName = "";
-        m_currentlyParsedEventId = String();
+        m_eventName = emptyAtom;
+        m_currentlyParsedEventId = nullAtom;
     }
     networkRequestEnded();
 }
@@ -328,8 +330,8 @@ void EventSource::abortConnectionAttempt()
 
 void EventSource::parseEventStream()
 {
-    unsigned int bufPos = 0;
-    unsigned int bufSize = m_receiveBuf.size();
+    unsigned bufPos = 0;
+    unsigned bufSize = m_receiveBuf.size();
     while (bufPos < bufSize) {
         if (m_discardTrailingNewline) {
             if (m_receiveBuf[bufPos] == '\n')
@@ -339,7 +341,7 @@ void EventSource::parseEventStream()
 
         int lineLength = -1;
         int fieldLength = -1;
-        for (unsigned int i = bufPos; lineLength < 0 && i < bufSize; i++) {
+        for (unsigned i = bufPos; lineLength < 0 && i < bufSize; i++) {
             switch (m_receiveBuf[i]) {
             case ':':
                 if (fieldLength < 0)
@@ -377,13 +379,13 @@ void EventSource::parseEventStreamLine(unsigned bufPos, int fieldLength, int lin
         if (!m_data.isEmpty()) {
             m_data.removeLast();
             if (!m_currentlyParsedEventId.isNull()) {
-                m_lastEventId.swap(m_currentlyParsedEventId);
-                m_currentlyParsedEventId = String();
+                m_lastEventId = m_currentlyParsedEventId;
+                m_currentlyParsedEventId = nullAtom;
             }
             dispatchEvent(createMessageEvent());
         }
         if (!m_eventName.isEmpty())
-            m_eventName = "";
+            m_eventName = emptyAtom;
     } else if (fieldLength) {
         bool noValue = fieldLength < 0;
 
@@ -402,11 +404,11 @@ void EventSource::parseEventStreamLine(unsigned bufPos, int fieldLength, int lin
             if (valueLength)
                 m_data.append(&m_receiveBuf[bufPos], valueLength);
             m_data.append('\n');
-        } else if (field == "event")
-            m_eventName = valueLength ? String(&m_receiveBuf[bufPos], valueLength) : "";
-        else if (field == "id")
-            m_currentlyParsedEventId = valueLength ? String(&m_receiveBuf[bufPos], valueLength) : "";
-        else if (field == "retry") {
+        } else if (field == "event") {
+            m_eventName = valueLength ? AtomicString(&m_receiveBuf[bufPos], valueLength) : "";
+        } else if (field == "id") {
+            m_currentlyParsedEventId = valueLength ? AtomicString(&m_receiveBuf[bufPos], valueLength) : "";
+        } else if (field == "retry") {
             if (!valueLength)
                 m_reconnectDelay = defaultReconnectDelay;
             else {
@@ -425,10 +427,10 @@ void EventSource::stop()
     close();
 }
 
-PassRefPtr<MessageEvent> EventSource::createMessageEvent()
+PassRefPtrWillBeRawPtr<MessageEvent> EventSource::createMessageEvent()
 {
-    RefPtr<MessageEvent> event = MessageEvent::create();
-    event->initMessageEvent(m_eventName.isEmpty() ? EventTypeNames::message : AtomicString(m_eventName), false, false, SerializedScriptValue::create(String(m_data)), m_eventStreamOrigin, m_lastEventId, 0, nullptr);
+    RefPtrWillBeRawPtr<MessageEvent> event = MessageEvent::create();
+    event->initMessageEvent(m_eventName.isEmpty() ? EventTypeNames::message : m_eventName, false, false, SerializedScriptValue::create(String(m_data)), m_eventStreamOrigin, m_lastEventId, 0, nullptr);
     m_data.clear();
     return event.release();
 }

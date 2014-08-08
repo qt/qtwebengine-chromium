@@ -54,7 +54,7 @@ TestSuite = function()
 
 /**
  * Reports test failure.
- * @param {string} message !Failure description.
+ * @param {string} message Failure description.
  */
 TestSuite.prototype.fail = function(message)
 {
@@ -67,9 +67,9 @@ TestSuite.prototype.fail = function(message)
 
 /**
  * Equals assertion tests that expected === actual.
- * @param {!Object} expected !Expected object.
- * @param {!Object} actual !Actual object.
- * @param {string} opt_message !User message to print if the test fails.
+ * @param {!Object} expected Expected object.
+ * @param {!Object} actual Actual object.
+ * @param {string} opt_message User message to print if the test fails.
  */
 TestSuite.prototype.assertEquals = function(expected, actual, opt_message)
 {
@@ -83,8 +83,8 @@ TestSuite.prototype.assertEquals = function(expected, actual, opt_message)
 
 /**
  * True assertion tests that value == true.
- * @param {!Object} value !Actual object.
- * @param {string} opt_message !User message to print if the test fails.
+ * @param {!Object} value Actual object.
+ * @param {string} opt_message User message to print if the test fails.
  */
 TestSuite.prototype.assertTrue = function(value, opt_message)
 {
@@ -106,8 +106,8 @@ TestSuite.prototype.assertHasKey = function(object, key)
 
 /**
  * Contains assertion tests that string contains substring.
- * @param {string} string !Outer.
- * @param {string} substring !Inner.
+ * @param {string} string Outer.
+ * @param {string} substring Inner.
  */
 TestSuite.prototype.assertContains = function(string, substring)
 {
@@ -181,7 +181,7 @@ TestSuite.prototype.runTest = function(testName)
 
 
 /**
- * @param {string} panelName !Name of the panel to show.
+ * @param {string} panelName Name of the panel to show.
  */
 TestSuite.prototype.showPanel = function(panelName)
 {
@@ -194,11 +194,11 @@ TestSuite.prototype.showPanel = function(panelName)
 
 /**
  * Overrides the method with specified name until it's called first time.
- * @param {!Object} receiver !An object whose method to override.
- * @param {string} methodName !Name of the method to override.
- * @param {!Function} override !A function that should be called right after the
- *     overriden method returns.
- * @param {boolean} opt_sticky !Whether restore original method after first run
+ * @param {!Object} receiver An object whose method to override.
+ * @param {string} methodName Name of the method to override.
+ * @param {!Function} override A function that should be called right after the
+ *     overridden method returns.
+ * @param {boolean} opt_sticky Whether restore original method after first run
  *     or not.
  */
 TestSuite.prototype.addSniffer = function(receiver, methodName, override, opt_sticky)
@@ -224,16 +224,6 @@ TestSuite.prototype.addSniffer = function(receiver, methodName, override, opt_st
     };
 };
 
-
-TestSuite.prototype.testEnableResourcesTab = function()
-{
-    // FIXME once reference is removed downstream.
-}
-
-TestSuite.prototype.testCompletionOnPause = function()
-{
-    // FIXME once reference is removed downstream.
-}
 
 // UI Tests
 
@@ -520,7 +510,6 @@ TestSuite.prototype.testConsoleOnNavigateBack = function()
     function didClickLink() {
         // Check that there are no new messages(command is not a message).
         this.assertEquals(3, WebInspector.console.messages.length);
-        this.assertEquals(1, WebInspector.console.messages[0].totalRepeatCount);
         this.evaluateInConsole_("history.back();", didNavigateBack.bind(this));
     }
 
@@ -532,18 +521,17 @@ TestSuite.prototype.testConsoleOnNavigateBack = function()
 
     function didCompleteNavigation() {
         this.assertEquals(7, WebInspector.console.messages.length);
-        this.assertEquals(1, WebInspector.console.messages[0].totalRepeatCount);
         this.releaseControl();
     }
 
     this.takeControl();
 };
 
-
 TestSuite.prototype.testReattachAfterCrash = function()
 {
-    this.evaluateInConsole_("1+1;", this.releaseControl.bind(this));
-    this.takeControl();
+    PageAgent.navigate("about:crash");
+    PageAgent.navigate("about:blank");
+    WebInspector.runtimeModel.addEventListener(WebInspector.RuntimeModel.Events.ExecutionContextCreated, this.releaseControl, this);
 };
 
 
@@ -586,8 +574,8 @@ TestSuite.prototype.testTimelineFrames = function()
 
         for (var i = 0; i < records.length; ++i) {
             var record = records[i];
-            if (record.type !== "BeginFrame") {
-                recordsInFrame[record.type] = (recordsInFrame[record.type] || 0) + 1;
+            if (record.type() !== "BeginFrame") {
+                recordsInFrame[record.type()] = (recordsInFrame[record.type()] || 0) + 1;
                 continue;
             }
             if (!frameCount++)
@@ -607,10 +595,16 @@ TestSuite.prototype.testTimelineFrames = function()
     test.takeControl();
 }
 
+TestSuite.prototype.enableTouchEmulation = function()
+{
+    WebInspector.targetManager.activeTarget().domModel.emulateTouchEventObjects(true);
+};
+
 // Regression test for http://webk.it/97466
 TestSuite.prototype.testPageOverlayUpdate = function()
 {
     var test = this;
+    WebInspector.inspectorView.panel("elements");
 
     function populatePage()
     {
@@ -628,12 +622,12 @@ TestSuite.prototype.testPageOverlayUpdate = function()
     {
         test.evaluateInConsole_(populatePage.toString() + "; populatePage();" +
                                 "inspect(document.getElementById('div1'))", function() {});
-        WebInspector.notifications.addEventListener(WebInspector.ElementsTreeOutline.Events.SelectedNodeChanged, step2);
+        WebInspector.notifications.addEventListener(WebInspector.NotificationService.Events.SelectedNodeChanged, step2);
     }
 
     function step2()
     {
-        WebInspector.notifications.removeEventListener(WebInspector.ElementsTreeOutline.Events.SelectedNodeChanged, step2);
+        WebInspector.notifications.removeEventListener(WebInspector.NotificationService.Events.SelectedNodeChanged, step2);
         test.recordTimeline(onTimelineRecorded);
         setTimeout(step3, 500);
     }
@@ -641,12 +635,12 @@ TestSuite.prototype.testPageOverlayUpdate = function()
     function step3()
     {
         test.evaluateInConsole_("inspect(document.getElementById('div2'))", function() {});
-        WebInspector.notifications.addEventListener(WebInspector.ElementsTreeOutline.Events.SelectedNodeChanged, step4);
+        WebInspector.notifications.addEventListener(WebInspector.NotificationService.Events.SelectedNodeChanged, step4);
     }
 
     function step4()
     {
-        WebInspector.notifications.removeEventListener(WebInspector.ElementsTreeOutline.Events.SelectedNodeChanged, step4);
+        WebInspector.notifications.removeEventListener(WebInspector.NotificationService.Events.SelectedNodeChanged, step4);
         test.stopTimeline();
     }
 
@@ -669,8 +663,66 @@ TestSuite.prototype.testPageOverlayUpdate = function()
     this.takeControl();
 }
 
+// Regression test for crbug.com/370035.
+TestSuite.prototype.testDeviceMetricsOverrides = function()
+{
+    const dumpPageMetrics = function()
+    {
+        return JSON.stringify({
+            width: window.innerWidth,
+            height: window.innerHeight,
+            deviceScaleFactor: window.devicePixelRatio
+        });
+    };
 
-/**
+    var test = this;
+
+    function testOverrides(params, metrics, callback)
+    {
+        PageAgent.invoke_setDeviceMetricsOverride(params, getMetrics);
+
+        function getMetrics()
+        {
+            test.evaluateInConsole_("(" + dumpPageMetrics.toString() + ")()", checkMetrics);
+        }
+
+        function checkMetrics(consoleResult)
+        {
+            test.assertEquals('"' + JSON.stringify(metrics) + '"', consoleResult, "Wrong metrics for params: " + JSON.stringify(params));
+            callback();
+        }
+    }
+
+    function step1()
+    {
+        testOverrides({width: 1200, height: 1000, deviceScaleFactor: 1, emulateViewport: false, fitWindow: true}, {width: 1200, height: 1000, deviceScaleFactor: 1}, step2);
+    }
+
+    function step2()
+    {
+        testOverrides({width: 1200, height: 1000, deviceScaleFactor: 1, emulateViewport: false, fitWindow: false}, {width: 1200, height: 1000, deviceScaleFactor: 1}, step3);
+    }
+
+    function step3()
+    {
+        testOverrides({width: 1200, height: 1000, deviceScaleFactor: 3, emulateViewport: false, fitWindow: true}, {width: 1200, height: 1000, deviceScaleFactor: 3}, step4);
+    }
+
+    function step4()
+    {
+        testOverrides({width: 1200, height: 1000, deviceScaleFactor: 3, emulateViewport: false, fitWindow: false}, {width: 1200, height: 1000, deviceScaleFactor: 3}, finish);
+    }
+
+    function finish()
+    {
+        test.releaseControl();
+    }
+
+    step1();
+    test.takeControl();
+};
+
+    /**
  * Records timeline till console.timeStamp("ready"), invokes callback with resulting records.
  * @param {function(!Array.<!Object>)} callback
  */
@@ -690,11 +742,11 @@ TestSuite.prototype.recordTimeline = function(callback)
     function innerAddRecord(record)
     {
         records.push(record);
-        if (record.type === "TimeStamp" && record.data.message === "ready")
+        if (record.type() === "TimeStamp" && record.data().message === "ready")
             done();
 
-        if (record.children)
-            record.children.forEach(innerAddRecord);
+        if (record.children())
+            record.children().forEach(innerAddRecord);
     }
 
     function done()
@@ -715,16 +767,16 @@ TestSuite.prototype.waitForTestResultsInConsole = function()
 {
     var messages = WebInspector.console.messages;
     for (var i = 0; i < messages.length; ++i) {
-        var text = messages[i].text;
+        var text = messages[i].messageText;
         if (text === "PASS")
             return;
         else if (/^FAIL/.test(text))
             this.fail(text); // This will throw.
     }
-    // Neitwer PASS nor FAIL, so wait for more messages.
+    // Neither PASS nor FAIL, so wait for more messages.
     function onConsoleMessage(event)
     {
-        var text = event.data.text;
+        var text = event.data.messageText;
         if (text === "PASS")
             this.releaseControl();
         else if (/^FAIL/.test(text))
@@ -824,22 +876,31 @@ TestSuite.prototype.nonAnonymousUISourceCodes_ = function()
  */
 TestSuite.prototype.evaluateInConsole_ = function(code, callback)
 {
-    WebInspector.showConsole();
-    WebInspector.consoleView.prompt.text = code;
-    WebInspector.consoleView.promptElement.dispatchEvent(TestSuite.createKeyEvent("Enter"));
+    function innerEvaluate()
+    {
+        WebInspector.console.show();
+        var consoleView = WebInspector.ConsolePanel._view();
+        consoleView._prompt.text = code;
+        consoleView._promptElement.dispatchEvent(TestSuite.createKeyEvent("Enter"));
 
-    this.addSniffer(WebInspector.ConsoleView.prototype, "_showConsoleMessage",
-        function(messageIndex) {
-            var commandResult = WebInspector.console.messages[messageIndex];
-            callback(commandResult.toMessageElement().textContent);
-        });
+        this.addSniffer(WebInspector.ConsoleView.prototype, "_showConsoleMessage",
+            function(viewMessage) {
+                callback(viewMessage.toMessageElement().textContent);
+            }.bind(this));
+    }
+
+    if (!WebInspector.context.flavor(WebInspector.ExecutionContext)) {
+        WebInspector.context.addFlavorChangeListener(WebInspector.ExecutionContext, innerEvaluate, this);
+        return;
+    }
+
+    innerEvaluate.call(this);
 };
-
 
 /**
  * Checks that all expected scripts are present in the scripts list
  * in the Scripts panel.
- * @param {!Array.<string>} expected !Regular expressions describing
+ * @param {!Array.<string>} expected Regular expressions describing
  *     expected script names.
  * @return {boolean} Whether all the scripts are in "scripts-files" select
  *     box
@@ -908,7 +969,7 @@ TestSuite.prototype._waitUntilScriptsAreParsed = function(expectedScripts, callb
         if (test._scriptsAreParsed(expectedScripts))
             callback();
         else
-            test.addSniffer(WebInspector.panels.sources, "_addUISourceCode", waitForAllScripts);
+            test.addSniffer(WebInspector.panels.sources.sourcesView(), "_addUISourceCode", waitForAllScripts);
     }
 
     waitForAllScripts();
@@ -947,7 +1008,7 @@ uiTests.runAllTests = function()
 
 /**
  * Run specified test on a fresh instance of the test suite.
- * @param {string} name Name of a test method from !TestSuite class.
+ * @param {string} name Name of a test method from TestSuite class.
  */
 uiTests.runTest = function(name)
 {

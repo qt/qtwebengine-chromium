@@ -31,8 +31,8 @@
 #include "config.h"
 #include "core/html/forms/TimeInputType.h"
 
-#include "HTMLNames.h"
-#include "InputTypeNames.h"
+#include "core/HTMLNames.h"
+#include "core/InputTypeNames.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/forms/DateTimeFieldsState.h"
 #include "platform/DateComponents.h"
@@ -56,9 +56,9 @@ TimeInputType::TimeInputType(HTMLInputElement& element)
 {
 }
 
-PassRefPtr<InputType> TimeInputType::create(HTMLInputElement& element)
+PassRefPtrWillBeRawPtr<InputType> TimeInputType::create(HTMLInputElement& element)
 {
-    return adoptRef(new TimeInputType(element));
+    return adoptRefWillBeNoop(new TimeInputType(element));
 }
 
 void TimeInputType::countUsage()
@@ -90,7 +90,7 @@ StepRange TimeInputType::createStepRange(AnyStepHandling anyStepHandling) const
 {
     DEFINE_STATIC_LOCAL(const StepRange::StepDescription, stepDescription, (timeDefaultStep, timeDefaultStepBase, timeStepScaleFactor, StepRange::ScaledStepValueShouldBeInteger));
 
-    return InputType::createStepRange(anyStepHandling, 0, Decimal::fromDouble(DateComponents::minimumTime()), Decimal::fromDouble(DateComponents::maximumTime()), stepDescription);
+    return InputType::createStepRange(anyStepHandling, timeDefaultStepBase, Decimal::fromDouble(DateComponents::minimumTime()), Decimal::fromDouble(DateComponents::maximumTime()), stepDescription);
 }
 
 bool TimeInputType::parseToDateComponentsInternal(const String& string, DateComponents* out) const

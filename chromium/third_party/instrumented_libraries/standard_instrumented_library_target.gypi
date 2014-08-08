@@ -12,7 +12,9 @@
     {
       'action_name': '<(_library_name)',
       'inputs': [
-        'download_build_install.py',
+        # TODO(earthdok): reintroduce some sort of dependency
+        # See http://crbug.com/343515
+        #'download_build_install.py',
       ],
       'outputs': [
         '<(PRODUCT_DIR)/instrumented_libraries/<(_sanitizer_type)/<(_library_name).txt',
@@ -22,9 +24,24 @@
         '--library=<(_library_name)',
         '--intermediate-directory=<(INTERMEDIATE_DIR)',
         '--sanitizer-type=<(_sanitizer_type)',
-        '--custom-configure-flags=<(_custom_configure_flags)',
-        '<(_verbose_libraries_build_flag)',
+        '--extra-configure-flags=<(_extra_configure_flags)',
+        '--extra-cflags=<(_extra_cflags)',
+        '--extra-cxxflags=<(_extra_cxxflags)',
+        '--extra-ldflags=<(_extra_ldflags)',
+        '--run-before-build=<(_run_before_build)',
+        '--cc=<(_cc)',
+        '--cxx=<(_cxx)',
+        '--jobs=<(_jobs)',
+        '--build-method=<(_build_method)',
+        '--sanitizer-blacklist=<(_sanitizer_blacklist)',
       ],
+      'conditions': [
+        ['verbose_libraries_build==1', {
+          'action+': [
+            '--verbose',
+          ],
+        }],
+      ]
     },
   ],
 }

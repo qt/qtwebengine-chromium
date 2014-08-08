@@ -26,7 +26,7 @@
 #include "config.h"
 #include "core/html/HTMLSpanElement.h"
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 
 namespace WebCore {
 
@@ -38,9 +38,6 @@ HTMLSpanElement::HTMLSpanElement(Document& document)
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLSpanElement> HTMLSpanElement::create(Document& document)
-{
-    return adoptRef(new HTMLSpanElement(document));
-}
+DEFINE_NODE_FACTORY(HTMLSpanElement)
 
 }

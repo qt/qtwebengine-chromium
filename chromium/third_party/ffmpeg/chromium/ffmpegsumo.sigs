@@ -1,10 +1,10 @@
-# Copyright (c) 2011 The Chromium Authors. All rights reserved.
-# Use of this source code is governed by a BSD-style license that can be
-# found in the LICENSE file.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
-#------------------------------------------------
-# Functions from avcodec used in chromium code.
-#------------------------------------------------
+//------------------------------------------------
+// Functions from avcodec used in chromium code.
+//------------------------------------------------
 AVCodecContext *avcodec_alloc_context3(const AVCodec *codec);
 AVCodec *avcodec_find_decoder(enum AVCodecID id);
 int av_new_packet(AVPacket *pkt, int size);
@@ -12,6 +12,7 @@ int avcodec_decode_audio4(AVCodecContext *avctx, AVFrame *frame, int *got_frame_
 int avcodec_decode_video2(AVCodecContext *avctx, AVFrame *picture, int *got_picture_ptr, const AVPacket *avpkt);
 int avcodec_open2(AVCodecContext *avctx, const AVCodec *codec, AVDictionary **options);
 int avcodec_close(AVCodecContext *avctx);
+const char *avcodec_get_name(enum AVCodecID id);
 void av_free_packet(AVPacket *pkt);
 void av_init_packet(AVPacket *pkt);
 int av_dup_packet(AVPacket *pkt);
@@ -20,7 +21,6 @@ void av_register_bitstream_filter(AVBitStreamFilter *bsf);
 AVBitStreamFilterContext *av_bitstream_filter_init(const char *name);
 int av_bitstream_filter_filter(AVBitStreamFilterContext *bsfc, AVCodecContext *avctx, const char *args, uint8_t **poutbuf, int *poutbuf_size, const uint8_t *buf, int buf_size, int keyframe);
 void av_bitstream_filter_close(AVBitStreamFilterContext *bsf);
-void av_destruct_packet(AVPacket *pkt);
 int av_lockmgr_register(AVLockMgrOperation cb);
 void avcodec_get_frame_defaults(AVFrame *pic);
 void avcodec_align_dimensions(AVCodecContext *s, int *width, int *height);
@@ -30,16 +30,17 @@ void av_frame_unref(AVFrame *frame);
 void av_frame_free(AVFrame **frame);
 void avcodec_free_frame(AVFrame **frame);
 AVFrame* av_frame_alloc();
+int av_packet_copy_props(AVPacket *dst, const AVPacket *src);
 
-# RDFT functions.
+// RDFT functions.
 RDFTContext *av_rdft_init(int nbits, enum RDFTransformType trans);
 void av_rdft_calc(RDFTContext *s, FFTSample *data);
 void av_rdft_end(RDFTContext *s);
 
 
-#------------------------------------------------
-# Functions from avformat used in chromium code.
-#------------------------------------------------
+//------------------------------------------------
+// Functions from avformat used in chromium code.
+//------------------------------------------------
 void avformat_close_input(AVFormatContext **s);
 int avformat_find_stream_info(AVFormatContext *ic, AVDictionary **options);
 int av_index_search_timestamp(AVStream *st, int64_t wanted_timestamp, int flags);
@@ -53,9 +54,9 @@ AVIOContext *avio_alloc_context(unsigned char *buffer, int buffer_size, int writ
 int avio_close(AVIOContext *s);
 
 
-#------------------------------------------------
-# Functions from avutil used in chromium code.
-#------------------------------------------------
+//------------------------------------------------
+// Functions from avutil used in chromium code.
+//------------------------------------------------
 int av_get_bytes_per_sample(enum AVSampleFormat sample_fmt);
 int64_t av_rescale_q(int64_t a, AVRational bq, AVRational cq);
 void *av_malloc(size_t size);

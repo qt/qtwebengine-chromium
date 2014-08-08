@@ -29,7 +29,7 @@
 #include "config.h"
 #include "platform/fonts/FontFallbackList.h"
 
-#include "FontFamilyNames.h"
+#include "platform/FontFamilyNames.h"
 #include "platform/fonts/FontCache.h"
 #include "platform/fonts/FontDescription.h"
 #include "platform/fonts/FontFamily.h"
@@ -40,16 +40,16 @@ namespace WebCore {
 FontFallbackList::FontFallbackList()
     : m_pageZero(0)
     , m_cachedPrimarySimpleFontData(0)
-    , m_fontSelector(0)
+    , m_fontSelector(nullptr)
     , m_fontSelectorVersion(0)
     , m_familyIndex(0)
     , m_generation(FontCache::fontCache()->generation())
     , m_pitch(UnknownPitch)
-    , m_loadingCustomFonts(false)
+    , m_hasLoadingFallback(false)
 {
 }
 
-void FontFallbackList::invalidate(PassRefPtr<FontSelector> fontSelector)
+void FontFallbackList::invalidate(PassRefPtrWillBeRawPtr<FontSelector> fontSelector)
 {
     releaseFontData();
     m_fontList.clear();
@@ -58,7 +58,7 @@ void FontFallbackList::invalidate(PassRefPtr<FontSelector> fontSelector)
     m_cachedPrimarySimpleFontData = 0;
     m_familyIndex = 0;
     m_pitch = UnknownPitch;
-    m_loadingCustomFonts = false;
+    m_hasLoadingFallback = false;
     m_fontSelector = fontSelector;
     m_fontSelectorVersion = m_fontSelector ? m_fontSelector->version() : 0;
     m_generation = FontCache::fontCache()->generation();
@@ -93,39 +93,62 @@ void FontFallbackList::determinePitch(const FontDescription& fontDescription) co
 
 bool FontFallbackList::loadingCustomFonts() const
 {
-    if (m_loadingCustomFonts)
-        return true;
+    if (!m_hasLoadingFallback)
+        return false;
 
     unsigned numFonts = m_fontList.size();
     for (unsigned i = 0; i < numFonts; ++i) {
-        if (m_fontList[i]->isCustomFont() && m_fontList[i]->isLoading()) {
-            m_loadingCustomFonts = true;
+        if (m_fontList[i]->isLoading())
             return true;
-        }
+    }
+    return false;
+}
+
+bool FontFallbackList::shouldSkipDrawing() const
+{
+    if (!m_hasLoadingFallback)
+        return false;
+
+    unsigned numFonts = m_fontList.size();
+    for (unsigned i = 0; i < numFonts; ++i) {
+        if (m_fontList[i]->shouldSkipDrawing())
+            return true;
     }
     return false;
 }
 
 const FontData* FontFallbackList::primaryFontData(const FontDescription& fontDescription) const
 {
+    bool shouldLoadCustomFont = true;
+
     for (unsigned fontIndex = 0; ; ++fontIndex) {
         const FontData* fontData = fontDataAt(fontDescription, fontIndex);
         if (!fontData) {
             // All fonts are custom fonts and are loading. Return the first FontData.
-            // FIXME: Correct fallback to the default font.
-            return fontDataAt(fontDescription, 0);
+            fontData = fontDataAt(fontDescription, 0);
+            if (fontData)
+                return fontData->fontDataForCharacter(' ');
+
+            SimpleFontData* lastResortFallback = FontCache::fontCache()->getLastResortFallbackFont(fontDescription).get();
+            ASSERT(lastResortFallback);
+            return lastResortFallback;
         }
+
+        if (fontData->isSegmented() && !toSegmentedFontData(fontData)->containsCharacter(' '))
+            continue;
+
+        const SimpleFontData* simpleFontData = fontData->fontDataForCharacter(' ');
+        ASSERT(simpleFontData);
 
         // When a custom font is loading, we should use the correct fallback font to layout the text.
         // Here skip the temporary font for the loading custom font which may not act as the correct fallback font.
-        if (!fontData->isLoadingFallback())
+        if (!simpleFontData->isLoadingFallback())
             return fontData;
 
         // Begin to load the first custom font if needed.
-        if (!fontIndex) {
-            const SimpleFontData* simpleFontData = fontData->fontDataForCharacter(' ');
-            if (simpleFontData && simpleFontData->customFontData())
-                simpleFontData->customFontData()->beginLoadIfNeeded();
+        if (shouldLoadCustomFont) {
+            shouldLoadCustomFont = false;
+            simpleFontData->customFontData()->beginLoadIfNeeded();
         }
     }
 }
@@ -190,17 +213,10 @@ const FontData* FontFallbackList::fontDataAt(const FontDescription& fontDescript
     RefPtr<FontData> result = getFontData(fontDescription, m_familyIndex);
     if (result) {
         m_fontList.append(result);
-        if (result->isLoading())
-            m_loadingCustomFonts = true;
+        if (result->isLoadingFallback())
+            m_hasLoadingFallback = true;
     }
     return result.get();
-}
-
-void FontFallbackList::setPlatformFont(const FontPlatformData& platformData)
-{
-    m_familyIndex = cAllFamiliesScanned;
-    RefPtr<FontData> fontData = FontCache::fontCache()->fontDataFromFontPlatformData(&platformData);
-    m_fontList.append(fontData);
 }
 
 }

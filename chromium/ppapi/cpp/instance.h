@@ -28,6 +28,7 @@ struct PP_InputEvent;
 /// The C++ interface to the Pepper API.
 namespace pp {
 
+class Compositor;
 class Graphics2D;
 class Graphics3D;
 class InputEvent;
@@ -174,10 +175,10 @@ class Instance {
   /// RequestInputEvents() or RequestFilteringInputEvents(). By
   /// default, no events are delivered.
   ///
-  /// If the event was handled, it will not be forwarded to the web page or
-  /// browser. If it was not handled, it will bubble according to the normal
-  /// rules. So it is important that an instance respond accurately with whether
-  /// event propagation should continue.
+  /// If the event was handled, it will not be forwarded to any default
+  /// handlers. If it was not handled, it may be dispatched to a default
+  /// handler. So it is important that an instance respond accurately with
+  /// whether event propagation should continue.
   ///
   /// Event propagation also controls focus. If you handle an event like a mouse
   /// event, typically the instance will be given focus. Returning false from
@@ -315,6 +316,17 @@ class Instance {
   /// correct type. On success, a reference to the device will be held by the
   /// instance, so the caller can release its reference if it chooses.
   bool BindGraphics(const Graphics3D& graphics);
+
+  /// Binds the given Compositor as the current display surface.
+  /// Refer to <code>BindGraphics(const Graphics2D& graphics)</code> for
+  /// further information.
+  ///
+  /// @param[in] compositor A <code>Compositor</code> to bind.
+  ///
+  /// @return true if bind was successful or false if the device was not the
+  /// correct type. On success, a reference to the device will be held by the
+  /// instance, so the caller can release its reference if it chooses.
+  bool BindGraphics(const Compositor& compositor);
 
   /// IsFullFrame() determines if the instance is full-frame (repr).
   /// Such an instance represents the entire document in a frame rather than an

@@ -38,16 +38,17 @@ bool FakeMessageCenter::HasPopupNotifications() const {
   return false;
 }
 
-bool FakeMessageCenter::HasNotification(const std::string& id) {
-  return false;
-}
-
 bool FakeMessageCenter::IsQuietMode() const {
   return false;
 }
 
 bool FakeMessageCenter::HasClickedListener(const std::string& id) {
   return false;
+}
+
+message_center::Notification* FakeMessageCenter::FindVisibleNotificationById(
+    const std::string& id) {
+  return NULL;
 }
 
 const NotificationList::Notifications&
@@ -95,9 +96,6 @@ void FakeMessageCenter::DisableNotificationsByNotifier(
     const NotifierId& notifier_id) {
 }
 
-void FakeMessageCenter::ExpandNotification(const std::string& id) {
-}
-
 void FakeMessageCenter::ClickOnNotification(const std::string& id) {
 }
 
@@ -109,7 +107,9 @@ void FakeMessageCenter::MarkSinglePopupAsShown(const std::string& id,
                                                bool mark_notification_as_read) {
 }
 
-void FakeMessageCenter::DisplayedNotification(const std::string& id) {
+void FakeMessageCenter::DisplayedNotification(
+    const std::string& id,
+    const DisplaySource source) {
 }
 
 void FakeMessageCenter::SetNotifierSettingsProvider(

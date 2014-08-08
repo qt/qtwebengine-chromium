@@ -7,10 +7,8 @@
 #include <math.h>
 
 #include "base/basictypes.h"
-#include "base/bind.h"
 #include "base/logging.h"
 #include "base/time/time.h"
-#include "media/audio/alsa/alsa_util.h"
 #include "media/audio/audio_manager.h"
 #include "media/audio/cras/audio_manager_cras.h"
 
@@ -29,6 +27,7 @@ CrasInputStream::CrasInputStream(const AudioParameters& params,
       stream_direction_(device_id == AudioManagerBase::kLoopbackInputDeviceId ?
                             CRAS_STREAM_POST_MIX_PRE_DSP : CRAS_STREAM_INPUT) {
   DCHECK(audio_manager_);
+  audio_bus_ = AudioBus::Create(params_);
 }
 
 CrasInputStream::~CrasInputStream() {
@@ -54,7 +53,7 @@ bool CrasInputStream::Open() {
   }
 
   snd_pcm_format_t pcm_format =
-      alsa_util::BitsToFormat(params_.bits_per_sample());
+      AudioManagerCras::BitsToFormat(params_.bits_per_sample());
   if (pcm_format == SND_PCM_FORMAT_UNKNOWN) {
     DLOG(WARNING) << "Unsupported bits/sample: " << params_.bits_per_sample();
     return false;
@@ -86,15 +85,12 @@ bool CrasInputStream::Open() {
 }
 
 void CrasInputStream::Close() {
+  Stop();
+
   if (client_) {
     cras_client_stop(client_);
     cras_client_destroy(client_);
     client_ = NULL;
-  }
-
-  if (callback_) {
-    callback_->OnClose(this);
-    callback_ = NULL;
   }
 
   // Signal to the manager that we're closed and can be removed.
@@ -117,7 +113,7 @@ void CrasInputStream::Start(AudioInputCallback* callback) {
   // Prepare |audio_format| and |stream_params| for the stream we
   // will create.
   cras_audio_format* audio_format = cras_audio_format_create(
-      alsa_util::BitsToFormat(params_.bits_per_sample()),
+      AudioManagerCras::BitsToFormat(params_.bits_per_sample()),
       params_.sample_rate(),
       params_.channels());
   if (!audio_format) {
@@ -177,6 +173,7 @@ void CrasInputStream::Stop() {
   cras_client_rm_stream(client_, stream_id_);
 
   started_ = false;
+  callback_ = NULL;
 }
 
 // Static callback asking for samples.  Run on high priority thread.
@@ -226,11 +223,9 @@ void CrasInputStream::ReadAudio(size_t frames,
   double normalized_volume = 0.0;
   GetAgcVolume(&normalized_volume);
 
-  callback_->OnData(this,
-                    buffer,
-                    frames * bytes_per_frame_,
-                    bytes_latency,
-                    normalized_volume);
+  audio_bus_->FromInterleaved(
+      buffer, audio_bus_->frames(), params_.bits_per_sample() / 8);
+  callback_->OnData(this, audio_bus_.get(), bytes_latency, normalized_volume);
 }
 
 void CrasInputStream::NotifyStreamError(int err) {

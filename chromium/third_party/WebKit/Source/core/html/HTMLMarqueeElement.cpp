@@ -23,10 +23,10 @@
 #include "config.h"
 #include "core/html/HTMLMarqueeElement.h"
 
-#include "CSSPropertyNames.h"
-#include "CSSValueKeywords.h"
-#include "HTMLNames.h"
 #include "bindings/v8/ExceptionState.h"
+#include "core/CSSPropertyNames.h"
+#include "core/CSSValueKeywords.h"
+#include "core/HTMLNames.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/rendering/RenderMarquee.h"
 
@@ -41,9 +41,9 @@ inline HTMLMarqueeElement::HTMLMarqueeElement(Document& document)
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLMarqueeElement> HTMLMarqueeElement::create(Document& document)
+PassRefPtrWillBeRawPtr<HTMLMarqueeElement> HTMLMarqueeElement::create(Document& document)
 {
-    RefPtr<HTMLMarqueeElement> marqueeElement(adoptRef(new HTMLMarqueeElement(document)));
+    RefPtrWillBeRawPtr<HTMLMarqueeElement> marqueeElement(adoptRefWillBeNoop(new HTMLMarqueeElement(document)));
     marqueeElement->suspendIfNeeded();
     return marqueeElement.release();
 }
@@ -55,6 +55,12 @@ int HTMLMarqueeElement::minimumDelay() const
         return 60;
     }
     return 0;
+}
+
+void HTMLMarqueeElement::didMoveToNewDocument(Document& oldDocument)
+{
+    ActiveDOMObject::didMoveToNewExecutionContext(&document());
+    HTMLElement::didMoveToNewDocument(oldDocument);
 }
 
 bool HTMLMarqueeElement::isPresentationAttribute(const QualifiedName& name) const

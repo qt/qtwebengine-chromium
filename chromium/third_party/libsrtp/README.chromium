@@ -1,7 +1,7 @@
 Name: libsrtp
 URL: http://srtp.sourceforge.net/srtp.html
 Version: 1.4.4
-License: BSD-based license
+License: 3-clause BSD
 License File: srtp/LICENSE
 Security Critical: Yes
 
@@ -20,3 +20,5 @@ This is required because VS2012 does not allow redefinition of keywords via
 macros, but also does not support 'inline' in C files.
 
 Adding additional RTP header check
+
+Added gyp support to __arm64__

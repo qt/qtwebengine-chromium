@@ -26,7 +26,7 @@
 #include "config.h"
 #include "core/css/CSSImageSetValue.h"
 
-#include "FetchInitiatorTypeNames.h"
+#include "core/FetchInitiatorTypeNames.h"
 #include "core/css/CSSImageValue.h"
 #include "core/css/CSSPrimitiveValue.h"
 #include "core/dom/Document.h"
@@ -57,8 +57,8 @@ void CSSImageSetValue::fillImageSet()
     size_t length = this->length();
     size_t i = 0;
     while (i < length) {
-        CSSValue* imageValue = item(i);
-        String imageURL = toCSSImageValue(imageValue)->url();
+        CSSImageValue* imageValue = toCSSImageValue(item(i));
+        String imageURL = imageValue->url();
 
         ++i;
         ASSERT_WITH_SECURITY_IMPLICATION(i < length);
@@ -67,6 +67,7 @@ void CSSImageSetValue::fillImageSet()
 
         ImageWithScale image;
         image.imageURL = imageURL;
+        image.referrer = imageValue->referrer();
         image.scaleFactor = scaleFactor;
         m_imagesInSet.append(image);
         ++i;
@@ -88,7 +89,7 @@ CSSImageSetValue::ImageWithScale CSSImageSetValue::bestImageForScaleFactor()
     return image;
 }
 
-StyleFetchedImageSet* CSSImageSetValue::cachedImageSet(ResourceFetcher* loader, float deviceScaleFactor)
+StyleFetchedImageSet* CSSImageSetValue::cachedImageSet(ResourceFetcher* loader, float deviceScaleFactor, const ResourceLoaderOptions& options)
 {
     ASSERT(loader);
 
@@ -99,11 +100,16 @@ StyleFetchedImageSet* CSSImageSetValue::cachedImageSet(ResourceFetcher* loader, 
 
     if (!m_accessedBestFitImage) {
         // FIXME: In the future, we want to take much more than deviceScaleFactor into acount here.
-        // All forms of scale should be included: Page::pageScaleFactor(), Frame::pageZoomFactor(),
+        // All forms of scale should be included: Page::pageScaleFactor(), LocalFrame::pageZoomFactor(),
         // and any CSS transforms. https://bugs.webkit.org/show_bug.cgi?id=81698
         ImageWithScale image = bestImageForScaleFactor();
         if (Document* document = loader->document()) {
-            FetchRequest request(ResourceRequest(document->completeURL(image.imageURL)), FetchInitiatorTypeNames::css);
+            FetchRequest request(ResourceRequest(document->completeURL(image.imageURL)), FetchInitiatorTypeNames::css, options);
+            request.mutableResourceRequest().setHTTPReferrer(image.referrer);
+
+            if (options.corsEnabled == IsCORSEnabled)
+                request.setCrossOriginAccessControl(loader->document()->securityOrigin(), options.allowCredentials, options.credentialsRequested);
+
             if (ResourcePtr<ImageResource> cachedImage = loader->fetchImage(request)) {
                 m_imageSet = StyleFetchedImageSet::create(cachedImage.get(), image.scaleFactor, this);
                 m_accessedBestFitImage = true;
@@ -112,6 +118,11 @@ StyleFetchedImageSet* CSSImageSetValue::cachedImageSet(ResourceFetcher* loader, 
     }
 
     return (m_imageSet && m_imageSet->isImageResourceSet()) ? toStyleFetchedImageSet(m_imageSet) : 0;
+}
+
+StyleFetchedImageSet* CSSImageSetValue::cachedImageSet(ResourceFetcher* fetcher, float deviceScaleFactor)
+{
+    return cachedImageSet(fetcher, deviceScaleFactor, ResourceFetcher::defaultResourceOptions());
 }
 
 StyleImage* CSSImageSetValue::cachedOrPendingImageSet(float deviceScaleFactor)
@@ -176,9 +187,9 @@ CSSImageSetValue::CSSImageSetValue(const CSSImageSetValue& cloneFrom)
     // Non-CSSValueList data is not accessible through CSS OM, no need to clone.
 }
 
-PassRefPtr<CSSImageSetValue> CSSImageSetValue::cloneForCSSOM() const
+PassRefPtrWillBeRawPtr<CSSImageSetValue> CSSImageSetValue::cloneForCSSOM() const
 {
-    return adoptRef(new CSSImageSetValue(*this));
+    return adoptRefWillBeNoop(new CSSImageSetValue(*this));
 }
 
 } // namespace WebCore

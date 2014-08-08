@@ -57,19 +57,21 @@
     background: url(../images/partytime.gif) center center no-repeat;
 }
 
-#chromium-gtests iframe {
-    border: 0;
-    height: 20px;
-}
-
-#chromium-gtests {
+#link-handling {
     position: absolute;
     top: 10px;
-    right: 5px;
+    right: 0;
+    padding-right: 4px;
 }
 
-#gtest-label {
-    vertical-align: top;
+/* This checkbox just overlaps the main content on smalls screens and doesn't
+make a lot of sense as currently designed.*/
+@media only screen and (max-width: 400px) {
+    #link-handling { display: none; }
+}
+
+#new-window-for-links {
+    vertical-align: text-bottom;
 }
 
 #onebar details {

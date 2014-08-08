@@ -28,7 +28,6 @@
 #include "core/dom/Document.h"
 #include "core/fetch/ImageResource.h"
 #include "core/rendering/GraphicsContextAnnotator.h"
-#include "core/rendering/LayoutRectRecorder.h"
 #include "core/rendering/RenderLayer.h"
 #include "core/rendering/RenderListItem.h"
 #include "core/rendering/RenderView.h"
@@ -1078,10 +1077,10 @@ RenderListMarker* RenderListMarker::createAnonymous(RenderListItem* item)
     return renderer;
 }
 
-void RenderListMarker::styleWillChange(StyleDifference diff, const RenderStyle* newStyle)
+void RenderListMarker::styleWillChange(StyleDifference diff, const RenderStyle& newStyle)
 {
-    if (style() && (newStyle->listStylePosition() != style()->listStylePosition() || newStyle->listStyleType() != style()->listStyleType()))
-        setNeedsLayoutAndPrefWidthsRecalc();
+    if (style() && (newStyle.listStylePosition() != style()->listStylePosition() || newStyle.listStyleType() != style()->listStyleType()))
+        setNeedsLayoutAndPrefWidthsRecalcAndFullPaintInvalidation();
 
     RenderBox::styleWillChange(diff, newStyle);
 }
@@ -1116,11 +1115,11 @@ LayoutRect RenderListMarker::localSelectionRect()
     InlineBox* box = inlineBoxWrapper();
     if (!box)
         return LayoutRect(LayoutPoint(), size());
-    RootInlineBox* root = m_inlineBoxWrapper->root();
-    LayoutUnit newLogicalTop = root->block()->style()->isFlippedBlocksWritingMode() ? m_inlineBoxWrapper->logicalBottom() - root->selectionBottom() : root->selectionTop() - m_inlineBoxWrapper->logicalTop();
-    if (root->block()->style()->isHorizontalWritingMode())
-        return LayoutRect(0, newLogicalTop, width(), root->selectionHeight());
-    return LayoutRect(newLogicalTop, 0, root->selectionHeight(), height());
+    RootInlineBox& root = inlineBoxWrapper()->root();
+    LayoutUnit newLogicalTop = root.block().style()->isFlippedBlocksWritingMode() ? inlineBoxWrapper()->logicalBottom() - root.selectionBottom() : root.selectionTop() - inlineBoxWrapper()->logicalTop();
+    if (root.block().style()->isHorizontalWritingMode())
+        return LayoutRect(0, newLogicalTop, width(), root.selectionHeight());
+    return LayoutRect(newLogicalTop, 0, root.selectionHeight(), height());
 }
 
 void RenderListMarker::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset)
@@ -1136,7 +1135,6 @@ void RenderListMarker::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffse
     LayoutPoint boxOrigin(paintOffset + location());
     LayoutRect overflowRect(visualOverflowRect());
     overflowRect.moveBy(boxOrigin);
-    overflowRect.inflate(maximalOutlineSize(paintInfo.phase));
 
     if (!paintInfo.rect.intersects(pixelSnappedIntRect(overflowRect)))
         return;
@@ -1301,21 +1299,19 @@ void RenderListMarker::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffse
         }
 
         const UChar suffix = listMarkerSuffix(type, m_listItem->value());
+        UChar suffixStr[2] = {
+            style()->isLeftToRightDirection() ? suffix : ' ',
+            style()->isLeftToRightDirection() ? ' ' : suffix
+        };
+        TextRun suffixRun = RenderBlockFlow::constructTextRun(this, font, suffixStr, 2, style(), style()->direction());
+        TextRunPaintInfo suffixRunInfo(suffixRun);
+        suffixRunInfo.bounds = marker;
+
         if (style()->isLeftToRightDirection()) {
             context->drawText(font, textRunPaintInfo, textOrigin);
-
-            UChar suffixSpace[2] = { suffix, ' ' };
-            TextRun suffixRun = RenderBlockFlow::constructTextRun(this, font, suffixSpace, 2, style());
-            TextRunPaintInfo suffixRunInfo(suffixRun);
-            suffixRunInfo.bounds = marker;
             context->drawText(font, suffixRunInfo, textOrigin + IntSize(font.width(textRun), 0));
         } else {
-            UChar spaceSuffix[2] = { ' ', suffix };
-            TextRun suffixRun = RenderBlockFlow::constructTextRun(this, font, spaceSuffix, 2, style());
-            TextRunPaintInfo suffixRunInfo(suffixRun);
-            suffixRunInfo.bounds = marker;
             context->drawText(font, suffixRunInfo, textOrigin);
-
             context->drawText(font, textRunPaintInfo, textOrigin + IntSize(font.width(suffixRun), 0));
         }
     }
@@ -1325,7 +1321,6 @@ void RenderListMarker::layout()
 {
     ASSERT(needsLayout());
 
-    LayoutRectRecorder recorder(*this);
     if (isImage()) {
         updateMarginsAndContent();
         setWidth(m_image->imageSize(this, style()->effectiveZoom()).width());
@@ -1355,9 +1350,9 @@ void RenderListMarker::imageChanged(WrappedImagePtr o, const IntRect*)
         return;
 
     if (width() != m_image->imageSize(this, style()->effectiveZoom()).width() || height() != m_image->imageSize(this, style()->effectiveZoom()).height() || m_image->errorOccurred())
-        setNeedsLayoutAndPrefWidthsRecalc();
+        setNeedsLayoutAndPrefWidthsRecalcAndFullPaintInvalidation();
     else
-        repaint();
+        paintInvalidationForWholeRenderer();
 }
 
 void RenderListMarker::updateMarginsAndContent()
@@ -1379,7 +1374,9 @@ void RenderListMarker::updateContent()
         // FIXME: This is a somewhat arbitrary width.  Generated images for markers really won't become particularly useful
         // until we support the CSS3 marker pseudoclass to allow control over the width and height of the marker box.
         int bulletWidth = style()->fontMetrics().ascent() / 2;
-        m_image->setContainerSizeForRenderer(this, IntSize(bulletWidth, bulletWidth), style()->effectiveZoom());
+        IntSize defaultBulletSize(bulletWidth, bulletWidth);
+        IntSize imageSize = calculateImageIntrinsicDimensions(m_image.get(), defaultBulletSize, DoNotScaleByEffectiveZoom);
+        m_image->setContainerSizeForRenderer(this, imageSize, style()->effectiveZoom());
         return;
     }
 
@@ -1583,7 +1580,7 @@ void RenderListMarker::computePreferredLogicalWidths()
             else {
                 LayoutUnit itemWidth = font.width(m_text);
                 UChar suffixSpace[2] = { listMarkerSuffix(type, m_listItem->value()), ' ' };
-                LayoutUnit suffixSpaceWidth = font.width(RenderBlockFlow::constructTextRun(this, font, suffixSpace, 2, style()));
+                LayoutUnit suffixSpaceWidth = font.width(RenderBlockFlow::constructTextRun(this, font, suffixSpace, 2, style(), style()->direction()));
                 logicalWidth = itemWidth + suffixSpaceWidth;
             }
             break;
@@ -1809,7 +1806,7 @@ IntRect RenderListMarker::getRelativeMarkerRect()
             const Font& font = style()->font();
             int itemWidth = font.width(m_text);
             UChar suffixSpace[2] = { listMarkerSuffix(type, m_listItem->value()), ' ' };
-            int suffixSpaceWidth = font.width(RenderBlockFlow::constructTextRun(this, font, suffixSpace, 2, style()));
+            int suffixSpaceWidth = font.width(RenderBlockFlow::constructTextRun(this, font, suffixSpace, 2, style(), style()->direction()));
             relativeRect = IntRect(0, 0, itemWidth + suffixSpaceWidth, font.fontMetrics().height());
     }
 
@@ -1826,25 +1823,24 @@ void RenderListMarker::setSelectionState(SelectionState state)
     // The selection state for our containing block hierarchy is updated by the base class call.
     RenderBox::setSelectionState(state);
 
-    if (m_inlineBoxWrapper && canUpdateSelectionOnRootLineBoxes())
-        if (RootInlineBox* root = m_inlineBoxWrapper->root())
-            root->setHasSelectedChildren(state != SelectionNone);
+    if (inlineBoxWrapper() && canUpdateSelectionOnRootLineBoxes())
+        inlineBoxWrapper()->root().setHasSelectedChildren(state != SelectionNone);
 }
 
-LayoutRect RenderListMarker::selectionRectForRepaint(const RenderLayerModelObject* repaintContainer, bool clipToVisibleContent)
+LayoutRect RenderListMarker::selectionRectForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer, bool clipToVisibleContent)
 {
     ASSERT(!needsLayout());
 
     if (selectionState() == SelectionNone || !inlineBoxWrapper())
         return LayoutRect();
 
-    RootInlineBox* root = inlineBoxWrapper()->root();
-    LayoutRect rect(0, root->selectionTop() - y(), width(), root->selectionHeight());
+    RootInlineBox& root = inlineBoxWrapper()->root();
+    LayoutRect rect(0, root.selectionTop() - y(), width(), root.selectionHeight());
 
     if (clipToVisibleContent)
-        computeRectForRepaint(repaintContainer, rect);
+        mapRectToPaintInvalidationBacking(paintInvalidationContainer, rect);
     else
-        rect = localToContainerQuad(FloatRect(rect), repaintContainer).enclosingBoundingBox();
+        rect = localToContainerQuad(FloatRect(rect), paintInvalidationContainer).enclosingBoundingBox();
 
     return rect;
 }

@@ -103,16 +103,12 @@ class LayerTreeHostCopyRequestTestMultipleRequests
 
   virtual void AfterTest() OVERRIDE { EXPECT_EQ(4u, callbacks_.size()); }
 
-  virtual scoped_ptr<OutputSurface> CreateOutputSurface(bool fallback)
+  virtual scoped_ptr<FakeOutputSurface> CreateFakeOutputSurface(bool fallback)
       OVERRIDE {
-    scoped_ptr<FakeOutputSurface> output_surface;
-    if (use_gl_renderer_) {
-      output_surface = FakeOutputSurface::Create3d().Pass();
-    } else {
-      output_surface = FakeOutputSurface::CreateSoftware(
-          make_scoped_ptr(new SoftwareOutputDevice)).Pass();
-    }
-    return output_surface.PassAs<OutputSurface>();
+    if (use_gl_renderer_)
+      return FakeOutputSurface::Create3d();
+    return FakeOutputSurface::CreateSoftware(
+        make_scoped_ptr(new SoftwareOutputDevice));
   }
 
   bool use_gl_renderer_;
@@ -538,18 +534,16 @@ SINGLE_AND_MULTI_THREAD_DIRECT_RENDERER_NOIMPL_TEST_F(
 class LayerTreeHostCopyRequestTestLostOutputSurface
     : public LayerTreeHostCopyRequestTest {
  protected:
-  virtual scoped_ptr<OutputSurface> CreateOutputSurface(bool fallback)
+  virtual scoped_ptr<FakeOutputSurface> CreateFakeOutputSurface(bool fallback)
       OVERRIDE {
     if (!first_context_provider_.get()) {
       first_context_provider_ = TestContextProvider::Create();
-      return FakeOutputSurface::Create3d(first_context_provider_)
-          .PassAs<OutputSurface>();
+      return FakeOutputSurface::Create3d(first_context_provider_);
     }
 
     EXPECT_FALSE(second_context_provider_.get());
     second_context_provider_ = TestContextProvider::Create();
-    return FakeOutputSurface::Create3d(second_context_provider_)
-        .PassAs<OutputSurface>();
+    return FakeOutputSurface::Create3d(second_context_provider_);
   }
 
   virtual void SetupTree() OVERRIDE {
@@ -670,11 +664,10 @@ SINGLE_AND_MULTI_THREAD_DIRECT_RENDERER_NOIMPL_TEST_F(
 class LayerTreeHostCopyRequestTestCountTextures
     : public LayerTreeHostCopyRequestTest {
  protected:
-  virtual scoped_ptr<OutputSurface> CreateOutputSurface(bool fallback)
+  virtual scoped_ptr<FakeOutputSurface> CreateFakeOutputSurface(bool fallback)
       OVERRIDE {
     context_provider_ = TestContextProvider::Create();
-    return FakeOutputSurface::Create3d(context_provider_)
-        .PassAs<OutputSurface>();
+    return FakeOutputSurface::Create3d(context_provider_);
   }
 
   virtual void SetupTree() OVERRIDE {
@@ -803,10 +796,12 @@ class LayerTreeHostCopyRequestTestProvideTexture
             &LayerTreeHostCopyRequestTestProvideTexture::CopyOutputCallback,
             base::Unretained(this)));
 
+    gpu::gles2::GLES2Interface* gl = external_context_provider_->ContextGL();
     gpu::Mailbox mailbox;
-    external_context_provider_->Context3d()->genMailboxCHROMIUM(mailbox.name);
-    sync_point_ = external_context_provider_->Context3d()->insertSyncPoint();
-    request->SetTextureMailbox(TextureMailbox(mailbox, sync_point_));
+    gl->GenMailboxCHROMIUM(mailbox.name);
+    sync_point_ = gl->InsertSyncPointCHROMIUM();
+    request->SetTextureMailbox(
+        TextureMailbox(mailbox, GL_TEXTURE_2D, sync_point_));
     EXPECT_TRUE(request->has_texture_mailbox());
 
     copy_layer_->RequestCopyOfOutput(request.Pass());
@@ -903,6 +898,77 @@ class LayerTreeHostCopyRequestTestDestroyBeforeCopy
 
 SINGLE_AND_MULTI_THREAD_DIRECT_RENDERER_TEST_F(
     LayerTreeHostCopyRequestTestDestroyBeforeCopy);
+
+class LayerTreeHostCopyRequestTestShutdownBeforeCopy
+    : public LayerTreeHostCopyRequestTest {
+ protected:
+  virtual void SetupTree() OVERRIDE {
+    root_ = FakeContentLayer::Create(&client_);
+    root_->SetBounds(gfx::Size(20, 20));
+
+    copy_layer_ = FakeContentLayer::Create(&client_);
+    copy_layer_->SetBounds(gfx::Size(10, 10));
+    root_->AddChild(copy_layer_);
+
+    layer_tree_host()->SetRootLayer(root_);
+    LayerTreeHostCopyRequestTest::SetupTree();
+  }
+
+  virtual void BeginTest() OVERRIDE {
+    callback_count_ = 0;
+    PostSetNeedsCommitToMainThread();
+  }
+
+  void CopyOutputCallback(scoped_ptr<CopyOutputResult> result) {
+    EXPECT_TRUE(result->IsEmpty());
+    ++callback_count_;
+  }
+
+  virtual void DidActivateTreeOnThread(LayerTreeHostImpl* impl) OVERRIDE {
+    MainThreadTaskRunner()->PostTask(
+        FROM_HERE,
+        base::Bind(&LayerTreeHostCopyRequestTestShutdownBeforeCopy::DidActivate,
+                   base::Unretained(this)));
+  }
+
+  void DidActivate() {
+    switch (layer_tree_host()->source_frame_number()) {
+      case 1: {
+        EXPECT_EQ(0, callback_count_);
+        // Put a copy request on the layer, but then don't allow any
+        // drawing to take place.
+        scoped_ptr<CopyOutputRequest> request =
+            CopyOutputRequest::CreateRequest(
+                base::Bind(&LayerTreeHostCopyRequestTestShutdownBeforeCopy::
+                                CopyOutputCallback,
+                           base::Unretained(this)));
+        copy_layer_->RequestCopyOfOutput(request.Pass());
+
+        layer_tree_host()->SetViewportSize(gfx::Size());
+        break;
+      }
+      case 2:
+        DestroyLayerTreeHost();
+        // End the test after the copy result has had a chance to get back to
+        // the main thread.
+        MainThreadTaskRunner()->PostTask(
+            FROM_HERE,
+            base::Bind(&LayerTreeHostCopyRequestTestShutdownBeforeCopy::EndTest,
+                       base::Unretained(this)));
+        break;
+    }
+  }
+
+  virtual void AfterTest() OVERRIDE { EXPECT_EQ(1, callback_count_); }
+
+  int callback_count_;
+  FakeContentLayerClient client_;
+  scoped_refptr<FakeContentLayer> root_;
+  scoped_refptr<FakeContentLayer> copy_layer_;
+};
+
+SINGLE_AND_MULTI_THREAD_DIRECT_RENDERER_TEST_F(
+    LayerTreeHostCopyRequestTestShutdownBeforeCopy);
 
 }  // namespace
 }  // namespace cc

@@ -28,13 +28,17 @@
 #include "config.h"
 #include "core/html/parser/HTMLPreloadScanner.h"
 
-#include "HTMLNames.h"
-#include "InputTypeNames.h"
-#include "RuntimeEnabledFeatures.h"
+#include "core/HTMLNames.h"
+#include "core/InputTypeNames.h"
+#include "core/css/MediaList.h"
+#include "core/css/MediaQueryEvaluator.h"
+#include "core/css/MediaValues.h"
+#include "core/css/parser/SizesAttributeParser.h"
 #include "core/html/LinkRelAttribute.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/html/parser/HTMLSrcsetParser.h"
 #include "core/html/parser/HTMLTokenizer.h"
+#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/TraceEvent.h"
 #include "wtf/MainThread.h"
 
@@ -90,19 +94,33 @@ static String initiatorFor(const StringImpl* tagImpl)
     return emptyString();
 }
 
+static bool mediaAttributeMatches(const MediaValues& mediaValues, const String& attributeValue)
+{
+    RefPtrWillBeRawPtr<MediaQuerySet> mediaQueries = MediaQuerySet::createOffMainThread(attributeValue);
+    MediaQueryEvaluator mediaQueryEvaluator("screen", mediaValues);
+    return mediaQueryEvaluator.eval(mediaQueries.get());
+}
+
 class TokenPreloadScanner::StartTagScanner {
 public:
-    StartTagScanner(const StringImpl* tagImpl, float deviceScaleFactor)
+    StartTagScanner(const StringImpl* tagImpl, PassRefPtr<MediaValues> mediaValues)
         : m_tagImpl(tagImpl)
         , m_linkIsStyleSheet(false)
+        , m_matchedMediaAttribute(true)
         , m_inputIsImage(false)
-        , m_deviceScaleFactor(deviceScaleFactor)
-        , m_encounteredImgSrc(false)
+        , m_sourceSize(0)
+        , m_sourceSizeSet(false)
         , m_isCORSEnabled(false)
         , m_allowCredentials(DoNotAllowStoredCredentials)
+        , m_mediaValues(mediaValues)
     {
-        if (!match(m_tagImpl, imgTag)
-            && !match(m_tagImpl, inputTag)
+        if (match(m_tagImpl, imgTag)
+            || match(m_tagImpl, sourceTag)) {
+            if (RuntimeEnabledFeatures::pictureSizesEnabled())
+                m_sourceSize = SizesAttributeParser::findEffectiveSize(String(), m_mediaValues);
+            return;
+        }
+        if ( !match(m_tagImpl, inputTag)
             && !match(m_tagImpl, linkTag)
             && !match(m_tagImpl, scriptTag))
             m_tagImpl = 0;
@@ -133,57 +151,122 @@ public:
             processAttribute(iter->name, iter->value);
     }
 
+    void handlePictureSourceURL(String& sourceURL)
+    {
+        if (match(m_tagImpl, sourceTag) && m_matchedMediaAttribute && sourceURL.isEmpty())
+            sourceURL = m_srcsetImageCandidate.toString();
+        else if (match(m_tagImpl, imgTag) && !sourceURL.isEmpty())
+            setUrlToLoad(sourceURL, AllowURLReplacement);
+    }
+
     PassOwnPtr<PreloadRequest> createPreloadRequest(const KURL& predictedBaseURL, const SegmentedString& source)
     {
-        if (!shouldPreload())
+        if (!shouldPreload() || !m_matchedMediaAttribute)
             return nullptr;
 
         TRACE_EVENT_INSTANT1("net", "PreloadRequest", "url", m_urlToLoad.ascii());
         TextPosition position = TextPosition(source.currentLine(), source.currentColumn());
-        OwnPtr<PreloadRequest> request = PreloadRequest::create(initiatorFor(m_tagImpl), position, m_urlToLoad, predictedBaseURL, resourceType(), m_mediaAttribute);
+        OwnPtr<PreloadRequest> request = PreloadRequest::create(initiatorFor(m_tagImpl), position, m_urlToLoad, predictedBaseURL, resourceType());
         if (isCORSEnabled())
-            request->setCrossOriginEnabled(allowCredentials());
+            request->setCrossOriginEnabled(allowStoredCredentials());
         request->setCharset(charset());
         return request.release();
     }
 
 private:
     template<typename NameType>
+    void processScriptAttribute(const NameType& attributeName, const String& attributeValue)
+    {
+        // FIXME - Don't set crossorigin multiple times.
+        if (match(attributeName, srcAttr))
+            setUrlToLoad(attributeValue, DisallowURLReplacement);
+        else if (match(attributeName, crossoriginAttr))
+            setCrossOriginAllowed(attributeValue);
+    }
+
+    template<typename NameType>
+    void processImgAttribute(const NameType& attributeName, const String& attributeValue)
+    {
+        if (match(attributeName, srcAttr) && m_imgSrcUrl.isNull()) {
+            m_imgSrcUrl = attributeValue;
+            setUrlToLoad(bestFitSourceForImageAttributes(m_mediaValues->devicePixelRatio(), m_sourceSize, attributeValue, m_srcsetImageCandidate), AllowURLReplacement);
+        } else if (match(attributeName, crossoriginAttr)) {
+            setCrossOriginAllowed(attributeValue);
+        } else if (match(attributeName, srcsetAttr) && m_srcsetImageCandidate.isEmpty()) {
+            m_srcsetAttributeValue = attributeValue;
+            m_srcsetImageCandidate = bestFitSourceForSrcsetAttribute(m_mediaValues->devicePixelRatio(), m_sourceSize, attributeValue);
+            setUrlToLoad(bestFitSourceForImageAttributes(m_mediaValues->devicePixelRatio(), m_sourceSize, m_imgSrcUrl, m_srcsetImageCandidate), AllowURLReplacement);
+        } else if (RuntimeEnabledFeatures::pictureSizesEnabled() && match(attributeName, sizesAttr) && !m_sourceSizeSet) {
+            m_sourceSize = SizesAttributeParser::findEffectiveSize(attributeValue, m_mediaValues);
+            m_sourceSizeSet = true;
+            if (!m_srcsetImageCandidate.isEmpty()) {
+                m_srcsetImageCandidate = bestFitSourceForSrcsetAttribute(m_mediaValues->devicePixelRatio(), m_sourceSize, m_srcsetAttributeValue);
+                setUrlToLoad(bestFitSourceForImageAttributes(m_mediaValues->devicePixelRatio(), m_sourceSize, m_imgSrcUrl, m_srcsetImageCandidate), AllowURLReplacement);
+            }
+        }
+    }
+
+    template<typename NameType>
+    void processLinkAttribute(const NameType& attributeName, const String& attributeValue)
+    {
+        // FIXME - Don't set rel/media/crossorigin multiple times.
+        if (match(attributeName, hrefAttr))
+            setUrlToLoad(attributeValue, DisallowURLReplacement);
+        else if (match(attributeName, relAttr))
+            m_linkIsStyleSheet = relAttributeIsStyleSheet(attributeValue);
+        else if (match(attributeName, mediaAttr))
+            m_matchedMediaAttribute = mediaAttributeMatches(*m_mediaValues, attributeValue);
+        else if (match(attributeName, crossoriginAttr))
+            setCrossOriginAllowed(attributeValue);
+    }
+
+    template<typename NameType>
+    void processInputAttribute(const NameType& attributeName, const String& attributeValue)
+    {
+        // FIXME - Don't set type multiple times.
+        if (match(attributeName, srcAttr))
+            setUrlToLoad(attributeValue, DisallowURLReplacement);
+        else if (match(attributeName, typeAttr))
+            m_inputIsImage = equalIgnoringCase(attributeValue, InputTypeNames::image);
+    }
+
+    template<typename NameType>
+    void processSourceAttribute(const NameType& attributeName, const String& attributeValue)
+    {
+        if (!RuntimeEnabledFeatures::pictureEnabled())
+            return;
+        if (match(attributeName, srcsetAttr) && m_srcsetImageCandidate.isEmpty()) {
+            m_srcsetAttributeValue = attributeValue;
+            m_srcsetImageCandidate = bestFitSourceForSrcsetAttribute(m_mediaValues->devicePixelRatio(), m_sourceSize, attributeValue);
+        } else if (match(attributeName, sizesAttr) && !m_sourceSizeSet) {
+            m_sourceSize = SizesAttributeParser::findEffectiveSize(attributeValue, m_mediaValues);
+            m_sourceSizeSet = true;
+            if (!m_srcsetImageCandidate.isEmpty()) {
+                m_srcsetImageCandidate = bestFitSourceForSrcsetAttribute(m_mediaValues->devicePixelRatio(), m_sourceSize, m_srcsetAttributeValue);
+            }
+        } else if (match(attributeName, mediaAttr)) {
+            // FIXME - Don't match media multiple times.
+            m_matchedMediaAttribute = mediaAttributeMatches(*m_mediaValues, attributeValue);
+        }
+
+    }
+
+    template<typename NameType>
     void processAttribute(const NameType& attributeName, const String& attributeValue)
     {
         if (match(attributeName, charsetAttr))
             m_charset = attributeValue;
 
-        if (match(m_tagImpl, scriptTag)) {
-            if (match(attributeName, srcAttr))
-                setUrlToLoad(attributeValue, DisallowURLReplacement);
-            else if (match(attributeName, crossoriginAttr))
-                setCrossOriginAllowed(attributeValue);
-        } else if (match(m_tagImpl, imgTag)) {
-            if (match(attributeName, srcAttr) && !m_encounteredImgSrc) {
-                m_encounteredImgSrc = true;
-                setUrlToLoad(bestFitSourceForImageAttributes(m_deviceScaleFactor, attributeValue, m_srcsetImageCandidate), AllowURLReplacement);
-            } else if (match(attributeName, crossoriginAttr)) {
-                setCrossOriginAllowed(attributeValue);
-            } else if (RuntimeEnabledFeatures::srcsetEnabled()
-                && match(attributeName, srcsetAttr)
-                && m_srcsetImageCandidate.isEmpty()) {
-                m_srcsetImageCandidate = bestFitSourceForSrcsetAttribute(m_deviceScaleFactor, attributeValue);
-                setUrlToLoad(bestFitSourceForImageAttributes(m_deviceScaleFactor, m_urlToLoad, m_srcsetImageCandidate), AllowURLReplacement);
-            }
-        } else if (match(m_tagImpl, linkTag)) {
-            if (match(attributeName, hrefAttr))
-                setUrlToLoad(attributeValue, DisallowURLReplacement);
-            else if (match(attributeName, relAttr))
-                m_linkIsStyleSheet = relAttributeIsStyleSheet(attributeValue);
-            else if (match(attributeName, mediaAttr))
-                m_mediaAttribute = attributeValue;
-        } else if (match(m_tagImpl, inputTag)) {
-            if (match(attributeName, srcAttr))
-                setUrlToLoad(attributeValue, DisallowURLReplacement);
-            else if (match(attributeName, typeAttr))
-                m_inputIsImage = equalIgnoringCase(attributeValue, InputTypeNames::image);
-        }
+        if (match(m_tagImpl, scriptTag))
+            processScriptAttribute(attributeName, attributeValue);
+        else if (match(m_tagImpl, imgTag))
+            processImgAttribute(attributeName, attributeValue);
+        else if (match(m_tagImpl, linkTag))
+            processLinkAttribute(attributeName, attributeValue);
+        else if (match(m_tagImpl, inputTag))
+            processInputAttribute(attributeName, attributeValue);
+        else if (match(m_tagImpl, sourceTag))
+            processSourceAttribute(attributeName, attributeValue);
     }
 
     static bool relAttributeIsStyleSheet(const String& attributeValue)
@@ -240,7 +323,7 @@ private:
         return m_isCORSEnabled;
     }
 
-    StoredCredentials allowCredentials() const
+    StoredCredentials allowStoredCredentials() const
     {
         return m_allowCredentials;
     }
@@ -259,19 +342,23 @@ private:
     ImageCandidate m_srcsetImageCandidate;
     String m_charset;
     bool m_linkIsStyleSheet;
-    String m_mediaAttribute;
+    bool m_matchedMediaAttribute;
     bool m_inputIsImage;
-    float m_deviceScaleFactor;
-    bool m_encounteredImgSrc;
+    String m_imgSrcUrl;
+    String m_srcsetAttributeValue;
+    unsigned m_sourceSize;
+    bool m_sourceSizeSet;
     bool m_isCORSEnabled;
     StoredCredentials m_allowCredentials;
+    RefPtr<MediaValues> m_mediaValues;
 };
 
-TokenPreloadScanner::TokenPreloadScanner(const KURL& documentURL, float deviceScaleFactor)
+TokenPreloadScanner::TokenPreloadScanner(const KURL& documentURL, PassRefPtr<MediaValues> mediaValues)
     : m_documentURL(documentURL)
     , m_inStyle(false)
-    , m_deviceScaleFactor(deviceScaleFactor)
+    , m_inPicture(false)
     , m_templateCount(0)
+    , m_mediaValues(mediaValues)
 {
 }
 
@@ -328,7 +415,10 @@ void TokenPreloadScanner::scanCommon(const Token& token, const SegmentedString& 
             if (m_inStyle)
                 m_cssScanner.reset();
             m_inStyle = false;
+            return;
         }
+        if (match(tagImpl, pictureTag))
+            m_inPicture = false;
         return;
     }
     case HTMLToken::StartTag: {
@@ -350,9 +440,16 @@ void TokenPreloadScanner::scanCommon(const Token& token, const SegmentedString& 
             updatePredictedBaseURL(token);
             return;
         }
+        if (RuntimeEnabledFeatures::pictureEnabled() && (match(tagImpl, pictureTag))) {
+            m_inPicture = true;
+            m_pictureSourceURL = String();
+            return;
+        }
 
-        StartTagScanner scanner(tagImpl, m_deviceScaleFactor);
+        StartTagScanner scanner(tagImpl, m_mediaValues);
         scanner.processAttributes(token.attributes());
+        if (m_inPicture)
+            scanner.handlePictureSourceURL(m_pictureSourceURL);
         OwnPtr<PreloadRequest> request = scanner.createPreloadRequest(m_predictedBaseElementURL, source);
         if (request)
             requests.append(request.release());
@@ -372,8 +469,8 @@ void TokenPreloadScanner::updatePredictedBaseURL(const Token& token)
         m_predictedBaseElementURL = KURL(m_documentURL, stripLeadingAndTrailingHTMLSpaces(hrefAttribute->value)).copy();
 }
 
-HTMLPreloadScanner::HTMLPreloadScanner(const HTMLParserOptions& options, const KURL& documentURL, float deviceScaleFactor)
-    : m_scanner(documentURL, deviceScaleFactor)
+HTMLPreloadScanner::HTMLPreloadScanner(const HTMLParserOptions& options, const KURL& documentURL, PassRefPtr<MediaValues> mediaValues)
+    : m_scanner(documentURL, mediaValues)
     , m_tokenizer(HTMLTokenizer::create(options))
 {
 }
@@ -391,6 +488,8 @@ void HTMLPreloadScanner::scan(HTMLResourcePreloader* preloader, const KURL& star
 {
     ASSERT(isMainThread()); // HTMLTokenizer::updateStateFor only works on the main thread.
 
+    TRACE_EVENT1("webkit", "HTMLPreloadScanner::scan", "source_length", m_source.length());
+
     // When we start scanning, our best prediction of the baseElementURL is the real one!
     if (!startingBaseElementURL.isEmpty())
         m_scanner.setPredictedBaseElementURL(startingBaseElementURL);
@@ -399,7 +498,7 @@ void HTMLPreloadScanner::scan(HTMLResourcePreloader* preloader, const KURL& star
 
     while (m_tokenizer->nextToken(m_source, m_token)) {
         if (m_token.type() == HTMLToken::StartTag)
-            m_tokenizer->updateStateFor(AtomicString(m_token.name()));
+            m_tokenizer->updateStateFor(attemptStaticStringCreation(m_token.name(), Likely8Bit));
         m_scanner.scan(m_token, m_source, requests);
         m_token.clear();
     }

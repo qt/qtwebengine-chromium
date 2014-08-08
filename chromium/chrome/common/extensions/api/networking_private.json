@@ -9,7 +9,7 @@
     "compiler_options": {
       "implemented_in": "chrome/browser/extensions/api/networking_private/networking_private_api.h"
     },
-    "platforms": ["chromeos", "win"],
+    "platforms": ["chromeos", "win", "mac"],
     "types" : [
       {
         "id": "NetworkProperties",
@@ -58,7 +58,12 @@
       {
         "id": "NetworkType",
         "type": "string",
-        "enum": ["Ethernet", "WiFi", "Cellular"]
+        "enum": ["All", "Bluetooth", "Cellular", "Ethernet", "VPN", "Wireless", "WiFi", "Wimax"]
+      },
+      {
+        "id": "CaptivePortalStatus",
+        "type": "string",
+        "enum": ["Unknown", "Offline", "Online", "Portal", "ProxyAuthRequired"]
       }
     ],
     "functions": [
@@ -108,7 +113,7 @@
       },
       {
         "name": "getState",
-        "description": "Gets the cached read-only properties of the network with id networkGuid.  This is meant to be a higher performance function than getProperties, which requires a round trip to query the networking subsystem.  It only returns a subset of the properties returned by getProperties.",
+        "description": "Gets the cached read-only properties of the network with id networkGuid. This is meant to be a higher performance function than getProperties, which requires a round trip to query the networking subsystem.  The following properties are returned for all networks: GUID, Type, Name, WiFi.Security. Additional properties are provided for visible networks: ConnectionState, ErrorState, WiFi.SignalStrength, Cellular.NetworkTechnology, Cellular.ActivationState, Cellular.RoamingState, Cellular.OutOfCredits.",
         "parameters": [
           {
             "name": "networkGuid",
@@ -122,7 +127,7 @@
               {
                 "name": "properties",
                 "$ref": "NetworkProperties",
-                "description": "Results of the query for network properties."
+                "description": "Results of the query for network state properties."
               }
             ]
           }
@@ -151,7 +156,7 @@
       },
       {
         "name": "createNetwork",
-        "description": "Creates a new network configuration from propeties. If a matching configured network already exists, this will fail. Otherwise returns the guid of the new network.",
+        "description": "Creates a new network configuration from properties. If a matching configured network already exists, this will fail. Otherwise returns the guid of the new network.",
         "parameters": [
           {
             "name": "shared",
@@ -168,7 +173,7 @@
             "type": "function",
             "parameters": [
               {
-                "name": "guid",
+                "name": "networkGuid",
                 "type": "string"
               }
             ]
@@ -176,13 +181,56 @@
         ]
       },
       {
-        "name": "getVisibleNetworks",
-        "description": "Gets the list of visible networks, and returns a list of cached, read-only network properties for each.",
+        "name": "getNetworks",
+        "description": "Returns a list of network objects with the same properties provided by getState. A filter is provided to specify the type of networks returned and to limit the number of networks. Networks are ordered by the system based on their priority, with connected or connecting networks listed first.",
         "parameters": [
           {
-            "name": "type",
-            "type": "string",
-            "enum": ["Ethernet", "WiFi", "Bluetooth", "Cellular", "VPN", "All"],
+            "name": "filter",
+            "type": "object",
+            "properties": {
+              "networkType": {
+                "$ref": "NetworkType",
+                "description": "The type of networks to return."
+              },
+              "visible": {
+                "type": "boolean",
+                "optional": true,
+                "description": "If true, only include visible (physically connected or in-range) networks. Defaults to 'false'."
+              },
+              "configured": {
+                "type": "boolean",
+                "optional": true,
+                "description": "If true, only include configured (saved) networks. Defaults to 'false'."
+              },
+              "limit": {
+                "type": "integer",
+                "optional": true,
+                "description": "Maximum number of networks to return. Defaults to 1000. Use 0 for no limit."
+              }
+            }
+          },
+          {
+            "name": "callback",
+            "type": "function",
+            "optional": true,
+            "parameters": [
+              {
+                "name": "networkList",
+                "type": "array",
+                "items": { "$ref": "NetworkProperties" }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "getVisibleNetworks",
+        "deprecated": "Please use $(ref:networkingPrivate.getNetworks) with filter.visble = true.",
+        "description": "Returns a list of visible network objects with the same properties provided by getState.",
+        "parameters": [
+          {
+            "name": "networkType",
+            "$ref": "NetworkType",
             "description": "The type of networks to return."
           },
           {
@@ -201,7 +249,7 @@
       },
       {
         "name": "getEnabledNetworkTypes",
-        "description": "Returns a list of the enabled network type.",
+        "description": "Returns a list of the enabled network types. Note: this only returns discrete types that can be enabled or disabled: Cellular, Ethernet, WiFi, Wimax.",
         "parameters": [
           {
             "name": "callback",
@@ -209,7 +257,7 @@
             "optional": true,
             "parameters": [
               {
-                "name": "networkList",
+                "name": "enabledTypes",
                 "type": "array",
                 "items": { "$ref": "NetworkType" }
               }
@@ -219,7 +267,7 @@
       },
       {
         "name": "enableNetworkType",
-        "description": "Enable the specified network type.",
+        "description": "Enable the specified network type. Note, the type might represent multiple network types (e.g. 'Wireless').",
         "parameters": [
           {
             "name": "networkType",
@@ -229,7 +277,7 @@
       },
       {
         "name": "disableNetworkType",
-        "description": "Disable the specified network type.",
+        "description": "Disable the specified network type. See note for $(ref:networkingPrivate.enableNetworkType).",
         "parameters": [
           {
             "name": "networkType",
@@ -310,7 +358,7 @@
             "description": "Properties of the destination to use in verifying that it is a trusted device."
           },
           {
-            "name": "guid",
+            "name": "networkGuid",
             "type": "string",
             "description": "A string containing the unique identifier of the network to get credentials for."
           },
@@ -353,6 +401,77 @@
             "description": "A callback function that receives base64-encoded encrypted data to send to a trusted device."
           }
         ]
+      },
+      {
+        "name": "setWifiTDLSEnabledState",
+        "description": "Enables TDLS for wifi traffic with a specified peer if available.",
+        "parameters": [
+          {
+            "name": "ip_or_mac_address",
+            "type": "string",
+            "description": "The IP or MAC address of the peer with which to enable a TDLS connection."
+          },
+          {
+            "name": "enabled",
+            "type": "boolean",
+            "description": "If true, enable TDLS, otherwise disable TDLS."
+          },
+          {
+            "name": "callback",
+            "type": "function",
+            "parameters": [
+              {
+                "name": "status",
+                "type": "string"
+              }
+            ],
+            "description": "A callback function that receives a string with an error or the current TDLS status. 'Failed' indicates that the request failed (e.g. MAC address lookup failed). 'Timeout' indicates that the lookup timed out. Otherwise a valid status is returned (see getWifiTDLSStatus)."
+          }
+        ]
+      },
+      {
+        "name": "getWifiTDLSStatus",
+        "description": "Returns the current TDLS status for the specified peer.",
+        "parameters": [
+          {
+            "name": "ip_or_mac_address",
+            "type": "string",
+            "description": "The IP or MAC address of the peer."
+          },
+          {
+            "name": "callback",
+            "type": "function",
+            "parameters": [
+              {
+                "name": "status",
+                "type": "string"
+              }
+            ],
+            "description": "A callback function that receives a string with the current TDLS status which can be 'Connected', 'Disabled', 'Disconnected', 'Nonexistent', or 'Unknown'"
+          }
+        ]
+      },
+      {
+        "name": "getCaptivePortalStatus",
+        "description": "Returns captive portal status for the network matching 'guid'.",
+        "parameters": [
+          {
+            "name": "networkGuid",
+            "type": "string",
+            "description": "The guid of the network to get captive portal status."
+          },
+          {
+            "name": "callback",
+            "type": "function",
+            "parameters": [
+              {
+                "name": "status",
+                "$ref": "CaptivePortalStatus",
+                "description": "Results of the query for network captive portal status."
+              }
+            ]
+          }
+        ]
       }
     ],
     "events": [
@@ -377,6 +496,21 @@
             "name": "changes",
             "type": "array",
             "items": { "type": "string" }
+          }
+        ]
+      },
+      {
+        "name": "onPortalDetectionCompleted",
+        "type": "function",
+        "description": "Fired when a portal detection for a network completes. Sends the guid of the network and the corresponding captive portal status.",
+        "parameters": [
+          {
+            "name": "networkGuid",
+            "type": "string"
+          },
+          {
+            "name": "status",
+            "$ref": "CaptivePortalStatus"
           }
         ]
       }

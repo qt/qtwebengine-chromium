@@ -26,7 +26,6 @@
 #include "config.h"
 #include "modules/device_orientation/DeviceOrientationEvent.h"
 
-#include "core/events/ThreadLocalEventNames.h"
 #include "modules/device_orientation/DeviceOrientationData.h"
 
 namespace WebCore {
@@ -96,6 +95,12 @@ bool DeviceOrientationEvent::absolute(bool& isNull) const
 const AtomicString& DeviceOrientationEvent::interfaceName() const
 {
     return EventNames::DeviceOrientationEvent;
+}
+
+void DeviceOrientationEvent::trace(Visitor* visitor)
+{
+    visitor->trace(m_orientation);
+    Event::trace(visitor);
 }
 
 } // namespace WebCore

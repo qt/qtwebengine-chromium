@@ -50,6 +50,9 @@ class WebSharedWorkerClient {
 public:
     virtual void workerContextClosed() = 0;
     virtual void workerContextDestroyed() = 0;
+    virtual void workerScriptLoaded() = 0;
+    virtual void workerScriptLoadFailed() = 0;
+    virtual void selectAppCacheID(long long) = 0;
 
     // Returns the notification presenter for this worker context. Pointer
     // is owned by the object implementing WebSharedWorkerClient.
@@ -68,9 +71,6 @@ public:
 
     virtual void dispatchDevToolsMessage(const WebString&) { }
     virtual void saveDevToolsAgentState(const WebString&) { }
-
-protected:
-    ~WebSharedWorkerClient() { }
 };
 
 } // namespace blink

@@ -40,11 +40,21 @@
         'test/engine/fake_sync_scheduler.h',
         'test/engine/mock_connection_manager.cc',
         'test/engine/mock_connection_manager.h',
+        'test/engine/mock_non_blocking_type_processor_core.cc',
+        'test/engine/mock_non_blocking_type_processor_core.h',
+        'test/engine/mock_non_blocking_type_processor.cc',
+        'test/engine/mock_non_blocking_type_processor.h',
+        'test/engine/mock_update_handler.cc',
+        'test/engine/mock_update_handler.h',
+        'test/engine/single_type_mock_server.cc',
+        'test/engine/single_type_mock_server.h',
         'test/engine/test_directory_setter_upper.cc',
         'test/engine/test_directory_setter_upper.h',
         'test/engine/test_id_factory.h',
         'test/engine/test_syncable_utils.cc',
         'test/engine/test_syncable_utils.h',
+        'test/engine/injectable_sync_core_proxy.cc',
+        'test/engine/injectable_sync_core_proxy.h',
         'test/fake_encryptor.cc',
         'test/fake_encryptor.h',
         'test/fake_sync_encryption_handler.cc',
@@ -90,6 +100,52 @@
       ],
     },
 
+    # Test support files for the fake sync server.
+    {
+      'target_name': 'test_support_sync_fake_server',
+      'type': 'static_library',
+      'variables': { 'enable_wexit_time_destructors': 1, },
+      'include_dirs': [
+        '..',
+      ],
+      'dependencies': [
+        '../base/base.gyp:base',
+        '../net/net.gyp:net',
+        '../testing/gtest.gyp:gtest',
+        '../third_party/protobuf/protobuf.gyp:protobuf_lite',
+        'sync',
+      ],
+      'export_dependent_settings': [
+        'sync',
+      ],
+      'sources': [
+        'test/fake_server/bookmark_entity.cc',
+        'test/fake_server/bookmark_entity.h',
+        'test/fake_server/bookmark_entity_builder.cc',
+        'test/fake_server/bookmark_entity_builder.h',
+        'test/fake_server/entity_builder.cc',
+        'test/fake_server/entity_builder.h',
+        'test/fake_server/entity_builder_factory.cc',
+        'test/fake_server/entity_builder_factory.h',
+        'test/fake_server/fake_server.cc',
+        'test/fake_server/fake_server.h',
+        'test/fake_server/fake_server_entity.cc',
+        'test/fake_server/fake_server_entity.h',
+        'test/fake_server/fake_server_http_post_provider.cc',
+        'test/fake_server/fake_server_http_post_provider.h',
+        'test/fake_server/fake_server_network_resources.cc',
+        'test/fake_server/fake_server_network_resources.h',
+        'test/fake_server/fake_server_verifier.cc',
+        'test/fake_server/fake_server_verifier.h',
+        'test/fake_server/permanent_entity.cc',
+        'test/fake_server/permanent_entity.h',
+        'test/fake_server/tombstone_entity.cc',
+        'test/fake_server/tombstone_entity.h',
+        'test/fake_server/unique_client_entity.cc',
+        'test/fake_server/unique_client_entity.h',
+      ],
+    },
+
     # Test support files for the 'sync_notifier' target.
     {
       'target_name': 'test_support_sync_notifier',
@@ -111,14 +167,6 @@
         'sync',
       ],
       'sources': [
-        'notifier/fake_invalidation_handler.cc',
-        'notifier/fake_invalidation_handler.h',
-        'notifier/fake_invalidation_state_tracker.cc',
-        'notifier/fake_invalidation_state_tracker.h',
-        'notifier/fake_invalidator.cc',
-        'notifier/fake_invalidator.h',
-        'notifier/invalidator_test_template.cc',
-        'notifier/invalidator_test_template.h',
         'notifier/unacked_invalidation_set_test_util.cc',
         'notifier/unacked_invalidation_set_test_util.h',
         'internal_api/public/base/object_id_invalidation_map_test_util.h',
@@ -152,11 +200,13 @@
         'internal_api/public/base/invalidation_test_util.cc',
         'internal_api/public/base/invalidation_test_util.h',
         'internal_api/public/test/fake_sync_manager.h',
+        'internal_api/public/test/null_sync_core_proxy.h',
         'internal_api/public/test/sync_manager_factory_for_profile_sync_test.h',
         'internal_api/public/test/test_entry_factory.h',
         'internal_api/public/test/test_internal_components_factory.h',
         'internal_api/public/test/test_user_share.h',
         'internal_api/test/fake_sync_manager.cc',
+        'internal_api/test/null_sync_core_proxy.cc',
         'internal_api/test/sync_manager_factory_for_profile_sync_test.cc',
         'internal_api/test/sync_manager_for_profile_sync_test.cc',
         'internal_api/test/sync_manager_for_profile_sync_test.h',
@@ -187,6 +237,10 @@
       'sources': [
         'api/fake_syncable_service.cc',
         'api/fake_syncable_service.h',
+        'api/fake_sync_change_processor.cc',
+        'api/fake_sync_change_processor.h',
+        'api/sync_change_processor_wrapper_for_test.cc',
+        'api/sync_change_processor_wrapper_for_test.h',
         'api/sync_error_factory_mock.cc',
         'api/sync_error_factory_mock.h',
       ],
@@ -242,22 +296,28 @@
           'internal_api/public/util/weak_handle_unittest.cc',
           'engine/apply_control_data_updates_unittest.cc',
           'engine/backoff_delay_provider_unittest.cc',
-          'engine/download_unittest.cc',
+          'engine/directory_commit_contribution_unittest.cc',
+          'engine/directory_update_handler_unittest.cc',
+          'engine/get_updates_processor_unittest.cc',
+          'engine/model_thread_sync_entity_unittest.cc',
+          'engine/non_blocking_type_processor_core_unittest.cc',
+          'engine/non_blocking_type_processor_unittest.cc',
           'engine/sync_scheduler_unittest.cc',
+          'engine/sync_thread_sync_entity_unittest.cc',
           'engine/syncer_proto_util_unittest.cc',
           'engine/syncer_unittest.cc',
-          'engine/sync_directory_commit_contribution_unittest.cc',
-          'engine/sync_directory_update_handler_unittest.cc',
-          'engine/traffic_recorder_unittest.cc',
-          'js/js_arg_list_unittest.cc',
+          'engine/syncer_util_unittest.cc',
           'js/js_event_details_unittest.cc',
           'js/sync_js_controller_unittest.cc',
           'protocol/proto_enum_conversions_unittest.cc',
           'protocol/proto_value_conversions_unittest.cc',
+          'sessions/model_type_registry_unittest.cc',
           'sessions/nudge_tracker_unittest.cc',
           'sessions/status_controller_unittest.cc',
-          'sessions/sync_session_unittest.cc',
+          'syncable/directory_unittest.cc',
+          'syncable/directory_unittest.h',
           'syncable/directory_backing_store_unittest.cc',
+          'syncable/entry_kernel_unittest.cc',
           'syncable/model_type_unittest.cc',
           'syncable/nigori_util_unittest.cc',
           'syncable/parent_child_index_unittest.cc',
@@ -285,6 +345,7 @@
       'suppress_wildcard': 1,
       'dependencies': [
         '../base/base.gyp:base',
+        '../google_apis/google_apis.gyp:google_apis',
         '../jingle/jingle.gyp:notifier_test_util',
         '../net/net.gyp:net_test_support',
         '../testing/gmock.gyp:gmock',
@@ -298,6 +359,7 @@
       # happens in the dependents.
       'export_dependent_settings': [
         '../base/base.gyp:base',
+        '../google_apis/google_apis.gyp:google_apis',
         '../jingle/jingle.gyp:notifier_test_util',
         '../net/net.gyp:net_test_support',
         '../testing/gmock.gyp:gmock',
@@ -314,17 +376,9 @@
         'conditions': [
           ['OS != "android"', {
             'sources': [
-              'notifier/fake_invalidator_unittest.cc',
-              'notifier/invalidation_notifier_unittest.cc',
-              'notifier/invalidator_registrar_unittest.cc',
-              'notifier/non_blocking_invalidator_unittest.cc',
               'notifier/object_id_invalidation_map_unittest.cc',
-              'notifier/p2p_invalidator_unittest.cc',
-              'notifier/push_client_channel_unittest.cc',
               'notifier/registration_manager_unittest.cc',
               'notifier/single_object_invalidation_set_unittest.cc',
-              'notifier/sync_invalidation_listener_unittest.cc',
-              'notifier/sync_system_resources_unittest.cc',
               'notifier/unacked_invalidation_set_unittest.cc',
             ],
           }],
@@ -343,6 +397,7 @@
       'suppress_wildcard': 1,
       'dependencies': [
         '../base/base.gyp:base',
+        '../google_apis/google_apis.gyp:google_apis_test_support',
         '../net/net.gyp:net',
         '../net/net.gyp:net_test_support',
         '../testing/gmock.gyp:gmock',
@@ -366,16 +421,26 @@
           '..',
         ],
         'sources': [
+          'internal_api/attachments/attachment_downloader_impl_unittest.cc',
+          'internal_api/attachments/attachment_uploader_impl_unittest.cc',
+          'internal_api/attachments/fake_attachment_downloader_unittest.cc',
+          'internal_api/attachments/fake_attachment_store_unittest.cc',
+          'internal_api/attachments/fake_attachment_uploader_unittest.cc',
           'internal_api/debug_info_event_listener_unittest.cc',
           'internal_api/http_bridge_unittest.cc',
           'internal_api/js_mutation_event_observer_unittest.cc',
           'internal_api/js_sync_encryption_handler_observer_unittest.cc',
           'internal_api/js_sync_manager_observer_unittest.cc',
+          'internal_api/protocol_event_buffer_unittest.cc',
           'internal_api/public/change_record_unittest.cc',
           'internal_api/public/sessions/sync_session_snapshot_unittest.cc',
-          'internal_api/syncapi_server_connection_manager_unittest.cc',
+          'internal_api/sync_backup_manager_unittest.cc',
+          'internal_api/sync_core_proxy_impl_unittest.cc',
           'internal_api/sync_encryption_handler_impl_unittest.cc',
           'internal_api/sync_manager_impl_unittest.cc',
+          'internal_api/sync_rollback_manager_base_unittest.cc',
+          'internal_api/sync_rollback_manager_unittest.cc',
+          'internal_api/syncapi_server_connection_manager_unittest.cc',
         ],
         'conditions': [
           ['OS == "ios"', {
@@ -415,7 +480,12 @@
           '..',
         ],
         'sources': [
+          'api/attachments/attachment_unittest.cc',
+          'api/attachments/attachment_id_unittest.cc',
+          'api/attachments/attachment_service_impl_unittest.cc',
+          'api/attachments/attachment_service_proxy_unittest.cc',
           'api/sync_change_unittest.cc',
+          'api/sync_data_unittest.cc',
           'api/sync_error_unittest.cc',
           'api/sync_merge_result_unittest.cc',
         ],
@@ -442,12 +512,12 @@
         # TODO(akalin): This is needed because histogram.cc uses
         # leak_annotations.h, which pulls this in.  Make 'base'
         # propagate this dependency.
-        ['OS=="linux" and linux_use_tcmalloc==1', {
+        ['OS=="linux" and use_allocator!="none"', {
           'dependencies': [
             '../base/allocator/allocator.gyp:allocator',
           ],
         }],
-        ['OS == "android" and gtest_target_type == "shared_library"', {
+        ['OS == "android"', {
           'dependencies': [
             '../testing/android/native_test.gyp:native_test_native_code',
           ],
@@ -496,29 +566,6 @@
   'conditions': [
     ['OS != "ios"', {
       'targets': [
-        {
-          'target_name': 'sync_tools_helper',
-          'type': 'static_library',
-          'defines': [
-            'SYNC_IMPLEMENTATION',
-          ],
-          'include_dirs': [
-            '..',
-          ],
-          'dependencies': [
-            '../base/base.gyp:base',
-            'sync',
-          ],
-          'export_dependent_settings': [
-            '../base/base.gyp:base',
-            'sync',
-          ],
-          'sources': [
-            'tools/null_invalidation_state_tracker.cc',
-            'tools/null_invalidation_state_tracker.h',
-          ],
-        },
-
         # A tool that can be used to launch a python sync server instance.
         {
           'target_name': 'run_sync_testserver',
@@ -532,47 +579,6 @@
           ],
           'sources': [
             'tools/testserver/run_sync_testserver.cc',
-          ],
-        },
-
-        # A tool to listen to sync notifications and print them out.
-        {
-          'target_name': 'sync_listen_notifications',
-          'type': 'executable',
-          'defines': [
-            'SYNC_TEST',
-          ],
-          'dependencies': [
-            '../base/base.gyp:base',
-            '../jingle/jingle.gyp:notifier',
-            '../net/net.gyp:net',
-            '../net/net.gyp:net_test_support',
-            'sync',
-            'sync_tools_helper',
-          ],
-          'sources': [
-            'tools/sync_listen_notifications.cc',
-          ],
-        },
-
-        # A standalone command-line sync client.
-        {
-          'target_name': 'sync_client',
-          'type': 'executable',
-          'defines': [
-            'SYNC_TEST',
-          ],
-          'dependencies': [
-            '../base/base.gyp:base',
-            '../jingle/jingle.gyp:notifier',
-            '../net/net.gyp:net',
-            '../net/net.gyp:net_test_support',
-            'sync',
-            'sync_tools_helper',
-            'test_support_sync_core'
-          ],
-          'sources': [
-            'tools/sync_client.cc',
           ],
         },
       ],
@@ -606,9 +612,7 @@
         },
       ],
     }],
-    # Special target to wrap a gtest_target_type==shared_library
-    # sync_unit_tests into an android apk for execution.
-    ['OS == "android" and gtest_target_type == "shared_library"', {
+    ['OS == "android"', {
       'targets': [
         {
           'target_name': 'sync_unit_tests_apk',
@@ -618,7 +622,6 @@
           ],
           'variables': {
             'test_suite_name': 'sync_unit_tests',
-            'input_shlib_path': '<(SHARED_LIB_DIR)/<(SHARED_LIB_PREFIX)sync_unit_tests<(SHARED_LIB_SUFFIX)',
           },
           'includes': [ '../build/apk_test.gypi' ],
         },

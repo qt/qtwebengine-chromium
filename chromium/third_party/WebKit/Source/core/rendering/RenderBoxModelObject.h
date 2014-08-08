@@ -24,6 +24,7 @@
 #ifndef RenderBoxModelObject_h
 #define RenderBoxModelObject_h
 
+#include "core/animation/ActiveAnimations.h"
 #include "core/rendering/RenderLayerModelObject.h"
 #include "core/rendering/style/ShadowData.h"
 #include "platform/geometry/LayoutRect.h"
@@ -38,20 +39,17 @@ typedef unsigned BorderEdgeFlags;
 enum BackgroundBleedAvoidance {
     BackgroundBleedNone,
     BackgroundBleedShrinkBackground,
-    BackgroundBleedUseTransparencyLayer,
+    BackgroundBleedClipBackground,
     BackgroundBleedBackgroundOverBorder
 };
 
 enum ContentChangeType {
     ImageChanged,
-    MaskImageChanged,
     CanvasChanged,
     CanvasPixelsChanged,
-    VideoChanged,
-    FullScreenChanged
+    CanvasContextChanged
 };
 
-class KeyframeList;
 class RenderTextFragment;
 class StickyPositionViewportConstraints;
 
@@ -66,7 +64,7 @@ public:
     LayoutSize relativePositionOffset() const;
     LayoutSize relativePositionLogicalOffset() const { return style()->isHorizontalWritingMode() ? relativePositionOffset() : relativePositionOffset().transposedSize(); }
 
-    void computeStickyPositionConstraints(StickyPositionViewportConstraints&, const FloatRect& viewportRect) const;
+    void computeStickyPositionConstraints(StickyPositionViewportConstraints&, const FloatRect& constrainingRect) const;
     LayoutSize stickyPositionOffset() const;
     LayoutSize stickyPositionLogicalOffset() const { return style()->isHorizontalWritingMode() ? stickyPositionOffset() : stickyPositionOffset().transposedSize(); }
 
@@ -85,8 +83,6 @@ public:
     virtual int pixelSnappedOffsetHeight() const;
 
     virtual void updateFromStyle() OVERRIDE;
-
-    virtual bool requiresLayer() const OVERRIDE { return isRoot() || isPositioned() || createsGroup() || hasClipPath() || hasTransform() || hasHiddenBackface() || hasReflection() || style()->specifiesColumns(); }
 
     // This will work on inlines to return the bounding box of all of the lines' border boxes.
     virtual IntRect borderBoundingBox() const = 0;
@@ -120,6 +116,9 @@ public:
     virtual int borderAfter() const { return style()->borderAfterWidth(); }
     virtual int borderStart() const { return style()->borderStartWidth(); }
     virtual int borderEnd() const { return style()->borderEndWidth(); }
+
+    int borderWidth() const { return borderLeft() + borderRight(); }
+    int borderHeight() const { return borderTop() + borderBottom(); }
 
     LayoutUnit borderAndPaddingStart() const { return borderStart() + paddingStart(); }
     LayoutUnit borderAndPaddingBefore() const { return borderBefore() + paddingBefore(); }
@@ -176,30 +175,22 @@ public:
     virtual void mapAbsoluteToLocalPoint(MapCoordinatesFlags, TransformState&) const OVERRIDE;
     virtual const RenderObject* pushMappingToContainer(const RenderLayerModelObject* ancestorToStopAt, RenderGeometryMap&) const OVERRIDE;
 
-    void highQualityRepaintTimerFired(Timer<RenderBoxModelObject>*);
-
-    virtual void setSelectionState(SelectionState s);
-
-    bool canHaveBoxInfoInRegion() const { return !isFloating() && !isReplaced() && !isInline() && !hasColumns() && !isTableCell() && isRenderBlock() && !isRenderSVGBlock(); }
+    virtual void setSelectionState(SelectionState) OVERRIDE;
 
     void contentChanged(ContentChangeType);
     bool hasAcceleratedCompositing() const;
 
-    bool startTransition(double, CSSPropertyID, const RenderStyle* fromStyle, const RenderStyle* toStyle);
-    void transitionPaused(double timeOffset, CSSPropertyID);
-    void transitionFinished(CSSPropertyID);
-
-    bool startAnimation(double timeOffset, const CSSAnimationData*, const KeyframeList& keyframes);
-    void animationPaused(double timeOffset, const String& name);
-    void animationFinished(const String& name);
-
     virtual void computeLayerHitTestRects(LayerHitTestRects&) const OVERRIDE;
 
 protected:
-    virtual void willBeDestroyed();
+    virtual void willBeDestroyed() OVERRIDE;
 
     class BackgroundImageGeometry {
     public:
+        BackgroundImageGeometry()
+            : m_hasNonLocalGeometry(false)
+        { }
+
         IntPoint destOrigin() const { return m_destOrigin; }
         void setDestOrigin(const IntPoint& destOrigin)
         {
@@ -244,37 +235,43 @@ protected:
         void useFixedAttachment(const IntPoint& attachmentPoint);
 
         void clip(const IntRect&);
+
+        void setHasNonLocalGeometry(bool hasNonLocalGeometry = true) { m_hasNonLocalGeometry = hasNonLocalGeometry; }
+        bool hasNonLocalGeometry() const { return m_hasNonLocalGeometry; }
+
     private:
         IntRect m_destRect;
         IntPoint m_destOrigin;
         IntPoint m_phase;
         IntSize m_tileSize;
         IntSize m_repeatSpacing;
+        bool m_hasNonLocalGeometry; // Has background-attachment: fixed. Implies that we can't always cheaply compute destRect.
     };
 
     LayoutPoint adjustedPositionRelativeToOffsetParent(const LayoutPoint&) const;
 
-    void calculateBackgroundImageGeometry(const FillLayer*, const LayoutRect& paintRect, BackgroundImageGeometry&, RenderObject* = 0);
+    bool calculateHasBoxDecorations() const;
+    void calculateBackgroundImageGeometry(const RenderLayerModelObject* paintContainer, const FillLayer*, const LayoutRect& paintRect, BackgroundImageGeometry&, RenderObject* = 0) const;
     void getBorderEdgeInfo(class BorderEdge[], const RenderStyle*, bool includeLogicalLeftEdge = true, bool includeLogicalRightEdge = true) const;
     bool borderObscuresBackgroundEdge(const FloatSize& contextScale) const;
     bool borderObscuresBackground() const;
     RoundedRect backgroundRoundedRectAdjustedForBleedAvoidance(GraphicsContext*, const LayoutRect&, BackgroundBleedAvoidance, InlineFlowBox*, const LayoutSize&, bool includeLogicalLeftEdge, bool includeLogicalRightEdge) const;
     LayoutRect borderInnerRectAdjustedForBleedAvoidance(GraphicsContext*, const LayoutRect&, BackgroundBleedAvoidance) const;
 
-    bool shouldPaintAtLowQuality(GraphicsContext*, Image*, const void*, const LayoutSize&);
+    InterpolationQuality chooseInterpolationQuality(GraphicsContext*, Image*, const void*, const LayoutSize&);
 
     RenderBoxModelObject* continuation() const;
     void setContinuation(RenderBoxModelObject*);
 
     LayoutRect localCaretRectForEmptyElement(LayoutUnit width, LayoutUnit textIndentOffset);
 
-    static bool shouldAntialiasLines(GraphicsContext*);
-
     static void clipRoundedInnerRect(GraphicsContext*, const LayoutRect&, const RoundedRect& clipRect);
 
     bool hasAutoHeightOrContainingBlockWithAutoHeight() const;
 
 public:
+    static bool shouldAntialiasLines(GraphicsContext*);
+
     // For RenderBlocks and RenderInlines with m_style->styleType() == FIRST_LETTER, this tracks their remaining text fragments
     RenderTextFragment* firstLetterRemainingText() const;
     void setFirstLetterRemainingText(RenderTextFragment*);
@@ -293,7 +290,7 @@ public:
     }
     void moveAllChildrenTo(RenderBoxModelObject* toBoxModelObject, RenderObject* beforeChild, bool fullRemoveInsert = false)
     {
-        moveChildrenTo(toBoxModelObject, firstChild(), 0, beforeChild, fullRemoveInsert);
+        moveChildrenTo(toBoxModelObject, slowFirstChild(), 0, beforeChild, fullRemoveInsert);
     }
     // Move all of the kids from |startChild| up to but excluding |endChild|. 0 can be passed as the |endChild| to denote
     // that all the kids from |startChild| onwards should be moved.
@@ -303,16 +300,16 @@ public:
     }
     void moveChildrenTo(RenderBoxModelObject* toBoxModelObject, RenderObject* startChild, RenderObject* endChild, RenderObject* beforeChild, bool fullRemoveInsert = false);
 
+    enum ScaleByEffectiveZoomOrNot { ScaleByEffectiveZoom, DoNotScaleByEffectiveZoom };
+    IntSize calculateImageIntrinsicDimensions(StyleImage*, const IntSize& scaledPositioningAreaSize, ScaleByEffectiveZoomOrNot) const;
+
 private:
-    LayoutUnit computedCSSPadding(Length) const;
+    LayoutUnit computedCSSPadding(const Length&) const;
     virtual bool isBoxModelObject() const OVERRIDE FINAL { return true; }
 
     virtual LayoutRect frameRectForStickyPositioning() const = 0;
 
     IntSize calculateFillTileSize(const FillLayer*, const IntSize& scaledPositioningAreaSize) const;
-
-    enum ScaleByEffectiveZoomOrNot { ScaleByEffectiveZoom, DoNotScaleByEffectiveZoom };
-    IntSize calculateImageIntrinsicDimensions(StyleImage*, const IntSize& scaledPositioningAreaSize, ScaleByEffectiveZoomOrNot) const;
 
     RoundedRect getBackgroundRoundedRect(const LayoutRect&, InlineFlowBox*, LayoutUnit inlineBoxWidth, LayoutUnit inlineBoxHeight,
         bool includeLogicalLeftEdge, bool includeLogicalRightEdge) const;

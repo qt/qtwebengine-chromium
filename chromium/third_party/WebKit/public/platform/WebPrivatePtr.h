@@ -34,21 +34,142 @@
 #include "WebCommon.h"
 
 #if INSIDE_BLINK
+
+namespace WebCore { template<typename T> class TreeShared; }
+
+#include "platform/heap/Handle.h"
 #include "wtf/PassRefPtr.h"
+#include "wtf/TypeTraits.h"
 #endif
 
 namespace blink {
 
-// This class is an implementation detail of the WebKit API.  It exists
-// to help simplify the implementation of WebKit interfaces that merely
-// wrap a reference counted WebCore class.
+#if INSIDE_BLINK
+enum LifetimeManagementType {
+    RefCountedLifetime,
+    GarbageCollectedLifetime,
+    RefCountedGarbageCollectedLifetime
+};
+
+template<typename T>
+class LifetimeOf {
+    static const bool isGarbageCollected = WTF::IsSubclassOfTemplate<T, WebCore::GarbageCollected>::value;
+    static const bool isRefCountedGarbageCollected = WTF::IsSubclassOfTemplate<T, WebCore::RefCountedGarbageCollected>::value;
+public:
+    static const LifetimeManagementType value =
+        !isGarbageCollected ? RefCountedLifetime :
+        isRefCountedGarbageCollected ? RefCountedGarbageCollectedLifetime : GarbageCollectedLifetime;
+};
+
+template<typename T, LifetimeManagementType lifetime>
+class PtrStorageImpl;
+
+template<typename T>
+class PtrStorageImpl<T, RefCountedLifetime> {
+public:
+    typedef PassRefPtr<T> BlinkPtrType;
+
+    void assign(const BlinkPtrType& val)
+    {
+        release();
+        m_ptr = val.leakRef();
+    }
+
+    void assign(const PtrStorageImpl& other)
+    {
+        release();
+        T* val = other.get();
+        if (val)
+            val->ref();
+        m_ptr = val;
+    }
+
+    T* get() const { return m_ptr; }
+
+    void release()
+    {
+        if (m_ptr)
+            m_ptr->deref();
+        m_ptr = 0;
+    }
+
+private:
+    T* m_ptr;
+};
+
+template<typename T>
+class PtrStorageImpl<T, GarbageCollectedLifetime> {
+public:
+    void assign(const RawPtr<T>& val)
+    {
+        if (!val) {
+            release();
+            return;
+        }
+
+        if (!m_handle)
+            m_handle = new WebCore::Persistent<T>();
+
+        (*m_handle) = val;
+    }
+
+    void assign(T* ptr) { assign(RawPtr<T>(ptr)); }
+    template<typename U> void assign(const RawPtr<U>& val) { assign(RawPtr<T>(val)); }
+
+    void assign(const PtrStorageImpl& other) { assign(other.get()); }
+
+    T* get() const { return m_handle ? m_handle->get() : 0; }
+
+    void release()
+    {
+        delete m_handle;
+        m_handle = 0;
+    }
+
+private:
+    WebCore::Persistent<T>* m_handle;
+};
+
+template<typename T>
+class PtrStorageImpl<T, RefCountedGarbageCollectedLifetime> : public PtrStorageImpl<T, GarbageCollectedLifetime> {
+public:
+    void assign(const PassRefPtrWillBeRawPtr<T>& val) { PtrStorageImpl<T, GarbageCollectedLifetime>::assign(val.get()); }
+
+    void assign(const PtrStorageImpl& other) { PtrStorageImpl<T, GarbageCollectedLifetime>::assign(other.get()); }
+};
+
+template<typename T>
+class PtrStorage : public PtrStorageImpl<T, LifetimeOf<T>::value> {
+public:
+    static PtrStorage& fromSlot(void** slot)
+    {
+        COMPILE_ASSERT(sizeof(PtrStorage) == sizeof(void*), PtrStorage_must_be_pointer_size);
+        return *reinterpret_cast<PtrStorage*>(slot);
+    }
+
+    static const PtrStorage& fromSlot(void* const* slot)
+    {
+        COMPILE_ASSERT(sizeof(PtrStorage) == sizeof(void*), PtrStorage_must_be_pointer_size);
+        return *reinterpret_cast<const PtrStorage*>(slot);
+    }
+
+private:
+    // Prevent construction via normal means.
+    PtrStorage();
+    PtrStorage(const PtrStorage&);
+};
+#endif
+
+
+// This class is an implementation detail of the Blink API. It exists to help
+// simplify the implementation of Blink interfaces that merely wrap a reference
+// counted WebCore class.
 //
 // A typical implementation of a class which uses WebPrivatePtr might look like
 // this:
 //    class WebFoo {
 //    public:
-//        virtual ~WebFoo() { }  // Only necessary if WebFoo will be used as a
-//                               // base class.
+//        BLINK_EXPORT ~WebFoo();
 //        WebFoo() { }
 //        WebFoo(const WebFoo& other) { assign(other); }
 //        WebFoo& operator=(const WebFoo& other)
@@ -62,8 +183,8 @@ namespace blink {
 //        // WebFoo go here.
 //        BLINK_EXPORT doWebFooThing();
 //
-//        // Methods that are used only by other WebKit/chromium API classes
-//        // should only be declared when INSIDE_BLINK is set.
+//        // Methods that are used only by other Blink classes should only be
+//        // declared when INSIDE_BLINK is set.
 //    #if INSIDE_BLINK
 //        WebFoo(const WTF::PassRefPtr<WebCore::Foo>&);
 //    #endif
@@ -72,62 +193,70 @@ namespace blink {
 //        WebPrivatePtr<WebCore::Foo> m_private;
 //    };
 //
+//    // WebFoo.cpp
+//    WebFoo::~WebFoo() { m_private.reset(); }
+//    void WebFoo::assign(const WebFoo& other) { ... }
+//
 template <typename T>
 class WebPrivatePtr {
 public:
-    WebPrivatePtr() : m_ptr(0) { }
-    ~WebPrivatePtr() { BLINK_ASSERT(!m_ptr); }
+    WebPrivatePtr() : m_storage(0) { }
+    ~WebPrivatePtr()
+    {
+        // We don't destruct the object pointed by m_ptr here because we don't
+        // want to expose destructors of core classes to embedders. We should
+        // call reset() manually in destructors of classes with WebPrivatePtr
+        // members.
+        BLINK_ASSERT(!m_storage);
+    }
 
-    bool isNull() const { return !m_ptr; }
+    bool isNull() const { return !m_storage; }
 
 #if INSIDE_BLINK
-    WebPrivatePtr(const PassRefPtr<T>& prp)
-        : m_ptr(prp.leakRef())
+    template<typename U>
+    WebPrivatePtr(const U& ptr)
+        : m_storage(0)
     {
+        storage().assign(ptr);
     }
 
-    void reset()
-    {
-        assign(0);
-    }
+    void reset() { storage().release(); }
 
     WebPrivatePtr<T>& operator=(const WebPrivatePtr<T>& other)
     {
-        T* p = other.m_ptr;
-        if (p)
-            p->ref();
-        assign(p);
+        storage().assign(other.storage());
         return *this;
     }
 
-    WebPrivatePtr<T>& operator=(const PassRefPtr<T>& prp)
+    template<typename U>
+    WebPrivatePtr<T>& operator=(const U& ptr)
     {
-        assign(prp.leakRef());
+        storage().assign(ptr);
         return *this;
     }
 
-    T* get() const
+    T* get() const { return storage().get(); }
+
+    T& operator*() const
     {
-        return m_ptr;
+        ASSERT(m_storage);
+        return *get();
     }
 
     T* operator->() const
     {
-        ASSERT(m_ptr);
-        return m_ptr;
+        ASSERT(m_storage);
+        return get();
     }
 #endif
 
 private:
 #if INSIDE_BLINK
-    void assign(T* p)
-    {
-        // p is already ref'd for us by the caller
-        if (m_ptr)
-            m_ptr->deref();
-        m_ptr = p;
-    }
-#else
+    PtrStorage<T>& storage() { return PtrStorage<T>::fromSlot(&m_storage); }
+    const PtrStorage<T>& storage() const { return PtrStorage<T>::fromSlot(&m_storage); }
+#endif
+
+#if !INSIDE_BLINK
     // Disable the assignment operator; we define it above for when
     // INSIDE_BLINK is set, but we need to make sure that it is not
     // used outside there; the compiler-provided version won't handle reference
@@ -138,7 +267,7 @@ private:
     // should implement their copy constructor using assign().
     WebPrivatePtr(const WebPrivatePtr<T>&);
 
-    T* m_ptr;
+    void* m_storage;
 };
 
 } // namespace blink

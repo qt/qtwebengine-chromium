@@ -7,6 +7,7 @@
 
 #include <string>
 
+#include "base/files/file.h"
 #include "base/files/file_path.h"
 #include "base/memory/ref_counted.h"
 #include "base/task_runner.h"
@@ -28,7 +29,7 @@ class PepperExternalFileRefBackend : public PepperFileRefBackend {
 
   // PepperFileRefBackend overrides.
   virtual int32_t MakeDirectory(ppapi::host::ReplyMessageContext context,
-                                bool make_ancestors) OVERRIDE;
+                                int32_t make_directory_flags) OVERRIDE;
   virtual int32_t Touch(ppapi::host::ReplyMessageContext context,
                         PP_Time last_accessed_time,
                         PP_Time last_modified_time) OVERRIDE;
@@ -36,8 +37,8 @@ class PepperExternalFileRefBackend : public PepperFileRefBackend {
   virtual int32_t Rename(ppapi::host::ReplyMessageContext context,
                          PepperFileRefHost* new_file_ref) OVERRIDE;
   virtual int32_t Query(ppapi::host::ReplyMessageContext context) OVERRIDE;
-  virtual int32_t ReadDirectoryEntries(
-      ppapi::host::ReplyMessageContext context) OVERRIDE;
+  virtual int32_t ReadDirectoryEntries(ppapi::host::ReplyMessageContext context)
+      OVERRIDE;
   virtual int32_t GetAbsolutePath(ppapi::host::ReplyMessageContext context)
       OVERRIDE;
   virtual fileapi::FileSystemURL GetFileSystemURL() const OVERRIDE;
@@ -52,13 +53,12 @@ class PepperExternalFileRefBackend : public PepperFileRefBackend {
   // Generic reply callback.
   void DidFinish(ppapi::host::ReplyMessageContext reply_context,
                  const IPC::Message& msg,
-                 base::PlatformFileError error);
+                 base::File::Error error);
 
   // Operation specific callbacks.
-  void GetMetadataComplete(
-    ppapi::host::ReplyMessageContext reply_context,
-    base::PlatformFileError error,
-    const base::PlatformFileInfo& file_info);
+  void GetMetadataComplete(ppapi::host::ReplyMessageContext reply_context,
+                           base::File::Error error,
+                           const base::File::Info& file_info);
 
   ppapi::host::PpapiHost* host_;
   base::FilePath path_;

@@ -9,25 +9,28 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "third_party/WebKit/public/platform/WebServiceWorkerProvider.h"
-#include "third_party/WebKit/public/platform/WebServiceWorkerProviderClient.h"
 
 namespace blink {
 class WebURL;
+class WebServiceWorkerProviderClient;
 }
 
 namespace content {
 
+class ServiceWorkerDispatcher;
+class ServiceWorkerProviderContext;
 class ThreadSafeSender;
 
+// This class corresponds to one ServiceWorkerContainer interface in
+// JS context (i.e. navigator.serviceWorker).
 class WebServiceWorkerProviderImpl
     : NON_EXPORTED_BASE(public blink::WebServiceWorkerProvider) {
  public:
-  WebServiceWorkerProviderImpl(
-      ThreadSafeSender* thread_safe_sender,
-      scoped_ptr<blink::WebServiceWorkerProviderClient> client);
+  WebServiceWorkerProviderImpl(ThreadSafeSender* thread_safe_sender,
+                               ServiceWorkerProviderContext* context);
   virtual ~WebServiceWorkerProviderImpl();
 
-  int provider_id() const { return provider_id_; }
+  virtual void setClient(blink::WebServiceWorkerProviderClient* client);
 
   virtual void registerServiceWorker(const blink::WebURL& pattern,
                                      const blink::WebURL& script_url,
@@ -36,10 +39,15 @@ class WebServiceWorkerProviderImpl
   virtual void unregisterServiceWorker(const blink::WebURL& pattern,
                                        WebServiceWorkerCallbacks*);
 
+  ServiceWorkerProviderContext* context() { return context_.get(); }
+
  private:
-  const int provider_id_;
+  void RemoveScriptClient();
+  ServiceWorkerDispatcher* GetDispatcher();
+
   scoped_refptr<ThreadSafeSender> thread_safe_sender_;
-  scoped_ptr<blink::WebServiceWorkerProviderClient> client_;
+  scoped_refptr<ServiceWorkerProviderContext> context_;
+  const int provider_id_;
 
   DISALLOW_COPY_AND_ASSIGN(WebServiceWorkerProviderImpl);
 };

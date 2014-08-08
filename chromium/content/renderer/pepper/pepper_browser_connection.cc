@@ -19,11 +19,9 @@ namespace content {
 PepperBrowserConnection::PepperBrowserConnection(RenderFrame* render_frame)
     : RenderFrameObserver(render_frame),
       RenderFrameObserverTracker<PepperBrowserConnection>(render_frame),
-      next_sequence_number_(1) {
-}
+      next_sequence_number_(1) {}
 
-PepperBrowserConnection::~PepperBrowserConnection() {
-}
+PepperBrowserConnection::~PepperBrowserConnection() {}
 
 bool PepperBrowserConnection::OnMessageReceived(const IPC::Message& msg) {
   // Check if the message is an in-process reply.
@@ -41,16 +39,14 @@ bool PepperBrowserConnection::OnMessageReceived(const IPC::Message& msg) {
 
 void PepperBrowserConnection::DidCreateInProcessInstance(
     PP_Instance instance,
-    int render_view_id,
+    int render_frame_id,
     const GURL& document_url,
     const GURL& plugin_url) {
   Send(new ViewHostMsg_DidCreateInProcessInstance(
       instance,
       // Browser provides the render process id.
-      PepperRendererInstanceData(0,
-                                 render_view_id,
-                                 document_url,
-                                 plugin_url)));
+      PepperRendererInstanceData(
+          0, render_frame_id, document_url, plugin_url)));
 }
 
 void PepperBrowserConnection::DidDeleteInProcessInstance(PP_Instance instance) {
@@ -66,11 +62,7 @@ void PepperBrowserConnection::SendBrowserCreate(
   pending_create_map_[sequence_number] = callback;
   ppapi::proxy::ResourceMessageCallParams params(0, sequence_number);
   Send(new PpapiHostMsg_CreateResourceHostsFromHost(
-      routing_id(),
-      child_process_id,
-      params,
-      instance,
-      nested_msgs));
+      routing_id(), child_process_id, params, instance, nested_msgs));
 }
 
 void PepperBrowserConnection::OnMsgCreateResourceHostsFromHostReply(

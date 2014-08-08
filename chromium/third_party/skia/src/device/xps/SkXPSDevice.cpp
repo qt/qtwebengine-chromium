@@ -106,10 +106,11 @@ static HRESULT create_id(wchar_t* buffer, size_t bufferSize,
 
 static SkBitmap make_fake_bitmap(int width, int height) {
     SkBitmap bitmap;
-    bitmap.setConfig(SkBitmap::kNo_Config, width, height);
+    bitmap.setInfo(SkImageInfo::MakeUnknown(width, height));
     return bitmap;
 }
 
+// TODO: should inherit from SkBaseDevice instead of SkBitmapDevice...
 SkXPSDevice::SkXPSDevice()
     : SkBitmapDevice(make_fake_bitmap(10000, 10000))
     , fCurrentPage(0) {
@@ -1159,10 +1160,6 @@ HRESULT SkXPSDevice::createXpsQuad(const SkPoint (&points)[4],
     return S_OK;
 }
 
-uint32_t SkXPSDevice::getDeviceCapabilities() {
-    return kVector_Capability;
-}
-
 void SkXPSDevice::clear(SkColor color) {
     //TODO: override this for XPS
     SkDEBUGF(("XPS clear not yet implemented."));
@@ -1592,11 +1589,7 @@ HRESULT SkXPSDevice::applyMask(const SkDraw& d,
     xy[1] = (SkShader::TileMode)3;
 
     SkBitmap bm;
-    bm.setConfig(SkBitmap::kA8_Config,
-                 mask.fBounds.width(),
-                 mask.fBounds.height(),
-                 mask.fRowBytes);
-    bm.setPixels(mask.fImage);
+    bm.installMaskPixels(mask);
 
     SkTScopedComPtr<IXpsOMTileBrush> maskBrush;
     HR(this->createXpsImageBrush(bm, m, xy, 0xFF, &maskBrush));
@@ -1699,9 +1692,7 @@ void SkXPSDevice::drawPath(const SkDraw& d,
             }
             platonicPath.transform(*prePathMatrix, skeletalPath);
         } else {
-            if (!matrix.preConcat(*prePathMatrix)) {
-                return;
-            }
+            matrix.preConcat(*prePathMatrix);
         }
     }
 
@@ -2242,9 +2233,6 @@ static void text_draw_init(const SkPaint& paint,
                            SkBitSet& glyphsUsed,
                            SkDraw& myDraw, SkXPSDrawProcs& procs) {
     procs.fD1GProc = xps_draw_1_glyph;
-#if SK_DISTANCEFIELD_FONTS
-    procs.fFlags = 0;
-#endif
     size_t numGlyphGuess;
     switch (paint.getTextEncoding()) {
         case SkPaint::kUTF8_TextEncoding:
@@ -2261,7 +2249,7 @@ static void text_draw_init(const SkPaint& paint,
             numGlyphGuess = byteLength / 2;
             break;
         default:
-            SK_DEBUGBREAK(true);
+            SK_ALWAYSBREAK(true);
     }
     procs.xpsGlyphs.setReserve(numGlyphGuess);
     procs.glyphUse = &glyphsUsed;
@@ -2416,16 +2404,7 @@ void SkXPSDevice::drawDevice(const SkDraw& d, SkBaseDevice* dev,
          "Could not add layer to current visuals.");
 }
 
-bool SkXPSDevice::onReadPixels(const SkBitmap& bitmap, int x, int y,
-                               SkCanvas::Config8888) {
-    return false;
-}
-
-SkBaseDevice* SkXPSDevice::onCreateCompatibleDevice(SkBitmap::Config config,
-                                                    int width, int height,
-                                                    bool isOpaque,
-                                                    Usage usage) {
-
+SkBaseDevice* SkXPSDevice::onCreateDevice(const SkImageInfo&, Usage) {
 //Conditional for bug compatibility with PDF device.
 #if 0
     if (SkBaseDevice::kGeneral_Usage == usage) {
@@ -2456,6 +2435,6 @@ SkXPSDevice::SkXPSDevice(IXpsOMObjectFactory* xpsFactory)
          "Could not create canvas for layer.");
 }
 
-bool SkXPSDevice::allowImageFilter(SkImageFilter*) {
+bool SkXPSDevice::allowImageFilter(const SkImageFilter*) {
     return false;
 }

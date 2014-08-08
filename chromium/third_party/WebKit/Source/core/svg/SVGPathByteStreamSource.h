@@ -27,68 +27,47 @@
 
 namespace WebCore {
 
-class SVGPathByteStreamSource : public SVGPathSource {
+class SVGPathByteStreamSource FINAL : public SVGPathSource {
 public:
-    static PassOwnPtr<SVGPathByteStreamSource> create(SVGPathByteStream* stream)
-    {
-        return adoptPtr(new SVGPathByteStreamSource(stream));
-    }
+    explicit SVGPathByteStreamSource(const SVGPathByteStream*);
 
 private:
-    SVGPathByteStreamSource(SVGPathByteStream*);
+    virtual bool hasMoreData() const OVERRIDE;
+    virtual bool moveToNextToken() OVERRIDE { return true; }
+    virtual bool parseSVGSegmentType(SVGPathSegType&) OVERRIDE;
+    virtual SVGPathSegType nextCommand(SVGPathSegType) OVERRIDE;
 
-    virtual bool hasMoreData() const;
-    virtual bool moveToNextToken() { return true; }
-    virtual bool parseSVGSegmentType(SVGPathSegType&);
-    virtual SVGPathSegType nextCommand(SVGPathSegType);
-
-    virtual bool parseMoveToSegment(FloatPoint&);
-    virtual bool parseLineToSegment(FloatPoint&);
-    virtual bool parseLineToHorizontalSegment(float&);
-    virtual bool parseLineToVerticalSegment(float&);
-    virtual bool parseCurveToCubicSegment(FloatPoint&, FloatPoint&, FloatPoint&);
-    virtual bool parseCurveToCubicSmoothSegment(FloatPoint&, FloatPoint&);
-    virtual bool parseCurveToQuadraticSegment(FloatPoint&, FloatPoint&);
-    virtual bool parseCurveToQuadraticSmoothSegment(FloatPoint&);
-    virtual bool parseArcToSegment(float&, float&, float&, bool&, bool&, FloatPoint&);
+    virtual bool parseMoveToSegment(FloatPoint&) OVERRIDE;
+    virtual bool parseLineToSegment(FloatPoint&) OVERRIDE;
+    virtual bool parseLineToHorizontalSegment(float&) OVERRIDE;
+    virtual bool parseLineToVerticalSegment(float&) OVERRIDE;
+    virtual bool parseCurveToCubicSegment(FloatPoint&, FloatPoint&, FloatPoint&) OVERRIDE;
+    virtual bool parseCurveToCubicSmoothSegment(FloatPoint&, FloatPoint&) OVERRIDE;
+    virtual bool parseCurveToQuadraticSegment(FloatPoint&, FloatPoint&) OVERRIDE;
+    virtual bool parseCurveToQuadraticSmoothSegment(FloatPoint&) OVERRIDE;
+    virtual bool parseArcToSegment(float&, float&, float&, bool&, bool&, FloatPoint&) OVERRIDE;
 
 #if COMPILER(MSVC)
 #pragma warning(disable: 4701)
 #endif
-    template<typename DataType, typename ByteType>
+    template<typename DataType>
     DataType readType()
     {
-        ByteType data;
-        size_t typeSize = sizeof(ByteType);
-
-        for (size_t i = 0; i < typeSize; ++i) {
-            ASSERT(m_streamCurrent < m_streamEnd);
-            data.bytes[i] = *m_streamCurrent;
-            ++m_streamCurrent;
-        }
-
+        ByteType<DataType> data;
+        size_t typeSize = sizeof(ByteType<DataType>);
+        ASSERT(m_streamCurrent + typeSize <= m_streamEnd);
+        memcpy(data.bytes, m_streamCurrent, typeSize);
+        m_streamCurrent += typeSize;
         return data.value;
     }
 
-    bool readFlag()
-    {
-        return readType<bool, BoolByte>();
-    }
-
-    float readFloat()
-    {
-        return readType<float, FloatByte>();
-    }
-
-    unsigned short readSVGSegmentType()
-    {
-        return readType<unsigned short, UnsignedShortByte>();
-    }
-
+    bool readFlag() { return readType<bool>(); }
+    float readFloat() { return readType<float>(); }
+    unsigned short readSVGSegmentType() { return readType<unsigned short>(); }
     FloatPoint readFloatPoint()
     {
-        float x = readType<float, FloatByte>();
-        float y = readType<float, FloatByte>();
+        float x = readType<float>();
+        float y = readType<float>();
         return FloatPoint(x, y);
     }
 

@@ -100,8 +100,8 @@ class HttpProxyClientSocketPoolTest
   }
 
   void AddAuthToCache() {
-    const base::string16 kFoo(ASCIIToUTF16("foo"));
-    const base::string16 kBar(ASCIIToUTF16("bar"));
+    const base::string16 kFoo(base::ASCIIToUTF16("foo"));
+    const base::string16 kBar(base::ASCIIToUTF16("bar"));
     GURL proxy_url(GetParam().proxy_type == HTTP ?
                    (std::string("http://") + kHttpProxyHost) :
                    (std::string("https://") + kHttpsProxyHost));
@@ -135,7 +135,7 @@ class HttpProxyClientSocketPoolTest
         NULL,
         HostPortPair(kHttpsProxyHost, 443),
         SSLConfig(),
-        kPrivacyModeDisabled,
+        PRIVACY_MODE_DISABLED,
         0,
         false,
         false);
@@ -248,12 +248,9 @@ INSTANTIATE_TEST_CASE_P(
         HttpProxyClientSocketPoolTestParams(HTTP, kProtoSPDY31),
         HttpProxyClientSocketPoolTestParams(HTTPS, kProtoSPDY31),
         HttpProxyClientSocketPoolTestParams(SPDY, kProtoSPDY31),
-        HttpProxyClientSocketPoolTestParams(HTTP, kProtoSPDY4a2),
-        HttpProxyClientSocketPoolTestParams(HTTPS, kProtoSPDY4a2),
-        HttpProxyClientSocketPoolTestParams(SPDY, kProtoSPDY4a2),
-        HttpProxyClientSocketPoolTestParams(HTTP, kProtoHTTP2Draft04),
-        HttpProxyClientSocketPoolTestParams(HTTPS, kProtoHTTP2Draft04),
-        HttpProxyClientSocketPoolTestParams(SPDY, kProtoHTTP2Draft04)));
+        HttpProxyClientSocketPoolTestParams(HTTP, kProtoSPDY4),
+        HttpProxyClientSocketPoolTestParams(HTTPS, kProtoSPDY4),
+        HttpProxyClientSocketPoolTestParams(SPDY, kProtoSPDY4)));
 
 TEST_P(HttpProxyClientSocketPoolTest, NoTunnel) {
   Initialize(NULL, 0, NULL, 0, NULL, 0, NULL, 0);

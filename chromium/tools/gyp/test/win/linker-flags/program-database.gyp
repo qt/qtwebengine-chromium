@@ -4,9 +4,10 @@
 
 {
  'targets': [
-    # Verify that 'ProgramDataBase' option correctly makes it to LINK step in Ninja
+    # Verify that 'ProgramDatabaseFile' option correctly makes it to LINK
+    # step in Ninja.
     {
-      # Verify that VC macros and windows paths work correctly
+      # Verify that VC macros and windows paths work correctly.
       'target_name': 'test_pdb_outdir',
       'type': 'executable',
       'sources': ['hello.cc'],
@@ -21,7 +22,7 @@
       },
     },
     {
-      # Verify that GYP macros and POSIX paths work correctly
+      # Verify that GYP macros and POSIX paths work correctly.
       'target_name': 'test_pdb_proddir',
       'type': 'executable',
       'sources': ['hello.cc'],

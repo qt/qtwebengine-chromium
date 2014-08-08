@@ -21,7 +21,7 @@ HeadsUpDisplayLayer::HeadsUpDisplayLayer() {}
 HeadsUpDisplayLayer::~HeadsUpDisplayLayer() {}
 
 void HeadsUpDisplayLayer::PrepareForCalculateDrawProperties(
-    gfx::Size device_viewport, float device_scale_factor) {
+    const gfx::Size& device_viewport, float device_scale_factor) {
   gfx::Size device_viewport_in_layout_pixels = gfx::Size(
       device_viewport.width() / device_scale_factor,
       device_viewport.height() / device_scale_factor);
@@ -53,10 +53,6 @@ scoped_ptr<LayerImpl> HeadsUpDisplayLayer::CreateLayerImpl(
     LayerTreeImpl* tree_impl) {
   return HeadsUpDisplayLayerImpl::Create(tree_impl, layer_id_).
       PassAs<LayerImpl>();
-}
-
-std::string HeadsUpDisplayLayer::DebugName() {
-  return std::string("Heads Up Display Layer");
 }
 
 }  // namespace cc

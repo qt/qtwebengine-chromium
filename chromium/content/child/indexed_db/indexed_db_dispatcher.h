@@ -6,24 +6,28 @@
 #define CONTENT_CHILD_INDEXED_DB_INDEXED_DB_DISPATCHER_H_
 
 #include <map>
+#include <string>
 #include <vector>
 
 #include "base/gtest_prod_util.h"
 #include "base/id_map.h"
 #include "base/memory/ref_counted.h"
 #include "base/strings/nullable_string16.h"
+#include "content/child/worker_task_runner.h"
 #include "content/common/content_export.h"
 #include "ipc/ipc_sync_message_filter.h"
+#include "third_party/WebKit/public/platform/WebBlobInfo.h"
 #include "third_party/WebKit/public/platform/WebIDBCallbacks.h"
 #include "third_party/WebKit/public/platform/WebIDBCursor.h"
 #include "third_party/WebKit/public/platform/WebIDBDatabase.h"
 #include "third_party/WebKit/public/platform/WebIDBDatabaseCallbacks.h"
-#include "webkit/child/worker_task_runner.h"
 
 struct IndexedDBDatabaseMetadata;
 struct IndexedDBMsg_CallbacksSuccessCursorContinue_Params;
 struct IndexedDBMsg_CallbacksSuccessCursorPrefetch_Params;
 struct IndexedDBMsg_CallbacksSuccessIDBCursor_Params;
+struct IndexedDBMsg_CallbacksSuccessValue_Params;
+struct IndexedDBMsg_CallbacksSuccessValueWithKey_Params;
 struct IndexedDBMsg_CallbacksUpgradeNeeded_Params;
 
 namespace blink {
@@ -42,8 +46,7 @@ CONTENT_EXPORT extern const size_t kMaxIDBValueSizeInBytes;
 
 // Handle the indexed db related communication for this context thread - the
 // main thread and each worker thread have their own copies.
-class CONTENT_EXPORT IndexedDBDispatcher
-    : public webkit_glue::WorkerTaskRunner::Observer {
+class CONTENT_EXPORT IndexedDBDispatcher : public WorkerTaskRunner::Observer {
  public:
   // Constructor made public to allow RenderThreadImpl to own a copy without
   // failing a NOTREACHED in ThreadSpecificInstance in tests that instantiate
@@ -57,14 +60,16 @@ class CONTENT_EXPORT IndexedDBDispatcher
   static IndexedDBDispatcher* ThreadSpecificInstance(
       ThreadSafeSender* thread_safe_sender);
 
-  // webkit_glue::WorkerTaskRunner::Observer implementation.
+  // WorkerTaskRunner::Observer implementation.
   virtual void OnWorkerRunLoopStopped() OVERRIDE;
 
   static blink::WebIDBMetadata ConvertMetadata(
       const IndexedDBDatabaseMetadata& idb_metadata);
 
   void OnMessageReceived(const IPC::Message& msg);
-  bool Send(IPC::Message* msg);
+
+  // This method is virtual so it can be overridden in unit tests.
+  virtual bool Send(IPC::Message* msg);
 
   void RequestIDBFactoryGetDatabaseNames(
       blink::WebIDBCallbacks* callbacks,
@@ -82,22 +87,28 @@ class CONTENT_EXPORT IndexedDBDispatcher
                                        blink::WebIDBCallbacks* callbacks,
                                        const std::string& database_identifier);
 
-  void RequestIDBCursorAdvance(unsigned long count,
-                               blink::WebIDBCallbacks* callbacks_ptr,
-                               int32 ipc_cursor_id);
+  // This method is virtual so it can be overridden in unit tests.
+  virtual void RequestIDBCursorAdvance(unsigned long count,
+                                       blink::WebIDBCallbacks* callbacks_ptr,
+                                       int32 ipc_cursor_id,
+                                       int64 transaction_id);
 
+  // This method is virtual so it can be overridden in unit tests.
   virtual void RequestIDBCursorContinue(const IndexedDBKey& key,
                                         const IndexedDBKey& primary_key,
                                         blink::WebIDBCallbacks* callbacks_ptr,
-                                        int32 ipc_cursor_id);
+                                        int32 ipc_cursor_id,
+                                        int64 transaction_id);
 
+  // This method is virtual so it can be overridden in unit tests.
   virtual void RequestIDBCursorPrefetch(int n,
                                         blink::WebIDBCallbacks* callbacks_ptr,
                                         int32 ipc_cursor_id);
 
-  void RequestIDBCursorPrefetchReset(int used_prefetches,
-                                     int unused_prefetches,
-                                     int32 ipc_cursor_id);
+  // This method is virtual so it can be overridden in unit tests.
+  virtual void RequestIDBCursorPrefetchReset(int used_prefetches,
+                                             int unused_prefetches,
+                                             int32 ipc_cursor_id);
 
   void RequestIDBDatabaseClose(int32 ipc_database_id,
                                int32 ipc_database_callbacks_id);
@@ -107,7 +118,7 @@ class CONTENT_EXPORT IndexedDBDispatcher
       int64 transaction_id,
       blink::WebIDBDatabaseCallbacks* database_callbacks_ptr,
       blink::WebVector<long long> object_store_ids,
-      unsigned short mode);
+      blink::WebIDBDatabase::TransactionMode mode);
 
   void RequestIDBDatabaseGet(int32 ipc_database_id,
                              int64 transaction_id,
@@ -122,19 +133,19 @@ class CONTENT_EXPORT IndexedDBDispatcher
       int64 transaction_id,
       int64 object_store_id,
       const blink::WebData& value,
+      const blink::WebVector<blink::WebBlobInfo>& web_blob_info,
       const IndexedDBKey& key,
       blink::WebIDBDatabase::PutMode put_mode,
       blink::WebIDBCallbacks* callbacks,
       const blink::WebVector<long long>& index_ids,
-      const blink::WebVector<blink::WebVector<blink::WebIDBKey> >&
-          index_keys);
+      const blink::WebVector<blink::WebVector<blink::WebIDBKey> >& index_keys);
 
   void RequestIDBDatabaseOpenCursor(int32 ipc_database_id,
                                     int64 transaction_id,
                                     int64 object_store_id,
                                     int64 index_id,
                                     const IndexedDBKeyRange& key_range,
-                                    unsigned short direction,
+                                    blink::WebIDBCursor::Direction direction,
                                     bool key_only,
                                     blink::WebIDBDatabase::TaskType task_type,
                                     blink::WebIDBCallbacks* callbacks);
@@ -161,17 +172,21 @@ class CONTENT_EXPORT IndexedDBDispatcher
   void DatabaseDestroyed(int32 ipc_database_id);
 
  private:
+  FRIEND_TEST_ALL_PREFIXES(IndexedDBDispatcherTest, CursorReset);
+  FRIEND_TEST_ALL_PREFIXES(IndexedDBDispatcherTest, CursorTransactionId);
   FRIEND_TEST_ALL_PREFIXES(IndexedDBDispatcherTest, ValueSizeTest);
 
+  enum { kAllCursors = -1 };
+
   static int32 CurrentWorkerId() {
-    return webkit_glue::WorkerTaskRunner::Instance()->CurrentWorkerId();
+    return WorkerTaskRunner::Instance()->CurrentWorkerId();
   }
 
   template <typename T>
-  void init_params(T& params, blink::WebIDBCallbacks* callbacks_ptr) {
+  void init_params(T* params, blink::WebIDBCallbacks* callbacks_ptr) {
     scoped_ptr<blink::WebIDBCallbacks> callbacks(callbacks_ptr);
-    params.ipc_thread_id = CurrentWorkerId();
-    params.ipc_callbacks_id = pending_callbacks_.Add(callbacks.release());
+    params->ipc_thread_id = CurrentWorkerId();
+    params->ipc_callbacks_id = pending_callbacks_.Add(callbacks.release());
   }
 
   // IDBCallback message handlers.
@@ -193,14 +208,9 @@ class CONTENT_EXPORT IndexedDBDispatcher
   void OnSuccessStringList(int32 ipc_thread_id,
                            int32 ipc_callbacks_id,
                            const std::vector<base::string16>& value);
-  void OnSuccessValue(int32 ipc_thread_id,
-                      int32 ipc_callbacks_id,
-                      const std::string& value);
-  void OnSuccessValueWithKey(int32 ipc_thread_id,
-                             int32 ipc_callbacks_id,
-                             const std::string& value,
-                             const IndexedDBKey& primary_key,
-                             const IndexedDBKeyPath& key_path);
+  void OnSuccessValue(const IndexedDBMsg_CallbacksSuccessValue_Params& p);
+  void OnSuccessValueWithKey(
+      const IndexedDBMsg_CallbacksSuccessValueWithKey_Params& p);
   void OnSuccessInteger(int32 ipc_thread_id,
                         int32 ipc_callbacks_id,
                         int64 value);
@@ -228,7 +238,8 @@ class CONTENT_EXPORT IndexedDBDispatcher
                           int64 new_version);
 
   // Reset cursor prefetch caches for all cursors except exception_cursor_id.
-  void ResetCursorPrefetchCaches(int32 ipc_exception_cursor_id = -1);
+  void ResetCursorPrefetchCaches(int64 transaction_id,
+                                 int32 ipc_exception_cursor_id);
 
   scoped_refptr<ThreadSafeSender> thread_safe_sender_;
 
@@ -237,6 +248,11 @@ class CONTENT_EXPORT IndexedDBDispatcher
   IDMap<blink::WebIDBCallbacks, IDMapOwnPointer> pending_callbacks_;
   IDMap<blink::WebIDBDatabaseCallbacks, IDMapOwnPointer>
       pending_database_callbacks_;
+
+  // Maps the ipc_callback_id from an open cursor request to the request's
+  // transaction_id. Used to assign the transaction_id to the WebIDBCursorImpl
+  // when it is created.
+  std::map<int32, int64> cursor_transaction_ids_;
 
   // Map from cursor id to WebIDBCursorImpl.
   std::map<int32, WebIDBCursorImpl*> cursors_;

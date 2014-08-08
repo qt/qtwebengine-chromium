@@ -7,12 +7,10 @@
 #include <string>
 
 #include "base/android/jni_android.h"
-#include "base/android/jni_string.h"
 #include "base/android/scoped_java_ref.h"
 #include "base/strings/string_number_conversions.h"
-#include "base/strings/stringprintf.h"
 #include "jni/VideoCapture_jni.h"
-#include "media/base/video_util.h"
+#include "media/video/capture/android/video_capture_device_factory_android.h"
 
 using base::android::AttachCurrentThread;
 using base::android::CheckException;
@@ -24,39 +22,8 @@ using base::android::ScopedJavaLocalRef;
 namespace media {
 
 // static
-void VideoCaptureDevice::GetDeviceNames(Names* device_names) {
-  device_names->clear();
-
-  JNIEnv* env = AttachCurrentThread();
-
-  int num_cameras = Java_ChromiumCameraInfo_getNumberOfCameras(env);
-  DVLOG(1) << "VideoCaptureDevice::GetDeviceNames: num_cameras=" << num_cameras;
-  if (num_cameras <= 0)
-    return;
-
-  for (int camera_id = num_cameras - 1; camera_id >= 0; --camera_id) {
-    ScopedJavaLocalRef<jobject> ci =
-        Java_ChromiumCameraInfo_getAt(env, camera_id);
-
-    Name name(
-        base::android::ConvertJavaStringToUTF8(
-            Java_ChromiumCameraInfo_getDeviceName(env, ci.obj())),
-        base::StringPrintf("%d", Java_ChromiumCameraInfo_getId(env, ci.obj())));
-    device_names->push_back(name);
-
-    DVLOG(1) << "VideoCaptureDevice::GetDeviceNames: camera device_name="
-             << name.name()
-             << ", unique_id="
-             << name.id()
-             << ", orientation "
-             << Java_ChromiumCameraInfo_getOrientation(env, ci.obj());
-  }
-}
-
-// static
-void VideoCaptureDevice::GetDeviceSupportedFormats(const Name& device,
-    VideoCaptureFormats* formats) {
-  NOTIMPLEMENTED();
+bool VideoCaptureDeviceAndroid::RegisterVideoCaptureDevice(JNIEnv* env) {
+  return RegisterNativesImpl(env);
 }
 
 const std::string VideoCaptureDevice::Name::GetModel() const {
@@ -64,25 +31,6 @@ const std::string VideoCaptureDevice::Name::GetModel() const {
   // only used for USB model identifiers, so this implementation just indicates
   // an unknown device model.
   return "";
-}
-
-// static
-VideoCaptureDevice* VideoCaptureDevice::Create(const Name& device_name) {
-  return VideoCaptureDeviceAndroid::Create(device_name);
-}
-
-// static
-VideoCaptureDevice* VideoCaptureDeviceAndroid::Create(const Name& device_name) {
-  scoped_ptr<VideoCaptureDeviceAndroid> ret(
-      new VideoCaptureDeviceAndroid(device_name));
-  if (ret->Init())
-    return ret.release();
-  return NULL;
-}
-
-// static
-bool VideoCaptureDeviceAndroid::RegisterVideoCaptureDevice(JNIEnv* env) {
-  return RegisterNativesImpl(env);
 }
 
 VideoCaptureDeviceAndroid::VideoCaptureDeviceAndroid(const Name& device_name)
@@ -97,12 +45,8 @@ bool VideoCaptureDeviceAndroid::Init() {
   if (!base::StringToInt(device_name_.id(), &id))
     return false;
 
-  JNIEnv* env = AttachCurrentThread();
-
-  j_capture_.Reset(Java_VideoCapture_createVideoCapture(
-      env, base::android::GetApplicationContext(), id,
-      reinterpret_cast<intptr_t>(this)));
-
+  j_capture_.Reset(VideoCaptureDeviceFactoryAndroid::createVideoCaptureAndroid(
+      id, reinterpret_cast<intptr_t>(this)));
   return true;
 }
 
@@ -120,12 +64,12 @@ void VideoCaptureDeviceAndroid::AllocateAndStart(
 
   JNIEnv* env = AttachCurrentThread();
 
-  jboolean ret =
-      Java_VideoCapture_allocate(env,
-                                 j_capture_.obj(),
-                                 params.requested_format.frame_size.width(),
-                                 params.requested_format.frame_size.height(),
-                                 params.requested_format.frame_rate);
+  jboolean ret = Java_VideoCapture_allocate(
+      env,
+      j_capture_.obj(),
+      params.requested_format.frame_size.width(),
+      params.requested_format.frame_size.height(),
+      params.requested_format.frame_rate);
   if (!ret) {
     SetErrorState("failed to allocate");
     return;
@@ -220,11 +164,11 @@ void VideoCaptureDeviceAndroid::OnFrameAvailable(
   if (expected_next_frame_time_ <= current_time) {
     expected_next_frame_time_ += frame_interval_;
 
-    client_->OnIncomingCapturedFrame(reinterpret_cast<uint8*>(buffer),
-                                     length,
-                                     base::Time::Now(),
-                                     rotation,
-                                     capture_format_);
+    client_->OnIncomingCapturedData(reinterpret_cast<uint8*>(buffer),
+                                    length,
+                                    capture_format_,
+                                    rotation,
+                                    base::TimeTicks::Now());
   }
 
   env->ReleaseByteArrayElements(data, buffer, JNI_ABORT);
@@ -234,20 +178,14 @@ VideoPixelFormat VideoCaptureDeviceAndroid::GetColorspace() {
   JNIEnv* env = AttachCurrentThread();
   int current_capture_colorspace =
       Java_VideoCapture_getColorspace(env, j_capture_.obj());
-  switch (current_capture_colorspace){
-  case ANDROID_IMAGEFORMAT_YV12:
-    return media::PIXEL_FORMAT_YV12;
-  case ANDROID_IMAGEFORMAT_NV21:
-    return media::PIXEL_FORMAT_NV21;
-  case ANDROID_IMAGEFORMAT_YUY2:
-    return media::PIXEL_FORMAT_YUY2;
-  case ANDROID_IMAGEFORMAT_NV16:
-  case ANDROID_IMAGEFORMAT_JPEG:
-  case ANDROID_IMAGEFORMAT_RGB_565:
-  case ANDROID_IMAGEFORMAT_UNKNOWN:
-    // NOTE(mcasas): NV16, JPEG, RGB565 not supported in VideoPixelFormat.
-  default:
-    return media::PIXEL_FORMAT_UNKNOWN;
+  switch (current_capture_colorspace) {
+    case ANDROID_IMAGEFORMAT_YV12:
+      return media::PIXEL_FORMAT_YV12;
+    case ANDROID_IMAGEFORMAT_NV21:
+      return media::PIXEL_FORMAT_NV21;
+    case ANDROID_IMAGEFORMAT_UNKNOWN:
+    default:
+      return media::PIXEL_FORMAT_UNKNOWN;
   }
 }
 
@@ -257,7 +195,7 @@ void VideoCaptureDeviceAndroid::SetErrorState(const std::string& reason) {
     base::AutoLock lock(lock_);
     state_ = kError;
   }
-  client_->OnError();
+  client_->OnError(reason);
 }
 
 }  // namespace media

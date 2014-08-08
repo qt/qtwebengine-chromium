@@ -22,56 +22,49 @@
 
 #include "core/svg/SVGFETurbulenceElement.h"
 
-#include "SVGNames.h"
-#include "core/svg/SVGElementInstance.h"
+#include "core/SVGNames.h"
 #include "core/svg/SVGParserUtilities.h"
 
 namespace WebCore {
 
-// Animated property definitions
-DEFINE_ANIMATED_NUMBER_MULTIPLE_WRAPPERS(SVGFETurbulenceElement, SVGNames::baseFrequencyAttr, baseFrequencyXIdentifier(), BaseFrequencyX, baseFrequencyX)
-DEFINE_ANIMATED_NUMBER_MULTIPLE_WRAPPERS(SVGFETurbulenceElement, SVGNames::baseFrequencyAttr, baseFrequencyYIdentifier(), BaseFrequencyY, baseFrequencyY)
-DEFINE_ANIMATED_INTEGER(SVGFETurbulenceElement, SVGNames::numOctavesAttr, NumOctaves, numOctaves)
-DEFINE_ANIMATED_NUMBER(SVGFETurbulenceElement, SVGNames::seedAttr, Seed, seed)
-DEFINE_ANIMATED_ENUMERATION(SVGFETurbulenceElement, SVGNames::stitchTilesAttr, StitchTiles, stitchTiles, SVGStitchOptions)
-DEFINE_ANIMATED_ENUMERATION(SVGFETurbulenceElement, SVGNames::typeAttr, Type, type, TurbulenceType)
+template<> const SVGEnumerationStringEntries& getStaticStringEntries<SVGStitchOptions>()
+{
+    DEFINE_STATIC_LOCAL(SVGEnumerationStringEntries, entries, ());
+    if (entries.isEmpty()) {
+        entries.append(std::make_pair(SVG_STITCHTYPE_STITCH, "stitch"));
+        entries.append(std::make_pair(SVG_STITCHTYPE_NOSTITCH, "noStitch"));
+    }
+    return entries;
+}
 
-BEGIN_REGISTER_ANIMATED_PROPERTIES(SVGFETurbulenceElement)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(baseFrequencyX)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(baseFrequencyY)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(numOctaves)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(seed)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(stitchTiles)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(type)
-    REGISTER_PARENT_ANIMATED_PROPERTIES(SVGFilterPrimitiveStandardAttributes)
-END_REGISTER_ANIMATED_PROPERTIES
+template<> const SVGEnumerationStringEntries& getStaticStringEntries<TurbulenceType>()
+{
+    DEFINE_STATIC_LOCAL(SVGEnumerationStringEntries, entries, ());
+    if (entries.isEmpty()) {
+        entries.append(std::make_pair(FETURBULENCE_TYPE_FRACTALNOISE, "fractalNoise"));
+        entries.append(std::make_pair(FETURBULENCE_TYPE_TURBULENCE, "turbulence"));
+    }
+    return entries;
+}
 
 inline SVGFETurbulenceElement::SVGFETurbulenceElement(Document& document)
     : SVGFilterPrimitiveStandardAttributes(SVGNames::feTurbulenceTag, document)
-    , m_numOctaves(1)
-    , m_stitchTiles(SVG_STITCHTYPE_NOSTITCH)
-    , m_type(FETURBULENCE_TYPE_TURBULENCE)
+    , m_baseFrequency(SVGAnimatedNumberOptionalNumber::create(this, SVGNames::baseFrequencyAttr))
+    , m_seed(SVGAnimatedNumber::create(this, SVGNames::seedAttr, SVGNumber::create(0)))
+    , m_stitchTiles(SVGAnimatedEnumeration<SVGStitchOptions>::create(this, SVGNames::stitchTilesAttr, SVG_STITCHTYPE_NOSTITCH))
+    , m_type(SVGAnimatedEnumeration<TurbulenceType>::create(this, SVGNames::typeAttr, FETURBULENCE_TYPE_TURBULENCE))
+    , m_numOctaves(SVGAnimatedInteger::create(this, SVGNames::numOctavesAttr, SVGInteger::create(1)))
 {
     ScriptWrappable::init(this);
-    registerAnimatedPropertiesForSVGFETurbulenceElement();
+
+    addToPropertyMap(m_baseFrequency);
+    addToPropertyMap(m_seed);
+    addToPropertyMap(m_stitchTiles);
+    addToPropertyMap(m_type);
+    addToPropertyMap(m_numOctaves);
 }
 
-PassRefPtr<SVGFETurbulenceElement> SVGFETurbulenceElement::create(Document& document)
-{
-    return adoptRef(new SVGFETurbulenceElement(document));
-}
-
-const AtomicString& SVGFETurbulenceElement::baseFrequencyXIdentifier()
-{
-    DEFINE_STATIC_LOCAL(AtomicString, s_identifier, ("SVGBaseFrequencyX", AtomicString::ConstructFromLiteral));
-    return s_identifier;
-}
-
-const AtomicString& SVGFETurbulenceElement::baseFrequencyYIdentifier()
-{
-    DEFINE_STATIC_LOCAL(AtomicString, s_identifier, ("SVGBaseFrequencyY", AtomicString::ConstructFromLiteral));
-    return s_identifier;
-}
+DEFINE_NODE_FACTORY(SVGFETurbulenceElement)
 
 bool SVGFETurbulenceElement::isSupportedAttribute(const QualifiedName& attrName)
 {
@@ -93,58 +86,40 @@ void SVGFETurbulenceElement::parseAttribute(const QualifiedName& name, const Ato
         return;
     }
 
-    if (name == SVGNames::typeAttr) {
-        TurbulenceType propertyValue = SVGPropertyTraits<TurbulenceType>::fromString(value);
-        if (propertyValue > 0)
-            setTypeBaseValue(propertyValue);
-        return;
-    }
+    SVGParsingError parseError = NoError;
 
-    if (name == SVGNames::stitchTilesAttr) {
-        SVGStitchOptions propertyValue = SVGPropertyTraits<SVGStitchOptions>::fromString(value);
-        if (propertyValue > 0)
-            setStitchTilesBaseValue(propertyValue);
-        return;
-    }
+    if (name == SVGNames::baseFrequencyAttr)
+        m_baseFrequency->setBaseValueAsString(value, parseError);
+    else if (name == SVGNames::numOctavesAttr)
+        m_numOctaves->setBaseValueAsString(value, parseError);
+    else if (name == SVGNames::seedAttr)
+        m_seed->setBaseValueAsString(value, parseError);
+    else if (name == SVGNames::stitchTilesAttr)
+        m_stitchTiles->setBaseValueAsString(value, parseError);
+    else if (name == SVGNames::typeAttr)
+        m_type->setBaseValueAsString(value, parseError);
+    else
+        ASSERT_NOT_REACHED();
 
-    if (name == SVGNames::baseFrequencyAttr) {
-        float x, y;
-        if (parseNumberOptionalNumber(value, x, y)) {
-            setBaseFrequencyXBaseValue(x);
-            setBaseFrequencyYBaseValue(y);
-        }
-        return;
-    }
-
-    if (name == SVGNames::seedAttr) {
-        setSeedBaseValue(value.toFloat());
-        return;
-    }
-
-    if (name == SVGNames::numOctavesAttr) {
-        setNumOctavesBaseValue(value.string().toUIntStrict());
-        return;
-    }
-
-    ASSERT_NOT_REACHED();
+    reportAttributeParsingError(parseError, name, value);
 }
 
 bool SVGFETurbulenceElement::setFilterEffectAttribute(FilterEffect* effect, const QualifiedName& attrName)
 {
     FETurbulence* turbulence = static_cast<FETurbulence*>(effect);
     if (attrName == SVGNames::typeAttr)
-        return turbulence->setType(typeCurrentValue());
+        return turbulence->setType(m_type->currentValue()->enumValue());
     if (attrName == SVGNames::stitchTilesAttr)
-        return turbulence->setStitchTiles(stitchTilesCurrentValue());
+        return turbulence->setStitchTiles(m_stitchTiles->currentValue()->enumValue());
     if (attrName == SVGNames::baseFrequencyAttr) {
-        bool baseFrequencyXChanged = turbulence->setBaseFrequencyX(baseFrequencyXCurrentValue());
-        bool baseFrequencyYChanged = turbulence->setBaseFrequencyY(baseFrequencyYCurrentValue());
+        bool baseFrequencyXChanged = turbulence->setBaseFrequencyX(baseFrequencyX()->currentValue()->value());
+        bool baseFrequencyYChanged = turbulence->setBaseFrequencyY(baseFrequencyY()->currentValue()->value());
         return (baseFrequencyXChanged || baseFrequencyYChanged);
     }
     if (attrName == SVGNames::seedAttr)
-        return turbulence->setSeed(seedCurrentValue());
+        return turbulence->setSeed(m_seed->currentValue()->value());
     if (attrName == SVGNames::numOctavesAttr)
-        return turbulence->setNumOctaves(numOctavesCurrentValue());
+        return turbulence->setNumOctaves(m_numOctaves->currentValue()->value());
 
     ASSERT_NOT_REACHED();
     return false;
@@ -157,7 +132,7 @@ void SVGFETurbulenceElement::svgAttributeChanged(const QualifiedName& attrName)
         return;
     }
 
-    SVGElementInstance::InvalidationGuard invalidationGuard(this);
+    SVGElement::InvalidationGuard invalidationGuard(this);
 
     if (attrName == SVGNames::baseFrequencyAttr
         || attrName == SVGNames::numOctavesAttr
@@ -173,9 +148,9 @@ void SVGFETurbulenceElement::svgAttributeChanged(const QualifiedName& attrName)
 
 PassRefPtr<FilterEffect> SVGFETurbulenceElement::build(SVGFilterBuilder*, Filter* filter)
 {
-    if (baseFrequencyXCurrentValue() < 0 || baseFrequencyYCurrentValue() < 0)
-        return 0;
-    return FETurbulence::create(filter, typeCurrentValue(), baseFrequencyXCurrentValue(), baseFrequencyYCurrentValue(), numOctavesCurrentValue(), seedCurrentValue(), stitchTilesCurrentValue() == SVG_STITCHTYPE_STITCH);
+    if (baseFrequencyX()->currentValue()->value() < 0 || baseFrequencyY()->currentValue()->value() < 0)
+        return nullptr;
+    return FETurbulence::create(filter, m_type->currentValue()->enumValue(), baseFrequencyX()->currentValue()->value(), baseFrequencyY()->currentValue()->value(), m_numOctaves->currentValue()->value(), m_seed->currentValue()->value(), m_stitchTiles->currentValue()->enumValue() == SVG_STITCHTYPE_STITCH);
 }
 
 }

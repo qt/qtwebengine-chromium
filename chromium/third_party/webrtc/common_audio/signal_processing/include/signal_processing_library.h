@@ -27,7 +27,6 @@
 #define WEBRTC_SPL_WORD32_MAX       (int32_t)0x7fffffff
 #define WEBRTC_SPL_WORD32_MIN       (int32_t)0x80000000
 #define WEBRTC_SPL_MAX_LPC_ORDER    14
-#define WEBRTC_SPL_MAX_SEED_USED    0x80000000L
 #define WEBRTC_SPL_MIN(A, B)        (A < B ? A : B)  // Get min value
 #define WEBRTC_SPL_MAX(A, B)        (A > B ? A : B)  // Get max value
 // TODO(kma/bjorn): For the next two macros, investigate how to correct the code
@@ -54,12 +53,8 @@
     ((int32_t) ((int32_t)(a) * (int32_t)(b)))
 #define WEBRTC_SPL_UMUL(a, b) \
     ((uint32_t) ((uint32_t)(a) * (uint32_t)(b)))
-#define WEBRTC_SPL_UMUL_RSFT16(a, b) \
-    ((uint32_t) ((uint32_t)(a) * (uint32_t)(b)) >> 16)
 #define WEBRTC_SPL_UMUL_16_16(a, b) \
     ((uint32_t) (uint16_t)(a) * (uint16_t)(b))
-#define WEBRTC_SPL_UMUL_16_16_RSFT16(a, b) \
-    (((uint32_t) (uint16_t)(a) * (uint16_t)(b)) >> 16)
 #define WEBRTC_SPL_UMUL_32_16(a, b) \
     ((uint32_t) ((uint32_t)(a) * (uint16_t)(b)))
 #define WEBRTC_SPL_UMUL_32_16_RSFT16(a, b) \
@@ -83,11 +78,6 @@
 #define WEBRTC_SPL_MUL_32_32_RSFT32(a32a, a32b, b32) \
     ((int32_t)(WEBRTC_SPL_MUL_16_32_RSFT16(a32a, b32) \
     + (WEBRTC_SPL_MUL_16_32_RSFT16(a32b, b32) >> 16)))
-#define WEBRTC_SPL_MUL_32_32_RSFT32BI(a32, b32) \
-    ((int32_t)(WEBRTC_SPL_MUL_16_32_RSFT16(( \
-    (int16_t)(a32 >> 16)), b32) + \
-    (WEBRTC_SPL_MUL_16_32_RSFT16(( \
-    (int16_t)((a32 & 0x0000FFFF) >> 1)), b32) >> 15)))
 #endif
 #endif
 
@@ -107,8 +97,6 @@
 #define WEBRTC_SPL_MUL_16_16_RSFT_WITH_ROUND(a, b, c) \
     ((WEBRTC_SPL_MUL_16_16(a, b) + ((int32_t) \
                                   (((int32_t)1) << ((c) - 1)))) >> (c))
-#define WEBRTC_SPL_MUL_16_16_RSFT_WITH_FIXROUND(a, b) \
-    ((WEBRTC_SPL_MUL_16_16(a, b) + ((int32_t) (1 << 14))) >> 15)
 
 // C + the 32 most significant bits of A * B
 #define WEBRTC_SPL_SCALEDIFF32(A, B, C) \
@@ -120,10 +108,7 @@
 
 #define WEBRTC_SPL_SUB_SAT_W32(a, b)    WebRtcSpl_SubSatW32(a, b)
 #define WEBRTC_SPL_ADD_SAT_W16(a, b)    WebRtcSpl_AddSatW16(a, b)
-#define WEBRTC_SPL_SUB_SAT_W16(a, b)    WebRtcSpl_SubSatW16(a, b)
 
-// We cannot do casting here due to signed/unsigned problem
-#define WEBRTC_SPL_IS_NEG(a)            ((a) & 0x80000000)
 // Shifting with negative numbers allowed
 // Positive means left shift
 #define WEBRTC_SPL_SHIFT_W16(x, c) \
@@ -138,13 +123,8 @@
 #define WEBRTC_SPL_RSHIFT_W32(x, c)     ((x) >> (c))
 #define WEBRTC_SPL_LSHIFT_W32(x, c)     ((x) << (c))
 
-#define WEBRTC_SPL_RSHIFT_U16(x, c)     ((uint16_t)(x) >> (c))
-#define WEBRTC_SPL_LSHIFT_U16(x, c)     ((uint16_t)(x) << (c))
 #define WEBRTC_SPL_RSHIFT_U32(x, c)     ((uint32_t)(x) >> (c))
 #define WEBRTC_SPL_LSHIFT_U32(x, c)     ((uint32_t)(x) << (c))
-
-#define WEBRTC_SPL_VNEW(t, n)           (t *) malloc (sizeof (t) * (n))
-#define WEBRTC_SPL_FREE                 free
 
 #define WEBRTC_SPL_RAND(a) \
     ((int16_t)(WEBRTC_SPL_MUL_16_16_RSFT((a), 18816, 7) & 0x00007fff))
@@ -675,7 +655,6 @@ void WebRtcSpl_SqrtOfOneMinusXSquared(int16_t* in_vector,
 
 // Randomization functions. Implementations collected in
 // randomization_functions.c and descriptions at bottom of this file.
-uint32_t WebRtcSpl_IncreaseSeed(uint32_t* seed);
 int16_t WebRtcSpl_RandU(uint32_t* seed);
 int16_t WebRtcSpl_RandN(uint32_t* seed);
 int16_t WebRtcSpl_RandUArray(int16_t* vector,
@@ -996,12 +975,14 @@ void WebRtcSpl_UpsampleBy2(const int16_t* in, int16_t len,
  * END OF RESAMPLING FUNCTIONS
  ************************************************************/
 void WebRtcSpl_AnalysisQMF(const int16_t* in_data,
+                           int in_data_length,
                            int16_t* low_band,
                            int16_t* high_band,
                            int32_t* filter_state1,
                            int32_t* filter_state2);
 void WebRtcSpl_SynthesisQMF(const int16_t* low_band,
                             const int16_t* high_band,
+                            int band_length,
                             int16_t* out_data,
                             int32_t* filter_state1,
                             int32_t* filter_state2);

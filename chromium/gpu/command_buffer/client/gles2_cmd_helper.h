@@ -25,48 +25,36 @@ class GPU_EXPORT GLES2CmdHelper : public CommandBufferHelper {
 
   // Helpers that could not be auto-generated.
   // TODO(gman): Auto generate these.
-
   void GetAttribLocation(
-      GLuint program, uint32 name_shm_id, uint32 name_shm_offset,
-      uint32 location_shm_id, uint32 location_shm_offset, uint32 data_size) {
-    gles2::cmds::GetAttribLocation* c =
-        GetCmdSpace<gles2::cmds::GetAttribLocation>();
-    if (c) {
-      c->Init(
-          program, name_shm_id, name_shm_offset, location_shm_id,
-          location_shm_offset, data_size);
-    }
-  }
-
-  void GetAttribLocationBucket(
       GLuint program, uint32 name_bucket_id,
       uint32 location_shm_id, uint32 location_shm_offset) {
-    gles2::cmds::GetAttribLocationBucket* c =
-        GetCmdSpace<gles2::cmds::GetAttribLocationBucket>();
+    gles2::cmds::GetAttribLocation* c =
+        GetCmdSpace<gles2::cmds::GetAttribLocation>();
     if (c) {
       c->Init(program, name_bucket_id, location_shm_id, location_shm_offset);
     }
   }
 
   void GetUniformLocation(
-      GLuint program, uint32 name_shm_id, uint32 name_shm_offset,
-      uint32 location_shm_id, uint32 location_shm_offset, uint32 data_size) {
+      GLuint program, uint32 name_bucket_id,
+      uint32 location_shm_id, uint32 location_shm_offset) {
     gles2::cmds::GetUniformLocation* c =
         GetCmdSpace<gles2::cmds::GetUniformLocation>();
     if (c) {
-      c->Init(
-          program, name_shm_id, name_shm_offset, location_shm_id,
-          location_shm_offset, data_size);
+      c->Init(program, name_bucket_id, location_shm_id, location_shm_offset);
     }
   }
 
-  void GetUniformLocationBucket(
-      GLuint program, uint32 name_bucket_id,
-      uint32 location_shm_id, uint32 location_shm_offset) {
-    gles2::cmds::GetUniformLocationBucket* c =
-        GetCmdSpace<gles2::cmds::GetUniformLocationBucket>();
+  void CreateAndConsumeTextureCHROMIUMImmediate(GLenum target,
+                                                uint32_t client_id,
+                                                const GLbyte* _mailbox) {
+    const uint32_t size =
+        gles2::cmds::CreateAndConsumeTextureCHROMIUMImmediate::ComputeSize();
+    gles2::cmds::CreateAndConsumeTextureCHROMIUMImmediate* c =
+        GetImmediateCmdSpaceTotalSize<
+            gles2::cmds::CreateAndConsumeTextureCHROMIUMImmediate>(size);
     if (c) {
-      c->Init(program, name_bucket_id, location_shm_id, location_shm_offset);
+      c->Init(target, client_id, _mailbox);
     }
   }
 

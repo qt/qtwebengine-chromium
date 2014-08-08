@@ -31,7 +31,6 @@
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/ExecutionContext.h"
 #include "core/dom/ExecutionContextTask.h"
-#include "core/inspector/InspectorDatabaseInstrumentation.h"
 #include "platform/Logging.h"
 #include "modules/webdatabase/AbstractDatabaseServer.h"
 #include "modules/webdatabase/Database.h"
@@ -39,8 +38,8 @@
 #include "modules/webdatabase/DatabaseBackendBase.h"
 #include "modules/webdatabase/DatabaseBackendSync.h"
 #include "modules/webdatabase/DatabaseCallback.h"
+#include "modules/webdatabase/DatabaseClient.h"
 #include "modules/webdatabase/DatabaseContext.h"
-#include "modules/webdatabase/DatabaseDetails.h"
 #include "modules/webdatabase/DatabaseServer.h"
 #include "modules/webdatabase/DatabaseSync.h"
 #include "modules/webdatabase/DatabaseTask.h"
@@ -50,17 +49,12 @@ namespace WebCore {
 
 DatabaseManager& DatabaseManager::manager()
 {
-    static DatabaseManager* dbManager = 0;
-    // FIXME: The following is vulnerable to a race between threads. Need to
-    // implement a thread safe on-first-use static initializer.
-    if (!dbManager)
-        dbManager = new DatabaseManager();
-
+    AtomicallyInitializedStatic(DatabaseManager*, dbManager = new DatabaseManager);
     return *dbManager;
 }
 
 DatabaseManager::DatabaseManager()
-#if !ASSERT_DISABLED
+#if ASSERT_ENABLED
     : m_databaseContextRegisteredCount(0)
     , m_databaseContextInstanceCount(0)
 #endif
@@ -69,66 +63,68 @@ DatabaseManager::DatabaseManager()
     ASSERT(m_server); // We should always have a server to work with.
 }
 
-class DatabaseCreationCallbackTask : public ExecutionContextTask {
+DatabaseManager::~DatabaseManager()
+{
+}
+
+class DatabaseCreationCallbackTask FINAL : public ExecutionContextTask {
 public:
-    static PassOwnPtr<DatabaseCreationCallbackTask> create(PassRefPtr<Database> database, PassOwnPtr<DatabaseCallback> creationCallback)
+    static PassOwnPtr<DatabaseCreationCallbackTask> create(PassRefPtrWillBeRawPtr<Database> database, PassOwnPtr<DatabaseCallback> creationCallback)
     {
         return adoptPtr(new DatabaseCreationCallbackTask(database, creationCallback));
     }
 
-    virtual void performTask(ExecutionContext*)
+    virtual void performTask(ExecutionContext*) OVERRIDE
     {
         m_creationCallback->handleEvent(m_database.get());
     }
 
 private:
-    DatabaseCreationCallbackTask(PassRefPtr<Database> database, PassOwnPtr<DatabaseCallback> callback)
+    DatabaseCreationCallbackTask(PassRefPtrWillBeRawPtr<Database> database, PassOwnPtr<DatabaseCallback> callback)
         : m_database(database)
         , m_creationCallback(callback)
     {
     }
 
-    RefPtr<Database> m_database;
+    RefPtrWillBePersistent<Database> m_database;
     OwnPtr<DatabaseCallback> m_creationCallback;
 };
 
-PassRefPtr<DatabaseContext> DatabaseManager::existingDatabaseContextFor(ExecutionContext* context)
+DatabaseContext* DatabaseManager::existingDatabaseContextFor(ExecutionContext* context)
 {
     MutexLocker locker(m_contextMapLock);
 
     ASSERT(m_databaseContextRegisteredCount >= 0);
     ASSERT(m_databaseContextInstanceCount >= 0);
     ASSERT(m_databaseContextRegisteredCount <= m_databaseContextInstanceCount);
-
-    RefPtr<DatabaseContext> databaseContext = adoptRef(m_contextMap.get(context));
-    if (databaseContext) {
-        // If we're instantiating a new DatabaseContext, the new instance would
-        // carry a new refCount of 1. The client expects this and will simply
-        // adoptRef the databaseContext without ref'ing it.
-        //     However, instead of instantiating a new instance, we're reusing
-        // an existing one that corresponds to the specified ExecutionContext.
-        // Hence, that new refCount need to be attributed to the reused instance
-        // to ensure that the refCount is accurate when the client adopts the ref.
-        // We do this by ref'ing the reused databaseContext before returning it.
-        databaseContext->ref();
-    }
-    return databaseContext.release();
+#if ENABLE(OILPAN)
+    const Persistent<DatabaseContext>* databaseContext = m_contextMap.get(context);
+    return databaseContext ? databaseContext->get() : 0;
+#else
+    return m_contextMap.get(context);
+#endif
 }
 
-PassRefPtr<DatabaseContext> DatabaseManager::databaseContextFor(ExecutionContext* context)
+DatabaseContext* DatabaseManager::databaseContextFor(ExecutionContext* context)
 {
-    RefPtr<DatabaseContext> databaseContext = existingDatabaseContextFor(context);
-    if (!databaseContext)
-        databaseContext = DatabaseContext::create(context);
-    return databaseContext.release();
+    if (DatabaseContext* databaseContext = existingDatabaseContextFor(context))
+        return databaseContext;
+    // We don't need to hold a reference returned by DatabaseContext::create
+    // because DatabaseContext::create calls registerDatabaseContext, and the
+    // DatabaseManager holds a reference.
+    return DatabaseContext::create(context).get();
 }
 
 void DatabaseManager::registerDatabaseContext(DatabaseContext* databaseContext)
 {
     MutexLocker locker(m_contextMapLock);
     ExecutionContext* context = databaseContext->executionContext();
+#if ENABLE(OILPAN)
+    m_contextMap.set(context, adoptPtr(new Persistent<DatabaseContext>(databaseContext)));
+#else
     m_contextMap.set(context, databaseContext);
-#if !ASSERT_DISABLED
+#endif
+#if ASSERT_ENABLED
     m_databaseContextRegisteredCount++;
 #endif
 }
@@ -138,13 +134,13 @@ void DatabaseManager::unregisterDatabaseContext(DatabaseContext* databaseContext
     MutexLocker locker(m_contextMapLock);
     ExecutionContext* context = databaseContext->executionContext();
     ASSERT(m_contextMap.get(context));
-#if !ASSERT_DISABLED
+#if ASSERT_ENABLED
     m_databaseContextRegisteredCount--;
 #endif
     m_contextMap.remove(context);
 }
 
-#if !ASSERT_DISABLED
+#if ASSERT_ENABLED
 void DatabaseManager::didConstructDatabaseContext()
 {
     MutexLocker lock(m_contextMapLock);
@@ -181,16 +177,14 @@ static void logOpenDatabaseError(ExecutionContext* context, const String& name)
         context->securityOrigin()->toString().ascii().data());
 }
 
-PassRefPtr<DatabaseBackendBase> DatabaseManager::openDatabaseBackend(ExecutionContext* context,
+PassRefPtrWillBeRawPtr<DatabaseBackendBase> DatabaseManager::openDatabaseBackend(ExecutionContext* context,
     DatabaseType type, const String& name, const String& expectedVersion, const String& displayName,
     unsigned long estimatedSize, bool setVersionInNewDatabase, DatabaseError& error, String& errorMessage)
 {
     ASSERT(error == DatabaseError::None);
 
-    RefPtr<DatabaseContext> databaseContext = databaseContextFor(context);
-    RefPtr<DatabaseContext> backendContext = databaseContext->backend();
-
-    RefPtr<DatabaseBackendBase> backend = m_server->openDatabase(backendContext, type, name, expectedVersion,
+    RefPtrWillBeRawPtr<DatabaseBackendBase> backend = m_server->openDatabase(
+        databaseContextFor(context)->backend(), type, name, expectedVersion,
         displayName, estimatedSize, setVersionInNewDatabase, error, errorMessage);
 
     if (!backend) {
@@ -199,11 +193,11 @@ PassRefPtr<DatabaseBackendBase> DatabaseManager::openDatabaseBackend(ExecutionCo
         switch (error) {
         case DatabaseError::GenericSecurityError:
             logOpenDatabaseError(context, name);
-            return 0;
+            return nullptr;
 
         case DatabaseError::InvalidDatabaseState:
             logErrorMessage(context, errorMessage);
-            return 0;
+            return nullptr;
 
         default:
             ASSERT_NOT_REACHED();
@@ -213,7 +207,7 @@ PassRefPtr<DatabaseBackendBase> DatabaseManager::openDatabaseBackend(ExecutionCo
     return backend.release();
 }
 
-PassRefPtr<Database> DatabaseManager::openDatabase(ExecutionContext* context,
+PassRefPtrWillBeRawPtr<Database> DatabaseManager::openDatabase(ExecutionContext* context,
     const String& name, const String& expectedVersion, const String& displayName,
     unsigned long estimatedSize, PassOwnPtr<DatabaseCallback> creationCallback,
     DatabaseError& error, String& errorMessage)
@@ -221,27 +215,26 @@ PassRefPtr<Database> DatabaseManager::openDatabase(ExecutionContext* context,
     ASSERT(error == DatabaseError::None);
 
     bool setVersionInNewDatabase = !creationCallback;
-    RefPtr<DatabaseBackendBase> backend = openDatabaseBackend(context, DatabaseType::Async, name,
+    RefPtrWillBeRawPtr<DatabaseBackendBase> backend = openDatabaseBackend(context, DatabaseType::Async, name,
         expectedVersion, displayName, estimatedSize, setVersionInNewDatabase, error, errorMessage);
     if (!backend)
-        return 0;
+        return nullptr;
 
-    RefPtr<Database> database = Database::create(context, backend);
+    RefPtrWillBeRawPtr<Database> database = Database::create(context, backend);
 
-    RefPtr<DatabaseContext> databaseContext = databaseContextFor(context);
-    databaseContext->setHasOpenDatabases();
-    InspectorInstrumentation::didOpenDatabase(context, database, context->securityOrigin()->host(), name, expectedVersion);
+    databaseContextFor(context)->setHasOpenDatabases();
+    DatabaseClient::from(context)->didOpenDatabase(database, context->securityOrigin()->host(), name, expectedVersion);
 
     if (backend->isNew() && creationCallback.get()) {
         WTF_LOG(StorageAPI, "Scheduling DatabaseCreationCallbackTask for database %p\n", database.get());
-        database->m_executionContext->postTask(DatabaseCreationCallbackTask::create(database, creationCallback));
+        database->executionContext()->postTask(DatabaseCreationCallbackTask::create(database, creationCallback));
     }
 
     ASSERT(database);
     return database.release();
 }
 
-PassRefPtr<DatabaseSync> DatabaseManager::openDatabaseSync(ExecutionContext* context,
+PassRefPtrWillBeRawPtr<DatabaseSync> DatabaseManager::openDatabaseSync(ExecutionContext* context,
     const String& name, const String& expectedVersion, const String& displayName,
     unsigned long estimatedSize, PassOwnPtr<DatabaseCallback> creationCallback,
     DatabaseError& error, String& errorMessage)
@@ -250,12 +243,12 @@ PassRefPtr<DatabaseSync> DatabaseManager::openDatabaseSync(ExecutionContext* con
     ASSERT(error == DatabaseError::None);
 
     bool setVersionInNewDatabase = !creationCallback;
-    RefPtr<DatabaseBackendBase> backend = openDatabaseBackend(context, DatabaseType::Sync, name,
+    RefPtrWillBeRawPtr<DatabaseBackendBase> backend = openDatabaseBackend(context, DatabaseType::Sync, name,
         expectedVersion, displayName, estimatedSize, setVersionInNewDatabase, error, errorMessage);
     if (!backend)
-        return 0;
+        return nullptr;
 
-    RefPtr<DatabaseSync> database = DatabaseSync::create(context, backend);
+    RefPtrWillBeRawPtr<DatabaseSync> database = DatabaseSync::create(context, backend);
 
     if (backend->isNew() && creationCallback.get()) {
         WTF_LOG(StorageAPI, "Invoking the creation callback for database %p\n", database.get());
@@ -264,22 +257,6 @@ PassRefPtr<DatabaseSync> DatabaseManager::openDatabaseSync(ExecutionContext* con
 
     ASSERT(database);
     return database.release();
-}
-
-bool DatabaseManager::hasOpenDatabases(ExecutionContext* context)
-{
-    RefPtr<DatabaseContext> databaseContext = existingDatabaseContextFor(context);
-    if (!databaseContext)
-        return false;
-    return databaseContext->hasOpenDatabases();
-}
-
-void DatabaseManager::stopDatabases(ExecutionContext* context, DatabaseTaskSynchronizer* synchronizer)
-{
-    RefPtr<DatabaseContext> databaseContext = existingDatabaseContextFor(context);
-    if (!databaseContext || !databaseContext->stopDatabases(synchronizer))
-        if (synchronizer)
-            synchronizer->taskCompleted();
 }
 
 String DatabaseManager::fullPathForDatabase(SecurityOrigin* origin, const String& name, bool createIfDoesNotExist)
@@ -292,11 +269,9 @@ void DatabaseManager::closeDatabasesImmediately(const String& originIdentifier, 
     m_server->closeDatabasesImmediately(originIdentifier, name);
 }
 
-void DatabaseManager::interruptAllDatabasesForContext(ExecutionContext* context)
+void DatabaseManager::interruptAllDatabasesForContext(DatabaseContext* databaseContext)
 {
-    RefPtr<DatabaseContext> databaseContext = existingDatabaseContextFor(context);
-    if (databaseContext)
-        m_server->interruptAllDatabasesForContext(databaseContext->backend().get());
+    m_server->interruptAllDatabasesForContext(databaseContext->backend());
 }
 
 void DatabaseManager::logErrorMessage(ExecutionContext* context, const String& message)

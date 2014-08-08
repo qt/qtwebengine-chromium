@@ -27,16 +27,25 @@
 #define PerformanceMark_h
 
 #include "core/timing/PerformanceEntry.h"
+#include "platform/heap/Handle.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
-class PerformanceMark : public PerformanceEntry {
+class PerformanceMark FINAL : public PerformanceEntry {
 public:
-    static PassRefPtr<PerformanceMark> create(const String& name, double startTime) { return adoptRef(new PerformanceMark(name, startTime)); }
+    static PassRefPtrWillBeRawPtr<PerformanceMark> create(const String& name, double startTime)
+    {
+        return adoptRefWillBeNoop(new PerformanceMark(name, startTime));
+    }
 
-    virtual bool isMark() { return true; }
+    virtual bool isMark() OVERRIDE { return true; }
+
+    virtual void trace(Visitor* visitor) OVERRIDE
+    {
+        PerformanceEntry::trace(visitor);
+    }
 
 private:
     PerformanceMark(const String& name, double startTime) : PerformanceEntry(name, "mark", startTime, startTime)
@@ -44,7 +53,7 @@ private:
         ScriptWrappable::init(this);
     }
 
-    ~PerformanceMark() { }
+    virtual ~PerformanceMark() { }
 };
 
 }

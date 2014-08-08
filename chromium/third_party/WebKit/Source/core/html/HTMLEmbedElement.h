@@ -29,7 +29,7 @@ namespace WebCore {
 
 class HTMLEmbedElement FINAL : public HTMLPlugInElement {
 public:
-    static PassRefPtr<HTMLEmbedElement> create(Document&, bool createdByParser = false);
+    static PassRefPtrWillBeRawPtr<HTMLEmbedElement> create(Document&, bool createdByParser = false);
 
     bool isExposed() const;
 
@@ -40,24 +40,21 @@ private:
     virtual bool isPresentationAttribute(const QualifiedName&) const OVERRIDE;
     virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) OVERRIDE;
 
-    virtual bool rendererIsNeeded(const RenderStyle&);
+    virtual bool rendererIsNeeded(const RenderStyle&) OVERRIDE;
 
     virtual bool isURLAttribute(const Attribute&) const OVERRIDE;
+    virtual const QualifiedName& subResourceAttributeName() const OVERRIDE;
     virtual const AtomicString imageSourceURL() const OVERRIDE;
 
     virtual RenderWidget* existingRenderWidget() const OVERRIDE;
 
     virtual void updateWidgetInternal() OVERRIDE;
 
-    virtual void addSubresourceAttributeURLs(ListHashSet<KURL>&) const;
-
     void parametersForPlugin(Vector<String>& paramNames, Vector<String>& paramValues);
 
     virtual bool shouldRegisterAsNamedItem() const OVERRIDE { return true; }
     virtual bool isInteractiveContent() const OVERRIDE;
 };
-
-DEFINE_NODE_TYPE_CASTS(HTMLEmbedElement, hasTagName(HTMLNames::embedTag));
 
 }
 

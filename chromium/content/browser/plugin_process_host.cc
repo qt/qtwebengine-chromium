@@ -36,15 +36,13 @@
 #include "content/public/browser/resource_context.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/process_type.h"
+#include "content/public/common/sandboxed_process_launcher_delegate.h"
 #include "ipc/ipc_switches.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "ui/base/ui_base_switches.h"
 #include "ui/gfx/native_widget_types.h"
+#include "ui/gfx/switches.h"
 #include "ui/gl/gl_switches.h"
-
-#if defined(USE_X11)
-#include "ui/gfx/gtk_native_view_id_manager.h"
-#endif
 
 #if defined(OS_MACOSX)
 #include "base/mac/mac_util.h"
@@ -55,7 +53,6 @@
 #if defined(OS_WIN)
 #include "base/win/windows_version.h"
 #include "content/common/plugin_constants_win.h"
-#include "content/public/common/sandboxed_process_launcher_delegate.h"
 #endif
 
 namespace content {
@@ -76,33 +73,38 @@ void PluginProcessHost::OnPluginWindowDestroyed(HWND window, HWND parent) {
 void PluginProcessHost::AddWindow(HWND window) {
   plugin_parent_windows_set_.insert(window);
 }
+#endif  // defined(OS_WIN)
 
 // NOTE: changes to this class need to be reviewed by the security team.
 class PluginSandboxedProcessLauncherDelegate
     : public SandboxedProcessLauncherDelegate {
  public:
-  PluginSandboxedProcessLauncherDelegate() {}
+  explicit PluginSandboxedProcessLauncherDelegate(ChildProcessHost* host)
+#if defined(OS_POSIX)
+      : ipc_fd_(host->TakeClientFileDescriptor())
+#endif  // OS_POSIX
+  {}
+
   virtual ~PluginSandboxedProcessLauncherDelegate() {}
 
-  virtual void ShouldSandbox(bool* in_sandbox) OVERRIDE {
-    *in_sandbox = false;
+#if defined(OS_WIN)
+  virtual bool ShouldSandbox() OVERRIDE {
+    return false;
   }
 
+#elif defined(OS_POSIX)
+  virtual int GetIpcFd() OVERRIDE {
+    return ipc_fd_;
+  }
+#endif  // OS_WIN
+
  private:
+#if defined(OS_POSIX)
+  int ipc_fd_;
+#endif  // OS_POSIX
+
   DISALLOW_COPY_AND_ASSIGN(PluginSandboxedProcessLauncherDelegate);
 };
-
-#endif  // defined(OS_WIN)
-
-#if defined(TOOLKIT_GTK)
-void PluginProcessHost::OnMapNativeViewId(gfx::NativeViewId id,
-                                          gfx::PluginWindowHandle* output) {
-  *output = 0;
-#if !defined(USE_AURA)
-  GtkNativeViewManager::GetInstance()->GetXIDForId(output, id);
-#endif
-}
-#endif  // defined(TOOLKIT_GTK)
 
 PluginProcessHost::PluginProcessHost()
 #if defined(OS_MACOSX)
@@ -189,20 +191,20 @@ bool PluginProcessHost::Init(const WebPluginInfo& info) {
   // any associated values) if present in the browser command line
   static const char* const kSwitchNames[] = {
     switches::kDisableBreakpad,
-#if defined(OS_MACOSX)
-    switches::kDisableCoreAnimationPlugins,
-    switches::kEnableSandboxLogging,
-#endif
+    switches::kDisableDirectNPAPIRequests,
     switches::kEnableStatsTable,
     switches::kFullMemoryCrashReport,
     switches::kLoggingLevel,
     switches::kLogPluginMessages,
     switches::kNoSandbox,
     switches::kPluginStartupDialog,
-    switches::kTestSandbox,
     switches::kTraceStartup,
     switches::kUseGL,
-    switches::kUserAgent,
+    switches::kForceDeviceScaleFactor,
+#if defined(OS_MACOSX)
+    switches::kDisableCoreAnimationPlugins,
+    switches::kEnableSandboxLogging,
+#endif
   };
 
   cmd_line->CopySwitchesFrom(browser_command_line, kSwitchNames,
@@ -226,7 +228,7 @@ bool PluginProcessHost::Init(const WebPluginInfo& info) {
 #if defined(OS_POSIX)
   base::EnvironmentMap env;
 #if defined(OS_MACOSX) && !defined(__LP64__)
-  if (!browser_command_line.HasSwitch(switches::kDisableCarbonInterposing)) {
+  if (browser_command_line.HasSwitch(switches::kEnableCarbonInterposing)) {
     std::string interpose_list = GetContentClient()->GetCarbonInterposePath();
     if (!interpose_list.empty()) {
       // Add our interposing library for Carbon. This is stripped back out in
@@ -243,12 +245,7 @@ bool PluginProcessHost::Init(const WebPluginInfo& info) {
 #endif
 
   process_->Launch(
-#if defined(OS_WIN)
-      new PluginSandboxedProcessLauncherDelegate,
-#elif defined(OS_POSIX)
-      false,
-      env,
-#endif
+      new PluginSandboxedProcessLauncherDelegate(process_->GetHost()),
       cmd_line);
 
   // The plugin needs to be shutdown gracefully, i.e. NP_Shutdown needs to be
@@ -264,7 +261,7 @@ bool PluginProcessHost::Init(const WebPluginInfo& info) {
   // TODO(jam): right now we're passing NULL for appcache, blob storage, and
   // file system. If NPAPI plugins actually use this, we'll have to plumb them.
   ResourceMessageFilter* resource_message_filter = new ResourceMessageFilter(
-      process_->GetData().id, PROCESS_TYPE_PLUGIN, NULL, NULL, NULL,
+      process_->GetData().id, PROCESS_TYPE_PLUGIN, NULL, NULL, NULL, NULL,
       get_contexts_callback);
   process_->AddFilter(resource_message_filter);
   return true;
@@ -285,10 +282,6 @@ bool PluginProcessHost::OnMessageReceived(const IPC::Message& msg) {
 #if defined(OS_WIN)
     IPC_MESSAGE_HANDLER(PluginProcessHostMsg_PluginWindowDestroyed,
                         OnPluginWindowDestroyed)
-#endif
-#if defined(TOOLKIT_GTK)
-    IPC_MESSAGE_HANDLER(PluginProcessHostMsg_MapNativeViewId,
-                        OnMapNativeViewId)
 #endif
 #if defined(OS_MACOSX)
     IPC_MESSAGE_HANDLER(PluginProcessHostMsg_PluginSelectWindow,

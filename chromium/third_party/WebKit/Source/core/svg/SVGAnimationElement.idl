@@ -24,18 +24,24 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+// http://www.w3.org/TR/SVG2/animate.html#InterfaceSVGAnimationElement
+
 interface SVGAnimationElement : SVGElement {
     readonly attribute SVGElement targetElement;
+
+    attribute EventHandler onbegin;
+    attribute EventHandler onend;
+    attribute EventHandler onrepeat;
 
     float getStartTime();
     float getCurrentTime();
     float getSimpleDuration();
 
     void beginElement();
-    void beginElementAt([Default=Undefined] optional float offset);
+    void beginElementAt(float offset);
     void endElement();
-    void endElementAt([Default=Undefined] optional float offset);
+    void endElementAt(float offset);
+
 };
 
-SVGAnimationElement implements SVGExternalResourcesRequired;
 SVGAnimationElement implements SVGTests;

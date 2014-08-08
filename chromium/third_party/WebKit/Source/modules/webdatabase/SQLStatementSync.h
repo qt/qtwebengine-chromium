@@ -33,6 +33,7 @@
 
 #include "modules/webdatabase/sqlite/SQLValue.h"
 #include "modules/webdatabase/DatabaseBasicTypes.h"
+#include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
 #include "wtf/Vector.h"
 #include "wtf/text/WTFString.h"
@@ -47,7 +48,7 @@ class SQLStatementSync {
 public:
     SQLStatementSync(const String& statement, const Vector<SQLValue>& arguments, int permissions);
 
-    PassRefPtr<SQLResultSet> execute(DatabaseSync*, ExceptionState&);
+    PassRefPtrWillBeRawPtr<SQLResultSet> execute(DatabaseSync*, ExceptionState&);
 
 private:
     String m_statement;

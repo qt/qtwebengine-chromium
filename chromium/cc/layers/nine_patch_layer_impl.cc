@@ -44,8 +44,8 @@ static gfx::RectF NormalizedRect(float x,
                     height / total_height);
 }
 
-void NinePatchLayerImpl::SetLayout(gfx::Rect aperture,
-                                   gfx::Rect border,
+void NinePatchLayerImpl::SetLayout(const gfx::Rect& aperture,
+                                   const gfx::Rect& border,
                                    bool fill_center) {
   // This check imposes an ordering on the call sequence.  An UIResource must
   // exist before SetLayout can be called.
@@ -63,41 +63,31 @@ void NinePatchLayerImpl::SetLayout(gfx::Rect aperture,
 }
 
 void NinePatchLayerImpl::CheckGeometryLimitations() {
-  // TODO(ccameron): the following "greater than or equal to" (GE) checks should
-  // be greater than (GT) to avoid degenerate nine-patches.  The relaxed
-  // condition "equal to" is a workaround for the overhang shadow use case and
-  // should be investigated further.
-
   // |border| is in layer space.  It cannot exceed the bounds of the layer.
-  DCHECK(!border_.size().IsEmpty());
   DCHECK_GE(bounds().width(), border_.width());
   DCHECK_GE(bounds().height(), border_.height());
 
   // Sanity Check on |border|
-  DCHECK_LT(border_.x(), border_.width());
-  DCHECK_LT(border_.y(), border_.height());
+  DCHECK_LE(border_.x(), border_.width());
+  DCHECK_LE(border_.y(), border_.height());
   DCHECK_GE(border_.x(), 0);
   DCHECK_GE(border_.y(), 0);
 
   // |aperture| is in image space.  It cannot exceed the bounds of the bitmap.
   DCHECK(!image_aperture_.size().IsEmpty());
-  DCHECK(gfx::Rect(image_bounds_.width(), image_bounds_.height())
-             .Contains(image_aperture_));
-
-  // Avoid the degenerate cases where the aperture touches the edge of the
-  // image.
-  DCHECK_LT(image_aperture_.width(), image_bounds_.width() - 1);
-  DCHECK_LT(image_aperture_.height(), image_bounds_.height() - 1);
-  DCHECK_GT(image_aperture_.x(), 0);
-  DCHECK_GT(image_aperture_.y(), 0);
+  DCHECK(gfx::Rect(image_bounds_).Contains(image_aperture_))
+      << "image_bounds_ " << gfx::Rect(image_bounds_).ToString()
+      << " image_aperture_ " << image_aperture_.ToString();
 }
 
 void NinePatchLayerImpl::AppendQuads(QuadSink* quad_sink,
                                      AppendQuadsData* append_quads_data) {
   CheckGeometryLimitations();
-  SharedQuadState* shared_quad_state =
-      quad_sink->UseSharedQuadState(CreateSharedQuadState());
-  AppendDebugBorderQuad(quad_sink, shared_quad_state, append_quads_data);
+  SharedQuadState* shared_quad_state = quad_sink->CreateSharedQuadState();
+  PopulateSharedQuadState(shared_quad_state);
+
+  AppendDebugBorderQuad(
+      quad_sink, content_bounds(), shared_quad_state, append_quads_data);
 
   if (!ui_resource_id_)
     return;
@@ -217,126 +207,170 @@ void NinePatchLayerImpl::AppendQuads(QuadSink* quad_sink,
   // Nothing is opaque here.
   // TODO(danakj): Should we look at the SkBitmaps to determine opaqueness?
   gfx::Rect opaque_rect;
+  gfx::Rect visible_rect;
   const float vertex_opacity[] = {1.0f, 1.0f, 1.0f, 1.0f};
   scoped_ptr<TextureDrawQuad> quad;
 
-  quad = TextureDrawQuad::Create();
-  quad->SetNew(shared_quad_state,
-               layer_top_left,
-               opaque_rect,
-               resource,
-               premultiplied_alpha,
-               uv_top_left.origin(),
-               uv_top_left.bottom_right(),
-               SK_ColorTRANSPARENT,
-               vertex_opacity,
-               flipped);
-  quad_sink->Append(quad.PassAs<DrawQuad>(), append_quads_data);
-
-  quad = TextureDrawQuad::Create();
-  quad->SetNew(shared_quad_state,
-               layer_top_right,
-               opaque_rect,
-               resource,
-               premultiplied_alpha,
-               uv_top_right.origin(),
-               uv_top_right.bottom_right(),
-               SK_ColorTRANSPARENT,
-               vertex_opacity,
-               flipped);
-  quad_sink->Append(quad.PassAs<DrawQuad>(), append_quads_data);
-
-  quad = TextureDrawQuad::Create();
-  quad->SetNew(shared_quad_state,
-               layer_bottom_left,
-               opaque_rect,
-               resource,
-               premultiplied_alpha,
-               uv_bottom_left.origin(),
-               uv_bottom_left.bottom_right(),
-               SK_ColorTRANSPARENT,
-               vertex_opacity,
-               flipped);
-  quad_sink->Append(quad.PassAs<DrawQuad>(), append_quads_data);
-
-  quad = TextureDrawQuad::Create();
-  quad->SetNew(shared_quad_state,
-               layer_bottom_right,
-               opaque_rect,
-               resource,
-               premultiplied_alpha,
-               uv_bottom_right.origin(),
-               uv_bottom_right.bottom_right(),
-               SK_ColorTRANSPARENT,
-               vertex_opacity,
-               flipped);
-  quad_sink->Append(quad.PassAs<DrawQuad>(), append_quads_data);
-
-  quad = TextureDrawQuad::Create();
-  quad->SetNew(shared_quad_state,
-               layer_top,
-               opaque_rect,
-               resource,
-               premultiplied_alpha,
-               uv_top.origin(),
-               uv_top.bottom_right(),
-               SK_ColorTRANSPARENT,
-               vertex_opacity,
-               flipped);
-  quad_sink->Append(quad.PassAs<DrawQuad>(), append_quads_data);
-
-  quad = TextureDrawQuad::Create();
-  quad->SetNew(shared_quad_state,
-               layer_left,
-               opaque_rect,
-               resource,
-               premultiplied_alpha,
-               uv_left.origin(),
-               uv_left.bottom_right(),
-               SK_ColorTRANSPARENT,
-               vertex_opacity,
-               flipped);
-  quad_sink->Append(quad.PassAs<DrawQuad>(), append_quads_data);
-
-  quad = TextureDrawQuad::Create();
-  quad->SetNew(shared_quad_state,
-               layer_right,
-               opaque_rect,
-               resource,
-               premultiplied_alpha,
-               uv_right.origin(),
-               uv_right.bottom_right(),
-               SK_ColorTRANSPARENT,
-               vertex_opacity,
-               flipped);
-  quad_sink->Append(quad.PassAs<DrawQuad>(), append_quads_data);
-
-  quad = TextureDrawQuad::Create();
-  quad->SetNew(shared_quad_state,
-               layer_bottom,
-               opaque_rect,
-               resource,
-               premultiplied_alpha,
-               uv_bottom.origin(),
-               uv_bottom.bottom_right(),
-               SK_ColorTRANSPARENT,
-               vertex_opacity,
-               flipped);
-  quad_sink->Append(quad.PassAs<DrawQuad>(), append_quads_data);
-
-  if (fill_center_) {
+  visible_rect =
+      quad_sink->UnoccludedContentRect(layer_top_left, draw_transform());
+  if (!visible_rect.IsEmpty()) {
     quad = TextureDrawQuad::Create();
     quad->SetNew(shared_quad_state,
-                 layer_center,
+                 layer_top_left,
                  opaque_rect,
+                 visible_rect,
                  resource,
                  premultiplied_alpha,
-                 uv_center.origin(),
-                 uv_center.bottom_right(),
+                 uv_top_left.origin(),
+                 uv_top_left.bottom_right(),
                  SK_ColorTRANSPARENT,
                  vertex_opacity,
                  flipped);
-    quad_sink->Append(quad.PassAs<DrawQuad>(), append_quads_data);
+    quad_sink->Append(quad.PassAs<DrawQuad>());
+  }
+
+  visible_rect =
+      quad_sink->UnoccludedContentRect(layer_top_right, draw_transform());
+  if (!visible_rect.IsEmpty()) {
+    quad = TextureDrawQuad::Create();
+    quad->SetNew(shared_quad_state,
+                 layer_top_right,
+                 opaque_rect,
+                 visible_rect,
+                 resource,
+                 premultiplied_alpha,
+                 uv_top_right.origin(),
+                 uv_top_right.bottom_right(),
+                 SK_ColorTRANSPARENT,
+                 vertex_opacity,
+                 flipped);
+    quad_sink->Append(quad.PassAs<DrawQuad>());
+  }
+
+  visible_rect =
+      quad_sink->UnoccludedContentRect(layer_bottom_left, draw_transform());
+  if (!visible_rect.IsEmpty()) {
+    quad = TextureDrawQuad::Create();
+    quad->SetNew(shared_quad_state,
+                 layer_bottom_left,
+                 opaque_rect,
+                 visible_rect,
+                 resource,
+                 premultiplied_alpha,
+                 uv_bottom_left.origin(),
+                 uv_bottom_left.bottom_right(),
+                 SK_ColorTRANSPARENT,
+                 vertex_opacity,
+                 flipped);
+    quad_sink->Append(quad.PassAs<DrawQuad>());
+  }
+
+  visible_rect =
+      quad_sink->UnoccludedContentRect(layer_bottom_right, draw_transform());
+  if (!visible_rect.IsEmpty()) {
+    quad = TextureDrawQuad::Create();
+    quad->SetNew(shared_quad_state,
+                 layer_bottom_right,
+                 opaque_rect,
+                 visible_rect,
+                 resource,
+                 premultiplied_alpha,
+                 uv_bottom_right.origin(),
+                 uv_bottom_right.bottom_right(),
+                 SK_ColorTRANSPARENT,
+                 vertex_opacity,
+                 flipped);
+    quad_sink->Append(quad.PassAs<DrawQuad>());
+  }
+
+  visible_rect = quad_sink->UnoccludedContentRect(layer_top, draw_transform());
+  if (!visible_rect.IsEmpty()) {
+    quad = TextureDrawQuad::Create();
+    quad->SetNew(shared_quad_state,
+                 layer_top,
+                 opaque_rect,
+                 visible_rect,
+                 resource,
+                 premultiplied_alpha,
+                 uv_top.origin(),
+                 uv_top.bottom_right(),
+                 SK_ColorTRANSPARENT,
+                 vertex_opacity,
+                 flipped);
+    quad_sink->Append(quad.PassAs<DrawQuad>());
+  }
+
+  visible_rect = quad_sink->UnoccludedContentRect(layer_left, draw_transform());
+  if (!visible_rect.IsEmpty()) {
+    quad = TextureDrawQuad::Create();
+    quad->SetNew(shared_quad_state,
+                 layer_left,
+                 opaque_rect,
+                 visible_rect,
+                 resource,
+                 premultiplied_alpha,
+                 uv_left.origin(),
+                 uv_left.bottom_right(),
+                 SK_ColorTRANSPARENT,
+                 vertex_opacity,
+                 flipped);
+    quad_sink->Append(quad.PassAs<DrawQuad>());
+  }
+
+  visible_rect =
+      quad_sink->UnoccludedContentRect(layer_right, draw_transform());
+  if (!visible_rect.IsEmpty()) {
+    quad = TextureDrawQuad::Create();
+    quad->SetNew(shared_quad_state,
+                 layer_right,
+                 opaque_rect,
+                 layer_right,
+                 resource,
+                 premultiplied_alpha,
+                 uv_right.origin(),
+                 uv_right.bottom_right(),
+                 SK_ColorTRANSPARENT,
+                 vertex_opacity,
+                 flipped);
+    quad_sink->Append(quad.PassAs<DrawQuad>());
+  }
+
+  visible_rect =
+      quad_sink->UnoccludedContentRect(layer_bottom, draw_transform());
+  if (!visible_rect.IsEmpty()) {
+    quad = TextureDrawQuad::Create();
+    quad->SetNew(shared_quad_state,
+                 layer_bottom,
+                 opaque_rect,
+                 visible_rect,
+                 resource,
+                 premultiplied_alpha,
+                 uv_bottom.origin(),
+                 uv_bottom.bottom_right(),
+                 SK_ColorTRANSPARENT,
+                 vertex_opacity,
+                 flipped);
+    quad_sink->Append(quad.PassAs<DrawQuad>());
+  }
+
+  if (fill_center_) {
+    visible_rect =
+        quad_sink->UnoccludedContentRect(layer_center, draw_transform());
+    if (!visible_rect.IsEmpty()) {
+      quad = TextureDrawQuad::Create();
+      quad->SetNew(shared_quad_state,
+                   layer_center,
+                   opaque_rect,
+                   visible_rect,
+                   resource,
+                   premultiplied_alpha,
+                   uv_center.origin(),
+                   uv_center.bottom_right(),
+                   SK_ColorTRANSPARENT,
+                   vertex_opacity,
+                   flipped);
+      quad_sink->Append(quad.PassAs<DrawQuad>());
+    }
   }
 }
 

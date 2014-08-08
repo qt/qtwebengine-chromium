@@ -2,11 +2,32 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-chrome.streamsPrivate.onExecuteMimeTypeHandler.addListener(
-  function(mime_type, original_url, content_url, tab_id) {
-    // TODO(raymes): Currently this doesn't work with embedded PDFs (it
-    // causes the entire frame to navigate). Also work out how we can
-    // mask the URL with the URL of the PDF.
-    chrome.tabs.update(tab_id, { url: 'pdf.html?' + content_url });
-  }
-);
+(function() {
+  'use strict';
+
+  /**
+   * Keep a stack of stream details for requests. These are pushed onto the
+   * stack as requests come in and popped off the stack as they are handled by a
+   * renderer.
+   * TODO(raymes): This is probably racy for multiple requests. We could
+   * associate an ID with the request but this code will probably change
+   * completely when MIME type handling is improved.
+   */
+  var streamsCache = [];
+
+  window.popStreamDetails = function() {
+    if (streamsCache.length > 0)
+      return streamsCache.pop();
+  };
+
+  chrome.streamsPrivate.onExecuteMimeTypeHandler.addListener(
+    function(streamDetails) {
+      // TODO(raymes): Currently this doesn't work with embedded PDFs (it
+      // causes the entire frame to navigate). Also work out how we can
+      // mask the URL with the URL of the PDF.
+      streamsCache.push(streamDetails);
+      chrome.tabs.update(streamDetails.tabId, {url: 'index.html'});
+    }
+  );
+
+}());

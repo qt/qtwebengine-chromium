@@ -6,7 +6,6 @@
 
 #include "base/basictypes.h"
 #include "base/debug/trace_event.h"
-#include "base/message_loop/message_loop.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/time/time.h"
 #include "media/audio/audio_output_controller.h"
@@ -33,15 +32,14 @@ class AudioOutputDevice::AudioThreadCallback
 
  private:
   AudioRendererSink::RenderCallback* render_callback_;
-  scoped_ptr<AudioBus> input_bus_;
   scoped_ptr<AudioBus> output_bus_;
   DISALLOW_COPY_AND_ASSIGN(AudioThreadCallback);
 };
 
 AudioOutputDevice::AudioOutputDevice(
     scoped_ptr<AudioOutputIPC> ipc,
-    const scoped_refptr<base::MessageLoopProxy>& io_loop)
-    : ScopedLoopObserver(io_loop),
+    const scoped_refptr<base::SingleThreadTaskRunner>& io_task_runner)
+    : ScopedTaskRunnerObserver(io_task_runner),
       callback_(NULL),
       ipc_(ipc.Pass()),
       state_(IDLE),
@@ -58,10 +56,10 @@ AudioOutputDevice::AudioOutputDevice(
   COMPILE_ASSERT(PAUSED < PLAYING, invalid_enum_value_assignment_3);
 }
 
-void AudioOutputDevice::InitializeUnifiedStream(const AudioParameters& params,
+void AudioOutputDevice::InitializeWithSessionId(const AudioParameters& params,
                                                 RenderCallback* callback,
                                                 int session_id) {
-  DCHECK(!callback_) << "Calling InitializeUnifiedStream() twice?";
+  DCHECK(!callback_) << "Calling InitializeWithSessionId() twice?";
   DCHECK(params.IsValid());
   audio_parameters_ = params;
   callback_ = callback;
@@ -70,7 +68,7 @@ void AudioOutputDevice::InitializeUnifiedStream(const AudioParameters& params,
 
 void AudioOutputDevice::Initialize(const AudioParameters& params,
                                    RenderCallback* callback) {
-  InitializeUnifiedStream(params, callback, 0);
+  InitializeWithSessionId(params, callback, 0);
 }
 
 AudioOutputDevice::~AudioOutputDevice() {
@@ -81,7 +79,7 @@ AudioOutputDevice::~AudioOutputDevice() {
 
 void AudioOutputDevice::Start() {
   DCHECK(callback_) << "Initialize hasn't been called";
-  message_loop()->PostTask(FROM_HERE,
+  task_runner()->PostTask(FROM_HERE,
       base::Bind(&AudioOutputDevice::CreateStreamOnIOThread, this,
                  audio_parameters_));
 }
@@ -93,17 +91,17 @@ void AudioOutputDevice::Stop() {
     stopping_hack_ = true;
   }
 
-  message_loop()->PostTask(FROM_HERE,
+  task_runner()->PostTask(FROM_HERE,
       base::Bind(&AudioOutputDevice::ShutDownOnIOThread, this));
 }
 
 void AudioOutputDevice::Play() {
-  message_loop()->PostTask(FROM_HERE,
+  task_runner()->PostTask(FROM_HERE,
       base::Bind(&AudioOutputDevice::PlayOnIOThread, this));
 }
 
 void AudioOutputDevice::Pause() {
-  message_loop()->PostTask(FROM_HERE,
+  task_runner()->PostTask(FROM_HERE,
       base::Bind(&AudioOutputDevice::PauseOnIOThread, this));
 }
 
@@ -111,7 +109,7 @@ bool AudioOutputDevice::SetVolume(double volume) {
   if (volume < 0 || volume > 1.0)
     return false;
 
-  if (!message_loop()->PostTask(FROM_HERE,
+  if (!task_runner()->PostTask(FROM_HERE,
           base::Bind(&AudioOutputDevice::SetVolumeOnIOThread, this, volume))) {
     return false;
   }
@@ -120,7 +118,7 @@ bool AudioOutputDevice::SetVolume(double volume) {
 }
 
 void AudioOutputDevice::CreateStreamOnIOThread(const AudioParameters& params) {
-  DCHECK(message_loop()->BelongsToCurrentThread());
+  DCHECK(task_runner()->BelongsToCurrentThread());
   if (state_ == IDLE) {
     state_ = CREATING_STREAM;
     ipc_->CreateStream(this, params, session_id_);
@@ -128,7 +126,7 @@ void AudioOutputDevice::CreateStreamOnIOThread(const AudioParameters& params) {
 }
 
 void AudioOutputDevice::PlayOnIOThread() {
-  DCHECK(message_loop()->BelongsToCurrentThread());
+  DCHECK(task_runner()->BelongsToCurrentThread());
   if (state_ == PAUSED) {
     ipc_->PlayStream();
     state_ = PLAYING;
@@ -139,7 +137,7 @@ void AudioOutputDevice::PlayOnIOThread() {
 }
 
 void AudioOutputDevice::PauseOnIOThread() {
-  DCHECK(message_loop()->BelongsToCurrentThread());
+  DCHECK(task_runner()->BelongsToCurrentThread());
   if (state_ == PLAYING) {
     ipc_->PauseStream();
     state_ = PAUSED;
@@ -148,7 +146,7 @@ void AudioOutputDevice::PauseOnIOThread() {
 }
 
 void AudioOutputDevice::ShutDownOnIOThread() {
-  DCHECK(message_loop()->BelongsToCurrentThread());
+  DCHECK(task_runner()->BelongsToCurrentThread());
 
   // Close the stream, if we haven't already.
   if (state_ >= CREATING_STREAM) {
@@ -172,13 +170,13 @@ void AudioOutputDevice::ShutDownOnIOThread() {
 }
 
 void AudioOutputDevice::SetVolumeOnIOThread(double volume) {
-  DCHECK(message_loop()->BelongsToCurrentThread());
+  DCHECK(task_runner()->BelongsToCurrentThread());
   if (state_ >= CREATING_STREAM)
     ipc_->SetVolume(volume);
 }
 
 void AudioOutputDevice::OnStateChanged(AudioOutputIPCDelegate::State state) {
-  DCHECK(message_loop()->BelongsToCurrentThread());
+  DCHECK(task_runner()->BelongsToCurrentThread());
 
   // Do nothing if the stream has been closed.
   if (state_ < CREATING_STREAM)
@@ -211,7 +209,7 @@ void AudioOutputDevice::OnStreamCreated(
     base::SharedMemoryHandle handle,
     base::SyncSocket::Handle socket_handle,
     int length) {
-  DCHECK(message_loop()->BelongsToCurrentThread());
+  DCHECK(task_runner()->BelongsToCurrentThread());
 #if defined(OS_WIN)
   DCHECK(handle);
   DCHECK(socket_handle);
@@ -254,7 +252,7 @@ void AudioOutputDevice::OnStreamCreated(
 }
 
 void AudioOutputDevice::OnIPCClosed() {
-  DCHECK(message_loop()->BelongsToCurrentThread());
+  DCHECK(task_runner()->BelongsToCurrentThread());
   state_ = IPC_CLOSED;
   ipc_.reset();
 }
@@ -280,26 +278,10 @@ AudioOutputDevice::AudioThreadCallback::~AudioThreadCallback() {
 void AudioOutputDevice::AudioThreadCallback::MapSharedMemory() {
   CHECK_EQ(total_segments_, 1);
   CHECK(shared_memory_.Map(memory_length_));
-
-  // Calculate output and input memory size.
-  int output_memory_size = AudioBus::CalculateMemorySize(audio_parameters_);
-  int input_channels = audio_parameters_.input_channels();
-  int frames = audio_parameters_.frames_per_buffer();
-  int input_memory_size = AudioBus::CalculateMemorySize(input_channels, frames);
-
-  int io_size = output_memory_size + input_memory_size;
-
-  DCHECK_EQ(memory_length_, io_size);
+  DCHECK_EQ(memory_length_, AudioBus::CalculateMemorySize(audio_parameters_));
 
   output_bus_ =
       AudioBus::WrapMemory(audio_parameters_, shared_memory_.memory());
-
-  if (input_channels > 0) {
-    // The input data is after the output data.
-    char* input_data =
-        static_cast<char*>(shared_memory_.memory()) + output_memory_size;
-    input_bus_ = AudioBus::WrapMemory(input_channels, frames, input_data);
-  }
 }
 
 // Called whenever we receive notifications about pending data.
@@ -316,13 +298,7 @@ void AudioOutputDevice::AudioThreadCallback::Process(int pending_data) {
   // Update the audio-delay measurement then ask client to render audio.  Since
   // |output_bus_| is wrapping the shared memory the Render() call is writing
   // directly into the shared memory.
-  int input_channels = audio_parameters_.input_channels();
-  if (input_bus_ && input_channels > 0) {
-    render_callback_->RenderIO(
-        input_bus_.get(), output_bus_.get(), audio_delay_milliseconds);
-  } else {
-    render_callback_->Render(output_bus_.get(), audio_delay_milliseconds);
-  }
+  render_callback_->Render(output_bus_.get(), audio_delay_milliseconds);
 }
 
 }  // namespace media.

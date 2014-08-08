@@ -18,42 +18,62 @@
          count_all_in_varyings_packing)                      \
   GPU_OP(DISABLE_ANGLE_INSTANCED_ARRAYS,                     \
          disable_angle_instanced_arrays)                     \
+  GPU_OP(DISABLE_ARB_SYNC,                                   \
+         disable_arb_sync)                                   \
   GPU_OP(DISABLE_ASYNC_READPIXELS,                           \
          disable_async_readpixels)                           \
   GPU_OP(DISABLE_D3D11,                                      \
          disable_d3d11)                                      \
   GPU_OP(DISABLE_DEPTH_TEXTURE,                              \
          disable_depth_texture)                              \
+  GPU_OP(DISABLE_EGL_KHR_FENCE_SYNC,                         \
+         disable_egl_khr_fence_sync)                         \
   GPU_OP(DISABLE_EXT_DISCARD_FRAMEBUFFER,                    \
          disable_ext_discard_framebuffer)                    \
   GPU_OP(DISABLE_EXT_DRAW_BUFFERS,                           \
          disable_ext_draw_buffers)                           \
   GPU_OP(DISABLE_EXT_OCCLUSION_QUERY,                        \
          disable_ext_occlusion_query)                        \
-  GPU_OP(DISABLE_FRAMEBUFFER_MULTISAMPLE,                    \
-         disable_framebuffer_multisample)                    \
   GPU_OP(DISABLE_MULTIMONITOR_MULTISAMPLING,                 \
          disable_multimonitor_multisampling)                 \
+  GPU_OP(DISABLE_MULTISAMPLING,                              \
+         disable_multisampling)                              \
   GPU_OP(DISABLE_OES_STANDARD_DERIVATIVES,                   \
          disable_oes_standard_derivatives)                   \
+  GPU_OP(DISABLE_POST_SUB_BUFFERS_FOR_ONSCREEN_SURFACES,     \
+         disable_post_sub_buffers_for_onscreen_surfaces)     \
   GPU_OP(ENABLE_CHROMIUM_FAST_NPOT_MO8_TEXTURES,             \
          enable_chromium_fast_npot_mo8_textures)             \
   GPU_OP(EXIT_ON_CONTEXT_LOST,                               \
          exit_on_context_lost)                               \
   GPU_OP(FORCE_DISCRETE_GPU,                                 \
          force_discrete_gpu)                                 \
+  GPU_OP(FORCE_GL_FINISH_AFTER_COMPOSITING,                  \
+         force_gl_finish_after_compositing)                  \
   GPU_OP(FORCE_INTEGRATED_GPU,                               \
          force_integrated_gpu)                               \
   GPU_OP(INIT_GL_POSITION_IN_VERTEX_SHADER,                  \
          init_gl_position_in_vertex_shader)                  \
+  GPU_OP(INIT_TEXTURE_MAX_ANISOTROPY,                        \
+         init_texture_max_anisotropy)                        \
+  GPU_OP(INIT_VARYINGS_WITHOUT_STATIC_USE,                   \
+         init_varyings_without_static_use)                   \
+  GPU_OP(INIT_VERTEX_ATTRIBUTES,                             \
+         init_vertex_attributes)                             \
   GPU_OP(MAX_CUBE_MAP_TEXTURE_SIZE_LIMIT_1024,               \
          max_cube_map_texture_size_limit_1024)               \
   GPU_OP(MAX_CUBE_MAP_TEXTURE_SIZE_LIMIT_4096,               \
          max_cube_map_texture_size_limit_4096)               \
   GPU_OP(MAX_CUBE_MAP_TEXTURE_SIZE_LIMIT_512,                \
          max_cube_map_texture_size_limit_512)                \
+  GPU_OP(MAX_FRAGMENT_UNIFORM_VECTORS_32,                    \
+         max_fragment_uniform_vectors_32)                    \
   GPU_OP(MAX_TEXTURE_SIZE_LIMIT_4096,                        \
          max_texture_size_limit_4096)                        \
+  GPU_OP(MAX_VARYING_VECTORS_16,                             \
+         max_varying_vectors_16)                             \
+  GPU_OP(MAX_VERTEX_UNIFORM_VECTORS_256,                     \
+         max_vertex_uniform_vectors_256)                     \
   GPU_OP(NEEDS_GLSL_BUILT_IN_FUNCTION_EMULATION,             \
          needs_glsl_built_in_function_emulation)             \
   GPU_OP(NEEDS_OFFSCREEN_BUFFER_WORKAROUND,                  \
@@ -74,6 +94,8 @@
          unbind_fbo_on_context_switch)                       \
   GPU_OP(UNFOLD_SHORT_CIRCUIT_AS_TERNARY_OPERATION,          \
          unfold_short_circuit_as_ternary_operation)          \
+  GPU_OP(UNROLL_FOR_LOOP_WITH_SAMPLER_ARRAY_INDEX,           \
+         unroll_for_loop_with_sampler_array_index)           \
   GPU_OP(USE_CLIENT_SIDE_ARRAYS_FOR_STREAM_BUFFERS,          \
          use_client_side_arrays_for_stream_buffers)          \
   GPU_OP(USE_CURRENT_PROGRAM_AFTER_SUCCESSFUL_LINK,          \

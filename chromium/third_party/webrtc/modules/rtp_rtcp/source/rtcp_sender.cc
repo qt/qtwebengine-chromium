@@ -19,7 +19,7 @@
 #include "webrtc/common_types.h"
 #include "webrtc/modules/rtp_rtcp/source/rtp_rtcp_impl.h"
 #include "webrtc/system_wrappers/interface/critical_section_wrapper.h"
-#include "webrtc/system_wrappers/interface/trace.h"
+#include "webrtc/system_wrappers/interface/logging.h"
 #include "webrtc/system_wrappers/interface/trace_event.h"
 
 namespace webrtc {
@@ -156,16 +156,11 @@ RTCPSender::RTCPSender(const int32_t id,
 
     xrSendReceiverReferenceTimeEnabled_(false),
     _xrSendVoIPMetric(false),
-    _xrVoIPMetric(),
-    _nackCount(0),
-    _pliCount(0),
-    _fullIntraRequestCount(0)
+    _xrVoIPMetric()
 {
     memset(_CNAME, 0, sizeof(_CNAME));
     memset(_lastSendReport, 0, sizeof(_lastSendReport));
     memset(_lastRTCPTime, 0, sizeof(_lastRTCPTime));
-
-    WEBRTC_TRACE(kTraceMemory, kTraceRtpRtcp, id, "%s created", __FUNCTION__);
 }
 
 RTCPSender::~RTCPSender() {
@@ -190,8 +185,6 @@ RTCPSender::~RTCPSender() {
   }
   delete _criticalSectionTransport;
   delete _criticalSectionRTCPSender;
-
-  WEBRTC_TRACE(kTraceMemory, kTraceRtpRtcp, _id, "%s deleted", __FUNCTION__);
 }
 
 int32_t
@@ -239,10 +232,7 @@ RTCPSender::Init()
     memset(_lastRTCPTime, 0, sizeof(_lastRTCPTime));
     last_xr_rr_.clear();
 
-    _nackCount = 0;
-    _pliCount = 0;
-    _fullIntraRequestCount = 0;
-
+    memset(&packet_type_counter_, 0, sizeof(packet_type_counter_));
     return 0;
 }
 
@@ -354,6 +344,9 @@ RTCPSender::SetREMBData(const uint32_t bitrate,
         _rembSSRC[i] = SSRC[i];
     }
     _sendREMB = true;
+    // Send a REMB immediately if we have a new REMB. The frequency of REMBs is
+    // throttled by the caller.
+    _nextTimeToSendRTCP = _clock->TimeInMilliseconds();
     return 0;
 }
 
@@ -430,7 +423,8 @@ RTCPSender::SetCameraDelay(const int32_t delayMS)
     CriticalSectionScoped lock(_criticalSectionRTCPSender);
     if(delayMS > 1000 || delayMS < -1000)
     {
-        WEBRTC_TRACE(kTraceError, kTraceRtpRtcp, _id, "%s invalid argument, delay can't be larger than 1 sec", __FUNCTION__);
+        LOG(LS_WARNING) << "Delay can't be larger than 1 second: "
+                        << delayMS << " ms";
         return -1;
     }
     _cameraDelayMS = delayMS;
@@ -489,14 +483,15 @@ RTCPSender::TimeToSendRTCPReport(const bool sendKeyframeBeforeRTP) const
     For audio we use a fix 5 sec interval
 
     For video we use 1 sec interval fo a BW smaller than 360 kbit/s,
-        technicaly we break the max 5% RTCP BW for video below 10 kbit/s but that should be extreamly rare
+        technicaly we break the max 5% RTCP BW for video below 10 kbit/s but
+        that should be extremely rare
 
 
 From RFC 3550
 
     MAX RTCP BW is 5% if the session BW
         A send report is approximately 65 bytes inc CNAME
-        A report report is approximately 28 bytes
+        A receiver report is approximately 28 bytes
 
     The RECOMMENDED value for the reduced minimum in seconds is 360
       divided by the session bandwidth in kilobits/second.  This minimum
@@ -558,7 +553,7 @@ From RFC 3550
         now += RTCP_SEND_BEFORE_KEY_FRAME_MS;
     }
 
-    if(now > _nextTimeToSendRTCP)
+    if(now >= _nextTimeToSendRTCP)
     {
         return true;
 
@@ -616,6 +611,12 @@ bool RTCPSender::SendTimeOfXrRrReport(uint32_t mid_ntp,
   return true;
 }
 
+void RTCPSender::GetPacketTypeCounter(
+    RtcpPacketTypeCounter* packet_counter) const {
+  CriticalSectionScoped lock(_criticalSectionRTCPSender);
+  *packet_counter = packet_type_counter_;
+}
+
 int32_t RTCPSender::AddExternalReportBlock(
     uint32_t SSRC,
     const RTCPReportBlock* reportBlock) {
@@ -627,15 +628,10 @@ int32_t RTCPSender::AddReportBlock(
     uint32_t SSRC,
     std::map<uint32_t, RTCPReportBlock*>* report_blocks,
     const RTCPReportBlock* reportBlock) {
-  if (reportBlock == NULL) {
-    WEBRTC_TRACE(kTraceError, kTraceRtpRtcp, _id,
-                 "%s invalid argument", __FUNCTION__);
-    return -1;
-  }
+  assert(reportBlock);
 
   if (report_blocks->size() >= RTCP_MAX_REPORT_BLOCKS) {
-    WEBRTC_TRACE(kTraceError, kTraceRtpRtcp, _id,
-                 "%s invalid argument", __FUNCTION__);
+    LOG(LS_WARNING) << "Too many report blocks.";
     return -1;
   }
   std::map<uint32_t, RTCPReportBlock*>::iterator it =
@@ -673,7 +669,7 @@ int32_t RTCPSender::BuildSR(const FeedbackState& feedback_state,
     // sanity
     if(pos + 52 >= IP_PACKET_SIZE)
     {
-        WEBRTC_TRACE(kTraceError, kTraceRtpRtcp, _id, "%s invalid argument", __FUNCTION__);
+        LOG(LS_WARNING) << "Failed to build Sender Report.";
         return -2;
     }
     uint32_t RTPtime;
@@ -756,8 +752,7 @@ int32_t RTCPSender::BuildSDEC(uint8_t* rtcpbuffer, int& pos) {
 
   // sanity
   if(pos + 12 + lengthCname  >= IP_PACKET_SIZE) {
-    WEBRTC_TRACE(kTraceError, kTraceRtpRtcp, _id,
-                 "%s invalid argument", __FUNCTION__);
+    LOG(LS_WARNING) << "Failed to build SDEC.";
     return -2;
   }
   // SDEC Source Description
@@ -909,7 +904,9 @@ RTCPSender::BuildExtendedJitterReport(
 {
     if (external_report_blocks_.size() > 0)
     {
-        WEBRTC_TRACE(kTraceWarning, kTraceRtpRtcp, _id, "Not implemented.");
+        // TODO(andresp): Remove external report blocks since they are not
+        // supported.
+        LOG(LS_ERROR) << "Handling of external report blocks not implemented.";
         return 0;
     }
 
@@ -1313,7 +1310,7 @@ RTCPSender::BuildTMMBN(uint8_t* rtcpbuffer, int& pos)
     // sanity
     if(pos + 12 + boundingSet->lengthOfSet()*8 >= IP_PACKET_SIZE)
     {
-        WEBRTC_TRACE(kTraceError, kTraceRtpRtcp, _id, "%s invalid argument", __FUNCTION__);
+        LOG(LS_WARNING) << "Failed to build TMMBN.";
         return -2;
     }
     uint8_t FMT = 4;
@@ -1380,12 +1377,12 @@ RTCPSender::BuildAPP(uint8_t* rtcpbuffer, int& pos)
     // sanity
     if(_appData == NULL)
     {
-        WEBRTC_TRACE(kTraceWarning, kTraceRtpRtcp, _id, "%s invalid state", __FUNCTION__);
+        LOG(LS_WARNING) << "Failed to build app specific.";
         return -1;
     }
     if(pos + 12 + _appLength >= IP_PACKET_SIZE)
     {
-        WEBRTC_TRACE(kTraceError, kTraceRtpRtcp, _id, "%s invalid argument", __FUNCTION__);
+        LOG(LS_WARNING) << "Failed to build app specific.";
         return -2;
     }
     rtcpbuffer[pos++]=(uint8_t)0x80 + _appSubType;
@@ -1421,7 +1418,7 @@ RTCPSender::BuildNACK(uint8_t* rtcpbuffer,
     // sanity
     if(pos + 16 >= IP_PACKET_SIZE)
     {
-        WEBRTC_TRACE(kTraceError, kTraceRtpRtcp, _id, "%s invalid argument", __FUNCTION__);
+        LOG(LS_WARNING) << "Failed to build NACK.";
         return -2;
     }
 
@@ -1474,8 +1471,7 @@ RTCPSender::BuildNACK(uint8_t* rtcpbuffer,
       numOfNackFields++;
     }
     if (i != nackSize) {
-      WEBRTC_TRACE(kTraceWarning, kTraceRtpRtcp, _id,
-                   "Nack list to large for one packet.");
+      LOG(LS_WARNING) << "Nack list to large for one packet.";
     }
     rtcpbuffer[nackSizePos] = static_cast<uint8_t>(2 + numOfNackFields);
     *nackString = stringBuilder.GetResult();
@@ -1711,8 +1707,7 @@ int32_t RTCPSender::SendRTCP(const FeedbackState& feedback_state,
     CriticalSectionScoped lock(_criticalSectionRTCPSender);
     if(_method == kRtcpOff)
     {
-        WEBRTC_TRACE(kTraceWarning, kTraceRtpRtcp, _id,
-                     "%s invalid state", __FUNCTION__);
+        LOG(LS_WARNING) << "Can't send rtcp if it is disabled.";
         return -1;
     }
   }
@@ -1778,10 +1773,9 @@ int RTCPSender::PrepareRTCP(const FeedbackState& feedback_state,
       rtcpPacketTypeFlags |= kRtcpTmmbn;
       _sendTMMBN = false;
   }
-  if (xrSendReceiverReferenceTimeEnabled_ &&
-      (rtcpPacketTypeFlags & kRtcpReport))
+  if (rtcpPacketTypeFlags & kRtcpReport)
   {
-      if (!_sending)
+      if (xrSendReceiverReferenceTimeEnabled_ && !_sending)
       {
           rtcpPacketTypeFlags |= kRtcpXrReceiverReferenceTime;
       }
@@ -1920,8 +1914,9 @@ int RTCPSender::PrepareRTCP(const FeedbackState& feedback_state,
         return position;
       }
       TRACE_EVENT_INSTANT0("webrtc_rtp", "RTCPSender::PLI");
-      _pliCount++;
-      TRACE_COUNTER_ID1("webrtc_rtp", "RTCP_PLICount", _SSRC, _pliCount);
+      ++packet_type_counter_.pli_packets;
+      TRACE_COUNTER_ID1("webrtc_rtp", "RTCP_PLICount", _SSRC,
+                        packet_type_counter_.pli_packets);
   }
   if(rtcpPacketTypeFlags & kRtcpFir)
   {
@@ -1932,9 +1927,9 @@ int RTCPSender::PrepareRTCP(const FeedbackState& feedback_state,
         return position;
       }
       TRACE_EVENT_INSTANT0("webrtc_rtp", "RTCPSender::FIR");
-      _fullIntraRequestCount++;
+      ++packet_type_counter_.fir_packets;
       TRACE_COUNTER_ID1("webrtc_rtp", "RTCP_FIRCount", _SSRC,
-                        _fullIntraRequestCount);
+                        packet_type_counter_.fir_packets);
   }
   if(rtcpPacketTypeFlags & kRtcpSli)
   {
@@ -2017,8 +2012,9 @@ int RTCPSender::PrepareRTCP(const FeedbackState& feedback_state,
       }
       TRACE_EVENT_INSTANT1("webrtc_rtp", "RTCPSender::NACK",
                            "nacks", TRACE_STR_COPY(nackString.c_str()));
-      _nackCount++;
-      TRACE_COUNTER_ID1("webrtc_rtp", "RTCP_NACKCount", _SSRC, _nackCount);
+      ++packet_type_counter_.nack_packets;
+      TRACE_COUNTER_ID1("webrtc_rtp", "RTCP_NACKCount", _SSRC,
+                        packet_type_counter_.nack_packets);
   }
   if(rtcpPacketTypeFlags & kRtcpXrVoipMetric)
   {
@@ -2065,7 +2061,7 @@ bool RTCPSender::PrepareReport(const FeedbackState& feedback_state,
                                RTCPReportBlock* report_block,
                                uint32_t* ntp_secs, uint32_t* ntp_frac) {
   // Do we have receive statistics to send?
-  StreamStatistician::Statistics stats;
+  RtcpStatistics stats;
   if (!statistician->GetStatistics(&stats, true))
     return false;
   report_block->fractionLost = stats.fraction_lost;
@@ -2123,13 +2119,7 @@ int32_t
 RTCPSender::SetCSRCs(const uint32_t arrOfCSRC[kRtpCsrcSize],
                     const uint8_t arrLength)
 {
-    if(arrLength > kRtpCsrcSize)
-    {
-        WEBRTC_TRACE(kTraceError, kTraceRtpRtcp, _id, "%s invalid argument", __FUNCTION__);
-        assert(false);
-        return -1;
-    }
-
+    assert(arrLength <= kRtpCsrcSize);
     CriticalSectionScoped lock(_criticalSectionRTCPSender);
 
     for(int i = 0; i < arrLength;i++)
@@ -2148,7 +2138,7 @@ RTCPSender::SetApplicationSpecificData(const uint8_t subType,
 {
     if(length %4 != 0)
     {
-        WEBRTC_TRACE(kTraceError, kTraceRtpRtcp, _id, "%s invalid argument", __FUNCTION__);
+        LOG(LS_ERROR) << "Failed to SetApplicationSpecificData.";
         return -1;
     }
     CriticalSectionScoped lock(_criticalSectionRTCPSender);
@@ -2194,17 +2184,10 @@ int32_t RTCPSender::WriteAllReportBlocksToBuffer(
     uint8_t& numberOfReportBlocks,
     const uint32_t NTPsec,
     const uint32_t NTPfrac) {
-  // sanity one block
-  if(pos + 24 >= IP_PACKET_SIZE) {
-    WEBRTC_TRACE(kTraceError, kTraceRtpRtcp, _id,
-                 "%s invalid argument", __FUNCTION__);
-    return -1;
-  }
   numberOfReportBlocks = external_report_blocks_.size();
   numberOfReportBlocks += internal_report_blocks_.size();
   if ((pos + numberOfReportBlocks * 24) >= IP_PACKET_SIZE) {
-    WEBRTC_TRACE(kTraceError, kTraceRtpRtcp, _id,
-                 "%s invalid argument", __FUNCTION__);
+    LOG(LS_WARNING) << "Can't fit all report blocks.";
     return -1;
   }
   pos = WriteReportBlocksToBuffer(rtcpbuffer, pos, internal_report_blocks_);

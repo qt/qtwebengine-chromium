@@ -37,7 +37,6 @@ class MockVideoDecodeAcceleratorClient
   virtual ~MockVideoDecodeAcceleratorClient() {};
 
   // VideoDecodeAccelerator::Client implementation.
-  virtual void NotifyInitializeDone() OVERRIDE {};
   virtual void ProvidePictureBuffers(uint32 requested_num_of_buffers,
                                      const gfx::Size& dimensions,
                                      uint32 texture_target) OVERRIDE {};
@@ -66,14 +65,13 @@ class AndroidVideoDecodeAcceleratorTest : public testing::Test {
     scoped_ptr<MockVideoDecodeAcceleratorClient> client(
         new MockVideoDecodeAcceleratorClient());
     accelerator_.reset(new AndroidVideoDecodeAccelerator(
-        client.get(), decoder->AsWeakPtr(),
-        base::Bind(&MockMakeContextCurrent)));
+        decoder->AsWeakPtr(), base::Bind(&MockMakeContextCurrent)));
   }
 
   bool Configure(media::VideoCodec codec) {
     AndroidVideoDecodeAccelerator* accelerator =
         static_cast<AndroidVideoDecodeAccelerator*>(accelerator_.get());
-    accelerator->surface_texture_ = new gfx::SurfaceTexture(0);
+    accelerator->surface_texture_ = gfx::SurfaceTexture::Create(0);
     accelerator->codec_ = codec;
     return accelerator->ConfigureMediaCodec();
   }
@@ -83,8 +81,6 @@ class AndroidVideoDecodeAcceleratorTest : public testing::Test {
 };
 
 TEST_F(AndroidVideoDecodeAcceleratorTest, ConfigureUnsupportedCodec) {
-  if (!media::MediaCodecBridge::IsAvailable())
-    return;
   EXPECT_FALSE(Configure(media::kUnknownVideoCodec));
 }
 

@@ -4,20 +4,19 @@
 
 #include "ui/views/widget/desktop_aura/desktop_native_cursor_manager.h"
 
-#include "ui/aura/root_window.h"
+#include "ui/aura/window_event_dispatcher.h"
+#include "ui/aura/window_tree_host.h"
 #include "ui/base/cursor/cursor_loader.h"
 #include "ui/views/widget/desktop_aura/desktop_cursor_loader_updater.h"
 
 namespace views {
 
 DesktopNativeCursorManager::DesktopNativeCursorManager(
-    aura::RootWindow* window,
     scoped_ptr<DesktopCursorLoaderUpdater> cursor_loader_updater)
-    : root_window_(window),
-      cursor_loader_updater_(cursor_loader_updater.Pass()),
+    : cursor_loader_updater_(cursor_loader_updater.Pass()),
       cursor_loader_(ui::CursorLoader::Create()) {
   if (cursor_loader_updater_.get())
-    cursor_loader_updater_->OnCreate(root_window_, cursor_loader_.get());
+    cursor_loader_updater_->OnCreate(1.0f, cursor_loader_.get());
 }
 
 DesktopNativeCursorManager::~DesktopNativeCursorManager() {
@@ -29,11 +28,20 @@ gfx::NativeCursor DesktopNativeCursorManager::GetInitializedCursor(int type) {
   return cursor;
 }
 
+void DesktopNativeCursorManager::AddHost(aura::WindowTreeHost* host) {
+  hosts_.insert(host);
+}
+
+void DesktopNativeCursorManager::RemoveHost(aura::WindowTreeHost* host) {
+  hosts_.erase(host);
+}
+
 void DesktopNativeCursorManager::SetDisplay(
     const gfx::Display& display,
-    views::corewm::NativeCursorManagerDelegate* delegate) {
+    wm::NativeCursorManagerDelegate* delegate) {
   cursor_loader_->UnloadAll();
-  cursor_loader_->set_display(display);
+  cursor_loader_->set_rotation(display.rotation());
+  cursor_loader_->set_scale(display.device_scale_factor());
 
   if (cursor_loader_updater_.get())
     cursor_loader_updater_->OnDisplayUpdated(display, cursor_loader_.get());
@@ -43,18 +51,20 @@ void DesktopNativeCursorManager::SetDisplay(
 
 void DesktopNativeCursorManager::SetCursor(
     gfx::NativeCursor cursor,
-    views::corewm::NativeCursorManagerDelegate* delegate) {
+    wm::NativeCursorManagerDelegate* delegate) {
   gfx::NativeCursor new_cursor = cursor;
   cursor_loader_->SetPlatformCursor(&new_cursor);
   delegate->CommitCursor(new_cursor);
 
-  if (delegate->IsCursorVisible())
-    root_window_->SetCursor(new_cursor);
+  if (delegate->IsCursorVisible()) {
+    for (Hosts::const_iterator i = hosts_.begin(); i != hosts_.end(); ++i)
+      (*i)->SetCursor(new_cursor);
+  }
 }
 
 void DesktopNativeCursorManager::SetVisibility(
     bool visible,
-    views::corewm::NativeCursorManagerDelegate* delegate) {
+    wm::NativeCursorManagerDelegate* delegate) {
   delegate->CommitVisibility(visible);
 
   if (visible) {
@@ -62,27 +72,23 @@ void DesktopNativeCursorManager::SetVisibility(
   } else {
     gfx::NativeCursor invisible_cursor(ui::kCursorNone);
     cursor_loader_->SetPlatformCursor(&invisible_cursor);
-    root_window_->SetCursor(invisible_cursor);
+    for (Hosts::const_iterator i = hosts_.begin(); i != hosts_.end(); ++i)
+      (*i)->SetCursor(invisible_cursor);
   }
 
-  root_window_->OnCursorVisibilityChanged(visible);
+  for (Hosts::const_iterator i = hosts_.begin(); i != hosts_.end(); ++i)
+    (*i)->OnCursorVisibilityChanged(visible);
 }
 
 void DesktopNativeCursorManager::SetCursorSet(
     ui::CursorSetType cursor_set,
-    views::corewm::NativeCursorManagerDelegate* delegate) {
-  NOTIMPLEMENTED();
-}
-
-void DesktopNativeCursorManager::SetScale(
-    float scale,
-    views::corewm::NativeCursorManagerDelegate* delegate) {
+    wm::NativeCursorManagerDelegate* delegate) {
   NOTIMPLEMENTED();
 }
 
 void DesktopNativeCursorManager::SetMouseEventsEnabled(
     bool enabled,
-    views::corewm::NativeCursorManagerDelegate* delegate) {
+    wm::NativeCursorManagerDelegate* delegate) {
   delegate->CommitMouseEventsEnabled(enabled);
 
   // TODO(erg): In the ash version, we set the last mouse location on Env. I'm
@@ -90,7 +96,8 @@ void DesktopNativeCursorManager::SetMouseEventsEnabled(
 
   SetVisibility(delegate->IsCursorVisible(), delegate);
 
-  root_window_->OnMouseEventsEnableStateChanged(enabled);
+  for (Hosts::const_iterator i = hosts_.begin(); i != hosts_.end(); ++i)
+    (*i)->dispatcher()->OnMouseEventsEnableStateChanged(enabled);
 }
 
 }  // namespace views

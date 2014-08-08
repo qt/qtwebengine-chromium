@@ -1,38 +1,15 @@
 // Copyright 2012 the V8 project authors. All rights reserved.
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-//       copyright notice, this list of conditions and the following
-//       disclaimer in the documentation and/or other materials provided
-//       with the distribution.
-//     * Neither the name of Google Inc. nor the names of its
-//       contributors may be used to endorse or promote products derived
-//       from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
-#include "v8.h"
+#include "src/v8.h"
 
 #if V8_TARGET_ARCH_IA32
 
-#include "codegen.h"
-#include "ic-inl.h"
-#include "runtime.h"
-#include "stub-cache.h"
+#include "src/codegen.h"
+#include "src/ic-inl.h"
+#include "src/runtime.h"
+#include "src/stub-cache.h"
 
 namespace v8 {
 namespace internal {
@@ -351,7 +328,7 @@ static Operand GenerateMappedArgumentsLookup(MacroAssembler* masm,
   __ j(not_zero, slow_case);
 
   // Load the elements into scratch1 and check its map.
-  Handle<Map> arguments_map(heap->non_strict_arguments_elements_map());
+  Handle<Map> arguments_map(heap->sloppy_arguments_elements_map());
   __ mov(scratch1, FieldOperand(object, JSObject::kElementsOffset));
   __ CheckMap(scratch1, arguments_map, slow_case, DONT_DO_SMI_CHECK);
 
@@ -657,7 +634,7 @@ void KeyedLoadIC::GenerateIndexedInterceptor(MacroAssembler* masm) {
 }
 
 
-void KeyedLoadIC::GenerateNonStrictArguments(MacroAssembler* masm) {
+void KeyedLoadIC::GenerateSloppyArguments(MacroAssembler* masm) {
   // ----------- S t a t e -------------
   //  -- ecx    : key
   //  -- edx    : receiver
@@ -682,7 +659,7 @@ void KeyedLoadIC::GenerateNonStrictArguments(MacroAssembler* masm) {
 }
 
 
-void KeyedStoreIC::GenerateNonStrictArguments(MacroAssembler* masm) {
+void KeyedStoreIC::GenerateSloppyArguments(MacroAssembler* masm) {
   // ----------- S t a t e -------------
   //  -- eax    : value
   //  -- ecx    : key
@@ -738,7 +715,7 @@ static void KeyedStoreGenerateGenericHelper(
   // We have to go to the runtime if the current value is the hole because
   // there may be a callback on the element
   Label holecheck_passed1;
-  __ cmp(CodeGenerator::FixedArrayElementOperand(ebx, ecx),
+  __ cmp(FixedArrayElementOperand(ebx, ecx),
          masm->isolate()->factory()->the_hole_value());
   __ j(not_equal, &holecheck_passed1);
   __ JumpIfDictionaryInPrototypeChain(edx, ebx, edi, slow);
@@ -755,7 +732,7 @@ static void KeyedStoreGenerateGenericHelper(
            Immediate(Smi::FromInt(1)));
   }
   // It's irrelevant whether array is smi-only or not when writing a smi.
-  __ mov(CodeGenerator::FixedArrayElementOperand(ebx, ecx), eax);
+  __ mov(FixedArrayElementOperand(ebx, ecx), eax);
   __ ret(0);
 
   __ bind(&non_smi_value);
@@ -770,7 +747,7 @@ static void KeyedStoreGenerateGenericHelper(
     __ add(FieldOperand(edx, JSArray::kLengthOffset),
            Immediate(Smi::FromInt(1)));
   }
-  __ mov(CodeGenerator::FixedArrayElementOperand(ebx, ecx), eax);
+  __ mov(FixedArrayElementOperand(ebx, ecx), eax);
   // Update write barrier for the elements array address.
   __ mov(edx, eax);  // Preserve the value which is returned.
   __ RecordWriteArray(
@@ -798,7 +775,7 @@ static void KeyedStoreGenerateGenericHelper(
 
   __ bind(&fast_double_without_map_check);
   __ StoreNumberToDoubleElements(eax, ebx, ecx, edi, xmm0,
-                                 &transition_double_elements, false);
+                                 &transition_double_elements);
   if (increment_length == kIncrementLength) {
     // Add 1 to receiver->length.
     __ add(FieldOperand(edx, JSArray::kLengthOffset),
@@ -859,7 +836,7 @@ static void KeyedStoreGenerateGenericHelper(
 
 
 void KeyedStoreIC::GenerateGeneric(MacroAssembler* masm,
-                                   StrictModeFlag strict_mode) {
+                                   StrictMode strict_mode) {
   // ----------- S t a t e -------------
   //  -- eax    : value
   //  -- ecx    : key
@@ -947,377 +924,6 @@ void KeyedStoreIC::GenerateGeneric(MacroAssembler* masm,
 }
 
 
-// The generated code does not accept smi keys.
-// The generated code falls through if both probes miss.
-void CallICBase::GenerateMonomorphicCacheProbe(MacroAssembler* masm,
-                                               int argc,
-                                               Code::Kind kind,
-                                               ExtraICState extra_state) {
-  // ----------- S t a t e -------------
-  //  -- ecx                 : name
-  //  -- edx                 : receiver
-  // -----------------------------------
-  Label number, non_number, non_string, boolean, probe, miss;
-
-  // Probe the stub cache.
-  Code::Flags flags = Code::ComputeFlags(kind,
-                                         MONOMORPHIC,
-                                         extra_state,
-                                         Code::NORMAL,
-                                         argc);
-  Isolate* isolate = masm->isolate();
-  isolate->stub_cache()->GenerateProbe(masm, flags, edx, ecx, ebx, eax);
-
-  // If the stub cache probing failed, the receiver might be a value.
-  // For value objects, we use the map of the prototype objects for
-  // the corresponding JSValue for the cache and that is what we need
-  // to probe.
-  //
-  // Check for number.
-  __ JumpIfSmi(edx, &number);
-  __ CmpObjectType(edx, HEAP_NUMBER_TYPE, ebx);
-  __ j(not_equal, &non_number);
-  __ bind(&number);
-  StubCompiler::GenerateLoadGlobalFunctionPrototype(
-      masm, Context::NUMBER_FUNCTION_INDEX, edx);
-  __ jmp(&probe);
-
-  // Check for string.
-  __ bind(&non_number);
-  __ CmpInstanceType(ebx, FIRST_NONSTRING_TYPE);
-  __ j(above_equal, &non_string);
-  StubCompiler::GenerateLoadGlobalFunctionPrototype(
-      masm, Context::STRING_FUNCTION_INDEX, edx);
-  __ jmp(&probe);
-
-  // Check for boolean.
-  __ bind(&non_string);
-  __ cmp(edx, isolate->factory()->true_value());
-  __ j(equal, &boolean);
-  __ cmp(edx, isolate->factory()->false_value());
-  __ j(not_equal, &miss);
-  __ bind(&boolean);
-  StubCompiler::GenerateLoadGlobalFunctionPrototype(
-      masm, Context::BOOLEAN_FUNCTION_INDEX, edx);
-
-  // Probe the stub cache for the value object.
-  __ bind(&probe);
-  isolate->stub_cache()->GenerateProbe(masm, flags, edx, ecx, ebx, no_reg);
-  __ bind(&miss);
-}
-
-
-static void GenerateFunctionTailCall(MacroAssembler* masm,
-                                     int argc,
-                                     Label* miss) {
-  // ----------- S t a t e -------------
-  //  -- ecx                 : name
-  //  -- edi                 : function
-  //  -- esp[0]              : return address
-  //  -- esp[(argc - n) * 4] : arg[n] (zero-based)
-  //  -- ...
-  //  -- esp[(argc + 1) * 4] : receiver
-  // -----------------------------------
-
-  // Check that the result is not a smi.
-  __ JumpIfSmi(edi, miss);
-
-  // Check that the value is a JavaScript function, fetching its map into eax.
-  __ CmpObjectType(edi, JS_FUNCTION_TYPE, eax);
-  __ j(not_equal, miss);
-
-  // Invoke the function.
-  ParameterCount actual(argc);
-  __ InvokeFunction(edi, actual, JUMP_FUNCTION,
-                    NullCallWrapper(), CALL_AS_METHOD);
-}
-
-
-// The generated code falls through if the call should be handled by runtime.
-void CallICBase::GenerateNormal(MacroAssembler* masm, int argc) {
-  // ----------- S t a t e -------------
-  //  -- ecx                 : name
-  //  -- esp[0]              : return address
-  //  -- esp[(argc - n) * 4] : arg[n] (zero-based)
-  //  -- ...
-  //  -- esp[(argc + 1) * 4] : receiver
-  // -----------------------------------
-  Label miss;
-
-  // Get the receiver of the function from the stack; 1 ~ return address.
-  __ mov(edx, Operand(esp, (argc + 1) * kPointerSize));
-
-  GenerateNameDictionaryReceiverCheck(masm, edx, eax, ebx, &miss);
-
-  // eax: elements
-  // Search the dictionary placing the result in edi.
-  GenerateDictionaryLoad(masm, &miss, eax, ecx, edi, ebx, edi);
-  GenerateFunctionTailCall(masm, argc, &miss);
-
-  __ bind(&miss);
-}
-
-
-void CallICBase::GenerateMiss(MacroAssembler* masm,
-                              int argc,
-                              IC::UtilityId id,
-                              ExtraICState extra_state) {
-  // ----------- S t a t e -------------
-  //  -- ecx                 : name
-  //  -- esp[0]              : return address
-  //  -- esp[(argc - n) * 4] : arg[n] (zero-based)
-  //  -- ...
-  //  -- esp[(argc + 1) * 4] : receiver
-  // -----------------------------------
-
-  Counters* counters = masm->isolate()->counters();
-  if (id == IC::kCallIC_Miss) {
-    __ IncrementCounter(counters->call_miss(), 1);
-  } else {
-    __ IncrementCounter(counters->keyed_call_miss(), 1);
-  }
-
-  // Get the receiver of the function from the stack; 1 ~ return address.
-  __ mov(edx, Operand(esp, (argc + 1) * kPointerSize));
-
-  {
-    FrameScope scope(masm, StackFrame::INTERNAL);
-
-    // Push the receiver and the name of the function.
-    __ push(edx);
-    __ push(ecx);
-
-    // Call the entry.
-    CEntryStub stub(1);
-    __ mov(eax, Immediate(2));
-    __ mov(ebx, Immediate(ExternalReference(IC_Utility(id), masm->isolate())));
-    __ CallStub(&stub);
-
-    // Move result to edi and exit the internal frame.
-    __ mov(edi, eax);
-  }
-
-  // Check if the receiver is a global object of some sort.
-  // This can happen only for regular CallIC but not KeyedCallIC.
-  if (id == IC::kCallIC_Miss) {
-    Label invoke, global;
-    __ mov(edx, Operand(esp, (argc + 1) * kPointerSize));  // receiver
-    __ JumpIfSmi(edx, &invoke, Label::kNear);
-    __ mov(ebx, FieldOperand(edx, HeapObject::kMapOffset));
-    __ movzx_b(ebx, FieldOperand(ebx, Map::kInstanceTypeOffset));
-    __ cmp(ebx, JS_GLOBAL_OBJECT_TYPE);
-    __ j(equal, &global, Label::kNear);
-    __ cmp(ebx, JS_BUILTINS_OBJECT_TYPE);
-    __ j(not_equal, &invoke, Label::kNear);
-
-    // Patch the receiver on the stack.
-    __ bind(&global);
-    __ mov(edx, FieldOperand(edx, GlobalObject::kGlobalReceiverOffset));
-    __ mov(Operand(esp, (argc + 1) * kPointerSize), edx);
-    __ bind(&invoke);
-  }
-
-  // Invoke the function.
-  CallKind call_kind = CallICBase::Contextual::decode(extra_state)
-      ? CALL_AS_FUNCTION
-      : CALL_AS_METHOD;
-  ParameterCount actual(argc);
-  __ InvokeFunction(edi,
-                    actual,
-                    JUMP_FUNCTION,
-                    NullCallWrapper(),
-                    call_kind);
-}
-
-
-void CallIC::GenerateMegamorphic(MacroAssembler* masm,
-                                 int argc,
-                                 ExtraICState extra_state) {
-  // ----------- S t a t e -------------
-  //  -- ecx                 : name
-  //  -- esp[0]              : return address
-  //  -- esp[(argc - n) * 4] : arg[n] (zero-based)
-  //  -- ...
-  //  -- esp[(argc + 1) * 4] : receiver
-  // -----------------------------------
-
-  // Get the receiver of the function from the stack; 1 ~ return address.
-  __ mov(edx, Operand(esp, (argc + 1) * kPointerSize));
-  CallICBase::GenerateMonomorphicCacheProbe(masm, argc, Code::CALL_IC,
-                                            extra_state);
-
-  GenerateMiss(masm, argc, extra_state);
-}
-
-
-void KeyedCallIC::GenerateMegamorphic(MacroAssembler* masm, int argc) {
-  // ----------- S t a t e -------------
-  //  -- ecx                 : name
-  //  -- esp[0]              : return address
-  //  -- esp[(argc - n) * 4] : arg[n] (zero-based)
-  //  -- ...
-  //  -- esp[(argc + 1) * 4] : receiver
-  // -----------------------------------
-
-  // Get the receiver of the function from the stack; 1 ~ return address.
-  __ mov(edx, Operand(esp, (argc + 1) * kPointerSize));
-
-  Label do_call, slow_call, slow_load, slow_reload_receiver;
-  Label check_number_dictionary, check_name, lookup_monomorphic_cache;
-  Label index_smi, index_name;
-
-  // Check that the key is a smi.
-  __ JumpIfNotSmi(ecx, &check_name);
-
-  __ bind(&index_smi);
-  // Now the key is known to be a smi. This place is also jumped to from
-  // where a numeric string is converted to a smi.
-
-  GenerateKeyedLoadReceiverCheck(
-      masm, edx, eax, Map::kHasIndexedInterceptor, &slow_call);
-
-  GenerateFastArrayLoad(
-      masm, edx, ecx, eax, edi, &check_number_dictionary, &slow_load);
-  Isolate* isolate = masm->isolate();
-  Counters* counters = isolate->counters();
-  __ IncrementCounter(counters->keyed_call_generic_smi_fast(), 1);
-
-  __ bind(&do_call);
-  // receiver in edx is not used after this point.
-  // ecx: key
-  // edi: function
-  GenerateFunctionTailCall(masm, argc, &slow_call);
-
-  __ bind(&check_number_dictionary);
-  // eax: elements
-  // ecx: smi key
-  // Check whether the elements is a number dictionary.
-  __ CheckMap(eax,
-              isolate->factory()->hash_table_map(),
-              &slow_load,
-              DONT_DO_SMI_CHECK);
-  __ mov(ebx, ecx);
-  __ SmiUntag(ebx);
-  // ebx: untagged index
-  // Receiver in edx will be clobbered, need to reload it on miss.
-  __ LoadFromNumberDictionary(
-      &slow_reload_receiver, eax, ecx, ebx, edx, edi, edi);
-  __ IncrementCounter(counters->keyed_call_generic_smi_dict(), 1);
-  __ jmp(&do_call);
-
-  __ bind(&slow_reload_receiver);
-  __ mov(edx, Operand(esp, (argc + 1) * kPointerSize));
-
-  __ bind(&slow_load);
-  // This branch is taken when calling KeyedCallIC_Miss is neither required
-  // nor beneficial.
-  __ IncrementCounter(counters->keyed_call_generic_slow_load(), 1);
-
-  {
-    FrameScope scope(masm, StackFrame::INTERNAL);
-    __ push(ecx);  // save the key
-    __ push(edx);  // pass the receiver
-    __ push(ecx);  // pass the key
-    __ CallRuntime(Runtime::kKeyedGetProperty, 2);
-    __ pop(ecx);  // restore the key
-    // Leave the internal frame.
-  }
-
-  __ mov(edi, eax);
-  __ jmp(&do_call);
-
-  __ bind(&check_name);
-  GenerateKeyNameCheck(masm, ecx, eax, ebx, &index_name, &slow_call);
-
-  // The key is known to be a unique name.
-  // If the receiver is a regular JS object with slow properties then do
-  // a quick inline probe of the receiver's dictionary.
-  // Otherwise do the monomorphic cache probe.
-  GenerateKeyedLoadReceiverCheck(
-      masm, edx, eax, Map::kHasNamedInterceptor, &lookup_monomorphic_cache);
-
-  __ mov(ebx, FieldOperand(edx, JSObject::kPropertiesOffset));
-  __ CheckMap(ebx,
-              isolate->factory()->hash_table_map(),
-              &lookup_monomorphic_cache,
-              DONT_DO_SMI_CHECK);
-
-  GenerateDictionaryLoad(masm, &slow_load, ebx, ecx, eax, edi, edi);
-  __ IncrementCounter(counters->keyed_call_generic_lookup_dict(), 1);
-  __ jmp(&do_call);
-
-  __ bind(&lookup_monomorphic_cache);
-  __ IncrementCounter(counters->keyed_call_generic_lookup_cache(), 1);
-  CallICBase::GenerateMonomorphicCacheProbe(masm, argc, Code::KEYED_CALL_IC,
-                                            kNoExtraICState);
-  // Fall through on miss.
-
-  __ bind(&slow_call);
-  // This branch is taken if:
-  // - the receiver requires boxing or access check,
-  // - the key is neither smi nor a unique name,
-  // - the value loaded is not a function,
-  // - there is hope that the runtime will create a monomorphic call stub
-  //   that will get fetched next time.
-  __ IncrementCounter(counters->keyed_call_generic_slow(), 1);
-  GenerateMiss(masm, argc);
-
-  __ bind(&index_name);
-  __ IndexFromHash(ebx, ecx);
-  // Now jump to the place where smi keys are handled.
-  __ jmp(&index_smi);
-}
-
-
-void KeyedCallIC::GenerateNonStrictArguments(MacroAssembler* masm,
-                                             int argc) {
-  // ----------- S t a t e -------------
-  //  -- ecx                 : name
-  //  -- esp[0]              : return address
-  //  -- esp[(argc - n) * 4] : arg[n] (zero-based)
-  //  -- ...
-  //  -- esp[(argc + 1) * 4] : receiver
-  // -----------------------------------
-  Label slow, notin;
-  Factory* factory = masm->isolate()->factory();
-  __ mov(edx, Operand(esp, (argc + 1) * kPointerSize));
-  Operand mapped_location =
-      GenerateMappedArgumentsLookup(masm, edx, ecx, ebx, eax, &notin, &slow);
-  __ mov(edi, mapped_location);
-  GenerateFunctionTailCall(masm, argc, &slow);
-  __ bind(&notin);
-  // The unmapped lookup expects that the parameter map is in ebx.
-  Operand unmapped_location =
-      GenerateUnmappedArgumentsLookup(masm, ecx, ebx, eax, &slow);
-  __ cmp(unmapped_location, factory->the_hole_value());
-  __ j(equal, &slow);
-  __ mov(edi, unmapped_location);
-  GenerateFunctionTailCall(masm, argc, &slow);
-  __ bind(&slow);
-  GenerateMiss(masm, argc);
-}
-
-
-void KeyedCallIC::GenerateNormal(MacroAssembler* masm, int argc) {
-  // ----------- S t a t e -------------
-  //  -- ecx                 : name
-  //  -- esp[0]              : return address
-  //  -- esp[(argc - n) * 4] : arg[n] (zero-based)
-  //  -- ...
-  //  -- esp[(argc + 1) * 4] : receiver
-  // -----------------------------------
-
-  // Check if the name is really a name.
-  Label miss;
-  __ JumpIfSmi(ecx, &miss);
-  Condition cond = masm->IsObjectNameType(ecx, eax, eax);
-  __ j(NegateCondition(cond), &miss);
-  CallICBase::GenerateNormal(masm, argc);
-  __ bind(&miss);
-  GenerateMiss(masm, argc);
-}
-
-
 void LoadIC::GenerateMegamorphic(MacroAssembler* masm) {
   // ----------- S t a t e -------------
   //  -- ecx    : name
@@ -1326,9 +932,7 @@ void LoadIC::GenerateMegamorphic(MacroAssembler* masm) {
   // -----------------------------------
 
   // Probe the stub cache.
-  Code::Flags flags = Code::ComputeFlags(
-      Code::HANDLER, MONOMORPHIC, kNoExtraICState,
-      Code::NORMAL, Code::LOAD_IC);
+  Code::Flags flags = Code::ComputeHandlerFlags(Code::LOAD_IC);
   masm->isolate()->stub_cache()->GenerateProbe(
       masm, flags, edx, ecx, ebx, eax);
 
@@ -1343,14 +947,18 @@ void LoadIC::GenerateNormal(MacroAssembler* masm) {
   //  -- edx    : receiver
   //  -- esp[0] : return address
   // -----------------------------------
-  Label miss;
+  Label miss, slow;
 
   GenerateNameDictionaryReceiverCheck(masm, edx, eax, ebx, &miss);
 
   // eax: elements
   // Search the dictionary placing the result in eax.
-  GenerateDictionaryLoad(masm, &miss, eax, ecx, edi, ebx, eax);
+  GenerateDictionaryLoad(masm, &slow, eax, ecx, edi, ebx, eax);
   __ ret(0);
+
+  // Dictionary load failed, go slow (but don't miss).
+  __ bind(&slow);
+  GenerateRuntimeGetProperty(masm);
 
   // Cache miss: Jump to runtime.
   __ bind(&miss);
@@ -1434,17 +1042,14 @@ void KeyedLoadIC::GenerateRuntimeGetProperty(MacroAssembler* masm) {
 }
 
 
-void StoreIC::GenerateMegamorphic(MacroAssembler* masm,
-                                  ExtraICState extra_ic_state) {
+void StoreIC::GenerateMegamorphic(MacroAssembler* masm) {
   // ----------- S t a t e -------------
   //  -- eax    : value
   //  -- ecx    : name
   //  -- edx    : receiver
   //  -- esp[0] : return address
   // -----------------------------------
-  Code::Flags flags = Code::ComputeFlags(
-      Code::HANDLER, MONOMORPHIC, extra_ic_state,
-      Code::NORMAL, Code::STORE_IC);
+  Code::Flags flags = Code::ComputeHandlerFlags(Code::STORE_IC);
   masm->isolate()->stub_cache()->GenerateProbe(
       masm, flags, edx, ecx, ebx, no_reg);
 
@@ -1506,7 +1111,7 @@ void StoreIC::GenerateNormal(MacroAssembler* masm) {
 
 
 void StoreIC::GenerateRuntimeSetProperty(MacroAssembler* masm,
-                                         StrictModeFlag strict_mode) {
+                                         StrictMode strict_mode) {
   // ----------- S t a t e -------------
   //  -- eax    : value
   //  -- ecx    : name
@@ -1527,7 +1132,7 @@ void StoreIC::GenerateRuntimeSetProperty(MacroAssembler* masm,
 
 
 void KeyedStoreIC::GenerateRuntimeSetProperty(MacroAssembler* masm,
-                                              StrictModeFlag strict_mode) {
+                                              StrictMode strict_mode) {
   // ----------- S t a t e -------------
   //  -- eax    : value
   //  -- ecx    : key
@@ -1658,7 +1263,7 @@ void PatchInlinedSmiCode(Address address, InlinedSmiCheck check) {
   Address delta_address = test_instruction_address + 1;
   // The delta to the start of the map check instruction and the
   // condition code uses at the patched jump.
-  int8_t delta = *reinterpret_cast<int8_t*>(delta_address);
+  uint8_t delta = *reinterpret_cast<uint8_t*>(delta_address);
   if (FLAG_trace_ic) {
     PrintF("[  patching ic at %p, test=%p, delta=%d\n",
            address, test_instruction_address, delta);

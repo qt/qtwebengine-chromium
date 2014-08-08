@@ -25,6 +25,11 @@ namespace webrtc {
 
 class Clock;
 
+enum RateControlType {
+  kMimdControl,
+  kAimdControl
+};
+
 // RemoteBitrateObserver is used to signal changes in bitrate estimates for
 // the incoming streams.
 class RemoteBitrateObserver {
@@ -37,6 +42,27 @@ class RemoteBitrateObserver {
   virtual ~RemoteBitrateObserver() {}
 };
 
+struct ReceiveBandwidthEstimatorStats {
+  ReceiveBandwidthEstimatorStats() : total_propagation_time_delta_ms(0) {}
+
+  // The "propagation_time_delta" of a frame is defined as (d_arrival - d_sent),
+  // where d_arrival is the delta of the arrival times of the frame and the
+  // previous frame, d_sent is the delta of the sent times of the frame and
+  // the previous frame. The sent time is calculated from the RTP timestamp.
+
+  // |total_propagation_time_delta_ms| is the sum of the propagation_time_deltas
+  // of all received frames, except that it's is adjusted to 0 when it becomes
+  // negative.
+  int total_propagation_time_delta_ms;
+  // The propagation_time_deltas for the frames arrived in the last
+  // kProcessIntervalMs using the clock passed to
+  // RemoteBitrateEstimatorFactory::Create.
+  std::vector<int> recent_propagation_time_delta_ms;
+  // The arrival times for the frames arrived in the last kProcessIntervalMs
+  // using the clock passed to RemoteBitrateEstimatorFactory::Create.
+  std::vector<int64_t> recent_arrival_time_ms;
+};
+
 class RemoteBitrateEstimator : public CallStatsObserver, public Module {
  public:
   virtual ~RemoteBitrateEstimator() {}
@@ -45,6 +71,7 @@ class RemoteBitrateEstimator : public CallStatsObserver, public Module {
   // estimate and the over-use detector. If an over-use is detected the
   // remote bitrate estimate will be updated. Note that |payload_size| is the
   // packet size excluding headers.
+  // Note that |arrival_time_ms| can be of an arbitrary time base.
   virtual void IncomingPacket(int64_t arrival_time_ms,
                               int payload_size,
                               const RTPHeader& header) = 0;
@@ -58,6 +85,9 @@ class RemoteBitrateEstimator : public CallStatsObserver, public Module {
   virtual bool LatestEstimate(std::vector<unsigned int>* ssrcs,
                               unsigned int* bitrate_bps) const = 0;
 
+  // Returns true if the statistics are available.
+  virtual bool GetStats(ReceiveBandwidthEstimatorStats* output) const = 0;
+
  protected:
   static const int kProcessIntervalMs = 1000;
   static const int kStreamTimeOutMs = 2000;
@@ -70,6 +100,7 @@ struct RemoteBitrateEstimatorFactory {
   virtual RemoteBitrateEstimator* Create(
       RemoteBitrateObserver* observer,
       Clock* clock,
+      RateControlType control_type,
       uint32_t min_bitrate_bps) const;
 };
 
@@ -81,6 +112,7 @@ struct AbsoluteSendTimeRemoteBitrateEstimatorFactory
   virtual RemoteBitrateEstimator* Create(
       RemoteBitrateObserver* observer,
       Clock* clock,
+      RateControlType control_type,
       uint32_t min_bitrate_bps) const;
 };
 }  // namespace webrtc

@@ -15,7 +15,7 @@
 #include "media/base/pipeline_status.h"
 
 namespace base {
-class MessageLoopProxy;
+class SingleThreadTaskRunner;
 }
 
 namespace media {
@@ -34,6 +34,7 @@ class MEDIA_EXPORT SerialRunner {
     Queue();
     ~Queue();
 
+    void Push(const base::Closure& closure);
     void Push(const BoundClosure& bound_fn);
     void Push(const BoundPipelineStatusCB& bound_fn);
 
@@ -71,10 +72,12 @@ class MEDIA_EXPORT SerialRunner {
 
   void RunNextInSeries(PipelineStatus last_status);
 
-  base::WeakPtrFactory<SerialRunner> weak_this_;
-  scoped_refptr<base::MessageLoopProxy> message_loop_;
+  scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
   Queue bound_fns_;
   PipelineStatusCB done_cb_;
+
+  // NOTE: Weak pointers must be invalidated before all other member variables.
+  base::WeakPtrFactory<SerialRunner> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(SerialRunner);
 };

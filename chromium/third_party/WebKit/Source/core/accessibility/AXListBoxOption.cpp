@@ -35,7 +35,6 @@
 #include "core/html/HTMLSelectElement.h"
 #include "core/rendering/RenderListBox.h"
 
-using namespace std;
 
 namespace WebCore {
 
@@ -60,7 +59,7 @@ bool AXListBoxOption::isEnabled() const
     if (!m_optionElement)
         return false;
 
-    if (isHTMLOptGroupElement(m_optionElement))
+    if (isHTMLOptGroupElement(*m_optionElement))
         return false;
 
     if (equalIgnoringCase(getAttribute(aria_disabledAttr), "true"))
@@ -74,10 +73,7 @@ bool AXListBoxOption::isEnabled() const
 
 bool AXListBoxOption::isSelected() const
 {
-    if (!m_optionElement)
-        return false;
-
-    if (!m_optionElement->hasTagName(optionTag))
+    if (!isHTMLOptionElement(m_optionElement))
         return false;
 
     return toHTMLOptionElement(m_optionElement)->selected();
@@ -127,10 +123,7 @@ bool AXListBoxOption::computeAccessibilityIsIgnored() const
 
 bool AXListBoxOption::canSetSelectedAttribute() const
 {
-    if (!m_optionElement)
-        return false;
-
-    if (!m_optionElement->hasTagName(optionTag))
+    if (!isHTMLOptionElement(m_optionElement))
         return false;
 
     if (m_optionElement->isDisabledFormControl())
@@ -152,10 +145,10 @@ String AXListBoxOption::stringValue() const
     if (!ariaLabel.isNull())
         return ariaLabel;
 
-    if (m_optionElement->hasTagName(optionTag))
+    if (isHTMLOptionElement(*m_optionElement))
         return toHTMLOptionElement(m_optionElement)->text();
 
-    if (isHTMLOptGroupElement(m_optionElement))
+    if (isHTMLOptGroupElement(*m_optionElement))
         return toHTMLOptGroupElement(m_optionElement)->groupLabelText();
 
     return String();
@@ -198,10 +191,10 @@ HTMLSelectElement* AXListBoxOption::listBoxOptionParentNode() const
     if (!m_optionElement)
         return 0;
 
-    if (m_optionElement->hasTagName(optionTag))
+    if (isHTMLOptionElement(*m_optionElement))
         return toHTMLOptionElement(m_optionElement)->ownerSelectElement();
 
-    if (isHTMLOptGroupElement(m_optionElement))
+    if (isHTMLOptGroupElement(*m_optionElement))
         return toHTMLOptGroupElement(m_optionElement)->ownerSelectElement();
 
     return 0;
@@ -216,7 +209,7 @@ int AXListBoxOption::listBoxOptionIndex() const
     if (!selectElement)
         return -1;
 
-    const Vector<HTMLElement*>& listItems = selectElement->listItems();
+    const WillBeHeapVector<RawPtrWillBeMember<HTMLElement> >& listItems = selectElement->listItems();
     unsigned length = listItems.size();
     for (unsigned i = 0; i < length; i++) {
         if (listItems[i] == m_optionElement)

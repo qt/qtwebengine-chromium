@@ -14,18 +14,20 @@
 #define ARRAYSIZE ARRAYSIZE_UNSAFE
 #endif
 
-using url_test_utils::WStringToUTF16;
-using url_test_utils::ConvertUTF8ToUTF16;
+namespace url {
+
+using test_utils::WStringToUTF16;
+using test_utils::ConvertUTF8ToUTF16;
 
 namespace {
 
 template<typename CHAR>
-void SetupReplacement(void (url_canon::Replacements<CHAR>::*func)(const CHAR*,
-                          const url_parse::Component&),
-                      url_canon::Replacements<CHAR>* replacements,
-                      const CHAR* str) {
+void SetupReplacement(
+    void (Replacements<CHAR>::*func)(const CHAR*, const Component&),
+    Replacements<CHAR>* replacements,
+    const CHAR* str) {
   if (str) {
-    url_parse::Component comp;
+    Component comp;
     if (str[0])
       comp.len = static_cast<int>(strlen(str));
     (replacements->*func)(str, comp);
@@ -41,8 +43,8 @@ std::string TypesTestCase(const char* src) {
 
 }  // namespace
 
-// Different types of URLs should be handled differently by url_util, and
-// handed off to different canonicalizers.
+// Different types of URLs should be handled differently, and handed off to
+// different canonicalizers.
 TEST(GURLTest, Types) {
   // URLs with unknown schemes should be treated as path URLs, even when they
   // have things like "://".
@@ -85,6 +87,14 @@ TEST(GURLTest, Components) {
   EXPECT_EQ("/foo;bar", url.path());
   EXPECT_EQ("q=a", url.query());
   EXPECT_EQ("ref", url.ref());
+
+  // Test parsing userinfo with special characters.
+  GURL url_special_pass("http://user:%40!$&'()*+,;=:@google.com:12345");
+  EXPECT_TRUE(url_special_pass.is_valid());
+  // GURL canonicalizes some delimiters.
+  EXPECT_EQ("%40!$&%27()*+,%3B%3D%3A", url_special_pass.password());
+  EXPECT_EQ("google.com", url_special_pass.host());
+  EXPECT_EQ("12345", url_special_pass.port());
 }
 
 TEST(GURLTest, Empty) {
@@ -97,7 +107,7 @@ TEST(GURLTest, Empty) {
   EXPECT_EQ("", url.password());
   EXPECT_EQ("", url.host());
   EXPECT_EQ("", url.port());
-  EXPECT_EQ(url_parse::PORT_UNSPECIFIED, url.IntPort());
+  EXPECT_EQ(PORT_UNSPECIFIED, url.IntPort());
   EXPECT_EQ("", url.path());
   EXPECT_EQ("", url.query());
   EXPECT_EQ("", url.ref());
@@ -130,7 +140,7 @@ TEST(GURLTest, Copy) {
   EXPECT_EQ("", invalid2.password());
   EXPECT_EQ("", invalid2.host());
   EXPECT_EQ("", invalid2.port());
-  EXPECT_EQ(url_parse::PORT_UNSPECIFIED, invalid2.IntPort());
+  EXPECT_EQ(PORT_UNSPECIFIED, invalid2.IntPort());
   EXPECT_EQ("", invalid2.path());
   EXPECT_EQ("", invalid2.query());
   EXPECT_EQ("", invalid2.ref());
@@ -165,7 +175,7 @@ TEST(GURLTest, Assign) {
   EXPECT_EQ("", invalid2.password());
   EXPECT_EQ("", invalid2.host());
   EXPECT_EQ("", invalid2.port());
-  EXPECT_EQ(url_parse::PORT_UNSPECIFIED, invalid2.IntPort());
+  EXPECT_EQ(PORT_UNSPECIFIED, invalid2.IntPort());
   EXPECT_EQ("", invalid2.path());
   EXPECT_EQ("", invalid2.query());
   EXPECT_EQ("", invalid2.ref());
@@ -190,7 +200,7 @@ TEST(GURLTest, CopyFileSystem) {
   EXPECT_EQ("", url2.password());
   EXPECT_EQ("", url2.host());
   EXPECT_EQ("", url2.port());
-  EXPECT_EQ(url_parse::PORT_UNSPECIFIED, url2.IntPort());
+  EXPECT_EQ(PORT_UNSPECIFIED, url2.IntPort());
   EXPECT_EQ("/foo;bar", url2.path());
   EXPECT_EQ("q=a", url2.query());
   EXPECT_EQ("ref", url2.ref());
@@ -208,8 +218,49 @@ TEST(GURLTest, CopyFileSystem) {
   EXPECT_EQ("", inner->ref());
 }
 
+TEST(GURLTest, IsValid) {
+  const char* valid_cases[] = {
+    "http://google.com",
+    "unknown://google.com",
+    "http://user:pass@google.com",
+    "http://google.com:12345",
+    "http://google.com/path",
+    "http://google.com//path",
+    "http://google.com?k=v#fragment",
+    "http://user:pass@google.com:12345/path?k=v#fragment",
+    "http:/path",
+    "http:path",
+    "://google.com",
+  };
+  for (size_t i = 0; i < ARRAYSIZE(valid_cases); i++) {
+    EXPECT_TRUE(GURL(valid_cases[i]).is_valid())
+        << "Case: " << valid_cases[i];
+  }
+
+  const char* invalid_cases[] = {
+    "http://?k=v",
+    "http:://google.com",
+    "http//google.com",
+    "http://google.com:12three45",
+    "path",
+  };
+  for (size_t i = 0; i < ARRAYSIZE(invalid_cases); i++) {
+    EXPECT_FALSE(GURL(invalid_cases[i]).is_valid())
+        << "Case: " << invalid_cases[i];
+  }
+}
+
+TEST(GURLTest, ExtraSlashesBeforeAuthority) {
+  // According to RFC3986, the hier-part for URI with an authority must use only
+  // two slashes, GURL intentionally just ignores slashes more than 2 and parses
+  // the following part as an authority.
+  GURL url("http:///host");
+  EXPECT_EQ("host", url.host());
+  EXPECT_EQ("/", url.path());
+}
+
 // Given an invalid URL, we should still get most of the components.
-TEST(GURLTest, Invalid) {
+TEST(GURLTest, ComponentGettersWorkEvenForInvalidURL) {
   GURL url("http:google.com:foo");
   EXPECT_FALSE(url.is_valid());
   EXPECT_EQ("http://google.com:foo/", url.possibly_invalid_spec());
@@ -219,7 +270,7 @@ TEST(GURLTest, Invalid) {
   EXPECT_EQ("", url.password());
   EXPECT_EQ("google.com", url.host());
   EXPECT_EQ("foo", url.port());
-  EXPECT_EQ(url_parse::PORT_INVALID, url.IntPort());
+  EXPECT_EQ(PORT_INVALID, url.IntPort());
   EXPECT_EQ("/", url.path());
   EXPECT_EQ("", url.query());
   EXPECT_EQ("", url.ref());
@@ -283,6 +334,25 @@ TEST(GURLTest, GetOrigin) {
   for (size_t i = 0; i < ARRAYSIZE(cases); i++) {
     GURL url(cases[i].input);
     GURL origin = url.GetOrigin();
+    EXPECT_EQ(cases[i].expected, origin.spec());
+  }
+}
+
+TEST(GURLTest, GetAsReferrer) {
+  struct TestCase {
+    const char* input;
+    const char* expected;
+  } cases[] = {
+    {"http://www.google.com", "http://www.google.com/"},
+    {"http://user:pass@www.google.com:21/blah#baz", "http://www.google.com:21/blah"},
+    {"http://user@www.google.com", "http://www.google.com/"},
+    {"http://:pass@www.google.com", "http://www.google.com/"},
+    {"http://:@www.google.com", "http://www.google.com/"},
+    {"http://www.google.com/temp/foo?q#b", "http://www.google.com/temp/foo?q"},
+  };
+  for (size_t i = 0; i < ARRAYSIZE(cases); i++) {
+    GURL url(cases[i].input);
+    GURL origin = url.GetAsReferrer();
     EXPECT_EQ(cases[i].expected, origin.spec());
   }
 }
@@ -353,7 +423,7 @@ TEST(GURLTest, Replacements) {
 TEST(GURLTest, ClearFragmentOnDataUrl) {
   // http://crbug.com/291747 - a data URL may legitimately have trailing
   // whitespace in the spec after the ref is cleared. Test this does not trigger
-  // the url_parse::Parsed importing validation DCHECK in GURL.
+  // the Parsed importing validation DCHECK in GURL.
   GURL url(" data: one ? two # three ");
 
   // By default the trailing whitespace will have been stripped.
@@ -424,16 +494,16 @@ TEST(GURLTest, EffectiveIntPort) {
     {"gopher://www.google.com:80/", 80},
 
     // file - no port
-    {"file://www.google.com/", url_parse::PORT_UNSPECIFIED},
-    {"file://www.google.com:443/", url_parse::PORT_UNSPECIFIED},
+    {"file://www.google.com/", PORT_UNSPECIFIED},
+    {"file://www.google.com:443/", PORT_UNSPECIFIED},
 
     // data - no port
-    {"data:www.google.com:90", url_parse::PORT_UNSPECIFIED},
-    {"data:www.google.com", url_parse::PORT_UNSPECIFIED},
+    {"data:www.google.com:90", PORT_UNSPECIFIED},
+    {"data:www.google.com", PORT_UNSPECIFIED},
 
     // filesystem - no port
-    {"filesystem:http://www.google.com:90/t/foo", url_parse::PORT_UNSPECIFIED},
-    {"filesystem:file:///t/foo", url_parse::PORT_UNSPECIFIED},
+    {"filesystem:http://www.google.com:90/t/foo", PORT_UNSPECIFIED},
+    {"filesystem:file:///t/foo", PORT_UNSPECIFIED},
   };
 
   for (size_t i = 0; i < ARRAYSIZE(port_tests); i++) {
@@ -564,3 +634,5 @@ TEST(GURLTest, SchemeIsWSOrWSS) {
   EXPECT_TRUE(GURL("wss://bar/").SchemeIsWSOrWSS());
   EXPECT_FALSE(GURL("http://bar/").SchemeIsWSOrWSS());
 }
+
+}  // namespace url

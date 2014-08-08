@@ -26,6 +26,7 @@
 #ifndef ProgressTracker_h
 #define ProgressTracker_h
 
+#include "wtf/FastAllocBase.h"
 #include "wtf/Forward.h"
 #include "wtf/HashMap.h"
 #include "wtf/Noncopyable.h"
@@ -34,7 +35,7 @@
 
 namespace WebCore {
 
-class Frame;
+class LocalFrame;
 class ResourceResponse;
 struct ProgressItem;
 
@@ -46,13 +47,12 @@ class ProgressTracker {
 public:
     ~ProgressTracker();
 
-    static PassOwnPtr<ProgressTracker> create();
-    static unsigned long createUniqueIdentifier();
+    static PassOwnPtr<ProgressTracker> create(LocalFrame*);
 
     double estimatedProgress() const;
 
-    void progressStarted(Frame*);
-    void progressCompleted(Frame*);
+    void progressStarted();
+    void progressCompleted();
 
     void incrementProgress(unsigned long identifier, const ResourceResponse&);
     void incrementProgress(unsigned long identifier, const char*, int);
@@ -62,11 +62,12 @@ public:
     long long totalBytesReceived() const { return m_totalBytesReceived; }
 
 private:
-    ProgressTracker();
+    ProgressTracker(LocalFrame*);
 
     void reset();
-    void finalProgressComplete();
 
+    LocalFrame* m_frame;
+    bool m_inProgress;
     long long m_totalPageAndResourceBytesToLoad;
     long long m_totalBytesReceived;
     double m_lastNotifiedProgressValue;
@@ -75,9 +76,7 @@ private:
     double m_progressNotificationTimeInterval;
     bool m_finalProgressChangedSent;
     double m_progressValue;
-    RefPtr<Frame> m_originatingProgressFrame;
 
-    int m_numProgressTrackedFrames;
     HashMap<unsigned long, OwnPtr<ProgressItem> > m_progressItems;
 };
 

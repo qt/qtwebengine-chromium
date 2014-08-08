@@ -10,6 +10,7 @@
 #include <stdio.h>
 
 #include <fstream>
+#include <limits>
 
 #include "base/files/file_enumerator.h"
 #include "base/files/file_path.h"
@@ -126,7 +127,11 @@ bool TextContentsEqual(const FilePath& filename1, const FilePath& filename2) {
   return true;
 }
 
-bool ReadFileToString(const FilePath& path, std::string* contents) {
+bool ReadFileToString(const FilePath& path,
+                      std::string* contents,
+                      size_t max_size) {
+  if (contents)
+    contents->clear();
   if (path.ReferencesParent())
     return false;
   FILE* file = OpenFile(path, "rb");
@@ -136,13 +141,30 @@ bool ReadFileToString(const FilePath& path, std::string* contents) {
 
   char buf[1 << 16];
   size_t len;
+  size_t size = 0;
+  bool read_status = true;
+
+  // Many files supplied in |path| have incorrect size (proc files etc).
+  // Hence, the file is read sequentially as opposed to a one-shot read.
   while ((len = fread(buf, 1, sizeof(buf), file)) > 0) {
     if (contents)
-      contents->append(buf, len);
+      contents->append(buf, std::min(len, max_size - size));
+
+    if ((max_size - size) < len) {
+      read_status = false;
+      break;
+    }
+
+    size += len;
   }
+  read_status = read_status && !ferror(file);
   CloseFile(file);
 
-  return true;
+  return read_status;
+}
+
+bool ReadFileToString(const FilePath& path, std::string* contents) {
+  return ReadFileToString(path, contents, std::numeric_limits<size_t>::max());
 }
 
 bool IsDirectoryEmpty(const FilePath& dir_path) {
@@ -166,7 +188,7 @@ bool CreateDirectory(const FilePath& full_path) {
 }
 
 bool GetFileSize(const FilePath& file_path, int64* file_size) {
-  PlatformFileInfo info;
+  File::Info info;
   if (!GetFileInfo(file_path, &info))
     return false;
   *file_size = info.size;
@@ -176,22 +198,19 @@ bool GetFileSize(const FilePath& file_path, int64* file_size) {
 bool TouchFile(const FilePath& path,
                const Time& last_accessed,
                const Time& last_modified) {
-  int flags = PLATFORM_FILE_OPEN | PLATFORM_FILE_WRITE_ATTRIBUTES;
+  int flags = File::FLAG_OPEN | File::FLAG_WRITE_ATTRIBUTES;
 
 #if defined(OS_WIN)
   // On Windows, FILE_FLAG_BACKUP_SEMANTICS is needed to open a directory.
   if (DirectoryExists(path))
-    flags |= PLATFORM_FILE_BACKUP_SEMANTICS;
+    flags |= File::FLAG_BACKUP_SEMANTICS;
 #endif  // OS_WIN
 
-  const PlatformFile file = CreatePlatformFile(path, flags, NULL, NULL);
-  if (file != kInvalidPlatformFileValue) {
-    bool result = TouchPlatformFile(file, last_accessed, last_modified);
-    ClosePlatformFile(file);
-    return result;
-  }
+  File file(path, flags);
+  if (!file.IsValid())
+    return false;
 
-  return false;
+  return file.SetTimes(last_accessed, last_modified);
 }
 
 bool CloseFile(FILE* file) {
@@ -218,18 +237,8 @@ bool TruncateFile(FILE* file) {
   return true;
 }
 
-}  // namespace base
-
-// -----------------------------------------------------------------------------
-
-namespace file_util {
-
-using base::FilePath;
-using base::kMaxUniqueFiles;
-
-int GetUniquePathNumber(
-    const FilePath& path,
-    const FilePath::StringType& suffix) {
+int GetUniquePathNumber(const FilePath& path,
+                        const FilePath::StringType& suffix) {
   bool have_suffix = !suffix.empty();
   if (!PathExists(path) &&
       (!have_suffix || !PathExists(FilePath(path.value() + suffix)))) {
@@ -238,8 +247,7 @@ int GetUniquePathNumber(
 
   FilePath new_path;
   for (int count = 1; count <= kMaxUniqueFiles; ++count) {
-    new_path =
-        path.InsertBeforeExtensionASCII(base::StringPrintf(" (%d)", count));
+    new_path = path.InsertBeforeExtensionASCII(StringPrintf(" (%d)", count));
     if (!PathExists(new_path) &&
         (!have_suffix || !PathExists(FilePath(new_path.value() + suffix)))) {
       return count;
@@ -249,4 +257,4 @@ int GetUniquePathNumber(
   return -1;
 }
 
-}  // namespace file_util
+}  // namespace base

@@ -31,10 +31,11 @@
 #include "config.h"
 #include "core/dom/PresentationAttributeStyle.h"
 
-#include "HTMLNames.h"
 #include "core/css/StylePropertySet.h"
 #include "core/dom/Attribute.h"
 #include "core/dom/Element.h"
+#include "core/html/HTMLInputElement.h"
+#include "platform/Timer.h"
 #include "wtf/HashFunctions.h"
 #include "wtf/HashMap.h"
 #include "wtf/text/CString.h"
@@ -87,7 +88,7 @@ public:
         m_hitCount++;
 
         if (!m_cleanTimer.isActive())
-            m_cleanTimer.startOneShot(presentationAttributeCacheCleanTimeInSeconds);
+            m_cleanTimer.startOneShot(presentationAttributeCacheCleanTimeInSeconds, FROM_HERE);
     }
 
 private:
@@ -121,19 +122,19 @@ static void makePresentationAttributeCacheKey(Element& element, PresentationAttr
     if (!element.isHTMLElement())
         return;
     // Interpretation of the size attributes on <input> depends on the type attribute.
-    if (element.hasTagName(inputTag))
+    if (isHTMLInputElement(element))
         return;
-    unsigned size = element.attributeCount();
-    for (unsigned i = 0; i < size; ++i) {
-        const Attribute* attribute = element.attributeItem(i);
-        if (!element.isPresentationAttribute(attribute->name()))
+    AttributeCollection attributes = element.attributes();
+    AttributeCollection::const_iterator end = attributes.end();
+    for (AttributeCollection::const_iterator it = attributes.begin(); it != end; ++it) {
+        if (!element.isPresentationAttribute(it->name()))
             continue;
-        if (!attribute->namespaceURI().isNull())
+        if (!it->namespaceURI().isNull())
             return;
         // FIXME: Background URL may depend on the base URL and can't be shared. Disallow caching.
-        if (attribute->name() == backgroundAttr)
+        if (it->name() == backgroundAttr)
             return;
-        result.attributesAndValues.append(std::make_pair(attribute->localName().impl(), attribute->value()));
+        result.attributesAndValues.append(std::make_pair(it->localName().impl(), it->value()));
     }
     if (result.attributesAndValues.isEmpty())
         return;
@@ -163,29 +164,28 @@ PassRefPtr<StylePropertySet> computePresentationAttributeStyle(Element& element)
 
     unsigned cacheHash = computePresentationAttributeCacheHash(cacheKey);
 
-    PresentationAttributeCache::iterator cacheIterator;
+    PresentationAttributeCache::ValueType* cacheValue;
     if (cacheHash) {
-        cacheIterator = presentationAttributeCache().add(cacheHash, nullptr).iterator;
-        if (cacheIterator->value && cacheIterator->value->key != cacheKey)
+        cacheValue = presentationAttributeCache().add(cacheHash, nullptr).storedValue;
+        if (cacheValue->value && cacheValue->value->key != cacheKey)
             cacheHash = 0;
     } else {
-        cacheIterator = presentationAttributeCache().end();
+        cacheValue = 0;
     }
 
     RefPtr<StylePropertySet> style;
-    if (cacheHash && cacheIterator->value) {
-        style = cacheIterator->value->value;
+    if (cacheHash && cacheValue->value) {
+        style = cacheValue->value->value;
         cacheCleaner.didHitPresentationAttributeCache();
     } else {
         style = MutableStylePropertySet::create(element.isSVGElement() ? SVGAttributeMode : HTMLAttributeMode);
-        unsigned size = element.attributeCount();
-        for (unsigned i = 0; i < size; ++i) {
-            const Attribute* attribute = element.attributeItem(i);
-            element.collectStyleForPresentationAttribute(attribute->name(), attribute->value(), toMutableStylePropertySet(style));
-        }
+        AttributeCollection attributes = element.attributes();
+        AttributeCollection::const_iterator end = attributes.end();
+        for (AttributeCollection::const_iterator it = attributes.begin(); it != end; ++it)
+            element.collectStyleForPresentationAttribute(it->name(), it->value(), toMutableStylePropertySet(style));
     }
 
-    if (!cacheHash || cacheIterator->value)
+    if (!cacheHash || cacheValue->value)
         return style.release();
 
     OwnPtr<PresentationAttributeCacheEntry> newEntry = adoptPtr(new PresentationAttributeCacheEntry);
@@ -199,7 +199,7 @@ PassRefPtr<StylePropertySet> computePresentationAttributeStyle(Element& element)
         presentationAttributeCache().clear();
         presentationAttributeCache().set(cacheHash, newEntry.release());
     } else {
-        cacheIterator->value = newEntry.release();
+        cacheValue->value = newEntry.release();
     }
 
     return style.release();

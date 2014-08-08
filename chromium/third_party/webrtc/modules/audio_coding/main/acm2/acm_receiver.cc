@@ -21,8 +21,9 @@
 #include "webrtc/modules/audio_coding/main/acm2/acm_resampler.h"
 #include "webrtc/modules/audio_coding/main/acm2/call_statistics.h"
 #include "webrtc/modules/audio_coding/main/acm2/nack.h"
-#include "webrtc/modules/audio_coding/neteq4/interface/audio_decoder.h"
-#include "webrtc/modules/audio_coding/neteq4/interface/neteq.h"
+#include "webrtc/modules/audio_coding/neteq/interface/audio_decoder.h"
+#include "webrtc/modules/audio_coding/neteq/interface/neteq.h"
+#include "webrtc/system_wrappers/interface/clock.h"
 #include "webrtc/system_wrappers/interface/critical_section_wrapper.h"
 #include "webrtc/system_wrappers/interface/logging.h"
 #include "webrtc/system_wrappers/interface/rw_lock_wrapper.h"
@@ -35,7 +36,6 @@ namespace acm2 {
 
 namespace {
 
-const int kNeteqInitSampleRateHz = 16000;
 const int kNackThresholdPackets = 2;
 
 // |vad_activity_| field of |audio_frame| is set to |previous_audio_activity_|
@@ -117,21 +117,23 @@ bool IsCng(int codec_id) {
 
 }  // namespace
 
-AcmReceiver::AcmReceiver()
-    : id_(0),
-      neteq_(NetEq::Create(kNeteqInitSampleRateHz)),
+AcmReceiver::AcmReceiver(const AudioCodingModule::Config& config)
+    : crit_sect_(CriticalSectionWrapper::CreateCriticalSection()),
+      id_(config.id),
       last_audio_decoder_(-1),  // Invalid value.
-      decode_lock_(RWLockWrapper::CreateRWLock()),
-      neteq_crit_sect_(CriticalSectionWrapper::CreateCriticalSection()),
-      vad_enabled_(true),
-      previous_audio_activity_(AudioFrame::kVadUnknown),
-      current_sample_rate_hz_(kNeteqInitSampleRateHz),
+      previous_audio_activity_(AudioFrame::kVadPassive),
+      current_sample_rate_hz_(config.neteq_config.sample_rate_hz),
       nack_(),
       nack_enabled_(false),
+      neteq_(NetEq::Create(config.neteq_config)),
+      decode_lock_(RWLockWrapper::CreateRWLock()),
+      vad_enabled_(true),
+      clock_(config.clock),
       av_sync_(false),
       initial_delay_manager_(),
       missing_packets_sync_stream_(),
       late_packets_sync_stream_() {
+  assert(clock_);
   for (int n = 0; n < ACMCodecDB::kMaxNumCodecs; ++n) {
     decoders_[n].registered = false;
   }
@@ -148,7 +150,6 @@ AcmReceiver::AcmReceiver()
 AcmReceiver::~AcmReceiver() {
   delete neteq_;
   delete decode_lock_;
-  delete neteq_crit_sect_;
 }
 
 int AcmReceiver::SetMinimumDelay(int delay_ms) {
@@ -162,7 +163,7 @@ int AcmReceiver::SetInitialDelay(int delay_ms) {
   if (delay_ms < 0 || delay_ms > 10000) {
     return -1;
   }
-  CriticalSectionScoped lock(neteq_crit_sect_);
+  CriticalSectionScoped lock(crit_sect_.get());
 
   if (delay_ms == 0) {
     av_sync_ = false;
@@ -206,7 +207,7 @@ int AcmReceiver::LeastRequiredDelayMs() const {
 }
 
 int AcmReceiver::current_sample_rate_hz() const {
-  CriticalSectionScoped lock(neteq_crit_sect_);
+  CriticalSectionScoped lock(crit_sect_.get());
   return current_sample_rate_hz_;
 }
 
@@ -269,7 +270,7 @@ int AcmReceiver::InsertPacket(const WebRtcRTPHeader& rtp_header,
   const RTPHeader* header = &rtp_header.header;  // Just a shorthand.
 
   {
-    CriticalSectionScoped lock(neteq_crit_sect_);
+    CriticalSectionScoped lock(crit_sect_.get());
 
     int codec_id = RtpHeaderToCodecIndex(*header, incoming_payload);
     if (codec_id < 0) {
@@ -328,7 +329,7 @@ int AcmReceiver::InsertPacket(const WebRtcRTPHeader& rtp_header,
           rtp_header, receive_timestamp, packet_type, new_codec, sample_rate_hz,
           missing_packets_sync_stream_.get());
     }
-  }
+  }  // |crit_sect_| is released.
 
   {
     WriteLockScoped lock_codecs(*decode_lock_);  // Lock to prevent an encoding.
@@ -359,7 +360,7 @@ int AcmReceiver::GetAudio(int desired_freq_hz, AudioFrame* audio_frame) {
 
   {
     // Accessing members, take the lock.
-    CriticalSectionScoped lock(neteq_crit_sect_);
+    CriticalSectionScoped lock(crit_sect_.get());
 
     if (av_sync_) {
       assert(initial_delay_manager_.get());
@@ -404,7 +405,7 @@ int AcmReceiver::GetAudio(int desired_freq_hz, AudioFrame* audio_frame) {
   }
 
   // Accessing members, take the lock.
-  CriticalSectionScoped lock(neteq_crit_sect_);
+  CriticalSectionScoped lock(crit_sect_.get());
 
   // Update NACK.
   int decoded_sequence_num = 0;
@@ -426,9 +427,13 @@ int AcmReceiver::GetAudio(int desired_freq_hz, AudioFrame* audio_frame) {
   if (ptr_audio_buffer == audio_buffer_) {
     // Data is written to local buffer.
     if (need_resampling) {
-      samples_per_channel = resampler_.Resample10Msec(
-          audio_buffer_, current_sample_rate_hz_, desired_freq_hz,
-          num_channels, audio_frame->data_);
+      samples_per_channel =
+          resampler_.Resample10Msec(audio_buffer_,
+                                    current_sample_rate_hz_,
+                                    desired_freq_hz,
+                                    num_channels,
+                                    AudioFrame::kMaxDataSizeSamples,
+                                    audio_frame->data_);
       if (samples_per_channel < 0) {
         LOG_FERR0(LS_ERROR, "AcmReceiver::GetAudio") << "Resampler Failed.";
         return -1;
@@ -442,9 +447,13 @@ int AcmReceiver::GetAudio(int desired_freq_hz, AudioFrame* audio_frame) {
     // Data is written into |audio_frame|.
     if (need_resampling) {
       // We might end up here ONLY if codec is changed.
-      samples_per_channel = resampler_.Resample10Msec(
-          audio_frame->data_, current_sample_rate_hz_, desired_freq_hz,
-          num_channels, audio_buffer_);
+      samples_per_channel =
+          resampler_.Resample10Msec(audio_frame->data_,
+                                    current_sample_rate_hz_,
+                                    desired_freq_hz,
+                                    num_channels,
+                                    AudioFrame::kMaxDataSizeSamples,
+                                    audio_buffer_);
       if (samples_per_channel < 0) {
         LOG_FERR0(LS_ERROR, "AcmReceiver::GetAudio") << "Resampler Failed.";
         return -1;
@@ -463,6 +472,19 @@ int AcmReceiver::GetAudio(int desired_freq_hz, AudioFrame* audio_frame) {
   SetAudioFrameActivityAndType(vad_enabled_, type, audio_frame);
   previous_audio_activity_ = audio_frame->vad_activity_;
   call_stats_.DecodedByNetEq(audio_frame->speech_type_);
+
+  // Computes the RTP timestamp of the first sample in |audio_frame| from
+  // |GetPlayoutTimestamp|, which is the timestamp of the last sample of
+  // |audio_frame|.
+  uint32_t playout_timestamp = 0;
+  if (GetPlayoutTimestamp(&playout_timestamp)) {
+    audio_frame->timestamp_ =
+        playout_timestamp - audio_frame->samples_per_channel_;
+  } else {
+    // Remain 0 until we have a valid |playout_timestamp|.
+    audio_frame->timestamp_ = 0;
+  }
+
   return 0;
 }
 
@@ -473,19 +495,25 @@ int32_t AcmReceiver::AddCodec(int acm_codec_id,
   assert(acm_codec_id >= 0 && acm_codec_id < ACMCodecDB::kMaxNumCodecs);
   NetEqDecoder neteq_decoder = ACMCodecDB::neteq_decoders_[acm_codec_id];
 
-  CriticalSectionScoped lock(neteq_crit_sect_);
+  // Make sure the right decoder is registered for Opus.
+  if (neteq_decoder == kDecoderOpus && channels == 2) {
+    neteq_decoder = kDecoderOpus_2ch;
+  }
+
+  CriticalSectionScoped lock(crit_sect_.get());
 
   // The corresponding NetEq decoder ID.
   // If this coder has been registered before.
   if (decoders_[acm_codec_id].registered) {
-    if (decoders_[acm_codec_id].payload_type == payload_type) {
+    if (decoders_[acm_codec_id].payload_type == payload_type &&
+        decoders_[acm_codec_id].channels == channels) {
       // Re-registering the same codec with the same payload-type. Do nothing
       // and return.
       return 0;
     }
 
-    // Changing the payload-type of this codec. First unregister. Then register
-    // with new payload-type.
+    // Changing the payload-type or number of channels for this codec.
+    // First unregister. Then register with new payload-type/channels.
     if (neteq_->RemovePayloadType(decoders_[acm_codec_id].payload_type) !=
         NetEq::kOK) {
       LOG_F(LS_ERROR) << "Cannot remover payload "
@@ -499,8 +527,7 @@ int32_t AcmReceiver::AddCodec(int acm_codec_id,
     ret_val = neteq_->RegisterPayloadType(neteq_decoder, payload_type);
   } else {
     ret_val = neteq_->RegisterExternalDecoder(
-        audio_decoder, neteq_decoder,
-        ACMCodecDB::database_[acm_codec_id].plfreq, payload_type);
+        audio_decoder, neteq_decoder, payload_type);
   }
   if (ret_val != NetEq::kOK) {
     LOG_FERR3(LS_ERROR, "AcmReceiver::AddCodec", acm_codec_id, payload_type,
@@ -519,13 +546,13 @@ int32_t AcmReceiver::AddCodec(int acm_codec_id,
 
 void AcmReceiver::EnableVad() {
   neteq_->EnableVad();
-  CriticalSectionScoped lock(neteq_crit_sect_);
+  CriticalSectionScoped lock(crit_sect_.get());
   vad_enabled_ = true;
 }
 
 void AcmReceiver::DisableVad() {
   neteq_->DisableVad();
-  CriticalSectionScoped lock(neteq_crit_sect_);
+  CriticalSectionScoped lock(crit_sect_.get());
   vad_enabled_ = false;
 }
 
@@ -537,7 +564,7 @@ void AcmReceiver::FlushBuffers() {
 // many as it can.
 int AcmReceiver::RemoveAllCodecs() {
   int ret_val = 0;
-  CriticalSectionScoped lock(neteq_crit_sect_);
+  CriticalSectionScoped lock(crit_sect_.get());
   for (int n = 0; n < ACMCodecDB::kMaxNumCodecs; ++n) {
     if (decoders_[n].registered) {
       if (neteq_->RemovePayloadType(decoders_[n].payload_type) == 0) {
@@ -557,15 +584,13 @@ int AcmReceiver::RemoveAllCodecs() {
 int AcmReceiver::RemoveCodec(uint8_t payload_type) {
   int codec_index = PayloadType2CodecIndex(payload_type);
   if (codec_index < 0) {  // Such a payload-type is not registered.
-    LOG(LS_WARNING) << "payload_type " << payload_type << " is not registered,"
-        " no action is taken.";
     return 0;
   }
   if (neteq_->RemovePayloadType(payload_type) != NetEq::kOK) {
     LOG_FERR1(LS_ERROR, "AcmReceiver::RemoveCodec", payload_type);
     return -1;
   }
-  CriticalSectionScoped lock(neteq_crit_sect_);
+  CriticalSectionScoped lock(crit_sect_.get());
   decoders_[codec_index].registered = false;
   if (last_audio_decoder_ == codec_index)
     last_audio_decoder_ = -1;  // Codec is removed, invalidate last decoder.
@@ -573,26 +598,27 @@ int AcmReceiver::RemoveCodec(uint8_t payload_type) {
 }
 
 void AcmReceiver::set_id(int id) {
-  CriticalSectionScoped lock(neteq_crit_sect_);
+  CriticalSectionScoped lock(crit_sect_.get());
   id_ = id;
 }
 
-uint32_t AcmReceiver::PlayoutTimestamp() {
+bool AcmReceiver::GetPlayoutTimestamp(uint32_t* timestamp) {
   if (av_sync_) {
     assert(initial_delay_manager_.get());
-    if (initial_delay_manager_->buffering())
-      return initial_delay_manager_->playout_timestamp();
+    if (initial_delay_manager_->buffering()) {
+      return initial_delay_manager_->GetPlayoutTimestamp(timestamp);
+    }
   }
-  return neteq_->PlayoutTimestamp();
+  return neteq_->GetPlayoutTimestamp(timestamp);
 }
 
 int AcmReceiver::last_audio_codec_id() const {
-  CriticalSectionScoped lock(neteq_crit_sect_);
+  CriticalSectionScoped lock(crit_sect_.get());
   return last_audio_decoder_;
 }
 
 int AcmReceiver::last_audio_payload_type() const {
-  CriticalSectionScoped lock(neteq_crit_sect_);
+  CriticalSectionScoped lock(crit_sect_.get());
   if (last_audio_decoder_ < 0)
     return -1;
   assert(decoders_[last_audio_decoder_].registered);
@@ -600,7 +626,7 @@ int AcmReceiver::last_audio_payload_type() const {
 }
 
 int AcmReceiver::RedPayloadType() const {
-  CriticalSectionScoped lock(neteq_crit_sect_);
+  CriticalSectionScoped lock(crit_sect_.get());
   if (ACMCodecDB::kRED < 0 ||
       !decoders_[ACMCodecDB::kRED].registered) {
     LOG_F(LS_WARNING) << "RED is not registered.";
@@ -610,9 +636,8 @@ int AcmReceiver::RedPayloadType() const {
 }
 
 int AcmReceiver::LastAudioCodec(CodecInst* codec) const {
-  CriticalSectionScoped lock(neteq_crit_sect_);
+  CriticalSectionScoped lock(crit_sect_.get());
   if (last_audio_decoder_ < 0) {
-    LOG_F(LS_WARNING) << "No audio payload is received, yet.";
     return -1;
   }
   assert(decoders_[last_audio_decoder_].registered);
@@ -636,6 +661,7 @@ void AcmReceiver::NetworkStatistics(ACMNetworkStatistics* acm_stat) {
   acm_stat->currentPreemptiveRate = neteq_stat.preemptive_rate;
   acm_stat->currentAccelerateRate = neteq_stat.accelerate_rate;
   acm_stat->clockDriftPPM = neteq_stat.clockdrift_ppm;
+  acm_stat->addedSamples = neteq_stat.added_zero_samples;
 
   std::vector<int> waiting_times;
   neteq_->WaitingTimes(&waiting_times);
@@ -665,7 +691,7 @@ void AcmReceiver::NetworkStatistics(ACMNetworkStatistics* acm_stat) {
 
 int AcmReceiver::DecoderByPayloadType(uint8_t payload_type,
                                       CodecInst* codec) const {
-  CriticalSectionScoped lock(neteq_crit_sect_);
+  CriticalSectionScoped lock(crit_sect_.get());
   int codec_index = PayloadType2CodecIndex(payload_type);
   if (codec_index < 0) {
     LOG_FERR1(LS_ERROR, "AcmReceiver::DecoderByPayloadType", payload_type);
@@ -691,7 +717,7 @@ int AcmReceiver::EnableNack(size_t max_nack_list_size) {
   if (max_nack_list_size == 0 || max_nack_list_size > Nack::kNackListSizeLimit)
     return -1;
 
-  CriticalSectionScoped lock(neteq_crit_sect_);
+  CriticalSectionScoped lock(crit_sect_.get());
   if (!nack_enabled_) {
     nack_.reset(Nack::Create(kNackThresholdPackets));
     nack_enabled_ = true;
@@ -707,14 +733,14 @@ int AcmReceiver::EnableNack(size_t max_nack_list_size) {
 }
 
 void AcmReceiver::DisableNack() {
-  CriticalSectionScoped lock(neteq_crit_sect_);
+  CriticalSectionScoped lock(crit_sect_.get());
   nack_.reset();  // Memory is released.
   nack_enabled_ = false;
 }
 
 std::vector<uint16_t> AcmReceiver::GetNackList(
     int round_trip_time_ms) const {
-  CriticalSectionScoped lock(neteq_crit_sect_);
+  CriticalSectionScoped lock(crit_sect_.get());
   if (round_trip_time_ms < 0) {
     WEBRTC_TRACE(webrtc::kTraceWarning, webrtc::kTraceAudioCoding, id_,
                  "GetNackList: round trip time cannot be negative."
@@ -730,7 +756,7 @@ std::vector<uint16_t> AcmReceiver::GetNackList(
 
 void AcmReceiver::ResetInitialDelay() {
   {
-    CriticalSectionScoped lock(neteq_crit_sect_);
+    CriticalSectionScoped lock(crit_sect_.get());
     av_sync_ = false;
     initial_delay_manager_.reset(NULL);
     missing_packets_sync_stream_.reset(NULL);
@@ -752,13 +778,9 @@ bool AcmReceiver::GetSilence(int desired_sample_rate_hz, AudioFrame* frame) {
   // exceeds a threshold.
   int num_packets;
   int max_num_packets;
-  int buffer_size_byte;
-  int max_buffer_size_byte;
   const float kBufferingThresholdScale = 0.9f;
-  neteq_->PacketBufferStatistics(&num_packets, &max_num_packets,
-                                 &buffer_size_byte, &max_buffer_size_byte);
-  if (num_packets > max_num_packets * kBufferingThresholdScale ||
-      buffer_size_byte > max_buffer_size_byte * kBufferingThresholdScale) {
+  neteq_->PacketBufferStatistics(&num_packets, &max_num_packets);
+  if (num_packets > max_num_packets * kBufferingThresholdScale) {
     initial_delay_manager_->DisableBuffering();
     return false;
   }
@@ -771,7 +793,6 @@ bool AcmReceiver::GetSilence(int desired_sample_rate_hz, AudioFrame* frame) {
     current_sample_rate_hz_ = ACMCodecDB::database_[last_audio_decoder_].plfreq;
     frame->num_channels_ = decoders_[last_audio_decoder_].channels;
   } else {
-    current_sample_rate_hz_ = kNeteqInitSampleRateHz;
     frame->num_channels_ = 1;
   }
 
@@ -785,7 +806,6 @@ bool AcmReceiver::GetSilence(int desired_sample_rate_hz, AudioFrame* frame) {
   frame->samples_per_channel_ = frame->sample_rate_hz_ / 100;  // Always 10 ms.
   frame->speech_type_ = AudioFrame::kCNG;
   frame->vad_activity_ = AudioFrame::kVadPassive;
-  frame->energy_ = 0;
   int samples = frame->samples_per_channel_ * frame->num_channels_;
   memset(frame->data_, 0, samples * sizeof(int16_t));
   return true;
@@ -815,7 +835,7 @@ uint32_t AcmReceiver::NowInTimestamp(int decoder_sampling_rate) const {
   // We masked 6 most significant bits of 32-bit so there is no overflow in
   // the conversion from milliseconds to timestamp.
   const uint32_t now_in_ms = static_cast<uint32_t>(
-      TickTime::MillisecondTimestamp() & 0x03ffffff);
+      clock_->TimeInMilliseconds() & 0x03ffffff);
   return static_cast<uint32_t>(
       (decoder_sampling_rate / 1000) * now_in_ms);
 }
@@ -839,7 +859,7 @@ void AcmReceiver::InsertStreamOfSyncPackets(
 
 void AcmReceiver::GetDecodingCallStatistics(
     AudioDecodingCallStats* stats) const {
-  CriticalSectionScoped lock(neteq_crit_sect_);
+  CriticalSectionScoped lock(crit_sect_.get());
   *stats = call_stats_.GetDecodingStatistics();
 }
 

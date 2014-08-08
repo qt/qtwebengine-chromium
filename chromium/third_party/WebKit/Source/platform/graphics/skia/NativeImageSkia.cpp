@@ -46,6 +46,7 @@
 #include "third_party/skia/include/core/SkScalar.h"
 #include "third_party/skia/include/core/SkShader.h"
 
+#include <algorithm>
 #include <math.h>
 #include <limits>
 
@@ -56,7 +57,7 @@ static bool nearlyIntegral(float value)
     return fabs(value - floorf(value)) < std::numeric_limits<float>::epsilon();
 }
 
-ResamplingMode NativeImageSkia::computeResamplingMode(const SkMatrix& matrix, float srcWidth, float srcHeight, float destWidth, float destHeight) const
+InterpolationQuality NativeImageSkia::computeInterpolationQuality(const SkMatrix& matrix, float srcWidth, float srcHeight, float destWidth, float destHeight) const
 {
     // The percent change below which we will not resample. This usually means
     // an off-by-one error on the web page, and just doing nearest neighbor
@@ -81,7 +82,7 @@ ResamplingMode NativeImageSkia::computeResamplingMode(const SkMatrix& matrix, fl
     bool heightNearlyEqual = diffHeight < std::numeric_limits<float>::epsilon();
     // We don't need to resample if the source and destination are the same.
     if (widthNearlyEqual && heightNearlyEqual)
-        return NoResampling;
+        return InterpolationNone;
 
     if (srcWidth <= kSmallImageSizeThreshold
         || srcHeight <= kSmallImageSizeThreshold
@@ -94,11 +95,11 @@ ResamplingMode NativeImageSkia::computeResamplingMode(const SkMatrix& matrix, fl
         // when the source image is only one pixel wide in that dimension.
         if ((!nearlyIntegral(destWidth) && srcWidth > 1 + std::numeric_limits<float>::epsilon())
             || (!nearlyIntegral(destHeight) && srcHeight > 1 + std::numeric_limits<float>::epsilon()))
-            return LinearResampling;
+            return InterpolationLow;
 
         // Otherwise, don't resample small images. These are often used for
         // borders and rules (think 1x1 images used to make lines).
-        return NoResampling;
+        return InterpolationNone;
     }
 
     if (srcHeight * kLargeStretch <= destHeight || srcWidth * kLargeStretch <= destWidth) {
@@ -109,11 +110,11 @@ ResamplingMode NativeImageSkia::computeResamplingMode(const SkMatrix& matrix, fl
         // (which might be large) and then is stretching it to fill some part
         // of the page.
         if (widthNearlyEqual || heightNearlyEqual)
-            return NoResampling;
+            return InterpolationNone;
 
         // The image is growing a lot and in more than one direction. Resampling
         // is slow and doesn't give us very much when growing a lot.
-        return LinearResampling;
+        return InterpolationLow;
     }
 
     if ((diffWidth / srcWidth < kFractionalChangeThreshold)
@@ -121,40 +122,40 @@ ResamplingMode NativeImageSkia::computeResamplingMode(const SkMatrix& matrix, fl
         // It is disappointingly common on the web for image sizes to be off by
         // one or two pixels. We don't bother resampling if the size difference
         // is a small fraction of the original size.
-        return NoResampling;
+        return InterpolationNone;
     }
 
     // When the image is not yet done loading, use linear. We don't cache the
     // partially resampled images, and as they come in incrementally, it causes
     // us to have to resample the whole thing every time.
     if (!isDataComplete())
-        return LinearResampling;
+        return InterpolationLow;
 
     // Everything else gets resampled.
     // High quality interpolation only enabled for scaling and translation.
     if (!(matrix.getType() & (SkMatrix::kAffine_Mask | SkMatrix::kPerspective_Mask)))
-        return AwesomeResampling;
+        return InterpolationHigh;
 
-    return LinearResampling;
+    return InterpolationLow;
 }
 
-static ResamplingMode limitResamplingMode(GraphicsContext* context, ResamplingMode resampling)
+static InterpolationQuality limitInterpolationQuality(GraphicsContext* context, InterpolationQuality resampling)
 {
-    switch (context->imageInterpolationQuality()) {
-    case InterpolationNone:
-        return NoResampling;
-    case InterpolationMedium:
-        // For now we treat InterpolationMedium and InterpolationLow the same.
-    case InterpolationLow:
-        if (resampling == AwesomeResampling)
-            return LinearResampling;
-        break;
-    case InterpolationHigh:
-    case InterpolationDefault:
-        break;
-    }
+    return std::min(resampling, context->imageInterpolationQuality());
+}
 
-    return resampling;
+static SkPaint::FilterLevel convertToSkiaFilterLevel(bool useBicubicFilter, InterpolationQuality resampling)
+{
+    // FIXME: If we get rid of this special case, this function can go away entirely.
+    if (useBicubicFilter)
+        return SkPaint::kHigh_FilterLevel;
+
+    // InterpolationHigh if useBicubicFilter is false means that we do
+    // a manual high quality resampling before drawing to Skia.
+    if (resampling == InterpolationHigh)
+        return SkPaint::kNone_FilterLevel;
+
+    return static_cast<SkPaint::FilterLevel>(resampling);
 }
 
 // This function is used to scale an image and extract a scaled fragment.
@@ -223,6 +224,8 @@ SkBitmap NativeImageSkia::extractScaledImageFragment(const SkRect& srcRect, floa
 void NativeImageSkia::drawResampledBitmap(GraphicsContext* context, SkPaint& paint, const SkRect& srcRect, const SkRect& destRect) const
 {
     TRACE_EVENT0("skia", "drawResampledBitmap");
+    if (context->paintingDisabled())
+        return;
     // We want to scale |destRect| with transformation in the canvas to obtain
     // the final scale. The final scale is a combination of scale transform
     // in canvas and explicit scaling (srcRect and destRect).
@@ -233,7 +236,8 @@ void NativeImageSkia::drawResampledBitmap(GraphicsContext* context, SkPaint& pai
 
     // This part of code limits scaling only to visible portion in the
     SkRect destRectVisibleSubset;
-    ClipRectToCanvas(context, destRect, &destRectVisibleSubset);
+    if (!context->canvas()->getClipBounds(&destRectVisibleSubset))
+        return;
 
     // ClipRectToCanvas often overshoots, resulting in a larger region than our
     // original destRect. Intersecting gets us back inside.
@@ -295,6 +299,8 @@ SkBitmap NativeImageSkia::resizedBitmap(const SkISize& scaledImageSize, const Sk
         bool shouldCache = isDataComplete()
             && shouldCacheResampling(scaledImageSize, scaledImageSubset);
 
+        TRACE_EVENT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "ResizeImage", "cached", shouldCache);
+        // FIXME(361045): remove InspectorInstrumentation calls once DevTools Timeline migrates to tracing.
         PlatformInstrumentation::willResizeImage(shouldCache);
         SkBitmap resizedImage = skia::ImageOperations::Resize(m_image, skia::ImageOperations::RESIZE_LANCZOS3, scaledImageSize.width(), scaledImageSize.height(), scaledImageSubset);
         resizedImage.setImmutable();
@@ -312,9 +318,33 @@ SkBitmap NativeImageSkia::resizedBitmap(const SkISize& scaledImageSize, const Sk
     return resizedSubset;
 }
 
-static bool hasNon90rotation(GraphicsContext* context)
+static bool shouldDrawAntiAliased(GraphicsContext* context, const SkRect& destRect)
 {
-    return !context->getTotalMatrix().rectStaysRect();
+    if (!context->shouldAntialias())
+        return false;
+    const SkMatrix totalMatrix = context->getTotalMatrix();
+    // Don't disable anti-aliasing if we're rotated or skewed.
+    if (!totalMatrix.rectStaysRect())
+        return true;
+    // Disable anti-aliasing for scales or n*90 degree rotations.
+    // Allow to opt out of the optimization though for "hairline" geometry
+    // images - using the shouldAntialiasHairlineImages() GraphicsContext flag.
+    if (!context->shouldAntialiasHairlineImages())
+        return false;
+    // Check if the dimensions of the destination are "small" (less than one
+    // device pixel). To prevent sudden drop-outs. Since we know that
+    // kRectStaysRect_Mask is set, the matrix either has scale and no skew or
+    // vice versa. We can query the kAffine_Mask flag to determine which case
+    // it is.
+    // FIXME: This queries the CTM while drawing, which is generally
+    // discouraged. Always drawing with AA can negatively impact performance
+    // though - that's why it's not always on.
+    SkScalar widthExpansion, heightExpansion;
+    if (totalMatrix.getType() & SkMatrix::kAffine_Mask)
+        widthExpansion = totalMatrix[SkMatrix::kMSkewY], heightExpansion = totalMatrix[SkMatrix::kMSkewX];
+    else
+        widthExpansion = totalMatrix[SkMatrix::kMScaleX], heightExpansion = totalMatrix[SkMatrix::kMScaleY];
+    return destRect.width() * fabs(widthExpansion) < 1 || destRect.height() * fabs(heightExpansion) < 1;
 }
 
 void NativeImageSkia::draw(GraphicsContext* context, const SkRect& srcRect, const SkRect& destRect, PassRefPtr<SkXfermode> compOp) const
@@ -325,14 +355,17 @@ void NativeImageSkia::draw(GraphicsContext* context, const SkRect& srcRect, cons
     paint.setColorFilter(context->colorFilter());
     paint.setAlpha(context->getNormalizedAlpha());
     paint.setLooper(context->drawLooper());
-    // only antialias if we're rotated or skewed
-    paint.setAntiAlias(hasNon90rotation(context));
+    paint.setAntiAlias(shouldDrawAntiAliased(context, destRect));
 
-    ResamplingMode resampling;
+    bool isLazyDecoded = DeferredImageDecoder::isLazyDecoded(bitmap());
+
+    InterpolationQuality resampling;
     if (context->isAccelerated()) {
-        resampling = LinearResampling;
+        resampling = InterpolationLow;
     } else if (context->printing()) {
-        resampling = NoResampling;
+        resampling = InterpolationNone;
+    } else if (isLazyDecoded) {
+        resampling = InterpolationHigh;
     } else {
         // Take into account scale applied to the canvas when computing sampling mode (e.g. CSS scale or page scale).
         SkRect destRectTarget = destRect;
@@ -340,30 +373,27 @@ void NativeImageSkia::draw(GraphicsContext* context, const SkRect& srcRect, cons
         if (!(totalMatrix.getType() & (SkMatrix::kAffine_Mask | SkMatrix::kPerspective_Mask)))
             totalMatrix.mapRect(&destRectTarget, destRect);
 
-        resampling = computeResamplingMode(totalMatrix,
+        resampling = computeInterpolationQuality(totalMatrix,
             SkScalarToFloat(srcRect.width()), SkScalarToFloat(srcRect.height()),
             SkScalarToFloat(destRectTarget.width()), SkScalarToFloat(destRectTarget.height()));
     }
 
-    if (resampling == NoResampling) {
+    if (resampling == InterpolationNone) {
         // FIXME: This is to not break tests (it results in the filter bitmap flag
-        // being set to true). We need to decide if we respect NoResampling
-        // being returned from computeResamplingMode.
-        resampling = LinearResampling;
+        // being set to true). We need to decide if we respect InterpolationNone
+        // being returned from computeInterpolationQuality.
+        resampling = InterpolationLow;
     }
-    resampling = limitResamplingMode(context, resampling);
-    paint.setFilterBitmap(resampling == LinearResampling);
+    resampling = limitInterpolationQuality(context, resampling);
 
-    bool isLazyDecoded = DeferredImageDecoder::isLazyDecoded(bitmap());
     // FIXME: Bicubic filtering in Skia is only applied to defer-decoded images
     // as an experiment. Once this filtering code path becomes stable we should
     // turn this on for all cases, including non-defer-decoded images.
-    bool useBicubicFilter = resampling == AwesomeResampling && isLazyDecoded;
+    bool useBicubicFilter = resampling == InterpolationHigh && isLazyDecoded;
 
-    if (useBicubicFilter)
-        paint.setFilterLevel(SkPaint::kHigh_FilterLevel);
+    paint.setFilterLevel(convertToSkiaFilterLevel(useBicubicFilter, resampling));
 
-    if (resampling == AwesomeResampling && !useBicubicFilter) {
+    if (resampling == InterpolationHigh && !useBicubicFilter) {
         // Resample the image and then draw the result to canvas with bilinear
         // filtering.
         drawResampledBitmap(context, paint, srcRect, destRect);
@@ -381,12 +411,13 @@ void NativeImageSkia::draw(GraphicsContext* context, const SkRect& srcRect, cons
 
 static SkBitmap createBitmapWithSpace(const SkBitmap& bitmap, int spaceWidth, int spaceHeight)
 {
-    SkBitmap result;
-    result.setConfig(bitmap.config(),
-        bitmap.width() + spaceWidth,
-        bitmap.height() + spaceHeight);
-    result.allocPixels();
+    SkImageInfo info = bitmap.info();
+    info.fWidth += spaceWidth;
+    info.fHeight += spaceHeight;
+    info.fAlphaType = kPremul_SkAlphaType;
 
+    SkBitmap result;
+    result.allocPixels(info);
     result.eraseColor(SK_ColorTRANSPARENT);
     bitmap.copyPixelsTo(reinterpret_cast<uint8_t*>(result.getPixels()), result.rowBytes() * result.height(), result.rowBytes());
 
@@ -409,8 +440,9 @@ void NativeImageSkia::drawPattern(
         return; // nothing to draw
 
     SkMatrix totalMatrix = context->getTotalMatrix();
-    SkScalar ctmScaleX = totalMatrix.getScaleX();
-    SkScalar ctmScaleY = totalMatrix.getScaleY();
+    AffineTransform ctm = context->getCTM();
+    SkScalar ctmScaleX = ctm.xScale();
+    SkScalar ctmScaleY = ctm.yScale();
     totalMatrix.preScale(scale.width(), scale.height());
 
     // Figure out what size the bitmap will be in the destination. The
@@ -422,27 +454,46 @@ void NativeImageSkia::drawPattern(
     float destBitmapWidth = SkScalarToFloat(destRectTarget.width());
     float destBitmapHeight = SkScalarToFloat(destRectTarget.height());
 
-    // Compute the resampling mode.
-    ResamplingMode resampling;
-    if (context->isAccelerated() || context->printing())
-        resampling = LinearResampling;
-    else
-        resampling = computeResamplingMode(totalMatrix, normSrcRect.width(), normSrcRect.height(), destBitmapWidth, destBitmapHeight);
-    resampling = limitResamplingMode(context, resampling);
+    bool isLazyDecoded = DeferredImageDecoder::isLazyDecoded(bitmap());
 
-    SkMatrix shaderTransform;
+    // Compute the resampling mode.
+    InterpolationQuality resampling;
+    if (context->isAccelerated() || context->printing())
+        resampling = InterpolationLow;
+    else if (isLazyDecoded)
+        resampling = InterpolationHigh;
+    else
+        resampling = computeInterpolationQuality(totalMatrix, normSrcRect.width(), normSrcRect.height(), destBitmapWidth, destBitmapHeight);
+    resampling = limitInterpolationQuality(context, resampling);
+
+    SkMatrix localMatrix;
+    // We also need to translate it such that the origin of the pattern is the
+    // origin of the destination rect, which is what WebKit expects. Skia uses
+    // the coordinate system origin as the base for the pattern. If WebKit wants
+    // a shifted image, it will shift it from there using the localMatrix.
+    const float adjustedX = phase.x() + normSrcRect.x() * scale.width();
+    const float adjustedY = phase.y() + normSrcRect.y() * scale.height();
+    localMatrix.setTranslate(SkFloatToScalar(adjustedX), SkFloatToScalar(adjustedY));
+
     RefPtr<SkShader> shader;
 
-    bool isLazyDecoded = DeferredImageDecoder::isLazyDecoded(bitmap());
     // Bicubic filter is only applied to defer-decoded images, see
     // NativeImageSkia::draw for details.
-    bool useBicubicFilter = resampling == AwesomeResampling && isLazyDecoded;
+    bool useBicubicFilter = resampling == InterpolationHigh && isLazyDecoded;
 
-    if (resampling == AwesomeResampling && !useBicubicFilter) {
+    if (resampling == InterpolationHigh && !useBicubicFilter) {
         // Do nice resampling.
         float scaleX = destBitmapWidth / normSrcRect.width();
         float scaleY = destBitmapHeight / normSrcRect.height();
         SkRect scaledSrcRect;
+
+        // Since we are resizing the bitmap, we need to remove the scale
+        // applied to the pixels in the bitmap shader. This means we need
+        // CTM * localMatrix to have identity scale. Since we
+        // can't modify CTM (or the rectangle will be drawn in the wrong
+        // place), we must set localMatrix's scale to the inverse of
+        // CTM scale.
+        localMatrix.preScale(ctmScaleX ? 1 / ctmScaleX : 1, ctmScaleY ? 1 / ctmScaleY : 1);
 
         // The image fragment generated here is not exactly what is
         // requested. The scale factor used is approximated and image
@@ -450,54 +501,35 @@ void NativeImageSkia::drawPattern(
         // boundaries.
         SkBitmap resampled = extractScaledImageFragment(normSrcRect, scaleX, scaleY, &scaledSrcRect);
         if (repeatSpacing.isZero()) {
-            shader = adoptRef(SkShader::CreateBitmapShader(resampled, SkShader::kRepeat_TileMode, SkShader::kRepeat_TileMode));
+            shader = adoptRef(SkShader::CreateBitmapShader(resampled, SkShader::kRepeat_TileMode, SkShader::kRepeat_TileMode, &localMatrix));
         } else {
             shader = adoptRef(SkShader::CreateBitmapShader(
                 createBitmapWithSpace(resampled, repeatSpacing.width() * ctmScaleX, repeatSpacing.height() * ctmScaleY),
-                SkShader::kRepeat_TileMode, SkShader::kRepeat_TileMode));
+                SkShader::kRepeat_TileMode, SkShader::kRepeat_TileMode, &localMatrix));
         }
-
-        // Since we just resized the bitmap, we need to remove the scale
-        // applied to the pixels in the bitmap shader. This means we need
-        // CTM * shaderTransform to have identity scale. Since we
-        // can't modify CTM (or the rectangle will be drawn in the wrong
-        // place), we must set shaderTransform's scale to the inverse of
-        // CTM scale.
-        shaderTransform.setScale(ctmScaleX ? 1 / ctmScaleX : 1, ctmScaleY ? 1 / ctmScaleY : 1);
     } else {
+        // Because no resizing occurred, the shader transform should be
+        // set to the pattern's transform, which just includes scale.
+        localMatrix.preScale(scale.width(), scale.height());
+
         // No need to resample before drawing.
         SkBitmap srcSubset;
         bitmap().extractSubset(&srcSubset, enclosingIntRect(normSrcRect));
         if (repeatSpacing.isZero()) {
-            shader = adoptRef(SkShader::CreateBitmapShader(srcSubset, SkShader::kRepeat_TileMode, SkShader::kRepeat_TileMode));
+            shader = adoptRef(SkShader::CreateBitmapShader(srcSubset, SkShader::kRepeat_TileMode, SkShader::kRepeat_TileMode, &localMatrix));
         } else {
             shader = adoptRef(SkShader::CreateBitmapShader(
                 createBitmapWithSpace(srcSubset, repeatSpacing.width() * ctmScaleX, repeatSpacing.height() * ctmScaleY),
-                SkShader::kRepeat_TileMode, SkShader::kRepeat_TileMode));
+                SkShader::kRepeat_TileMode, SkShader::kRepeat_TileMode, &localMatrix));
         }
-
-        // Because no resizing occurred, the shader transform should be
-        // set to the pattern's transform, which just includes scale.
-        shaderTransform.setScale(scale.width(), scale.height());
     }
-
-    // We also need to translate it such that the origin of the pattern is the
-    // origin of the destination rect, which is what WebKit expects. Skia uses
-    // the coordinate system origin as the base for the pattern. If WebKit wants
-    // a shifted image, it will shift it from there using the shaderTransform.
-    float adjustedX = phase.x() + normSrcRect.x() * scale.width();
-    float adjustedY = phase.y() + normSrcRect.y() * scale.height();
-    shaderTransform.postTranslate(SkFloatToScalar(adjustedX), SkFloatToScalar(adjustedY));
-    shader->setLocalMatrix(shaderTransform);
 
     SkPaint paint;
     paint.setShader(shader.get());
     paint.setXfermode(WebCoreCompositeToSkiaComposite(compositeOp, blendMode).get());
     paint.setColorFilter(context->colorFilter());
+    paint.setFilterLevel(convertToSkiaFilterLevel(useBicubicFilter, resampling));
 
-    paint.setFilterBitmap(resampling == LinearResampling);
-    if (useBicubicFilter)
-        paint.setFilterLevel(SkPaint::kHigh_FilterLevel);
     if (isLazyDecoded)
         PlatformInstrumentation::didDrawLazyPixelRef(bitmap().getGenerationID());
 

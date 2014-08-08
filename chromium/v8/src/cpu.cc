@@ -1,49 +1,29 @@
 // Copyright 2013 the V8 project authors. All rights reserved.
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-//       copyright notice, this list of conditions and the following
-//       disclaimer in the documentation and/or other materials provided
-//       with the distribution.
-//     * Neither the name of Google Inc. nor the names of its
-//       contributors may be used to endorse or promote products derived
-//       from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
-#include "cpu.h"
+#include "src/cpu.h"
 
-#if V8_CC_MSVC
+#if V8_LIBC_MSVCRT
 #include <intrin.h>  // __cpuid()
 #endif
 #if V8_OS_POSIX
 #include <unistd.h>  // sysconf()
 #endif
+#if V8_OS_QNX
+#include <sys/syspage.h>  // cpuinfo
+#endif
 
+#include <ctype.h>
+#include <limits.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <algorithm>
-#include <cctype>
-#include <climits>
-#include <cstdio>
-#include <cstdlib>
-#include <cstring>
 
-#include "checks.h"
+#include "src/checks.h"
 #if V8_OS_WIN
-#include "win32-headers.h"
+#include "src/base/win32-headers.h"
 #endif
 
 namespace v8 {
@@ -51,8 +31,8 @@ namespace internal {
 
 #if V8_HOST_ARCH_IA32 || V8_HOST_ARCH_X64
 
-// Define __cpuid() for non-MSVC compilers.
-#if !V8_CC_MSVC
+// Define __cpuid() for non-MSVC libraries.
+#if !V8_LIBC_MSVCRT
 
 static V8_INLINE void __cpuid(int cpu_info[4], int info_type) {
 #if defined(__i386__) && defined(__pic__)
@@ -74,9 +54,11 @@ static V8_INLINE void __cpuid(int cpu_info[4], int info_type) {
 #endif  // defined(__i386__) && defined(__pic__)
 }
 
-#endif  // !V8_CC_MSVC
+#endif  // !V8_LIBC_MSVCRT
 
-#elif V8_HOST_ARCH_ARM || V8_HOST_ARCH_MIPS
+#elif V8_HOST_ARCH_ARM || V8_HOST_ARCH_ARM64 || V8_HOST_ARCH_MIPS
+
+#if V8_OS_LINUX
 
 #if V8_HOST_ARCH_ARM
 
@@ -224,6 +206,7 @@ class CPUInfo V8_FINAL BASE_EMBEDDED {
   size_t datalen_;
 };
 
+#if V8_HOST_ARCH_ARM || V8_HOST_ARCH_MIPS
 
 // Checks that a space-separated list of items contains one given 'item'.
 static bool HasListItem(const char* list, const char* item) {
@@ -249,6 +232,10 @@ static bool HasListItem(const char* list, const char* item) {
   return false;
 }
 
+#endif  // V8_HOST_ARCH_ARM || V8_HOST_ARCH_MIPS
+
+#endif  // V8_OS_LINUX
+
 #endif  // V8_HOST_ARCH_IA32 || V8_HOST_ARCH_X64
 
 CPU::CPU() : stepping_(0),
@@ -272,7 +259,7 @@ CPU::CPU() : stepping_(0),
              has_sse42_(false),
              has_idiva_(false),
              has_neon_(false),
-             has_thumbee_(false),
+             has_thumb2_(false),
              has_vfp_(false),
              has_vfp3_(false),
              has_vfp3_d32_(false) {
@@ -313,6 +300,10 @@ CPU::CPU() : stepping_(0),
     has_sse42_ = (cpu_info[2] & 0x00100000) != 0;
   }
 
+#if V8_HOST_ARCH_IA32
+  // SAHF is always available in compat/legacy mode,
+  has_sahf_ = true;
+#else
   // Query extended IDs.
   __cpuid(cpu_info, 0x80000000);
   unsigned num_ext_ids = cpu_info[0];
@@ -320,15 +311,15 @@ CPU::CPU() : stepping_(0),
   // Interpret extended CPU feature information.
   if (num_ext_ids > 0x80000000) {
     __cpuid(cpu_info, 0x80000001);
-    // SAHF is always available in compat/legacy mode,
-    // but must be probed in long mode.
-#if V8_HOST_ARCH_IA32
-    has_sahf_ = true;
-#else
+    // SAHF must be probed in long mode.
     has_sahf_ = (cpu_info[2] & 0x00000001) != 0;
-#endif
   }
+#endif
+
 #elif V8_HOST_ARCH_ARM
+
+#if V8_OS_LINUX
+
   CPUInfo cpu_info;
 
   // Extract implementor from the "CPU implementer" field.
@@ -392,7 +383,6 @@ CPU::CPU() : stepping_(0),
   if (hwcaps != 0) {
     has_idiva_ = (hwcaps & HWCAP_IDIVA) != 0;
     has_neon_ = (hwcaps & HWCAP_NEON) != 0;
-    has_thumbee_ = (hwcaps & HWCAP_THUMBEE) != 0;
     has_vfp_ = (hwcaps & HWCAP_VFP) != 0;
     has_vfp3_ = (hwcaps & (HWCAP_VFPv3 | HWCAP_VFPv3D16 | HWCAP_VFPv4)) != 0;
     has_vfp3_d32_ = (has_vfp3_ && ((hwcaps & HWCAP_VFPv3D16) == 0 ||
@@ -402,13 +392,13 @@ CPU::CPU() : stepping_(0),
     char* features = cpu_info.ExtractField("Features");
     has_idiva_ = HasListItem(features, "idiva");
     has_neon_ = HasListItem(features, "neon");
-    has_thumbee_ = HasListItem(features, "thumbee");
+    has_thumb2_ = HasListItem(features, "thumb2");
     has_vfp_ = HasListItem(features, "vfp");
-    if (HasListItem(features, "vfpv3")) {
+    if (HasListItem(features, "vfpv3d16")) {
+      has_vfp3_ = true;
+    } else if (HasListItem(features, "vfpv3")) {
       has_vfp3_ = true;
       has_vfp3_d32_ = true;
-    } else if (HasListItem(features, "vfpv3d16")) {
-      has_vfp3_ = true;
     }
     delete[] features;
   }
@@ -426,19 +416,46 @@ CPU::CPU() : stepping_(0),
     architecture_ = 7;
   }
 
-  // ARMv7 implies ThumbEE.
+  // ARMv7 implies Thumb2.
   if (architecture_ >= 7) {
-    has_thumbee_ = true;
+    has_thumb2_ = true;
   }
 
-  // The earliest architecture with ThumbEE is ARMv6T2.
-  if (has_thumbee_ && architecture_ < 6) {
+  // The earliest architecture with Thumb2 is ARMv6T2.
+  if (has_thumb2_ && architecture_ < 6) {
     architecture_ = 6;
   }
 
   // We don't support any FPUs other than VFP.
   has_fpu_ = has_vfp_;
+
+#elif V8_OS_QNX
+
+  uint32_t cpu_flags = SYSPAGE_ENTRY(cpuinfo)->flags;
+  if (cpu_flags & ARM_CPU_FLAG_V7) {
+    architecture_ = 7;
+    has_thumb2_ = true;
+  } else if (cpu_flags & ARM_CPU_FLAG_V6) {
+    architecture_ = 6;
+    // QNX doesn't say if Thumb2 is available.
+    // Assume false for the architectures older than ARMv7.
+  }
+  ASSERT(architecture_ >= 6);
+  has_fpu_ = (cpu_flags & CPU_FLAG_FPU) != 0;
+  has_vfp_ = has_fpu_;
+  if (cpu_flags & ARM_CPU_FLAG_NEON) {
+    has_neon_ = true;
+    has_vfp3_ = has_vfp_;
+#ifdef ARM_CPU_FLAG_VFP_D32
+    has_vfp3_d32_ = (cpu_flags & ARM_CPU_FLAG_VFP_D32) != 0;
+#endif
+  }
+  has_idiva_ = (cpu_flags & ARM_CPU_FLAG_IDIV) != 0;
+
+#endif  // V8_OS_LINUX
+
 #elif V8_HOST_ARCH_MIPS
+
   // Simple detection of FPU at runtime for Linux.
   // It is based on /proc/cpuinfo, which reveals hardware configuration
   // to user-space applications.  According to MIPS (early 2010), no similar
@@ -448,18 +465,33 @@ CPU::CPU() : stepping_(0),
   char* cpu_model = cpu_info.ExtractField("cpu model");
   has_fpu_ = HasListItem(cpu_model, "FPU");
   delete[] cpu_model;
-#endif
-}
 
+#elif V8_HOST_ARCH_ARM64
 
-// static
-int CPU::NumberOfProcessorsOnline() {
-#if V8_OS_WIN
-  SYSTEM_INFO info;
-  GetSystemInfo(&info);
-  return info.dwNumberOfProcessors;
-#else
-  return static_cast<int>(sysconf(_SC_NPROCESSORS_ONLN));
+  CPUInfo cpu_info;
+
+  // Extract implementor from the "CPU implementer" field.
+  char* implementer = cpu_info.ExtractField("CPU implementer");
+  if (implementer != NULL) {
+    char* end ;
+    implementer_ = strtol(implementer, &end, 0);
+    if (end == implementer) {
+      implementer_ = 0;
+    }
+    delete[] implementer;
+  }
+
+  // Extract part number from the "CPU part" field.
+  char* part = cpu_info.ExtractField("CPU part");
+  if (part != NULL) {
+    char* end ;
+    part_ = strtol(part, &end, 0);
+    if (end == part) {
+      part_ = 0;
+    }
+    delete[] part;
+  }
+
 #endif
 }
 

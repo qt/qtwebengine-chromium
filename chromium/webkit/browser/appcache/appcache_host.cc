@@ -12,7 +12,7 @@
 #include "webkit/browser/appcache/appcache_backend_impl.h"
 #include "webkit/browser/appcache/appcache_policy.h"
 #include "webkit/browser/appcache/appcache_request_handler.h"
-#include "webkit/browser/quota/quota_manager.h"
+#include "webkit/browser/quota/quota_manager_proxy.h"
 
 namespace appcache {
 
@@ -20,7 +20,7 @@ namespace {
 
 void FillCacheInfo(const AppCache* cache,
                    const GURL& manifest_url,
-                   Status status, AppCacheInfo* info) {
+                   AppCacheStatus status, AppCacheInfo* info) {
   info->manifest_url = manifest_url;
   info->status = status;
 
@@ -43,12 +43,12 @@ void FillCacheInfo(const AppCache* cache,
 }  // Anonymous namespace
 
 AppCacheHost::AppCacheHost(int host_id, AppCacheFrontend* frontend,
-                           AppCacheService* service)
+                           AppCacheServiceImpl* service)
     : host_id_(host_id),
-      spawning_host_id_(kNoHostId), spawning_process_id_(0),
-      parent_host_id_(kNoHostId), parent_process_id_(0),
-      pending_main_resource_cache_id_(kNoCacheId),
-      pending_selected_cache_id_(kNoCacheId),
+      spawning_host_id_(kAppCacheNoHostId), spawning_process_id_(0),
+      parent_host_id_(kAppCacheNoHostId), parent_process_id_(0),
+      pending_main_resource_cache_id_(kAppCacheNoCacheId),
+      pending_selected_cache_id_(kAppCacheNoCacheId),
       frontend_(frontend), service_(service),
       storage_(service->storage()),
       pending_callback_param_(NULL),
@@ -101,7 +101,7 @@ void AppCacheHost::SelectCache(const GURL& document_url,
   // MarkAsForeignEntry is called in that case, so that detection
   // step is skipped here. See WebApplicationCacheHostImpl.cc
 
-  if (cache_document_was_loaded_from != kNoCacheId) {
+  if (cache_document_was_loaded_from != kAppCacheNoCacheId) {
     LoadSelectedCache(cache_document_was_loaded_from);
     return;
   }
@@ -114,9 +114,15 @@ void AppCacheHost::SelectCache(const GURL& document_url,
         !policy->CanCreateAppCache(manifest_url, first_party_url_)) {
       FinishCacheSelection(NULL, NULL);
       std::vector<int> host_ids(1, host_id_);
-      frontend_->OnEventRaised(host_ids, CHECKING_EVENT);
+      frontend_->OnEventRaised(host_ids, APPCACHE_CHECKING_EVENT);
       frontend_->OnErrorEventRaised(
-          host_ids, "Cache creation was blocked by the content policy");
+          host_ids,
+          AppCacheErrorDetails(
+              "Cache creation was blocked by the content policy",
+              APPCACHE_POLICY_ERROR,
+              GURL(),
+              0,
+              false /*is_cross_origin*/));
       frontend_->OnContentBlocked(host_id_, manifest_url);
       return;
     }
@@ -153,7 +159,7 @@ void AppCacheHost::SelectCacheForSharedWorker(int64 appcache_id) {
          pending_get_status_callback_.is_null() &&
          !is_selection_pending());
 
-  if (appcache_id != kNoCacheId) {
+  if (appcache_id != kAppCacheNoCacheId) {
     LoadSelectedCache(appcache_id);
     return;
   }
@@ -167,7 +173,7 @@ void AppCacheHost::MarkAsForeignEntry(const GURL& document_url,
   storage()->MarkEntryAsForeign(
       main_resource_was_namespace_entry_ ? namespace_entry_url_ : document_url,
       cache_document_was_loaded_from);
-  SelectCache(document_url, kNoCacheId, GURL());
+  SelectCache(document_url, kAppCacheNoCacheId, GURL());
 }
 
 void AppCacheHost::GetStatusWithCallback(const GetStatusCallback& callback,
@@ -307,26 +313,26 @@ void AppCacheHost::GetResourceList(
     associated_cache_->ToResourceInfoVector(resource_infos);
 }
 
-Status AppCacheHost::GetStatus() {
+AppCacheStatus AppCacheHost::GetStatus() {
   // 6.9.8 Application cache API
   AppCache* cache = associated_cache();
   if (!cache)
-    return UNCACHED;
+    return APPCACHE_STATUS_UNCACHED;
 
   // A cache without an owning group represents the cache being constructed
   // during the application cache update process.
   if (!cache->owning_group())
-    return DOWNLOADING;
+    return APPCACHE_STATUS_DOWNLOADING;
 
   if (cache->owning_group()->is_obsolete())
-    return OBSOLETE;
+    return APPCACHE_STATUS_OBSOLETE;
   if (cache->owning_group()->update_status() == AppCacheGroup::CHECKING)
-    return CHECKING;
+    return APPCACHE_STATUS_CHECKING;
   if (cache->owning_group()->update_status() == AppCacheGroup::DOWNLOADING)
-    return DOWNLOADING;
+    return APPCACHE_STATUS_DOWNLOADING;
   if (swappable_cache_.get())
-    return UPDATE_READY;
-  return IDLE;
+    return APPCACHE_STATUS_UPDATE_READY;
+  return APPCACHE_STATUS_IDLE;
 }
 
 void AppCacheHost::LoadOrCreateGroup(const GURL& manifest_url) {
@@ -343,17 +349,17 @@ void AppCacheHost::OnGroupLoaded(AppCacheGroup* group,
 }
 
 void AppCacheHost::LoadSelectedCache(int64 cache_id) {
-  DCHECK(cache_id != kNoCacheId);
+  DCHECK(cache_id != kAppCacheNoCacheId);
   pending_selected_cache_id_ = cache_id;
   storage()->LoadCache(cache_id, this);
 }
 
 void AppCacheHost::OnCacheLoaded(AppCache* cache, int64 cache_id) {
   if (cache_id == pending_main_resource_cache_id_) {
-    pending_main_resource_cache_id_ = kNoCacheId;
+    pending_main_resource_cache_id_ = kAppCacheNoCacheId;
     main_resource_cache_ = cache;
   } else if (cache_id == pending_selected_cache_id_) {
-    pending_selected_cache_id_ = kNoCacheId;
+    pending_selected_cache_id_ = kAppCacheNoCacheId;
     FinishCacheSelection(cache, NULL);
   }
 }
@@ -375,7 +381,7 @@ void AppCacheHost::FinishCacheSelection(
     const char* kFormatString =
         "Document was loaded from Application Cache with manifest %s";
     frontend_->OnLogMessage(
-        host_id_, LOG_INFO,
+        host_id_, APPCACHE_LOG_INFO,
         base::StringPrintf(
             kFormatString, owing_group->manifest_url().spec().c_str()));
     AssociateCompleteCache(cache);
@@ -396,7 +402,7 @@ void AppCacheHost::FinishCacheSelection(
         "Adding master entry to Application Cache with manifest %s" :
         "Creating Application Cache with manifest %s";
     frontend_->OnLogMessage(
-        host_id_, LOG_INFO,
+        host_id_, APPCACHE_LOG_INFO,
         base::StringPrintf(kFormatString,
                            group->manifest_url().spec().c_str()));
     // The UpdateJob may produce one for us later.
@@ -468,7 +474,7 @@ void AppCacheHost::SetSwappableCache(AppCacheGroup* group) {
 }
 
 void AppCacheHost::LoadMainResourceCache(int64 cache_id) {
-  DCHECK(cache_id != kNoCacheId);
+  DCHECK(cache_id != kAppCacheNoCacheId);
   if (pending_main_resource_cache_id_ == cache_id ||
       (main_resource_cache_.get() &&
        main_resource_cache_->cache_id() == cache_id)) {
@@ -494,7 +500,7 @@ void AppCacheHost::PrepareForTransfer() {
   DCHECK(!associated_cache());
   DCHECK(!is_selection_pending());
   DCHECK(!group_being_updated_);
-  host_id_ = kNoHostId;
+  host_id_ = kAppCacheNoHostId;
   frontend_ = NULL;
 }
 

@@ -18,6 +18,8 @@
  */
 
 partial interface Navigator {
-    readonly attribute StorageQuota webkitTemporaryStorage;
-    readonly attribute StorageQuota webkitPersistentStorage;
+    [MeasureAs=PrefixedStorageQuota] readonly attribute DeprecatedStorageQuota webkitTemporaryStorage;
+    [MeasureAs=PrefixedStorageQuota] readonly attribute DeprecatedStorageQuota webkitPersistentStorage;
+
+    [RuntimeEnabled=QuotaPromise] readonly attribute StorageQuota storageQuota;
 };

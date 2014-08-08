@@ -25,26 +25,27 @@
 #include "core/dom/Document.h"
 #include "core/dom/Node.h"
 #include "core/dom/TransformSource.h"
-#include "core/frame/Frame.h"
-#include "core/page/Page.h"
+#include "core/frame/FrameHost.h"
+#include "core/frame/LocalFrame.h"
 #include "core/xml/XSLImportRule.h"
 #include "core/xml/XSLTProcessor.h"
 #include "core/xml/parser/XMLDocumentParserScope.h"
 #include "core/xml/parser/XMLParserInput.h"
 #include "wtf/text/CString.h"
-
 #include <libxml/uri.h>
 #include <libxslt/xsltutils.h>
 
 namespace WebCore {
 
 XSLStyleSheet::XSLStyleSheet(XSLImportRule* parentRule, const String& originalURL, const KURL& finalURL)
-    : m_ownerNode(0)
+    : m_ownerNode(nullptr)
     , m_originalURL(originalURL)
     , m_finalURL(finalURL)
     , m_isDisabled(false)
     , m_embedded(false)
-    , m_processed(false) // Child sheets get marked as processed when the libxslt engine has finally seen them.
+    // Child sheets get marked as processed when the libxslt engine has finally
+    // seen them.
+    , m_processed(false)
     , m_stylesheetDoc(0)
     , m_stylesheetDocTaken(false)
     , m_compilationFailed(false)
@@ -62,7 +63,7 @@ XSLStyleSheet::XSLStyleSheet(Node* parentNode, const String& originalURL, const 
     , m_stylesheetDoc(0)
     , m_stylesheetDocTaken(false)
     , m_compilationFailed(false)
-    , m_parentStyleSheet(0)
+    , m_parentStyleSheet(nullptr)
 {
 }
 
@@ -70,11 +71,12 @@ XSLStyleSheet::~XSLStyleSheet()
 {
     if (!m_stylesheetDocTaken)
         xmlFreeDoc(m_stylesheetDoc);
-
+#if !ENABLE(OILPAN)
     for (unsigned i = 0; i < m_children.size(); ++i) {
         ASSERT(m_children.at(i)->parentStyleSheet() == this);
         m_children.at(i)->setParentStyleSheet(0);
     }
+#endif
 }
 
 bool XSLStyleSheet::isLoading() const
@@ -115,10 +117,9 @@ void XSLStyleSheet::clearDocuments()
 
 ResourceFetcher* XSLStyleSheet::fetcher()
 {
-    Document* document = ownerDocument();
-    if (!document)
-        return 0;
-    return document->fetcher();
+    if (Document* document = ownerDocument())
+        return document->fetcher();
+    return 0;
 }
 
 bool XSLStyleSheet::parseString(const String& source)
@@ -128,10 +129,9 @@ bool XSLStyleSheet::parseString(const String& source)
         xmlFreeDoc(m_stylesheetDoc);
     m_stylesheetDocTaken = false;
 
-    PageConsole* console = 0;
-    Frame* frame = ownerDocument()->frame();
-    if (frame && frame->page())
-        console = &frame->page()->console();
+    FrameConsole* console = 0;
+    if (LocalFrame* frame = ownerDocument()->frame())
+        console = &frame->console();
 
     XMLDocumentParserScope scope(fetcher(), XSLTProcessor::genericErrorFunc, XSLTProcessor::parseErrorFunc, console);
     XMLParserInput input(source);
@@ -168,25 +168,26 @@ void XSLStyleSheet::loadChildSheets()
 
     xmlNodePtr stylesheetRoot = document()->children;
 
-    // Top level children may include other things such as DTD nodes, we ignore those.
+    // Top level children may include other things such as DTD nodes, we ignore
+    // those.
     while (stylesheetRoot && stylesheetRoot->type != XML_ELEMENT_NODE)
         stylesheetRoot = stylesheetRoot->next;
 
     if (m_embedded) {
-        // We have to locate (by ID) the appropriate embedded stylesheet element, so that we can walk the
-        // import/include list.
+        // We have to locate (by ID) the appropriate embedded stylesheet
+        // element, so that we can walk the import/include list.
         xmlAttrPtr idNode = xmlGetID(document(), (const xmlChar*)(finalURL().string().utf8().data()));
         if (!idNode)
             return;
         stylesheetRoot = idNode->parent;
     } else {
-        // FIXME: Need to handle an external URI with a # in it.  This is a pretty minor edge case, so we'll deal
-        // with it later.
+        // FIXME: Need to handle an external URI with a # in it. This is a
+        // pretty minor edge case, so we'll deal with it later.
     }
 
     if (stylesheetRoot) {
-        // Walk the children of the root element and look for import/include elements.
-        // Imports must occur first.
+        // Walk the children of the root element and look for import/include
+        // elements. Imports must occur first.
         xmlNodePtr curr = stylesheetRoot->children;
         while (curr) {
             if (curr->type != XML_ELEMENT_NODE) {
@@ -197,8 +198,9 @@ void XSLStyleSheet::loadChildSheets()
                 xmlChar* uriRef = xsltGetNsProp(curr, (const xmlChar*)"href", XSLT_NAMESPACE);
                 loadChildSheet(String::fromUTF8((const char*)uriRef));
                 xmlFree(uriRef);
-            } else
+            } else {
                 break;
+            }
             curr = curr->next;
         }
 
@@ -216,7 +218,7 @@ void XSLStyleSheet::loadChildSheets()
 
 void XSLStyleSheet::loadChildSheet(const String& href)
 {
-    OwnPtr<XSLImportRule> childRule = XSLImportRule::create(this, href);
+    OwnPtrWillBeRawPtr<XSLImportRule> childRule = XSLImportRule::create(this, href);
     XSLImportRule* c = childRule.get();
     m_children.append(childRule.release());
     c->loadSheet();
@@ -228,8 +230,8 @@ xsltStylesheetPtr XSLStyleSheet::compileStyleSheet()
     if (m_embedded)
         return xsltLoadStylesheetPI(document());
 
-    // Certain libxslt versions are corrupting the xmlDoc on compilation failures -
-    // hence attempting to recompile after a failure is unsafe.
+    // Certain libxslt versions are corrupting the xmlDoc on compilation
+    // failures - hence attempting to recompile after a failure is unsafe.
     if (m_compilationFailed)
         return 0;
 
@@ -272,9 +274,9 @@ xmlDocPtr XSLStyleSheet::locateStylesheetSubResource(xmlDocPtr parentDoc, const 
                 continue; // libxslt has been given this sheet already.
 
             // Check the URI of the child stylesheet against the doc URI.
-            // In order to ensure that libxml canonicalized both URLs, we get the original href
-            // string from the import rule and canonicalize it using libxml before comparing it
-            // with the URI argument.
+            // In order to ensure that libxml canonicalized both URLs, we get
+            // the original href string from the import rule and canonicalize it
+            // using libxml before comparing it with the URI argument.
             CString importHref = import->href().utf8();
             xmlChar* base = xmlNodeGetBase(parentDoc, (xmlNodePtr)parentDoc);
             xmlChar* childURI = xmlBuildURI((const xmlChar*)importHref.data(), base);
@@ -301,6 +303,14 @@ void XSLStyleSheet::markAsProcessed()
     ASSERT(!m_stylesheetDocTaken);
     m_processed = true;
     m_stylesheetDocTaken = true;
+}
+
+void XSLStyleSheet::trace(Visitor* visitor)
+{
+    visitor->trace(m_ownerNode);
+    visitor->trace(m_children);
+    visitor->trace(m_parentStyleSheet);
+    StyleSheet::trace(visitor);
 }
 
 } // namespace WebCore

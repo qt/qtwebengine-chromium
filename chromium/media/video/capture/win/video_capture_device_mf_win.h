@@ -30,12 +30,13 @@ class MEDIA_EXPORT VideoCaptureDeviceMFWin
     : public base::NonThreadSafe,
       public VideoCaptureDevice {
  public:
+  static bool FormatFromGuid(const GUID& guid, VideoPixelFormat* format);
+
   explicit VideoCaptureDeviceMFWin(const Name& device_name);
   virtual ~VideoCaptureDeviceMFWin();
 
   // Opens the device driver for this device.
-  // This function is used by the static VideoCaptureDevice::Create function.
-  bool Init();
+  bool Init(const base::win::ScopedComPtr<IMFMediaSource>& source);
 
   // VideoCaptureDevice implementation.
   virtual void AllocateAndStart(const VideoCaptureParams& params,
@@ -43,21 +44,11 @@ class MEDIA_EXPORT VideoCaptureDeviceMFWin
       OVERRIDE;
   virtual void StopAndDeAllocate() OVERRIDE;
 
-  // Returns true iff the current platform supports the Media Foundation API
-  // and that the DLLs are available.  On Vista this API is an optional download
-  // but the API is advertised as a part of Windows 7 and onwards.  However,
-  // we've seen that the required DLLs are not available in some Win7
-  // distributions such as Windows 7 N and Windows 7 KN.
-  static bool PlatformSupported();
-
-  static void GetDeviceNames(Names* device_names);
-
-  // Captured a new video frame.
-  void OnIncomingCapturedFrame(
-      const uint8* data,
-      int length,
-      const base::Time& time_stamp,
-      int rotation);
+  // Captured new video data.
+  void OnIncomingCapturedData(const uint8* data,
+                              int length,
+                              int rotation,
+                              const base::TimeTicks& time_stamp);
 
  private:
   void OnError(HRESULT hr);

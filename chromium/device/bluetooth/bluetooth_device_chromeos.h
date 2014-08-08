@@ -7,40 +7,50 @@
 
 #include <string>
 
+#include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "chromeos/dbus/bluetooth_agent_service_provider.h"
+#include "base/observer_list.h"
+#include "base/sequenced_task_runner.h"
 #include "chromeos/dbus/bluetooth_device_client.h"
+#include "chromeos/dbus/bluetooth_gatt_service_client.h"
 #include "dbus/object_path.h"
 #include "device/bluetooth/bluetooth_device.h"
+
+namespace device {
+class BluetoothSocketThread;
+}  // namespace device
 
 namespace chromeos {
 
 class BluetoothAdapterChromeOS;
+class BluetoothPairingChromeOS;
 
 // The BluetoothDeviceChromeOS class implements BluetoothDevice for the
 // Chrome OS platform.
 class BluetoothDeviceChromeOS
     : public device::BluetoothDevice,
-      private chromeos::BluetoothAgentServiceProvider::Delegate {
+      public BluetoothGattServiceClient::Observer {
  public:
   // BluetoothDevice override
+  virtual void AddObserver(
+      device::BluetoothDevice::Observer* observer) OVERRIDE;
+  virtual void RemoveObserver(
+      device::BluetoothDevice::Observer* observer) OVERRIDE;
   virtual uint32 GetBluetoothClass() const OVERRIDE;
   virtual std::string GetAddress() const OVERRIDE;
+  virtual VendorIDSource GetVendorIDSource() const OVERRIDE;
   virtual uint16 GetVendorID() const OVERRIDE;
   virtual uint16 GetProductID() const OVERRIDE;
   virtual uint16 GetDeviceID() const OVERRIDE;
+  virtual int GetRSSI() const OVERRIDE;
+  virtual int GetCurrentHostTransmitPower() const OVERRIDE;
+  virtual int GetMaximumHostTransmitPower() const OVERRIDE;
   virtual bool IsPaired() const OVERRIDE;
   virtual bool IsConnected() const OVERRIDE;
   virtual bool IsConnectable() const OVERRIDE;
   virtual bool IsConnecting() const OVERRIDE;
-  virtual ServiceList GetServices() const OVERRIDE;
-  virtual void GetServiceRecords(
-      const ServiceRecordsCallback& callback,
-      const ErrorCallback& error_callback) OVERRIDE;
-  virtual void ProvidesServiceWithName(
-      const std::string& name,
-      const ProvidesServiceCallback& callback) OVERRIDE;
+  virtual UUIDList GetUUIDs() const OVERRIDE;
   virtual bool ExpectingPinCode() const OVERRIDE;
   virtual bool ExpectingPasskey() const OVERRIDE;
   virtual bool ExpectingConfirmation() const OVERRIDE;
@@ -58,19 +68,31 @@ class BluetoothDeviceChromeOS
       const ErrorCallback& error_callback) OVERRIDE;
   virtual void Forget(const ErrorCallback& error_callback) OVERRIDE;
   virtual void ConnectToService(
-      const std::string& service_uuid,
-      const SocketCallback& callback) OVERRIDE;
-  virtual void ConnectToProfile(
-      device::BluetoothProfile* profile,
+      const device::BluetoothUUID& uuid,
+      const ConnectToServiceCallback& callback,
+      const ConnectToServiceErrorCallback& error_callback) OVERRIDE;
+  virtual void CreateGattConnection(
+      const GattConnectionCallback& callback,
+      const ConnectErrorCallback& error_callback) OVERRIDE;
+  virtual void StartConnectionMonitor(
       const base::Closure& callback,
       const ErrorCallback& error_callback) OVERRIDE;
-  virtual void SetOutOfBandPairingData(
-      const device::BluetoothOutOfBandPairingData& data,
-      const base::Closure& callback,
-      const ErrorCallback& error_callback) OVERRIDE;
-  virtual void ClearOutOfBandPairingData(
-      const base::Closure& callback,
-      const ErrorCallback& error_callback) OVERRIDE;
+
+  // Creates a pairing object with the given delegate |pairing_delegate| and
+  // establishes it as the pairing context for this device. All pairing-related
+  // method calls will be forwarded to this object until it is released.
+  BluetoothPairingChromeOS* BeginPairing(
+      BluetoothDevice::PairingDelegate* pairing_delegate);
+
+  // Releases the current pairing object, any pairing-related method calls will
+  // be ignored.
+  void EndPairing();
+
+  // Returns the current pairing object or NULL if no pairing is in progress.
+  BluetoothPairingChromeOS* GetPairing() const;
+
+  // Returns the object path of the device.
+  const dbus::ObjectPath& object_path() const { return object_path_; }
 
  protected:
    // BluetoothDevice override
@@ -79,31 +101,16 @@ class BluetoothDeviceChromeOS
  private:
   friend class BluetoothAdapterChromeOS;
 
-  BluetoothDeviceChromeOS(BluetoothAdapterChromeOS* adapter,
-                          const dbus::ObjectPath& object_path);
+  BluetoothDeviceChromeOS(
+      BluetoothAdapterChromeOS* adapter,
+      const dbus::ObjectPath& object_path,
+      scoped_refptr<base::SequencedTaskRunner> ui_task_runner,
+      scoped_refptr<device::BluetoothSocketThread> socket_thread);
   virtual ~BluetoothDeviceChromeOS();
 
-  // BluetoothAgentServiceProvider::Delegate override.
-  virtual void Release() OVERRIDE;
-  virtual void RequestPinCode(const dbus::ObjectPath& device_path,
-                              const PinCodeCallback& callback) OVERRIDE;
-  virtual void DisplayPinCode(const dbus::ObjectPath& device_path,
-                              const std::string& pincode) OVERRIDE;
-  virtual void RequestPasskey(const dbus::ObjectPath& device_path,
-                              const PasskeyCallback& callback) OVERRIDE;
-  virtual void DisplayPasskey(const dbus::ObjectPath& device_path,
-                              uint32 passkey, uint16 entered) OVERRIDE;
-  virtual void RequestConfirmation(const dbus::ObjectPath& device_path,
-                                   uint32 passkey,
-                                   const ConfirmationCallback& callback)
-      OVERRIDE;
-  virtual void RequestAuthorization(const dbus::ObjectPath& device_path,
-                                    const ConfirmationCallback& callback)
-      OVERRIDE;
-  virtual void AuthorizeService(const dbus::ObjectPath& device_path,
-                                const std::string& uuid,
-                                const ConfirmationCallback& callback) OVERRIDE;
-  virtual void Cancel() OVERRIDE;
+  // BluetoothGattServiceClient::Observer overrides.
+  virtual void GattServiceAdded(const dbus::ObjectPath& object_path) OVERRIDE;
+  virtual void GattServiceRemoved(const dbus::ObjectPath& object_path) OVERRIDE;
 
   // Internal method to initiate a connection to this device, and methods called
   // by dbus:: on completion of the D-Bus method call.
@@ -112,18 +119,11 @@ class BluetoothDeviceChromeOS
                        const ConnectErrorCallback& error_callback);
   void OnConnect(bool after_pairing,
                  const base::Closure& callback);
+  void OnCreateGattConnection(const GattConnectionCallback& callback);
   void OnConnectError(bool after_pairing,
                       const ConnectErrorCallback& error_callback,
                       const std::string& error_name,
                       const std::string& error_message);
-
-  // Called by dbus:: on completion of the D-Bus method call to register the
-  // pairing agent.
-  void OnRegisterAgent(const base::Closure& callback,
-                       const ConnectErrorCallback& error_callback);
-  void OnRegisterAgentError(const ConnectErrorCallback& error_callback,
-                            const std::string& error_name,
-                            const std::string& error_message);
 
   // Called by dbus:: on completion of the D-Bus method call to pair the device.
   void OnPair(const base::Closure& callback,
@@ -145,13 +145,6 @@ class BluetoothDeviceChromeOS
   void SetTrusted();
   void OnSetTrusted(bool success);
 
-  // Internal method to unregister the pairing agent and method called by dbus::
-  // on failure of the D-Bus method call. No completion call as success is
-  // ignored.
-  void UnregisterAgent();
-  void OnUnregisterAgentError(const std::string& error_name,
-                              const std::string& error_message);
-
   // Called by dbus:: on completion of the D-Bus method call to disconnect the
   // device.
   void OnDisconnect(const base::Closure& callback);
@@ -166,21 +159,12 @@ class BluetoothDeviceChromeOS
                      const std::string& error_name,
                      const std::string& error_message);
 
-  // Run any outstanding pairing callbacks passing |status| as the result of
-  // pairing. Returns true if any callbacks were run, false if not.
-  bool RunPairingCallbacks(Status status);
-
-  // Called by dbus:: on completion of the D-Bus method call to
-  // connect a peofile.
-  void OnConnectProfile(device::BluetoothProfile* profile,
-                        const base::Closure& callback);
-  void OnConnectProfileError(device::BluetoothProfile* profile,
-                             const ErrorCallback& error_callback,
-                             const std::string& error_name,
-                             const std::string& error_message);
-
-  // Return the object path of the device; used by BluetoothAdapterChromeOS
-  const dbus::ObjectPath& object_path() const { return object_path_; }
+  // Called by dbus:: on completion of the D-Bus method call to start the
+  // connection monitor.
+  void OnStartConnectionMonitor(const base::Closure& callback);
+  void OnStartConnectionMonitorError(const ErrorCallback& error_callback,
+                                     const std::string& error_name,
+                                     const std::string& error_message);
 
   // The adapter that owns this device instance.
   BluetoothAdapterChromeOS* adapter_;
@@ -188,28 +172,24 @@ class BluetoothDeviceChromeOS
   // The dbus object path of the device object.
   dbus::ObjectPath object_path_;
 
+  // List of observers interested in event notifications from us.
+  ObserverList<device::BluetoothDevice::Observer> observers_;
+
   // Number of ongoing calls to Connect().
   int num_connecting_calls_;
+
+  // True if the connection monitor has been started, tracking the connection
+  // RSSI and TX power.
+  bool connection_monitor_started_;
+
+  // UI thread task runner and socket thread object used to create sockets.
+  scoped_refptr<base::SequencedTaskRunner> ui_task_runner_;
+  scoped_refptr<device::BluetoothSocketThread> socket_thread_;
 
   // During pairing this is set to an object that we don't own, but on which
   // we can make method calls to request, display or confirm PIN Codes and
   // Passkeys. Generally it is the object that owns this one.
-  PairingDelegate* pairing_delegate_;
-
-  // Flag to indicate whether a pairing delegate method has been called during
-  // pairing.
-  bool pairing_delegate_used_;
-
-  // During pairing this is set to an instance of a D-Bus agent object
-  // intialized with our own class as its delegate.
-  scoped_ptr<BluetoothAgentServiceProvider> agent_;
-
-  // During pairing these callbacks are set to those provided by method calls
-  // made on us by |agent_| and are called by our own method calls such as
-  // SetPinCode() and SetPasskey().
-  PinCodeCallback pincode_callback_;
-  PasskeyCallback passkey_callback_;
-  ConfirmationCallback confirmation_callback_;
+  scoped_ptr<BluetoothPairingChromeOS> pairing_;
 
   // Note: This should remain the last member so it'll be destroyed and
   // invalidate its weak pointers before any other members are destroyed.

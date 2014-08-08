@@ -56,7 +56,46 @@ WebMessagePortChannelImpl::~WebMessagePortChannelImpl() {
     Send(new MessagePortHostMsg_DestroyMessagePort(message_port_id_));
 
   if (route_id_ != MSG_ROUTING_NONE)
-    ChildThread::current()->RemoveRoute(route_id_);
+    ChildThread::current()->GetRouter()->RemoveRoute(route_id_);
+}
+
+// static
+void WebMessagePortChannelImpl::CreatePair(
+    base::MessageLoopProxy* child_thread_loop,
+    blink::WebMessagePortChannel** channel1,
+    blink::WebMessagePortChannel** channel2) {
+  WebMessagePortChannelImpl* impl1 =
+      new WebMessagePortChannelImpl(child_thread_loop);
+  WebMessagePortChannelImpl* impl2 =
+      new WebMessagePortChannelImpl(child_thread_loop);
+
+  impl1->Entangle(impl2);
+  impl2->Entangle(impl1);
+
+  *channel1 = impl1;
+  *channel2 = impl2;
+}
+
+// static
+std::vector<int> WebMessagePortChannelImpl::ExtractMessagePortIDs(
+    WebMessagePortChannelArray* channels) {
+  std::vector<int> message_port_ids;
+  if (channels) {
+    message_port_ids.resize(channels->size());
+    // Extract the port IDs from the source array, then free it.
+    for (size_t i = 0; i < channels->size(); ++i) {
+      WebMessagePortChannelImpl* webchannel =
+          static_cast<WebMessagePortChannelImpl*>((*channels)[i]);
+      // The message port ids might not be set up yet if this channel
+      // wasn't created on the main thread.
+      DCHECK(webchannel->child_thread_loop_->BelongsToCurrentThread());
+      message_port_ids[i] = webchannel->message_port_id();
+      webchannel->QueueMessages();
+      DCHECK(message_port_ids[i] != MSG_ROUTING_NONE);
+    }
+    delete channels;
+  }
+  return message_port_ids;
 }
 
 void WebMessagePortChannelImpl::setClient(WebMessagePortChannelClient* client) {
@@ -73,15 +112,6 @@ void WebMessagePortChannelImpl::destroy() {
   child_thread_loop_->ReleaseSoon(FROM_HERE, this);
 }
 
-void WebMessagePortChannelImpl::entangle(WebMessagePortChannel* channel) {
-  // The message port ids might not be set up yet, if this channel wasn't
-  // created on the main thread.  So need to wait until we're on the main thread
-  // before getting the other message port id.
-  scoped_refptr<WebMessagePortChannelImpl> webchannel(
-      static_cast<WebMessagePortChannelImpl*>(channel));
-  Entangle(webchannel);
-}
-
 void WebMessagePortChannelImpl::postMessage(
     const WebString& message,
     WebMessagePortChannelArray* channels) {
@@ -89,25 +119,17 @@ void WebMessagePortChannelImpl::postMessage(
     child_thread_loop_->PostTask(
         FROM_HERE,
         base::Bind(
-            &WebMessagePortChannelImpl::postMessage, this, message, channels));
-    return;
+            &WebMessagePortChannelImpl::PostMessage, this, message, channels));
+  } else {
+    PostMessage(message, channels);
   }
+}
 
-  std::vector<int> message_port_ids(channels ? channels->size() : 0);
-  if (channels) {
-    // Extract the port IDs from the source array, then free it.
-    for (size_t i = 0; i < channels->size(); ++i) {
-      WebMessagePortChannelImpl* webchannel =
-          static_cast<WebMessagePortChannelImpl*>((*channels)[i]);
-      message_port_ids[i] = webchannel->message_port_id();
-      webchannel->QueueMessages();
-      DCHECK(message_port_ids[i] != MSG_ROUTING_NONE);
-    }
-    delete channels;
-  }
-
+void WebMessagePortChannelImpl::PostMessage(
+    const base::string16& message,
+    WebMessagePortChannelArray* channels) {
   IPC::Message* msg = new MessagePortHostMsg_PostMessage(
-      message_port_id_, message, message_port_ids);
+      message_port_id_, message, ExtractMessagePortIDs(channels));
   Send(msg);
 }
 
@@ -144,11 +166,14 @@ void WebMessagePortChannelImpl::Init() {
         &route_id_, &message_port_id_));
   }
 
-  ChildThread::current()->AddRoute(route_id_, this);
+  ChildThread::current()->GetRouter()->AddRoute(route_id_, this);
 }
 
 void WebMessagePortChannelImpl::Entangle(
     scoped_refptr<WebMessagePortChannelImpl> channel) {
+  // The message port ids might not be set up yet, if this channel wasn't
+  // created on the main thread.  So need to wait until we're on the main thread
+  // before getting the other message port id.
   if (!child_thread_loop_->BelongsToCurrentThread()) {
     child_thread_loop_->PostTask(
         FROM_HERE,
@@ -188,7 +213,7 @@ void WebMessagePortChannelImpl::Send(IPC::Message* message) {
     return;
   }
 
-  ChildThread::current()->Send(message);
+  ChildThread::current()->GetRouter()->Send(message);
 }
 
 bool WebMessagePortChannelImpl::OnMessageReceived(const IPC::Message& message) {

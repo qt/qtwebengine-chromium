@@ -37,6 +37,14 @@ import name_utilities
 import template_expander
 
 
+def case_insensitive_matching(name):
+    return (name == ('HTMLEvents')
+            or name == 'Event'
+            or name == 'Events'
+            or name.startswith('UIEvent')
+            or name.startswith('CustomEvent')
+            or name.startswith('MouseEvent'))
+
 class EventFactoryWriter(name_macros.Writer):
     defaults = {
         'ImplementedAs': None,
@@ -45,21 +53,27 @@ class EventFactoryWriter(name_macros.Writer):
     }
     default_parameters = {
         'namespace': '',
+        'suffix': '',
     }
     filters = {
-        'script_name': name_utilities.script_name,
         'cpp_name': name_utilities.cpp_name,
+        'enable_conditional': name_utilities.enable_conditional_if_endif,
         'lower_first': name_utilities.lower_first,
+        'case_insensitive_matching': case_insensitive_matching,
+        'script_name': name_utilities.script_name,
     }
 
     def __init__(self, in_file_path):
         super(EventFactoryWriter, self).__init__(in_file_path)
-        self._outputs[(self.namespace + ".cpp")] = self.generate_implementation
+        if self.namespace == 'EventTarget':
+            return
+        self._outputs[(self.namespace + self.suffix + ".cpp")] = self.generate_implementation
 
     @template_expander.use_jinja('EventFactory.cpp.tmpl', filters=filters)
     def generate_implementation(self):
         return {
             'namespace': self.namespace,
+            'suffix': self.suffix,
             'events': self.in_file.name_dictionaries,
         }
 

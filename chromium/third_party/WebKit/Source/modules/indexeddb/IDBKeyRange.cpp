@@ -26,7 +26,6 @@
 #include "config.h"
 #include "modules/indexeddb/IDBKeyRange.h"
 
-#include "bindings/v8/DOMRequestState.h"
 #include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/IDBBindingUtilities.h"
 #include "core/dom/ExceptionCode.h"
@@ -34,26 +33,25 @@
 
 namespace WebCore {
 
-PassRefPtr<IDBKeyRange> IDBKeyRange::fromScriptValue(ExecutionContext* context, const ScriptValue& value, ExceptionState& exceptionState)
+IDBKeyRange* IDBKeyRange::fromScriptValue(ExecutionContext* context, const ScriptValue& value, ExceptionState& exceptionState)
 {
-    DOMRequestState requestState(context);
     if (value.isUndefined() || value.isNull())
         return 0;
 
-    RefPtr<IDBKeyRange> range = scriptValueToIDBKeyRange(&requestState, value);
+    IDBKeyRange* range = scriptValueToIDBKeyRange(toIsolate(context), value);
     if (range)
-        return range.release();
+        return range;
 
-    RefPtr<IDBKey> key = scriptValueToIDBKey(&requestState, value);
+    IDBKey* key = scriptValueToIDBKey(toIsolate(context), value);
     if (!key || !key->isValid()) {
         exceptionState.throwDOMException(DataError, IDBDatabase::notValidKeyErrorMessage);
         return 0;
     }
 
-    return adoptRef(new IDBKeyRange(key, key, LowerBoundClosed, UpperBoundClosed));
+    return new IDBKeyRange(key, key, LowerBoundClosed, UpperBoundClosed);
 }
 
-IDBKeyRange::IDBKeyRange(PassRefPtr<IDBKey> lower, PassRefPtr<IDBKey> upper, LowerBoundType lowerType, UpperBoundType upperType)
+IDBKeyRange::IDBKeyRange(IDBKey* lower, IDBKey* upper, LowerBoundType lowerType, UpperBoundType upperType)
     : m_lower(lower)
     , m_upper(upper)
     , m_lowerType(lowerType)
@@ -62,21 +60,24 @@ IDBKeyRange::IDBKeyRange(PassRefPtr<IDBKey> lower, PassRefPtr<IDBKey> upper, Low
     ScriptWrappable::init(this);
 }
 
-ScriptValue IDBKeyRange::lowerValue(ExecutionContext* context) const
+void IDBKeyRange::trace(Visitor* visitor)
 {
-    DOMRequestState requestState(context);
-    return idbKeyToScriptValue(&requestState, m_lower);
+    visitor->trace(m_lower);
+    visitor->trace(m_upper);
 }
 
-ScriptValue IDBKeyRange::upperValue(ExecutionContext* context) const
+ScriptValue IDBKeyRange::lowerValue(ScriptState* scriptState) const
 {
-    DOMRequestState requestState(context);
-    return idbKeyToScriptValue(&requestState, m_upper);
+    return idbKeyToScriptValue(scriptState, m_lower);
 }
 
-PassRefPtr<IDBKeyRange> IDBKeyRange::only(PassRefPtr<IDBKey> prpKey, ExceptionState& exceptionState)
+ScriptValue IDBKeyRange::upperValue(ScriptState* scriptState) const
 {
-    RefPtr<IDBKey> key = prpKey;
+    return idbKeyToScriptValue(scriptState, m_upper);
+}
+
+IDBKeyRange* IDBKeyRange::only(IDBKey* key, ExceptionState& exceptionState)
+{
     if (!key || !key->isValid()) {
         exceptionState.throwDOMException(DataError, IDBDatabase::notValidKeyErrorMessage);
         return 0;
@@ -85,10 +86,9 @@ PassRefPtr<IDBKeyRange> IDBKeyRange::only(PassRefPtr<IDBKey> prpKey, ExceptionSt
     return IDBKeyRange::create(key, key, LowerBoundClosed, UpperBoundClosed);
 }
 
-PassRefPtr<IDBKeyRange> IDBKeyRange::only(ExecutionContext* context, const ScriptValue& keyValue, ExceptionState& exceptionState)
+IDBKeyRange* IDBKeyRange::only(ExecutionContext* context, const ScriptValue& keyValue, ExceptionState& exceptionState)
 {
-    DOMRequestState requestState(context);
-    RefPtr<IDBKey> key = scriptValueToIDBKey(&requestState, keyValue);
+    IDBKey* key = scriptValueToIDBKey(toIsolate(context), keyValue);
     if (!key || !key->isValid()) {
         exceptionState.throwDOMException(DataError, IDBDatabase::notValidKeyErrorMessage);
         return 0;
@@ -97,10 +97,9 @@ PassRefPtr<IDBKeyRange> IDBKeyRange::only(ExecutionContext* context, const Scrip
     return IDBKeyRange::create(key, key, LowerBoundClosed, UpperBoundClosed);
 }
 
-PassRefPtr<IDBKeyRange> IDBKeyRange::lowerBound(ExecutionContext* context, const ScriptValue& boundValue, bool open, ExceptionState& exceptionState)
+IDBKeyRange* IDBKeyRange::lowerBound(ExecutionContext* context, const ScriptValue& boundValue, bool open, ExceptionState& exceptionState)
 {
-    DOMRequestState requestState(context);
-    RefPtr<IDBKey> bound = scriptValueToIDBKey(&requestState, boundValue);
+    IDBKey* bound = scriptValueToIDBKey(toIsolate(context), boundValue);
     if (!bound || !bound->isValid()) {
         exceptionState.throwDOMException(DataError, IDBDatabase::notValidKeyErrorMessage);
         return 0;
@@ -109,10 +108,9 @@ PassRefPtr<IDBKeyRange> IDBKeyRange::lowerBound(ExecutionContext* context, const
     return IDBKeyRange::create(bound, 0, open ? LowerBoundOpen : LowerBoundClosed, UpperBoundOpen);
 }
 
-PassRefPtr<IDBKeyRange> IDBKeyRange::upperBound(ExecutionContext* context, const ScriptValue& boundValue, bool open, ExceptionState& exceptionState)
+IDBKeyRange* IDBKeyRange::upperBound(ExecutionContext* context, const ScriptValue& boundValue, bool open, ExceptionState& exceptionState)
 {
-    DOMRequestState requestState(context);
-    RefPtr<IDBKey> bound = scriptValueToIDBKey(&requestState, boundValue);
+    IDBKey* bound = scriptValueToIDBKey(toIsolate(context), boundValue);
     if (!bound || !bound->isValid()) {
         exceptionState.throwDOMException(DataError, IDBDatabase::notValidKeyErrorMessage);
         return 0;
@@ -121,21 +119,20 @@ PassRefPtr<IDBKeyRange> IDBKeyRange::upperBound(ExecutionContext* context, const
     return IDBKeyRange::create(0, bound, LowerBoundOpen, open ? UpperBoundOpen : UpperBoundClosed);
 }
 
-PassRefPtr<IDBKeyRange> IDBKeyRange::bound(ExecutionContext* context, const ScriptValue& lowerValue, const ScriptValue& upperValue, bool lowerOpen, bool upperOpen, ExceptionState& exceptionState)
+IDBKeyRange* IDBKeyRange::bound(ExecutionContext* context, const ScriptValue& lowerValue, const ScriptValue& upperValue, bool lowerOpen, bool upperOpen, ExceptionState& exceptionState)
 {
-    DOMRequestState requestState(context);
-    RefPtr<IDBKey> lower = scriptValueToIDBKey(&requestState, lowerValue);
-    RefPtr<IDBKey> upper = scriptValueToIDBKey(&requestState, upperValue);
+    IDBKey* lower = scriptValueToIDBKey(toIsolate(context), lowerValue);
+    IDBKey* upper = scriptValueToIDBKey(toIsolate(context), upperValue);
 
     if (!lower || !lower->isValid() || !upper || !upper->isValid()) {
         exceptionState.throwDOMException(DataError, IDBDatabase::notValidKeyErrorMessage);
         return 0;
     }
-    if (upper->isLessThan(lower.get())) {
+    if (upper->isLessThan(lower)) {
         exceptionState.throwDOMException(DataError, "The lower key is greater than the upper key.");
         return 0;
     }
-    if (upper->isEqual(lower.get()) && (lowerOpen || upperOpen)) {
+    if (upper->isEqual(lower) && (lowerOpen || upperOpen)) {
         exceptionState.throwDOMException(DataError, "The lower key and upper key are equal and one of the bounds is open.");
         return 0;
     }

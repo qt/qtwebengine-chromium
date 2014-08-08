@@ -20,6 +20,7 @@
 #include "content/plugin/webplugin_delegate_stub.h"
 #include "content/plugin/webplugin_proxy.h"
 #include "content/public/common/content_switches.h"
+#include "ipc/message_filter.h"
 #include "third_party/WebKit/public/web/WebBindings.h"
 
 #if defined(OS_POSIX)
@@ -40,9 +41,9 @@ const int kPluginReleaseTimeMinutes = 5;
 // If a sync call to the renderer results in a modal dialog, we need to have a
 // way to know so that we can run a nested message loop to simulate what would
 // happen in a single process browser and avoid deadlock.
-class PluginChannel::MessageFilter : public IPC::ChannelProxy::MessageFilter {
+class PluginChannel::MessageFilter : public IPC::MessageFilter {
  public:
-  MessageFilter() : channel_(NULL) { }
+  MessageFilter() : sender_(NULL) { }
 
   base::WaitableEvent* GetModalDialogEvent(int render_view_id) {
     base::AutoLock auto_lock(modal_dialog_event_map_lock_);
@@ -74,12 +75,12 @@ class PluginChannel::MessageFilter : public IPC::ChannelProxy::MessageFilter {
 
   bool Send(IPC::Message* message) {
     // Need this function for the IPC_MESSAGE_HANDLER_DELAY_REPLY macro.
-    return channel_->Send(message);
+    return sender_->Send(message);
   }
 
-  // IPC::ChannelProxy::MessageFilter:
-  virtual void OnFilterAdded(IPC::Channel* channel) OVERRIDE {
-    channel_ = channel;
+  // IPC::MessageFilter:
+  virtual void OnFilterAdded(IPC::Sender* sender) OVERRIDE {
+    sender_ = sender;
   }
 
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE {
@@ -137,7 +138,7 @@ class PluginChannel::MessageFilter : public IPC::ChannelProxy::MessageFilter {
   ModalDialogEventMap modal_dialog_event_map_;
   base::Lock modal_dialog_event_map_lock_;
 
-  IPC::Channel* channel_;
+  IPC::Sender* sender_;
 };
 
 PluginChannel* PluginChannel::GetPluginChannel(

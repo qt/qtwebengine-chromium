@@ -27,28 +27,32 @@
 #define PlatformSpeechSynthesizerMock_h
 
 #include "platform/Timer.h"
+#include "platform/heap/Handle.h"
 #include "platform/speech/PlatformSpeechSynthesizer.h"
-#include "wtf/PassOwnPtr.h"
 
 namespace WebCore {
 
-class PlatformSpeechSynthesizerMock : public PlatformSpeechSynthesizer {
+class PlatformSpeechSynthesizerMock FINAL : public PlatformSpeechSynthesizer {
 public:
-    static PassOwnPtr<PlatformSpeechSynthesizerMock> create(PlatformSpeechSynthesizerClient*);
+    static PlatformSpeechSynthesizerMock* create(PlatformSpeechSynthesizerClient*);
 
     virtual ~PlatformSpeechSynthesizerMock();
-    virtual void speak(PassRefPtr<PlatformSpeechSynthesisUtterance>);
-    virtual void pause();
-    virtual void resume();
-    virtual void cancel();
+    virtual void speak(PlatformSpeechSynthesisUtterance*) OVERRIDE;
+    virtual void pause() OVERRIDE;
+    virtual void resume() OVERRIDE;
+    virtual void cancel() OVERRIDE;
+
+    virtual void trace(Visitor*) OVERRIDE;
 
 private:
     explicit PlatformSpeechSynthesizerMock(PlatformSpeechSynthesizerClient*);
-    virtual void initializeVoiceList();
+    virtual void initializeVoiceList() OVERRIDE;
     void speakingFinished(Timer<PlatformSpeechSynthesizerMock>*);
+    void speakingErrorOccurred(Timer<PlatformSpeechSynthesizerMock>*);
 
     Timer<PlatformSpeechSynthesizerMock> m_speakingFinishedTimer;
-    RefPtr<PlatformSpeechSynthesisUtterance> m_utterance;
+    Timer<PlatformSpeechSynthesizerMock> m_speakingErrorOccurredTimer;
+    Member<PlatformSpeechSynthesisUtterance> m_utterance;
 };
 
 } // namespace WebCore

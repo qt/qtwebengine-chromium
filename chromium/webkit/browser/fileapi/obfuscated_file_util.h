@@ -11,11 +11,11 @@
 #include <vector>
 
 #include "base/callback_forward.h"
+#include "base/files/file.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util_proxy.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/platform_file.h"
 #include "webkit/browser/fileapi/file_system_file_util.h"
 #include "webkit/browser/fileapi/file_system_url.h"
 #include "webkit/browser/fileapi/sandbox_directory_database.h"
@@ -27,6 +27,11 @@
 namespace base {
 class SequencedTaskRunner;
 class TimeTicks;
+}
+
+namespace content {
+class ObfuscatedFileUtilTest;
+class QuotaBackendImplTest;
 }
 
 namespace quota {
@@ -99,6 +104,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT_PRIVATE ObfuscatedFileUtil
   ObfuscatedFileUtil(
       quota::SpecialStoragePolicy* special_storage_policy,
       const base::FilePath& file_system_directory,
+      leveldb::Env* env_override,
       base::SequencedTaskRunner* file_task_runner,
       const GetTypeStringForURLCallback& get_type_string_for_url,
       const std::set<std::string>& known_type_strings,
@@ -106,65 +112,60 @@ class WEBKIT_STORAGE_BROWSER_EXPORT_PRIVATE ObfuscatedFileUtil
   virtual ~ObfuscatedFileUtil();
 
   // FileSystemFileUtil overrides.
-  virtual base::PlatformFileError CreateOrOpen(
+  virtual base::File CreateOrOpen(
       FileSystemOperationContext* context,
       const FileSystemURL& url,
-      int file_flags,
-      base::PlatformFile* file_handle,
-      bool* created) OVERRIDE;
-  virtual base::PlatformFileError Close(
-      FileSystemOperationContext* context,
-      base::PlatformFile file) OVERRIDE;
-  virtual base::PlatformFileError EnsureFileExists(
+      int file_flags) OVERRIDE;
+  virtual base::File::Error EnsureFileExists(
       FileSystemOperationContext* context,
       const FileSystemURL& url, bool* created) OVERRIDE;
-  virtual base::PlatformFileError CreateDirectory(
+  virtual base::File::Error CreateDirectory(
       FileSystemOperationContext* context,
       const FileSystemURL& url,
       bool exclusive,
       bool recursive) OVERRIDE;
-  virtual base::PlatformFileError GetFileInfo(
+  virtual base::File::Error GetFileInfo(
       FileSystemOperationContext* context,
       const FileSystemURL& url,
-      base::PlatformFileInfo* file_info,
+      base::File::Info* file_info,
       base::FilePath* platform_file) OVERRIDE;
   virtual scoped_ptr<AbstractFileEnumerator> CreateFileEnumerator(
       FileSystemOperationContext* context,
       const FileSystemURL& root_url) OVERRIDE;
-  virtual base::PlatformFileError GetLocalFilePath(
+  virtual base::File::Error GetLocalFilePath(
       FileSystemOperationContext* context,
       const FileSystemURL& file_system_url,
       base::FilePath* local_path) OVERRIDE;
-  virtual base::PlatformFileError Touch(
+  virtual base::File::Error Touch(
       FileSystemOperationContext* context,
       const FileSystemURL& url,
       const base::Time& last_access_time,
       const base::Time& last_modified_time) OVERRIDE;
-  virtual base::PlatformFileError Truncate(
+  virtual base::File::Error Truncate(
       FileSystemOperationContext* context,
       const FileSystemURL& url,
       int64 length) OVERRIDE;
-  virtual base::PlatformFileError CopyOrMoveFile(
+  virtual base::File::Error CopyOrMoveFile(
       FileSystemOperationContext* context,
       const FileSystemURL& src_url,
       const FileSystemURL& dest_url,
       CopyOrMoveOption option,
       bool copy) OVERRIDE;
-  virtual base::PlatformFileError CopyInForeignFile(
+  virtual base::File::Error CopyInForeignFile(
         FileSystemOperationContext* context,
         const base::FilePath& src_file_path,
         const FileSystemURL& dest_url) OVERRIDE;
-  virtual base::PlatformFileError DeleteFile(
+  virtual base::File::Error DeleteFile(
       FileSystemOperationContext* context,
       const FileSystemURL& url) OVERRIDE;
-  virtual base::PlatformFileError DeleteDirectory(
+  virtual base::File::Error DeleteDirectory(
       FileSystemOperationContext* context,
       const FileSystemURL& url) OVERRIDE;
   virtual webkit_blob::ScopedFile CreateSnapshotFile(
       FileSystemOperationContext* context,
       const FileSystemURL& url,
-      base::PlatformFileError* error,
-      base::PlatformFileInfo* file_info,
+      base::File::Error* error,
+      base::File::Info* file_info,
       base::FilePath* platform_path) OVERRIDE;
 
   // Same as the other CreateFileEnumerator, but with recursive support.
@@ -191,7 +192,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT_PRIVATE ObfuscatedFileUtil
       const GURL& origin,
       const std::string& type_string,
       bool create,
-      base::PlatformFileError* error_code);
+      base::File::Error* error_code);
 
   // Deletes the topmost directory specific to this origin and type.  This will
   // delete its directory database.
@@ -229,17 +230,8 @@ class WEBKIT_STORAGE_BROWSER_EXPORT_PRIVATE ObfuscatedFileUtil
   typedef SandboxDirectoryDatabase::FileInfo FileInfo;
 
   friend class ObfuscatedFileEnumerator;
-  friend class ObfuscatedFileUtilTest;
-  friend class QuotaBackendImplTest;
-  FRIEND_TEST_ALL_PREFIXES(ObfuscatedFileUtilTest, MaybeDropDatabasesAliveCase);
-  FRIEND_TEST_ALL_PREFIXES(ObfuscatedFileUtilTest,
-                           MaybeDropDatabasesAlreadyDeletedCase);
-  FRIEND_TEST_ALL_PREFIXES(ObfuscatedFileUtilTest,
-                           DestroyDirectoryDatabase_Isolated);
-  FRIEND_TEST_ALL_PREFIXES(ObfuscatedFileUtilTest,
-                           GetDirectoryDatabase_Isolated);
-  FRIEND_TEST_ALL_PREFIXES(ObfuscatedFileUtilTest,
-                           MigrationBackFromIsolated);
+  friend class content::ObfuscatedFileUtilTest;
+  friend class content::QuotaBackendImplTest;
 
   // Helper method to create an obfuscated file util for regular
   // (temporary, persistent) file systems. Used only for testing.
@@ -247,43 +239,52 @@ class WEBKIT_STORAGE_BROWSER_EXPORT_PRIVATE ObfuscatedFileUtil
   static ObfuscatedFileUtil* CreateForTesting(
       quota::SpecialStoragePolicy* special_storage_policy,
       const base::FilePath& file_system_directory,
+      leveldb::Env* env_override,
       base::SequencedTaskRunner* file_task_runner);
 
   base::FilePath GetDirectoryForURL(
       const FileSystemURL& url,
       bool create,
-      base::PlatformFileError* error_code);
+      base::File::Error* error_code);
 
   // This just calls get_type_string_for_url_ callback that is given in ctor.
   std::string CallGetTypeStringForURL(const FileSystemURL& url);
 
-  base::PlatformFileError GetFileInfoInternal(
+  base::File::Error GetFileInfoInternal(
       SandboxDirectoryDatabase* db,
       FileSystemOperationContext* context,
       const FileSystemURL& url,
       FileId file_id,
       FileInfo* local_info,
-      base::PlatformFileInfo* file_info,
+      base::File::Info* file_info,
       base::FilePath* platform_file_path);
 
   // Creates a new file, both the underlying backing file and the entry in the
   // database.  |dest_file_info| is an in-out parameter.  Supply the name and
   // parent_id; data_path is ignored.  On success, data_path will
   // always be set to the relative path [from the root of the type-specific
-  // filesystem directory] of a NEW backing file, and handle, if supplied, will
-  // hold open PlatformFile for the backing file, which the caller is
-  // responsible for closing.  If you supply a path in |source_path|, it will be
-  // used as a source from which to COPY data.
-  // Caveat: do not supply handle if you're also supplying a data path.  It was
-  // easier not to support this, and no code has needed it so far, so it will
-  // DCHECK and handle will hold base::kInvalidPlatformFileValue.
-  base::PlatformFileError CreateFile(
+  // filesystem directory] of a NEW backing file.  Returns the new file.
+  base::File CreateAndOpenFile(
+      FileSystemOperationContext* context,
+      const FileSystemURL& dest_url,
+      FileInfo* dest_file_info,
+      int file_flags);
+
+  // The same as CreateAndOpenFile except that a file is not returned and if a
+  // path is provided in |source_path|, it will be used as a source from which
+  // to COPY data.
+  base::File::Error CreateFile(
       FileSystemOperationContext* context,
       const base::FilePath& source_file_path,
       const FileSystemURL& dest_url,
-      FileInfo* dest_file_info,
-      int file_flags,
-      base::PlatformFile* handle);
+      FileInfo* dest_file_info);
+
+  // Updates |db| and |dest_file_info| at the end of creating a new file.
+  base::File::Error CommitCreateFile(
+    const base::FilePath& root,
+    const base::FilePath& local_path,
+    SandboxDirectoryDatabase* db,
+    FileInfo* dest_file_info);
 
   // This converts from a relative path [as is stored in the FileInfo.data_path
   // field] to an absolute platform path that can be given to the native
@@ -305,7 +306,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT_PRIVATE ObfuscatedFileUtil
   // contain both the filesystem type subdirectories.
   base::FilePath GetDirectoryForOrigin(const GURL& origin,
                                        bool create,
-                                       base::PlatformFileError* error_code);
+                                       base::File::Error* error_code);
 
   void InvalidateUsageCache(FileSystemOperationContext* context,
                             const GURL& origin,
@@ -318,18 +319,17 @@ class WEBKIT_STORAGE_BROWSER_EXPORT_PRIVATE ObfuscatedFileUtil
   // for initializing database if it's not empty.
   bool InitOriginDatabase(const GURL& origin_hint, bool create);
 
-  base::PlatformFileError GenerateNewLocalPath(
+  base::File::Error GenerateNewLocalPath(
       SandboxDirectoryDatabase* db,
       FileSystemOperationContext* context,
       const FileSystemURL& url,
+      base::FilePath* root,
       base::FilePath* local_path);
 
-  base::PlatformFileError CreateOrOpenInternal(
+  base::File CreateOrOpenInternal(
       FileSystemOperationContext* context,
       const FileSystemURL& url,
-      int file_flags,
-      base::PlatformFile* file_handle,
-      bool* created);
+      int file_flags);
 
   bool HasIsolatedStorage(const GURL& origin);
 
@@ -338,6 +338,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT_PRIVATE ObfuscatedFileUtil
   scoped_ptr<SandboxOriginDatabaseInterface> origin_database_;
   scoped_refptr<quota::SpecialStoragePolicy> special_storage_policy_;
   base::FilePath file_system_directory_;
+  leveldb::Env* env_override_;
 
   // Used to delete database after a certain period of inactivity.
   int64 db_flush_delay_seconds_;

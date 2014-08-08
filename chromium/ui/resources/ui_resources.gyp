@@ -41,12 +41,9 @@
       'target_name': 'ui_test_pak',
       'type': 'none',
       'dependencies': [
-        '../base/strings/ui_strings.gyp:ui_strings',
+        '../strings/ui_strings.gyp:ui_strings',
         'ui_resources',
       ],
-      'variables': {
-        'repack_path': '../../tools/grit/grit/format/repack.py',
-      },
       'actions': [
         {
           'action_name': 'repack_ui_test_pack',
@@ -57,16 +54,62 @@
               '<(SHARED_INTERMEDIATE_DIR)/ui/ui_resources/webui_resources.pak',
               '<(SHARED_INTERMEDIATE_DIR)/ui/ui_strings/ui_strings_en-US.pak',
             ],
+            'pak_output': '<(PRODUCT_DIR)/ui_test.pak',
           },
-          'inputs': [
-            '<(repack_path)',
-            '<@(pak_inputs)',
-          ],
-          'outputs': [
-            '<(PRODUCT_DIR)/ui_test.pak',
-          ],
-          'action': ['python', '<(repack_path)', '<@(_outputs)', '<@(pak_inputs)'],
+          'includes': [ '../../build/repack_action.gypi' ],
         },
+      ],
+      'conditions': [
+        ['OS != "mac"', {
+          'copies': [
+            {
+              'destination': '<(PRODUCT_DIR)/ui',
+              'files': [
+                '<(SHARED_INTERMEDIATE_DIR)/ui/ui_resources/ui_resources_100_percent.pak',
+              ],
+            },
+          ],
+        }],
+        ['OS == "ios"', {
+          'actions': [
+            {
+              'action_name': 'copy_ui_test_pak',
+              'message': 'Copying ui_test.pak into locale.pak',
+              'inputs': [
+                '<(PRODUCT_DIR)/ui_test.pak',
+              ],
+              'outputs': [
+                '<(PRODUCT_DIR)/ui/en.lproj/locale.pak',
+              ],
+              'action': [
+                'python',
+                '../../build/cp.py',
+                '<@(_inputs)',
+                '<@(_outputs)'
+              ],
+            },
+          ],
+        }],
+        ['OS != "mac" and OS !="ios"', {
+          'actions': [
+            {
+              'action_name': 'copy_ui_test_pak',
+              'message': 'Copying ui_test.pak into en-US.pak',
+              'inputs': [
+                '<(PRODUCT_DIR)/ui_test.pak',
+              ],
+              'outputs': [
+                '<(PRODUCT_DIR)/ui/en-US.pak',
+              ],
+              'action': [
+                'python',
+                '../../build/cp.py',
+                '<@(_inputs)',
+                '<@(_outputs)'
+              ],
+            },
+          ],
+        }],
       ],
     },
   ],

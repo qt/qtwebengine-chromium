@@ -28,31 +28,30 @@
 #ifndef DocumentStyleSheetCollection_h
 #define DocumentStyleSheetCollection_h
 
-#include "core/dom/StyleSheetCollection.h"
+#include "core/dom/TreeScopeStyleSheetCollection.h"
 
 namespace WebCore {
 
-class CSSStyleSheet;
-class StyleSheet;
-class StyleSheetCollection;
+class DocumentStyleSheetCollector;
 class StyleEngine;
 class TreeScope;
 
-class DocumentStyleSheetCollection FINAL : public StyleSheetCollection {
-    WTF_MAKE_NONCOPYABLE(DocumentStyleSheetCollection); WTF_MAKE_FAST_ALLOCATED;
+class DocumentStyleSheetCollection FINAL : public TreeScopeStyleSheetCollection {
+    WTF_MAKE_NONCOPYABLE(DocumentStyleSheetCollection);
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
 public:
     explicit DocumentStyleSheetCollection(TreeScope&);
 
-    enum CollectFor {
-        CollectForList,
-        DontCollectForList
-    };
+    void updateActiveStyleSheets(StyleEngine*, StyleResolverUpdateMode);
+    void collectStyleSheets(StyleEngine*, DocumentStyleSheetCollector&);
 
-    bool updateActiveStyleSheets(StyleEngine*, StyleResolverUpdateMode);
-    void collectStyleSheets(StyleEngine*, StyleSheetCollectionBase&, CollectFor);
+    virtual void trace(Visitor* visitor) OVERRIDE
+    {
+        TreeScopeStyleSheetCollection::trace(visitor);
+    }
 
 private:
-    void collectStyleSheetsFromCandidates(StyleEngine*, StyleSheetCollectionBase&, CollectFor);
+    void collectStyleSheetsFromCandidates(StyleEngine*, DocumentStyleSheetCollector&);
 };
 
 }

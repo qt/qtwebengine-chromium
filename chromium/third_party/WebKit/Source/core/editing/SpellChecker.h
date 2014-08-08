@@ -26,7 +26,7 @@
 #ifndef SpellChecker_h
 #define SpellChecker_h
 
-#include "core/dom/ClipboardAccessPolicy.h"
+#include "core/clipboard/ClipboardAccessPolicy.h"
 #include "core/dom/DocumentMarker.h"
 #include "core/editing/FrameSelection.h"
 #include "core/editing/VisibleSelection.h"
@@ -34,7 +34,7 @@
 
 namespace WebCore {
 
-class Frame;
+class LocalFrame;
 class SpellCheckerClient;
 class SpellCheckRequest;
 class SpellCheckRequester;
@@ -45,7 +45,7 @@ struct TextCheckingResult;
 class SpellChecker {
     WTF_MAKE_NONCOPYABLE(SpellChecker);
 public:
-    static PassOwnPtr<SpellChecker> create(Frame&);
+    static PassOwnPtr<SpellChecker> create(LocalFrame&);
 
     ~SpellChecker();
 
@@ -56,11 +56,10 @@ public:
     void toggleContinuousSpellChecking();
     bool isGrammarCheckingEnabled();
     void ignoreSpelling();
-    String misspelledWordAtCaretOrRange(Node* clickedNode) const;
     bool isSpellCheckingEnabledInFocusedNode() const;
     bool isSpellCheckingEnabledFor(Node*) const;
     void markMisspellingsAfterTypingToWord(const VisiblePosition &wordStart, const VisibleSelection& selectionAfterTyping);
-    void markMisspellings(const VisibleSelection&, RefPtr<Range>& firstMisspellingRange);
+    void markMisspellings(const VisibleSelection&, RefPtrWillBeRawPtr<Range>& firstMisspellingRange);
     void markBadGrammar(const VisibleSelection&);
     void markMisspellingsAndBadGrammar(const VisibleSelection& spellingSelection, bool markGrammar, const VisibleSelection& grammarSelection);
     void markAndReplaceFor(PassRefPtr<SpellCheckRequest>, const Vector<TextCheckingResult>&);
@@ -85,12 +84,12 @@ public:
     SpellCheckRequester& spellCheckRequester() const { return *m_spellCheckRequester; }
 
 private:
-    Frame& m_frame;
+    LocalFrame& m_frame;
     const OwnPtr<SpellCheckRequester> m_spellCheckRequester;
 
-    explicit SpellChecker(Frame&);
+    explicit SpellChecker(LocalFrame&);
 
-    void markMisspellingsOrBadGrammar(const VisibleSelection&, bool checkSpelling, RefPtr<Range>& firstMisspellingRange);
+    void markMisspellingsOrBadGrammar(const VisibleSelection&, bool checkSpelling, RefPtrWillBeRawPtr<Range>& firstMisspellingRange);
     TextCheckingTypeMask resolveTextCheckingTypeMask(TextCheckingTypeMask);
 
     bool unifiedTextCheckerEnabled() const;

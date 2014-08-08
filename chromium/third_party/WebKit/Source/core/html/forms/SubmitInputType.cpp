@@ -32,7 +32,7 @@
 #include "config.h"
 #include "core/html/forms/SubmitInputType.h"
 
-#include "InputTypeNames.h"
+#include "core/InputTypeNames.h"
 #include "core/events/Event.h"
 #include "core/html/FormDataList.h"
 #include "core/html/HTMLFormElement.h"
@@ -42,9 +42,9 @@
 
 namespace WebCore {
 
-PassRefPtr<InputType> SubmitInputType::create(HTMLInputElement& element)
+PassRefPtrWillBeRawPtr<InputType> SubmitInputType::create(HTMLInputElement& element)
 {
-    return adoptRef(new SubmitInputType(element));
+    return adoptRefWillBeNoop(new SubmitInputType(element));
 }
 
 const AtomicString& SubmitInputType::formControlType() const
@@ -67,7 +67,7 @@ bool SubmitInputType::supportsRequired() const
 
 void SubmitInputType::handleDOMActivateEvent(Event* event)
 {
-    RefPtr<HTMLInputElement> element(this->element());
+    RefPtrWillBeRawPtr<HTMLInputElement> element(this->element());
     if (element->isDisabledFormControl() || !element->form())
         return;
     element->setActivatedSubmit(true);
@@ -84,11 +84,6 @@ bool SubmitInputType::canBeSuccessfulSubmitButton()
 String SubmitInputType::defaultValue() const
 {
     return locale().queryString(blink::WebLocalizedString::SubmitButtonDefaultLabel);
-}
-
-bool SubmitInputType::isSubmitButton() const
-{
-    return true;
 }
 
 bool SubmitInputType::isTextButton() const

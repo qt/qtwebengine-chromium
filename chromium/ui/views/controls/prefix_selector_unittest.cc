@@ -11,6 +11,8 @@
 #include "ui/views/controls/prefix_delegate.h"
 #include "ui/views/test/views_test_base.h"
 
+using base::ASCIIToUTF16;
+
 namespace views {
 
 class TestPrefixDelegate : public PrefixDelegate {
@@ -36,12 +38,12 @@ class TestPrefixDelegate : public PrefixDelegate {
     selected_row_ = row;
   }
 
-  virtual string16 GetTextForRow(int row) OVERRIDE {
+  virtual base::string16 GetTextForRow(int row) OVERRIDE {
     return rows_[row];
   }
 
  private:
-  std::vector<string16> rows_;
+  std::vector<base::string16> rows_;
   int selected_row_;
 
   DISALLOW_COPY_AND_ASSIGN(TestPrefixDelegate);

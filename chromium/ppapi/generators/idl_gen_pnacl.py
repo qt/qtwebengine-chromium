@@ -48,7 +48,7 @@ class PnaclGen(WrapperGen):
   def OwnHeaderFile(self):
     """Return the header file that specifies the API of this wrapper.
     We do not generate the header files.  """
-    return 'ppapi/generators/pnacl_shim.h'
+    return 'ppapi/native_client/src/untrusted/pnacl_irt_shim/pnacl_shim.h'
 
 
   def InterfaceVersionNeedsWrapping(self, iface, version):
@@ -58,6 +58,12 @@ class PnaclGen(WrapperGen):
     if self._skip_opt:
       return True
     if iface.GetName().endswith('Trusted'):
+      return False
+    # TODO(dmichael): We have no way to wrap PPP_ interfaces without an
+    # interface string. If any ever need wrapping, we'll need to figure out a
+    # way to get the plugin-side of the Pepper proxy (within the IRT) to access
+    # and use the wrapper.
+    if iface.GetProperty("no_interface_string"):
       return False
     for member in iface.GetListOf('Member'):
       release = member.GetRelease(version)

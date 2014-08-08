@@ -28,7 +28,7 @@
 #define WorkerGlobalScopeFileSystem_h
 
 #include "modules/filesystem/DOMFileSystemSync.h"
-#include "wtf/PassRefPtr.h"
+#include "platform/heap/Handle.h"
 
 namespace WebCore {
 
@@ -46,10 +46,10 @@ public:
         PERSISTENT,
     };
 
-    static void webkitRequestFileSystem(WorkerGlobalScope*, int type, long long size, PassOwnPtr<FileSystemCallback> successCallback, PassOwnPtr<ErrorCallback>);
-    static PassRefPtr<DOMFileSystemSync> webkitRequestFileSystemSync(WorkerGlobalScope*, int type, long long size, ExceptionState&);
-    static void webkitResolveLocalFileSystemURL(WorkerGlobalScope*, const String& url, PassOwnPtr<EntryCallback> successCallback, PassOwnPtr<ErrorCallback>);
-    static PassRefPtr<EntrySync> webkitResolveLocalFileSystemSyncURL(WorkerGlobalScope*, const String& url, ExceptionState&);
+    static void webkitRequestFileSystem(WorkerGlobalScope&, int type, long long size, PassOwnPtr<FileSystemCallback> successCallback, PassOwnPtr<ErrorCallback>);
+    static DOMFileSystemSync* webkitRequestFileSystemSync(WorkerGlobalScope&, int type, long long size, ExceptionState&);
+    static void webkitResolveLocalFileSystemURL(WorkerGlobalScope&, const String& url, PassOwnPtr<EntryCallback> successCallback, PassOwnPtr<ErrorCallback>);
+    static EntrySync* webkitResolveLocalFileSystemSyncURL(WorkerGlobalScope&, const String& url, ExceptionState&);
 
 private:
     WorkerGlobalScopeFileSystem();

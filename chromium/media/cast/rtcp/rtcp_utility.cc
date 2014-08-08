@@ -4,8 +4,9 @@
 
 #include "media/cast/rtcp/rtcp_utility.h"
 
+#include "base/big_endian.h"
 #include "base/logging.h"
-#include "net/base/big_endian.h"
+#include "media/cast/transport/cast_transport_defines.h"
 
 namespace media {
 namespace cast {
@@ -19,18 +20,15 @@ RtcpParser::RtcpParser(const uint8* rtcpData, size_t rtcpDataLength)
       state_(kStateTopLevel),
       number_of_blocks_(0),
       field_type_(kRtcpNotValidCode) {
+  memset(&field_, 0, sizeof(field_));
   Validate();
 }
 
 RtcpParser::~RtcpParser() {}
 
-RtcpFieldTypes RtcpParser::FieldType() const {
-  return field_type_;
-}
+RtcpFieldTypes RtcpParser::FieldType() const { return field_type_; }
 
-const RtcpField& RtcpParser::Field() const {
-  return field_;
-}
+const RtcpField& RtcpParser::Field() const { return field_; }
 
 RtcpFieldTypes RtcpParser::Begin() {
   rtcp_data_ = rtcp_data_begin_;
@@ -41,7 +39,8 @@ RtcpFieldTypes RtcpParser::Iterate() {
   // Reset packet type
   field_type_ = kRtcpNotValidCode;
 
-  if (!IsValid()) return kRtcpNotValidCode;
+  if (!IsValid())
+    return kRtcpNotValidCode;
 
   switch (state_) {
     case kStateTopLevel:
@@ -61,9 +60,6 @@ RtcpFieldTypes RtcpParser::Iterate() {
       break;
     case kStateApplicationSpecificCastReceiverEventLog:
       IterateCastReceiverLogEvent();
-      break;
-    case kStateApplicationSpecificCastSenderLog:
-      IterateCastSenderLog();
       break;
     case kStateExtendedReportBlock:
       IterateExtendedReportItem();
@@ -101,51 +97,53 @@ void RtcpParser::IterateTopLevel() {
     RtcpCommonHeader header;
 
     bool success = RtcpParseCommonHeader(rtcp_data_, rtcp_data_end_, &header);
-    if (!success) return;
+    if (!success)
+      return;
 
     rtcp_block_end_ = rtcp_data_ + header.length_in_octets;
 
-    if (rtcp_block_end_ > rtcp_data_end_) return;  // Bad block!
+    if (rtcp_block_end_ > rtcp_data_end_)
+      return;  // Bad block!
 
     switch (header.PT) {
-      case kPacketTypeSenderReport:
+      case transport::kPacketTypeSenderReport:
         // number of Report blocks
         number_of_blocks_ = header.IC;
         ParseSR();
         return;
-      case kPacketTypeReceiverReport:
+      case transport::kPacketTypeReceiverReport:
         // number of Report blocks
         number_of_blocks_ = header.IC;
         ParseRR();
         return;
-      case kPacketTypeSdes:
+      case transport::kPacketTypeSdes:
         // number of Sdes blocks
         number_of_blocks_ = header.IC;
         if (!ParseSdes()) {
           break;  // Nothing supported found, continue to next block!
         }
         return;
-      case kPacketTypeBye:
+      case transport::kPacketTypeBye:
         number_of_blocks_ = header.IC;
         if (!ParseBye()) {
           // Nothing supported found, continue to next block!
           break;
         }
         return;
-      case kPacketTypeApplicationDefined:
+      case transport::kPacketTypeApplicationDefined:
         if (!ParseApplicationDefined(header.IC)) {
           // Nothing supported found, continue to next block!
           break;
         }
         return;
-      case kPacketTypeGenericRtpFeedback:  // Fall through!
-      case kPacketTypePayloadSpecific:
+      case transport::kPacketTypeGenericRtpFeedback:  // Fall through!
+      case transport::kPacketTypePayloadSpecific:
         if (!ParseFeedBackCommon(header)) {
           // Nothing supported found, continue to next block!
           break;
         }
         return;
-      case kPacketTypeXr:
+      case transport::kPacketTypeXr:
         if (!ParseExtendedReport()) {
           break;  // Nothing supported found, continue to next block!
         }
@@ -160,103 +158,111 @@ void RtcpParser::IterateTopLevel() {
 
 void RtcpParser::IterateReportBlockItem() {
   bool success = ParseReportBlockItem();
-  if (!success) Iterate();
+  if (!success)
+    Iterate();
 }
 
 void RtcpParser::IterateSdesItem() {
   bool success = ParseSdesItem();
-  if (!success) Iterate();
+  if (!success)
+    Iterate();
 }
 
 void RtcpParser::IterateByeItem() {
   bool success = ParseByeItem();
-  if (!success) Iterate();
+  if (!success)
+    Iterate();
 }
 
 void RtcpParser::IterateExtendedReportItem() {
   bool success = ParseExtendedReportItem();
-  if (!success) Iterate();
+  if (!success)
+    Iterate();
 }
 
 void RtcpParser::IterateExtendedReportDelaySinceLastReceiverReportItem() {
   bool success = ParseExtendedReportDelaySinceLastReceiverReport();
-  if (!success) Iterate();
+  if (!success)
+    Iterate();
 }
 
 void RtcpParser::IterateNackItem() {
   bool success = ParseNackItem();
-  if (!success) Iterate();
+  if (!success)
+    Iterate();
 }
 
 void RtcpParser::IterateRpsiItem() {
   bool success = ParseRpsiItem();
-  if (!success) Iterate();
+  if (!success)
+    Iterate();
 }
 
 void RtcpParser::IterateFirItem() {
   bool success = ParseFirItem();
-  if (!success) Iterate();
+  if (!success)
+    Iterate();
 }
 
 void RtcpParser::IteratePayloadSpecificAppItem() {
   bool success = ParsePayloadSpecificAppItem();
-  if (!success) Iterate();
+  if (!success)
+    Iterate();
 }
 
 void RtcpParser::IteratePayloadSpecificRembItem() {
   bool success = ParsePayloadSpecificRembItem();
-  if (!success) Iterate();
+  if (!success)
+    Iterate();
 }
 
 void RtcpParser::IteratePayloadSpecificCastItem() {
   bool success = ParsePayloadSpecificCastItem();
-  if (!success) Iterate();
+  if (!success)
+    Iterate();
 }
 
 void RtcpParser::IteratePayloadSpecificCastNackItem() {
   bool success = ParsePayloadSpecificCastNackItem();
-  if (!success) Iterate();
+  if (!success)
+    Iterate();
 }
 
 void RtcpParser::IterateCastReceiverLogFrame() {
   bool success = ParseCastReceiverLogFrameItem();
-  if (!success) Iterate();
+  if (!success)
+    Iterate();
 }
 
 void RtcpParser::IterateCastReceiverLogEvent() {
   bool success = ParseCastReceiverLogEventItem();
-  if (!success) Iterate();
-}
-
-void RtcpParser::IterateCastSenderLog() {
-  bool success = ParseCastSenderLogItem();
-  if (!success) Iterate();
+  if (!success)
+    Iterate();
 }
 
 void RtcpParser::Validate() {
-  if (rtcp_data_ == NULL) return;  // NOT VALID
+  if (rtcp_data_ == NULL)
+    return;  // NOT VALID
 
   RtcpCommonHeader header;
-  bool success = RtcpParseCommonHeader(rtcp_data_begin_, rtcp_data_end_,
-                                       &header);
+  bool success =
+      RtcpParseCommonHeader(rtcp_data_begin_, rtcp_data_end_, &header);
 
-  if (!success) return;  // NOT VALID!
+  if (!success)
+    return;  // NOT VALID!
 
   valid_packet_ = true;
 }
 
-bool RtcpParser::IsValid() const {
-  return valid_packet_;
-}
+bool RtcpParser::IsValid() const { return valid_packet_; }
 
-void RtcpParser::EndCurrentBlock() {
-  rtcp_data_ = rtcp_block_end_;
-}
+void RtcpParser::EndCurrentBlock() { rtcp_data_ = rtcp_block_end_; }
 
 bool RtcpParser::RtcpParseCommonHeader(const uint8* data_begin,
                                        const uint8* data_end,
                                        RtcpCommonHeader* parsed_header) const {
-  if (!data_begin || !data_end) return false;
+  if (!data_begin || !data_end)
+    return false;
 
   //  0                   1                   2                   3
   //  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
@@ -266,31 +272,36 @@ bool RtcpParser::RtcpParseCommonHeader(const uint8* data_begin,
   //
   // Common header for all Rtcp packets, 4 octets.
 
-  if ((data_end - data_begin) < 4) return false;
+  if ((data_end - data_begin) < 4)
+    return false;
 
-  parsed_header->V  = data_begin[0] >> 6;
-  parsed_header->P  = ((data_begin[0] & 0x20) == 0) ? false : true;
+  parsed_header->V = data_begin[0] >> 6;
+  parsed_header->P = ((data_begin[0] & 0x20) == 0) ? false : true;
   parsed_header->IC = data_begin[0] & 0x1f;
   parsed_header->PT = data_begin[1];
 
   parsed_header->length_in_octets =
       ((data_begin[2] << 8) + data_begin[3] + 1) * 4;
 
-  if (parsed_header->length_in_octets == 0) return false;
+  if (parsed_header->length_in_octets == 0)
+    return false;
 
   // Check if RTP version field == 2.
-  if (parsed_header->V != 2) return false;
+  if (parsed_header->V != 2)
+    return false;
 
   return true;
 }
 
 bool RtcpParser::ParseRR() {
   ptrdiff_t length = rtcp_block_end_ - rtcp_data_;
-  if (length < 8) return false;
+  if (length < 8)
+    return false;
 
   field_type_ = kRtcpRrCode;
 
-  net::BigEndianReader big_endian_reader(rtcp_data_, length);
+  base::BigEndianReader big_endian_reader(
+      reinterpret_cast<const char*>(rtcp_data_), length);
   big_endian_reader.Skip(4);  // Skip header
   big_endian_reader.ReadU32(&field_.receiver_report.sender_ssrc);
   field_.receiver_report.number_of_report_blocks = number_of_blocks_;
@@ -309,7 +320,8 @@ bool RtcpParser::ParseSR() {
   }
   field_type_ = kRtcpSrCode;
 
-  net::BigEndianReader big_endian_reader(rtcp_data_, length);
+  base::BigEndianReader big_endian_reader(
+      reinterpret_cast<const char*>(rtcp_data_), length);
   big_endian_reader.Skip(4);  // Skip header
   big_endian_reader.ReadU32(&field_.sender_report.sender_ssrc);
   big_endian_reader.ReadU32(&field_.sender_report.ntp_most_significant);
@@ -339,7 +351,8 @@ bool RtcpParser::ParseReportBlockItem() {
     return false;
   }
 
-  net::BigEndianReader big_endian_reader(rtcp_data_, length);
+  base::BigEndianReader big_endian_reader(
+      reinterpret_cast<const char*>(rtcp_data_), length);
   big_endian_reader.ReadU32(&field_.report_block_item.ssrc);
   big_endian_reader.ReadU8(&field_.report_block_item.fraction_lost);
 
@@ -399,7 +412,8 @@ bool RtcpParser::ParseSdesItem() {
     }
 
     uint32 ssrc;
-    net::BigEndianReader big_endian_reader(rtcp_data_, data_length);
+    base::BigEndianReader big_endian_reader(
+        reinterpret_cast<const char*>(rtcp_data_), data_length);
     big_endian_reader.ReadU32(&ssrc);
     rtcp_data_ += 4;
 
@@ -418,7 +432,8 @@ bool RtcpParser::ParseSdesTypes() {
   // Only the c_name item is mandatory. RFC 3550 page 46.
   bool found_c_name = false;
   ptrdiff_t length = rtcp_block_end_ - rtcp_data_;
-  net::BigEndianReader big_endian_reader(rtcp_data_, length);
+  base::BigEndianReader big_endian_reader(
+      reinterpret_cast<const char*>(rtcp_data_), length);
 
   while (big_endian_reader.remaining() > 0) {
     uint8 tag;
@@ -484,7 +499,8 @@ bool RtcpParser::ParseByeItem() {
 
   field_type_ = kRtcpByeCode;
 
-  net::BigEndianReader big_endian_reader(rtcp_data_, length);
+  base::BigEndianReader big_endian_reader(
+      reinterpret_cast<const char*>(rtcp_data_), length);
   big_endian_reader.ReadU32(&field_.bye.sender_ssrc);
   rtcp_data_ += 4;
 
@@ -498,8 +514,7 @@ bool RtcpParser::ParseByeItem() {
 
 bool RtcpParser::ParseApplicationDefined(uint8 subtype) {
   ptrdiff_t length = rtcp_block_end_ - rtcp_data_;
-  if (length < 16 ||
-      !(subtype == kSenderLogSubtype || subtype == kReceiverLogSubtype)) {
+  if (length < 16 || subtype != kReceiverLogSubtype) {
     state_ = kStateTopLevel;
     EndCurrentBlock();
     return false;
@@ -508,7 +523,8 @@ bool RtcpParser::ParseApplicationDefined(uint8 subtype) {
   uint32 sender_ssrc;
   uint32 name;
 
-  net::BigEndianReader big_endian_reader(rtcp_data_, length);
+  base::BigEndianReader big_endian_reader(
+      reinterpret_cast<const char*>(rtcp_data_), length);
   big_endian_reader.Skip(4);  // Skip header.
   big_endian_reader.ReadU32(&sender_ssrc);
   big_endian_reader.ReadU32(&name);
@@ -520,11 +536,6 @@ bool RtcpParser::ParseApplicationDefined(uint8 subtype) {
   }
   rtcp_data_ += 12;
   switch (subtype) {
-    case kSenderLogSubtype:
-      state_ = kStateApplicationSpecificCastSenderLog;
-      field_type_ = kRtcpApplicationSpecificCastSenderLogCode;
-      field_.cast_sender_log.sender_ssrc = sender_ssrc;
-      break;
     case kReceiverLogSubtype:
       state_ = kStateApplicationSpecificCastReceiverFrameLog;
       field_type_ = kRtcpApplicationSpecificCastReceiverLogCode;
@@ -545,7 +556,8 @@ bool RtcpParser::ParseCastReceiverLogFrameItem() {
   }
   uint32 rtp_timestamp;
   uint32 data;
-  net::BigEndianReader big_endian_reader(rtcp_data_, length);
+  base::BigEndianReader big_endian_reader(
+      reinterpret_cast<const char*>(rtcp_data_), length);
   big_endian_reader.ReadU32(&rtp_timestamp);
   big_endian_reader.ReadU32(&data);
 
@@ -577,7 +589,8 @@ bool RtcpParser::ParseCastReceiverLogEventItem() {
 
   uint16 delay_delta_or_packet_id;
   uint16 event_type_and_timestamp_delta;
-  net::BigEndianReader big_endian_reader(rtcp_data_, length);
+  base::BigEndianReader big_endian_reader(
+      reinterpret_cast<const char*>(rtcp_data_), length);
   big_endian_reader.ReadU16(&delay_delta_or_packet_id);
   big_endian_reader.ReadU16(&event_type_and_timestamp_delta);
 
@@ -585,7 +598,9 @@ bool RtcpParser::ParseCastReceiverLogEventItem() {
 
   field_.cast_receiver_log.event =
       static_cast<uint8>(event_type_and_timestamp_delta >> 12);
-  field_.cast_receiver_log.delay_delta_or_packet_id = delay_delta_or_packet_id;
+  // delay_delta is in union'ed with packet_id.
+  field_.cast_receiver_log.delay_delta_or_packet_id.packet_id =
+      delay_delta_or_packet_id;
   field_.cast_receiver_log.event_timestamp_delta =
       event_type_and_timestamp_delta & 0xfff;
 
@@ -593,30 +608,10 @@ bool RtcpParser::ParseCastReceiverLogEventItem() {
   return true;
 }
 
-bool RtcpParser::ParseCastSenderLogItem() {
-  ptrdiff_t length = rtcp_block_end_ - rtcp_data_;
-
-  if (length < 4) {
-    state_ = kStateTopLevel;
-    EndCurrentBlock();
-    return false;
-  }
-  uint32 data;
-  net::BigEndianReader big_endian_reader(rtcp_data_, length);
-  big_endian_reader.ReadU32(&data);
-
-  rtcp_data_ += 4;
-
-  field_.cast_sender_log.status = static_cast<uint8>(data >> 24);
-  // We have 24 LSB of the RTP timestamp on the wire.
-  field_.cast_sender_log.rtp_timestamp = data & 0xffffff;
-  field_type_ = kRtcpApplicationSpecificCastSenderLogCode;
-  return true;
-}
-
 bool RtcpParser::ParseFeedBackCommon(const RtcpCommonHeader& header) {
-  DCHECK((header.PT == kPacketTypeGenericRtpFeedback) ||
-         (header.PT == kPacketTypePayloadSpecific)) << "Invalid state";
+  DCHECK((header.PT == transport::kPacketTypeGenericRtpFeedback) ||
+         (header.PT == transport::kPacketTypePayloadSpecific))
+      << "Invalid state";
 
   ptrdiff_t length = rtcp_block_end_ - rtcp_data_;
 
@@ -627,21 +622,22 @@ bool RtcpParser::ParseFeedBackCommon(const RtcpCommonHeader& header) {
 
   uint32 sender_ssrc;
   uint32 media_ssrc;
-  net::BigEndianReader big_endian_reader(rtcp_data_, length);
+  base::BigEndianReader big_endian_reader(
+      reinterpret_cast<const char*>(rtcp_data_), length);
   big_endian_reader.Skip(4);  // Skip header.
   big_endian_reader.ReadU32(&sender_ssrc);
   big_endian_reader.ReadU32(&media_ssrc);
 
   rtcp_data_ += 12;
 
-  if (header.PT == kPacketTypeGenericRtpFeedback) {
+  if (header.PT == transport::kPacketTypeGenericRtpFeedback) {
     // Transport layer feedback
     switch (header.IC) {
       case 1:
         // Nack
         field_type_ = kRtcpGenericRtpFeedbackNackCode;
         field_.nack.sender_ssrc = sender_ssrc;
-        field_.nack.media_ssrc  = media_ssrc;
+        field_.nack.media_ssrc = media_ssrc;
         state_ = kStateGenericRtpFeedbackNack;
         return true;
       case 2:
@@ -667,14 +663,14 @@ bool RtcpParser::ParseFeedBackCommon(const RtcpCommonHeader& header) {
     EndCurrentBlock();
     return false;
 
-  } else if (header.PT == kPacketTypePayloadSpecific) {
+  } else if (header.PT == transport::kPacketTypePayloadSpecific) {
     // Payload specific feedback
     switch (header.IC) {
       case 1:
         // PLI
         field_type_ = kRtcpPayloadSpecificPliCode;
         field_.pli.sender_ssrc = sender_ssrc;
-        field_.pli.media_ssrc  = media_ssrc;
+        field_.pli.media_ssrc = media_ssrc;
 
         // Note: No state transition, PLI FCI is empty!
         return true;
@@ -684,7 +680,7 @@ bool RtcpParser::ParseFeedBackCommon(const RtcpCommonHeader& header) {
       case 3:
         field_type_ = kRtcpPayloadSpecificRpsiCode;
         field_.rpsi.sender_ssrc = sender_ssrc;
-        field_.rpsi.media_ssrc  = media_ssrc;
+        field_.rpsi.media_ssrc = media_ssrc;
         state_ = kStatePayloadSpecificRpsi;
         return true;
       case 4:
@@ -693,7 +689,7 @@ bool RtcpParser::ParseFeedBackCommon(const RtcpCommonHeader& header) {
       case 15:
         field_type_ = kRtcpPayloadSpecificAppCode;
         field_.application_specific.sender_ssrc = sender_ssrc;
-        field_.application_specific.media_ssrc  = media_ssrc;
+        field_.application_specific.media_ssrc = media_ssrc;
         state_ = kStatePayloadSpecificApplication;
         return true;
       default:
@@ -736,7 +732,8 @@ bool RtcpParser::ParseRpsiItem() {
   field_type_ = kRtcpPayloadSpecificRpsiCode;
 
   uint8 padding_bits;
-  net::BigEndianReader big_endian_reader(rtcp_data_, length);
+  base::BigEndianReader big_endian_reader(
+      reinterpret_cast<const char*>(rtcp_data_), length);
   big_endian_reader.ReadU8(&padding_bits);
   big_endian_reader.ReadU8(&field_.rpsi.payload_type);
   big_endian_reader.ReadBytes(&field_.rpsi.native_bit_string, length - 2);
@@ -759,7 +756,8 @@ bool RtcpParser::ParseNackItem() {
 
   field_type_ = kRtcpGenericRtpFeedbackNackItemCode;
 
-  net::BigEndianReader big_endian_reader(rtcp_data_, length);
+  base::BigEndianReader big_endian_reader(
+      reinterpret_cast<const char*>(rtcp_data_), length);
   big_endian_reader.ReadU16(&field_.nack_item.packet_id);
   big_endian_reader.ReadU16(&field_.nack_item.bitmask);
   rtcp_data_ += 4;
@@ -775,7 +773,8 @@ bool RtcpParser::ParsePayloadSpecificAppItem() {
     return false;
   }
   uint32 name;
-  net::BigEndianReader big_endian_reader(rtcp_data_, length);
+  base::BigEndianReader big_endian_reader(
+      reinterpret_cast<const char*>(rtcp_data_), length);
   big_endian_reader.ReadU32(&name);
   rtcp_data_ += 4;
 
@@ -802,7 +801,8 @@ bool RtcpParser::ParsePayloadSpecificRembItem() {
     return false;
   }
 
-  net::BigEndianReader big_endian_reader(rtcp_data_, length);
+  base::BigEndianReader big_endian_reader(
+      reinterpret_cast<const char*>(rtcp_data_), length);
   big_endian_reader.ReadU8(&field_.remb_item.number_of_ssrcs);
 
   uint8 byte_1;
@@ -841,9 +841,11 @@ bool RtcpParser::ParsePayloadSpecificCastItem() {
   }
   field_type_ = kRtcpPayloadSpecificCastCode;
 
-  net::BigEndianReader big_endian_reader(rtcp_data_, length);
+  base::BigEndianReader big_endian_reader(
+      reinterpret_cast<const char*>(rtcp_data_), length);
   big_endian_reader.ReadU8(&field_.cast_item.last_frame_id);
   big_endian_reader.ReadU8(&field_.cast_item.number_of_lost_fields);
+  big_endian_reader.ReadU16(&field_.cast_item.target_delay_ms);
 
   rtcp_data_ += 4;
 
@@ -867,7 +869,8 @@ bool RtcpParser::ParsePayloadSpecificCastNackItem() {
   }
   field_type_ = kRtcpPayloadSpecificCastNackItemCode;
 
-  net::BigEndianReader big_endian_reader(rtcp_data_, length);
+  base::BigEndianReader big_endian_reader(
+      reinterpret_cast<const char*>(rtcp_data_), length);
   big_endian_reader.ReadU8(&field_.cast_nack_item.frame_id);
   big_endian_reader.ReadU16(&field_.cast_nack_item.packet_id);
   big_endian_reader.ReadU8(&field_.cast_nack_item.bitmask);
@@ -887,7 +890,8 @@ bool RtcpParser::ParseFirItem() {
   }
   field_type_ = kRtcpPayloadSpecificFirItemCode;
 
-  net::BigEndianReader big_endian_reader(rtcp_data_, length);
+  base::BigEndianReader big_endian_reader(
+      reinterpret_cast<const char*>(rtcp_data_), length);
   big_endian_reader.ReadU32(&field_.fir_item.ssrc);
   big_endian_reader.ReadU8(&field_.fir_item.command_sequence_number);
 
@@ -897,11 +901,13 @@ bool RtcpParser::ParseFirItem() {
 
 bool RtcpParser::ParseExtendedReport() {
   ptrdiff_t length = rtcp_block_end_ - rtcp_data_;
-  if (length < 8) return false;
+  if (length < 8)
+    return false;
 
   field_type_ = kRtcpXrCode;
 
-  net::BigEndianReader big_endian_reader(rtcp_data_, length);
+  base::BigEndianReader big_endian_reader(
+      reinterpret_cast<const char*>(rtcp_data_), length);
   big_endian_reader.Skip(4);  // Skip header.
   big_endian_reader.ReadU32(&field_.extended_report.sender_ssrc);
 
@@ -921,7 +927,8 @@ bool RtcpParser::ParseExtendedReportItem() {
 
   uint8 block_type;
   uint16 block_length;
-  net::BigEndianReader big_endian_reader(rtcp_data_, length);
+  base::BigEndianReader big_endian_reader(
+      reinterpret_cast<const char*>(rtcp_data_), length);
   big_endian_reader.ReadU8(&block_type);
   big_endian_reader.Skip(1);  // Ignore reserved.
   big_endian_reader.ReadU16(&block_length);
@@ -970,7 +977,8 @@ bool RtcpParser::ParseExtendedReportReceiverReferenceTimeReport() {
     return false;
   }
 
-  net::BigEndianReader big_endian_reader(rtcp_data_, length);
+  base::BigEndianReader big_endian_reader(
+      reinterpret_cast<const char*>(rtcp_data_), length);
   big_endian_reader.ReadU32(&field_.rrtr.ntp_most_significant);
   big_endian_reader.ReadU32(&field_.rrtr.ntp_least_significant);
 
@@ -993,7 +1001,8 @@ bool RtcpParser::ParseExtendedReportDelaySinceLastReceiverReport() {
     return false;
   }
 
-  net::BigEndianReader big_endian_reader(rtcp_data_, length);
+  base::BigEndianReader big_endian_reader(
+      reinterpret_cast<const char*>(rtcp_data_), length);
   big_endian_reader.ReadU32(&field_.dlrr.receivers_ssrc);
   big_endian_reader.ReadU32(&field_.dlrr.last_receiver_report);
   big_endian_reader.ReadU32(&field_.dlrr.delay_last_receiver_report);
@@ -1003,6 +1012,54 @@ bool RtcpParser::ParseExtendedReportDelaySinceLastReceiverReport() {
   number_of_blocks_--;
   field_type_ = kRtcpXrDlrrCode;
   return true;
+}
+
+// Converts a log event type to an integer value.
+// NOTE: We have only allocated 4 bits to represent the type of event over the
+// wire. Therefore, this function can only return values from 0 to 15.
+uint8 ConvertEventTypeToWireFormat(CastLoggingEvent event) {
+  switch (event) {
+    case FRAME_ACK_SENT:
+      return 11;
+    case FRAME_PLAYOUT:
+      return 12;
+    case FRAME_DECODED:
+      return 13;
+    case PACKET_RECEIVED:
+      return 14;
+    default:
+      return 0;  // Not an interesting event.
+  }
+}
+
+CastLoggingEvent TranslateToLogEventFromWireFormat(uint8 event) {
+  // TODO(imcheng): Remove the old mappings once they are no longer used.
+  switch (event) {
+    case 1:  // AudioAckSent
+    case 5:  // VideoAckSent
+    case 11:  // Unified
+      return FRAME_ACK_SENT;
+    case 2:  // AudioPlayoutDelay
+    case 7:  // VideoRenderDelay
+    case 12:  // Unified
+      return FRAME_PLAYOUT;
+    case 3:  // AudioFrameDecoded
+    case 6:  // VideoFrameDecoded
+    case 13:  // Unified
+      return FRAME_DECODED;
+    case 4:  // AudioPacketReceived
+    case 8:  // VideoPacketReceived
+    case 14:  // Unified
+      return PACKET_RECEIVED;
+    case 9:  // DuplicateAudioPacketReceived
+    case 10:  // DuplicateVideoPacketReceived
+    default:
+      // If the sender adds new log messages we will end up here until we add
+      // the new messages in the receiver.
+      VLOG(1) << "Unexpected log message received: " << static_cast<int>(event);
+      NOTREACHED();
+      return UNKNOWN;
+  }
 }
 
 }  // namespace cast

@@ -10,13 +10,15 @@
 
 #include <KHR/khrplatform.h>
 
+#include <stdint.h>
 #include <string.h>
 
-#include "base/safe_numerics.h"
+#include "base/atomicops.h"
+#include "base/logging.h"
+#include "base/macros.h"
 #include "gpu/command_buffer/common/bitfield_helpers.h"
 #include "gpu/command_buffer/common/cmd_buffer_common.h"
 #include "gpu/command_buffer/common/gles2_cmd_ids.h"
-#include "gpu/command_buffer/common/types.h"
 
 // GL types are forward declared to avoid including the GL headers. The problem
 // is determining which GL headers to include from code that is common to the
@@ -43,7 +45,8 @@ typedef khronos_ssize_t  GLsizeiptr;
 namespace gpu {
 namespace gles2 {
 
-#pragma pack(push, 1)
+// Command buffer is GPU_COMMAND_BUFFER_ENTRY_ALIGNMENT byte aligned.
+#pragma pack(push, GPU_COMMAND_BUFFER_ENTRY_ALIGNMENT)
 
 namespace id_namespaces {
 
@@ -82,19 +85,19 @@ struct SizedResult {
   // Returns the total size in bytes of the SizedResult for a given number of
   // results including the size field.
   static size_t ComputeSize(size_t num_results) {
-    return sizeof(T) * num_results + sizeof(uint32);  // NOLINT
+    return sizeof(T) * num_results + sizeof(uint32_t);  // NOLINT
   }
 
   // Returns the total size in bytes of the SizedResult for a given size of
   // results.
   static size_t ComputeSizeFromBytes(size_t size_of_result_in_bytes) {
-    return size_of_result_in_bytes + sizeof(uint32);  // NOLINT
+    return size_of_result_in_bytes + sizeof(uint32_t);  // NOLINT
   }
 
   // Returns the maximum number of results for a given buffer size.
-  static uint32 ComputeMaxResults(size_t size_of_buffer) {
-    return (size_of_buffer >= sizeof(uint32)) ?
-        ((size_of_buffer - sizeof(uint32)) / sizeof(T)) : 0;  // NOLINT
+  static uint32_t ComputeMaxResults(size_t size_of_buffer) {
+    return (size_of_buffer >= sizeof(uint32_t)) ?
+        ((size_of_buffer - sizeof(uint32_t)) / sizeof(T)) : 0;  // NOLINT
   }
 
   // Set the size for a given number of results.
@@ -103,7 +106,7 @@ struct SizedResult {
   }
 
   // Get the number of elements in the result
-  int32 GetNumResults() const {
+  int32_t GetNumResults() const {
     return size / sizeof(T);  // NOLINT
   }
 
@@ -112,31 +115,31 @@ struct SizedResult {
     memcpy(dst, &data, size);
   }
 
-  uint32 size;  // in bytes.
-  int32 data;  // this is just here to get an offset.
+  uint32_t size;  // in bytes.
+  int32_t data;  // this is just here to get an offset.
 };
 
-COMPILE_ASSERT(sizeof(SizedResult<int8>) == 8, SizedResult_size_not_8);
-COMPILE_ASSERT(offsetof(SizedResult<int8>, size) == 0,
+COMPILE_ASSERT(sizeof(SizedResult<int8_t>) == 8, SizedResult_size_not_8);
+COMPILE_ASSERT(offsetof(SizedResult<int8_t>, size) == 0,
                OffsetOf_SizedResult_size_not_0);
-COMPILE_ASSERT(offsetof(SizedResult<int8>, data) == 4,
+COMPILE_ASSERT(offsetof(SizedResult<int8_t>, data) == 4,
                OffsetOf_SizedResult_data_not_4);
 
 // The data for one attrib or uniform from GetProgramInfoCHROMIUM.
 struct ProgramInput {
-  uint32 type;             // The type (GL_VEC3, GL_MAT3, GL_SAMPLER_2D, etc.
-  int32 size;              // The size (how big the array is for uniforms)
-  uint32 location_offset;  // offset from ProgramInfoHeader to 'size' locations
-                           // for uniforms, 1 for attribs.
-  uint32 name_offset;      // offset from ProgrmaInfoHeader to start of name.
-  uint32 name_length;      // length of the name.
+  uint32_t type;             // The type (GL_VEC3, GL_MAT3, GL_SAMPLER_2D, etc.
+  int32_t size;              // The size (how big the array is for uniforms)
+  uint32_t location_offset;  // offset from ProgramInfoHeader to 'size'
+                             // locations for uniforms, 1 for attribs.
+  uint32_t name_offset;      // offset from ProgrmaInfoHeader to start of name.
+  uint32_t name_length;      // length of the name.
 };
 
 // The format of the bucket filled out by GetProgramInfoCHROMIUM
 struct ProgramInfoHeader {
-  uint32 link_status;
-  uint32 num_attribs;
-  uint32 num_uniforms;
+  uint32_t link_status;
+  uint32_t num_attribs;
+  uint32_t num_uniforms;
   // ProgramInput inputs[num_attribs + num_uniforms];
 };
 
@@ -147,8 +150,27 @@ struct QuerySync {
     result = 0;
   }
 
-  uint32 process_count;
-  uint64 result;
+  base::subtle::Atomic32 process_count;
+  uint64_t result;
+};
+
+struct AsyncUploadSync {
+  void Reset() {
+    base::subtle::Release_Store(&async_upload_token, 0);
+  }
+
+  void SetAsyncUploadToken(uint32_t token) {
+    DCHECK_NE(token, 0u);
+    base::subtle::Release_Store(&async_upload_token, token);
+  }
+
+  bool HasAsyncUploadTokenPassed(uint32_t token) {
+    DCHECK_NE(token, 0u);
+    uint32_t current_token = base::subtle::Acquire_Load(&async_upload_token);
+    return (current_token - token < 0x80000000);
+  }
+
+  base::subtle::Atomic32 async_upload_token;
 };
 
 COMPILE_ASSERT(sizeof(ProgramInput) == 20, ProgramInput_size_not_20);
@@ -177,77 +199,11 @@ namespace cmds {
 
 // These are hand written commands.
 // TODO(gman): Attempt to make these auto-generated.
-
 struct GetAttribLocation {
   typedef GetAttribLocation ValueType;
   static const CommandId kCmdId = kGetAttribLocation;
   static const cmd::ArgFlags kArgFlags = cmd::kFixed;
-
-  typedef GLint Result;
-
-  static uint32 ComputeSize() {
-    return static_cast<uint32>(sizeof(ValueType));  // NOLINT
-  }
-
-  void SetHeader() {
-    header.SetCmd<ValueType>();
-  }
-
-  void Init(
-      GLuint _program, uint32 _name_shm_id, uint32 _name_shm_offset,
-      uint32 _location_shm_id, uint32 _location_shm_offset,
-      uint32 _data_size) {
-    SetHeader();
-    program = _program;
-    name_shm_id = _name_shm_id;
-    name_shm_offset = _name_shm_offset;
-    location_shm_id = _location_shm_id;
-    location_shm_offset = _location_shm_offset;
-    data_size = _data_size;
-  }
-
-  void* Set(
-      void* cmd, GLuint _program, uint32 _name_shm_id, uint32 _name_shm_offset,
-      uint32 _location_shm_id, uint32 _location_shm_offset,
-      uint32 _data_size) {
-    static_cast<ValueType*>(
-        cmd)->Init(
-            _program, _name_shm_id, _name_shm_offset, _location_shm_id,
-            _location_shm_offset, _data_size);
-    return NextCmdAddress<ValueType>(cmd);
-  }
-
-  CommandHeader header;
-  uint32 program;
-  uint32 name_shm_id;
-  uint32 name_shm_offset;
-  uint32 location_shm_id;
-  uint32 location_shm_offset;
-  uint32 data_size;
-};
-
-COMPILE_ASSERT(sizeof(GetAttribLocation) == 28,
-               Sizeof_GetAttribLocation_is_not_28);
-COMPILE_ASSERT(offsetof(GetAttribLocation, header) == 0,
-               OffsetOf_GetAttribLocation_header_not_0);
-COMPILE_ASSERT(offsetof(GetAttribLocation, program) == 4,
-               OffsetOf_GetAttribLocation_program_not_4);
-COMPILE_ASSERT(offsetof(GetAttribLocation, name_shm_id) == 8,
-               OffsetOf_GetAttribLocation_name_shm_id_not_8);
-COMPILE_ASSERT(offsetof(GetAttribLocation, name_shm_offset) == 12,
-               OffsetOf_GetAttribLocation_name_shm_offset_not_12);
-COMPILE_ASSERT(offsetof(GetAttribLocation, location_shm_id) == 16,
-               OffsetOf_GetAttribLocation_location_shm_id_not_16);
-COMPILE_ASSERT(offsetof(GetAttribLocation, location_shm_offset) == 20,
-               OffsetOf_GetAttribLocation_location_shm_offset_not_20);
-COMPILE_ASSERT(offsetof(GetAttribLocation, data_size) == 24,
-               OffsetOf_GetAttribLocation_data_size_not_24);
-
-
-struct GetAttribLocationBucket {
-  typedef GetAttribLocationBucket ValueType;
-  static const CommandId kCmdId = kGetAttribLocationBucket;
-  static const cmd::ArgFlags kArgFlags = cmd::kFixed;
+  static const uint8 cmd_flags = CMD_FLAG_SET_TRACE_LEVEL(3);
 
   typedef GLint Result;
 
@@ -286,88 +242,24 @@ struct GetAttribLocationBucket {
   uint32 location_shm_offset;
 };
 
-COMPILE_ASSERT(sizeof(GetAttribLocationBucket) == 20,
-               Sizeof_GetAttribLocationBucket_is_not_24);
-COMPILE_ASSERT(offsetof(GetAttribLocationBucket, header) == 0,
-               OffsetOf_GetAttribLocationBucket_header_not_0);
-COMPILE_ASSERT(offsetof(GetAttribLocationBucket, program) == 4,
-               OffsetOf_GetAttribLocationBucket_program_not_4);
-COMPILE_ASSERT(offsetof(GetAttribLocationBucket, name_bucket_id) == 8,
-               OffsetOf_GetAttribLocationBucket_name_bucket_id_not_8);
-COMPILE_ASSERT(offsetof(GetAttribLocationBucket, location_shm_id) == 12,
-               OffsetOf_GetAttribLocationBucket_location_shm_id_not_12);
-COMPILE_ASSERT(offsetof(GetAttribLocationBucket, location_shm_offset) == 16,
-               OffsetOf_GetAttribLocationBucket_location_shm_offset_not_16);
+COMPILE_ASSERT(sizeof(GetAttribLocation) == 20,
+               Sizeof_GetAttribLocation_is_not_24);
+COMPILE_ASSERT(offsetof(GetAttribLocation, header) == 0,
+               OffsetOf_GetAttribLocation_header_not_0);
+COMPILE_ASSERT(offsetof(GetAttribLocation, program) == 4,
+               OffsetOf_GetAttribLocation_program_not_4);
+COMPILE_ASSERT(offsetof(GetAttribLocation, name_bucket_id) == 8,
+               OffsetOf_GetAttribLocation_name_bucket_id_not_8);
+COMPILE_ASSERT(offsetof(GetAttribLocation, location_shm_id) == 12,
+               OffsetOf_GetAttribLocation_location_shm_id_not_12);
+COMPILE_ASSERT(offsetof(GetAttribLocation, location_shm_offset) == 16,
+               OffsetOf_GetAttribLocation_location_shm_offset_not_16);
 
 struct GetUniformLocation {
   typedef GetUniformLocation ValueType;
   static const CommandId kCmdId = kGetUniformLocation;
   static const cmd::ArgFlags kArgFlags = cmd::kFixed;
-
-  typedef GLint Result;
-
-  static uint32 ComputeSize() {
-    return static_cast<uint32>(sizeof(ValueType));  // NOLINT
-  }
-
-  void SetHeader() {
-    header.SetCmd<ValueType>();
-  }
-
-  void Init(
-      GLuint _program, uint32 _name_shm_id, uint32 _name_shm_offset,
-      uint32 _location_shm_id, uint32 _location_shm_offset,
-      uint32 _data_size) {
-    SetHeader();
-    program = _program;
-    name_shm_id = _name_shm_id;
-    name_shm_offset = _name_shm_offset;
-    location_shm_id = _location_shm_id;
-    location_shm_offset = _location_shm_offset;
-    data_size = _data_size;
-  }
-
-  void* Set(
-      void* cmd, GLuint _program, uint32 _name_shm_id, uint32 _name_shm_offset,
-      uint32 _location_shm_id, uint32 _location_shm_offset,
-      uint32 _data_size) {
-    static_cast<ValueType*>(
-        cmd)->Init(
-            _program, _name_shm_id, _name_shm_offset, _location_shm_id,
-            _location_shm_offset, _data_size);
-    return NextCmdAddress<ValueType>(cmd);
-  }
-
-  CommandHeader header;
-  uint32 program;
-  uint32 name_shm_id;
-  uint32 name_shm_offset;
-  uint32 location_shm_id;
-  uint32 location_shm_offset;
-  uint32 data_size;
-};
-
-COMPILE_ASSERT(sizeof(GetUniformLocation) == 28,
-               Sizeof_GetUniformLocation_is_not_28);
-COMPILE_ASSERT(offsetof(GetUniformLocation, header) == 0,
-               OffsetOf_GetUniformLocation_header_not_0);
-COMPILE_ASSERT(offsetof(GetUniformLocation, program) == 4,
-               OffsetOf_GetUniformLocation_program_not_4);
-COMPILE_ASSERT(offsetof(GetUniformLocation, name_shm_id) == 8,
-               OffsetOf_GetUniformLocation_name_shm_id_not_8);
-COMPILE_ASSERT(offsetof(GetUniformLocation, name_shm_offset) == 12,
-               OffsetOf_GetUniformLocation_name_shm_offset_not_12);
-COMPILE_ASSERT(offsetof(GetUniformLocation, location_shm_id) == 16,
-               OffsetOf_GetUniformLocation_location_shm_id_not_16);
-COMPILE_ASSERT(offsetof(GetUniformLocation, location_shm_offset) == 20,
-               OffsetOf_GetUniformLocation_location_shm_offset_not_20);
-COMPILE_ASSERT(offsetof(GetUniformLocation, data_size) == 24,
-               OffsetOf_GetUniformLocation_data_size_not_24);
-
-struct GetUniformLocationBucket {
-  typedef GetUniformLocationBucket ValueType;
-  static const CommandId kCmdId = kGetUniformLocationBucket;
-  static const cmd::ArgFlags kArgFlags = cmd::kFixed;
+  static const uint8 cmd_flags = CMD_FLAG_SET_TRACE_LEVEL(3);
 
   typedef GLint Result;
 
@@ -406,23 +298,24 @@ struct GetUniformLocationBucket {
   uint32 location_shm_offset;
 };
 
-COMPILE_ASSERT(sizeof(GetUniformLocationBucket) == 20,
-               Sizeof_GetUniformLocationBucket_is_not_24);
-COMPILE_ASSERT(offsetof(GetUniformLocationBucket, header) == 0,
-               OffsetOf_GetUniformLocationBucket_header_not_0);
-COMPILE_ASSERT(offsetof(GetUniformLocationBucket, program) == 4,
-               OffsetOf_GetUniformLocationBucket_program_not_4);
-COMPILE_ASSERT(offsetof(GetUniformLocationBucket, name_bucket_id) == 8,
-               OffsetOf_GetUniformLocationBucket_name_bucket_id_not_8);
-COMPILE_ASSERT(offsetof(GetUniformLocationBucket, location_shm_id) == 12,
-               OffsetOf_GetUniformLocationBucket_location_shm_id_not_12);
-COMPILE_ASSERT(offsetof(GetUniformLocationBucket, location_shm_offset) == 16,
-               OffsetOf_GetUniformLocationBucket_location_shm_offset_not_16);
+COMPILE_ASSERT(sizeof(GetUniformLocation) == 20,
+               Sizeof_GetUniformLocation_is_not_24);
+COMPILE_ASSERT(offsetof(GetUniformLocation, header) == 0,
+               OffsetOf_GetUniformLocation_header_not_0);
+COMPILE_ASSERT(offsetof(GetUniformLocation, program) == 4,
+               OffsetOf_GetUniformLocation_program_not_4);
+COMPILE_ASSERT(offsetof(GetUniformLocation, name_bucket_id) == 8,
+               OffsetOf_GetUniformLocation_name_bucket_id_not_8);
+COMPILE_ASSERT(offsetof(GetUniformLocation, location_shm_id) == 12,
+               OffsetOf_GetUniformLocation_location_shm_id_not_12);
+COMPILE_ASSERT(offsetof(GetUniformLocation, location_shm_offset) == 16,
+               OffsetOf_GetUniformLocation_location_shm_offset_not_16);
 
 struct GenMailboxCHROMIUM {
   typedef GenMailboxCHROMIUM ValueType;
   static const CommandId kCmdId = kGenMailboxCHROMIUM;
   static const cmd::ArgFlags kArgFlags = cmd::kFixed;
+  static const uint8 cmd_flags = CMD_FLAG_SET_TRACE_LEVEL(3);
   CommandHeader header;
 };
 
@@ -430,8 +323,60 @@ struct InsertSyncPointCHROMIUM {
   typedef InsertSyncPointCHROMIUM ValueType;
   static const CommandId kCmdId = kInsertSyncPointCHROMIUM;
   static const cmd::ArgFlags kArgFlags = cmd::kFixed;
+  static const uint8 cmd_flags = CMD_FLAG_SET_TRACE_LEVEL(3);
   CommandHeader header;
 };
+
+struct CreateAndConsumeTextureCHROMIUMImmediate {
+  typedef CreateAndConsumeTextureCHROMIUMImmediate ValueType;
+  static const CommandId kCmdId = kCreateAndConsumeTextureCHROMIUMImmediate;
+  static const cmd::ArgFlags kArgFlags = cmd::kAtLeastN;
+  static const uint8 cmd_flags = CMD_FLAG_SET_TRACE_LEVEL(1);
+
+  static uint32_t ComputeDataSize() {
+    return static_cast<uint32_t>(sizeof(GLbyte) * 64);  // NOLINT
+  }
+
+  static uint32_t ComputeSize() {
+    return static_cast<uint32_t>(sizeof(ValueType) +
+                                 ComputeDataSize());  // NOLINT
+  }
+
+  void SetHeader(uint32_t size_in_bytes) {
+    header.SetCmdByTotalSize<ValueType>(size_in_bytes);
+  }
+
+  void Init(GLenum _target, uint32_t _client_id, const GLbyte* _mailbox) {
+    SetHeader(ComputeSize());
+    target = _target;
+    client_id = _client_id;
+    memcpy(ImmediateDataAddress(this), _mailbox, ComputeDataSize());
+  }
+
+  void* Set(void* cmd,
+            GLenum _target,
+            uint32_t _client_id,
+            const GLbyte* _mailbox) {
+    static_cast<ValueType*>(cmd)->Init(_target, _client_id, _mailbox);
+    const uint32_t size = ComputeSize();
+    return NextImmediateCmdAddressTotalSize<ValueType>(cmd, size);
+  }
+
+  gpu::CommandHeader header;
+  uint32_t target;
+  uint32_t client_id;
+};
+
+COMPILE_ASSERT(sizeof(CreateAndConsumeTextureCHROMIUMImmediate) == 12,
+               Sizeof_CreateAndConsumeTextureCHROMIUMImmediate_is_not_12);
+COMPILE_ASSERT(offsetof(CreateAndConsumeTextureCHROMIUMImmediate, header) == 0,
+               OffsetOf_CreateAndConsumeTextureCHROMIUMImmediate_header_not_0);
+COMPILE_ASSERT(offsetof(CreateAndConsumeTextureCHROMIUMImmediate, target) == 4,
+               OffsetOf_CreateAndConsumeTextureCHROMIUMImmediate_target_not_4);
+COMPILE_ASSERT(
+    offsetof(CreateAndConsumeTextureCHROMIUMImmediate, client_id) == 8,
+    OffsetOf_CreateAndConsumeTextureCHROMIUMImmediate_client_id_not_8);
+
 
 #pragma pack(pop)
 

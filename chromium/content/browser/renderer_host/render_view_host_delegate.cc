@@ -13,24 +13,9 @@ RenderViewHostDelegateView* RenderViewHostDelegate::GetDelegateView() {
   return NULL;
 }
 
-RenderViewHostDelegate::RendererManagement*
-RenderViewHostDelegate::GetRendererManagementDelegate() {
-  return NULL;
-}
-
 bool RenderViewHostDelegate::OnMessageReceived(RenderViewHost* render_view_host,
                                                const IPC::Message& message) {
   return false;
-}
-
-bool RenderViewHostDelegate::AddMessageToConsole(
-    int32 level, const base::string16& message, int32 line_no,
-    const base::string16& source_id) {
-  return false;
-}
-
-const GURL& RenderViewHostDelegate::GetURL() const {
-  return GURL::EmptyGURL();
 }
 
 WebContents* RenderViewHostDelegate::GetAsWebContents() {
@@ -50,8 +35,17 @@ SessionStorageNamespace* RenderViewHostDelegate::GetSessionStorageNamespace(
   return NULL;
 }
 
+SessionStorageNamespaceMap
+RenderViewHostDelegate::GetSessionStorageNamespaceMap() {
+  return SessionStorageNamespaceMap();
+}
+
 FrameTree* RenderViewHostDelegate::GetFrameTree() {
   return NULL;
+}
+
+bool RenderViewHostDelegate::IsNeverVisible() {
+  return false;
 }
 
 }  // namespace content

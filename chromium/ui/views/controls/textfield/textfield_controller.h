@@ -29,7 +29,7 @@ class VIEWS_EXPORT TextfieldController {
   // user. It won't be called if the text is changed by calling
   // Textfield::SetText() or Textfield::AppendText().
   virtual void ContentsChanged(Textfield* sender,
-                               const string16& new_contents) {}
+                               const base::string16& new_contents) {}
 
   // This method is called to get notified about keystrokes in the edit.
   // Returns true if the message was handled and should not be processed
@@ -52,7 +52,7 @@ class VIEWS_EXPORT TextfieldController {
   virtual void OnAfterUserAction(Textfield* sender) {}
 
   // Called after performing a Cut or Copy operation.
-  virtual void OnAfterCutOrCopy() {}
+  virtual void OnAfterCutOrCopy(ui::ClipboardType clipboard_type) {}
 
   // Called after performing a Paste operation.
   virtual void OnAfterPaste() {}
@@ -78,26 +78,6 @@ class VIEWS_EXPORT TextfieldController {
 
   // Gives the controller a chance to modify the context menu contents.
   virtual void UpdateContextMenu(ui::SimpleMenuModel* menu_contents) {}
-
-  // Returns true if the |command_id| should be enabled in the context menu.
-  virtual bool IsCommandIdEnabled(int command_id) const;
-
-  // Returns true if the item label for the |command_id| is dynamic in the
-  // context menu.
-  virtual bool IsItemForCommandIdDynamic(int command_id) const;
-
-  // Returns the label string for the |coomand_id|.
-  virtual string16 GetLabelForCommandId(int command_id) const;
-
-  // Returns whether the controller handles the specified command. This is used
-  // to handle a command the textfield would normally handle. For example, to
-  // have the controller handle |IDS_APP_PASTE| override and return true if
-  // |command_id| == |IDS_APP_PASTE|.
-  // This is only invoked if the command is enabled.
-  virtual bool HandlesCommand(int command_id) const;
-
-  // Execute context menu command specified by |command_id|.
-  virtual void ExecuteCommand(int command_id, int event_flag) {}
 
  protected:
   virtual ~TextfieldController() {}

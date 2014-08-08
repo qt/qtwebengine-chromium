@@ -87,7 +87,7 @@ void RenderImageResource::resetAnimation()
     image()->resetAnimation();
 
     if (!m_renderer->needsLayout())
-        m_renderer->repaint();
+        m_renderer->paintInvalidationForWholeRenderer();
 }
 
 void RenderImageResource::setContainerSizeForRenderer(const IntSize& imageContainerSize)
@@ -95,11 +95,6 @@ void RenderImageResource::setContainerSizeForRenderer(const IntSize& imageContai
     ASSERT(m_renderer);
     if (m_cachedImage)
         m_cachedImage->setContainerSizeForRenderer(m_renderer, imageContainerSize, m_renderer->style()->effectiveZoom());
-}
-
-Image* RenderImageResource::nullImage()
-{
-    return Image::nullImage();
 }
 
 LayoutSize RenderImageResource::getImageSize(float multiplier, ImageResource::SizeType type) const

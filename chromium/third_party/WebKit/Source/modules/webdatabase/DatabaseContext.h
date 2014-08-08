@@ -29,38 +29,45 @@
 #define DatabaseContext_h
 
 #include "core/dom/ActiveDOMObject.h"
+#include "core/workers/WorkerGlobalScope.h"
+#include "platform/heap/Handle.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/ThreadSafeRefCounted.h"
 
 namespace WebCore {
 
 class Database;
+class DatabaseBackendBase;
 class DatabaseContext;
-class DatabaseTaskSynchronizer;
+class TaskSynchronizer;
 class DatabaseThread;
 class ExecutionContext;
 class SecurityOrigin;
 
-class DatabaseContext : public ThreadSafeRefCounted<DatabaseContext>, public ActiveDOMObject {
+class DatabaseContext FINAL
+    : public ThreadSafeRefCountedWillBeGarbageCollectedFinalized<DatabaseContext>
+    , public ActiveDOMObject
+    , private WorkerGlobalScope::TerminationObserver {
 public:
     friend class DatabaseManager;
 
-    static PassRefPtr<DatabaseContext> create(ExecutionContext*);
+    static PassRefPtrWillBeRawPtr<DatabaseContext> create(ExecutionContext*);
 
     virtual ~DatabaseContext();
+    void trace(Visitor*);
 
     // For life-cycle management (inherited from ActiveDOMObject):
-    virtual void contextDestroyed();
-    virtual void stop();
+    virtual void contextDestroyed() OVERRIDE;
+    virtual void stop() OVERRIDE;
 
-    PassRefPtr<DatabaseContext> backend();
+    DatabaseContext* backend();
     DatabaseThread* databaseThread();
 
     void setHasOpenDatabases() { m_hasOpenDatabases = true; }
-    bool hasOpenDatabases() { return m_hasOpenDatabases; }
-
-    // When the database cleanup is done, cleanupSync will be signalled.
-    bool stopDatabases(DatabaseTaskSynchronizer*);
+    void didOpenDatabase(DatabaseBackendBase&);
+    void didCloseDatabase(DatabaseBackendBase&);
+    // Blocks the caller thread until cleanup tasks are completed.
+    void stopDatabases();
 
     bool allowDatabaseAccess() const;
 
@@ -70,11 +77,26 @@ public:
 private:
     explicit DatabaseContext(ExecutionContext*);
 
-    void stopDatabases() { stopDatabases(0); }
+    virtual void wasRequestedToTerminate() OVERRIDE;
+    void stopSyncDatabases();
 
-    RefPtr<DatabaseThread> m_databaseThread;
+    RefPtrWillBeMember<DatabaseThread> m_databaseThread;
+#if ENABLE(OILPAN)
+    class DatabaseCloser {
+    public:
+        explicit DatabaseCloser(DatabaseBackendBase& database) : m_database(database) { }
+        ~DatabaseCloser();
+
+    private:
+        DatabaseBackendBase& m_database;
+    };
+    HeapHashMap<WeakMember<DatabaseBackendBase>, OwnPtr<DatabaseCloser> > m_openSyncDatabases;
+#else
+    // The contents of m_openSyncDatabases are raw pointers. It's safe because
+    // DatabaseBackendSync is always closed before destruction.
+    HashSet<DatabaseBackendBase*> m_openSyncDatabases;
+#endif
     bool m_hasOpenDatabases; // This never changes back to false, even after the database thread is closed.
-    bool m_isRegistered;
     bool m_hasRequestedTermination;
 };
 

@@ -2,6 +2,7 @@
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
  * Copyright (C) 2003, 2004, 2005, 2006, 2007, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2014 Samsung Electronics. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -23,12 +24,12 @@
 #ifndef HTMLFormControlsCollection_h
 #define HTMLFormControlsCollection_h
 
+#include "core/html/FormAssociatedElement.h"
 #include "core/html/HTMLCollection.h"
 #include "core/html/RadioNodeList.h"
 
 namespace WebCore {
 
-class FormAssociatedElement;
 class HTMLElement;
 class HTMLImageElement;
 class QualifiedName;
@@ -38,22 +39,30 @@ class QualifiedName;
 
 class HTMLFormControlsCollection FINAL : public HTMLCollection {
 public:
-    static PassRefPtr<HTMLFormControlsCollection> create(Node*, CollectionType);
+    static PassRefPtrWillBeRawPtr<HTMLFormControlsCollection> create(ContainerNode&, CollectionType);
 
     virtual ~HTMLFormControlsCollection();
 
-    virtual Node* namedItem(const AtomicString& name) const;
-    void namedGetter(const AtomicString& name, bool&, RefPtr<RadioNodeList>&, bool&, RefPtr<Node>&);
+    virtual Element* namedItem(const AtomicString& name) const OVERRIDE;
+    void namedGetter(const AtomicString& name, bool& radioNodeListEnabled, RefPtrWillBeRawPtr<RadioNodeList>&, bool& elementEnabled, RefPtrWillBeRawPtr<Element>&);
+
+    virtual void trace(Visitor*) OVERRIDE;
 
 private:
-    explicit HTMLFormControlsCollection(Node*);
+    explicit HTMLFormControlsCollection(ContainerNode&);
 
-    virtual void updateNameCache() const OVERRIDE;
+    virtual void updateIdNameCache() const OVERRIDE;
+    virtual void supportedPropertyNames(Vector<String>& names) OVERRIDE;
 
-    const Vector<FormAssociatedElement*>& formControlElements() const;
-    const Vector<HTMLImageElement*>& formImageElements() const;
-    virtual Element* virtualItemAfter(unsigned& offsetInArray, Element*) const OVERRIDE;
+    const FormAssociatedElement::List& formControlElements() const;
+    const WillBeHeapVector<RawPtrWillBeMember<HTMLImageElement> >& formImageElements() const;
+    virtual Element* virtualItemAfter(Element*) const OVERRIDE;
+    virtual void invalidateCache(Document* oldDocument = 0) const OVERRIDE;
+
+    mutable RawPtrWillBeMember<Element> m_cachedElement;
+    mutable unsigned m_cachedElementOffsetInArray;
 };
+DEFINE_TYPE_CASTS(HTMLFormControlsCollection, LiveNodeListBase, collection, collection->type() == FormControls, collection.type() == FormControls);
 
 } // namespace
 

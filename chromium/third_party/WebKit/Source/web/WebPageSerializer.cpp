@@ -29,23 +29,18 @@
  */
 
 #include "config.h"
-#include "WebPageSerializer.h"
+#include "public/web/WebPageSerializer.h"
 
-#include "HTMLNames.h"
-#include "WebFrame.h"
-#include "WebFrameImpl.h"
-#include "WebPageSerializerClient.h"
-#include "WebPageSerializerImpl.h"
-#include "WebView.h"
-#include "WebViewImpl.h"
+#include "core/HTMLNames.h"
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
+#include "core/frame/LocalFrame.h"
 #include "core/html/HTMLAllCollection.h"
+#include "core/html/HTMLFrameElementBase.h"
 #include "core/html/HTMLFrameOwnerElement.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/HTMLTableElement.h"
 #include "core/loader/DocumentLoader.h"
-#include "core/frame/Frame.h"
 #include "core/page/PageSerializer.h"
 #include "platform/SerializedResource.h"
 #include "platform/mhtml/MHTMLArchive.h"
@@ -54,6 +49,12 @@
 #include "public/platform/WebString.h"
 #include "public/platform/WebURL.h"
 #include "public/platform/WebVector.h"
+#include "public/web/WebFrame.h"
+#include "public/web/WebPageSerializerClient.h"
+#include "public/web/WebView.h"
+#include "web/WebLocalFrameImpl.h"
+#include "web/WebPageSerializerImpl.h"
+#include "web/WebViewImpl.h"
 #include "wtf/Vector.h"
 #include "wtf/text/StringConcatenate.h"
 
@@ -64,38 +65,11 @@ namespace {
 KURL getSubResourceURLFromElement(Element* element)
 {
     ASSERT(element);
-    const QualifiedName* attributeName = 0;
-    if (element->hasTagName(HTMLNames::imgTag) || element->hasTagName(HTMLNames::scriptTag))
-        attributeName = &HTMLNames::srcAttr;
-    else if (element->hasTagName(HTMLNames::inputTag)) {
-        if (toHTMLInputElement(element)->isImageButton())
-            attributeName = &HTMLNames::srcAttr;
-    } else if (element->hasTagName(HTMLNames::bodyTag)
-        || isHTMLTableElement(element)
-        || element->hasTagName(HTMLNames::trTag)
-        || element->hasTagName(HTMLNames::tdTag))
-        attributeName = &HTMLNames::backgroundAttr;
-    else if (element->hasTagName(HTMLNames::blockquoteTag)
-             || element->hasTagName(HTMLNames::qTag)
-             || element->hasTagName(HTMLNames::delTag)
-             || element->hasTagName(HTMLNames::insTag))
-        attributeName = &HTMLNames::citeAttr;
-    else if (element->hasTagName(HTMLNames::linkTag)) {
-        // If the link element is not css, ignore it.
-        if (equalIgnoringCase(element->getAttribute(HTMLNames::typeAttr), "text/css")) {
-            // FIXME: Add support for extracting links of sub-resources which
-            // are inside style-sheet such as @import, @font-face, url(), etc.
-            attributeName = &HTMLNames::hrefAttr;
-        }
-    } else if (element->hasTagName(HTMLNames::objectTag))
-        attributeName = &HTMLNames::dataAttr;
-    else if (element->hasTagName(HTMLNames::embedTag))
-        attributeName = &HTMLNames::srcAttr;
-
-    if (!attributeName)
+    const QualifiedName& attributeName = element->subResourceAttributeName();
+    if (attributeName == QualifiedName::null())
         return KURL();
 
-    String value = element->getAttribute(*attributeName);
+    String value = element->getAttribute(attributeName);
     // Ignore javascript content.
     if (value.isEmpty() || value.stripWhiteSpace().startsWith("javascript:", false))
         return KURL();
@@ -104,18 +78,18 @@ KURL getSubResourceURLFromElement(Element* element)
 }
 
 void retrieveResourcesForElement(Element* element,
-                                 Vector<Frame*>* visitedFrames,
-                                 Vector<Frame*>* framesToVisit,
+                                 Vector<LocalFrame*>* visitedFrames,
+                                 Vector<LocalFrame*>* framesToVisit,
                                  Vector<KURL>* frameURLs,
                                  Vector<KURL>* resourceURLs)
 {
+    ASSERT(element);
     // If the node is a frame, we'll process it later in retrieveResourcesForFrame.
-    if ((element->hasTagName(HTMLNames::iframeTag) || element->hasTagName(HTMLNames::frameTag)
-        || element->hasTagName(HTMLNames::objectTag) || element->hasTagName(HTMLNames::embedTag))
-            && element->isFrameOwnerElement()) {
-        if (Frame* frame = toHTMLFrameOwnerElement(element)->contentFrame()) {
-            if (!visitedFrames->contains(frame))
-                framesToVisit->append(frame);
+    if (isHTMLFrameElementBase(*element) || isHTMLObjectElement(*element) || isHTMLEmbedElement(*element)) {
+        Frame* frame = toHTMLFrameOwnerElement(element)->contentFrame();
+        if (frame && frame->isLocalFrame()) {
+            if (!visitedFrames->contains(toLocalFrame(frame)))
+                framesToVisit->append(toLocalFrame(frame));
             return;
         }
     }
@@ -133,10 +107,10 @@ void retrieveResourcesForElement(Element* element,
         resourceURLs->append(url);
 }
 
-void retrieveResourcesForFrame(Frame* frame,
+void retrieveResourcesForFrame(LocalFrame* frame,
                                const blink::WebVector<blink::WebCString>& supportedSchemes,
-                               Vector<Frame*>* visitedFrames,
-                               Vector<Frame*>* framesToVisit,
+                               Vector<LocalFrame*>* visitedFrames,
+                               Vector<LocalFrame*>* framesToVisit,
                                Vector<KURL>* frameURLs,
                                Vector<KURL>* resourceURLs)
 {
@@ -165,13 +139,10 @@ void retrieveResourcesForFrame(Frame* frame,
         frameURLs->append(frameURL);
 
     // Now get the resources associated with each node of the document.
-    RefPtr<HTMLCollection> allNodes = frame->document()->all();
-    for (unsigned i = 0; i < allNodes->length(); ++i) {
-        Node* node = allNodes->item(i);
-        // We are only interested in HTML resources.
-        if (!node->isElementNode())
-            continue;
-        retrieveResourcesForElement(toElement(node),
+    RefPtrWillBeRawPtr<HTMLAllCollection> allElements = frame->document()->all();
+    for (unsigned i = 0; i < allElements->length(); ++i) {
+        Element* element = allElements->item(i);
+        retrieveResourcesForElement(element,
                                     visitedFrames, framesToVisit,
                                     frameURLs, resourceURLs);
     }
@@ -205,7 +176,7 @@ static PassRefPtr<SharedBuffer> serializePageToMHTML(Page* page, MHTMLArchive::E
     Vector<SerializedResource> resources;
     PageSerializer serializer(&resources);
     serializer.serialize(page);
-    Document* document = page->mainFrame()->document();
+    Document* document = page->deprecatedLocalMainFrame()->document();
     return MHTMLArchive::generateMHTMLData(resources, encodingPolicy, document->title(), document->suggestedMIMEType());
 }
 
@@ -223,7 +194,7 @@ WebCString WebPageSerializer::serializeToMHTMLUsingBinaryEncoding(WebView* view)
     return WebCString(mhtml->data(), mhtml->size());
 }
 
-bool WebPageSerializer::serialize(WebFrame* frame,
+bool WebPageSerializer::serialize(WebLocalFrame* frame,
                                   bool recursive,
                                   WebPageSerializerClient* client,
                                   const WebVector<WebURL>& links,
@@ -239,19 +210,19 @@ bool WebPageSerializer::retrieveAllResources(WebView* view,
                                              const WebVector<WebCString>& supportedSchemes,
                                              WebVector<WebURL>* resourceURLs,
                                              WebVector<WebURL>* frameURLs) {
-    WebFrameImpl* mainFrame = toWebFrameImpl(view->mainFrame());
+    WebLocalFrameImpl* mainFrame = toWebLocalFrameImpl(view->mainFrame());
     if (!mainFrame)
         return false;
 
-    Vector<Frame*> framesToVisit;
-    Vector<Frame*> visitedFrames;
+    Vector<LocalFrame*> framesToVisit;
+    Vector<LocalFrame*> visitedFrames;
     Vector<KURL> frameKURLs;
     Vector<KURL> resourceKURLs;
 
     // Let's retrieve the resources from every frame in this page.
     framesToVisit.append(mainFrame->frame());
     while (!framesToVisit.isEmpty()) {
-        Frame* frame = framesToVisit[0];
+        LocalFrame* frame = framesToVisit[0];
         framesToVisit.remove(0);
         retrieveResourcesForFrame(frame, supportedSchemes,
                                   &visitedFrames, &framesToVisit,

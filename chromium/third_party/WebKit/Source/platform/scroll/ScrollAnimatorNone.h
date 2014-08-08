@@ -48,15 +48,15 @@ public:
     explicit ScrollAnimatorNone(ScrollableArea*);
     virtual ~ScrollAnimatorNone();
 
-    virtual bool scroll(ScrollbarOrientation, ScrollGranularity, float step, float multiplier);
-    virtual void scrollToOffsetWithoutAnimation(const FloatPoint&);
+    virtual bool scroll(ScrollbarOrientation, ScrollGranularity, float step, float delta) OVERRIDE;
+    virtual void scrollToOffsetWithoutAnimation(const FloatPoint&) OVERRIDE;
 
-    virtual void cancelAnimations();
-    virtual void serviceScrollAnimations();
+    virtual void cancelAnimations() OVERRIDE;
+    virtual void serviceScrollAnimations() OVERRIDE;
 
-    virtual void willEndLiveResize();
-    virtual void didAddVerticalScrollbar(Scrollbar*);
-    virtual void didAddHorizontalScrollbar(Scrollbar*);
+    virtual void willEndLiveResize() OVERRIDE;
+    virtual void didAddVerticalScrollbar(Scrollbar*) OVERRIDE;
+    virtual void didAddHorizontalScrollbar(Scrollbar*) OVERRIDE;
 
     enum Curve {
         Linear,
@@ -98,7 +98,7 @@ protected:
     struct PLATFORM_EXPORT PerAxisData {
         PerAxisData(ScrollAnimatorNone* parent, float* currentPos, int visibleLength);
         void reset();
-        bool updateDataFromParameters(float step, float multiplier, float scrollableSize, double currentTime, Parameters*);
+        bool updateDataFromParameters(float step, float delta, float scrollableSize, double currentTime, Parameters*);
         bool animateScroll(double currentTime);
         void updateVisibleLength(int visibleLength);
 
@@ -110,6 +110,8 @@ protected:
         static double curveIntegralAt(Curve, double t);
         static double attackArea(Curve, double startT, double endT);
         static double releaseArea(Curve, double startT, double endT);
+
+        double newScrollAnimationPosition(double deltaTime);
 
         float* m_currentPosition;
         double m_currentVelocity;

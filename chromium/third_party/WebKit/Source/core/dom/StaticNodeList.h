@@ -29,6 +29,7 @@
 #ifndef StaticNodeList_h
 #define StaticNodeList_h
 
+#include "core/dom/Node.h"
 #include "core/dom/NodeList.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
@@ -40,24 +41,27 @@ class Node;
 
 class StaticNodeList FINAL : public NodeList {
 public:
-    static PassRefPtr<StaticNodeList> adopt(Vector<RefPtr<Node> >& nodes)
+    static PassRefPtrWillBeRawPtr<StaticNodeList> adopt(WillBeHeapVector<RefPtrWillBeMember<Node> >& nodes);
+
+    static PassRefPtrWillBeRawPtr<StaticNodeList> createEmpty()
     {
-        RefPtr<StaticNodeList> nodeList = adoptRef(new StaticNodeList);
-        nodeList->m_nodes.swap(nodes);
-        return nodeList.release();
+        return adoptRefWillBeNoop(new StaticNodeList);
     }
 
-    static PassRefPtr<StaticNodeList> createEmpty()
-    {
-        return adoptRef(new StaticNodeList);
-    }
+    virtual ~StaticNodeList();
 
     virtual unsigned length() const OVERRIDE;
     virtual Node* item(unsigned index) const OVERRIDE;
-    virtual Node* namedItem(const AtomicString&) const OVERRIDE;
+
+    virtual void trace(Visitor*) OVERRIDE;
 
 private:
-    Vector<RefPtr<Node> > m_nodes;
+    ptrdiff_t AllocationSize()
+    {
+        return m_nodes.capacity() * sizeof(RefPtrWillBeMember<Node>);
+    }
+
+    WillBeHeapVector<RefPtrWillBeMember<Node> > m_nodes;
 };
 
 } // namespace WebCore

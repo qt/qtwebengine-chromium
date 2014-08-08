@@ -7,9 +7,9 @@
 
 #import <Cocoa/Cocoa.h>
 
-// GTM also maintinas a list of empty protocols, but only the ones the library
+// GTM also maintains a list of empty protocols, but only the ones the library
 // requires. Augment that below.
-#import "third_party/GTM/GTMDefines.h"
+#import "third_party/google_toolbox_for_mac/src/GTMDefines.h"
 
 // New Mac OS X SDKs introduce new protocols used for delegates.  These
 // protocol defintions aren't not present in earlier releases of the Mac OS X
@@ -29,13 +29,6 @@ DEFINE_EMPTY_PROTOCOL(NSDraggingDestination)
 DEFINE_EMPTY_PROTOCOL(ICCameraDeviceDownloadDelegate)
 
 #endif  // MAC_OS_X_VERSION_10_7
-
-#if !defined(MAC_OS_X_VERSION_10_8) || \
-    MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_8
-
-DEFINE_EMPTY_PROTOCOL(NSUserNotificationCenterDelegate)
-
-#endif  // MAC_OS_X_VERSION_10_8
 
 #undef DEFINE_EMPTY_PROTOCOL
 

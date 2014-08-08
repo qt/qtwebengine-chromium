@@ -7,7 +7,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "grit/ui_resources.h"
 #include "grit/ui_strings.h"
-#include "ui/base/accessibility/accessible_view_state.h"
+#include "ui/accessibility/ax_view_state.h"
 #include "ui/base/dragdrop/drag_drop_types.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -16,6 +16,7 @@
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/screen.h"
+#include "ui/gfx/text_constants.h"
 #include "ui/views/controls/button/button.h"
 #include "ui/views/controls/button/menu_button_listener.h"
 #include "ui/views/mouse_constants.h"
@@ -43,10 +44,10 @@ const int MenuButton::kMenuMarkerPaddingRight = -1;
 ////////////////////////////////////////////////////////////////////////////////
 
 MenuButton::MenuButton(ButtonListener* listener,
-                       const string16& text,
+                       const base::string16& text,
                        MenuButtonListener* menu_button_listener,
                        bool show_menu_marker)
-    : TextButton(listener, text),
+    : LabelButton(listener, text),
       menu_visible_(false),
       menu_offset_(kDefaultMenuOffsetX, kDefaultMenuOffsetY),
       listener_(menu_button_listener),
@@ -54,7 +55,7 @@ MenuButton::MenuButton(ButtonListener* listener,
       menu_marker_(ui::ResourceBundle::GetSharedInstance().GetImageNamed(
           IDR_MENU_DROPARROW).ToImageSkia()),
       destroyed_flag_(NULL) {
-  set_alignment(TextButton::ALIGN_LEFT);
+  SetHorizontalAlignment(gfx::ALIGN_LEFT);
 }
 
 MenuButton::~MenuButton() {
@@ -133,8 +134,8 @@ bool MenuButton::Activate() {
   return true;
 }
 
-void MenuButton::PaintButton(gfx::Canvas* canvas, PaintButtonMode mode) {
-  TextButton::PaintButton(canvas, mode);
+void MenuButton::OnPaint(gfx::Canvas* canvas) {
+  LabelButton::OnPaint(canvas);
 
   if (show_menu_marker_)
     PaintMenuMarker(canvas);
@@ -146,8 +147,8 @@ void MenuButton::PaintButton(gfx::Canvas* canvas, PaintButtonMode mode) {
 //
 ////////////////////////////////////////////////////////////////////////////////
 
-gfx::Size MenuButton::GetPreferredSize() {
-  gfx::Size prefsize = TextButton::GetPreferredSize();
+gfx::Size MenuButton::GetPreferredSize() const {
+  gfx::Size prefsize = LabelButton::GetPreferredSize();
   if (show_menu_marker_) {
     prefsize.Enlarge(menu_marker_->width() + kMenuMarkerPaddingLeft +
                          kMenuMarkerPaddingRight,
@@ -186,7 +187,7 @@ void MenuButton::OnMouseReleased(const ui::MouseEvent& event) {
       HitTestPoint(event.location())) {
     Activate();
   } else {
-    TextButton::OnMouseReleased(event);
+    LabelButton::OnMouseReleased(event);
   }
 }
 
@@ -202,12 +203,14 @@ void MenuButton::OnMouseExited(const ui::MouseEvent& event) {
 }
 
 void MenuButton::OnGestureEvent(ui::GestureEvent* event) {
-  if (state() != STATE_DISABLED && event->type() == ui::ET_GESTURE_TAP) {
-    if (Activate())
-      event->StopPropagation();
+  if (state() != STATE_DISABLED && event->type() == ui::ET_GESTURE_TAP &&
+      !Activate()) {
+    // When |Activate()| returns |false|, it means that a menu is shown and
+    // has handled the gesture event. So, there is no need to further process
+    // the gesture event here.
     return;
   }
-  TextButton::OnGestureEvent(event);
+  LabelButton::OnGestureEvent(event);
 }
 
 bool MenuButton::OnKeyPressed(const ui::KeyEvent& event) {
@@ -220,16 +223,12 @@ bool MenuButton::OnKeyPressed(const ui::KeyEvent& event) {
     case ui::VKEY_UP:
     case ui::VKEY_DOWN: {
       // WARNING: we may have been deleted by the time Activate returns.
-      bool ret = Activate();
-#if defined(USE_AURA)
-      // This is to prevent the keyboard event from being dispatched twice.
-      // The Activate function returns false in most cases. In AURA if the
-      // keyboard event is not handled, we pass it to the default handler
-      // which dispatches the event back to us causing the menu to get
-      // displayed again.
-      ret = true;
-#endif
-      return ret;
+      Activate();
+      // This is to prevent the keyboard event from being dispatched twice.  If
+      // the keyboard event is not handled, we pass it to the default handler
+      // which dispatches the event back to us causing the menu to get displayed
+      // again. Return true to prevent this.
+      return true;
     }
     default:
       break;
@@ -244,11 +243,11 @@ bool MenuButton::OnKeyReleased(const ui::KeyEvent& event) {
   return false;
 }
 
-void MenuButton::GetAccessibleState(ui::AccessibleViewState* state) {
+void MenuButton::GetAccessibleState(ui::AXViewState* state) {
   CustomButton::GetAccessibleState(state);
-  state->role = ui::AccessibilityTypes::ROLE_BUTTONMENU;
+  state->role = ui::AX_ROLE_POP_UP_BUTTON;
   state->default_action = l10n_util::GetStringUTF16(IDS_APP_ACCACTION_PRESS);
-  state->state = ui::AccessibilityTypes::STATE_HASPOPUP;
+  state->AddStateFlag(ui::AX_STATE_HASPOPUP);
 }
 
 void MenuButton::PaintMenuMarker(gfx::Canvas* canvas) {
@@ -265,6 +264,17 @@ void MenuButton::PaintMenuMarker(gfx::Canvas* canvas) {
                          menu_marker_->height());
   arrow_bounds.set_x(GetMirroredXForRect(arrow_bounds));
   canvas->DrawImageInt(*menu_marker_, arrow_bounds.x(), arrow_bounds.y());
+}
+
+gfx::Rect MenuButton::GetChildAreaBounds() {
+  gfx::Size s = size();
+
+  if (show_menu_marker_) {
+    s.set_width(s.width() - menu_marker_->width() - kMenuMarkerPaddingLeft -
+                kMenuMarkerPaddingRight);
+  }
+
+  return gfx::Rect(s);
 }
 
 int MenuButton::GetMaximumScreenXCoordinate() {

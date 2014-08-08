@@ -8,7 +8,8 @@
 #include "base/values.h"
 #include "printing/page_setup.h"
 #include "printing/page_size_margins.h"
-#include "printing/print_settings_initializer.h"
+#include "printing/print_job_constants.h"
+#include "printing/print_settings_conversion.h"
 #include "printing/units.h"
 
 namespace printing {
@@ -47,13 +48,29 @@ PrintingContext::Result PrintingContext::OnError() {
   return abort_printing_ ? CANCEL : FAILED;
 }
 
+PrintingContext::Result PrintingContext::UsePdfSettings() {
+  scoped_ptr<base::DictionaryValue> pdf_settings(new base::DictionaryValue);
+  pdf_settings->SetBoolean(kSettingHeaderFooterEnabled, false);
+  pdf_settings->SetBoolean(kSettingShouldPrintBackgrounds, false);
+  pdf_settings->SetBoolean(kSettingShouldPrintSelectionOnly, false);
+  pdf_settings->SetInteger(kSettingMarginsType, printing::NO_MARGINS);
+  pdf_settings->SetBoolean(kSettingCollate, true);
+  pdf_settings->SetInteger(kSettingCopies, 1);
+  pdf_settings->SetInteger(kSettingColor, printing::COLOR);
+  pdf_settings->SetInteger(kSettingDuplexMode, printing::SIMPLEX);
+  pdf_settings->SetBoolean(kSettingLandscape, false);
+  pdf_settings->SetString(kSettingDeviceName, "");
+  pdf_settings->SetBoolean(kSettingPrintToPDF, true);
+  pdf_settings->SetBoolean(kSettingCloudPrintDialog, false);
+  pdf_settings->SetBoolean(kSettingPrintWithPrivet, false);
+  return UpdatePrintSettings(*pdf_settings);
+}
+
 PrintingContext::Result PrintingContext::UpdatePrintSettings(
-    const base::DictionaryValue& job_settings,
-    const PageRanges& ranges) {
+    const base::DictionaryValue& job_settings) {
   ResetSettings();
 
-  if (!PrintSettingsInitializer::InitSettings(job_settings, ranges,
-                                              &settings_)) {
+  if (!PrintSettingsFromJobSettings(job_settings, &settings_)) {
     NOTREACHED();
     return OnError();
   }
@@ -76,16 +93,21 @@ PrintingContext::Result PrintingContext::UpdatePrintSettings(
   if (!open_in_external_preview && (print_to_pdf || print_to_cloud ||
                                     is_cloud_dialog || print_with_privet)) {
     settings_.set_dpi(kDefaultPdfDpi);
-    // Cloud print should get size and rect from capabilities received from
-    // server.
     gfx::Size paper_size(GetPdfPaperSizeDeviceUnits());
+    if (!settings_.requested_media().size_microns.IsEmpty()) {
+      float deviceMicronsPerDeviceUnit =
+          (kHundrethsMMPerInch * 10.0f) / settings_.device_units_per_inch();
+      paper_size = gfx::Size(settings_.requested_media().size_microns.width() /
+                                 deviceMicronsPerDeviceUnit,
+                             settings_.requested_media().size_microns.height() /
+                                 deviceMicronsPerDeviceUnit);
+    }
     gfx::Rect paper_rect(0, 0, paper_size.width(), paper_size.height());
     if (print_to_cloud || print_with_privet) {
       paper_rect.Inset(
           kCloudPrintMarginInch * settings_.device_units_per_inch(),
           kCloudPrintMarginInch * settings_.device_units_per_inch());
     }
-    DCHECK_EQ(settings_.device_units_per_inch(), kDefaultPdfDpi);
     settings_.SetPrinterPrintableArea(paper_size, paper_rect, true);
     return OK;
   }

@@ -24,9 +24,9 @@
 #include "core/events/MouseRelatedEvent.h"
 
 #include "core/dom/Document.h"
-#include "core/frame/DOMWindow.h"
-#include "core/frame/Frame.h"
+#include "core/frame/LocalDOMWindow.h"
 #include "core/frame/FrameView.h"
+#include "core/frame/LocalFrame.h"
 #include "core/rendering/RenderLayer.h"
 #include "core/rendering/RenderObject.h"
 
@@ -42,7 +42,7 @@ static LayoutSize contentsScrollOffset(AbstractView* abstractView)
 {
     if (!abstractView)
         return LayoutSize();
-    Frame* frame = abstractView->frame();
+    LocalFrame* frame = abstractView->frame();
     if (!frame)
         return LayoutSize();
     FrameView* frameView = frame->view();
@@ -52,7 +52,7 @@ static LayoutSize contentsScrollOffset(AbstractView* abstractView)
     return LayoutSize(frameView->scrollX() / scaleFactor, frameView->scrollY() / scaleFactor);
 }
 
-MouseRelatedEvent::MouseRelatedEvent(const AtomicString& eventType, bool canBubble, bool cancelable, PassRefPtr<AbstractView> abstractView,
+MouseRelatedEvent::MouseRelatedEvent(const AtomicString& eventType, bool canBubble, bool cancelable, PassRefPtrWillBeRawPtr<AbstractView> abstractView,
                                      int detail, const IntPoint& screenLocation, const IntPoint& windowLocation,
                                      const IntPoint& movementDelta,
                                      bool ctrlKey, bool altKey, bool shiftKey, bool metaKey, bool isSimulated)
@@ -64,7 +64,7 @@ MouseRelatedEvent::MouseRelatedEvent(const AtomicString& eventType, bool canBubb
     LayoutPoint adjustedPageLocation;
     LayoutPoint scrollPosition;
 
-    Frame* frame = view() ? view()->frame() : 0;
+    LocalFrame* frame = view() ? view()->frame() : 0;
     if (frame && !isSimulated) {
         if (FrameView* frameView = frame->view()) {
             scrollPosition = frameView->scrollPosition();
@@ -110,10 +110,10 @@ void MouseRelatedEvent::initCoordinates(const LayoutPoint& clientLocation)
 
 static float pageZoomFactor(const UIEvent* event)
 {
-    DOMWindow* window = event->view();
+    LocalDOMWindow* window = event->view();
     if (!window)
         return 1;
-    Frame* frame = window->frame();
+    LocalFrame* frame = window->frame();
     if (!frame)
         return 1;
     return frame->pageZoomFactor();
@@ -160,11 +160,9 @@ void MouseRelatedEvent::computeRelativePosition()
     while (n && !n->renderer())
         n = n->parentNode();
 
-    RenderLayer* layer;
-    if (n && (layer = n->renderer()->enclosingLayer())) {
-        for (; layer; layer = layer->parent()) {
+    if (n) {
+        for (RenderLayer* layer = n->renderer()->enclosingLayer(); layer; layer = layer->parent())
             m_layerLocation -= toLayoutSize(layer->location());
-        }
     }
 
     m_hasCachedRelativePosition = true;
@@ -186,6 +184,8 @@ int MouseRelatedEvent::layerY()
 
 int MouseRelatedEvent::offsetX()
 {
+    if (isSimulated())
+        return 0;
     if (!m_hasCachedRelativePosition)
         computeRelativePosition();
     return roundToInt(m_offsetLocation.x());
@@ -193,6 +193,8 @@ int MouseRelatedEvent::offsetX()
 
 int MouseRelatedEvent::offsetY()
 {
+    if (isSimulated())
+        return 0;
     if (!m_hasCachedRelativePosition)
         computeRelativePosition();
     return roundToInt(m_offsetLocation.y());
@@ -208,11 +210,6 @@ int MouseRelatedEvent::pageY() const
     return m_pageLocation.y();
 }
 
-const LayoutPoint& MouseRelatedEvent::pageLocation() const
-{
-    return m_pageLocation;
-}
-
 int MouseRelatedEvent::x() const
 {
     // FIXME: This is not correct.
@@ -225,6 +222,11 @@ int MouseRelatedEvent::y() const
     // FIXME: This is not correct.
     // See Microsoft documentation and <http://www.quirksmode.org/dom/w3c_events.html>.
     return m_clientLocation.y();
+}
+
+void MouseRelatedEvent::trace(Visitor* visitor)
+{
+    UIEventWithKeyState::trace(visitor);
 }
 
 } // namespace WebCore

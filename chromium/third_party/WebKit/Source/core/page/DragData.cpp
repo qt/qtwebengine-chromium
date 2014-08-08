@@ -27,13 +27,12 @@
 #include "config.h"
 #include "core/page/DragData.h"
 
+#include "core/clipboard/DataObject.h"
 #include "core/dom/Document.h"
 #include "core/dom/DocumentFragment.h"
 #include "core/dom/Range.h"
 #include "core/editing/markup.h"
-#include "core/frame/Frame.h"
-#include "core/platform/chromium/ChromiumDataObject.h"
-#include "modules/filesystem/DraggedIsolatedFileSystem.h"
+#include "core/frame/LocalFrame.h"
 #include "platform/FileMetadata.h"
 #include "platform/clipboard/ClipboardMimeTypes.h"
 #include "platform/weborigin/KURL.h"
@@ -41,7 +40,7 @@
 
 namespace WebCore {
 
-DragData::DragData(ChromiumDataObject* data, const IntPoint& clientPosition, const IntPoint& globalPosition,
+DragData::DragData(DataObject* data, const IntPoint& clientPosition, const IntPoint& globalPosition,
     DragOperation sourceOperationMask, DragApplicationFlags flags)
     : m_clientPosition(clientPosition)
     , m_globalPosition(globalPosition)
@@ -61,7 +60,7 @@ DragData::DragData(const String&, const IntPoint& clientPosition, const IntPoint
 {
 }
 
-static bool containsHTML(const ChromiumDataObject* dropData)
+static bool containsHTML(const DataObject* dropData)
 {
     return dropData->types().contains(mimeTypeTextHTML);
 }
@@ -132,7 +131,7 @@ bool DragData::containsCompatibleContent() const
         || containsFiles();
 }
 
-PassRefPtr<DocumentFragment> DragData::asFragment(Frame* frame, PassRefPtr<Range>, bool, bool&) const
+PassRefPtrWillBeRawPtr<DocumentFragment> DragData::asFragment(LocalFrame* frame, PassRefPtrWillBeRawPtr<Range>, bool, bool&) const
 {
     /*
      * Order is richest format first. On OSX this is:
@@ -154,19 +153,16 @@ PassRefPtr<DocumentFragment> DragData::asFragment(Frame* frame, PassRefPtr<Range
         KURL baseURL;
         m_platformDragData->htmlAndBaseURL(html, baseURL);
         ASSERT(frame->document());
-        if (RefPtr<DocumentFragment> fragment = createFragmentFromMarkup(*frame->document(), html, baseURL, DisallowScriptingAndPluginContent))
+        if (RefPtrWillBeRawPtr<DocumentFragment> fragment = createFragmentFromMarkup(*frame->document(), html, baseURL, DisallowScriptingAndPluginContent))
             return fragment.release();
     }
 
-    return 0;
+    return nullptr;
 }
 
 String DragData::droppedFileSystemId() const
 {
-    DraggedIsolatedFileSystem* filesystem = DraggedIsolatedFileSystem::from(m_platformDragData);
-    if (!filesystem)
-        return String();
-    return filesystem->filesystemId();
+    return m_platformDragData->filesystemId();
 }
 
 } // namespace WebCore

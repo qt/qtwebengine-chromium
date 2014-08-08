@@ -9,13 +9,14 @@
   'targets': [
   ],
   'conditions': [
-    ['OS == "linux" and target_arch != "arm"', {
+    ['OS == "linux" and target_arch != "arm" and use_x11==1', {
       'targets': [
         {
           'target_name': 'compositor_model_bench',
           'type': 'executable',
           'dependencies': [
             '../../base/base.gyp:base',
+            '../../build/linux/system.gyp:x11',
             '../../ui/gl/gl.gyp:gl',
           ],
           'libraries': [

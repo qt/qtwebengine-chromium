@@ -1,53 +1,45 @@
-// Copyright 2012 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "cc/resources/tile_priority.h"
-
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace cc {
-namespace {
 
-TEST(TilePriorityTest, TimeForBoundsToIntersectWithScroll) {
-  const float inf = std::numeric_limits<float>::infinity();
-  gfx::Rect target(0, 0, 800, 600);
-  gfx::Rect current(100, 100, 100, 100);
-  EXPECT_EQ(0, TilePriority::TimeForBoundsToIntersect(
-      gfx::Rect(-200, 0, 100, 100), current, 1, target));
-  EXPECT_EQ(0, TilePriority::TimeForBoundsToIntersect(
-      gfx::Rect(-100, 0, 100, 100), current, 1, target));
-  EXPECT_EQ(0, TilePriority::TimeForBoundsToIntersect(
-      gfx::Rect(400, 400, 100, 100), current, 1, target));
+TEST(TilePriorityTest, IsHigherPriorityThan) {
+  TilePriority now(HIGH_RESOLUTION, TilePriority::NOW, 0);
+  TilePriority close_soon(HIGH_RESOLUTION, TilePriority::SOON, 1);
+  TilePriority far_soon(HIGH_RESOLUTION, TilePriority::SOON, 500);
+  TilePriority close_eventually(HIGH_RESOLUTION, TilePriority::EVENTUALLY, 2);
+  TilePriority far_eventually(HIGH_RESOLUTION, TilePriority::EVENTUALLY, 1000);
+  TilePriority non_ideal_now(NON_IDEAL_RESOLUTION, TilePriority::NOW, 0);
 
-  current = gfx::Rect(-300, -300, 100, 100);
-  EXPECT_EQ(inf, TilePriority::TimeForBoundsToIntersect(
-      gfx::Rect(0, 0, 100, 100), current, 1, target));
-  EXPECT_EQ(inf, TilePriority::TimeForBoundsToIntersect(
-      gfx::Rect(-200, -200, 100, 100), current, 1, target));
-  EXPECT_EQ(2, TilePriority::TimeForBoundsToIntersect(
-      gfx::Rect(-400, -400, 100, 100), current, 1, target));
+  EXPECT_FALSE(now.IsHigherPriorityThan(now));
+  EXPECT_FALSE(now.IsHigherPriorityThan(non_ideal_now));
+
+  EXPECT_TRUE(now.IsHigherPriorityThan(close_soon));
+  EXPECT_TRUE(now.IsHigherPriorityThan(far_soon));
+  EXPECT_TRUE(now.IsHigherPriorityThan(close_eventually));
+  EXPECT_TRUE(now.IsHigherPriorityThan(far_eventually));
+  EXPECT_TRUE(close_soon.IsHigherPriorityThan(far_soon));
+  EXPECT_TRUE(close_soon.IsHigherPriorityThan(close_eventually));
+  EXPECT_TRUE(close_soon.IsHigherPriorityThan(far_eventually));
+  EXPECT_TRUE(far_soon.IsHigherPriorityThan(close_eventually));
+  EXPECT_TRUE(far_soon.IsHigherPriorityThan(far_eventually));
+  EXPECT_TRUE(close_eventually.IsHigherPriorityThan(far_eventually));
+
+  EXPECT_FALSE(far_eventually.IsHigherPriorityThan(close_eventually));
+  EXPECT_FALSE(far_eventually.IsHigherPriorityThan(far_soon));
+  EXPECT_FALSE(far_eventually.IsHigherPriorityThan(close_soon));
+  EXPECT_FALSE(far_eventually.IsHigherPriorityThan(now));
+  EXPECT_FALSE(far_eventually.IsHigherPriorityThan(non_ideal_now));
+  EXPECT_FALSE(close_eventually.IsHigherPriorityThan(far_soon));
+  EXPECT_FALSE(close_eventually.IsHigherPriorityThan(close_soon));
+  EXPECT_FALSE(close_eventually.IsHigherPriorityThan(now));
+  EXPECT_FALSE(far_soon.IsHigherPriorityThan(close_soon));
+  EXPECT_FALSE(far_soon.IsHigherPriorityThan(now));
+  EXPECT_FALSE(close_soon.IsHigherPriorityThan(now));
 }
 
-TEST(TilePriorityTest, TimeForBoundsToIntersectWithScale) {
-  const float inf = std::numeric_limits<float>::infinity();
-  gfx::Rect target(0, 0, 800, 600);
-  gfx::Rect current(100, 100, 100, 100);
-  EXPECT_EQ(0, TilePriority::TimeForBoundsToIntersect(
-      gfx::Rect(-200, 0, 200, 200), current, 1, target));
-  EXPECT_EQ(0, TilePriority::TimeForBoundsToIntersect(
-      gfx::Rect(-100, 0, 50, 50), current, 1, target));
-  EXPECT_EQ(0, TilePriority::TimeForBoundsToIntersect(
-      gfx::Rect(400, 400, 400, 400), current, 1, target));
-
-  current = gfx::Rect(-300, -300, 100, 100);
-  EXPECT_EQ(inf, TilePriority::TimeForBoundsToIntersect(
-      gfx::Rect(-400, -400, 300, 300), current, 1, target));
-  EXPECT_EQ(8, TilePriority::TimeForBoundsToIntersect(
-      gfx::Rect(-275, -275, 50, 50), current, 1, target));
-  EXPECT_EQ(1, TilePriority::TimeForBoundsToIntersect(
-      gfx::Rect(-450, -450, 50, 50), current, 1, target));
-}
-
-}  // namespace
 }  // namespace cc

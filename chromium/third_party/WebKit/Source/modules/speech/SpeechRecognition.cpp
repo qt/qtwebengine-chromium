@@ -37,11 +37,11 @@
 
 namespace WebCore {
 
-PassRefPtr<SpeechRecognition> SpeechRecognition::create(ExecutionContext* context)
+SpeechRecognition* SpeechRecognition::create(ExecutionContext* context)
 {
-    RefPtr<SpeechRecognition> speechRecognition(adoptRef(new SpeechRecognition(context)));
+    SpeechRecognition* speechRecognition = adoptRefCountedGarbageCollectedWillBeNoop(new SpeechRecognition(context));
     speechRecognition->suspendIfNeeded();
-    return speechRecognition.release();
+    return speechRecognition;
 }
 
 void SpeechRecognition::start(ExceptionState& exceptionState)
@@ -52,7 +52,6 @@ void SpeechRecognition::start(ExceptionState& exceptionState)
         return;
     }
 
-    setPendingActivity(this);
     m_finalResults.clear();
     m_controller->start(this, m_grammars.get(), m_lang, m_continuous, m_interimResults, m_maxAlternatives);
     m_started = true;
@@ -106,26 +105,26 @@ void SpeechRecognition::didEndAudio()
     dispatchEvent(Event::create(EventTypeNames::audioend));
 }
 
-void SpeechRecognition::didReceiveResults(const Vector<RefPtr<SpeechRecognitionResult> >& newFinalResults, const Vector<RefPtr<SpeechRecognitionResult> >& currentInterimResults)
+void SpeechRecognition::didReceiveResults(const HeapVector<Member<SpeechRecognitionResult> >& newFinalResults, const HeapVector<Member<SpeechRecognitionResult> >& currentInterimResults)
 {
     unsigned long resultIndex = m_finalResults.size();
 
     for (size_t i = 0; i < newFinalResults.size(); ++i)
         m_finalResults.append(newFinalResults[i]);
 
-    Vector<RefPtr<SpeechRecognitionResult> > results = m_finalResults;
+    HeapVector<Member<SpeechRecognitionResult> > results = m_finalResults;
     for (size_t i = 0; i < currentInterimResults.size(); ++i)
         results.append(currentInterimResults[i]);
 
     dispatchEvent(SpeechRecognitionEvent::createResult(resultIndex, results));
 }
 
-void SpeechRecognition::didReceiveNoMatch(PassRefPtr<SpeechRecognitionResult> result)
+void SpeechRecognition::didReceiveNoMatch(SpeechRecognitionResult* result)
 {
     dispatchEvent(SpeechRecognitionEvent::createNoMatch(result));
 }
 
-void SpeechRecognition::didReceiveError(PassRefPtr<SpeechRecognitionError> error)
+void SpeechRecognition::didReceiveError(PassRefPtrWillBeRawPtr<SpeechRecognitionError> error)
 {
     dispatchEvent(error);
     m_started = false;
@@ -142,7 +141,6 @@ void SpeechRecognition::didEnd()
     m_stopping = false;
     if (!m_stoppedByActiveDOMObject)
         dispatchEvent(Event::create(EventTypeNames::end));
-    unsetPendingActivity(this);
 }
 
 const AtomicString& SpeechRecognition::interfaceName() const
@@ -162,13 +160,18 @@ void SpeechRecognition::stop()
         abort();
 }
 
+bool SpeechRecognition::hasPendingActivity() const
+{
+    return m_started;
+}
+
 SpeechRecognition::SpeechRecognition(ExecutionContext* context)
     : ActiveDOMObject(context)
     , m_grammars(SpeechGrammarList::create()) // FIXME: The spec is not clear on the default value for the grammars attribute.
     , m_continuous(false)
     , m_interimResults(false)
     , m_maxAlternatives(1)
-    , m_controller(0)
+    , m_controller(nullptr)
     , m_stoppedByActiveDOMObject(false)
     , m_started(false)
     , m_stopping(false)
@@ -187,6 +190,16 @@ SpeechRecognition::SpeechRecognition(ExecutionContext* context)
 
 SpeechRecognition::~SpeechRecognition()
 {
+}
+
+void SpeechRecognition::trace(Visitor* visitor)
+{
+    visitor->trace(m_grammars);
+#if ENABLE(OILPAN)
+    visitor->trace(m_controller);
+#endif
+    visitor->trace(m_finalResults);
+    EventTargetWithInlineData::trace(visitor);
 }
 
 } // namespace WebCore

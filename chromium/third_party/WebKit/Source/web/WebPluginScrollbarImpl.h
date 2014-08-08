@@ -25,7 +25,7 @@
 #ifndef WebPluginScrollbarImpl_h
 #define WebPluginScrollbarImpl_h
 
-#include "WebPluginScrollbar.h"
+#include "public/web/WebPluginScrollbar.h"
 
 #include "wtf/RefPtr.h"
 #include "wtf/Vector.h"
@@ -40,10 +40,10 @@ namespace blink {
 
 class ScrollbarGroup;
 
-class WebPluginScrollbarImpl : public WebPluginScrollbar {
+class WebPluginScrollbarImpl FINAL : public WebPluginScrollbar {
 public:
     WebPluginScrollbarImpl(Orientation, ScrollbarGroup*, WebPluginScrollbarClient*);
-    ~WebPluginScrollbarImpl();
+    virtual ~WebPluginScrollbarImpl();
 
     void setScrollOffset(int);
     void invalidateScrollbarRect(const WebCore::IntRect&);

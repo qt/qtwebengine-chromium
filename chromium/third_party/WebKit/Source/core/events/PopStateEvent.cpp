@@ -28,27 +28,26 @@
 #include "core/events/PopStateEvent.h"
 
 #include "bindings/v8/SerializedScriptValue.h"
-#include "core/events/ThreadLocalEventNames.h"
 #include "core/frame/History.h"
 
 namespace WebCore {
 
 PopStateEvent::PopStateEvent()
     : Event(EventTypeNames::popstate, false, true)
-    , m_serializedState(0)
-    , m_history(0)
+    , m_serializedState(nullptr)
+    , m_history(nullptr)
 {
     ScriptWrappable::init(this);
 }
 
 PopStateEvent::PopStateEvent(const AtomicString& type, const PopStateEventInit& initializer)
     : Event(type, initializer)
-    , m_history(0)
+    , m_history(nullptr)
 {
     ScriptWrappable::init(this);
 }
 
-PopStateEvent::PopStateEvent(PassRefPtr<SerializedScriptValue> serializedState, PassRefPtr<History> history)
+PopStateEvent::PopStateEvent(PassRefPtr<SerializedScriptValue> serializedState, PassRefPtrWillBeRawPtr<History> history)
     : Event(EventTypeNames::popstate, false, true)
     , m_serializedState(serializedState)
     , m_history(history)
@@ -60,24 +59,30 @@ PopStateEvent::~PopStateEvent()
 {
 }
 
-PassRefPtr<PopStateEvent> PopStateEvent::create()
+PassRefPtrWillBeRawPtr<PopStateEvent> PopStateEvent::create()
 {
-    return adoptRef(new PopStateEvent);
+    return adoptRefWillBeNoop(new PopStateEvent);
 }
 
-PassRefPtr<PopStateEvent> PopStateEvent::create(PassRefPtr<SerializedScriptValue> serializedState, PassRefPtr<History> history)
+PassRefPtrWillBeRawPtr<PopStateEvent> PopStateEvent::create(PassRefPtr<SerializedScriptValue> serializedState, PassRefPtrWillBeRawPtr<History> history)
 {
-    return adoptRef(new PopStateEvent(serializedState, history));
+    return adoptRefWillBeNoop(new PopStateEvent(serializedState, history));
 }
 
-PassRefPtr<PopStateEvent> PopStateEvent::create(const AtomicString& type, const PopStateEventInit& initializer)
+PassRefPtrWillBeRawPtr<PopStateEvent> PopStateEvent::create(const AtomicString& type, const PopStateEventInit& initializer)
 {
-    return adoptRef(new PopStateEvent(type, initializer));
+    return adoptRefWillBeNoop(new PopStateEvent(type, initializer));
 }
 
 const AtomicString& PopStateEvent::interfaceName() const
 {
     return EventNames::PopStateEvent;
+}
+
+void PopStateEvent::trace(Visitor* visitor)
+{
+    visitor->trace(m_history);
+    Event::trace(visitor);
 }
 
 } // namespace WebCore

@@ -33,9 +33,9 @@ SpeechRecognitionResult::~SpeechRecognitionResult()
 {
 }
 
-PassRefPtr<SpeechRecognitionResult> SpeechRecognitionResult::create(const Vector<RefPtr<SpeechRecognitionAlternative> >& alternatives, bool final)
+SpeechRecognitionResult* SpeechRecognitionResult::create(const HeapVector<Member<SpeechRecognitionAlternative> >& alternatives, bool final)
 {
-    return adoptRef(new SpeechRecognitionResult(alternatives, final));
+    return new SpeechRecognitionResult(alternatives, final);
 }
 
 SpeechRecognitionAlternative* SpeechRecognitionResult::item(unsigned long index)
@@ -46,11 +46,16 @@ SpeechRecognitionAlternative* SpeechRecognitionResult::item(unsigned long index)
     return m_alternatives[index].get();
 }
 
-SpeechRecognitionResult::SpeechRecognitionResult(const Vector<RefPtr<SpeechRecognitionAlternative> >& alternatives, bool final)
-    : m_alternatives(alternatives)
-    , m_final(final)
+SpeechRecognitionResult::SpeechRecognitionResult(const HeapVector<Member<SpeechRecognitionAlternative> >& alternatives, bool final)
+    : m_final(final)
+    , m_alternatives(alternatives)
 {
     ScriptWrappable::init(this);
+}
+
+void SpeechRecognitionResult::trace(Visitor* visitor)
+{
+    visitor->trace(m_alternatives);
 }
 
 } // namespace WebCore

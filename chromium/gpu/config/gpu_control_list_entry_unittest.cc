@@ -32,7 +32,7 @@ class GpuControlListEntryTest : public testing::Test {
       const std::string& json, bool supports_feature_type_all) {
     scoped_ptr<base::Value> root;
     root.reset(base::JSONReader::Read(json));
-    DictionaryValue* value = NULL;
+    base::DictionaryValue* value = NULL;
     if (root.get() == NULL || !root->GetAsDictionary(&value))
       return NULL;
 
@@ -52,10 +52,11 @@ class GpuControlListEntryTest : public testing::Test {
   virtual void SetUp() {
     gpu_info_.gpu.vendor_id = 0x10de;
     gpu_info_.gpu.device_id = 0x0640;
+    gpu_info_.gpu.active = true;
     gpu_info_.driver_vendor = "NVIDIA";
     gpu_info_.driver_version = "1.6.18";
     gpu_info_.driver_date = "7-14-2009";
-    gpu_info_.machine_model = "MacBookPro 7.1";
+    gpu_info_.gl_version = "2.1 NVIDIA-8.24.11 310.90.9b01";
     gpu_info_.gl_vendor = "NVIDIA Corporation";
     gpu_info_.gl_renderer = "NVIDIA GeForce GT 120 OpenGL Engine";
     gpu_info_.performance_stats.graphics = 5.0;
@@ -63,7 +64,7 @@ class GpuControlListEntryTest : public testing::Test {
     gpu_info_.performance_stats.overall = 5.0;
   }
 
- private:
+ protected:
   GPUInfo gpu_info_;
 };
 
@@ -376,6 +377,99 @@ TEST_F(GpuControlListEntryTest, UnknownFeatureEntry) {
   EXPECT_TRUE(entry.get() == NULL);
 }
 
+TEST_F(GpuControlListEntryTest, GlVersionGLESEntry) {
+  const std::string json = LONG_STRING_CONST(
+      {
+        "id": 1,
+        "gl_type": "gles",
+        "gl_version": {
+          "op": "=",
+          "value": "3.0"
+        },
+        "features": [
+          "test_feature_0"
+        ]
+      }
+  );
+  ScopedEntry entry(GetEntryFromString(json));
+  EXPECT_TRUE(entry.get() != NULL);
+
+  GPUInfo gpu_info;
+  gpu_info.gl_version = "OpenGL ES 3.0 V@66.0 AU@ (CL@)";
+  EXPECT_TRUE(entry->Contains(GpuControlList::kOsAndroid, "4.4.2", gpu_info));
+
+  gpu_info.gl_version = "OpenGL ES 3.1 V@66.0 AU@ (CL@)";
+  EXPECT_FALSE(entry->Contains(GpuControlList::kOsAndroid, "4.4.2", gpu_info));
+
+  gpu_info.gl_version = "3.0 NVIDIA-8.24.11 310.90.9b01";
+  EXPECT_FALSE(entry->Contains(GpuControlList::kOsMacosx, "10.9", gpu_info));
+
+  gpu_info.gl_version = "OpenGL ES 3.0 (ANGLE 1.2.0.2450)";
+  EXPECT_FALSE(entry->Contains(GpuControlList::kOsWin, "6.1", gpu_info));
+}
+
+TEST_F(GpuControlListEntryTest, GlVersionANGLEEntry) {
+  const std::string json = LONG_STRING_CONST(
+      {
+        "id": 1,
+        "gl_type": "angle",
+        "gl_version": {
+          "op": ">",
+          "value": "2.0"
+        },
+        "features": [
+          "test_feature_0"
+        ]
+      }
+  );
+  ScopedEntry entry(GetEntryFromString(json));
+  EXPECT_TRUE(entry.get() != NULL);
+
+  GPUInfo gpu_info;
+  gpu_info.gl_version = "OpenGL ES 3.0 V@66.0 AU@ (CL@)";
+  EXPECT_FALSE(entry->Contains(GpuControlList::kOsAndroid, "4.4.2", gpu_info));
+
+  gpu_info.gl_version = "3.0 NVIDIA-8.24.11 310.90.9b01";
+  EXPECT_FALSE(entry->Contains(GpuControlList::kOsMacosx, "10.9", gpu_info));
+
+  gpu_info.gl_version = "OpenGL ES 3.0 (ANGLE 1.2.0.2450)";
+  EXPECT_TRUE(entry->Contains(GpuControlList::kOsWin, "6.1", gpu_info));
+
+  gpu_info.gl_version = "OpenGL ES 2.0 (ANGLE 1.2.0.2450)";
+  EXPECT_FALSE(entry->Contains(GpuControlList::kOsWin, "6.1", gpu_info));
+}
+
+TEST_F(GpuControlListEntryTest, GlVersionGLEntry) {
+  const std::string json = LONG_STRING_CONST(
+      {
+        "id": 1,
+        "gl_type": "gl",
+        "gl_version": {
+          "op": "<",
+          "value": "4.0"
+        },
+        "features": [
+          "test_feature_0"
+        ]
+      }
+  );
+  ScopedEntry entry(GetEntryFromString(json));
+  EXPECT_TRUE(entry.get() != NULL);
+
+  GPUInfo gpu_info;
+  gpu_info.gl_version = "OpenGL ES 3.0 V@66.0 AU@ (CL@)";
+  EXPECT_FALSE(entry->Contains(GpuControlList::kOsAndroid, "4.4.2", gpu_info));
+
+  gpu_info.gl_version = "3.0 NVIDIA-8.24.11 310.90.9b01";
+  EXPECT_TRUE(entry->Contains(GpuControlList::kOsMacosx, "10.9", gpu_info));
+
+  gpu_info.gl_version = "4.0 NVIDIA-8.24.11 310.90.9b01";
+  EXPECT_FALSE(entry->Contains(GpuControlList::kOsMacosx, "10.9", gpu_info));
+
+  gpu_info.gl_version = "OpenGL ES 3.0 (ANGLE 1.2.0.2450)";
+  EXPECT_FALSE(entry->Contains(GpuControlList::kOsWin, "6.1", gpu_info));
+}
+
 TEST_F(GpuControlListEntryTest, GlVendorEntry) {
   const std::string json = LONG_STRING_CONST(
       {
@@ -584,72 +678,6 @@ TEST_F(GpuControlListEntryTest, LexicalDriverVersionEntry) {
       GpuControlList::kOsLinux, "10.6", gpu_info));
 }
 
-TEST_F(GpuControlListEntryTest, MultipleGPUsAnyEntry) {
-  const std::string json = LONG_STRING_CONST(
-      {
-        "id": 1,
-        "os": {
-          "type": "macosx"
-        },
-        "vendor_id": "0x8086",
-        "device_id": ["0x0166"],
-        "multi_gpu_category": "any",
-        "features": [
-          "test_feature_0"
-        ]
-      }
-  );
-  ScopedEntry entry(GetEntryFromString(json));
-  EXPECT_TRUE(entry.get() != NULL);
-  EXPECT_EQ(GpuControlList::kOsMacosx, entry->GetOsType());
-
-  GPUInfo gpu_info;
-  gpu_info.gpu.vendor_id = 0x10de;
-  gpu_info.gpu.device_id = 0x1976;
-  EXPECT_FALSE(entry->Contains(
-      GpuControlList::kOsMacosx, "10.6", gpu_info));
-
-  GPUInfo::GPUDevice gpu_device;
-  gpu_device.vendor_id = 0x8086;
-  gpu_device.device_id = 0x0166;
-  gpu_info.secondary_gpus.push_back(gpu_device);
-  EXPECT_TRUE(entry->Contains(
-      GpuControlList::kOsMacosx, "10.6", gpu_info));
-}
-
-TEST_F(GpuControlListEntryTest, MultipleGPUsSecondaryEntry) {
-  const std::string json = LONG_STRING_CONST(
-      {
-        "id": 1,
-        "os": {
-          "type": "macosx"
-        },
-        "vendor_id": "0x8086",
-        "device_id": ["0x0166"],
-        "multi_gpu_category": "secondary",
-        "features": [
-          "test_feature_0"
-        ]
-      }
-  );
-  ScopedEntry entry(GetEntryFromString(json));
-  EXPECT_TRUE(entry.get() != NULL);
-  EXPECT_EQ(GpuControlList::kOsMacosx, entry->GetOsType());
-
-  GPUInfo gpu_info;
-  gpu_info.gpu.vendor_id = 0x10de;
-  gpu_info.gpu.device_id = 0x1976;
-  EXPECT_FALSE(entry->Contains(
-      GpuControlList::kOsMacosx, "10.6", gpu_info));
-
-  GPUInfo::GPUDevice gpu_device;
-  gpu_device.vendor_id = 0x8086;
-  gpu_device.device_id = 0x0166;
-  gpu_info.secondary_gpus.push_back(gpu_device);
-  EXPECT_TRUE(entry->Contains(
-      GpuControlList::kOsMacosx, "10.6", gpu_info));
-}
-
 TEST_F(GpuControlListEntryTest, NeedsMoreInfoEntry) {
   const std::string json = LONG_STRING_CONST(
       {
@@ -719,6 +747,412 @@ TEST_F(GpuControlListEntryTest, FeatureTypeAllEntry) {
   EXPECT_EQ(1u, entry->features().count(TEST_FEATURE_0));
   EXPECT_EQ(1u, entry->features().count(TEST_FEATURE_1));
   EXPECT_EQ(1u, entry->features().count(TEST_FEATURE_2));
+}
+
+TEST_F(GpuControlListEntryTest, InvalidVendorIdEntry) {
+  const std::string json = LONG_STRING_CONST(
+      {
+        "id": 1,
+        "vendor_id": "0x0000",
+        "features": [
+          "test_feature_1"
+        ]
+      }
+  );
+  ScopedEntry entry(GetEntryFromString(json));
+  EXPECT_TRUE(entry.get() == NULL);
+}
+
+TEST_F(GpuControlListEntryTest, InvalidDeviceIdEntry) {
+  const std::string json = LONG_STRING_CONST(
+      {
+        "id": 1,
+        "vendor_id": "0x10de",
+        "device_id": ["0x1023", "0x0000"],
+        "features": [
+          "test_feature_1"
+        ]
+      }
+  );
+  ScopedEntry entry(GetEntryFromString(json));
+  EXPECT_TRUE(entry.get() == NULL);
+}
+
+TEST_F(GpuControlListEntryTest, SingleActiveGPU) {
+  const std::string json = LONG_STRING_CONST(
+      {
+        "id": 1,
+        "os": {
+          "type": "macosx"
+        },
+        "vendor_id": "0x10de",
+        "device_id": ["0x0640"],
+        "multi_gpu_category": "active",
+        "features": [
+          "test_feature_0"
+        ]
+      }
+  );
+  ScopedEntry entry(GetEntryFromString(json));
+  EXPECT_TRUE(entry.get() != NULL);
+  EXPECT_EQ(GpuControlList::kOsMacosx, entry->GetOsType());
+  EXPECT_TRUE(entry->Contains(
+      GpuControlList::kOsMacosx, "10.6", gpu_info()));
+}
+
+TEST_F(GpuControlListEntryTest, MachineModelName) {
+  const std::string json = LONG_STRING_CONST(
+      {
+        "id": 1,
+        "os": {
+          "type": "android"
+        },
+        "machine_model_name": ["Nexus 4", "XT1032"],
+        "features": [
+          "test_feature_0"
+        ]
+      }
+  );
+  ScopedEntry entry(GetEntryFromString(json));
+  EXPECT_TRUE(entry.get() != NULL);
+  EXPECT_EQ(GpuControlList::kOsAndroid, entry->GetOsType());
+  GPUInfo gpu_info;
+
+  gpu_info.machine_model_name = "Nexus 4";
+  EXPECT_TRUE(entry->Contains(
+      GpuControlList::kOsAndroid, "4.1", gpu_info));
+
+  gpu_info.machine_model_name = "XT1032";
+  EXPECT_TRUE(entry->Contains(
+      GpuControlList::kOsAndroid, "4.1", gpu_info));
+
+  gpu_info.machine_model_name = "XT1032i";
+  EXPECT_FALSE(entry->Contains(
+      GpuControlList::kOsAndroid, "4.1", gpu_info));
+
+  gpu_info.machine_model_name = "Nexus 5";
+  EXPECT_FALSE(entry->Contains(
+      GpuControlList::kOsAndroid, "4.1", gpu_info));
+
+  gpu_info.machine_model_name = "Nexus";
+  EXPECT_FALSE(entry->Contains(
+      GpuControlList::kOsAndroid, "4.1", gpu_info));
+
+  gpu_info.machine_model_name = "";
+  EXPECT_FALSE(entry->Contains(
+      GpuControlList::kOsAndroid, "4.1", gpu_info));
+}
+
+TEST_F(GpuControlListEntryTest, MachineModelNameException) {
+  const std::string json = LONG_STRING_CONST(
+      {
+        "id": 1,
+        "exceptions": [
+          {
+            "os": {
+              "type": "android"
+            },
+            "machine_model_name": ["Nexus 4"]
+          }
+        ],
+        "features": [
+          "test_feature_0"
+        ]
+      }
+  );
+  ScopedEntry entry(GetEntryFromString(json));
+  EXPECT_TRUE(entry.get() != NULL);
+  EXPECT_EQ(GpuControlList::kOsAny, entry->GetOsType());
+  GPUInfo gpu_info;
+
+  gpu_info.machine_model_name = "Nexus 4";
+  EXPECT_FALSE(entry->Contains(
+      GpuControlList::kOsAndroid, "4.1", gpu_info));
+  EXPECT_TRUE(entry->Contains(
+      GpuControlList::kOsLinux, "4.1", gpu_info));
+
+  gpu_info.machine_model_name = "";
+  EXPECT_TRUE(entry->Contains(
+      GpuControlList::kOsAndroid, "4.1", gpu_info));
+  EXPECT_TRUE(entry->Contains(
+      GpuControlList::kOsLinux, "4.1", gpu_info));
+}
+
+TEST_F(GpuControlListEntryTest, MachineModelVersion) {
+  const std::string json = LONG_STRING_CONST(
+      {
+        "id": 1,
+        "os": {
+          "type": "macosx"
+        },
+        "machine_model_name": ["MacBookPro"],
+        "machine_model_version": {
+          "op": "=",
+          "value": "7.1"
+        },
+        "features": [
+          "test_feature_0"
+        ]
+      }
+  );
+  ScopedEntry entry(GetEntryFromString(json));
+  EXPECT_TRUE(entry.get() != NULL);
+  GPUInfo gpu_info;
+  gpu_info.machine_model_name = "MacBookPro";
+  gpu_info.machine_model_version = "7.1";
+  EXPECT_EQ(GpuControlList::kOsMacosx, entry->GetOsType());
+  EXPECT_TRUE(entry->Contains(
+      GpuControlList::kOsMacosx, "10.6", gpu_info));
+}
+
+TEST_F(GpuControlListEntryTest, MachineModelVersionException) {
+  const std::string json = LONG_STRING_CONST(
+      {
+        "id": 1,
+        "os": {
+          "type": "macosx"
+        },
+        "machine_model_name": ["MacBookPro"],
+        "exceptions": [
+          {
+            "machine_model_version": {
+              "op": ">",
+              "value": "7.1"
+            }
+          }
+        ],
+        "features": [
+          "test_feature_0"
+        ]
+      }
+  );
+  ScopedEntry entry(GetEntryFromString(json));
+  EXPECT_TRUE(entry.get() != NULL);
+  EXPECT_EQ(GpuControlList::kOsMacosx, entry->GetOsType());
+
+  GPUInfo gpu_info;
+  gpu_info.machine_model_name = "MacBookPro";
+  gpu_info.machine_model_version = "7.0";
+  EXPECT_TRUE(entry->Contains(
+      GpuControlList::kOsMacosx, "10.6", gpu_info));
+
+  gpu_info.machine_model_version = "7.2";
+  EXPECT_FALSE(entry->Contains(
+      GpuControlList::kOsMacosx, "10.6", gpu_info));
+
+  gpu_info.machine_model_version = "";
+  EXPECT_TRUE(entry->Contains(
+      GpuControlList::kOsMacosx, "10.6", gpu_info));
+}
+
+class GpuControlListEntryDualGPUTest : public GpuControlListEntryTest {
+ public:
+  GpuControlListEntryDualGPUTest() { }
+  virtual ~GpuControlListEntryDualGPUTest() { }
+
+  virtual void SetUp() OVERRIDE {
+    // Set up a NVIDIA/Intel dual, with NVIDIA as primary and Intel as
+    // secondary, and initially Intel is active.
+    gpu_info_.gpu.vendor_id = 0x10de;
+    gpu_info_.gpu.device_id = 0x0640;
+    gpu_info_.gpu.active = false;
+    GPUInfo::GPUDevice second_gpu;
+    second_gpu.vendor_id = 0x8086;
+    second_gpu.device_id = 0x0166;
+    second_gpu.active = true;
+    gpu_info_.secondary_gpus.push_back(second_gpu);
+  }
+
+  void ActivatePrimaryGPU() {
+    gpu_info_.gpu.active = true;
+    gpu_info_.secondary_gpus[0].active = false;
+  }
+
+  void EntryShouldApply(const std::string& entry_json) const {
+    EXPECT_TRUE(EntryApplies(entry_json));
+  }
+
+  void EntryShouldNotApply(const std::string& entry_json) const {
+    EXPECT_FALSE(EntryApplies(entry_json));
+  }
+
+ private:
+  bool EntryApplies(const std::string& entry_json) const {
+    ScopedEntry entry(GetEntryFromString(entry_json));
+    EXPECT_TRUE(entry.get());
+    EXPECT_EQ(GpuControlList::kOsMacosx, entry->GetOsType());
+    return entry->Contains(GpuControlList::kOsMacosx, "10.6", gpu_info());
+  }
+};
+
+TEST_F(GpuControlListEntryDualGPUTest, CategoryAny) {
+  const std::string json_intel = LONG_STRING_CONST(
+      {
+        "id": 1,
+        "os": {
+          "type": "macosx"
+        },
+        "vendor_id": "0x8086",
+        "device_id": ["0x0166"],
+        "multi_gpu_category": "any",
+        "features": [
+          "test_feature_0"
+        ]
+      }
+  );
+  EntryShouldApply(json_intel);
+
+  const std::string json_nvidia = LONG_STRING_CONST(
+      {
+        "id": 1,
+        "os": {
+          "type": "macosx"
+        },
+        "vendor_id": "0x10de",
+        "device_id": ["0x0640"],
+        "multi_gpu_category": "any",
+        "features": [
+          "test_feature_0"
+        ]
+      }
+  );
+  EntryShouldApply(json_nvidia);
+}
+
+TEST_F(GpuControlListEntryDualGPUTest, CategoryPrimarySecondary) {
+  const std::string json_secondary = LONG_STRING_CONST(
+      {
+        "id": 1,
+        "os": {
+          "type": "macosx"
+        },
+        "vendor_id": "0x8086",
+        "device_id": ["0x0166"],
+        "multi_gpu_category": "secondary",
+        "features": [
+          "test_feature_0"
+        ]
+      }
+  );
+  EntryShouldApply(json_secondary);
+
+  const std::string json_primary = LONG_STRING_CONST(
+      {
+        "id": 1,
+        "os": {
+          "type": "macosx"
+        },
+        "vendor_id": "0x8086",
+        "device_id": ["0x0166"],
+        "multi_gpu_category": "primary",
+        "features": [
+          "test_feature_0"
+        ]
+      }
+  );
+  EntryShouldNotApply(json_primary);
+
+  const std::string json_default = LONG_STRING_CONST(
+      {
+        "id": 1,
+        "os": {
+          "type": "macosx"
+        },
+        "vendor_id": "0x8086",
+        "device_id": ["0x0166"],
+        "features": [
+          "test_feature_0"
+        ]
+      }
+  );
+  // Default is primary.
+  EntryShouldNotApply(json_default);
+}
+
+TEST_F(GpuControlListEntryDualGPUTest, ActiveSecondaryGPU) {
+  const std::string json = LONG_STRING_CONST(
+      {
+        "id": 1,
+        "os": {
+          "type": "macosx"
+        },
+        "vendor_id": "0x8086",
+        "device_id": ["0x0166", "0x0168"],
+        "multi_gpu_category": "active",
+        "features": [
+          "test_feature_0"
+        ]
+      }
+  );
+  // By default, secondary GPU is active.
+  EntryShouldApply(json);
+
+  ActivatePrimaryGPU();
+  EntryShouldNotApply(json);
+}
+
+TEST_F(GpuControlListEntryDualGPUTest, VendorOnlyActiveSecondaryGPU) {
+  const std::string json = LONG_STRING_CONST(
+      {
+        "id": 1,
+        "os": {
+          "type": "macosx"
+        },
+        "vendor_id": "0x8086",
+        "multi_gpu_category": "active",
+        "features": [
+          "test_feature_0"
+        ]
+      }
+  );
+  // By default, secondary GPU is active.
+  EntryShouldApply(json);
+
+  ActivatePrimaryGPU();
+  EntryShouldNotApply(json);
+}
+
+TEST_F(GpuControlListEntryDualGPUTest, ActivePrimaryGPU) {
+  const std::string json = LONG_STRING_CONST(
+      {
+        "id": 1,
+        "os": {
+          "type": "macosx"
+        },
+        "vendor_id": "0x10de",
+        "device_id": ["0x0640"],
+        "multi_gpu_category": "active",
+        "features": [
+          "test_feature_0"
+        ]
+      }
+  );
+  // By default, secondary GPU is active.
+  EntryShouldNotApply(json);
+
+  ActivatePrimaryGPU();
+  EntryShouldApply(json);
+}
+
+TEST_F(GpuControlListEntryDualGPUTest, VendorOnlyActivePrimaryGPU) {
+  const std::string json = LONG_STRING_CONST(
+      {
+        "id": 1,
+        "os": {
+          "type": "macosx"
+        },
+        "vendor_id": "0x10de",
+        "multi_gpu_category": "active",
+        "features": [
+          "test_feature_0"
+        ]
+      }
+  );
+  // By default, secondary GPU is active.
+  EntryShouldNotApply(json);
+
+  ActivatePrimaryGPU();
+  EntryShouldApply(json);
 }
 
 }  // namespace gpu

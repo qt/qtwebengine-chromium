@@ -25,11 +25,9 @@ class FrameInfo {
             bool key_frame);
   ~FrameInfo();
 
-  // Returns true if packet is inserted.
-  bool InsertPacket(uint16 packet_id);
+  PacketType InsertPacket(uint16 packet_id);
   bool Complete() const;
-  void GetMissingPackets(bool newest_frame,
-                         PacketIdSet* missing_packets) const;
+  void GetMissingPackets(bool newest_frame, PacketIdSet* missing_packets) const;
 
   bool is_key_frame() const { return is_key_frame_; }
   uint32 frame_id() const { return frame_id_; }
@@ -53,8 +51,7 @@ class FrameIdMap {
   FrameIdMap();
   ~FrameIdMap();
 
-  // Returns false if not a valid (old) packet, otherwise returns true.
-  bool InsertPacket(const RtpCastHeader& rtp_header, bool* complete);
+  PacketType InsertPacket(const RtpCastHeader& rtp_header);
 
   bool Empty() const;
   bool FrameExists(uint32 frame_id) const;
@@ -67,8 +64,8 @@ class FrameIdMap {
   bool NextContinuousFrame(uint32* frame_id) const;
   uint32 LastContinuousFrame() const;
 
-  bool NextAudioFrameAllowingMissingFrames(uint32* frame_id) const;
-  bool NextVideoFrameAllowingSkippingFrames(uint32* frame_id) const;
+  bool NextFrameAllowingSkippingFrames(uint32* frame_id) const;
+  bool HaveMultipleDecodableFrames() const;
 
   int NumberOfCompleteFrames() const;
   void GetMissingPackets(uint32 frame_id,
@@ -77,7 +74,7 @@ class FrameIdMap {
 
  private:
   bool ContinuousFrame(FrameInfo* frame) const;
-  bool DecodableVideoFrame(FrameInfo* frame) const;
+  bool DecodableFrame(FrameInfo* frame) const;
 
   FrameMap frame_map_;
   bool waiting_for_key_;

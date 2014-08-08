@@ -38,6 +38,20 @@ class GPU_EXPORT Program : public base::RefCounted<Program> {
     kCountAll
   };
 
+  enum UniformApiType {
+    kUniform1i = 1 << 0,
+    kUniform2i = 1 << 1,
+    kUniform3i = 1 << 2,
+    kUniform4i = 1 << 3,
+    kUniform1f = 1 << 4,
+    kUniform2f = 1 << 5,
+    kUniform3f = 1 << 6,
+    kUniform4f = 1 << 7,
+    kUniformMatrix2f = 1 << 8,
+    kUniformMatrix3f = 1 << 9,
+    kUniformMatrix4f = 1 << 10,
+  };
+
   struct UniformInfo {
     UniformInfo();
     UniformInfo(
@@ -56,6 +70,7 @@ class GPU_EXPORT Program : public base::RefCounted<Program> {
 
     GLsizei size;
     GLenum type;
+    uint32 accepts_api_type;
     GLint fake_location_base;
     bool is_array;
     std::string name;
@@ -192,15 +207,16 @@ class GPU_EXPORT Program : public base::RefCounted<Program> {
 
   // Detects if there are uniforms of the same name but different type
   // or precision in vertex/fragment shaders.
-  // Return true if such cases are detected.
-  bool DetectUniformsMismatch() const;
+  // Return true and set the first found conflicting hashed name to
+  // conflicting_name if such cases are detected.
+  bool DetectUniformsMismatch(std::string* conflicting_name) const;
 
   // Return true if a varying is statically used in fragment shader, but it
   // is not declared in vertex shader.
-  bool DetectVaryingsMismatch() const;
+  bool DetectVaryingsMismatch(std::string* conflicting_name) const;
 
   // Return true if an uniform and an attribute share the same name.
-  bool DetectGlobalNameConflicts() const;
+  bool DetectGlobalNameConflicts(std::string* conflicting_name) const;
 
   // Return false if varyings can't be packed into the max available
   // varying registers.

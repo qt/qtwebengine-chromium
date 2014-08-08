@@ -17,6 +17,7 @@ void GLContextStub::Destroy() {}
 
 bool GLContextStub::MakeCurrent(GLSurface* surface) {
   SetCurrent(surface);
+  SetRealGLApi();
   return true;
 }
 
@@ -37,6 +38,10 @@ void GLContextStub::SetSwapInterval(int interval) {
 
 std::string GLContextStub::GetExtensions() {
   return std::string();
+}
+
+std::string GLContextStub::GetGLRenderer() {
+  return std::string("CHROMIUM");
 }
 
 GLContextStub::~GLContextStub() {}

@@ -36,8 +36,10 @@ _format_modules = {
   'resource_map_source':      'resource_map',
   'resource_file_map_source': 'resource_map',
 }
-_format_modules.update((type, 'policy_templates.template_formatter')
-    for type in 'adm plist plist_strings admx adml doc json reg'.split())
+_format_modules.update(
+    (type, 'policy_templates.template_formatter') for type in
+        [ 'adm', 'admx', 'adml', 'reg', 'doc', 'json',
+          'plist', 'plist_strings', 'ios_plist' ])
 
 
 def GetFormatter(type):
@@ -83,6 +85,11 @@ Options:
                     flag should match what sys.platform would report for your
                     target platform; see grit.node.base.EvaluateCondition.
 
+  -h HEADERFORMAT   Custom format string to use for generating rc header files.
+                    The string should have two placeholders: {textual_id}
+                    and {numeric_id}. E.g. "#define {textual_id} {numeric_id}"
+                    Otherwise it will use the default "#define SYMBOL 1234"
+
 Conditional inclusion of resources only affects the output of files which
 control which resources get linked into a binary, e.g. it affects .rc files
 meant for compilation but it does not affect resource header files (that define
@@ -98,8 +105,10 @@ are exported to translation interchange files (e.g. XMB files), etc.
     first_ids_file = None
     whitelist_filenames = []
     target_platform = None
-    dep_dir = None
-    (own_opts, args) = getopt.getopt(args, 'o:D:E:f:w:t:', ('dep-dir=',))
+    depfile = None
+    depdir = None
+    rc_header_format = None
+    (own_opts, args) = getopt.getopt(args, 'o:D:E:f:w:t:h:', ('depdir=','depfile='))
     for (key, val) in own_opts:
       if key == '-o':
         self.output_directory = val
@@ -118,8 +127,12 @@ are exported to translation interchange files (e.g. XMB files), etc.
         whitelist_filenames.append(val)
       elif key == '-t':
         target_platform = val
-      elif key == '--dep-dir':
-        dep_dir = val
+      elif key == '-h':
+        rc_header_format = val
+      elif key == '--depdir':
+        depdir = val
+      elif key == '--depfile':
+        depfile = val
 
     if len(args):
       print 'This tool takes no tool-specific arguments.'
@@ -148,11 +161,13 @@ are exported to translation interchange files (e.g. XMB files), etc.
     # gathering stage; we use a dummy language here since we are not outputting
     # a specific language.
     self.res.SetOutputLanguage('en')
+    if rc_header_format:
+      self.res.AssignRcHeaderFormat(rc_header_format)
     self.res.RunGatherers()
     self.Process()
 
-    if dep_dir:
-      self.GenerateDepfile(opts.input, dep_dir)
+    if depfile and depdir:
+      self.GenerateDepfile(opts.input, depfile, depdir)
 
     return 0
 
@@ -177,7 +192,6 @@ are exported to translation interchange files (e.g. XMB files), etc.
     # The set of names that are whitelisted to actually be included in the
     # output.
     self.whitelist_names = None
-
 
   @staticmethod
   def AddWhitelistTags(start_node, whitelist_names):
@@ -310,11 +324,10 @@ are exported to translation interchange files (e.g. XMB files), etc.
       print self.res.UberClique().missing_translations_
       sys.exit(-1)
 
-  def GenerateDepfile(self, input_filename, dep_dir):
+  def GenerateDepfile(self, input_filename, depfile, depdir):
     '''Generate a depfile that contains the imlicit dependencies of the input
     grd. The depfile will be in the same format as a makefile, and will contain
-    references to files relative to |dep_dir|. It will be put in the same
-    directory as the generated outputs.
+    references to files relative to |depdir|. It will be put in |depfile|.
 
     For example, supposing we have three files in a directory src/
 
@@ -325,23 +338,21 @@ are exported to translation interchange files (e.g. XMB files), etc.
 
     and we run
 
-      grit -i blah.grd -o ../out/gen --dep-dir ../out
+      grit -i blah.grd -o ../out/gen --depdir ../out --depfile ../out/gen/blah.rd.d
 
     from the directory src/ we will generate a depfile ../out/gen/blah.grd.d
     that has the contents
 
       gen/blah.grd.d: ../src/input1.xtb ../src/input2.xtb
 
-    Note that all paths in the depfile are relative to ../out, the dep-dir.
+    Note that all paths in the depfile are relative to ../out, the depdir.
     '''
-    depsfile_basename = os.path.basename(input_filename + '.d')
-    depfile = os.path.abspath(
-        os.path.join(self.output_directory, depsfile_basename))
-    dep_dir = os.path.abspath(dep_dir)
+    depfile = os.path.abspath(depfile)
+    depdir = os.path.abspath(depdir)
     # The path prefix to prepend to dependencies in the depfile.
-    prefix = os.path.relpath(os.getcwd(), dep_dir)
+    prefix = os.path.relpath(os.getcwd(), depdir)
     # The path that the depfile refers to itself by.
-    self_ref_depfile = os.path.relpath(depfile, dep_dir)
+    self_ref_depfile = os.path.relpath(depfile, depdir)
     infiles = self.res.GetInputFiles()
     deps_text = ' '.join([os.path.join(prefix, i) for i in infiles])
     depfile_contents = self_ref_depfile + ': ' + deps_text

@@ -41,7 +41,8 @@ class TestNetworkDelegate : public net::NetworkDelegate {
       URLRequest* request,
       const CompletionCallback& callback,
       const HttpResponseHeaders* original_response_headers,
-      scoped_refptr<HttpResponseHeaders>* override_response_headers) OVERRIDE {
+      scoped_refptr<HttpResponseHeaders>* override_response_headers,
+      GURL* allowed_unsafe_redirect_url) OVERRIDE {
     return net::OK;
   }
   virtual void OnBeforeRedirect(URLRequest* request,
@@ -83,9 +84,6 @@ class TestNetworkDelegate : public net::NetworkDelegate {
       SocketStream* stream,
       const CompletionCallback& callback) OVERRIDE {
     return OK;
-  }
-  virtual void OnRequestWaitStateChange(const net::URLRequest& request,
-                                        RequestWaitState state) OVERRIDE {
   }
 
   bool got_pac_error_;

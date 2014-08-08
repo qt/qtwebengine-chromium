@@ -28,18 +28,18 @@
 
 #include "modules/webaudio/MediaStreamAudioDestinationNode.h"
 
-#include "core/platform/mediastream/MediaStreamCenter.h"
-#include "core/platform/mediastream/RTCPeerConnectionHandler.h"
 #include "modules/webaudio/AudioContext.h"
 #include "modules/webaudio/AudioNodeInput.h"
 #include "platform/UUID.h"
+#include "platform/mediastream/MediaStreamCenter.h"
+#include "public/platform/WebRTCPeerConnectionHandler.h"
 #include "wtf/Locker.h"
 
 namespace WebCore {
 
-PassRefPtr<MediaStreamAudioDestinationNode> MediaStreamAudioDestinationNode::create(AudioContext* context, size_t numberOfChannels)
+PassRefPtrWillBeRawPtr<MediaStreamAudioDestinationNode> MediaStreamAudioDestinationNode::create(AudioContext* context, size_t numberOfChannels)
 {
-    return adoptRef(new MediaStreamAudioDestinationNode(context, numberOfChannels));
+    return adoptRefWillBeNoop(new MediaStreamAudioDestinationNode(context, numberOfChannels));
 }
 
 MediaStreamAudioDestinationNode::MediaStreamAudioDestinationNode(AudioContext* context, size_t numberOfChannels)
@@ -54,16 +54,11 @@ MediaStreamAudioDestinationNode::MediaStreamAudioDestinationNode(AudioContext* c
     audioSources.append(m_source);
     MediaStreamSourceVector videoSources;
     m_stream = MediaStream::create(context->executionContext(), MediaStreamDescriptor::create(audioSources, videoSources));
-    MediaStreamCenter::instance().didCreateMediaStream(m_stream->descriptor());
+    MediaStreamCenter::instance().didCreateMediaStreamAndTracks(m_stream->descriptor());
 
     m_source->setAudioFormat(numberOfChannels, context->sampleRate());
 
     initialize();
-}
-
-MediaStreamSource* MediaStreamAudioDestinationNode::mediaStreamSource()
-{
-    return m_source.get();
 }
 
 MediaStreamAudioDestinationNode::~MediaStreamAudioDestinationNode()
@@ -75,10 +70,6 @@ void MediaStreamAudioDestinationNode::process(size_t numberOfFrames)
 {
     m_mixBus->copyFrom(*input(0)->bus());
     m_source->consumeAudio(m_mixBus.get(), numberOfFrames);
-}
-
-void MediaStreamAudioDestinationNode::reset()
-{
 }
 
 } // namespace WebCore

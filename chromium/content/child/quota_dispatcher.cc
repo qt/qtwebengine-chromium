@@ -13,16 +13,14 @@
 #include "content/common/quota_messages.h"
 #include "third_party/WebKit/public/platform/WebStorageQuotaCallbacks.h"
 #include "third_party/WebKit/public/platform/WebStorageQuotaType.h"
+#include "third_party/WebKit/public/web/WebUserGestureIndicator.h"
 #include "url/gurl.h"
-
-using quota::QuotaStatusCode;
-using quota::StorageType;
 
 using blink::WebStorageQuotaCallbacks;
 using blink::WebStorageQuotaError;
 using blink::WebStorageQuotaType;
-
-using webkit_glue::WorkerTaskRunner;
+using quota::QuotaStatusCode;
+using quota::StorageType;
 
 namespace content {
 
@@ -34,24 +32,25 @@ namespace {
 // QuotaDispatcher::Callback implementation for WebStorageQuotaCallbacks.
 class WebStorageQuotaDispatcherCallback : public QuotaDispatcher::Callback {
  public:
-  WebStorageQuotaDispatcherCallback(blink::WebStorageQuotaCallbacks* callback)
-      : callbacks_(callback) {
-    DCHECK(callbacks_);
-  }
+  explicit WebStorageQuotaDispatcherCallback(
+      blink::WebStorageQuotaCallbacks callback)
+      : callbacks_(callback) {}
   virtual ~WebStorageQuotaDispatcherCallback() {}
+
   virtual void DidQueryStorageUsageAndQuota(int64 usage, int64 quota) OVERRIDE {
-    callbacks_->didQueryStorageUsageAndQuota(usage, quota);
+    callbacks_.didQueryStorageUsageAndQuota(usage, quota);
   }
-  virtual void DidGrantStorageQuota(int64 granted_quota) OVERRIDE {
-    callbacks_->didGrantStorageQuota(granted_quota);
+  virtual void DidGrantStorageQuota(int64 usage, int64 granted_quota) OVERRIDE {
+    callbacks_.didGrantStorageQuota(usage, granted_quota);
   }
   virtual void DidFail(quota::QuotaStatusCode error) OVERRIDE {
-    callbacks_->didFail(static_cast<WebStorageQuotaError>(error));
+    callbacks_.didFail(static_cast<WebStorageQuotaError>(error));
   }
 
  private:
-  // Not owned (self-destructed).
-  blink::WebStorageQuotaCallbacks* callbacks_;
+  blink::WebStorageQuotaCallbacks callbacks_;
+
+  DISALLOW_COPY_AND_ASSIGN(WebStorageQuotaDispatcherCallback);
 };
 
 int CurrentWorkerId() {
@@ -122,29 +121,38 @@ void QuotaDispatcher::RequestStorageQuota(
     int render_view_id,
     const GURL& origin_url,
     StorageType type,
-    int64 requested_size,
+    uint64 requested_size,
     Callback* callback) {
   DCHECK(callback);
   DCHECK(CurrentWorkerId() == 0);
   int request_id = quota_message_filter_->GenerateRequestID(CurrentWorkerId());
   pending_quota_callbacks_.AddWithID(callback, request_id);
-  thread_safe_sender_->Send(new QuotaHostMsg_RequestStorageQuota(
-      render_view_id, request_id, origin_url, type, requested_size));
+
+  StorageQuotaParams params;
+  params.render_view_id = render_view_id;
+  params.request_id = request_id;
+  params.origin_url = origin_url;
+  params.storage_type = type;
+  params.requested_size = requested_size;
+  params.user_gesture =
+      blink::WebUserGestureIndicator::isProcessingUserGesture();
+  thread_safe_sender_->Send(new QuotaHostMsg_RequestStorageQuota(params));
 }
 
 // static
 QuotaDispatcher::Callback*
 QuotaDispatcher::CreateWebStorageQuotaCallbacksWrapper(
-    blink::WebStorageQuotaCallbacks* callbacks) {
+    blink::WebStorageQuotaCallbacks callbacks) {
   return new WebStorageQuotaDispatcherCallback(callbacks);
 }
 
 void QuotaDispatcher::DidGrantStorageQuota(
     int request_id,
+    int64 current_usage,
     int64 granted_quota) {
   Callback* callback = pending_quota_callbacks_.Lookup(request_id);
   DCHECK(callback);
-  callback->DidGrantStorageQuota(granted_quota);
+  callback->DidGrantStorageQuota(current_usage, granted_quota);
   pending_quota_callbacks_.Remove(request_id);
 }
 

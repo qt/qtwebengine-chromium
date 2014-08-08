@@ -7,10 +7,12 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
+#include "base/memory/scoped_ptr.h"
 #include "skia/ext/platform_canvas.h"
 #include "ui/native_theme/native_theme.h"
 
 namespace gfx {
+class Canvas;
 class ImageSkia;
 class Rect;
 class Size;
@@ -30,6 +32,13 @@ class NATIVE_THEME_EXPORT NativeThemeBase : public NativeTheme {
                      State state,
                      const gfx::Rect& rect,
                      const ExtraParams& extra) const OVERRIDE;
+
+  virtual void PaintStateTransition(SkCanvas* canvas,
+                                    Part part,
+                                    State startState,
+                                    State endState,
+                                    double progress,
+                                    const gfx::Rect& rect) const OVERRIDE;
 
  protected:
   NativeThemeBase();
@@ -55,6 +64,10 @@ class NATIVE_THEME_EXPORT NativeThemeBase : public NativeTheme {
       Part part,
       State state,
       const gfx::Rect& rect) const;
+
+  virtual void PaintScrollbarCorner(SkCanvas* canvas,
+                                    State state,
+                                    const gfx::Rect& rect) const;
 
   virtual void PaintCheckbox(
       SkCanvas* canvas,
@@ -121,10 +134,17 @@ class NATIVE_THEME_EXPORT NativeThemeBase : public NativeTheme {
       const gfx::Rect& rect,
       const ProgressBarExtraParams& progress_bar) const;
 
- protected:
+  virtual void PaintScrollbarThumbStateTransition(
+      SkCanvas* canvas,
+      State startState,
+      State endState,
+      double progress,
+      const gfx::Rect& rect) const {}
+
   void set_scrollbar_button_length(unsigned int length) {
     scrollbar_button_length_ = length;
   }
+  int scrollbar_button_length() const { return scrollbar_button_length_; }
 
   bool IntersectsClipRectInt(SkCanvas* canvas,
                              int x, int y, int w, int h) const;
@@ -142,6 +162,16 @@ class NATIVE_THEME_EXPORT NativeThemeBase : public NativeTheme {
   SkColor SaturateAndBrighten(SkScalar* hsv,
                               SkScalar saturate_amount,
                               SkScalar brighten_amount) const;
+
+  // Paints the arrow used on the scrollbar and spinner.
+  void PaintArrow(SkCanvas* canvas,
+                  const gfx::Rect& rect,
+                  Part direction,
+                  SkColor color) const;
+
+  // Returns the color used to draw the arrow.
+  SkColor GetArrowColor(State state) const;
+
  private:
   void DrawVertLine(SkCanvas* canvas,
                     int x,

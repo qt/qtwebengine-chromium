@@ -4,9 +4,11 @@
 
 #include "content/browser/renderer_host/media/media_stream_ui_proxy.h"
 
+#include "base/command_line.h"
 #include "content/browser/renderer_host/render_view_host_delegate.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/common/content_switches.h"
 #include "media/video/capture/fake_video_capture_device.h"
 
 namespace content {
@@ -18,10 +20,11 @@ class MediaStreamUIProxy::Core {
   ~Core();
 
   void RequestAccess(const MediaStreamRequest& request);
-  void OnStarted();
+  void OnStarted(gfx::NativeViewId* window_id);
 
  private:
   void ProcessAccessRequestResponse(const MediaStreamDevices& devices,
+                                    content::MediaStreamRequestResult result,
                                     scoped_ptr<MediaStreamUI> stream_ui);
   void ProcessStopRequestFromUI();
 
@@ -45,12 +48,12 @@ MediaStreamUIProxy::Core::Core(const base::WeakPtr<MediaStreamUIProxy>& proxy,
 }
 
 MediaStreamUIProxy::Core::~Core() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 }
 
 void MediaStreamUIProxy::Core::RequestAccess(
     const MediaStreamRequest& request) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   RenderViewHostDelegate* render_delegate;
 
@@ -63,7 +66,9 @@ void MediaStreamUIProxy::Core::RequestAccess(
     // Tab may have gone away.
     if (!host || !host->GetDelegate()) {
       ProcessAccessRequestResponse(
-          MediaStreamDevices(), scoped_ptr<MediaStreamUI>());
+          MediaStreamDevices(),
+          MEDIA_DEVICE_INVALID_STATE,
+          scoped_ptr<MediaStreamUI>());
       return;
     }
 
@@ -75,28 +80,29 @@ void MediaStreamUIProxy::Core::RequestAccess(
                           weak_factory_.GetWeakPtr()));
 }
 
-void MediaStreamUIProxy::Core::OnStarted() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+void MediaStreamUIProxy::Core::OnStarted(gfx::NativeViewId* window_id) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   if (ui_) {
-    ui_->OnStarted(base::Bind(&Core::ProcessStopRequestFromUI,
-                              base::Unretained(this)));
+    *window_id = ui_->OnStarted(
+        base::Bind(&Core::ProcessStopRequestFromUI, base::Unretained(this)));
   }
 }
 
 void MediaStreamUIProxy::Core::ProcessAccessRequestResponse(
     const MediaStreamDevices& devices,
+    content::MediaStreamRequestResult result,
     scoped_ptr<MediaStreamUI> stream_ui) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   ui_ = stream_ui.Pass();
   BrowserThread::PostTask(
       BrowserThread::IO, FROM_HERE,
       base::Bind(&MediaStreamUIProxy::ProcessAccessRequestResponse,
-                 proxy_, devices));
+                 proxy_, devices, result));
 }
 
 void MediaStreamUIProxy::Core::ProcessStopRequestFromUI() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   BrowserThread::PostTask(
       BrowserThread::IO, FROM_HERE,
@@ -118,19 +124,19 @@ scoped_ptr<MediaStreamUIProxy> MediaStreamUIProxy::CreateForTests(
 MediaStreamUIProxy::MediaStreamUIProxy(
     RenderViewHostDelegate* test_render_delegate)
     : weak_factory_(this) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   core_.reset(new Core(weak_factory_.GetWeakPtr(), test_render_delegate));
 }
 
 MediaStreamUIProxy::~MediaStreamUIProxy() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   BrowserThread::DeleteSoon(BrowserThread::UI, FROM_HERE, core_.release());
 }
 
 void MediaStreamUIProxy::RequestAccess(
     const MediaStreamRequest& request,
     const ResponseCallback& response_callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   response_callback_ = response_callback;
   BrowserThread::PostTask(
@@ -138,27 +144,45 @@ void MediaStreamUIProxy::RequestAccess(
       base::Bind(&Core::RequestAccess, base::Unretained(core_.get()), request));
 }
 
-void MediaStreamUIProxy::OnStarted(const base::Closure& stop_callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+void MediaStreamUIProxy::OnStarted(const base::Closure& stop_callback,
+                                   const WindowIdCallback& window_id_callback) {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   stop_callback_ = stop_callback;
-  BrowserThread::PostTask(
-      BrowserThread::UI, FROM_HERE,
-      base::Bind(&Core::OnStarted, base::Unretained(core_.get())));
+
+  // Owned by the PostTaskAndReply callback.
+  gfx::NativeViewId* window_id = new gfx::NativeViewId(0);
+
+  BrowserThread::PostTaskAndReply(
+      BrowserThread::UI,
+      FROM_HERE,
+      base::Bind(&Core::OnStarted, base::Unretained(core_.get()), window_id),
+      base::Bind(&MediaStreamUIProxy::OnWindowId,
+                 weak_factory_.GetWeakPtr(),
+                 window_id_callback,
+                 base::Owned(window_id)));
+}
+
+void MediaStreamUIProxy::OnWindowId(const WindowIdCallback& window_id_callback,
+                                    gfx::NativeViewId* window_id) {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  if (!window_id_callback.is_null())
+    window_id_callback.Run(*window_id);
 }
 
 void MediaStreamUIProxy::ProcessAccessRequestResponse(
-    const MediaStreamDevices& devices) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+    const MediaStreamDevices& devices,
+    content::MediaStreamRequestResult result) {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DCHECK(!response_callback_.is_null());
 
   ResponseCallback cb = response_callback_;
   response_callback_.Reset();
-  cb.Run(devices);
+  cb.Run(devices, result);
 }
 
 void MediaStreamUIProxy::ProcessStopRequestFromUI() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DCHECK(!stop_callback_.is_null());
 
   base::Closure cb = stop_callback_;
@@ -180,20 +204,33 @@ void FakeMediaStreamUIProxy::SetAvailableDevices(
 void FakeMediaStreamUIProxy::RequestAccess(
     const MediaStreamRequest& request,
     const ResponseCallback& response_callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   response_callback_ = response_callback;
+
+  if (CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+      switches::kUseFakeUIForMediaStream) == "deny") {
+    // Immediately deny the request.
+    BrowserThread::PostTask(
+          BrowserThread::IO, FROM_HERE,
+          base::Bind(&MediaStreamUIProxy::ProcessAccessRequestResponse,
+                     weak_factory_.GetWeakPtr(),
+                     MediaStreamDevices(),
+                     MEDIA_DEVICE_PERMISSION_DENIED));
+    return;
+  }
 
   MediaStreamDevices devices_to_use;
   bool accepted_audio = false;
   bool accepted_video = false;
+
   // Use the first capture device of the same media type in the list for the
   // fake UI.
   for (MediaStreamDevices::const_iterator it = devices_.begin();
        it != devices_.end(); ++it) {
     if (!accepted_audio &&
-        IsAudioMediaType(request.audio_type) &&
-        IsAudioMediaType(it->type) &&
+        IsAudioInputMediaType(request.audio_type) &&
+        IsAudioInputMediaType(it->type) &&
         (request.requested_audio_device_id.empty() ||
          request.requested_audio_device_id == it->id)) {
       devices_to_use.push_back(*it);
@@ -208,13 +245,24 @@ void FakeMediaStreamUIProxy::RequestAccess(
     }
   }
 
+  // Fail the request if a device exist for the requested type.
+  if ((request.audio_type != MEDIA_NO_SERVICE && !accepted_audio) ||
+      (request.video_type != MEDIA_NO_SERVICE && !accepted_video)) {
+    devices_to_use.clear();
+  }
+
   BrowserThread::PostTask(
       BrowserThread::IO, FROM_HERE,
       base::Bind(&MediaStreamUIProxy::ProcessAccessRequestResponse,
-                 weak_factory_.GetWeakPtr(), devices_to_use));
+                 weak_factory_.GetWeakPtr(),
+                 devices_to_use,
+                 devices_to_use.empty() ?
+                     MEDIA_DEVICE_NO_HARDWARE :
+                     MEDIA_DEVICE_OK));
 }
 
-void FakeMediaStreamUIProxy::OnStarted(const base::Closure& stop_callback) {
-}
+void FakeMediaStreamUIProxy::OnStarted(
+    const base::Closure& stop_callback,
+    const WindowIdCallback& window_id_callback) {}
 
 }  // namespace content

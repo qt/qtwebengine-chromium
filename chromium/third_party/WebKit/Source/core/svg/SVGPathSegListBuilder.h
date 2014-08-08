@@ -32,40 +32,40 @@ namespace WebCore {
 
 class SVGPathElement;
 
-class SVGPathSegListBuilder : public SVGPathConsumer {
+class SVGPathSegListBuilder FINAL : public SVGPathConsumer {
 public:
     SVGPathSegListBuilder();
 
     void setCurrentSVGPathElement(SVGPathElement* pathElement) { m_pathElement = pathElement; }
-    void setCurrentSVGPathSegList(SVGPathSegList& pathSegList) { m_pathSegList = &pathSegList; }
+    void setCurrentSVGPathSegList(PassRefPtr<SVGPathSegList> pathSegList) { m_pathSegList = pathSegList; }
     void setCurrentSVGPathSegRole(SVGPathSegRole pathSegRole) { m_pathSegRole = pathSegRole; }
 
 private:
-    virtual void incrementPathSegmentCount() { }
-    virtual bool continueConsuming() { return true; }
-    virtual void cleanup()
+    virtual void incrementPathSegmentCount() OVERRIDE { }
+    virtual bool continueConsuming() OVERRIDE { return true; }
+    virtual void cleanup() OVERRIDE
     {
         m_pathElement = 0;
-        m_pathSegList = 0;
+        m_pathSegList = nullptr;
         m_pathSegRole = PathSegUndefinedRole;
     }
 
     // Used in UnalteredParsing/NormalizedParsing modes.
-    virtual void moveTo(const FloatPoint&, bool closed, PathCoordinateMode);
-    virtual void lineTo(const FloatPoint&, PathCoordinateMode);
-    virtual void curveToCubic(const FloatPoint&, const FloatPoint&, const FloatPoint&, PathCoordinateMode);
-    virtual void closePath();
+    virtual void moveTo(const FloatPoint&, bool closed, PathCoordinateMode) OVERRIDE;
+    virtual void lineTo(const FloatPoint&, PathCoordinateMode) OVERRIDE;
+    virtual void curveToCubic(const FloatPoint&, const FloatPoint&, const FloatPoint&, PathCoordinateMode) OVERRIDE;
+    virtual void closePath() OVERRIDE;
 
     // Only used in UnalteredParsing mode.
-    virtual void lineToHorizontal(float, PathCoordinateMode);
-    virtual void lineToVertical(float, PathCoordinateMode);
-    virtual void curveToCubicSmooth(const FloatPoint&, const FloatPoint&, PathCoordinateMode);
-    virtual void curveToQuadratic(const FloatPoint&, const FloatPoint&, PathCoordinateMode);
-    virtual void curveToQuadraticSmooth(const FloatPoint&, PathCoordinateMode);
-    virtual void arcTo(float, float, float, bool largeArcFlag, bool sweepFlag, const FloatPoint&, PathCoordinateMode);
+    virtual void lineToHorizontal(float, PathCoordinateMode) OVERRIDE;
+    virtual void lineToVertical(float, PathCoordinateMode) OVERRIDE;
+    virtual void curveToCubicSmooth(const FloatPoint&, const FloatPoint&, PathCoordinateMode) OVERRIDE;
+    virtual void curveToQuadratic(const FloatPoint&, const FloatPoint&, PathCoordinateMode) OVERRIDE;
+    virtual void curveToQuadraticSmooth(const FloatPoint&, PathCoordinateMode) OVERRIDE;
+    virtual void arcTo(float, float, float, bool largeArcFlag, bool sweepFlag, const FloatPoint&, PathCoordinateMode) OVERRIDE;
 
     SVGPathElement* m_pathElement;
-    SVGPathSegList* m_pathSegList;
+    RefPtr<SVGPathSegList> m_pathSegList;
     SVGPathSegRole m_pathSegRole;
 };
 

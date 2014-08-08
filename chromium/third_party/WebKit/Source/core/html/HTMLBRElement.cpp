@@ -23,25 +23,22 @@
 #include "config.h"
 #include "core/html/HTMLBRElement.h"
 
-#include "CSSPropertyNames.h"
-#include "CSSValueKeywords.h"
-#include "HTMLNames.h"
+#include "core/CSSPropertyNames.h"
+#include "core/CSSValueKeywords.h"
+#include "core/HTMLNames.h"
 #include "core/rendering/RenderBR.h"
 
 namespace WebCore {
 
 using namespace HTMLNames;
 
-HTMLBRElement::HTMLBRElement(Document& document)
+inline HTMLBRElement::HTMLBRElement(Document& document)
     : HTMLElement(brTag, document)
 {
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLBRElement> HTMLBRElement::create(Document& document)
-{
-    return adoptRef(new HTMLBRElement(document));
-}
+DEFINE_NODE_FACTORY(HTMLBRElement)
 
 bool HTMLBRElement::isPresentationAttribute(const QualifiedName& name) const
 {

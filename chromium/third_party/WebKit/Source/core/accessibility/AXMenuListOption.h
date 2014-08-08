@@ -33,7 +33,7 @@ namespace WebCore {
 class AXMenuListPopup;
 class HTMLElement;
 
-class AXMenuListOption : public AXMockObject {
+class AXMenuListOption FINAL : public AXMockObject {
 public:
     static PassRefPtr<AXMenuListOption> create() { return adoptRef(new AXMenuListOption); }
 
@@ -58,7 +58,7 @@ private:
     virtual String stringValue() const OVERRIDE;
     virtual bool computeAccessibilityIsIgnored() const OVERRIDE;
 
-    RefPtr<HTMLElement> m_element;
+    RefPtrWillBePersistent<HTMLElement> m_element;
 };
 
 DEFINE_AX_OBJECT_TYPE_CASTS(AXMenuListOption, isMenuListOption());

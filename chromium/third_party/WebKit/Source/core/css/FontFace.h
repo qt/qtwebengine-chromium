@@ -31,9 +31,11 @@
 #ifndef FontFace_h
 #define FontFace_h
 
-#include "CSSPropertyNames.h"
 #include "bindings/v8/ScriptPromise.h"
+#include "core/CSSPropertyNames.h"
 #include "core/css/CSSValue.h"
+#include "core/dom/DOMError.h"
+#include "platform/fonts/FontTraits.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/text/WTFString.h"
@@ -49,12 +51,14 @@ class FontFaceReadyPromiseResolver;
 class StylePropertySet;
 class StyleRuleFontFace;
 
-class FontFace : public RefCounted<FontFace> {
+class FontFace : public RefCountedWillBeGarbageCollectedFinalized<FontFace> {
 public:
     enum LoadStatus { Unloaded, Loading, Loaded, Error };
 
-    static PassRefPtr<FontFace> create(const AtomicString& family, const String& source, const Dictionary&, ExceptionState&);
-    static PassRefPtr<FontFace> create(const StyleRuleFontFace*);
+    static PassRefPtrWillBeRawPtr<FontFace> create(ExecutionContext*, const AtomicString& family, PassRefPtr<ArrayBuffer> source, const Dictionary&, ExceptionState&);
+    static PassRefPtrWillBeRawPtr<FontFace> create(ExecutionContext*, const AtomicString& family, PassRefPtr<ArrayBufferView>, const Dictionary&, ExceptionState&);
+    static PassRefPtrWillBeRawPtr<FontFace> create(ExecutionContext*, const AtomicString& family, const String& source, const Dictionary&, ExceptionState&);
+    static PassRefPtrWillBeRawPtr<FontFace> create(Document*, const StyleRuleFontFace*);
 
     ~FontFace();
 
@@ -67,49 +71,68 @@ public:
     String featureSettings() const;
 
     // FIXME: Changing these attributes should affect font matching.
-    void setFamily(const AtomicString& s, ExceptionState&) { m_family = s; }
-    void setStyle(const String&, ExceptionState&);
-    void setWeight(const String&, ExceptionState&);
-    void setStretch(const String&, ExceptionState&);
-    void setUnicodeRange(const String&, ExceptionState&);
-    void setVariant(const String&, ExceptionState&);
-    void setFeatureSettings(const String&, ExceptionState&);
+    void setFamily(ExecutionContext*, const AtomicString& s, ExceptionState&) { m_family = s; }
+    void setStyle(ExecutionContext*, const String&, ExceptionState&);
+    void setWeight(ExecutionContext*, const String&, ExceptionState&);
+    void setStretch(ExecutionContext*, const String&, ExceptionState&);
+    void setUnicodeRange(ExecutionContext*, const String&, ExceptionState&);
+    void setVariant(ExecutionContext*, const String&, ExceptionState&);
+    void setFeatureSettings(ExecutionContext*, const String&, ExceptionState&);
 
     String status() const;
+    ScriptPromise loaded(ScriptState* scriptState) { return fontStatusPromise(scriptState); }
 
-    void load();
-    ScriptPromise ready(ExecutionContext*);
+    ScriptPromise load(ScriptState*);
 
     LoadStatus loadStatus() const { return m_status; }
     void setLoadStatus(LoadStatus);
-    unsigned traitsMask() const;
-    PassRefPtr<CSSFontFace> createCSSFontFace(Document*);
-    void cssFontFaceDestroyed() { m_cssFontFace = 0; }
+    DOMError* error() const { return m_error.get(); }
+    FontTraits traits() const;
+    CSSFontFace* cssFontFace() { return m_cssFontFace.get(); }
+
+    void trace(Visitor*);
+
+    bool hadBlankText() const;
+
+    class LoadFontCallback : public RefCountedWillBeGarbageCollectedFinalized<LoadFontCallback> {
+    public:
+        virtual ~LoadFontCallback() { }
+        virtual void notifyLoaded(FontFace*) = 0;
+        virtual void notifyError(FontFace*) = 0;
+        virtual void trace(Visitor*) { }
+    };
+    void loadWithCallback(PassRefPtrWillBeRawPtr<LoadFontCallback>, ExecutionContext*);
 
 private:
-    FontFace(PassRefPtr<CSSValue> source);
+    FontFace();
 
-    void setPropertyFromString(const String&, CSSPropertyID, ExceptionState&);
-    bool setPropertyFromStyle(const StylePropertySet*, CSSPropertyID);
-    bool setPropertyValue(PassRefPtr<CSSValue>, CSSPropertyID);
+    void initCSSFontFace(Document*, PassRefPtrWillBeRawPtr<CSSValue> src);
+    void initCSSFontFace(const unsigned char* data, unsigned size);
+    void setPropertyFromString(const Document*, const String&, CSSPropertyID, ExceptionState&);
+    bool setPropertyFromStyle(const StylePropertySet&, CSSPropertyID);
+    bool setPropertyValue(PassRefPtrWillBeRawPtr<CSSValue>, CSSPropertyID);
     bool setFamilyValue(CSSValueList*);
     void resolveReadyPromises();
+    void loadInternal(ExecutionContext*);
+    ScriptPromise fontStatusPromise(ScriptState*);
 
     AtomicString m_family;
-    RefPtr<CSSValue> m_src;
-    RefPtr<CSSValue> m_style;
-    RefPtr<CSSValue> m_weight;
-    RefPtr<CSSValue> m_stretch;
-    RefPtr<CSSValue> m_unicodeRange;
-    RefPtr<CSSValue> m_variant;
-    RefPtr<CSSValue> m_featureSettings;
+    RefPtrWillBeMember<CSSValue> m_src;
+    RefPtrWillBeMember<CSSValue> m_style;
+    RefPtrWillBeMember<CSSValue> m_weight;
+    RefPtrWillBeMember<CSSValue> m_stretch;
+    RefPtrWillBeMember<CSSValue> m_unicodeRange;
+    RefPtrWillBeMember<CSSValue> m_variant;
+    RefPtrWillBeMember<CSSValue> m_featureSettings;
     LoadStatus m_status;
+    RefPtrWillBeMember<DOMError> m_error;
 
     Vector<OwnPtr<FontFaceReadyPromiseResolver> > m_readyResolvers;
-    CSSFontFace* m_cssFontFace;
+    OwnPtrWillBeMember<CSSFontFace> m_cssFontFace;
+    WillBeHeapVector<RefPtrWillBeMember<LoadFontCallback> > m_callbacks;
 };
 
-typedef Vector<RefPtr<FontFace> > FontFaceArray;
+typedef WillBeHeapVector<RefPtrWillBeMember<FontFace> > FontFaceArray;
 
 } // namespace WebCore
 

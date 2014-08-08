@@ -39,11 +39,11 @@ public:
 
     virtual ~RenderScrollbarPart();
 
-    virtual const char* renderName() const { return "RenderScrollbarPart"; }
+    virtual const char* renderName() const OVERRIDE { return "RenderScrollbarPart"; }
 
-    virtual bool requiresLayer() const { return false; }
+    virtual LayerType layerTypeRequired() const OVERRIDE { return NoLayer; }
 
-    virtual void layout();
+    virtual void layout() OVERRIDE;
 
     void paintIntoRect(GraphicsContext*, const LayoutPoint&, const LayoutRect&);
 
@@ -53,20 +53,31 @@ public:
     virtual LayoutUnit marginLeft() const OVERRIDE { ASSERT(isIntegerValue(m_marginBox.left())); return m_marginBox.left(); }
     virtual LayoutUnit marginRight() const OVERRIDE { ASSERT(isIntegerValue(m_marginBox.right())); return m_marginBox.right(); }
 
-    virtual bool isRenderScrollbarPart() const { return true; }
+    virtual bool isRenderScrollbarPart() const OVERRIDE { return true; }
     RenderObject* rendererOwningScrollbar() const;
 
 protected:
-    virtual void styleWillChange(StyleDifference diff, const RenderStyle* newStyle);
-    virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle);
-    virtual void imageChanged(WrappedImagePtr, const IntRect* = 0);
+    virtual void styleWillChange(StyleDifference, const RenderStyle& newStyle) OVERRIDE;
+    virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle) OVERRIDE;
+    virtual void imageChanged(WrappedImagePtr, const IntRect* = 0) OVERRIDE;
 
 private:
     RenderScrollbarPart(RenderScrollbar*, ScrollbarPart);
 
-    virtual void computePreferredLogicalWidths();
+    virtual void computePreferredLogicalWidths() OVERRIDE;
 
-    virtual bool supportsPartialLayout() const OVERRIDE { return false; }
+    // Have all padding getters return 0. The important point here is to avoid resolving percents
+    // against the containing block, since scroll bar corners don't always have one (so it would
+    // crash). Scroll bar corners are not actually laid out, and they don't have child content, so
+    // what we return here doesn't really matter.
+    virtual LayoutUnit paddingTop() const OVERRIDE { return LayoutUnit(); }
+    virtual LayoutUnit paddingBottom() const OVERRIDE { return LayoutUnit(); }
+    virtual LayoutUnit paddingLeft() const OVERRIDE { return LayoutUnit(); }
+    virtual LayoutUnit paddingRight() const OVERRIDE { return LayoutUnit(); }
+    virtual LayoutUnit paddingBefore() const OVERRIDE { return LayoutUnit(); }
+    virtual LayoutUnit paddingAfter() const OVERRIDE { return LayoutUnit(); }
+    virtual LayoutUnit paddingStart() const OVERRIDE { return LayoutUnit(); }
+    virtual LayoutUnit paddingEnd() const OVERRIDE { return LayoutUnit(); }
 
     void layoutHorizontalPart();
     void layoutVerticalPart();

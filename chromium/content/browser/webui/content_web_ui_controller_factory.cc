@@ -8,11 +8,16 @@
 #include "content/browser/gpu/gpu_internals_ui.h"
 #include "content/browser/indexed_db/indexed_db_internals_ui.h"
 #include "content/browser/media/media_internals_ui.h"
-#include "content/browser/media/webrtc_internals_ui.h"
+#include "content/browser/service_worker/service_worker_internals_ui.h"
 #include "content/browser/tracing/tracing_ui.h"
+#include "content/public/browser/storage_partition.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/common/url_constants.h"
+
+#if defined(ENABLE_WEBRTC)
+#include "content/browser/media/webrtc_internals_ui.h"
+#endif
 
 namespace content {
 
@@ -25,6 +30,7 @@ WebUI::TypeID ContentWebUIControllerFactory::GetWebUIType(
       url.host() == kChromeUIGpuHost ||
       url.host() == kChromeUIIndexedDBInternalsHost ||
       url.host() == kChromeUIMediaInternalsHost ||
+      url.host() == kChromeUIServiceWorkerInternalsHost ||
       url.host() == kChromeUIAccessibilityHost) {
     return const_cast<ContentWebUIControllerFactory*>(this);
   }
@@ -43,8 +49,6 @@ bool ContentWebUIControllerFactory::UseWebUIBindingsForURL(
 
 WebUIController* ContentWebUIControllerFactory::CreateWebUIControllerForURL(
     WebUI* web_ui, const GURL& url) const {
-  if (url.host() == kChromeUIWebRTCInternalsHost)
-    return new WebRTCInternalsUI(web_ui);
   if (url.host() == kChromeUIGpuHost)
     return new GpuInternalsUI(web_ui);
   if (url.host() == kChromeUIIndexedDBInternalsHost)
@@ -53,9 +57,16 @@ WebUIController* ContentWebUIControllerFactory::CreateWebUIControllerForURL(
     return new MediaInternalsUI(web_ui);
   if (url.host() == kChromeUIAccessibilityHost)
     return new AccessibilityUI(web_ui);
+  if (url.host() == kChromeUIServiceWorkerInternalsHost)
+    return new ServiceWorkerInternalsUI(web_ui);
 #if !defined(OS_ANDROID)
   if (url.host() == kChromeUITracingHost)
     return new TracingUI(web_ui);
+#endif
+
+#if defined(ENABLE_WEBRTC)
+  if (url.host() == kChromeUIWebRTCInternalsHost)
+    return new WebRTCInternalsUI(web_ui);
 #endif
 
   return NULL;

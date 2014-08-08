@@ -39,15 +39,16 @@ class Event;
 class Node;
 class ExecutionContext;
 
-class WorkerEventQueue : public EventQueue {
-    WTF_MAKE_FAST_ALLOCATED;
+class WorkerEventQueue FINAL : public EventQueue {
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
 public:
 
-    static PassOwnPtr<WorkerEventQueue> create(ExecutionContext*);
+    static PassOwnPtrWillBeRawPtr<WorkerEventQueue> create(ExecutionContext*);
     virtual ~WorkerEventQueue();
+    void trace(Visitor*);
 
     // EventQueue
-    virtual bool enqueueEvent(PassRefPtr<Event>) OVERRIDE;
+    virtual bool enqueueEvent(PassRefPtrWillBeRawPtr<Event>) OVERRIDE;
     virtual bool cancelEvent(Event*) OVERRIDE;
     virtual void close() OVERRIDE;
 
@@ -55,11 +56,11 @@ private:
     explicit WorkerEventQueue(ExecutionContext*);
     void removeEvent(Event*);
 
-    ExecutionContext* m_executionContext;
+    RawPtrWillBeMember<ExecutionContext> m_executionContext;
     bool m_isClosed;
 
     class EventDispatcherTask;
-    typedef HashMap<RefPtr<Event>, EventDispatcherTask*> EventTaskMap;
+    typedef WillBeHeapHashMap<RefPtrWillBeMember<Event>, EventDispatcherTask*> EventTaskMap;
     EventTaskMap m_eventTaskMap;
 };
 

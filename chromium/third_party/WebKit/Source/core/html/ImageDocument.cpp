@@ -25,13 +25,15 @@
 #include "config.h"
 #include "core/html/ImageDocument.h"
 
-#include "HTMLNames.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "core/HTMLNames.h"
 #include "core/dom/RawDataDocumentParser.h"
 #include "core/events/EventListener.h"
 #include "core/events/MouseEvent.h"
-#include "core/events/ThreadLocalEventNames.h"
 #include "core/fetch/ImageResource.h"
+#include "core/frame/FrameView.h"
+#include "core/frame/LocalFrame.h"
+#include "core/frame/Settings.h"
 #include "core/html/HTMLBodyElement.h"
 #include "core/html/HTMLHeadElement.h"
 #include "core/html/HTMLHtmlElement.h"
@@ -40,9 +42,6 @@
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderClient.h"
-#include "core/frame/Frame.h"
-#include "core/frame/FrameView.h"
-#include "core/frame/Settings.h"
 #include "wtf/text/StringBuilder.h"
 
 using std::min;
@@ -77,9 +76,9 @@ private:
 
 class ImageDocumentParser : public RawDataDocumentParser {
 public:
-    static PassRefPtr<ImageDocumentParser> create(ImageDocument* document)
+    static PassRefPtrWillBeRawPtr<ImageDocumentParser> create(ImageDocument* document)
     {
-        return adoptRef(new ImageDocumentParser(document));
+        return adoptRefWillBeNoop(new ImageDocumentParser(document));
     }
 
     ImageDocument* document() const
@@ -101,7 +100,7 @@ private:
 
 static float pageZoomFactor(const Document* document)
 {
-    Frame* frame = document->frame();
+    LocalFrame* frame = document->frame();
     return frame ? frame->pageZoomFactor() : 1;
 }
 
@@ -124,18 +123,22 @@ void ImageDocumentParser::appendBytes(const char* data, size_t length)
     if (!length)
         return;
 
-    Frame* frame = document()->frame();
+    LocalFrame* frame = document()->frame();
     Settings* settings = frame->settings();
     if (!frame->loader().client()->allowImage(!settings || settings->imagesEnabled(), document()->url()))
         return;
 
-    document()->cachedImage()->appendData(data, length);
+    if (document()->cachedImage())
+        document()->cachedImage()->appendData(data, length);
+    // Make sure the image renderer gets created because we need the renderer
+    // to read the aspect ratio. See crbug.com/320244
+    document()->updateRenderTreeIfNeeded();
     document()->imageUpdated();
 }
 
 void ImageDocumentParser::finish()
 {
-    if (!isStopped() && document()->imageElement()) {
+    if (!isStopped() && document()->imageElement() && document()->cachedImage()) {
         ImageResource* cachedImage = document()->cachedImage();
         cachedImage->finish();
         cachedImage->setResponse(document()->frame()->loader().documentLoader()->response());
@@ -162,7 +165,7 @@ void ImageDocumentParser::finish()
 
 ImageDocument::ImageDocument(const DocumentInit& initializer)
     : HTMLDocument(initializer, ImageDocumentClass)
-    , m_imageElement(0)
+    , m_imageElement(nullptr)
     , m_imageSizeIsKnown(false)
     , m_didShrinkImage(false)
     , m_shouldShrinkImage(shouldShrinkToFit())
@@ -171,27 +174,27 @@ ImageDocument::ImageDocument(const DocumentInit& initializer)
     lockCompatibilityMode();
 }
 
-PassRefPtr<DocumentParser> ImageDocument::createParser()
+PassRefPtrWillBeRawPtr<DocumentParser> ImageDocument::createParser()
 {
     return ImageDocumentParser::create(this);
 }
 
 void ImageDocument::createDocumentStructure()
 {
-    RefPtr<HTMLHtmlElement> rootElement = HTMLHtmlElement::create(*this);
+    RefPtrWillBeRawPtr<HTMLHtmlElement> rootElement = HTMLHtmlElement::create(*this);
     appendChild(rootElement);
     rootElement->insertedByParser();
 
     if (frame())
         frame()->loader().dispatchDocumentElementAvailable();
 
-    RefPtr<HTMLHeadElement> head = HTMLHeadElement::create(*this);
-    RefPtr<HTMLMetaElement> meta = HTMLMetaElement::create(*this);
+    RefPtrWillBeRawPtr<HTMLHeadElement> head = HTMLHeadElement::create(*this);
+    RefPtrWillBeRawPtr<HTMLMetaElement> meta = HTMLMetaElement::create(*this);
     meta->setAttribute(nameAttr, "viewport");
-    meta->setAttribute(contentAttr, "width=device-width");
+    meta->setAttribute(contentAttr, "width=device-width, minimum-scale=0.1");
     head->appendChild(meta);
 
-    RefPtr<HTMLBodyElement> body = HTMLBodyElement::create(*this);
+    RefPtrWillBeRawPtr<HTMLBodyElement> body = HTMLBodyElement::create(*this);
     body->setAttribute(styleAttr, "margin: 0px;");
 
     m_imageElement = HTMLImageElement::create(*this);
@@ -203,7 +206,7 @@ void ImageDocument::createDocumentStructure()
     if (shouldShrinkToFit()) {
         // Add event listeners
         RefPtr<EventListener> listener = ImageEventListener::create(this);
-        if (DOMWindow* domWindow = this->domWindow())
+        if (LocalDOMWindow* domWindow = this->domWindow())
             domWindow->addEventListener("resize", listener, false);
         m_imageElement->addEventListener("click", listener.release(), false);
     }
@@ -224,15 +227,15 @@ float ImageDocument::scale() const
     LayoutSize imageSize = m_imageElement->cachedImage()->imageSizeForRenderer(m_imageElement->renderer(), pageZoomFactor(this));
     LayoutSize windowSize = LayoutSize(view->width(), view->height());
 
-    float widthScale = (float)windowSize.width() / imageSize.width();
-    float heightScale = (float)windowSize.height() / imageSize.height();
+    float widthScale = windowSize.width().toFloat() / imageSize.width().toFloat();
+    float heightScale = windowSize.height().toFloat() / imageSize.height().toFloat();
 
     return min(widthScale, heightScale);
 }
 
-void ImageDocument::resizeImageToFit()
+void ImageDocument::resizeImageToFit(ScaleType type)
 {
-    if (!m_imageElement || m_imageElement->document() != this || pageZoomFactor(this) > 1)
+    if (!m_imageElement || m_imageElement->document() != this || (pageZoomFactor(this) > 1 && type == ScaleOnlyUnzoomedDocument))
         return;
 
     LayoutSize imageSize = m_imageElement->cachedImage()->imageSizeForRenderer(m_imageElement->renderer(), pageZoomFactor(this));
@@ -241,7 +244,7 @@ void ImageDocument::resizeImageToFit()
     m_imageElement->setWidth(static_cast<int>(imageSize.width() * scale));
     m_imageElement->setHeight(static_cast<int>(imageSize.height() * scale));
 
-    m_imageElement->setInlineStyleProperty(CSSPropertyCursor, CSSValueWebkitZoomIn);
+    m_imageElement->setInlineStyleProperty(CSSPropertyCursor, CSSValueZoomIn);
 }
 
 void ImageDocument::imageClicked(int x, int y)
@@ -252,9 +255,9 @@ void ImageDocument::imageClicked(int x, int y)
     m_shouldShrinkImage = !m_shouldShrinkImage;
 
     if (m_shouldShrinkImage)
-        windowSizeChanged();
+        windowSizeChanged(ScaleZoomedDocument);
     else {
-        restoreImageSize();
+        restoreImageSize(ScaleZoomedDocument);
 
         updateLayout();
 
@@ -281,13 +284,13 @@ void ImageDocument::imageUpdated()
 
     if (shouldShrinkToFit()) {
         // Force resizing of the image
-        windowSizeChanged();
+        windowSizeChanged(ScaleOnlyUnzoomedDocument);
     }
 }
 
-void ImageDocument::restoreImageSize()
+void ImageDocument::restoreImageSize(ScaleType type)
 {
-    if (!m_imageElement || !m_imageSizeIsKnown || m_imageElement->document() != this || pageZoomFactor(this) < 1)
+    if (!m_imageElement || !m_imageSizeIsKnown || m_imageElement->document() != this || (pageZoomFactor(this) < 1 && type == ScaleOnlyUnzoomedDocument))
         return;
 
     LayoutSize imageSize = m_imageElement->cachedImage()->imageSizeForRenderer(m_imageElement->renderer(), 1.0f);
@@ -297,7 +300,7 @@ void ImageDocument::restoreImageSize()
     if (imageFitsInWindow())
         m_imageElement->removeInlineStyleProperty(CSSPropertyCursor);
     else
-        m_imageElement->setInlineStyleProperty(CSSPropertyCursor, CSSValueWebkitZoomOut);
+        m_imageElement->setInlineStyleProperty(CSSPropertyCursor, CSSValueZoomOut);
 
     m_didShrinkImage = false;
 }
@@ -317,7 +320,7 @@ bool ImageDocument::imageFitsInWindow() const
     return imageSize.width() <= windowSize.width() && imageSize.height() <= windowSize.height();
 }
 
-void ImageDocument::windowSizeChanged()
+void ImageDocument::windowSizeChanged(ScaleType type)
 {
     if (!m_imageElement || !m_imageSizeIsKnown || m_imageElement->document() != this)
         return;
@@ -330,7 +333,7 @@ void ImageDocument::windowSizeChanged()
         if (fitsInWindow)
             m_imageElement->removeInlineStyleProperty(CSSPropertyCursor);
         else
-            m_imageElement->setInlineStyleProperty(CSSPropertyCursor, CSSValueWebkitZoomOut);
+            m_imageElement->setInlineStyleProperty(CSSPropertyCursor, CSSValueZoomOut);
         return;
     }
 
@@ -338,13 +341,13 @@ void ImageDocument::windowSizeChanged()
         // If the window has been resized so that the image fits, restore the image size
         // otherwise update the restored image size.
         if (fitsInWindow)
-            restoreImageSize();
+            restoreImageSize(type);
         else
-            resizeImageToFit();
+            resizeImageToFit(type);
     } else {
         // If the image isn't resized but needs to be, then resize it.
         if (!fitsInWindow) {
-            resizeImageToFit();
+            resizeImageToFit(type);
             m_didShrinkImage = true;
         }
     }
@@ -363,10 +366,18 @@ bool ImageDocument::shouldShrinkToFit() const
     return frame()->settings()->shrinksStandaloneImagesToFit() && frame()->isMainFrame();
 }
 
+#if !ENABLE(OILPAN)
 void ImageDocument::dispose()
 {
-    m_imageElement = 0;
+    m_imageElement = nullptr;
     HTMLDocument::dispose();
+}
+#endif
+
+void ImageDocument::trace(Visitor* visitor)
+{
+    visitor->trace(m_imageElement);
+    HTMLDocument::trace(visitor);
 }
 
 // --------
@@ -374,7 +385,7 @@ void ImageDocument::dispose()
 void ImageEventListener::handleEvent(ExecutionContext*, Event* event)
 {
     if (event->type() == EventTypeNames::resize)
-        m_doc->windowSizeChanged();
+        m_doc->windowSizeChanged(ImageDocument::ScaleOnlyUnzoomedDocument);
     else if (event->type() == EventTypeNames::click && event->isMouseEvent()) {
         MouseEvent* mouseEvent = toMouseEvent(event);
         m_doc->imageClicked(mouseEvent->x(), mouseEvent->y());

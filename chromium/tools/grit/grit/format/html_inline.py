@@ -19,6 +19,14 @@ import mimetypes
 from grit import lazy_re
 from grit import util
 
+# There is a python bug that makes mimetypes crash if the Windows
+# registry contains non-Latin keys ( http://bugs.python.org/issue9291
+# ). Initing manually and blocking external mime-type databases will
+# prevent that bug and if we add svg manually, it will still give us
+# the data we need.
+mimetypes.init([])
+mimetypes.add_type('image/svg+xml', '.svg')
+
 DIST_DEFAULT = 'chromium'
 DIST_ENV_VAR = 'CHROMIUM_BUILD'
 DIST_SUBSTR = '%DISTRIBUTION%'
@@ -44,17 +52,6 @@ _ICON_RE = lazy_re.compile(
     r'<link rel="icon"\s(?:[^>]+?\s)?'
     'href=(?P<quote>")(?P<filename>[^"\']*)\1',
     re.MULTILINE)
-
-
-
-def FixupMimeType(mime_type):
-  """Helper function that normalizes platform differences in the mime type
-     returned by the Python's mimetypes.guess_type API.
-  """
-  mappings = {
-    'image/x-png': 'image/png'
-  }
-  return mappings[mime_type] if mime_type in mappings else mime_type
 
 
 def GetDistribution():
@@ -109,7 +106,10 @@ def SrcInlineAsDataURL(
   if names_only:
     return ""
 
-  mimetype = FixupMimeType(mimetypes.guess_type(filename)[0]) or 'text/plain'
+  mimetype = mimetypes.guess_type(filename)[0]
+  if mimetype is None:
+    raise Exception('%s is of an an unknown type and '
+                    'cannot be stored in a data url.' % filename)
   inline_data = base64.standard_b64encode(util.ReadFile(filepath, util.BINARY))
 
   prefix = src_match.string[src_match.start():src_match.start('filename')]

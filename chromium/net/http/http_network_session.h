@@ -7,6 +7,7 @@
 
 #include <set>
 #include <string>
+#include <vector>
 
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
@@ -18,6 +19,7 @@
 #include "net/http/http_auth_cache.h"
 #include "net/http/http_stream_factory.h"
 #include "net/quic/quic_stream_factory.h"
+#include "net/socket/next_proto.h"
 #include "net/spdy/spdy_session_pool.h"
 #include "net/ssl/ssl_client_auth_cache.h"
 
@@ -30,7 +32,9 @@ namespace net {
 class CertVerifier;
 class ClientSocketFactory;
 class ClientSocketPoolManager;
+class CTVerifier;
 class HostResolver;
+class HpackHuffmanAggregator;
 class HttpAuthHandlerFactory;
 class HttpNetworkSessionPeer;
 class HttpProxyClientSocketPool;
@@ -42,6 +46,7 @@ class ServerBoundCertService;
 class ProxyService;
 class QuicClock;
 class QuicCryptoClientStreamFactory;
+class QuicServerInfoFactory;
 class SOCKSClientSocketPool;
 class SSLClientSocketPool;
 class SSLConfigService;
@@ -71,29 +76,50 @@ class NET_EXPORT HttpNetworkSession
     base::WeakPtr<HttpServerProperties> http_server_properties;
     NetLog* net_log;
     HostMappingRules* host_mapping_rules;
-    bool force_http_pipelining;
     bool ignore_certificate_errors;
-    bool http_pipelining_enabled;
     uint16 testing_fixed_http_port;
     uint16 testing_fixed_https_port;
+
     bool force_spdy_single_domain;
-    bool enable_spdy_ip_pooling;
     bool enable_spdy_compression;
     bool enable_spdy_ping_based_connection_checking;
     NextProto spdy_default_protocol;
+    // The protocols supported by NPN (next protocol negotiation) during the
+    // SSL handshake as well as by HTTP Alternate-Protocol.
+    // TODO(mmenke):  This is currently empty by default, and alternate
+    //                protocols are disabled.  We should use some reasonable
+    //                defaults.
+    NextProtoVector next_protos;
     size_t spdy_stream_initial_recv_window_size;
     size_t spdy_initial_max_concurrent_streams;
     size_t spdy_max_concurrent_streams_limit;
     SpdySessionPool::TimeFunc time_func;
     std::string trusted_spdy_proxy;
+    // Controls whether or not ssl is used when in SPDY mode.
+    bool force_spdy_over_ssl;
+    // Controls whether or not SPDY is used without NPN.
+    bool force_spdy_always;
+    // URLs to exclude from forced SPDY.
+    std::set<HostPortPair> forced_spdy_exclusions;
+    // Noe: Using this in the case of NPN for HTTP only results in the browser
+    // trying SSL and then falling back to http.
+    bool use_alternate_protocols;
+    bool enable_websocket_over_spdy;
+
     bool enable_quic;
     bool enable_quic_https;
+    bool enable_quic_port_selection;
+    bool enable_quic_pacing;
+    bool enable_quic_time_based_loss_detection;
+    bool enable_quic_persist_server_info;
     HostPortPair origin_to_force_quic_on;
     QuicClock* quic_clock;  // Will be owned by QuicStreamFactory.
     QuicRandom* quic_random;
     size_t quic_max_packet_length;
+    std::string quic_user_agent_id;
     bool enable_user_alternate_protocol_ports;
     QuicCryptoClientStreamFactory* quic_crypto_client_stream_factory;
+    QuicVersionVector quic_supported_versions;
   };
 
   enum SocketPoolType {
@@ -148,6 +174,9 @@ class NET_EXPORT HttpNetworkSession
   NetLog* net_log() {
     return net_log_;
   }
+  HpackHuffmanAggregator* huffman_aggregator() {
+    return huffman_aggregator_.get();
+  }
 
   // Creates a Value summary of the state of the socket pools. The caller is
   // responsible for deleting the returned value.
@@ -164,14 +193,16 @@ class NET_EXPORT HttpNetworkSession
   void CloseAllConnections();
   void CloseIdleConnections();
 
-  bool force_http_pipelining() const { return force_http_pipelining_; }
-
   // Returns the original Params used to construct this session.
   const Params& params() const { return params_; }
 
-  void set_http_pipelining_enabled(bool enable) {
-    params_.http_pipelining_enabled = enable;
-  }
+  bool IsProtocolEnabled(AlternateProtocol protocol) const;
+
+  void GetNextProtos(std::vector<std::string>* next_protos) const;
+
+  // Convenience function for searching through |params_| for
+  // |forced_spdy_exclusions|.
+  bool HasSpdyExclusion(HostPortPair host_port_pair) const;
 
  private:
   friend class base::RefCounted<HttpNetworkSession>;
@@ -186,7 +217,6 @@ class NET_EXPORT HttpNetworkSession
   const base::WeakPtr<HttpServerProperties> http_server_properties_;
   CertVerifier* const cert_verifier_;
   HttpAuthHandlerFactory* const http_auth_handler_factory_;
-  bool force_http_pipelining_;
 
   // Not const since it's modified by HttpNetworkSessionPeer for testing.
   ProxyService* proxy_service_;
@@ -201,6 +231,12 @@ class NET_EXPORT HttpNetworkSession
   scoped_ptr<HttpStreamFactory> http_stream_factory_;
   scoped_ptr<HttpStreamFactory> http_stream_factory_for_websocket_;
   std::set<HttpResponseBodyDrainer*> response_drainers_;
+
+  // TODO(jgraettinger): Remove when Huffman collection is complete.
+  scoped_ptr<HpackHuffmanAggregator> huffman_aggregator_;
+
+  std::vector<std::string> next_protos_;
+  bool enabled_protocols_[NUM_VALID_ALTERNATE_PROTOCOLS];
 
   Params params_;
 };

@@ -31,15 +31,16 @@
 #ifndef TouchDisambiguation_h
 #define TouchDisambiguation_h
 
+#include "platform/heap/Handle.h"
 #include "wtf/Vector.h"
 
 namespace WebCore {
 
-class Frame;
+class LocalFrame;
 class IntRect;
 class Node;
 
-void findGoodTouchTargets(const IntRect& touchBox, Frame* mainFrame, Vector<IntRect>& goodTargets, Vector<Node*>& highlightNodes);
+void findGoodTouchTargets(const IntRect& touchBox, LocalFrame* mainFrame, Vector<IntRect>& goodTargets, WillBeHeapVector<RawPtrWillBeMember<Node> >& highlightNodes);
 
 } // namespace WebCore
 

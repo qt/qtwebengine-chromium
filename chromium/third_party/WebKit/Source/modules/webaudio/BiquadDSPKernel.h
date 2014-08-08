@@ -35,7 +35,7 @@ class BiquadProcessor;
 
 // BiquadDSPKernel is an AudioDSPKernel and is responsible for filtering one channel of a BiquadProcessor using a Biquad object.
 
-class BiquadDSPKernel : public AudioDSPKernel {
+class BiquadDSPKernel FINAL : public AudioDSPKernel {
 public:
     explicit BiquadDSPKernel(BiquadProcessor* processor)
     : AudioDSPKernel(processor)
@@ -43,8 +43,8 @@ public:
     }
 
     // AudioDSPKernel
-    virtual void process(const float* source, float* dest, size_t framesToProcess);
-    virtual void reset() { m_biquad.reset(); }
+    virtual void process(const float* source, float* dest, size_t framesToProcess) OVERRIDE;
+    virtual void reset() OVERRIDE { m_biquad.reset(); }
 
     // Get the magnitude and phase response of the filter at the given
     // set of frequencies (in Hz). The phase response is in radians.
@@ -62,12 +62,13 @@ protected:
 
     // To prevent audio glitches when parameters are changed,
     // dezippering is used to slowly change the parameters.
-    // |useSmoothing| implies that we want to update using the
-    // smoothed values. Otherwise the final target values are
-    // used. If |forceUpdate| is true, we update the coefficients even
-    // if they are not dirty. (Used when computing the frequency
-    // response.)
-    void updateCoefficientsIfNecessary(bool useSmoothing, bool forceUpdate);
+    void updateCoefficientsIfNecessary();
+    // Update the biquad cofficients with the given parameters
+    void updateCoefficients(double frequency, double Q, double gain, double detune);
+
+private:
+    // Synchronize process() with getting and setting the filter coefficients.
+    mutable Mutex m_processLock;
 };
 
 } // namespace WebCore

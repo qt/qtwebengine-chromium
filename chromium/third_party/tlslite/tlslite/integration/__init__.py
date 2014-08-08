@@ -1,17 +1,13 @@
+# Author: Trevor Perrin
+# See the LICENSE file for legal information regarding use of this file.
+
 """Classes for integrating TLS Lite with other packages."""
 
-__all__ = ["AsyncStateMachine",
-           "HTTPTLSConnection",
-           "POP3_TLS",
-           "IMAP4_TLS",
-           "SMTP_TLS",
-           "XMLRPCTransport",
-           "TLSSocketServerMixIn",
-           "TLSAsyncDispatcherMixIn",
-           "TLSTwistedProtocolWrapper"]
-
-try:
-    import twisted
-    del twisted
-except ImportError:
-   del __all__[__all__.index("TLSTwistedProtocolWrapper")]
+__all__ = ["asyncstatemachine",
+           "httptlsconnection",
+           "pop3_tls",
+           "imap4_tls",
+           "smtp_tls",
+           "xmlrpctransport",
+           "tlssocketservermixin",
+           "tlsasyncdispatchermixin"]

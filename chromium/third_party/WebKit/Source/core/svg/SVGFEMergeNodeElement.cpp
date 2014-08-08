@@ -22,29 +22,19 @@
 
 #include "core/svg/SVGFEMergeNodeElement.h"
 
-#include "core/svg/SVGElementInstance.h"
 #include "core/svg/SVGFilterPrimitiveStandardAttributes.h"
 
 namespace WebCore {
 
-// Animated property definitions
-DEFINE_ANIMATED_STRING(SVGFEMergeNodeElement, SVGNames::inAttr, In1, in1)
-
-BEGIN_REGISTER_ANIMATED_PROPERTIES(SVGFEMergeNodeElement)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(in1)
-END_REGISTER_ANIMATED_PROPERTIES
-
 inline SVGFEMergeNodeElement::SVGFEMergeNodeElement(Document& document)
     : SVGElement(SVGNames::feMergeNodeTag, document)
+    , m_in1(SVGAnimatedString::create(this, SVGNames::inAttr, SVGString::create()))
 {
     ScriptWrappable::init(this);
-    registerAnimatedPropertiesForSVGFEMergeNodeElement();
+    addToPropertyMap(m_in1);
 }
 
-PassRefPtr<SVGFEMergeNodeElement> SVGFEMergeNodeElement::create(Document& document)
-{
-    return adoptRef(new SVGFEMergeNodeElement(document));
-}
+DEFINE_NODE_FACTORY(SVGFEMergeNodeElement)
 
 bool SVGFEMergeNodeElement::isSupportedAttribute(const QualifiedName& attrName)
 {
@@ -61,12 +51,14 @@ void SVGFEMergeNodeElement::parseAttribute(const QualifiedName& name, const Atom
         return;
     }
 
-    if (name == SVGNames::inAttr) {
-        setIn1BaseValue(value);
-        return;
-    }
+    SVGParsingError parseError = NoError;
 
-    ASSERT_NOT_REACHED();
+    if (name == SVGNames::inAttr)
+        m_in1->setBaseValueAsString(value, parseError);
+    else
+        ASSERT_NOT_REACHED();
+
+    reportAttributeParsingError(parseError, name, value);
 }
 
 void SVGFEMergeNodeElement::svgAttributeChanged(const QualifiedName& attrName)
@@ -76,7 +68,7 @@ void SVGFEMergeNodeElement::svgAttributeChanged(const QualifiedName& attrName)
         return;
     }
 
-    SVGElementInstance::InvalidationGuard invalidationGuard(this);
+    SVGElement::InvalidationGuard invalidationGuard(this);
 
     if (attrName == SVGNames::inAttr) {
         invalidateFilterPrimitiveParent(this);

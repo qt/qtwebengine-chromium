@@ -10,6 +10,7 @@
 #include "base/logging.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/skia/include/core/SkBitmap.h"
+#include "ui/base/cursor/cursor_util.h"
 
 namespace ui {
 
@@ -17,6 +18,7 @@ TEST(CursorLoaderX11Test, ScaleAndRotate) {
   SkBitmap bitmap;
   bitmap.setConfig(SkBitmap::kARGB_8888_Config, 10, 5);
   bitmap.allocPixels();
+  bitmap.eraseColor(SK_ColorBLACK);
 
   gfx::Point hotpoint(3,4);
 

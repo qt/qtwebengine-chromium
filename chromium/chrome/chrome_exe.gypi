@@ -6,7 +6,46 @@
   'targets': [
     {
       'target_name': 'chrome',
+      'type': 'none',
+      'dependencies': [ 'chrome_initial', ],
+      'conditions': [
+        ['OS == "win"', {
+          'actions': [
+            {
+              'variables': {
+                'reorder_py_path': '<(DEPTH)/build/win/reorder-imports.py',
+                # See comment in chrome_dll.gypi in the hardlink_to_output
+                # target for why this cannot be 'initial' like the DLL.
+                'exe_input_path':'$(OutDir)\\initialexe',
+                'exe_output_path':'<(PRODUCT_DIR)',
+              },
+              'action_name': 'reorder_imports',
+              'inputs': [
+                '<(reorder_py_path)',
+                '$(OutDir)\\initialexe\\chrome.exe',
+              ],
+              'outputs': [
+                '<(PRODUCT_DIR)\\chrome.exe',
+                '<(PRODUCT_DIR)\\chrome.exe.pdb',
+              ],
+              'action': [
+                'python',
+                '<(reorder_py_path)',
+                '-i', '<(exe_input_path)',
+                '-o', '<(exe_output_path)',
+                '-a', '<(target_arch)',
+              ],
+              'message': 'Reordering Imports',
+            },
+          ],
+        }],
+      ],
+    },
+    {
+      'target_name': 'chrome_initial',
       'type': 'executable',
+      # Name the exe chrome.exe, not chrome_initial.exe.
+      'product_name': 'chrome',
       'mac_bundle': 1,
       'variables': {
         'use_system_xdg_utils%': 0,
@@ -14,14 +53,11 @@
       },
       'sources': [
         'app/chrome_exe_main_aura.cc',
-        'app/chrome_exe_main_gtk.cc',
         'app/chrome_exe_main_mac.cc',
         'app/chrome_exe_main_win.cc',
         'app/chrome_exe_resource.h',
         'app/client_util.cc',
         'app/client_util.h',
-        'app/metro_driver_win.cc',
-        'app/metro_driver_win.h',
         'app/signature_validator_win.cc',
         'app/signature_validator_win.h',
         '<(DEPTH)/content/app/startup_helper_win.cc',
@@ -41,11 +77,6 @@
         'INFOPLIST_FILE': 'app/app-Info.plist',
       },
       'conditions': [
-        ['component == "shared_library"', {
-          'variables': {
-            'win_use_external_manifest': 1,
-          },
-        }],
         ['order_profiling!=0 and (chromeos==1 or OS=="linux")', {
           'dependencies' : [
             '../tools/cygprofile/cygprofile.gyp:cygprofile',
@@ -59,10 +90,13 @@
             }],
           ]
         }],
-        ['OS == "win" and use_aura==1', {
+        ['OS == "win"', {
           'sources!': [
             # We still want the _win entry point for sandbox, etc.
             'app/chrome_exe_main_aura.cc',
+          ],
+          'dependencies': [
+            '../ui/gfx/gfx.gyp:gfx',
           ],
         }],
         ['OS == "android"', {
@@ -107,7 +141,7 @@
             },
           ],
           'conditions': [
-            ['linux_use_tcmalloc==1', {
+            ['use_allocator!="none"', {
                 'dependencies': [
                   '<(allocator_target)',
                 ],
@@ -139,31 +173,11 @@
                 },
               ],
             }],
-            ['toolkit_uses_gtk == 1', {
+            # x11 build. Needed for chrome_main.cc initialization of libraries.
+            ['use_x11==1', {
               'dependencies': [
-                # On Linux, link the dependencies (libraries) that make up actual
-                # Chromium functionality directly into the executable.
-                '<@(chromium_browser_dependencies)',
-                '<@(chromium_child_dependencies)',
-                '../content/content.gyp:content_app_both',
-                # Needed for chrome_main.cc initialization of libraries.
-                '../build/linux/system.gyp:gtk',
-                # Needed to use the master_preferences functions
-                'installer_util',
-              ],
-            }, { # else toolkit_uses_gtk == 1
-              'dependencies': [
-                # On Linux, link the dependencies (libraries) that make up actual
-                # Chromium functionality directly into the executable.
-                '<@(chromium_browser_dependencies)',
-                '<@(chromium_child_dependencies)',
-                '../content/content.gyp:content_app_both',
-                # Needed for chrome_main.cc initialization of libraries.
                 '../build/linux/system.gyp:x11',
-                '../build/linux/system.gyp:pangocairo',
                 '../build/linux/system.gyp:xext',
-                # Needed to use the master_preferences functions
-                'installer_util',
               ],
             }],
           ],
@@ -173,6 +187,17 @@
             'app/chrome_main_delegate.cc',
             'app/chrome_main_delegate.h',
           ],
+          'dependencies': [
+            # On Linux, link the dependencies (libraries) that make up actual
+            # Chromium functionality directly into the executable.
+            '<@(chromium_browser_dependencies)',
+            '<@(chromium_child_dependencies)',
+            '../content/content.gyp:content_app_both',
+            # Needed for chrome_main.cc initialization of libraries.
+            '../build/linux/system.gyp:pangocairo',
+            # Needed to use the master_preferences functions
+            'installer_util',
+          ],
         }],
         ['OS=="mac"', {
           # 'branding' is a variable defined in common.gypi
@@ -180,14 +205,14 @@
           'conditions': [
             ['branding=="Chrome"', {
               'mac_bundle_resources': [
-                'app/theme/google_chrome/app.icns',
-                'app/theme/google_chrome/document.icns',
+                'app/theme/google_chrome/mac/app.icns',
+                'app/theme/google_chrome/mac/document.icns',
                 'browser/ui/cocoa/applescript/scripting.sdef',
               ],
             }, {  # else: 'branding!="Chrome"
               'mac_bundle_resources': [
-                'app/theme/chromium/app.icns',
-                'app/theme/chromium/document.icns',
+                'app/theme/chromium/mac/app.icns',
+                'app/theme/chromium/mac/document.icns',
                 'browser/ui/cocoa/applescript/scripting.sdef',
               ],
             }],
@@ -204,12 +229,6 @@
               'dependencies': [
                 '../breakpad/breakpad.gyp:dump_syms',
                 '../breakpad/breakpad.gyp:symupload',
-
-                # In order to process symbols for the Remoting Host plugin,
-                # that plugin needs to be built beforehand.  Since the
-                # "Dump Symbols" step hangs off this target, that plugin also
-                # needs to be added as a dependency.
-                '../remoting/remoting.gyp:remoting_host_plugin',
               ],
               # The "Dump Symbols" post-build step is in a target_conditions
               # block so that it will follow the "Strip If Needed" step if that
@@ -335,15 +354,12 @@
               # application reads Keystone keys from this plist and not the
               # framework's, and the ticket will reference this Info.plist to
               # determine the tag of the installed product.  Use --scm=1 to
-              # include SCM information.  The --pdf flag controls whether
-              # to insert PDF as a supported type identifier that can be
-              # opened.
+              # include SCM information.
               'postbuild_name': 'Tweak Info.plist',
               'action': ['<(tweak_info_plist_path)',
                          '--breakpad=0',
                          '--keystone=<(mac_keystone)',
                          '--scm=1',
-                         '--pdf=<(internal_pdf)',
                          '--bundle_id=<(mac_bundle_id)'],
             },
             {
@@ -405,20 +421,19 @@
             # chrome/app/theme/google_chrome/BRANDING have the short name
             # "chrome" etc.; should we try to extract from there instead?
 
-            # On Mac, this is done in chrome_dll.gypi.
-            ['internal_pdf', {
+            # CrOS does this in a separate build step.
+            ['OS=="linux" and chromeos==0 and linux_dump_symbols==1', {
               'dependencies': [
+                '../pdf/pdf.gyp:pdf_linux_symbols',
+              ],
+            }], # OS=="linux" and chromeos==0 and linux_dump_symbols==1
+            # Android doesn't use pdfium.
+            ['OS!="android"', {
+              'dependencies': [
+                # On Mac, this is done in chrome_dll.gypi.
                 '../pdf/pdf.gyp:pdf',
               ],
-              'conditions': [
-                # CrOS does this in a separate build step.
-                ['OS=="linux" and chromeos==0 and linux_dump_symbols==1', {
-                  'dependencies': [
-                    '../pdf/pdf.gyp:pdf_linux_symbols',
-                  ],
-                }], # OS=="linux" and chromeos==0 and linux_dump_symbols==1
-              ],
-            }], # internal_pdf
+            }], # OS=="android"
           ],
           'dependencies': [
             '../components/components.gyp:startup_metric_utils',
@@ -476,7 +491,6 @@
             '../breakpad/breakpad.gyp:breakpad_sender',
             '../chrome_elf/chrome_elf.gyp:chrome_elf',
             '../components/components.gyp:breakpad_component',
-            '../components/components.gyp:policy',
             '../sandbox/sandbox.gyp:sandbox',
           ],
           'sources': [
@@ -490,6 +504,7 @@
           'msvs_settings': {
             'VCLinkerTool': {
               'ImportLibrary': '$(OutDir)\\lib\\chrome_exe.lib',
+              'OutputFile': '$(OutDir)\\initialexe\\chrome.exe',
               'DelayLoadDLLs': [
                 'dbghelp.dll',
                 'dwmapi.dll',
@@ -498,16 +513,28 @@
                 'oleaut32.dll',
               ],
               'AdditionalDependencies': [ 'wintrust.lib' ],
-              # Set /SUBSYSTEM:WINDOWS for chrome.exe itself.
-              'SubSystem': '2',
+              'conditions': [
+                ['asan==0', {
+                  # Set /SUBSYSTEM:WINDOWS for chrome.exe itself, except for the
+                  # AddressSanitizer build where console output is important.
+                  'SubSystem': '2',
+                }],
+              ],
             },
             'VCManifestTool': {
               'AdditionalManifestFiles': [
                 '$(ProjectDir)\\app\\chrome.exe.manifest',
-                '<(SHARED_INTERMEDIATE_DIR)/chrome_elf/version_assembly.manifest',
+                '<(SHARED_INTERMEDIATE_DIR)/chrome/app/version_assembly/version_assembly.manifest',
               ],
             },
           },
+          'conditions': [
+            ['configuration_policy==1', {
+              'dependencies': [
+                '<(DEPTH)/components/components.gyp:policy',
+              ],
+            }],
+          ],
           'actions': [
             {
               'action_name': 'first_run',
@@ -517,20 +544,19 @@
               'outputs': [
                   '<(PRODUCT_DIR)/First Run',
               ],
-              'action': ['cp', '-f', '<@(_inputs)', '<@(_outputs)'],
+              'action': ['python', '../build/cp.py', '<@(_inputs)', '<@(_outputs)'],
               'message': 'Copy first run complete sentinel file',
-              'msvs_cygwin_shell': 1,
             },
             {
               'action_name': 'chrome_exe_manifest',
               'includes': [
-                  '../chrome_elf/chrome_exe_manifest_action.gypi',
+                  'app/version_assembly/chrome_exe_manifest_action.gypi',
               ],
             },
             {
               'action_name': 'version_assembly_manifest',
               'includes': [
-                  '../chrome_elf/version_assembly_manifest_action.gypi',
+                  'app/version_assembly/version_assembly_manifest_action.gypi',
               ],
             },
           ],
@@ -581,20 +607,20 @@
                 '../content/common/sandbox_init_win.cc',
                 '../content/common/sandbox_win.cc',
                 '../content/public/common/content_switches.cc',
+                '../content/public/common/sandboxed_process_launcher_delegate.cc',
                 '<(SHARED_INTERMEDIATE_DIR)/chrome_version/nacl64_exe_version.rc',
               ],
               'dependencies': [
                 'chrome_version_resources',
                 'installer_util_nacl_win64',
                 '../base/base.gyp:base_i18n_nacl_win64',
-                '../base/base.gyp:base_nacl_win64',
+                '../base/base.gyp:base_win64',
                 '../base/base.gyp:base_static_win64',
                 '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations_win64',
                 '../breakpad/breakpad.gyp:breakpad_handler_win64',
                 '../breakpad/breakpad.gyp:breakpad_sender_win64',
                 '../components/components.gyp:breakpad_win64',
                 '../chrome/common_constants.gyp:common_constants_win64',
-                '../components/components.gyp:policy_win64',
                 '../components/nacl.gyp:nacl_win64',
                 '../crypto/crypto.gyp:crypto_nacl_win64',
                 '../ipc/ipc.gyp:ipc_win64',
@@ -618,6 +644,13 @@
                   'msvs_target_platform': 'x64',
                 },
               },
+              'conditions': [
+                ['configuration_policy==1', {
+                  'dependencies': [
+                    '<(DEPTH)/components/components.gyp:policy_win64',
+                  ],
+                }],
+              ],
             },
           ],
         }, {  # else (disable_nacl==1)

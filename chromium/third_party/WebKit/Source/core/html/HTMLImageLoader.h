@@ -27,15 +27,21 @@
 
 namespace WebCore {
 
-class HTMLImageLoader : public ImageLoader {
+class HTMLImageLoader FINAL : public ImageLoader {
 public:
-    HTMLImageLoader(Element*);
+    static PassOwnPtrWillBeRawPtr<HTMLImageLoader> create(Element* element)
+    {
+        return adoptPtrWillBeNoop(new HTMLImageLoader(element));
+    }
     virtual ~HTMLImageLoader();
 
-    virtual void dispatchLoadEvent();
-    virtual String sourceURI(const AtomicString&) const;
+    virtual void dispatchLoadEvent() OVERRIDE;
+    virtual String sourceURI(const AtomicString&) const OVERRIDE;
 
-    virtual void notifyFinished(Resource*);
+    virtual void notifyFinished(Resource*) OVERRIDE;
+
+private:
+    explicit HTMLImageLoader(Element*);
 };
 
 }

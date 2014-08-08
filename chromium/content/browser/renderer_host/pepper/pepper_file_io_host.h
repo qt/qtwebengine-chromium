@@ -9,6 +9,8 @@
 
 #include "base/basictypes.h"
 #include "base/callback_forward.h"
+#include "base/files/file.h"
+#include "base/files/file_proxy.h"
 #include "base/memory/weak_ptr.h"
 #include "base/platform_file.h"
 #include "content/browser/renderer_host/pepper/browser_ppapi_host_impl.h"
@@ -22,14 +24,17 @@
 #include "url/gurl.h"
 #include "webkit/browser/fileapi/file_system_context.h"
 
+namespace ppapi {
+struct FileGrowth;
+}
+
 namespace content {
 class PepperFileSystemBrowserHost;
 
 class PepperFileIOHost : public ppapi::host::ResourceHost,
                          public base::SupportsWeakPtr<PepperFileIOHost> {
  public:
-  typedef base::Callback<void (base::PlatformFileError)>
-      NotifyCloseFileCallback;
+  typedef base::Callback<void(base::File::Error)> NotifyCloseFileCallback;
 
   PepperFileIOHost(BrowserPpapiHostImpl* host,
                    PP_Instance instance,
@@ -41,18 +46,13 @@ class PepperFileIOHost : public ppapi::host::ResourceHost,
       const IPC::Message& msg,
       ppapi::host::HostMessageContext* context) OVERRIDE;
 
-  // Direct access for PepperFileSystemBrowserHost.
-  int64_t max_written_offset() const { return max_written_offset_; }
-  void set_max_written_offset(int64_t max_written_offset) {
-      max_written_offset_ = max_written_offset;
-  }
-
   struct UIThreadStuff {
     UIThreadStuff();
     ~UIThreadStuff();
     base::ProcessId resolved_render_process_id;
     scoped_refptr<fileapi::FileSystemContext> file_system_context;
   };
+
  private:
   int32_t OnHostMsgOpen(ppapi::host::HostMessageContext* context,
                         PP_Resource file_ref_resource,
@@ -60,12 +60,10 @@ class PepperFileIOHost : public ppapi::host::ResourceHost,
   int32_t OnHostMsgTouch(ppapi::host::HostMessageContext* context,
                          PP_Time last_access_time,
                          PP_Time last_modified_time);
-  int32_t OnHostMsgWrite(ppapi::host::HostMessageContext* context,
-                         int64_t offset,
-                         const std::string& buffer);
   int32_t OnHostMsgSetLength(ppapi::host::HostMessageContext* context,
                              int64_t length);
-  int32_t OnHostMsgClose(ppapi::host::HostMessageContext* context);
+  int32_t OnHostMsgClose(ppapi::host::HostMessageContext* context,
+                         const ppapi::FileGrowth& file_growth);
   int32_t OnHostMsgFlush(ppapi::host::HostMessageContext* context);
   int32_t OnHostMsgRequestOSFileHandle(
       ppapi::host::HostMessageContext* context);
@@ -74,55 +72,39 @@ class PepperFileIOHost : public ppapi::host::ResourceHost,
       ppapi::host::ReplyMessageContext reply_context,
       bool plugin_allowed);
 
-  // Callback handlers. These mostly convert the PlatformFileError to the
+  // Callback handlers. These mostly convert the File::Error to the
   // PP_Error code and send back the reply. Note that the argument
   // ReplyMessageContext is copied so that we have a closure containing all
   // necessary information to reply.
   void ExecutePlatformGeneralCallback(
       ppapi::host::ReplyMessageContext reply_context,
-      base::PlatformFileError error_code);
-  void ExecutePlatformOpenFileCallback(
-      ppapi::host::ReplyMessageContext reply_context,
-      base::PlatformFileError error_code,
-      base::PassPlatformFile file,
-      bool unused_created);
-  void ExecutePlatformWriteCallback(
-      ppapi::host::ReplyMessageContext reply_context,
-      base::PlatformFileError error_code,
-      int bytes_written);
+      base::File::Error error_code);
+
+  void OnOpenProxyCallback(ppapi::host::ReplyMessageContext reply_context,
+                           base::File::Error error_code);
 
   void GotUIThreadStuffForInternalFileSystems(
       ppapi::host::ReplyMessageContext reply_context,
       int platform_file_flags,
       UIThreadStuff ui_thread_stuff);
-  void DidOpenInternalFile(
-      ppapi::host::ReplyMessageContext reply_context,
-      base::PlatformFileError result,
-      base::PlatformFile file,
-      const base::Closure& on_close_callback);
+  void DidOpenInternalFile(ppapi::host::ReplyMessageContext reply_context,
+                           base::File file,
+                           const base::Closure& on_close_callback);
   void GotResolvedRenderProcessId(
       ppapi::host::ReplyMessageContext reply_context,
       base::FilePath path,
-      int platform_file_flags,
+      int file_flags,
       base::ProcessId resolved_render_process_id);
 
   void DidOpenQuotaFile(ppapi::host::ReplyMessageContext reply_context,
-                        base::PlatformFile file,
+                        base::File file,
                         int64_t max_written_offset);
-  void GotWriteQuota(ppapi::host::ReplyMessageContext reply_context,
-                     int64_t offset,
-                     const std::string& buffer,
-                     int32_t granted);
-  void GotSetLengthQuota(ppapi::host::ReplyMessageContext reply_context,
-                         int64_t length,
-                         int32_t granted);
-  bool CallWrite(ppapi::host::ReplyMessageContext reply_context,
-                 int64_t offset,
-                 const std::string& buffer);
   bool CallSetLength(ppapi::host::ReplyMessageContext reply_context,
                      int64_t length);
 
-  void DidCloseFile(base::PlatformFileError error);
+  void DidCloseFile(base::File::Error error);
+
+  void SendOpenErrorReply(ppapi::host::ReplyMessageContext reply_context);
 
   // Adds file_ to |reply_context| with the specified |open_flags|.
   bool AddFileToReplyContext(
@@ -135,7 +117,7 @@ class PepperFileIOHost : public ppapi::host::ResourceHost,
   int render_process_id_;
   base::ProcessId resolved_render_process_id_;
 
-  base::PlatformFile file_;
+  base::FileProxy file_;
   int32_t open_flags_;
 
   // The file system type specified in the Open() call. This will be
@@ -152,10 +134,6 @@ class PepperFileIOHost : public ppapi::host::ResourceHost,
   bool check_quota_;
 
   ppapi::FileIOStateManager state_manager_;
-
-  scoped_refptr<base::MessageLoopProxy> file_message_loop_;
-
-  base::WeakPtrFactory<PepperFileIOHost> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(PepperFileIOHost);
 };

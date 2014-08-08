@@ -36,6 +36,7 @@ class HttpAuthHandlerFactory;
 class HttpTransactionFactory;
 class HttpUserAgentSettings;
 class NetworkDelegate;
+class SdchManager;
 class ServerBoundCertService;
 class ProxyService;
 class URLRequest;
@@ -58,9 +59,13 @@ class NET_EXPORT URLRequestContext
   // May return NULL if this context doesn't have an associated network session.
   const HttpNetworkSession::Params* GetNetworkSessionParams() const;
 
+  // Creates a URLRequest. |cookie_store| optionally specifies a cookie store
+  // to be used rather than the one represented by the context, or NULL
+  // otherwise.
   scoped_ptr<URLRequest> CreateRequest(const GURL& url,
                                        RequestPriority priority,
-                                       URLRequest::Delegate* delegate) const;
+                                       URLRequest::Delegate* delegate,
+                                       CookieStore* cookie_store) const;
 
   NetLog* net_log() const {
     return net_log_;
@@ -167,17 +172,6 @@ class NET_EXPORT URLRequestContext
     cert_transparency_verifier_ = verifier;
   }
 
-  // ---------------------------------------------------------------------------
-  // Legacy accessors that delegate to http_user_agent_settings_.
-  // TODO(pauljensen): Remove after all clients are updated to directly access
-  // http_user_agent_settings_.
-  // Gets the value of 'Accept-Language' header field.
-  std::string GetAcceptLanguage() const;
-  // Gets the UA string to use for the given URL.  Pass an invalid URL (such as
-  // GURL()) to get the default UA string.
-  std::string GetUserAgent(const GURL& url) const;
-  // ---------------------------------------------------------------------------
-
   const URLRequestJobFactory* job_factory() const { return job_factory_; }
   void set_job_factory(const URLRequestJobFactory* job_factory) {
     job_factory_ = job_factory;
@@ -189,6 +183,14 @@ class NET_EXPORT URLRequestContext
   }
   void set_throttler_manager(URLRequestThrottlerManager* throttler_manager) {
     throttler_manager_ = throttler_manager;
+  }
+
+  // May be NULL.
+  SdchManager* sdch_manager() const {
+    return sdch_manager_;
+  }
+  void set_sdch_manager(SdchManager* sdch_manager) {
+    sdch_manager_ = sdch_manager;
   }
 
   // Gets the URLRequest objects that hold a reference to this
@@ -234,6 +236,7 @@ class NET_EXPORT URLRequestContext
   HttpTransactionFactory* http_transaction_factory_;
   const URLRequestJobFactory* job_factory_;
   URLRequestThrottlerManager* throttler_manager_;
+  SdchManager* sdch_manager_;
 
   // ---------------------------------------------------------------------------
   // Important: When adding any new members below, consider whether they need to

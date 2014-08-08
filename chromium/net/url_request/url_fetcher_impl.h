@@ -14,6 +14,8 @@
 #ifndef NET_URL_REQUEST_URL_FETCHER_IMPL_H_
 #define NET_URL_REQUEST_URL_FETCHER_IMPL_H_
 
+#include <string>
+
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "net/base/net_export.h"
@@ -50,11 +52,11 @@ class NET_EXPORT_PRIVATE URLFetcherImpl : public URLFetcher {
   virtual void SetLoadFlags(int load_flags) OVERRIDE;
   virtual int GetLoadFlags() const OVERRIDE;
   virtual void SetReferrer(const std::string& referrer) OVERRIDE;
+  virtual void SetReferrerPolicy(
+      URLRequest::ReferrerPolicy referrer_policy) OVERRIDE;
   virtual void SetExtraRequestHeaders(
       const std::string& extra_request_headers) OVERRIDE;
   virtual void AddExtraRequestHeader(const std::string& header_line) OVERRIDE;
-  virtual void GetExtraRequestHeaders(
-      HttpRequestHeaders* headers) const OVERRIDE;
   virtual void SetRequestContext(
       URLRequestContextGetter* request_context_getter) OVERRIDE;
   virtual void SetFirstPartyForCookies(

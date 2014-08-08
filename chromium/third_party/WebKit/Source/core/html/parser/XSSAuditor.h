@@ -64,6 +64,8 @@ public:
     PassOwnPtr<XSSInfo> filterToken(const FilterTokenRequest&);
     bool isSafeToSendToAnotherThread() const;
 
+    void setEncoding(const WTF::TextEncoding&);
+
 private:
     static const size_t kMaximumFragmentLengthTarget = 100;
 
@@ -74,10 +76,11 @@ private:
         SuppressingAdjacentCharacterTokens
     };
 
-    enum AttributeKind {
-        NormalAttribute,
-        SrcLikeAttribute,
-        ScriptLikeAttribute
+    enum TruncationKind {
+        NoTruncation,
+        NormalAttributeTruncation,
+        SrcLikeAttributeTruncation,
+        ScriptLikeAttributeTruncation
     };
 
     bool filterStartToken(const FilterTokenRequest&);
@@ -96,12 +99,13 @@ private:
     bool filterButtonToken(const FilterTokenRequest&);
 
     bool eraseDangerousAttributesIfInjected(const FilterTokenRequest&);
-    bool eraseAttributeIfInjected(const FilterTokenRequest&, const QualifiedName&, const String& replacementValue = String(), AttributeKind treatment = NormalAttribute);
+    bool eraseAttributeIfInjected(const FilterTokenRequest&, const QualifiedName&, const String& replacementValue = String(), TruncationKind treatment = NormalAttributeTruncation);
 
-    String decodedSnippetForToken(const HTMLToken&);
-    String decodedSnippetForName(const FilterTokenRequest&);
-    String decodedSnippetForAttribute(const FilterTokenRequest&, const HTMLToken::Attribute&, AttributeKind treatment = NormalAttribute);
-    String decodedSnippetForJavaScript(const FilterTokenRequest&);
+    String canonicalizedSnippetForTagName(const FilterTokenRequest&);
+    String canonicalizedSnippetForJavaScript(const FilterTokenRequest&);
+    String nameFromAttribute(const FilterTokenRequest&, const HTMLToken::Attribute&);
+    String snippetFromAttribute(const FilterTokenRequest&, const HTMLToken::Attribute&);
+    String canonicalize(String, TruncationKind);
 
     bool isContainedInRequest(const String&);
     bool isLikelySafeResource(const String& url);
@@ -115,6 +119,7 @@ private:
 
     String m_decodedURL;
     String m_decodedHTTPBody;
+    String m_httpBodyAsString;
     OwnPtr<SuffixTree<ASCIICodebook> > m_decodedHTTPBodySuffixTree;
 
     State m_state;

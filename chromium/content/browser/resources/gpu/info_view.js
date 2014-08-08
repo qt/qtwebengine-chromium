@@ -64,8 +64,8 @@ cr.define('gpu', function() {
             value: clientInfo.driver_bug_list_version
           },
           {
-            description: 'ANGLE revision',
-            value: clientInfo.angle_revision
+            description: 'ANGLE commit id',
+            value: clientInfo.angle_commit_id
           },
           {
             description: '2D graphics backend',
@@ -82,66 +82,73 @@ cr.define('gpu', function() {
       // Feature map
       var featureLabelMap = {
         '2d_canvas': 'Canvas',
-        '3d_css': '3D CSS',
-        'css_animation': 'CSS Animation',
-        'compositing': 'Compositing',
+        'gpu_compositing': 'Compositing',
         'webgl': 'WebGL',
         'multisampling': 'WebGL multisampling',
-        'flash_3d': 'Flash 3D',
+        'flash_3d': 'Flash',
         'flash_stage3d': 'Flash Stage3D',
         'flash_stage3d_baseline': 'Flash Stage3D Baseline profile',
         'texture_sharing': 'Texture Sharing',
         'video_decode': 'Video Decode',
         'video_encode': 'Video Encode',
-        'video': 'Video',
-        // GPU Switching
-        'gpu_switching': 'GPU Switching',
         'panel_fitting': 'Panel Fitting',
-        'force_compositing_mode': 'Force Compositing Mode',
-        'raster': 'Rasterization',
-      };
-      var statusLabelMap = {
-        'disabled_software': 'Software only. Hardware acceleration disabled.',
-        'disabled_software_animated': 'Software animated.',
-        'disabled_off': 'Unavailable. Hardware acceleration disabled.',
-        'software': 'Software rendered. Hardware acceleration not enabled.',
-        'unavailable_off': 'Unavailable. Hardware acceleration unavailable',
-        'unavailable_software':
-            'Software only, hardware acceleration unavailable',
-        'enabled_readback': 'Hardware accelerated, but at reduced performance',
-        'enabled_force': 'Hardware accelerated on all pages',
-        'enabled_threaded': 'Hardware accelerated on demand and threaded',
-        'enabled_force_threaded':
-            'Hardware accelerated on all pages and threaded',
-        'enabled': 'Hardware accelerated',
-        'accelerated': 'Accelerated',
-        'accelerated_threaded': 'Accelerated and threaded',
-        // GPU Switching
-        'gpu_switching_automatic': 'Automatic switching',
-        'gpu_switching_force_discrete': 'Always on discrete GPU',
-        'gpu_switching_force_integrated': 'Always on integrated GPU',
-        'disabled_software_multithreaded': 'Software only, multi-threaded',
+        'rasterization': 'Rasterization',
+        'threaded_rasterization': 'Threaded Rasterization',
       };
 
-      var statusClassMap = {
-        'disabled_software': 'feature-yellow',
-        'disabled_software_animated': 'feature-yellow',
-        'disabled_off': 'feature-red',
-        'software': 'feature-yellow',
-        'unavailable_off': 'feature-red',
-        'unavailable_software': 'feature-yellow',
-        'enabled_force': 'feature-green',
-        'enabled_readback': 'feature-yellow',
-        'enabled_threaded': 'feature-green',
-        'enabled_force_threaded': 'feature-green',
-        'enabled': 'feature-green',
-        'accelerated': 'feature-green',
-        'accelerated_threaded': 'feature-green',
-        // GPU Switching
-        'gpu_switching_automatic': 'feature-green',
-        'gpu_switching_force_discrete': 'feature-red',
-        'gpu_switching_force_integrated': 'feature-red',
-        'disabled_software_multithreaded': 'feature-yellow',
+      var statusMap =  {
+        'disabled_software': {
+          'label': 'Software only. Hardware acceleration disabled',
+          'class': 'feature-yellow'
+        },
+        'disabled_software_threaded': {
+          'label': 'Software only, threaded. Hardware acceleration disabled',
+          'class': 'feature-yellow'
+        },
+        'disabled_off': {
+          'label': 'Disabled',
+          'class': 'feature-red'
+        },
+        'disabled_off_ok': {
+          'label': 'Disabled',
+          'class': 'feature-yellow'
+        },
+        'unavailable_software': {
+          'label': 'Software only, hardware acceleration unavailable',
+          'class': 'feature-yellow'
+        },
+        'unavailable_software_threaded': {
+          'label': 'Software only, threaded. Hardware acceleration unavailable',
+          'class': 'feature-yellow'
+        },
+        'unavailable_off': {
+          'label': 'Unavailable',
+          'class': 'feature-red'
+        },
+        'unavailable_off_ok': {
+          'label': 'Unavailable',
+          'class': 'feature-yellow'
+        },
+        'enabled_readback': {
+          'label': 'Hardware accelerated but at reduced performance',
+          'class': 'feature-yellow'
+        },
+        'enabled_force': {
+          'label': 'Hardware accelerated on all pages',
+          'class': 'feature-green'
+        },
+        'enabled_threaded': {
+          'label': 'Hardware accelerated and threaded',
+          'class': 'feature-green'
+        },
+        'enabled': {
+          'label': 'Hardware accelerated',
+          'class': 'feature-green'
+        },
+        'enabled_on': {
+          'label': 'Enabled',
+          'class': 'feature-green'
+        }
       };
 
       // GPU info, basic
@@ -173,12 +180,15 @@ cr.define('gpu', function() {
             featureEl.appendChild(nameEl);
 
             var statusEl = document.createElement('span');
-            if (!statusLabelMap[featureStatus])
-              console.log('Missing statusLabel for', featureStatus);
-            if (!statusClassMap[featureStatus])
-              console.log('Missing statusClass for', featureStatus);
-            statusEl.textContent = statusLabelMap[featureStatus];
-            statusEl.className = statusClassMap[featureStatus];
+            var statusInfo = statusMap[featureStatus];
+            if (!statusInfo) {
+              console.log('Missing status for ', featureStatus);
+              statusEl.textContent = 'Unknown';
+              statusEl.className = 'feature-red';
+            } else {
+              statusEl.textContent = statusInfo['label'];
+              statusEl.className = statusInfo['class'];
+            }
             featureEl.appendChild(statusEl);
 
             featureStatusList.appendChild(featureEl);
@@ -301,6 +311,35 @@ cr.define('gpu', function() {
         link.href = 'https://bugs.webkit.org/show_bug.cgi?id=' + bugid;
         problemEl.appendChild(link);
         nbugs++;
+      }
+
+      if (problem.affectedGpuSettings.length > 0) {
+        var brNode = document.createElement('br');
+        problemEl.appendChild(brNode);
+
+        var iNode = document.createElement('i');
+        problemEl.appendChild(iNode);
+
+        var headNode = document.createElement('span');
+        if (problem.tag == 'disabledFeatures')
+          headNode.textContent = 'Disabled Features: ';
+        else  // problem.tag == 'workarounds'
+          headNode.textContent = 'Applied Workarounds: ';
+        iNode.appendChild(headNode);
+        for (j = 0; j < problem.affectedGpuSettings.length; ++j) {
+          if (j > 0) {
+            var separateNode = document.createElement('span');
+            separateNode.textContent = ', ';
+            iNode.appendChild(separateNode);
+          }
+          var nameNode = document.createElement('span');
+          if (problem.tag == 'disabledFeatures')
+            nameNode.classList.add('feature-red');
+          else  // problem.tag == 'workarounds'
+            nameNode.classList.add('feature-yellow');
+          nameNode.textContent = problem.affectedGpuSettings[j];
+          iNode.appendChild(nameNode);
+        }
       }
 
       return problemEl;

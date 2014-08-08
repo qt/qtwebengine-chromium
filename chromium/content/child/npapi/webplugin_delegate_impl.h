@@ -15,16 +15,10 @@
 #include "base/timer/timer.h"
 #include "build/build_config.h"
 #include "content/child/npapi/webplugin_delegate.h"
+#include "content/common/cursors/webcursor.h"
 #include "third_party/npapi/bindings/npapi.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/rect.h"
-#include "webkit/common/cursors/webcursor.h"
-
-#if defined(USE_X11)
-#include "ui/base/x/x11_util.h"
-
-typedef struct _GdkDrawable GdkPixmap;
-#endif
 
 namespace base {
 class FilePath;
@@ -129,6 +123,7 @@ class WebPluginDelegateImpl : public WebPluginDelegate {
                         bool notify_redirects,
                         bool is_plugin_src_load,
                         int origin_pid,
+                        int render_frame_id,
                         int render_view_id) OVERRIDE;
   // End of WebPluginDelegate implementation.
 
@@ -196,12 +191,6 @@ class WebPluginDelegateImpl : public WebPluginDelegate {
   // and all callers will use the Paint defined above.
   void CGPaint(CGContextRef context, const gfx::Rect& rect);
 #endif  // OS_MACOSX && !USE_AURA
-
-#if defined(USE_X11)
-  void SetWindowlessShmPixmap(XID shm_pixmap) {
-    windowless_shm_pixmap_ = shm_pixmap;
-  }
-#endif
 
  private:
   friend class base::DeleteHelper<WebPluginDelegateImpl>;
@@ -318,27 +307,6 @@ class WebPluginDelegateImpl : public WebPluginDelegate {
   scoped_ptr<WebPluginIMEWin> plugin_ime_;
 #endif  // defined(OS_WIN)
 
-#if defined(USE_X11)
-  // The SHM pixmap for a windowless plugin.
-  XID windowless_shm_pixmap_;
-#endif
-
-#if defined(TOOLKIT_GTK)
-  // The pixmap we're drawing into, for a windowless plugin.
-  GdkPixmap* pixmap_;
-  double first_event_time_;
-
-  // On Linux some plugins assume that the GtkSocket container is in the same
-  // process. So we create a GtkPlug to plug into the browser's container, and
-  // a GtkSocket to hold the plugin. We then send the GtkPlug to the browser
-  // process.
-  GtkWidget* plug_;
-  GtkWidget* socket_;
-
-  // Ensure pixmap_ exists and is at least width by height pixels.
-  void EnsurePixmapAtLeastSize(int width, int height);
-#endif
-
   NPWindow window_;
   gfx::Rect window_rect_;
   gfx::Rect clip_rect_;
@@ -387,13 +355,11 @@ class WebPluginDelegateImpl : public WebPluginDelegate {
   // GetProcAddress intercepter for windowless plugins.
   static FARPROC WINAPI GetProcAddressPatch(HMODULE module, LPCSTR name);
 
-#if defined(USE_AURA)
   // WindowFromPoint patch for Flash windowless plugins. When flash receives
   // mouse move messages it calls the WindowFromPoint API to eventually convert
   // the mouse coordinates to screen. We need to return the dummy plugin parent
   // window for Aura to ensure that these conversions occur correctly.
   static HWND WINAPI WindowFromPointPatch(POINT point);
-#endif
 
   // The mouse hook proc which handles mouse capture in windowed plugins.
   static LRESULT CALLBACK MouseHookProc(int code, WPARAM wParam,

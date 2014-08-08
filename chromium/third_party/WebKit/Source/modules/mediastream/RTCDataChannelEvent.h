@@ -25,28 +25,30 @@
 #ifndef RTCDataChannelEvent_h
 #define RTCDataChannelEvent_h
 
-#include "core/events/Event.h"
+#include "modules/EventModules.h"
 #include "modules/mediastream/RTCDataChannel.h"
 #include "wtf/text/AtomicString.h"
 
 namespace WebCore {
 
-class RTCDataChannelEvent : public Event {
+class RTCDataChannelEvent FINAL : public Event {
 public:
     virtual ~RTCDataChannelEvent();
 
-    static PassRefPtr<RTCDataChannelEvent> create();
-    static PassRefPtr<RTCDataChannelEvent> create(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtr<RTCDataChannel>);
+    static PassRefPtrWillBeRawPtr<RTCDataChannelEvent> create();
+    static PassRefPtrWillBeRawPtr<RTCDataChannelEvent> create(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtrWillBeRawPtr<RTCDataChannel>);
 
     RTCDataChannel* channel() const;
 
-    virtual const AtomicString& interfaceName() const;
+    virtual const AtomicString& interfaceName() const OVERRIDE;
+
+    virtual void trace(Visitor*) OVERRIDE;
 
 private:
     RTCDataChannelEvent();
-    RTCDataChannelEvent(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtr<RTCDataChannel>);
+    RTCDataChannelEvent(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtrWillBeRawPtr<RTCDataChannel>);
 
-    RefPtr<RTCDataChannel> m_channel;
+    RefPtrWillBeMember<RTCDataChannel> m_channel;
 };
 
 } // namespace WebCore

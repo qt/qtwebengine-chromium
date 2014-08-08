@@ -28,15 +28,20 @@
 
 namespace WebCore {
 
-PassRefPtr<SpeechSynthesisVoice> SpeechSynthesisVoice::create(PassRefPtr<PlatformSpeechSynthesisVoice> voice)
+SpeechSynthesisVoice* SpeechSynthesisVoice::create(PlatformSpeechSynthesisVoice* voice)
 {
-    return adoptRef(new SpeechSynthesisVoice(voice));
+    return new SpeechSynthesisVoice(voice);
 }
 
-SpeechSynthesisVoice::SpeechSynthesisVoice(PassRefPtr<PlatformSpeechSynthesisVoice> voice)
+SpeechSynthesisVoice::SpeechSynthesisVoice(PlatformSpeechSynthesisVoice* voice)
     : m_platformVoice(voice)
 {
     ScriptWrappable::init(this);
+}
+
+void SpeechSynthesisVoice::trace(Visitor* visitor)
+{
+    visitor->trace(m_platformVoice);
 }
 
 } // namespace WebCore

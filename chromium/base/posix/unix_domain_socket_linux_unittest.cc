@@ -9,6 +9,8 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/file_util.h"
+#include "base/files/scoped_file.h"
+#include "base/memory/scoped_vector.h"
 #include "base/pickle.h"
 #include "base/posix/unix_domain_socket_linux.h"
 #include "base/synchronization/waitable_event.h"
@@ -25,8 +27,8 @@ TEST(UnixDomainSocketTest, SendRecvMsgAbortOnReplyFDClose) {
 
   int fds[2];
   ASSERT_EQ(0, socketpair(AF_UNIX, SOCK_SEQPACKET, 0, fds));
-  file_util::ScopedFD scoped_fd0(&fds[0]);
-  file_util::ScopedFD scoped_fd1(&fds[1]);
+  ScopedFD scoped_fd0(fds[0]);
+  ScopedFD scoped_fd1(fds[1]);
 
   // Have the thread send a synchronous message via the socket.
   Pickle request;
@@ -37,7 +39,7 @@ TEST(UnixDomainSocketTest, SendRecvMsgAbortOnReplyFDClose) {
            request));
 
   // Receive the message.
-  std::vector<int> message_fds;
+  ScopedVector<base::ScopedFD> message_fds;
   uint8_t buffer[16];
   ASSERT_EQ(static_cast<int>(request.size()),
             UnixDomainSocket::RecvMsg(fds[0], buffer, sizeof(buffer),
@@ -45,7 +47,7 @@ TEST(UnixDomainSocketTest, SendRecvMsgAbortOnReplyFDClose) {
   ASSERT_EQ(1U, message_fds.size());
 
   // Close the reply FD.
-  ASSERT_EQ(0, IGNORE_EINTR(close(message_fds.front())));
+  message_fds.clear();
 
   // Check that the thread didn't get blocked.
   WaitableEvent event(false, false);
@@ -62,7 +64,7 @@ TEST(UnixDomainSocketTest, SendRecvMsgAvoidsSIGPIPE) {
   ASSERT_EQ(0, sigaction(SIGPIPE, &act, &oldact));
   int fds[2];
   ASSERT_EQ(0, socketpair(AF_UNIX, SOCK_SEQPACKET, 0, fds));
-  file_util::ScopedFD scoped_fd1(&fds[1]);
+  ScopedFD scoped_fd1(fds[1]);
   ASSERT_EQ(0, IGNORE_EINTR(close(fds[0])));
 
   // Have the thread send a synchronous message via the socket. Unless the
@@ -74,6 +76,84 @@ TEST(UnixDomainSocketTest, SendRecvMsgAvoidsSIGPIPE) {
   ASSERT_EQ(EPIPE, errno);
   // Restore the SIGPIPE handler.
   ASSERT_EQ(0, sigaction(SIGPIPE, &oldact, NULL));
+}
+
+// Simple sanity check within a single process that receiving PIDs works.
+TEST(UnixDomainSocketTest, RecvPid) {
+  int fds[2];
+  ASSERT_EQ(0, socketpair(AF_UNIX, SOCK_SEQPACKET, 0, fds));
+  base::ScopedFD recv_sock(fds[0]);
+  base::ScopedFD send_sock(fds[1]);
+
+  ASSERT_TRUE(UnixDomainSocket::EnableReceiveProcessId(recv_sock.get()));
+
+  static const char kHello[] = "hello";
+  ASSERT_TRUE(UnixDomainSocket::SendMsg(
+      send_sock.get(), kHello, sizeof(kHello), std::vector<int>()));
+
+  // Extra receiving buffer space to make sure we really received only
+  // sizeof(kHello) bytes and it wasn't just truncated to fit the buffer.
+  char buf[sizeof(kHello) + 1];
+  base::ProcessId sender_pid;
+  ScopedVector<base::ScopedFD> fd_vec;
+  const ssize_t nread = UnixDomainSocket::RecvMsgWithPid(
+      recv_sock.get(), buf, sizeof(buf), &fd_vec, &sender_pid);
+  ASSERT_EQ(sizeof(kHello), static_cast<size_t>(nread));
+  ASSERT_EQ(0, memcmp(buf, kHello, sizeof(kHello)));
+  ASSERT_EQ(0U, fd_vec.size());
+
+  ASSERT_EQ(getpid(), sender_pid);
+}
+
+// Same as above, but send the max number of file descriptors too.
+TEST(UnixDomainSocketTest, RecvPidWithMaxDescriptors) {
+  int fds[2];
+  ASSERT_EQ(0, socketpair(AF_UNIX, SOCK_SEQPACKET, 0, fds));
+  base::ScopedFD recv_sock(fds[0]);
+  base::ScopedFD send_sock(fds[1]);
+
+  ASSERT_TRUE(UnixDomainSocket::EnableReceiveProcessId(recv_sock.get()));
+
+  static const char kHello[] = "hello";
+  std::vector<int> send_fds(UnixDomainSocket::kMaxFileDescriptors,
+                            send_sock.get());
+  ASSERT_TRUE(UnixDomainSocket::SendMsg(
+      send_sock.get(), kHello, sizeof(kHello), send_fds));
+
+  // Extra receiving buffer space to make sure we really received only
+  // sizeof(kHello) bytes and it wasn't just truncated to fit the buffer.
+  char buf[sizeof(kHello) + 1];
+  base::ProcessId sender_pid;
+  ScopedVector<base::ScopedFD> recv_fds;
+  const ssize_t nread = UnixDomainSocket::RecvMsgWithPid(
+      recv_sock.get(), buf, sizeof(buf), &recv_fds, &sender_pid);
+  ASSERT_EQ(sizeof(kHello), static_cast<size_t>(nread));
+  ASSERT_EQ(0, memcmp(buf, kHello, sizeof(kHello)));
+  ASSERT_EQ(UnixDomainSocket::kMaxFileDescriptors, recv_fds.size());
+
+  ASSERT_EQ(getpid(), sender_pid);
+}
+
+// Check that RecvMsgWithPid doesn't DCHECK fail when reading EOF from a
+// disconnected socket.
+TEST(UnixDomianSocketTest, RecvPidDisconnectedSocket) {
+  int fds[2];
+  ASSERT_EQ(0, socketpair(AF_UNIX, SOCK_SEQPACKET, 0, fds));
+  base::ScopedFD recv_sock(fds[0]);
+  base::ScopedFD send_sock(fds[1]);
+
+  ASSERT_TRUE(UnixDomainSocket::EnableReceiveProcessId(recv_sock.get()));
+
+  send_sock.reset();
+
+  char ch;
+  base::ProcessId sender_pid;
+  ScopedVector<base::ScopedFD> recv_fds;
+  const ssize_t nread = UnixDomainSocket::RecvMsgWithPid(
+      recv_sock.get(), &ch, sizeof(ch), &recv_fds, &sender_pid);
+  ASSERT_EQ(0, nread);
+  ASSERT_EQ(-1, sender_pid);
+  ASSERT_EQ(0U, recv_fds.size());
 }
 
 }  // namespace

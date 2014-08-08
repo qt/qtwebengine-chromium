@@ -51,7 +51,6 @@ class NET_EXPORT SpdySessionPool
       SSLConfigService* ssl_config_service,
       const base::WeakPtr<HttpServerProperties>& http_server_properties,
       bool force_single_domain,
-      bool enable_ip_pooling,
       bool enable_compression,
       bool enable_ping_based_connection_checking,
       NextProto default_protocol,
@@ -80,15 +79,14 @@ class NET_EXPORT SpdySessionPool
   // encountered when connecting the SSL socket, with OK meaning there
   // was no error.
   //
-  // If successful, OK is returned and |available_session| will be
-  // non-NULL and available. Otherwise, an error is returned and
-  // |available_session| will be NULL.
-  net::Error CreateAvailableSessionFromSocket(
+  // Returns the new SpdySession. Note that the SpdySession begins reading from
+  // |connection| on a subsequent event loop iteration, so it may be closed
+  // immediately afterwards if the first read of |connection| fails.
+  base::WeakPtr<SpdySession> CreateAvailableSessionFromSocket(
       const SpdySessionKey& key,
       scoped_ptr<ClientSocketHandle> connection,
       const BoundNetLog& net_log,
       int certificate_error_code,
-      base::WeakPtr<SpdySession>* available_session,
       bool is_secure);
 
   // Find an available session for the given key, or NULL if there isn't one.
@@ -215,7 +213,6 @@ class NET_EXPORT SpdySessionPool
   bool verify_domain_authentication_;
   bool enable_sending_initial_data_;
   bool force_single_domain_;
-  bool enable_ip_pooling_;
   bool enable_compression_;
   bool enable_ping_based_connection_checking_;
   const NextProto default_protocol_;

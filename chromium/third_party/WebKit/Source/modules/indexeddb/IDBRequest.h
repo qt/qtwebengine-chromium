@@ -29,50 +29,49 @@
 #ifndef IDBRequest_h
 #define IDBRequest_h
 
-#include "bindings/v8/DOMRequestState.h"
+#include "bindings/v8/ScriptState.h"
+#include "bindings/v8/ScriptValue.h"
 #include "bindings/v8/ScriptWrappable.h"
 #include "core/dom/ActiveDOMObject.h"
 #include "core/dom/DOMError.h"
 #include "core/dom/DOMStringList.h"
-#include "core/events/Event.h"
 #include "core/events/EventListener.h"
 #include "core/events/EventTarget.h"
-#include "core/events/ThreadLocalEventNames.h"
+#include "modules/EventModules.h"
 #include "modules/indexeddb/IDBAny.h"
-#include "modules/indexeddb/IDBCursor.h"
 #include "modules/indexeddb/IDBTransaction.h"
 #include "modules/indexeddb/IndexedDB.h"
+#include "platform/heap/Handle.h"
+#include "public/platform/WebBlobInfo.h"
 #include "public/platform/WebIDBCursor.h"
+#include "public/platform/WebIDBTypes.h"
 
 namespace WebCore {
 
 class ExceptionState;
+class IDBCursor;
 struct IDBDatabaseMetadata;
 class SharedBuffer;
 
-// Base class to simplify usage of event target refcounting.
-class IDBRequestBase : public WTF::RefCountedBase {
+class IDBRequest
+    : public RefCountedGarbageCollectedWillBeGarbageCollectedFinalized<IDBRequest>
+    , public ScriptWrappable
+    , public EventTargetWithInlineData
+    , public ActiveDOMObject {
+    DEFINE_EVENT_TARGET_REFCOUNTING_WILL_BE_REMOVED(RefCountedGarbageCollected<IDBRequest>);
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(IDBRequest);
 public:
-    virtual void deref() = 0;
-
-protected:
-    virtual ~IDBRequestBase() { }
-};
-
-class IDBRequest : public IDBRequestBase, public ScriptWrappable, public EventTargetWithInlineData, public ActiveDOMObject {
-    DEFINE_EVENT_TARGET_REFCOUNTING(IDBRequestBase);
-
-public:
-    static PassRefPtr<IDBRequest> create(ExecutionContext*, PassRefPtr<IDBAny> source, IDBTransaction*);
+    static IDBRequest* create(ScriptState*, IDBAny* source, IDBTransaction*);
     virtual ~IDBRequest();
+    virtual void trace(Visitor*) OVERRIDE;
 
     ScriptValue result(ExceptionState&);
-    PassRefPtr<DOMError> error(ExceptionState&) const;
-    ScriptValue source(ExecutionContext*) const;
-    PassRefPtr<IDBTransaction> transaction() const { return m_transaction; }
+    PassRefPtrWillBeRawPtr<DOMError> error(ExceptionState&) const;
+    ScriptValue source() const;
+    IDBTransaction* transaction() const { return m_transaction.get(); }
 
     bool isResultDirty() const { return m_resultDirty; }
-    PassRefPtr<IDBAny> resultAsAny() const { return m_result; }
+    IDBAny* resultAsAny() const { return m_result; }
 
     // Requests made during index population are implementation details and so
     // events should not be visible to script.
@@ -90,19 +89,19 @@ public:
     DEFINE_ATTRIBUTE_EVENT_LISTENER(success);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(error);
 
-    void setCursorDetails(IndexedDB::CursorType, IndexedDB::CursorDirection);
-    void setPendingCursor(PassRefPtr<IDBCursor>);
+    void setCursorDetails(IndexedDB::CursorType, blink::WebIDBCursorDirection);
+    void setPendingCursor(IDBCursor*);
     void abort();
 
-    virtual void onError(PassRefPtr<DOMError>);
+    virtual void onError(PassRefPtrWillBeRawPtr<DOMError>);
     virtual void onSuccess(const Vector<String>&);
-    virtual void onSuccess(PassOwnPtr<blink::WebIDBCursor>, PassRefPtr<IDBKey>, PassRefPtr<IDBKey> primaryKey, PassRefPtr<SharedBuffer>);
-    virtual void onSuccess(PassRefPtr<IDBKey>);
-    virtual void onSuccess(PassRefPtr<SharedBuffer>);
-    virtual void onSuccess(PassRefPtr<SharedBuffer>, PassRefPtr<IDBKey>, const IDBKeyPath&);
+    virtual void onSuccess(PassOwnPtr<blink::WebIDBCursor>, IDBKey*, IDBKey* primaryKey, PassRefPtr<SharedBuffer>, PassOwnPtr<Vector<blink::WebBlobInfo> >);
+    virtual void onSuccess(IDBKey*);
+    virtual void onSuccess(PassRefPtr<SharedBuffer>, PassOwnPtr<Vector<blink::WebBlobInfo> >);
+    virtual void onSuccess(PassRefPtr<SharedBuffer>, PassOwnPtr<Vector<blink::WebBlobInfo> >, IDBKey*, const IDBKeyPath&);
     virtual void onSuccess(int64_t);
     virtual void onSuccess();
-    virtual void onSuccess(PassRefPtr<IDBKey>, PassRefPtr<IDBKey> primaryKey, PassRefPtr<SharedBuffer>);
+    virtual void onSuccess(IDBKey*, IDBKey* primaryKey, PassRefPtr<SharedBuffer>, PassOwnPtr<Vector<blink::WebBlobInfo> >);
 
     // Only IDBOpenDBRequest instances should receive these:
     virtual void onBlocked(int64_t oldVersion) { ASSERT_NOT_REACHED(); }
@@ -110,72 +109,63 @@ public:
     virtual void onSuccess(PassOwnPtr<blink::WebIDBDatabase>, const IDBDatabaseMetadata&) { ASSERT_NOT_REACHED(); }
 
     // ActiveDOMObject
-    virtual bool hasPendingActivity() const OVERRIDE;
-    virtual void stop() OVERRIDE;
+    virtual bool hasPendingActivity() const OVERRIDE FINAL;
+    virtual void stop() OVERRIDE FINAL;
 
     // EventTarget
     virtual const AtomicString& interfaceName() const OVERRIDE;
-    virtual ExecutionContext* executionContext() const OVERRIDE;
-    virtual void uncaughtExceptionInEventHandler() OVERRIDE;
+    virtual ExecutionContext* executionContext() const OVERRIDE FINAL;
+    virtual void uncaughtExceptionInEventHandler() OVERRIDE FINAL;
 
     using EventTarget::dispatchEvent;
-    virtual bool dispatchEvent(PassRefPtr<Event>) OVERRIDE;
+    virtual bool dispatchEvent(PassRefPtrWillBeRawPtr<Event>) OVERRIDE;
 
     // Called by a version change transaction that has finished to set this
     // request back from DONE (following "upgradeneeded") back to PENDING (for
     // the upcoming "success" or "error").
     void transactionDidFinishAndDispatch();
 
-    virtual void deref() OVERRIDE
-    {
-        if (derefBase())
-            delete this;
-        else if (hasOneRef())
-            checkForReferenceCycle();
-    }
-
-    DOMRequestState* requestState() { return &m_requestState; }
     IDBCursor* getResultCursor() const;
 
 protected:
-    IDBRequest(ExecutionContext*, PassRefPtr<IDBAny> source, IDBTransaction*);
-    void enqueueEvent(PassRefPtr<Event>);
+    IDBRequest(ScriptState*, IDBAny* source, IDBTransaction*);
+    void enqueueEvent(PassRefPtrWillBeRawPtr<Event>);
     void dequeueEvent(Event*);
     virtual bool shouldEnqueueEvent() const;
-    void onSuccessInternal(PassRefPtr<IDBAny>);
-    void setResult(PassRefPtr<IDBAny>);
+    void onSuccessInternal(IDBAny*);
+    void setResult(IDBAny*);
 
     bool m_contextStopped;
-    RefPtr<IDBTransaction> m_transaction;
+    Member<IDBTransaction> m_transaction;
     ReadyState m_readyState;
     bool m_requestAborted; // May be aborted by transaction then receive async onsuccess; ignore vs. assert.
 
 private:
-    void setResultCursor(PassRefPtr<IDBCursor>, PassRefPtr<IDBKey>, PassRefPtr<IDBKey> primaryKey, PassRefPtr<SharedBuffer> value);
-    void checkForReferenceCycle();
+    void setResultCursor(IDBCursor*, IDBKey*, IDBKey* primaryKey, PassRefPtr<SharedBuffer> value, PassOwnPtr<Vector<blink::WebBlobInfo> >);
+    void handleBlobAcks();
 
-    RefPtr<IDBAny> m_source;
-    RefPtr<IDBAny> m_result;
-    RefPtr<DOMError> m_error;
+    RefPtr<ScriptState> m_scriptState;
+    Member<IDBAny> m_source;
+    Member<IDBAny> m_result;
+    RefPtrWillBeMember<DOMError> m_error;
 
     bool m_hasPendingActivity;
-    Vector<RefPtr<Event> > m_enqueuedEvents;
+    WillBeHeapVector<RefPtrWillBeMember<Event> > m_enqueuedEvents;
 
     // Only used if the result type will be a cursor.
     IndexedDB::CursorType m_cursorType;
-    IndexedDB::CursorDirection m_cursorDirection;
+    blink::WebIDBCursorDirection m_cursorDirection;
     // When a cursor is continued/advanced, m_result is cleared and m_pendingCursor holds it.
-    RefPtr<IDBCursor> m_pendingCursor;
+    Member<IDBCursor> m_pendingCursor;
     // New state is not applied to the cursor object until the event is dispatched.
-    RefPtr<IDBKey> m_cursorKey;
-    RefPtr<IDBKey> m_cursorPrimaryKey;
+    Member<IDBKey> m_cursorKey;
+    Member<IDBKey> m_cursorPrimaryKey;
     RefPtr<SharedBuffer> m_cursorValue;
+    OwnPtr<Vector<blink::WebBlobInfo> > m_blobInfo;
 
     bool m_didFireUpgradeNeededEvent;
     bool m_preventPropagation;
     bool m_resultDirty;
-
-    DOMRequestState m_requestState;
 };
 
 } // namespace WebCore

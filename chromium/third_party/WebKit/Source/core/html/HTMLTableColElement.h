@@ -32,7 +32,7 @@ namespace WebCore {
 
 class HTMLTableColElement FINAL : public HTMLTablePartElement {
 public:
-    static PassRefPtr<HTMLTableColElement> create(const QualifiedName& tagName, Document&);
+    DECLARE_ELEMENT_FACTORY_WITH_TAGNAME(HTMLTableColElement);
 
     int span() const { return m_span; }
     void setSpan(int);
@@ -50,12 +50,17 @@ private:
     int m_span;
 };
 
-inline bool isHTMLTableColElement(const Node& node)
+inline bool isHTMLTableColElement(const Element& element)
 {
-    return node.hasTagName(HTMLNames::colTag) || node.hasTagName(HTMLNames::colgroupTag);
+    return element.hasTagName(HTMLNames::colTag) || element.hasTagName(HTMLNames::colgroupTag);
 }
 
-DEFINE_NODE_TYPE_CASTS_WITH_FUNCTION(HTMLTableColElement);
+inline bool isHTMLTableColElement(const HTMLElement& element)
+{
+    return element.hasLocalName(HTMLNames::colTag) || element.hasLocalName(HTMLNames::colgroupTag);
+}
+
+DEFINE_HTMLELEMENT_TYPE_CASTS_WITH_FUNCTION(HTMLTableColElement);
 
 } // namespace WebCore
 

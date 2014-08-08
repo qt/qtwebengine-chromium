@@ -33,7 +33,15 @@
 
 namespace WebCore {
 
-PassRefPtr<AnimatableValue> AnimatableLengthBoxAndBool::interpolateTo(const AnimatableValue* value, double fraction) const
+bool AnimatableLengthBoxAndBool::usesDefaultInterpolationWith(const AnimatableValue* value) const
+{
+    const AnimatableLengthBoxAndBool* lengthBox = toAnimatableLengthBoxAndBool(value);
+    if (lengthBox->flag() != flag())
+        return true;
+    return AnimatableValue::usesDefaultInterpolation(lengthBox->box(), box());
+}
+
+PassRefPtrWillBeRawPtr<AnimatableValue> AnimatableLengthBoxAndBool::interpolateTo(const AnimatableValue* value, double fraction) const
 {
     const AnimatableLengthBoxAndBool* lengthBox = toAnimatableLengthBoxAndBool(value);
     if (lengthBox->flag() == flag()) {
@@ -44,21 +52,16 @@ PassRefPtr<AnimatableValue> AnimatableLengthBoxAndBool::interpolateTo(const Anim
     return defaultInterpolateTo(this, value, fraction);
 }
 
-PassRefPtr<AnimatableValue> AnimatableLengthBoxAndBool::addWith(const AnimatableValue* value) const
-{
-    const AnimatableLengthBoxAndBool* lengthBox = toAnimatableLengthBoxAndBool(value);
-    if (lengthBox->flag() == flag()) {
-        return AnimatableLengthBoxAndBool::create(
-            AnimatableValue::add(box(), lengthBox->box()),
-            flag());
-    }
-    return defaultAddWith(this, value);
-}
-
 bool AnimatableLengthBoxAndBool::equalTo(const AnimatableValue* value) const
 {
     const AnimatableLengthBoxAndBool* lengthBox = toAnimatableLengthBoxAndBool(value);
     return box()->equals(lengthBox->box()) && flag() == lengthBox->flag();
+}
+
+void AnimatableLengthBoxAndBool::trace(Visitor* visitor)
+{
+    visitor->trace(m_box);
+    AnimatableValue::trace(visitor);
 }
 
 }

@@ -23,25 +23,24 @@
  */
 
 #include "config.h"
-#include "WebPluginScrollbarImpl.h"
+#include "web/WebPluginScrollbarImpl.h"
 
-#include "ScrollbarGroup.h"
-#include "WebInputEvent.h"
-#include "WebInputEventConversion.h"
-#include "WebPluginContainerImpl.h"
-#include "WebPluginScrollbarClient.h"
-#include "WebViewImpl.h"
 #include "platform/KeyboardCodes.h"
+#include "platform/graphics/GraphicsContext.h"
 #include "platform/scroll/ScrollAnimator.h"
+#include "platform/scroll/ScrollTypes.h"
 #include "platform/scroll/Scrollbar.h"
 #include "platform/scroll/ScrollbarTheme.h"
-#include "platform/graphics/GraphicsContext.h"
-#include "platform/scroll/ScrollTypes.h"
 #include "public/platform/WebCanvas.h"
 #include "public/platform/WebRect.h"
 #include "public/platform/WebVector.h"
+#include "public/web/WebInputEvent.h"
+#include "public/web/WebPluginScrollbarClient.h"
+#include "web/ScrollbarGroup.h"
+#include "web/WebInputEventConversion.h"
+#include "web/WebPluginContainerImpl.h"
+#include "web/WebViewImpl.h"
 
-using namespace std;
 using namespace WebCore;
 
 namespace blink {
@@ -50,7 +49,7 @@ WebPluginScrollbar* WebPluginScrollbar::createForPlugin(Orientation orientation,
                                                         WebPluginContainer* pluginContainer,
                                                         WebPluginScrollbarClient* client)
 {
-    WebPluginContainerImpl* plugin = toPluginContainerImpl(pluginContainer);
+    WebPluginContainerImpl* plugin = toWebPluginContainerImpl(pluginContainer);
     return new WebPluginScrollbarImpl(orientation, plugin->scrollbarGroup(), client);
 }
 

@@ -8,6 +8,7 @@
 
 #include "base/i18n/icu_string_conversions.h"
 #include "base/logging.h"
+#include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "ui/base/clipboard/clipboard.h"
 #include "ui/base/x/x11_util.h"
@@ -18,12 +19,16 @@ namespace ui {
 const char kMimeTypeMozillaURL[] = "text/x-moz-url";
 const char kString[] = "STRING";
 const char kText[] = "TEXT";
+const char kTextPlain[] = "text/plain";
+const char kTextPlainUtf8[] = "text/plain;charset=utf-8";
 const char kUtf8String[] = "UTF8_STRING";
 
 const char* kSelectionDataAtoms[] = {
   Clipboard::kMimeTypeHTML,
   kString,
   kText,
+  kTextPlain,
+  kTextPlainUtf8,
   kUtf8String,
   NULL
 };
@@ -33,6 +38,8 @@ std::vector< ::Atom> GetTextAtomsFrom(const X11AtomCache* atom_cache) {
   atoms.push_back(atom_cache->GetAtom(kUtf8String));
   atoms.push_back(atom_cache->GetAtom(kString));
   atoms.push_back(atom_cache->GetAtom(kText));
+  atoms.push_back(atom_cache->GetAtom(kTextPlain));
+  atoms.push_back(atom_cache->GetAtom(kTextPlainUtf8));
   return atoms;
 }
 
@@ -40,6 +47,12 @@ std::vector< ::Atom> GetURLAtomsFrom(const X11AtomCache* atom_cache) {
   std::vector< ::Atom> atoms;
   atoms.push_back(atom_cache->GetAtom(Clipboard::kMimeTypeURIList));
   atoms.push_back(atom_cache->GetAtom(kMimeTypeMozillaURL));
+  return atoms;
+}
+
+std::vector< ::Atom> GetURIListAtomsFrom(const X11AtomCache* atom_cache) {
+  std::vector< ::Atom> atoms;
+  atoms.push_back(atom_cache->GetAtom(Clipboard::kMimeTypeURIList));
   return atoms;
 }
 
@@ -55,11 +68,21 @@ void GetAtomIntersection(const std::vector< ::Atom>& desired,
   }
 }
 
-void AddString16ToVector(const string16& str,
+void AddString16ToVector(const base::string16& str,
                          std::vector<unsigned char>* bytes) {
   const unsigned char* front =
       reinterpret_cast<const unsigned char*>(str.data());
   bytes->insert(bytes->end(), front, front + (str.size() * 2));
+}
+
+std::vector<std::string> ParseURIList(const SelectionData& data) {
+  // uri-lists are newline separated file lists in URL encoding.
+  std::string unparsed;
+  data.AssignTo(&unparsed);
+
+  std::vector<std::string> tokens;
+  Tokenize(unparsed, "\n", &tokens);
+  return tokens;
 }
 
 std::string RefCountedMemoryToString(
@@ -77,19 +100,19 @@ std::string RefCountedMemoryToString(
   return std::string(reinterpret_cast<const char*>(front), size);
 }
 
-string16 RefCountedMemoryToString16(
+base::string16 RefCountedMemoryToString16(
     const scoped_refptr<base::RefCountedMemory>& memory) {
   if (!memory.get()) {
     NOTREACHED();
-    return string16();
+    return base::string16();
   }
 
   size_t size = memory->size();
   if (!size)
-    return string16();
+    return base::string16();
 
   const unsigned char* front = memory->front();
-  return string16(reinterpret_cast<const base::char16*>(front), size / 2);
+  return base::string16(reinterpret_cast<const base::char16*>(front), size / 2);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -175,9 +198,11 @@ size_t SelectionData::GetSize() const {
 
 std::string SelectionData::GetText() const {
   if (type_ == atom_cache_.GetAtom(kUtf8String) ||
-      type_ == atom_cache_.GetAtom(kText)) {
+      type_ == atom_cache_.GetAtom(kText) ||
+      type_ == atom_cache_.GetAtom(kTextPlainUtf8)) {
     return RefCountedMemoryToString(memory_);
-  } else if (type_ == atom_cache_.GetAtom(kString)) {
+  } else if (type_ == atom_cache_.GetAtom(kString) ||
+             type_ == atom_cache_.GetAtom(kTextPlain)) {
     std::string result;
     base::ConvertToUtf8AndNormalize(RefCountedMemoryToString(memory_),
                                     base::kCodepageLatin1,
@@ -191,8 +216,8 @@ std::string SelectionData::GetText() const {
   }
 }
 
-string16 SelectionData::GetHtml() const {
-  string16 markup;
+base::string16 SelectionData::GetHtml() const {
+  base::string16 markup;
 
   if (type_ == atom_cache_.GetAtom(Clipboard::kMimeTypeHTML)) {
     const unsigned char* data = GetData();
@@ -205,7 +230,7 @@ string16 SelectionData::GetHtml() const {
       markup.assign(reinterpret_cast<const uint16_t*>(data) + 1,
                     (size / 2) - 1);
     } else {
-      UTF8ToUTF16(reinterpret_cast<const char*>(data), size, &markup);
+      base::UTF8ToUTF16(reinterpret_cast<const char*>(data), size, &markup);
     }
 
     // If there is a terminating NULL, drop it.
@@ -223,7 +248,7 @@ void SelectionData::AssignTo(std::string* result) const {
   *result = RefCountedMemoryToString(memory_);
 }
 
-void SelectionData::AssignTo(string16* result) const {
+void SelectionData::AssignTo(base::string16* result) const {
   *result = RefCountedMemoryToString16(memory_);
 }
 

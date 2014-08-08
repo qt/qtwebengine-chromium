@@ -12,60 +12,44 @@
 struct ViewHostMsg_UpdateRect_Flags {
   enum {
     IS_RESIZE_ACK = 1 << 0,
-    IS_RESTORE_ACK = 1 << 1,
     IS_REPAINT_ACK = 1 << 2,
   };
   static bool is_resize_ack(int flags) {
     return (flags & IS_RESIZE_ACK) != 0;
-  }
-  static bool is_restore_ack(int flags) {
-    return (flags & IS_RESTORE_ACK) != 0;
   }
   static bool is_repaint_ack(int flags) {
     return (flags & IS_REPAINT_ACK) != 0;
   }
 };
 
-struct ViewMsg_Navigate_Type {
- public:
-  enum Value {
-    // Reload the page.
-    RELOAD,
+// Note: keep enums in content/browser/resources/accessibility/accessibility.js
+// in sync with these two enums.
+enum AccessibilityModeFlag {
+  // Accessibility updates are processed to create platform trees and events are
+  // passed to platform APIs in the browser.
+  AccessibilityModeFlagPlatform = 1 << 0,
 
-    // Reload the page, ignoring any cache entries.
-    RELOAD_IGNORING_CACHE,
-
-    // Reload the page using the original request URL.
-    RELOAD_ORIGINAL_REQUEST_URL,
-
-    // The navigation is the result of session restore and should honor the
-    // page's cache policy while restoring form state. This is set to true if
-    // restoring a tab/session from the previous session and the previous
-    // session did not crash. If this is not set and the page was restored then
-    // the page's cache policy is ignored and we load from the cache.
-    RESTORE,
-
-    // Like RESTORE, except that the navigation contains POST data.
-    RESTORE_WITH_POST,
-
-    // Navigation type not categorized by the other types.
-    NORMAL
-  };
+  // Accessibility is on, and the full tree is computed. If this flag is off,
+  // only limited information about editable text nodes is sent to the browser
+  // process. Useful for implementing limited UIA on tablets.
+  AccessibilityModeFlagFullTree = 1 << 1,
 };
 
 enum AccessibilityMode {
-  // WebKit accessibility is off and no accessibility information is
-  // sent from the renderer to the browser process.
-  AccessibilityModeOff,
+  // All accessibility is off.
+  AccessibilityModeOff = 0,
 
-  // WebKit accessibility is on, but only limited information about
-  // editable text nodes is sent to the browser process. Useful for
-  // implementing limited UIA on tablets.
-  AccessibilityModeEditableTextOnly,
+  // Renderer accessibility is on, platform APIs are called, but only limited
+  // information is available (see AccessibilityModeFlagEditableTextOnly).
+  AccessibilityModeEditableTextOnly = AccessibilityModeFlagPlatform,
 
-  // WebKit accessibility is on, and the full accessibility tree is synced
-  // to the browser process. Useful for screen readers and magnifiers.
-  AccessibilityModeComplete,
+  // Renderer accessibility is on, and platform APIs are called.
+  AccessibilityModeComplete =
+      AccessibilityModeFlagPlatform | AccessibilityModeFlagFullTree,
+
+  // Renderer accessibility is on, and events are passed to any extensions
+  // requesting automation, but not to platform accessibility.
+  AccessibilityModeTreeOnly = AccessibilityModeFlagFullTree,
 };
 
 #endif  // CONTENT_COMMON_VIEW_MESSAGES_ENUMS_H_

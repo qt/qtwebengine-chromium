@@ -122,7 +122,9 @@ TEST_F(ChannelManagerTest, StartupShutdownOnThread) {
 }
 
 // Test that we fail to startup if we're given an unstarted thread.
-TEST_F(ChannelManagerTest, StartupShutdownOnUnstartedThread) {
+// TODO(fischman): delete once Thread::RunningForChannelManager() is gone
+// (webrtc:3388).
+TEST_F(ChannelManagerTest, DISABLED_StartupShutdownOnUnstartedThread) {
   EXPECT_TRUE(cm_->set_worker_thread(&worker_));
   EXPECT_FALSE(cm_->Init());
   EXPECT_FALSE(cm_->initialized());
@@ -317,6 +319,25 @@ TEST_F(ChannelManagerTest, SetAudioOptions) {
             fme_->audio_delay_offset());
   // Test setting bad values.
   EXPECT_FALSE(cm_->SetAudioOptions("audio-in9", "audio-out2", options));
+}
+
+TEST_F(ChannelManagerTest, SetEngineAudioOptions) {
+  EXPECT_TRUE(cm_->Init());
+  // Test setting specific values.
+  AudioOptions options;
+  options.experimental_ns.Set(true);
+  EXPECT_TRUE(cm_->SetEngineAudioOptions(options));
+  bool experimental_ns = false;
+  EXPECT_TRUE(fme_->audio_options().experimental_ns.Get(&experimental_ns));
+  EXPECT_TRUE(experimental_ns);
+}
+
+TEST_F(ChannelManagerTest, SetEngineAudioOptionsBeforeInitFails) {
+  // Test that values that we set before Init are not applied.
+  AudioOptions options;
+  options.experimental_ns.Set(true);
+  EXPECT_FALSE(cm_->SetEngineAudioOptions(options));
+  EXPECT_FALSE(fme_->audio_options().experimental_ns.IsSet());
 }
 
 TEST_F(ChannelManagerTest, SetCaptureDeviceBeforeInit) {

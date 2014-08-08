@@ -7,8 +7,9 @@
 #ifndef MEDIA_CAST_RTCP_TEST_RTCP_PACKET_BUILDER_H_
 #define MEDIA_CAST_RTCP_TEST_RTCP_PACKET_BUILDER_H_
 
+#include "base/big_endian.h"
+#include "media/cast/cast_config.h"
 #include "media/cast/rtcp/rtcp_defines.h"
-#include "net/base/big_endian.h"
 
 namespace media {
 namespace cast {
@@ -58,7 +59,9 @@ class TestRtcpPacketBuilder {
   TestRtcpPacketBuilder();
 
   void AddSr(uint32 sender_ssrc, int number_of_report_blocks);
-  void AddSrWithNtp(uint32 sender_ssrc, uint32 ntp_high, uint32 ntp_low,
+  void AddSrWithNtp(uint32 sender_ssrc,
+                    uint32 ntp_high,
+                    uint32 ntp_low,
                     uint32 rtp_timestamp);
   void AddRr(uint32 sender_ssrc, int number_of_report_blocks);
   void AddRb(uint32 rtp_ssrc);
@@ -76,17 +79,18 @@ class TestRtcpPacketBuilder {
   void AddPli(uint32 sender_ssrc, uint32 media_ssrc);
   void AddRpsi(uint32 sender_ssrc, uint32 media_ssrc);
   void AddRemb(uint32 sender_ssrc, uint32 media_ssrc);
-  void AddCast(uint32 sender_ssrc, uint32 media_ssrc);
-  void AddSenderLog(uint32 sender_ssrc);
-  void AddSenderFrameLog(uint8 event_id, uint32 rtp_timestamp);
+  void AddCast(uint32 sender_ssrc, uint32 media_ssrc, uint16 target_delay_ms);
   void AddReceiverLog(uint32 sender_ssrc);
-  void AddReceiverFrameLog(uint32 rtp_timestamp, int num_events,
+  void AddReceiverFrameLog(uint32 rtp_timestamp,
+                           int num_events,
                            uint32 event_timesamp_base);
-  void AddReceiverEventLog(uint16 event_data, uint8 event_id,
+  void AddReceiverEventLog(uint16 event_data,
+                           CastLoggingEvent event,
                            uint16 event_timesamp_delta);
 
-  const uint8* Packet();
-  int Length() { return kIpPacketSize - big_endian_writer_.remaining(); }
+  scoped_ptr<Packet> GetPacket();
+  const uint8* Data();
+  int Length() { return kMaxIpPacketSize - big_endian_writer_.remaining(); }
 
  private:
   void AddRtcpHeader(int payload, int format_or_count);
@@ -94,12 +98,14 @@ class TestRtcpPacketBuilder {
 
   // Where the length field of the current packet is.
   // Note: 0 is not a legal value, it is used for "uninitialized".
-  uint8 buffer_[kIpPacketSize];
+  uint8 buffer_[kMaxIpPacketSize];
   char* ptr_of_length_;
-  net::BigEndianWriter big_endian_writer_;
+  base::BigEndianWriter big_endian_writer_;
+
+  DISALLOW_COPY_AND_ASSIGN(TestRtcpPacketBuilder);
 };
 
 }  // namespace cast
 }  // namespace media
 
-#endif //  MEDIA_CAST_RTCP_TEST_RTCP_PACKET_BUILDER_H_
+#endif  //  MEDIA_CAST_RTCP_TEST_RTCP_PACKET_BUILDER_H_

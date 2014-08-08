@@ -37,12 +37,12 @@
 
 namespace WebCore {
 
-PassOwnPtr<MutationObserverRegistration> MutationObserverRegistration::create(PassRefPtr<MutationObserver> observer, Node* registrationNode, MutationObserverOptions options, const HashSet<AtomicString>& attributeFilter)
+PassOwnPtrWillBeRawPtr<MutationObserverRegistration> MutationObserverRegistration::create(MutationObserver& observer, Node* registrationNode, MutationObserverOptions options, const HashSet<AtomicString>& attributeFilter)
 {
-    return adoptPtr(new MutationObserverRegistration(observer, registrationNode, options, attributeFilter));
+    return adoptPtrWillBeNoop(new MutationObserverRegistration(observer, registrationNode, options, attributeFilter));
 }
 
-MutationObserverRegistration::MutationObserverRegistration(PassRefPtr<MutationObserver> observer, Node* registrationNode, MutationObserverOptions options, const HashSet<AtomicString>& attributeFilter)
+MutationObserverRegistration::MutationObserverRegistration(MutationObserver& observer, Node* registrationNode, MutationObserverOptions options, const HashSet<AtomicString>& attributeFilter)
     : m_observer(observer)
     , m_registrationNode(registrationNode)
     , m_options(options)
@@ -53,8 +53,16 @@ MutationObserverRegistration::MutationObserverRegistration(PassRefPtr<MutationOb
 
 MutationObserverRegistration::~MutationObserverRegistration()
 {
+#if !ENABLE(OILPAN)
+    dispose();
+#endif
+}
+
+void MutationObserverRegistration::dispose()
+{
     clearTransientRegistrations();
     m_observer->observationEnded(this);
+    m_observer.clear();
 }
 
 void MutationObserverRegistration::resetObservation(MutationObserverOptions options, const HashSet<AtomicString>& attributeFilter)
@@ -64,21 +72,22 @@ void MutationObserverRegistration::resetObservation(MutationObserverOptions opti
     m_attributeFilter = attributeFilter;
 }
 
-void MutationObserverRegistration::observedSubtreeNodeWillDetach(Node* node)
+void MutationObserverRegistration::observedSubtreeNodeWillDetach(Node& node)
 {
     if (!isSubtree())
         return;
 
-    node->registerTransientMutationObserver(this);
+    node.registerTransientMutationObserver(this);
     m_observer->setHasTransientRegistration();
 
     if (!m_transientRegistrationNodes) {
-        m_transientRegistrationNodes = adoptPtr(new NodeHashSet);
+        m_transientRegistrationNodes = adoptPtrWillBeNoop(new NodeHashSet);
 
+        ASSERT(m_registrationNode);
         ASSERT(!m_registrationNodeKeepAlive);
-        m_registrationNodeKeepAlive = m_registrationNode; // Balanced in clearTransientRegistrations.
+        m_registrationNodeKeepAlive = PassRefPtrWillBeRawPtr<Node>(m_registrationNode.get()); // Balanced in clearTransientRegistrations.
     }
-    m_transientRegistrationNodes->add(node);
+    m_transientRegistrationNodes->add(&node);
 }
 
 void MutationObserverRegistration::clearTransientRegistrations()
@@ -94,22 +103,23 @@ void MutationObserverRegistration::clearTransientRegistrations()
     m_transientRegistrationNodes.clear();
 
     ASSERT(m_registrationNodeKeepAlive);
-    m_registrationNodeKeepAlive = 0; // Balanced in observeSubtreeNodeWillDetach.
+    m_registrationNodeKeepAlive = nullptr; // Balanced in observeSubtreeNodeWillDetach.
 }
 
 void MutationObserverRegistration::unregister()
 {
+    ASSERT(m_registrationNode);
     m_registrationNode->unregisterMutationObserver(this);
     // The above line will cause this object to be deleted, so don't do any more in this function.
 }
 
-bool MutationObserverRegistration::shouldReceiveMutationFrom(Node* node, MutationObserver::MutationType type, const QualifiedName* attributeName) const
+bool MutationObserverRegistration::shouldReceiveMutationFrom(Node& node, MutationObserver::MutationType type, const QualifiedName* attributeName) const
 {
     ASSERT((type == MutationObserver::Attributes && attributeName) || !attributeName);
     if (!(m_options & type))
         return false;
 
-    if (m_registrationNode != node && !isSubtree())
+    if (m_registrationNode != &node && !isSubtree())
         return false;
 
     if (type != MutationObserver::Attributes || !(m_options & MutationObserver::AttributeFilter))
@@ -123,11 +133,22 @@ bool MutationObserverRegistration::shouldReceiveMutationFrom(Node* node, Mutatio
 
 void MutationObserverRegistration::addRegistrationNodesToSet(HashSet<Node*>& nodes) const
 {
-    nodes.add(m_registrationNode);
+    ASSERT(m_registrationNode);
+    nodes.add(m_registrationNode.get());
     if (!m_transientRegistrationNodes)
         return;
     for (NodeHashSet::const_iterator iter = m_transientRegistrationNodes->begin(); iter != m_transientRegistrationNodes->end(); ++iter)
         nodes.add(iter->get());
+}
+
+void MutationObserverRegistration::trace(Visitor* visitor)
+{
+    visitor->trace(m_observer);
+    visitor->trace(m_registrationNode);
+    visitor->trace(m_registrationNodeKeepAlive);
+#if ENABLE(OILPAN)
+    visitor->trace(m_transientRegistrationNodes);
+#endif
 }
 
 } // namespace WebCore

@@ -60,7 +60,7 @@ public:
     void addView(ArrayBufferView*);
     void removeView(ArrayBufferView*);
 
-    bool transfer(ArrayBufferContents&, Vector<RefPtr<ArrayBufferView> >& neuteredViews);
+    bool transfer(ArrayBufferContents&);
     bool isNeutered() { return m_isNeutered; }
 
     void setDeallocationObserver(ArrayBufferDeallocationObserver* observer) { m_contents.setDeallocationObserver(observer); }
@@ -104,7 +104,7 @@ PassRefPtr<ArrayBuffer> ArrayBuffer::create(const void* source, unsigned byteLen
 {
     ArrayBufferContents contents(byteLength, 1, ArrayBufferContents::ZeroInitialize);
     if (!contents.data())
-        return 0;
+        return nullptr;
     RefPtr<ArrayBuffer> buffer = adoptRef(new ArrayBuffer(contents));
     memcpy(buffer->data(), source, byteLength);
     return buffer.release();
@@ -124,7 +124,7 @@ PassRefPtr<ArrayBuffer> ArrayBuffer::create(unsigned numElements, unsigned eleme
 {
     ArrayBufferContents contents(numElements, elementByteSize, policy);
     if (!contents.data())
-        return 0;
+        return nullptr;
     return adoptRef(new ArrayBuffer(contents));
 }
 

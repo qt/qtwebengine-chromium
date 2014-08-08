@@ -22,9 +22,9 @@ class PPAPI_SHARED_EXPORT PPB_OpenGLES2_Shared {
       GetChromiumEnableFeatureInterface();
   static const PPB_OpenGLES2ChromiumMapSub* GetChromiumMapSubInterface();
   static const PPB_OpenGLES2Query* GetQueryInterface();
+  static const PPB_OpenGLES2DrawBuffers_Dev* GetDrawBuffersInterface();
 };
 
 }  // namespace ppapi
 
 #endif  // PPAPI_SHARED_IMPL_PPB_OPENGLES2_SHARED_H_
-

@@ -22,10 +22,8 @@
  *
  */
 
-// FIXME: This is temporary until all ports switch to using this file.
-#if OS(WIN)
-#include "platform/fonts/win/FontPlatformDataWin.h"
-#elif !OS(MACOSX)
+// FIXME: This is temporary until mac switch to using FontPlatformDataHarfBuzz.h and we merge it with this file.
+#if !OS(MACOSX)
 #include "platform/fonts/harfbuzz/FontPlatformDataHarfBuzz.h"
 
 #else
@@ -56,6 +54,7 @@ typedef const struct __CTFont* CTFontRef;
 
 #if OS(MACOSX)
 #include "platform/fonts/mac/MemoryActivatedFont.h"
+#include "third_party/skia/include/core/SkTypeface.h"
 #endif
 
 #if OS(MACOSX)
@@ -88,7 +87,7 @@ public:
     FontPlatformData(float size, bool syntheticBold, bool syntheticOblique, FontOrientation = Horizontal, FontWidthVariant = RegularWidth);
 
 #if OS(MACOSX)
-    FontPlatformData(NSFont*, float size, bool isPrinterFont = false, bool syntheticBold = false, bool syntheticOblique = false,
+    FontPlatformData(NSFont*, float size, bool syntheticBold = false, bool syntheticOblique = false,
                      FontOrientation = Horizontal, FontWidthVariant = RegularWidth);
     FontPlatformData(CGFontRef, float size, bool syntheticBold, bool syntheticOblique, FontOrientation, FontWidthVariant);
 #endif
@@ -103,6 +102,7 @@ public:
 #if OS(MACOSX)
     CGFontRef cgFont() const { return m_cgFont.get(); }
     CTFontRef ctFont() const;
+    SkTypeface* typeface() const;
 
     bool roundsGlyphAdvances() const;
     bool allowsLigatures() const;
@@ -116,9 +116,7 @@ public:
     bool syntheticOblique() const { return m_syntheticOblique; }
     bool isColorBitmapFont() const { return m_isColorBitmapFont; }
     bool isCompositeFontReference() const { return m_isCompositeFontReference; }
-#if OS(MACOSX)
-    bool isPrinterFont() const { return m_isPrinterFont; }
-#endif
+
     FontOrientation orientation() const { return m_orientation; }
     FontWidthVariant widthVariant() const { return m_widthVariant; }
 
@@ -132,7 +130,7 @@ public:
     {
 #if OS(MACOSX)
         ASSERT(m_font || !m_cgFont);
-        uintptr_t hashCodes[3] = { (uintptr_t)m_font, m_widthVariant, static_cast<uintptr_t>(m_isPrinterFont << 3 | m_orientation << 2 | m_syntheticBold << 1 | m_syntheticOblique) };
+        uintptr_t hashCodes[3] = { (uintptr_t)m_font, m_widthVariant, static_cast<uintptr_t>(m_orientation << 2 | m_syntheticBold << 1 | m_syntheticOblique) };
         return StringHasher::hashMemory<sizeof(hashCodes)>(hashCodes);
 #endif
     }
@@ -147,9 +145,6 @@ public:
             && m_syntheticOblique == other.m_syntheticOblique
             && m_isColorBitmapFont == other.m_isColorBitmapFont
             && m_isCompositeFontReference == other.m_isCompositeFontReference
-#if OS(MACOSX)
-            && m_isPrinterFont == other.m_isPrinterFont
-#endif
             && m_orientation == other.m_orientation
             && m_widthVariant == other.m_widthVariant;
     }
@@ -198,13 +193,11 @@ private:
 
     RefPtr<MemoryActivatedFont> m_inMemoryFont;
     RefPtr<HarfBuzzFace> m_harfBuzzFace;
+    mutable RefPtr<SkTypeface> m_typeface;
 #endif
 
     bool m_isColorBitmapFont;
     bool m_isCompositeFontReference;
-#if OS(MACOSX)
-    bool m_isPrinterFont;
-#endif
 };
 
 } // namespace WebCore

@@ -6,6 +6,7 @@
 #define CC_OUTPUT_BEGIN_FRAME_ARGS_H_
 
 #include "base/time/time.h"
+#include "base/values.h"
 #include "cc/base/cc_export.h"
 
 namespace cc {
@@ -19,13 +20,12 @@ struct CC_EXPORT BeginFrameArgs {
   static BeginFrameArgs Create(base::TimeTicks frame_time,
                                base::TimeTicks deadline,
                                base::TimeDelta interval);
-  static BeginFrameArgs CreateForSynchronousCompositor();
-  static BeginFrameArgs CreateForTesting();
-  static BeginFrameArgs CreateExpiredForTesting();
+  static BeginFrameArgs CreateForSynchronousCompositor(
+      base::TimeTicks now = base::TimeTicks());
 
   // This is the default delta that will be used to adjust the deadline when
   // proper draw-time estimations are not yet available.
-  static base::TimeDelta DefaultDeadlineAdjustment();
+  static base::TimeDelta DefaultEstimatedParentDrawTime();
 
   // This is the default interval to use to avoid sprinkling the code with
   // magic numbers.
@@ -38,6 +38,8 @@ struct CC_EXPORT BeginFrameArgs {
   static base::TimeDelta DefaultRetroactiveBeginFramePeriod();
 
   bool IsValid() const { return interval >= base::TimeDelta(); }
+
+  scoped_ptr<base::Value> AsValue() const;
 
   base::TimeTicks frame_time;
   base::TimeTicks deadline;

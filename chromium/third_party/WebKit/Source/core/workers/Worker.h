@@ -31,9 +31,9 @@
 #include "core/dom/MessagePort.h"
 #include "core/events/EventListener.h"
 #include "core/events/EventTarget.h"
-#include "core/events/ThreadLocalEventNames.h"
 #include "core/workers/AbstractWorker.h"
 #include "core/workers/WorkerScriptLoaderClient.h"
+#include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
@@ -46,9 +46,9 @@ class ExecutionContext;
 class WorkerGlobalScopeProxy;
 class WorkerScriptLoader;
 
-class Worker : public AbstractWorker, public ScriptWrappable, private WorkerScriptLoaderClient {
+class Worker FINAL : public AbstractWorker, public ScriptWrappable, private WorkerScriptLoaderClient {
 public:
-    static PassRefPtr<Worker> create(ExecutionContext*, const String& url, ExceptionState&);
+    static PassRefPtrWillBeRawPtr<Worker> create(ExecutionContext*, const String& url, ExceptionState&);
     virtual ~Worker();
 
     virtual const AtomicString& interfaceName() const OVERRIDE;
@@ -61,6 +61,8 @@ public:
     virtual bool hasPendingActivity() const OVERRIDE;
 
     DEFINE_ATTRIBUTE_EVENT_LISTENER(message);
+
+    virtual void trace(Visitor*) OVERRIDE;
 
 private:
     explicit Worker(ExecutionContext*);

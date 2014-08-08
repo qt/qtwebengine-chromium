@@ -13,6 +13,7 @@
 #include "net/base/net_export.h"
 #include "net/http/http_basic_state.h"
 #include "net/websockets/websocket_handshake_stream_base.h"
+#include "url/gurl.h"
 
 namespace net {
 
@@ -21,14 +22,19 @@ class HttpResponseHeaders;
 class HttpResponseInfo;
 class HttpStreamParser;
 
+struct WebSocketExtensionParams;
+
 class NET_EXPORT_PRIVATE WebSocketBasicHandshakeStream
     : public WebSocketHandshakeStreamBase {
  public:
+  // |connect_delegate| and |failure_message| must out-live this object.
   WebSocketBasicHandshakeStream(
       scoped_ptr<ClientSocketHandle> connection,
+      WebSocketStream::ConnectDelegate* connect_delegate,
       bool using_proxy,
       std::vector<std::string> requested_sub_protocols,
-      std::vector<std::string> requested_extensions);
+      std::vector<std::string> requested_extensions,
+      std::string* failure_message);
 
   virtual ~WebSocketBasicHandshakeStream();
 
@@ -41,7 +47,6 @@ class NET_EXPORT_PRIVATE WebSocketBasicHandshakeStream
                           HttpResponseInfo* response,
                           const CompletionCallback& callback) OVERRIDE;
   virtual int ReadResponseHeaders(const CompletionCallback& callback) OVERRIDE;
-  virtual const HttpResponseInfo* GetResponseInfo() const OVERRIDE;
   virtual int ReadResponseBody(IOBuffer* buf,
                                int buf_len,
                                const CompletionCallback& callback) OVERRIDE;
@@ -78,19 +83,28 @@ class NET_EXPORT_PRIVATE WebSocketBasicHandshakeStream
   void ReadResponseHeadersCallback(const CompletionCallback& callback,
                                    int result);
 
-  // Validates the response from the server and returns OK or
-  // ERR_INVALID_RESPONSE.
-  int ValidateResponse();
+  void OnFinishOpeningHandshake();
+
+  // Validates the response and sends the finished handshake event.
+  int ValidateResponse(int rv);
 
   // Check that the headers are well-formed for a 101 response, and returns
   // OK if they are, otherwise returns ERR_INVALID_RESPONSE.
-  int ValidateUpgradeResponse(
-      const scoped_refptr<HttpResponseHeaders>& headers);
+  int ValidateUpgradeResponse(const HttpResponseHeaders* headers);
 
   HttpStreamParser* parser() const { return state_.parser(); }
 
+  void set_failure_message(const std::string& failure_message);
+
+  // The request URL.
+  GURL url_;
+
   // HttpBasicState holds most of the handshake-related state.
   HttpBasicState state_;
+
+  // Owned by another object.
+  // |connect_delegate| will live during the lifetime of this object.
+  WebSocketStream::ConnectDelegate* connect_delegate_;
 
   // This is stored in SendRequest() for use by ReadResponseHeaders().
   HttpResponseInfo* http_response_info_;
@@ -113,6 +127,12 @@ class NET_EXPORT_PRIVATE WebSocketBasicHandshakeStream
 
   // The extension(s) selected by the server.
   std::string extensions_;
+
+  // The extension parameters. The class is defined in the implementation file
+  // to avoid including extension-related header files here.
+  scoped_ptr<WebSocketExtensionParams> extension_params_;
+
+  std::string* failure_message_;
 
   DISALLOW_COPY_AND_ASSIGN(WebSocketBasicHandshakeStream);
 };

@@ -26,13 +26,11 @@
 
 #include "core/dom/Document.h"
 #include "core/events/MouseEvent.h"
-#include "core/events/ThreadLocalEventNames.h"
+#include "core/frame/LocalFrame.h"
 #include "core/html/HTMLDimension.h"
 #include "core/html/HTMLFrameSetElement.h"
 #include "core/page/EventHandler.h"
-#include "core/frame/Frame.h"
 #include "core/rendering/GraphicsContextAnnotator.h"
-#include "core/rendering/LayoutRectRecorder.h"
 #include "core/rendering/PaintInfo.h"
 #include "core/rendering/RenderFrame.h"
 #include "core/rendering/RenderView.h"
@@ -441,13 +439,12 @@ void RenderFrameSet::layout()
 {
     ASSERT(needsLayout());
 
-    LayoutRectRecorder recorder(*this);
-    bool doFullRepaint = !RuntimeEnabledFeatures::repaintAfterLayoutEnabled() && selfNeedsLayout() && checkForRepaintDuringLayout();
+    bool doFullRepaint = selfNeedsLayout() && checkForPaintInvalidationDuringLayout();
     LayoutRect oldBounds;
-    RenderLayerModelObject* repaintContainer = 0;
+    const RenderLayerModelObject* repaintContainer = 0;
     if (doFullRepaint) {
-        repaintContainer = containerForRepaint();
-        oldBounds = clippedOverflowRectForRepaint(repaintContainer);
+        repaintContainer = containerForPaintInvalidation();
+        oldBounds = boundsRectForPaintInvalidation(repaintContainer);
     }
 
     if (!parent()->isFrameSet() && !document().printing()) {
@@ -473,13 +470,13 @@ void RenderFrameSet::layout()
 
     computeEdgeInfo();
 
-    updateLayerTransform();
+    updateLayerTransformAfterLayout();
 
     if (doFullRepaint) {
-        repaintUsingContainer(repaintContainer, pixelSnappedIntRect(oldBounds));
-        LayoutRect newBounds = clippedOverflowRectForRepaint(repaintContainer);
+        invalidatePaintUsingContainer(repaintContainer, pixelSnappedIntRect(oldBounds), InvalidationSelfLayout);
+        LayoutRect newBounds = boundsRectForPaintInvalidation(repaintContainer);
         if (newBounds != oldBounds)
-            repaintUsingContainer(repaintContainer, pixelSnappedIntRect(newBounds));
+            invalidatePaintUsingContainer(repaintContainer, pixelSnappedIntRect(newBounds), InvalidationSelfLayout);
     }
 
     clearNeedsLayout();
@@ -517,7 +514,7 @@ void RenderFrameSet::positionFrames()
             if (width != child->width() || height != child->height()) {
                 child->setWidth(width);
                 child->setHeight(height);
-                child->setNeedsLayout();
+                child->setNeedsLayoutAndFullPaintInvalidation();
                 child->layout();
             }
 
@@ -557,7 +554,7 @@ void RenderFrameSet::continueResizing(GridAxis& axis, int position)
         return;
     axis.m_deltas[axis.m_splitBeingResized - 1] += delta;
     axis.m_deltas[axis.m_splitBeingResized] -= delta;
-    setNeedsLayout();
+    setNeedsLayoutAndFullPaintInvalidation();
 }
 
 bool RenderFrameSet::userResize(MouseEvent* evt)
@@ -596,18 +593,8 @@ void RenderFrameSet::setIsResizing(bool isResizing)
         if (ancestor->isFrameSet())
             toRenderFrameSet(ancestor)->m_isChildResizing = isResizing;
     }
-    if (Frame* frame = this->frame())
+    if (LocalFrame* frame = this->frame())
         frame->eventHandler().setResizingFrameSet(isResizing ? frameSet() : 0);
-}
-
-bool RenderFrameSet::isResizingRow() const
-{
-    return m_isResizing && m_rows.m_splitBeingResized != noSplit;
-}
-
-bool RenderFrameSet::isResizingColumn() const
-{
-    return m_isResizing && m_cols.m_splitBeingResized != noSplit;
 }
 
 bool RenderFrameSet::canResizeRow(const IntPoint& p) const

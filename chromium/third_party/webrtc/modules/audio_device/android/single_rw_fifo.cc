@@ -10,6 +10,8 @@
 
 #include "webrtc/modules/audio_device/android/single_rw_fifo.h"
 
+#include <assert.h>
+
 static int UpdatePos(int pos, int capacity) {
   return (pos + 1) % capacity;
 }
@@ -18,14 +20,16 @@ namespace webrtc {
 
 namespace subtle {
 
-#if defined(__ARMEL__)
-// From http://src.chromium.org/viewvc/chrome/trunk/src/base/atomicops_internals_arm_gcc.h
-// Note that it is only the MemoryBarrier function that makes this class arm
-// specific. Borrowing other MemoryBarrier implementations, this class could
-// be extended to more platforms.
+#if defined(__aarch64__)
+// From http://http://src.chromium.org/viewvc/chrome/trunk/src/base/atomicops_internals_arm64_gcc.h
 inline void MemoryBarrier() {
-  // Note: This is a function call, which is also an implicit compiler
-  // barrier.
+  __asm__ __volatile__ ("dmb ish" ::: "memory");
+}
+
+#elif defined(__ARMEL__)
+// From http://src.chromium.org/viewvc/chrome/trunk/src/base/atomicops_internals_arm_gcc.h
+inline void MemoryBarrier() {
+  // Note: This is a function call, which is also an implicit compiler barrier.
   typedef void (*KernelMemoryBarrierFunc)();
   ((KernelMemoryBarrierFunc)0xffff0fa0)();
 }

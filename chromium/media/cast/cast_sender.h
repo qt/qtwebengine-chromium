@@ -2,11 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
-// This is the main interface for the cast sender. All configuration are done
-// at creation.
+// This is the main interface for the cast sender.
 //
-// The FrameInput and PacketReciever interfaces should normally be accessed from
-// the IO thread. However they are allowed to be called from any thread.
+// The AudioFrameInput, VideoFrameInput and PacketReciever interfaces should
+// be accessed from the main thread.
 
 #ifndef MEDIA_CAST_CAST_SENDER_H_
 #define MEDIA_CAST_CAST_SENDER_H_
@@ -14,83 +13,83 @@
 #include "base/basictypes.h"
 #include "base/callback.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/time/tick_clock.h"
 #include "base/time/time.h"
+#include "media/base/audio_bus.h"
 #include "media/cast/cast_config.h"
 #include "media/cast/cast_environment.h"
+#include "media/cast/transport/cast_transport_sender.h"
 
 namespace media {
-class AudioBus;
 class VideoFrame;
-}
 
-namespace media {
 namespace cast {
+class AudioSender;
+class VideoSender;
 
-// This Class is thread safe.
-class FrameInput : public base::RefCountedThreadSafe<FrameInput> {
+class VideoFrameInput : public base::RefCountedThreadSafe<VideoFrameInput> {
  public:
-  // The video_frame must be valid until the callback is called.
-  // The callback is called from the main cast thread as soon as
-  // the encoder is done with the frame; it does not mean that the encoded frame
-  // has been sent out.
+  // Insert video frames into Cast sender. Frames will be encoded, packetized
+  // and sent to the network.
   virtual void InsertRawVideoFrame(
       const scoped_refptr<media::VideoFrame>& video_frame,
       const base::TimeTicks& capture_time) = 0;
 
-  // The video_frame must be valid until the callback is called.
-  // The callback is called from the main cast thread as soon as
-  // the cast sender is done with the frame; it does not mean that the encoded
-  // frame has been sent out.
-  virtual void InsertCodedVideoFrame(const EncodedVideoFrame* video_frame,
-                                     const base::TimeTicks& capture_time,
-                                     const base::Closure callback) = 0;
-
-  // The |audio_bus| must be valid until the |done_callback| is called.
-  // The callback is called from the main cast thread as soon as the encoder is
-  // done with |audio_bus|; it does not mean that the encoded data has been
-  // sent out.
-  virtual void InsertAudio(const AudioBus* audio_bus,
-                           const base::TimeTicks& recorded_time,
-                           const base::Closure& done_callback) = 0;
-
-  // The audio_frame must be valid until the callback is called.
-  // The callback is called from the main cast thread as soon as
-  // the cast sender is done with the frame; it does not mean that the encoded
-  // frame has been sent out.
-  virtual void InsertCodedAudioFrame(const EncodedAudioFrame* audio_frame,
-                                     const base::TimeTicks& recorded_time,
-                                     const base::Closure callback) = 0;
-
  protected:
-  virtual ~FrameInput() {}
+  virtual ~VideoFrameInput() {}
 
  private:
-  friend class base::RefCountedThreadSafe<FrameInput>;
+  friend class base::RefCountedThreadSafe<VideoFrameInput>;
 };
 
-// This Class is thread safe.
-// The provided PacketSender object will always be called form the main cast
-// thread.
+class AudioFrameInput : public base::RefCountedThreadSafe<AudioFrameInput> {
+ public:
+  // Insert audio frames into Cast sender. Frames will be encoded, packetized
+  // and sent to the network.
+  virtual void InsertAudio(scoped_ptr<AudioBus> audio_bus,
+                           const base::TimeTicks& recorded_time) = 0;
+
+ protected:
+  virtual ~AudioFrameInput() {}
+
+ private:
+  friend class base::RefCountedThreadSafe<AudioFrameInput>;
+};
+
+// All methods of CastSender must be called on the main thread.
+// Provided CastTransportSender will also be called on the main thread.
 class CastSender {
  public:
-  static CastSender* CreateCastSender(
+  static scoped_ptr<CastSender> Create(
       scoped_refptr<CastEnvironment> cast_environment,
-      const AudioSenderConfig& audio_config,
-      const VideoSenderConfig& video_config,
-      VideoEncoderController* const video_encoder_controller,
-      PacketSender* const packet_sender);
+      transport::CastTransportSender* const transport_sender);
 
   virtual ~CastSender() {}
 
-  // All audio and video frames for the session should be inserted to this
-  // object.
-  // Can be called from any thread.
-  virtual scoped_refptr<FrameInput> frame_input() = 0;
+  // All video frames for the session should be inserted to this object.
+  virtual scoped_refptr<VideoFrameInput> video_frame_input() = 0;
+
+  // All audio frames for the session should be inserted to this object.
+  virtual scoped_refptr<AudioFrameInput> audio_frame_input() = 0;
 
   // All RTCP packets for the session should be inserted to this object.
-  // Can be called from any thread.
-  virtual scoped_refptr<PacketReceiver> packet_receiver() = 0;
+  // This function and the callback must be called on the main thread.
+  virtual transport::PacketReceiverCallback packet_receiver() = 0;
+
+  // Initialize the audio stack. Must be called in order to send audio frames.
+  // Status of the initialization will be returned on cast_initialization_cb.
+  virtual void InitializeAudio(
+      const AudioSenderConfig& audio_config,
+      const CastInitializationCallback& cast_initialization_cb) = 0;
+
+  // Initialize the video stack. Must be called in order to send video frames.
+  // Status of the initialization will be returned on cast_initialization_cb.
+  virtual void InitializeVideo(
+      const VideoSenderConfig& video_config,
+      const CastInitializationCallback& cast_initialization_cb,
+      const CreateVideoEncodeAcceleratorCallback& create_vea_cb,
+      const CreateVideoEncodeMemoryCallback& create_video_encode_mem_cb) = 0;
 };
 
 }  // namespace cast

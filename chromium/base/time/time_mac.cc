@@ -15,6 +15,7 @@
 
 #include "base/basictypes.h"
 #include "base/logging.h"
+#include "base/mac/mach_logging.h"
 #include "base/mac/scoped_cftyperef.h"
 #include "base/mac/scoped_mach_port.h"
 
@@ -46,7 +47,7 @@ uint64_t ComputeCurrentTicks() {
     // whether mach_timebase_info has already been called.  This is
     // recommended by Apple's QA1398.
     kern_return_t kr = mach_timebase_info(&timebase_info);
-    DCHECK_EQ(KERN_SUCCESS, kr);
+    MACH_DCHECK(kr == KERN_SUCCESS, kr) << "mach_timebase_info";
   }
 
   // mach_absolute_time is it when it comes to ticks on the Mac.  Other calls
@@ -71,11 +72,11 @@ uint64_t ComputeThreadTicks() {
   NOTREACHED();
   return 0;
 #else
-  base::mac::ScopedMachPort thread(mach_thread_self());
+  base::mac::ScopedMachSendRight thread(mach_thread_self());
   mach_msg_type_number_t thread_info_count = THREAD_BASIC_INFO_COUNT;
   thread_basic_info_data_t thread_info_data;
 
-  if (thread == MACH_PORT_NULL) {
+  if (thread.get() == MACH_PORT_NULL) {
     DLOG(ERROR) << "Failed to get mach_thread_self()";
     return 0;
   }
@@ -85,7 +86,7 @@ uint64_t ComputeThreadTicks() {
       THREAD_BASIC_INFO,
       reinterpret_cast<thread_info_t>(&thread_info_data),
       &thread_info_count);
-  DCHECK_EQ(KERN_SUCCESS, kr);
+  MACH_DCHECK(kr == KERN_SUCCESS, kr) << "thread_info";
 
   return (thread_info_data.user_time.seconds *
               base::Time::kMicrosecondsPerSecond) +
@@ -131,9 +132,11 @@ Time Time::Now() {
 
 // static
 Time Time::FromCFAbsoluteTime(CFAbsoluteTime t) {
+  COMPILE_ASSERT(std::numeric_limits<CFAbsoluteTime>::has_infinity,
+                 numeric_limits_infinity_is_undefined_when_not_has_infinity);
   if (t == 0)
     return Time();  // Consider 0 as a null Time.
-  if (t == std::numeric_limits<CFAbsoluteTime>::max())
+  if (t == std::numeric_limits<CFAbsoluteTime>::infinity())
     return Max();
   return Time(static_cast<int64>(
       (t + kCFAbsoluteTimeIntervalSince1970) * kMicrosecondsPerSecond) +
@@ -141,10 +144,12 @@ Time Time::FromCFAbsoluteTime(CFAbsoluteTime t) {
 }
 
 CFAbsoluteTime Time::ToCFAbsoluteTime() const {
+  COMPILE_ASSERT(std::numeric_limits<CFAbsoluteTime>::has_infinity,
+                 numeric_limits_infinity_is_undefined_when_not_has_infinity);
   if (is_null())
     return 0;  // Consider 0 as a null Time.
   if (is_max())
-    return std::numeric_limits<CFAbsoluteTime>::max();
+    return std::numeric_limits<CFAbsoluteTime>::infinity();
   return (static_cast<CFAbsoluteTime>(us_ - kWindowsEpochDeltaMicroseconds) /
       kMicrosecondsPerSecond) - kCFAbsoluteTimeIntervalSince1970;
 }

@@ -28,16 +28,16 @@
 
 #include "core/page/DragActions.h"
 #include "platform/geometry/IntPoint.h"
-
+#include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
 #include "wtf/HashMap.h"
 #include "wtf/Vector.h"
 
 namespace WebCore {
 
-class ChromiumDataObject;
+class DataObject;
 class DocumentFragment;
-class Frame;
+class LocalFrame;
 class KURL;
 class Range;
 
@@ -54,12 +54,12 @@ public:
     enum FilenameConversionPolicy { DoNotConvertFilenames, ConvertFilenames };
 
     // clientPosition is taken to be the position of the drag event within the target window, with (0,0) at the top left
-    DragData(ChromiumDataObject*, const IntPoint& clientPosition, const IntPoint& globalPosition, DragOperation, DragApplicationFlags = DragApplicationNone);
+    DragData(DataObject*, const IntPoint& clientPosition, const IntPoint& globalPosition, DragOperation, DragApplicationFlags = DragApplicationNone);
     DragData(const String& dragStorageName, const IntPoint& clientPosition, const IntPoint& globalPosition, DragOperation, DragApplicationFlags = DragApplicationNone);
     const IntPoint& clientPosition() const { return m_clientPosition; }
     const IntPoint& globalPosition() const { return m_globalPosition; }
     DragApplicationFlags flags() const { return m_applicationFlags; }
-    ChromiumDataObject* platformData() const { return m_platformDragData; }
+    DataObject* platformData() const { return m_platformDragData; }
     DragOperation draggingSourceOperationMask() const { return m_draggingSourceOperationMask; }
     bool containsURL(FilenameConversionPolicy filenamePolicy = ConvertFilenames) const;
     bool containsPlainText() const;
@@ -67,7 +67,7 @@ public:
     String asURL(FilenameConversionPolicy filenamePolicy = ConvertFilenames, String* title = 0) const;
     String asPlainText() const;
     void asFilenames(Vector<String>&) const;
-    PassRefPtr<DocumentFragment> asFragment(Frame*, PassRefPtr<Range> context, bool allowPlainText, bool& chosePlainText) const;
+    PassRefPtrWillBeRawPtr<DocumentFragment> asFragment(LocalFrame*, PassRefPtrWillBeRawPtr<Range> context, bool allowPlainText, bool& chosePlainText) const;
     bool canSmartReplace() const;
     bool containsFiles() const;
     unsigned numberOfFiles() const;
@@ -78,7 +78,7 @@ public:
 private:
     IntPoint m_clientPosition;
     IntPoint m_globalPosition;
-    ChromiumDataObject* m_platformDragData;
+    DataObject* m_platformDragData;
     DragOperation m_draggingSourceOperationMask;
     DragApplicationFlags m_applicationFlags;
 };

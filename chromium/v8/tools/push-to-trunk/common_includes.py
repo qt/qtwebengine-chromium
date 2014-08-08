@@ -26,6 +26,10 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+import argparse
+import datetime
+import imp
+import json
 import os
 import re
 import subprocess
@@ -34,8 +38,10 @@ import textwrap
 import time
 import urllib2
 
+from git_recipes import GitRecipesMixin
+from git_recipes import GitFailedException
+
 PERSISTFILE_BASENAME = "PERSISTFILE_BASENAME"
-TEMP_BRANCH = "TEMP_BRANCH"
 BRANCHNAME = "BRANCHNAME"
 DOT_GIT_LOCATION = "DOT_GIT_LOCATION"
 VERSION_FILE = "VERSION_FILE"
@@ -79,14 +85,6 @@ def Fill80(line):
                        subsequent_indent="        ")
 
 
-def GetLastChangeLogEntries(change_log_file):
-  result = []
-  for line in LinesInFile(change_log_file):
-    if re.search(r"^\d{4}-\d{2}-\d{2}:", line) and result: break
-    result.append(line)
-  return "".join(result)
-
-
 def MakeComment(text):
   return MSub(r"^( ?)", "#", text)
 
@@ -105,7 +103,7 @@ def MakeChangeLogBody(commit_messages, auto_format=False):
     title = title.strip()
     if auto_format:
       # Only add commits that set the LOG flag correctly.
-      log_exp = r"^[ \t]*LOG[ \t]*=[ \t]*(?:Y(?:ES)?)|TRUE"
+      log_exp = r"^[ \t]*LOG[ \t]*=[ \t]*(?:(?:Y(?:ES)?)|TRUE)"
       if not re.search(log_exp, body, flags=re.I | re.M):
         continue
       # Never include reverts.
@@ -177,6 +175,7 @@ def Command(cmd, args="", prefix="", pipe=True):
   # TODO(machenbach): Use timeout.
   cmd_line = "%s %s %s" % (prefix, cmd, args)
   print "Command: %s" % cmd_line
+  sys.stdout.flush()
   try:
     if pipe:
       return subprocess.check_output(cmd_line, shell=True)
@@ -184,31 +183,44 @@ def Command(cmd, args="", prefix="", pipe=True):
       return subprocess.check_call(cmd_line, shell=True)
   except subprocess.CalledProcessError:
     return None
+  finally:
+    sys.stdout.flush()
+    sys.stderr.flush()
 
 
 # Wrapper for side effects.
-class SideEffectHandler(object):
+class SideEffectHandler(object):  # pragma: no cover
+  def Call(self, fun, *args, **kwargs):
+    return fun(*args, **kwargs)
+
   def Command(self, cmd, args="", prefix="", pipe=True):
     return Command(cmd, args, prefix, pipe)
 
   def ReadLine(self):
     return sys.stdin.readline().strip()
 
-  def ReadURL(self, url):
+  def ReadURL(self, url, params=None):
     # pylint: disable=E1121
-    url_fh = urllib2.urlopen(url, None, 60)
+    url_fh = urllib2.urlopen(url, params, 60)
     try:
       return url_fh.read()
     finally:
       url_fh.close()
 
-  def Sleep(seconds):
+  def Sleep(self, seconds):
     time.sleep(seconds)
+
+  def GetDate(self):
+    return datetime.date.today().strftime("%Y-%m-%d")
 
 DEFAULT_SIDE_EFFECT_HANDLER = SideEffectHandler()
 
 
-class Step(object):
+class NoRetryException(Exception):
+  pass
+
+
+class Step(GitRecipesMixin):
   def __init__(self, text, requires, number, config, state, options, handler):
     self._text = text
     self._requires = requires
@@ -222,18 +234,37 @@ class Step(object):
     assert self._state is not None
     assert self._side_effect_handler is not None
 
+  def __getitem__(self, key):
+    # Convenience method to allow direct [] access on step classes for
+    # manipulating the backed state dict.
+    return self._state[key]
+
+  def __setitem__(self, key, value):
+    # Convenience method to allow direct [] access on step classes for
+    # manipulating the backed state dict.
+    self._state[key] = value
+
   def Config(self, key):
     return self._config[key]
 
   def Run(self):
-    if self._requires:
-      self.RestoreIfUnset(self._requires)
-      if not self._state[self._requires]:
-        return
-    print ">>> Step %d: %s" % (self._number, self._text)
-    self.RunStep()
+    # Restore state.
+    state_file = "%s-state.json" % self._config[PERSISTFILE_BASENAME]
+    if not self._state and os.path.exists(state_file):
+      self._state.update(json.loads(FileToText(state_file)))
 
-  def RunStep(self):
+    # Skip step if requirement is not met.
+    if self._requires and not self._state.get(self._requires):
+      return
+
+    print ">>> Step %d: %s" % (self._number, self._text)
+    try:
+      return self.RunStep()
+    finally:
+      # Persist state.
+      TextToFile(json.dumps(self._state), state_file)
+
+  def RunStep(self):  # pragma: no cover
     raise NotImplementedError
 
   def Retry(self, cb, retry_on=None, wait_plan=None):
@@ -253,10 +284,12 @@ class Step(object):
       got_exception = False
       try:
         result = cb()
+      except NoRetryException, e:
+        raise e
       except Exception:
         got_exception = True
       if got_exception or retry_on(result):
-        if not wait_plan:
+        if not wait_plan:  # pragma: no cover
           raise Exception("Retried too often. Giving up.")
         wait_time = wait_plan.pop()
         print "Waiting for %f seconds." % wait_time
@@ -267,7 +300,7 @@ class Step(object):
 
   def ReadLine(self, default=None):
     # Don't prompt in forced mode.
-    if self._options and self._options.f and default is not None:
+    if self._options.force_readline_defaults and default is not None:
       print "%s (forced)" % default
       return default
     else:
@@ -275,16 +308,27 @@ class Step(object):
 
   def Git(self, args="", prefix="", pipe=True, retry_on=None):
     cmd = lambda: self._side_effect_handler.Command("git", args, prefix, pipe)
+    result = self.Retry(cmd, retry_on, [5, 30])
+    if result is None:
+      raise GitFailedException("'git %s' failed." % args)
+    return result
+
+  def SVN(self, args="", prefix="", pipe=True, retry_on=None):
+    cmd = lambda: self._side_effect_handler.Command("svn", args, prefix, pipe)
     return self.Retry(cmd, retry_on, [5, 30])
 
   def Editor(self, args):
-    return self._side_effect_handler.Command(os.environ["EDITOR"], args,
-                                             pipe=False)
+    if self._options.requires_editor:
+      return self._side_effect_handler.Command(os.environ["EDITOR"], args,
+                                               pipe=False)
 
-  def ReadURL(self, url, retry_on=None, wait_plan=None):
+  def ReadURL(self, url, params=None, retry_on=None, wait_plan=None):
     wait_plan = wait_plan or [3, 60, 600]
-    cmd = lambda: self._side_effect_handler.ReadURL(url)
+    cmd = lambda: self._side_effect_handler.ReadURL(url, params)
     return self.Retry(cmd, retry_on, wait_plan)
+
+  def GetDate(self):
+    return self._side_effect_handler.GetDate()
 
   def Die(self, msg=""):
     if msg != "":
@@ -292,9 +336,9 @@ class Step(object):
     print "Exiting"
     raise Exception(msg)
 
-  def DieInForcedMode(self, msg=""):
-    if self._options and self._options.f:
-      msg = msg or "Not implemented in forced mode."
+  def DieNoManualMode(self, msg=""):
+    if not self._options.manual:  # pragma: no cover
+      msg = msg or "Only available in manual mode."
       self.Die(msg)
 
   def Confirm(self, msg):
@@ -303,79 +347,45 @@ class Step(object):
     return answer == "" or answer == "Y" or answer == "y"
 
   def DeleteBranch(self, name):
-    git_result = self.Git("branch").strip()
-    for line in git_result.splitlines():
+    for line in self.GitBranch().splitlines():
       if re.match(r".*\s+%s$" % name, line):
         msg = "Branch %s exists, do you want to delete it?" % name
         if self.Confirm(msg):
-          if self.Git("branch -D %s" % name) is None:
-            self.Die("Deleting branch '%s' failed." % name)
+          self.GitDeleteBranch(name)
           print "Branch %s deleted." % name
         else:
           msg = "Can't continue. Please delete branch %s and try again." % name
           self.Die(msg)
 
-  def Persist(self, var, value):
-    value = value or "__EMPTY__"
-    TextToFile(value, "%s-%s" % (self._config[PERSISTFILE_BASENAME], var))
-
-  def Restore(self, var):
-    value = FileToText("%s-%s" % (self._config[PERSISTFILE_BASENAME], var))
-    value = value or self.Die("Variable '%s' could not be restored." % var)
-    return "" if value == "__EMPTY__" else value
-
-  def RestoreIfUnset(self, var_name):
-    if self._state.get(var_name) is None:
-      self._state[var_name] = self.Restore(var_name)
-
   def InitialEnvironmentChecks(self):
     # Cancel if this is not a git checkout.
-    if not os.path.exists(self._config[DOT_GIT_LOCATION]):
+    if not os.path.exists(self._config[DOT_GIT_LOCATION]):  # pragma: no cover
       self.Die("This is not a git checkout, this script won't work for you.")
 
-    # TODO(machenbach): Don't use EDITOR in forced mode as soon as script is
-    # well tested.
     # Cancel if EDITOR is unset or not executable.
-    if (not os.environ.get("EDITOR") or
-        Command("which", os.environ["EDITOR"]) is None):
+    if (self._options.requires_editor and (not os.environ.get("EDITOR") or
+        Command("which", os.environ["EDITOR"]) is None)):  # pragma: no cover
       self.Die("Please set your EDITOR environment variable, you'll need it.")
 
   def CommonPrepare(self):
     # Check for a clean workdir.
-    if self.Git("status -s -uno").strip() != "":
+    if not self.GitIsWorkdirClean():  # pragma: no cover
       self.Die("Workspace is not clean. Please commit or undo your changes.")
 
     # Persist current branch.
-    current_branch = ""
-    git_result = self.Git("status -s -b -uno").strip()
-    for line in git_result.splitlines():
-      match = re.match(r"^## (.+)", line)
-      if match:
-        current_branch = match.group(1)
-        break
-    self.Persist("current_branch", current_branch)
+    self["current_branch"] = self.GitCurrentBranch()
 
     # Fetch unfetched revisions.
-    if self.Git("svn fetch") is None:
-      self.Die("'git svn fetch' failed.")
+    self.GitSVNFetch()
 
   def PrepareBranch(self):
-    # Get ahold of a safe temporary branch and check it out.
-    self.RestoreIfUnset("current_branch")
-    if self._state["current_branch"] != self._config[TEMP_BRANCH]:
-      self.DeleteBranch(self._config[TEMP_BRANCH])
-      self.Git("checkout -b %s" % self._config[TEMP_BRANCH])
-
     # Delete the branch that will be created later if it exists already.
     self.DeleteBranch(self._config[BRANCHNAME])
 
   def CommonCleanup(self):
-    self.RestoreIfUnset("current_branch")
-    self.Git("checkout -f %s" % self._state["current_branch"])
-    if self._config[TEMP_BRANCH] != self._state["current_branch"]:
-      self.Git("branch -D %s" % self._config[TEMP_BRANCH])
-    if self._config[BRANCHNAME] != self._state["current_branch"]:
-      self.Git("branch -D %s" % self._config[BRANCHNAME])
+    self.GitCheckout(self["current_branch"])
+    if self._config[BRANCHNAME] != self["current_branch"]:
+      self.GitDeleteBranch(self._config[BRANCHNAME])
 
     # Clean up all temporary files.
     Command("rm", "-f %s*" % self._config[PERSISTFILE_BASENAME])
@@ -385,18 +395,13 @@ class Step(object):
       match = re.match(r"^#define %s\s+(\d*)" % def_name, line)
       if match:
         value = match.group(1)
-        self.Persist("%s%s" % (prefix, var_name), value)
-        self._state["%s%s" % (prefix, var_name)] = value
+        self["%s%s" % (prefix, var_name)] = value
     for line in LinesInFile(self._config[VERSION_FILE]):
       for (var_name, def_name) in [("major", "MAJOR_VERSION"),
                                    ("minor", "MINOR_VERSION"),
                                    ("build", "BUILD_NUMBER"),
                                    ("patch", "PATCH_LEVEL")]:
         ReadAndPersist(var_name, def_name)
-
-  def RestoreVersionIfUnset(self, prefix=""):
-    for v in ["major", "minor", "build", "patch"]:
-      self.RestoreIfUnset("%s%s" % (prefix, v))
 
   def WaitForLGTM(self):
     print ("Please wait for an LGTM, then type \"LGTM<Return>\" to commit "
@@ -406,9 +411,7 @@ class Step(object):
     answer = ""
     while answer != "LGTM":
       print "> ",
-      # TODO(machenbach): Add default="LGTM" to avoid prompt when script is
-      # well tested and when prepare push cl has TBR flag.
-      answer = self.ReadLine()
+      answer = self.ReadLine(None if self._options.wait_for_lgtm else "LGTM")
       if answer != "LGTM":
         print "That was not 'LGTM'."
 
@@ -416,7 +419,7 @@ class Step(object):
     print("Applying the patch \"%s\" failed. Either type \"ABORT<Return>\", "
           "or resolve the conflicts, stage *all* touched files with "
           "'git add', and type \"RESOLVED<Return>\"")
-    self.DieInForcedMode()
+    self.DieNoManualMode()
     answer = ""
     while answer != "RESOLVED":
       if answer == "ABORT":
@@ -427,29 +430,69 @@ class Step(object):
       answer = self.ReadLine()
 
   # Takes a file containing the patch to apply as first argument.
-  def ApplyPatch(self, patch_file, reverse_patch=""):
-    args = "apply --index --reject %s \"%s\"" % (reverse_patch, patch_file)
-    if self.Git(args) is None:
+  def ApplyPatch(self, patch_file, revert=False):
+    try:
+      self.GitApplyPatch(patch_file, revert)
+    except GitFailedException:
       self.WaitForResolvingConflicts(patch_file)
+
+  def FindLastTrunkPush(self, parent_hash="", include_patches=False):
+    push_pattern = "^Version [[:digit:]]*\.[[:digit:]]*\.[[:digit:]]*"
+    if not include_patches:
+      # Non-patched versions only have three numbers followed by the "(based
+      # on...) comment."
+      push_pattern += " (based"
+    branch = "" if parent_hash else "svn/trunk"
+    return self.GitLog(n=1, format="%H", grep=push_pattern,
+                       parent_hash=parent_hash, branch=branch)
 
 
 class UploadStep(Step):
   MESSAGE = "Upload for code review."
 
   def RunStep(self):
-    if self._options.r:
-      print "Using account %s for review." % self._options.r
-      reviewer = self._options.r
+    if self._options.reviewer:
+      print "Using account %s for review." % self._options.reviewer
+      reviewer = self._options.reviewer
     else:
       print "Please enter the email address of a V8 reviewer for your patch: ",
-      self.DieInForcedMode("A reviewer must be specified in forced mode.")
+      self.DieNoManualMode("A reviewer must be specified in forced mode.")
       reviewer = self.ReadLine()
-    force_flag = " -f" if self._options.f else ""
-    args = "cl upload -r \"%s\" --send-mail%s" % (reviewer, force_flag)
-    # TODO(machenbach): Check output in forced mode. Verify that all required
-    # base files were uploaded, if not retry.
-    if self.Git(args, pipe=False) is None:
-      self.Die("'git cl upload' failed, please try again.")
+    self.GitUpload(reviewer, self._options.author, self._options.force_upload)
+
+
+class DetermineV8Sheriff(Step):
+  MESSAGE = "Determine the V8 sheriff for code review."
+
+  def RunStep(self):
+    self["sheriff"] = None
+    if not self._options.sheriff:  # pragma: no cover
+      return
+
+    try:
+      # The googlers mapping maps @google.com accounts to @chromium.org
+      # accounts.
+      googlers = imp.load_source('googlers_mapping',
+                                 self._options.googlers_mapping)
+      googlers = googlers.list_to_dict(googlers.get_list())
+    except:  # pragma: no cover
+      print "Skip determining sheriff without googler mapping."
+      return
+
+    # The sheriff determined by the rotation on the waterfall has a
+    # @google.com account.
+    url = "https://chromium-build.appspot.com/p/chromium/sheriff_v8.js"
+    match = re.match(r"document\.write\('(\w+)'\)", self.ReadURL(url))
+
+    # If "channel is sheriff", we can't match an account.
+    if match:
+      g_name = match.group(1)
+      self["sheriff"] = googlers.get(g_name + "@google.com",
+                                     g_name + "@chromium.org")
+      self._options.reviewer = self["sheriff"]
+      print "Found active sheriff: %s" % self["sheriff"]
+    else:
+      print "No active sheriff found."
 
 
 def MakeStep(step_class=Step, number=0, state=None, config=None,
@@ -472,15 +515,92 @@ def MakeStep(step_class=Step, number=0, state=None, config=None,
                       handler=side_effect_handler)
 
 
-def RunScript(step_classes,
-              config,
-              options,
-              side_effect_handler=DEFAULT_SIDE_EFFECT_HANDLER):
-  state = {}
-  steps = []
-  for (number, step_class) in enumerate(step_classes):
-    steps.append(MakeStep(step_class, number, state, config,
-                          options, side_effect_handler))
+class ScriptsBase(object):
+  # TODO(machenbach): Move static config here.
+  def __init__(self, config, side_effect_handler=DEFAULT_SIDE_EFFECT_HANDLER,
+               state=None):
+    self._config = config
+    self._side_effect_handler = side_effect_handler
+    self._state = state if state is not None else {}
 
-  for step in steps[options.s:]:
-    step.Run()
+  def _Description(self):
+    return None
+
+  def _PrepareOptions(self, parser):
+    pass
+
+  def _ProcessOptions(self, options):
+    return True
+
+  def _Steps(self):  # pragma: no cover
+    raise Exception("Not implemented.")
+
+  def MakeOptions(self, args=None):
+    parser = argparse.ArgumentParser(description=self._Description())
+    parser.add_argument("-a", "--author", default="",
+                        help="The author email used for rietveld.")
+    parser.add_argument("-g", "--googlers-mapping",
+                        help="Path to the script mapping google accounts.")
+    parser.add_argument("-r", "--reviewer", default="",
+                        help="The account name to be used for reviews.")
+    parser.add_argument("--sheriff", default=False, action="store_true",
+                        help=("Determine current sheriff to review CLs. On "
+                              "success, this will overwrite the reviewer "
+                              "option."))
+    parser.add_argument("-s", "--step",
+        help="Specify the step where to start work. Default: 0.",
+        default=0, type=int)
+
+    self._PrepareOptions(parser)
+
+    if args is None:  # pragma: no cover
+      options = parser.parse_args()
+    else:
+      options = parser.parse_args(args)
+
+    # Process common options.
+    if options.step < 0:  # pragma: no cover
+      print "Bad step number %d" % options.step
+      parser.print_help()
+      return None
+    if options.sheriff and not options.googlers_mapping:  # pragma: no cover
+      print "To determine the current sheriff, requires the googler mapping"
+      parser.print_help()
+      return None
+
+    # Defaults for options, common to all scripts.
+    options.manual = getattr(options, "manual", True)
+    options.force = getattr(options, "force", False)
+
+    # Derived options.
+    options.requires_editor = not options.force
+    options.wait_for_lgtm = not options.force
+    options.force_readline_defaults = not options.manual
+    options.force_upload = not options.manual
+
+    # Process script specific options.
+    if not self._ProcessOptions(options):
+      parser.print_help()
+      return None
+    return options
+
+  def RunSteps(self, step_classes, args=None):
+    options = self.MakeOptions(args)
+    if not options:
+      return 1
+
+    state_file = "%s-state.json" % self._config[PERSISTFILE_BASENAME]
+    if options.step == 0 and os.path.exists(state_file):
+      os.remove(state_file)
+
+    steps = []
+    for (number, step_class) in enumerate(step_classes):
+      steps.append(MakeStep(step_class, number, self._state, self._config,
+                            options, self._side_effect_handler))
+    for step in steps[options.step:]:
+      if step.Run():
+        return 1
+    return 0
+
+  def Run(self, args=None):
+    return self.RunSteps(self._Steps(), args)

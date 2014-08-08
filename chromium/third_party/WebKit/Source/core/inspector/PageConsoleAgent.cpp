@@ -39,8 +39,8 @@
 
 namespace WebCore {
 
-PageConsoleAgent::PageConsoleAgent(InstrumentingAgents* instrumentingAgents, InspectorCompositeState* state, InjectedScriptManager* injectedScriptManager, InspectorDOMAgent* domAgent, InspectorTimelineAgent* timelineAgent)
-    : InspectorConsoleAgent(instrumentingAgents, timelineAgent, state, injectedScriptManager)
+PageConsoleAgent::PageConsoleAgent(InjectedScriptManager* injectedScriptManager, InspectorDOMAgent* domAgent, InspectorTimelineAgent* timelineAgent)
+    : InspectorConsoleAgent(timelineAgent, injectedScriptManager)
     , m_inspectorDOMAgent(domAgent)
 {
 }
@@ -56,10 +56,10 @@ void PageConsoleAgent::clearMessages(ErrorString* errorString)
     InspectorConsoleAgent::clearMessages(errorString);
 }
 
-class InspectableNode : public InjectedScriptHost::InspectableObject {
+class InspectableNode FINAL : public InjectedScriptHost::InspectableObject {
 public:
     explicit InspectableNode(Node* node) : m_node(node) { }
-    virtual ScriptValue get(ScriptState* state)
+    virtual ScriptValue get(ScriptState* state) OVERRIDE
     {
         return InjectedScriptHost::nodeAsScriptValue(state, m_node);
     }
@@ -75,11 +75,11 @@ void PageConsoleAgent::addInspectedNode(ErrorString* errorString, int nodeId)
         return;
     }
     while (node->isInShadowTree()) {
-        Node* ancestor = node->highestAncestor();
-        if (!ancestor->isShadowRoot() || toShadowRoot(ancestor)->type() == ShadowRoot::AuthorShadowRoot)
+        Node& ancestor = node->highestAncestorOrSelf();
+        if (!ancestor.isShadowRoot() || toShadowRoot(ancestor).type() == ShadowRoot::AuthorShadowRoot)
             break;
         // User agent shadow root, keep climbing up.
-        node = toShadowRoot(ancestor)->host();
+        node = toShadowRoot(ancestor).host();
     }
     m_injectedScriptManager->injectedScriptHost()->addInspectedObject(adoptPtr(new InspectableNode(node)));
 }

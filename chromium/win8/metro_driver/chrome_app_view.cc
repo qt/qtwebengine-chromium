@@ -777,7 +777,7 @@ void ChromeAppView::CheckForOSKActivation() {
   // process. If yes then fire the notification once for when the OSK is shown
   // and once for when it is hidden.
   // TODO(ananta)
-  // Take this out when the documented input pane notifcation issues are
+  // Take this out when the documented input pane notification issues are
   // addressed.
   HWND osk = ::FindWindow(kOSKClassName, NULL);
   if (::IsWindow(osk)) {
@@ -819,7 +819,7 @@ ChromeAppView::Run() {
   }
 
   // Create a message loop to allow message passing into this thread.
-  base::MessageLoop msg_loop(base::MessageLoop::TYPE_UI);
+  base::MessageLoopForUI msg_loop;
 
   // Announce our message loop to the world.
   globals.appview_msg_loop = msg_loop.message_loop_proxy();
@@ -1088,8 +1088,8 @@ HRESULT ChromeAppView::OnShareDataRequested(
     return E_FAIL;
   }
 
-  string16 current_title(current_tab_info.title);
-  string16 current_url(current_tab_info.url);
+  base::string16 current_title(current_tab_info.title);
+  base::string16 current_url(current_tab_info.url);
 
   LocalFree(current_tab_info.title);
   LocalFree(current_tab_info.url);

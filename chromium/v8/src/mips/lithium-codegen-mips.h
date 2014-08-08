@@ -1,40 +1,17 @@
 // Copyright 2012 the V8 project authors. All rights reserved.
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-//       copyright notice, this list of conditions and the following
-//       disclaimer in the documentation and/or other materials provided
-//       with the distribution.
-//     * Neither the name of Google Inc. nor the names of its
-//       contributors may be used to endorse or promote products derived
-//       from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
 #ifndef V8_MIPS_LITHIUM_CODEGEN_MIPS_H_
 #define V8_MIPS_LITHIUM_CODEGEN_MIPS_H_
 
-#include "deoptimizer.h"
-#include "mips/lithium-gap-resolver-mips.h"
-#include "mips/lithium-mips.h"
-#include "lithium-codegen.h"
-#include "safepoint-table.h"
-#include "scopes.h"
-#include "v8utils.h"
+#include "src/deoptimizer.h"
+#include "src/mips/lithium-gap-resolver-mips.h"
+#include "src/mips/lithium-mips.h"
+#include "src/lithium-codegen.h"
+#include "src/safepoint-table.h"
+#include "src/scopes.h"
+#include "src/utils.h"
 
 namespace v8 {
 namespace internal {
@@ -124,9 +101,11 @@ class LCodeGen: public LCodeGenBase {
   void DoDeferredNumberTagD(LNumberTagD* instr);
 
   enum IntegerSignedness { SIGNED_INT32, UNSIGNED_INT32 };
-  void DoDeferredNumberTagI(LInstruction* instr,
-                            LOperand* value,
-                            IntegerSignedness signedness);
+  void DoDeferredNumberTagIU(LInstruction* instr,
+                             LOperand* value,
+                             LOperand* temp1,
+                             LOperand* temp2,
+                             IntegerSignedness signedness);
 
   void DoDeferredTaggedToI(LTaggedToI* instr);
   void DoDeferredMathAbsTaggedHeapNumber(LMathAbs* instr);
@@ -138,6 +117,10 @@ class LCodeGen: public LCodeGenBase {
                                        Label* map_check);
 
   void DoDeferredInstanceMigration(LCheckMaps* instr, Register object);
+  void DoDeferredLoadMutableDouble(LLoadFieldByIndex* instr,
+                                   Register result,
+                                   Register object,
+                                   Register index);
 
   // Parallel move support.
   void DoParallelMove(LParallelMove* move);
@@ -149,8 +132,7 @@ class LCodeGen: public LCodeGenBase {
                                  int constant_key,
                                  int element_size,
                                  int shift_size,
-                                 int additional_index,
-                                 int additional_offset);
+                                 int base_offset);
 
   // Emit frame translation commands for an environment.
   void WriteTranslation(LEnvironment* environment, Translation* translation);
@@ -161,9 +143,7 @@ class LCodeGen: public LCodeGenBase {
 #undef DECLARE_DO
 
  private:
-  StrictModeFlag strict_mode_flag() const {
-    return info()->is_classic_mode() ? kNonStrictMode : kStrictMode;
-  }
+  StrictMode strict_mode() const { return info()->strict_mode(); }
 
   Scope* scope() const { return scope_; }
 
@@ -181,8 +161,6 @@ class LCodeGen: public LCodeGenBase {
                        Register temporary2);
 
   int GetStackSlotCount() const { return chunk()->spill_slot_count(); }
-
-  void Abort(BailoutReason reason);
 
   void AddDeferredCode(LDeferredCode* code) { deferred_.Add(code, zone()); }
 
@@ -243,7 +221,6 @@ class LCodeGen: public LCodeGenBase {
                          int formal_parameter_count,
                          int arity,
                          LInstruction* instr,
-                         CallKind call_kind,
                          A1State a1_state);
 
   void RecordSafepointWithLazyDeopt(LInstruction* instr,
@@ -260,10 +237,6 @@ class LCodeGen: public LCodeGenBase {
                     LEnvironment* environment,
                     Register src1 = zero_reg,
                     const Operand& src2 = Operand(zero_reg));
-  void ApplyCheckIf(Condition condition,
-                    LBoundsCheck* check,
-                    Register src1 = zero_reg,
-                    const Operand& src2 = Operand(zero_reg));
 
   void AddToTranslation(LEnvironment* environment,
                         Translation* translation,
@@ -272,7 +245,6 @@ class LCodeGen: public LCodeGenBase {
                         bool is_uint32,
                         int* object_index_pointer,
                         int* dematerialized_index_pointer);
-  void RegisterDependentCodeForEmbeddedMaps(Handle<Code> code);
   void PopulateDeoptimizationData(Handle<Code> code);
   int DefineDeoptimizationLiteral(Handle<Object> literal);
 
@@ -344,8 +316,8 @@ class LCodeGen: public LCodeGenBase {
                          Label* false_label,
                          Register input,
                          Handle<String> type_name,
-                         Register& cmp1,
-                         Operand& cmp2);
+                         Register* cmp1,
+                         Operand* cmp2);
 
   // Emits optimized code for %_IsObject(x).  Preserves input register.
   // Returns the condition on which a final split to
@@ -424,12 +396,20 @@ class LCodeGen: public LCodeGenBase {
       codegen_->expected_safepoint_kind_ = kind;
 
       switch (codegen_->expected_safepoint_kind_) {
-        case Safepoint::kWithRegisters:
-          codegen_->masm_->PushSafepointRegisters();
+        case Safepoint::kWithRegisters: {
+          StoreRegistersStateStub stub1(codegen_->masm_->isolate(),
+                                        kDontSaveFPRegs);
+          codegen_->masm_->push(ra);
+          codegen_->masm_->CallStub(&stub1);
           break;
-        case Safepoint::kWithRegistersAndDoubles:
-          codegen_->masm_->PushSafepointRegistersAndDoubles();
+        }
+        case Safepoint::kWithRegistersAndDoubles: {
+          StoreRegistersStateStub stub2(codegen_->masm_->isolate(),
+                                        kSaveFPRegs);
+          codegen_->masm_->push(ra);
+          codegen_->masm_->CallStub(&stub2);
           break;
+        }
         default:
           UNREACHABLE();
       }
@@ -439,12 +419,20 @@ class LCodeGen: public LCodeGenBase {
       Safepoint::Kind kind = codegen_->expected_safepoint_kind_;
       ASSERT((kind & Safepoint::kWithRegisters) != 0);
       switch (kind) {
-        case Safepoint::kWithRegisters:
-          codegen_->masm_->PopSafepointRegisters();
+        case Safepoint::kWithRegisters: {
+          RestoreRegistersStateStub stub1(codegen_->masm_->isolate(),
+                                          kDontSaveFPRegs);
+          codegen_->masm_->push(ra);
+          codegen_->masm_->CallStub(&stub1);
           break;
-        case Safepoint::kWithRegistersAndDoubles:
-          codegen_->masm_->PopSafepointRegistersAndDoubles();
+        }
+        case Safepoint::kWithRegistersAndDoubles: {
+          RestoreRegistersStateStub stub2(codegen_->masm_->isolate(),
+                                          kSaveFPRegs);
+          codegen_->masm_->push(ra);
+          codegen_->masm_->CallStub(&stub2);
           break;
+        }
         default:
           UNREACHABLE();
       }

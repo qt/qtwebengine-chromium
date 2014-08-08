@@ -1,34 +1,11 @@
 // Copyright 2012 the V8 project authors. All rights reserved.
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-//       copyright notice, this list of conditions and the following
-//       disclaimer in the documentation and/or other materials provided
-//       with the distribution.
-//     * Neither the name of Google Inc. nor the names of its
-//       contributors may be used to endorse or promote products derived
-//       from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
 #ifndef V8_ARM_CODE_STUBS_ARM_H_
 #define V8_ARM_CODE_STUBS_ARM_H_
 
-#include "ic-inl.h"
+#include "src/ic-inl.h"
 
 namespace v8 {
 namespace internal {
@@ -37,34 +14,10 @@ namespace internal {
 void ArrayNativeCode(MacroAssembler* masm, Label* call_generic_code);
 
 
-// Compute a transcendental math function natively, or call the
-// TranscendentalCache runtime function.
-class TranscendentalCacheStub: public PlatformCodeStub {
- public:
-  enum ArgumentType {
-    TAGGED = 0 << TranscendentalCache::kTranscendentalTypeBits,
-    UNTAGGED = 1 << TranscendentalCache::kTranscendentalTypeBits
-  };
-
-  TranscendentalCacheStub(TranscendentalCache::Type type,
-                          ArgumentType argument_type)
-      : type_(type), argument_type_(argument_type) { }
-  void Generate(MacroAssembler* masm);
- private:
-  TranscendentalCache::Type type_;
-  ArgumentType argument_type_;
-  void GenerateCallCFunction(MacroAssembler* masm, Register scratch);
-
-  Major MajorKey() { return TranscendentalCache; }
-  int MinorKey() { return type_ | argument_type_; }
-  Runtime::FunctionId RuntimeFunction();
-};
-
-
 class StoreBufferOverflowStub: public PlatformCodeStub {
  public:
-  explicit StoreBufferOverflowStub(SaveFPRegsMode save_fp)
-      : save_doubles_(save_fp) {}
+  StoreBufferOverflowStub(Isolate* isolate, SaveFPRegsMode save_fp)
+      : PlatformCodeStub(isolate), save_doubles_(save_fp) {}
 
   void Generate(MacroAssembler* masm);
 
@@ -81,49 +34,17 @@ class StoreBufferOverflowStub: public PlatformCodeStub {
 
 class StringHelper : public AllStatic {
  public:
-  // Generate code for copying characters using a simple loop. This should only
-  // be used in places where the number of characters is small and the
-  // additional setup and checking in GenerateCopyCharactersLong adds too much
-  // overhead. Copying of overlapping regions is not supported.
+  // Generate code for copying a large number of characters. This function
+  // is allowed to spend extra time setting up conditions to make copying
+  // faster. Copying of overlapping regions is not supported.
   // Dest register ends at the position after the last character written.
   static void GenerateCopyCharacters(MacroAssembler* masm,
                                      Register dest,
                                      Register src,
                                      Register count,
                                      Register scratch,
-                                     bool ascii);
+                                     String::Encoding encoding);
 
-  // Generate code for copying a large number of characters. This function
-  // is allowed to spend extra time setting up conditions to make copying
-  // faster. Copying of overlapping regions is not supported.
-  // Dest register ends at the position after the last character written.
-  static void GenerateCopyCharactersLong(MacroAssembler* masm,
-                                         Register dest,
-                                         Register src,
-                                         Register count,
-                                         Register scratch1,
-                                         Register scratch2,
-                                         Register scratch3,
-                                         Register scratch4,
-                                         int flags);
-
-
-  // Probe the string table for a two character string. If the string is
-  // not found by probing a jump to the label not_found is performed. This jump
-  // does not guarantee that the string is not in the string table. If the
-  // string is found the code falls through with the string in register r0.
-  // Contents of both c1 and c2 registers are modified. At the exit c1 is
-  // guaranteed to contain halfword with low and high bytes equal to
-  // initial contents of c1 and c2 respectively.
-  static void GenerateTwoCharacterStringTableProbe(MacroAssembler* masm,
-                                                   Register c1,
-                                                   Register c2,
-                                                   Register scratch1,
-                                                   Register scratch2,
-                                                   Register scratch3,
-                                                   Register scratch4,
-                                                   Register scratch5,
-                                                   Label* not_found);
 
   // Generate string hash.
   static void GenerateHashInit(MacroAssembler* masm,
@@ -142,35 +63,9 @@ class StringHelper : public AllStatic {
 };
 
 
-class StringAddStub: public PlatformCodeStub {
- public:
-  explicit StringAddStub(StringAddFlags flags) : flags_(flags) {}
-
- private:
-  Major MajorKey() { return StringAdd; }
-  int MinorKey() { return flags_; }
-
-  void Generate(MacroAssembler* masm);
-
-  void GenerateConvertArgument(MacroAssembler* masm,
-                               int stack_offset,
-                               Register arg,
-                               Register scratch1,
-                               Register scratch2,
-                               Register scratch3,
-                               Register scratch4,
-                               Label* slow);
-
-  void GenerateRegisterArgsPush(MacroAssembler* masm);
-  void GenerateRegisterArgsPop(MacroAssembler* masm);
-
-  const StringAddFlags flags_;
-};
-
-
 class SubStringStub: public PlatformCodeStub {
  public:
-  SubStringStub() {}
+  explicit SubStringStub(Isolate* isolate) : PlatformCodeStub(isolate) {}
 
  private:
   Major MajorKey() { return SubString; }
@@ -183,7 +78,7 @@ class SubStringStub: public PlatformCodeStub {
 
 class StringCompareStub: public PlatformCodeStub {
  public:
-  StringCompareStub() { }
+  explicit StringCompareStub(Isolate* isolate) : PlatformCodeStub(isolate) { }
 
   // Compares two flat ASCII strings and returns result in r0.
   static void GenerateCompareFlatAsciiStrings(MacroAssembler* masm,
@@ -223,10 +118,12 @@ class StringCompareStub: public PlatformCodeStub {
 // so you don't have to set up the frame.
 class WriteInt32ToHeapNumberStub : public PlatformCodeStub {
  public:
-  WriteInt32ToHeapNumberStub(Register the_int,
+  WriteInt32ToHeapNumberStub(Isolate* isolate,
+                             Register the_int,
                              Register the_heap_number,
                              Register scratch)
-      : the_int_(the_int),
+      : PlatformCodeStub(isolate),
+        the_int_(the_int),
         the_heap_number_(the_heap_number),
         scratch_(scratch) { }
 
@@ -256,12 +153,14 @@ class WriteInt32ToHeapNumberStub : public PlatformCodeStub {
 
 class RecordWriteStub: public PlatformCodeStub {
  public:
-  RecordWriteStub(Register object,
+  RecordWriteStub(Isolate* isolate,
+                  Register object,
                   Register value,
                   Register address,
                   RememberedSetAction remembered_set_action,
                   SaveFPRegsMode fp_mode)
-      : object_(object),
+      : PlatformCodeStub(isolate),
+        object_(object),
         value_(value),
         address_(address),
         remembered_set_action_(remembered_set_action),
@@ -403,7 +302,7 @@ class RecordWriteStub: public PlatformCodeStub {
       MacroAssembler* masm,
       OnNoNeedToInformIncrementalMarker on_no_need,
       Mode mode);
-  void InformIncrementalMarker(MacroAssembler* masm, Mode mode);
+  void InformIncrementalMarker(MacroAssembler* masm);
 
   Major MajorKey() { return RecordWrite; }
 
@@ -442,7 +341,7 @@ class RecordWriteStub: public PlatformCodeStub {
 // moved by GC
 class DirectCEntryStub: public PlatformCodeStub {
  public:
-  DirectCEntryStub() {}
+  explicit DirectCEntryStub(Isolate* isolate) : PlatformCodeStub(isolate) {}
   void Generate(MacroAssembler* masm);
   void GenerateCall(MacroAssembler* masm, Register target);
 
@@ -458,7 +357,8 @@ class NameDictionaryLookupStub: public PlatformCodeStub {
  public:
   enum LookupMode { POSITIVE_LOOKUP, NEGATIVE_LOOKUP };
 
-  explicit NameDictionaryLookupStub(LookupMode mode) : mode_(mode) { }
+  NameDictionaryLookupStub(Isolate* isolate, LookupMode mode)
+      : PlatformCodeStub(isolate), mode_(mode) { }
 
   void Generate(MacroAssembler* masm);
 
@@ -501,6 +401,18 @@ class NameDictionaryLookupStub: public PlatformCodeStub {
   class LookupModeBits: public BitField<LookupMode, 0, 1> {};
 
   LookupMode mode_;
+};
+
+
+struct PlatformCallInterfaceDescriptor {
+  explicit PlatformCallInterfaceDescriptor(
+      TargetAddressStorageMode storage_mode)
+      : storage_mode_(storage_mode) { }
+
+  TargetAddressStorageMode storage_mode() { return storage_mode_; }
+
+ private:
+  TargetAddressStorageMode storage_mode_;
 };
 
 

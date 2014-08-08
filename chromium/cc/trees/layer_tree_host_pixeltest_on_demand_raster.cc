@@ -41,19 +41,21 @@ class LayerTreeHostOnDemandRasterPixelTest : public LayerTreePixelTest {
     PictureLayerImpl* picture_layer = static_cast<PictureLayerImpl*>(
         host_impl->active_tree()->root_layer()->child_at(0));
 
-    QuadList quads;
-    SharedQuadStateList shared_states;
-    MockQuadCuller quad_culler(&quads, &shared_states);
+    MockOcclusionTracker<LayerImpl> occlusion_tracker;
+    scoped_ptr<RenderPass> render_pass = RenderPass::Create();
+    MockQuadCuller quad_culler(render_pass.get(), &occlusion_tracker);
 
     AppendQuadsData data;
     picture_layer->AppendQuads(&quad_culler, &data);
 
-    for (size_t i = 0; i < quads.size(); ++i)
-      EXPECT_EQ(quads[i]->material, DrawQuad::PICTURE_CONTENT);
+    for (size_t i = 0; i < render_pass->quad_list.size(); ++i)
+      EXPECT_EQ(render_pass->quad_list[i]->material, DrawQuad::PICTURE_CONTENT);
 
     // Triggers pixel readback and ends the test.
     LayerTreePixelTest::SwapBuffersOnThread(host_impl, result);
   }
+
+  void RunOnDemandRasterPixelTest();
 };
 
 class BlueYellowLayerClient : public ContentLayerClient {
@@ -63,9 +65,13 @@ class BlueYellowLayerClient : public ContentLayerClient {
 
   virtual void DidChangeLayerCanUseLCDText() OVERRIDE { }
 
-  virtual void PaintContents(SkCanvas* canvas,
-                             gfx::Rect clip,
-                             gfx::RectF* opaque) OVERRIDE {
+  virtual bool FillsBoundsCompletely() const OVERRIDE { return false; }
+
+  virtual void PaintContents(
+      SkCanvas* canvas,
+      const gfx::Rect& clip,
+      gfx::RectF* opaque,
+      ContentLayerClient::GraphicsContextStatus gc_status) OVERRIDE {
     *opaque = gfx::RectF(layer_rect_.width(), layer_rect_.height());
 
     SkPaint paint;
@@ -87,7 +93,7 @@ class BlueYellowLayerClient : public ContentLayerClient {
   gfx::Rect layer_rect_;
 };
 
-TEST_F(LayerTreeHostOnDemandRasterPixelTest, RasterPictureLayer) {
+void LayerTreeHostOnDemandRasterPixelTest::RunOnDemandRasterPixelTest() {
   // Use multiple colors in a single layer to prevent bypassing on-demand
   // rasterization if a single solid color is detected in picture analysis.
   gfx::Rect layer_rect(200, 200);
@@ -95,13 +101,29 @@ TEST_F(LayerTreeHostOnDemandRasterPixelTest, RasterPictureLayer) {
   scoped_refptr<PictureLayer> layer = PictureLayer::Create(&client);
 
   layer->SetIsDrawable(true);
-  layer->SetAnchorPoint(gfx::PointF());
   layer->SetBounds(layer_rect.size());
   layer->SetPosition(layer_rect.origin());
 
   RunPixelTest(GL_WITH_BITMAP,
                layer,
                base::FilePath(FILE_PATH_LITERAL("blue_yellow.png")));
+}
+
+TEST_F(LayerTreeHostOnDemandRasterPixelTest, RasterPictureLayer) {
+  RunOnDemandRasterPixelTest();
+}
+
+class LayerTreeHostOnDemandRasterPixelTestWithGpuRasterizationForced
+    : public LayerTreeHostOnDemandRasterPixelTest {
+  virtual void InitializeSettings(LayerTreeSettings* settings) OVERRIDE {
+    LayerTreeHostOnDemandRasterPixelTest::InitializeSettings(settings);
+    settings->gpu_rasterization_forced = true;
+  }
+};
+
+TEST_F(LayerTreeHostOnDemandRasterPixelTestWithGpuRasterizationForced,
+       RasterPictureLayer) {
+  RunOnDemandRasterPixelTest();
 }
 
 }  // namespace

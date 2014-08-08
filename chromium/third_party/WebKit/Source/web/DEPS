@@ -2,6 +2,7 @@ include_rules = [
     "+..",
     "+bindings",
     "+core",
+    "+gin/public",
     "+heap",
     "+modules",
     "+painting",
@@ -11,4 +12,5 @@ include_rules = [
     "+skia",
     "+third_party/khronos",
     "+third_party/skia",
+    "+web",
 ]

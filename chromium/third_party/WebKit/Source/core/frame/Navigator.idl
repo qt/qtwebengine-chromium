@@ -17,12 +17,16 @@
     Boston, MA 02110-1301, USA.
 */
 
-interface Navigator {
-    readonly attribute DOMString language;
+// http://www.whatwg.org/specs/web-apps/current-work/multipage/timers.html#navigator
+
+[
+    WillBeGarbageCollected,
+] interface Navigator {
+    // FIXME: move these 3 to NavigatorPlugins
     readonly attribute PluginArray plugins;
     readonly attribute MimeTypeArray mimeTypes;
-    readonly attribute boolean cookieEnabled;
     boolean javaEnabled();
+    readonly attribute boolean cookieEnabled; // FIXME: move to NavigatorStorageUtils
 
     void getStorageUpdates(); // FIXME: Remove this method or rename to yieldForStorageUpdates.
 
@@ -32,5 +36,7 @@ interface Navigator {
     [MeasureAs=NavigatorVendorSub] readonly attribute DOMString vendorSub;
 };
 
+Navigator implements NavigatorCPU;
 Navigator implements NavigatorID;
+Navigator implements NavigatorLanguage;
 Navigator implements NavigatorOnLine;

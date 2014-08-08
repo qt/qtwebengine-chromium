@@ -41,9 +41,11 @@ class BuildUnittest(unittest.TestCase):
         self.input = util.PathFromRoot('grit/testdata/substitute.grd')
         self.verbose = False
         self.extra_verbose = False
-    builder.Run(DummyOpts(), ['-o', output_dir, '--dep-dir', output_dir])
-
     expected_dep_file = os.path.join(output_dir, 'substitute.grd.d')
+    builder.Run(DummyOpts(), ['-o', output_dir,
+                              '--depdir', output_dir,
+                              '--depfile', expected_dep_file])
+
     self.failUnless(os.path.isfile(expected_dep_file))
     with open(expected_dep_file) as f:
       line = f.readline()

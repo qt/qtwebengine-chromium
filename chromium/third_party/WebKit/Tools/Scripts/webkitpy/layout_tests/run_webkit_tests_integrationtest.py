@@ -266,6 +266,9 @@ class RunTest(unittest.TestCase, StreamTestingMixin):
         tests_run = get_tests_run(['-n'])
         self.assertEqual(tests_run, [])
 
+    def test_enable_sanitizer(self):
+        self.assertTrue(passing_run(['--enable-sanitizer', 'failures/expected/text.html']))
+
     def test_exception_raised(self):
         # Exceptions raised by a worker are treated differently depending on
         # whether they are in-process or out. inline exceptions work as normal,
@@ -312,6 +315,11 @@ class RunTest(unittest.TestCase, StreamTestingMixin):
 
     def test_no_tests_found_2(self):
         details, err, _ = logging_run(['foo'], tests_included=True)
+        self.assertEqual(details.exit_code, test_run_results.NO_TESTS_EXIT_STATUS)
+        self.assertContains(err, 'No tests to run.\n')
+
+    def test_no_tests_found_3(self):
+        details, err, _ = logging_run(['--run-chunk', '5:400', 'foo/bar.html'], tests_included=True)
         self.assertEqual(details.exit_code, test_run_results.NO_TESTS_EXIT_STATUS)
         self.assertContains(err, 'No tests to run.\n')
 
@@ -579,8 +587,7 @@ class RunTest(unittest.TestCase, StreamTestingMixin):
         # By returning False, we know that the incremental results were generated and then deleted.
         self.assertFalse(host.filesystem.exists('/tmp/layout-test-results/incremental_results.json'))
 
-        # This checks that we report only the number of tests that actually failed.
-        self.assertEqual(details.exit_code, 1)
+        self.assertEqual(details.exit_code, test_run_results.EARLY_EXIT_STATUS)
 
         # This checks that passes/text.html is considered SKIPped.
         self.assertTrue('"skipped":1' in host.filesystem.read_text_file('/tmp/layout-test-results/full_results.json'))
@@ -689,6 +696,12 @@ class RunTest(unittest.TestCase, StreamTestingMixin):
     def test_retrying_crashed_tests(self):
         host = MockHost()
         details, err, _ = logging_run(['--retry-failures', 'failures/unexpected/crash.html'], tests_included=True, host=host)
+        self.assertEqual(details.exit_code, 1)
+        self.assertTrue('Retrying' in err.getvalue())
+
+    def test_retrying_leak_tests(self):
+        host = MockHost()
+        details, err, _ = logging_run(['--retry-failures', 'failures/unexpected/leak.html'], tests_included=True, host=host)
         self.assertEqual(details.exit_code, 1)
         self.assertTrue('Retrying' in err.getvalue())
 
@@ -1026,3 +1039,17 @@ class MainTest(unittest.TestCase):
             self.assertEqual(res, test_run_results.UNEXPECTED_ERROR_EXIT_STATUS)
         finally:
             run_webkit_tests.run = orig_run_fn
+
+    def test_buildbot_results_are_printed_on_early_exit(self):
+        # unused args pylint: disable=W0613
+        stdout = StringIO.StringIO()
+        stderr = StringIO.StringIO()
+        res = run_webkit_tests.main(['--platform', 'test', '--exit-after-n-failures', '1',
+                                     'failures/unexpected/missing_text.html',
+                                     'failures/unexpected/missing_image.html'],
+                                    stdout, stderr)
+        self.assertEqual(res, test_run_results.EARLY_EXIT_STATUS)
+        self.assertEqual(stdout.getvalue(),
+                ('\n'
+                 'Regressions: Unexpected missing results (1)\n'
+                 '  failures/unexpected/missing_image.html [ Missing ]\n\n'))

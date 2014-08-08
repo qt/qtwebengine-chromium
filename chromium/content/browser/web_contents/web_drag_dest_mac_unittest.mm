@@ -13,7 +13,7 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #import "third_party/mozilla/NSPasteboard+Utils.h"
 #import "ui/base/dragdrop/cocoa_dnd_util.h"
-#import "ui/base/test/ui_cocoa_test_helper.h"
+#import "ui/gfx/test/ui_cocoa_test_helper.h"
 
 using content::DropData;
 using content::RenderViewHostImplTestHarness;
@@ -140,7 +140,7 @@ TEST_F(WebDragDestTest, URL) {
   EXPECT_TRUE(ui::PopulateURLAndTitleFromPasteboard(
       &result_url, &result_title, pboard, YES));
   EXPECT_EQ("file://localhost/bin/sh", result_url.spec());
-  EXPECT_EQ("sh", UTF16ToUTF8(result_title));
+  EXPECT_EQ("sh", base::UTF16ToUTF8(result_title));
   [pboard releaseGlobally];
 }
 

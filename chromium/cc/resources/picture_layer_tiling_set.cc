@@ -22,7 +22,7 @@ class LargestToSmallestScaleFunctor {
 
 PictureLayerTilingSet::PictureLayerTilingSet(
     PictureLayerTilingClient* client,
-    gfx::Size layer_bounds)
+    const gfx::Size& layer_bounds)
     : client_(client),
       layer_bounds_(layer_bounds) {
 }
@@ -36,15 +36,14 @@ void PictureLayerTilingSet::SetClient(PictureLayerTilingClient* client) {
     tilings_[i]->SetClient(client_);
 }
 
-void PictureLayerTilingSet::SyncTilings(
-    const PictureLayerTilingSet& other,
-    gfx::Size new_layer_bounds,
-    const Region& layer_invalidation,
-    float minimum_contents_scale) {
+bool PictureLayerTilingSet::SyncTilings(const PictureLayerTilingSet& other,
+                                        const gfx::Size& new_layer_bounds,
+                                        const Region& layer_invalidation,
+                                        float minimum_contents_scale) {
   if (new_layer_bounds.IsEmpty()) {
     RemoveAllTilings();
     layer_bounds_ = new_layer_bounds;
-    return;
+    return false;
   }
 
   tilings_.reserve(other.tilings_.size());
@@ -59,6 +58,8 @@ void PictureLayerTilingSet::SyncTilings(
     tilings_.pop_back();
     --i;
   }
+
+  bool have_high_res_tiling = false;
 
   // Add any missing tilings from |other| that meet the minimum.
   for (size_t i = 0; i < other.tilings_.size(); ++i) {
@@ -75,9 +76,11 @@ void PictureLayerTilingSet::SyncTilings(
 
       this_tiling->UpdateTilesToCurrentPile();
       this_tiling->CreateMissingTilesInLiveTilesRect();
+      if (this_tiling->resolution() == HIGH_RESOLUTION)
+        have_high_res_tiling = true;
 
       DCHECK(this_tiling->tile_size() ==
-             client_->CalculateTileSize(this_tiling->ContentRect().size()));
+             client_->CalculateTileSize(this_tiling->TilingRect().size()));
       continue;
     }
     scoped_ptr<PictureLayerTiling> new_tiling = PictureLayerTiling::Create(
@@ -85,16 +88,19 @@ void PictureLayerTilingSet::SyncTilings(
         new_layer_bounds,
         client_);
     new_tiling->set_resolution(other.tilings_[i]->resolution());
+    if (new_tiling->resolution() == HIGH_RESOLUTION)
+      have_high_res_tiling = true;
     tilings_.push_back(new_tiling.Pass());
   }
   tilings_.sort(LargestToSmallestScaleFunctor());
 
   layer_bounds_ = new_layer_bounds;
+  return have_high_res_tiling;
 }
 
-void PictureLayerTilingSet::SetCanUseLCDText(bool can_use_lcd_text) {
+void PictureLayerTilingSet::RemoveTilesInRegion(const Region& region) {
   for (size_t i = 0; i < tilings_.size(); ++i)
-    tilings_[i]->SetCanUseLCDText(can_use_lcd_text);
+    tilings_[i]->RemoveTilesInRegion(region);
 }
 
 PictureLayerTiling* PictureLayerTilingSet::AddTiling(float contents_scale) {
@@ -147,7 +153,7 @@ void PictureLayerTilingSet::RemoveAllTiles() {
 PictureLayerTilingSet::CoverageIterator::CoverageIterator(
     const PictureLayerTilingSet* set,
     float contents_scale,
-    gfx::Rect content_rect,
+    const gfx::Rect& content_rect,
     float ideal_contents_scale)
     : set_(set),
       contents_scale_(contents_scale),
@@ -299,43 +305,6 @@ PictureLayerTilingSet::CoverageIterator::operator++() {
 PictureLayerTilingSet::CoverageIterator::operator bool() const {
   return current_tiling_ < static_cast<int>(set_->tilings_.size()) ||
       region_iter_.has_rect();
-}
-
-void PictureLayerTilingSet::UpdateTilePriorities(
-    WhichTree tree,
-    gfx::Size device_viewport,
-    gfx::Rect viewport_in_content_space,
-    gfx::Rect visible_content_rect,
-    gfx::Size last_layer_bounds,
-    gfx::Size current_layer_bounds,
-    float last_layer_contents_scale,
-    float current_layer_contents_scale,
-    const gfx::Transform& last_screen_transform,
-    const gfx::Transform& current_screen_transform,
-    double current_frame_time_in_seconds,
-    size_t max_tiles_for_interest_area) {
-  gfx::Rect viewport_in_layer_space = gfx::ScaleToEnclosingRect(
-      viewport_in_content_space,
-      1.f / current_layer_contents_scale);
-  gfx::Rect visible_layer_rect = gfx::ScaleToEnclosingRect(
-      visible_content_rect,
-      1.f / current_layer_contents_scale);
-
-  for (size_t i = 0; i < tilings_.size(); ++i) {
-    tilings_[i]->UpdateTilePriorities(
-        tree,
-        device_viewport,
-        viewport_in_layer_space,
-        visible_layer_rect,
-        last_layer_bounds,
-        current_layer_bounds,
-        last_layer_contents_scale,
-        current_layer_contents_scale,
-        last_screen_transform,
-        current_screen_transform,
-        current_frame_time_in_seconds,
-        max_tiles_for_interest_area);
-  }
 }
 
 void PictureLayerTilingSet::DidBecomeActive() {

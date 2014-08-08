@@ -41,8 +41,9 @@ namespace {
 
 class MockSocketStream : public SocketStream {
  public:
-  MockSocketStream(const GURL& url, SocketStream::Delegate* delegate)
-      : SocketStream(url, delegate) {}
+  MockSocketStream(const GURL& url, SocketStream::Delegate* delegate,
+                   URLRequestContext* context, CookieStore* cookie_store)
+      : SocketStream(url, delegate, context, cookie_store) {}
 
   virtual void Connect() OVERRIDE {}
   virtual bool SendData(const char* data, int len) OVERRIDE {
@@ -203,6 +204,12 @@ class MockCookieStore : public CookieStore {
       callback.Run(GetCookiesWithOptions(url, options));
   }
 
+  virtual void GetAllCookiesForURLAsync(
+      const GURL& url,
+      const GetCookieListCallback& callback) OVERRIDE {
+    ADD_FAILURE();
+  }
+
   virtual void DeleteCookieAsync(const GURL& url,
                                  const std::string& cookie_name,
                                  const base::Closure& callback) OVERRIDE {
@@ -212,6 +219,14 @@ class MockCookieStore : public CookieStore {
   virtual void DeleteAllCreatedBetweenAsync(
       const base::Time& delete_begin,
       const base::Time& delete_end,
+      const DeleteCallback& callback) OVERRIDE {
+    ADD_FAILURE();
+  }
+
+  virtual void DeleteAllCreatedBetweenForHostAsync(
+      const base::Time delete_begin,
+      const base::Time delete_end,
+      const GURL& url,
       const DeleteCallback& callback) OVERRIDE {
     ADD_FAILURE();
   }
@@ -259,11 +274,14 @@ class MockURLRequestContext : public URLRequestContext {
 
 class MockHttpTransactionFactory : public HttpTransactionFactory {
  public:
-  MockHttpTransactionFactory(NextProto next_proto, OrderedSocketData* data) {
+  MockHttpTransactionFactory(NextProto next_proto,
+                             OrderedSocketData* data,
+                             bool enable_websocket_over_spdy) {
     data_ = data;
     MockConnect connect_data(SYNCHRONOUS, OK);
     data_->set_connect_data(connect_data);
     session_deps_.reset(new SpdySessionDependencies(next_proto));
+    session_deps_->enable_websocket_over_spdy = enable_websocket_over_spdy;
     session_deps_->socket_factory->AddSocketDataProvider(data_);
     http_session_ =
         SpdySessionDependencies::SpdyCreateSession(session_deps_.get());
@@ -271,15 +289,14 @@ class MockHttpTransactionFactory : public HttpTransactionFactory {
     host_port_pair_.set_port(80);
     spdy_session_key_ = SpdySessionKey(host_port_pair_,
                                             ProxyServer::Direct(),
-                                            kPrivacyModeDisabled);
+                                            PRIVACY_MODE_DISABLED);
     session_ = CreateInsecureSpdySession(
         http_session_, spdy_session_key_, BoundNetLog());
   }
 
   virtual int CreateTransaction(
       RequestPriority priority,
-      scoped_ptr<HttpTransaction>* trans,
-      HttpTransactionDelegate* delegate) OVERRIDE {
+      scoped_ptr<HttpTransaction>* trans) OVERRIDE {
     NOTREACHED();
     return ERR_UNEXPECTED;
   }
@@ -302,12 +319,82 @@ class MockHttpTransactionFactory : public HttpTransactionFactory {
   SpdySessionKey spdy_session_key_;
 };
 
+class DeletingSocketStreamDelegate : public SocketStream::Delegate {
+ public:
+  DeletingSocketStreamDelegate()
+      : delete_next_(false) {}
+
+  // Since this class needs to be able to delete |job_|, it must be the only
+  // reference holder (except for temporary references). Provide access to the
+  // pointer for tests to use.
+  WebSocketJob* job() { return job_.get(); }
+
+  void set_job(WebSocketJob* job) { job_ = job; }
+
+  // After calling this, the next call to a method on this delegate will delete
+  // the WebSocketJob object.
+  void set_delete_next(bool delete_next) { delete_next_ = delete_next; }
+
+  void DeleteJobMaybe() {
+    if (delete_next_) {
+      job_->DetachContext();
+      job_->DetachDelegate();
+      job_ = NULL;
+    }
+  }
+
+  // SocketStream::Delegate implementation
+
+  // OnStartOpenConnection() is not implemented by SocketStreamDispatcherHost
+
+  virtual void OnConnected(SocketStream* socket,
+                           int max_pending_send_allowed) OVERRIDE {
+    DeleteJobMaybe();
+  }
+
+  virtual void OnSentData(SocketStream* socket, int amount_sent) OVERRIDE {
+    DeleteJobMaybe();
+  }
+
+  virtual void OnReceivedData(SocketStream* socket,
+                              const char* data,
+                              int len) OVERRIDE {
+    DeleteJobMaybe();
+  }
+
+  virtual void OnClose(SocketStream* socket) OVERRIDE { DeleteJobMaybe(); }
+
+  virtual void OnAuthRequired(SocketStream* socket,
+                              AuthChallengeInfo* auth_info) OVERRIDE {
+    DeleteJobMaybe();
+  }
+
+  virtual void OnSSLCertificateError(SocketStream* socket,
+                                     const SSLInfo& ssl_info,
+                                     bool fatal) OVERRIDE {
+    DeleteJobMaybe();
+  }
+
+  virtual void OnError(const SocketStream* socket, int error) OVERRIDE {
+    DeleteJobMaybe();
+  }
+
+  // CanGetCookies() and CanSetCookies() do not appear to be able to delete the
+  // WebSocketJob object.
+
+ private:
+  scoped_refptr<WebSocketJob> job_;
+  bool delete_next_;
+};
+
 }  // namespace
 
 class WebSocketJobTest : public PlatformTest,
                          public ::testing::WithParamInterface<NextProto> {
  public:
-  WebSocketJobTest() : spdy_util_(GetParam()) {}
+  WebSocketJobTest()
+      : spdy_util_(GetParam()),
+        enable_websocket_over_spdy_(false) {}
 
   virtual void SetUp() OVERRIDE {
     stream_type_ = STREAM_INVALID;
@@ -334,6 +421,7 @@ class WebSocketJobTest : public PlatformTest,
   int WaitForResult() {
     return sync_test_callback_.WaitForResult();
   }
+
  protected:
   enum StreamType {
     STREAM_INVALID,
@@ -357,12 +445,13 @@ class WebSocketJobTest : public PlatformTest,
     websocket_ = new WebSocketJob(delegate);
 
     if (stream_type == STREAM_MOCK_SOCKET)
-      socket_ = new MockSocketStream(url, websocket_.get());
+      socket_ = new MockSocketStream(url, websocket_.get(), context_.get(),
+                                     NULL);
 
     if (stream_type == STREAM_SOCKET || stream_type == STREAM_SPDY_WEBSOCKET) {
       if (stream_type == STREAM_SPDY_WEBSOCKET) {
-        http_factory_.reset(
-            new MockHttpTransactionFactory(GetParam(), data_.get()));
+        http_factory_.reset(new MockHttpTransactionFactory(
+            GetParam(), data_.get(), enable_websocket_over_spdy_));
         context_->set_http_transaction_factory(http_factory_.get());
       }
 
@@ -373,7 +462,7 @@ class WebSocketJobTest : public PlatformTest,
       host_resolver_.reset(new MockHostResolver);
       context_->set_host_resolver(host_resolver_.get());
 
-      socket_ = new SocketStream(url, websocket_.get());
+      socket_ = new SocketStream(url, websocket_.get(), context_.get(), NULL);
       socket_factory_.reset(new MockClientSocketFactory);
       DCHECK(data_.get());
       socket_factory_->AddSocketDataProvider(data_.get());
@@ -381,7 +470,6 @@ class WebSocketJobTest : public PlatformTest,
     }
 
     websocket_->InitSocketStream(socket_.get());
-    websocket_->set_context(context_.get());
     // MockHostResolver resolves all hosts to 127.0.0.1; however, when we create
     // a WebSocketJob purely to block another one in a throttling test, we don't
     // perform a real connect. In that case, the following address is used
@@ -448,6 +536,9 @@ class WebSocketJobTest : public PlatformTest,
   scoped_ptr<MockHostResolver> host_resolver_;
   scoped_ptr<MockHttpTransactionFactory> http_factory_;
 
+  // Must be set before call to enable_websocket_over_spdy, defaults to false.
+  bool enable_websocket_over_spdy_;
+
   static const char kHandshakeRequestWithoutCookie[];
   static const char kHandshakeRequestWithCookie[];
   static const char kHandshakeRequestWithFilteredCookie[];
@@ -464,6 +555,34 @@ class WebSocketJobTest : public PlatformTest,
   static const size_t kHandshakeResponseWithCookieLength;
   static const size_t kDataHelloLength;
   static const size_t kDataWorldLength;
+};
+
+// Tests using this fixture verify that the WebSocketJob can handle being
+// deleted while calling back to the delegate correctly. These tests need to be
+// run under AddressSanitizer or other systems for detecting use-after-free
+// errors in order to find problems.
+class WebSocketJobDeleteTest : public ::testing::Test {
+ protected:
+  WebSocketJobDeleteTest()
+      : delegate_(new DeletingSocketStreamDelegate),
+        cookie_store_(new MockCookieStore),
+        context_(new MockURLRequestContext(cookie_store_.get())) {
+    WebSocketJob* websocket = new WebSocketJob(delegate_.get());
+    delegate_->set_job(websocket);
+
+    socket_ = new MockSocketStream(
+        GURL("ws://127.0.0.1/"), websocket, context_.get(), NULL);
+
+    websocket->InitSocketStream(socket_.get());
+  }
+
+  void SetDeleteNext() { return delegate_->set_delete_next(true); }
+  WebSocketJob* job() { return delegate_->job(); }
+
+  scoped_ptr<DeletingSocketStreamDelegate> delegate_;
+  scoped_refptr<MockCookieStore> cookie_store_;
+  scoped_ptr<MockURLRequestContext> context_;
+  scoped_refptr<SocketStream> socket_;
 };
 
 const char WebSocketJobTest::kHandshakeRequestWithoutCookie[] =
@@ -598,11 +717,10 @@ INSTANTIATE_TEST_CASE_P(
     NextProto,
     WebSocketJobTest,
     testing::Values(kProtoDeprecatedSPDY2,
-                    kProtoSPDY3, kProtoSPDY31, kProtoSPDY4a2,
-                    kProtoHTTP2Draft04));
+                    kProtoSPDY3, kProtoSPDY31, kProtoSPDY4));
 
 TEST_P(WebSocketJobTest, DelayedCookies) {
-  WebSocketJob::set_websocket_over_spdy_enabled(true);
+  enable_websocket_over_spdy_ = true;
   GURL url("ws://example.com/demo");
   GURL cookieUrl("http://example.com/demo");
   CookieOptions cookie_options;
@@ -731,14 +849,14 @@ void WebSocketJobTest::TestHSTSUpgrade() {
   scoped_refptr<SocketStreamJob> job =
       SocketStreamJob::CreateSocketStreamJob(
           url, &delegate, context_->transport_security_state(),
-          context_->ssl_config_service());
+          context_->ssl_config_service(), NULL, NULL);
   EXPECT_TRUE(GetSocket(job.get())->is_secure());
   job->DetachDelegate();
 
   url = GURL("ws://donotupgrademe.com/");
   job = SocketStreamJob::CreateSocketStreamJob(
       url, &delegate, context_->transport_security_state(),
-      context_->ssl_config_service());
+      context_->ssl_config_service(), NULL, NULL);
   EXPECT_FALSE(GetSocket(job.get())->is_secure());
   job->DetachDelegate();
 }
@@ -1005,87 +1123,79 @@ void WebSocketJobTest::TestThrottlingLimit() {
 
 // Execute tests in both spdy-disabled mode and spdy-enabled mode.
 TEST_P(WebSocketJobTest, SimpleHandshake) {
-  WebSocketJob::set_websocket_over_spdy_enabled(false);
   TestSimpleHandshake();
 }
 
 TEST_P(WebSocketJobTest, SlowHandshake) {
-  WebSocketJob::set_websocket_over_spdy_enabled(false);
   TestSlowHandshake();
 }
 
 TEST_P(WebSocketJobTest, HandshakeWithCookie) {
-  WebSocketJob::set_websocket_over_spdy_enabled(false);
   TestHandshakeWithCookie();
 }
 
 TEST_P(WebSocketJobTest, HandshakeWithCookieButNotAllowed) {
-  WebSocketJob::set_websocket_over_spdy_enabled(false);
   TestHandshakeWithCookieButNotAllowed();
 }
 
 TEST_P(WebSocketJobTest, HSTSUpgrade) {
-  WebSocketJob::set_websocket_over_spdy_enabled(false);
   TestHSTSUpgrade();
 }
 
 TEST_P(WebSocketJobTest, InvalidSendData) {
-  WebSocketJob::set_websocket_over_spdy_enabled(false);
   TestInvalidSendData();
 }
 
 TEST_P(WebSocketJobTest, SimpleHandshakeSpdyEnabled) {
-  WebSocketJob::set_websocket_over_spdy_enabled(true);
+  enable_websocket_over_spdy_ = true;
   TestSimpleHandshake();
 }
 
 TEST_P(WebSocketJobTest, SlowHandshakeSpdyEnabled) {
-  WebSocketJob::set_websocket_over_spdy_enabled(true);
+  enable_websocket_over_spdy_ = true;
   TestSlowHandshake();
 }
 
 TEST_P(WebSocketJobTest, HandshakeWithCookieSpdyEnabled) {
-  WebSocketJob::set_websocket_over_spdy_enabled(true);
+  enable_websocket_over_spdy_ = true;
   TestHandshakeWithCookie();
 }
 
 TEST_P(WebSocketJobTest, HandshakeWithCookieButNotAllowedSpdyEnabled) {
-  WebSocketJob::set_websocket_over_spdy_enabled(true);
+  enable_websocket_over_spdy_ = true;
   TestHandshakeWithCookieButNotAllowed();
 }
 
 TEST_P(WebSocketJobTest, HSTSUpgradeSpdyEnabled) {
-  WebSocketJob::set_websocket_over_spdy_enabled(true);
+  enable_websocket_over_spdy_ = true;
   TestHSTSUpgrade();
 }
 
 TEST_P(WebSocketJobTest, InvalidSendDataSpdyEnabled) {
-  WebSocketJob::set_websocket_over_spdy_enabled(true);
+  enable_websocket_over_spdy_ = true;
   TestInvalidSendData();
 }
 
 TEST_P(WebSocketJobTest, ConnectByWebSocket) {
-  WebSocketJob::set_websocket_over_spdy_enabled(false);
+  enable_websocket_over_spdy_ = true;
   TestConnectByWebSocket(THROTTLING_OFF);
 }
 
 TEST_P(WebSocketJobTest, ConnectByWebSocketSpdyEnabled) {
-  WebSocketJob::set_websocket_over_spdy_enabled(true);
+  enable_websocket_over_spdy_ = true;
   TestConnectByWebSocket(THROTTLING_OFF);
 }
 
 TEST_P(WebSocketJobTest, ConnectBySpdy) {
-  WebSocketJob::set_websocket_over_spdy_enabled(false);
   TestConnectBySpdy(SPDY_OFF, THROTTLING_OFF);
 }
 
 TEST_P(WebSocketJobTest, ConnectBySpdySpdyEnabled) {
-  WebSocketJob::set_websocket_over_spdy_enabled(true);
+  enable_websocket_over_spdy_ = true;
   TestConnectBySpdy(SPDY_ON, THROTTLING_OFF);
 }
 
 TEST_P(WebSocketJobTest, ThrottlingWebSocket) {
-  WebSocketJob::set_websocket_over_spdy_enabled(false);
   TestConnectByWebSocket(THROTTLING_ON);
 }
 
@@ -1094,18 +1204,87 @@ TEST_P(WebSocketJobTest, ThrottlingMaxNumberOfThrottledJobLimit) {
 }
 
 TEST_P(WebSocketJobTest, ThrottlingWebSocketSpdyEnabled) {
-  WebSocketJob::set_websocket_over_spdy_enabled(true);
+  enable_websocket_over_spdy_ = true;
   TestConnectByWebSocket(THROTTLING_ON);
 }
 
 TEST_P(WebSocketJobTest, ThrottlingSpdy) {
-  WebSocketJob::set_websocket_over_spdy_enabled(false);
   TestConnectBySpdy(SPDY_OFF, THROTTLING_ON);
 }
 
 TEST_P(WebSocketJobTest, ThrottlingSpdySpdyEnabled) {
-  WebSocketJob::set_websocket_over_spdy_enabled(true);
+  enable_websocket_over_spdy_ = true;
   TestConnectBySpdy(SPDY_ON, THROTTLING_ON);
+}
+
+TEST_F(WebSocketJobDeleteTest, OnClose) {
+  SetDeleteNext();
+  job()->OnClose(socket_.get());
+  // OnClose() sets WebSocketJob::_socket to NULL before we can detach it, so
+  // socket_->delegate is still set at this point. Clear it to avoid hitting
+  // DCHECK(!delegate_) in the SocketStream destructor. SocketStream::Finish()
+  // is the only caller of this method in real code, and it also sets delegate_
+  // to NULL.
+  socket_->DetachDelegate();
+  EXPECT_FALSE(job());
+}
+
+TEST_F(WebSocketJobDeleteTest, OnAuthRequired) {
+  SetDeleteNext();
+  job()->OnAuthRequired(socket_.get(), NULL);
+  EXPECT_FALSE(job());
+}
+
+TEST_F(WebSocketJobDeleteTest, OnSSLCertificateError) {
+  SSLInfo ssl_info;
+  SetDeleteNext();
+  job()->OnSSLCertificateError(socket_.get(), ssl_info, true);
+  EXPECT_FALSE(job());
+}
+
+TEST_F(WebSocketJobDeleteTest, OnError) {
+  SetDeleteNext();
+  job()->OnError(socket_.get(), ERR_CONNECTION_RESET);
+  EXPECT_FALSE(job());
+}
+
+TEST_F(WebSocketJobDeleteTest, OnSentSpdyHeaders) {
+  job()->Connect();
+  SetDeleteNext();
+  job()->OnSentSpdyHeaders();
+  EXPECT_FALSE(job());
+}
+
+TEST_F(WebSocketJobDeleteTest, OnSentHandshakeRequest) {
+  static const char kMinimalRequest[] =
+      "GET /demo HTTP/1.1\r\n"
+      "Host: example.com\r\n"
+      "Upgrade: WebSocket\r\n"
+      "Connection: Upgrade\r\n"
+      "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+      "Origin: http://example.com\r\n"
+      "Sec-WebSocket-Version: 13\r\n"
+      "\r\n";
+  const size_t kMinimalRequestSize = arraysize(kMinimalRequest) - 1;
+  job()->Connect();
+  job()->SendData(kMinimalRequest, kMinimalRequestSize);
+  SetDeleteNext();
+  job()->OnSentData(socket_.get(), kMinimalRequestSize);
+  EXPECT_FALSE(job());
+}
+
+TEST_F(WebSocketJobDeleteTest, NotifyHeadersComplete) {
+  static const char kMinimalResponse[] =
+      "HTTP/1.1 101 Switching Protocols\r\n"
+      "Upgrade: websocket\r\n"
+      "Connection: Upgrade\r\n"
+      "Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n"
+      "\r\n";
+  job()->Connect();
+  SetDeleteNext();
+  job()->OnReceivedData(
+      socket_.get(), kMinimalResponse, arraysize(kMinimalResponse) - 1);
+  EXPECT_FALSE(job());
 }
 
 // TODO(toyoshim): Add tests to verify throttling, SPDY stream limitation.

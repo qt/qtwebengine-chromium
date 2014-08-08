@@ -171,4 +171,12 @@ IntRect unionRect(const Vector<IntRect>& rects)
     return result;
 }
 
+#ifndef NDEBUG
+    // Prints the rect to the screen.
+void IntRect::show() const
+{
+    LayoutRect(*this).show();
+}
+#endif
+
 } // namespace WebCore

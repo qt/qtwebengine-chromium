@@ -10,16 +10,13 @@
 namespace content {
 
 WorkerWebApplicationCacheHostImpl::WorkerWebApplicationCacheHostImpl(
-    const WorkerAppCacheInitInfo& init_info,
     blink::WebApplicationCacheHostClient* client)
     : WebApplicationCacheHostImpl(client,
           WorkerThread::current()->appcache_dispatcher()->backend_proxy()) {
-  backend()->SelectCacheForSharedWorker(host_id(),
-                                          init_info.main_resource_appcache_id);
 }
 
 void WorkerWebApplicationCacheHostImpl::willStartMainResourceRequest(
-    blink::WebURLRequest&, const blink::WebFrame*) {
+    blink::WebURLRequest&, const blink::WebApplicationCacheHost*) {
 }
 
 void WorkerWebApplicationCacheHostImpl::didReceiveResponseForMainResource(

@@ -75,6 +75,7 @@
 
 namespace media {
 
+class AudioBus;
 class AudioManagerWin;
 
 // AudioInputStream implementation using Windows Core Audio APIs.
@@ -88,6 +89,7 @@ class MEDIA_EXPORT WASAPIAudioInputStream
   WASAPIAudioInputStream(AudioManagerWin* manager,
                          const AudioParameters& params,
                          const std::string& device_id);
+
   // The dtor is typically called by the AudioManager only and it is usually
   // triggered by calling AudioInputStream::Close().
   virtual ~WASAPIAudioInputStream();
@@ -101,15 +103,10 @@ class MEDIA_EXPORT WASAPIAudioInputStream
   virtual void SetVolume(double volume) OVERRIDE;
   virtual double GetVolume() OVERRIDE;
 
-  // Retrieves the sample rate used by the audio engine for its internal
-  // processing/mixing of shared-mode streams given a specifed device.
-  static int HardwareSampleRate(const std::string& device_id);
-
-  // Retrieves the number of audio channels used by the audio engine for its
-  // internal processing/mixing of shared-mode streams given a specified device.
-  static uint32 HardwareChannelCount(const std::string& device_id);
-
   bool started() const { return started_; }
+
+  // Returns the default hardware audio parameters of the specific device.
+  static AudioParameters GetInputStreamParameters(const std::string& device_id);
 
  private:
   // DelegateSimpleThread::Delegate implementation.
@@ -127,8 +124,11 @@ class MEDIA_EXPORT WASAPIAudioInputStream
 
   // Retrieves the stream format that the audio engine uses for its internal
   // processing/mixing of shared-mode streams.
+  // |effects| is a an AudioParameters::effects() flag that will have the
+  // DUCKING flag raised for only the default communication device.
   static HRESULT GetMixFormat(const std::string& device_id,
-                              WAVEFORMATEX** device_format);
+                              WAVEFORMATEX** device_format,
+                              int* effects);
 
   // Our creator, the audio manager needs to be notified when we close.
   AudioManagerWin* manager_;
@@ -157,6 +157,9 @@ class MEDIA_EXPORT WASAPIAudioInputStream
   // Length of the audio endpoint buffer.
   uint32 endpoint_buffer_size_frames_;
 
+  // A copy of the supplied AudioParameter's |effects|.
+  const int effects_;
+
   // Contains the unique name of the selected endpoint device.
   // Note that AudioManagerBase::kDefaultDeviceId represents the default
   // device role and is not a valid ID as such.
@@ -178,7 +181,7 @@ class MEDIA_EXPORT WASAPIAudioInputStream
   // An IMMDevice interface which represents an audio endpoint device.
   base::win::ScopedComPtr<IMMDevice> endpoint_device_;
 
-  // Windows Audio Session API (WASAP) interfaces.
+  // Windows Audio Session API (WASAPI) interfaces.
 
   // An IAudioClient interface which enables a client to create and initialize
   // an audio stream between an audio application and the audio engine.
@@ -208,6 +211,10 @@ class MEDIA_EXPORT WASAPIAudioInputStream
 
   // This event will be signaled when capturing shall stop.
   base::win::ScopedHandle stop_capture_event_;
+
+  // Extra audio bus used for storage of deinterleaved data for the OnData
+  // callback.
+  scoped_ptr<media::AudioBus> audio_bus_;
 
   DISALLOW_COPY_AND_ASSIGN(WASAPIAudioInputStream);
 };

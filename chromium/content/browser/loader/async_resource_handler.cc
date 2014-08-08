@@ -23,7 +23,6 @@
 #include "content/browser/resource_context_impl.h"
 #include "content/common/resource_messages.h"
 #include "content/common/view_messages.h"
-#include "content/public/browser/global_request_id.h"
 #include "content/public/browser/resource_dispatcher_host_delegate.h"
 #include "content/public/common/resource_response.h"
 #include "net/base/io_buffer.h"
@@ -87,7 +86,8 @@ AsyncResourceHandler::AsyncResourceHandler(
       did_defer_(false),
       has_checked_for_sufficient_resources_(false),
       sent_received_response_msg_(false),
-      sent_first_data_msg_(false) {
+      sent_first_data_msg_(false),
+      reported_transfer_size_(0) {
   InitializeResourceBufferConstants();
 }
 
@@ -96,28 +96,21 @@ AsyncResourceHandler::~AsyncResourceHandler() {
     rdh_->FinishedWithResourcesForRequest(request());
 }
 
-bool AsyncResourceHandler::OnMessageReceived(const IPC::Message& message,
-                                             bool* message_was_ok) {
+bool AsyncResourceHandler::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
-  IPC_BEGIN_MESSAGE_MAP_EX(AsyncResourceHandler, message, *message_was_ok)
+  IPC_BEGIN_MESSAGE_MAP(AsyncResourceHandler, message)
     IPC_MESSAGE_HANDLER(ResourceHostMsg_FollowRedirect, OnFollowRedirect)
     IPC_MESSAGE_HANDLER(ResourceHostMsg_DataReceived_ACK, OnDataReceivedACK)
     IPC_MESSAGE_UNHANDLED(handled = false)
-  IPC_END_MESSAGE_MAP_EX()
+  IPC_END_MESSAGE_MAP()
   return handled;
 }
 
-void AsyncResourceHandler::OnFollowRedirect(
-    int request_id,
-    bool has_new_first_party_for_cookies,
-    const GURL& new_first_party_for_cookies) {
+void AsyncResourceHandler::OnFollowRedirect(int request_id) {
   if (!request()->status().is_success()) {
     DVLOG(1) << "OnFollowRedirect for invalid request";
     return;
   }
-
-  if (has_new_first_party_for_cookies)
-    request()->set_first_party_for_cookies(new_first_party_for_cookies);
 
   ResumeIfDeferred();
 }
@@ -132,18 +125,16 @@ void AsyncResourceHandler::OnDataReceivedACK(int request_id) {
   }
 }
 
-bool AsyncResourceHandler::OnUploadProgress(int request_id,
-                                            uint64 position,
+bool AsyncResourceHandler::OnUploadProgress(uint64 position,
                                             uint64 size) {
   ResourceMessageFilter* filter = GetFilter();
   if (!filter)
     return false;
   return filter->Send(
-      new ResourceMsg_UploadProgress(request_id, position, size));
+      new ResourceMsg_UploadProgress(GetRequestID(), position, size));
 }
 
-bool AsyncResourceHandler::OnRequestRedirected(int request_id,
-                                               const GURL& new_url,
+bool AsyncResourceHandler::OnRequestRedirected(const GURL& new_url,
                                                ResourceResponse* response,
                                                bool* defer) {
   const ResourceRequestInfoImpl* info = GetRequestInfo();
@@ -159,14 +150,20 @@ bool AsyncResourceHandler::OnRequestRedirected(int request_id,
   }
 
   DevToolsNetLogObserver::PopulateResponseInfo(request(), response);
+  response->head.encoded_data_length = request()->GetTotalReceivedBytes();
+  reported_transfer_size_ = 0;
   response->head.request_start = request()->creation_time();
   response->head.response_start = TimeTicks::Now();
+  // TODO(davidben): Is it necessary to pass the new first party URL for
+  // cookies? The only case where it can change is top-level navigation requests
+  // and hopefully those will eventually all be owned by the browser. It's
+  // possible this is still needed while renderer-owned ones exist.
   return info->filter()->Send(new ResourceMsg_ReceivedRedirect(
-      request_id, new_url, response->head));
+      GetRequestID(), new_url, request()->first_party_for_cookies(),
+      response->head));
 }
 
-bool AsyncResourceHandler::OnResponseStarted(int request_id,
-                                             ResourceResponse* response,
+bool AsyncResourceHandler::OnResponseStarted(ResourceResponse* response,
                                              bool* defer) {
   // For changes to the main frame, inform the renderer of the new URL's
   // per-host settings before the request actually commits.  This way the
@@ -197,9 +194,17 @@ bool AsyncResourceHandler::OnResponseStarted(int request_id,
             net::GetHostOrSpecFromURL(request_url))));
   }
 
+  // If the parent handler downloaded the resource to a file, grant the child
+  // read permissions on it.
+  if (!response->head.download_file_path.empty()) {
+    rdh_->RegisterDownloadedTempFile(
+        info->GetChildID(), info->GetRequestID(),
+        response->head.download_file_path);
+  }
+
   response->head.request_start = request()->creation_time();
   response->head.response_start = TimeTicks::Now();
-  info->filter()->Send(new ResourceMsg_ReceivedResponse(request_id,
+  info->filter()->Send(new ResourceMsg_ReceivedResponse(GetRequestID(),
                                                         response->head));
   sent_received_response_msg_ = true;
 
@@ -207,21 +212,22 @@ bool AsyncResourceHandler::OnResponseStarted(int request_id,
     std::vector<char> copy(request()->response_info().metadata->data(),
                            request()->response_info().metadata->data() +
                                request()->response_info().metadata->size());
-    info->filter()->Send(new ResourceMsg_ReceivedCachedMetadata(request_id,
+    info->filter()->Send(new ResourceMsg_ReceivedCachedMetadata(GetRequestID(),
                                                                 copy));
   }
 
   return true;
 }
 
-bool AsyncResourceHandler::OnWillStart(int request_id,
-                                       const GURL& url,
-                                       bool* defer) {
+bool AsyncResourceHandler::OnWillStart(const GURL& url, bool* defer) {
   return true;
 }
 
-bool AsyncResourceHandler::OnWillRead(int request_id,
-                                      scoped_refptr<net::IOBuffer>* buf,
+bool AsyncResourceHandler::OnBeforeNetworkStart(const GURL& url, bool* defer) {
+  return true;
+}
+
+bool AsyncResourceHandler::OnWillRead(scoped_refptr<net::IOBuffer>* buf,
                                       int* buf_size,
                                       int min_size) {
   DCHECK_EQ(-1, min_size);
@@ -242,8 +248,7 @@ bool AsyncResourceHandler::OnWillRead(int request_id,
   return true;
 }
 
-bool AsyncResourceHandler::OnReadCompleted(int request_id, int bytes_read,
-                                           bool* defer) {
+bool AsyncResourceHandler::OnReadCompleted(int bytes_read, bool* defer) {
   DCHECK_GE(bytes_read, 0);
 
   if (!bytes_read)
@@ -268,16 +273,18 @@ bool AsyncResourceHandler::OnReadCompleted(int request_id, int bytes_read,
     if (!buffer_->ShareToProcess(filter->PeerHandle(), &handle, &size))
       return false;
     filter->Send(new ResourceMsg_SetDataBuffer(
-        request_id, handle, size, filter->peer_pid()));
+        GetRequestID(), handle, size, filter->peer_pid()));
     sent_first_data_msg_ = true;
   }
 
   int data_offset = buffer_->GetLastAllocationOffset();
-  int encoded_data_length =
-      DevToolsNetLogObserver::GetAndResetEncodedDataLength(request());
+
+  int64_t current_transfer_size = request()->GetTotalReceivedBytes();
+  int encoded_data_length = current_transfer_size - reported_transfer_size_;
+  reported_transfer_size_ = current_transfer_size;
 
   filter->Send(new ResourceMsg_DataReceived(
-      request_id, data_offset, bytes_read, encoded_data_length));
+      GetRequestID(), data_offset, bytes_read, encoded_data_length));
   ++pending_data_count_;
   UMA_HISTOGRAM_CUSTOM_COUNTS(
       "Net.AsyncResourceHandler_PendingDataCount",
@@ -294,20 +301,19 @@ bool AsyncResourceHandler::OnReadCompleted(int request_id, int bytes_read,
   return true;
 }
 
-void AsyncResourceHandler::OnDataDownloaded(
-    int request_id, int bytes_downloaded) {
-  int encoded_data_length =
-      DevToolsNetLogObserver::GetAndResetEncodedDataLength(request());
+void AsyncResourceHandler::OnDataDownloaded(int bytes_downloaded) {
+  int64_t current_transfer_size = request()->GetTotalReceivedBytes();
+  int encoded_data_length = current_transfer_size - reported_transfer_size_;
+  reported_transfer_size_ = current_transfer_size;
 
   ResourceMessageFilter* filter = GetFilter();
   if (filter) {
     filter->Send(new ResourceMsg_DataDownloaded(
-        request_id, bytes_downloaded, encoded_data_length));
+        GetRequestID(), bytes_downloaded, encoded_data_length));
   }
 }
 
 void AsyncResourceHandler::OnResponseCompleted(
-    int request_id,
     const net::URLRequestStatus& status,
     const std::string& security_info,
     bool* defer) {
@@ -329,8 +335,6 @@ void AsyncResourceHandler::OnResponseCompleted(
   CHECK(status.status() != net::URLRequestStatus::SUCCESS ||
         sent_received_response_msg_);
 
-  TimeTicks completion_time = TimeTicks::Now();
-
   int error_code = status.error();
   bool was_ignored_by_handler = info->WasIgnoredByHandler();
 
@@ -350,12 +354,16 @@ void AsyncResourceHandler::OnResponseCompleted(
     error_code = net::ERR_FAILED;
   }
 
+  ResourceMsg_RequestCompleteData request_complete_data;
+  request_complete_data.error_code = error_code;
+  request_complete_data.was_ignored_by_handler = was_ignored_by_handler;
+  request_complete_data.exists_in_cache = request()->response_info().was_cached;
+  request_complete_data.security_info = security_info;
+  request_complete_data.completion_time = TimeTicks::Now();
+  request_complete_data.encoded_data_length =
+      request()->GetTotalReceivedBytes();
   info->filter()->Send(
-      new ResourceMsg_RequestComplete(request_id,
-                                      error_code,
-                                      was_ignored_by_handler,
-                                      security_info,
-                                      completion_time));
+      new ResourceMsg_RequestComplete(GetRequestID(), request_complete_data));
 }
 
 bool AsyncResourceHandler::EnsureResourceBufferIsInitialized() {

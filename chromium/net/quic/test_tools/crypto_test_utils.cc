@@ -15,6 +15,7 @@
 #include "net/quic/quic_crypto_client_stream.h"
 #include "net/quic/quic_crypto_server_stream.h"
 #include "net/quic/quic_crypto_stream.h"
+#include "net/quic/quic_server_id.h"
 #include "net/quic/test_tools/quic_connection_peer.h"
 #include "net/quic/test_tools/quic_test_utils.h"
 #include "net/quic/test_tools/simple_quic_framer.h"
@@ -30,6 +31,9 @@ namespace test {
 
 namespace {
 
+const char kServerHostname[] = "test.example.com";
+const uint16 kServerPort = 80;
+
 // CryptoFramerVisitor is a framer visitor that records handshake messages.
 class CryptoFramerVisitor : public CryptoFramerVisitorInterface {
  public:
@@ -37,9 +41,7 @@ class CryptoFramerVisitor : public CryptoFramerVisitorInterface {
       : error_(false) {
   }
 
-  virtual void OnError(CryptoFramer* framer) OVERRIDE {
-    error_ = true;
-  }
+  virtual void OnError(CryptoFramer* framer) OVERRIDE { error_ = true; }
 
   virtual void OnHandshakeMessage(
       const CryptoHandshakeMessage& message) OVERRIDE {
@@ -67,7 +69,7 @@ void MovePackets(PacketSavingConnection* source_conn,
                  size_t *inout_packet_index,
                  QuicCryptoStream* dest_stream,
                  PacketSavingConnection* dest_conn) {
-  SimpleQuicFramer framer;
+  SimpleQuicFramer framer(source_conn->supported_versions());
   CryptoFramer crypto_framer;
   CryptoFramerVisitor crypto_visitor;
 
@@ -133,7 +135,8 @@ CryptoTestUtils::FakeClientOptions::FakeClientOptions()
 int CryptoTestUtils::HandshakeWithFakeServer(
     PacketSavingConnection* client_conn,
     QuicCryptoClientStream* client) {
-  PacketSavingConnection* server_conn = new PacketSavingConnection(true);
+  PacketSavingConnection* server_conn =
+      new PacketSavingConnection(true, client_conn->supported_versions());
   TestSession server_session(server_conn, DefaultQuicConfig());
 
   QuicCryptoServerConfig crypto_config(QuicCryptoServerConfig::TESTING,
@@ -162,7 +165,7 @@ int CryptoTestUtils::HandshakeWithFakeClient(
     QuicCryptoServerStream* server,
     const FakeClientOptions& options) {
   PacketSavingConnection* client_conn = new PacketSavingConnection(false);
-  TestSession client_session(client_conn, DefaultQuicConfig());
+  TestClientSession client_session(client_conn, DefaultQuicConfig());
   QuicCryptoClientConfig crypto_config;
 
   client_session.config()->SetDefaults();
@@ -172,9 +175,11 @@ int CryptoTestUtils::HandshakeWithFakeClient(
   //   crypto_config.SetProofVerifier(ProofVerifierForTesting());
   // }
   if (options.channel_id_enabled) {
-    crypto_config.SetChannelIDSigner(ChannelIDSignerForTesting());
+    crypto_config.SetChannelIDSource(ChannelIDSourceForTesting());
   }
-  QuicCryptoClientStream client("test.example.com", &client_session,
+  QuicServerId server_id(kServerHostname, kServerPort, false,
+                         PRIVACY_MODE_DISABLED);
+  QuicCryptoClientStream client(server_id, &client_session, NULL,
                                 &crypto_config);
   client_session.SetCryptoStream(&client);
 
@@ -186,8 +191,13 @@ int CryptoTestUtils::HandshakeWithFakeClient(
   CompareClientAndServerKeys(&client, server);
 
   if (options.channel_id_enabled) {
-    EXPECT_EQ(crypto_config.channel_id_signer()->GetKeyForHostname(
-                  "test.example.com"),
+    scoped_ptr<ChannelIDKey> channel_id_key;
+    QuicAsyncStatus status =
+        crypto_config.channel_id_source()->GetChannelIDKey(kServerHostname,
+                                                           &channel_id_key,
+                                                           NULL);
+    EXPECT_EQ(QUIC_SUCCESS, status);
+    EXPECT_EQ(channel_id_key->SerializeKey(),
               server->crypto_negotiated_params().channel_id);
   }
 
@@ -230,6 +240,7 @@ void CryptoTestUtils::CommunicateHandshakeMessages(
   }
 }
 
+// static
 pair<size_t, size_t> CryptoTestUtils::AdvanceHandshake(
     PacketSavingConnection* a_conn,
     QuicCryptoStream* a,
@@ -486,7 +497,7 @@ CryptoHandshakeMessage CryptoTestUtils::BuildMessage(const char* message_tag,
       valuestr++;
       len--;
 
-      CHECK(len % 2 == 0);
+      CHECK_EQ(0u, len % 2);
       scoped_ptr<uint8[]> buf(new uint8[len/2]);
 
       for (size_t i = 0; i < len/2; i++) {

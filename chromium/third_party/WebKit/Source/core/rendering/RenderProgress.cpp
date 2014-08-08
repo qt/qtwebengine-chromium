@@ -54,8 +54,8 @@ void RenderProgress::updateFromElement()
     m_position = element->position();
 
     updateAnimationState();
-    repaint();
-    RenderBlock::updateFromElement();
+    paintInvalidationForWholeRenderer();
+    RenderBlockFlow::updateFromElement();
 }
 
 double RenderProgress::animationProgress() const
@@ -71,9 +71,9 @@ bool RenderProgress::isDeterminate() const
 
 void RenderProgress::animationTimerFired(Timer<RenderProgress>*)
 {
-    repaint();
+    paintInvalidationForWholeRenderer();
     if (!m_animationTimer.isActive() && m_animating)
-        m_animationTimer.startOneShot(m_animationRepeatInterval);
+        m_animationTimer.startOneShot(m_animationRepeatInterval, FROM_HERE);
 }
 
 void RenderProgress::updateAnimationState()
@@ -88,7 +88,7 @@ void RenderProgress::updateAnimationState()
     m_animating = animating;
     if (m_animating) {
         m_animationStartTime = currentTime();
-        m_animationTimer.startOneShot(m_animationRepeatInterval);
+        m_animationTimer.startOneShot(m_animationRepeatInterval, FROM_HERE);
     } else
         m_animationTimer.stop();
 }
@@ -98,7 +98,7 @@ HTMLProgressElement* RenderProgress::progressElement() const
     if (!node())
         return 0;
 
-    if (isHTMLProgressElement(node()))
+    if (isHTMLProgressElement(*node()))
         return toHTMLProgressElement(node());
 
     ASSERT(node()->shadowHost());

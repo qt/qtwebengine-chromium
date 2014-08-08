@@ -21,29 +21,24 @@
 #include "config.h"
 #include "core/css/CSSImageValue.h"
 
-#include "FetchInitiatorTypeNames.h"
-#include "core/css/CSSParser.h"
+#include "core/FetchInitiatorTypeNames.h"
+#include "core/css/CSSMarkup.h"
 #include "core/dom/Document.h"
 #include "core/fetch/CrossOriginAccessControl.h"
 #include "core/fetch/FetchRequest.h"
 #include "core/fetch/ImageResource.h"
 #include "core/rendering/style/StyleFetchedImage.h"
 #include "core/rendering/style/StylePendingImage.h"
+#include "platform/weborigin/KURL.h"
 
 namespace WebCore {
 
-CSSImageValue::CSSImageValue(const String& url)
+CSSImageValue::CSSImageValue(const String& rawValue, const KURL& url, StyleImage* image)
     : CSSValue(ImageClass)
-    , m_url(url)
-    , m_accessedImage(false)
-{
-}
-
-CSSImageValue::CSSImageValue(const String& url, StyleImage* image)
-    : CSSValue(ImageClass)
-    , m_url(url)
+    , m_relativeURL(rawValue)
+    , m_absoluteURL(url.string())
     , m_image(image)
-    , m_accessedImage(true)
+    , m_accessedImage(image)
 {
 }
 
@@ -59,23 +54,39 @@ StyleImage* CSSImageValue::cachedOrPendingImage()
     return m_image.get();
 }
 
-StyleFetchedImage* CSSImageValue::cachedImage(ResourceFetcher* fetcher, const ResourceLoaderOptions& options, CORSEnabled corsEnabled)
+StyleFetchedImage* CSSImageValue::cachedImage(ResourceFetcher* fetcher, const ResourceLoaderOptions& options)
 {
     ASSERT(fetcher);
 
     if (!m_accessedImage) {
         m_accessedImage = true;
 
-        FetchRequest request(ResourceRequest(fetcher->document()->completeURL(m_url)), m_initiatorName.isEmpty() ? FetchInitiatorTypeNames::css : m_initiatorName, options);
+        FetchRequest request(ResourceRequest(m_absoluteURL), m_initiatorName.isEmpty() ? FetchInitiatorTypeNames::css : m_initiatorName, options);
+        request.mutableResourceRequest().setHTTPReferrer(m_referrer);
 
-        if (corsEnabled == PotentiallyCORSEnabled)
-            updateRequestForAccessControl(request.mutableResourceRequest(), fetcher->document()->securityOrigin(), options.allowCredentials);
+        if (options.corsEnabled == IsCORSEnabled)
+            request.setCrossOriginAccessControl(fetcher->document()->securityOrigin(), options.allowCredentials, options.credentialsRequested);
 
         if (ResourcePtr<ImageResource> cachedImage = fetcher->fetchImage(request))
             m_image = StyleFetchedImage::create(cachedImage.get());
     }
 
     return (m_image && m_image->isImageResource()) ? toStyleFetchedImage(m_image) : 0;
+}
+
+void CSSImageValue::restoreCachedResourceIfNeeded(Document& document)
+{
+    if (!m_accessedImage || !m_image->isImageResource() || !document.fetcher())
+        return;
+    if (document.fetcher()->cachedResource(KURL(ParsedURLString, m_absoluteURL)))
+        return;
+
+    ImageResource* resource = m_image->cachedImage();
+    if (!resource)
+        return;
+
+    FetchRequest request(ResourceRequest(m_absoluteURL), m_initiatorName.isEmpty() ? FetchInitiatorTypeNames::css : m_initiatorName, resource->options());
+    document.fetcher()->requestLoadStarted(resource, request, ResourceFetcher::ResourceLoadingFromCache);
 }
 
 bool CSSImageValue::hasFailedOrCanceledSubresources() const
@@ -89,18 +100,18 @@ bool CSSImageValue::hasFailedOrCanceledSubresources() const
 
 bool CSSImageValue::equals(const CSSImageValue& other) const
 {
-    return m_url == other.m_url;
+    return m_absoluteURL == other.m_absoluteURL;
 }
 
 String CSSImageValue::customCSSText() const
 {
-    return "url(" + quoteCSSURLIfNeeded(m_url) + ")";
+    return "url(" + quoteCSSURLIfNeeded(m_absoluteURL) + ")";
 }
 
-PassRefPtr<CSSValue> CSSImageValue::cloneForCSSOM() const
+PassRefPtrWillBeRawPtr<CSSValue> CSSImageValue::cloneForCSSOM() const
 {
     // NOTE: We expose CSSImageValues as URI primitive values in CSSOM to maintain old behavior.
-    RefPtr<CSSPrimitiveValue> uriValue = CSSPrimitiveValue::create(m_url, CSSPrimitiveValue::CSS_URI);
+    RefPtrWillBeRawPtr<CSSPrimitiveValue> uriValue = CSSPrimitiveValue::create(m_absoluteURL, CSSPrimitiveValue::CSS_URI);
     uriValue->setCSSOMSafe();
     return uriValue.release();
 }
@@ -108,6 +119,21 @@ PassRefPtr<CSSValue> CSSImageValue::cloneForCSSOM() const
 bool CSSImageValue::knownToBeOpaque(const RenderObject* renderer) const
 {
     return m_image ? m_image->knownToBeOpaque(renderer) : false;
+}
+
+void CSSImageValue::traceAfterDispatch(Visitor* visitor)
+{
+    CSSValue::traceAfterDispatch(visitor);
+}
+
+void CSSImageValue::reResolveURL(const Document& document)
+{
+    KURL url = document.completeURL(m_relativeURL);
+    if (url == m_absoluteURL)
+        return;
+    m_absoluteURL = url.string();
+    m_accessedImage = false;
+    m_image.clear();
 }
 
 } // namespace WebCore

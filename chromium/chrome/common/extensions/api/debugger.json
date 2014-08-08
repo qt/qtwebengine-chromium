@@ -5,7 +5,7 @@
 [
   {
     "namespace": "debugger",
-    "description": "The <code>chrome.debugger</code> API serves as an alternate transport for Chrome's <a href='http://code.google.com/chrome/devtools/docs/remote-debugging.html'>remote debugging protocol</a>. Use <code>chrome.debugger</code> to attach to one or more tabs to instrument network interaction, debug JavaScript, mutate the DOM and CSS, etc. Use the Debuggee <code>tabId</code> to target tabs with sendCommand and route events by <code>tabId</code> from onEvent callbacks.",
+    "description": "The <code>chrome.debugger</code> API serves as an alternate transport for Chrome's <a href='http://code.google.com/chrome/devtools/docs/remote-debugging'>remote debugging protocol</a>. Use <code>chrome.debugger</code> to attach to one or more tabs to instrument network interaction, debug JavaScript, mutate the DOM and CSS, etc. Use the Debuggee <code>tabId</code> to target tabs with sendCommand and route events by <code>tabId</code> from onEvent callbacks.",
     "types": [
       {
         "id": "Debuggee",
@@ -13,7 +13,7 @@
         "description": "Debuggee identifier. Either tabId or extensionId must be specified",
         "properties": {
           "tabId": { "type": "integer", "optional": true, "description": "The id of the tab which you intend to debug." },
-          "extensionId": { "type": "string", "optional": true, "description": "The id of the extension which you intend to debug. Attaching to an extension background page is only possible when 'enable-silent-debugging' flag is enabled on the target browser." },
+          "extensionId": { "type": "string", "optional": true, "description": "The id of the extension which you intend to debug. Attaching to an extension background page is only possible when 'silent-debugger-extension-api' flag is enabled on the target browser." },
           "targetId": { "type": "string", "optional": true, "description": "The opaque id of the debug target." }
         }
       },
@@ -51,14 +51,14 @@
           {
             "type": "string",
             "name": "requiredVersion",
-            "description": "Required debugging protocol version (\"0.1\"). One can only attach to the debuggee with matching major version and greater or equal minor version. List of the protocol versions can be obtained <a href='http://code.google.com/chrome/devtools/docs/remote-debugging.html'>here</a>."
+            "description": "Required debugging protocol version (\"0.1\"). One can only attach to the debuggee with matching major version and greater or equal minor version. List of the protocol versions can be obtained <a href='http://code.google.com/chrome/devtools/docs/remote-debugging'>here</a>."
           },
           {
             "type": "function",
             "name": "callback",
             "optional": true,
             "parameters": [],
-            "description": "Called once the attach operation succeeds or fails. Callback receives no arguments. If the attach fails, $ref:runtime.lastError will be set to the error message."
+            "description": "Called once the attach operation succeeds or fails. Callback receives no arguments. If the attach fails, $(ref:runtime.lastError) will be set to the error message."
           }
         ]
       },
@@ -77,7 +77,7 @@
             "name": "callback",
             "optional": true,
             "parameters": [],
-            "description": "Called once the detach operation succeeds or fails. Callback receives no arguments. If the detach fails, $ref:runtime.lastError will be set to the error message."
+            "description": "Called once the detach operation succeeds or fails. Callback receives no arguments. If the detach fails, $(ref:runtime.lastError) will be set to the error message."
           }
         ]
       },
@@ -94,7 +94,7 @@
           {
             "type": "string",
             "name": "method",
-            "description": "Method name. Should be one of the methods defined by the <a href='http://code.google.com/chrome/devtools/docs/remote-debugging.html'>remote debugging protocol</a>."
+            "description": "Method name. Should be one of the methods defined by the <a href='http://code.google.com/chrome/devtools/docs/remote-debugging'>remote debugging protocol</a>."
           },
           {
             "type": "object",
@@ -113,10 +113,10 @@
                 "name": "result",
                 "optional": true,
                 "additionalProperties": { "type": "any" },
-                "description": "JSON object with the response. Structure of the response varies depending on the method and is defined by the remote debugging protocol."
+                "description": "JSON object with the response. Structure of the response varies depending on the method name and is defined by the 'returns' attribute of the command description in the remote debugging protocol."
               }
             ],
-            "description": "Response body. If an error occurs while posting the message, the callback will be called with no arguments and $ref:runtime.lastError will be set to the error message."
+            "description": "Response body. If an error occurs while posting the message, the callback will be called with no arguments and $(ref:runtime.lastError) will be set to the error message."
           }
         ]
       },
@@ -154,14 +154,14 @@
           {
             "type": "string",
             "name": "method",
-            "description": "Method name. Should be one of the notifications defined by the <a href='http://code.google.com/chrome/devtools/docs/remote-debugging.html'>remote debugging protocol</a>."
+            "description": "Method name. Should be one of the notifications defined by the <a href='http://code.google.com/chrome/devtools/docs/remote-debugging'>remote debugging protocol</a>."
           },
           {
             "type": "object",
             "name": "params",
             "optional": true,
             "additionalProperties": { "type": "any" },
-            "description": "JSON object with the response. Structure of the response varies depending on the method and is defined by the remote debugging protocol."
+            "description": "JSON object with the parameters. Structure of the parameters varies depending on the method name and is defined by the 'parameters' attribute of the event description in the remote debugging protocol."
           }
         ]
       },

@@ -31,6 +31,12 @@ const int kMsCallbackWait = 500;
 const int kMinHdHeight = 720;
 const uint32 kTimeout = 5000U;
 
+void NormalizeVideoSize(int* expected_width, int* expected_height) {
+  // WebRtcVideoFrame truncates the frame size to a multiple of 4.
+  *expected_width = *expected_width & ~3;
+  *expected_height = *expected_height & ~3;
+}
+
 }  // namespace
 
 // Sets the elapsed time in the video frame to 0.
@@ -94,6 +100,7 @@ class VideoCapturerTest
 };
 
 TEST_F(VideoCapturerTest, CaptureState) {
+  EXPECT_TRUE(capturer_.enable_video_adapter());
   EXPECT_EQ(cricket::CS_RUNNING, capturer_.Start(cricket::VideoFormat(
       640,
       480,
@@ -227,6 +234,59 @@ TEST_F(VideoCapturerTest, ScreencastScaledMaxPixels) {
   EXPECT_EQ(2, renderer_.num_rendered_frames());
 }
 
+TEST_F(VideoCapturerTest, ScreencastScaledOddWidth) {
+  capturer_.SetScreencast(true);
+
+  int kWidth = 1281;
+  int kHeight = 720;
+
+  std::vector<cricket::VideoFormat> formats;
+  formats.push_back(cricket::VideoFormat(kWidth, kHeight,
+      cricket::VideoFormat::FpsToInterval(5), cricket::FOURCC_ARGB));
+  capturer_.ResetSupportedFormats(formats);
+
+  EXPECT_EQ(cricket::CS_RUNNING, capturer_.Start(cricket::VideoFormat(
+      kWidth,
+      kHeight,
+      cricket::VideoFormat::FpsToInterval(30),
+      cricket::FOURCC_ARGB)));
+  EXPECT_TRUE(capturer_.IsRunning());
+  EXPECT_EQ(0, renderer_.num_rendered_frames());
+  int expected_width = kWidth;
+  int expected_height = kHeight;
+  NormalizeVideoSize(&expected_width, &expected_height);
+  renderer_.SetSize(expected_width, expected_height, 0);
+  EXPECT_TRUE(capturer_.CaptureFrame());
+  EXPECT_EQ(1, renderer_.num_rendered_frames());
+}
+
+TEST_F(VideoCapturerTest, ScreencastScaledSuperLarge) {
+  capturer_.SetScreencast(true);
+
+  const int kMaxWidth = 4096;
+  const int kMaxHeight = 3072;
+  int kWidth = kMaxWidth + 4;
+  int kHeight = kMaxHeight + 4;
+
+  std::vector<cricket::VideoFormat> formats;
+  formats.push_back(cricket::VideoFormat(kWidth, kHeight,
+      cricket::VideoFormat::FpsToInterval(5), cricket::FOURCC_ARGB));
+  capturer_.ResetSupportedFormats(formats);
+
+  EXPECT_EQ(cricket::CS_RUNNING, capturer_.Start(cricket::VideoFormat(
+      kWidth,
+      kHeight,
+      cricket::VideoFormat::FpsToInterval(30),
+      cricket::FOURCC_ARGB)));
+  EXPECT_TRUE(capturer_.IsRunning());
+  EXPECT_EQ(0, renderer_.num_rendered_frames());
+  int expected_width = 2050;
+  int expected_height = 1538;
+  NormalizeVideoSize(&expected_width, &expected_height);
+  renderer_.SetSize(expected_width, expected_height, 0);
+  EXPECT_TRUE(capturer_.CaptureFrame());
+  EXPECT_EQ(1, renderer_.num_rendered_frames());
+}
 
 TEST_F(VideoCapturerTest, TestFourccMatch) {
   cricket::VideoFormat desired(640, 480,
@@ -507,23 +567,23 @@ TEST_F(VideoCapturerTest, TestFpsFormats) {
       cricket::VideoFormat::FpsToInterval(10), cricket::FOURCC_ANY));
   cricket::VideoFormat best;
 
-  // expect 30 fps to choose 30 fps format
+  // Expect 30 fps to choose 30 fps format.
   EXPECT_TRUE(capturer_.GetBestCaptureFormat(required_formats[0], &best));
   EXPECT_EQ(640, best.width);
   EXPECT_EQ(400, best.height);
   EXPECT_EQ(cricket::VideoFormat::FpsToInterval(30), best.interval);
 
-  // expect 20 fps to choose 20 fps format
+  // Expect 20 fps to choose 30 fps format.
   EXPECT_TRUE(capturer_.GetBestCaptureFormat(required_formats[1], &best));
   EXPECT_EQ(640, best.width);
   EXPECT_EQ(400, best.height);
-  EXPECT_EQ(cricket::VideoFormat::FpsToInterval(20), best.interval);
+  EXPECT_EQ(cricket::VideoFormat::FpsToInterval(30), best.interval);
 
-  // expect 10 fps to choose 15 fps format but set fps to 10
+  // Expect 10 fps to choose 15 fps format and set fps to 15.
   EXPECT_TRUE(capturer_.GetBestCaptureFormat(required_formats[2], &best));
   EXPECT_EQ(640, best.width);
   EXPECT_EQ(480, best.height);
-  EXPECT_EQ(cricket::VideoFormat::FpsToInterval(10), best.interval);
+  EXPECT_EQ(cricket::VideoFormat::FpsToInterval(15), best.interval);
 
   // We have VGA 60 fps and 15 fps. Choose best fps.
   supported_formats.clear();
@@ -539,23 +599,23 @@ TEST_F(VideoCapturerTest, TestFpsFormats) {
       cricket::VideoFormat::FpsToInterval(30), cricket::FOURCC_I420));
   capturer_.ResetSupportedFormats(supported_formats);
 
-  // expect 30 fps to choose 60 fps format, but will set best fps to 30
+  // Expect 30 fps to choose 60 fps format and will set best fps to 60.
   EXPECT_TRUE(capturer_.GetBestCaptureFormat(required_formats[0], &best));
   EXPECT_EQ(640, best.width);
   EXPECT_EQ(480, best.height);
-  EXPECT_EQ(cricket::VideoFormat::FpsToInterval(30), best.interval);
+  EXPECT_EQ(cricket::VideoFormat::FpsToInterval(60), best.interval);
 
-  // expect 20 fps to choose 60 fps format, but will set best fps to 20
+  // Expect 20 fps to choose 60 fps format, and will set best fps to 60.
   EXPECT_TRUE(capturer_.GetBestCaptureFormat(required_formats[1], &best));
   EXPECT_EQ(640, best.width);
   EXPECT_EQ(480, best.height);
-  EXPECT_EQ(cricket::VideoFormat::FpsToInterval(20), best.interval);
+  EXPECT_EQ(cricket::VideoFormat::FpsToInterval(60), best.interval);
 
-  // expect 10 fps to choose 10 fps
+  // Expect 10 fps to choose 15 fps.
   EXPECT_TRUE(capturer_.GetBestCaptureFormat(required_formats[2], &best));
   EXPECT_EQ(640, best.width);
   EXPECT_EQ(480, best.height);
-  EXPECT_EQ(cricket::VideoFormat::FpsToInterval(10), best.interval);
+  EXPECT_EQ(cricket::VideoFormat::FpsToInterval(15), best.interval);
 }
 
 TEST_F(VideoCapturerTest, TestRequest16x10_9) {

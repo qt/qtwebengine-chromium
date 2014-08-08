@@ -32,7 +32,7 @@
 
 namespace WebCore {
 
-MergeIdenticalElementsCommand::MergeIdenticalElementsCommand(PassRefPtr<Element> first, PassRefPtr<Element> second)
+MergeIdenticalElementsCommand::MergeIdenticalElementsCommand(PassRefPtrWillBeRawPtr<Element> first, PassRefPtrWillBeRawPtr<Element> second)
     : SimpleEditCommand(first->document())
     , m_element1(first)
     , m_element2(second)
@@ -49,7 +49,7 @@ void MergeIdenticalElementsCommand::doApply()
 
     m_atChild = m_element2->firstChild();
 
-    Vector<RefPtr<Node> > children;
+    WillBeHeapVector<RefPtrWillBeMember<Node> > children;
     for (Node* child = m_element1->firstChild(); child; child = child->nextSibling())
         children.append(child);
 
@@ -65,7 +65,7 @@ void MergeIdenticalElementsCommand::doUnapply()
     ASSERT(m_element1);
     ASSERT(m_element2);
 
-    RefPtr<Node> atChild = m_atChild.release();
+    RefPtrWillBeRawPtr<Node> atChild = m_atChild.release();
 
     ContainerNode* parent = m_element2->parentNode();
     if (!parent || !parent->rendererIsEditable())
@@ -77,13 +77,21 @@ void MergeIdenticalElementsCommand::doUnapply()
     if (exceptionState.hadException())
         return;
 
-    Vector<RefPtr<Node> > children;
+    WillBeHeapVector<RefPtrWillBeMember<Node> > children;
     for (Node* child = m_element2->firstChild(); child && child != atChild; child = child->nextSibling())
         children.append(child);
 
     size_t size = children.size();
     for (size_t i = 0; i < size; ++i)
         m_element1->appendChild(children[i].release(), exceptionState);
+}
+
+void MergeIdenticalElementsCommand::trace(Visitor* visitor)
+{
+    visitor->trace(m_element1);
+    visitor->trace(m_element2);
+    visitor->trace(m_atChild);
+    SimpleEditCommand::trace(visitor);
 }
 
 } // namespace WebCore

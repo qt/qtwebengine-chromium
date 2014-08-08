@@ -31,8 +31,8 @@
 #ifndef WebDevToolsFrontendImpl_h
 #define WebDevToolsFrontendImpl_h
 
-#include "WebDevToolsFrontend.h"
 #include "platform/Timer.h"
+#include "public/web/WebDevToolsFrontend.h"
 #include "wtf/Deque.h"
 #include "wtf/Forward.h"
 #include "wtf/Noncopyable.h"
@@ -47,7 +47,7 @@ struct WebDevToolsMessageData;
 
 using WTF::String;
 
-class WebDevToolsFrontendImpl : public blink::WebDevToolsFrontend {
+class WebDevToolsFrontendImpl FINAL : public blink::WebDevToolsFrontend {
     WTF_MAKE_NONCOPYABLE(WebDevToolsFrontendImpl);
 public:
     WebDevToolsFrontendImpl(
@@ -57,7 +57,7 @@ public:
     virtual ~WebDevToolsFrontendImpl();
 
     // WebDevToolsFrontend implementation.
-    virtual void dispatchOnInspectorFrontend(const WebString& message);
+    virtual void dispatchOnInspectorFrontend(const WebString& message) OVERRIDE;
 
 private:
     class InspectorFrontendResumeObserver;

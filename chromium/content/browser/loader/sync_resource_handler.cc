@@ -10,7 +10,6 @@
 #include "content/browser/loader/resource_message_filter.h"
 #include "content/browser/loader/resource_request_info_impl.h"
 #include "content/common/resource_messages.h"
-#include "content/public/browser/global_request_id.h"
 #include "content/public/browser/resource_dispatcher_host_delegate.h"
 #include "content/public/browser/resource_request_info.h"
 #include "net/base/io_buffer.h"
@@ -25,7 +24,8 @@ SyncResourceHandler::SyncResourceHandler(
     : ResourceHandler(request),
       read_buffer_(new net::IOBuffer(kReadBufSize)),
       result_message_(result_message),
-      rdh_(resource_dispatcher_host) {
+      rdh_(resource_dispatcher_host),
+      total_transfer_size_(0) {
   result_.final_url = request->url();
 }
 
@@ -40,14 +40,11 @@ SyncResourceHandler::~SyncResourceHandler() {
   }
 }
 
-bool SyncResourceHandler::OnUploadProgress(int request_id,
-                                           uint64 position,
-                                           uint64 size) {
+bool SyncResourceHandler::OnUploadProgress(uint64 position, uint64 size) {
   return true;
 }
 
 bool SyncResourceHandler::OnRequestRedirected(
-    int request_id,
     const GURL& new_url,
     ResourceResponse* response,
     bool* defer) {
@@ -65,11 +62,12 @@ bool SyncResourceHandler::OnRequestRedirected(
     return false;
   }
   result_.final_url = new_url;
+
+  total_transfer_size_ += request()->GetTotalReceivedBytes();
   return true;
 }
 
 bool SyncResourceHandler::OnResponseStarted(
-    int request_id,
     ResourceResponse* response,
     bool* defer) {
   const ResourceRequestInfoImpl* info = GetRequestInfo();
@@ -95,14 +93,15 @@ bool SyncResourceHandler::OnResponseStarted(
   return true;
 }
 
-bool SyncResourceHandler::OnWillStart(int request_id,
-                                      const GURL& url,
-                                      bool* defer) {
+bool SyncResourceHandler::OnWillStart(const GURL& url, bool* defer) {
   return true;
 }
 
-bool SyncResourceHandler::OnWillRead(int request_id,
-                                     scoped_refptr<net::IOBuffer>* buf,
+bool SyncResourceHandler::OnBeforeNetworkStart(const GURL& url, bool* defer) {
+  return true;
+}
+
+bool SyncResourceHandler::OnWillRead(scoped_refptr<net::IOBuffer>* buf,
                                      int* buf_size,
                                      int min_size) {
   DCHECK(min_size == -1);
@@ -111,8 +110,7 @@ bool SyncResourceHandler::OnWillRead(int request_id,
   return true;
 }
 
-bool SyncResourceHandler::OnReadCompleted(int request_id, int bytes_read,
-                                          bool* defer) {
+bool SyncResourceHandler::OnReadCompleted(int bytes_read, bool* defer) {
   if (!bytes_read)
     return true;
   result_.data.append(read_buffer_->data(), bytes_read);
@@ -120,7 +118,6 @@ bool SyncResourceHandler::OnReadCompleted(int request_id, int bytes_read,
 }
 
 void SyncResourceHandler::OnResponseCompleted(
-    int request_id,
     const net::URLRequestStatus& status,
     const std::string& security_info,
     bool* defer) {
@@ -130,8 +127,8 @@ void SyncResourceHandler::OnResponseCompleted(
 
   result_.error_code = status.error();
 
-  result_.encoded_data_length =
-      DevToolsNetLogObserver::GetAndResetEncodedDataLength(request());
+  int total_transfer_size = request()->GetTotalReceivedBytes();
+  result_.encoded_data_length = total_transfer_size_ + total_transfer_size;
 
   ResourceHostMsg_SyncLoad::WriteReplyParams(result_message_, result_);
   filter->Send(result_message_);
@@ -139,9 +136,7 @@ void SyncResourceHandler::OnResponseCompleted(
   return;
 }
 
-void SyncResourceHandler::OnDataDownloaded(
-    int request_id,
-    int bytes_downloaded) {
+void SyncResourceHandler::OnDataDownloaded(int bytes_downloaded) {
   // Sync requests don't involve ResourceMsg_DataDownloaded messages
   // being sent back to renderers as progress is made.
 }

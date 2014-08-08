@@ -24,7 +24,7 @@ void AdjustWindowToFit(HWND hwnd, const RECT& bounds, bool fit_to_monitor) {
     if (hmon) {
       MONITORINFO mi;
       mi.cbSize = sizeof(mi);
-      base::win::GetMonitorInfoWrapper(hmon, &mi);
+      GetMonitorInfo(hmon, &mi);
       Rect window_rect(bounds);
       Rect monitor_rect(mi.rcWork);
       Rect new_window_rect = window_rect;
@@ -54,23 +54,23 @@ void AdjustWindowToFit(HWND hwnd, const RECT& bounds, bool fit_to_monitor) {
 MSVC_DISABLE_OPTIMIZE();
 
 void CrashOutOfMemory() {
-  LOG_GETLASTERROR(FATAL);
+  PLOG(FATAL);
 }
 
 void CrashAccessDenied() {
-  LOG_GETLASTERROR(FATAL);
+  PLOG(FATAL);
 }
 
 // Crash isn't one of the ones we commonly see.
 void CrashOther() {
-  LOG_GETLASTERROR(FATAL);
+  PLOG(FATAL);
 }
 
 MSVC_ENABLE_OPTIMIZE();
 
 }  // namespace
 
-string16 GetClassName(HWND window) {
+base::string16 GetClassName(HWND window) {
   // GetClassNameW will return a truncated result (properly null terminated) if
   // the given buffer is not large enough.  So, it is not possible to determine
   // that we got the entire class name if the result is exactly equal to the
@@ -150,7 +150,7 @@ void CenterAndSizeWindow(HWND parent,
     if (monitor) {
       MONITORINFO mi = {0};
       mi.cbSize = sizeof(mi);
-      base::win::GetMonitorInfoWrapper(monitor, &mi);
+      GetMonitorInfo(monitor, &mi);
       center_bounds = mi.rcWork;
     } else {
       NOTREACHED() << "Unable to get default monitor";
@@ -200,16 +200,17 @@ void CheckWindowCreated(HWND hwnd) {
         CrashOther();
         break;
     }
-    LOG_GETLASTERROR(FATAL);
+    PLOG(FATAL);
   }
 }
 
 void ShowSystemMenu(HWND window) {
   RECT rect;
   GetWindowRect(window, &rect);
-  Point point = Point(rect.left, rect.top);
+  Point point = Point(base::i18n::IsRTL() ? rect.right : rect.left, rect.top);
   static const int kSystemMenuOffset = 10;
-  point.Offset(kSystemMenuOffset, kSystemMenuOffset);
+  point.Offset(base::i18n::IsRTL() ? -kSystemMenuOffset : kSystemMenuOffset,
+               kSystemMenuOffset);
   ShowSystemMenuAtPoint(window, point);
 }
 

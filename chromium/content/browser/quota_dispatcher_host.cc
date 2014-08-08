@@ -6,6 +6,7 @@
 
 #include "base/bind.h"
 #include "base/memory/weak_ptr.h"
+#include "base/numerics/safe_conversions.h"
 #include "content/common/quota_messages.h"
 #include "content/public/browser/quota_permission_context.h"
 #include "net/base/net_util.h"
@@ -99,75 +100,72 @@ class QuotaDispatcherHost::RequestQuotaDispatcher
   typedef RequestQuotaDispatcher self_type;
 
   RequestQuotaDispatcher(base::WeakPtr<QuotaDispatcherHost> dispatcher_host,
-                         int request_id,
-                         const GURL& origin,
-                         StorageType type,
-                         int64 requested_quota,
-                         int render_view_id)
-      : RequestDispatcher(dispatcher_host, request_id),
-        origin_(origin),
-        host_(net::GetHostOrSpecFromURL(origin)),
-        type_(type),
+                         const StorageQuotaParams& params)
+      : RequestDispatcher(dispatcher_host, params.request_id),
+        params_(params),
+        current_usage_(0),
         current_quota_(0),
-        requested_quota_(requested_quota),
-        render_view_id_(render_view_id),
-        weak_factory_(this) {}
+        requested_quota_(0),
+        weak_factory_(this) {
+    // Convert the requested size from uint64 to int64 since the quota backend
+    // requires int64 values.
+    // TODO(nhiroki): The backend should accept uint64 values.
+    requested_quota_ = base::saturated_cast<int64>(params_.requested_size);
+  }
   virtual ~RequestQuotaDispatcher() {}
 
   void Start() {
     DCHECK(dispatcher_host());
-    DCHECK(type_ == quota::kStorageTypeTemporary ||
-           type_ == quota::kStorageTypePersistent ||
-           type_ == quota::kStorageTypeSyncable);
-    if (type_ == quota::kStorageTypePersistent) {
-      quota_manager()->GetPersistentHostQuota(
-          host_,
-          base::Bind(&self_type::DidGetHostQuota,
-                     weak_factory_.GetWeakPtr(), host_, type_));
+
+    DCHECK(params_.storage_type == quota::kStorageTypeTemporary ||
+           params_.storage_type == quota::kStorageTypePersistent ||
+           params_.storage_type == quota::kStorageTypeSyncable);
+    if (params_.storage_type == quota::kStorageTypePersistent) {
+      quota_manager()->GetUsageAndQuotaForWebApps(
+          params_.origin_url, params_.storage_type,
+          base::Bind(&self_type::DidGetPersistentUsageAndQuota,
+                     weak_factory_.GetWeakPtr()));
     } else {
       quota_manager()->GetUsageAndQuotaForWebApps(
-          origin_, type_,
+          params_.origin_url, params_.storage_type,
           base::Bind(&self_type::DidGetTemporaryUsageAndQuota,
                      weak_factory_.GetWeakPtr()));
     }
   }
 
  private:
-  void DidGetHostQuota(const std::string& host,
-                       StorageType type,
-                       QuotaStatusCode status,
-                       int64 quota) {
+  void DidGetPersistentUsageAndQuota(QuotaStatusCode status,
+                                     int64 usage,
+                                     int64 quota) {
     if (!dispatcher_host())
       return;
-    DCHECK_EQ(type_, type);
-    DCHECK_EQ(host_, host);
     if (status != quota::kQuotaStatusOk) {
-      DidFinish(status, 0);
+      DidFinish(status, 0, 0);
       return;
     }
-    if (requested_quota_ < 0) {
-      DidFinish(quota::kQuotaErrorInvalidModification, 0);
-      return;
-    }
-    if (requested_quota_ <= quota) {
+
+    if (quota_manager()->IsStorageUnlimited(params_.origin_url,
+                                            params_.storage_type) ||
+        requested_quota_ <= quota) {
       // Seems like we can just let it go.
-      DidFinish(quota::kQuotaStatusOk, requested_quota_);
+      DidFinish(quota::kQuotaStatusOk, usage, params_.requested_size);
       return;
     }
+    current_usage_ = usage;
     current_quota_ = quota;
+
     // Otherwise we need to consult with the permission context and
-    // possibly show an infobar.
+    // possibly show a prompt.
     DCHECK(permission_context());
-    permission_context()->RequestQuotaPermission(
-        origin_, type_, requested_quota_, render_process_id(), render_view_id_,
+    permission_context()->RequestQuotaPermission(params_, render_process_id(),
         base::Bind(&self_type::DidGetPermissionResponse,
                    weak_factory_.GetWeakPtr()));
   }
 
   void DidGetTemporaryUsageAndQuota(QuotaStatusCode status,
-                                    int64 usage_unused,
+                                    int64 usage,
                                     int64 quota) {
-    DidFinish(status, std::min(requested_quota_, quota));
+    DidFinish(status, usage, std::min(requested_quota_, quota));
   }
 
   void DidGetPermissionResponse(
@@ -176,20 +174,22 @@ class QuotaDispatcherHost::RequestQuotaDispatcher
       return;
     if (response != QuotaPermissionContext::QUOTA_PERMISSION_RESPONSE_ALLOW) {
       // User didn't allow the new quota.  Just returning the current quota.
-      DidFinish(quota::kQuotaStatusOk, current_quota_);
+      DidFinish(quota::kQuotaStatusOk, current_usage_, current_quota_);
       return;
     }
     // Now we're allowed to set the new quota.
     quota_manager()->SetPersistentHostQuota(
-        host_, requested_quota_,
+        net::GetHostOrSpecFromURL(params_.origin_url), params_.requested_size,
         base::Bind(&self_type::DidSetHostQuota, weak_factory_.GetWeakPtr()));
   }
 
   void DidSetHostQuota(QuotaStatusCode status, int64 new_quota) {
-    DidFinish(status, new_quota);
+    DidFinish(status, current_usage_, new_quota);
   }
 
-  void DidFinish(QuotaStatusCode status, int64 granted_quota) {
+  void DidFinish(QuotaStatusCode status,
+                 int64 usage,
+                 int64 granted_quota) {
     if (!dispatcher_host())
       return;
     DCHECK(dispatcher_host());
@@ -197,17 +197,15 @@ class QuotaDispatcherHost::RequestQuotaDispatcher
       dispatcher_host()->Send(new QuotaMsg_DidFail(request_id(), status));
     } else {
       dispatcher_host()->Send(new QuotaMsg_DidGrantStorageQuota(
-          request_id(), granted_quota));
+          request_id(), usage, granted_quota));
     }
     Completed();
   }
 
-  const GURL origin_;
-  const std::string host_;
-  const StorageType type_;
+  StorageQuotaParams params_;
+  int64 current_usage_;
   int64 current_quota_;
-  const int64 requested_quota_;
-  const int render_view_id_;
+  int64 requested_quota_;
   base::WeakPtrFactory<self_type> weak_factory_;
 };
 
@@ -215,23 +213,22 @@ QuotaDispatcherHost::QuotaDispatcherHost(
     int process_id,
     QuotaManager* quota_manager,
     QuotaPermissionContext* permission_context)
-    : process_id_(process_id),
+    : BrowserMessageFilter(QuotaMsgStart),
+      process_id_(process_id),
       quota_manager_(quota_manager),
       permission_context_(permission_context),
       weak_factory_(this) {
 }
 
-bool QuotaDispatcherHost::OnMessageReceived(
-    const IPC::Message& message, bool* message_was_ok) {
-  *message_was_ok = true;
+bool QuotaDispatcherHost::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
-  IPC_BEGIN_MESSAGE_MAP_EX(QuotaDispatcherHost, message, *message_was_ok)
+  IPC_BEGIN_MESSAGE_MAP(QuotaDispatcherHost, message)
     IPC_MESSAGE_HANDLER(QuotaHostMsg_QueryStorageUsageAndQuota,
                         OnQueryStorageUsageAndQuota)
     IPC_MESSAGE_HANDLER(QuotaHostMsg_RequestStorageQuota,
                         OnRequestStorageQuota)
     IPC_MESSAGE_UNHANDLED(handled = false)
-  IPC_END_MESSAGE_MAP_EX()
+  IPC_END_MESSAGE_MAP()
   return handled;
 }
 
@@ -247,27 +244,18 @@ void QuotaDispatcherHost::OnQueryStorageUsageAndQuota(
 }
 
 void QuotaDispatcherHost::OnRequestStorageQuota(
-    int render_view_id,
-    int request_id,
-    const GURL& origin,
-    StorageType type,
-    int64 requested_size) {
-  if (quota_manager_->IsStorageUnlimited(origin, type)) {
-    // If the origin is marked 'unlimited' we always just return ok.
-    Send(new QuotaMsg_DidGrantStorageQuota(request_id, requested_size));
-    return;
-  }
-
-  if (type != quota::kStorageTypeTemporary &&
-      type != quota::kStorageTypePersistent) {
+    const StorageQuotaParams& params) {
+  if (params.storage_type != quota::kStorageTypeTemporary &&
+      params.storage_type != quota::kStorageTypePersistent) {
     // Unsupported storage types.
-    Send(new QuotaMsg_DidFail(request_id, quota::kQuotaErrorNotSupported));
+    Send(new QuotaMsg_DidFail(params.request_id,
+                              quota::kQuotaErrorNotSupported));
     return;
   }
 
-  RequestQuotaDispatcher* dispatcher = new RequestQuotaDispatcher(
-      weak_factory_.GetWeakPtr(), request_id, origin, type,
-      requested_size, render_view_id);
+  RequestQuotaDispatcher* dispatcher =
+      new RequestQuotaDispatcher(weak_factory_.GetWeakPtr(),
+                                 params);
   dispatcher->Start();
 }
 

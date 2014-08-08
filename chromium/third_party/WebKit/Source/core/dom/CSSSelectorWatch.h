@@ -43,24 +43,27 @@
 
 namespace WebCore {
 
-class CSSSelectorWatch : public DocumentSupplement {
+class CSSSelectorWatch FINAL : public NoBaseWillBeGarbageCollectedFinalized<CSSSelectorWatch>, public DocumentSupplement {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(CSSSelectorWatch);
 public:
     virtual ~CSSSelectorWatch() { }
 
     static CSSSelectorWatch& from(Document&);
 
     void watchCSSSelectors(const Vector<String>& selectors);
-    const Vector<RefPtr<StyleRule> >& watchedCallbackSelectors() const { return m_watchedCallbackSelectors; }
+    const WillBeHeapVector<RefPtrWillBeMember<StyleRule> >& watchedCallbackSelectors() const { return m_watchedCallbackSelectors; }
 
     void updateSelectorMatches(const Vector<String>& removedSelectors, const Vector<String>& addedSelectors);
 
+    virtual void trace(Visitor*) OVERRIDE;
+
 private:
-    CSSSelectorWatch(Document&);
+    explicit CSSSelectorWatch(Document&);
     void callbackSelectorChangeTimerFired(Timer<CSSSelectorWatch>*);
 
     Document& m_document;
 
-    Vector<RefPtr<StyleRule> > m_watchedCallbackSelectors;
+    WillBeHeapVector<RefPtrWillBeMember<StyleRule> > m_watchedCallbackSelectors;
 
     // Maps a CSS selector string with a -webkit-callback property to the number
     // of matching RenderStyle objects in this document.

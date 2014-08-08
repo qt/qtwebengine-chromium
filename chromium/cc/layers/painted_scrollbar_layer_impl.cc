@@ -29,7 +29,7 @@ PaintedScrollbarLayerImpl::PaintedScrollbarLayerImpl(
     LayerTreeImpl* tree_impl,
     int id,
     ScrollbarOrientation orientation)
-    : ScrollbarLayerImplBase(tree_impl, id, orientation, false),
+    : ScrollbarLayerImplBase(tree_impl, id, orientation, false, false),
       track_ui_resource_id_(0),
       thumb_ui_resource_id_(0),
       thumb_thickness_(0),
@@ -78,24 +78,29 @@ void PaintedScrollbarLayerImpl::AppendQuads(
   gfx::Rect bounds_rect(bounds());
   gfx::Rect content_bounds_rect(content_bounds());
 
-  SharedQuadState* shared_quad_state =
-      quad_sink->UseSharedQuadState(CreateSharedQuadState());
-  AppendDebugBorderQuad(quad_sink, shared_quad_state, append_quads_data);
+  SharedQuadState* shared_quad_state = quad_sink->CreateSharedQuadState();
+  PopulateSharedQuadState(shared_quad_state);
+
+  AppendDebugBorderQuad(
+      quad_sink, content_bounds(), shared_quad_state, append_quads_data);
 
   gfx::Rect thumb_quad_rect = ComputeThumbQuadRect();
+  gfx::Rect visible_thumb_quad_rect =
+      quad_sink->UnoccludedContentRect(thumb_quad_rect, draw_transform());
 
   ResourceProvider::ResourceId thumb_resource_id =
       layer_tree_impl()->ResourceIdForUIResource(thumb_ui_resource_id_);
   ResourceProvider::ResourceId track_resource_id =
       layer_tree_impl()->ResourceIdForUIResource(track_ui_resource_id_);
 
-  if (thumb_resource_id && !thumb_quad_rect.IsEmpty()) {
+  if (thumb_resource_id && !visible_thumb_quad_rect.IsEmpty()) {
     gfx::Rect opaque_rect;
     const float opacity[] = {1.0f, 1.0f, 1.0f, 1.0f};
     scoped_ptr<TextureDrawQuad> quad = TextureDrawQuad::Create();
     quad->SetNew(shared_quad_state,
                  thumb_quad_rect,
                  opaque_rect,
+                 visible_thumb_quad_rect,
                  thumb_resource_id,
                  premultipled_alpha,
                  uv_top_left,
@@ -103,17 +108,20 @@ void PaintedScrollbarLayerImpl::AppendQuads(
                  SK_ColorTRANSPARENT,
                  opacity,
                  flipped);
-    quad_sink->Append(quad.PassAs<DrawQuad>(), append_quads_data);
+    quad_sink->Append(quad.PassAs<DrawQuad>());
   }
 
   gfx::Rect track_quad_rect = content_bounds_rect;
-  if (track_resource_id && !track_quad_rect.IsEmpty()) {
+  gfx::Rect visible_track_quad_rect =
+      quad_sink->UnoccludedContentRect(track_quad_rect, draw_transform());
+  if (track_resource_id && !visible_track_quad_rect.IsEmpty()) {
     gfx::Rect opaque_rect(contents_opaque() ? track_quad_rect : gfx::Rect());
     const float opacity[] = {1.0f, 1.0f, 1.0f, 1.0f};
     scoped_ptr<TextureDrawQuad> quad = TextureDrawQuad::Create();
     quad->SetNew(shared_quad_state,
                  track_quad_rect,
                  opaque_rect,
+                 visible_track_quad_rect,
                  track_resource_id,
                  premultipled_alpha,
                  uv_top_left,
@@ -121,7 +129,7 @@ void PaintedScrollbarLayerImpl::AppendQuads(
                  SK_ColorTRANSPARENT,
                  opacity,
                  flipped);
-    quad_sink->Append(quad.PassAs<DrawQuad>(), append_quads_data);
+    quad_sink->Append(quad.PassAs<DrawQuad>());
   }
 }
 
@@ -167,6 +175,10 @@ void PaintedScrollbarLayerImpl::SetTrackLength(int track_length) {
 
 float PaintedScrollbarLayerImpl::TrackLength() const {
   return track_length_ + (orientation() == VERTICAL ? vertical_adjust() : 0);
+}
+
+bool PaintedScrollbarLayerImpl::IsThumbResizable() const {
+  return false;
 }
 
 const char* PaintedScrollbarLayerImpl::LayerTypeAsString() const {

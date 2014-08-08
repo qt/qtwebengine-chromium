@@ -30,6 +30,7 @@
 
 #include "core/dom/SandboxFlags.h"
 #include "core/dom/SecurityContext.h"
+#include "platform/heap/Handle.h"
 #include "platform/weborigin/KURL.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
@@ -39,19 +40,20 @@ namespace WebCore {
 
 class CustomElementRegistrationContext;
 class Document;
-class Frame;
-class HTMLImport;
+class LocalFrame;
+class HTMLImportsController;
 class Settings;
 
-class DocumentInit {
+class DocumentInit FINAL {
+    STACK_ALLOCATED();
 public:
-    explicit DocumentInit(const KURL& = KURL(), Frame* = 0, WeakPtr<Document> = WeakPtr<Document>(), HTMLImport* = 0);
+    explicit DocumentInit(const KURL& = KURL(), LocalFrame* = 0, WeakPtrWillBeRawPtr<Document> = nullptr, HTMLImportsController* = 0);
     DocumentInit(const DocumentInit&);
     ~DocumentInit();
 
     const KURL& url() const { return m_url; }
-    Frame* frame() const { return m_frame; }
-    HTMLImport* import() const { return m_import; }
+    LocalFrame* frame() const { return m_frame; }
+    HTMLImportsController* importsController() const { return m_importsController; }
 
     bool hasSecurityContext() const { return frameForSecurityContext(); }
     bool shouldTreatURLAsSrcdocDocument() const;
@@ -62,26 +64,27 @@ public:
     Document* parent() const { return m_parent.get(); }
     Document* owner() const { return m_owner.get(); }
     KURL parentBaseURL() const;
-    Frame* ownerFrame() const;
+    LocalFrame* ownerFrame() const;
     Settings* settings() const;
 
     DocumentInit& withRegistrationContext(CustomElementRegistrationContext*);
+    DocumentInit& withNewRegistrationContext();
+    PassRefPtrWillBeRawPtr<CustomElementRegistrationContext> registrationContext(Document*) const;
+    WeakPtrWillBeRawPtr<Document> contextDocument() const;
 
-    PassRefPtr<CustomElementRegistrationContext> registrationContext(Document*) const;
-    WeakPtr<Document> contextDocument() const;
-
-    static DocumentInit fromContext(WeakPtr<Document> contextDocument, const KURL& = KURL());
+    static DocumentInit fromContext(WeakPtrWillBeRawPtr<Document> contextDocument, const KURL& = KURL());
 
 private:
-    Frame* frameForSecurityContext() const;
+    LocalFrame* frameForSecurityContext() const;
 
     KURL m_url;
-    Frame* m_frame;
-    RefPtr<Document> m_parent;
-    RefPtr<Document> m_owner;
-    WeakPtr<Document> m_contextDocument;
-    HTMLImport* m_import;
-    RefPtr<CustomElementRegistrationContext> m_registrationContext;
+    LocalFrame* m_frame;
+    RefPtrWillBeMember<Document> m_parent;
+    RefPtrWillBeMember<Document> m_owner;
+    WeakPtrWillBeMember<Document> m_contextDocument;
+    RawPtrWillBeMember<HTMLImportsController> m_importsController;
+    RefPtrWillBeMember<CustomElementRegistrationContext> m_registrationContext;
+    bool m_createNewRegistrationContext;
 };
 
 } // namespace WebCore

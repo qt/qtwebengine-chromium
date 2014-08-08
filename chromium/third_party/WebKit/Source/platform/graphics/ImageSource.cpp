@@ -55,14 +55,14 @@ bool ImageSource::initialized() const
     return m_decoder;
 }
 
-void ImageSource::setData(SharedBuffer* data, bool allDataReceived)
+void ImageSource::setData(SharedBuffer& data, bool allDataReceived)
 {
     // Make the decoder by sniffing the bytes.
     // This method will examine the data and instantiate an instance of the appropriate decoder plugin.
     // If insufficient bytes are available to determine the image type, no decoder plugin will be
     // made.
     if (!m_decoder)
-        m_decoder = DeferredImageDecoder::create(*data, m_alphaOption, m_gammaAndColorProfileOption);
+        m_decoder = DeferredImageDecoder::create(data, m_alphaOption, m_gammaAndColorProfileOption);
 
     if (m_decoder)
         m_decoder->setData(data, allDataReceived);
@@ -76,6 +76,11 @@ String ImageSource::filenameExtension() const
 bool ImageSource::isSizeAvailable()
 {
     return m_decoder && m_decoder->isSizeAvailable();
+}
+
+bool ImageSource::hasColorProfile() const
+{
+    return m_decoder && m_decoder->hasColorProfile();
 }
 
 IntSize ImageSource::size(RespectImageOrientationEnum shouldRespectOrientation) const
@@ -113,16 +118,16 @@ size_t ImageSource::frameCount() const
 PassRefPtr<NativeImageSkia> ImageSource::createFrameAtIndex(size_t index)
 {
     if (!m_decoder)
-        return 0;
+        return nullptr;
 
     ImageFrame* buffer = m_decoder->frameBufferAtIndex(index);
     if (!buffer || buffer->status() == ImageFrame::FrameEmpty)
-        return 0;
+        return nullptr;
 
     // Zero-height images can cause problems for some ports.  If we have an
     // empty image dimension, just bail.
     if (size().isEmpty())
-        return 0;
+        return nullptr;
 
     // Return the buffer contents as a native image.  For some ports, the data
     // is already in a native container, and this just increments its refcount.

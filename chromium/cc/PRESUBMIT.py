@@ -4,8 +4,8 @@
 
 """Top-level presubmit script for cc.
 
-See http://dev.chromium.org/developers/how-tos/depottools/presubmit-scripts for
-details on the presubmit API built into gcl.
+See http://dev.chromium.org/developers/how-tos/depottools/presubmit-scripts
+for more details about the presubmit API built into depot_tools.
 """
 
 import re
@@ -116,13 +116,6 @@ def CheckPassByValue(input_api,
   # Well-defined simple classes containing only <= 4 ints, or <= 2 floats.
   pass_by_value_types = ['base::Time',
                          'base::TimeTicks',
-                         'gfx::Point',
-                         'gfx::PointF',
-                         'gfx::Rect',
-                         'gfx::Size',
-                         'gfx::SizeF',
-                         'gfx::Vector2d',
-                         'gfx::Vector2dF',
                          ]
 
   for f in input_api.AffectedSourceFiles(source_file_filter):
@@ -155,6 +148,19 @@ def CheckTodos(input_api, output_api):
 def FindUnquotedQuote(contents, pos):
   match = re.search(r"(?<!\\)(?P<quote>\")", contents[pos:])
   return -1 if not match else match.start("quote") + pos
+
+def FindUselessIfdefs(input_api, output_api):
+  errors = []
+  source_file_filter = lambda x: x
+  for f in input_api.AffectedSourceFiles(source_file_filter):
+    contents = input_api.ReadFile(f, 'rb')
+    if re.search(r'#if\s*0\s', contents):
+      errors.append(f.LocalPath())
+  if errors:
+    return [output_api.PresubmitError(
+      'Don\'t use #if '+'0; just delete the code.',
+      items=errors)]
+  return []
 
 def FindNamespaceInBlock(pos, namespace, contents, whitelist=[]):
   open_brace = -1
@@ -219,6 +225,58 @@ def CheckNamespace(input_api, output_api):
       items=errors)]
   return []
 
+def CheckForUseOfWrongClock(input_api,
+                            output_api,
+                            white_list=CC_SOURCE_FILES,
+                            black_list=None):
+  """Make sure new lines of code don't use a clock susceptible to skew."""
+  black_list = tuple(black_list or input_api.DEFAULT_BLACK_LIST)
+  source_file_filter = lambda x: input_api.FilterSourceFile(x,
+                                                            white_list,
+                                                            black_list)
+  # Regular expression that should detect any explicit references to the
+  # base::Time type (or base::Clock/DefaultClock), whether in using decls,
+  # typedefs, or to call static methods.
+  base_time_type_pattern = r'(^|\W)base::(Time|Clock|DefaultClock)(\W|$)'
+
+  # Regular expression that should detect references to the base::Time class
+  # members, such as a call to base::Time::Now.
+  base_time_member_pattern = r'(^|\W)(Time|Clock|DefaultClock)::'
+
+  # Regular expression to detect "using base::Time" declarations.  We want to
+  # prevent these from triggerring a warning.  For example, it's perfectly
+  # reasonable for code to be written like this:
+  #
+  #   using base::Time;
+  #   ...
+  #   int64 foo_us = foo_s * Time::kMicrosecondsPerSecond;
+  using_base_time_decl_pattern = r'^\s*using\s+(::)?base::Time\s*;'
+
+  # Regular expression to detect references to the kXXX constants in the
+  # base::Time class.  We want to prevent these from triggerring a warning.
+  base_time_konstant_pattern = r'(^|\W)Time::k\w+'
+
+  problem_re = input_api.re.compile(
+      r'(' + base_time_type_pattern + r')|(' + base_time_member_pattern + r')')
+  exception_re = input_api.re.compile(
+      r'(' + using_base_time_decl_pattern + r')|(' +
+      base_time_konstant_pattern + r')')
+  problems = []
+  for f in input_api.AffectedSourceFiles(source_file_filter):
+    for line_number, line in f.ChangedContents():
+      if problem_re.search(line):
+        if not exception_re.search(line):
+          problems.append(
+              '  %s:%d\n    %s' % (f.LocalPath(), line_number, line.strip()))
+
+  if problems:
+    return [output_api.PresubmitPromptOrNotify(
+        'You added one or more references to the base::Time class and/or one\n'
+        'of its member functions (or base::Clock/DefaultClock). In cc code,\n'
+        'it is most certainly incorrect! Instead use base::TimeTicks.\n\n'
+        '\n'.join(problems))]
+  else:
+    return []
 
 def CheckChangeOnUpload(input_api, output_api):
   results = []
@@ -228,13 +286,19 @@ def CheckChangeOnUpload(input_api, output_api):
   results += CheckChangeLintsClean(input_api, output_api)
   results += CheckTodos(input_api, output_api)
   results += CheckNamespace(input_api, output_api)
+  results += CheckForUseOfWrongClock(input_api, output_api)
+  results += FindUselessIfdefs(input_api, output_api)
+  results += input_api.canned_checks.CheckPatchFormatted(input_api, output_api)
   return results
 
-def GetPreferredTrySlaves(project, change):
-  return [
-    'linux_layout_rel',
-    'win_gpu',
-    'linux_gpu',
-    'mac_gpu',
-    'mac_gpu_retina',
-  ]
+def GetPreferredTryMasters(project, change):
+  return {
+    'tryserver.chromium': {
+      'linux_blink_rel': set(['defaulttests']),
+    },
+    'tryserver.chromium.gpu': {
+      'linux_gpu': set(['defaulttests']),
+      'mac_gpu': set(['defaulttests']),
+      'win_gpu': set(['defaulttests']),
+    },
+  }

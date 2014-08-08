@@ -36,17 +36,17 @@ public:
 
     static RenderDeprecatedFlexibleBox* createAnonymous(Document*);
 
-    virtual const char* renderName() const;
+    virtual const char* renderName() const OVERRIDE;
 
-    virtual void styleWillChange(StyleDifference, const RenderStyle* newStyle) OVERRIDE;
+    virtual void styleWillChange(StyleDifference, const RenderStyle& newStyle) OVERRIDE;
 
-    virtual void layoutBlock(bool relayoutChildren, LayoutUnit pageHeight = 0);
+    virtual void layoutBlock(bool relayoutChildren) OVERRIDE;
     void layoutHorizontalBox(bool relayoutChildren);
     void layoutVerticalBox(bool relayoutChildren);
 
-    virtual bool avoidsFloats() const { return true; }
-    virtual bool isDeprecatedFlexibleBox() const { return true; }
-    virtual bool isStretchingChildren() const { return m_stretchingChildren; }
+    virtual bool avoidsFloats() const OVERRIDE { return true; }
+    virtual bool isDeprecatedFlexibleBox() const OVERRIDE { return true; }
+    bool isStretchingChildren() const { return m_stretchingChildren; }
     virtual bool canCollapseAnonymousBlockChild() const OVERRIDE { return false; }
 
     void placeChild(RenderBox* child, const LayoutPoint& location);
@@ -64,11 +64,11 @@ protected:
     bool m_stretchingChildren;
 
 private:
-    virtual bool supportsPartialLayout() const OVERRIDE { return false; }
-
     void applyLineClamp(FlexBoxIterator&, bool relayoutChildren);
     void clearLineClamp();
 };
+
+DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderDeprecatedFlexibleBox, isDeprecatedFlexibleBox());
 
 } // namespace WebCore
 

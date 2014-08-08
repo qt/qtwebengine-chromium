@@ -11,6 +11,7 @@
 #include "cc/base/region.h"
 #include "cc/debug/rendering_stats_instrumentation.h"
 #include "cc/resources/picture_pile_impl.h"
+#include "cc/resources/raster_worker_pool.h"
 #include "cc/resources/tile_priority.h"
 
 namespace {
@@ -140,22 +141,24 @@ float ClusterTiles(const std::vector<gfx::Rect>& invalid_tiles,
 
 namespace cc {
 
-PicturePile::PicturePile() {
-}
+PicturePile::PicturePile() : is_suitable_for_gpu_rasterization_(true) {}
 
 PicturePile::~PicturePile() {
 }
 
-bool PicturePile::Update(
+bool PicturePile::UpdateAndExpandInvalidation(
     ContentLayerClient* painter,
+    Region* invalidation,
     SkColor background_color,
     bool contents_opaque,
-    const Region& invalidation,
-    gfx::Rect visible_layer_rect,
+    bool contents_fill_bounds_completely,
+    const gfx::Rect& visible_layer_rect,
     int frame_number,
+    Picture::RecordingMode recording_mode,
     RenderingStatsInstrumentation* stats_instrumentation) {
   background_color_ = background_color;
   contents_opaque_ = contents_opaque;
+  contents_fill_bounds_completely_ = contents_fill_bounds_completely;
 
   gfx::Rect interest_rect = visible_layer_rect;
   interest_rect.Inset(
@@ -163,14 +166,23 @@ bool PicturePile::Update(
       -kPixelDistanceToRecord,
       -kPixelDistanceToRecord,
       -kPixelDistanceToRecord);
+  recorded_viewport_ = interest_rect;
+  recorded_viewport_.Intersect(tiling_rect());
+
+  gfx::Rect interest_rect_over_tiles =
+      tiling_.ExpandRectToTileBounds(interest_rect);
+
+  Region invalidation_expanded_to_full_tiles;
 
   bool invalidated = false;
-  for (Region::Iterator i(invalidation); i.has_rect(); i.next()) {
-    gfx::Rect invalidation = i.rect();
+  for (Region::Iterator i(*invalidation); i.has_rect(); i.next()) {
+    gfx::Rect invalid_rect = i.rect();
     // Split this inflated invalidation across tile boundaries and apply it
     // to all tiles that it touches.
-    for (TilingData::Iterator iter(&tiling_, invalidation);
-         iter; ++iter) {
+    bool include_borders = true;
+    for (TilingData::Iterator iter(&tiling_, invalid_rect, include_borders);
+         iter;
+         ++iter) {
       const PictureMapKey& key = iter.index();
 
       PictureMap::iterator picture_it = picture_map_.find(key);
@@ -180,14 +192,28 @@ bool PicturePile::Update(
       // Inform the grid cell that it has been invalidated in this frame.
       invalidated = picture_it->second.Invalidate(frame_number) || invalidated;
     }
+
+    // Expand invalidation that is outside tiles that intersect the interest
+    // rect. These tiles are no longer valid and should be considerered fully
+    // invalid, so we can know to not keep around raster tiles that intersect
+    // with these recording tiles.
+    gfx::Rect invalid_rect_outside_interest_rect_tiles = invalid_rect;
+    // TODO(danakj): We should have a Rect-subtract-Rect-to-2-rects operator
+    // instead of using Rect::Subtract which gives you the bounding box of the
+    // subtraction.
+    invalid_rect_outside_interest_rect_tiles.Subtract(interest_rect_over_tiles);
+    invalidation_expanded_to_full_tiles.Union(tiling_.ExpandRectToTileBounds(
+        invalid_rect_outside_interest_rect_tiles));
   }
+
+  invalidation->Union(invalidation_expanded_to_full_tiles);
 
   // Make a list of all invalid tiles; we will attempt to
   // cluster these into multiple invalidation regions.
   std::vector<gfx::Rect> invalid_tiles;
-
-  for (TilingData::Iterator it(&tiling_, interest_rect);
-       it; ++it) {
+  bool include_borders = true;
+  for (TilingData::Iterator it(&tiling_, interest_rect, include_borders); it;
+       ++it) {
     const PictureMapKey& key = it.index();
     PictureInfo& info = picture_map_[key];
 
@@ -198,17 +224,27 @@ bool PicturePile::Update(
     if (info.NeedsRecording(frame_number, distance_to_visible)) {
       gfx::Rect tile = tiling_.TileBounds(key.first, key.second);
       invalid_tiles.push_back(tile);
+    } else if (!info.GetPicture()) {
+      if (recorded_viewport_.Intersects(rect)) {
+        // Recorded viewport is just an optimization for a fully recorded
+        // interest rect.  In this case, a tile in that rect has declined
+        // to be recorded (probably due to frequent invalidations).
+        // TODO(enne): Shrink the recorded_viewport_ rather than clearing.
+        recorded_viewport_ = gfx::Rect();
+      }
+
+      // If a tile in the interest rect is not recorded, the entire tile needs
+      // to be considered invalid, so that we know not to keep around raster
+      // tiles that intersect this recording tile.
+      invalidation->Union(tiling_.TileBounds(it.index_x(), it.index_y()));
     }
   }
 
   std::vector<gfx::Rect> record_rects;
   ClusterTiles(invalid_tiles, &record_rects);
 
-  if (record_rects.empty()) {
-    if (invalidated)
-      UpdateRecordedRegion();
+  if (record_rects.empty())
     return invalidated;
-  }
 
   for (std::vector<gfx::Rect>::iterator it = record_rects.begin();
        it != record_rects.end();
@@ -217,14 +253,33 @@ bool PicturePile::Update(
     record_rect = PadRect(record_rect);
 
     int repeat_count = std::max(1, slow_down_raster_scale_factor_for_debug_);
-    scoped_refptr<Picture> picture = Picture::Create(record_rect);
+    scoped_refptr<Picture> picture;
+    int num_raster_threads = RasterWorkerPool::GetNumRasterThreads();
+
+    // Note: Currently, gathering of pixel refs when using a single
+    // raster thread doesn't provide any benefit. This might change
+    // in the future but we avoid it for now to reduce the cost of
+    // Picture::Create.
+    bool gather_pixel_refs = num_raster_threads > 1;
 
     {
-      base::TimeDelta best_duration = base::TimeDelta::FromInternalValue(
-          std::numeric_limits<int64>::max());
+      base::TimeDelta best_duration = base::TimeDelta::Max();
       for (int i = 0; i < repeat_count; i++) {
         base::TimeTicks start_time = stats_instrumentation->StartRecording();
-        picture->Record(painter, tile_grid_info_);
+        picture = Picture::Create(record_rect,
+                                  painter,
+                                  tile_grid_info_,
+                                  gather_pixel_refs,
+                                  num_raster_threads,
+                                  recording_mode);
+        // Note the '&&' with previous is-suitable state.
+        // This means that once a picture-pile becomes unsuitable for gpu
+        // rasterization due to some content, it will continue to be unsuitable
+        // even if that content is replaced by gpu-friendly content.
+        // This is an optimization to avoid iterating though all pictures in
+        // the pile after each invalidation.
+        is_suitable_for_gpu_rasterization_ &=
+            picture->IsSuitableForGpuRasterization();
         base::TimeDelta duration =
             stats_instrumentation->EndRecording(start_time);
         best_duration = std::min(duration, best_duration);
@@ -232,23 +287,26 @@ bool PicturePile::Update(
       int recorded_pixel_count =
           picture->LayerRect().width() * picture->LayerRect().height();
       stats_instrumentation->AddRecord(best_duration, recorded_pixel_count);
-      if (num_raster_threads_ > 1)
-        picture->GatherPixelRefs(tile_grid_info_);
-      picture->CloneForDrawing(num_raster_threads_);
     }
 
-    for (TilingData::Iterator it(&tiling_, record_rect);
-        it; ++it) {
+    bool found_tile_for_recorded_picture = false;
+
+    bool include_borders = true;
+    for (TilingData::Iterator it(&tiling_, record_rect, include_borders); it;
+         ++it) {
       const PictureMapKey& key = it.index();
       gfx::Rect tile = PaddedRect(key);
       if (record_rect.Contains(tile)) {
         PictureInfo& info = picture_map_[key];
         info.SetPicture(picture);
+        found_tile_for_recorded_picture = true;
       }
     }
+    DCHECK(found_tile_for_recorded_picture);
   }
 
-  UpdateRecordedRegion();
+  has_any_recordings_ = true;
+  DCHECK(CanRasterSlowTileCheck(recorded_viewport_));
   return true;
 }
 

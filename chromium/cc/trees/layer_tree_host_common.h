@@ -24,15 +24,15 @@ class Layer;
 
 class CC_EXPORT LayerTreeHostCommon {
  public:
-  static gfx::Rect CalculateVisibleRect(gfx::Rect target_surface_rect,
-                                        gfx::Rect layer_bound_rect,
+  static gfx::Rect CalculateVisibleRect(const gfx::Rect& target_surface_rect,
+                                        const gfx::Rect& layer_bound_rect,
                                         const gfx::Transform& transform);
 
   template <typename LayerType, typename RenderSurfaceLayerListType>
   struct CalcDrawPropsInputs {
    public:
     CalcDrawPropsInputs(LayerType* root_layer,
-                        gfx::Size device_viewport_size,
+                        const gfx::Size& device_viewport_size,
                         const gfx::Transform& device_transform,
                         float device_scale_factor,
                         float page_scale_factor,
@@ -41,7 +41,8 @@ class CC_EXPORT LayerTreeHostCommon {
                         bool can_use_lcd_text,
                         bool can_render_to_separate_surface,
                         bool can_adjust_raster_scales,
-                        RenderSurfaceLayerListType* render_surface_layer_list)
+                        RenderSurfaceLayerListType* render_surface_layer_list,
+                        int current_render_surface_layer_list_id)
         : root_layer(root_layer),
           device_viewport_size(device_viewport_size),
           device_transform(device_transform),
@@ -52,7 +53,9 @@ class CC_EXPORT LayerTreeHostCommon {
           can_use_lcd_text(can_use_lcd_text),
           can_render_to_separate_surface(can_render_to_separate_surface),
           can_adjust_raster_scales(can_adjust_raster_scales),
-          render_surface_layer_list(render_surface_layer_list) {}
+          render_surface_layer_list(render_surface_layer_list),
+          current_render_surface_layer_list_id(
+              current_render_surface_layer_list_id) {}
 
     LayerType* root_layer;
     gfx::Size device_viewport_size;
@@ -65,6 +68,7 @@ class CC_EXPORT LayerTreeHostCommon {
     bool can_render_to_separate_surface;
     bool can_adjust_raster_scales;
     RenderSurfaceLayerListType* render_surface_layer_list;
+    int current_render_surface_layer_list_id;
   };
 
   template <typename LayerType, typename RenderSurfaceLayerListType>
@@ -72,12 +76,12 @@ class CC_EXPORT LayerTreeHostCommon {
       : public CalcDrawPropsInputs<LayerType, RenderSurfaceLayerListType> {
     CalcDrawPropsInputsForTesting(
         LayerType* root_layer,
-        gfx::Size device_viewport_size,
+        const gfx::Size& device_viewport_size,
         const gfx::Transform& device_transform,
         RenderSurfaceLayerListType* render_surface_layer_list);
     CalcDrawPropsInputsForTesting(
         LayerType* root_layer,
-        gfx::Size device_viewport_size,
+        const gfx::Size& device_viewport_size,
         RenderSurfaceLayerListType* render_surface_layer_list);
 
    private:
@@ -95,18 +99,6 @@ class CC_EXPORT LayerTreeHostCommon {
       CalcDrawPropsImplInputsForTesting;
   static void CalculateDrawProperties(CalcDrawPropsImplInputs* inputs);
 
-  // Performs hit testing for a given render_surface_layer_list.
-  static LayerImpl* FindLayerThatIsHitByPoint(
-      gfx::PointF screen_space_point,
-      const LayerImplList& render_surface_layer_list);
-
-  static LayerImpl* FindLayerThatIsHitByPointInTouchHandlerRegion(
-      gfx::PointF screen_space_point,
-      const LayerImplList& render_surface_layer_list);
-
-  static bool LayerHasTouchEventHandlersAt(gfx::PointF screen_space_point,
-                                           LayerImpl* layer_impl);
-
   template <typename LayerType>
   static bool RenderSurfaceContributesToTarget(LayerType*,
                                                int target_surface_layer_id);
@@ -121,16 +113,18 @@ class CC_EXPORT LayerTreeHostCommon {
   template <typename LayerType>
   static LayerType* FindLayerInSubtree(LayerType* root_layer, int layer_id);
 
-  static Layer* get_child_as_raw_ptr(
-      const LayerList& children,
-      size_t index) {
-    return children[index].get();
+  static Layer* get_layer_as_raw_ptr(const LayerList& layers, size_t index) {
+    return layers[index].get();
   }
 
-  static LayerImpl* get_child_as_raw_ptr(
-      const OwnedLayerImplList& children,
-      size_t index) {
-    return children[index];
+  static LayerImpl* get_layer_as_raw_ptr(const OwnedLayerImplList& layers,
+                                         size_t index) {
+    return layers[index];
+  }
+
+  static LayerImpl* get_layer_as_raw_ptr(const LayerImplList& layers,
+                                         size_t index) {
+    return layers[index];
   }
 
   struct ScrollUpdateInfo {
@@ -180,7 +174,7 @@ LayerType* LayerTreeHostCommon::FindLayerInSubtree(LayerType* root_layer,
 
   for (size_t i = 0; i < root_layer->children().size(); ++i) {
     if (LayerType* found = FindLayerInSubtree(
-            get_child_as_raw_ptr(root_layer->children(), i), layer_id))
+            get_layer_as_raw_ptr(root_layer->children(), i), layer_id))
       return found;
   }
   return NULL;
@@ -201,7 +195,7 @@ void LayerTreeHostCommon::CallFunctionForSubtree(
   }
 
   for (size_t i = 0; i < root_layer->children().size(); ++i) {
-    CallFunctionForSubtree(get_child_as_raw_ptr(root_layer->children(), i),
+    CallFunctionForSubtree(get_layer_as_raw_ptr(root_layer->children(), i),
                            function);
   }
 }
@@ -211,7 +205,7 @@ LayerTreeHostCommon::CalcDrawPropsInputsForTesting<LayerType,
                                                    RenderSurfaceLayerListType>::
     CalcDrawPropsInputsForTesting(
         LayerType* root_layer,
-        gfx::Size device_viewport_size,
+        const gfx::Size& device_viewport_size,
         const gfx::Transform& device_transform,
         RenderSurfaceLayerListType* render_surface_layer_list)
     : CalcDrawPropsInputs<LayerType, RenderSurfaceLayerListType>(
@@ -225,7 +219,8 @@ LayerTreeHostCommon::CalcDrawPropsInputsForTesting<LayerType,
           false,
           true,
           false,
-          render_surface_layer_list) {
+          render_surface_layer_list,
+          0) {
   DCHECK(root_layer);
   DCHECK(render_surface_layer_list);
 }
@@ -235,7 +230,7 @@ LayerTreeHostCommon::CalcDrawPropsInputsForTesting<LayerType,
                                                    RenderSurfaceLayerListType>::
     CalcDrawPropsInputsForTesting(
         LayerType* root_layer,
-        gfx::Size device_viewport_size,
+        const gfx::Size& device_viewport_size,
         RenderSurfaceLayerListType* render_surface_layer_list)
     : CalcDrawPropsInputs<LayerType, RenderSurfaceLayerListType>(
           root_layer,
@@ -248,7 +243,8 @@ LayerTreeHostCommon::CalcDrawPropsInputsForTesting<LayerType,
           false,
           true,
           false,
-          render_surface_layer_list) {
+          render_surface_layer_list,
+          0) {
   DCHECK(root_layer);
   DCHECK(render_surface_layer_list);
 }

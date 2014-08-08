@@ -32,7 +32,7 @@ class GLContext;
 
 namespace gpu {
 class AsyncPixelTransferDelegate;
-struct AsyncMemoryParams;
+class AsyncMemoryParams;
 struct AsyncTexImage2DParams;
 
 class AsyncPixelTransferCompletionObserver
@@ -77,6 +77,9 @@ class GPU_EXPORT AsyncPixelTransferManager
   // this to avoid blocking the caller thread inappropriately.
   virtual void ProcessMorePendingTransfers() = 0;
   virtual bool NeedsProcessMorePendingTransfers() = 0;
+
+  // Wait for all AsyncTex(Sub)Image2D uploads to finish before returning.
+  virtual void WaitAllAsyncTexImage2D() = 0;
 
   AsyncPixelTransferDelegate* CreatePixelTransferDelegate(
       gles2::TextureRef* ref,

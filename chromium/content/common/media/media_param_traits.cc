@@ -60,9 +60,10 @@ void ParamTraits<AudioParameters>::Log(const AudioParameters& p,
 
 void ParamTraits<VideoCaptureFormat>::Write(Message* m,
                                             const VideoCaptureFormat& p) {
+  // Crash during Send rather than have a failure at the message handler.
   m->WriteInt(p.frame_size.width());
   m->WriteInt(p.frame_size.height());
-  m->WriteInt(p.frame_rate);
+  m->WriteFloat(p.frame_rate);
   m->WriteInt(static_cast<int>(p.pixel_format));
 }
 
@@ -72,7 +73,7 @@ bool ParamTraits<VideoCaptureFormat>::Read(const Message* m,
   int frame_size_width, frame_size_height, pixel_format;
   if (!m->ReadInt(iter, &frame_size_width) ||
       !m->ReadInt(iter, &frame_size_height) ||
-      !m->ReadInt(iter, &r->frame_rate) ||
+      !m->ReadFloat(iter, &r->frame_rate) ||
       !m->ReadInt(iter, &pixel_format))
     return false;
 

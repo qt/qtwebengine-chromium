@@ -36,11 +36,11 @@
     const unsigned short      DOCUMENT_FRAGMENT_NODE         = 11;
     const unsigned short      NOTATION_NODE                  = 12;
 
-    [PerWorldBindings] readonly attribute DOMString nodeName;
+    readonly attribute DOMString nodeName;
 
-    [TreatReturnedNullStringAs=Null, TreatNullAs=NullString, PerWorldBindings, CustomElementCallbacks] attribute DOMString nodeValue;
+    [TreatReturnedNullStringAs=Null, TreatNullAs=NullString, CustomElementCallbacks] attribute DOMString nodeValue;
 
-    [PerWorldBindings] readonly attribute unsigned short   nodeType;
+    readonly attribute unsigned short   nodeType;
     [PerWorldBindings] readonly attribute Node             parentNode;
     [PerWorldBindings] readonly attribute NodeList         childNodes;
     [PerWorldBindings] readonly attribute Node             firstChild;
@@ -49,28 +49,23 @@
     [PerWorldBindings] readonly attribute Node             nextSibling;
     [PerWorldBindings] readonly attribute Document         ownerDocument;
 
-    [Custom, CustomElementCallbacks, PerWorldBindings, ActivityLogging=ForIsolatedWorlds, RaisesException] Node insertBefore(Node newChild, Node refChild);
-    [Custom, CustomElementCallbacks, PerWorldBindings, ActivityLogging=ForIsolatedWorlds, RaisesException] Node replaceChild(Node newChild, Node oldChild);
-    [Custom, CustomElementCallbacks, PerWorldBindings, RaisesException] Node removeChild(Node oldChild);
-    [Custom, CustomElementCallbacks, PerWorldBindings, ActivityLogging=ForIsolatedWorlds, RaisesException] Node appendChild(Node newChild);
+    [Custom, CustomElementCallbacks, PerWorldBindings, LogActivity, RaisesException] Node insertBefore(Node newChild, Node refChild);
+    [Custom, CustomElementCallbacks, PerWorldBindings, LogActivity, RaisesException] Node replaceChild(Node newChild, Node oldChild);
+    [Custom, CustomElementCallbacks, RaisesException] Node removeChild(Node oldChild);
+    [Custom, CustomElementCallbacks, PerWorldBindings, LogActivity, RaisesException] Node appendChild(Node newChild);
 
-    boolean            hasChildNodes();
-    [CustomElementCallbacks, PerWorldBindings]
-    Node               cloneNode(optional boolean deep);
+    [ImplementedAs=hasChildren] boolean hasChildNodes();
+    [CustomElementCallbacks] Node cloneNode(optional boolean deep);
     [CustomElementCallbacks] void normalize();
 
     // Introduced in DOM Level 2:
-    [MeasureAs=NodeIsSupported] boolean isSupported([Default=Undefined] optional DOMString feature,
-                                                    [TreatNullAs=NullString,Default=Undefined] optional DOMString version); // Removed in DOM4.
-
-    [TreatReturnedNullStringAs=Null, PerWorldBindings, MeasureAs=NodeNamespaceURI] readonly attribute DOMString namespaceURI; // Moved to Element and Attr in DOM4.
-    [TreatReturnedNullStringAs=Null, TreatNullAs=NullString, PerWorldBindings, RaisesException=Setter, MeasureAs=NodePrefix] attribute DOMString prefix; // Moved to Element and Attr in DOM4.
-    [TreatReturnedNullStringAs=Null, PerWorldBindings, MeasureAs=NodeLocalName] readonly attribute DOMString localName; // Moved to Element and Attr in DOM4.
+    [TreatReturnedNullStringAs=Null, MeasureAs=NodeNamespaceURI] readonly attribute DOMString namespaceURI; // Moved to Element and Attr in DOM4.
+    [TreatReturnedNullStringAs=Null, MeasureAs=NodeLocalName] readonly attribute DOMString localName; // Moved to Element and Attr in DOM4.
 
     // Introduced in DOM Level 3:
-    [TreatReturnedNullStringAs=Null, PerWorldBindings] readonly attribute DOMString baseURI;
+    [TreatReturnedNullStringAs=Null] readonly attribute DOMString baseURI;
 
-    [TreatReturnedNullStringAs=Null, TreatNullAs=NullString, PerWorldBindings, CustomElementCallbacks] attribute DOMString textContent;
+    [TreatReturnedNullStringAs=Null, TreatNullAs=NullString, TreatUndefinedAs=NullString, CustomElementCallbacks] attribute DOMString textContent;
 
     [MeasureAs=NodeIsSameNode] boolean isSameNode([Default=Undefined] optional Node other); // Removed in DOM4.
     boolean isEqualNode(Node other);
@@ -89,7 +84,7 @@
     unsigned short compareDocumentPosition(Node other);
 
     // Introduced in DOM4
-    [ImplementedAs=bindingsContains] boolean contains(Node other);
+    boolean contains(Node other);
 
     // IE extensions
     [PerWorldBindings] readonly attribute Element parentElement;

@@ -40,6 +40,8 @@ const float kLowSystemCpuThreshold = 0.65f;
 const float kProcessCpuThreshold = 0.10f;
 
 const char kRtxCodecName[] = "rtx";
+const char kRedCodecName[] = "red";
+const char kUlpfecCodecName[] = "ulpfec";
 
 // RTP payload type is in the 0-127 range. Use 128 to indicate "all" payload
 // types.
@@ -78,12 +80,14 @@ const int kPreferredStereo = 0;
 const int kPreferredUseInbandFec = 0;
 
 const char kRtcpFbParamNack[] = "nack";
+const char kRtcpFbNackParamPli[] = "pli";
 const char kRtcpFbParamRemb[] = "goog-remb";
 
 const char kRtcpFbParamCcm[] = "ccm";
 const char kRtcpFbCcmParamFir[] = "fir";
 const char kCodecParamMaxBitrate[] = "x-google-max-bitrate";
 const char kCodecParamMinBitrate[] = "x-google-min-bitrate";
+const char kCodecParamStartBitrate[] = "x-google-start-bitrate";
 const char kCodecParamMaxQuantization[] = "x-google-max-quantization";
 const char kCodecParamPort[] = "x-google-port";
 
@@ -95,4 +99,20 @@ const char kGoogleSctpDataCodecName[] = "google-sctp-data";
 
 const char kComfortNoiseCodecName[] = "CN";
 
+const int kRtpAudioLevelHeaderExtensionDefaultId = 1;
+const char kRtpAudioLevelHeaderExtension[] =
+    "urn:ietf:params:rtp-hdrext:ssrc-audio-level";
+
+const int kRtpTimestampOffsetHeaderExtensionDefaultId = 2;
+const char kRtpTimestampOffsetHeaderExtension[] =
+    "urn:ietf:params:rtp-hdrext:toffset";
+
+const int kRtpAbsoluteSenderTimeHeaderExtensionDefaultId = 3;
+const char kRtpAbsoluteSenderTimeHeaderExtension[] =
+    "http://www.webrtc.org/experiments/rtp-hdrext/abs-send-time";
+
+const int kNumDefaultUnsignalledVideoRecvStreams = 0;
+
+
 }  // namespace cricket
+

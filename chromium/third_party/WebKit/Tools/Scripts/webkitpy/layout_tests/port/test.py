@@ -53,6 +53,7 @@ class TestInstance(object):
         self.timeout = False
         self.is_reftest = False
         self.device_failure = False
+        self.leak = False
 
         # The values of each field are treated as raw byte strings. They
         # will be converted to unicode strings where appropriate using
@@ -102,11 +103,11 @@ class TestList(object):
 #
 # These numbers may need to be updated whenever we add or delete tests. This includes virtual tests.
 #
-TOTAL_TESTS = 110
-TOTAL_SKIPS = 28
+TOTAL_TESTS = 117
+TOTAL_SKIPS = 30
 
 UNEXPECTED_PASSES = 1
-UNEXPECTED_FAILURES = 25
+UNEXPECTED_FAILURES = 26
 
 def unit_test_list():
     tests = TestList()
@@ -114,6 +115,7 @@ def unit_test_list():
     tests.add('failures/expected/exception.html', exception=True)
     tests.add('failures/expected/device_failure.html', device_failure=True)
     tests.add('failures/expected/timeout.html', timeout=True)
+    tests.add('failures/expected/leak.html', leak=True)
     tests.add('failures/expected/missing_text.html', expected_text=None)
     tests.add('failures/expected/needsrebaseline.html', actual_text='needsrebaseline text')
     tests.add('failures/expected/needsmanualrebaseline.html', actual_text='needsmanualrebaseline text')
@@ -143,6 +145,14 @@ def unit_test_list():
               expected_text="foo\n\n", actual_text="foo\n")
     tests.add('failures/expected/newlines_with_excess_CR.html',
               expected_text="foo\r\r\r\n", actual_text="foo\n")
+    tests.add('failures/expected/testharness.html',
+            actual_text='This is a testharness.js-based test.\nFAIL: assert fired\n.Harness: the test ran to completion.\n\n', expected_text=None,
+              actual_image=None, expected_image=None,
+              actual_checksum=None)
+    tests.add('failures/expected/testharness.html',
+            actual_text='RANDOM TEXT.\nThis is a testharness.js-based test.\nPASS: things are fine.\n.Harness: the test ran to completion.\n\n', expected_text=None,
+              actual_image=None, expected_image=None,
+              actual_checksum=None)
     tests.add('failures/expected/text.html', actual_text='text_fail-png')
     tests.add('failures/expected/crash_then_text.html')
     tests.add('failures/expected/skip_text.html', actual_text='text diff')
@@ -177,6 +187,7 @@ layer at (0,0) size 800x34
     tests.add('failures/unexpected/text.html', actual_text='text_fail-txt')
     tests.add('failures/unexpected/text_then_crash.html')
     tests.add('failures/unexpected/timeout.html', timeout=True)
+    tests.add('failures/unexpected/leak.html', leak=True)
     tests.add('http/tests/passes/text.html')
     tests.add('http/tests/passes/image.html')
     tests.add('http/tests/ssl/text.html')
@@ -192,6 +203,22 @@ layer at (0,0) size 800x34
     tests.add('passes/checksum_in_image.html',
               expected_image='tEXtchecksum\x00checksum_in_image-checksum')
     tests.add('passes/skipped/skip.html')
+    tests.add('passes/testharness.html',
+            actual_text='CONSOLE LOG: error.\nThis is a testharness.js-based test.\nPASS: things are fine.\n.Harness: the test ran to completion.\n\n', expected_text=None,
+              actual_image=None, expected_image=None,
+              actual_checksum=None)
+    tests.add('passes/testharness.html',
+            actual_text='CONSOLE ERROR: error.\nThis is a testharness.js-based test.\nPASS: things are fine.\n.Harness: the test ran to completion.\n\n', expected_text=None,
+              actual_image=None, expected_image=None,
+              actual_checksum=None)
+    tests.add('passes/testharness.html',
+            actual_text='  This is a testharness.js-based test.\nPASS: assert is fine\nHarness: the test ran to completion.\n\n', expected_text=None,
+              actual_image=None, expected_image=None,
+              actual_checksum=None)
+    tests.add('passes/testharness.html',
+            actual_text='This is a testharness.js-based test.\nPASS: assert is fine\nHarness: the test ran to completion.\n\n', expected_text=None,
+              actual_image=None, expected_image=None,
+              actual_checksum=None)
 
     # Note that here the checksums don't match but the images do, so this test passes "unexpectedly".
     # See https://bugs.webkit.org/show_bug.cgi?id=69444 .
@@ -297,10 +324,12 @@ Bug(test) failures/expected/newlines_trailing.html [ Failure ]
 Bug(test) failures/expected/newlines_with_excess_CR.html [ Failure ]
 Bug(test) failures/expected/reftest.html [ ImageOnlyFailure ]
 Bug(test) failures/expected/text.html [ Failure ]
+Bug(test) failures/expected/testharness.html [ Failure ]
 Bug(test) failures/expected/timeout.html [ Timeout ]
 Bug(test) failures/expected/keyboard.html [ WontFix ]
 Bug(test) failures/expected/exception.html [ WontFix ]
 Bug(test) failures/expected/device_failure.html [ WontFix ]
+Bug(test) failures/expected/leak.html [ Leak ]
 Bug(test) failures/unexpected/pass.html [ Failure ]
 Bug(test) passes/skipped/skip.html [ Skip ]
 Bug(test) passes/text.html [ Pass ]
@@ -481,7 +510,7 @@ class TestPort(Port):
     def _driver_class(self):
         return TestDriver
 
-    def start_http_server(self, additional_dirs=None, number_of_servers=None):
+    def start_http_server(self, additional_dirs, number_of_drivers):
         pass
 
     def start_websocket_server(self):
@@ -499,19 +528,19 @@ class TestPort(Port):
     def release_http_lock(self):
         pass
 
-    def _path_to_lighttpd(self):
+    def path_to_lighttpd(self):
         return "/usr/sbin/lighttpd"
 
-    def _path_to_lighttpd_modules(self):
+    def path_to_lighttpd_modules(self):
         return "/usr/lib/lighttpd"
 
-    def _path_to_lighttpd_php(self):
+    def path_to_lighttpd_php(self):
         return "/usr/bin/php-cgi"
 
-    def _path_to_apache(self):
+    def path_to_apache(self):
         return "/usr/sbin/httpd"
 
-    def _path_to_apache_config_file(self):
+    def path_to_apache_config_file(self):
         return self._filesystem.join(self.layout_tests_dir(), 'http', 'conf', 'httpd.conf')
 
     def path_to_generic_test_expectations_file(self):
@@ -644,7 +673,8 @@ class TestDriver(Driver):
         return DriverOutput(actual_text, image, test.actual_checksum, audio,
             crash=(crash or web_process_crash), crashed_process_name=crashed_process_name,
             crashed_pid=crashed_pid, crash_log=crash_log,
-            test_time=time.time() - start_time, timeout=test.timeout, error=test.error, pid=self.pid)
+            test_time=time.time() - start_time, timeout=test.timeout, error=test.error, pid=self.pid,
+            leak=test.leak)
 
     def stop(self):
         self.started = False

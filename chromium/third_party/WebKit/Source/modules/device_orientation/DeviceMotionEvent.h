@@ -26,7 +26,8 @@
 #ifndef DeviceMotionEvent_h
 #define DeviceMotionEvent_h
 
-#include "core/events/Event.h"
+#include "modules/EventModules.h"
+#include "platform/heap/Handle.h"
 
 namespace WebCore {
 
@@ -34,16 +35,16 @@ class DeviceAcceleration;
 class DeviceMotionData;
 class DeviceRotationRate;
 
-class DeviceMotionEvent : public Event {
+class DeviceMotionEvent FINAL : public Event {
 public:
-    ~DeviceMotionEvent();
-    static PassRefPtr<DeviceMotionEvent> create()
+    virtual ~DeviceMotionEvent();
+    static PassRefPtrWillBeRawPtr<DeviceMotionEvent> create()
     {
-        return adoptRef(new DeviceMotionEvent);
+        return adoptRefWillBeNoop(new DeviceMotionEvent);
     }
-    static PassRefPtr<DeviceMotionEvent> create(const AtomicString& eventType, DeviceMotionData* deviceMotionData)
+    static PassRefPtrWillBeRawPtr<DeviceMotionEvent> create(const AtomicString& eventType, DeviceMotionData* deviceMotionData)
     {
-        return adoptRef(new DeviceMotionEvent(eventType, deviceMotionData));
+        return adoptRefWillBeNoop(new DeviceMotionEvent(eventType, deviceMotionData));
     }
 
     void initDeviceMotionEvent(const AtomicString& type, bool bubbles, bool cancelable, DeviceMotionData*);
@@ -55,24 +56,21 @@ public:
     DeviceRotationRate* rotationRate();
     double interval(bool& isNull) const;
 
-    virtual const AtomicString& interfaceName() const;
+    virtual const AtomicString& interfaceName() const OVERRIDE;
+
+    virtual void trace(Visitor*) OVERRIDE;
 
 private:
     DeviceMotionEvent();
     DeviceMotionEvent(const AtomicString& eventType, DeviceMotionData*);
 
-    RefPtr<DeviceMotionData> m_deviceMotionData;
-
-    RefPtr<DeviceAcceleration> m_acceleration;
-    RefPtr<DeviceAcceleration> m_accelerationIncludingGravity;
-    RefPtr<DeviceRotationRate> m_rotationRate;
+    RefPtrWillBeMember<DeviceMotionData> m_deviceMotionData;
+    RefPtrWillBeMember<DeviceAcceleration> m_acceleration;
+    RefPtrWillBeMember<DeviceAcceleration> m_accelerationIncludingGravity;
+    RefPtrWillBeMember<DeviceRotationRate> m_rotationRate;
 };
 
-inline DeviceMotionEvent* toDeviceMotionEvent(Event* event)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!event || event->interfaceName() == EventNames::DeviceMotionEvent);
-    return static_cast<DeviceMotionEvent*>(event);
-}
+DEFINE_TYPE_CASTS(DeviceMotionEvent, Event, event, event->interfaceName() == EventNames::DeviceMotionEvent, event.interfaceName() == EventNames::DeviceMotionEvent);
 
 } // namespace WebCore
 

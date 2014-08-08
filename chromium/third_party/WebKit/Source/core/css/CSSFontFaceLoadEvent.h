@@ -34,7 +34,6 @@
 #include "core/css/FontFace.h"
 #include "core/dom/DOMError.h"
 #include "core/events/Event.h"
-#include "core/events/ThreadLocalEventNames.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
 
@@ -44,28 +43,30 @@ struct CSSFontFaceLoadEventInit : public EventInit {
     FontFaceArray fontfaces;
 };
 
-class CSSFontFaceLoadEvent : public Event {
+class CSSFontFaceLoadEvent FINAL : public Event {
 public:
-    static PassRefPtr<CSSFontFaceLoadEvent> create()
+    static PassRefPtrWillBeRawPtr<CSSFontFaceLoadEvent> create()
     {
-        return adoptRef<CSSFontFaceLoadEvent>(new CSSFontFaceLoadEvent());
+        return adoptRefWillBeNoop(new CSSFontFaceLoadEvent());
     }
 
-    static PassRefPtr<CSSFontFaceLoadEvent> create(const AtomicString& type, const CSSFontFaceLoadEventInit& initializer)
+    static PassRefPtrWillBeRawPtr<CSSFontFaceLoadEvent> create(const AtomicString& type, const CSSFontFaceLoadEventInit& initializer)
     {
-        return adoptRef<CSSFontFaceLoadEvent>(new CSSFontFaceLoadEvent(type, initializer));
+        return adoptRefWillBeNoop(new CSSFontFaceLoadEvent(type, initializer));
     }
 
-    static PassRefPtr<CSSFontFaceLoadEvent> createForFontFaces(const AtomicString& type, const FontFaceArray& fontfaces = FontFaceArray())
+    static PassRefPtrWillBeRawPtr<CSSFontFaceLoadEvent> createForFontFaces(const AtomicString& type, const FontFaceArray& fontfaces = FontFaceArray())
     {
-        return adoptRef<CSSFontFaceLoadEvent>(new CSSFontFaceLoadEvent(type, fontfaces));
+        return adoptRefWillBeNoop(new CSSFontFaceLoadEvent(type, fontfaces));
     }
 
     virtual ~CSSFontFaceLoadEvent();
 
     FontFaceArray fontfaces() const { return m_fontfaces; }
 
-    virtual const AtomicString& interfaceName() const;
+    virtual const AtomicString& interfaceName() const OVERRIDE;
+
+    virtual void trace(Visitor*) OVERRIDE;
 
 private:
     CSSFontFaceLoadEvent();

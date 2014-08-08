@@ -29,8 +29,8 @@
 #include "config.h"
 #include "core/css/resolver/SharedStyleFinder.h"
 
-#include "HTMLNames.h"
-#include "XMLNames.h"
+#include "core/HTMLNames.h"
+#include "core/XMLNames.h"
 #include "core/css/resolver/StyleResolver.h"
 #include "core/css/resolver/StyleResolverStats.h"
 #include "core/dom/ContainerNode.h"
@@ -42,9 +42,11 @@
 #include "core/dom/QualifiedName.h"
 #include "core/dom/SpaceSplitString.h"
 #include "core/dom/shadow/ElementShadow.h"
+#include "core/dom/shadow/InsertionPoint.h"
 #include "core/html/HTMLElement.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/HTMLOptGroupElement.h"
+#include "core/html/HTMLOptionElement.h"
 #include "core/rendering/style/RenderStyle.h"
 #include "core/svg/SVGElement.h"
 #include "wtf/HashSet.h"
@@ -56,7 +58,7 @@ using namespace HTMLNames;
 
 bool SharedStyleFinder::canShareStyleWithControl(Element& candidate) const
 {
-    if (!candidate.hasTagName(inputTag) || !element().hasTagName(inputTag))
+    if (!isHTMLInputElement(candidate) || !isHTMLInputElement(element()))
         return false;
 
     HTMLInputElement& candidateInput = toHTMLInputElement(candidate);
@@ -100,7 +102,7 @@ bool SharedStyleFinder::classNamesAffectedByRules(const SpaceSplitString& classN
 {
     unsigned count = classNames.size();
     for (unsigned i = 0; i < count; ++i) {
-        if (m_features.classesInRules.contains(classNames[i]))
+        if (m_features.hasSelectorForClass(classNames[i]))
             return true;
     }
     return false;
@@ -121,7 +123,7 @@ bool SharedStyleFinder::sharingCandidateHasIdenticalStyleAffectingAttributes(Ele
     if (element().fastGetAttribute(langAttr) != candidate.fastGetAttribute(langAttr))
         return false;
 
-    // These two checks must be here since RuleSet has a specail case to allow style sharing between elements
+    // These two checks must be here since RuleSet has a special case to allow style sharing between elements
     // with type and readonly attributes whereas other attribute selectors prevent sharing.
     if (typeAttributeValue(element()) != typeAttributeValue(candidate))
         return false;
@@ -149,11 +151,46 @@ bool SharedStyleFinder::sharingCandidateHasIdenticalStyleAffectingAttributes(Ele
     // FIXME: Consider removing this, it's unlikely we'll have so many progress elements
     // that sharing the style makes sense. Instead we should just not support style sharing
     // for them.
-    if (element().hasTagName(progressTag)) {
+    if (isHTMLProgressElement(element())) {
         if (element().shouldAppearIndeterminate() != candidate.shouldAppearIndeterminate())
             return false;
     }
 
+    if (isHTMLOptGroupElement(element()) || isHTMLOptionElement(element())) {
+        if (element().isDisabledFormControl() != candidate.isDisabledFormControl())
+            return false;
+        if (isHTMLOptionElement(element()) && toHTMLOptionElement(element()).selected() != toHTMLOptionElement(candidate).selected())
+            return false;
+    }
+
+    return true;
+}
+
+bool SharedStyleFinder::sharingCandidateCanShareHostStyles(Element& candidate) const
+{
+    const ElementShadow* elementShadow = element().shadow();
+    const ElementShadow* candidateShadow = candidate.shadow();
+
+    if (!elementShadow && !candidateShadow)
+        return true;
+
+    if (static_cast<bool>(elementShadow) != static_cast<bool>(candidateShadow))
+        return false;
+
+    return elementShadow->hasSameStyles(candidateShadow);
+}
+
+bool SharedStyleFinder::sharingCandidateDistributedToSameInsertionPoint(Element& candidate) const
+{
+    WillBeHeapVector<RawPtrWillBeMember<InsertionPoint>, 8> insertionPoints, candidateInsertionPoints;
+    collectDestinationInsertionPoints(element(), insertionPoints);
+    collectDestinationInsertionPoints(candidate, candidateInsertionPoints);
+    if (insertionPoints.size() != candidateInsertionPoints.size())
+        return false;
+    for (size_t i = 0; i < insertionPoints.size(); ++i) {
+        if (insertionPoints[i] != candidateInsertionPoints[i])
+            return false;
+    }
     return true;
 }
 
@@ -161,7 +198,7 @@ bool SharedStyleFinder::canShareStyleWithElement(Element& candidate) const
 {
     if (element() == candidate)
         return false;
-    Element* parent = candidate.parentElement();
+    Element* parent = candidate.parentOrShadowHostElement();
     RenderStyle* style = candidate.renderStyle();
     if (!style)
         return false;
@@ -169,7 +206,7 @@ bool SharedStyleFinder::canShareStyleWithElement(Element& candidate) const
         return false;
     if (!parent)
         return false;
-    if (element().parentElement()->renderStyle() != parent->renderStyle())
+    if (element().parentOrShadowHostElement()->renderStyle() != parent->renderStyle())
         return false;
     if (candidate.tagQName() != element().tagQName())
         return false;
@@ -181,26 +218,20 @@ bool SharedStyleFinder::canShareStyleWithElement(Element& candidate) const
         return false;
     if (candidate.isLink() != element().isLink())
         return false;
-    if (candidate.hovered() != element().hovered())
-        return false;
-    if (candidate.active() != element().active())
-        return false;
-    if (candidate.focused() != element().focused())
-        return false;
     if (candidate.shadowPseudoId() != element().shadowPseudoId())
-        return false;
-    if (candidate == document().cssTarget())
         return false;
     if (!sharingCandidateHasIdenticalStyleAffectingAttributes(candidate))
         return false;
     if (candidate.additionalPresentationAttributeStyle() != element().additionalPresentationAttributeStyle())
         return false;
-    if (candidate.hasID() && m_features.idsInRules.contains(candidate.idForStyleResolution()))
+    if (candidate.hasID() && m_features.hasSelectorForId(candidate.idForStyleResolution()))
         return false;
-    if (candidate.hasScopedHTMLStyleChild())
+    if (!sharingCandidateCanShareHostStyles(candidate))
         return false;
-    if (candidate.shadow() && candidate.shadow()->containsActiveStyles())
-        return 0;
+    if (!sharingCandidateDistributedToSameInsertionPoint(candidate))
+        return false;
+    if (candidate.isInTopLayer() != element().isInTopLayer())
+        return false;
 
     bool isControl = candidate.isFormControlElement();
 
@@ -220,16 +251,14 @@ bool SharedStyleFinder::canShareStyleWithElement(Element& candidate) const
     if (candidate.isUnresolvedCustomElement() != element().isUnresolvedCustomElement())
         return false;
 
-    if (element().parentElement() != parent) {
+    if (element().parentOrShadowHostElement() != parent) {
         if (!parent->isStyledElement())
-            return false;
-        if (parent->hasScopedHTMLStyleChild())
             return false;
         if (parent->inlineStyle())
             return false;
         if (parent->isSVGElement() && toSVGElement(parent)->animatedSMILStyleProperties())
             return false;
-        if (parent->hasID() && m_features.idsInRules.contains(parent->idForStyleResolution()))
+        if (parent->hasID() && m_features.hasSelectorForId(parent->idForStyleResolution()))
             return false;
         if (!parent->childrenSupportStyleSharing())
             return false;
@@ -304,7 +333,7 @@ RenderStyle* SharedStyleFinder::findSharedStyle()
     }
 
     // Tracking child index requires unique style for each node. This may get set by the sibling rule match above.
-    if (!element().parentElement()->childrenSupportStyleSharing()) {
+    if (!element().parentElementOrShadowRoot()->childrenSupportStyleSharing()) {
         INCREMENT_STYLE_STATS_COUNTER(m_styleResolver, sharedStyleRejectedByParent);
         return 0;
     }

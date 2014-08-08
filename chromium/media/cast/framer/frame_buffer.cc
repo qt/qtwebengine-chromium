@@ -28,21 +28,17 @@ void FrameBuffer::InsertPacket(const uint8* payload_data,
     frame_id_ = rtp_header.frame_id;
     max_packet_id_ = rtp_header.max_packet_id;
     is_key_frame_ = rtp_header.is_key_frame;
-    if (rtp_header.is_reference) {
-      last_referenced_frame_id_ = rtp_header.reference_frame_id;
-    } else {
-      last_referenced_frame_id_ = rtp_header.frame_id - 1;
-    }
-
-    rtp_timestamp_ = rtp_header.webrtc.header.timestamp;
+    if (is_key_frame_)
+      DCHECK_EQ(rtp_header.frame_id, rtp_header.reference_frame_id);
+    last_referenced_frame_id_ = rtp_header.reference_frame_id;
+    rtp_timestamp_ = rtp_header.rtp_timestamp;
   }
   // Is this the correct frame?
-  if (rtp_header.frame_id != frame_id_) return;
+  if (rtp_header.frame_id != frame_id_)
+    return;
 
   // Insert every packet only once.
   if (packets_.find(rtp_header.packet_id) != packets_.end()) {
-    VLOG(3) << "Packet already received, ignored: frame "
-            << frame_id_ << ", packet " << rtp_header.packet_id;
     return;
   }
 
@@ -52,8 +48,8 @@ void FrameBuffer::InsertPacket(const uint8* payload_data,
 
   // Insert the packet.
   retval.first->second.resize(payload_size);
-  std::copy(payload_data, payload_data + payload_size,
-            retval.first->second.begin());
+  std::copy(
+      payload_data, payload_data + payload_size, retval.first->second.begin());
 
   ++num_packets_received_;
   total_data_size_ += payload_size;
@@ -63,45 +59,27 @@ bool FrameBuffer::Complete() const {
   return num_packets_received_ - 1 == max_packet_id_;
 }
 
-bool FrameBuffer::GetEncodedAudioFrame(EncodedAudioFrame* audio_frame,
-                                       uint32* rtp_timestamp) const {
-  if (!Complete()) return false;
-
-  *rtp_timestamp = rtp_timestamp_;
+bool FrameBuffer::AssembleEncodedFrame(transport::EncodedFrame* frame) const {
+  if (!Complete())
+    return false;
 
   // Frame is complete -> construct.
-  audio_frame->frame_id = frame_id_;
+  if (is_key_frame_)
+    frame->dependency = transport::EncodedFrame::KEY;
+  else if (frame_id_ == last_referenced_frame_id_)
+    frame->dependency = transport::EncodedFrame::INDEPENDENT;
+  else
+    frame->dependency = transport::EncodedFrame::DEPENDENT;
+  frame->frame_id = frame_id_;
+  frame->referenced_frame_id = last_referenced_frame_id_;
+  frame->rtp_timestamp = rtp_timestamp_;
 
   // Build the data vector.
-  audio_frame->data.clear();
-  audio_frame->data.reserve(total_data_size_);
+  frame->data.clear();
+  frame->data.reserve(total_data_size_);
   PacketMap::const_iterator it;
-  for (it = packets_.begin(); it != packets_.end(); ++it) {
-    audio_frame->data.insert(audio_frame->data.end(),
-                             it->second.begin(), it->second.end());
-  }
-  return true;
-}
-
-bool FrameBuffer::GetEncodedVideoFrame(EncodedVideoFrame* video_frame,
-                                       uint32* rtp_timestamp) const {
-  if (!Complete()) return false;
-
-  *rtp_timestamp = rtp_timestamp_;
-
-  // Frame is complete -> construct.
-  video_frame->key_frame = is_key_frame_;
-  video_frame->frame_id = frame_id_;
-  video_frame->last_referenced_frame_id = last_referenced_frame_id_;
-
-  // Build the data vector.
-  video_frame->data.clear();
-  video_frame->data.reserve(total_data_size_);
-  PacketMap::const_iterator it;
-  for (it = packets_.begin(); it != packets_.end(); ++it) {
-    video_frame->data.insert(video_frame->data.end(),
-                             it->second.begin(), it->second.end());
-  }
+  for (it = packets_.begin(); it != packets_.end(); ++it)
+    frame->data.insert(frame->data.end(), it->second.begin(), it->second.end());
   return true;
 }
 

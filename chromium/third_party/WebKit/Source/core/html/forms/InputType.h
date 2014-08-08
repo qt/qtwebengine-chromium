@@ -55,16 +55,13 @@ class Node;
 // FIXME: InputType should not inherit InputTypeView. It's conceptually wrong.
 class InputType : public InputTypeView {
     WTF_MAKE_NONCOPYABLE(InputType);
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
 
 public:
-    static PassRefPtr<InputType> create(HTMLInputElement&, const AtomicString&);
-    static PassRefPtr<InputType> createText(HTMLInputElement&);
+    static PassRefPtrWillBeRawPtr<InputType> create(HTMLInputElement&, const AtomicString&);
+    static PassRefPtrWillBeRawPtr<InputType> createText(HTMLInputElement&);
     static const AtomicString& normalizeTypeName(const AtomicString&);
     virtual ~InputType();
-
-    static bool canChangeFromAnotherType(const AtomicString& normalizedTypeName);
-    static bool themeSupportsDataListUI(InputType*);
 
     virtual const AtomicString& formControlType() const = 0;
 
@@ -92,7 +89,6 @@ public:
     virtual bool isRadioButton() const;
     virtual bool isRangeControl() const;
     virtual bool isSearchField() const;
-    virtual bool isSubmitButton() const;
     virtual bool isTelephoneField() const;
     virtual bool isTextButton() const;
     virtual bool isTextField() const;
@@ -172,7 +168,7 @@ public:
     virtual void sanitizeValueInResponseToMinOrMaxAttributeChange();
     virtual bool shouldRespectAlignAttribute();
     virtual FileList* files();
-    virtual void setFiles(PassRefPtr<FileList>);
+    virtual void setFiles(PassRefPtrWillBeRawPtr<FileList>);
     // Should return true if the given DragData has more than one dropped files.
     virtual bool receiveDroppedFiles(const DragData*);
     virtual String droppedFileSystemId();
@@ -182,7 +178,6 @@ public:
     virtual bool canSetValue(const String&);
     virtual bool storesValueSeparateFromAttribute();
     virtual void setValue(const String&, bool valueChanged, TextFieldEventBehavior);
-    virtual bool shouldResetOnDocumentActivation();
     virtual bool shouldRespectListAttribute();
     virtual bool shouldRespectSpeechAttribute();
     virtual bool isEnumeratable();
@@ -191,22 +186,17 @@ public:
     virtual bool shouldRespectHeightAndWidthAttributes();
     virtual bool supportsPlaceholder() const;
     virtual bool supportsReadOnly() const;
-    virtual void updatePlaceholderText();
     virtual String defaultToolTip() const;
     virtual Decimal findClosestTickMarkValue(const Decimal&);
     virtual void handleDOMActivateEvent(Event*);
+    virtual bool hasLegalLinkAttribute(const QualifiedName&) const;
+    virtual const QualifiedName& subResourceAttributeName() const;
 
     // Parses the specified string for the type, and return
     // the Decimal value for the parsing result if the parsing
     // succeeds; Returns defaultValue otherwise. This function can
     // return NaN or Infinity only if defaultValue is NaN or Infinity.
     virtual Decimal parseToNumber(const String&, const Decimal& defaultValue) const;
-
-    // Parses the specified string for this InputType, and returns true if it
-    // is successfully parsed. An instance pointed by the DateComponents*
-    // parameter will have parsed values and be modified even if the parsing
-    // fails. The DateComponents* parameter may be 0.
-    virtual bool parseToDateComponents(const String&, DateComponents*) const;
 
     // Create a string representation of the specified Decimal value for the
     // input type. If NaN or Infinity is specified, this returns an empty
@@ -230,6 +220,8 @@ public:
     virtual bool shouldSubmitImplicitly(Event*) OVERRIDE;
     virtual bool hasCustomFocusLogic() const OVERRIDE;
 
+    virtual bool shouldDispatchFormControlChangeEvent(String&, String&);
+
 protected:
     InputType(HTMLInputElement& element) : InputTypeView(element) { }
     Chrome* chrome() const;
@@ -244,7 +236,7 @@ protected:
 
 private:
     // Helper for stepUp()/stepDown(). Adds step value * count to the current value.
-    void applyStep(int count, AnyStepHandling, TextFieldEventBehavior, ExceptionState&);
+    void applyStep(const Decimal&, int count, AnyStepHandling, TextFieldEventBehavior, ExceptionState&);
 };
 
 } // namespace WebCore

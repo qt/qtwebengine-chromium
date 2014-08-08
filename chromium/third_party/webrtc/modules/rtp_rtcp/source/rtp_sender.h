@@ -25,6 +25,7 @@
 #include "webrtc/modules/rtp_rtcp/source/rtp_rtcp_config.h"
 #include "webrtc/modules/rtp_rtcp/source/ssrc_database.h"
 #include "webrtc/modules/rtp_rtcp/source/video_codec_information.h"
+#include "webrtc/system_wrappers/interface/thread_annotations.h"
 
 #define MAX_INIT_RTP_SEQ_NUMBER 32767  // 2^15 -1.
 
@@ -82,7 +83,8 @@ class RTPSender : public RTPSenderInterface, public Bitrate::Observer {
   // was sent within the statistics window.
   bool GetSendSideDelay(int* avg_send_delay_ms, int* max_send_delay_ms) const;
 
-  void SetTargetSendBitrate(const uint32_t bits);
+  void SetTargetBitrate(uint32_t bitrate);
+  uint32_t GetTargetBitrate();
 
   virtual uint16_t MaxDataPayloadLength() const
       OVERRIDE;  // with RTP and FEC headers.
@@ -153,19 +155,15 @@ class RTPSender : public RTPSenderInterface, public Bitrate::Observer {
 
   uint16_t BuildRTPHeaderExtension(uint8_t* data_buffer) const;
 
-  uint8_t BuildTransmissionTimeOffsetExtension(
-      uint8_t *data_buffer) const;
-  uint8_t BuildAbsoluteSendTimeExtension(
-      uint8_t* data_buffer) const;
+  uint8_t BuildTransmissionTimeOffsetExtension(uint8_t *data_buffer) const;
+  uint8_t BuildAudioLevelExtension(uint8_t* data_buffer) const;
+  uint8_t BuildAbsoluteSendTimeExtension(uint8_t* data_buffer) const;
 
-  bool UpdateTransmissionTimeOffset(uint8_t *rtp_packet,
-                                    const uint16_t rtp_packet_length,
-                                    const RTPHeader &rtp_header,
-                                    const int64_t time_diff_ms) const;
-  bool UpdateAbsoluteSendTime(uint8_t *rtp_packet,
-                              const uint16_t rtp_packet_length,
-                              const RTPHeader &rtp_header,
-                              const int64_t now_ms) const;
+  bool UpdateAudioLevel(uint8_t *rtp_packet,
+                        const uint16_t rtp_packet_length,
+                        const RTPHeader &rtp_header,
+                        const bool is_voiced,
+                        const uint8_t dBov) const;
 
   bool TimeToSendPacket(uint16_t sequence_number, int64_t capture_time_ms,
                         bool retransmission);
@@ -187,9 +185,11 @@ class RTPSender : public RTPSenderInterface, public Bitrate::Observer {
   bool ProcessNACKBitRate(const uint32_t now);
 
   // RTX.
-  void SetRTXStatus(int mode, bool set_ssrc, uint32_t ssrc);
+  void SetRTXStatus(int mode);
 
   void RTXStatus(int* mode, uint32_t* ssrc, int* payload_type) const;
+
+  void SetRtxSsrc(uint32_t ssrc);
 
   void SetRtxPayloadType(int payloadType);
 
@@ -227,12 +227,6 @@ class RTPSender : public RTPSenderInterface, public Bitrate::Observer {
   // Set audio packet size, used to determine when it's time to send a DTMF
   // packet in silence (CNG).
   int32_t SetAudioPacketSize(const uint16_t packet_size_samples);
-
-  // Set status and ID for header-extension-for-audio-level-indication.
-  int32_t SetAudioLevelIndicationStatus(const bool enable, const uint8_t ID);
-
-  // Get status and ID for header-extension-for-audio-level-indication.
-  int32_t AudioLevelIndicationStatus(bool *enable, uint8_t *id) const;
 
   // Store the audio level in d_bov for
   // header-extension-for-audio-level-indication.
@@ -303,7 +297,8 @@ class RTPSender : public RTPSenderInterface, public Bitrate::Observer {
   bool PrepareAndSendPacket(uint8_t* buffer,
                             uint16_t length,
                             int64_t capture_time_ms,
-                            bool send_over_rtx);
+                            bool send_over_rtx,
+                            bool is_retransmit);
 
   int SendRedundantPayloads(int payload_type, int bytes);
 
@@ -318,6 +313,15 @@ class RTPSender : public RTPSenderInterface, public Bitrate::Observer {
   bool SendPacketToNetwork(const uint8_t *packet, uint32_t size);
 
   void UpdateDelayStatistics(int64_t capture_time_ms, int64_t now_ms);
+
+  void UpdateTransmissionTimeOffset(uint8_t *rtp_packet,
+                                    const uint16_t rtp_packet_length,
+                                    const RTPHeader &rtp_header,
+                                    const int64_t time_diff_ms) const;
+  void UpdateAbsoluteSendTime(uint8_t *rtp_packet,
+                              const uint16_t rtp_packet_length,
+                              const RTPHeader &rtp_header,
+                              const int64_t now_ms) const;
 
   void UpdateRtpStats(const uint8_t* buffer,
                       uint32_t size,
@@ -338,13 +342,12 @@ class RTPSender : public RTPSenderInterface, public Bitrate::Observer {
   CriticalSectionWrapper *send_critsect_;
 
   Transport *transport_;
-  bool sending_media_;
+  bool sending_media_ GUARDED_BY(send_critsect_);
 
   uint16_t max_payload_length_;
-  uint16_t target_send_bitrate_;
   uint16_t packet_over_head_;
 
-  int8_t payload_type_;
+  int8_t payload_type_ GUARDED_BY(send_critsect_);
   std::map<int8_t, ModuleRTPUtility::Payload *> payload_type_map_;
 
   RtpHeaderExtensionMap rtp_header_extension_map_;
@@ -388,6 +391,13 @@ class RTPSender : public RTPSenderInterface, public Bitrate::Observer {
   int rtx_;
   uint32_t ssrc_rtx_;
   int payload_type_rtx_;
+
+  // Note: Don't access this variable directly, always go through
+  // SetTargetBitrateKbps or GetTargetBitrateKbps. Also remember
+  // that by the time the function returns there is no guarantee
+  // that the target bitrate is still valid.
+  scoped_ptr<CriticalSectionWrapper> target_bitrate_critsect_;
+  uint32_t target_bitrate_ GUARDED_BY(target_bitrate_critsect_);
 };
 
 }  // namespace webrtc

@@ -16,6 +16,7 @@ import StringIO
 from grit import exception
 from grit import grd_reader
 from grit import util
+from grit.node import base
 from grit.node import empty
 
 
@@ -284,6 +285,29 @@ class GrdReaderUnittest(unittest.TestCase):
       top_grd = StringIO.StringIO(template % u'<part file="bad.grp" />')
       with util.TempDir({'bad.grp': data}) as temp_dir:
         self.assertRaises(raises, grd_reader.Parse, top_grd, temp_dir.GetPath())
+
+  def testEarlyEnoughPlatformSpecification(self):
+    # This is a regression test for issue
+    # https://code.google.com/p/grit-i18n/issues/detail?id=23
+    grd_text = u'''<?xml version="1.0" encoding="UTF-8"?>
+      <grit latest_public_release="1" current_release="1">
+        <release seq="1">
+          <messages>
+            <if expr="not pp_ifdef('use_titlecase')">
+              <message name="IDS_XYZ">foo</message>
+            </if>
+            <!-- The assumption is that use_titlecase is never true for
+                 this platform. When the platform isn't set to 'android'
+                 early enough, we get a duplicate message name. -->
+            <if expr="os == '%s'">
+              <message name="IDS_XYZ">boo</message>
+            </if>
+          </messages>
+        </release>
+      </grit>''' % sys.platform
+    with util.TempDir({}) as temp_dir:
+      grd_reader.Parse(StringIO.StringIO(grd_text), temp_dir.GetPath(),
+                       target_platform='android')
 
 
 if __name__ == '__main__':

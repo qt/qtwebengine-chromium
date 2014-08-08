@@ -29,6 +29,7 @@ void ResourceRequestInfo::AllocateForTesting(
     ResourceContext* context,
     int render_process_id,
     int render_view_id,
+    int render_frame_id,
     bool is_async) {
   ResourceRequestInfoImpl* info =
       new ResourceRequestInfoImpl(
@@ -37,11 +38,10 @@ void ResourceRequestInfo::AllocateForTesting(
           render_view_id,                    // route_id
           0,                                 // origin_pid
           0,                                 // request_id
-          MSG_ROUTING_NONE,                  // render_frame_id
+          render_frame_id,                   // render_frame_id
           resource_type == ResourceType::MAIN_FRAME,  // is_main_frame
-          0,                                 // frame_id
           false,                             // parent_is_main_frame
-          0,                                 // parent_frame_id
+          0,                                 // parent_render_frame_id
           resource_type,                     // resource_type
           PAGE_TRANSITION_LINK,              // transition_type
           false,                             // should_replace_current_entry
@@ -49,7 +49,8 @@ void ResourceRequestInfo::AllocateForTesting(
           false,                             // is_stream
           true,                              // allow_download
           false,                             // has_user_gesture
-          blink::WebReferrerPolicyDefault,  // referrer_policy
+          blink::WebReferrerPolicyDefault,   // referrer_policy
+          blink::WebPageVisibilityStateVisible,  // visibility_state
           context,                           // context
           base::WeakPtr<ResourceMessageFilter>(),  // filter
           is_async);                         // is_async
@@ -57,16 +58,16 @@ void ResourceRequestInfo::AllocateForTesting(
 }
 
 // static
-bool ResourceRequestInfo::GetRenderViewForRequest(
+bool ResourceRequestInfo::GetRenderFrameForRequest(
     const net::URLRequest* request,
     int* render_process_id,
-    int* render_view_id) {
+    int* render_frame_id) {
   URLRequestUserData* user_data = static_cast<URLRequestUserData*>(
       request->GetUserData(URLRequestUserData::kUserDataKey));
   if (!user_data)
     return false;
   *render_process_id = user_data->render_process_id();
-  *render_view_id = user_data->render_view_id();
+  *render_frame_id = user_data->render_frame_id();
   return true;
 }
 
@@ -93,9 +94,8 @@ ResourceRequestInfoImpl::ResourceRequestInfoImpl(
     int request_id,
     int render_frame_id,
     bool is_main_frame,
-    int64 frame_id,
     bool parent_is_main_frame,
-    int64 parent_frame_id,
+    int parent_render_frame_id,
     ResourceType::Type resource_type,
     PageTransition transition_type,
     bool should_replace_current_entry,
@@ -104,6 +104,7 @@ ResourceRequestInfoImpl::ResourceRequestInfoImpl(
     bool allow_download,
     bool has_user_gesture,
     blink::WebReferrerPolicy referrer_policy,
+    blink::WebPageVisibilityState visibility_state,
     ResourceContext* context,
     base::WeakPtr<ResourceMessageFilter> filter,
     bool is_async)
@@ -116,9 +117,8 @@ ResourceRequestInfoImpl::ResourceRequestInfoImpl(
       request_id_(request_id),
       render_frame_id_(render_frame_id),
       is_main_frame_(is_main_frame),
-      frame_id_(frame_id),
       parent_is_main_frame_(parent_is_main_frame),
-      parent_frame_id_(parent_frame_id),
+      parent_render_frame_id_(parent_render_frame_id),
       should_replace_current_entry_(should_replace_current_entry),
       is_download_(is_download),
       is_stream_(is_stream),
@@ -129,6 +129,7 @@ ResourceRequestInfoImpl::ResourceRequestInfoImpl(
       transition_type_(transition_type),
       memory_cost_(0),
       referrer_policy_(referrer_policy),
+      visibility_state_(visibility_state),
       context_(context),
       filter_(filter),
       is_async_(is_async) {
@@ -165,24 +166,29 @@ bool ResourceRequestInfoImpl::IsMainFrame() const {
   return is_main_frame_;
 }
 
-int64 ResourceRequestInfoImpl::GetFrameID() const {
-  return frame_id_;
-}
-
 bool ResourceRequestInfoImpl::ParentIsMainFrame() const {
   return parent_is_main_frame_;
 }
 
-int64 ResourceRequestInfoImpl::GetParentFrameID() const {
-  return parent_frame_id_;
+int ResourceRequestInfoImpl::GetParentRenderFrameID() const {
+  return parent_render_frame_id_;
 }
 
 ResourceType::Type ResourceRequestInfoImpl::GetResourceType() const {
   return resource_type_;
 }
 
+int ResourceRequestInfoImpl::GetProcessType() const {
+  return process_type_;
+}
+
 blink::WebReferrerPolicy ResourceRequestInfoImpl::GetReferrerPolicy() const {
   return referrer_policy_;
+}
+
+blink::WebPageVisibilityState
+ResourceRequestInfoImpl::GetVisibilityState() const {
+  return visibility_state_;
 }
 
 PageTransition ResourceRequestInfoImpl::GetPageTransition() const {
@@ -197,26 +203,26 @@ bool ResourceRequestInfoImpl::WasIgnoredByHandler() const {
   return was_ignored_by_handler_;
 }
 
-bool ResourceRequestInfoImpl::GetAssociatedRenderView(
+bool ResourceRequestInfoImpl::GetAssociatedRenderFrame(
     int* render_process_id,
-    int* render_view_id) const {
+    int* render_frame_id) const {
   // If the request is from the worker process, find a content that owns the
   // worker.
   if (process_type_ == PROCESS_TYPE_WORKER) {
     // Need to display some related UI for this network request - pick an
     // arbitrary parent to do so.
     if (!WorkerServiceImpl::GetInstance()->GetRendererForWorker(
-            child_id_, render_process_id, render_view_id)) {
+            child_id_, render_process_id, render_frame_id)) {
       *render_process_id = -1;
-      *render_view_id = -1;
+      *render_frame_id = -1;
       return false;
     }
   } else if (process_type_ == PROCESS_TYPE_PLUGIN) {
     *render_process_id = origin_pid_;
-    *render_view_id = route_id_;
+    *render_frame_id = render_frame_id_;
   } else {
     *render_process_id = child_id_;
-    *render_view_id = route_id_;
+    *render_frame_id = render_frame_id_;
   }
   return true;
 }
@@ -232,11 +238,11 @@ bool ResourceRequestInfoImpl::IsDownload() const {
 void ResourceRequestInfoImpl::AssociateWithRequest(net::URLRequest* request) {
   request->SetUserData(NULL, this);
   int render_process_id;
-  int render_view_id;
-  if (GetAssociatedRenderView(&render_process_id, &render_view_id)) {
+  int render_frame_id;
+  if (GetAssociatedRenderFrame(&render_process_id, &render_frame_id)) {
     request->SetUserData(
         URLRequestUserData::kUserDataKey,
-        new URLRequestUserData(render_process_id, render_view_id));
+        new URLRequestUserData(render_process_id, render_frame_id));
   }
 }
 
@@ -253,14 +259,13 @@ void ResourceRequestInfoImpl::UpdateForTransfer(
     int route_id,
     int origin_pid,
     int request_id,
-    int64 frame_id,
-    int64 parent_frame_id,
+    int parent_render_frame_id,
     base::WeakPtr<ResourceMessageFilter> filter) {
   child_id_ = child_id;
   route_id_ = route_id;
   origin_pid_ = origin_pid;
   request_id_ = request_id;
-  frame_id_ = frame_id;
+  parent_render_frame_id_ = parent_render_frame_id;
   filter_ = filter;
 }
 

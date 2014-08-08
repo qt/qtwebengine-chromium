@@ -22,6 +22,7 @@
 #define CSSValue_h
 
 #include "core/dom/ExceptionCode.h"
+#include "platform/heap/Handle.h"
 #include "platform/weborigin/KURL.h"
 #include "wtf/HashMap.h"
 #include "wtf/ListHashSet.h"
@@ -40,7 +41,7 @@ enum CSSTextFormattingFlags { QuoteCSSStringIfNeeded, AlwaysQuoteCSSString };
 // They should be handled by separate wrapper classes.
 
 // Please don't expose more CSSValue types to the web.
-class CSSValue : public RefCounted<CSSValue> {
+class CSSValue : public RefCountedWillBeGarbageCollectedFinalized<CSSValue> {
 public:
     enum Type {
         CSS_INHERIT = 0,
@@ -53,17 +54,20 @@ public:
 
     // Override RefCounted's deref() to ensure operator delete is called on
     // the appropriate subclass type.
+    // When oilpan is enabled the finalize method is called by the garbage
+    // collector and not immediately when deref reached zero.
+#if !ENABLE(OILPAN)
     void deref()
     {
         if (derefBase())
             destroy();
     }
+#endif // !ENABLE(OILPAN)
 
     Type cssValueType() const;
 
     String cssText() const;
     void setCSSText(const String&, ExceptionState&) { } // FIXME: Not implemented.
-    String serializeResolvingVariables(const HashMap<AtomicString, String>&) const;
 
     bool isPrimitiveValue() const { return m_classType == PrimitiveClass; }
     bool isValueList() const { return m_classType >= ValueListClass; }
@@ -98,11 +102,7 @@ public:
     bool isCalcValue() const {return m_classType == CalculationClass; }
     bool isFilterValue() const { return m_classType == CSSFilterClass; }
     bool isArrayFunctionValue() const { return m_classType == CSSArrayFunctionValueClass; }
-    bool isMixFunctionValue() const { return m_classType == CSSMixFunctionValueClass; }
-    bool isShaderValue() const { return m_classType == CSSShaderClass; }
-    bool isVariableValue() const { return m_classType == VariableClass; }
-    bool isGridTemplateValue() const { return m_classType == GridTemplateClass; }
-    bool isSVGColor() const { return m_classType == SVGColorClass || m_classType == SVGPaintClass; }
+    bool isGridTemplateAreasValue() const { return m_classType == GridTemplateAreasClass; }
     bool isSVGPaint() const { return m_classType == SVGPaintClass; }
     bool isSVGDocumentValue() const { return m_classType == CSSSVGDocumentClass; }
     bool isUnicodeRangeValue() const { return m_classType == UnicodeRangeClass; }
@@ -111,16 +111,18 @@ public:
     bool isCSSOMSafe() const { return m_isCSSOMSafe; }
     bool isSubtypeExposedToCSSOM() const
     {
-        return isPrimitiveValue() || isSVGColor() || isValueList();
+        return isPrimitiveValue() || isSVGPaint() || isValueList();
     }
 
-    PassRefPtr<CSSValue> cloneForCSSOM() const;
-
-    void addSubresourceStyleURLs(ListHashSet<KURL>&, const StyleSheetContents*) const;
+    PassRefPtrWillBeRawPtr<CSSValue> cloneForCSSOM() const;
 
     bool hasFailedOrCanceledSubresources() const;
 
     bool equals(const CSSValue&) const;
+
+    void finalizeGarbageCollectedObject();
+    void traceAfterDispatch(Visitor*) { }
+    void trace(Visitor*);
 
 protected:
 
@@ -158,12 +160,9 @@ protected:
         UnicodeRangeClass,
         LineBoxContainClass,
         CalculationClass,
-        CSSShaderClass,
-        VariableClass,
-        GridTemplateClass,
+        GridTemplateAreasClass,
 
         // SVG classes.
-        SVGColorClass,
         SVGPaintClass,
         CSSSVGDocumentClass,
 
@@ -172,7 +171,6 @@ protected:
         ImageSetClass,
         CSSFilterClass,
         CSSArrayFunctionValueClass,
-        CSSMixFunctionValueClass,
         CSSTransformClass,
         GridLineNamesClass,
         // Do not append non-list class types here.
@@ -213,7 +211,7 @@ protected:
     // to maximize struct packing.
 
     // CSSPrimitiveValue bits:
-    unsigned m_primitiveUnitType : 7; // CSSPrimitiveValue::UnitTypes
+    unsigned m_primitiveUnitType : 7; // CSSPrimitiveValue::UnitType
     mutable unsigned m_hasCachedCSSText : 1;
     unsigned m_isQuirkValue : 1;
 
@@ -223,16 +221,16 @@ private:
     unsigned m_classType : ClassTypeBits; // ClassType
 };
 
-template<typename CSSValueType>
-inline bool compareCSSValueVector(const Vector<RefPtr<CSSValueType> >& firstVector, const Vector<RefPtr<CSSValueType> >& secondVector)
+template<typename CSSValueType, size_t inlineCapacity>
+inline bool compareCSSValueVector(const WillBeHeapVector<RefPtrWillBeMember<CSSValueType>, inlineCapacity>& firstVector, const WillBeHeapVector<RefPtrWillBeMember<CSSValueType>, inlineCapacity>& secondVector)
 {
     size_t size = firstVector.size();
     if (size != secondVector.size())
         return false;
 
     for (size_t i = 0; i < size; i++) {
-        const RefPtr<CSSValueType>& firstPtr = firstVector[i];
-        const RefPtr<CSSValueType>& secondPtr = secondVector[i];
+        const RefPtrWillBeMember<CSSValueType>& firstPtr = firstVector[i];
+        const RefPtrWillBeMember<CSSValueType>& secondPtr = secondVector[i];
         if (firstPtr == secondPtr || (firstPtr && secondPtr && firstPtr->equals(*secondPtr)))
             continue;
         return false;
@@ -242,6 +240,18 @@ inline bool compareCSSValueVector(const Vector<RefPtr<CSSValueType> >& firstVect
 
 template<typename CSSValueType>
 inline bool compareCSSValuePtr(const RefPtr<CSSValueType>& first, const RefPtr<CSSValueType>& second)
+{
+    return first ? second && first->equals(*second) : !second;
+}
+
+template<typename CSSValueType>
+inline bool compareCSSValuePtr(const RawPtr<CSSValueType>& first, const RawPtr<CSSValueType>& second)
+{
+    return first ? second && first->equals(*second) : !second;
+}
+
+template<typename CSSValueType>
+inline bool compareCSSValuePtr(const Member<CSSValueType>& first, const Member<CSSValueType>& second)
 {
     return first ? second && first->equals(*second) : !second;
 }

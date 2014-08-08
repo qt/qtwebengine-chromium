@@ -26,32 +26,30 @@
 
 namespace WebCore {
 
-class AffineTransform;
-
 class SVGAnimateMotionElement FINAL : public SVGAnimationElement {
 public:
     virtual ~SVGAnimateMotionElement();
 
-    static PassRefPtr<SVGAnimateMotionElement> create(Document&);
+    DECLARE_NODE_FACTORY(SVGAnimateMotionElement);
     void updateAnimationPath();
 
 private:
     explicit SVGAnimateMotionElement(Document&);
 
-    virtual bool hasValidAttributeType();
-    virtual bool hasValidAttributeName();
+    virtual bool hasValidAttributeType() OVERRIDE;
+    virtual bool hasValidAttributeName() OVERRIDE;
 
     bool isSupportedAttribute(const QualifiedName&);
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
 
-    virtual void resetAnimatedType();
-    virtual void clearAnimatedType(SVGElement* targetElement);
-    virtual bool calculateToAtEndOfDurationValue(const String& toAtEndOfDurationString);
-    virtual bool calculateFromAndToValues(const String& fromString, const String& toString);
-    virtual bool calculateFromAndByValues(const String& fromString, const String& byString);
-    virtual void calculateAnimatedValue(float percentage, unsigned repeatCount, SVGSMILElement* resultElement);
-    virtual void applyResultsToTarget();
-    virtual float calculateDistance(const String& fromString, const String& toString);
+    virtual void resetAnimatedType() OVERRIDE;
+    virtual void clearAnimatedType(SVGElement* targetElement) OVERRIDE;
+    virtual bool calculateToAtEndOfDurationValue(const String& toAtEndOfDurationString) OVERRIDE;
+    virtual bool calculateFromAndToValues(const String& fromString, const String& toString) OVERRIDE;
+    virtual bool calculateFromAndByValues(const String& fromString, const String& byString) OVERRIDE;
+    virtual void calculateAnimatedValue(float percentage, unsigned repeatCount, SVGSMILElement* resultElement) OVERRIDE;
+    virtual void applyResultsToTarget() OVERRIDE;
+    virtual float calculateDistance(const String& fromString, const String& toString) OVERRIDE;
 
     enum RotateMode {
         RotateAngle,

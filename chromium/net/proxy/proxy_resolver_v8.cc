@@ -9,11 +9,13 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
+#include "base/debug/leak_annotations.h"
 #include "base/logging.h"
 #include "base/strings/string_tokenizer.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/synchronization/lock.h"
+#include "gin/public/isolate_holder.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_log.h"
 #include "net/base/net_util.h"
@@ -110,7 +112,7 @@ class V8ExternalASCIILiteral : public v8::String::ExternalAsciiStringResource {
   // throughout this object's lifetime.
   V8ExternalASCIILiteral(const char* ascii, size_t length)
       : ascii_(ascii), length_(length) {
-    DCHECK(IsStringASCII(ascii));
+    DCHECK(base::IsStringASCII(ascii));
   }
 
   virtual const char* data() const OVERRIDE {
@@ -157,7 +159,7 @@ base::string16 V8StringToUTF16(v8::Handle<v8::String> s) {
 // Converts an ASCII std::string to a V8 string.
 v8::Local<v8::String> ASCIIStringToV8String(v8::Isolate* isolate,
                                             const std::string& s) {
-  DCHECK(IsStringASCII(s));
+  DCHECK(base::IsStringASCII(s));
   return v8::String::NewFromUtf8(isolate, s.data(), v8::String::kNormalString,
                                  s.size());
 }
@@ -180,7 +182,7 @@ v8::Local<v8::String> ScriptDataToV8String(
 // Converts an ASCII string literal to a V8 string.
 v8::Local<v8::String> ASCIILiteralToV8String(v8::Isolate* isolate,
                                              const char* ascii) {
-  DCHECK(IsStringASCII(ascii));
+  DCHECK(base::IsStringASCII(ascii));
   size_t length = strlen(ascii);
   if (length <= kMaxStringBytesForCopy)
     return v8::String::NewFromUtf8(isolate, ascii, v8::String::kNormalString,
@@ -216,28 +218,27 @@ bool GetHostnameArgument(const v8::FunctionCallbackInfo<v8::Value>& args,
   const base::string16 hostname_utf16 = V8StringToUTF16(args[0]->ToString());
 
   // If the hostname is already in ASCII, simply return it as is.
-  if (IsStringASCII(hostname_utf16)) {
-    *hostname = UTF16ToASCII(hostname_utf16);
+  if (base::IsStringASCII(hostname_utf16)) {
+    *hostname = base::UTF16ToASCII(hostname_utf16);
     return true;
   }
 
   // Otherwise try to convert it from IDN to punycode.
   const int kInitialBufferSize = 256;
-  url_canon::RawCanonOutputT<char16, kInitialBufferSize> punycode_output;
-  if (!url_canon::IDNToASCII(hostname_utf16.data(),
-                             hostname_utf16.length(),
-                             &punycode_output)) {
+  url::RawCanonOutputT<base::char16, kInitialBufferSize> punycode_output;
+  if (!url::IDNToASCII(hostname_utf16.data(), hostname_utf16.length(),
+                       &punycode_output)) {
     return false;
   }
 
   // |punycode_output| should now be ASCII; convert it to a std::string.
   // (We could use UTF16ToASCII() instead, but that requires an extra string
   // copy. Since ASCII is a subset of UTF8 the following is equivalent).
-  bool success = UTF16ToUTF8(punycode_output.data(),
+  bool success = base::UTF16ToUTF8(punycode_output.data(),
                              punycode_output.length(),
                              hostname);
   DCHECK(success);
-  DCHECK(IsStringASCII(*hostname));
+  DCHECK(base::IsStringASCII(*hostname));
   return success;
 }
 
@@ -372,7 +373,7 @@ class ProxyResolverV8::Context {
     v8::Local<v8::Value> function;
     if (!GetFindProxyForURL(&function)) {
       js_bindings()->OnError(
-          -1, ASCIIToUTF16("FindProxyForURL() is undefined."));
+          -1, base::ASCIIToUTF16("FindProxyForURL() is undefined."));
       return ERR_PAC_SCRIPT_FAILED;
     }
 
@@ -392,25 +393,25 @@ class ProxyResolverV8::Context {
 
     if (!ret->IsString()) {
       js_bindings()->OnError(
-          -1, ASCIIToUTF16("FindProxyForURL() did not return a string."));
+          -1, base::ASCIIToUTF16("FindProxyForURL() did not return a string."));
       return ERR_PAC_SCRIPT_FAILED;
     }
 
     base::string16 ret_str = V8StringToUTF16(ret->ToString());
 
-    if (!IsStringASCII(ret_str)) {
+    if (!base::IsStringASCII(ret_str)) {
       // TODO(eroman): Rather than failing when a wide string is returned, we
       //               could extend the parsing to handle IDNA hostnames by
       //               converting them to ASCII punycode.
       //               crbug.com/47234
       base::string16 error_message =
-          ASCIIToUTF16("FindProxyForURL() returned a non-ASCII string "
-                       "(crbug.com/47234): ") + ret_str;
+          base::ASCIIToUTF16("FindProxyForURL() returned a non-ASCII string "
+                             "(crbug.com/47234): ") + ret_str;
       js_bindings()->OnError(-1, error_message);
       return ERR_PAC_SCRIPT_FAILED;
     }
 
-    results->UsePacString(UTF16ToASCII(ret_str));
+    results->UsePacString(base::UTF16ToASCII(ret_str));
     return OK;
   }
 
@@ -422,7 +423,8 @@ class ProxyResolverV8::Context {
     v8_this_.Reset(isolate_, v8::External::New(isolate_, this));
     v8::Local<v8::External> v8_this =
         v8::Local<v8::External>::New(isolate_, v8_this_);
-    v8::Local<v8::ObjectTemplate> global_template = v8::ObjectTemplate::New();
+    v8::Local<v8::ObjectTemplate> global_template =
+        v8::ObjectTemplate::New(isolate_);
 
     // Attach the javascript bindings.
     v8::Local<v8::FunctionTemplate> alert_template =
@@ -496,17 +498,11 @@ class ProxyResolverV8::Context {
     v8::Local<v8::Value> function;
     if (!GetFindProxyForURL(&function)) {
       js_bindings()->OnError(
-          -1, ASCIIToUTF16("FindProxyForURL() is undefined."));
+          -1, base::ASCIIToUTF16("FindProxyForURL() is undefined."));
       return ERR_PAC_SCRIPT_FAILED;
     }
 
     return OK;
-  }
-
-  void PurgeMemory() {
-    v8::Locker locked(isolate_);
-    v8::Isolate::Scope isolate_scope(isolate_);
-    v8::V8::LowMemoryNotification();
   }
 
  private:
@@ -564,7 +560,7 @@ class ProxyResolverV8::Context {
     // disregard any arguments beyond the first.
     base::string16 message;
     if (args.Length() == 0) {
-      message = ASCIIToUTF16("undefined");
+      message = base::ASCIIToUTF16("undefined");
     } else {
       if (!V8ObjectToUTF16String(args[0], &message, args.GetIsolate()))
         return;  // toString() threw an exception.
@@ -665,7 +661,7 @@ class ProxyResolverV8::Context {
     }
 
     std::string ip_address_list = V8StringToUTF8(args[0]->ToString());
-    if (!IsStringASCII(ip_address_list)) {
+    if (!base::IsStringASCII(ip_address_list)) {
       args.GetReturnValue().SetNull();
       return;
     }
@@ -690,12 +686,12 @@ class ProxyResolverV8::Context {
     }
 
     std::string ip_address = V8StringToUTF8(args[0]->ToString());
-    if (!IsStringASCII(ip_address)) {
+    if (!base::IsStringASCII(ip_address)) {
       args.GetReturnValue().Set(false);
       return;
     }
     std::string ip_prefix = V8StringToUTF8(args[1]->ToString());
-    if (!IsStringASCII(ip_prefix)) {
+    if (!base::IsStringASCII(ip_prefix)) {
       args.GetReturnValue().Set(false);
       return;
     }
@@ -750,11 +746,6 @@ void ProxyResolverV8::CancelSetPacScript() {
   NOTREACHED();
 }
 
-void ProxyResolverV8::PurgeMemory() {
-  if (context_)
-    context_->PurgeMemory();
-}
-
 int ProxyResolverV8::SetPacScript(
     const scoped_refptr<ProxyResolverScriptData>& script_data,
     const CompletionCallback& /*callback*/) {
@@ -774,59 +765,44 @@ int ProxyResolverV8::SetPacScript(
 }
 
 // static
-void ProxyResolverV8::RememberDefaultIsolate() {
-  v8::Isolate* isolate = v8::Isolate::GetCurrent();
-  DCHECK(isolate)
-      << "ProxyResolverV8::RememberDefaultIsolate called on wrong thread";
-  DCHECK(g_default_isolate_ == NULL || g_default_isolate_ == isolate)
-      << "Default Isolate can not be changed";
-  g_default_isolate_ = isolate;
+void ProxyResolverV8::EnsureIsolateCreated() {
+  if (g_proxy_resolver_isolate_)
+    return;
+  g_proxy_resolver_isolate_ =
+      new gin::IsolateHolder(gin::IsolateHolder::kNonStrictMode);
+  ANNOTATE_LEAKING_OBJECT_PTR(g_proxy_resolver_isolate_);
 }
-
-#if defined(OS_WIN)
-// static
-void ProxyResolverV8::CreateIsolate() {
-  v8::Isolate* isolate = v8::Isolate::New();
-  DCHECK(isolate);
-  DCHECK(g_default_isolate_ == NULL) << "Default Isolate can not be set twice";
-
-  isolate->Enter();
-  v8::V8::Initialize();
-
-  g_default_isolate_ = isolate;
-}
-#endif  // defined(OS_WIN)
 
 // static
 v8::Isolate* ProxyResolverV8::GetDefaultIsolate() {
-  DCHECK(g_default_isolate_)
-      << "Must call ProxyResolverV8::RememberDefaultIsolate() first";
-  return g_default_isolate_;
+  DCHECK(g_proxy_resolver_isolate_)
+      << "Must call ProxyResolverV8::EnsureIsolateCreated() first";
+  return g_proxy_resolver_isolate_->isolate();
 }
 
-v8::Isolate* ProxyResolverV8::g_default_isolate_ = NULL;
+gin::IsolateHolder* ProxyResolverV8::g_proxy_resolver_isolate_ = NULL;
 
 // static
 size_t ProxyResolverV8::GetTotalHeapSize() {
-  if (!g_default_isolate_)
+  if (!g_proxy_resolver_isolate_)
     return 0;
 
-  v8::Locker locked(g_default_isolate_);
-  v8::Isolate::Scope isolate_scope(g_default_isolate_);
+  v8::Locker locked(g_proxy_resolver_isolate_->isolate());
+  v8::Isolate::Scope isolate_scope(g_proxy_resolver_isolate_->isolate());
   v8::HeapStatistics heap_statistics;
-  g_default_isolate_->GetHeapStatistics(&heap_statistics);
+  g_proxy_resolver_isolate_->isolate()->GetHeapStatistics(&heap_statistics);
   return heap_statistics.total_heap_size();
 }
 
 // static
 size_t ProxyResolverV8::GetUsedHeapSize() {
-  if (!g_default_isolate_)
+  if (!g_proxy_resolver_isolate_)
     return 0;
 
-  v8::Locker locked(g_default_isolate_);
-  v8::Isolate::Scope isolate_scope(g_default_isolate_);
+  v8::Locker locked(g_proxy_resolver_isolate_->isolate());
+  v8::Isolate::Scope isolate_scope(g_proxy_resolver_isolate_->isolate());
   v8::HeapStatistics heap_statistics;
-  g_default_isolate_->GetHeapStatistics(&heap_statistics);
+  g_proxy_resolver_isolate_->isolate()->GetHeapStatistics(&heap_statistics);
   return heap_statistics.used_heap_size();
 }
 

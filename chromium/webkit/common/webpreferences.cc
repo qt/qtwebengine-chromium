@@ -10,6 +10,7 @@
 #include "third_party/WebKit/public/web/WebSettings.h"
 #include "third_party/icu/source/common/unicode/uchar.h"
 
+using base::ASCIIToWide;
 using blink::WebSettings;
 
 WebPreferences::WebPreferences()
@@ -43,55 +44,43 @@ WebPreferences::WebPreferences()
       caret_browsing_enabled(false),
       hyperlink_auditing_enabled(true),
       is_online(true),
+      connection_type(net::NetworkChangeNotifier::CONNECTION_NONE),
       allow_universal_access_from_file_urls(false),
       allow_file_access_from_file_urls(false),
       webaudio_enabled(false),
       experimental_webgl_enabled(false),
+      pepper_3d_enabled(false),
       flash_3d_enabled(true),
       flash_stage3d_enabled(false),
       flash_stage3d_baseline_enabled(false),
       gl_multisampling_enabled(true),
       privileged_webgl_extensions_enabled(false),
       webgl_errors_to_console_enabled(true),
-      accelerated_compositing_for_overflow_scroll_enabled(false),
-      universal_accelerated_compositing_for_overflow_scroll_enabled(false),
-      accelerated_compositing_for_scrollable_frames_enabled(false),
-      composited_scrolling_for_frames_enabled(false),
       mock_scrollbars_enabled(false),
-      layer_squashing_enabled(false),
-      threaded_html_parser(true),
-      show_paint_rects(false),
+      layer_squashing_enabled(true),
       asynchronous_spell_checking_enabled(true),
       unified_textchecker_enabled(false),
-      accelerated_compositing_enabled(false),
-      force_compositing_mode(false),
-      accelerated_compositing_for_3d_transforms_enabled(false),
-      accelerated_compositing_for_animation_enabled(false),
-      accelerated_compositing_for_video_enabled(false),
+      accelerated_compositing_for_video_enabled(true),
       accelerated_2d_canvas_enabled(false),
       minimum_accelerated_2d_canvas_size(257 * 256),
       antialiased_2d_canvas_disabled(false),
       accelerated_2d_canvas_msaa_sample_count(0),
       accelerated_filters_enabled(false),
+      deferred_filters_enabled(false),
+      container_culling_enabled(false),
       gesture_tap_highlight_enabled(false),
-      accelerated_compositing_for_plugins_enabled(false),
-      memory_info_enabled(false),
-      fullscreen_enabled(false),
       allow_displaying_insecure_content(true),
       allow_running_insecure_content(false),
       password_echo_enabled(false),
       should_print_backgrounds(false),
       should_clear_document_background(true),
       enable_scroll_animator(false),
-      visual_word_movement_enabled(false),
-      lazy_layout_enabled(false),
       region_based_columns_enabled(false),
       touch_enabled(false),
       device_supports_touch(false),
       device_supports_mouse(true),
       touch_adjustment_enabled(true),
       pointer_events_max_touch_points(0),
-      fixed_position_creates_stacking_context(false),
       sync_xhr_in_documents_enabled(true),
       deferred_image_decoding_enabled(false),
       should_respect_image_orientation(false),
@@ -118,12 +107,13 @@ WebPreferences::WebPreferences()
       smart_insert_delete_enabled(false),
 #endif
       spatial_navigation_enabled(false),
-      experimental_websocket_enabled(false),
       pinch_virtual_viewport_enabled(false),
       pinch_overlay_scrollbar_thickness(0),
       use_solid_color_scrollbars(false),
       compositor_touch_hit_testing(true),
-      cookie_enabled(true)
+      navigate_on_drag_drop(true),
+      cookie_enabled(true),
+      pepper_accelerated_video_decode_enabled(false)
 #if defined(OS_ANDROID)
       ,
       text_autosizing_enabled(true),
@@ -132,7 +122,6 @@ WebPreferences::WebPreferences()
       force_enable_zoom(false),
       double_tap_to_zoom_enabled(true),
       user_gesture_required_for_media_playback(true),
-      user_gesture_required_for_media_fullscreen(true),
       support_deprecated_target_density_dpi(false),
       use_legacy_background_size_shorthand_behavior(false),
       wide_viewport_quirk(false),
@@ -147,19 +136,19 @@ WebPreferences::WebPreferences()
 #endif
 {
   standard_font_family_map[webkit_glue::kCommonScript] =
-      ASCIIToUTF16("Times New Roman");
+      base::ASCIIToUTF16("Times New Roman");
   fixed_font_family_map[webkit_glue::kCommonScript] =
-      ASCIIToUTF16("Courier New");
+      base::ASCIIToUTF16("Courier New");
   serif_font_family_map[webkit_glue::kCommonScript] =
-      ASCIIToUTF16("Times New Roman");
+      base::ASCIIToUTF16("Times New Roman");
   sans_serif_font_family_map[webkit_glue::kCommonScript] =
-      ASCIIToUTF16("Arial");
+      base::ASCIIToUTF16("Arial");
   cursive_font_family_map[webkit_glue::kCommonScript] =
-      ASCIIToUTF16("Script");
+      base::ASCIIToUTF16("Script");
   fantasy_font_family_map[webkit_glue::kCommonScript] =
-      ASCIIToUTF16("Impact");
+      base::ASCIIToUTF16("Impact");
   pictograph_font_family_map[webkit_glue::kCommonScript] =
-      ASCIIToUTF16("Times New Roman");
+      base::ASCIIToUTF16("Times New Roman");
 }
 
 WebPreferences::~WebPreferences() {

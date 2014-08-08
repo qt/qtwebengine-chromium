@@ -23,7 +23,7 @@
 #ifndef RenderLayerModelObject_h
 #define RenderLayerModelObject_h
 
-#include "core/rendering/CompositedLayerMappingPtr.h"
+#include "core/rendering/compositing/CompositedLayerMappingPtr.h"
 #include "core/rendering/RenderObject.h"
 
 namespace WebCore {
@@ -31,6 +31,15 @@ namespace WebCore {
 class RenderLayer;
 class CompositedLayerMapping;
 class ScrollableArea;
+
+enum LayerType {
+    NoLayer,
+    NormalLayer,
+    // A forced or overflow clip layer is required for bookkeeping purposes,
+    // but does not force a layer to be self painting.
+    OverflowClipLayer,
+    ForcedLayer
+};
 
 class RenderLayerModelObject : public RenderObject {
 public:
@@ -44,11 +53,11 @@ public:
     RenderLayer* layer() const { return m_layer.get(); }
     ScrollableArea* scrollableArea() const;
 
-    virtual void styleWillChange(StyleDifference, const RenderStyle* newStyle) OVERRIDE;
+    virtual void styleWillChange(StyleDifference, const RenderStyle& newStyle) OVERRIDE;
     virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle) OVERRIDE;
     virtual void updateFromStyle() { }
 
-    virtual bool requiresLayer() const = 0;
+    virtual LayerType layerTypeRequired() const = 0;
 
     // Returns true if the background is painted opaque in the given rect.
     // The query rect is given in local coordinate system.
@@ -62,7 +71,7 @@ public:
     CompositedLayerMapping* groupedMapping() const;
 
 protected:
-    void createLayer();
+    void createLayer(LayerType);
 
     virtual void willBeDestroyed() OVERRIDE;
 

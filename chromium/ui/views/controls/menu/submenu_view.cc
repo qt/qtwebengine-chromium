@@ -7,12 +7,14 @@
 #include <algorithm>
 
 #include "base/compiler_specific.h"
-#include "ui/base/accessibility/accessible_view_state.h"
+#include "ui/accessibility/ax_view_state.h"
 #include "ui/events/event.h"
 #include "ui/gfx/canvas.h"
+#include "ui/gfx/geometry/safe_integer_conversions.h"
 #include "ui/views/controls/menu/menu_config.h"
 #include "ui/views/controls/menu/menu_controller.h"
 #include "ui/views/controls/menu/menu_host.h"
+#include "ui/views/controls/menu/menu_item_view.h"
 #include "ui/views/controls/menu/menu_scroll_view_container.h"
 #include "ui/views/widget/root_view.h"
 #include "ui/views/widget/widget.h"
@@ -41,7 +43,9 @@ SubmenuView::SubmenuView(MenuItemView* parent)
       max_minor_text_width_(0),
       minimum_preferred_width_(0),
       resize_open_menu_(false),
-      scroll_animator_(new ScrollAnimator(this)) {
+      scroll_animator_(new ScrollAnimator(this)),
+      roundoff_error_(0),
+      prefix_selector_(this) {
   DCHECK(parent);
   // We'll delete ourselves, otherwise the ScrollView would delete us on close.
   set_owned_by_client();
@@ -117,7 +121,7 @@ void SubmenuView::Layout() {
   }
 }
 
-gfx::Size SubmenuView::GetPreferredSize() {
+gfx::Size SubmenuView::GetPreferredSize() const {
   if (!has_children())
     return gfx::Size();
 
@@ -128,11 +132,11 @@ gfx::Size SubmenuView::GetPreferredSize() {
   int max_simple_width = 0;
   int height = 0;
   for (int i = 0; i < child_count(); ++i) {
-    View* child = child_at(i);
+    const View* child = child_at(i);
     if (!child->visible())
       continue;
     if (child->id() == MenuItemView::kMenuItemViewID) {
-      MenuItemView* menu = static_cast<MenuItemView*>(child);
+      const MenuItemView* menu = static_cast<const MenuItemView*>(child);
       const MenuItemView::MenuItemDimensions& dimensions =
           menu->GetDimensions();
       max_simple_width = std::max(
@@ -162,15 +166,20 @@ gfx::Size SubmenuView::GetPreferredSize() {
       height + insets.height());
 }
 
-void SubmenuView::GetAccessibleState(ui::AccessibleViewState* state) {
+void SubmenuView::GetAccessibleState(ui::AXViewState* state) {
   // Inherit most of the state from the parent menu item, except the role.
   if (GetMenuItem())
     GetMenuItem()->GetAccessibleState(state);
-  state->role = ui::AccessibilityTypes::ROLE_MENUPOPUP;
+  state->role = ui::AX_ROLE_MENU_LIST_POPUP;
 }
 
-void SubmenuView::PaintChildren(gfx::Canvas* canvas) {
-  View::PaintChildren(canvas);
+ui::TextInputClient* SubmenuView::GetTextInputClient() {
+  return &prefix_selector_;
+}
+
+void SubmenuView::PaintChildren(gfx::Canvas* canvas,
+                                const views::CullSet& cull_set) {
+  View::PaintChildren(canvas, cull_set);
 
   if (drop_item_ && drop_position_ != MenuDelegate::DROP_ON)
     PaintDropIndicator(canvas, drop_item_, drop_position_);
@@ -293,6 +302,35 @@ void SubmenuView::OnGestureEvent(ui::GestureEvent* event) {
     event->SetHandled();
 }
 
+int SubmenuView::GetRowCount() {
+  return GetMenuItemCount();
+}
+
+int SubmenuView::GetSelectedRow() {
+  int row = 0;
+  for (int i = 0; i < child_count(); ++i) {
+    if (child_at(i)->id() != MenuItemView::kMenuItemViewID)
+      continue;
+
+    if (static_cast<MenuItemView*>(child_at(i))->IsSelected())
+      return row;
+
+    row++;
+  }
+
+  return -1;
+}
+
+void SubmenuView::SetSelectedRow(int row) {
+  GetMenuItem()->GetMenuController()->SetSelection(
+      GetMenuItemAt(row),
+      MenuController::SELECTION_DEFAULT);
+}
+
+base::string16 SubmenuView::GetTextForRow(int row) {
+  return GetMenuItemAt(row)->title();
+}
+
 bool SubmenuView::IsShowing() {
   return host_ && host_->IsMenuHostVisible();
 }
@@ -313,10 +351,10 @@ void SubmenuView::ShowAt(Widget* parent,
   }
 
   GetScrollViewContainer()->NotifyAccessibilityEvent(
-      ui::AccessibilityTypes::EVENT_MENUSTART,
+      ui::AX_EVENT_MENU_START,
       true);
   NotifyAccessibilityEvent(
-      ui::AccessibilityTypes::EVENT_MENUPOPUPSTART,
+      ui::AX_EVENT_MENU_POPUP_START,
       true);
 }
 
@@ -327,9 +365,9 @@ void SubmenuView::Reposition(const gfx::Rect& bounds) {
 
 void SubmenuView::Close() {
   if (host_) {
-    NotifyAccessibilityEvent(ui::AccessibilityTypes::EVENT_MENUPOPUPEND, true);
+    NotifyAccessibilityEvent(ui::AX_EVENT_MENU_POPUP_END, true);
     GetScrollViewContainer()->NotifyAccessibilityEvent(
-        ui::AccessibilityTypes::EVENT_MENUEND, true);
+        ui::AX_EVENT_MENU_END, true);
 
     host_->DestroyMenuHost();
     host_ = NULL;
@@ -446,7 +484,9 @@ bool SubmenuView::OnScroll(float dx, float dy) {
   const gfx::Rect& vis_bounds = GetVisibleBounds();
   const gfx::Rect& full_bounds = bounds();
   int x = vis_bounds.x();
-  int y = vis_bounds.y() - static_cast<int>(dy);
+  float y_f = vis_bounds.y() - dy - roundoff_error_;
+  int y = gfx::ToRoundedInt(y_f);
+  roundoff_error_ = y - y_f;
   // clamp y to [0, full_height - vis_height)
   y = std::min(y, full_bounds.height() - vis_bounds.height() - 1);
   y = std::max(y, 0);

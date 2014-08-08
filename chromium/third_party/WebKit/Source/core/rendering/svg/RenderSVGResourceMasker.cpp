@@ -66,8 +66,8 @@ bool RenderSVGResourceMasker::applyResource(RenderObject* object, RenderStyle*,
 
     clearInvalidationMask();
 
-    FloatRect repaintRect = object->repaintRectInLocalCoordinates();
-    if (repaintRect.isEmpty() || !element()->hasChildNodes())
+    FloatRect repaintRect = object->paintInvalidationRectInLocalCoordinates();
+    if (repaintRect.isEmpty() || !element()->hasChildren())
         return false;
 
     // Content layer start.
@@ -85,7 +85,7 @@ void RenderSVGResourceMasker::postApplyResource(RenderObject* object, GraphicsCo
     ASSERT_UNUSED(resourceMode, resourceMode == ApplyToDefaultMode);
     ASSERT_WITH_SECURITY_IMPLICATION(!needsLayout());
 
-    FloatRect repaintRect = object->repaintRectInLocalCoordinates();
+    FloatRect repaintRect = object->paintInvalidationRectInLocalCoordinates();
 
     const SVGRenderStyle* svgStyle = style()->svgStyle();
     ASSERT(svgStyle);
@@ -115,7 +115,7 @@ void RenderSVGResourceMasker::drawMaskForRenderer(GraphicsContext* context, cons
     ASSERT(context);
 
     AffineTransform contentTransformation;
-    SVGUnitTypes::SVGUnitType contentUnits = toSVGMaskElement(element())->maskContentUnitsCurrentValue();
+    SVGUnitTypes::SVGUnitType contentUnits = toSVGMaskElement(element())->maskContentUnits()->currentValue()->enumValue();
     if (contentUnits == SVGUnitTypes::SVG_UNIT_TYPE_OBJECTBOUNDINGBOX) {
         contentTransformation.translate(targetBoundingBox.x(), targetBoundingBox.y());
         contentTransformation.scaleNonUniform(targetBoundingBox.width(), targetBoundingBox.height());
@@ -133,10 +133,13 @@ PassRefPtr<DisplayList> RenderSVGResourceMasker::asDisplayList(GraphicsContext* 
 {
     ASSERT(context);
 
-    context->beginRecording(repaintRectInLocalCoordinates());
-    for (Node* childNode = element()->firstChild(); childNode; childNode = childNode->nextSibling()) {
-        RenderObject* renderer = childNode->renderer();
-        if (!childNode->isSVGElement() || !renderer)
+    // Using strokeBoundingBox (instead of paintInvalidationRectInLocalCoordinates) to avoid the intersection
+    // with local clips/mask, which may yield incorrect results when mixing objectBoundingBox and
+    // userSpaceOnUse units (http://crbug.com/294900).
+    context->beginRecording(strokeBoundingBox());
+    for (Element* childElement = ElementTraversal::firstWithin(*element()); childElement; childElement = ElementTraversal::nextSibling(*childElement)) {
+        RenderObject* renderer = childElement->renderer();
+        if (!childElement->isSVGElement() || !renderer)
             continue;
         RenderStyle* style = renderer->style();
         if (!style || style->display() == NONE || style->visibility() != VISIBLE)
@@ -150,24 +153,24 @@ PassRefPtr<DisplayList> RenderSVGResourceMasker::asDisplayList(GraphicsContext* 
 
 void RenderSVGResourceMasker::calculateMaskContentRepaintRect()
 {
-    for (Node* childNode = element()->firstChild(); childNode; childNode = childNode->nextSibling()) {
-        RenderObject* renderer = childNode->renderer();
-        if (!childNode->isSVGElement() || !renderer)
+    for (SVGElement* childElement = Traversal<SVGElement>::firstChild(*element()); childElement; childElement = Traversal<SVGElement>::nextSibling(*childElement)) {
+        RenderObject* renderer = childElement->renderer();
+        if (!renderer)
             continue;
         RenderStyle* style = renderer->style();
         if (!style || style->display() == NONE || style->visibility() != VISIBLE)
              continue;
-        m_maskContentBoundaries.unite(renderer->localToParentTransform().mapRect(renderer->repaintRectInLocalCoordinates()));
+        m_maskContentBoundaries.unite(renderer->localToParentTransform().mapRect(renderer->paintInvalidationRectInLocalCoordinates()));
     }
 }
 
-FloatRect RenderSVGResourceMasker::resourceBoundingBox(RenderObject* object)
+FloatRect RenderSVGResourceMasker::resourceBoundingBox(const RenderObject* object)
 {
     SVGMaskElement* maskElement = toSVGMaskElement(element());
     ASSERT(maskElement);
 
     FloatRect objectBoundingBox = object->objectBoundingBox();
-    FloatRect maskBoundaries = SVGLengthContext::resolveRectangle<SVGMaskElement>(maskElement, maskElement->maskUnitsCurrentValue(), objectBoundingBox);
+    FloatRect maskBoundaries = SVGLengthContext::resolveRectangle<SVGMaskElement>(maskElement, maskElement->maskUnits()->currentValue()->enumValue(), objectBoundingBox);
 
     // Resource was not layouted yet. Give back clipping rect of the mask.
     if (selfNeedsLayout())
@@ -177,7 +180,7 @@ FloatRect RenderSVGResourceMasker::resourceBoundingBox(RenderObject* object)
         calculateMaskContentRepaintRect();
 
     FloatRect maskRect = m_maskContentBoundaries;
-    if (maskElement->maskContentUnitsCurrentValue() == SVGUnitTypes::SVG_UNIT_TYPE_OBJECTBOUNDINGBOX) {
+    if (maskElement->maskContentUnits()->currentValue()->value() == SVGUnitTypes::SVG_UNIT_TYPE_OBJECTBOUNDINGBOX) {
         AffineTransform transform;
         transform.translate(objectBoundingBox.x(), objectBoundingBox.y());
         transform.scaleNonUniform(objectBoundingBox.width(), objectBoundingBox.height());

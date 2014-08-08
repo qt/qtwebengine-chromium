@@ -36,7 +36,6 @@ class MEDIA_EXPORT AudioOutputDispatcherImpl : public AudioOutputDispatcher {
   AudioOutputDispatcherImpl(AudioManager* audio_manager,
                             const AudioParameters& params,
                             const std::string& output_device_id,
-                            const std::string& input_device_id,
                             const base::TimeDelta& close_delay);
 
   // Opens a new physical stream if there are no pending streams in
@@ -61,9 +60,6 @@ class MEDIA_EXPORT AudioOutputDispatcherImpl : public AudioOutputDispatcher {
   virtual void CloseStream(AudioOutputProxy* stream_proxy) OVERRIDE;
 
   virtual void Shutdown() OVERRIDE;
-
-  virtual void CloseStreamsForWedgeFix() OVERRIDE;
-  virtual void RestartStreamsForWedgeFix() OVERRIDE;
 
  private:
   friend class base::RefCountedThreadSafe<AudioOutputDispatcherImpl>;

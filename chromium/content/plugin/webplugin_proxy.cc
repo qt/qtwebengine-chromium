@@ -8,7 +8,6 @@
 
 #include "base/bind.h"
 #include "base/lazy_instance.h"
-#include "base/memory/scoped_handle.h"
 #include "base/memory/shared_memory.h"
 #include "build/build_config.h"
 #include "content/child/npapi/npobject_proxy.h"
@@ -19,21 +18,17 @@
 #include "content/plugin/plugin_channel.h"
 #include "content/plugin/plugin_thread.h"
 #include "content/public/common/content_client.h"
-#include "content/public/common/url_constants.h"
 #include "skia/ext/platform_canvas.h"
 #include "skia/ext/platform_device.h"
 #include "third_party/WebKit/public/web/WebBindings.h"
 #include "ui/gfx/blit.h"
 #include "ui/gfx/canvas.h"
+#include "url/url_constants.h"
 
 #if defined(OS_MACOSX)
 #include "base/mac/mac_util.h"
 #include "base/mac/scoped_cftyperef.h"
 #include "content/plugin/webplugin_accelerated_surface_proxy_mac.h"
-#endif
-
-#if defined(USE_X11)
-#include "ui/base/x/x11_util_internal.h"
 #endif
 
 #if defined(OS_WIN)
@@ -67,36 +62,9 @@ WebPluginProxy::WebPluginProxy(
       windowless_buffer_index_(0),
       host_render_view_routing_id_(host_render_view_routing_id),
       weak_factory_(this) {
-#if defined(USE_X11)
-  windowless_shm_pixmaps_[0] = None;
-  windowless_shm_pixmaps_[1] = None;
-  use_shm_pixmap_ = false;
-
-  // If the X server supports SHM pixmaps
-  // and the color depth and masks match,
-  // then consider using SHM pixmaps for windowless plugin painting.
-  XDisplay* display = gfx::GetXDisplay();
-  if (ui::QuerySharedMemorySupport(display) == ui::SHARED_MEMORY_PIXMAP &&
-      gfx::BitsPerPixelForPixmapDepth(
-          display, DefaultDepth(display, DefaultScreen(display))) == 32) {
-    Visual* vis = DefaultVisual(display, DefaultScreen(display));
-
-    if (vis->red_mask == 0xff0000 &&
-        vis->green_mask == 0xff00 &&
-        vis->blue_mask == 0xff)
-      use_shm_pixmap_ = true;
-  }
-#endif
 }
 
 WebPluginProxy::~WebPluginProxy() {
-#if defined(USE_X11)
-  if (windowless_shm_pixmaps_[0] != None)
-    XFreePixmap(gfx::GetXDisplay(), windowless_shm_pixmaps_[0]);
-  if (windowless_shm_pixmaps_[1] != None)
-    XFreePixmap(gfx::GetXDisplay(), windowless_shm_pixmaps_[1]);
-#endif
-
 #if defined(OS_MACOSX)
   // Destroy the surface early, since it may send messages during cleanup.
   if (accelerated_surface_)
@@ -126,8 +94,6 @@ void WebPluginProxy::WillDestroyWindow(gfx::PluginWindowHandle window) {
   PluginThread::current()->Send(
       new PluginProcessHostMsg_PluginWindowDestroyed(
           window, ::GetParent(window)));
-#elif defined(USE_X11)
-  // Nothing to do.
 #else
   NOTIMPLEMENTED();
 #endif
@@ -321,9 +287,9 @@ void WebPluginProxy::HandleURLRequest(const char* url,
     if (delegate_->GetQuirks() &
         WebPluginDelegateImpl::PLUGIN_QUIRK_BLOCK_NONSTANDARD_GETURL_REQUESTS) {
       GURL request_url(url);
-      if (!request_url.SchemeIs(kHttpScheme) &&
-          !request_url.SchemeIs(kHttpsScheme) &&
-          !request_url.SchemeIs(kFtpScheme)) {
+      if (!request_url.SchemeIs(url::kHttpScheme) &&
+          !request_url.SchemeIs(url::kHttpsScheme) &&
+          !request_url.SchemeIs(url::kFtpScheme)) {
         return;
       }
     }
@@ -384,10 +350,6 @@ void WebPluginProxy::Paint(const gfx::Rect& rect) {
   // See above comment about windowless_context_ changing.
   // http::/crbug.com/139462
   skia::RefPtr<skia::PlatformCanvas> saved_canvas = windowless_canvas();
-#if defined(USE_X11)
-  scoped_refptr<SharedTransportDIB> local_dib_ref(
-      windowless_dibs_[windowless_buffer_index_]);
-#endif
 
   saved_canvas->save();
 
@@ -437,9 +399,6 @@ void WebPluginProxy::UpdateGeometry(
 
   DCHECK(0 <= windowless_buffer_index && windowless_buffer_index <= 1);
   windowless_buffer_index_ = windowless_buffer_index;
-#if defined(USE_X11)
-  delegate_->SetWindowlessShmPixmap(windowless_shm_pixmap());
-#endif
 
 #if defined(OS_MACOSX)
   delegate_->UpdateGeometryAndContext(
@@ -531,72 +490,6 @@ void WebPluginProxy::SetWindowlessBuffers(
                                   window_rect,
                                   &windowless_dibs_[1],
                                   &windowless_contexts_[1]);
-}
-
-#elif defined(TOOLKIT_GTK)
-
-void WebPluginProxy::CreateDIBAndCanvasFromHandle(
-    const TransportDIB::Handle& dib_handle,
-    const gfx::Rect& window_rect,
-    scoped_refptr<SharedTransportDIB>* dib_out,
-    skia::RefPtr<skia::PlatformCanvas>* canvas) {
-  TransportDIB* dib = TransportDIB::Map(dib_handle);
-  // dib may be NULL if the renderer has already destroyed the TransportDIB by
-  // the time we receive the handle, e.g. in case of multiple resizes.
-  if (dib) {
-    *canvas = skia::AdoptRef(
-        dib->GetPlatformCanvas(window_rect.width(), window_rect.height()));
-  } else {
-    canvas->clear();
-  }
-  *dib_out = new SharedTransportDIB(dib);
-}
-
-void WebPluginProxy::CreateShmPixmapFromDIB(
-    TransportDIB* dib,
-    const gfx::Rect& window_rect,
-    XID* pixmap_out) {
-  if (dib) {
-    XDisplay* display = gfx::GetXDisplay();
-    XID root_window = ui::GetX11RootWindow();
-    XShmSegmentInfo shminfo = {0};
-
-    if (*pixmap_out != None)
-      XFreePixmap(display, *pixmap_out);
-
-    shminfo.shmseg = dib->MapToX(display);
-    // Create a shared memory pixmap based on the image buffer.
-    *pixmap_out = XShmCreatePixmap(display, root_window,
-                                   NULL, &shminfo,
-                                   window_rect.width(), window_rect.height(),
-                                   DefaultDepth(display,
-                                                DefaultScreen(display)));
-  }
-}
-
-void WebPluginProxy::SetWindowlessBuffers(
-    const TransportDIB::Handle& windowless_buffer0,
-    const TransportDIB::Handle& windowless_buffer1,
-    const gfx::Rect& window_rect) {
-  CreateDIBAndCanvasFromHandle(windowless_buffer0,
-                               window_rect,
-                               &windowless_dibs_[0],
-                               &windowless_canvases_[0]);
-  CreateDIBAndCanvasFromHandle(windowless_buffer1,
-                               window_rect,
-                               &windowless_dibs_[1],
-                               &windowless_canvases_[1]);
-
-  // If SHM pixmaps support is available, create SHM pixmaps to pass to the
-  // delegate for windowless plugin painting.
-  if (delegate_->IsWindowless() && use_shm_pixmap_) {
-    CreateShmPixmapFromDIB(windowless_dibs_[0]->dib(),
-                           window_rect,
-                           &windowless_shm_pixmaps_[0]);
-    CreateShmPixmapFromDIB(windowless_dibs_[1]->dib(),
-                           window_rect,
-                           &windowless_shm_pixmaps_[1]);
-  }
 }
 
 #else
@@ -706,7 +599,7 @@ void WebPluginProxy::URLRedirectResponse(bool allow, int resource_id) {
 bool WebPluginProxy::CheckIfRunInsecureContent(const GURL& url) {
   bool result = true;
   Send(new PluginHostMsg_CheckIfRunInsecureContent(
-      host_render_view_routing_id_, url, &result));
+      route_id_, url, &result));
   return result;
 }
 

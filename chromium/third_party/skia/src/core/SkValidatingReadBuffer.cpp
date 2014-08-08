@@ -14,7 +14,7 @@
 SkValidatingReadBuffer::SkValidatingReadBuffer(const void* data, size_t size) :
     fError(false) {
     this->setMemory(data, size);
-    this->setFlags(SkFlattenableReadBuffer::kValidation_Flag);
+    this->setFlags(SkReadBuffer::kValidation_Flag);
 }
 
 SkValidatingReadBuffer::~SkValidatingReadBuffer() {
@@ -91,7 +91,7 @@ int32_t SkValidatingReadBuffer::read32() {
 }
 
 void SkValidatingReadBuffer::readString(SkString* string) {
-    const size_t len = this->readInt();
+    const size_t len = this->readUInt();
     const void* ptr = fReader.peek();
     const char* cptr = (const char*)ptr;
 
@@ -210,22 +210,13 @@ uint32_t SkValidatingReadBuffer::getArrayCount() {
     return fError ? 0 : *(uint32_t*)fReader.peek();
 }
 
-void SkValidatingReadBuffer::readBitmap(SkBitmap* bitmap) {
-    const int width = this->readInt();
-    const int height = this->readInt();
-    const size_t length = this->readUInt();
-    // A size of zero means the SkBitmap was simply flattened.
-    this->validate(length == 0);
-    if (fError) {
-        return;
-    }
-    bitmap->unflatten(*this);
-    this->validate((bitmap->width() == width) && (bitmap->height() == height));
-}
-
 SkTypeface* SkValidatingReadBuffer::readTypeface() {
     // TODO: Implement this (securely) when needed
     return NULL;
+}
+
+bool SkValidatingReadBuffer::validateAvailable(size_t size) {
+    return this->validate((size <= SK_MaxU32) && fReader.isAvailable(static_cast<uint32_t>(size)));
 }
 
 SkFlattenable* SkValidatingReadBuffer::readFlattenable(SkFlattenable::Type type) {
@@ -252,10 +243,10 @@ SkFlattenable* SkValidatingReadBuffer::readFlattenable(SkFlattenable::Type type)
     SkFlattenable* obj = NULL;
     uint32_t sizeRecorded = this->readUInt();
     if (factory) {
-        uint32_t offset = fReader.offset();
+        size_t offset = fReader.offset();
         obj = (*factory)(*this);
         // check that we read the amount we expected
-        uint32_t sizeRead = fReader.offset() - offset;
+        size_t sizeRead = fReader.offset() - offset;
         this->validate(sizeRecorded == sizeRead);
         if (fError) {
             // we could try to fix up the offset...
@@ -268,4 +259,14 @@ SkFlattenable* SkValidatingReadBuffer::readFlattenable(SkFlattenable::Type type)
         SkASSERT(false);
     }
     return obj;
+}
+
+void SkValidatingReadBuffer::skipFlattenable() {
+    SkString name;
+    this->readString(&name);
+    if (fError) {
+        return;
+    }
+    uint32_t sizeRecorded = this->readUInt();
+    this->skip(sizeRecorded);
 }

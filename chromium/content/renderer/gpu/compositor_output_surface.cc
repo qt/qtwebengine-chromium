@@ -16,6 +16,8 @@
 #include "content/common/view_messages.h"
 #include "content/public/common/content_switches.h"
 #include "content/renderer/render_thread_impl.h"
+#include "gpu/command_buffer/client/context_support.h"
+#include "gpu/command_buffer/client/gles2_interface.h"
 #include "ipc/ipc_forwarding_message_filter.h"
 #include "ipc/ipc_sync_channel.h"
 
@@ -62,11 +64,12 @@ CompositorOutputSurface::CompositorOutputSurface(
       prefers_smoothness_(false),
 #if defined(OS_WIN)
       // TODO(epenner): Implement PlatformThread::CurrentHandle() on windows.
-      main_thread_handle_(base::PlatformThreadHandle())
+      main_thread_handle_(base::PlatformThreadHandle()),
 #else
-      main_thread_handle_(base::PlatformThread::CurrentHandle())
+      main_thread_handle_(base::PlatformThread::CurrentHandle()),
 #endif
-{
+      layout_test_mode_(RenderThreadImpl::current()->layout_test_mode()),
+      weak_ptrs_(this) {
   DCHECK(output_surface_filter_.get());
   DetachFromThread();
   message_sender_ = RenderThreadImpl::current()->sync_message_filter();
@@ -77,7 +80,7 @@ CompositorOutputSurface::CompositorOutputSurface(
 
 CompositorOutputSurface::~CompositorOutputSurface() {
   DCHECK(CalledOnValidThread());
-  SetNeedsBeginImplFrame(false);
+  SetNeedsBeginFrame(false);
   if (!HasClient())
     return;
   UpdateSmoothnessTakesPriority(false);
@@ -102,7 +105,7 @@ bool CompositorOutputSurface::BindToClient(
   if (!context_provider()) {
     // Without a GPU context, the memory policy otherwise wouldn't be set.
     client->SetMemoryPolicy(cc::ManagedMemoryPolicy(
-        64 * 1024 * 1024,
+        128 * 1024 * 1024,
         gpu::MemoryAllocation::CUTOFF_ALLOW_NICE_TO_HAVE,
         cc::ManagedMemoryPolicy::kDefaultNumResourcesLimit));
   }
@@ -110,23 +113,69 @@ bool CompositorOutputSurface::BindToClient(
   return true;
 }
 
+void CompositorOutputSurface::ShortcutSwapAck(
+    uint32 output_surface_id,
+    scoped_ptr<cc::GLFrameData> gl_frame_data,
+    scoped_ptr<cc::SoftwareFrameData> software_frame_data) {
+  if (!layout_test_previous_frame_ack_) {
+    layout_test_previous_frame_ack_.reset(new cc::CompositorFrameAck);
+    layout_test_previous_frame_ack_->gl_frame_data.reset(new cc::GLFrameData);
+  }
+
+  OnSwapAck(output_surface_id, *layout_test_previous_frame_ack_);
+
+  layout_test_previous_frame_ack_->gl_frame_data = gl_frame_data.Pass();
+  layout_test_previous_frame_ack_->last_software_frame_id =
+      software_frame_data ? software_frame_data->id : 0;
+}
+
 void CompositorOutputSurface::SwapBuffers(cc::CompositorFrame* frame) {
+  if (layout_test_mode_ && use_swap_compositor_frame_message_) {
+    // This code path is here to support layout tests that are currently
+    // doing a readback in the renderer instead of the browser. So they
+    // are using deprecated code paths in the renderer and don't need to
+    // actually swap anything to the browser. We shortcut the swap to the
+    // browser here and just ack directly within the renderer process.
+    // Once crbug.com/311404 is fixed, this can be removed.
+
+    // This would indicate that crbug.com/311404 is being fixed, and this
+    // block needs to be removed.
+    DCHECK(!frame->delegated_frame_data);
+
+    base::Closure closure =
+        base::Bind(&CompositorOutputSurface::ShortcutSwapAck,
+                   weak_ptrs_.GetWeakPtr(),
+                   output_surface_id_,
+                   base::Passed(&frame->gl_frame_data),
+                   base::Passed(&frame->software_frame_data));
+
+    if (context_provider_) {
+      gpu::gles2::GLES2Interface* context = context_provider_->ContextGL();
+      context->Flush();
+      uint32 sync_point = context->InsertSyncPointCHROMIUM();
+      context_provider_->ContextSupport()->SignalSyncPoint(sync_point, closure);
+    } else {
+      base::MessageLoopProxy::current()->PostTask(FROM_HERE, closure);
+    }
+    client_->DidSwapBuffers();
+    return;
+  }
+
   if (use_swap_compositor_frame_message_) {
     Send(new ViewHostMsg_SwapCompositorFrame(routing_id_,
                                              output_surface_id_,
                                              *frame));
-    DidSwapBuffers();
+    client_->DidSwapBuffers();
     return;
   }
 
   if (frame->gl_frame_data) {
-    WebGraphicsContext3DCommandBufferImpl* command_buffer_context =
-        static_cast<WebGraphicsContext3DCommandBufferImpl*>(
-            context_provider_->Context3d());
+    context_provider_->ContextGL()->ShallowFlushCHROMIUM();
+    ContextProviderCommandBuffer* provider_command_buffer =
+        static_cast<ContextProviderCommandBuffer*>(context_provider_.get());
     CommandBufferProxyImpl* command_buffer_proxy =
-        command_buffer_context->GetCommandBufferProxy();
+        provider_command_buffer->GetCommandBufferProxy();
     DCHECK(command_buffer_proxy);
-    context_provider_->Context3d()->shallowFlushCHROMIUM();
     command_buffer_proxy->SetLatencyInfo(frame->metadata.latency_info);
   }
 
@@ -138,32 +187,32 @@ void CompositorOutputSurface::OnMessageReceived(const IPC::Message& message) {
   if (!HasClient())
     return;
   IPC_BEGIN_MESSAGE_MAP(CompositorOutputSurface, message)
-    IPC_MESSAGE_HANDLER(ViewMsg_UpdateVSyncParameters, OnUpdateVSyncParameters);
+    IPC_MESSAGE_HANDLER(ViewMsg_UpdateVSyncParameters,
+                        OnUpdateVSyncParametersFromBrowser);
     IPC_MESSAGE_HANDLER(ViewMsg_SwapCompositorFrameAck, OnSwapAck);
     IPC_MESSAGE_HANDLER(ViewMsg_ReclaimCompositorResources, OnReclaimResources);
 #if defined(OS_ANDROID)
-    IPC_MESSAGE_HANDLER(ViewMsg_BeginFrame, OnBeginImplFrame);
+    IPC_MESSAGE_HANDLER(ViewMsg_BeginFrame, OnBeginFrame);
 #endif
   IPC_END_MESSAGE_MAP()
 }
 
-void CompositorOutputSurface::OnUpdateVSyncParameters(
-    base::TimeTicks timebase, base::TimeDelta interval) {
+void CompositorOutputSurface::OnUpdateVSyncParametersFromBrowser(
+    base::TimeTicks timebase,
+    base::TimeDelta interval) {
   DCHECK(CalledOnValidThread());
-  OnVSyncParametersChanged(timebase, interval);
+  CommitVSyncParameters(timebase, interval);
 }
 
 #if defined(OS_ANDROID)
-void CompositorOutputSurface::SetNeedsBeginImplFrame(bool enable) {
+void CompositorOutputSurface::SetNeedsBeginFrame(bool enable) {
   DCHECK(CalledOnValidThread());
-  if (needs_begin_impl_frame_ != enable)
-    Send(new ViewHostMsg_SetNeedsBeginFrame(routing_id_, enable));
-  OutputSurface::SetNeedsBeginImplFrame(enable);
+  Send(new ViewHostMsg_SetNeedsBeginFrame(routing_id_, enable));
 }
 
-void CompositorOutputSurface::OnBeginImplFrame(const cc::BeginFrameArgs& args) {
+void CompositorOutputSurface::OnBeginFrame(const cc::BeginFrameArgs& args) {
   DCHECK(CalledOnValidThread());
-  BeginImplFrame(args);
+  client_->BeginFrame(args);
 }
 #endif  // defined(OS_ANDROID)
 
@@ -174,7 +223,7 @@ void CompositorOutputSurface::OnSwapAck(uint32 output_surface_id,
   if (output_surface_id != output_surface_id_)
     return;
   ReclaimResources(&ack);
-  OnSwapBuffersComplete();
+  client_->DidSwapBuffersComplete();
 }
 
 void CompositorOutputSurface::OnReclaimResources(

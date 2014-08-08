@@ -29,9 +29,10 @@ class RenderSVGInline : public RenderInline {
 public:
     explicit RenderSVGInline(Element*);
 
-    virtual const char* renderName() const { return "RenderSVGInline"; }
-    virtual bool requiresLayer() const OVERRIDE FINAL { return false; }
+    virtual const char* renderName() const OVERRIDE { return "RenderSVGInline"; }
+    virtual LayerType layerTypeRequired() const OVERRIDE FINAL { return NoLayer; }
     virtual bool isSVGInline() const OVERRIDE FINAL { return true; }
+    virtual bool isSVG() const OVERRIDE FINAL { return true; }
 
     virtual bool isChildAllowed(RenderObject*, RenderStyle*) const OVERRIDE;
 
@@ -42,10 +43,10 @@ public:
     // this element, since we need it for filters.
     virtual FloatRect objectBoundingBox() const OVERRIDE FINAL;
     virtual FloatRect strokeBoundingBox() const OVERRIDE FINAL;
-    virtual FloatRect repaintRectInLocalCoordinates() const OVERRIDE FINAL;
+    virtual FloatRect paintInvalidationRectInLocalCoordinates() const OVERRIDE FINAL;
 
-    virtual LayoutRect clippedOverflowRectForRepaint(const RenderLayerModelObject* repaintContainer) const OVERRIDE FINAL;
-    virtual void computeFloatRectForRepaint(const RenderLayerModelObject* repaintContainer, FloatRect&, bool fixed = false) const OVERRIDE FINAL;
+    virtual LayoutRect clippedOverflowRectForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer) const OVERRIDE FINAL;
+    virtual void computeFloatRectForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer, FloatRect&, bool fixed = false) const OVERRIDE FINAL;
     virtual void mapLocalToContainer(const RenderLayerModelObject* repaintContainer, TransformState&, MapCoordinatesFlags = ApplyContainerFlip, bool* wasFixed = 0) const OVERRIDE FINAL;
     virtual const RenderObject* pushMappingToContainer(const RenderLayerModelObject* ancestorToStopAt, RenderGeometryMap&) const OVERRIDE FINAL;
     virtual void absoluteQuads(Vector<FloatQuad>&, bool* wasFixed) const OVERRIDE FINAL;
@@ -59,6 +60,8 @@ private:
     virtual void addChild(RenderObject* child, RenderObject* beforeChild = 0) OVERRIDE FINAL;
     virtual void removeChild(RenderObject*) OVERRIDE FINAL;
 };
+
+DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderSVGInline, isSVGInline());
 
 }
 

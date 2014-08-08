@@ -41,12 +41,9 @@ namespace WebCore {
 //
 // The main purpose of this class at the moment is to override rendererIsNeeded() to return
 // false to make sure we don't attempt to render such elements.
-class SVGUnknownElement : public SVGElement {
+class SVGUnknownElement FINAL : public SVGElement {
 public:
-    static PassRefPtr<SVGUnknownElement> create(const QualifiedName& tagName, Document& document)
-    {
-        return adoptRef(new SVGUnknownElement(tagName, document));
-    }
+    DECLARE_ELEMENT_FACTORY_WITH_TAGNAME(SVGUnknownElement);
 
 private:
     SVGUnknownElement(const QualifiedName&, Document&);

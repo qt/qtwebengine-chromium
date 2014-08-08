@@ -43,7 +43,6 @@ from webkitpy.common.system.systemhost_mock import MockSystemHost
 from webkitpy.layout_tests.models import test_run_results
 from webkitpy.layout_tests.port.base import Port, TestConfiguration
 from webkitpy.layout_tests.port.server_process_mock import MockServerProcess
-from webkitpy.layout_tests.servers import http_server_base
 from webkitpy.tool.mocktool import MockOptions
 
 
@@ -108,6 +107,7 @@ class PortTestCase(unittest.TestCase):
             port._dump_reader.check_is_functional = lambda: True
         port._options.build = True
         port._check_driver_build_up_to_date = lambda config: True
+        port.check_httpd = lambda: True
         oc = OutputCapture()
         try:
             oc.capture_output()
@@ -154,7 +154,7 @@ class PortTestCase(unittest.TestCase):
         self.assertTrue('--foo=baz' in cmd_line)
 
     def test_uses_apache(self):
-        self.assertTrue(self.make_port()._uses_apache())
+        self.assertTrue(self.make_port().uses_apache())
 
     def assert_servers_are_down(self, host, ports):
         for port in ports:
@@ -228,7 +228,7 @@ class PortTestCase(unittest.TestCase):
     def test_diff_image_crashed(self):
         port = self.make_port()
         port._executive = MockExecutive2(exit_code=2)
-        self.assertEqual(port.diff_image("EXPECTED", "ACTUAL"), (None, 'image diff returned an exit code of 2'))
+        self.assertEqual(port.diff_image("EXPECTED", "ACTUAL"), (None, 'Image diff returned an exit code of 2. See http://crbug.com/278596'))
 
     def test_check_wdiff(self):
         port = self.make_port()
@@ -330,21 +330,35 @@ class PortTestCase(unittest.TestCase):
         never_fix_tests_path = port._filesystem.join(port.layout_tests_dir(), 'NeverFixTests')
         stale_tests_path = port._filesystem.join(port.layout_tests_dir(), 'StaleTestExpectations')
         slow_tests_path = port._filesystem.join(port.layout_tests_dir(), 'SlowTests')
+        flaky_tests_path = port._filesystem.join(port.layout_tests_dir(), 'FlakyTests')
         skia_overrides_path = port.path_from_chromium_base(
             'skia', 'skia_test_expectations.txt')
 
-        port._filesystem.write_text_file(skia_overrides_path, 'dummay text')
+        port._filesystem.write_text_file(skia_overrides_path, 'dummy text')
+
+        w3c_overrides_path = port.path_from_chromium_base(
+            'webkit', 'tools', 'layout_tests', 'test_expectations_w3c.txt')
+        port._filesystem.write_text_file(w3c_overrides_path, 'dummy text')
 
         port._options.builder_name = 'DUMMY_BUILDER_NAME'
-        self.assertEqual(port.expectations_files(), [generic_path, skia_overrides_path, never_fix_tests_path, stale_tests_path, slow_tests_path, chromium_overrides_path])
+        self.assertEqual(port.expectations_files(),
+                         [generic_path, skia_overrides_path, w3c_overrides_path,
+                          never_fix_tests_path, stale_tests_path, slow_tests_path,
+                          flaky_tests_path, chromium_overrides_path])
 
         port._options.builder_name = 'builder (deps)'
-        self.assertEqual(port.expectations_files(), [generic_path, skia_overrides_path, never_fix_tests_path, stale_tests_path, slow_tests_path, chromium_overrides_path])
+        self.assertEqual(port.expectations_files(),
+                         [generic_path, skia_overrides_path, w3c_overrides_path,
+                          never_fix_tests_path, stale_tests_path, slow_tests_path,
+                          flaky_tests_path, chromium_overrides_path])
 
         # A builder which does NOT observe the Chromium test_expectations,
         # but still observes the Skia test_expectations...
         port._options.builder_name = 'builder'
-        self.assertEqual(port.expectations_files(), [generic_path, skia_overrides_path, never_fix_tests_path, stale_tests_path, slow_tests_path])
+        self.assertEqual(port.expectations_files(),
+                         [generic_path, skia_overrides_path, w3c_overrides_path,
+                          never_fix_tests_path, stale_tests_path, slow_tests_path,
+                          flaky_tests_path])
 
     def test_check_sys_deps(self):
         port = self.make_port()
@@ -436,22 +450,22 @@ class PortTestCase(unittest.TestCase):
         saved_environ = os.environ.copy()
         try:
             os.environ['WEBKIT_HTTP_SERVER_CONF_PATH'] = '/path/to/httpd.conf'
-            self.assertRaises(IOError, port._path_to_apache_config_file)
+            self.assertRaises(IOError, port.path_to_apache_config_file)
             port._filesystem.write_text_file('/existing/httpd.conf', 'Hello, world!')
             os.environ['WEBKIT_HTTP_SERVER_CONF_PATH'] = '/existing/httpd.conf'
-            self.assertEqual(port._path_to_apache_config_file(), '/existing/httpd.conf')
+            self.assertEqual(port.path_to_apache_config_file(), '/existing/httpd.conf')
         finally:
             os.environ = saved_environ.copy()
 
         # Mock out _apache_config_file_name_for_platform to ignore the passed sys.platform value.
         port._apache_config_file_name_for_platform = lambda platform: 'httpd.conf'
-        self.assertEqual(port._path_to_apache_config_file(), '/mock-checkout/third_party/WebKit/LayoutTests/http/conf/httpd.conf')
+        self.assertEqual(port.path_to_apache_config_file(), '/mock-checkout/third_party/WebKit/LayoutTests/http/conf/httpd.conf')
 
         # Check that even if we mock out _apache_config_file_name, the environment variable takes precedence.
         saved_environ = os.environ.copy()
         try:
             os.environ['WEBKIT_HTTP_SERVER_CONF_PATH'] = '/existing/httpd.conf'
-            self.assertEqual(port._path_to_apache_config_file(), '/existing/httpd.conf')
+            self.assertEqual(port.path_to_apache_config_file(), '/existing/httpd.conf')
         finally:
             os.environ = saved_environ.copy()
 

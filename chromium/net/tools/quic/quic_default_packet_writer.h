@@ -11,7 +11,6 @@
 
 namespace net {
 
-class QuicBlockedWriterInterface;
 struct WriteResult;
 
 namespace tools {
@@ -23,15 +22,27 @@ class QuicDefaultPacketWriter : public QuicPacketWriter {
   virtual ~QuicDefaultPacketWriter();
 
   // QuicPacketWriter
-  virtual WriteResult WritePacket(
-      const char* buffer, size_t buf_len,
-      const net::IPAddressNumber& self_address,
-      const net::IPEndPoint& peer_address,
-      QuicBlockedWriterInterface* blocked_writer) OVERRIDE;
+  virtual WriteResult WritePacket(const char* buffer,
+                                  size_t buf_len,
+                                  const IPAddressNumber& self_address,
+                                  const IPEndPoint& peer_address) OVERRIDE;
   virtual bool IsWriteBlockedDataBuffered() const OVERRIDE;
+  virtual bool IsWriteBlocked() const OVERRIDE;
+  virtual void SetWritable() OVERRIDE;
+
+  void set_fd(int fd) { fd_ = fd; }
+
+ protected:
+  void set_write_blocked(bool is_blocked) {
+    write_blocked_ = is_blocked;
+  }
+  int fd() { return fd_; }
 
  private:
   int fd_;
+  bool write_blocked_;
+
+  DISALLOW_COPY_AND_ASSIGN(QuicDefaultPacketWriter);
 };
 
 }  // namespace tools

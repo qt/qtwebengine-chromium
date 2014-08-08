@@ -5,4 +5,8 @@
 LIBRARY  "chrome_elf.dll"
 
 EXPORTS
-  InitChromeElf
+  CreateFileW=CreateFileWRedirect
+  GetRedirectCount
+  IsBlacklistInitialized
+  SignalChromeElf
+  SuccessfullyBlocked

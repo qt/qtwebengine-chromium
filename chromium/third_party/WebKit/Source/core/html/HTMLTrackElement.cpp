@@ -26,14 +26,12 @@
 #include "config.h"
 #include "core/html/HTMLTrackElement.h"
 
-#include "HTMLNames.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "core/HTMLNames.h"
 #include "core/events/Event.h"
+#include "core/frame/csp/ContentSecurityPolicy.h"
 #include "core/html/HTMLMediaElement.h"
-#include "core/frame/ContentSecurityPolicy.h"
 #include "platform/Logging.h"
-
-using namespace std;
 
 namespace WebCore {
 
@@ -58,15 +56,14 @@ inline HTMLTrackElement::HTMLTrackElement(Document& document)
     ScriptWrappable::init(this);
 }
 
+DEFINE_NODE_FACTORY(HTMLTrackElement)
+
 HTMLTrackElement::~HTMLTrackElement()
 {
+#if !ENABLE(OILPAN)
     if (m_track)
-        m_track->clearClient();
-}
-
-PassRefPtr<HTMLTrackElement> HTMLTrackElement::create(Document& document)
-{
-    return adoptRef(new HTMLTrackElement(document));
+        m_track->clearTrackElement();
+#endif
 }
 
 Node::InsertionNotificationRequest HTMLTrackElement::insertedInto(ContainerNode* insertionPoint)
@@ -79,14 +76,14 @@ Node::InsertionNotificationRequest HTMLTrackElement::insertedInto(ContainerNode*
     HTMLElement::insertedInto(insertionPoint);
     HTMLMediaElement* parent = mediaElement();
     if (insertionPoint == parent)
-        parent->didAddTrack(this);
+        parent->didAddTrackElement(this);
     return InsertionDone;
 }
 
 void HTMLTrackElement::removedFrom(ContainerNode* insertionPoint)
 {
-    if (!parentNode() && isHTMLMediaElement(insertionPoint))
-        toHTMLMediaElement(insertionPoint)->didRemoveTrack(this);
+    if (!parentNode() && isHTMLMediaElement(*insertionPoint))
+        toHTMLMediaElement(insertionPoint)->didRemoveTrackElement(this);
     HTMLElement::removedFrom(insertionPoint);
 }
 
@@ -162,7 +159,7 @@ void HTMLTrackElement::scheduleLoad()
         return;
 
     // 4. Run the remainder of these steps asynchronously, allowing whatever caused these steps to run to continue.
-    m_loadTimer.startOneShot(0);
+    m_loadTimer.startOneShot(0, FROM_HERE);
 }
 
 void HTMLTrackElement::loadTimerFired(Timer<HTMLTrackElement>*)
@@ -207,7 +204,7 @@ bool HTMLTrackElement::canLoadUrl(const KURL& url)
         return false;
     }
 
-    return dispatchBeforeLoadEvent(url.string());
+    return true;
 }
 
 void HTMLTrackElement::didCompleteLoad(LoadStatus status)
@@ -264,53 +261,18 @@ const AtomicString& HTMLTrackElement::mediaElementCrossOriginAttribute() const
     return nullAtom;
 }
 
-void HTMLTrackElement::textTrackKindChanged(TextTrack* track)
-{
-    if (HTMLMediaElement* parent = mediaElement())
-        return parent->textTrackKindChanged(track);
-}
-
-void HTMLTrackElement::textTrackModeChanged(TextTrack* track)
-{
-    // Since we've moved to a new parent, we may now be able to load.
-    if (readyState() == HTMLTrackElement::NONE)
-        scheduleLoad();
-
-    if (HTMLMediaElement* parent = mediaElement())
-        return parent->textTrackModeChanged(track);
-}
-
-void HTMLTrackElement::textTrackAddCues(TextTrack* track, const TextTrackCueList* cues)
-{
-    if (HTMLMediaElement* parent = mediaElement())
-        return parent->textTrackAddCues(track, cues);
-}
-
-void HTMLTrackElement::textTrackRemoveCues(TextTrack* track, const TextTrackCueList* cues)
-{
-    if (HTMLMediaElement* parent = mediaElement())
-        return parent->textTrackRemoveCues(track, cues);
-}
-
-void HTMLTrackElement::textTrackAddCue(TextTrack* track, PassRefPtr<TextTrackCue> cue)
-{
-    if (HTMLMediaElement* parent = mediaElement())
-        return parent->textTrackAddCue(track, cue);
-}
-
-void HTMLTrackElement::textTrackRemoveCue(TextTrack* track, PassRefPtr<TextTrackCue> cue)
-{
-    if (HTMLMediaElement* parent = mediaElement())
-        return parent->textTrackRemoveCue(track, cue);
-}
-
 HTMLMediaElement* HTMLTrackElement::mediaElement() const
 {
     Element* parent = parentElement();
-    if (parent && parent->isMediaElement())
-        return toHTMLMediaElement(parentNode());
+    if (isHTMLMediaElement(parent))
+        return toHTMLMediaElement(parent);
     return 0;
 }
 
+void HTMLTrackElement::trace(Visitor* visitor)
+{
+    visitor->trace(m_track);
+    HTMLElement::trace(visitor);
 }
 
+}

@@ -10,12 +10,15 @@
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/time/time.h"
-#include "content/browser/renderer_host/input/gesture_event_filter.h"
+#include "content/browser/renderer_host/input/gesture_event_queue.h"
 #include "content/browser/renderer_host/input/input_router.h"
 #include "content/browser/renderer_host/input/touch_action_filter.h"
 #include "content/browser/renderer_host/input/touch_event_queue.h"
 #include "content/browser/renderer_host/input/touchpad_tap_suppression_controller.h"
+#include "content/common/input/input_event_stream_validator.h"
 #include "content/public/browser/native_web_keyboard_event.h"
+
+struct InputHostMsg_HandleInputEvent_ACK_Params;
 
 namespace IPC {
 class Sender;
@@ -31,18 +34,26 @@ class InputAckHandler;
 class InputRouterClient;
 class OverscrollController;
 class RenderWidgetHostImpl;
+struct DidOverscrollParams;
 
 // A default implementation for browser input event routing.
 class CONTENT_EXPORT InputRouterImpl
     : public NON_EXPORTED_BASE(InputRouter),
-      public NON_EXPORTED_BASE(GestureEventFilterClient),
+      public NON_EXPORTED_BASE(GestureEventQueueClient),
       public NON_EXPORTED_BASE(TouchEventQueueClient),
       public NON_EXPORTED_BASE(TouchpadTapSuppressionControllerClient) {
  public:
+  struct CONTENT_EXPORT Config {
+    Config();
+    GestureEventQueue::Config gesture_config;
+    TouchEventQueue::Config touch_config;
+  };
+
   InputRouterImpl(IPC::Sender* sender,
                   InputRouterClient* client,
                   InputAckHandler* ack_handler,
-                  int routing_id);
+                  int routing_id,
+                  const Config& config);
   virtual ~InputRouterImpl();
 
   // InputRouter
@@ -63,13 +74,13 @@ class CONTENT_EXPORT InputRouterImpl
   virtual const NativeWebKeyboardEvent* GetLastKeyboardEvent() const OVERRIDE;
   virtual bool ShouldForwardTouchEvent() const OVERRIDE;
   virtual void OnViewUpdated(int view_flags) OVERRIDE;
+  virtual bool HasPendingEvents() const OVERRIDE;
 
   // IPC::Listener
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 
 private:
   friend class InputRouterImplTest;
-  friend class MockRenderWidgetHost;
 
   // TouchpadTapSuppressionControllerClient
   virtual void SendMouseEventImmediately(
@@ -117,21 +128,39 @@ private:
                        const ui::LatencyInfo& latency_info,
                        bool is_keyboard_shortcut);
 
+  // A data structure that attaches some metadata to a WebMouseWheelEvent
+  // and its latency info.
+  struct QueuedWheelEvent {
+    QueuedWheelEvent();
+    QueuedWheelEvent(const MouseWheelEventWithLatencyInfo& event,
+                     bool synthesized_from_pinch);
+    ~QueuedWheelEvent();
+
+    MouseWheelEventWithLatencyInfo event;
+    bool synthesized_from_pinch;
+  };
+
+  // Enqueue or send a mouse wheel event.
+  void SendWheelEvent(const QueuedWheelEvent& wheel_event);
+
+  // Given a Touchpad GesturePinchUpdate event, create and send a synthetic
+  // wheel event for it.
+  void SendSyntheticWheelEventForPinch(
+      const GestureEventWithLatencyInfo& pinch_event);
+
   // IPC message handlers
-  void OnInputEventAck(blink::WebInputEvent::Type event_type,
-                       InputEventAckState ack_result,
-                       const ui::LatencyInfo& latency_info);
+  void OnInputEventAck(const InputHostMsg_HandleInputEvent_ACK_Params& ack);
+  void OnDidOverscroll(const DidOverscrollParams& params);
   void OnMsgMoveCaretAck();
   void OnSelectRangeAck();
   void OnHasTouchEventHandlers(bool has_handlers);
-  void OnSetTouchAction(content::TouchAction touch_action);
+  void OnSetTouchAction(TouchAction touch_action);
 
   // Indicates the source of an ack provided to |ProcessInputEventAck()|.
   // The source is tracked by |current_ack_source_|, which aids in ack routing.
   enum AckSource {
     RENDERER,
     CLIENT,
-    OVERSCROLL_CONTROLLER,
     IGNORING_DISPOSITION,
     ACK_SOURCE_NONE
   };
@@ -155,7 +184,7 @@ private:
   void ProcessWheelAck(InputEventAckState ack_result,
                        const ui::LatencyInfo& latency);
 
-  // Forwards the event ack to |gesture_event_filter|, potentially triggering
+  // Forwards the event ack to |gesture_event_queue|, potentially triggering
   // dispatch of queued gesture events.
   void ProcessGestureAck(blink::WebInputEvent::Type type,
                          InputEventAckState ack_result,
@@ -166,12 +195,16 @@ private:
   void ProcessTouchAck(InputEventAckState ack_result,
                        const ui::LatencyInfo& latency);
 
-  // Forwards |ack_result| to the client's OverscrollController, if necessary.
-  void ProcessAckForOverscroll(const blink::WebInputEvent& event,
-                               InputEventAckState ack_result);
+  // Called when a touch timeout-affecting bit has changed, in turn toggling the
+  // touch ack timeout feature of the |touch_event_queue_| as appropriate. Input
+  // to that determination includes current view properties and the allowed
+  // touch action. Note that this will only affect platforms that have a
+  // non-zero touch timeout configuration.
+  void UpdateTouchAckTimeoutEnabled();
 
-  void SimulateTouchGestureWithMouse(
-      const MouseEventWithLatencyInfo& mouse_event);
+  // If a flush has been requested, signals a completed flush to the client if
+  // all events have been dispatched (i.e., |HasPendingEvents()| is false).
+  void SignalFlushedIfNecessary();
 
   bool IsInOverscrollGesture() const;
 
@@ -206,9 +239,7 @@ private:
   // (Similar to |mouse_move_pending_|.) True if a mouse wheel event was sent
   // and we are waiting for a corresponding ack.
   bool mouse_wheel_pending_;
-  MouseWheelEventWithLatencyInfo current_wheel_event_;
-
-  typedef std::deque<MouseWheelEventWithLatencyInfo> WheelEventQueue;
+  QueuedWheelEvent current_wheel_event_;
 
   // (Similar to |next_mouse_move_|.) The next mouse wheel events to send.
   // Unlike mouse moves, mouse wheel events received while one is pending are
@@ -217,35 +248,34 @@ private:
   // high rate; not waiting for the ack results in jankiness, and using the same
   // mechanism as for mouse moves (just dropping old events when multiple ones
   // would be queued) results in very slow scrolling.
+  typedef std::deque<QueuedWheelEvent> WheelEventQueue;
   WheelEventQueue coalesced_mouse_wheel_events_;
-
-  // The time when an input event was sent to the RenderWidget.
-  base::TimeTicks input_event_start_time_;
-
-  // Queue of keyboard events that we need to track.
-  typedef std::deque<NativeWebKeyboardEvent> KeyQueue;
 
   // A queue of keyboard events. We can't trust data from the renderer so we
   // stuff key events into a queue and pop them out on ACK, feeding our copy
   // back to whatever unhandled handler instead of the returned version.
+  typedef std::deque<NativeWebKeyboardEvent> KeyQueue;
   KeyQueue key_queue_;
 
-  // Keeps track of whether the webpage has any touch event handler. If it does,
-  // then touch events are sent to the renderer. Otherwise, the touch events are
-  // not sent to the renderer.
-  bool has_touch_handler_;
+  // The time when an input event was sent to the client.
+  base::TimeTicks input_event_start_time_;
 
-  // Whether touch ack timeout handling has been enabled via the command line.
-  bool touch_ack_timeout_enabled_;
-  size_t touch_ack_timeout_delay_ms_;
+  // Cached flags from |OnViewUpdated()|, defaults to 0.
+  int current_view_flags_;
 
   // The source of the ack within the scope of |ProcessInputEventAck()|.
   // Defaults to ACK_SOURCE_NONE.
   AckSource current_ack_source_;
 
-  scoped_ptr<TouchEventQueue> touch_event_queue_;
-  scoped_ptr<GestureEventFilter> gesture_event_filter_;
+  // Whether a call to |Flush()| has yet been accompanied by a |DidFlush()| call
+  // to the client_ after all events have been dispatched/acked.
+  bool flush_requested_;
+
+  TouchEventQueue touch_event_queue_;
+  GestureEventQueue gesture_event_queue_;
   TouchActionFilter touch_action_filter_;
+  InputEventStreamValidator input_stream_validator_;
+  InputEventStreamValidator output_stream_validator_;
 
   DISALLOW_COPY_AND_ASSIGN(InputRouterImpl);
 };

@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/message_loop/message_loop.h"
 #include "base/strings/stringprintf.h"
 #include "media/audio/alsa/alsa_output.h"
 #include "media/audio/alsa/alsa_wrapper.h"
 #include "media/audio/alsa/audio_manager_alsa.h"
 #include "media/audio/fake_audio_log_factory.h"
+#include "media/audio/mock_audio_source_callback.h"
 #include "media/base/data_buffer.h"
 #include "media/base/seekable_buffer.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -67,16 +67,6 @@ class MockAlsaWrapper : public AlsaWrapper {
   MOCK_METHOD1(StrError, const char*(int errnum));
 };
 
-class MockAudioSourceCallback : public AudioOutputStream::AudioSourceCallback {
- public:
-  MOCK_METHOD2(OnMoreData, int(AudioBus* audio_bus,
-                               AudioBuffersState buffers_state));
-  MOCK_METHOD3(OnMoreIOData, int(AudioBus* source,
-                                 AudioBus* dest,
-                                 AudioBuffersState buffers_state));
-  MOCK_METHOD1(OnError, void(AudioOutputStream* stream));
-};
-
 class MockAudioManagerAlsa : public AudioManagerAlsa {
  public:
   MockAudioManagerAlsa() : AudioManagerAlsa(&fake_audio_log_factory_) {}
@@ -85,10 +75,9 @@ class MockAudioManagerAlsa : public AudioManagerAlsa {
   MOCK_METHOD0(HasAudioInputDevices, bool());
   MOCK_METHOD1(MakeLinearOutputStream, AudioOutputStream*(
       const AudioParameters& params));
-  MOCK_METHOD3(MakeLowLatencyOutputStream, AudioOutputStream*(
+  MOCK_METHOD2(MakeLowLatencyOutputStream, AudioOutputStream*(
       const AudioParameters& params,
-      const std::string& device_id,
-      const std::string& input_device_id));
+      const std::string& device_id));
   MOCK_METHOD2(MakeLowLatencyInputStream, AudioInputStream*(
       const AudioParameters& params, const std::string& device_id));
 
@@ -102,8 +91,8 @@ class MockAudioManagerAlsa : public AudioManagerAlsa {
   }
 
   // We don't mock this method since all tests will do the same thing
-  // and use the current message loop.
-  virtual scoped_refptr<base::MessageLoopProxy> GetMessageLoop() OVERRIDE {
+  // and use the current task runner.
+  virtual scoped_refptr<base::SingleThreadTaskRunner> GetTaskRunner() OVERRIDE {
     return base::MessageLoop::current()->message_loop_proxy();
   }
 

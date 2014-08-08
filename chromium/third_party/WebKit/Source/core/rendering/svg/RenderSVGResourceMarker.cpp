@@ -23,7 +23,7 @@
 
 #include "core/rendering/svg/RenderSVGResourceMarker.h"
 
-#include "core/rendering/LayoutRectRecorder.h"
+#include "core/rendering/PaintInfo.h"
 #include "core/rendering/svg/RenderSVGContainer.h"
 #include "core/rendering/svg/SVGRenderSupport.h"
 #include "platform/graphics/GraphicsContextStateSaver.h"
@@ -49,12 +49,7 @@ void RenderSVGResourceMarker::layout()
     if (m_isInLayout)
         return;
 
-    LayoutRectRecorder recorder(*this);
     TemporaryChange<bool> inLayoutChange(m_isInLayout, true);
-
-    // Invalidate all resources if our layout changed.
-    if (everHadLayout() && selfNeedsLayout())
-        removeAllClientsFromCache();
 
     // RenderSVGHiddenContainer overwrites layout(). We need the
     // layouting of RenderSVGContainer for calculating  local
@@ -83,7 +78,7 @@ void RenderSVGResourceMarker::applyViewportClip(PaintInfo& paintInfo)
 
 FloatRect RenderSVGResourceMarker::markerBoundaries(const AffineTransform& markerTransformation) const
 {
-    FloatRect coordinates = RenderSVGContainer::repaintRectInLocalCoordinates();
+    FloatRect coordinates = RenderSVGContainer::paintInvalidationRectInLocalCoordinates();
 
     // Map repaint rect into parent coordinate space, in which the marker boundaries have to be evaluated
     coordinates = localToParentTransform().mapRect(coordinates);
@@ -105,7 +100,7 @@ FloatPoint RenderSVGResourceMarker::referencePoint() const
     ASSERT(marker);
 
     SVGLengthContext lengthContext(marker);
-    return FloatPoint(marker->refXCurrentValue().value(lengthContext), marker->refYCurrentValue().value(lengthContext));
+    return FloatPoint(marker->refX()->currentValue()->value(lengthContext), marker->refY()->currentValue()->value(lengthContext));
 }
 
 float RenderSVGResourceMarker::angle() const
@@ -114,8 +109,8 @@ float RenderSVGResourceMarker::angle() const
     ASSERT(marker);
 
     float angle = -1;
-    if (marker->orientTypeCurrentValue() == SVGMarkerOrientAngle)
-        angle = marker->orientAngleCurrentValue().value();
+    if (marker->orientType()->currentValue()->enumValue() == SVGMarkerOrientAngle)
+        angle = marker->orientAngle()->currentValue()->value();
 
     return angle;
 }
@@ -126,7 +121,7 @@ AffineTransform RenderSVGResourceMarker::markerTransformation(const FloatPoint& 
     ASSERT(marker);
 
     float markerAngle = angle();
-    bool useStrokeWidth = marker->markerUnitsCurrentValue() == SVGMarkerUnitsStrokeWidth;
+    bool useStrokeWidth = marker->markerUnits()->currentValue()->enumValue() == SVGMarkerUnitsStrokeWidth;
 
     AffineTransform transform;
     transform.translate(origin.x(), origin.y());
@@ -142,12 +137,15 @@ void RenderSVGResourceMarker::draw(PaintInfo& paintInfo, const AffineTransform& 
     // An empty viewBox disables rendering.
     SVGMarkerElement* marker = toSVGMarkerElement(element());
     ASSERT(marker);
-    if (marker->hasAttribute(SVGNames::viewBoxAttr) && marker->viewBoxCurrentValue().isValid() && marker->viewBoxCurrentValue().isEmpty())
+    if (marker->hasAttribute(SVGNames::viewBoxAttr) && marker->viewBox()->currentValue()->isValid() && marker->viewBox()->currentValue()->value().isEmpty())
         return;
 
     PaintInfo info(paintInfo);
-    GraphicsContextStateSaver stateSaver(*info.context);
-    info.applyTransform(transform);
+    GraphicsContextStateSaver stateSaver(*info.context, false);
+    if (!transform.isIdentity()) {
+        stateSaver.save();
+        info.applyTransform(transform, false);
+    }
     RenderSVGContainer::paint(info, IntPoint());
 }
 
@@ -181,8 +179,8 @@ void RenderSVGResourceMarker::calcViewport()
     ASSERT(marker);
 
     SVGLengthContext lengthContext(marker);
-    float w = marker->markerWidthCurrentValue().value(lengthContext);
-    float h = marker->markerHeightCurrentValue().value(lengthContext);
+    float w = marker->markerWidth()->currentValue()->value(lengthContext);
+    float h = marker->markerHeight()->currentValue()->value(lengthContext);
     m_viewport = FloatRect(0, 0, w, h);
 }
 

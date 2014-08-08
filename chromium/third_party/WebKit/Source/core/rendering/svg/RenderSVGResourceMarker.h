@@ -28,7 +28,6 @@
 
 namespace WebCore {
 
-class AffineTransform;
 class RenderObject;
 
 class RenderSVGResourceMarker FINAL : public RenderSVGResourceContainer {
@@ -36,30 +35,30 @@ public:
     explicit RenderSVGResourceMarker(SVGMarkerElement*);
     virtual ~RenderSVGResourceMarker();
 
-    virtual const char* renderName() const { return "RenderSVGResourceMarker"; }
+    virtual const char* renderName() const OVERRIDE { return "RenderSVGResourceMarker"; }
 
-    virtual void removeAllClientsFromCache(bool markForInvalidation = true);
-    virtual void removeClientFromCache(RenderObject*, bool markForInvalidation = true);
+    virtual void removeAllClientsFromCache(bool markForInvalidation = true) OVERRIDE;
+    virtual void removeClientFromCache(RenderObject*, bool markForInvalidation = true) OVERRIDE;
 
     void draw(PaintInfo&, const AffineTransform&);
 
     // Calculates marker boundaries, mapped to the target element's coordinate space
     FloatRect markerBoundaries(const AffineTransform& markerTransformation) const;
 
-    virtual void applyViewportClip(PaintInfo&);
-    virtual void layout();
-    virtual void calcViewport();
+    virtual void applyViewportClip(PaintInfo&) OVERRIDE;
+    virtual void layout() OVERRIDE;
+    virtual void calcViewport() OVERRIDE;
 
-    virtual const AffineTransform& localToParentTransform() const;
+    virtual const AffineTransform& localToParentTransform() const OVERRIDE;
     AffineTransform markerTransformation(const FloatPoint& origin, float angle, float strokeWidth) const;
 
-    virtual bool applyResource(RenderObject*, RenderStyle*, GraphicsContext*&, unsigned short) { return false; }
+    virtual bool applyResource(RenderObject*, RenderStyle*, GraphicsContext*&, unsigned short) OVERRIDE { return false; }
 
     FloatPoint referencePoint() const;
     float angle() const;
-    SVGMarkerUnitsType markerUnits() const { return toSVGMarkerElement(element())->markerUnitsCurrentValue(); }
+    SVGMarkerUnitsType markerUnits() const { return toSVGMarkerElement(element())->markerUnits()->currentValue()->enumValue(); }
 
-    virtual RenderSVGResourceType resourceType() const { return s_resourceType; }
+    virtual RenderSVGResourceType resourceType() const OVERRIDE { return s_resourceType; }
     static const RenderSVGResourceType s_resourceType;
 
 private:

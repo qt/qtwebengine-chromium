@@ -29,16 +29,14 @@
  */
 
 #include "config.h"
-#include "V8BlobCustomHelpers.h"
+#include "bindings/v8/custom/V8BlobCustomHelpers.h"
 
-#include "V8Blob.h"
+#include "bindings/core/v8/V8Blob.h"
 #include "bindings/v8/Dictionary.h"
 #include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/V8Binding.h"
-#include "bindings/v8/V8Utilities.h"
 #include "bindings/v8/custom/V8ArrayBufferCustom.h"
 #include "bindings/v8/custom/V8ArrayBufferViewCustom.h"
-#include "core/fileapi/BlobBuilder.h"
 #include "wtf/DateMath.h"
 
 namespace WebCore {
@@ -46,7 +44,7 @@ namespace WebCore {
 namespace V8BlobCustomHelpers {
 
 ParsedProperties::ParsedProperties(bool hasFileProperties)
-    : m_endings("transparent")
+    : m_normalizeLineEndingsToNative(false)
     , m_hasFileProperties(hasFileProperties)
 #ifndef NDEBUG
     , m_hasLastModified(false)
@@ -71,19 +69,20 @@ void ParsedProperties::setDefaultLastModified()
 
 bool ParsedProperties::parseBlobPropertyBag(v8::Local<v8::Value> propertyBag, const char* blobClassName, ExceptionState& exceptionState, v8::Isolate* isolate)
 {
-    ASSERT(m_endings == "transparent");
+    TONATIVE_DEFAULT(Dictionary, dictionary, Dictionary(propertyBag, isolate), false);
 
-    V8TRYCATCH_RETURN(Dictionary, dictionary, Dictionary(propertyBag, isolate), false);
-
-    V8TRYCATCH_RETURN(bool, containsEndings, dictionary.get("endings", m_endings), false);
+    String endings;
+    TONATIVE_DEFAULT(bool, containsEndings, dictionary.get("endings", endings), false);
     if (containsEndings) {
-        if (m_endings != "transparent" && m_endings != "native") {
+        if (endings != "transparent" && endings != "native") {
             exceptionState.throwTypeError("The 'endings' property must be either 'transparent' or 'native'.");
             return false;
         }
+        if (endings == "native")
+            m_normalizeLineEndingsToNative = true;
     }
 
-    V8TRYCATCH_RETURN(bool, containsType, dictionary.get("type", m_contentType), false);
+    TONATIVE_DEFAULT(bool, containsType, dictionary.get("type", m_contentType), false);
     if (containsType) {
         if (!m_contentType.containsOnlyASCII()) {
             exceptionState.throwDOMException(SyntaxError, "The 'type' property must consist of ASCII characters.");
@@ -96,9 +95,9 @@ bool ParsedProperties::parseBlobPropertyBag(v8::Local<v8::Value> propertyBag, co
         return true;
 
     v8::Local<v8::Value> lastModified;
-    V8TRYCATCH_RETURN(bool, containsLastModified, dictionary.get("lastModified", lastModified), false);
+    TONATIVE_DEFAULT(bool, containsLastModified, dictionary.get("lastModified", lastModified), false);
     if (containsLastModified) {
-        V8TRYCATCH_RETURN(long long, lastModifiedInt, toInt64(lastModified), false);
+        TONATIVE_DEFAULT(long long, lastModifiedInt, toInt64(lastModified), false);
         setLastModified(static_cast<double>(lastModifiedInt) / msPerSecond);
     } else {
         setDefaultLastModified();
@@ -107,30 +106,28 @@ bool ParsedProperties::parseBlobPropertyBag(v8::Local<v8::Value> propertyBag, co
     return true;
 }
 
-bool processBlobParts(v8::Local<v8::Object> blobParts, uint32_t blobPartsLength, const String& endings, BlobBuilder& blobBuilder, v8::Isolate* isolate)
+bool processBlobParts(v8::Local<v8::Object> blobParts, uint32_t blobPartsLength, bool normalizeLineEndingsToNative, BlobData& blobData, v8::Isolate* isolate)
 {
-    ASSERT(endings == "transparent" || endings == "native");
-
     for (uint32_t i = 0; i < blobPartsLength; ++i) {
-        v8::Local<v8::Value> item = blobParts->Get(v8::Uint32::New(i, isolate));
+        v8::Local<v8::Value> item = blobParts->Get(v8::Uint32::New(isolate, i));
         if (item.IsEmpty())
             return false;
 
-        if (V8ArrayBuffer::hasInstance(item, isolate, worldType(isolate))) {
+        if (V8ArrayBuffer::hasInstance(item, isolate)) {
             ArrayBuffer* arrayBuffer = V8ArrayBuffer::toNative(v8::Handle<v8::Object>::Cast(item));
             ASSERT(arrayBuffer);
-            blobBuilder.append(arrayBuffer);
-        } else if (V8ArrayBufferView::hasInstance(item, isolate, worldType(isolate))) {
+            blobData.appendArrayBuffer(arrayBuffer);
+        } else if (V8ArrayBufferView::hasInstance(item, isolate)) {
             ArrayBufferView* arrayBufferView = V8ArrayBufferView::toNative(v8::Handle<v8::Object>::Cast(item));
             ASSERT(arrayBufferView);
-            blobBuilder.append(arrayBufferView);
-        } else if (V8Blob::hasInstance(item, isolate, worldType(isolate))) {
+            blobData.appendArrayBufferView(arrayBufferView);
+        } else if (V8Blob::hasInstance(item, isolate)) {
             Blob* blob = V8Blob::toNative(v8::Handle<v8::Object>::Cast(item));
             ASSERT(blob);
-            blobBuilder.append(blob);
+            blob->appendTo(blobData);
         } else {
-            V8TRYCATCH_FOR_V8STRINGRESOURCE_RETURN(V8StringResource<>, stringValue, item, false);
-            blobBuilder.append(stringValue, endings);
+            TOSTRING_DEFAULT(V8StringResource<>, stringValue, item, false);
+            blobData.appendText(stringValue, normalizeLineEndingsToNative);
         }
     }
     return true;

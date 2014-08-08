@@ -16,6 +16,7 @@
 #include "net/base/completion_callback.h"
 #include "net/base/net_export.h"
 #include "net/cookies/cookie_store.h"
+#include "net/filter/filter.h"
 #include "net/http/http_request_info.h"
 #include "net/url_request/url_request_job.h"
 #include "net/url_request/url_request_throttler_entry_interface.h"
@@ -106,6 +107,7 @@ class NET_EXPORT_PRIVATE URLRequestHttpJob : public URLRequestJob {
   virtual bool GetResponseCookies(std::vector<std::string>* cookies) OVERRIDE;
   virtual int GetResponseCode() const OVERRIDE;
   virtual Filter* SetupFilter() const OVERRIDE;
+  virtual bool CopyFragmentOnRedirect(const GURL& location) const OVERRIDE;
   virtual bool IsSafeRedirect(const GURL& location) OVERRIDE;
   virtual bool NeedsAuth() OVERRIDE;
   virtual void GetAuthChallengeInfo(scoped_refptr<AuthChallengeInfo>*) OVERRIDE;
@@ -113,12 +115,16 @@ class NET_EXPORT_PRIVATE URLRequestHttpJob : public URLRequestJob {
   virtual void CancelAuth() OVERRIDE;
   virtual void ContinueWithCertificate(X509Certificate* client_cert) OVERRIDE;
   virtual void ContinueDespiteLastError() OVERRIDE;
+  virtual void ResumeNetworkStart() OVERRIDE;
   virtual bool ReadRawData(IOBuffer* buf, int buf_size,
                            int* bytes_read) OVERRIDE;
   virtual void StopCaching() OVERRIDE;
   virtual bool GetFullRequestHeaders(
       HttpRequestHeaders* headers) const OVERRIDE;
+  virtual int64 GetTotalReceivedBytes() const OVERRIDE;
   virtual void DoneReading() OVERRIDE;
+  virtual void DoneReadingRedirectResponse() OVERRIDE;
+
   virtual HostPortPair GetSocketAddress() const OVERRIDE;
   virtual void NotifyURLRequestDestroyed() OVERRIDE;
 
@@ -165,9 +171,6 @@ class NET_EXPORT_PRIVATE URLRequestHttpJob : public URLRequestJob {
   // overridden by |override_response_headers_|.
   HttpResponseHeaders* GetResponseHeaders() const;
 
-  // Override of the private interface of URLRequestJob.
-  virtual void OnDetachRequest() OVERRIDE;
-
   RequestPriority priority_;
 
   HttpRequestInfo request_info_;
@@ -186,9 +189,6 @@ class NET_EXPORT_PRIVATE URLRequestHttpJob : public URLRequestJob {
   CompletionCallback notify_before_headers_sent_callback_;
 
   bool read_in_progress_;
-
-  // An URL for an SDCH dictionary as suggested in a Get-Dictionary HTTP header.
-  GURL sdch_dictionary_url_;
 
   scoped_ptr<HttpTransaction> transaction_;
 
@@ -245,7 +245,6 @@ class NET_EXPORT_PRIVATE URLRequestHttpJob : public URLRequestJob {
   base::TimeTicks receive_headers_end_;
 
   scoped_ptr<HttpFilterContext> filter_context_;
-  base::WeakPtrFactory<URLRequestHttpJob> weak_factory_;
 
   CompletionCallback on_headers_received_callback_;
 
@@ -254,6 +253,11 @@ class NET_EXPORT_PRIVATE URLRequestHttpJob : public URLRequestJob {
   // layers of the network stack.
   scoped_refptr<HttpResponseHeaders> override_response_headers_;
 
+  // The network delegate can mark a URL as safe for redirection.
+  // The reference fragment of the original URL is not appended to the redirect
+  // URL when the redirect URL is equal to |allowed_unsafe_redirect_url_|.
+  GURL allowed_unsafe_redirect_url_;
+
   // Flag used to verify that |this| is not deleted while we are awaiting
   // a callback from the NetworkDelegate. Used as a fail-fast mechanism.
   // True if we are waiting a callback and
@@ -261,9 +265,9 @@ class NET_EXPORT_PRIVATE URLRequestHttpJob : public URLRequestJob {
   // to inform the NetworkDelegate that it may not call back.
   bool awaiting_callback_;
 
-  scoped_ptr<HttpTransactionDelegateImpl> http_transaction_delegate_;
-
   const HttpUserAgentSettings* http_user_agent_settings_;
+
+  base::WeakPtrFactory<URLRequestHttpJob> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(URLRequestHttpJob);
 };

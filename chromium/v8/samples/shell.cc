@@ -65,23 +65,36 @@ void ReportException(v8::Isolate* isolate, v8::TryCatch* handler);
 static bool run_shell;
 
 
+class ShellArrayBufferAllocator : public v8::ArrayBuffer::Allocator {
+ public:
+  virtual void* Allocate(size_t length) {
+    void* data = AllocateUninitialized(length);
+    return data == NULL ? data : memset(data, 0, length);
+  }
+  virtual void* AllocateUninitialized(size_t length) { return malloc(length); }
+  virtual void Free(void* data, size_t) { free(data); }
+};
+
+
 int main(int argc, char* argv[]) {
   v8::V8::InitializeICU();
   v8::V8::SetFlagsFromCommandLine(&argc, argv, true);
-  v8::Isolate* isolate = v8::Isolate::GetCurrent();
+  ShellArrayBufferAllocator array_buffer_allocator;
+  v8::V8::SetArrayBufferAllocator(&array_buffer_allocator);
+  v8::Isolate* isolate = v8::Isolate::New();
   run_shell = (argc == 1);
   int result;
   {
+    v8::Isolate::Scope isolate_scope(isolate);
     v8::HandleScope handle_scope(isolate);
     v8::Handle<v8::Context> context = CreateShellContext(isolate);
     if (context.IsEmpty()) {
       fprintf(stderr, "Error creating context\n");
       return 1;
     }
-    context->Enter();
+    v8::Context::Scope context_scope(context);
     result = RunMain(isolate, argc, argv);
     if (run_shell) RunShell(context);
-    context->Exit();
   }
   v8::V8::Dispose();
   return result;
@@ -98,22 +111,22 @@ const char* ToCString(const v8::String::Utf8Value& value) {
 // functions.
 v8::Handle<v8::Context> CreateShellContext(v8::Isolate* isolate) {
   // Create a template for the global object.
-  v8::Handle<v8::ObjectTemplate> global = v8::ObjectTemplate::New();
+  v8::Handle<v8::ObjectTemplate> global = v8::ObjectTemplate::New(isolate);
   // Bind the global 'print' function to the C++ Print callback.
   global->Set(v8::String::NewFromUtf8(isolate, "print"),
-              v8::FunctionTemplate::New(Print));
+              v8::FunctionTemplate::New(isolate, Print));
   // Bind the global 'read' function to the C++ Read callback.
   global->Set(v8::String::NewFromUtf8(isolate, "read"),
-              v8::FunctionTemplate::New(Read));
+              v8::FunctionTemplate::New(isolate, Read));
   // Bind the global 'load' function to the C++ Load callback.
   global->Set(v8::String::NewFromUtf8(isolate, "load"),
-              v8::FunctionTemplate::New(Load));
+              v8::FunctionTemplate::New(isolate, Load));
   // Bind the 'quit' function
   global->Set(v8::String::NewFromUtf8(isolate, "quit"),
-              v8::FunctionTemplate::New(Quit));
+              v8::FunctionTemplate::New(isolate, Quit));
   // Bind the 'version' function
   global->Set(v8::String::NewFromUtf8(isolate, "version"),
-              v8::FunctionTemplate::New(Version));
+              v8::FunctionTemplate::New(isolate, Version));
 
   return v8::Context::New(isolate, NULL, global);
 }
@@ -304,7 +317,8 @@ bool ExecuteString(v8::Isolate* isolate,
                    bool report_exceptions) {
   v8::HandleScope handle_scope(isolate);
   v8::TryCatch try_catch;
-  v8::Handle<v8::Script> script = v8::Script::Compile(source, name);
+  v8::ScriptOrigin origin(name);
+  v8::Handle<v8::Script> script = v8::Script::Compile(source, &origin);
   if (script.IsEmpty()) {
     // Print errors that happened during compilation.
     if (report_exceptions)

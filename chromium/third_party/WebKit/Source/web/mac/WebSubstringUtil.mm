@@ -30,11 +30,10 @@
  */
 
 #include "config.h"
-#include "WebSubstringUtil.h"
+#include "public/web/mac/WebSubstringUtil.h"
 
 #import <Cocoa/Cocoa.h>
 
-#include "WebFrameImpl.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
@@ -43,41 +42,35 @@
 #include "core/editing/FrameSelection.h"
 #include "core/editing/PlainTextRange.h"
 #include "core/editing/TextIterator.h"
-#include "core/html/HTMLElement.h"
-#include "core/frame/Frame.h"
 #include "core/frame/FrameView.h"
+#include "core/frame/LocalFrame.h"
+#include "core/html/HTMLElement.h"
+#include "core/rendering/HitTestResult.h"
 #include "core/rendering/RenderObject.h"
 #include "core/rendering/style/RenderStyle.h"
 #include "platform/fonts/Font.h"
 #include "platform/mac/ColorMac.h"
 #include "public/platform/WebRect.h"
+#include "public/web/WebHitTestResult.h"
+#include "public/web/WebRange.h"
+#include "public/web/WebView.h"
+#include "web/WebLocalFrameImpl.h"
 
 using namespace WebCore;
 
-namespace blink {
-
-NSAttributedString* WebSubstringUtil::attributedSubstringInRange(WebFrame* webFrame, size_t location, size_t length)
+static NSAttributedString* attributedSubstringFromRange(const Range* range)
 {
-    Frame* frame = toWebFrameImpl(webFrame)->frame();
-    if (frame->view()->needsLayout())
-        frame->view()->layout();
-
-    Element* editable = frame->selection().rootEditableElementOrDocumentElement();
-    ASSERT(editable);
-    RefPtr<Range> range(PlainTextRange(location, location + length).createRange(*editable));
-    if (!range)
-        return nil;
-
     NSMutableAttributedString* string = [[NSMutableAttributedString alloc] init];
     NSMutableDictionary* attrs = [NSMutableDictionary dictionary];
+    size_t length = range->endOffset() - range->startOffset();
 
     unsigned position = 0;
-    for (TextIterator it(range.get()); !it.atEnd() && [string length] < length; it.advance()) {
+    for (TextIterator it(range); !it.atEnd() && [string length] < length; it.advance()) {
         unsigned numCharacters = it.length();
         if (!numCharacters)
             continue;
 
-        Node* container = it.range()->startContainer(IGNORE_EXCEPTION);
+        Node* container = it.range()->startContainer();
         RenderObject* renderer = container->renderer();
         ASSERT(renderer);
         if (!renderer)
@@ -90,7 +83,7 @@ NSAttributedString* WebSubstringUtil::attributedSubstringInRange(WebFrame* webFr
         // TODO(rsesek): Change the font activation flags to allow other processes
         // to use the font.
         if (!font)
-          font = [NSFont systemFontOfSize:style->font().size()];
+          font = [NSFont systemFontOfSize:style->font().fontDescription().computedSize()];
         [attrs setObject:font forKey:NSFontAttributeName];
 
         if (style->visitedDependentColor(CSSPropertyColor).alpha())
@@ -113,6 +106,60 @@ NSAttributedString* WebSubstringUtil::attributedSubstringInRange(WebFrame* webFr
         position += numCharacters;
     }
     return [string autorelease];
+}
+
+namespace blink {
+
+NSAttributedString* WebSubstringUtil::attributedWordAtPoint(WebView* view, WebPoint point, WebPoint& baselinePoint)
+{
+    HitTestResult result = view->hitTestResultAt(point);
+    if (!result.targetNode())
+      return nil;
+    LocalFrame* frame = result.targetNode()->document().frame();
+    FrameView* frameView = frame->view();
+
+    RefPtrWillBeRawPtr<Range> range = frame->rangeForPoint(result.roundedPointInInnerNodeFrame());
+    if (!range)
+        return nil;
+
+    // Expand to word under point.
+    VisibleSelection selection(range.get());
+    selection.expandUsingGranularity(WordGranularity);
+    RefPtrWillBeRawPtr<Range> wordRange = selection.toNormalizedRange();
+
+    // Convert to NSAttributedString.
+    NSAttributedString* string = attributedSubstringFromRange(wordRange.get());
+
+    // Compute bottom left corner and convert to AppKit coordinates.
+    IntRect stringRect = enclosingIntRect(wordRange->boundingRect());
+    IntPoint stringPoint = stringRect.minXMaxYCorner();
+    stringPoint.setY(frameView->height() - stringPoint.y());
+
+    // Adjust for the font's descender. AppKit wants the baseline point.
+    if ([string length]) {
+        NSDictionary* attributes = [string attributesAtIndex:0 effectiveRange:NULL];
+        NSFont* font = [attributes objectForKey:NSFontAttributeName];
+        if (font)
+            stringPoint.move(0, ceil(-[font descender]));
+    }
+
+    baselinePoint = stringPoint;
+    return string;
+}
+
+NSAttributedString* WebSubstringUtil::attributedSubstringInRange(WebLocalFrame* webFrame, size_t location, size_t length)
+{
+    LocalFrame* frame = toWebLocalFrameImpl(webFrame)->frame();
+    if (frame->view()->needsLayout())
+        frame->view()->layout();
+
+    Element* editable = frame->selection().rootEditableElementOrDocumentElement();
+    ASSERT(editable);
+    RefPtrWillBeRawPtr<Range> range(PlainTextRange(location, location + length).createRange(*editable));
+    if (!range)
+        return nil;
+
+    return attributedSubstringFromRange(range.get());
 }
 
 } // namespace blink

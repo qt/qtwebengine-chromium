@@ -31,23 +31,26 @@
 #ifndef UserMediaClient_h
 #define UserMediaClient_h
 
+#include "modules/mediastream/MediaDevicesRequest.h"
 #include "modules/mediastream/UserMediaRequest.h"
 #include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
-class Page;
+class LocalFrame;
 
 class UserMediaClient {
 public:
-    virtual void requestUserMedia(PassRefPtr<UserMediaRequest>) = 0;
+    virtual void requestUserMedia(PassRefPtrWillBeRawPtr<UserMediaRequest>) = 0;
     virtual void cancelUserMediaRequest(UserMediaRequest*) = 0;
+    virtual void requestMediaDevices(PassRefPtrWillBeRawPtr<MediaDevicesRequest>) = 0;
+    virtual void cancelMediaDevicesRequest(MediaDevicesRequest*) = 0;
 
 protected:
     virtual ~UserMediaClient() { }
 };
 
-void provideUserMediaTo(Page*, UserMediaClient*);
+void provideUserMediaTo(LocalFrame&, UserMediaClient*);
 
 } // namespace WebCore
 

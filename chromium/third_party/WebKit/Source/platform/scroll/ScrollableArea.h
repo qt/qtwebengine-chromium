@@ -27,7 +27,7 @@
 #define ScrollableArea_h
 
 #include "platform/PlatformExport.h"
-#include "platform/scroll//ScrollAnimator.h"
+#include "platform/scroll/ScrollAnimator.h"
 #include "platform/scroll/Scrollbar.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/Vector.h"
@@ -41,6 +41,17 @@ class PlatformGestureEvent;
 class PlatformWheelEvent;
 class ScrollAnimator;
 
+enum ScrollBehavior {
+    ScrollBehaviorAuto,
+    ScrollBehaviorInstant,
+    ScrollBehaviorSmooth,
+};
+
+enum IncludeScrollbarsInRect {
+    ExcludeScrollbars,
+    IncludeScrollbars,
+};
+
 class PLATFORM_EXPORT ScrollableArea {
     WTF_MAKE_NONCOPYABLE(ScrollableArea);
 public:
@@ -48,13 +59,15 @@ public:
     static float minFractionToStepWhenPaging();
     static int maxOverlapBetweenPages();
 
-    bool scroll(ScrollDirection, ScrollGranularity, float multiplier = 1);
+    bool scroll(ScrollDirection, ScrollGranularity, float delta = 1);
     void scrollToOffsetWithoutAnimation(const FloatPoint&);
     void scrollToOffsetWithoutAnimation(ScrollbarOrientation, float offset);
 
     // Should be called when the scroll position changes externally, for example if the scroll layer position
     // is updated on the scrolling thread and we need to notify the main thread.
     void notifyScrollPositionChanged(const IntPoint&);
+
+    static bool scrollBehaviorFromString(const String&, ScrollBehavior&);
 
     bool handleWheelEvent(const PlatformWheelEvent&);
 
@@ -101,6 +114,7 @@ public:
     const IntPoint& scrollOrigin() const { return m_scrollOrigin; }
     bool scrollOriginChanged() const { return m_scrollOriginChanged; }
 
+    // FIXME(bokan): Meaningless name, rename to isActiveFocus
     virtual bool isActive() const = 0;
     virtual int scrollSize(ScrollbarOrientation) const = 0;
     virtual void invalidateScrollbar(Scrollbar*, const IntRect&);
@@ -138,7 +152,6 @@ public:
     virtual IntPoint minimumScrollPosition() const = 0;
     virtual IntPoint maximumScrollPosition() const = 0;
 
-    enum IncludeScrollbarsInRect { ExcludeScrollbars, IncludeScrollbars };
     virtual IntRect visibleContentRect(IncludeScrollbarsInRect = ExcludeScrollbars) const;
     virtual int visibleHeight() const = 0;
     virtual int visibleWidth() const = 0;
@@ -147,17 +160,13 @@ public:
     virtual IntPoint lastKnownMousePosition() const { return IntPoint(); }
 
     virtual bool shouldSuspendScrollAnimations() const { return true; }
-    virtual void scrollbarStyleChanged(int /*newStyle*/, bool /*forceUpdate*/) { }
+    virtual void scrollbarStyleChanged() { }
 
     virtual bool scrollbarsCanBeActive() const = 0;
-
-    // Note that this only returns scrollable areas that can actually be scrolled.
-    virtual ScrollableArea* enclosingScrollableArea() const = 0;
 
     // Returns the bounding box of this scrollable area, in the coordinate system of the enclosing scroll view.
     virtual IntRect scrollableAreaBoundingBox() const = 0;
 
-    virtual bool shouldRubberBandInDirection(ScrollDirection) const { return true; }
     virtual bool isRubberBandInProgress() const { return false; }
 
     virtual bool scrollAnimatorEnabled() const { return false; }
@@ -173,8 +182,8 @@ public:
     void serviceScrollAnimations();
 
     virtual bool usesCompositedScrolling() const { return false; }
-    virtual void updateNeedsCompositedScrolling() { }
-    virtual void updateHasVisibleNonLayerContent() { }
+
+    virtual void updateAfterCompositingChange() { }
 
     virtual bool userInputScrollable(ScrollbarOrientation) const = 0;
     virtual bool shouldPlaceVerticalScrollbarOnLeft() const = 0;
@@ -184,6 +193,35 @@ public:
     int minimumScrollPosition(ScrollbarOrientation orientation) { return orientation == HorizontalScrollbar ? minimumScrollPosition().x() : minimumScrollPosition().y(); }
     int maximumScrollPosition(ScrollbarOrientation orientation) { return orientation == HorizontalScrollbar ? maximumScrollPosition().x() : maximumScrollPosition().y(); }
     int clampScrollPosition(ScrollbarOrientation orientation, int pos)  { return std::max(std::min(pos, maximumScrollPosition(orientation)), minimumScrollPosition(orientation)); }
+
+    bool hasVerticalBarDamage() const { return m_hasVerticalBarDamage; }
+    bool hasHorizontalBarDamage() const { return m_hasHorizontalBarDamage; }
+
+    const IntRect& verticalBarDamage() const
+    {
+        ASSERT(m_hasVerticalBarDamage);
+        return m_verticalBarDamage;
+    }
+
+    const IntRect& horizontalBarDamage() const
+    {
+        ASSERT(m_hasHorizontalBarDamage);
+        return m_horizontalBarDamage;
+    }
+
+    void resetScrollbarDamage()
+    {
+        m_hasVerticalBarDamage = false;
+        m_hasHorizontalBarDamage = false;
+    }
+    virtual GraphicsLayer* layerForContainer() const;
+    virtual GraphicsLayer* layerForScrolling() const { return 0; }
+    virtual GraphicsLayer* layerForHorizontalScrollbar() const { return 0; }
+    virtual GraphicsLayer* layerForVerticalScrollbar() const { return 0; }
+    virtual GraphicsLayer* layerForScrollCorner() const { return 0; }
+    bool hasLayerForHorizontalScrollbar() const;
+    bool hasLayerForVerticalScrollbar() const;
+    bool hasLayerForScrollCorner() const;
 
 protected:
     ScrollableArea();
@@ -195,14 +233,12 @@ protected:
     virtual void invalidateScrollbarRect(Scrollbar*, const IntRect&) = 0;
     virtual void invalidateScrollCornerRect(const IntRect&) = 0;
 
-    friend class ScrollingCoordinator;
-    virtual GraphicsLayer* layerForScrolling() const { return 0; }
-    virtual GraphicsLayer* layerForHorizontalScrollbar() const { return 0; }
-    virtual GraphicsLayer* layerForVerticalScrollbar() const { return 0; }
-    virtual GraphicsLayer* layerForScrollCorner() const { return 0; }
-    bool hasLayerForHorizontalScrollbar() const;
-    bool hasLayerForVerticalScrollbar() const;
-    bool hasLayerForScrollCorner() const;
+    // For repaint after layout, stores the damage to be repainted for the
+    // scrollbars.
+    unsigned m_hasHorizontalBarDamage : 1;
+    unsigned m_hasVerticalBarDamage : 1;
+    IntRect m_horizontalBarDamage;
+    IntRect m_verticalBarDamage;
 
 private:
     void scrollPositionChanged(const IntPoint&);
@@ -216,7 +252,7 @@ private:
     virtual void setScrollOffset(const IntPoint&) = 0;
 
     virtual int lineStep(ScrollbarOrientation) const;
-    virtual int pageStep(ScrollbarOrientation) const = 0;
+    virtual int pageStep(ScrollbarOrientation) const;
     virtual int documentStep(ScrollbarOrientation) const;
     virtual float pixelStep(ScrollbarOrientation) const;
 

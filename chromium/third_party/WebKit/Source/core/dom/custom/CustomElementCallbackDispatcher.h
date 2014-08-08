@@ -31,19 +31,18 @@
 #ifndef CustomElementCallbackDispatcher_h
 #define CustomElementCallbackDispatcher_h
 
-#include "core/dom/custom/CustomElementBaseElementQueue.h"
+#include "core/dom/custom/CustomElementCallbackQueue.h"
 #include "wtf/Vector.h"
 
 namespace WebCore {
 
-class CustomElementCallbackQueue;
-class CustomElementCallbackScheduler;
+class CustomElementScheduler;
 
+// FIXME: Rename this CustomElementProcessingStack. It only handles
+// the processing stack.
 class CustomElementCallbackDispatcher {
     WTF_MAKE_NONCOPYABLE(CustomElementCallbackDispatcher);
 public:
-    static CustomElementCallbackDispatcher& instance();
-
     // This is stack allocated in many DOM callbacks. Make it cheap.
     class CallbackDeliveryScope {
     public:
@@ -64,13 +63,11 @@ public:
         size_t m_savedElementQueueStart;
     };
 
-    // Returns true if more work may have to be performed at the
-    // checkpoint by this or other workers (for example, this work
-    // invoked author scripts)
-    bool dispatch();
+    static bool inCallbackDeliveryScope() { return s_elementQueueStart; }
 
 protected:
-    friend class CustomElementCallbackScheduler;
+    friend class CustomElementScheduler;
+    static CustomElementCallbackDispatcher& instance();
     void enqueue(CustomElementCallbackQueue*);
 
 private:
@@ -95,19 +92,10 @@ private:
     // stack. A cache of instance().m_flattenedProcessingStack.size().
     static size_t s_elementQueueEnd;
 
-    static bool inCallbackDeliveryScope() { return s_elementQueueStart; }
-
-    typedef int ElementQueue;
-    static ElementQueue baseElementQueue() { return ElementQueue(0); }
-    static ElementQueue currentElementQueue() { return ElementQueue(s_elementQueueStart); }
+    static CustomElementCallbackQueue::ElementQueueId currentElementQueue() { return CustomElementCallbackQueue::ElementQueueId(s_elementQueueStart); }
 
     static void processElementQueueAndPop();
     void processElementQueueAndPop(size_t start, size_t end);
-
-    // The base element queue, used when no CallbackDeliveryScope is
-    // active. Callbacks for elements created by the parser are
-    // enqueued here.
-    CustomElementBaseElementQueue m_baseElementQueue;
 
     // The processing stack, flattened. Element queues lower in the
     // stack appear toward the head of the vector. The first element

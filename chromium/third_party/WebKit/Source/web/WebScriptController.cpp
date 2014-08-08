@@ -29,7 +29,7 @@
  */
 
 #include "config.h"
-#include "WebScriptController.h"
+#include "public/web/WebScriptController.h"
 
 #include "bindings/v8/ScriptController.h"
 
@@ -40,16 +40,6 @@ namespace blink {
 void WebScriptController::registerExtension(v8::Extension* extension)
 {
     ScriptController::registerExtensionIfNeeded(extension);
-}
-
-void WebScriptController::enableV8SingleThreadMode()
-{
-    // FIXME: remove this method after all it's usages are gone.
-}
-
-void WebScriptController::flushConsoleMessages()
-{
-    // FIXME: remove this method after all it's usages are gone.
 }
 
 } // namespace blink

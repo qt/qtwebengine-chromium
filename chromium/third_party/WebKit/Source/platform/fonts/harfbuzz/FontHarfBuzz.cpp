@@ -32,6 +32,7 @@
 #include "platform/fonts/Font.h"
 
 #include "platform/NotImplemented.h"
+#include "platform/fonts/FontPlatformFeatures.h"
 #include "platform/fonts/SimpleFontData.h"
 #include "platform/fonts/harfbuzz/HarfBuzzShaper.h"
 #include "platform/fonts/GlyphBuffer.h"
@@ -45,52 +46,55 @@
 
 namespace WebCore {
 
-bool Font::canReturnFallbackFontsForComplexText()
+bool FontPlatformFeatures::canReturnFallbackFontsForComplexText()
 {
     return false;
 }
 
-bool Font::canExpandAroundIdeographsInComplexText()
+bool FontPlatformFeatures::canExpandAroundIdeographsInComplexText()
 {
     return false;
 }
-
 
 static void paintGlyphs(GraphicsContext* gc, const SimpleFontData* font,
-    const GlyphBufferGlyph* glyphs, unsigned numGlyphs,
+    const Glyph* glyphs, unsigned numGlyphs,
     SkPoint* pos, const FloatRect& textRect)
 {
     TextDrawingModeFlags textMode = gc->textDrawingMode();
 
     // We draw text up to two times (once for fill, once for stroke).
     if (textMode & TextModeFill) {
-        SkPaint paint;
-        gc->setupPaintForFilling(&paint);
+        SkPaint paint = gc->fillPaint();
         font->platformData().setupPaint(&paint, gc);
         gc->adjustTextRenderMode(&paint);
         paint.setTextEncoding(SkPaint::kGlyphID_TextEncoding);
 
-        gc->drawPosText(glyphs, numGlyphs << 1, pos, textRect, paint);
+        gc->drawPosText(glyphs, numGlyphs * sizeof(Glyph), pos, textRect, paint);
     }
 
     if ((textMode & TextModeStroke)
         && gc->strokeStyle() != NoStroke
         && gc->strokeThickness() > 0) {
 
-        SkPaint paint;
-        gc->setupPaintForStroking(&paint);
+        SkPaint paint = gc->strokePaint();
         font->platformData().setupPaint(&paint, gc);
         gc->adjustTextRenderMode(&paint);
         paint.setTextEncoding(SkPaint::kGlyphID_TextEncoding);
 
         if (textMode & TextModeFill) {
-            // If we also filled, we don't want to draw shadows twice.
-            // See comment in FontChromiumWin.cpp::paintSkiaText() for more details.
-            // Since we use the looper for shadows, we remove it (if any) now.
+            // If there is a shadow and we filled above, there will already be
+            // a shadow. We don't want to draw it again or it will be too dark
+            // and it will go on top of the fill.
+            //
+            // Note that this isn't strictly correct, since the stroke could be
+            // very thick and the shadow wouldn't account for this. The "right"
+            // thing would be to draw to a new layer and then draw that layer
+            // with a shadow. But this is a lot of extra work for something
+            // that isn't normally an issue.
             paint.setLooper(0);
         }
 
-        gc->drawPosText(glyphs, numGlyphs << 1, pos, textRect, paint);
+        gc->drawPosText(glyphs, numGlyphs * sizeof(Glyph), pos, textRect, paint);
     }
 }
 
@@ -98,8 +102,6 @@ void Font::drawGlyphs(GraphicsContext* gc, const SimpleFontData* font,
     const GlyphBuffer& glyphBuffer, unsigned from, unsigned numGlyphs,
     const FloatPoint& point, const FloatRect& textRect) const
 {
-    SkASSERT(sizeof(GlyphBufferGlyph) == sizeof(uint16_t)); // compile-time assert
-
     SkScalar x = SkFloatToScalar(point.x());
     SkScalar y = SkFloatToScalar(point.y());
 
@@ -123,7 +125,7 @@ void Font::drawGlyphs(GraphicsContext* gc, const SimpleFontData* font,
         while (glyphIndex < numGlyphs) {
             unsigned chunkLength = std::min(kMaxBufferLength, numGlyphs - glyphIndex);
 
-            const GlyphBufferGlyph* glyphs = glyphBuffer.glyphs(from + glyphIndex);
+            const Glyph* glyphs = glyphBuffer.glyphs(from + glyphIndex);
             translations.resize(chunkLength);
             verticalData->getVerticalTranslationsForGlyphs(font, &glyphs[0], chunkLength, reinterpret_cast<float*>(&translations[0]));
 
@@ -135,7 +137,7 @@ void Font::drawGlyphs(GraphicsContext* gc, const SimpleFontData* font,
                 pos[i].set(
                     x + SkIntToScalar(lroundf(translations[i].x())),
                     y + -SkIntToScalar(-lroundf(currentWidth - translations[i].y())));
-                currentWidth += glyphBuffer.advanceAt(from + glyphIndex);
+                currentWidth += glyphBuffer.advanceAt(from + glyphIndex).width();
             }
             horizontalOffset += currentWidth;
             paintGlyphs(gc, font, glyphs, chunkLength, pos, textRect);
@@ -151,14 +153,14 @@ void Font::drawGlyphs(GraphicsContext* gc, const SimpleFontData* font,
     // text drawing can proceed faster. However, it's unclear when those
     // patches may be upstreamed to WebKit so we always use the slower path
     // here.
-    const GlyphBufferAdvance* adv = glyphBuffer.advances(from);
+    const FloatSize* adv = glyphBuffer.advances(from);
     for (unsigned i = 0; i < numGlyphs; i++) {
         pos[i].set(x, y);
         x += SkFloatToScalar(adv[i].width());
         y += SkFloatToScalar(adv[i].height());
     }
 
-    const GlyphBufferGlyph* glyphs = glyphBuffer.glyphs(from);
+    const Glyph* glyphs = glyphBuffer.glyphs(from);
     paintGlyphs(gc, font, glyphs, numGlyphs, pos, textRect);
 }
 
@@ -179,22 +181,43 @@ void Font::drawComplexText(GraphicsContext* gc, const TextRunPaintInfo& runInfo,
     GlyphBuffer glyphBuffer;
     HarfBuzzShaper shaper(this, runInfo.run);
     shaper.setDrawRange(runInfo.from, runInfo.to);
-    if (!shaper.shape(&glyphBuffer))
+    if (!shaper.shape(&glyphBuffer) || glyphBuffer.isEmpty())
         return;
     FloatPoint adjustedPoint = shaper.adjustStartPoint(point);
     drawGlyphBuffer(gc, runInfo, glyphBuffer, adjustedPoint);
 }
 
-void Font::drawEmphasisMarksForComplexText(GraphicsContext* /* context */, const TextRunPaintInfo& /* runInfo */, const AtomicString& /* mark */, const FloatPoint& /* point */) const
+void Font::drawEmphasisMarksForComplexText(GraphicsContext* context, const TextRunPaintInfo& runInfo, const AtomicString& mark, const FloatPoint& point) const
 {
-    notImplemented();
+    GlyphBuffer glyphBuffer;
+
+    float initialAdvance = getGlyphsAndAdvancesForComplexText(runInfo, glyphBuffer, ForTextEmphasis);
+
+    if (glyphBuffer.isEmpty())
+        return;
+
+    drawEmphasisMarks(context, runInfo, glyphBuffer, mark, FloatPoint(point.x() + initialAdvance, point.y()));
 }
 
-float Font::floatWidthForComplexText(const TextRun& run, HashSet<const SimpleFontData*>* /* fallbackFonts */, GlyphOverflow* /* glyphOverflow */) const
+float Font::getGlyphsAndAdvancesForComplexText(const TextRunPaintInfo& runInfo, GlyphBuffer& glyphBuffer, ForTextEmphasisOrNot forTextEmphasis) const
+{
+    HarfBuzzShaper shaper(this, runInfo.run, HarfBuzzShaper::ForTextEmphasis);
+    shaper.setDrawRange(runInfo.from, runInfo.to);
+    shaper.shape(&glyphBuffer);
+    return 0;
+}
+
+float Font::floatWidthForComplexText(const TextRun& run, HashSet<const SimpleFontData*>* /* fallbackFonts */, IntRectExtent* glyphBounds) const
 {
     HarfBuzzShaper shaper(this, run);
     if (!shaper.shape())
         return 0;
+
+    glyphBounds->setTop(floorf(-shaper.glyphBoundingBox().top()));
+    glyphBounds->setBottom(ceilf(shaper.glyphBoundingBox().bottom()));
+    glyphBounds->setLeft(std::max<int>(0, floorf(-shaper.glyphBoundingBox().left())));
+    glyphBounds->setRight(std::max<int>(0, ceilf(shaper.glyphBoundingBox().right() - shaper.totalWidth())));
+
     return shaper.totalWidth();
 }
 

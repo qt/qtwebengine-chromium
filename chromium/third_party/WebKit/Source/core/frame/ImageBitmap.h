@@ -7,8 +7,10 @@
 
 #include "bindings/v8/ScriptWrappable.h"
 #include "core/html/HTMLImageElement.h"
+#include "core/html/canvas/CanvasImageSource.h"
 #include "platform/geometry/IntRect.h"
 #include "platform/graphics/Image.h"
+#include "platform/heap/Handle.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 
@@ -18,27 +20,34 @@ class HTMLCanvasElement;
 class HTMLVideoElement;
 class ImageData;
 
-class ImageBitmap : public RefCounted<ImageBitmap>, public ScriptWrappable, public ImageLoaderClient {
-
+class ImageBitmap FINAL : public RefCountedWillBeGarbageCollectedFinalized<ImageBitmap>, public ScriptWrappable, public ImageLoaderClient, public CanvasImageSource {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(ImageBitmap);
 public:
-    static PassRefPtr<ImageBitmap> create(HTMLImageElement*, const IntRect&);
-    static PassRefPtr<ImageBitmap> create(HTMLVideoElement*, const IntRect&);
-    static PassRefPtr<ImageBitmap> create(HTMLCanvasElement*, const IntRect&);
-    static PassRefPtr<ImageBitmap> create(ImageData*, const IntRect&);
-    static PassRefPtr<ImageBitmap> create(ImageBitmap*, const IntRect&);
-    static PassRefPtr<ImageBitmap> create(Image*, const IntRect&);
+    static PassRefPtrWillBeRawPtr<ImageBitmap> create(HTMLImageElement*, const IntRect&);
+    static PassRefPtrWillBeRawPtr<ImageBitmap> create(HTMLVideoElement*, const IntRect&);
+    static PassRefPtrWillBeRawPtr<ImageBitmap> create(HTMLCanvasElement*, const IntRect&);
+    static PassRefPtrWillBeRawPtr<ImageBitmap> create(ImageData*, const IntRect&);
+    static PassRefPtrWillBeRawPtr<ImageBitmap> create(ImageBitmap*, const IntRect&);
+    static PassRefPtrWillBeRawPtr<ImageBitmap> create(Image*, const IntRect&);
 
     PassRefPtr<Image> bitmapImage() const;
-    PassRefPtr<HTMLImageElement> imageElement() const { return m_imageElement; }
+    PassRefPtrWillBeRawPtr<HTMLImageElement> imageElement() const { return m_imageElement; }
 
     IntRect bitmapRect() const { return m_bitmapRect; }
-    IntPoint bitmapOffset() const { return m_bitmapOffset; }
 
     int width() const { return m_cropRect.width(); }
     int height() const { return m_cropRect.height(); }
     IntSize size() const { return m_cropRect.size(); }
 
     virtual ~ImageBitmap();
+
+    // CanvasImageSource implementation
+    virtual PassRefPtr<Image> getSourceImageForCanvas(SourceImageMode, SourceImageStatus*) const OVERRIDE;
+    virtual bool wouldTaintOrigin(SecurityOrigin*) const OVERRIDE { return false; };
+    virtual void adjustDrawRects(FloatRect* srcRect, FloatRect* dstRect) const OVERRIDE;
+    virtual FloatSize sourceSize() const OVERRIDE;
+
+    virtual void trace(Visitor*);
 
 private:
     ImageBitmap(HTMLImageElement*, const IntRect&);
@@ -49,12 +58,12 @@ private:
     ImageBitmap(Image*, const IntRect&);
 
     // ImageLoaderClient
-    virtual void notifyImageSourceChanged();
-    virtual bool requestsHighLiveResourceCachePriority() { return true; }
+    virtual void notifyImageSourceChanged() OVERRIDE;
+    virtual bool requestsHighLiveResourceCachePriority() OVERRIDE { return true; }
 
     // ImageBitmaps constructed from HTMLImageElements hold a reference to the HTMLImageElement until
     // the image source changes.
-    RefPtr<HTMLImageElement> m_imageElement;
+    RefPtrWillBeMember<HTMLImageElement> m_imageElement;
     RefPtr<Image> m_bitmap;
 
     IntRect m_bitmapRect; // The rect where the underlying Image should be placed in reference to the ImageBitmap.

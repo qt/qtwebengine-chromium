@@ -28,118 +28,71 @@
 #define TextControlInnerElements_h
 
 #include "core/html/HTMLDivElement.h"
-#include "core/speech/SpeechInputListener.h"
 #include "wtf/Forward.h"
 
 namespace WebCore {
 
-class SpeechInput;
-
 class TextControlInnerContainer FINAL : public HTMLDivElement {
 public:
-    static PassRefPtr<TextControlInnerContainer> create(Document&);
+    static PassRefPtrWillBeRawPtr<TextControlInnerContainer> create(Document&);
+
 protected:
-    TextControlInnerContainer(Document&);
-    virtual RenderObject* createRenderer(RenderStyle*);
+    explicit TextControlInnerContainer(Document&);
+    virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
 };
 
 class EditingViewPortElement FINAL : public HTMLDivElement {
 public:
-    static PassRefPtr<EditingViewPortElement> create(Document&);
+    static PassRefPtrWillBeRawPtr<EditingViewPortElement> create(Document&);
 
 protected:
-    EditingViewPortElement(Document&);
+    explicit EditingViewPortElement(Document&);
     virtual PassRefPtr<RenderStyle> customStyleForRenderer() OVERRIDE;
 
 private:
     virtual bool supportsFocus() const OVERRIDE { return false; }
 };
 
-class TextControlInnerTextElement FINAL : public HTMLDivElement {
+class TextControlInnerEditorElement FINAL : public HTMLDivElement {
 public:
-    static PassRefPtr<TextControlInnerTextElement> create(Document&);
+    static PassRefPtrWillBeRawPtr<TextControlInnerEditorElement> create(Document&);
 
-    virtual void defaultEventHandler(Event*);
+    virtual void defaultEventHandler(Event*) OVERRIDE;
 
 private:
-    TextControlInnerTextElement(Document&);
-    virtual RenderObject* createRenderer(RenderStyle*);
+    explicit TextControlInnerEditorElement(Document&);
+    virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
     virtual PassRefPtr<RenderStyle> customStyleForRenderer() OVERRIDE;
     virtual bool supportsFocus() const OVERRIDE { return false; }
 };
 
 class SearchFieldDecorationElement FINAL : public HTMLDivElement {
 public:
-    static PassRefPtr<SearchFieldDecorationElement> create(Document&);
+    static PassRefPtrWillBeRawPtr<SearchFieldDecorationElement> create(Document&);
 
-    virtual void defaultEventHandler(Event*);
+    virtual void defaultEventHandler(Event*) OVERRIDE;
     virtual bool willRespondToMouseClickEvents() OVERRIDE;
 
 private:
-    SearchFieldDecorationElement(Document&);
-    virtual const AtomicString& pseudo() const OVERRIDE;
+    explicit SearchFieldDecorationElement(Document&);
+    virtual const AtomicString& shadowPseudoId() const OVERRIDE;
     virtual bool supportsFocus() const OVERRIDE { return false; }
 };
 
 class SearchFieldCancelButtonElement FINAL : public HTMLDivElement {
 public:
-    static PassRefPtr<SearchFieldCancelButtonElement> create(Document&);
+    static PassRefPtrWillBeRawPtr<SearchFieldCancelButtonElement> create(Document&);
 
-    virtual void defaultEventHandler(Event*);
+    virtual void defaultEventHandler(Event*) OVERRIDE;
     virtual bool willRespondToMouseClickEvents() OVERRIDE;
 
 private:
-    SearchFieldCancelButtonElement(Document&);
+    explicit SearchFieldCancelButtonElement(Document&);
     virtual void detach(const AttachContext& = AttachContext()) OVERRIDE;
     virtual bool supportsFocus() const OVERRIDE { return false; }
 
     bool m_capturing;
 };
-
-#if ENABLE(INPUT_SPEECH)
-
-class InputFieldSpeechButtonElement FINAL
-    : public HTMLDivElement,
-      public SpeechInputListener {
-public:
-    enum SpeechInputState {
-        Idle,
-        Recording,
-        Recognizing,
-    };
-
-    static PassRefPtr<InputFieldSpeechButtonElement> create(Document&);
-    virtual ~InputFieldSpeechButtonElement();
-
-    virtual void detach(const AttachContext& = AttachContext()) OVERRIDE;
-    virtual void defaultEventHandler(Event*);
-    virtual bool willRespondToMouseClickEvents();
-    virtual bool isInputFieldSpeechButtonElement() const { return true; }
-    SpeechInputState state() const { return m_state; }
-    void startSpeechInput();
-    void stopSpeechInput();
-
-    // SpeechInputListener methods.
-    void didCompleteRecording(int);
-    void didCompleteRecognition(int);
-    void setRecognitionResult(int, const SpeechInputResultArray&);
-
-private:
-    InputFieldSpeechButtonElement(Document&);
-    SpeechInput* speechInput();
-    void setState(SpeechInputState state);
-    virtual bool isMouseFocusable() const { return false; }
-    virtual void attach(const AttachContext& = AttachContext()) OVERRIDE;
-
-    bool m_capturing;
-    SpeechInputState m_state;
-    int m_listenerId;
-    SpeechInputResultArray m_results;
-};
-
-DEFINE_TYPE_CASTS(InputFieldSpeechButtonElement, Element, element, element->isInputFieldSpeechButtonElement(), element.isInputFieldSpeechButtonElement());
-
-#endif // ENABLE(INPUT_SPEECH)
 
 } // namespace
 

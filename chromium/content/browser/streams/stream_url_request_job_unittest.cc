@@ -51,7 +51,7 @@ class StreamURLRequestJobTest : public testing::Test {
     StreamRegistry* registry_;
   };
 
-  StreamURLRequestJobTest() : message_loop_(base::MessageLoop::TYPE_IO) {}
+  StreamURLRequestJobTest() {}
 
   virtual void SetUp() {
     registry_.reset(new StreamRegistry());
@@ -76,7 +76,7 @@ class StreamURLRequestJobTest : public testing::Test {
                    const std::string& expected_response) {
     net::TestDelegate delegate;
     request_ = url_request_context_.CreateRequest(
-        url, net::DEFAULT_PRIORITY, &delegate);
+        url, net::DEFAULT_PRIORITY, &delegate, NULL);
     request_->set_method(method);
     if (!extra_headers.IsEmpty())
       request_->SetExtraRequestHeaders(extra_headers);
@@ -93,7 +93,7 @@ class StreamURLRequestJobTest : public testing::Test {
   }
 
  protected:
-  base::MessageLoop message_loop_;
+  base::MessageLoopForIO message_loop_;
   scoped_ptr<StreamRegistry> registry_;
 
   net::URLRequestContext url_request_context_;
@@ -134,7 +134,7 @@ TEST_F(StreamURLRequestJobTest, TestGetLargeStreamRequest) {
 TEST_F(StreamURLRequestJobTest, TestGetNonExistentStreamRequest) {
   net::TestDelegate delegate;
   request_ = url_request_context_.CreateRequest(
-      kStreamURL, net::DEFAULT_PRIORITY, &delegate);
+      kStreamURL, net::DEFAULT_PRIORITY, &delegate, NULL);
   request_->set_method("GET");
   request_->Start();
 

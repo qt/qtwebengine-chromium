@@ -10,6 +10,7 @@
 #include "base/sys_info.h"
 #include "ui/gl/gl_bindings.h"
 #include "ui/gl/gl_context_egl.h"
+#include "ui/gl/gl_context_osmesa.h"
 #include "ui/gl/gl_context_stub.h"
 #include "ui/gl/gl_implementation.h"
 #include "ui/gl/gl_surface.h"
@@ -75,16 +76,24 @@ scoped_refptr<GLContext> GLContext::CreateGLContext(
     GLShareGroup* share_group,
     GLSurface* compatible_surface,
     GpuPreference gpu_preference) {
-  if (GetGLImplementation() == kGLImplementationMockGL)
-    return scoped_refptr<GLContext>(new GLContextStub());
-
   scoped_refptr<GLContext> context;
-  if (compatible_surface->GetHandle())
-    context = new GLContextEGL(share_group);
-  else
-    context = new GLNonOwnedContext(share_group);
+  switch (GetGLImplementation()) {
+    case kGLImplementationMockGL:
+      return scoped_refptr<GLContext>(new GLContextStub());
+    case kGLImplementationOSMesaGL:
+      context = new GLContextOSMesa(share_group);
+      break;
+    default:
+      if (compatible_surface->GetHandle())
+        context = new GLContextEGL(share_group);
+      else
+        context = new GLNonOwnedContext(share_group);
+      break;
+  }
+
   if (!context->Initialize(compatible_surface, gpu_preference))
     return NULL;
+
   return context;
 }
 
@@ -108,27 +117,33 @@ bool GLContextEGL::GetTotalGpuMemory(size_t* bytes) {
   // Now we take a default of 1/8th of memory on high-memory devices,
   // and gradually scale that back for low-memory devices (to be nicer
   // to other apps so they don't get killed). Examples:
-  // Nexus 4/10(2GB)    256MB
-  // Droid Razr M(1GB)  91MB
-  // Galaxy Nexus(1GB)  85MB
-  // Xoom(1GB)          85MB
-  // Nexus S(low-end)   8MB
+  // Nexus 4/10(2GB)    256MB (normally 128MB)
+  // Droid Razr M(1GB)  114MB (normally 57MB)
+  // Galaxy Nexus(1GB)  100MB (normally 50MB)
+  // Xoom(1GB)          100MB (normally 50MB)
+  // Nexus S(low-end)   12MB (normally 8MB)
+  // Note that the compositor now uses only some of this memory for
+  // pre-painting and uses the rest only for 'emergencies'.
   static size_t limit_bytes = 0;
   if (limit_bytes == 0) {
+    // NOTE: Non-low-end devices use only 50% of these limits,
+    // except during 'emergencies' where 100% can be used.
     if (!base::android::SysUtils::IsLowEndDevice()) {
       if (physical_memory_mb >= 1536)
-        limit_bytes = physical_memory_mb / 8;
+        limit_bytes = physical_memory_mb / 8; // >192MB
       else if (physical_memory_mb >= 1152)
-        limit_bytes = physical_memory_mb / 10;
+        limit_bytes = physical_memory_mb / 8; // >144MB
       else if (physical_memory_mb >= 768)
-        limit_bytes = physical_memory_mb / 12;
+        limit_bytes = physical_memory_mb / 10; // >76MB
       else
-        limit_bytes = physical_memory_mb / 16;
+        limit_bytes = physical_memory_mb / 12; // <64MB
     } else {
       // Low-end devices have 512MB or less memory by definition
       // so we hard code the limit rather than relying on the heuristics
       // above. Low-end devices use 4444 textures so we can use a lower limit.
-      limit_bytes = 8;
+      // NOTE: Low-end uses 2/3 (67%) of this memory in practice, so we have
+      // increased the limit to 12 (8MB, or 12MB in emergencies).
+      limit_bytes = 12;
     }
     limit_bytes = limit_bytes * 1024 * 1024;
   }

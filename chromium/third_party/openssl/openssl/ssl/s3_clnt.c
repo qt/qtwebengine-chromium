@@ -557,7 +557,8 @@ int ssl3_connect(SSL *s)
 				}
 			else
 				{
-				if ((SSL_get_mode(s) & SSL_MODE_HANDSHAKE_CUTTHROUGH) && SSL_get_cipher_bits(s, NULL) >= 128
+				if ((SSL_get_mode(s) & SSL_MODE_HANDSHAKE_CUTTHROUGH)
+				    && ssl3_can_cutthrough(s)
 				    && s->s3->previous_server_finished_len == 0 /* no cutthrough on renegotiation (would complicate the state machine) */
 				   )
 					{
@@ -581,6 +582,18 @@ int ssl3_connect(SSL *s)
 					else
 #endif
 						s->s3->tmp.next_state=SSL3_ST_CR_FINISHED_A;
+					}
+					if (s->s3->tlsext_channel_id_valid)
+					{
+					/* This is a non-resumption handshake. If it
+					 * involves ChannelID, then record the
+					 * handshake hashes at this point in the
+					 * session so that any resumption of this
+					 * session with ChannelID can sign those
+					 * hashes. */
+					ret = tls1_record_handshake_hashes_for_channel_id(s);
+					if (ret <= 0)
+						goto end;
 					}
 				}
 			s->init_num=0;
@@ -607,6 +620,7 @@ int ssl3_connect(SSL *s)
 		case SSL3_ST_CR_FINISHED_A:
 		case SSL3_ST_CR_FINISHED_B:
 
+			s->s3->flags |= SSL3_FLAGS_CCS_OK;
 			ret=ssl3_get_finished(s,SSL3_ST_CR_FINISHED_A,
 				SSL3_ST_CR_FINISHED_B);
 			if (ret <= 0) goto end;
@@ -757,7 +771,9 @@ int ssl3_client_hello(SSL *s)
 		if (RAND_pseudo_bytes(p,SSL3_RANDOM_SIZE-4) <= 0)
 			goto err;
 
-		/* Do the message type and length last */
+		/* Do the message type and length last.
+		 * Note: the final argument to ssl_add_clienthello_tlsext below
+		 * depends on the size of this prefix. */
 		d=p= &(buf[4]);
 
 		/* version indicates the negotiated version: for example from
@@ -864,7 +880,7 @@ int ssl3_client_hello(SSL *s)
 			SSLerr(SSL_F_SSL3_CLIENT_HELLO,SSL_R_CLIENTHELLO_TLSEXT);
 			goto err;
 			}
-		if ((p = ssl_add_clienthello_tlsext(s, p, buf+SSL3_RT_MAX_PLAIN_LENGTH)) == NULL)
+		if ((p = ssl_add_clienthello_tlsext(s, p, buf+SSL3_RT_MAX_PLAIN_LENGTH, p-buf)) == NULL)
 			{
 			SSLerr(SSL_F_SSL3_CLIENT_HELLO,ERR_R_INTERNAL_ERROR);
 			goto err;
@@ -988,6 +1004,7 @@ int ssl3_get_server_hello(SSL *s)
 		SSLerr(SSL_F_SSL3_GET_SERVER_HELLO,SSL_R_ATTEMPT_TO_REUSE_SESSION_IN_DIFFERENT_CONTEXT);
 		goto f_err;
 		}
+	    s->s3->flags |= SSL3_FLAGS_CCS_OK;
 	    s->hit=1;
 	    }
 	else	/* a miss or crap from the other end */
@@ -2589,6 +2606,13 @@ int ssl3_send_client_key_exchange(SSL *s)
 			int ecdh_clnt_cert = 0;
 			int field_size = 0;
 
+			if (s->session->sess_cert == NULL) 
+				{
+				ssl3_send_alert(s,SSL3_AL_FATAL,SSL_AD_UNEXPECTED_MESSAGE);
+				SSLerr(SSL_F_SSL3_SEND_CLIENT_KEY_EXCHANGE,SSL_R_UNEXPECTED_MESSAGE);
+				goto err;
+				}
+
 			/* Did we send out the client's
 			 * ECDH share for use in premaster
 			 * computation as part of client certificate?
@@ -3007,33 +3031,18 @@ int ssl3_send_client_verify(SSL *s)
 	unsigned char *p,*d;
 	unsigned char data[MD5_DIGEST_LENGTH+SHA_DIGEST_LENGTH];
 	EVP_PKEY *pkey;
-	EVP_PKEY_CTX *pctx=NULL;
+	EVP_PKEY_CTX *pctx = NULL;
 	EVP_MD_CTX mctx;
-	unsigned u=0;
+	unsigned signature_length = 0;
 	unsigned long n;
-	int j;
 
 	EVP_MD_CTX_init(&mctx);
 
 	if (s->state == SSL3_ST_CW_CERT_VRFY_A)
 		{
-		d=(unsigned char *)s->init_buf->data;
-		p= &(d[4]);
-		pkey=s->cert->key->privatekey;
-/* Create context from key and test if sha1 is allowed as digest */
-		pctx = EVP_PKEY_CTX_new(pkey,NULL);
-		EVP_PKEY_sign_init(pctx);
-		if (EVP_PKEY_CTX_set_signature_md(pctx, EVP_sha1())>0)
-			{
-			if (TLS1_get_version(s) < TLS1_2_VERSION)
-				s->method->ssl3_enc->cert_verify_mac(s,
-						NID_sha1,
-						&(data[MD5_DIGEST_LENGTH]));
-			}
-		else
-			{
-			ERR_clear_error();
-			}
+		d = (unsigned char *)s->init_buf->data;
+		p = &(d[4]);
+		pkey = s->cert->key->privatekey;
 		/* For TLS v1.2 send signature algorithm and signature
 		 * using agreed digest and cached handshake records.
 		 */
@@ -3057,14 +3066,15 @@ int ssl3_send_client_verify(SSL *s)
 #endif
 			if (!EVP_SignInit_ex(&mctx, md, NULL)
 				|| !EVP_SignUpdate(&mctx, hdata, hdatalen)
-				|| !EVP_SignFinal(&mctx, p + 2, &u, pkey))
+				|| !EVP_SignFinal(&mctx, p + 2,
+					&signature_length, pkey))
 				{
 				SSLerr(SSL_F_SSL3_SEND_CLIENT_VERIFY,
 						ERR_R_EVP_LIB);
 				goto err;
 				}
-			s2n(u,p);
-			n = u + 4;
+			s2n(signature_length, p);
+			n = signature_length + 4;
 			if (!ssl3_digest_cached_records(s))
 				goto err;
 			}
@@ -3072,78 +3082,80 @@ int ssl3_send_client_verify(SSL *s)
 #ifndef OPENSSL_NO_RSA
 		if (pkey->type == EVP_PKEY_RSA)
 			{
+			s->method->ssl3_enc->cert_verify_mac(s, NID_md5, data);
 			s->method->ssl3_enc->cert_verify_mac(s,
-				NID_md5,
-			 	&(data[0]));
+				NID_sha1, &(data[MD5_DIGEST_LENGTH]));
 			if (RSA_sign(NID_md5_sha1, data,
-					 MD5_DIGEST_LENGTH+SHA_DIGEST_LENGTH,
-					&(p[2]), &u, pkey->pkey.rsa) <= 0 )
+					MD5_DIGEST_LENGTH + SHA_DIGEST_LENGTH,
+					&(p[2]), &signature_length, pkey->pkey.rsa) <= 0)
 				{
-				SSLerr(SSL_F_SSL3_SEND_CLIENT_VERIFY,ERR_R_RSA_LIB);
+				SSLerr(SSL_F_SSL3_SEND_CLIENT_VERIFY, ERR_R_RSA_LIB);
 				goto err;
 				}
-			s2n(u,p);
-			n=u+2;
+			s2n(signature_length, p);
+			n = signature_length + 2;
 			}
 		else
 #endif
 #ifndef OPENSSL_NO_DSA
-			if (pkey->type == EVP_PKEY_DSA)
+		if (pkey->type == EVP_PKEY_DSA)
 			{
-			if (!DSA_sign(pkey->save_type,
-				&(data[MD5_DIGEST_LENGTH]),
-				SHA_DIGEST_LENGTH,&(p[2]),
-				(unsigned int *)&j,pkey->pkey.dsa))
+			s->method->ssl3_enc->cert_verify_mac(s, NID_sha1, data);
+			if (!DSA_sign(pkey->save_type, data,
+					SHA_DIGEST_LENGTH, &(p[2]),
+					&signature_length, pkey->pkey.dsa))
 				{
-				SSLerr(SSL_F_SSL3_SEND_CLIENT_VERIFY,ERR_R_DSA_LIB);
+				SSLerr(SSL_F_SSL3_SEND_CLIENT_VERIFY, ERR_R_DSA_LIB);
 				goto err;
 				}
-			s2n(j,p);
-			n=j+2;
+			s2n(signature_length, p);
+			n = signature_length + 2;
 			}
 		else
 #endif
 #ifndef OPENSSL_NO_ECDSA
-			if (pkey->type == EVP_PKEY_EC)
+		if (pkey->type == EVP_PKEY_EC)
 			{
-			if (!ECDSA_sign(pkey->save_type,
-				&(data[MD5_DIGEST_LENGTH]),
-				SHA_DIGEST_LENGTH,&(p[2]),
-				(unsigned int *)&j,pkey->pkey.ec))
+			s->method->ssl3_enc->cert_verify_mac(s, NID_sha1, data);
+			if (!ECDSA_sign(pkey->save_type, data,
+					SHA_DIGEST_LENGTH, &(p[2]),
+					&signature_length, pkey->pkey.ec))
 				{
-				SSLerr(SSL_F_SSL3_SEND_CLIENT_VERIFY,
-				    ERR_R_ECDSA_LIB);
+				SSLerr(SSL_F_SSL3_SEND_CLIENT_VERIFY, ERR_R_ECDSA_LIB);
 				goto err;
 				}
-			s2n(j,p);
-			n=j+2;
+			s2n(signature_length, p);
+			n = signature_length + 2;
 			}
 		else
 #endif
 		if (pkey->type == NID_id_GostR3410_94 || pkey->type == NID_id_GostR3410_2001) 
-		{
-		unsigned char signbuf[64];
-		int i;
-		size_t sigsize=64;
-		s->method->ssl3_enc->cert_verify_mac(s,
-			NID_id_GostR3411_94,
-			data);
-		if (EVP_PKEY_sign(pctx, signbuf, &sigsize, data, 32) <= 0) {
-			SSLerr(SSL_F_SSL3_SEND_CLIENT_VERIFY,
-			ERR_R_INTERNAL_ERROR);
-			goto err;
-		}
-		for (i=63,j=0; i>=0; j++, i--) {
-			p[2+j]=signbuf[i];
-		}	
-		s2n(j,p);
-		n=j+2;
-		}
+			{
+			unsigned char signbuf[64];
+			int i, j;
+			size_t sigsize=64;
+
+			s->method->ssl3_enc->cert_verify_mac(s,
+				NID_id_GostR3411_94,
+				data);
+			pctx = EVP_PKEY_CTX_new(pkey, NULL);
+			EVP_PKEY_sign_init(pctx);
+			if (EVP_PKEY_sign(pctx, signbuf, &sigsize, data, 32) <= 0) {
+				SSLerr(SSL_F_SSL3_SEND_CLIENT_VERIFY,
+					ERR_R_INTERNAL_ERROR);
+				goto err;
+			}
+			for (i=63,j=0; i>=0; j++, i--) {
+				p[2+j]=signbuf[i];
+			}
+			s2n(j,p);
+			n=j+2;
+			}
 		else
-		{
+			{
 			SSLerr(SSL_F_SSL3_SEND_CLIENT_VERIFY,ERR_R_INTERNAL_ERROR);
 			goto err;
-		}
+			}
 		*(d++)=SSL3_MT_CERTIFICATE_VERIFY;
 		l2n3(n,d);
 

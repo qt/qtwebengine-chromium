@@ -7,6 +7,7 @@
 
 #include <deque>
 #include <map>
+#include <queue>
 
 #include "content/browser/renderer_host/render_widget_host_view_aura.h"
 #include "ui/aura/window_observer.h"
@@ -42,7 +43,7 @@ class CONTENT_EXPORT TouchEditableImplAura
 
   // Overridden from RenderWidgetHostViewAura::TouchEditingClient.
   virtual void StartTouchEditing() OVERRIDE;
-  virtual void EndTouchEditing() OVERRIDE;
+  virtual void EndTouchEditing(bool quick) OVERRIDE;
   virtual void OnSelectionOrCursorChanged(const gfx::Rect& anchor,
                                           const gfx::Rect& focus) OVERRIDE;
   virtual void OnTextInputTypeChanged(ui::TextInputType type) OVERRIDE;
@@ -56,7 +57,7 @@ class CONTENT_EXPORT TouchEditableImplAura
   virtual void MoveCaretTo(const gfx::Point& point) OVERRIDE;
   virtual void GetSelectionEndPoints(gfx::Rect* p1, gfx::Rect* p2) OVERRIDE;
   virtual gfx::Rect GetBounds() OVERRIDE;
-  virtual gfx::NativeView GetNativeView() OVERRIDE;
+  virtual gfx::NativeView GetNativeView() const OVERRIDE;
   virtual void ConvertPointToScreen(gfx::Point* point) OVERRIDE;
   virtual void ConvertPointFromScreen(gfx::Point* point) OVERRIDE;
   virtual bool DrawsHandles() OVERRIDE;
@@ -67,6 +68,7 @@ class CONTENT_EXPORT TouchEditableImplAura
       int command_id,
       ui::Accelerator* accelerator) OVERRIDE;
   virtual void ExecuteCommand(int command_id, int event_flags) OVERRIDE;
+  virtual void DestroyTouchSelection() OVERRIDE;
 
  protected:
   TouchEditableImplAura();
@@ -100,14 +102,9 @@ class CONTENT_EXPORT TouchEditableImplAura
   // Set to true when the page starts an overscroll.
   bool overscroll_in_progress_;
 
-  // Used to track if the current tap gesture is on a focused textfield.
-  bool is_tap_on_focused_textfield_;
-
-  // When we receive ack for a ET_GESTURE_TAP, we do not know if the ack is for
-  // a tap or a double tap (we only get the event type in the ack). So we have
-  // this queue to keep track of the the tap count so that we can distinguish
-  // between double and single tap when we get the ack.
-  std::queue<int> tap_gesture_tap_count_queue_;
+  // Used to track if a textfield was focused when the current tap gesture
+  // happened.
+  bool textfield_was_focused_on_tap_;
 
   DISALLOW_COPY_AND_ASSIGN(TouchEditableImplAura);
 };

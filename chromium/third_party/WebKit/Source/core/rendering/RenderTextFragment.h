@@ -37,7 +37,7 @@ public:
     RenderTextFragment(Node*, StringImpl*);
     virtual ~RenderTextFragment();
 
-    virtual bool isTextFragment() const { return true; }
+    virtual bool isTextFragment() const OVERRIDE { return true; }
 
     virtual bool canBeSelectionLeaf() const OVERRIDE { return node() && node()->rendererIsEditable(); }
 
@@ -45,31 +45,31 @@ public:
     unsigned end() const { return m_end; }
     virtual unsigned textStartOffset() const OVERRIDE { return start(); }
 
-    RenderObject* firstLetter() const { return m_firstLetter; }
-    void setFirstLetter(RenderObject* firstLetter) { m_firstLetter = firstLetter; }
+    RenderBoxModelObject* firstLetter() const { return m_firstLetter; }
+    void setFirstLetter(RenderBoxModelObject* firstLetter) { m_firstLetter = firstLetter; }
     RenderText* firstRenderTextInFirstLetter() const;
 
     StringImpl* contentString() const { return m_contentString.get(); }
-    virtual PassRefPtr<StringImpl> originalText() const;
+    virtual PassRefPtr<StringImpl> originalText() const OVERRIDE;
 
     virtual void setText(PassRefPtr<StringImpl>, bool force = false) OVERRIDE;
 
     virtual void transformText() OVERRIDE;
 
 protected:
-    virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle);
+    virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle) OVERRIDE;
 
 private:
-    virtual void willBeDestroyed();
+    virtual void willBeDestroyed() OVERRIDE;
 
-    virtual UChar previousCharacter() const;
+    virtual UChar previousCharacter() const OVERRIDE;
     RenderBlock* blockForAccompanyingFirstLetter() const;
     virtual void updateHitTestResult(HitTestResult&, const LayoutPoint&) OVERRIDE;
 
     unsigned m_start;
     unsigned m_end;
     RefPtr<StringImpl> m_contentString;
-    RenderObject* m_firstLetter;
+    RenderBoxModelObject* m_firstLetter;
 };
 
 DEFINE_TYPE_CASTS(RenderTextFragment, RenderObject, object, toRenderText(object)->isTextFragment(), toRenderText(object).isTextFragment());

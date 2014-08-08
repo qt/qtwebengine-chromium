@@ -28,7 +28,7 @@ inline void* operator new(size_t, SkTLList<T>* list,
     constructor arguments for type_name. These macros behave like addBefore() and addAfter().
 */
 template <typename T>
-class SkTLList : public SkNoncopyable {
+class SkTLList : SkNoncopyable {
 private:
     struct Block;
     struct Node {
@@ -75,11 +75,29 @@ public:
         return reinterpret_cast<T*>(node->fObj);
     }
 
+    T* addToHead() {
+        this->validate();
+        Node* node = this->createNode();
+        fList.addToHead(node);
+        SkNEW_PLACEMENT(node->fObj, T);
+        this->validate();
+        return reinterpret_cast<T*>(node->fObj);
+    }
+
     T* addToTail(const T& t) {
         this->validate();
         Node* node = this->createNode();
         fList.addToTail(node);
         SkNEW_PLACEMENT_ARGS(node->fObj, T, (t));
+        this->validate();
+        return reinterpret_cast<T*>(node->fObj);
+    }
+
+    T* addToTail() {
+        this->validate();
+        Node* node = this->createNode();
+        fList.addToTail(node);
+        SkNEW_PLACEMENT(node->fObj, T);
         this->validate();
         return reinterpret_cast<T*>(node->fObj);
     }
@@ -180,11 +198,11 @@ public:
 
         Iter() {}
 
-        Iter(const SkTLList& list, IterStart start) {
+        Iter(const SkTLList& list, IterStart start = kHead_IterStart) {
             INHERITED::init(list.fList, start);
         }
 
-        T* init(const SkTLList& list, IterStart start) {
+        T* init(const SkTLList& list, IterStart start = kHead_IterStart) {
             return this->nodeToObj(INHERITED::init(list.fList, start));
         }
 

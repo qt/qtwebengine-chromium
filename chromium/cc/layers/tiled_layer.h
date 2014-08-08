@@ -35,7 +35,7 @@ class CC_EXPORT TiledLayer : public ContentsScalingLayer {
       OVERRIDE;
   virtual Region VisibleContentOpaqueRegion() const OVERRIDE;
   virtual bool Update(ResourceUpdateQueue* queue,
-                      const OcclusionTracker* occlusion) OVERRIDE;
+                      const OcclusionTracker<Layer>* occlusion) OVERRIDE;
   virtual void OnOutputSurfaceCreated() OVERRIDE;
 
  protected:
@@ -46,7 +46,7 @@ class CC_EXPORT TiledLayer : public ContentsScalingLayer {
   void UpdateBounds();
 
   // Exposed to subclasses for testing.
-  void SetTileSize(gfx::Size size);
+  void SetTileSize(const gfx::Size& size);
   void SetTextureFormat(ResourceFormat texture_format) {
     texture_format_ = texture_format;
   }
@@ -57,7 +57,7 @@ class CC_EXPORT TiledLayer : public ContentsScalingLayer {
   virtual void CreateUpdaterIfNeeded() = 0;
 
   // Set invalidations to be potentially repainted during Update().
-  void InvalidateContentRect(gfx::Rect content_rect);
+  void InvalidateContentRect(const gfx::Rect& content_rect);
 
   // Reset state on tiles that will be used for updating the layer.
   void ResetUpdateState();
@@ -85,18 +85,19 @@ class CC_EXPORT TiledLayer : public ContentsScalingLayer {
   bool TileOnlyNeedsPartialUpdate(UpdatableTile* tile);
   bool TileNeedsBufferedUpdate(UpdatableTile* tile);
 
-  void MarkOcclusionsAndRequestTextures(int left,
-                                        int top,
-                                        int right,
-                                        int bottom,
-                                        const OcclusionTracker* occlusion);
+  void MarkOcclusionsAndRequestTextures(
+      int left,
+      int top,
+      int right,
+      int bottom,
+      const OcclusionTracker<Layer>* occlusion);
 
   bool UpdateTiles(int left,
                    int top,
                    int right,
                    int bottom,
                    ResourceUpdateQueue* queue,
-                   const OcclusionTracker* occlusion,
+                   const OcclusionTracker<Layer>* occlusion,
                    bool* did_paint);
   bool HaveTexturesForTiles(int left,
                             int top,
@@ -110,14 +111,14 @@ class CC_EXPORT TiledLayer : public ContentsScalingLayer {
                           int right,
                           int bottom,
                           bool ignore_occlusions);
-  void UpdateTileTextures(gfx::Rect update_rect,
-                          gfx::Rect paint_rect,
+  void UpdateTileTextures(const gfx::Rect& update_rect,
+                          const gfx::Rect& paint_rect,
                           int left,
                           int top,
                           int right,
                           int bottom,
                           ResourceUpdateQueue* queue,
-                          const OcclusionTracker* occlusion);
+                          const OcclusionTracker<Layer>* occlusion);
   void UpdateScrollPrediction();
 
   UpdatableTile* TileAt(int i, int j) const;

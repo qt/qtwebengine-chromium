@@ -31,12 +31,6 @@
 #include "dbus/object_proxy.h"
 #include "ui/gfx/x/x11_types.h"
 
-#if defined(TOOLKIT_GTK)
-#include "base/message_loop/message_pump_gtk.h"
-#else
-#include "base/message_loop/message_pump_x11.h"
-#endif
-
 namespace {
 
 enum DBusAPI {
@@ -299,7 +293,7 @@ void PowerSaveBlockerImpl::Delegate::RemoveBlock(DBusAPI api) {
 
 // static
 bool PowerSaveBlockerImpl::Delegate::DPMSEnabled() {
-  XDisplay* display = base::MessagePumpForUI::GetDefaultXDisplay();
+  XDisplay* display = gfx::GetXDisplay();
   BOOL enabled = false;
   int dummy;
   if (DPMSQueryExtension(display, &dummy, &dummy) && DPMSCapable(display)) {

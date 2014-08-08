@@ -5,17 +5,18 @@
 #ifndef UI_VIEWS_WIDGET_DESKTOP_FOCUS_RULES_H_
 #define UI_VIEWS_WIDGET_DESKTOP_FOCUS_RULES_H_
 
-#include "ui/views/corewm/base_focus_rules.h"
+#include "ui/wm/core/base_focus_rules.h"
 
 namespace views {
 
-class DesktopFocusRules : public corewm::BaseFocusRules {
+class DesktopFocusRules : public wm::BaseFocusRules {
  public:
   explicit DesktopFocusRules(aura::Window* content_window);
   virtual ~DesktopFocusRules();
 
  private:
-  // Overridden from corewm::BaseFocusRules:
+  // Overridden from wm::BaseFocusRules:
+  virtual bool CanActivateWindow(aura::Window* window) const OVERRIDE;
   virtual bool SupportsChildActivation(aura::Window* window) const OVERRIDE;
   virtual bool IsWindowConsideredVisibleForActivation(
       aura::Window* window) const OVERRIDE;

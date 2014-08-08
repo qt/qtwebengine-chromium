@@ -30,16 +30,16 @@
 #include "config.h"
 #include "platform/fonts/FontCache.h"
 
-#include "FontFamilyNames.h"
+#include "platform/FontFamilyNames.h"
 
-#include "RuntimeEnabledFeatures.h"
+#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/fonts/AlternateFontFamily.h"
+#include "platform/fonts/FontCacheClient.h"
 #include "platform/fonts/FontCacheKey.h"
 #include "platform/fonts/FontDataCache.h"
 #include "platform/fonts/FontDescription.h"
 #include "platform/fonts/FontFallbackList.h"
 #include "platform/fonts/FontPlatformData.h"
-#include "platform/fonts/FontSelector.h"
 #include "platform/fonts/FontSmoothingMode.h"
 #include "platform/fonts/TextRenderingMode.h"
 #include "platform/fonts/opentype/OpenTypeVerticalData.h"
@@ -53,16 +53,22 @@ using namespace WTF;
 
 namespace WebCore {
 
-#if !OS(WIN) || ENABLE(GDI_FONTS_ON_WINDOWS)
+#if !OS(WIN)
 FontCache::FontCache()
     : m_purgePreventCount(0)
 {
 }
-#endif // !OS(WIN) || ENABLE(GDI_FONTS_ON_WINDOWS)
+#endif // !OS(WIN)
 
 typedef HashMap<FontCacheKey, OwnPtr<FontPlatformData>, FontCacheKeyHash, FontCacheKeyTraits> FontPlatformDataCache;
 
 static FontPlatformDataCache* gFontPlatformDataCache = 0;
+
+#if OS(WIN)
+bool FontCache::s_useDirectWrite = false;
+IDWriteFactory* FontCache::s_directWriteFactory = 0;
+bool FontCache::s_useSubpixelPositioning = false;
+#endif // OS(WIN)
 
 FontCache* FontCache::fontCache()
 {
@@ -145,7 +151,7 @@ PassRefPtr<SimpleFontData> FontCache::getFontData(const FontDescription& fontDes
     if (FontPlatformData* platformData = getFontPlatformData(fontDescription, adjustFamilyNameToAvoidUnsupportedFonts(family), checkingAlternateName))
         return fontDataFromFontPlatformData(platformData, shouldRetain);
 
-    return 0;
+    return nullptr;
 }
 
 PassRefPtr<SimpleFontData> FontCache::fontDataFromFontPlatformData(const FontPlatformData* platformData, ShouldRetain shouldRetain)
@@ -153,7 +159,7 @@ PassRefPtr<SimpleFontData> FontCache::fontDataFromFontPlatformData(const FontPla
     if (!gFontDataCache)
         gFontDataCache = new FontDataCache;
 
-#if !ASSERT_DISABLED
+#if ASSERT_ENABLED
     if (shouldRetain == DoNotRetain)
         ASSERT(m_purgePreventCount);
 #endif
@@ -164,7 +170,7 @@ PassRefPtr<SimpleFontData> FontCache::fontDataFromFontPlatformData(const FontPla
 bool FontCache::isPlatformFontAvailable(const FontDescription& fontDescription, const AtomicString& family)
 {
     bool checkingAlternateName = true;
-    return getFontPlatformData(fontDescription, family, checkingAlternateName);
+    return getFontPlatformData(fontDescription, adjustFamilyNameToAvoidUnsupportedFonts(family), checkingAlternateName);
 }
 
 SimpleFontData* FontCache::getNonRetainedLastResortFallbackFont(const FontDescription& fontDescription)
@@ -191,10 +197,7 @@ static inline void purgePlatformFontDataCache()
         if (platformData->value && !gFontDataCache->contains(platformData->value.get()))
             keysToRemove.append(platformData->key);
     }
-
-    size_t keysToRemoveCount = keysToRemove.size();
-    for (size_t i = 0; i < keysToRemoveCount; ++i)
-        gFontPlatformDataCache->remove(keysToRemove[i]);
+    gFontPlatformDataCache->removeAll(keysToRemove);
 }
 
 static inline void purgeFontVerticalDataCache()
@@ -217,8 +220,7 @@ static inline void purgeFontVerticalDataCache()
             if (!verticalData->value || !verticalData->value->inFontCache())
                 keysToRemove.append(verticalData->key);
         }
-        for (size_t i = 0, count = keysToRemove.size(); i < count; ++i)
-            fontVerticalDataCache.take(keysToRemove[i]);
+        fontVerticalDataCache.removeAll(keysToRemove);
     }
 #endif
 }
@@ -237,24 +239,32 @@ void FontCache::purge(PurgeSeverity PurgeSeverity)
     purgeFontVerticalDataCache();
 }
 
-static HashSet<FontSelector*>* gClients;
+static bool invalidateFontCache = false;
 
-void FontCache::addClient(FontSelector* client)
+WillBeHeapHashSet<RawPtrWillBeWeakMember<FontCacheClient> >& fontCacheClients()
 {
-    if (!gClients)
-        gClients = new HashSet<FontSelector*>;
-
-    ASSERT(!gClients->contains(client));
-    gClients->add(client);
+#if ENABLE(OILPAN)
+    DEFINE_STATIC_LOCAL(Persistent<HeapHashSet<WeakMember<FontCacheClient> > >, clients, (new HeapHashSet<WeakMember<FontCacheClient> >()));
+#else
+    DEFINE_STATIC_LOCAL(HashSet<RawPtr<FontCacheClient> >*, clients, (new HashSet<RawPtr<FontCacheClient> >()));
+#endif
+    invalidateFontCache = true;
+    return *clients;
 }
 
-void FontCache::removeClient(FontSelector* client)
+void FontCache::addClient(FontCacheClient* client)
 {
-    ASSERT(gClients);
-    ASSERT(gClients->contains(client));
-
-    gClients->remove(client);
+    ASSERT(!fontCacheClients().contains(client));
+    fontCacheClients().add(client);
 }
+
+#if !ENABLE(OILPAN)
+void FontCache::removeClient(FontCacheClient* client)
+{
+    ASSERT(fontCacheClients().contains(client));
+    fontCacheClients().remove(client);
+}
+#endif
 
 static unsigned short gGeneration = 0;
 
@@ -265,7 +275,7 @@ unsigned short FontCache::generation()
 
 void FontCache::invalidate()
 {
-    if (!gClients) {
+    if (!invalidateFontCache) {
         ASSERT(!gFontPlatformDataCache);
         return;
     }
@@ -277,11 +287,11 @@ void FontCache::invalidate()
 
     gGeneration++;
 
-    Vector<RefPtr<FontSelector> > clients;
-    size_t numClients = gClients->size();
+    WillBeHeapVector<RefPtrWillBeMember<FontCacheClient> > clients;
+    size_t numClients = fontCacheClients().size();
     clients.reserveInitialCapacity(numClients);
-    HashSet<FontSelector*>::iterator end = gClients->end();
-    for (HashSet<FontSelector*>::iterator it = gClients->begin(); it != end; ++it)
+    WillBeHeapHashSet<RawPtrWillBeWeakMember<FontCacheClient> >::iterator end = fontCacheClients().end();
+    for (WillBeHeapHashSet<RawPtrWillBeWeakMember<FontCacheClient> >::iterator it = fontCacheClients().begin(); it != end; ++it)
         clients.append(*it);
 
     ASSERT(numClients == clients.size());

@@ -28,7 +28,6 @@
 
 #include "talk/base/common.h"  // For ASSERT
 #include "talk/base/criticalsection.h"
-#include "talk/base/logging.h"
 #include "talk/base/scoped_ptr.h"
 #include "talk/base/sigslot.h"
 #include "talk/media/base/videocommon.h"
@@ -52,6 +51,8 @@ class VideoAdapter {
   int GetOutputNumPixels() const;
 
   const VideoFormat& input_format();
+  // Returns true if the adapter is dropping frames in calls to AdaptFrame.
+  bool drops_all_frames() const;
   const VideoFormat& output_format();
   // If the parameter black is true, the adapted frames will be black.
   void SetBlackOutput(bool black);
@@ -60,15 +61,15 @@ class VideoAdapter {
   // true and set the output frame to NULL if the input frame is dropped. Return
   // true and set the out frame to output_frame_ if the input frame is adapted
   // successfully. Return false otherwise.
-  // output_frame_ is owned by the VideoAdapter that has the best knowledge on
-  // the output frame.
-  bool AdaptFrame(const VideoFrame* in_frame, VideoFrame** out_frame);
+  // Note that, if no adaptation is required, |out_frame| will refer directly
+  // in_frame. If a copy is always required, the caller must do an explicit
+  // copy.
+  // If a copy has taken place, |output_frame_| is owned by the VideoAdapter
+  // and will remain usable until the adapter is destroyed or AdaptFrame is
+  // called again.
+  bool AdaptFrame(VideoFrame* in_frame, VideoFrame** out_frame);
 
-  void set_scale_third(bool enable) {
-    LOG(LS_INFO) << "Video Adapter third scaling is now "
-                 << (enable ? "enabled" : "disabled");
-    scale_third_ = enable;
-  }
+  void set_scale_third(bool enable);
   bool scale_third() const { return scale_third_; }
 
  protected:
@@ -87,8 +88,9 @@ class VideoAdapter {
   VideoFormat output_format_;
   int output_num_pixels_;
   bool scale_third_;  // True if adapter allows scaling to 1/3 and 2/3.
-  int frames_;  // Number of input frames.
-  int adapted_frames_;  // Number of frames scaled.
+  int frames_in_;  // Number of input frames.
+  int frames_out_;  // Number of output frames.
+  int frames_scaled_;  // Number of frames scaled.
   int adaption_changes_;  // Number of changes in scale factor.
   size_t previous_width_;  // Previous adapter output width.
   size_t previous_height_;  // Previous adapter output height.
@@ -110,6 +112,7 @@ class CoordinatedVideoAdapter
  public:
   enum AdaptRequest { UPGRADE, KEEP, DOWNGRADE };
   enum AdaptReasonEnum {
+    ADAPTREASON_NONE = 0,
     ADAPTREASON_CPU = 1,
     ADAPTREASON_BANDWIDTH = 2,
     ADAPTREASON_VIEW = 4
@@ -127,11 +130,7 @@ class CoordinatedVideoAdapter
   // Enable or disable smoothing when doing CPU adaptation. When smoothing is
   // enabled, system CPU load is tracked using an exponential weighted
   // average.
-  void set_cpu_smoothing(bool enable) {
-    LOG(LS_INFO) << "CPU smoothing is now "
-                 << (enable ? "enabled" : "disabled");
-    cpu_smoothing_ = enable;
-  }
+  void set_cpu_smoothing(bool enable);
   bool cpu_smoothing() const { return cpu_smoothing_; }
   // Enable or disable video adaptation due to the change of the GD
   void set_gd_adaptation(bool enable) { gd_adaptation_ = enable; }
@@ -149,46 +148,16 @@ class CoordinatedVideoAdapter
 
   // When the video is decreased, set the waiting time for CPU adaptation to
   // decrease video again.
-  void set_cpu_adapt_wait_time(uint32 cpu_adapt_wait_time) {
-    if (cpu_adapt_wait_time_ != static_cast<int>(cpu_adapt_wait_time)) {
-      LOG(LS_INFO) << "VAdapt Change Cpu Adapt Wait Time from: "
-                   << cpu_adapt_wait_time_ << " to "
-                   << cpu_adapt_wait_time;
-      cpu_adapt_wait_time_ = static_cast<int>(cpu_adapt_wait_time);
-    }
-  }
+  void set_cpu_load_min_samples(int cpu_load_min_samples);
+  int cpu_load_min_samples() const { return cpu_load_min_samples_; }
   // CPU system load high threshold for reducing resolution.  e.g. 0.85f
-  void set_high_system_threshold(float high_system_threshold) {
-    ASSERT(high_system_threshold <= 1.0f);
-    ASSERT(high_system_threshold >= 0.0f);
-    if (high_system_threshold_ != high_system_threshold) {
-      LOG(LS_INFO) << "VAdapt Change High System Threshold from: "
-                   << high_system_threshold_ << " to " << high_system_threshold;
-      high_system_threshold_ = high_system_threshold;
-    }
-  }
+  void set_high_system_threshold(float high_system_threshold);
   float high_system_threshold() const { return high_system_threshold_; }
   // CPU system load low threshold for increasing resolution.  e.g. 0.70f
-  void set_low_system_threshold(float low_system_threshold) {
-    ASSERT(low_system_threshold <= 1.0f);
-    ASSERT(low_system_threshold >= 0.0f);
-    if (low_system_threshold_ != low_system_threshold) {
-      LOG(LS_INFO) << "VAdapt Change Low System Threshold from: "
-                   << low_system_threshold_ << " to " << low_system_threshold;
-      low_system_threshold_ = low_system_threshold;
-    }
-  }
+  void set_low_system_threshold(float low_system_threshold);
   float low_system_threshold() const { return low_system_threshold_; }
   // CPU process load threshold for reducing resolution.  e.g. 0.10f
-  void set_process_threshold(float process_threshold) {
-    ASSERT(process_threshold <= 1.0f);
-    ASSERT(process_threshold >= 0.0f);
-    if (process_threshold_ != process_threshold) {
-      LOG(LS_INFO) << "VAdapt Change High Process Threshold from: "
-                   << process_threshold_ << " to " << process_threshold;
-      process_threshold_ = process_threshold;
-    }
-  }
+  void set_process_threshold(float process_threshold);
   float process_threshold() const { return process_threshold_; }
 
   // Handle the format request from the server via Jingle update message.
@@ -220,7 +189,8 @@ class CoordinatedVideoAdapter
   bool view_adaptation_;  // True if view adaptation is enabled.
   bool view_switch_;  // True if view switch is enabled.
   int cpu_downgrade_count_;
-  int cpu_adapt_wait_time_;
+  int cpu_load_min_samples_;
+  int cpu_load_num_samples_;
   // cpu system load thresholds relative to max cpus.
   float high_system_threshold_;
   float low_system_threshold_;

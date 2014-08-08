@@ -16,11 +16,6 @@
 #include "gin/arguments.h"
 #include "gin/converter.h"
 #include "gin/gin_export.h"
-#include "gin/handle.h"
-#include "gin/public/gin_embedders.h"
-#include "gin/public/wrapper_info.h"
-#include "gin/wrappable.h"
-
 #include "v8/include/v8.h"
 
 namespace gin {
@@ -50,31 +45,39 @@ struct CallbackParamTraits<const T*> {
 // CallbackHolder and CallbackHolderBase are used to pass a base::Callback from
 // CreateFunctionTemplate through v8 (via v8::FunctionTemplate) to
 // DispatchToCallback, where it is invoked.
-//
-// v8::FunctionTemplate only supports passing void* as data so how do we know
-// when to delete the base::Callback? That's where CallbackHolderBase comes in.
-// It inherits from Wrappable, which delete itself when both (a) the refcount
-// via base::RefCounted has dropped to zero, and (b) there are no more
-// JavaScript references in V8.
 
 // This simple base class is used so that we can share a single object template
 // among every CallbackHolder instance.
-class GIN_EXPORT CallbackHolderBase : public Wrappable<CallbackHolderBase> {
+class GIN_EXPORT CallbackHolderBase {
  public:
-  static WrapperInfo kWrapperInfo;
+  v8::Handle<v8::External> GetHandle(v8::Isolate* isolate);
+
  protected:
-  virtual ~CallbackHolderBase() {}
+  explicit CallbackHolderBase(v8::Isolate* isolate);
+  virtual ~CallbackHolderBase();
+
+ private:
+  static void WeakCallback(
+      const v8::WeakCallbackData<v8::External, CallbackHolderBase>& data);
+
+  v8::Persistent<v8::External> v8_ref_;
+
+  DISALLOW_COPY_AND_ASSIGN(CallbackHolderBase);
 };
 
 template<typename Sig>
 class CallbackHolder : public CallbackHolderBase {
  public:
-  CallbackHolder(const base::Callback<Sig>& callback, int flags)
-      : callback(callback), flags(flags) {}
+  CallbackHolder(v8::Isolate* isolate,
+                 const base::Callback<Sig>& callback,
+                 int flags)
+      : CallbackHolderBase(isolate), callback(callback), flags(flags) {}
   base::Callback<Sig> callback;
   int flags;
  private:
   virtual ~CallbackHolder() {}
+
+  DISALLOW_COPY_AND_ASSIGN(CallbackHolder);
 };
 
 
@@ -86,8 +89,67 @@ class CallbackHolder : public CallbackHolderBase {
 // expression to foo. As a result, we must specialize the case of Callbacks that
 // have the void return type.
 template<typename R, typename P1 = void, typename P2 = void,
-    typename P3 = void, typename P4 = void>
+    typename P3 = void, typename P4 = void, typename P5 = void,
+    typename P6 = void>
 struct Invoker {
+  inline static void Go(
+      Arguments* args,
+      const base::Callback<R(P1, P2, P3, P4, P5, P6)>& callback,
+      const P1& a1,
+      const P2& a2,
+      const P3& a3,
+      const P4& a4,
+      const P5& a5,
+      const P6& a6) {
+    args->Return(callback.Run(a1, a2, a3, a4, a5, a6));
+  }
+};
+template<typename P1, typename P2, typename P3, typename P4, typename P5,
+    typename P6>
+struct Invoker<void, P1, P2, P3, P4, P5, P6> {
+  inline static void Go(
+      Arguments* args,
+      const base::Callback<void(P1, P2, P3, P4, P5, P6)>& callback,
+      const P1& a1,
+      const P2& a2,
+      const P3& a3,
+      const P4& a4,
+      const P5& a5,
+      const P6& a6) {
+    callback.Run(a1, a2, a3, a4, a5, a6);
+  }
+};
+
+template<typename R, typename P1, typename P2, typename P3, typename P4,
+    typename P5>
+struct Invoker<R, P1, P2, P3, P4, P5, void> {
+  inline static void Go(
+      Arguments* args,
+      const base::Callback<R(P1, P2, P3, P4, P5)>& callback,
+      const P1& a1,
+      const P2& a2,
+      const P3& a3,
+      const P4& a4,
+      const P5& a5) {
+    args->Return(callback.Run(a1, a2, a3, a4, a5));
+  }
+};
+template<typename P1, typename P2, typename P3, typename P4, typename P5>
+struct Invoker<void, P1, P2, P3, P4, P5, void> {
+  inline static void Go(
+      Arguments* args,
+      const base::Callback<void(P1, P2, P3, P4, P5)>& callback,
+      const P1& a1,
+      const P2& a2,
+      const P3& a3,
+      const P4& a4,
+      const P5& a5) {
+    callback.Run(a1, a2, a3, a4, a5);
+  }
+};
+
+template<typename R, typename P1, typename P2, typename P3, typename P4>
+struct Invoker<R, P1, P2, P3, P4, void, void> {
   inline static void Go(
       Arguments* args,
       const base::Callback<R(P1, P2, P3, P4)>& callback,
@@ -99,7 +161,7 @@ struct Invoker {
   }
 };
 template<typename P1, typename P2, typename P3, typename P4>
-struct Invoker<void, P1, P2, P3, P4> {
+struct Invoker<void, P1, P2, P3, P4, void, void> {
   inline static void Go(
       Arguments* args,
       const base::Callback<void(P1, P2, P3, P4)>& callback,
@@ -112,7 +174,7 @@ struct Invoker<void, P1, P2, P3, P4> {
 };
 
 template<typename R, typename P1, typename P2, typename P3>
-struct Invoker<R, P1, P2, P3, void> {
+struct Invoker<R, P1, P2, P3, void, void, void> {
   inline static void Go(
       Arguments* args,
       const base::Callback<R(P1, P2, P3)>& callback,
@@ -123,7 +185,7 @@ struct Invoker<R, P1, P2, P3, void> {
   }
 };
 template<typename P1, typename P2, typename P3>
-struct Invoker<void, P1, P2, P3, void> {
+struct Invoker<void, P1, P2, P3, void, void, void> {
   inline static void Go(
       Arguments* args,
       const base::Callback<void(P1, P2, P3)>& callback,
@@ -135,7 +197,7 @@ struct Invoker<void, P1, P2, P3, void> {
 };
 
 template<typename R, typename P1, typename P2>
-struct Invoker<R, P1, P2, void, void> {
+struct Invoker<R, P1, P2, void, void, void, void> {
   inline static void Go(
       Arguments* args,
       const base::Callback<R(P1, P2)>& callback,
@@ -145,7 +207,7 @@ struct Invoker<R, P1, P2, void, void> {
   }
 };
 template<typename P1, typename P2>
-struct Invoker<void, P1, P2, void, void> {
+struct Invoker<void, P1, P2, void, void, void, void> {
   inline static void Go(
       Arguments* args,
       const base::Callback<void(P1, P2)>& callback,
@@ -156,7 +218,7 @@ struct Invoker<void, P1, P2, void, void> {
 };
 
 template<typename R, typename P1>
-struct Invoker<R, P1, void, void, void> {
+struct Invoker<R, P1, void, void, void, void, void> {
   inline static void Go(
       Arguments* args,
       const base::Callback<R(P1)>& callback,
@@ -165,7 +227,7 @@ struct Invoker<R, P1, void, void, void> {
   }
 };
 template<typename P1>
-struct Invoker<void, P1, void, void, void> {
+struct Invoker<void, P1, void, void, void, void, void> {
   inline static void Go(
       Arguments* args,
       const base::Callback<void(P1)>& callback,
@@ -175,7 +237,7 @@ struct Invoker<void, P1, void, void, void> {
 };
 
 template<typename R>
-struct Invoker<R, void, void, void, void> {
+struct Invoker<R, void, void, void, void, void, void> {
   inline static void Go(
       Arguments* args,
       const base::Callback<R()>& callback) {
@@ -183,7 +245,7 @@ struct Invoker<R, void, void, void, void> {
   }
 };
 template<>
-struct Invoker<void, void, void, void, void> {
+struct Invoker<void, void, void, void, void, void, void> {
   inline static void Go(
       Arguments* args,
       const base::Callback<void()>& callback) {
@@ -209,6 +271,18 @@ inline bool GetNextArgument(Arguments* args, int create_flags, bool is_first,
   *result = *args;
   return true;
 }
+inline bool GetNextArgument(Arguments* args, int create_flags, bool is_first,
+                            Arguments** result) {
+  *result = args;
+  return true;
+}
+
+// It's common for clients to just need the isolate, so we make that easy.
+inline bool GetNextArgument(Arguments* args, int create_flags,
+                            bool is_first, v8::Isolate** result) {
+  *result = args->isolate();
+  return true;
+}
 
 
 // DispatchToCallback converts all the JavaScript arguments to C++ types and
@@ -222,8 +296,10 @@ struct Dispatcher<R()> {
   static void DispatchToCallback(
       const v8::FunctionCallbackInfo<v8::Value>& info) {
     Arguments args(info);
-    CallbackHolderBase* holder_base = NULL;
-    CHECK(args.GetData(&holder_base));
+    v8::Handle<v8::External> v8_holder;
+    CHECK(args.GetData(&v8_holder));
+    CallbackHolderBase* holder_base = reinterpret_cast<CallbackHolderBase*>(
+        v8_holder->Value());
 
     typedef CallbackHolder<R()> HolderT;
     HolderT* holder = static_cast<HolderT*>(holder_base);
@@ -237,8 +313,10 @@ struct Dispatcher<R(P1)> {
   static void DispatchToCallback(
       const v8::FunctionCallbackInfo<v8::Value>& info) {
     Arguments args(info);
-    CallbackHolderBase* holder_base = NULL;
-    CHECK(args.GetData(&holder_base));
+    v8::Handle<v8::External> v8_holder;
+    CHECK(args.GetData(&v8_holder));
+    CallbackHolderBase* holder_base = reinterpret_cast<CallbackHolderBase*>(
+        v8_holder->Value());
 
     typedef CallbackHolder<R(P1)> HolderT;
     HolderT* holder = static_cast<HolderT*>(holder_base);
@@ -258,8 +336,10 @@ struct Dispatcher<R(P1, P2)> {
   static void DispatchToCallback(
       const v8::FunctionCallbackInfo<v8::Value>& info) {
     Arguments args(info);
-    CallbackHolderBase* holder_base = NULL;
-    CHECK(args.GetData(&holder_base));
+    v8::Handle<v8::External> v8_holder;
+    CHECK(args.GetData(&v8_holder));
+    CallbackHolderBase* holder_base = reinterpret_cast<CallbackHolderBase*>(
+        v8_holder->Value());
 
     typedef CallbackHolder<R(P1, P2)> HolderT;
     HolderT* holder = static_cast<HolderT*>(holder_base);
@@ -281,8 +361,10 @@ struct Dispatcher<R(P1, P2, P3)> {
   static void DispatchToCallback(
       const v8::FunctionCallbackInfo<v8::Value>& info) {
     Arguments args(info);
-    CallbackHolderBase* holder_base = NULL;
-    CHECK(args.GetData(&holder_base));
+    v8::Handle<v8::External> v8_holder;
+    CHECK(args.GetData(&v8_holder));
+    CallbackHolderBase* holder_base = reinterpret_cast<CallbackHolderBase*>(
+        v8_holder->Value());
 
     typedef CallbackHolder<R(P1, P2, P3)> HolderT;
     HolderT* holder = static_cast<HolderT*>(holder_base);
@@ -306,8 +388,10 @@ struct Dispatcher<R(P1, P2, P3, P4)> {
   static void DispatchToCallback(
       const v8::FunctionCallbackInfo<v8::Value>& info) {
     Arguments args(info);
-    CallbackHolderBase* holder_base = NULL;
-    CHECK(args.GetData(&holder_base));
+    v8::Handle<v8::External> v8_holder;
+    CHECK(args.GetData(&v8_holder));
+    CallbackHolderBase* holder_base = reinterpret_cast<CallbackHolderBase*>(
+        v8_holder->Value());
 
     typedef CallbackHolder<R(P1, P2, P3, P4)> HolderT;
     HolderT* holder = static_cast<HolderT*>(holder_base);
@@ -328,12 +412,75 @@ struct Dispatcher<R(P1, P2, P3, P4)> {
   }
 };
 
+template<typename R, typename P1, typename P2, typename P3, typename P4,
+    typename P5>
+struct Dispatcher<R(P1, P2, P3, P4, P5)> {
+  static void DispatchToCallback(
+      const v8::FunctionCallbackInfo<v8::Value>& info) {
+    Arguments args(info);
+    v8::Handle<v8::External> v8_holder;
+    CHECK(args.GetData(&v8_holder));
+    CallbackHolderBase* holder_base = reinterpret_cast<CallbackHolderBase*>(
+        v8_holder->Value());
+
+    typedef CallbackHolder<R(P1, P2, P3, P4, P5)> HolderT;
+    HolderT* holder = static_cast<HolderT*>(holder_base);
+
+    typename CallbackParamTraits<P1>::LocalType a1;
+    typename CallbackParamTraits<P2>::LocalType a2;
+    typename CallbackParamTraits<P3>::LocalType a3;
+    typename CallbackParamTraits<P4>::LocalType a4;
+    typename CallbackParamTraits<P5>::LocalType a5;
+    if (!GetNextArgument(&args, holder->flags, true, &a1) ||
+        !GetNextArgument(&args, holder->flags, false, &a2) ||
+        !GetNextArgument(&args, holder->flags, false, &a3) ||
+        !GetNextArgument(&args, holder->flags, false, &a4) ||
+        !GetNextArgument(&args, holder->flags, false, &a5)) {
+      args.ThrowError();
+      return;
+    }
+
+    Invoker<R, P1, P2, P3, P4, P5>::Go(&args, holder->callback, a1, a2, a3, a4,
+        a5);
+  }
+};
+
+template<typename R, typename P1, typename P2, typename P3, typename P4,
+    typename P5, typename P6>
+struct Dispatcher<R(P1, P2, P3, P4, P5, P6)> {
+  static void DispatchToCallback(
+      const v8::FunctionCallbackInfo<v8::Value>& info) {
+    Arguments args(info);
+    v8::Handle<v8::External> v8_holder;
+    CHECK(args.GetData(&v8_holder));
+    CallbackHolderBase* holder_base = reinterpret_cast<CallbackHolderBase*>(
+        v8_holder->Value());
+
+    typedef CallbackHolder<R(P1, P2, P3, P4, P5, P6)> HolderT;
+    HolderT* holder = static_cast<HolderT*>(holder_base);
+
+    typename CallbackParamTraits<P1>::LocalType a1;
+    typename CallbackParamTraits<P2>::LocalType a2;
+    typename CallbackParamTraits<P3>::LocalType a3;
+    typename CallbackParamTraits<P4>::LocalType a4;
+    typename CallbackParamTraits<P5>::LocalType a5;
+    typename CallbackParamTraits<P6>::LocalType a6;
+    if (!GetNextArgument(&args, holder->flags, true, &a1) ||
+        !GetNextArgument(&args, holder->flags, false, &a2) ||
+        !GetNextArgument(&args, holder->flags, false, &a3) ||
+        !GetNextArgument(&args, holder->flags, false, &a4) ||
+        !GetNextArgument(&args, holder->flags, false, &a5) ||
+        !GetNextArgument(&args, holder->flags, false, &a6)) {
+      args.ThrowError();
+      return;
+    }
+
+    Invoker<R, P1, P2, P3, P4, P5, P6>::Go(&args, holder->callback, a1, a2, a3,
+        a4, a5, a6);
+  }
+};
+
 }  // namespace internal
-
-
-// This should be called once per-isolate to initialize the function template
-// system.
-GIN_EXPORT void InitFunctionTemplates(PerIsolateData* isolate_data);
 
 
 // CreateFunctionTemplate creates a v8::FunctionTemplate that will create
@@ -345,11 +492,27 @@ v8::Local<v8::FunctionTemplate> CreateFunctionTemplate(
     v8::Isolate* isolate, const base::Callback<Sig> callback,
     int callback_flags = 0) {
   typedef internal::CallbackHolder<Sig> HolderT;
-  gin::Handle<HolderT> holder = CreateHandle(
-      isolate, new HolderT(callback, callback_flags));
+  HolderT* holder = new HolderT(isolate, callback, callback_flags);
+
   return v8::FunctionTemplate::New(
+      isolate,
       &internal::Dispatcher<Sig>::DispatchToCallback,
-      ConvertToV8<internal::CallbackHolderBase*>(isolate, holder.get()));
+      ConvertToV8<v8::Handle<v8::External> >(isolate,
+                                             holder->GetHandle(isolate)));
+}
+
+// CreateFunctionHandler installs a CallAsFunction handler on the given
+// object template that forwards to a provided C++ function or base::Callback.
+template<typename Sig>
+void CreateFunctionHandler(v8::Isolate* isolate,
+                           v8::Local<v8::ObjectTemplate> tmpl,
+                           const base::Callback<Sig> callback,
+                           int callback_flags = 0) {
+  typedef internal::CallbackHolder<Sig> HolderT;
+  HolderT* holder = new HolderT(isolate, callback, callback_flags);
+  tmpl->SetCallAsFunctionHandler(&internal::Dispatcher<Sig>::DispatchToCallback,
+                                 ConvertToV8<v8::Handle<v8::External> >(
+                                     isolate, holder->GetHandle(isolate)));
 }
 
 }  // namespace gin

@@ -41,19 +41,21 @@ scoped_ptr<base::Value> TileResolutionAsValue(
     TileResolution resolution);
 
 struct CC_EXPORT TilePriority {
+  enum PriorityBin { NOW, SOON, EVENTUALLY };
+
   TilePriority()
       : resolution(NON_IDEAL_RESOLUTION),
         required_for_activation(false),
-        time_to_visible_in_seconds(std::numeric_limits<float>::infinity()),
-        distance_to_visible_in_pixels(std::numeric_limits<float>::infinity()) {}
+        priority_bin(EVENTUALLY),
+        distance_to_visible(std::numeric_limits<float>::infinity()) {}
 
   TilePriority(TileResolution resolution,
-               float time_to_visible_in_seconds,
-               float distance_to_visible_in_pixels)
+               PriorityBin bin,
+               float distance_to_visible)
       : resolution(resolution),
         required_for_activation(false),
-        time_to_visible_in_seconds(time_to_visible_in_seconds),
-        distance_to_visible_in_pixels(distance_to_visible_in_pixels) {}
+        priority_bin(bin),
+        distance_to_visible(distance_to_visible) {}
 
   TilePriority(const TilePriority& active, const TilePriority& pending) {
     if (active.resolution == HIGH_RESOLUTION ||
@@ -68,40 +70,45 @@ struct CC_EXPORT TilePriority {
     required_for_activation =
         active.required_for_activation || pending.required_for_activation;
 
-    time_to_visible_in_seconds =
-      std::min(active.time_to_visible_in_seconds,
-               pending.time_to_visible_in_seconds);
-    distance_to_visible_in_pixels =
-      std::min(active.distance_to_visible_in_pixels,
-               pending.distance_to_visible_in_pixels);
+    if (active.priority_bin < pending.priority_bin) {
+      priority_bin = active.priority_bin;
+      distance_to_visible = active.distance_to_visible;
+    } else if (active.priority_bin > pending.priority_bin) {
+      priority_bin = pending.priority_bin;
+      distance_to_visible = pending.distance_to_visible;
+    } else {
+      priority_bin = active.priority_bin;
+      distance_to_visible =
+          std::min(active.distance_to_visible, pending.distance_to_visible);
+    }
   }
 
   scoped_ptr<base::Value> AsValue() const;
 
-  // Calculate the time for the |current_bounds| to intersect with the
-  // |target_bounds| given its previous location and time delta.
-  // This function should work for both scaling and scrolling case.
-  static float TimeForBoundsToIntersect(const gfx::RectF& previous_bounds,
-                                        const gfx::RectF& current_bounds,
-                                        float time_delta,
-                                        const gfx::RectF& target_bounds);
-
   bool operator ==(const TilePriority& other) const {
     return resolution == other.resolution &&
-        time_to_visible_in_seconds == other.time_to_visible_in_seconds &&
-        distance_to_visible_in_pixels == other.distance_to_visible_in_pixels &&
-        required_for_activation == other.required_for_activation;
+           priority_bin == other.priority_bin &&
+           distance_to_visible == other.distance_to_visible &&
+           required_for_activation == other.required_for_activation;
   }
 
   bool operator !=(const TilePriority& other) const {
     return !(*this == other);
   }
 
+  bool IsHigherPriorityThan(const TilePriority& other) const {
+    return priority_bin < other.priority_bin ||
+           (priority_bin == other.priority_bin &&
+            distance_to_visible < other.distance_to_visible);
+  }
+
   TileResolution resolution;
   bool required_for_activation;
-  float time_to_visible_in_seconds;
-  float distance_to_visible_in_pixels;
+  PriorityBin priority_bin;
+  float distance_to_visible;
 };
+
+scoped_ptr<base::Value> TilePriorityBinAsValue(TilePriority::PriorityBin bin);
 
 enum TileMemoryLimitPolicy {
   // Nothing.
@@ -137,25 +144,25 @@ class GlobalStateThatImpactsTilePriority {
  public:
   GlobalStateThatImpactsTilePriority()
       : memory_limit_policy(ALLOW_NOTHING),
-        memory_limit_in_bytes(0),
-        unused_memory_limit_in_bytes(0),
+        soft_memory_limit_in_bytes(0),
+        hard_memory_limit_in_bytes(0),
         num_resources_limit(0),
         tree_priority(SAME_PRIORITY_FOR_BOTH_TREES) {}
 
   TileMemoryLimitPolicy memory_limit_policy;
 
-  size_t memory_limit_in_bytes;
-  size_t unused_memory_limit_in_bytes;
+  size_t soft_memory_limit_in_bytes;
+  size_t hard_memory_limit_in_bytes;
   size_t num_resources_limit;
 
   TreePriority tree_priority;
 
   bool operator==(const GlobalStateThatImpactsTilePriority& other) const {
-    return memory_limit_policy == other.memory_limit_policy
-        && memory_limit_in_bytes == other.memory_limit_in_bytes
-        && unused_memory_limit_in_bytes == other.unused_memory_limit_in_bytes
-        && num_resources_limit == other.num_resources_limit
-        && tree_priority == other.tree_priority;
+    return memory_limit_policy == other.memory_limit_policy &&
+           soft_memory_limit_in_bytes == other.soft_memory_limit_in_bytes &&
+           hard_memory_limit_in_bytes == other.hard_memory_limit_in_bytes &&
+           num_resources_limit == other.num_resources_limit &&
+           tree_priority == other.tree_priority;
   }
   bool operator!=(const GlobalStateThatImpactsTilePriority& other) const {
     return !(*this == other);

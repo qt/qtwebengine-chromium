@@ -38,44 +38,49 @@
 
 namespace WebCore {
 
-class DOMWindow;
+class LocalDOMWindow;
 class ExceptionState;
-class Frame;
+class LocalFrame;
 class KURL;
 
-class Location : public ScriptWrappable, public RefCounted<Location>, public DOMWindowProperty {
+class Location FINAL : public RefCountedWillBeGarbageCollectedFinalized<Location>, public ScriptWrappable, public DOMWindowProperty {
 public:
-    static PassRefPtr<Location> create(Frame* frame) { return adoptRef(new Location(frame)); }
+    static PassRefPtrWillBeRawPtr<Location> create(LocalFrame* frame)
+    {
+        return adoptRefWillBeNoop(new Location(frame));
+    }
 
-    void setHref(DOMWindow* activeWindow, DOMWindow* firstWindow, const String&);
+    void setHref(LocalDOMWindow* callingWindow, LocalDOMWindow* enteredWindow, const String&);
     String href() const;
 
-    void assign(DOMWindow* activeWindow, DOMWindow* firstWindow, const String&);
-    void replace(DOMWindow* activeWindow, DOMWindow* firstWindow, const String&);
-    void reload(DOMWindow* activeWindow);
+    void assign(LocalDOMWindow* callingWindow, LocalDOMWindow* enteredWindow, const String&);
+    void replace(LocalDOMWindow* callingWindow, LocalDOMWindow* enteredWindow, const String&);
+    void reload(LocalDOMWindow* callingWindow);
 
-    void setProtocol(DOMWindow* activeWindow, DOMWindow* firstWindow, const String&, ExceptionState&);
+    void setProtocol(LocalDOMWindow* callingWindow, LocalDOMWindow* enteredWindow, const String&, ExceptionState&);
     String protocol() const;
-    void setHost(DOMWindow* activeWindow, DOMWindow* firstWindow, const String&);
+    void setHost(LocalDOMWindow* callingWindow, LocalDOMWindow* enteredWindow, const String&);
     String host() const;
-    void setHostname(DOMWindow* activeWindow, DOMWindow* firstWindow, const String&);
+    void setHostname(LocalDOMWindow* callingWindow, LocalDOMWindow* enteredWindow, const String&);
     String hostname() const;
-    void setPort(DOMWindow* activeWindow, DOMWindow* firstWindow, const String&);
+    void setPort(LocalDOMWindow* callingWindow, LocalDOMWindow* enteredWindow, const String&);
     String port() const;
-    void setPathname(DOMWindow* activeWindow, DOMWindow* firstWindow, const String&);
+    void setPathname(LocalDOMWindow* callingWindow, LocalDOMWindow* enteredWindow, const String&);
     String pathname() const;
-    void setSearch(DOMWindow* activeWindow, DOMWindow* firstWindow, const String&);
+    void setSearch(LocalDOMWindow* callingWindow, LocalDOMWindow* enteredWindow, const String&);
     String search() const;
-    void setHash(DOMWindow* activeWindow, DOMWindow* firstWindow, const String&);
+    void setHash(LocalDOMWindow* callingWindow, LocalDOMWindow* enteredWindow, const String&);
     String hash() const;
     String origin() const;
 
-    PassRefPtr<DOMStringList> ancestorOrigins() const;
+    PassRefPtrWillBeRawPtr<DOMStringList> ancestorOrigins() const;
+
+    void trace(Visitor*) { }
 
 private:
-    explicit Location(Frame*);
+    explicit Location(LocalFrame*);
 
-    void setLocation(const String&, DOMWindow* activeWindow, DOMWindow* firstWindow);
+    void setLocation(const String&, LocalDOMWindow* callingWindow, LocalDOMWindow* enteredWindow);
 
     const KURL& url() const;
 };

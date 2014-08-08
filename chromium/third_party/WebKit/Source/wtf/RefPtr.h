@@ -26,15 +26,20 @@
 #include <algorithm>
 #include "wtf/HashTableDeletedValueType.h"
 #include "wtf/PassRefPtr.h"
+#include "wtf/RawPtr.h"
 
 namespace WTF {
 
     template<typename T> class PassRefPtr;
 
     template<typename T> class RefPtr {
+        WTF_DISALLOW_CONSTRUCTION_FROM_ZERO(RefPtr);
+        WTF_DISALLOW_ZERO_ASSIGNMENT(RefPtr);
     public:
         ALWAYS_INLINE RefPtr() : m_ptr(0) { }
+        ALWAYS_INLINE RefPtr(std::nullptr_t) : m_ptr(0) { }
         ALWAYS_INLINE RefPtr(T* ptr) : m_ptr(ptr) { refIfNotNull(ptr); }
+        template<typename U> RefPtr(const RawPtr<U>& ptr, EnsurePtrConvertibleArgDecl(U, T)) : m_ptr(ptr.get()) { refIfNotNull(m_ptr); }
         ALWAYS_INLINE explicit RefPtr(T& ref) : m_ptr(&ref) { m_ptr->ref(); }
         ALWAYS_INLINE RefPtr(const RefPtr& o) : m_ptr(o.m_ptr) { refIfNotNull(m_ptr); }
         template<typename U> RefPtr(const RefPtr<U>& o, EnsurePtrConvertibleArgDecl(U, T)) : m_ptr(o.get()) { refIfNotNull(m_ptr); }
@@ -48,7 +53,7 @@ namespace WTF {
 
         ALWAYS_INLINE ~RefPtr() { derefIfNotNull(m_ptr); }
 
-        T* get() const { return m_ptr; }
+        ALWAYS_INLINE T* get() const { return m_ptr; }
 
         void clear();
         PassRefPtr<T> release() { PassRefPtr<T> tmp = adoptRef(m_ptr); m_ptr = 0; return tmp; }
@@ -65,11 +70,11 @@ namespace WTF {
         RefPtr& operator=(const RefPtr&);
         RefPtr& operator=(T*);
         RefPtr& operator=(const PassRefPtr<T>&);
-#if !COMPILER_SUPPORTS(CXX_NULLPTR)
         RefPtr& operator=(std::nullptr_t) { clear(); return *this; }
-#endif
+
         template<typename U> RefPtr<T>& operator=(const RefPtr<U>&);
         template<typename U> RefPtr<T>& operator=(const PassRefPtr<U>&);
+        template<typename U> RefPtr<T>& operator=(const RawPtr<U>&);
 
         void swap(RefPtr&);
 
@@ -126,6 +131,13 @@ namespace WTF {
         return *this;
     }
 
+    template<typename T> template<typename U> inline RefPtr<T>& RefPtr<T>::operator=(const RawPtr<U>& o)
+    {
+        RefPtr ptr = o.get();
+        swap(ptr);
+        return *this;
+    }
+
     template<class T> inline void RefPtr<T>::swap(RefPtr& o)
     {
         std::swap(m_ptr, o.m_ptr);
@@ -175,6 +187,18 @@ namespace WTF {
     {
         return p.get();
     }
+
+    template<typename T> class RefPtrValuePeeker {
+    public:
+        ALWAYS_INLINE RefPtrValuePeeker(T* p): m_ptr(p) { }
+        ALWAYS_INLINE RefPtrValuePeeker(std::nullptr_t): m_ptr(0) { }
+        template<typename U> RefPtrValuePeeker(const RefPtr<U>& p): m_ptr(p.get()) { }
+        template<typename U> RefPtrValuePeeker(const PassRefPtr<U>& p): m_ptr(p.get()) { }
+
+        ALWAYS_INLINE operator T*() const { return m_ptr; }
+    private:
+        T* m_ptr;
+    };
 
 } // namespace WTF
 

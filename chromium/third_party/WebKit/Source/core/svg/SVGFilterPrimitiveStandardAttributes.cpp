@@ -23,40 +23,34 @@
 
 #include "core/svg/SVGFilterPrimitiveStandardAttributes.h"
 
-#include "SVGNames.h"
+#include "core/SVGNames.h"
 #include "platform/graphics/filters/FilterEffect.h"
 #include "core/rendering/svg/RenderSVGResourceFilterPrimitive.h"
-#include "core/svg/SVGElementInstance.h"
 #include "core/svg/SVGLength.h"
 
 namespace WebCore {
 
-// Animated property definitions
-DEFINE_ANIMATED_LENGTH(SVGFilterPrimitiveStandardAttributes, SVGNames::xAttr, X, x)
-DEFINE_ANIMATED_LENGTH(SVGFilterPrimitiveStandardAttributes, SVGNames::yAttr, Y, y)
-DEFINE_ANIMATED_LENGTH(SVGFilterPrimitiveStandardAttributes, SVGNames::widthAttr, Width, width)
-DEFINE_ANIMATED_LENGTH(SVGFilterPrimitiveStandardAttributes, SVGNames::heightAttr, Height, height)
-DEFINE_ANIMATED_STRING(SVGFilterPrimitiveStandardAttributes, SVGNames::resultAttr, Result, result)
-
-BEGIN_REGISTER_ANIMATED_PROPERTIES(SVGFilterPrimitiveStandardAttributes)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(x)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(y)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(width)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(height)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(result)
-    REGISTER_PARENT_ANIMATED_PROPERTIES(SVGElement)
-END_REGISTER_ANIMATED_PROPERTIES
-
 SVGFilterPrimitiveStandardAttributes::SVGFilterPrimitiveStandardAttributes(const QualifiedName& tagName, Document& document)
     : SVGElement(tagName, document)
-    , m_x(LengthModeWidth, "0%")
-    , m_y(LengthModeHeight, "0%")
-    , m_width(LengthModeWidth, "100%")
-    , m_height(LengthModeHeight, "100%")
+    , m_x(SVGAnimatedLength::create(this, SVGNames::xAttr, SVGLength::create(LengthModeWidth), AllowNegativeLengths))
+    , m_y(SVGAnimatedLength::create(this, SVGNames::yAttr, SVGLength::create(LengthModeHeight), AllowNegativeLengths))
+    , m_width(SVGAnimatedLength::create(this, SVGNames::widthAttr, SVGLength::create(LengthModeWidth), ForbidNegativeLengths))
+    , m_height(SVGAnimatedLength::create(this, SVGNames::heightAttr, SVGLength::create(LengthModeHeight), ForbidNegativeLengths))
+    , m_result(SVGAnimatedString::create(this, SVGNames::resultAttr, SVGString::create()))
 {
     // Spec: If the x/y attribute is not specified, the effect is as if a value of "0%" were specified.
+    m_x->setDefaultValueAsString("0%");
+    m_y->setDefaultValueAsString("0%");
+
     // Spec: If the width/height attribute is not specified, the effect is as if a value of "100%" were specified.
-    registerAnimatedPropertiesForSVGFilterPrimitiveStandardAttributes();
+    m_width->setDefaultValueAsString("100%");
+    m_height->setDefaultValueAsString("100%");
+
+    addToPropertyMap(m_x);
+    addToPropertyMap(m_y);
+    addToPropertyMap(m_width);
+    addToPropertyMap(m_height);
+    addToPropertyMap(m_result);
 }
 
 bool SVGFilterPrimitiveStandardAttributes::isSupportedAttribute(const QualifiedName& attrName)
@@ -79,15 +73,15 @@ void SVGFilterPrimitiveStandardAttributes::parseAttribute(const QualifiedName& n
     if (!isSupportedAttribute(name))
         SVGElement::parseAttribute(name, value);
     else if (name == SVGNames::xAttr)
-        setXBaseValue(SVGLength::construct(LengthModeWidth, value, parseError));
+        m_x->setBaseValueAsString(value, parseError);
     else if (name == SVGNames::yAttr)
-        setYBaseValue(SVGLength::construct(LengthModeHeight, value, parseError));
+        m_y->setBaseValueAsString(value, parseError);
     else if (name == SVGNames::widthAttr)
-        setWidthBaseValue(SVGLength::construct(LengthModeWidth, value, parseError));
+        m_width->setBaseValueAsString(value, parseError);
     else if (name == SVGNames::heightAttr)
-        setHeightBaseValue(SVGLength::construct(LengthModeHeight, value, parseError));
+        m_height->setBaseValueAsString(value, parseError);
     else if (name == SVGNames::resultAttr)
-        setResultBaseValue(value);
+        m_result->setBaseValueAsString(value, parseError);
     else
         ASSERT_NOT_REACHED();
 
@@ -108,7 +102,7 @@ void SVGFilterPrimitiveStandardAttributes::svgAttributeChanged(const QualifiedNa
         return;
     }
 
-    SVGElementInstance::InvalidationGuard invalidationGuard(this);
+    SVGElement::InvalidationGuard invalidationGuard(this);
     invalidate();
 }
 
@@ -143,7 +137,7 @@ RenderObject* SVGFilterPrimitiveStandardAttributes::createRenderer(RenderStyle*)
 
 bool SVGFilterPrimitiveStandardAttributes::rendererIsNeeded(const RenderStyle& style)
 {
-    if (parentNode() && (parentNode()->hasTagName(SVGNames::filterTag)))
+    if (isSVGFilterElement(parentNode()))
         return SVGElement::rendererIsNeeded(style);
 
     return false;

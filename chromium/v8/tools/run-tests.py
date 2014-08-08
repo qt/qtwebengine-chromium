@@ -33,6 +33,8 @@ import multiprocessing
 import optparse
 import os
 from os.path import join
+import platform
+import random
 import shlex
 import subprocess
 import sys
@@ -48,7 +50,7 @@ from testrunner.objects import context
 
 
 ARCH_GUESS = utils.DefaultArch()
-DEFAULT_TESTS = ["mjsunit", "cctest", "message", "preparser"]
+DEFAULT_TESTS = ["mjsunit", "fuzz-natives", "cctest", "message", "preparser"]
 TIMEOUT_DEFAULT = 60
 TIMEOUT_SCALEFACTOR = {"debug"   : 4,
                        "release" : 1 }
@@ -62,27 +64,40 @@ VARIANT_FLAGS = {
 VARIANTS = ["default", "stress", "nocrankshaft"]
 
 MODE_FLAGS = {
-    "debug"   : ["--nobreak-on-abort", "--nodead-code-elimination",
+    "debug"   : ["--nohard-abort", "--nodead-code-elimination",
                  "--nofold-constants", "--enable-slow-asserts",
                  "--debug-code", "--verify-heap"],
-    "release" : ["--nobreak-on-abort", "--nodead-code-elimination",
+    "release" : ["--nohard-abort", "--nodead-code-elimination",
                  "--nofold-constants"]}
 
+GC_STRESS_FLAGS = ["--gc-interval=500", "--stress-compaction",
+                   "--concurrent-recompilation-queue-length=64",
+                   "--concurrent-recompilation-delay=500",
+                   "--concurrent-recompilation"]
+
 SUPPORTED_ARCHS = ["android_arm",
+                   "android_arm64",
                    "android_ia32",
                    "arm",
                    "ia32",
+                   "x87",
+                   "mips",
                    "mipsel",
                    "nacl_ia32",
                    "nacl_x64",
-                   "x64"]
+                   "x64",
+                   "arm64"]
 # Double the timeout for these:
 SLOW_ARCHS = ["android_arm",
+              "android_arm64",
               "android_ia32",
               "arm",
+              "mips",
               "mipsel",
               "nacl_ia32",
-              "nacl_x64"]
+              "nacl_x64",
+              "x87",
+              "arm64"]
 
 
 def BuildOptions():
@@ -94,6 +109,9 @@ def BuildOptions():
   result.add_option("--arch-and-mode",
                     help="Architecture and mode in the format 'arch.mode'",
                     default=None)
+  result.add_option("--asan",
+                    help="Regard test expectations for ASAN",
+                    default=False, action="store_true")
   result.add_option("--buildbot",
                     help="Adapt to path structure used on buildbots",
                     default=False, action="store_true")
@@ -108,6 +126,9 @@ def BuildOptions():
   result.add_option("--pass-fail-tests",
                     help="Regard pass|fail tests (run|skip|dontcare)",
                     default="dontcare")
+  result.add_option("--gc-stress",
+                    help="Switch on GC stress mode",
+                    default=False, action="store_true")
   result.add_option("--command-prefix",
                     help="Prepended to each shell command used to run a test",
                     default="")
@@ -133,6 +154,12 @@ def BuildOptions():
   result.add_option("--no-presubmit", "--nopresubmit",
                     help='Skip presubmit checks',
                     default=False, dest="no_presubmit", action="store_true")
+  result.add_option("--no-snap", "--nosnap",
+                    help='Test a build compiled without snapshot.',
+                    default=False, dest="no_snap", action="store_true")
+  result.add_option("--no-sorting", "--nosorting",
+                    help="Don't sort tests according to duration of last run.",
+                    default=False, dest="no_sorting", action="store_true")
   result.add_option("--no-stress", "--nostress",
                     help="Don't run crankshaft --always-opt --stress-op test",
                     default=False, dest="no_stress", action="store_true")
@@ -147,8 +174,12 @@ def BuildOptions():
                     help=("The style of progress indicator"
                           " (verbose, dots, color, mono)"),
                     choices=progress.PROGRESS_INDICATORS.keys(), default="mono")
+  result.add_option("--quickcheck", default=False, action="store_true",
+                    help=("Quick check mode (skip slow/flaky tests)"))
   result.add_option("--report", help="Print a summary of the tests to be run",
                     default=False, action="store_true")
+  result.add_option("--json-test-results",
+                    help="Path to a file for storing json results.")
   result.add_option("--shard-count",
                     help="Split testsuites into this number of shards",
                     default=1, type="int")
@@ -158,6 +189,10 @@ def BuildOptions():
   result.add_option("--shell", help="DEPRECATED! use --shell-dir", default="")
   result.add_option("--shell-dir", help="Directory containing executables",
                     default="")
+  result.add_option("--dont-skip-slow-simulator-tests",
+                    help="Don't skip more slow tests when using a simulator.",
+                    default=False, action="store_true",
+                    dest="dont_skip_simulator_slow_tests")
   result.add_option("--stress-only",
                     help="Only run tests with --always-opt --stress-opt",
                     default=False, action="store_true")
@@ -175,6 +210,8 @@ def BuildOptions():
   result.add_option("--junittestsuite",
                     help="The testsuite name in the JUnit output file",
                     default="v8tests")
+  result.add_option("--random-seed", default=0, dest="random_seed",
+                    help="Default seed for initializing random generator")
   return result
 
 
@@ -190,7 +227,7 @@ def ProcessOptions(options):
     options.mode = ",".join([tokens[1] for tokens in options.arch_and_mode])
   options.mode = options.mode.split(",")
   for mode in options.mode:
-    if not mode.lower() in ["debug", "release"]:
+    if not mode.lower() in ["debug", "release", "optdebug"]:
       print "Unknown mode %s" % mode
       return False
   if options.arch in ["auto", "native"]:
@@ -218,17 +255,27 @@ def ProcessOptions(options):
     options.no_network = True
   options.command_prefix = shlex.split(options.command_prefix)
   options.extra_flags = shlex.split(options.extra_flags)
+
+  if options.gc_stress:
+    options.extra_flags += GC_STRESS_FLAGS
+
+  if options.asan:
+    options.extra_flags.append("--invoke-weak-callbacks")
+
   if options.j == 0:
     options.j = multiprocessing.cpu_count()
+
+  while options.random_seed == 0:
+    options.random_seed = random.SystemRandom().randint(-2147483648, 2147483647)
 
   def excl(*args):
     """Returns true if zero or one of multiple arguments are true."""
     return reduce(lambda x, y: x + y, args) <= 1
 
   if not excl(options.no_stress, options.stress_only, options.no_variants,
-              bool(options.variants)):
-    print("Use only one of --no-stress, --stress-only, --no-variants or "
-          "--variants.")
+              bool(options.variants), options.quickcheck):
+    print("Use only one of --no-stress, --stress-only, --no-variants, "
+          "--variants, or --quickcheck.")
     return False
   if options.no_stress:
     VARIANTS = ["default", "nocrankshaft"]
@@ -241,6 +288,12 @@ def ProcessOptions(options):
     if not set(VARIANTS).issubset(VARIANT_FLAGS.keys()):
       print "All variants must be in %s" % str(VARIANT_FLAGS.keys())
       return False
+  if options.quickcheck:
+    VARIANTS = ["default", "stress"]
+    options.flaky_tests = "skip"
+    options.slow_tests = "skip"
+    options.pass_fail_tests = "skip"
+
   if not options.shell_dir:
     if options.shell:
       print "Warning: --shell is deprecated, use --shell-dir instead."
@@ -293,9 +346,8 @@ def Main():
   workspace = os.path.abspath(join(os.path.dirname(sys.argv[0]), ".."))
   if not options.no_presubmit:
     print ">>> running presubmit tests"
-    code = subprocess.call(
+    exit_code = subprocess.call(
         [sys.executable, join(workspace, "tools", "presubmit.py")])
-    exit_code = code
 
   suite_paths = utils.GetSuitePaths(join(workspace, "test"))
 
@@ -321,7 +373,10 @@ def Main():
       s.DownloadData()
 
   for (arch, mode) in options.arch_and_mode:
-    code = Execute(arch, mode, args, options, suites, workspace)
+    try:
+      code = Execute(arch, mode, args, options, suites, workspace)
+    except KeyboardInterrupt:
+      return 2
     exit_code = exit_code or code
   return exit_code
 
@@ -339,6 +394,9 @@ def Execute(arch, mode, args, options, suites, workspace):
                                "%s.%s" % (arch, mode))
   shell_dir = os.path.relpath(shell_dir)
 
+  if mode == "optdebug":
+    mode = "debug"  # "optdebug" is just an alias.
+
   # Populate context object.
   mode_flags = MODE_FLAGS[mode]
   timeout = options.timeout
@@ -355,16 +413,26 @@ def Execute(arch, mode, args, options, suites, workspace):
                         timeout, options.isolates,
                         options.command_prefix,
                         options.extra_flags,
-                        options.no_i18n)
+                        options.no_i18n,
+                        options.random_seed,
+                        options.no_sorting)
 
+  # TODO(all): Combine "simulator" and "simulator_run".
+  simulator_run = not options.dont_skip_simulator_slow_tests and \
+      arch in ['arm64', 'arm', 'mips'] and ARCH_GUESS and arch != ARCH_GUESS
   # Find available test suites and read test cases from them.
   variables = {
-    "mode": mode,
     "arch": arch,
-    "system": utils.GuessOS(),
-    "isolates": options.isolates,
+    "asan": options.asan,
     "deopt_fuzzer": False,
+    "gc_stress": options.gc_stress,
+    "isolates": options.isolates,
+    "mode": mode,
     "no_i18n": options.no_i18n,
+    "no_snap": options.no_snap,
+    "simulator_run": simulator_run,
+    "simulator": utils.UseSimulator(arch),
+    "system": utils.GuessOS(),
   }
   all_tests = []
   num_tests = 0
@@ -401,44 +469,42 @@ def Execute(arch, mode, args, options, suites, workspace):
     return 0
 
   # Run the tests, either locally or distributed on the network.
-  try:
-    start_time = time.time()
-    progress_indicator = progress.PROGRESS_INDICATORS[options.progress]()
-    if options.junitout:
-      progress_indicator = progress.JUnitTestProgressIndicator(
-          progress_indicator, options.junitout, options.junittestsuite)
+  start_time = time.time()
+  progress_indicator = progress.PROGRESS_INDICATORS[options.progress]()
+  if options.junitout:
+    progress_indicator = progress.JUnitTestProgressIndicator(
+        progress_indicator, options.junitout, options.junittestsuite)
+  if options.json_test_results:
+    progress_indicator = progress.JsonTestProgressIndicator(
+        progress_indicator, options.json_test_results, arch, mode)
 
-    run_networked = not options.no_network
-    if not run_networked:
-      print("Network distribution disabled, running tests locally.")
-    elif utils.GuessOS() != "linux":
-      print("Network distribution is only supported on Linux, sorry!")
+  run_networked = not options.no_network
+  if not run_networked:
+    print("Network distribution disabled, running tests locally.")
+  elif utils.GuessOS() != "linux":
+    print("Network distribution is only supported on Linux, sorry!")
+    run_networked = False
+  peers = []
+  if run_networked:
+    peers = network_execution.GetPeers()
+    if not peers:
+      print("No connection to distribution server; running tests locally.")
       run_networked = False
-    peers = []
-    if run_networked:
-      peers = network_execution.GetPeers()
-      if not peers:
-        print("No connection to distribution server; running tests locally.")
-        run_networked = False
-      elif len(peers) == 1:
-        print("No other peers on the network; running tests locally.")
-        run_networked = False
-      elif num_tests <= 100:
-        print("Less than 100 tests, running them locally.")
-        run_networked = False
+    elif len(peers) == 1:
+      print("No other peers on the network; running tests locally.")
+      run_networked = False
+    elif num_tests <= 100:
+      print("Less than 100 tests, running them locally.")
+      run_networked = False
 
-    if run_networked:
-      runner = network_execution.NetworkedRunner(suites, progress_indicator,
-                                                 ctx, peers, workspace)
-    else:
-      runner = execution.Runner(suites, progress_indicator, ctx)
+  if run_networked:
+    runner = network_execution.NetworkedRunner(suites, progress_indicator,
+                                               ctx, peers, workspace)
+  else:
+    runner = execution.Runner(suites, progress_indicator, ctx)
 
-    exit_code = runner.Run(options.j)
-    if runner.terminate:
-      return exit_code
-    overall_duration = time.time() - start_time
-  except KeyboardInterrupt:
-    return 1
+  exit_code = runner.Run(options.j)
+  overall_duration = time.time() - start_time
 
   if options.time:
     verbose.PrintTestDurations(suites, overall_duration)

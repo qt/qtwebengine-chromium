@@ -37,9 +37,17 @@ from __future__ import with_statement
 from HTMLParser import HTMLParser
 from cStringIO import StringIO
 
-import rjsmin
 import os.path
 import sys
+
+rjsmin_path = os.path.abspath(os.path.join(
+        os.path.dirname(__file__),
+        "..",
+        "..",
+        "build",
+        "scripts"))
+sys.path.append(rjsmin_path)
+import rjsmin
 
 
 class OrderedJSFilesExtractor(HTMLParser):
@@ -61,17 +69,11 @@ class PathExpander:
         self.paths = paths
 
     def expand(self, filename):
-        last_path = None
-        expanded_name = None
         for path in self.paths:
-            fname = "%s/%s" % (path, filename)
+            fname = os.path.join(path, filename)
             if (os.access(fname, os.F_OK)):
-                if (last_path != None):
-                    raise Exception('Ambiguous file %s: found in %s and %s' %
-                                    (filename, last_path, path))
-                expanded_name = fname
-                last_path = path
-        return expanded_name
+                return fname
+        return None
 
 
 def main(argv):

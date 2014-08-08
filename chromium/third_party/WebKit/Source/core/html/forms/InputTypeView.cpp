@@ -35,13 +35,18 @@
 
 namespace WebCore {
 
-PassRefPtr<InputTypeView> InputTypeView::create(HTMLInputElement& input)
+PassRefPtrWillBeRawPtr<InputTypeView> InputTypeView::create(HTMLInputElement& input)
 {
-    return adoptRef(new InputTypeView(input));
+    return adoptRefWillBeNoop(new InputTypeView(input));
 }
 
 InputTypeView::~InputTypeView()
 {
+}
+
+void InputTypeView::trace(Visitor* visitor)
+{
+    visitor->trace(m_element);
 }
 
 bool InputTypeView::sizeShouldIncludeDecoration(int, int& preferredSize) const
@@ -87,7 +92,7 @@ bool InputTypeView::shouldSubmitImplicitly(Event* event)
     return false;
 }
 
-PassRefPtr<HTMLFormElement> InputTypeView::formForSubmission() const
+PassRefPtrWillBeRawPtr<HTMLFormElement> InputTypeView::formForSubmission() const
 {
     return element().form();
 }
@@ -112,7 +117,7 @@ bool InputTypeView::hasCustomFocusLogic() const
     return false;
 }
 
-void InputTypeView::handleFocusEvent(Element*, FocusDirection)
+void InputTypeView::handleFocusEvent(Element*, FocusType)
 {
 }
 
@@ -154,7 +159,7 @@ void InputTypeView::stepAttributeChanged()
 {
 }
 
-PassOwnPtr<ClickHandlingState> InputTypeView::willDispatchClick()
+PassOwnPtrWillBeRawPtr<ClickHandlingState> InputTypeView::willDispatchClick()
 {
     return nullptr;
 }
@@ -207,6 +212,15 @@ void InputTypeView::listAttributeTargetChanged()
 
 void InputTypeView::updateClearButtonVisibility()
 {
+}
+
+void InputTypeView::updatePlaceholderText()
+{
+}
+
+void ClickHandlingState::trace(Visitor* visitor)
+{
+    visitor->trace(checkedRadioButton);
 }
 
 } // namespace WebCore

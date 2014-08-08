@@ -19,7 +19,7 @@ void ExtractCompositionTextFromGtkPreedit(const gchar* utf8_text,
                                           int cursor_position,
                                           CompositionText* composition) {
   composition->Clear();
-  composition->text = UTF8ToUTF16(utf8_text);
+  composition->text = base::UTF8ToUTF16(utf8_text);
 
   if (composition->text.empty())
     return;
@@ -75,8 +75,11 @@ void ExtractCompositionTextFromGtkPreedit(const gchar* utf8_text,
 
       if (background_attr || underline_attr) {
         // Use a black thin underline by default.
-        CompositionUnderline underline(
-            char16_offsets[start], char16_offsets[end], SK_ColorBLACK, false);
+        CompositionUnderline underline(char16_offsets[start],
+                                       char16_offsets[end],
+                                       SK_ColorBLACK,
+                                       false,
+                                       SK_ColorTRANSPARENT);
 
         // Always use thick underline for a range with background color, which
         // is usually the selection range.
@@ -108,8 +111,8 @@ void ExtractCompositionTextFromGtkPreedit(const gchar* utf8_text,
 
   // Use a black thin underline by default.
   if (composition->underlines.empty()) {
-    composition->underlines.push_back(
-        CompositionUnderline(0, length, SK_ColorBLACK, false));
+    composition->underlines.push_back(CompositionUnderline(
+        0, length, SK_ColorBLACK, false, SK_ColorTRANSPARENT));
   }
 }
 

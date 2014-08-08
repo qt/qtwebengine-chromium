@@ -10,7 +10,7 @@
 
 #include "GrTypes.h"
 #include "SkTemplates.h"
-#include "SkThread_platform.h"
+#include "SkThread.h"
 #include "SkTypes.h"
 
 /** Given a GrEffect of a particular type, creates the corresponding graphics-backend-specific
@@ -28,7 +28,7 @@ class GrGLEffect;
 class GrGLCaps;
 class GrDrawEffect;
 
-class GrBackendEffectFactory : public SkNoncopyable {
+class GrBackendEffectFactory : SkNoncopyable {
 public:
     typedef uint32_t EffectKey;
     enum {

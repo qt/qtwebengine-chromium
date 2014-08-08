@@ -252,7 +252,7 @@ FieldTrialList::FieldTrialList(
 FieldTrialList::~FieldTrialList() {
   AutoLock auto_lock(lock_);
   while (!registered_.empty()) {
-    RegistrationList::iterator it = registered_.begin();
+    RegistrationMap::iterator it = registered_.begin();
     it->second->Release();
     registered_.erase(it->first);
   }
@@ -390,7 +390,7 @@ void FieldTrialList::GetActiveFieldTrialGroups(
     return;
   AutoLock auto_lock(global_->lock_);
 
-  for (RegistrationList::iterator it = global_->registered_.begin();
+  for (RegistrationMap::iterator it = global_->registered_.begin();
        it != global_->registered_.end(); ++it) {
     FieldTrial::ActiveGroup active_group;
     if (it->second->GetActiveGroup(&active_group))
@@ -399,8 +399,10 @@ void FieldTrialList::GetActiveFieldTrialGroups(
 }
 
 // static
-bool FieldTrialList::CreateTrialsFromString(const std::string& trials_string,
-                                            FieldTrialActivationMode mode) {
+bool FieldTrialList::CreateTrialsFromString(
+    const std::string& trials_string,
+    FieldTrialActivationMode mode,
+    const std::set<std::string>& ignored_trial_names) {
   DCHECK(global_);
   if (trials_string.empty() || !global_)
     return true;
@@ -418,6 +420,9 @@ bool FieldTrialList::CreateTrialsFromString(const std::string& trials_string,
     std::string group_name(trials_string, name_end + 1,
                            group_name_end - name_end - 1);
     next_item = group_name_end + 1;
+
+    if (ignored_trial_names.find(name) != ignored_trial_names.end())
+      continue;
 
     FieldTrial* trial = CreateFieldTrial(name, group_name);
     if (!trial)
@@ -513,7 +518,7 @@ const FieldTrial::EntropyProvider*
 }
 
 FieldTrial* FieldTrialList::PreLockedFind(const std::string& name) {
-  RegistrationList::iterator it = registered_.find(name);
+  RegistrationMap::iterator it = registered_.find(name);
   if (registered_.end() == it)
     return NULL;
   return it->second;

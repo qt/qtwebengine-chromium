@@ -29,9 +29,9 @@
 
 #include "core/dom/ExecutionContext.h"
 #include "core/inspector/InspectorInstrumentation.h"
+#include "core/inspector/InspectorTraceEvents.h"
+#include "platform/TraceEvent.h"
 #include "wtf/CurrentTime.h"
-
-using namespace std;
 
 namespace WebCore {
 
@@ -70,6 +70,9 @@ double DOMTimer::visiblePageAlignmentInterval()
 int DOMTimer::install(ExecutionContext* context, PassOwnPtr<ScheduledAction> action, int timeout, bool singleShot)
 {
     int timeoutID = context->installNewTimeout(action, timeout, singleShot);
+    TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "TimerInstall", "data", InspectorTimerInstallEvent::data(context, timeoutID, timeout, singleShot));
+    TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline.stack"), "CallStack", "stack", InspectorCallStackEvent::currentCallStack());
+    // FIXME(361045): remove InspectorInstrumentation calls once DevTools Timeline migrates to tracing.
     InspectorInstrumentation::didInstallTimer(context, timeoutID, timeout, singleShot);
     return timeoutID;
 }
@@ -77,6 +80,9 @@ int DOMTimer::install(ExecutionContext* context, PassOwnPtr<ScheduledAction> act
 void DOMTimer::removeByID(ExecutionContext* context, int timeoutID)
 {
     context->removeTimeoutByID(timeoutID);
+    TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "TimerRemove", "data", InspectorTimerRemoveEvent::data(context, timeoutID));
+    TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline.stack"), "CallStack", "stack", InspectorCallStackEvent::currentCallStack());
+    // FIXME(361045): remove InspectorInstrumentation calls once DevTools Timeline migrates to tracing.
     InspectorInstrumentation::didRemoveTimer(context, timeoutID);
 }
 
@@ -90,13 +96,13 @@ DOMTimer::DOMTimer(ExecutionContext* context, PassOwnPtr<ScheduledAction> action
     if (shouldForwardUserGesture(interval, m_nestingLevel))
         m_userGestureToken = UserGestureIndicator::currentToken();
 
-    double intervalMilliseconds = max(oneMillisecond, interval * oneMillisecond);
+    double intervalMilliseconds = std::max(oneMillisecond, interval * oneMillisecond);
     if (intervalMilliseconds < minimumInterval && m_nestingLevel >= maxTimerNestingLevel)
         intervalMilliseconds = minimumInterval;
     if (singleShot)
-        startOneShot(intervalMilliseconds);
+        startOneShot(intervalMilliseconds, FROM_HERE);
     else
-        startRepeating(intervalMilliseconds);
+        startRepeating(intervalMilliseconds, FROM_HERE);
 }
 
 DOMTimer::~DOMTimer()
@@ -116,6 +122,8 @@ void DOMTimer::fired()
     // Only the first execution of a multi-shot timer should get an affirmative user gesture indicator.
     UserGestureIndicator gestureIndicator(m_userGestureToken.release());
 
+    TRACE_EVENT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "TimerFire", "data", InspectorTimerFireEvent::data(context, m_timeoutID));
+    // FIXME(361045): remove InspectorInstrumentation calls once DevTools Timeline migrates to tracing.
     InspectorInstrumentationCookie cookie = InspectorInstrumentation::willFireTimer(context, m_timeoutID);
 
     // Simple case for non-one-shot timers.
@@ -143,6 +151,7 @@ void DOMTimer::fired()
     action->execute(context);
 
     InspectorInstrumentation::didFireTimer(cookie);
+    TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "UpdateCounters", "data", InspectorUpdateCountersEvent::data());
 
     timerNestingLevel = 0;
 }

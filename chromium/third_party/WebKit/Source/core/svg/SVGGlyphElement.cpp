@@ -36,16 +36,13 @@ inline SVGGlyphElement::SVGGlyphElement(Document& document)
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<SVGGlyphElement> SVGGlyphElement::create(Document& document)
-{
-    return adoptRef(new SVGGlyphElement(document));
-}
+DEFINE_NODE_FACTORY(SVGGlyphElement)
 
 void SVGGlyphElement::invalidateGlyphCache()
 {
     ContainerNode* fontNode = parentNode();
-    if (fontNode && fontNode->hasTagName(SVGNames::fontTag))
-        toSVGFontElement(fontNode)->invalidateGlyphCache();
+    if (isSVGFontElement(fontNode))
+        toSVGFontElement(*fontNode).invalidateGlyphCache();
 }
 
 void SVGGlyphElement::parseAttribute(const QualifiedName& name, const AtomicString& value)

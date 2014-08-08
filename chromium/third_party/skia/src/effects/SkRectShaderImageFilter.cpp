@@ -9,7 +9,8 @@
 #include "SkBitmap.h"
 #include "SkCanvas.h"
 #include "SkDevice.h"
-#include "SkFlattenableBuffers.h"
+#include "SkReadBuffer.h"
+#include "SkWriteBuffer.h"
 #include "SkShader.h"
 
 SkRectShaderImageFilter* SkRectShaderImageFilter::Create(SkShader* s, const SkRect& rect) {
@@ -34,12 +35,12 @@ SkRectShaderImageFilter::SkRectShaderImageFilter(SkShader* s, const CropRect* cr
     s->ref();
 }
 
-SkRectShaderImageFilter::SkRectShaderImageFilter(SkFlattenableReadBuffer& buffer)
+SkRectShaderImageFilter::SkRectShaderImageFilter(SkReadBuffer& buffer)
   : INHERITED(1, buffer) {
     fShader = buffer.readShader();
 }
 
-void SkRectShaderImageFilter::flatten(SkFlattenableWriteBuffer& buffer) const {
+void SkRectShaderImageFilter::flatten(SkWriteBuffer& buffer) const {
     this->INHERITED::flatten(buffer);
 
     buffer.writeFlattenable(fShader);
@@ -51,12 +52,11 @@ SkRectShaderImageFilter::~SkRectShaderImageFilter() {
 
 bool SkRectShaderImageFilter::onFilterImage(Proxy* proxy,
                                             const SkBitmap& source,
-                                            const SkMatrix& ctm,
+                                            const Context& ctx,
                                             SkBitmap* result,
-                                            SkIPoint* offset) {
+                                            SkIPoint* offset) const {
     SkIRect bounds;
-    source.getBounds(&bounds);
-    if (!this->applyCropRect(&bounds, ctm)) {
+    if (!this->applyCropRect(ctx, source, SkIPoint::Make(0, 0), &bounds)) {
         return false;
     }
 
@@ -66,15 +66,17 @@ bool SkRectShaderImageFilter::onFilterImage(Proxy* proxy,
         return false;
     }
     SkCanvas canvas(device.get());
+
     SkPaint paint;
-    paint.setShader(fShader);
-    SkMatrix matrix;
-    matrix.setTranslate(-SkIntToScalar(bounds.fLeft), -SkIntToScalar(bounds.fTop));
-    fShader->setLocalMatrix(matrix);
+    SkMatrix matrix(ctx.ctm());
+    matrix.postTranslate(SkIntToScalar(-bounds.left()), SkIntToScalar(-bounds.top()));
+    paint.setShader(SkShader::CreateLocalMatrixShader(fShader, matrix))->unref();
+
     SkRect rect = SkRect::MakeWH(SkIntToScalar(bounds.width()), SkIntToScalar(bounds.height()));
     canvas.drawRect(rect, paint);
+
     *result = device.get()->accessBitmap(false);
-    offset->fX += bounds.fLeft;
-    offset->fY += bounds.fTop;
+    offset->fX = bounds.fLeft;
+    offset->fY = bounds.fTop;
     return true;
 }

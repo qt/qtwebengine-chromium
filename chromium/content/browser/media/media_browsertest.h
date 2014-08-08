@@ -8,7 +8,7 @@
 #include <utility>
 #include <vector>
 
-#include "content/test/content_browser_test.h"
+#include "content/public/test/content_browser_test.h"
 
 namespace content {
 
@@ -25,8 +25,6 @@ class MediaBrowserTest : public ContentBrowserTest {
   static const char kEnded[];
   static const char kError[];
   static const char kFailed[];
-
-  virtual void SetUp() OVERRIDE;
 
   // Runs a html page with a list of URL query parameters.
   // If http is true, the test starts a local http test server to load the test

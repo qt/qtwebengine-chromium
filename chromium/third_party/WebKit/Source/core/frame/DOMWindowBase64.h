@@ -39,10 +39,11 @@ namespace WebCore {
 
 class ExceptionState;
 
-namespace DOMWindowBase64 {
-String btoa(void*, const String& stringToEncode, ExceptionState&);
-String atob(void*, const String& encodedString, ExceptionState&);
-}
+class DOMWindowBase64 {
+public:
+    String btoa(const String& stringToEncode, ExceptionState&);
+    String atob(const String& encodedString, ExceptionState&);
+};
 
 } // namespace WebCore
 

@@ -32,7 +32,6 @@ namespace WebCore {
 
 class Filter;
 class FilterEffect;
-class RenderSVGResourceFilterPrimitive;
 class SVGFilterBuilder;
 
 class SVGFilterPrimitiveStandardAttributes : public SVGElement {
@@ -43,13 +42,20 @@ public:
     // Returns true, if the new value is different from the old one.
     virtual bool setFilterEffectAttribute(FilterEffect*, const QualifiedName&);
 
+    // JS API
+    SVGAnimatedLength* x() const { return m_x.get(); }
+    SVGAnimatedLength* y() const { return m_y.get(); }
+    SVGAnimatedLength* width() const { return m_width.get(); }
+    SVGAnimatedLength* height() const { return m_height.get(); }
+    SVGAnimatedString* result() const { return m_result.get(); }
+
 protected:
     SVGFilterPrimitiveStandardAttributes(const QualifiedName&, Document&);
 
     bool isSupportedAttribute(const QualifiedName&);
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual void svgAttributeChanged(const QualifiedName&);
-    virtual void childrenChanged(bool changedByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0);
+    virtual void svgAttributeChanged(const QualifiedName&) OVERRIDE;
+    virtual void childrenChanged(bool changedByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0) OVERRIDE;
 
     inline void invalidate()
     {
@@ -60,19 +66,16 @@ protected:
     void primitiveAttributeChanged(const QualifiedName&);
 
 private:
-    virtual bool isFilterEffect() const { return true; }
+    virtual bool isFilterEffect() const OVERRIDE FINAL { return true; }
 
-    virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
-    virtual bool rendererIsNeeded(const RenderStyle&) OVERRIDE;
-    virtual bool childShouldCreateRenderer(const Node& child) const OVERRIDE { return false; }
+    virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE FINAL;
+    virtual bool rendererIsNeeded(const RenderStyle&) OVERRIDE FINAL;
 
-    BEGIN_DECLARE_ANIMATED_PROPERTIES(SVGFilterPrimitiveStandardAttributes)
-        DECLARE_ANIMATED_LENGTH(X, x)
-        DECLARE_ANIMATED_LENGTH(Y, y)
-        DECLARE_ANIMATED_LENGTH(Width, width)
-        DECLARE_ANIMATED_LENGTH(Height, height)
-        DECLARE_ANIMATED_STRING(Result, result)
-    END_DECLARE_ANIMATED_PROPERTIES
+    RefPtr<SVGAnimatedLength> m_x;
+    RefPtr<SVGAnimatedLength> m_y;
+    RefPtr<SVGAnimatedLength> m_width;
+    RefPtr<SVGAnimatedLength> m_height;
+    RefPtr<SVGAnimatedString> m_result;
 };
 
 void invalidateFilterPrimitiveParent(SVGElement*);

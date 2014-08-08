@@ -26,15 +26,17 @@
 #include "config.h"
 #include "core/html/HTMLVideoElement.h"
 
-#include "CSSPropertyNames.h"
-#include "HTMLNames.h"
 #include "bindings/v8/ExceptionState.h"
+#include "core/CSSPropertyNames.h"
+#include "core/HTMLNames.h"
 #include "core/dom/Attribute.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
-#include "core/html/HTMLImageLoader.h"
-#include "core/html/parser/HTMLParserIdioms.h"
+#include "core/dom/shadow/ShadowRoot.h"
 #include "core/frame/Settings.h"
+#include "core/html/HTMLImageLoader.h"
+#include "core/html/canvas/CanvasRenderingContext.h"
+#include "core/html/parser/HTMLParserIdioms.h"
 #include "core/rendering/RenderImage.h"
 #include "core/rendering/RenderVideo.h"
 #include "platform/UserGestureIndicator.h"
@@ -43,19 +45,26 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-inline HTMLVideoElement::HTMLVideoElement(Document& document, bool createdByParser)
-    : HTMLMediaElement(videoTag, document, createdByParser)
+inline HTMLVideoElement::HTMLVideoElement(Document& document)
+    : HTMLMediaElement(videoTag, document)
 {
     ScriptWrappable::init(this);
     if (document.settings())
-        m_defaultPosterURL = document.settings()->defaultVideoPosterURL();
+        m_defaultPosterURL = AtomicString(document.settings()->defaultVideoPosterURL());
 }
 
-PassRefPtr<HTMLVideoElement> HTMLVideoElement::create(Document& document, bool createdByParser)
+PassRefPtrWillBeRawPtr<HTMLVideoElement> HTMLVideoElement::create(Document& document)
 {
-    RefPtr<HTMLVideoElement> videoElement(adoptRef(new HTMLVideoElement(document, createdByParser)));
-    videoElement->suspendIfNeeded();
-    return videoElement.release();
+    RefPtrWillBeRawPtr<HTMLVideoElement> video = adoptRefWillBeNoop(new HTMLVideoElement(document));
+    video->ensureUserAgentShadowRoot();
+    video->suspendIfNeeded();
+    return video.release();
+}
+
+void HTMLVideoElement::trace(Visitor* visitor)
+{
+    visitor->trace(m_imageLoader);
+    HTMLMediaElement::trace(visitor);
 }
 
 bool HTMLVideoElement::rendererIsNeeded(const RenderStyle& style)
@@ -75,7 +84,7 @@ void HTMLVideoElement::attach(const AttachContext& context)
     updateDisplayState();
     if (shouldDisplayPosterImage()) {
         if (!m_imageLoader)
-            m_imageLoader = adoptPtr(new HTMLImageLoader(this));
+            m_imageLoader = HTMLImageLoader::create(this);
         m_imageLoader->updateFromElement();
         if (renderer())
             toRenderImage(renderer())->imageResource()->setImageResource(m_imageLoader->image());
@@ -107,12 +116,15 @@ void HTMLVideoElement::parseAttribute(const QualifiedName& name, const AtomicStr
         updateDisplayState();
         if (shouldDisplayPosterImage()) {
             if (!m_imageLoader)
-                m_imageLoader = adoptPtr(new HTMLImageLoader(this));
+                m_imageLoader = HTMLImageLoader::create(this);
             m_imageLoader->updateFromElementIgnoringPreviousError();
         } else {
             if (renderer())
                 toRenderImage(renderer())->imageResource()->setImageResource(0);
         }
+        // Notify the player when the poster image URL changes.
+        if (player())
+            player()->setPoster(posterImageURL());
     } else
         HTMLMediaElement::parseAttribute(name, value);
 }
@@ -122,7 +134,7 @@ bool HTMLVideoElement::supportsFullscreen() const
     if (!document().page())
         return false;
 
-    if (!player() || !player()->supportsFullscreen())
+    if (!player())
         return false;
 
     return true;
@@ -130,16 +142,16 @@ bool HTMLVideoElement::supportsFullscreen() const
 
 unsigned HTMLVideoElement::videoWidth() const
 {
-    if (!player())
+    if (!webMediaPlayer())
         return 0;
-    return player()->naturalSize().width();
+    return webMediaPlayer()->naturalSize().width;
 }
 
 unsigned HTMLVideoElement::videoHeight() const
 {
-    if (!player())
+    if (!webMediaPlayer())
         return 0;
-    return player()->naturalSize().height();
+    return webMediaPlayer()->naturalSize().height;
 }
 
 bool HTMLVideoElement::isURLAttribute(const Attribute& attribute) const
@@ -163,7 +175,9 @@ void HTMLVideoElement::setDisplayMode(DisplayMode mode)
     if (!poster.isEmpty()) {
         // We have a poster path, but only show it until the user triggers display by playing or seeking and the
         // media engine has something to display.
-        if (mode == Video && !hasAvailableVideoFrame())
+        // Don't show the poster if there is a seek operation or
+        // the video has restarted because of loop attribute
+        if (mode == Video && oldMode == Poster && !hasAvailableVideoFrame())
             mode = PosterWaitingForVideo;
     }
 
@@ -181,7 +195,7 @@ void HTMLVideoElement::updateDisplayState()
         setDisplayMode(Poster);
 }
 
-void HTMLVideoElement::paintCurrentFrameInContext(GraphicsContext* context, const IntRect& destRect)
+void HTMLVideoElement::paintCurrentFrameInContext(GraphicsContext* context, const IntRect& destRect) const
 {
     MediaPlayer* player = HTMLMediaElement::player();
     if (!player)
@@ -189,7 +203,7 @@ void HTMLVideoElement::paintCurrentFrameInContext(GraphicsContext* context, cons
     player->paint(context, destRect);
 }
 
-bool HTMLVideoElement::copyVideoTextureToPlatformTexture(GraphicsContext3D* context, Platform3DObject texture, GC3Dint level, GC3Denum type, GC3Denum internalFormat, bool premultiplyAlpha, bool flipY)
+bool HTMLVideoElement::copyVideoTextureToPlatformTexture(blink::WebGraphicsContext3D* context, Platform3DObject texture, GLint level, GLenum type, GLenum internalFormat, bool premultiplyAlpha, bool flipY)
 {
     if (!player())
         return false;
@@ -198,10 +212,10 @@ bool HTMLVideoElement::copyVideoTextureToPlatformTexture(GraphicsContext3D* cont
 
 bool HTMLVideoElement::hasAvailableVideoFrame() const
 {
-    if (!player())
+    if (!webMediaPlayer())
         return false;
 
-    return player()->hasVideo() && player()->readyState() >= MediaPlayer::HaveCurrentData;
+    return webMediaPlayer()->hasVideo() && webMediaPlayer()->readyState() >= blink::WebMediaPlayer::ReadyStateHaveCurrentData;
 }
 
 void HTMLVideoElement::webkitEnterFullscreen(ExceptionState& exceptionState)
@@ -209,12 +223,6 @@ void HTMLVideoElement::webkitEnterFullscreen(ExceptionState& exceptionState)
     if (isFullscreen())
         return;
 
-    // Generate an exception if this isn't called in response to a user gesture, or if the
-    // element does not support fullscreen.
-    if (userGestureRequiredForFullscreen() && !UserGestureIndicator::processingUserGesture()) {
-        exceptionState.throwDOMException(InvalidStateError, "This element may only enter fullscreen mode in response to a user gesture ('click', for example).");
-        return;
-    }
     if (!supportsFullscreen()) {
         exceptionState.throwDOMException(InvalidStateError, "This element does not support fullscreen mode.");
         return;
@@ -248,18 +256,18 @@ void HTMLVideoElement::didMoveToNewDocument(Document& oldDocument)
 
 unsigned HTMLVideoElement::webkitDecodedFrameCount() const
 {
-    if (!player())
+    if (!webMediaPlayer())
         return 0;
 
-    return player()->decodedFrameCount();
+    return webMediaPlayer()->decodedFrameCount();
 }
 
 unsigned HTMLVideoElement::webkitDroppedFrameCount() const
 {
-    if (!player())
+    if (!webMediaPlayer())
         return 0;
 
-    return player()->droppedFrameCount();
+    return webMediaPlayer()->droppedFrameCount();
 }
 
 KURL HTMLVideoElement::posterImageURL() const
@@ -268,6 +276,41 @@ KURL HTMLVideoElement::posterImageURL() const
     if (url.isEmpty())
         return KURL();
     return document().completeURL(url);
+}
+
+KURL HTMLVideoElement::mediaPlayerPosterURL()
+{
+    return posterImageURL();
+}
+
+PassRefPtr<Image> HTMLVideoElement::getSourceImageForCanvas(SourceImageMode mode, SourceImageStatus* status) const
+{
+    if (!hasAvailableVideoFrame()) {
+        *status = InvalidSourceImageStatus;
+        return nullptr;
+    }
+
+    IntSize intrinsicSize(videoWidth(), videoHeight());
+    OwnPtr<ImageBuffer> imageBuffer = ImageBuffer::create(intrinsicSize);
+    if (!imageBuffer) {
+        *status = InvalidSourceImageStatus;
+        return nullptr;
+    }
+
+    paintCurrentFrameInContext(imageBuffer->context(), IntRect(IntPoint(0, 0), intrinsicSize));
+
+    *status = NormalSourceImageStatus;
+    return imageBuffer->copyImage(mode == CopySourceImageIfVolatile ? CopyBackingStore : DontCopyBackingStore, Unscaled);
+}
+
+bool HTMLVideoElement::wouldTaintOrigin(SecurityOrigin* destinationSecurityOrigin) const
+{
+    return !hasSingleSecurityOrigin() || (!(webMediaPlayer() && webMediaPlayer()->didPassCORSAccessCheck()) && destinationSecurityOrigin->taintsCanvas(currentSrc()));
+}
+
+FloatSize HTMLVideoElement::sourceSize() const
+{
+    return FloatSize(videoWidth(), videoHeight());
 }
 
 }

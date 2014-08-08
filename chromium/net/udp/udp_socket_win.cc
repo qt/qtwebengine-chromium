@@ -339,7 +339,7 @@ int UDPSocketWin::InternalConnect(const IPEndPoint& address) {
   // else connect() does the DatagramSocket::DEFAULT_BIND
 
   if (rv < 0) {
-    UMA_HISTOGRAM_SPARSE_SLOWLY("Net.UdpSocketRandomBindErrorCode", rv);
+    UMA_HISTOGRAM_SPARSE_SLOWLY("Net.UdpSocketRandomBindErrorCode", -rv);
     Close();
     return rv;
   }
@@ -388,20 +388,47 @@ int UDPSocketWin::CreateSocket(int addr_family) {
   return OK;
 }
 
-bool UDPSocketWin::SetReceiveBufferSize(int32 size) {
+int UDPSocketWin::SetReceiveBufferSize(int32 size) {
   DCHECK(CalledOnValidThread());
   int rv = setsockopt(socket_, SOL_SOCKET, SO_RCVBUF,
                       reinterpret_cast<const char*>(&size), sizeof(size));
-  DCHECK(!rv) << "Could not set socket receive buffer size: " << errno;
-  return rv == 0;
+  if (rv != 0)
+    return MapSystemError(WSAGetLastError());
+
+  // According to documentation, setsockopt may succeed, but we need to check
+  // the results via getsockopt to be sure it works on Windows.
+  int32 actual_size = 0;
+  int option_size = sizeof(actual_size);
+  rv = getsockopt(socket_, SOL_SOCKET, SO_RCVBUF,
+                  reinterpret_cast<char*>(&actual_size), &option_size);
+  if (rv != 0)
+    return MapSystemError(WSAGetLastError());
+  if (actual_size >= size)
+    return OK;
+  UMA_HISTOGRAM_CUSTOM_COUNTS("Net.SocketUnchangeableReceiveBuffer",
+                              actual_size, 1000, 1000000, 50);
+  return ERR_SOCKET_RECEIVE_BUFFER_SIZE_UNCHANGEABLE;
 }
 
-bool UDPSocketWin::SetSendBufferSize(int32 size) {
+int UDPSocketWin::SetSendBufferSize(int32 size) {
   DCHECK(CalledOnValidThread());
   int rv = setsockopt(socket_, SOL_SOCKET, SO_SNDBUF,
                       reinterpret_cast<const char*>(&size), sizeof(size));
-  DCHECK(!rv) << "Could not set socket send buffer size: " << errno;
-  return rv == 0;
+  if (rv != 0)
+    return MapSystemError(WSAGetLastError());
+  // According to documentation, setsockopt may succeed, but we need to check
+  // the results via getsockopt to be sure it works on Windows.
+  int32 actual_size = 0;
+  int option_size = sizeof(actual_size);
+  rv = getsockopt(socket_, SOL_SOCKET, SO_SNDBUF,
+                  reinterpret_cast<char*>(&actual_size), &option_size);
+  if (rv != 0)
+    return MapSystemError(WSAGetLastError());
+  if (actual_size >= size)
+    return OK;
+  UMA_HISTOGRAM_CUSTOM_COUNTS("Net.SocketUnchangeableSendBuffer",
+                              actual_size, 1000, 1000000, 50);
+  return ERR_SOCKET_SEND_BUFFER_SIZE_UNCHANGEABLE;
 }
 
 void UDPSocketWin::AllowAddressReuse() {
@@ -461,7 +488,7 @@ void UDPSocketWin::LogRead(int result, const char* bytes) const {
     return;
   }
 
-  if (net_log_.IsLoggingAllEvents()) {
+  if (net_log_.IsLogging()) {
     // Get address for logging, if |address| is NULL.
     IPEndPoint address;
     bool is_address_valid = ReceiveAddressToIPEndpoint(&address);
@@ -497,7 +524,7 @@ void UDPSocketWin::LogWrite(int result,
     return;
   }
 
-  if (net_log_.IsLoggingAllEvents()) {
+  if (net_log_.IsLogging()) {
     net_log_.AddEvent(
         NetLog::TYPE_UDP_BYTES_SENT,
         CreateNetLogUDPDataTranferCallback(result, bytes, address));
@@ -529,7 +556,7 @@ int UDPSocketWin::InternalRecvFrom(IOBuffer* buf, int buf_len,
       // Convert address.
       if (address && result >= 0) {
         if (!ReceiveAddressToIPEndpoint(address))
-          result = ERR_FAILED;
+          result = ERR_ADDRESS_INVALID;
       }
       LogRead(result, buf->data());
       return result;
@@ -558,7 +585,7 @@ int UDPSocketWin::InternalSendTo(IOBuffer* buf, int buf_len,
     storage.addr_len = 0;
   } else {
     if (!address->ToSockAddr(addr, &storage.addr_len)) {
-      int result = ERR_FAILED;
+      int result = ERR_ADDRESS_INVALID;
       LogWrite(result, NULL, NULL);
       return result;
     }
@@ -670,7 +697,12 @@ int UDPSocketWin::DoBind(const IPEndPoint& address) {
   int last_error = WSAGetLastError();
   UMA_HISTOGRAM_SPARSE_SLOWLY("Net.UdpSocketBindErrorFromWinOS", last_error);
   // Map some codes that are special to bind() separately.
-  if (last_error == WSAEACCES || last_error == WSAEINVAL)
+  // * WSAEACCES: If a port is already bound to a socket, WSAEACCES may be
+  //   returned instead of WSAEADDRINUSE, depending on whether the socket
+  //   option SO_REUSEADDR or SO_EXCLUSIVEADDRUSE is set and whether the
+  //   conflicting socket is owned by a different user account. See the MSDN
+  //   page "Using SO_REUSEADDR and SO_EXCLUSIVEADDRUSE" for the gory details.
+  if (last_error == WSAEACCES || last_error == WSAEADDRNOTAVAIL)
     return ERR_ADDRESS_IN_USE;
   return MapSystemError(last_error);
 }
@@ -803,6 +835,10 @@ int UDPSocketWin::SetMulticastLoopbackMode(bool loopback) {
 // Note: setsockopt(IP_TOS) does not work on windows XP and later.
 int UDPSocketWin::SetDiffServCodePoint(DiffServCodePoint dscp) {
   return ERR_NOT_IMPLEMENTED;
+}
+
+void UDPSocketWin::DetachFromThread() {
+  base::NonThreadSafe::DetachFromThread();
 }
 
 }  // namespace net

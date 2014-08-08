@@ -154,24 +154,22 @@ var kStoppedIssue = {
   "issue": 16606004
 };
 
-test("fetchCurrentRoll", 6, function() {
+asyncTest("fetchCurrentRoll", 6, function() {
     var simulator = new NetworkSimulator();
-    simulator.get = function(url, callback)
+    simulator.json = function(url)
     {
-        simulator.scheduleCallback(function() {
-            callback(kSearchResults);
-        });
+        return Promise.resolve(kSearchResults);
     };
 
     simulator.runTest(function() {
-        rollbot.fetchCurrentRoll(function(roll) {
+        rollbot.fetchCurrentRoll().then(function(roll) {
             equals(roll.issue, 16337011);
             equals(roll.url, "https://codereview.chromium.org/16337011");
             equals(roll.isStopped, false);
             equals(roll.fromRevision, "151668");
             equals(roll.toRevision, "151677");
         });
-    });
+    }).then(start);
 });
 
 test("_isRollbotStopped", 1, function() {

@@ -12,6 +12,7 @@ namespace content {
 namespace {
 
 const int kRenderViewId = 1;
+const int kRenderFrameId = 2;
 
 class MockAudioDelegate : public media::AudioOutputIPCDelegate {
  public:
@@ -71,14 +72,14 @@ class MockAudioDelegate : public media::AudioOutputIPCDelegate {
 }  // namespace
 
 TEST(AudioMessageFilterTest, Basic) {
-  base::MessageLoop message_loop(base::MessageLoop::TYPE_IO);
+  base::MessageLoopForIO message_loop;
 
   scoped_refptr<AudioMessageFilter> filter(new AudioMessageFilter(
       message_loop.message_loop_proxy()));
 
   MockAudioDelegate delegate;
   const scoped_ptr<media::AudioOutputIPC> ipc =
-      filter->CreateAudioOutputIPC(kRenderViewId);
+      filter->CreateAudioOutputIPC(kRenderViewId, kRenderFrameId);
   static const int kSessionId = 0;
   ipc->CreateStream(&delegate, media::AudioParameters(), kSessionId);
   static const int kStreamId = 1;
@@ -118,7 +119,7 @@ TEST(AudioMessageFilterTest, Basic) {
 }
 
 TEST(AudioMessageFilterTest, Delegates) {
-  base::MessageLoop message_loop(base::MessageLoop::TYPE_IO);
+  base::MessageLoopForIO message_loop;
 
   scoped_refptr<AudioMessageFilter> filter(new AudioMessageFilter(
       message_loop.message_loop_proxy()));
@@ -126,9 +127,9 @@ TEST(AudioMessageFilterTest, Delegates) {
   MockAudioDelegate delegate1;
   MockAudioDelegate delegate2;
   const scoped_ptr<media::AudioOutputIPC> ipc1 =
-      filter->CreateAudioOutputIPC(kRenderViewId);
+      filter->CreateAudioOutputIPC(kRenderViewId, kRenderFrameId);
   const scoped_ptr<media::AudioOutputIPC> ipc2 =
-      filter->CreateAudioOutputIPC(kRenderViewId);
+      filter->CreateAudioOutputIPC(kRenderViewId, kRenderFrameId);
   static const int kSessionId = 0;
   ipc1->CreateStream(&delegate1, media::AudioParameters(), kSessionId);
   ipc2->CreateStream(&delegate2, media::AudioParameters(), kSessionId);

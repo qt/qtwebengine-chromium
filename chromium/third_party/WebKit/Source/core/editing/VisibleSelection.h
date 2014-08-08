@@ -39,16 +39,22 @@ const EAffinity SEL_DEFAULT_AFFINITY = DOWNSTREAM;
 enum SelectionDirection { DirectionForward, DirectionBackward, DirectionRight, DirectionLeft };
 
 class VisibleSelection {
+    DISALLOW_ALLOCATION();
 public:
     VisibleSelection();
 
     VisibleSelection(const Position&, EAffinity, bool isDirectional = false);
     VisibleSelection(const Position&, const Position&, EAffinity = SEL_DEFAULT_AFFINITY, bool isDirectional = false);
 
-    VisibleSelection(const Range*, EAffinity = SEL_DEFAULT_AFFINITY, bool isDirectional = false);
+    explicit VisibleSelection(const Range*, EAffinity = SEL_DEFAULT_AFFINITY, bool isDirectional = false);
 
-    VisibleSelection(const VisiblePosition&, bool isDirectional = false);
+    explicit VisibleSelection(const VisiblePosition&, bool isDirectional = false);
     VisibleSelection(const VisiblePosition&, const VisiblePosition&, bool isDirectional = false);
+
+    VisibleSelection(const VisibleSelection&);
+    VisibleSelection& operator=(const VisibleSelection&);
+
+    ~VisibleSelection();
 
     static VisibleSelection selectionFromContentsOfNode(Node*);
 
@@ -83,19 +89,17 @@ public:
     bool isDirectional() const { return m_isDirectional; }
     void setIsDirectional(bool isDirectional) { m_isDirectional = isDirectional; }
 
-    bool isAll(EditingBoundaryCrossingRule) const;
-
     void appendTrailingWhitespace();
 
     bool expandUsingGranularity(TextGranularity granularity);
 
     // We don't yet support multi-range selections, so we only ever have one range to return.
-    PassRefPtr<Range> firstRange() const;
+    PassRefPtrWillBeRawPtr<Range> firstRange() const;
 
     // FIXME: Most callers probably don't want this function, but are using it
     // for historical reasons.  toNormalizedRange contracts the range around
     // text, and moves the caret upstream before returning the range.
-    PassRefPtr<Range> toNormalizedRange() const;
+    PassRefPtrWillBeRawPtr<Range> toNormalizedRange() const;
 
     Element* rootEditableElement() const;
     bool isContentEditable() const;
@@ -107,14 +111,34 @@ public:
 
     VisiblePosition visiblePositionRespectingEditingBoundary(const LayoutPoint& localPoint, Node* targetNode) const;
 
+    void setWithoutValidation(const Position&, const Position&);
+
+    // Listener of VisibleSelection modification. didChangeVisibleSelection() will be invoked when base, extent, start
+    // or end is moved to a different position.
+    //
+    // Objects implementing |ChangeObserver| interface must outlive the VisibleSelection object.
+    class ChangeObserver : public WillBeGarbageCollectedMixin {
+        WTF_MAKE_NONCOPYABLE(ChangeObserver);
+    public:
+        ChangeObserver();
+        virtual ~ChangeObserver();
+        virtual void didChangeVisibleSelection() = 0;
+        virtual void trace(Visitor*) { }
+    };
+
+    void setChangeObserver(ChangeObserver&);
+    void clearChangeObserver();
+    void didChange(); // Fire the change observer, if any.
+
+    void trace(Visitor*);
+
+    void validatePositionsIfNeeded();
 
 #ifndef NDEBUG
     void debugPosition() const;
     void formatForDebugger(char* buffer, unsigned length) const;
     void showTreeForThis() const;
 #endif
-
-    void setWithoutValidation(const Position&, const Position&);
 
 private:
     void validate(TextGranularity = CharacterGranularity);
@@ -137,6 +161,10 @@ private:
     Position m_end;    // Rightmost position when expanded to respect granularity
 
     EAffinity m_affinity;           // the upstream/downstream affinity of the caret
+
+    // Oilpan: this reference has a lifetime that is at least as long
+    // as this object.
+    RawPtrWillBeMember<ChangeObserver> m_changeObserver;
 
     // these are cached, can be recalculated by validate()
     SelectionType m_selectionType; // None, Caret, Range

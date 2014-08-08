@@ -14,23 +14,29 @@ class SK_API SkTileImageFilter : public SkImageFilter {
     typedef SkImageFilter INHERITED;
 
 public:
-    /** Tile image filter constructor
+    /** Create a tile image filter
         @param srcRect  Defines the pixels to tile
         @param dstRect  Defines the pixels where tiles are drawn
         @param input    Input from which the subregion defined by srcRect will be tiled
     */
-    SkTileImageFilter(const SkRect& srcRect, const SkRect& dstRect, SkImageFilter* input)
-        : INHERITED(input), fSrcRect(srcRect), fDstRect(dstRect) {}
+    static SkTileImageFilter* Create(const SkRect& srcRect, const SkRect& dstRect,
+                                     SkImageFilter* input) {
+        return SkNEW_ARGS(SkTileImageFilter, (srcRect, dstRect, input));
+    }
 
-    virtual bool onFilterImage(Proxy* proxy, const SkBitmap& src, const SkMatrix& ctm,
-                               SkBitmap* dst, SkIPoint* offset) SK_OVERRIDE;
+    virtual bool onFilterImage(Proxy* proxy, const SkBitmap& src, const Context& ctx,
+                               SkBitmap* dst, SkIPoint* offset) const SK_OVERRIDE;
+    virtual bool onFilterBounds(const SkIRect& src, const SkMatrix&,
+                                SkIRect* dst) const SK_OVERRIDE;
 
     SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(SkTileImageFilter)
 
 protected:
-    explicit SkTileImageFilter(SkFlattenableReadBuffer& buffer);
+    SkTileImageFilter(const SkRect& srcRect, const SkRect& dstRect, SkImageFilter* input)
+        : INHERITED(input), fSrcRect(srcRect), fDstRect(dstRect) {}
+    explicit SkTileImageFilter(SkReadBuffer& buffer);
 
-    virtual void flatten(SkFlattenableWriteBuffer& buffer) const SK_OVERRIDE;
+    virtual void flatten(SkWriteBuffer& buffer) const SK_OVERRIDE;
 
 private:
     SkRect fSrcRect;

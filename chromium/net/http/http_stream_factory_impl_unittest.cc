@@ -43,20 +43,6 @@ namespace net {
 
 namespace {
 
-class UseAlternateProtocolsScopedSetter {
- public:
-  explicit UseAlternateProtocolsScopedSetter(bool use_alternate_protocols)
-      : use_alternate_protocols_(HttpStreamFactory::use_alternate_protocols()) {
-    HttpStreamFactory::set_use_alternate_protocols(use_alternate_protocols);
-  }
-  ~UseAlternateProtocolsScopedSetter() {
-    HttpStreamFactory::set_use_alternate_protocols(use_alternate_protocols_);
-  }
-
- private:
-  bool use_alternate_protocols_;
-};
-
 class MockWebSocketHandshakeStream : public WebSocketHandshakeStreamBase {
  public:
   enum StreamType {
@@ -86,9 +72,6 @@ class MockWebSocketHandshakeStream : public WebSocketHandshakeStreamBase {
   }
   virtual int ReadResponseHeaders(const CompletionCallback& callback) OVERRIDE {
     return ERR_IO_PENDING;
-  }
-  virtual const HttpResponseInfo* GetResponseInfo() const OVERRIDE {
-    return NULL;
   }
   virtual int ReadResponseBody(IOBuffer* buf,
                                int buf_len,
@@ -420,19 +403,19 @@ CapturePreconnectsSSLSocketPool::CapturePreconnectsSocketPool(
     CertVerifier* cert_verifier)
     : SSLClientSocketPool(0,
                           0,
-                          NULL,
+                          NULL,           // ssl_histograms
                           host_resolver,
                           cert_verifier,
+                          NULL,           // server_bound_cert_store
+                          NULL,           // transport_security_state
+                          NULL,           // cert_transparency_verifier
+                          std::string(),  // ssl_session_cache_shard
+                          NULL,           // deterministic_socket_factory
+                          NULL,           // transport_socket_pool
                           NULL,
                           NULL,
-                          NULL,
-                          std::string(),
-                          NULL,
-                          NULL,
-                          NULL,
-                          NULL,
-                          NULL,
-                          NULL),
+                          NULL,           // ssl_config_service
+                          NULL),          // net_log
       last_num_streams_(-1) {}
 
 class HttpStreamFactoryTest : public ::testing::Test,
@@ -443,8 +426,7 @@ INSTANTIATE_TEST_CASE_P(
     NextProto,
     HttpStreamFactoryTest,
     testing::Values(kProtoDeprecatedSPDY2,
-                    kProtoSPDY3, kProtoSPDY31, kProtoSPDY4a2,
-                    kProtoHTTP2Draft04));
+                    kProtoSPDY3, kProtoSPDY31, kProtoSPDY4));
 
 TEST_P(HttpStreamFactoryTest, PreconnectDirect) {
   for (size_t i = 0; i < arraysize(kTests); ++i) {
@@ -546,7 +528,7 @@ TEST_P(HttpStreamFactoryTest, PreconnectDirectWithExistingSpdySession) {
     // Put a SpdySession in the pool.
     HostPortPair host_port_pair("www.google.com", 443);
     SpdySessionKey key(host_port_pair, ProxyServer::Direct(),
-                       kPrivacyModeDisabled);
+                       PRIVACY_MODE_DISABLED);
     ignore_result(CreateFakeSpdySession(session->spdy_session_pool(), key));
 
     CapturePreconnectsTransportSocketPool* transport_conn_pool =
@@ -657,13 +639,13 @@ TEST_P(HttpStreamFactoryTest, PrivacyModeDisablesChannelId) {
   // Set an existing SpdySession in the pool.
   HostPortPair host_port_pair("www.google.com", 443);
   SpdySessionKey key(host_port_pair, ProxyServer::Direct(),
-                     kPrivacyModeEnabled);
+                     PRIVACY_MODE_ENABLED);
 
   HttpRequestInfo request_info;
   request_info.method = "GET";
   request_info.url = GURL("https://www.google.com");
   request_info.load_flags = 0;
-  request_info.privacy_mode = kPrivacyModeDisabled;
+  request_info.privacy_mode = PRIVACY_MODE_DISABLED;
 
   SSLConfig ssl_config;
   StreamRequestWaiter waiter;
@@ -716,7 +698,7 @@ TEST_P(HttpStreamFactoryTest, PrivacyModeUsesDifferentSocketPoolGroup) {
   request_info.method = "GET";
   request_info.url = GURL("https://www.google.com");
   request_info.load_flags = 0;
-  request_info.privacy_mode = kPrivacyModeDisabled;
+  request_info.privacy_mode = PRIVACY_MODE_DISABLED;
 
   SSLConfig ssl_config;
   StreamRequestWaiter waiter;
@@ -737,7 +719,7 @@ TEST_P(HttpStreamFactoryTest, PrivacyModeUsesDifferentSocketPoolGroup) {
 
   EXPECT_EQ(GetSocketPoolGroupCount(ssl_pool), 1);
 
-  request_info.privacy_mode = kPrivacyModeEnabled;
+  request_info.privacy_mode = PRIVACY_MODE_ENABLED;
   scoped_ptr<HttpStreamRequest> request3(
       session->http_stream_factory()->RequestStream(
           request_info, DEFAULT_PRIORITY, ssl_config, ssl_config,
@@ -1127,7 +1109,64 @@ TEST_P(HttpStreamFactoryTest, RequestSpdyHttpStream) {
   EXPECT_TRUE(waiter.used_proxy_info().is_direct());
 }
 
-TEST_P(HttpStreamFactoryTest, RequestWebSocketSpdyHandshakeStream) {
+// TODO(ricea): This test can be removed once the new WebSocket stack supports
+// SPDY. Currently, even if we connect to a SPDY-supporting server, we need to
+// use plain SSL.
+TEST_P(HttpStreamFactoryTest, RequestWebSocketSpdyHandshakeStreamButGetSSL) {
+  SpdySessionDependencies session_deps(GetParam(),
+                                       ProxyService::CreateDirect());
+
+  MockRead mock_read(SYNCHRONOUS, ERR_IO_PENDING);
+  StaticSocketDataProvider socket_data(&mock_read, 1, NULL, 0);
+  socket_data.set_connect_data(MockConnect(ASYNC, OK));
+  session_deps.socket_factory->AddSocketDataProvider(&socket_data);
+
+  SSLSocketDataProvider ssl_socket_data(ASYNC, OK);
+  session_deps.socket_factory->AddSSLSocketDataProvider(&ssl_socket_data);
+
+  HostPortPair host_port_pair("www.google.com", 80);
+  scoped_refptr<HttpNetworkSession>
+      session(SpdySessionDependencies::SpdyCreateSession(&session_deps));
+
+  // Now request a stream.
+  HttpRequestInfo request_info;
+  request_info.method = "GET";
+  request_info.url = GURL("wss://www.google.com");
+  request_info.load_flags = 0;
+
+  SSLConfig ssl_config;
+  StreamRequestWaiter waiter1;
+  WebSocketStreamCreateHelper create_helper;
+  scoped_ptr<HttpStreamRequest> request1(
+      session->http_stream_factory_for_websocket()
+          ->RequestWebSocketHandshakeStream(request_info,
+                                            DEFAULT_PRIORITY,
+                                            ssl_config,
+                                            ssl_config,
+                                            &waiter1,
+                                            &create_helper,
+                                            BoundNetLog()));
+  waiter1.WaitForStream();
+  EXPECT_TRUE(waiter1.stream_done());
+  ASSERT_TRUE(NULL != waiter1.websocket_stream());
+  EXPECT_EQ(MockWebSocketHandshakeStream::kStreamTypeBasic,
+            waiter1.websocket_stream()->type());
+  EXPECT_TRUE(NULL == waiter1.stream());
+
+  EXPECT_EQ(0, GetSocketPoolGroupCount(
+      session->GetTransportSocketPool(HttpNetworkSession::NORMAL_SOCKET_POOL)));
+  EXPECT_EQ(0, GetSocketPoolGroupCount(
+      session->GetSSLSocketPool(HttpNetworkSession::NORMAL_SOCKET_POOL)));
+  EXPECT_EQ(1, GetSocketPoolGroupCount(
+      session->GetTransportSocketPool(
+                HttpNetworkSession::WEBSOCKET_SOCKET_POOL)));
+  EXPECT_EQ(1, GetSocketPoolGroupCount(
+      session->GetSSLSocketPool(HttpNetworkSession::WEBSOCKET_SOCKET_POOL)));
+  EXPECT_TRUE(waiter1.used_proxy_info().is_direct());
+}
+
+// TODO(ricea): Re-enable once WebSocket-over-SPDY is implemented.
+TEST_P(HttpStreamFactoryTest, DISABLED_RequestWebSocketSpdyHandshakeStream) {
   SpdySessionDependencies session_deps(GetParam(),
                                        ProxyService::CreateDirect());
 
@@ -1203,10 +1242,11 @@ TEST_P(HttpStreamFactoryTest, RequestWebSocketSpdyHandshakeStream) {
   EXPECT_TRUE(waiter1.used_proxy_info().is_direct());
 }
 
-TEST_P(HttpStreamFactoryTest, OrphanedWebSocketStream) {
-  UseAlternateProtocolsScopedSetter use_alternate_protocols(true);
+// TODO(ricea): Re-enable once WebSocket over SPDY is implemented.
+TEST_P(HttpStreamFactoryTest, DISABLED_OrphanedWebSocketStream) {
   SpdySessionDependencies session_deps(GetParam(),
                                        ProxyService::CreateDirect());
+  session_deps.use_alternate_protocols = true;
 
   MockRead mock_read(ASYNC, OK);
   DeterministicSocketData socket_data(&mock_read, 1, NULL, 0);

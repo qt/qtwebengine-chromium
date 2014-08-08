@@ -16,6 +16,11 @@
 #include "webkit/browser/appcache/appcache_storage.h"
 #include "webkit/browser/webkit_storage_browser_export.h"
 
+namespace content {
+class AppCacheRequestHandlerTest;
+class AppCacheURLRequestJobTest;
+}
+
 namespace net {
 class GrowableIOBuffer;
 };
@@ -33,7 +38,8 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AppCacheURLRequestJob
   AppCacheURLRequestJob(net::URLRequest* request,
                         net::NetworkDelegate* network_delegate,
                         AppCacheStorage* storage,
-                        AppCacheHost* host);
+                        AppCacheHost* host,
+                        bool is_main_resource);
 
   // Informs the job of what response it should deliver. Only one of these
   // methods should be called, and only once per job. A job will sit idle and
@@ -91,8 +97,8 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AppCacheURLRequestJob
   virtual ~AppCacheURLRequestJob();
 
  private:
-  friend class AppCacheRequestHandlerTest;
-  friend class AppCacheURLRequestJobTest;
+  friend class content::AppCacheRequestHandlerTest;
+  friend class content::AppCacheURLRequestJobTest;
 
   enum DeliveryType {
     AWAITING_DELIVERY_ORDERS,
@@ -158,6 +164,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AppCacheURLRequestJob
   int64 cache_id_;
   AppCacheEntry entry_;
   bool is_fallback_;
+  bool is_main_resource_;  // Used for histogram logging.
   bool cache_entry_not_found_;
   scoped_refptr<AppCacheResponseInfo> info_;
   scoped_refptr<net::GrowableIOBuffer> handler_source_buffer_;

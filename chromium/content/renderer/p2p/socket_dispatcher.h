@@ -29,8 +29,8 @@
 #include "base/observer_list_threadsafe.h"
 #include "base/synchronization/lock.h"
 #include "content/common/content_export.h"
-#include "content/public/common/p2p_socket_type.h"
-#include "ipc/ipc_channel_proxy.h"
+#include "content/common/p2p_socket_type.h"
+#include "ipc/message_filter.h"
 #include "net/base/net_util.h"
 
 namespace base {
@@ -44,14 +44,13 @@ class IPEndPoint;
 namespace content {
 
 class NetworkListObserver;
-class RenderViewImpl;
-class P2PHostAddressRequest;
+class P2PAsyncAddressResolver;
 class P2PSocketClientImpl;
+class RenderViewImpl;
 
-class CONTENT_EXPORT P2PSocketDispatcher
-    : public IPC::ChannelProxy::MessageFilter {
+class CONTENT_EXPORT P2PSocketDispatcher : public IPC::MessageFilter {
  public:
-  P2PSocketDispatcher(base::MessageLoopProxy* ipc_message_loop);
+  explicit P2PSocketDispatcher(base::MessageLoopProxy* ipc_message_loop);
 
   // Add a new network list observer. Each observer is called
   // immidiately after it is registered and then later whenever
@@ -67,15 +66,15 @@ class CONTENT_EXPORT P2PSocketDispatcher
   virtual ~P2PSocketDispatcher();
 
  private:
-  friend class P2PHostAddressRequest;
+  friend class P2PAsyncAddressResolver;
   friend class P2PSocketClientImpl;
 
   // Send a message asynchronously.
   virtual void Send(IPC::Message* message);
 
-  // IPC::ChannelProxy::MessageFilter override. Called on IO thread.
+  // IPC::MessageFilter override. Called on IO thread.
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
-  virtual void OnFilterAdded(IPC::Channel* channel) OVERRIDE;
+  virtual void OnFilterAdded(IPC::Sender* sender) OVERRIDE;
   virtual void OnFilterRemoved() OVERRIDE;
   virtual void OnChannelClosing() OVERRIDE;
 
@@ -88,13 +87,13 @@ class CONTENT_EXPORT P2PSocketDispatcher
   void SendP2PMessage(IPC::Message* msg);
 
   // Called by DnsRequest.
-  int RegisterHostAddressRequest(P2PHostAddressRequest* request);
+  int RegisterHostAddressRequest(P2PAsyncAddressResolver* request);
   void UnregisterHostAddressRequest(int id);
 
   // Incoming message handlers.
   void OnNetworkListChanged(const net::NetworkInterfaceList& networks);
   void OnGetHostAddressResult(int32 request_id,
-                              const net::IPAddressNumber& address);
+                              const net::IPAddressList& addresses);
   void OnSocketCreated(int socket_id, const net::IPEndPoint& address);
   void OnIncomingTcpConnection(int socket_id, const net::IPEndPoint& address);
   void OnSendComplete(int socket_id);
@@ -108,13 +107,13 @@ class CONTENT_EXPORT P2PSocketDispatcher
   scoped_refptr<base::MessageLoopProxy> message_loop_;
   IDMap<P2PSocketClientImpl> clients_;
 
-  IDMap<P2PHostAddressRequest> host_address_requests_;
+  IDMap<P2PAsyncAddressResolver> host_address_requests_;
 
   bool network_notifications_started_;
   scoped_refptr<ObserverListThreadSafe<NetworkListObserver> >
       network_list_observers_;
 
-  IPC::Channel* channel_;
+  IPC::Sender* sender_;
 
   DISALLOW_COPY_AND_ASSIGN(P2PSocketDispatcher);
 };

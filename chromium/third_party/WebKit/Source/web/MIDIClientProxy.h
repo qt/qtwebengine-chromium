@@ -32,25 +32,30 @@
 #define MIDIClientProxy_h
 
 #include "modules/webmidi/MIDIClient.h"
-#include "wtf/PassRefPtr.h"
+#include "platform/heap/Handle.h"
 
 namespace WebCore {
-class MIDIAccess;
+class MIDIAccessInitializer;
 }
 
 namespace blink {
 
 class WebMIDIClient;
 
-class MIDIClientProxy : public WebCore::MIDIClient {
+class MIDIClientProxy FINAL : public WebCore::MIDIClient {
 public:
-    explicit MIDIClientProxy(WebMIDIClient*);
+    static PassOwnPtr<MIDIClientProxy> create(WebMIDIClient* client)
+    {
+        return adoptPtr(new MIDIClientProxy(client));
+    }
 
     // WebCore::MIDIClient
-    virtual void requestSysExPermission(PassRefPtr<WebCore::MIDIAccess>);
-    virtual void cancelSysExPermissionRequest(WebCore::MIDIAccess*);
+    virtual void requestSysexPermission(WebCore::MIDIAccessInitializer*) OVERRIDE;
+    virtual void cancelSysexPermissionRequest(WebCore::MIDIAccessInitializer*) OVERRIDE;
 
 private:
+    explicit MIDIClientProxy(WebMIDIClient*);
+
     WebMIDIClient* m_client;
 };
 

@@ -60,7 +60,6 @@ class MediaConstraintsInterface {
   virtual const Constraints& GetMandatory() const = 0;
   virtual const Constraints& GetOptional() const = 0;
 
-
   // Constraint keys used by a local video source.
   // Specified by draft-alvestrand-constraints-resolution-00b
   static const char kMinAspectRatio[];  // minAspectRatio
@@ -79,6 +78,7 @@ class MediaConstraintsInterface {
   static const char kAutoGainControl[];  // googAutoGainControl
   static const char kExperimentalAutoGainControl[];  // googAutoGainControl2
   static const char kNoiseSuppression[];  // googNoiseSuppression
+  static const char kExperimentalNoiseSuppression[];  // googNoiseSuppression2
   static const char kHighpassFilter[];  // googHighpassFilter
   static const char kTypingNoiseDetection[];  // googTypingNoiseDetection
   static const char kAudioMirroring[];  // googAudioMirroring
@@ -86,9 +86,8 @@ class MediaConstraintsInterface {
   // Google-specific constraint keys for a local video source
   static const char kNoiseReduction[];  // googNoiseReduction
   static const char kLeakyBucket[];  // googLeakyBucket
-  // googTemporalLayeredScreencast
   static const char kTemporalLayeredScreencast[];
-  static const char kCpuOveruseDetection[];
+      // googTemporalLayeredScreencast
 
   // Constraint keys for CreateOffer / CreateAnswer
   // Specified by the W3C PeerConnection spec
@@ -103,26 +102,46 @@ class MediaConstraintsInterface {
   static const char kValueTrue[];  // true
   static const char kValueFalse[];  // false
 
+  // PeerConnection constraint keys.
   // Temporary pseudo-constraints used to enable DTLS-SRTP
   static const char kEnableDtlsSrtp[];  // Enable DTLS-SRTP
   // Temporary pseudo-constraints used to enable DataChannels
   static const char kEnableRtpDataChannels[];  // Enable RTP DataChannels
-  // TODO(perkj): Remove kEnableSctpDataChannels once Chrome use
-  // PeerConnectionFactory::SetOptions.
-  static const char kEnableSctpDataChannels[];  // Enable SCTP DataChannels
+  // Google-specific constraint keys.
   // Temporary pseudo-constraint for enabling DSCP through JS.
-  static const char kEnableDscp[];
+  static const char kEnableDscp[];  // googDscp
+  // Constraint to enable IPv6 through JS.
+  static const char kEnableIPv6[];  // googIPv6
+  // Temporary constraint to enable suspend below min bitrate feature.
+  static const char kEnableVideoSuspendBelowMinBitrate[];
+      // googSuspendBelowMinBitrate
+  static const char kImprovedWifiBwe[];  // googImprovedWifiBwe
+  static const char kScreencastMinBitrate[];  // googScreencastMinBitrate
+  static const char kSkipEncodingUnusedStreams[];
+      // googSkipEncodingUnusedStreams
+  static const char kCpuOveruseDetection[];  // googCpuOveruseDetection
+  static const char kCpuUnderuseThreshold[];  // googCpuUnderuseThreshold
+  static const char kCpuOveruseThreshold[];  // googCpuOveruseThreshold
+  // Low cpu adaptation threshold for relative standard deviation of encode
+  // time.
+  static const char kCpuUnderuseEncodeRsdThreshold[];
+  // High cpu adaptation threshold for relative standard deviation of encode
+  // time.
+  static const char kCpuOveruseEncodeRsdThreshold[];
+  static const char kCpuOveruseEncodeUsage[];  // googCpuOveruseEncodeUsage
+  static const char kHighStartBitrate[];  // googHighStartBitrate
+  static const char kHighBitrate[];  // googHighBitrate
+  static const char kVeryHighBitrate[];  // googVeryHighBitrate
+  static const char kPayloadPadding[];  // googPayloadPadding
+
+  // PeerConnection codec constraint keys. This should be combined with the
+  // values above.
+  // kOpusFec controls whether we ask the other side to turn on FEC for Opus.
+  static const char kOpusFec[];  // googOpusFec
 
   // The prefix of internal-only constraints whose JS set values should be
   // stripped by Chrome before passed down to Libjingle.
   static const char kInternalConstraintPrefix[];
-
-  // These constraints are for internal use only, representing Chrome command
-  // line flags. So they are prefixed with "internal" so JS values will be
-  // removed.
-  // Used by a local audio source.
-  // TODO(perkj): Remove once Chrome use PeerConnectionFactory::SetOptions.
-  static const char kInternalAecDump[];  // internalAecDump
 
  protected:
   // Dtor protected as objects shouldn't be deleted via this interface

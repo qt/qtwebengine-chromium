@@ -9,7 +9,6 @@
 #include "cc/resources/layer_painter.h"
 #include "cc/resources/prioritized_resource.h"
 #include "cc/resources/resource_update_queue.h"
-#include "third_party/skia/include/core/SkBitmapDevice.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 
 namespace cc {
@@ -21,15 +20,14 @@ BitmapSkPictureContentLayerUpdater::Resource::Resource(
 
 void BitmapSkPictureContentLayerUpdater::Resource::Update(
     ResourceUpdateQueue* queue,
-    gfx::Rect source_rect,
-    gfx::Vector2d dest_offset,
+    const gfx::Rect& source_rect,
+    const gfx::Vector2d& dest_offset,
     bool partial_update) {
-  bitmap_.setConfig(
-      SkBitmap::kARGB_8888_Config, source_rect.width(), source_rect.height(), 0,
-      updater_->layer_is_opaque() ? kOpaque_SkAlphaType : kPremul_SkAlphaType);
-  bitmap_.allocPixels();
-  SkBitmapDevice device(bitmap_);
-  SkCanvas canvas(&device);
+  SkAlphaType at =
+      updater_->layer_is_opaque() ? kOpaque_SkAlphaType : kPremul_SkAlphaType;
+  bitmap_.allocPixels(SkImageInfo::Make(
+      source_rect.width(), source_rect.height(), kPMColor_SkColorType, at));
+  SkCanvas canvas(bitmap_);
   updater_->PaintContentsRect(&canvas, source_rect);
 
   ResourceUpdate upload = ResourceUpdate::Create(
@@ -70,7 +68,9 @@ BitmapSkPictureContentLayerUpdater::CreateResource(
 
 void BitmapSkPictureContentLayerUpdater::PaintContentsRect(
     SkCanvas* canvas,
-    gfx::Rect source_rect) {
+    const gfx::Rect& source_rect) {
+  if (!canvas)
+    return;
   // Translate the origin of content_rect to that of source_rect.
   canvas->translate(content_rect().x() - source_rect.x(),
                     content_rect().y() - source_rect.y());

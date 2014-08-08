@@ -18,6 +18,10 @@
 #include "vp9/common/vp9_common.h"
 #include "vp9/common/vp9_enums.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 
 // Constants and Macros used by all idct/dct functions
 #define DCT_CONST_BITS 14
@@ -28,9 +32,6 @@
 
 #define pair_set_epi16(a, b) \
   _mm_set_epi16(b, a, b, a, b, a, b, a)
-
-#define pair_set_epi32(a, b) \
-  _mm_set_epi32(b, a, b, a)
 
 // Constants:
 //  for (int i = 1; i< 32; ++i)
@@ -77,8 +78,7 @@ static const int sinpi_4_9 = 15212;
 
 static INLINE int dct_const_round_shift(int input) {
   int rv = ROUND_POWER_OF_TWO(input, DCT_CONST_BITS);
-  assert(INT16_MIN <= rv && rv <= INT16_MAX);
-  return rv;
+  return (int16_t)rv;
 }
 
 typedef void (*transform_1d)(const int16_t*, int16_t*);
@@ -103,5 +103,9 @@ void vp9_iht8x8_add(TX_TYPE tx_type, const int16_t *input, uint8_t *dest,
 void vp9_iht16x16_add(TX_TYPE tx_type, const int16_t *input, uint8_t *dest,
                       int stride, int eob);
 
+
+#ifdef __cplusplus
+}  // extern "C"
+#endif
 
 #endif  // VP9_COMMON_VP9_IDCT_H_

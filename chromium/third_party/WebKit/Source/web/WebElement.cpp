@@ -29,8 +29,8 @@
  */
 
 #include "config.h"
-#include "WebDocument.h"
-#include "WebElement.h"
+#include "public/web/WebElement.h"
+
 #include "bindings/v8/ExceptionState.h"
 #include "core/dom/Element.h"
 #include "core/dom/NamedNodeMap.h"
@@ -39,6 +39,7 @@
 #include "core/rendering/RenderBoxModelObject.h"
 #include "core/rendering/RenderObject.h"
 #include "public/platform/WebRect.h"
+#include "public/web/WebDocument.h"
 #include "wtf/PassRefPtr.h"
 
 
@@ -125,14 +126,14 @@ WebString WebElement::attributeLocalName(unsigned index) const
 {
     if (index >= attributeCount())
         return WebString();
-    return constUnwrap<Element>()->attributeItem(index)->localName();
+    return constUnwrap<Element>()->attributeAt(index).localName();
 }
 
 WebString WebElement::attributeValue(unsigned index) const
 {
     if (index >= attributeCount())
         return WebString();
-    return constUnwrap<Element>()->attributeItem(index)->value();
+    return constUnwrap<Element>()->attributeAt(index).value();
 }
 
 WebString WebElement::innerText()
@@ -171,18 +172,18 @@ WebImage WebElement::imageContents()
     return bitmap->bitmap();
 }
 
-WebElement::WebElement(const PassRefPtr<Element>& elem)
+WebElement::WebElement(const PassRefPtrWillBeRawPtr<Element>& elem)
     : WebNode(elem)
 {
 }
 
-WebElement& WebElement::operator=(const PassRefPtr<Element>& elem)
+WebElement& WebElement::operator=(const PassRefPtrWillBeRawPtr<Element>& elem)
 {
     m_private = elem;
     return *this;
 }
 
-WebElement::operator PassRefPtr<Element>() const
+WebElement::operator PassRefPtrWillBeRawPtr<Element>() const
 {
     return toElement(m_private.get());
 }

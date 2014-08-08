@@ -4,13 +4,20 @@ include_rules = [
   "+skia/ext",
   "+third_party/iaccessible2",
   "+third_party/skia",
+  "+ui/accessibility",
   "+ui/aura",
   "+ui/base",
   "+ui/compositor",
+  "+ui/display",
   "+ui/events",
   "+ui/gfx",
-  "+ui/ozone",
+  "+ui/gl/gl_surface.h",  # To initialize GL for tests.
   "+ui/native_theme",
+  "+ui/ozone",
+  "+ui/wm/core",
+  "+ui/wm/public",
+
+  "-testing/gmock",
 ]
 
 specific_include_rules = {

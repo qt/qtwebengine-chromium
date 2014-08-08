@@ -10,6 +10,7 @@
 #include "cc/test/fake_output_surface_client.h"
 #include "cc/test/fake_proxy.h"
 #include "cc/test/scheduler_test_common.h"
+#include "cc/test/test_shared_bitmap_manager.h"
 #include "cc/test/test_web_graphics_context_3d.h"
 #include "cc/test/tiled_layer_test_common.h"
 #include "cc/trees/single_thread_proxy.h"  // For DebugScopedSetImplThread
@@ -42,9 +43,9 @@ class WebGraphicsContext3DForUploadTest : public TestWebGraphicsContext3D {
                              GLenum format,
                              GLenum type,
                              const void* pixels) OVERRIDE;
-  virtual GrGLInterface* createGrGLInterface() OVERRIDE { return NULL; }
 
-  virtual void getQueryObjectuivEXT(GLuint id, GLenum pname, GLuint* value);
+  virtual void getQueryObjectuivEXT(GLuint id, GLenum pname, GLuint* value)
+      OVERRIDE;
 
  private:
   ResourceUpdateControllerTest* test_;
@@ -107,8 +108,7 @@ class ResourceUpdateControllerTest : public Test {
 
  protected:
   virtual void SetUp() {
-    bitmap_.setConfig(SkBitmap::kARGB_8888_Config, 300, 150);
-    bitmap_.allocPixels();
+    bitmap_.allocN32Pixels(300, 150);
 
     for (int i = 0; i < 4; i++) {
       textures_[i] = PrioritizedResource::Create(resource_manager_.get(),
@@ -124,8 +124,10 @@ class ResourceUpdateControllerTest : public Test {
             new WebGraphicsContext3DForUploadTest(this)));
     CHECK(output_surface_->BindToClient(&output_surface_client_));
 
-    resource_provider_ =
-        ResourceProvider::Create(output_surface_.get(), NULL, 0, false, 1);
+    shared_bitmap_manager_.reset(new TestSharedBitmapManager());
+    resource_provider_ = ResourceProvider::Create(
+        output_surface_.get(), shared_bitmap_manager_.get(), 0, false, 1,
+        false);
   }
 
   void AppendFullUploadsOfIndexedTextureToUpdateQueue(int count,
@@ -182,6 +184,7 @@ class ResourceUpdateControllerTest : public Test {
   FakeProxy proxy_;
   FakeOutputSurfaceClient output_surface_client_;
   scoped_ptr<OutputSurface> output_surface_;
+  scoped_ptr<SharedBitmapManager> shared_bitmap_manager_;
   scoped_ptr<ResourceProvider> resource_provider_;
   scoped_ptr<ResourceUpdateQueue> queue_;
   scoped_ptr<PrioritizedResource> textures_[4];
@@ -455,15 +458,16 @@ TEST_F(ResourceUpdateControllerTest, NoMoreUpdates) {
   EXPECT_TRUE(client.ReadyToFinalizeCalled());
   EXPECT_EQ(2, num_total_uploads_);
 
+  client.Reset();
   controller->SetUpdateTextureTime(base::TimeDelta::FromMilliseconds(100));
   controller->SetUpdateMoreTexturesSize(1);
   // Enough time for updates but no more updates left.
   controller->PerformMoreUpdates(controller->Now() +
                                  base::TimeDelta::FromMilliseconds(310));
-  // 0-delay task used to call ReadyToFinalizeTextureUpdates().
-  RunPendingTask(task_runner.get(), controller.get());
+
+  // ReadyToFinalizeTextureUpdates should only be called once.
   EXPECT_FALSE(task_runner->HasPendingTask());
-  EXPECT_TRUE(client.ReadyToFinalizeCalled());
+  EXPECT_FALSE(client.ReadyToFinalizeCalled());
   EXPECT_EQ(2, num_total_uploads_);
 }
 

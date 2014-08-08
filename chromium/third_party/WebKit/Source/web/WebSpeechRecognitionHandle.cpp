@@ -24,7 +24,7 @@
  */
 
 #include "config.h"
-#include "WebSpeechRecognitionHandle.h"
+#include "public/web/WebSpeechRecognitionHandle.h"
 
 #include "modules/speech/SpeechRecognition.h"
 
@@ -52,18 +52,18 @@ bool WebSpeechRecognitionHandle::lessThan(const WebSpeechRecognitionHandle& othe
     return m_private.get() < other.m_private.get();
 }
 
-WebSpeechRecognitionHandle::WebSpeechRecognitionHandle(const PassRefPtr<SpeechRecognition>& speechRecognition)
+WebSpeechRecognitionHandle::WebSpeechRecognitionHandle(WebCore::SpeechRecognition* speechRecognition)
     : m_private(speechRecognition)
 {
 }
 
-WebSpeechRecognitionHandle& WebSpeechRecognitionHandle::operator=(const PassRefPtr<SpeechRecognition>& speechRecognition)
+WebSpeechRecognitionHandle& WebSpeechRecognitionHandle::operator=(WebCore::SpeechRecognition* speechRecognition)
 {
     m_private = speechRecognition;
     return *this;
 }
 
-WebSpeechRecognitionHandle::operator PassRefPtr<SpeechRecognition>() const
+WebSpeechRecognitionHandle::operator SpeechRecognition*() const
 {
     return m_private.get();
 }

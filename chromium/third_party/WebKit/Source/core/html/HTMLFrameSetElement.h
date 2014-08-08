@@ -24,6 +24,7 @@
 #ifndef HTMLFrameSetElement_h
 #define HTMLFrameSetElement_h
 
+#include "core/dom/Document.h"
 #include "core/html/HTMLDimension.h"
 #include "core/html/HTMLElement.h"
 
@@ -31,7 +32,7 @@ namespace WebCore {
 
 class HTMLFrameSetElement FINAL : public HTMLElement {
 public:
-    static PassRefPtr<HTMLFrameSetElement> create(Document&);
+    DECLARE_NODE_FACTORY(HTMLFrameSetElement);
 
     bool hasFrameBorder() const { return m_frameborder; }
     bool noResize() const { return m_noresize; }
@@ -45,17 +46,15 @@ public:
     const Vector<HTMLDimension>& rowLengths() const { return m_rowLengths; }
     const Vector<HTMLDimension>& colLengths() const { return m_colLengths; }
 
-    DOMWindow* anonymousNamedGetter(const AtomicString&);
+    LocalDOMWindow* anonymousNamedGetter(const AtomicString&);
 
     DEFINE_WINDOW_ATTRIBUTE_EVENT_LISTENER(blur);
     DEFINE_WINDOW_ATTRIBUTE_EVENT_LISTENER(error);
     DEFINE_WINDOW_ATTRIBUTE_EVENT_LISTENER(focus);
     DEFINE_WINDOW_ATTRIBUTE_EVENT_LISTENER(load);
+    DEFINE_WINDOW_ATTRIBUTE_EVENT_LISTENER(resize);
     DEFINE_WINDOW_ATTRIBUTE_EVENT_LISTENER(scroll);
-
-#if ENABLE(ORIENTATION_EVENTS)
     DEFINE_WINDOW_ATTRIBUTE_EVENT_LISTENER(orientationchange);
-#endif
 
 private:
     explicit HTMLFrameSetElement(Document&);
@@ -65,10 +64,10 @@ private:
     virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) OVERRIDE;
 
     virtual void attach(const AttachContext& = AttachContext()) OVERRIDE;
-    virtual bool rendererIsNeeded(const RenderStyle&);
-    virtual RenderObject* createRenderer(RenderStyle*);
+    virtual bool rendererIsNeeded(const RenderStyle&) OVERRIDE;
+    virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
 
-    virtual void defaultEventHandler(Event*);
+    virtual void defaultEventHandler(Event*) OVERRIDE;
 
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
     virtual void willRecalcStyle(StyleRecalcChange) OVERRIDE;
@@ -85,8 +84,6 @@ private:
     bool m_frameborderSet;
     bool m_noresize;
 };
-
-DEFINE_NODE_TYPE_CASTS(HTMLFrameSetElement, hasTagName(HTMLNames::framesetTag));
 
 } // namespace WebCore
 

@@ -26,7 +26,6 @@
 #define AutocompleteErrorEvent_h
 
 #include "core/events/Event.h"
-#include "core/events/ThreadLocalEventNames.h"
 
 namespace WebCore {
 
@@ -34,26 +33,28 @@ struct AutocompleteErrorEventInit : public EventInit {
     String reason;
 };
 
-class AutocompleteErrorEvent : public Event {
+class AutocompleteErrorEvent FINAL : public Event {
 public:
-    static PassRefPtr<AutocompleteErrorEvent> create()
+    static PassRefPtrWillBeRawPtr<AutocompleteErrorEvent> create()
     {
-        return adoptRef(new AutocompleteErrorEvent);
+        return adoptRefWillBeNoop(new AutocompleteErrorEvent);
     }
 
-    static PassRefPtr<AutocompleteErrorEvent> create(const String& reason)
+    static PassRefPtrWillBeRawPtr<AutocompleteErrorEvent> create(const String& reason)
     {
-        return adoptRef(new AutocompleteErrorEvent(reason));
+        return adoptRefWillBeNoop(new AutocompleteErrorEvent(reason));
     }
 
-    static PassRefPtr<AutocompleteErrorEvent> create(const AtomicString& eventType, const AutocompleteErrorEventInit& initializer)
+    static PassRefPtrWillBeRawPtr<AutocompleteErrorEvent> create(const AtomicString& eventType, const AutocompleteErrorEventInit& initializer)
     {
-        return adoptRef(new AutocompleteErrorEvent(eventType, initializer));
+        return adoptRefWillBeNoop(new AutocompleteErrorEvent(eventType, initializer));
     }
 
     const String& reason() const { return m_reason; }
 
-    virtual const AtomicString& interfaceName() const { return EventNames::AutocompleteErrorEvent; }
+    virtual const AtomicString& interfaceName() const OVERRIDE { return EventNames::AutocompleteErrorEvent; }
+
+    virtual void trace(Visitor* visitor) OVERRIDE { Event::trace(visitor); }
 
 private:
     AutocompleteErrorEvent()
@@ -62,7 +63,7 @@ private:
     }
 
     AutocompleteErrorEvent(const String& reason)
-        : Event(EventTypeNames::autocompleteerror, false, false)
+        : Event(EventTypeNames::autocompleteerror, true, false)
         , m_reason(reason)
     {
         ScriptWrappable::init(this);

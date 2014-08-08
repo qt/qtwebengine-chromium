@@ -11,7 +11,8 @@
 #include "SkColorMatrixFilter.h"
 #include "SkDevice.h"
 #include "SkColorFilter.h"
-#include "SkFlattenableBuffers.h"
+#include "SkReadBuffer.h"
+#include "SkWriteBuffer.h"
 
 namespace {
 
@@ -67,8 +68,8 @@ SkColorFilterImageFilter* SkColorFilterImageFilter::Create(SkColorFilter* cf,
         SkAutoUnref autoUnref(inputColorFilter);
         if (inputColorFilter->asColorMatrix(inputMatrix) && !matrix_needs_clamping(inputMatrix)) {
             SkScalar combinedMatrix[20];
-            mult_color_matrix(inputMatrix, colorMatrix, combinedMatrix);
-            SkAutoTUnref<SkColorFilter> newCF(SkNEW_ARGS(SkColorMatrixFilter, (combinedMatrix)));
+            mult_color_matrix(colorMatrix, inputMatrix, combinedMatrix);
+            SkAutoTUnref<SkColorFilter> newCF(SkColorMatrixFilter::Create(combinedMatrix));
             return SkNEW_ARGS(SkColorFilterImageFilter, (newCF, input->getInput(0), cropRect));
         }
     }
@@ -82,12 +83,12 @@ SkColorFilterImageFilter::SkColorFilterImageFilter(SkColorFilter* cf,
     SkSafeRef(cf);
 }
 
-SkColorFilterImageFilter::SkColorFilterImageFilter(SkFlattenableReadBuffer& buffer)
+SkColorFilterImageFilter::SkColorFilterImageFilter(SkReadBuffer& buffer)
   : INHERITED(1, buffer) {
     fColorFilter = buffer.readColorFilter();
 }
 
-void SkColorFilterImageFilter::flatten(SkFlattenableWriteBuffer& buffer) const {
+void SkColorFilterImageFilter::flatten(SkWriteBuffer& buffer) const {
     this->INHERITED::flatten(buffer);
 
     buffer.writeFlattenable(fColorFilter);
@@ -98,17 +99,17 @@ SkColorFilterImageFilter::~SkColorFilterImageFilter() {
 }
 
 bool SkColorFilterImageFilter::onFilterImage(Proxy* proxy, const SkBitmap& source,
-                                             const SkMatrix& matrix,
+                                             const Context& ctx,
                                              SkBitmap* result,
-                                             SkIPoint* loc) {
+                                             SkIPoint* offset) const {
     SkBitmap src = source;
-    if (getInput(0) && !getInput(0)->filterImage(proxy, source, matrix, &src, loc)) {
+    SkIPoint srcOffset = SkIPoint::Make(0, 0);
+    if (getInput(0) && !getInput(0)->filterImage(proxy, source, ctx, &src, &srcOffset)) {
         return false;
     }
 
     SkIRect bounds;
-    src.getBounds(&bounds);
-    if (!this->applyCropRect(&bounds, matrix)) {
+    if (!this->applyCropRect(ctx, src, srcOffset, &bounds)) {
         return false;
     }
 
@@ -121,11 +122,11 @@ bool SkColorFilterImageFilter::onFilterImage(Proxy* proxy, const SkBitmap& sourc
 
     paint.setXfermodeMode(SkXfermode::kSrc_Mode);
     paint.setColorFilter(fColorFilter);
-    canvas.drawSprite(src, -bounds.fLeft, -bounds.fTop, &paint);
+    canvas.drawSprite(src, srcOffset.fX - bounds.fLeft, srcOffset.fY - bounds.fTop, &paint);
 
     *result = device.get()->accessBitmap(false);
-    loc->fX += bounds.fLeft;
-    loc->fY += bounds.fTop;
+    offset->fX = bounds.fLeft;
+    offset->fY = bounds.fTop;
     return true;
 }
 

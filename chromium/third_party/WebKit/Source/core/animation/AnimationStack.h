@@ -33,6 +33,8 @@
 
 #include "core/animation/Animation.h"
 #include "core/animation/AnimationEffect.h"
+#include "core/animation/AnimationPlayer.h"
+#include "core/animation/SampledEffect.h"
 #include "wtf/HashSet.h"
 #include "wtf/Vector.h"
 
@@ -41,22 +43,25 @@ namespace WebCore {
 class InertAnimation;
 
 class AnimationStack {
-
+    DISALLOW_ALLOCATION();
+    WTF_MAKE_NONCOPYABLE(AnimationStack);
 public:
-    void add(Animation* animation) { m_activeAnimations.append(animation); }
-    void remove(Animation* animation)
-    {
-        size_t position = m_activeAnimations.find(animation);
-        ASSERT(position != kNotFound);
-        m_activeAnimations.remove(position);
-    }
-    bool isEmpty() const { return m_activeAnimations.isEmpty(); }
+    AnimationStack();
+
+    void add(PassOwnPtrWillBeRawPtr<SampledEffect> effect) { m_effects.append(effect); }
+    bool isEmpty() const { return m_effects.isEmpty(); }
     bool affects(CSSPropertyID) const;
     bool hasActiveAnimationsOnCompositor(CSSPropertyID) const;
-    static AnimationEffect::CompositableValueMap compositableValues(const AnimationStack*, const Vector<InertAnimation*>* newAnimations, const HashSet<const Player*>* cancelledPlayers, Animation::Priority);
+    static WillBeHeapHashMap<CSSPropertyID, RefPtrWillBeMember<Interpolation> > activeInterpolations(AnimationStack*, const WillBeHeapVector<RawPtrWillBeMember<InertAnimation> >* newAnimations, const WillBeHeapHashSet<RawPtrWillBeMember<const AnimationPlayer> >* cancelledAnimationPlayers, Animation::Priority, double timelineCurrentTime);
+
+    void trace(Visitor*);
 
 private:
-    Vector<Animation*> m_activeAnimations;
+    void simplifyEffects();
+    // Effects sorted by priority. Lower priority at the start of the list.
+    WillBeHeapVector<OwnPtrWillBeMember<SampledEffect> > m_effects;
+
+    friend class AnimationAnimationStackTest;
 };
 
 } // namespace WebCore

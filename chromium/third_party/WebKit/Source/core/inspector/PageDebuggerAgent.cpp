@@ -34,23 +34,23 @@
 #include "bindings/v8/DOMWrapperWorld.h"
 #include "bindings/v8/ScriptController.h"
 #include "bindings/v8/ScriptSourceCode.h"
+#include "core/frame/FrameConsole.h"
+#include "core/frame/LocalFrame.h"
 #include "core/inspector/InspectorOverlay.h"
 #include "core/inspector/InspectorPageAgent.h"
 #include "core/inspector/InstrumentingAgents.h"
 #include "core/loader/DocumentLoader.h"
-#include "core/frame/Frame.h"
 #include "core/page/Page.h"
-#include "core/page/PageConsole.h"
 
 namespace WebCore {
 
-PassOwnPtr<PageDebuggerAgent> PageDebuggerAgent::create(InstrumentingAgents* instrumentingAgents, InspectorCompositeState* inspectorState, PageScriptDebugServer* pageScriptDebugServer, InspectorPageAgent* pageAgent, InjectedScriptManager* injectedScriptManager, InspectorOverlay* overlay)
+PassOwnPtr<PageDebuggerAgent> PageDebuggerAgent::create(PageScriptDebugServer* pageScriptDebugServer, InspectorPageAgent* pageAgent, InjectedScriptManager* injectedScriptManager, InspectorOverlay* overlay)
 {
-    return adoptPtr(new PageDebuggerAgent(instrumentingAgents, inspectorState, pageScriptDebugServer, pageAgent, injectedScriptManager, overlay));
+    return adoptPtr(new PageDebuggerAgent(pageScriptDebugServer, pageAgent, injectedScriptManager, overlay));
 }
 
-PageDebuggerAgent::PageDebuggerAgent(InstrumentingAgents* instrumentingAgents, InspectorCompositeState* inspectorState, PageScriptDebugServer* pageScriptDebugServer, InspectorPageAgent* pageAgent, InjectedScriptManager* injectedScriptManager, InspectorOverlay* overlay)
-    : InspectorDebuggerAgent(instrumentingAgents, inspectorState, injectedScriptManager)
+PageDebuggerAgent::PageDebuggerAgent(PageScriptDebugServer* pageScriptDebugServer, InspectorPageAgent* pageAgent, InjectedScriptManager* injectedScriptManager, InspectorOverlay* overlay)
+    : InspectorDebuggerAgent(injectedScriptManager)
     , m_pageScriptDebugServer(pageScriptDebugServer)
     , m_pageAgent(pageAgent)
     , m_overlay(overlay)
@@ -91,12 +91,12 @@ PageScriptDebugServer& PageDebuggerAgent::scriptDebugServer()
 
 void PageDebuggerAgent::muteConsole()
 {
-    PageConsole::mute();
+    FrameConsole::mute();
 }
 
 void PageDebuggerAgent::unmuteConsole()
 {
-    PageConsole::unmute();
+    FrameConsole::unmute();
 }
 
 void PageDebuggerAgent::overlayResumed()
@@ -108,17 +108,17 @@ void PageDebuggerAgent::overlayResumed()
 void PageDebuggerAgent::overlaySteppedOver()
 {
     ErrorString error;
-    stepOver(&error, 0);
+    stepOver(&error);
 }
 
 InjectedScript PageDebuggerAgent::injectedScriptForEval(ErrorString* errorString, const int* executionContextId)
 {
     if (!executionContextId) {
-        ScriptState* scriptState = mainWorldScriptState(m_pageAgent->mainFrame());
+        ScriptState* scriptState = ScriptState::forMainWorld(m_pageAgent->mainFrame());
         return injectedScriptManager()->injectedScriptFor(scriptState);
     }
     InjectedScript injectedScript = injectedScriptManager()->injectedScriptForId(*executionContextId);
-    if (injectedScript.hasNoValue())
+    if (injectedScript.isEmpty())
         *errorString = "Execution context with given id not found.";
     return injectedScript;
 }
@@ -128,9 +128,9 @@ void PageDebuggerAgent::setOverlayMessage(ErrorString*, const String* message)
     m_overlay->setPausedInDebuggerMessage(message);
 }
 
-void PageDebuggerAgent::didClearWindowObjectInWorld(Frame* frame, DOMWrapperWorld* world)
+void PageDebuggerAgent::didClearDocumentOfWindowObject(LocalFrame* frame)
 {
-    if (world != mainThreadNormalWorld() || frame != m_pageAgent->mainFrame())
+    if (frame != m_pageAgent->mainFrame())
         return;
 
     reset();
@@ -141,23 +141,23 @@ void PageDebuggerAgent::didClearWindowObjectInWorld(Frame* frame, DOMWrapperWorl
         scriptDebugServer().setPreprocessorSource(m_pageAgent->scriptPreprocessorSource());
 }
 
-String PageDebuggerAgent::preprocessEventListener(Frame* frame, const String& source, const String& url, const String& functionName)
+String PageDebuggerAgent::preprocessEventListener(LocalFrame* frame, const String& source, const String& url, const String& functionName)
 {
     ASSERT(frame);
     ASSERT(m_pageScriptDebugServer);
     return m_pageScriptDebugServer->preprocessEventListener(frame, source, url, functionName);
 }
 
-PassOwnPtr<ScriptSourceCode> PageDebuggerAgent::preprocess(Frame* frame, const ScriptSourceCode& sourceCode)
+PassOwnPtr<ScriptSourceCode> PageDebuggerAgent::preprocess(LocalFrame* frame, const ScriptSourceCode& sourceCode)
 {
     ASSERT(m_pageScriptDebugServer);
     ASSERT(frame);
     return m_pageScriptDebugServer->preprocess(frame, sourceCode);
 }
 
-void PageDebuggerAgent::didCommitLoad(Frame* frame, DocumentLoader* loader)
+void PageDebuggerAgent::didCommitLoad(LocalFrame* frame, DocumentLoader* loader)
 {
-    Frame* mainFrame = frame->page()->mainFrame();
+    Frame* mainFrame = frame->page()->deprecatedLocalMainFrame();
     if (loader->frame() == mainFrame)
         pageDidCommitLoad();
 }

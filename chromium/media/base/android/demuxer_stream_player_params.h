@@ -5,9 +5,6 @@
 #ifndef MEDIA_BASE_ANDROID_DEMUXER_STREAM_PLAYER_PARAMS_H_
 #define MEDIA_BASE_ANDROID_DEMUXER_STREAM_PLAYER_PARAMS_H_
 
-#if defined(GOOGLE_TV)
-#include <string>
-#endif  // defined(GOOGLE_TV)
 #include <vector>
 
 #include "media/base/audio_decoder_config.h"
@@ -34,11 +31,7 @@ struct MEDIA_EXPORT DemuxerConfigs {
   bool is_video_encrypted;
   std::vector<uint8> video_extra_data;
 
-  int duration_ms;
-
-#if defined(GOOGLE_TV)
-  std::string key_system;
-#endif  // defined(GOOGLE_TV)
+  base::TimeDelta duration;
 };
 
 struct MEDIA_EXPORT AccessUnit {
@@ -61,6 +54,12 @@ struct MEDIA_EXPORT DemuxerData {
 
   DemuxerStream::Type type;
   std::vector<AccessUnit> access_units;
+  // If the last entry in |access_units| has a status equal to |kConfigChanged|,
+  // a corresponding DemuxerConfigs is added into this vector. The
+  // DemuxerConfigs should only contain information of the stream that is
+  // specified by |type|. This solves the issue that we need multiple IPCs when
+  // demuxer configs change.
+  std::vector<DemuxerConfigs> demuxer_configs;
 };
 
 };  // namespace media

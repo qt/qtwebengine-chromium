@@ -25,8 +25,9 @@
 #include "config.h"
 #include "core/html/HTMLTableSectionElement.h"
 
-#include "HTMLNames.h"
 #include "bindings/v8/ExceptionState.h"
+#include "core/HTMLNames.h"
+#include "core/dom/ElementTraversal.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/html/HTMLCollection.h"
 #include "core/html/HTMLTableElement.h"
@@ -42,10 +43,7 @@ inline HTMLTableSectionElement::HTMLTableSectionElement(const QualifiedName& tag
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLTableSectionElement> HTMLTableSectionElement::create(const QualifiedName& tagName, Document& document)
-{
-    return adoptRef(new HTMLTableSectionElement(tagName, document));
-}
+DEFINE_ELEMENT_FACTORY_WITH_TAGNAME(HTMLTableSectionElement)
 
 const StylePropertySet* HTMLTableSectionElement::additionalPresentationAttributeStyle()
 {
@@ -54,99 +52,54 @@ const StylePropertySet* HTMLTableSectionElement::additionalPresentationAttribute
     return 0;
 }
 
+PassRefPtrWillBeRawPtr<HTMLElement> HTMLTableSectionElement::insertRow(ExceptionState& exceptionState)
+{
+    // The default 'index' argument value is -1.
+    return insertRow(-1, exceptionState);
+}
+
 // these functions are rather slow, since we need to get the row at
 // the index... but they aren't used during usual HTML parsing anyway
-PassRefPtr<HTMLElement> HTMLTableSectionElement::insertRow(int index, ExceptionState& exceptionState)
+PassRefPtrWillBeRawPtr<HTMLElement> HTMLTableSectionElement::insertRow(int index, ExceptionState& exceptionState)
 {
-    RefPtr<HTMLTableRowElement> row;
-    RefPtr<HTMLCollection> children = rows();
-    int numRows = children ? (int)children->length() : 0;
-    if (index < -1 || index > numRows)
-        exceptionState.throwUninformativeAndGenericDOMException(IndexSizeError); // per the DOM
-    else {
-        row = HTMLTableRowElement::create(document());
-        if (numRows == index || index == -1)
-            appendChild(row, exceptionState);
-        else {
-            Node* n;
-            if (index < 1)
-                n = firstChild();
-            else
-                n = children->item(index);
-            insertBefore(row, n, exceptionState);
-        }
+    RefPtrWillBeRawPtr<HTMLCollection> children = rows();
+    int numRows = children ? static_cast<int>(children->length()) : 0;
+    if (index < -1 || index > numRows) {
+        exceptionState.throwDOMException(IndexSizeError, "The provided index (" + String::number(index) + " is outside the range [-1, " + String::number(numRows) + "].");
+        return nullptr;
     }
+
+    RefPtrWillBeRawPtr<HTMLTableRowElement> row = HTMLTableRowElement::create(document());
+    if (numRows == index || index == -1)
+        appendChild(row, exceptionState);
+    else
+        insertBefore(row, children->item(index), exceptionState);
     return row.release();
 }
 
 void HTMLTableSectionElement::deleteRow(int index, ExceptionState& exceptionState)
 {
-    RefPtr<HTMLCollection> children = rows();
+    RefPtrWillBeRawPtr<HTMLCollection> children = rows();
     int numRows = children ? (int)children->length() : 0;
     if (index == -1)
         index = numRows - 1;
     if (index >= 0 && index < numRows) {
-        RefPtr<Node> row = children->item(index);
+        RefPtrWillBeRawPtr<Element> row = children->item(index);
         HTMLElement::removeChild(row.get(), exceptionState);
     } else {
-        exceptionState.throwUninformativeAndGenericDOMException(IndexSizeError);
+        exceptionState.throwDOMException(IndexSizeError, "The provided index (" + String::number(index) + " is outside the range [-1, " + String::number(numRows) + "].");
     }
 }
 
 int HTMLTableSectionElement::numRows() const
 {
-    int rows = 0;
-    const Node *n = firstChild();
-    while (n) {
-        if (n->hasTagName(trTag))
-            rows++;
-        n = n->nextSibling();
-    }
-
-    return rows;
+    int rowCount = 0;
+    for (const HTMLTableRowElement* row = Traversal<HTMLTableRowElement>::firstChild(*this); row; row = Traversal<HTMLTableRowElement>::nextSibling(*row))
+        ++rowCount;
+    return rowCount;
 }
 
-const AtomicString& HTMLTableSectionElement::align() const
-{
-    return getAttribute(alignAttr);
-}
-
-void HTMLTableSectionElement::setAlign(const AtomicString& value)
-{
-    setAttribute(alignAttr, value);
-}
-
-const AtomicString& HTMLTableSectionElement::ch() const
-{
-    return getAttribute(charAttr);
-}
-
-void HTMLTableSectionElement::setCh(const AtomicString& value)
-{
-    setAttribute(charAttr, value);
-}
-
-const AtomicString& HTMLTableSectionElement::chOff() const
-{
-    return getAttribute(charoffAttr);
-}
-
-void HTMLTableSectionElement::setChOff(const AtomicString& value)
-{
-    setAttribute(charoffAttr, value);
-}
-
-const AtomicString& HTMLTableSectionElement::vAlign() const
-{
-    return getAttribute(valignAttr);
-}
-
-void HTMLTableSectionElement::setVAlign(const AtomicString& value)
-{
-    setAttribute(valignAttr, value);
-}
-
-PassRefPtr<HTMLCollection> HTMLTableSectionElement::rows()
+PassRefPtrWillBeRawPtr<HTMLCollection> HTMLTableSectionElement::rows()
 {
     return ensureCachedHTMLCollection(TSectionRows);
 }

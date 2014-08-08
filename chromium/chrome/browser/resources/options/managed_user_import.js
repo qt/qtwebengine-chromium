@@ -55,40 +55,65 @@ cr.define('options', function() {
 
       var self = this;
       $('managed-user-import-cancel').onclick = function(event) {
-        OptionsPage.closeOverlay();
-        self.updateImportInProgress_(false);
+        if (self.inProgress_) {
+          self.updateImportInProgress_(false);
 
-        // 'cancelCreateProfile' is handled by CreateProfileHandler.
-        chrome.send('cancelCreateProfile');
+          // 'cancelCreateProfile' is handled by CreateProfileHandler.
+          chrome.send('cancelCreateProfile');
+        }
+        OptionsPage.closeOverlay();
       };
 
       $('managed-user-import-ok').onclick =
           this.showAvatarGridOrSubmit_.bind(this);
-
-      $('create-new-user-link').onclick = function(event) {
-        OptionsPage.closeOverlay();
-        OptionsPage.navigateToPage('createProfile');
-      };
+      $('managed-user-select-avatar-ok').onclick =
+          this.showAvatarGridOrSubmit_.bind(this);
     },
 
     /**
      * @override
      */
     didShowPage: function() {
-      chrome.send('requestManagedUserImportUpdate');
+      // When the import link is clicked to open this overlay, it is hidden in
+      // order to trigger a cursor update. We can show the import link again
+      // now. TODO(akuegel): Remove this temporary fix when crbug/246304 is
+      // resolved.
+      $('import-existing-managed-user-link').hidden = false;
+
+      options.ManagedUserListData.requestExistingManagedUsers().then(
+          this.receiveExistingManagedUsers_, this.onSigninError_.bind(this));
+      options.ManagedUserListData.addObserver(this);
 
       this.updateImportInProgress_(false);
       $('managed-user-import-error-bubble').hidden = true;
       $('managed-user-import-ok').disabled = true;
-      $('select-avatar-grid').hidden = true;
-      $('managed-user-list').hidden = false;
+      this.showAppropriateElements_(/* isSelectAvatarMode */ false);
+    },
 
-      $('managed-user-import-ok').textContent =
-          loadTimeData.getString('managedUserImportOk');
-      $('managed-user-import-text').textContent =
-          loadTimeData.getString('managedUserImportText');
-      $('managed-user-import-title').textContent =
-          loadTimeData.getString('managedUserImportTitle');
+    /**
+     * @override
+     */
+    didClosePage: function() {
+      options.ManagedUserListData.removeObserver(this);
+    },
+
+    /**
+     * Shows either the managed user import dom elements or the select avatar
+     * dom elements.
+     * @param {boolean} isSelectAvatarMode True if the overlay should show the
+     *     select avatar grid, and false if the overlay should show the managed
+     *     user list.
+     * @private
+     */
+    showAppropriateElements_: function(isSelectAvatarMode) {
+      var avatarElements =
+          this.pageDiv.querySelectorAll('.managed-user-select-avatar');
+      for (var i = 0; i < avatarElements.length; i++)
+        avatarElements[i].hidden = !isSelectAvatarMode;
+      var importElements =
+          this.pageDiv.querySelectorAll('.managed-user-import');
+      for (var i = 0; i < importElements.length; i++)
+        importElements[i].hidden = isSelectAvatarMode;
     },
 
     /**
@@ -128,18 +153,10 @@ cr.define('options', function() {
      * @private
      */
     showAvatarGridHelper_: function() {
-      $('managed-user-list').hidden = true;
-      $('select-avatar-grid').hidden = false;
+      this.showAppropriateElements_(/* isSelectAvatarMode */ true);
       $('select-avatar-grid').redraw();
       $('select-avatar-grid').selectedItem =
           loadTimeData.getValue('avatarIcons')[0];
-
-      $('managed-user-import-ok').textContent =
-          loadTimeData.getString('managedUserSelectAvatarOk');
-      $('managed-user-import-text').textContent =
-          loadTimeData.getString('managedUserSelectAvatarText');
-      $('managed-user-import-title').textContent =
-          loadTimeData.getString('managedUserSelectAvatarTitle');
     },
 
     /**
@@ -149,16 +166,16 @@ cr.define('options', function() {
      * @private
      */
     updateImportInProgress_: function(inProgress) {
+      this.inProgress_ = inProgress;
       $('managed-user-import-ok').disabled = inProgress;
+      $('managed-user-select-avatar-ok').disabled = inProgress;
       $('managed-user-list').disabled = inProgress;
       $('select-avatar-grid').disabled = inProgress;
-      $('create-new-user-link').disabled = inProgress;
       $('managed-user-import-throbber').hidden = !inProgress;
     },
 
     /**
-     * Adds all the existing |managedUsers| to the list. If |managedUsers|
-     * is undefined, then the list is cleared.
+     * Sets the data model of the managed user list to |managedUsers|.
      * @param {Array.<Object>} managedUsers An array of managed user objects.
      *     Each object is of the form:
      *       managedUser = {
@@ -171,12 +188,9 @@ cr.define('options', function() {
      * @private
      */
     receiveExistingManagedUsers_: function(managedUsers) {
-      if (!managedUsers) {
-        $('managed-user-list').dataModel = null;
-        return;
-      }
-
       managedUsers.sort(function(a, b) {
+        if (a.onCurrentDevice != b.onCurrentDevice)
+          return a.onCurrentDevice ? 1 : -1;
         return a.name.localeCompare(b.name);
       });
 
@@ -184,14 +198,15 @@ cr.define('options', function() {
       if (managedUsers.length == 0) {
         this.onError_(loadTimeData.getString('noExistingManagedUsers'));
         $('managed-user-import-ok').disabled = true;
+      } else {
+        // Hide the error bubble.
+        $('managed-user-import-error-bubble').hidden = true;
       }
     },
 
-    /**
-     * @private
-     */
-    hideErrorBubble_: function() {
-      $('managed-user-import-error-bubble').hidden = true;
+    onSigninError_: function() {
+      $('managed-user-list').dataModel = null;
+      this.onError_(loadTimeData.getString('managedUserImportSigninError'));
     },
 
     /**
@@ -209,21 +224,21 @@ cr.define('options', function() {
     },
 
     /**
-     * Closes the overlay if importing the managed user was successful.
+     * Closes the overlay if importing the managed user was successful. Also
+     * reset the cached list of managed users in order to get an updated list
+     * when the overlay is reopened.
      * @private
      */
     onSuccess_: function() {
       this.updateImportInProgress_(false);
-      OptionsPage.closeOverlay();
+      options.ManagedUserListData.resetPromise();
+      OptionsPage.closeAllOverlays();
     },
   };
 
   // Forward public APIs to private implementations.
   [
-    'hideErrorBubble',
-    'onError',
     'onSuccess',
-    'receiveExistingManagedUsers',
   ].forEach(function(name) {
     ManagedUserImportOverlay[name] = function() {
       var instance = ManagedUserImportOverlay.getInstance();

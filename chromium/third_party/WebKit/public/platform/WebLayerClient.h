@@ -39,12 +39,11 @@ class WebGraphicsLayerDebugInfo;
 
 class BLINK_PLATFORM_EXPORT WebLayerClient {
 public:
-    virtual WebString debugName(WebLayer*) = 0;
-
     // Returns a pointer to a debug info object, if one has been computed.
     // If not, returns 0. If the returned pointer is non-zero, the caller takes
-    // ownership of the pointer.
-    virtual WebGraphicsLayerDebugInfo* takeDebugInfo() = 0;
+    // ownership of the pointer. The parameter allows us to return WebLayer-
+    // specific information, too (only the debug name for now).
+    virtual WebGraphicsLayerDebugInfo* takeDebugInfoFor(WebLayer*) = 0;
 
 protected:
     virtual ~WebLayerClient() { }

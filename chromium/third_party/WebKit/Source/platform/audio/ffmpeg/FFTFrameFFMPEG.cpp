@@ -42,47 +42,9 @@ extern "C" {
 
 #include "wtf/MathExtras.h"
 
-namespace {
-
-struct FFTComplexProxy {
-    int16_t re;
-    int16_t im;
-};
-
-struct FFTContextProxy {
-    int nbits;
-    int inverse;
-    uint16_t* revtab;
-    FFTComplexProxy* tmpBuf;
-    int mdctSize;
-    int mdctBits;
-    void* tcos;
-    void* tsin;
-    void (*fftPermute)();
-    void (*fftCalc)();
-    void (*imdctCalc)();
-    void (*imdctHalf)();
-    void (*mdctCalc)();
-    void (*mdctCalcw)();
-    int fftPermutation;
-    int mdctPermutation;
-};
-
-struct RDFTContextProxy {
-    int nbits;
-    int inverse;
-    int signConvention;
-    const void* tcos;
-    const void* tsin;
-    FFTContextProxy fft;
-    void (*rdft_calc)();
-};
-
-}
-
 namespace WebCore {
 
-#if !ASSERT_DISABLED
+#if ASSERT_ENABLED
 const int kMaxFFTPow2Size = 24;
 #endif
 
@@ -145,36 +107,6 @@ FFTFrame::~FFTFrame()
     av_rdft_end(m_inverseContext);
 }
 
-void FFTFrame::multiply(const FFTFrame& frame)
-{
-    FFTFrame& frame1 = *this;
-    FFTFrame& frame2 = const_cast<FFTFrame&>(frame);
-
-    float* realP1 = frame1.realData();
-    float* imagP1 = frame1.imagData();
-    const float* realP2 = frame2.realData();
-    const float* imagP2 = frame2.imagData();
-
-    unsigned halfSize = fftSize() / 2;
-    float real0 = realP1[0];
-    float imag0 = imagP1[0];
-
-    VectorMath::zvmul(realP1, imagP1, realP2, imagP2, realP1, imagP1, halfSize);
-
-    // Multiply the packed DC/nyquist component
-    realP1[0] = real0 * realP2[0];
-    imagP1[0] = imag0 * imagP2[0];
-
-    // Scale accounts the peculiar scaling of vecLib on the Mac.
-    // This ensures the right scaling all the way back to inverse FFT.
-    // FIXME: if we change the scaling on the Mac then this scale
-    // factor will need to change too.
-    float scale = 0.5f;
-
-    VectorMath::vsmul(realP1, 1, &scale, realP1, 1, halfSize);
-    VectorMath::vsmul(imagP1, 1, &scale, imagP1, 1, halfSize);
-}
-
 void FFTFrame::doFFT(const float* data)
 {
     // Copy since processing is in-place.
@@ -187,15 +119,14 @@ void FFTFrame::doFFT(const float* data)
     // De-interleave to separate real and complex arrays.
     int len = m_FFTSize / 2;
 
-    // FIXME: see above comment in multiply() about scaling.
-    const float scale = 2.0f;
-
+    float* real = m_realData.data();
+    float* imag = m_imagData.data();
     for (int i = 0; i < len; ++i) {
         int baseComplexIndex = 2 * i;
         // m_realData[0] is the DC component and m_imagData[0] is the nyquist component
         // since the interleaved complex data is packed.
-        m_realData[i] = scale * p[baseComplexIndex];
-        m_imagData[i] = scale * p[baseComplexIndex + 1];
+        real[i] = p[baseComplexIndex];
+        imag[i] = p[baseComplexIndex + 1];
     }
 }
 
@@ -207,8 +138,10 @@ void FFTFrame::doInverseFFT(float* data)
     // Compute inverse transform.
     av_rdft_calc(m_inverseContext, interleavedData);
 
-    // Scale so that a forward then inverse FFT yields exactly the original data.
-    const float scale = 1.0 / m_FFTSize;
+    // Scale so that a forward then inverse FFT yields exactly the original data. For some reason
+    // av_rdft_calc above returns values that are half of what I expect. Hence make the scale factor
+    // twice as large to compensate for that.
+    const float scale = 2.0 / m_FFTSize;
     VectorMath::vsmul(interleavedData, 1, &scale, data, 1, m_FFTSize);
 }
 
@@ -227,10 +160,13 @@ float* FFTFrame::getUpToDateComplexData()
     // FIXME: if we can't completely get rid of this method, SSE
     // optimization could be considered if it shows up hot on profiles.
     int len = m_FFTSize / 2;
+    const float* real = m_realData.data();
+    const float* imag = m_imagData.data();
+    float* c = m_complexData.data();
     for (int i = 0; i < len; ++i) {
         int baseComplexIndex = 2 * i;
-        m_complexData[baseComplexIndex] = m_realData[i];
-        m_complexData[baseComplexIndex + 1] = m_imagData[i];
+        c[baseComplexIndex] = real[i];
+        c[baseComplexIndex + 1] = imag[i];
     }
     return const_cast<float*>(m_complexData.data());
 }
@@ -250,6 +186,6 @@ RDFTContext* FFTFrame::contextForSize(unsigned fftSize, int trans)
 
 } // namespace WebCore
 
-#endif // !OS(MACOSX) && USE(WEBAUDIO_FFMPEG)
+#endif // USE(WEBAUDIO_FFMPEG)
 
 #endif // ENABLE(WEB_AUDIO)

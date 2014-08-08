@@ -28,13 +28,14 @@
 #include "platform/graphics/ImageBuffer.h"
 #include "platform/graphics/UnacceleratedImageBufferSurface.h"
 #include "platform/graphics/filters/Filter.h"
-#include "platform/graphics/gpu/AcceleratedImageBufferSurface.h"
 
 #if HAVE(ARM_NEON_INTRINSICS)
 #include <arm_neon.h>
 #endif
 
 namespace WebCore {
+
+static const float kMaxFilterArea = 4096 * 4096;
 
 FilterEffect::FilterEffect(Filter* filter)
     : m_alphaImage(false)
@@ -54,27 +55,49 @@ FilterEffect::~FilterEffect()
 {
 }
 
-inline bool isFilterSizeValid(IntRect rect)
+float FilterEffect::maxFilterArea()
 {
-    if (rect.width() < 0 || rect.width() > kMaxFilterSize
-        || rect.height() < 0 || rect.height() > kMaxFilterSize)
+    return kMaxFilterArea;
+}
+
+bool FilterEffect::isFilterSizeValid(const FloatRect& rect)
+{
+    if (rect.width() < 0 || rect.height() < 0
+        ||  (rect.height() * rect.width() > kMaxFilterArea))
         return false;
+
     return true;
 }
 
-void FilterEffect::determineAbsolutePaintRect()
+FloatRect FilterEffect::determineAbsolutePaintRect(const FloatRect& originalRequestedRect)
 {
-    m_absolutePaintRect = IntRect();
-    unsigned size = m_inputEffects.size();
-    for (unsigned i = 0; i < size; ++i)
-        m_absolutePaintRect.unite(m_inputEffects.at(i)->absolutePaintRect());
-
+    FloatRect requestedRect = originalRequestedRect;
     // Filters in SVG clip to primitive subregion, while CSS doesn't.
     if (m_clipsToBounds)
-        m_absolutePaintRect.intersect(enclosingIntRect(m_maxEffectRect));
-    else
-        m_absolutePaintRect.unite(enclosingIntRect(m_maxEffectRect));
+        requestedRect.intersect(maxEffectRect());
 
+    // We may be called multiple times if result is used more than once. Return
+    // quickly if if nothing new is required.
+    if (absolutePaintRect().contains(enclosingIntRect(requestedRect)))
+        return requestedRect;
+
+    FloatRect inputRect = mapPaintRect(requestedRect, false);
+    FloatRect inputUnion;
+    unsigned size = m_inputEffects.size();
+
+    for (unsigned i = 0; i < size; ++i)
+        inputUnion.unite(m_inputEffects.at(i)->determineAbsolutePaintRect(inputRect));
+    inputUnion = mapPaintRect(inputUnion, true);
+
+    if (affectsTransparentPixels() || !size) {
+        inputUnion = requestedRect;
+    } else {
+        // Rect may have inflated. Re-intersect with request.
+        inputUnion.intersect(requestedRect);
+    }
+
+    addAbsolutePaintRect(inputUnion);
+    return inputUnion;
 }
 
 FloatRect FilterEffect::mapRectRecursive(const FloatRect& rect)
@@ -94,7 +117,7 @@ FloatRect FilterEffect::getSourceRect(const FloatRect& destRect, const FloatRect
     FloatRect sourceRect = mapRect(destRect, false);
     FloatRect sourceClipRect = mapRect(destClipRect, false);
 
-    FloatRect boundaries = effectBoundaries();
+    FloatRect boundaries = filter()->mapLocalRectToAbsoluteRect(effectBoundaries());
     if (hasX())
         sourceClipRect.setX(boundaries.x());
     if (hasY())
@@ -136,14 +159,33 @@ FilterEffect* FilterEffect::inputEffect(unsigned number) const
     return m_inputEffects.at(number).get();
 }
 
+void FilterEffect::addAbsolutePaintRect(const FloatRect& paintRect)
+{
+    IntRect intPaintRect(enclosingIntRect(paintRect));
+    if (m_absolutePaintRect.contains(intPaintRect))
+        return;
+    intPaintRect.unite(m_absolutePaintRect);
+    // Make sure we are not holding on to a smaller rendering.
+    clearResult();
+    m_absolutePaintRect = intPaintRect;
+}
+
 void FilterEffect::apply()
+{
+    // Recursively determine paint rects first, so that we don't redraw images
+    // if a smaller section is requested first.
+    determineAbsolutePaintRect(maxEffectRect());
+    applyRecursive();
+}
+
+void FilterEffect::applyRecursive()
 {
     if (hasResult())
         return;
     unsigned size = m_inputEffects.size();
     for (unsigned i = 0; i < size; ++i) {
         FilterEffect* in = m_inputEffects.at(i).get();
-        in->apply();
+        in->applyRecursive();
         if (!in->hasResult())
             return;
 
@@ -151,19 +193,15 @@ void FilterEffect::apply()
         transformResultColorSpace(in, i);
     }
 
-    determineAbsolutePaintRect();
     setResultColorSpace(m_operatingColorSpace);
 
     if (!isFilterSizeValid(m_absolutePaintRect))
         return;
 
-    if (requiresValidPreMultipliedPixels()) {
+    if (!mayProduceInvalidPreMultipliedPixels()) {
         for (unsigned i = 0; i < size; ++i)
             inputEffect(i)->correctFilterResultIfNeeded();
     }
-
-    if (applySkia())
-        return;
 
     applySoftware();
 }
@@ -225,6 +263,12 @@ void FilterEffect::clearResult()
         m_unmultipliedImageResult.clear();
     if (m_premultipliedImageResult)
         m_premultipliedImageResult.clear();
+
+    m_absolutePaintRect = IntRect();
+    for (int i = 0; i < 4; i++) {
+        filter()->removeFromCache(m_imageFilters[i].get());
+        m_imageFilters[i] = nullptr;
+    }
 }
 
 void FilterEffect::clearResultsRecursive()
@@ -246,10 +290,7 @@ ImageBuffer* FilterEffect::asImageBuffer()
     if (m_imageBufferResult)
         return m_imageBufferResult.get();
     OwnPtr<ImageBufferSurface> surface;
-    if (m_filter->isAccelerated())
-        surface = adoptPtr(new AcceleratedImageBufferSurface(m_absolutePaintRect.size()));
-    if (!m_filter->isAccelerated() || !surface->isValid())
-        surface = adoptPtr(new UnacceleratedImageBufferSurface(m_absolutePaintRect.size()));
+    surface = adoptPtr(new UnacceleratedImageBufferSurface(m_absolutePaintRect.size()));
     m_imageBufferResult = ImageBuffer::create(surface.release());
     if (!m_imageBufferResult)
         return 0;
@@ -387,13 +428,11 @@ void FilterEffect::copyPremultipliedImage(Uint8ClampedArray* destination, const 
 ImageBuffer* FilterEffect::createImageBufferResult()
 {
     // Only one result type is allowed.
-    if (m_absolutePaintRect.isEmpty())
-        return 0;
+    ASSERT(!hasResult());
+    ASSERT(isFilterSizeValid(m_absolutePaintRect));
+
     OwnPtr<ImageBufferSurface> surface;
-    if (m_filter->isAccelerated())
-        surface = adoptPtr(new AcceleratedImageBufferSurface(m_absolutePaintRect.size()));
-    if (!m_filter->isAccelerated() || !surface->isValid())
-        surface = adoptPtr(new UnacceleratedImageBufferSurface(m_absolutePaintRect.size()));
+    surface = adoptPtr(new UnacceleratedImageBufferSurface(m_absolutePaintRect.size()));
     m_imageBufferResult = ImageBuffer::create(surface.release());
     return m_imageBufferResult.get();
 }
@@ -422,6 +461,12 @@ Uint8ClampedArray* FilterEffect::createPremultipliedImageResult()
     return m_premultipliedImageResult.get();
 }
 
+Color FilterEffect::adaptColorToOperatingColorSpace(const Color& deviceColor)
+{
+    // |deviceColor| is assumed to be DeviceRGB.
+    return ColorSpaceUtilities::convertColor(deviceColor, operatingColorSpace());
+}
+
 void FilterEffect::transformResultColorSpace(ColorSpace dstColorSpace)
 {
     if (!hasResult() || dstColorSpace == m_resultColorSpace)
@@ -448,7 +493,8 @@ TextStream& FilterEffect::externalRepresentation(TextStream& ts, int) const
 
 FloatRect FilterEffect::determineFilterPrimitiveSubregion(DetermineSubregionFlags flags)
 {
-    ASSERT(filter());
+    Filter* filter = this->filter();
+    ASSERT(filter);
 
     // FETile, FETurbulence, FEFlood don't have input effects, take the filter region as unite rect.
     FloatRect subregion;
@@ -456,15 +502,19 @@ FloatRect FilterEffect::determineFilterPrimitiveSubregion(DetermineSubregionFlag
         subregion = inputEffect(0)->determineFilterPrimitiveSubregion(flags);
         for (unsigned i = 1; i < numberOfInputEffects; ++i)
             subregion.unite(inputEffect(i)->determineFilterPrimitiveSubregion(flags));
-    } else
-        subregion = filter()->filterRegion();
+    } else {
+        subregion = filter->filterRegion();
+    }
 
     // After calling determineFilterPrimitiveSubregion on the target effect, reset the subregion again for <feTile>.
     if (filterEffectType() == FilterEffectTypeTile)
-        subregion = filter()->filterRegion();
+        subregion = filter->filterRegion();
 
-    if (flags & MapRectForward)
-        subregion = mapRect(subregion);
+    if (flags & MapRectForward) {
+        // mapRect works on absolute rectangles.
+        subregion = filter->mapAbsoluteRectToLocalRect(mapRect(
+            filter->mapLocalRectToAbsoluteRect(subregion)));
+    }
 
     FloatRect boundaries = effectBoundaries();
     if (hasX())
@@ -478,15 +528,11 @@ FloatRect FilterEffect::determineFilterPrimitiveSubregion(DetermineSubregionFlag
 
     setFilterPrimitiveSubregion(subregion);
 
-    FloatRect absoluteSubregion = filter()->absoluteTransform().mapRect(subregion);
-    FloatSize filterResolution = filter()->filterResolution();
-    absoluteSubregion.scale(filterResolution.width(), filterResolution.height());
+    FloatRect absoluteSubregion = filter->mapLocalRectToAbsoluteRect(subregion);
 
     // Clip every filter effect to the filter region.
     if (flags & ClipToFilterRegion) {
-        FloatRect absoluteScaledFilterRegion = filter()->absoluteFilterRegion();
-        absoluteScaledFilterRegion.scale(filterResolution.width(), filterResolution.height());
-        absoluteSubregion.intersect(absoluteScaledFilterRegion);
+        absoluteSubregion.intersect(filter->absoluteFilterRegion());
     }
 
     setMaxEffectRect(absoluteSubregion);
@@ -495,34 +541,63 @@ FloatRect FilterEffect::determineFilterPrimitiveSubregion(DetermineSubregionFlag
 
 PassRefPtr<SkImageFilter> FilterEffect::createImageFilter(SkiaImageFilterBuilder* builder)
 {
-    return 0;
+    return nullptr;
+}
+
+PassRefPtr<SkImageFilter> FilterEffect::createImageFilterWithoutValidation(SkiaImageFilterBuilder* builder)
+{
+    return createImageFilter(builder);
 }
 
 SkImageFilter::CropRect FilterEffect::getCropRect(const FloatSize& cropOffset) const
 {
-    SkRect rect = SkRect::MakeEmpty();
+    FloatRect rect = filter()->filterRegion();
     uint32_t flags = 0;
     FloatRect boundaries = effectBoundaries();
-    FloatSize resolution = filter()->filterResolution();
-    boundaries.scale(resolution.width(), resolution.height());
     boundaries.move(cropOffset);
     if (hasX()) {
-        rect.fLeft = boundaries.x();
+        rect.setX(boundaries.x());
         flags |= SkImageFilter::CropRect::kHasLeft_CropEdge;
+        flags |= SkImageFilter::CropRect::kHasRight_CropEdge;
     }
     if (hasY()) {
-        rect.fTop = boundaries.y();
+        rect.setY(boundaries.y());
         flags |= SkImageFilter::CropRect::kHasTop_CropEdge;
+        flags |= SkImageFilter::CropRect::kHasBottom_CropEdge;
     }
     if (hasWidth()) {
-        rect.fRight = rect.fLeft + boundaries.width();
+        rect.setWidth(boundaries.width());
         flags |= SkImageFilter::CropRect::kHasRight_CropEdge;
     }
     if (hasHeight()) {
-        rect.fBottom = rect.fTop + boundaries.height();
+        rect.setHeight(boundaries.height());
         flags |= SkImageFilter::CropRect::kHasBottom_CropEdge;
     }
+    rect = filter()->mapLocalRectToAbsoluteRect(rect);
     return SkImageFilter::CropRect(rect, flags);
+}
+
+static int getImageFilterIndex(ColorSpace colorSpace, bool requiresPMColorValidation)
+{
+    // Map the (colorspace, bool) tuple to an integer index as follows:
+    // 0 == linear colorspace, no PM validation
+    // 1 == device colorspace, no PM validation
+    // 2 == linear colorspace, PM validation
+    // 3 == device colorspace, PM validation
+    return (colorSpace == ColorSpaceLinearRGB ? 0x1 : 0x0) | (requiresPMColorValidation ? 0x2 : 0x0);
+}
+
+SkImageFilter* FilterEffect::getImageFilter(ColorSpace colorSpace, bool requiresPMColorValidation) const
+{
+    int index = getImageFilterIndex(colorSpace, requiresPMColorValidation);
+    return m_imageFilters[index].get();
+}
+
+void FilterEffect::setImageFilter(ColorSpace colorSpace, bool requiresPMColorValidation, PassRefPtr<SkImageFilter> imageFilter)
+{
+    int index = getImageFilterIndex(colorSpace, requiresPMColorValidation);
+    filter()->removeFromCache(m_imageFilters[index].get());
+    m_imageFilters[index] = imageFilter;
 }
 
 } // namespace WebCore

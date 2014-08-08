@@ -49,11 +49,9 @@ TYPE_NAME_FIX_MAP = {
 
 TYPES_WITH_RUNTIME_CAST_SET = frozenset(["Runtime.RemoteObject", "Runtime.PropertyDescriptor", "Runtime.InternalPropertyDescriptor",
                                          "Debugger.FunctionDetails", "Debugger.CallFrame", "Debugger.Location",
-                                         "Canvas.TraceLog", "Canvas.ResourceState",
-                                         # This should be a temporary hack. TimelineEvent should be created via generated C++ API.
-                                         "Timeline.TimelineEvent"])
+                                         "Canvas.TraceLog", "Canvas.ResourceState"])
 
-TYPES_WITH_OPEN_FIELD_LIST_SET = frozenset(["Timeline.TimelineEvent",
+TYPES_WITH_OPEN_FIELD_LIST_SET = frozenset([
                                             # InspectorStyleSheet not only creates this property but wants to read it and modify it.
                                             "CSS.CSSProperty",
                                             # InspectorResourceAgent needs to update mime-type.
@@ -158,7 +156,7 @@ class Capitalizer:
 
     ABBREVIATION = frozenset(["XHR", "DOM", "CSS"])
 
-VALIDATOR_IFDEF_NAME = "!ASSERT_DISABLED"
+VALIDATOR_IFDEF_NAME = "ASSERT_ENABLED"
 
 
 class DomainNameFixes:
@@ -1195,6 +1193,18 @@ class TypeBindings:
 
                                 writer.newline("    typedef TypeBuilder::StructItemTraits ItemTraits;\n")
 
+                                for prop_data in resolve_data.main_properties:
+                                    prop_name = prop_data.p["name"]
+                                    param_type_binding = prop_data.param_type_binding
+                                    raw_type = param_type_binding.reduce_to_raw_type()
+                                    if isinstance(param_type_binding.get_type_model(), TypeModel.ValueType):
+                                        writer.append_multiline("\n    void %s" % prop_name)
+                                        writer.append("(%s value)\n" % param_type_binding.get_type_model().get_command_return_pass_model().get_output_parameter_type())
+                                        writer.newline("    {\n")
+                                        writer.newline("        JSONObjectBase::get%s(\"%s\", value);\n"
+                                            % (param_type_binding.reduce_to_raw_type().get_setter_name(), prop_data.p["name"]))
+                                        writer.newline("    }\n")
+
                                 for prop_data in resolve_data.optional_properties:
                                     prop_name = prop_data.p["name"]
                                     param_type_binding = prop_data.param_type_binding
@@ -1207,7 +1217,6 @@ class TypeBindings:
                                         % (param_type_binding.reduce_to_raw_type().get_setter_name(), prop_data.p["name"],
                                            format_setter_value_expression(param_type_binding, "value")))
                                     writer.newline("    }\n")
-
 
                                     if setter_name in INSPECTOR_OBJECT_SETTER_NAMES:
                                         writer.newline("    using JSONObjectBase::%s;\n\n" % setter_name)
@@ -1851,6 +1860,9 @@ class Generator:
 
     @staticmethod
     def process_event(json_event, domain_name, frontend_method_declaration_lines):
+        if (("handlers" in json_event) and (not ("renderer" in json_event["handlers"]))):
+            return
+
         event_name = json_event["name"]
 
         ad_hoc_type_output = []
@@ -1881,46 +1893,43 @@ class Generator:
 
     @staticmethod
     def process_command(json_command, domain_name, agent_field_name, agent_interface_name):
+        if (("handlers" in json_command) and (not ("renderer" in json_command["handlers"]))):
+            return
+
         json_command_name = json_command["name"]
 
         cmd_enum_name = "k%s_%sCmd" % (domain_name, json_command["name"])
 
         Generator.method_name_enum_list.append("        %s," % cmd_enum_name)
         Generator.method_handler_list.append("            &InspectorBackendDispatcherImpl::%s_%s," % (domain_name, json_command_name))
-        Generator.backend_method_declaration_list.append("    void %s_%s(long callId, JSONObject* requestMessageObject);" % (domain_name, json_command_name))
+        Generator.backend_method_declaration_list.append("    void %s_%s(long callId, JSONObject* requestMessageObject, JSONArray* protocolErrors);" % (domain_name, json_command_name))
+
+        backend_agent_interface_list = [] if "redirect" in json_command else Generator.backend_agent_interface_list
 
         ad_hoc_type_output = []
-        Generator.backend_agent_interface_list.append(ad_hoc_type_output)
+        backend_agent_interface_list.append(ad_hoc_type_output)
         ad_hoc_type_writer = Writer(ad_hoc_type_output, "        ")
 
-        Generator.backend_agent_interface_list.append("        virtual void %s(ErrorString*" % json_command_name)
+        backend_agent_interface_list.append("        virtual void %s(ErrorString*" % json_command_name)
 
         method_in_code = ""
         method_out_code = ""
-        agent_call_param_list = []
+        result_object_declaration = ""
+        agent_call_param_list = ["&error"]
+        agent_call_params_declaration_list = ["    ErrorString error;"]
+        send_response_call_params_list = ["error"]
         request_message_param = ""
         normal_response_cook_text = ""
-        error_response_cook_text = ""
         error_type_binding = None
         if "error" in json_command:
             json_error = json_command["error"]
             error_type_binding = Generator.resolve_type_and_generate_ad_hoc(json_error, json_command_name + "Error", json_command_name, domain_name, ad_hoc_type_writer, agent_interface_name + "::")
             error_type_model = error_type_binding.get_type_model().get_optional()
             error_annotated_type = error_type_model.get_command_return_pass_model().get_output_parameter_type()
-            agent_call_param_list.append(", %serrorData" % error_type_model.get_command_return_pass_model().get_output_argument_prefix())
-            Generator.backend_agent_interface_list.append(", %s errorData" % error_annotated_type)
+            agent_call_param_list.append("%serrorData" % error_type_model.get_command_return_pass_model().get_output_argument_prefix())
+            backend_agent_interface_list.append(", %s errorData" % error_annotated_type)
             method_in_code += "    %s errorData;\n" % error_type_model.get_command_return_pass_model().get_return_var_type()
-
-            setter_argument = error_type_model.get_command_return_pass_model().get_output_to_raw_expression() % "errorData"
-            if error_type_binding.get_setter_value_expression_pattern():
-                setter_argument = error_type_binding.get_setter_value_expression_pattern() % setter_argument
-            error_assigment_value = error_type_binding.reduce_to_raw_type().get_constructor_pattern() % setter_argument
-
-            cook = "            resultErrorData = %s;\n" % error_assigment_value
-
-            error_condition_pattern = error_type_model.get_command_return_pass_model().get_set_return_condition()
-            cook = ("            if (%s)\n    " % (error_condition_pattern % "errorData")) + cook
-            error_response_cook_text = "        if (error.length()) {\n" + cook + "        }\n"
+            send_response_call_params_list.append("errorData")
 
         if "parameters" in json_command:
             json_params = json_command["parameters"]
@@ -1945,15 +1954,15 @@ class Generator:
 
                 if optional:
                     code = ("    bool %s_valueFound = false;\n"
-                            "    %s in_%s = get%s(paramsContainerPtr, \"%s\", &%s_valueFound, protocolErrorsPtr);\n" %
+                            "    %s in_%s = get%s(paramsContainerPtr, \"%s\", &%s_valueFound, protocolErrors);\n" %
                            (json_param_name, non_optional_type_model.get_command_return_pass_model().get_return_var_type(), json_param_name, getter_name, json_param_name, json_param_name))
-                    param = ", %s_valueFound ? &in_%s : 0" % (json_param_name, json_param_name)
+                    param = "%s_valueFound ? &in_%s : 0" % (json_param_name, json_param_name)
                     # FIXME: pass optional refptr-values as PassRefPtr
                     formal_param_type_pattern = "const %s*"
                 else:
-                    code = ("    %s in_%s = get%s(paramsContainerPtr, \"%s\", 0, protocolErrorsPtr);\n" %
+                    code = ("    %s in_%s = get%s(paramsContainerPtr, \"%s\", 0, protocolErrors);\n" %
                             (non_optional_type_model.get_command_return_pass_model().get_return_var_type(), json_param_name, getter_name, json_param_name))
-                    param = ", in_%s" % json_param_name
+                    param = "in_%s" % json_param_name
                     # FIXME: pass not-optional refptr-values as NonNullPassRefPtr
                     if param_raw_type.is_heavy_value():
                         formal_param_type_pattern = "const %s&"
@@ -1962,7 +1971,7 @@ class Generator:
 
                 method_in_code += code
                 agent_call_param_list.append(param)
-                Generator.backend_agent_interface_list.append(", %s in_%s" % (formal_param_type_pattern % non_optional_type_model.get_command_return_pass_model().get_return_var_type(), json_param_name))
+                backend_agent_interface_list.append(", %s in_%s" % (formal_param_type_pattern % non_optional_type_model.get_command_return_pass_model().get_return_var_type(), json_param_name))
 
         if json_command.get("async") == True:
             callback_name = Capitalizer.lower_camel_case_to_upper(json_command_name) + "Callback"
@@ -1998,19 +2007,19 @@ class Generator:
                     parameter=annotated_type + " errorData",
                     argument=assigment_value))
 
-
-
             ad_hoc_type_output.append(callback_output)
 
             method_out_code += "    RefPtr<" + agent_interface_name + "::" + callback_name + "> callback = adoptRef(new " + agent_interface_name + "::" + callback_name + "(this, callId));\n"
-            agent_call_param_list.append(", callback")
-            normal_response_cook_text += "        if (!error.length()) \n"
-            normal_response_cook_text += "            return;\n"
-            normal_response_cook_text += "        callback->disable();\n"
-            Generator.backend_agent_interface_list.append(", PassRefPtr<%s> callback" % callback_name)
+            agent_call_param_list.append("callback")
+            normal_response_cook_text += "    if (!error.length()) \n"
+            normal_response_cook_text += "        return;\n"
+            normal_response_cook_text += "    callback->disable();\n"
+            backend_agent_interface_list.append(", PassRefPtr<%s> callback" % callback_name)
         else:
             if "returns" in json_command:
                 method_out_code += "\n"
+                agent_call_params_declaration_list.append("    RefPtr<JSONObject> result = JSONObject::create();")
+                send_response_call_params_list.append("result")
                 response_cook_list = []
                 for json_return in json_command["returns"]:
 
@@ -2029,25 +2038,25 @@ class Generator:
                         type_model = type_model.get_optional()
 
                     code = "    %s out_%s;\n" % (type_model.get_command_return_pass_model().get_return_var_type(), json_return_name)
-                    param = ", %sout_%s" % (type_model.get_command_return_pass_model().get_output_argument_prefix(), json_return_name)
+                    param = "%sout_%s" % (type_model.get_command_return_pass_model().get_output_argument_prefix(), json_return_name)
                     var_name = "out_%s" % json_return_name
                     setter_argument = type_model.get_command_return_pass_model().get_output_to_raw_expression() % var_name
                     if return_type_binding.get_setter_value_expression_pattern():
                         setter_argument = return_type_binding.get_setter_value_expression_pattern() % setter_argument
 
-                    cook = "            result->set%s(\"%s\", %s);\n" % (setter_type, json_return_name,
+                    cook = "        result->set%s(\"%s\", %s);\n" % (setter_type, json_return_name,
                                                                          setter_argument)
 
                     set_condition_pattern = type_model.get_command_return_pass_model().get_set_return_condition()
                     if set_condition_pattern:
-                        cook = ("            if (%s)\n    " % (set_condition_pattern % var_name)) + cook
+                        cook = ("        if (%s)\n    " % (set_condition_pattern % var_name)) + cook
                     annotated_type = type_model.get_command_return_pass_model().get_output_parameter_type()
 
                     param_name = var_name
                     if optional:
                         param_name = "opt_" + param_name
 
-                    Generator.backend_agent_interface_list.append(", %s %s" % (annotated_type, param_name))
+                    backend_agent_interface_list.append(", %s %s" % (annotated_type, param_name))
                     response_cook_list.append(cook)
 
                     method_out_code += code
@@ -2056,24 +2065,30 @@ class Generator:
                 normal_response_cook_text += "".join(response_cook_list)
 
                 if len(normal_response_cook_text) != 0:
-                    normal_response_cook_text = "        if (!error.length()) {\n" + normal_response_cook_text + "        }"
+                    normal_response_cook_text = "    if (!error.length()) {\n" + normal_response_cook_text + "    }"
+
+        # Redirect to another agent's implementation.
+        agent_field = "m_" + agent_field_name
+        if "redirect" in json_command:
+            domain_fixes = DomainNameFixes.get_fixed_data(json_command.get("redirect"))
+            agent_field = "m_" + domain_fixes.agent_field_name
 
         Generator.backend_method_implementation_list.append(Templates.backend_method.substitute(None,
             domainName=domain_name, methodName=json_command_name,
-            agentField="m_" + agent_field_name,
-            methodInCode=method_in_code,
-            methodOutCode=method_out_code,
-            agentCallParams="".join(agent_call_param_list),
+            agentField=agent_field,
+            methodCode="".join([method_in_code, method_out_code]),
+            agentCallParamsDeclaration="\n".join(agent_call_params_declaration_list),
+            agentCallParams=", ".join(agent_call_param_list),
             requestMessageObject=request_message_param,
             responseCook=normal_response_cook_text,
-            errorCook=error_response_cook_text,
+            sendResponseCallParams=", ".join(send_response_call_params_list),
             commandNameIndex=cmd_enum_name))
         declaration_command_name = "%s.%s\\0" % (domain_name, json_command_name)
         Generator.backend_method_name_declaration_list.append("    \"%s\"" % declaration_command_name)
         Generator.backend_method_name_declaration_index_list.append("    %d," % Generator.backend_method_name_declaration_current_index)
         Generator.backend_method_name_declaration_current_index += len(declaration_command_name) - 1
 
-        Generator.backend_agent_interface_list.append(") = 0;\n")
+        backend_agent_interface_list.append(") = 0;\n")
 
     class CallbackMethodStructTemplate:
         @staticmethod

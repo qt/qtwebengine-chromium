@@ -31,6 +31,7 @@
 
 #include "core/dom/DOMImplementation.h"
 #include "core/fetch/Resource.h"
+#include "platform/MIMETypeRegistry.h"
 #include "platform/SharedBuffer.h"
 #include "platform/network/ResourceResponse.h"
 
@@ -45,9 +46,9 @@ static size_t maximumSingleResourceContentSize = 10 * 1000 * 1000;
 namespace WebCore {
 
 
-PassRefPtr<XHRReplayData> XHRReplayData::create(const AtomicString& method, const KURL& url, bool async, PassRefPtr<FormData> formData, bool includeCredentials)
+PassRefPtr<XHRReplayData> XHRReplayData::create(ExecutionContext* executionContext, const AtomicString& method, const KURL& url, bool async, PassRefPtr<FormData> formData, bool includeCredentials)
 {
-    return adoptRef(new XHRReplayData(method, url, async, formData, includeCredentials));
+    return adoptRef(new XHRReplayData(executionContext, method, url, async, formData, includeCredentials));
 }
 
 void XHRReplayData::addHeader(const AtomicString& key, const AtomicString& value)
@@ -55,8 +56,9 @@ void XHRReplayData::addHeader(const AtomicString& key, const AtomicString& value
     m_headers.set(key, value);
 }
 
-XHRReplayData::XHRReplayData(const AtomicString& method, const KURL& url, bool async, PassRefPtr<FormData> formData, bool includeCredentials)
-    : m_method(method)
+XHRReplayData::XHRReplayData(ExecutionContext* executionContext, const AtomicString& method, const KURL& url, bool async, PassRefPtr<FormData> formData, bool includeCredentials)
+    : ContextLifecycleObserver(executionContext)
+    , m_method(method)
     , m_url(url)
     , m_async(async)
     , m_formData(formData)
@@ -130,7 +132,7 @@ size_t NetworkResourcesData::ResourceData::decodeDataToContent()
     ASSERT(!hasContent());
     size_t dataLength = m_dataBuffer->size();
     m_content = m_decoder->decode(m_dataBuffer->data(), m_dataBuffer->size());
-    m_content.append(m_decoder->flush());
+    m_content = m_content + m_decoder->flush();
     m_dataBuffer = nullptr;
     return contentSizeInBytes(m_content) - dataLength;
 }
@@ -157,15 +159,18 @@ void NetworkResourcesData::resourceCreated(const String& requestId, const String
 static PassOwnPtr<TextResourceDecoder> createOtherResourceTextDecoder(const String& mimeType, const String& textEncodingName)
 {
     OwnPtr<TextResourceDecoder> decoder;
-    if (!textEncodingName.isEmpty())
+    if (!textEncodingName.isEmpty()) {
         decoder = TextResourceDecoder::create("text/plain", textEncodingName);
-    else if (DOMImplementation::isXMLMIMEType(mimeType.lower())) {
+    } else if (DOMImplementation::isXMLMIMEType(mimeType)) {
         decoder = TextResourceDecoder::create("application/xml");
         decoder->useLenientXMLDecoding();
-    } else if (equalIgnoringCase(mimeType, "text/html"))
+    } else if (equalIgnoringCase(mimeType, "text/html")) {
         decoder = TextResourceDecoder::create("text/html", "UTF-8");
-    else if (mimeType == "text/plain")
+    } else if (MIMETypeRegistry::isSupportedJavaScriptMIMEType(mimeType) || DOMImplementation::isJSONMIMEType(mimeType)) {
+        decoder = TextResourceDecoder::create("text/plain", "UTF-8");
+    } else if (DOMImplementation::isTextMIMEType(mimeType)) {
         decoder = TextResourceDecoder::create("text/plain", "ISO-8859-1");
+    }
     return decoder.release();
 }
 
@@ -255,15 +260,6 @@ void NetworkResourcesData::addResource(const String& requestId, Resource* cached
     resourceData->setResource(cachedResource);
 }
 
-void NetworkResourcesData::addResourceSharedBuffer(const String& requestId, PassRefPtr<SharedBuffer> buffer, const String& textEncodingName)
-{
-    ResourceData* resourceData = resourceDataForRequestId(requestId);
-    if (!resourceData)
-        return;
-    resourceData->setBuffer(buffer);
-    resourceData->setTextEncodingName(textEncodingName);
-}
-
 NetworkResourcesData::ResourceData const* NetworkResourcesData::data(const String& requestId)
 {
     return resourceDataForRequestId(requestId);
@@ -295,18 +291,6 @@ void NetworkResourcesData::setXHRReplayData(const String& requestId, XHRReplayDa
     }
 
     resourceData->setXHRReplayData(xhrReplayData);
-}
-
-void NetworkResourcesData::reuseXHRReplayData(const String& requestId, const String& reusedRequestId)
-{
-    ResourceData* reusedResourceData = resourceDataForRequestId(reusedRequestId);
-    ResourceData* resourceData = resourceDataForRequestId(requestId);
-    if (!reusedResourceData || !resourceData) {
-        m_reusedXHRReplayDataRequestIds.set(requestId, reusedRequestId);
-        return;
-    }
-
-    resourceData->setXHRReplayData(reusedResourceData->xhrReplayData());
 }
 
 Vector<NetworkResourcesData::ResourceData*> NetworkResourcesData::resources()

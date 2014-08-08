@@ -26,7 +26,8 @@ std::string GetEffectiveDomain(const std::string& scheme,
                                const std::string& host) {
   if (scheme == "http" || scheme == "https") {
     return registry_controlled_domains::GetDomainAndRegistry(
-        host, net::registry_controlled_domains::EXCLUDE_PRIVATE_REGISTRIES);
+        host,
+        registry_controlled_domains::INCLUDE_PRIVATE_REGISTRIES);
   }
 
   if (!DomainIsHostOnly(host))
@@ -50,7 +51,7 @@ bool GetCookieDomainWithString(const GURL& url,
   }
 
   // Get the normalized domain specified in cookie line.
-  url_canon::CanonHostInfo ignored;
+  url::CanonHostInfo ignored;
   std::string cookie_domain(CanonicalizeHost(domain_string, &ignored));
   if (cookie_domain.empty())
     return false;

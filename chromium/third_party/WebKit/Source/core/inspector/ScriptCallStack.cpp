@@ -34,18 +34,16 @@
 
 namespace WebCore {
 
-PassRefPtr<ScriptCallStack> ScriptCallStack::create(Vector<ScriptCallFrame>& frames)
+DEFINE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(ScriptCallStack);
+
+PassRefPtrWillBeRawPtr<ScriptCallStack> ScriptCallStack::create(Vector<ScriptCallFrame>& frames)
 {
-    return adoptRef(new ScriptCallStack(frames));
+    return adoptRefWillBeNoop(new ScriptCallStack(frames));
 }
 
 ScriptCallStack::ScriptCallStack(Vector<ScriptCallFrame>& frames)
 {
     m_frames.swap(frames);
-}
-
-ScriptCallStack::~ScriptCallStack()
-{
 }
 
 const ScriptCallFrame &ScriptCallStack::at(size_t index) const
@@ -57,23 +55,6 @@ const ScriptCallFrame &ScriptCallStack::at(size_t index) const
 size_t ScriptCallStack::size() const
 {
     return m_frames.size();
-}
-
-bool ScriptCallStack::isEqual(ScriptCallStack* o) const
-{
-    if (!o)
-        return false;
-
-    size_t frameCount = o->m_frames.size();
-    if (frameCount != m_frames.size())
-        return false;
-
-    for (size_t i = 0; i < frameCount; ++i) {
-        if (!m_frames[i].isEqual(o->m_frames[i]))
-            return false;
-    }
-
-    return true;
 }
 
 PassRefPtr<TypeBuilder::Array<TypeBuilder::Console::CallFrame> > ScriptCallStack::buildInspectorArray() const

@@ -26,24 +26,22 @@
 #include "config.h"
 #include "modules/mediastream/RTCDTMFToneChangeEvent.h"
 
-#include "core/events/ThreadLocalEventNames.h"
-
 namespace WebCore {
 
-PassRefPtr<RTCDTMFToneChangeEvent> RTCDTMFToneChangeEvent::create()
+PassRefPtrWillBeRawPtr<RTCDTMFToneChangeEvent> RTCDTMFToneChangeEvent::create()
 {
-    return adoptRef(new RTCDTMFToneChangeEvent);
+    return adoptRefWillBeNoop(new RTCDTMFToneChangeEvent);
 }
 
-PassRefPtr<RTCDTMFToneChangeEvent> RTCDTMFToneChangeEvent::create(const String& tone)
+PassRefPtrWillBeRawPtr<RTCDTMFToneChangeEvent> RTCDTMFToneChangeEvent::create(const String& tone)
 {
-    return adoptRef(new RTCDTMFToneChangeEvent(tone));
+    return adoptRefWillBeNoop(new RTCDTMFToneChangeEvent(tone));
 }
 
-PassRefPtr<RTCDTMFToneChangeEvent> RTCDTMFToneChangeEvent::create(const AtomicString& type, const RTCDTMFToneChangeEventInit& initializer)
+PassRefPtrWillBeRawPtr<RTCDTMFToneChangeEvent> RTCDTMFToneChangeEvent::create(const AtomicString& type, const RTCDTMFToneChangeEventInit& initializer)
 {
     ASSERT(type == EventTypeNames::tonechange);
-    return adoptRef(new RTCDTMFToneChangeEvent(initializer));
+    return adoptRefWillBeNoop(new RTCDTMFToneChangeEvent(initializer));
 }
 
 RTCDTMFToneChangeEvent::RTCDTMFToneChangeEvent()
@@ -77,6 +75,11 @@ const String& RTCDTMFToneChangeEvent::tone() const
 const AtomicString& RTCDTMFToneChangeEvent::interfaceName() const
 {
     return EventNames::RTCDTMFToneChangeEvent;
+}
+
+void RTCDTMFToneChangeEvent::trace(Visitor* visitor)
+{
+    Event::trace(visitor);
 }
 
 } // namespace WebCore

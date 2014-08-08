@@ -12,10 +12,10 @@
 
 #include "base/mac/scoped_nsobject.h"
 #include "base/memory/scoped_ptr.h"
+#include "content/browser/renderer_host/render_view_host_delegate_view.h"
+#include "content/browser/web_contents/web_contents_view.h"
 #include "content/common/content_export.h"
 #include "content/common/drag_event_source_info.h"
-#include "content/port/browser/render_view_host_delegate_view.h"
-#include "content/port/browser/web_contents_view_port.h"
 #include "ui/base/cocoa/base_view.h"
 #include "ui/gfx/size.h"
 
@@ -25,6 +25,7 @@ class SkBitmap;
 @class WebDragSource;
 
 namespace content {
+class PopupMenuHelper;
 class WebContentsImpl;
 class WebContentsViewDelegate;
 class WebContentsViewMac;
@@ -54,7 +55,7 @@ namespace content {
 
 // Mac-specific implementation of the WebContentsView. It owns an NSView that
 // contains all of the contents of the tab and associated child views.
-class WebContentsViewMac : public WebContentsViewPort,
+class WebContentsViewMac : public WebContentsView,
                            public RenderViewHostDelegateView {
  public:
   // The corresponding WebContentsImpl is passed in the constructor, and manages
@@ -69,8 +70,6 @@ class WebContentsViewMac : public WebContentsViewPort,
   virtual gfx::NativeView GetContentNativeView() const OVERRIDE;
   virtual gfx::NativeWindow GetTopLevelNativeWindow() const OVERRIDE;
   virtual void GetContainerBounds(gfx::Rect* out) const OVERRIDE;
-  virtual void OnTabCrashed(base::TerminationStatus status,
-                            int error_code) OVERRIDE;
   virtual void SizeContents(const gfx::Size& size) OVERRIDE;
   virtual void Focus() OVERRIDE;
   virtual void SetInitialFocus() OVERRIDE;
@@ -83,13 +82,11 @@ class WebContentsViewMac : public WebContentsViewPort,
   virtual void SetOverlayView(WebContentsView* overlay,
                               const gfx::Point& offset) OVERRIDE;
   virtual void RemoveOverlayView() OVERRIDE;
-
-  // WebContentsViewPort implementation ----------------------------------------
   virtual void CreateView(
       const gfx::Size& initial_size, gfx::NativeView context) OVERRIDE;
-  virtual RenderWidgetHostView* CreateViewForWidget(
+  virtual RenderWidgetHostViewBase* CreateViewForWidget(
       RenderWidgetHost* render_widget_host) OVERRIDE;
-  virtual RenderWidgetHostView* CreateViewForPopupWidget(
+  virtual RenderWidgetHostViewBase* CreateViewForPopupWidget(
       RenderWidgetHost* render_widget_host) OVERRIDE;
   virtual void SetPageTitle(const base::string16& title) OVERRIDE;
   virtual void RenderViewCreated(RenderViewHost* host) OVERRIDE;
@@ -99,7 +96,8 @@ class WebContentsViewMac : public WebContentsViewPort,
   virtual void CloseTabAfterEventTracking() OVERRIDE;
 
   // Backend implementation of RenderViewHostDelegateView.
-  virtual void ShowContextMenu(const ContextMenuParams& params) OVERRIDE;
+  virtual void ShowContextMenu(content::RenderFrameHost* render_frame_host,
+                               const ContextMenuParams& params) OVERRIDE;
   virtual void ShowPopupMenu(const gfx::Rect& bounds,
                              int item_height,
                              double item_font_size,
@@ -107,6 +105,7 @@ class WebContentsViewMac : public WebContentsViewPort,
                              const std::vector<MenuItem>& items,
                              bool right_aligned,
                              bool allow_multiple_selection) OVERRIDE;
+  virtual void HidePopupMenu() OVERRIDE;
   virtual void StartDragging(const DropData& drop_data,
                              blink::WebDragOperationsMask allowed_operations,
                              const gfx::ImageSkia& image,
@@ -153,6 +152,8 @@ class WebContentsViewMac : public WebContentsViewPort,
   // The underlay view which this view is rendered above.
   // Underlay view has |overlay_view_| set to this view.
   WebContentsViewMac* underlay_view_;
+
+  scoped_ptr<PopupMenuHelper> popup_menu_helper_;
 
   DISALLOW_COPY_AND_ASSIGN(WebContentsViewMac);
 };

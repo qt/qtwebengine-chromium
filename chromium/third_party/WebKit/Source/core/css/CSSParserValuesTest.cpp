@@ -56,4 +56,45 @@ TEST(CSSParserValuesTest, InitWithEmpty16BitsString)
     ASSERT_EQ(0u, cssParserString.length());
 }
 
+TEST(CSSParserValuesTest, EqualIgnoringCase8BitsString)
+{
+    CSSParserString cssParserString;
+    String string8bit("sHaDOw");
+    cssParserString.init(string8bit, 0, string8bit.length());
+
+    ASSERT_TRUE(cssParserString.equalIgnoringCase("shadow"));
+    ASSERT_TRUE(cssParserString.equalIgnoringCase("ShaDow"));
+    ASSERT_FALSE(cssParserString.equalIgnoringCase("shadow-all"));
+    ASSERT_FALSE(cssParserString.equalIgnoringCase("sha"));
+    ASSERT_FALSE(cssParserString.equalIgnoringCase("abCD"));
+}
+
+TEST(CSSParserValuesTest, EqualIgnoringCase16BitsString)
+{
+    String string16bit("sHaDOw");
+    string16bit.ensure16Bit();
+
+    CSSParserString cssParserString;
+    cssParserString.init(string16bit, 0, string16bit.length());
+
+    ASSERT_TRUE(cssParserString.equalIgnoringCase("shadow"));
+    ASSERT_TRUE(cssParserString.equalIgnoringCase("ShaDow"));
+    ASSERT_FALSE(cssParserString.equalIgnoringCase("shadow-all"));
+    ASSERT_FALSE(cssParserString.equalIgnoringCase("sha"));
+    ASSERT_FALSE(cssParserString.equalIgnoringCase("abCD"));
+}
+
+TEST(CSSParserValuesTest, CSSParserValuelistClear)
+{
+    CSSParserValueList list;
+    for (int i = 0; i < 3; ++i) {
+        CSSParserValue value;
+        value.setFromNumber(3);
+        list.addValue(value);
+    }
+    list.clearAndLeakValues();
+    ASSERT_FALSE(list.size());
+    ASSERT_FALSE(list.currentIndex());
+}
+
 } // namespace

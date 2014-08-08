@@ -55,11 +55,11 @@ TIMEOUT_SCALEFACTOR = {"debug"   : 4,
                        "release" : 1 }
 
 MODE_FLAGS = {
-    "debug"   : ["--nobreak-on-abort", "--nodead-code-elimination",
+    "debug"   : ["--nohard-abort", "--nodead-code-elimination",
                  "--nofold-constants", "--enable-slow-asserts",
                  "--debug-code", "--verify-heap",
                  "--noconcurrent-recompilation"],
-    "release" : ["--nobreak-on-abort", "--nodead-code-elimination",
+    "release" : ["--nohard-abort", "--nodead-code-elimination",
                  "--nofold-constants", "--noconcurrent-recompilation"]}
 
 SUPPORTED_ARCHS = ["android_arm",
@@ -154,6 +154,9 @@ def BuildOptions():
   result.add_option("--arch-and-mode",
                     help="Architecture and mode in the format 'arch.mode'",
                     default=None)
+  result.add_option("--asan",
+                    help="Regard test expectations for ASAN",
+                    default=False, action="store_true")
   result.add_option("--buildbot",
                     help="Adapt to path structure used on buildbots",
                     default=False, action="store_true")
@@ -210,6 +213,8 @@ def BuildOptions():
                     default= -1, type="int")
   result.add_option("-v", "--verbose", help="Verbose output",
                     default=False, action="store_true")
+  result.add_option("--random-seed", default=0, dest="random_seed",
+                    help="Default seed for initializing random generator")
   return result
 
 
@@ -239,6 +244,8 @@ def ProcessOptions(options):
   options.extra_flags = shlex.split(options.extra_flags)
   if options.j == 0:
     options.j = multiprocessing.cpu_count()
+  while options.random_seed == 0:
+    options.random_seed = random.SystemRandom().randint(-2147483648, 2147483647)
   if not options.distribution_mode in DISTRIBUTION_MODES:
     print "Unknown distribution mode %s" % options.distribution_mode
     return False
@@ -312,8 +319,11 @@ def Main():
 
   for mode in options.mode:
     for arch in options.arch:
-      code = Execute(arch, mode, args, options, suites, workspace)
-      exit_code = exit_code or code
+      try:
+        code = Execute(arch, mode, args, options, suites, workspace)
+        exit_code = exit_code or code
+      except KeyboardInterrupt:
+        return 2
   return exit_code
 
 
@@ -359,16 +369,22 @@ def Execute(arch, mode, args, options, suites, workspace):
                         timeout, options.isolates,
                         options.command_prefix,
                         options.extra_flags,
-                        False)
+                        False,
+                        options.random_seed,
+                        True)
 
   # Find available test suites and read test cases from them.
   variables = {
-    "mode": mode,
     "arch": arch,
-    "system": utils.GuessOS(),
-    "isolates": options.isolates,
+    "asan": options.asan,
     "deopt_fuzzer": True,
+    "gc_stress": False,
+    "isolates": options.isolates,
+    "mode": mode,
     "no_i18n": False,
+    "no_snap": False,
+    "simulator": utils.UseSimulator(arch),
+    "system": utils.GuessOS(),
   }
   all_tests = []
   num_tests = 0
@@ -397,17 +413,11 @@ def Execute(arch, mode, args, options, suites, workspace):
     print "No tests to run."
     return 0
 
-  try:
-    print(">>> Collection phase")
-    progress_indicator = progress.PROGRESS_INDICATORS[options.progress]()
-    runner = execution.Runner(suites, progress_indicator, ctx)
+  print(">>> Collection phase")
+  progress_indicator = progress.PROGRESS_INDICATORS[options.progress]()
+  runner = execution.Runner(suites, progress_indicator, ctx)
 
-    exit_code = runner.Run(options.j)
-    if runner.terminate:
-      return exit_code
-
-  except KeyboardInterrupt:
-    return 1
+  exit_code = runner.Run(options.j)
 
   print(">>> Analysis phase")
   num_tests = 0
@@ -450,19 +460,12 @@ def Execute(arch, mode, args, options, suites, workspace):
     print "No tests to run."
     return 0
 
-  try:
-    print(">>> Deopt fuzzing phase (%d test cases)" % num_tests)
-    progress_indicator = progress.PROGRESS_INDICATORS[options.progress]()
-    runner = execution.Runner(suites, progress_indicator, ctx)
+  print(">>> Deopt fuzzing phase (%d test cases)" % num_tests)
+  progress_indicator = progress.PROGRESS_INDICATORS[options.progress]()
+  runner = execution.Runner(suites, progress_indicator, ctx)
 
-    exit_code = runner.Run(options.j)
-    if runner.terminate:
-      return exit_code
-
-  except KeyboardInterrupt:
-    return 1
-
-  return exit_code
+  code = runner.Run(options.j)
+  return exit_code or code
 
 
 if __name__ == "__main__":

@@ -29,35 +29,26 @@ namespace WebCore {
 
 using namespace WTF;
 
-AtomicString CSSParserString::atomicSubstring(unsigned position, unsigned length) const
+static void destroy(Vector<CSSParserValue, 4>& values)
 {
-    ASSERT(m_length >= position + length);
-
-    if (is8Bit())
-        return AtomicString(characters8() + position, length);
-    return AtomicString(characters16() + position, length);
+    size_t numValues = values.size();
+    for (size_t i = 0; i < numValues; i++) {
+        if (values[i].unit == CSSParserValue::Function)
+            delete values[i].function;
+        else if (values[i].unit == CSSParserValue::ValueList)
+            delete values[i].valueList;
+    }
 }
 
-void CSSParserString::trimTrailingWhitespace()
+void CSSParserValueList::destroyAndClear()
 {
-    if (is8Bit()) {
-        while (m_length > 0 && isHTMLSpace<LChar>(m_data.characters8[m_length - 1]))
-            --m_length;
-    } else {
-        while (m_length > 0 && isHTMLSpace<UChar>(m_data.characters16[m_length - 1]))
-            --m_length;
-    }
+    destroy(m_values);
+    clearAndLeakValues();
 }
 
 CSSParserValueList::~CSSParserValueList()
 {
-    size_t numValues = m_values.size();
-    for (size_t i = 0; i < numValues; i++) {
-        if (m_values[i].unit == CSSParserValue::Function)
-            delete m_values[i].function;
-        else if (m_values[i].unit == CSSParserValue::ValueList)
-            delete m_values[i].valueList;
-    }
+    destroy(m_values);
 }
 
 void CSSParserValueList::addValue(const CSSParserValue& v)
@@ -70,28 +61,20 @@ void CSSParserValueList::insertValueAt(unsigned i, const CSSParserValue& v)
     m_values.insert(i, v);
 }
 
-void CSSParserValueList::deleteValueAt(unsigned i)
+void CSSParserValueList::stealValues(CSSParserValueList& valueList)
 {
-    m_values.remove(i);
-}
-
-void CSSParserValueList::extend(CSSParserValueList& valueList)
-{
-    for (unsigned int i = 0; i < valueList.size(); ++i)
+    for (unsigned i = 0; i < valueList.size(); ++i)
         m_values.append(*(valueList.valueAt(i)));
+    valueList.clearAndLeakValues();
 }
 
-PassRefPtr<CSSValue> CSSParserValue::createCSSValue()
+PassRefPtrWillBeRawPtr<CSSValue> CSSParserValue::createCSSValue()
 {
-    RefPtr<CSSValue> parsedValue;
     if (id)
         return CSSPrimitiveValue::createIdentifier(id);
 
-    if (unit == CSSParserValue::Operator) {
-        RefPtr<CSSPrimitiveValue> primitiveValue = CSSPrimitiveValue::createParserOperator(iValue);
-        primitiveValue->setPrimitiveType(CSSPrimitiveValue::CSS_PARSER_OPERATOR);
-        return primitiveValue;
-    }
+    if (unit == CSSParserValue::Operator)
+        return CSSPrimitiveValue::createParserOperator(iValue);
     if (unit == CSSParserValue::Function)
         return CSSFunctionValue::create(function);
     if (unit == CSSParserValue::ValueList)
@@ -99,7 +82,7 @@ PassRefPtr<CSSValue> CSSParserValue::createCSSValue()
     if (unit >= CSSParserValue::Q_EMS)
         return CSSPrimitiveValue::createAllowingMarginQuirk(fValue, CSSPrimitiveValue::CSS_EMS);
 
-    CSSPrimitiveValue::UnitTypes primitiveUnit = static_cast<CSSPrimitiveValue::UnitTypes>(unit);
+    CSSPrimitiveValue::UnitType primitiveUnit = static_cast<CSSPrimitiveValue::UnitType>(unit);
     switch (primitiveUnit) {
     case CSSPrimitiveValue::CSS_IDENT:
     case CSSPrimitiveValue::CSS_PROPERTY_ID:
@@ -109,7 +92,6 @@ PassRefPtr<CSSValue> CSSParserValue::createCSSValue()
         return CSSPrimitiveValue::create(fValue, isInt ? CSSPrimitiveValue::CSS_PARSER_INTEGER : CSSPrimitiveValue::CSS_NUMBER);
     case CSSPrimitiveValue::CSS_STRING:
     case CSSPrimitiveValue::CSS_URI:
-    case CSSPrimitiveValue::CSS_VARIABLE_NAME:
     case CSSPrimitiveValue::CSS_PARSER_HEXCOLOR:
         return CSSPrimitiveValue::create(string, primitiveUnit);
     case CSSPrimitiveValue::CSS_PERCENTAGE:
@@ -148,31 +130,29 @@ PassRefPtr<CSSValue> CSSParserValue::createCSSValue()
     case CSSPrimitiveValue::CSS_DPCM:
     case CSSPrimitiveValue::CSS_PAIR:
     case CSSPrimitiveValue::CSS_UNICODE_RANGE:
-    case CSSPrimitiveValue::CSS_PARSER_OPERATOR:
     case CSSPrimitiveValue::CSS_PARSER_INTEGER:
     case CSSPrimitiveValue::CSS_PARSER_IDENTIFIER:
+    case CSSPrimitiveValue::CSS_PARSER_OPERATOR:
     case CSSPrimitiveValue::CSS_COUNTER_NAME:
     case CSSPrimitiveValue::CSS_SHAPE:
     case CSSPrimitiveValue::CSS_QUAD:
     case CSSPrimitiveValue::CSS_CALC:
     case CSSPrimitiveValue::CSS_CALC_PERCENTAGE_WITH_NUMBER:
     case CSSPrimitiveValue::CSS_CALC_PERCENTAGE_WITH_LENGTH:
-        return 0;
+        return nullptr;
     }
 
     ASSERT_NOT_REACHED();
-    return 0;
+    return nullptr;
 }
 
 CSSParserSelector::CSSParserSelector()
     : m_selector(adoptPtr(new CSSSelector()))
-    , m_functionArgumentSelector(0)
 {
 }
 
 CSSParserSelector::CSSParserSelector(const QualifiedName& tagQName)
     : m_selector(adoptPtr(new CSSSelector(tagQName)))
-    , m_functionArgumentSelector(0)
 {
 }
 
@@ -206,7 +186,7 @@ bool CSSParserSelector::isSimple() const
     if (!m_tagHistory)
         return true;
 
-    if (m_selector->m_match == CSSSelector::Tag) {
+    if (m_selector->match() == CSSSelector::Tag) {
         // We can't check against anyQName() here because namespace may not be nullAtom.
         // Example:
         //     @namespace "http://www.w3.org/2000/svg";
@@ -244,17 +224,17 @@ void CSSParserSelector::prependTagSelector(const QualifiedName& tagQName, bool t
     m_tagHistory = second.release();
 
     m_selector = adoptPtr(new CSSSelector(tagQName, tagIsForNamespaceRule));
-    m_selector->m_relation = CSSSelector::SubSelector;
+    m_selector->setRelation(CSSSelector::SubSelector);
 }
 
-CSSParserSelector* CSSParserSelector::findDistributedPseudoElementSelector() const
+bool CSSParserSelector::hasHostPseudoSelector() const
 {
     CSSParserSelector* selector = const_cast<CSSParserSelector*>(this);
     do {
-        if (selector->isDistributedPseudoElement())
-            return selector;
+        if (selector->pseudoType() == CSSSelector::PseudoHost || selector->pseudoType() == CSSSelector::PseudoHostContext)
+            return true;
     } while ((selector = selector->tagHistory()));
-    return 0;
+    return false;
 }
 
 } // namespace WebCore

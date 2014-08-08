@@ -22,14 +22,11 @@ interface DocumentType : Node {
     // DOM Level 1
 
     readonly attribute DOMString name;
-    [MeasureAs=DocumentTypeEntities] readonly attribute NamedNodeMap entities; // Removed from DOM4.
-    [MeasureAs=DocumentTypeNotations] readonly attribute NamedNodeMap notations; // Removed from DOM4.
 
     // DOM Level 2
 
-    [TreatReturnedNullStringAs=Null] readonly attribute DOMString publicId;
-    [TreatReturnedNullStringAs=Null] readonly attribute DOMString systemId;
-    [TreatReturnedNullStringAs=Null, MeasureAs=DocumentTypeInternalSubset] readonly attribute DOMString internalSubset; // Removed from DOM4.
+    readonly attribute DOMString publicId;
+    readonly attribute DOMString systemId;
 };
 
 DocumentType implements ChildNode;

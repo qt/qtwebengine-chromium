@@ -94,12 +94,12 @@ class FakeDatagramServerSocket : public net::DatagramServerSocket {
     return buf_len;
   }
 
-  virtual bool SetReceiveBufferSize(int32 size) OVERRIDE {
-    return true;
+  virtual int SetReceiveBufferSize(int32 size) OVERRIDE {
+    return net::OK;
   }
 
-  virtual bool SetSendBufferSize(int32 size) OVERRIDE {
-    return true;
+  virtual int SetSendBufferSize(int32 size) OVERRIDE {
+    return net::OK;
   }
 
   void ReceivePacket(const net::IPEndPoint& address, std::vector<char> data) {
@@ -160,6 +160,10 @@ class FakeDatagramServerSocket : public net::DatagramServerSocket {
     return net::ERR_NOT_IMPLEMENTED;
   }
 
+  virtual void DetachFromThread() OVERRIDE {
+    NOTIMPLEMENTED();
+  }
+
  private:
   net::IPEndPoint address_;
   std::deque<UDPPacket>* sent_packets_;
@@ -188,7 +192,7 @@ class P2PSocketHostUdpTest : public testing::Test {
     socket_host_->socket_.reset(socket_);
 
     local_address_ = ParseAddress(kTestLocalIpAddress, kTestPort1);
-    socket_host_->Init(local_address_, net::IPEndPoint());
+    socket_host_->Init(local_address_, P2PHostAndIPEndPoint());
 
     dest1_ = ParseAddress(kTestIpAddress1, kTestPort1);
     dest2_ = ParseAddress(kTestIpAddress2, kTestPort2);
@@ -217,17 +221,18 @@ TEST_F(P2PSocketHostUdpTest, SendStunNoAuth) {
       .Times(3)
       .WillRepeatedly(DoAll(DeleteArg<0>(), Return(true)));
 
+  talk_base::PacketOptions options;
   std::vector<char> packet1;
   CreateStunRequest(&packet1);
-  socket_host_->Send(dest1_, packet1, net::DSCP_NO_CHANGE, 0);
+  socket_host_->Send(dest1_, packet1, options, 0);
 
   std::vector<char> packet2;
   CreateStunResponse(&packet2);
-  socket_host_->Send(dest1_, packet2, net::DSCP_NO_CHANGE, 0);
+  socket_host_->Send(dest1_, packet2, options, 0);
 
   std::vector<char> packet3;
   CreateStunError(&packet3);
-  socket_host_->Send(dest1_, packet3, net::DSCP_NO_CHANGE, 0);
+  socket_host_->Send(dest1_, packet3, options, 0);
 
   ASSERT_EQ(sent_packets_.size(), 3U);
   ASSERT_EQ(sent_packets_[0].second, packet1);
@@ -242,9 +247,10 @@ TEST_F(P2PSocketHostUdpTest, SendDataNoAuth) {
       MatchMessage(static_cast<uint32>(P2PMsg_OnError::ID))))
       .WillOnce(DoAll(DeleteArg<0>(), Return(true)));
 
+  talk_base::PacketOptions options;
   std::vector<char> packet;
   CreateRandomPacket(&packet);
-  socket_host_->Send(dest1_, packet, net::DSCP_NO_CHANGE, 0);
+  socket_host_->Send(dest1_, packet, options, 0);
 
   ASSERT_EQ(sent_packets_.size(), 0U);
 }
@@ -264,9 +270,11 @@ TEST_F(P2PSocketHostUdpTest, SendAfterStunRequest) {
   EXPECT_CALL(sender_, Send(
       MatchMessage(static_cast<uint32>(P2PMsg_OnSendComplete::ID))))
       .WillOnce(DoAll(DeleteArg<0>(), Return(true)));
+
+  talk_base::PacketOptions options;
   std::vector<char> packet;
   CreateRandomPacket(&packet);
-  socket_host_->Send(dest1_, packet, net::DSCP_NO_CHANGE, 0);
+  socket_host_->Send(dest1_, packet, options, 0);
 
   ASSERT_EQ(1U, sent_packets_.size());
   ASSERT_EQ(dest1_, sent_packets_[0].first);
@@ -287,9 +295,11 @@ TEST_F(P2PSocketHostUdpTest, SendAfterStunResponse) {
   EXPECT_CALL(sender_, Send(
       MatchMessage(static_cast<uint32>(P2PMsg_OnSendComplete::ID))))
       .WillOnce(DoAll(DeleteArg<0>(), Return(true)));
+
+  talk_base::PacketOptions options;
   std::vector<char> packet;
   CreateRandomPacket(&packet);
-  socket_host_->Send(dest1_, packet, net::DSCP_NO_CHANGE, 0);
+  socket_host_->Send(dest1_, packet, options, 0);
 
   ASSERT_EQ(1U, sent_packets_.size());
   ASSERT_EQ(dest1_, sent_packets_[0].first);
@@ -307,12 +317,13 @@ TEST_F(P2PSocketHostUdpTest, SendAfterStunResponseDifferentHost) {
   socket_->ReceivePacket(dest1_, request_packet);
 
   // Should fail when trying to send the same packet to |dest2_|.
+  talk_base::PacketOptions options;
   std::vector<char> packet;
   CreateRandomPacket(&packet);
   EXPECT_CALL(sender_, Send(
       MatchMessage(static_cast<uint32>(P2PMsg_OnError::ID))))
       .WillOnce(DoAll(DeleteArg<0>(), Return(true)));
-  socket_host_->Send(dest2_, packet, net::DSCP_NO_CHANGE, 0);
+  socket_host_->Send(dest2_, packet, options, 0);
 }
 
 // Verify throttler not allowing unlimited sending of ICE messages to
@@ -323,15 +334,16 @@ TEST_F(P2PSocketHostUdpTest, ThrottleAfterLimit) {
       .Times(2)
       .WillRepeatedly(DoAll(DeleteArg<0>(), Return(true)));
 
+  talk_base::PacketOptions options;
   std::vector<char> packet1;
   CreateStunRequest(&packet1);
   throttler_.SetSendIceBandwidth(packet1.size() * 2);
-  socket_host_->Send(dest1_, packet1, net::DSCP_NO_CHANGE, 0);
-  socket_host_->Send(dest2_, packet1, net::DSCP_NO_CHANGE, 0);
+  socket_host_->Send(dest1_, packet1, options, 0);
+  socket_host_->Send(dest2_, packet1, options, 0);
 
   net::IPEndPoint dest3 = ParseAddress(kTestIpAddress1, 2222);
   // This packet must be dropped by the throttler.
-  socket_host_->Send(dest3, packet1, net::DSCP_NO_CHANGE, 0);
+  socket_host_->Send(dest3, packet1, options, 0);
   ASSERT_EQ(sent_packets_.size(), 2U);
 }
 
@@ -351,25 +363,26 @@ TEST_F(P2PSocketHostUdpTest, ThrottleAfterLimitAfterReceive) {
       .Times(4)
       .WillRepeatedly(DoAll(DeleteArg<0>(), Return(true)));
 
+  talk_base::PacketOptions options;
   std::vector<char> packet1;
   CreateStunRequest(&packet1);
   throttler_.SetSendIceBandwidth(packet1.size());
   // |dest1_| is known address, throttling will not be applied.
-  socket_host_->Send(dest1_, packet1, net::DSCP_NO_CHANGE, 0);
+  socket_host_->Send(dest1_, packet1, options, 0);
   // Trying to send the packet to dest1_ in the same window. It should go.
-  socket_host_->Send(dest1_, packet1, net::DSCP_NO_CHANGE, 0);
+  socket_host_->Send(dest1_, packet1, options, 0);
 
   // Throttler should allow this packet to go through.
-  socket_host_->Send(dest2_, packet1, net::DSCP_NO_CHANGE, 0);
+  socket_host_->Send(dest2_, packet1, options, 0);
 
   net::IPEndPoint dest3 = ParseAddress(kTestIpAddress1, 2223);
   // This packet will be dropped, as limit only for a single packet.
-  socket_host_->Send(dest3, packet1, net::DSCP_NO_CHANGE, 0);
+  socket_host_->Send(dest3, packet1, options, 0);
   net::IPEndPoint dest4 = ParseAddress(kTestIpAddress1, 2224);
   // This packet should also be dropped.
-  socket_host_->Send(dest4, packet1, net::DSCP_NO_CHANGE, 0);
+  socket_host_->Send(dest4, packet1, options, 0);
   // |dest1| is known, we can send as many packets to it.
-  socket_host_->Send(dest1_, packet1, net::DSCP_NO_CHANGE, 0);
+  socket_host_->Send(dest1_, packet1, options, 0);
   ASSERT_EQ(sent_packets_.size(), 4U);
 }
 

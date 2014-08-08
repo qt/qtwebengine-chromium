@@ -27,44 +27,30 @@
 #define Gamepad_h
 
 #include "bindings/v8/ScriptWrappable.h"
+#include "modules/gamepad/GamepadButton.h"
+#include "modules/gamepad/GamepadCommon.h"
+#include "platform/heap/Handle.h"
+#include "public/platform/WebGamepad.h"
 #include "wtf/RefCounted.h"
-#include "wtf/Vector.h"
-#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
-class Gamepad: public RefCounted<Gamepad>, public ScriptWrappable {
+class Gamepad FINAL : public GarbageCollectedFinalized<Gamepad>, public GamepadCommon, public ScriptWrappable {
 public:
-    static PassRefPtr<Gamepad> create()
+    static Gamepad* create()
     {
-        return adoptRef(new Gamepad);
+        return new Gamepad;
     }
     ~Gamepad();
 
-    typedef Vector<float> FloatVector;
+    const GamepadButtonVector& buttons() const { return m_buttons; }
+    void setButtons(unsigned count, const blink::WebGamepadButton* data);
 
-    const String& id() const { return m_id; }
-    void id(const String& id) { m_id = id; }
-
-    unsigned index() const { return m_index; }
-    void index(unsigned val) { m_index = val; }
-
-    unsigned long long timestamp() const { return m_timestamp; }
-    void timestamp(unsigned long long val) { m_timestamp = val; }
-
-    const FloatVector& axes() const { return m_axes; }
-    void axes(unsigned count, float* data);
-
-    const FloatVector& buttons() const { return m_buttons; }
-    void buttons(unsigned count, float* data);
+    void trace(Visitor*);
 
 private:
     Gamepad();
-    String m_id;
-    unsigned m_index;
-    unsigned long long m_timestamp;
-    FloatVector m_axes;
-    FloatVector m_buttons;
+    GamepadButtonVector m_buttons;
 };
 
 } // namespace WebCore

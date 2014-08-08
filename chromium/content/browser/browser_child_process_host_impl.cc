@@ -129,12 +129,7 @@ void BrowserChildProcessHostImpl::TerminateAll() {
 }
 
 void BrowserChildProcessHostImpl::Launch(
-#if defined(OS_WIN)
     SandboxedProcessLauncherDelegate* delegate,
-#elif defined(OS_POSIX)
-    bool use_zygote,
-    const base::EnvironmentMap& environ,
-#endif
     CommandLine* cmd_line) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
 
@@ -144,15 +139,12 @@ void BrowserChildProcessHostImpl::Launch(
   const CommandLine& browser_command_line = *CommandLine::ForCurrentProcess();
   static const char* kForwardSwitches[] = {
     switches::kDisableLogging,
-    switches::kEnableDCHECK,
     switches::kEnableLogging,
+    switches::kIPCConnectionTimeout,
     switches::kLoggingLevel,
     switches::kTraceToConsole,
     switches::kV,
     switches::kVModule,
-#if defined(OS_POSIX)
-    switches::kChildCleanExit,
-#endif
 #if defined(OS_WIN)
     switches::kEnableHighResolutionTime,
 #endif
@@ -161,13 +153,7 @@ void BrowserChildProcessHostImpl::Launch(
                              arraysize(kForwardSwitches));
 
   child_process_.reset(new ChildProcessLauncher(
-#if defined(OS_WIN)
       delegate,
-#elif defined(OS_POSIX)
-      use_zygote,
-      environ,
-      child_process_host_->TakeClientFileDescriptor(),
-#endif
       cmd_line,
       data_.id,
       this));
@@ -229,6 +215,12 @@ void BrowserChildProcessHostImpl::NotifyProcessInstanceCreated(
                     BrowserChildProcessInstanceCreated(data));
 }
 
+void BrowserChildProcessHostImpl::HistogramBadMessageTerminated(
+    int process_type) {
+  UMA_HISTOGRAM_ENUMERATION("ChildProcess.BadMessgeTerminated", process_type,
+                            PROCESS_TYPE_MAX);
+}
+
 base::TerminationStatus BrowserChildProcessHostImpl::GetTerminationStatus(
     bool known_dead, int* exit_code) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
@@ -260,6 +252,16 @@ void BrowserChildProcessHostImpl::OnChannelConnected(int32 peer_pid) {
 
 void BrowserChildProcessHostImpl::OnChannelError() {
   delegate_->OnChannelError();
+}
+
+void BrowserChildProcessHostImpl::OnBadMessageReceived(
+    const IPC::Message& message) {
+  HistogramBadMessageTerminated(data_.process_type);
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kDisableKillAfterBadIPC)) {
+    return;
+  }
+  base::KillProcess(GetHandle(), RESULT_CODE_KILLED_BAD_MESSAGE, false);
 }
 
 bool BrowserChildProcessHostImpl::CanShutdown() {
@@ -311,6 +313,11 @@ void BrowserChildProcessHostImpl::OnChildDisconnected() {
 
 bool BrowserChildProcessHostImpl::Send(IPC::Message* message) {
   return child_process_host_->Send(message);
+}
+
+void BrowserChildProcessHostImpl::OnProcessLaunchFailed() {
+  delegate_->OnProcessLaunchFailed();
+  delete delegate_;  // Will delete us
 }
 
 void BrowserChildProcessHostImpl::OnProcessLaunched() {

@@ -29,15 +29,8 @@
  */
 
 #include "config.h"
-#include "WebPopupMenuImpl.h"
+#include "web/WebPopupMenuImpl.h"
 
-#include "PopupContainer.h"
-#include "PopupMenuChromium.h"
-#include "WebInputEvent.h"
-#include "WebInputEventConversion.h"
-#include "WebRange.h"
-#include "WebViewClient.h"
-#include "WebWidgetClient.h"
 #include "core/frame/FrameView.h"
 #include "platform/Cursor.h"
 #include "platform/NotImplemented.h"
@@ -49,7 +42,19 @@
 #include "platform/graphics/GraphicsContext.h"
 #include "platform/graphics/skia/SkiaUtils.h"
 #include "platform/scroll/FramelessScrollView.h"
+#include "public/platform/Platform.h"
+#include "public/platform/WebCompositorSupport.h"
+#include "public/platform/WebContentLayer.h"
+#include "public/platform/WebFloatRect.h"
+#include "public/platform/WebLayerTreeView.h"
 #include "public/platform/WebRect.h"
+#include "public/web/WebInputEvent.h"
+#include "public/web/WebRange.h"
+#include "public/web/WebViewClient.h"
+#include "public/web/WebWidgetClient.h"
+#include "web/PopupContainer.h"
+#include "web/PopupMenuChromium.h"
+#include "web/WebInputEventConversion.h"
 #include <skia/ext/platform_canvas.h>
 
 using namespace WebCore;
@@ -68,10 +73,11 @@ WebPopupMenu* WebPopupMenu::create(WebWidgetClient* client)
 
 WebPopupMenuImpl::WebPopupMenuImpl(WebWidgetClient* client)
     : m_client(client)
+    , m_layerTreeView(0)
+    // Set to impossible point so we always get the first mouse position.
+    , m_lastMousePosition(WebPoint(-1, -1))
     , m_widget(0)
 {
-    // Set to impossible point so we always get the first mouse position.
-    m_lastMousePosition = WebPoint(-1, -1);
 }
 
 WebPopupMenuImpl::~WebPopupMenuImpl()
@@ -80,14 +86,29 @@ WebPopupMenuImpl::~WebPopupMenuImpl()
         m_widget->setClient(0);
 }
 
+void WebPopupMenuImpl::willCloseLayerTreeView()
+{
+    m_layerTreeView = 0;
+}
+
 void WebPopupMenuImpl::initialize(FramelessScrollView* widget, const WebRect& bounds)
 {
     m_widget = widget;
     m_widget->setClient(this);
 
-    if (m_client) {
-        m_client->setWindowRect(bounds);
-        m_client->show(WebNavigationPolicy()); // Policy is ignored.
+    if (!m_client)
+        return;
+    m_client->setWindowRect(bounds);
+    m_client->show(WebNavigationPolicy()); // Policy is ignored.
+
+    m_client->initializeLayerTreeView();
+    m_layerTreeView = m_client->layerTreeView();
+    if (m_layerTreeView) {
+        m_layerTreeView->setVisible(true);
+        m_layerTreeView->setDeviceScaleFactor(m_client->deviceScaleFactor());
+        m_rootLayer = adoptPtr(Platform::current()->compositorSupport()->createContentLayer(this));
+        m_rootLayer->layer()->setBounds(m_size);
+        m_layerTreeView->setRootLayer(*m_rootLayer->layer());
     }
 }
 
@@ -99,7 +120,7 @@ void WebPopupMenuImpl::handleMouseMove(const WebMouseEvent& event)
         m_widget->handleMouseMoveEvent(PlatformMouseEventBuilder(m_widget, event));
 
         // We cannot call setToolTipText() in PopupContainer, because PopupContainer is in WebCore, and we cannot refer to WebKit from Webcore.
-        WebCore::PopupContainer* container = static_cast<WebCore::PopupContainer*>(m_widget);
+        PopupContainer* container = static_cast<PopupContainer*>(m_widget);
         client()->setToolTipText(container->getSelectedItemToolTip(), container->menuStyle().textDirection() == WebCore::RTL ? WebTextDirectionRightToLeft : WebTextDirectionLeftToRight);
     }
 }
@@ -174,6 +195,9 @@ void WebPopupMenuImpl::resize(const WebSize& newSize)
         WebRect damagedRect(0, 0, m_size.width, m_size.height);
         m_client->didInvalidateRect(damagedRect);
     }
+
+    if (m_rootLayer)
+        m_rootLayer->layer()->setBounds(newSize);
 }
 
 void WebPopupMenuImpl::willEndLiveResize()
@@ -188,7 +212,20 @@ void WebPopupMenuImpl::layout()
 {
 }
 
-void WebPopupMenuImpl::paint(WebCanvas* canvas, const WebRect& rect, PaintOptions)
+void WebPopupMenuImpl::paintContents(WebCanvas* canvas, const WebRect& rect, bool, WebFloatRect&,
+    WebContentLayerClient::GraphicsContextStatus contextStatus)
+{
+    if (!m_widget)
+        return;
+
+    if (!rect.isEmpty()) {
+        GraphicsContext context(canvas,
+            contextStatus == WebContentLayerClient::GraphicsContextEnabled ? GraphicsContext::NothingDisabled : GraphicsContext::FullyDisabled);
+        m_widget->paint(&context, rect);
+    }
+}
+
+void WebPopupMenuImpl::paint(WebCanvas* canvas, const WebRect& rect)
 {
     if (!m_widget)
         return;
@@ -290,11 +327,6 @@ void WebPopupMenuImpl::setFocus(bool)
 {
 }
 
-void WebPopupMenu::setMinimumRowHeight(int minimumRowHeight)
-{
-    PopupMenuChromium::setMinimumRowHeight(minimumRowHeight);
-}
-
 bool WebPopupMenuImpl::setComposition(const WebString&, const WebVector<WebCompositionUnderline>&, int, int)
 {
     return false;
@@ -343,6 +375,8 @@ void WebPopupMenuImpl::invalidateContentsAndRootView(const IntRect& paintRect)
         return;
     if (m_client)
         m_client->didInvalidateRect(paintRect);
+    if (m_rootLayer)
+        m_rootLayer->layer()->invalidateRect(FloatRect(paintRect));
 }
 
 void WebPopupMenuImpl::invalidateContentsForSlowScroll(const IntRect& updateRect)
@@ -361,12 +395,8 @@ void WebPopupMenuImpl::scroll(const IntSize& scrollDelta, const IntRect& scrollR
         int dy = scrollDelta.height();
         m_client->didScrollRect(dx, dy, clipRect);
     }
-}
-
-IntPoint WebPopupMenuImpl::screenToRootView(const IntPoint& point) const
-{
-    notImplemented();
-    return IntPoint();
+    if (m_rootLayer)
+        m_rootLayer->layer()->invalidateRect(FloatRect(clipRect));
 }
 
 IntRect WebPopupMenuImpl::rootViewToScreen(const IntRect& rect) const

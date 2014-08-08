@@ -38,44 +38,48 @@ namespace WebCore {
 
 class Resource;
 class ResourceFetcher;
-class Frame;
+class LocalFrame;
 class ResourceLoader;
 class ResourceRequest;
 class ResourceResponse;
 
 struct FetchInitiatorInfo;
-struct ResourceLoaderOptions;
 
-class ResourceLoaderHost {
+class ResourceLoaderHost : public WillBeGarbageCollectedMixin {
 public:
-    void ref() { refResourceLoaderHost(); }
-    void deref() { derefResourceLoaderHost(); }
-
     virtual void incrementRequestCount(const Resource*) = 0;
     virtual void decrementRequestCount(const Resource*) = 0;
     virtual void didLoadResource(Resource*) = 0;
     virtual void redirectReceived(Resource*, const ResourceResponse&) = 0;
 
-    virtual void didFinishLoading(const Resource*, double finishTime, const ResourceLoaderOptions&) = 0;
-    virtual void didChangeLoadingPriority(const Resource*, ResourceLoadPriority) = 0;
-    virtual void didFailLoading(const Resource*, const ResourceError&, const ResourceLoaderOptions&) = 0;
+    virtual void didFinishLoading(const Resource*, double finishTime, int64_t encodedDataLength) = 0;
+    virtual void didChangeLoadingPriority(const Resource*, ResourceLoadPriority, int intraPriorityValue) = 0;
+    virtual void didFailLoading(const Resource*, const ResourceError&) = 0;
 
-    virtual void willSendRequest(unsigned long identifier, ResourceRequest&, const ResourceResponse& redirectResponse, const ResourceLoaderOptions&) = 0;
-    virtual void didReceiveResponse(const Resource*, const ResourceResponse&, const ResourceLoaderOptions&) = 0;
-    virtual void didReceiveData(const Resource*, const char* data, int dataLength, int encodedDataLength, const ResourceLoaderOptions&) = 0;
-    virtual void didDownloadData(const Resource*, int dataLength, int encodedDataLength, const ResourceLoaderOptions&) = 0;
+    virtual void willSendRequest(unsigned long identifier, ResourceRequest&, const ResourceResponse& redirectResponse, const FetchInitiatorInfo&) = 0;
+    virtual void didReceiveResponse(const Resource*, const ResourceResponse&) = 0;
+    virtual void didReceiveData(const Resource*, const char* data, int dataLength, int encodedDataLength) = 0;
+    virtual void didDownloadData(const Resource*, int dataLength, int encodedDataLength) = 0;
 
     virtual void subresourceLoaderFinishedLoadingOnePart(ResourceLoader*) = 0;
     virtual void didInitializeResourceLoader(ResourceLoader*) = 0;
     virtual void willTerminateResourceLoader(ResourceLoader*) = 0;
-    virtual void willStartLoadingResource(ResourceRequest&) = 0;
+    virtual void willStartLoadingResource(Resource*, ResourceRequest&) = 0;
 
-    virtual bool shouldRequest(Resource*, const ResourceRequest&, const ResourceLoaderOptions&) = 0;
+    virtual bool canAccessRedirect(Resource*, ResourceRequest&, const ResourceResponse&, ResourceLoaderOptions&) = 0;
+    virtual bool canAccessResource(Resource*, SecurityOrigin* sourceOrigin, const KURL&) const = 0;
     virtual bool defersLoading() const = 0;
     virtual bool isLoadedBy(ResourceLoaderHost*) const = 0;
 
+    virtual void trace(Visitor*) { }
+
+#if !ENABLE(OILPAN)
     virtual void refResourceLoaderHost() = 0;
     virtual void derefResourceLoaderHost() = 0;
+
+    void ref() { refResourceLoaderHost(); }
+    void deref() { derefResourceLoaderHost(); }
+#endif
 };
 
 }

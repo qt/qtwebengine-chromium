@@ -29,6 +29,9 @@
 #include "config.h"
 #endif
 
+#include "opus_types.h"
+#include "opus_defines.h"
+
 #include <math.h>
 #include "mlp.h"
 #include "arch.h"
@@ -36,7 +39,7 @@
 #define MAX_NEURONS 100
 
 #if 0
-static inline opus_val16 tansig_approx(opus_val32 _x) /* Q19 */
+static OPUS_INLINE opus_val16 tansig_approx(opus_val32 _x) /* Q19 */
 {
 	int i;
 	opus_val16 xx; /* Q11 */
@@ -62,14 +65,15 @@ static inline opus_val16 tansig_approx(opus_val32 _x) /* Q19 */
 }
 #else
 /*extern const float tansig_table[501];*/
-static inline float tansig_approx(float x)
+static OPUS_INLINE float tansig_approx(float x)
 {
 	int i;
 	float y, dy;
 	float sign=1;
-    if (x>=8)
+	/* Tests are reversed to catch NaNs */
+    if (!(x<8))
         return 1;
-    if (x<=-8)
+    if (!(x>-8))
         return -1;
 	if (x<0)
 	{

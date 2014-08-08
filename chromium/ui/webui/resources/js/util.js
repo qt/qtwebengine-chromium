@@ -21,6 +21,25 @@ function $(id) {
 }
 
 /**
+ * Add an accessible message to the page that will be announced to
+ * users who have spoken feedback on, but will be invisible to all
+ * other users. It's removed right away so it doesn't clutter the DOM.
+ * @param {string} msg The text to be pronounced.
+ */
+function announceAccessibleMessage(msg) {
+  var element = document.createElement('div');
+  element.setAttribute('aria-live', 'polite');
+  element.style.position = 'relative';
+  element.style.left = '-9999px';
+  element.style.height = '0px';
+  element.innerText = msg;
+  document.body.appendChild(element);
+  window.setTimeout(function() {
+    document.body.removeChild(element);
+  }, 0);
+}
+
+/**
  * Calls chrome.send with a callback and restores the original afterwards.
  * @param {string} name The name of the message to send.
  * @param {!Array} params The parameters to send.
@@ -72,6 +91,21 @@ function url(s) {
     s2 += ' ';
   }
   return 'url("' + s2 + '")';
+}
+
+/**
+ * Returns the URL of the image, or an image set of URLs for the profile avatar.
+ * Default avatars have resources available for multiple scalefactors, whereas
+ * the GAIA profile image only comes in one size.
+
+ * @param {string} url The path of the image.
+ * @return {string} The url, or an image set of URLs of the avatar image.
+ */
+function getProfileAvatarIcon(path) {
+  var chromeThemePath = 'chrome://theme';
+  var isDefaultAvatar =
+      (path.slice(0, chromeThemePath.length) == chromeThemePath);
+  return isDefaultAvatar ? imageset(path + '@scalefactorx'): url(path);
 }
 
 /**
@@ -380,4 +414,32 @@ function scrollLeftForDocument(doc) {
  */
 function setScrollLeftForDocument(doc, value) {
   doc.documentElement.scrollLeft = doc.body.scrollLeft = value;
+}
+
+/**
+ * Replaces '&', '<', '>', '"', and ''' characters with their HTML encoding.
+ * @param {string} original The original string.
+ * @return {string} The string with all the characters mentioned above replaced.
+ */
+function HTMLEscape(original) {
+  return original.replace(/&/g, '&amp;')
+                 .replace(/</g, '&lt;')
+                 .replace(/>/g, '&gt;')
+                 .replace(/"/g, '&quot;')
+                 .replace(/'/g, '&#39;');
+}
+
+/**
+ * Shortens the provided string (if necessary) to a string of length at most
+ * |maxLength|.
+ * @param {string} original The original string.
+ * @param {number} maxLength The maximum length allowed for the string.
+ * @return {string} The original string if its length does not exceed
+ *     |maxLength|. Otherwise the first |maxLength| - 1 characters with '...'
+ *     appended.
+ */
+function elide(original, maxLength) {
+  if (original.length <= maxLength)
+    return original;
+  return original.substring(0, maxLength - 1) + '\u2026';
 }

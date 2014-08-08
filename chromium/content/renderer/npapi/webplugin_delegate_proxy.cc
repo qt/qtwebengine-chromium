@@ -4,12 +4,6 @@
 
 #include "content/renderer/npapi/webplugin_delegate_proxy.h"
 
-#if defined(TOOLKIT_GTK)
-#include <gtk/gtk.h>
-#elif defined(USE_X11)
-#include <cairo/cairo.h>
-#endif
-
 #include <algorithm>
 
 #include "base/auto_reset.h"
@@ -31,6 +25,7 @@
 #include "content/child/npapi/webplugin_resource_client.h"
 #include "content/child/plugin_messages.h"
 #include "content/common/content_constants_internal.h"
+#include "content/common/cursors/webcursor.h"
 #include "content/common/frame_messages.h"
 #include "content/common/view_messages.h"
 #include "content/public/renderer/content_renderer_client.h"
@@ -42,18 +37,17 @@
 #include "ipc/ipc_channel_handle.h"
 #include "net/base/mime_util.h"
 #include "skia/ext/platform_canvas.h"
+#include "third_party/WebKit/public/platform/WebDragData.h"
+#include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/web/WebBindings.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
 #include "third_party/WebKit/public/web/WebFrame.h"
 #include "third_party/WebKit/public/web/WebView.h"
-#include "third_party/WebKit/public/platform/WebDragData.h"
-#include "third_party/WebKit/public/platform/WebString.h"
 #include "ui/gfx/blit.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/size.h"
 #include "ui/gfx/skia_util.h"
-#include "webkit/common/cursors/webcursor.h"
 
 #if defined(OS_POSIX)
 #include "ipc/ipc_channel_posix.h"
@@ -654,7 +648,7 @@ bool WebPluginDelegateProxy::CreateSharedBitmap(
   if (!memory->get())
     return false;
 #endif
-#if defined(OS_POSIX) && !defined(TOOLKIT_GTK) && !defined(OS_ANDROID)
+#if defined(OS_POSIX) && !defined(OS_ANDROID)
   TransportDIB::Handle handle;
   IPC::Message* msg = new ViewHostMsg_AllocTransportDIB(size, false, &handle);
   if (!RenderThreadImpl::current()->Send(msg))
@@ -923,11 +917,13 @@ void WebPluginDelegateProxy::OnNotifyIMEStatus(int input_type,
   if (!render_view_)
     return;
 
-  render_view_->Send(new ViewHostMsg_TextInputTypeChanged(
-      render_view_->routing_id(),
-      static_cast<ui::TextInputType>(input_type),
-      ui::TEXT_INPUT_MODE_DEFAULT,
-      true));
+  ViewHostMsg_TextInputState_Params p;
+  p.type = static_cast<ui::TextInputType>(input_type);
+  p.mode = ui::TEXT_INPUT_MODE_DEFAULT;
+  p.can_compose_inline = true;
+
+  render_view_->Send(new ViewHostMsg_TextInputStateChanged(
+      render_view_->routing_id(), p));
 
   ViewHostMsg_SelectionBounds_Params bounds_params;
   bounds_params.anchor_rect = bounds_params.focus_rect = caret_rect;
@@ -1128,6 +1124,7 @@ void WebPluginDelegateProxy::FetchURL(unsigned long resource_id,
                                       bool notify_redirects,
                                       bool is_plugin_src_load,
                                       int origin_pid,
+                                      int render_frame_id,
                                       int render_view_id) {
   PluginMsg_FetchURL_Params params;
   params.resource_id = resource_id;
@@ -1142,7 +1139,7 @@ void WebPluginDelegateProxy::FetchURL(unsigned long resource_id,
   params.referrer = referrer;
   params.notify_redirect = notify_redirects;
   params.is_plugin_src_load = is_plugin_src_load;
-  params.render_view_id = render_view_id;
+  params.render_frame_id = render_frame_id;
   Send(new PluginMsg_FetchURL(instance_id_, params));
 }
 
@@ -1212,7 +1209,7 @@ bool WebPluginDelegateProxy::UseSynchronousGeometryUpdates() {
   // Need to update geometry synchronously with WMP, otherwise if a site
   // scripts the plugin to start playing while it's in the middle of handling
   // an update geometry message, videos don't play.  See urls in bug 20260.
-  if (info_.name.find(ASCIIToUTF16("Windows Media Player")) !=
+  if (info_.name.find(base::ASCIIToUTF16("Windows Media Player")) !=
       base::string16::npos)
     return true;
 

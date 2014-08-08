@@ -27,7 +27,6 @@
 #include "config.h"
 #include "core/fetch/ScriptResource.h"
 
-#include "core/fetch/TextResourceDecoder.h"
 #include "platform/MIMETypeRegistry.h"
 #include "platform/SharedBuffer.h"
 #include "platform/network/HTTPParsers.h"
@@ -35,8 +34,7 @@
 namespace WebCore {
 
 ScriptResource::ScriptResource(const ResourceRequest& resourceRequest, const String& charset)
-    : Resource(resourceRequest, Script)
-    , m_decoder(TextResourceDecoder::create("application/javascript", charset))
+    : TextResource(resourceRequest, Script, "application/javascript", charset)
 {
     DEFINE_STATIC_LOCAL(const AtomicString, acceptScript, ("*/*", AtomicString::ConstructFromLiteral));
 
@@ -50,16 +48,6 @@ ScriptResource::~ScriptResource()
 {
 }
 
-void ScriptResource::setEncoding(const String& chs)
-{
-    m_decoder->setEncoding(chs, TextResourceDecoder::EncodingFromHTTPHeader);
-}
-
-String ScriptResource::encoding() const
-{
-    return m_decoder->encoding().name();
-}
-
 AtomicString ScriptResource::mimeType() const
 {
     return extractMIMETypeFromMediaType(m_response.httpHeaderField("Content-Type")).lower();
@@ -71,14 +59,13 @@ const String& ScriptResource::script()
     ASSERT(isLoaded());
 
     if (!m_script && m_data) {
-        String script = m_decoder->decode(m_data->data(), encodedSize());
-        script.append(m_decoder->flush());
+        String script = decodedText();
         m_data.clear();
         // We lie a it here and claim that script counts as encoded data (even though it's really decoded data).
         // That's because the MemoryCache thinks that it can clear out decoded data by calling destroyDecodedData(),
         // but we can't destroy script in destroyDecodedData because that's our only copy of the data!
         setEncodedSize(script.sizeInBytes());
-        m_script = script;
+        m_script = AtomicString(script);
     }
 
     return m_script.string();

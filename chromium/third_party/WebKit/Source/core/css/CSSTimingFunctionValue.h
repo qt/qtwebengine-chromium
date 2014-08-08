@@ -27,15 +27,16 @@
 #define CSSTimingFunctionValue_h
 
 #include "core/css/CSSValue.h"
+#include "platform/animation/TimingFunction.h"
 #include "wtf/PassRefPtr.h"
 
 namespace WebCore {
 
 class CSSCubicBezierTimingFunctionValue : public CSSValue {
 public:
-    static PassRefPtr<CSSCubicBezierTimingFunctionValue> create(double x1, double y1, double x2, double y2)
+    static PassRefPtrWillBeRawPtr<CSSCubicBezierTimingFunctionValue> create(double x1, double y1, double x2, double y2)
     {
-        return adoptRef(new CSSCubicBezierTimingFunctionValue(x1, y1, x2, y2));
+        return adoptRefWillBeNoop(new CSSCubicBezierTimingFunctionValue(x1, y1, x2, y2));
     }
 
     String customCSSText() const;
@@ -46,6 +47,8 @@ public:
     double y2() const { return m_y2; }
 
     bool equals(const CSSCubicBezierTimingFunctionValue&) const;
+
+    void traceAfterDispatch(Visitor* visitor) { CSSValue::traceAfterDispatch(visitor); }
 
 private:
     CSSCubicBezierTimingFunctionValue(double x1, double y1, double x2, double y2)
@@ -67,28 +70,30 @@ DEFINE_CSS_VALUE_TYPE_CASTS(CSSCubicBezierTimingFunctionValue, isCubicBezierTimi
 
 class CSSStepsTimingFunctionValue : public CSSValue {
 public:
-    static PassRefPtr<CSSStepsTimingFunctionValue> create(int steps, bool stepAtStart)
+    static PassRefPtrWillBeRawPtr<CSSStepsTimingFunctionValue> create(int steps, StepsTimingFunction::StepAtPosition stepAtPosition)
     {
-        return adoptRef(new CSSStepsTimingFunctionValue(steps, stepAtStart));
+        return adoptRefWillBeNoop(new CSSStepsTimingFunctionValue(steps, stepAtPosition));
     }
 
     int numberOfSteps() const { return m_steps; }
-    bool stepAtStart() const { return m_stepAtStart; }
+    StepsTimingFunction::StepAtPosition stepAtPosition() const { return m_stepAtPosition; }
 
     String customCSSText() const;
 
     bool equals(const CSSStepsTimingFunctionValue&) const;
 
+    void traceAfterDispatch(Visitor* visitor) { CSSValue::traceAfterDispatch(visitor); }
+
 private:
-    CSSStepsTimingFunctionValue(int steps, bool stepAtStart)
+    CSSStepsTimingFunctionValue(int steps, StepsTimingFunction::StepAtPosition stepAtPosition)
         : CSSValue(StepsTimingFunctionClass)
         , m_steps(steps)
-        , m_stepAtStart(stepAtStart)
+        , m_stepAtPosition(stepAtPosition)
     {
     }
 
     int m_steps;
-    bool m_stepAtStart;
+    StepsTimingFunction::StepAtPosition m_stepAtPosition;
 };
 
 DEFINE_CSS_VALUE_TYPE_CASTS(CSSStepsTimingFunctionValue, isStepsTimingFunctionValue());

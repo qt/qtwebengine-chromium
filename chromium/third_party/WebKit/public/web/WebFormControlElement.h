@@ -59,10 +59,54 @@ public:
     BLINK_EXPORT WebString formControlName() const;
     BLINK_EXPORT WebString formControlType() const;
 
+    // FIXME: remove this method when no longer used.
     BLINK_EXPORT void dispatchFormControlChangeEvent();
 
     BLINK_EXPORT bool isAutofilled() const;
     BLINK_EXPORT void setAutofilled(bool);
+
+    // Returns true if autocomplete attribute of the element is not set as "off".
+    BLINK_EXPORT bool autoComplete() const;
+
+    // Sets value for input element, textarea element and select element. For select
+    // element it finds the option with value matches the given parameter and make the
+    // option as the current selection.
+    BLINK_EXPORT void setValue(const WebString&, bool sendEvents = false);
+    // Returns value of element. For select element, it returns the value of
+    // the selected option if present. If no selected option, an empty string
+    // is returned. If element doesn't fall into input element, textarea element
+    // and select element categories, a null string is returned.
+    BLINK_EXPORT WebString value() const;
+    // Sets suggested value for element. For select element it finds the option
+    // with value matches the given parameter and make the option as the suggested
+    // selection. The goal of introducing suggested value is to not leak any information
+    // to JavaScript.
+    BLINK_EXPORT void setSuggestedValue(const WebString&);
+    // Returns suggested value of element. If element doesn't fall into input element,
+    // textarea element and select element categories, a null string is returned.
+    BLINK_EXPORT WebString suggestedValue() const;
+
+    // Returns the non-sanitized, exact value inside the text input field
+    // or insisde the textarea. If neither input element nor textarea element,
+    // a null string is returned.
+    BLINK_EXPORT WebString editingValue() const;
+
+    // Sets character selection range.
+    BLINK_EXPORT void setSelectionRange(int start, int end);
+    // Returned value represents a cursor/caret position at the current
+    // selection's start for text input field or textarea. If neither input
+    // element nor textarea element, 0 is returned.
+    BLINK_EXPORT int selectionStart() const;
+    // Returned value represents a cursor/caret position at the current
+    // selection's end for text input field or textarea. If neither input
+    // element nor textarea element, 0 is returned.
+    BLINK_EXPORT int selectionEnd() const;
+
+    // Returns direction of text of element.
+    BLINK_EXPORT WebString directionForFormData() const;
+
+    // Returns true if sumit is activated.
+    BLINK_EXPORT bool isActivatedSubmit() const;
 
     // Returns the name that should be used for the specified |element| when
     // storing autofill data.  This is either the field name or its id, an empty
@@ -72,9 +116,9 @@ public:
     BLINK_EXPORT WebFormElement form() const;
 
 #if BLINK_IMPLEMENTATION
-    WebFormControlElement(const WTF::PassRefPtr<WebCore::HTMLFormControlElement>&);
-    WebFormControlElement& operator=(const WTF::PassRefPtr<WebCore::HTMLFormControlElement>&);
-    operator WTF::PassRefPtr<WebCore::HTMLFormControlElement>() const;
+    WebFormControlElement(const PassRefPtrWillBeRawPtr<WebCore::HTMLFormControlElement>&);
+    WebFormControlElement& operator=(const PassRefPtrWillBeRawPtr<WebCore::HTMLFormControlElement>&);
+    operator PassRefPtrWillBeRawPtr<WebCore::HTMLFormControlElement>() const;
 #endif
 };
 

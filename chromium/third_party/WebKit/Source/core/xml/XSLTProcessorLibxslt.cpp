@@ -23,19 +23,15 @@
 #include "config.h"
 #include "core/xml/XSLTProcessor.h"
 
-#include <libxslt/imports.h>
-#include <libxslt/security.h>
-#include <libxslt/variables.h>
-#include <libxslt/xsltutils.h>
-#include "FetchInitiatorTypeNames.h"
+#include "core/FetchInitiatorTypeNames.h"
 #include "core/dom/Document.h"
 #include "core/dom/TransformSource.h"
 #include "core/editing/markup.h"
 #include "core/fetch/Resource.h"
 #include "core/fetch/ResourceFetcher.h"
-#include "core/frame/Frame.h"
-#include "core/page/Page.h"
-#include "core/page/PageConsole.h"
+#include "core/frame/FrameConsole.h"
+#include "core/frame/FrameHost.h"
+#include "core/frame/LocalFrame.h"
 #include "core/xml/XSLStyleSheet.h"
 #include "core/xml/XSLTExtensions.h"
 #include "core/xml/XSLTUnicodeSort.h"
@@ -50,6 +46,10 @@
 #include "wtf/text/CString.h"
 #include "wtf/text/StringBuffer.h"
 #include "wtf/unicode/UTF8.h"
+#include <libxslt/imports.h>
+#include <libxslt/security.h>
+#include <libxslt/variables.h>
+#include <libxslt/xsltutils.h>
 
 namespace WebCore {
 
@@ -60,7 +60,7 @@ void XSLTProcessor::genericErrorFunc(void*, const char*, ...)
 
 void XSLTProcessor::parseErrorFunc(void* userData, xmlError* error)
 {
-    PageConsole* console = static_cast<PageConsole*>(userData);
+    FrameConsole* console = static_cast<FrameConsole*>(userData);
     if (!console)
         return;
 
@@ -85,11 +85,9 @@ void XSLTProcessor::parseErrorFunc(void* userData, xmlError* error)
 // FIXME: There seems to be no way to control the ctxt pointer for loading here, thus we have globals.
 static XSLTProcessor* globalProcessor = 0;
 static ResourceFetcher* globalResourceFetcher = 0;
-static xmlDocPtr docLoaderFunc(const xmlChar* uri,
-                               xmlDictPtr,
-                               int options,
-                               void* ctxt,
-                               xsltLoadType type)
+
+static xmlDocPtr docLoaderFunc(
+    const xmlChar* uri, xmlDictPtr, int options, void* ctxt, xsltLoadType type)
 {
     if (!globalProcessor)
         return 0;
@@ -108,10 +106,10 @@ static xmlDocPtr docLoaderFunc(const xmlChar* uri,
         if (!resource || !globalProcessor)
             return 0;
 
-        PageConsole* console = 0;
-        Frame* frame = globalProcessor->xslStylesheet()->ownerDocument()->frame();
-        if (frame && frame->page())
-            console = &frame->page()->console();
+        FrameConsole* console = 0;
+        LocalFrame* frame = globalProcessor->xslStylesheet()->ownerDocument()->frame();
+        if (frame)
+            console = &frame->console();
         xmlSetStructuredErrorFunc(console, XSLTProcessor::parseErrorFunc);
         xmlSetGenericErrorFunc(console, XSLTProcessor::genericErrorFunc);
 
@@ -179,7 +177,8 @@ static bool saveResultToString(xmlDocPtr resultDoc, xsltStylesheetPtr sheet, Str
     if (retval < 0)
         return false;
 
-    // Workaround for <http://bugzilla.gnome.org/show_bug.cgi?id=495668>: libxslt appends an extra line feed to the result.
+    // Workaround for <http://bugzilla.gnome.org/show_bug.cgi?id=495668>:
+    // libxslt appends an extra line feed to the result.
     if (resultBuilder.length() > 0 && resultBuilder[resultBuilder.length() - 1] == '\n')
         resultBuilder.resize(resultBuilder.length() - 1);
 
@@ -193,7 +192,7 @@ static const char** xsltParamArrayFromParameterMap(XSLTProcessor::ParameterMap& 
     if (parameters.isEmpty())
         return 0;
 
-    const char** parameterArray = (const char**)fastMalloc(((parameters.size() * 2) + 1) * sizeof(char*));
+    const char** parameterArray = static_cast<const char**>(fastMalloc(((parameters.size() * 2) + 1) * sizeof(char*)));
 
     XSLTProcessor::ParameterMap::iterator end = parameters.end();
     unsigned index = 0;
@@ -213,21 +212,23 @@ static void freeXsltParamArray(const char** params)
         return;
 
     while (*temp) {
-        fastFree((void*)*(temp++));
-        fastFree((void*)*(temp++));
+        fastFree(const_cast<char*>(*(temp++)));
+        fastFree(const_cast<char*>(*(temp++)));
     }
     fastFree(params);
 }
 
-static xsltStylesheetPtr xsltStylesheetPointer(RefPtr<XSLStyleSheet>& cachedStylesheet, Node* stylesheetRootNode)
+static xsltStylesheetPtr xsltStylesheetPointer(RefPtrWillBeMember<XSLStyleSheet>& cachedStylesheet, Node* stylesheetRootNode)
 {
     if (!cachedStylesheet && stylesheetRootNode) {
-        cachedStylesheet = XSLStyleSheet::createForXSLTProcessor(stylesheetRootNode->parentNode() ? stylesheetRootNode->parentNode() : stylesheetRootNode,
+        cachedStylesheet = XSLStyleSheet::createForXSLTProcessor(
+            stylesheetRootNode->parentNode() ? stylesheetRootNode->parentNode() : stylesheetRootNode,
             stylesheetRootNode->document().url().string(),
             stylesheetRootNode->document().url()); // FIXME: Should we use baseURL here?
 
-        // According to Mozilla documentation, the node must be a Document node, an xsl:stylesheet or xsl:transform element.
-        // But we just use text content regardless of node type.
+        // According to Mozilla documentation, the node must be a Document node,
+        // an xsl:stylesheet or xsl:transform element. But we just use text
+        // content regardless of node type.
         cachedStylesheet->parseString(createMarkup(stylesheetRootNode));
     }
 
@@ -239,7 +240,7 @@ static xsltStylesheetPtr xsltStylesheetPointer(RefPtr<XSLStyleSheet>& cachedStyl
 
 static inline xmlDocPtr xmlDocPtrFromNode(Node* sourceNode, bool& shouldDelete)
 {
-    RefPtr<Document> ownerDocument(sourceNode->document());
+    RefPtrWillBeRawPtr<Document> ownerDocument(sourceNode->document());
     bool sourceIsDocument = (sourceNode == ownerDocument.get());
 
     xmlDocPtr sourceDoc = 0;
@@ -274,13 +275,13 @@ static inline String resultMIMEType(xmlDocPtr resultDoc, xsltStylesheetPtr sheet
 
 bool XSLTProcessor::transformToString(Node* sourceNode, String& mimeType, String& resultString, String& resultEncoding)
 {
-    RefPtr<Document> ownerDocument(sourceNode->document());
+    RefPtrWillBeRawPtr<Document> ownerDocument(sourceNode->document());
 
     setXSLTLoadCallBack(docLoaderFunc, this, ownerDocument->fetcher());
     xsltStylesheetPtr sheet = xsltStylesheetPointer(m_stylesheet, m_stylesheetRootNode.get());
     if (!sheet) {
         setXSLTLoadCallBack(0, 0, 0);
-        m_stylesheet = 0;
+        m_stylesheet = nullptr;
         return false;
     }
     m_stylesheet->clearDocuments();
@@ -292,8 +293,9 @@ bool XSLTProcessor::transformToString(Node* sourceNode, String& mimeType, String
     bool success = false;
     bool shouldFreeSourceDoc = false;
     if (xmlDocPtr sourceDoc = xmlDocPtrFromNode(sourceNode, shouldFreeSourceDoc)) {
-        // The XML declaration would prevent parsing the result as a fragment, and it's not needed even for documents,
-        // as the result of this function is always immediately parsed.
+        // The XML declaration would prevent parsing the result as a fragment,
+        // and it's not needed even for documents, as the result of this
+        // function is always immediately parsed.
         sheet->omitXmlDeclaration = true;
 
         xsltTransformContextPtr transformContext = xsltNewTransformContext(sheet, sourceDoc);
@@ -310,13 +312,15 @@ bool XSLTProcessor::transformToString(Node* sourceNode, String& mimeType, String
         if (0 != xsltSetCtxtSecurityPrefs(securityPrefs, transformContext))
             CRASH();
 
-        // <http://bugs.webkit.org/show_bug.cgi?id=16077>: XSLT processor <xsl:sort> algorithm only compares by code point.
+        // <http://bugs.webkit.org/show_bug.cgi?id=16077>: XSLT processor
+        // <xsl:sort> algorithm only compares by code point.
         xsltSetCtxtSortFunc(transformContext, xsltUnicodeSortFunction);
 
         // This is a workaround for a bug in libxslt.
-        // The bug has been fixed in version 1.1.13, so once we ship that this can be removed.
+        // The bug has been fixed in version 1.1.13, so once we ship that this
+        // can be removed.
         if (!transformContext->globalVars)
-           transformContext->globalVars = xmlHashCreate(20);
+            transformContext->globalVars = xmlHashCreate(20);
 
         const char** params = xsltParamArrayFromParameterMap(m_parameters);
         xsltQuoteUserParams(transformContext, params);
@@ -339,7 +343,7 @@ bool XSLTProcessor::transformToString(Node* sourceNode, String& mimeType, String
     sheet->method = origMethod;
     setXSLTLoadCallBack(0, 0, 0);
     xsltFreeStylesheet(sheet);
-    m_stylesheet = 0;
+    m_stylesheet = nullptr;
 
     return success;
 }

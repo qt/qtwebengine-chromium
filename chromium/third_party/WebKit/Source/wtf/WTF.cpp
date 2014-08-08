@@ -31,7 +31,8 @@
 #include "config.h"
 #include "WTF.h"
 
-#include "wtf/QuantizedAllocation.h"
+#include "wtf/DefaultAllocator.h"
+#include "wtf/FastMalloc.h"
 
 #ifndef NDEBUG
 #include "wtf/MainThread.h"
@@ -44,7 +45,7 @@ extern void initializeThreading();
 bool s_initialized;
 bool s_shutdown;
 bool Partitions::s_initialized;
-PartitionAllocator<4096> Partitions::m_bufferAllocator;
+PartitionAllocatorGeneric Partitions::m_bufferAllocator;
 
 void initialize(TimeFunction currentTimeFunction, TimeFunction monotonicallyIncreasingTimeFunction)
 {
@@ -77,16 +78,16 @@ void Partitions::initialize()
     static int lock = 0;
     // Guard against two threads hitting here in parallel.
     spinLockLock(&lock);
-    if (s_initialized)
-        return;
-    s_initialized = true;
+    if (!s_initialized) {
+        m_bufferAllocator.init();
+        s_initialized = true;
+    }
     spinLockUnlock(&lock);
-    QuantizedAllocation::init();
-    m_bufferAllocator.init();
 }
 
 void Partitions::shutdown()
 {
+    fastMallocShutdown();
     m_bufferAllocator.shutdown();
 }
 

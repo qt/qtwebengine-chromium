@@ -24,7 +24,6 @@
 #include "native_client/src/trusted/weak_ref/weak_ref.h"
 
 #include "ppapi/cpp/completion_callback.h"
-
 #include "ppapi/native_client/src/trusted/plugin/utility.h"
 
 struct NaClFileInfo;
@@ -33,14 +32,9 @@ namespace nacl {
 class DescWrapper;
 }  // namespace
 
-namespace pp {
-class FileIO;
-}  // namespace
-
 namespace plugin {
 
-class ErrorInfo;
-class Manifest;
+class OpenManifestEntryAsyncCallback;
 class Plugin;
 class SrpcClient;
 class ServiceRuntime;
@@ -49,24 +43,19 @@ class ServiceRuntime;
 // creation templates aren't overwhelmed with too many parameters.
 struct SelLdrStartParams {
   SelLdrStartParams(const nacl::string& url,
-                    ErrorInfo* error_info,
                     bool uses_irt,
                     bool uses_ppapi,
-                    bool enable_dev_interfaces,
                     bool enable_dyncode_syscalls,
                     bool enable_exception_handling,
                     bool enable_crash_throttling)
       : url(url),
-        error_info(error_info),
         uses_irt(uses_irt),
         uses_ppapi(uses_ppapi),
-        enable_dev_interfaces(enable_dev_interfaces),
         enable_dyncode_syscalls(enable_dyncode_syscalls),
         enable_exception_handling(enable_exception_handling),
         enable_crash_throttling(enable_crash_throttling) {
   }
   nacl::string url;
-  ErrorInfo* error_info;
   bool uses_irt;
   bool uses_ppapi;
   bool enable_dev_interfaces;
@@ -76,69 +65,24 @@ struct SelLdrStartParams {
 };
 
 // Callback resources are essentially our continuation state.
-
-struct LogToJavaScriptConsoleResource {
- public:
-  explicit LogToJavaScriptConsoleResource(std::string msg)
-      : message(msg) {}
-  std::string message;
-};
-
-struct PostMessageResource {
- public:
-  explicit PostMessageResource(std::string msg)
-      : message(msg) {}
-  std::string message;
-};
-
 struct OpenManifestEntryResource {
  public:
   OpenManifestEntryResource(const std::string& target_url,
                             struct NaClFileInfo* finfo,
-                            ErrorInfo* infop,
-                            bool* op_complete)
+                            bool* op_complete,
+                            OpenManifestEntryAsyncCallback* callback)
       : url(target_url),
         file_info(finfo),
-        error_info(infop),
-        op_complete_ptr(op_complete) {}
+        op_complete_ptr(op_complete),
+        callback(callback) {}
+  ~OpenManifestEntryResource();
+  void MaybeRunCallback(int32_t pp_error);
+
   std::string url;
   struct NaClFileInfo* file_info;
-  ErrorInfo* error_info;
+  PP_NaClFileInfo pp_file_info;
   bool* op_complete_ptr;
-};
-
-struct CloseManifestEntryResource {
- public:
-  CloseManifestEntryResource(int32_t desc_to_close,
-                             bool* op_complete,
-                             bool* op_result)
-      : desc(desc_to_close),
-        op_complete_ptr(op_complete),
-        op_result_ptr(op_result) {}
-
-  int32_t desc;
-  bool* op_complete_ptr;
-  bool* op_result_ptr;
-};
-
-struct QuotaRequest {
- public:
-  QuotaRequest(PP_Resource pp_resource,
-               int64_t start_offset,
-               int64_t quota_bytes_requested,
-               int64_t* quota_bytes_granted,
-               bool* op_complete)
-      : resource(pp_resource),
-        offset(start_offset),
-        bytes_requested(quota_bytes_requested),
-        bytes_granted(quota_bytes_granted),
-        op_complete_ptr(op_complete) { }
-
-  PP_Resource resource;
-  int64_t offset;
-  int64_t bytes_requested;
-  int64_t* bytes_granted;
-  bool* op_complete_ptr;
+  OpenManifestEntryAsyncCallback* callback;
 };
 
 // Do not invoke from the main thread, since the main methods will
@@ -151,7 +95,6 @@ class PluginReverseInterface: public nacl::ReverseInterface {
  public:
   PluginReverseInterface(nacl::WeakRefAnchor* anchor,
                          Plugin* plugin,
-                         const Manifest* manifest,
                          ServiceRuntime* service_runtime,
                          pp::CompletionCallback init_done_cb,
                          pp::CompletionCallback crash_cb);
@@ -160,13 +103,9 @@ class PluginReverseInterface: public nacl::ReverseInterface {
 
   void ShutDown();
 
-  virtual void Log(nacl::string message);
-
   virtual void DoPostMessage(nacl::string message);
 
   virtual void StartupInitializationComplete();
-
-  virtual bool EnumerateManifestKeys(std::set<nacl::string>* out_keys);
 
   virtual bool OpenManifestEntry(nacl::string url_key,
                                  struct NaClFileInfo *info);
@@ -177,21 +116,22 @@ class PluginReverseInterface: public nacl::ReverseInterface {
 
   virtual void ReportExitStatus(int exit_status);
 
+  // TODO(teravest): Remove this method once it's gone from
+  // nacl::ReverseInterface.
   virtual int64_t RequestQuotaForWrite(nacl::string file_id,
                                        int64_t offset,
                                        int64_t bytes_to_write);
 
-  void AddQuotaManagedFile(const nacl::string& file_id,
-                           const pp::FileIO& file_io);
-  void AddTempQuotaManagedFile(const nacl::string& file_id);
+  // This is a sibling of OpenManifestEntry. While OpenManifestEntry is
+  // a sync function and must be called on a non-main thread,
+  // OpenManifestEntryAsync must be called on the main thread. Upon completion
+  // (even on error), callback will be invoked. The caller has responsibility
+  // to keep the memory passed to info until callback is invoked.
+  void OpenManifestEntryAsync(const nacl::string& key,
+                              struct NaClFileInfo* info,
+                              OpenManifestEntryAsyncCallback* callback);
 
  protected:
-  virtual void Log_MainThreadContinuation(LogToJavaScriptConsoleResource* p,
-                                          int32_t err);
-
-  virtual void PostMessage_MainThreadContinuation(PostMessageResource* p,
-                                                  int32_t err);
-
   virtual void OpenManifestEntry_MainThreadContinuation(
       OpenManifestEntryResource* p,
       int32_t err);
@@ -200,19 +140,13 @@ class PluginReverseInterface: public nacl::ReverseInterface {
       OpenManifestEntryResource* p,
       int32_t result);
 
-  virtual void CloseManifestEntry_MainThreadContinuation(
-      CloseManifestEntryResource* cls,
-      int32_t err);
-
  private:
   nacl::WeakRefAnchor* anchor_;  // holds a ref
   Plugin* plugin_;  // value may be copied, but should be used only in
                     // main thread in WeakRef-protected callbacks.
-  const Manifest* manifest_;
   ServiceRuntime* service_runtime_;
   NaClMutex mu_;
   NaClCondVar cv_;
-  std::set<int64_t> quota_files_;
   bool shutting_down_;
 
   pp::CompletionCallback init_done_cb_;
@@ -225,34 +159,41 @@ class ServiceRuntime {
   // TODO(sehr): This class should also implement factory methods, using the
   // Start method below.
   ServiceRuntime(Plugin* plugin,
-                 const Manifest* manifest,
-                 bool should_report_uma,
+                 bool main_service_runtime,
+                 bool uses_nonsfi_mode,
                  pp::CompletionCallback init_done_cb,
                  pp::CompletionCallback crash_cb);
   // The destructor terminates the sel_ldr process.
   ~ServiceRuntime();
 
-  // Spawn the sel_ldr instance. On success, returns true.
-  // On failure, returns false and |error_string| is set to something
-  // describing the error.
-  bool StartSelLdr(const SelLdrStartParams& params);
+  // Spawn the sel_ldr instance.
+  void StartSelLdr(const SelLdrStartParams& params,
+                   pp::CompletionCallback callback);
 
   // If starting sel_ldr from a background thread, wait for sel_ldr to
-  // actually start.
-  void WaitForSelLdrStart();
+  // actually start. Returns |false| if timed out waiting for the process
+  // to start. Otherwise, returns |true| if StartSelLdr is complete
+  // (either successfully or unsuccessfully).
+  bool WaitForSelLdrStart();
 
-  // Signal to waiting threads that StartSelLdr is complete.
-  // Done externally, in case external users want to write to shared
-  // memory that is yet to be fenced.
+  // Signal to waiting threads that StartSelLdr is complete (either
+  // successfully or unsuccessfully).
   void SignalStartSelLdrDone();
 
+  // If starting the nexe from a background thread, wait for the nexe to
+  // actually start.
+  void WaitForNexeStart();
+
+  // Signal to waiting threads that LoadNexeAndStart is complete (either
+  // successfully or unsuccessfully).
+  void SignalNexeStarted();
+
   // Establish an SrpcClient to the sel_ldr instance and load the nexe.
-  // The nexe to be started is passed through |nacl_file_desc|.
-  // On success, returns true. On failure, returns false and |error_string|
-  // is set to something describing the error.
-  bool LoadNexeAndStart(nacl::DescWrapper* nacl_file_desc,
-                        ErrorInfo* error_info,
-                        const pp::CompletionCallback& crash_cb);
+  // The nexe to be started is passed through |file_info|.
+  // Upon completion |callback| is invoked with status code.
+  // This function must be called on the main thread.
+  void LoadNexeAndStart(PP_NaClFileInfo file_info,
+                        const pp::CompletionCallback& callback);
 
   // Starts the application channel to the nexe.
   SrpcClient* SetupAppChannel();
@@ -270,17 +211,26 @@ class ServiceRuntime {
 
   nacl::string GetCrashLogOutput();
 
-  // To establish quota callbacks the pnacl coordinator needs to communicate
-  // with the reverse interface.
-  PluginReverseInterface* rev_interface() const { return rev_interface_; }
+  bool main_service_runtime() const { return main_service_runtime_; }
 
  private:
   NACL_DISALLOW_COPY_AND_ASSIGN(ServiceRuntime);
-  bool InitCommunication(nacl::DescWrapper* shm, ErrorInfo* error_info);
+  struct LoadNexeAndStartData;
+  void LoadNexeAndStartAfterLoadModule(
+      LoadNexeAndStartData* data, int32_t pp_error);
+  void DidLoadNexeAndStart(LoadNexeAndStartData* data, int32_t pp_error);
+
+  bool SetupCommandChannel();
+  bool InitReverseService();
+  void LoadModule(PP_NaClFileInfo file_info,
+                  pp::CompletionCallback callback);
+  void DidLoadModule(pp::CompletionCallback callback, int32_t pp_error);
+  bool StartModule();
 
   NaClSrpcChannel command_channel_;
   Plugin* plugin_;
   bool main_service_runtime_;
+  bool uses_nonsfi_mode_;
   nacl::ReverseService* reverse_service_;
   nacl::scoped_ptr<nacl::SelLdrLauncherBase> subprocess_;
 
@@ -288,13 +238,11 @@ class ServiceRuntime {
 
   PluginReverseInterface* rev_interface_;
 
-  // Mutex to protect exit_status_.
-  // Also, in conjunction with cond_ it is used to signal when
-  // StartSelLdr is complete with either success or error.
+  // Mutex and CondVar to protect start_sel_ldr_done_ and nexe_started_.
   NaClMutex mu_;
   NaClCondVar cond_;
-  int exit_status_;
   bool start_sel_ldr_done_;
+  bool nexe_started_;
 };
 
 }  // namespace plugin

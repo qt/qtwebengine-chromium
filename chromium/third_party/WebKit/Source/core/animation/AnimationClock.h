@@ -32,45 +32,33 @@
 #define AnimationClock_h
 
 #include "wtf/CurrentTime.h"
+#include "wtf/Noncopyable.h"
 #include "wtf/PassOwnPtr.h"
+#include <limits>
 
 namespace WebCore {
 
 class AnimationClock {
+    WTF_MAKE_NONCOPYABLE(AnimationClock);
 public:
-    static PassOwnPtr<AnimationClock> create(WTF::TimeFunction monotonicallyIncreasingTime = WTF::monotonicallyIncreasingTime)
-    {
-        return adoptPtr(new AnimationClock(monotonicallyIncreasingTime));
-    }
-
-    void updateTime(double time)
-    {
-        if (time > m_time)
-            m_time = time;
-        m_frozen = true;
-    }
-
-    double currentTime()
-    {
-        if (!m_frozen)
-            updateTime(m_monotonicallyIncreasingTime());
-        return m_time;
-    }
-
-    void unfreeze() { m_frozen = false; }
-
-    void resetTimeForTesting() { m_time = 0; m_frozen = true; }
-
-private:
-    AnimationClock(WTF::TimeFunction monotonicallyIncreasingTime)
+    explicit AnimationClock(WTF::TimeFunction monotonicallyIncreasingTime = WTF::monotonicallyIncreasingTime)
         : m_monotonicallyIncreasingTime(monotonicallyIncreasingTime)
         , m_time(0)
-        , m_frozen(false)
+        , m_currentTask(std::numeric_limits<unsigned>::max())
     {
     }
+
+    void updateTime(double time);
+    double currentTime();
+    void resetTimeForTesting();
+
+    static void notifyTaskStart() { ++s_currentTask; }
+
+private:
     WTF::TimeFunction m_monotonicallyIncreasingTime;
     double m_time;
-    bool m_frozen;
+    unsigned m_currentTask;
+    static unsigned s_currentTask;
 };
 
 } // namespace WebCore

@@ -31,6 +31,8 @@ message ClientType {
     CHROME_SYNC = 1004;
     CHROME_SYNC_ANDROID = 1018;
     CHROME_SYNC_IOS = 1038;
+    CHROME_SYNC_GCM_DESKTOP = 1055;
+    CHROME_SYNC_GCM_IOS = 1056;
   }
   optional Type type = 1;
 }

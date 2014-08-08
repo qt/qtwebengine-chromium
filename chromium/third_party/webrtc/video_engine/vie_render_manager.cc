@@ -15,7 +15,7 @@
 #include "webrtc/modules/video_render/include/video_render_defines.h"
 #include "webrtc/system_wrappers/interface/critical_section_wrapper.h"
 #include "webrtc/system_wrappers/interface/rw_lock_wrapper.h"
-#include "webrtc/system_wrappers/interface/trace.h"
+#include "webrtc/system_wrappers/interface/logging.h"
 #include "webrtc/video_engine/vie_defines.h"
 #include "webrtc/video_engine/vie_renderer.h"
 
@@ -35,14 +35,9 @@ ViERenderManager::ViERenderManager(int32_t engine_id)
     : list_cs_(CriticalSectionWrapper::CreateCriticalSection()),
       engine_id_(engine_id),
       use_external_render_module_(false) {
-  WEBRTC_TRACE(webrtc::kTraceMemory, webrtc::kTraceVideo, ViEId(engine_id),
-               "ViERenderManager::ViERenderManager(engine_id: %d) - "
-               "Constructor", engine_id);
 }
 
 ViERenderManager::~ViERenderManager() {
-  WEBRTC_TRACE(webrtc::kTraceMemory, webrtc::kTraceVideo, ViEId(engine_id_),
-               "ViERenderManager Destructor, engine_id: %d", engine_id_);
   for (RendererMap::iterator it = stream_to_vie_renderer_.begin();
        it != stream_to_vie_renderer_.end();
        ++it) {
@@ -57,15 +52,12 @@ int32_t ViERenderManager::RegisterVideoRenderModule(
   // the registrant render module is associated with.
   VideoRender* current_module = FindRenderModule(render_module->Window());
   if (current_module) {
-    WEBRTC_TRACE(webrtc::kTraceError, webrtc::kTraceVideo, ViEId(engine_id_),
-                 "A module is already registered for this window (window=%p, "
-                 "current module=%p, registrant module=%p.",
-                 render_module->Window(), current_module, render_module);
+    LOG_F(LS_ERROR) << "A render module is already registered for this window.";
     return -1;
   }
 
   // Register module.
-  render_list_.PushBack(static_cast<void*>(render_module));
+  render_list_.push_back(render_module);
   use_external_render_module_ = true;
   return 0;
 }
@@ -75,30 +67,22 @@ int32_t ViERenderManager::DeRegisterVideoRenderModule(
   // Check if there are streams in the module.
   uint32_t n_streams = render_module->GetNumIncomingRenderStreams();
   if (n_streams != 0) {
-    WEBRTC_TRACE(webrtc::kTraceError, webrtc::kTraceVideo, ViEId(engine_id_),
-                 "There are still %d streams in this module, cannot "
-                 "de-register", n_streams);
+    LOG(LS_ERROR) << "There are still " << n_streams
+                  << "in this module, cannot de-register.";
     return -1;
   }
 
-  // Erase the render module from the map.
-  ListItem* list_item = NULL;
-  bool found = false;
-  for (list_item = render_list_.First(); list_item != NULL;
-       list_item = render_list_.Next(list_item)) {
-    if (render_module == static_cast<VideoRender*>(list_item->GetItem())) {
-      // We've found our renderer.
-      render_list_.Erase(list_item);
-      found = true;
-      break;
+  for (RenderList::iterator iter = render_list_.begin();
+       iter != render_list_.end(); ++iter) {
+    if (render_module == *iter) {
+      // We've found our renderer. Erase the render module from the map.
+      render_list_.erase(iter);
+      return 0;
     }
   }
-  if (!found) {
-    WEBRTC_TRACE(webrtc::kTraceError, webrtc::kTraceVideo, ViEId(engine_id_),
-                 "Module not registered");
-    return -1;
-  }
-  return 0;
+
+  LOG(LS_ERROR) << "Module not registered.";
+  return -1;
 }
 
 ViERenderer* ViERenderManager::AddRenderStream(const int32_t render_id,
@@ -112,9 +96,7 @@ ViERenderer* ViERenderManager::AddRenderStream(const int32_t render_id,
 
   if (stream_to_vie_renderer_.find(render_id) !=
       stream_to_vie_renderer_.end()) {
-    // This stream is already added to a renderer, not allowed!
-    WEBRTC_TRACE(webrtc::kTraceError, webrtc::kTraceVideo, ViEId(engine_id_),
-                 "Render stream already exists");
+    LOG(LS_ERROR) << "Render stream already exists";
     return NULL;
   }
 
@@ -124,12 +106,10 @@ ViERenderer* ViERenderManager::AddRenderStream(const int32_t render_id,
     // No render module for this window, create a new one.
     render_module = VideoRender::CreateVideoRender(ViEModuleId(engine_id_, -1),
                                                   window, false);
-    if (!render_module) {
-      WEBRTC_TRACE(webrtc::kTraceError, webrtc::kTraceVideo, ViEId(engine_id_),
-                   "Could not create new render module");
+    if (!render_module)
       return NULL;
-    }
-    render_list_.PushBack(static_cast<void*>(render_module));
+
+    render_list_.push_back(render_module);
   }
 
   ViERenderer* vie_renderer = ViERenderer::CreateViERenderer(render_id,
@@ -138,12 +118,9 @@ ViERenderer* ViERenderManager::AddRenderStream(const int32_t render_id,
                                                              *this, z_order,
                                                              left, top, right,
                                                              bottom);
-  if (!vie_renderer) {
-    WEBRTC_TRACE(webrtc::kTraceError, webrtc::kTraceVideo,
-                 ViEId(engine_id_, render_id),
-                 "Could not create new render stream");
+  if (!vie_renderer)
     return NULL;
-  }
+
   stream_to_vie_renderer_[render_id] = vie_renderer;
   return vie_renderer;
 }
@@ -156,9 +133,7 @@ int32_t ViERenderManager::RemoveRenderStream(
   CriticalSectionScoped cs(list_cs_.get());
   RendererMap::iterator it = stream_to_vie_renderer_.find(render_id);
   if (it == stream_to_vie_renderer_.end()) {
-    // No such stream
-    WEBRTC_TRACE(webrtc::kTraceWarning, webrtc::kTraceVideo, ViEId(engine_id_),
-                 "No renderer for this stream found, channel_id");
+    LOG(LS_ERROR) << "No renderer found for render_id: " << render_id;
     return 0;
   }
 
@@ -176,12 +151,11 @@ int32_t ViERenderManager::RemoveRenderStream(
   if (!use_external_render_module_ &&
       renderer.GetNumIncomingRenderStreams() == 0) {
     // Erase the render module from the map.
-    ListItem* list_item = NULL;
-    for (list_item = render_list_.First(); list_item != NULL;
-         list_item = render_list_.Next(list_item)) {
-      if (&renderer == static_cast<VideoRender*>(list_item->GetItem())) {
+    for (RenderList::iterator iter = render_list_.begin();
+         iter != render_list_.end(); ++iter) {
+      if (&renderer == *iter) {
         // We've found our renderer.
-        render_list_.Erase(list_item);
+        render_list_.erase(iter);
         break;
       }
     }
@@ -192,21 +166,14 @@ int32_t ViERenderManager::RemoveRenderStream(
 }
 
 VideoRender* ViERenderManager::FindRenderModule(void* window) {
-  VideoRender* renderer = NULL;
-  ListItem* list_item = NULL;
-  for (list_item = render_list_.First(); list_item != NULL;
-       list_item = render_list_.Next(list_item)) {
-    renderer = static_cast<VideoRender*>(list_item->GetItem());
-    if (renderer == NULL) {
-      break;
-    }
-    if (renderer->Window() == window) {
+  for (RenderList::iterator iter = render_list_.begin();
+       iter != render_list_.end(); ++iter) {
+    if ((*iter)->Window() == window) {
       // We've found the render module.
-      break;
+      return *iter;
     }
-    renderer = NULL;
   }
-  return renderer;
+  return NULL;
 }
 
 ViERenderer* ViERenderManager::ViERenderPtr(int32_t render_id) const {

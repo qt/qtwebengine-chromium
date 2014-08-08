@@ -43,22 +43,22 @@ XPathResult::XPathResult(Document* document, const Value& value)
 {
     ScriptWrappable::init(this);
     switch (m_value.type()) {
-        case Value::BooleanValue:
-            m_resultType = BOOLEAN_TYPE;
-            return;
-        case Value::NumberValue:
-            m_resultType = NUMBER_TYPE;
-            return;
-        case Value::StringValue:
-            m_resultType = STRING_TYPE;
-            return;
-        case Value::NodeSetValue:
-            m_resultType = UNORDERED_NODE_ITERATOR_TYPE;
-            m_nodeSetPosition = 0;
-            m_nodeSet = m_value.toNodeSet();
-            m_document = document;
-            m_domTreeVersion = document->domTreeVersion();
-            return;
+    case Value::BooleanValue:
+        m_resultType = BOOLEAN_TYPE;
+        return;
+    case Value::NumberValue:
+        m_resultType = NUMBER_TYPE;
+        return;
+    case Value::StringValue:
+        m_resultType = STRING_TYPE;
+        return;
+    case Value::NodeSetValue:
+        m_resultType = UNORDERED_NODE_ITERATOR_TYPE;
+        m_nodeSetPosition = 0;
+        m_nodeSet = NodeSet::create(m_value.toNodeSet());
+        m_document = document;
+        m_domTreeVersion = document->domTreeVersion();
+        return;
     }
     ASSERT_NOT_REACHED();
 }
@@ -67,49 +67,57 @@ XPathResult::~XPathResult()
 {
 }
 
+void XPathResult::trace(Visitor* visitor)
+{
+    visitor->trace(m_value);
+    visitor->trace(m_nodeSet);
+    visitor->trace(m_document);
+}
+
 void XPathResult::convertTo(unsigned short type, ExceptionState& exceptionState)
 {
     switch (type) {
-        case ANY_TYPE:
-            break;
-        case NUMBER_TYPE:
-            m_resultType = type;
-            m_value = m_value.toNumber();
-            break;
-        case STRING_TYPE:
-            m_resultType = type;
-            m_value = m_value.toString();
-            break;
-        case BOOLEAN_TYPE:
-            m_resultType = type;
-            m_value = m_value.toBoolean();
-            break;
-        case UNORDERED_NODE_ITERATOR_TYPE:
-        case UNORDERED_NODE_SNAPSHOT_TYPE:
-        case ANY_UNORDERED_NODE_TYPE:
-        case FIRST_ORDERED_NODE_TYPE: // This is correct - singleNodeValue() will take care of ordering.
-            if (!m_value.isNodeSet()) {
-                exceptionState.throwTypeError("The result is not a node set, and therefore cannot be converted to the desired type.");
-                return;
-            }
-            m_resultType = type;
-            break;
-        case ORDERED_NODE_ITERATOR_TYPE:
-            if (!m_value.isNodeSet()) {
-                exceptionState.throwTypeError("The result is not a node set, and therefore cannot be converted to the desired type.");
-                return;
-            }
-            m_nodeSet.sort();
-            m_resultType = type;
-            break;
-        case ORDERED_NODE_SNAPSHOT_TYPE:
-            if (!m_value.isNodeSet()) {
-                exceptionState.throwTypeError("The result is not a node set, and therefore cannot be converted to the desired type.");
-                return;
-            }
-            m_value.toNodeSet().sort();
-            m_resultType = type;
-            break;
+    case ANY_TYPE:
+        break;
+    case NUMBER_TYPE:
+        m_resultType = type;
+        m_value = m_value.toNumber();
+        break;
+    case STRING_TYPE:
+        m_resultType = type;
+        m_value = m_value.toString();
+        break;
+    case BOOLEAN_TYPE:
+        m_resultType = type;
+        m_value = m_value.toBoolean();
+        break;
+    case UNORDERED_NODE_ITERATOR_TYPE:
+    case UNORDERED_NODE_SNAPSHOT_TYPE:
+    case ANY_UNORDERED_NODE_TYPE:
+    // This is correct - singleNodeValue() will take care of ordering.
+    case FIRST_ORDERED_NODE_TYPE:
+        if (!m_value.isNodeSet()) {
+            exceptionState.throwTypeError("The result is not a node set, and therefore cannot be converted to the desired type.");
+            return;
+        }
+        m_resultType = type;
+        break;
+    case ORDERED_NODE_ITERATOR_TYPE:
+        if (!m_value.isNodeSet()) {
+            exceptionState.throwTypeError("The result is not a node set, and therefore cannot be converted to the desired type.");
+            return;
+        }
+        nodeSet().sort();
+        m_resultType = type;
+        break;
+    case ORDERED_NODE_SNAPSHOT_TYPE:
+        if (!m_value.isNodeSet()) {
+            exceptionState.throwTypeError("The result is not a node set, and therefore cannot be converted to the desired type.");
+            return;
+        }
+        m_value.toNodeSet().sort();
+        m_resultType = type;
+        break;
     }
 }
 
@@ -155,8 +163,7 @@ Node* XPathResult::singleNodeValue(ExceptionState& exceptionState) const
     const NodeSet& nodes = m_value.toNodeSet();
     if (resultType() == FIRST_ORDERED_NODE_TYPE)
         return nodes.firstNode();
-    else
-        return nodes.anyNode();
+    return nodes.anyNode();
 }
 
 bool XPathResult::invalidIteratorState() const
@@ -190,10 +197,10 @@ Node* XPathResult::iterateNext(ExceptionState& exceptionState)
         return 0;
     }
 
-    if (m_nodeSetPosition + 1 > m_nodeSet.size())
+    if (m_nodeSetPosition + 1 > nodeSet().size())
         return 0;
 
-    Node* node = m_nodeSet[m_nodeSetPosition];
+    Node* node = nodeSet()[m_nodeSetPosition];
 
     m_nodeSetPosition++;
 

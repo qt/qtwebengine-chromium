@@ -31,26 +31,24 @@
 #ifndef ScriptProfile_h
 #define ScriptProfile_h
 
-#include "InspectorTypeBuilder.h"
+#include "core/InspectorTypeBuilder.h"
+#include "platform/heap/Handle.h"
 #include "wtf/RefCounted.h"
 #include "wtf/text/WTFString.h"
-
-namespace v8 {
-class CpuProfile;
-}
+#include <v8-profiler.h>
 
 namespace WebCore {
 
-class ScriptProfile FINAL : public RefCounted<ScriptProfile> {
+class ScriptProfile FINAL : public RefCountedWillBeGarbageCollectedFinalized<ScriptProfile> {
 public:
-    static PassRefPtr<ScriptProfile> create(const v8::CpuProfile* profile, double idleTime)
+    static PassRefPtrWillBeRawPtr<ScriptProfile> create(v8::CpuProfile* profile, double idleTime)
     {
-        return adoptRef(new ScriptProfile(profile, idleTime));
+        return adoptRefWillBeNoop(new ScriptProfile(profile, idleTime));
     }
     ~ScriptProfile();
+    void trace(Visitor*) { }
 
     String title() const;
-    unsigned int uid() const;
     double idleTime() const;
 
     double startTime() const;
@@ -58,15 +56,16 @@ public:
 
     PassRefPtr<TypeBuilder::Profiler::CPUProfileNode> buildInspectorObjectForHead() const;
     PassRefPtr<TypeBuilder::Array<int> > buildInspectorObjectForSamples() const;
+    PassRefPtr<TypeBuilder::Array<double> > buildInspectorObjectForTimestamps() const;
 
 private:
-    ScriptProfile(const v8::CpuProfile* profile, double idleTime)
+    ScriptProfile(v8::CpuProfile* profile, double idleTime)
         : m_profile(profile)
         , m_idleTime(idleTime)
     {
     }
 
-    const v8::CpuProfile* m_profile;
+    v8::CpuProfile* m_profile;
     double m_idleTime;
 };
 

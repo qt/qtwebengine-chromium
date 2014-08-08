@@ -27,39 +27,37 @@
 
 #include "core/html/canvas/WebGLCompressedTexturePVRTC.h"
 
-#include "core/html/canvas/WebGLRenderingContext.h"
-#include "platform/graphics/Extensions3D.h"
+#include "core/html/canvas/WebGLRenderingContextBase.h"
 
 namespace WebCore {
 
-WebGLCompressedTexturePVRTC::WebGLCompressedTexturePVRTC(WebGLRenderingContext* context)
+WebGLCompressedTexturePVRTC::WebGLCompressedTexturePVRTC(WebGLRenderingContextBase* context)
     : WebGLExtension(context)
 {
     ScriptWrappable::init(this);
-    context->addCompressedTextureFormat(Extensions3D::COMPRESSED_RGB_PVRTC_4BPPV1_IMG);
-    context->addCompressedTextureFormat(Extensions3D::COMPRESSED_RGB_PVRTC_2BPPV1_IMG);
-    context->addCompressedTextureFormat(Extensions3D::COMPRESSED_RGBA_PVRTC_4BPPV1_IMG);
-    context->addCompressedTextureFormat(Extensions3D::COMPRESSED_RGBA_PVRTC_2BPPV1_IMG);
+    context->addCompressedTextureFormat(GL_COMPRESSED_RGB_PVRTC_4BPPV1_IMG);
+    context->addCompressedTextureFormat(GL_COMPRESSED_RGB_PVRTC_2BPPV1_IMG);
+    context->addCompressedTextureFormat(GL_COMPRESSED_RGBA_PVRTC_4BPPV1_IMG);
+    context->addCompressedTextureFormat(GL_COMPRESSED_RGBA_PVRTC_2BPPV1_IMG);
 }
 
 WebGLCompressedTexturePVRTC::~WebGLCompressedTexturePVRTC()
 {
 }
 
-WebGLExtension::ExtensionName WebGLCompressedTexturePVRTC::name() const
+WebGLExtensionName WebGLCompressedTexturePVRTC::name() const
 {
     return WebGLCompressedTexturePVRTCName;
 }
 
-PassRefPtr<WebGLCompressedTexturePVRTC> WebGLCompressedTexturePVRTC::create(WebGLRenderingContext* context)
+PassRefPtr<WebGLCompressedTexturePVRTC> WebGLCompressedTexturePVRTC::create(WebGLRenderingContextBase* context)
 {
     return adoptRef(new WebGLCompressedTexturePVRTC(context));
 }
 
-bool WebGLCompressedTexturePVRTC::supported(WebGLRenderingContext* context)
+bool WebGLCompressedTexturePVRTC::supported(WebGLRenderingContextBase* context)
 {
-    Extensions3D* extensions = context->graphicsContext3D()->extensions();
-    return extensions->supports("GL_IMG_texture_compression_pvrtc");
+    return context->extensionsUtil()->supportsExtension("GL_IMG_texture_compression_pvrtc");
 }
 
 const char* WebGLCompressedTexturePVRTC::extensionName()

@@ -15,16 +15,22 @@
 
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
+#include "sandbox/sandbox_export.h"
 
 namespace sandbox {
 
 // This class should be used to manipulate the current process' credentials.
 // It is currently a stub used to manipulate POSIX.1e capabilities as
 // implemented by the Linux kernel.
-class Credentials {
+class SANDBOX_EXPORT Credentials {
  public:
   Credentials();
   ~Credentials();
+
+  // Returns the number of file descriptors in the current process's FD
+  // table, excluding |proc_fd|, which should be a file descriptor for
+  // /proc.
+  int CountOpenFds(int proc_fd);
 
   // Checks whether the current process has any directory file descriptor open.
   // Directory file descriptors are "capabilities" that would let a process use
@@ -50,6 +56,13 @@ class Credentials {
   // documented in libcap2's cap_to_text(3). This is mostly useful for
   // debugging and tests.
   scoped_ptr<std::string> GetCurrentCapString() const;
+
+  // Returns whether the kernel supports CLONE_NEWUSER and whether it would be
+  // possible to immediately move to a new user namespace. There is no point
+  // in using this method right before calling MoveToNewUserNS(), simply call
+  // MoveToNewUserNS() immediately. This method is only useful to test kernel
+  // support ahead of time.
+  static bool SupportsNewUserNS();
 
   // Move the current process to a new "user namespace" as supported by Linux
   // 3.8+ (CLONE_NEWUSER).

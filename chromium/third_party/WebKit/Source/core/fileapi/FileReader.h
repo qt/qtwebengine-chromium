@@ -37,6 +37,7 @@
 #include "core/fileapi/FileError.h"
 #include "core/fileapi/FileReaderLoader.h"
 #include "core/fileapi/FileReaderLoaderClient.h"
+#include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
 #include "wtf/RefCounted.h"
 #include "wtf/ThreadSpecific.h"
@@ -48,10 +49,11 @@ class Blob;
 class ExceptionState;
 class ExecutionContext;
 
-class FileReader : public RefCounted<FileReader>, public ScriptWrappable, public ActiveDOMObject, public EventTargetWithInlineData, public FileReaderLoaderClient {
+class FileReader FINAL : public RefCountedWillBeRefCountedGarbageCollected<FileReader>, public ScriptWrappable, public ActiveDOMObject, public FileReaderLoaderClient, public EventTargetWithInlineData {
     REFCOUNTED_EVENT_TARGET(FileReader);
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(FileReader);
 public:
-    static PassRefPtr<FileReader> create(ExecutionContext*);
+    static PassRefPtrWillBeRawPtr<FileReader> create(ExecutionContext*);
 
     virtual ~FileReader();
 
@@ -71,23 +73,23 @@ public:
     void doAbort();
 
     ReadyState readyState() const { return m_state; }
-    PassRefPtr<FileError> error() { return m_error; }
+    PassRefPtrWillBeRawPtr<FileError> error() { return m_error; }
     FileReaderLoader::ReadType readType() const { return m_readType; }
     PassRefPtr<ArrayBuffer> arrayBufferResult() const;
     String stringResult();
 
     // ActiveDOMObject
-    virtual void stop();
+    virtual void stop() OVERRIDE;
 
     // EventTarget
     virtual const AtomicString& interfaceName() const OVERRIDE;
     virtual ExecutionContext* executionContext() const OVERRIDE { return ActiveDOMObject::executionContext(); }
 
     // FileReaderLoaderClient
-    virtual void didStartLoading();
-    virtual void didReceiveData();
-    virtual void didFinishLoading();
-    virtual void didFail(FileError::ErrorCode);
+    virtual void didStartLoading() OVERRIDE;
+    virtual void didReceiveData() OVERRIDE;
+    virtual void didFinishLoading() OVERRIDE;
+    virtual void didFail(FileError::ErrorCode) OVERRIDE;
 
     DEFINE_ATTRIBUTE_EVENT_LISTENER(loadstart);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(progress);
@@ -95,6 +97,8 @@ public:
     DEFINE_ATTRIBUTE_EVENT_LISTENER(abort);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(error);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(loadend);
+
+    virtual void trace(Visitor*) OVERRIDE;
 
 private:
     class ThrottlingController;
@@ -121,12 +125,13 @@ private:
     };
     LoadingState m_loadingState;
 
-    RefPtr<Blob> m_blob;
+    String m_blobType;
+    RefPtr<BlobDataHandle> m_blobDataHandle;
     FileReaderLoader::ReadType m_readType;
     String m_encoding;
 
     OwnPtr<FileReaderLoader> m_loader;
-    RefPtr<FileError> m_error;
+    RefPtrWillBeMember<FileError> m_error;
     double m_lastProgressNotificationTimeMS;
 };
 

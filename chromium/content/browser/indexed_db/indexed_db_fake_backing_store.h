@@ -9,118 +9,150 @@
 
 #include "content/browser/indexed_db/indexed_db_backing_store.h"
 
+namespace base {
+class TaskRunner;
+}
+
 namespace content {
+
+class IndexedDBFactory;
 
 class IndexedDBFakeBackingStore : public IndexedDBBackingStore {
  public:
-  IndexedDBFakeBackingStore()
-      : IndexedDBBackingStore(GURL("http://localhost:81"),
-                              scoped_ptr<LevelDBDatabase>(),
-                              scoped_ptr<LevelDBComparator>()) {}
-  virtual std::vector<base::string16> GetDatabaseNames() OVERRIDE;
-  virtual bool GetIDBDatabaseMetaData(const base::string16& name,
-                                      IndexedDBDatabaseMetadata*,
-                                      bool* found) OVERRIDE;
-  virtual bool CreateIDBDatabaseMetaData(const base::string16& name,
-                                         const base::string16& version,
-                                         int64 int_version,
-                                         int64* row_id) OVERRIDE;
+  IndexedDBFakeBackingStore();
+  IndexedDBFakeBackingStore(IndexedDBFactory* factory,
+                            base::TaskRunner* task_runner);
+  virtual std::vector<base::string16> GetDatabaseNames(leveldb::Status* s)
+      OVERRIDE;
+  virtual leveldb::Status GetIDBDatabaseMetaData(const base::string16& name,
+                                                 IndexedDBDatabaseMetadata*,
+                                                 bool* found) OVERRIDE;
+  virtual leveldb::Status CreateIDBDatabaseMetaData(
+      const base::string16& name,
+      const base::string16& version,
+      int64 int_version,
+      int64* row_id) OVERRIDE;
   virtual bool UpdateIDBDatabaseIntVersion(Transaction*,
                                            int64 row_id,
                                            int64 version) OVERRIDE;
-  virtual bool DeleteDatabase(const base::string16& name) OVERRIDE;
+  virtual leveldb::Status DeleteDatabase(const base::string16& name) OVERRIDE;
 
-  virtual bool CreateObjectStore(Transaction*,
-                                 int64 database_id,
-                                 int64 object_store_id,
-                                 const base::string16& name,
-                                 const IndexedDBKeyPath&,
-                                 bool auto_increment) OVERRIDE;
-
-  virtual bool ClearObjectStore(Transaction*,
-                                int64 database_id,
-                                int64 object_store_id) OVERRIDE;
-  virtual bool DeleteRecord(Transaction*,
-                            int64 database_id,
-                            int64 object_store_id,
-                            const RecordIdentifier&) OVERRIDE;
-  virtual bool GetKeyGeneratorCurrentNumber(Transaction*,
+  virtual leveldb::Status CreateObjectStore(Transaction*,
                                             int64 database_id,
                                             int64 object_store_id,
-                                            int64* current_number) OVERRIDE;
-  virtual bool MaybeUpdateKeyGeneratorCurrentNumber(Transaction*,
-                                                    int64 database_id,
-                                                    int64 object_store_id,
-                                                    int64 new_number,
-                                                    bool check_current)
+                                            const base::string16& name,
+                                            const IndexedDBKeyPath&,
+                                            bool auto_increment) OVERRIDE;
+
+  virtual leveldb::Status DeleteObjectStore(Transaction* transaction,
+                                            int64 database_id,
+                                            int64 object_store_id) OVERRIDE;
+
+  virtual leveldb::Status PutRecord(
+      IndexedDBBackingStore::Transaction* transaction,
+      int64 database_id,
+      int64 object_store_id,
+      const IndexedDBKey& key,
+      IndexedDBValue& value,
+      ScopedVector<webkit_blob::BlobDataHandle>* handles,
+      RecordIdentifier* record) OVERRIDE;
+
+  virtual leveldb::Status ClearObjectStore(Transaction*,
+                                           int64 database_id,
+                                           int64 object_store_id) OVERRIDE;
+  virtual leveldb::Status DeleteRecord(Transaction*,
+                                       int64 database_id,
+                                       int64 object_store_id,
+                                       const RecordIdentifier&) OVERRIDE;
+  virtual leveldb::Status GetKeyGeneratorCurrentNumber(Transaction*,
+                                                       int64 database_id,
+                                                       int64 object_store_id,
+                                                       int64* current_number)
       OVERRIDE;
-  virtual bool KeyExistsInObjectStore(Transaction*,
+  virtual leveldb::Status MaybeUpdateKeyGeneratorCurrentNumber(
+      Transaction*,
+      int64 database_id,
+      int64 object_store_id,
+      int64 new_number,
+      bool check_current) OVERRIDE;
+  virtual leveldb::Status KeyExistsInObjectStore(
+      Transaction*,
+      int64 database_id,
+      int64 object_store_id,
+      const IndexedDBKey&,
+      RecordIdentifier* found_record_identifier,
+      bool* found) OVERRIDE;
+
+  virtual leveldb::Status CreateIndex(Transaction*,
                                       int64 database_id,
                                       int64 object_store_id,
-                                      const IndexedDBKey&,
-                                      RecordIdentifier* found_record_identifier,
-                                      bool* found) OVERRIDE;
-
-  virtual bool CreateIndex(Transaction*,
-                           int64 database_id,
-                           int64 object_store_id,
-                           int64 index_id,
-                           const base::string16& name,
-                           const IndexedDBKeyPath&,
-                           bool is_unique,
-                           bool is_multi_entry) OVERRIDE;
-  virtual bool DeleteIndex(Transaction*,
-                           int64 database_id,
-                           int64 object_store_id,
-                           int64 index_id) OVERRIDE;
-  virtual bool PutIndexDataForRecord(Transaction*,
-                                     int64 database_id,
-                                     int64 object_store_id,
-                                     int64 index_id,
-                                     const IndexedDBKey&,
-                                     const RecordIdentifier&) OVERRIDE;
-
+                                      int64 index_id,
+                                      const base::string16& name,
+                                      const IndexedDBKeyPath&,
+                                      bool is_unique,
+                                      bool is_multi_entry) OVERRIDE;
+  virtual leveldb::Status DeleteIndex(Transaction*,
+                                      int64 database_id,
+                                      int64 object_store_id,
+                                      int64 index_id) OVERRIDE;
+  virtual leveldb::Status PutIndexDataForRecord(Transaction*,
+                                                int64 database_id,
+                                                int64 object_store_id,
+                                                int64 index_id,
+                                                const IndexedDBKey&,
+                                                const RecordIdentifier&)
+      OVERRIDE;
+  virtual void ReportBlobUnused(int64 database_id, int64 blob_key) OVERRIDE;
   virtual scoped_ptr<Cursor> OpenObjectStoreKeyCursor(
       Transaction* transaction,
       int64 database_id,
       int64 object_store_id,
       const IndexedDBKeyRange& key_range,
-      indexed_db::CursorDirection) OVERRIDE;
+      indexed_db::CursorDirection,
+      leveldb::Status*) OVERRIDE;
   virtual scoped_ptr<Cursor> OpenObjectStoreCursor(
       Transaction* transaction,
       int64 database_id,
       int64 object_store_id,
       const IndexedDBKeyRange& key_range,
-      indexed_db::CursorDirection) OVERRIDE;
+      indexed_db::CursorDirection,
+      leveldb::Status*) OVERRIDE;
   virtual scoped_ptr<Cursor> OpenIndexKeyCursor(
       Transaction* transaction,
       int64 database_id,
       int64 object_store_id,
       int64 index_id,
       const IndexedDBKeyRange& key_range,
-      indexed_db::CursorDirection) OVERRIDE;
+      indexed_db::CursorDirection,
+      leveldb::Status*) OVERRIDE;
   virtual scoped_ptr<Cursor> OpenIndexCursor(Transaction* transaction,
                                              int64 database_id,
                                              int64 object_store_id,
                                              int64 index_id,
                                              const IndexedDBKeyRange& key_range,
-                                             indexed_db::CursorDirection)
-      OVERRIDE;
+                                             indexed_db::CursorDirection,
+                                             leveldb::Status*) OVERRIDE;
 
   class FakeTransaction : public IndexedDBBackingStore::Transaction {
    public:
-    FakeTransaction(bool result);
+    explicit FakeTransaction(leveldb::Status phase_two_result);
     virtual void Begin() OVERRIDE;
-    virtual bool Commit() OVERRIDE;
+    virtual leveldb::Status CommitPhaseOne(
+        scoped_refptr<BlobWriteCallback>) OVERRIDE;
+    virtual leveldb::Status CommitPhaseTwo() OVERRIDE;
     virtual void Rollback() OVERRIDE;
 
    private:
-    bool result_;
+    leveldb::Status result_;
+
+    DISALLOW_COPY_AND_ASSIGN(FakeTransaction);
   };
 
  protected:
   friend class base::RefCounted<IndexedDBFakeBackingStore>;
   virtual ~IndexedDBFakeBackingStore();
+
+  DISALLOW_COPY_AND_ASSIGN(IndexedDBFakeBackingStore);
 };
 
 }  // namespace content

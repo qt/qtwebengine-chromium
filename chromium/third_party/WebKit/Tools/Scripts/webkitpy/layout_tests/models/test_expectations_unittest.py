@@ -63,7 +63,9 @@ class Base(unittest.TestCase):
                 self.get_test('failures/expected/needsmanualrebaseline.html'),
                 self.get_test('failures/expected/missing_text.html'),
                 self.get_test('failures/expected/image.html'),
+                self.get_test('failures/expected/timeout.html'),
                 self.get_test('passes/text.html')]
+
 
     def get_basic_expectations(self):
         return """
@@ -118,6 +120,7 @@ class MiscTests(Base):
 
         # test handling of SKIPped tests and results
         self.assertEqual(TestExpectations.result_was_expected(SKIP, set([CRASH]), test_needs_rebaselining=False), True)
+        self.assertEqual(TestExpectations.result_was_expected(SKIP, set([LEAK]), test_needs_rebaselining=False), True)
 
         # test handling of MISSING results and the REBASELINE specifier
         self.assertEqual(TestExpectations.result_was_expected(MISSING, set([PASS]), test_needs_rebaselining=True), True)
@@ -131,6 +134,7 @@ class MiscTests(Base):
         self.assertTrue(TestExpectations.result_was_expected(AUDIO, set([NEEDS_REBASELINE]), test_needs_rebaselining=False))
         self.assertFalse(TestExpectations.result_was_expected(TIMEOUT, set([NEEDS_REBASELINE]), test_needs_rebaselining=False))
         self.assertFalse(TestExpectations.result_was_expected(CRASH, set([NEEDS_REBASELINE]), test_needs_rebaselining=False))
+        self.assertFalse(TestExpectations.result_was_expected(LEAK, set([NEEDS_REBASELINE]), test_needs_rebaselining=False))
 
     def test_remove_pixel_failures(self):
         self.assertEqual(TestExpectations.remove_pixel_failures(set([FAIL])), set([FAIL]))
@@ -176,6 +180,21 @@ class MiscTests(Base):
         self.assertEqual(s,
             set([self.get_test('failures/expected/crash.html'),
                  self.get_test('failures/expected/image_checksum.html')]))
+
+    def test_needs_rebaseline_reftest(self):
+        try:
+            filesystem = self._port.host.filesystem
+            filesystem.write_text_file(filesystem.join(self._port.layout_tests_dir(), 'failures/expected/needsrebaseline.html'), 'content')
+            filesystem.write_text_file(filesystem.join(self._port.layout_tests_dir(), 'failures/expected/needsrebaseline-expected.html'), 'content')
+            filesystem.write_text_file(filesystem.join(self._port.layout_tests_dir(), 'failures/expected/needsmanualrebaseline.html'), 'content')
+            filesystem.write_text_file(filesystem.join(self._port.layout_tests_dir(), 'failures/expected/needsmanualrebaseline-expected.html'), 'content')
+            self.parse_exp("""Bug(user) failures/expected/needsrebaseline.html [ NeedsRebaseline ]
+Bug(user) failures/expected/needsmanualrebaseline.html [ NeedsManualRebaseline ]""", is_lint_mode=True)
+            self.assertFalse(True, "ParseError wasn't raised")
+        except ParseError, e:
+            warnings = """expectations:1 A reftest cannot be marked as NeedsRebaseline/NeedsManualRebaseline failures/expected/needsrebaseline.html
+expectations:2 A reftest cannot be marked as NeedsRebaseline/NeedsManualRebaseline failures/expected/needsmanualrebaseline.html"""
+            self.assertEqual(str(e), warnings)
 
     def test_parse_warning(self):
         try:
@@ -231,7 +250,7 @@ class MiscTests(Base):
     def test_pixel_tests_flag(self):
         def match(test, result, pixel_tests_enabled):
             return self._exp.matches_an_expected_result(
-                self.get_test(test), result, pixel_tests_enabled)
+                self.get_test(test), result, pixel_tests_enabled, sanitizer_is_enabled=False)
 
         self.parse_exp(self.get_basic_expectations())
         self.assertTrue(match('failures/expected/text.html', FAIL, True))
@@ -246,6 +265,22 @@ class MiscTests(Base):
         self.assertTrue(match('failures/expected/needsmanualrebaseline.html', TEXT, True))
         self.assertFalse(match('failures/expected/needsmanualrebaseline.html', CRASH, True))
         self.assertTrue(match('passes/text.html', PASS, False))
+
+    def test_sanitizer_flag(self):
+        def match(test, result):
+            return self._exp.matches_an_expected_result(
+                self.get_test(test), result, pixel_tests_are_enabled=False, sanitizer_is_enabled=True)
+
+        self.parse_exp("""
+Bug(test) failures/expected/crash.html [ Crash ]
+Bug(test) failures/expected/image.html [ ImageOnlyFailure ]
+Bug(test) failures/expected/text.html [ Failure ]
+Bug(test) failures/expected/timeout.html [ Timeout ]
+""")
+        self.assertTrue(match('failures/expected/crash.html', CRASH))
+        self.assertTrue(match('failures/expected/image.html', PASS))
+        self.assertTrue(match('failures/expected/text.html', PASS))
+        self.assertTrue(match('failures/expected/timeout.html', TIMEOUT))
 
     def test_more_specific_override_resets_skip(self):
         self.parse_exp("Bug(x) failures/expected [ Skip ]\n"
@@ -503,7 +538,7 @@ Bug(y) [ Win Mac Debug ] failures/expected/foo.html [ Crash ]
 """}
         expectations = TestExpectations(test_port, self.get_basic_tests())
 
-        actual_expectations = expectations.remove_configuration_from_test('failures/expected/foo.html', test_config)
+        actual_expectations = expectations.remove_configurations([('failures/expected/foo.html', test_config)])
 
         self.assertEqual("""Bug(x) [ Linux Win7 Release ] failures/expected/foo.html [ Failure ]
 Bug(y) [ Win Mac Debug ] failures/expected/foo.html [ Crash ]
@@ -520,10 +555,30 @@ Bug(y) [ Win Mac Debug ] failures/expected/foo.html [ Crash ]
 """}
         expectations = TestExpectations(test_port, self.get_basic_tests())
 
-        actual_expectations = expectations.remove_configuration_from_test('failures/expected/foo.html', test_config)
+        actual_expectations = expectations.remove_configurations([('failures/expected/foo.html', test_config)])
 
         self.assertEqual("""Bug(x) [ XP Debug ] failures/expected/foo.html [ NeedsRebaseline ]
 Bug(x) [ Win7 ] failures/expected/foo.html [ NeedsRebaseline ]
+""", actual_expectations)
+
+    def test_remove_multiple_configurations(self):
+        host = MockHost()
+        test_port = host.port_factory.get('test-win-xp', None)
+        test_port.test_exists = lambda test: True
+        test_port.test_isfile = lambda test: True
+
+        test_config = test_port.test_configuration()
+        test_port.expectations_dict = lambda: {'expectations': """Bug(y) [ Win Debug ] failures/expected/foo.html [ Crash ]
+Bug(x) [ Win Release ] failures/expected/foo.html [ Failure ]
+"""}
+        expectations = TestExpectations(test_port)
+
+        actual_expectations = expectations.remove_configurations([
+            ('failures/expected/foo.html', test_config),
+            ('failures/expected/foo.html', host.port_factory.get('test-win-win7', None).test_configuration()),
+        ])
+
+        self.assertEqual("""Bug(y) [ Win Debug ] failures/expected/foo.html [ Crash ]
 """, actual_expectations)
 
     def test_remove_line_with_comments(self):
@@ -540,8 +595,8 @@ Bug(x) [ Win Release ] failures/expected/foo.html [ Failure ]
 """}
         expectations = TestExpectations(test_port)
 
-        actual_expectations = expectations.remove_configuration_from_test('failures/expected/foo.html', test_config)
-        actual_expectations = expectations.remove_configuration_from_test('failures/expected/foo.html', host.port_factory.get('test-win-win7', None).test_configuration())
+        actual_expectations = expectations.remove_configurations([('failures/expected/foo.html', test_config)])
+        actual_expectations = expectations.remove_configurations([('failures/expected/foo.html', host.port_factory.get('test-win-win7', None).test_configuration())])
 
         self.assertEqual("""Bug(y) [ Win Debug ] failures/expected/foo.html [ Crash ]
 """, actual_expectations)
@@ -561,8 +616,8 @@ Bug(y) [ Win Debug ] failures/expected/foo.html [ Crash ]
 """}
         expectations = TestExpectations(test_port)
 
-        actual_expectations = expectations.remove_configuration_from_test('failures/expected/foo.html', test_config)
-        actual_expectations = expectations.remove_configuration_from_test('failures/expected/foo.html', host.port_factory.get('test-win-win7', None).test_configuration())
+        actual_expectations = expectations.remove_configurations([('failures/expected/foo.html', test_config)])
+        actual_expectations = expectations.remove_configurations([('failures/expected/foo.html', host.port_factory.get('test-win-win7', None).test_configuration())])
 
         self.assertEqual("""
 Bug(y) [ Win Debug ] failures/expected/foo.html [ Crash ]
@@ -581,8 +636,8 @@ Bug(y) [ Win Debug ] failures/expected/foo.html [ Crash ]
 Bug(x) [ Win Release ] failures/expected/foo.html [ Failure ]"""}
         expectations = TestExpectations(test_port)
 
-        actual_expectations = expectations.remove_configuration_from_test('failures/expected/foo.html', test_config)
-        actual_expectations = expectations.remove_configuration_from_test('failures/expected/foo.html', host.port_factory.get('test-win-win7', None).test_configuration())
+        actual_expectations = expectations.remove_configurations([('failures/expected/foo.html', test_config)])
+        actual_expectations = expectations.remove_configurations([('failures/expected/foo.html', host.port_factory.get('test-win-win7', None).test_configuration())])
 
         self.assertEqual("""Bug(y) [ Win Debug ] failures/expected/foo.html [ Crash ]""", actual_expectations)
 
@@ -600,8 +655,8 @@ Bug(y) [ Win Debug ] failures/expected/foo.html [ Crash ]
 """}
         expectations = TestExpectations(test_port)
 
-        actual_expectations = expectations.remove_configuration_from_test('failures/expected/foo.html', test_config)
-        actual_expectations = expectations.remove_configuration_from_test('failures/expected/foo.html', host.port_factory.get('test-win-win7', None).test_configuration())
+        actual_expectations = expectations.remove_configurations([('failures/expected/foo.html', test_config)])
+        actual_expectations = expectations.remove_configurations([('failures/expected/foo.html', host.port_factory.get('test-win-win7', None).test_configuration())])
 
         self.assertEqual("""
  # This comment line should not get stripped.
@@ -623,8 +678,8 @@ Bug(y) [ Win Debug ] failures/expected/foo.html [ Crash ]
 """}
         expectations = TestExpectations(test_port)
 
-        actual_expectations = expectations.remove_configuration_from_test('failures/expected/foo.html', test_config)
-        actual_expectations = expectations.remove_configuration_from_test('failures/expected/foo.html', host.port_factory.get('test-win-win7', None).test_configuration())
+        actual_expectations = expectations.remove_configurations([('failures/expected/foo.html', test_config)])
+        actual_expectations = expectations.remove_configurations([('failures/expected/foo.html', host.port_factory.get('test-win-win7', None).test_configuration())])
 
         self.assertEqual(""" # This comment line should not get stripped.
 Bug(y) [ Win Debug ] failures/expected/foo.html [ Crash ]
@@ -643,8 +698,8 @@ Bug(y) [ Win Debug ] failures/expected/foo.html [ Crash ]
 """}
         expectations = TestExpectations(test_port)
 
-        actual_expectations = expectations.remove_configuration_from_test('failures/expected/foo.html', test_config)
-        actual_expectations = expectations.remove_configuration_from_test('failures/expected/foo.html', host.port_factory.get('test-win-win7', None).test_configuration())
+        actual_expectations = expectations.remove_configurations([('failures/expected/foo.html', test_config)])
+        actual_expectations = expectations.remove_configurations([('failures/expected/foo.html', host.port_factory.get('test-win-win7', None).test_configuration())])
 
         self.assertEqual(""" # This comment line should not get stripped.
 Bug(y) [ Win Debug ] failures/expected/foo.html [ Crash ]
@@ -662,8 +717,8 @@ Bug(y) [ Mac ] failures/expected/foo.html [ Crash ]
 """}
         expectations = TestExpectations(test_port)
 
-        actual_expectations = expectations.remove_configuration_from_test('failures/expected/foo.html', test_config)
-        actual_expectations = expectations.remove_configuration_from_test('failures/expected/foo.html', host.port_factory.get('test-win-win7', None).test_configuration())
+        actual_expectations = expectations.remove_configurations([('failures/expected/foo.html', test_config)])
+        actual_expectations = expectations.remove_configurations([('failures/expected/foo.html', host.port_factory.get('test-win-win7', None).test_configuration())])
 
         self.assertEqual("""Bug(x) [ Win Debug ] failures/expected/foo.html [ Failure Timeout ]
 Bug(y) [ Mac ] failures/expected/foo.html [ Crash ]

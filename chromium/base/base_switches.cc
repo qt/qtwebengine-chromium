@@ -6,12 +6,6 @@
 
 namespace switches {
 
-// If the program includes base/debug/debug_on_start_win.h, the process will
-// (on Windows only) start the JIT system-registered debugger on itself and
-// will wait for 60 seconds for the debugger to attach to itself. Then a break
-// point will be hit.
-const char kDebugOnStart[]                  = "debug-on-start";
-
 // Disables the crash reporting.
 const char kDisableBreakpad[]               = "disable-breakpad";
 
@@ -19,9 +13,6 @@ const char kDisableBreakpad[]               = "disable-breakpad";
 // processes cannot access to files needed to make this decision, this flag is
 // generated internally.
 const char kEnableCrashReporter[]           = "enable-crash-reporter";
-
-// Enable DCHECKs in release mode.
-const char kEnableDCHECK[]                  = "enable-dcheck";
 
 // Generates full memory crash dump.
 const char kFullMemoryCrashReport[]         = "full-memory-crash-report";

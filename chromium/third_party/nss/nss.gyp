@@ -560,6 +560,7 @@
         'nss/lib/freebl/dsa.c',
         'nss/lib/freebl/ec.c',
         'nss/lib/freebl/ec.h',
+        'nss/lib/freebl/ecdecode.c',
         'nss/lib/freebl/ecl/ec2.h',
         'nss/lib/freebl/ecl/ecl-curve.h',
         'nss/lib/freebl/ecl/ecl-exp.h',
@@ -581,6 +582,13 @@
         'nss/lib/freebl/ecl/ec_naf.c',
         'nss/lib/freebl/gcm.c',
         'nss/lib/freebl/gcm.h',
+        'nss/lib/freebl/intel-aes-x64-masm.asm',
+        'nss/lib/freebl/intel-aes-x86-masm.asm',
+        'nss/lib/freebl/intel-aes.h',
+        'nss/lib/freebl/intel-gcm-wrap.c',
+        'nss/lib/freebl/intel-gcm-x64-masm.asm',
+        'nss/lib/freebl/intel-gcm-x86-masm.asm',
+        'nss/lib/freebl/intel-gcm.h',
         'nss/lib/freebl/hmacct.c',
         'nss/lib/freebl/hmacct.h',
         'nss/lib/freebl/jpake.c',
@@ -615,6 +623,7 @@
         'nss/lib/freebl/rijndael.h',
         'nss/lib/freebl/rijndael32.tab',
         'nss/lib/freebl/rsa.c',
+        'nss/lib/freebl/rsapkcs.c',
         'nss/lib/freebl/secmpi.h',
         'nss/lib/freebl/secrng.h',
         'nss/lib/freebl/seed.c',
@@ -866,7 +875,6 @@
         'nss/lib/smime/cmsreclist.h',
         'nss/lib/smime/cmst.h',
         'nss/lib/smime/smime.h',
-        'nss/lib/softoken/ecdecode.c',
         'nss/lib/softoken/fipsaudt.c',
         'nss/lib/softoken/fipstest.c',
         'nss/lib/softoken/fipstokn.c',
@@ -884,7 +892,6 @@
         'nss/lib/softoken/pkcs11i.h',
         'nss/lib/softoken/pkcs11ni.h',
         'nss/lib/softoken/pkcs11u.c',
-        'nss/lib/softoken/rsawrapr.c',
         'nss/lib/softoken/sdb.c',
         'nss/lib/softoken/sdb.h',
         'nss/lib/softoken/sftkdb.c',
@@ -985,7 +992,6 @@
       'defines': [
         'MP_API_COMPATIBLE',
         'NSS_DISABLE_DBM',
-        'NSS_ENABLE_ECC',
         'NSS_STATIC',
         'NSS_USE_STATIC_LIBS',
         'RIJNDAEL_INCLUDE_TABLES',
@@ -1025,7 +1031,6 @@
       ],
       'direct_dependent_settings': {
         'defines': [
-          'NSS_ENABLE_ECC',
           'NSS_STATIC',
           'NSS_USE_STATIC_LIBS',
           'USE_UTIL_DIRECTLY',
@@ -1071,9 +1076,28 @@
           'include_dirs/': [
             ['exclude', '^nss/lib/libpkix/'],
           ],
+        }, { # else: exclude_nss_libpkix==0
+          # Disable the LDAP code in libpkix.
+          'defines': [
+            'NSS_PKIX_NO_LDAP',
+          ],
+          'sources!': [
+            'nss/lib/libpkix/pkix_pl_nss/module/pkix_pl_ldapcertstore.c',
+            'nss/lib/libpkix/pkix_pl_nss/module/pkix_pl_ldapcertstore.h',
+            'nss/lib/libpkix/pkix_pl_nss/module/pkix_pl_ldapdefaultclient.c',
+            'nss/lib/libpkix/pkix_pl_nss/module/pkix_pl_ldapdefaultclient.h',
+            'nss/lib/libpkix/pkix_pl_nss/module/pkix_pl_ldaprequest.c',
+            'nss/lib/libpkix/pkix_pl_nss/module/pkix_pl_ldaprequest.h',
+            'nss/lib/libpkix/pkix_pl_nss/module/pkix_pl_ldapresponse.c',
+            'nss/lib/libpkix/pkix_pl_nss/module/pkix_pl_ldapresponse.h',
+            'nss/lib/libpkix/pkix_pl_nss/module/pkix_pl_ldapt.h',
+            'nss/lib/libpkix/pkix_pl_nss/module/pkix_pl_ldaptemplates.c',
+          ],
         }],
         ['target_arch=="ia32"', {
           'sources!': [
+            'nss/lib/freebl/intel-aes-x64-masm.asm',
+            'nss/lib/freebl/intel-gcm-x64-masm.asm',
             'nss/lib/freebl/mpi/mpi_amd64.c',
           ],
         }],
@@ -1147,7 +1171,14 @@
                 'MP_ASSEMBLY_DIV_2DX1D',
                 'MP_USE_UINT_DIGIT',
                 'MP_NO_MP_WORD',
+                'USE_HW_AES',
+                'INTEL_GCM',
               ],
+              'msvs_settings': {
+                'MASM': {
+                  'UseSafeExceptionHandlers': 'true',
+                },
+              },
             }],
             ['target_arch=="x64"', {
               'defines': [
@@ -1160,6 +1191,11 @@
                 'WIN64',
               ],
               'sources!': [
+                'nss/lib/freebl/intel-aes-x64-masm.asm',
+                'nss/lib/freebl/intel-aes-x86-masm.asm',
+                'nss/lib/freebl/intel-gcm-wrap.c',
+                'nss/lib/freebl/intel-gcm-x64-masm.asm',
+                'nss/lib/freebl/intel-gcm-x86-masm.asm',
                 'nss/lib/freebl/mpi/mpi_amd64.c',
                 'nss/lib/freebl/mpi/mpi_x86_asm.c',
               ],
@@ -1167,6 +1203,11 @@
           ],
         }, { # else: OS!="win"
           'sources!': [
+            'nss/lib/freebl/intel-aes-x64-masm.asm',
+            'nss/lib/freebl/intel-aes-x86-masm.asm',
+            'nss/lib/freebl/intel-gcm-wrap.c',
+            'nss/lib/freebl/intel-gcm-x64-masm.asm',
+            'nss/lib/freebl/intel-gcm-x86-masm.asm',
             # mpi_x86_asm.c contains MSVC inline assembly code.
             'nss/lib/freebl/mpi/mpi_x86_asm.c',
           ],

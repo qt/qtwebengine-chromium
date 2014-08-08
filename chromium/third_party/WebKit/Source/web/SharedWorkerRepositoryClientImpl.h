@@ -40,7 +40,7 @@ namespace blink {
 
 class WebSharedWorkerRepositoryClient;
 
-class SharedWorkerRepositoryClientImpl : public WebCore::SharedWorkerRepositoryClient {
+class SharedWorkerRepositoryClientImpl FINAL : public WebCore::SharedWorkerRepositoryClient {
     WTF_MAKE_NONCOPYABLE(SharedWorkerRepositoryClientImpl);
 public:
     static PassOwnPtr<SharedWorkerRepositoryClientImpl> create(WebSharedWorkerRepositoryClient* client)
@@ -50,7 +50,7 @@ public:
 
     virtual ~SharedWorkerRepositoryClientImpl() { }
 
-    virtual void connect(PassRefPtr<WebCore::SharedWorker>, PassOwnPtr<WebMessagePortChannel>, const WebCore::KURL&, const String& name, WebCore::ExceptionState&) OVERRIDE;
+    virtual void connect(PassRefPtrWillBeRawPtr<WebCore::SharedWorker>, PassOwnPtr<WebMessagePortChannel>, const WebCore::KURL&, const String& name, WebCore::ExceptionState&) OVERRIDE;
     virtual void documentDetached(WebCore::Document*) OVERRIDE;
 
 private:

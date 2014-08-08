@@ -25,7 +25,6 @@ class TouchEvent;
 namespace views {
 
 class InputMethod;
-class NativeWidgetWin;
 
 // Implemented by the object that uses the HWNDMessageHandler to handle
 // notifications from the underlying HWND and service requests for data.
@@ -46,13 +45,6 @@ class VIEWS_EXPORT HWNDMessageHandlerDelegate {
   virtual bool CanActivate() const = 0;
 
   virtual bool WidgetSizeIsClientSize() const = 0;
-
-  // Returns true if the delegate has a focus saving mechanism that should be
-  // used when the window is activated and deactivated.
-  virtual bool CanSaveFocus() const = 0;
-  virtual void SaveFocusOnDeactivate() = 0;
-  virtual void RestoreFocusOnActivate() = 0;
-  virtual void RestoreFocusOnEnable() = 0;
 
   // Returns true if the delegate represents a modal window.
   virtual bool IsModal() const = 0;
@@ -137,7 +129,7 @@ class VIEWS_EXPORT HWNDMessageHandlerDelegate {
   // Called when the HWND is to be focused for the first time. This is called
   // when the window is shown for the first time. Returns true if the delegate
   // set focus and no default processing should be done by the message handler.
-  virtual bool HandleInitialFocus() = 0;
+  virtual bool HandleInitialFocus(ui::WindowShowState show_state) = 0;
 
   // Called when display settings are adjusted on the system.
   virtual void HandleDisplayChange() = 0;
@@ -217,6 +209,9 @@ class VIEWS_EXPORT HWNDMessageHandlerDelegate {
                                       WPARAM w_param,
                                       LPARAM l_param) = 0;
 
+  // Invoked on entering/exiting a menu loop.
+  virtual void HandleMenuLoop(bool in_menu_loop) = 0;
+
   // Catch-all message handling and filtering. Called before
   // HWNDMessageHandler's built-in handling, which may pre-empt some
   // expectations in Views/Aura if messages are consumed. Returns true if the
@@ -237,6 +232,9 @@ class VIEWS_EXPORT HWNDMessageHandlerDelegate {
   // Called when a scroll event is received. Returns true if the event was
   // handled by the delegate.
   virtual bool HandleScrollEvent(const ui::ScrollEvent& event) = 0;
+
+  // Called when the window size is about to change.
+  virtual void HandleWindowSizeChanging() = 0;
 
  protected:
   virtual ~HWNDMessageHandlerDelegate() {}

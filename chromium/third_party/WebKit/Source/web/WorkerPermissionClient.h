@@ -41,21 +41,25 @@ class ExecutionContext;
 namespace blink {
 
 class WebFrame;
+class WebPermissionCallbacks;
 class WebString;
 class WebWorkerPermissionClientProxy;
 
-class WorkerPermissionClient : public WebCore::Supplement<WebCore::WorkerClients> {
+class WorkerPermissionClient FINAL : public NoBaseWillBeGarbageCollectedFinalized<WorkerPermissionClient>, public WillBeHeapSupplement<WebCore::WorkerClients> {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(WorkerPermissionClient);
 public:
-    static PassOwnPtr<WorkerPermissionClient> create(PassOwnPtr<WebWorkerPermissionClientProxy>);
+    static PassOwnPtrWillBeRawPtr<WorkerPermissionClient> create(PassOwnPtr<WebWorkerPermissionClientProxy>);
 
     virtual ~WorkerPermissionClient();
 
     bool allowDatabase(const WebString& name, const WebString& displayName, unsigned long estimatedSize);
-    bool allowFileSystem();
+    bool requestFileSystemAccessSync();
     bool allowIndexedDB(const WebString& name);
 
     static const char* supplementName();
-    static WorkerPermissionClient* from(WebCore::ExecutionContext*);
+    static WorkerPermissionClient* from(WebCore::ExecutionContext&);
+
+    virtual void trace(WebCore::Visitor* visitor) OVERRIDE { WillBeHeapSupplement<WebCore::WorkerClients>::trace(visitor); }
 
 private:
     explicit WorkerPermissionClient(PassOwnPtr<WebWorkerPermissionClientProxy>);

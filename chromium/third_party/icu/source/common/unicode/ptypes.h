@@ -26,12 +26,16 @@
 #   include "unicode/pmac.h"
 #elif defined(ANDROID)
 #   include "unicode/pandroid.h"
+#elif defined(__native_client__)
+#   include "unicode/pnacl.h"
 #elif defined(__linux__)
 #   include "unicode/plinux.h"
 #elif defined(__FreeBSD__)
 #   include "unicode/pfreebsd.h"
 #elif defined(__OpenBSD__)
 #   include "unicode/popenbsd.h"
+#elif defined(__QNXNTO__)
+#   include "unicode/pqnx.h"
 #else
 #   include "unicode/platform.h"
 #endif

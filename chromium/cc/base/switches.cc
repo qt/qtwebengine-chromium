@@ -9,37 +9,27 @@
 namespace cc {
 namespace switches {
 
-// On platforms where checkerboards are used, prefer background colors instead
-// of checkerboards.
-const char kBackgroundColorInsteadOfCheckerboard[] =
-    "background-color-instead-of-checkerboard";
-
-// Disables LCD text.
-const char kDisableLCDText[] = "disable-lcd-text";
-
 const char kDisableThreadedAnimation[] = "disable-threaded-animation";
 
 // Disables layer-edge anti-aliasing in the compositor.
 const char kDisableCompositedAntialiasing[] =
     "disable-composited-antialiasing";
 
-// Paint content on the main thread instead of the compositor thread.
-// Overrides the kEnableImplSidePainting flag.
-const char kDisableImplSidePainting[] = "disable-impl-side-painting";
+// Disables sending the next BeginMainFrame before the previous commit has
+// drawn.
+const char kDisableMainFrameBeforeDraw[] = "disable-main-frame-before-draw";
 
-// Enables LCD text.
-const char kEnableLCDText[] = "enable-lcd-text";
+// Disables sending the next BeginMainFrame before the previous commit
+// activates. Overrides the kEnableMainFrameBeforeActivation flag.
+const char kDisableMainFrameBeforeActivation[] =
+    "disable-main-frame-before-activation";
 
-// Paint content on the compositor thread instead of the main thread.
-const char kEnableImplSidePainting[] = "enable-impl-side-painting";
+// Enables sending the next BeginMainFrame before the previous commit activates.
+const char kEnableMainFrameBeforeActivation[] =
+    "enable-main-frame-before-activation";
 
 const char kEnableTopControlsPositionCalculation[] =
     "enable-top-controls-position-calculation";
-
-// Allow heuristics to determine when a layer tile should be drawn with
-// the Skia GPU backend.  Only valid with GPU accelerated compositing +
-// impl-side painting.
-const char kEnableGPURasterization[] = "enable-gpu-rasterization";
 
 // The height of the movable top controls.
 const char kTopControlsHeight[] = "top-controls-height";
@@ -49,13 +39,6 @@ const char kTopControlsHideThreshold[] = "top-controls-hide-threshold";
 
 // Percentage of the top controls need to be shown before they will auto show.
 const char kTopControlsShowThreshold[] = "top-controls-show-threshold";
-
-// Number of worker threads used to rasterize content.
-const char kNumRasterThreads[] = "num-raster-threads";
-
-// Show metrics about overdraw in about:tracing recordings, such as the number
-// of pixels culled, and the number of pixels drawn, for each frame.
-const char kTraceOverdraw[] = "trace-overdraw";
 
 // Re-rasters everything multiple times to simulate a much slower machine.
 // Give a scale factor to cause raster to take that many times longer to
@@ -80,13 +63,13 @@ const char kStrictLayerPropertyChangeChecking[] =
 
 // Virtual viewport for fixed-position elements, scrollbars during pinch.
 const char kEnablePinchVirtualViewport[] = "enable-pinch-virtual-viewport";
+const char kDisablePinchVirtualViewport[] = "disable-pinch-virtual-viewport";
 
-const char kEnablePartialSwap[] = "enable-partial-swap";
 // Disable partial swap which is needed for some OpenGL drivers / emulators.
 const char kUIDisablePartialSwap[] = "ui-disable-partial-swap";
 
-const char kEnablePerTilePainting[] = "enable-per-tile-painting";
-const char kUIEnablePerTilePainting[] = "ui-enable-per-tile-painting";
+// Enables the GPU benchmarking extension
+const char kEnableGpuBenchmarking[] = "enable-gpu-benchmarking";
 
 // Renders a border around compositor layers to help debug and study
 // layer compositing.
@@ -131,83 +114,15 @@ const char kUIShowOccludingRects[] = "ui-show-occluding-rects";
 const char kShowNonOccludingRects[] = "show-nonoccluding-rects";
 const char kUIShowNonOccludingRects[] = "ui-show-nonoccluding-rects";
 
-// Enable rasterizer that writes directly to GPU memory.
-const char kEnableMapImage[] = "enable-map-image";
-
-// Disable rasterizer that writes directly to GPU memory.
-// Overrides the kEnableMapImage flag.
-const char kDisableMapImage[] = "disable-map-image";
-
 // Prevents the layer tree unit tests from timing out.
 const char kCCLayerTreeTestNoTimeout[] = "cc-layer-tree-test-no-timeout";
 
 // Makes pixel tests write their output instead of read it.
 const char kCCRebaselinePixeltests[] = "cc-rebaseline-pixeltests";
 
-// Disable textures using RGBA_4444 layout.
-const char kDisable4444Textures[] = "disable-4444-textures";
-
 // Disable touch hit testing in the compositor.
 const char kDisableCompositorTouchHitTesting[] =
     "disable-compositor-touch-hit-testing";
-
-bool IsLCDTextEnabled() {
-  const CommandLine* command_line = CommandLine::ForCurrentProcess();
-  if (command_line->HasSwitch(switches::kDisableLCDText))
-    return false;
-  else if (command_line->HasSwitch(switches::kEnableLCDText))
-    return true;
-
-#if defined(OS_ANDROID)
-  return false;
-#else
-  return true;
-#endif
-}
-
-namespace {
-bool CheckImplSidePaintingStatus() {
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-
-  if (command_line.HasSwitch(switches::kDisableImplSidePainting))
-    return false;
-  else if (command_line.HasSwitch(switches::kEnableImplSidePainting))
-    return true;
-
-#if defined(OS_ANDROID)
-  return true;
-#else
-  return false;
-#endif
-}
-
-bool CheckGPURasterizationStatus() {
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-  return command_line.HasSwitch(switches::kEnableGPURasterization);
-}
-
-}  // namespace
-
-bool IsImplSidePaintingEnabled() {
-  static bool enabled = CheckImplSidePaintingStatus();
-  return enabled;
-}
-
-bool IsGPURasterizationEnabled() {
-  static bool enabled = CheckGPURasterizationStatus();
-  return enabled;
-}
-
-bool IsMapImageEnabled() {
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-
-  if (command_line.HasSwitch(switches::kDisableMapImage))
-    return false;
-  else if (command_line.HasSwitch(switches::kEnableMapImage))
-    return true;
-
-  return false;
-}
 
 }  // namespace switches
 }  // namespace cc

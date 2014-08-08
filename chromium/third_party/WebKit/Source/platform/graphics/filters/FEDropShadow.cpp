@@ -49,21 +49,6 @@ PassRefPtr<FEDropShadow> FEDropShadow::create(Filter* filter, float stdX, float 
     return adoptRef(new FEDropShadow(filter, stdX, stdY, dx, dy, shadowColor, shadowOpacity));
 }
 
-void FEDropShadow::determineAbsolutePaintRect()
-{
-    Filter* filter = this->filter();
-    ASSERT_UNUSED(filter, filter);
-
-    FloatRect absolutePaintRect = mapRect(inputEffect(0)->absolutePaintRect());
-
-    if (clipsToBounds())
-        absolutePaintRect.intersect(maxEffectRect());
-    else
-        absolutePaintRect.unite(maxEffectRect());
-
-    setAbsolutePaintRect(enclosingIntRect(absolutePaintRect));
-}
-
 FloatRect FEDropShadow::mapRect(const FloatRect& rect, bool forward)
 {
     FloatRect result = rect;
@@ -77,13 +62,11 @@ FloatRect FEDropShadow::mapRect(const FloatRect& rect, bool forward)
         offsetRect.move(-filter->applyHorizontalScale(m_dx), -filter->applyVerticalScale(m_dy));
     result.unite(offsetRect);
 
-    unsigned kernelSizeX = 0;
-    unsigned kernelSizeY = 0;
-    FEGaussianBlur::calculateKernelSize(filter, kernelSizeX, kernelSizeY, m_stdX, m_stdY);
+    IntSize kernelSize = FEGaussianBlur::calculateKernelSize(filter, FloatPoint(m_stdX, m_stdY));
 
     // We take the half kernel size and multiply it with three, because we run box blur three times.
-    result.inflateX(3 * kernelSizeX * 0.5f);
-    result.inflateY(3 * kernelSizeY * 0.5f);
+    result.inflateX(3 * kernelSize.width() * 0.5f);
+    result.inflateY(3 * kernelSize.height() * 0.5f);
     return result;
 }
 
@@ -103,8 +86,9 @@ void FEDropShadow::applySoftware()
     GraphicsContext* resultContext = resultImage->context();
     ASSERT(resultContext);
 
-    SkAutoTUnref<SkImageFilter> blurFilter(new SkBlurImageFilter(blurRadius.width(), blurRadius.height()));
-    SkAutoTUnref<SkColorFilter> colorFilter(SkColorFilter::CreateModeFilter(m_shadowColor.rgb(), SkXfermode::kSrcIn_Mode));
+    Color color = adaptColorToOperatingColorSpace(m_shadowColor.combineWithAlpha(m_shadowOpacity));
+    SkAutoTUnref<SkImageFilter> blurFilter(SkBlurImageFilter::Create(blurRadius.width(), blurRadius.height()));
+    SkAutoTUnref<SkColorFilter> colorFilter(SkColorFilter::CreateModeFilter(color.rgb(), SkXfermode::kSrcIn_Mode));
     SkPaint paint;
     paint.setImageFilter(blurFilter.get());
     paint.setColorFilter(colorFilter.get());
@@ -126,9 +110,10 @@ PassRefPtr<SkImageFilter> FEDropShadow::createImageFilter(SkiaImageFilterBuilder
     float dx = filter()->applyHorizontalScale(m_dx);
     float dy = filter()->applyVerticalScale(m_dy);
     float stdX = filter()->applyHorizontalScale(m_stdX);
-    float stdY = filter()->applyHorizontalScale(m_stdY);
+    float stdY = filter()->applyVerticalScale(m_stdY);
+    Color color = adaptColorToOperatingColorSpace(m_shadowColor.combineWithAlpha(m_shadowOpacity));
     SkImageFilter::CropRect cropRect = getCropRect(builder->cropOffset());
-    return adoptRef(new SkDropShadowImageFilter(SkFloatToScalar(dx), SkFloatToScalar(dy), SkFloatToScalar(stdX), SkFloatToScalar(stdY), m_shadowColor.rgb(), input.get(), &cropRect));
+    return adoptRef(SkDropShadowImageFilter::Create(SkFloatToScalar(dx), SkFloatToScalar(dy), SkFloatToScalar(stdX), SkFloatToScalar(stdY), color.rgb(), input.get(), &cropRect));
 }
 
 

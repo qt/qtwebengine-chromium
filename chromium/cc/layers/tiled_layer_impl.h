@@ -38,12 +38,12 @@ class CC_EXPORT TiledLayerImpl : public LayerImpl {
   void PushTileProperties(int i,
                           int j,
                           ResourceProvider::ResourceId resource,
-                          gfx::Rect opaque_rect,
+                          const gfx::Rect& opaque_rect,
                           bool contents_swizzled);
   void PushInvalidTile(int i, int j);
 
   virtual Region VisibleContentOpaqueRegion() const OVERRIDE;
-  virtual void DidLoseOutputSurface() OVERRIDE;
+  virtual void ReleaseResources() OVERRIDE;
 
   const LayerTilingData* TilingForTesting() const { return tiler_.get(); }
 

@@ -32,7 +32,7 @@
 #include "core/loader/PrerenderHandle.h"
 
 #include "core/dom/Document.h"
-#include "core/frame/Frame.h"
+#include "core/frame/LocalFrame.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/PrerendererClient.h"
 #include "platform/Prerender.h"
@@ -42,7 +42,7 @@
 namespace WebCore {
 
 // static
-PassOwnPtr<PrerenderHandle> PrerenderHandle::create(Document& document, PrerenderClient* client, const KURL& url)
+PassOwnPtr<PrerenderHandle> PrerenderHandle::create(Document& document, PrerenderClient* client, const KURL& url, const unsigned prerenderRelTypes)
 {
     // Prerenders are unlike requests in most ways (for instance, they pass down fragments, and they don't return data),
     // but they do have referrers.
@@ -53,7 +53,7 @@ PassOwnPtr<PrerenderHandle> PrerenderHandle::create(Document& document, Prerende
 
     const String referrer = SecurityPolicy::generateReferrerHeader(referrerPolicy, url, document.outgoingReferrer());
 
-    RefPtr<Prerender> prerender = Prerender::create(client, url, referrer, referrerPolicy);
+    RefPtr<Prerender> prerender = Prerender::create(client, url, prerenderRelTypes, referrer, referrerPolicy);
 
     PrerendererClient* prerendererClient = PrerendererClient::from(document.page());
     if (prerendererClient)

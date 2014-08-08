@@ -1102,6 +1102,7 @@ void ssl_free_wbio_buffer(SSL *s);
 int tls1_change_cipher_state(SSL *s, int which);
 int tls1_setup_key_block(SSL *s);
 int tls1_enc(SSL *s, int snd);
+int tls1_handshake_digest(SSL *s, unsigned char *out, size_t out_len);
 int tls1_final_finish_mac(SSL *s,
 	const char *str, int slen, unsigned char *p);
 int tls1_cert_verify_mac(SSL *s, int md_nid, unsigned char *p);
@@ -1127,8 +1128,8 @@ int tls1_ec_nid2curve_id(int nid);
 #endif /* OPENSSL_NO_EC */
 
 #ifndef OPENSSL_NO_TLSEXT
-unsigned char *ssl_add_clienthello_tlsext(SSL *s, unsigned char *p, unsigned char *limit); 
-unsigned char *ssl_add_serverhello_tlsext(SSL *s, unsigned char *p, unsigned char *limit); 
+unsigned char *ssl_add_clienthello_tlsext(SSL *s, unsigned char *buf, unsigned char *limit, size_t header_len);
+unsigned char *ssl_add_serverhello_tlsext(SSL *s, unsigned char *buf, unsigned char *limit); 
 int ssl_parse_clienthello_tlsext(SSL *s, unsigned char **data, unsigned char *d, int n, int *al);
 int ssl_parse_serverhello_tlsext(SSL *s, unsigned char **data, unsigned char *d, int n, int *al);
 int ssl_prepare_clienthello_tlsext(SSL *s);
@@ -1158,7 +1159,10 @@ int tls12_get_sigid(const EVP_PKEY *pk);
 const EVP_MD *tls12_get_hash(unsigned char hash_alg);
 
 int tls1_channel_id_hash(EVP_MD_CTX *ctx, SSL *s);
+int tls1_record_handshake_hashes_for_channel_id(SSL *s);
 #endif
+
+int ssl3_can_cutthrough(const SSL *s);
 
 EVP_MD_CTX* ssl_replace_hash(EVP_MD_CTX **hash,const EVP_MD *md) ;
 void ssl_clear_hash_ctx(EVP_MD_CTX **hash);

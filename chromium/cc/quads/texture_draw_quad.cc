@@ -27,14 +27,16 @@ scoped_ptr<TextureDrawQuad> TextureDrawQuad::Create() {
 }
 
 void TextureDrawQuad::SetNew(const SharedQuadState* shared_quad_state,
-                             gfx::Rect rect, gfx::Rect opaque_rect,
-                             unsigned resource_id, bool premultiplied_alpha,
-                             gfx::PointF uv_top_left,
-                             gfx::PointF uv_bottom_right,
+                             const gfx::Rect& rect,
+                             const gfx::Rect& opaque_rect,
+                             const gfx::Rect& visible_rect,
+                             unsigned resource_id,
+                             bool premultiplied_alpha,
+                             const gfx::PointF& uv_top_left,
+                             const gfx::PointF& uv_bottom_right,
                              SkColor background_color,
                              const float vertex_opacity[4],
                              bool flipped) {
-  gfx::Rect visible_rect = rect;
   bool needs_blending = vertex_opacity[0] != 1.0f || vertex_opacity[1] != 1.0f
       || vertex_opacity[2] != 1.0f || vertex_opacity[3] != 1.0f;
   DrawQuad::SetAll(shared_quad_state, DrawQuad::TEXTURE_CONTENT, rect,
@@ -52,11 +54,12 @@ void TextureDrawQuad::SetNew(const SharedQuadState* shared_quad_state,
 }
 
 void TextureDrawQuad::SetAll(const SharedQuadState* shared_quad_state,
-                             gfx::Rect rect, gfx::Rect opaque_rect,
-                             gfx::Rect visible_rect, bool needs_blending,
+                             const gfx::Rect& rect,
+                             const gfx::Rect& opaque_rect,
+                             const gfx::Rect& visible_rect, bool needs_blending,
                              unsigned resource_id, bool premultiplied_alpha,
-                             gfx::PointF uv_top_left,
-                             gfx::PointF uv_bottom_right,
+                             const gfx::PointF& uv_top_left,
+                             const gfx::PointF& uv_bottom_right,
                              SkColor background_color,
                              const float vertex_opacity[4],
                              bool flipped) {
@@ -90,7 +93,7 @@ void TextureDrawQuad::ExtendValue(base::DictionaryValue* value) const {
   value->Set("uv_top_left", MathUtil::AsValue(uv_top_left).release());
   value->Set("uv_bottom_right", MathUtil::AsValue(uv_bottom_right).release());
   value->SetInteger("background_color", background_color);
-  scoped_ptr<ListValue> vertex_opacity_value(new ListValue);
+  scoped_ptr<base::ListValue> vertex_opacity_value(new base::ListValue);
   for (size_t i = 0; i < 4; ++i)
     vertex_opacity_value->AppendDouble(vertex_opacity[i]);
   value->Set("vertex_opacity", vertex_opacity_value.release());

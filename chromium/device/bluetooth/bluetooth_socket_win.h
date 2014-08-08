@@ -10,39 +10,91 @@
 #include <string>
 
 #include "base/memory/ref_counted.h"
+#include "device/bluetooth/bluetooth_service_record_win.h"
 #include "device/bluetooth/bluetooth_socket.h"
-
-namespace net {
-
-class DrainableIOBuffer;
-class GrowableIOBuffer;
-
-}  // namespace net
+#include "device/bluetooth/bluetooth_socket_net.h"
+#include "device/bluetooth/bluetooth_uuid.h"
+#include "net/base/ip_endpoint.h"
+#include "net/socket/tcp_socket.h"
 
 namespace device {
 
-class BluetoothServiceRecord;
+class BluetoothAdapter;
+class BluetoothDeviceWin;
 
-// This class is an implementation of BluetoothSocket class for Windows
-// platform.
-class BluetoothSocketWin : public BluetoothSocket {
+// The BluetoothSocketWin class implements BluetoothSocket for the Microsoft
+// Windows platform.
+class BluetoothSocketWin : public BluetoothSocketNet {
  public:
-  static scoped_refptr<BluetoothSocket> CreateBluetoothSocket(
-      const BluetoothServiceRecord& service_record);
+  static scoped_refptr<BluetoothSocketWin> CreateBluetoothSocket(
+      scoped_refptr<base::SequencedTaskRunner> ui_task_runner,
+      scoped_refptr<BluetoothSocketThread> socket_thread,
+      net::NetLog* net_log,
+      const net::NetLog::Source& source);
 
-  // BluetoothSocket override
-  virtual bool Receive(net::GrowableIOBuffer* buffer) OVERRIDE;
-  virtual bool Send(net::DrainableIOBuffer* buffer) OVERRIDE;
-  virtual std::string GetLastErrorMessage() const OVERRIDE;
+  // Connect to the peer device and calls |success_callback| when the
+  // connection has been established successfully. If an error occurs, calls
+  // |error_callback| with a system error message.
+  void Connect(const BluetoothDeviceWin* device,
+               const BluetoothUUID& uuid,
+               const base::Closure& success_callback,
+               const ErrorCompletionCallback& error_callback);
+
+  // Listens using this socket using an RFCOMM service published as UUID |uuid|
+  // with Channel |channel|.  |success_callback| will be called if the service
+  // is successfully registered, |error_callback| on failure with a message
+  // explaining the cause.
+  void Listen(scoped_refptr<BluetoothAdapter> adapter,
+              const BluetoothUUID& uuid,
+              int rfcomm_channel,
+              const base::Closure& success_callback,
+              const ErrorCompletionCallback& error_callback);
+
+  // BluetoothSocketNet:
+  void ResetData();
+
+  // BluetoothSocket:
+  virtual void Accept(const AcceptCompletionCallback& success_callback,
+                      const ErrorCompletionCallback& error_callback) OVERRIDE;
 
  protected:
   virtual ~BluetoothSocketWin();
 
  private:
-  explicit BluetoothSocketWin(SOCKET fd);
+  struct ServiceRegData;
 
-  const SOCKET fd_;
-  std::string error_message_;
+  BluetoothSocketWin(scoped_refptr<base::SequencedTaskRunner> ui_task_runner,
+                     scoped_refptr<BluetoothSocketThread> socket_thread,
+                     net::NetLog* net_log,
+                     const net::NetLog::Source& source);
+
+
+  void DoConnect(const base::Closure& success_callback,
+                 const ErrorCompletionCallback& error_callback);
+  void DoListen(const BluetoothUUID& uuid,
+      int rfcomm_channel,
+      const base::Closure& success_callback,
+      const ErrorCompletionCallback& error_callback);
+  void DoAccept(const AcceptCompletionCallback& success_callback,
+                const ErrorCompletionCallback& error_callback);
+  void OnAcceptOnSocketThread(const AcceptCompletionCallback& success_callback,
+                              const ErrorCompletionCallback& error_callback,
+                              int accept_result);
+  void OnAcceptOnUI(scoped_ptr<net::TCPSocket> accept_socket,
+                    const net::IPEndPoint& peer_address,
+                    const AcceptCompletionCallback& success_callback,
+                    const ErrorCompletionCallback& error_callback);
+
+  std::string device_address_;
+  bool supports_rfcomm_;
+  uint8 rfcomm_channel_;
+  BTH_ADDR bth_addr_;
+
+  // Data members below are only used when listening.
+  scoped_refptr<device::BluetoothAdapter> adapter_;
+  scoped_ptr<ServiceRegData> service_reg_data_;
+  scoped_ptr<net::TCPSocket> accept_socket_;
+  net::IPEndPoint accept_address_;
 
   DISALLOW_COPY_AND_ASSIGN(BluetoothSocketWin);
 };

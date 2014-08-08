@@ -27,106 +27,109 @@
 #ifndef MediaControls_h
 #define MediaControls_h
 
-#include "core/events/MouseEvent.h"
 #include "core/html/HTMLDivElement.h"
 #include "core/html/shadow/MediaControlElements.h"
-#include "core/rendering/RenderTheme.h"
 
 namespace WebCore {
 
 class Document;
 class Event;
-class MediaPlayer;
 
-class RenderBox;
-class RenderMedia;
+class MediaControls FINAL : public HTMLDivElement {
+public:
+    static PassRefPtrWillBeRawPtr<MediaControls> create(HTMLMediaElement&);
 
-// An abstract class with the media control elements that all ports support.
-class MediaControls : public HTMLDivElement {
-  public:
-    virtual ~MediaControls() {}
+    HTMLMediaElement& mediaElement() const { return *m_mediaElement; }
 
-    // This function is to be implemented in your port-specific media
-    // controls implementation since it will return a child instance.
-    static PassRefPtr<MediaControls> create(Document&);
+    void reset();
 
-    virtual void setMediaController(MediaControllerInterface*);
+    void show();
+    void hide();
 
-    virtual void reset();
-    virtual void reportedError();
-    virtual void loadedMetadata();
+    void playbackStarted();
+    void playbackProgressed();
+    void playbackStopped();
 
-    virtual void show();
-    virtual void hide();
-    virtual void makeOpaque();
-    virtual void makeTransparent();
-    virtual bool shouldHideControls();
+    void beginScrubbing();
+    void endScrubbing();
 
-    virtual void bufferingProgressed();
-    virtual void playbackStarted();
-    virtual void playbackProgressed();
-    virtual void playbackStopped();
+    void updateCurrentTimeDisplay();
 
-    virtual void updateStatusDisplay() { };
-    virtual void updateCurrentTimeDisplay() = 0;
-    virtual void showVolumeSlider();
+    void updateVolume();
 
-    virtual void changedMute();
-    virtual void changedVolume();
+    void changedClosedCaptionsVisibility();
+    void refreshClosedCaptionsButtonVisibility();
+    void closedCaptionTracksChanged();
 
-    virtual void changedClosedCaptionsVisibility();
-    virtual void refreshClosedCaptionsButtonVisibility();
-    virtual void closedCaptionTracksChanged();
+    void enteredFullscreen();
+    void exitedFullscreen();
 
-    virtual void enteredFullscreen();
-    virtual void exitedFullscreen();
+    void updateTextTrackDisplay();
 
-    virtual bool willRespondToMouseMoveEvents() OVERRIDE { return true; }
+    void mediaElementFocused();
 
-    virtual void hideFullscreenControlsTimerFired(Timer<MediaControls>*);
-    virtual void startHideFullscreenControlsTimer();
-    virtual void stopHideFullscreenControlsTimer();
-
-    virtual void createTextTrackDisplay();
-    virtual void showTextTrackDisplay();
-    virtual void hideTextTrackDisplay();
-    virtual void updateTextTrackDisplay();
-
-protected:
-    explicit MediaControls(Document&);
-
-    virtual void defaultEventHandler(Event*);
-
-    virtual bool containsRelatedTarget(Event*);
-
-    MediaControllerInterface* m_mediaController;
-
-    // Container for the media control elements.
-    MediaControlPanelElement* m_panel;
-
-    // Container for the text track cues.
-    MediaControlTextTrackContainerElement* m_textDisplayContainer;
-
-    // Media control elements.
-    MediaControlPlayButtonElement* m_playButton;
-    MediaControlCurrentTimeDisplayElement* m_currentTimeDisplay;
-    MediaControlTimelineElement* m_timeline;
-    MediaControlPanelMuteButtonElement* m_panelMuteButton;
-    MediaControlPanelVolumeSliderElement* m_volumeSlider;
-    MediaControlToggleClosedCaptionsButtonElement* m_toggleClosedCaptionsButton;
-    MediaControlFullscreenButtonElement* m_fullScreenButton;
-
-    Timer<MediaControls> m_hideFullscreenControlsTimer;
-    bool m_isFullscreen;
-    bool m_isMouseOverControls;
+    virtual void trace(Visitor*) OVERRIDE;
 
 private:
-    virtual bool isMediaControls() const { return true; }
+    explicit MediaControls(HTMLMediaElement&);
 
-    virtual const AtomicString& pseudo() const;
+    bool initializeControls();
+
+    void makeOpaque();
+    void makeTransparent();
+
+    void updatePlayState();
+
+    enum HideBehaviorFlags {
+        IgnoreVideoHover = 1 << 0,
+        IgnoreFocus = 1 << 1
+    };
+
+    bool shouldHideMediaControls(unsigned behaviorFlags = 0) const;
+    void hideMediaControlsTimerFired(Timer<MediaControls>*);
+    void startHideMediaControlsTimer();
+    void stopHideMediaControlsTimer();
+
+    void createTextTrackDisplay();
+    void showTextTrackDisplay();
+    void hideTextTrackDisplay();
+
+    // Node
+    virtual bool isMediaControls() const OVERRIDE { return true; }
+    virtual bool willRespondToMouseMoveEvents() OVERRIDE { return true; }
+    virtual void defaultEventHandler(Event*) OVERRIDE;
+    bool containsRelatedTarget(Event*);
+
+    // Element
+    virtual const AtomicString& shadowPseudoId() const OVERRIDE;
+
+    RawPtrWillBeMember<HTMLMediaElement> m_mediaElement;
+
+    // Container for the media control elements.
+    RawPtrWillBeMember<MediaControlPanelElement> m_panel;
+
+    // Container for the text track cues.
+    RawPtrWillBeMember<MediaControlTextTrackContainerElement> m_textDisplayContainer;
+
+    // Media control elements.
+    RawPtrWillBeMember<MediaControlOverlayPlayButtonElement> m_overlayPlayButton;
+    RawPtrWillBeMember<MediaControlOverlayEnclosureElement> m_overlayEnclosure;
+    RawPtrWillBeMember<MediaControlPlayButtonElement> m_playButton;
+    RawPtrWillBeMember<MediaControlCurrentTimeDisplayElement> m_currentTimeDisplay;
+    RawPtrWillBeMember<MediaControlTimelineElement> m_timeline;
+    RawPtrWillBeMember<MediaControlMuteButtonElement> m_muteButton;
+    RawPtrWillBeMember<MediaControlVolumeSliderElement> m_volumeSlider;
+    RawPtrWillBeMember<MediaControlToggleClosedCaptionsButtonElement> m_toggleClosedCaptionsButton;
+    RawPtrWillBeMember<MediaControlFullscreenButtonElement> m_fullScreenButton;
+    RawPtrWillBeMember<MediaControlTimeRemainingDisplayElement> m_durationDisplay;
+    RawPtrWillBeMember<MediaControlPanelEnclosureElement> m_enclosure;
+
+    Timer<MediaControls> m_hideMediaControlsTimer;
+    bool m_isMouseOverControls : 1;
+    bool m_isPausedForScrubbing : 1;
 };
 
-DEFINE_NODE_TYPE_CASTS(MediaControls, isMediaControls());
+DEFINE_ELEMENT_TYPE_CASTS(MediaControls, isMediaControls());
 
 }
 

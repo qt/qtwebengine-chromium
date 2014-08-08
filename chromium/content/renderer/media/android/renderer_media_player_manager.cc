@@ -4,38 +4,28 @@
 
 #include "content/renderer/media/android/renderer_media_player_manager.h"
 
-#include "base/bind.h"
-#include "base/message_loop/message_loop.h"
 #include "content/common/media/media_player_messages_android.h"
-#include "content/renderer/media/android/proxy_media_keys.h"
+#include "content/public/common/renderer_preferences.h"
 #include "content/renderer/media/android/renderer_media_player_manager.h"
 #include "content/renderer/media/android/webmediaplayer_android.h"
+#include "content/renderer/media/crypto/renderer_cdm_manager.h"
+#include "content/renderer/render_view_impl.h"
 #include "ui/gfx/rect_f.h"
-
-// Maximum sizes for various EME message parameters. These are checks to
-// prevent unnecessarily large messages from being passed around, and the sizes
-// are somewhat arbitrary as the EME specification doesn't specify any limits.
-static const size_t kEmeWebSessionIdMaximum = 512;
-static const size_t kEmeMessageMaximum = 10240;  // 10 KB
-static const size_t kEmeDestinationUrlMaximum = 2048;  // 2 KB
 
 namespace content {
 
-RendererMediaPlayerManager::RendererMediaPlayerManager(RenderView* render_view)
-    : RenderViewObserver(render_view),
+RendererMediaPlayerManager::RendererMediaPlayerManager(
+    RenderFrame* render_frame)
+    : RenderFrameObserver(render_frame),
       next_media_player_id_(0),
       fullscreen_frame_(NULL),
-      pending_fullscreen_frame_(NULL) {}
+      pending_fullscreen_frame_(NULL) {
+}
 
 RendererMediaPlayerManager::~RendererMediaPlayerManager() {
-  std::map<int, WebMediaPlayerAndroid*>::iterator player_it;
-  for (player_it = media_players_.begin();
-      player_it != media_players_.end(); ++player_it) {
-    WebMediaPlayerAndroid* player = player_it->second;
-    player->Detach();
-  }
-
-  Send(new MediaPlayerHostMsg_DestroyAllMediaPlayers(routing_id()));
+  DCHECK(media_players_.empty())
+      << "RendererMediaPlayerManager is owned by RenderFrameImpl and is "
+         "destroyed only after all media players are destroyed.";
 }
 
 bool RendererMediaPlayerManager::OnMessageReceived(const IPC::Message& msg) {
@@ -65,11 +55,7 @@ bool RendererMediaPlayerManager::OnMessageReceived(const IPC::Message& msg) {
     IPC_MESSAGE_HANDLER(MediaPlayerMsg_DidExitFullscreen, OnDidExitFullscreen)
     IPC_MESSAGE_HANDLER(MediaPlayerMsg_DidMediaPlayerPlay, OnPlayerPlay)
     IPC_MESSAGE_HANDLER(MediaPlayerMsg_DidMediaPlayerPause, OnPlayerPause)
-    IPC_MESSAGE_HANDLER(MediaKeysMsg_SessionCreated, OnSessionCreated)
-    IPC_MESSAGE_HANDLER(MediaKeysMsg_SessionMessage, OnSessionMessage)
-    IPC_MESSAGE_HANDLER(MediaKeysMsg_SessionReady, OnSessionReady)
-    IPC_MESSAGE_HANDLER(MediaKeysMsg_SessionClosed, OnSessionClosed)
-    IPC_MESSAGE_HANDLER(MediaKeysMsg_SessionError, OnSessionError)
+    IPC_MESSAGE_HANDLER(MediaPlayerMsg_PauseVideo, OnPauseVideo)
   IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
@@ -80,10 +66,18 @@ void RendererMediaPlayerManager::Initialize(
     int player_id,
     const GURL& url,
     const GURL& first_party_for_cookies,
-    int demuxer_client_id) {
-  Send(new MediaPlayerHostMsg_Initialize(
-      routing_id(), type, player_id, url, first_party_for_cookies,
-      demuxer_client_id));
+    int demuxer_client_id,
+    const GURL& frame_url) {
+
+  MediaPlayerHostMsg_Initialize_Params media_player_params;
+  media_player_params.type = type;
+  media_player_params.player_id = player_id;
+  media_player_params.demuxer_client_id = demuxer_client_id;
+  media_player_params.url = url;
+  media_player_params.first_party_for_cookies = first_party_for_cookies;
+  media_player_params.frame_url = frame_url;
+
+  Send(new MediaPlayerHostMsg_Initialize(routing_id(), media_player_params));
 }
 
 void RendererMediaPlayerManager::Start(int player_id) {
@@ -105,6 +99,10 @@ void RendererMediaPlayerManager::Seek(
 
 void RendererMediaPlayerManager::SetVolume(int player_id, double volume) {
   Send(new MediaPlayerHostMsg_SetVolume(routing_id(), player_id, volume));
+}
+
+void RendererMediaPlayerManager::SetPoster(int player_id, const GURL& poster) {
+  Send(new MediaPlayerHostMsg_SetPoster(routing_id(), player_id, poster));
 }
 
 void RendererMediaPlayerManager::ReleaseResources(int player_id) {
@@ -182,10 +180,11 @@ void RendererMediaPlayerManager::OnMediaPlayerReleased(int player_id) {
     player->OnPlayerReleased();
 }
 
-void RendererMediaPlayerManager::OnConnectedToRemoteDevice(int player_id) {
+void RendererMediaPlayerManager::OnConnectedToRemoteDevice(int player_id,
+    const std::string& remote_playback_message) {
   WebMediaPlayerAndroid* player = GetMediaPlayer(player_id);
   if (player)
-    player->OnConnectedToRemoteDevice();
+    player->OnConnectedToRemoteDevice(remote_playback_message);
 }
 
 void RendererMediaPlayerManager::OnDisconnectedFromRemoteDevice(int player_id) {
@@ -224,6 +223,10 @@ void RendererMediaPlayerManager::OnRequestFullscreen(int player_id) {
     player->OnRequestFullscreen();
 }
 
+void RendererMediaPlayerManager::OnPauseVideo() {
+  ReleaseVideoResources();
+}
+
 void RendererMediaPlayerManager::EnterFullscreen(int player_id,
                                                  blink::WebFrame* frame) {
   pending_fullscreen_frame_ = frame;
@@ -232,99 +235,16 @@ void RendererMediaPlayerManager::EnterFullscreen(int player_id,
 
 void RendererMediaPlayerManager::ExitFullscreen(int player_id) {
   pending_fullscreen_frame_ = NULL;
+  fullscreen_frame_ = NULL;
   Send(new MediaPlayerHostMsg_ExitFullscreen(routing_id(), player_id));
 }
 
-void RendererMediaPlayerManager::InitializeCDM(int media_keys_id,
-                                               ProxyMediaKeys* media_keys,
-                                               const std::vector<uint8>& uuid,
-                                               const GURL& frame_url) {
-  RegisterMediaKeys(media_keys_id, media_keys);
-  Send(new MediaKeysHostMsg_InitializeCDM(
-      routing_id(), media_keys_id, uuid, frame_url));
-}
-
-void RendererMediaPlayerManager::CreateSession(
-    int media_keys_id,
-    uint32 session_id,
-    const std::string& type,
-    const std::vector<uint8>& init_data) {
-  Send(new MediaKeysHostMsg_CreateSession(
-      routing_id(), media_keys_id, session_id, type, init_data));
-}
-
-void RendererMediaPlayerManager::UpdateSession(
-    int media_keys_id,
-    uint32 session_id,
-    const std::vector<uint8>& response) {
-  Send(new MediaKeysHostMsg_UpdateSession(
-      routing_id(), media_keys_id, session_id, response));
-}
-
-void RendererMediaPlayerManager::ReleaseSession(int media_keys_id,
-                                                uint32 session_id) {
-  Send(new MediaKeysHostMsg_ReleaseSession(
-      routing_id(), media_keys_id, session_id));
-}
-
-void RendererMediaPlayerManager::OnSessionCreated(
-    int media_keys_id,
-    uint32 session_id,
-    const std::string& web_session_id) {
-  if (web_session_id.length() > kEmeWebSessionIdMaximum) {
-    OnSessionError(
-        media_keys_id, session_id, media::MediaKeys::kUnknownError, 0);
+void RendererMediaPlayerManager::SetCdm(int player_id, int cdm_id) {
+  if (cdm_id == RendererCdmManager::kInvalidCdmId) {
+    NOTREACHED();
     return;
   }
-
-  ProxyMediaKeys* media_keys = GetMediaKeys(media_keys_id);
-  if (media_keys)
-    media_keys->OnSessionCreated(session_id, web_session_id);
-}
-
-void RendererMediaPlayerManager::OnSessionMessage(
-    int media_keys_id,
-    uint32 session_id,
-    const std::vector<uint8>& message,
-    const std::string& destination_url) {
-  if (message.size() > kEmeMessageMaximum) {
-    OnSessionError(
-        media_keys_id, session_id, media::MediaKeys::kUnknownError, 0);
-    return;
-  }
-  if (destination_url.length() > kEmeDestinationUrlMaximum) {
-    OnSessionError(
-        media_keys_id, session_id, media::MediaKeys::kUnknownError, 0);
-    return;
-  }
-
-  ProxyMediaKeys* media_keys = GetMediaKeys(media_keys_id);
-  if (media_keys)
-    media_keys->OnSessionMessage(session_id, message, destination_url);
-}
-
-void RendererMediaPlayerManager::OnSessionReady(int media_keys_id,
-                                                uint32 session_id) {
-  ProxyMediaKeys* media_keys = GetMediaKeys(media_keys_id);
-  if (media_keys)
-    media_keys->OnSessionReady(session_id);
-}
-
-void RendererMediaPlayerManager::OnSessionClosed(int media_keys_id,
-                                                 uint32 session_id) {
-  ProxyMediaKeys* media_keys = GetMediaKeys(media_keys_id);
-  if (media_keys)
-    media_keys->OnSessionClosed(session_id);
-}
-
-void RendererMediaPlayerManager::OnSessionError(
-    int media_keys_id,
-    uint32 session_id,
-    media::MediaKeys::KeyError error_code,
-    int system_code) {
-  ProxyMediaKeys* media_keys = GetMediaKeys(media_keys_id);
-  if (media_keys)
-    media_keys->OnSessionError(session_id, error_code, system_code);
+  Send(new MediaPlayerHostMsg_SetCdm(routing_id(), player_id, cdm_id));
 }
 
 int RendererMediaPlayerManager::RegisterMediaPlayer(
@@ -335,26 +255,12 @@ int RendererMediaPlayerManager::RegisterMediaPlayer(
 
 void RendererMediaPlayerManager::UnregisterMediaPlayer(int player_id) {
   media_players_.erase(player_id);
-  media_keys_.erase(player_id);
-}
-
-void RendererMediaPlayerManager::RegisterMediaKeys(int media_keys_id,
-                                                   ProxyMediaKeys* media_keys) {
-  // WebMediaPlayerAndroid must have already been registered for
-  // |media_keys_id|. For now |media_keys_id| is the same as player_id
-  // used in other methods.
-  DCHECK(media_players_.find(media_keys_id) != media_players_.end());
-
-  // Only allowed to register once.
-  DCHECK(media_keys_.find(media_keys_id) == media_keys_.end());
-
-  media_keys_[media_keys_id] = media_keys;
 }
 
 void RendererMediaPlayerManager::ReleaseVideoResources() {
   std::map<int, WebMediaPlayerAndroid*>::iterator player_it;
-  for (player_it = media_players_.begin();
-      player_it != media_players_.end(); ++player_it) {
+  for (player_it = media_players_.begin(); player_it != media_players_.end();
+       ++player_it) {
     WebMediaPlayerAndroid* player = player_it->second;
 
     // Do not release if an audio track is still playing
@@ -370,12 +276,6 @@ WebMediaPlayerAndroid* RendererMediaPlayerManager::GetMediaPlayer(
   if (iter != media_players_.end())
     return iter->second;
   return NULL;
-}
-
-ProxyMediaKeys* RendererMediaPlayerManager::GetMediaKeys(int media_keys_id) {
-  std::map<int, ProxyMediaKeys*>::iterator iter =
-      media_keys_.find(media_keys_id);
-  return (iter != media_keys_.end()) ? iter->second : NULL;
 }
 
 bool RendererMediaPlayerManager::CanEnterFullscreen(blink::WebFrame* frame) {
@@ -429,12 +329,17 @@ void RendererMediaPlayerManager::RetrieveGeometryChanges(
     WebMediaPlayerAndroid* player = player_it->second;
 
     if (player && player->hasVideo()) {
-      gfx::RectF rect;
-      if (player->RetrieveGeometryChange(&rect)) {
-        (*changes)[player_it->first] = rect;
-      }
+      if (player->UpdateBoundaryRectangle())
+        (*changes)[player_it->first] = player->GetBoundaryRectangle();
     }
   }
+}
+
+bool
+RendererMediaPlayerManager::ShouldUseVideoOverlayForEmbeddedEncryptedVideo() {
+  const RendererPreferences& prefs = static_cast<RenderFrameImpl*>(
+      render_frame())->render_view()->renderer_preferences();
+  return prefs.use_video_overlay_for_embedded_encrypted_video;
 }
 #endif  // defined(VIDEO_HOLE)
 

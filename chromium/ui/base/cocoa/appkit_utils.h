@@ -7,7 +7,7 @@
 
 #import <Cocoa/Cocoa.h>
 
-#include "ui/base/ui_export.h"
+#include "ui/base/ui_base_export.h"
 
 namespace ui {
 
@@ -23,12 +23,17 @@ struct NinePartImageIds {
   int bottom_right;
 };
 
+// A macro to define arrays of IDR constants used with DrawNinePartImage.
+#define IMAGE_GRID(x) { x ## _TOP_LEFT,    x ## _TOP,    x ## _TOP_RIGHT, \
+                        x ## _LEFT,        x ## _CENTER, x ## _RIGHT, \
+                        x ## _BOTTOM_LEFT, x ## _BOTTOM, x ## _BOTTOM_RIGHT, }
+
 // Utility method to draw a nine part image using image ids.
-UI_EXPORT void DrawNinePartImage(NSRect frame,
-                                 const NinePartImageIds& image_ids,
-                                 NSCompositingOperation operation,
-                                 CGFloat alpha,
-                                 BOOL flipped);
+UI_BASE_EXPORT void DrawNinePartImage(NSRect frame,
+                                      const NinePartImageIds& image_ids,
+                                      NSCompositingOperation operation,
+                                      CGFloat alpha,
+                                      BOOL flipped);
 
 }  // namespace ui
 

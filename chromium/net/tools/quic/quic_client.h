@@ -10,6 +10,7 @@
 
 #include <string>
 
+#include "base/basictypes.h"
 #include "base/command_line.h"
 #include "base/memory/scoped_ptr.h"
 #include "net/base/ip_endpoint.h"
@@ -24,6 +25,7 @@
 namespace net {
 
 class ProofVerifier;
+class QuicServerId;
 
 namespace tools {
 
@@ -36,14 +38,28 @@ class QuicClientPeer;
 class QuicClient : public EpollCallbackInterface,
                    public QuicDataStream::Visitor {
  public:
+  class ResponseListener {
+   public:
+    ResponseListener() {}
+    virtual ~ResponseListener() {}
+    virtual void OnCompleteResponse(QuicStreamId id,
+                                    const BalsaHeaders& response_headers,
+                                    const string& response_body) = 0;
+  };
+
+  // Create a quic client, which will have events managed by an externally owned
+  // EpollServer.
   QuicClient(IPEndPoint server_address,
-             const string& server_hostname,
+             const QuicServerId& server_id,
              const QuicVersionVector& supported_versions,
-             bool print_response);
+             bool print_response,
+             EpollServer* epoll_server);
   QuicClient(IPEndPoint server_address,
-             const std::string& server_hostname,
+             const QuicServerId& server_id,
+             const QuicVersionVector& supported_versions,
+             bool print_response,
              const QuicConfig& config,
-             const QuicVersionVector& supported_versions);
+             EpollServer* epoll_server);
 
   virtual ~QuicClient();
 
@@ -69,11 +85,12 @@ class QuicClient : public EpollCallbackInterface,
   // Disconnects from the QUIC server.
   void Disconnect();
 
-  // Sends a request simple GET for each URL in arg, and then waits for
+  // Sends a request simple GET for each URL in |args|, and then waits for
   // each to complete.
-  void SendRequestsAndWaitForResponse(const CommandLine::StringVector& args);
+  void SendRequestsAndWaitForResponse(const
+      base::CommandLine::StringVector& args);
 
-  // Returns a newly created CreateReliableClientStream, owned by the
+  // Returns a newly created QuicSpdyClientStream, owned by the
   // QuicClient.
   QuicSpdyClientStream* CreateReliableClientStream();
 
@@ -88,8 +105,9 @@ class QuicClient : public EpollCallbackInterface,
   bool WaitForEvents();
 
   // From EpollCallbackInterface
-  virtual void OnRegistration(
-      EpollServer* eps, int fd, int event_mask) OVERRIDE {}
+  virtual void OnRegistration(EpollServer* eps,
+                              int fd,
+                              int event_mask) OVERRIDE {}
   virtual void OnModification(int fd, int event_mask) OVERRIDE {}
   virtual void OnEvent(int fd, EpollEvent* event) OVERRIDE;
   // |fd_| can be unregistered without the client being disconnected. This
@@ -100,8 +118,6 @@ class QuicClient : public EpollCallbackInterface,
 
   // QuicDataStream::Visitor
   virtual void OnClose(QuicDataStream* stream) OVERRIDE;
-
-  QuicPacketCreator::Options* options();
 
   QuicClientSession* session() { return session_.get(); }
 
@@ -119,13 +135,19 @@ class QuicClient : public EpollCallbackInterface,
 
   const IPEndPoint& client_address() const { return client_address_; }
 
-  EpollServer* epoll_server() { return &epoll_server_; }
+  EpollServer* epoll_server() { return epoll_server_; }
 
   int fd() { return fd_; }
 
+  const QuicServerId& server_id() const { return server_id_; }
+
   // This should only be set before the initial Connect()
-  void set_server_hostname(const string& hostname) {
-    server_hostname_ = hostname;
+  void set_server_id(const QuicServerId& server_id) {
+    server_id_ = server_id;
+  }
+
+  void SetUserAgentID(const string& user_agent_id) {
+    crypto_config_.set_user_agent_id(user_agent_id);
   }
 
   // SetProofVerifier sets the ProofVerifier that will be used to verify the
@@ -135,20 +157,39 @@ class QuicClient : public EpollCallbackInterface,
     crypto_config_.SetProofVerifier(verifier);
   }
 
-  // SetChannelIDSigner sets a ChannelIDSigner that will be called when the
-  // server supports channel IDs to sign a message proving possession of the
-  // given ChannelID. This object takes ownership of |signer|.
-  void SetChannelIDSigner(ChannelIDSigner* signer) {
-    crypto_config_.SetChannelIDSigner(signer);
+  // SetChannelIDSource sets a ChannelIDSource that will be called, when the
+  // server supports channel IDs, to obtain a channel ID for signing a message
+  // proving possession of the channel ID. This object takes ownership of
+  // |source|.
+  void SetChannelIDSource(ChannelIDSource* source) {
+    crypto_config_.SetChannelIDSource(source);
+  }
+
+  void SetSupportedVersions(const QuicVersionVector& versions) {
+    supported_versions_ = versions;
+  }
+
+  // Takes ownership of the listener.
+  void set_response_listener(ResponseListener* listener) {
+    response_listener_.reset(listener);
   }
 
  protected:
-  virtual QuicGuid GenerateGuid();
+  virtual QuicConnectionId GenerateConnectionId();
   virtual QuicEpollConnectionHelper* CreateQuicConnectionHelper();
   virtual QuicPacketWriter* CreateQuicPacketWriter();
 
+  virtual int ReadPacket(char* buffer,
+                         int buffer_len,
+                         IPEndPoint* server_address,
+                         IPAddressNumber* client_ip);
+
  private:
   friend class net::tools::test::QuicClientPeer;
+
+  // Used during initialization: creates the UDP socket FD, sets socket options,
+  // and binds the socket to our address.
+  bool CreateUDPSocket();
 
   // Read a UDP packet and hand it to the framer.
   bool ReadAndProcessPacket();
@@ -156,8 +197,8 @@ class QuicClient : public EpollCallbackInterface,
   // Address of the server.
   const IPEndPoint server_address_;
 
-  // Hostname of the server. This may be a DNS name or an IP address literal.
-  std::string server_hostname_;
+  // |server_id_| is a tuple (hostname, port, is_https) of the server.
+  QuicServerId server_id_;
 
   // config_ and crypto_config_ contain configuration and cached state about
   // servers.
@@ -175,12 +216,15 @@ class QuicClient : public EpollCallbackInterface,
   // Session which manages streams.
   scoped_ptr<QuicClientSession> session_;
   // Listens for events on the client socket.
-  EpollServer epoll_server_;
+  EpollServer* epoll_server_;
   // UDP socket.
   int fd_;
 
   // Helper to be used by created connections.
   scoped_ptr<QuicEpollConnectionHelper> helper_;
+
+  // Listens for full responses.
+  scoped_ptr<ResponseListener> response_listener_;
 
   // Writer used to actually send packets to the wire.
   scoped_ptr<QuicPacketWriter> writer_;
@@ -191,7 +235,7 @@ class QuicClient : public EpollCallbackInterface,
   // If overflow_supported_ is true, this will be the number of packets dropped
   // during the lifetime of the server.  This may overflow if enough packets
   // are dropped.
-  int packets_dropped_;
+  uint32 packets_dropped_;
 
   // True if the kernel supports SO_RXQ_OVFL, the number of packets dropped
   // because the socket would otherwise overflow.

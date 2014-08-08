@@ -1,16 +1,17 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 // This file is auto-generated from
 // gpu/command_buffer/build_gles2_cmd_buffer.py
+// It's formatted by clang-format using chromium coding style:
+//    clang-format -i -style=chromium filename
 // DO NOT EDIT!
 
 // This file is included by gles2_implementation.h to declare the
 // GL api functions.
 #ifndef GPU_COMMAND_BUFFER_CLIENT_GLES2_IMPLEMENTATION_UNITTEST_AUTOGEN_H_
 #define GPU_COMMAND_BUFFER_CLIENT_GLES2_IMPLEMENTATION_UNITTEST_AUTOGEN_H_
-
 
 TEST_F(GLES2ImplementationTest, AttachShader) {
   struct Cmds {
@@ -126,14 +127,13 @@ TEST_F(GLES2ImplementationTest, CheckFramebufferStatus) {
     cmds::CheckFramebufferStatus cmd;
   };
 
-  typedef cmds::CheckFramebufferStatus::Result Result;
   Cmds expected;
   ExpectedMemoryInfo result1 =
       GetExpectedResultMemory(sizeof(cmds::CheckFramebufferStatus::Result));
   expected.cmd.Init(1, result1.id, result1.offset);
 
   EXPECT_CALL(*command_buffer(), OnFlush())
-      .WillOnce(SetMemory(result1.ptr, uint32(1)))
+      .WillOnce(SetMemory(result1.ptr, uint32_t(1)))
       .RetiresOnSaturation();
 
   GLboolean result = gl_->CheckFramebufferStatus(1);
@@ -168,9 +168,9 @@ TEST_F(GLES2ImplementationTest, ClearDepthf) {
     cmds::ClearDepthf cmd;
   };
   Cmds expected;
-  expected.cmd.Init(1);
+  expected.cmd.Init(0.5f);
 
-  gl_->ClearDepthf(1);
+  gl_->ClearDepthf(0.5f);
   EXPECT_EQ(0, memcmp(&expected, commands_, sizeof(expected)));
 }
 
@@ -214,10 +214,16 @@ TEST_F(GLES2ImplementationTest, CopyTexImage2D) {
     cmds::CopyTexImage2D cmd;
   };
   Cmds expected;
-  expected.cmd.Init(GL_TEXTURE_2D, 2, GL_ALPHA, 4, 5, 6, 7, 0);
+  expected.cmd.Init(GL_TEXTURE_2D, 2, GL_ALPHA, 4, 5, 6, 7);
 
   gl_->CopyTexImage2D(GL_TEXTURE_2D, 2, GL_ALPHA, 4, 5, 6, 7, 0);
   EXPECT_EQ(0, memcmp(&expected, commands_, sizeof(expected)));
+}
+
+TEST_F(GLES2ImplementationTest, CopyTexImage2DInvalidConstantArg7) {
+  gl_->CopyTexImage2D(GL_TEXTURE_2D, 2, GL_ALPHA, 4, 5, 6, 7, 1);
+  EXPECT_TRUE(NoCommandsWritten());
+  EXPECT_EQ(GL_INVALID_VALUE, CheckError());
 }
 
 TEST_F(GLES2ImplementationTest, CopyTexSubImage2D) {
@@ -243,7 +249,7 @@ TEST_F(GLES2ImplementationTest, CullFace) {
 }
 
 TEST_F(GLES2ImplementationTest, DeleteBuffers) {
-  GLuint ids[2] = { kBuffersStartId, kBuffersStartId + 1 };
+  GLuint ids[2] = {kBuffersStartId, kBuffersStartId + 1};
   struct Cmds {
     cmds::DeleteBuffersImmediate del;
     GLuint data[2];
@@ -257,7 +263,7 @@ TEST_F(GLES2ImplementationTest, DeleteBuffers) {
 }
 
 TEST_F(GLES2ImplementationTest, DeleteFramebuffers) {
-  GLuint ids[2] = { kFramebuffersStartId, kFramebuffersStartId + 1 };
+  GLuint ids[2] = {kFramebuffersStartId, kFramebuffersStartId + 1};
   struct Cmds {
     cmds::DeleteFramebuffersImmediate del;
     GLuint data[2];
@@ -282,7 +288,7 @@ TEST_F(GLES2ImplementationTest, DeleteProgram) {
 }
 
 TEST_F(GLES2ImplementationTest, DeleteRenderbuffers) {
-  GLuint ids[2] = { kRenderbuffersStartId, kRenderbuffersStartId + 1 };
+  GLuint ids[2] = {kRenderbuffersStartId, kRenderbuffersStartId + 1};
   struct Cmds {
     cmds::DeleteRenderbuffersImmediate del;
     GLuint data[2];
@@ -307,7 +313,7 @@ TEST_F(GLES2ImplementationTest, DeleteShader) {
 }
 
 TEST_F(GLES2ImplementationTest, DeleteTextures) {
-  GLuint ids[2] = { kTexturesStartId, kTexturesStartId + 1 };
+  GLuint ids[2] = {kTexturesStartId, kTexturesStartId + 1};
   struct Cmds {
     cmds::DeleteTexturesImmediate del;
     GLuint data[2];
@@ -425,11 +431,18 @@ TEST_F(GLES2ImplementationTest, FramebufferTexture2D) {
     cmds::FramebufferTexture2D cmd;
   };
   Cmds expected;
-  expected.cmd.Init(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 4, 0);
+  expected.cmd.Init(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 4);
 
   gl_->FramebufferTexture2D(
       GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 4, 0);
   EXPECT_EQ(0, memcmp(&expected, commands_, sizeof(expected)));
+}
+
+TEST_F(GLES2ImplementationTest, FramebufferTexture2DInvalidConstantArg4) {
+  gl_->FramebufferTexture2D(
+      GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 4, 1);
+  EXPECT_TRUE(NoCommandsWritten());
+  EXPECT_EQ(GL_INVALID_VALUE, CheckError());
 }
 
 TEST_F(GLES2ImplementationTest, FrontFace) {
@@ -444,7 +457,9 @@ TEST_F(GLES2ImplementationTest, FrontFace) {
 }
 
 TEST_F(GLES2ImplementationTest, GenBuffers) {
-  GLuint ids[2] = { 0, };
+  GLuint ids[2] = {
+      0,
+  };
   struct Cmds {
     cmds::GenBuffersImmediate gen;
     GLuint data[2];
@@ -471,7 +486,9 @@ TEST_F(GLES2ImplementationTest, GenerateMipmap) {
 }
 
 TEST_F(GLES2ImplementationTest, GenFramebuffers) {
-  GLuint ids[2] = { 0, };
+  GLuint ids[2] = {
+      0,
+  };
   struct Cmds {
     cmds::GenFramebuffersImmediate gen;
     GLuint data[2];
@@ -487,7 +504,9 @@ TEST_F(GLES2ImplementationTest, GenFramebuffers) {
 }
 
 TEST_F(GLES2ImplementationTest, GenRenderbuffers) {
-  GLuint ids[2] = { 0, };
+  GLuint ids[2] = {
+      0,
+  };
   struct Cmds {
     cmds::GenRenderbuffersImmediate gen;
     GLuint data[2];
@@ -503,7 +522,9 @@ TEST_F(GLES2ImplementationTest, GenRenderbuffers) {
 }
 
 TEST_F(GLES2ImplementationTest, GenTextures) {
-  GLuint ids[2] = { 0, };
+  GLuint ids[2] = {
+      0,
+  };
   struct Cmds {
     cmds::GenTexturesImmediate gen;
     GLuint data[2];
@@ -581,14 +602,18 @@ TEST_F(GLES2ImplementationTest, GetFramebufferAttachmentParameteriv) {
   Result::Type result = 0;
   Cmds expected;
   ExpectedMemoryInfo result1 = GetExpectedResultMemory(4);
-  expected.cmd.Init(
-      123, GL_COLOR_ATTACHMENT0, GL_FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE,
-      result1.id, result1.offset);
+  expected.cmd.Init(123,
+                    GL_COLOR_ATTACHMENT0,
+                    GL_FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE,
+                    result1.id,
+                    result1.offset);
   EXPECT_CALL(*command_buffer(), OnFlush())
       .WillOnce(SetMemory(result1.ptr, SizedResultHelper<Result::Type>(1)))
       .RetiresOnSaturation();
   gl_->GetFramebufferAttachmentParameteriv(
-      123, GL_COLOR_ATTACHMENT0, GL_FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE,
+      123,
+      GL_COLOR_ATTACHMENT0,
+      GL_FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE,
       &result);
   EXPECT_EQ(0, memcmp(&expected, commands_, sizeof(expected)));
   EXPECT_EQ(static_cast<Result::Type>(1), result);
@@ -754,14 +779,13 @@ TEST_F(GLES2ImplementationTest, IsBuffer) {
     cmds::IsBuffer cmd;
   };
 
-  typedef cmds::IsBuffer::Result Result;
   Cmds expected;
   ExpectedMemoryInfo result1 =
       GetExpectedResultMemory(sizeof(cmds::IsBuffer::Result));
   expected.cmd.Init(1, result1.id, result1.offset);
 
   EXPECT_CALL(*command_buffer(), OnFlush())
-      .WillOnce(SetMemory(result1.ptr, uint32(1)))
+      .WillOnce(SetMemory(result1.ptr, uint32_t(1)))
       .RetiresOnSaturation();
 
   GLboolean result = gl_->IsBuffer(1);
@@ -774,14 +798,13 @@ TEST_F(GLES2ImplementationTest, IsEnabled) {
     cmds::IsEnabled cmd;
   };
 
-  typedef cmds::IsEnabled::Result Result;
   Cmds expected;
   ExpectedMemoryInfo result1 =
       GetExpectedResultMemory(sizeof(cmds::IsEnabled::Result));
   expected.cmd.Init(1, result1.id, result1.offset);
 
   EXPECT_CALL(*command_buffer(), OnFlush())
-      .WillOnce(SetMemory(result1.ptr, uint32(1)))
+      .WillOnce(SetMemory(result1.ptr, uint32_t(1)))
       .RetiresOnSaturation();
 
   GLboolean result = gl_->IsEnabled(1);
@@ -794,14 +817,13 @@ TEST_F(GLES2ImplementationTest, IsFramebuffer) {
     cmds::IsFramebuffer cmd;
   };
 
-  typedef cmds::IsFramebuffer::Result Result;
   Cmds expected;
   ExpectedMemoryInfo result1 =
       GetExpectedResultMemory(sizeof(cmds::IsFramebuffer::Result));
   expected.cmd.Init(1, result1.id, result1.offset);
 
   EXPECT_CALL(*command_buffer(), OnFlush())
-      .WillOnce(SetMemory(result1.ptr, uint32(1)))
+      .WillOnce(SetMemory(result1.ptr, uint32_t(1)))
       .RetiresOnSaturation();
 
   GLboolean result = gl_->IsFramebuffer(1);
@@ -814,14 +836,13 @@ TEST_F(GLES2ImplementationTest, IsProgram) {
     cmds::IsProgram cmd;
   };
 
-  typedef cmds::IsProgram::Result Result;
   Cmds expected;
   ExpectedMemoryInfo result1 =
       GetExpectedResultMemory(sizeof(cmds::IsProgram::Result));
   expected.cmd.Init(1, result1.id, result1.offset);
 
   EXPECT_CALL(*command_buffer(), OnFlush())
-      .WillOnce(SetMemory(result1.ptr, uint32(1)))
+      .WillOnce(SetMemory(result1.ptr, uint32_t(1)))
       .RetiresOnSaturation();
 
   GLboolean result = gl_->IsProgram(1);
@@ -834,14 +855,13 @@ TEST_F(GLES2ImplementationTest, IsRenderbuffer) {
     cmds::IsRenderbuffer cmd;
   };
 
-  typedef cmds::IsRenderbuffer::Result Result;
   Cmds expected;
   ExpectedMemoryInfo result1 =
       GetExpectedResultMemory(sizeof(cmds::IsRenderbuffer::Result));
   expected.cmd.Init(1, result1.id, result1.offset);
 
   EXPECT_CALL(*command_buffer(), OnFlush())
-      .WillOnce(SetMemory(result1.ptr, uint32(1)))
+      .WillOnce(SetMemory(result1.ptr, uint32_t(1)))
       .RetiresOnSaturation();
 
   GLboolean result = gl_->IsRenderbuffer(1);
@@ -854,14 +874,13 @@ TEST_F(GLES2ImplementationTest, IsShader) {
     cmds::IsShader cmd;
   };
 
-  typedef cmds::IsShader::Result Result;
   Cmds expected;
   ExpectedMemoryInfo result1 =
       GetExpectedResultMemory(sizeof(cmds::IsShader::Result));
   expected.cmd.Init(1, result1.id, result1.offset);
 
   EXPECT_CALL(*command_buffer(), OnFlush())
-      .WillOnce(SetMemory(result1.ptr, uint32(1)))
+      .WillOnce(SetMemory(result1.ptr, uint32_t(1)))
       .RetiresOnSaturation();
 
   GLboolean result = gl_->IsShader(1);
@@ -874,14 +893,13 @@ TEST_F(GLES2ImplementationTest, IsTexture) {
     cmds::IsTexture cmd;
   };
 
-  typedef cmds::IsTexture::Result Result;
   Cmds expected;
   ExpectedMemoryInfo result1 =
       GetExpectedResultMemory(sizeof(cmds::IsTexture::Result));
   expected.cmd.Init(1, result1.id, result1.offset);
 
   EXPECT_CALL(*command_buffer(), OnFlush())
-      .WillOnce(SetMemory(result1.ptr, uint32(1)))
+      .WillOnce(SetMemory(result1.ptr, uint32_t(1)))
       .RetiresOnSaturation();
 
   GLboolean result = gl_->IsTexture(1);
@@ -894,9 +912,9 @@ TEST_F(GLES2ImplementationTest, LineWidth) {
     cmds::LineWidth cmd;
   };
   Cmds expected;
-  expected.cmd.Init(1);
+  expected.cmd.Init(0.5f);
 
-  gl_->LineWidth(1);
+  gl_->LineWidth(0.5f);
   EXPECT_EQ(0, memcmp(&expected, commands_, sizeof(expected)));
 }
 
@@ -1048,9 +1066,9 @@ TEST_F(GLES2ImplementationTest, TexParameterf) {
     cmds::TexParameterf cmd;
   };
   Cmds expected;
-  expected.cmd.Init(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, 3);
+  expected.cmd.Init(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
-  gl_->TexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, 3);
+  gl_->TexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
   EXPECT_EQ(0, memcmp(&expected, commands_, sizeof(expected)));
 }
 
@@ -1075,9 +1093,9 @@ TEST_F(GLES2ImplementationTest, TexParameteri) {
     cmds::TexParameteri cmd;
   };
   Cmds expected;
-  expected.cmd.Init(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, 3);
+  expected.cmd.Init(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
-  gl_->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, 3);
+  gl_->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
   EXPECT_EQ(0, memcmp(&expected, commands_, sizeof(expected)));
 }
 
@@ -1342,9 +1360,21 @@ TEST_F(GLES2ImplementationTest, UniformMatrix2fv) {
       data[ii][jj] = static_cast<GLfloat>(ii * 4 + jj);
     }
   }
-  expected.cmd.Init(1, 2, false, &data[0][0]);
+  expected.cmd.Init(1, 2, &data[0][0]);
   gl_->UniformMatrix2fv(1, 2, false, &data[0][0]);
   EXPECT_EQ(0, memcmp(&expected, commands_, sizeof(expected)));
+}
+
+TEST_F(GLES2ImplementationTest, UniformMatrix2fvInvalidConstantArg2) {
+  GLfloat data[2][4] = {{0}};
+  for (int ii = 0; ii < 2; ++ii) {
+    for (int jj = 0; jj < 4; ++jj) {
+      data[ii][jj] = static_cast<GLfloat>(ii * 4 + jj);
+    }
+  }
+  gl_->UniformMatrix2fv(1, 2, true, &data[0][0]);
+  EXPECT_TRUE(NoCommandsWritten());
+  EXPECT_EQ(GL_INVALID_VALUE, CheckError());
 }
 
 TEST_F(GLES2ImplementationTest, UniformMatrix3fv) {
@@ -1360,9 +1390,21 @@ TEST_F(GLES2ImplementationTest, UniformMatrix3fv) {
       data[ii][jj] = static_cast<GLfloat>(ii * 9 + jj);
     }
   }
-  expected.cmd.Init(1, 2, false, &data[0][0]);
+  expected.cmd.Init(1, 2, &data[0][0]);
   gl_->UniformMatrix3fv(1, 2, false, &data[0][0]);
   EXPECT_EQ(0, memcmp(&expected, commands_, sizeof(expected)));
+}
+
+TEST_F(GLES2ImplementationTest, UniformMatrix3fvInvalidConstantArg2) {
+  GLfloat data[2][9] = {{0}};
+  for (int ii = 0; ii < 2; ++ii) {
+    for (int jj = 0; jj < 9; ++jj) {
+      data[ii][jj] = static_cast<GLfloat>(ii * 9 + jj);
+    }
+  }
+  gl_->UniformMatrix3fv(1, 2, true, &data[0][0]);
+  EXPECT_TRUE(NoCommandsWritten());
+  EXPECT_EQ(GL_INVALID_VALUE, CheckError());
 }
 
 TEST_F(GLES2ImplementationTest, UniformMatrix4fv) {
@@ -1378,9 +1420,21 @@ TEST_F(GLES2ImplementationTest, UniformMatrix4fv) {
       data[ii][jj] = static_cast<GLfloat>(ii * 16 + jj);
     }
   }
-  expected.cmd.Init(1, 2, false, &data[0][0]);
+  expected.cmd.Init(1, 2, &data[0][0]);
   gl_->UniformMatrix4fv(1, 2, false, &data[0][0]);
   EXPECT_EQ(0, memcmp(&expected, commands_, sizeof(expected)));
+}
+
+TEST_F(GLES2ImplementationTest, UniformMatrix4fvInvalidConstantArg2) {
+  GLfloat data[2][16] = {{0}};
+  for (int ii = 0; ii < 2; ++ii) {
+    for (int jj = 0; jj < 16; ++jj) {
+      data[ii][jj] = static_cast<GLfloat>(ii * 16 + jj);
+    }
+  }
+  gl_->UniformMatrix4fv(1, 2, true, &data[0][0]);
+  EXPECT_TRUE(NoCommandsWritten());
+  EXPECT_EQ(GL_INVALID_VALUE, CheckError());
 }
 
 TEST_F(GLES2ImplementationTest, UseProgram) {
@@ -1392,6 +1446,9 @@ TEST_F(GLES2ImplementationTest, UseProgram) {
 
   gl_->UseProgram(1);
   EXPECT_EQ(0, memcmp(&expected, commands_, sizeof(expected)));
+  ClearCommands();
+  gl_->UseProgram(1);
+  EXPECT_TRUE(NoCommandsWritten());
 }
 
 TEST_F(GLES2ImplementationTest, ValidateProgram) {
@@ -1563,12 +1620,19 @@ TEST_F(GLES2ImplementationTest, FramebufferTexture2DMultisampleEXT) {
     cmds::FramebufferTexture2DMultisampleEXT cmd;
   };
   Cmds expected;
-  expected.cmd.Init(
-      GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 4, 0, 6);
+  expected.cmd.Init(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 4, 6);
 
   gl_->FramebufferTexture2DMultisampleEXT(
       GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 4, 0, 6);
   EXPECT_EQ(0, memcmp(&expected, commands_, sizeof(expected)));
+}
+
+TEST_F(GLES2ImplementationTest,
+       FramebufferTexture2DMultisampleEXTInvalidConstantArg4) {
+  gl_->FramebufferTexture2DMultisampleEXT(
+      GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 4, 1, 6);
+  EXPECT_TRUE(NoCommandsWritten());
+  EXPECT_EQ(GL_INVALID_VALUE, CheckError());
 }
 
 TEST_F(GLES2ImplementationTest, TexStorage2DEXT) {
@@ -1583,7 +1647,9 @@ TEST_F(GLES2ImplementationTest, TexStorage2DEXT) {
 }
 
 TEST_F(GLES2ImplementationTest, GenQueriesEXT) {
-  GLuint ids[2] = { 0, };
+  GLuint ids[2] = {
+      0,
+  };
   struct Cmds {
     cmds::GenQueriesEXTImmediate gen;
     GLuint data[2];
@@ -1599,7 +1665,7 @@ TEST_F(GLES2ImplementationTest, GenQueriesEXT) {
 }
 
 TEST_F(GLES2ImplementationTest, DeleteQueriesEXT) {
-  GLuint ids[2] = { kQueriesStartId, kQueriesStartId + 1 };
+  GLuint ids[2] = {kQueriesStartId, kQueriesStartId + 1};
   struct Cmds {
     cmds::DeleteQueriesEXTImmediate del;
     GLuint data[2];
@@ -1627,7 +1693,9 @@ TEST_F(GLES2ImplementationTest, PopGroupMarkerEXT) {
 }
 
 TEST_F(GLES2ImplementationTest, GenVertexArraysOES) {
-  GLuint ids[2] = { 0, };
+  GLuint ids[2] = {
+      0,
+  };
   struct Cmds {
     cmds::GenVertexArraysOESImmediate gen;
     GLuint data[2];
@@ -1643,7 +1711,7 @@ TEST_F(GLES2ImplementationTest, GenVertexArraysOES) {
 }
 
 TEST_F(GLES2ImplementationTest, DeleteVertexArraysOES) {
-  GLuint ids[2] = { kVertexArraysStartId, kVertexArraysStartId + 1 };
+  GLuint ids[2] = {kVertexArraysStartId, kVertexArraysStartId + 1};
   struct Cmds {
     cmds::DeleteVertexArraysOESImmediate del;
     GLuint data[2];
@@ -1661,14 +1729,13 @@ TEST_F(GLES2ImplementationTest, IsVertexArrayOES) {
     cmds::IsVertexArrayOES cmd;
   };
 
-  typedef cmds::IsVertexArrayOES::Result Result;
   Cmds expected;
   ExpectedMemoryInfo result1 =
       GetExpectedResultMemory(sizeof(cmds::IsVertexArrayOES::Result));
   expected.cmd.Init(1, result1.id, result1.offset);
 
   EXPECT_CALL(*command_buffer(), OnFlush())
-      .WillOnce(SetMemory(result1.ptr, uint32(1)))
+      .WillOnce(SetMemory(result1.ptr, uint32_t(1)))
       .RetiresOnSaturation();
 
   GLboolean result = gl_->IsVertexArrayOES(1);
@@ -1691,17 +1758,7 @@ TEST_F(GLES2ImplementationTest, ResizeCHROMIUM) {
   EXPECT_EQ(0, memcmp(&expected, commands_, sizeof(expected)));
 }
 // TODO: Implement unit test for GetRequestableExtensionsCHROMIUM
-
-TEST_F(GLES2ImplementationTest, DestroyStreamTextureCHROMIUM) {
-  struct Cmds {
-    cmds::DestroyStreamTextureCHROMIUM cmd;
-  };
-  Cmds expected;
-  expected.cmd.Init(1);
-
-  gl_->DestroyStreamTextureCHROMIUM(1);
-  EXPECT_EQ(0, memcmp(&expected, commands_, sizeof(expected)));
-}
+// TODO: Implement unit test for CreateStreamTextureCHROMIUM
 // TODO: Implement unit test for GetTranslatedShaderSourceANGLE
 
 TEST_F(GLES2ImplementationTest, TexImageIOSurface2DCHROMIUM) {
@@ -1748,38 +1805,6 @@ TEST_F(GLES2ImplementationTest, VertexAttribDivisorANGLE) {
   EXPECT_EQ(0, memcmp(&expected, commands_, sizeof(expected)));
 }
 // TODO: Implement unit test for GenMailboxCHROMIUM
-
-TEST_F(GLES2ImplementationTest, ProduceTextureCHROMIUM) {
-  GLbyte data[64] = {0};
-  struct Cmds {
-    cmds::ProduceTextureCHROMIUMImmediate cmd;
-    GLbyte data[64];
-  };
-
-  for (int jj = 0; jj < 64; ++jj) {
-    data[jj] = static_cast<GLbyte>(jj);
-  }
-  Cmds expected;
-  expected.cmd.Init(GL_TEXTURE_2D, &data[0]);
-  gl_->ProduceTextureCHROMIUM(GL_TEXTURE_2D, &data[0]);
-  EXPECT_EQ(0, memcmp(&expected, commands_, sizeof(expected)));
-}
-
-TEST_F(GLES2ImplementationTest, ConsumeTextureCHROMIUM) {
-  GLbyte data[64] = {0};
-  struct Cmds {
-    cmds::ConsumeTextureCHROMIUMImmediate cmd;
-    GLbyte data[64];
-  };
-
-  for (int jj = 0; jj < 64; ++jj) {
-    data[jj] = static_cast<GLbyte>(jj);
-  }
-  Cmds expected;
-  expected.cmd.Init(GL_TEXTURE_2D, &data[0]);
-  gl_->ConsumeTextureCHROMIUM(GL_TEXTURE_2D, &data[0]);
-  EXPECT_EQ(0, memcmp(&expected, commands_, sizeof(expected)));
-}
 // TODO: Implement unit test for BindUniformLocationCHROMIUM
 
 TEST_F(GLES2ImplementationTest, BindTexImage2DCHROMIUM) {
@@ -1827,9 +1852,10 @@ TEST_F(GLES2ImplementationTest, LoseContextCHROMIUM) {
     cmds::LoseContextCHROMIUM cmd;
   };
   Cmds expected;
-  expected.cmd.Init(1, 2);
+  expected.cmd.Init(GL_GUILTY_CONTEXT_RESET_ARB, GL_GUILTY_CONTEXT_RESET_ARB);
 
-  gl_->LoseContextCHROMIUM(1, 2);
+  gl_->LoseContextCHROMIUM(GL_GUILTY_CONTEXT_RESET_ARB,
+                           GL_GUILTY_CONTEXT_RESET_ARB);
   EXPECT_EQ(0, memcmp(&expected, commands_, sizeof(expected)));
 }
 // TODO: Implement unit test for InsertSyncPointCHROMIUM
@@ -1874,4 +1900,3 @@ TEST_F(GLES2ImplementationTest, DiscardBackbufferCHROMIUM) {
   EXPECT_EQ(0, memcmp(&expected, commands_, sizeof(expected)));
 }
 #endif  // GPU_COMMAND_BUFFER_CLIENT_GLES2_IMPLEMENTATION_UNITTEST_AUTOGEN_H_
-

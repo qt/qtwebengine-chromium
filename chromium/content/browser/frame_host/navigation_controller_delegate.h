@@ -16,6 +16,7 @@ struct LoadNotificationDetails;
 struct NativeWebKeyboardEvent;
 class InterstitialPage;
 class InterstitialPageImpl;
+class RenderFrameHost;
 class RenderViewHost;
 class SiteInstance;
 class WebContents;
@@ -35,11 +36,12 @@ class NavigationControllerDelegate {
   virtual const std::string& GetContentsMimeType() const = 0;
   virtual void NotifyNavigationStateChanged(unsigned changed_flags) = 0;
   virtual void Stop() = 0;
-  virtual SiteInstance* GetSiteInstance() const = 0;
   virtual SiteInstance* GetPendingSiteInstance() const = 0;
   virtual int32 GetMaxPageID() = 0;
   virtual int32 GetMaxPageIDForSiteInstance(SiteInstance* site_instance) = 0;
   virtual bool IsLoading() const = 0;
+  virtual bool IsBeingDestroyed() const = 0;
+  virtual bool CanOverscrollContent() const = 0;
 
   // Methods from WebContentsImpl that NavigationControllerImpl needs to
   // call.
@@ -57,6 +59,7 @@ class NavigationControllerDelegate {
   virtual void UpdateMaxPageIDForSiteInstance(SiteInstance* site_instance,
                                               int32 page_id) = 0;
   virtual void ActivateAndShowRepostFormWarningDialog() = 0;
+  virtual bool HasAccessedInitialDocument() = 0;
 
   // This method is needed, since we are no longer guaranteed that the
   // embedder for NavigationController will be a WebContents object.
@@ -64,13 +67,14 @@ class NavigationControllerDelegate {
 
   // Methods needed by InterstitialPageImpl.
   virtual bool IsHidden() = 0;
-  virtual void RenderViewForInterstitialPageCreated(
-      RenderViewHost* render_view_host) = 0;
+  virtual void RenderFrameForInterstitialPageCreated(
+      RenderFrameHost* render_frame_host) = 0;
   virtual void AttachInterstitialPage(
       InterstitialPageImpl* interstitial_page) = 0;
   virtual void DetachInterstitialPage() = 0;
   virtual void SetIsLoading(RenderViewHost* render_view_host,
                             bool is_loading,
+                            bool to_different_document,
                             LoadNotificationDetails* details) = 0;
 };
 

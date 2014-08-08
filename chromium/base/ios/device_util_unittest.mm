@@ -30,10 +30,6 @@ TEST_F(DeviceUtilTest, GetPlatform) {
   GTEST_ASSERT_GT(ios::device_util::GetPlatform().length(), 0U);
 }
 
-TEST_F(DeviceUtilTest, IsRunningOnHighRamDevice) {
-  ios::device_util::IsRunningOnHighRamDevice();
-}
-
 TEST_F(DeviceUtilTest, IsSingleCoreDevice) {
   ios::device_util::IsSingleCoreDevice();
 }
@@ -56,8 +52,7 @@ TEST_F(DeviceUtilTest, GetDeviceIdentifier) {
   CleanNSUserDefaultsForDeviceId();
 
   std::string new_default_id = ios::device_util::GetDeviceIdentifier(NULL);
-  if (base::ios::IsRunningOnIOS6OrLater() &&
-      ![[[[UIDevice currentDevice] identifierForVendor] UUIDString]
+  if (![[[[UIDevice currentDevice] identifierForVendor] UUIDString]
           isEqualToString:@"00000000-0000-0000-0000-000000000000"]) {
     EXPECT_EQ(default_id, new_default_id);
   } else {
@@ -101,6 +96,33 @@ TEST_F(DeviceUtilTest, CheckMigrationFromZero) {
   EXPECT_NE(zero_id, new_id);
 
   CleanNSUserDefaultsForDeviceId();
+}
+
+TEST_F(DeviceUtilTest, GetSaltedStringEquals) {
+  std::string string1("The quick brown fox jumps over the lazy dog");
+  std::string string2("The quick brown fox jumps over the lazy dog");
+  std::string salt("salt");
+  // Same string and same salt should result in the same salted string.
+  EXPECT_EQ(ios::device_util::GetSaltedString(string1, salt),
+            ios::device_util::GetSaltedString(string2, salt));
+}
+
+TEST_F(DeviceUtilTest, GetSaltedStringNotEquals) {
+  std::string string1("The quick brown fox jumps over the lazy dog");
+  std::string string2("The lazy brown fox jumps over the quick dog");
+  std::string salt("salt");
+  // Different string and same salt should result in different salted strings.
+  EXPECT_NE(ios::device_util::GetSaltedString(string1, salt),
+            ios::device_util::GetSaltedString(string2, salt));
+}
+
+TEST_F(DeviceUtilTest, GetSaltedStringDifferentSalt) {
+  std::string string1("The quick brown fox jumps over the lazy dog");
+  std::string salt1("salt");
+  std::string salt2("pepper");
+  // Same string with different salt should result in different salted strings.
+  EXPECT_NE(ios::device_util::GetSaltedString(string1, salt1),
+            ios::device_util::GetSaltedString(string1, salt2));
 }
 
 TEST_F(DeviceUtilTest, CheckDeviceMigration) {

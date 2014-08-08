@@ -32,8 +32,7 @@
 #define FileEntrySync_h
 
 #include "modules/filesystem/EntrySync.h"
-#include "wtf/PassRefPtr.h"
-#include "wtf/RefCounted.h"
+#include "platform/heap/Handle.h"
 #include "wtf/text/WTFString.h"
 
 namespace WebCore {
@@ -42,21 +41,22 @@ class ExceptionState;
 class File;
 class FileWriterSync;
 
-class FileEntrySync : public EntrySync {
+class FileEntrySync FINAL : public EntrySync {
 public:
-    static PassRefPtr<FileEntrySync> create(PassRefPtr<DOMFileSystemBase> fileSystem, const String& fullPath)
+    static FileEntrySync* create(DOMFileSystemBase* fileSystem, const String& fullPath)
     {
-        return adoptRef(new FileEntrySync(fileSystem, fullPath));
+        return new FileEntrySync(fileSystem, fullPath);
     }
 
-    virtual bool isFile() const { return true; }
+    virtual bool isFile() const OVERRIDE { return true; }
 
-    PassRefPtr<File> file(ExceptionState&);
-    PassRefPtr<FileWriterSync> createWriter(ExceptionState&);
+    PassRefPtrWillBeRawPtr<File> file(ExceptionState&);
+    FileWriterSync* createWriter(ExceptionState&);
+
+    virtual void trace(Visitor*) OVERRIDE;
 
 private:
-    friend class EntrySync;
-    FileEntrySync(PassRefPtr<DOMFileSystemBase>, const String& fullPath);
+    FileEntrySync(DOMFileSystemBase*, const String& fullPath);
 };
 
 DEFINE_TYPE_CASTS(FileEntrySync, EntrySync, entry, entry->isFile(), entry.isFile());

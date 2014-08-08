@@ -12,46 +12,20 @@
 namespace ui {
 
 InputMethodAuraLinux::InputMethodAuraLinux(
-    internal::InputMethodDelegate* delegate) {
+    internal::InputMethodDelegate* delegate)
+    : allowed_to_fire_vkey_process_key_(false), vkey_processkey_flags_(0) {
   SetDelegate(delegate);
 }
 
 InputMethodAuraLinux::~InputMethodAuraLinux() {}
 
-// static
-void InputMethodAuraLinux::Initialize() {
-#if (USE_X11)
-  // Force a IBus IM context to run in synchronous mode.
-  //
-  // Background: IBus IM context runs by default in asynchronous mode.  In
-  // this mode, gtk_im_context_filter_keypress() consumes all the key events
-  // and returns true while asynchronously sending the event to an underlying
-  // IME implementation.  When the event has not actually been consumed by
-  // the underlying IME implementation, the context pushes the event back to
-  // the GDK event queue marking the event as already handled by the IBus IM
-  // context.
-  //
-  // The problem here is that those pushed-back GDK events are never handled
-  // when base::MessagePumpX11 is used, which only handles X events.  So, we
-  // make a IBus IM context run in synchronous mode by setting an environment
-  // variable.  This is only the interface to change the mode.
-  //
-  // Another possible solution is to use GDK event loop instead of X event
-  // loop.
-  //
-  // Since there is no reentrant version of setenv(3C), it's a caller's duty
-  // to avoid race conditions.  This function should be called in the main
-  // thread on a very early stage, and supposed to be called from
-  // ui::InitializeInputMethod().
-  scoped_ptr<base::Environment> env(base::Environment::Create());
-  env->SetVar("IBUS_ENABLE_SYNC_MODE", "1");
-#endif
-}
-
 // Overriden from InputMethod.
 
 void InputMethodAuraLinux::Init(bool focused) {
-  CHECK(LinuxInputMethodContextFactory::instance());
+  CHECK(LinuxInputMethodContextFactory::instance())
+      << "This failure was likely caused because "
+      << "ui::InitializeInputMethod(ForTesting) was not called "
+      << "before instantiating this class.";
   input_method_context_ =
       LinuxInputMethodContextFactory::instance()->CreateInputMethodContext(
           this);
@@ -81,17 +55,15 @@ bool InputMethodAuraLinux::DispatchKeyEvent(const ui::KeyEvent& event) {
   if (!GetTextInputClient())
     return DispatchKeyEventPostIME(event);
 
-  // Let an IME handle the key event first.
-  if (input_method_context_->DispatchKeyEvent(event)) {
-    if (event.type() == ET_KEY_PRESSED) {
-      const ui::KeyEvent fabricated_event(ET_KEY_PRESSED,
-                                          VKEY_PROCESSKEY,
-                                          event.flags(),
-                                          false);  // is_char
-      DispatchKeyEventPostIME(fabricated_event);
-    }
+  // Let an IME handle the key event first, and allow to fire a VKEY_PROCESSKEY
+  // event for keydown events.  Note that DOM Level 3 Events Sepc requires that
+  // only keydown events fire keyCode=229 events and not for keyup events.
+  if (event.type() == ET_KEY_PRESSED &&
+      (event.flags() & ui::EF_IME_FABRICATED_KEY) == 0)
+    AllowToFireProcessKey(event);
+  if (input_method_context_->DispatchKeyEvent(event))
     return true;
-  }
+  StopFiringProcessKey();
 
   // Otherwise, insert the character.
   const bool handled = DispatchKeyEventPostIME(event);
@@ -135,10 +107,6 @@ std::string InputMethodAuraLinux::GetInputLocale() {
   return "";
 }
 
-base::i18n::TextDirection InputMethodAuraLinux::GetInputTextDirection() {
-  return input_method_context_->GetInputTextDirection();
-}
-
 bool InputMethodAuraLinux::IsActive() {
   // InputMethodAuraLinux is always ready and up.
   return true;
@@ -152,25 +120,29 @@ bool InputMethodAuraLinux::IsCandidatePopupOpen() const {
 // Overriden from ui::LinuxInputMethodContextDelegate
 
 void InputMethodAuraLinux::OnCommit(const base::string16& text) {
-  TextInputClient* text_input_client = GetTextInputClient();
-  if (text_input_client)
-    text_input_client->InsertText(text);
+  MaybeFireProcessKey();
+  if (!IsTextInputTypeNone())
+    GetTextInputClient()->InsertText(text);
 }
 
 void InputMethodAuraLinux::OnPreeditChanged(
     const CompositionText& composition_text) {
+  MaybeFireProcessKey();
   TextInputClient* text_input_client = GetTextInputClient();
   if (text_input_client)
     text_input_client->SetCompositionText(composition_text);
 }
 
 void InputMethodAuraLinux::OnPreeditEnd() {
+  MaybeFireProcessKey();
   TextInputClient* text_input_client = GetTextInputClient();
   if (text_input_client && text_input_client->HasCompositionText())
     text_input_client->ClearCompositionText();
 }
 
-void InputMethodAuraLinux::OnPreeditStart() {}
+void InputMethodAuraLinux::OnPreeditStart() {
+  MaybeFireProcessKey();
+}
 
 // Overridden from InputMethodBase.
 
@@ -182,6 +154,30 @@ void InputMethodAuraLinux::OnDidChangeFocusedClient(
       focused ? focused->GetTextInputType() : TEXT_INPUT_TYPE_NONE);
 
   InputMethodBase::OnDidChangeFocusedClient(focused_before, focused);
+}
+
+// Helper functions to support VKEY_PROCESSKEY.
+
+void InputMethodAuraLinux::AllowToFireProcessKey(const ui::KeyEvent& event) {
+  allowed_to_fire_vkey_process_key_ = true;
+  vkey_processkey_flags_ = event.flags();
+}
+
+void InputMethodAuraLinux::MaybeFireProcessKey() {
+  if (!allowed_to_fire_vkey_process_key_)
+    return;
+
+  const ui::KeyEvent fabricated_event(ET_KEY_PRESSED,
+                                      VKEY_PROCESSKEY,
+                                      vkey_processkey_flags_,
+                                      false);  // is_char
+  DispatchKeyEventPostIME(fabricated_event);
+  StopFiringProcessKey();
+}
+
+void InputMethodAuraLinux::StopFiringProcessKey() {
+  allowed_to_fire_vkey_process_key_ = false;
+  vkey_processkey_flags_ = 0;
 }
 
 }  // namespace ui

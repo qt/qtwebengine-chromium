@@ -8,7 +8,9 @@
 #include "base/android/jni_array.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
+#include "content/browser/frame_host/render_frame_host_impl.h"
 #include "content/browser/media/android/browser_media_player_manager.h"
+#include "content/browser/media/media_web_contents_observer.h"
 #include "content/browser/renderer_host/compositor_impl_android.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/public/browser/browser_thread.h"
@@ -29,34 +31,52 @@ namespace content {
 namespace {
 
 // Pass a java surface object to the MediaPlayerAndroid object
-// identified by render process handle, render view ID and player ID.
+// identified by render process handle, render frame ID and player ID.
 static void SetSurfacePeer(
     const base::android::JavaRef<jobject>& surface,
     base::ProcessHandle render_process_handle,
-    int render_view_id,
+    int render_frame_id,
     int player_id) {
-  int renderer_id = 0;
+  int render_process_id = 0;
   RenderProcessHost::iterator it = RenderProcessHost::AllHostsIterator();
   while (!it.IsAtEnd()) {
     if (it.GetCurrentValue()->GetHandle() == render_process_handle) {
-      renderer_id = it.GetCurrentValue()->GetID();
+      render_process_id = it.GetCurrentValue()->GetID();
       break;
     }
     it.Advance();
   }
+  if (!render_process_id) {
+    DVLOG(1) << "Cannot find render process for render_process_handle "
+             << render_process_handle;
+    return;
+  }
 
-  if (renderer_id) {
-    RenderViewHostImpl* host = RenderViewHostImpl::FromID(
-        renderer_id, render_view_id);
-    if (host) {
-      media::MediaPlayerAndroid* player =
-          host->media_player_manager()->GetPlayer(player_id);
-      if (player &&
-          player != host->media_player_manager()->GetFullscreenPlayer()) {
-        gfx::ScopedJavaSurface scoped_surface(surface);
-        player->SetVideoSurface(scoped_surface.Pass());
-      }
-    }
+  RenderFrameHostImpl* frame =
+      RenderFrameHostImpl::FromID(render_process_id, render_frame_id);
+  if (!frame) {
+    DVLOG(1) << "Cannot find frame for render_frame_id " << render_frame_id;
+    return;
+  }
+
+  RenderViewHostImpl* view =
+      static_cast<RenderViewHostImpl*>(frame->GetRenderViewHost());
+  BrowserMediaPlayerManager* player_manager =
+      view->media_web_contents_observer()->GetMediaPlayerManager(frame);
+  if (!player_manager) {
+    DVLOG(1) << "Cannot find the media player manager for frame " << frame;
+    return;
+  }
+
+  media::MediaPlayerAndroid* player = player_manager->GetPlayer(player_id);
+  if (!player) {
+    DVLOG(1) << "Cannot find media player for player_id " << player_id;
+    return;
+  }
+
+  if (player != player_manager->GetFullscreenPlayer()) {
+    gfx::ScopedJavaSurface scoped_surface(surface);
+    player->SetVideoSurface(scoped_surface.Pass());
   }
 }
 
@@ -81,6 +101,7 @@ static void OnChildProcessStarted(JNIEnv*,
 
 void StartChildProcess(
     const CommandLine::StringVector& argv,
+    int child_process_id,
     const std::vector<content::FileDescriptorInfo>& files_to_register,
     const StartChildProcessCallback& callback) {
   JNIEnv* env = AttachCurrentThread();
@@ -119,6 +140,7 @@ void StartChildProcess(
   Java_ChildProcessLauncher_start(env,
       base::android::GetApplicationContext(),
       j_argv.obj(),
+      child_process_id,
       j_file_ids.obj(),
       j_file_fds.obj(),
       j_file_auto_close.obj(),
@@ -138,6 +160,14 @@ bool IsChildProcessOomProtected(base::ProcessHandle handle) {
       static_cast<jint>(handle));
 }
 
+void SetChildProcessInForeground(base::ProcessHandle handle,
+    bool in_foreground) {
+  JNIEnv* env = AttachCurrentThread();
+  DCHECK(env);
+  return Java_ChildProcessLauncher_setInForeground(env,
+      static_cast<jint>(handle), static_cast<jboolean>(in_foreground));
+}
+
 void EstablishSurfacePeer(
     JNIEnv* env, jclass clazz,
     jint pid, jobject surface, jint primary_id, jint secondary_id) {
@@ -151,12 +181,33 @@ void EstablishSurfacePeer(
       &SetSurfacePeer, jsurface, pid, primary_id, secondary_id));
 }
 
-jobject GetViewSurface(JNIEnv* env, jclass clazz, jint surface_id) {
-  // This is a synchronous call from the GPU process and is expected to be
-  // handled on a binder thread. Handling this on the UI thread will lead
-  // to deadlocks.
-  DCHECK(!BrowserThread::CurrentlyOn(BrowserThread::UI));
-  return CompositorImpl::GetSurface(surface_id);
+void RegisterViewSurface(int surface_id, jobject j_surface) {
+  JNIEnv* env = AttachCurrentThread();
+  DCHECK(env);
+  Java_ChildProcessLauncher_registerViewSurface(env, surface_id, j_surface);
+}
+
+void UnregisterViewSurface(int surface_id) {
+  JNIEnv* env = AttachCurrentThread();
+  DCHECK(env);
+  Java_ChildProcessLauncher_unregisterViewSurface(env, surface_id);
+}
+
+void RegisterChildProcessSurfaceTexture(int surface_texture_id,
+                                        int child_process_id,
+                                        jobject j_surface_texture) {
+  JNIEnv* env = AttachCurrentThread();
+  DCHECK(env);
+  Java_ChildProcessLauncher_registerSurfaceTexture(
+      env, surface_texture_id, child_process_id, j_surface_texture);
+}
+
+void UnregisterChildProcessSurfaceTexture(int surface_texture_id,
+                                          int child_process_id) {
+  JNIEnv* env = AttachCurrentThread();
+  DCHECK(env);
+  Java_ChildProcessLauncher_unregisterSurfaceTexture(
+      env, surface_texture_id, child_process_id);
 }
 
 jboolean IsSingleProcess(JNIEnv* env, jclass clazz) {

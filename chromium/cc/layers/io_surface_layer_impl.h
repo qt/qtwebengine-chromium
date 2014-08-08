@@ -21,7 +21,7 @@ class CC_EXPORT IOSurfaceLayerImpl : public LayerImpl {
   }
   virtual ~IOSurfaceLayerImpl();
 
-  void SetIOSurfaceProperties(unsigned io_surface_id, gfx::Size size);
+  void SetIOSurfaceProperties(unsigned io_surface_id, const gfx::Size& size);
 
   virtual scoped_ptr<LayerImpl> CreateLayerImpl(LayerTreeImpl* tree_impl)
       OVERRIDE;
@@ -32,19 +32,18 @@ class CC_EXPORT IOSurfaceLayerImpl : public LayerImpl {
 
   virtual bool WillDraw(DrawMode draw_mode,
                         ResourceProvider* resource_provider) OVERRIDE;
-  virtual void DidLoseOutputSurface() OVERRIDE;
+  virtual void ReleaseResources() OVERRIDE;
 
  private:
   IOSurfaceLayerImpl(LayerTreeImpl* tree_impl, int id);
 
-  void DestroyTexture();
+  void DestroyResource();
 
   virtual const char* LayerTypeAsString() const OVERRIDE;
 
   unsigned io_surface_id_;
   gfx::Size io_surface_size_;
   bool io_surface_changed_;
-  unsigned io_surface_texture_id_;
   unsigned io_surface_resource_id_;
 
   DISALLOW_COPY_AND_ASSIGN(IOSurfaceLayerImpl);

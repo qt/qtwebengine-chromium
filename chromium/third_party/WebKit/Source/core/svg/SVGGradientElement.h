@@ -21,12 +21,11 @@
 #ifndef SVGGradientElement_h
 #define SVGGradientElement_h
 
-#include "SVGNames.h"
+#include "core/SVGNames.h"
 #include "core/svg/SVGAnimatedBoolean.h"
 #include "core/svg/SVGAnimatedEnumeration.h"
 #include "core/svg/SVGAnimatedTransformList.h"
 #include "core/svg/SVGElement.h"
-#include "core/svg/SVGExternalResourcesRequired.h"
 #include "core/svg/SVGURIReference.h"
 #include "core/svg/SVGUnitTypes.h"
 #include "platform/graphics/Gradient.h"
@@ -39,43 +38,10 @@ enum SVGSpreadMethodType {
     SVGSpreadMethodReflect,
     SVGSpreadMethodRepeat
 };
-
-template<>
-struct SVGPropertyTraits<SVGSpreadMethodType> {
-    static unsigned highestEnumValue() { return SVGSpreadMethodRepeat; }
-
-    static String toString(SVGSpreadMethodType type)
-    {
-        switch (type) {
-        case SVGSpreadMethodUnknown:
-            return emptyString();
-        case SVGSpreadMethodPad:
-            return "pad";
-        case SVGSpreadMethodReflect:
-            return "reflect";
-        case SVGSpreadMethodRepeat:
-            return "repeat";
-        }
-
-        ASSERT_NOT_REACHED();
-        return emptyString();
-    }
-
-    static SVGSpreadMethodType fromString(const String& value)
-    {
-        if (value == "pad")
-            return SVGSpreadMethodPad;
-        if (value == "reflect")
-            return SVGSpreadMethodReflect;
-        if (value == "repeat")
-            return SVGSpreadMethodRepeat;
-        return SVGSpreadMethodUnknown;
-    }
-};
+template<> const SVGEnumerationStringEntries& getStaticStringEntries<SVGSpreadMethodType>();
 
 class SVGGradientElement : public SVGElement,
-                           public SVGURIReference,
-                           public SVGExternalResourcesRequired {
+                           public SVGURIReference {
 public:
     enum {
         SVG_SPREADMETHOD_UNKNOWN = SVGSpreadMethodUnknown,
@@ -86,25 +52,25 @@ public:
 
     Vector<Gradient::ColorStop> buildStops();
 
+    SVGAnimatedTransformList* gradientTransform() { return m_gradientTransform.get(); }
+    SVGAnimatedEnumeration<SVGSpreadMethodType>* spreadMethod() { return m_spreadMethod.get(); }
+    SVGAnimatedEnumeration<SVGUnitTypes::SVGUnitType>* gradientUnits() { return m_gradientUnits.get(); }
+
 protected:
     SVGGradientElement(const QualifiedName&, Document&);
 
     bool isSupportedAttribute(const QualifiedName&);
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual void svgAttributeChanged(const QualifiedName&);
+    virtual void svgAttributeChanged(const QualifiedName&) OVERRIDE;
 
 private:
-    virtual bool needsPendingResourceHandling() const { return false; }
+    virtual bool needsPendingResourceHandling() const OVERRIDE FINAL { return false; }
 
-    virtual void childrenChanged(bool changedByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0);
+    virtual void childrenChanged(bool changedByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0) OVERRIDE FINAL;
 
-    BEGIN_DECLARE_ANIMATED_PROPERTIES(SVGGradientElement)
-        DECLARE_ANIMATED_ENUMERATION(SpreadMethod, spreadMethod, SVGSpreadMethodType)
-        DECLARE_ANIMATED_ENUMERATION(GradientUnits, gradientUnits, SVGUnitTypes::SVGUnitType)
-        DECLARE_ANIMATED_TRANSFORM_LIST(GradientTransform, gradientTransform)
-        DECLARE_ANIMATED_STRING(Href, href)
-        DECLARE_ANIMATED_BOOLEAN(ExternalResourcesRequired, externalResourcesRequired)
-    END_DECLARE_ANIMATED_PROPERTIES
+    RefPtr<SVGAnimatedTransformList> m_gradientTransform;
+    RefPtr<SVGAnimatedEnumeration<SVGSpreadMethodType> > m_spreadMethod;
+    RefPtr<SVGAnimatedEnumeration<SVGUnitTypes::SVGUnitType> > m_gradientUnits;
 };
 
 inline bool isSVGGradientElement(const Node& node)
@@ -112,7 +78,7 @@ inline bool isSVGGradientElement(const Node& node)
     return node.hasTagName(SVGNames::radialGradientTag) || node.hasTagName(SVGNames::linearGradientTag);
 }
 
-DEFINE_NODE_TYPE_CASTS_WITH_FUNCTION(SVGGradientElement);
+DEFINE_ELEMENT_TYPE_CASTS_WITH_FUNCTION(SVGGradientElement);
 
 } // namespace WebCore
 

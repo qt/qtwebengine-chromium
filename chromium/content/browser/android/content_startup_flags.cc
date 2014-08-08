@@ -14,6 +14,7 @@
 #include "content/public/common/content_switches.h"
 #include "gpu/command_buffer/service/gpu_switches.h"
 #include "ui/base/ui_base_switches.h"
+#include "ui/native_theme/native_theme_switches.h"
 
 namespace content {
 
@@ -27,48 +28,45 @@ void SetContentCommandLineFlags(int max_render_process_count,
 
   CommandLine* parsed_command_line = CommandLine::ForCurrentProcess();
 
+  int command_line_renderer_limit = -1;
   if (parsed_command_line->HasSwitch(switches::kRendererProcessLimit)) {
     std::string limit = parsed_command_line->GetSwitchValueASCII(
         switches::kRendererProcessLimit);
     int value;
-    if (base::StringToInt(limit, &value))
-      max_render_process_count = value;
+    if (base::StringToInt(limit, &value)) {
+      command_line_renderer_limit = value;
+      if (value <= 0)
+        max_render_process_count = 0;
+    }
   }
 
-  if (max_render_process_count <= 0) {
+  if (command_line_renderer_limit > 0) {
+    int limit = std::min(command_line_renderer_limit,
+                         static_cast<int>(kMaxRendererProcessCount));
+    RenderProcessHost::SetMaxRendererProcessCount(limit);
+  } else if (max_render_process_count <= 0) {
     // Need to ensure the command line flag is consistent as a lot of chrome
     // internal code checks this directly, but it wouldn't normally get set when
     // we are implementing an embedded WebView.
     parsed_command_line->AppendSwitch(switches::kSingleProcess);
   } else {
-    max_render_process_count =
-        std::min(max_render_process_count,
-                 static_cast<int>(content::kMaxRendererProcessCount));
-    content::RenderProcessHost::SetMaxRendererProcessCount(
-        max_render_process_count);
+    int default_maximum = RenderProcessHost::GetMaxRendererProcessCount();
+    DCHECK(default_maximum <= static_cast<int>(kMaxRendererProcessCount));
+    if (max_render_process_count < default_maximum)
+      RenderProcessHost::SetMaxRendererProcessCount(max_render_process_count);
   }
 
-  parsed_command_line->AppendSwitch(switches::kForceCompositingMode);
-  parsed_command_line->AppendSwitch(switches::kAllowWebUICompositing);
   parsed_command_line->AppendSwitch(switches::kEnableThreadedCompositing);
   parsed_command_line->AppendSwitch(
       switches::kEnableCompositingForFixedPosition);
   parsed_command_line->AppendSwitch(switches::kEnableAcceleratedOverflowScroll);
-  parsed_command_line->AppendSwitch(
-      switches::kEnableAcceleratedScrollableFrames);
-  parsed_command_line->AppendSwitch(
-      switches::kEnableCompositedScrollingForFrames);
   parsed_command_line->AppendSwitch(switches::kEnableBeginFrameScheduling);
-  parsed_command_line->AppendSwitch(switches::kEnableDeadlineScheduling);
 
-  parsed_command_line->AppendSwitch(switches::kDisableGestureDebounce);
   parsed_command_line->AppendSwitch(switches::kEnableGestureTapHighlight);
   parsed_command_line->AppendSwitch(switches::kEnablePinch);
   parsed_command_line->AppendSwitch(switches::kEnableOverlayFullscreenVideo);
-  parsed_command_line->AppendSwitch(switches::kEnableOverlayScrollbars);
+  parsed_command_line->AppendSwitch(switches::kEnableOverlayScrollbar);
   parsed_command_line->AppendSwitch(switches::kEnableOverscrollNotifications);
-  parsed_command_line->AppendSwitchASCII(switches::kTouchAckTimeoutDelayMs,
-                                         "200");
 
   // Run the GPU service as a thread in the browser instead of as a
   // standalone process.
@@ -85,6 +83,8 @@ void SetContentCommandLineFlags(int max_render_process_count,
       cc::switches::kDisableCompositedAntialiasing);
 
   parsed_command_line->AppendSwitch(switches::kUIPrioritizeInGpuProcess);
+
+  parsed_command_line->AppendSwitch(switches::kEnableDelegatedRenderer);
 
   if (!plugin_descriptor.empty()) {
     parsed_command_line->AppendSwitchNative(

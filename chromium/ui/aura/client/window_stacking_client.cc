@@ -14,11 +14,10 @@ WindowStackingClient* instance = NULL;
 }  // namespace
 
 void SetWindowStackingClient(WindowStackingClient* client) {
-  delete instance;
   instance = client;
 }
 
-AURA_EXPORT WindowStackingClient* GetWindowStackingClient() {
+WindowStackingClient* GetWindowStackingClient() {
   return instance;
 }
 

@@ -59,18 +59,23 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
   virtual int Read(IOBuffer* buf,
                    int buf_len,
                    const CompletionCallback& callback) OVERRIDE;
-  virtual void StopCaching() OVERRIDE {}
+  virtual void StopCaching() OVERRIDE;
   virtual bool GetFullRequestHeaders(
       HttpRequestHeaders* headers) const OVERRIDE;
-  virtual void DoneReading() OVERRIDE {}
+  virtual int64 GetTotalReceivedBytes() const OVERRIDE;
+  virtual void DoneReading() OVERRIDE;
   virtual const HttpResponseInfo* GetResponseInfo() const OVERRIDE;
   virtual LoadState GetLoadState() const OVERRIDE;
   virtual UploadProgress GetUploadProgress() const OVERRIDE;
+  virtual void SetQuicServerInfo(QuicServerInfo* quic_server_info) OVERRIDE;
   virtual bool GetLoadTimingInfo(
       LoadTimingInfo* load_timing_info) const OVERRIDE;
   virtual void SetPriority(RequestPriority priority) OVERRIDE;
   virtual void SetWebSocketHandshakeStreamCreateHelper(
       WebSocketHandshakeStreamBase::CreateHelper* create_helper) OVERRIDE;
+  virtual void SetBeforeNetworkStartCallback(
+      const BeforeNetworkStartCallback& callback) OVERRIDE;
+  virtual int ResumeNetworkStart() OVERRIDE;
 
   // HttpStreamRequest::Delegate methods:
   virtual void OnStreamReady(const SSLConfig& used_ssl_config,
@@ -116,6 +121,7 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
                            FlowControlNegativeSendWindowSize);
 
   enum State {
+    STATE_NOTIFY_BEFORE_CREATE_STREAM,
     STATE_CREATE_STREAM,
     STATE_CREATE_STREAM_COMPLETE,
     STATE_INIT_STREAM,
@@ -151,6 +157,7 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
   // argument receive the result from the previous state.  If a method returns
   // ERR_IO_PENDING, then the result from OnIOComplete will be passed to the
   // next state method as the result arg.
+  int DoNotifyBeforeCreateStream();
   int DoCreateStream();
   int DoCreateStreamComplete(int result);
   int DoInitStream();
@@ -203,18 +210,13 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
   // Gets the response headers from the HttpStream.
   HttpResponseHeaders* GetResponseHeaders() const;
 
-  // Called when we reached EOF or got an error.  Returns true if we should
-  // resend the request.  |error| is OK when we reached EOF.
-  bool ShouldResendRequest(int error) const;
+  // Called when the socket is unexpectedly closed.  Returns true if the request
+  // should be resent in case of a socket reuse/close race.
+  bool ShouldResendRequest() const;
 
   // Resets the connection and the request headers for resend.  Called when
   // ShouldResendRequest() is true.
   void ResetConnectionAndRequestForResend();
-
-  // Decides the policy when the connection is closed before the end of headers
-  // has been read. This only applies to reading responses, and not writing
-  // requests.
-  int HandleConnectionClosedBeforeEndOfHeaders();
 
   // Sets up the state machine to restart the transaction with auth.
   void PrepareForAuthRestart(HttpAuth::Target target);
@@ -253,6 +255,8 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
 
   // Debug helper.
   static std::string DescribeState(State state);
+
+  void SetStream(HttpStreamBase* stream);
 
   scoped_refptr<HttpAuthController>
       auth_controllers_[HttpAuth::AUTH_NUM_TARGETS];
@@ -306,6 +310,9 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
   scoped_refptr<IOBuffer> read_buf_;
   int read_buf_len_;
 
+  // Total number of bytes received on streams for this transaction.
+  int64 total_received_bytes_;
+
   // The time the Start method was called.
   base::Time start_time_;
 
@@ -325,6 +332,8 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
   // objects. Only relevant when establishing a WebSocket connection.
   WebSocketHandshakeStreamBase::CreateHelper*
       websocket_handshake_stream_base_create_helper_;
+
+  BeforeNetworkStartCallback before_network_start_callback_;
 
   DISALLOW_COPY_AND_ASSIGN(HttpNetworkTransaction);
 };

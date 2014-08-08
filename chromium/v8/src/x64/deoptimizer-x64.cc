@@ -1,38 +1,15 @@
 // Copyright 2012 the V8 project authors. All rights reserved.
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-//       copyright notice, this list of conditions and the following
-//       disclaimer in the documentation and/or other materials provided
-//       with the distribution.
-//     * Neither the name of Google Inc. nor the names of its
-//       contributors may be used to endorse or promote products derived
-//       from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
-#include "v8.h"
+#include "src/v8.h"
 
 #if V8_TARGET_ARCH_X64
 
-#include "codegen.h"
-#include "deoptimizer.h"
-#include "full-codegen.h"
-#include "safepoint-table.h"
+#include "src/codegen.h"
+#include "src/deoptimizer.h"
+#include "src/full-codegen.h"
+#include "src/safepoint-table.h"
 
 namespace v8 {
 namespace internal {
@@ -51,6 +28,26 @@ void Deoptimizer::PatchCodeForDeoptimization(Isolate* isolate, Code* code) {
   // code patching below, and is not needed any more.
   code->InvalidateRelocation();
 
+  if (FLAG_zap_code_space) {
+    // Fail hard and early if we enter this code object again.
+    byte* pointer = code->FindCodeAgeSequence();
+    if (pointer != NULL) {
+      pointer += kNoCodeAgeSequenceLength;
+    } else {
+      pointer = code->instruction_start();
+    }
+    CodePatcher patcher(pointer, 1);
+    patcher.masm()->int3();
+
+    DeoptimizationInputData* data =
+        DeoptimizationInputData::cast(code->deoptimization_data());
+    int osr_offset = data->OsrPcOffset()->value();
+    if (osr_offset > 0) {
+      CodePatcher osr_patcher(code->instruction_start() + osr_offset, 1);
+      osr_patcher.masm()->int3();
+    }
+  }
+
   // For each LLazyBailout instruction insert a absolute call to the
   // corresponding deoptimization entry, or a short call to an absolute
   // jump if space is short. The absolute jumps are put in a table just
@@ -63,6 +60,12 @@ void Deoptimizer::PatchCodeForDeoptimization(Isolate* isolate, Code* code) {
 #endif
   DeoptimizationInputData* deopt_data =
       DeoptimizationInputData::cast(code->deoptimization_data());
+  SharedFunctionInfo* shared =
+      SharedFunctionInfo::cast(deopt_data->SharedFunctionInfo());
+  shared->EvictFromOptimizedCodeMap(code, "deoptimized code");
+  deopt_data->SetSharedFunctionInfo(Smi::FromInt(0));
+  // For each LLazyBailout instruction insert a call to the corresponding
+  // deoptimization entry.
   for (int i = 0; i < deopt_data->DeoptCount(); i++) {
     if (deopt_data->Pc(i)->value() == -1) continue;
     // Position where Call will be patched in.
@@ -71,7 +74,7 @@ void Deoptimizer::PatchCodeForDeoptimization(Isolate* isolate, Code* code) {
     // LLazyBailout instructions with nops if necessary.
     CodePatcher patcher(call_address, Assembler::kCallSequenceLength);
     patcher.masm()->Call(GetDeoptimizationEntry(isolate, i, LAZY),
-                         RelocInfo::NONE64);
+                         Assembler::RelocInfoNone());
     ASSERT(prev_call_address == NULL ||
            call_address >= prev_call_address + patch_size());
     ASSERT(call_address + patch_size() <= code->instruction_end());
@@ -97,7 +100,7 @@ void Deoptimizer::FillInputFrame(Address tos, JavaScriptFrame* frame) {
 
   // Fill the frame content from the actual data on the frame.
   for (unsigned i = 0; i < input_->GetFrameSize(); i += kPointerSize) {
-    input_->SetFrameSlot(i, Memory::uint64_at(tos + i));
+    input_->SetFrameSlot(i, Memory::uintptr_at(tos + i));
   }
 }
 
@@ -126,11 +129,6 @@ bool Deoptimizer::HasAlignmentPadding(JSFunction* function) {
 }
 
 
-Code* Deoptimizer::NotifyStubFailureBuiltin() {
-  return isolate_->builtins()->builtin(Builtins::kNotifyStubFailureSaveDoubles);
-}
-
-
 #define __ masm()->
 
 void Deoptimizer::EntryGenerator::Generate() {
@@ -141,7 +139,7 @@ void Deoptimizer::EntryGenerator::Generate() {
 
   const int kDoubleRegsSize = kDoubleSize *
       XMMRegister::NumAllocatableRegisters();
-  __ subq(rsp, Immediate(kDoubleRegsSize));
+  __ subp(rsp, Immediate(kDoubleRegsSize));
 
   for (int i = 0; i < XMMRegister::NumAllocatableRegisters(); ++i) {
     XMMRegister xmm_reg = XMMRegister::FromAllocationIndex(i);
@@ -153,10 +151,10 @@ void Deoptimizer::EntryGenerator::Generate() {
   // to restore all later.
   for (int i = 0; i < kNumberOfRegisters; i++) {
     Register r = Register::from_code(i);
-    __ push(r);
+    __ pushq(r);
   }
 
-  const int kSavedRegistersAreaSize = kNumberOfRegisters * kPointerSize +
+  const int kSavedRegistersAreaSize = kNumberOfRegisters * kRegisterSize +
                                       kDoubleRegsSize;
 
   // We use this to keep the value of the fifth argument temporarily.
@@ -165,32 +163,32 @@ void Deoptimizer::EntryGenerator::Generate() {
   Register arg5 = r11;
 
   // Get the bailout id from the stack.
-  __ movq(arg_reg_3, Operand(rsp, kSavedRegistersAreaSize));
+  __ movp(arg_reg_3, Operand(rsp, kSavedRegistersAreaSize));
 
   // Get the address of the location in the code object
   // and compute the fp-to-sp delta in register arg5.
-  __ movq(arg_reg_4,
-          Operand(rsp, kSavedRegistersAreaSize + 1 * kPointerSize));
-  __ lea(arg5, Operand(rsp, kSavedRegistersAreaSize + 2 * kPointerSize));
+  __ movp(arg_reg_4, Operand(rsp, kSavedRegistersAreaSize + 1 * kRegisterSize));
+  __ leap(arg5, Operand(rsp, kSavedRegistersAreaSize + 1 * kRegisterSize +
+                            kPCOnStackSize));
 
-  __ subq(arg5, rbp);
-  __ neg(arg5);
+  __ subp(arg5, rbp);
+  __ negp(arg5);
 
   // Allocate a new deoptimizer object.
   __ PrepareCallCFunction(6);
-  __ movq(rax, Operand(rbp, JavaScriptFrameConstants::kFunctionOffset));
-  __ movq(arg_reg_1, rax);
+  __ movp(rax, Operand(rbp, JavaScriptFrameConstants::kFunctionOffset));
+  __ movp(arg_reg_1, rax);
   __ Set(arg_reg_2, type());
   // Args 3 and 4 are already in the right registers.
 
   // On windows put the arguments on the stack (PrepareCallCFunction
   // has created space for this). On linux pass the arguments in r8 and r9.
 #ifdef _WIN64
-  __ movq(Operand(rsp, 4 * kPointerSize), arg5);
+  __ movq(Operand(rsp, 4 * kRegisterSize), arg5);
   __ LoadAddress(arg5, ExternalReference::isolate_address(isolate()));
-  __ movq(Operand(rsp, 5 * kPointerSize), arg5);
+  __ movq(Operand(rsp, 5 * kRegisterSize), arg5);
 #else
-  __ movq(r8, arg5);
+  __ movp(r8, arg5);
   __ LoadAddress(r9, ExternalReference::isolate_address(isolate()));
 #endif
 
@@ -199,54 +197,54 @@ void Deoptimizer::EntryGenerator::Generate() {
   }
   // Preserve deoptimizer object in register rax and get the input
   // frame descriptor pointer.
-  __ movq(rbx, Operand(rax, Deoptimizer::input_offset()));
+  __ movp(rbx, Operand(rax, Deoptimizer::input_offset()));
 
   // Fill in the input registers.
   for (int i = kNumberOfRegisters -1; i >= 0; i--) {
     int offset = (i * kPointerSize) + FrameDescription::registers_offset();
-    __ pop(Operand(rbx, offset));
+    __ PopQuad(Operand(rbx, offset));
   }
 
   // Fill in the double input registers.
   int double_regs_offset = FrameDescription::double_registers_offset();
   for (int i = 0; i < XMMRegister::NumAllocatableRegisters(); i++) {
     int dst_offset = i * kDoubleSize + double_regs_offset;
-    __ pop(Operand(rbx, dst_offset));
+    __ popq(Operand(rbx, dst_offset));
   }
 
   // Remove the bailout id and return address from the stack.
-  __ addq(rsp, Immediate(2 * kPointerSize));
+  __ addp(rsp, Immediate(1 * kRegisterSize + kPCOnStackSize));
 
   // Compute a pointer to the unwinding limit in register rcx; that is
   // the first stack slot not part of the input frame.
-  __ movq(rcx, Operand(rbx, FrameDescription::frame_size_offset()));
-  __ addq(rcx, rsp);
+  __ movp(rcx, Operand(rbx, FrameDescription::frame_size_offset()));
+  __ addp(rcx, rsp);
 
   // Unwind the stack down to - but not including - the unwinding
   // limit and copy the contents of the activation frame to the input
   // frame description.
-  __ lea(rdx, Operand(rbx, FrameDescription::frame_content_offset()));
+  __ leap(rdx, Operand(rbx, FrameDescription::frame_content_offset()));
   Label pop_loop_header;
   __ jmp(&pop_loop_header);
   Label pop_loop;
   __ bind(&pop_loop);
-  __ pop(Operand(rdx, 0));
-  __ addq(rdx, Immediate(sizeof(intptr_t)));
+  __ Pop(Operand(rdx, 0));
+  __ addp(rdx, Immediate(sizeof(intptr_t)));
   __ bind(&pop_loop_header);
-  __ cmpq(rcx, rsp);
+  __ cmpp(rcx, rsp);
   __ j(not_equal, &pop_loop);
 
   // Compute the output frame in the deoptimizer.
-  __ push(rax);
+  __ pushq(rax);
   __ PrepareCallCFunction(2);
-  __ movq(arg_reg_1, rax);
+  __ movp(arg_reg_1, rax);
   __ LoadAddress(arg_reg_2, ExternalReference::isolate_address(isolate()));
   {
     AllowExternalCallThatCantCauseGC scope(masm());
     __ CallCFunction(
         ExternalReference::compute_output_frames_function(isolate()), 2);
   }
-  __ pop(rax);
+  __ popq(rax);
 
   // Replace the current frame with the output frames.
   Label outer_push_loop, inner_push_loop,
@@ -254,23 +252,23 @@ void Deoptimizer::EntryGenerator::Generate() {
   // Outer loop state: rax = current FrameDescription**, rdx = one past the
   // last FrameDescription**.
   __ movl(rdx, Operand(rax, Deoptimizer::output_count_offset()));
-  __ movq(rax, Operand(rax, Deoptimizer::output_offset()));
-  __ lea(rdx, Operand(rax, rdx, times_pointer_size, 0));
+  __ movp(rax, Operand(rax, Deoptimizer::output_offset()));
+  __ leap(rdx, Operand(rax, rdx, times_pointer_size, 0));
   __ jmp(&outer_loop_header);
   __ bind(&outer_push_loop);
   // Inner loop state: rbx = current FrameDescription*, rcx = loop index.
-  __ movq(rbx, Operand(rax, 0));
-  __ movq(rcx, Operand(rbx, FrameDescription::frame_size_offset()));
+  __ movp(rbx, Operand(rax, 0));
+  __ movp(rcx, Operand(rbx, FrameDescription::frame_size_offset()));
   __ jmp(&inner_loop_header);
   __ bind(&inner_push_loop);
-  __ subq(rcx, Immediate(sizeof(intptr_t)));
-  __ push(Operand(rbx, rcx, times_1, FrameDescription::frame_content_offset()));
+  __ subp(rcx, Immediate(sizeof(intptr_t)));
+  __ Push(Operand(rbx, rcx, times_1, FrameDescription::frame_content_offset()));
   __ bind(&inner_loop_header);
-  __ testq(rcx, rcx);
+  __ testp(rcx, rcx);
   __ j(not_zero, &inner_push_loop);
-  __ addq(rax, Immediate(kPointerSize));
+  __ addp(rax, Immediate(kPointerSize));
   __ bind(&outer_loop_header);
-  __ cmpq(rax, rdx);
+  __ cmpp(rax, rdx);
   __ j(below, &outer_push_loop);
 
   for (int i = 0; i < XMMRegister::NumAllocatableRegisters(); ++i) {
@@ -280,14 +278,14 @@ void Deoptimizer::EntryGenerator::Generate() {
   }
 
   // Push state, pc, and continuation from the last output frame.
-  __ push(Operand(rbx, FrameDescription::state_offset()));
-  __ push(Operand(rbx, FrameDescription::pc_offset()));
-  __ push(Operand(rbx, FrameDescription::continuation_offset()));
+  __ Push(Operand(rbx, FrameDescription::state_offset()));
+  __ PushQuad(Operand(rbx, FrameDescription::pc_offset()));
+  __ PushQuad(Operand(rbx, FrameDescription::continuation_offset()));
 
   // Push the registers from the last output frame.
   for (int i = 0; i < kNumberOfRegisters; i++) {
     int offset = (i * kPointerSize) + FrameDescription::registers_offset();
-    __ push(Operand(rbx, offset));
+    __ PushQuad(Operand(rbx, offset));
   }
 
   // Restore the registers from the stack.
@@ -299,7 +297,7 @@ void Deoptimizer::EntryGenerator::Generate() {
       ASSERT(i > 0);
       r = Register::from_code(i - 1);
     }
-    __ pop(r);
+    __ popq(r);
   }
 
   // Set up the roots register.
@@ -317,7 +315,7 @@ void Deoptimizer::TableEntryGenerator::GeneratePrologue() {
   for (int i = 0; i < count(); i++) {
     int start = masm()->pc_offset();
     USE(start);
-    __ push_imm32(i);
+    __ pushq_imm32(i);
     __ jmp(&done);
     ASSERT(masm()->pc_offset() - start == table_entry_size_);
   }
@@ -326,12 +324,26 @@ void Deoptimizer::TableEntryGenerator::GeneratePrologue() {
 
 
 void FrameDescription::SetCallerPc(unsigned offset, intptr_t value) {
+  if (kPCOnStackSize == 2 * kPointerSize) {
+    // Zero out the high-32 bit of PC for x32 port.
+    SetFrameSlot(offset + kPointerSize, 0);
+  }
   SetFrameSlot(offset, value);
 }
 
 
 void FrameDescription::SetCallerFp(unsigned offset, intptr_t value) {
+  if (kFPOnStackSize == 2 * kPointerSize) {
+    // Zero out the high-32 bit of FP for x32 port.
+    SetFrameSlot(offset + kPointerSize, 0);
+  }
   SetFrameSlot(offset, value);
+}
+
+
+void FrameDescription::SetCallerConstantPool(unsigned offset, intptr_t value) {
+  // No out-of-line constant pool support.
+  UNREACHABLE();
 }
 
 

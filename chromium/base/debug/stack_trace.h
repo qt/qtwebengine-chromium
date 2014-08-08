@@ -27,6 +27,15 @@ namespace debug {
 // unit_tests only! This is not thread-safe: only call from main thread.
 BASE_EXPORT bool EnableInProcessStackDumping();
 
+// A different version of EnableInProcessStackDumping that also works for
+// sandboxed processes.  For more details take a look at the description
+// of EnableInProcessStackDumping.
+// Calling this function on Linux opens /proc/self/maps and caches its
+// contents. In DEBUG builds, this function also opens the object files that
+// are loaded in memory and caches their file descriptors (this cannot be
+// done in official builds because it has security implications).
+BASE_EXPORT bool EnableInProcessStackDumpingForSandbox();
+
 // A stacktrace can be helpful in debugging. For example, you can include a
 // stacktrace member in a object (probably around #ifndef NDEBUG) so that you
 // can later see where the given object was created from.
@@ -44,7 +53,7 @@ class BASE_EXPORT StackTrace {
   // Creates a stacktrace for an exception.
   // Note: this function will throw an import not found (StackWalk64) exception
   // on system without dbghelp 5.1.
-  StackTrace(_EXCEPTION_POINTERS* exception_pointers);
+  StackTrace(const _EXCEPTION_POINTERS* exception_pointers);
 #endif
 
   // Copying and assignment are allowed with the default functions.
@@ -55,11 +64,13 @@ class BASE_EXPORT StackTrace {
   // number of elements in the returned array.
   const void* const* Addresses(size_t* count) const;
 
+#if !defined(__UCLIBC__)
   // Prints the stack trace to stderr.
   void Print() const;
 
   // Resolves backtrace to symbols and write to stream.
   void OutputToStream(std::ostream* os) const;
+#endif
 
   // Resolves backtrace to symbols and returns as string.
   std::string ToString() const;

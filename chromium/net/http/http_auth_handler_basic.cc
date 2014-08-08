@@ -7,11 +7,12 @@
 #include <string>
 
 #include "base/base64.h"
-#include "base/i18n/icu_string_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "net/base/net_errors.h"
+#include "net/base/net_string_util.h"
 #include "net/http/http_auth.h"
+#include "net/http/http_auth_challenge_tokenizer.h"
 
 namespace net {
 
@@ -33,7 +34,7 @@ namespace {
 //
 // TODO(cbentzel): Realm may need to be decoded using RFC 2047 rules as
 // well, see http://crbug.com/25790.
-bool ParseRealm(const HttpAuth::ChallengeTokenizer& tokenizer,
+bool ParseRealm(const HttpAuthChallengeTokenizer& tokenizer,
                 std::string* realm) {
   CHECK(realm);
   realm->clear();
@@ -42,16 +43,17 @@ bool ParseRealm(const HttpAuth::ChallengeTokenizer& tokenizer,
     if (!LowerCaseEqualsASCII(parameters.name(), "realm"))
       continue;
 
-    if (!base::ConvertToUtf8AndNormalize(
-            parameters.value(), base::kCodepageLatin1, realm))
+    if (!net::ConvertToUtf8AndNormalize(parameters.value(), kCharsetLatin1,
+                                        realm)) {
       return false;
+    }
   }
   return parameters.valid();
 }
 
 }  // namespace
 
-bool HttpAuthHandlerBasic::Init(HttpAuth::ChallengeTokenizer* challenge) {
+bool HttpAuthHandlerBasic::Init(HttpAuthChallengeTokenizer* challenge) {
   auth_scheme_ = HttpAuth::AUTH_SCHEME_BASIC;
   score_ = 1;
   properties_ = 0;
@@ -59,7 +61,7 @@ bool HttpAuthHandlerBasic::Init(HttpAuth::ChallengeTokenizer* challenge) {
 }
 
 bool HttpAuthHandlerBasic::ParseChallenge(
-    HttpAuth::ChallengeTokenizer* challenge) {
+    HttpAuthChallengeTokenizer* challenge) {
   // Verify the challenge's auth-scheme.
   if (!LowerCaseEqualsASCII(challenge->scheme(), "basic"))
     return false;
@@ -73,7 +75,7 @@ bool HttpAuthHandlerBasic::ParseChallenge(
 }
 
 HttpAuth::AuthorizationResult HttpAuthHandlerBasic::HandleAnotherChallenge(
-    HttpAuth::ChallengeTokenizer* challenge) {
+    HttpAuthChallengeTokenizer* challenge) {
   // Basic authentication is always a single round, so any responses
   // should be treated as a rejection.  However, if the new challenge
   // is for a different realm, then indicate the realm change.
@@ -91,8 +93,8 @@ int HttpAuthHandlerBasic::GenerateAuthTokenImpl(
   DCHECK(credentials);
   // TODO(eroman): is this the right encoding of username/password?
   std::string base64_username_password;
-  base::Base64Encode(UTF16ToUTF8(credentials->username()) + ":" +
-                         UTF16ToUTF8(credentials->password()),
+  base::Base64Encode(base::UTF16ToUTF8(credentials->username()) + ":" +
+                         base::UTF16ToUTF8(credentials->password()),
                      &base64_username_password);
   *auth_token = "Basic " + base64_username_password;
   return OK;
@@ -105,7 +107,7 @@ HttpAuthHandlerBasic::Factory::~Factory() {
 }
 
 int HttpAuthHandlerBasic::Factory::CreateAuthHandler(
-    HttpAuth::ChallengeTokenizer* challenge,
+    HttpAuthChallengeTokenizer* challenge,
     HttpAuth::Target target,
     const GURL& origin,
     CreateReason reason,

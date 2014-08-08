@@ -1,42 +1,20 @@
 // Copyright 2012 the V8 project authors. All rights reserved.
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-//       copyright notice, this list of conditions and the following
-//       disclaimer in the documentation and/or other materials provided
-//       with the distribution.
-//     * Neither the name of Google Inc. nor the names of its
-//       contributors may be used to endorse or promote products derived
-//       from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
+#include <stdarg.h>
 #include <stdlib.h>
 #include <cmath>
-#include <cstdarg>
-#include "v8.h"
+
+#include "src/v8.h"
 
 #if V8_TARGET_ARCH_ARM
 
-#include "disasm.h"
-#include "assembler.h"
-#include "codegen.h"
-#include "arm/constants-arm.h"
-#include "arm/simulator-arm.h"
+#include "src/disasm.h"
+#include "src/assembler.h"
+#include "src/codegen.h"
+#include "src/arm/constants-arm.h"
+#include "src/arm/simulator-arm.h"
 
 #if defined(USE_SIMULATOR)
 
@@ -716,12 +694,12 @@ void Simulator::CheckICache(v8::internal::HashMap* i_cache,
   char* cached_line = cache_page->CachedData(offset & ~CachePage::kLineMask);
   if (cache_hit) {
     // Check that the data in memory matches the contents of the I-cache.
-    CHECK(memcmp(reinterpret_cast<void*>(instr),
-                 cache_page->CachedData(offset),
-                 Instruction::kInstrSize) == 0);
+    CHECK_EQ(0,
+             memcmp(reinterpret_cast<void*>(instr),
+                    cache_page->CachedData(offset), Instruction::kInstrSize));
   } else {
     // Cache miss.  Load memory into the cache.
-    OS::MemCopy(cached_line, line, CachePage::kLineLength);
+    memcpy(cached_line, line, CachePage::kLineLength);
     *cache_valid_byte = CachePage::LINE_VALID;
   }
 }
@@ -772,8 +750,8 @@ Simulator::Simulator(Isolate* isolate) : isolate_(isolate) {
   z_flag_FPSCR_ = false;
   c_flag_FPSCR_ = false;
   v_flag_FPSCR_ = false;
-  FPSCR_rounding_mode_ = RZ;
-  FPSCR_default_NaN_mode_ = true;
+  FPSCR_rounding_mode_ = RN;
+  FPSCR_default_NaN_mode_ = false;
 
   inv_op_vfp_flag_ = false;
   div_zero_vfp_flag_ = false;
@@ -792,6 +770,10 @@ Simulator::Simulator(Isolate* isolate) : isolate_(isolate) {
   InitializeCoverage();
 
   last_debugger_input_ = NULL;
+}
+
+
+Simulator::~Simulator() {
 }
 
 
@@ -843,6 +825,12 @@ class Redirection {
     char* addr_of_redirection =
         addr_of_swi - OFFSET_OF(Redirection, swi_instruction_);
     return reinterpret_cast<Redirection*>(addr_of_redirection);
+  }
+
+  static void* ReverseRedirection(int32_t reg) {
+    Redirection* redirection = FromSwiInstruction(
+        reinterpret_cast<Instruction*>(reinterpret_cast<void*>(reg)));
+    return redirection->external_function();
   }
 
  private:
@@ -906,8 +894,8 @@ double Simulator::get_double_from_register_pair(int reg) {
   // Read the bits from the unsigned integer register_[] array
   // into the double precision floating point value and return it.
   char buffer[2 * sizeof(vfp_registers_[0])];
-  OS::MemCopy(buffer, &registers_[reg], 2 * sizeof(registers_[0]));
-  OS::MemCopy(&dm_val, buffer, 2 * sizeof(registers_[0]));
+  memcpy(buffer, &registers_[reg], 2 * sizeof(registers_[0]));
+  memcpy(&dm_val, buffer, 2 * sizeof(registers_[0]));
   return(dm_val);
 }
 
@@ -1011,9 +999,9 @@ void Simulator::SetVFPRegister(int reg_index, const InputType& value) {
   if (register_size == 2) ASSERT(reg_index < DwVfpRegister::NumRegisters());
 
   char buffer[register_size * sizeof(vfp_registers_[0])];
-  OS::MemCopy(buffer, &value, register_size * sizeof(vfp_registers_[0]));
-  OS::MemCopy(&vfp_registers_[reg_index * register_size], buffer,
-              register_size * sizeof(vfp_registers_[0]));
+  memcpy(buffer, &value, register_size * sizeof(vfp_registers_[0]));
+  memcpy(&vfp_registers_[reg_index * register_size], buffer,
+         register_size * sizeof(vfp_registers_[0]));
 }
 
 
@@ -1025,9 +1013,9 @@ ReturnType Simulator::GetFromVFPRegister(int reg_index) {
 
   ReturnType value = 0;
   char buffer[register_size * sizeof(vfp_registers_[0])];
-  OS::MemCopy(buffer, &vfp_registers_[register_size * reg_index],
-              register_size * sizeof(vfp_registers_[0]));
-  OS::MemCopy(&value, buffer, register_size * sizeof(vfp_registers_[0]));
+  memcpy(buffer, &vfp_registers_[register_size * reg_index],
+         register_size * sizeof(vfp_registers_[0]));
+  memcpy(&value, buffer, register_size * sizeof(vfp_registers_[0]));
   return value;
 }
 
@@ -1056,14 +1044,14 @@ void Simulator::GetFpArgs(double* x, double* y, int32_t* z) {
 void Simulator::SetFpResult(const double& result) {
   if (use_eabi_hardfloat()) {
     char buffer[2 * sizeof(vfp_registers_[0])];
-    OS::MemCopy(buffer, &result, sizeof(buffer));
+    memcpy(buffer, &result, sizeof(buffer));
     // Copy result to d0.
-    OS::MemCopy(vfp_registers_, buffer, sizeof(buffer));
+    memcpy(vfp_registers_, buffer, sizeof(buffer));
   } else {
     char buffer[2 * sizeof(registers_[0])];
-    OS::MemCopy(buffer, &result, sizeof(buffer));
+    memcpy(buffer, &result, sizeof(buffer));
     // Copy result to r0 and r1.
-    OS::MemCopy(registers_, buffer, sizeof(buffer));
+    memcpy(registers_, buffer, sizeof(buffer));
   }
 }
 
@@ -1647,12 +1635,12 @@ void Simulator::HandleVList(Instruction* instr) {
           ReadW(reinterpret_cast<int32_t>(address + 1), instr)
         };
         double d;
-        OS::MemCopy(&d, data, 8);
+        memcpy(&d, data, 8);
         set_d_register_from_double(reg, d);
       } else {
         int32_t data[2];
         double d = get_double_from_d_register(reg);
-        OS::MemCopy(data, &d, 8);
+        memcpy(data, &d, 8);
         WriteW(reinterpret_cast<int32_t>(address), data[0], instr);
         WriteW(reinterpret_cast<int32_t>(address + 1), data[1], instr);
       }
@@ -1688,12 +1676,12 @@ typedef double (*SimulatorRuntimeFPIntCall)(double darg0, int32_t arg0);
 // This signature supports direct call in to API function native callback
 // (refer to InvocationCallback in v8.h).
 typedef void (*SimulatorRuntimeDirectApiCall)(int32_t arg0);
-typedef void (*SimulatorRuntimeProfilingApiCall)(int32_t arg0, int32_t arg1);
+typedef void (*SimulatorRuntimeProfilingApiCall)(int32_t arg0, void* arg1);
 
 // This signature supports direct call to accessor getter callback.
 typedef void (*SimulatorRuntimeDirectGetterCall)(int32_t arg0, int32_t arg1);
 typedef void (*SimulatorRuntimeProfilingGetterCall)(
-    int32_t arg0, int32_t arg1, int32_t arg2);
+    int32_t arg0, int32_t arg1, void* arg2);
 
 // Software interrupt instructions are used by the simulator to call into the
 // C-based V8 runtime.
@@ -1832,7 +1820,7 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
         CHECK(stack_aligned);
         SimulatorRuntimeProfilingApiCall target =
             reinterpret_cast<SimulatorRuntimeProfilingApiCall>(external);
-        target(arg0, arg1);
+        target(arg0, Redirection::ReverseRedirection(arg1));
       } else if (
           redirection->type() == ExternalReference::DIRECT_GETTER_CALL) {
         if (::v8::internal::FLAG_trace_sim || !stack_aligned) {
@@ -1861,7 +1849,7 @@ void Simulator::SoftwareInterrupt(Instruction* instr) {
         SimulatorRuntimeProfilingGetterCall target =
             reinterpret_cast<SimulatorRuntimeProfilingGetterCall>(
                 external);
-        target(arg0, arg1, arg2);
+        target(arg0, arg1, Redirection::ReverseRedirection(arg2));
       } else {
         // builtin call.
         ASSERT(redirection->type() == ExternalReference::BUILTIN_CALL);
@@ -2733,7 +2721,11 @@ void Simulator::DecodeType3(Instruction* instr) {
                int32_t rs_val = get_register(rs);
                int32_t ret_val = 0;
                ASSERT(rs_val != 0);
-               ret_val = rm_val/rs_val;
+               if ((rm_val == kMinInt) && (rs_val == -1)) {
+                 ret_val = kMinInt;
+               } else {
+                 ret_val = rm_val / rs_val;
+               }
                set_register(rn, ret_val);
                return;
              }
@@ -2905,7 +2897,7 @@ void Simulator::DecodeTypeVFP(Instruction* instr) {
       } else if ((instr->Opc2Value() == 0x0) && (instr->Opc3Value() == 0x3)) {
         // vabs
         double dm_value = get_double_from_d_register(vm);
-        double dd_value = fabs(dm_value);
+        double dd_value = std::fabs(dm_value);
         dd_value = canonicalizeNaN(dd_value);
         set_d_register_from_double(vd, dd_value);
       } else if ((instr->Opc2Value() == 0x1) && (instr->Opc3Value() == 0x1)) {
@@ -2921,7 +2913,7 @@ void Simulator::DecodeTypeVFP(Instruction* instr) {
       } else if ((instr->Opc2Value() == 0xA) && (instr->Opc3Value() == 0x3) &&
                  (instr->Bit(8) == 1)) {
         // vcvt.f64.s32 Dd, Dd, #<fbits>
-        int fraction_bits = 32 - ((instr->Bit(5) << 4) | instr->Bits(3, 0));
+        int fraction_bits = 32 - ((instr->Bits(3, 0) << 1) | instr->Bit(5));
         int fixed_value = get_sinteger_from_s_register(vd * 2);
         double divide = 1 << fraction_bits;
         set_d_register_from_double(vd, fixed_value / divide);
@@ -2934,7 +2926,7 @@ void Simulator::DecodeTypeVFP(Instruction* instr) {
       } else if (((instr->Opc2Value() == 0x1)) && (instr->Opc3Value() == 0x3)) {
         // vsqrt
         double dm_value = get_double_from_d_register(vm);
-        double dd_value = sqrt(dm_value);
+        double dd_value = std::sqrt(dm_value);
         dd_value = canonicalizeNaN(dd_value);
         set_d_register_from_double(vd, dd_value);
       } else if (instr->Opc3Value() == 0x0) {
@@ -3028,9 +3020,9 @@ void Simulator::DecodeTypeVFP(Instruction* instr) {
       int vd = instr->Bits(19, 16) | (instr->Bit(7) << 4);
       double dd_value = get_double_from_d_register(vd);
       int32_t data[2];
-      OS::MemCopy(data, &dd_value, 8);
+      memcpy(data, &dd_value, 8);
       data[instr->Bit(21)] = get_register(instr->RtValue());
-      OS::MemCopy(&dd_value, data, 8);
+      memcpy(&dd_value, data, 8);
       set_d_register_from_double(vd, dd_value);
     } else if ((instr->VLValue() == 0x1) &&
                (instr->VCValue() == 0x1) &&
@@ -3039,7 +3031,7 @@ void Simulator::DecodeTypeVFP(Instruction* instr) {
       int vn = instr->Bits(19, 16) | (instr->Bit(7) << 4);
       double dn_value = get_double_from_d_register(vn);
       int32_t data[2];
-      OS::MemCopy(data, &dn_value, 8);
+      memcpy(data, &dn_value, 8);
       set_register(instr->RtValue(), data[instr->Bit(21)]);
     } else if ((instr->VLValue() == 0x1) &&
                (instr->VCValue() == 0x0) &&
@@ -3270,8 +3262,8 @@ void Simulator::DecodeVCVTBetweenFloatingPointAndInteger(Instruction* instr) {
     inv_op_vfp_flag_ = get_inv_op_vfp_flag(mode, val, unsigned_integer);
 
     double abs_diff =
-      unsigned_integer ? fabs(val - static_cast<uint32_t>(temp))
-                       : fabs(val - temp);
+      unsigned_integer ? std::fabs(val - static_cast<uint32_t>(temp))
+                       : std::fabs(val - temp);
 
     inexact_vfp_flag_ = (abs_diff != 0);
 
@@ -3390,13 +3382,13 @@ void Simulator::DecodeType6CoprocessorIns(Instruction* instr) {
           if (instr->HasL()) {
             int32_t data[2];
             double d = get_double_from_d_register(vm);
-            OS::MemCopy(data, &d, 8);
+            memcpy(data, &d, 8);
             set_register(rt, data[0]);
             set_register(rn, data[1]);
           } else {
             int32_t data[] = { get_register(rt), get_register(rn) };
             double d;
-            OS::MemCopy(&d, data, 8);
+            memcpy(&d, data, 8);
             set_d_register_from_double(vm, d);
           }
         }
@@ -3419,13 +3411,13 @@ void Simulator::DecodeType6CoprocessorIns(Instruction* instr) {
             ReadW(address + 4, instr)
           };
           double val;
-          OS::MemCopy(&val, data, 8);
+          memcpy(&val, data, 8);
           set_d_register_from_double(vd, val);
         } else {
           // Store double to memory: vstr.
           int32_t data[2];
           double val = get_double_from_d_register(vd);
-          OS::MemCopy(data, &val, 8);
+          memcpy(data, &val, 8);
           WriteW(address, data[0], instr);
           WriteW(address + 4, data[1], instr);
         }
@@ -3455,7 +3447,8 @@ void Simulator::DecodeSpecialCondition(Instruction* instr) {
       if ((instr->Bits(18, 16) == 0) && (instr->Bits(11, 6) == 0x28) &&
           (instr->Bit(4) == 1)) {
         // vmovl signed
-        int Vd = (instr->Bit(22) << 4) | instr->VdValue();
+        if ((instr->VdValue() & 1) != 0) UNIMPLEMENTED();
+        int Vd = (instr->Bit(22) << 3) | (instr->VdValue() >> 1);
         int Vm = (instr->Bit(5) << 4) | instr->VmValue();
         int imm3 = instr->Bits(21, 19);
         if ((imm3 != 1) && (imm3 != 2) && (imm3 != 4)) UNIMPLEMENTED();
@@ -3478,7 +3471,8 @@ void Simulator::DecodeSpecialCondition(Instruction* instr) {
       if ((instr->Bits(18, 16) == 0) && (instr->Bits(11, 6) == 0x28) &&
           (instr->Bit(4) == 1)) {
         // vmovl unsigned
-        int Vd = (instr->Bit(22) << 4) | instr->VdValue();
+        if ((instr->VdValue() & 1) != 0) UNIMPLEMENTED();
+        int Vd = (instr->Bit(22) << 3) | (instr->VdValue() >> 1);
         int Vm = (instr->Bit(5) << 4) | instr->VmValue();
         int imm3 = instr->Bits(21, 19);
         if ((imm3 != 1) && (imm3 != 2) && (imm3 != 4)) UNIMPLEMENTED();

@@ -7,9 +7,7 @@
 
 #include <string>
 
-#include "base/basictypes.h"
-#include "base/compiler_specific.h"
-#include "base/strings/string16.h"
+#include "base/macros.h"
 #include "ui/views/controls/button/button.h"
 #include "ui/views/controls/textfield/textfield_controller.h"
 #include "ui/views/examples/example_base.h"
@@ -21,9 +19,9 @@ class LabelButton;
 namespace examples {
 
 // TextfieldExample mimics login screen.
-class TextfieldExample : public ExampleBase,
-                         public TextfieldController,
-                         public ButtonListener {
+class VIEWS_EXAMPLES_EXPORT TextfieldExample : public ExampleBase,
+                                               public TextfieldController,
+                                               public ButtonListener {
  public:
   TextfieldExample();
   virtual ~TextfieldExample();
@@ -34,7 +32,7 @@ class TextfieldExample : public ExampleBase,
  private:
   // TextfieldController:
   virtual void ContentsChanged(Textfield* sender,
-                               const string16& new_contents) OVERRIDE;
+                               const base::string16& new_contents) OVERRIDE;
   virtual bool HandleKeyEvent(Textfield* sender,
                               const ui::KeyEvent& key_event) OVERRIDE;
   virtual bool HandleMouseEvent(Textfield* sender,

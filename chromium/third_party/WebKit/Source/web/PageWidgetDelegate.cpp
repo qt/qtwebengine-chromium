@@ -29,18 +29,18 @@
  */
 
 #include "config.h"
-#include "PageWidgetDelegate.h"
+#include "web/PageWidgetDelegate.h"
 
-#include "PageOverlayList.h"
-#include "WebInputEvent.h"
-#include "WebInputEventConversion.h"
+#include "core/frame/FrameView.h"
+#include "core/frame/LocalFrame.h"
 #include "core/page/AutoscrollController.h"
 #include "core/page/EventHandler.h"
-#include "core/frame/Frame.h"
-#include "core/frame/FrameView.h"
-#include "core/rendering/RenderLayerCompositor.h"
 #include "core/rendering/RenderView.h"
+#include "core/rendering/compositing/RenderLayerCompositor.h"
 #include "platform/graphics/GraphicsContext.h"
+#include "public/web/WebInputEvent.h"
+#include "web/PageOverlayList.h"
+#include "web/WebInputEventConversion.h"
 #include "wtf/CurrentTime.h"
 
 using namespace WebCore;
@@ -54,7 +54,9 @@ static inline FrameView* mainFrameView(Page* page)
     // FIXME: Can we remove this check?
     if (!page->mainFrame())
         return 0;
-    return page->mainFrame()->view();
+    if (!page->mainFrame()->isLocalFrame())
+        return 0;
+    return page->deprecatedLocalMainFrame()->view();
 }
 
 void PageWidgetDelegate::animate(Page* page, double monotonicFrameBeginTime)
@@ -63,31 +65,14 @@ void PageWidgetDelegate::animate(Page* page, double monotonicFrameBeginTime)
     if (!view)
         return;
     page->autoscrollController().animate(monotonicFrameBeginTime);
-    view->serviceScriptedAnimations(monotonicFrameBeginTime);
+    page->animator().serviceScriptedAnimations(monotonicFrameBeginTime);
 }
 
 void PageWidgetDelegate::layout(Page* page)
 {
-    RefPtr<FrameView> view = mainFrameView(page);
-    if (!view)
+    if (!page || !page->mainFrame())
         return;
-    // In order for our child HWNDs (NativeWindowWidgets) to update properly,
-    // they need to be told that we are updating the screen. The problem is that
-    // the native widgets need to recalculate their clip region and not overlap
-    // any of our non-native widgets. To force the resizing, call
-    // setFrameRect(). This will be a quick operation for most frames, but the
-    // NativeWindowWidgets will update a proper clipping region.
-    view->setFrameRect(view->frameRect());
-
-    // setFrameRect may have the side-effect of causing existing page layout to
-    // be invalidated, so layout needs to be called last.
-    view->updateLayoutAndStyleIfNeededRecursive();
-
-    // For now, as we know this is the point in code where the compositor has
-    // actually asked for Blink to update the composited layer tree. So finally
-    // do all the deferred work for updateCompositingLayers() here.
-    if (RenderView* renderView = view->renderView())
-        renderView->compositor()->updateCompositingLayers(CompositingUpdateFinishAllDeferredWork);
+    page->animator().updateLayoutAndStyleForPainting();
 }
 
 void PageWidgetDelegate::paint(Page* page, PageOverlayList* overlays, WebCanvas* canvas, const WebRect& rect, CanvasBackground background)
@@ -99,10 +84,10 @@ void PageWidgetDelegate::paint(Page* page, PageOverlayList* overlays, WebCanvas*
     gc.applyDeviceScaleFactor(page->deviceScaleFactor());
     gc.setUseHighResMarkers(page->deviceScaleFactor() > 1.5f);
     IntRect dirtyRect(rect);
-    gc.save();
+    gc.save(); // Needed to save the canvas, not the GraphicsContext.
     FrameView* view = mainFrameView(page);
     // FIXME: Can we remove the mainFrame()->document() check?
-    if (view && page->mainFrame()->document()) {
+    if (view && page->deprecatedLocalMainFrame()->document()) {
         gc.clip(dirtyRect);
         view->paint(&gc, dirtyRect);
         if (overlays)
@@ -115,7 +100,7 @@ void PageWidgetDelegate::paint(Page* page, PageOverlayList* overlays, WebCanvas*
 
 bool PageWidgetDelegate::handleInputEvent(Page* page, PageWidgetEventHandler& handler, const WebInputEvent& event)
 {
-    Frame* frame = page ? page->mainFrame() : 0;
+    LocalFrame* frame = page && page->mainFrame()->isLocalFrame() ? page->deprecatedLocalMainFrame() : 0;
     switch (event.type) {
 
     // FIXME: WebKit seems to always return false on mouse events processing
@@ -195,32 +180,32 @@ bool PageWidgetDelegate::handleInputEvent(Page* page, PageWidgetEventHandler& ha
 // ----------------------------------------------------------------
 // Default handlers for PageWidgetEventHandler
 
-void PageWidgetEventHandler::handleMouseMove(Frame& mainFrame, const WebMouseEvent& event)
+void PageWidgetEventHandler::handleMouseMove(LocalFrame& mainFrame, const WebMouseEvent& event)
 {
     mainFrame.eventHandler().handleMouseMoveEvent(PlatformMouseEventBuilder(mainFrame.view(), event));
 }
 
-void PageWidgetEventHandler::handleMouseLeave(Frame& mainFrame, const WebMouseEvent& event)
+void PageWidgetEventHandler::handleMouseLeave(LocalFrame& mainFrame, const WebMouseEvent& event)
 {
     mainFrame.eventHandler().handleMouseLeaveEvent(PlatformMouseEventBuilder(mainFrame.view(), event));
 }
 
-void PageWidgetEventHandler::handleMouseDown(Frame& mainFrame, const WebMouseEvent& event)
+void PageWidgetEventHandler::handleMouseDown(LocalFrame& mainFrame, const WebMouseEvent& event)
 {
     mainFrame.eventHandler().handleMousePressEvent(PlatformMouseEventBuilder(mainFrame.view(), event));
 }
 
-void PageWidgetEventHandler::handleMouseUp(Frame& mainFrame, const WebMouseEvent& event)
+void PageWidgetEventHandler::handleMouseUp(LocalFrame& mainFrame, const WebMouseEvent& event)
 {
     mainFrame.eventHandler().handleMouseReleaseEvent(PlatformMouseEventBuilder(mainFrame.view(), event));
 }
 
-bool PageWidgetEventHandler::handleMouseWheel(Frame& mainFrame, const WebMouseWheelEvent& event)
+bool PageWidgetEventHandler::handleMouseWheel(LocalFrame& mainFrame, const WebMouseWheelEvent& event)
 {
     return mainFrame.eventHandler().handleWheelEvent(PlatformWheelEventBuilder(mainFrame.view(), event));
 }
 
-bool PageWidgetEventHandler::handleTouchEvent(Frame& mainFrame, const WebTouchEvent& event)
+bool PageWidgetEventHandler::handleTouchEvent(LocalFrame& mainFrame, const WebTouchEvent& event)
 {
     return mainFrame.eventHandler().handleTouchEvent(PlatformTouchEventBuilder(mainFrame.view(), event));
 }

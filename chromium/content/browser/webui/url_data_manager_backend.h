@@ -19,7 +19,7 @@
 class GURL;
 
 namespace appcache {
-class AppCacheService;
+class AppCacheServiceImpl;
 }
 
 namespace base {
@@ -48,7 +48,7 @@ class URLDataManagerBackend : public base::SupportsUserData::Data {
   static net::URLRequestJobFactory::ProtocolHandler* CreateProtocolHandler(
       content::ResourceContext* resource_context,
       bool is_incognito,
-      appcache::AppCacheService* appcache_service,
+      appcache::AppCacheServiceImpl* appcache_service,
       ChromeBlobStorageContext* blob_storage_context);
 
   // Adds a DataSource to the collection of data sources.
@@ -77,7 +77,7 @@ class URLDataManagerBackend : public base::SupportsUserData::Data {
   static void CallStartRequest(scoped_refptr<URLDataSourceImpl> source,
                                const std::string& path,
                                int render_process_id,
-                               int render_view_id,
+                               int render_frame_id,
                                int request_id);
 
   // Remove a request from the list of pending requests.
@@ -87,6 +87,10 @@ class URLDataManagerBackend : public base::SupportsUserData::Data {
   // Called by ~URLRequestChromeJob to verify that |pending_requests_| is kept
   // up to date.
   bool HasPendingJob(URLRequestChromeJob* job) const;
+
+  // Look up the data source for the request. Returns the source if it is found,
+  // else NULL.
+  URLDataSourceImpl* GetDataSourceFromURL(const GURL& url);
 
   // Custom sources of data, keyed by source path (e.g. "favicon").
   DataSourceMap data_sources_;

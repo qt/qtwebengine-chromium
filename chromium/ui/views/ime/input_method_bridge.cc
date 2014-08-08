@@ -33,6 +33,7 @@ class InputMethodBridge::HostObserver : public ui::InputMethodObserver {
       const ui::TextInputClient* client) OVERRIDE {}
   virtual void OnInputMethodDestroyed(
       const ui::InputMethod* input_method) OVERRIDE;
+  virtual void OnShowImeIfNeeded() OVERRIDE {}
 
  private:
   InputMethodBridge* bridge_;
@@ -159,12 +160,6 @@ std::string InputMethodBridge::GetInputLocale() {
   return host_->GetInputLocale();
 }
 
-base::i18n::TextDirection InputMethodBridge::GetInputTextDirection() {
-  DCHECK(host_);
-
-  return host_->GetInputTextDirection();
-}
-
 bool InputMethodBridge::IsActive() {
   DCHECK(host_);
 
@@ -177,8 +172,13 @@ bool InputMethodBridge::IsCandidatePopupOpen() const {
   return host_->IsCandidatePopupOpen();
 }
 
+void InputMethodBridge::ShowImeIfNeeded() {
+  DCHECK(host_);
+  host_->ShowImeIfNeeded();
+}
+
 // Overridden from TextInputClient. Forward an event from the system-wide IME
-// to the text input |client|, which is e.g. views::NativeTextfieldViews.
+// to the text input |client|, which is e.g. views::Textfield.
 void InputMethodBridge::SetCompositionText(
     const ui::CompositionText& composition) {
   TextInputClient* client = GetTextInputClient();
@@ -198,13 +198,13 @@ void InputMethodBridge::ClearCompositionText() {
     client->ClearCompositionText();
 }
 
-void InputMethodBridge::InsertText(const string16& text) {
+void InputMethodBridge::InsertText(const base::string16& text) {
   TextInputClient* client = GetTextInputClient();
   if (client)
     client->InsertText(text);
 }
 
-void InputMethodBridge::InsertChar(char16 ch, int flags) {
+void InputMethodBridge::InsertChar(base::char16 ch, int flags) {
   TextInputClient* client = GetTextInputClient();
   if (client)
     client->InsertChar(ch, flags);
@@ -280,7 +280,7 @@ bool InputMethodBridge::DeleteRange(const gfx::Range& range) {
 }
 
 bool InputMethodBridge::GetTextFromRange(const gfx::Range& range,
-                                         string16* text) const {
+                                         base::string16* text) const {
   TextInputClient* client = GetTextInputClient();
   return client ? client->GetTextFromRange(range, text) : false;
 }
@@ -317,6 +317,13 @@ void InputMethodBridge::OnCandidateWindowUpdated() {
 }
 
 void InputMethodBridge::OnCandidateWindowHidden() {
+}
+
+bool InputMethodBridge::IsEditingCommandEnabled(int command_id) {
+  return false;
+}
+
+void InputMethodBridge::ExecuteEditingCommand(int command_id) {
 }
 
 // Overridden from FocusChangeListener.

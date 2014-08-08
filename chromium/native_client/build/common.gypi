@@ -31,6 +31,19 @@
     # Set this to true when building with Clang.
     'clang%': 0,
 
+    'conditions': [
+      ['OS=="mac"', {
+        # On Mac only clang is new enough to build the trusted code.
+        'clang%': 1,
+      }],
+      # Set ARM float abi compilation flag.
+      ['OS=="android"', {
+        'arm_float_abi%': 'softfp',
+      }, {
+        'arm_float_abi%': 'hard',
+      }],
+    ],
+
     # Set to 1 to enable code coverage.  In addition to build changes
     # (e.g. extra CFLAGS), also creates a new target in the src/chrome
     # project file called "coverage".
@@ -56,9 +69,6 @@
     # Set ARM fpu compilation flags (only meaningful if arm_version==7 and
     # arm_neon==0).
     'arm_fpu%': 'vfpv3',
-
-    # Set ARM float abi compilation flag.
-    'arm_float_abi%': 'softfp',
 
     # Version of the mac sdk to use.
     'mac_sdk%': '10.6',
@@ -97,11 +107,12 @@
             # NOTE: currently only nacl is generating gyp files on an arm board.
             #    The arm.* -> arm substitution in chrome's common.gypi isn't
             #    appropriate in that context as we actually use target_arch==arm
-            #    to me x86 -> arm cross compile. When actually running on an arm
-            #    board, we'll generate ia32 for now, so that the generation
+            #    to mean x86 -> arm cross compile. When actually running on an
+            #    arm board, we'll generate ia32 for now, so that the generation
             #    succeeds.
             'target_arch%':
-              '<!(uname -m | sed -e "s/i.86/ia32/;s/x86_64/x64/;s/amd64/x64/;s/arm.*/ia32/")'
+                '<!(echo "<!pymod_do_main(detect_nacl_host_arch)" | sed -e "s/arm.*/ia32/")',
+
           }, {  # OS!="linux"
             'target_arch%': 'ia32',
           }],
@@ -110,6 +121,7 @@
       # These come from the above variable scope.
       'nacl_standalone%': '<(nacl_standalone)',
       'target_arch%': '<(target_arch)',
+      'host_arch%': '<(target_arch)',
       'branding%': '<(branding)',
       'buildtype%': '<(buildtype)',
 
@@ -119,6 +131,16 @@
         # means we can't set a default here.
         ['nacl_standalone!=0', {
           'sysroot%': '',
+        }],
+        #
+        # A flag for POSIX platforms
+        ['OS=="win"', {
+          'os_posix%': 0,
+         }, {
+          'os_posix%': 1,
+        }],
+        ['OS=="android"', { # Android target_arch defaults to ARM.
+          'target_arch%': 'arm',
         }],
       ],
 
@@ -138,6 +160,8 @@
     'nacl_validator_ragel%': 1,
 
     'linux2%': 0,
+
+    'os_posix%': '<(os_posix)',
   },
 
   'target_defaults': {
@@ -262,7 +286,7 @@
     ],
   },
   'conditions': [
-    ['OS=="linux"', {
+    ['OS=="linux" or OS=="android"', {
       'target_defaults': {
         # Enable -Werror by default, but put it in a variable so it can
         # be disabled in ~/.gyp/include.gypi on the valgrind builders.
@@ -270,14 +294,25 @@
           'werror%': '-Werror',
         },
         'cflags': [
-           '<(werror)',  # See note above about the werror variable.
-           '-pthread',
+          '<(werror)',  # See note above about the werror variable.
+          '-pthread',
           '-fno-exceptions',
           '-Wall', # TODO(bradnelson): why does this disappear?!?
         ],
         'conditions': [
           ['nacl_standalone==1 and OS=="linux"', {
             'cflags': ['-fPIC'],
+          }],
+          ['OS=="android"', {
+            'defines': ['NACL_ANDROID=1'],
+           }, {
+            'defines': ['NACL_ANDROID=0'],
+            'link_settings': {
+              'libraries': [
+                '-lrt',
+                '-lpthread',
+              ],
+            }
           }],
           ['nacl_standalone==1 and nacl_strict_warnings==1', {
             # TODO(gregoryd): remove the condition when the issues in
@@ -301,75 +336,87 @@
               '-Wstrict-prototypes',
             ],
           }],
-          [ 'target_arch=="arm"', {
-              'cflags': [
+          ['target_arch=="arm"', {
+            'target_conditions': [
+              ['_toolset=="target"', {
+                'cflags': [
                   '-Wno-abi',
                   '-fno-exceptions',
                   '-Wall',
                   '-fPIC',
-                  '--sysroot=<(sysroot)',
-              ],
-              'ldflags': [
-                  '--sysroot=<(sysroot)',
-              ],
-              # TODO(mcgrathr): This is copied from the arm section of
-              # chromium/src/build/common.gypi, but these details really
-              # should be more fully harmonized and shared.
-              'conditions': [
+                ],
+                # TODO(mcgrathr): This is copied from the arm section of
+                # chromium/src/build/common.gypi, but these details really
+                # should be more fully harmonized and shared.
+                'conditions': [
+                  ['sysroot!=""', {
+                    'cflags': [
+                      '--sysroot=<(sysroot)',
+                    ],
+                    'ldflags': [
+                      '--sysroot=<(sysroot)',
+                    ],
+                  }],
                   ['arm_thumb==1', {
-                      'cflags': [
-                          '-mthumb',
-                      ]
+                    'cflags': [
+                      '-mthumb',
+                    ]
                   }],
                   ['arm_version==7', {
-                      'cflags': [
-                          '-march=armv7-a',
-                          '-mtune=cortex-a9',
-                          '-mfloat-abi=<(arm_float_abi)',
-                      ],
-                      'conditions': [
-                          ['arm_neon==1', {
-                              'cflags': [ '-mfpu=neon', ],
-                          }, {
-                              'cflags': [ '-mfpu=<(arm_fpu)', ],
-                          }]
-                      ],
+                    'cflags': [
+                    '-march=armv7-a',
+                    '-mtune=cortex-a9',
+                    '-mfloat-abi=<(arm_float_abi)',
+                    ],
+                    'conditions': [
+                      ['arm_neon==1', {
+                        'cflags': [ '-mfpu=neon', ],
+                      }, {
+                        'cflags': [ '-mfpu=<(arm_fpu)', ],
+                      }]
+                    ],
                   }],
-              ],
-            }],
-            ['target_arch=="mipsel"', {
-              # Copied from chromium build/common.gypi
-              'conditions': [
-                ['mips_arch_variant=="mips32r2"', {
-                  'cflags': ['-mips32r2'],
-                }, {
-                  'cflags': ['-mips32'],
-                }],
-              ],
-            }],
-            ['target_arch=="ia32" or target_arch=="x64"', {
-              'conditions': [
-                ['target_arch=="x64"', {
-                  'variables': {
-                    'mbits_flag': '-m64',
-                  },
-                }, {
-                  'variables': {
-                    'mbits_flag': '-m32',
-                  }
-                },],
-              ],
-              'asflags': [
-                '<(mbits_flag)',
-              ],
-              'cflags': [
-                '<(mbits_flag)',
-                '-fno-exceptions',
-                '-Wall',
-              ],
-              'ldflags': [
-                '<(mbits_flag)',
-              ],
+                ],
+              }],
+            ],
+          }],
+          ['target_arch=="mipsel"', {
+            'target_conditions': [
+              ['_toolset=="target"', {
+                # Copied from chromium build/common.gypi
+                'conditions': [
+                  ['mips_arch_variant=="mips32r2"', {
+                    'cflags': ['-mips32r2'],
+                  }, {
+                    'cflags': ['-mips32'],
+                  }],
+                ],
+              }],
+            ],
+          }],
+          ['target_arch=="ia32" or target_arch=="x64"', {
+            'conditions': [
+              ['target_arch=="x64"', {
+                'variables': {
+                  'mbits_flag': '-m64',
+                },
+              }, {
+                'variables': {
+                  'mbits_flag': '-m32',
+                }
+              },],
+            ],
+            'asflags': [
+              '<(mbits_flag)',
+            ],
+            'cflags': [
+              '<(mbits_flag)',
+              '-fno-exceptions',
+              '-Wall',
+            ],
+            'ldflags': [
+              '<(mbits_flag)',
+            ],
           }],
         ],
         'cflags_cc': [
@@ -382,7 +429,6 @@
         ],
         'defines': [
           'NACL_LINUX=1',
-          'NACL_ANDROID=0',
           'NACL_OSX=0',
           'NACL_WINDOWS=0',
           '_BSD_SOURCE=1',
@@ -391,12 +437,6 @@
           '_GNU_SOURCE=1',
           '__STDC_LIMIT_MACROS=1',
         ],
-        'link_settings': {
-          'libraries': [
-            '-lrt',
-            '-lpthread',
-          ],
-        },
         'configurations': {
           'Debug': {
             'variables': {
@@ -601,7 +641,6 @@
                 'extension': 'S',
                 'inputs': [
                   '<(DEPTH)/native_client/tools/win_as.py',
-                  '$(InputPath)'
                 ],
                 'outputs': [
                   '$(IntDir)/$(InputName).obj',
@@ -625,8 +664,8 @@
           }],
         ],
         'defines': [
-          '_WIN32_WINNT=0x0600',
-          'WINVER=0x0600',
+          '_WIN32_WINNT=0x0602',
+          'WINVER=0x0602',
           # WIN32 is used by ppapi
           'WIN32',
           'NOMINMAX',
@@ -690,6 +729,7 @@
               '/nxcompat',
             ],
             'AdditionalDependencies': [
+              'advapi32.lib',
               'wininet.lib',
               'version.lib',
               'msimg32.lib',
@@ -763,6 +803,11 @@
         ['LINK.host', '$(LINK)'],
       ],
     }],
+    ['OS=="android" and nacl_standalone==1', {
+      'includes': [
+        'android_settings.gypi',
+      ],
+    }],  # OS=="android" and nacl_standalone==1
   ],
   'xcode_settings': {
     # The Xcode generator will look for an xcode_settings section at the root

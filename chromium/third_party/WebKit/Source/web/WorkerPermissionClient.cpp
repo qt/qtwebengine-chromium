@@ -29,9 +29,10 @@
  */
 
 #include "config.h"
-#include "WorkerPermissionClient.h"
+#include "web/WorkerPermissionClient.h"
 
 #include "core/workers/WorkerGlobalScope.h"
+#include "public/platform/WebPermissionCallbacks.h"
 #include "public/platform/WebString.h"
 #include "public/web/WebWorkerPermissionClientProxy.h"
 #include "wtf/PassOwnPtr.h"
@@ -40,9 +41,9 @@ using namespace WebCore;
 
 namespace blink {
 
-PassOwnPtr<WorkerPermissionClient> WorkerPermissionClient::create(PassOwnPtr<WebWorkerPermissionClientProxy> proxy)
+PassOwnPtrWillBeRawPtr<WorkerPermissionClient> WorkerPermissionClient::create(PassOwnPtr<WebWorkerPermissionClientProxy> proxy)
 {
-    return adoptPtr(new WorkerPermissionClient(proxy));
+    return adoptPtrWillBeNoop(new WorkerPermissionClient(proxy));
 }
 
 WorkerPermissionClient::~WorkerPermissionClient()
@@ -56,11 +57,11 @@ bool WorkerPermissionClient::allowDatabase(const WebString& name, const WebStrin
     return m_proxy->allowDatabase(name, displayName, estimatedSize);
 }
 
-bool WorkerPermissionClient::allowFileSystem()
+bool WorkerPermissionClient::requestFileSystemAccessSync()
 {
     if (!m_proxy)
         return true;
-    return m_proxy->allowFileSystem();
+    return m_proxy->requestFileSystemAccessSync();
 }
 
 bool WorkerPermissionClient::allowIndexedDB(const WebString& name)
@@ -75,9 +76,11 @@ const char* WorkerPermissionClient::supplementName()
     return "WorkerPermissionClient";
 }
 
-WorkerPermissionClient* WorkerPermissionClient::from(ExecutionContext* context)
+WorkerPermissionClient* WorkerPermissionClient::from(ExecutionContext& context)
 {
-    return static_cast<WorkerPermissionClient*>(Supplement<WorkerClients>::from(toWorkerGlobalScope(context)->clients(), supplementName()));
+    WorkerClients* clients = toWorkerGlobalScope(context).clients();
+    ASSERT(clients);
+    return static_cast<WorkerPermissionClient*>(WillBeHeapSupplement<WorkerClients>::from(*clients, supplementName()));
 }
 
 WorkerPermissionClient::WorkerPermissionClient(PassOwnPtr<WebWorkerPermissionClientProxy> proxy)
@@ -87,7 +90,8 @@ WorkerPermissionClient::WorkerPermissionClient(PassOwnPtr<WebWorkerPermissionCli
 
 void providePermissionClientToWorker(WorkerClients* clients, PassOwnPtr<WebWorkerPermissionClientProxy> proxy)
 {
-    WorkerPermissionClient::provideTo(clients, WorkerPermissionClient::supplementName(), WorkerPermissionClient::create(proxy));
+    ASSERT(clients);
+    WorkerPermissionClient::provideTo(*clients, WorkerPermissionClient::supplementName(), WorkerPermissionClient::create(proxy));
 }
 
 } // namespace blink

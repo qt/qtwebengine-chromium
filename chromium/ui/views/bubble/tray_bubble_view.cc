@@ -11,7 +11,8 @@
 #include "third_party/skia/include/core/SkPaint.h"
 #include "third_party/skia/include/core/SkPath.h"
 #include "third_party/skia/include/effects/SkBlurImageFilter.h"
-#include "ui/base/accessibility/accessible_view_state.h"
+#include "ui/accessibility/ax_view_state.h"
+#include "ui/aura/window.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/layer_delegate.h"
@@ -22,6 +23,7 @@
 #include "ui/gfx/rect.h"
 #include "ui/gfx/skia_util.h"
 #include "ui/views/bubble/bubble_frame_view.h"
+#include "ui/views/bubble/bubble_window_targeter.h"
 #include "ui/views/layout/box_layout.h"
 #include "ui/views/widget/widget.h"
 
@@ -325,17 +327,14 @@ TrayBubbleView::TrayBubbleView(gfx::NativeView parent_window,
       mouse_actively_entered_(false) {
   set_parent_window(parent_window);
   set_notify_enter_exit_on_child(true);
-  set_move_with_anchor(true);
   set_close_on_deactivate(init_params.close_on_deactivate);
   set_margins(gfx::Insets());
   bubble_border_ = new TrayBubbleBorder(this, GetAnchorView(), params_);
-  if (get_use_acceleration_when_possible()) {
-    SetPaintToLayer(true);
-    SetFillsBoundsOpaquely(true);
+  SetPaintToLayer(true);
+  SetFillsBoundsOpaquely(true);
 
-    bubble_content_mask_.reset(
-        new TrayBubbleContentMask(bubble_border_->GetBorderCornerRadius()));
-  }
+  bubble_content_mask_.reset(
+      new TrayBubbleContentMask(bubble_border_->GetBorderCornerRadius()));
 }
 
 TrayBubbleView::~TrayBubbleView() {
@@ -350,17 +349,17 @@ void TrayBubbleView::InitializeAndShowBubble() {
   SetAlignment(params_.arrow_alignment);
   bubble_border_->UpdateArrowOffset();
 
-  if (get_use_acceleration_when_possible())
-    layer()->parent()->SetMaskLayer(bubble_content_mask_->layer());
+  layer()->parent()->SetMaskLayer(bubble_content_mask_->layer());
 
   GetWidget()->Show();
+  GetWidget()->GetNativeWindow()->SetEventTargeter(
+      scoped_ptr<ui::EventTargeter>(new BubbleWindowTargeter(this)));
   UpdateBubble();
 }
 
 void TrayBubbleView::UpdateBubble() {
   SizeToContents();
-  if (get_use_acceleration_when_possible())
-    bubble_content_mask_->layer()->SetBounds(layer()->bounds());
+  bubble_content_mask_->layer()->SetBounds(layer()->bounds());
   GetWidget()->GetRootView()->SchedulePaint();
 }
 
@@ -390,11 +389,11 @@ gfx::Insets TrayBubbleView::GetBorderInsets() const {
 
 void TrayBubbleView::Init() {
   BoxLayout* layout = new BottomAlignedBoxLayout(this);
-  layout->set_spread_blank_space(true);
+  layout->set_main_axis_alignment(views::BoxLayout::MAIN_AXIS_ALIGNMENT_FILL);
   SetLayoutManager(layout);
 }
 
-gfx::Rect TrayBubbleView::GetAnchorRect() {
+gfx::Rect TrayBubbleView::GetAnchorRect() const {
   if (!delegate_)
     return gfx::Rect();
   return delegate_->GetAnchorRect(anchor_widget(),
@@ -408,7 +407,7 @@ bool TrayBubbleView::CanActivate() const {
 
 NonClientFrameView* TrayBubbleView::CreateNonClientFrameView(Widget* widget) {
   BubbleFrameView* frame = new BubbleFrameView(margins());
-  frame->SetBubbleBorder(bubble_border_);
+  frame->SetBubbleBorder(scoped_ptr<views::BubbleBorder>(bubble_border_));
   return frame;
 }
 
@@ -421,21 +420,21 @@ void TrayBubbleView::GetWidgetHitTestMask(gfx::Path* mask) const {
   mask->addRect(gfx::RectToSkRect(GetBubbleFrameView()->GetContentsBounds()));
 }
 
-gfx::Size TrayBubbleView::GetPreferredSize() {
+gfx::Size TrayBubbleView::GetPreferredSize() const {
   return gfx::Size(preferred_width_, GetHeightForWidth(preferred_width_));
 }
 
-gfx::Size TrayBubbleView::GetMaximumSize() {
+gfx::Size TrayBubbleView::GetMaximumSize() const {
   gfx::Size size = GetPreferredSize();
   size.set_width(params_.max_width);
   return size;
 }
 
-int TrayBubbleView::GetHeightForWidth(int width) {
+int TrayBubbleView::GetHeightForWidth(int width) const {
   int height = GetInsets().height();
   width = std::max(width - GetInsets().width(), 0);
   for (int i = 0; i < child_count(); ++i) {
-    View* child = child_at(i);
+    const View* child = child_at(i);
     if (child->visible())
       height += child->GetHeightForWidth(width);
   }
@@ -478,9 +477,9 @@ void TrayBubbleView::OnMouseExited(const ui::MouseEvent& event) {
     delegate_->OnMouseExitedView();
 }
 
-void TrayBubbleView::GetAccessibleState(ui::AccessibleViewState* state) {
+void TrayBubbleView::GetAccessibleState(ui::AXViewState* state) {
   if (delegate_ && params_.can_activate) {
-    state->role = ui::AccessibilityTypes::ROLE_WINDOW;
+    state->role = ui::AX_ROLE_WINDOW;
     state->name = delegate_->GetAccessibleNameForBubble();
   }
 }
@@ -500,8 +499,7 @@ void TrayBubbleView::ChildPreferredSizeChanged(View* child) {
 
 void TrayBubbleView::ViewHierarchyChanged(
     const ViewHierarchyChangedDetails& details) {
-  if (get_use_acceleration_when_possible() && details.is_add &&
-      details.child == this) {
+  if (details.is_add && details.child == this) {
     details.parent->SetPaintToLayer(true);
     details.parent->SetFillsBoundsOpaquely(true);
     details.parent->layer()->SetMasksToBounds(true);

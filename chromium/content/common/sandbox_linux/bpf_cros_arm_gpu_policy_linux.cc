@@ -15,6 +15,7 @@
 #include <string>
 #include <vector>
 
+#include "base/bind.h"
 #include "base/compiler_specific.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
@@ -72,34 +73,6 @@ void AddArmMaliGpuWhitelist(std::vector<std::string>* read_whitelist,
   write_whitelist->push_back(kDevMfcEncPath);
 }
 
-void AddArmTegraGpuWhitelist(std::vector<std::string>* read_whitelist,
-                             std::vector<std::string>* write_whitelist) {
-  // Device files needed by the Tegra GPU userspace.
-  static const char kDevNvhostCtrlPath[] = "/dev/nvhost-ctrl";
-  static const char kDevNvhostGr2dPath[] = "/dev/nvhost-gr2d";
-  static const char kDevNvhostGr3dPath[] = "/dev/nvhost-gr3d";
-  static const char kDevNvhostIspPath[] = "/dev/nvhost-isp";
-  static const char kDevNvhostViPath[] = "/dev/nvhost-vi";
-  static const char kDevNvmapPath[] = "/dev/nvmap";
-  static const char kDevTegraSemaPath[] = "/dev/tegra_sema";
-
-  read_whitelist->push_back(kDevNvhostCtrlPath);
-  read_whitelist->push_back(kDevNvhostGr2dPath);
-  read_whitelist->push_back(kDevNvhostGr3dPath);
-  read_whitelist->push_back(kDevNvhostIspPath);
-  read_whitelist->push_back(kDevNvhostViPath);
-  read_whitelist->push_back(kDevNvmapPath);
-  read_whitelist->push_back(kDevTegraSemaPath);
-
-  write_whitelist->push_back(kDevNvhostCtrlPath);
-  write_whitelist->push_back(kDevNvhostGr2dPath);
-  write_whitelist->push_back(kDevNvhostGr3dPath);
-  write_whitelist->push_back(kDevNvhostIspPath);
-  write_whitelist->push_back(kDevNvhostViPath);
-  write_whitelist->push_back(kDevNvmapPath);
-  write_whitelist->push_back(kDevTegraSemaPath);
-}
-
 void AddArmGpuWhitelist(std::vector<std::string>* read_whitelist,
                         std::vector<std::string>* write_whitelist) {
   // On ARM we're enabling the sandbox before the X connection is made,
@@ -117,18 +90,20 @@ void AddArmGpuWhitelist(std::vector<std::string>* read_whitelist,
   read_whitelist->push_back(kLibEglPath);
 
   AddArmMaliGpuWhitelist(read_whitelist, write_whitelist);
-  AddArmTegraGpuWhitelist(read_whitelist, write_whitelist);
 }
 
 class CrosArmGpuBrokerProcessPolicy : public CrosArmGpuProcessPolicy {
  public:
-  CrosArmGpuBrokerProcessPolicy() : CrosArmGpuProcessPolicy(false) {}
+  static sandbox::SandboxBPFPolicy* Create() {
+    return new CrosArmGpuBrokerProcessPolicy();
+  }
   virtual ~CrosArmGpuBrokerProcessPolicy() {}
 
   virtual ErrorCode EvaluateSyscall(SandboxBPF* sandbox_compiler,
                                     int system_call_number) const OVERRIDE;
 
  private:
+  CrosArmGpuBrokerProcessPolicy() : CrosArmGpuProcessPolicy(false) {}
   DISALLOW_COPY_AND_ASSIGN(CrosArmGpuBrokerProcessPolicy);
 };
 
@@ -144,11 +119,6 @@ ErrorCode CrosArmGpuBrokerProcessPolicy::EvaluateSyscall(SandboxBPF* sandbox,
     default:
       return CrosArmGpuProcessPolicy::EvaluateSyscall(sandbox, sysno);
   }
-}
-
-bool EnableArmGpuBrokerPolicyCallback() {
-  return SandboxSeccompBPF::StartSandboxWithExternalPolicy(
-      scoped_ptr<sandbox::SandboxBPFPolicy>(new CrosArmGpuBrokerProcessPolicy));
 }
 
 }  // namespace
@@ -202,7 +172,7 @@ bool CrosArmGpuProcessPolicy::PreSandboxHook() {
   // Add ARM-specific files to whitelist in the broker.
 
   AddArmGpuWhitelist(&read_whitelist_extra, &write_whitelist_extra);
-  InitGpuBrokerProcess(EnableArmGpuBrokerPolicyCallback,
+  InitGpuBrokerProcess(CrosArmGpuBrokerProcessPolicy::Create,
                        read_whitelist_extra,
                        write_whitelist_extra);
 
@@ -210,16 +180,11 @@ bool CrosArmGpuProcessPolicy::PreSandboxHook() {
 
   // Preload the Mali library.
   dlopen("/usr/lib/libmali.so", dlopen_flag);
-
-  // Preload the Tegra libraries.
-  dlopen("/usr/lib/libnvrm.so", dlopen_flag);
-  dlopen("/usr/lib/libnvrm_graphics.so", dlopen_flag);
-  dlopen("/usr/lib/libnvos.so", dlopen_flag);
-  dlopen("/usr/lib/libnvddk_2d.so", dlopen_flag);
-  dlopen("/usr/lib/libardrv_dynamic.so", dlopen_flag);
-  dlopen("/usr/lib/libnvwsi.so", dlopen_flag);
-  dlopen("/usr/lib/libnvglsi.so", dlopen_flag);
-  dlopen("/usr/lib/libcgdrv.so", dlopen_flag);
+  // Preload the Tegra V4L2 (video decode acceleration) library.
+  dlopen("/usr/lib/libtegrav4l2.so", dlopen_flag);
+  // Resetting errno since platform-specific libraries will fail on other
+  // platforms.
+  errno = 0;
 
   return true;
 }

@@ -8,7 +8,7 @@
 #include <set>
 #include <string>
 
-#include "base/platform_file.h"
+#include "base/files/file_path.h"
 #include "url/gurl.h"
 #include "webkit/browser/webkit_storage_browser_export.h"
 #include "webkit/common/fileapi/file_system_mount_option.h"
@@ -86,12 +86,6 @@ class WEBKIT_STORAGE_BROWSER_EXPORT FileSystemURL {
   static FileSystemURL CreateForTest(const GURL& origin,
                                      FileSystemType mount_type,
                                      const base::FilePath& virtual_path);
-
-  // Parses filesystem scheme |url| into uncracked FileSystemURL components.
-  static bool ParseFileSystemSchemeURL(const GURL& url,
-                                       GURL* origin,
-                                       FileSystemType* mount_type,
-                                       base::FilePath* virtual_path);
 
   // Returns true if this instance represents a valid FileSystem URL.
   bool is_valid() const { return is_valid_; }

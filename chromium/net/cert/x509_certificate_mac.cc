@@ -8,8 +8,6 @@
 #include <CoreServices/CoreServices.h>
 #include <Security/Security.h>
 
-#include <cert.h>
-
 #include <vector>
 
 #include "base/lazy_instance.h"
@@ -24,7 +22,6 @@
 #include "base/synchronization/lock.h"
 #include "crypto/cssm_init.h"
 #include "crypto/mac_security_services_lock.h"
-#include "crypto/nss_util.h"
 #include "net/cert/x509_util_mac.h"
 
 using base::ScopedCFTypeRef;
@@ -198,45 +195,6 @@ void AddCertificatesFromBytes(const char* data, size_t length,
     }
   }
 }
-
-struct CSSMOIDString {
-  const CSSM_OID* oid_;
-  std::string string_;
-};
-
-typedef std::vector<CSSMOIDString> CSSMOIDStringVector;
-
-class ScopedCertName {
- public:
-  explicit ScopedCertName(CERTName* name) : name_(name) { }
-  ~ScopedCertName() {
-    if (name_) CERT_DestroyName(name_);
-  }
-  operator CERTName*() { return name_; }
-
- private:
-  CERTName* name_;
-};
-
-class ScopedEncodedCertResults {
- public:
-  explicit ScopedEncodedCertResults(CSSM_TP_RESULT_SET* results)
-      : results_(results) { }
-  ~ScopedEncodedCertResults() {
-    if (results_) {
-      CSSM_ENCODED_CERT* encCert =
-          reinterpret_cast<CSSM_ENCODED_CERT*>(results_->Results);
-      for (uint32 i = 0; i < results_->NumberOfResults; i++) {
-        crypto::CSSMFree(encCert[i].CertBlob.Data);
-      }
-      crypto::CSSMFree(results_->Results);
-      crypto::CSSMFree(results_);
-    }
-  }
-
- private:
-  CSSM_TP_RESULT_SET* results_;
-};
 
 }  // namespace
 

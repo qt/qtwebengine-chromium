@@ -30,41 +30,41 @@
 #include "config.h"
 #include "core/css/resolver/ViewportStyleResolver.h"
 
-#include "CSSValueKeywords.h"
+#include "core/CSSValueKeywords.h"
+#include "core/css/CSSPrimitiveValueMappings.h"
 #include "core/css/CSSToLengthConversionData.h"
 #include "core/css/StylePropertySet.h"
 #include "core/css/StyleRule.h"
 #include "core/dom/Document.h"
 #include "core/dom/NodeRenderStyle.h"
 #include "core/dom/ViewportDescription.h"
+#include "core/frame/FrameView.h"
 
 namespace WebCore {
 
+DEFINE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(ViewportStyleResolver);
+
 ViewportStyleResolver::ViewportStyleResolver(Document* document)
-    : m_document(document),
-    m_hasAuthorStyle(false)
+    : m_document(document)
+    , m_hasAuthorStyle(false)
 {
     ASSERT(m_document);
-}
-
-ViewportStyleResolver::~ViewportStyleResolver()
-{
 }
 
 void ViewportStyleResolver::collectViewportRules(RuleSet* rules, Origin origin)
 {
     rules->compactRulesIfNeeded();
 
-    const Vector<StyleRuleViewport*>& viewportRules = rules->viewportRules();
+    const WillBeHeapVector<RawPtrWillBeMember<StyleRuleViewport> >& viewportRules = rules->viewportRules();
     for (size_t i = 0; i < viewportRules.size(); ++i)
         addViewportRule(viewportRules[i], origin);
 }
 
 void ViewportStyleResolver::addViewportRule(StyleRuleViewport* viewportRule, Origin origin)
 {
-    StylePropertySet* propertySet = viewportRule->mutableProperties();
+    StylePropertySet& propertySet = viewportRule->mutableProperties();
 
-    unsigned propertyCount = propertySet->propertyCount();
+    unsigned propertyCount = propertySet.propertyCount();
     if (!propertyCount)
         return;
 
@@ -72,19 +72,14 @@ void ViewportStyleResolver::addViewportRule(StyleRuleViewport* viewportRule, Ori
         m_hasAuthorStyle = true;
 
     if (!m_propertySet) {
-        m_propertySet = propertySet->mutableCopy();
+        m_propertySet = propertySet.mutableCopy();
         return;
     }
 
     // We cannot use mergeAndOverrideOnConflict() here because it doesn't
     // respect the !important declaration (but addParsedProperty() does).
     for (unsigned i = 0; i < propertyCount; ++i)
-        m_propertySet->addParsedProperty(propertySet->propertyAt(i).toCSSProperty());
-}
-
-void ViewportStyleResolver::clearDocument()
-{
-    m_document = 0;
+        m_propertySet->addParsedProperty(propertySet.propertyAt(i).toCSSProperty());
 }
 
 void ViewportStyleResolver::resolve()
@@ -92,10 +87,8 @@ void ViewportStyleResolver::resolve()
     if (!m_document)
         return;
 
-    if (!m_propertySet || (!m_hasAuthorStyle && m_document->hasLegacyViewportTag())) {
-        ASSERT(!m_hasAuthorStyle);
-        m_propertySet = 0;
-        m_document->setViewportDescription(ViewportDescription());
+    if (!m_propertySet) {
+        m_document->setViewportDescription(ViewportDescription(ViewportDescription::UserAgentStyleSheet));
         return;
     }
 
@@ -113,7 +106,7 @@ void ViewportStyleResolver::resolve()
 
     m_document->setViewportDescription(description);
 
-    m_propertySet = 0;
+    m_propertySet = nullptr;
     m_hasAuthorStyle = false;
 }
 
@@ -127,7 +120,7 @@ float ViewportStyleResolver::viewportArgumentValue(CSSPropertyID id) const
     if (id == CSSPropertyUserZoom)
         defaultValue = 1;
 
-    RefPtr<CSSValue> value = m_propertySet->getPropertyCSSValue(id);
+    RefPtrWillBeRawPtr<CSSValue> value = m_propertySet->getPropertyCSSValue(id);
     if (!value || !value->isPrimitiveValue())
         return defaultValue;
 
@@ -177,31 +170,36 @@ Length ViewportStyleResolver::viewportLengthValue(CSSPropertyID id) const
         || id == CSSPropertyMaxWidth
         || id == CSSPropertyMinWidth);
 
-    RefPtr<CSSValue> value = m_propertySet->getPropertyCSSValue(id);
+    RefPtrWillBeRawPtr<CSSValue> value = m_propertySet->getPropertyCSSValue(id);
     if (!value || !value->isPrimitiveValue())
         return Length(); // auto
 
     CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value.get());
 
-    if (primitiveValue->isLength())
-        return primitiveValue->computeLength<Length>(CSSToLengthConversionData(m_document->renderStyle(), m_document->renderStyle(), 1.0f));
-
-    if (primitiveValue->isViewportPercentageLength())
-        return primitiveValue->viewportPercentageLength();
-
-    if (primitiveValue->isPercentage())
-        return Length(primitiveValue->getFloatValue(), Percent);
-
-    switch (primitiveValue->getValueID()) {
-    case CSSValueInternalExtendToZoom:
+    if (primitiveValue->getValueID() == CSSValueInternalExtendToZoom)
         return Length(ExtendToZoom);
-    case CSSValueAuto:
-        return Length();
-    default:
-        // Unrecognized keyword.
-        ASSERT_NOT_REACHED();
-        return Length(0, Fixed);
-    }
+
+    RenderStyle* documentStyle = m_document->renderStyle();
+
+    // If we have viewport units the conversion will mark the document style as having viewport units.
+    bool documentStyleHasViewportUnits = documentStyle->hasViewportUnits();
+    documentStyle->setHasViewportUnits(false);
+
+    FrameView* view = m_document->view();
+    float width = view ? view->width() : 0;
+    float height = view ? view->height() : 0;
+
+    Length result = primitiveValue->convertToLength<AnyConversion>(CSSToLengthConversionData(documentStyle, documentStyle, width, height, 1.0f));
+    if (documentStyle->hasViewportUnits())
+        m_document->setHasViewportUnits();
+    documentStyle->setHasViewportUnits(documentStyleHasViewportUnits);
+
+    return result;
+}
+
+void ViewportStyleResolver::trace(Visitor* visitor)
+{
+    visitor->trace(m_propertySet);
 }
 
 } // namespace WebCore

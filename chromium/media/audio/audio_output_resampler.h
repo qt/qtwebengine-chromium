@@ -41,7 +41,6 @@ class MEDIA_EXPORT AudioOutputResampler : public AudioOutputDispatcher {
                        const AudioParameters& input_params,
                        const AudioParameters& output_params,
                        const std::string& output_device_id,
-                       const std::string& input_device_id,
                        const base::TimeDelta& close_delay);
 
   // AudioOutputDispatcher interface.
@@ -53,8 +52,6 @@ class MEDIA_EXPORT AudioOutputResampler : public AudioOutputDispatcher {
                                double volume) OVERRIDE;
   virtual void CloseStream(AudioOutputProxy* stream_proxy) OVERRIDE;
   virtual void Shutdown() OVERRIDE;
-  virtual void CloseStreamsForWedgeFix() OVERRIDE;
-  virtual void RestartStreamsForWedgeFix() OVERRIDE;
 
  private:
   friend class base::RefCountedThreadSafe<AudioOutputResampler>;

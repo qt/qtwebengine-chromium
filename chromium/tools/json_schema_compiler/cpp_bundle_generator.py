@@ -40,13 +40,15 @@ class CppBundleGenerator(object):
                api_defs,
                cpp_type_generator,
                cpp_namespace,
-               source_file_dir):
+               source_file_dir,
+               impl_dir):
     self._root = root
     self._model = model
     self._api_defs = api_defs
     self._cpp_type_generator = cpp_type_generator
     self._cpp_namespace = cpp_namespace
     self._source_file_dir = source_file_dir
+    self._impl_dir = impl_dir
 
     self.api_cc_generator = _APICCGenerator(self)
     self.api_h_generator = _APIHGenerator(self)
@@ -183,8 +185,9 @@ class _APICCGenerator(object):
       namespace_name = namespace.unix_name.replace("experimental_", "")
       implementation_header = namespace.compiler_options.get(
           "implemented_in",
-          "chrome/browser/extensions/api/%s/%s_api.h" % (namespace_name,
-                                                         namespace_name))
+          "%s/%s/%s_api.h" % (self._bundle._impl_dir,
+                              namespace_name,
+                              namespace_name))
       if not os.path.exists(
           os.path.join(self._bundle._root,
                        os.path.normpath(implementation_header))):
@@ -203,7 +206,7 @@ class _APICCGenerator(object):
         c.Append("#endif  // %s" % ifdefs, indent_level=0)
     c.Append()
     c.Append('#include '
-                 '"chrome/browser/extensions/extension_function_registry.h"')
+                 '"extensions/browser/extension_function_registry.h"')
     c.Append()
     c.Concat(cpp_util.OpenNamespace(self._bundle._cpp_namespace))
     c.Append()
@@ -271,10 +274,15 @@ class _SchemasCCGenerator(object):
       json_content = json.dumps([_RemoveDescriptions(api)],
                                 separators=(',', ':'))
       # Escape all double-quotes and backslashes. For this to output a valid
-      # JSON C string, we need to escape \ and ".
-      json_content = json_content.replace('\\', '\\\\').replace('"', '\\"')
+      # JSON C string, we need to escape \ and ". Note that some schemas are
+      # too large to compile on windows. Split the JSON up into several
+      # strings, since apparently that helps.
+      max_length = 8192
+      segments = [json_content[i:i + max_length].replace('\\', '\\\\')
+                                                .replace('"', '\\"')
+                  for i in xrange(0, len(json_content), max_length)]
       c.Append('const char %s[] = "%s";' %
-          (_FormatNameAsConstant(namespace.name), json_content))
+          (_FormatNameAsConstant(namespace.name), '" "'.join(segments)))
     c.Append('}')
     c.Concat(cpp_util.OpenNamespace(self._bundle._cpp_namespace))
     c.Append()

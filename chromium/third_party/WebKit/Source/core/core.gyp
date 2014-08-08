@@ -33,19 +33,25 @@
     '../build/win/precompile.gypi',
     '../build/features.gypi',
     '../build/scripts/scripts.gypi',
-    '../modules/modules.gypi',
-    '../bindings/bindings.gypi',
+    '../bindings/core/core.gypi',  # core can depend on bindings/core, but not on bindings
     'core.gypi',
+    '../modules/modules_generated.gypi', # FIXME: Required by <(blink_modules_output_dir) below.
+    '../platform/platform_generated.gypi', # FIXME: Required by <(blink_platform_output_dir) below.
   ],
 
   'variables': {
     'enable_wexit_time_destructors': 1,
 
     'webcore_include_dirs': [
-      '../..',
-      '..',
-      '<(SHARED_INTERMEDIATE_DIR)/blink',
-      '<(SHARED_INTERMEDIATE_DIR)/blink/bindings',
+      '..',  # WebKit/Source
+      # FIXME: Remove these once core scripts generate qualified
+      # includes correctly: http://crbug.com/380054
+      '<(blink_core_output_dir)',
+      '<(blink_modules_output_dir)',
+      '<(bindings_core_v8_output_dir)',
+      '<(bindings_modules_v8_output_dir)',
+      # Needed to include the generated binding headers.
+      '<(SHARED_INTERMEDIATE_DIR)/blink',  # gen/blink
     ],
 
     'conditions': [
@@ -65,6 +71,7 @@
 
   'targets': [
     {
+      # GN version: //third_party/WebKit/Source/core/inspector:protocol_sources
       'target_name': 'inspector_protocol_sources',
       'type': 'none',
       'dependencies': [
@@ -82,12 +89,12 @@
             '../devtools/protocol.json',
           ],
           'outputs': [
-            '<(SHARED_INTERMEDIATE_DIR)/blink/InspectorBackendDispatcher.cpp',
-            '<(SHARED_INTERMEDIATE_DIR)/blink/InspectorBackendDispatcher.h',
-            '<(SHARED_INTERMEDIATE_DIR)/blink/InspectorFrontend.cpp',
-            '<(SHARED_INTERMEDIATE_DIR)/blink/InspectorFrontend.h',
-            '<(SHARED_INTERMEDIATE_DIR)/blink/InspectorTypeBuilder.cpp',
-            '<(SHARED_INTERMEDIATE_DIR)/blink/InspectorTypeBuilder.h',
+            '<(blink_core_output_dir)/InspectorBackendDispatcher.cpp',
+            '<(blink_core_output_dir)/InspectorBackendDispatcher.h',
+            '<(blink_core_output_dir)/InspectorFrontend.cpp',
+            '<(blink_core_output_dir)/InspectorFrontend.h',
+            '<(blink_core_output_dir)/InspectorTypeBuilder.cpp',
+            '<(blink_core_output_dir)/InspectorTypeBuilder.h',
           ],
           'variables': {
             'generator_include_dirs': [
@@ -97,14 +104,14 @@
             'python',
             'inspector/CodeGeneratorInspector.py',
             '../devtools/protocol.json',
-            '--output_dir', '<(SHARED_INTERMEDIATE_DIR)/blink',
+            '--output_dir', '<(blink_core_output_dir)',
           ],
           'message': 'Generating Inspector protocol backend sources from protocol.json',
-          'msvs_cygwin_shell': 1,
         },
       ]
     },
     {
+      # GN version: //third_party/WebKit/Source/core/inspector:instrumentation_sources
       'target_name': 'inspector_instrumentation_sources',
       'type': 'none',
       'dependencies': [],
@@ -118,26 +125,25 @@
             'inspector/InspectorInstrumentation.idl',
           ],
           'outputs': [
-            '<(SHARED_INTERMEDIATE_DIR)/blink/InspectorCanvasInstrumentationInl.h',
-            '<(SHARED_INTERMEDIATE_DIR)/blink/InspectorConsoleInstrumentationInl.h',
-            '<(SHARED_INTERMEDIATE_DIR)/blink/InspectorDatabaseInstrumentationInl.h',
-            '<(SHARED_INTERMEDIATE_DIR)/blink/InspectorInstrumentationInl.h',
-            '<(SHARED_INTERMEDIATE_DIR)/blink/InspectorOverridesInl.h',
-            '<(SHARED_INTERMEDIATE_DIR)/blink/InstrumentingAgentsInl.h',
-            '<(SHARED_INTERMEDIATE_DIR)/blink/InspectorInstrumentationImpl.cpp',
+            '<(blink_core_output_dir)/InspectorCanvasInstrumentationInl.h',
+            '<(blink_core_output_dir)/InspectorConsoleInstrumentationInl.h',
+            '<(blink_core_output_dir)/InspectorInstrumentationInl.h',
+            '<(blink_core_output_dir)/InspectorOverridesInl.h',
+            '<(blink_core_output_dir)/InstrumentingAgentsInl.h',
+            '<(blink_core_output_dir)/InspectorInstrumentationImpl.cpp',
           ],
           'action': [
             'python',
             'inspector/CodeGeneratorInstrumentation.py',
             'inspector/InspectorInstrumentation.idl',
-            '--output_dir', '<(SHARED_INTERMEDIATE_DIR)/blink',
+            '--output_dir', '<(blink_core_output_dir)',
           ],
           'message': 'Generating Inspector instrumentation code from InspectorInstrumentation.idl',
-          'msvs_cygwin_shell': 1,
         }
       ]
     },
     {
+      # GN version: //third_party/WebKit/Source/core/inspector:protocol_version
       'target_name': 'generate_inspector_protocol_version',
       'type': 'none',
       'actions': [
@@ -148,7 +154,7 @@
             '../devtools/protocol.json',
           ],
           'outputs': [
-            '<(SHARED_INTERMEDIATE_DIR)/blink/InspectorProtocolVersion.h',
+            '<(blink_core_output_dir)/InspectorProtocolVersion.h',
           ],
           'variables': {
             'generator_include_dirs': [
@@ -166,60 +172,68 @@
       ]
     },
     {
+      # GN version: //third_party/WebKit/Source/core/inspector:inspector_overlay_page
       'target_name': 'inspector_overlay_page',
       'type': 'none',
       'variables': {
         'input_file_path': 'inspector/InspectorOverlayPage.html',
-        'output_file_path': '<(SHARED_INTERMEDIATE_DIR)/blink/InspectorOverlayPage.h',
+        'output_file_path': '<(blink_core_output_dir)/InspectorOverlayPage.h',
         'character_array_name': 'InspectorOverlayPage_html',
       },
       'includes': [ '../build/ConvertFileToHeaderWithCharacterArray.gypi' ],
     },
     {
+      # GN version: //third_party/WebKit/Source/core/inspector:injected_canvas_script_source
       'target_name': 'injected_canvas_script_source',
       'type': 'none',
       'variables': {
         'input_file_path': 'inspector/InjectedScriptCanvasModuleSource.js',
-        'output_file_path': '<(SHARED_INTERMEDIATE_DIR)/blink/InjectedScriptCanvasModuleSource.h',
+        'output_file_path': '<(blink_core_output_dir)/InjectedScriptCanvasModuleSource.h',
         'character_array_name': 'InjectedScriptCanvasModuleSource_js',
       },
       'includes': [ '../build/ConvertFileToHeaderWithCharacterArray.gypi' ],
     },
     {
+      # GN version: //third_party/WebKit/Source/core/inspector:injected_script_source
       'target_name': 'injected_script_source',
       'type': 'none',
       'variables': {
         'input_file_path': 'inspector/InjectedScriptSource.js',
-        'output_file_path': '<(SHARED_INTERMEDIATE_DIR)/blink/InjectedScriptSource.h',
+        'output_file_path': '<(blink_core_output_dir)/InjectedScriptSource.h',
         'character_array_name': 'InjectedScriptSource_js',
       },
       'includes': [ '../build/ConvertFileToHeaderWithCharacterArray.gypi' ],
     },
     {
+      # GN version: //third_party/WebKit/Source/core/inspector:debugger_script_source
       'target_name': 'debugger_script_source',
       'type': 'none',
       'variables': {
-        'input_file_path': '<(bindings_dir)/v8/DebuggerScript.js',
-        'output_file_path': '<(SHARED_INTERMEDIATE_DIR)/blink/DebuggerScriptSource.h',
+        'input_file_path': '<(bindings_v8_dir)/DebuggerScript.js',
+        'output_file_path': '<(blink_core_output_dir)/DebuggerScriptSource.h',
         'character_array_name': 'DebuggerScriptSource_js',
       },
       'includes': [ '../build/ConvertFileToHeaderWithCharacterArray.gypi' ],
     },
     {
-      'target_name': 'webcore_derived',
+      # GN version: //third_party/WebKit/Source/core:core_generated
+      'target_name': 'webcore_generated',
       'type': 'static_library',
       'hard_dependency': 1,
       'dependencies': [
         'webcore_prerequisites',
-        '../bindings/derived_sources.gyp:bindings_derived_sources',
-        'core_derived_sources.gyp:make_core_derived_sources',
+        'core_generated.gyp:make_core_generated',
         'inspector_overlay_page',
         'inspector_protocol_sources',
         'inspector_instrumentation_sources',
         'injected_canvas_script_source',
         'injected_script_source',
         'debugger_script_source',
-        '../platform/platform_derived_sources.gyp:make_platform_derived_sources',
+        '../bindings/core/v8/generated.gyp:bindings_core_v8_generated',
+        # FIXME: don't depend on bindings_modules http://crbug.com/358074
+        '../bindings/modules/generated.gyp:modules_event_generated',
+        '../bindings/modules/v8/generated.gyp:bindings_modules_v8_generated',
+        '../platform/platform_generated.gyp:make_platform_generated',
         '../wtf/wtf.gyp:wtf',
         '<(DEPTH)/gin/gin.gyp:gin',
         '<(DEPTH)/skia/skia.gyp:skia',
@@ -235,95 +249,92 @@
         '<(DEPTH)/v8/tools/gyp/v8.gyp:v8',
       ],
       'include_dirs': [
-        '<(SHARED_INTERMEDIATE_DIR)/blink',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/bindings',
         '<@(webcore_include_dirs)',
-
-        # FIXME: Remove these once the bindings script generates qualified
-        # includes for these correctly. (Sequences don't work yet.)
-        '<(bindings_dir)/v8/custom',
-        'html',
-        'html/shadow',
-        'inspector',
-        'svg',
       ],
       'sources': [
+        # FIXME: should be bindings_core_v8_files http://crbug.com/358074
+        '<@(bindings_v8_files)',
         # These files include all the .cpp files generated from the .idl files
         # in webcore_files.
-        '<@(derived_sources_aggregate_files)',
-        '<@(bindings_files)',
+        '<@(bindings_core_v8_generated_aggregate_files)',
 
         # Additional .cpp files for HashTools.h
-        '<(SHARED_INTERMEDIATE_DIR)/blink/CSSPropertyNames.cpp',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/CSSValueKeywords.cpp',
+        '<(blink_core_output_dir)/CSSPropertyNames.cpp',
+        '<(blink_core_output_dir)/CSSValueKeywords.cpp',
 
-        # Additional .cpp files from make_core_derived_sources actions.
-        '<(SHARED_INTERMEDIATE_DIR)/blink/Event.cpp',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/EventHeaders.h',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/EventInterfaces.h',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/EventNames.cpp',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/EventNames.h',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/EventTargetHeaders.h',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/EventTargetInterfaces.h',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/EventTargetNames.cpp',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/EventTargetNames.h',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/EventTypeNames.cpp',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/EventTypeNames.h',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/FetchInitiatorTypeNames.cpp',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/HTMLElementFactory.cpp',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/HTMLElementFactory.h',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/HTMLElementLookupTrie.cpp',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/HTMLElementLookupTrie.h',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/HTMLNames.cpp',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/InputTypeNames.cpp',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/MathMLNames.cpp',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/SVGNames.cpp',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/UserAgentStyleSheetsData.cpp',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/V8HTMLElementWrapperFactory.cpp',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/XLinkNames.cpp',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/XMLNSNames.cpp',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/XMLNames.cpp',
+        # Additional .cpp files from make_core_generated actions.
+        '<(blink_core_output_dir)/Event.cpp',
+        '<(blink_core_output_dir)/EventHeaders.h',
+        '<(blink_core_output_dir)/EventInterfaces.h',
+        '<(blink_core_output_dir)/EventNames.cpp',
+        '<(blink_core_output_dir)/EventNames.h',
+        '<(blink_core_output_dir)/EventTargetHeaders.h',
+        '<(blink_core_output_dir)/EventTargetInterfaces.h',
+        '<(blink_core_output_dir)/EventTargetNames.cpp',
+        '<(blink_core_output_dir)/EventTargetNames.h',
+        '<(blink_core_output_dir)/EventTypeNames.cpp',
+        '<(blink_core_output_dir)/EventTypeNames.h',
+        '<(blink_core_output_dir)/FetchInitiatorTypeNames.cpp',
+        '<(blink_core_output_dir)/HTMLElementFactory.cpp',
+        '<(blink_core_output_dir)/HTMLElementFactory.h',
+        '<(blink_core_output_dir)/HTMLElementLookupTrie.cpp',
+        '<(blink_core_output_dir)/HTMLElementLookupTrie.h',
+        '<(blink_core_output_dir)/HTMLNames.cpp',
+        '<(blink_core_output_dir)/HTMLTokenizerNames.cpp',
+        '<(blink_core_output_dir)/InputTypeNames.cpp',
+        '<(blink_core_output_dir)/MathMLNames.cpp',
+        '<(blink_core_output_dir)/SVGNames.cpp',
+        '<(blink_core_output_dir)/UserAgentStyleSheetsData.cpp',
+        '<(blink_core_output_dir)/V8HTMLElementWrapperFactory.cpp',
+        '<(blink_core_output_dir)/XLinkNames.cpp',
+        '<(blink_core_output_dir)/XMLNSNames.cpp',
+        '<(blink_core_output_dir)/XMLNames.cpp',
 
         # Generated from HTMLEntityNames.in
-        '<(SHARED_INTERMEDIATE_DIR)/blink/HTMLEntityTable.cpp',
+        '<(blink_core_output_dir)/HTMLEntityTable.cpp',
+
+        # Generated from MediaFeatureNames.in
+        '<(blink_core_output_dir)/MediaFeatureNames.cpp',
+
+        # Generated from MediaTypeNames.in
+        '<(blink_core_output_dir)/MediaTypeNames.cpp',
 
         # Generated from CSSTokenizer-in.cpp
-        '<(SHARED_INTERMEDIATE_DIR)/blink/CSSTokenizer.cpp',
+        '<(blink_core_output_dir)/CSSTokenizer.cpp',
 
-        # Generated from CSSParser-in.cpp
-        '<(SHARED_INTERMEDIATE_DIR)/blink/CSSParser.cpp',
+        # Generated from BisonCSSParser-in.cpp
+        '<(blink_core_output_dir)/BisonCSSParser.cpp',
 
         # Generated from HTMLMetaElement-in.cpp
-        '<(SHARED_INTERMEDIATE_DIR)/blink/HTMLMetaElement.cpp',
+        '<(blink_core_output_dir)/HTMLMetaElement.cpp',
 
-        # Additional .cpp files from the make_core_derived_sources rules.
-        '<(SHARED_INTERMEDIATE_DIR)/blink/CSSGrammar.cpp',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/XPathGrammar.cpp',
+        # Additional .cpp files from the make_core_generated rules.
+        '<(blink_core_output_dir)/CSSGrammar.cpp',
+        '<(blink_core_output_dir)/XPathGrammar.cpp',
 
         # Additional .cpp files from the inspector_protocol_sources list.
-        '<(SHARED_INTERMEDIATE_DIR)/blink/InspectorFrontend.cpp',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/InspectorBackendDispatcher.cpp',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/InspectorTypeBuilder.cpp',
+        '<(blink_core_output_dir)/InspectorFrontend.cpp',
+        '<(blink_core_output_dir)/InspectorBackendDispatcher.cpp',
+        '<(blink_core_output_dir)/InspectorTypeBuilder.cpp',
 
         # Additional .cpp files from the inspector_instrumentation_sources list.
-        '<(SHARED_INTERMEDIATE_DIR)/blink/InspectorCanvasInstrumentationInl.h',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/InspectorConsoleInstrumentationInl.h',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/InspectorDatabaseInstrumentationInl.h',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/InspectorInstrumentationInl.h',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/InspectorOverridesInl.h',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/InstrumentingAgentsInl.h',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/InspectorInstrumentationImpl.cpp',
+        '<(blink_core_output_dir)/InspectorCanvasInstrumentationInl.h',
+        '<(blink_core_output_dir)/InspectorConsoleInstrumentationInl.h',
+        '<(blink_core_output_dir)/InspectorInstrumentationInl.h',
+        '<(blink_core_output_dir)/InspectorOverridesInl.h',
+        '<(blink_core_output_dir)/InstrumentingAgentsInl.h',
+        '<(blink_core_output_dir)/InspectorInstrumentationImpl.cpp',
 
         # Additional .cpp files for SVG.
-        '<(SHARED_INTERMEDIATE_DIR)/blink/SVGElementFactory.cpp',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/V8SVGElementWrapperFactory.cpp',
+        '<(blink_core_output_dir)/SVGElementFactory.cpp',
+        '<(blink_core_output_dir)/V8SVGElementWrapperFactory.cpp',
 
         # Generated from make_style_shorthands.py
-        '<(SHARED_INTERMEDIATE_DIR)/blink/StylePropertyShorthand.cpp',
+        '<(blink_core_output_dir)/StylePropertyShorthand.cpp',
 
         # Generated from make_style_builder.py
-        '<(SHARED_INTERMEDIATE_DIR)/blink/StyleBuilder.cpp',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/StyleBuilderFunctions.cpp',
+        '<(blink_core_output_dir)/StyleBuilder.cpp',
+        '<(blink_core_output_dir)/StyleBuilderFunctions.cpp',
       ],
       'conditions': [
         ['OS=="win" and component=="shared_library"', {
@@ -334,7 +345,9 @@
         ['OS=="win"', {
           # In generated bindings code: 'switch contains default but no case'.
           # Disable c4267 warnings until we fix size_t to int truncations.
-          'msvs_disabled_warnings': [ 4065, 4267 ],
+          # 4702 is disabled because of issues in Bison-generated
+          # XPathGrammar.cpp and CSSGrammar.cpp.
+          'msvs_disabled_warnings': [ 4065, 4267, 4702 ],
         }],
         ['OS in ("linux", "android") and "WTF_USE_WEBAUDIO_IPP=1" in feature_defines', {
           'cflags': [
@@ -346,6 +359,7 @@
     {
       # We'll soon split libwebcore in multiple smaller libraries.
       # webcore_prerequisites will be the 'base' target of every sub-target.
+      # GN version: //third_party/WebKit/Source/core:prerequisites
       'target_name': 'webcore_prerequisites',
       'type': 'none',
       'dependencies': [
@@ -355,11 +369,12 @@
         'inspector_overlay_page',
         'inspector_protocol_sources',
         'inspector_instrumentation_sources',
-        '../bindings/derived_sources.gyp:bindings_derived_sources',
-        'core_derived_sources.gyp:make_core_derived_sources',
+        'core_generated.gyp:make_core_generated',
+        '../bindings/core/v8/generated.gyp:bindings_core_v8_generated',
+        # FIXME: don't depend on bindings_modules http://crbug.com/358074
+        '../bindings/modules/v8/generated.gyp:bindings_modules_v8_generated',
         '../wtf/wtf.gyp:wtf',
         '../config.gyp:config',
-        '../heap/blink_heap.gyp:blink_heap',
         '../platform/blink_platform.gyp:blink_platform',
         '<(DEPTH)/gpu/gpu.gyp:gles2_c_lib',
         '<(DEPTH)/skia/skia.gyp:skia',
@@ -380,7 +395,6 @@
       'export_dependent_settings': [
         '../wtf/wtf.gyp:wtf',
         '../config.gyp:config',
-        '../heap/blink_heap.gyp:blink_heap',
         '<(DEPTH)/gpu/gpu.gyp:gles2_c_lib',
         '<(DEPTH)/skia/skia.gyp:skia',
         '<(angle_path)/src/build_angle.gyp:translator',
@@ -437,18 +451,17 @@
             ],
           },
         }],
-        ['toolkit_uses_gtk == 1', {
-          'dependencies': [
-            '<(DEPTH)/build/linux/system.gyp:gtk',
-          ],
-          'export_dependent_settings': [
-            '<(DEPTH)/build/linux/system.gyp:gtk',
-          ],
-        }],
         ['OS=="android"', {
           'sources/': [
             ['exclude', 'accessibility/'],
           ],
+        }],
+        ['OS in ("linux", "android") and "WTF_USE_WEBAUDIO_IPP=1" in feature_defines', {
+          'direct_dependent_settings': {
+            'cflags': [
+              '<!@(pkg-config --cflags-only-I ipp)',
+            ],
+          },
         }],
         ['OS=="mac"', {
           'direct_dependent_settings': {
@@ -472,10 +485,9 @@
               # If this is unhandled, the console will receive log messages
               # such as:
               # com.google.Chrome[] objc[]: Class ScrollbarPrefsObserver is implemented in both .../Google Chrome.app/Contents/Versions/.../Google Chrome Helper.app/Contents/MacOS/../../../Google Chrome Framework.framework/Google Chrome Framework and /System/Library/Frameworks/WebKit.framework/Versions/A/Frameworks/WebCore.framework/Versions/A/WebCore. One of the two will be used. Which one is undefined.
-              'WebCoreFlippedView=ChromiumWebCoreObjCWebCoreFlippedView',
               'WebCoreTextFieldCell=ChromiumWebCoreObjCWebCoreTextFieldCell',
               'WebCoreRenderThemeNotificationObserver=ChromiumWebCoreObjCWebCoreRenderThemeNotificationObserver',
-             ],
+            ],
             'postbuilds': [
               {
                 # This step ensures that any Objective-C names that aren't
@@ -493,13 +505,6 @@
                   '<(category_whitelist_regex)',
                 ],
               },
-            ],
-          },
-        }],
-        ['OS in ("linux", "android") and "WTF_USE_WEBAUDIO_IPP=1" in feature_defines', {
-          'direct_dependent_settings': {
-            'cflags': [
-              '<!@(pkg-config --cflags-only-I ipp)',
             ],
           },
         }],
@@ -533,6 +538,7 @@
       ],
     },
     {
+      # GN version: //third_party/WebKit/Source/core:dom
       'target_name': 'webcore_dom',
       'type': 'static_library',
       'dependencies': [
@@ -545,6 +551,7 @@
       'msvs_disabled_warnings': [ 4267, ],
     },
     {
+      # GN version: //third_party/WebKit/Source/core:html
       'target_name': 'webcore_html',
       'type': 'static_library',
       'dependencies': [
@@ -554,6 +561,11 @@
         '<@(webcore_html_files)',
       ],
       'conditions': [
+        # Shard this taret into parts to work around linker limitations.
+        # on link time code generation builds.
+        ['OS=="win" and buildtype=="Official"', {
+          'msvs_shard': 5,
+        }],
         ['OS!="android"', {
           'sources/': [
             ['exclude', 'Android\\.cpp$'],
@@ -562,6 +574,7 @@
       ],
     },
     {
+      # GN version: //third_party/WebKit/Source/core:svg
       'target_name': 'webcore_svg',
       'type': 'static_library',
       'dependencies': [
@@ -570,104 +583,14 @@
       'sources': [
         '<@(webcore_svg_files)',
       ],
-    },
-    {
-      'target_name': 'webcore_platform',
-      'type': 'static_library',
-      'dependencies': [
-        'webcore_prerequisites',
-      ],
-      # Disable c4267 warnings until we fix size_t to int truncations.
-      # Disable c4724 warnings which is generated in VS2012 due to improper
-      # compiler optimizations, see crbug.com/237063
-      'msvs_disabled_warnings': [ 4267, 4334, 4724 ],
-      'sources': [
-        '<@(webcore_platform_files)',
-      ],
-      'sources/': [
-        # FIXME: Figure out how to store these patterns in a variable.
-        ['exclude', '(cf|cg|harfbuzz|mac|opentype|svg|win)/'],
-        ['exclude', '(?<!Chromium)(CF|CG|Mac|Win)\\.(cpp|mm?)$'],
-
-        # Used only by mac.
-        ['exclude', 'platform/Theme\\.cpp$'],
-      ],
       'conditions': [
-        ['OS!="linux"', {
-          'sources/': [
-            ['exclude', 'Linux\\.cpp$'],
-          ],
-        }],
-        ['toolkit_uses_gtk == 0', {
-          'sources/': [
-            ['exclude', 'platform/chromium/KeyCodeConversionGtk\\.cpp$'],
-          ],
-        }],
-        ['OS=="mac"', {
-          'sources': [
-            'editing/SmartReplaceCF.cpp',
-          ],
-          'link_settings': {
-            'libraries': [
-              '$(SDKROOT)/System/Library/Frameworks/Carbon.framework',
-            ],
-          },
-          'sources/': [
-            # Additional files from the WebCore Mac build that are presently
-            # used in the WebCore Chromium Mac build too.
-
-            # The Mac build is USE(CF).
-            ['include', 'CF\\.cpp$'],
-
-            # Cherry-pick some files that can't be included by broader regexps.
-            # Some of these are used instead of Chromium platform files, see
-            # the specific exclusions in the "exclude" list below.
-            ['include', 'platform/mac/ThemeMac\\.h$'],
-            ['include', 'platform/mac/ThemeMac\\.mm$'],
-            ['include', 'platform/mac/WebCoreSystemInterface\\.h$'],
-            ['include', 'platform/mac/WebCoreTextRenderer\\.mm$'],
-            ['include', 'platform/text/mac/ShapeArabic\\.c$'],
-            ['include', 'platform/text/mac/String(Impl)?Mac\\.mm$'],
-            # Use USE_NEW_THEME on Mac.
-            ['include', 'platform/Theme\\.cpp$'],
-          ],
-        }],
-        ['OS=="win"', {
-          'sources/': [
-            ['exclude', 'Posix\\.cpp$'],
-          ],
-        },{ # OS!="win"
-          'sources/': [
-            ['exclude', 'Win\\.cpp$'],
-          ],
-        }],
-        ['OS=="win" and chromium_win_pch==1', {
-          'sources/': [
-            ['include', '<(DEPTH)/third_party/WebKit/Source/build/win/Precompile.cpp'],
-          ],
-        }],
-        ['OS=="android"', {
-          'sources/': [
-            ['include', 'platform/chromium/ClipboardChromiumLinux\\.cpp$'],
-            ['include', 'platform/chromium/FileSystemChromiumLinux\\.cpp$'],
-          ],
-        }, { # OS!="android"
-          'sources/': [
-            ['exclude', 'Android\\.cpp$'],
-          ],
-        }],
-        ['use_default_render_theme==1', {
-          'sources/': [
-            ['exclude', 'platform/chromium/PlatformThemeChromiumWin\\.(cpp|h)'],
-          ],
-        }, { # use_default_render_theme==0
-          'sources/': [
-            ['exclude', 'platform/chromium/PlatformThemeChromiumDefault\\.(cpp|h)'],
-          ],
+        ['OS=="win" and buildtype=="Official"', {
+          'msvs_shard': 5,
         }],
       ],
     },
     {
+      # GN version: //third_party/WebKit/Source/core:rendering
       'target_name': 'webcore_rendering',
       'type': 'static_library',
       'dependencies': [
@@ -695,11 +618,6 @@
         ['use_default_render_theme==0', {
           'sources/': [
             ['exclude', 'rendering/RenderThemeChromiumDefault.*'],
-          ],
-        }],
-        ['use_default_render_theme==1', {
-          'sources/': [
-            ['exclude', 'RenderThemeChromiumWin.*'],
           ],
         }],
         ['OS=="win"', {
@@ -737,11 +655,6 @@
             ['exclude', 'Linux\\.cpp$'],
           ],
         }],
-        ['toolkit_uses_gtk == 0', {
-          'sources/': [
-            ['exclude', 'Gtk\\.cpp$'],
-          ],
-        }],
         ['OS=="android"', {
           'sources/': [
             ['include', 'rendering/RenderThemeChromiumFontProviderLinux\\.cpp$'],
@@ -755,6 +668,7 @@
       ],
     },
     {
+      # GN version: //third_party/WebKit/Source/core:remaining
       'target_name': 'webcore_remaining',
       'type': 'static_library',
       'dependencies': [
@@ -781,11 +695,6 @@
             ['exclude', 'Linux\\.cpp$'],
           ],
         }],
-        ['toolkit_uses_gtk == 0', {
-          'sources/': [
-            ['exclude', 'Gtk\\.cpp$'],
-          ],
-        }],
         ['OS=="android"', {
           'cflags': [
             # WebCore does not work with strict aliasing enabled.
@@ -795,7 +704,33 @@
         }, { # OS!="android"
           'sources/': [['exclude', 'Android\\.cpp$']]
         }],
-        ['OS!="mac"', {
+        ['OS=="mac"', {
+          'sources': [
+            'editing/SmartReplaceCF.cpp',
+          ],
+          'link_settings': {
+            'libraries': [
+              '$(SDKROOT)/System/Library/Frameworks/Carbon.framework',
+            ],
+          },
+          'sources/': [
+            # Additional files from the WebCore Mac build that are presently
+            # used in the WebCore Chromium Mac build too.
+
+            # The Mac build is USE(CF).
+            ['include', 'CF\\.cpp$'],
+
+            # Cherry-pick some files that can't be included by broader regexps.
+            # Some of these are used instead of Chromium platform files, see
+            # the specific exclusions in the "exclude" list below.
+            ['include', 'platform/mac/WebCoreSystemInterface\\.h$'],
+            ['include', 'platform/mac/WebCoreTextRenderer\\.mm$'],
+            ['include', 'platform/text/mac/ShapeArabic\\.c$'],
+            ['include', 'platform/text/mac/String(Impl)?Mac\\.mm$'],
+            # Use USE_NEW_THEME on Mac.
+            ['include', 'platform/Theme\\.cpp$'],
+          ],
+        }, { # OS!="mac"
           'sources/': [['exclude', 'Mac\\.(cpp|mm?)$']]
         }],
         ['OS=="win" and chromium_win_pch==1', {
@@ -808,17 +743,17 @@
       'msvs_disabled_warnings': [ 4267, 4334, ],
     },
     {
+      # GN version: //third_party/WebKit/Source/core:core
       'target_name': 'webcore',
       'type': 'none',
       'dependencies': [
         'webcore_dom',
         'webcore_html',
-        'webcore_platform',
         'webcore_remaining',
         'webcore_rendering',
         'webcore_svg',
         # Exported.
-        'webcore_derived',
+        'webcore_generated',
         '../wtf/wtf.gyp:wtf',
         '<(DEPTH)/skia/skia.gyp:skia',
         '<(DEPTH)/third_party/npapi/npapi.gyp:npapi',
@@ -828,7 +763,7 @@
       ],
       'export_dependent_settings': [
         '../wtf/wtf.gyp:wtf',
-        'webcore_derived',
+        'webcore_generated',
         '<(DEPTH)/skia/skia.gyp:skia',
         '<(DEPTH)/third_party/npapi/npapi.gyp:npapi',
         '<(DEPTH)/third_party/qcms/qcms.gyp:qcms',
@@ -863,7 +798,7 @@
       ],
     },
     {
-      'target_name': 'webcore_test_support',
+      'target_name': 'webcore_testing',
       'type': 'static_library',
       'dependencies': [
         '../config.gyp:config',
@@ -874,32 +809,32 @@
         'INSIDE_BLINK',
       ],
       'include_dirs': [
-        '<(bindings_dir)/v8',  # FIXME: Remove once http://crbug.com/236119 is fixed.
+        '<(bindings_v8_dir)',  # FIXME: Remove once http://crbug.com/236119 is fixed.
         'testing',
         'testing/v8',
       ],
       'sources': [
-        '<@(webcore_test_support_files)',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/bindings/V8GCObservation.cpp',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/bindings/V8GCObservation.h',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/bindings/V8MallocStatistics.cpp',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/bindings/V8MallocStatistics.h',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/bindings/V8TypeConversions.cpp',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/bindings/V8TypeConversions.h',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/bindings/V8Internals.cpp',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/bindings/V8Internals.h',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/bindings/V8InternalProfilers.cpp',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/bindings/V8InternalProfilers.h',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/bindings/V8InternalSettings.cpp',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/bindings/V8InternalSettings.h',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/bindings/V8InternalSettingsGenerated.cpp',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/bindings/V8InternalSettingsGenerated.h',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/bindings/V8InternalRuntimeFlags.cpp',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/bindings/V8InternalRuntimeFlags.h',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/bindings/V8LayerRect.cpp',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/bindings/V8LayerRect.h',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/bindings/V8LayerRectList.cpp',
-        '<(SHARED_INTERMEDIATE_DIR)/blink/bindings/V8LayerRectList.h',
+        '<@(webcore_testing_files)',
+        '<(bindings_core_v8_output_dir)/V8GCObservation.cpp',
+        '<(bindings_core_v8_output_dir)/V8GCObservation.h',
+        '<(bindings_core_v8_output_dir)/V8MallocStatistics.cpp',
+        '<(bindings_core_v8_output_dir)/V8MallocStatistics.h',
+        '<(bindings_core_v8_output_dir)/V8TypeConversions.cpp',
+        '<(bindings_core_v8_output_dir)/V8TypeConversions.h',
+        '<(bindings_core_v8_output_dir)/V8Internals.cpp',
+        '<(bindings_core_v8_output_dir)/V8Internals.h',
+        '<(bindings_core_v8_output_dir)/V8InternalProfilers.cpp',
+        '<(bindings_core_v8_output_dir)/V8InternalProfilers.h',
+        '<(bindings_core_v8_output_dir)/V8InternalSettings.cpp',
+        '<(bindings_core_v8_output_dir)/V8InternalSettings.h',
+        '<(bindings_core_v8_output_dir)/V8InternalSettingsGenerated.cpp',
+        '<(bindings_core_v8_output_dir)/V8InternalSettingsGenerated.h',
+        '<(bindings_core_v8_output_dir)/V8InternalRuntimeFlags.cpp',
+        '<(bindings_core_v8_output_dir)/V8InternalRuntimeFlags.h',
+        '<(bindings_core_v8_output_dir)/V8LayerRect.cpp',
+        '<(bindings_core_v8_output_dir)/V8LayerRect.h',
+        '<(bindings_core_v8_output_dir)/V8LayerRectList.cpp',
+        '<(bindings_core_v8_output_dir)/V8LayerRectList.h',
       ],
       'sources/': [
         ['exclude', 'testing/js'],

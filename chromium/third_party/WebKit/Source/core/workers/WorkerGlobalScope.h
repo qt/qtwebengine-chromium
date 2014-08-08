@@ -32,11 +32,12 @@
 #include "core/dom/ExecutionContext.h"
 #include "core/events/EventListener.h"
 #include "core/events/EventTarget.h"
-#include "core/events/ThreadLocalEventNames.h"
-#include "core/frame/ContentSecurityPolicy.h"
-#include "core/workers/WorkerConsole.h"
+#include "core/frame/DOMWindowBase64.h"
+#include "core/frame/UseCounter.h"
+#include "core/frame/csp/ContentSecurityPolicy.h"
 #include "core/workers/WorkerEventQueue.h"
-#include "core/workers/WorkerSupplementable.h"
+#include "platform/heap/Handle.h"
+#include "platform/network/ContentSecurityPolicyParsers.h"
 #include "wtf/Assertions.h"
 #include "wtf/HashMap.h"
 #include "wtf/OwnPtr.h"
@@ -48,7 +49,6 @@
 namespace WebCore {
 
     class Blob;
-    class DOMURL;
     class ExceptionState;
     class ScheduledAction;
     class WorkerClients;
@@ -58,32 +58,48 @@ namespace WebCore {
     class WorkerNavigator;
     class WorkerThread;
 
-    class WorkerGlobalScope : public RefCounted<WorkerGlobalScope>, public ScriptWrappable, public SecurityContext, public ExecutionContext, public ExecutionContextClient, public WorkerSupplementable, public EventTargetWithInlineData {
+    class WorkerGlobalScope : public RefCountedWillBeRefCountedGarbageCollected<WorkerGlobalScope>, public ScriptWrappable, public SecurityContext, public ExecutionContext, public ExecutionContextClient, public WillBeHeapSupplementable<WorkerGlobalScope>, public EventTargetWithInlineData, public DOMWindowBase64 {
+        WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(WorkerGlobalScope);
         REFCOUNTED_EVENT_TARGET(WorkerGlobalScope);
     public:
         virtual ~WorkerGlobalScope();
 
-        virtual bool isWorkerGlobalScope() const OVERRIDE { return true; }
+        virtual bool isWorkerGlobalScope() const OVERRIDE FINAL { return true; }
 
-        virtual ExecutionContext* executionContext() const OVERRIDE;
+        virtual ExecutionContext* executionContext() const OVERRIDE FINAL;
 
         virtual bool isSharedWorkerGlobalScope() const { return false; }
         virtual bool isDedicatedWorkerGlobalScope() const { return false; }
         virtual bool isServiceWorkerGlobalScope() const { return false; }
+        virtual void countFeature(UseCounter::Feature) const;
+        virtual void countDeprecation(UseCounter::Feature) const;
 
         const KURL& url() const { return m_url; }
         KURL completeURL(const String&) const;
 
-        virtual String userAgent(const KURL&) const;
-        virtual void disableEval(const String& errorMessage) OVERRIDE;
+        virtual String userAgent(const KURL&) const OVERRIDE FINAL;
+        virtual void disableEval(const String& errorMessage) OVERRIDE FINAL;
 
         WorkerScriptController* script() { return m_script.get(); }
         void clearScript() { m_script.clear(); }
         void clearInspector();
 
+        // FIXME: We can remove this interface when we remove openDatabaseSync.
+        class TerminationObserver {
+        public:
+            virtual ~TerminationObserver() { }
+            // The function is probably called in the main thread.
+            virtual void wasRequestedToTerminate() = 0;
+        };
+        void registerTerminationObserver(TerminationObserver*);
+        void unregisterTerminationObserver(TerminationObserver*);
+        void wasRequestedToTerminate();
+
+        void dispose();
+
         WorkerThread* thread() const { return m_thread; }
 
-        virtual void postTask(PassOwnPtr<ExecutionContextTask>) OVERRIDE; // Executes the task on context's thread asynchronously.
+        virtual void postTask(PassOwnPtr<ExecutionContextTask>) OVERRIDE FINAL; // Executes the task on context's thread asynchronously.
 
         // WorkerGlobalScope
         WorkerGlobalScope* self() { return this; }
@@ -98,38 +114,19 @@ namespace WebCore {
         WorkerNavigator* navigator() const;
 
         // ExecutionContextClient
-        virtual WorkerEventQueue* eventQueue() const OVERRIDE;
-        virtual SecurityContext& securityContext() OVERRIDE { return *this; }
+        virtual WorkerEventQueue* eventQueue() const OVERRIDE FINAL;
+        virtual SecurityContext& securityContext() OVERRIDE FINAL { return *this; }
 
-        virtual bool isContextThread() const OVERRIDE;
-        virtual bool isJSExecutionForbidden() const OVERRIDE;
+        virtual bool isContextThread() const OVERRIDE FINAL;
+        virtual bool isJSExecutionForbidden() const OVERRIDE FINAL;
 
-        virtual double timerAlignmentInterval() const OVERRIDE;
+        virtual double timerAlignmentInterval() const OVERRIDE FINAL;
 
         WorkerInspectorController* workerInspectorController() { return m_workerInspectorController.get(); }
-        // These methods are used for GC marking. See JSWorkerGlobalScope::visitChildrenVirtual(SlotVisitor&) in
-        // JSWorkerGlobalScopeCustom.cpp.
-        WorkerConsole* optionalConsole() const { return m_console.get(); }
-        WorkerNavigator* optionalNavigator() const { return m_navigator.get(); }
-        WorkerLocation* optionalLocation() const { return m_location.get(); }
 
         bool isClosing() { return m_closing; }
 
-        // An observer interface to be notified when the worker thread is getting stopped.
-        class Observer {
-            WTF_MAKE_NONCOPYABLE(Observer);
-        public:
-            Observer(WorkerGlobalScope*);
-            virtual ~Observer();
-            virtual void notifyStop() = 0;
-            void stopObserving();
-        private:
-            WorkerGlobalScope* m_context;
-        };
-        friend class Observer;
-        void registerObserver(Observer*);
-        void unregisterObserver(Observer*);
-        void notifyObserversOfStop();
+        virtual void stopFetch() { }
 
         bool idleNotification();
 
@@ -140,47 +137,49 @@ namespace WebCore {
         using SecurityContext::securityOrigin;
         using SecurityContext::contentSecurityPolicy;
 
-    protected:
-        WorkerGlobalScope(const KURL&, const String& userAgent, WorkerThread*, double timeOrigin, PassOwnPtr<WorkerClients>);
-        void applyContentSecurityPolicyFromString(const String& contentSecurityPolicy, ContentSecurityPolicy::HeaderType);
+        virtual void trace(Visitor*) OVERRIDE;
 
-        virtual void logExceptionToConsole(const String& errorMessage, const String& sourceURL, int lineNumber, int columnNumber, PassRefPtr<ScriptCallStack>) OVERRIDE;
-        void addMessageToWorkerConsole(MessageSource, MessageLevel, const String& message, const String& sourceURL, unsigned lineNumber, PassRefPtr<ScriptCallStack>, ScriptState*);
+    protected:
+        WorkerGlobalScope(const KURL&, const String& userAgent, WorkerThread*, double timeOrigin, PassOwnPtrWillBeRawPtr<WorkerClients>);
+        void applyContentSecurityPolicyFromString(const String& contentSecurityPolicy, ContentSecurityPolicyHeaderType);
+
+        virtual void logExceptionToConsole(const String& errorMessage, const String& sourceURL, int lineNumber, int columnNumber, PassRefPtrWillBeRawPtr<ScriptCallStack>) OVERRIDE;
+        void addMessageToWorkerConsole(MessageSource, MessageLevel, const String& message, const String& sourceURL, unsigned lineNumber, PassRefPtrWillBeRawPtr<ScriptCallStack>, ScriptState*);
 
     private:
-        virtual void refExecutionContext() OVERRIDE { ref(); }
-        virtual void derefExecutionContext() OVERRIDE { deref(); }
+#if !ENABLE(OILPAN)
+        virtual void refExecutionContext() OVERRIDE FINAL { ref(); }
+        virtual void derefExecutionContext() OVERRIDE FINAL { deref(); }
+#endif
 
-        virtual const KURL& virtualURL() const OVERRIDE;
-        virtual KURL virtualCompleteURL(const String&) const;
+        virtual const KURL& virtualURL() const OVERRIDE FINAL;
+        virtual KURL virtualCompleteURL(const String&) const OVERRIDE FINAL;
 
-        virtual void reportBlockedScriptExecutionToInspector(const String& directiveText) OVERRIDE;
-        virtual void addMessage(MessageSource, MessageLevel, const String& message, const String& sourceURL, unsigned lineNumber, ScriptState* = 0) OVERRIDE;
+        virtual void reportBlockedScriptExecutionToInspector(const String& directiveText) OVERRIDE FINAL;
+        virtual void addMessage(MessageSource, MessageLevel, const String& message, const String& sourceURL, unsigned lineNumber, ScriptState* = 0) OVERRIDE FINAL;
 
-        virtual EventTarget* errorEventTarget() OVERRIDE;
-        virtual void didUpdateSecurityOrigin() OVERRIDE { }
+        virtual EventTarget* errorEventTarget() OVERRIDE FINAL;
+        virtual void didUpdateSecurityOrigin() OVERRIDE FINAL { }
 
         KURL m_url;
         String m_userAgent;
 
-        mutable RefPtr<WorkerConsole> m_console;
-        mutable RefPtr<WorkerLocation> m_location;
-        mutable RefPtr<WorkerNavigator> m_navigator;
+        mutable RefPtrWillBeMember<WorkerConsole> m_console;
+        mutable RefPtrWillBeMember<WorkerLocation> m_location;
+        mutable RefPtrWillBeMember<WorkerNavigator> m_navigator;
 
         OwnPtr<WorkerScriptController> m_script;
         WorkerThread* m_thread;
 
-        mutable RefPtr<DOMURL> m_domURL;
         OwnPtr<WorkerInspectorController> m_workerInspectorController;
         bool m_closing;
 
-        HashSet<Observer*> m_workerObservers;
+        OwnPtrWillBeMember<WorkerEventQueue> m_eventQueue;
 
-        OwnPtr<WorkerEventQueue> m_eventQueue;
-
-        OwnPtr<WorkerClients> m_workerClients;
+        OwnPtrWillBeMember<WorkerClients> m_workerClients;
 
         double m_timeOrigin;
+        TerminationObserver* m_terminationObserver;
     };
 
 DEFINE_TYPE_CASTS(WorkerGlobalScope, ExecutionContext, context, context->isWorkerGlobalScope(), context.isWorkerGlobalScope());

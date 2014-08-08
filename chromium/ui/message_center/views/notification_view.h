@@ -19,6 +19,7 @@ namespace message_center {
 class BoundedLabel;
 class MessageCenter;
 class MessageCenterController;
+class NotificationButton;
 class NotificationView;
 class PaddedButton;
 
@@ -38,14 +39,12 @@ class MESSAGE_CENTER_EXPORT NotificationView : public MessageView,
   // |controller| may be NULL, but has to be set before the view is shown.
   static NotificationView* Create(MessageCenterController* controller,
                                   const Notification& notification,
-                                  bool expanded,
                                   bool top_level);
-
-    virtual ~NotificationView();
+  virtual ~NotificationView();
 
   // Overridden from views::View:
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
-  virtual int GetHeightForWidth(int width) OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
+  virtual int GetHeightForWidth(int width) const OVERRIDE;
   virtual void Layout() OVERRIDE;
   virtual void OnFocus() OVERRIDE;
   virtual void ScrollRectToVisible(const gfx::Rect& rect) OVERRIDE;
@@ -53,6 +52,8 @@ class MESSAGE_CENTER_EXPORT NotificationView : public MessageView,
   virtual gfx::NativeCursor GetCursor(const ui::MouseEvent& event) OVERRIDE;
 
   // Overridden from MessageView:
+  virtual void UpdateWithNotification(
+      const Notification& notification) OVERRIDE;
   virtual void ButtonPressed(views::Button* sender,
                              const ui::Event& event) OVERRIDE;
 
@@ -60,9 +61,6 @@ class MESSAGE_CENTER_EXPORT NotificationView : public MessageView,
   virtual void ClickOnNotification(const std::string& notification_id) OVERRIDE;
   virtual void RemoveNotification(const std::string& notification_id,
                                   bool by_user) OVERRIDE;
-  virtual void DisableNotificationsFromThisSource(
-      const NotifierId& notifier_id) OVERRIDE;
-  virtual void ShowNotifierSettingsBubble() OVERRIDE;
 
   void set_controller(MessageCenterController* controller) {
     controller_ = controller;
@@ -70,24 +68,37 @@ class MESSAGE_CENTER_EXPORT NotificationView : public MessageView,
 
  protected:
   NotificationView(MessageCenterController* controller,
-                   const Notification& notification,
-                   bool expanded);
+                   const Notification& notification);
 
  private:
-  bool IsExpansionNeeded(int width);
-  bool IsMessageExpansionNeeded(int width);
-  int GetMessageLineLimit(int width);
-  int GetMessageLines(int width, int limit);
-  int GetMessageHeight(int width, int limit);
+  FRIEND_TEST_ALL_PREFIXES(NotificationViewTest, CreateOrUpdateTest);
+  FRIEND_TEST_ALL_PREFIXES(NotificationViewTest, TestLineLimits);
+  FRIEND_TEST_ALL_PREFIXES(NotificationViewTest, UpdateButtonsStateTest);
+  FRIEND_TEST_ALL_PREFIXES(NotificationViewTest, UpdateButtonCountTest);
+
+  friend class NotificationViewTest;
+
+  void CreateOrUpdateViews(const Notification& notification);
+  void SetAccessibleName(const Notification& notification);
+
+  void CreateOrUpdateTitleView(const Notification& notification);
+  void CreateOrUpdateMessageView(const Notification& notification);
+  void CreateOrUpdateContextMessageView(const Notification& notification);
+  void CreateOrUpdateProgressBarView(const Notification& notification);
+  void CreateOrUpdateListItemViews(const Notification& notification);
+  void CreateOrUpdateIconView(const Notification& notification);
+  void CreateOrUpdateImageView(const Notification& notification);
+  void CreateOrUpdateActionButtonViews(const Notification& notification);
+
+  int GetMessageLineLimit(int title_lines, int width) const;
+  int GetMessageHeight(int width, int limit) const;
 
   MessageCenterController* controller_;  // Weak, lives longer then views.
 
   // Describes whether the view should display a hand pointer or not.
   bool clickable_;
-  bool is_expanded_;
 
   // Weak references to NotificationView descendants owned by their parents.
-  views::View* background_view_;
   views::View* top_view_;
   BoundedLabel* title_view_;
   BoundedLabel* message_view_;
@@ -97,8 +108,8 @@ class MESSAGE_CENTER_EXPORT NotificationView : public MessageView,
   views::View* bottom_view_;
   views::View* image_view_;
   views::ProgressBar* progress_bar_view_;
-  std::vector<views::View*> action_buttons_;
-  PaddedButton* expand_button_;
+  std::vector<NotificationButton*> action_buttons_;
+  std::vector<views::View*> separators_;
 
   DISALLOW_COPY_AND_ASSIGN(NotificationView);
 };

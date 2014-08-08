@@ -69,6 +69,7 @@ ChildProcess::~ChildProcess() {
   }
 
   g_lazy_tls.Pointer()->Set(NULL);
+  io_thread_.Stop();
 }
 
 ChildThread* ChildProcess::main_thread() {
@@ -116,7 +117,8 @@ void ChildProcess::WaitForDebugger(const std::string& label) {
   std::string message = label;
   message += " starting with pid: ";
   message += base::IntToString(base::GetCurrentProcId());
-  ::MessageBox(NULL, UTF8ToWide(message).c_str(), UTF8ToWide(title).c_str(),
+  ::MessageBox(NULL, base::UTF8ToWide(message).c_str(),
+               base::UTF8ToWide(title).c_str(),
                MB_OK | MB_SETFOREGROUND);
 #elif defined(OS_POSIX)
 #if defined(OS_ANDROID)

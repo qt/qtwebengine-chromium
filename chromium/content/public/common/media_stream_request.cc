@@ -8,14 +8,14 @@
 
 namespace content {
 
-bool IsAudioMediaType(MediaStreamType type) {
-  return (type == content::MEDIA_DEVICE_AUDIO_CAPTURE ||
+bool IsAudioInputMediaType(MediaStreamType type) {
+  return (type == MEDIA_DEVICE_AUDIO_CAPTURE ||
           type == content::MEDIA_TAB_AUDIO_CAPTURE ||
           type == content::MEDIA_LOOPBACK_AUDIO_CAPTURE);
 }
 
 bool IsVideoMediaType(MediaStreamType type) {
-  return (type == content::MEDIA_DEVICE_VIDEO_CAPTURE ||
+  return (type == MEDIA_DEVICE_VIDEO_CAPTURE ||
           type == content::MEDIA_TAB_VIDEO_CAPTURE ||
           type == content::MEDIA_DESKTOP_VIDEO_CAPTURE);
 }
@@ -67,11 +67,28 @@ bool MediaStreamDevice::IsEqual(const MediaStreamDevice& second) const {
       input.channel_layout == input_second.channel_layout;
 }
 
+MediaStreamDevices::MediaStreamDevices() {}
+
+MediaStreamDevices::MediaStreamDevices(size_t count,
+                                       const MediaStreamDevice& value)
+    : std::vector<MediaStreamDevice>(count, value) {
+}
+
+const MediaStreamDevice* MediaStreamDevices::FindById(
+    const std::string& device_id) const {
+  for (const_iterator iter = begin(); iter != end(); ++iter) {
+    if (iter->id == device_id)
+      return &(*iter);
+  }
+  return NULL;
+}
+
 MediaStreamRequest::MediaStreamRequest(
     int render_process_id,
     int render_view_id,
     int page_request_id,
     const GURL& security_origin,
+    bool user_gesture,
     MediaStreamRequestType request_type,
     const std::string& requested_audio_device_id,
     const std::string& requested_video_device_id,
@@ -81,6 +98,7 @@ MediaStreamRequest::MediaStreamRequest(
       render_view_id(render_view_id),
       page_request_id(page_request_id),
       security_origin(security_origin),
+      user_gesture(user_gesture),
       request_type(request_type),
       requested_audio_device_id(requested_audio_device_id),
       requested_video_device_id(requested_video_device_id),

@@ -25,14 +25,12 @@ class LayerTreeHostVideoTestSetNeedsDisplay
   virtual void SetupTree() OVERRIDE {
     scoped_refptr<Layer> root = Layer::Create();
     root->SetBounds(gfx::Size(10, 10));
-    root->SetAnchorPoint(gfx::PointF());
     root->SetIsDrawable(true);
 
     scoped_refptr<VideoLayer> video = VideoLayer::Create(
         &video_frame_provider_);
     video->SetPosition(gfx::PointF(3.f, 3.f));
     video->SetBounds(gfx::Size(4, 4));
-    video->SetAnchorPoint(gfx::PointF());
     video->SetIsDrawable(true);
     root->AddChild(video);
 
@@ -46,9 +44,9 @@ class LayerTreeHostVideoTestSetNeedsDisplay
     PostSetNeedsCommitToMainThread();
   }
 
-  virtual bool PrepareToDrawOnThread(LayerTreeHostImpl* host_impl,
-                                     LayerTreeHostImpl::FrameData* frame,
-                                     bool result) OVERRIDE {
+  virtual DrawResult PrepareToDrawOnThread(LayerTreeHostImpl* host_impl,
+                                           LayerTreeHostImpl::FrameData* frame,
+                                           DrawResult draw_result) OVERRIDE {
     LayerImpl* root_layer = host_impl->active_tree()->root_layer();
     RenderSurfaceImpl* root_surface = root_layer->render_surface();
     gfx::RectF damage_rect =
@@ -68,8 +66,8 @@ class LayerTreeHostVideoTestSetNeedsDisplay
         break;
     }
 
-    EXPECT_TRUE(result);
-    return result;
+    EXPECT_EQ(DRAW_SUCCESS, draw_result);
+    return draw_result;
   }
 
   virtual void DrawLayersOnThread(LayerTreeHostImpl* host_impl) OVERRIDE {

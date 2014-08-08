@@ -8,6 +8,8 @@
 
 #include "base/logging.h"
 
+#if !defined(OS_ANDROID)
+
 namespace base {
 namespace internal {
 
@@ -36,3 +38,5 @@ void ThreadLocalPlatform::SetValueInSlot(SlotType slot, void* value) {
 
 }  // namespace internal
 }  // namespace base
+
+#endif  // !defined(OS_ANDROID)

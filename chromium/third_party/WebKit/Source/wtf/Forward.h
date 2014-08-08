@@ -29,10 +29,11 @@ namespace WTF {
     template<typename T> class PassOwnPtr;
     template<typename T> class PassRefPtr;
     template<typename T> class RefPtr;
-    template<typename T, size_t inlineCapacity> class Vector;
+    template<typename T, size_t inlineCapacity, typename Allocator> class Vector;
 
     class ArrayBuffer;
     class ArrayBufferView;
+    class ArrayPiece;
     class AtomicString;
     class CString;
     class Float32Array;
@@ -40,6 +41,8 @@ namespace WTF {
     class Int8Array;
     class Int16Array;
     class Int32Array;
+    template<size_t size>
+    class SizeSpecificPartitionAllocator;
     class String;
     template <typename T> class StringBuffer;
     class StringBuilder;
@@ -59,6 +62,7 @@ using WTF::Vector;
 
 using WTF::ArrayBuffer;
 using WTF::ArrayBufferView;
+using WTF::ArrayPiece;
 using WTF::AtomicString;
 using WTF::CString;
 using WTF::Float32Array;

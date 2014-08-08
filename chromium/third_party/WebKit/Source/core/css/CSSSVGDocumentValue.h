@@ -35,7 +35,10 @@ class ResourceFetcher;
 
 class CSSSVGDocumentValue : public CSSValue {
 public:
-    static PassRefPtr<CSSSVGDocumentValue> create(const String& url) { return adoptRef(new CSSSVGDocumentValue(url)); }
+    static PassRefPtrWillBeRawPtr<CSSSVGDocumentValue> create(const String& url)
+    {
+        return adoptRefWillBeNoop(new CSSSVGDocumentValue(url));
+    }
     ~CSSSVGDocumentValue();
 
     DocumentResource* cachedSVGDocument() const { return m_document.get(); }
@@ -45,6 +48,8 @@ public:
     const String& url() const { return m_url; }
     bool loadRequested() const { return m_loadRequested; }
     bool equals(const CSSSVGDocumentValue&) const;
+
+    void traceAfterDispatch(Visitor* visitor) { CSSValue::traceAfterDispatch(visitor); }
 
 private:
     CSSSVGDocumentValue(const String& url);

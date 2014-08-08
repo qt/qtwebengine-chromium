@@ -49,6 +49,8 @@ class BaseMultipleFieldsDateAndTimeInputType
     , protected PickerIndicatorElement::PickerIndicatorOwner
     , protected SpinButtonElement::SpinButtonOwner
     , protected ClearButtonElement::ClearButtonOwner {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(BaseMultipleFieldsDateAndTimeInputType);
+
 public:
     virtual bool isValidFormat(bool hasYear, bool hasMonth, bool hasWeek, bool hasDay, bool hasAMPM, bool hasHour, bool hasMinute, bool hasSecond) const = 0;
 
@@ -67,6 +69,7 @@ private:
     virtual bool isEditControlOwnerDisabled() const OVERRIDE FINAL;
     virtual bool isEditControlOwnerReadOnly() const OVERRIDE FINAL;
     virtual AtomicString localeIdentifier() const OVERRIDE FINAL;
+    virtual void editControlDidChangeValueByKeyboard() OVERRIDE FINAL;
 
     // SpinButtonElement::SpinButtonOwner functions.
     virtual void focusAndSelectSpinButtonOwner() OVERRIDE;
@@ -74,6 +77,7 @@ private:
     virtual bool shouldSpinButtonRespondToWheelEvents() OVERRIDE;
     virtual void spinButtonStepDown() OVERRIDE;
     virtual void spinButtonStepUp() OVERRIDE;
+    virtual void spinButtonDidReleaseMouseCapture(SpinButtonElement::EventDispatch) OVERRIDE;
 
     // PickerIndicatorElement::PickerIndicatorOwner functions
     virtual bool isPickerIndicatorOwnerDisabledOrReadOnly() const OVERRIDE FINAL;
@@ -94,7 +98,7 @@ private:
     virtual void destroyShadowSubtree() OVERRIDE FINAL;
     virtual void disabledAttributeChanged() OVERRIDE FINAL;
     virtual void forwardEvent(Event*) OVERRIDE FINAL;
-    virtual void handleFocusEvent(Element* oldFocusedElement, FocusDirection) OVERRIDE;
+    virtual void handleFocusEvent(Element* oldFocusedElement, FocusType) OVERRIDE;
     virtual void handleKeydownEvent(KeyboardEvent*) OVERRIDE FINAL;
     virtual bool hasBadInput() const OVERRIDE;
     virtual bool hasCustomFocusLogic() const OVERRIDE FINAL;

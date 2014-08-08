@@ -51,7 +51,7 @@
         'android_stlport_libs': '<(android_stlport)/libs',
       }, {
         'variables': {
-          'android_sysroot': '<(android_ndk_root)/platforms/android-9/arch-<(android_target_arch)',
+          'android_sysroot': '<(android_ndk_root)/platforms/android-<(android_target_platform)/arch-<(android_target_arch)',
           'android_stlport': '<(android_ndk_root)/sources/cxx-stl/stlport/',
         },
         'android_include': '<(android_sysroot)/usr/include',
@@ -146,7 +146,7 @@
               '-Wl,--icf=safe',
             ],
           }],
-          ['target_arch=="arm" and armv7==1', {
+          ['target_arch=="arm" and arm_version==7', {
             'cflags': [
               '-march=armv7-a',
               '-mtune=cortex-a8',
@@ -164,12 +164,12 @@
               '-I<(android_stlport_include)',
             ],
             'conditions': [
-              ['target_arch=="arm" and armv7==1', {
+              ['target_arch=="arm" and arm_version==7', {
                 'ldflags': [
                   '-L<(android_stlport_libs)/armeabi-v7a',
                 ],
               }],
-              ['target_arch=="arm" and armv7==0', {
+              ['target_arch=="arm" and arm_version < 7', {
                 'ldflags': [
                   '-L<(android_stlport_libs)/armeabi',
                 ],
@@ -179,14 +179,24 @@
                   '-L<(android_stlport_libs)/mips',
                 ],
               }],
-              ['target_arch=="ia32"', {
+              ['target_arch=="ia32" or target_arch=="x87"', {
                 'ldflags': [
                   '-L<(android_stlport_libs)/x86',
                 ],
               }],
+              ['target_arch=="x64"', {
+                'ldflags': [
+                  '-L<(android_stlport_libs)/x86_64',
+                ],
+              }],
+              ['target_arch=="arm64"', {
+                'ldflags': [
+                  '-L<(android_stlport_libs)/arm64-v8a',
+                ],
+              }],
             ],
           }],
-          ['target_arch=="ia32"', {
+          ['target_arch=="ia32" or target_arch=="x87"', {
             # The x86 toolchain currently has problems with stack-protector.
             'cflags!': [
               '-fstack-protector',
@@ -205,13 +215,31 @@
               '-fno-stack-protector',
             ],
           }],
+          ['target_arch=="arm64" or target_arch=="x64"', {
+            # TODO(ulan): Enable PIE for other architectures (crbug.com/373219).
+            'cflags': [
+              '-fPIE',
+            ],
+            'ldflags': [
+              '-pie',
+            ],
+          }],
         ],
         'target_conditions': [
           ['_type=="executable"', {
+            'conditions': [
+              ['target_arch=="arm64"', {
+                'ldflags': [
+                  '-Wl,-dynamic-linker,/system/bin/linker64',
+                ],
+              }, {
+                'ldflags': [
+                  '-Wl,-dynamic-linker,/system/bin/linker',
+                ],
+              }]
+            ],
             'ldflags': [
               '-Bdynamic',
-              '-Wl,-dynamic-linker,/system/bin/linker',
-              '-Wl,--gc-sections',
               '-Wl,-z,nocopyreloc',
               # crtbegin_dynamic.o should be the last item in ldflags.
               '<(android_lib)/crtbegin_dynamic.o',
@@ -238,8 +266,15 @@
       }],  # _toolset=="target"
       # Settings for building host targets using the system toolchain.
       ['_toolset=="host"', {
-        'cflags': [ '-m32', '-pthread' ],
-        'ldflags': [ '-m32', '-pthread' ],
+        'conditions': [
+          ['target_arch=="x64"', {
+            'cflags': [ '-m64', '-pthread' ],
+            'ldflags': [ '-m64', '-pthread' ],
+          }, {
+            'cflags': [ '-m32', '-pthread' ],
+            'ldflags': [ '-m32', '-pthread' ],
+          }],
+        ],
         'ldflags!': [
           '-Wl,-z,noexecstack',
           '-Wl,--gc-sections',

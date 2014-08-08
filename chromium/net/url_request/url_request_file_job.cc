@@ -23,18 +23,18 @@
 #include "base/compiler_specific.h"
 #include "base/file_util.h"
 #include "base/message_loop/message_loop.h"
-#include "base/platform_file.h"
 #include "base/strings/string_util.h"
 #include "base/synchronization/lock.h"
 #include "base/task_runner.h"
 #include "base/threading/thread_restrictions.h"
 #include "build/build_config.h"
 #include "net/base/file_stream.h"
+#include "net/base/filename_util.h"
 #include "net/base/io_buffer.h"
 #include "net/base/load_flags.h"
 #include "net/base/mime_util.h"
 #include "net/base/net_errors.h"
-#include "net/base/net_util.h"
+#include "net/filter/filter.h"
 #include "net/http/http_util.h"
 #include "net/url_request/url_request_error_job.h"
 #include "net/url_request/url_request_file_dir_job.h"
@@ -60,7 +60,7 @@ URLRequestFileJob::URLRequestFileJob(
     const scoped_refptr<base::TaskRunner>& file_task_runner)
     : URLRequestJob(request, network_delegate),
       file_path_(file_path),
-      stream_(new FileStream(NULL, file_task_runner)),
+      stream_(new FileStream(file_task_runner)),
       file_task_runner_(file_task_runner),
       remaining_bytes_(0),
       weak_ptr_factory_(this) {}
@@ -83,8 +83,9 @@ void URLRequestFileJob::Kill() {
   URLRequestJob::Kill();
 }
 
-bool URLRequestFileJob::ReadRawData(IOBuffer* dest, int dest_size,
-                                    int *bytes_read) {
+bool URLRequestFileJob::ReadRawData(IOBuffer* dest,
+                                    int dest_size,
+                                    int* bytes_read) {
   DCHECK_NE(dest_size, 0);
   DCHECK(bytes_read);
   DCHECK_GE(remaining_bytes_, 0);
@@ -99,9 +100,11 @@ bool URLRequestFileJob::ReadRawData(IOBuffer* dest, int dest_size,
     return true;
   }
 
-  int rv = stream_->Read(dest, dest_size,
+  int rv = stream_->Read(dest,
+                         dest_size,
                          base::Bind(&URLRequestFileJob::DidRead,
-                                    weak_ptr_factory_.GetWeakPtr()));
+                                    weak_ptr_factory_.GetWeakPtr(),
+                                    make_scoped_refptr(dest)));
   if (rv >= 0) {
     // Data is immediately available.
     *bytes_read = rv;
@@ -192,16 +195,22 @@ void URLRequestFileJob::SetExtraRequestHeaders(
   }
 }
 
+void URLRequestFileJob::OnSeekComplete(int64 result) {
+}
+
+void URLRequestFileJob::OnReadComplete(net::IOBuffer* buf, int result) {
+}
+
 URLRequestFileJob::~URLRequestFileJob() {
 }
 
 void URLRequestFileJob::FetchMetaInfo(const base::FilePath& file_path,
                                       FileMetaInfo* meta_info) {
-  base::PlatformFileInfo platform_info;
-  meta_info->file_exists = base::GetFileInfo(file_path, &platform_info);
+  base::File::Info file_info;
+  meta_info->file_exists = base::GetFileInfo(file_path, &file_info);
   if (meta_info->file_exists) {
-    meta_info->file_size = platform_info.size;
-    meta_info->is_directory = platform_info.is_directory;
+    meta_info->file_size = file_info.size;
+    meta_info->is_directory = file_info.is_directory;
   }
   // On Windows GetMimeTypeFromFile() goes to the registry. Thus it should be
   // done in WorkerPool.
@@ -229,9 +238,9 @@ void URLRequestFileJob::DidFetchMetaInfo(const FileMetaInfo* meta_info) {
     return;
   }
 
-  int flags = base::PLATFORM_FILE_OPEN |
-              base::PLATFORM_FILE_READ |
-              base::PLATFORM_FILE_ASYNC;
+  int flags = base::File::FLAG_OPEN |
+              base::File::FLAG_READ |
+              base::File::FLAG_ASYNC;
   int rv = stream_->Open(file_path_, flags,
                          base::Bind(&URLRequestFileJob::DidOpen,
                                     weak_ptr_factory_.GetWeakPtr()));
@@ -273,6 +282,7 @@ void URLRequestFileJob::DidOpen(int result) {
 }
 
 void URLRequestFileJob::DidSeek(int64 result) {
+  OnSeekComplete(result);
   if (result != byte_range_.first_byte_position()) {
     NotifyDone(URLRequestStatus(URLRequestStatus::FAILED,
                                 ERR_REQUEST_RANGE_NOT_SATISFIABLE));
@@ -283,17 +293,21 @@ void URLRequestFileJob::DidSeek(int64 result) {
   NotifyHeadersComplete();
 }
 
-void URLRequestFileJob::DidRead(int result) {
+void URLRequestFileJob::DidRead(scoped_refptr<net::IOBuffer> buf, int result) {
   if (result > 0) {
     SetStatus(URLRequestStatus());  // Clear the IO_PENDING status
-  } else if (result == 0) {
-    NotifyDone(URLRequestStatus());
-  } else {
-    NotifyDone(URLRequestStatus(URLRequestStatus::FAILED, result));
+    remaining_bytes_ -= result;
+    DCHECK_GE(remaining_bytes_, 0);
   }
 
-  remaining_bytes_ -= result;
-  DCHECK_GE(remaining_bytes_, 0);
+  OnReadComplete(buf.get(), result);
+  buf = NULL;
+
+  if (result == 0) {
+    NotifyDone(URLRequestStatus());
+  } else if (result < 0) {
+    NotifyDone(URLRequestStatus(URLRequestStatus::FAILED, result));
+  }
 
   NotifyReadComplete(result);
 }

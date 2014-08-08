@@ -126,6 +126,7 @@ id
 incremental
 indeterminate
 inputmode
+integrity
 is
 ismap
 itemid
@@ -176,7 +177,6 @@ onautocomplete
 onautocompleteerror
 onbeforecopy
 onbeforecut
-onbeforeload
 onbeforepaste
 onbeforeunload
 onblur
@@ -211,6 +211,7 @@ oninvalid
 onkeydown
 onkeypress
 onkeyup
+onlanguagechange
 onload
 onloadeddata
 onloadedmetadata
@@ -252,6 +253,7 @@ onstorage
 onsuspend
 onsubmit
 ontimeupdate
+ontoggle
 ontouchstart
 ontouchmove
 ontouchend
@@ -282,7 +284,6 @@ pluginspage
 pluginurl
 ping
 poster
-precision
 preload
 primary
 profile
@@ -292,7 +293,6 @@ pseudo
 readonly
 rel
 required
-reset-style-inheritance
 results
 rev
 reversed
@@ -307,7 +307,6 @@ scoped
 scrollamount
 scrolldelay
 scrolling
-seamless
 select
 selected
 shape
@@ -316,8 +315,6 @@ sizes
 sortable
 sortdirection
 span
-x-webkit-speech
-x-webkit-grammar
 spellcheck
 src
 srcset

@@ -51,28 +51,28 @@
 namespace WebCore {
 
 class RenderLayer;
-class RenderRegion;
 
 struct ClipRectsContext {
-    ClipRectsContext(const RenderLayer* inRootLayer, RenderRegion* inRegion, ClipRectsType inClipRectsType, OverlayScrollbarSizeRelevancy inOverlayScrollbarSizeRelevancy = IgnoreOverlayScrollbarSize, ShouldRespectOverflowClip inRespectOverflowClip = RespectOverflowClip)
+    ClipRectsContext(const RenderLayer* inRootLayer, ClipRectsType inClipRectsType, OverlayScrollbarSizeRelevancy inOverlayScrollbarSizeRelevancy = IgnoreOverlayScrollbarSize, ShouldRespectOverflowClip inRespectOverflowClip = RespectOverflowClip, const LayoutSize& inSubPixelAccumulation = LayoutSize())
         : rootLayer(inRootLayer)
-        , region(inRegion)
         , clipRectsType(inClipRectsType)
         , overlayScrollbarSizeRelevancy(inOverlayScrollbarSizeRelevancy)
         , respectOverflowClip(inRespectOverflowClip)
+        , subPixelAccumulation(inSubPixelAccumulation)
     { }
     const RenderLayer* rootLayer;
-    RenderRegion* region;
     ClipRectsType clipRectsType;
     OverlayScrollbarSizeRelevancy overlayScrollbarSizeRelevancy;
     ShouldRespectOverflowClip respectOverflowClip;
+    LayoutSize subPixelAccumulation;
 };
 
-class RenderLayerClipper {
+class RenderLayerClipper FINAL {
     WTF_MAKE_NONCOPYABLE(RenderLayerClipper);
 public:
-    RenderLayerClipper(RenderLayerModelObject* renderer)
-    : m_renderer(renderer)
+    explicit RenderLayerClipper(RenderLayerModelObject& renderer)
+        : m_renderer(renderer)
+        , m_compositingClipRectsDirty(false)
     {
     }
 
@@ -88,15 +88,38 @@ public:
     void clearClipRectsIncludingDescendants(ClipRectsType typeToClear = AllClipRectTypes);
     void clearClipRects(ClipRectsType typeToClear = AllClipRectTypes);
 
+    void setCompositingClipRectsDirty();
+
+    LayoutRect childrenClipRect() const; // Returns the foreground clip rect of the layer in the document's coordinate space.
+    LayoutRect localClipRect() const; // Returns the background clip rect of the layer in the local coordinate space.
+
+    ClipRect backgroundClipRect(const ClipRectsContext&) const;
+
+    // FIXME: The following functions should be private.
+
+    // This method figures out our layerBounds in coordinates relative to
+    // |rootLayer}. It also computes our background and foreground clip rects
+    // for painting/event handling.
+    // Pass offsetFromRoot if known.
+    void calculateRects(const ClipRectsContext&, const LayoutRect& paintDirtyRect, LayoutRect& layerBounds,
+        ClipRect& backgroundRect, ClipRect& foregroundRect, ClipRect& outlineRect, const LayoutPoint* offsetFromRoot = 0) const;
+
     // Compute and return the clip rects. If useCached is true, will used previously computed clip rects on ancestors
     // (rather than computing them all from scratch up the parent chain).
     void calculateClipRects(const ClipRectsContext&, ClipRects&) const;
 
 private:
-    // FIXME: Could this be a RenderBox?
-    RenderLayerModelObject* m_renderer;
+    void parentClipRects(const ClipRectsContext&, ClipRects&) const;
 
+    // The layer relative to which clipping rects for this layer are computed.
+    RenderLayer* clippingRootForPainting() const;
+
+    bool isClippingRootForContext(const ClipRectsContext&) const;
+
+    // FIXME: Could this be a RenderBox?
+    RenderLayerModelObject& m_renderer;
     OwnPtr<ClipRectsCache> m_clipRectsCache;
+    unsigned m_compositingClipRectsDirty : 1;
 };
 
 } // namespace WebCore

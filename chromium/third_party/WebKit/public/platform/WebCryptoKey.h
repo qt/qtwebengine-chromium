@@ -50,6 +50,7 @@ enum WebCryptoKeyUsage {
     WebCryptoKeyUsageDeriveKey = 1 << 4,
     WebCryptoKeyUsageWrapKey = 1 << 5,
     WebCryptoKeyUsageUnwrapKey = 1 << 6,
+    WebCryptoKeyUsageDeriveBits = 1 << 7,
 #if INSIDE_BLINK
     EndOfWebCryptoKeyUsage,
 #endif
@@ -65,7 +66,7 @@ enum WebCryptoKeyFormat {
     WebCryptoKeyFormatJwk,
 };
 
-class WebCryptoAlgorithm;
+class WebCryptoKeyAlgorithm;
 class WebCryptoKeyPrivate;
 class WebCryptoKeyHandle;
 
@@ -86,11 +87,6 @@ class WebCryptoKeyHandle;
 //
 // If WebCryptoKey "isNull()" then it is invalid to call any of the other
 // methods on it (other than destruction, assignment, or isNull()).
-//
-// FIXME: Define the interface to use for structured clone.
-//        Cloning across a process boundary will need serialization,
-//        however cloning for in-process workers could just share the same
-//        (threadsafe) handle.
 class WebCryptoKey {
 public:
     ~WebCryptoKey() { reset(); }
@@ -106,7 +102,7 @@ public:
     // https://dvcs.w3.org/hg/webcrypto-api/raw-file/tip/spec/Overview.html#key-interface-members
     //
     // Note that the caller is passing ownership of the WebCryptoKeyHandle*.
-    BLINK_PLATFORM_EXPORT static WebCryptoKey create(WebCryptoKeyHandle*, WebCryptoKeyType, bool extractable, const WebCryptoAlgorithm&, WebCryptoKeyUsageMask);
+    BLINK_PLATFORM_EXPORT static WebCryptoKey create(WebCryptoKeyHandle*, WebCryptoKeyType, bool extractable, const WebCryptoKeyAlgorithm&, WebCryptoKeyUsageMask);
 
     BLINK_PLATFORM_EXPORT static WebCryptoKey createNull();
 
@@ -117,7 +113,7 @@ public:
 
     BLINK_PLATFORM_EXPORT WebCryptoKeyType type() const;
     BLINK_PLATFORM_EXPORT bool extractable() const;
-    BLINK_PLATFORM_EXPORT const WebCryptoAlgorithm& algorithm() const;
+    BLINK_PLATFORM_EXPORT const WebCryptoKeyAlgorithm& algorithm() const;
     BLINK_PLATFORM_EXPORT WebCryptoKeyUsageMask usages() const;
 
     BLINK_PLATFORM_EXPORT bool isNull() const;

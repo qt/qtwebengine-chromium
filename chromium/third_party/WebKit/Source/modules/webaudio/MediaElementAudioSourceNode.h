@@ -27,7 +27,6 @@
 
 #if ENABLE(WEB_AUDIO)
 
-#include "core/html/HTMLMediaElement.h"
 #include "platform/audio/AudioSourceProviderClient.h"
 #include "platform/audio/MultiChannelResampler.h"
 #include "modules/webaudio/AudioSourceNode.h"
@@ -38,24 +37,27 @@
 namespace WebCore {
 
 class AudioContext;
+class HTMLMediaElement;
 
-class MediaElementAudioSourceNode : public AudioSourceNode, public AudioSourceProviderClient {
+class MediaElementAudioSourceNode FINAL : public AudioSourceNode, public AudioSourceProviderClient {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(MediaElementAudioSourceNode);
 public:
-    static PassRefPtr<MediaElementAudioSourceNode> create(AudioContext*, HTMLMediaElement*);
+    static PassRefPtrWillBeRawPtr<MediaElementAudioSourceNode> create(AudioContext*, HTMLMediaElement*);
 
     virtual ~MediaElementAudioSourceNode();
 
     HTMLMediaElement* mediaElement() { return m_mediaElement.get(); }
 
     // AudioNode
-    virtual void process(size_t framesToProcess);
-    virtual void reset();
+    virtual void process(size_t framesToProcess) OVERRIDE;
 
     // AudioSourceProviderClient
-    virtual void setFormat(size_t numberOfChannels, float sampleRate);
+    virtual void setFormat(size_t numberOfChannels, float sampleRate) OVERRIDE;
 
-    void lock();
-    void unlock();
+    virtual void lock() OVERRIDE;
+    virtual void unlock() OVERRIDE;
+
+    virtual void trace(Visitor*) OVERRIDE;
 
 private:
     MediaElementAudioSourceNode(AudioContext*, HTMLMediaElement*);
@@ -63,7 +65,7 @@ private:
     // As an audio source, we will never propagate silence.
     virtual bool propagatesSilence() const OVERRIDE { return false; }
 
-    RefPtr<HTMLMediaElement> m_mediaElement;
+    RefPtrWillBeMember<HTMLMediaElement> m_mediaElement;
     Mutex m_processLock;
 
     unsigned m_sourceNumberOfChannels;

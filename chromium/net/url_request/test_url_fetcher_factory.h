@@ -104,11 +104,11 @@ class TestURLFetcher : public URLFetcher {
   virtual void SetLoadFlags(int load_flags) OVERRIDE;
   virtual int GetLoadFlags() const OVERRIDE;
   virtual void SetReferrer(const std::string& referrer) OVERRIDE;
+  virtual void SetReferrerPolicy(
+      URLRequest::ReferrerPolicy referrer_policy) OVERRIDE;
   virtual void SetExtraRequestHeaders(
       const std::string& extra_request_headers) OVERRIDE;
   virtual void AddExtraRequestHeader(const std::string& header_line) OVERRIDE;
-  virtual void GetExtraRequestHeaders(
-      HttpRequestHeaders* headers) const OVERRIDE;
   virtual void SetRequestContext(
       URLRequestContextGetter* request_context_getter) OVERRIDE;
   virtual void SetFirstPartyForCookies(
@@ -148,6 +148,8 @@ class TestURLFetcher : public URLFetcher {
       std::string* out_response_string) const OVERRIDE;
   virtual bool GetResponseAsFilePath(
       bool take_ownership, base::FilePath* out_response_path) const OVERRIDE;
+
+  void GetExtraRequestHeaders(HttpRequestHeaders* headers) const;
 
   // Sets owner of this class.  Set it to a non-NULL value if you want
   // to automatically unregister this fetcher from the owning factory
@@ -220,6 +222,7 @@ class TestURLFetcher : public URLFetcher {
   HttpRequestHeaders fake_extra_request_headers_;
   int fake_max_retries_;
   base::TimeDelta fake_backoff_delay_;
+  scoped_ptr<URLFetcherResponseWriter> response_writer_;
 
   DISALLOW_COPY_AND_ASSIGN(TestURLFetcher);
 };
@@ -454,7 +457,6 @@ class URLFetcherImplFactory : public URLFetcherFactory {
       const GURL& url,
       URLFetcher::RequestType request_type,
       URLFetcherDelegate* d) OVERRIDE;
-
 };
 
 }  // namespace net

@@ -27,8 +27,8 @@ class TestBasicJitterBuffer : public ::testing::Test {
  protected:
   virtual void SetUp() {
     clock_.reset(new SimulatedClock(0));
-    jitter_buffer_.reset(new VCMJitterBuffer(clock_.get(),
-        &event_factory_, -1, -1, true));
+    jitter_buffer_.reset(
+        new VCMJitterBuffer(clock_.get(), &event_factory_));
     jitter_buffer_->Start();
     seq_num_ = 1234;
     timestamp_ = 0;
@@ -126,8 +126,7 @@ class TestRunningJitterBuffer : public ::testing::Test {
     clock_.reset(new SimulatedClock(0));
     max_nack_list_size_ = 150;
     oldest_packet_to_nack_ = 250;
-    jitter_buffer_ = new VCMJitterBuffer(clock_.get(), &event_factory_, -1, -1,
-                                         true);
+    jitter_buffer_ = new VCMJitterBuffer(clock_.get(), &event_factory_);
     stream_generator_ = new StreamGenerator(0, 0, clock_->TimeInMilliseconds());
     jitter_buffer_->Start();
     jitter_buffer_->SetNackSettings(max_nack_list_size_,
@@ -2032,6 +2031,33 @@ TEST_F(TestJitterBufferNack, NormalOperationWrap2) {
   // Verify the NACK list.
   ASSERT_EQ(1, nack_list_size);
   EXPECT_EQ(65535, list[0]);
+}
+
+TEST_F(TestJitterBufferNack, ResetByFutureKeyFrameDoesntError) {
+  stream_generator_->Init(0, 0, clock_->TimeInMilliseconds());
+  InsertFrame(kVideoFrameKey);
+  EXPECT_TRUE(DecodeCompleteFrame());
+  uint16_t nack_list_size = 0;
+  bool extended = false;
+  jitter_buffer_->GetNackList(&nack_list_size, &extended);
+  EXPECT_EQ(0, nack_list_size);
+
+  // Far-into-the-future video frame, could be caused by resetting the encoder
+  // or otherwise restarting. This should not fail when error when the packet is
+  // a keyframe, even if all of the nack list needs to be flushed.
+  stream_generator_->Init(10000, 0, clock_->TimeInMilliseconds());
+  clock_->AdvanceTimeMilliseconds(kDefaultFramePeriodMs);
+  InsertFrame(kVideoFrameKey);
+  EXPECT_TRUE(DecodeCompleteFrame());
+  jitter_buffer_->GetNackList(&nack_list_size, &extended);
+  EXPECT_EQ(0, nack_list_size);
+
+  // Stream should be decodable from this point.
+  clock_->AdvanceTimeMilliseconds(kDefaultFramePeriodMs);
+  InsertFrame(kVideoFrameDelta);
+  EXPECT_TRUE(DecodeCompleteFrame());
+  jitter_buffer_->GetNackList(&nack_list_size, &extended);
+  EXPECT_EQ(0, nack_list_size);
 }
 
 }  // namespace webrtc

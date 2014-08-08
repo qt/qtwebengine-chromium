@@ -12,6 +12,7 @@
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/size.h"
 #include "ui/gl/gl_export.h"
+#include "ui/gl/gl_implementation.h"
 
 namespace gfx {
 
@@ -56,11 +57,8 @@ class GL_EXPORT GLSurface : public base::RefCounted<GLSurface> {
   // Get the underlying platform specific surface "handle".
   virtual void* GetHandle() = 0;
 
-  // Returns space separated list of surface specific extensions.
-  // The surface must be current.
-  virtual std::string GetExtensions();
-
-  bool HasExtension(const char* name);
+  // Returns whether or not the surface supports PostSubBuffer.
+  virtual bool SupportsPostSubBuffer();
 
   // Returns the internal frame buffer object name if the surface is backed by
   // FBO. Otherwise returns 0.
@@ -69,7 +67,14 @@ class GL_EXPORT GLSurface : public base::RefCounted<GLSurface> {
   // Copy part of the backbuffer to the frontbuffer.
   virtual bool PostSubBuffer(int x, int y, int width, int height);
 
+  // Initialize GL bindings.
   static bool InitializeOneOff();
+
+  // Unit tests should call these instead of InitializeOneOff() to set up
+  // GL bindings appropriate for tests.
+  static void InitializeOneOffForTests();
+  static void InitializeOneOffWithMockBindingsForTests();
+  static void InitializeDynamicMockBindingsForTests(GLContext* context);
 
   // Called after a context is made current with this surface. Returns false
   // on error.
@@ -109,6 +114,10 @@ class GL_EXPORT GLSurface : public base::RefCounted<GLSurface> {
 
  protected:
   virtual ~GLSurface();
+  static bool InitializeOneOffImplementation(GLImplementation impl,
+                                             bool fallback_to_osmesa,
+                                             bool gpu_service_logging,
+                                             bool disable_gl_drawing);
   static bool InitializeOneOffInternal();
   static void SetCurrent(GLSurface* surface);
 
@@ -135,7 +144,7 @@ class GL_EXPORT GLSurfaceAdapter : public GLSurface {
   virtual bool IsOffscreen() OVERRIDE;
   virtual bool SwapBuffers() OVERRIDE;
   virtual bool PostSubBuffer(int x, int y, int width, int height) OVERRIDE;
-  virtual std::string GetExtensions() OVERRIDE;
+  virtual bool SupportsPostSubBuffer() OVERRIDE;
   virtual gfx::Size GetSize() OVERRIDE;
   virtual void* GetHandle() OVERRIDE;
   virtual unsigned int GetBackingFrameBufferObject() OVERRIDE;

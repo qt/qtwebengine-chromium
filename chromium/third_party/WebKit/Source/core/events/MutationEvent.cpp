@@ -23,8 +23,6 @@
 #include "config.h"
 #include "core/events/MutationEvent.h"
 
-#include "core/events/ThreadLocalEventNames.h"
-
 namespace WebCore {
 
 MutationEvent::MutationEvent()
@@ -33,7 +31,7 @@ MutationEvent::MutationEvent()
     ScriptWrappable::init(this);
 }
 
-MutationEvent::MutationEvent(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtr<Node> relatedNode,
+MutationEvent::MutationEvent(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtrWillBeRawPtr<Node> relatedNode,
                              const String& prevValue, const String& newValue,
                              const String& attrName, unsigned short attrChange)
     : Event(type, canBubble, cancelable)
@@ -50,7 +48,7 @@ MutationEvent::~MutationEvent()
 {
 }
 
-void MutationEvent::initMutationEvent(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtr<Node> relatedNode,
+void MutationEvent::initMutationEvent(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtrWillBeRawPtr<Node> relatedNode,
                                       const String& prevValue, const String& newValue,
                                       const String& attrName, unsigned short attrChange)
 {
@@ -69,6 +67,12 @@ void MutationEvent::initMutationEvent(const AtomicString& type, bool canBubble, 
 const AtomicString& MutationEvent::interfaceName() const
 {
     return EventNames::MutationEvent;
+}
+
+void MutationEvent::trace(Visitor* visitor)
+{
+    visitor->trace(m_relatedNode);
+    Event::trace(visitor);
 }
 
 } // namespace WebCore

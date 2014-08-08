@@ -75,7 +75,6 @@ public:
         : m_resourceRequestAllocation(*p->m_resourceRequest)
     {
         m_resourceRequest = &m_resourceRequestAllocation;
-        m_allowStoredCredentials = p->m_allowStoredCredentials;
     }
 
     virtual void dispose() { delete this; }
@@ -127,24 +126,14 @@ void WebURLRequest::setFirstPartyForCookies(const WebURL& firstPartyForCookies)
     m_private->m_resourceRequest->setFirstPartyForCookies(firstPartyForCookies);
 }
 
-bool WebURLRequest::allowCookies() const
-{
-    return m_private->m_resourceRequest->allowCookies();
-}
-
-void WebURLRequest::setAllowCookies(bool allowCookies)
-{
-    m_private->m_resourceRequest->setAllowCookies(allowCookies);
-}
-
 bool WebURLRequest::allowStoredCredentials() const
 {
-    return m_private->m_allowStoredCredentials;
+    return m_private->m_resourceRequest->allowStoredCredentials();
 }
 
 void WebURLRequest::setAllowStoredCredentials(bool allowStoredCredentials)
 {
-    m_private->m_allowStoredCredentials = allowStoredCredentials;
+    m_private->m_resourceRequest->setAllowStoredCredentials(allowStoredCredentials);
 }
 
 WebURLRequest::CachePolicy WebURLRequest::cachePolicy() const
@@ -176,7 +165,16 @@ WebString WebURLRequest::httpHeaderField(const WebString& name) const
 
 void WebURLRequest::setHTTPHeaderField(const WebString& name, const WebString& value)
 {
+    RELEASE_ASSERT(!equalIgnoringCase(name, "referer"));
     m_private->m_resourceRequest->setHTTPHeaderField(name, value);
+}
+
+void WebURLRequest::setHTTPReferrer(const WebString& referrer, WebReferrerPolicy referrerPolicy)
+{
+    if (referrer.isEmpty())
+        m_private->m_resourceRequest->clearHTTPReferrer();
+    else
+        m_private->m_resourceRequest->setHTTPReferrer(Referrer(referrer, static_cast<ReferrerPolicy>(referrerPolicy)));
 }
 
 void WebURLRequest::addHTTPHeaderField(const WebString& name, const WebString& value)
@@ -216,11 +214,6 @@ void WebURLRequest::setReportUploadProgress(bool reportUploadProgress)
     m_private->m_resourceRequest->setReportUploadProgress(reportUploadProgress);
 }
 
-bool WebURLRequest::reportLoadTiming() const
-{
-    return m_private->m_resourceRequest->reportLoadTiming();
-}
-
 void WebURLRequest::setReportRawHeaders(bool reportRawHeaders)
 {
     m_private->m_resourceRequest->setReportRawHeaders(reportRawHeaders);
@@ -231,11 +224,6 @@ bool WebURLRequest::reportRawHeaders() const
     return m_private->m_resourceRequest->reportRawHeaders();
 }
 
-void WebURLRequest::setReportLoadTiming(bool reportLoadTiming)
-{
-    m_private->m_resourceRequest->setReportLoadTiming(reportLoadTiming);
-}
-
 WebURLRequest::TargetType WebURLRequest::targetType() const
 {
     // FIXME: Temporary special case until downstream chromium.org knows of the new TargetTypes.
@@ -243,6 +231,11 @@ WebURLRequest::TargetType WebURLRequest::targetType() const
     if (targetType == TargetIsTextTrack || targetType == TargetIsUnspecified)
         return TargetIsSubresource;
     return targetType;
+}
+
+WebReferrerPolicy WebURLRequest::referrerPolicy() const
+{
+    return static_cast<WebReferrerPolicy>(m_private->m_resourceRequest->referrerPolicy());
 }
 
 bool WebURLRequest::hasUserGesture() const
@@ -326,6 +319,12 @@ WebURLRequest::Priority WebURLRequest::priority() const
 {
     return static_cast<WebURLRequest::Priority>(
         m_private->m_resourceRequest->priority());
+}
+
+void WebURLRequest::setPriority(WebURLRequest::Priority priority)
+{
+    m_private->m_resourceRequest->setPriority(
+        static_cast<ResourceLoadPriority>(priority));
 }
 
 const ResourceRequest& WebURLRequest::toResourceRequest() const

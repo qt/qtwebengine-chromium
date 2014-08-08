@@ -19,7 +19,7 @@ from grit.format.policy_templates.writers import xml_writer_base_unittest
 from xml.dom import minidom
 
 
-class AdmxWriterTest(xml_writer_base_unittest.XmlWriterBaseTest):
+class AdmxWriterUnittest(xml_writer_base_unittest.XmlWriterBaseTest):
 
   def _CreateDocumentElement(self):
     dom_impl = minidom.getDOMImplementation('')

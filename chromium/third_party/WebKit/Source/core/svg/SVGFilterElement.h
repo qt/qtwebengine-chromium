@@ -23,63 +23,61 @@
 #ifndef SVGFilterElement_h
 #define SVGFilterElement_h
 
-#include "SVGNames.h"
+#include "core/SVGNames.h"
 #include "core/svg/SVGAnimatedBoolean.h"
 #include "core/svg/SVGAnimatedEnumeration.h"
 #include "core/svg/SVGAnimatedInteger.h"
+#include "core/svg/SVGAnimatedIntegerOptionalInteger.h"
 #include "core/svg/SVGAnimatedLength.h"
 #include "core/svg/SVGElement.h"
-#include "core/svg/SVGExternalResourcesRequired.h"
 #include "core/svg/SVGURIReference.h"
 #include "core/svg/SVGUnitTypes.h"
 
 namespace WebCore {
 
 class SVGFilterElement FINAL : public SVGElement,
-                               public SVGURIReference,
-                               public SVGExternalResourcesRequired {
+                               public SVGURIReference {
 public:
-    static PassRefPtr<SVGFilterElement> create(Document&);
+    DECLARE_NODE_FACTORY(SVGFilterElement);
+    virtual void trace(Visitor*) OVERRIDE;
 
-    void setFilterRes(unsigned filterResX, unsigned filterResY);
+    void setFilterRes(unsigned x, unsigned y);
     void addClient(Node*);
     void removeClient(Node*);
+
+    SVGAnimatedLength* x() const { return m_x.get(); }
+    SVGAnimatedLength* y() const { return m_y.get(); }
+    SVGAnimatedLength* width() const { return m_width.get(); }
+    SVGAnimatedLength* height() const { return m_height.get(); }
+    SVGAnimatedEnumeration<SVGUnitTypes::SVGUnitType>* filterUnits() { return m_filterUnits.get(); }
+    SVGAnimatedEnumeration<SVGUnitTypes::SVGUnitType>* primitiveUnits() { return m_primitiveUnits.get(); }
+    SVGAnimatedInteger* filterResX() { return m_filterRes->firstInteger(); }
+    SVGAnimatedInteger* filterResY() { return m_filterRes->secondInteger(); }
 
 private:
     explicit SVGFilterElement(Document&);
 
-    virtual bool needsPendingResourceHandling() const { return false; }
+    virtual bool needsPendingResourceHandling() const OVERRIDE { return false; }
 
     bool isSupportedAttribute(const QualifiedName&);
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual void svgAttributeChanged(const QualifiedName&);
-    virtual void childrenChanged(bool changedByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0);
+    virtual void svgAttributeChanged(const QualifiedName&) OVERRIDE;
+    virtual void childrenChanged(bool changedByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0) OVERRIDE;
 
     virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
-    virtual bool childShouldCreateRenderer(const Node& child) const OVERRIDE;
 
-    virtual bool selfHasRelativeLengths() const;
+    virtual bool selfHasRelativeLengths() const OVERRIDE;
 
-    static const AtomicString& filterResXIdentifier();
-    static const AtomicString& filterResYIdentifier();
+    RefPtr<SVGAnimatedLength> m_x;
+    RefPtr<SVGAnimatedLength> m_y;
+    RefPtr<SVGAnimatedLength> m_width;
+    RefPtr<SVGAnimatedLength> m_height;
+    RefPtr<SVGAnimatedEnumeration<SVGUnitTypes::SVGUnitType> > m_filterUnits;
+    RefPtr<SVGAnimatedEnumeration<SVGUnitTypes::SVGUnitType> > m_primitiveUnits;
+    RefPtr<SVGAnimatedIntegerOptionalInteger> m_filterRes;
 
-    BEGIN_DECLARE_ANIMATED_PROPERTIES(SVGFilterElement)
-        DECLARE_ANIMATED_ENUMERATION(FilterUnits, filterUnits, SVGUnitTypes::SVGUnitType)
-        DECLARE_ANIMATED_ENUMERATION(PrimitiveUnits, primitiveUnits, SVGUnitTypes::SVGUnitType)
-        DECLARE_ANIMATED_LENGTH(X, x)
-        DECLARE_ANIMATED_LENGTH(Y, y)
-        DECLARE_ANIMATED_LENGTH(Width, width)
-        DECLARE_ANIMATED_LENGTH(Height, height)
-        DECLARE_ANIMATED_INTEGER(FilterResX, filterResX)
-        DECLARE_ANIMATED_INTEGER(FilterResY, filterResY)
-        DECLARE_ANIMATED_STRING(Href, href)
-        DECLARE_ANIMATED_BOOLEAN(ExternalResourcesRequired, externalResourcesRequired)
-    END_DECLARE_ANIMATED_PROPERTIES
-
-    HashSet<RefPtr<Node> > m_clientsToAdd;
+    WillBeHeapHashSet<RefPtrWillBeMember<Node> > m_clientsToAdd;
 };
-
-DEFINE_NODE_TYPE_CASTS(SVGFilterElement, hasTagName(SVGNames::filterTag));
 
 }
 

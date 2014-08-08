@@ -8,8 +8,8 @@
 #include <vector>
 
 #include "base/callback.h"
+#include "base/files/file.h"
 #include "base/files/file_path.h"
-#include "base/platform_file.h"
 #include "base/process/process.h"
 #include "webkit/browser/fileapi/file_system_operation_context.h"
 #include "webkit/browser/webkit_storage_browser_export.h"
@@ -66,20 +66,19 @@ class FileSystemOperation {
   virtual ~FileSystemOperation() {}
 
   // Used for CreateFile(), etc. |result| is the return code of the operation.
-  typedef base::Callback<void(base::PlatformFileError result)> StatusCallback;
+  typedef base::Callback<void(base::File::Error result)> StatusCallback;
 
   // Used for GetMetadata(). |result| is the return code of the operation,
   // |file_info| is the obtained file info.
   typedef base::Callback<
-      void(base::PlatformFileError result,
-           const base::PlatformFileInfo& file_info)> GetMetadataCallback;
+      void(base::File::Error result,
+           const base::File::Info& file_info)> GetMetadataCallback;
 
-  // Used for OpenFile(). |result| is the return code of the operation.
-  // |on_close_callback| will be called after the file is closed in the child
-  // process. It can be null, if no operation is needed on closing a file.
+  // Used for OpenFile(). |on_close_callback| will be called after the file is
+  // closed in the child process. It can be null, if no operation is needed on
+  // closing a file.
   typedef base::Callback<
-      void(base::PlatformFileError result,
-           base::PlatformFile file,
+      void(base::File file,
            const base::Closure& on_close_callback)> OpenFileCallback;
 
   // Used for ReadDirectoryCallback.
@@ -89,7 +88,7 @@ class FileSystemOperation {
   // |file_list| is the list of files read, and |has_more| is true if some files
   // are yet to be read.
   typedef base::Callback<
-      void(base::PlatformFileError result,
+      void(base::File::Error result,
            const FileEntryList& file_list,
            bool has_more)> ReadDirectoryCallback;
 
@@ -115,8 +114,8 @@ class FileSystemOperation {
   // Please see the comment for ShareableFileReference for details.
   //
   typedef base::Callback<
-      void(base::PlatformFileError result,
-           const base::PlatformFileInfo& file_info,
+      void(base::File::Error result,
+           const base::File::Info& file_info,
            const base::FilePath& platform_path,
            const scoped_refptr<webkit_blob::ShareableFileReference>& file_ref)>
           SnapshotFileCallback;
@@ -221,7 +220,7 @@ class FileSystemOperation {
   };
 
   // Used for Write().
-  typedef base::Callback<void(base::PlatformFileError result,
+  typedef base::Callback<void(base::File::Error result,
                               int64 bytes,
                               bool complete)> WriteCallback;
 
@@ -329,11 +328,11 @@ class FileSystemOperation {
   //
   //     // Dispatch ABORT error for the current operation by invoking
   //     // the callback function for the ongoing operation,
-  //     operation_callback.Run(base::PLATFORM_FILE_ERROR_ABORT, ...);
+  //     operation_callback.Run(base::File::FILE_ERROR_ABORT, ...);
   //
   //     // Dispatch 'success' for the cancel (or dispatch appropriate
   //     // error code with DidFail() if the cancel has somehow failed).
-  //     cancel_callback.Run(base::PLATFORM_FILE_OK);
+  //     cancel_callback.Run(base::File::FILE_OK);
   //   }
   //
   // Note that, for reporting failure, the callback function passed to a
@@ -352,7 +351,7 @@ class FileSystemOperation {
                          const StatusCallback& callback) = 0;
 
   // Opens a file at |path| with |file_flags|, where flags are OR'ed
-  // values of base::PlatformFileFlags.
+  // values of base::File::Flags.
   //
   // This function is used only by Pepper as of writing.
   virtual void OpenFile(const FileSystemURL& path,
@@ -373,11 +372,11 @@ class FileSystemOperation {
   // Copies in a single file from a different filesystem.
   //
   // This returns:
-  // - PLATFORM_FILE_ERROR_NOT_FOUND if |src_file_path|
+  // - File::FILE_ERROR_NOT_FOUND if |src_file_path|
   //   or the parent directory of |dest_url| does not exist.
-  // - PLATFORM_FILE_ERROR_INVALID_OPERATION if |dest_url| exists and
+  // - File::FILE_ERROR_INVALID_OPERATION if |dest_url| exists and
   //   is not a file.
-  // - PLATFORM_FILE_ERROR_FAILED if |dest_url| does not exist and
+  // - File::FILE_ERROR_FAILED if |dest_url| does not exist and
   //   its parent path is a file.
   //
   virtual void CopyInForeignFile(const base::FilePath& src_local_disk_path,
@@ -387,8 +386,8 @@ class FileSystemOperation {
   // Removes a single file.
   //
   // This returns:
-  // - PLATFORM_FILE_ERROR_NOT_FOUND if |url| does not exist.
-  // - PLATFORM_FILE_ERROR_NOT_A_FILE if |url| is not a file.
+  // - File::FILE_ERROR_NOT_FOUND if |url| does not exist.
+  // - File::FILE_ERROR_NOT_A_FILE if |url| is not a file.
   //
   virtual void RemoveFile(const FileSystemURL& url,
                           const StatusCallback& callback) = 0;
@@ -396,9 +395,9 @@ class FileSystemOperation {
   // Removes a single empty directory.
   //
   // This returns:
-  // - PLATFORM_FILE_ERROR_NOT_FOUND if |url| does not exist.
-  // - PLATFORM_FILE_ERROR_NOT_A_DIRECTORY if |url| is not a directory.
-  // - PLATFORM_FILE_ERROR_NOT_EMPTY if |url| is not empty.
+  // - File::FILE_ERROR_NOT_FOUND if |url| does not exist.
+  // - File::FILE_ERROR_NOT_A_DIRECTORY if |url| is not a directory.
+  // - File::FILE_ERROR_NOT_EMPTY if |url| is not empty.
   //
   virtual void RemoveDirectory(const FileSystemURL& url,
                                const StatusCallback& callback) = 0;
@@ -413,12 +412,12 @@ class FileSystemOperation {
   // optional.
   //
   // This returns:
-  // - PLATFORM_FILE_ERROR_NOT_FOUND if |src_url|
+  // - File::FILE_ERROR_NOT_FOUND if |src_url|
   //   or the parent directory of |dest_url| does not exist.
-  // - PLATFORM_FILE_ERROR_NOT_A_FILE if |src_url| exists but is not a file.
-  // - PLATFORM_FILE_ERROR_INVALID_OPERATION if |dest_url| exists and
+  // - File::FILE_ERROR_NOT_A_FILE if |src_url| exists but is not a file.
+  // - File::FILE_ERROR_INVALID_OPERATION if |dest_url| exists and
   //   is not a file.
-  // - PLATFORM_FILE_ERROR_FAILED if |dest_url| does not exist and
+  // - File::FILE_ERROR_FAILED if |dest_url| does not exist and
   //   its parent path is a file.
   //
   virtual void CopyFileLocal(const FileSystemURL& src_url,
@@ -434,12 +433,12 @@ class FileSystemOperation {
   // comment for details.
   //
   // This returns:
-  // - PLATFORM_FILE_ERROR_NOT_FOUND if |src_url|
+  // - File::FILE_ERROR_NOT_FOUND if |src_url|
   //   or the parent directory of |dest_url| does not exist.
-  // - PLATFORM_FILE_ERROR_NOT_A_FILE if |src_url| exists but is not a file.
-  // - PLATFORM_FILE_ERROR_INVALID_OPERATION if |dest_url| exists and
+  // - File::FILE_ERROR_NOT_A_FILE if |src_url| exists but is not a file.
+  // - File::FILE_ERROR_INVALID_OPERATION if |dest_url| exists and
   //   is not a file.
-  // - PLATFORM_FILE_ERROR_FAILED if |dest_url| does not exist and
+  // - File::FILE_ERROR_FAILED if |dest_url| does not exist and
   //   its parent path is a file.
   //
   virtual void MoveFileLocal(const FileSystemURL& src_url,
@@ -450,9 +449,9 @@ class FileSystemOperation {
   // Synchronously gets the platform path for the given |url|.
   // This may fail if the given |url|'s filesystem type is neither
   // temporary nor persistent.
-  // In such a case, base::PLATFORM_FILE_ERROR_INVALID_OPERATION will be
+  // In such a case, base::File::FILE_ERROR_INVALID_OPERATION will be
   // returned.
-  virtual base::PlatformFileError SyncGetPlatformPath(
+  virtual base::File::Error SyncGetPlatformPath(
       const FileSystemURL& url,
       base::FilePath* platform_path) = 0;
 

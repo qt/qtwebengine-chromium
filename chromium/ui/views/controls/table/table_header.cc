@@ -5,15 +5,14 @@
 #include "ui/views/controls/table/table_header.h"
 
 #include "third_party/skia/include/core/SkColor.h"
+#include "ui/base/cursor/cursor.h"
 #include "ui/gfx/canvas.h"
+#include "ui/gfx/text_utils.h"
 #include "ui/native_theme/native_theme.h"
 #include "ui/views/background.h"
 #include "ui/views/controls/table/table_utils.h"
 #include "ui/views/controls/table/table_view.h"
-
-#if defined(USE_AURA)
-#include "ui/base/cursor/cursor.h"
-#endif
+#include "ui/views/native_cursor.h"
 
 namespace views {
 
@@ -37,15 +36,6 @@ const SkColor kSeparatorColor = SkColorSetRGB(0xAA, 0xAA, 0xAA);
 
 // Size of the sort indicator (doesn't include padding).
 const int kSortIndicatorSize = 8;
-
-gfx::NativeCursor GetResizeCursor() {
-#if defined(USE_AURA)
-  return ui::kCursorColumnResize;
-#elif defined(OS_WIN)
-  static HCURSOR g_hand_cursor = LoadCursor(NULL, IDC_SIZEWE);
-  return g_hand_cursor;
-#endif
-}
 
 }  // namespace
 
@@ -95,7 +85,8 @@ void TableHeader::OnPaint(gfx::Canvas* canvas) {
     if (width <= 0)
       continue;
 
-    const int title_width = font_.GetStringWidth(columns[i].column.title);
+    const int title_width =
+        gfx::GetStringWidth(columns[i].column.title, font_list_);
     const bool paint_sort_indicator =
         (columns[i].column.id == sorted_column_id &&
          title_width + kSortIndicatorWidth <= width);
@@ -105,10 +96,10 @@ void TableHeader::OnPaint(gfx::Canvas* canvas) {
       width -= kSortIndicatorWidth;
     }
 
-    canvas->DrawStringInt(
-        columns[i].column.title, font_, kTextColor,
-        GetMirroredXWithWidthInView(x, width), kVerticalPadding, width,
-        height() - kVerticalPadding * 2,
+    canvas->DrawStringRectWithFlags(
+        columns[i].column.title, font_list_, kTextColor,
+        gfx::Rect(GetMirroredXWithWidthInView(x, width), kVerticalPadding,
+                  width, height() - kVerticalPadding * 2),
         TableColumnAlignmentToCanvasAlignment(columns[i].column.alignment));
 
     if (paint_sort_indicator) {
@@ -168,13 +159,13 @@ void TableHeader::OnPaint(gfx::Canvas* canvas) {
   }
 }
 
-gfx::Size TableHeader::GetPreferredSize() {
-  return gfx::Size(1, kVerticalPadding * 2 + font_.GetHeight());
+gfx::Size TableHeader::GetPreferredSize() const {
+  return gfx::Size(1, kVerticalPadding * 2 + font_list_.GetHeight());
 }
 
 gfx::NativeCursor TableHeader::GetCursor(const ui::MouseEvent& event) {
   return GetResizeColumn(GetMirroredXInView(event.x())) != -1 ?
-      GetResizeCursor() : View::GetCursor(event);
+      GetNativeColumnResizeCursor() : View::GetCursor(event);
 }
 
 bool TableHeader::OnMousePressed(const ui::MouseEvent& event) {

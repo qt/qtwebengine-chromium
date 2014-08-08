@@ -32,9 +32,7 @@ namespace WebCore {
 class RenderObject;
 class RenderStyle;
 class RenderSVGInlineText;
-class SVGElement;
 class SVGInlineTextBox;
-class SVGRenderStyle;
 
 // SVGTextLayoutEngine performs the second layout phase for SVG text.
 //
@@ -96,7 +94,7 @@ private:
     bool m_inPathLayout;
 
     // Text on path layout
-    Path m_textPath;
+    Path::PositionCalculator* m_textPathCalculator;
     float m_textPathLength;
     float m_textPathStartOffset;
     float m_textPathCurrentOffset;

@@ -31,7 +31,7 @@
 #ifndef ScriptCallFrame_h
 #define ScriptCallFrame_h
 
-#include "InspectorTypeBuilder.h"
+#include "core/InspectorTypeBuilder.h"
 #include "wtf/Forward.h"
 #include "wtf/text/WTFString.h"
 
@@ -47,8 +47,6 @@ public:
     const String& sourceURL() const { return m_scriptName; }
     unsigned lineNumber() const { return m_lineNumber; }
     unsigned columnNumber() const { return m_column; }
-
-    bool isEqual(const ScriptCallFrame&) const;
 
     PassRefPtr<TypeBuilder::Console::CallFrame> buildInspectorObject() const;
 

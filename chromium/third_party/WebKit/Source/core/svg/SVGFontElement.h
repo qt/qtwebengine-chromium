@@ -23,10 +23,9 @@
 #define SVGFontElement_h
 
 #if ENABLE(SVG_FONTS)
-#include "SVGNames.h"
+#include "core/SVGNames.h"
 #include "core/svg/SVGAnimatedBoolean.h"
 #include "core/svg/SVGElement.h"
-#include "core/svg/SVGExternalResourcesRequired.h"
 #include "core/svg/SVGGlyphMap.h"
 #include "core/svg/SVGParserUtilities.h"
 
@@ -48,48 +47,43 @@ struct SVGKerningPair {
     }
 };
 
+typedef unsigned KerningPairKey;
 typedef Vector<SVGKerningPair> KerningPairVector;
+typedef HashMap<KerningPairKey, float> KerningTable;
 
-class SVGMissingGlyphElement;
-
-class SVGFontElement FINAL : public SVGElement
-                           , public SVGExternalResourcesRequired {
+class SVGFontElement FINAL : public SVGElement {
 public:
-    static PassRefPtr<SVGFontElement> create(Document&);
+    DECLARE_NODE_FACTORY(SVGFontElement);
 
     void invalidateGlyphCache();
     void collectGlyphsForString(const String&, Vector<SVGGlyph>&);
-    void collectGlyphsForGlyphName(const String&, Vector<SVGGlyph>&);
+    void collectGlyphsForAltGlyphReference(const String&, Vector<SVGGlyph>&);
 
-    float horizontalKerningForPairOfStringsAndGlyphs(const String& u1, const String& g1, const String& u2, const String& g2) const;
-    float verticalKerningForPairOfStringsAndGlyphs(const String& u1, const String& g1, const String& u2, const String& g2) const;
+    float horizontalKerningForPairOfGlyphs(Glyph, Glyph) const;
+    float verticalKerningForPairOfGlyphs(Glyph, Glyph) const;
 
     // Used by SimpleFontData/WidthIterator.
     SVGGlyph svgGlyphForGlyph(Glyph);
     Glyph missingGlyph();
 
-    SVGMissingGlyphElement* firstMissingGlyphElement() const;
-
 private:
     explicit SVGFontElement(Document&);
 
-    virtual bool rendererIsNeeded(const RenderStyle&) { return false; }
+    virtual bool rendererIsNeeded(const RenderStyle&) OVERRIDE { return false; }
 
     void ensureGlyphCache();
     void registerLigaturesInGlyphCache(Vector<String>&);
+    Vector<SVGGlyph> buildGlyphList(const UnicodeRanges&, const HashSet<String>& unicodeNames, const HashSet<String>& glyphNames) const;
+    void addPairsToKerningTable(const SVGKerningPair&, KerningTable&);
+    void buildKerningTable(const KerningPairVector&, KerningTable&);
 
-    BEGIN_DECLARE_ANIMATED_PROPERTIES(SVGFontElement)
-        DECLARE_ANIMATED_BOOLEAN(ExternalResourcesRequired, externalResourcesRequired)
-    END_DECLARE_ANIMATED_PROPERTIES
 
-    KerningPairVector m_horizontalKerningPairs;
-    KerningPairVector m_verticalKerningPairs;
+    KerningTable m_horizontalKerningTable;
+    KerningTable m_verticalKerningTable;
     SVGGlyphMap m_glyphMap;
     Glyph m_missingGlyph;
     bool m_isGlyphCacheValid;
 };
-
-DEFINE_NODE_TYPE_CASTS(SVGFontElement, hasTagName(SVGNames::fontTag));
 
 } // namespace WebCore
 

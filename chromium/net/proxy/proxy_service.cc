@@ -13,6 +13,8 @@
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/message_loop/message_loop_proxy.h"
+#include "base/metrics/histogram.h"
+#include "base/metrics/sparse_histogram.h"
 #include "base/strings/string_util.h"
 #include "base/thread_task_runner_handle.h"
 #include "base/values.h"
@@ -43,10 +45,6 @@
 #include "net/proxy/proxy_config_service_linux.h"
 #elif defined(OS_ANDROID)
 #include "net/proxy/proxy_config_service_android.h"
-#endif
-
-#if defined(SPDY_PROXY_AUTH_ORIGIN)
-#include "base/metrics/histogram.h"
 #endif
 
 using base::TimeDelta;
@@ -343,7 +341,8 @@ class ProxyService::InitProxyResolver {
  public:
   InitProxyResolver()
       : proxy_resolver_(NULL),
-        next_state_(STATE_NONE) {
+        next_state_(STATE_NONE),
+        quick_check_enabled_(true) {
   }
 
   ~InitProxyResolver() {
@@ -367,6 +366,7 @@ class ProxyService::InitProxyResolver {
 
     decider_.reset(new ProxyScriptDecider(
         proxy_script_fetcher, dhcp_proxy_script_fetcher, net_log));
+    decider_->set_quick_check_enabled(quick_check_enabled_);
     config_ = config;
     wait_delay_ = wait_delay;
     callback_ = callback;
@@ -419,6 +419,9 @@ class ProxyService::InitProxyResolver {
     }
     return LOAD_STATE_RESOLVING_PROXY_FOR_URL;
   }
+
+  void set_quick_check_enabled(bool enabled) { quick_check_enabled_ = enabled; }
+  bool quick_check_enabled() const { return quick_check_enabled_; }
 
  private:
   enum State {
@@ -511,6 +514,7 @@ class ProxyService::InitProxyResolver {
   ProxyResolver* proxy_resolver_;
   CompletionCallback callback_;
   State next_state_;
+  bool quick_check_enabled_;
 
   DISALLOW_COPY_AND_ASSIGN(InitProxyResolver);
 };
@@ -581,6 +585,9 @@ class ProxyService::ProxyScriptDeciderPoller {
     return prev;
   }
 
+  void set_quick_check_enabled(bool enabled) { quick_check_enabled_ = enabled; }
+  bool quick_check_enabled() const { return quick_check_enabled_; }
+
  private:
   // Returns the effective poll policy (the one injected by unit-tests, or the
   // default).
@@ -624,6 +631,7 @@ class ProxyService::ProxyScriptDeciderPoller {
     // TODO(eroman): Pass a proper NetLog rather than NULL.
     decider_.reset(new ProxyScriptDecider(
         proxy_script_fetcher_, dhcp_proxy_script_fetcher_, NULL));
+    decider_->set_quick_check_enabled(quick_check_enabled_);
     int result = decider_->Start(
         config_, TimeDelta(), proxy_resolver_expects_pac_bytes_,
         base::Bind(&ProxyScriptDeciderPoller::OnProxyScriptDeciderCompleted,
@@ -709,6 +717,8 @@ class ProxyService::ProxyScriptDeciderPoller {
   static const PacPollPolicy* poll_policy_;
 
   const DefaultPollPolicy default_poll_policy_;
+
+  bool quick_check_enabled_;
 
   DISALLOW_COPY_AND_ASSIGN(ProxyScriptDeciderPoller);
 };
@@ -873,7 +883,8 @@ ProxyService::ProxyService(ProxyConfigService* config_service,
       current_state_(STATE_NONE) ,
       net_log_(net_log),
       stall_proxy_auto_config_delay_(TimeDelta::FromMilliseconds(
-          kDelayAfterNetworkChangesMs)) {
+          kDelayAfterNetworkChangesMs)),
+      quick_check_enabled_(true) {
   NetworkChangeNotifier::AddIPAddressObserver(this);
   NetworkChangeNotifier::AddDNSObserver(this);
   ResetConfigService(config_service);
@@ -1124,6 +1135,7 @@ void ProxyService::OnInitProxyResolverComplete(int result) {
       result,
       init_proxy_resolver_->script_data(),
       NULL));
+  script_poller_->set_quick_check_enabled(quick_check_enabled_);
 
   init_proxy_resolver_.reset();
 
@@ -1154,6 +1166,7 @@ void ProxyService::OnInitProxyResolverComplete(int result) {
 }
 
 int ProxyService::ReconsiderProxyAfterError(const GURL& url,
+                                            int net_error,
                                             ProxyInfo* result,
                                             const CompletionCallback& callback,
                                             PacRequest** pac_request,
@@ -1177,9 +1190,13 @@ int ProxyService::ReconsiderProxyAfterError(const GURL& url,
   if (result->proxy_server().isDataReductionProxy()) {
     RecordDataReductionProxyBypassInfo(
         true, result->proxy_server(), ERROR_BYPASS);
+    RecordDataReductionProxyBypassOnNetworkError(
+        true, result->proxy_server(), net_error);
   } else if (result->proxy_server().isDataReductionProxyFallback()) {
     RecordDataReductionProxyBypassInfo(
         false, result->proxy_server(), ERROR_BYPASS);
+    RecordDataReductionProxyBypassOnNetworkError(
+        false, result->proxy_server(), net_error);
   }
 #endif
 
@@ -1192,15 +1209,19 @@ int ProxyService::ReconsiderProxyAfterError(const GURL& url,
   return did_fallback ? OK : ERR_FAILED;
 }
 
-bool ProxyService::MarkProxiesAsBad(
+bool ProxyService::MarkProxiesAsBadUntil(
     const ProxyInfo& result,
     base::TimeDelta retry_delay,
     const ProxyServer& another_bad_proxy,
     const BoundNetLog& net_log) {
   result.proxy_list_.UpdateRetryInfoOnFallback(&proxy_retry_info_, retry_delay,
+                                               false,
                                                another_bad_proxy,
                                                net_log);
-  return result.proxy_list_.HasUntriedProxies(proxy_retry_info_);
+  if (another_bad_proxy.is_valid())
+    return result.proxy_list_.size() > 2;
+  else
+    return result.proxy_list_.size() > 1;
 }
 
 void ProxyService::ReportSuccess(const ProxyInfo& result) {
@@ -1258,7 +1279,7 @@ int ProxyService::DidFinishResolvingProxy(ProxyInfo* result,
   // Log the result of the proxy resolution.
   if (result_code == OK) {
     // When logging all events is enabled, dump the proxy list.
-    if (net_log.IsLoggingAllEvents()) {
+    if (net_log.IsLogging()) {
       net_log.AddEvent(
           NetLog::TYPE_PROXY_SERVICE_RESOLVED_PROXY_LIST,
           base::Bind(&NetLogFinishedResolvingProxyCallback, result));
@@ -1337,12 +1358,6 @@ void ProxyService::ResetConfigService(
     ApplyProxyConfigIfAvailable();
 }
 
-void ProxyService::PurgeMemory() {
-  DCHECK(CalledOnValidThread());
-  if (resolver_.get())
-    resolver_->PurgeMemory();
-}
-
 void ProxyService::ForceReloadProxyConfig() {
   DCHECK(CalledOnValidThread());
   ResetProxyConfig(false);
@@ -1410,7 +1425,6 @@ scoped_ptr<ProxyService::PacPollPolicy>
   return scoped_ptr<PacPollPolicy>(new DefaultPollPolicy());
 }
 
-#if defined(SPDY_PROXY_AUTH_ORIGIN)
 void ProxyService::RecordDataReductionProxyBypassInfo(
     bool is_primary,
     const ProxyServer& proxy_server,
@@ -1427,7 +1441,25 @@ void ProxyService::RecordDataReductionProxyBypassInfo(
                               bypass_type, BYPASS_EVENT_TYPE_MAX);
   }
 }
-#endif  // defined(SPDY_PROXY_AUTH_ORIGIN)
+
+void ProxyService::RecordDataReductionProxyBypassOnNetworkError(
+    bool is_primary,
+    const ProxyServer& proxy_server,
+    int net_error) {
+  // Only record UMA if the proxy isn't already on the retry list.
+  if (proxy_retry_info_.find(proxy_server.ToURI()) != proxy_retry_info_.end())
+    return;
+
+  if (is_primary) {
+    UMA_HISTOGRAM_SPARSE_SLOWLY(
+        "DataReductionProxy.BypassOnNetworkErrorPrimary",
+        std::abs(net_error));
+    return;
+  }
+  UMA_HISTOGRAM_SPARSE_SLOWLY(
+      "DataReductionProxy.BypassOnNetworkErrorFallback",
+      std::abs(net_error));
+}
 
 void ProxyService::OnProxyConfigChanged(
     const ProxyConfig& config,
@@ -1486,6 +1518,7 @@ void ProxyService::InitializeUsingLastFetchedConfig() {
       stall_proxy_autoconfig_until_ - TimeTicks::Now();
 
   init_proxy_resolver_.reset(new InitProxyResolver());
+  init_proxy_resolver_->set_quick_check_enabled(quick_check_enabled_);
   int rv = init_proxy_resolver_->Start(
       resolver_.get(),
       proxy_script_fetcher_.get(),
@@ -1568,13 +1601,14 @@ int SyncProxyServiceHelper::ResolveProxy(const GURL& url,
 }
 
 int SyncProxyServiceHelper::ReconsiderProxyAfterError(
-    const GURL& url, ProxyInfo* proxy_info, const BoundNetLog& net_log) {
+    const GURL& url, int net_error, ProxyInfo* proxy_info,
+    const BoundNetLog& net_log) {
   DCHECK(io_message_loop_ != base::MessageLoop::current());
 
   io_message_loop_->PostTask(
       FROM_HERE,
       base::Bind(&SyncProxyServiceHelper::StartAsyncReconsider, this, url,
-                 net_log));
+                 net_error, net_log));
 
   event_.Wait();
 
@@ -1596,9 +1630,10 @@ void SyncProxyServiceHelper::StartAsyncResolve(const GURL& url,
 }
 
 void SyncProxyServiceHelper::StartAsyncReconsider(const GURL& url,
+                                                  int net_error,
                                                   const BoundNetLog& net_log) {
   result_ = proxy_service_->ReconsiderProxyAfterError(
-      url, &proxy_info_, callback_, NULL, net_log);
+      url, net_error, &proxy_info_, callback_, NULL, net_log);
   if (result_ != net::ERR_IO_PENDING) {
     OnCompletion(result_);
   }

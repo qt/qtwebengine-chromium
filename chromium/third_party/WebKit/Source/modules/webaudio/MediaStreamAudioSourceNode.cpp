@@ -35,12 +35,12 @@
 
 namespace WebCore {
 
-PassRefPtr<MediaStreamAudioSourceNode> MediaStreamAudioSourceNode::create(AudioContext* context, MediaStream* mediaStream, MediaStreamTrack* audioTrack, AudioSourceProvider* audioSourceProvider)
+PassRefPtrWillBeRawPtr<MediaStreamAudioSourceNode> MediaStreamAudioSourceNode::create(AudioContext* context, MediaStream* mediaStream, MediaStreamTrack* audioTrack, PassOwnPtr<AudioSourceProvider> audioSourceProvider)
 {
-    return adoptRef(new MediaStreamAudioSourceNode(context, mediaStream, audioTrack, audioSourceProvider));
+    return adoptRefWillBeNoop(new MediaStreamAudioSourceNode(context, mediaStream, audioTrack, audioSourceProvider));
 }
 
-MediaStreamAudioSourceNode::MediaStreamAudioSourceNode(AudioContext* context, MediaStream* mediaStream, MediaStreamTrack* audioTrack, AudioSourceProvider* audioSourceProvider)
+MediaStreamAudioSourceNode::MediaStreamAudioSourceNode(AudioContext* context, MediaStream* mediaStream, MediaStreamTrack* audioTrack, PassOwnPtr<AudioSourceProvider> audioSourceProvider)
     : AudioSourceNode(context, context->sampleRate())
     , m_mediaStream(mediaStream)
     , m_audioTrack(audioTrack)
@@ -113,8 +113,12 @@ void MediaStreamAudioSourceNode::process(size_t numberOfFrames)
     }
 }
 
-void MediaStreamAudioSourceNode::reset()
+void MediaStreamAudioSourceNode::trace(Visitor* visitor)
 {
+    visitor->trace(m_mediaStream);
+    visitor->trace(m_audioTrack);
+    AudioSourceNode::trace(visitor);
+    AudioSourceProviderClient::trace(visitor);
 }
 
 } // namespace WebCore

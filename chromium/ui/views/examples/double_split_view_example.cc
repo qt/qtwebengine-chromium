@@ -21,8 +21,8 @@ class SplittedView : public View {
 
   void SetColor(SkColor from, SkColor to);
 
-  // Overridden from View.
-  virtual gfx::Size GetMinimumSize() OVERRIDE;
+  // View:
+  virtual gfx::Size GetMinimumSize() const OVERRIDE;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(SplittedView);
@@ -39,7 +39,7 @@ void SplittedView::SetColor(SkColor from, SkColor to) {
   set_background(Background::CreateVerticalGradientBackground(from, to));
 }
 
-gfx::Size SplittedView::GetMinimumSize() {
+gfx::Size SplittedView::GetMinimumSize() const {
   return gfx::Size(10, 10);
 }
 

@@ -21,7 +21,7 @@
 #include "third_party/WebKit/public/platform/WebURLError.h"
 #include "third_party/WebKit/public/platform/WebURLRequest.h"
 #include "third_party/WebKit/public/platform/WebURLResponse.h"
-#include "third_party/WebKit/public/web/WebFrame.h"
+#include "third_party/WebKit/public/web/WebLocalFrame.h"
 #include "third_party/WebKit/public/web/WebView.h"
 
 using ::testing::_;
@@ -30,6 +30,7 @@ using ::testing::Return;
 using ::testing::Truly;
 using ::testing::NiceMock;
 
+using blink::WebLocalFrame;
 using blink::WebString;
 using blink::WebURLError;
 using blink::WebURLResponse;
@@ -63,8 +64,8 @@ static bool CorrectAcceptEncoding(const blink::WebURLRequest &request) {
 class BufferedResourceLoaderTest : public testing::Test {
  public:
   BufferedResourceLoaderTest()
-      : view_(WebView::create(NULL)) {
-    view_->initializeMainFrame(&client_);
+      : view_(WebView::create(NULL)), frame_(WebLocalFrame::create(&client_)) {
+    view_->setMainFrame(frame_);
 
     for (int i = 0; i < kDataSize; ++i) {
       data_[i] = i;
@@ -73,6 +74,7 @@ class BufferedResourceLoaderTest : public testing::Test {
 
   virtual ~BufferedResourceLoaderTest() {
     view_->close();
+    frame_->close();
   }
 
   void Initialize(const char* url, int first_position, int last_position) {
@@ -295,6 +297,7 @@ class BufferedResourceLoaderTest : public testing::Test {
 
   MockWebFrameClient client_;
   WebView* view_;
+  WebLocalFrame* frame_;
 
   base::MessageLoop message_loop_;
 
@@ -422,7 +425,7 @@ TEST_F(BufferedResourceLoaderTest, BufferAndRead) {
 
   // Response has completed.
   EXPECT_CALL(*this, LoadingCallback(BufferedResourceLoader::kLoadingFinished));
-  loader_->didFinishLoading(url_loader_, 0);
+  loader_->didFinishLoading(url_loader_, 0, -1);
 
   // Try to read 10 from position 25 will just return with 5 bytes.
   EXPECT_CALL(*this, ReadCallback(BufferedResourceLoader::kOk, 5));
@@ -515,7 +518,7 @@ TEST_F(BufferedResourceLoaderTest, ReadOutsideBuffer) {
 
   EXPECT_CALL(*this, LoadingCallback(BufferedResourceLoader::kLoadingFinished));
   EXPECT_CALL(*this, ReadCallback(BufferedResourceLoader::kOk, 5));
-  loader_->didFinishLoading(url_loader_, 0);
+  loader_->didFinishLoading(url_loader_, 0, -1);
 }
 
 TEST_F(BufferedResourceLoaderTest, RequestFailedWhenRead) {

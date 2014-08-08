@@ -19,20 +19,27 @@
         'bluetooth/bluetooth.gyp:device_bluetooth_mocks',
         'nfc/nfc.gyp:device_nfc',
         'usb/usb.gyp:device_usb',
+        'hid/hid.gyp:device_hid',
       ],
       'sources': [
         'bluetooth/bluetooth_adapter_mac_unittest.mm',
+        'bluetooth/bluetooth_adapter_unittest.cc',
         'bluetooth/bluetooth_adapter_win_unittest.cc',
+        'bluetooth/bluetooth_device_unittest.cc',
         'bluetooth/bluetooth_device_win_unittest.cc',
         'bluetooth/bluetooth_chromeos_unittest.cc',
-        'bluetooth/bluetooth_profile_chromeos_unittest.cc',
-        'bluetooth/bluetooth_service_record_mac_unittest.mm',
+        'bluetooth/bluetooth_gatt_chromeos_unittest.cc',
         'bluetooth/bluetooth_service_record_win_unittest.cc',
+        'bluetooth/bluetooth_socket_chromeos_unittest.cc',
         'bluetooth/bluetooth_task_manager_win_unittest.cc',
-        'bluetooth/bluetooth_utils_unittest.cc',
+        'bluetooth/bluetooth_uuid_unittest.cc',
         'nfc/nfc_chromeos_unittest.cc',
         'nfc/nfc_ndef_record_unittest.cc',
         'usb/usb_ids_unittest.cc',
+        'hid/hid_connection_unittest.cc',
+        'hid/hid_report_descriptor_unittest.cc',
+        'hid/hid_service_unittest.cc',
+        'hid/input_service_linux_unittest.cc',
       ],
       'conditions': [
         ['chromeos==1', {
@@ -52,11 +59,21 @@
         }],
         ['os_posix == 1 and OS != "mac" and OS != "android" and OS != "ios"', {
           'conditions': [
-            ['linux_use_tcmalloc == 1', {
+            ['use_allocator!="none"', {
               'dependencies': [
                 '../base/allocator/allocator.gyp:allocator',
               ],
             }],
+          ],
+        }],
+        ['OS=="linux" and use_udev==0', {
+          # Udev is the only Linux implementation. If we're compiling without
+          # Udev, disable these unittests.
+          'dependencies!': [
+            'hid/hid.gyp:device_hid',
+          ],
+          'sources/': [
+            ['exclude', '^hid/'],
           ],
         }],
       ],

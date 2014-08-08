@@ -11,8 +11,18 @@ namespace tools {
 namespace test {
 
 // static
-int QuicClientPeer::GetFd(QuicClient* client) {
-  return client->fd_;
+QuicCryptoClientConfig* QuicClientPeer::GetCryptoConfig(QuicClient* client) {
+  return &client->crypto_config_;
+}
+
+// static
+bool QuicClientPeer::CreateUDPSocket(QuicClient* client) {
+  return client->CreateUDPSocket();
+}
+
+// static
+void QuicClientPeer::SetClientPort(QuicClient* client, int port) {
+  client->client_address_ = IPEndPoint(client->client_address_.address(), port);
 }
 
 }  // namespace test

@@ -24,17 +24,27 @@
  */
 
 #include "config.h"
-#include "WebGeolocationPermissionRequest.h"
+#include "public/web/WebGeolocationPermissionRequest.h"
 
-#include "public/platform/WebURL.h"
-#include "WebSecurityOrigin.h"
 #include "core/dom/ExecutionContext.h"
 #include "modules/geolocation/Geolocation.h"
 #include "platform/weborigin/SecurityOrigin.h"
+#include "public/platform/WebURL.h"
+#include "public/web/WebSecurityOrigin.h"
 
 using namespace WebCore;
 
 namespace blink {
+
+WebGeolocationPermissionRequest::WebGeolocationPermissionRequest(Geolocation* geolocation)
+    : m_private(geolocation)
+{
+}
+
+void WebGeolocationPermissionRequest::reset()
+{
+    m_private.reset();
+}
 
 WebSecurityOrigin WebGeolocationPermissionRequest::securityOrigin() const
 {

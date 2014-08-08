@@ -5,6 +5,7 @@
 #include "content/browser/webui/web_ui_controller_factory_registry.h"
 
 #include "base/lazy_instance.h"
+#include "content/browser/frame_host/debug_urls.h"
 #include "content/public/common/url_constants.h"
 #include "url/gurl.h"
 
@@ -78,23 +79,13 @@ bool WebUIControllerFactoryRegistry::UseWebUIBindingsForURL(
 
 bool WebUIControllerFactoryRegistry::IsURLAcceptableForWebUI(
     BrowserContext* browser_context,
-    const GURL& url,
-    bool data_urls_allowed) const {
+    const GURL& url) const {
   return UseWebUIForURL(browser_context, url) ||
-      // javascript: URLs are allowed to run in Web UI pages.
-      url.SchemeIs(kJavaScriptScheme) ||
       // It's possible to load about:blank in a Web UI renderer.
       // See http://crbug.com/42547
-      url.spec() == kAboutBlankURL ||
-      // Chrome URLs crash, kill, hang, and shorthang are allowed.
-      url == GURL(kChromeUICrashURL) ||
-      url == GURL(kChromeUIKillURL) ||
-      url == GURL(kChromeUIHangURL) ||
-      url == GURL(kChromeUIShorthangURL) ||
-      // Data URLs are usually not allowed in WebUI for security reasons.
-      // BalloonHosts are one exception needed by ChromeOS, and are safe because
-      // they cannot be scripted by other pages.
-      (data_urls_allowed && url.SchemeIs(chrome::kDataScheme));
+      url.spec() == url::kAboutBlankURL ||
+      // javascript: and debug URLs like chrome://kill are allowed.
+      IsRendererDebugURL(url);
 }
 
 WebUIControllerFactoryRegistry::WebUIControllerFactoryRegistry() {

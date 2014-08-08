@@ -41,6 +41,7 @@ class NET_EXPORT_PRIVATE WebSocketDeflateStream : public WebSocketStream {
  public:
   WebSocketDeflateStream(scoped_ptr<WebSocketStream> stream,
                          WebSocketDeflater::ContextTakeOverMode mode,
+                         int client_window_bits,
                          scoped_ptr<WebSocketDeflatePredictor> predictor);
   virtual ~WebSocketDeflateStream();
 
@@ -67,6 +68,7 @@ class NET_EXPORT_PRIVATE WebSocketDeflateStream : public WebSocketStream {
     NOT_WRITING,
   };
 
+  // Handles asynchronous completion of ReadFrames() call on |stream_|.
   void OnReadComplete(ScopedVector<WebSocketFrame>* frames,
                       const CompletionCallback& callback,
                       int result);

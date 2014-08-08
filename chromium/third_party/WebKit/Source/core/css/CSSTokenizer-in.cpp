@@ -28,7 +28,7 @@
 #include "core/css/CSSTokenizer.h"
 
 #include "core/css/CSSKeyframeRule.h"
-#include "core/css/CSSParser.h"
+#include "core/css/parser/BisonCSSParser.h"
 #include "core/css/CSSParserValues.h"
 #include "core/css/MediaQuery.h"
 #include "core/css/StyleRule.h"
@@ -37,7 +37,7 @@
 
 namespace WebCore {
 
-#include "CSSGrammar.h"
+#include "core/CSSGrammar.h"
 
 enum CharacterType {
     // Types for the main switch.
@@ -304,14 +304,17 @@ inline UChar*& CSSTokenizer::currentCharacter<UChar>()
     return m_currentCharacter16;
 }
 
-UChar*& CSSTokenizer::currentCharacter16()
+UChar* CSSTokenizer::allocateStringBuffer16(size_t len)
 {
-    if (!m_currentCharacter16) {
-        m_dataStart16 = adoptArrayPtr(new UChar[m_length]);
-        m_currentCharacter16 = m_dataStart16.get();
-    }
+    // Allocates and returns a CSSTokenizer owned buffer for storing
+    // UTF-16 data. Used to get a suitable life span for UTF-16
+    // strings, identifiers and URIs created by the tokenizer.
+    OwnPtr<UChar[]> buffer = adoptArrayPtr(new UChar[len]);
 
-    return m_currentCharacter16;
+    UChar* bufferPtr = buffer.get();
+
+    m_cssStrings16.append(buffer.release());
+    return bufferPtr;
 }
 
 template <>
@@ -350,13 +353,17 @@ inline bool CSSTokenizer::isIdentifierStart()
     return isIdentifierStartAfterDash((*currentCharacter<CharacterType>() != '-') ? currentCharacter<CharacterType>() : currentCharacter<CharacterType>() + 1);
 }
 
+enum CheckStringValidationMode {
+    AbortIfInvalid,
+    SkipInvalid
+};
+
 template <typename CharacterType>
-static inline CharacterType* checkAndSkipString(CharacterType* currentCharacter, int quote)
+static inline CharacterType* checkAndSkipString(CharacterType* currentCharacter, int quote, CheckStringValidationMode mode)
 {
-    // Returns with 0, if string check is failed. Otherwise
-    // it returns with the following character. This is necessary
-    // since we cannot revert escape sequences, thus strings
-    // must be validated before parsing.
+    // If mode is AbortIfInvalid and the string check fails it returns
+    // with 0. Otherwise it returns with a pointer to the first
+    // character after the string.
     while (true) {
         if (UNLIKELY(*currentCharacter == quote)) {
             // String parsing is successful.
@@ -366,7 +373,7 @@ static inline CharacterType* checkAndSkipString(CharacterType* currentCharacter,
             // String parsing is successful up to end of input.
             return currentCharacter;
         }
-        if (UNLIKELY(*currentCharacter <= '\r' && (*currentCharacter == '\n' || (*currentCharacter | 0x1) == '\r'))) {
+        if (mode == AbortIfInvalid && UNLIKELY(*currentCharacter <= '\r' && (*currentCharacter == '\n' || (*currentCharacter | 0x1) == '\r'))) {
             // String parsing is failed for character '\n', '\f' or '\r'.
             return 0;
         }
@@ -378,9 +385,13 @@ static inline CharacterType* checkAndSkipString(CharacterType* currentCharacter,
         } else if (currentCharacter[1] == '\r') {
             currentCharacter += currentCharacter[2] == '\n' ? 3 : 2;
         } else {
-            currentCharacter = checkAndSkipEscape(currentCharacter);
-            if (!currentCharacter)
-                return 0;
+            CharacterType* next = checkAndSkipEscape(currentCharacter);
+            if (!next) {
+                if (mode == AbortIfInvalid)
+                    return 0;
+                next = currentCharacter + 1;
+            }
+            currentCharacter = next;
         }
     }
 }
@@ -412,7 +423,7 @@ unsigned CSSTokenizer::parseEscape(CharacterType*& src)
         return unicode;
     }
 
-    return *currentCharacter<CharacterType>()++;
+    return *src++;
 }
 
 template <>
@@ -436,6 +447,24 @@ inline void CSSTokenizer::UnicodeToChars<UChar>(UChar*& result, unsigned unicode
     }
 
     ++result;
+}
+
+template <typename SrcCharacterType>
+size_t CSSTokenizer::peekMaxIdentifierLen(SrcCharacterType* src)
+{
+    // The decoded form of an identifier (after resolving escape
+    // sequences) will not contain more characters (ASCII or UTF-16
+    // codepoints) than the input. This code can therefore ignore
+    // escape sequences completely.
+    SrcCharacterType* start = src;
+    do {
+        if (LIKELY(*src != '\\'))
+            src++;
+        else
+            parseEscape<SrcCharacterType>(src);
+    } while (isCSSLetter(src[0]) || (src[0] == '\\' && isCSSEscape(src[1])));
+
+    return src - start;
 }
 
 template <typename SrcCharacterType, typename DestCharacterType>
@@ -471,7 +500,7 @@ inline void CSSTokenizer::parseIdentifier(CharacterType*& result, CSSParserStrin
     if (UNLIKELY(!parseIdentifierInternal(currentCharacter<CharacterType>(), result, hasEscape))) {
         // Found an escape we couldn't handle with 8 bits, copy what has been recognized and continue
         ASSERT(is8BitSource());
-        UChar*& result16 = currentCharacter16();
+        UChar* result16 = allocateStringBuffer16((result - start) + peekMaxIdentifierLen(currentCharacter<CharacterType>()));
         UChar* start16 = result16;
         int i = 0;
         for (; i < result - start; i++)
@@ -489,6 +518,18 @@ inline void CSSTokenizer::parseIdentifier(CharacterType*& result, CSSParserStrin
     resultString.init(start, result - start);
 }
 
+template <typename SrcCharacterType>
+size_t CSSTokenizer::peekMaxStringLen(SrcCharacterType* src, UChar quote)
+{
+    // The decoded form of a CSS string (after resolving escape
+    // sequences) will not contain more characters (ASCII or UTF-16
+    // codepoints) than the input. This code can therefore ignore
+    // escape sequences completely and just return the length of the
+    // input string (possibly including terminating quote if any).
+    SrcCharacterType* end = checkAndSkipString(src, quote, SkipInvalid);
+    return end ? end - src : 0;
+}
+
 template <typename SrcCharacterType, typename DestCharacterType>
 inline bool CSSTokenizer::parseStringInternal(SrcCharacterType*& src, DestCharacterType*& result, UChar quote)
 {
@@ -502,8 +543,6 @@ inline bool CSSTokenizer::parseStringInternal(SrcCharacterType*& src, DestCharac
             // String parsing is done, but don't advance pointer if at the end of input.
             return true;
         }
-        ASSERT(*src > '\r' || (*src < '\n' && *src) || *src == '\v');
-
         if (LIKELY(src[0] != '\\')) {
             *result++ = *src++;
         } else if (src[1] == '\n' || src[1] == '\f') {
@@ -532,7 +571,7 @@ inline void CSSTokenizer::parseString(CharacterType*& result, CSSParserString& r
     if (UNLIKELY(!parseStringInternal(currentCharacter<CharacterType>(), result, quote))) {
         // Found an escape we couldn't handle with 8 bits, copy what has been recognized and continue
         ASSERT(is8BitSource());
-        UChar*& result16 = currentCharacter16();
+        UChar* result16 = allocateStringBuffer16((result - start) + peekMaxStringLen(currentCharacter<CharacterType>(), quote));
         UChar* start16 = result16;
         int i = 0;
         for (; i < result - start; i++)
@@ -556,7 +595,7 @@ inline bool CSSTokenizer::findURI(CharacterType*& start, CharacterType*& end, UC
 
     if (*start == '"' || *start == '\'') {
         quote = *start++;
-        end = checkAndSkipString(start, quote);
+        end = checkAndSkipString(start, quote, AbortIfInvalid);
         if (!end)
             return false;
     } else {
@@ -580,6 +619,29 @@ inline bool CSSTokenizer::findURI(CharacterType*& start, CharacterType*& end, UC
     return true;
 }
 
+template <typename SrcCharacterType>
+inline size_t CSSTokenizer::peekMaxURILen(SrcCharacterType* src, UChar quote)
+{
+    // The decoded form of a URI (after resolving escape sequences)
+    // will not contain more characters (ASCII or UTF-16 codepoints)
+    // than the input. This code can therefore ignore escape sequences
+    // completely.
+    SrcCharacterType* start = src;
+    if (quote) {
+        ASSERT(quote == '"' || quote == '\'');
+        return peekMaxStringLen(src, quote);
+    }
+
+    while (isURILetter(*src)) {
+        if (LIKELY(*src != '\\'))
+            src++;
+        else
+            parseEscape<SrcCharacterType>(src);
+    }
+
+    return src - start;
+}
+
 template <typename SrcCharacterType, typename DestCharacterType>
 inline bool CSSTokenizer::parseURIInternal(SrcCharacterType*& src, DestCharacterType*& dest, UChar quote)
 {
@@ -593,7 +655,7 @@ inline bool CSSTokenizer::parseURIInternal(SrcCharacterType*& src, DestCharacter
             *dest++ = *src++;
         } else {
             unsigned unicode = parseEscape<SrcCharacterType>(src);
-            if (unicode > 0xff && sizeof(SrcCharacterType) == 1)
+            if (unicode > 0xff && sizeof(DestCharacterType) == 1)
                 return false;
             UnicodeToChars(dest, unicode);
         }
@@ -619,11 +681,12 @@ inline void CSSTokenizer::parseURI(CSSParserString& string)
         // Reset the current character to the start of the URI and re-parse with
         // a 16-bit destination.
         ASSERT(is8BitSource());
-        UChar* uriStart16 = currentCharacter16();
         currentCharacter<CharacterType>() = uriStart;
-        bool result = parseURIInternal(currentCharacter<CharacterType>(), currentCharacter16(), quote);
+        UChar* result16 = allocateStringBuffer16(peekMaxURILen(currentCharacter<CharacterType>(), quote));
+        UChar* uriStart16 = result16;
+        bool result = parseURIInternal(currentCharacter<CharacterType>(), result16, quote);
         ASSERT_UNUSED(result, result);
-        string.init(uriStart16, currentCharacter16() - uriStart16);
+        string.init(uriStart16, result16 - uriStart16);
     }
 
     currentCharacter<CharacterType>() = uriEnd + 1;
@@ -719,18 +782,16 @@ inline bool CSSTokenizer::detectFunctionTypeToken(int length)
             m_token = CUEFUNCTION;
             return true;
         }
-        CASE("var") {
-            if (!RuntimeEnabledFeatures::cssVariablesEnabled())
-                return false;
-            m_token = VARFUNCTION;
-            return true;
-        }
         CASE("calc") {
             m_token = CALCFUNCTION;
             return true;
         }
         CASE("host") {
             m_token = HOSTFUNCTION;
+            return true;
+        }
+        CASE("host-context") {
+            m_token = HOSTCONTEXTFUNCTION;
             return true;
         }
         CASE("nth-child") {
@@ -881,17 +942,8 @@ inline void CSSTokenizer::detectDashToken(int length)
         CASE("webkit-any") {
             m_token = ANYFUNCTION;
         }
-        CASE("webkit-min") {
-            m_token = MINFUNCTION;
-        }
-        CASE("webkit-max") {
-            m_token = MAXFUNCTION;
-        }
         CASE("webkit-calc") {
             m_token = CALCFUNCTION;
-        }
-        CASE("webkit-distributed") {
-            m_token = DISTRIBUTEDFUNCTION;
         }
     }
 }
@@ -1009,14 +1061,6 @@ inline void CSSTokenizer::detectAtToken(int length, bool hasEscape)
             if (LIKELY(!hasEscape && m_internal))
                 m_token = INTERNAL_RULE_SYM;
         }
-        CASE("-webkit-region") {
-            if (LIKELY(!hasEscape))
-                m_token = WEBKIT_REGION_RULE_SYM;
-        }
-        CASE("-webkit-filter") {
-            if (LIKELY(!hasEscape))
-                m_token = WEBKIT_FILTER_RULE_SYM;
-        }
         CASE("-internal-decls") {
             if (LIKELY(!hasEscape && m_internal))
                 m_token = INTERNAL_DECLS_SYM;
@@ -1073,18 +1117,6 @@ inline void CSSTokenizer::detectSupportsToken(int length)
             m_token = SUPPORTS_NOT;
         }
     }
-}
-
-template <typename CharacterType>
-inline void CSSTokenizer::detectCSSVariableDefinitionToken(int length)
-{
-    static const int prefixLength = static_cast<int>(sizeof("var-") - 1);
-    if (length <= prefixLength)
-        return;
-    CharacterType* name = tokenStart<CharacterType>();
-    COMPILE_ASSERT(prefixLength > 0, CSS_variable_prefix_must_be_nonempty);
-    if (name[prefixLength - 1] == '-' && isIdentifierStartAfterDash(name + prefixLength) && isEqualToCSSCaseSensitiveIdentifier(name, "var"))
-        m_token = VAR_DEFINITION;
 }
 
 template <typename SrcCharacterType>
@@ -1176,8 +1208,6 @@ restartAfterComment:
                     }
                 }
             }
-        } else if (UNLIKELY(RuntimeEnabledFeatures::cssVariablesEnabled())) {
-            detectCSSVariableDefinitionToken<SrcCharacterType>(result - tokenStart<SrcCharacterType>());
         }
         break;
 
@@ -1338,7 +1368,7 @@ restartAfterComment:
         break;
 
     case CharacterQuote:
-        if (checkAndSkipString(currentCharacter<SrcCharacterType>(), m_token)) {
+        if (checkAndSkipString(currentCharacter<SrcCharacterType>(), m_token, AbortIfInvalid)) {
             ++result;
             parseString<SrcCharacterType>(result, yylval->string, m_token);
             m_token = STRING;
@@ -1388,9 +1418,9 @@ restartAfterComment:
         // Ignore comments. They are not even considered as white spaces.
         if (*currentCharacter<SrcCharacterType>() == '*') {
             const CSSParserLocation startLocation = currentLocation();
-            if (m_parser.m_sourceDataHandler) {
+            if (m_parser.m_observer) {
                 unsigned startOffset = currentCharacter<SrcCharacterType>() - dataStart<SrcCharacterType>() - 1; // Start with a slash.
-                m_parser.m_sourceDataHandler->startComment(startOffset - m_parsedTextPrefixLength);
+                m_parser.m_observer->startComment(startOffset - m_parsedTextPrefixLength);
             }
             ++currentCharacter<SrcCharacterType>();
             while (currentCharacter<SrcCharacterType>()[0] != '*' || currentCharacter<SrcCharacterType>()[1] != '/') {
@@ -1399,16 +1429,16 @@ restartAfterComment:
                 if (*currentCharacter<SrcCharacterType>() == '\0') {
                     // Unterminated comments are simply ignored.
                     currentCharacter<SrcCharacterType>() -= 2;
-                    m_parser.reportError(startLocation, CSSParser::UnterminatedCommentError);
+                    m_parser.reportError(startLocation, UnterminatedCommentCSSError);
                     break;
                 }
                 ++currentCharacter<SrcCharacterType>();
             }
             currentCharacter<SrcCharacterType>() += 2;
-            if (m_parser.m_sourceDataHandler) {
+            if (m_parser.m_observer) {
                 unsigned endOffset = currentCharacter<SrcCharacterType>() - dataStart<SrcCharacterType>();
                 unsigned userTextEndOffset = static_cast<unsigned>(m_length - 1 - m_parsedTextSuffixLength);
-                m_parser.m_sourceDataHandler->endComment(std::min(endOffset, userTextEndOffset) - m_parsedTextPrefixLength);
+                m_parser.m_observer->endComment(std::min(endOffset, userTextEndOffset) - m_parsedTextPrefixLength);
             }
             goto restartAfterComment;
         }
@@ -1451,7 +1481,9 @@ restartAfterComment:
             m_token = ATKEYWORD;
             ++result;
             parseIdentifier(result, resultString, hasEscape);
-            detectAtToken<SrcCharacterType>(result - tokenStart<SrcCharacterType>(), hasEscape);
+            // The standard enables unicode escapes in at-rules. In this case only the resultString will contain the
+            // correct identifier, hence we have to use it to determine its length instead of the usual pointer arithmetic.
+            detectAtToken<SrcCharacterType>(resultString.length() + 1, hasEscape);
         }
         break;
 

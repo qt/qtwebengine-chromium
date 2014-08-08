@@ -24,17 +24,17 @@
 #include "config.h"
 #include "core/html/HTMLFrameElementBase.h"
 
-#include "HTMLNames.h"
 #include "bindings/v8/ScriptController.h"
 #include "bindings/v8/ScriptEventListener.h"
+#include "core/HTMLNames.h"
 #include "core/dom/Attribute.h"
 #include "core/dom/Document.h"
-#include "core/events/ThreadLocalEventNames.h"
+#include "core/frame/FrameView.h"
+#include "core/frame/LocalFrame.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/loader/FrameLoader.h"
+#include "core/page/ChromeClient.h"
 #include "core/page/FocusController.h"
-#include "core/frame/Frame.h"
-#include "core/frame/FrameView.h"
 #include "core/page/Page.h"
 #include "core/rendering/RenderPart.h"
 
@@ -63,7 +63,7 @@ bool HTMLFrameElementBase::isURLAllowed() const
             return false;
     }
 
-    Frame* parentFrame = document().frame();
+    LocalFrame* parentFrame = document().frame();
     if (parentFrame)
         return parentFrame->isURLAllowed(completeURL);
 
@@ -76,9 +76,9 @@ void HTMLFrameElementBase::openURL(bool lockBackForwardList)
         return;
 
     if (m_URL.isEmpty())
-        m_URL = blankURL().string();
+        m_URL = AtomicString(blankURL().string());
 
-    Frame* parentFrame = document().frame();
+    LocalFrame* parentFrame = document().frame();
     if (!parentFrame)
         return;
 
@@ -92,9 +92,9 @@ void HTMLFrameElementBase::openURL(bool lockBackForwardList)
 
     if (!loadOrRedirectSubframe(url, m_frameName, lockBackForwardList))
         return;
-    if (!contentFrame() || scriptURL.isEmpty())
+    if (!contentFrame() || scriptURL.isEmpty() || !contentFrame()->isLocalFrame())
         return;
-    contentFrame()->script().executeScriptIfJavaScriptURL(scriptURL);
+    toLocalFrame(contentFrame())->script().executeScriptIfJavaScriptURL(scriptURL);
 }
 
 void HTMLFrameElementBase::parseAttribute(const QualifiedName& name, const AtomicString& value)
@@ -125,11 +125,9 @@ void HTMLFrameElementBase::parseAttribute(const QualifiedName& name, const Atomi
         else if (equalIgnoringCase(value, "no"))
             m_scrolling = ScrollbarAlwaysOff;
         // FIXME: If we are already attached, this has no effect.
-    } else if (name == onbeforeloadAttr)
-        setAttributeEventListener(EventTypeNames::beforeload, createAttributeEventListener(this, name, value));
-    else if (name == onbeforeunloadAttr) {
+    } else if (name == onbeforeunloadAttr) {
         // FIXME: should <frame> elements have beforeunload handlers?
-        setAttributeEventListener(EventTypeNames::beforeunload, createAttributeEventListener(this, name, value));
+        setAttributeEventListener(EventTypeNames::beforeunload, createAttributeEventListener(this, name, value, eventParameterName()));
     } else
         HTMLFrameOwnerElement::parseAttribute(name, value);
 }
@@ -137,8 +135,6 @@ void HTMLFrameElementBase::parseAttribute(const QualifiedName& name, const Atomi
 void HTMLFrameElementBase::setNameAndOpenURL()
 {
     m_frameName = getNameAttribute();
-    if (m_frameName.isNull())
-        m_frameName = getIdAttribute();
     openURL();
 }
 
@@ -163,17 +159,12 @@ void HTMLFrameElementBase::attach(const AttachContext& context)
 {
     HTMLFrameOwnerElement::attach(context);
 
-    if (RenderPart* part = renderPart()) {
-        if (Frame* frame = contentFrame())
-            part->setWidget(frame->view());
+    if (renderPart()) {
+        if (Frame* frame = contentFrame()) {
+            if (frame->isLocalFrame())
+                setWidget(toLocalFrame(frame)->view());
+        }
     }
-}
-
-KURL HTMLFrameElementBase::location() const
-{
-    if (fastHasAttribute(srcdocAttr))
-        return KURL(ParsedURLString, "about:srcdoc");
-    return document().completeURL(getAttribute(srcAttr));
 }
 
 void HTMLFrameElementBase::setLocation(const String& str)
@@ -196,7 +187,7 @@ void HTMLFrameElementBase::setFocus(bool received)
         if (received)
             page->focusController().setFocusedFrame(contentFrame());
         else if (page->focusController().focusedFrame() == contentFrame()) // Focus may have already been given to another frame, don't take it away.
-            page->focusController().setFocusedFrame(0);
+            page->focusController().setFocusedFrame(nullptr);
     }
 }
 
@@ -204,6 +195,11 @@ bool HTMLFrameElementBase::isURLAttribute(const Attribute& attribute) const
 {
     return attribute.name() == longdescAttr || attribute.name() == srcAttr
         || HTMLFrameOwnerElement::isURLAttribute(attribute);
+}
+
+bool HTMLFrameElementBase::hasLegalLinkAttribute(const QualifiedName& name) const
+{
+    return name == srcAttr || HTMLFrameOwnerElement::hasLegalLinkAttribute(name);
 }
 
 bool HTMLFrameElementBase::isHTMLContentAttribute(const Attribute& attribute) const
@@ -225,6 +221,17 @@ int HTMLFrameElementBase::height()
     if (!renderBox())
         return 0;
     return renderBox()->height();
+}
+
+// FIXME: Remove this code once we have input routing in the browser
+// process. See http://crbug.com/339659.
+void HTMLFrameElementBase::defaultEventHandler(Event* event)
+{
+    if (contentFrame() && contentFrame()->isRemoteFrameTemporary()) {
+        contentFrame()->chromeClient().forwardInputEvent(contentFrame(), event);
+        return;
+    }
+    HTMLFrameOwnerElement::defaultEventHandler(event);
 }
 
 } // namespace WebCore

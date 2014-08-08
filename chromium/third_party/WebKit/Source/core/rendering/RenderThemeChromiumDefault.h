@@ -36,12 +36,12 @@ namespace WebCore {
 class RenderThemeChromiumDefault : public RenderThemeChromiumSkia {
 public:
     static PassRefPtr<RenderTheme> create();
-    virtual String extraDefaultStyleSheet();
+    virtual String extraDefaultStyleSheet() OVERRIDE;
 
-    virtual Color systemColor(CSSValueID) const;
+    virtual Color systemColor(CSSValueID) const OVERRIDE;
 
     // A method asking if the control changes its tint when the window has focus or not.
-    virtual bool controlSupportsTints(const RenderObject*) const;
+    virtual bool controlSupportsTints(const RenderObject*) const OVERRIDE;
 
     virtual bool supportsFocusRing(const RenderStyle*) const OVERRIDE;
 
@@ -51,23 +51,23 @@ public:
     virtual Color inactiveListBoxSelectionBackgroundColor() const;
     virtual Color inactiveListBoxSelectionForegroundColor() const;
 
-    virtual Color platformActiveSelectionBackgroundColor() const;
-    virtual Color platformInactiveSelectionBackgroundColor() const;
-    virtual Color platformActiveSelectionForegroundColor() const;
-    virtual Color platformInactiveSelectionForegroundColor() const;
+    virtual Color platformActiveSelectionBackgroundColor() const OVERRIDE;
+    virtual Color platformInactiveSelectionBackgroundColor() const OVERRIDE;
+    virtual Color platformActiveSelectionForegroundColor() const OVERRIDE;
+    virtual Color platformInactiveSelectionForegroundColor() const OVERRIDE;
 
     virtual IntSize sliderTickSize() const OVERRIDE;
     virtual int sliderTickOffsetFromTrackCenter() const OVERRIDE;
-    virtual void adjustSliderThumbSize(RenderStyle*, Element*) const;
+    virtual void adjustSliderThumbSize(RenderStyle*, Element*) const OVERRIDE;
 
     static void setCaretBlinkInterval(double);
-    virtual double caretBlinkIntervalInternal() const;
+    virtual double caretBlinkIntervalInternal() const OVERRIDE;
 
-    virtual bool paintCheckbox(RenderObject*, const PaintInfo&, const IntRect&);
-    virtual void setCheckboxSize(RenderStyle*) const;
+    virtual bool paintCheckbox(RenderObject*, const PaintInfo&, const IntRect&) OVERRIDE;
+    virtual void setCheckboxSize(RenderStyle*) const OVERRIDE;
 
-    virtual bool paintRadio(RenderObject*, const PaintInfo&, const IntRect&);
-    virtual void setRadioSize(RenderStyle*) const;
+    virtual bool paintRadio(RenderObject*, const PaintInfo&, const IntRect&) OVERRIDE;
+    virtual void setRadioSize(RenderStyle*) const OVERRIDE;
 
     virtual bool paintButton(RenderObject*, const PaintInfo&, const IntRect&) OVERRIDE;
     virtual bool paintTextField(RenderObject*, const PaintInfo&, const IntRect&) OVERRIDE;
@@ -76,12 +76,12 @@ public:
     virtual bool paintSliderTrack(RenderObject*, const PaintInfo&, const IntRect&) OVERRIDE;
     virtual bool paintSliderThumb(RenderObject*, const PaintInfo&, const IntRect&) OVERRIDE;
 
-    virtual void adjustInnerSpinButtonStyle(RenderStyle*, Element*) const;
-    virtual bool paintInnerSpinButton(RenderObject*, const PaintInfo&, const IntRect&);
+    virtual void adjustInnerSpinButtonStyle(RenderStyle*, Element*) const OVERRIDE;
+    virtual bool paintInnerSpinButton(RenderObject*, const PaintInfo&, const IntRect&) OVERRIDE;
 
-    virtual bool popsMenuBySpaceOrReturn() const OVERRIDE { return true; }
+    virtual bool popsMenuBySpaceOrReturn() const OVERRIDE FINAL { return true; }
 
-    virtual bool paintProgressBar(RenderObject*, const PaintInfo&, const IntRect&);
+    virtual bool paintProgressBar(RenderObject*, const PaintInfo&, const IntRect&) OVERRIDE;
 
     virtual bool shouldOpenPickerWithF4Key() const OVERRIDE;
 
@@ -93,9 +93,6 @@ protected:
     virtual bool shouldUseFallbackTheme(RenderStyle*) const OVERRIDE;
 
 private:
-    // A general method asking if any control tinting is supported at all.
-    virtual bool supportsControlTints() const;
-
     static double m_caretBlinkInterval;
 
     static unsigned m_activeSelectionBackgroundColor;

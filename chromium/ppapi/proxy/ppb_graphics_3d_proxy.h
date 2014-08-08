@@ -12,6 +12,7 @@
 #include "ppapi/c/pp_graphics_3d.h"
 #include "ppapi/c/pp_instance.h"
 #include "ppapi/proxy/interface_proxy.h"
+#include "ppapi/proxy/ppapi_proxy_export.h"
 #include "ppapi/proxy/proxy_completion_callback_factory.h"
 #include "ppapi/shared_impl/ppb_graphics_3d_shared.h"
 #include "ppapi/shared_impl/resource.h"
@@ -26,7 +27,7 @@ namespace proxy {
 class SerializedHandle;
 class PpapiCommandBufferProxy;
 
-class Graphics3D : public PPB_Graphics3D_Shared {
+class PPAPI_PROXY_EXPORT Graphics3D : public PPB_Graphics3D_Shared {
  public:
   explicit Graphics3D(const HostResource& resource);
   virtual ~Graphics3D();
@@ -35,17 +36,15 @@ class Graphics3D : public PPB_Graphics3D_Shared {
 
   // Graphics3DTrusted API. These are not implemented in the proxy.
   virtual PP_Bool SetGetBuffer(int32_t shm_id) OVERRIDE;
-  virtual gpu::CommandBuffer::State GetState() OVERRIDE;
   virtual PP_Bool Flush(int32_t put_offset) OVERRIDE;
-  virtual gpu::CommandBuffer::State FlushSync(int32_t put_offset) OVERRIDE;
-  virtual int32_t CreateTransferBuffer(uint32_t size) OVERRIDE;
+  virtual scoped_refptr<gpu::Buffer> CreateTransferBuffer(uint32_t size,
+                                                          int32* id) OVERRIDE;
   virtual PP_Bool DestroyTransferBuffer(int32_t id) OVERRIDE;
-  virtual PP_Bool GetTransferBuffer(int32_t id,
-                                    int* shm_handle,
-                                    uint32_t* shm_size) OVERRIDE;
-  virtual gpu::CommandBuffer::State FlushSyncFast(
-      int32_t put_offset,
-      int32_t last_known_get) OVERRIDE;
+  virtual gpu::CommandBuffer::State WaitForTokenInRange(int32_t start,
+                                                        int32_t end) OVERRIDE;
+  virtual gpu::CommandBuffer::State WaitForGetOffsetInRange(int32_t start,
+                                                            int32_t end)
+      OVERRIDE;
   virtual uint32_t InsertSyncPoint() OVERRIDE;
 
  private:
@@ -81,24 +80,24 @@ class PPB_Graphics3D_Proxy : public InterfaceProxy {
                    HostResource* result);
   void OnMsgSetGetBuffer(const HostResource& context,
                          int32 id);
-  void OnMsgGetState(const HostResource& context,
-                     gpu::CommandBuffer::State* state,
-                     bool* success);
-  void OnMsgFlush(const HostResource& context,
-                  int32 put_offset,
-                  int32 last_known_get,
-                  gpu::CommandBuffer::State* state,
-                  bool* success);
-  void OnMsgAsyncFlush(const HostResource& context,
-                       int32 put_offset);
-  void OnMsgCreateTransferBuffer(const HostResource& context,
-                                 uint32 size,
-                                 int32* id);
+  void OnMsgWaitForTokenInRange(const HostResource& context,
+                                int32 start,
+                                int32 end,
+                                gpu::CommandBuffer::State* state,
+                                bool* success);
+  void OnMsgWaitForGetOffsetInRange(const HostResource& context,
+                                    int32 start,
+                                    int32 end,
+                                    gpu::CommandBuffer::State* state,
+                                    bool* success);
+  void OnMsgAsyncFlush(const HostResource& context, int32 put_offset);
+  void OnMsgCreateTransferBuffer(
+      const HostResource& context,
+      uint32 size,
+      int32* id,
+      ppapi::proxy::SerializedHandle* transfer_buffer);
   void OnMsgDestroyTransferBuffer(const HostResource& context,
                                   int32 id);
-  void OnMsgGetTransferBuffer(const HostResource& context,
-                              int32 id,
-                              ppapi::proxy::SerializedHandle* transfer_buffer);
   void OnMsgSwapBuffers(const HostResource& context);
   void OnMsgInsertSyncPoint(const HostResource& context, uint32* sync_point);
   // Renderer->plugin message handlers.

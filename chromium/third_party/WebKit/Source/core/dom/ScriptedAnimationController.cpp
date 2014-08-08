@@ -29,9 +29,10 @@
 #include "core/dom/Document.h"
 #include "core/dom/RequestAnimationFrameCallback.h"
 #include "core/events/Event.h"
-#include "core/frame/DOMWindow.h"
+#include "core/frame/LocalDOMWindow.h"
 #include "core/frame/FrameView.h"
 #include "core/inspector/InspectorInstrumentation.h"
+#include "core/inspector/InspectorTraceEvents.h"
 #include "core/loader/DocumentLoader.h"
 
 namespace WebCore {
@@ -50,6 +51,15 @@ ScriptedAnimationController::ScriptedAnimationController(Document* document)
 
 ScriptedAnimationController::~ScriptedAnimationController()
 {
+}
+
+void ScriptedAnimationController::trace(Visitor* visitor)
+{
+    visitor->trace(m_document);
+    visitor->trace(m_eventQueue);
+#if ENABLE(OILPAN)
+    visitor->trace(m_perFrameEvents);
+#endif
 }
 
 void ScriptedAnimationController::suspend()
@@ -74,6 +84,9 @@ ScriptedAnimationController::CallbackId ScriptedAnimationController::registerCal
     m_callbacks.append(callback);
     scheduleAnimationIfNeeded();
 
+    TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "RequestAnimationFrame", "data", InspectorAnimationFrameEvent::data(m_document, id));
+    TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline.stack"), "CallStack", "stack", InspectorCallStackEvent::currentCallStack());
+    // FIXME(361045): remove InspectorInstrumentation calls once DevTools Timeline migrates to tracing.
     InspectorInstrumentation::didRequestAnimationFrame(m_document, id);
 
     return id;
@@ -83,6 +96,9 @@ void ScriptedAnimationController::cancelCallback(CallbackId id)
 {
     for (size_t i = 0; i < m_callbacks.size(); ++i) {
         if (m_callbacks[i]->m_id == id) {
+            TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "CancelAnimationFrame", "data", InspectorAnimationFrameEvent::data(m_document, id));
+            TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline.stack"), "CallStack", "stack", InspectorCallStackEvent::currentCallStack());
+            // FIXME(361045): remove InspectorInstrumentation calls once DevTools Timeline migrates to tracing.
             InspectorInstrumentation::didCancelAnimationFrame(m_document, id);
             m_callbacks.remove(i);
             return;
@@ -90,6 +106,9 @@ void ScriptedAnimationController::cancelCallback(CallbackId id)
     }
     for (size_t i = 0; i < m_callbacksToInvoke.size(); ++i) {
         if (m_callbacksToInvoke[i]->m_id == id) {
+            TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "CancelAnimationFrame", "data", InspectorAnimationFrameEvent::data(m_document, id));
+            TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline.stack"), "CallStack", "stack", InspectorCallStackEvent::currentCallStack());
+            // FIXME(361045): remove InspectorInstrumentation calls once DevTools Timeline migrates to tracing.
             InspectorInstrumentation::didCancelAnimationFrame(m_document, id);
             m_callbacksToInvoke[i]->m_cancelled = true;
             // will be removed at the end of executeCallbacks()
@@ -100,7 +119,7 @@ void ScriptedAnimationController::cancelCallback(CallbackId id)
 
 void ScriptedAnimationController::dispatchEvents()
 {
-    Vector<RefPtr<Event> > events;
+    WillBeHeapVector<RefPtrWillBeMember<Event> > events;
     events.swap(m_eventQueue);
     m_perFrameEvents.clear();
 
@@ -109,10 +128,12 @@ void ScriptedAnimationController::dispatchEvents()
         // FIXME: we should figure out how to make dispatchEvent properly virtual to avoid
         // special casting window.
         // FIXME: We should not fire events for nodes that are no longer in the tree.
-        if (DOMWindow* window = eventTarget->toDOMWindow())
-            window->dispatchEvent(events[i], 0);
+        if (LocalDOMWindow* window = eventTarget->toDOMWindow())
+            window->dispatchEvent(events[i], nullptr);
         else
             eventTarget->dispatchEvent(events[i]);
+
+        InspectorInstrumentation::didRemoveEvent(eventTarget, events[i].get());
     }
 }
 
@@ -133,12 +154,15 @@ void ScriptedAnimationController::executeCallbacks(double monotonicTimeNow)
     for (size_t i = 0; i < m_callbacksToInvoke.size(); ++i) {
         RequestAnimationFrameCallback* callback = m_callbacksToInvoke[i].get();
         if (!callback->m_cancelled) {
+            TRACE_EVENT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "FireAnimationFrame", "data", InspectorAnimationFrameEvent::data(m_document, callback->m_id));
+            // FIXME(361045): remove InspectorInstrumentation calls once DevTools Timeline migrates to tracing.
             InspectorInstrumentationCookie cookie = InspectorInstrumentation::willFireAnimationFrame(m_document, callback->m_id);
             if (callback->m_useLegacyTimeBase)
                 callback->handleEvent(legacyHighResNowMs);
             else
                 callback->handleEvent(highResNowMs);
             InspectorInstrumentation::didFireAnimationFrame(cookie);
+            TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "UpdateCounters", "data", InspectorUpdateCountersEvent::data());
         }
     }
 
@@ -153,7 +177,7 @@ void ScriptedAnimationController::serviceScriptedAnimations(double monotonicTime
     if (m_suspendCount)
         return;
 
-    RefPtr<ScriptedAnimationController> protect(this);
+    RefPtrWillBeRawPtr<ScriptedAnimationController> protect(this);
 
     dispatchEvents();
     executeCallbacks(monotonicTimeNow);
@@ -161,13 +185,14 @@ void ScriptedAnimationController::serviceScriptedAnimations(double monotonicTime
     scheduleAnimationIfNeeded();
 }
 
-void ScriptedAnimationController::enqueueEvent(PassRefPtr<Event> event)
+void ScriptedAnimationController::enqueueEvent(PassRefPtrWillBeRawPtr<Event> event)
 {
+    InspectorInstrumentation::didEnqueueEvent(event->target(), event.get());
     m_eventQueue.append(event);
     scheduleAnimationIfNeeded();
 }
 
-void ScriptedAnimationController::enqueuePerFrameEvent(PassRefPtr<Event> event)
+void ScriptedAnimationController::enqueuePerFrameEvent(PassRefPtrWillBeRawPtr<Event> event)
 {
     if (!m_perFrameEvents.add(eventTargetKey(event.get())).isNewEntry)
         return;

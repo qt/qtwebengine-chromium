@@ -29,11 +29,9 @@
  */
 
 #include "config.h"
-#include "WebSearchableFormData.h"
+#include "public/web/WebSearchableFormData.h"
 
-#include "HTMLNames.h"
-#include "WebFormElement.h"
-#include "WebInputElement.h"
+#include "core/HTMLNames.h"
 #include "core/dom/Document.h"
 #include "core/html/FormDataList.h"
 #include "core/html/HTMLFormControlElement.h"
@@ -41,8 +39,9 @@
 #include "core/html/HTMLInputElement.h"
 #include "core/html/HTMLOptionElement.h"
 #include "core/html/HTMLSelectElement.h"
-#include "core/html/HTMLTextAreaElement.h"
 #include "platform/network/FormDataBuilder.h"
+#include "public/web/WebFormElement.h"
+#include "public/web/WebInputElement.h"
 #include "wtf/text/TextEncoding.h"
 
 using namespace WebCore;
@@ -81,8 +80,8 @@ bool IsHTTPFormSubmit(const HTMLFormElement* form)
 HTMLFormControlElement* GetButtonToActivate(HTMLFormElement* form)
 {
     HTMLFormControlElement* firstSubmitButton = 0;
-    const Vector<FormAssociatedElement*>& element = form->associatedElements();
-    for (Vector<FormAssociatedElement*>::const_iterator i(element.begin()); i != element.end(); ++i) {
+    const FormAssociatedElement::List& element = form->associatedElements();
+    for (FormAssociatedElement::List::const_iterator i(element.begin()); i != element.end(); ++i) {
         if (!(*i)->isFormControlElement())
             continue;
         HTMLFormControlElement* control = toHTMLFormControlElement(*i);
@@ -100,9 +99,9 @@ HTMLFormControlElement* GetButtonToActivate(HTMLFormElement* form)
 // selected state.
 bool IsSelectInDefaultState(HTMLSelectElement* select)
 {
-    const Vector<HTMLElement*>& listItems = select->listItems();
+    const WillBeHeapVector<RawPtrWillBeMember<HTMLElement> >& listItems = select->listItems();
     if (select->multiple() || select->size() > 1) {
-        for (Vector<HTMLElement*>::const_iterator i(listItems.begin()); i != listItems.end(); ++i) {
+        for (WillBeHeapVector<RawPtrWillBeMember<HTMLElement> >::const_iterator i(listItems.begin()); i != listItems.end(); ++i) {
             if (!(*i)->hasLocalName(HTMLNames::optionTag))
                 continue;
             HTMLOptionElement* optionElement = toHTMLOptionElement(*i);
@@ -115,7 +114,7 @@ bool IsSelectInDefaultState(HTMLSelectElement* select)
     // The select is rendered as a combobox (called menulist in WebKit). At
     // least one item is selected, determine which one.
     HTMLOptionElement* initialSelected = 0;
-    for (Vector<HTMLElement*>::const_iterator i(listItems.begin()); i != listItems.end(); ++i) {
+    for (WillBeHeapVector<RawPtrWillBeMember<HTMLElement> >::const_iterator i(listItems.begin()); i != listItems.end(); ++i) {
         if (!(*i)->hasLocalName(HTMLNames::optionTag))
             continue;
         HTMLOptionElement* optionElement = toHTMLOptionElement(*i);
@@ -136,11 +135,12 @@ bool IsSelectInDefaultState(HTMLSelectElement* select)
 // in its default state if the checked state matches the state of the checked attribute.
 bool IsInDefaultState(HTMLFormControlElement* formElement)
 {
-    if (formElement->hasTagName(HTMLNames::inputTag)) {
-        const HTMLInputElement* inputElement = toHTMLInputElement(formElement);
-        if (inputElement->isCheckbox() || inputElement->isRadioButton())
-            return inputElement->checked() == inputElement->hasAttribute(checkedAttr);
-    } else if (formElement->hasTagName(HTMLNames::selectTag)) {
+    ASSERT(formElement);
+    if (isHTMLInputElement(*formElement)) {
+        const HTMLInputElement& inputElement = toHTMLInputElement(*formElement);
+        if (inputElement.isCheckbox() || inputElement.isRadioButton())
+            return inputElement.checked() == inputElement.hasAttribute(checkedAttr);
+    } else if (isHTMLSelectElement(*formElement)) {
         return IsSelectInDefaultState(toHTMLSelectElement(formElement));
     }
     return true;
@@ -155,8 +155,8 @@ bool IsInDefaultState(HTMLFormControlElement* formElement)
 HTMLInputElement* findSuitableSearchInputElement(const HTMLFormElement* form)
 {
     HTMLInputElement* textElement = 0;
-    const Vector<FormAssociatedElement*>& element = form->associatedElements();
-    for (Vector<FormAssociatedElement*>::const_iterator i(element.begin()); i != element.end(); ++i) {
+    const FormAssociatedElement::List& element = form->associatedElements();
+    for (FormAssociatedElement::List::const_iterator i(element.begin()); i != element.end(); ++i) {
         if (!(*i)->isFormControlElement())
             continue;
 
@@ -165,17 +165,17 @@ HTMLInputElement* findSuitableSearchInputElement(const HTMLFormElement* form)
         if (control->isDisabledFormControl() || control->name().isNull())
             continue;
 
-        if (!IsInDefaultState(control) || isHTMLTextAreaElement(control))
+        if (!IsInDefaultState(control) || isHTMLTextAreaElement(*control))
             return 0;
 
-        if (control->hasTagName(HTMLNames::inputTag) && control->willValidate()) {
-            const HTMLInputElement* input = toHTMLInputElement(control);
+        if (isHTMLInputElement(*control) && control->willValidate()) {
+            const HTMLInputElement& input = toHTMLInputElement(*control);
 
             // Return nothing if a file upload field or a password field are found.
-            if (input->isFileUpload() || input->isPasswordField())
+            if (input.isFileUpload() || input.isPasswordField())
                 return 0;
 
-            if (input->isTextField()) {
+            if (input.isTextField()) {
                 if (textElement) {
                     // The auto-complete bar only knows how to fill in one value.
                     // This form has multiple fields; don't treat it as searchable.
@@ -198,8 +198,8 @@ bool buildSearchString(const HTMLFormElement* form, Vector<char>* encodedString,
 {
     bool isElementFound = false;
 
-    Vector<FormAssociatedElement*> elements = form->associatedElements();
-    for (Vector<FormAssociatedElement*>::const_iterator i(elements.begin()); i != elements.end(); ++i) {
+    const FormAssociatedElement::List& elements = form->associatedElements();
+    for (FormAssociatedElement::List::const_iterator i(elements.begin()); i != elements.end(); ++i) {
         if (!(*i)->isFormControlElement())
             continue;
 
@@ -212,17 +212,13 @@ bool buildSearchString(const HTMLFormElement* form, Vector<char>* encodedString,
         if (!control->appendFormData(dataList, false))
             continue;
 
-        const Vector<FormDataList::Item>& items = dataList.items();
+        const WillBeHeapVector<FormDataList::Item>& items = dataList.items();
 
-        for (Vector<FormDataList::Item>::const_iterator j(items.begin()); j != items.end(); ++j) {
-            // Handle ISINDEX / <input name=isindex> specially, but only if it's
-            // the first entry.
-            if (!encodedString->isEmpty() || j->data() != "isindex") {
-                if (!encodedString->isEmpty())
-                    encodedString->append('&');
-                FormDataBuilder::encodeStringAsFormData(*encodedString, j->data());
-                encodedString->append('=');
-            }
+        for (WillBeHeapVector<FormDataList::Item>::const_iterator j(items.begin()); j != items.end(); ++j) {
+            if (!encodedString->isEmpty())
+                encodedString->append('&');
+            FormDataBuilder::encodeStringAsFormData(*encodedString, j->data());
+            encodedString->append('=');
             ++j;
             if (control == textElement) {
                 encodedString->append("{searchTerms}", 13);
@@ -239,8 +235,8 @@ namespace blink {
 
 WebSearchableFormData::WebSearchableFormData(const WebFormElement& form, const WebInputElement& selectedInputElement)
 {
-    RefPtr<HTMLFormElement> formElement = form.operator PassRefPtr<HTMLFormElement>();
-    HTMLInputElement* inputElement = selectedInputElement.operator PassRefPtr<HTMLInputElement>().get();
+    RefPtrWillBeRawPtr<HTMLFormElement> formElement = static_cast<PassRefPtrWillBeRawPtr<HTMLFormElement> >(form);
+    HTMLInputElement* inputElement = static_cast<PassRefPtrWillBeRawPtr<HTMLInputElement> >(selectedInputElement).get();
 
     // Only consider forms that GET data.
     // Allow HTTPS only when an input element is provided.

@@ -8386,7 +8386,7 @@ diff -burN android-openssl-lhash2/patches/neon_runtime.patch android-openssl/pat
 ++		return;
 ++		}
 ++#endif
-+
+++#endif
 ++
 + 	t0 = U8TO32_LE(key+0);
 + 	t1 = U8TO32_LE(key+4);

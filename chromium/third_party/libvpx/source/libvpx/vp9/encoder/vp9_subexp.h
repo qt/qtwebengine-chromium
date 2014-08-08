@@ -9,8 +9,12 @@
  */
 
 
-#ifndef VP9_DECODER_VP9_SUBEXP_H_
-#define VP9_DECODER_VP9_SUBEXP_H_
+#ifndef VP9_ENCODER_VP9_SUBEXP_H_
+#define VP9_ENCODER_VP9_SUBEXP_H_
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 void vp9_compute_update_table();
 
@@ -29,7 +33,10 @@ int vp9_prob_diff_update_savings_search(const unsigned int *ct,
 int vp9_prob_diff_update_savings_search_model(const unsigned int *ct,
                                               const vp9_prob *oldp,
                                               vp9_prob *bestp,
-                                              vp9_prob upd,
-                                              int b, int r);
+                                              vp9_prob upd);
 
-#endif  // VP9_DECODER_VP9_SUBEXP_H_
+#ifdef __cplusplus
+}  // extern "C"
+#endif
+
+#endif  // VP9_ENCODER_VP9_SUBEXP_H_

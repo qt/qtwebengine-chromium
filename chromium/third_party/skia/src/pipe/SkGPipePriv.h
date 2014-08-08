@@ -45,6 +45,7 @@ enum DrawOps {
     kDrawBitmapRectToRect_DrawOp,
     kDrawClear_DrawOp,
     kDrawData_DrawOp,
+    kDrawDRRect_DrawOp,
     kDrawOval_DrawOp,
     kDrawPaint_DrawOp,
     kDrawPath_DrawOp,
@@ -142,6 +143,7 @@ enum {
     kDrawVertices_HasTexs_DrawOpFlag     = 1 << 0,
     kDrawVertices_HasColors_DrawOpFlag   = 1 << 1,
     kDrawVertices_HasIndices_DrawOpFlag  = 1 << 2,
+    kDrawVertices_HasXfermode_DrawOpFlag = 1 << 3,
 };
 enum {
     kDrawBitmap_HasPaint_DrawOpFlag   = 1 << 0,
@@ -222,6 +224,7 @@ enum PaintOps {
 
     kFlags_PaintOp,     // arg inline
     kColor_PaintOp,     // arg 32
+    kFilterLevel_PaintOp,   // arg inline
     kStyle_PaintOp,     // arg inline
     kJoin_PaintOp,      // arg inline
     kCap_PaintOp,       // arg inline

@@ -14,6 +14,9 @@
 #include "ui/views/layout/grid_layout.h"
 #include "ui/views/view.h"
 
+using base::ASCIIToUTF16;
+using base::UTF16ToUTF8;
+
 namespace views {
 namespace examples {
 
@@ -34,7 +37,8 @@ TextfieldExample::~TextfieldExample() {
 
 void TextfieldExample::CreateExampleView(View* container) {
   name_ = new Textfield();
-  password_ = new Textfield(Textfield::STYLE_OBSCURED);
+  password_ = new Textfield();
+  password_->SetTextInputType(ui::TEXT_INPUT_TYPE_PASSWORD);
   password_->set_placeholder_text(ASCIIToUTF16("password"));
   read_only_ = new Textfield();
   read_only_->SetReadOnly(true);
@@ -44,8 +48,8 @@ void TextfieldExample::CreateExampleView(View* container) {
   append_ = new LabelButton(this, ASCIIToUTF16("Append"));
   set_ = new LabelButton(this, ASCIIToUTF16("Set"));
   set_style_ = new LabelButton(this, ASCIIToUTF16("Set Styles"));
-  name_->SetController(this);
-  password_->SetController(this);
+  name_->set_controller(this);
+  password_->set_controller(this);
 
   GridLayout* layout = new GridLayout(container);
   container->SetLayoutManager(layout);
@@ -77,7 +81,7 @@ void TextfieldExample::CreateExampleView(View* container) {
 }
 
 void TextfieldExample::ContentsChanged(Textfield* sender,
-                                       const string16& new_contents) {
+                                       const base::string16& new_contents) {
   if (sender == name_) {
     PrintStatus("Name [%s]", UTF16ToUTF8(new_contents).c_str());
   } else if (sender == password_) {
@@ -102,7 +106,7 @@ void TextfieldExample::ButtonPressed(Button* sender, const ui::Event& event) {
   if (sender == show_password_) {
     PrintStatus("Password [%s]", UTF16ToUTF8(password_->text()).c_str());
   } else if (sender == clear_all_) {
-    string16 empty;
+    base::string16 empty;
     name_->SetText(empty);
     password_->SetText(empty);
     read_only_->SetText(empty);

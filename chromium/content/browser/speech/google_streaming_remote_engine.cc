@@ -7,7 +7,6 @@
 #include <vector>
 
 #include "base/bind.h"
-#include "base/command_line.h"
 #include "base/rand_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
@@ -15,12 +14,12 @@
 #include "base/time/time.h"
 #include "content/browser/speech/audio_buffer.h"
 #include "content/browser/speech/proto/google_streaming_api.pb.h"
-#include "content/public/common/content_switches.h"
 #include "content/public/common/speech_recognition_error.h"
 #include "content/public/common/speech_recognition_result.h"
 #include "google_apis/google_api_keys.h"
 #include "net/base/escape.h"
 #include "net/base/load_flags.h"
+#include "net/url_request/http_user_agent_settings.h"
 #include "net/url_request/url_fetcher.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
@@ -66,21 +65,6 @@ void DumpResponse(const std::string& response) {
         DVLOG(1) << "    TRANSCRIPT:\t" << alt.transcript();
     }
   }
-}
-
-std::string GetAPIKey() {
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-  if (command_line.HasSwitch(switches::kSpeechRecognitionWebserviceKey)) {
-    DVLOG(1) << "GetAPIKey() used key from command-line.";
-    return command_line.GetSwitchValueASCII(
-        switches::kSpeechRecognitionWebserviceKey);
-  }
-
-  std::string api_key = google_apis::GetAPIKey();
-  if (api_key.empty())
-    DVLOG(1) << "GetAPIKey() returned empty string!";
-
-  return api_key;
 }
 
 }  // namespace
@@ -316,7 +300,7 @@ GoogleStreamingRemoteEngine::ConnectBothStreams(const FSMEventArgs&) {
   // Setup downstream fetcher.
   std::vector<std::string> downstream_args;
   downstream_args.push_back(
-      "key=" + net::EscapeQueryParamValue(GetAPIKey(), true));
+      "key=" + net::EscapeQueryParamValue(google_apis::GetAPIKey(), true));
   downstream_args.push_back("pair=" + request_key);
   downstream_args.push_back("output=pb");
   GURL downstream_url(std::string(kWebServiceBaseUrl) +
@@ -336,7 +320,7 @@ GoogleStreamingRemoteEngine::ConnectBothStreams(const FSMEventArgs&) {
   // TODO(hans): Support for user-selected grammars.
   std::vector<std::string> upstream_args;
   upstream_args.push_back("key=" +
-      net::EscapeQueryParamValue(GetAPIKey(), true));
+      net::EscapeQueryParamValue(google_apis::GetAPIKey(), true));
   upstream_args.push_back("pair=" + request_key);
   upstream_args.push_back("output=pb");
   upstream_args.push_back(
@@ -455,7 +439,7 @@ GoogleStreamingRemoteEngine::ProcessDownstreamResponse(
       DCHECK(ws_alternative.has_transcript());
       // TODO(hans): Perhaps the transcript should be required in the proto?
       if (ws_alternative.has_transcript())
-        hypothesis.utterance = UTF8ToUTF16(ws_alternative.transcript());
+        hypothesis.utterance = base::UTF8ToUTF16(ws_alternative.transcript());
 
       result.hypotheses.push_back(hypothesis);
     }
@@ -563,10 +547,13 @@ std::string GoogleStreamingRemoteEngine::GetAcceptedLanguages() const {
     // TODO(pauljensen): GoogleStreamingRemoteEngine should be constructed with
     // a reference to the HttpUserAgentSettings rather than accessing the
     // accept language through the URLRequestContext.
-    std::string accepted_language_list = request_context->GetAcceptLanguage();
-    size_t separator = accepted_language_list.find_first_of(",;");
-    if (separator != std::string::npos)
-      langs = accepted_language_list.substr(0, separator);
+    if (request_context->http_user_agent_settings()) {
+      std::string accepted_language_list =
+          request_context->http_user_agent_settings()->GetAcceptLanguage();
+      size_t separator = accepted_language_list.find_first_of(",;");
+      if (separator != std::string::npos)
+        langs = accepted_language_list.substr(0, separator);
+    }
   }
   if (langs.empty())
     langs = "en-US";
@@ -575,8 +562,8 @@ std::string GoogleStreamingRemoteEngine::GetAcceptedLanguages() const {
 
 // TODO(primiano): Is there any utility in the codebase that already does this?
 std::string GoogleStreamingRemoteEngine::GenerateRequestKey() const {
-  const int64 kKeepLowBytes = GG_LONGLONG(0x00000000FFFFFFFF);
-  const int64 kKeepHighBytes = GG_LONGLONG(0xFFFFFFFF00000000);
+  const int64 kKeepLowBytes = 0x00000000FFFFFFFFLL;
+  const int64 kKeepHighBytes = 0xFFFFFFFF00000000LL;
 
   // Just keep the least significant bits of timestamp, in order to reduce
   // probability of collisions.

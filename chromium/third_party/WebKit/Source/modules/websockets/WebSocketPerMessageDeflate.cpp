@@ -41,7 +41,7 @@
 
 namespace WebCore {
 
-class CompressionMessageExtensionProcessor : public WebSocketExtensionProcessor {
+class CompressionMessageExtensionProcessor FINAL : public WebSocketExtensionProcessor {
     WTF_MAKE_FAST_ALLOCATED;
     WTF_MAKE_NONCOPYABLE(CompressionMessageExtensionProcessor);
 public:
@@ -189,7 +189,7 @@ bool WebSocketPerMessageDeflate::deflate(WebSocketFrame& frame)
     }
 
     if (frame.payloadLength > 0 && !m_deflater->addBytes(frame.payload, frame.payloadLength)) {
-        m_failureReason = "Failed to inflate a frame";
+        m_failureReason = "Failed to deflate a frame";
         return false;
     }
     if (frame.final && !m_deflater->finish()) {

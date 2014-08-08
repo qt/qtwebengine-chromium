@@ -29,7 +29,6 @@
 
 #include "core/dom/ContextLifecycleObserver.h"
 #include "wtf/Assertions.h"
-#include "wtf/Forward.h"
 
 namespace WebCore {
 
@@ -40,7 +39,7 @@ public:
     // suspendIfNeeded() should be called exactly once after object construction to synchronize
     // the suspend state with that in ExecutionContext.
     void suspendIfNeeded();
-#if !ASSERT_DISABLED
+#if ASSERT_ENABLED
     bool suspendIfNeededCalled() const { return m_suspendIfNeededCalled; }
 #endif
 
@@ -56,6 +55,8 @@ public:
     virtual void suspend();
     virtual void resume();
     virtual void stop();
+
+    void didMoveToNewExecutionContext(ExecutionContext*);
 
 protected:
     virtual ~ActiveDOMObject();
@@ -76,7 +77,7 @@ protected:
 
 private:
     unsigned m_pendingActivityCount;
-#if !ASSERT_DISABLED
+#if ASSERT_ENABLED
     bool m_suspendIfNeededCalled;
 #endif
 };

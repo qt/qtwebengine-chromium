@@ -1,35 +1,12 @@
 // Copyright 2012 the V8 project authors. All rights reserved.
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-//       copyright notice, this list of conditions and the following
-//       disclaimer in the documentation and/or other materials provided
-//       with the distribution.
-//     * Neither the name of Google Inc. nor the names of its
-//       contributors may be used to endorse or promote products derived
-//       from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
 #ifndef V8_SCOPES_H_
 #define V8_SCOPES_H_
 
-#include "ast.h"
-#include "zone.h"
+#include "src/ast.h"
+#include "src/zone.h"
 
 namespace v8 {
 namespace internal {
@@ -123,7 +100,7 @@ class Scope: public ZoneObject {
   // Declarations
 
   // Lookup a variable in this scope. Returns the variable or NULL if not found.
-  Variable* LocalLookup(Handle<String> name);
+  Variable* LookupLocal(Handle<String> name);
 
   // This lookup corresponds to a lookup in the "intermediate" scope sitting
   // between this scope and the outer scope. (ECMA-262, 3rd., requires that
@@ -234,9 +211,7 @@ class Scope: public ZoneObject {
   void RecordEvalCall() { if (!is_global_scope()) scope_calls_eval_ = true; }
 
   // Set the strict mode flag (unless disabled by a global flag).
-  void SetLanguageMode(LanguageMode language_mode) {
-    language_mode_ = language_mode;
-  }
+  void SetStrictMode(StrictMode strict_mode) { strict_mode_ = strict_mode; }
 
   // Position in the source where this scope begins and ends.
   //
@@ -293,23 +268,17 @@ class Scope: public ZoneObject {
     return is_eval_scope() || is_function_scope() ||
         is_module_scope() || is_global_scope();
   }
-  bool is_classic_mode() const {
-    return language_mode() == CLASSIC_MODE;
-  }
-  bool is_extended_mode() const {
-    return language_mode() == EXTENDED_MODE;
-  }
-  bool is_strict_or_extended_eval_scope() const {
-    return is_eval_scope() && !is_classic_mode();
+  bool is_strict_eval_scope() const {
+    return is_eval_scope() && strict_mode_ == STRICT;
   }
 
   // Information about which scopes calls eval.
   bool calls_eval() const { return scope_calls_eval_; }
-  bool calls_non_strict_eval() {
-    return scope_calls_eval_ && is_classic_mode();
+  bool calls_sloppy_eval() {
+    return scope_calls_eval_ && strict_mode_ == SLOPPY;
   }
-  bool outer_scope_calls_non_strict_eval() const {
-    return outer_scope_calls_non_strict_eval_;
+  bool outer_scope_calls_sloppy_eval() const {
+    return outer_scope_calls_sloppy_eval_;
   }
 
   // Is this scope inside a with statement.
@@ -324,7 +293,7 @@ class Scope: public ZoneObject {
   ScopeType scope_type() const { return scope_type_; }
 
   // The language mode of this scope.
-  LanguageMode language_mode() const { return language_mode_; }
+  StrictMode strict_mode() const { return strict_mode_; }
 
   // The variable corresponding the 'this' value.
   Variable* receiver() { return receiver_; }
@@ -493,14 +462,14 @@ class Scope: public ZoneObject {
   // This scope or a nested catch scope or with scope contain an 'eval' call. At
   // the 'eval' call site this scope is the declaration scope.
   bool scope_calls_eval_;
-  // The language mode of this scope.
-  LanguageMode language_mode_;
+  // The strict mode of this scope.
+  StrictMode strict_mode_;
   // Source positions.
   int start_position_;
   int end_position_;
 
   // Computed via PropagateScopeInfo.
-  bool outer_scope_calls_non_strict_eval_;
+  bool outer_scope_calls_sloppy_eval_;
   bool inner_scope_calls_eval_;
   bool force_eager_compilation_;
   bool force_context_allocation_;
@@ -538,13 +507,13 @@ class Scope: public ZoneObject {
     // The variable reference could be statically resolved to a variable binding
     // which is returned. There is no 'with' statement between the reference and
     // the binding and no scope between the reference scope (inclusive) and
-    // binding scope (exclusive) makes a non-strict 'eval' call.
+    // binding scope (exclusive) makes a sloppy 'eval' call.
     BOUND,
 
     // The variable reference could be statically resolved to a variable binding
     // which is returned. There is no 'with' statement between the reference and
     // the binding, but some scope between the reference scope (inclusive) and
-    // binding scope (exclusive) makes a non-strict 'eval' call, that might
+    // binding scope (exclusive) makes a sloppy 'eval' call, that might
     // possibly introduce variable bindings shadowing the found one. Thus the
     // found variable binding is just a guess.
     BOUND_EVAL_SHADOWED,
@@ -553,13 +522,13 @@ class Scope: public ZoneObject {
     // and thus should be considered referencing a global variable. NULL is
     // returned. The variable reference is not inside any 'with' statement and
     // no scope between the reference scope (inclusive) and global scope
-    // (exclusive) makes a non-strict 'eval' call.
+    // (exclusive) makes a sloppy 'eval' call.
     UNBOUND,
 
     // The variable reference could not be statically resolved to any binding
     // NULL is returned. The variable reference is not inside any 'with'
     // statement, but some scope between the reference scope (inclusive) and
-    // global scope (exclusive) makes a non-strict 'eval' call, that might
+    // global scope (exclusive) makes a sloppy 'eval' call, that might
     // possibly introduce a variable binding. Thus the reference should be
     // considered referencing a global variable unless it is shadowed by an
     // 'eval' introduced binding.
@@ -591,7 +560,7 @@ class Scope: public ZoneObject {
                                    AstNodeFactory<AstNullVisitor>* factory);
 
   // Scope analysis.
-  bool PropagateScopeInfo(bool outer_scope_calls_non_strict_eval);
+  bool PropagateScopeInfo(bool outer_scope_calls_sloppy_eval);
   bool HasTrivialContext() const;
 
   // Predicates.

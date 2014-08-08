@@ -28,11 +28,11 @@
 #include "core/html/canvas/WebGLSharedObject.h"
 
 #include "core/html/canvas/WebGLContextGroup.h"
-#include "core/html/canvas/WebGLRenderingContext.h"
+#include "core/html/canvas/WebGLRenderingContextBase.h"
 
 namespace WebCore {
 
-WebGLSharedObject::WebGLSharedObject(WebGLRenderingContext* context)
+WebGLSharedObject::WebGLSharedObject(WebGLRenderingContextBase* context)
     : WebGLObject(context),
       m_contextGroup(context->contextGroup())
 {
@@ -54,9 +54,9 @@ void WebGLSharedObject::detachContextGroup()
     }
 }
 
-GraphicsContext3D* WebGLSharedObject::getAGraphicsContext3D() const
+blink::WebGraphicsContext3D* WebGLSharedObject::getAWebGraphicsContext3D() const
 {
-    return m_contextGroup ? m_contextGroup->getAGraphicsContext3D() : 0;
+    return m_contextGroup ? m_contextGroup->getAWebGraphicsContext3D() : 0;
 }
 
 }

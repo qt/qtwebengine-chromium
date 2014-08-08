@@ -2,15 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "url/url_canon_internal.h"
+
 #include <errno.h>
 #include <stdlib.h>
 
 #include <cstdio>
 #include <string>
 
-#include "url/url_canon_internal.h"
+#include "base/strings/utf_string_conversion_utils.h"
 
-namespace url_canon {
+namespace url {
 
 namespace {
 
@@ -58,12 +60,12 @@ void DoAppendInvalidNarrowString(const CHAR* spec, int begin, int end,
   }
 }
 
-// Overrides one component, see the url_canon::Replacements structure for
+// Overrides one component, see the Replacements structure for
 // what the various combionations of source pointer and component mean.
 void DoOverrideComponent(const char* override_source,
-                         const url_parse::Component& override_component,
+                         const Component& override_component,
                          const char** dest,
-                         url_parse::Component* dest_component) {
+                         Component* dest_component) {
   if (override_source) {
     *dest = override_source;
     *dest_component = override_component;
@@ -82,16 +84,15 @@ void DoOverrideComponent(const char* override_source,
 // may get resized while we're overriding a subsequent component. Instead, the
 // caller should use the beginning of the |utf8_buffer| as the string pointer
 // for all components once all overrides have been prepared.
-bool PrepareUTF16OverrideComponent(
-    const base::char16* override_source,
-    const url_parse::Component& override_component,
-    CanonOutput* utf8_buffer,
-    url_parse::Component* dest_component) {
+bool PrepareUTF16OverrideComponent(const base::char16* override_source,
+                                   const Component& override_component,
+                                   CanonOutput* utf8_buffer,
+                                   Component* dest_component) {
   bool success = true;
   if (override_source) {
     if (!override_component.is_valid()) {
       // Non-"valid" component (means delete), so we need to preserve that.
-      *dest_component = url_parse::Component();
+      *dest_component = Component();
     } else {
       // Convert to UTF-8.
       dest_component->begin = utf8_buffer->length();
@@ -246,6 +247,32 @@ void AppendStringOfType(const base::char16* source, int length,
       source, length, type, output);
 }
 
+bool ReadUTFChar(const char* str, int* begin, int length,
+                 unsigned* code_point_out) {
+  // This depends on ints and int32s being the same thing.  If they're not, it
+  // will fail to compile.
+  // TODO(mmenke):  This should probably be fixed.
+  if (!base::ReadUnicodeCharacter(str, length, begin, code_point_out) ||
+      !base::IsValidCharacter(*code_point_out)) {
+    *code_point_out = kUnicodeReplacementCharacter;
+    return false;
+  }
+  return true;
+}
+
+bool ReadUTFChar(const base::char16* str, int* begin, int length,
+                 unsigned* code_point_out) {
+  // This depends on ints and int32s being the same thing.  If they're not, it
+  // will fail to compile.
+  // TODO(mmenke):  This should probably be fixed.
+  if (!base::ReadUnicodeCharacter(str, length, begin, code_point_out) ||
+      !base::IsValidCharacter(*code_point_out)) {
+    *code_point_out = kUnicodeReplacementCharacter;
+    return false;
+  }
+  return true;
+}
+
 void AppendInvalidNarrowString(const char* spec, int begin, int end,
                                CanonOutput* output) {
   DoAppendInvalidNarrowString<char, unsigned char>(spec, begin, end, output);
@@ -282,10 +309,10 @@ bool ConvertUTF8ToUTF16(const char* input, int input_len,
 void SetupOverrideComponents(const char* base,
                              const Replacements<char>& repl,
                              URLComponentSource<char>* source,
-                             url_parse::Parsed* parsed) {
+                             Parsed* parsed) {
   // Get the source and parsed structures of the things we are replacing.
   const URLComponentSource<char>& repl_source = repl.sources();
-  const url_parse::Parsed& repl_parsed = repl.components();
+  const Parsed& repl_parsed = repl.components();
 
   DoOverrideComponent(repl_source.scheme, repl_parsed.scheme,
                       &source->scheme, &parsed->scheme);
@@ -314,12 +341,12 @@ bool SetupUTF16OverrideComponents(const char* base,
                                   const Replacements<base::char16>& repl,
                                   CanonOutput* utf8_buffer,
                                   URLComponentSource<char>* source,
-                                  url_parse::Parsed* parsed) {
+                                  Parsed* parsed) {
   bool success = true;
 
   // Get the source and parsed structures of the things we are replacing.
   const URLComponentSource<base::char16>& repl_source = repl.sources();
-  const url_parse::Parsed& repl_parsed = repl.components();
+  const Parsed& repl_parsed = repl.components();
 
   success &= PrepareUTF16OverrideComponent(
       repl_source.scheme, repl_parsed.scheme,
@@ -402,4 +429,4 @@ int _itow_s(int value, base::char16* buffer, size_t size_in_chars, int radix) {
 
 #endif  // !WIN32
 
-}  // namespace url_canon
+}  // namespace url

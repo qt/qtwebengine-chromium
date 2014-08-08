@@ -19,7 +19,8 @@ class ContextProvider;
 class LayerTreeHost;
 class LayerTreeHostSingleThreadClient;
 
-class SingleThreadProxy : public Proxy, LayerTreeHostImplClient {
+class CC_EXPORT SingleThreadProxy : public Proxy,
+                    NON_EXPORTED_BASE(LayerTreeHostImplClient) {
  public:
   static scoped_ptr<Proxy> Create(
       LayerTreeHost* layer_tree_host,
@@ -27,57 +28,64 @@ class SingleThreadProxy : public Proxy, LayerTreeHostImplClient {
   virtual ~SingleThreadProxy();
 
   // Proxy implementation
-  virtual bool CompositeAndReadback(void* pixels, gfx::Rect rect) OVERRIDE;
   virtual void FinishAllRendering() OVERRIDE;
   virtual bool IsStarted() const OVERRIDE;
   virtual void SetLayerTreeHostClientReady() OVERRIDE;
   virtual void SetVisible(bool visible) OVERRIDE;
-  virtual void CreateAndInitializeOutputSurface() OVERRIDE;
   virtual const RendererCapabilities& GetRendererCapabilities() const OVERRIDE;
   virtual void SetNeedsAnimate() OVERRIDE;
   virtual void SetNeedsUpdateLayers() OVERRIDE;
   virtual void SetNeedsCommit() OVERRIDE;
-  virtual void SetNeedsRedraw(gfx::Rect damage_rect) OVERRIDE;
+  virtual void SetNeedsRedraw(const gfx::Rect& damage_rect) OVERRIDE;
   virtual void SetNextCommitWaitsForActivation() OVERRIDE;
   virtual void NotifyInputThrottledUntilCommit() OVERRIDE {}
   virtual void SetDeferCommits(bool defer_commits) OVERRIDE;
   virtual bool CommitRequested() const OVERRIDE;
   virtual bool BeginMainFrameRequested() const OVERRIDE;
   virtual void MainThreadHasStoppedFlinging() OVERRIDE {}
-  virtual void Start(scoped_ptr<OutputSurface> first_output_surface) OVERRIDE;
+  virtual void Start() OVERRIDE;
   virtual void Stop() OVERRIDE;
   virtual size_t MaxPartialTextureUpdates() const OVERRIDE;
-  virtual void AcquireLayerTextures() OVERRIDE {}
   virtual void ForceSerializeOnSwapBuffers() OVERRIDE;
   virtual scoped_ptr<base::Value> AsValue() const OVERRIDE;
   virtual bool CommitPendingForTesting() OVERRIDE;
 
   // LayerTreeHostImplClient implementation
+  virtual void UpdateRendererCapabilitiesOnImplThread() OVERRIDE;
   virtual void DidLoseOutputSurfaceOnImplThread() OVERRIDE;
+  virtual void CommitVSyncParameters(base::TimeTicks timebase,
+                                     base::TimeDelta interval) OVERRIDE {}
+  virtual void SetEstimatedParentDrawTime(base::TimeDelta draw_time) OVERRIDE {}
+  virtual void SetMaxSwapsPendingOnImplThread(int max) OVERRIDE {}
   virtual void DidSwapBuffersOnImplThread() OVERRIDE;
-  virtual void OnSwapBuffersCompleteOnImplThread() OVERRIDE;
-  virtual void BeginImplFrame(const BeginFrameArgs& args)
-      OVERRIDE {}
+  virtual void DidSwapBuffersCompleteOnImplThread() OVERRIDE;
+  virtual void BeginFrame(const BeginFrameArgs& args) OVERRIDE {}
   virtual void OnCanDrawStateChanged(bool can_draw) OVERRIDE;
   virtual void NotifyReadyToActivate() OVERRIDE;
   virtual void SetNeedsRedrawOnImplThread() OVERRIDE;
-  virtual void SetNeedsRedrawRectOnImplThread(gfx::Rect dirty_rect) OVERRIDE;
+  virtual void SetNeedsRedrawRectOnImplThread(
+      const gfx::Rect& dirty_rect) OVERRIDE;
+  virtual void SetNeedsAnimateOnImplThread() OVERRIDE;
   virtual void SetNeedsManageTilesOnImplThread() OVERRIDE;
   virtual void DidInitializeVisibleTileOnImplThread() OVERRIDE;
   virtual void SetNeedsCommitOnImplThread() OVERRIDE;
   virtual void PostAnimationEventsToMainThreadOnImplThread(
-      scoped_ptr<AnimationEventsVector> events,
-      base::Time wall_clock_time) OVERRIDE;
+      scoped_ptr<AnimationEventsVector> events) OVERRIDE;
   virtual bool ReduceContentsTextureMemoryOnImplThread(
       size_t limit_bytes,
       int priority_cutoff) OVERRIDE;
-  virtual void SendManagedMemoryStats() OVERRIDE;
   virtual bool IsInsideDraw() OVERRIDE;
   virtual void RenewTreePriority() OVERRIDE {}
-  virtual void RequestScrollbarAnimationOnImplThread(base::TimeDelta delay)
-      OVERRIDE {}
+  virtual void PostDelayedScrollbarFadeOnImplThread(
+      const base::Closure& start_fade,
+      base::TimeDelta delay) OVERRIDE {}
   virtual void DidActivatePendingTree() OVERRIDE {}
   virtual void DidManageTiles() OVERRIDE {}
+  virtual void SetDebugState(const LayerTreeDebugState& debug_state) OVERRIDE {}
+
+  // Attempts to create the context and renderer synchronously. Calls
+  // LayerTreeHost::OnCreateAndInitializeOutputSurfaceAttempted with the result.
+  void CreateAndInitializeOutputSurface();
 
   // Called by the legacy path where RenderWidget does the scheduling.
   void CompositeImmediately(base::TimeTicks frame_begin_time);
@@ -86,16 +94,8 @@ class SingleThreadProxy : public Proxy, LayerTreeHostImplClient {
   SingleThreadProxy(LayerTreeHost* layer_tree_host,
                     LayerTreeHostSingleThreadClient* client);
 
-  void OnOutputSurfaceInitializeAttempted(bool success);
-  bool CommitAndComposite(base::TimeTicks frame_begin_time,
-                          gfx::Rect device_viewport_damage_rect,
-                          bool for_readback,
-                          LayerTreeHostImpl::FrameData* frame);
   void DoCommit(scoped_ptr<ResourceUpdateQueue> queue);
-  bool DoComposite(scoped_refptr<ContextProvider> offscreen_context_provider,
-                   base::TimeTicks frame_begin_time,
-                   gfx::Rect device_viewport_damage_rect,
-                   bool for_readback,
+  bool DoComposite(base::TimeTicks frame_begin_time,
                    LayerTreeHostImpl::FrameData* frame);
   void DidSwapFrame();
 
@@ -105,11 +105,6 @@ class SingleThreadProxy : public Proxy, LayerTreeHostImplClient {
   // Accessed on main thread only.
   LayerTreeHost* layer_tree_host_;
   LayerTreeHostSingleThreadClient* client_;
-  bool created_offscreen_context_provider_;
-
-  // Holds the first output surface passed from Start. Should not be used for
-  // anything else.
-  scoped_ptr<OutputSurface> first_output_surface_;
 
   // Used on the Thread, but checked on main thread during
   // initialization/shutdown.
@@ -128,13 +123,13 @@ class SingleThreadProxy : public Proxy, LayerTreeHostImplClient {
 class DebugScopedSetImplThread {
  public:
   explicit DebugScopedSetImplThread(Proxy* proxy) : proxy_(proxy) {
-#ifndef NDEBUG
+#if DCHECK_IS_ON
     previous_value_ = proxy_->impl_thread_is_overridden_;
     proxy_->SetCurrentThreadIsImplThread(true);
 #endif
   }
   ~DebugScopedSetImplThread() {
-#ifndef NDEBUG
+#if DCHECK_IS_ON
     proxy_->SetCurrentThreadIsImplThread(previous_value_);
 #endif
   }
@@ -151,13 +146,13 @@ class DebugScopedSetImplThread {
 class DebugScopedSetMainThread {
  public:
   explicit DebugScopedSetMainThread(Proxy* proxy) : proxy_(proxy) {
-#ifndef NDEBUG
+#if DCHECK_IS_ON
     previous_value_ = proxy_->impl_thread_is_overridden_;
     proxy_->SetCurrentThreadIsImplThread(false);
 #endif
   }
   ~DebugScopedSetMainThread() {
-#ifndef NDEBUG
+#if DCHECK_IS_ON
     proxy_->SetCurrentThreadIsImplThread(previous_value_);
 #endif
   }

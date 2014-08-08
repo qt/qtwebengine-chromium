@@ -216,13 +216,13 @@ class RegWriterUnittest(writer_unittest_common.WriterUnittestCommon):
     # Tests a policy group with a single policy of type 'dict'.
     example = {
       'bool': True,
-      'int': 10,
-      'string': 'abc',
-      'list': [1, 2, 3],
       'dict': {
         'a': 1,
         'b': 2,
-      }
+      },
+      'int': 10,
+      'list': [1, 2, 3],
+      'string': 'abc',
     }
     grd = self.PrepareTest(
         '{'
@@ -244,8 +244,8 @@ class RegWriterUnittest(writer_unittest_common.WriterUnittestCommon):
         'Windows Registry Editor Version 5.00',
         '',
         '[HKEY_LOCAL_MACHINE\\Software\\Policies\\Chromium]',
-        '"DictionaryPolicy"="{\'bool\': True, \'dict\': {\'a\': 1, '
-        '\'b\': 2}, \'int\': 10, \'list\': [1, 2, 3], \'string\': \'abc\'}"'])
+        '"DictionaryPolicy"="{"bool": true, "dict": {"a": 1, '
+        '"b": 2}, "int": 10, "list": [1, 2, 3], "string": "abc"}"'])
     self.CompareOutputs(output, expected_output)
 
   def testNonSupportedPolicy(self):

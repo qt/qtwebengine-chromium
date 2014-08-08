@@ -32,8 +32,8 @@
 #include "core/loader/CookieJar.h"
 
 #include "core/dom/Document.h"
+#include "core/frame/LocalFrame.h"
 #include "core/loader/FrameLoaderClient.h"
-#include "core/frame/Frame.h"
 #include "platform/Cookie.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebCookie.h"
@@ -47,12 +47,7 @@ static blink::WebCookieJar* toCookieJar(const Document* document)
 {
     if (!document || !document->frame())
         return 0;
-    blink::WebCookieJar* cookieJar = document->frame()->loader().client()->cookieJar();
-    // FIXME: DRT depends on being able to get a cookie jar from Platform rather than
-    // FrameLoaderClient. Delete this when DRT is deleted.
-    if (!cookieJar)
-        cookieJar = blink::Platform::current()->cookieJar();
-    return cookieJar;
+    return document->frame()->loader().client()->cookieJar();
 }
 
 String cookies(const Document* document, const KURL& url)

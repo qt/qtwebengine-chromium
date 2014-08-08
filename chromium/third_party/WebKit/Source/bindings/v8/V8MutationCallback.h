@@ -27,9 +27,8 @@
 #define V8MutationCallback_h
 
 #include "bindings/v8/ActiveDOMCallback.h"
-#include "bindings/v8/DOMWrapperWorld.h"
 #include "bindings/v8/ScopedPersistent.h"
-#include "bindings/v8/V8Utilities.h"
+#include "bindings/v8/ScriptState.h"
 #include "core/dom/MutationCallback.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/RefPtr.h"
@@ -39,25 +38,23 @@ namespace WebCore {
 
 class ExecutionContext;
 
-class V8MutationCallback : public MutationCallback, public ActiveDOMCallback {
+class V8MutationCallback FINAL : public MutationCallback, public ActiveDOMCallback {
 public:
-    static PassOwnPtr<V8MutationCallback> create(v8::Handle<v8::Function> callback, ExecutionContext* context, v8::Handle<v8::Object> owner, v8::Isolate* isolate)
+    static PassOwnPtr<V8MutationCallback> create(v8::Handle<v8::Function> callback, v8::Handle<v8::Object> owner, ScriptState* scriptState)
     {
-        ASSERT(context);
-        return adoptPtr(new V8MutationCallback(callback, context, owner, isolate));
+        return adoptPtr(new V8MutationCallback(callback, owner, scriptState));
     }
 
-    virtual void call(const Vector<RefPtr<MutationRecord> >&, MutationObserver*) OVERRIDE;
+    virtual void call(const WillBeHeapVector<RefPtrWillBeMember<MutationRecord> >&, MutationObserver*) OVERRIDE;
     virtual ExecutionContext* executionContext() const OVERRIDE { return ContextLifecycleObserver::executionContext(); }
 
 private:
-    V8MutationCallback(v8::Handle<v8::Function>, ExecutionContext*, v8::Handle<v8::Object>, v8::Isolate*);
+    V8MutationCallback(v8::Handle<v8::Function>, v8::Handle<v8::Object>, ScriptState*);
 
     static void setWeakCallback(const v8::WeakCallbackData<v8::Function, V8MutationCallback>&);
 
     ScopedPersistent<v8::Function> m_callback;
-    RefPtr<DOMWrapperWorld> m_world;
-    v8::Isolate* m_isolate;
+    RefPtr<ScriptState> m_scriptState;
 };
 
 }

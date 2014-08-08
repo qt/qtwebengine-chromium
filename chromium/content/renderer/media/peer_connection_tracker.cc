@@ -8,6 +8,7 @@
 #include "content/renderer/media/rtc_media_constraints.h"
 #include "content/renderer/media/rtc_peer_connection_handler.h"
 #include "content/renderer/render_thread_impl.h"
+#include "third_party/WebKit/public/platform/WebMediaConstraints.h"
 #include "third_party/WebKit/public/platform/WebMediaStream.h"
 #include "third_party/WebKit/public/platform/WebMediaStreamSource.h"
 #include "third_party/WebKit/public/platform/WebMediaStreamTrack.h"
@@ -15,6 +16,7 @@
 #include "third_party/WebKit/public/platform/WebRTCPeerConnectionHandlerClient.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
 #include "third_party/WebKit/public/web/WebFrame.h"
+#include "third_party/WebKit/public/web/WebUserMediaRequest.h"
 
 using std::string;
 using webrtc::MediaConstraintsInterface;
@@ -64,13 +66,13 @@ static string SerializeMediaConstraints(
 
 static string SerializeMediaStreamComponent(
     const blink::WebMediaStreamTrack component) {
-  string id = UTF16ToUTF8(component.source().id());
+  string id = base::UTF16ToUTF8(component.source().id());
   return id;
 }
 
 static string SerializeMediaDescriptor(
     const blink::WebMediaStream& stream) {
-  string label = UTF16ToUTF8(stream.id());
+  string label = base::UTF16ToUTF8(stream.id());
   string result = "label: " + label;
   blink::WebVector<blink::WebMediaStreamTrack> tracks;
   stream.audioTracks(tracks);
@@ -160,7 +162,7 @@ static base::DictionaryValue* GetDictValueStats(
   if (report.values.empty())
     return NULL;
 
-  DictionaryValue* dict = new base::DictionaryValue();
+  base::DictionaryValue* dict = new base::DictionaryValue();
   dict->SetDouble("timestamp", report.timestamp);
 
   base::ListValue* values = new base::ListValue();
@@ -243,7 +245,10 @@ void PeerConnectionTracker::OnGetAllStats() {
     talk_base::scoped_refptr<InternalStatsObserver> observer(
         new talk_base::RefCountedObject<InternalStatsObserver>(it->second));
 
-    it->first->GetStats(observer, NULL);
+    it->first->GetStats(
+        observer,
+        NULL,
+        webrtc::PeerConnectionInterface::kStatsOutputLevelDebug);
   }
 }
 
@@ -306,8 +311,8 @@ void PeerConnectionTracker::TrackSetSessionDescription(
     RTCPeerConnectionHandler* pc_handler,
     const blink::WebRTCSessionDescription& desc,
     Source source) {
-  string sdp = UTF16ToUTF8(desc.sdp());
-  string type = UTF16ToUTF8(desc.type());
+  string sdp = base::UTF16ToUTF8(desc.sdp());
+  string type = base::UTF16ToUTF8(desc.type());
 
   string value = "type: " + type + ", sdp: " + sdp;
   SendPeerConnectionUpdate(
@@ -332,8 +337,8 @@ void PeerConnectionTracker::TrackAddIceCandidate(
       RTCPeerConnectionHandler* pc_handler,
       const blink::WebRTCICECandidate& candidate,
       Source source) {
-  string value = "mid: " + UTF16ToUTF8(candidate.sdpMid()) + ", " +
-                 "candidate: " + UTF16ToUTF8(candidate.candidate());
+  string value = "mid: " + base::UTF16ToUTF8(candidate.sdpMid()) + ", " +
+                 "candidate: " + base::UTF16ToUTF8(candidate.candidate());
   SendPeerConnectionUpdate(
       pc_handler,
       source == SOURCE_LOCAL ? "onIceCandidate" : "addIceCandidate", value);
@@ -431,7 +436,20 @@ void PeerConnectionTracker::TrackCreateDTMFSender(
     RTCPeerConnectionHandler* pc_handler,
     const blink::WebMediaStreamTrack& track) {
   SendPeerConnectionUpdate(pc_handler, "createDTMFSender",
-                           UTF16ToUTF8(track.id()));
+                           base::UTF16ToUTF8(track.id()));
+}
+
+void PeerConnectionTracker::TrackGetUserMedia(
+    const blink::WebUserMediaRequest& user_media_request) {
+  RTCMediaConstraints audio_constraints(user_media_request.audioConstraints());
+  RTCMediaConstraints video_constraints(user_media_request.videoConstraints());
+
+  RenderThreadImpl::current()->Send(new PeerConnectionTrackerHost_GetUserMedia(
+      user_media_request.securityOrigin().toString().utf8(),
+      user_media_request.audio(),
+      user_media_request.video(),
+      SerializeMediaConstraints(audio_constraints),
+      SerializeMediaConstraints(video_constraints)));
 }
 
 int PeerConnectionTracker::GetNextLocalID() {

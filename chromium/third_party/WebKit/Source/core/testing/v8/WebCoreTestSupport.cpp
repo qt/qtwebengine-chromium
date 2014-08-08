@@ -24,16 +24,14 @@
  */
 
 #include "config.h"
-#include "WebCoreTestSupport.h"
+#include "core/testing/v8/WebCoreTestSupport.h"
 
-#include "InternalSettings.h"
-#include "Internals.h"
-#include "V8Internals.h"
+#include "bindings/core/v8/V8Internals.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExecutionContext.h"
-#include "core/frame/Frame.h"
-
-#include <v8.h>
+#include "core/frame/LocalFrame.h"
+#include "core/testing/InternalSettings.h"
+#include "core/testing/Internals.h"
 
 using namespace WebCore;
 
@@ -41,11 +39,12 @@ namespace WebCoreTestSupport {
 
 void injectInternalsObject(v8::Local<v8::Context> context)
 {
-    v8::Context::Scope contextScope(context);
-    v8::HandleScope scope(context->GetIsolate());
-    ExecutionContext* scriptContext = getExecutionContext();
-    if (scriptContext->isDocument())
-        context->Global()->Set(v8::String::NewFromUtf8(context->GetIsolate(), Internals::internalsId), toV8(Internals::create(toDocument(scriptContext)), v8::Handle<v8::Object>(), context->GetIsolate()));
+    ScriptState* scriptState = ScriptState::from(context);
+    ScriptState::Scope scope(scriptState);
+    v8::Handle<v8::Object> global = scriptState->context()->Global();
+    ExecutionContext* executionContext = scriptState->executionContext();
+    if (executionContext->isDocument())
+        global->Set(v8::String::NewFromUtf8(scriptState->isolate(), Internals::internalsId), toV8(Internals::create(toDocument(executionContext)), global, scriptState->isolate()));
 }
 
 void resetInternalsObject(v8::Local<v8::Context> context)
@@ -54,13 +53,12 @@ void resetInternalsObject(v8::Local<v8::Context> context)
     if (context.IsEmpty())
         return;
 
-    v8::Context::Scope contextScope(context);
-    v8::HandleScope scope(context->GetIsolate());
-
-    ExecutionContext* scriptContext = getExecutionContext();
-    Page* page = toDocument(scriptContext)->frame()->page();
+    ScriptState* scriptState = ScriptState::from(context);
+    ScriptState::Scope scope(scriptState);
+    Page* page = toDocument(scriptState->executionContext())->frame()->page();
+    ASSERT(page);
     Internals::resetToConsistentState(page);
-    InternalSettings::from(page)->resetToConsistentState();
+    InternalSettings::from(*page)->resetToConsistentState();
 }
 
 }

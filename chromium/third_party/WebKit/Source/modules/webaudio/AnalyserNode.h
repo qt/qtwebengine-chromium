@@ -33,18 +33,17 @@ namespace WebCore {
 
 class ExceptionState;
 
-class AnalyserNode : public AudioBasicInspectorNode {
+class AnalyserNode FINAL : public AudioBasicInspectorNode {
 public:
-    static PassRefPtr<AnalyserNode> create(AudioContext* context, float sampleRate)
+    static PassRefPtrWillBeRawPtr<AnalyserNode> create(AudioContext* context, float sampleRate)
     {
-        return adoptRef(new AnalyserNode(context, sampleRate));
+        return adoptRefWillBeNoop(new AnalyserNode(context, sampleRate));
     }
 
     virtual ~AnalyserNode();
 
     // AudioNode
-    virtual void process(size_t framesToProcess);
-    virtual void reset();
+    virtual void process(size_t framesToProcess) OVERRIDE;
 
     // Javascript bindings
     unsigned fftSize() const { return m_analyser.fftSize(); }
@@ -52,19 +51,19 @@ public:
 
     unsigned frequencyBinCount() const { return m_analyser.frequencyBinCount(); }
 
-    void setMinDecibels(float k, ExceptionState&);
-    float minDecibels() const { return m_analyser.minDecibels(); }
+    void setMinDecibels(double k, ExceptionState&);
+    double minDecibels() const { return m_analyser.minDecibels(); }
 
-    void setMaxDecibels(float k, ExceptionState&);
-    float maxDecibels() const { return m_analyser.maxDecibels(); }
+    void setMaxDecibels(double k, ExceptionState&);
+    double maxDecibels() const { return m_analyser.maxDecibels(); }
 
-    void setSmoothingTimeConstant(float k, ExceptionState&);
-    float smoothingTimeConstant() const { return m_analyser.smoothingTimeConstant(); }
+    void setSmoothingTimeConstant(double k, ExceptionState&);
+    double smoothingTimeConstant() const { return m_analyser.smoothingTimeConstant(); }
 
     void getFloatFrequencyData(Float32Array* array) { m_analyser.getFloatFrequencyData(array); }
     void getByteFrequencyData(Uint8Array* array) { m_analyser.getByteFrequencyData(array); }
+    void getFloatTimeDomainData(Float32Array* array) { m_analyser.getFloatTimeDomainData(array); }
     void getByteTimeDomainData(Uint8Array* array) { m_analyser.getByteTimeDomainData(array); }
-
 private:
     virtual double tailTime() const OVERRIDE { return 0; }
     virtual double latencyTime() const OVERRIDE { return 0; }

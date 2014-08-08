@@ -1,6 +1,7 @@
 /*
  * Copyright (C) 2006, 2007, 2009 Apple Inc. All rights reserved.
  * Copyright (C) 2006 Samuel Weinig <sam.weinig@gmail.com>
+ * Copyright (C) 2014 Samsung Electronics. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -21,11 +22,11 @@
 [
     Custom=Wrap,
     DependentLifetime,
-    GenerateVisitDOMWrapper=ownerNode,
+    SetWrapperReferenceFrom=ownerNode,
+    WillBeGarbageCollected,
 ] interface HTMLCollection {
     readonly attribute unsigned long length;
-    getter Node item([Default=Undefined] optional unsigned long index);
-    Node namedItem([Default=Undefined] optional DOMString name);
-    [NotEnumerable, ImplementedAs=namedItem] getter Node ([Default=Undefined] optional DOMString name);
+    getter Element item([Default=Undefined] optional unsigned long index);
+    getter Element namedItem(DOMString name);
 };
 

@@ -23,15 +23,8 @@
 
 #include "wtf/HashTableDeletedValueType.h"
 #include "wtf/WTFExport.h"
+#include "wtf/text/CString.h"
 #include "wtf/text/WTFString.h"
-
-// Define 'NO_IMPLICIT_ATOMICSTRING' before including this header,
-// to disallow (expensive) implicit String-->AtomicString conversions.
-#ifdef NO_IMPLICIT_ATOMICSTRING
-#define ATOMICSTRING_CONVERSION explicit
-#else
-#define ATOMICSTRING_CONVERSION
-#endif
 
 namespace WTF {
 
@@ -55,8 +48,11 @@ public:
     {
     }
 
-    explicit AtomicString(StringImpl* imp) : m_string(add(imp)) { }
-    ATOMICSTRING_CONVERSION AtomicString(const String& s) : m_string(add(s.impl())) { }
+    // Constructing an AtomicString from a String / StringImpl can be expensive if
+    // the StringImpl is not already atomic.
+    explicit AtomicString(StringImpl* impl) : m_string(add(impl)) { }
+    explicit AtomicString(const String& s) : m_string(add(s.impl())) { }
+
     AtomicString(StringImpl* baseString, unsigned start, unsigned length) : m_string(add(baseString, start, length)) { }
 
     enum ConstructFromLiteralTag { ConstructFromLiteral };
@@ -100,7 +96,7 @@ public:
     const UChar* characters16() const { return m_string.characters16(); }
     unsigned length() const { return m_string.length(); }
 
-    UChar operator[](unsigned int i) const { return m_string[i]; }
+    UChar operator[](unsigned i) const { return m_string[i]; }
 
     bool contains(UChar c) const { return m_string.contains(c); }
     bool contains(const LChar* s, bool caseSensitive = true) const
@@ -163,6 +159,10 @@ public:
     // the input data contains invalid UTF-8 sequences.
     static AtomicString fromUTF8(const char*, size_t);
     static AtomicString fromUTF8(const char*);
+
+    CString ascii() const { return m_string.ascii(); }
+    CString latin1() const { return m_string.latin1(); }
+    CString utf8(UTF8ConversionMode mode = LenientUTF8Conversion) const { return m_string.utf8(mode); }
 
 #ifndef NDEBUG
     void show() const;
@@ -256,6 +256,8 @@ template<> struct DefaultHash<AtomicString> {
 };
 
 } // namespace WTF
+
+WTF_ALLOW_MOVE_INIT_AND_COMPARE_WITH_MEM_FUNCTIONS(AtomicString);
 
 #ifndef ATOMICSTRING_HIDE_GLOBALS
 using WTF::AtomicString;

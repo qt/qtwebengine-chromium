@@ -23,48 +23,31 @@
 #include "core/svg/SVGLineElement.h"
 
 #include "core/rendering/svg/RenderSVGResource.h"
-#include "core/svg/SVGElementInstance.h"
 #include "core/svg/SVGLength.h"
 
 namespace WebCore {
 
-// Animated property definitions
-DEFINE_ANIMATED_LENGTH(SVGLineElement, SVGNames::x1Attr, X1, x1)
-DEFINE_ANIMATED_LENGTH(SVGLineElement, SVGNames::y1Attr, Y1, y1)
-DEFINE_ANIMATED_LENGTH(SVGLineElement, SVGNames::x2Attr, X2, x2)
-DEFINE_ANIMATED_LENGTH(SVGLineElement, SVGNames::y2Attr, Y2, y2)
-DEFINE_ANIMATED_BOOLEAN(SVGLineElement, SVGNames::externalResourcesRequiredAttr, ExternalResourcesRequired, externalResourcesRequired)
-
-BEGIN_REGISTER_ANIMATED_PROPERTIES(SVGLineElement)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(x1)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(y1)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(x2)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(y2)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(externalResourcesRequired)
-    REGISTER_PARENT_ANIMATED_PROPERTIES(SVGGraphicsElement)
-END_REGISTER_ANIMATED_PROPERTIES
-
 inline SVGLineElement::SVGLineElement(Document& document)
     : SVGGeometryElement(SVGNames::lineTag, document)
-    , m_x1(LengthModeWidth)
-    , m_y1(LengthModeHeight)
-    , m_x2(LengthModeWidth)
-    , m_y2(LengthModeHeight)
+    , m_x1(SVGAnimatedLength::create(this, SVGNames::x1Attr, SVGLength::create(LengthModeWidth), AllowNegativeLengths))
+    , m_y1(SVGAnimatedLength::create(this, SVGNames::y1Attr, SVGLength::create(LengthModeHeight), AllowNegativeLengths))
+    , m_x2(SVGAnimatedLength::create(this, SVGNames::x2Attr, SVGLength::create(LengthModeWidth), AllowNegativeLengths))
+    , m_y2(SVGAnimatedLength::create(this, SVGNames::y2Attr, SVGLength::create(LengthModeHeight), AllowNegativeLengths))
 {
     ScriptWrappable::init(this);
-    registerAnimatedPropertiesForSVGLineElement();
+
+    addToPropertyMap(m_x1);
+    addToPropertyMap(m_y1);
+    addToPropertyMap(m_x2);
+    addToPropertyMap(m_y2);
 }
 
-PassRefPtr<SVGLineElement> SVGLineElement::create(Document& document)
-{
-    return adoptRef(new SVGLineElement(document));
-}
+DEFINE_NODE_FACTORY(SVGLineElement)
 
 bool SVGLineElement::isSupportedAttribute(const QualifiedName& attrName)
 {
     DEFINE_STATIC_LOCAL(HashSet<QualifiedName>, supportedAttributes, ());
     if (supportedAttributes.isEmpty()) {
-        SVGExternalResourcesRequired::addSupportedAttributes(supportedAttributes);
         supportedAttributes.add(SVGNames::x1Attr);
         supportedAttributes.add(SVGNames::x2Attr);
         supportedAttributes.add(SVGNames::y1Attr);
@@ -80,15 +63,14 @@ void SVGLineElement::parseAttribute(const QualifiedName& name, const AtomicStrin
     if (!isSupportedAttribute(name))
         SVGGeometryElement::parseAttribute(name, value);
     else if (name == SVGNames::x1Attr)
-        setX1BaseValue(SVGLength::construct(LengthModeWidth, value, parseError));
+        m_x1->setBaseValueAsString(value, parseError);
     else if (name == SVGNames::y1Attr)
-        setY1BaseValue(SVGLength::construct(LengthModeHeight, value, parseError));
+        m_y1->setBaseValueAsString(value, parseError);
     else if (name == SVGNames::x2Attr)
-        setX2BaseValue(SVGLength::construct(LengthModeWidth, value, parseError));
+        m_x2->setBaseValueAsString(value, parseError);
     else if (name == SVGNames::y2Attr)
-        setY2BaseValue(SVGLength::construct(LengthModeHeight, value, parseError));
-    else if (SVGExternalResourcesRequired::parseAttribute(name, value)) {
-    } else
+        m_y2->setBaseValueAsString(value, parseError);
+    else
         ASSERT_NOT_REACHED();
 
     reportAttributeParsingError(parseError, name, value);
@@ -101,7 +83,7 @@ void SVGLineElement::svgAttributeChanged(const QualifiedName& attrName)
         return;
     }
 
-    SVGElementInstance::InvalidationGuard invalidationGuard(this);
+    SVGElement::InvalidationGuard invalidationGuard(this);
 
     bool isLengthAttribute = attrName == SVGNames::x1Attr
                           || attrName == SVGNames::y1Attr
@@ -121,20 +103,15 @@ void SVGLineElement::svgAttributeChanged(const QualifiedName& attrName)
         return;
     }
 
-    if (SVGExternalResourcesRequired::isKnownAttribute(attrName)) {
-        RenderSVGResource::markForLayoutAndParentResourceInvalidation(renderer);
-        return;
-    }
-
     ASSERT_NOT_REACHED();
 }
 
 bool SVGLineElement::selfHasRelativeLengths() const
 {
-    return x1CurrentValue().isRelative()
-        || y1CurrentValue().isRelative()
-        || x2CurrentValue().isRelative()
-        || y2CurrentValue().isRelative();
+    return m_x1->currentValue()->isRelative()
+        || m_y1->currentValue()->isRelative()
+        || m_x2->currentValue()->isRelative()
+        || m_y2->currentValue()->isRelative();
 }
 
 }

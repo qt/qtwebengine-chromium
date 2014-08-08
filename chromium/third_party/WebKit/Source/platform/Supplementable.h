@@ -26,12 +26,13 @@
 #ifndef Supplementable_h
 #define Supplementable_h
 
+#include "platform/heap/Handle.h"
 #include "wtf/Assertions.h"
 #include "wtf/HashMap.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
 
-#if !ASSERT_DISABLED
+#if ASSERT_ENABLED
 #include "wtf/Threading.h"
 #endif
 
@@ -87,68 +88,172 @@ namespace WebCore {
 // Note that reattachThread() does nothing if assertion is not enabled.
 //
 
-template<typename T>
-class Supplementable;
+template<typename T, bool isGarbageCollected>
+class SupplementBase;
+
+template<typename T, bool isGarbageCollected>
+class SupplementableBase;
+
+template<typename T, bool isGarbageCollected>
+struct SupplementableTraits;
 
 template<typename T>
-class Supplement {
-public:
-    virtual ~Supplement() { }
-#if !ASSERT_DISABLED || defined(ADDRESS_SANITIZER)
-    virtual bool isRefCountedWrapper() const { return false; }
-#endif
-
-    static void provideTo(Supplementable<T>* host, const char* key, PassOwnPtr<Supplement<T> > supplement)
-    {
-        host->provideSupplement(key, supplement);
-    }
-
-    static Supplement<T>* from(Supplementable<T>* host, const char* key)
-    {
-        return host ? host->requireSupplement(key) : 0;
-    }
+struct SupplementableTraits<T, true> {
+    typedef RawPtr<SupplementBase<T, true> > SupplementArgumentType;
+    typedef HeapHashMap<const char*, Member<SupplementBase<T, true> >, PtrHash<const char*> > SupplementMap;
 };
 
 template<typename T>
-class Supplementable {
+struct SupplementableTraits<T, false> {
+    typedef PassOwnPtr<SupplementBase<T, false> > SupplementArgumentType;
+    typedef HashMap<const char*, OwnPtr<SupplementBase<T, false> >, PtrHash<const char*> > SupplementMap;
+};
+
+template<bool>
+class SupplementTracing;
+
+template<>
+class SupplementTracing<true> : public GarbageCollectedMixin { };
+
+template<>
+class SupplementTracing<false> {
 public:
-    void provideSupplement(const char* key, PassOwnPtr<Supplement<T> > supplement)
+    virtual ~SupplementTracing() { }
+};
+
+template<typename T, bool isGarbageCollected = false>
+class SupplementBase : public SupplementTracing<isGarbageCollected> {
+public:
+#if SECURITY_ASSERT_ENABLED
+    virtual bool isRefCountedWrapper() const { return false; }
+#endif
+
+    static void provideTo(SupplementableBase<T, isGarbageCollected>& host, const char* key, typename SupplementableTraits<T, isGarbageCollected>::SupplementArgumentType supplement)
+    {
+        host.provideSupplement(key, supplement);
+    }
+
+    static SupplementBase<T, isGarbageCollected>* from(SupplementableBase<T, isGarbageCollected>& host, const char* key)
+    {
+        return host.requireSupplement(key);
+    }
+
+    static SupplementBase<T, isGarbageCollected>* from(SupplementableBase<T, isGarbageCollected>* host, const char* key)
+    {
+        return host ? host->requireSupplement(key) : 0;
+    }
+
+    virtual void trace(Visitor*) { }
+    virtual void willBeDestroyed() { }
+
+    // FIXME: Oilpan: Remove this callback once PersistentHeapSupplementable is removed again.
+    virtual void persistentHostHasBeenDestroyed() { }
+};
+
+template<typename T, bool>
+class SupplementableTracing;
+
+template<typename T>
+class SupplementableTracing<T, true> { };
+
+template<typename T>
+class SupplementableTracing<T, false> { };
+
+template<typename T, bool isGarbageCollected = false>
+class SupplementableBase : public SupplementableTracing<T, isGarbageCollected> {
+public:
+    void provideSupplement(const char* key, typename SupplementableTraits<T, isGarbageCollected>::SupplementArgumentType supplement)
     {
         ASSERT(m_threadId == currentThread());
-        ASSERT(!m_supplements.get(key));
-        m_supplements.set(key, supplement);
+        ASSERT(!this->m_supplements.get(key));
+        this->m_supplements.set(key, supplement);
     }
 
     void removeSupplement(const char* key)
     {
         ASSERT(m_threadId == currentThread());
-        m_supplements.remove(key);
+        this->m_supplements.remove(key);
     }
 
-    Supplement<T>* requireSupplement(const char* key)
+    SupplementBase<T, isGarbageCollected>* requireSupplement(const char* key)
     {
         ASSERT(m_threadId == currentThread());
-        return m_supplements.get(key);
+        return this->m_supplements.get(key);
     }
 
     void reattachThread()
     {
-#if !ASSERT_DISABLED
+#if ASSERT_ENABLED
         m_threadId = currentThread();
 #endif
     }
 
-#if !ASSERT_DISABLED
+    virtual void trace(Visitor* visitor) { visitor->trace(m_supplements); }
+
+    void willBeDestroyed()
+    {
+        typedef typename SupplementableTraits<T, isGarbageCollected>::SupplementMap::iterator SupplementIterator;
+        for (SupplementIterator it = m_supplements.begin(); it != m_supplements.end(); ++it)
+            it->value->willBeDestroyed();
+    }
+
+    // FIXME: Oilpan: Make private and remove this ignore once PersistentHeapSupplementable is removed again.
 protected:
-    Supplementable() : m_threadId(currentThread()) { }
-#endif
+    GC_PLUGIN_IGNORE("")
+    typename SupplementableTraits<T, isGarbageCollected>::SupplementMap m_supplements;
+
+#if ASSERT_ENABLED
+protected:
+    SupplementableBase() : m_threadId(currentThread()) { }
 
 private:
-    typedef HashMap<const char*, OwnPtr<Supplement<T> >, PtrHash<const char*> > SupplementMap;
-    SupplementMap m_supplements;
-#if !ASSERT_DISABLED
     ThreadIdentifier m_threadId;
 #endif
+};
+
+template<typename T>
+class HeapSupplement : public SupplementBase<T, true> { };
+
+// FIXME: Oilpan: Move GarbageCollectedMixin to SupplementableBase<T, true> once PersistentHeapSupplementable is removed again.
+template<typename T>
+class HeapSupplementable : public SupplementableBase<T, true>, public GarbageCollectedMixin { };
+
+template<typename T>
+class PersistentHeapSupplementable : public SupplementableBase<T, true> {
+public:
+    PersistentHeapSupplementable() : m_root(this) { }
+    virtual ~PersistentHeapSupplementable()
+    {
+        typedef typename SupplementableTraits<T, true>::SupplementMap::iterator SupplementIterator;
+        for (SupplementIterator it = this->m_supplements.begin(); it != this->m_supplements.end(); ++it)
+            it->value->persistentHostHasBeenDestroyed();
+    }
+private:
+    class TraceDelegate : PersistentBase<ThreadLocalPersistents<AnyThread>, TraceDelegate> {
+    public:
+        TraceDelegate(PersistentHeapSupplementable* owner) : m_owner(owner) { }
+        void trace(Visitor* visitor) { m_owner->trace(visitor); }
+    private:
+        PersistentHeapSupplementable* m_owner;
+    };
+
+    TraceDelegate m_root;
+};
+
+template<typename T>
+class Supplement : public SupplementBase<T, false> { };
+
+template<typename T>
+class Supplementable : public SupplementableBase<T, false> { };
+
+template<typename T>
+struct ThreadingTrait<WebCore::SupplementBase<T, true> > {
+    static const ThreadAffinity Affinity = ThreadingTrait<T>::Affinity;
+};
+
+template<typename T>
+struct ThreadingTrait<WebCore::SupplementableBase<T, true> > {
+    static const ThreadAffinity Affinity = ThreadingTrait<T>::Affinity;
 };
 
 } // namespace WebCore

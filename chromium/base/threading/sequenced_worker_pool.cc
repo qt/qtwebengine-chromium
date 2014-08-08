@@ -32,6 +32,8 @@
 
 #if defined(OS_MACOSX)
 #include "base/mac/scoped_nsautorelease_pool.h"
+#elif defined(OS_WIN)
+#include "base/win/scoped_com_initializer.h"
 #endif
 
 #if !defined(OS_NACL)
@@ -480,8 +482,7 @@ SequencedWorkerPool::Worker::Worker(
     const scoped_refptr<SequencedWorkerPool>& worker_pool,
     int thread_number,
     const std::string& prefix)
-    : SimpleThread(
-          prefix + StringPrintf("Worker%d", thread_number).c_str()),
+    : SimpleThread(prefix + StringPrintf("Worker%d", thread_number)),
       worker_pool_(worker_pool),
       running_shutdown_behavior_(CONTINUE_ON_SHUTDOWN) {
   Start();
@@ -491,6 +492,10 @@ SequencedWorkerPool::Worker::~Worker() {
 }
 
 void SequencedWorkerPool::Worker::Run() {
+#if defined(OS_WIN)
+  win::ScopedCOMInitializer com_initializer;
+#endif
+
   // Store a pointer to the running sequence in thread local storage for
   // static function access.
   g_lazy_tls_ptr.Get().Set(&running_sequence_);
@@ -593,7 +598,8 @@ bool SequencedWorkerPool::Inner::PostTask(
     // The trace_id is used for identifying the task in about:tracing.
     sequenced.trace_id = trace_id_++;
 
-    TRACE_EVENT_FLOW_BEGIN0("task", "SequencedWorkerPool::PostTask",
+    TRACE_EVENT_FLOW_BEGIN0(TRACE_DISABLED_BY_DEFAULT("toplevel.flow"),
+        "SequencedWorkerPool::PostTask",
         TRACE_ID_MANGLE(GetTaskTraceID(sequenced, static_cast<void*>(this))));
 
     sequenced.sequence_task_number = LockedGetNextSequenceTaskNumber();
@@ -726,9 +732,10 @@ void SequencedWorkerPool::Inner::ThreadLoop(Worker* this_worker) {
       GetWorkStatus status =
           GetWork(&task, &wait_time, &delete_these_outside_lock);
       if (status == GET_WORK_FOUND) {
-        TRACE_EVENT_FLOW_END0("task", "SequencedWorkerPool::PostTask",
+        TRACE_EVENT_FLOW_END0(TRACE_DISABLED_BY_DEFAULT("toplevel.flow"),
+            "SequencedWorkerPool::PostTask",
             TRACE_ID_MANGLE(GetTaskTraceID(task, static_cast<void*>(this))));
-        TRACE_EVENT2("task", "SequencedWorkerPool::ThreadLoop",
+        TRACE_EVENT2("toplevel", "SequencedWorkerPool::ThreadLoop",
                      "src_file", task.posted_from.file_name(),
                      "src_func", task.posted_from.function_name());
         int new_thread_id = WillRunWorkerTask(task);

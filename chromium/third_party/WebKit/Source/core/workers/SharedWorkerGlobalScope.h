@@ -31,19 +31,20 @@
 #ifndef SharedWorkerGlobalScope_h
 #define SharedWorkerGlobalScope_h
 
-#include "core/frame/ContentSecurityPolicy.h"
+#include "core/frame/csp/ContentSecurityPolicy.h"
 #include "core/workers/WorkerGlobalScope.h"
 #include "core/workers/WorkerThreadStartupData.h"
+#include "platform/heap/Handle.h"
 
 namespace WebCore {
 
     class MessageEvent;
     class SharedWorkerThread;
 
-    class SharedWorkerGlobalScope : public WorkerGlobalScope {
+    class SharedWorkerGlobalScope FINAL : public WorkerGlobalScope {
     public:
         typedef WorkerGlobalScope Base;
-        static PassRefPtr<SharedWorkerGlobalScope> create(const String& name, SharedWorkerThread*, PassOwnPtr<WorkerThreadStartupData>);
+        static PassRefPtrWillBeRawPtr<SharedWorkerGlobalScope> create(const String& name, SharedWorkerThread*, PassOwnPtrWillBeRawPtr<WorkerThreadStartupData>);
         virtual ~SharedWorkerGlobalScope();
 
         virtual bool isSharedWorkerGlobalScope() const OVERRIDE { return true; }
@@ -57,14 +58,16 @@ namespace WebCore {
 
         SharedWorkerThread* thread();
 
+        virtual void trace(Visitor*) OVERRIDE;
+
     private:
-        SharedWorkerGlobalScope(const String& name, const KURL&, const String& userAgent, SharedWorkerThread*, PassOwnPtr<WorkerClients>);
-        virtual void logExceptionToConsole(const String& errorMessage, const String& sourceURL, int lineNumber, int columnNumber, PassRefPtr<ScriptCallStack>) OVERRIDE;
+        SharedWorkerGlobalScope(const String& name, const KURL&, const String& userAgent, SharedWorkerThread*, PassOwnPtrWillBeRawPtr<WorkerClients>);
+        virtual void logExceptionToConsole(const String& errorMessage, const String& sourceURL, int lineNumber, int columnNumber, PassRefPtrWillBeRawPtr<ScriptCallStack>) OVERRIDE;
 
         String m_name;
     };
 
-    PassRefPtr<MessageEvent> createConnectEvent(PassRefPtr<MessagePort>);
+    PassRefPtrWillBeRawPtr<MessageEvent> createConnectEvent(PassRefPtrWillBeRawPtr<MessagePort>);
 
 } // namespace WebCore
 

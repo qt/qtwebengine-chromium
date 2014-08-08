@@ -32,7 +32,7 @@ const size_t kMaxAddressNameWordLength = 25;
 const size_t kMaxLocationNameDistance = 4;
 
 // Additional characters used as new line delimiters.
-const char16 kNewlineDelimiters[] = {
+const base::char16 kNewlineDelimiters[] = {
   '\n',
   ',',
   '*',
@@ -51,7 +51,8 @@ using namespace internal;
 bool FindAddress(const base::string16& text, base::string16* address) {
   size_t start, end;
   if (FindAddress(text.begin(), text.end(), &start, &end)) {
-    address->assign(text.substr(start, end));
+    size_t len = end >= start ? end - start : 0;
+    address->assign(text.substr(start, len));
     return true;
   }
   return false;

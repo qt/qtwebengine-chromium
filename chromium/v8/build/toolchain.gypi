@@ -70,6 +70,11 @@
     # it's handled in build/standalone.gypi.
     'want_separate_host_toolset%': 1,
 
+    # Toolset the d8 binary should be compiled for. Possible values are 'host'
+    # and 'target'. If you want to run v8 tests, it needs to be set to 'target'.
+    # The setting is ignored if want_separate_host_toolset is 0.
+    'v8_toolset_for_d8%': 'target',
+
     'host_os%': '<(OS)',
     'werror%': '-Werror',
     # For a shared library build, results in "libv8-<(soname_version).so".
@@ -92,20 +97,13 @@
             'conditions': [
               ['armcompiler=="yes"', {
                 'conditions': [
-                  [ 'armv7==1', {
+                  [ 'arm_version==7', {
                     'cflags': ['-march=armv7-a',],
                   }],
-                  [ 'armv7==1 or armv7=="default"', {
+                  [ 'arm_version==7 or arm_version=="default"', {
                     'conditions': [
-                      [ 'arm_neon==1', {
-                        'cflags': ['-mfpu=neon',],
-                      },
-                      {
-                        'conditions': [
-                          [ 'arm_fpu!="default"', {
-                            'cflags': ['-mfpu=<(arm_fpu)',],
-                          }],
-                        ],
+                      [ 'arm_fpu!="default"', {
+                        'cflags': ['-mfpu=<(arm_fpu)',],
                       }],
                     ],
                   }],
@@ -127,7 +125,7 @@
               }, {
                 # armcompiler=="no"
                 'conditions': [
-                  [ 'armv7==1 or armv7=="default"', {
+                  [ 'arm_version==7 or arm_version=="default"', {
                     'defines': [
                       'CAN_USE_ARMV7_INSTRUCTIONS=1',
                     ],
@@ -148,10 +146,11 @@
                           'CAN_USE_VFP32DREGS',
                         ],
                       }],
-                      [ 'arm_fpu=="neon" or arm_neon==1', {
+                      [ 'arm_fpu=="neon"', {
                         'defines': [
                           'CAN_USE_VFP3_INSTRUCTIONS',
                           'CAN_USE_VFP32DREGS',
+                          'CAN_USE_NEON',
                         ],
                       }],
                     ],
@@ -180,20 +179,13 @@
             'conditions': [
               ['armcompiler=="yes"', {
                 'conditions': [
-                  [ 'armv7==1', {
+                  [ 'arm_version==7', {
                     'cflags': ['-march=armv7-a',],
                   }],
-                  [ 'armv7==1 or armv7=="default"', {
+                  [ 'arm_version==7 or arm_version=="default"', {
                     'conditions': [
-                      [ 'arm_neon==1', {
-                        'cflags': ['-mfpu=neon',],
-                      },
-                      {
-                        'conditions': [
-                          [ 'arm_fpu!="default"', {
-                            'cflags': ['-mfpu=<(arm_fpu)',],
-                          }],
-                        ],
+                      [ 'arm_fpu!="default"', {
+                        'cflags': ['-mfpu=<(arm_fpu)',],
                       }],
                     ],
                   }],
@@ -210,12 +202,32 @@
                     'defines': [
                       'ARM_TEST',
                     ],
+                    'conditions': [
+                      [ 'arm_fpu=="vfpv3-d16"', {
+                        'defines': [
+                          'CAN_USE_VFP3_INSTRUCTIONS',
+                        ],
+                      }],
+                      [ 'arm_fpu=="vfpv3"', {
+                        'defines': [
+                          'CAN_USE_VFP3_INSTRUCTIONS',
+                          'CAN_USE_VFP32DREGS',
+                        ],
+                      }],
+                      [ 'arm_fpu=="neon"', {
+                        'defines': [
+                          'CAN_USE_VFP3_INSTRUCTIONS',
+                          'CAN_USE_VFP32DREGS',
+                          'CAN_USE_NEON',
+                        ],
+                      }],
+                    ],
                   }],
                 ],
               }, {
                 # armcompiler=="no"
                 'conditions': [
-                  [ 'armv7==1 or armv7=="default"', {
+                  [ 'arm_version==7 or arm_version=="default"', {
                     'defines': [
                       'CAN_USE_ARMV7_INSTRUCTIONS=1',
                     ],
@@ -223,6 +235,8 @@
                       [ 'arm_fpu=="default"', {
                         'defines': [
                           'CAN_USE_VFP3_INSTRUCTIONS',
+                          'CAN_USE_VFP32DREGS',
+                          'CAN_USE_NEON',
                         ],
                       }],
                       [ 'arm_fpu=="vfpv3-d16"', {
@@ -236,10 +250,11 @@
                           'CAN_USE_VFP32DREGS',
                         ],
                       }],
-                      [ 'arm_fpu=="neon" or arm_neon==1', {
+                      [ 'arm_fpu=="neon"', {
                         'defines': [
                           'CAN_USE_VFP3_INSTRUCTIONS',
                           'CAN_USE_VFP32DREGS',
+                          'CAN_USE_NEON',
                         ],
                       }],
                     ],
@@ -263,11 +278,73 @@
           }],  # _toolset=="target"
         ],
       }],  # v8_target_arch=="arm"
+      ['v8_target_arch=="arm64"', {
+        'defines': [
+          'V8_TARGET_ARCH_ARM64',
+        ],
+      }],
       ['v8_target_arch=="ia32"', {
         'defines': [
           'V8_TARGET_ARCH_IA32',
         ],
       }],  # v8_target_arch=="ia32"
+      ['v8_target_arch=="x87"', {
+        'defines': [
+          'V8_TARGET_ARCH_X87',
+        ],
+        'cflags': ['-march=i586'],
+      }],  # v8_target_arch=="x87"
+      ['v8_target_arch=="mips"', {
+        'defines': [
+          'V8_TARGET_ARCH_MIPS',
+        ],
+        'variables': {
+          'mipscompiler': '<!($(echo <(CXX)) -v 2>&1 | grep -q "^Target: mips" && echo "yes" || echo "no")',
+        },
+        'conditions': [
+          ['mipscompiler=="yes"', {
+            'target_conditions': [
+              ['_toolset=="target"', {
+                'cflags': ['-EB'],
+                'ldflags': ['-EB'],
+                'conditions': [
+                  [ 'v8_use_mips_abi_hardfloat=="true"', {
+                    'cflags': ['-mhard-float'],
+                    'ldflags': ['-mhard-float'],
+                  }, {
+                    'cflags': ['-msoft-float'],
+                    'ldflags': ['-msoft-float'],
+                  }],
+                  ['mips_arch_variant=="mips32r2"', {
+                    'cflags': ['-mips32r2', '-Wa,-mips32r2'],
+                  }],
+                  ['mips_arch_variant=="mips32r1"', {
+                    'cflags': ['-mips32', '-Wa,-mips32'],
+                  }],
+                ],
+              }],
+            ],
+          }],
+          [ 'v8_can_use_fpu_instructions=="true"', {
+            'defines': [
+              'CAN_USE_FPU_INSTRUCTIONS',
+            ],
+          }],
+          [ 'v8_use_mips_abi_hardfloat=="true"', {
+            'defines': [
+              '__mips_hard_float=1',
+              'CAN_USE_FPU_INSTRUCTIONS',
+            ],
+          }, {
+            'defines': [
+              '__mips_soft_float=1'
+            ],
+          }],
+          ['mips_arch_variant=="mips32r2"', {
+            'defines': ['_MIPS_ARCH_MIPS32R2',],
+          }],
+        ],
+      }],  # v8_target_arch=="mips"
       ['v8_target_arch=="mipsel"', {
         'defines': [
           'V8_TARGET_ARCH_MIPS',
@@ -357,7 +434,7 @@
         },
       }],
       ['OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="solaris" \
-         or OS=="netbsd"', {
+         or OS=="netbsd" or OS=="qnx"', {
         'conditions': [
           [ 'v8_no_strict_aliasing==1', {
             'cflags': [ '-fno-strict-aliasing' ],
@@ -368,9 +445,9 @@
         'defines': [ '__C99FEATURES__=1' ],  # isinf() etc.
       }],
       ['(OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="solaris" \
-         or OS=="netbsd" or OS=="mac" or OS=="android") and \
-        (v8_target_arch=="arm" or v8_target_arch=="ia32" or \
-         v8_target_arch=="mipsel")', {
+         or OS=="netbsd" or OS=="mac" or OS=="android" or OS=="qnx") and \
+        (v8_target_arch=="arm" or v8_target_arch=="ia32" or v8_target_arch=="x87" or\
+         v8_target_arch=="mips" or v8_target_arch=="mipsel")', {
         # Check whether the host compiler and target compiler support the
         # '-m32' option and set it if so.
         'target_conditions': [
@@ -390,7 +467,7 @@
               'clang%': 0,
             },
             'conditions': [
-              ['(OS!="android" or clang==1) and \
+              ['((OS!="android" and OS!="qnx") or clang==1) and \
                 nacl_target_arch!="nacl_x64"', {
                 'cflags': [ '<(m32flag)' ],
                 'ldflags': [ '<(m32flag)' ],
@@ -402,7 +479,8 @@
           }],
         ],
       }],
-      ['(OS=="linux") and (v8_target_arch=="x64")', {
+      ['(OS=="linux" or OS=="android") and \
+        (v8_target_arch=="x64" or v8_target_arch=="arm64")', {
         # Check whether the host compiler and target compiler support the
         # '-m64' option and set it if so.
         'target_conditions': [
@@ -417,8 +495,12 @@
             'variables': {
               'm64flag': '<!(($(echo ${CXX_target:-<(CXX)}) -m64 -E - > /dev/null 2>&1 < /dev/null) && echo "-m64" || true)',
             },
-            'cflags': [ '<(m64flag)' ],
-            'ldflags': [ '<(m64flag)' ],
+            'conditions': [
+              ['((OS!="android" and OS!="qnx") or clang==1)', {
+                'cflags': [ '<(m64flag)' ],
+                'ldflags': [ '<(m64flag)' ],
+              }],
+            ],
           }]
         ],
       }],
@@ -430,7 +512,172 @@
       }],
     ],  # conditions
     'configurations': {
-      'Debug': {
+      # Abstract configuration for v8_optimized_debug == 0.
+      'DebugBase0': {
+        'abstract': 1,
+        'msvs_settings': {
+          'VCCLCompilerTool': {
+            'Optimization': '0',
+            'conditions': [
+              ['component=="shared_library"', {
+                'RuntimeLibrary': '3',  # /MDd
+              }, {
+                'RuntimeLibrary': '1',  # /MTd
+              }],
+            ],
+          },
+          'VCLinkerTool': {
+            'LinkIncremental': '2',
+          },
+        },
+        'conditions': [
+          ['OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="netbsd" or \
+            OS=="qnx"', {
+            'cflags!': [
+              '-O0',
+              '-O3',
+              '-O2',
+              '-O1',
+              '-Os',
+            ],
+            'cflags': [
+              '-fdata-sections',
+              '-ffunction-sections',
+            ],
+          }],
+          ['OS=="mac"', {
+            'xcode_settings': {
+               'GCC_OPTIMIZATION_LEVEL': '0',  # -O0
+            },
+          }],
+        ],
+      },  # DebugBase0
+      # Abstract configuration for v8_optimized_debug == 1.
+      'DebugBase1': {
+        'abstract': 1,
+        'msvs_settings': {
+          'VCCLCompilerTool': {
+            'Optimization': '1',
+            'InlineFunctionExpansion': '2',
+            'EnableIntrinsicFunctions': 'true',
+            'FavorSizeOrSpeed': '0',
+            'StringPooling': 'true',
+            'BasicRuntimeChecks': '0',
+            'conditions': [
+              ['component=="shared_library"', {
+                'RuntimeLibrary': '3',  # /MDd
+              }, {
+                'RuntimeLibrary': '1',  # /MTd
+              }],
+            ],
+          },
+          'VCLinkerTool': {
+            'LinkIncremental': '2',
+          },
+        },
+        'conditions': [
+          ['OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="netbsd" or \
+            OS=="qnx"', {
+            'cflags!': [
+              '-O0',
+              '-O3', # TODO(2807) should be -O1.
+              '-O2',
+              '-Os',
+            ],
+            'cflags': [
+              '-fdata-sections',
+              '-ffunction-sections',
+              '-O1', # TODO(2807) should be -O3.
+            ],
+            'conditions': [
+              ['gcc_version==44 and clang==0', {
+                'cflags': [
+                  # Avoid crashes with gcc 4.4 in the v8 test suite.
+                  '-fno-tree-vrp',
+                ],
+              }],
+            ],
+          }],
+          ['OS=="mac"', {
+            'xcode_settings': {
+               'GCC_OPTIMIZATION_LEVEL': '3',  # -O3
+               'GCC_STRICT_ALIASING': 'YES',
+            },
+          }],
+        ],
+      },  # DebugBase1
+      # Abstract configuration for v8_optimized_debug == 2.
+      'DebugBase2': {
+        'abstract': 1,
+        'msvs_settings': {
+          'VCCLCompilerTool': {
+            'Optimization': '2',
+            'InlineFunctionExpansion': '2',
+            'EnableIntrinsicFunctions': 'true',
+            'FavorSizeOrSpeed': '0',
+            'StringPooling': 'true',
+            'BasicRuntimeChecks': '0',
+            'conditions': [
+              ['component=="shared_library"', {
+                'RuntimeLibrary': '3',  #/MDd
+              }, {
+                'RuntimeLibrary': '1',  #/MTd
+              }],
+              ['v8_target_arch=="x64"', {
+                # TODO(2207): remove this option once the bug is fixed.
+                'WholeProgramOptimization': 'true',
+              }],
+            ],
+          },
+          'VCLinkerTool': {
+            'LinkIncremental': '1',
+            'OptimizeReferences': '2',
+            'EnableCOMDATFolding': '2',
+          },
+        },
+        'conditions': [
+          ['OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="netbsd" or \
+            OS=="qnx"', {
+            'cflags!': [
+              '-O0',
+              '-O1',
+              '-Os',
+            ],
+            'cflags': [
+              '-fdata-sections',
+              '-ffunction-sections',
+            ],
+            'defines': [
+              'OPTIMIZED_DEBUG'
+            ],
+            'conditions': [
+              # TODO(crbug.com/272548): Avoid -O3 in NaCl
+              ['nacl_target_arch=="none"', {
+                'cflags': ['-O3'],
+                'cflags!': ['-O2'],
+                }, {
+                'cflags': ['-O2'],
+                'cflags!': ['-O3'],
+              }],
+              ['gcc_version==44 and clang==0', {
+                'cflags': [
+                  # Avoid crashes with gcc 4.4 in the v8 test suite.
+                  '-fno-tree-vrp',
+                ],
+              }],
+            ],
+          }],
+          ['OS=="mac"', {
+            'xcode_settings': {
+              'GCC_OPTIMIZATION_LEVEL': '3',  # -O3
+              'GCC_STRICT_ALIASING': 'YES',
+            },
+          }],
+        ],
+      },  # DebugBase2
+      # Common settings for the Debug configuration.
+      'DebugBaseCommon': {
+        'abstract': 1,
         'defines': [
           'ENABLE_DISASSEMBLER',
           'V8_ENABLE_CHECKS',
@@ -438,134 +685,10 @@
           'VERIFY_HEAP',
           'DEBUG'
         ],
-        'msvs_settings': {
-          'VCCLCompilerTool': {
-            'conditions': [
-              ['v8_optimized_debug==0', {
-                'Optimization': '0',
-                'conditions': [
-                  ['component=="shared_library"', {
-                    'RuntimeLibrary': '3',  # /MDd
-                  }, {
-                    'RuntimeLibrary': '1',  # /MTd
-                  }],
-                ],
-              }],
-              ['v8_optimized_debug==1', {
-                'Optimization': '1',
-                'InlineFunctionExpansion': '2',
-                'EnableIntrinsicFunctions': 'true',
-                'FavorSizeOrSpeed': '0',
-                'StringPooling': 'true',
-                'BasicRuntimeChecks': '0',
-                'conditions': [
-                  ['component=="shared_library"', {
-                    'RuntimeLibrary': '3',  # /MDd
-                  }, {
-                    'RuntimeLibrary': '1',  # /MTd
-                  }],
-                ],
-              }],
-              ['v8_optimized_debug==2', {
-                'Optimization': '2',
-                'InlineFunctionExpansion': '2',
-                'EnableIntrinsicFunctions': 'true',
-                'FavorSizeOrSpeed': '0',
-                'StringPooling': 'true',
-                'BasicRuntimeChecks': '0',
-                'conditions': [
-                  ['component=="shared_library"', {
-                    'RuntimeLibrary': '3',  #/MDd
-                  }, {
-                    'RuntimeLibrary': '1',  #/MTd
-                  }],
-                  ['v8_target_arch=="x64"', {
-                    # TODO(2207): remove this option once the bug is fixed.
-                    'WholeProgramOptimization': 'true',
-                  }],
-                ],
-              }],
-            ],
-          },
-          'VCLinkerTool': {
-            'conditions': [
-              ['v8_optimized_debug==0', {
-                'LinkIncremental': '2',
-              }],
-              ['v8_optimized_debug==1', {
-                'LinkIncremental': '2',
-              }],
-              ['v8_optimized_debug==2', {
-                'LinkIncremental': '1',
-                'OptimizeReferences': '2',
-                'EnableCOMDATFolding': '2',
-              }],
-            ],
-          },
-        },
         'conditions': [
-          ['OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="netbsd"', {
-            'cflags': [ '-Wall', '<(werror)', '-W', '-Wno-unused-parameter',
-                        '-Wnon-virtual-dtor', '-Woverloaded-virtual',
-                        '<(wno_array_bounds)' ],
-            'conditions': [
-              ['v8_optimized_debug==0', {
-                'cflags!': [
-                  '-O0',
-                  '-O3',
-                  '-O2',
-                  '-O1',
-                  '-Os',
-                ],
-                'cflags': [
-                  '-fdata-sections',
-                  '-ffunction-sections',
-                ],
-              }],
-              ['v8_optimized_debug==1', {
-                'cflags!': [
-                  '-O0',
-                  '-O3', # TODO(2807) should be -O1.
-                  '-O2',
-                  '-Os',
-                ],
-                'cflags': [
-                  '-fdata-sections',
-                  '-ffunction-sections',
-                  '-O1', # TODO(2807) should be -O3.
-                ],
-              }],
-              ['v8_optimized_debug==2', {
-                'cflags!': [
-                  '-O0',
-                  '-O1',
-                  '-Os',
-                ],
-                'cflags': [
-                  '-fdata-sections',
-                  '-ffunction-sections',
-                ],
-                'defines': [
-                  'OPTIMIZED_DEBUG'
-                ],
-                'conditions': [
-                  # TODO(crbug.com/272548): Avoid -O3 in NaCl
-                  ['nacl_target_arch=="none"', {
-                    'cflags': ['-O3'],
-                    'cflags!': ['-O2'],
-                    }, {
-                    'cflags': ['-O2'],
-                    'cflags!': ['-O3'],
-                  }],
-                ],
-              }],
-              ['v8_optimized_debug!=0 and gcc_version==44 and clang==0', {
-                'cflags': [
-                  # Avoid crashes with gcc 4.4 in the v8 test suite.
-                  '-fno-tree-vrp',
-                ],
-              }],
-            ],
+          ['OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="netbsd" or \
+            OS=="qnx"', {
+            'cflags': [ '-Woverloaded-virtual', '<(wno_array_bounds)', ],
           }],
           ['OS=="linux" and v8_enable_backtrace==1', {
             # Support for backtrace_symbols.
@@ -585,17 +708,19 @@
               }],
             ],
           }],
-          ['OS=="mac"', {
-            'xcode_settings': {
-              'conditions': [
-                 ['v8_optimized_debug==0', {
-                   'GCC_OPTIMIZATION_LEVEL': '0',  # -O0
-                 }, {
-                   'GCC_OPTIMIZATION_LEVEL': '3',  # -O3
-                   'GCC_STRICT_ALIASING': 'YES',
-                 }],
-               ],
-            },
+        ],
+      },  # DebugBaseCommon
+      'Debug': {
+        'inherit_from': ['DebugBaseCommon'],
+        'conditions': [
+          ['v8_optimized_debug==0', {
+            'inherit_from': ['DebugBase0'],
+          }],
+          ['v8_optimized_debug==1', {
+            'inherit_from': ['DebugBase1'],
+          }],
+          ['v8_optimized_debug==2', {
+            'inherit_from': ['DebugBase2'],
           }],
         ],
       },  # Debug

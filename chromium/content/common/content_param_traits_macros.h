@@ -10,27 +10,30 @@
 
 #include "content/common/content_export.h"
 #include "ipc/ipc_message_macros.h"
+#include "third_party/WebKit/public/web/WebCompositionUnderline.h"
+#include "third_party/WebKit/public/web/WebContentSecurityPolicy.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
-#include "ui/events/latency_info.h"
+#include "third_party/WebKit/public/web/WebPageVisibilityState.h"
 #include "webkit/common/resource_type.h"
 
 #undef IPC_MESSAGE_EXPORT
 #define IPC_MESSAGE_EXPORT CONTENT_EXPORT
 
-IPC_ENUM_TRAITS(ResourceType::Type)
-IPC_ENUM_TRAITS(blink::WebInputEvent::Type)
-IPC_ENUM_TRAITS(ui::LatencyComponentType)
+IPC_ENUM_TRAITS_MAX_VALUE(ResourceType::Type, ResourceType::LAST_TYPE - 1)
+IPC_ENUM_TRAITS_MAX_VALUE(blink::WebContentSecurityPolicyType,
+                          blink::WebContentSecurityPolicyTypeLast)
+IPC_ENUM_TRAITS_MIN_MAX_VALUE(blink::WebInputEvent::Type,
+                              blink::WebInputEvent::TypeFirst,
+                              blink::WebInputEvent::TypeLast)
+IPC_ENUM_TRAITS_MAX_VALUE(blink::WebPageVisibilityState,
+                          blink::WebPageVisibilityStateLast)
 
-IPC_STRUCT_TRAITS_BEGIN(ui::LatencyInfo::LatencyComponent)
-  IPC_STRUCT_TRAITS_MEMBER(sequence_number)
-  IPC_STRUCT_TRAITS_MEMBER(event_time)
-  IPC_STRUCT_TRAITS_MEMBER(event_count)
-IPC_STRUCT_TRAITS_END()
-
-IPC_STRUCT_TRAITS_BEGIN(ui::LatencyInfo)
-  IPC_STRUCT_TRAITS_MEMBER(latency_components)
-  IPC_STRUCT_TRAITS_MEMBER(trace_id)
-  IPC_STRUCT_TRAITS_MEMBER(terminated)
+IPC_STRUCT_TRAITS_BEGIN(blink::WebCompositionUnderline)
+  IPC_STRUCT_TRAITS_MEMBER(startOffset)
+  IPC_STRUCT_TRAITS_MEMBER(endOffset)
+  IPC_STRUCT_TRAITS_MEMBER(color)
+  IPC_STRUCT_TRAITS_MEMBER(thick)
+  IPC_STRUCT_TRAITS_MEMBER(backgroundColor)
 IPC_STRUCT_TRAITS_END()
 
 #endif  // CONTENT_COMMON_CONTENT_PARAM_TRAITS_MACROS_H_

@@ -30,7 +30,6 @@
 
 #include "platform/audio/AudioBus.h"
 #include "platform/audio/AudioUtilities.h"
-#include "platform/audio/FFTFrame.h"
 #include "platform/audio/VectorMath.h"
 
 #include <algorithm>
@@ -65,13 +64,6 @@ RealtimeAnalyser::RealtimeAnalyser()
     , m_maxDecibels(DefaultMaxDecibels)
 {
     m_analysisFrame = adoptPtr(new FFTFrame(DefaultFFTSize));
-}
-
-void RealtimeAnalyser::reset()
-{
-    m_writeIndex = 0;
-    m_inputBuffer.zero();
-    m_magnitudeBuffer.zero();
 }
 
 bool RealtimeAnalyser::setFftSize(size_t size)
@@ -145,7 +137,7 @@ void applyWindow(float* p, size_t n)
 
     for (unsigned i = 0; i < n; ++i) {
         double x = static_cast<double>(i) / static_cast<double>(n);
-        double window = a0 - a1 * cos(2 * piDouble * x) + a2 * cos(4 * piDouble * x);
+        double window = a0 - a1 * cos(twoPiDouble * x) + a2 * cos(twoPiDouble * 2.0 * x);
         p[i] *= float(window);
     }
 }
@@ -185,7 +177,7 @@ void RealtimeAnalyser::doFFTAnalysis()
     imagP[0] = 0;
 
     // Normalize so than an input sine wave at 0dBfs registers as 0dBfs (undo FFT scaling factor).
-    const double magnitudeScale = 1.0 / DefaultFFTSize;
+    const double magnitudeScale = 1.0 / fftSize;
 
     // A value of 0 does no averaging with the previous result.  Larger values produce slower, but smoother changes.
     double k = m_smoothingTimeConstant;
@@ -260,6 +252,35 @@ void RealtimeAnalyser::getByteFrequencyData(Uint8Array* destinationArray)
                 scaledValue = UCHAR_MAX;
 
             destination[i] = static_cast<unsigned char>(scaledValue);
+        }
+    }
+}
+
+void RealtimeAnalyser::getFloatTimeDomainData(Float32Array* destinationArray)
+{
+    ASSERT(isMainThread());
+
+    if (!destinationArray)
+        return;
+
+    unsigned fftSize = this->fftSize();
+    size_t len = min(fftSize, destinationArray->length());
+    if (len > 0) {
+        bool isInputBufferGood = m_inputBuffer.size() == InputBufferSize && m_inputBuffer.size() > fftSize;
+        ASSERT(isInputBufferGood);
+        if (!isInputBufferGood)
+            return;
+
+        float* inputBuffer = m_inputBuffer.data();
+        float* destination = destinationArray->data();
+
+        unsigned writeIndex = m_writeIndex;
+
+        for (unsigned i = 0; i < len; ++i) {
+            // Buffer access is protected due to modulo operation.
+            float value = inputBuffer[(i + writeIndex - fftSize + InputBufferSize) % InputBufferSize];
+
+            destination[i] = value;
         }
     }
 }

@@ -17,8 +17,10 @@
 #include "content/public/browser/local_storage_usage_info.h"
 #include "content/public/browser/session_storage_namespace.h"
 #include "content/public/browser/session_storage_usage_info.h"
+#include "content/public/test/mock_special_storage_policy.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "webkit/browser/quota/mock_special_storage_policy.h"
+
+using base::ASCIIToUTF16;
 
 namespace content {
 
@@ -40,7 +42,7 @@ class DOMStorageContextImplTest : public testing::Test {
 
   virtual void SetUp() {
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
-    storage_policy_ = new quota::MockSpecialStoragePolicy;
+    storage_policy_ = new MockSpecialStoragePolicy;
     task_runner_ =
         new MockDOMStorageTaskRunner(base::MessageLoopProxy::current().get());
     context_ = new DOMStorageContextImpl(temp_dir_.path(),
@@ -67,7 +69,7 @@ class DOMStorageContextImplTest : public testing::Test {
  protected:
   base::MessageLoop message_loop_;
   base::ScopedTempDir temp_dir_;
-  scoped_refptr<quota::MockSpecialStoragePolicy> storage_policy_;
+  scoped_refptr<MockSpecialStoragePolicy> storage_policy_;
   scoped_refptr<MockDOMStorageTaskRunner> task_runner_;
   scoped_refptr<DOMStorageContextImpl> context_;
   DISALLOW_COPY_AND_ASSIGN(DOMStorageContextImplTest);
@@ -80,7 +82,6 @@ TEST_F(DOMStorageContextImplTest, Basics) {
   EXPECT_EQ(temp_dir_.path(), context_->localstorage_directory());
   EXPECT_EQ(base::FilePath(), context_->sessionstorage_directory());
   EXPECT_EQ(storage_policy_.get(), context_->special_storage_policy_.get());
-  context_->PurgeMemory();
   context_->DeleteLocalStorage(GURL("http://chromium.org/"));
   const int kFirstSessionStorageNamespaceId = 1;
   EXPECT_TRUE(context_->GetStorageNamespace(kLocalStorageNamespaceId));

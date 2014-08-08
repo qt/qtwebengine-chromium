@@ -6,7 +6,9 @@
 
 #include "base/command_line.h"
 #include "base/debug/trace_event.h"
+#include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/metrics/field_trial.h"
 #include "base/native_library.h"
 #include "base/path_service.h"
 #include "talk/base/basictypes.h"
@@ -40,6 +42,17 @@ bool InitializeWebRtcModule() {
   webrtc::SetupEventTracer(&GetCategoryGroupEnabled, &AddTraceEvent);
   return true;
 }
+
+// Define webrtc:field_trial::FindFullName to provide webrtc with a field trial
+// implementation. When compiled as a static library this can be done directly
+// and without pointers to functions.
+namespace webrtc {
+namespace field_trial {
+std::string FindFullName(const std::string& trial_name) {
+  return base::FieldTrialList::FindFullName(trial_name);
+}
+}  // namespace field_trial
+}  // namespace webrtc
 
 #else  // !LIBPEERCONNECTION_LIB
 
@@ -80,10 +93,25 @@ bool InitializeWebRtcModule() {
   base::FilePath path(GetLibPeerConnectionPath());
   DVLOG(1) << "Loading WebRTC module: " << path.value();
 
-  std::string error;
-  static base::NativeLibrary lib =
-      base::LoadNativeLibrary(path, &error);
-  CHECK(lib) << error;
+  base::NativeLibraryLoadError error;
+  static base::NativeLibrary lib = base::LoadNativeLibrary(path, &error);
+#if defined(OS_WIN)
+  // We've been seeing problems on Windows with loading the DLL and we're
+  // not sure exactly why.  It could be that AV programs are quarantining the
+  // file or disallowing loading the DLL. To get a better picture of the errors
+  // we're checking these specific error codes.
+  if (error.code == ERROR_MOD_NOT_FOUND) {
+    // It's possible that we get this error due to failure to load other
+    // dependencies, so check first that libpeerconnection actually exists.
+    CHECK(base::PathExists(path));  // libpeerconnection itself is missing.
+    CHECK(lib);  // If we hit this, a dependency is missing.
+  } else if (error.code == ERROR_ACCESS_DENIED) {
+    CHECK(lib);  // AV blocking access?
+  }
+#endif
+
+  // Catch-all error handler for all other sorts of errors.
+  CHECK(lib) << error.ToString();
 
   InitializeModuleFunction initialize_module =
       reinterpret_cast<InitializeModuleFunction>(
@@ -101,6 +129,7 @@ bool InitializeWebRtcModule() {
 #if !defined(OS_MACOSX) && !defined(OS_ANDROID)
       &Allocate, &Dellocate,
 #endif
+      &base::FieldTrialList::FindFullName,
       logging::GetLogMessageHandler(),
       &GetCategoryGroupEnabled, &AddTraceEvent,
       &g_create_webrtc_media_engine, &g_destroy_webrtc_media_engine,

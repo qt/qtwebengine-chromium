@@ -31,19 +31,48 @@
 #ifndef WebSocketHandshakeRequest_h
 #define WebSocketHandshakeRequest_h
 
-#include "platform/network/HTTPRequest.h"
+#include "platform/PlatformExport.h"
+#include "platform/network/HTTPHeaderMap.h"
+#include "platform/weborigin/KURL.h"
+#include "wtf/PassRefPtr.h"
+#include "wtf/RefCounted.h"
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
-class PLATFORM_EXPORT WebSocketHandshakeRequest : public HTTPRequest {
+class HTTPHeaderMap;
+
+class PLATFORM_EXPORT WebSocketHandshakeRequest : public RefCounted<WebSocketHandshakeRequest> {
 public:
-    static PassRefPtr<WebSocketHandshakeRequest> create(const String& requestMethod, const KURL& url) { return adoptRef(new WebSocketHandshakeRequest(requestMethod, url)); }
+    static PassRefPtr<WebSocketHandshakeRequest> create(const KURL& url) { return adoptRef(new WebSocketHandshakeRequest(url)); }
     static PassRefPtr<WebSocketHandshakeRequest> create() { return adoptRef(new WebSocketHandshakeRequest); }
-    ~WebSocketHandshakeRequest();
+    static PassRefPtr<WebSocketHandshakeRequest> create(const WebSocketHandshakeRequest& request) { return adoptRef(new WebSocketHandshakeRequest(request)); }
+    virtual ~WebSocketHandshakeRequest();
+
+    void addAndMergeHeader(const AtomicString& name, const AtomicString& value) { addAndMergeHeader(&m_headerFields, name, value); }
+
+    // Merges the existing value with |value| in |map| if |map| already has |name|.
+    // Associates |value| with |name| in |map| otherwise.
+    // This function builds data for inspector.
+    static void addAndMergeHeader(HTTPHeaderMap* /* map */, const AtomicString& name, const AtomicString& value);
+
+    void addHeaderField(const AtomicString& name, const AtomicString& value) { m_headerFields.add(name, value); }
+    void addHeaderField(const char* name, const char* value) { m_headerFields.add(name, value); }
+
+    KURL url() const { return m_url; }
+    void setURL(const KURL& url) { m_url = url; }
+    const HTTPHeaderMap& headerFields() const { return m_headerFields; }
+    const String& headersText() const { return m_headersText; }
+    void setHeadersText(const String& text) { m_headersText = text; }
 
 private:
-    WebSocketHandshakeRequest(const String& requestMethod, const KURL&);
+    WebSocketHandshakeRequest(const KURL&);
     WebSocketHandshakeRequest();
+    WebSocketHandshakeRequest(const WebSocketHandshakeRequest&);
+
+    KURL m_url;
+    HTTPHeaderMap m_headerFields;
+    String m_headersText;
 };
 
 } // namespace WebCore

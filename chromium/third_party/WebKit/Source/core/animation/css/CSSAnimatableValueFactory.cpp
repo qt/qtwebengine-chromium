@@ -31,7 +31,7 @@
 #include "config.h"
 #include "core/animation/css/CSSAnimatableValueFactory.h"
 
-#include "CSSValueKeywords.h"
+#include "core/CSSValueKeywords.h"
 #include "core/animation/AnimatableClipPathOperation.h"
 #include "core/animation/AnimatableColor.h"
 #include "core/animation/AnimatableDouble.h"
@@ -41,6 +41,7 @@
 #include "core/animation/AnimatableLengthBox.h"
 #include "core/animation/AnimatableLengthBoxAndBool.h"
 #include "core/animation/AnimatableLengthPoint.h"
+#include "core/animation/AnimatableLengthPoint3D.h"
 #include "core/animation/AnimatableLengthSize.h"
 #include "core/animation/AnimatableRepeatable.h"
 #include "core/animation/AnimatableSVGLength.h"
@@ -61,23 +62,13 @@
 
 namespace WebCore {
 
-static PassRefPtr<AnimatableValue> createFromLength(const Length& length, const RenderStyle& style)
+static PassRefPtrWillBeRawPtr<AnimatableValue> createFromLength(const Length& length, const RenderStyle& style)
 {
     switch (length.type()) {
     case Fixed:
-        return AnimatableLength::create(adjustFloatForAbsoluteZoom(length.value(), style), AnimatableLength::UnitTypePixels);
     case Percent:
-        return AnimatableLength::create(length.value(), AnimatableLength::UnitTypePercentage);
-    case ViewportPercentageWidth:
-        return AnimatableLength::create(length.value(), AnimatableLength::UnitTypeViewportWidth);
-    case ViewportPercentageHeight:
-        return AnimatableLength::create(length.value(), AnimatableLength::UnitTypeViewportHeight);
-    case ViewportPercentageMin:
-        return AnimatableLength::create(length.value(), AnimatableLength::UnitTypeViewportMin);
-    case ViewportPercentageMax:
-        return AnimatableLength::create(length.value(), AnimatableLength::UnitTypeViewportMax);
     case Calculated:
-        return AnimatableLength::create(CSSCalcValue::createExpressionNode(length.calculationValue()->expression(), style.effectiveZoom()));
+        return AnimatableLength::create(length, style.effectiveZoom());
     case Auto:
     case Intrinsic:
     case MinIntrinsic:
@@ -85,18 +76,20 @@ static PassRefPtr<AnimatableValue> createFromLength(const Length& length, const 
     case MaxContent:
     case FillAvailable:
     case FitContent:
-        return AnimatableUnknown::create(CSSPrimitiveValue::create(length));
+        return AnimatableUnknown::create(CSSPrimitiveValue::create(length, 1));
     case Undefined:
         return AnimatableUnknown::create(CSSValueNone);
     case ExtendToZoom: // Does not apply to elements.
+    case DeviceWidth:
+    case DeviceHeight:
         ASSERT_NOT_REACHED();
-        return 0;
+        return nullptr;
     }
     ASSERT_NOT_REACHED();
-    return 0;
+    return nullptr;
 }
 
-static PassRefPtr<AnimatableValue> createFromLineHeight(const Length& length, const RenderStyle& style)
+static PassRefPtrWillBeRawPtr<AnimatableValue> createFromLineHeight(const Length& length, const RenderStyle& style)
 {
     if (length.type() == Percent) {
         double value = length.value();
@@ -108,12 +101,12 @@ static PassRefPtr<AnimatableValue> createFromLineHeight(const Length& length, co
     return createFromLength(length, style);
 }
 
-inline static PassRefPtr<AnimatableValue> createFromDouble(double value, AnimatableDouble::Constraint constraint = AnimatableDouble::Unconstrained)
+inline static PassRefPtrWillBeRawPtr<AnimatableValue> createFromDouble(double value, AnimatableDouble::Constraint constraint = AnimatableDouble::Unconstrained)
 {
     return AnimatableDouble::create(value, constraint);
 }
 
-inline static PassRefPtr<AnimatableValue> createFromLengthBox(const LengthBox& lengthBox, const RenderStyle& style)
+inline static PassRefPtrWillBeRawPtr<AnimatableValue> createFromLengthBox(const LengthBox& lengthBox, const RenderStyle& style)
 {
     return AnimatableLengthBox::create(
         createFromLength(lengthBox.left(), style),
@@ -122,14 +115,14 @@ inline static PassRefPtr<AnimatableValue> createFromLengthBox(const LengthBox& l
         createFromLength(lengthBox.bottom(), style));
 }
 
-static PassRefPtr<AnimatableValue> createFromBorderImageLength(const BorderImageLength& borderImageLength, const RenderStyle& style)
+static PassRefPtrWillBeRawPtr<AnimatableValue> createFromBorderImageLength(const BorderImageLength& borderImageLength, const RenderStyle& style)
 {
     if (borderImageLength.isNumber())
         return createFromDouble(borderImageLength.number());
     return createFromLength(borderImageLength.length(), style);
 }
 
-inline static PassRefPtr<AnimatableValue> createFromBorderImageLengthBox(const BorderImageLengthBox& borderImageLengthBox, const RenderStyle& style)
+inline static PassRefPtrWillBeRawPtr<AnimatableValue> createFromBorderImageLengthBox(const BorderImageLengthBox& borderImageLengthBox, const RenderStyle& style)
 {
     return AnimatableLengthBox::create(
         createFromBorderImageLength(borderImageLengthBox.left(), style),
@@ -138,35 +131,37 @@ inline static PassRefPtr<AnimatableValue> createFromBorderImageLengthBox(const B
         createFromBorderImageLength(borderImageLengthBox.bottom(), style));
 }
 
-inline static PassRefPtr<AnimatableValue> createFromLengthBoxAndBool(const LengthBox lengthBox, const bool flag, const RenderStyle& style)
+inline static PassRefPtrWillBeRawPtr<AnimatableValue> createFromLengthBoxAndBool(const LengthBox lengthBox, const bool flag, const RenderStyle& style)
 {
     return AnimatableLengthBoxAndBool::create(
         createFromLengthBox(lengthBox, style),
         flag);
 }
 
-inline static PassRefPtr<AnimatableValue> createFromLengthPoint(const LengthPoint& lengthPoint, const RenderStyle& style)
+inline static PassRefPtrWillBeRawPtr<AnimatableValue> createFromLengthPoint(const LengthPoint& lengthPoint, const RenderStyle& style)
 {
     return AnimatableLengthPoint::create(
         createFromLength(lengthPoint.x(), style),
         createFromLength(lengthPoint.y(), style));
 }
 
-inline static PassRefPtr<AnimatableValue> createFromLengthSize(const LengthSize& lengthSize, const RenderStyle& style)
+inline static PassRefPtrWillBeRawPtr<AnimatableValue> createFromLengthSize(const LengthSize& lengthSize, const RenderStyle& style)
 {
     return AnimatableLengthSize::create(
         createFromLength(lengthSize.width(), style),
         createFromLength(lengthSize.height(), style));
 }
 
-inline static PassRefPtr<AnimatableValue> createFromStyleImage(StyleImage* image)
+inline static PassRefPtrWillBeRawPtr<AnimatableValue> createFromStyleImage(StyleImage* image)
 {
-    if (image)
-        return AnimatableImage::create(image);
+    if (image) {
+        if (RefPtrWillBeRawPtr<CSSValue> cssValue = image->cssValue())
+            return AnimatableImage::create(cssValue.release());
+    }
     return AnimatableUnknown::create(CSSValueNone);
 }
 
-inline static PassRefPtr<AnimatableValue> createFromFillSize(const FillSize& fillSize, const RenderStyle& style)
+inline static PassRefPtrWillBeRawPtr<AnimatableValue> createFromFillSize(const FillSize& fillSize, const RenderStyle& style)
 {
     switch (fillSize.type) {
     case SizeLength:
@@ -177,15 +172,22 @@ inline static PassRefPtr<AnimatableValue> createFromFillSize(const FillSize& fil
         return AnimatableUnknown::create(CSSPrimitiveValue::create(fillSize.type));
     default:
         ASSERT_NOT_REACHED();
-        return 0;
+        return nullptr;
     }
 }
 
+inline static PassRefPtrWillBeRawPtr<AnimatableValue> createFromBackgroundPosition(const Length& length, bool originIsSet, BackgroundEdgeOrigin origin, const RenderStyle& style)
+{
+    if (!originIsSet || origin == LeftEdge || origin == TopEdge)
+        return createFromLength(length, style);
+    return createFromLength(length.subtractFromOneHundredPercent(), style);
+}
+
 template<CSSPropertyID property>
-inline static PassRefPtr<AnimatableValue> createFromFillLayers(const FillLayer* fillLayer, const RenderStyle& style)
+inline static PassRefPtrWillBeRawPtr<AnimatableValue> createFromFillLayers(const FillLayer* fillLayer, const RenderStyle& style)
 {
     ASSERT(fillLayer);
-    Vector<RefPtr<AnimatableValue> > values;
+    WillBeHeapVector<RefPtrWillBeMember<AnimatableValue> > values;
     while (fillLayer) {
         if (property == CSSPropertyBackgroundImage || property == CSSPropertyWebkitMaskImage) {
             if (!fillLayer->isImageSet())
@@ -194,11 +196,11 @@ inline static PassRefPtr<AnimatableValue> createFromFillLayers(const FillLayer* 
         } else if (property == CSSPropertyBackgroundPositionX || property == CSSPropertyWebkitMaskPositionX) {
             if (!fillLayer->isXPositionSet())
                 break;
-            values.append(createFromLength(fillLayer->xPosition(), style));
+            values.append(createFromBackgroundPosition(fillLayer->xPosition(), fillLayer->isBackgroundXOriginSet(), fillLayer->backgroundXOrigin(), style));
         } else if (property == CSSPropertyBackgroundPositionY || property == CSSPropertyWebkitMaskPositionY) {
             if (!fillLayer->isYPositionSet())
                 break;
-            values.append(createFromLength(fillLayer->yPosition(), style));
+            values.append(createFromBackgroundPosition(fillLayer->yPosition(), fillLayer->isBackgroundYOriginSet(), fillLayer->backgroundYOrigin(), style));
         } else if (property == CSSPropertyBackgroundSize || property == CSSPropertyWebkitMaskSize) {
             if (!fillLayer->isSizeSet())
                 break;
@@ -211,42 +213,56 @@ inline static PassRefPtr<AnimatableValue> createFromFillLayers(const FillLayer* 
     return AnimatableRepeatable::create(values);
 }
 
-PassRefPtr<AnimatableValue> CSSAnimatableValueFactory::createFromColor(CSSPropertyID property, const RenderStyle& style)
+PassRefPtrWillBeRawPtr<AnimatableValue> CSSAnimatableValueFactory::createFromColor(CSSPropertyID property, const RenderStyle& style)
 {
     Color color = style.colorIncludingFallback(property, false);
     Color visitedLinkColor = style.colorIncludingFallback(property, true);
-    Color fallbackColor = style.color();
-    Color fallbackVisitedLinkColor = style.visitedLinkColor();
-    Color resolvedColor;
-
-    if (property == CSSPropertyBackgroundColor) {
-        // For background-color, invalid color means transparent and not currentColor.
-        fallbackColor = Color::transparent;
-        fallbackVisitedLinkColor = Color::transparent;
-    }
-
-    if (color.isValid())
-        resolvedColor = color;
-    else
-        resolvedColor = fallbackColor;
-    Color resolvedVisitedLinkColor;
-    if (visitedLinkColor.isValid())
-        resolvedVisitedLinkColor = visitedLinkColor;
-    else
-        resolvedVisitedLinkColor = fallbackVisitedLinkColor;
-    return AnimatableColor::create(resolvedColor, resolvedVisitedLinkColor);
+    return AnimatableColor::create(color, visitedLinkColor);
 }
 
-inline static PassRefPtr<AnimatableValue> createFromShapeValue(ShapeValue* value)
+inline static PassRefPtrWillBeRawPtr<AnimatableValue> createFromShapeValue(ShapeValue* value)
 {
     if (value)
         return AnimatableShapeValue::create(value);
-    return AnimatableUnknown::create(CSSValueAuto);
+    return AnimatableUnknown::create(CSSValueNone);
+}
+
+static double fontWeightToDouble(FontWeight fontWeight)
+{
+    switch (fontWeight) {
+    case FontWeight100:
+        return 100;
+    case FontWeight200:
+        return 200;
+    case FontWeight300:
+        return 300;
+    case FontWeight400:
+        return 400;
+    case FontWeight500:
+        return 500;
+    case FontWeight600:
+        return 600;
+    case FontWeight700:
+        return 700;
+    case FontWeight800:
+        return 800;
+    case FontWeight900:
+        return 900;
+    }
+
+    ASSERT_NOT_REACHED();
+    return 400;
+}
+
+static PassRefPtrWillBeRawPtr<AnimatableValue> createFromFontWeight(FontWeight fontWeight)
+{
+    return createFromDouble(fontWeightToDouble(fontWeight));
 }
 
 // FIXME: Generate this function.
-PassRefPtr<AnimatableValue> CSSAnimatableValueFactory::create(CSSPropertyID property, const RenderStyle& style)
+PassRefPtrWillBeRawPtr<AnimatableValue> CSSAnimatableValueFactory::create(CSSPropertyID property, const RenderStyle& style)
 {
+    ASSERT(CSSAnimations::isAnimatableProperty(property));
     switch (property) {
     case CSSPropertyBackgroundColor:
         return createFromColor(property, style);
@@ -307,7 +323,10 @@ PassRefPtr<AnimatableValue> CSSAnimatableValueFactory::create(CSSPropertyID prop
     case CSSPropertyFillOpacity:
         return createFromDouble(style.fillOpacity());
     case CSSPropertyFill:
-        return AnimatableSVGPaint::create(style.svgStyle()->fillPaintType(), style.svgStyle()->fillPaintColor(), style.svgStyle()->fillPaintUri());
+        return AnimatableSVGPaint::create(
+            style.svgStyle()->fillPaintType(), style.svgStyle()->visitedLinkFillPaintType(),
+            style.svgStyle()->fillPaintColor(), style.svgStyle()->visitedLinkFillPaintColor(),
+            style.svgStyle()->fillPaintUri(), style.svgStyle()->visitedLinkFillPaintUri());
     case CSSPropertyFlexGrow:
         return createFromDouble(style.flexGrow(), AnimatableDouble::InterpolationIsNonContinuousWithZero);
     case CSSPropertyFlexShrink:
@@ -324,10 +343,10 @@ PassRefPtr<AnimatableValue> CSSAnimatableValueFactory::create(CSSPropertyID prop
         // FIXME: Should we introduce an option to pass the computed font size here, allowing consumers to
         // enable text zoom rather than Text Autosizing? See http://crbug.com/227545.
         return createFromDouble(style.specifiedFontSize());
+    case CSSPropertyFontWeight:
+        return createFromFontWeight(style.fontWeight());
     case CSSPropertyHeight:
         return createFromLength(style.height(), style);
-    case CSSPropertyKerning:
-        return AnimatableSVGLength::create(style.kerning());
     case CSSPropertyLightingColor:
         return createFromColor(property, style);
     case CSSPropertyListStyleImage:
@@ -391,9 +410,12 @@ PassRefPtr<AnimatableValue> CSSAnimatableValueFactory::create(CSSPropertyID prop
     case CSSPropertyStrokeOpacity:
         return createFromDouble(style.strokeOpacity());
     case CSSPropertyStroke:
-        return AnimatableSVGPaint::create(style.svgStyle()->strokePaintType(), style.svgStyle()->strokePaintColor(), style.svgStyle()->strokePaintUri());
+        return AnimatableSVGPaint::create(
+            style.svgStyle()->strokePaintType(), style.svgStyle()->visitedLinkStrokePaintType(),
+            style.svgStyle()->strokePaintColor(), style.svgStyle()->visitedLinkStrokePaintColor(),
+            style.svgStyle()->strokePaintUri(), style.svgStyle()->visitedLinkStrokePaintUri());
     case CSSPropertyTextDecorationColor:
-        return createFromColor(property, style);
+        return AnimatableColor::create(style.textDecorationColor().resolve(style.color()), style.visitedLinkTextDecorationColor().resolve(style.visitedLinkColor()));
     case CSSPropertyTextIndent:
         return createFromLength(style.textIndent(), style);
     case CSSPropertyTextShadow:
@@ -436,14 +458,19 @@ PassRefPtr<AnimatableValue> CSSAnimatableValueFactory::create(CSSPropertyID prop
         return createFromFillLayers<CSSPropertyWebkitMaskPositionY>(style.maskLayers(), style);
     case CSSPropertyWebkitMaskSize:
         return createFromFillLayers<CSSPropertyWebkitMaskSize>(style.maskLayers(), style);
-    case CSSPropertyWebkitPerspective:
+    case CSSPropertyPerspective:
         return createFromDouble(style.perspective());
+    case CSSPropertyPerspectiveOrigin:
+        ASSERT(RuntimeEnabledFeatures::cssTransformsUnprefixedEnabled());
+        return AnimatableLengthPoint::create(
+            createFromLength(style.perspectiveOriginX(), style),
+            createFromLength(style.perspectiveOriginY(), style));
     case CSSPropertyWebkitPerspectiveOriginX:
+        ASSERT(!RuntimeEnabledFeatures::cssTransformsUnprefixedEnabled());
         return createFromLength(style.perspectiveOriginX(), style);
     case CSSPropertyWebkitPerspectiveOriginY:
+        ASSERT(!RuntimeEnabledFeatures::cssTransformsUnprefixedEnabled());
         return createFromLength(style.perspectiveOriginY(), style);
-    case CSSPropertyShapeInside:
-        return createFromShapeValue(style.shapeInside());
     case CSSPropertyShapeOutside:
         return createFromShapeValue(style.shapeOutside());
     case CSSPropertyShapeMargin:
@@ -452,13 +479,22 @@ PassRefPtr<AnimatableValue> CSSAnimatableValueFactory::create(CSSPropertyID prop
         return createFromDouble(style.shapeImageThreshold());
     case CSSPropertyWebkitTextStrokeColor:
         return createFromColor(property, style);
-    case CSSPropertyWebkitTransform:
+    case CSSPropertyTransform:
         return AnimatableTransform::create(style.transform());
+    case CSSPropertyTransformOrigin:
+        ASSERT(RuntimeEnabledFeatures::cssTransformsUnprefixedEnabled());
+        return AnimatableLengthPoint3D::create(
+            createFromLength(style.transformOriginX(), style),
+            createFromLength(style.transformOriginY(), style),
+            createFromDouble(style.transformOriginZ()));
     case CSSPropertyWebkitTransformOriginX:
+        ASSERT(!RuntimeEnabledFeatures::cssTransformsUnprefixedEnabled());
         return createFromLength(style.transformOriginX(), style);
     case CSSPropertyWebkitTransformOriginY:
+        ASSERT(!RuntimeEnabledFeatures::cssTransformsUnprefixedEnabled());
         return createFromLength(style.transformOriginY(), style);
     case CSSPropertyWebkitTransformOriginZ:
+        ASSERT(!RuntimeEnabledFeatures::cssTransformsUnprefixedEnabled());
         return createFromDouble(style.transformOriginZ());
     case CSSPropertyWidows:
         return createFromDouble(style.widows());
@@ -466,6 +502,10 @@ PassRefPtr<AnimatableValue> CSSAnimatableValueFactory::create(CSSPropertyID prop
         return createFromLength(style.width(), style);
     case CSSPropertyWordSpacing:
         return createFromDouble(style.wordSpacing());
+    case CSSPropertyVerticalAlign:
+        if (style.verticalAlign() == LENGTH)
+            return createFromLength(style.verticalAlignLength(), style);
+        return AnimatableUnknown::create(CSSPrimitiveValue::create(style.verticalAlign()));
     case CSSPropertyVisibility:
         return AnimatableVisibility::create(style.visibility());
     case CSSPropertyZIndex:
@@ -473,10 +513,9 @@ PassRefPtr<AnimatableValue> CSSAnimatableValueFactory::create(CSSPropertyID prop
     case CSSPropertyZoom:
         return createFromDouble(style.zoom());
     default:
-        ASSERT_WITH_MESSAGE(!CSSAnimations::isAnimatableProperty(property), "Web Animations not yet implemented: Create AnimatableValue from render style: %s", getPropertyNameString(property).utf8().data());
         ASSERT_NOT_REACHED();
         // This return value is to avoid a release crash if possible.
-        return AnimatableUnknown::create(0);
+        return AnimatableUnknown::create(nullptr);
     }
 }
 

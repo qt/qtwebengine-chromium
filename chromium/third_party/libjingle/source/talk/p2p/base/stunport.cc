@@ -173,7 +173,7 @@ bool UDPPort::Init() {
 
 UDPPort::~UDPPort() {
   if (resolver_) {
-    resolver_->Destroy(false);
+    resolver_->Destroy(true);
   }
   if (!SharedSocket())
     delete socket_;
@@ -192,7 +192,7 @@ void UDPPort::MaybePrepareStunCandidate() {
   if (!server_addr_.IsNil()) {
     SendStunBindingRequest();
   } else {
-    // Processing host candidate address.
+    // Port is done allocating candidates.
     SetResult(true);
   }
 }
@@ -218,9 +218,9 @@ Connection* UDPPort::CreateConnection(const Candidate& address,
 
 int UDPPort::SendTo(const void* data, size_t size,
                     const talk_base::SocketAddress& addr,
-                    talk_base::DiffServCodePoint dscp,
+                    const talk_base::PacketOptions& options,
                     bool payload) {
-  int sent = socket_->SendTo(data, size, addr, dscp);
+  int sent = socket_->SendTo(data, size, addr, options);
   if (sent < 0) {
     error_ = socket_->GetError();
     LOG_J(LS_ERROR, this) << "UDP send of " << size
@@ -230,12 +230,6 @@ int UDPPort::SendTo(const void* data, size_t size,
 }
 
 int UDPPort::SetOption(talk_base::Socket::Option opt, int value) {
-  // TODO(mallinath) - After we have the support on socket,
-  // remove this specialization.
-  if (opt == talk_base::Socket::OPT_DSCP) {
-    SetDefaultDscpValue(static_cast<talk_base::DiffServCodePoint>(value));
-    return 0;
-  }
   return socket_->SetOption(opt, value);
 }
 
@@ -249,7 +243,8 @@ int UDPPort::GetError() {
 
 void UDPPort::OnLocalAddressReady(talk_base::AsyncPacketSocket* socket,
                                   const talk_base::SocketAddress& address) {
-  AddAddress(address, address, UDP_PROTOCOL_NAME, LOCAL_PORT_TYPE,
+  AddAddress(address, address, talk_base::SocketAddress(),
+             UDP_PROTOCOL_NAME, LOCAL_PORT_TYPE,
              ICE_TYPE_PREFERENCE_HOST, false);
   MaybePrepareStunCandidate();
 }
@@ -330,11 +325,10 @@ void UDPPort::OnStunBindingRequestSucceeded(
   if (!SharedSocket() || stun_addr != socket_->GetLocalAddress()) {
     // If socket is shared and |stun_addr| is equal to local socket
     // address then discarding the stun address.
-    // Setting related address before STUN candidate is added. For STUN
-    // related address is local socket address.
-    set_related_address(socket_->GetLocalAddress());
-    AddAddress(stun_addr, socket_->GetLocalAddress(), UDP_PROTOCOL_NAME,
-               STUN_PORT_TYPE, ICE_TYPE_PREFERENCE_PRFLX, false);
+    // For STUN related address is local socket address.
+    AddAddress(stun_addr, socket_->GetLocalAddress(),
+               socket_->GetLocalAddress(), UDP_PROTOCOL_NAME,
+               STUN_PORT_TYPE, ICE_TYPE_PREFERENCE_SRFLX, false);
   }
   SetResult(true);
 }
@@ -360,7 +354,8 @@ void UDPPort::SetResult(bool success) {
 // TODO: merge this with SendTo above.
 void UDPPort::OnSendPacket(const void* data, size_t size, StunRequest* req) {
   StunBindingRequest* sreq = static_cast<StunBindingRequest*>(req);
-  if (socket_->SendTo(data, size, sreq->server_addr(), DefaultDscpValue()) < 0)
+  talk_base::PacketOptions options(DefaultDscpValue());
+  if (socket_->SendTo(data, size, sreq->server_addr(), options) < 0)
     PLOG(LERROR, socket_->GetError()) << "sendto";
 }
 

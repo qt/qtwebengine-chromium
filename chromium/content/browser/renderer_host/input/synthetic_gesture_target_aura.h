@@ -10,12 +10,15 @@
 #include "content/common/input/synthetic_gesture_params.h"
 
 namespace aura {
-class RootWindowHostDelegate;
+class Window;
+class WindowEventDispatcher;
+
+namespace client {
+class ScreenPositionClient;
 }
+}  // namespace aura
 
 namespace content {
-
-class InputEvent;
 
 // SyntheticGestureTarget implementation for aura
 class SyntheticGestureTargetAura : public SyntheticGestureTargetBase {
@@ -36,14 +39,13 @@ class SyntheticGestureTargetAura : public SyntheticGestureTargetBase {
   // SyntheticGestureTarget:
   virtual SyntheticGestureParams::GestureSourceType
       GetDefaultSyntheticGestureSourceType() const OVERRIDE;
-  virtual bool SupportsSyntheticGestureSourceType(
-      SyntheticGestureParams::GestureSourceType gesture_source_type) const
-      OVERRIDE;
 
-  virtual int GetTouchSlopInDips() const OVERRIDE;
+  virtual float GetTouchSlopInDips() const OVERRIDE;
+
+  virtual float GetMinScalingSpanInDips() const OVERRIDE;
 
  private:
-  aura::RootWindowHostDelegate* GetRootWindowHostDelegate() const;
+  aura::Window* GetWindow() const;
 
   DISALLOW_COPY_AND_ASSIGN(SyntheticGestureTargetAura);
 };

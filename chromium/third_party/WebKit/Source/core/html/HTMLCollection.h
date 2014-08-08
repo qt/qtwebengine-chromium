@@ -2,6 +2,7 @@
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
  * Copyright (C) 2003, 2004, 2005, 2006, 2007, 2008, 2011, 2012 Apple Inc. All rights reserved.
+ * Copyright (C) 2014 Samsung Electronics. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -23,7 +24,8 @@
 #ifndef HTMLCollection_h
 #define HTMLCollection_h
 
-#include "core/dom/LiveNodeList.h"
+#include "core/dom/LiveNodeListBase.h"
+#include "core/html/CollectionIndexCache.h"
 #include "core/html/CollectionType.h"
 #include "wtf/Forward.h"
 #include "wtf/HashMap.h"
@@ -31,64 +33,132 @@
 
 namespace WebCore {
 
-class HTMLCollection : public LiveNodeListBase {
+class HTMLCollection : public RefCountedWillBeGarbageCollectedFinalized<HTMLCollection>, public ScriptWrappable, public LiveNodeListBase {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(HTMLCollection);
 public:
-    static PassRefPtr<HTMLCollection> create(Node* base, CollectionType);
+    enum ItemAfterOverrideType {
+        OverridesItemAfter,
+        DoesNotOverrideItemAfter,
+    };
+
+    static PassRefPtrWillBeRawPtr<HTMLCollection> create(ContainerNode& base, CollectionType);
     virtual ~HTMLCollection();
+    virtual void invalidateCache(Document* oldDocument = 0) const OVERRIDE;
+    void invalidateCacheForAttribute(const QualifiedName*) const;
 
     // DOM API
-    virtual Node* namedItem(const AtomicString& name) const;
+    unsigned length() const { return m_collectionIndexCache.nodeCount(*this); }
+    Element* item(unsigned offset) const { return m_collectionIndexCache.nodeAt(*this, offset); }
+    virtual Element* namedItem(const AtomicString& name) const;
+    bool namedPropertyQuery(const AtomicString&, ExceptionState&);
+    void namedPropertyEnumerator(Vector<String>& names, ExceptionState&);
 
     // Non-DOM API
-    virtual bool hasNamedItem(const AtomicString& name) const;
-    void namedItems(const AtomicString& name, Vector<RefPtr<Node> >&) const;
-    bool isEmpty() const
-    {
-        if (isLengthCacheValid())
-            return !cachedLength();
-        if (isItemCacheValid())
-            return !cachedItem();
-        return !item(0);
-    }
-    bool hasExactlyOneItem() const
-    {
-        if (isLengthCacheValid())
-            return cachedLength() == 1;
-        if (isItemCacheValid())
-            return cachedItem() && !cachedItemOffset() && !item(1);
-        return item(0) && !item(1);
-    }
+    void namedItems(const AtomicString& name, WillBeHeapVector<RefPtrWillBeMember<Element> >&) const;
+    bool isEmpty() const { return m_collectionIndexCache.isEmpty(*this); }
+    bool hasExactlyOneItem() const { return m_collectionIndexCache.hasExactlyOneNode(*this); }
 
-    virtual Element* virtualItemAfter(unsigned& offsetInArray, Element*) const;
+    // CollectionIndexCache API.
+    bool canTraverseBackward() const { return !overridesItemAfter(); }
+    Element* traverseToFirstElement() const;
+    Element* traverseToLastElement() const;
+    Element* traverseForwardToOffset(unsigned offset, Element& currentElement, unsigned& currentOffset) const;
+    Element* traverseBackwardToOffset(unsigned offset, Element& currentElement, unsigned& currentOffset) const;
 
-    Element* traverseFirstElement(unsigned& offsetInArray, ContainerNode& root) const;
-    Element* traverseForwardToOffset(unsigned offset, Element& currentElement, unsigned& currentOffset, unsigned& offsetInArray, ContainerNode* root) const;
+    virtual void trace(Visitor*);
 
 protected:
-    HTMLCollection(Node* base, CollectionType, ItemAfterOverrideType);
+    HTMLCollection(ContainerNode& base, CollectionType, ItemAfterOverrideType);
 
-    virtual void updateNameCache() const;
+    class NamedItemCache FINAL : public NoBaseWillBeGarbageCollected<NamedItemCache> {
+    public:
+        static PassOwnPtrWillBeRawPtr<NamedItemCache> create()
+        {
+            return adoptPtrWillBeNoop(new NamedItemCache);
+        }
 
-    typedef HashMap<StringImpl*, OwnPtr<Vector<Element*> > > NodeCacheMap;
-    Vector<Element*>* idCache(const AtomicString& name) const { return m_idCache.get(name.impl()); }
-    Vector<Element*>* nameCache(const AtomicString& name) const { return m_nameCache.get(name.impl()); }
-    void appendIdCache(const AtomicString& name, Element* element) const { append(m_idCache, name, element); }
-    void appendNameCache(const AtomicString& name, Element* element) const { append(m_nameCache, name, element); }
+        WillBeHeapVector<RawPtrWillBeMember<Element> >* getElementsById(const AtomicString& id) const { return m_idCache.get(id.impl()); }
+        WillBeHeapVector<RawPtrWillBeMember<Element> >* getElementsByName(const AtomicString& name) const { return m_nameCache.get(name.impl()); }
+        void addElementWithId(const AtomicString& id, Element* element) { addElementToMap(m_idCache, id, element); }
+        void addElementWithName(const AtomicString& name, Element* element) { addElementToMap(m_nameCache, name, element); }
+
+        void trace(Visitor* visitor)
+        {
+            visitor->trace(m_idCache);
+            visitor->trace(m_nameCache);
+        }
+
+    private:
+        NamedItemCache();
+        typedef WillBeHeapHashMap<StringImpl*, OwnPtrWillBeMember<WillBeHeapVector<RawPtrWillBeMember<Element> > > > StringToElementsMap;
+        static void addElementToMap(StringToElementsMap& map, const AtomicString& key, Element* element)
+        {
+            OwnPtrWillBeMember<WillBeHeapVector<RawPtrWillBeMember<Element> > >& vector = map.add(key.impl(), nullptr).storedValue->value;
+            if (!vector)
+                vector = adoptPtrWillBeNoop(new WillBeHeapVector<RawPtrWillBeMember<Element> >);
+            vector->append(element);
+        }
+
+        StringToElementsMap m_idCache;
+        StringToElementsMap m_nameCache;
+    };
+
+    bool overridesItemAfter() const { return m_overridesItemAfter; }
+    virtual Element* virtualItemAfter(Element*) const;
+    bool shouldOnlyIncludeDirectChildren() const { return m_shouldOnlyIncludeDirectChildren; }
+    virtual void supportedPropertyNames(Vector<String>& names);
+
+    virtual void updateIdNameCache() const;
+    bool hasValidIdNameCache() const { return m_namedItemCache; }
+
+    void setNamedItemCache(PassOwnPtrWillBeRawPtr<NamedItemCache> cache) const
+    {
+        ASSERT(!m_namedItemCache);
+        document().registerNodeListWithIdNameCache(this);
+        m_namedItemCache = cache;
+    }
+
+    NamedItemCache& namedItemCache() const
+    {
+        ASSERT(m_namedItemCache);
+        return *m_namedItemCache;
+    }
 
 private:
-    bool checkForNameMatch(Element*, bool checkName, const AtomicString& name) const;
-    Element* traverseNextElement(unsigned& offsetInArray, Element& previous, ContainerNode* root) const;
+    void invalidateIdNameCacheMaps(Document* oldDocument = 0) const
+    {
+        if (!hasValidIdNameCache())
+            return;
 
-    virtual bool isLiveNodeList() const OVERRIDE { ASSERT_NOT_REACHED(); return true; }
+        // Make sure we decrement the NodeListWithIdNameCache count from
+        // the old document instead of the new one in the case the collection
+        // is moved to a new document.
+        unregisterIdNameCacheFromDocument(oldDocument ? *oldDocument : document());
 
-    static void append(NodeCacheMap&, const AtomicString&, Element*);
+        m_namedItemCache.clear();
+    }
 
-    mutable NodeCacheMap m_idCache;
-    mutable NodeCacheMap m_nameCache;
-    mutable unsigned m_cachedElementsArrayOffset;
+    void unregisterIdNameCacheFromDocument(Document& document) const
+    {
+        ASSERT(hasValidIdNameCache());
+        document.unregisterNodeListWithIdNameCache(this);
+    }
 
-    friend class LiveNodeListBase;
+    const unsigned m_overridesItemAfter : 1;
+    const unsigned m_shouldOnlyIncludeDirectChildren : 1;
+    mutable OwnPtrWillBeMember<NamedItemCache> m_namedItemCache;
+    mutable CollectionIndexCache<HTMLCollection, Element> m_collectionIndexCache;
 };
+
+DEFINE_TYPE_CASTS(HTMLCollection, LiveNodeListBase, collection, isHTMLCollectionType(collection->type()), isHTMLCollectionType(collection.type()));
+
+inline void HTMLCollection::invalidateCacheForAttribute(const QualifiedName* attrName) const
+{
+    if (!attrName || shouldInvalidateTypeOnAttributeChange(invalidationType(), *attrName))
+        invalidateCache();
+    else if (*attrName == HTMLNames::idAttr || *attrName == HTMLNames::nameAttr)
+        invalidateIdNameCacheMaps();
+}
 
 } // namespace
 

@@ -2030,15 +2030,15 @@ void RGBAToUVRow_Unaligned_SSSE3(const uint8* src_argb0, int src_stride_argb,
 }
 #endif  // HAS_ARGBTOYROW_SSSE3
 
-#define YG 74 /* static_cast<int8>(1.164 * 64 + 0.5) */
+#define YG 74 /* (int8)(1.164 * 64 + 0.5) */
 
-#define UB 127 /* min(63,static_cast<int8>(2.018 * 64)) */
-#define UG -25 /* static_cast<int8>(-0.391 * 64 - 0.5) */
+#define UB 127 /* min(63,(int8)(2.018 * 64)) */
+#define UG -25 /* (int8)(-0.391 * 64 - 0.5) */
 #define UR 0
 
 #define VB 0
-#define VG -52 /* static_cast<int8>(-0.813 * 64 - 0.5) */
-#define VR 102 /* static_cast<int8>(1.596 * 64 + 0.5) */
+#define VG -52 /* (int8)(-0.813 * 64 - 0.5) */
+#define VR 102 /* (int8)(1.596 * 64 + 0.5) */
 
 // Bias
 #define BB UB * 128 + VB * 128
@@ -7008,21 +7008,6 @@ void I422ToUYVYRow_SSE2(const uint8* src_y,
     ret
   }
 }
-
-#ifdef HAS_FIXEDDIV_X86
-// Divide num by div and return as 16.16 fixed point result.
-__declspec(naked) __declspec(align(16))
-int FixedDiv_X86(int num, int div) {
-  __asm {
-    mov        eax, [esp + 4]    // num
-    cdq                          // extend num to 64 bits
-    shld       edx, eax, 16      // 32.16
-    shl        eax, 16
-    idiv       dword ptr [esp + 8]
-    ret
-  }
-}
-#endif  // HAS_FIXEDDIV_X86
 
 #ifdef HAS_ARGBPOLYNOMIALROW_SSE2
 __declspec(naked) __declspec(align(16))

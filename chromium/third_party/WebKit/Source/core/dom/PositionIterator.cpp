@@ -26,7 +26,6 @@
 #include "config.h"
 #include "core/dom/PositionIterator.h"
 
-#include "HTMLNames.h"
 #include "core/editing/htmlediting.h"
 #include "core/html/HTMLHtmlElement.h"
 #include "core/rendering/RenderBlock.h"
@@ -42,9 +41,9 @@ PositionIterator::operator Position() const
         // FIXME: This check is inadaquete because any ancestor could be ignored by editing
         if (editingIgnoresContent(m_nodeAfterPositionInAnchor->parentNode()))
             return positionBeforeNode(m_anchorNode);
-        return positionInParentBeforeNode(m_nodeAfterPositionInAnchor);
+        return positionInParentBeforeNode(*m_nodeAfterPositionInAnchor);
     }
-    if (m_anchorNode->hasChildNodes())
+    if (m_anchorNode->hasChildren())
         return lastPositionInOrAfterNode(m_anchorNode);
     return createLegacyEditingPosition(m_anchorNode, m_offsetInAnchor);
 }
@@ -61,7 +60,7 @@ void PositionIterator::increment()
         return;
     }
 
-    if (!m_anchorNode->hasChildNodes() && m_offsetInAnchor < lastOffsetForEditing(m_anchorNode))
+    if (!m_anchorNode->hasChildren() && m_offsetInAnchor < lastOffsetForEditing(m_anchorNode))
         m_offsetInAnchor = Position::uncheckedNextOffset(m_anchorNode, m_offsetInAnchor);
     else {
         m_nodeAfterPositionInAnchor = m_anchorNode;
@@ -79,8 +78,8 @@ void PositionIterator::decrement()
     if (m_nodeAfterPositionInAnchor) {
         m_anchorNode = m_nodeAfterPositionInAnchor->previousSibling();
         if (m_anchorNode) {
-            m_nodeAfterPositionInAnchor = 0;
-            m_offsetInAnchor = m_anchorNode->hasChildNodes() ? 0 : lastOffsetForEditing(m_anchorNode);
+            m_nodeAfterPositionInAnchor = nullptr;
+            m_offsetInAnchor = m_anchorNode->hasChildren() ? 0 : lastOffsetForEditing(m_anchorNode);
         } else {
             m_nodeAfterPositionInAnchor = m_nodeAfterPositionInAnchor->parentNode();
             m_anchorNode = m_nodeAfterPositionInAnchor->parentNode();
@@ -89,9 +88,9 @@ void PositionIterator::decrement()
         return;
     }
 
-    if (m_anchorNode->hasChildNodes()) {
+    if (m_anchorNode->hasChildren()) {
         m_anchorNode = m_anchorNode->lastChild();
-        m_offsetInAnchor = m_anchorNode->hasChildNodes()? 0: lastOffsetForEditing(m_anchorNode);
+        m_offsetInAnchor = m_anchorNode->hasChildren()? 0: lastOffsetForEditing(m_anchorNode);
     } else {
         if (m_offsetInAnchor)
             m_offsetInAnchor = Position::uncheckedPreviousOffset(m_anchorNode, m_offsetInAnchor);
@@ -108,7 +107,7 @@ bool PositionIterator::atStart() const
         return true;
     if (m_anchorNode->parentNode())
         return false;
-    return (!m_anchorNode->hasChildNodes() && !m_offsetInAnchor) || (m_nodeAfterPositionInAnchor && !m_nodeAfterPositionInAnchor->previousSibling());
+    return (!m_anchorNode->hasChildren() && !m_offsetInAnchor) || (m_nodeAfterPositionInAnchor && !m_nodeAfterPositionInAnchor->previousSibling());
 }
 
 bool PositionIterator::atEnd() const
@@ -117,7 +116,7 @@ bool PositionIterator::atEnd() const
         return true;
     if (m_nodeAfterPositionInAnchor)
         return false;
-    return !m_anchorNode->parentNode() && (m_anchorNode->hasChildNodes() || m_offsetInAnchor >= lastOffsetForEditing(m_anchorNode));
+    return !m_anchorNode->parentNode() && (m_anchorNode->hasChildren() || m_offsetInAnchor >= lastOffsetForEditing(m_anchorNode));
 }
 
 bool PositionIterator::atStartOfNode() const
@@ -125,7 +124,7 @@ bool PositionIterator::atStartOfNode() const
     if (!m_anchorNode)
         return true;
     if (!m_nodeAfterPositionInAnchor)
-        return !m_anchorNode->hasChildNodes() && !m_offsetInAnchor;
+        return !m_anchorNode->hasChildren() && !m_offsetInAnchor;
     return !m_nodeAfterPositionInAnchor->previousSibling();
 }
 
@@ -135,7 +134,7 @@ bool PositionIterator::atEndOfNode() const
         return true;
     if (m_nodeAfterPositionInAnchor)
         return false;
-    return m_anchorNode->hasChildNodes() || m_offsetInAnchor >= lastOffsetForEditing(m_anchorNode);
+    return m_anchorNode->hasChildren() || m_offsetInAnchor >= lastOffsetForEditing(m_anchorNode);
 }
 
 bool PositionIterator::isCandidate() const
@@ -150,17 +149,33 @@ bool PositionIterator::isCandidate() const
     if (renderer->style()->visibility() != VISIBLE)
         return false;
 
-    if (renderer->isBR())
-        return !m_offsetInAnchor && !Position::nodeIsUserSelectNone(m_anchorNode->parentNode());
-
+    if (renderer->isBR()) {
+        // For br element, the condition
+        // |(!m_anchorNode->hasChildren() || m_nodeAfterPositionInAnchor)|
+        // corresponds to the condition
+        // |m_anchorType != PositionIsAfterAnchor| in Position.isCandaite.
+        // Both conditions say this position is not in tail of the element.
+        // If conditions lose consitency, VisiblePosition::canonicalPosition
+        // will fail on |canonicalizeCandidate(previousCandidate(position))|,
+        // because previousCandidate returns a Position converted from
+        // a "Candidate" PositionIterator and cannonicalizeCandidate(Position)
+        // assumes the Position is "Candidate".
+        return !m_offsetInAnchor && (!m_anchorNode->hasChildren() || m_nodeAfterPositionInAnchor) && !Position::nodeIsUserSelectNone(m_anchorNode->parentNode());
+    }
     if (renderer->isText())
         return !Position::nodeIsUserSelectNone(m_anchorNode) && Position(*this).inRenderedText();
 
-    if (isTableElement(m_anchorNode) || editingIgnoresContent(m_anchorNode))
+    if (renderer->isSVG()) {
+        // We don't consider SVG elements are contenteditable except for
+        // associated renderer returns isText() true, e.g. RenderSVGInlineText.
+        return false;
+    }
+
+    if (isRenderedTableElement(m_anchorNode) || editingIgnoresContent(m_anchorNode))
         return (atStartOfNode() || atEndOfNode()) && !Position::nodeIsUserSelectNone(m_anchorNode->parentNode());
 
-    if (!isHTMLHtmlElement(m_anchorNode) && renderer->isRenderBlockFlow()) {
-        if (toRenderBlock(renderer)->logicalHeight() || m_anchorNode->hasTagName(bodyTag)) {
+    if (!isHTMLHtmlElement(*m_anchorNode) && renderer->isRenderBlockFlow()) {
+        if (toRenderBlock(renderer)->logicalHeight() || isHTMLBodyElement(*m_anchorNode)) {
             if (!Position::hasRenderedNonAnonymousDescendantsWithHeight(renderer))
                 return atStartOfNode() && !Position::nodeIsUserSelectNone(m_anchorNode);
             return m_anchorNode->rendererIsEditable() && !Position::nodeIsUserSelectNone(m_anchorNode) && Position(*this).atEditingBoundary();

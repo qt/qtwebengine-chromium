@@ -33,6 +33,7 @@
 
 #include "core/dom/ClientRect.h"
 
+#include "platform/heap/Handle.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
@@ -42,28 +43,40 @@ namespace WebCore {
 
 class Node;
 
-class LayerRect : public RefCounted<LayerRect> {
+class LayerRect FINAL : public RefCountedWillBeGarbageCollectedFinalized<LayerRect> {
 public:
-    static PassRefPtr<LayerRect> create(PassRefPtr<Node> node, const String& layerType, PassRefPtr<ClientRect> rect)
+    static PassRefPtrWillBeRawPtr<LayerRect> create(PassRefPtrWillBeRawPtr<Node> node, const String& layerType, int nodeOffsetX, int nodeOffsetY, PassRefPtrWillBeRawPtr<ClientRect> rect)
     {
-        return adoptRef(new LayerRect(node, layerType, rect));
+        return adoptRefWillBeNoop(new LayerRect(node, layerType, nodeOffsetX, nodeOffsetY, rect));
     }
 
-    Node* layerRootNode() const { return m_layerRootNode.get(); }
+    Node* layerAssociatedNode() const { return m_layerAssociatedNode.get(); }
     String layerType() const { return m_layerType; }
+    int associatedNodeOffsetX() const { return m_associatedNodeOffsetX; }
+    int associatedNodeOffsetY() const { return m_associatedNodeOffsetY; }
     ClientRect* layerRelativeRect() const { return m_rect.get(); }
 
+    void trace(Visitor* visitor)
+    {
+        visitor->trace(m_layerAssociatedNode);
+        visitor->trace(m_rect);
+    }
+
 private:
-    LayerRect(PassRefPtr<Node> node, const String& layerName, PassRefPtr<ClientRect> rect)
-        : m_layerRootNode(node)
+    LayerRect(PassRefPtrWillBeRawPtr<Node> node, const String& layerName, int nodeOffsetX, int nodeOffsetY, PassRefPtrWillBeRawPtr<ClientRect> rect)
+        : m_layerAssociatedNode(node)
         , m_layerType(layerName)
+        , m_associatedNodeOffsetX(nodeOffsetX)
+        , m_associatedNodeOffsetY(nodeOffsetY)
         , m_rect(rect)
     {
     }
 
-    RefPtr<Node> m_layerRootNode;
+    RefPtrWillBeMember<Node> m_layerAssociatedNode;
     String m_layerType;
-    RefPtr<ClientRect> m_rect;
+    int m_associatedNodeOffsetX;
+    int m_associatedNodeOffsetY;
+    RefPtrWillBeMember<ClientRect> m_rect;
 };
 
 } // namespace WebCore

@@ -29,12 +29,12 @@
       'includes': ['../../build/java_prebuilt.gypi'],
     },
     {
-      # This jar contains the Android support v4 library from the revision 18
+      # This jar contains the Android support v13 library from the revision 18
       # of the Android Support library.
-      'target_name': 'android_support_v4_javalib',
+      'target_name': 'android_support_v13_javalib',
       'type' : 'none',
       'variables': {
-        'jar_path': '<(android_sdk_root)/extras/android/support/v4/android-support-v4.jar',
+        'jar_path': '<(android_sdk_root)/extras/android/support/v13/android-support-v13.jar',
       },
       'includes': ['../../build/java_prebuilt.gypi'],
     },
@@ -92,10 +92,10 @@
         'R_package_relpath': ['android/support/v7/mediarouter'],
         'has_java_resources': 1,
         'res_v14_verify_only': 1,
-        'res_extra_dirs': ['<(android_sdk_root)/extras/android/support/v7/appcompat/res'],
       },
       'dependencies': [
         'android_support_v7_mediarouter_javalib_no_res',
+        'android_support_v7_appcompat_javalib',
       ],
       'includes': [ '../../build/java.gypi' ]
     },

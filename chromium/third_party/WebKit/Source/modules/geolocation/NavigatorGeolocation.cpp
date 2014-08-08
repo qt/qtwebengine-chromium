@@ -24,13 +24,13 @@
 #include "modules/geolocation/NavigatorGeolocation.h"
 
 #include "core/dom/Document.h"
-#include "core/frame/Frame.h"
+#include "core/frame/LocalFrame.h"
 #include "core/frame/Navigator.h"
 #include "modules/geolocation/Geolocation.h"
 
 namespace WebCore {
 
-NavigatorGeolocation::NavigatorGeolocation(Frame* frame)
+NavigatorGeolocation::NavigatorGeolocation(LocalFrame* frame)
     : DOMWindowProperty(frame)
 {
 }
@@ -44,19 +44,19 @@ const char* NavigatorGeolocation::supplementName()
     return "NavigatorGeolocation";
 }
 
-NavigatorGeolocation* NavigatorGeolocation::from(Navigator* navigator)
+NavigatorGeolocation& NavigatorGeolocation::from(Navigator& navigator)
 {
-    NavigatorGeolocation* supplement = static_cast<NavigatorGeolocation*>(Supplement<Navigator>::from(navigator, supplementName()));
+    NavigatorGeolocation* supplement = static_cast<NavigatorGeolocation*>(WillBeHeapSupplement<Navigator>::from(navigator, supplementName()));
     if (!supplement) {
-        supplement = new NavigatorGeolocation(navigator->frame());
-        provideTo(navigator, supplementName(), adoptPtr(supplement));
+        supplement = new NavigatorGeolocation(navigator.frame());
+        provideTo(navigator, supplementName(), adoptPtrWillBeNoop(supplement));
     }
-    return supplement;
+    return *supplement;
 }
 
-Geolocation* NavigatorGeolocation::geolocation(Navigator* navigator)
+Geolocation* NavigatorGeolocation::geolocation(Navigator& navigator)
 {
-    return NavigatorGeolocation::from(navigator)->geolocation();
+    return NavigatorGeolocation::from(navigator).geolocation();
 }
 
 Geolocation* NavigatorGeolocation::geolocation() const
@@ -64,6 +64,12 @@ Geolocation* NavigatorGeolocation::geolocation() const
     if (!m_geolocation && frame())
         m_geolocation = Geolocation::create(frame()->document());
     return m_geolocation.get();
+}
+
+void NavigatorGeolocation::trace(Visitor* visitor)
+{
+    visitor->trace(m_geolocation);
+    WillBeHeapSupplement<Navigator>::trace(visitor);
 }
 
 } // namespace WebCore

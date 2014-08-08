@@ -27,13 +27,16 @@ namespace WebCore {
 
 class Dictionary;
 class ExceptionState;
+class MediaDeviceInfoCallback;
 class Navigator;
 class NavigatorUserMediaErrorCallback;
 class NavigatorUserMediaSuccessCallback;
 
 class NavigatorMediaStream {
 public:
-    static void webkitGetUserMedia(Navigator*, const Dictionary&, PassOwnPtr<NavigatorUserMediaSuccessCallback>, PassOwnPtr<NavigatorUserMediaErrorCallback>, ExceptionState&);
+    static void webkitGetUserMedia(Navigator&, const Dictionary&, PassOwnPtr<NavigatorUserMediaSuccessCallback>, PassOwnPtr<NavigatorUserMediaErrorCallback>, ExceptionState&);
+
+    static void getMediaDevices(Navigator&, PassOwnPtr<MediaDeviceInfoCallback>, ExceptionState&);
 
 private:
     NavigatorMediaStream();

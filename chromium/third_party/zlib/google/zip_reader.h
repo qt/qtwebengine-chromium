@@ -1,17 +1,18 @@
 // Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-
 #ifndef THIRD_PARTY_ZLIB_GOOGLE_ZIP_READER_H_
 #define THIRD_PARTY_ZLIB_GOOGLE_ZIP_READER_H_
 
 #include <string>
 
 #include "base/basictypes.h"
+#include "base/callback.h"
 #include "base/file_util.h"
+#include "base/files/file.h"
 #include "base/files/file_path.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/platform_file.h"
+#include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
 
 #if defined(USE_SYSTEM_MINIZIP)
@@ -34,7 +35,7 @@ namespace zip {
 //     reader.AdvanceToNextEntry();
 //   }
 //
-// For simplicty, error checking is omitted in the example code above. The
+// For simplicity, error checking is omitted in the example code above. The
 // production code should check return values from all of these functions.
 //
 // This calls can also be used for random access of contents in a zip file
@@ -42,6 +43,14 @@ namespace zip {
 //
 class ZipReader {
  public:
+  // A callback that is called when the operation is successful.
+  typedef base::Closure SuccessCallback;
+  // A callback that is called when the operation fails.
+  typedef base::Closure FailureCallback;
+  // A callback that is called periodically during the operation with the number
+  // of bytes that have been processed so far.
+  typedef base::Callback<void(int64)> ProgressCallback;
+
   // This class represents information of an entry (file or directory) in
   // a zip file.
   class EntryInfo {
@@ -55,9 +64,19 @@ class ZipReader {
 
     // Returns the size of the original file (i.e. after uncompressed).
     // Returns 0 if the entry is a directory.
+    // Note: this value should not be trusted, because it is stored as metadata
+    // in the zip archive and can be different from the real uncompressed size.
     int64 original_size() const { return original_size_; }
 
-    // Returns the last modified time.
+    // Returns the last modified time. If the time stored in the zip file was
+    // not valid, the unix epoch will be returned.
+    //
+    // The time stored in the zip archive uses the MS-DOS date and time format.
+    // http://msdn.microsoft.com/en-us/library/ms724247(v=vs.85).aspx
+    // As such the following limitations apply:
+    // * only years from 1980 to 2107 can be represented.
+    // * the time stamp has a 2 second resolution.
+    // * there's no timezone information, so the time is interpreted as local.
     base::Time last_modified() const { return last_modified_; }
 
     // Returns true if the entry is a directory.
@@ -127,8 +146,21 @@ class ZipReader {
   // instead. Returns true on success. OpenCurrentEntryInZip() must be
   // called beforehand.
   //
-  // This function does not preserve the timestamp of the original entry.
+  // This function preserves the timestamp of the original entry. If that
+  // timestamp is not valid, the timestamp will be set to the current time.
   bool ExtractCurrentEntryToFilePath(const base::FilePath& output_file_path);
+
+  // Asynchronously extracts the current entry to the given output file path.
+  // If the current entry is a directory it just creates the directory
+  // synchronously instead.  OpenCurrentEntryInZip() must be called beforehand.
+  // success_callback will be called on success and failure_callback will be
+  // called on failure.  progress_callback will be called at least once.
+  // Callbacks will be posted to the current MessageLoop in-order.
+  void ExtractCurrentEntryToFilePathAsync(
+      const base::FilePath& output_file_path,
+      const SuccessCallback& success_callback,
+      const FailureCallback& failure_callback,
+      const ProgressCallback& progress_callback);
 
   // Extracts the current entry to the given output directory path using
   // ExtractCurrentEntryToFilePath(). Sub directories are created as needed
@@ -138,6 +170,9 @@ class ZipReader {
   //
   // Returns true on success. OpenCurrentEntryInZip() must be called
   // beforehand.
+  //
+  // This function preserves the timestamp of the original entry. If that
+  // timestamp is not valid, the timestamp will be set to the current time.
   bool ExtractCurrentEntryIntoDirectory(
       const base::FilePath& output_directory_path);
 
@@ -146,6 +181,21 @@ class ZipReader {
   // Does not close the file descriptor. Returns true on success.
   bool ExtractCurrentEntryToFd(int fd);
 #endif
+
+  // Extracts the current entry into memory. If the current entry is a directory
+  // the |output| parameter is set to the empty string. If the current entry is
+  // a file, the |output| parameter is filled with its contents. Returns true on
+  // success. OpenCurrentEntryInZip() must be called beforehand.
+  // Note: the |output| parameter can be filled with a big amount of data, avoid
+  // passing it around by value, but by reference or pointer.
+  // Note: the value returned by EntryInfo::original_size() cannot be
+  // trusted, so the real size of the uncompressed contents can be different.
+  // Use max_read_bytes to limit the ammount of memory used to carry the entry.
+  // If the real size of the uncompressed data is bigger than max_read_bytes
+  // then false is returned. |max_read_bytes| must be non-zero.
+  bool ExtractCurrentEntryToString(
+      size_t max_read_bytes,
+      std::string* output) const;
 
   // Returns the current entry info. Returns NULL if the current entry is
   // not yet opened. OpenCurrentEntryInZip() must be called beforehand.
@@ -164,10 +214,20 @@ class ZipReader {
   // Resets the internal state.
   void Reset();
 
+  // Extracts a chunk of the file to the target.  Will post a task for the next
+  // chunk and success/failure/progress callbacks as necessary.
+  void ExtractChunk(base::File target_file,
+                    const SuccessCallback& success_callback,
+                    const FailureCallback& failure_callback,
+                    const ProgressCallback& progress_callback,
+                    const int64 offset);
+
   unzFile zip_file_;
   int num_entries_;
   bool reached_end_;
   scoped_ptr<EntryInfo> current_entry_info_;
+
+  base::WeakPtrFactory<ZipReader> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(ZipReader);
 };

@@ -33,9 +33,15 @@
 #include "core/accessibility/AXTableCell.h"
 #include "core/accessibility/AXTableColumn.h"
 #include "core/accessibility/AXTableRow.h"
+#include "core/dom/ElementTraversal.h"
+#include "core/html/HTMLCollection.h"
 #include "core/html/HTMLTableCaptionElement.h"
 #include "core/html/HTMLTableCellElement.h"
+#include "core/html/HTMLTableColElement.h"
 #include "core/html/HTMLTableElement.h"
+#include "core/html/HTMLTableRowElement.h"
+#include "core/html/HTMLTableRowsCollection.h"
+#include "core/html/HTMLTableSectionElement.h"
 #include "core/rendering/RenderTableCell.h"
 
 namespace WebCore {
@@ -44,7 +50,7 @@ using namespace HTMLNames;
 
 AXTable::AXTable(RenderObject* renderer)
     : AXRenderObject(renderer)
-    , m_headerContainer(0)
+    , m_headerContainer(nullptr)
     , m_isAXTable(true)
 {
 }
@@ -84,9 +90,18 @@ bool AXTable::isAXTable() const
     return m_isAXTable;
 }
 
+static bool elementHasAriaRole(const Element* element)
+{
+    if (!element)
+        return false;
+
+    const AtomicString& ariaRole = element->fastGetAttribute(roleAttr);
+    return (!ariaRole.isNull() && !ariaRole.isEmpty());
+}
+
 bool AXTable::isDataTable() const
 {
-    if (!m_renderer)
+    if (!m_renderer || !node())
         return false;
 
     // Do not consider it a data table is it has an ARIA role.
@@ -106,11 +121,40 @@ bool AXTable::isDataTable() const
 
     RenderTable* table = toRenderTable(m_renderer);
     Node* tableNode = table->node();
-    if (!tableNode || !isHTMLTableElement(tableNode))
+    if (!isHTMLTableElement(tableNode))
         return false;
 
-    // if there is a caption element, summary, THEAD, or TFOOT section, it's most certainly a data table
+    // Do not consider it a data table if any of its descendants have an ARIA role.
     HTMLTableElement* tableElement = toHTMLTableElement(tableNode);
+    if (elementHasAriaRole(tableElement->tHead()))
+        return false;
+    if (elementHasAriaRole(tableElement->tFoot()))
+        return false;
+
+    RefPtrWillBeRawPtr<HTMLCollection> bodies = tableElement->tBodies();
+    for (unsigned bodyIndex = 0; bodyIndex < bodies->length(); ++bodyIndex) {
+        Element* bodyElement = bodies->item(bodyIndex);
+        if (elementHasAriaRole(bodyElement))
+            return false;
+    }
+
+    RefPtrWillBeRawPtr<HTMLTableRowsCollection> rows = tableElement->rows();
+    unsigned rowCount = rows->length();
+    for (unsigned rowIndex = 0; rowIndex < rowCount; ++rowIndex) {
+        Element* rowElement = rows->item(rowIndex);
+        if (elementHasAriaRole(rowElement))
+            return false;
+        if (rowElement->hasTagName(trTag)) {
+            HTMLTableRowElement* row = static_cast<HTMLTableRowElement*>(rowElement);
+            RefPtrWillBeRawPtr<HTMLCollection> cells = row->cells();
+            for (unsigned cellIndex = 0; cellIndex < cells->length(); ++cellIndex) {
+                if (elementHasAriaRole(cells->item(cellIndex)))
+                    return false;
+            }
+        }
+    }
+
+    // If there is a caption element, summary, THEAD, or TFOOT section, it's most certainly a data table
     if (!tableElement->summary().isEmpty() || tableElement->tHead() || tableElement->tFoot() || tableElement->caption())
         return true;
 
@@ -119,10 +163,8 @@ bool AXTable::isDataTable() const
         return true;
 
     // if there's a colgroup or col element, it's probably a data table.
-    for (Node* child = tableElement->firstChild(); child; child = child->nextSibling()) {
-        if (child->hasTagName(colTag) || child->hasTagName(colgroupTag))
-            return true;
-    }
+    if (Traversal<HTMLTableColElement>::firstChild(*tableElement))
+        return true;
 
     // go through the cell's and check for tell-tale signs of "data" table status
     // cells have borders, or use attributes like headers, abbr, scope or axis
@@ -191,10 +233,10 @@ bool AXTable::isDataTable() const
                 headersInFirstColumnCount++;
 
             // in this case, the developer explicitly assigned a "data" table attribute
-            if (cellNode->hasTagName(tdTag) || cellNode->hasTagName(thTag)) {
-                HTMLTableCellElement* cellElement = toHTMLTableCellElement(cellNode);
-                if (!cellElement->headers().isEmpty() || !cellElement->abbr().isEmpty()
-                    || !cellElement->axis().isEmpty() || !cellElement->scope().isEmpty())
+            if (isHTMLTableCellElement(*cellNode)) {
+                HTMLTableCellElement& cellElement = toHTMLTableCellElement(*cellNode);
+                if (!cellElement.headers().isEmpty() || !cellElement.abbr().isEmpty()
+                    || !cellElement.axis().isEmpty() || !cellElement.scope().isEmpty())
                     return true;
             }
 
@@ -314,7 +356,7 @@ void AXTable::clearChildren()
 
     if (m_headerContainer) {
         m_headerContainer->detachFromParent();
-        m_headerContainer = 0;
+        m_headerContainer = nullptr;
     }
 }
 
@@ -439,7 +481,7 @@ void AXTable::cells(AXObject::AccessibilityChildrenVector& cells)
     int numRows = m_rows.size();
     for (int row = 0; row < numRows; ++row) {
         AccessibilityChildrenVector rowChildren = m_rows[row]->children();
-        cells.append(rowChildren);
+        cells.appendVector(rowChildren);
     }
 }
 
@@ -455,17 +497,6 @@ unsigned AXTable::rowCount()
     updateChildrenIfNecessary();
 
     return m_rows.size();
-}
-
-int AXTable::tableLevel() const
-{
-    int level = 0;
-    for (AXObject* obj = static_cast<AXObject*>(const_cast<AXTable*>(this)); obj; obj = obj->parentObject()) {
-        if (obj->isAXTable())
-            ++level;
-    }
-
-    return level;
 }
 
 AXTableCell* AXTable::cellForColumnAndRow(unsigned column, unsigned row)
@@ -535,7 +566,7 @@ String AXTable::title() const
 
     // see if there is a caption
     Node* tableElement = m_renderer->node();
-    if (tableElement && isHTMLTableElement(tableElement)) {
+    if (isHTMLTableElement(tableElement)) {
         HTMLTableCaptionElement* caption = toHTMLTableElement(tableElement)->caption();
         if (caption)
             title = caption->innerText();

@@ -120,6 +120,8 @@ struct Codec {
     name = c.name;
     clockrate = c.clockrate;
     preference = c.preference;
+    params = c.params;
+    feedback_params = c.feedback_params;
     return *this;
   }
 
@@ -127,7 +129,9 @@ struct Codec {
     return this->id == c.id &&  // id is reserved in objective-c
         name == c.name &&
         clockrate == c.clockrate &&
-        preference == c.preference;
+        preference == c.preference &&
+        params == c.params &&
+        feedback_params == c.feedback_params;
   }
 
   bool operator!=(const Codec& c) const {
@@ -242,6 +246,22 @@ struct VideoCodec : public Codec {
   bool operator!=(const VideoCodec& c) const {
     return !(*this == c);
   }
+
+  static VideoCodec CreateRtxCodec(int rtx_payload_type,
+                                   int associated_payload_type);
+
+  enum CodecType {
+    CODEC_VIDEO,
+    CODEC_RED,
+    CODEC_ULPFEC,
+    CODEC_RTX,
+  };
+
+  CodecType GetCodecType() const;
+  // Validates a VideoCodec's payload type, dimensions and bitrates etc. If they
+  // don't make sense (such as max < min bitrate), and error is logged and
+  // ValidateCodecFormat returns false.
+  bool ValidateCodecFormat() const;
 };
 
 struct DataCodec : public Codec {

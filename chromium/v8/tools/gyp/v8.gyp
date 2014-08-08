@@ -27,6 +27,7 @@
 
 {
   'variables': {
+    'icu_use_data_file_flag%': 0,
     'v8_code': 1,
     'v8_random_seed%': 314159265,
   },
@@ -45,16 +46,13 @@
           # The dependency on v8_base should come from a transitive
           # dependency however the Android toolchain requires libv8_base.a
           # to appear before libv8_snapshot.a so it's listed explicitly.
-          'dependencies': ['v8_base.<(v8_target_arch)', 'v8_snapshot'],
+          'dependencies': ['v8_base', 'v8_snapshot'],
         },
         {
           # The dependency on v8_base should come from a transitive
           # dependency however the Android toolchain requires libv8_base.a
           # to appear before libv8_snapshot.a so it's listed explicitly.
-          'dependencies': [
-            'v8_base.<(v8_target_arch)',
-            'v8_nosnapshot.<(v8_target_arch)',
-          ],
+          'dependencies': ['v8_base', 'v8_nosnapshot'],
         }],
         ['component=="shared_library"', {
           'type': '<(component)',
@@ -62,6 +60,9 @@
             # Note: on non-Windows we still build this file so that gyp
             # has some sources to link into the component.
             '../../src/v8dll-main.cc',
+          ],
+          'include_dirs': [
+            '../..',
           ],
           'defines': [
             'V8_SHARED',
@@ -111,14 +112,14 @@
         ['want_separate_host_toolset==1', {
           'toolsets': ['host', 'target'],
           'dependencies': [
-            'mksnapshot.<(v8_target_arch)#host',
+            'mksnapshot#host',
             'js2c#host',
             'generate_trig_table#host',
           ],
         }, {
           'toolsets': ['target'],
           'dependencies': [
-            'mksnapshot.<(v8_target_arch)',
+            'mksnapshot',
             'js2c',
             'generate_trig_table',
           ],
@@ -137,10 +138,10 @@
         }],
       ],
       'dependencies': [
-        'v8_base.<(v8_target_arch)',
+        'v8_base',
       ],
       'include_dirs+': [
-        '../../src',
+        '../..',
       ],
       'sources': [
         '<(SHARED_INTERMEDIATE_DIR)/libraries.cc',
@@ -152,7 +153,7 @@
         {
           'action_name': 'run_mksnapshot',
           'inputs': [
-            '<(PRODUCT_DIR)/<(EXECUTABLE_PREFIX)mksnapshot.<(v8_target_arch)<(EXECUTABLE_SUFFIX)',
+            '<(PRODUCT_DIR)/<(EXECUTABLE_PREFIX)mksnapshot<(EXECUTABLE_SUFFIX)',
           ],
           'outputs': [
             '<(INTERMEDIATE_DIR)/snapshot.cc',
@@ -177,13 +178,13 @@
       ],
     },
     {
-      'target_name': 'v8_nosnapshot.<(v8_target_arch)',
+      'target_name': 'v8_nosnapshot',
       'type': 'static_library',
       'dependencies': [
-        'v8_base.<(v8_target_arch)',
+        'v8_base',
       ],
       'include_dirs+': [
-        '../../src',
+        '../..',
       ],
       'sources': [
         '<(SHARED_INTERMEDIATE_DIR)/libraries.cc',
@@ -234,13 +235,16 @@
       ]
     },
     {
-      'target_name': 'v8_base.<(v8_target_arch)',
+      'target_name': 'v8_base',
       'type': 'static_library',
+      'dependencies': [
+        'v8_libbase',
+      ],
       'variables': {
         'optimize': 'max',
       },
       'include_dirs+': [
-        '../../src',
+        '../..',
       ],
       'sources': [  ### gcmole(all) ###
         '../../src/accessors.cc',
@@ -253,16 +257,14 @@
         '../../src/allocation-tracker.h',
         '../../src/api.cc',
         '../../src/api.h',
-        '../../src/apiutils.h',
         '../../src/arguments.cc',
         '../../src/arguments.h',
         '../../src/assembler.cc',
         '../../src/assembler.h',
         '../../src/assert-scope.h',
+        '../../src/assert-scope.cc',
         '../../src/ast.cc',
         '../../src/ast.h',
-        '../../src/atomicops.h',
-        '../../src/atomicops_internals_x86_gcc.cc',
         '../../src/bignum-dtoa.cc',
         '../../src/bignum-dtoa.h',
         '../../src/bignum.cc',
@@ -309,12 +311,8 @@
         '../../src/dateparser-inl.h',
         '../../src/dateparser.cc',
         '../../src/dateparser.h',
-        '../../src/debug-agent.cc',
-        '../../src/debug-agent.h',
         '../../src/debug.cc',
         '../../src/debug.h',
-        '../../src/default-platform.cc',
-        '../../src/default-platform.h',
         '../../src/deoptimizer.cc',
         '../../src/deoptimizer.h',
         '../../src/disasm.h',
@@ -340,10 +338,16 @@
         '../../src/extensions/gc-extension.h',
         '../../src/extensions/statistics-extension.cc',
         '../../src/extensions/statistics-extension.h',
+        '../../src/extensions/trigger-failure-extension.cc',
+        '../../src/extensions/trigger-failure-extension.h',
         '../../src/factory.cc',
         '../../src/factory.h',
         '../../src/fast-dtoa.cc',
         '../../src/fast-dtoa.h',
+        '../../src/feedback-slots.h',
+        '../../src/field-index.cc',
+        '../../src/field-index.h',
+        '../../src/field-index-inl.h',
         '../../src/fixed-dtoa.cc',
         '../../src/fixed-dtoa.h',
         '../../src/flag-definitions.h',
@@ -407,8 +411,6 @@
         '../../src/hydrogen-mark-deoptimize.h',
         '../../src/hydrogen-mark-unreachable.cc',
         '../../src/hydrogen-mark-unreachable.h',
-        '../../src/hydrogen-minus-zero.cc',
-        '../../src/hydrogen-minus-zero.h',
         '../../src/hydrogen-osr.cc',
         '../../src/hydrogen-osr.h',
         '../../src/hydrogen-range-analysis.cc',
@@ -421,6 +423,10 @@
         '../../src/hydrogen-representation-changes.h',
         '../../src/hydrogen-sce.cc',
         '../../src/hydrogen-sce.h',
+        '../../src/hydrogen-store-elimination.cc',
+        '../../src/hydrogen-store-elimination.h',
+        '../../src/hydrogen-types.cc',
+        '../../src/hydrogen-types.h',
         '../../src/hydrogen-uint32-analysis.cc',
         '../../src/hydrogen-uint32-analysis.h',
         '../../src/i18n.cc',
@@ -443,7 +449,13 @@
         '../../src/jsregexp-inl.h',
         '../../src/jsregexp.cc',
         '../../src/jsregexp.h',
-        '../../src/lazy-instance.h',
+        # TODO(jochen): move libplatform/ files to their own target.
+        '../../src/libplatform/default-platform.cc',
+        '../../src/libplatform/default-platform.h',
+        '../../src/libplatform/task-queue.cc',
+        '../../src/libplatform/task-queue.h',
+        '../../src/libplatform/worker-thread.cc',
+        '../../src/libplatform/worker-thread.h',
         '../../src/list-inl.h',
         '../../src/list.h',
         '../../src/lithium-allocator-inl.h',
@@ -460,11 +472,14 @@
         '../../src/log-utils.h',
         '../../src/log.cc',
         '../../src/log.h',
+        '../../src/lookup.cc',
+        '../../src/lookup.h',
         '../../src/macro-assembler.h',
         '../../src/mark-compact.cc',
         '../../src/mark-compact.h',
         '../../src/messages.cc',
         '../../src/messages.h',
+        '../../src/msan.h',
         '../../src/natives.h',
         '../../src/objects-debug.cc',
         '../../src/objects-inl.h',
@@ -473,8 +488,6 @@
         '../../src/objects-visiting.h',
         '../../src/objects.cc',
         '../../src/objects.h',
-        '../../src/once.cc',
-        '../../src/once.h',
         '../../src/optimizing-compiler-thread.h',
         '../../src/optimizing-compiler-thread.cc',
         '../../src/parser.cc',
@@ -489,8 +502,6 @@
         '../../src/platform/mutex.h',
         '../../src/platform/semaphore.cc',
         '../../src/platform/semaphore.h',
-        '../../src/platform/socket.cc',
-        '../../src/platform/socket.h',
         '../../src/preparse-data-format.h',
         '../../src/preparse-data.cc',
         '../../src/preparse-data.h',
@@ -560,6 +571,7 @@
         '../../src/transitions.h',
         '../../src/type-info.cc',
         '../../src/type-info.h',
+        '../../src/types-inl.h',
         '../../src/types.cc',
         '../../src/types.h',
         '../../src/typing.cc',
@@ -576,21 +588,15 @@
         '../../src/utils.h',
         '../../src/utils/random-number-generator.cc',
         '../../src/utils/random-number-generator.h',
-        '../../src/v8-counters.cc',
-        '../../src/v8-counters.h',
         '../../src/v8.cc',
         '../../src/v8.h',
         '../../src/v8checks.h',
-        '../../src/v8conversions.cc',
-        '../../src/v8conversions.h',
-        '../../src/v8globals.h',
         '../../src/v8memory.h',
         '../../src/v8threads.cc',
         '../../src/v8threads.h',
-        '../../src/v8utils.cc',
-        '../../src/v8utils.h',
         '../../src/variables.cc',
         '../../src/variables.h',
+        '../../src/vector.h',
         '../../src/version.cc',
         '../../src/version.h',
         '../../src/vm-state-inl.h',
@@ -639,7 +645,52 @@
             '../../src/arm/stub-cache-arm.cc',
           ],
         }],
-        ['v8_target_arch=="ia32" or v8_target_arch=="mac" or OS=="mac"', {
+        ['v8_target_arch=="arm64"', {
+          'sources': [  ### gcmole(arch:arm64) ###
+            '../../src/arm64/assembler-arm64.cc',
+            '../../src/arm64/assembler-arm64.h',
+            '../../src/arm64/assembler-arm64-inl.h',
+            '../../src/arm64/builtins-arm64.cc',
+            '../../src/arm64/codegen-arm64.cc',
+            '../../src/arm64/codegen-arm64.h',
+            '../../src/arm64/code-stubs-arm64.cc',
+            '../../src/arm64/code-stubs-arm64.h',
+            '../../src/arm64/constants-arm64.h',
+            '../../src/arm64/cpu-arm64.cc',
+            '../../src/arm64/debug-arm64.cc',
+            '../../src/arm64/decoder-arm64.cc',
+            '../../src/arm64/decoder-arm64.h',
+            '../../src/arm64/decoder-arm64-inl.h',
+            '../../src/arm64/deoptimizer-arm64.cc',
+            '../../src/arm64/disasm-arm64.cc',
+            '../../src/arm64/disasm-arm64.h',
+            '../../src/arm64/frames-arm64.cc',
+            '../../src/arm64/frames-arm64.h',
+            '../../src/arm64/full-codegen-arm64.cc',
+            '../../src/arm64/ic-arm64.cc',
+            '../../src/arm64/instructions-arm64.cc',
+            '../../src/arm64/instructions-arm64.h',
+            '../../src/arm64/instrument-arm64.cc',
+            '../../src/arm64/instrument-arm64.h',
+            '../../src/arm64/lithium-arm64.cc',
+            '../../src/arm64/lithium-arm64.h',
+            '../../src/arm64/lithium-codegen-arm64.cc',
+            '../../src/arm64/lithium-codegen-arm64.h',
+            '../../src/arm64/lithium-gap-resolver-arm64.cc',
+            '../../src/arm64/lithium-gap-resolver-arm64.h',
+            '../../src/arm64/macro-assembler-arm64.cc',
+            '../../src/arm64/macro-assembler-arm64.h',
+            '../../src/arm64/macro-assembler-arm64-inl.h',
+            '../../src/arm64/regexp-macro-assembler-arm64.cc',
+            '../../src/arm64/regexp-macro-assembler-arm64.h',
+            '../../src/arm64/simulator-arm64.cc',
+            '../../src/arm64/simulator-arm64.h',
+            '../../src/arm64/stub-cache-arm64.cc',
+            '../../src/arm64/utils-arm64.cc',
+            '../../src/arm64/utils-arm64.h',
+          ],
+        }],
+        ['v8_target_arch=="ia32"', {
           'sources': [  ### gcmole(arch:ia32) ###
             '../../src/ia32/assembler-ia32-inl.h',
             '../../src/ia32/assembler-ia32.cc',
@@ -670,7 +721,38 @@
             '../../src/ia32/stub-cache-ia32.cc',
           ],
         }],
-        ['v8_target_arch=="mipsel"', {
+        ['v8_target_arch=="x87"', {
+          'sources': [  ### gcmole(arch:x87) ###
+            '../../src/x87/assembler-x87-inl.h',
+            '../../src/x87/assembler-x87.cc',
+            '../../src/x87/assembler-x87.h',
+            '../../src/x87/builtins-x87.cc',
+            '../../src/x87/code-stubs-x87.cc',
+            '../../src/x87/code-stubs-x87.h',
+            '../../src/x87/codegen-x87.cc',
+            '../../src/x87/codegen-x87.h',
+            '../../src/x87/cpu-x87.cc',
+            '../../src/x87/debug-x87.cc',
+            '../../src/x87/deoptimizer-x87.cc',
+            '../../src/x87/disasm-x87.cc',
+            '../../src/x87/frames-x87.cc',
+            '../../src/x87/frames-x87.h',
+            '../../src/x87/full-codegen-x87.cc',
+            '../../src/x87/ic-x87.cc',
+            '../../src/x87/lithium-codegen-x87.cc',
+            '../../src/x87/lithium-codegen-x87.h',
+            '../../src/x87/lithium-gap-resolver-x87.cc',
+            '../../src/x87/lithium-gap-resolver-x87.h',
+            '../../src/x87/lithium-x87.cc',
+            '../../src/x87/lithium-x87.h',
+            '../../src/x87/macro-assembler-x87.cc',
+            '../../src/x87/macro-assembler-x87.h',
+            '../../src/x87/regexp-macro-assembler-x87.cc',
+            '../../src/x87/regexp-macro-assembler-x87.h',
+            '../../src/x87/stub-cache-x87.cc',
+          ],
+        }],
+        ['v8_target_arch=="mips" or v8_target_arch=="mipsel"', {
           'sources': [  ### gcmole(arch:mipsel) ###
             '../../src/mips/assembler-mips.cc',
             '../../src/mips/assembler-mips.h',
@@ -704,7 +786,7 @@
             '../../src/mips/stub-cache-mips.cc',
           ],
         }],
-        ['v8_target_arch=="x64" or v8_target_arch=="mac" or OS=="mac"', {
+        ['v8_target_arch=="x64"', {
           'sources': [  ### gcmole(arch:x64) ###
             '../../src/x64/assembler-x64-inl.h',
             '../../src/x64/assembler-x64.cc',
@@ -804,6 +886,43 @@
             ],
           },
         ],
+        ['OS=="qnx"', {
+            'link_settings': {
+              'target_conditions': [
+                ['_toolset=="host" and host_os=="linux"', {
+                  'libraries': [
+                    '-lrt'
+                  ],
+                }],
+                ['_toolset=="target"', {
+                  'libraries': [
+                    '-lbacktrace'
+                  ],
+                }],
+              ],
+            },
+            'sources': [
+              '../../src/platform-posix.cc',
+            ],
+            'target_conditions': [
+              ['_toolset=="host" and host_os=="linux"', {
+                'sources': [
+                  '../../src/platform-linux.cc'
+                ],
+              }],
+              ['_toolset=="host" and host_os=="mac"', {
+                'sources': [
+                  '../../src/platform-macos.cc'
+                ],
+              }],
+              ['_toolset=="target"', {
+                'sources': [
+                  '../../src/platform-qnx.cc'
+                ],
+              }],
+            ],
+          },
+        ],
         ['OS=="freebsd"', {
             'link_settings': {
               'libraries': [
@@ -840,7 +959,7 @@
         ['OS=="solaris"', {
             'link_settings': {
               'libraries': [
-                '-lsocket -lnsl',
+                '-lnsl',
             ]},
             'sources': [
               '../../src/platform-solaris.cc',
@@ -923,10 +1042,60 @@
             '<(icu_gyp_path):icudata',
           ],
         }],
-        ['v8_use_default_platform==0', {
-          'sources!': [
-            '../../src/default-platform.cc',
-            '../../src/default-platform.h',
+        ['icu_use_data_file_flag==1', {
+          'defines': ['ICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_FILE'],
+        }, { # else icu_use_data_file_flag !=1
+          'conditions': [
+            ['OS=="win"', {
+              'defines': ['ICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_SHARED'],
+            }, {
+              'defines': ['ICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC'],
+            }],
+          ],
+        }],
+      ],
+    },
+    {
+      'target_name': 'v8_libbase',
+      'type': 'static_library',
+      'variables': {
+        'optimize': 'max',
+      },
+      'include_dirs+': [
+        '../..',
+      ],
+      'sources': [
+        '../../src/base/atomicops.h',
+        '../../src/base/atomicops_internals_arm64_gcc.h',
+        '../../src/base/atomicops_internals_arm_gcc.h',
+        '../../src/base/atomicops_internals_atomicword_compat.h',
+        '../../src/base/atomicops_internals_mac.h',
+        '../../src/base/atomicops_internals_mips_gcc.h',
+        '../../src/base/atomicops_internals_tsan.h',
+        '../../src/base/atomicops_internals_x86_gcc.cc',
+        '../../src/base/atomicops_internals_x86_gcc.h',
+        '../../src/base/atomicops_internals_x86_msvc.h',
+        '../../src/base/build_config.h',
+        '../../src/base/lazy-instance.h',
+        '../../src/base/macros.h',
+        '../../src/base/once.cc',
+        '../../src/base/once.h',
+        '../../src/base/safe_conversions.h',
+        '../../src/base/safe_conversions_impl.h',
+        '../../src/base/safe_math.h',
+        '../../src/base/safe_math_impl.h',
+        '../../src/base/win32-headers.h',
+      ],
+      'conditions': [
+        ['want_separate_host_toolset==1', {
+          'toolsets': ['host', 'target'],
+        }, {
+          'toolsets': ['target'],
+        }],
+        ['component=="shared_library"', {
+          'defines': [
+            'BUILDING_V8_SHARED',
+            'V8_SHARED',
           ],
         }],
       ],
@@ -970,6 +1139,9 @@
           '../../src/regexp.js',
           '../../src/arraybuffer.js',
           '../../src/typedarray.js',
+          '../../src/weak_collection.js',
+          '../../src/promise.js',
+          '../../src/object-observe.js',
           '../../src/macros.py',
         ],
         'experimental_library_files': [
@@ -977,8 +1149,7 @@
           '../../src/symbol.js',
           '../../src/proxy.js',
           '../../src/collection.js',
-          '../../src/object-observe.js',
-          '../../src/promise.js',
+          '../../src/collection-iterator.js',
           '../../src/generator.js',
           '../../src/array-iterator.js',
           '../../src/harmony-string.js',
@@ -1056,14 +1227,11 @@
         ]
     },
     {
-      'target_name': 'mksnapshot.<(v8_target_arch)',
+      'target_name': 'mksnapshot',
       'type': 'executable',
-      'dependencies': [
-        'v8_base.<(v8_target_arch)',
-        'v8_nosnapshot.<(v8_target_arch)',
-      ],
+      'dependencies': ['v8_base', 'v8_nosnapshot'],
       'include_dirs+': [
-        '../../src',
+        '../..',
       ],
       'sources': [
         '../../src/mksnapshot.cc',
@@ -1073,32 +1241,6 @@
           'toolsets': ['host'],
         }, {
           'toolsets': ['target'],
-        }],
-        ['v8_compress_startup_data=="bz2"', {
-          'libraries': [
-            '-lbz2',
-          ]
-        }],
-      ],
-    },
-    {
-      'target_name': 'v8_shell',
-      'type': 'executable',
-      'dependencies': [
-        'v8'
-      ],
-      'sources': [
-        '../../samples/shell.cc',
-      ],
-      'conditions': [
-        ['want_separate_host_toolset==1', {
-          'toolsets': ['host'],
-        }, {
-          'toolsets': ['target'],
-        }],
-        ['OS=="win"', {
-          # This could be gotten by not setting chromium_code, if that's OK.
-          'defines': ['_CRT_SECURE_NO_WARNINGS'],
         }],
         ['v8_compress_startup_data=="bz2"', {
           'libraries': [

@@ -34,11 +34,11 @@ namespace WebCore {
 class AudioContext;
 class ExceptionState;
 
-class DefaultAudioDestinationNode : public AudioDestinationNode {
+class DefaultAudioDestinationNode FINAL : public AudioDestinationNode {
 public:
-    static PassRefPtr<DefaultAudioDestinationNode> create(AudioContext* context)
+    static PassRefPtrWillBeRawPtr<DefaultAudioDestinationNode> create(AudioContext* context)
     {
-        return adoptRef(new DefaultAudioDestinationNode(context));
+        return adoptRefWillBeNoop(new DefaultAudioDestinationNode(context));
     }
 
     virtual ~DefaultAudioDestinationNode();
@@ -49,7 +49,6 @@ public:
     virtual void setChannelCount(unsigned long, ExceptionState&) OVERRIDE;
 
     // AudioDestinationNode
-    virtual void enableInput(const String& inputDeviceId) OVERRIDE;
     virtual void startRendering() OVERRIDE;
     virtual unsigned long maxChannelCount() const OVERRIDE;
 

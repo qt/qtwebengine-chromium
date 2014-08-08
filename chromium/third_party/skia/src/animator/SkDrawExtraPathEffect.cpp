@@ -1,4 +1,3 @@
-
 /*
  * Copyright 2006 The Android Open Source Project
  *
@@ -6,13 +5,12 @@
  * found in the LICENSE file.
  */
 
-
 #include "SkDrawExtraPathEffect.h"
 #include "SkDrawPath.h"
 #include "Sk1DPathEffect.h"
 #include "Sk2DPathEffect.h"
 #include "SkMemberInfo.h"
-#include "SkPaintParts.h"
+#include "SkPaintPart.h"
 #include "SkPathEffect.h"
 #include "SkCornerPathEffect.h"
 
@@ -112,7 +110,7 @@ protected:
             SkApply* apply = (SkApply*) fDraw->addPath;
             apply->refresh(*fMaker);
             apply->activate(*fMaker);
-            apply->interpolate(*fMaker, SkScalarMulRound(distance, 1000));
+            apply->interpolate(*fMaker, SkScalarRoundToInt(distance * 1000));
             drawPath = (SkDrawPath*) apply->getScope();
         }
         SkMatrix m;
@@ -125,7 +123,7 @@ protected:
                 SkApply* apply = (SkApply*) fDraw->addMatrix;
                 apply->refresh(*fMaker);
                 apply->activate(*fMaker);
-                apply->interpolate(*fMaker, SkScalarMulRound(distance, 1000));
+                apply->interpolate(*fMaker, SkScalarRoundToInt(distance * 1000));
                 matrix = (SkDrawMatrix*) apply->getScope();
             }
             if (matrix) {
@@ -371,7 +369,7 @@ bool SkDrawComposePathEffect::addChild(SkAnimateMaker& , SkDisplayable* child) {
 SkPathEffect* SkDrawComposePathEffect::getPathEffect() {
     SkPathEffect* e1 = effect1->getPathEffect();
     SkPathEffect* e2 = effect2->getPathEffect();
-    SkPathEffect* composite = new SkComposePathEffect(e1, e2);
+    SkPathEffect* composite = SkComposePathEffect::Create(e1, e2);
     e1->unref();
     e2->unref();
     return composite;
@@ -401,7 +399,7 @@ SkDrawCornerPathEffect::~SkDrawCornerPathEffect() {
 }
 
 SkPathEffect* SkDrawCornerPathEffect::getPathEffect() {
-    return new SkCornerPathEffect(radius);
+    return SkCornerPathEffect::Create(radius);
 }
 
 /////////

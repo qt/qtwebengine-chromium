@@ -24,7 +24,6 @@
 
 #include "core/rendering/svg/RenderSVGResource.h"
 #include "core/rendering/svg/RenderSVGText.h"
-#include "core/svg/SVGElementInstance.h"
 
 namespace WebCore {
 
@@ -34,10 +33,7 @@ inline SVGTextElement::SVGTextElement(Document& doc)
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<SVGTextElement> SVGTextElement::create(Document& document)
-{
-    return adoptRef(new SVGTextElement(document));
-}
+DEFINE_NODE_FACTORY(SVGTextElement)
 
 // We override SVGGraphics::animatedLocalTransform() so that the transform-origin
 // is not taken into account.
@@ -55,7 +51,7 @@ AffineTransform SVGTextElement::animatedLocalTransform() const
         // Flatten any 3D transform
         matrix = t.toAffineTransform();
     } else {
-        transformCurrentValue().concatenate(matrix);
+        transform()->currentValue()->concatenate(matrix);
     }
 
     const AffineTransform* transform = const_cast<SVGTextElement*>(this)->supplementalTransform();
@@ -67,20 +63,6 @@ AffineTransform SVGTextElement::animatedLocalTransform() const
 RenderObject* SVGTextElement::createRenderer(RenderStyle*)
 {
     return new RenderSVGText(this);
-}
-
-bool SVGTextElement::childShouldCreateRenderer(const Node& child) const
-{
-    if (child.isTextNode()
-        || child.hasTagName(SVGNames::aTag)
-#if ENABLE(SVG_FONTS)
-        || child.hasTagName(SVGNames::altGlyphTag)
-#endif
-        || child.hasTagName(SVGNames::textPathTag)
-        || child.hasTagName(SVGNames::tspanTag))
-        return true;
-
-    return false;
 }
 
 }

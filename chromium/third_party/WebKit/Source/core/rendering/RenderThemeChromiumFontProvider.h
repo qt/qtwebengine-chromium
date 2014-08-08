@@ -26,11 +26,7 @@
 #ifndef RenderThemeChromiumFontProvider_h
 #define RenderThemeChromiumFontProvider_h
 
-#include "CSSValueKeywords.h"
-
-namespace WTF {
-class String;
-}
+#include "core/CSSValueKeywords.h"
 
 namespace WebCore {
 
@@ -42,7 +38,7 @@ public:
     static void setDefaultFontSize(int);
 
 protected:
-    static const WTF::String& defaultGUIFont();
+    static const WTF::AtomicString& defaultGUIFont();
 
     static float s_defaultFontSize;
 };

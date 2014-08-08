@@ -51,13 +51,13 @@ ArrayBufferView::~ArrayBufferView()
 
 void ArrayBufferView::neuter()
 {
-    m_buffer = 0;
+    m_buffer = nullptr;
     m_byteOffset = 0;
 }
 
 const char* ArrayBufferView::typeName()
 {
-    switch (getType()) {
+    switch (type()) {
     case TypeInt8:
         return "Int8";
         break;

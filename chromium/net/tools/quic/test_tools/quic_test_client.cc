@@ -10,39 +10,49 @@
 #include "net/cert/cert_verify_result.h"
 #include "net/cert/x509_certificate.h"
 #include "net/quic/crypto/proof_verifier.h"
+#include "net/quic/quic_server_id.h"
 #include "net/quic/test_tools/quic_connection_peer.h"
+#include "net/quic/test_tools/quic_session_peer.h"
+#include "net/quic/test_tools/quic_test_utils.h"
+#include "net/quic/test_tools/reliable_quic_stream_peer.h"
 #include "net/tools/balsa/balsa_headers.h"
 #include "net/tools/quic/quic_epoll_connection_helper.h"
+#include "net/tools/quic/quic_packet_writer_wrapper.h"
 #include "net/tools/quic/quic_spdy_client_stream.h"
-#include "net/tools/quic/test_tools/http_message_test_utils.h"
+#include "net/tools/quic/test_tools/http_message.h"
+#include "net/tools/quic/test_tools/quic_client_peer.h"
 #include "url/gurl.h"
 
 using base::StringPiece;
+using net::QuicServerId;
 using net::test::QuicConnectionPeer;
-using net::test::QuicTestWriter;
+using net::test::QuicSessionPeer;
+using net::test::ReliableQuicStreamPeer;
 using std::string;
 using std::vector;
 
+namespace net {
+namespace tools {
+namespace test {
 namespace {
 
 // RecordingProofVerifier accepts any certificate chain and records the common
 // name of the leaf.
-class RecordingProofVerifier : public net::ProofVerifier {
+class RecordingProofVerifier : public ProofVerifier {
  public:
   // ProofVerifier interface.
-  virtual net::ProofVerifier::Status VerifyProof(
+  virtual QuicAsyncStatus VerifyProof(
       const string& hostname,
       const string& server_config,
       const vector<string>& certs,
       const string& signature,
+      const ProofVerifyContext* context,
       string* error_details,
-      scoped_ptr<net::ProofVerifyDetails>* details,
-      net::ProofVerifierCallback* callback) OVERRIDE {
-    delete callback;
-
+      scoped_ptr<ProofVerifyDetails>* details,
+      ProofVerifierCallback* callback) OVERRIDE {
     common_name_.clear();
     if (certs.empty()) {
-      return FAILURE;
+      return QUIC_FAILURE;
     }
 
     // Convert certs to X509Certificate.
@@ -53,11 +63,11 @@ class RecordingProofVerifier : public net::ProofVerifier {
     scoped_refptr<net::X509Certificate> cert =
         net::X509Certificate::CreateFromDERCertChain(cert_pieces);
     if (!cert.get()) {
-      return FAILURE;
+      return QUIC_FAILURE;
     }
 
     common_name_ = cert->subject().GetDisplayName();
-    return SUCCESS;
+    return QUIC_SUCCESS;
   }
 
   const string& common_name() const { return common_name_; }
@@ -67,10 +77,6 @@ class RecordingProofVerifier : public net::ProofVerifier {
 };
 
 }  // anonymous namespace
-
-namespace net {
-namespace tools {
-namespace test {
 
 BalsaHeaders* MungeHeaders(const BalsaHeaders* const_headers,
                            bool secure) {
@@ -94,99 +100,128 @@ BalsaHeaders* MungeHeaders(const BalsaHeaders* const_headers,
   return headers;
 }
 
-// A quic client which allows mocking out writes.
-class QuicEpollClient : public QuicClient {
- public:
-  typedef QuicClient Super;
+MockableQuicClient::MockableQuicClient(
+    IPEndPoint server_address,
+    const QuicServerId& server_id,
+    const QuicVersionVector& supported_versions,
+    EpollServer* epoll_server)
+    : QuicClient(server_address,
+                 server_id,
+                 supported_versions,
+                 false,
+                 epoll_server),
+      override_connection_id_(0),
+      test_writer_(NULL) {}
 
-  QuicEpollClient(IPEndPoint server_address,
-             const string& server_hostname,
-             const QuicVersionVector& supported_versions)
-      : Super(server_address, server_hostname, supported_versions, false),
-        override_guid_(0), test_writer_(NULL) {
+MockableQuicClient::MockableQuicClient(
+    IPEndPoint server_address,
+    const QuicServerId& server_id,
+    const QuicConfig& config,
+    const QuicVersionVector& supported_versions,
+    EpollServer* epoll_server)
+    : QuicClient(server_address,
+                 server_id,
+                 supported_versions,
+                 false,
+                 config,
+                 epoll_server),
+      override_connection_id_(0),
+      test_writer_(NULL) {}
+
+MockableQuicClient::~MockableQuicClient() {
+  if (connected()) {
+    Disconnect();
   }
-
-  QuicEpollClient(IPEndPoint server_address,
-             const string& server_hostname,
-             const QuicConfig& config,
-             const QuicVersionVector& supported_versions)
-      : Super(server_address, server_hostname, config, supported_versions),
-        override_guid_(0), test_writer_(NULL) {
-  }
-
-  virtual ~QuicEpollClient() {
-    if (connected()) {
-      Disconnect();
-    }
-  }
-
-  virtual QuicPacketWriter* CreateQuicPacketWriter() OVERRIDE {
-    QuicPacketWriter* writer = Super::CreateQuicPacketWriter();
-    if (!test_writer_) {
-      return writer;
-    }
-    test_writer_->set_writer(writer);
-    return test_writer_;
-  }
-
-  virtual QuicGuid GenerateGuid() OVERRIDE {
-    return override_guid_ ? override_guid_ : Super::GenerateGuid();
-  }
-
-  // Takes ownership of writer.
-  void UseWriter(QuicTestWriter* writer) { test_writer_ = writer; }
-
-  void UseGuid(QuicGuid guid) {
-    override_guid_ = guid;
-  }
-
- private:
-  QuicGuid override_guid_;  // GUID to use, if nonzero
-  QuicTestWriter* test_writer_;
-};
-
-QuicTestClient::QuicTestClient(IPEndPoint address, const string& hostname,
-                               const QuicVersionVector& supported_versions)
-    : client_(new QuicEpollClient(address, hostname, supported_versions)) {
-  Initialize(address, hostname, true);
 }
 
-QuicTestClient::QuicTestClient(IPEndPoint address,
-                               const string& hostname,
+QuicPacketWriter* MockableQuicClient::CreateQuicPacketWriter() {
+  QuicPacketWriter* writer = QuicClient::CreateQuicPacketWriter();
+  if (!test_writer_) {
+    return writer;
+  }
+  test_writer_->set_writer(writer);
+  return test_writer_;
+}
+
+QuicConnectionId MockableQuicClient::GenerateConnectionId() {
+  return override_connection_id_ ? override_connection_id_
+      : QuicClient::GenerateConnectionId();
+}
+
+// Takes ownership of writer.
+void MockableQuicClient::UseWriter(QuicPacketWriterWrapper* writer) {
+  CHECK(test_writer_ == NULL);
+  test_writer_ = writer;
+}
+
+void MockableQuicClient::UseConnectionId(QuicConnectionId connection_id) {
+  override_connection_id_ = connection_id;
+}
+
+QuicTestClient::QuicTestClient(IPEndPoint server_address,
+                               const string& server_hostname,
+                               const QuicVersionVector& supported_versions)
+    : client_(new MockableQuicClient(server_address,
+                                     QuicServerId(server_hostname,
+                                                  server_address.port(),
+                                                  false,
+                                                  PRIVACY_MODE_DISABLED),
+                                     supported_versions,
+                                     &epoll_server_)) {
+  Initialize(true);
+}
+
+QuicTestClient::QuicTestClient(IPEndPoint server_address,
+                               const string& server_hostname,
                                bool secure,
                                const QuicVersionVector& supported_versions)
-    : client_(new QuicEpollClient(address, hostname, supported_versions)) {
-  Initialize(address, hostname, secure);
+    : client_(new MockableQuicClient(server_address,
+                                     QuicServerId(server_hostname,
+                                                  server_address.port(),
+                                                  secure,
+                                                  PRIVACY_MODE_DISABLED),
+                                     supported_versions,
+                                     &epoll_server_)) {
+  Initialize(secure);
 }
 
-QuicTestClient::QuicTestClient(IPEndPoint address,
-                               const string& hostname,
-                               bool secure,
-                               const QuicConfig& config,
-                               const QuicVersionVector& supported_versions)
-    : client_(new QuicEpollClient(address, hostname, config,
-                                  supported_versions)) {
-  Initialize(address, hostname, secure);
+QuicTestClient::QuicTestClient(
+    IPEndPoint server_address,
+    const string& server_hostname,
+    bool secure,
+    const QuicConfig& config,
+    const QuicVersionVector& supported_versions)
+    : client_(
+          new MockableQuicClient(server_address,
+                                 QuicServerId(server_hostname,
+                                              server_address.port(),
+                                              secure,
+                                              PRIVACY_MODE_DISABLED),
+                                 config,
+                                 supported_versions,
+                                 &epoll_server_)) {
+  Initialize(secure);
 }
 
-void QuicTestClient::Initialize(IPEndPoint address,
-                                const string& hostname,
-                                bool secure) {
-  server_address_ = address;
-  priority_ = 3;
-  connect_attempted_ = false;
-  secure_ = secure;
-  auto_reconnect_ = false;
-  buffer_body_ = true;
-  proof_verifier_ = NULL;
-  ClearPerRequestState();
-  ExpectCertificates(secure_);
+QuicTestClient::QuicTestClient() {
 }
 
 QuicTestClient::~QuicTestClient() {
   if (stream_) {
     stream_->set_visitor(NULL);
   }
+}
+
+void QuicTestClient::Initialize(bool secure) {
+  priority_ = 3;
+  connect_attempted_ = false;
+  secure_ = secure;
+  auto_reconnect_ = false;
+  buffer_body_ = true;
+  fec_policy_ = FEC_PROTECT_OPTIONAL;
+  proof_verifier_ = NULL;
+  ClearPerRequestState();
+  ExpectCertificates(secure_);
 }
 
 void QuicTestClient::ExpectCertificates(bool on) {
@@ -199,8 +234,14 @@ void QuicTestClient::ExpectCertificates(bool on) {
   }
 }
 
+void QuicTestClient::SetUserAgentID(const string& user_agent_id) {
+  client_->SetUserAgentID(user_agent_id);
+}
+
 ssize_t QuicTestClient::SendRequest(const string& uri) {
-  HTTPMessage message(HttpConstants::HTTP_1_1, HttpConstants::GET, uri);
+  HTTPMessage message(HttpConstants::HTTP_1_1,
+                      HttpConstants::GET,
+                      uri);
   return SendMessage(message);
 }
 
@@ -211,7 +252,11 @@ ssize_t QuicTestClient::SendMessage(const HTTPMessage& message) {
   if (!connected()) {
     GURL url(message.headers()->request_uri().as_string());
     if (!url.host().empty()) {
-      client_->set_server_hostname(url.host());
+      client_->set_server_id(
+          QuicServerId(url.host(),
+                       url.EffectiveIntPort(),
+                       url.SchemeIs("https"),
+                       PRIVACY_MODE_DISABLED));
     }
   }
 
@@ -234,6 +279,34 @@ ssize_t QuicTestClient::SendData(string data, bool last_data) {
   GetOrCreateStream()->SendBody(data, last_data);
   WaitForWriteToFlush();
   return data.length();
+}
+
+bool QuicTestClient::response_complete() const {
+  return response_complete_;
+}
+
+int QuicTestClient::response_header_size() const {
+  return response_header_size_;
+}
+
+int64 QuicTestClient::response_body_size() const {
+  return response_body_size_;
+}
+
+bool QuicTestClient::buffer_body() const {
+  return buffer_body_;
+}
+
+void QuicTestClient::set_buffer_body(bool buffer_body) {
+  buffer_body_ = buffer_body;
+}
+
+bool QuicTestClient::ServerInLameDuckMode() const {
+  return false;
+}
+
+const string& QuicTestClient::response_body() {
+  return response_;
 }
 
 string QuicTestClient::SendCustomSynchronousRequest(
@@ -268,26 +341,39 @@ QuicSpdyClientStream* QuicTestClient::GetOrCreateStream() {
     }
     stream_->set_visitor(this);
     reinterpret_cast<QuicSpdyClientStream*>(stream_)->set_priority(priority_);
+    // Set FEC policy on stream.
+    ReliableQuicStreamPeer::SetFecPolicy(stream_, fec_policy_);
   }
 
   return stream_;
 }
+
+QuicErrorCode QuicTestClient::connection_error() {
+  return client()->session()->error();
+}
+
+MockableQuicClient* QuicTestClient::client() { return client_.get(); }
 
 const string& QuicTestClient::cert_common_name() const {
   return reinterpret_cast<RecordingProofVerifier*>(proof_verifier_)
       ->common_name();
 }
 
-bool QuicTestClient::connected() const {
-  return client_->connected();
+QuicTagValueMap QuicTestClient::GetServerConfig() const {
+  QuicCryptoClientConfig* config =
+      QuicClientPeer::GetCryptoConfig(client_.get());
+  QuicCryptoClientConfig::CachedState* state =
+      config->LookupOrCreate(client_->server_id());
+  const CryptoHandshakeMessage* handshake_msg = state->GetServerConfig();
+  if (handshake_msg != NULL) {
+    return handshake_msg->tag_value_map();
+  } else {
+    return QuicTagValueMap();
+  }
 }
 
-void QuicTestClient::WaitForResponse() {
-  if (stream_ == NULL) {
-    // The client has likely disconnected.
-    return;
-  }
-  client_->WaitForStreamToClose(stream_->id());
+bool QuicTestClient::connected() const {
+  return client_->connected();
 }
 
 void QuicTestClient::Connect() {
@@ -328,9 +414,9 @@ void QuicTestClient::ClearPerRequestState() {
 
 void QuicTestClient::WaitForResponseForMs(int timeout_ms) {
   int64 timeout_us = timeout_ms * base::Time::kMicrosecondsPerMillisecond;
-  int64 old_timeout_us = client()->epoll_server()->timeout_in_us();
+  int64 old_timeout_us = epoll_server()->timeout_in_us();
   if (timeout_us > 0) {
-    client()->epoll_server()->set_timeout_in_us(timeout_us);
+    epoll_server()->set_timeout_in_us(timeout_us);
   }
   const QuicClock* clock =
       QuicConnectionPeer::GetHelper(client()->session()->connection())->
@@ -343,15 +429,15 @@ void QuicTestClient::WaitForResponseForMs(int timeout_ms) {
     client_->WaitForEvents();
   }
   if (timeout_us > 0) {
-    client()->epoll_server()->set_timeout_in_us(old_timeout_us);
+    epoll_server()->set_timeout_in_us(old_timeout_us);
   }
 }
 
 void QuicTestClient::WaitForInitialResponseForMs(int timeout_ms) {
   int64 timeout_us = timeout_ms * base::Time::kMicrosecondsPerMillisecond;
-  int64 old_timeout_us = client()->epoll_server()->timeout_in_us();
+  int64 old_timeout_us = epoll_server()->timeout_in_us();
   if (timeout_us > 0) {
-    client()->epoll_server()->set_timeout_in_us(timeout_us);
+    epoll_server()->set_timeout_in_us(timeout_us);
   }
   const QuicClock* clock =
       QuicConnectionPeer::GetHelper(client()->session()->connection())->
@@ -365,7 +451,7 @@ void QuicTestClient::WaitForInitialResponseForMs(int timeout_ms) {
     client_->WaitForEvents();
   }
   if (timeout_us > 0) {
-    client()->epoll_server()->set_timeout_in_us(old_timeout_us);
+    epoll_server()->set_timeout_in_us(old_timeout_us);
   }
 }
 
@@ -389,7 +475,7 @@ const BalsaHeaders* QuicTestClient::response_headers() const {
   }
 }
 
-int QuicTestClient::response_size() const {
+int64 QuicTestClient::response_size() const {
   return bytes_read_;
 }
 
@@ -413,26 +499,69 @@ void QuicTestClient::OnClose(QuicDataStream* stream) {
   response_headers_complete_ = stream_->headers_decompressed();
   headers_.CopyFrom(stream_->headers());
   stream_error_ = stream_->stream_error();
-  bytes_read_ = stream_->stream_bytes_read();
-  bytes_written_ = stream_->stream_bytes_written();
+  bytes_read_ = stream_->stream_bytes_read() + stream_->header_bytes_read();
+  bytes_written_ =
+      stream_->stream_bytes_written() + stream_->header_bytes_written();
   response_header_size_ = headers_.GetSizeForWriteBuffer();
   response_body_size_ = stream_->data().size();
   stream_ = NULL;
 }
 
-void QuicTestClient::UseWriter(QuicTestWriter* writer) {
-  reinterpret_cast<QuicEpollClient*>(client_.get())->UseWriter(writer);
+void QuicTestClient::UseWriter(QuicPacketWriterWrapper* writer) {
+  client_->UseWriter(writer);
 }
 
-void QuicTestClient::UseGuid(QuicGuid guid) {
+void QuicTestClient::UseConnectionId(QuicConnectionId connection_id) {
   DCHECK(!connected());
-  reinterpret_cast<QuicEpollClient*>(client_.get())->UseGuid(guid);
+  client_->UseConnectionId(connection_id);
+}
+
+ssize_t QuicTestClient::SendAndWaitForResponse(const void *buffer,
+                                               size_t size) {
+  LOG(DFATAL) << "Not implemented";
+  return 0;
+}
+
+void QuicTestClient::Bind(IPEndPoint* local_address) {
+  DLOG(WARNING) << "Bind will be done during connect";
+}
+
+string QuicTestClient::SerializeMessage(const HTTPMessage& message) {
+  LOG(DFATAL) << "Not implemented";
+  return "";
+}
+
+IPAddressNumber QuicTestClient::bind_to_address() const {
+  return client_->bind_to_address();
+}
+
+void QuicTestClient::set_bind_to_address(IPAddressNumber address) {
+  client_->set_bind_to_address(address);
+}
+
+const IPEndPoint& QuicTestClient::address() const {
+  LOG(DFATAL) << "Not implemented";
+  return client_->server_address();
+}
+
+size_t QuicTestClient::requests_sent() const {
+  LOG(DFATAL) << "Not implemented";
+  return 0;
 }
 
 void QuicTestClient::WaitForWriteToFlush() {
-  while (connected() && client()->session()->HasQueuedData()) {
+  while (connected() && client()->session()->HasDataToWrite()) {
     client_->WaitForEvents();
   }
+}
+
+void QuicTestClient::SetFecPolicy(FecPolicy fec_policy) {
+  fec_policy_ = fec_policy;
+  // Set policy for headers and crypto streams.
+  ReliableQuicStreamPeer::SetFecPolicy(
+      QuicSessionPeer::GetHeadersStream(client()->session()), fec_policy);
+  ReliableQuicStreamPeer::SetFecPolicy(client()->session()->GetCryptoStream(),
+                                       fec_policy);
 }
 
 }  // namespace test

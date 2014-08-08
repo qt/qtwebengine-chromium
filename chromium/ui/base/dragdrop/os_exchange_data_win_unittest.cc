@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 #include "base/memory/ref_counted.h"
-#include "base/memory/scoped_handle.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/win/scoped_hglobal.h"
@@ -62,10 +61,11 @@ TEST(OSExchangeDataWinTest, StringDataWritingViaCOM) {
   // Construct a new object with the old object so that we can use our access
   // APIs.
   OSExchangeData data2(data.provider().Clone());
-  EXPECT_TRUE(data2.HasURL());
+  EXPECT_TRUE(data2.HasURL(OSExchangeData::CONVERT_FILENAMES));
   GURL url_from_data;
   std::wstring title;
-  EXPECT_TRUE(data2.GetURLAndTitle(&url_from_data, &title));
+  EXPECT_TRUE(data2.GetURLAndTitle(
+      OSExchangeData::CONVERT_FILENAMES, &url_from_data, &title));
   GURL reference_url(input);
   EXPECT_EQ(reference_url.spec(), url_from_data.spec());
 }
@@ -113,10 +113,11 @@ TEST(OSExchangeDataWinTest, RemoveData) {
   // Construct a new object with the old object so that we can use our access
   // APIs.
   OSExchangeData data2(data.provider().Clone());
-  EXPECT_TRUE(data2.HasURL());
+  EXPECT_TRUE(data2.HasURL(OSExchangeData::CONVERT_FILENAMES));
   GURL url_from_data;
   std::wstring title;
-  EXPECT_TRUE(data2.GetURLAndTitle(&url_from_data, &title));
+  EXPECT_TRUE(data2.GetURLAndTitle(
+      OSExchangeData::CONVERT_FILENAMES, &url_from_data, &title));
   EXPECT_EQ(GURL(input2).spec(), url_from_data.spec());
 }
 
@@ -136,7 +137,7 @@ TEST(OSExchangeDataWinTest, URLDataAccessViaCOM) {
   EXPECT_EQ(S_OK, com_data->GetData(&format_etc, &medium));
   std::wstring output =
       base::win::ScopedHGlobal<wchar_t>(medium.hGlobal).get();
-  EXPECT_EQ(url.spec(), WideToUTF8(output));
+  EXPECT_EQ(url.spec(), base::WideToUTF8(output));
   ReleaseStgMedium(&medium);
 }
 
@@ -163,7 +164,7 @@ TEST(OSExchangeDataWinTest, MultipleFormatsViaCOM) {
   EXPECT_EQ(S_OK, com_data->GetData(&url_format_etc, &medium));
   std::wstring output_url =
       base::win::ScopedHGlobal<wchar_t>(medium.hGlobal).get();
-  EXPECT_EQ(url.spec(), WideToUTF8(output_url));
+  EXPECT_EQ(url.spec(), base::WideToUTF8(output_url));
   ReleaseStgMedium(&medium);
 
   // The text is supposed to be the raw text of the URL, _NOT_ the value of
@@ -171,7 +172,7 @@ TEST(OSExchangeDataWinTest, MultipleFormatsViaCOM) {
   EXPECT_EQ(S_OK, com_data->GetData(&text_format_etc, &medium));
   std::wstring output_text =
       base::win::ScopedHGlobal<wchar_t>(medium.hGlobal).get();
-  EXPECT_EQ(url_spec, WideToUTF8(output_text));
+  EXPECT_EQ(url_spec, base::WideToUTF8(output_text));
   ReleaseStgMedium(&medium);
 }
 
@@ -321,7 +322,7 @@ TEST(OSExchangeDataWinTest, CFHtml) {
       "StartFragment:0000000175\r\nEndFragment:0000000252\r\n"
       "SourceURL:http://www.google.com/\r\n<html>\r\n<body>\r\n"
       "<!--StartFragment-->");
-  expected_cf_html += WideToUTF8(html);
+  expected_cf_html += base::WideToUTF8(html);
   expected_cf_html.append("<!--EndFragment-->\r\n</body>\r\n</html>");
 
   FORMATETC format = Clipboard::GetHtmlFormatType().ToFormatEtc();
@@ -345,10 +346,11 @@ TEST(OSExchangeDataWinTest, ProvideURLForPlainTextURL) {
   data.SetString(L"http://google.com");
 
   OSExchangeData data2(data.provider().Clone());
-  ASSERT_TRUE(data2.HasURL());
+  ASSERT_TRUE(data2.HasURL(OSExchangeData::CONVERT_FILENAMES));
   GURL read_url;
   std::wstring title;
-  EXPECT_TRUE(data2.GetURLAndTitle(&read_url, &title));
+  EXPECT_TRUE(data2.GetURLAndTitle(
+      OSExchangeData::CONVERT_FILENAMES, &read_url, &title));
   EXPECT_EQ(GURL("http://google.com"), read_url);
 }
 

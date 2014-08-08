@@ -30,6 +30,9 @@
 #include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "core/dom/ExceptionCode.h"
+#include "core/dom/ExecutionContext.h"
+#include "core/events/Event.h"
+#include "core/events/GenericEventQueue.h"
 #include "core/html/HTMLMediaElement.h"
 #include "core/html/TimeRanges.h"
 #include "platform/Clock.h"
@@ -37,12 +40,11 @@
 #include "wtf/StdLibExtras.h"
 #include "wtf/text/AtomicString.h"
 
-using namespace WebCore;
-using namespace std;
+namespace WebCore {
 
-PassRefPtr<MediaController> MediaController::create(ExecutionContext* context)
+PassRefPtrWillBeRawPtr<MediaController> MediaController::create(ExecutionContext* context)
 {
-    return adoptRef(new MediaController(context));
+    return adoptRefWillBeRefCountedGarbageCollected(new MediaController(context));
 }
 
 MediaController::MediaController(ExecutionContext* context)
@@ -51,11 +53,10 @@ MediaController::MediaController(ExecutionContext* context)
     , m_volume(1)
     , m_position(MediaPlayer::invalidTime())
     , m_muted(false)
-    , m_readyState(HAVE_NOTHING)
+    , m_readyState(HTMLMediaElement::HAVE_NOTHING)
     , m_playbackState(WAITING)
-    , m_asyncEventTimer(this, &MediaController::asyncEventTimerFired)
+    , m_pendingEventsQueue(GenericEventQueue::create(this))
     , m_clearPositionTimer(this, &MediaController::clearPositionTimerFired)
-    , m_closedCaptionsVisible(false)
     , m_clock(Clock::create())
     , m_executionContext(context)
     , m_timeupdateTimer(this, &MediaController::timeupdateTimerFired)
@@ -73,7 +74,7 @@ void MediaController::addMediaElement(HTMLMediaElement* element)
     ASSERT(element);
     ASSERT(!m_mediaElements.contains(element));
 
-    m_mediaElements.append(element);
+    m_mediaElements.add(element);
     bringElementUpToSpeed(element);
 }
 
@@ -84,11 +85,6 @@ void MediaController::removeMediaElement(HTMLMediaElement* element)
     m_mediaElements.remove(m_mediaElements.find(element));
 }
 
-bool MediaController::containsMediaElement(HTMLMediaElement* element) const
-{
-    return m_mediaElements.contains(element);
-}
-
 PassRefPtr<TimeRanges> MediaController::buffered() const
 {
     if (m_mediaElements.isEmpty())
@@ -97,9 +93,10 @@ PassRefPtr<TimeRanges> MediaController::buffered() const
     // The buffered attribute must return a new static normalized TimeRanges object that represents
     // the intersection of the ranges of the media resources of the slaved media elements that the
     // user agent has buffered, at the time the attribute is evaluated.
-    RefPtr<TimeRanges> bufferedRanges = m_mediaElements.first()->buffered();
-    for (size_t index = 1; index < m_mediaElements.size(); ++index)
-        bufferedRanges->intersectWith(m_mediaElements[index]->buffered().get());
+    MediaElementSequence::const_iterator it = m_mediaElements.begin();
+    RefPtr<TimeRanges> bufferedRanges = (*it)->buffered();
+    for (++it; it != m_mediaElements.end(); ++it)
+        bufferedRanges->intersectWith((*it)->buffered().get());
     return bufferedRanges;
 }
 
@@ -111,9 +108,10 @@ PassRefPtr<TimeRanges> MediaController::seekable() const
     // The seekable attribute must return a new static normalized TimeRanges object that represents
     // the intersection of the ranges of the media resources of the slaved media elements that the
     // user agent is able to seek to, at the time the attribute is evaluated.
-    RefPtr<TimeRanges> seekableRanges = m_mediaElements.first()->seekable();
-    for (size_t index = 1; index < m_mediaElements.size(); ++index)
-        seekableRanges->intersectWith(m_mediaElements[index]->seekable().get());
+    MediaElementSequence::const_iterator it = m_mediaElements.begin();
+    RefPtr<TimeRanges> seekableRanges = (*it)->seekable();
+    for (++it; it != m_mediaElements.end(); ++it)
+        seekableRanges->intersectWith((*it)->seekable().get());
     return seekableRanges;
 }
 
@@ -125,9 +123,10 @@ PassRefPtr<TimeRanges> MediaController::played()
     // The played attribute must return a new static normalized TimeRanges object that represents
     // the union of the ranges of the media resources of the slaved media elements that the
     // user agent has so far rendered, at the time the attribute is evaluated.
-    RefPtr<TimeRanges> playedRanges = m_mediaElements.first()->played();
-    for (size_t index = 1; index < m_mediaElements.size(); ++index)
-        playedRanges->unionWith(m_mediaElements[index]->played().get());
+    MediaElementSequence::const_iterator it = m_mediaElements.begin();
+    RefPtr<TimeRanges> playedRanges = (*it)->played();
+    for (++it; it != m_mediaElements.end(); ++it)
+        playedRanges->unionWith((*it)->played().get());
     return playedRanges;
 }
 
@@ -136,11 +135,11 @@ double MediaController::duration() const
     // FIXME: Investigate caching the maximum duration and only updating the cached value
     // when the slaved media elements' durations change.
     double maxDuration = 0;
-    for (size_t index = 0; index < m_mediaElements.size(); ++index) {
-        double duration = m_mediaElements[index]->duration();
+    for (MediaElementSequence::const_iterator it = m_mediaElements.begin(); it != m_mediaElements.end(); ++it) {
+        double duration = (*it)->duration();
         if (std::isnan(duration))
             continue;
-        maxDuration = max(maxDuration, duration);
+        maxDuration = std::max(maxDuration, duration);
     }
     return maxDuration;
 }
@@ -152,8 +151,8 @@ double MediaController::currentTime() const
 
     if (m_position == MediaPlayer::invalidTime()) {
         // Some clocks may return times outside the range of [0..duration].
-        m_position = max(0.0, min(duration(), m_clock->currentTime()));
-        m_clearPositionTimer.startOneShot(0);
+        m_position = std::max(0.0, std::min(duration(), m_clock->currentTime()));
+        m_clearPositionTimer.startOneShot(0, FROM_HERE);
     }
 
     return m_position;
@@ -164,18 +163,19 @@ void MediaController::setCurrentTime(double time, ExceptionState& exceptionState
     // When the user agent is to seek the media controller to a particular new playback position,
     // it must follow these steps:
     // If the new playback position is less than zero, then set it to zero.
-    time = max(0.0, time);
+    time = std::max(0.0, time);
 
     // If the new playback position is greater than the media controller duration, then set it
     // to the media controller duration.
-    time = min(time, duration());
+    time = std::min(time, duration());
 
     // Set the media controller position to the new playback position.
+    m_position = time;
     m_clock->setCurrentTime(time);
 
     // Seek each slaved media element to the new playback position relative to the media element timeline.
-    for (size_t index = 0; index < m_mediaElements.size(); ++index)
-        m_mediaElements[index]->seek(time, exceptionState);
+    for (MediaElementSequence::const_iterator it = m_mediaElements.begin(); it != m_mediaElements.end(); ++it)
+        (*it)->seek(time, exceptionState);
 
     scheduleTimeupdateEvent();
 }
@@ -198,8 +198,8 @@ void MediaController::play()
 {
     // When the play() method is invoked, the user agent must invoke the play method of each
     // slaved media element in turn,
-    for (size_t index = 0; index < m_mediaElements.size(); ++index)
-        m_mediaElements[index]->play();
+    for (MediaElementSequence::const_iterator it = m_mediaElements.begin(); it != m_mediaElements.end(); ++it)
+        (*it)->play();
 
     // and then invoke the unpause method of the MediaController.
     unpause();
@@ -246,8 +246,8 @@ void MediaController::setPlaybackRate(double rate)
     // playback rate to the new value,
     m_clock->setPlayRate(rate);
 
-    for (size_t index = 0; index < m_mediaElements.size(); ++index)
-        m_mediaElements[index]->updatePlaybackRate();
+    for (MediaElementSequence::const_iterator it = m_mediaElements.begin(); it != m_mediaElements.end(); ++it)
+        (*it)->updatePlaybackRate();
 
     // then queue a task to fire a simple event named ratechange at the MediaController.
     scheduleEvent(EventTypeNames::ratechange);
@@ -261,7 +261,7 @@ void MediaController::setVolume(double level, ExceptionState& exceptionState)
     // If the new value is outside the range 0.0 to 1.0 inclusive, then, on setting, an
     // IndexSizeError exception must be raised instead.
     if (level < 0 || level > 1) {
-        exceptionState.throwDOMException(IndexSizeError, ExceptionMessages::failedToSet("volume", "MediaController", "The value provided (" + String::number(level) + ") is not in the range [0.0, 1.0]."));
+        exceptionState.throwDOMException(IndexSizeError, ExceptionMessages::indexOutsideRange("volume", level, 0.0, ExceptionMessages::InclusiveBound, 1.0, ExceptionMessages::InclusiveBound));
         return;
     }
 
@@ -272,8 +272,8 @@ void MediaController::setVolume(double level, ExceptionState& exceptionState)
     // and queue a task to fire a simple event named volumechange at the MediaController.
     scheduleEvent(EventTypeNames::volumechange);
 
-    for (size_t index = 0; index < m_mediaElements.size(); ++index)
-        m_mediaElements[index]->updateVolume();
+    for (MediaElementSequence::const_iterator it = m_mediaElements.begin(); it != m_mediaElements.end(); ++it)
+        (*it)->updateVolume();
 }
 
 void MediaController::setMuted(bool flag)
@@ -288,8 +288,8 @@ void MediaController::setMuted(bool flag)
     // and queue a task to fire a simple event named volumechange at the MediaController.
     scheduleEvent(EventTypeNames::volumechange);
 
-    for (size_t index = 0; index < m_mediaElements.size(); ++index)
-        m_mediaElements[index]->updateVolume();
+    for (MediaElementSequence::const_iterator it = m_mediaElements.begin(); it != m_mediaElements.end(); ++it)
+        (*it)->updateVolume();
 }
 
 static const AtomicString& playbackStateWaiting()
@@ -331,18 +331,18 @@ void MediaController::reportControllerState()
     updatePlaybackState();
 }
 
-static AtomicString eventNameForReadyState(MediaControllerInterface::ReadyState state)
+static const AtomicString& eventNameForReadyState(HTMLMediaElement::ReadyState state)
 {
     switch (state) {
-    case MediaControllerInterface::HAVE_NOTHING:
+    case HTMLMediaElement::HAVE_NOTHING:
         return EventTypeNames::emptied;
-    case MediaControllerInterface::HAVE_METADATA:
+    case HTMLMediaElement::HAVE_METADATA:
         return EventTypeNames::loadedmetadata;
-    case MediaControllerInterface::HAVE_CURRENT_DATA:
+    case HTMLMediaElement::HAVE_CURRENT_DATA:
         return EventTypeNames::loadeddata;
-    case MediaControllerInterface::HAVE_FUTURE_DATA:
+    case HTMLMediaElement::HAVE_FUTURE_DATA:
         return EventTypeNames::canplay;
-    case MediaControllerInterface::HAVE_ENOUGH_DATA:
+    case HTMLMediaElement::HAVE_ENOUGH_DATA:
         return EventTypeNames::canplaythrough;
     default:
         ASSERT_NOT_REACHED();
@@ -357,13 +357,14 @@ void MediaController::updateReadyState()
 
     if (m_mediaElements.isEmpty()) {
         // If the MediaController has no slaved media elements, let new readiness state be 0.
-        newReadyState = HAVE_NOTHING;
+        newReadyState = HTMLMediaElement::HAVE_NOTHING;
     } else {
         // Otherwise, let it have the lowest value of the readyState IDL attributes of all of its
         // slaved media elements.
-        newReadyState = m_mediaElements.first()->readyState();
-        for (size_t index = 1; index < m_mediaElements.size(); ++index)
-            newReadyState = min(newReadyState, m_mediaElements[index]->readyState());
+        MediaElementSequence::const_iterator it = m_mediaElements.begin();
+        newReadyState = (*it)->readyState();
+        for (++it; it != m_mediaElements.end(); ++it)
+            newReadyState = std::min(newReadyState, (*it)->readyState());
     }
 
     if (newReadyState == oldReadyState)
@@ -471,8 +472,8 @@ void MediaController::updatePlaybackState()
 
 void MediaController::updateMediaElements()
 {
-    for (size_t index = 0; index < m_mediaElements.size(); ++index)
-        m_mediaElements[index]->updatePlayState();
+    for (MediaElementSequence::const_iterator it = m_mediaElements.begin(); it != m_mediaElements.end(); ++it)
+        (*it)->updatePlayState();
 }
 
 void MediaController::bringElementUpToSpeed(HTMLMediaElement* element)
@@ -486,20 +487,51 @@ void MediaController::bringElementUpToSpeed(HTMLMediaElement* element)
     element->seek(currentTime(), IGNORE_EXCEPTION);
 }
 
+bool MediaController::isRestrained() const
+{
+    ASSERT(!m_mediaElements.isEmpty());
+
+    // A MediaController is a restrained media controller if the MediaController is a playing media
+    // controller,
+    if (m_paused)
+        return false;
+
+    bool anyAutoplayingAndPaused = false;
+    bool allPaused = true;
+    for (MediaElementSequence::const_iterator it = m_mediaElements.begin(); it != m_mediaElements.end(); ++it) {
+        HTMLMediaElement* element = *it;
+
+        // and none of its slaved media elements are blocked media elements,
+        if (element->isBlocked())
+            return false;
+
+        if (element->isAutoplaying() && element->paused())
+            anyAutoplayingAndPaused = true;
+
+        if (!element->paused())
+            allPaused = false;
+    }
+
+    // but either at least one of its slaved media elements whose autoplaying flag is true still has
+    // its paused attribute set to true, or, all of its slaved media elements have their paused
+    // attribute set to true.
+    return anyAutoplayingAndPaused || allPaused;
+}
+
 bool MediaController::isBlocked() const
 {
+    ASSERT(!m_mediaElements.isEmpty());
+
     // A MediaController is a blocked media controller if the MediaController is a paused media
     // controller,
     if (m_paused)
         return true;
 
-    if (m_mediaElements.isEmpty())
-        return false;
-
     bool allPaused = true;
-    for (size_t index = 0; index < m_mediaElements.size(); ++index) {
-        HTMLMediaElement* element = m_mediaElements[index];
-        //  or if any of its slaved media elements are blocked media elements,
+    for (MediaElementSequence::const_iterator it = m_mediaElements.begin(); it != m_mediaElements.end(); ++it) {
+        HTMLMediaElement* element = *it;
+
+        // or if any of its slaved media elements are blocked media elements,
         if (element->isBlocked())
             return true;
 
@@ -528,8 +560,8 @@ bool MediaController::hasEnded() const
         return false;
 
     bool allHaveEnded = true;
-    for (size_t index = 0; index < m_mediaElements.size(); ++index) {
-        if (!m_mediaElements[index]->ended())
+    for (MediaElementSequence::const_iterator it = m_mediaElements.begin(); it != m_mediaElements.end(); ++it) {
+        if (!(*it)->ended())
             allHaveEnded = false;
     }
     return allHaveEnded;
@@ -537,95 +569,12 @@ bool MediaController::hasEnded() const
 
 void MediaController::scheduleEvent(const AtomicString& eventName)
 {
-    m_pendingEvents.append(Event::createCancelable(eventName));
-    if (!m_asyncEventTimer.isActive())
-        m_asyncEventTimer.startOneShot(0);
-}
-
-void MediaController::asyncEventTimerFired(Timer<MediaController>*)
-{
-    Vector<RefPtr<Event> > pendingEvents;
-
-    m_pendingEvents.swap(pendingEvents);
-    size_t count = pendingEvents.size();
-    for (size_t index = 0; index < count; ++index)
-        dispatchEvent(pendingEvents[index].release(), IGNORE_EXCEPTION);
+    m_pendingEventsQueue->enqueueEvent(Event::createCancelable(eventName));
 }
 
 void MediaController::clearPositionTimerFired(Timer<MediaController>*)
 {
     m_position = MediaPlayer::invalidTime();
-}
-
-bool MediaController::hasAudio() const
-{
-    for (size_t index = 0; index < m_mediaElements.size(); ++index) {
-        if (m_mediaElements[index]->hasAudio())
-            return true;
-    }
-    return false;
-}
-
-bool MediaController::hasVideo() const
-{
-    for (size_t index = 0; index < m_mediaElements.size(); ++index) {
-        if (m_mediaElements[index]->hasVideo())
-            return true;
-    }
-    return false;
-}
-
-bool MediaController::hasClosedCaptions() const
-{
-    for (size_t index = 0; index < m_mediaElements.size(); ++index) {
-        if (m_mediaElements[index]->hasClosedCaptions())
-            return true;
-    }
-    return false;
-}
-
-void MediaController::setClosedCaptionsVisible(bool visible)
-{
-    m_closedCaptionsVisible = visible;
-    for (size_t index = 0; index < m_mediaElements.size(); ++index)
-        m_mediaElements[index]->setClosedCaptionsVisible(visible);
-}
-
-void MediaController::beginScrubbing()
-{
-    for (size_t index = 0; index < m_mediaElements.size(); ++index)
-        m_mediaElements[index]->beginScrubbing();
-    if (m_playbackState == PLAYING)
-        m_clock->stop();
-}
-
-void MediaController::endScrubbing()
-{
-    for (size_t index = 0; index < m_mediaElements.size(); ++index)
-        m_mediaElements[index]->endScrubbing();
-    if (m_playbackState == PLAYING)
-        m_clock->start();
-}
-
-bool MediaController::canPlay() const
-{
-    if (m_paused)
-        return true;
-
-    for (size_t index = 0; index < m_mediaElements.size(); ++index) {
-        if (!m_mediaElements[index]->canPlay())
-            return false;
-    }
-    return true;
-}
-
-bool MediaController::hasCurrentSrc() const
-{
-    for (size_t index = 0; index < m_mediaElements.size(); ++index) {
-        if (!m_mediaElements[index]->hasCurrentSrc())
-            return false;
-    }
-    return true;
 }
 
 const AtomicString& MediaController::interfaceName() const
@@ -642,7 +591,7 @@ void MediaController::startTimeupdateTimer()
     if (m_timeupdateTimer.isActive())
         return;
 
-    m_timeupdateTimer.startRepeating(maxTimeupdateEventFrequency);
+    m_timeupdateTimer.startRepeating(maxTimeupdateEventFrequency, FROM_HERE);
 }
 
 void MediaController::timeupdateTimerFired(Timer<MediaController>*)
@@ -660,4 +609,14 @@ void MediaController::scheduleTimeupdateEvent()
 
     scheduleEvent(EventTypeNames::timeupdate);
     m_previousTimeupdateTime = now;
+}
+
+void MediaController::trace(Visitor* visitor)
+{
+    visitor->trace(m_mediaElements);
+    visitor->trace(m_pendingEventsQueue);
+    visitor->trace(m_executionContext);
+    EventTargetWithInlineData::trace(visitor);
+}
+
 }

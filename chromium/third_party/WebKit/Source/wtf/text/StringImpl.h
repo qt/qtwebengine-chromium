@@ -204,8 +204,7 @@ public:
 
     // Reallocate the StringImpl. The originalString must be only owned by the PassRefPtr.
     // Just like the input pointer of realloc(), the originalString can't be used after this function.
-    static PassRefPtr<StringImpl> reallocate(PassRefPtr<StringImpl> originalString, unsigned length, LChar*& data);
-    static PassRefPtr<StringImpl> reallocate(PassRefPtr<StringImpl> originalString, unsigned length, UChar*& data);
+    static PassRefPtr<StringImpl> reallocate(PassRefPtr<StringImpl> originalString, unsigned length);
 
     // If this StringImpl has only one reference, we can truncate the string by updating
     // its m_length property without actually re-allocating its buffer.
@@ -271,17 +270,17 @@ public:
         return hashSlowCase();
     }
 
-    inline bool hasOneRef() const
+    ALWAYS_INLINE bool hasOneRef() const
     {
         return m_refCount == 1;
     }
 
-    inline void ref()
+    ALWAYS_INLINE void ref()
     {
         ++m_refCount;
     }
 
-    inline void deref()
+    ALWAYS_INLINE void deref()
     {
         if (hasOneRef()) {
             destroyIfNotStatic();
@@ -296,30 +295,7 @@ public:
     // FIXME: Does this really belong in StringImpl?
     template <typename T> static void copyChars(T* destination, const T* source, unsigned numCharacters)
     {
-        if (numCharacters == 1) {
-            *destination = *source;
-            return;
-        }
-
-        // FIXME: Is this implementation really faster than memcpy?
-        if (numCharacters <= s_copyCharsInlineCutOff) {
-            unsigned i = 0;
-#if (CPU(X86) || CPU(X86_64))
-            const unsigned charsPerInt = sizeof(uint32_t) / sizeof(T);
-
-            if (numCharacters > charsPerInt) {
-                unsigned stopCount = numCharacters & ~(charsPerInt - 1);
-
-                const uint32_t* srcCharacters = reinterpret_cast<const uint32_t*>(source);
-                uint32_t* destCharacters = reinterpret_cast<uint32_t*>(destination);
-                for (unsigned j = 0; i < stopCount; i += charsPerInt, ++j)
-                    destCharacters[j] = srcCharacters[j];
-            }
-#endif
-            for (; i < numCharacters; ++i)
-                destination[i] = source[i];
-        } else
-            memcpy(destination, source, numCharacters * sizeof(T));
+        memcpy(destination, source, numCharacters * sizeof(T));
     }
 
     ALWAYS_INLINE static void copyChars(UChar* destination, const LChar* source, unsigned numCharacters)
@@ -435,8 +411,11 @@ public:
 #endif
 
 private:
-    // This number must be at least 2 to avoid sharing empty, null as well as 1 character strings from SmallStrings.
-    static const unsigned s_copyCharsInlineCutOff = 20;
+    template<typename CharType> static size_t allocationSize(unsigned length)
+    {
+        RELEASE_ASSERT(length <= ((std::numeric_limits<unsigned>::max() - sizeof(StringImpl)) / sizeof(CharType)));
+        return sizeof(StringImpl) + length * sizeof(CharType);
+    }
 
     template <class UCharPredicate> PassRefPtr<StringImpl> stripMatchedCharacters(UCharPredicate);
     template <typename CharType, class UCharPredicate> PassRefPtr<StringImpl> simplifyMatchedCharactersToSpace(UCharPredicate, StripBehavior);

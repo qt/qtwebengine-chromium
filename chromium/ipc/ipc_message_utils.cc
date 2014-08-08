@@ -340,12 +340,12 @@ void ParamTraits<std::string>::Log(const param_type& p, std::string* l) {
 }
 
 void ParamTraits<std::wstring>::Log(const param_type& p, std::string* l) {
-  l->append(WideToUTF8(p));
+  l->append(base::WideToUTF8(p));
 }
 
 #if !defined(WCHAR_T_IS_UTF16)
 void ParamTraits<base::string16>::Log(const param_type& p, std::string* l) {
-  l->append(UTF16ToUTF8(p));
+  l->append(base::UTF16ToUTF8(p));
 }
 #endif
 
@@ -555,8 +555,8 @@ void ParamTraits<base::NullableString16>::Log(const param_type& p,
   l->append(")");
 }
 
-void ParamTraits<base::PlatformFileInfo>::Write(Message* m,
-                                                const param_type& p) {
+void ParamTraits<base::File::Info>::Write(Message* m,
+                                          const param_type& p) {
   WriteParam(m, p.size);
   WriteParam(m, p.is_directory);
   WriteParam(m, p.last_modified.ToDoubleT());
@@ -564,9 +564,9 @@ void ParamTraits<base::PlatformFileInfo>::Write(Message* m,
   WriteParam(m, p.creation_time.ToDoubleT());
 }
 
-bool ParamTraits<base::PlatformFileInfo>::Read(const Message* m,
-                                               PickleIterator* iter,
-                                               param_type* p) {
+bool ParamTraits<base::File::Info>::Read(const Message* m,
+                                         PickleIterator* iter,
+                                         param_type* p) {
   double last_modified;
   double last_accessed;
   double creation_time;
@@ -584,8 +584,8 @@ bool ParamTraits<base::PlatformFileInfo>::Read(const Message* m,
   return result;
 }
 
-void ParamTraits<base::PlatformFileInfo>::Log(const param_type& p,
-                                              std::string* l) {
+void ParamTraits<base::File::Info>::Log(const param_type& p,
+                                        std::string* l) {
   l->append("(");
   LogParam(p.size, l);
   l->append(",");

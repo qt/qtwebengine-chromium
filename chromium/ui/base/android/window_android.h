@@ -7,20 +7,22 @@
 
 #include <jni.h>
 #include <vector>
-#include "base/android/jni_helper.h"
+#include "base/android/jni_weak_ref.h"
 #include "base/android/scoped_java_ref.h"
 #include "base/observer_list.h"
-#include "ui/base/ui_export.h"
+#include "base/time/time.h"
+#include "ui/base/ui_base_export.h"
 #include "ui/gfx/vector2d_f.h"
 
 namespace ui {
 
+class WindowAndroidCompositor;
 class WindowAndroidObserver;
 
 // Android implementation of the activity window.
-class UI_EXPORT WindowAndroid {
+class UI_BASE_EXPORT WindowAndroid {
  public:
-  WindowAndroid(JNIEnv* env, jobject obj);
+  WindowAndroid(JNIEnv* env, jobject obj, jlong vsync_period);
 
   void Destroy(JNIEnv* env, jobject obj);
 
@@ -34,23 +36,33 @@ class UI_EXPORT WindowAndroid {
     content_offset_ = content_offset;
   }
 
-  bool GrabSnapshot(int content_x, int content_y, int width, int height,
-                    std::vector<unsigned char>* png_representation);
+  gfx::Vector2dF content_offset() const {
+    return content_offset_;
+  }
 
   // Compositor callback relay.
   void OnCompositingDidCommit();
 
-  void AttachCompositor();
+  void AttachCompositor(WindowAndroidCompositor* compositor);
   void DetachCompositor();
 
   void AddObserver(WindowAndroidObserver* observer);
   void RemoveObserver(WindowAndroidObserver* observer);
+
+  WindowAndroidCompositor* GetCompositor() { return compositor_; }
+
+  void RequestVSyncUpdate();
+  void SetNeedsAnimate();
+  void OnVSync(JNIEnv* env, jobject obj, jlong time_micros);
+  void Animate(base::TimeTicks begin_frame_time);
 
  private:
   ~WindowAndroid();
 
   JavaObjectWeakGlobalRef weak_java_window_;
   gfx::Vector2dF content_offset_;
+  WindowAndroidCompositor* compositor_;
+  base::TimeDelta vsync_period_;
 
   ObserverList<WindowAndroidObserver> observer_list_;
 

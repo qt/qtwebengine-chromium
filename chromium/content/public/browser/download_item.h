@@ -181,6 +181,8 @@ class CONTENT_EXPORT DownloadItem : public base::SupportsUserData {
   virtual const std::vector<GURL>& GetUrlChain() const = 0;
   virtual const GURL& GetOriginalUrl() const = 0;
   virtual const GURL& GetReferrerUrl() const = 0;
+  virtual const GURL& GetTabUrl() const = 0;
+  virtual const GURL& GetTabReferrerUrl() const = 0;
   virtual std::string GetSuggestedFilename() const = 0;
   virtual std::string GetContentDisposition() const = 0;
   virtual std::string GetMimeType() const = 0;
@@ -236,10 +238,16 @@ class CONTENT_EXPORT DownloadItem : public base::SupportsUserData {
   virtual bool GetFileExternallyRemoved() const = 0;
 
   // If the file is successfully deleted, then GetFileExternallyRemoved() will
-  // become true and DownloadItem::OnDownloadUpdated() will be called. Does
-  // nothing if GetState() == COMPLETE or GetFileExternallyRemoved() is already
-  // true.
-  virtual void DeleteFile() = 0;
+  // become true, GetFullPath() will become empty, and
+  // DownloadItem::OnDownloadUpdated() will be called. Does nothing if
+  // GetState() == COMPLETE or GetFileExternallyRemoved() is already true or
+  // GetFullPath() is already empty. The callback is always run, and it is
+  // always run asynchronously. It will be passed true if the file is
+  // successfully deleted or if GetFilePath() was already empty or if
+  // GetFileExternallyRemoved() was already true. The callback will be passed
+  // false if the DownloadItem was not yet complete or if the file could not be
+  // deleted for any reason.
+  virtual void DeleteFile(const base::Callback<void(bool)>& callback) = 0;
 
   // True if the file that will be written by the download is dangerous
   // and we will require a call to ValidateDangerousDownload() to complete.

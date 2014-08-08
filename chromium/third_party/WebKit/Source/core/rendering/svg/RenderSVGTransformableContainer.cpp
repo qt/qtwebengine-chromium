@@ -23,8 +23,8 @@
 
 #include "core/rendering/svg/RenderSVGTransformableContainer.h"
 
-#include "SVGNames.h"
 #include "core/rendering/svg/SVGRenderSupport.h"
+#include "core/svg/SVGGElement.h"
 #include "core/svg/SVGGraphicsElement.h"
 #include "core/svg/SVGUseElement.h"
 
@@ -37,25 +37,60 @@ RenderSVGTransformableContainer::RenderSVGTransformableContainer(SVGGraphicsElem
 {
 }
 
+static bool hasValidPredecessor(const Node* node)
+{
+    ASSERT(node);
+    while ((node = node->previousSibling())) {
+        if (node->isSVGElement() && toSVGElement(node)->isValid())
+            return true;
+    }
+    return false;
+}
+
+bool RenderSVGTransformableContainer::isChildAllowed(RenderObject* child, RenderStyle* style) const
+{
+    ASSERT(element());
+    if (isSVGSwitchElement(*element())) {
+        Node* node = child->node();
+        // Reject non-SVG/non-valid elements.
+        if (!node->isSVGElement() || !toSVGElement(node)->isValid())
+            return false;
+        // Reject this child if it isn't the first valid node.
+        if (hasValidPredecessor(node))
+            return false;
+    } else if (isSVGAElement(*element())) {
+        // http://www.w3.org/2003/01/REC-SVG11-20030114-errata#linking-text-environment
+        // The 'a' element may contain any element that its parent may contain, except itself.
+        if (isSVGAElement(*child->node()))
+            return false;
+        if (parent() && parent()->isSVG())
+            return parent()->isChildAllowed(child, style);
+    }
+    return RenderSVGContainer::isChildAllowed(child, style);
+}
+
 bool RenderSVGTransformableContainer::calculateLocalTransform()
 {
     SVGGraphicsElement* element = toSVGGraphicsElement(this->element());
+    ASSERT(element);
 
     // If we're either the renderer for a <use> element, or for any <g> element inside the shadow
     // tree, that was created during the use/symbol/svg expansion in SVGUseElement. These containers
     // need to respect the translations induced by their corresponding use elements x/y attributes.
     SVGUseElement* useElement = 0;
-    if (element->hasTagName(SVGNames::useTag))
+    if (isSVGUseElement(*element)) {
         useElement = toSVGUseElement(element);
-    else if (element->isInShadowTree() && element->hasTagName(SVGNames::gTag)) {
+    } else if (isSVGGElement(*element) && toSVGGElement(element)->inUseShadowTree()) {
         SVGElement* correspondingElement = element->correspondingElement();
-        if (correspondingElement && correspondingElement->hasTagName(SVGNames::useTag))
+        if (isSVGUseElement(correspondingElement))
             useElement = toSVGUseElement(correspondingElement);
     }
 
     if (useElement) {
         SVGLengthContext lengthContext(useElement);
-        FloatSize translation(useElement->xCurrentValue().value(lengthContext), useElement->yCurrentValue().value(lengthContext));
+        FloatSize translation(
+            useElement->x()->currentValue()->value(lengthContext),
+            useElement->y()->currentValue()->value(lengthContext));
         if (translation != m_lastTranslation)
             m_needsTransformUpdate = true;
         m_lastTranslation = translation;

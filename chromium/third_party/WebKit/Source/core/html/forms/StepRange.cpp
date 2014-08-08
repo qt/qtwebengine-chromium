@@ -21,13 +21,11 @@
 #include "config.h"
 #include "core/html/forms/StepRange.h"
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "wtf/MathExtras.h"
 #include "wtf/text/WTFString.h"
 #include <float.h>
-
-using namespace std;
 
 namespace WebCore {
 
@@ -84,12 +82,12 @@ Decimal StepRange::alignValueForStep(const Decimal& currentValue, const Decimal&
 
 Decimal StepRange::clampValue(const Decimal& value) const
 {
-    const Decimal inRangeValue = max(m_minimum, min(value, m_maximum));
+    const Decimal inRangeValue = std::max(m_minimum, std::min(value, m_maximum));
     if (!m_hasStep)
         return inRangeValue;
-    // Rounds inRangeValue to minimum + N * step.
-    const Decimal roundedValue = roundByStep(inRangeValue, m_minimum);
-    const Decimal clampedValue = roundedValue > m_maximum ? roundedValue - m_step : roundedValue;
+    // Rounds inRangeValue to stepBase + N * step.
+    const Decimal roundedValue = roundByStep(inRangeValue, m_stepBase);
+    const Decimal clampedValue = roundedValue > m_maximum ? roundedValue - m_step : (roundedValue < m_minimum ? roundedValue + m_step : roundedValue);
     ASSERT(clampedValue >= m_minimum);
     ASSERT(clampedValue <= m_maximum);
     return clampedValue;
@@ -121,13 +119,13 @@ Decimal StepRange::parseStep(AnyStepHandling anyStepHandling, const StepDescript
         break;
     case ParsedStepValueShouldBeInteger:
         // For date, month, and week, the parsed value should be an integer for some types.
-        step = max(step.round(), Decimal(1));
+        step = std::max(step.round(), Decimal(1));
         step *= stepDescription.stepScaleFactor;
         break;
     case ScaledStepValueShouldBeInteger:
         // For datetime, datetime-local, time, the result should be an integer.
         step *= stepDescription.stepScaleFactor;
-        step = max(step.round(), Decimal(1));
+        step = std::max(step.round(), Decimal(1));
         break;
     default:
         ASSERT_NOT_REACHED();
@@ -161,7 +159,7 @@ bool StepRange::stepMismatch(const Decimal& valueForCheck) const
     // ... that number subtracted from the step base is not an integral multiple
     // of the allowed value step, the element is suffering from a step mismatch.
     const Decimal remainder = (value - m_step * (value / m_step).round()).abs();
-    // Accepts erros in lower fractional part which IEEE 754 single-precision
+    // Accepts errors in lower fractional part which IEEE 754 single-precision
     // can't represent.
     const Decimal computedAcceptableError = acceptableError();
     return computedAcceptableError < remainder && remainder < (m_step - computedAcceptableError);

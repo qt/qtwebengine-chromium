@@ -6,7 +6,7 @@
 #define MEDIA_FILTERS_MOCK_GPU_VIDEO_ACCELERATOR_FACTORIES_H_
 
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop/message_loop_proxy.h"
+#include "base/single_thread_task_runner.h"
 #include "media/filters/gpu_video_accelerator_factories.h"
 #include "media/video/video_decode_accelerator.h"
 #include "media/video/video_encode_accelerator.h"
@@ -28,35 +28,29 @@ class MockGpuVideoAcceleratorFactories : public GpuVideoAcceleratorFactories {
 
   // CreateVideo{Decode,Encode}Accelerator returns scoped_ptr, which the mocking
   // framework does not want.  Trampoline them.
-  MOCK_METHOD2(DoCreateVideoDecodeAccelerator,
-               VideoDecodeAccelerator*(VideoCodecProfile,
-                                       VideoDecodeAccelerator::Client*));
-  MOCK_METHOD1(DoCreateVideoEncodeAccelerator,
-               VideoEncodeAccelerator*(VideoEncodeAccelerator::Client*));
+  MOCK_METHOD0(DoCreateVideoDecodeAccelerator, VideoDecodeAccelerator*());
+  MOCK_METHOD0(DoCreateVideoEncodeAccelerator, VideoEncodeAccelerator*());
 
   MOCK_METHOD5(CreateTextures,
-               uint32(int32 count,
-                      const gfx::Size& size,
-                      std::vector<uint32>* texture_ids,
-                      std::vector<gpu::Mailbox>* texture_mailboxes,
-                      uint32 texture_target));
+               bool(int32 count,
+                    const gfx::Size& size,
+                    std::vector<uint32>* texture_ids,
+                    std::vector<gpu::Mailbox>* texture_mailboxes,
+                    uint32 texture_target));
   MOCK_METHOD1(DeleteTexture, void(uint32 texture_id));
   MOCK_METHOD1(WaitSyncPoint, void(uint32 sync_point));
   MOCK_METHOD3(ReadPixels,
                void(uint32 texture_id,
-                    const gfx::Size& size,
+                    const gfx::Rect& visible_rect,
                     const SkBitmap& pixels));
   MOCK_METHOD1(CreateSharedMemory, base::SharedMemory*(size_t size));
-  MOCK_METHOD0(GetMessageLoop, scoped_refptr<base::MessageLoopProxy>());
-  MOCK_METHOD0(Abort, void());
-  MOCK_METHOD0(IsAborted, bool());
+  MOCK_METHOD0(GetTaskRunner, scoped_refptr<base::SingleThreadTaskRunner>());
 
-  virtual scoped_ptr<VideoDecodeAccelerator> CreateVideoDecodeAccelerator(
-      VideoCodecProfile profile,
-      VideoDecodeAccelerator::Client* client) OVERRIDE;
+  virtual scoped_ptr<VideoDecodeAccelerator> CreateVideoDecodeAccelerator()
+      OVERRIDE;
 
-  virtual scoped_ptr<VideoEncodeAccelerator> CreateVideoEncodeAccelerator(
-      VideoEncodeAccelerator::Client* client) OVERRIDE;
+  virtual scoped_ptr<VideoEncodeAccelerator> CreateVideoEncodeAccelerator()
+      OVERRIDE;
 
  private:
   virtual ~MockGpuVideoAcceleratorFactories();

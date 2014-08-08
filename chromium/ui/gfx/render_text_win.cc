@@ -86,7 +86,8 @@ bool ChooseFallbackFont(HDC hdc,
     log_font.lfFaceName[0] = 0;
     EnumEnhMetaFile(0, meta_file, MetaFileEnumProc, &log_font, NULL);
     if (log_font.lfFaceName[0]) {
-      *result = Font(UTF16ToUTF8(log_font.lfFaceName), font.GetFontSize());
+      *result = Font(base::UTF16ToUTF8(log_font.lfFaceName),
+                     font.GetFontSize());
       found_fallback = true;
     }
   }
@@ -117,11 +118,11 @@ void DeriveFontIfNecessary(int font_size,
   const int current_style = (font->GetStyle() & kStyleMask);
   const int current_size = font->GetFontSize();
   if (current_style != target_style || current_size != font_size)
-    *font = font->DeriveFont(font_size - current_size, target_style);
+    *font = font->Derive(font_size - current_size, target_style);
 }
 
 // Returns true if |c| is a Unicode BiDi control character.
-bool IsUnicodeBidiControlCharacter(char16 c) {
+bool IsUnicodeBidiControlCharacter(base::char16 c) {
   return c == base::i18n::kRightToLeftMark ||
          c == base::i18n::kLeftToRightMark ||
          c == base::i18n::kLeftToRightEmbeddingMark ||
@@ -261,6 +262,26 @@ void CheckLineIntegrity(const std::vector<internal::Line>& lines,
 bool IsUnusualBlockCode(const UBlockCode block_code) {
   return block_code == UBLOCK_GEOMETRIC_SHAPES ||
          block_code == UBLOCK_MISCELLANEOUS_SYMBOLS;
+}
+
+// Returns the index of the first unusual character after a usual character or
+// vice versa. Unusual characters are defined by |IsUnusualBlockCode|.
+size_t FindUnusualCharacter(const base::string16& text,
+                            size_t run_start,
+                            size_t run_break) {
+  const int32 run_length = static_cast<int32>(run_break - run_start);
+  base::i18n::UTF16CharIterator iter(text.c_str() + run_start,
+                                     run_length);
+  const UBlockCode first_block_code = ublock_getCode(iter.get());
+  const bool first_block_unusual = IsUnusualBlockCode(first_block_code);
+  while (iter.Advance() && iter.array_pos() < run_length) {
+    const UBlockCode current_block_code = ublock_getCode(iter.get());
+    if (current_block_code != first_block_code &&
+        (first_block_unusual || IsUnusualBlockCode(current_block_code))) {
+      return run_start + iter.array_pos();
+    }
+  }
+  return run_break;
 }
 
 }  // namespace
@@ -503,19 +524,14 @@ HDC RenderTextWin::cached_hdc_ = NULL;
 // static
 std::map<std::string, Font> RenderTextWin::successful_substitute_fonts_;
 
-RenderTextWin::RenderTextWin()
-    : RenderText(),
-      needs_layout_(false) {
+RenderTextWin::RenderTextWin() : RenderText(), needs_layout_(false) {
   set_truncate_length(kMaxUniscribeTextLength);
-
   memset(&script_control_, 0, sizeof(script_control_));
   memset(&script_state_, 0, sizeof(script_state_));
-
   MoveCursorTo(EdgeSelectionModel(CURSOR_LEFT));
 }
 
-RenderTextWin::~RenderTextWin() {
-}
+RenderTextWin::~RenderTextWin() {}
 
 Size RenderTextWin::GetStringSize() {
   EnsureLayout();
@@ -662,6 +678,7 @@ SelectionModel RenderTextWin::AdjacentWordSelectionModel(
 }
 
 Range RenderTextWin::GetGlyphBounds(size_t index) {
+  EnsureLayout();
   const size_t run_index =
       GetRunContainingCaret(SelectionModel(index, CURSOR_FORWARD));
   // Return edge bounds if the index is invalid or beyond the layout text size.
@@ -715,7 +732,7 @@ std::vector<Rect> RenderTextWin::GetSubstringBounds(const Range& range) {
 
 size_t RenderTextWin::TextIndexToLayoutIndex(size_t index) const {
   DCHECK_LE(index, text().length());
-  ptrdiff_t i = obscured() ? gfx::UTF16IndexToOffset(text(), 0, index) : index;
+  ptrdiff_t i = obscured() ? UTF16IndexToOffset(text(), 0, index) : index;
   CHECK_GE(i, 0);
   // Clamp layout indices to the length of the text actually used for layout.
   return std::min<size_t>(GetLayoutText().length(), i);
@@ -726,24 +743,22 @@ size_t RenderTextWin::LayoutIndexToTextIndex(size_t index) const {
     return index;
 
   DCHECK_LE(index, GetLayoutText().length());
-  const size_t text_index = gfx::UTF16OffsetToIndex(text(), 0, index);
+  const size_t text_index = UTF16OffsetToIndex(text(), 0, index);
   DCHECK_LE(text_index, text().length());
   return text_index;
 }
 
-bool RenderTextWin::IsCursorablePosition(size_t position) {
-  if (position == 0 || position == text().length())
+bool RenderTextWin::IsValidCursorIndex(size_t index) {
+  if (index == 0 || index == text().length())
     return true;
+  if (!IsValidLogicalIndex(index))
+    return false;
   EnsureLayout();
-
-  // Check that the index is at a valid code point (not mid-surrgate-pair),
-  // that it is not truncated from layout text (its glyph is shown on screen),
-  // and that its glyph has distinct bounds (not mid-multi-character-grapheme).
-  // An example of a multi-character-grapheme that is not a surrogate-pair is:
-  // \x0915\x093f - (ki) - one of many Devanagari biconsonantal conjuncts.
-  return gfx::IsValidCodePointIndex(text(), position) &&
-         position < LayoutIndexToTextIndex(GetLayoutText().length()) &&
-         GetGlyphBounds(position) != GetGlyphBounds(position - 1);
+  // Disallow indices amid multi-character graphemes by checking glyph bounds.
+  // These characters are not surrogate-pairs, but may yield a single glyph:
+  //   \x0915\x093f - (ki) - one of many Devanagari biconsonantal conjuncts.
+  //   \x0e08\x0e33 - (cho chan + sara am) - a Thai consonant and vowel pair.
+  return GetGlyphBounds(index) != GetGlyphBounds(index - 1);
 }
 
 void RenderTextWin::ResetLayout() {
@@ -799,7 +814,8 @@ void RenderTextWin::DrawVisualText(Canvas* canvas) {
   GetCachedFontSmoothingSettings(&smoothing_enabled, &cleartype_enabled);
   // Note that |cleartype_enabled| corresponds to Skia's |enable_lcd_text|.
   renderer.SetFontSmoothingSettings(
-      smoothing_enabled, cleartype_enabled && !background_is_transparent());
+      smoothing_enabled, cleartype_enabled && !background_is_transparent(),
+      smoothing_enabled /* subpixel_positioning */);
 
   ApplyCompositionAndSelectionStyles();
 
@@ -841,7 +857,7 @@ void RenderTextWin::DrawVisualText(Canvas* canvas) {
       for (size_t k = glyph_range.start(); k < glyph_range.end(); ++k) {
         pos[k - glyph_range.start()].set(
             SkIntToScalar(text_offset.x() + run->offsets[k].du + segment_x),
-            SkIntToScalar(text_offset.y() + run->offsets[k].dv));
+            SkIntToScalar(text_offset.y() - run->offsets[k].dv));
         segment_x += run->advance_widths[k];
       }
       pos.back().set(SkIntToScalar(text_offset.x() + segment_x),
@@ -858,8 +874,13 @@ void RenderTextWin::DrawVisualText(Canvas* canvas) {
         const Range intersection =
             colors().GetRange(it).Intersect(segment->char_range);
         const Range colored_glyphs = CharRangeToGlyphRange(*run, intersection);
+        // The range may be empty if a portion of a multi-character grapheme is
+        // selected, yielding two colors for a single glyph. For now, this just
+        // paints the glyph with a single style, but it should paint it twice,
+        // clipped according to selection bounds. See http://crbug.com/366786
+        if (colored_glyphs.is_empty())
+          continue;
         DCHECK(glyph_range.Contains(colored_glyphs));
-        DCHECK(!colored_glyphs.is_empty());
         const SkPoint& start_pos =
             pos[colored_glyphs.start() - glyph_range.start()];
         const SkPoint& end_pos =
@@ -876,6 +897,8 @@ void RenderTextWin::DrawVisualText(Canvas* canvas) {
 
       preceding_segment_widths += segment_width;
     }
+
+    renderer.EndDiagonalStrike();
   }
 
   UndoCompositionAndSelectionStyles();
@@ -926,7 +949,7 @@ void RenderTextWin::ItemizeLogicalText() {
   for (size_t run_break = 0; run_break < layout_text_length;) {
     internal::TextRun* run = new internal::TextRun();
     run->range.set_start(run_break);
-    run->font = GetPrimaryFont();
+    run->font = font_list().GetPrimaryFont();
     run->font_style = (style.style(BOLD) ? Font::BOLD : 0) |
                       (style.style(ITALIC) ? Font::ITALIC : 0);
     DeriveFontIfNecessary(run->font.GetFontSize(), run->font.GetHeight(),
@@ -952,20 +975,8 @@ void RenderTextWin::ItemizeLogicalText() {
     // This avoids using their fallback fonts for more characters than needed,
     // in cases like "\x25B6 Media Title", etc. http://crbug.com/278913
     if (run_break > run->range.start()) {
-      const size_t run_start = run->range.start();
-      const int32 run_length = static_cast<int32>(run_break - run_start);
-      base::i18n::UTF16CharIterator iter(layout_text.c_str() + run_start,
-                                         run_length);
-      const UBlockCode first_block_code = ublock_getCode(iter.get());
-      const bool first_block_unusual = IsUnusualBlockCode(first_block_code);
-      while (iter.Advance() && iter.array_pos() < run_length) {
-        const UBlockCode current_block_code = ublock_getCode(iter.get());
-        if (current_block_code != first_block_code &&
-            (first_block_unusual || IsUnusualBlockCode(current_block_code))) {
-          run_break = run_start + iter.array_pos();
-          break;
-        }
-      }
+      run_break =
+          FindUnusualCharacter(layout_text, run->range.start(), run_break);
     }
 
     DCHECK(IsValidCodePointIndex(layout_text, run_break));
@@ -1271,7 +1282,7 @@ SelectionModel RenderTextWin::LastSelectionModelInsideRun(
   return SelectionModel(position, CURSOR_FORWARD);
 }
 
-RenderText* RenderText::CreateInstance() {
+RenderText* RenderText::CreateNativeInstance() {
   return new RenderTextWin;
 }
 

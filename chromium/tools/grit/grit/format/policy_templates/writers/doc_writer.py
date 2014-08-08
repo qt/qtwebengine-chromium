@@ -234,41 +234,32 @@ class DocWriter(xml_formatted_writer.XMLFormattedWriter):
     if self.IsPolicySupportedOnPlatform(policy, 'mac'):
       self._AddListExampleMac(examples, policy)
 
-  def _PythonDictionaryToMacDictionary(self, dictionary, indent=''):
-    '''Converts a python dictionary to an equivalent XML plist.
+  def _PythonObjectToPlist(self, obj, indent=''):
+    '''Converts a python object to an equivalent XML plist.
 
-    Returns a list of lines, with one dictionary entry per line.'''
-    result = [indent + '<dict>']
-    indent += '  '
-    for k in sorted(dictionary.keys()):
-      v = dictionary[k]
-      result.append('%s<key>%s</key>' % (indent, k))
-      value_type = type(v)
-      if value_type == bool:
-        result.append('%s<%s/>' % (indent, 'true' if v else 'false'))
-      elif value_type == int:
-        result.append('%s<integer>%s</integer>' % (indent, v))
-      elif value_type == str:
-        result.append('%s<string>%s</string>' % (indent, v))
-      elif value_type == dict:
-        result += self._PythonDictionaryToMacDictionary(v, indent)
-      elif value_type == list:
-        array = []
-        if len(v) != 0:
-          if type(v[0]) == str:
-            array = ['%s  <string>%s</string>' % (indent, x) for x in v]
-          elif type(v[0]) == dict:
-            for x in v:
-              array += self._PythonDictionaryToMacDictionary(x, indent + '  ')
-          else:
-            raise Exception('Must be list of string or dict.')
-        result.append('%s<array>' % indent)
-        result += array
-        result.append('%s</array>' % indent)
-      else:
-        raise Exception('Invalid example value type %s' % value_type)
-    result.append(indent[2:] + '</dict>')
-    return result
+    Returns a list of lines.'''
+    obj_type = type(obj)
+    if obj_type == bool:
+      return [ '%s<%s/>' % (indent, 'true' if obj else 'false') ]
+    elif obj_type == int:
+      return [ '%s<integer>%s</integer>' % (indent, obj) ]
+    elif obj_type == str:
+      return [ '%s<string>%s</string>' % (indent, obj) ]
+    elif obj_type == list:
+      result = [ '%s<array>' % indent ]
+      for item in obj:
+        result += self._PythonObjectToPlist(item, indent + '  ')
+      result.append('%s</array>' % indent)
+      return result
+    elif obj_type == dict:
+      result = [ '%s<dict>' % indent ]
+      for key in sorted(obj.keys()):
+        result.append('%s<key>%s</key>' % (indent + '  ', key))
+        result += self._PythonObjectToPlist(obj[key], indent + '  ')
+      result.append('%s</dict>' % indent)
+      return result
+    else:
+      raise Exception('Invalid object to convert: %s' % obj)
 
   def _AddDictionaryExampleMac(self, parent, policy):
     '''Adds an example value for Mac of a 'dict' policy to a DOM node.
@@ -282,7 +273,7 @@ class DocWriter(xml_formatted_writer.XMLFormattedWriter):
     self.AddElement(parent, 'dt', {}, 'Mac:')
     mac = self._AddStyledElement(parent, 'dd', ['.monospace', '.pre'])
     mac_text = ['<key>%s</key>' % (policy['name'])]
-    mac_text += self._PythonDictionaryToMacDictionary(example_value)
+    mac_text += self._PythonObjectToPlist(example_value)
     self.AddText(mac, '\n'.join(mac_text))
 
   def _AddDictionaryExampleWindows(self, parent, policy):
@@ -626,6 +617,8 @@ class DocWriter(xml_formatted_writer.XMLFormattedWriter):
       'mac': 'Mac',
       'linux': 'Linux',
       'chrome_os': self.config['os_name'],
+      'android': 'Android',
+      'ios': 'iOS',
     }
     # Human-readable names of supported products.
     self._PRODUCT_MAP = {

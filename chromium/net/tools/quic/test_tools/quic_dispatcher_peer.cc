@@ -5,8 +5,7 @@
 #include "net/tools/quic/test_tools/quic_dispatcher_peer.h"
 
 #include "net/tools/quic/quic_dispatcher.h"
-
-using net::test::QuicTestWriter;
+#include "net/tools/quic/quic_packet_writer_wrapper.h"
 
 namespace net {
 namespace tools {
@@ -20,13 +19,8 @@ void QuicDispatcherPeer::SetTimeWaitListManager(
 }
 
 // static
-void QuicDispatcherPeer::SetWriteBlocked(QuicDispatcher* dispatcher) {
-  dispatcher->write_blocked_ = true;
-}
-
-// static
 void QuicDispatcherPeer::UseWriter(QuicDispatcher* dispatcher,
-                                   QuicTestWriter* writer) {
+                                   QuicPacketWriterWrapper* writer) {
   writer->set_writer(dispatcher->writer_.release());
   dispatcher->writer_.reset(writer);
 }
@@ -40,6 +34,17 @@ QuicPacketWriter* QuicDispatcherPeer::GetWriter(QuicDispatcher* dispatcher) {
 QuicEpollConnectionHelper* QuicDispatcherPeer::GetHelper(
     QuicDispatcher* dispatcher) {
   return dispatcher->helper_.get();
+}
+
+// static
+QuicConnection* QuicDispatcherPeer::CreateQuicConnection(
+    QuicDispatcher* dispatcher,
+    QuicConnectionId connection_id,
+    const IPEndPoint& server,
+    const IPEndPoint& client) {
+  return dispatcher->CreateQuicConnection(connection_id,
+                                          server,
+                                          client);
 }
 
 }  // namespace test

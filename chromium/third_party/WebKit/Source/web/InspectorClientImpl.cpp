@@ -29,19 +29,21 @@
  */
 
 #include "config.h"
-#include "InspectorClientImpl.h"
+#include "web/InspectorClientImpl.h"
 
-#include "WebDevToolsAgentImpl.h"
-#include "WebViewClient.h"
-#include "WebViewImpl.h"
-#include "core/inspector/InspectorInstrumentation.h"
-#include "core/frame/DOMWindow.h"
-#include "core/page/Page.h"
+#include "core/frame/LocalDOMWindow.h"
+#include "core/frame/LocalFrame.h"
 #include "core/frame/Settings.h"
+#include "core/inspector/InspectorInstrumentation.h"
+#include "core/page/Page.h"
+#include "platform/JSONValues.h"
 #include "platform/geometry/FloatRect.h"
 #include "public/platform/WebRect.h"
 #include "public/platform/WebURL.h"
 #include "public/platform/WebURLRequest.h"
+#include "public/web/WebViewClient.h"
+#include "web/WebDevToolsAgentImpl.h"
+#include "web/WebViewImpl.h"
 #include "wtf/Vector.h"
 
 using namespace WebCore;
@@ -70,11 +72,16 @@ void InspectorClientImpl::hideHighlight()
         agent->hideHighlight();
 }
 
-bool InspectorClientImpl::sendMessageToFrontend(const WTF::String& message)
+void InspectorClientImpl::sendMessageToFrontend(PassRefPtr<WebCore::JSONObject> message)
 {
     if (WebDevToolsAgentImpl* agent = devToolsAgent())
-        return agent->sendMessageToFrontend(message);
-    return false;
+        agent->sendMessageToFrontend(message);
+}
+
+void InspectorClientImpl::flush()
+{
+    if (WebDevToolsAgentImpl* agent = devToolsAgent())
+        agent->flush();
 }
 
 void InspectorClientImpl::updateInspectorStateCookie(const WTF::String& inspectorState)
@@ -83,22 +90,22 @@ void InspectorClientImpl::updateInspectorStateCookie(const WTF::String& inspecto
         agent->updateInspectorStateCookie(inspectorState);
 }
 
-void InspectorClientImpl::clearBrowserCache()
+void InspectorClientImpl::setDeviceMetricsOverride(int width, int height, float deviceScaleFactor, bool emulateViewport, bool fitWindow)
 {
     if (WebDevToolsAgentImpl* agent = devToolsAgent())
-        agent->clearBrowserCache();
+        agent->setDeviceMetricsOverride(width, height, deviceScaleFactor, emulateViewport, fitWindow);
 }
 
-void InspectorClientImpl::clearBrowserCookies()
+void InspectorClientImpl::clearDeviceMetricsOverride()
 {
     if (WebDevToolsAgentImpl* agent = devToolsAgent())
-        agent->clearBrowserCookies();
+        agent->clearDeviceMetricsOverride();
 }
 
-void InspectorClientImpl::overrideDeviceMetrics(int width, int height, float deviceScaleFactor, bool emulateViewport, bool fitWindow)
+void InspectorClientImpl::setTouchEventEmulationEnabled(bool enabled)
 {
     if (WebDevToolsAgentImpl* agent = devToolsAgent())
-        agent->overrideDeviceMetrics(width, height, deviceScaleFactor, emulateViewport, fitWindow);
+        agent->setTouchEventEmulationEnabled(enabled);
 }
 
 bool InspectorClientImpl::overridesShowPaintRects()
@@ -133,7 +140,8 @@ void InspectorClientImpl::setShowScrollBottleneckRects(bool show)
 
 void InspectorClientImpl::requestPageScaleFactor(float scale, const IntPoint& origin)
 {
-    m_inspectedWebView->setPageScaleFactor(scale, origin);
+    m_inspectedWebView->setPageScaleFactor(scale);
+    m_inspectedWebView->setMainFrameScrollOffset(origin);
 }
 
 void InspectorClientImpl::getAllocatedObjects(HashSet<const void*>& set)
@@ -160,10 +168,28 @@ void InspectorClientImpl::dispatchMouseEvent(const PlatformMouseEvent& event)
         agent->dispatchMouseEvent(event);
 }
 
-void InspectorClientImpl::setTraceEventCallback(TraceEventCallback callback)
+void InspectorClientImpl::setTraceEventCallback(const String& categoryFilter, TraceEventCallback callback)
 {
     if (WebDevToolsAgentImpl* agent = devToolsAgent())
-        agent->setTraceEventCallback(callback);
+        agent->setTraceEventCallback(categoryFilter, callback);
+}
+
+void InspectorClientImpl::enableTracing(const String& categoryFilter)
+{
+    if (WebDevToolsAgentImpl* agent = devToolsAgent())
+        agent->enableTracing(categoryFilter);
+}
+
+void InspectorClientImpl::disableTracing()
+{
+    if (WebDevToolsAgentImpl* agent = devToolsAgent())
+        agent->disableTracing();
+}
+
+void InspectorClientImpl::resetTraceEventCallback()
+{
+    if (WebDevToolsAgentImpl* agent = devToolsAgent())
+        agent->resetTraceEventCallback();
 }
 
 void InspectorClientImpl::startGPUEventsRecording()

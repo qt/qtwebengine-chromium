@@ -37,9 +37,8 @@ class NET_EXPORT HttpResponseInfo {
     CONNECTION_INFO_HTTP1 = 1,
     CONNECTION_INFO_DEPRECATED_SPDY2 = 2,
     CONNECTION_INFO_SPDY3 = 3,
-    CONNECTION_INFO_SPDY4A2 = 4,
+    CONNECTION_INFO_SPDY4 = 4,
     CONNECTION_INFO_QUIC1_SPDY3 = 5,
-    CONNECTION_INFO_HTTP2_DRAFT_04 = 6,
     NUM_OF_CONNECTION_INFOS,
   };
 
@@ -59,12 +58,14 @@ class NET_EXPORT HttpResponseInfo {
                bool response_truncated) const;
 
   // The following is only defined if the request_time member is set.
-  // If this response was resurrected from cache, then this bool is set, and
+  // If this resource was found in the cache, then this bool is set, and
   // request_time may corresponds to a time "far" in the past.  Note that
   // stale content (perhaps un-cacheable) may be fetched from cache subject to
   // the load flags specified on the request info.  For example, this is done
   // when a user presses the back button to re-render pages, or at startup,
   // when reloading previously visited pages (without going over the network).
+  // Note also that under normal circumstances, was_cached is set to the correct
+  // value even if the request fails.
   bool was_cached;
 
   // True if the request was fetched from cache rather than the network
@@ -84,8 +85,10 @@ class NET_EXPORT HttpResponseInfo {
 
   // True if the request was fetched via an explicit proxy.  The proxy could
   // be any type of proxy, HTTP or SOCKS.  Note, we do not know if a
-  // transparent proxy may have been involved.
+  // transparent proxy may have been involved. If true, |proxy_server| contains
+  // the name of the proxy server that was used.
   bool was_fetched_via_proxy;
+  HostPortPair proxy_server;
 
   // Whether the request use http proxy or server authentication.
   bool did_use_http_auth;

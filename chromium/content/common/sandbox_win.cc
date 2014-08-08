@@ -8,11 +8,11 @@
 
 #include "base/base_switches.h"
 #include "base/command_line.h"
-#include "base/debug/debugger.h"
 #include "base/debug/profiler.h"
 #include "base/debug/trace_event.h"
 #include "base/file_util.h"
 #include "base/hash.h"
+#include "base/metrics/field_trial.h"
 #include "base/path_service.h"
 #include "base/process/launch.h"
 #include "base/strings/string_util.h"
@@ -25,11 +25,11 @@
 #include "content/public/common/content_switches.h"
 #include "content/public/common/sandbox_init.h"
 #include "content/public/common/sandboxed_process_launcher_delegate.h"
-#include "ipc/ipc_switches.h"
 #include "sandbox/win/src/process_mitigations.h"
 #include "sandbox/win/src/sandbox.h"
 #include "sandbox/win/src/sandbox_nt_util.h"
 #include "sandbox/win/src/win_utils.h"
+#include "ui/gfx/win/dpi.h"
 
 static sandbox::BrokerServices* g_broker_services = NULL;
 static sandbox::TargetServices* g_target_services = NULL;
@@ -43,10 +43,13 @@ namespace {
 // For more information about how this list is generated, and how to get off
 // of it, see:
 // https://sites.google.com/a/chromium.org/dev/Home/third-party-developers
+// If the size of this list exceeds 64, change kTroublesomeDllsMaxCount.
 const wchar_t* const kTroublesomeDlls[] = {
   L"adialhk.dll",                 // Kaspersky Internet Security.
   L"acpiz.dll",                   // Unknown.
   L"akinsofthook32.dll",          // Akinsoft Software Engineering.
+  L"assistant_x64.dll",           // Unknown.
+  L"avcuf64.dll",                 // Bit Defender Internet Security x64.
   L"avgrsstx.dll",                // AVG 8.
   L"babylonchromepi.dll",         // Babylon translator.
   L"btkeyind.dll",                // Widcomm Bluetooth.
@@ -220,7 +223,7 @@ void AddGenericDllEvictionPolicy(sandbox::TargetPolicy* policy) {
 }
 
 // Returns the object path prepended with the current logon session.
-base::string16 PrependWindowsSessionPath(const char16* object) {
+base::string16 PrependWindowsSessionPath(const base::char16* object) {
   // Cache this because it can't change after process creation.
   static uintptr_t s_session_id = 0;
   if (s_session_id == 0) {
@@ -332,7 +335,6 @@ bool AddGenericPolicy(sandbox::TargetPolicy* policy) {
 #endif  // NDEBUG
 
   AddGenericDllEvictionPolicy(policy);
-
   return true;
 }
 
@@ -345,6 +347,10 @@ bool AddPolicyForSandboxedProcess(sandbox::TargetPolicy* policy) {
   if (result != sandbox::SBOX_ALL_OK)
     return false;
 
+  // Win8+ adds a device DeviceApi that we don't need.
+  if (base::win::GetVersion() > base::win::VERSION_WIN7)
+    policy->AddKernelObjectToClose(L"File", L"\\Device\\DeviceApi");
+
   sandbox::TokenLevel initial_token = sandbox::USER_UNPROTECTED;
   if (base::win::GetVersion() > base::win::VERSION_XP) {
     // On 2003/Vista the initial token has to be restricted if the main
@@ -356,10 +362,7 @@ bool AddPolicyForSandboxedProcess(sandbox::TargetPolicy* policy) {
   // Prevents the renderers from manipulating low-integrity processes.
   policy->SetDelayedIntegrityLevel(sandbox::INTEGRITY_LEVEL_UNTRUSTED);
 
-  bool use_winsta = !CommandLine::ForCurrentProcess()->HasSwitch(
-                        switches::kDisableAltWinstation);
-
-  if (sandbox::SBOX_ALL_OK !=  policy->SetAlternateDesktop(use_winsta)) {
+  if (sandbox::SBOX_ALL_OK !=  policy->SetAlternateDesktop(true)) {
     DLOG(WARNING) << "Failed to apply desktop security to the renderer";
   }
 
@@ -368,25 +371,11 @@ bool AddPolicyForSandboxedProcess(sandbox::TargetPolicy* policy) {
 
 // Updates the command line arguments with debug-related flags. If debug flags
 // have been used with this process, they will be filtered and added to
-// command_line as needed. is_in_sandbox must be true if the child process will
-// be in a sandbox.
-//
-// Returns true if the caller should "help" the child process by calling the JIT
-// debugger on it. It may only happen if is_in_sandbox is true.
-bool ProcessDebugFlags(CommandLine* command_line, bool is_in_sandbox) {
-  bool should_help_child = false;
+// command_line as needed.
+void ProcessDebugFlags(CommandLine* command_line) {
   const CommandLine& current_cmd_line = *CommandLine::ForCurrentProcess();
   std::string type = command_line->GetSwitchValueASCII(switches::kProcessType);
-  if (current_cmd_line.HasSwitch(switches::kDebugChildren)) {
-    // Look to pass-on the kDebugOnStart flag.
-    std::string value = current_cmd_line.GetSwitchValueASCII(
-        switches::kDebugChildren);
-    if (value.empty() || value == type) {
-      command_line->AppendSwitch(switches::kDebugOnStart);
-      should_help_child = true;
-    }
-    command_line->AppendSwitchASCII(switches::kDebugChildren, value);
-  } else if (current_cmd_line.HasSwitch(switches::kWaitForDebuggerChildren)) {
+  if (current_cmd_line.HasSwitch(switches::kWaitForDebuggerChildren)) {
     // Look to pass-on the kWaitForDebugger flag.
     std::string value = current_cmd_line.GetSwitchValueASCII(
         switches::kWaitForDebuggerChildren);
@@ -395,7 +384,6 @@ bool ProcessDebugFlags(CommandLine* command_line, bool is_in_sandbox) {
     }
     command_line->AppendSwitchASCII(switches::kWaitForDebuggerChildren, value);
   }
-  return should_help_child;
 }
 
 // This code is test only, and attempts to catch unsafe uses of
@@ -403,13 +391,15 @@ bool ProcessDebugFlags(CommandLine* command_line, bool is_in_sandbox) {
 #ifndef OFFICIAL_BUILD
 base::win::IATPatchFunction g_iat_patch_duplicate_handle;
 
-BOOL (WINAPI *g_iat_orig_duplicate_handle)(HANDLE source_process_handle,
-                                           HANDLE source_handle,
-                                           HANDLE target_process_handle,
-                                           LPHANDLE target_handle,
-                                           DWORD desired_access,
-                                           BOOL inherit_handle,
-                                           DWORD options);
+typedef BOOL (WINAPI *DuplicateHandleFunctionPtr)(HANDLE source_process_handle,
+                                                  HANDLE source_handle,
+                                                  HANDLE target_process_handle,
+                                                  LPHANDLE target_handle,
+                                                  DWORD desired_access,
+                                                  BOOL inherit_handle,
+                                                  DWORD options);
+
+DuplicateHandleFunctionPtr g_iat_orig_duplicate_handle;
 
 NtQueryObject g_QueryObject = NULL;
 
@@ -507,10 +497,14 @@ void SetJobLevel(const CommandLine& cmd_line,
                  sandbox::JobLevel job_level,
                  uint32 ui_exceptions,
                  sandbox::TargetPolicy* policy) {
-  if (ShouldSetJobLevel(cmd_line))
+  if (ShouldSetJobLevel(cmd_line)) {
+#ifdef _WIN64
+    policy->SetJobMemoryLimit(4ULL * 1024 * 1024 * 1024);
+#endif
     policy->SetJobLevel(job_level, ui_exceptions);
-  else
+  } else {
     policy->SetJobLevel(sandbox::JOB_NONE, 0);
+  }
 }
 
 // TODO(jschuh): Need get these restrictions applied to NaCl and Pepper.
@@ -547,10 +541,13 @@ bool InitBrokerServices(sandbox::BrokerServices* broker_services) {
     DWORD result = ::GetModuleFileNameW(module, module_name, MAX_PATH);
     if (result && (result != MAX_PATH)) {
       ResolveNTFunctionPtr("NtQueryObject", &g_QueryObject);
-      g_iat_orig_duplicate_handle = ::DuplicateHandle;
-      g_iat_patch_duplicate_handle.Patch(
+      result = g_iat_patch_duplicate_handle.Patch(
           module_name, "kernel32.dll", "DuplicateHandle",
           DuplicateHandlePatch);
+      CHECK(result == 0);
+      g_iat_orig_duplicate_handle =
+          reinterpret_cast<DuplicateHandleFunctionPtr>(
+              g_iat_patch_duplicate_handle.original_function());
     }
   }
 #endif
@@ -566,6 +563,38 @@ bool InitTargetServices(sandbox::TargetServices* target_services) {
   return sandbox::SBOX_ALL_OK == result;
 }
 
+bool ShouldUseDirectWrite() {
+  // If the flag is currently on, and we're on Win7 or above, we enable
+  // DirectWrite. Skia does not require the additions to DirectWrite in QFE
+  // 2670838, but a simple 'better than XP' check is not enough.
+  if (base::win::GetVersion() < base::win::VERSION_WIN7)
+    return false;
+
+  base::win::OSInfo::VersionNumber os_version =
+      base::win::OSInfo::GetInstance()->version_number();
+  if ((os_version.major == 6) && (os_version.minor == 1)) {
+    // We can't use DirectWrite for pre-release versions of Windows 7.
+    if (os_version.build < 7600)
+      return false;
+  }
+
+  // If forced off, don't use it.
+  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  if (command_line.HasSwitch(switches::kDisableDirectWrite))
+    return false;
+
+#if !defined(NACL_WIN64)
+  // Can't use GDI on HiDPI.
+  if (gfx::GetDPIScale() > 1.0f)
+    return true;
+#endif
+
+  // Otherwise, check the field trial.
+  const std::string group_name =
+      base::FieldTrialList::FindFullName("DirectWrite");
+  return group_name != "Disabled";
+}
+
 base::ProcessHandle StartSandboxedProcess(
     SandboxedProcessLauncherDelegate* delegate,
     CommandLine* cmd_line) {
@@ -574,31 +603,22 @@ base::ProcessHandle StartSandboxedProcess(
 
   TRACE_EVENT_BEGIN_ETW("StartProcessWithAccess", 0, type_str);
 
-  bool in_sandbox = true;
-  if (delegate)
-    delegate->ShouldSandbox(&in_sandbox);
-
-  if (browser_command_line.HasSwitch(switches::kNoSandbox) ||
-      cmd_line->HasSwitch(switches::kNoSandbox)) {
-    // The user or the caller has explicity opted-out from all sandboxing.
-    in_sandbox = false;
-  }
-
-
   // Propagate the --allow-no-job flag if present.
   if (browser_command_line.HasSwitch(switches::kAllowNoSandboxJob) &&
       !cmd_line->HasSwitch(switches::kAllowNoSandboxJob)) {
     cmd_line->AppendSwitch(switches::kAllowNoSandboxJob);
   }
 
-  bool child_needs_help = ProcessDebugFlags(cmd_line, in_sandbox);
+  ProcessDebugFlags(cmd_line);
 
   // Prefetch hints on windows:
   // Using a different prefetch profile per process type will allow Windows
   // to create separate pretetch settings for browser, renderer etc.
   cmd_line->AppendArg(base::StringPrintf("/prefetch:%d", base::Hash(type_str)));
 
-  if (!in_sandbox) {
+  if ((delegate && !delegate->ShouldSandbox()) ||
+      browser_command_line.HasSwitch(switches::kNoSandbox) ||
+      cmd_line->HasSwitch(switches::kNoSandbox)) {
     base::ProcessHandle process = 0;
     base::LaunchProcess(*cmd_line, base::LaunchOptions(), &process);
     g_broker_services->AddTargetPeer(process);
@@ -612,6 +632,18 @@ base::ProcessHandle StartSandboxedProcess(
                                          sandbox::MITIGATION_DEP |
                                          sandbox::MITIGATION_DEP_NO_ATL_THUNK |
                                          sandbox::MITIGATION_SEHOP;
+
+ if (base::win::GetVersion() >= base::win::VERSION_WIN8 &&
+     type_str == switches::kRendererProcess &&
+     browser_command_line.HasSwitch(
+        switches::kEnableWin32kRendererLockDown)) {
+    if (policy->AddRule(sandbox::TargetPolicy::SUBSYS_WIN32K_LOCKDOWN,
+                        sandbox::TargetPolicy::FAKE_USER_GDI_INIT,
+                        NULL) != sandbox::SBOX_ALL_OK) {
+      return 0;
+    }
+    mitigations |= sandbox::MITIGATION_WIN32K_DISABLE;
+  }
 
   if (policy->SetProcessMitigations(mitigations) != sandbox::SBOX_ALL_OK)
     return 0;
@@ -632,7 +664,15 @@ base::ProcessHandle StartSandboxedProcess(
   if (!disable_default_policy && !AddPolicyForSandboxedProcess(policy))
     return 0;
 
-  if (type_str != switches::kRendererProcess) {
+  if (type_str == switches::kRendererProcess) {
+    if (ShouldUseDirectWrite()) {
+      AddDirectory(base::DIR_WINDOWS_FONTS,
+                  NULL,
+                  true,
+                  sandbox::TargetPolicy::FILES_ALLOW_READONLY,
+                  policy);
+    }
+  } else {
     // Hack for Google Desktop crash. Trick GD into not injecting its DLL into
     // this subprocess. See
     // http://code.google.com/p/chromium/issues/detail?id=25580
@@ -698,12 +738,6 @@ base::ProcessHandle StartSandboxedProcess(
     delegate->PostSpawnTarget(target.process_handle());
 
   ResumeThread(target.thread_handle());
-
-  // Help the process a little. It can't start the debugger by itself if
-  // the process is in a sandbox.
-  if (child_needs_help)
-    base::debug::SpawnDebuggerOnProcess(target.process_id());
-
   return target.TakeProcessHandle();
 }
 

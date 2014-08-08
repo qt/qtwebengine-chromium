@@ -25,18 +25,16 @@
 #include "config.h"
 #include "modules/mediastream/RTCDataChannelEvent.h"
 
-#include "core/events/ThreadLocalEventNames.h"
-
 namespace WebCore {
 
-PassRefPtr<RTCDataChannelEvent> RTCDataChannelEvent::create()
+PassRefPtrWillBeRawPtr<RTCDataChannelEvent> RTCDataChannelEvent::create()
 {
-    return adoptRef(new RTCDataChannelEvent);
+    return adoptRefWillBeNoop(new RTCDataChannelEvent);
 }
 
-PassRefPtr<RTCDataChannelEvent> RTCDataChannelEvent::create(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtr<RTCDataChannel> channel)
+PassRefPtrWillBeRawPtr<RTCDataChannelEvent> RTCDataChannelEvent::create(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtrWillBeRawPtr<RTCDataChannel> channel)
 {
-    return adoptRef(new RTCDataChannelEvent(type, canBubble, cancelable, channel));
+    return adoptRefWillBeNoop(new RTCDataChannelEvent(type, canBubble, cancelable, channel));
 }
 
 
@@ -45,7 +43,7 @@ RTCDataChannelEvent::RTCDataChannelEvent()
     ScriptWrappable::init(this);
 }
 
-RTCDataChannelEvent::RTCDataChannelEvent(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtr<RTCDataChannel> channel)
+RTCDataChannelEvent::RTCDataChannelEvent(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtrWillBeRawPtr<RTCDataChannel> channel)
     : Event(type, canBubble, cancelable)
     , m_channel(channel)
 {
@@ -66,5 +64,10 @@ const AtomicString& RTCDataChannelEvent::interfaceName() const
     return EventNames::RTCDataChannelEvent;
 }
 
-} // namespace WebCore
+void RTCDataChannelEvent::trace(Visitor* visitor)
+{
+    visitor->trace(m_channel);
+    Event::trace(visitor);
+}
 
+} // namespace WebCore

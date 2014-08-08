@@ -21,6 +21,7 @@
 #define SVGFEDropShadowElement_h
 
 #include "core/svg/SVGAnimatedNumber.h"
+#include "core/svg/SVGAnimatedNumberOptionalNumber.h"
 #include "core/svg/SVGFilterPrimitiveStandardAttributes.h"
 #include "platform/graphics/filters/FEDropShadow.h"
 
@@ -28,28 +29,31 @@ namespace WebCore {
 
 class SVGFEDropShadowElement FINAL : public SVGFilterPrimitiveStandardAttributes {
 public:
-    static PassRefPtr<SVGFEDropShadowElement> create(Document&);
+    DECLARE_NODE_FACTORY(SVGFEDropShadowElement);
 
     void setStdDeviation(float stdDeviationX, float stdDeviationY);
+
+    SVGAnimatedNumber* dx() { return m_dx.get(); }
+    SVGAnimatedNumber* dy() { return m_dy.get(); }
+    SVGAnimatedNumber* stdDeviationX() { return m_stdDeviation->firstNumber(); }
+    SVGAnimatedNumber* stdDeviationY() { return m_stdDeviation->secondNumber(); }
+    SVGAnimatedString* in1() { return m_in1.get(); }
 
 private:
     explicit SVGFEDropShadowElement(Document&);
 
     bool isSupportedAttribute(const QualifiedName&);
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual void svgAttributeChanged(const QualifiedName&);
-    virtual PassRefPtr<FilterEffect> build(SVGFilterBuilder*, Filter*);
+    virtual void svgAttributeChanged(const QualifiedName&) OVERRIDE;
+    virtual PassRefPtr<FilterEffect> build(SVGFilterBuilder*, Filter*) OVERRIDE;
 
     static const AtomicString& stdDeviationXIdentifier();
     static const AtomicString& stdDeviationYIdentifier();
 
-    BEGIN_DECLARE_ANIMATED_PROPERTIES(SVGFEDropShadowElement)
-        DECLARE_ANIMATED_STRING(In1, in1)
-        DECLARE_ANIMATED_NUMBER(Dx, dx)
-        DECLARE_ANIMATED_NUMBER(Dy, dy)
-        DECLARE_ANIMATED_NUMBER(StdDeviationX, stdDeviationX)
-        DECLARE_ANIMATED_NUMBER(StdDeviationY, stdDeviationY)
-    END_DECLARE_ANIMATED_PROPERTIES
+    RefPtr<SVGAnimatedNumber> m_dx;
+    RefPtr<SVGAnimatedNumber> m_dy;
+    RefPtr<SVGAnimatedNumberOptionalNumber> m_stdDeviation;
+    RefPtr<SVGAnimatedString> m_in1;
 };
 
 } // namespace WebCore

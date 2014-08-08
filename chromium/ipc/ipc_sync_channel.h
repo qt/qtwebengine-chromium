@@ -30,7 +30,7 @@ class SyncMessage;
 // Overview of how the sync channel works
 // --------------------------------------
 // When the sending thread sends a synchronous message, we create a bunch
-// of tracking info (created in SendWithTimeout, stored in the PendingSyncMsg
+// of tracking info (created in Send, stored in the PendingSyncMsg
 // structure) associated with the message that we identify by the unique
 // "MessageId" on the SyncMessage. Among the things we save is the
 // "Deserializer" which is provided by the sync message. This object is in
@@ -66,29 +66,26 @@ class IPC_EXPORT SyncChannel : public ChannelProxy {
 
   // Creates and initializes a sync channel. If create_pipe_now is specified,
   // the channel will be initialized synchronously.
-  SyncChannel(const IPC::ChannelHandle& channel_handle,
-              Channel::Mode mode,
-              Listener* listener,
-              base::SingleThreadTaskRunner* ipc_task_runner,
-              bool create_pipe_now,
-              base::WaitableEvent* shutdown_event);
+  // The naming pattern follows IPC::Channel.
+  static scoped_ptr<SyncChannel> Create(
+      const IPC::ChannelHandle& channel_handle,
+      IPC::Channel::Mode mode,
+      Listener* listener,
+      base::SingleThreadTaskRunner* ipc_task_runner,
+      bool create_pipe_now,
+      base::WaitableEvent* shutdown_event);
 
   // Creates an uninitialized sync channel. Call ChannelProxy::Init to
   // initialize the channel. This two-step setup allows message filters to be
   // added before any messages are sent or received.
-  SyncChannel(Listener* listener,
-              base::SingleThreadTaskRunner* ipc_task_runner,
-              base::WaitableEvent* shutdown_event);
+  static scoped_ptr<SyncChannel> Create(
+      Listener* listener,
+      base::SingleThreadTaskRunner* ipc_task_runner,
+      base::WaitableEvent* shutdown_event);
 
   virtual ~SyncChannel();
 
   virtual bool Send(Message* message) OVERRIDE;
-  virtual bool SendWithTimeout(Message* message, int timeout_ms);
-
-  // Whether we allow sending messages with no time-out.
-  void set_sync_messages_with_no_timeout_allowed(bool value) {
-    sync_messages_with_no_timeout_allowed_ = value;
-  }
 
   // Sets the dispatch group for this channel, to only allow re-entrant dispatch
   // of messages to other channels in the same group.
@@ -194,6 +191,10 @@ class IPC_EXPORT SyncChannel : public ChannelProxy {
   };
 
  private:
+  SyncChannel(Listener* listener,
+              base::SingleThreadTaskRunner* ipc_task_runner,
+              base::WaitableEvent* shutdown_event);
+
   void OnWaitableEventSignaled(base::WaitableEvent* arg);
 
   SyncContext* sync_context() {
@@ -211,8 +212,6 @@ class IPC_EXPORT SyncChannel : public ChannelProxy {
 
   // Starts the dispatch watcher.
   void StartWatching();
-
-  bool sync_messages_with_no_timeout_allowed_;
 
   // Used to signal events between the IPC and listener threads.
   base::WaitableEventWatcher dispatch_watcher_;

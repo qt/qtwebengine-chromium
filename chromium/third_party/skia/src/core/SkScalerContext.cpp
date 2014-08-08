@@ -15,8 +15,8 @@
 #include "SkGlyph.h"
 #include "SkMaskFilter.h"
 #include "SkMaskGamma.h"
-#include "SkOrderedReadBuffer.h"
-#include "SkOrderedWriteBuffer.h"
+#include "SkReadBuffer.h"
+#include "SkWriteBuffer.h"
 #include "SkPathEffect.h"
 #include "SkRasterizer.h"
 #include "SkRasterClip.h"
@@ -73,7 +73,7 @@ static SkFlattenable* load_flattenable(const SkDescriptor* desc, uint32_t tag,
     const void*     data = desc->findEntry(tag, &len);
 
     if (data) {
-        SkOrderedReadBuffer   buffer(data, len);
+        SkReadBuffer buffer(data, len);
         obj = buffer.readFlattenable(ft);
         SkASSERT(buffer.offset() == buffer.size());
     }
@@ -102,7 +102,7 @@ SkScalerContext::SkScalerContext(SkTypeface* typeface, const SkDescriptor* desc)
 {
 #ifdef DUMP_REC
     desc->assertChecksum();
-    SkDebugf("SkScalarContext checksum %x count %d length %d\n",
+    SkDebugf("SkScalerContext checksum %x count %d length %d\n",
              desc->getChecksum(), desc->getCount(), desc->getLength());
     SkDebugf(" textsize %g prescale %g preskew %g post [%g %g %g %g]\n",
         rec->fTextSize, rec->fPreScaleX, rec->fPreSkewX, rec->fPost2x2[0][0],
@@ -118,7 +118,7 @@ SkScalerContext::SkScalerContext(SkTypeface* typeface, const SkDescriptor* desc)
     uint32_t len;
     const void* data = desc->findEntry(kAndroidOpts_SkDescriptorTag, &len);
     if (data) {
-        SkOrderedReadBuffer buffer(data, len);
+        SkReadBuffer buffer(data, len);
         fPaintOptionsAndroid.unflatten(buffer);
         SkASSERT(buffer.offset() == buffer.size());
     }
@@ -147,10 +147,11 @@ SkScalerContext* SkScalerContext::allocNextContext() const {
     SkAutoTUnref<SkTypeface> aur(newFace);
     uint32_t newFontID = newFace->uniqueID();
 
-    SkOrderedWriteBuffer androidBuffer(128);
+    SkWriteBuffer androidBuffer;
     fPaintOptionsAndroid.flatten(androidBuffer);
 
-    SkAutoDescriptor    ad(sizeof(fRec) + androidBuffer.size() + SkDescriptor::ComputeOverhead(2));
+    SkAutoDescriptor    ad(sizeof(fRec) + androidBuffer.bytesWritten()
+                           + SkDescriptor::ComputeOverhead(2));
     SkDescriptor*       desc = ad.getDesc();
 
     desc->init();
@@ -158,7 +159,7 @@ SkScalerContext* SkScalerContext::allocNextContext() const {
     (SkScalerContext::Rec*)desc->addEntry(kRec_SkDescriptorTag,
                                           sizeof(fRec), &fRec);
     androidBuffer.writeToMemory(desc->addEntry(kAndroidOpts_SkDescriptorTag,
-                                               androidBuffer.size(), NULL));
+                                               androidBuffer.bytesWritten(), NULL));
 
     newRec->fFontID = newFontID;
     desc->computeChecksum();
@@ -427,7 +428,7 @@ static void pack4xHToLCD16(const SkBitmap& src, const SkMask& dst,
                            const SkMaskGamma::PreBlend& maskPreBlend) {
 #define SAMPLES_PER_PIXEL 4
 #define LCD_PER_PIXEL 3
-    SkASSERT(SkBitmap::kA8_Config == src.config());
+    SkASSERT(kAlpha_8_SkColorType == src.colorType());
     SkASSERT(SkMask::kLCD16_Format == dst.fFormat);
 
     const int sample_width = src.width();
@@ -501,7 +502,7 @@ static void pack4xHToLCD16(const SkBitmap& src, const SkMask& dst,
 template<bool APPLY_PREBLEND>
 static void pack4xHToLCD32(const SkBitmap& src, const SkMask& dst,
                            const SkMaskGamma::PreBlend& maskPreBlend) {
-    SkASSERT(SkBitmap::kA8_Config == src.config());
+    SkASSERT(kAlpha_8_SkColorType == src.colorType());
     SkASSERT(SkMask::kLCD32_Format == dst.fFormat);
 
     const int width = dst.fBounds.width();
@@ -547,8 +548,9 @@ static void packA8ToA1(const SkMask& mask, const uint8_t* src, size_t srcRB) {
     const int dstPad = mask.fRowBytes - SkAlign8(width)/8;
     SkASSERT(dstPad >= 0);
 
-    const int srcPad = srcRB - width;
-    SkASSERT(srcPad >= 0);
+    SkASSERT(width >= 0);
+    SkASSERT(srcRB >= (size_t)width);
+    const size_t srcPad = srcRB - width;
 
     for (int y = 0; y < height; ++y) {
         for (int i = 0; i < octs; ++i) {
@@ -582,7 +584,6 @@ static void generateMask(const SkMask& mask, const SkPath& path,
     matrix.setTranslate(-SkIntToScalar(mask.fBounds.fLeft),
                         -SkIntToScalar(mask.fBounds.fTop));
 
-    SkBitmap::Config config = SkBitmap::kA8_Config;
     paint.setAntiAlias(SkMask::kBW_Format != mask.fFormat);
     switch (mask.fFormat) {
         case SkMask::kBW_Format:
@@ -606,18 +607,17 @@ static void generateMask(const SkMask& mask, const SkPath& path,
     SkRasterClip clip;
     clip.setRect(SkIRect::MakeWH(dstW, dstH));
 
+    const SkImageInfo info = SkImageInfo::MakeA8(dstW, dstH);
     SkBitmap bm;
-    bm.setConfig(config, dstW, dstH, dstRB);
 
     if (0 == dstRB) {
-        if (!bm.allocPixels()) {
+        if (!bm.allocPixels(info)) {
             // can't allocate offscreen, so empty the mask and return
             sk_bzero(mask.fImage, mask.computeImageSize());
             return;
         }
-        bm.lockPixels();
     } else {
-        bm.setPixels(mask.fImage);
+        bm.installPixels(info, mask.fImage, dstRB);
     }
     sk_bzero(bm.getPixels(), bm.getSafeSize());
 

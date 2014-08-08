@@ -25,7 +25,7 @@
 #include "net/base/net_export.h"
 
 #if defined(OS_ANDROID)
-#include "base/android/activity_status.h"
+#include "base/android/application_status_listener.h"
 #endif
 
 class Pickle;
@@ -149,9 +149,9 @@ class NET_EXPORT_PRIVATE SimpleIndex
   void MergeInitializingSet(scoped_ptr<SimpleIndexLoadResult> load_result);
 
 #if defined(OS_ANDROID)
-  void OnActivityStateChange(base::android::ActivityState state);
+  void OnApplicationStateChange(base::android::ApplicationState state);
 
-  scoped_ptr<base::android::ActivityStatus::Listener> activity_status_listener_;
+  scoped_ptr<base::android::ApplicationStatusListener> app_status_listener_;
 #endif
 
   // The owner of |this| must ensure the |delegate_| outlives |this|.
@@ -195,12 +195,6 @@ class NET_EXPORT_PRIVATE SimpleIndex
   // background we can write the index much more frequently, to insure fresh
   // index on next startup.
   bool app_on_background_;
-
-  // The time in milliseconds for the index to be idle before it gets flushed to
-  // the disk. When the app is on foreground the delay is different from the
-  // background state.
-  int foreground_flush_delay_;
-  int background_flush_delay_;
 };
 
 }  // namespace disk_cache

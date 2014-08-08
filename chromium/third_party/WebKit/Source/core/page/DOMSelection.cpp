@@ -31,6 +31,7 @@
 #include "config.h"
 #include "core/page/DOMSelection.h"
 
+#include "bindings/v8/ExceptionMessages.h"
 #include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "core/dom/Document.h"
@@ -41,12 +42,12 @@
 #include "core/editing/FrameSelection.h"
 #include "core/editing/TextIterator.h"
 #include "core/editing/htmlediting.h"
-#include "core/frame/Frame.h"
+#include "core/frame/LocalFrame.h"
 #include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
-static Node* selectionShadowAncestor(Frame* frame)
+static Node* selectionShadowAncestor(LocalFrame* frame)
 {
     Node* node = frame->selection().selection().base().anchorNode();
     if (!node)
@@ -59,7 +60,7 @@ static Node* selectionShadowAncestor(Frame* frame)
 }
 
 DOMSelection::DOMSelection(const TreeScope* treeScope)
-    : DOMWindowProperty(treeScope->rootNode()->document().frame())
+    : DOMWindowProperty(treeScope->rootNode().document().frame())
     , m_treeScope(treeScope)
 {
     ScriptWrappable::init(this);
@@ -67,7 +68,7 @@ DOMSelection::DOMSelection(const TreeScope* treeScope)
 
 void DOMSelection::clearTreeScope()
 {
-    m_treeScope = 0;
+    m_treeScope = nullptr;
 }
 
 const VisibleSelection& DOMSelection::visibleSelection() const
@@ -195,6 +196,7 @@ int DOMSelection::rangeCount() const
 
 void DOMSelection::collapse(Node* node, int offset, ExceptionState& exceptionState)
 {
+    ASSERT(node);
     if (!m_frame)
         return;
 
@@ -205,9 +207,19 @@ void DOMSelection::collapse(Node* node, int offset, ExceptionState& exceptionSta
 
     if (!isValidForPosition(node))
         return;
+    RefPtrWillBeRawPtr<Range> range = Range::create(node->document());
+    range->setStart(node, offset, exceptionState);
+    if (exceptionState.hadException())
+        return;
+    range->setEnd(node, offset, exceptionState);
+    if (exceptionState.hadException())
+        return;
+    m_frame->selection().setSelectedRange(range.get(), DOWNSTREAM, m_frame->selection().isDirectional() ? FrameSelection::Directional : FrameSelection::NonDirectional);
+}
 
-    // FIXME: Eliminate legacy editing positions
-    m_frame->selection().moveTo(VisiblePosition(createLegacyEditingPosition(node, offset), DOWNSTREAM));
+void DOMSelection::collapse(Node* node, ExceptionState& exceptionState)
+{
+    collapse(node, 0, exceptionState);
 }
 
 void DOMSelection::collapseToEnd(ExceptionState& exceptionState)
@@ -272,22 +284,6 @@ void DOMSelection::setBaseAndExtent(Node* baseNode, int baseOffset, Node* extent
     m_frame->selection().moveTo(visibleBase, visibleExtent);
 }
 
-void DOMSelection::setPosition(Node* node, int offset, ExceptionState& exceptionState)
-{
-    if (!m_frame)
-        return;
-    if (offset < 0) {
-        exceptionState.throwDOMException(IndexSizeError, String::number(offset) + " is not a valid offset.");
-        return;
-    }
-
-    if (!isValidForPosition(node))
-        return;
-
-    // FIXME: Eliminate legacy editing positions
-    m_frame->selection().moveTo(VisiblePosition(createLegacyEditingPosition(node, offset), DOWNSTREAM));
-}
-
 void DOMSelection::modify(const String& alterString, const String& directionString, const String& granularityString)
 {
     if (!m_frame)
@@ -344,7 +340,7 @@ void DOMSelection::extend(Node* node, int offset, ExceptionState& exceptionState
         return;
 
     if (!node) {
-        exceptionState.throwDOMException(TypeMismatchError, "The node provided is invalid.");
+        exceptionState.throwDOMException(TypeMismatchError, ExceptionMessages::argumentNullOrIncorrectType(1, "Node"));
         return;
     }
 
@@ -352,7 +348,7 @@ void DOMSelection::extend(Node* node, int offset, ExceptionState& exceptionState
         exceptionState.throwDOMException(IndexSizeError, String::number(offset) + " is not a valid offset.");
         return;
     }
-    if (offset > (node->offsetInCharacters() ? caretMaxOffset(node) : (int)node->childNodeCount())) {
+    if (offset > (node->offsetInCharacters() ? caretMaxOffset(node) : (int)node->countChildren())) {
         exceptionState.throwDOMException(IndexSizeError, String::number(offset) + " is larger than the given node's length.");
         return;
     }
@@ -364,14 +360,14 @@ void DOMSelection::extend(Node* node, int offset, ExceptionState& exceptionState
     m_frame->selection().setExtent(VisiblePosition(createLegacyEditingPosition(node, offset), DOWNSTREAM));
 }
 
-PassRefPtr<Range> DOMSelection::getRangeAt(int index, ExceptionState& exceptionState)
+PassRefPtrWillBeRawPtr<Range> DOMSelection::getRangeAt(int index, ExceptionState& exceptionState)
 {
     if (!m_frame)
-        return 0;
+        return nullptr;
 
     if (index < 0 || index >= rangeCount()) {
         exceptionState.throwDOMException(IndexSizeError, String::number(index) + " is not a valid index.");
-        return 0;
+        return nullptr;
     }
 
     // If you're hitting this, you've added broken multi-range selection support
@@ -384,8 +380,7 @@ PassRefPtr<Range> DOMSelection::getRangeAt(int index, ExceptionState& exceptionS
         return Range::create(shadowAncestor->document(), container, offset, container, offset);
     }
 
-    const VisibleSelection& selection = m_frame->selection().selection();
-    return selection.firstRange();
+    return m_frame->selection().firstRange();
 }
 
 void DOMSelection::removeAllRanges()
@@ -395,45 +390,56 @@ void DOMSelection::removeAllRanges()
     m_frame->selection().clear();
 }
 
-void DOMSelection::addRange(Range* r)
+void DOMSelection::addRange(Range* newRange)
 {
     if (!m_frame)
         return;
-    if (!r)
+
+    // FIXME: Should we throw DOMException for error cases below?
+    if (!newRange) {
+        addConsoleError("The given range is null.");
         return;
+    }
+
+    if (!newRange->startContainer()) {
+        addConsoleError("The given range has no container. Perhaps 'detach()' has been invoked on it?");
+        return;
+    }
 
     FrameSelection& selection = m_frame->selection();
 
     if (selection.isNone()) {
-        selection.setSelection(VisibleSelection(r));
+        selection.setSelectedRange(newRange, VP_DEFAULT_AFFINITY);
         return;
     }
 
-    RefPtr<Range> range = selection.selection().toNormalizedRange();
-    if (r->compareBoundaryPoints(Range::START_TO_START, range.get(), IGNORE_EXCEPTION) == -1) {
-        // We don't support discontiguous selection. We don't do anything if r and range don't intersect.
-        if (r->compareBoundaryPoints(Range::START_TO_END, range.get(), IGNORE_EXCEPTION) > -1) {
-            if (r->compareBoundaryPoints(Range::END_TO_END, range.get(), IGNORE_EXCEPTION) == -1) {
-                // The original range and r intersect.
-                selection.setSelection(VisibleSelection(r->startPosition(), range->endPosition(), DOWNSTREAM));
-            } else {
-                // r contains the original range.
-                selection.setSelection(VisibleSelection(r));
-            }
-        }
-    } else {
-        // We don't support discontiguous selection. We don't do anything if r and range don't intersect.
-        TrackExceptionState exceptionState;
-        if (r->compareBoundaryPoints(Range::END_TO_START, range.get(), exceptionState) < 1 && !exceptionState.hadException()) {
-            if (r->compareBoundaryPoints(Range::END_TO_END, range.get(), IGNORE_EXCEPTION) == -1) {
-                // The original range contains r.
-                selection.setSelection(VisibleSelection(range.get()));
-            } else {
-                // The original range and r intersect.
-                selection.setSelection(VisibleSelection(range->startPosition(), r->endPosition(), DOWNSTREAM));
-            }
-        }
+    RefPtrWillBeRawPtr<Range> originalRange = selection.firstRange();
+
+    if (originalRange->startContainer()->document() != newRange->startContainer()->document()) {
+        addConsoleError("The given range does not belong to the current selection's document.");
+        return;
     }
+    if (originalRange->startContainer()->treeScope() != newRange->startContainer()->treeScope()) {
+        addConsoleError("The given range and the current selection belong to two different document fragments.");
+        return;
+    }
+
+    if (originalRange->compareBoundaryPoints(Range::START_TO_END, newRange, ASSERT_NO_EXCEPTION) < 0
+        || newRange->compareBoundaryPoints(Range::START_TO_END, originalRange.get(), ASSERT_NO_EXCEPTION) < 0) {
+        addConsoleError("Discontiguous selection is not supported.");
+        return;
+    }
+
+    // FIXME: "Merge the ranges if they intersect" is Blink-specific behavior; other browsers supporting discontiguous
+    // selection (obviously) keep each Range added and return it in getRangeAt(). But it's unclear if we can really
+    // do the same, since we don't support discontiguous selection. Further discussions at
+    // <https://code.google.com/p/chromium/issues/detail?id=353069>.
+
+    Range* start = originalRange->compareBoundaryPoints(Range::START_TO_START, newRange, ASSERT_NO_EXCEPTION) < 0 ? originalRange.get() : newRange;
+    Range* end = originalRange->compareBoundaryPoints(Range::END_TO_END, newRange, ASSERT_NO_EXCEPTION) < 0 ? newRange : originalRange.get();
+    RefPtrWillBeRawPtr<Range> merged = Range::create(originalRange->startContainer()->document(), start->startContainer(), start->startOffset(), end->endContainer(), end->endOffset());
+    EAffinity affinity = selection.selection().affinity();
+    selection.setSelectedRange(merged.get(), affinity);
 }
 
 void DOMSelection::deleteFromDocument()
@@ -446,16 +452,13 @@ void DOMSelection::deleteFromDocument()
     if (selection.isNone())
         return;
 
-    if (isCollapsed())
-        selection.modify(FrameSelection::AlterationExtend, DirectionBackward, CharacterGranularity);
-
-    RefPtr<Range> selectedRange = selection.selection().toNormalizedRange();
+    RefPtrWillBeRawPtr<Range> selectedRange = selection.selection().toNormalizedRange();
     if (!selectedRange)
         return;
 
     selectedRange->deleteContents(ASSERT_NO_EXCEPTION);
 
-    setBaseAndExtent(selectedRange->startContainer(ASSERT_NO_EXCEPTION), selectedRange->startOffset(), selectedRange->startContainer(), selectedRange->startOffset(), ASSERT_NO_EXCEPTION);
+    setBaseAndExtent(selectedRange->startContainer(), selectedRange->startOffset(), selectedRange->startContainer(), selectedRange->startOffset(), ASSERT_NO_EXCEPTION);
 }
 
 bool DOMSelection::containsNode(const Node* n, bool allowPartial) const
@@ -469,7 +472,7 @@ bool DOMSelection::containsNode(const Node* n, bool allowPartial) const
         return false;
 
     unsigned nodeIndex = n->nodeIndex();
-    RefPtr<Range> selectedRange = selection.selection().toNormalizedRange();
+    RefPtrWillBeRawPtr<Range> selectedRange = selection.selection().toNormalizedRange();
 
     ContainerNode* parentNode = n->parentNode();
     if (!parentNode)
@@ -478,7 +481,8 @@ bool DOMSelection::containsNode(const Node* n, bool allowPartial) const
     TrackExceptionState exceptionState;
     bool nodeFullySelected = Range::compareBoundaryPoints(parentNode, nodeIndex, selectedRange->startContainer(), selectedRange->startOffset(), exceptionState) >= 0 && !exceptionState.hadException()
         && Range::compareBoundaryPoints(parentNode, nodeIndex + 1, selectedRange->endContainer(), selectedRange->endOffset(), exceptionState) <= 0 && !exceptionState.hadException();
-    ASSERT(!exceptionState.hadException());
+    if (exceptionState.hadException())
+        return false;
     if (nodeFullySelected)
         return true;
 
@@ -497,7 +501,7 @@ void DOMSelection::selectAllChildren(Node* n, ExceptionState& exceptionState)
         return;
 
     // This doesn't (and shouldn't) select text node characters.
-    setBaseAndExtent(n, 0, n, n->childNodeCount(), exceptionState);
+    setBaseAndExtent(n, 0, n, n->countChildren(), exceptionState);
 }
 
 String DOMSelection::toString()
@@ -549,6 +553,12 @@ bool DOMSelection::isValidForPosition(Node* node) const
     if (!node)
         return true;
     return node->document() == m_frame->document();
+}
+
+void DOMSelection::addConsoleError(const String& message)
+{
+    if (m_treeScope)
+        m_treeScope->document().addConsoleMessage(JSMessageSource, ErrorMessageLevel, message);
 }
 
 } // namespace WebCore

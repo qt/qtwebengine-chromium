@@ -11,19 +11,18 @@
 
 namespace content {
 
-PepperMessageFilter::PepperMessageFilter() {}
+PepperMessageFilter::PepperMessageFilter()
+    : BrowserMessageFilter(PpapiMsgStart) {}
+
 PepperMessageFilter::~PepperMessageFilter() {}
 
-bool PepperMessageFilter::OnMessageReceived(const IPC::Message& msg,
-                                            bool* message_was_ok) {
+bool PepperMessageFilter::OnMessageReceived(const IPC::Message& msg) {
   bool handled = true;
-  IPC_BEGIN_MESSAGE_MAP_EX(PepperMessageFilter, msg, *message_was_ok)
-    // X509 certificate messages.
+  IPC_BEGIN_MESSAGE_MAP(PepperMessageFilter, msg)
     IPC_MESSAGE_HANDLER(PpapiHostMsg_PPBX509Certificate_ParseDER,
-                        OnX509CertificateParseDER);
-
-  IPC_MESSAGE_UNHANDLED(handled = false)
-  IPC_END_MESSAGE_MAP_EX()
+                        OnX509CertificateParseDER)
+    IPC_MESSAGE_UNHANDLED(handled = false)
+  IPC_END_MESSAGE_MAP()
   return handled;
 }
 
@@ -32,7 +31,7 @@ void PepperMessageFilter::OnX509CertificateParseDER(
     bool* succeeded,
     ppapi::PPB_X509Certificate_Fields* result) {
   *succeeded = (der.size() != 0 && pepper_socket_utils::GetCertificateFields(
-      &der[0], der.size(), result));
+                                       &der[0], der.size(), result));
 }
 
 }  // namespace content

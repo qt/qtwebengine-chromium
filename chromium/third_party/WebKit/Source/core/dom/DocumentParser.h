@@ -24,9 +24,9 @@
 #ifndef DocumentParser_h
 #define DocumentParser_h
 
+#include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
 #include "wtf/RefCounted.h"
-#include "wtf/RefPtr.h"
 
 namespace WebCore {
 
@@ -36,9 +36,10 @@ class SegmentedString;
 class ScriptableDocumentParser;
 class TextResourceDecoder;
 
-class DocumentParser : public RefCounted<DocumentParser> {
+class DocumentParser : public RefCountedWillBeGarbageCollectedFinalized<DocumentParser> {
 public:
     virtual ~DocumentParser();
+    virtual void trace(Visitor*);
 
     virtual ScriptableDocumentParser* asScriptableDocumentParser() { return 0; }
 
@@ -97,6 +98,7 @@ public:
     // callstacks, but not produce any more nodes.
     // It is impossible for the parser to touch the rest of WebCore after
     // detach is called.
+    // Oilpan: We don't need to call detach when a Document is destructed.
     virtual void detach();
 
     void setDocumentWasLoadedAsPartOfNavigation() { m_documentWasLoadedAsPartOfNavigation = true; }
@@ -121,7 +123,7 @@ private:
 
     // Every DocumentParser needs a pointer back to the document.
     // m_document will be 0 after the parser is stopped.
-    Document* m_document;
+    RawPtrWillBeMember<Document> m_document;
 };
 
 } // namespace WebCore

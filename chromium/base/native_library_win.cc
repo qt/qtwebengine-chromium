@@ -7,6 +7,7 @@
 #include <windows.h>
 
 #include "base/file_util.h"
+#include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread_restrictions.h"
 
@@ -14,34 +15,48 @@ namespace base {
 
 typedef HMODULE (WINAPI* LoadLibraryFunction)(const wchar_t* file_name);
 
+namespace {
+
 NativeLibrary LoadNativeLibraryHelper(const FilePath& library_path,
-                                      LoadLibraryFunction load_library_api) {
+                                      LoadLibraryFunction load_library_api,
+                                      NativeLibraryLoadError* error) {
   // LoadLibrary() opens the file off disk.
-  base::ThreadRestrictions::AssertIOAllowed();
+  ThreadRestrictions::AssertIOAllowed();
 
   // Switch the current directory to the library directory as the library
   // may have dependencies on DLLs in this directory.
   bool restore_directory = false;
   FilePath current_directory;
-  if (file_util::GetCurrentDirectory(&current_directory)) {
+  if (GetCurrentDirectory(&current_directory)) {
     FilePath plugin_path = library_path.DirName();
     if (!plugin_path.empty()) {
-      file_util::SetCurrentDirectory(plugin_path);
+      SetCurrentDirectory(plugin_path);
       restore_directory = true;
     }
   }
 
   HMODULE module = (*load_library_api)(library_path.value().c_str());
+  if (!module && error) {
+    // GetLastError() needs to be called immediately after |load_library_api|.
+    error->code = GetLastError();
+  }
+
   if (restore_directory)
-    file_util::SetCurrentDirectory(current_directory);
+    SetCurrentDirectory(current_directory);
 
   return module;
 }
 
+}  // namespace
+
+std::string NativeLibraryLoadError::ToString() const {
+  return StringPrintf("%u", code);
+}
+
 // static
 NativeLibrary LoadNativeLibrary(const FilePath& library_path,
-                                std::string* error) {
-  return LoadNativeLibraryHelper(library_path, LoadLibraryW);
+                                NativeLibraryLoadError* error) {
+  return LoadNativeLibraryHelper(library_path, LoadLibraryW, error);
 }
 
 NativeLibrary LoadNativeLibraryDynamically(const FilePath& library_path) {
@@ -51,7 +66,7 @@ NativeLibrary LoadNativeLibraryDynamically(const FilePath& library_path) {
   load_library = reinterpret_cast<LoadLibraryFunction>(
       GetProcAddress(GetModuleHandle(L"kernel32.dll"), "LoadLibraryW"));
 
-  return LoadNativeLibraryHelper(library_path, load_library);
+  return LoadNativeLibraryHelper(library_path, load_library, NULL);
 }
 
 // static

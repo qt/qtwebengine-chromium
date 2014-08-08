@@ -31,11 +31,11 @@
 #ifndef PageScriptDebugServer_h
 #define PageScriptDebugServer_h
 
-
 #include "bindings/v8/ScriptDebugServer.h"
 #include "bindings/v8/ScriptPreprocessor.h"
 #include "wtf/Forward.h"
 #include "wtf/RefCounted.h"
+#include <v8.h>
 
 namespace WebCore {
 
@@ -44,13 +44,17 @@ class ScriptController;
 class ScriptPreprocessor;
 class ScriptSourceCode;
 
-class PageScriptDebugServer : public ScriptDebugServer {
+class PageScriptDebugServer FINAL : public ScriptDebugServer {
     WTF_MAKE_NONCOPYABLE(PageScriptDebugServer);
 public:
     static PageScriptDebugServer& shared();
 
+    static void setMainThreadIsolate(v8::Isolate*);
+
     void addListener(ScriptDebugListener*, Page*);
     void removeListener(ScriptDebugListener*, Page*);
+
+    static void interruptAndRun(PassOwnPtr<Task>);
 
     class ClientMessageLoop {
     public:
@@ -60,21 +64,24 @@ public:
     };
     void setClientMessageLoop(PassOwnPtr<ClientMessageLoop>);
 
-    virtual void compileScript(ScriptState*, const String& expression, const String& sourceURL, String* scriptId, String* exceptionMessage);
-    virtual void clearCompiledScripts();
-    virtual void runScript(ScriptState*, const String& scriptId, ScriptValue* result, bool* wasThrown, String* exceptionMessage);
-    virtual void setPreprocessorSource(const String&);
-    virtual void preprocessBeforeCompile(const v8::Debug::EventDetails&);
-    virtual PassOwnPtr<ScriptSourceCode> preprocess(Frame*, const ScriptSourceCode&);
-    virtual String preprocessEventListener(Frame*, const String& source, const String& url, const String& functionName);
+    virtual void compileScript(ScriptState*, const String& expression, const String& sourceURL, String* scriptId, String* exceptionDetailsText, int* lineNumber, int* columnNumber, RefPtrWillBeRawPtr<ScriptCallStack>* stackTrace) OVERRIDE;
+    virtual void clearCompiledScripts() OVERRIDE;
+    virtual void runScript(ScriptState*, const String& scriptId, ScriptValue* result, bool* wasThrown, String* exceptionDetailsText, int* lineNumber, int* columnNumber, RefPtrWillBeRawPtr<ScriptCallStack>* stackTrace) OVERRIDE;
+    virtual void setPreprocessorSource(const String&) OVERRIDE;
+    virtual void preprocessBeforeCompile(const v8::Debug::EventDetails&) OVERRIDE;
+    virtual PassOwnPtr<ScriptSourceCode> preprocess(LocalFrame*, const ScriptSourceCode&) OVERRIDE;
+    virtual String preprocessEventListener(LocalFrame*, const String& source, const String& url, const String& functionName) OVERRIDE;
+
+    virtual void muteWarningsAndDeprecations() OVERRIDE;
+    virtual void unmuteWarningsAndDeprecations() OVERRIDE;
 
 private:
     PageScriptDebugServer();
-    virtual ~PageScriptDebugServer() { }
+    virtual ~PageScriptDebugServer();
 
-    virtual ScriptDebugListener* getDebugListenerForContext(v8::Handle<v8::Context>);
-    virtual void runMessageLoopOnPause(v8::Handle<v8::Context>);
-    virtual void quitMessageLoopOnPause();
+    virtual ScriptDebugListener* getDebugListenerForContext(v8::Handle<v8::Context>) OVERRIDE;
+    virtual void runMessageLoopOnPause(v8::Handle<v8::Context>) OVERRIDE;
+    virtual void quitMessageLoopOnPause() OVERRIDE;
 
     typedef HashMap<Page*, ScriptDebugListener*> ListenersMap;
     ListenersMap m_listenersMap;
@@ -84,7 +91,8 @@ private:
 
     OwnPtr<ScriptSourceCode> m_preprocessorSourceCode;
     OwnPtr<ScriptPreprocessor> m_scriptPreprocessor;
-    bool canPreprocess(Frame*);
+    bool canPreprocess(LocalFrame*);
+    static v8::Isolate* s_mainThreadIsolate;
 };
 
 } // namespace WebCore

@@ -7,8 +7,8 @@
 #include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/message_loop/message_loop_proxy.h"
-#include "base/platform_file.h"
 #include "base/strings/utf_string_conversions.h"
+#include "content/child/blink_glue.h"
 #include "content/child/database_util.h"
 #include "content/child/fileapi/webfilesystem_impl.h"
 #include "content/child/indexed_db/webidbfactory_impl.h"
@@ -17,6 +17,7 @@
 #include "content/child/thread_safe_sender.h"
 #include "content/child/web_database_observer_impl.h"
 #include "content/child/webblobregistry_impl.h"
+#include "content/child/webfileutilities_impl.h"
 #include "content/child/webmessageportchannel_impl.h"
 #include "content/common/file_utilities_messages.h"
 #include "content/common/mime_registry_messages.h"
@@ -28,8 +29,6 @@
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/platform/WebURL.h"
 #include "webkit/common/quota/quota_types.h"
-#include "webkit/glue/webfileutilities_impl.h"
-#include "webkit/glue/webkit_glue.h"
 
 using blink::Platform;
 using blink::WebBlobRegistry;
@@ -49,7 +48,7 @@ namespace content {
 // TODO(kinuko): Probably this could be consolidated into
 // RendererWebKitPlatformSupportImpl::FileUtilities.
 class WorkerWebKitPlatformSupportImpl::FileUtilities
-    : public webkit_glue::WebFileUtilitiesImpl {
+    : public WebFileUtilitiesImpl {
  public:
   explicit FileUtilities(ThreadSafeSender* sender)
       : thread_safe_sender_(sender) {}
@@ -61,15 +60,15 @@ class WorkerWebKitPlatformSupportImpl::FileUtilities
 bool WorkerWebKitPlatformSupportImpl::FileUtilities::getFileInfo(
     const WebString& path,
     WebFileInfo& web_file_info) {
-  base::PlatformFileInfo file_info;
-  base::PlatformFileError status;
+  base::File::Info file_info;
+  base::File::Error status;
   if (!thread_safe_sender_.get() ||
       !thread_safe_sender_->Send(new FileUtilitiesMsg_GetFileInfo(
            base::FilePath::FromUTF16Unsafe(path), &file_info, &status)) ||
-      status != base::PLATFORM_FILE_OK) {
+      status != base::File::FILE_OK) {
     return false;
   }
-  webkit_glue::PlatformFileInfoToWebFileInfo(file_info, &web_file_info);
+  FileInfoToWebFileInfo(file_info, &web_file_info);
   web_file_info.platformPath = path;
   return true;
 }
@@ -142,9 +141,11 @@ bool WorkerWebKitPlatformSupportImpl::isLinkVisited(
   return false;
 }
 
-WebMessagePortChannel*
-WorkerWebKitPlatformSupportImpl::createMessagePortChannel() {
-  return new WebMessagePortChannelImpl(child_thread_loop_.get());
+void WorkerWebKitPlatformSupportImpl::createMessageChannel(
+    blink::WebMessagePortChannel** channel1,
+    blink::WebMessagePortChannel** channel2) {
+  WebMessagePortChannelImpl::CreatePair(
+      child_thread_loop_.get(), channel1, channel2);
 }
 
 void WorkerWebKitPlatformSupportImpl::setCookies(
@@ -252,6 +253,14 @@ bool WorkerWebKitPlatformSupportImpl::supportsMediaSourceMIMEType(
   return false;
 }
 
+bool WorkerWebKitPlatformSupportImpl::supportsEncryptedMediaMIMEType(
+    const blink::WebString& key_system,
+    const blink::WebString& mime_type,
+    const blink::WebString& codecs) {
+  NOTREACHED();
+  return false;
+}
+
 WebMimeRegistry::SupportsType
 WorkerWebKitPlatformSupportImpl::supportsNonImageMIMEType(
     const WebString&) {
@@ -264,7 +273,7 @@ WebString WorkerWebKitPlatformSupportImpl::mimeTypeForExtension(
   std::string mime_type;
   thread_safe_sender_->Send(new MimeRegistryMsg_GetMimeTypeFromExtension(
       base::FilePath::FromUTF16Unsafe(file_extension).value(), &mime_type));
-  return ASCIIToUTF16(mime_type);
+  return base::ASCIIToUTF16(mime_type);
 }
 
 WebString WorkerWebKitPlatformSupportImpl::wellKnownMimeTypeForExtension(
@@ -272,7 +281,7 @@ WebString WorkerWebKitPlatformSupportImpl::wellKnownMimeTypeForExtension(
   std::string mime_type;
   net::GetWellKnownMimeTypeFromExtension(
       base::FilePath::FromUTF16Unsafe(file_extension).value(), &mime_type);
-  return ASCIIToUTF16(mime_type);
+  return base::ASCIIToUTF16(mime_type);
 }
 
 WebString WorkerWebKitPlatformSupportImpl::mimeTypeFromFile(
@@ -282,7 +291,7 @@ WebString WorkerWebKitPlatformSupportImpl::mimeTypeFromFile(
       new MimeRegistryMsg_GetMimeTypeFromFile(
           base::FilePath::FromUTF16Unsafe(file_path),
           &mime_type));
-  return ASCIIToUTF16(mime_type);
+  return base::ASCIIToUTF16(mime_type);
 }
 
 WebBlobRegistry* WorkerWebKitPlatformSupportImpl::blobRegistry() {
@@ -292,7 +301,7 @@ WebBlobRegistry* WorkerWebKitPlatformSupportImpl::blobRegistry() {
 void WorkerWebKitPlatformSupportImpl::queryStorageUsageAndQuota(
     const blink::WebURL& storage_partition,
     blink::WebStorageQuotaType type,
-    blink::WebStorageQuotaCallbacks* callbacks) {
+    blink::WebStorageQuotaCallbacks callbacks) {
   if (!thread_safe_sender_.get() || !quota_message_filter_.get())
     return;
   QuotaDispatcher::ThreadSpecificInstance(

@@ -26,8 +26,6 @@
 #include "config.h"
 #include "core/events/PageTransitionEvent.h"
 
-#include "core/events/ThreadLocalEventNames.h"
-
 namespace WebCore {
 
 PageTransitionEventInit::PageTransitionEventInit()
@@ -62,6 +60,11 @@ PageTransitionEvent::~PageTransitionEvent()
 const AtomicString& PageTransitionEvent::interfaceName() const
 {
     return EventNames::PageTransitionEvent;
+}
+
+void PageTransitionEvent::trace(Visitor* visitor)
+{
+    Event::trace(visitor);
 }
 
 } // namespace WebCore

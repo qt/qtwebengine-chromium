@@ -11,7 +11,8 @@ namespace content {
 
 MessagePortMessageFilter::MessagePortMessageFilter(
     const NextRoutingIDCallback& callback)
-    : next_routing_id_(callback) {
+    : BrowserMessageFilter(MessagePortMsgStart),
+      next_routing_id_(callback) {
 }
 
 MessagePortMessageFilter::~MessagePortMessageFilter() {
@@ -21,10 +22,9 @@ void MessagePortMessageFilter::OnChannelClosing() {
   MessagePortService::GetInstance()->OnMessagePortMessageFilterClosing(this);
 }
 
-bool MessagePortMessageFilter::OnMessageReceived(const IPC::Message& message,
-                                                 bool* message_was_ok) {
+bool MessagePortMessageFilter::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
-  IPC_BEGIN_MESSAGE_MAP_EX(MessagePortMessageFilter, message, *message_was_ok)
+  IPC_BEGIN_MESSAGE_MAP(MessagePortMessageFilter, message)
     IPC_MESSAGE_HANDLER(MessagePortHostMsg_CreateMessagePort,
                         OnCreateMessagePort)
     IPC_MESSAGE_FORWARD(MessagePortHostMsg_DestroyMessagePort,
@@ -43,7 +43,7 @@ bool MessagePortMessageFilter::OnMessageReceived(const IPC::Message& message,
                         MessagePortService::GetInstance(),
                         MessagePortService::SendQueuedMessages)
     IPC_MESSAGE_UNHANDLED(handled = false)
-  IPC_END_MESSAGE_MAP_EX()
+  IPC_END_MESSAGE_MAP()
 
   return handled;
 }
@@ -54,6 +54,22 @@ void MessagePortMessageFilter::OnDestruct() const {
 
 int MessagePortMessageFilter::GetNextRoutingID() {
   return next_routing_id_.Run();
+}
+
+void MessagePortMessageFilter::UpdateMessagePortsWithNewRoutes(
+    const std::vector<int>& message_port_ids,
+    std::vector<int>* new_routing_ids) {
+  DCHECK(new_routing_ids);
+  new_routing_ids->clear();
+  new_routing_ids->resize(message_port_ids.size());
+
+  for (size_t i = 0; i < message_port_ids.size(); ++i) {
+    (*new_routing_ids)[i] = GetNextRoutingID();
+    MessagePortService::GetInstance()->UpdateMessagePort(
+        message_port_ids[i],
+        this,
+        (*new_routing_ids)[i]);
+  }
 }
 
 void MessagePortMessageFilter::OnCreateMessagePort(int *route_id,

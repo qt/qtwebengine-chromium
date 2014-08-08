@@ -11,24 +11,24 @@
 
 namespace ppapi {
 
-int PlatformFileErrorToPepperError(base::PlatformFileError error_code) {
+int FileErrorToPepperError(base::File::Error error_code) {
   switch (error_code) {
-    case base::PLATFORM_FILE_OK:
+    case base::File::FILE_OK:
       return PP_OK;
-    case base::PLATFORM_FILE_ERROR_EXISTS:
+    case base::File::FILE_ERROR_EXISTS:
       return PP_ERROR_FILEEXISTS;
-    case base::PLATFORM_FILE_ERROR_NOT_FOUND:
+    case base::File::FILE_ERROR_NOT_FOUND:
       return PP_ERROR_FILENOTFOUND;
-    case base::PLATFORM_FILE_ERROR_ACCESS_DENIED:
-    case base::PLATFORM_FILE_ERROR_SECURITY:
+    case base::File::FILE_ERROR_ACCESS_DENIED:
+    case base::File::FILE_ERROR_SECURITY:
       return PP_ERROR_NOACCESS;
-    case base::PLATFORM_FILE_ERROR_NO_MEMORY:
+    case base::File::FILE_ERROR_NO_MEMORY:
       return PP_ERROR_NOMEMORY;
-    case base::PLATFORM_FILE_ERROR_NO_SPACE:
+    case base::File::FILE_ERROR_NO_SPACE:
       return PP_ERROR_NOSPACE;
-    case base::PLATFORM_FILE_ERROR_NOT_A_DIRECTORY:
+    case base::File::FILE_ERROR_NOT_A_DIRECTORY:
       return PP_ERROR_FAILED;
-    case base::PLATFORM_FILE_ERROR_NOT_A_FILE:
+    case base::File::FILE_ERROR_NOT_A_FILE:
       return PP_ERROR_NOTAFILE;
     default:
       return PP_ERROR_FAILED;
@@ -45,17 +45,17 @@ bool PepperFileOpenFlagsToPlatformFileFlags(int32_t pp_open_flags,
   bool pp_append = !!(pp_open_flags & PP_FILEOPENFLAG_APPEND);
 
   // Pepper allows Touch on any open file, so always set this Windows-only flag.
-  int flags = base::PLATFORM_FILE_WRITE_ATTRIBUTES;
+  int flags = base::File::FLAG_WRITE_ATTRIBUTES;
 
   if (pp_read)
-    flags |= base::PLATFORM_FILE_READ;
+    flags |= base::File::FLAG_READ;
   if (pp_write) {
-    flags |= base::PLATFORM_FILE_WRITE;
+    flags |= base::File::FLAG_WRITE;
   }
   if (pp_append) {
     if (pp_write)
       return false;
-    flags |= base::PLATFORM_FILE_APPEND;
+    flags |= base::File::FLAG_APPEND;
   }
 
   if (pp_truncate && !pp_write)
@@ -63,16 +63,16 @@ bool PepperFileOpenFlagsToPlatformFileFlags(int32_t pp_open_flags,
 
   if (pp_create) {
     if (pp_exclusive) {
-      flags |= base::PLATFORM_FILE_CREATE;
+      flags |= base::File::FLAG_CREATE;
     } else if (pp_truncate) {
-      flags |= base::PLATFORM_FILE_CREATE_ALWAYS;
+      flags |= base::File::FLAG_CREATE_ALWAYS;
     } else {
-      flags |= base::PLATFORM_FILE_OPEN_ALWAYS;
+      flags |= base::File::FLAG_OPEN_ALWAYS;
     }
   } else if (pp_truncate) {
-    flags |= base::PLATFORM_FILE_OPEN_TRUNCATED;
+    flags |= base::File::FLAG_OPEN_TRUNCATED;
   } else {
-    flags |= base::PLATFORM_FILE_OPEN;
+    flags |= base::File::FLAG_OPEN;
   }
 
   if (flags_out)
@@ -80,9 +80,9 @@ bool PepperFileOpenFlagsToPlatformFileFlags(int32_t pp_open_flags,
   return true;
 }
 
-void PlatformFileInfoToPepperFileInfo(const base::PlatformFileInfo& info,
-                                      PP_FileSystemType fs_type,
-                                      PP_FileInfo* info_out) {
+void FileInfoToPepperFileInfo(const base::File::Info& info,
+                              PP_FileSystemType fs_type,
+                              PP_FileInfo* info_out) {
   DCHECK(info_out);
   info_out->size = info.size;
   info_out->creation_time = TimeToPPTime(info.creation_time);

@@ -32,10 +32,12 @@ FlagsAndLength CreateFlagsAndLength(uint8 flags, size_t length) {
 
 }  // namespace
 
-SpdyFrameBuilder::SpdyFrameBuilder(size_t size)
+  SpdyFrameBuilder::SpdyFrameBuilder(size_t size, SpdyMajorVersion version)
     : buffer_(new char[size]),
       capacity_(size),
-      length_(0) {
+      length_(0),
+      offset_(0),
+      version_(version) {
 }
 
 SpdyFrameBuilder::~SpdyFrameBuilder() {
@@ -45,7 +47,7 @@ char* SpdyFrameBuilder::GetWritableBuffer(size_t length) {
   if (!CanWrite(length)) {
     return NULL;
   }
-  return buffer_.get() + length_;
+  return buffer_.get() + offset_ + length_;
 }
 
 bool SpdyFrameBuilder::Seek(size_t length) {
@@ -60,14 +62,16 @@ bool SpdyFrameBuilder::Seek(size_t length) {
 bool SpdyFrameBuilder::WriteControlFrameHeader(const SpdyFramer& framer,
                                                SpdyFrameType type,
                                                uint8 flags) {
-  DCHECK_GE(type, FIRST_CONTROL_TYPE);
-  DCHECK_LE(type, LAST_CONTROL_TYPE);
-  DCHECK_GT(4, framer.protocol_version());
+  DCHECK_GE(SPDY3, version_);
+  DCHECK_NE(-1,
+            SpdyConstants::SerializeFrameType(version_, type));
   bool success = true;
   FlagsAndLength flags_length = CreateFlagsAndLength(
       flags, capacity_ - framer.GetControlFrameHeaderSize());
-  success &= WriteUInt16(kControlFlagMask | framer.protocol_version());
-  success &= WriteUInt16(type);
+  success &= WriteUInt16(kControlFlagMask |
+                         SpdyConstants::SerializeMajorVersion(version_));
+  success &= WriteUInt16(
+      SpdyConstants::SerializeFrameType(framer.protocol_version(), type));
   success &= WriteBytes(&flags_length, sizeof(flags_length));
   DCHECK_EQ(framer.GetControlFrameHeaderSize(), length());
   return success;
@@ -75,9 +79,9 @@ bool SpdyFrameBuilder::WriteControlFrameHeader(const SpdyFramer& framer,
 
 bool SpdyFrameBuilder::WriteDataFrameHeader(const SpdyFramer& framer,
                                             SpdyStreamId stream_id,
-                                            SpdyDataFlags flags) {
-  if (framer.protocol_version() >= 4) {
-    return WriteFramePrefix(framer, DATA, flags, stream_id);
+                                            uint8 flags) {
+  if (version_ > SPDY3) {
+    return BeginNewFrame(framer, DATA, flags, stream_id);
   }
   DCHECK_EQ(0u, stream_id & ~kStreamIdMask);
   bool success = true;
@@ -93,21 +97,36 @@ bool SpdyFrameBuilder::WriteDataFrameHeader(const SpdyFramer& framer,
   return success;
 }
 
-bool SpdyFrameBuilder::WriteFramePrefix(const SpdyFramer& framer,
-                                        SpdyFrameType type,
-                                        uint8 flags,
-                                        SpdyStreamId stream_id) {
-  DCHECK_LE(DATA, type);
-  DCHECK_GE(LAST_CONTROL_TYPE, type);
+bool SpdyFrameBuilder::BeginNewFrame(const SpdyFramer& framer,
+                                     SpdyFrameType type,
+                                     uint8 flags,
+                                     SpdyStreamId stream_id) {
+  DCHECK(SpdyConstants::IsValidFrameType(version_,
+      SpdyConstants::SerializeFrameType(version_, type)));
   DCHECK_EQ(0u, stream_id & ~kStreamIdMask);
-  DCHECK_LE(4, framer.protocol_version());
+  DCHECK_LT(SPDY3, framer.protocol_version());
   bool success = true;
-  DCHECK_GT(1u<<16, capacity_);  // Make sure length fits in 2B.
-  success &= WriteUInt16(capacity_);
-  success &= WriteUInt8(type);
+  if (length_ > 0) {
+    // Update length field for previous frame.
+    OverwriteLength(framer, length_ - framer.GetPrefixLength(type));
+    DLOG_IF(DFATAL, SpdyConstants::GetFrameMaximumSize(version_) < length_)
+        << "Frame length  " << length_
+        << " is longer than the maximum allowed length.";
+  }
+
+  offset_ += length_;
+  length_ = 0;
+
+  // Assume all remaining capacity will be used for this frame. If not,
+  // the length will get overwritten when we begin the next frame.
+  // Don't check for length limits here because this may be larger than the
+  // actual frame length.
+  success &= WriteUInt16(capacity_ - offset_ - framer.GetPrefixLength(type));
+  success &= WriteUInt8(
+      SpdyConstants::SerializeFrameType(version_, type));
   success &= WriteUInt8(flags);
   success &= WriteUInt32(stream_id);
-  DCHECK_EQ(framer.GetDataFrameMinimumSize(), length());
+  DCHECK_EQ(framer.GetDataFrameMinimumSize(), length_);
   return success;
 }
 
@@ -143,20 +162,23 @@ bool SpdyFrameBuilder::WriteBytes(const void* data, uint32 data_len) {
 }
 
 bool SpdyFrameBuilder::RewriteLength(const SpdyFramer& framer) {
-  if (framer.protocol_version() < 4) {
-    return OverwriteLength(framer,
-                           length_ - framer.GetControlFrameHeaderSize());
-  } else {
-    return OverwriteLength(framer, length_);
-  }
+  return OverwriteLength(framer,
+                         length_ - framer.GetControlFrameHeaderSize());
 }
 
 bool SpdyFrameBuilder::OverwriteLength(const SpdyFramer& framer,
                                        size_t length) {
+  if (version_ <= SPDY3) {
+    DCHECK_GE(SpdyConstants::GetFrameMaximumSize(version_) -
+              framer.GetFrameMinimumSize(),
+              length);
+  } else {
+    DCHECK_GE(SpdyConstants::GetFrameMaximumSize(version_), length);
+  }
   bool success = false;
   const size_t old_length = length_;
 
-  if (framer.protocol_version() < 4) {
+  if (version_ <= SPDY3) {
     FlagsAndLength flags_length = CreateFlagsAndLength(
         0,  // We're not writing over the flags value anyway.
         length);
@@ -174,13 +196,25 @@ bool SpdyFrameBuilder::OverwriteLength(const SpdyFramer& framer,
   return success;
 }
 
+bool SpdyFrameBuilder::OverwriteFlags(const SpdyFramer& framer,
+                                      uint8 flags) {
+  DCHECK_LT(SPDY3, framer.protocol_version());
+  bool success = false;
+  const size_t old_length = length_;
+  // Flags are the fourth octet in the frame prefix.
+  length_ = 3;
+  success = WriteUInt8(flags);
+  length_ = old_length;
+  return success;
+}
+
 bool SpdyFrameBuilder::CanWrite(size_t length) const {
   if (length > kLengthMask) {
     DCHECK(false);
     return false;
   }
 
-  if (length_ + length > capacity_) {
+  if (offset_ + length_ + length > capacity_) {
     DCHECK(false);
     return false;
   }

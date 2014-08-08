@@ -22,7 +22,7 @@
 #include "config.h"
 #include "core/css/StyleRuleImport.h"
 
-#include "FetchInitiatorTypeNames.h"
+#include "core/FetchInitiatorTypeNames.h"
 #include "core/css/StyleSheetContents.h"
 #include "core/dom/Document.h"
 #include "core/fetch/CSSStyleSheetResource.h"
@@ -31,14 +31,14 @@
 
 namespace WebCore {
 
-PassRefPtr<StyleRuleImport> StyleRuleImport::create(const String& href, PassRefPtr<MediaQuerySet> media)
+PassRefPtrWillBeRawPtr<StyleRuleImport> StyleRuleImport::create(const String& href, PassRefPtrWillBeRawPtr<MediaQuerySet> media)
 {
-    return adoptRef(new StyleRuleImport(href, media));
+    return adoptRefWillBeNoop(new StyleRuleImport(href, media));
 }
 
-StyleRuleImport::StyleRuleImport(const String& href, PassRefPtr<MediaQuerySet> media)
+StyleRuleImport::StyleRuleImport(const String& href, PassRefPtrWillBeRawPtr<MediaQuerySet> media)
     : StyleRuleBase(Import)
-    , m_parentStyleSheet(0)
+    , m_parentStyleSheet(nullptr)
     , m_styleSheetClient(this)
     , m_strHref(href)
     , m_mediaQueries(media)
@@ -51,10 +51,20 @@ StyleRuleImport::StyleRuleImport(const String& href, PassRefPtr<MediaQuerySet> m
 
 StyleRuleImport::~StyleRuleImport()
 {
+#if !ENABLE(OILPAN)
     if (m_styleSheet)
         m_styleSheet->clearOwnerRule();
+#endif
     if (m_resource)
         m_resource->removeClient(&m_styleSheetClient);
+}
+
+void StyleRuleImport::traceAfterDispatch(Visitor* visitor)
+{
+    visitor->trace(m_parentStyleSheet);
+    visitor->trace(m_mediaQueries);
+    visitor->trace(m_styleSheet);
+    StyleRuleBase::traceAfterDispatch(visitor);
 }
 
 void StyleRuleImport::setCSSStyleSheet(const String& href, const KURL& baseURL, const String& charset, const CSSStyleSheetResource* cachedStyleSheet)
@@ -62,14 +72,17 @@ void StyleRuleImport::setCSSStyleSheet(const String& href, const KURL& baseURL, 
     if (m_styleSheet)
         m_styleSheet->clearOwnerRule();
 
-    CSSParserContext context = m_parentStyleSheet ? m_parentStyleSheet->parserContext() : HTMLStandardMode;
+    CSSParserContext context = m_parentStyleSheet ? m_parentStyleSheet->parserContext() : strictCSSParserContext();
     context.setCharset(charset);
-    if (!baseURL.isNull())
+    Document* document = m_parentStyleSheet ? m_parentStyleSheet->singleOwnerDocument() : 0;
+    if (!baseURL.isNull()) {
         context.setBaseURL(baseURL);
+        if (document)
+            context.setReferrer(Referrer(baseURL.strippedForUseAsReferrer(), document->referrerPolicy()));
+    }
 
     m_styleSheet = StyleSheetContents::create(this, href, context);
 
-    Document* document = m_parentStyleSheet ? m_parentStyleSheet->singleOwnerDocument() : 0;
     m_styleSheet->parseAuthorStyleSheet(cachedStyleSheet, document ? document->securityOrigin() : 0);
 
     m_loading = false;

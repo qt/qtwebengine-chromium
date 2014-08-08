@@ -9,11 +9,13 @@
 <include src="controlled_setting.js"></include>
 <include src="deletable_item_list.js"></include>
 <include src="editable_text_field.js"></include>
+<include src="hotword_search_setting_indicator.js"></include>
 <include src="inline_editable_list.js"></include>
 <include src="options_page.js"></include>
 <include src="pref_ui.js"></include>
 <include src="settings_dialog.js"></include>
-<if expr="pp_ifdef('chromeos')">
+<include src="settings_banner.js"></include>
+<if expr="chromeos">
 <include src="../chromeos/user_images_grid.js"></include>
 // DO NOT BREAK THE FOLLOWING INCLUDE LINE INTO SEPARATE LINES!
 // Even though the include line spans more than 80 characters,
@@ -36,6 +38,7 @@
 <include src="chromeos/display_overscan.js"></include>
 <include src="chromeos/keyboard_overlay.js"></include>
 <include src="chromeos/pointer_overlay.js"></include>
+<include src="chromeos/third_party_ime_confirm_overlay.js"></include>
 var AccountsOptions = options.AccountsOptions;
 var ChangePictureOptions = options.ChangePictureOptions;
 var DetailsInternetPage = options.internet.DetailsInternetPage;
@@ -47,7 +50,7 @@ var KeyboardOverlay = options.KeyboardOverlay;
 var PointerOverlay = options.PointerOverlay;
 var UIAccountTweaks = uiAccountTweaks.UIAccountTweaks;
 </if>
-<if expr="pp_ifdef('use_nss')">
+<if expr="use_nss">
 <include src="certificate_tree.js"></include>
 <include src="certificate_manager.js"></include>
 <include src="certificate_restore_overlay.js"></include>
@@ -65,20 +68,20 @@ var CertificateImportErrorOverlay = options.CertificateImportErrorOverlay;
 <include src="autofill_edit_creditcard_overlay.js"></include>
 <include src="autofill_options_list.js"></include>
 <include src="autofill_options.js"></include>
+<include src="automatic_settings_reset_banner.js"></include>
 <include src="browser_options.js"></include>
 <include src="browser_options_profile_list.js"></include>
 <include src="browser_options_startup_page_list.js"></include>
 <include src="clear_browser_data_overlay.js"></include>
 <include src="confirm_dialog.js"></include>
 <include src="content_settings.js"></include>
-<include src="content_settings2.js"></include>
 <include src="content_settings_exceptions_area.js"></include>
 <include src="content_settings_ui.js"></include>
 <include src="cookies_list.js"></include>
 <include src="cookies_view.js"></include>
 <include src="factory_reset_overlay.js"></include>
 <include src="font_settings.js"></include>
-<if expr="pp_ifdef('enable_google_now')">
+<if expr="enable_google_now">
 <include src="geolocation_options.js"></include>
 </if>
 <include src="handler_options.js"></include>
@@ -97,8 +100,7 @@ var CertificateImportErrorOverlay = options.CertificateImportErrorOverlay;
 <include src="managed_user_import.js"></include>
 <include src="managed_user_learn_more.js"</include>
 <include src="managed_user_list.js"></include>
-<include src="media_galleries_list.js"></include>
-<include src="media_galleries_manager_overlay.js"></include>
+<include src="managed_user_list_data.js"></include>
 <include src="options_focus_manager.js"></include>
 <include src="password_manager.js"></include>
 <include src="password_manager_list.js"></include>
@@ -112,6 +114,6 @@ var CertificateImportErrorOverlay = options.CertificateImportErrorOverlay;
 <include src="../sync_setup_overlay.js"></include>
 <include src="../uber/uber_utils.js"></include>
 <include src="options.js"></include>
-<if expr="pp_ifdef('enable_settings_app')">
+<if expr="enable_settings_app">
 <include src="options_settings_app.js"></include>
 </if>

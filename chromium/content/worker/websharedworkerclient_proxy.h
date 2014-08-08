@@ -21,6 +21,7 @@ namespace content {
 
 class SharedWorkerDevToolsAgent;
 class WebSharedWorkerStub;
+class WorkerWebApplicationCacheHostImpl;
 
 // This class receives IPCs from the renderer and calls the WebCore::Worker
 // implementation (after the data types have been converted by glue code).  It
@@ -35,6 +36,9 @@ class WebSharedWorkerClientProxy : public blink::WebSharedWorkerClient {
   // WebSharedWorkerClient implementation.
   virtual void workerContextClosed();
   virtual void workerContextDestroyed();
+  virtual void workerScriptLoaded();
+  virtual void workerScriptLoadFailed();
+  virtual void selectAppCacheID(long long app_cache_id);
 
   virtual blink::WebNotificationPresenter* notificationPresenter();
 
@@ -43,14 +47,6 @@ class WebSharedWorkerClientProxy : public blink::WebSharedWorkerClient {
   virtual blink::WebWorkerPermissionClientProxy*
       createWorkerPermissionClientProxy(
           const blink::WebSecurityOrigin& origin);
-
-  // TODO(kinuko): Deprecate these methods.
-  virtual bool allowDatabase(blink::WebFrame* frame,
-                             const blink::WebString& name,
-                             const blink::WebString& display_name,
-                             unsigned long estimated_size);
-  virtual bool allowFileSystem();
-  virtual bool allowIndexedDB(const blink::WebString&);
 
   virtual void dispatchDevToolsMessage(const blink::WebString&);
   virtual void saveDevToolsAgentState(const blink::WebString&);
@@ -69,6 +65,7 @@ class WebSharedWorkerClientProxy : public blink::WebSharedWorkerClient {
   WebSharedWorkerStub* stub_;
   base::WeakPtrFactory<WebSharedWorkerClientProxy> weak_factory_;
   SharedWorkerDevToolsAgent* devtools_agent_;
+  WorkerWebApplicationCacheHostImpl* app_cache_host_;
 
   DISALLOW_COPY_AND_ASSIGN(WebSharedWorkerClientProxy);
 };

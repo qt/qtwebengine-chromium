@@ -22,6 +22,7 @@
 
 #include "bindings/v8/ScriptState.h"
 #include "bindings/v8/ScriptValue.h"
+#include "platform/heap/Handle.h"
 #include "wtf/RefCounted.h"
 
 namespace WebCore {
@@ -30,22 +31,25 @@ class MediaQueryList;
 
 // See http://dev.w3.org/csswg/cssom-view/#the-mediaquerylist-interface
 
-class MediaQueryListListener : public RefCounted<MediaQueryListListener> {
+class MediaQueryListListener : public RefCountedWillBeGarbageCollectedFinalized<MediaQueryListListener> {
 public:
-    static PassRefPtr<MediaQueryListListener> create(const ScriptValue& value)
+    static PassRefPtrWillBeRawPtr<MediaQueryListListener> create(ScriptState* scriptState, const ScriptValue& value)
     {
         if (!value.isFunction())
-            return 0;
-        return adoptRef(new MediaQueryListListener(value));
+            return nullptr;
+        return adoptRefWillBeNoop(new MediaQueryListListener(scriptState, value));
     }
-    void queryChanged(ScriptState*, MediaQueryList*);
+    void queryChanged(MediaQueryList*);
 
-    bool operator==(const MediaQueryListListener& other) const { return m_value == other.m_value; }
+    bool operator==(const MediaQueryListListener& other) const { return m_function == other.m_function; }
+
+    void trace(Visitor*) { }
 
 private:
-    MediaQueryListListener(const ScriptValue& value) : m_value(value) { }
+    MediaQueryListListener(ScriptState*, const ScriptValue&);
 
-    ScriptValue m_value;
+    RefPtr<ScriptState> m_scriptState;
+    ScriptValue m_function;
 };
 
 }

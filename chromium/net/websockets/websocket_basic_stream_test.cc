@@ -13,8 +13,8 @@
 #include <string>
 
 #include "base/basictypes.h"
+#include "base/big_endian.h"
 #include "base/port.h"
-#include "net/base/big_endian.h"
 #include "net/base/capturing_net_log.h"
 #include "net/base/test_completion_callback.h"
 #include "net/socket/socket_test_util.h"
@@ -57,6 +57,8 @@ WEBSOCKET_BASIC_STREAM_TEST_DEFINE_CONSTANT(CloseFrame,
                                             "\x88\x09\x03\xe8occludo");
 WEBSOCKET_BASIC_STREAM_TEST_DEFINE_CONSTANT(WriteFrame,
                                             "\x81\x85\x00\x00\x00\x00Write");
+WEBSOCKET_BASIC_STREAM_TEST_DEFINE_CONSTANT(MaskedEmptyPong,
+                                            "\x8A\x80\x00\x00\x00\x00");
 const WebSocketMaskingKey kNulMaskingKey = {{'\0', '\0', '\0', '\0'}};
 const WebSocketMaskingKey kNonNulMaskingKey = {
     {'\x0d', '\x1b', '\x06', '\x17'}};
@@ -801,7 +803,7 @@ TEST_F(WebSocketBasicStreamSocketChunkedReadTest, OneMegFrame) {
       (kWireSize + kReadBufferSize - 1) / kReadBufferSize;
   scoped_ptr<char[]> big_frame(new char[kWireSize]);
   memcpy(big_frame.get(), "\x81\x7F", 2);
-  WriteBigEndian(big_frame.get() + 2, kPayloadSize);
+  base::WriteBigEndian(big_frame.get() + 2, kPayloadSize);
   memset(big_frame.get() + kLargeFrameHeaderSize, 'A', kPayloadSize);
 
   CreateChunkedRead(ASYNC,
@@ -824,6 +826,33 @@ TEST_F(WebSocketBasicStreamSocketChunkedReadTest, OneMegFrame) {
     }
     EXPECT_EQ(expected_payload_size, frames_[0]->header.payload_length);
   }
+}
+
+// A frame with reserved flag(s) set that arrives in chunks should only have the
+// reserved flag(s) set on the first chunk when split.
+TEST_F(WebSocketBasicStreamSocketChunkedReadTest, ReservedFlagCleared) {
+  static const char kReservedFlagFrame[] = "\x41\x05Hello";
+  const size_t kReservedFlagFrameSize = arraysize(kReservedFlagFrame) - 1;
+  const size_t kChunkSize = 5;
+
+  CreateChunkedRead(ASYNC,
+                    kReservedFlagFrame,
+                    kReservedFlagFrameSize,
+                    kChunkSize,
+                    2,
+                    LAST_FRAME_BIG);
+
+  TestCompletionCallback cb[2];
+  ASSERT_EQ(ERR_IO_PENDING, stream_->ReadFrames(&frames_, cb[0].callback()));
+  EXPECT_EQ(OK, cb[0].WaitForResult());
+  ASSERT_EQ(1U, frames_.size());
+  EXPECT_TRUE(frames_[0]->header.reserved1);
+
+  frames_.clear();
+  ASSERT_EQ(ERR_IO_PENDING, stream_->ReadFrames(&frames_, cb[1].callback()));
+  EXPECT_EQ(OK, cb[1].WaitForResult());
+  ASSERT_EQ(1U, frames_.size());
+  EXPECT_FALSE(frames_[0]->header.reserved1);
 }
 
 // Check that writing a frame all at once works.
@@ -854,6 +883,23 @@ TEST_F(WebSocketBasicStreamSocketWriteTest, WriteInBits) {
 
   ASSERT_EQ(ERR_IO_PENDING, stream_->WriteFrames(&frames_, cb_.callback()));
   EXPECT_EQ(OK, cb_.WaitForResult());
+}
+
+// Check that writing a Pong frame with a NULL body works.
+TEST_F(WebSocketBasicStreamSocketWriteTest, WriteNullPong) {
+  MockWrite writes[] = {
+      MockWrite(SYNCHRONOUS, kMaskedEmptyPong, kMaskedEmptyPongSize)};
+  CreateWriteOnly(writes);
+
+  scoped_ptr<WebSocketFrame> frame(
+      new WebSocketFrame(WebSocketFrameHeader::kOpCodePong));
+  WebSocketFrameHeader& header = frame->header;
+  header.final = true;
+  header.masked = true;
+  header.payload_length = 0;
+  ScopedVector<WebSocketFrame> frames;
+  frames.push_back(frame.release());
+  EXPECT_EQ(OK, stream_->WriteFrames(&frames, cb_.callback()));
 }
 
 // Check that writing with a non-NULL mask works correctly.

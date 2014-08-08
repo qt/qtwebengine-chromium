@@ -24,43 +24,39 @@
  */
 
 #include "config.h"
-#include "ValidationMessageClientImpl.h"
+#include "web/ValidationMessageClientImpl.h"
 
-#include "WebTextDirection.h"
-#include "WebValidationMessageClient.h"
-#include "WebViewImpl.h"
 #include "core/dom/Element.h"
 #include "core/frame/FrameView.h"
 #include "core/rendering/RenderObject.h"
 #include "platform/HostWindow.h"
 #include "public/platform/WebRect.h"
 #include "public/platform/WebString.h"
+#include "public/web/WebTextDirection.h"
 #include "public/web/WebViewClient.h"
+#include "web/WebViewImpl.h"
 #include "wtf/CurrentTime.h"
 
 using namespace WebCore;
 
 namespace blink {
 
-ValidationMessageClientImpl::ValidationMessageClientImpl(WebViewImpl& webView, WebValidationMessageClient* client)
+ValidationMessageClientImpl::ValidationMessageClientImpl(WebViewImpl& webView)
     : m_webView(webView)
-    , m_client(client)
-    , m_currentAnchor(0)
+    , m_currentAnchor(nullptr)
     , m_lastPageScaleFactor(1)
     , m_finishTime(0)
     , m_timer(this, &ValidationMessageClientImpl::checkAnchorStatus)
 {
 }
 
-PassOwnPtr<ValidationMessageClientImpl> ValidationMessageClientImpl::create(WebViewImpl& webView, WebValidationMessageClient* client)
+PassOwnPtrWillBeRawPtr<ValidationMessageClientImpl> ValidationMessageClientImpl::create(WebViewImpl& webView)
 {
-    return adoptPtr(new ValidationMessageClientImpl(webView, client));
+    return adoptPtrWillBeNoop(new ValidationMessageClientImpl(webView));
 }
 
 ValidationMessageClientImpl::~ValidationMessageClientImpl()
 {
-    if (m_currentAnchor)
-        hideValidationMessage(*m_currentAnchor);
 }
 
 FrameView* ValidationMessageClientImpl::currentView()
@@ -86,8 +82,6 @@ void ValidationMessageClientImpl::showValidationMessage(const Element& anchor, c
 
     WebTextDirection dir = m_currentAnchor->renderer()->style()->direction() == RTL ? WebTextDirectionRightToLeft : WebTextDirectionLeftToRight;
     AtomicString title = m_currentAnchor->fastGetAttribute(HTMLNames::titleAttr);
-    if (m_client)
-        m_client->showValidationMessage(anchorInRootView, m_message, title, dir);
     m_webView.client()->showValidationMessage(anchorInRootView, m_message, title, dir);
 
     const double minimumSecondToShowValidationMessage = 5.0;
@@ -96,7 +90,7 @@ void ValidationMessageClientImpl::showValidationMessage(const Element& anchor, c
     m_finishTime = monotonicallyIncreasingTime() + std::max(minimumSecondToShowValidationMessage, (message.length() + title.length()) * secondPerCharacter);
     // FIXME: We should invoke checkAnchorStatus actively when layout, scroll,
     // or page scale change happen.
-    m_timer.startRepeating(statusCheckInterval);
+    m_timer.startRepeating(statusCheckInterval, FROM_HERE);
 }
 
 void ValidationMessageClientImpl::hideValidationMessage(const Element& anchor)
@@ -104,11 +98,9 @@ void ValidationMessageClientImpl::hideValidationMessage(const Element& anchor)
     if (!m_currentAnchor || !isValidationMessageVisible(anchor))
         return;
     m_timer.stop();
-    m_currentAnchor = 0;
+    m_currentAnchor = nullptr;
     m_message = String();
     m_finishTime = 0;
-    if (m_client)
-        m_client->hideValidationMessage();
     m_webView.client()->hideValidationMessage();
 }
 
@@ -145,9 +137,19 @@ void ValidationMessageClientImpl::checkAnchorStatus(Timer<ValidationMessageClien
         return;
     m_lastAnchorRectInScreen = newAnchorRectInScreen;
     m_lastPageScaleFactor = m_webView.pageScaleFactor();
-    if (m_client)
-        m_client->moveValidationMessage(newAnchorRect);
     m_webView.client()->moveValidationMessage(newAnchorRect);
+}
+
+void ValidationMessageClientImpl::willBeDestroyed()
+{
+    if (m_currentAnchor)
+        hideValidationMessage(*m_currentAnchor);
+}
+
+void ValidationMessageClientImpl::trace(Visitor* visitor)
+{
+    visitor->trace(m_currentAnchor);
+    ValidationMessageClient::trace(visitor);
 }
 
 }

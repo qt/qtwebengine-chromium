@@ -9,7 +9,7 @@
 #include <map>
 #include <string>
 
-#include "base/android/jni_helper.h"
+#include "base/android/jni_weak_ref.h"
 #include "base/android/scoped_java_ref.h"
 #include "base/memory/linked_ptr.h"
 #include "base/memory/weak_ptr.h"
@@ -29,17 +29,16 @@ class JavaBridgeDispatcherHostManager;
 // created and destroyed on different threads.
 class JavaBoundObject {
  public:
-  // Takes a Java object and creates a JavaBoundObject around it. The
-  // |require_annotation| flag specifies whether or not only methods with the
-  // JavascriptInterface annotation are exposed to JavaScript.  This property
-  // propagates to all Objects that get implicitly exposed as return values as
-  // well. Returns an NPObject with a ref count of one which owns the
+  // Takes a Java object and creates a JavaBoundObject around it. If
+  // |safe_annotation_clazz| annotation is non-null, the method is exposed
+  // to JavaScript. Returns an NPObject with a ref count of one which owns the
   // JavaBoundObject.
   // See also comment below for |manager_|.
   static NPObject* Create(
       const base::android::JavaRef<jobject>& object,
       const base::android::JavaRef<jclass>& safe_annotation_clazz,
-      const base::WeakPtr<JavaBridgeDispatcherHostManager>& manager);
+      const base::WeakPtr<JavaBridgeDispatcherHostManager>& manager,
+      bool can_enumerate_methods);
 
   virtual ~JavaBoundObject();
 
@@ -50,17 +49,23 @@ class JavaBoundObject {
       NPObject* object);
 
   // Methods to implement the NPObject callbacks.
+  bool CanEnumerateMethods() const { return can_enumerate_methods_; }
+  std::vector<std::string> GetMethodNames() const;
   bool HasMethod(const std::string& name) const;
   bool Invoke(const std::string& name, const NPVariant* args, size_t arg_count,
               NPVariant* result);
 
  private:
-  explicit JavaBoundObject(
+  JavaBoundObject(
       const base::android::JavaRef<jobject>& object,
       const base::android::JavaRef<jclass>& safe_annotation_clazz,
-      const base::WeakPtr<JavaBridgeDispatcherHostManager>& manager_);
+      const base::WeakPtr<JavaBridgeDispatcherHostManager>& manager,
+      bool can_enumerate_methods);
 
   void EnsureMethodsAreSetUp() const;
+  base::android::ScopedJavaLocalRef<jclass> GetLocalClassRef(JNIEnv* env) const;
+
+  static void ThrowSecurityException(const char* message);
 
   // The weak ref to the underlying Java object that this JavaBoundObject
   // instance represents.
@@ -78,6 +83,8 @@ class JavaBoundObject {
   typedef std::multimap<std::string, linked_ptr<JavaMethod> > JavaMethodMap;
   mutable JavaMethodMap methods_;
   mutable bool are_methods_set_up_;
+  mutable jmethodID object_get_class_method_id_;
+  const bool can_enumerate_methods_;
 
   base::android::ScopedJavaGlobalRef<jclass> safe_annotation_clazz_;
 

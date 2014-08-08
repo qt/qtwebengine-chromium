@@ -140,6 +140,15 @@ bool SkWStream::writeScalar(SkScalar value) {
     return this->write(&value, sizeof(value));
 }
 
+int SkWStream::SizeOfPackedUInt(size_t value) {
+    if (value <= SK_MAX_BYTE_FOR_U8) {
+        return 1;
+    } else if (value <= 0xFFFF) {
+        return 3;
+    }
+    return 5;
+}
+
 bool SkWStream::writePackedUInt(size_t value) {
     uint8_t data[5];
     size_t len = 1;
@@ -152,7 +161,7 @@ bool SkWStream::writePackedUInt(size_t value) {
         memcpy(&data[1], &value16, 2);
         len = 3;
     } else {
-        uint32_t value32 = value;
+        uint32_t value32 = SkToU32(value);
         data[0] = SK_BYTE_SENTINEL_FOR_U32;
         memcpy(&data[1], &value32, 4);
         len = 5;
@@ -180,7 +189,7 @@ bool SkWStream::writeStream(SkStream* stream, size_t length) {
 
 bool SkWStream::writeData(const SkData* data) {
     if (data) {
-        this->write32(data->size());
+        this->write32(SkToU32(data->size()));
         this->write(data->data(), data->size());
     } else {
         this->write32(0);
@@ -433,14 +442,20 @@ SkFILEWStream::SkFILEWStream(const char path[])
 
 SkFILEWStream::~SkFILEWStream()
 {
-    if (fFILE)
+    if (fFILE) {
         sk_fclose(fFILE);
+    }
+}
+
+size_t SkFILEWStream::bytesWritten() const {
+    return sk_ftell(fFILE);
 }
 
 bool SkFILEWStream::write(const void* buffer, size_t size)
 {
-    if (fFILE == NULL)
+    if (fFILE == NULL) {
         return false;
+    }
 
     if (sk_fwrite(buffer, size, fFILE) != size)
     {
@@ -454,8 +469,9 @@ bool SkFILEWStream::write(const void* buffer, size_t size)
 
 void SkFILEWStream::flush()
 {
-    if (fFILE)
+    if (fFILE) {
         sk_fflush(fFILE);
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////
@@ -465,11 +481,9 @@ SkMemoryWStream::SkMemoryWStream(void* buffer, size_t size)
 {
 }
 
-bool SkMemoryWStream::write(const void* buffer, size_t size)
-{
-    size = SkMin32(size, fMaxLength - fBytesWritten);
-    if (size > 0)
-    {
+bool SkMemoryWStream::write(const void* buffer, size_t size) {
+    size = SkTMin(size, fMaxLength - fBytesWritten);
+    if (size > 0) {
         memcpy(fBuffer + fBytesWritten, buffer, size);
         fBytesWritten += size;
         return true;
@@ -542,7 +556,7 @@ bool SkDynamicMemoryWStream::write(const void* buffer, size_t count)
         size_t  size;
 
         if (fTail != NULL && fTail->avail() > 0) {
-            size = SkMin32(fTail->avail(), count);
+            size = SkTMin(fTail->avail(), count);
             buffer = fTail->append(buffer, size);
             SkASSERT(count >= size);
             count -= size;
@@ -550,7 +564,7 @@ bool SkDynamicMemoryWStream::write(const void* buffer, size_t count)
                 return true;
         }
 
-        size = SkMax32(count, SkDynamicMemoryWStream_MinBlockSize);
+        size = SkTMax<size_t>(count, SkDynamicMemoryWStream_MinBlockSize);
         Block* block = (Block*)sk_malloc_throw(sizeof(Block) + size);
         block->init(size);
         block->append(buffer, count);
@@ -687,10 +701,10 @@ public:
         size_t bytesLeftToRead = count;
         while (fCurrent != NULL) {
             size_t bytesLeftInCurrent = fCurrent->written() - fCurrentOffset;
-            size_t bytesFromCurrent = bytesLeftToRead <= bytesLeftInCurrent
-                                    ? bytesLeftToRead  : bytesLeftInCurrent;
+            size_t bytesFromCurrent = SkTMin(bytesLeftToRead, bytesLeftInCurrent);
             if (buffer) {
                 memcpy(buffer, fCurrent->start() + fCurrentOffset, bytesFromCurrent);
+                buffer = SkTAddOffset<void>(buffer, bytesFromCurrent);
             }
             if (bytesLeftToRead <= bytesFromCurrent) {
                 fCurrentOffset += bytesFromCurrent;
@@ -698,7 +712,6 @@ public:
                 return count;
             }
             bytesLeftToRead -= bytesFromCurrent;
-            buffer = SkTAddOffset<void>(buffer, bytesFromCurrent);
             fCurrent = fCurrent->fNext;
             fCurrentOffset = 0;
         }
@@ -791,6 +804,7 @@ void SkDebugWStream::newline()
 {
 #if defined(SK_DEBUG) || defined(SK_DEVELOPER)
     SkDebugf("\n");
+    fBytesWritten++;
 #endif
 }
 
@@ -802,6 +816,7 @@ bool SkDebugWStream::write(const void* buffer, size_t size)
     s[size] = 0;
     SkDebugf("%s", s);
     delete[] s;
+    fBytesWritten += size;
 #endif
     return true;
 }

@@ -22,21 +22,21 @@ class FileVersionInfoWin : public FileVersionInfo {
 
   // Accessors to the different version properties.
   // Returns an empty string if the property is not found.
-  virtual string16 company_name() OVERRIDE;
-  virtual string16 company_short_name() OVERRIDE;
-  virtual string16 product_name() OVERRIDE;
-  virtual string16 product_short_name() OVERRIDE;
-  virtual string16 internal_name() OVERRIDE;
-  virtual string16 product_version() OVERRIDE;
-  virtual string16 private_build() OVERRIDE;
-  virtual string16 special_build() OVERRIDE;
-  virtual string16 comments() OVERRIDE;
-  virtual string16 original_filename() OVERRIDE;
-  virtual string16 file_description() OVERRIDE;
-  virtual string16 file_version() OVERRIDE;
-  virtual string16 legal_copyright() OVERRIDE;
-  virtual string16 legal_trademarks() OVERRIDE;
-  virtual string16 last_change() OVERRIDE;
+  virtual base::string16 company_name() OVERRIDE;
+  virtual base::string16 company_short_name() OVERRIDE;
+  virtual base::string16 product_name() OVERRIDE;
+  virtual base::string16 product_short_name() OVERRIDE;
+  virtual base::string16 internal_name() OVERRIDE;
+  virtual base::string16 product_version() OVERRIDE;
+  virtual base::string16 private_build() OVERRIDE;
+  virtual base::string16 special_build() OVERRIDE;
+  virtual base::string16 comments() OVERRIDE;
+  virtual base::string16 original_filename() OVERRIDE;
+  virtual base::string16 file_description() OVERRIDE;
+  virtual base::string16 file_version() OVERRIDE;
+  virtual base::string16 legal_copyright() OVERRIDE;
+  virtual base::string16 legal_trademarks() OVERRIDE;
+  virtual base::string16 last_change() OVERRIDE;
   virtual bool is_official_build() OVERRIDE;
 
   // Lets you access other properties not covered above.
@@ -50,7 +50,7 @@ class FileVersionInfoWin : public FileVersionInfo {
   VS_FIXEDFILEINFO* fixed_file_info() { return fixed_file_info_; }
 
  private:
-  scoped_ptr_malloc<char> data_;
+  scoped_ptr<char, base::FreeDeleter> data_;
   int language_;
   int code_page_;
   // This is a pointer into the data_ if it exists. Otherwise NULL.

@@ -32,29 +32,25 @@
 
 namespace WebCore {
 
-class WebGLRenderbuffer : public WebGLSharedObject, public ScriptWrappable {
+class WebGLRenderbuffer FINAL : public WebGLSharedObject, public ScriptWrappable {
 public:
     virtual ~WebGLRenderbuffer();
 
-    static PassRefPtr<WebGLRenderbuffer> create(WebGLRenderingContext*);
+    static PassRefPtr<WebGLRenderbuffer> create(WebGLRenderingContextBase*);
 
-    void setInternalFormat(GC3Denum internalformat)
+    void setInternalFormat(GLenum internalformat)
     {
         m_internalFormat = internalformat;
-        m_initialized = false;
     }
-    GC3Denum internalFormat() const { return m_internalFormat; }
+    GLenum internalFormat() const { return m_internalFormat; }
 
-    void setSize(GC3Dsizei width, GC3Dsizei height)
+    void setSize(GLsizei width, GLsizei height)
     {
         m_width = width;
         m_height = height;
     }
-    GC3Dsizei width() const { return m_width; }
-    GC3Dsizei height() const { return m_height; }
-
-    bool initialized() const { return m_initialized; }
-    void setInitialized() { m_initialized = true; }
+    GLsizei width() const { return m_width; }
+    GLsizei height() const { return m_height; }
 
     bool hasEverBeenBound() const { return object() && m_hasEverBeenBound; }
 
@@ -62,19 +58,18 @@ public:
 
     void setEmulatedStencilBuffer(PassRefPtr<WebGLRenderbuffer> buffer) { m_emulatedStencilBuffer = buffer; }
     WebGLRenderbuffer* emulatedStencilBuffer() const { return m_emulatedStencilBuffer.get(); }
-    void deleteEmulatedStencilBuffer(GraphicsContext3D* context3d);
+    void deleteEmulatedStencilBuffer(blink::WebGraphicsContext3D* context3d);
 
 protected:
-    WebGLRenderbuffer(WebGLRenderingContext*);
+    WebGLRenderbuffer(WebGLRenderingContextBase*);
 
-    virtual void deleteObjectImpl(GraphicsContext3D*, Platform3DObject);
+    virtual void deleteObjectImpl(blink::WebGraphicsContext3D*, Platform3DObject) OVERRIDE;
 
 private:
-    virtual bool isRenderbuffer() const { return true; }
+    virtual bool isRenderbuffer() const OVERRIDE { return true; }
 
-    GC3Denum m_internalFormat;
-    bool m_initialized;
-    GC3Dsizei m_width, m_height;
+    GLenum m_internalFormat;
+    GLsizei m_width, m_height;
 
     bool m_hasEverBeenBound;
 

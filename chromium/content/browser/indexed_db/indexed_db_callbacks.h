@@ -20,11 +20,13 @@
 #include "url/gurl.h"
 
 namespace content {
+class IndexedDBBlobInfo;
 class IndexedDBConnection;
 class IndexedDBCursor;
 class IndexedDBDatabase;
 class IndexedDBDatabaseCallbacks;
 struct IndexedDBDatabaseMetadata;
+struct IndexedDBValue;
 
 class CONTENT_EXPORT IndexedDBCallbacks
     : public base::RefCounted<IndexedDBCallbacks> {
@@ -57,12 +59,12 @@ class CONTENT_EXPORT IndexedDBCallbacks
   virtual void OnBlocked(int64 existing_version);
 
   // IndexedDBFactory::Open
+  virtual void OnDataLoss(blink::WebIDBDataLoss data_loss,
+                          std::string data_loss_message);
   virtual void OnUpgradeNeeded(
       int64 old_version,
       scoped_ptr<IndexedDBConnection> connection,
-      const content::IndexedDBDatabaseMetadata& metadata,
-      blink::WebIDBDataLoss data_loss,
-      std::string data_loss_message);
+      const content::IndexedDBDatabaseMetadata& metadata);
   virtual void OnSuccess(scoped_ptr<IndexedDBConnection> connection,
                          const content::IndexedDBDatabaseMetadata& metadata);
 
@@ -70,41 +72,47 @@ class CONTENT_EXPORT IndexedDBCallbacks
   virtual void OnSuccess(scoped_refptr<IndexedDBCursor> cursor,
                          const IndexedDBKey& key,
                          const IndexedDBKey& primary_key,
-                         std::string* value);
+                         IndexedDBValue* value);
 
   // IndexedDBCursor::Continue / Advance
   virtual void OnSuccess(const IndexedDBKey& key,
                          const IndexedDBKey& primary_key,
-                         std::string* value);
+                         IndexedDBValue* value);
 
   // IndexedDBCursor::PrefetchContinue
   virtual void OnSuccessWithPrefetch(
       const std::vector<IndexedDBKey>& keys,
       const std::vector<IndexedDBKey>& primary_keys,
-      const std::vector<std::string>& values);
+      std::vector<IndexedDBValue>& values);
 
   // IndexedDBDatabase::Get (with key injection)
-  virtual void OnSuccess(std::string* data,
+  virtual void OnSuccess(IndexedDBValue* value,
                          const IndexedDBKey& key,
                          const IndexedDBKeyPath& key_path);
 
   // IndexedDBDatabase::Get
-  virtual void OnSuccess(std::string* value);
+  virtual void OnSuccess(IndexedDBValue* value);
 
   // IndexedDBDatabase::Put / IndexedDBCursor::Update
-  virtual void OnSuccess(const IndexedDBKey& value);
+  virtual void OnSuccess(const IndexedDBKey& key);
 
   // IndexedDBDatabase::Count
+  // IndexedDBFactory::DeleteDatabase
   virtual void OnSuccess(int64 value);
 
   // IndexedDBDatabase::Delete
   // IndexedDBCursor::Continue / Advance (when complete)
   virtual void OnSuccess();
 
+  blink::WebIDBDataLoss data_loss() const { return data_loss_; }
+
  protected:
   virtual ~IndexedDBCallbacks();
 
  private:
+  void RegisterBlobsAndSend(const std::vector<IndexedDBBlobInfo>& blob_info,
+                            const base::Closure& callback);
+
   friend class base::RefCounted<IndexedDBCallbacks>;
 
   // Originally from IndexedDBCallbacks:
@@ -120,6 +128,12 @@ class CONTENT_EXPORT IndexedDBCallbacks
   GURL origin_url_;
   int32 ipc_database_id_;
   int32 ipc_database_callbacks_id_;
+
+  // Stored in OnDataLoss, merged with OnUpgradeNeeded response.
+  blink::WebIDBDataLoss data_loss_;
+  std::string data_loss_message_;
+
+  DISALLOW_COPY_AND_ASSIGN(IndexedDBCallbacks);
 };
 
 }  // namespace content

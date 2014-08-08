@@ -7,21 +7,29 @@
 
 #include "base/memory/ref_counted.h"
 #include "content/common/content_export.h"
+#include "gpu/command_buffer/service/in_process_command_buffer.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/size.h"
 
 class SkCanvas;
 
+namespace cc {
+class CompositorFrame;
+class CompositorFrameAck;
+}
+
 namespace gfx {
-class GLSurface;
 class Transform;
 };
 
+namespace gpu {
+class GLInProcessContext;
+}
+
 namespace content {
 
-class WebContents;
-
 class SynchronousCompositorClient;
+class WebContents;
 
 struct CONTENT_EXPORT SynchronousCompositorMemoryPolicy {
   // Memory limit for rendering and pre-rendering.
@@ -52,27 +60,42 @@ class CONTENT_EXPORT SynchronousCompositor {
   // the caller.
   virtual void SetClient(SynchronousCompositorClient* client) = 0;
 
+  static void SetGpuService(
+      scoped_refptr<gpu::InProcessCommandBuffer::Service> service);
+
+  // By default, synchronous compopsitor records the full layer, not only
+  // what is inside and around the view port. This can be used to switch
+  // between this record-full-layer behavior and normal record-around-viewport
+  // behavior.
+  static void SetRecordFullDocument(bool record_full_document);
+
   // Synchronously initialize compositor for hardware draw. Can only be called
   // while compositor is in software only mode, either after compositor is
   // first created or after ReleaseHwDraw is called. It is invalid to
-  // DemandDrawHw before this returns true. |surface| is the GLSurface that
-  // should be used to create the underlying hardware context.
-  virtual bool InitializeHwDraw(scoped_refptr<gfx::GLSurface> surface) = 0;
+  // DemandDrawHw before this returns true.
+  virtual bool InitializeHwDraw() = 0;
 
   // Reverse of InitializeHwDraw above. Can only be called while hardware draw
   // is already initialized. Brings compositor back to software only mode and
   // releases all hardware resources.
   virtual void ReleaseHwDraw() = 0;
 
+  // Get the share context of the compositor. The returned context is owned
+  // by the compositor and is only valid between InitializeHwDraw and
+  // ReleaseHwDraw.
+  virtual gpu::GLInProcessContext* GetShareContext() = 0;
+
   // "On demand" hardware draw. The content is first clipped to |damage_area|,
-  // then transformed through |transform|, and finally clipped to |view_size|
-  // and by the existing stencil buffer if any.
-  virtual bool DemandDrawHw(
+  // then transformed through |transform|, and finally clipped to |view_size|.
+  virtual scoped_ptr<cc::CompositorFrame> DemandDrawHw(
       gfx::Size surface_size,
       const gfx::Transform& transform,
       gfx::Rect viewport,
-      gfx::Rect clip,
-      bool stencil_enabled) = 0;
+      gfx::Rect clip) = 0;
+
+  // For delegated rendering, return resources from parent compositor to this.
+  // Note that all resources must be returned before ReleaseHwDraw.
+  virtual void ReturnResources(const cc::CompositorFrameAck& frame_ack) = 0;
 
   // "On demand" SW draw, into the supplied canvas (observing the transform
   // and clip set there-in).

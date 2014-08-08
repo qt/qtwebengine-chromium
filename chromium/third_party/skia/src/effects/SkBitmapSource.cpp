@@ -8,7 +8,8 @@
 #include "SkBitmapSource.h"
 #include "SkDevice.h"
 #include "SkCanvas.h"
-#include "SkFlattenableBuffers.h"
+#include "SkReadBuffer.h"
+#include "SkWriteBuffer.h"
 #include "SkValidationUtils.h"
 
 SkBitmapSource::SkBitmapSource(const SkBitmap& bitmap)
@@ -20,35 +21,38 @@ SkBitmapSource::SkBitmapSource(const SkBitmap& bitmap)
 }
 
 SkBitmapSource::SkBitmapSource(const SkBitmap& bitmap, const SkRect& srcRect, const SkRect& dstRect)
-  : INHERITED(0, 0),
-    fBitmap(bitmap),
-    fSrcRect(srcRect),
-    fDstRect(dstRect) {
-}
+  : INHERITED(0, 0)
+  , fBitmap(bitmap)
+  , fSrcRect(srcRect)
+  , fDstRect(dstRect) {}
 
-SkBitmapSource::SkBitmapSource(SkFlattenableReadBuffer& buffer)
-  : INHERITED(0, buffer) {
-    fBitmap.unflatten(buffer);
+SkBitmapSource::SkBitmapSource(SkReadBuffer& buffer) : INHERITED(0, buffer) {
+    if (buffer.isVersionLT(SkReadBuffer::kNoMoreBitmapFlatten_Version)) {
+        fBitmap.legacyUnflatten(buffer);
+    } else {
+        buffer.readBitmap(&fBitmap);
+    }
     buffer.readRect(&fSrcRect);
     buffer.readRect(&fDstRect);
-    buffer.validate(SkIsValidRect(fSrcRect) && SkIsValidRect(fDstRect));
+    buffer.validate(buffer.isValid() && SkIsValidRect(fSrcRect) && SkIsValidRect(fDstRect));
 }
 
-void SkBitmapSource::flatten(SkFlattenableWriteBuffer& buffer) const {
+void SkBitmapSource::flatten(SkWriteBuffer& buffer) const {
     this->INHERITED::flatten(buffer);
-    fBitmap.flatten(buffer);
+    buffer.writeBitmap(fBitmap);
     buffer.writeRect(fSrcRect);
     buffer.writeRect(fDstRect);
 }
 
-bool SkBitmapSource::onFilterImage(Proxy* proxy, const SkBitmap&, const SkMatrix& matrix,
-                                   SkBitmap* result, SkIPoint* offset) {
+bool SkBitmapSource::onFilterImage(Proxy* proxy, const SkBitmap&, const Context& ctx,
+                                   SkBitmap* result, SkIPoint* offset) const {
     SkRect bounds, dstRect;
     fBitmap.getBounds(&bounds);
-    matrix.mapRect(&dstRect, fDstRect);
+    ctx.ctm().mapRect(&dstRect, fDstRect);
     if (fSrcRect == bounds && dstRect == bounds) {
         // No regions cropped out or resized; return entire bitmap.
         *result = fBitmap;
+        offset->fX = offset->fY = 0;
         return true;
     }
     SkIRect dstIRect;
@@ -69,11 +73,21 @@ bool SkBitmapSource::onFilterImage(Proxy* proxy, const SkBitmap&, const SkMatrix
     // None filtering when it's translate-only
     paint.setFilterLevel(
         fSrcRect.width() == dstRect.width() && fSrcRect.height() == dstRect.height() ?
-        SkPaint::kNone_FilterLevel : SkPaint::kMedium_FilterLevel);
+        SkPaint::kNone_FilterLevel : SkPaint::kHigh_FilterLevel);
     canvas.drawBitmapRectToRect(fBitmap, &fSrcRect, dstRect, &paint);
 
     *result = device.get()->accessBitmap(false);
-    offset->fX += dstIRect.fLeft;
-    offset->fY += dstIRect.fTop;
+    offset->fX = dstIRect.fLeft;
+    offset->fY = dstIRect.fTop;
+    return true;
+}
+
+void SkBitmapSource::computeFastBounds(const SkRect&, SkRect* dst) const {
+    *dst = fDstRect;
+}
+
+bool SkBitmapSource::onFilterBounds(const SkIRect& src, const SkMatrix& ctm,
+                                    SkIRect* dst) const {
+    *dst = src;
     return true;
 }

@@ -27,11 +27,9 @@
 #ifndef NavigatorContentUtils_h
 #define NavigatorContentUtils_h
 
-#if ENABLE(NAVIGATOR_CONTENT_UTILS)
-
 #include "modules/navigatorcontentutils/NavigatorContentUtilsClient.h"
-#include "platform/RefCountedSupplement.h"
-#include "wtf/PassRefPtr.h"
+#include "platform/Supplementable.h"
+#include "platform/heap/Handle.h"
 #include "wtf/text/WTFString.h"
 
 namespace WebCore {
@@ -40,34 +38,34 @@ class ExceptionState;
 class Navigator;
 class Page;
 
-class NavigatorContentUtils : public RefCountedSupplement<Page, NavigatorContentUtils> {
+class NavigatorContentUtils FINAL : public NoBaseWillBeGarbageCollectedFinalized<NavigatorContentUtils>, public WillBeHeapSupplement<Page> {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(NavigatorContentUtils);
 public:
     virtual ~NavigatorContentUtils();
 
+    static NavigatorContentUtils* from(Page&);
     static const char* supplementName();
-    static NavigatorContentUtils* from(Page*);
 
-    static void registerProtocolHandler(Navigator*, const String& scheme, const String& url, const String& title, ExceptionState&);
+    static void registerProtocolHandler(Navigator&, const String& scheme, const String& url, const String& title, ExceptionState&);
+    static String isProtocolHandlerRegistered(Navigator&, const String& scheme, const String& url, ExceptionState&);
+    static void unregisterProtocolHandler(Navigator&, const String& scheme, const String& url, ExceptionState&);
 
-#if ENABLE(CUSTOM_SCHEME_HANDLER)
-    static String isProtocolHandlerRegistered(Navigator*, const String& scheme, const String& url, ExceptionState&);
-    static void unregisterProtocolHandler(Navigator*, const String& scheme, const String& url, ExceptionState&);
-#endif
+    static PassOwnPtrWillBeRawPtr<NavigatorContentUtils> create(PassOwnPtr<NavigatorContentUtilsClient>);
 
-    static PassRefPtr<NavigatorContentUtils> create(NavigatorContentUtilsClient*);
+    virtual void trace(Visitor* visitor) OVERRIDE { WillBeHeapSupplement<Page>::trace(visitor); }
+
+    void setClientForTest(PassOwnPtr<NavigatorContentUtilsClient> client) { m_client = client; }
 
 private:
-    explicit NavigatorContentUtils(NavigatorContentUtilsClient* client)
+    explicit NavigatorContentUtils(PassOwnPtr<NavigatorContentUtilsClient> client)
         : m_client(client)
     { }
 
-    NavigatorContentUtilsClient* client() { return m_client; }
+    NavigatorContentUtilsClient* client() { return m_client.get(); }
 
-    NavigatorContentUtilsClient* m_client;
+    OwnPtr<NavigatorContentUtilsClient> m_client;
 };
 
 } // namespace WebCore
-
-#endif // ENABLE(NAVIGATOR_CONTENT_UTILS)
 
 #endif // NavigatorContentUtils_h

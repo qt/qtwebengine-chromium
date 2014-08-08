@@ -17,18 +17,18 @@ namespace test {
 // Simple wrapper class to run server in a thread.
 class ServerThread : public base::SimpleThread {
  public:
-  ServerThread(IPEndPoint address,
-               const QuicConfig& config,
-               const QuicVersionVector& supported_versions,
+  ServerThread(QuicServer* server,
+               IPEndPoint address,
                bool strike_register_no_startup_period);
 
   virtual ~ServerThread();
 
-  // SimpleThread implementation.
-  virtual void Run() OVERRIDE;
+  // Prepares the server, but does not start accepting connections. Useful for
+  // injecting mocks.
+  void Initialize();
 
-  // Waits until the server has started and is listening for requests.
-  void WaitForServerStartup();
+  // Runs the event loop. Will initialize if necessary.
+  virtual void Run() OVERRIDE;
 
   // Waits for the handshake to be confirmed for the first session created.
   void WaitForCryptoHandshakeConfirmed();
@@ -48,7 +48,7 @@ class ServerThread : public base::SimpleThread {
   // Returns the underlying server.  Care must be taken to avoid data races
   // when accessing the server.  It is always safe to access the server
   // after calling Pause() and before calling Resume().
-  QuicServer* server() { return &server_; }
+  QuicServer* server() { return server_.get(); }
 
   // Returns the port that the server is listening on.
   int GetPort();
@@ -56,7 +56,6 @@ class ServerThread : public base::SimpleThread {
  private:
   void MaybeNotifyOfHandshakeConfirmation();
 
-  base::WaitableEvent listening_;  // Notified when the server is listening.
   base::WaitableEvent confirmed_;  // Notified when the first handshake is
                                    // confirmed.
   base::WaitableEvent pause_;      // Notified when the server should pause.
@@ -64,10 +63,12 @@ class ServerThread : public base::SimpleThread {
   base::WaitableEvent resume_;     // Notified when the server should resume.
   base::WaitableEvent quit_;       // Notified when the server should quit.
 
-  tools::QuicServer server_;
+  scoped_ptr<QuicServer> server_;
   IPEndPoint address_;
   base::Lock port_lock_;
   int port_;
+
+  bool initialized_;
 
   DISALLOW_COPY_AND_ASSIGN(ServerThread);
 };

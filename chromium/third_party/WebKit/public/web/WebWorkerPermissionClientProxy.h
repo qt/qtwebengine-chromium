@@ -31,8 +31,11 @@
 #ifndef WebWorkerPermissionClientProxy_h
 #define WebWorkerPermissionClientProxy_h
 
+#include "public/platform/WebPermissionCallbacks.h"
+
 namespace blink {
 
+class WebPermissionCallbacks;
 class WebString;
 
 // Proxy interface to talk to the document's PermissionClient implementation.
@@ -48,7 +51,7 @@ public:
         return true;
     }
 
-    virtual bool allowFileSystem()
+    virtual bool requestFileSystemAccessSync()
     {
         return true;
     }

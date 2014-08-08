@@ -31,17 +31,18 @@
 #include "config.h"
 #include "core/inspector/InspectorInputAgent.h"
 
+#include "core/frame/FrameView.h"
+#include "core/frame/LocalFrame.h"
 #include "core/inspector/InspectorClient.h"
 #include "core/page/Chrome.h"
 #include "core/page/EventHandler.h"
-#include "core/frame/Frame.h"
-#include "core/frame/FrameView.h"
 #include "core/page/Page.h"
 #include "platform/JSONValues.h"
 #include "platform/PlatformKeyboardEvent.h"
 #include "platform/PlatformMouseEvent.h"
 #include "platform/PlatformTouchEvent.h"
 #include "platform/PlatformTouchPoint.h"
+#include "platform/geometry/FloatSize.h"
 #include "platform/geometry/IntPoint.h"
 #include "platform/geometry/IntRect.h"
 #include "platform/geometry/IntSize.h"
@@ -57,8 +58,7 @@ public:
         m_screenPos = screenPos;
         m_pos = pos;
         m_state = state;
-        m_radiusY = radiusY;
-        m_radiusX = radiusX;
+        m_radius = WebCore::FloatSize(radiusX, radiusY);
         m_rotationAngle = rotationAngle;
         m_force = force;
     }
@@ -81,7 +81,7 @@ public:
 
 void ConvertInspectorPoint(WebCore::Page* page, const WebCore::IntPoint& point, WebCore::IntPoint* convertedPoint, WebCore::IntPoint* globalPoint)
 {
-    *convertedPoint = page->mainFrame()->view()->convertToContainingWindow(point);
+    *convertedPoint = page->deprecatedLocalMainFrame()->view()->convertToContainingWindow(point);
     *globalPoint = page->chrome().rootViewToScreen(WebCore::IntRect(point, WebCore::IntSize(0, 0))).location();
 }
 
@@ -89,8 +89,8 @@ void ConvertInspectorPoint(WebCore::Page* page, const WebCore::IntPoint& point, 
 
 namespace WebCore {
 
-InspectorInputAgent::InspectorInputAgent(InstrumentingAgents* instrumentingAgents, InspectorCompositeState* inspectorState, Page* page, InspectorClient* client)
-    : InspectorBaseAgent<InspectorInputAgent>("Input", instrumentingAgents, inspectorState)
+InspectorInputAgent::InspectorInputAgent(Page* page, InspectorClient* client)
+    : InspectorBaseAgent<InspectorInputAgent>("Input")
     , m_page(page), m_client(client)
 {
 }
@@ -99,7 +99,7 @@ InspectorInputAgent::~InspectorInputAgent()
 {
 }
 
-void InspectorInputAgent::dispatchKeyEvent(ErrorString* error, const String& type, const int* modifiers, const double* timestamp, const String* text, const String* unmodifiedText, const String* keyIdentifier, const int* windowsVirtualKeyCode, const int* nativeVirtualKeyCode, const int* macCharCode, const bool* autoRepeat, const bool* isKeypad, const bool* isSystemKey)
+void InspectorInputAgent::dispatchKeyEvent(ErrorString* error, const String& type, const int* modifiers, const double* timestamp, const String* text, const String* unmodifiedText, const String* keyIdentifier, const int* windowsVirtualKeyCode, const int* nativeVirtualKeyCode, const bool* autoRepeat, const bool* isKeypad, const bool* isSystemKey)
 {
     PlatformEvent::Type convertedType;
     if (type == "keyDown")
@@ -122,7 +122,6 @@ void InspectorInputAgent::dispatchKeyEvent(ErrorString* error, const String& typ
         keyIdentifier ? *keyIdentifier : "",
         windowsVirtualKeyCode ? *windowsVirtualKeyCode : 0,
         nativeVirtualKeyCode ? *nativeVirtualKeyCode : 0,
-        macCharCode ? *macCharCode : 0,
         autoRepeat ? *autoRepeat : false,
         isKeypad ? *isKeypad : false,
         isSystemKey ? *isSystemKey : false,
@@ -268,12 +267,7 @@ void InspectorInputAgent::dispatchTouchEvent(ErrorString* error, const String& t
         event.append(point);
     }
 
-    m_page->mainFrame()->eventHandler().handleTouchEvent(event);
-}
-
-void InspectorInputAgent::dispatchGestureEvent(ErrorString*, const String& type, int x, int y, const double* timestamp, const int* deltaX, const int* deltaY, const double* scale)
-{
-    // Handled on the browser level.
+    m_page->deprecatedLocalMainFrame()->eventHandler().handleTouchEvent(event);
 }
 
 } // namespace WebCore

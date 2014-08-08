@@ -28,6 +28,11 @@ void CopyPlane(const uint8* src_y, int src_stride_y,
                uint8* dst_y, int dst_stride_y,
                int width, int height);
 
+LIBYUV_API
+void CopyPlane_16(const uint16* src_y, int src_stride_y,
+                  uint16* dst_y, int dst_stride_y,
+                  int width, int height);
+
 // Set a plane of data to a 32 bit value.
 LIBYUV_API
 void SetPlane(uint8* dst_y, int dst_stride_y,
@@ -82,9 +87,9 @@ int UYVYToI422(const uint8* src_uyvy, int src_stride_uyvy,
 // Convert I420 to I400. (calls CopyPlane ignoring u/v).
 LIBYUV_API
 int I420ToI400(const uint8* src_y, int src_stride_y,
+               const uint8* src_u, int src_stride_u,
+               const uint8* src_v, int src_stride_v,
                uint8* dst_y, int dst_stride_y,
-               uint8* dst_u, int dst_stride_u,
-               uint8* dst_v, int dst_stride_v,
                int width, int height);
 
 // Alias
@@ -382,10 +387,11 @@ int ARGBInterpolate(const uint8* src_argb0, int src_stride_argb0,
                     uint8* dst_argb, int dst_stride_argb,
                     int width, int height, int interpolation);
 
-#if defined(__CLR_VER) || defined(COVERAGE_ENABLED) || \
+#if defined(__pnacl__) || defined(__CLR_VER) || defined(COVERAGE_ENABLED) || \
     defined(TARGET_IPHONE_SIMULATOR)
 #define LIBYUV_DISABLE_X86
 #endif
+
 // Row functions for copying a pixels from a source with a slope to a row
 // of destination. Useful for scaling, rotation, mirror, texture mapping.
 LIBYUV_API

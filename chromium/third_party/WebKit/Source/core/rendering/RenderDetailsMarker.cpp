@@ -21,8 +21,9 @@
 #include "config.h"
 #include "core/rendering/RenderDetailsMarker.h"
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 #include "core/dom/Element.h"
+#include "core/html/HTMLElement.h"
 #include "core/rendering/PaintInfo.h"
 #include "platform/graphics/GraphicsContext.h"
 
@@ -106,8 +107,8 @@ Path RenderDetailsMarker::getCanonicalPath() const
 Path RenderDetailsMarker::getPath(const LayoutPoint& origin) const
 {
     Path result = getCanonicalPath();
-    result.transform(AffineTransform().scale(contentWidth(), contentHeight()));
-    result.translate(FloatSize(origin.x(), origin.y()));
+    result.transform(AffineTransform().scale(contentWidth().toFloat(), contentHeight().toFloat()));
+    result.translate(FloatSize(origin.x().toFloat(), origin.y().toFloat()));
     return result;
 }
 
@@ -121,7 +122,6 @@ void RenderDetailsMarker::paint(PaintInfo& paintInfo, const LayoutPoint& paintOf
     LayoutPoint boxOrigin(paintOffset + location());
     LayoutRect overflowRect(visualOverflowRect());
     overflowRect.moveBy(boxOrigin);
-    overflowRect.inflate(maximalOutlineSize(paintInfo.phase));
 
     if (!paintInfo.rect.intersects(pixelSnappedIntRect(overflowRect)))
         return;
@@ -141,9 +141,9 @@ bool RenderDetailsMarker::isOpen() const
     for (RenderObject* renderer = parent(); renderer; renderer = renderer->parent()) {
         if (!renderer->node())
             continue;
-        if (renderer->node()->hasTagName(detailsTag))
+        if (isHTMLDetailsElement(*renderer->node()))
             return !toElement(renderer->node())->getAttribute(openAttr).isNull();
-        if (renderer->node()->hasTagName(inputTag))
+        if (isHTMLInputElement(*renderer->node()))
             return true;
     }
 

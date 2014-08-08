@@ -27,84 +27,68 @@
 #define MediaController_h
 
 #include "bindings/v8/ScriptWrappable.h"
-#include "core/events/Event.h"
 #include "core/events/EventTarget.h"
-#include "core/html/MediaControllerInterface.h"
-#include "platform/Timer.h"
+#include "core/html/HTMLMediaElement.h"
+#include "wtf/LinkedHashSet.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
-#include "wtf/Vector.h"
 
 namespace WebCore {
 
 class Clock;
-class Event;
 class ExceptionState;
-class HTMLMediaElement;
 class ExecutionContext;
+class GenericEventQueue;
 
-class MediaController : public RefCounted<MediaController>, public ScriptWrappable, public MediaControllerInterface, public EventTargetWithInlineData {
+class MediaController FINAL : public RefCountedWillBeRefCountedGarbageCollected<MediaController>, public ScriptWrappable, public EventTargetWithInlineData {
     REFCOUNTED_EVENT_TARGET(MediaController);
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(MediaController);
 public:
-    static PassRefPtr<MediaController> create(ExecutionContext*);
+    static PassRefPtrWillBeRawPtr<MediaController> create(ExecutionContext*);
     virtual ~MediaController();
 
     void addMediaElement(HTMLMediaElement*);
     void removeMediaElement(HTMLMediaElement*);
-    bool containsMediaElement(HTMLMediaElement*) const;
 
-    const String& mediaGroup() const { return m_mediaGroup; }
+    PassRefPtr<TimeRanges> buffered() const;
+    PassRefPtr<TimeRanges> seekable() const;
+    PassRefPtr<TimeRanges> played();
 
-    virtual PassRefPtr<TimeRanges> buffered() const;
-    virtual PassRefPtr<TimeRanges> seekable() const;
-    virtual PassRefPtr<TimeRanges> played();
+    double duration() const;
+    double currentTime() const;
+    void setCurrentTime(double, ExceptionState&);
 
-    virtual double duration() const;
-    virtual double currentTime() const;
-    virtual void setCurrentTime(double, ExceptionState&);
-
-    virtual bool paused() const { return m_paused; }
-    virtual void play();
-    virtual void pause();
+    bool paused() const { return m_paused; }
+    void play();
+    void pause();
     void unpause();
 
-    virtual double defaultPlaybackRate() const { return m_defaultPlaybackRate; }
-    virtual void setDefaultPlaybackRate(double);
+    double defaultPlaybackRate() const { return m_defaultPlaybackRate; }
+    void setDefaultPlaybackRate(double);
 
-    virtual double playbackRate() const;
-    virtual void setPlaybackRate(double);
+    double playbackRate() const;
+    void setPlaybackRate(double);
 
-    virtual double volume() const { return m_volume; }
-    virtual void setVolume(double, ExceptionState&);
+    double volume() const { return m_volume; }
+    void setVolume(double, ExceptionState&);
 
-    virtual bool muted() const { return m_muted; }
-    virtual void setMuted(bool);
+    bool muted() const { return m_muted; }
+    void setMuted(bool);
 
-    virtual ReadyState readyState() const { return m_readyState; }
+    typedef HTMLMediaElement::ReadyState ReadyState;
+    ReadyState readyState() const { return m_readyState; }
 
     enum PlaybackState { WAITING, PLAYING, ENDED };
     const AtomicString& playbackState() const;
 
-    virtual bool supportsFullscreen() const { return false; }
-    virtual bool isFullscreen() const { return false; }
-    virtual void enterFullscreen() { }
-
-    virtual bool hasAudio() const;
-    virtual bool hasVideo() const;
-    virtual bool hasClosedCaptions() const;
-    virtual void setClosedCaptionsVisible(bool);
-    virtual bool closedCaptionsVisible() const { return m_closedCaptionsVisible; }
-
-    virtual void beginScrubbing();
-    virtual void endScrubbing();
-
-    virtual bool canPlay() const;
-
-    virtual bool hasCurrentSrc() const;
-
+    bool isRestrained() const;
     bool isBlocked() const;
 
-    void clearExecutionContext() { m_executionContext = 0; }
+#if !ENABLE(OILPAN)
+    void clearExecutionContext() { m_executionContext = nullptr; }
+#endif
+
+    virtual void trace(Visitor*) OVERRIDE;
 
 private:
     MediaController(ExecutionContext*);
@@ -114,7 +98,6 @@ private:
     void updateMediaElements();
     void bringElementUpToSpeed(HTMLMediaElement*);
     void scheduleEvent(const AtomicString& eventName);
-    void asyncEventTimerFired(Timer<MediaController>*);
     void clearPositionTimerFired(Timer<MediaController>*);
     bool hasEnded() const;
     void scheduleTimeupdateEvent();
@@ -127,7 +110,12 @@ private:
 
     friend class HTMLMediaElement;
     friend class MediaControllerEventListener;
-    Vector<HTMLMediaElement*> m_mediaElements;
+    // FIXME: A MediaController should ideally keep an otherwise
+    // unreferenced slaved media element alive. When Oilpan is
+    // enabled by default, consider making the hash set references
+    // strong to accomplish that. crbug.com/383072
+    typedef WillBeHeapLinkedHashSet<RawPtrWillBeWeakMember<HTMLMediaElement> > MediaElementSequence;
+    MediaElementSequence m_mediaElements;
     bool m_paused;
     double m_defaultPlaybackRate;
     double m_volume;
@@ -135,13 +123,10 @@ private:
     bool m_muted;
     ReadyState m_readyState;
     PlaybackState m_playbackState;
-    Vector<RefPtr<Event> > m_pendingEvents;
-    Timer<MediaController> m_asyncEventTimer;
+    OwnPtrWillBeMember<GenericEventQueue> m_pendingEventsQueue;
     mutable Timer<MediaController> m_clearPositionTimer;
-    String m_mediaGroup;
-    bool m_closedCaptionsVisible;
     OwnPtr<Clock> m_clock;
-    ExecutionContext* m_executionContext;
+    RawPtrWillBeWeakMember<ExecutionContext> m_executionContext;
     Timer<MediaController> m_timeupdateTimer;
     double m_previousTimeupdateTime;
 };

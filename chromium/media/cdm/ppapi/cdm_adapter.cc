@@ -4,10 +4,12 @@
 
 #include "media/cdm/ppapi/cdm_adapter.h"
 
+#include "media/cdm/ppapi/cdm_file_io_impl.h"
 #include "media/cdm/ppapi/cdm_helpers.h"
 #include "media/cdm/ppapi/cdm_logging.h"
 #include "media/cdm/ppapi/supported_cdm_versions.h"
 #include "ppapi/c/ppb_console.h"
+#include "ppapi/cpp/private/uma_private.h"
 
 #if defined(CHECK_DOCUMENT_URL)
 #include "ppapi/cpp/dev/url_util_dev.h"
@@ -56,7 +58,6 @@ void ConfigureInputBuffer(
   input_buffer->data = static_cast<uint8_t*>(encrypted_buffer.data());
   input_buffer->data_size = encrypted_block_info.data_size;
   PP_DCHECK(encrypted_buffer.size() >= input_buffer->data_size);
-  input_buffer->data_offset = encrypted_block_info.data_offset;
 
   PP_DCHECK(encrypted_block_info.key_id_size <=
             arraysize(encrypted_block_info.key_id));
@@ -154,6 +155,8 @@ cdm::VideoDecoderConfig::VideoCodec PpVideoCodecToCdmVideoCodec(
       return cdm::VideoDecoderConfig::kCodecVp8;
     case PP_VIDEOCODEC_H264:
       return cdm::VideoDecoderConfig::kCodecH264;
+    case PP_VIDEOCODEC_VP9:
+      return cdm::VideoDecoderConfig::kCodecVp9;
     default:
       return cdm::VideoDecoderConfig::kUnknownVideoCodec;
   }
@@ -162,8 +165,8 @@ cdm::VideoDecoderConfig::VideoCodec PpVideoCodecToCdmVideoCodec(
 cdm::VideoDecoderConfig::VideoCodecProfile PpVCProfileToCdmVCProfile(
     PP_VideoCodecProfile profile) {
   switch (profile) {
-    case PP_VIDEOCODECPROFILE_VP8_MAIN:
-      return cdm::VideoDecoderConfig::kVp8ProfileMain;
+    case PP_VIDEOCODECPROFILE_NOT_NEEDED:
+      return cdm::VideoDecoderConfig::kProfileNotNeeded;
     case PP_VIDEOCODECPROFILE_H264_BASELINE:
       return cdm::VideoDecoderConfig::kH264ProfileBaseline;
     case PP_VIDEOCODECPROFILE_H264_MAIN:
@@ -208,6 +211,40 @@ cdm::StreamType PpDecryptorStreamTypeToCdmStreamType(
   return cdm::kStreamTypeVideo;
 }
 
+cdm::SessionType PpSessionTypeToCdmSessionType(PP_SessionType session_type) {
+  switch (session_type) {
+    case PP_SESSIONTYPE_TEMPORARY:
+      return cdm::kTemporary;
+    case PP_SESSIONTYPE_PERSISTENT:
+      return cdm::kPersistent;
+    default:
+      PP_NOTREACHED();
+      return cdm::kTemporary;
+  }
+}
+
+PP_CdmExceptionCode CdmExceptionTypeToPpCdmExceptionType(cdm::Error error) {
+  switch (error) {
+    case cdm::kNotSupportedError:
+      return PP_CDMEXCEPTIONCODE_NOTSUPPORTEDERROR;
+    case cdm::kInvalidStateError:
+      return PP_CDMEXCEPTIONCODE_INVALIDSTATEERROR;
+    case cdm::kInvalidAccessError:
+      return PP_CDMEXCEPTIONCODE_INVALIDACCESSERROR;
+    case cdm::kQuotaExceededError:
+      return PP_CDMEXCEPTIONCODE_QUOTAEXCEEDEDERROR;
+    case cdm::kUnknownError:
+      return PP_CDMEXCEPTIONCODE_UNKNOWNERROR;
+    case cdm::kClientError:
+      return PP_CDMEXCEPTIONCODE_CLIENTERROR;
+    case cdm::kOutputError:
+      return PP_CDMEXCEPTIONCODE_OUTPUTERROR;
+    default:
+      PP_NOTREACHED();
+      return PP_CDMEXCEPTIONCODE_UNKNOWNERROR;
+  }
+}
+
 }  // namespace
 
 namespace media {
@@ -222,6 +259,8 @@ CdmAdapter::CdmAdapter(PP_Instance instance, pp::Module* module)
       output_link_mask_(0),
       output_protection_mask_(0),
       query_output_protection_in_progress_(false),
+      uma_for_output_protection_query_reported_(false),
+      uma_for_output_protection_positive_result_reported_(false),
 #endif
       allocator_(this),
       cdm_(NULL),
@@ -248,12 +287,35 @@ bool CdmAdapter::CreateCdmInstance(const std::string& key_system) {
   return success;
 }
 
-// No KeyErrors should be reported in this function because they cannot be
-// bubbled up in the WD EME API. Those errors will be reported during session
-// creation (CreateSession).
+// No errors should be reported in this function because the spec says:
+// "Store this new error object internally with the MediaKeys instance being
+// created. This will be used to fire an error against any session created for
+// this instance." These errors will be reported during session creation
+// (CreateSession()) or session loading (LoadSession()).
+// TODO(xhwang): If necessary, we need to store the error here if we want to
+// support more specific error reporting (other than "Unknown").
 void CdmAdapter::Initialize(const std::string& key_system) {
   PP_DCHECK(!key_system.empty());
   PP_DCHECK(key_system_.empty() || (key_system_ == key_system && cdm_));
+
+#if defined(CHECK_DOCUMENT_URL)
+  PP_URLComponents_Dev url_components = {};
+  const pp::URLUtil_Dev* url_util = pp::URLUtil_Dev::Get();
+  if (!url_util)
+    return;
+  pp::Var href = url_util->GetDocumentURL(pp::InstanceHandle(pp_instance()),
+                                          &url_components);
+  PP_DCHECK(href.is_string());
+  std::string url = href.AsString();
+  PP_DCHECK(!url.empty());
+  std::string url_scheme =
+      url.substr(url_components.scheme.begin, url_components.scheme.len);
+  if (url_scheme != "file") {
+    // Skip this check for file:// URLs as they don't have a host component.
+    PP_DCHECK(url_components.host.begin);
+    PP_DCHECK(0 < url_components.host.len);
+  }
+#endif  // defined(CHECK_DOCUMENT_URL)
 
   if (!cdm_ && !CreateCdmInstance(key_system))
     return;
@@ -262,87 +324,70 @@ void CdmAdapter::Initialize(const std::string& key_system) {
   key_system_ = key_system;
 }
 
-void CdmAdapter::CreateSession(uint32_t session_id,
-                               const std::string& type,
-                               pp::VarArrayBuffer init_data) {
+void CdmAdapter::CreateSession(uint32_t promise_id,
+                               const std::string& init_data_type,
+                               pp::VarArrayBuffer init_data,
+                               PP_SessionType session_type) {
   // Initialize() doesn't report an error, so CreateSession() can be called
   // even if Initialize() failed.
+  // TODO(jrummell): Remove this code when prefixed EME gets removed.
+  // TODO(jrummell): Verify that Initialize() failing does not resolve the
+  // MediaKeys.create() promise.
   if (!cdm_) {
-    OnSessionError(session_id, cdm::kUnknownError, 0);
+    RejectPromise(promise_id,
+                  cdm::kInvalidStateError,
+                  0,
+                  "CDM has not been initialized.");
     return;
   }
 
-#if defined(CHECK_DOCUMENT_URL)
-  PP_URLComponents_Dev url_components = {};
-  const pp::URLUtil_Dev* url_util = pp::URLUtil_Dev::Get();
-  if (!url_util) {
-    OnSessionError(session_id, cdm::kUnknownError, 0);
-    return;
-  }
-  pp::Var href = url_util->GetDocumentURL(
-      pp::InstanceHandle(pp_instance()), &url_components);
-  PP_DCHECK(href.is_string());
-  PP_DCHECK(!href.AsString().empty());
-  PP_DCHECK(url_components.host.begin);
-  PP_DCHECK(0 < url_components.host.len);
-#endif  // defined(CHECK_DOCUMENT_URL)
-
-  cdm_->CreateSession(session_id,
-                      type.data(),
-                      type.size(),
+  cdm_->CreateSession(promise_id,
+                      init_data_type.data(),
+                      init_data_type.size(),
                       static_cast<const uint8_t*>(init_data.Map()),
-                      init_data.ByteLength());
+                      init_data.ByteLength(),
+                      PpSessionTypeToCdmSessionType(session_type));
 }
 
-void CdmAdapter::UpdateSession(uint32_t session_id,
-                               pp::VarArrayBuffer response) {
-  // TODO(jrummell): In EME WD, AddKey() can only be called on valid sessions.
-  // We should be able to DCHECK(cdm_) when addressing http://crbug.com/249976.
+void CdmAdapter::LoadSession(uint32_t promise_id,
+                             const std::string& web_session_id) {
+  // Initialize() doesn't report an error, so LoadSession() can be called
+  // even if Initialize() failed.
+  // TODO(jrummell): Remove this code when prefixed EME gets removed.
+  // TODO(jrummell): Verify that Initialize() failing does not resolve the
+  // MediaKeys.create() promise.
   if (!cdm_) {
-    OnSessionError(session_id, cdm::kUnknownError, 0);
+    RejectPromise(promise_id,
+                  cdm::kInvalidStateError,
+                  0,
+                  "CDM has not been initialized.");
     return;
   }
 
+  cdm_->LoadSession(promise_id, web_session_id.data(), web_session_id.size());
+}
+
+void CdmAdapter::UpdateSession(uint32_t promise_id,
+                               const std::string& web_session_id,
+                               pp::VarArrayBuffer response) {
   const uint8_t* response_ptr = static_cast<const uint8_t*>(response.Map());
   const uint32_t response_size = response.ByteLength();
 
-  if (!response_ptr || response_size <= 0) {
-    OnSessionError(session_id, cdm::kUnknownError, 0);
-    return;
-  }
-  CdmWrapper::Result result =
-      cdm_->UpdateSession(session_id, response_ptr, response_size);
-  switch (result) {
-    case CdmWrapper::NO_ACTION:
-      break;
-    case CdmWrapper::CALL_KEY_ADDED:
-      OnSessionReady(session_id);
-      break;
-    case CdmWrapper::CALL_KEY_ERROR:
-      OnSessionError(session_id, cdm::kUnknownError, 0);
-      break;
-  }
+  PP_DCHECK(!web_session_id.empty());
+  PP_DCHECK(response_ptr);
+  PP_DCHECK(response_size > 0);
+
+  cdm_->UpdateSession(promise_id,
+                      web_session_id.data(),
+                      web_session_id.length(),
+                      response_ptr,
+                      response_size);
 }
 
-void CdmAdapter::ReleaseSession(uint32_t session_id) {
-  // TODO(jrummell): In EME WD, AddKey() can only be called on valid sessions.
-  // We should be able to DCHECK(cdm_) when addressing http://crbug.com/249976.
-  if (!cdm_) {
-    OnSessionError(session_id, cdm::kUnknownError, 0);
-    return;
-  }
-
-  CdmWrapper::Result result = cdm_->ReleaseSession(session_id);
-  switch (result) {
-    case CdmWrapper::NO_ACTION:
-      break;
-    case CdmWrapper::CALL_KEY_ADDED:
-      PP_NOTREACHED();
-      break;
-    case CdmWrapper::CALL_KEY_ERROR:
-      OnSessionError(session_id, cdm::kUnknownError, 0);
-      break;
-  }
+void CdmAdapter::ReleaseSession(uint32_t promise_id,
+                                const std::string& web_session_id) {
+  cdm_->ReleaseSession(
+      promise_id, web_session_id.data(), web_session_id.length());
 }
 
 // Note: In the following decryption/decoding related functions, errors are NOT
@@ -539,48 +584,18 @@ void CdmAdapter::TimerExpired(int32_t result, void* context) {
   cdm_->TimerExpired(context);
 }
 
+// cdm::Host_4 methods
+
 double CdmAdapter::GetCurrentWallTimeInSeconds() {
-  return pp::Module::Get()->core()->GetTime();
-}
-
-void CdmAdapter::SendKeyMessage(
-    const char* session_id, uint32_t session_id_length,
-    const char* message, uint32_t message_length,
-    const char* default_url, uint32_t default_url_length) {
-  PP_DCHECK(!key_system_.empty());
-
-  std::string session_id_str(session_id, session_id_length);
-  PP_DCHECK(!session_id_str.empty());
-  uint32_t session_reference_id = cdm_->LookupSessionId(session_id_str);
-
-  OnSessionCreated(session_reference_id, session_id, session_id_length);
-  OnSessionMessage(session_reference_id,
-                   message, message_length,
-                   default_url, default_url_length);
-}
-
-void CdmAdapter::SendKeyError(const char* session_id,
-                              uint32_t session_id_length,
-                              cdm::MediaKeyError error_code,
-                              uint32_t system_code) {
-  std::string session_id_str(session_id, session_id_length);
-  uint32_t session_reference_id = cdm_->LookupSessionId(session_id_str);
-  OnSessionError(session_reference_id, error_code, system_code);
-}
-
-void CdmAdapter::GetPrivateData(int32_t* instance,
-                                GetPrivateInterface* get_interface) {
-  *instance = pp_instance();
-  *get_interface = pp::Module::Get()->get_browser_interface();
+  return GetCurrentTime();
 }
 
 void CdmAdapter::OnSessionCreated(uint32_t session_id,
                                   const char* web_session_id,
                                   uint32_t web_session_id_length) {
-  PostOnMain(callback_factory_.NewCallback(
-      &CdmAdapter::SendSessionCreatedInternal,
-      session_id,
-      std::string(web_session_id, web_session_id_length)));
+  uint32_t promise_id = cdm_->LookupPromiseId(session_id);
+  cdm_->AssignWebSessionId(session_id, web_session_id, web_session_id_length);
+  OnResolveNewSessionPromise(promise_id, web_session_id, web_session_id_length);
 }
 
 void CdmAdapter::OnSessionMessage(uint32_t session_id,
@@ -588,44 +603,202 @@ void CdmAdapter::OnSessionMessage(uint32_t session_id,
                                   uint32_t message_length,
                                   const char* destination_url,
                                   uint32_t destination_url_length) {
-  PostOnMain(callback_factory_.NewCallback(
-      &CdmAdapter::SendSessionMessageInternal,
-      session_id,
-      std::vector<uint8>(message, message + message_length),
-      std::string(destination_url, destination_url_length)));
+  std::string web_session_id = cdm_->LookupWebSessionId(session_id);
+  OnSessionMessage(web_session_id.data(),
+                   web_session_id.length(),
+                   message,
+                   message_length,
+                   destination_url,
+                   destination_url_length);
 }
 
 void CdmAdapter::OnSessionReady(uint32_t session_id) {
-  PostOnMain(callback_factory_.NewCallback(
-      &CdmAdapter::SendSessionReadyInternal, session_id));
+  uint32_t promise_id = cdm_->LookupPromiseId(session_id);
+  if (promise_id) {
+    OnResolvePromise(promise_id);
+  } else {
+    std::string web_session_id = cdm_->LookupWebSessionId(session_id);
+    OnSessionReady(web_session_id.data(), web_session_id.length());
+  }
 }
 
 void CdmAdapter::OnSessionClosed(uint32_t session_id) {
-  PostOnMain(callback_factory_.NewCallback(
-      &CdmAdapter::SendSessionClosedInternal, session_id));
+  uint32_t promise_id = cdm_->LookupPromiseId(session_id);
+  std::string web_session_id = cdm_->LookupWebSessionId(session_id);
+  cdm_->DropWebSessionId(web_session_id);
+  if (promise_id) {
+    OnResolvePromise(promise_id);
+  } else {
+    OnSessionClosed(web_session_id.data(), web_session_id.length());
+  }
 }
 
 void CdmAdapter::OnSessionError(uint32_t session_id,
                                 cdm::MediaKeyError error_code,
                                 uint32_t system_code) {
+  uint32_t promise_id = cdm_->LookupPromiseId(session_id);
+
+  // Existing cdm::MediaKeyError don't map to DOM error names. Convert them
+  // into non-standard names so that the prefixed API can extract them.
+  // TODO(jrummell): Remove this conversion and the inverse when CDM4 is gone.
+  cdm::Error error;
+  switch (error_code) {
+    case cdm::kPrefixedClientError:
+      error = cdm::kClientError;
+      break;
+    case cdm::kPrefixedOutputError:
+      error = cdm::kOutputError;
+      break;
+    case cdm::kPrefixedUnknownError:
+    default:
+      error = cdm::kUnknownError;
+      break;
+  }
+
+  if (promise_id) {
+    RejectPromise(promise_id, error, system_code, std::string());
+  } else {
+    std::string web_session_id = cdm_->LookupWebSessionId(session_id);
+    OnSessionError(web_session_id.data(),
+                   web_session_id.length(),
+                   error,
+                   system_code,
+                   NULL,
+                   0);
+  }
+}
+
+// cdm::Host_5 methods
+
+cdm::Time CdmAdapter::GetCurrentTime() {
+  return pp::Module::Get()->core()->GetTime();
+}
+
+void CdmAdapter::OnResolvePromise(uint32_t promise_id) {
+  PostOnMain(callback_factory_.NewCallback(
+      &CdmAdapter::SendPromiseResolvedInternal, promise_id));
+}
+
+void CdmAdapter::OnResolveNewSessionPromise(uint32_t promise_id,
+                                            const char* web_session_id,
+                                            uint32_t web_session_id_length) {
+  PostOnMain(callback_factory_.NewCallback(
+      &CdmAdapter::SendPromiseResolvedWithSessionInternal,
+      promise_id,
+      std::string(web_session_id, web_session_id_length)));
+}
+
+void CdmAdapter::OnRejectPromise(uint32_t promise_id,
+                                 cdm::Error error,
+                                 uint32_t system_code,
+                                 const char* error_message,
+                                 uint32_t error_message_length) {
+  RejectPromise(promise_id,
+                error,
+                system_code,
+                std::string(error_message, error_message_length));
+}
+
+void CdmAdapter::RejectPromise(uint32_t promise_id,
+                               cdm::Error error,
+                               uint32_t system_code,
+                               const std::string& error_message) {
+  PostOnMain(callback_factory_.NewCallback(
+      &CdmAdapter::SendPromiseRejectedInternal,
+      promise_id,
+      SessionError(error, system_code, error_message)));
+}
+
+void CdmAdapter::OnSessionMessage(const char* web_session_id,
+                                  uint32_t web_session_id_length,
+                                  const char* message,
+                                  uint32_t message_length,
+                                  const char* destination_url,
+                                  uint32_t destination_url_length) {
+  PostOnMain(callback_factory_.NewCallback(
+      &CdmAdapter::SendSessionMessageInternal,
+      std::string(web_session_id, web_session_id_length),
+      std::vector<uint8>(message, message + message_length),
+      std::string(destination_url, destination_url_length)));
+}
+
+void CdmAdapter::OnSessionKeysChange(const char* web_session_id,
+                                     uint32_t web_session_id_length,
+                                     bool has_additional_usable_key) {
+  // TODO(jrummell): Implement this event in subsequent CL
+  // (http://crbug.com/370251).
+  PP_NOTREACHED();
+}
+
+void CdmAdapter::OnExpirationChange(const char* web_session_id,
+                                    uint32_t web_session_id_length,
+                                    cdm::Time new_expiry_time) {
+  // TODO(jrummell): Implement this event in subsequent CL
+  // (http://crbug.com/370251).
+  PP_NOTREACHED();
+}
+
+void CdmAdapter::OnSessionReady(const char* web_session_id,
+                                uint32_t web_session_id_length) {
+  PostOnMain(callback_factory_.NewCallback(
+      &CdmAdapter::SendSessionReadyInternal,
+      std::string(web_session_id, web_session_id_length)));
+}
+
+void CdmAdapter::OnSessionClosed(const char* web_session_id,
+                                 uint32_t web_session_id_length) {
+  PostOnMain(callback_factory_.NewCallback(
+      &CdmAdapter::SendSessionClosedInternal,
+      std::string(web_session_id, web_session_id_length)));
+}
+
+void CdmAdapter::OnSessionError(const char* web_session_id,
+                                uint32_t web_session_id_length,
+                                cdm::Error error,
+                                uint32_t system_code,
+                                const char* error_message,
+                                uint32_t error_message_length) {
   PostOnMain(callback_factory_.NewCallback(
       &CdmAdapter::SendSessionErrorInternal,
-      session_id,
-      error_code,
-      system_code));
+      std::string(web_session_id, web_session_id_length),
+      SessionError(error,
+                   system_code,
+                   std::string(error_message, error_message_length))));
 }
 
-void CdmAdapter::SendSessionCreatedInternal(int32_t result,
-                                            uint32_t session_id,
-                                            const std::string& web_session_id) {
+// Helpers to pass the event to Pepper.
+
+void CdmAdapter::SendPromiseResolvedInternal(int32_t result,
+                                             uint32_t promise_id) {
   PP_DCHECK(result == PP_OK);
-  pp::ContentDecryptor_Private::SessionCreated(session_id, web_session_id);
+  pp::ContentDecryptor_Private::PromiseResolved(promise_id);
 }
 
-void CdmAdapter::SendSessionMessageInternal(int32_t result,
-                                            uint32_t session_id,
-                                            const std::vector<uint8>& message,
-                                            const std::string& default_url) {
+void CdmAdapter::SendPromiseResolvedWithSessionInternal(
+    int32_t result,
+    uint32_t promise_id,
+    const std::string& web_session_id) {
+  PP_DCHECK(result == PP_OK);
+  pp::ContentDecryptor_Private::PromiseResolvedWithSession(promise_id,
+                                                           web_session_id);
+}
+
+void CdmAdapter::SendPromiseRejectedInternal(int32_t result,
+                                             uint32_t promise_id,
+                                             const SessionError& error) {
+  PP_DCHECK(result == PP_OK);
+  pp::ContentDecryptor_Private::PromiseRejected(
+      promise_id,
+      CdmExceptionTypeToPpCdmExceptionType(error.error),
+      error.system_code,
+      error.error_description);
+}
+
+void CdmAdapter::SendSessionMessageInternal(
+    int32_t result,
+    const std::string& web_session_id,
+    const std::vector<uint8>& message,
+    const std::string& destination_url) {
   PP_DCHECK(result == PP_OK);
 
   pp::VarArrayBuffer message_array_buffer(message.size());
@@ -634,27 +807,30 @@ void CdmAdapter::SendSessionMessageInternal(int32_t result,
   }
 
   pp::ContentDecryptor_Private::SessionMessage(
-      session_id, message_array_buffer, default_url);
+      web_session_id, message_array_buffer, destination_url);
 }
 
-void CdmAdapter::SendSessionReadyInternal(int32_t result, uint32_t session_id) {
+void CdmAdapter::SendSessionReadyInternal(int32_t result,
+                                          const std::string& web_session_id) {
   PP_DCHECK(result == PP_OK);
-  pp::ContentDecryptor_Private::SessionReady(session_id);
+  pp::ContentDecryptor_Private::SessionReady(web_session_id);
 }
 
 void CdmAdapter::SendSessionClosedInternal(int32_t result,
-                                           uint32_t session_id) {
+                                           const std::string& web_session_id) {
   PP_DCHECK(result == PP_OK);
-  pp::ContentDecryptor_Private::SessionClosed(session_id);
+  pp::ContentDecryptor_Private::SessionClosed(web_session_id);
 }
 
 void CdmAdapter::SendSessionErrorInternal(int32_t result,
-                                          uint32_t session_id,
-                                          cdm::MediaKeyError error_code,
-                                          uint32_t system_code) {
+                                          const std::string& web_session_id,
+                                          const SessionError& error) {
   PP_DCHECK(result == PP_OK);
   pp::ContentDecryptor_Private::SessionError(
-      session_id, error_code, system_code);
+      web_session_id,
+      CdmExceptionTypeToPpCdmExceptionType(error.error),
+      error.system_code,
+      error.error_description);
 }
 
 void CdmAdapter::DeliverBlock(int32_t result,
@@ -662,7 +838,7 @@ void CdmAdapter::DeliverBlock(int32_t result,
                               const LinkedDecryptedBlock& decrypted_block,
                               const PP_DecryptTrackingInfo& tracking_info) {
   PP_DCHECK(result == PP_OK);
-  PP_DecryptedBlockInfo decrypted_block_info;
+  PP_DecryptedBlockInfo decrypted_block_info = {};
   decrypted_block_info.tracking_info = tracking_info;
   decrypted_block_info.tracking_info.timestamp = decrypted_block->Timestamp();
   decrypted_block_info.tracking_info.buffer_id = 0;
@@ -679,9 +855,10 @@ void CdmAdapter::DeliverBlock(int32_t result,
     } else {
       PpbBuffer* ppb_buffer =
           static_cast<PpbBuffer*>(decrypted_block->DecryptedBuffer());
-      buffer = ppb_buffer->buffer_dev();
       decrypted_block_info.tracking_info.buffer_id = ppb_buffer->buffer_id();
       decrypted_block_info.data_size = ppb_buffer->Size();
+
+      buffer = ppb_buffer->TakeBuffer();
     }
   }
 
@@ -717,7 +894,7 @@ void CdmAdapter::DeliverFrame(
     const LinkedVideoFrame& video_frame,
     const PP_DecryptTrackingInfo& tracking_info) {
   PP_DCHECK(result == PP_OK);
-  PP_DecryptedFrameInfo decrypted_frame_info;
+  PP_DecryptedFrameInfo decrypted_frame_info = {};
   decrypted_frame_info.tracking_info.request_id = tracking_info.request_id;
   decrypted_frame_info.tracking_info.buffer_id = 0;
   decrypted_frame_info.result = CdmStatusToPpDecryptResult(status);
@@ -731,8 +908,6 @@ void CdmAdapter::DeliverFrame(
     } else {
       PpbBuffer* ppb_buffer =
           static_cast<PpbBuffer*>(video_frame->FrameBuffer());
-
-      buffer = ppb_buffer->buffer_dev();
 
       decrypted_frame_info.tracking_info.timestamp = video_frame->Timestamp();
       decrypted_frame_info.tracking_info.buffer_id = ppb_buffer->buffer_id();
@@ -752,8 +927,11 @@ void CdmAdapter::DeliverFrame(
           video_frame->Stride(cdm::VideoFrame::kUPlane);
       decrypted_frame_info.strides[PP_DECRYPTEDFRAMEPLANES_V] =
           video_frame->Stride(cdm::VideoFrame::kVPlane);
+
+      buffer = ppb_buffer->TakeBuffer();
     }
   }
+
   pp::ContentDecryptor_Private::DeliverFrame(buffer, decrypted_frame_info);
 }
 
@@ -763,7 +941,7 @@ void CdmAdapter::DeliverSamples(int32_t result,
                                 const PP_DecryptTrackingInfo& tracking_info) {
   PP_DCHECK(result == PP_OK);
 
-  PP_DecryptedSampleInfo decrypted_sample_info;
+  PP_DecryptedSampleInfo decrypted_sample_info = {};
   decrypted_sample_info.tracking_info = tracking_info;
   decrypted_sample_info.tracking_info.timestamp = 0;
   decrypted_sample_info.tracking_info.buffer_id = 0;
@@ -780,11 +958,13 @@ void CdmAdapter::DeliverSamples(int32_t result,
     } else {
       PpbBuffer* ppb_buffer =
           static_cast<PpbBuffer*>(audio_frames->FrameBuffer());
-      buffer = ppb_buffer->buffer_dev();
+
       decrypted_sample_info.tracking_info.buffer_id = ppb_buffer->buffer_id();
       decrypted_sample_info.data_size = ppb_buffer->Size();
       decrypted_sample_info.format =
           CdmAudioFormatToPpDecryptedSampleFormat(audio_frames->Format());
+
+      buffer = ppb_buffer->TakeBuffer();
     }
   }
 
@@ -885,6 +1065,7 @@ void CdmAdapter::QueryOutputProtectionStatus() {
           &CdmAdapter::QueryOutputProtectionStatusDone));
   if (result == PP_OK_COMPLETIONPENDING) {
     query_output_protection_in_progress_ = true;
+    ReportOutputProtectionQuery();
     return;
   }
 
@@ -921,7 +1102,58 @@ void CdmAdapter::OnDeferredInitializationDone(cdm::StreamType stream_type,
   }
 }
 
+// The CDM owns the returned object and must call FileIO::Close() to release it.
+cdm::FileIO* CdmAdapter::CreateFileIO(cdm::FileIOClient* client) {
+  return new CdmFileIOImpl(client, pp_instance());
+}
+
 #if defined(OS_CHROMEOS)
+void CdmAdapter::ReportOutputProtectionUMA(OutputProtectionStatus status) {
+  pp::UMAPrivate uma_interface_(this);
+  uma_interface_.HistogramEnumeration(
+      "Media.EME.OutputProtection", status, OUTPUT_PROTECTION_MAX);
+}
+
+void CdmAdapter::ReportOutputProtectionQuery() {
+  if (uma_for_output_protection_query_reported_)
+    return;
+
+  ReportOutputProtectionUMA(OUTPUT_PROTECTION_QUERIED);
+  uma_for_output_protection_query_reported_ = true;
+}
+
+void CdmAdapter::ReportOutputProtectionQueryResult() {
+  if (uma_for_output_protection_positive_result_reported_)
+    return;
+
+  // Report UMAs for output protection query result.
+  uint32_t external_links = (output_link_mask_ & ~cdm::kLinkTypeInternal);
+
+  if (!external_links) {
+    ReportOutputProtectionUMA(OUTPUT_PROTECTION_NO_EXTERNAL_LINK);
+    uma_for_output_protection_positive_result_reported_ = true;
+    return;
+  }
+
+  const uint32_t kProtectableLinks =
+      cdm::kLinkTypeHDMI | cdm::kLinkTypeDVI | cdm::kLinkTypeDisplayPort;
+  bool is_unprotectable_link_connected = external_links & ~kProtectableLinks;
+  bool is_hdcp_enabled_on_all_protectable_links =
+      output_protection_mask_ & cdm::kProtectionHDCP;
+
+  if (!is_unprotectable_link_connected &&
+      is_hdcp_enabled_on_all_protectable_links) {
+    ReportOutputProtectionUMA(
+        OUTPUT_PROTECTION_ALL_EXTERNAL_LINKS_PROTECTED);
+    uma_for_output_protection_positive_result_reported_ = true;
+    return;
+  }
+
+  // Do not report a negative result because it could be a false negative.
+  // Instead, we will calculate number of negatives using the total number of
+  // queries and success results.
+}
+
 void CdmAdapter::SendPlatformChallengeDone(int32_t result) {
   challenge_in_progress_ = false;
 
@@ -938,15 +1170,12 @@ void CdmAdapter::SendPlatformChallengeDone(int32_t result) {
       platform_key_certificate_output_.AsString();
 
   cdm::PlatformChallengeResponse response = {
-    static_cast<uint8_t*>(signed_data_var.Map()),
-    signed_data_var.ByteLength(),
-
-    static_cast<uint8_t*>(signed_data_signature_var.Map()),
-    signed_data_signature_var.ByteLength(),
-
-    reinterpret_cast<const uint8_t*>(platform_key_certificate_string.c_str()),
-    static_cast<uint32_t>(platform_key_certificate_string.length())
-  };
+      static_cast<uint8_t*>(signed_data_var.Map()),
+      signed_data_var.ByteLength(),
+      static_cast<uint8_t*>(signed_data_signature_var.Map()),
+      signed_data_signature_var.ByteLength(),
+      reinterpret_cast<const uint8_t*>(platform_key_certificate_string.data()),
+      static_cast<uint32_t>(platform_key_certificate_string.length())};
   cdm_->OnPlatformChallengeResponse(response);
 
   signed_data_var.Unmap();
@@ -966,45 +1195,53 @@ void CdmAdapter::QueryOutputProtectionStatusDone(int32_t result) {
   // Return a protection status of none on error.
   if (result != PP_OK)
     output_link_mask_ = output_protection_mask_ = 0;
+  else
+    ReportOutputProtectionQueryResult();
 
   cdm_->OnQueryOutputProtectionStatus(output_link_mask_,
                                       output_protection_mask_);
 }
 #endif
 
+CdmAdapter::SessionError::SessionError(cdm::Error error,
+                                       uint32_t system_code,
+                                       std::string error_description)
+    : error(error),
+      system_code(system_code),
+      error_description(error_description) {
+}
+
 void* GetCdmHost(int host_interface_version, void* user_data) {
   if (!host_interface_version || !user_data)
     return NULL;
 
-  COMPILE_ASSERT(cdm::ContentDecryptionModule::Host::kVersion ==
-                 cdm::ContentDecryptionModule_3::Host::kVersion,
-                 update_code_below);
+  COMPILE_ASSERT(
+      cdm::ContentDecryptionModule::Host::kVersion == cdm::Host_5::kVersion,
+      update_code_below);
 
   // Ensure IsSupportedCdmHostVersion matches implementation of this function.
   // Always update this DCHECK when updating this function.
   // If this check fails, update this function and DCHECK or update
   // IsSupportedCdmHostVersion.
+
   PP_DCHECK(
       // Future version is not supported.
-      !IsSupportedCdmHostVersion(
-          cdm::ContentDecryptionModule::Host::kVersion + 1) &&
+      !IsSupportedCdmHostVersion(cdm::Host_5::kVersion + 1) &&
       // Current version is supported.
-      IsSupportedCdmHostVersion(cdm::ContentDecryptionModule::Host::kVersion) &&
-      // Include all previous supported versions here.
-      IsSupportedCdmHostVersion(cdm::Host_1::kVersion) &&
+      IsSupportedCdmHostVersion(cdm::Host_5::kVersion) &&
+      // Include all previous supported versions (if any) here.
+      IsSupportedCdmHostVersion(cdm::Host_4::kVersion) &&
       // One older than the oldest supported version is not supported.
-      !IsSupportedCdmHostVersion(cdm::Host_1::kVersion - 1));
+      !IsSupportedCdmHostVersion(cdm::Host_4::kVersion - 1));
   PP_DCHECK(IsSupportedCdmHostVersion(host_interface_version));
 
   CdmAdapter* cdm_adapter = static_cast<CdmAdapter*>(user_data);
   CDM_DLOG() << "Create CDM Host with version " << host_interface_version;
   switch (host_interface_version) {
-    case cdm::Host_3::kVersion:
-      return static_cast<cdm::Host_3*>(cdm_adapter);
-    case cdm::Host_2::kVersion:
-      return static_cast<cdm::Host_2*>(cdm_adapter);
-    case cdm::Host_1::kVersion:
-      return static_cast<cdm::Host_1*>(cdm_adapter);
+    case cdm::Host_4::kVersion:
+      return static_cast<cdm::Host_4*>(cdm_adapter);
+    case cdm::Host_5::kVersion:
+      return static_cast<cdm::Host_5*>(cdm_adapter);
     default:
       PP_NOTREACHED();
       return NULL;
@@ -1027,6 +1264,9 @@ class CdmAdapterModule : public pp::Module {
   virtual pp::Instance* CreateInstance(PP_Instance instance) {
     return new CdmAdapter(instance, this);
   }
+
+ private:
+  CdmFileIOImpl::ResourceTracker cdm_file_io_impl_resource_tracker;
 };
 
 }  // namespace media

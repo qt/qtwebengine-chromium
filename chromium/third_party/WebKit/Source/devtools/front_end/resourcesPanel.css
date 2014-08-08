@@ -34,6 +34,7 @@
 .resources.panel .sidebar {
     padding-left: 0;
     z-index: 10;
+    display: block;
 }
 
 .resources.panel .sidebar li {
@@ -47,18 +48,18 @@
 }
 
 .resources.panel .sidebar li.selected .selection {
-    background-image: -webkit-gradient(linear, left top, left bottom, from(rgb(162, 177, 207)), to(rgb(120, 138, 177)));
+    background-image: linear-gradient(to bottom, rgb(162, 177, 207), rgb(120, 138, 177));
     border-top: 1px solid #979797;
     height: 18px;
 }
 
 .resources.panel .sidebar :focus li.selected .selection {
-    background-image: -webkit-gradient(linear, left top, left bottom, from(rgb(92, 147, 213)), to(rgb(21, 83, 170)));
+    background-image: linear-gradient(to bottom, rgb(92, 147, 213), rgb(21, 83, 170));
     border-top: 1px solid rgb(68, 128, 200);
 }
 
 body.inactive .resources.panel .sidebar li.selected .selection {
-    background-image: -webkit-gradient(linear, left top, left bottom, from(rgb(180, 180, 180)), to(rgb(138, 138, 138)));
+    background-image: linear-gradient(to bottom, rgb(180, 180, 180), rgb(138, 138, 138));
     border-top: 1px solid rgb(151, 151, 151);
 }
 
@@ -82,6 +83,7 @@ body.inactive .resources.panel .sidebar li.selected .selection {
     bottom: 23px;
     left: 0;
     right: 0;
+    display: flex;
 }
 
 .resources-status-bar {
@@ -127,7 +129,7 @@ li.selected .base-storage-tree-element-subtitle {
 }
 
 .storage-view.visible {
-    display: block;
+    display: flex;
 }
 
 .storage-view {
@@ -136,7 +138,7 @@ li.selected .base-storage-tree-element-subtitle {
 
 .storage-view .data-grid:not(.inline) {
     border: none;
-    height: 100%;
+    flex: auto;
 }
 
 .storage-view .storage-table-error {
@@ -171,14 +173,14 @@ li.selected .base-storage-tree-element-subtitle {
     margin-top: -7px;
     -webkit-user-select: none;
     background-image: url(Images/statusbarButtonGlyphs.png);
-    background-size: 320px 120px;
+    background-size: 320px 144px;
 }
 
 @media (-webkit-min-device-pixel-ratio: 1.5) {
 .database-user-query::before,
 .database-query-prompt::before,
 .database-query-result::before {
-    background-image: url(Images/statusbarButtonGlyphs2x.png);
+    background-image: url(Images/statusbarButtonGlyphs_2x.png);
 }
 } /* media */
 

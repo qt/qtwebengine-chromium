@@ -14,6 +14,7 @@
 #include "cc/base/math_util.h"
 #include "cc/output/copy_output_request.h"
 #include "cc/quads/draw_quad.h"
+#include "cc/resources/raster_worker_pool.h"
 #include "ui/gfx/rect_conversions.h"
 #include "ui/gfx/transform.h"
 
@@ -57,10 +58,8 @@ static gfx::Transform window_matrix(int x, int y, int width, int height) {
 namespace cc {
 
 DirectRenderer::DrawingFrame::DrawingFrame()
-    : root_render_pass(NULL),
-      current_render_pass(NULL),
-      current_texture(NULL),
-      offscreen_context_provider(NULL) {}
+    : root_render_pass(NULL), current_render_pass(NULL), current_texture(NULL) {
+}
 
 DirectRenderer::DrawingFrame::~DrawingFrame() {}
 
@@ -81,9 +80,9 @@ void DirectRenderer::QuadRectTransform(gfx::Transform* quad_rect_transform,
 }
 
 void DirectRenderer::InitializeViewport(DrawingFrame* frame,
-                                        gfx::Rect draw_rect,
-                                        gfx::Rect viewport_rect,
-                                        gfx::Size surface_size) {
+                                        const gfx::Rect& draw_rect,
+                                        const gfx::Rect& viewport_rect,
+                                        const gfx::Size& surface_size) {
   bool flip_y = FlippedFramebuffer();
 
   DCHECK_GE(viewport_rect.x(), 0);
@@ -117,8 +116,8 @@ void DirectRenderer::InitializeViewport(DrawingFrame* frame,
 }
 
 gfx::Rect DirectRenderer::MoveFromDrawToWindowSpace(
-    const gfx::RectF& draw_rect) const {
-  gfx::Rect window_rect = gfx::ToEnclosingRect(draw_rect);
+    const gfx::Rect& draw_rect) const {
+  gfx::Rect window_rect = draw_rect;
   window_rect -= current_draw_rect_.OffsetFromOrigin();
   window_rect += current_viewport_rect_.OffsetFromOrigin();
   if (FlippedFramebuffer())
@@ -132,14 +131,16 @@ DirectRenderer::DirectRenderer(RendererClient* client,
                                ResourceProvider* resource_provider)
     : Renderer(client, settings),
       output_surface_(output_surface),
-      resource_provider_(resource_provider) {}
+      resource_provider_(resource_provider),
+      overlay_processor_(
+          new OverlayProcessor(output_surface, resource_provider)) {
+  overlay_processor_->Initialize();
+}
 
 DirectRenderer::~DirectRenderer() {}
 
-bool DirectRenderer::CanReadPixels() const { return true; }
-
 void DirectRenderer::SetEnlargePassTextureAmountForTesting(
-    gfx::Vector2d amount) {
+    const gfx::Vector2d& amount) {
   enlarge_pass_texture_amount_ = amount;
 }
 
@@ -193,11 +194,9 @@ void DirectRenderer::DecideRenderPassAllocationsForFrame(
 }
 
 void DirectRenderer::DrawFrame(RenderPassList* render_passes_in_draw_order,
-                               ContextProvider* offscreen_context_provider,
                                float device_scale_factor,
-                               gfx::Rect device_viewport_rect,
-                               gfx::Rect device_clip_rect,
-                               bool allow_partial_swap,
+                               const gfx::Rect& device_viewport_rect,
+                               const gfx::Rect& device_clip_rect,
                                bool disable_picture_quad_image_filtering) {
   TRACE_EVENT0("cc", "DirectRenderer::DrawFrame");
   UMA_HISTOGRAM_COUNTS("Renderer4.renderPassCount",
@@ -208,16 +207,17 @@ void DirectRenderer::DrawFrame(RenderPassList* render_passes_in_draw_order,
 
   DrawingFrame frame;
   frame.root_render_pass = root_render_pass;
-  frame.root_damage_rect =
-      Capabilities().using_partial_swap && allow_partial_swap
-          ? root_render_pass->damage_rect
-          : root_render_pass->output_rect;
+  frame.root_damage_rect = Capabilities().using_partial_swap
+                               ? root_render_pass->damage_rect
+                               : root_render_pass->output_rect;
   frame.root_damage_rect.Intersect(gfx::Rect(device_viewport_rect.size()));
   frame.device_viewport_rect = device_viewport_rect;
   frame.device_clip_rect = device_clip_rect;
-  frame.offscreen_context_provider = offscreen_context_provider;
   frame.disable_picture_quad_image_filtering =
       disable_picture_quad_image_filtering;
+
+  overlay_processor_->ProcessForOverlays(render_passes_in_draw_order,
+                                         &frame.overlay_list);
 
   EnsureBackbuffer();
 
@@ -229,7 +229,7 @@ void DirectRenderer::DrawFrame(RenderPassList* render_passes_in_draw_order,
   BeginDrawingFrame(&frame);
   for (size_t i = 0; i < render_passes_in_draw_order->size(); ++i) {
     RenderPass* pass = render_passes_in_draw_order->at(i);
-    DrawRenderPass(&frame, pass, allow_partial_swap);
+    DrawRenderPass(&frame, pass);
 
     for (ScopedPtrVector<CopyOutputRequest>::iterator it =
              pass->copy_requests.begin();
@@ -248,20 +248,21 @@ void DirectRenderer::DrawFrame(RenderPassList* render_passes_in_draw_order,
   render_passes_in_draw_order->clear();
 }
 
-gfx::RectF DirectRenderer::ComputeScissorRectForRenderPass(
+gfx::Rect DirectRenderer::ComputeScissorRectForRenderPass(
     const DrawingFrame* frame) {
-  gfx::RectF render_pass_scissor = frame->current_render_pass->output_rect;
+  gfx::Rect render_pass_scissor = frame->current_render_pass->output_rect;
 
-  if (frame->root_damage_rect == frame->root_render_pass->output_rect)
+  if (frame->root_damage_rect == frame->root_render_pass->output_rect ||
+      !frame->current_render_pass->copy_requests.empty())
     return render_pass_scissor;
 
   gfx::Transform inverse_transform(gfx::Transform::kSkipInitialization);
   if (frame->current_render_pass->transform_to_root_target.GetInverse(
           &inverse_transform)) {
     // Only intersect inverse-projected damage if the transform is invertible.
-    gfx::RectF damage_rect_in_render_pass_space =
-        MathUtil::ProjectClippedRect(inverse_transform,
-                                     frame->root_damage_rect);
+    gfx::Rect damage_rect_in_render_pass_space =
+        MathUtil::ProjectEnclosingClippedRect(inverse_transform,
+                                              frame->root_damage_rect);
     render_pass_scissor.Intersect(damage_rect_in_render_pass_space);
   }
 
@@ -301,9 +302,9 @@ void DirectRenderer::SetScissorStateForQuad(const DrawingFrame* frame,
 void DirectRenderer::SetScissorStateForQuadWithRenderPassScissor(
     const DrawingFrame* frame,
     const DrawQuad& quad,
-    const gfx::RectF& render_pass_scissor,
+    const gfx::Rect& render_pass_scissor,
     bool* should_skip_quad) {
-  gfx::RectF quad_scissor_rect = render_pass_scissor;
+  gfx::Rect quad_scissor_rect = render_pass_scissor;
 
   if (quad.isClipped())
     quad_scissor_rect.Intersect(quad.clipRect());
@@ -317,8 +318,9 @@ void DirectRenderer::SetScissorStateForQuadWithRenderPassScissor(
   SetScissorTestRectInDrawSpace(frame, quad_scissor_rect);
 }
 
-void DirectRenderer::SetScissorTestRectInDrawSpace(const DrawingFrame* frame,
-                                                   gfx::RectF draw_space_rect) {
+void DirectRenderer::SetScissorTestRectInDrawSpace(
+    const DrawingFrame* frame,
+    const gfx::Rect& draw_space_rect) {
   gfx::Rect window_space_rect = MoveFromDrawToWindowSpace(draw_space_rect);
   if (NeedDeviceClip(frame))
     window_space_rect.Intersect(DeviceClipRectInWindowSpace(frame));
@@ -328,15 +330,13 @@ void DirectRenderer::SetScissorTestRectInDrawSpace(const DrawingFrame* frame,
 void DirectRenderer::FinishDrawingQuadList() {}
 
 void DirectRenderer::DrawRenderPass(DrawingFrame* frame,
-                                    const RenderPass* render_pass,
-                                    bool allow_partial_swap) {
+                                    const RenderPass* render_pass) {
   TRACE_EVENT0("cc", "DirectRenderer::DrawRenderPass");
   if (!UseRenderPass(frame, render_pass))
     return;
 
-  bool using_scissor_as_optimization =
-      Capabilities().using_partial_swap && allow_partial_swap;
-  gfx::RectF render_pass_scissor;
+  bool using_scissor_as_optimization = Capabilities().using_partial_swap;
+  gfx::Rect render_pass_scissor;
   bool draw_rect_covers_full_surface = true;
   if (frame->current_render_pass == frame->root_render_pass &&
       !frame->device_viewport_rect.Contains(

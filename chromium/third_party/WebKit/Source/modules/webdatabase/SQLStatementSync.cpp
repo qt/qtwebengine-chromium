@@ -50,7 +50,7 @@ SQLStatementSync::SQLStatementSync(const String& statement, const Vector<SQLValu
     ASSERT(!m_statement.isEmpty());
 }
 
-PassRefPtr<SQLResultSet> SQLStatementSync::execute(DatabaseSync* db, ExceptionState& exceptionState)
+PassRefPtrWillBeRawPtr<SQLResultSet> SQLStatementSync::execute(DatabaseSync* db, ExceptionState& exceptionState)
 {
     db->setAuthorizerPermissions(m_permissions);
 
@@ -60,20 +60,20 @@ PassRefPtr<SQLResultSet> SQLStatementSync::execute(DatabaseSync* db, ExceptionSt
     int result = statement.prepare();
     if (result != SQLResultOk) {
         if (result == SQLResultInterrupt)
-            exceptionState.throwUninformativeAndGenericDOMException(SQLDatabaseError);
+            exceptionState.throwDOMException(SQLDatabaseError, "Connection to the database interrupted.");
         else
-            exceptionState.throwDOMException(SyntaxError, SQLError::syntaxErrorMessage);
+            exceptionState.throwDOMException(SyntaxError, "Could not prepare statement.");
         db->setLastErrorMessage("could not prepare statement", result, database->lastErrorMsg());
-        return 0;
+        return nullptr;
     }
 
     if (statement.bindParameterCount() != m_arguments.size()) {
         if (db->isInterrupted())
-            exceptionState.throwUninformativeAndGenericDOMException(SQLDatabaseError);
+            exceptionState.throwDOMException(SQLDatabaseError, "Connection to the database interrupted.");
         else
-            exceptionState.throwDOMException(SyntaxError, SQLError::syntaxErrorMessage);
+            exceptionState.throwDOMException(SyntaxError, "Number of '?'s in statement string (" + String::number(statement.bindParameterCount()) + ") does not match the arguments provided (" + String::number(m_arguments.size()) + ").");
         db->setLastErrorMessage("number of '?'s in statement string does not match argument count");
-        return 0;
+        return nullptr;
     }
 
     for (unsigned i = 0; i < m_arguments.size(); ++i) {
@@ -81,17 +81,17 @@ PassRefPtr<SQLResultSet> SQLStatementSync::execute(DatabaseSync* db, ExceptionSt
         if (result == SQLResultFull) {
             exceptionState.throwDOMException(QuotaExceededError, SQLError::quotaExceededErrorMessage);
             db->setLastErrorMessage("there was not enough remaining storage space");
-            return 0;
+            return nullptr;
         }
 
         if (result != SQLResultOk) {
-            exceptionState.throwUninformativeAndGenericDOMException(SQLDatabaseError);
+            exceptionState.throwDOMException(SQLDatabaseError, "Could not bind value.");
             db->setLastErrorMessage("could not bind value", result, database->lastErrorMsg());
-            return 0;
+            return nullptr;
         }
     }
 
-    RefPtr<SQLResultSet> resultSet = SQLResultSet::create();
+    RefPtrWillBeRawPtr<SQLResultSet> resultSet = SQLResultSet::create();
 
     // Step so we can fetch the column names.
     result = statement.step();
@@ -110,9 +110,9 @@ PassRefPtr<SQLResultSet> SQLStatementSync::execute(DatabaseSync* db, ExceptionSt
         } while (result == SQLResultRow);
 
         if (result != SQLResultDone) {
-            exceptionState.throwUninformativeAndGenericDOMException(SQLDatabaseError);
+            exceptionState.throwDOMException(SQLDatabaseError, "Could not iterate results.");
             db->setLastErrorMessage("could not iterate results", result, database->lastErrorMsg());
-            return 0;
+            return nullptr;
         }
     } else if (result == SQLResultDone) {
         // Didn't find anything, or was an insert.
@@ -122,15 +122,15 @@ PassRefPtr<SQLResultSet> SQLStatementSync::execute(DatabaseSync* db, ExceptionSt
         // Quota error, the delegate will be asked for more space and this statement might be re-run.
         exceptionState.throwDOMException(QuotaExceededError, SQLError::quotaExceededErrorMessage);
         db->setLastErrorMessage("there was not enough remaining storage space");
-        return 0;
+        return nullptr;
     } else if (result == SQLResultConstraint) {
         exceptionState.throwDOMException(ConstraintError, "A constraint was violated.");
         db->setLastErrorMessage("statement failed due to a constraint failure");
-        return 0;
+        return nullptr;
     } else {
-        exceptionState.throwUninformativeAndGenericDOMException(SQLDatabaseError);
+        exceptionState.throwDOMException(SQLDatabaseError, "Could not execute statement.");
         db->setLastErrorMessage("could not execute statement", result, database->lastErrorMsg());
-        return 0;
+        return nullptr;
     }
 
     resultSet->setRowsAffected(database->lastChanges());

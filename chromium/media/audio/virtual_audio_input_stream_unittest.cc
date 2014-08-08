@@ -6,7 +6,6 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
-#include "base/message_loop/message_loop.h"
 #include "base/rand_util.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/threading/thread.h"
@@ -33,17 +32,17 @@ class MockInputCallback : public AudioInputStream::AudioInputCallback {
  public:
   MockInputCallback()
       : data_pushed_(false, false) {
-    ON_CALL(*this, OnData(_, _, _, _, _))
-        .WillByDefault(InvokeWithoutArgs(&data_pushed_,
-                                         &base::WaitableEvent::Signal));
+    ON_CALL(*this, OnData(_, _, _, _)).WillByDefault(
+        InvokeWithoutArgs(&data_pushed_, &base::WaitableEvent::Signal));
   }
 
   virtual ~MockInputCallback() {}
 
-  MOCK_METHOD5(OnData, void(AudioInputStream* stream, const uint8* data,
-                            uint32 size, uint32 hardware_delay_bytes,
-                            double volume));
-  MOCK_METHOD1(OnClose, void(AudioInputStream* stream));
+  MOCK_METHOD4(OnData,
+               void(AudioInputStream* stream,
+                    const AudioBus* source,
+                    uint32 hardware_delay_bytes,
+                    double volume));
   MOCK_METHOD1(OnError, void(AudioInputStream* stream));
 
   void WaitForDataPushes() {
@@ -74,15 +73,6 @@ class TestAudioSource : public SineWaveAudioSource {
     return ret;
   }
 
-  virtual int OnMoreIOData(AudioBus* source,
-                           AudioBus* dest,
-                           AudioBuffersState audio_buffers) OVERRIDE {
-    const int ret =
-        SineWaveAudioSource::OnMoreIOData(source, dest, audio_buffers);
-    data_pulled_.Signal();
-    return ret;
-  }
-
   void WaitForDataPulls() {
     for (int i = 0; i < 3; ++i) {
       data_pulled_.Wait();
@@ -105,7 +95,7 @@ class VirtualAudioInputStreamTest : public testing::TestWithParam<bool> {
         stream_(NULL),
         closed_stream_(false, false) {
     audio_thread_->Start();
-    audio_message_loop_ = audio_thread_->message_loop_proxy();
+    audio_task_runner_ = audio_thread_->message_loop_proxy();
   }
 
   virtual ~VirtualAudioInputStreamTest() {
@@ -118,15 +108,13 @@ class VirtualAudioInputStreamTest : public testing::TestWithParam<bool> {
   void Create() {
     const bool worker_is_separate_thread = GetParam();
     stream_ = new VirtualAudioInputStream(
-        kParams, GetWorkerLoop(worker_is_separate_thread),
+        kParams, GetWorkerTaskRunner(worker_is_separate_thread),
         base::Bind(&base::DeletePointer<VirtualAudioInputStream>));
     stream_->Open();
   }
 
   void Start() {
-    EXPECT_CALL(input_callback_, OnClose(_));
-    EXPECT_CALL(input_callback_, OnData(_, NotNull(), _, _, _))
-        .Times(AtLeast(1));
+    EXPECT_CALL(input_callback_, OnData(_, NotNull(), _, _)).Times(AtLeast(1));
 
     ASSERT_TRUE(!!stream_);
     stream_->Start(&input_callback_);
@@ -209,36 +197,36 @@ class VirtualAudioInputStreamTest : public testing::TestWithParam<bool> {
     stopped_output_streams_.clear();
   }
 
-  const scoped_refptr<base::MessageLoopProxy>& audio_message_loop() const {
-    return audio_message_loop_;
+  const scoped_refptr<base::SingleThreadTaskRunner>& audio_task_runner() const {
+    return audio_task_runner_;
   }
 
-  const scoped_refptr<base::MessageLoopProxy>& GetWorkerLoop(
+  const scoped_refptr<base::SingleThreadTaskRunner>& GetWorkerTaskRunner(
       bool worker_is_separate_thread) {
     if (worker_is_separate_thread) {
       if (!worker_thread_->IsRunning()) {
         worker_thread_->Start();
-        worker_message_loop_ = worker_thread_->message_loop_proxy();
+        worker_task_runner_ = worker_thread_->message_loop_proxy();
       }
-      return worker_message_loop_;
+      return worker_task_runner_;
     } else {
-      return audio_message_loop_;
+      return audio_task_runner_;
     }
   }
 
  private:
   void SyncWithAudioThread() {
     base::WaitableEvent done(false, false);
-    audio_message_loop_->PostTask(
+    audio_task_runner_->PostTask(
         FROM_HERE,
         base::Bind(&base::WaitableEvent::Signal, base::Unretained(&done)));
     done.Wait();
   }
 
   scoped_ptr<base::Thread> audio_thread_;
-  scoped_refptr<base::MessageLoopProxy> audio_message_loop_;
+  scoped_refptr<base::SingleThreadTaskRunner> audio_task_runner_;
   scoped_ptr<base::Thread> worker_thread_;
-  scoped_refptr<base::MessageLoopProxy> worker_message_loop_;
+  scoped_refptr<base::SingleThreadTaskRunner> worker_task_runner_;
 
   VirtualAudioInputStream* stream_;
   MockInputCallback input_callback_;
@@ -252,7 +240,7 @@ class VirtualAudioInputStreamTest : public testing::TestWithParam<bool> {
 };
 
 #define RUN_ON_AUDIO_THREAD(method)  \
-  audio_message_loop()->PostTask(  \
+  audio_task_runner()->PostTask(  \
       FROM_HERE, base::Bind(&VirtualAudioInputStreamTest::method,  \
                             base::Unretained(this)))
 

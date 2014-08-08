@@ -86,8 +86,8 @@ class NET_EXPORT_PRIVATE SpdyProxyClientSocket : public ProxyClientSocket,
   virtual int Write(IOBuffer* buf,
                     int buf_len,
                     const CompletionCallback& callback) OVERRIDE;
-  virtual bool SetReceiveBufferSize(int32 size) OVERRIDE;
-  virtual bool SetSendBufferSize(int32 size) OVERRIDE;
+  virtual int SetReceiveBufferSize(int32 size) OVERRIDE;
+  virtual int SetSendBufferSize(int32 size) OVERRIDE;
   virtual int GetPeerAddress(IPEndPoint* address) const OVERRIDE;
   virtual int GetLocalAddress(IPEndPoint* address) const OVERRIDE;
 
@@ -112,6 +112,10 @@ class NET_EXPORT_PRIVATE SpdyProxyClientSocket : public ProxyClientSocket,
   };
 
   void LogBlockedTunnelResponse() const;
+
+  // Calls |callback.Run(result)|. Used to run a callback posted to the
+  // message loop.
+  void RunCallback(const CompletionCallback& callback, int result) const;
 
   void OnIOComplete(int result);
 
@@ -163,9 +167,14 @@ class NET_EXPORT_PRIVATE SpdyProxyClientSocket : public ProxyClientSocket,
   bool redirect_has_load_timing_info_;
   LoadTimingInfo redirect_load_timing_info_;
 
+  const BoundNetLog net_log_;
+
+  // The default weak pointer factory.
   base::WeakPtrFactory<SpdyProxyClientSocket> weak_factory_;
 
-  const BoundNetLog net_log_;
+  // Only used for posting write callbacks. Weak pointers created by this
+  // factory are invalidated in Disconnect().
+  base::WeakPtrFactory<SpdyProxyClientSocket> write_callback_weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(SpdyProxyClientSocket);
 };

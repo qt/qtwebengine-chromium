@@ -41,7 +41,7 @@ namespace {
 
 bool isIntegerArray(ArrayBufferView* array)
 {
-    ArrayBufferView::ViewType type = array->getType();
+    ArrayBufferView::ViewType type = array->type();
     return type == ArrayBufferView::TypeInt8
         || type == ArrayBufferView::TypeUint8
         || type == ArrayBufferView::TypeUint8Clamped
@@ -58,7 +58,6 @@ Crypto::Crypto()
     ScriptWrappable::init(this);
 }
 
-// Note: This implementation must be thread-safe, as it is used by workers.
 void Crypto::getRandomValues(ArrayBufferView* array, ExceptionState& exceptionState)
 {
     if (!array) {
@@ -81,6 +80,11 @@ SubtleCrypto* Crypto::subtle()
     if (!m_subtleCrypto)
         m_subtleCrypto = SubtleCrypto::create();
     return m_subtleCrypto.get();
+}
+
+void Crypto::trace(Visitor* visitor)
+{
+    visitor->trace(m_subtleCrypto);
 }
 
 }

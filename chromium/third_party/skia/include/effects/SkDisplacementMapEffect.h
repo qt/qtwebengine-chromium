@@ -18,42 +18,54 @@ public:
         kR_ChannelSelectorType,
         kG_ChannelSelectorType,
         kB_ChannelSelectorType,
-        kA_ChannelSelectorType,
-        kKeyBits = 3 // Max value is 4, so 3 bits are required at most
+        kA_ChannelSelectorType
     };
 
-    SkDisplacementMapEffect(ChannelSelectorType xChannelSelector,
-                            ChannelSelectorType yChannelSelector,
-                            SkScalar scale, SkImageFilter* displacement,
-                            SkImageFilter* color = NULL,
-                            const CropRect* cropRect = NULL);
-
     ~SkDisplacementMapEffect();
+
+    static SkDisplacementMapEffect* Create(ChannelSelectorType xChannelSelector,
+                                           ChannelSelectorType yChannelSelector,
+                                           SkScalar scale, SkImageFilter* displacement,
+                                           SkImageFilter* color = NULL,
+                                           const CropRect* cropRect = NULL) {
+        return SkNEW_ARGS(SkDisplacementMapEffect, (xChannelSelector, yChannelSelector, scale,
+                                                    displacement, color, cropRect));
+    }
 
     SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(SkDisplacementMapEffect)
 
     virtual bool onFilterImage(Proxy* proxy,
                                const SkBitmap& src,
-                               const SkMatrix& ctm,
+                               const Context& ctx,
                                SkBitmap* dst,
-                               SkIPoint* offset) SK_OVERRIDE;
+                               SkIPoint* offset) const SK_OVERRIDE;
+    virtual void computeFastBounds(const SkRect& src, SkRect* dst) const SK_OVERRIDE;
+
+    virtual bool onFilterBounds(const SkIRect& src, const SkMatrix&,
+                                SkIRect* dst) const SK_OVERRIDE;
+
 #if SK_SUPPORT_GPU
     virtual bool canFilterImageGPU() const SK_OVERRIDE { return true; }
-    virtual bool filterImageGPU(Proxy* proxy, const SkBitmap& src, const SkMatrix& ctm,
-                                SkBitmap* result, SkIPoint* offset) SK_OVERRIDE;
+    virtual bool filterImageGPU(Proxy* proxy, const SkBitmap& src, const Context& ctx,
+                                SkBitmap* result, SkIPoint* offset) const SK_OVERRIDE;
 #endif
 
 protected:
-    explicit SkDisplacementMapEffect(SkFlattenableReadBuffer& buffer);
-    virtual void flatten(SkFlattenableWriteBuffer&) const SK_OVERRIDE;
+    SkDisplacementMapEffect(ChannelSelectorType xChannelSelector,
+                            ChannelSelectorType yChannelSelector,
+                            SkScalar scale, SkImageFilter* displacement,
+                            SkImageFilter* color = NULL,
+                            const CropRect* cropRect = NULL);
+    explicit SkDisplacementMapEffect(SkReadBuffer& buffer);
+    virtual void flatten(SkWriteBuffer&) const SK_OVERRIDE;
 
 private:
     ChannelSelectorType fXChannelSelector;
     ChannelSelectorType fYChannelSelector;
     SkScalar fScale;
     typedef SkImageFilter INHERITED;
-    SkImageFilter* getDisplacementInput() { return getInput(0); }
-    SkImageFilter* getColorInput() { return getInput(1); }
+    const SkImageFilter* getDisplacementInput() const { return getInput(0); }
+    const SkImageFilter* getColorInput() const { return getInput(1); }
 };
 
 #endif

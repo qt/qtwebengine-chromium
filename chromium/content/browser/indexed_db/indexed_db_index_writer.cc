@@ -13,6 +13,8 @@
 #include "content/common/indexed_db/indexed_db_key_path.h"
 #include "content/common/indexed_db/indexed_db_key_range.h"
 
+using base::ASCIIToUTF16;
+
 namespace content {
 
 IndexWriter::IndexWriter(
@@ -36,13 +38,14 @@ bool IndexWriter::VerifyIndexKeys(
     const IndexedDBKey& primary_key,
     base::string16* error_message) const {
   *can_add_keys = false;
-  for (size_t i = 0; i < index_keys_.size(); ++i) {
+  DCHECK_EQ(index_id, index_keys_.first);
+  for (size_t i = 0; i < index_keys_.second.size(); ++i) {
     bool ok = AddingKeyAllowed(backing_store,
                                transaction,
                                database_id,
                                object_store_id,
                                index_id,
-                               (index_keys_)[i],
+                               (index_keys_.second)[i],
                                primary_key,
                                can_add_keys);
     if (!ok)
@@ -68,16 +71,18 @@ void IndexWriter::WriteIndexKeys(
     int64 database_id,
     int64 object_store_id) const {
   int64 index_id = index_metadata_.id;
-  for (size_t i = 0; i < index_keys_.size(); ++i) {
-    bool ok = backing_store->PutIndexDataForRecord(transaction,
-                                                   database_id,
-                                                   object_store_id,
-                                                   index_id,
-                                                   index_keys_[i],
-                                                   record_identifier);
+  DCHECK_EQ(index_id, index_keys_.first);
+  for (size_t i = 0; i < index_keys_.second.size(); ++i) {
+    leveldb::Status s =
+        backing_store->PutIndexDataForRecord(transaction,
+                                             database_id,
+                                             object_store_id,
+                                             index_id,
+                                             index_keys_.second[i],
+                                             record_identifier);
     // This should have already been verified as a valid write during
     // verify_index_keys.
-    DCHECK(ok);
+    DCHECK(s.ok());
   }
 }
 
@@ -98,51 +103,49 @@ bool IndexWriter::AddingKeyAllowed(
 
   scoped_ptr<IndexedDBKey> found_primary_key;
   bool found = false;
-  bool ok = backing_store->KeyExistsInIndex(transaction,
-                                            database_id,
-                                            object_store_id,
-                                            index_id,
-                                            index_key,
-                                            &found_primary_key,
-                                            &found);
-  if (!ok)
+  leveldb::Status s = backing_store->KeyExistsInIndex(transaction,
+                                                      database_id,
+                                                      object_store_id,
+                                                      index_id,
+                                                      index_key,
+                                                      &found_primary_key,
+                                                      &found);
+  if (!s.ok())
     return false;
   if (!found ||
-      (primary_key.IsValid() && found_primary_key->IsEqual(primary_key)))
+      (primary_key.IsValid() && found_primary_key->Equals(primary_key)))
     *allowed = true;
   return true;
 }
 
 bool MakeIndexWriters(
-    scoped_refptr<IndexedDBTransaction> transaction,
+    IndexedDBTransaction* transaction,
     IndexedDBBackingStore* backing_store,
     int64 database_id,
     const IndexedDBObjectStoreMetadata& object_store,
     const IndexedDBKey& primary_key,  // makes a copy
     bool key_was_generated,
-    const std::vector<int64>& index_ids,
     const std::vector<IndexedDBDatabase::IndexKeys>& index_keys,
     ScopedVector<IndexWriter>* index_writers,
     base::string16* error_message,
     bool* completed) {
-  DCHECK_EQ(index_ids.size(), index_keys.size());
   *completed = false;
 
-  std::map<int64, IndexedDBDatabase::IndexKeys> index_key_map;
-  for (size_t i = 0; i < index_ids.size(); ++i)
-    index_key_map[index_ids[i]] = index_keys[i];
-
-  for (IndexedDBObjectStoreMetadata::IndexMap::const_iterator it =
-           object_store.indexes.begin();
-       it != object_store.indexes.end();
+  for (std::vector<IndexedDBDatabase::IndexKeys>::const_iterator it =
+           index_keys.begin();
+       it != index_keys.end();
        ++it) {
-    const IndexedDBIndexMetadata& index = it->second;
+    IndexedDBObjectStoreMetadata::IndexMap::const_iterator found =
+        object_store.indexes.find(it->first);
+    if (found == object_store.indexes.end())
+      continue;
+    const IndexedDBIndexMetadata& index = found->second;
+    IndexedDBDatabase::IndexKeys keys = *it;
 
-    IndexedDBDatabase::IndexKeys keys = index_key_map[it->first];
     // If the object_store is using auto_increment, then any indexes with an
     // identical key_path need to also use the primary (generated) key as a key.
     if (key_was_generated && (index.key_path == object_store.key_path))
-      keys.push_back(primary_key);
+      keys.second.push_back(primary_key);
 
     scoped_ptr<IndexWriter> index_writer(new IndexWriter(index, keys));
     bool can_add_keys = false;

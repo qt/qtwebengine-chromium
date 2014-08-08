@@ -22,12 +22,13 @@
 
 .data-grid .data-container {
     position: absolute;
-    top: 16px;
+    top: 17px;
     bottom: 0;
     left: 0;
     right: 0;
     overflow-x: hidden;
     overflow-y: overlay;
+    -webkit-transform: translateZ(0);
 }
 
 .data-grid.inline {
@@ -38,22 +39,10 @@
     position: static;
 }
 
+.data-grid.inline col.corner,
 .data-grid.inline th.corner,
 .data-grid.inline td.corner {
     display: none;
-}
-
-.data-grid th {
-    text-align: left;
-    background-image: url(Images/glossyHeader.png);
-    background-repeat: repeat-x;
-    border-left: 1px solid rgb(179, 179, 179);
-    border-bottom: 1px solid rgb(179, 179, 179);
-    height: 15px;
-    font-weight: normal;
-    vertical-align: middle;
-    padding: 0 4px;
-    white-space: nowrap;
 }
 
 .data-grid th.corner,
@@ -83,8 +72,8 @@
     bottom: 0;
     height: 100%;
     border-top: 0 none transparent;
-    background-image: -webkit-gradient(linear, left top, left bottom, from(white), color-stop(0.5, white), color-stop(0.5, rgb(234, 243, 255)), to(rgb(234, 243, 255)));
-    background-size: 1px 32px;
+    background-image: linear-gradient(to bottom, white, white 50%, rgb(234, 243, 255) 50%, rgb(234, 243, 255));
+    background-size: 128px 32px;
     table-layout: fixed;
 }
 
@@ -100,20 +89,34 @@
     display: table-row;
 }
 
+.data-grid td,
+.data-grid th {
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    overflow: hidden;
+    height: 16px; /* Keep in sync with .data-grid table.data @ background-size */
+    line-height: 14px;
+    border-left: 1px solid #aaa;
+}
+
+.data-grid:not(.inline) th:first-child,
+.data-grid:not(.inline) td:first-child {
+    border-left: none !important;
+}
+
 .data-grid td {
     vertical-align: top;
-    height: 16px; /* Keep in sync with .data-grid table.data @ background-size */
-    line-height: 13px;
     padding: 1px 4px;
-    white-space: nowrap;
-    overflow: hidden;
-    border-left: 1px solid #aaa;
     -webkit-user-select: text;
 }
 
-.data-grid th:first-child,
-.data-grid td:first-child {
-    border-left: none !important;
+.data-grid th {
+    text-align: left;
+    background-color: rgb(236, 236, 236);
+    border-bottom: 1px solid #aaa;
+    font-weight: normal;
+    vertical-align: middle;
+    padding: 0 4px;
 }
 
 .data-grid td > div,
@@ -123,15 +126,19 @@
     overflow: hidden;
 }
 
+.data-grid th > div {
+    overflow: hidden;
+}
+
 .data-grid td.editing > div {
     text-overflow: clip;
 }
 
-.data-grid .center div {
+.data-grid .center {
     text-align: center;
 }
 
-.data-grid .right div {
+.data-grid .right {
     text-align: right;
 }
 
@@ -140,18 +147,7 @@
 }
 
 .data-grid th.sortable:active {
-    background-image: url(Images/glossyHeaderPressed.png);
-}
-.data-grid th.sort-ascending,
-.data-grid th.sort-descending {
-    border-left: 1px solid rgb(107, 140, 196);
-    border-bottom: 1px solid rgb(107, 140, 196);
-    background-image: url(Images/glossyHeaderSelected.png);
-    background-repeat: repeat-x;
-}
-
-.data-grid th.sortable.sort-ascending:active, .data-grid th.sortable.sort-descending:active {
-    background-image: url(Images/glossyHeaderSelectedPressed.png);
+    background-color: rgba(0, 0, 0, 0.15);
 }
 
 .data-grid th.sort-ascending > div::after,
@@ -160,7 +156,7 @@
     top: 1px;
     right: 0;
     background-image: url(Images/statusbarButtonGlyphs.png);
-    background-size: 320px 120px;
+    background-size: 320px 144px;
     opacity: 0.5;
     width: 8px;
     height: 10px;
@@ -171,7 +167,7 @@
 @media (-webkit-min-device-pixel-ratio: 1.5) {
 .data-grid th.sort-ascending > div::after,
 .data-grid th.sort-descending > div::after {
-    background-image: url(Images/statusbarButtonGlyphs2x.png);
+    background-image: url(Images/statusbarButtonGlyphs_2x.png);
 }
 } /* media */
 
@@ -183,22 +179,19 @@
     background-position: -20px -96px;
 }
 
+.data-grid th:hover {
+    background-color: rgba(0, 0, 0, 0.1);
+}
+
 .data-grid button {
     line-height: 18px;
     color: inherit;
 }
 
-body.inactive .data-grid th.sort-ascending,
-body.inactive .data-grid th.sort-descending {
-    background-image: url(Images/glossyHeader.png);
-    border-left: 1px solid rgb(179, 179, 179);
-    border-bottom: 1px solid rgb(179, 179, 179);
-}
-
 .data-grid tr.parent td.disclosure::before {
     -webkit-user-select: none;
     -webkit-mask-image: url(Images/statusbarButtonGlyphs.png);
-    -webkit-mask-size: 320px 120px;
+    -webkit-mask-size: 320px 144px;
     float: left;
     width: 8px;
     margin-right: 2px;
@@ -215,7 +208,7 @@ body.inactive .data-grid th.sort-descending {
 
 @media (-webkit-min-device-pixel-ratio: 1.5) {
 .data-grid tr.parent td.disclosure::before {
-    -webkit-mask-image: url(Images/statusbarButtonGlyphs2x.png);
+    -webkit-mask-image: url(Images/statusbarButtonGlyphs_2x.png);
 }
 } /* media */
 

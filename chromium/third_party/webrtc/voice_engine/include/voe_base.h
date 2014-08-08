@@ -40,6 +40,7 @@ namespace webrtc {
 
 class AudioDeviceModule;
 class AudioProcessing;
+class AudioTransport;
 class Config;
 
 const int kVoEDefault = -1;
@@ -84,7 +85,9 @@ public:
     // receives callbacks for generated trace messages.
     static int SetTraceCallback(TraceCallback* callback);
 
+#if !defined(WEBRTC_CHROMIUM_BUILD)
     static int SetAndroidObjects(void* javaVM, void* env, void* context);
+#endif
 
 protected:
     VoiceEngine() {}
@@ -169,19 +172,18 @@ public:
     // Gets the last VoiceEngine error code.
     virtual int LastError() = 0;
 
-    // Stops or resumes playout and transmission on a temporary basis.
+    // TODO(xians): Make the interface pure virtual after libjingle
+    // implements the interface in its FakeWebRtcVoiceEngine.
+    virtual AudioTransport* audio_transport() { return NULL; }
+
+    // To be removed. Don't use.
     virtual int SetOnHoldStatus(int channel, bool enable,
-                                OnHoldModes mode = kHoldSendAndPlay) = 0;
-
-    // Gets the current playout and transmission status.
+        OnHoldModes mode = kHoldSendAndPlay) { return -1; }
     virtual int GetOnHoldStatus(int channel, bool& enabled,
-                                OnHoldModes& mode) = 0;
-
-    // Sets the NetEQ playout mode for a specified |channel| number.
-    virtual int SetNetEQPlayoutMode(int channel, NetEqModes mode) = 0;
-
-    // Gets the NetEQ playout mode for a specified |channel| number.
-    virtual int GetNetEQPlayoutMode(int channel, NetEqModes& mode) = 0;
+        OnHoldModes& mode) { return -1; }
+    virtual int SetNetEQPlayoutMode(int channel, NetEqModes mode) { return -1; }
+    virtual int GetNetEQPlayoutMode(int channel,
+        NetEqModes& mode) { return -1; }
 
 protected:
     VoEBase() {}

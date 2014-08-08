@@ -9,6 +9,8 @@ var statsTable = null;
 var dumpCreator = null;
 /** A map from peer connection id to the PeerConnectionRecord. */
 var peerConnectionDataStore = {};
+/** A list of getUserMedia requests. */
+var userMediaRequests = [];
 
 /** A simple class to store the updates and stats data for a peer connection. */
 var PeerConnectionRecord = (function() {
@@ -94,15 +96,19 @@ function initialize() {
   peerConnectionUpdateTable = new PeerConnectionUpdateTable();
   statsTable = new StatsTable(ssrcInfoManager);
 
-  chrome.send('getAllUpdates');
+  chrome.send('finishedDOMLoad');
 
   // Requests stats from all peer connections every second.
-  window.setInterval(function() {
-    if (Object.keys(peerConnectionDataStore).length > 0)
-      chrome.send('getAllStats');
-  }, 1000);
+  window.setInterval(requestStats, 1000);
 }
 document.addEventListener('DOMContentLoaded', initialize);
+
+
+/** Sends a request to the browser to get peer connection statistics. */
+function requestStats() {
+  if (Object.keys(peerConnectionDataStore).length > 0)
+    chrome.send('getAllStats');
+}
 
 
 /**
@@ -219,6 +225,7 @@ function updateAllPeerConnections(data) {
       addPeerConnectionUpdate(peerConnection, log[j]);
     }
   }
+  requestStats();
 }
 
 
@@ -245,10 +252,43 @@ function addStats(data) {
 
 
 /**
- * Delegates to dumpCreator to update the recording status.
- * @param {!Object.<string>} update Key-value pairs describing the status of the
- *     RTP recording.
+ * Adds a getUserMedia request.
+ *
+ * @param {!Object} data The object containing rid {number}, pid {number},
+ *     origin {string}, audio {string}, video {string}.
  */
-function updateDumpStatus(update) {
-  dumpCreator.onUpdate(update);
+function addGetUserMedia(data) {
+  // TODO(jiayl): add the getUserMedia info to the tabbed UI.
+  userMediaRequests.push(data);
+}
+
+
+/**
+ * Removes the getUserMedia requests from the specified |rid|.
+ *
+ * @param {!Object} data The object containing rid {number}, the render id.
+ */
+function removeGetUserMediaForRenderer(data) {
+  // TODO(jiayl): remove the getUserMedia info from the tabbed UI.
+  for (var i = userMediaRequests.length - 1; i >= 0; --i) {
+    if (userMediaRequests[i].rid == data.rid)
+      userMediaRequests.splice(i, 1);
+  }
+}
+
+
+/**
+ * Notification that the AEC recording file selection dialog was cancelled,
+ * i.e. AEC has not been enabled.
+ */
+function aecRecordingFileSelectionCancelled() {
+  dumpCreator.disableAecRecording();
+}
+
+
+/**
+ * Set
+ */
+function enableAecRecording() {
+  dumpCreator.enableAecRecording();
 }

@@ -14,6 +14,10 @@
 #include "ppapi/proxy/ppapi_messages.h"
 #include "ppapi/proxy/var_serialization_rules.h"
 
+namespace IPC {
+class MessageFilter;
+}
+
 namespace ppapi {
 namespace proxy {
 
@@ -24,10 +28,6 @@ Dispatcher::Dispatcher(PP_GetInterface_Func local_get_interface,
 }
 
 Dispatcher::~Dispatcher() {
-}
-
-void Dispatcher::AddFilter(IPC::Listener* listener) {
-  filters_.push_back(listener);
 }
 
 InterfaceProxy* Dispatcher::GetInterfaceProxy(ApiID id) {
@@ -47,12 +47,7 @@ InterfaceProxy* Dispatcher::GetInterfaceProxy(ApiID id) {
   return proxy;
 }
 
-base::MessageLoopProxy* Dispatcher::GetIPCMessageLoop() {
-  return delegate()->GetIPCMessageLoop();
-}
-
-void Dispatcher::AddIOThreadMessageFilter(
-    IPC::ChannelProxy::MessageFilter* filter) {
+void Dispatcher::AddIOThreadMessageFilter(IPC::MessageFilter* filter) {
   // Our filter is refcounted. The channel will call the destruct method on the
   // filter when the channel is done with it, so the corresponding Release()
   // happens there.

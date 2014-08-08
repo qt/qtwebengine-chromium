@@ -44,10 +44,10 @@ public:
 
 private:
     RenderObject& m_object;
-    RenderLayerModelObject* m_repaintContainer;
+    const RenderLayerModelObject* m_repaintContainer;
     // We store these values as LayoutRects, but the final invalidations will be pixel snapped
     LayoutRect m_oldBounds;
-    LayoutRect m_oldOutlineBox;
+    LayoutPoint m_oldOffset;
     bool m_checkForRepaint;
 };
 

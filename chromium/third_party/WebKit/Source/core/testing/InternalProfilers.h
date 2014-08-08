@@ -31,22 +31,26 @@
 #ifndef InternalProfilers_h
 #define InternalProfilers_h
 
+#include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 
 namespace WebCore {
 
-
-
-class InternalProfilers : public RefCounted<InternalProfilers> {
+class InternalProfilers : public RefCountedWillBeGarbageCollected<InternalProfilers> {
 public:
-    static PassRefPtr<InternalProfilers> create() { return adoptRef(new InternalProfilers()); }
+    static PassRefPtrWillBeRawPtr<InternalProfilers> create()
+    {
+        return adoptRefWillBeNoop(new InternalProfilers());
+    }
 
     void startHeapProfiling(const String& prefix);
     void stopHeapProfiling();
     void dumpHeapProfiling(const String& reason);
     String getHeapProfile();
+
+    void trace(Visitor*) { }
 };
 
 } // namespace WebCore

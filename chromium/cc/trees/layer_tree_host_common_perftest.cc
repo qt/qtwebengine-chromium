@@ -12,13 +12,14 @@
 #include "base/strings/string_piece.h"
 #include "base/threading/thread.h"
 #include "base/time/time.h"
+#include "cc/debug/lap_timer.h"
 #include "cc/layers/layer.h"
 #include "cc/test/fake_content_layer_client.h"
 #include "cc/test/fake_layer_tree_host_client.h"
-#include "cc/test/lap_timer.h"
 #include "cc/test/layer_tree_json_parser.h"
 #include "cc/test/layer_tree_test.h"
 #include "cc/test/paths.h"
+#include "cc/trees/layer_sorter.h"
 #include "cc/trees/layer_tree_impl.h"
 #include "testing/perf/perf_test.h"
 
@@ -97,7 +98,8 @@ class CalcDrawPropsMainTest : public LayerTreeHostCommonPerfTest {
           layer_tree_host()
               ->settings()
               .layer_transforms_should_scale_layer_contents,
-          &update_list);
+          &update_list,
+          0);
       LayerTreeHostCommon::CalculateDrawProperties(&inputs);
 
       timer_.NextLap();
@@ -124,48 +126,107 @@ class CalcDrawPropsImplTest : public LayerTreeHostCommonPerfTest {
     do {
       bool can_render_to_separate_surface = true;
       int max_texture_size = 8096;
-      LayerImplList update_list;
-      LayerTreeHostCommon::CalcDrawPropsImplInputs inputs(
-          active_tree->root_layer(),
-          active_tree->DrawViewportSize(),
-          host_impl->DrawTransform(),
-          active_tree->device_scale_factor(),
-          active_tree->total_page_scale_factor(),
-          active_tree->RootContainerLayer(),
-          max_texture_size,
-          host_impl->settings().can_use_lcd_text,
-          can_render_to_separate_surface,
-          host_impl->settings().layer_transforms_should_scale_layer_contents,
-          &update_list);
-      LayerTreeHostCommon::CalculateDrawProperties(&inputs);
+      DoCalcDrawPropertiesImpl(can_render_to_separate_surface,
+                               max_texture_size,
+                               active_tree,
+                               host_impl);
 
       timer_.NextLap();
     } while (!timer_.HasTimeLimitExpired());
 
     EndTest();
   }
+
+  void DoCalcDrawPropertiesImpl(bool can_render_to_separate_surface,
+                                int max_texture_size,
+                                LayerTreeImpl* active_tree,
+                                LayerTreeHostImpl* host_impl) {
+    LayerImplList update_list;
+    LayerTreeHostCommon::CalcDrawPropsImplInputs inputs(
+        active_tree->root_layer(),
+        active_tree->DrawViewportSize(),
+        host_impl->DrawTransform(),
+        active_tree->device_scale_factor(),
+        active_tree->total_page_scale_factor(),
+        active_tree->InnerViewportContainerLayer(),
+        max_texture_size,
+        host_impl->settings().can_use_lcd_text,
+        can_render_to_separate_surface,
+        host_impl->settings().layer_transforms_should_scale_layer_contents,
+        &update_list,
+        0);
+    LayerTreeHostCommon::CalculateDrawProperties(&inputs);
+  }
+};
+
+class LayerSorterMainTest : public CalcDrawPropsImplTest {
+ public:
+  void RunSortLayers() { RunTest(false, false, false); }
+
+  virtual void BeginTest() OVERRIDE { PostSetNeedsCommitToMainThread(); }
+
+  virtual void DrawLayersOnThread(LayerTreeHostImpl* host_impl) OVERRIDE {
+    LayerTreeImpl* active_tree = host_impl->active_tree();
+    // First build the tree and then we'll start running tests on layersorter
+    // itself
+    bool can_render_to_separate_surface = true;
+    int max_texture_size = 8096;
+    DoCalcDrawPropertiesImpl(can_render_to_separate_surface,
+                             max_texture_size,
+                             active_tree,
+                             host_impl);
+
+    // Behaviour of this test is different from that of sorting in practice.
+    // In this case, all layers that exist in any 3D context are put into a list
+    // and are sorted as one big 3D context instead of several smaller ones.
+    BuildLayerImplList(active_tree->root_layer(), &base_list_);
+    timer_.Reset();
+    do {
+      // Here we'll move the layers into a LayerImpl list of their own to be
+      // sorted so we don't have a sorted list for every run after the first
+      LayerImplList test_list = base_list_;
+      layer_sorter_.Sort(test_list.begin(), test_list.end());
+      timer_.NextLap();
+    } while (!timer_.HasTimeLimitExpired());
+
+    EndTest();
+  }
+
+  void BuildLayerImplList(LayerImpl* layer, LayerImplList* list) {
+    if (layer->Is3dSorted()) {
+      list->push_back(layer);
+    }
+
+    for (unsigned int i = 0; i < layer->children().size(); i++) {
+      BuildLayerImplList(layer->children()[i], list);
+    }
+  }
+
+ private:
+  LayerImplList base_list_;
+  LayerSorter layer_sorter_;
 };
 
 TEST_F(CalcDrawPropsMainTest, TenTen) {
-  SetTestName("10_10");
+  SetTestName("10_10_main_thread");
   ReadTestFile("10_10_layer_tree");
   RunCalcDrawProps();
 }
 
 TEST_F(CalcDrawPropsMainTest, HeavyPage) {
-  SetTestName("heavy_page");
+  SetTestName("heavy_page_main_thread");
   ReadTestFile("heavy_layer_tree");
   RunCalcDrawProps();
 }
 
 TEST_F(CalcDrawPropsMainTest, TouchRegionLight) {
-  SetTestName("touch_region_light");
+  SetTestName("touch_region_light_main_thread");
   ReadTestFile("touch_region_light");
   RunCalcDrawProps();
 }
 
 TEST_F(CalcDrawPropsMainTest, TouchRegionHeavy) {
-  SetTestName("touch_region_heavy");
+  SetTestName("touch_region_heavy_main_thread");
   ReadTestFile("touch_region_heavy");
   RunCalcDrawProps();
 }
@@ -192,6 +253,18 @@ TEST_F(CalcDrawPropsImplTest, TouchRegionHeavy) {
   SetTestName("touch_region_heavy");
   ReadTestFile("touch_region_heavy");
   RunCalcDrawProps();
+}
+
+TEST_F(LayerSorterMainTest, LayerSorterCubes) {
+  SetTestName("layer_sort_cubes");
+  ReadTestFile("layer_sort_cubes");
+  RunSortLayers();
+}
+
+TEST_F(LayerSorterMainTest, LayerSorterRubik) {
+  SetTestName("layer_sort_rubik");
+  ReadTestFile("layer_sort_rubik");
+  RunSortLayers();
 }
 
 }  // namespace

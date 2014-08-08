@@ -20,7 +20,11 @@
  * Boston, MA 02110-1301, USA.
  */
 
-interface SVGLength {
+[
+    ImplementedAs=SVGLengthTearOff,
+    SetWrapperReferenceTo(SVGElement contextElement),
+    TypeChecking=Interface|Nullable,
+] interface SVGLength {
     // Length Unit Types
     const unsigned short SVG_LENGTHTYPE_UNKNOWN    = 0;
     const unsigned short SVG_LENGTHTYPE_NUMBER     = 1;
@@ -35,14 +39,13 @@ interface SVGLength {
     const unsigned short SVG_LENGTHTYPE_PC         = 10;
 
     readonly attribute unsigned short unitType;
-    [Custom, StrictTypeChecking, RaisesException] attribute float value;
+    [RaisesException] attribute float value;
 
-    [StrictTypeChecking] attribute float valueInSpecifiedUnits;
-    [TreatNullAs=NullString, StrictTypeChecking, RaisesException=Setter] attribute DOMString valueAsString;
+    [RaisesException=Setter] attribute float valueInSpecifiedUnits;
+    [TreatNullAs=NullString, RaisesException=Setter] attribute DOMString valueAsString;
 
-    [StrictTypeChecking, RaisesException] void newValueSpecifiedUnits(unsigned short unitType,
-                                                     float valueInSpecifiedUnits);
+    [RaisesException] void newValueSpecifiedUnits(unsigned short unitType, float valueInSpecifiedUnits);
 
-    [Custom, StrictTypeChecking, RaisesException] void convertToSpecifiedUnits(unsigned short unitType);
+    [RaisesException] void convertToSpecifiedUnits(unsigned short unitType);
 };
 

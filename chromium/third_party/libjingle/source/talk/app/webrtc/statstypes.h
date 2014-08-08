@@ -53,7 +53,11 @@ class StatsReport {
 
   void AddValue(const std::string& name, const std::string& value);
   void AddValue(const std::string& name, int64 value);
+  template <typename T>
+  void AddValue(const std::string& name, const std::vector<T>& value);
   void AddBoolean(const std::string& name, bool value);
+
+  void ReplaceValue(const std::string& name, const std::string& value);
 
   double timestamp;  // Time since 1970-01-01T00:00:00Z in milliseconds.
   typedef std::vector<Value> Values;
@@ -129,6 +133,7 @@ class StatsReport {
 
   // Internal StatsValue names
   static const char kStatsValueNameAvgEncodeMs[];
+  static const char kStatsValueNameEncodeRelStdDev[];
   static const char kStatsValueNameEncodeUsagePercent[];
   static const char kStatsValueNameCaptureJitterMs[];
   static const char kStatsValueNameCaptureQueueDelayMsPerS[];
@@ -141,8 +146,10 @@ class StatsReport {
   static const char kStatsValueNameEchoDelayStdDev[];
   static const char kStatsValueNameEchoReturnLoss[];
   static const char kStatsValueNameEchoReturnLossEnhancement[];
+  static const char kStatsValueNameExpandRate[];
   static const char kStatsValueNameFirsReceived[];
   static const char kStatsValueNameFirsSent[];
+  static const char kStatsValueNameFrameHeightInput[];
   static const char kStatsValueNameFrameHeightReceived[];
   static const char kStatsValueNameFrameHeightSent[];
   static const char kStatsValueNameFrameRateReceived[];
@@ -155,13 +162,18 @@ class StatsReport {
   static const char kStatsValueNameJitterBufferMs[];
   static const char kStatsValueNameMinPlayoutDelayMs[];
   static const char kStatsValueNameRenderDelayMs[];
+  static const char kStatsValueNameCaptureStartNtpTimeMs[];
   static const char kStatsValueNameFrameRateInput[];
   static const char kStatsValueNameFrameRateSent[];
+  static const char kStatsValueNameFrameWidthInput[];
   static const char kStatsValueNameFrameWidthReceived[];
   static const char kStatsValueNameFrameWidthSent[];
   static const char kStatsValueNameJitterReceived[];
   static const char kStatsValueNameNacksReceived[];
   static const char kStatsValueNameNacksSent[];
+  static const char kStatsValueNamePlisReceived[];
+  static const char kStatsValueNamePlisSent[];
+  static const char kStatsValueNamePreferredJitterBufferMs[];
   static const char kStatsValueNameRtt[];
   static const char kStatsValueNameAvailableSendBandwidth[];
   static const char kStatsValueNameAvailableReceiveBandwidth[];
@@ -186,6 +198,15 @@ class StatsReport {
   static const char kStatsValueNameRemoteCertificateId[];
   static const char kStatsValueNameLocalCandidateType[];
   static const char kStatsValueNameRemoteCandidateType[];
+  static const char kStatsValueNameRecvPacketGroupArrivalTimeDebug[];
+  static const char kStatsValueNameRecvPacketGroupPropagationDeltaDebug[];
+  static const char kStatsValueNameRecvPacketGroupPropagationDeltaSumDebug[];
+  static const char kStatsValueNameDecodingCTSG[];
+  static const char kStatsValueNameDecodingCTN[];
+  static const char kStatsValueNameDecodingNormal[];
+  static const char kStatsValueNameDecodingPLC[];
+  static const char kStatsValueNameDecodingCNG[];
+  static const char kStatsValueNameDecodingPLCCNG[];
 };
 
 typedef std::vector<StatsReport> StatsReports;

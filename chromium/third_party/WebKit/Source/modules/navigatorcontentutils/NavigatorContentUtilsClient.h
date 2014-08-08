@@ -26,8 +26,7 @@
 #ifndef NavigatorContentUtilsClient_h
 #define NavigatorContentUtilsClient_h
 
-#if ENABLE(NAVIGATOR_CONTENT_UTILS)
-
+#include "platform/weborigin/KURL.h"
 #include "wtf/text/WTFString.h"
 
 namespace WebCore {
@@ -37,23 +36,20 @@ class Page;
 class NavigatorContentUtilsClient {
 public:
     virtual ~NavigatorContentUtilsClient() { }
-    virtual void registerProtocolHandler(const String& scheme, const String& baseURL, const String& url, const String& title) = 0;
+    virtual void registerProtocolHandler(const String& scheme, const KURL& baseURL, const KURL&, const String& title) = 0;
 
-#if ENABLE(CUSTOM_SCHEME_HANDLER)
     enum CustomHandlersState {
         CustomHandlersNew,
         CustomHandlersRegistered,
         CustomHandlersDeclined
     };
 
-    virtual CustomHandlersState isProtocolHandlerRegistered(const String& scheme, const String& baseURL, const String& url) = 0;
-    virtual void unregisterProtocolHandler(const String& scheme, const String& baseURL, const String& url) = 0;
-#endif
+    virtual CustomHandlersState isProtocolHandlerRegistered(const String& scheme, const KURL& baseURL, const KURL&) = 0;
+    virtual void unregisterProtocolHandler(const String& scheme, const KURL& baseURL, const KURL&) = 0;
 };
 
-void provideNavigatorContentUtilsTo(Page*, NavigatorContentUtilsClient*);
+void provideNavigatorContentUtilsTo(Page&, PassOwnPtr<NavigatorContentUtilsClient>);
 
 }
 
-#endif // ENABLE(NAVIGATOR_CONTENT_UTILS)
 #endif // NavigatorContentUtilsClient_h

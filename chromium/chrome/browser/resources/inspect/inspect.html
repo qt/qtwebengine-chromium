@@ -24,11 +24,11 @@ found in the LICENSE file.
     <div id="devices">
       <div class="content-header">Devices</div>
       <div id="device-settings">
+        <input id="discover-usb-devices-enable" type="checkbox" disabled/>
         <label for="discover-usb-devices-enable"
             title="Enable Remote Debugging of Chrome for Android over raw USB
                    interface (no need to install / run Android Debug Bridge).">
-          <input id="discover-usb-devices-enable" type="checkbox" disabled/>
-          <span>Discover USB devices</span>
+          Discover USB devices
         </label>
         <button id="port-forwarding-config-open" disabled>
           Port forwarding...</button>
@@ -37,6 +37,9 @@ found in the LICENSE file.
         <a href="https://developers.google.com/chrome-developer-tools/docs/remote-debugging">
         remote debugging documentation</a> to verify your device is enabled for
         USB debugging.
+      </div>
+      <div id="devices-incognito" hidden="true">
+        Remote debugging is not available in Incognito mode.
       </div>
       <div id="devices-list"></div>
     </div>
@@ -56,6 +59,11 @@ found in the LICENSE file.
       <div class="content-header">Shared workers</div>
       <div id="workers-list" class="list"></div>
     </div>
+    <div id="service-workers">
+      <div class="content-header">Service workers</div>
+      <div id="service-workers-list" class="list"></div>
+      <iframe src="chrome://serviceworker-internals/#iframe" name="serviceworker-internals" id="serviceworker-internals"></iframe>
+    </div>
     <div id="other">
       <div class="content-header">Other</div>
       <div id="others-list" class="list"></div>
@@ -68,11 +76,15 @@ found in the LICENSE file.
     <div id="port-forwarding-config-title">Port forwarding settings</div>
     <div id="port-forwarding-config-list">
     </div>
+    <div id="port-forwarding-message">
+        Define the listening port on your device that maps to a port accessible
+        from your development machine.
+        <a href="https://developers.google.com/chrome-developer-tools/docs/remote-debugging#reverse-port-forwarding"
+           target="_blank">Learn more</a>
+    </div>
     <div id="port-forwarding-config-buttons">
-      <label for="port-forwarding-enable">
-        <input id="port-forwarding-enable" type="checkbox" disabled/>
-        <span>Enable port forwarding</span>
-      </label>
+      <input id="port-forwarding-enable" type="checkbox" disabled/>
+      <label for="port-forwarding-enable">Enable port forwarding</label>
       <button id="port-forwarding-config-done">Done</button>
     </div>
   </div>

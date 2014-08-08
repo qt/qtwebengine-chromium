@@ -41,8 +41,10 @@
 
 namespace WebCore {
 
+class CustomElementMicrotaskImportStep;
 class Document;
 class Element;
+class HTMLImportChild;
 
 class CustomElement {
 public:
@@ -54,15 +56,14 @@ public:
     static bool isValidName(const AtomicString& name, NameSet validNames = AllNames);
     static void addEmbedderCustomElementName(const AtomicString& name);
 
+    // API to notify of document-level changes
+    static CustomElementMicrotaskImportStep* didCreateImport(HTMLImportChild*);
+
     // API for registration contexts
     static void define(Element*, PassRefPtr<CustomElementDefinition>);
 
-    // API for wrapper creation, which uses a definition as a key
-    static CustomElementDefinition* definitionFor(Element*);
-
     // API for Element to kick off changes
 
-    static void didFinishParsingChildren(Element*);
     static void attributeDidChange(Element*, const AtomicString& name, const AtomicString& oldValue, const AtomicString& newValue);
     static void didEnterDocument(Element*, const Document&);
     static void didLeaveDocument(Element*, const Document&);
@@ -72,24 +73,6 @@ private:
     CustomElement();
 
     static Vector<AtomicString>& embedderCustomElementNames();
-
-    // Maps resolved elements to their definitions
-
-    class DefinitionMap {
-        WTF_MAKE_NONCOPYABLE(DefinitionMap);
-    public:
-        DefinitionMap() { }
-        ~DefinitionMap() { }
-
-        void add(Element*, PassRefPtr<CustomElementDefinition>);
-        void remove(Element* element) { m_definitions.remove(element); }
-        CustomElementDefinition* get(Element* element) const { return m_definitions.get(element); }
-
-    private:
-        typedef HashMap<Element*, RefPtr<CustomElementDefinition> > ElementDefinitionHashMap;
-        ElementDefinitionHashMap m_definitions;
-    };
-    static DefinitionMap& definitions();
 };
 
 }

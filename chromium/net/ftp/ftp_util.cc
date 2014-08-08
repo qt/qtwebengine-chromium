@@ -22,6 +22,7 @@
 #include "third_party/icu/source/i18n/unicode/datefmt.h"
 #include "third_party/icu/source/i18n/unicode/dtfmtsym.h"
 
+using base::ASCIIToUTF16;
 using base::StringPiece16;
 
 // For examples of Unix<->VMS path conversions, see the unit test file. On VMS
@@ -365,7 +366,7 @@ base::string16 FtpUtil::GetStringPartAfterColumns(const base::string16& text,
   }
 
   base::string16 result(text.substr(iter.array_pos()));
-  TrimWhitespace(result, TRIM_ALL, &result);
+  base::TrimWhitespace(result, base::TRIM_ALL, &result);
   return result;
 }
 

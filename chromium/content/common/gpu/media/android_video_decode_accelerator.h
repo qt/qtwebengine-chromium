@@ -15,7 +15,6 @@
 #include "base/threading/thread_checker.h"
 #include "base/timer/timer.h"
 #include "content/common/content_export.h"
-#include "content/common/gpu/media/video_decode_accelerator_impl.h"
 #include "gpu/command_buffer/service/gles2_cmd_copy_texture_chromium.h"
 #include "gpu/command_buffer/service/gles2_cmd_decoder.h"
 #include "media/base/android/media_codec_bridge.h"
@@ -30,16 +29,16 @@ namespace content {
 // This class decodes the input encoded stream by using Android's MediaCodec
 // class. http://developer.android.com/reference/android/media/MediaCodec.html
 class CONTENT_EXPORT AndroidVideoDecodeAccelerator
-    : public VideoDecodeAcceleratorImpl {
+    : public media::VideoDecodeAccelerator {
  public:
   // Does not take ownership of |client| which must outlive |*this|.
   AndroidVideoDecodeAccelerator(
-      media::VideoDecodeAccelerator::Client* client,
       const base::WeakPtr<gpu::gles2::GLES2Decoder> decoder,
       const base::Callback<bool(void)>& make_context_current);
 
   // media::VideoDecodeAccelerator implementation.
-  virtual bool Initialize(media::VideoCodecProfile profile) OVERRIDE;
+  virtual bool Initialize(media::VideoCodecProfile profile,
+                          Client* client) OVERRIDE;
   virtual void Decode(const media::BitstreamBuffer& bitstream_buffer) OVERRIDE;
   virtual void AssignPictureBuffers(
       const std::vector<media::PictureBuffer>& buffers) OVERRIDE;
@@ -47,6 +46,7 @@ class CONTENT_EXPORT AndroidVideoDecodeAccelerator
   virtual void Flush() OVERRIDE;
   virtual void Reset() OVERRIDE;
   virtual void Destroy() OVERRIDE;
+  virtual bool CanDecodeOnIOThread() OVERRIDE;
 
  private:
   enum State {
@@ -76,9 +76,6 @@ class CONTENT_EXPORT AndroidVideoDecodeAccelerator
   // Dequeues output from |media_codec_| and feeds the decoded frame to the
   // client.
   void DequeueOutput();
-
-  // Notifies the client that initialize was completed.
-  void NotifyInitializeDone();
 
   // Requests picture buffers from the client.
   void RequestPictureBuffers();
@@ -163,6 +160,9 @@ class CONTENT_EXPORT AndroidVideoDecodeAccelerator
 
   // Repeating timer responsible for draining pending IO to the codec.
   base::RepeatingTimer<AndroidVideoDecodeAccelerator> io_timer_;
+
+  // WeakPtrFactory for posting tasks back to |this|.
+  base::WeakPtrFactory<AndroidVideoDecodeAccelerator> weak_this_factory_;
 
   friend class AndroidVideoDecodeAcceleratorTest;
 };

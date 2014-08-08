@@ -67,8 +67,6 @@ void DelegatedRendererLayer::PushPropertiesTo(LayerImpl* impl) {
   DelegatedRendererLayerImpl* delegated_impl =
       static_cast<DelegatedRendererLayerImpl*>(impl);
 
-  delegated_impl->SetDisplaySize(display_size_);
-
   delegated_impl->CreateChildIdIfNeeded(
       frame_provider_->GetReturnResourcesCallbackForImplThread());
 
@@ -86,34 +84,8 @@ void DelegatedRendererLayer::ProviderHasNewFrame() {
   SetNextCommitWaitsForActivation();
 }
 
-void DelegatedRendererLayer::SetDisplaySize(gfx::Size size) {
-  if (display_size_ == size)
-    return;
-  display_size_ = size;
-  SetNeedsCommit();
-}
-
-static bool FrameDataRequiresFilterContext(const DelegatedFrameData* frame) {
-  for (size_t i = 0; i < frame->render_pass_list.size(); ++i) {
-    const QuadList& quad_list = frame->render_pass_list[i]->quad_list;
-    for (size_t j = 0; j < quad_list.size(); ++j) {
-      if (quad_list[j]->shared_quad_state->blend_mode !=
-          SkXfermode::kSrcOver_Mode)
-        return true;
-      if (quad_list[j]->material != DrawQuad::RENDER_PASS)
-        continue;
-      const RenderPassDrawQuad* render_pass_quad =
-          RenderPassDrawQuad::MaterialCast(quad_list[j]);
-      if (!render_pass_quad->filters.IsEmpty() ||
-          !render_pass_quad->background_filters.IsEmpty())
-        return true;
-    }
-  }
-  return false;
-}
-
 bool DelegatedRendererLayer::Update(ResourceUpdateQueue* queue,
-                                    const OcclusionTracker* occlusion) {
+                                    const OcclusionTracker<Layer>* occlusion) {
   bool updated = Layer::Update(queue, occlusion);
   if (!should_collect_new_frame_)
     return updated;
@@ -121,11 +93,6 @@ bool DelegatedRendererLayer::Update(ResourceUpdateQueue* queue,
   frame_data_ =
       frame_provider_->GetFrameDataAndRefResources(this, &frame_damage_);
   should_collect_new_frame_ = false;
-
-  // If any quad has a filter operation or a blend mode other than normal,
-  // then we need an offscreen context to draw this layer's content.
-  if (FrameDataRequiresFilterContext(frame_data_))
-    layer_tree_host()->set_needs_filter_context();
 
   SetNeedsPushProperties();
   return true;

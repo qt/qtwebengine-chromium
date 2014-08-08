@@ -25,7 +25,8 @@
  */
 
 [
-    ActiveDOMObject
+    ActiveDOMObject,
+    GarbageCollected
 ] interface IDBTransaction : EventTarget {
 
     // Properties

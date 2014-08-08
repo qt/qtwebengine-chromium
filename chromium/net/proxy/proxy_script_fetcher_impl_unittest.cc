@@ -10,8 +10,8 @@
 #include "base/files/file_path.h"
 #include "base/path_service.h"
 #include "base/strings/utf_string_conversions.h"
+#include "net/base/filename_util.h"
 #include "net/base/load_flags.h"
-#include "net/base/net_util.h"
 #include "net/base/test_completion_callback.h"
 #include "net/cert/mock_cert_verifier.h"
 #include "net/disk_cache/disk_cache.h"
@@ -22,13 +22,18 @@
 #include "net/http/transport_security_state.h"
 #include "net/ssl/ssl_config_service_defaults.h"
 #include "net/test/spawned_test_server/spawned_test_server.h"
-#include "net/url_request/file_protocol_handler.h"
 #include "net/url_request/url_request_context_storage.h"
 #include "net/url_request/url_request_file_job.h"
 #include "net/url_request/url_request_job_factory_impl.h"
 #include "net/url_request/url_request_test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/platform_test.h"
+
+#if !defined(DISABLE_FILE_SUPPORT)
+#include "net/url_request/file_protocol_handler.h"
+#endif
+
+using base::ASCIIToUTF16;
 
 namespace net {
 
@@ -46,7 +51,8 @@ struct FetchResult {
   base::string16 text;
 };
 
-// A non-mock URL request which can access http:// and file:// urls.
+// A non-mock URL request which can access http:// and file:// urls, in the case
+// the tests were built with file support.
 class RequestContext : public URLRequestContext {
  public:
   RequestContext() : storage_(this) {
@@ -71,8 +77,10 @@ class RequestContext : public URLRequestContext {
     storage_.set_http_transaction_factory(new HttpCache(
         network_session.get(), HttpCache::DefaultBackend::InMemory(0)));
     URLRequestJobFactoryImpl* job_factory = new URLRequestJobFactoryImpl();
+#if !defined(DISABLE_FILE_SUPPORT)
     job_factory->SetProtocolHandler(
         "file", new FileProtocolHandler(base::MessageLoopProxy::current()));
+#endif
     storage_.set_job_factory(job_factory);
   }
 
@@ -83,6 +91,7 @@ class RequestContext : public URLRequestContext {
   URLRequestContextStorage storage_;
 };
 
+#if !defined(DISABLE_FILE_SUPPORT)
 // Get a file:// url relative to net/data/proxy/proxy_script_fetcher_unittest.
 GURL GetTestFileUrl(const std::string& relpath) {
   base::FilePath path;
@@ -93,6 +102,7 @@ GURL GetTestFileUrl(const std::string& relpath) {
   GURL base_url = FilePathToFileURL(path);
   return GURL(base_url.spec() + "/" + relpath);
 }
+#endif  // !defined(DISABLE_FILE_SUPPORT)
 
 // Really simple NetworkDelegate so we can allow local file access on ChromeOS
 // without introducing layering violations.  Also causes a test failure if a
@@ -124,8 +134,8 @@ class BasicNetworkDelegate : public NetworkDelegate {
       URLRequest* request,
       const CompletionCallback& callback,
       const HttpResponseHeaders* original_response_headers,
-      scoped_refptr<HttpResponseHeaders>* override_response_headers)
-      OVERRIDE {
+      scoped_refptr<HttpResponseHeaders>* override_response_headers,
+      GURL* allowed_unsafe_redirect_url) OVERRIDE {
     return OK;
   }
 
@@ -177,10 +187,6 @@ class BasicNetworkDelegate : public NetworkDelegate {
     return OK;
   }
 
-  virtual void OnRequestWaitStateChange(const net::URLRequest& request,
-                                        RequestWaitState state) OVERRIDE {
-  }
-
   DISALLOW_COPY_AND_ASSIGN(BasicNetworkDelegate);
 };
 
@@ -201,6 +207,7 @@ class ProxyScriptFetcherImplTest : public PlatformTest {
   RequestContext context_;
 };
 
+#if !defined(DISABLE_FILE_SUPPORT)
 TEST_F(ProxyScriptFetcherImplTest, FileUrl) {
   ProxyScriptFetcherImpl pac_fetcher(&context_);
 
@@ -223,6 +230,7 @@ TEST_F(ProxyScriptFetcherImplTest, FileUrl) {
     EXPECT_EQ(ASCIIToUTF16("-pac.txt-\n"), text);
   }
 }
+#endif  // !defined(DISABLE_FILE_SUPPORT)
 
 // Note that all mime types are allowed for PAC file, to be consistent
 // with other browsers.
@@ -346,7 +354,9 @@ TEST_F(ProxyScriptFetcherImplTest, TooLarge) {
   // These two URLs are the same file, but are http:// vs file://
   GURL urls[] = {
     test_server_.GetURL("files/large-pac.nsproxy"),
+#if !defined(DISABLE_FILE_SUPPORT)
     GetTestFileUrl("large-pac.nsproxy")
+#endif
   };
 
   // Try fetching URLs that are 101 bytes large. We should abort the request

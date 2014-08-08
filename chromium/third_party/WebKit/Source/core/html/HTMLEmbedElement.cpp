@@ -24,8 +24,8 @@
 #include "config.h"
 #include "core/html/HTMLEmbedElement.h"
 
-#include "CSSPropertyNames.h"
-#include "HTMLNames.h"
+#include "core/CSSPropertyNames.h"
+#include "core/HTMLNames.h"
 #include "core/dom/Attribute.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/html/HTMLImageLoader.h"
@@ -45,9 +45,9 @@ inline HTMLEmbedElement::HTMLEmbedElement(Document& document, bool createdByPars
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLEmbedElement> HTMLEmbedElement::create(Document& document, bool createdByParser)
+PassRefPtrWillBeRawPtr<HTMLEmbedElement> HTMLEmbedElement::create(Document& document, bool createdByParser)
 {
-    RefPtr<HTMLEmbedElement> element = adoptRef(new HTMLEmbedElement(document, createdByParser));
+    RefPtrWillBeRawPtr<HTMLEmbedElement> element = adoptRefWillBeNoop(new HTMLEmbedElement(document, createdByParser));
     element->ensureUserAgentShadowRoot();
     return element.release();
 }
@@ -55,9 +55,7 @@ PassRefPtr<HTMLEmbedElement> HTMLEmbedElement::create(Document& document, bool c
 static inline RenderWidget* findWidgetRenderer(const Node* n)
 {
     if (!n->renderer())
-        do
-            n = n->parentNode();
-        while (n && !n->hasTagName(objectTag));
+        n = Traversal<HTMLObjectElement>::firstAncestor(*n);
 
     if (n && n->renderer() && n->renderer()->isWidget())
         return toRenderWidget(n->renderer());
@@ -96,13 +94,15 @@ void HTMLEmbedElement::parseAttribute(const QualifiedName& name, const AtomicStr
         size_t pos = m_serviceType.find(";");
         if (pos != kNotFound)
             m_serviceType = m_serviceType.left(pos);
+        if (!renderer())
+            requestPluginCreationWithoutRendererIfPossible();
     } else if (name == codeAttr) {
         m_url = stripLeadingAndTrailingHTMLSpaces(value);
     } else if (name == srcAttr) {
         m_url = stripLeadingAndTrailingHTMLSpaces(value);
         if (renderer() && isImageType()) {
             if (!m_imageLoader)
-                m_imageLoader = adoptPtr(new HTMLImageLoader(this));
+                m_imageLoader = HTMLImageLoader::create(this);
             m_imageLoader->updateFromElementIgnoringPreviousError();
         }
     } else {
@@ -115,10 +115,11 @@ void HTMLEmbedElement::parametersForPlugin(Vector<String>& paramNames, Vector<St
     if (!hasAttributes())
         return;
 
-    for (unsigned i = 0; i < attributeCount(); ++i) {
-        const Attribute* attribute = attributeItem(i);
-        paramNames.append(attribute->localName().string());
-        paramValues.append(attribute->value().string());
+    AttributeCollection attributes = this->attributes();
+    AttributeCollection::const_iterator end = attributes.end();
+    for (AttributeCollection::const_iterator it = attributes.begin(); it != end; ++it) {
+        paramNames.append(it->localName().string());
+        paramValues.append(it->value().string());
     }
 }
 
@@ -143,21 +144,12 @@ void HTMLEmbedElement::updateWidgetInternal()
     Vector<String> paramValues;
     parametersForPlugin(paramNames, paramValues);
 
-    RefPtr<HTMLEmbedElement> protect(this); // Loading the plugin might remove us from the document.
-    bool beforeLoadAllowedLoad = dispatchBeforeLoadEvent(m_url);
-    if (!beforeLoadAllowedLoad) {
-        if (document().isPluginDocument()) {
-            // Plugins inside plugin documents load differently than other plugins. By the time
-            // we are here in a plugin document, the load of the plugin (which is the plugin document's
-            // main resource) has already started. We need to explicitly cancel the main resource load here.
-            toPluginDocument(document()).cancelManualPluginLoad();
-        }
-        return;
-    }
-    if (!renderer()) // Do not load the plugin if beforeload removed this element or its renderer.
+    RefPtrWillBeRawPtr<HTMLEmbedElement> protect(this); // Loading the plugin might remove us from the document.
+
+    // FIXME: Can we not have renderer here now that beforeload events are gone?
+    if (!renderer())
         return;
 
-    // FIXME: beforeLoad could have detached the renderer!  Just like in the <object> case above.
     requestObject(m_url, m_serviceType, paramNames, paramValues);
 }
 
@@ -166,14 +158,14 @@ bool HTMLEmbedElement::rendererIsNeeded(const RenderStyle& style)
     if (isImageType())
         return HTMLPlugInElement::rendererIsNeeded(style);
 
-    Frame* frame = document().frame();
+    LocalFrame* frame = document().frame();
     if (!frame)
         return false;
 
     // If my parent is an <object> and is not set to use fallback content, I
     // should be ignored and not get a renderer.
     ContainerNode* p = parentNode();
-    if (p && p->hasTagName(objectTag)) {
+    if (isHTMLObjectElement(p)) {
         ASSERT(p->renderer());
         if (!toHTMLObjectElement(p)->useFallbackContent()) {
             ASSERT(!p->renderer()->isEmbeddedObject());
@@ -188,16 +180,14 @@ bool HTMLEmbedElement::isURLAttribute(const Attribute& attribute) const
     return attribute.name() == srcAttr || HTMLPlugInElement::isURLAttribute(attribute);
 }
 
+const QualifiedName& HTMLEmbedElement::subResourceAttributeName() const
+{
+    return srcAttr;
+}
+
 const AtomicString HTMLEmbedElement::imageSourceURL() const
 {
     return getAttribute(srcAttr);
-}
-
-void HTMLEmbedElement::addSubresourceAttributeURLs(ListHashSet<KURL>& urls) const
-{
-    HTMLPlugInElement::addSubresourceAttributeURLs(urls);
-
-    addSubresourceURL(urls, document().completeURL(getAttribute(srcAttr)));
 }
 
 bool HTMLEmbedElement::isInteractiveContent() const
@@ -208,8 +198,8 @@ bool HTMLEmbedElement::isInteractiveContent() const
 bool HTMLEmbedElement::isExposed() const
 {
     // http://www.whatwg.org/specs/web-apps/current-work/#exposed
-    for (Node* ancestor = parentNode(); ancestor; ancestor = ancestor->parentNode()) {
-        if (ancestor->hasTagName(objectTag) && toHTMLObjectElement(ancestor)->isExposed())
+    for (HTMLObjectElement* object = Traversal<HTMLObjectElement>::firstAncestor(*this); object; object = Traversal<HTMLObjectElement>::firstAncestor(*object)) {
+        if (object->isExposed())
             return false;
     }
     return true;

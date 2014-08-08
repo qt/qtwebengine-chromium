@@ -12,6 +12,8 @@
 
 #if defined(OS_MACOSX)
 #include "base/mac/mac_util.h"
+#elif defined(OS_WIN)
+#include "base/win/windows_version.h"
 #endif
 
 namespace gpu {
@@ -35,7 +37,7 @@ GPUTestConfig::OS GetCurrentOS() {
     return GPUTestConfig::kOsWinVista;
   if (major_version == 6 && minor_version == 1)
     return GPUTestConfig::kOsWin7;
-  if (major_version == 6 && minor_version == 2)
+  if (major_version == 6 && (minor_version == 2 || minor_version == 3))
     return GPUTestConfig::kOsWin8;
 #elif defined(OS_MACOSX)
   int32 major_version = 0;
@@ -53,6 +55,8 @@ GPUTestConfig::OS GetCurrentOS() {
         return GPUTestConfig::kOsMacLion;
       case 8:
         return GPUTestConfig::kOsMacMountainLion;
+      case 9:
+        return GPUTestConfig::kOsMacMavericks;
     }
   }
 #elif defined(OS_ANDROID)
@@ -167,6 +171,7 @@ bool GPUTestBotConfig::IsValid() const {
     case kOsMacSnowLeopard:
     case kOsMacLion:
     case kOsMacMountainLion:
+    case kOsMacMavericks:
     case kOsLinux:
     case kOsChromeOS:
     case kOsAndroid:
@@ -232,6 +237,7 @@ bool GPUTestBotConfig::LoadCurrentConfig(const GPUInfo* gpu_info) {
     result = CollectGpuID(&my_gpu_info.gpu.vendor_id,
                           &my_gpu_info.gpu.device_id);
     if (result == kGpuIDNotSupported) {
+      LOG(ERROR) << "Fail to identify GPU";
       DisableGPUInfoValidation();
       rt = true;
     } else {
@@ -241,8 +247,10 @@ bool GPUTestBotConfig::LoadCurrentConfig(const GPUInfo* gpu_info) {
     rt = SetGPUInfo(*gpu_info);
   }
   set_os(GetCurrentOS());
-  if (os() == kOsUnknown)
+  if (os() == kOsUnknown) {
+    LOG(ERROR) << "Unknown OS";
     rt = false;
+  }
 #if defined(NDEBUG)
   set_build_type(kBuildTypeRelease);
 #else
@@ -279,8 +287,12 @@ bool GPUTestBotConfig::GpuBlacklistedOnBot() {
   if (CurrentConfigMatches("MAC VMWARE") && base::mac::IsOSLionOrEarlier()) {
     return true;
   }
+#elif defined(OS_WIN)
+  // Blacklist rule #79 disables all Gpu acceleration before Windows 7.
+  if (base::win::GetVersion() <= base::win::VERSION_VISTA) {
+    return true;
+  }
 #endif
-  // TODO(ccameron): This should be true on Windows XP as well.
   return false;
 }
 

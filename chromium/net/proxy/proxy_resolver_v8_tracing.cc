@@ -973,7 +973,12 @@ HostResolver::RequestInfo ProxyResolverV8Tracing::Job::MakeDnsRequestInfo(
   }
 
   HostResolver::RequestInfo info(host_port);
-
+  // Flag myIpAddress requests.
+  if (op == MY_IP_ADDRESS || op == MY_IP_ADDRESS_EX) {
+    // TODO: Provide a RequestInfo construction mechanism that does not
+    // require a hostname and sets is_my_ip_address to true instead of this.
+    info.set_is_my_ip_address(true);
+  }
   // The non-ex flavors are limited to IPv4 results.
   if (op == MY_IP_ADDRESS || op == DNS_RESOLVE) {
     info.set_address_family(ADDRESS_FAMILY_IPV4);
@@ -1150,15 +1155,6 @@ void ProxyResolverV8Tracing::CancelSetPacScript() {
   DCHECK(set_pac_script_job_.get());
   set_pac_script_job_->Cancel();
   set_pac_script_job_ = NULL;
-}
-
-void ProxyResolverV8Tracing::PurgeMemory() {
-  thread_->message_loop()->PostTask(
-      FROM_HERE,
-      base::Bind(&ProxyResolverV8::PurgeMemory,
-                 // The use of unretained is safe, since the worker thread
-                 // cannot outlive |this|.
-                 base::Unretained(v8_resolver_.get())));
 }
 
 int ProxyResolverV8Tracing::SetPacScript(

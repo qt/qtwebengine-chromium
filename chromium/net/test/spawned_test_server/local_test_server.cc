@@ -22,7 +22,7 @@ namespace {
 
 bool AppendArgumentFromJSONValue(const std::string& key,
                                  const base::Value& value_node,
-                                 CommandLine* command_line) {
+                                 base::CommandLine* command_line) {
   std::string argument_name = "--" + key;
   switch (value_node.GetType()) {
     case base::Value::TYPE_NULL:
@@ -35,7 +35,7 @@ bool AppendArgumentFromJSONValue(const std::string& key,
       command_line->AppendArg(argument_name + "=" + base::IntToString(value));
       break;
     }
-    case Value::TYPE_STRING: {
+    case base::Value::TYPE_STRING: {
       std::string value;
       bool result = value_node.GetAsString(&value);
       if (!result || value.empty())
@@ -198,7 +198,8 @@ bool LocalTestServer::SetPythonPath() const {
   return true;
 }
 
-bool LocalTestServer::AddCommandLineArguments(CommandLine* command_line) const {
+bool LocalTestServer::AddCommandLineArguments(
+    base::CommandLine* command_line) const {
   base::DictionaryValue arguments_dict;
   if (!GenerateArguments(&arguments_dict))
     return false;
@@ -210,7 +211,7 @@ bool LocalTestServer::AddCommandLineArguments(CommandLine* command_line) const {
     const std::string& key = it.key();
 
     // Add arguments from a list.
-    if (value.IsType(Value::TYPE_LIST)) {
+    if (value.IsType(base::Value::TYPE_LIST)) {
       const base::ListValue* list = NULL;
       if (!value.GetAsList(&list) || !list || list->empty())
         return false;

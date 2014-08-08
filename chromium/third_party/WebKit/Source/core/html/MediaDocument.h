@@ -32,15 +32,15 @@ namespace WebCore {
 
 class MediaDocument FINAL : public HTMLDocument {
 public:
-    static PassRefPtr<MediaDocument> create(const DocumentInit& initializer = DocumentInit())
+    static PassRefPtrWillBeRawPtr<MediaDocument> create(const DocumentInit& initializer = DocumentInit())
     {
-        return adoptRef(new MediaDocument(initializer));
+        return adoptRefWillBeNoop(new MediaDocument(initializer));
     }
 
 private:
     MediaDocument(const DocumentInit&);
 
-    virtual PassRefPtr<DocumentParser> createParser() OVERRIDE;
+    virtual PassRefPtrWillBeRawPtr<DocumentParser> createParser() OVERRIDE;
 
     virtual void defaultEventHandler(Event*) OVERRIDE;
 };

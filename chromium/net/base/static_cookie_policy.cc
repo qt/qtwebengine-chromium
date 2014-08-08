@@ -16,7 +16,6 @@ int StaticCookiePolicy::CanGetCookies(
     const GURL& first_party_for_cookies) const {
   switch (type_) {
     case StaticCookiePolicy::ALLOW_ALL_COOKIES:
-    case StaticCookiePolicy::BLOCK_SETTING_THIRD_PARTY_COOKIES:
       return OK;
     case StaticCookiePolicy::BLOCK_ALL_THIRD_PARTY_COOKIES:
       if (first_party_for_cookies.is_empty())
@@ -24,7 +23,7 @@ int StaticCookiePolicy::CanGetCookies(
       return registry_controlled_domains::SameDomainOrHost(
           url,
           first_party_for_cookies,
-          registry_controlled_domains::EXCLUDE_PRIVATE_REGISTRIES) ?
+          registry_controlled_domains::INCLUDE_PRIVATE_REGISTRIES) ?
               OK : ERR_ACCESS_DENIED;
     case StaticCookiePolicy::BLOCK_ALL_COOKIES:
       return ERR_ACCESS_DENIED;
@@ -40,14 +39,13 @@ int StaticCookiePolicy::CanSetCookie(
   switch (type_) {
     case StaticCookiePolicy::ALLOW_ALL_COOKIES:
       return OK;
-    case StaticCookiePolicy::BLOCK_SETTING_THIRD_PARTY_COOKIES:
     case StaticCookiePolicy::BLOCK_ALL_THIRD_PARTY_COOKIES:
       if (first_party_for_cookies.is_empty())
         return OK;  // Empty first-party URL indicates a first-party request.
       return registry_controlled_domains::SameDomainOrHost(
           url,
           first_party_for_cookies,
-          registry_controlled_domains::EXCLUDE_PRIVATE_REGISTRIES) ?
+          registry_controlled_domains::INCLUDE_PRIVATE_REGISTRIES) ?
               OK : ERR_ACCESS_DENIED;
     case StaticCookiePolicy::BLOCK_ALL_COOKIES:
       return ERR_ACCESS_DENIED;

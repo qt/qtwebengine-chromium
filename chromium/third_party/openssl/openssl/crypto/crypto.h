@@ -420,7 +420,7 @@ void CRYPTO_set_NEON_capable(int on);
 
 /* CRYPTO_is_NEON_capable returns the last value given to
  * CRYPTO_set_NEON_capable, or else zero if it has never been called. */
-int CRYPTO_is_NEON_capable();
+int CRYPTO_is_NEON_capable(void);
 
 int CRYPTO_num_locks(void); /* return CRYPTO_NUM_LOCKS (shared libs!) */
 void CRYPTO_lock(int mode, int type,const char *file,int line);

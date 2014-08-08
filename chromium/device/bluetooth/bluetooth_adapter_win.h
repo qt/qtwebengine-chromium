@@ -18,45 +18,53 @@
 #include "device/bluetooth/bluetooth_task_manager_win.h"
 
 namespace base {
-
 class SequencedTaskRunner;
-
+class Thread;
 }  // namespace base
 
 namespace device {
 
-class BluetoothAdapterFactory;
 class BluetoothAdapterWinTest;
 class BluetoothDevice;
+class BluetoothSocketThread;
 
 class BluetoothAdapterWin : public BluetoothAdapter,
                             public BluetoothTaskManagerWin::Observer {
  public:
-  typedef base::Callback<void()> InitCallback;
+  static base::WeakPtr<BluetoothAdapter> CreateAdapter(
+      const InitCallback& init_callback);
 
-  // BluetoothAdapter override
+  // BluetoothAdapter:
   virtual void AddObserver(BluetoothAdapter::Observer* observer) OVERRIDE;
   virtual void RemoveObserver(BluetoothAdapter::Observer* observer) OVERRIDE;
   virtual std::string GetAddress() const OVERRIDE;
   virtual std::string GetName() const OVERRIDE;
+  virtual void SetName(const std::string& name,
+                       const base::Closure& callback,
+                       const ErrorCallback& error_callback) OVERRIDE;
   virtual bool IsInitialized() const OVERRIDE;
   virtual bool IsPresent() const OVERRIDE;
   virtual bool IsPowered() const OVERRIDE;
   virtual void SetPowered(
-      bool powered,
+      bool discoverable,
+      const base::Closure& callback,
+      const ErrorCallback& error_callback) OVERRIDE;
+  virtual bool IsDiscoverable() const OVERRIDE;
+  virtual void SetDiscoverable(
+      bool discoverable,
       const base::Closure& callback,
       const ErrorCallback& error_callback) OVERRIDE;
   virtual bool IsDiscovering() const OVERRIDE;
-
-  virtual void StartDiscovering(
-      const base::Closure& callback,
-      const ErrorCallback& error_callback) OVERRIDE;
-  virtual void StopDiscovering(
-      const base::Closure& callback,
-      const ErrorCallback& error_callback) OVERRIDE;
-  virtual void ReadLocalOutOfBandPairingData(
-      const BluetoothOutOfBandPairingDataCallback& callback,
-      const ErrorCallback& error_callback) OVERRIDE;
+  virtual void CreateRfcommService(
+      const BluetoothUUID& uuid,
+      int channel,
+      const CreateServiceCallback& callback,
+      const CreateServiceErrorCallback& error_callback) OVERRIDE;
+  virtual void CreateL2capService(
+      const BluetoothUUID& uuid,
+      int psm,
+      const CreateServiceCallback& callback,
+      const CreateServiceErrorCallback& error_callback) OVERRIDE;
 
   // BluetoothTaskManagerWin::Observer override
   virtual void AdapterStateChanged(
@@ -71,8 +79,19 @@ class BluetoothAdapterWin : public BluetoothAdapter,
       const ScopedVector<BluetoothTaskManagerWin::DeviceState>& devices)
           OVERRIDE;
 
+  const scoped_refptr<base::SequencedTaskRunner>& ui_task_runner() const {
+    return ui_task_runner_;
+  }
+  const scoped_refptr<BluetoothSocketThread>& socket_thread() const {
+    return socket_thread_;
+  }
+
+ protected:
+  // BluetoothAdapter:
+  virtual void RemovePairingDelegateInternal(
+      device::BluetoothDevice::PairingDelegate* pairing_delegate) OVERRIDE;
+
  private:
-  friend class BluetoothAdapterFactory;
   friend class BluetoothAdapterWinTest;
 
   enum DiscoveryStatus {
@@ -84,6 +103,14 @@ class BluetoothAdapterWin : public BluetoothAdapter,
 
   explicit BluetoothAdapterWin(const InitCallback& init_callback);
   virtual ~BluetoothAdapterWin();
+
+  // BluetoothAdapter:
+  virtual void AddDiscoverySession(
+      const base::Closure& callback,
+      const ErrorCallback& error_callback) OVERRIDE;
+  virtual void RemoveDiscoverySession(
+      const base::Closure& callback,
+      const ErrorCallback& error_callback) OVERRIDE;
 
   void Init();
   void InitForTest(
@@ -107,6 +134,7 @@ class BluetoothAdapterWin : public BluetoothAdapter,
   size_t num_discovery_listeners_;
 
   scoped_refptr<base::SequencedTaskRunner> ui_task_runner_;
+  scoped_refptr<BluetoothSocketThread> socket_thread_;
   scoped_refptr<BluetoothTaskManagerWin> task_manager_;
 
   base::ThreadChecker thread_checker_;

@@ -6,16 +6,15 @@
 #define MEDIA_BASE_ANDROID_MEDIA_DRM_BRIDGE_H_
 
 #include <jni.h>
-#include <map>
-#include <queue>
 #include <string>
 #include <vector>
 
 #include "base/android/scoped_java_ref.h"
 #include "base/callback.h"
 #include "base/memory/scoped_ptr.h"
+#include "media/base/browser_cdm.h"
 #include "media/base/media_export.h"
-#include "media/base/media_keys.h"
+#include "media/cdm/player_tracker_impl.h"
 #include "url/gurl.h"
 
 class GURL;
@@ -26,7 +25,7 @@ class MediaPlayerManager;
 
 // This class provides DRM services for android EME implementation.
 // TODO(qinmin): implement all the functions in this class.
-class MEDIA_EXPORT MediaDrmBridge : public MediaKeys {
+class MEDIA_EXPORT MediaDrmBridge : public BrowserCdm {
  public:
   enum SecurityLevel {
     SECURITY_LEVEL_NONE = 0,
@@ -38,37 +37,70 @@ class MEDIA_EXPORT MediaDrmBridge : public MediaKeys {
 
   virtual ~MediaDrmBridge();
 
-  // Returns a MediaDrmBridge instance if |scheme_uuid| is supported, or a NULL
-  // pointer otherwise.
-  static scoped_ptr<MediaDrmBridge> Create(
-      int media_keys_id,
-      const std::vector<uint8>& scheme_uuid,
-      const GURL& frame_url,
-      const std::string& security_level,
-      MediaPlayerManager* manager);
-
   // Checks whether MediaDRM is available.
+  // All other static methods check IsAvailable() internally. There's no need
+  // to check IsAvailable() explicitly before calling them.
   static bool IsAvailable();
 
-  static bool IsSecurityLevelSupported(const std::vector<uint8>& scheme_uuid,
-                                       const std::string& security_level);
+  static bool IsSecurityLevelSupported(const std::string& key_system,
+                                       SecurityLevel security_level);
 
-  static bool IsCryptoSchemeSupported(const std::vector<uint8>& scheme_uuid,
-                                      const std::string& container_mime_type);
+  // Checks whether |key_system| is supported.
+  static bool IsKeySystemSupported(const std::string& key_system);
 
-  static bool IsSecureDecoderRequired(const std::string& security_level_str);
+  // Returns the list of the platform-supported key system names that
+  // are not handled by Chrome explicitly.
+  static std::vector<std::string> GetPlatformKeySystemNames();
+
+  // Checks whether |key_system| is supported with |container_mime_type|.
+  // |container_mime_type| must not be empty.
+  static bool IsKeySystemSupportedWithType(
+      const std::string& key_system,
+      const std::string& container_mime_type);
+
+  static bool IsSecureDecoderRequired(SecurityLevel security_level);
 
   static bool RegisterMediaDrmBridge(JNIEnv* env);
 
-  // MediaKeys implementations.
+  // Returns a MediaDrmBridge instance if |key_system| is supported, or a NULL
+  // pointer otherwise.
+  static scoped_ptr<MediaDrmBridge> Create(
+      const std::string& key_system,
+      const SessionCreatedCB& session_created_cb,
+      const SessionMessageCB& session_message_cb,
+      const SessionReadyCB& session_ready_cb,
+      const SessionClosedCB& session_closed_cb,
+      const SessionErrorCB& session_error_cb);
+
+  // Returns a MediaDrmBridge instance if |key_system| is supported, or a NULL
+  // otherwise. No session callbacks are provided. This is used when we need to
+  // use MediaDrmBridge without creating any sessions.
+  static scoped_ptr<MediaDrmBridge> CreateSessionless(
+      const std::string& key_system);
+
+  // Returns true if |security_level| is successfully set, or false otherwise.
+  // Call this function right after Create() and before any other calls.
+  // Note:
+  // - If this function is not called, the default security level of the device
+  //   will be used.
+  // - It's recommended to call this function only once on a MediaDrmBridge
+  //   object. Calling this function multiples times may cause errors.
+  bool SetSecurityLevel(SecurityLevel security_level);
+
+  // BrowserCdm implementations.
   virtual bool CreateSession(uint32 session_id,
-                             const std::string& type,
+                             const std::string& content_type,
                              const uint8* init_data,
                              int init_data_length) OVERRIDE;
+  virtual void LoadSession(uint32 session_id,
+                           const std::string& web_session_id) OVERRIDE;
   virtual void UpdateSession(uint32 session_id,
                              const uint8* response,
                              int response_length) OVERRIDE;
   virtual void ReleaseSession(uint32 session_id) OVERRIDE;
+  virtual int RegisterPlayer(const base::Closure& new_key_cb,
+                             const base::Closure& cdm_unset_cb) OVERRIDE;
+  virtual void UnregisterPlayer(int registration_id) OVERRIDE;
 
   // Returns a MediaCrypto object if it's already created. Returns a null object
   // otherwise.
@@ -105,40 +137,35 @@ class MEDIA_EXPORT MediaDrmBridge : public MediaKeys {
   // video playback.
   bool IsProtectedSurfaceRequired();
 
-  int media_keys_id() const { return media_keys_id_; }
-
-  GURL frame_url() const { return frame_url_; }
-
  private:
-  static bool IsSecureDecoderRequired(SecurityLevel security_level);
-
-  MediaDrmBridge(int media_keys_id,
-                 const std::vector<uint8>& scheme_uuid,
-                 const GURL& frame_url,
-                 const std::string& security_level,
-                 MediaPlayerManager* manager);
+  MediaDrmBridge(const std::vector<uint8>& scheme_uuid,
+                 const SessionCreatedCB& session_created_cb,
+                 const SessionMessageCB& session_message_cb,
+                 const SessionReadyCB& session_ready_cb,
+                 const SessionClosedCB& session_closed_cb,
+                 const SessionErrorCB& session_error_cb);
 
   // Get the security level of the media.
   SecurityLevel GetSecurityLevel();
 
-  // ID of the MediaKeys object.
-  int media_keys_id_;
-
   // UUID of the key system.
   std::vector<uint8> scheme_uuid_;
-
-  // media stream's frame URL.
-  const GURL frame_url_;
 
   // Java MediaDrm instance.
   base::android::ScopedJavaGlobalRef<jobject> j_media_drm_;
 
-  // Non-owned pointer.
-  MediaPlayerManager* manager_;
+  // Callbacks for firing session events.
+  SessionCreatedCB session_created_cb_;
+  SessionMessageCB session_message_cb_;
+  SessionReadyCB session_ready_cb_;
+  SessionClosedCB session_closed_cb_;
+  SessionErrorCB session_error_cb_;
 
   base::Closure media_crypto_ready_cb_;
 
   ResetCredentialsCB reset_credentials_cb_;
+
+  PlayerTrackerImpl player_tracker_;
 
   DISALLOW_COPY_AND_ASSIGN(MediaDrmBridge);
 };

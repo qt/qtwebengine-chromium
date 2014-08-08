@@ -21,7 +21,7 @@
 #ifndef SVGFEGaussianBlurElement_h
 #define SVGFEGaussianBlurElement_h
 
-#include "core/svg/SVGAnimatedNumber.h"
+#include "core/svg/SVGAnimatedNumberOptionalNumber.h"
 #include "core/svg/SVGFilterPrimitiveStandardAttributes.h"
 #include "platform/graphics/filters/FEGaussianBlur.h"
 
@@ -29,26 +29,24 @@ namespace WebCore {
 
 class SVGFEGaussianBlurElement FINAL : public SVGFilterPrimitiveStandardAttributes {
 public:
-    static PassRefPtr<SVGFEGaussianBlurElement> create(Document&);
+    DECLARE_NODE_FACTORY(SVGFEGaussianBlurElement);
 
     void setStdDeviation(float stdDeviationX, float stdDeviationY);
+
+    SVGAnimatedNumber* stdDeviationX() { return m_stdDeviation->firstNumber(); }
+    SVGAnimatedNumber* stdDeviationY() { return m_stdDeviation->secondNumber(); }
+    SVGAnimatedString* in1() { return m_in1.get(); }
 
 private:
     explicit SVGFEGaussianBlurElement(Document&);
 
     bool isSupportedAttribute(const QualifiedName&);
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual void svgAttributeChanged(const QualifiedName&);
-    virtual PassRefPtr<FilterEffect> build(SVGFilterBuilder*, Filter*);
+    virtual void svgAttributeChanged(const QualifiedName&) OVERRIDE;
+    virtual PassRefPtr<FilterEffect> build(SVGFilterBuilder*, Filter*) OVERRIDE;
 
-    static const AtomicString& stdDeviationXIdentifier();
-    static const AtomicString& stdDeviationYIdentifier();
-
-    BEGIN_DECLARE_ANIMATED_PROPERTIES(SVGFEGaussianBlurElement)
-        DECLARE_ANIMATED_STRING(In1, in1)
-        DECLARE_ANIMATED_NUMBER(StdDeviationX, stdDeviationX)
-        DECLARE_ANIMATED_NUMBER(StdDeviationY, stdDeviationY)
-    END_DECLARE_ANIMATED_PROPERTIES
+    RefPtr<SVGAnimatedNumberOptionalNumber> m_stdDeviation;
+    RefPtr<SVGAnimatedString> m_in1;
 };
 
 } // namespace WebCore

@@ -117,20 +117,18 @@ test("rebaselineQueue", 3, function() {
     deepEqual(queue, []);
 });
 
-test("updateRecentCommits", 2, function() {
+asyncTest("updateRecentCommits", 2, function() {
     var simulator = new NetworkSimulator();
 
-    simulator.get = function(url, callback)
+    simulator.xml = function(url)
     {
-        simulator.scheduleCallback(function() {
-            var parser = new DOMParser();
-            var responseDOM = parser.parseFromString(kExampleCommitDataXML, "application/xml");
-            callback(responseDOM);
-        });
+        var parser = new DOMParser();
+        var responseDOM = parser.parseFromString(kExampleCommitDataXML, "application/xml");
+        return Promise.resolve(responseDOM);
     };
 
     simulator.runTest(function() {
-        model.updateRecentCommits(function() {
+        model.updateRecentCommits().then(function() {
             var recentCommits = model.state.recentCommits;
             delete model.state.recentCommits;
             $.each(recentCommits, function(index, commitData) {
@@ -138,66 +136,64 @@ test("updateRecentCommits", 2, function() {
             });
             deepEqual(recentCommits, [{
                 "revision": 3,
-                "title": "This matches Gecko's behavior for these types of properties.",
+                "title": "Throw SecurityError when setting 'Replaceable' properties cross-origin.",
                 "time": "2013-09-30T20:22:01Z",
                 "summary": "This matches Gecko's behavior for these types of properties.",
                 "author": "mkwst@chromium.org",
-                "reviewer": "jochen@chromium",
-                "bugID": 13,
+                "reviewer": "jochen@chromium.org",
+                "bugID": [13],
                 "revertedRevision": undefined,
               },
               {
                 "revision": 2,
-                "title": "core/platform may not depend on core/ even for testing.",
+                "title": "Fix one more layering violation caught by check-blink-deps",
                 "time": "2013-09-30T19:36:21Z",
                 "summary": "core/platform may not depend on core/ even for testing.",
                 "author": "eseidel@chromium.org",
-                "reviewer": "abarth@chromium",
-                "bugID": 12,
+                "reviewer": "abarth@chromium.org, abarth",
+                "bugID": [12],
                 "revertedRevision": undefined
               },
               {
                 "revision": 1,
-                "title": "These were all failures noticed when running check-blink-deps",
+                "title": "Update DEPS include_rules after addition of root-level platform directory",
                 "time": "2013-09-30T19:28:49Z",
                 "summary": "These were all failures noticed when running check-blink-deps",
                 "author": "eseidel@chromium.org",
-                "reviewer": "abarth@chromium",
-                "bugID": 11,
+                "reviewer": "abarth@chromium.org, abarth",
+                "bugID": [11],
                 "revertedRevision": undefined
               }
             ]);
         });
-    });
+    }).then(start);
 });
 
-test("commitDataListForRevisionRange", 6, function() {
+asyncTest("commitDataListForRevisionRange", 6, function() {
     var simulator = new NetworkSimulator();
 
-    simulator.get = function(url, callback)
+    simulator.xml = function(url)
     {
-        simulator.scheduleCallback(function() {
-            var parser = new DOMParser();
-            var responseDOM = parser.parseFromString(kExampleCommitDataXML, "application/xml");
-            callback(responseDOM);
-        });
+        var parser = new DOMParser();
+        var responseDOM = parser.parseFromString(kExampleCommitDataXML, "application/xml");
+        return Promise.resolve(responseDOM);
     };
 
     simulator.runTest(function() {
-        model.updateRecentCommits(function() {
+        model.updateRecentCommits().then(function() {
             function extractBugIDs(commitData)
             {
                 return commitData.bugID;
             }
 
-            deepEqual(model.commitDataListForRevisionRange(3, 3).map(extractBugIDs), [13]);
-            deepEqual(model.commitDataListForRevisionRange(1, 3).map(extractBugIDs), [11, 12, 13]);
-            deepEqual(model.commitDataListForRevisionRange(0, 1).map(extractBugIDs), [11]);
-            deepEqual(model.commitDataListForRevisionRange(0, 4).map(extractBugIDs), [11, 12, 13]);
+            deepEqual(model.commitDataListForRevisionRange(3, 3).map(extractBugIDs), [[13]]);
+            deepEqual(model.commitDataListForRevisionRange(1, 3).map(extractBugIDs), [[11], [12], [13]]);
+            deepEqual(model.commitDataListForRevisionRange(0, 1).map(extractBugIDs), [[11]]);
+            deepEqual(model.commitDataListForRevisionRange(0, 4).map(extractBugIDs), [[11], [12], [13]]);
             deepEqual(model.commitDataListForRevisionRange(4, 0).map(extractBugIDs), []);
             delete model.state.recentCommits;
         });
-    });
+    }).then(start);
 });
 
 test("buildersInFlightForRevision", 3, function() {

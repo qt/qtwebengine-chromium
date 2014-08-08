@@ -12,9 +12,11 @@
 #include "SkCanvas.h"
 #include "SkColorMatrixFilter.h"
 #include "SkDevice.h"
-#include "SkFlattenableBuffers.h"
+#include "SkReadBuffer.h"
+#include "SkWriteBuffer.h"
 
-SkDropShadowImageFilter::SkDropShadowImageFilter(SkScalar dx, SkScalar dy, SkScalar sigma, SkColor color, SkImageFilter* input)
+SkDropShadowImageFilter::SkDropShadowImageFilter(SkScalar dx, SkScalar dy, SkScalar sigma,
+                                                 SkColor color, SkImageFilter* input)
     : INHERITED(input)
     , fDx(dx)
     , fDy(dy)
@@ -24,7 +26,9 @@ SkDropShadowImageFilter::SkDropShadowImageFilter(SkScalar dx, SkScalar dy, SkSca
 {
 }
 
-SkDropShadowImageFilter::SkDropShadowImageFilter(SkScalar dx, SkScalar dy, SkScalar sigmaX, SkScalar sigmaY, SkColor color, SkImageFilter* input, const CropRect* cropRect)
+SkDropShadowImageFilter::SkDropShadowImageFilter(SkScalar dx, SkScalar dy,
+                                                 SkScalar sigmaX, SkScalar sigmaY, SkColor color,
+                                                 SkImageFilter* input, const CropRect* cropRect)
     : INHERITED(input, cropRect)
     , fDx(dx)
     , fDy(dy)
@@ -34,7 +38,7 @@ SkDropShadowImageFilter::SkDropShadowImageFilter(SkScalar dx, SkScalar dy, SkSca
 {
 }
 
-SkDropShadowImageFilter::SkDropShadowImageFilter(SkFlattenableReadBuffer& buffer)
+SkDropShadowImageFilter::SkDropShadowImageFilter(SkReadBuffer& buffer)
  : INHERITED(1, buffer) {
     fDx = buffer.readScalar();
     fDy = buffer.readScalar();
@@ -47,7 +51,7 @@ SkDropShadowImageFilter::SkDropShadowImageFilter(SkFlattenableReadBuffer& buffer
                     SkScalarIsFinite(fSigmaY));
 }
 
-void SkDropShadowImageFilter::flatten(SkFlattenableWriteBuffer& buffer) const
+void SkDropShadowImageFilter::flatten(SkWriteBuffer& buffer) const
 {
     this->INHERITED::flatten(buffer);
     buffer.writeScalar(fDx);
@@ -57,15 +61,17 @@ void SkDropShadowImageFilter::flatten(SkFlattenableWriteBuffer& buffer) const
     buffer.writeColor(fColor);
 }
 
-bool SkDropShadowImageFilter::onFilterImage(Proxy* proxy, const SkBitmap& source, const SkMatrix& matrix, SkBitmap* result, SkIPoint* loc)
+bool SkDropShadowImageFilter::onFilterImage(Proxy* proxy, const SkBitmap& source,
+                                            const Context& ctx,
+                                            SkBitmap* result, SkIPoint* offset) const
 {
     SkBitmap src = source;
-    if (getInput(0) && !getInput(0)->filterImage(proxy, source, matrix, &src, loc))
+    SkIPoint srcOffset = SkIPoint::Make(0, 0);
+    if (getInput(0) && !getInput(0)->filterImage(proxy, source, ctx, &src, &srcOffset))
         return false;
 
     SkIRect bounds;
-    src.getBounds(&bounds);
-    if (!this->applyCropRect(&bounds, matrix)) {
+    if (!this->applyCropRect(ctx, src, srcOffset, &bounds)) {
         return false;
     }
 
@@ -75,17 +81,58 @@ bool SkDropShadowImageFilter::onFilterImage(Proxy* proxy, const SkBitmap& source
     }
     SkCanvas canvas(device.get());
 
-    SkAutoTUnref<SkImageFilter> blurFilter(new SkBlurImageFilter(fSigmaX, fSigmaY));
-    SkAutoTUnref<SkColorFilter> colorFilter(SkColorFilter::CreateModeFilter(fColor, SkXfermode::kSrcIn_Mode));
+    SkVector sigma = SkVector::Make(fSigmaX, fSigmaY);
+    ctx.ctm().mapVectors(&sigma, 1);
+    sigma.fX = SkMaxScalar(0, sigma.fX);
+    sigma.fY = SkMaxScalar(0, sigma.fY);
+    SkAutoTUnref<SkImageFilter> blurFilter(SkBlurImageFilter::Create(sigma.fX, sigma.fY));
+    SkAutoTUnref<SkColorFilter> colorFilter(
+        SkColorFilter::CreateModeFilter(fColor, SkXfermode::kSrcIn_Mode));
     SkPaint paint;
     paint.setImageFilter(blurFilter.get());
     paint.setColorFilter(colorFilter.get());
     paint.setXfermodeMode(SkXfermode::kSrcOver_Mode);
-    canvas.translate(-SkIntToScalar(bounds.fLeft), -SkIntToScalar(bounds.fTop));
-    canvas.drawBitmap(src, fDx, fDy, &paint);
+    SkVector offsetVec = SkVector::Make(fDx, fDy);
+    ctx.ctm().mapVectors(&offsetVec, 1);
+    canvas.translate(SkIntToScalar(srcOffset.fX - bounds.fLeft),
+                     SkIntToScalar(srcOffset.fY - bounds.fTop));
+    canvas.drawBitmap(src, offsetVec.fX, offsetVec.fY, &paint);
     canvas.drawBitmap(src, 0, 0);
     *result = device->accessBitmap(false);
-    loc->fX += bounds.fLeft;
-    loc->fY += bounds.fTop;
+    offset->fX = bounds.fLeft;
+    offset->fY = bounds.fTop;
+    return true;
+}
+
+void SkDropShadowImageFilter::computeFastBounds(const SkRect& src, SkRect* dst) const {
+    if (getInput(0)) {
+        getInput(0)->computeFastBounds(src, dst);
+    } else {
+        *dst = src;
+    }
+
+    SkRect shadowBounds = *dst;
+    shadowBounds.offset(fDx, fDy);
+    shadowBounds.outset(SkScalarMul(fSigmaX, SkIntToScalar(3)),
+                        SkScalarMul(fSigmaY, SkIntToScalar(3)));
+    dst->join(shadowBounds);
+}
+
+bool SkDropShadowImageFilter::onFilterBounds(const SkIRect& src, const SkMatrix& ctm,
+                                             SkIRect* dst) const {
+    SkIRect bounds = src;
+    if (getInput(0) && !getInput(0)->filterBounds(src, ctm, &bounds)) {
+        return false;
+    }
+    SkVector offsetVec = SkVector::Make(fDx, fDy);
+    ctm.mapVectors(&offsetVec, 1);
+    bounds.offset(-SkScalarCeilToInt(offsetVec.x()),
+                  -SkScalarCeilToInt(offsetVec.y()));
+    SkVector sigma = SkVector::Make(fSigmaX, fSigmaY);
+    ctm.mapVectors(&sigma, 1);
+    bounds.outset(SkScalarCeilToInt(SkScalarMul(sigma.x(), SkIntToScalar(3))),
+                  SkScalarCeilToInt(SkScalarMul(sigma.y(), SkIntToScalar(3))));
+    bounds.join(src);
+    *dst = bounds;
     return true;
 }

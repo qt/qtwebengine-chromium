@@ -25,8 +25,8 @@
 #include "config.h"
 #include "core/html/HTMLTableCaptionElement.h"
 
-#include "CSSPropertyNames.h"
-#include "HTMLNames.h"
+#include "core/CSSPropertyNames.h"
+#include "core/HTMLNames.h"
 
 namespace WebCore {
 
@@ -38,17 +38,7 @@ inline HTMLTableCaptionElement::HTMLTableCaptionElement(Document& document)
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLTableCaptionElement> HTMLTableCaptionElement::create(Document& document)
-{
-    return adoptRef(new HTMLTableCaptionElement(document));
-}
-
-bool HTMLTableCaptionElement::isPresentationAttribute(const QualifiedName& name) const
-{
-    if (name == alignAttr)
-        return true;
-    return HTMLElement::isPresentationAttribute(name);
-}
+DEFINE_NODE_FACTORY(HTMLTableCaptionElement)
 
 void HTMLTableCaptionElement::collectStyleForPresentationAttribute(const QualifiedName& name, const AtomicString& value, MutableStylePropertySet* style)
 {

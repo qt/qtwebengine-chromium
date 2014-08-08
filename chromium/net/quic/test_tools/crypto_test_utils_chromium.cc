@@ -22,14 +22,14 @@ class TestProofVerifierChromium : public ProofVerifierChromium {
  public:
   TestProofVerifierChromium(CertVerifier* cert_verifier,
                             const std::string& cert_file)
-      : ProofVerifierChromium(cert_verifier, BoundNetLog()),
+      : ProofVerifierChromium(cert_verifier),
         cert_verifier_(cert_verifier) {
     // Load and install the root for the validated chain.
     scoped_refptr<X509Certificate> root_cert =
         ImportCertFromFile(GetTestCertsDirectory(), cert_file);
     scoped_root_.Reset(root_cert.get());
   }
-  virtual ~TestProofVerifierChromium() { }
+  virtual ~TestProofVerifierChromium() {}
 
  private:
   ScopedTestRoot scoped_root_;
@@ -46,6 +46,11 @@ ProofVerifier* CryptoTestUtils::ProofVerifierForTesting() {
   TestProofVerifierChromium* proof_verifier = new TestProofVerifierChromium(
       CertVerifier::CreateDefault(), "quic_root.crt");
   return proof_verifier;
+}
+
+// static
+ProofVerifyContext* CryptoTestUtils::ProofVerifyContextForTesting() {
+  return new ProofVerifyContextChromium(BoundNetLog());
 }
 
 }  // namespace test

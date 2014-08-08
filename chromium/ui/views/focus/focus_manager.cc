@@ -11,6 +11,10 @@
 #include "base/logging.h"
 #include "build/build_config.h"
 #include "ui/base/accelerators/accelerator.h"
+#include "ui/base/ime/input_method.h"
+#include "ui/base/ime/text_input_client.h"
+#include "ui/base/ime/text_input_focus_manager.h"
+#include "ui/base/ui_base_switches_util.h"
 #include "ui/events/event.h"
 #include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/views/focus/focus_manager_delegate.h"
@@ -64,6 +68,7 @@ bool FocusManager::OnKeyEvent(const ui::KeyEvent& event) {
     modifiers |= ui::EF_ALT_DOWN;
   ui::Accelerator accelerator(event.key_code(), modifiers);
   accelerator.set_type(event.type());
+  accelerator.set_is_repeat(event.IsRepeat());
 
   if (event.type() == ui::ET_KEY_PRESSED) {
     // If the focused view wants to process the key event as is, let it be.
@@ -75,20 +80,10 @@ bool FocusManager::OnKeyEvent(const ui::KeyEvent& event) {
     // Note that we don't do focus traversal if the root window is not part of
     // the active window hierarchy as this would mean we have no focused view
     // and would focus the first focusable view.
-#if defined(OS_WIN) && !defined(USE_AURA)
-    HWND top_window = widget_->GetNativeView();
-    HWND active_window = ::GetActiveWindow();
-    if ((active_window == top_window || ::IsChild(active_window, top_window)) &&
-        IsTabTraversalKeyEvent(event)) {
-      AdvanceFocus(event.IsShiftDown());
-      return false;
-    }
-#else
     if (IsTabTraversalKeyEvent(event)) {
       AdvanceFocus(event.IsShiftDown());
       return false;
     }
-#endif
 
     if (arrow_key_traversal_enabled_ && ProcessArrowKeyTraversal(event))
       return false;
@@ -319,8 +314,13 @@ View* FocusManager::GetNextFocusableView(View* original_starting_view,
 
 void FocusManager::SetFocusedViewWithReason(
     View* view, FocusChangeReason reason) {
-  if (focused_view_ == view)
+  if (focused_view_ == view) {
+    // In the case that the widget lost the focus and gained it back without
+    // changing the focused view, we have to make the text input client focused.
+    // TODO(yukishiino): Remove this hack once we fix http://crbug.com/383236
+    FocusTextInputClient(focused_view_);
     return;
+  }
 
   base::AutoReset<bool> auto_changing_focus(&is_changing_focus_, true);
   // Update the reason for the focus change (since this is checked by
@@ -331,14 +331,18 @@ void FocusManager::SetFocusedViewWithReason(
 
   View* old_focused_view = focused_view_;
   focused_view_ = view;
-  if (old_focused_view)
+  if (old_focused_view) {
     old_focused_view->Blur();
+    BlurTextInputClient(old_focused_view);
+  }
   // Also make |focused_view_| the stored focus view. This way the stored focus
   // view is remembered if focus changes are requested prior to a show or while
   // hidden.
   SetStoredFocusView(focused_view_);
-  if (focused_view_)
+  if (focused_view_) {
+    FocusTextInputClient(focused_view_);
     focused_view_->Focus();
+  }
 
   FOR_EACH_OBSERVER(FocusChangeListener, focus_change_listeners_,
                     OnDidChangeFocus(old_focused_view, focused_view_));
@@ -435,6 +439,46 @@ View* FocusManager::GetStoredFocusView() {
 
 void FocusManager::ClearStoredFocusedView() {
   SetStoredFocusView(NULL);
+}
+
+void FocusManager::OnTextInputClientChanged(View* view) {
+  if (view == focused_view_)
+    FocusTextInputClient(view);
+}
+
+void FocusManager::FocusTextInputClient(View* view) {
+  if (!switches::IsTextInputFocusManagerEnabled())
+    return;
+
+  // If the widget is not active, do not steal the text input focus.
+  if (!widget_->IsActive())
+    return;
+
+  ui::TextInputClient* text_input_client =
+      view ? view->GetTextInputClient() : NULL;
+  ui::TextInputFocusManager::GetInstance()->
+      FocusTextInputClient(text_input_client);
+  ui::InputMethod* input_method = widget_->GetHostInputMethod();
+  if (input_method) {
+    input_method->OnTextInputTypeChanged(text_input_client);
+    input_method->OnCaretBoundsChanged(text_input_client);
+  }
+}
+
+void FocusManager::BlurTextInputClient(View* view) {
+  if (!switches::IsTextInputFocusManagerEnabled())
+    return;
+
+  ui::TextInputClient* text_input_client =
+      view ? view->GetTextInputClient() : NULL;
+  if (text_input_client && text_input_client->HasCompositionText()) {
+    text_input_client->ConfirmCompositionText();
+    ui::InputMethod* input_method = widget_->GetHostInputMethod();
+    if (input_method && input_method->GetTextInputClient() == text_input_client)
+      input_method->CancelComposition(text_input_client);
+  }
+  ui::TextInputFocusManager::GetInstance()->
+      BlurTextInputClient(text_input_client);
 }
 
 // Find the next (previous if reverse is true) focusable view for the specified

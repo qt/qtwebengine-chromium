@@ -32,8 +32,6 @@
 
 #include "core/animation/AnimatableValueTestHelper.h"
 
-
-
 namespace WebCore {
 
 bool operator==(const AnimatableValue& a, const AnimatableValue& b)
@@ -53,50 +51,9 @@ void PrintTo(const AnimatableColor& animColor, ::std::ostream* os)
         << animColor.visitedLinkColor().serialized().utf8().data() << ")";
 }
 
-void PrintTo(const AnimatableDouble& animDouble, ::std::ostream* os)
-{
-    PrintTo(*(animDouble.toCSSValue().get()), os, "AnimatableDouble");
-}
-
 void PrintTo(const AnimatableImage& animImage, ::std::ostream* os)
 {
-    PrintTo(*(animImage.toCSSValue().get()), os, "AnimatableImage");
-}
-
-void PrintTo(const AnimatableLength& animLength, ::std::ostream* os)
-{
-    PrintTo(*(animLength.toCSSValue().get()), os, "AnimatableLength");
-}
-
-void PrintTo(const AnimatableLengthBox& animLengthBox, ::std::ostream* os)
-{
-    *os << "AnimatableLengthBox(";
-    PrintTo(*(animLengthBox.left()), os);
-    *os << ", ";
-    PrintTo(*(animLengthBox.right()), os);
-    *os << ", ";
-    PrintTo(*(animLengthBox.top()), os);
-    *os << ", ";
-    PrintTo(*(animLengthBox.bottom()), os);
-    *os << ")";
-}
-
-void PrintTo(const AnimatableLengthPoint& animLengthPoint, ::std::ostream* os)
-{
-    *os << "AnimatableLengthPoint(";
-    PrintTo(*(animLengthPoint.x()), os);
-    *os << ", ";
-    PrintTo(*(animLengthPoint.y()), os);
-    *os << ")";
-}
-
-void PrintTo(const AnimatableLengthSize& animLengthSize, ::std::ostream* os)
-{
-    *os << "AnimatableLengthSize(";
-    PrintTo(*(animLengthSize.width()), os);
-    *os << ", ";
-    PrintTo(*(animLengthSize.height()), os);
-    *os << ")";
+    PrintTo(*(animImage.toCSSValue()), os, "AnimatableImage");
 }
 
 void PrintTo(const AnimatableNeutral& animValue, ::std::ostream* os)
@@ -108,8 +65,8 @@ void PrintTo(const AnimatableRepeatable& animValue, ::std::ostream* os)
 {
     *os << "AnimatableRepeatable(";
 
-    const Vector<RefPtr<AnimatableValue> > v = animValue.values();
-    for (Vector<RefPtr<AnimatableValue> >::const_iterator it = v.begin(); it != v.end(); ++it) {
+    const WillBeHeapVector<RefPtrWillBeMember<AnimatableValue> > v = animValue.values();
+    for (WillBeHeapVector<RefPtrWillBeMember<AnimatableValue> >::const_iterator it = v.begin(); it != v.end(); ++it) {
         PrintTo(*(it->get()), os);
         if (it+1 != v.end())
             *os << ", ";
@@ -120,19 +77,7 @@ void PrintTo(const AnimatableRepeatable& animValue, ::std::ostream* os)
 void PrintTo(const AnimatableSVGLength& animSVGLength, ::std::ostream* os)
 {
     *os << "AnimatableSVGLength("
-        << animSVGLength.toSVGLength().valueAsString().utf8().data() << ")";
-}
-
-void PrintTo(const AnimatableSVGPaint& animSVGPaint, ::std::ostream* os)
-{
-    *os << "AnimatableSVGPaint(";
-    if (animSVGPaint.paintType() == SVGPaint::SVG_PAINTTYPE_RGBCOLOR)
-        *os << animSVGPaint.color().serialized().utf8().data();
-    else if (animSVGPaint.paintType() == SVGPaint::SVG_PAINTTYPE_URI)
-        *os << "url(" << animSVGPaint.uri().utf8().data() << ")";
-    else
-        *os << animSVGPaint.paintType();
-    *os << ")";
+        << animSVGLength.toSVGLength()->valueAsString().utf8().data() << ")";
 }
 
 void PrintTo(const AnimatableShapeValue& animValue, ::std::ostream* os)
@@ -143,10 +88,11 @@ void PrintTo(const AnimatableShapeValue& animValue, ::std::ostream* os)
 void PrintTo(const AnimatableStrokeDasharrayList& animValue, ::std::ostream* os)
 {
     *os << "AnimatableStrokeDasharrayList(";
-    const Vector<SVGLength> v = animValue.toSVGLengthVector();
-    for (Vector<SVGLength>::const_iterator it = v.begin(); it != v.end(); ++it) {
-        *os << it->valueAsString().utf8().data();
-        if (it+1 != v.end())
+    RefPtr<SVGLengthList> list = animValue.toSVGLengthList();
+    size_t length = list->length();
+    for (size_t i = 0; i < length; ++i) {
+        *os << list->at(i)->valueAsString().utf8().data();
+        if (i != length-1)
             *os << ", ";
     }
     *os << ")";
@@ -232,18 +178,8 @@ void PrintTo(const AnimatableValue& animValue, ::std::ostream* os)
         PrintTo(*(toAnimatableClipPathOperation(&animValue)), os);
     else if (animValue.isColor())
         PrintTo(*(toAnimatableColor(&animValue)), os);
-    else if (animValue.isDouble())
-        PrintTo(*(toAnimatableDouble(&animValue)), os);
     else if (animValue.isImage())
         PrintTo(*(toAnimatableImage(&animValue)), os);
-    else if (animValue.isLength())
-        PrintTo(*(toAnimatableLength(&animValue)), os);
-    else if (animValue.isLengthBox())
-        PrintTo(*(toAnimatableLengthBox(&animValue)), os);
-    else if (animValue.isLengthPoint())
-        PrintTo(*(toAnimatableLengthPoint(&animValue)), os);
-    else if (animValue.isLengthSize())
-        PrintTo(*(toAnimatableLengthSize(&animValue)), os);
     else if (animValue.isNeutral())
         PrintTo(*(static_cast<const AnimatableNeutral*>(&animValue)), os);
     else if (animValue.isRepeatable())

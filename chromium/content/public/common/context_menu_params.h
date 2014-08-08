@@ -88,9 +88,6 @@ struct CONTENT_EXPORT ContextMenuParams {
   // This is the URL of the subframe that the context menu was invoked on.
   GURL frame_url;
 
-  // This is the ID of the subframe that the context menu was invoked on.
-  int64 frame_id;
-
   // This is the page state of the frame on which the context menu was invoked.
   PageState frame_page_state;
 
@@ -114,9 +111,6 @@ struct CONTENT_EXPORT ContextMenuParams {
   // and populating dictionary_suggestions if the type is EDITABLE
   // and the misspelled_word is not empty.
   std::vector<base::string16> dictionary_suggestions;
-
-  // If editable, flag for whether node is speech-input enabled.
-  bool speech_input_enabled;
 
   // If editable, flag for whether spell check is enabled or not.
   bool spellcheck_enabled;

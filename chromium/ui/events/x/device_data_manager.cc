@@ -10,9 +10,13 @@
 
 #include "base/logging.h"
 #include "base/memory/singleton.h"
+#include "base/sys_info.h"
 #include "ui/events/event_constants.h"
+#include "ui/events/event_switches.h"
 #include "ui/events/x/device_list_cache_x.h"
 #include "ui/events/x/touch_factory_x11.h"
+#include "ui/gfx/display.h"
+#include "ui/gfx/point3_f.h"
 #include "ui/gfx/x/x11_types.h"
 
 // XIScrollClass was introduced in XI 2.1 so we need to define it here
@@ -110,8 +114,7 @@ DeviceDataManager* DeviceDataManager::GetInstance() {
 }
 
 DeviceDataManager::DeviceDataManager()
-    : natural_scroll_enabled_(false),
-      xi_opcode_(-1),
+    : xi_opcode_(-1),
       atom_cache_(gfx::GetXDisplay(), kCachedAtoms),
       button_map_count_(0) {
   CHECK(gfx::GetXDisplay());
@@ -121,6 +124,8 @@ DeviceDataManager::DeviceDataManager()
   CHECK(arraysize(kCachedAtoms) == static_cast<size_t>(DT_LAST_ENTRY) + 1);
   UpdateDeviceList(gfx::GetXDisplay());
   UpdateButtonMap();
+  for (int i = 0; i < kMaxDeviceNum; i++)
+    touch_device_to_display_map_[i] = gfx::Display::kInvalidDisplayID;
 }
 
 DeviceDataManager::~DeviceDataManager() {
@@ -175,14 +180,6 @@ bool DeviceDataManager::InitializeXInputInternal() {
 
 bool DeviceDataManager::IsXInput2Available() const {
   return xi_opcode_ != -1;
-}
-
-float DeviceDataManager::GetNaturalScrollFactor(int sourceid) const {
-  // Natural scroll is touchpad-only.
-  if (sourceid >= kMaxDeviceNum || !touchpads_[sourceid])
-    return -1.0f;
-
-  return natural_scroll_enabled_ ? 1.0f : -1.0f;
 }
 
 void DeviceDataManager::UpdateDeviceList(Display* display) {
@@ -460,20 +457,17 @@ void DeviceDataManager::GetScrollOffsets(const base::NativeEvent& native_event,
   *y_offset_ordinal = 0;
   *finger_count = 2;
 
-  XIDeviceEvent* xiev =
-      static_cast<XIDeviceEvent*>(native_event->xcookie.data);
-  const float natural_scroll_factor = GetNaturalScrollFactor(xiev->sourceid);
   EventData data;
   GetEventRawData(*native_event, &data);
 
   if (data.find(DT_CMT_SCROLL_X) != data.end())
-    *x_offset = data[DT_CMT_SCROLL_X] * natural_scroll_factor;
+    *x_offset = data[DT_CMT_SCROLL_X];
   if (data.find(DT_CMT_SCROLL_Y) != data.end())
-    *y_offset = data[DT_CMT_SCROLL_Y] * natural_scroll_factor;
+    *y_offset = data[DT_CMT_SCROLL_Y];
   if (data.find(DT_CMT_ORDINAL_X) != data.end())
-    *x_offset_ordinal = data[DT_CMT_ORDINAL_X] * natural_scroll_factor;
+    *x_offset_ordinal = data[DT_CMT_ORDINAL_X];
   if (data.find(DT_CMT_ORDINAL_Y) != data.end())
-    *y_offset_ordinal = data[DT_CMT_ORDINAL_Y] * natural_scroll_factor;
+    *y_offset_ordinal = data[DT_CMT_ORDINAL_Y];
   if (data.find(DT_CMT_FINGER_COUNT) != data.end())
     *finger_count = static_cast<int>(data[DT_CMT_FINGER_COUNT]);
 }
@@ -488,22 +482,19 @@ void DeviceDataManager::GetFlingData(const base::NativeEvent& native_event,
   *vy_ordinal = 0;
   *is_cancel = false;
 
-  XIDeviceEvent* xiev =
-      static_cast<XIDeviceEvent*>(native_event->xcookie.data);
-  const float natural_scroll_factor = GetNaturalScrollFactor(xiev->sourceid);
   EventData data;
   GetEventRawData(*native_event, &data);
 
   if (data.find(DT_CMT_FLING_X) != data.end())
-    *vx = data[DT_CMT_FLING_X] * natural_scroll_factor;
+    *vx = data[DT_CMT_FLING_X];
   if (data.find(DT_CMT_FLING_Y) != data.end())
-    *vy = data[DT_CMT_FLING_Y] * natural_scroll_factor;
+    *vy = data[DT_CMT_FLING_Y];
   if (data.find(DT_CMT_FLING_STATE) != data.end())
     *is_cancel = !!static_cast<unsigned int>(data[DT_CMT_FLING_STATE]);
   if (data.find(DT_CMT_ORDINAL_X) != data.end())
-    *vx_ordinal = data[DT_CMT_ORDINAL_X] * natural_scroll_factor;
+    *vx_ordinal = data[DT_CMT_ORDINAL_X];
   if (data.find(DT_CMT_ORDINAL_Y) != data.end())
-    *vy_ordinal = data[DT_CMT_ORDINAL_Y] * natural_scroll_factor;
+    *vy_ordinal = data[DT_CMT_ORDINAL_Y];
 }
 
 void DeviceDataManager::GetMetricsData(const base::NativeEvent& native_event,
@@ -647,6 +638,56 @@ void DeviceDataManager::InitializeValuatorsForTest(int deviceid,
     valuator_max_[deviceid][j] = max_value;
     valuator_count_[deviceid]++;
   }
+}
+
+bool DeviceDataManager::TouchEventNeedsCalibrate(int touch_device_id) const {
+#if defined(OS_CHROMEOS) && defined(USE_XI2_MT)
+  int64 touch_display_id = GetDisplayForTouchDevice(touch_device_id);
+  if (base::SysInfo::IsRunningOnChromeOS() &&
+      touch_display_id == gfx::Display::InternalDisplayId()) {
+    return true;
+  }
+#endif  // defined(OS_CHROMEOS) && defined(USE_XI2_MT)
+  return false;
+}
+
+void DeviceDataManager::ClearTouchTransformerRecord() {
+  for (int i = 0; i < kMaxDeviceNum; i++) {
+    touch_device_transformer_map_[i] = gfx::Transform();
+    touch_device_to_display_map_[i] = gfx::Display::kInvalidDisplayID;
+  }
+}
+
+bool DeviceDataManager::IsTouchDeviceIdValid(int touch_device_id) const {
+  return (touch_device_id > 0 && touch_device_id < kMaxDeviceNum);
+}
+
+void DeviceDataManager::UpdateTouchInfoForDisplay(
+    int64 display_id,
+    int touch_device_id,
+    const gfx::Transform& touch_transformer) {
+  if (IsTouchDeviceIdValid(touch_device_id)) {
+    touch_device_to_display_map_[touch_device_id] = display_id;
+    touch_device_transformer_map_[touch_device_id] = touch_transformer;
+  }
+}
+
+void DeviceDataManager::ApplyTouchTransformer(int touch_device_id,
+                                              float* x, float* y) {
+  if (IsTouchDeviceIdValid(touch_device_id)) {
+    gfx::Point3F point(*x, *y, 0.0);
+    const gfx::Transform& trans =
+        touch_device_transformer_map_[touch_device_id];
+    trans.TransformPoint(&point);
+    *x = point.x();
+    *y = point.y();
+  }
+}
+
+int64 DeviceDataManager::GetDisplayForTouchDevice(int touch_device_id) const {
+  if (IsTouchDeviceIdValid(touch_device_id))
+    return touch_device_to_display_map_[touch_device_id];
+  return gfx::Display::kInvalidDisplayID;
 }
 
 }  // namespace ui

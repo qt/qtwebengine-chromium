@@ -14,7 +14,6 @@
 #include "ui/gfx/rect.h"
 
 namespace cc {
-class OverdrawMetrics;
 class LayerImpl;
 class RenderSurfaceImpl;
 class Layer;
@@ -29,12 +28,11 @@ class RenderSurface;
 // be queried via surfaceOccluded() and surfaceUnoccludedContentRect(). Finally,
 // once finished with the layer, occlusion behind the layer should be marked by
 // calling MarkOccludedBehindLayer().
-template <typename LayerType, typename RenderSurfaceType>
-class CC_EXPORT OcclusionTrackerBase {
+template <typename LayerType>
+class CC_EXPORT OcclusionTracker {
  public:
-  OcclusionTrackerBase(gfx::Rect screen_space_clip_rect,
-                       bool record_metrics_for_frame);
-  ~OcclusionTrackerBase();
+  explicit OcclusionTracker(const gfx::Rect& screen_space_clip_rect);
+  ~OcclusionTracker();
 
   // Called at the beginning of each step in the LayerIterator's front-to-back
   // traversal.
@@ -48,32 +46,22 @@ class CC_EXPORT OcclusionTrackerBase {
   // |render_target| is the contributing layer's render target, and
   // |draw_transform| and |impl_draw_transform_is_unknown| are relative to that.
   bool Occluded(const LayerType* render_target,
-                gfx::Rect content_rect,
-                const gfx::Transform& draw_transform,
-                bool impl_draw_transform_is_unknown) const;
+                const gfx::Rect& content_rect,
+                const gfx::Transform& draw_transform) const;
 
   // Gives an unoccluded sub-rect of |content_rect| in the content space of a
   // layer. Used when considering occlusion for a layer that paints/draws
   // something. |render_target| is the contributing layer's render target, and
   // |draw_transform| and |impl_draw_transform_is_unknown| are relative to that.
-  gfx::Rect UnoccludedContentRect(
-      const LayerType* render_target,
-      gfx::Rect content_rect,
-      const gfx::Transform& draw_transform,
-      bool impl_draw_transform_is_unknown) const;
+  gfx::Rect UnoccludedContentRect(const gfx::Rect& content_rect,
+                                  const gfx::Transform& draw_transform) const;
 
   // Gives an unoccluded sub-rect of |content_rect| in the content space of the
   // render_target owned by the layer. Used when considering occlusion for a
   // contributing surface that is rendering into another target.
   gfx::Rect UnoccludedContributingSurfaceContentRect(
-      const LayerType* layer,
-      bool for_replica,
-      gfx::Rect content_rect) const;
-
-  // Report operations for recording overdraw metrics.
-  OverdrawMetrics* overdraw_metrics() const {
-    return overdraw_metrics_.get();
-  }
+      const gfx::Rect& content_rect,
+      const gfx::Transform& draw_transform) const;
 
   // Gives the region of the screen that is not occluded by something opaque.
   Region ComputeVisibleRegionInScreen() const {
@@ -82,7 +70,7 @@ class CC_EXPORT OcclusionTrackerBase {
                            stack_.back().occlusion_from_inside_target);
   }
 
-  void set_minimum_tracking_size(gfx::Size size) {
+  void set_minimum_tracking_size(const gfx::Size& size) {
     minimum_tracking_size_ = size;
   }
 
@@ -142,21 +130,18 @@ class CC_EXPORT OcclusionTrackerBase {
   void MarkOccludedBehindLayer(const LayerType* layer);
 
   gfx::Rect screen_space_clip_rect_;
-  scoped_ptr<class OverdrawMetrics> overdraw_metrics_;
   gfx::Size minimum_tracking_size_;
 
   // This is used for visualizing the occlusion tracking process.
   std::vector<gfx::Rect>* occluding_screen_space_rects_;
   std::vector<gfx::Rect>* non_occluding_screen_space_rects_;
 
-  DISALLOW_COPY_AND_ASSIGN(OcclusionTrackerBase);
+  DISALLOW_COPY_AND_ASSIGN(OcclusionTracker);
 };
 
-typedef OcclusionTrackerBase<Layer, RenderSurface> OcclusionTracker;
-typedef OcclusionTrackerBase<LayerImpl, RenderSurfaceImpl> OcclusionTrackerImpl;
 #if !defined(COMPILER_MSVC)
-extern template class OcclusionTrackerBase<Layer, RenderSurface>;
-extern template class OcclusionTrackerBase<LayerImpl, RenderSurfaceImpl>;
+extern template class OcclusionTracker<Layer>;
+extern template class OcclusionTracker<LayerImpl>;
 #endif
 
 }  // namespace cc

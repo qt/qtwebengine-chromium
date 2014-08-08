@@ -25,7 +25,7 @@
 #ifndef KeyframeList_h
 #define KeyframeList_h
 
-#include "CSSPropertyNames.h"
+#include "core/CSSPropertyNames.h"
 #include "core/rendering/style/StyleInheritedData.h"
 #include "wtf/HashSet.h"
 #include "wtf/RefPtr.h"
@@ -36,8 +36,6 @@ namespace WebCore {
 
 class RenderObject;
 class RenderStyle;
-class StylePropertySet;
-class TimingFunction;
 
 class KeyframeValue {
 public:
@@ -47,7 +45,6 @@ public:
     {
     }
 
-    void addProperties(const StylePropertySet*);
     void addProperty(CSSPropertyID prop) { m_properties.add(prop); }
     bool containsProperty(CSSPropertyID prop) const { return m_properties.contains(prop); }
     const HashSet<CSSPropertyID>& properties() const { return m_properties; }
@@ -57,8 +54,6 @@ public:
 
     const RenderStyle* style() const { return m_style.get(); }
     void setStyle(PassRefPtr<RenderStyle> style) { m_style = style; }
-
-    static TimingFunction* timingFunction(const RenderStyle& keyframeStyle);
 
 private:
     double m_key;
@@ -71,8 +66,8 @@ public:
     KeyframeList(RenderObject&, const AtomicString& animationName)
         : m_animationName(animationName)
     {
-        insert(KeyframeValue(0, 0));
-        insert(KeyframeValue(1, 0));
+        insert(KeyframeValue(0, nullptr));
+        insert(KeyframeValue(1, nullptr));
     }
     ~KeyframeList();
 

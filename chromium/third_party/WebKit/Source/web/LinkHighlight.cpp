@@ -25,20 +25,17 @@
 
 #include "config.h"
 
-#include "LinkHighlight.h"
+#include "web/LinkHighlight.h"
 
 #include "SkMatrix44.h"
-#include "WebFrameImpl.h"
-#include "WebKit.h"
-#include "WebViewImpl.h"
 #include "core/dom/Node.h"
-#include "core/frame/Frame.h"
 #include "core/frame/FrameView.h"
-#include "core/rendering/CompositedLayerMapping.h"
+#include "core/frame/LocalFrame.h"
 #include "core/rendering/RenderLayer.h"
 #include "core/rendering/RenderLayerModelObject.h"
 #include "core/rendering/RenderObject.h"
 #include "core/rendering/RenderView.h"
+#include "core/rendering/compositing/CompositedLayerMapping.h"
 #include "core/rendering/style/ShadowData.h"
 #include "platform/graphics/Color.h"
 #include "public/platform/Platform.h"
@@ -48,6 +45,9 @@
 #include "public/platform/WebFloatPoint.h"
 #include "public/platform/WebRect.h"
 #include "public/platform/WebSize.h"
+#include "public/web/WebKit.h"
+#include "web/WebLocalFrameImpl.h"
+#include "web/WebViewImpl.h"
 #include "wtf/CurrentTime.h"
 
 using namespace WebCore;
@@ -74,7 +74,7 @@ LinkHighlight::LinkHighlight(Node* node, WebViewImpl* owningWebViewImpl)
     WebCompositorSupport* compositorSupport = Platform::current()->compositorSupport();
     m_contentLayer = adoptPtr(compositorSupport->createContentLayer(this));
     m_clipLayer = adoptPtr(compositorSupport->createLayer());
-    m_clipLayer->setAnchorPoint(WebFloatPoint());
+    m_clipLayer->setTransformOrigin(WebFloatPoint3D());
     m_clipLayer->addChild(m_contentLayer->layer());
     m_contentLayer->layer()->setAnimationDelegate(this);
     m_contentLayer->layer()->setDrawsContent(true);
@@ -112,27 +112,25 @@ RenderLayer* LinkHighlight::computeEnclosingCompositingLayer()
     // Find the nearest enclosing composited layer and attach to it. We may need to cross frame boundaries
     // to find a suitable layer.
     RenderObject* renderer = m_node->renderer();
-    RenderLayerModelObject* repaintContainer;
+    RenderLayer* renderLayer;
     do {
-        repaintContainer = renderer->containerForRepaint();
-        if (!repaintContainer) {
+        renderLayer = renderer->enclosingLayer()->enclosingCompositingLayerForRepaint();
+        if (!renderLayer) {
             renderer = renderer->frame()->ownerRenderer();
             if (!renderer)
                 return 0;
         }
-    } while (!repaintContainer);
-    RenderLayer* renderLayer = repaintContainer->layer();
+    } while (!renderLayer);
 
-    if (!renderLayer || renderLayer->compositingState() == NotComposited)
-        return 0;
+    CompositedLayerMappingPtr compositedLayerMapping = renderLayer->compositingState() == PaintsIntoGroupedBacking ? renderLayer->groupedMapping() : renderLayer->compositedLayerMapping();
+    GraphicsLayer* newGraphicsLayer = renderLayer->compositingState() == PaintsIntoGroupedBacking ? compositedLayerMapping->squashingLayer() : compositedLayerMapping->mainGraphicsLayer();
 
-    GraphicsLayer* newGraphicsLayer = renderLayer->compositedLayerMapping()->mainGraphicsLayer();
-    m_clipLayer->setSublayerTransform(SkMatrix44());
+    m_clipLayer->setTransform(SkMatrix44(SkMatrix44::kIdentity_Constructor));
 
     if (!newGraphicsLayer->drawsContent()) {
         if (renderLayer->scrollableArea() && renderLayer->scrollableArea()->usesCompositedScrolling()) {
             ASSERT(renderLayer->hasCompositedLayerMapping() && renderLayer->compositedLayerMapping()->scrollingContentsLayer());
-            newGraphicsLayer = renderLayer->compositedLayerMapping()->scrollingContentsLayer();
+            newGraphicsLayer = compositedLayerMapping->scrollingContentsLayer();
         }
     }
 
@@ -184,6 +182,27 @@ static void addQuadToPath(const FloatQuad& quad, Path& path)
     path.closeSubpath();
 }
 
+void LinkHighlight::computeQuads(Node* node, Vector<FloatQuad>& outQuads) const
+{
+    if (!node || !node->renderer())
+        return;
+
+    RenderObject* renderer = node->renderer();
+
+    // For inline elements, absoluteQuads will return a line box based on the line-height
+    // and font metrics, which is technically incorrect as replaced elements like images
+    // should use their intristic height and expand the linebox  as needed. To get an
+    // appropriately sized highlight we descend into the children and have them add their
+    // boxes.
+    if (renderer->isRenderInline()) {
+        for (Node* child = node->firstChild(); child; child = child->nextSibling())
+            computeQuads(child, outQuads);
+    } else {
+        renderer->absoluteQuads(outQuads);
+    }
+
+}
+
 bool LinkHighlight::computeHighlightLayerPathAndPosition(RenderLayer* compositingLayer)
 {
     if (!m_node || !m_node->renderer() || !m_currentGraphicsLayer)
@@ -193,14 +212,14 @@ bool LinkHighlight::computeHighlightLayerPathAndPosition(RenderLayer* compositin
 
     // Get quads for node in absolute coordinates.
     Vector<FloatQuad> quads;
-    m_node->renderer()->absoluteQuads(quads);
+    computeQuads(m_node.get(), quads);
     ASSERT(quads.size());
 
     // Adjust for offset between target graphics layer and the node's renderer.
     FloatPoint positionAdjust = IntPoint(m_currentGraphicsLayer->offsetFromRenderer());
 
     Path newPath;
-    for (unsigned quadIndex = 0; quadIndex < quads.size(); ++quadIndex) {
+    for (size_t quadIndex = 0; quadIndex < quads.size(); ++quadIndex) {
         FloatQuad absoluteQuad = quads[quadIndex];
         absoluteQuad.move(-positionAdjust.x(), -positionAdjust.y());
 
@@ -233,12 +252,14 @@ bool LinkHighlight::computeHighlightLayerPathAndPosition(RenderLayer* compositin
     return pathHasChanged;
 }
 
-void LinkHighlight::paintContents(WebCanvas* canvas, const WebRect& webClipRect, bool, WebFloatRect&)
+void LinkHighlight::paintContents(WebCanvas* canvas, const WebRect& webClipRect, bool, WebFloatRect&,
+    WebContentLayerClient::GraphicsContextStatus contextStatus)
 {
     if (!m_node || !m_node->renderer())
         return;
 
-    GraphicsContext gc(canvas);
+    GraphicsContext gc(canvas,
+        contextStatus == WebContentLayerClient::GraphicsContextEnabled ? GraphicsContext::NothingDisabled : GraphicsContext::FullyDisabled);
     IntRect clipRect(IntPoint(webClipRect.x, webClipRect.y), IntSize(webClipRect.width, webClipRect.height));
     gc.clip(clipRect);
     gc.setFillColor(m_node->renderer()->style()->tapHighlightColor());
@@ -287,11 +308,11 @@ void LinkHighlight::clearGraphicsLayerLinkHighlightPointer()
     }
 }
 
-void LinkHighlight::notifyAnimationStarted(double, double, blink::WebAnimation::TargetProperty)
+void LinkHighlight::notifyAnimationStarted(double, blink::WebAnimation::TargetProperty)
 {
 }
 
-void LinkHighlight::notifyAnimationFinished(double, double, blink::WebAnimation::TargetProperty)
+void LinkHighlight::notifyAnimationFinished(double, blink::WebAnimation::TargetProperty)
 {
     // Since WebViewImpl may hang on to us for a while, make sure we
     // release resources as soon as possible.

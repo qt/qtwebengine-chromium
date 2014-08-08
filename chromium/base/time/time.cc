@@ -11,46 +11,86 @@
 #include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/third_party/nspr/prtime.h"
-#include "base/third_party/nspr/prtypes.h"
 
 namespace base {
 
 // TimeDelta ------------------------------------------------------------------
 
+// static
+TimeDelta TimeDelta::Max() {
+  return TimeDelta(std::numeric_limits<int64>::max());
+}
+
 int TimeDelta::InDays() const {
+  if (is_max()) {
+    // Preserve max to prevent overflow.
+    return std::numeric_limits<int>::max();
+  }
   return static_cast<int>(delta_ / Time::kMicrosecondsPerDay);
 }
 
 int TimeDelta::InHours() const {
+  if (is_max()) {
+    // Preserve max to prevent overflow.
+    return std::numeric_limits<int>::max();
+  }
   return static_cast<int>(delta_ / Time::kMicrosecondsPerHour);
 }
 
 int TimeDelta::InMinutes() const {
+  if (is_max()) {
+    // Preserve max to prevent overflow.
+    return std::numeric_limits<int>::max();
+  }
   return static_cast<int>(delta_ / Time::kMicrosecondsPerMinute);
 }
 
 double TimeDelta::InSecondsF() const {
+  if (is_max()) {
+    // Preserve max to prevent overflow.
+    return std::numeric_limits<double>::infinity();
+  }
   return static_cast<double>(delta_) / Time::kMicrosecondsPerSecond;
 }
 
 int64 TimeDelta::InSeconds() const {
+  if (is_max()) {
+    // Preserve max to prevent overflow.
+    return std::numeric_limits<int64>::max();
+  }
   return delta_ / Time::kMicrosecondsPerSecond;
 }
 
 double TimeDelta::InMillisecondsF() const {
+  if (is_max()) {
+    // Preserve max to prevent overflow.
+    return std::numeric_limits<double>::infinity();
+  }
   return static_cast<double>(delta_) / Time::kMicrosecondsPerMillisecond;
 }
 
 int64 TimeDelta::InMilliseconds() const {
+  if (is_max()) {
+    // Preserve max to prevent overflow.
+    return std::numeric_limits<int64>::max();
+  }
   return delta_ / Time::kMicrosecondsPerMillisecond;
 }
 
 int64 TimeDelta::InMillisecondsRoundedUp() const {
+  if (is_max()) {
+    // Preserve max to prevent overflow.
+    return std::numeric_limits<int64>::max();
+  }
   return (delta_ + Time::kMicrosecondsPerMillisecond - 1) /
       Time::kMicrosecondsPerMillisecond;
 }
 
 int64 TimeDelta::InMicroseconds() const {
+  if (is_max()) {
+    // Preserve max to prevent overflow.
+    return std::numeric_limits<int64>::max();
+  }
   return delta_;
 }
 
@@ -89,7 +129,7 @@ time_t Time::ToTimeT() const {
 Time Time::FromDoubleT(double dt) {
   if (dt == 0 || IsNaN(dt))
     return Time();  // Preserve 0 so we can tell it doesn't exist.
-  if (dt == std::numeric_limits<double>::max())
+  if (dt == std::numeric_limits<double>::infinity())
     return Max();
   return Time(static_cast<int64>((dt *
                                   static_cast<double>(kMicrosecondsPerSecond)) +
@@ -101,7 +141,7 @@ double Time::ToDoubleT() const {
     return 0;  // Preserve 0 so we can tell it doesn't exist.
   if (is_max()) {
     // Preserve max without offset to prevent overflow.
-    return std::numeric_limits<double>::max();
+    return std::numeric_limits<double>::infinity();
   }
   return (static_cast<double>(us_ - kTimeTToMicrosecondsOffset) /
           static_cast<double>(kMicrosecondsPerSecond));
@@ -120,7 +160,7 @@ Time Time::FromTimeSpec(const timespec& ts) {
 Time Time::FromJsTime(double ms_since_epoch) {
   // The epoch is a valid time, so this constructor doesn't interpret
   // 0 as the null time.
-  if (ms_since_epoch == std::numeric_limits<double>::max())
+  if (ms_since_epoch == std::numeric_limits<double>::infinity())
     return Max();
   return Time(static_cast<int64>(ms_since_epoch * kMicrosecondsPerMillisecond) +
               kTimeTToMicrosecondsOffset);
@@ -133,7 +173,7 @@ double Time::ToJsTime() const {
   }
   if (is_max()) {
     // Preserve max without offset to prevent overflow.
-    return std::numeric_limits<double>::max();
+    return std::numeric_limits<double>::infinity();
   }
   return (static_cast<double>(us_ - kTimeTToMicrosecondsOffset) /
           kMicrosecondsPerMillisecond);

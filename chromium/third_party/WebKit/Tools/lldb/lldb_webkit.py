@@ -40,6 +40,9 @@ def __lldb_init_module(debugger, dict):
     debugger.HandleCommand('type summary add --expand -F lldb_webkit.WTFHashTable_SummaryProvider -x "WTF::HashTable<.+>$"')
     debugger.HandleCommand('type synthetic add -x "WTF::Vector<.+>$" --python-class lldb_webkit.WTFVectorProvider')
     debugger.HandleCommand('type synthetic add -x "WTF::HashTable<.+>$" --python-class lldb_webkit.WTFHashTableProvider')
+    debugger.HandleCommand('type summary add -F lldb_webkit.WebCoreLayoutUnit_SummaryProvider WebCore::LayoutUnit')
+    debugger.HandleCommand('type summary add -F lldb_webkit.WebCoreLayoutSize_SummaryProvider WebCore::LayoutSize')
+    debugger.HandleCommand('type summary add -F lldb_webkit.WebCoreLayoutPoint_SummaryProvider WebCore::LayoutPoint')
 
 
 def WTFString_SummaryProvider(valobj, dict):
@@ -65,8 +68,22 @@ def WTFHashTable_SummaryProvider(valobj, dict):
     provider = WTFHashTableProvider(valobj, dict)
     return "{ tableSize = %d, keyCount = %d }" % (provider.tableSize(), provider.keyCount())
 
+
+def WebCoreLayoutUnit_SummaryProvider(valobj, dict):
+    provider = WebCoreLayoutUnitProvider(valobj, dict)
+    return "{ %s }" % provider.to_string()
+
+
+def WebCoreLayoutSize_SummaryProvider(valobj, dict):
+    provider = WebCoreLayoutSizeProvider(valobj, dict)
+    return "{ width = %s, height = %s }" % (provider.get_width(), provider.get_height())
+
+
+def WebCoreLayoutPoint_SummaryProvider(valobj, dict):
+    provider = WebCoreLayoutPointProvider(valobj, dict)
+    return "{ x = %s, y = %s }" % (provider.get_x(), provider.get_y())
+
 # FIXME: Provide support for the following types:
-# def WTFVector_SummaryProvider(valobj, dict):
 # def WTFCString_SummaryProvider(valobj, dict):
 # def WebCoreKURLGooglePrivate_SummaryProvider(valobj, dict):
 # def WebCoreQualifiedName_SummaryProvider(valobj, dict):
@@ -159,19 +176,54 @@ class WTFStringProvider:
         return impl.to_string()
 
 
+class WebCoreLayoutUnitProvider:
+    "Print a WebCore::LayoutUnit"
+    def __init__(self, valobj, dict):
+        self.valobj = valobj
+
+    def to_string(self):
+        return "%gpx" % (self.valobj.GetChildMemberWithName('m_value').GetValueAsUnsigned(0) / 64.0)
+
+
+class WebCoreLayoutSizeProvider:
+    "Print a WebCore::LayoutSize"
+    def __init__(self, valobj, dict):
+        self.valobj = valobj
+
+    def get_width(self):
+        return WebCoreLayoutUnitProvider(self.valobj.GetChildMemberWithName('m_width'), dict).to_string()
+
+    def get_height(self):
+        return WebCoreLayoutUnitProvider(self.valobj.GetChildMemberWithName('m_height'), dict).to_string()
+
+
+class WebCoreLayoutPointProvider:
+    "Print a WebCore::LayoutPoint"
+    def __init__(self, valobj, dict):
+        self.valobj = valobj
+
+    def get_x(self):
+        return WebCoreLayoutUnitProvider(self.valobj.GetChildMemberWithName('m_x'), dict).to_string()
+
+    def get_y(self):
+        return WebCoreLayoutUnitProvider(self.valobj.GetChildMemberWithName('m_y'), dict).to_string()
+
+
 class WTFVectorProvider:
     def __init__(self, valobj, internal_dict):
         self.valobj = valobj
         self.update()
 
     def num_children(self):
-        return self.size + 2
+        return self.size + 3
 
     def get_child_index(self, name):
         if name == "m_size":
             return self.size
-        elif name == "m_buffer":
+        elif name == "m_capacity":
             return self.size + 1
+        elif name == "m_buffer":
+            return self.size + 2
         else:
             return int(name.lstrip('[').rstrip(']'))
 
@@ -179,7 +231,9 @@ class WTFVectorProvider:
         if index == self.size:
             return self.valobj.GetChildMemberWithName("m_size")
         elif index == self.size + 1:
-            return self.vector_buffer
+            return self.valobj.GetChildMemberWithName("m_capacity")
+        elif index == self.size + 2:
+            return self.buffer
         elif index < self.size:
             offset = index * self.data_size
             child = self.buffer.CreateChildAtOffset('[' + str(index) + ']', offset, self.data_type)
@@ -188,10 +242,9 @@ class WTFVectorProvider:
             return None
 
     def update(self):
-        self.vector_buffer = self.valobj.GetChildMemberWithName('m_buffer')
-        self.buffer = self.vector_buffer.GetChildMemberWithName('m_buffer')
+        self.buffer = self.valobj.GetChildMemberWithName('m_buffer')
         self.size = self.valobj.GetChildMemberWithName('m_size').GetValueAsUnsigned(0)
-        self.capacity = self.vector_buffer.GetChildMemberWithName('m_capacity').GetValueAsUnsigned(0)
+        self.capacity = self.buffer.GetChildMemberWithName('m_capacity').GetValueAsUnsigned(0)
         self.data_type = self.buffer.GetType().GetPointeeType()
         self.data_size = self.data_type.GetByteSize()
 

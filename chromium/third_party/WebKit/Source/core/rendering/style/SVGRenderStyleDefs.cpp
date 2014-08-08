@@ -86,9 +86,9 @@ StyleStrokeData::StyleStrokeData(const StyleStrokeData& other)
     : RefCounted<StyleStrokeData>()
     , opacity(other.opacity)
     , miterLimit(other.miterLimit)
-    , width(other.width)
-    , dashOffset(other.dashOffset)
-    , dashArray(other.dashArray)
+    , width(other.width->clone())
+    , dashOffset(other.dashOffset->clone())
+    , dashArray(other.dashArray->clone())
     , paintType(other.paintType)
     , paintColor(other.paintColor)
     , paintUri(other.paintUri)
@@ -100,11 +100,11 @@ StyleStrokeData::StyleStrokeData(const StyleStrokeData& other)
 
 bool StyleStrokeData::operator==(const StyleStrokeData& other) const
 {
-    return width == other.width
+    return *width == *other.width
         && opacity == other.opacity
         && miterLimit == other.miterLimit
-        && dashOffset == other.dashOffset
-        && dashArray == other.dashArray
+        && *dashOffset == *other.dashOffset
+        && *dashArray == *other.dashArray
         && paintType == other.paintType
         && paintColor == other.paintColor
         && paintUri == other.paintUri
@@ -132,22 +132,6 @@ bool StyleStopData::operator==(const StyleStopData& other) const
         && opacity == other.opacity;
 }
 
-StyleTextData::StyleTextData()
-    : kerning(SVGRenderStyle::initialKerning())
-{
-}
-
-StyleTextData::StyleTextData(const StyleTextData& other)
-    : RefCounted<StyleTextData>()
-    , kerning(other.kerning)
-{
-}
-
-bool StyleTextData::operator==(const StyleTextData& other) const
-{
-    return kerning == other.kerning;
-}
-
 StyleMiscData::StyleMiscData()
     : floodColor(SVGRenderStyle::initialFloodColor())
     , floodOpacity(SVGRenderStyle::initialFloodOpacity())
@@ -161,7 +145,7 @@ StyleMiscData::StyleMiscData(const StyleMiscData& other)
     , floodColor(other.floodColor)
     , floodOpacity(other.floodOpacity)
     , lightingColor(other.lightingColor)
-    , baselineShiftValue(other.baselineShiftValue)
+    , baselineShiftValue(other.baselineShiftValue->clone())
 {
 }
 
@@ -170,7 +154,7 @@ bool StyleMiscData::operator==(const StyleMiscData& other) const
     return floodOpacity == other.floodOpacity
         && floodColor == other.floodColor
         && lightingColor == other.lightingColor
-        && baselineShiftValue == other.baselineShiftValue;
+        && *baselineShiftValue == *other.baselineShiftValue;
 }
 
 StyleResourceData::StyleResourceData()

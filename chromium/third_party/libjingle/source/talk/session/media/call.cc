@@ -34,6 +34,7 @@
 #include "talk/media/base/screencastid.h"
 #include "talk/p2p/base/parsing.h"
 #include "talk/session/media/call.h"
+#include "talk/session/media/currentspeakermonitor.h"
 #include "talk/session/media/mediasessionclient.h"
 
 namespace cricket {
@@ -74,6 +75,22 @@ bool ContentContainsCrypto(const cricket::ContentInfo* content) {
 
 }
 
+AudioSourceProxy::AudioSourceProxy(Call* call)
+    : call_(call) {
+  call_->SignalAudioMonitor.connect(this, &AudioSourceProxy::OnAudioMonitor);
+  call_->SignalMediaStreamsUpdate.connect(
+      this, &AudioSourceProxy::OnMediaStreamsUpdate);
+}
+
+void AudioSourceProxy::OnAudioMonitor(Call* call, const AudioInfo& info) {
+  SignalAudioMonitor(this, info);
+}
+
+void AudioSourceProxy::OnMediaStreamsUpdate(Call* call, Session* session,
+    const MediaStreams& added, const MediaStreams& removed) {
+  SignalMediaStreamsUpdate(this, session, added, removed);
+}
+
 Call::Call(MediaSessionClient* session_client)
     : id_(talk_base::CreateRandomId()),
       session_client_(session_client),
@@ -84,6 +101,7 @@ Call::Call(MediaSessionClient* session_client)
       video_muted_(false),
       send_to_voicemail_(true),
       playing_dtmf_(false) {
+  audio_source_proxy_.reset(new AudioSourceProxy(this));
 }
 
 Call::~Call() {
@@ -523,7 +541,7 @@ bool Call::StartScreencast(Session* session,
   VideoContentDescription* video = CreateVideoStreamUpdate(stream);
 
   // TODO(pthatcher): Wait until view request before sending video.
-  video_channel->SetLocalContent(video, CA_UPDATE);
+  video_channel->SetLocalContent(video, CA_UPDATE, NULL);
   SendVideoStreamUpdate(session, video);
   return true;
 }
@@ -546,7 +564,7 @@ bool Call::StopScreencast(Session* session,
   // No ssrcs
   VideoContentDescription* video = CreateVideoStreamUpdate(stream);
 
-  video_channel->SetLocalContent(video, CA_UPDATE);
+  video_channel->SetLocalContent(video, CA_UPDATE, NULL);
   SendVideoStreamUpdate(session, video);
   return true;
 }
@@ -718,7 +736,8 @@ void Call::StartSpeakerMonitor(Session* session) {
       StartAudioMonitor(session, kAudioMonitorPollPeriodMillis);
     }
     CurrentSpeakerMonitor* speaker_monitor =
-        new cricket::CurrentSpeakerMonitor(this, session);
+        new cricket::CurrentSpeakerMonitor(
+            audio_source_proxy_.get(), session);
     speaker_monitor->SignalUpdate.connect(this, &Call::OnSpeakerMonitor);
     speaker_monitor->Start();
     speaker_monitor_map_[session->id()] = speaker_monitor;
@@ -870,9 +889,11 @@ void Call::OnRemoteDescriptionUpdate(BaseSession* base_session,
 bool Call::UpdateVoiceChannelRemoteContent(
     Session* session, const AudioContentDescription* audio) {
   VoiceChannel* voice_channel = GetVoiceChannel(session);
-  if (!voice_channel->SetRemoteContent(audio, CA_UPDATE)) {
-    LOG(LS_ERROR) << "Failure in audio SetRemoteContent with CA_UPDATE";
-    session->SetError(BaseSession::ERROR_CONTENT);
+  if (!voice_channel->SetRemoteContent(audio, CA_UPDATE, NULL)) {
+    const std::string error_desc =
+        "Failure in audio SetRemoteContent with CA_UPDATE";
+    LOG(LS_ERROR) << error_desc;
+    session->SetError(BaseSession::ERROR_CONTENT, error_desc);
     return false;
   }
   return true;
@@ -881,9 +902,11 @@ bool Call::UpdateVoiceChannelRemoteContent(
 bool Call::UpdateVideoChannelRemoteContent(
     Session* session, const VideoContentDescription* video) {
   VideoChannel* video_channel = GetVideoChannel(session);
-  if (!video_channel->SetRemoteContent(video, CA_UPDATE)) {
-    LOG(LS_ERROR) << "Failure in video SetRemoteContent with CA_UPDATE";
-    session->SetError(BaseSession::ERROR_CONTENT);
+  if (!video_channel->SetRemoteContent(video, CA_UPDATE, NULL)) {
+    const std::string error_desc =
+        "Failure in video SetRemoteContent with CA_UPDATE";
+    LOG(LS_ERROR) << error_desc;
+    session->SetError(BaseSession::ERROR_CONTENT, error_desc);
     return false;
   }
   return true;
@@ -892,9 +915,11 @@ bool Call::UpdateVideoChannelRemoteContent(
 bool Call::UpdateDataChannelRemoteContent(
     Session* session, const DataContentDescription* data) {
   DataChannel* data_channel = GetDataChannel(session);
-  if (!data_channel->SetRemoteContent(data, CA_UPDATE)) {
-    LOG(LS_ERROR) << "Failure in data SetRemoteContent with CA_UPDATE";
-    session->SetError(BaseSession::ERROR_CONTENT);
+  if (!data_channel->SetRemoteContent(data, CA_UPDATE, NULL)) {
+    const std::string error_desc =
+        "Failure in data SetRemoteContent with CA_UPDATE";
+    LOG(LS_ERROR) << error_desc;
+    session->SetError(BaseSession::ERROR_CONTENT, error_desc);
     return false;
   }
   return true;
@@ -1096,6 +1121,10 @@ Session* Call::InternalInitiateSession(const std::string& id,
     send_to_voicemail_ ? kSendToVoicemailTimeout : kNoVoicemailTimeout,
     this, MSG_TERMINATECALL);
   return session;
+}
+
+AudioSourceProxy* Call::GetAudioSourceProxy() {
+  return audio_source_proxy_.get();
 }
 
 }  // namespace cricket

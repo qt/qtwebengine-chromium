@@ -60,9 +60,7 @@ public:
 
     static void fillRegionWorker(void*);
 
-    virtual void determineAbsolutePaintRect() { setAbsolutePaintRect(enclosingIntRect(maxEffectRect())); }
-
-    virtual TextStream& externalRepresentation(TextStream&, int indention) const;
+    virtual TextStream& externalRepresentation(TextStream&, int indention) const OVERRIDE;
 
 private:
     static const int s_blockSize = 256;
@@ -118,9 +116,8 @@ private:
     FETurbulence(Filter*, TurbulenceType, float, float, int, float, bool);
 
     virtual void applySoftware() OVERRIDE;
-    virtual bool applySkia() OVERRIDE;
     virtual PassRefPtr<SkImageFilter> createImageFilter(SkiaImageFilterBuilder*) OVERRIDE;
-    SkShader* createShader(const IntRect& filterRegion);
+    SkShader* createShader();
 
     inline void initPaint(PaintingData&);
     float noise2D(int channel, PaintingData&, StitchData&, const FloatPoint&);

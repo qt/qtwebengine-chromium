@@ -23,9 +23,9 @@
 #include "config.h"
 #include "core/html/HTMLDivElement.h"
 
-#include "CSSPropertyNames.h"
-#include "CSSValueKeywords.h"
-#include "HTMLNames.h"
+#include "core/CSSPropertyNames.h"
+#include "core/CSSValueKeywords.h"
+#include "core/HTMLNames.h"
 
 namespace WebCore {
 
@@ -37,17 +37,7 @@ HTMLDivElement::HTMLDivElement(Document& document)
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLDivElement> HTMLDivElement::create(Document& document)
-{
-    return adoptRef(new HTMLDivElement(document));
-}
-
-bool HTMLDivElement::isPresentationAttribute(const QualifiedName& name) const
-{
-    if (name == alignAttr)
-        return true;
-    return HTMLElement::isPresentationAttribute(name);
-}
+DEFINE_NODE_FACTORY(HTMLDivElement)
 
 void HTMLDivElement::collectStyleForPresentationAttribute(const QualifiedName& name, const AtomicString& value, MutableStylePropertySet* style)
 {

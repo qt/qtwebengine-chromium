@@ -7,7 +7,10 @@
 
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/threading/thread_checker.h"
+#include "base/time/time.h"
 #include "media/cast/cast_config.h"
+#include "media/cast/video_sender/software_video_encoder.h"
 #include "third_party/libvpx/source/libvpx/vpx/vpx_encoder.h"
 
 namespace media {
@@ -22,24 +25,27 @@ namespace cast {
 
 const int kNumberOfVp8VideoBuffers = 3;
 
-class Vp8Encoder {
+class Vp8Encoder : public SoftwareVideoEncoder {
  public:
-  Vp8Encoder(const VideoSenderConfig& video_config,
-             uint8 max_unacked_frames);
+  Vp8Encoder(const VideoSenderConfig& video_config, int max_unacked_frames);
 
-  ~Vp8Encoder();
+  virtual ~Vp8Encoder();
+
+  // Initialize the encoder before Encode() can be called. This method
+  // must be called on the thread that Encode() is called.
+  virtual void Initialize() OVERRIDE;
 
   // Encode a raw image (as a part of a video stream).
-  bool Encode(const scoped_refptr<media::VideoFrame>& video_frame,
-              EncodedVideoFrame* encoded_image);
+  virtual bool Encode(const scoped_refptr<media::VideoFrame>& video_frame,
+                      transport::EncodedFrame* encoded_image) OVERRIDE;
 
   // Update the encoder with a new target bit rate.
-  void UpdateRates(uint32 new_bitrate);
+  virtual void UpdateRates(uint32 new_bitrate) OVERRIDE;
 
   // Set the next frame to be a key frame.
-  void GenerateKeyFrame();
+  virtual void GenerateKeyFrame() OVERRIDE;
 
-  void LatestFrameIdToReference(uint32 frame_id);
+  virtual void LatestFrameIdToReference(uint32 frame_id) OVERRIDE;
 
  private:
   enum Vp8Buffers {
@@ -73,16 +79,22 @@ class Vp8Encoder {
 
   // VP8 internal objects.
   scoped_ptr<vpx_codec_enc_cfg_t> config_;
-  vpx_enc_ctx_t* encoder_;
+  scoped_ptr<vpx_enc_ctx_t> encoder_;
   vpx_image_t* raw_image_;
 
   bool key_frame_requested_;
-  int64 timestamp_;
+  bool first_frame_received_;
+  base::TimeDelta first_frame_timestamp_;
   uint32 last_encoded_frame_id_;
   uint32 used_buffers_frame_id_[kNumberOfVp8VideoBuffers];
   bool acked_frame_buffers_[kNumberOfVp8VideoBuffers];
   Vp8Buffers last_used_vp8_buffer_;
   int number_of_repeated_buffers_;
+
+  // This is bound to the thread where Initialize() is called.
+  base::ThreadChecker thread_checker_;
+
+  DISALLOW_COPY_AND_ASSIGN(Vp8Encoder);
 };
 
 }  // namespace cast

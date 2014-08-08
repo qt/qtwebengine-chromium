@@ -9,7 +9,6 @@
 
 #include "base/basictypes.h"
 #include "base/event_types.h"
-#include "base/i18n/rtl.h"
 #include "ui/base/ime/text_input_mode.h"
 #include "ui/base/ime/text_input_type.h"
 
@@ -43,11 +42,11 @@ class TextInputClient;
 // - Keeps track of the focused TextInputClient to see which client can call
 //   APIs, OnTextInputTypeChanged, OnCaretBoundsChanged, and CancelComposition,
 //   that change the state of the input method.
-// In Aura environment, aura::RootWindowHost creates an instance of
+// In Aura environment, aura::WindowTreeHost creates an instance of
 // ui::InputMethod and owns it.
 class InputMethod {
  public:
-  // TODO(yukawa): Move these typedef into ime_constants.h or somewhere.
+
 #if defined(OS_WIN)
   typedef LRESULT NativeEventResult;
 #else
@@ -126,10 +125,6 @@ class InputMethod {
   // tag, or an empty string if the input method cannot provide it.
   virtual std::string GetInputLocale() = 0;
 
-  // Returns the text direction of current keyboard layout or input method, or
-  // base::i18n::UNKNOWN_DIRECTION if the input method cannot provide it.
-  virtual base::i18n::TextDirection GetInputTextDirection() = 0;
-
   // Checks if the input method is active, i.e. if it's ready for processing
   // keyboard event and generate composition or text result.
   // If the input method is inactive, then it's not necessary to inform it the
@@ -158,6 +153,9 @@ class InputMethod {
   // etc.) is open.  Returns false if no popup window is open or the detection
   // of IME popups is not supported.
   virtual bool IsCandidatePopupOpen() const = 0;
+
+  // Displays an on screen keyboard if enabled.
+  virtual void ShowImeIfNeeded() = 0;
 
   // Management of the observer list.
   virtual void AddObserver(InputMethodObserver* observer) = 0;

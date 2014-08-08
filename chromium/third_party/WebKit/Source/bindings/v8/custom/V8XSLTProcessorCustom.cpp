@@ -29,11 +29,11 @@
  */
 
 #include "config.h"
-#include "V8XSLTProcessor.h"
+#include "bindings/core/v8/V8XSLTProcessor.h"
 
-#include "V8Document.h"
-#include "V8DocumentFragment.h"
-#include "V8Node.h"
+#include "bindings/core/v8/V8Document.h"
+#include "bindings/core/v8/V8DocumentFragment.h"
+#include "bindings/core/v8/V8Node.h"
 #include "bindings/v8/V8Binding.h"
 #include "core/dom/Document.h"
 #include "core/dom/DocumentFragment.h"
@@ -48,12 +48,12 @@ void V8XSLTProcessor::setParameterMethodCustom(const v8::FunctionCallbackInfo<v8
     if (isUndefinedOrNull(info[1]) || isUndefinedOrNull(info[2]))
         return;
 
-    V8TRYCATCH_FOR_V8STRINGRESOURCE_VOID(V8StringResource<>, namespaceURI, info[0]);
-    V8TRYCATCH_FOR_V8STRINGRESOURCE_VOID(V8StringResource<>, localName, info[1]);
-    V8TRYCATCH_FOR_V8STRINGRESOURCE_VOID(V8StringResource<>, value, info[2]);
+    TOSTRING_VOID(V8StringResource<>, namespaceURI, info[0]);
+    TOSTRING_VOID(V8StringResource<>, localName, info[1]);
+    TOSTRING_VOID(V8StringResource<>, value, info[2]);
 
-    XSLTProcessor* imp = V8XSLTProcessor::toNative(info.Holder());
-    imp->setParameter(namespaceURI, localName, value);
+    XSLTProcessor* impl = V8XSLTProcessor::toNative(info.Holder());
+    impl->setParameter(namespaceURI, localName, value);
 }
 
 void V8XSLTProcessor::getParameterMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
@@ -61,11 +61,11 @@ void V8XSLTProcessor::getParameterMethodCustom(const v8::FunctionCallbackInfo<v8
     if (isUndefinedOrNull(info[1]))
         return;
 
-    V8TRYCATCH_FOR_V8STRINGRESOURCE_VOID(V8StringResource<>, namespaceURI, info[0]);
-    V8TRYCATCH_FOR_V8STRINGRESOURCE_VOID(V8StringResource<>, localName, info[1]);
+    TOSTRING_VOID(V8StringResource<>, namespaceURI, info[0]);
+    TOSTRING_VOID(V8StringResource<>, localName, info[1]);
 
-    XSLTProcessor* imp = V8XSLTProcessor::toNative(info.Holder());
-    String result = imp->getParameter(namespaceURI, localName);
+    XSLTProcessor* impl = V8XSLTProcessor::toNative(info.Holder());
+    String result = impl->getParameter(namespaceURI, localName);
     if (result.isNull())
         return;
 
@@ -77,11 +77,11 @@ void V8XSLTProcessor::removeParameterMethodCustom(const v8::FunctionCallbackInfo
     if (isUndefinedOrNull(info[1]))
         return;
 
-    V8TRYCATCH_FOR_V8STRINGRESOURCE_VOID(V8StringResource<>, namespaceURI, info[0]);
-    V8TRYCATCH_FOR_V8STRINGRESOURCE_VOID(V8StringResource<>, localName, info[1]);
+    TOSTRING_VOID(V8StringResource<>, namespaceURI, info[0]);
+    TOSTRING_VOID(V8StringResource<>, localName, info[1]);
 
-    XSLTProcessor* imp = V8XSLTProcessor::toNative(info.Holder());
-    imp->removeParameter(namespaceURI, localName);
+    XSLTProcessor* impl = V8XSLTProcessor::toNative(info.Holder());
+    impl->removeParameter(namespaceURI, localName);
 }
 
 } // namespace WebCore

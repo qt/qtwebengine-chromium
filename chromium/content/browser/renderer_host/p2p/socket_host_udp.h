@@ -15,9 +15,10 @@
 #include "base/message_loop/message_loop.h"
 #include "content/browser/renderer_host/p2p/socket_host.h"
 #include "content/common/content_export.h"
-#include "content/public/common/p2p_socket_type.h"
+#include "content/common/p2p_socket_type.h"
 #include "net/base/ip_endpoint.h"
 #include "net/udp/udp_server_socket.h"
+#include "third_party/libjingle/source/talk/base/asyncpacketsocket.h"
 
 namespace content {
 
@@ -25,19 +26,21 @@ class P2PMessageThrottler;
 
 class CONTENT_EXPORT P2PSocketHostUdp : public P2PSocketHost {
  public:
-  P2PSocketHostUdp(IPC::Sender* message_sender, int id,
+  P2PSocketHostUdp(IPC::Sender* message_sender,
+                   int socket_id,
                    P2PMessageThrottler* throttler);
   virtual ~P2PSocketHostUdp();
 
   // P2PSocketHost overrides.
   virtual bool Init(const net::IPEndPoint& local_address,
-                    const net::IPEndPoint& remote_address) OVERRIDE;
+                    const P2PHostAndIPEndPoint& remote_address) OVERRIDE;
   virtual void Send(const net::IPEndPoint& to,
                     const std::vector<char>& data,
-                    net::DiffServCodePoint dscp,
+                    const talk_base::PacketOptions& options,
                     uint64 packet_id) OVERRIDE;
   virtual P2PSocketHost* AcceptIncomingTcpConnection(
       const net::IPEndPoint& remote_address, int id) OVERRIDE;
+  virtual bool SetOption(P2PSocketOption option, int value) OVERRIDE;
 
  private:
   friend class P2PSocketHostUdpTest;
@@ -47,13 +50,13 @@ class CONTENT_EXPORT P2PSocketHostUdp : public P2PSocketHost {
   struct PendingPacket {
     PendingPacket(const net::IPEndPoint& to,
                   const std::vector<char>& content,
-                  net::DiffServCodePoint dscp,
+                  const talk_base::PacketOptions& options,
                   uint64 id);
     ~PendingPacket();
     net::IPEndPoint to;
     scoped_refptr<net::IOBuffer> data;
     int size;
-    net::DiffServCodePoint dscp;
+    talk_base::PacketOptions packet_options;
     uint64 id;
   };
 

@@ -27,8 +27,21 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+
+// https://slightlyoff.github.io/ServiceWorker/spec/service_worker/index.html#service-worker-interface
 [
-    RuntimeEnabled=ServiceWorker,
-    NoInterfaceObject
-] interface ServiceWorker {
+    ActiveDOMObject,
+    RuntimeEnabled=ServiceWorker
+] interface ServiceWorker : EventTarget {
+
+    // FIXME: Should inherit this from Worker.
+    [Custom, RaisesException] void postMessage(SerializedScriptValue message, optional MessagePort[] messagePorts);
+
+    readonly attribute ScalarValueString scope;
+    readonly attribute ScalarValueString url;
+    // FIXME: Should be ServiceWorkerState enum, not DOMString.
+    readonly attribute DOMString state;
+    attribute EventHandler onstatechange;
 };
+
+ServiceWorker implements AbstractWorker;

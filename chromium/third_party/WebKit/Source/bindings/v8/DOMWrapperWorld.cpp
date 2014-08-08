@@ -31,7 +31,7 @@
 #include "config.h"
 #include "bindings/v8/DOMWrapperWorld.h"
 
-#include "V8Window.h"
+#include "bindings/core/v8/V8Window.h"
 #include "bindings/v8/DOMDataStore.h"
 #include "bindings/v8/ScriptController.h"
 #include "bindings/v8/V8Binding.h"
@@ -41,70 +41,30 @@
 #include "bindings/v8/WrapperTypeInfo.h"
 #include "core/dom/ExecutionContext.h"
 #include "wtf/HashTraits.h"
-#include "wtf/MainThread.h"
 #include "wtf/StdLibExtras.h"
 
 namespace WebCore {
 
 unsigned DOMWrapperWorld::isolatedWorldCount = 0;
-static bool initializingWindow = false;
+DOMWrapperWorld* DOMWrapperWorld::worldOfInitializingWindow = 0;
 
-void DOMWrapperWorld::setInitializingWindow(bool initializing)
+PassRefPtr<DOMWrapperWorld> DOMWrapperWorld::create(int worldId, int extensionGroup)
 {
-    initializingWindow = initializing;
-}
-
-PassRefPtr<DOMWrapperWorld> DOMWrapperWorld::createMainWorld()
-{
-    return adoptRef(new DOMWrapperWorld(MainWorldId, mainWorldExtensionGroup));
+    return adoptRef(new DOMWrapperWorld(worldId, extensionGroup));
 }
 
 DOMWrapperWorld::DOMWrapperWorld(int worldId, int extensionGroup)
     : m_worldId(worldId)
     , m_extensionGroup(extensionGroup)
+    , m_domDataStore(adoptPtr(new DOMDataStore(isMainWorld())))
 {
-    if (isIsolatedWorld())
-        m_domDataStore = adoptPtr(new DOMDataStore(IsolatedWorld));
 }
 
-DOMWrapperWorld* DOMWrapperWorld::current()
-{
-    v8::Isolate* isolate = v8::Isolate::GetCurrent();
-    ASSERT(isolate->InContext());
-    v8::Handle<v8::Context> context = isolate->GetCurrentContext();
-    if (!V8DOMWrapper::isWrapperOfType(toInnerGlobalObject(context), &V8Window::wrapperTypeInfo))
-        return 0;
-    ASSERT(isMainThread());
-    if (DOMWrapperWorld* world = isolatedWorld(context))
-        return world;
-    return mainThreadNormalWorld();
-}
-
-DOMWrapperWorld* mainThreadNormalWorld()
+DOMWrapperWorld& DOMWrapperWorld::mainWorld()
 {
     ASSERT(isMainThread());
-    DEFINE_STATIC_REF(DOMWrapperWorld, cachedNormalWorld, (DOMWrapperWorld::createMainWorld()));
-    return cachedNormalWorld;
-}
-
-// FIXME: Remove this function. There is currently an issue with the inspector related to the call to dispatchDidClearWindowObjectInWorld in ScriptController::windowShell.
-DOMWrapperWorld* existingWindowShellWorkaroundWorld()
-{
-    DEFINE_STATIC_REF(DOMWrapperWorld, world, (adoptRef(new DOMWrapperWorld(MainWorldId - 1, DOMWrapperWorld::mainWorldExtensionGroup - 1))));
-    return world;
-}
-
-bool DOMWrapperWorld::contextHasCorrectPrototype(v8::Handle<v8::Context> context)
-{
-    ASSERT(isMainThread());
-    if (initializingWindow)
-        return true;
-    return V8DOMWrapper::isWrapperOfType(toInnerGlobalObject(context), &V8Window::wrapperTypeInfo);
-}
-
-void DOMWrapperWorld::setIsolatedWorldField(v8::Handle<v8::Context> context)
-{
-    V8PerContextDataHolder::from(context)->setIsolatedWorld(isMainWorld() ? 0 : this);
+    DEFINE_STATIC_REF(DOMWrapperWorld, cachedMainWorld, (DOMWrapperWorld::create(MainWorldId, mainWorldExtensionGroup)));
+    return *cachedMainWorld;
 }
 
 typedef HashMap<int, DOMWrapperWorld*> WorldMap;
@@ -115,9 +75,10 @@ static WorldMap& isolatedWorldMap()
     return map;
 }
 
-void DOMWrapperWorld::getAllWorlds(Vector<RefPtr<DOMWrapperWorld> >& worlds)
+void DOMWrapperWorld::allWorldsInMainThread(Vector<RefPtr<DOMWrapperWorld> >& worlds)
 {
-    worlds.append(mainThreadNormalWorld());
+    ASSERT(isMainThread());
+    worlds.append(&mainWorld());
     WorldMap& isolatedWorlds = isolatedWorldMap();
     for (WorldMap::iterator it = isolatedWorlds.begin(); it != isolatedWorlds.end(); ++it)
         worlds.append(it->value);
@@ -127,46 +88,55 @@ DOMWrapperWorld::~DOMWrapperWorld()
 {
     ASSERT(!isMainWorld());
 
+    dispose();
+
     if (!isIsolatedWorld())
         return;
 
     WorldMap& map = isolatedWorldMap();
-    WorldMap::iterator i = map.find(m_worldId);
-    if (i == map.end()) {
+    WorldMap::iterator it = map.find(m_worldId);
+    if (it == map.end()) {
         ASSERT_NOT_REACHED();
         return;
     }
-    ASSERT(i->value == this);
+    ASSERT(it->value == this);
 
-    map.remove(i);
+    map.remove(it);
     isolatedWorldCount--;
     ASSERT(map.size() == isolatedWorldCount);
 }
 
+void DOMWrapperWorld::dispose()
+{
+    m_domDataStore.clear();
+}
+
+#ifndef NDEBUG
+static bool isIsolatedWorldId(int worldId)
+{
+    return MainWorldId < worldId  && worldId < IsolatedWorldIdLimit;
+}
+#endif
+
 PassRefPtr<DOMWrapperWorld> DOMWrapperWorld::ensureIsolatedWorld(int worldId, int extensionGroup)
 {
-    ASSERT(worldId > MainWorldId);
+    ASSERT(isIsolatedWorldId(worldId));
 
     WorldMap& map = isolatedWorldMap();
     WorldMap::AddResult result = map.add(worldId, 0);
-    RefPtr<DOMWrapperWorld> world = result.iterator->value;
+    RefPtr<DOMWrapperWorld> world = result.storedValue->value;
     if (world) {
         ASSERT(world->worldId() == worldId);
         ASSERT(world->extensionGroup() == extensionGroup);
         return world.release();
     }
 
-    world = adoptRef(new DOMWrapperWorld(worldId, extensionGroup));
-    result.iterator->value = world.get();
+    world = DOMWrapperWorld::create(worldId, extensionGroup);
+    result.storedValue->value = world.get();
     isolatedWorldCount++;
     ASSERT(map.size() == isolatedWorldCount);
 
     return world.release();
-}
-
-v8::Handle<v8::Context> DOMWrapperWorld::context(ScriptController& controller)
-{
-    return controller.windowShell(this)->context();
 }
 
 typedef HashMap<int, RefPtr<SecurityOrigin> > IsolatedWorldSecurityOriginMap;
@@ -185,19 +155,13 @@ SecurityOrigin* DOMWrapperWorld::isolatedWorldSecurityOrigin()
     return it == origins.end() ? 0 : it->value.get();
 }
 
-void DOMWrapperWorld::setIsolatedWorldSecurityOrigin(int worldID, PassRefPtr<SecurityOrigin> securityOrigin)
+void DOMWrapperWorld::setIsolatedWorldSecurityOrigin(int worldId, PassRefPtr<SecurityOrigin> securityOrigin)
 {
-    ASSERT(DOMWrapperWorld::isIsolatedWorldId(worldID));
+    ASSERT(isIsolatedWorldId(worldId));
     if (securityOrigin)
-        isolatedWorldSecurityOrigins().set(worldID, securityOrigin);
+        isolatedWorldSecurityOrigins().set(worldId, securityOrigin);
     else
-        isolatedWorldSecurityOrigins().remove(worldID);
-}
-
-void DOMWrapperWorld::clearIsolatedWorldSecurityOrigin(int worldID)
-{
-    ASSERT(DOMWrapperWorld::isIsolatedWorldId(worldID));
-    isolatedWorldSecurityOrigins().remove(worldID);
+        isolatedWorldSecurityOrigins().remove(worldId);
 }
 
 typedef HashMap<int, bool> IsolatedWorldContentSecurityPolicyMap;
@@ -216,39 +180,13 @@ bool DOMWrapperWorld::isolatedWorldHasContentSecurityPolicy()
     return it == policies.end() ? false : it->value;
 }
 
-void DOMWrapperWorld::setIsolatedWorldContentSecurityPolicy(int worldID, const String& policy)
+void DOMWrapperWorld::setIsolatedWorldContentSecurityPolicy(int worldId, const String& policy)
 {
-    ASSERT(DOMWrapperWorld::isIsolatedWorldId(worldID));
+    ASSERT(isIsolatedWorldId(worldId));
     if (!policy.isEmpty())
-        isolatedWorldContentSecurityPolicies().set(worldID, true);
+        isolatedWorldContentSecurityPolicies().set(worldId, true);
     else
-        isolatedWorldContentSecurityPolicies().remove(worldID);
-}
-
-void DOMWrapperWorld::clearIsolatedWorldContentSecurityPolicy(int worldID)
-{
-    ASSERT(DOMWrapperWorld::isIsolatedWorldId(worldID));
-    isolatedWorldContentSecurityPolicies().remove(worldID);
-}
-
-typedef HashMap<int, OwnPtr<V8DOMActivityLogger>, WTF::IntHash<int>, WTF::UnsignedWithZeroKeyHashTraits<int> > DOMActivityLoggerMap;
-static DOMActivityLoggerMap& domActivityLoggers()
-{
-    ASSERT(isMainThread());
-    DEFINE_STATIC_LOCAL(DOMActivityLoggerMap, map, ());
-    return map;
-}
-
-void DOMWrapperWorld::setActivityLogger(int worldId, PassOwnPtr<V8DOMActivityLogger> logger)
-{
-    domActivityLoggers().set(worldId, logger);
-}
-
-V8DOMActivityLogger* DOMWrapperWorld::activityLogger(int worldId)
-{
-    DOMActivityLoggerMap& loggers = domActivityLoggers();
-    DOMActivityLoggerMap::iterator it = loggers.find(worldId);
-    return it == loggers.end() ? 0 : it->value.get();
+        isolatedWorldContentSecurityPolicies().remove(worldId);
 }
 
 } // namespace WebCore

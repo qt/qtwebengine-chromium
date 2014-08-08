@@ -30,11 +30,13 @@ def Format(root, lang='en', output_dir='.'):
   for line in emit_lines or default_includes:
     yield line + '\n'
 
-  for line in FormatDefines(root, root.ShouldOutputAllResourceDefines()):
+  for line in FormatDefines(root, root.ShouldOutputAllResourceDefines(),
+                            root.GetRcHeaderFormat()):
     yield line
 
 
-def FormatDefines(root, output_all_resource_defines=True):
+def FormatDefines(root, output_all_resource_defines=True,
+                  rc_header_format=None):
   '''Yields #define SYMBOL 1234 lines.
 
   Args:
@@ -50,6 +52,9 @@ def FormatDefines(root, output_all_resource_defines=True):
   else:
     items = root.ActiveDescendants()
 
+  if not rc_header_format:
+    rc_header_format = "#define {textual_id} {numeric_id}"
+  rc_header_format += "\n"
   seen = set()
   for item in items:
     if not isinstance(item, message.MessageNode):
@@ -57,7 +62,8 @@ def FormatDefines(root, output_all_resource_defines=True):
         for tid in item.GetTextualIds():
           if tid in tids and tid not in seen:
             seen.add(tid)
-            yield '#define %s %d\n' % (tid, tids[tid])
+            yield rc_header_format.format(textual_id=tid,numeric_id=tids[tid])
+
   # Temporarily mimic old behavior: MessageNodes were only output if active,
   # even with output_all_resource_defines set. TODO(benrg): Remove this after
   # fixing problems in the Chrome tree.
@@ -67,7 +73,7 @@ def FormatDefines(root, output_all_resource_defines=True):
         for tid in item.GetTextualIds():
           if tid in tids and tid not in seen:
             seen.add(tid)
-            yield '#define %s %d\n' % (tid, tids[tid])
+            yield rc_header_format.format(textual_id=tid,numeric_id=tids[tid])
 
 
 _cached_ids = {}

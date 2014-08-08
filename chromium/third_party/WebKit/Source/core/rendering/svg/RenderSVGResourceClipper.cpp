@@ -24,15 +24,16 @@
 
 #include "core/rendering/svg/RenderSVGResourceClipper.h"
 
-#include "RuntimeEnabledFeatures.h"
-#include "SVGNames.h"
-#include "core/frame/Frame.h"
+#include "core/SVGNames.h"
 #include "core/frame/FrameView.h"
+#include "core/frame/LocalFrame.h"
 #include "core/rendering/HitTestResult.h"
+#include "core/rendering/svg/SVGRenderSupport.h"
 #include "core/rendering/svg/SVGRenderingContext.h"
 #include "core/rendering/svg/SVGResources.h"
 #include "core/rendering/svg/SVGResourcesCache.h"
 #include "core/svg/SVGUseElement.h"
+#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/graphics/DisplayList.h"
 #include "platform/graphics/GraphicsContextStateSaver.h"
 #include "wtf/TemporaryChange.h"
@@ -78,7 +79,7 @@ bool RenderSVGResourceClipper::applyStatefulResource(RenderObject* object, Graph
 
     clearInvalidationMask();
 
-    return applyClippingToContext(object, object->objectBoundingBox(), object->repaintRectInLocalCoordinates(), context, clipperContext);
+    return applyClippingToContext(object, object->objectBoundingBox(), object->paintInvalidationRectInLocalCoordinates(), context, clipperContext);
 }
 
 bool RenderSVGResourceClipper::tryPathOnlyClipping(GraphicsContext* context,
@@ -89,16 +90,16 @@ bool RenderSVGResourceClipper::tryPathOnlyClipping(GraphicsContext* context,
     WindRule clipRule = RULE_NONZERO;
     Path clipPath = Path();
 
-    for (Node* childNode = element()->firstChild(); childNode; childNode = childNode->nextSibling()) {
-        RenderObject* renderer = childNode->renderer();
+    for (Element* childElement = ElementTraversal::firstWithin(*element()); childElement; childElement = ElementTraversal::nextSibling(*childElement)) {
+        RenderObject* renderer = childElement->renderer();
         if (!renderer)
             continue;
         // Only shapes or paths are supported for direct clipping. We need to fallback to masking for texts.
         if (renderer->isSVGText())
             return false;
-        if (!childNode->isSVGElement() || !toSVGElement(childNode)->isSVGGraphicsElement())
+        if (!childElement->isSVGElement() || !toSVGElement(childElement)->isSVGGraphicsElement())
             continue;
-        SVGGraphicsElement* styled = toSVGGraphicsElement(childNode);
+        SVGGraphicsElement* styled = toSVGGraphicsElement(childElement);
         RenderStyle* style = renderer->style();
         if (!style || style->display() == NONE || style->visibility() != VISIBLE)
              continue;
@@ -127,7 +128,7 @@ bool RenderSVGResourceClipper::tryPathOnlyClipping(GraphicsContext* context,
         }
     }
     // Only one visible shape/path was found. Directly continue clipping and transform the content to userspace if necessary.
-    if (toSVGClipPathElement(element())->clipPathUnitsCurrentValue() == SVGUnitTypes::SVG_UNIT_TYPE_OBJECTBOUNDINGBOX) {
+    if (toSVGClipPathElement(element())->clipPathUnits()->currentValue()->enumValue() == SVGUnitTypes::SVG_UNIT_TYPE_OBJECTBOUNDINGBOX) {
         AffineTransform transform;
         transform.translate(objectBoundingBox.x(), objectBoundingBox.y());
         transform.scaleNonUniform(objectBoundingBox.width(), objectBoundingBox.height());
@@ -148,7 +149,6 @@ bool RenderSVGResourceClipper::applyClippingToContext(RenderObject* target, cons
     const FloatRect& repaintRect, GraphicsContext* context, ClipperContext& clipperContext)
 {
     ASSERT(target);
-    ASSERT(target->node());
     ASSERT(context);
     ASSERT(clipperContext.state == ClipperContext::NotAppliedState);
     ASSERT_WITH_SECURITY_IMPLICATION(!needsLayout());
@@ -161,8 +161,8 @@ bool RenderSVGResourceClipper::applyClippingToContext(RenderObject* target, cons
     // When drawing a clip for non-SVG elements, the CTM does not include the zoom factor.
     // In this case, we need to apply the zoom scale explicitly - but only for clips with
     // userSpaceOnUse units (the zoom is accounted for objectBoundingBox-resolved lengths).
-    if (!target->node()->isSVGElement()
-        && toSVGClipPathElement(element())->clipPathUnitsCurrentValue() == SVGUnitTypes::SVG_UNIT_TYPE_USERSPACEONUSE) {
+    if (!target->isSVG()
+        && toSVGClipPathElement(element())->clipPathUnits()->currentValue()->enumValue() == SVGUnitTypes::SVG_UNIT_TYPE_USERSPACEONUSE) {
         ASSERT(style());
         animatedLocalTransform.scale(style()->effectiveZoom());
     }
@@ -238,7 +238,7 @@ void RenderSVGResourceClipper::drawClipMaskContent(GraphicsContext* context, con
     ASSERT(context);
 
     AffineTransform contentTransformation;
-    SVGUnitTypes::SVGUnitType contentUnits = toSVGClipPathElement(element())->clipPathUnitsCurrentValue();
+    SVGUnitTypes::SVGUnitType contentUnits = toSVGClipPathElement(element())->clipPathUnits()->currentValue()->enumValue();
     if (contentUnits == SVGUnitTypes::SVG_UNIT_TYPE_OBJECTBOUNDINGBOX) {
         contentTransformation.translate(targetBoundingBox.x(), targetBoundingBox.y());
         contentTransformation.scaleNonUniform(targetBoundingBox.width(), targetBoundingBox.height());
@@ -258,7 +258,10 @@ PassRefPtr<DisplayList> RenderSVGResourceClipper::asDisplayList(GraphicsContext*
     ASSERT(context);
     ASSERT(frame());
 
-    context->beginRecording(repaintRectInLocalCoordinates());
+    // Using strokeBoundingBox (instead of paintInvalidationRectInLocalCoordinates) to avoid the intersection
+    // with local clips/mask, which may yield incorrect results when mixing objectBoundingBox and
+    // userSpaceOnUse units (http://crbug.com/294900).
+    context->beginRecording(strokeBoundingBox());
 
     // Switch to a paint behavior where all children of this <clipPath> will be rendered using special constraints:
     // - fill-opacity/stroke-opacity/opacity set to 1
@@ -268,9 +271,9 @@ PassRefPtr<DisplayList> RenderSVGResourceClipper::asDisplayList(GraphicsContext*
     PaintBehavior oldBehavior = frame()->view()->paintBehavior();
     frame()->view()->setPaintBehavior(oldBehavior | PaintBehaviorRenderingSVGMask);
 
-    for (Node* childNode = element()->firstChild(); childNode; childNode = childNode->nextSibling()) {
-        RenderObject* renderer = childNode->renderer();
-        if (!childNode->isSVGElement() || !renderer)
+    for (SVGElement* childElement = Traversal<SVGElement>::firstChild(*element()); childElement; childElement = Traversal<SVGElement>::nextSibling(*childElement)) {
+        RenderObject* renderer = childElement->renderer();
+        if (!renderer)
             continue;
 
         RenderStyle* style = renderer->style();
@@ -278,13 +281,13 @@ PassRefPtr<DisplayList> RenderSVGResourceClipper::asDisplayList(GraphicsContext*
             continue;
 
         WindRule newClipRule = style->svgStyle()->clipRule();
-        bool isUseElement = childNode->hasTagName(SVGNames::useTag);
+        bool isUseElement = isSVGUseElement(*childElement);
         if (isUseElement) {
-            SVGUseElement* useElement = toSVGUseElement(childNode);
-            renderer = useElement->rendererClipChild();
+            SVGUseElement& useElement = toSVGUseElement(*childElement);
+            renderer = useElement.rendererClipChild();
             if (!renderer)
                 continue;
-            if (!useElement->hasAttribute(SVGNames::clip_ruleAttr))
+            if (!useElement.hasAttribute(SVGNames::clip_ruleAttr))
                 newClipRule = renderer->style()->svgStyle()->clipRule();
         }
 
@@ -295,7 +298,7 @@ PassRefPtr<DisplayList> RenderSVGResourceClipper::asDisplayList(GraphicsContext*
         context->setFillRule(newClipRule);
 
         if (isUseElement)
-            renderer = childNode->renderer();
+            renderer = childElement->renderer();
 
         SVGRenderingContext::renderSubtree(context, renderer, contentTransformation);
     }
@@ -308,16 +311,16 @@ PassRefPtr<DisplayList> RenderSVGResourceClipper::asDisplayList(GraphicsContext*
 void RenderSVGResourceClipper::calculateClipContentRepaintRect()
 {
     // This is a rough heuristic to appraise the clip size and doesn't consider clip on clip.
-    for (Node* childNode = element()->firstChild(); childNode; childNode = childNode->nextSibling()) {
-        RenderObject* renderer = childNode->renderer();
-        if (!childNode->isSVGElement() || !renderer)
+    for (SVGElement* childElement = Traversal<SVGElement>::firstChild(*element()); childElement; childElement = Traversal<SVGElement>::nextSibling(*childElement)) {
+        RenderObject* renderer = childElement->renderer();
+        if (!renderer)
             continue;
-        if (!renderer->isSVGShape() && !renderer->isSVGText() && !childNode->hasTagName(SVGNames::useTag))
+        if (!renderer->isSVGShape() && !renderer->isSVGText() && !isSVGUseElement(*childElement))
             continue;
         RenderStyle* style = renderer->style();
         if (!style || style->display() == NONE || style->visibility() != VISIBLE)
              continue;
-        m_clipBoundaries.unite(renderer->localToParentTransform().mapRect(renderer->repaintRectInLocalCoordinates()));
+        m_clipBoundaries.unite(renderer->localToParentTransform().mapRect(renderer->paintInvalidationRectInLocalCoordinates()));
     }
     m_clipBoundaries = toSVGClipPathElement(element())->animatedLocalTransform().mapRect(m_clipBoundaries);
 }
@@ -329,7 +332,7 @@ bool RenderSVGResourceClipper::hitTestClipContent(const FloatRect& objectBoundin
         return false;
 
     SVGClipPathElement* clipPathElement = toSVGClipPathElement(element());
-    if (clipPathElement->clipPathUnitsCurrentValue() == SVGUnitTypes::SVG_UNIT_TYPE_OBJECTBOUNDINGBOX) {
+    if (clipPathElement->clipPathUnits()->currentValue()->enumValue() == SVGUnitTypes::SVG_UNIT_TYPE_OBJECTBOUNDINGBOX) {
         AffineTransform transform;
         transform.translate(objectBoundingBox.x(), objectBoundingBox.y());
         transform.scaleNonUniform(objectBoundingBox.width(), objectBoundingBox.height());
@@ -338,11 +341,11 @@ bool RenderSVGResourceClipper::hitTestClipContent(const FloatRect& objectBoundin
 
     point = clipPathElement->animatedLocalTransform().inverse().mapPoint(point);
 
-    for (Node* childNode = element()->firstChild(); childNode; childNode = childNode->nextSibling()) {
-        RenderObject* renderer = childNode->renderer();
-        if (!childNode->isSVGElement() || !renderer)
+    for (SVGElement* childElement = Traversal<SVGElement>::firstChild(*element()); childElement; childElement = Traversal<SVGElement>::nextSibling(*childElement)) {
+        RenderObject* renderer = childElement->renderer();
+        if (!renderer)
             continue;
-        if (!renderer->isSVGShape() && !renderer->isSVGText() && !childNode->hasTagName(SVGNames::useTag))
+        if (!renderer->isSVGShape() && !renderer->isSVGText() && !isSVGUseElement(*childElement))
             continue;
         IntPoint hitPoint;
         HitTestResult result(hitPoint);
@@ -353,7 +356,7 @@ bool RenderSVGResourceClipper::hitTestClipContent(const FloatRect& objectBoundin
     return false;
 }
 
-FloatRect RenderSVGResourceClipper::resourceBoundingBox(RenderObject* object)
+FloatRect RenderSVGResourceClipper::resourceBoundingBox(const RenderObject* object)
 {
     // Resource was not layouted yet. Give back the boundingBox of the object.
     if (selfNeedsLayout())
@@ -362,7 +365,7 @@ FloatRect RenderSVGResourceClipper::resourceBoundingBox(RenderObject* object)
     if (m_clipBoundaries.isEmpty())
         calculateClipContentRepaintRect();
 
-    if (toSVGClipPathElement(element())->clipPathUnitsCurrentValue() == SVGUnitTypes::SVG_UNIT_TYPE_OBJECTBOUNDINGBOX) {
+    if (toSVGClipPathElement(element())->clipPathUnits()->currentValue()->enumValue() == SVGUnitTypes::SVG_UNIT_TYPE_OBJECTBOUNDINGBOX) {
         FloatRect objectBoundingBox = object->objectBoundingBox();
         AffineTransform transform;
         transform.translate(objectBoundingBox.x(), objectBoundingBox.y());

@@ -15,7 +15,7 @@
 #include "media/base/video_decoder_config.h"
 
 namespace base {
-class MessageLoopProxy;
+class SingleThreadTaskRunner;
 }
 
 namespace media {
@@ -24,12 +24,12 @@ class DecoderBuffer;
 
 // Decryptor-based DemuxerStream implementation that converts a potentially
 // encrypted demuxer stream to a clear demuxer stream.
-// All public APIs and callbacks are trampolined to the |message_loop_| so
+// All public APIs and callbacks are trampolined to the |task_runner_| so
 // that no locks are required for thread safety.
 class MEDIA_EXPORT DecryptingDemuxerStream : public DemuxerStream {
  public:
   DecryptingDemuxerStream(
-      const scoped_refptr<base::MessageLoopProxy>& message_loop,
+      const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
       const SetDecryptorReadyCB& set_decryptor_ready_cb);
   virtual ~DecryptingDemuxerStream();
 
@@ -55,6 +55,7 @@ class MEDIA_EXPORT DecryptingDemuxerStream : public DemuxerStream {
   virtual VideoDecoderConfig video_decoder_config() OVERRIDE;
   virtual Type type() OVERRIDE;
   virtual void EnableBitstreamConverter() OVERRIDE;
+  virtual bool SupportsConfigChanges() OVERRIDE;
 
  private:
   // For a detailed state diagram please see this link: http://goo.gl/8jAok
@@ -98,9 +99,7 @@ class MEDIA_EXPORT DecryptingDemuxerStream : public DemuxerStream {
   // |demuxer_stream_|.
   void InitializeDecoderConfig();
 
-  scoped_refptr<base::MessageLoopProxy> message_loop_;
-  base::WeakPtrFactory<DecryptingDemuxerStream> weak_factory_;
-  base::WeakPtr<DecryptingDemuxerStream> weak_this_;
+  scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
 
   State state_;
 
@@ -127,6 +126,10 @@ class MEDIA_EXPORT DecryptingDemuxerStream : public DemuxerStream {
   // If this variable is true and kNoKey is returned then we need to try
   // decrypting again in case the newly added key is the correct decryption key.
   bool key_added_while_decrypt_pending_;
+
+  // NOTE: Weak pointers must be invalidated before all other member variables.
+  base::WeakPtrFactory<DecryptingDemuxerStream> weak_factory_;
+  base::WeakPtr<DecryptingDemuxerStream> weak_this_;
 
   DISALLOW_COPY_AND_ASSIGN(DecryptingDemuxerStream);
 };

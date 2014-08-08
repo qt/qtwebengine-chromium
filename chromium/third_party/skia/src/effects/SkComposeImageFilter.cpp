@@ -7,16 +7,17 @@
 
 #include "SkBitmap.h"
 #include "SkComposeImageFilter.h"
-#include "SkFlattenableBuffers.h"
+#include "SkReadBuffer.h"
+#include "SkWriteBuffer.h"
 
 SkComposeImageFilter::~SkComposeImageFilter() {
 }
 
 bool SkComposeImageFilter::onFilterImage(Proxy* proxy,
                                          const SkBitmap& src,
-                                         const SkMatrix& ctm,
+                                         const Context& ctx,
                                          SkBitmap* result,
-                                         SkIPoint* loc) {
+                                         SkIPoint* offset) const {
     SkImageFilter* outer = getInput(0);
     SkImageFilter* inner = getInput(1);
 
@@ -25,17 +26,17 @@ bool SkComposeImageFilter::onFilterImage(Proxy* proxy,
     }
 
     if (!outer || !inner) {
-        return (outer ? outer : inner)->filterImage(proxy, src, ctm, result, loc);
+        return (outer ? outer : inner)->filterImage(proxy, src, ctx, result, offset);
     }
 
     SkBitmap tmp;
-    return inner->filterImage(proxy, src, ctm, &tmp, loc) &&
-           outer->filterImage(proxy, tmp, ctm, result, loc);
+    return inner->filterImage(proxy, src, ctx, &tmp, offset) &&
+           outer->filterImage(proxy, tmp, ctx, result, offset);
 }
 
 bool SkComposeImageFilter::onFilterBounds(const SkIRect& src,
                                           const SkMatrix& ctm,
-                                          SkIRect* dst) {
+                                          SkIRect* dst) const {
     SkImageFilter* outer = getInput(0);
     SkImageFilter* inner = getInput(1);
 
@@ -52,6 +53,6 @@ bool SkComposeImageFilter::onFilterBounds(const SkIRect& src,
            outer->filterBounds(tmp, ctm, dst);
 }
 
-SkComposeImageFilter::SkComposeImageFilter(SkFlattenableReadBuffer& buffer)
+SkComposeImageFilter::SkComposeImageFilter(SkReadBuffer& buffer)
   : INHERITED(2, buffer) {
 }

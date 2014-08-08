@@ -26,9 +26,10 @@
 #include "config.h"
 #include "core/editing/TypingCommand.h"
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
+#include "core/dom/ElementTraversal.h"
 #include "core/editing/BreakBlockquoteCommand.h"
 #include "core/editing/Editor.h"
 #include "core/editing/FrameSelection.h"
@@ -39,7 +40,8 @@
 #include "core/editing/VisiblePosition.h"
 #include "core/editing/VisibleUnits.h"
 #include "core/editing/htmlediting.h"
-#include "core/frame/Frame.h"
+#include "core/frame/LocalFrame.h"
+#include "core/html/HTMLBRElement.h"
 #include "core/rendering/RenderObject.h"
 
 namespace WebCore {
@@ -92,13 +94,13 @@ TypingCommand::TypingCommand(Document& document, ETypingCommand commandType, con
 
 void TypingCommand::deleteSelection(Document& document, Options options)
 {
-    Frame* frame = document.frame();
+    LocalFrame* frame = document.frame();
     ASSERT(frame);
 
     if (!frame->selection().isRange())
         return;
 
-    if (RefPtr<TypingCommand> lastTypingCommand = lastTypingCommandIfStillOpenForTyping(frame)) {
+    if (RefPtrWillBeRawPtr<TypingCommand> lastTypingCommand = lastTypingCommandIfStillOpenForTyping(frame)) {
         lastTypingCommand->setShouldPreventSpellChecking(options & PreventSpellChecking);
         lastTypingCommand->deleteSelection(options & SmartDelete);
         return;
@@ -110,8 +112,8 @@ void TypingCommand::deleteSelection(Document& document, Options options)
 void TypingCommand::deleteKeyPressed(Document& document, Options options, TextGranularity granularity)
 {
     if (granularity == CharacterGranularity) {
-        Frame* frame = document.frame();
-        if (RefPtr<TypingCommand> lastTypingCommand = lastTypingCommandIfStillOpenForTyping(frame)) {
+        LocalFrame* frame = document.frame();
+        if (RefPtrWillBeRawPtr<TypingCommand> lastTypingCommand = lastTypingCommandIfStillOpenForTyping(frame)) {
             // If the last typing command is not Delete, open a new typing command.
             // We need to group continuous delete commands alone in a single typing command.
             if (lastTypingCommand->commandTypeOfOpenCommand() == DeleteKey) {
@@ -130,8 +132,8 @@ void TypingCommand::forwardDeleteKeyPressed(Document& document, Options options,
 {
     // FIXME: Forward delete in TextEdit appears to open and close a new typing command.
     if (granularity == CharacterGranularity) {
-        Frame* frame = document.frame();
-        if (RefPtr<TypingCommand> lastTypingCommand = lastTypingCommandIfStillOpenForTyping(frame)) {
+        LocalFrame* frame = document.frame();
+        if (RefPtrWillBeRawPtr<TypingCommand> lastTypingCommand = lastTypingCommandIfStillOpenForTyping(frame)) {
             updateSelectionIfDifferentFromCurrentSelection(lastTypingCommand.get(), frame);
             lastTypingCommand->setShouldPreventSpellChecking(options & PreventSpellChecking);
             lastTypingCommand->forwardDeleteKeyPressed(granularity, options & KillRing);
@@ -142,7 +144,7 @@ void TypingCommand::forwardDeleteKeyPressed(Document& document, Options options,
     TypingCommand::create(document, ForwardDeleteKey, "", options, granularity)->apply();
 }
 
-void TypingCommand::updateSelectionIfDifferentFromCurrentSelection(TypingCommand* typingCommand, Frame* frame)
+void TypingCommand::updateSelectionIfDifferentFromCurrentSelection(TypingCommand* typingCommand, LocalFrame* frame)
 {
     ASSERT(frame);
     VisibleSelection currentSelection = frame->selection().selection();
@@ -155,7 +157,7 @@ void TypingCommand::updateSelectionIfDifferentFromCurrentSelection(TypingCommand
 
 void TypingCommand::insertText(Document& document, const String& text, Options options, TextCompositionType composition)
 {
-    Frame* frame = document.frame();
+    LocalFrame* frame = document.frame();
     ASSERT(frame);
 
     if (!text.isEmpty())
@@ -167,7 +169,7 @@ void TypingCommand::insertText(Document& document, const String& text, Options o
 // FIXME: We shouldn't need to take selectionForInsertion. It should be identical to FrameSelection's current selection.
 void TypingCommand::insertText(Document& document, const String& text, const VisibleSelection& selectionForInsertion, Options options, TextCompositionType compositionType)
 {
-    RefPtr<Frame> frame = document.frame();
+    RefPtr<LocalFrame> frame = document.frame();
     ASSERT(frame);
 
     VisibleSelection currentSelection = frame->selection().selection();
@@ -177,7 +179,7 @@ void TypingCommand::insertText(Document& document, const String& text, const Vis
     // Set the starting and ending selection appropriately if we are using a selection
     // that is different from the current selection.  In the future, we should change EditCommand
     // to deal with custom selections in a general way that can be used by all of the commands.
-    if (RefPtr<TypingCommand> lastTypingCommand = lastTypingCommandIfStillOpenForTyping(frame.get())) {
+    if (RefPtrWillBeRawPtr<TypingCommand> lastTypingCommand = lastTypingCommandIfStillOpenForTyping(frame.get())) {
         if (lastTypingCommand->endingSelection() != selectionForInsertion) {
             lastTypingCommand->setStartingSelection(selectionForInsertion);
             lastTypingCommand->setEndingSelection(selectionForInsertion);
@@ -190,13 +192,13 @@ void TypingCommand::insertText(Document& document, const String& text, const Vis
         return;
     }
 
-    RefPtr<TypingCommand> cmd = TypingCommand::create(document, InsertText, newText, options, compositionType);
+    RefPtrWillBeRawPtr<TypingCommand> cmd = TypingCommand::create(document, InsertText, newText, options, compositionType);
     applyTextInsertionCommand(frame.get(), cmd, selectionForInsertion, currentSelection);
 }
 
 void TypingCommand::insertLineBreak(Document& document, Options options)
 {
-    if (RefPtr<TypingCommand> lastTypingCommand = lastTypingCommandIfStillOpenForTyping(document.frame())) {
+    if (RefPtrWillBeRawPtr<TypingCommand> lastTypingCommand = lastTypingCommandIfStillOpenForTyping(document.frame())) {
         lastTypingCommand->setShouldRetainAutocorrectionIndicator(options & RetainAutocorrectionIndicator);
         lastTypingCommand->insertLineBreak();
         return;
@@ -207,7 +209,7 @@ void TypingCommand::insertLineBreak(Document& document, Options options)
 
 void TypingCommand::insertParagraphSeparatorInQuotedContent(Document& document)
 {
-    if (RefPtr<TypingCommand> lastTypingCommand = lastTypingCommandIfStillOpenForTyping(document.frame())) {
+    if (RefPtrWillBeRawPtr<TypingCommand> lastTypingCommand = lastTypingCommandIfStillOpenForTyping(document.frame())) {
         lastTypingCommand->insertParagraphSeparatorInQuotedContent();
         return;
     }
@@ -217,7 +219,7 @@ void TypingCommand::insertParagraphSeparatorInQuotedContent(Document& document)
 
 void TypingCommand::insertParagraphSeparator(Document& document, Options options)
 {
-    if (RefPtr<TypingCommand> lastTypingCommand = lastTypingCommandIfStillOpenForTyping(document.frame())) {
+    if (RefPtrWillBeRawPtr<TypingCommand> lastTypingCommand = lastTypingCommandIfStillOpenForTyping(document.frame())) {
         lastTypingCommand->setShouldRetainAutocorrectionIndicator(options & RetainAutocorrectionIndicator);
         lastTypingCommand->insertParagraphSeparator();
         return;
@@ -226,20 +228,20 @@ void TypingCommand::insertParagraphSeparator(Document& document, Options options
     TypingCommand::create(document, InsertParagraphSeparator, "", options)->apply();
 }
 
-PassRefPtr<TypingCommand> TypingCommand::lastTypingCommandIfStillOpenForTyping(Frame* frame)
+PassRefPtrWillBeRawPtr<TypingCommand> TypingCommand::lastTypingCommandIfStillOpenForTyping(LocalFrame* frame)
 {
     ASSERT(frame);
 
-    RefPtr<CompositeEditCommand> lastEditCommand = frame->editor().lastEditCommand();
+    RefPtrWillBeRawPtr<CompositeEditCommand> lastEditCommand = frame->editor().lastEditCommand();
     if (!lastEditCommand || !lastEditCommand->isTypingCommand() || !static_cast<TypingCommand*>(lastEditCommand.get())->isOpenForMoreTyping())
-        return 0;
+        return nullptr;
 
     return static_cast<TypingCommand*>(lastEditCommand.get());
 }
 
-void TypingCommand::closeTyping(Frame* frame)
+void TypingCommand::closeTyping(LocalFrame* frame)
 {
-    if (RefPtr<TypingCommand> lastTypingCommand = lastTypingCommandIfStillOpenForTyping(frame))
+    if (RefPtrWillBeRawPtr<TypingCommand> lastTypingCommand = lastTypingCommandIfStillOpenForTyping(frame))
         lastTypingCommand->closeTyping();
 }
 
@@ -286,7 +288,7 @@ EditAction TypingCommand::editingAction() const
 
 void TypingCommand::markMisspellingsAfterTyping(ETypingCommand commandType)
 {
-    Frame* frame = document().frame();
+    LocalFrame* frame = document().frame();
     if (!frame)
         return;
 
@@ -311,7 +313,7 @@ void TypingCommand::markMisspellingsAfterTyping(ETypingCommand commandType)
 
 void TypingCommand::typingAddedToOpenCommand(ETypingCommand commandTypeForAddedTyping)
 {
-    Frame* frame = document().frame();
+    LocalFrame* frame = document().frame();
     if (!frame)
         return;
 
@@ -336,7 +338,7 @@ void TypingCommand::insertText(const String &text, bool selectInsertedText)
 
 void TypingCommand::insertTextRunWithoutNewlines(const String &text, bool selectInsertedText)
 {
-    RefPtr<InsertTextCommand> command = InsertTextCommand::create(document(), text, selectInsertedText,
+    RefPtrWillBeRawPtr<InsertTextCommand> command = InsertTextCommand::create(document(), text, selectInsertedText,
         m_compositionType == TextCompositionNone ? InsertTextCommand::RebalanceLeadingAndTrailingWhitespaces : InsertTextCommand::RebalanceAllWhitespaces);
 
     applyCommandToComposite(command, endingSelection());
@@ -381,10 +383,13 @@ bool TypingCommand::makeEditableRootEmpty()
     if (!root || !root->firstChild())
         return false;
 
-    if (root->firstChild() == root->lastChild() && root->firstElementChild() && root->firstElementChild()->hasTagName(brTag)) {
-        // If there is a single child and it could be a placeholder, leave it alone.
-        if (root->renderer() && root->renderer()->isRenderBlockFlow())
-            return false;
+    if (root->firstChild() == root->lastChild()) {
+        Element* firstElementChild = ElementTraversal::firstWithin(*root);
+        if (isHTMLBRElement(firstElementChild)) {
+            // If there is a single child and it could be a placeholder, leave it alone.
+            if (root->renderer() && root->renderer()->isRenderBlockFlow())
+                return false;
+        }
     }
 
     while (Node* child = root->firstChild())
@@ -398,7 +403,7 @@ bool TypingCommand::makeEditableRootEmpty()
 
 void TypingCommand::deleteKeyPressed(TextGranularity granularity, bool killRing)
 {
-    Frame* frame = document().frame();
+    LocalFrame* frame = document().frame();
     if (!frame)
         return;
 
@@ -420,29 +425,29 @@ void TypingCommand::deleteKeyPressed(TextGranularity granularity, bool killRing)
 
         m_smartDelete = false;
 
-        FrameSelection selection;
-        selection.setSelection(endingSelection());
-        selection.modify(FrameSelection::AlterationExtend, DirectionBackward, granularity);
-        if (killRing && selection.isCaret() && granularity != CharacterGranularity)
-            selection.modify(FrameSelection::AlterationExtend, DirectionBackward, CharacterGranularity);
+        OwnPtrWillBeRawPtr<FrameSelection> selection = FrameSelection::create();
+        selection->setSelection(endingSelection());
+        selection->modify(FrameSelection::AlterationExtend, DirectionBackward, granularity);
+        if (killRing && selection->isCaret() && granularity != CharacterGranularity)
+            selection->modify(FrameSelection::AlterationExtend, DirectionBackward, CharacterGranularity);
 
-        if (endingSelection().visibleStart().previous(CannotCrossEditingBoundary).isNull()) {
+        VisiblePosition visibleStart(endingSelection().visibleStart());
+        if (visibleStart.previous(CannotCrossEditingBoundary).isNull()) {
             // When the caret is at the start of the editable area in an empty list item, break out of the list item.
             if (breakOutOfEmptyListItem()) {
                 typingAddedToOpenCommand(DeleteKey);
                 return;
             }
             // When there are no visible positions in the editing root, delete its entire contents.
-            if (endingSelection().visibleStart().next(CannotCrossEditingBoundary).isNull() && makeEditableRootEmpty()) {
+            if (visibleStart.next(CannotCrossEditingBoundary).isNull() && makeEditableRootEmpty()) {
                 typingAddedToOpenCommand(DeleteKey);
                 return;
             }
         }
 
-        VisiblePosition visibleStart(endingSelection().visibleStart());
         // If we have a caret selection at the beginning of a cell, we have nothing to do.
         Node* enclosingTableCell = enclosingNodeOfType(visibleStart.deepEquivalent(), &isTableCell);
-        if (enclosingTableCell && visibleStart == firstPositionInNode(enclosingTableCell))
+        if (enclosingTableCell && visibleStart == VisiblePosition(firstPositionInNode(enclosingTableCell)))
             return;
 
         // If the caret is at the start of a paragraph after a table, move content into the last table cell.
@@ -451,7 +456,7 @@ void TypingCommand::deleteKeyPressed(TextGranularity granularity, bool killRing)
             if (isLastPositionBeforeTable(visibleStart))
                 return;
             // Extend the selection backward into the last cell, then deletion will handle the move.
-            selection.modify(FrameSelection::AlterationExtend, DirectionBackward, granularity);
+            selection->modify(FrameSelection::AlterationExtend, DirectionBackward, granularity);
         // If the caret is just after a table, select the table and don't delete anything.
         } else if (Node* table = isFirstPositionAfterTable(visibleStart)) {
             setEndingSelection(VisibleSelection(positionBeforeNode(table), endingSelection().start(), DOWNSTREAM, endingSelection().isDirectional()));
@@ -459,7 +464,7 @@ void TypingCommand::deleteKeyPressed(TextGranularity granularity, bool killRing)
             return;
         }
 
-        selectionToDelete = selection.selection();
+        selectionToDelete = selection->selection();
 
         if (granularity == CharacterGranularity && selectionToDelete.end().containerNode() == selectionToDelete.start().containerNode()
             && selectionToDelete.end().computeOffsetInContainerNode() - selectionToDelete.start().computeOffsetInContainerNode() > 1) {
@@ -502,7 +507,7 @@ void TypingCommand::deleteKeyPressed(TextGranularity granularity, bool killRing)
 
 void TypingCommand::forwardDeleteKeyPressed(TextGranularity granularity, bool killRing)
 {
-    Frame* frame = document().frame();
+    LocalFrame* frame = document().frame();
     if (!frame)
         return;
 
@@ -522,16 +527,16 @@ void TypingCommand::forwardDeleteKeyPressed(TextGranularity granularity, bool ki
         // Handle delete at beginning-of-block case.
         // Do nothing in the case that the caret is at the start of a
         // root editable element or at the start of a document.
-        FrameSelection selection;
-        selection.setSelection(endingSelection());
-        selection.modify(FrameSelection::AlterationExtend, DirectionForward, granularity);
-        if (killRing && selection.isCaret() && granularity != CharacterGranularity)
-            selection.modify(FrameSelection::AlterationExtend, DirectionForward, CharacterGranularity);
+        OwnPtrWillBeRawPtr<FrameSelection> selection = FrameSelection::create();
+        selection->setSelection(endingSelection());
+        selection->modify(FrameSelection::AlterationExtend, DirectionForward, granularity);
+        if (killRing && selection->isCaret() && granularity != CharacterGranularity)
+            selection->modify(FrameSelection::AlterationExtend, DirectionForward, CharacterGranularity);
 
         Position downstreamEnd = endingSelection().end().downstream();
         VisiblePosition visibleEnd = endingSelection().visibleEnd();
         Node* enclosingTableCell = enclosingNodeOfType(visibleEnd.deepEquivalent(), &isTableCell);
-        if (enclosingTableCell && visibleEnd == lastPositionInNode(enclosingTableCell))
+        if (enclosingTableCell && visibleEnd == VisiblePosition(lastPositionInNode(enclosingTableCell)))
             return;
         if (visibleEnd == endOfParagraph(visibleEnd))
             downstreamEnd = visibleEnd.next(CannotCrossEditingBoundary).deepEquivalent().downstream();
@@ -543,10 +548,10 @@ void TypingCommand::forwardDeleteKeyPressed(TextGranularity granularity, bool ki
         }
 
         // deleting to end of paragraph when at end of paragraph needs to merge the next paragraph (if any)
-        if (granularity == ParagraphBoundary && selection.selection().isCaret() && isEndOfParagraph(selection.selection().visibleEnd()))
-            selection.modify(FrameSelection::AlterationExtend, DirectionForward, CharacterGranularity);
+        if (granularity == ParagraphBoundary && selection->selection().isCaret() && isEndOfParagraph(selection->selection().visibleEnd()))
+            selection->modify(FrameSelection::AlterationExtend, DirectionForward, CharacterGranularity);
 
-        selectionToDelete = selection.selection();
+        selectionToDelete = selection->selection();
         if (!startingSelection().isRange() || selectionToDelete.base() != startingSelection().start())
             selectionAfterUndo = selectionToDelete;
         else {

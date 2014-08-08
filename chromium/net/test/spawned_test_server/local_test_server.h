@@ -8,6 +8,7 @@
 #include <string>
 
 #include "base/file_util.h"
+#include "base/files/scoped_file.h"
 #include "base/process/process_handle.h"
 #include "net/test/spawned_test_server/base_test_server.h"
 
@@ -15,7 +16,9 @@
 #include "base/win/scoped_handle.h"
 #endif
 
+namespace base {
 class CommandLine;
+}
 
 namespace net {
 
@@ -73,7 +76,7 @@ class LocalTestServer : public BaseTestServer {
 
   // Adds the command line arguments for the Python test server to
   // |command_line|. Returns true on success.
-  virtual bool AddCommandLineArguments(CommandLine* command_line) const
+  virtual bool AddCommandLineArguments(base::CommandLine* command_line) const
       WARN_UNUSED_RESULT;
 
   // Returns the actual path of document root for test cases. This function
@@ -105,8 +108,7 @@ class LocalTestServer : public BaseTestServer {
 
 #if defined(OS_POSIX)
   // The file descriptor the child writes to when it starts.
-  int child_fd_;
-  file_util::ScopedFD child_fd_closer_;
+  base::ScopedFD child_fd_;
 #endif
 
   DISALLOW_COPY_AND_ASSIGN(LocalTestServer);

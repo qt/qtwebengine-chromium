@@ -15,11 +15,14 @@
 #include "base/bind.h"
 #include "base/callback_helpers.h"
 #include "base/command_line.h"
+#include "base/debug/stack_trace.h"
+#include "base/files/scoped_file.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/singleton.h"
 #include "base/posix/eintr_wrapper.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/sys_info.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
 #include "content/common/sandbox_linux/sandbox_linux.h"
@@ -28,7 +31,15 @@
 #include "content/public/common/sandbox_linux.h"
 #include "sandbox/linux/services/credentials.h"
 #include "sandbox/linux/services/thread_helpers.h"
+#include "sandbox/linux/services/yama.h"
 #include "sandbox/linux/suid/client/setuid_sandbox_client.h"
+
+#if defined(ADDRESS_SANITIZER) || defined(MEMORY_SANITIZER) || \
+     defined(LEAK_SANITIZER)
+#include <sanitizer/common_interface_defs.h>
+#endif
+
+using sandbox::Yama;
 
 namespace {
 
@@ -39,10 +50,6 @@ struct FDCloser {
     *fd = -1;
   }
 };
-
-// Don't use base::ScopedFD since it doesn't CHECK that the file descriptor was
-// closed.
-typedef scoped_ptr<int, FDCloser> SafeScopedFD;
 
 void LogSandboxStarted(const std::string& sandbox_name) {
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
@@ -58,6 +65,7 @@ void LogSandboxStarted(const std::string& sandbox_name) {
 #endif
 }
 
+#if !defined(ADDRESS_SANITIZER) && !defined(MEMORY_SANITIZER)
 bool AddResourceLimit(int resource, rlim_t limit) {
   struct rlimit old_rlimit;
   if (getrlimit(resource, &old_rlimit))
@@ -70,6 +78,7 @@ bool AddResourceLimit(int resource, rlim_t limit) {
   int rc = setrlimit(resource, &new_rlimit);
   return rc == 0;
 }
+#endif
 
 bool IsRunningTSAN() {
 #if defined(THREAD_SANITIZER)
@@ -104,10 +113,17 @@ LinuxSandbox::LinuxSandbox()
       sandbox_status_flags_(kSandboxLinuxInvalid),
       pre_initialized_(false),
       seccomp_bpf_supported_(false),
-      setuid_sandbox_client_(sandbox::SetuidSandboxClient::Create()) {
+      yama_is_enforcing_(false),
+      setuid_sandbox_client_(sandbox::SetuidSandboxClient::Create())
+{
   if (setuid_sandbox_client_ == NULL) {
     LOG(FATAL) << "Failed to instantiate the setuid sandbox client.";
   }
+#if defined(ADDRESS_SANITIZER) || defined(MEMORY_SANITIZER) || \
+    defined(LEAK_SANITIZER)
+  sanitizer_args_ = make_scoped_ptr(new __sanitizer_sandbox_arguments);
+  *sanitizer_args_ = {0};
+#endif
 }
 
 LinuxSandbox::~LinuxSandbox() {
@@ -119,24 +135,26 @@ LinuxSandbox* LinuxSandbox::GetInstance() {
   return instance;
 }
 
-#if defined(ADDRESS_SANITIZER) && defined(OS_LINUX)
-// ASan API call to notify the tool the sandbox is going to be turned on.
-extern "C" void __sanitizer_sandbox_on_notify(void *reserved);
-#endif
-
 void LinuxSandbox::PreinitializeSandbox() {
   CHECK(!pre_initialized_);
   seccomp_bpf_supported_ = false;
-#if defined(ADDRESS_SANITIZER) && defined(OS_LINUX)
-  // ASan needs to open some resources before the sandbox is enabled.
+#if defined(ADDRESS_SANITIZER) || defined(MEMORY_SANITIZER) || \
+     defined(LEAK_SANITIZER)
+  // Sanitizers need to open some resources before the sandbox is enabled.
   // This should not fork, not launch threads, not open a directory.
-  __sanitizer_sandbox_on_notify(/*reserved*/NULL);
+  __sanitizer_sandbox_on_notify(sanitizer_args());
+  sanitizer_args_.reset();
 #endif
 
 #if !defined(NDEBUG)
+  // The in-process stack dumping needs to open /proc/self/maps and cache
+  // its contents before the sandbox is enabled.  It also pre-opens the
+  // object files that are already loaded in the process address space.
+  base::debug::EnableInProcessStackDumpingForSandbox();
+
   // Open proc_fd_ only in Debug mode so that forgetting to close it doesn't
   // produce a sandbox escape in Release mode.
-  proc_fd_ = open("/proc", O_DIRECTORY | O_RDONLY);
+  proc_fd_ = open("/proc", O_DIRECTORY | O_RDONLY | O_CLOEXEC);
   CHECK_GE(proc_fd_, 0);
 #endif  // !defined(NDEBUG)
   // We "pre-warm" the code that detects supports for seccomp BPF.
@@ -147,6 +165,12 @@ void LinuxSandbox::PreinitializeSandbox() {
       seccomp_bpf_supported_ = true;
     }
   }
+
+  // Yama is a "global", system-level status. We assume it will not regress
+  // after startup.
+  const int yama_status = Yama::GetStatus();
+  yama_is_enforcing_ = (yama_status & Yama::STATUS_PRESENT) &&
+                       (yama_status & Yama::STATUS_ENFORCING);
   pre_initialized_ = true;
 }
 
@@ -179,6 +203,10 @@ int LinuxSandbox::GetStatus() {
         SandboxSeccompBPF::ShouldEnableSeccompBPF(switches::kRendererProcess)) {
       sandbox_status_flags_ |= kSandboxLinuxSeccompBPF;
     }
+
+    if (yama_is_enforcing_) {
+      sandbox_status_flags_ |= kSandboxLinuxYama;
+    }
   }
 
   return sandbox_status_flags_;
@@ -189,25 +217,25 @@ int LinuxSandbox::GetStatus() {
 // of using the pid.
 bool LinuxSandbox::IsSingleThreaded() const {
   bool is_single_threaded = false;
-  int proc_self_task = OpenProcTaskFd(proc_fd_);
+  base::ScopedFD proc_self_task(OpenProcTaskFd(proc_fd_));
 
 // In Debug mode, it's mandatory to be able to count threads to catch bugs.
 #if !defined(NDEBUG)
   // Using CHECK here since we want to check all the cases where
   // !defined(NDEBUG)
   // gets built.
-  CHECK_LE(0, proc_self_task) << "Could not count threads, the sandbox was not "
-                              << "pre-initialized properly.";
+  CHECK(proc_self_task.is_valid())
+      << "Could not count threads, the sandbox was not "
+      << "pre-initialized properly.";
 #endif  // !defined(NDEBUG)
 
-  if (proc_self_task < 0) {
+  if (!proc_self_task.is_valid()) {
     // Pretend to be monothreaded if it can't be determined (for instance the
     // setuid sandbox is already engaged but no proc_fd_ is available).
     is_single_threaded = true;
   } else {
-    SafeScopedFD task_closer(&proc_self_task);
     is_single_threaded =
-        sandbox::ThreadHelpers::IsSingleThreaded(proc_self_task);
+        sandbox::ThreadHelpers::IsSingleThreaded(proc_self_task.get());
   }
 
   return is_single_threaded;
@@ -236,9 +264,9 @@ bool LinuxSandbox::StartSeccompBPF(const std::string& process_type) {
 }
 
 bool LinuxSandbox::InitializeSandboxImpl() {
+  CommandLine* command_line = CommandLine::ForCurrentProcess();
   const std::string process_type =
-      CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
-          switches::kProcessType);
+      command_line->GetSwitchValueASCII(switches::kProcessType);
 
   // We need to make absolutely sure that our sandbox is "sealed" before
   // returning.
@@ -257,14 +285,26 @@ bool LinuxSandbox::InitializeSandboxImpl() {
   if (!IsSingleThreaded()) {
     std::string error_message = "InitializeSandbox() called with multiple "
                                 "threads in process " + process_type;
-    // TSAN starts a helper thread. So we don't start the sandbox and don't
+    // TSAN starts a helper thread, so we don't start the sandbox and don't
     // even report an error about it.
     if (IsRunningTSAN())
       return false;
-    // The GPU process is allowed to call InitializeSandbox() with threads for
-    // now, because it loads third-party libraries.
-    if (process_type != switches::kGpuProcess)
-      CHECK(false) << error_message;
+
+    // The GPU process is allowed to call InitializeSandbox() with threads.
+    bool sandbox_failure_fatal = process_type != switches::kGpuProcess;
+    // This can be disabled with the '--gpu-sandbox-failures-fatal' flag.
+    // Setting the flag with no value or any value different than 'yes' or 'no'
+    // is equal to setting '--gpu-sandbox-failures-fatal=yes'.
+    if (process_type == switches::kGpuProcess &&
+        command_line->HasSwitch(switches::kGpuSandboxFailuresFatal)) {
+      const std::string switch_value =
+          command_line->GetSwitchValueASCII(switches::kGpuSandboxFailuresFatal);
+      sandbox_failure_fatal = switch_value != "no";
+    }
+
+    if (sandbox_failure_fatal)
+      LOG(FATAL) << error_message;
+
     LOG(ERROR) << error_message;
     return false;
   }
@@ -298,7 +338,7 @@ bool LinuxSandbox::seccomp_bpf_supported() const {
 
 bool LinuxSandbox::LimitAddressSpace(const std::string& process_type) {
   (void) process_type;
-#if !defined(ADDRESS_SANITIZER)
+#if !defined(ADDRESS_SANITIZER) && !defined(MEMORY_SANITIZER)
   CommandLine* command_line = CommandLine::ForCurrentProcess();
   if (command_line->HasSwitch(switches::kNoSandbox)) {
     return false;
@@ -330,10 +370,15 @@ bool LinuxSandbox::LimitAddressSpace(const std::string& process_type) {
 
   bool limited_as = AddResourceLimit(RLIMIT_AS, address_space_limit);
   bool limited_data = AddResourceLimit(RLIMIT_DATA, kNewDataSegmentMaxSize);
+
+  // Cache the resource limit before turning on the sandbox.
+  base::SysInfo::AmountOfVirtualMemory();
+
   return limited_as && limited_data;
 #else
+  base::SysInfo::AmountOfVirtualMemory();
   return false;
-#endif  // !defined(ADDRESS_SANITIZER)
+#endif  // !defined(ADDRESS_SANITIZER) && !defined(MEMORY_SANITIZER)
 }
 
 bool LinuxSandbox::HasOpenDirectories() const {
@@ -365,11 +410,10 @@ void LinuxSandbox::CheckForBrokenPromises(const std::string& process_type) {
 
 void LinuxSandbox::StopThreadAndEnsureNotCounted(base::Thread* thread) const {
   DCHECK(thread);
-  int proc_self_task = OpenProcTaskFd(proc_fd_);
-  PCHECK(proc_self_task >= 0);
-  SafeScopedFD task_closer(&proc_self_task);
-  CHECK(
-      sandbox::ThreadHelpers::StopThreadAndWatchProcFS(proc_self_task, thread));
+  base::ScopedFD proc_self_task(OpenProcTaskFd(proc_fd_));
+  PCHECK(proc_self_task.is_valid());
+  CHECK(sandbox::ThreadHelpers::StopThreadAndWatchProcFS(proc_self_task.get(),
+                                                         thread));
 }
 
 }  // namespace content

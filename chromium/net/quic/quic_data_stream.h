@@ -13,14 +13,15 @@
 
 #include <list>
 
+#include "base/basictypes.h"
 #include "base/strings/string_piece.h"
 #include "net/base/iovec.h"
 #include "net/base/net_export.h"
 #include "net/quic/quic_ack_notifier.h"
-#include "net/quic/quic_spdy_compressor.h"
-#include "net/quic/quic_spdy_decompressor.h"
+#include "net/quic/quic_protocol.h"
 #include "net/quic/quic_stream_sequencer.h"
 #include "net/quic/reliable_quic_stream.h"
+#include "net/spdy/spdy_framer.h"
 
 namespace net {
 
@@ -34,8 +35,7 @@ class QuicSession;
 class SSLInfo;
 
 // All this does right now is send data to subclasses via the sequencer.
-class NET_EXPORT_PRIVATE QuicDataStream : public ReliableQuicStream,
-                                          public QuicSpdyDecompressor::Visitor {
+class NET_EXPORT_PRIVATE QuicDataStream : public ReliableQuicStream {
  public:
   // Visitor receives callbacks from the stream.
   class Visitor {
@@ -58,18 +58,38 @@ class NET_EXPORT_PRIVATE QuicDataStream : public ReliableQuicStream,
 
   // ReliableQuicStream implementation
   virtual void OnClose() OVERRIDE;
+  virtual uint32 ProcessRawData(const char* data, uint32 data_len) OVERRIDE;
   // By default, this is the same as priority(), however it allows streams
   // to temporarily alter effective priority.   For example if a SPDY stream has
   // compressed but not written headers it can write the headers with a higher
   // priority.
   virtual QuicPriority EffectivePriority() const OVERRIDE;
-  virtual uint32 ProcessRawData(const char* data, uint32 data_len) OVERRIDE;
 
-  // QuicSpdyDecompressor::Visitor implementation.
-  virtual bool OnDecompressedData(base::StringPiece data) OVERRIDE;
-  virtual void OnDecompressionError() OVERRIDE;
-
+  // Overridden by subclasses to process data.  The headers will be delivered
+  // via OnStreamHeaders, so only data will be delivered through this method.
   virtual uint32 ProcessData(const char* data, uint32 data_len) = 0;
+
+  // Called by the session when decompressed headers data is received
+  // for this stream.
+  // May be called multiple times, with each call providing additional headers
+  // data until OnStreamHeadersComplete is called.
+  virtual void OnStreamHeaders(base::StringPiece headers_data);
+
+  // Called by the session when headers with a priority have been received
+  // for this stream.  This method will only be called for server streams.
+  virtual void OnStreamHeadersPriority(QuicPriority priority);
+
+  // Called by the session when decompressed headers have been completely
+  // delilvered to this stream.  If |fin| is true, then this stream
+  // should be closed; no more data will be sent by the peer.
+  virtual void OnStreamHeadersComplete(bool fin, size_t frame_len);
+
+  // Writes the headers contained in |header_block| to the dedicated
+  // headers stream.
+  virtual size_t WriteHeaders(
+      const SpdyHeaderBlock& header_block,
+      bool fin,
+      QuicAckNotifier::DelegateInterface* ack_notifier_delegate);
 
   // This block of functions wraps the sequencer's functions of the same
   // name.  These methods return uncompressed data until that has
@@ -80,17 +100,11 @@ class NET_EXPORT_PRIVATE QuicDataStream : public ReliableQuicStream,
   virtual bool IsDoneReading() const;
   virtual bool HasBytesToRead() const;
 
-  // Called by the session when a decompression blocked stream
-  // becomes unblocked.
-  virtual void OnDecompressorAvailable();
-
   void set_visitor(Visitor* visitor) { visitor_ = visitor; }
 
   bool headers_decompressed() const { return headers_decompressed_; }
 
   const IPEndPoint& GetPeerAddress();
-
-  QuicSpdyCompressor* compressor();
 
   // Gets the SSL connection information.
   bool GetSSLInfo(SSLInfo* ssl_info);
@@ -110,8 +124,6 @@ class NET_EXPORT_PRIVATE QuicDataStream : public ReliableQuicStream,
 
   uint32 ProcessHeaderData();
 
-  uint32 StripPriorityAndHeaderId(const char* data, uint32 data_len);
-
   bool FinishedReadingHeaders();
 
   Visitor* visitor_;
@@ -119,11 +131,6 @@ class NET_EXPORT_PRIVATE QuicDataStream : public ReliableQuicStream,
   bool headers_decompressed_;
   // The priority of the stream, once parsed.
   QuicPriority priority_;
-  // ID of the header block sent by the peer, once parsed.
-  QuicHeaderId headers_id_;
-  // Buffer into which we write bytes from priority_ and headers_id_
-  // until each is fully parsed.
-  string headers_id_and_priority_buffer_;
   // Contains a copy of the decompressed headers until they are consumed
   // via ProcessData or Readv.
   string decompressed_headers_;

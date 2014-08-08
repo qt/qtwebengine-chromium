@@ -39,13 +39,18 @@ FakeConnectionHandler::~FakeConnectionHandler() {
 }
 
 void FakeConnectionHandler::Init(const mcs_proto::LoginRequest& login_request,
-                                 scoped_ptr<net::StreamSocket> socket) {
+                                 net::StreamSocket* socket) {
+  ASSERT_GE(expected_outgoing_messages_.size(), 1U);
   EXPECT_EQ(expected_outgoing_messages_.front().SerializeAsString(),
             login_request.SerializeAsString());
   expected_outgoing_messages_.pop_front();
   DVLOG(1) << "Received init call.";
   read_callback_.Run(BuildLoginResponse(fail_login_));
   initialized_ = !fail_login_;
+}
+
+void FakeConnectionHandler::Reset() {
+  initialized_ = false;
 }
 
 bool FakeConnectionHandler::CanSendMessage() const {

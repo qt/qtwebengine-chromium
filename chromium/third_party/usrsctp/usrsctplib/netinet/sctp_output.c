@@ -32,7 +32,7 @@
 
 #ifdef __FreeBSD__
 #include <sys/cdefs.h>
-__FBSDID("$FreeBSD: head/sys/netinet/sctp_output.c 258235 2013-11-16 19:57:56Z tuexen $");
+__FBSDID("$FreeBSD: head/sys/netinet/sctp_output.c 264017 2014-04-01 18:38:04Z tuexen $");
 #endif
 
 #include <netinet/sctp_os.h>
@@ -3742,7 +3742,6 @@ sctp_add_cookie(struct mbuf *init, int init_offset,
 	int sig_offset;
 	uint16_t cookie_sz;
 
-	mret = NULL;
 	mret = sctp_get_mbuf_for_msg((sizeof(struct sctp_state_cookie) +
 				      sizeof(struct sctp_paramhdr)), 0,
 				     M_NOWAIT, 1, MT_DATA);
@@ -4243,7 +4242,7 @@ sctp_lowlevel_chunk_output(struct sctp_inpcb *inp,
 #else
 #if defined(__FreeBSD__) && __FreeBSD_version >= 800000
 			m->m_pkthdr.csum_flags = CSUM_SCTP;
-			m->m_pkthdr.csum_data = 0;
+			m->m_pkthdr.csum_data = offsetof(struct sctphdr, checksum);
 			SCTP_STAT_INCR(sctps_sendhwcrc);
 #else
 			if (!(SCTP_BASE_SYSCTL(sctp_no_csum_on_loopback) &&
@@ -4349,7 +4348,11 @@ sctp_lowlevel_chunk_output(struct sctp_inpcb *inp,
 			 * This means especially, that it is not set at the
 			 * SCTP layer. So use the value from the IP layer.
 			 */
+#if defined(__APPLE__) && (!defined(APPLE_LEOPARD) && !defined(APPLE_SNOWLEOPARD) && !defined(APPLE_LION) && !defined(APPLE_MOUNTAINLION))
+			flowlabel = ntohl(inp->ip_inp.inp.inp_flow);
+#else
 			flowlabel = ntohl(((struct in6pcb *)inp)->in6p_flowinfo);
+#endif
 		}
 		flowlabel &= 0x000fffff;
 		len = sizeof(struct ip6_hdr) + sizeof(struct sctphdr);
@@ -4429,7 +4432,11 @@ sctp_lowlevel_chunk_output(struct sctp_inpcb *inp,
 			 * SCTP layer. So use the value from the IP layer.
 			 */
 #if defined(__FreeBSD__) || defined(__APPLE__) || defined(__Panda__) || defined(__Windows__) || defined(__Userspace__)
+#if defined(__APPLE__) && (!defined(APPLE_LEOPARD) && !defined(APPLE_SNOWLEOPARD) && !defined(APPLE_LION) && !defined(APPLE_MOUNTAINLION))
+			tos_value = (ntohl(inp->ip_inp.inp.inp_flow) >> 20) & 0xff;
+#else
 			tos_value = (ntohl(((struct in6pcb *)inp)->in6p_flowinfo) >> 20) & 0xff;
+#endif
 #endif
 		}
 		tos_value &= 0xfc;
@@ -4690,7 +4697,7 @@ sctp_lowlevel_chunk_output(struct sctp_inpcb *inp,
 #else
 			m->m_pkthdr.csum_flags = CSUM_SCTP;
 #endif
-			m->m_pkthdr.csum_data = 0;
+			m->m_pkthdr.csum_data = offsetof(struct sctphdr, checksum);
 			SCTP_STAT_INCR(sctps_sendhwcrc);
 #endif
 #else
@@ -5457,16 +5464,16 @@ sctp_arethere_unrecognized_parameters(struct mbuf *in_initpkt,
 #endif
 		l_len += (2 * sizeof(struct sctp_paramhdr));
 		op_err = sctp_get_mbuf_for_msg(l_len, 0, M_NOWAIT, 1, MT_DATA);
-        if (op_err) {
-    		SCTP_BUF_LEN(op_err) = 0;
+		if (op_err) {
+			SCTP_BUF_LEN(op_err) = 0;
 #ifdef INET6
-	    	SCTP_BUF_RESV_UF(op_err, sizeof(struct ip6_hdr));
+			SCTP_BUF_RESV_UF(op_err, sizeof(struct ip6_hdr));
 #else
-	    	SCTP_BUF_RESV_UF(op_err, sizeof(struct ip));
+			SCTP_BUF_RESV_UF(op_err, sizeof(struct ip));
 #endif
-		SCTP_BUF_RESV_UF(op_err, sizeof(struct sctphdr));
-    		SCTP_BUF_RESV_UF(op_err, sizeof(struct sctp_chunkhdr));
-        }
+			SCTP_BUF_RESV_UF(op_err, sizeof(struct sctphdr));
+			SCTP_BUF_RESV_UF(op_err, sizeof(struct sctp_chunkhdr));
+		}
 	}
 	if ((op_err) && phdr) {
 		struct sctp_paramhdr s;
@@ -5714,7 +5721,9 @@ sctp_send_initiate_ack(struct sctp_inpcb *inp, struct sctp_tcb *stcb,
 		 * though we even set the T bit and copy in the 0 tag.. this
 		 * looks no different than if no listener was present.
 		 */
-		sctp_send_abort(init_pkt, iphlen, src, dst, sh, 0, NULL,
+		op_err = sctp_generate_cause(SCTP_BASE_SYSCTL(sctp_diag_info_code),
+		                             "Address added");
+		sctp_send_abort(init_pkt, iphlen, src, dst, sh, 0, op_err,
 #if defined(__FreeBSD__)
 		                use_mflowid, mflowid,
 #endif
@@ -5727,6 +5736,13 @@ sctp_send_initiate_ack(struct sctp_inpcb *inp, struct sctp_tcb *stcb,
 						       &abort_flag, (struct sctp_chunkhdr *)init_chk, &nat_friendly);
 	if (abort_flag) {
 	do_a_abort:
+		if (op_err == NULL) {
+			char msg[SCTP_DIAG_INFO_LEN];
+
+			snprintf(msg, sizeof(msg), "%s:%d at %s\n", __FILE__, __LINE__, __FUNCTION__);
+			op_err = sctp_generate_cause(SCTP_BASE_SYSCTL(sctp_diag_info_code),
+			                             msg);
+		}
 		sctp_send_abort(init_pkt, iphlen, src, dst, sh,
 				init_chk->init.initiate_tag, op_err,
 #if defined(__FreeBSD__)
@@ -7729,7 +7745,8 @@ re_look:
 	chk->pad_inplace = 0;
 	chk->no_fr_allowed = 0;
 	chk->rec.data.stream_seq = strq->next_sequence_send;
-	if (rcv_flags & SCTP_DATA_LAST_FRAG) {
+	if ((rcv_flags & SCTP_DATA_LAST_FRAG) &&
+	    !(rcv_flags & SCTP_DATA_UNORDERED)) {
 		strq->next_sequence_send++;
 	}
 	chk->rec.data.stream_number = sp->stream;
@@ -9356,7 +9373,6 @@ sctp_send_cookie_ack(struct sctp_tcb *stcb)
 	struct sctp_chunkhdr *hdr;
 	struct sctp_tmit_chunk *chk;
 
-	cookie_ack = NULL;
 	SCTP_TCB_LOCK_ASSERT(stcb);
 
 	cookie_ack = sctp_get_mbuf_for_msg(sizeof(struct sctp_chunkhdr), 0, M_NOWAIT, 1, MT_HEADER);
@@ -11526,7 +11542,7 @@ sctp_send_resp_msg(struct sockaddr *src, struct sockaddr *dst,
 #else
 #if defined(__FreeBSD__) && __FreeBSD_version >= 800000
 			mout->m_pkthdr.csum_flags = CSUM_SCTP;
-			mout->m_pkthdr.csum_data = 0;
+			mout->m_pkthdr.csum_data = offsetof(struct sctphdr, checksum);
 			SCTP_STAT_INCR(sctps_sendhwcrc);
 #else
 			shout->checksum = sctp_calculate_cksum(mout, sizeof(struct ip));
@@ -11578,7 +11594,7 @@ sctp_send_resp_msg(struct sockaddr *src, struct sockaddr *dst,
 #else
 			mout->m_pkthdr.csum_flags = CSUM_SCTP;
 #endif
-			mout->m_pkthdr.csum_data = 0;
+			mout->m_pkthdr.csum_data = offsetof(struct sctphdr, checksum);
 			SCTP_STAT_INCR(sctps_sendhwcrc);
 #else
 			shout->checksum = sctp_calculate_cksum(mout, sizeof(struct ip6_hdr));

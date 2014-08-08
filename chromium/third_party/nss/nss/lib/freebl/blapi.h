@@ -1,5 +1,5 @@
 /*
- * crypto.h - public data structures and prototypes for the crypto library
+ * blapi.h - public prototypes for the freebl library
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -62,7 +62,7 @@ extern SECStatus RSA_PrivateKeyOpDoubleChecked(RSAPrivateKey *  key,
 /*
 ** Perform a check of private key parameters for consistency.
 */
-extern SECStatus RSA_PrivateKeyCheck(RSAPrivateKey *key);
+extern SECStatus RSA_PrivateKeyCheck(const RSAPrivateKey *key);
 
 /*
 ** Given only minimal private key parameters, fill in the rest of the
@@ -106,6 +106,174 @@ extern SECStatus RSA_PrivateKeyCheck(RSAPrivateKey *key);
 ** ignored in this implementation.
 */
 extern SECStatus RSA_PopulatePrivateKey(RSAPrivateKey *key);
+
+/********************************************************************
+** RSA algorithm
+*/
+
+/********************************************************************
+** Raw signing/encryption/decryption operations.
+**
+** No padding or formatting will be applied.
+** inputLen MUST be equivalent to the modulus size (in bytes).
+*/
+extern SECStatus
+RSA_SignRaw(RSAPrivateKey       * key,
+            unsigned char       * output,
+            unsigned int        * outputLen,
+            unsigned int          maxOutputLen,
+            const unsigned char * input,
+            unsigned int          inputLen);
+
+extern SECStatus
+RSA_CheckSignRaw(RSAPublicKey        * key,
+                 const unsigned char * sig,
+                 unsigned int          sigLen,
+                 const unsigned char * hash,
+                 unsigned int          hashLen);
+
+extern SECStatus
+RSA_CheckSignRecoverRaw(RSAPublicKey        * key,
+                        unsigned char       * data,
+                        unsigned int        * dataLen,
+                        unsigned int          maxDataLen,
+                        const unsigned char * sig,
+                        unsigned int          sigLen);
+
+extern SECStatus
+RSA_EncryptRaw(RSAPublicKey        * key,
+               unsigned char       * output,
+               unsigned int        * outputLen,
+               unsigned int          maxOutputLen,
+               const unsigned char * input,
+               unsigned int          inputLen);
+
+extern SECStatus
+RSA_DecryptRaw(RSAPrivateKey       * key,
+               unsigned char       * output,
+               unsigned int        * outputLen,
+               unsigned int          maxOutputLen,
+               const unsigned char * input,
+               unsigned int          inputLen);
+
+/********************************************************************
+** RSAES-OAEP encryption/decryption, as defined in RFC 3447, Section 7.1.
+**
+** Note: Only MGF1 is supported as the mask generation function. It will be
+** used with maskHashAlg as the inner hash function.
+**
+** Unless performing Known Answer Tests, "seed" should be NULL, indicating that
+** freebl should generate a random value. Otherwise, it should be an octet
+** string of seedLen bytes, which should be the same size as the output of
+** hashAlg.
+*/
+extern SECStatus
+RSA_EncryptOAEP(RSAPublicKey        * key,
+                HASH_HashType         hashAlg,
+                HASH_HashType         maskHashAlg,
+                const unsigned char * label,
+                unsigned int          labelLen,
+                const unsigned char * seed,
+                unsigned int          seedLen,
+                unsigned char       * output,
+                unsigned int        * outputLen,
+                unsigned int          maxOutputLen,
+                const unsigned char * input,
+                unsigned int          inputLen);
+
+extern SECStatus
+RSA_DecryptOAEP(RSAPrivateKey       * key,
+                HASH_HashType         hashAlg,
+                HASH_HashType         maskHashAlg,
+                const unsigned char * label,
+                unsigned int          labelLen,
+                unsigned char       * output,
+                unsigned int        * outputLen,
+                unsigned int          maxOutputLen,
+                const unsigned char * input,
+                unsigned int          inputLen);
+
+/********************************************************************
+** RSAES-PKCS1-v1_5 encryption/decryption, as defined in RFC 3447, Section 7.2.
+*/
+extern SECStatus
+RSA_EncryptBlock(RSAPublicKey        * key,
+                 unsigned char       * output,
+                 unsigned int        * outputLen,
+                 unsigned int          maxOutputLen,
+                 const unsigned char * input,
+                 unsigned int          inputLen);
+
+extern SECStatus
+RSA_DecryptBlock(RSAPrivateKey       * key,
+                 unsigned char       * output,
+                 unsigned int        * outputLen,
+                 unsigned int          maxOutputLen,
+                 const unsigned char * input,
+                 unsigned int          inputLen);
+
+/********************************************************************
+** RSASSA-PSS signing/verifying, as defined in RFC 3447, Section 8.1.
+**
+** Note: Only MGF1 is supported as the mask generation function. It will be
+** used with maskHashAlg as the inner hash function.
+**
+** Unless performing Known Answer Tests, "salt" should be NULL, indicating that
+** freebl should generate a random value.
+*/
+extern SECStatus
+RSA_SignPSS(RSAPrivateKey       * key,
+            HASH_HashType         hashAlg,
+            HASH_HashType         maskHashAlg,
+            const unsigned char * salt,
+            unsigned int          saltLen,
+            unsigned char       * output,
+            unsigned int        * outputLen,
+            unsigned int          maxOutputLen,
+            const unsigned char * input,
+            unsigned int          inputLen);
+
+extern SECStatus
+RSA_CheckSignPSS(RSAPublicKey        * key,
+                 HASH_HashType         hashAlg,
+                 HASH_HashType         maskHashAlg,
+                 unsigned int          saltLen,
+                 const unsigned char * sig,
+                 unsigned int          sigLen,
+                 const unsigned char * hash,
+                 unsigned int          hashLen);
+
+/********************************************************************
+** RSASSA-PKCS1-v1_5 signing/verifying, as defined in RFC 3447, Section 8.2.
+**
+** These functions expect as input to be the raw value to be signed. For most
+** cases using PKCS1-v1_5, this should be the value of T, the DER-encoded
+** DigestInfo structure defined in Section 9.2, Step 2.
+** Note: This can also be used for signatures that use PKCS1-v1_5 padding, such
+** as the signatures used in SSL/TLS, which sign a raw hash.
+*/
+extern SECStatus
+RSA_Sign(RSAPrivateKey       * key,
+         unsigned char       * output,
+         unsigned int        * outputLen,
+         unsigned int          maxOutputLen,
+         const unsigned char * data,
+         unsigned int          dataLen);
+
+extern SECStatus
+RSA_CheckSign(RSAPublicKey        * key,
+              const unsigned char * sig,
+              unsigned int          sigLen,
+              const unsigned char * data,
+              unsigned int          dataLen);
+
+extern SECStatus
+RSA_CheckSignRecover(RSAPublicKey        * key,
+                     unsigned char       * output,
+                     unsigned int        * outputLen,
+                     unsigned int          maxOutputLen,
+                     const unsigned char * sig,
+                     unsigned int          sigLen);
 
 /********************************************************************
 ** DSA signing algorithm
@@ -1439,6 +1607,18 @@ PRBool BLAPI_VerifySelf(const char *name);
 extern const SECHashObject * HASH_GetRawHashObject(HASH_HashType hashType);
 
 extern void BL_SetForkState(PRBool forked);
+
+#ifndef NSS_DISABLE_ECC
+/*
+** pepare an ECParam structure from DEREncoded params
+ */
+extern SECStatus EC_FillParams(PLArenaPool *arena,
+                               const SECItem *encodedParams, ECParams *params);
+extern SECStatus EC_DecodeParams(const SECItem *encodedParams,
+                                 ECParams **ecparams);
+extern SECStatus EC_CopyParams(PLArenaPool *arena, ECParams *dstParams,
+                               const ECParams *srcParams);
+#endif
 
 SEC_END_PROTOS
 

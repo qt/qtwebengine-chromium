@@ -2,6 +2,9 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 {
+  'includes': [
+    'chrome.isolate',
+  ],
   'conditions': [
     ['OS=="linux"', {
       'variables': {
@@ -15,16 +18,15 @@
           '../testing/xvfb.py',
           '<(PRODUCT_DIR)/libclearkeycdm.so',
           '<(PRODUCT_DIR)/libclearkeycdmadapter.so',
-          '<(PRODUCT_DIR)/libffmpegsumo.so',
-          '<(PRODUCT_DIR)/libosmesa.so',
-          '<(PRODUCT_DIR)/libppGoogleNaClPluginChrome.so',
           '<(PRODUCT_DIR)/libppapi_tests.so',
-          '<(PRODUCT_DIR)/nacl_helper<(EXECUTABLE_SUFFIX)',
-          '<(PRODUCT_DIR)/nacl_helper_bootstrap<(EXECUTABLE_SUFFIX)',
           '<(PRODUCT_DIR)/xdisplaycheck<(EXECUTABLE_SUFFIX)',
         ],
-        'isolate_dependency_untracked': [
-          '<(PRODUCT_DIR)/chromevox_test_data/',
+      },
+    }],
+    ['OS=="linux" and libpeer_target_type=="loadable_module"', {
+      'variables': {
+        'isolate_dependency_tracked': [
+          '<(PRODUCT_DIR)/lib/libpeerconnection.so',
         ],
       },
     }],
@@ -39,7 +41,9 @@
     ['OS=="linux" or OS=="mac" or OS=="win"', {
       'variables': {
         'isolate_dependency_tracked': [
+          '../media/test/data/90rotation.mp4',
           '../media/test/data/bear-320x240-multitrack.webm',
+          '../media/test/data/id3_png_test.mp3',
           '../media/test/data/no_streams.webm',
           '../media/test/data/sfx.ogg',
           '../ppapi/tests/test_case.html',
@@ -47,10 +51,10 @@
           '../testing/test_env.py',
           '../third_party/accessibility-audit/axs_testing.js',
           '<(PRODUCT_DIR)/browser_tests<(EXECUTABLE_SUFFIX)',
+          '<(PRODUCT_DIR)/peerconnection_server<(EXECUTABLE_SUFFIX)',
           '<(PRODUCT_DIR)/ppapi_nacl_tests_glibc.nmf',
           '<(PRODUCT_DIR)/ppapi_nacl_tests_newlib.nmf',
           '<(PRODUCT_DIR)/ppapi_nacl_tests_pnacl.nmf',
-          '<(PRODUCT_DIR)/resources.pak',
           '<(PRODUCT_DIR)/test_case.html',
           '<(PRODUCT_DIR)/test_case.html.mock-http-headers',
           '<(PRODUCT_DIR)/test_page.css',
@@ -71,7 +75,6 @@
           '../third_party/safe_browsing/',
           '../third_party/simplejson/',
           '../third_party/tlslite/',
-          '../tools/swarming_client/',
           '<(PRODUCT_DIR)/nacl_test_data/',
           '<(PRODUCT_DIR)/pnacl/',
           '<(PRODUCT_DIR)/pseudo_locales/',
@@ -83,17 +86,13 @@
           'test/data/',
           'third_party/mock4js/',
         ],
+        'read_only': 1,
       },
     }],
     ['OS=="linux" or OS=="win"', {
       'variables': {
         'isolate_dependency_tracked': [
-          '<(PRODUCT_DIR)/chrome<(EXECUTABLE_SUFFIX)',
-          '<(PRODUCT_DIR)/chrome_100_percent.pak',
-          '<(PRODUCT_DIR)/locales/en-US.pak',
-          '<(PRODUCT_DIR)/locales/fr.pak',
           '<(PRODUCT_DIR)/mock_nacl_gdb<(EXECUTABLE_SUFFIX)',
-          '<(PRODUCT_DIR)/nacl_irt_x86_64.nexe',
           '<(PRODUCT_DIR)/ppapi_nacl_tests_glibc_x64.nexe',
           '<(PRODUCT_DIR)/ppapi_nacl_tests_newlib_x64.nexe',
           '<(PRODUCT_DIR)/ppapi_nacl_tests_pnacl_newlib_x64.nexe',
@@ -102,7 +101,6 @@
           '../third_party/bidichecker/',
           '<(PRODUCT_DIR)/lib64/',
           '<(PRODUCT_DIR)/plugins/',
-          '<(PRODUCT_DIR)/resources/extension/',
         ],
       },
     }],
@@ -110,20 +108,17 @@
       'variables': {
         'isolate_dependency_tracked': [
           '<(PRODUCT_DIR)/clearkeycdmadapter.plugin',
-          '<(PRODUCT_DIR)/ffmpegsumo.so',
           '<(PRODUCT_DIR)/libclearkeycdm.dylib',
+          '<(PRODUCT_DIR)/osmesa.so',
           '<(PRODUCT_DIR)/ppapi_nacl_tests_glibc_x32.nexe',
           '<(PRODUCT_DIR)/ppapi_nacl_tests_newlib_x32.nexe',
           '<(PRODUCT_DIR)/ppapi_nacl_tests_pnacl_newlib_x32.nexe',
           '<(PRODUCT_DIR)/ppapi_tests.plugin/Contents/MacOS/ppapi_tests',
         ],
         'isolate_dependency_untracked': [
-          '<(PRODUCT_DIR)/Chromium Framework.framework/',
-          '<(PRODUCT_DIR)/Chromium Helper.app/',
-          '<(PRODUCT_DIR)/Chromium.app/',
           '<(PRODUCT_DIR)/lib32/',
-          '<(PRODUCT_DIR)/plugins/TestNetscapePlugIn.plugin/',
           '<(PRODUCT_DIR)/plugins/npapi_test_plugin.plugin/',
+          '<(PRODUCT_DIR)/plugins/test_netscape_plugin.plugin/',
         ],
       },
     }],
@@ -140,27 +135,29 @@
       'variables': {
         'isolate_dependency_tracked': [
           '../native_client/build/build_nexe.py',
-          '../third_party/cygwin/bin/bash.exe',
-          '../third_party/cygwin/setup_mount.bat',
-          '<(PRODUCT_DIR)/D3DCompiler_43.dll',
+          '<(PRODUCT_DIR)/chrome_elf.dll',
           '<(PRODUCT_DIR)/clearkeycdm.dll',
           '<(PRODUCT_DIR)/clearkeycdmadapter.dll',
-          '<(PRODUCT_DIR)/chrome.dll',
-          '<(PRODUCT_DIR)/d3dcompiler_46.dll',
-          '<(PRODUCT_DIR)/ffmpegsumo.dll',
-          '<(PRODUCT_DIR)/icudt.dll',
-          '<(PRODUCT_DIR)/libEGL.dll',
-          '<(PRODUCT_DIR)/libGLESv2.dll',
-          '<(PRODUCT_DIR)/nacl64<(EXECUTABLE_SUFFIX)',
-          '<(PRODUCT_DIR)/osmesa.dll',
-          '<(PRODUCT_DIR)/ppGoogleNaClPluginChrome.dll',
           '<(PRODUCT_DIR)/ppapi_tests.dll',
-          '<(PRODUCT_DIR)/security_tests.dll',
           'tools/build/repack_locales.py',
         ],
         'isolate_dependency_untracked': [
           '../third_party/npapi/npspy/extern/plugin/',
           '../third_party/psyco_win32/psyco/',
+        ],
+      },
+    }],
+    ['OS=="win" and libpeer_target_type=="loadable_module"', {
+      'variables': {
+        'isolate_dependency_tracked': [
+          '<(PRODUCT_DIR)/libpeerconnection.dll',
+        ],
+      },
+    }],
+    ['chromeos==1', {
+      'variables': {
+        'isolate_dependency_untracked': [
+          '<(PRODUCT_DIR)/chromevox_test_data/',
         ],
       },
     }],

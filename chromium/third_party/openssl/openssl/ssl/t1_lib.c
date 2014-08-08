@@ -341,15 +341,19 @@ int tls12_get_req_sig_algs(SSL *s, unsigned char *p)
 	return (int)slen;
 	}
 
-unsigned char *ssl_add_clienthello_tlsext(SSL *s, unsigned char *p, unsigned char *limit)
+/* header_len is the length of the ClientHello header written so far, used to
+ * compute padding. It does not include the record header. Pass 0 if no padding
+ * is to be done. */
+unsigned char *ssl_add_clienthello_tlsext(SSL *s, unsigned char *buf, unsigned char *limit, size_t header_len)
 	{
 	int extdatalen=0;
-	unsigned char *ret = p;
+	unsigned char *orig = buf;
+	unsigned char *ret = buf;
 
 	/* don't add extensions for SSLv3 unless doing secure renegotiation */
 	if (s->client_version == SSL3_VERSION
 					&& !s->s3->send_connection_binding)
-		return p;
+		return orig;
 
 	ret+=2;
 
@@ -398,7 +402,7 @@ unsigned char *ssl_add_clienthello_tlsext(SSL *s, unsigned char *p, unsigned cha
               return NULL;
               }
 
-          if((limit - p - 4 - el) < 0) return NULL;
+          if((limit - ret - 4 - el) < 0) return NULL;
           
           s2n(TLSEXT_TYPE_renegotiate,ret);
           s2n(el,ret);
@@ -439,55 +443,6 @@ unsigned char *ssl_add_clienthello_tlsext(SSL *s, unsigned char *p, unsigned cha
 		ret+=login_len;
 		}
 #endif
-
-#ifndef OPENSSL_NO_EC
-	if (s->tlsext_ecpointformatlist != NULL &&
-	    s->version != DTLS1_VERSION)
-		{
-		/* Add TLS extension ECPointFormats to the ClientHello message */
-		long lenmax; 
-
-		if ((lenmax = limit - ret - 5) < 0) return NULL; 
-		if (s->tlsext_ecpointformatlist_length > (unsigned long)lenmax) return NULL;
-		if (s->tlsext_ecpointformatlist_length > 255)
-			{
-			SSLerr(SSL_F_SSL_ADD_CLIENTHELLO_TLSEXT, ERR_R_INTERNAL_ERROR);
-			return NULL;
-			}
-		
-		s2n(TLSEXT_TYPE_ec_point_formats,ret);
-		s2n(s->tlsext_ecpointformatlist_length + 1,ret);
-		*(ret++) = (unsigned char) s->tlsext_ecpointformatlist_length;
-		memcpy(ret, s->tlsext_ecpointformatlist, s->tlsext_ecpointformatlist_length);
-		ret+=s->tlsext_ecpointformatlist_length;
-		}
-	if (s->tlsext_ellipticcurvelist != NULL &&
-	    s->version != DTLS1_VERSION)
-		{
-		/* Add TLS extension EllipticCurves to the ClientHello message */
-		long lenmax; 
-
-		if ((lenmax = limit - ret - 6) < 0) return NULL; 
-		if (s->tlsext_ellipticcurvelist_length > (unsigned long)lenmax) return NULL;
-		if (s->tlsext_ellipticcurvelist_length > 65532)
-			{
-			SSLerr(SSL_F_SSL_ADD_CLIENTHELLO_TLSEXT, ERR_R_INTERNAL_ERROR);
-			return NULL;
-			}
-		
-		s2n(TLSEXT_TYPE_elliptic_curves,ret);
-		s2n(s->tlsext_ellipticcurvelist_length + 2, ret);
-
-		/* NB: draft-ietf-tls-ecc-12.txt uses a one-byte prefix for
-		 * elliptic_curve_list, but the examples use two bytes.
-		 * http://www1.ietf.org/mail-archive/web/tls/current/msg00538.html
-		 * resolves this to two bytes.
-		 */
-		s2n(s->tlsext_ellipticcurvelist_length, ret);
-		memcpy(ret, s->tlsext_ellipticcurvelist, s->tlsext_ellipticcurvelist_length);
-		ret+=s->tlsext_ellipticcurvelist_length;
-		}
-#endif /* OPENSSL_NO_EC */
 
 	if (!(SSL_get_options(s) & SSL_OP_NO_TICKET))
 		{
@@ -647,7 +602,7 @@ unsigned char *ssl_add_clienthello_tlsext(SSL *s, unsigned char *p, unsigned cha
 
                 ssl_add_clienthello_use_srtp_ext(s, 0, &el, 0);
                 
-                if((limit - p - 4 - el) < 0) return NULL;
+                if((limit - ret - 4 - el) < 0) return NULL;
 
                 s2n(TLSEXT_TYPE_use_srtp,ret);
                 s2n(el,ret);
@@ -661,24 +616,104 @@ unsigned char *ssl_add_clienthello_tlsext(SSL *s, unsigned char *p, unsigned cha
                 }
 #endif
 
-	if ((extdatalen = ret-p-2)== 0) 
-		return p;
+#ifndef OPENSSL_NO_EC
+	/* WebSphere Application Server 7.0 is intolerant to the last extension
+	 * being zero-length. ECC extensions are non-empty and not dropped until
+	 * fallback to SSL3, at which point all extensions are gone. */
+	if (s->tlsext_ecpointformatlist != NULL &&
+	    s->version != DTLS1_VERSION)
+		{
+		/* Add TLS extension ECPointFormats to the ClientHello message */
+		long lenmax; 
 
-	s2n(extdatalen,p);
+		if ((lenmax = limit - ret - 5) < 0) return NULL; 
+		if (s->tlsext_ecpointformatlist_length > (unsigned long)lenmax) return NULL;
+		if (s->tlsext_ecpointformatlist_length > 255)
+			{
+			SSLerr(SSL_F_SSL_ADD_CLIENTHELLO_TLSEXT, ERR_R_INTERNAL_ERROR);
+			return NULL;
+			}
+		
+		s2n(TLSEXT_TYPE_ec_point_formats,ret);
+		s2n(s->tlsext_ecpointformatlist_length + 1,ret);
+		*(ret++) = (unsigned char) s->tlsext_ecpointformatlist_length;
+		memcpy(ret, s->tlsext_ecpointformatlist, s->tlsext_ecpointformatlist_length);
+		ret+=s->tlsext_ecpointformatlist_length;
+		}
+	if (s->tlsext_ellipticcurvelist != NULL &&
+	    s->version != DTLS1_VERSION)
+		{
+		/* Add TLS extension EllipticCurves to the ClientHello message */
+		long lenmax; 
+
+		if ((lenmax = limit - ret - 6) < 0) return NULL; 
+		if (s->tlsext_ellipticcurvelist_length > (unsigned long)lenmax) return NULL;
+		if (s->tlsext_ellipticcurvelist_length > 65532)
+			{
+			SSLerr(SSL_F_SSL_ADD_CLIENTHELLO_TLSEXT, ERR_R_INTERNAL_ERROR);
+			return NULL;
+			}
+		
+		s2n(TLSEXT_TYPE_elliptic_curves,ret);
+		s2n(s->tlsext_ellipticcurvelist_length + 2, ret);
+
+		/* NB: draft-ietf-tls-ecc-12.txt uses a one-byte prefix for
+		 * elliptic_curve_list, but the examples use two bytes.
+		 * http://www1.ietf.org/mail-archive/web/tls/current/msg00538.html
+		 * resolves this to two bytes.
+		 */
+		s2n(s->tlsext_ellipticcurvelist_length, ret);
+		memcpy(ret, s->tlsext_ellipticcurvelist, s->tlsext_ellipticcurvelist_length);
+		ret+=s->tlsext_ellipticcurvelist_length;
+		}
+#endif /* OPENSSL_NO_EC */
+
+	/* Add padding to workaround bugs in F5 terminators.
+	 * See https://tools.ietf.org/html/draft-agl-tls-padding-02 */
+	if (header_len > 0)
+		{
+		header_len += ret - orig;
+		if (header_len > 0xff && header_len < 0x200)
+			{
+			size_t padding_len = 0x200 - header_len;
+			/* Extensions take at least four bytes to encode. Always
+			 * include least one byte of data if including the
+			 * extension. WebSphere Application Server 7.0 is
+			 * intolerant to the last extension being zero-length. */
+			if (padding_len >= 4 + 1)
+				padding_len -= 4;
+			else
+				padding_len = 1;
+			if (limit - ret - 4 - (long)padding_len < 0)
+				return NULL;
+
+			s2n(TLSEXT_TYPE_padding, ret);
+			s2n(padding_len, ret);
+			memset(ret, 0, padding_len);
+			ret += padding_len;
+			}
+		}
+
+
+	if ((extdatalen = ret-orig-2)== 0) 
+		return orig;
+
+	s2n(extdatalen, orig);
 	return ret;
 	}
 
-unsigned char *ssl_add_serverhello_tlsext(SSL *s, unsigned char *p, unsigned char *limit)
+unsigned char *ssl_add_serverhello_tlsext(SSL *s, unsigned char *buf, unsigned char *limit)
 	{
 	int extdatalen=0;
-	unsigned char *ret = p;
+	unsigned char *orig = buf;
+	unsigned char *ret = buf;
 #ifndef OPENSSL_NO_NEXTPROTONEG
 	int next_proto_neg_seen;
 #endif
 
 	/* don't add extensions for SSLv3, unless doing secure renegotiation */
 	if (s->version == SSL3_VERSION && !s->s3->send_connection_binding)
-		return p;
+		return orig;
 	
 	ret+=2;
 	if (ret>=limit) return NULL; /* this really never occurs, but ... */
@@ -701,7 +736,7 @@ unsigned char *ssl_add_serverhello_tlsext(SSL *s, unsigned char *p, unsigned cha
               return NULL;
               }
 
-          if((limit - p - 4 - el) < 0) return NULL;
+          if((limit - ret - 4 - el) < 0) return NULL;
           
           s2n(TLSEXT_TYPE_renegotiate,ret);
           s2n(el,ret);
@@ -781,7 +816,7 @@ unsigned char *ssl_add_serverhello_tlsext(SSL *s, unsigned char *p, unsigned cha
 
                 ssl_add_serverhello_use_srtp_ext(s, 0, &el, 0);
                 
-                if((limit - p - 4 - el) < 0) return NULL;
+                if((limit - ret - 4 - el) < 0) return NULL;
 
                 s2n(TLSEXT_TYPE_use_srtp,ret);
                 s2n(el,ret);
@@ -860,10 +895,10 @@ unsigned char *ssl_add_serverhello_tlsext(SSL *s, unsigned char *p, unsigned cha
 		s2n(0,ret);
 		}
 
-	if ((extdatalen = ret-p-2)== 0) 
-		return p;
+	if ((extdatalen = ret-orig-2)== 0) 
+		return orig;
 
-	s2n(extdatalen,p);
+	s2n(extdatalen, orig);
 	return ret;
 	}
 
@@ -2649,6 +2684,17 @@ tls1_channel_id_hash(EVP_MD_CTX *md, SSL *s)
 
 	EVP_DigestUpdate(md, kClientIDMagic, sizeof(kClientIDMagic));
 
+	if (s->hit)
+		{
+		static const char kResumptionMagic[] = "Resumption";
+		EVP_DigestUpdate(md, kResumptionMagic,
+				 sizeof(kResumptionMagic));
+		if (s->session->original_handshake_hash_len == 0)
+			return 0;
+		EVP_DigestUpdate(md, s->session->original_handshake_hash,
+				 s->session->original_handshake_hash_len);
+		}
+
 	EVP_MD_CTX_init(&ctx);
 	for (i = 0; i < SSL_MAX_DIGEST; i++)
 		{
@@ -2663,3 +2709,29 @@ tls1_channel_id_hash(EVP_MD_CTX *md, SSL *s)
 	return 1;
 	}
 #endif
+
+/* tls1_record_handshake_hashes_for_channel_id records the current handshake
+ * hashes in |s->session| so that Channel ID resumptions can sign that data. */
+int tls1_record_handshake_hashes_for_channel_id(SSL *s)
+	{
+	int digest_len;
+	/* This function should never be called for a resumed session because
+	 * the handshake hashes that we wish to record are for the original,
+	 * full handshake. */
+	if (s->hit)
+		return -1;
+	/* It only makes sense to call this function if Channel IDs have been
+	 * negotiated. */
+	if (!s->s3->tlsext_channel_id_valid)
+		return -1;
+
+	digest_len = tls1_handshake_digest(
+		s, s->session->original_handshake_hash,
+		sizeof(s->session->original_handshake_hash));
+	if (digest_len < 0)
+		return -1;
+
+	s->session->original_handshake_hash_len = digest_len;
+
+	return 1;
+	}

@@ -21,7 +21,7 @@ base::LazyInstance<ThreadLocalBoolean>::Leaky
 
 DWORD CALLBACK WorkItemCallback(void* param) {
   PendingTask* pending_task = static_cast<PendingTask*>(param);
-  TRACE_EVENT2("task", "WorkItemCallback::Run",
+  TRACE_EVENT2("toplevel", "WorkItemCallback::Run",
                "src_file", pending_task->posted_from.file_name(),
                "src_func", pending_task->posted_from.function_name());
 
@@ -48,7 +48,7 @@ bool PostTaskInternal(PendingTask* pending_task, bool task_is_slow) {
     flags |= WT_EXECUTELONGFUNCTION;
 
   if (!QueueUserWorkItem(WorkItemCallback, pending_task, flags)) {
-    DLOG_GETLASTERROR(ERROR) << "QueueUserWorkItem failed";
+    DPLOG(ERROR) << "QueueUserWorkItem failed";
     delete pending_task;
     return false;
   }

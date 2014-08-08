@@ -29,6 +29,7 @@
 
 #include "bindings/v8/ScriptWrappable.h"
 #include "core/xml/XPathValue.h"
+#include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
 #include "wtf/RefCounted.h"
 
@@ -38,7 +39,7 @@ class Document;
 class ExceptionState;
 class Node;
 
-class XPathResult : public RefCounted<XPathResult>, public ScriptWrappable {
+class XPathResult : public RefCountedWillBeGarbageCollectedFinalized<XPathResult>, public ScriptWrappable {
 public:
     enum XPathResultType {
         ANY_TYPE = 0,
@@ -53,7 +54,10 @@ public:
         FIRST_ORDERED_NODE_TYPE = 9
     };
 
-    static PassRefPtr<XPathResult> create(Document* document, const XPath::Value& value) { return adoptRef(new XPathResult(document, value)); }
+    static PassRefPtrWillBeRawPtr<XPathResult> create(Document* document, const XPath::Value& value)
+    {
+        return adoptRefWillBeNoop(new XPathResult(document, value));
+    }
     ~XPathResult();
 
     void convertTo(unsigned short type, ExceptionState&);
@@ -72,14 +76,17 @@ public:
 
     const XPath::Value& value() const { return m_value; }
 
+    void trace(Visitor*);
+
 private:
     XPathResult(Document*, const XPath::Value&);
+    XPath::NodeSet& nodeSet() { return *m_nodeSet; }
 
     XPath::Value m_value;
     unsigned m_nodeSetPosition;
-    XPath::NodeSet m_nodeSet; // FIXME: why duplicate the node set stored in m_value?
+    OwnPtrWillBeMember<XPath::NodeSet> m_nodeSet; // FIXME: why duplicate the node set stored in m_value?
     unsigned short m_resultType;
-    RefPtr<Document> m_document;
+    RefPtrWillBeMember<Document> m_document;
     uint64_t m_domTreeVersion;
 };
 

@@ -10,6 +10,7 @@
 #include "content/renderer/media/media_stream_dispatcher_eventhandler.h"
 #include "content/renderer/render_thread_impl.h"
 #include "content/renderer/render_view_impl.h"
+#include "third_party/WebKit/public/web/WebUserGestureIndicator.h"
 #include "url/gurl.h"
 
 namespace content {
@@ -78,10 +79,9 @@ void MediaStreamDispatcher::GenerateStream(
   DVLOG(1) << "MediaStreamDispatcher::GenerateStream(" << request_id << ")";
 
   requests_.push_back(Request(event_handler, request_id, next_ipc_id_));
-  Send(new MediaStreamHostMsg_GenerateStream(routing_id(),
-                                             next_ipc_id_++,
-                                             components,
-                                             security_origin));
+  Send(new MediaStreamHostMsg_GenerateStream(
+      routing_id(), next_ipc_id_++, components, security_origin,
+      blink::WebUserGestureIndicator::isProcessingUserGesture()));
 }
 
 void MediaStreamDispatcher::CancelGenerateStream(
@@ -134,10 +134,12 @@ void MediaStreamDispatcher::EnumerateDevices(
     int request_id,
     const base::WeakPtr<MediaStreamDispatcherEventHandler>& event_handler,
     MediaStreamType type,
-    const GURL& security_origin) {
+    const GURL& security_origin,
+    bool hide_labels_if_no_access) {
   DCHECK(main_loop_->BelongsToCurrentThread());
   DCHECK(type == MEDIA_DEVICE_AUDIO_CAPTURE ||
-         type == MEDIA_DEVICE_VIDEO_CAPTURE);
+         type == MEDIA_DEVICE_VIDEO_CAPTURE ||
+         type == MEDIA_DEVICE_AUDIO_OUTPUT);
   DVLOG(1) << "MediaStreamDispatcher::EnumerateDevices("
            << request_id << ")";
 
@@ -150,7 +152,8 @@ void MediaStreamDispatcher::EnumerateDevices(
   Send(new MediaStreamHostMsg_EnumerateDevices(routing_id(),
                                                next_ipc_id_++,
                                                type,
-                                               security_origin));
+                                               security_origin,
+                                               hide_labels_if_no_access));
 }
 
 void MediaStreamDispatcher::StopEnumerateDevices(
@@ -264,14 +267,16 @@ void MediaStreamDispatcher::OnStreamGenerated(
   }
 }
 
-void MediaStreamDispatcher::OnStreamGenerationFailed(int request_id) {
+void MediaStreamDispatcher::OnStreamGenerationFailed(
+    int request_id,
+    content::MediaStreamRequestResult result) {
   DCHECK(main_loop_->BelongsToCurrentThread());
   for (RequestList::iterator it = requests_.begin();
        it != requests_.end(); ++it) {
     Request& request = *it;
     if (request.ipc_request == request_id) {
       if (request.handler.get()) {
-        request.handler->OnStreamGenerationFailed(request.request_id);
+        request.handler->OnStreamGenerationFailed(request.request_id, result);
         DVLOG(1) << "MediaStreamDispatcher::OnStreamGenerationFailed("
                  << request.request_id << ")\n";
       }
@@ -296,7 +301,7 @@ void MediaStreamDispatcher::OnDeviceStopped(
     return;
   }
   Stream* stream = &it->second;
-  if (IsAudioMediaType(device_info.device.type))
+  if (IsAudioInputMediaType(device_info.device.type))
     RemoveStreamDeviceFromArray(device_info, &stream->audio_array);
   else
     RemoveStreamDeviceFromArray(device_info, &stream->video_array);
@@ -334,7 +339,7 @@ void MediaStreamDispatcher::OnDeviceOpened(
     if (request.ipc_request == request_id) {
       Stream new_stream;
       new_stream.handler = request.handler;
-      if (IsAudioMediaType(device_info.device.type)) {
+      if (IsAudioInputMediaType(device_info.device.type)) {
         new_stream.audio_array.push_back(device_info);
       } else if (IsVideoMediaType(device_info.device.type)) {
         new_stream.video_array.push_back(device_info);

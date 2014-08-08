@@ -12,6 +12,7 @@
 #include "cc/resources/bitmap_skpicture_content_layer_updater.h"
 #include "cc/resources/layer_painter.h"
 #include "cc/trees/layer_tree_host.h"
+#include "third_party/skia/include/core/SkPictureRecorder.h"
 
 namespace cc {
 
@@ -24,29 +25,12 @@ scoped_ptr<ContentLayerPainter> ContentLayerPainter::Create(
 }
 
 void ContentLayerPainter::Paint(SkCanvas* canvas,
-                                gfx::Rect content_rect,
+                                const gfx::Rect& content_rect,
                                 gfx::RectF* opaque) {
-  base::TimeTicks paint_start = base::TimeTicks::HighResNow();
-  client_->PaintContents(canvas, content_rect, opaque);
-  base::TimeTicks paint_end = base::TimeTicks::HighResNow();
-  // The start and end times might be the same if the paint was very fast or if
-  // our timer granularity is poor. Treat this as a very short time duration
-  // instead of none to avoid dividing by zero.
-  if (paint_end == paint_start)
-    paint_end += base::TimeDelta::FromMicroseconds(1);
-
-  double pixels_per_sec = (content_rect.width() * content_rect.height()) /
-                          (paint_end - paint_start).InSecondsF();
-  UMA_HISTOGRAM_CUSTOM_COUNTS("Renderer4.AccelContentPaintDurationMS",
-                              (paint_end - paint_start).InMilliseconds(),
-                              0,
-                              120,
-                              30);
-  UMA_HISTOGRAM_CUSTOM_COUNTS("Renderer4.AccelContentPaintMegapixPerSecond",
-                              pixels_per_sec / 1000000,
-                              10,
-                              210,
-                              30);
+  client_->PaintContents(canvas,
+                         content_rect,
+                         opaque,
+                         ContentLayerClient::GRAPHICS_CONTEXT_ENABLED);
 }
 
 scoped_refptr<ContentLayer> ContentLayer::Create(ContentLayerClient* client) {
@@ -88,7 +72,7 @@ void ContentLayer::SetTexturePriorities(
 }
 
 bool ContentLayer::Update(ResourceUpdateQueue* queue,
-                          const OcclusionTracker* occlusion) {
+                          const OcclusionTracker<Layer>* occlusion) {
   {
     base::AutoReset<bool> ignore_set_needs_commit(&ignore_set_needs_commit_,
                                                   true);
@@ -126,6 +110,8 @@ void ContentLayer::CreateUpdaterIfNeeded() {
         id());
   }
   updater_->SetOpaque(contents_opaque());
+  if (client_)
+    updater_->SetFillsBoundsCompletely(client_->FillsBoundsCompletely());
 
   SetTextureFormat(
       layer_tree_host()->GetRendererCapabilities().best_texture_format);
@@ -158,10 +144,13 @@ skia::RefPtr<SkPicture> ContentLayer::GetPicture() const {
   int height = bounds().height();
   gfx::RectF opaque;
 
-  skia::RefPtr<SkPicture> picture = skia::AdoptRef(new SkPicture);
-  SkCanvas* canvas = picture->beginRecording(width, height);
-  client_->PaintContents(canvas, gfx::Rect(width, height), &opaque);
-  picture->endRecording();
+  SkPictureRecorder recorder;
+  SkCanvas* canvas = recorder.beginRecording(width, height, NULL, 0);
+  client_->PaintContents(canvas,
+                         gfx::Rect(width, height),
+                         &opaque,
+                         ContentLayerClient::GRAPHICS_CONTEXT_ENABLED);
+  skia::RefPtr<SkPicture> picture = skia::AdoptRef(recorder.endRecording());
   return picture;
 }
 

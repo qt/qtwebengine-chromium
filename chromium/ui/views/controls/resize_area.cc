@@ -5,13 +5,11 @@
 #include "ui/views/controls/resize_area.h"
 
 #include "base/logging.h"
-#include "ui/base/accessibility/accessible_view_state.h"
+#include "ui/accessibility/ax_view_state.h"
+#include "ui/base/cursor/cursor.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/views/controls/resize_area_delegate.h"
-
-#if defined(USE_AURA)
-#include "ui/base/cursor/cursor.h"
-#endif
+#include "ui/views/native_cursor.h"
 
 namespace views {
 
@@ -33,14 +31,8 @@ const char* ResizeArea::GetClassName() const {
 }
 
 gfx::NativeCursor ResizeArea::GetCursor(const ui::MouseEvent& event) {
-  if (!enabled())
-    return gfx::kNullCursor;
-#if defined(USE_AURA)
-  return ui::kCursorEastWestResize;
-#elif defined(OS_WIN)
-  static HCURSOR g_resize_cursor = LoadCursor(NULL, IDC_SIZEWE);
-  return g_resize_cursor;
-#endif
+  return enabled() ? GetNativeEastWestResizeCursor()
+                   : gfx::kNullCursor;
 }
 
 bool ResizeArea::OnMousePressed(const ui::MouseEvent& event) {
@@ -73,8 +65,8 @@ void ResizeArea::OnMouseCaptureLost() {
   ReportResizeAmount(initial_position_, true);
 }
 
-void ResizeArea::GetAccessibleState(ui::AccessibleViewState* state) {
-  state->role = ui::AccessibilityTypes::ROLE_SEPARATOR;
+void ResizeArea::GetAccessibleState(ui::AXViewState* state) {
+  state->role = ui::AX_ROLE_SPLITTER;
 }
 
 void ResizeArea::ReportResizeAmount(int resize_amount, bool last_update) {

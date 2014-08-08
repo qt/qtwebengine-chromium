@@ -32,8 +32,6 @@ class SK_API SkXfermode : public SkFlattenable {
 public:
     SK_DECLARE_INST_COUNT(SkXfermode)
 
-    SkXfermode() {}
-
     virtual void xfer32(SkPMColor dst[], const SkPMColor src[], int count,
                         const SkAlpha aa[]) const;
     virtual void xfer16(uint16_t dst[], const SkPMColor src[], int count,
@@ -213,12 +211,13 @@ public:
                                    Coeff* dst,
                                    GrTexture* background = NULL);
 
-    SkDEVCODE(virtual void toString(SkString* str) const = 0;)
+    SK_TO_STRING_PUREVIRT()
     SK_DECLARE_FLATTENABLE_REGISTRAR_GROUP()
     SK_DEFINE_FLATTENABLE_TYPE(SkXfermode)
 
 protected:
-    SkXfermode(SkFlattenableReadBuffer& rb) : SkFlattenable(rb) {}
+    SkXfermode() {}
+    explicit SkXfermode(SkReadBuffer& rb) : SkFlattenable(rb) {}
 
     /** The default implementation of xfer32/xfer16/xferA8 in turn call this
         method, 1 color at a time (upscaled to a SkPMColor). The default
@@ -235,51 +234,7 @@ private:
         kModeCount = kLastMode + 1
     };
 
-    friend class SkGraphics;
-    static void Term();
-
     typedef SkFlattenable INHERITED;
-};
-
-///////////////////////////////////////////////////////////////////////////////
-
-/** \class SkProcXfermode
-
-    SkProcXfermode is a xfermode that applies the specified proc to its colors.
-    This class is not exported to java.
-*/
-class SkProcXfermode : public SkXfermode {
-public:
-    SkProcXfermode(SkXfermodeProc proc) : fProc(proc) {}
-
-    // overrides from SkXfermode
-    virtual void xfer32(SkPMColor dst[], const SkPMColor src[], int count,
-                        const SkAlpha aa[]) const SK_OVERRIDE;
-    virtual void xfer16(uint16_t dst[], const SkPMColor src[], int count,
-                        const SkAlpha aa[]) const SK_OVERRIDE;
-    virtual void xferA8(SkAlpha dst[], const SkPMColor src[], int count,
-                        const SkAlpha aa[]) const SK_OVERRIDE;
-
-    SK_DEVELOPER_TO_STRING()
-    SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(SkProcXfermode)
-
-protected:
-    SkProcXfermode(SkFlattenableReadBuffer&);
-    virtual void flatten(SkFlattenableWriteBuffer&) const SK_OVERRIDE;
-
-    // allow subclasses to update this after we unflatten
-    void setProc(SkXfermodeProc proc) {
-        fProc = proc;
-    }
-
-    SkXfermodeProc getProc() const {
-        return fProc;
-    }
-
-private:
-    SkXfermodeProc  fProc;
-
-    typedef SkXfermode INHERITED;
 };
 
 #endif

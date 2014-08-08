@@ -43,7 +43,7 @@ HRESULT ForegroundHelper::ForegroundHotKey(HWND window) {
   hotkey.type = INPUT_KEYBOARD;
   hotkey.ki.wVk =  VK_F22;
   if (1 != SendInput(1, &hotkey, sizeof(hotkey))) {
-    LOG(WARNING) << "Failed to send input";
+    LOG(WARNING) << "Failed to send input; GetLastError(): " << GetLastError();
     return E_FAIL;
   }
 
@@ -72,13 +72,9 @@ HRESULT ForegroundHelper::ForegroundHotKey(HWND window) {
   return S_OK;
 }
 
-  // Handle the registered Hotkey being pressed.
-LRESULT ForegroundHelper::OnHotKey(UINT message,
-                                   WPARAM wparam,
-                                   LPARAM lparam,
-                                   BOOL& handled) {
+// Handle the registered Hotkey being pressed.
+void ForegroundHelper::OnHotKey(int id, UINT vcode, UINT modifiers) {
   SetForegroundWindow(window_);
-  return 1;
 }
 
 }  // namespace ui

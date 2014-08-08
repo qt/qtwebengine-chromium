@@ -27,22 +27,22 @@
 
 #include "core/html/canvas/WebGLShader.h"
 
-#include "core/html/canvas/WebGLRenderingContext.h"
+#include "core/html/canvas/WebGLRenderingContextBase.h"
 
 namespace WebCore {
 
-PassRefPtr<WebGLShader> WebGLShader::create(WebGLRenderingContext* ctx, GC3Denum type)
+PassRefPtr<WebGLShader> WebGLShader::create(WebGLRenderingContextBase* ctx, GLenum type)
 {
     return adoptRef(new WebGLShader(ctx, type));
 }
 
-WebGLShader::WebGLShader(WebGLRenderingContext* ctx, GC3Denum type)
+WebGLShader::WebGLShader(WebGLRenderingContextBase* ctx, GLenum type)
     : WebGLSharedObject(ctx)
     , m_type(type)
     , m_source("")
 {
     ScriptWrappable::init(this);
-    setObject(ctx->graphicsContext3D()->createShader(type));
+    setObject(ctx->webContext()->createShader(type));
 }
 
 WebGLShader::~WebGLShader()
@@ -50,7 +50,7 @@ WebGLShader::~WebGLShader()
     deleteObject(0);
 }
 
-void WebGLShader::deleteObjectImpl(GraphicsContext3D* context3d, Platform3DObject object)
+void WebGLShader::deleteObjectImpl(blink::WebGraphicsContext3D* context3d, Platform3DObject object)
 {
     context3d->deleteShader(object);
 }

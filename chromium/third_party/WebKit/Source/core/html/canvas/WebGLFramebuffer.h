@@ -37,28 +37,26 @@ namespace WebCore {
 class WebGLRenderbuffer;
 class WebGLTexture;
 
-class WebGLFramebuffer : public WebGLContextObject, public ScriptWrappable {
+class WebGLFramebuffer FINAL : public WebGLContextObject, public ScriptWrappable {
 public:
     class WebGLAttachment : public RefCounted<WebGLAttachment> {
     public:
         virtual ~WebGLAttachment();
 
-        virtual GC3Dsizei width() const = 0;
-        virtual GC3Dsizei height() const = 0;
-        virtual GC3Denum format() const = 0;
+        virtual GLsizei width() const = 0;
+        virtual GLsizei height() const = 0;
+        virtual GLenum format() const = 0;
         // For texture attachment, type() returns the type of the attached texture.
         // For renderbuffer attachment, the type of the renderbuffer may vary with GL implementation.
         // To avoid confusion, it would be better to not implement type() for renderbuffer attachment and
         // we should always use the internalformat of the renderbuffer and avoid using type() API.
-        virtual GC3Denum type() const = 0;
+        virtual GLenum type() const = 0;
         virtual WebGLSharedObject* object() const = 0;
         virtual bool isSharedObject(WebGLSharedObject*) const = 0;
         virtual bool valid() const = 0;
-        virtual bool initialized() const = 0;
-        virtual void setInitialized() = 0;
-        virtual void onDetached(GraphicsContext3D*) = 0;
-        virtual void attach(GraphicsContext3D*, GC3Denum attachment) = 0;
-        virtual void unattach(GraphicsContext3D*, GC3Denum attachment) = 0;
+        virtual void onDetached(blink::WebGraphicsContext3D*) = 0;
+        virtual void attach(blink::WebGraphicsContext3D*, GLenum attachment) = 0;
+        virtual void unattach(blink::WebGraphicsContext3D*, GLenum attachment) = 0;
 
     protected:
         WebGLAttachment();
@@ -66,33 +64,29 @@ public:
 
     virtual ~WebGLFramebuffer();
 
-    static PassRefPtr<WebGLFramebuffer> create(WebGLRenderingContext*);
+    static PassRefPtr<WebGLFramebuffer> create(WebGLRenderingContextBase*);
 
-    void setAttachmentForBoundFramebuffer(GC3Denum attachment, GC3Denum texTarget, WebGLTexture*, GC3Dint level);
-    void setAttachmentForBoundFramebuffer(GC3Denum attachment, WebGLRenderbuffer*);
+    void setAttachmentForBoundFramebuffer(GLenum attachment, GLenum texTarget, WebGLTexture*, GLint level);
+    void setAttachmentForBoundFramebuffer(GLenum attachment, WebGLRenderbuffer*);
     // If an object is attached to the currently bound framebuffer, remove it.
     void removeAttachmentFromBoundFramebuffer(WebGLSharedObject*);
     // If a given attachment point for the currently bound framebuffer is not null, remove the attached object.
-    void removeAttachmentFromBoundFramebuffer(GC3Denum);
-    WebGLSharedObject* getAttachmentObject(GC3Denum) const;
+    void removeAttachmentFromBoundFramebuffer(GLenum);
+    WebGLSharedObject* getAttachmentObject(GLenum) const;
 
-    GC3Denum colorBufferFormat() const;
-    GC3Dsizei colorBufferWidth() const;
-    GC3Dsizei colorBufferHeight() const;
+    GLenum colorBufferFormat() const;
 
     // This should always be called before drawArray, drawElements, clear,
     // readPixels, copyTexImage2D, copyTexSubImage2D if this framebuffer is
     // currently bound.
-    // Return false if the framebuffer is incomplete; otherwise initialize
-    // the buffers if they haven't been initialized and
-    // needToInitializeAttachments is true.
-    bool onAccess(GraphicsContext3D*, const char** reason);
+    // Return false if the framebuffer is incomplete.
+    bool onAccess(blink::WebGraphicsContext3D*, const char** reason);
 
     // Software version of glCheckFramebufferStatus(), except that when
     // FRAMEBUFFER_COMPLETE is returned, it is still possible for
     // glCheckFramebufferStatus() to return FRAMEBUFFER_UNSUPPORTED,
     // depending on hardware implementation.
-    GC3Denum checkStatus(const char** reason) const;
+    GLenum checkStatus(const char** reason) const;
 
     bool hasEverBeenBound() const { return object() && m_hasEverBeenBound; }
 
@@ -101,38 +95,36 @@ public:
     bool hasStencilBuffer() const;
 
     // Wrapper for drawBuffersEXT/drawBuffersARB to work around a driver bug.
-    void drawBuffers(const Vector<GC3Denum>& bufs);
+    void drawBuffers(const Vector<GLenum>& bufs);
 
-    GC3Denum getDrawBuffer(GC3Denum);
+    GLenum getDrawBuffer(GLenum);
 
 protected:
-    WebGLFramebuffer(WebGLRenderingContext*);
+    WebGLFramebuffer(WebGLRenderingContextBase*);
 
-    virtual void deleteObjectImpl(GraphicsContext3D*, Platform3DObject);
+    virtual void deleteObjectImpl(blink::WebGraphicsContext3D*, Platform3DObject) OVERRIDE;
 
 private:
-    virtual bool isFramebuffer() const { return true; }
-
-    WebGLAttachment* getAttachment(GC3Denum) const;
-    bool isAttachmentComplete(WebGLAttachment* attachedObject, GC3Denum attachment, const char** reason) const;
+    WebGLAttachment* getAttachment(GLenum) const;
+    bool isAttachmentComplete(WebGLAttachment* attachedObject, GLenum attachment, const char** reason) const;
 
     // Check if the framebuffer is currently bound.
     bool isBound() const;
 
     // attach 'attachment' at 'attachmentPoint'.
-    void attach(GC3Denum attachment, GC3Denum attachmentPoint);
+    void attach(GLenum attachment, GLenum attachmentPoint);
 
     // Check if a new drawBuffers call should be issued. This is called when we add or remove an attachment.
     void drawBuffersIfNecessary(bool force);
 
-    typedef WTF::HashMap<GC3Denum, RefPtr<WebGLAttachment> > AttachmentMap;
+    typedef WTF::HashMap<GLenum, RefPtr<WebGLAttachment> > AttachmentMap;
 
     AttachmentMap m_attachments;
 
     bool m_hasEverBeenBound;
 
-    Vector<GC3Denum> m_drawBuffers;
-    Vector<GC3Denum> m_filteredDrawBuffers;
+    Vector<GLenum> m_drawBuffers;
+    Vector<GLenum> m_filteredDrawBuffers;
 };
 
 } // namespace WebCore

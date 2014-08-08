@@ -5,12 +5,13 @@
 #ifndef CONTENT_PUBLIC_RENDERER_KEY_SYSTEM_INFO_H_
 #define CONTENT_PUBLIC_RENDERER_KEY_SYSTEM_INFO_H_
 
+#include <map>
 #include <string>
-#include <utility>
-#include <vector>
 
 #include "base/basictypes.h"
+#include "base/containers/hash_tables.h"
 #include "content/common/content_export.h"
+#include "content/public/common/eme_codec.h"
 
 // Definitions:
 // * Key system
@@ -32,19 +33,13 @@ namespace content {
 // Contains information about an EME key system as well as how to instantiate
 // the corresponding CDM.
 struct CONTENT_EXPORT KeySystemInfo {
-  // Represents container-codec combinations. The second string may contain zero
-  // or more codecs separated by commas.
-  typedef std::pair<std::string, std::string> ContainerCodecsPair;
-
   explicit KeySystemInfo(const std::string& key_system);
   ~KeySystemInfo();
 
   std::string key_system;
 
-  // Specifies container and codec combinations supported by |key_system|.
-  // Multiple codecs may be listed for each container.
-  // In all cases, the container without a codec is also always supported.
-  std::vector<ContainerCodecsPair> supported_types;
+  // Specifies codecs supported by |key_system|.
+  SupportedCodecs supported_codecs;
 
   // A hierarchical parent for |key_system|. This value can be used to check
   // supported types but cannot be used to instantiate a MediaKeys object.
@@ -55,8 +50,6 @@ struct CONTENT_EXPORT KeySystemInfo {
   bool use_aes_decryptor;
 #if defined(ENABLE_PEPPER_CDMS)
   std::string pepper_type;
-#elif defined(OS_ANDROID)
-  std::vector<uint8> uuid;
 #endif
 };
 

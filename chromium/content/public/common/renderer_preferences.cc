@@ -37,7 +37,6 @@ RendererPreferences::RendererPreferences()
       inactive_selection_fg_color(SkColorSetRGB(50, 50, 50)),
       browser_handles_non_local_top_level_requests(false),
       browser_handles_all_top_level_requests(false),
-      browser_handles_all_top_level_link_clicks(false),
       caret_blink_interval(0.5),
       use_custom_colors(true),
       enable_referrers(true),
@@ -48,7 +47,8 @@ RendererPreferences::RendererPreferences()
       touchscreen_fling_profile(3),
       tap_multiple_targets_strategy(TAP_MULTIPLE_TARGETS_STRATEGY_POPUP),
       disable_client_blocked_error_page(false),
-      plugin_fullscreen_allowed(true) {
+      plugin_fullscreen_allowed(true),
+      use_video_overlay_for_embedded_encrypted_video(false) {
   touchpad_fling_profile[0] = kDefaultAlpha;
   touchpad_fling_profile[1] = kDefaultBeta;
   touchpad_fling_profile[2] = kDefaultGamma;

@@ -41,7 +41,6 @@ namespace WebCore {
 struct LayerFragment;
 typedef Vector<LayerFragment, 1> LayerFragments;
 class RenderFlowThread;
-class RenderStyle;
 class RenderRegion;
 
 typedef ListHashSet<RenderRegion*> RenderRegionList;
@@ -58,117 +57,58 @@ public:
     virtual ~RenderFlowThread() { };
 
     virtual bool isRenderFlowThread() const OVERRIDE FINAL { return true; }
+    virtual bool isRenderMultiColumnFlowThread() const { return false; }
 
-    virtual void layout() OVERRIDE FINAL;
+    virtual void layout() OVERRIDE;
 
     // Always create a RenderLayer for the RenderFlowThread so that we
     // can easily avoid drawing the children directly.
-    virtual bool requiresLayer() const OVERRIDE FINAL { return true; }
+    virtual LayerType layerTypeRequired() const OVERRIDE FINAL { return NormalLayer; }
 
-    virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction) OVERRIDE;
+    virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction) OVERRIDE FINAL;
 
-    void removeFlowChildInfo(RenderObject*);
-#ifndef NDEBUG
-    bool hasChildInfo(RenderObject* child) const { return child && child->isBox() && m_regionRangeMap.contains(toRenderBox(child)); }
-#endif
-
-    virtual void addRegionToThread(RenderRegion*);
+    virtual void addRegionToThread(RenderRegion*) = 0;
     virtual void removeRegionFromThread(RenderRegion*);
     const RenderRegionList& renderRegionList() const { return m_regionList; }
 
-    virtual void updateLogicalWidth() OVERRIDE FINAL;
     virtual void computeLogicalHeight(LayoutUnit logicalHeight, LayoutUnit logicalTop, LogicalExtentComputedValues&) const OVERRIDE;
 
-    void paintFlowThreadPortionInRegion(PaintInfo&, RenderRegion*, const LayoutRect& flowThreadPortionRect, const LayoutRect& flowThreadPortionOverflowRect, const LayoutPoint&) const;
-    bool hitTestFlowThreadPortionInRegion(RenderRegion*, const LayoutRect& flowThreadPortionRect, const LayoutRect& flowThreadPortionOverflowRect, const HitTestRequest&, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset) const;
-
     bool hasRegions() const { return m_regionList.size(); }
-    // Check if the content is flown into at least a region with region styling rules.
-    bool hasRegionsWithStyling() const { return m_hasRegionsWithStyling; }
-    void checkRegionsWithStyling();
-    virtual void regionChangedWritingMode(RenderRegion*) { }
 
     void validateRegions();
     void invalidateRegions();
     bool hasValidRegionInfo() const { return !m_regionsInvalidated && !m_regionList.isEmpty(); }
-
-    static PassRefPtr<RenderStyle> createFlowThreadStyle(RenderStyle* parentStyle);
-
-    void styleDidChange(StyleDifference, const RenderStyle* oldStyle);
 
     void repaintRectangleInRegions(const LayoutRect&) const;
 
     LayoutPoint adjustedPositionRelativeToOffsetParent(const RenderBoxModelObject&, const LayoutPoint&);
 
     LayoutUnit pageLogicalTopForOffset(LayoutUnit);
-    LayoutUnit pageLogicalWidthForOffset(LayoutUnit);
     LayoutUnit pageLogicalHeightForOffset(LayoutUnit);
     LayoutUnit pageRemainingLogicalHeightForOffset(LayoutUnit, PageBoundaryRule = IncludePageBoundary);
 
     virtual void setPageBreak(LayoutUnit /*offset*/, LayoutUnit /*spaceShortage*/) { }
     virtual void updateMinimumPageHeight(LayoutUnit /*offset*/, LayoutUnit /*minHeight*/) { }
 
-    enum RegionAutoGenerationPolicy {
-        AllowRegionAutoGeneration,
-        DisallowRegionAutoGeneration,
-    };
-    RenderRegion* regionAtBlockOffset(LayoutUnit, bool extendLastRegion = false, RegionAutoGenerationPolicy = AllowRegionAutoGeneration);
+    virtual RenderRegion* regionAtBlockOffset(LayoutUnit) const;
 
-    RenderRegion* regionFromAbsolutePointAndBox(IntPoint, const RenderBox* flowedBox);
-
-    bool regionsHaveUniformLogicalWidth() const { return m_regionsHaveUniformLogicalWidth; }
     bool regionsHaveUniformLogicalHeight() const { return m_regionsHaveUniformLogicalHeight; }
-
-    RenderRegion* mapFromFlowToRegion(TransformState&) const;
-
-    void removeRenderBoxRegionInfo(RenderBox*);
-    bool logicalWidthChangedInRegionsForBlock(const RenderBlock*);
-
-    LayoutUnit contentLogicalWidthOfFirstRegion() const;
-    LayoutUnit contentLogicalHeightOfFirstRegion() const;
-    LayoutUnit contentLogicalLeftOfFirstRegion() const;
 
     RenderRegion* firstRegion() const;
     RenderRegion* lastRegion() const;
 
-    bool previousRegionCountChanged() const { return m_previousRegionCount != m_regionList.size(); }
-    void updatePreviousRegionCount() { m_previousRegionCount = m_regionList.size(); }
-
     void setRegionRangeForBox(const RenderBox*, LayoutUnit offsetFromLogicalTopOfFirstPage);
     void getRegionRangeForBox(const RenderBox*, RenderRegion*& startRegion, RenderRegion*& endRegion) const;
 
-    void clearRenderObjectCustomStyle(const RenderObject*,
-        const RenderRegion* oldStartRegion = 0, const RenderRegion* oldEndRegion = 0,
-        const RenderRegion* newStartRegion = 0, const RenderRegion* newEndRegion = 0);
+    virtual bool addForcedRegionBreak(LayoutUnit, RenderObject* breakChild, bool isBefore, LayoutUnit* offsetBreakAdjustment = 0) { return false; }
 
-    // Check if the object is in region and the region is part of this flow thread.
-    bool objectInFlowRegion(const RenderObject*, const RenderRegion*) const;
-
-    void markAutoLogicalHeightRegionsForLayout();
-
-    bool addForcedRegionBreak(LayoutUnit, RenderObject* breakChild, bool isBefore, LayoutUnit* offsetBreakAdjustment = 0);
-    void applyBreakAfterContent(LayoutUnit);
-
+    virtual bool isPageLogicalHeightKnown() const { return true; }
     bool pageLogicalSizeChanged() const { return m_pageLogicalSizeChanged; }
-
-    bool hasAutoLogicalHeightRegions() const { ASSERT(isAutoLogicalHeightRegionsCountConsistent()); return m_autoLogicalHeightRegionsCount; }
-    void incrementAutoLogicalHeightRegions();
-    void decrementAutoLogicalHeightRegions();
-
-#ifndef NDEBUG
-    bool isAutoLogicalHeightRegionsCountConsistent() const;
-#endif
 
     void collectLayerFragments(LayerFragments&, const LayoutRect& layerBoundingBox, const LayoutRect& dirtyRect);
     LayoutRect fragmentsBoundingBox(const LayoutRect& layerBoundingBox);
 
-    void setInConstrainedLayoutPhase(bool value) { m_inConstrainedLayoutPhase = value; }
-    bool inConstrainedLayoutPhase() const { return m_inConstrainedLayoutPhase; }
-
-    bool needsTwoPhasesLayout() const { return m_needsTwoPhasesLayout; }
-    void clearNeedsTwoPhasesLayout() { m_needsTwoPhasesLayout = false; }
-
-    void pushFlowThreadLayoutState(const RenderObject*);
+    void pushFlowThreadLayoutState(const RenderObject&);
     void popFlowThreadLayoutState();
     LayoutUnit offsetFromLogicalTopOfFirstRegion(const RenderBlock*) const;
 
@@ -178,31 +118,8 @@ public:
 protected:
     virtual const char* renderName() const = 0;
 
-    // Overridden by columns/pages to set up an initial logical width of the page width even when
-    // no regions have been generated yet.
-    virtual LayoutUnit initialLogicalWidth() const { return 0; };
-
-    virtual void mapLocalToContainer(const RenderLayerModelObject* repaintContainer, TransformState&, MapCoordinatesFlags = ApplyContainerFlip, bool* wasFixed = 0) const OVERRIDE;
-
-    void updateRegionsFlowThreadPortionRect(const RenderRegion* = 0);
+    void updateRegionsFlowThreadPortionRect();
     bool shouldRepaint(const LayoutRect&) const;
-    bool regionInRange(const RenderRegion* targetRegion, const RenderRegion* startRegion, const RenderRegion* endRegion) const;
-
-    LayoutRect computeRegionClippingRect(const LayoutPoint&, const LayoutRect&, const LayoutRect&) const;
-
-    void setDispatchRegionLayoutUpdateEvent(bool value) { m_dispatchRegionLayoutUpdateEvent = value; }
-    bool shouldDispatchRegionLayoutUpdateEvent() { return m_dispatchRegionLayoutUpdateEvent; }
-
-    void setDispatchRegionOversetChangeEvent(bool value) { m_dispatchRegionOversetChangeEvent = value; }
-    bool shouldDispatchRegionOversetChangeEvent() const { return m_dispatchRegionOversetChangeEvent; }
-
-    // Override if the flow thread implementation supports dispatching events when the flow layout is updated (e.g. for named flows)
-    virtual void dispatchRegionLayoutUpdateEvent() { m_dispatchRegionLayoutUpdateEvent = false; }
-    virtual void dispatchRegionOversetChangeEvent() { m_dispatchRegionOversetChangeEvent = false; }
-
-    void initializeRegionsComputedAutoHeight(RenderRegion* = 0);
-
-    virtual void autoGenerateRegionsToBlockOffset(LayoutUnit) { };
 
     bool cachedOffsetFromLogicalTopOfFirstRegion(const RenderBox*, LayoutUnit&) const;
     void setOffsetFromLogicalTopOfFirstRegion(const RenderBox*, LayoutUnit);
@@ -211,7 +128,6 @@ protected:
     const RenderBox* currentStatePusherRenderBox() const;
 
     RenderRegionList m_regionList;
-    unsigned short m_previousRegionCount;
 
     class RenderRegionRange {
     public:
@@ -265,10 +181,6 @@ protected:
     typedef HashMap<const RenderBox*, RenderRegionRange> RenderRegionRangeMap;
     RenderRegionRangeMap m_regionRangeMap;
 
-    typedef HashMap<RenderObject*, RenderRegion*> RenderObjectToRegionMap;
-    RenderObjectToRegionMap m_breakBeforeToRegionMap;
-    RenderObjectToRegionMap m_breakAfterToRegionMap;
-
     // Stack of objects that pushed a LayoutState object on the RenderView. The
     // objects on the stack are the ones that are curently in the process of being
     // laid out.
@@ -276,23 +188,11 @@ protected:
     typedef HashMap<const RenderBox*, LayoutUnit> RenderBoxToOffsetMap;
     RenderBoxToOffsetMap m_boxesToOffsetMap;
 
-    unsigned m_autoLogicalHeightRegionsCount;
-
     RegionIntervalTree m_regionIntervalTree;
 
     bool m_regionsInvalidated : 1;
-    bool m_regionsHaveUniformLogicalWidth : 1;
     bool m_regionsHaveUniformLogicalHeight : 1;
-    bool m_hasRegionsWithStyling : 1;
-    bool m_dispatchRegionLayoutUpdateEvent : 1;
-    bool m_dispatchRegionOversetChangeEvent : 1;
     bool m_pageLogicalSizeChanged : 1;
-    bool m_inConstrainedLayoutPhase : 1;
-    bool m_needsTwoPhasesLayout : 1;
-
-private:
-    virtual bool supportsPartialLayout() const OVERRIDE { return false; }
-
 };
 
 DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderFlowThread, isRenderFlowThread());

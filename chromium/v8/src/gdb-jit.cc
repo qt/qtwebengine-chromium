@@ -1,43 +1,20 @@
 // Copyright 2010 the V8 project authors. All rights reserved.
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-//       copyright notice, this list of conditions and the following
-//       disclaimer in the documentation and/or other materials provided
-//       with the distribution.
-//     * Neither the name of Google Inc. nor the names of its
-//       contributors may be used to endorse or promote products derived
-//       from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
 #ifdef ENABLE_GDB_JIT_INTERFACE
-#include "v8.h"
-#include "gdb-jit.h"
+#include "src/v8.h"
+#include "src/gdb-jit.h"
 
-#include "bootstrapper.h"
-#include "compiler.h"
-#include "frames.h"
-#include "frames-inl.h"
-#include "global-handles.h"
-#include "messages.h"
-#include "natives.h"
-#include "platform.h"
-#include "scopes.h"
+#include "src/bootstrapper.h"
+#include "src/compiler.h"
+#include "src/frames.h"
+#include "src/frames-inl.h"
+#include "src/global-handles.h"
+#include "src/messages.h"
+#include "src/natives.h"
+#include "src/platform.h"
+#include "src/scopes.h"
 
 namespace v8 {
 namespace internal {
@@ -217,7 +194,7 @@ class DebugSectionBase : public ZoneObject {
 struct MachOSectionHeader {
   char sectname[16];
   char segname[16];
-#if V8_TARGET_ARCH_IA32
+#if V8_TARGET_ARCH_IA32 || V8_TARGET_ARCH_X87
   uint32_t addr;
   uint32_t size;
 #else
@@ -252,8 +229,8 @@ class MachOSection : public DebugSectionBase<MachOSectionHeader> {
       segment_(segment),
       align_(align),
       flags_(flags) {
-    ASSERT(IsPowerOf2(align));
     if (align_ != 0) {
+      ASSERT(IsPowerOf2(align));
       align_ = WhichPowerOf2(align_);
     }
   }
@@ -534,7 +511,7 @@ class MachO BASE_EMBEDDED {
     uint32_t cmd;
     uint32_t cmdsize;
     char segname[16];
-#if V8_TARGET_ARCH_IA32
+#if V8_TARGET_ARCH_IA32 || V8_TARGET_ARCH_X87
     uint32_t vmaddr;
     uint32_t vmsize;
     uint32_t fileoff;
@@ -560,7 +537,7 @@ class MachO BASE_EMBEDDED {
   Writer::Slot<MachOHeader> WriteHeader(Writer* w) {
     ASSERT(w->position() == 0);
     Writer::Slot<MachOHeader> header = w->CreateSlotHere<MachOHeader>();
-#if V8_TARGET_ARCH_IA32
+#if V8_TARGET_ARCH_IA32 || V8_TARGET_ARCH_X87
     header->magic = 0xFEEDFACEu;
     header->cputype = 7;  // i386
     header->cpusubtype = 3;  // CPU_SUBTYPE_I386_ALL
@@ -585,7 +562,7 @@ class MachO BASE_EMBEDDED {
                                                         uintptr_t code_size) {
     Writer::Slot<MachOSegmentCommand> cmd =
         w->CreateSlotHere<MachOSegmentCommand>();
-#if V8_TARGET_ARCH_IA32
+#if V8_TARGET_ARCH_IA32 || V8_TARGET_ARCH_X87
     cmd->cmd = LC_SEGMENT_32;
 #else
     cmd->cmd = LC_SEGMENT_64;
@@ -672,7 +649,7 @@ class ELF BASE_EMBEDDED {
   void WriteHeader(Writer* w) {
     ASSERT(w->position() == 0);
     Writer::Slot<ELFHeader> header = w->CreateSlotHere<ELFHeader>();
-#if V8_TARGET_ARCH_IA32 || V8_TARGET_ARCH_ARM
+#if V8_TARGET_ARCH_IA32 || V8_TARGET_ARCH_ARM || V8_TARGET_ARCH_X87
     const uint8_t ident[16] =
         { 0x7f, 'E', 'L', 'F', 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 #elif V8_TARGET_ARCH_X64
@@ -681,9 +658,9 @@ class ELF BASE_EMBEDDED {
 #else
 #error Unsupported target architecture.
 #endif
-    OS::MemCopy(header->ident, ident, 16);
+    memcpy(header->ident, ident, 16);
     header->type = 1;
-#if V8_TARGET_ARCH_IA32
+#if V8_TARGET_ARCH_IA32 || V8_TARGET_ARCH_X87
     header->machine = 3;
 #elif V8_TARGET_ARCH_X64
     // Processor identification value for x64 is 62 as defined in
@@ -785,7 +762,7 @@ class ELFSymbol BASE_EMBEDDED {
   Binding binding() const {
     return static_cast<Binding>(info >> 4);
   }
-#if V8_TARGET_ARCH_IA32 || V8_TARGET_ARCH_ARM
+#if V8_TARGET_ARCH_IA32 || V8_TARGET_ARCH_ARM || V8_TARGET_ARCH_X87
   struct SerializedLayout {
     SerializedLayout(uint32_t name,
                      uintptr_t value,
@@ -1002,7 +979,7 @@ class CodeDescription BASE_EMBEDDED {
   }
 
   int GetScriptLineNumber(int pos) {
-    return GetScriptLineNumberSafe(script_, pos) + 1;
+    return script_->GetLineNumber(pos) + 1;
   }
 
 
@@ -1089,7 +1066,7 @@ class DebugInfoSection : public DebugSection {
     w->Write<uint8_t>(sizeof(intptr_t));
 
     w->WriteULEB128(1);  // Abbreviation code.
-    w->WriteString(*desc_->GetFilename());
+    w->WriteString(desc_->GetFilename().get());
     w->Write<intptr_t>(desc_->CodeStart());
     w->Write<intptr_t>(desc_->CodeStart() + desc_->CodeSize());
     w->Write<uint32_t>(0);
@@ -1107,7 +1084,7 @@ class DebugInfoSection : public DebugSection {
       w->Write<intptr_t>(desc_->CodeStart() + desc_->CodeSize());
       Writer::Slot<uint32_t> fb_block_size = w->CreateSlotHere<uint32_t>();
       uintptr_t fb_block_start = w->position();
-#if V8_TARGET_ARCH_IA32
+#if V8_TARGET_ARCH_IA32 || V8_TARGET_ARCH_X87
       w->Write<uint8_t>(DW_OP_reg5);  // The frame pointer's here on ia32
 #elif V8_TARGET_ARCH_X64
       w->Write<uint8_t>(DW_OP_reg6);  // and here on x64.
@@ -1131,7 +1108,7 @@ class DebugInfoSection : public DebugSection {
       for (int param = 0; param < params; ++param) {
         w->WriteULEB128(current_abbreviation++);
         w->WriteString(
-            *scope->parameter(param)->name()->ToCString(DISALLOW_NULLS));
+            scope->parameter(param)->name()->ToCString(DISALLOW_NULLS).get());
         w->Write<uint32_t>(ty_offset);
         Writer::Slot<uint32_t> block_size = w->CreateSlotHere<uint32_t>();
         uintptr_t block_start = w->position();
@@ -1182,7 +1159,7 @@ class DebugInfoSection : public DebugSection {
       for (int local = 0; local < locals; ++local) {
         w->WriteULEB128(current_abbreviation++);
         w->WriteString(
-            *stack_locals[local]->name()->ToCString(DISALLOW_NULLS));
+            stack_locals[local]->name()->ToCString(DISALLOW_NULLS).get());
         w->Write<uint32_t>(ty_offset);
         Writer::Slot<uint32_t> block_size = w->CreateSlotHere<uint32_t>();
         uintptr_t block_start = w->position();
@@ -1455,7 +1432,7 @@ class DebugLineSection : public DebugSection {
     w->Write<uint8_t>(1);  // DW_LNS_SET_COLUMN operands count.
     w->Write<uint8_t>(0);  // DW_LNS_NEGATE_STMT operands count.
     w->Write<uint8_t>(0);  // Empty include_directories sequence.
-    w->WriteString(*desc_->GetFilename());  // File name.
+    w->WriteString(desc_->GetFilename().get());  // File name.
     w->WriteULEB128(0);  // Current directory.
     w->WriteULEB128(0);  // Unknown modification time.
     w->WriteULEB128(0);  // Unknown file size.
@@ -1841,7 +1818,7 @@ extern "C" {
   JITDescriptor __jit_debug_descriptor = { 1, 0, 0, 0 };
 
 #ifdef OBJECT_PRINT
-  void __gdb_print_v8_object(MaybeObject* object) {
+  void __gdb_print_v8_object(Object* object) {
     object->Print();
     PrintF(stdout, "\n");
   }
@@ -1856,7 +1833,7 @@ static JITCodeEntry* CreateCodeEntry(Address symfile_addr,
 
   entry->symfile_addr_ = reinterpret_cast<Address>(entry + 1);
   entry->symfile_size_ = symfile_size;
-  OS::MemCopy(entry->symfile_addr_, symfile_addr, symfile_size);
+  MemCopy(entry->symfile_addr_, symfile_addr, symfile_size);
 
   entry->prev_ = entry->next_ = NULL;
 
@@ -1880,12 +1857,12 @@ static void RegisterCodeEntry(JITCodeEntry* entry,
     static const char* kObjFileExt = ".o";
     char file_name[64];
 
-    OS::SNPrintF(Vector<char>(file_name, kMaxFileNameSize),
-                 "%s%s%d%s",
-                 kElfFilePrefix,
-                 (name_hint != NULL) ? name_hint : "",
-                 file_num++,
-                 kObjFileExt);
+    SNPrintF(Vector<char>(file_name, kMaxFileNameSize),
+             "%s%s%d%s",
+             kElfFilePrefix,
+             (name_hint != NULL) ? name_hint : "",
+             file_num++,
+             kObjFileExt);
     WriteBytes(file_name, entry->symfile_addr_, entry->symfile_size_);
   }
 #endif
@@ -2003,13 +1980,13 @@ void GDBJITInterface::AddCode(Handle<Name> name,
                               CompilationInfo* info) {
   if (!FLAG_gdbjit) return;
 
-  // Force initialization of line_ends array.
-  GetScriptLineNumber(script, 0);
+  Script::InitLineEnds(script);
 
   if (!name.is_null() && name->IsString()) {
     SmartArrayPointer<char> name_cstring =
         Handle<String>::cast(name)->ToCString(DISALLOW_NULLS);
-    AddCode(*name_cstring, *code, GDBJITInterface::FUNCTION, *script, info);
+    AddCode(name_cstring.get(), *code, GDBJITInterface::FUNCTION, *script,
+            info);
   } else {
     AddCode("", *code, GDBJITInterface::FUNCTION, *script, info);
   }
@@ -2132,7 +2109,7 @@ void GDBJITInterface::AddCode(GDBJITInterface::CodeTag tag,
                               Code* code) {
   if (!FLAG_gdbjit) return;
   if (name != NULL && name->IsString()) {
-    AddCode(tag, *String::cast(name)->ToCString(DISALLOW_NULLS), code);
+    AddCode(tag, String::cast(name)->ToCString(DISALLOW_NULLS).get(), code);
   } else {
     AddCode(tag, "", code);
   }

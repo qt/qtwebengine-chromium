@@ -26,7 +26,7 @@
 #include "config.h"
 #include "core/rendering/RenderGeometryMap.h"
 
-#include "core/frame/Frame.h"
+#include "core/frame/LocalFrame.h"
 #include "core/rendering/RenderLayer.h"
 #include "core/rendering/RenderView.h"
 #include "platform/geometry/TransformState.h"
@@ -57,7 +57,7 @@ void RenderGeometryMap::mapToContainer(TransformState& transformState, const Ren
     }
 
     bool inFixed = false;
-#if !ASSERT_DISABLED
+#if ASSERT_ENABLED
     bool foundContainer = !container || (m_mapping.size() && m_mapping[0].m_renderer == container);
 #endif
 
@@ -66,7 +66,7 @@ void RenderGeometryMap::mapToContainer(TransformState& transformState, const Ren
 
         // If container is the root RenderView (step 0) we want to apply its fixed position offset.
         if (i > 0 && currentStep.m_renderer == container) {
-#if !ASSERT_DISABLED
+#if ASSERT_ENABLED
             foundContainer = true;
 #endif
             break;
@@ -109,14 +109,14 @@ FloatPoint RenderGeometryMap::mapToContainer(const FloatPoint& p, const RenderLa
     FloatPoint result;
 
     if (!hasFixedPositionStep() && !hasTransformStep() && !hasNonUniformStep() && (!container || (m_mapping.size() && container == m_mapping[0].m_renderer)))
-        result = p + roundedIntSize(m_accumulatedOffset);
+        result = p + m_accumulatedOffset;
     else {
         TransformState transformState(TransformState::ApplyTransformDirection, p);
         mapToContainer(transformState, container);
         result = transformState.lastPlanarPoint();
     }
 
-#if !ASSERT_DISABLED
+#if ASSERT_ENABLED
     if (m_mapping.size() > 0) {
         const RenderObject* lastRenderer = m_mapping.last().m_renderer;
         const RenderLayer* layer = lastRenderer->enclosingLayer();
@@ -125,7 +125,7 @@ FloatPoint RenderGeometryMap::mapToContainer(const FloatPoint& p, const RenderLa
         // therefore not necessarily expected to be correct here. This is ok,
         // because they will be recomputed if the layer becomes visible.
         if (!layer || !layer->subtreeIsInvisible()) {
-            FloatPoint rendererMappedResult = lastRenderer->localToAbsolute(p, m_mapCoordinatesFlags);
+            FloatPoint rendererMappedResult = lastRenderer->localToContainerPoint(p, container, m_mapCoordinatesFlags);
 
             ASSERT(roundedIntPoint(rendererMappedResult) == roundedIntPoint(result));
         }
@@ -137,7 +137,7 @@ FloatPoint RenderGeometryMap::mapToContainer(const FloatPoint& p, const RenderLa
 
 #ifndef NDEBUG
 // Handy function to call from gdb while debugging mismatched point/rect errors.
-void RenderGeometryMap::dumpSteps()
+void RenderGeometryMap::dumpSteps() const
 {
     fprintf(stderr, "RenderGeometryMap::dumpSteps accumulatedOffset=%d,%d\n", m_accumulatedOffset.width().toInt(), m_accumulatedOffset.height().toInt());
     for (int i = m_mapping.size() - 1; i >= 0; --i) {
@@ -162,7 +162,7 @@ FloatQuad RenderGeometryMap::mapToContainer(const FloatRect& rect, const RenderL
         result = transformState.lastPlanarQuad().boundingBox();
     }
 
-#if !ASSERT_DISABLED
+#if ASSERT_ENABLED
     if (m_mapping.size() > 0) {
         const RenderObject* lastRenderer = m_mapping.last().m_renderer;
         const RenderLayer* layer = lastRenderer->enclosingLayer();
@@ -170,7 +170,7 @@ FloatQuad RenderGeometryMap::mapToContainer(const FloatRect& rect, const RenderL
         // Bounds for invisible layers are intentionally not calculated, and are
         // therefore not necessarily expected to be correct here. This is ok,
         // because they will be recomputed if the layer becomes visible.
-        if (!layer || !layer->subtreeIsInvisible()) {
+        if (!layer->subtreeIsInvisible() && lastRenderer->style()->visibility() == VISIBLE) {
             FloatRect rendererMappedResult = lastRenderer->localToContainerQuad(rect, container, m_mapCoordinatesFlags).boundingBox();
 
             // Inspector creates renderers with negative width <https://bugs.webkit.org/show_bug.cgi?id=87194>.
@@ -235,7 +235,8 @@ void RenderGeometryMap::pushMappingsToAncestor(const RenderLayer* layer, const R
         }
 
         TemporaryChange<size_t> positionChange(m_insertionPosition, m_mapping.size());
-        push(renderer, toLayoutSize(layerOffset), /*accumulatingTransform*/ true, /*isNonUniform*/ false, /*isFixedPosition*/ false, /*hasTransform*/ false);
+        bool accumulatingTransform = layer->renderer()->style()->preserves3D() || ancestorLayer->renderer()->style()->preserves3D();
+        push(renderer, toLayoutSize(layerOffset), accumulatingTransform, /*isNonUniform*/ false, /*isFixedPosition*/ false, /*hasTransform*/ false);
         return;
     }
     const RenderLayerModelObject* ancestorRenderer = ancestorLayer ? ancestorLayer->renderer() : 0;
@@ -328,7 +329,7 @@ void RenderGeometryMap::stepRemoved(const RenderGeometryMapStep& step)
     }
 }
 
-#if !ASSERT_DISABLED
+#if ASSERT_ENABLED
 bool RenderGeometryMap::isTopmostRenderView(const RenderObject* renderer) const
 {
     if (!renderer->isRenderView())

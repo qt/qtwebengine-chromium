@@ -13,6 +13,7 @@
 
 #include "base/gtest_prod_util.h"
 #include "base/i18n/rtl.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/strings/string16.h"
 #include "skia/ext/refptr.h"
 #include "third_party/skia/include/core/SkColor.h"
@@ -27,6 +28,7 @@
 #include "ui/gfx/shadow_value.h"
 #include "ui/gfx/size_f.h"
 #include "ui/gfx/text_constants.h"
+#include "ui/gfx/text_elider.h"
 #include "ui/gfx/vector2d.h"
 
 class SkCanvas;
@@ -50,7 +52,10 @@ class SkiaTextRenderer {
   ~SkiaTextRenderer();
 
   void SetDrawLooper(SkDrawLooper* draw_looper);
-  void SetFontSmoothingSettings(bool enable_smoothing, bool enable_lcd_text);
+  void SetFontSmoothingSettings(bool antialiasing,
+                                bool subpixel_rendering,
+                                bool subpixel_positioning);
+  void SetFontHinting(SkPaint::Hinting hinting);
   void SetTypeface(SkTypeface* typeface);
   void SetTextSize(SkScalar size);
   void SetFontFamilyWithStyle(const std::string& family, int font_style);
@@ -69,11 +74,36 @@ class SkiaTextRenderer {
   //   third_party/skia/src/core/SkTextFormatParams.h
   void DrawDecorations(int x, int y, int width, bool underline, bool strike,
                        bool diagonal_strike);
+  // Finishes any ongoing diagonal strike run.
+  void EndDiagonalStrike();
   void DrawUnderline(int x, int y, int width);
   void DrawStrike(int x, int y, int width) const;
-  void DrawDiagonalStrike(int x, int y, int width) const;
 
  private:
+  // Helper class to draw a diagonal line with multiple pieces of different
+  // lengths and colors; to support text selection appearances.
+  class DiagonalStrike {
+   public:
+    DiagonalStrike(Canvas* canvas, Point start, const SkPaint& paint);
+    ~DiagonalStrike();
+
+    void AddPiece(int length, SkColor color);
+    void Draw();
+
+   private:
+    typedef std::pair<int, SkColor> Piece;
+
+    Canvas* canvas_;
+    SkMatrix matrix_;
+    const Point start_;
+    SkPaint paint_;
+    int total_length_;
+    std::vector<Piece> pieces_;
+
+    DISALLOW_COPY_AND_ASSIGN(DiagonalStrike);
+  };
+
+  Canvas* canvas_;
   SkCanvas* canvas_skia_;
   bool started_drawing_;
   SkPaint paint_;
@@ -81,6 +111,7 @@ class SkiaTextRenderer {
   skia::RefPtr<SkShader> deferred_fade_shader_;
   SkScalar underline_thickness_;
   SkScalar underline_position_;
+  scoped_ptr<DiagonalStrike> diagonal_;
 
   DISALLOW_COPY_AND_ASSIGN(SkiaTextRenderer);
 };
@@ -146,6 +177,10 @@ struct Line {
   int baseline;
 };
 
+// Creates an SkTypeface from a font |family| name and a |gfx::Font::FontStyle|.
+skia::RefPtr<SkTypeface> CreateSkiaTypeface(const std::string& family,
+                                            int style);
+
 }  // namespace internal
 
 // RenderText represents an abstract model of styled text and its corresponding
@@ -156,7 +191,7 @@ class GFX_EXPORT RenderText {
  public:
   virtual ~RenderText();
 
-  // Creates a platform-specific RenderText instance.
+  // Creates a platform-specific or cross-platform RenderText instance.
   static RenderText* CreateInstance();
 
   const base::string16& text() const { return text_; }
@@ -169,13 +204,6 @@ class GFX_EXPORT RenderText {
 
   const FontList& font_list() const { return font_list_; }
   void SetFontList(const FontList& font_list);
-  void SetFont(const Font& font);
-
-  // Set the font size to |size| in pixels.
-  void SetFontSize(int size);
-
-  // Get the first font in |font_list_|.
-  const Font& GetPrimaryFont() const;
 
   bool cursor_enabled() const { return cursor_enabled_; }
   void SetCursorEnabled(bool cursor_enabled);
@@ -227,13 +255,13 @@ class GFX_EXPORT RenderText {
   // WARNING: Only use this for system limits, it lacks complex text support.
   void set_truncate_length(size_t length) { truncate_length_ = length; }
 
+  // Elides the text to fit in |display_rect| according to the specified
+  // |elide_behavior|. |ELIDE_MIDDLE| is not supported. If a truncate length and
+  // an elide mode are specified, the shorter of the two will be applicable.
+  void SetElideBehavior(ElideBehavior elide_behavior);
+
   const Rect& display_rect() const { return display_rect_; }
   void SetDisplayRect(const Rect& r);
-
-  void set_fade_head(bool fade_head) { fade_head_ = fade_head; }
-  bool fade_head() const { return fade_head_; }
-  void set_fade_tail(bool fade_tail) { fade_tail_ = fade_tail; }
-  bool fade_tail() const { return fade_tail_; }
 
   bool background_is_transparent() const { return background_is_transparent_; }
   void set_background_is_transparent(bool transparent) {
@@ -260,11 +288,6 @@ class GFX_EXPORT RenderText {
   // If any index in |selection_model| is not a cursorable position (not on a
   // grapheme boundary), it is a no-op and returns false.
   bool MoveCursorTo(const SelectionModel& selection_model);
-
-  // Move the cursor to the position associated with the clicked point.
-  // If |select| is false, the selection start is moved to the same position.
-  // Returns true if the cursor position or selection range changed.
-  bool MoveCursorTo(const Point& point, bool select);
 
   // Set the selection_model_ based on |range|.
   // If the |range| start or end is greater than text length, it is modified
@@ -320,9 +343,8 @@ class GFX_EXPORT RenderText {
   VisualCursorDirection GetVisualDirectionOfLogicalEnd();
 
   // Returns the size required to display the current string (which is the
-  // wrapped size in multiline mode). Note that this returns the raw size of the
-  // string, which does not include the cursor or the margin area of text
-  // shadows.
+  // wrapped size in multiline mode). The returned size does not include space
+  // reserved for the cursor or the offset text shadows.
   virtual Size GetStringSize() = 0;
 
   // This is same as GetStringSize except that fractional size is returned.
@@ -347,16 +369,16 @@ class GFX_EXPORT RenderText {
   // Draws a cursor at |position|.
   void DrawCursor(Canvas* canvas, const SelectionModel& position);
 
-  // Draw the selected text without a cursor or selection highlight. Subpixel
-  // antialiasing is disabled and foreground color is forced to black.
-  void DrawSelectedTextForDrag(Canvas* canvas);
-
   // Gets the SelectionModel from a visual point in local coordinates.
   virtual SelectionModel FindCursorPosition(const Point& point) = 0;
 
-  // Return true if cursor can appear in front of the character at |position|,
-  // which means it is a grapheme boundary or the first character in the text.
-  virtual bool IsCursorablePosition(size_t position) = 0;
+  // Returns true if the position is a valid logical index into text(), and is
+  // also a valid grapheme boundary, which may be used as a cursor position.
+  virtual bool IsValidCursorIndex(size_t index) = 0;
+
+  // Returns true if the position is a valid logical index into text(). Indices
+  // amid multi-character graphemes are allowed here, unlike IsValidCursorIndex.
+  virtual bool IsValidLogicalIndex(size_t index);
 
   // Get the visual bounds of a cursor at |caret|. These bounds typically
   // represent a vertical line if |insert_mode| is true. Pass false for
@@ -364,8 +386,7 @@ class GFX_EXPORT RenderText {
   // are in local coordinates, but may be outside the visible region if the text
   // is longer than the textfield. Subsequent text, cursor, or bounds changes
   // may invalidate returned values. Note that |caret| must be placed at
-  // grapheme boundary, that is, |IsCursorablePosition(caret.caret_pos())| must
-  // return true.
+  // grapheme boundary, i.e. caret.caret_pos() must be a cursorable position.
   Rect GetCursorBounds(const SelectionModel& caret, bool insert_mode);
 
   // Compute the current cursor bounds, panning the text to show the cursor in
@@ -374,10 +395,9 @@ class GFX_EXPORT RenderText {
   const Rect& GetUpdatedCursorBounds();
 
   // Given an |index| in text(), return the next or previous grapheme boundary
-  // in logical order (that is, the nearest index for which
-  // |IsCursorablePosition(index)| returns true). The return value is in the
-  // range 0 to text().length() inclusive (the input is clamped if it is out of
-  // that range). Always moves by at least one character index unless the
+  // in logical order (i.e. the nearest cursorable index). The return value is
+  // in the range 0 to text().length() inclusive (the input is clamped if it is
+  // out of that range). Always moves by at least one character index unless the
   // supplied index is already at the boundary of the string.
   size_t IndexOfAdjacentGrapheme(size_t index,
                                  LogicalCursorDirection direction);
@@ -387,7 +407,7 @@ class GFX_EXPORT RenderText {
   SelectionModel GetSelectionModelForSelectionStart();
 
   // Sets shadows to drawn with text.
-  void SetTextShadows(const ShadowValues& shadows);
+  void set_shadows(const ShadowValues& shadows) { shadows_ = shadows; }
 
   typedef std::pair<Font, Range> FontSpan;
   // For testing purposes, returns which fonts were chosen for which parts of
@@ -395,6 +415,12 @@ class GFX_EXPORT RenderText {
   // specifies the character range for which the corresponding font has been
   // chosen.
   virtual std::vector<FontSpan> GetFontSpansForTesting() = 0;
+
+  // Gets the horizontal bounds (relative to the left of the text, not the view)
+  // of the glyph starting at |index|. If the glyph is RTL then the returned
+  // Range will have is_reversed() true.  (This does not return a Rect because a
+  // Rect can't have a negative width.)
+  virtual Range GetGlyphBounds(size_t index) = 0;
 
  protected:
   RenderText();
@@ -460,12 +486,6 @@ class GFX_EXPORT RenderText {
   // Sets the selection model, the argument is assumed to be valid.
   virtual void SetSelectionModel(const SelectionModel& model);
 
-  // Get the horizontal bounds (relative to the left of the text, not the view)
-  // of the glyph starting at |index|. If the glyph is RTL then the returned
-  // Range will have is_reversed() true.  (This does not return a Rect because a
-  // Rect can't have a negative width.)
-  virtual Range GetGlyphBounds(size_t index) = 0;
-
   // Get the visual bounds containing the logical substring within the |range|.
   // If |range| is empty, the result is empty. These bounds could be visually
   // discontinuous if the substring is split by a LTR/RTL level change.
@@ -508,12 +528,10 @@ class GFX_EXPORT RenderText {
   Point ToTextPoint(const Point& point);
   Point ToViewPoint(const Point& point);
 
-  // Convert a text space x-coordinate range to corresponding rects in view
-  // space.
+  // Convert a text space x-coordinate range to rects in view space.
   std::vector<Rect> TextBoundsToViewBounds(const Range& x);
 
-  // Returns the line offset from the origin, accounting for text alignment
-  // only.
+  // Returns the line offset from the origin, accounts for text alignment only.
   Vector2d GetAlignmentOffset(size_t line_number);
 
   // Applies fade effects to |renderer|.
@@ -535,6 +553,8 @@ class GFX_EXPORT RenderText {
   FRIEND_TEST_ALL_PREFIXES(RenderTextTest, ApplyColorAndStyle);
   FRIEND_TEST_ALL_PREFIXES(RenderTextTest, ObscuredText);
   FRIEND_TEST_ALL_PREFIXES(RenderTextTest, RevealObscuredText);
+  FRIEND_TEST_ALL_PREFIXES(RenderTextTest, ElidedText);
+  FRIEND_TEST_ALL_PREFIXES(RenderTextTest, ElidedObscuredText);
   FRIEND_TEST_ALL_PREFIXES(RenderTextTest, TruncatedText);
   FRIEND_TEST_ALL_PREFIXES(RenderTextTest, TruncatedObscuredText);
   FRIEND_TEST_ALL_PREFIXES(RenderTextTest, GraphemePositions);
@@ -545,6 +565,11 @@ class GFX_EXPORT RenderText {
   FRIEND_TEST_ALL_PREFIXES(RenderTextTest, Multiline_NormalWidth);
   FRIEND_TEST_ALL_PREFIXES(RenderTextTest, Multiline_SufficientWidth);
   FRIEND_TEST_ALL_PREFIXES(RenderTextTest, Multiline_Newline);
+  FRIEND_TEST_ALL_PREFIXES(RenderTextTest, GlyphBounds);
+  FRIEND_TEST_ALL_PREFIXES(RenderTextTest, HarfBuzz_GlyphBounds);
+
+  // Creates a platform-specific RenderText instance.
+  static RenderText* CreateNativeInstance();
 
   // Set the cursor to |position|, with the caret trailing the previous
   // grapheme, or if there is no previous grapheme, leading the cursor position.
@@ -555,6 +580,10 @@ class GFX_EXPORT RenderText {
 
   // Updates |layout_text_| if the text is obscured or truncated.
   void UpdateLayoutText();
+
+  // Elides |text| to fit in the |display_rect_| with given |elide_behavior_|.
+  // See ElideText in ui/gfx/text_elider.cc for reference.
+  base::string16 ElideText(const base::string16& text);
 
   // Update the cached bounds and display offset to ensure that the current
   // cursor is within the visible display area.
@@ -628,16 +657,15 @@ class GFX_EXPORT RenderText {
   // The maximum length of text to display, 0 forgoes a hard limit.
   size_t truncate_length_;
 
+  // The behavior for eliding, fading, or truncating.
+  ElideBehavior elide_behavior_;
+
   // The obscured and/or truncated text that will be displayed.
   base::string16 layout_text_;
 
   // Whether the text should be broken into multiple lines. Uses the width of
   // |display_rect_| as the width cap.
   bool multiline_;
-
-  // Fade text head and/or tail, if text doesn't fit into |display_rect_|.
-  bool fade_head_;
-  bool fade_tail_;
 
   // Is the background transparent (either partially or fully)?
   bool background_is_transparent_;
@@ -665,7 +693,7 @@ class GFX_EXPORT RenderText {
   bool cached_bounds_and_offset_valid_;
 
   // Text shadows to be drawn.
-  ShadowValues text_shadows_;
+  ShadowValues shadows_;
 
   // A list of valid layout text line break positions.
   BreakList<size_t> line_breaks_;

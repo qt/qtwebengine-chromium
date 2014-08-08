@@ -17,6 +17,16 @@
 #include "url/gurl.h"
 #include "webkit/browser/webkit_storage_browser_export.h"
 
+namespace content {
+FORWARD_DECLARE_TEST(AppCacheGroupTest, StartUpdate);
+FORWARD_DECLARE_TEST(AppCacheGroupTest, CancelUpdate);
+FORWARD_DECLARE_TEST(AppCacheGroupTest, QueueUpdate);
+FORWARD_DECLARE_TEST(AppCacheUpdateJobTest, AlreadyChecking);
+FORWARD_DECLARE_TEST(AppCacheUpdateJobTest, AlreadyDownloading);
+class AppCacheUpdateJobTest;
+class MockAppCacheStorage;
+}
+
 namespace appcache {
 
 class AppCache;
@@ -38,7 +48,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AppCacheGroup
       virtual ~UpdateObserver() {}
   };
 
-  enum UpdateStatus {
+  enum UpdateAppCacheStatus {
     IDLE,
     CHECKING,
     DOWNLOADING,
@@ -70,7 +80,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AppCacheGroup
 
   void AddNewlyDeletableResponseIds(std::vector<int64>* response_ids);
 
-  UpdateStatus update_status() const { return update_status_; }
+  UpdateAppCacheStatus update_status() const { return update_status_; }
 
   // Starts an update via update() javascript API.
   void StartUpdate() {
@@ -94,10 +104,10 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AppCacheGroup
  private:
   class HostObserver;
 
-  friend class AppCacheUpdateJob;
-  friend class AppCacheUpdateJobTest;
   friend class base::RefCounted<AppCacheGroup>;
-  friend class MockAppCacheStorage;  // for old_caches()
+  friend class content::AppCacheUpdateJobTest;
+  friend class content::MockAppCacheStorage;  // for old_caches()
+  friend class AppCacheUpdateJob;
 
   ~AppCacheGroup();
 
@@ -107,7 +117,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AppCacheGroup
   static const int kUpdateRestartDelayMs = 1000;
 
   AppCacheUpdateJob* update_job() { return update_job_; }
-  void SetUpdateStatus(UpdateStatus status);
+  void SetUpdateAppCacheStatus(UpdateAppCacheStatus status);
 
   void NotifyContentBlocked();
 
@@ -124,7 +134,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AppCacheGroup
   const int64 group_id_;
   const GURL manifest_url_;
   base::Time creation_time_;
-  UpdateStatus update_status_;
+  UpdateAppCacheStatus update_status_;
   bool is_obsolete_;
   bool is_being_deleted_;
   std::vector<int64> newly_deletable_response_ids_;
@@ -153,11 +163,11 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AppCacheGroup
   // True if we're in our destructor.
   bool is_in_dtor_;
 
-  FRIEND_TEST_ALL_PREFIXES(AppCacheGroupTest, StartUpdate);
-  FRIEND_TEST_ALL_PREFIXES(AppCacheGroupTest, CancelUpdate);
-  FRIEND_TEST_ALL_PREFIXES(AppCacheGroupTest, QueueUpdate);
-  FRIEND_TEST_ALL_PREFIXES(AppCacheUpdateJobTest, AlreadyChecking);
-  FRIEND_TEST_ALL_PREFIXES(AppCacheUpdateJobTest, AlreadyDownloading);
+  FRIEND_TEST_ALL_PREFIXES(content::AppCacheGroupTest, StartUpdate);
+  FRIEND_TEST_ALL_PREFIXES(content::AppCacheGroupTest, CancelUpdate);
+  FRIEND_TEST_ALL_PREFIXES(content::AppCacheGroupTest, QueueUpdate);
+  FRIEND_TEST_ALL_PREFIXES(content::AppCacheUpdateJobTest, AlreadyChecking);
+  FRIEND_TEST_ALL_PREFIXES(content::AppCacheUpdateJobTest, AlreadyDownloading);
 
   DISALLOW_COPY_AND_ASSIGN(AppCacheGroup);
 };

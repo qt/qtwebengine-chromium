@@ -982,10 +982,9 @@ PRStatus _MD_MemUnmap(void *addr, PRUint32 len)
 {
     if (UnmapViewOfFile(addr)) {
         return PR_SUCCESS;
-    } else {
-        PR_SetError(PR_UNKNOWN_ERROR, GetLastError());
-        return PR_FAILURE;
     }
+    _PR_MD_MAP_DEFAULT_ERROR(GetLastError());
+    return PR_FAILURE;
 }
 
 PRStatus _MD_CloseFileMap(PRFileMap *fmap)
@@ -993,6 +992,25 @@ PRStatus _MD_CloseFileMap(PRFileMap *fmap)
     CloseHandle(fmap->md.hFileMap);
     PR_DELETE(fmap);
     return PR_SUCCESS;
+}
+
+PRStatus _MD_SyncMemMap(
+    PRFileDesc *fd,
+    void *addr,
+    PRUint32 len)
+{
+    PROsfd osfd = fd->secret->md.osfd;
+
+    /* The FlushViewOfFile page on MSDN says:
+     *  To flush all the dirty pages plus the metadata for the file and
+     *  ensure that they are physically written to disk, call
+     *  FlushViewOfFile and then call the FlushFileBuffers function.
+     */
+    if (FlushViewOfFile(addr, len) && FlushFileBuffers((HANDLE) osfd)) {
+        return PR_SUCCESS;
+    }
+    _PR_MD_MAP_DEFAULT_ERROR(GetLastError());
+    return PR_FAILURE;
 }
 
 /*

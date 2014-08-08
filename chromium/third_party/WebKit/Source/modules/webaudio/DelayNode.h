@@ -34,11 +34,11 @@ namespace WebCore {
 class AudioParam;
 class ExceptionState;
 
-class DelayNode : public AudioBasicProcessorNode {
+class DelayNode FINAL : public AudioBasicProcessorNode {
 public:
-    static PassRefPtr<DelayNode> create(AudioContext* context, float sampleRate, double maxDelayTime, ExceptionState& exceptionState)
+    static PassRefPtrWillBeRawPtr<DelayNode> create(AudioContext* context, float sampleRate, double maxDelayTime, ExceptionState& exceptionState)
     {
-        return adoptRef(new DelayNode(context, sampleRate, maxDelayTime, exceptionState));
+        return adoptRefWillBeNoop(new DelayNode(context, sampleRate, maxDelayTime, exceptionState));
     }
 
     AudioParam* delayTime();

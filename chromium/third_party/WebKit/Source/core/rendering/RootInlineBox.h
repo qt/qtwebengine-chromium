@@ -29,14 +29,13 @@ namespace WebCore {
 class EllipsisBox;
 class HitTestResult;
 class RenderBlockFlow;
-class RenderRegion;
 
 struct BidiStatus;
 struct GapRects;
 
 class RootInlineBox : public InlineFlowBox {
 public:
-    explicit RootInlineBox(RenderBlockFlow*);
+    explicit RootInlineBox(RenderBlockFlow&);
 
     virtual void destroy() OVERRIDE FINAL;
 
@@ -63,9 +62,6 @@ public:
 
     LayoutUnit paginatedLineWidth() const { return m_fragmentationData ? m_fragmentationData->m_paginatedLineWidth : LayoutUnit(0); }
     void setPaginatedLineWidth(LayoutUnit width) { ensureLineFragmentationData()->m_paginatedLineWidth = width; }
-
-    RenderRegion* containingRegion() const;
-    void setContainingRegion(RenderRegion*);
 
     LayoutUnit selectionTop() const;
     LayoutUnit selectionBottom() const;
@@ -117,7 +113,7 @@ public:
     virtual int baselinePosition(FontBaseline baselineType) const OVERRIDE FINAL;
     virtual LayoutUnit lineHeight() const OVERRIDE FINAL;
 
-    virtual void paint(PaintInfo&, const LayoutPoint&, LayoutUnit lineTop, LayoutUnit lineBottom);
+    virtual void paint(PaintInfo&, const LayoutPoint&, LayoutUnit lineTop, LayoutUnit lineBottom) OVERRIDE;
     virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, LayoutUnit lineTop, LayoutUnit lineBottom) OVERRIDE FINAL;
 
     using InlineBox::hasSelectedChildren;
@@ -129,7 +125,7 @@ public:
 
     GapRects lineSelectionGap(RenderBlock* rootBlock, const LayoutPoint& rootBlockPhysicalPosition, const LayoutSize& offsetFromRootBlock, LayoutUnit selTop, LayoutUnit selHeight, const PaintInfo*);
 
-    RenderBlockFlow* block() const;
+    RenderBlockFlow& block() const;
 
     InlineBox* closestLeafChildForPoint(const IntPoint&, bool onlyEditableLeaves);
     InlineBox* closestLeafChildForLogicalLeftPosition(int, bool onlyEditableLeaves = false);
@@ -189,11 +185,9 @@ public:
     Node* getLogicalEndBoxWithNode(InlineBox*&) const;
 
 #ifndef NDEBUG
-    virtual const char* boxName() const;
+    virtual const char* boxName() const OVERRIDE;
 #endif
 private:
-    LayoutUnit lineSnapAdjustment(LayoutUnit delta = 0) const;
-
     LayoutUnit beforeAnnotationsAdjustment() const;
 
     struct LineFragmentationData;
@@ -223,17 +217,13 @@ private:
         WTF_MAKE_NONCOPYABLE(LineFragmentationData); WTF_MAKE_FAST_ALLOCATED;
     public:
         LineFragmentationData()
-            : m_containingRegion(0)
-            , m_paginationStrut(0)
+            : m_paginationStrut(0)
             , m_paginatedLineWidth(0)
             , m_isFirstAfterPageBreak(false)
         {
 
         }
 
-        // It should not be assumed the |containingRegion| is always valid.
-        // It can also be 0 if the flow has no region chain.
-        RenderRegion* m_containingRegion;
         LayoutUnit m_paginationStrut;
         LayoutUnit m_paginatedLineWidth;
         bool m_isFirstAfterPageBreak;

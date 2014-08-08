@@ -18,7 +18,6 @@
 #include "ui/gl/gl_bindings.h"
 #include "ui/gl/gl_context.h"
 #include "ui/gl/gl_implementation.h"
-#include "ui/gl/gl_interface.h"
 
 #import <Cocoa/Cocoa.h>
 #import <Foundation/Foundation.h>
@@ -65,6 +64,7 @@ GPUInfo::GPUDevice GetActiveGPU() {
 // Scan IO registry for PCI video cards.
 bool CollectPCIVideoCardInfo(GPUInfo* gpu_info) {
   DCHECK(gpu_info);
+  GPUInfo::GPUDevice active_gpu = GetActiveGPU();
 
   // Collect all GPUs' info.
   // match_dictionary will be consumed by IOServiceGetMatchingServices, no need
@@ -84,8 +84,13 @@ bool CollectPCIVideoCardInfo(GPUInfo* gpu_info) {
       }
       gpu.vendor_id = GetEntryProperty(entry, CFSTR("vendor-id"));
       gpu.device_id = GetEntryProperty(entry, CFSTR("device-id"));
-      if (gpu.vendor_id && gpu.device_id)
+      if (gpu.vendor_id && gpu.device_id) {
+        if (gpu.vendor_id == active_gpu.vendor_id &&
+            gpu.device_id == active_gpu.device_id) {
+          gpu.active = true;
+        }
         gpu_list.push_back(gpu);
+      }
     }
     IOObjectRelease(entry_iterator);
   }
@@ -129,15 +134,11 @@ bool CollectPCIVideoCardInfo(GPUInfo* gpu_info) {
       }
     default:
       {
-        GPUInfo::GPUDevice active_gpu = GetActiveGPU();
         size_t current = gpu_list.size();
-        if (active_gpu.vendor_id && active_gpu.device_id) {
-          for (size_t i = 0; i < gpu_list.size(); ++i) {
-            if (gpu_list[i].vendor_id == active_gpu.vendor_id &&
-                gpu_list[i].device_id == active_gpu.device_id) {
-              current = i;
-              break;
-            }
+        for (size_t i = 0; i < gpu_list.size(); ++i) {
+          if (gpu_list[i].active) {
+            current = i;
+            break;
           }
         }
         if (current == gpu_list.size()) {
@@ -158,7 +159,7 @@ bool CollectPCIVideoCardInfo(GPUInfo* gpu_info) {
 
 }  // namespace anonymous
 
-bool CollectContextGraphicsInfo(GPUInfo* gpu_info) {
+CollectInfoResult CollectContextGraphicsInfo(GPUInfo* gpu_info) {
   DCHECK(gpu_info);
 
   TRACE_EVENT0("gpu", "gpu_info_collector::CollectGraphicsInfo");
@@ -171,56 +172,47 @@ bool CollectContextGraphicsInfo(GPUInfo* gpu_info) {
 
 GpuIDResult CollectGpuID(uint32* vendor_id, uint32* device_id) {
   DCHECK(vendor_id && device_id);
-  *vendor_id = 0;
-  *device_id = 0;
 
-  GPUInfo gpu_info;
-  if (CollectPCIVideoCardInfo(&gpu_info)) {
-    *vendor_id = gpu_info.gpu.vendor_id;
-    *device_id = gpu_info.gpu.device_id;
+  GPUInfo::GPUDevice gpu = GetActiveGPU();
+  *vendor_id = gpu.vendor_id;
+  *device_id = gpu.device_id;
+
+  if (*vendor_id != 0 && *device_id != 0)
     return kGpuIDSuccess;
-  }
   return kGpuIDFailure;
 }
 
-bool CollectBasicGraphicsInfo(GPUInfo* gpu_info) {
+CollectInfoResult CollectBasicGraphicsInfo(GPUInfo* gpu_info) {
   DCHECK(gpu_info);
 
-  std::string model_name;
   int32 model_major = 0, model_minor = 0;
   base::mac::ParseModelIdentifier(base::mac::GetModelIdentifier(),
-                                  &model_name, &model_major, &model_minor);
-  base::ReplaceChars(model_name, " ", "_", &gpu_info->machine_model);
-  gpu_info->machine_model += " " + base::IntToString(model_major) +
-                             "." + base::IntToString(model_minor);
+                                  &gpu_info->machine_model_name,
+                                  &model_major, &model_minor);
+  gpu_info->machine_model_version =
+      base::IntToString(model_major) + "." + base::IntToString(model_minor);
 
-  return CollectPCIVideoCardInfo(gpu_info);
+  bool result = CollectPCIVideoCardInfo(gpu_info);
+  return result ? kCollectInfoSuccess : kCollectInfoNonFatalFailure;
 }
 
-bool CollectDriverInfoGL(GPUInfo* gpu_info) {
+CollectInfoResult CollectDriverInfoGL(GPUInfo* gpu_info) {
   DCHECK(gpu_info);
 
   // Extract the OpenGL driver version string from the GL_VERSION string.
   // Mac OpenGL drivers have the driver version
   // at the end of the gl version string preceded by a dash.
   // Use some jiggery-pokery to turn that utf8 string into a std::wstring.
-  std::string gl_version_string = gpu_info->gl_version_string;
-  size_t pos = gl_version_string.find_last_of('-');
+  size_t pos = gpu_info->gl_version.find_last_of('-');
   if (pos == std::string::npos)
-    return false;
-  gpu_info->driver_version = gl_version_string.substr(pos + 1);
-  return true;
+    return kCollectInfoNonFatalFailure;
+  gpu_info->driver_version = gpu_info->gl_version.substr(pos + 1);
+  return kCollectInfoSuccess;
 }
 
 void MergeGPUInfo(GPUInfo* basic_gpu_info,
                   const GPUInfo& context_gpu_info) {
   MergeGPUInfoGL(basic_gpu_info, context_gpu_info);
-}
-
-bool DetermineActiveGPU(GPUInfo* gpu_info) {
-  DCHECK(gpu_info);
-  // On mac, during info collection, we've already detected the active gpu.
-  return true;
 }
 
 }  // namespace gpu

@@ -10,8 +10,9 @@
 #include "base/strings/string_util.h"
 #include "media/base/media_log.h"
 #include "media/base/media_switches.h"
-#include "media/mp3/mp3_stream_parser.h"
-#include "media/webm/webm_stream_parser.h"
+#include "media/formats/mpeg/adts_stream_parser.h"
+#include "media/formats/mpeg/mp3_stream_parser.h"
+#include "media/formats/webm/webm_stream_parser.h"
 
 #if defined(OS_ANDROID)
 #include "base/android/build_info.h"
@@ -19,10 +20,10 @@
 
 #if defined(USE_PROPRIETARY_CODECS)
 #if defined(ENABLE_MPEG2TS_STREAM_PARSER)
-#include "media/mp2t/mp2t_stream_parser.h"
+#include "media/formats/mp2t/mp2t_stream_parser.h"
 #endif
-#include "media/mp4/es_descriptor.h"
-#include "media/mp4/mp4_stream_parser.h"
+#include "media/formats/mp4/es_descriptor.h"
+#include "media/formats/mp4/mp4_stream_parser.h"
 #endif
 
 namespace media {
@@ -49,7 +50,7 @@ struct CodecInfo {
     HISTOGRAM_EAC3,
     HISTOGRAM_MP3,
     HISTOGRAM_OPUS,
-    HISTOGRAM_MAX  // Must be the last entry.
+    HISTOGRAM_MAX = HISTOGRAM_OPUS  // Must be equal to largest logged entry.
   };
 
   const char* pattern;
@@ -141,11 +142,6 @@ static const CodecInfo kMPEG2AACLCCodecInfo = { "mp4a.67", CodecInfo::AUDIO,
                                                 NULL,
                                                 CodecInfo::HISTOGRAM_MPEG2AAC };
 
-#if defined(ENABLE_EAC3_PLAYBACK)
-static const CodecInfo kEAC3CodecInfo = { "mp4a.a6", CodecInfo::AUDIO, NULL,
-                                          CodecInfo::HISTOGRAM_EAC3 };
-#endif
-
 static const CodecInfo* kVideoMP4Codecs[] = {
   &kH264AVC1CodecInfo,
   &kH264AVC3CodecInfo,
@@ -157,9 +153,6 @@ static const CodecInfo* kVideoMP4Codecs[] = {
 static const CodecInfo* kAudioMP4Codecs[] = {
   &kMPEG4AACCodecInfo,
   &kMPEG2AACLCCodecInfo,
-#if defined(ENABLE_EAC3_PLAYBACK)
-  &kEAC3CodecInfo,
-#endif
   NULL
 };
 
@@ -168,10 +161,6 @@ static StreamParser* BuildMP4Parser(
   std::set<int> audio_object_types;
 
   bool has_sbr = false;
-#if defined(ENABLE_EAC3_PLAYBACK)
-  bool enable_eac3 = CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kEnableEac3Playback);
-#endif
   for (size_t i = 0; i < codecs.size(); ++i) {
     std::string codec_id = codecs[i];
     if (MatchPattern(codec_id, kMPEG2AACLCCodecInfo.pattern)) {
@@ -186,10 +175,6 @@ static StreamParser* BuildMP4Parser(
         has_sbr = true;
         break;
       }
-#if defined(ENABLE_EAC3_PLAYBACK)
-    } else if (enable_eac3 && MatchPattern(codec_id, kEAC3CodecInfo.pattern)) {
-      audio_object_types.insert(mp4::kEAC3);
-#endif
     }
   }
 
@@ -207,6 +192,18 @@ static const CodecInfo* kAudioMP3Codecs[] = {
 static StreamParser* BuildMP3Parser(
     const std::vector<std::string>& codecs, const LogCB& log_cb) {
   return new MP3StreamParser();
+}
+
+static const CodecInfo kADTSCodecInfo = { NULL, CodecInfo::AUDIO, NULL,
+                                          CodecInfo::HISTOGRAM_MPEG4AAC };
+static const CodecInfo* kAudioADTSCodecs[] = {
+  &kADTSCodecInfo,
+  NULL
+};
+
+static StreamParser* BuildADTSParser(
+    const std::vector<std::string>& codecs, const LogCB& log_cb) {
+  return new ADTSStreamParser();
 }
 
 #if defined(ENABLE_MPEG2TS_STREAM_PARSER)
@@ -239,6 +236,7 @@ static const SupportedTypeInfo kSupportedTypeInfo[] = {
   { "video/webm", &BuildWebMParser, kVideoWebMCodecs },
   { "audio/webm", &BuildWebMParser, kAudioWebMCodecs },
 #if defined(USE_PROPRIETARY_CODECS)
+  { "audio/aac", &BuildADTSParser, kAudioADTSCodecs },
   { "audio/mpeg", &BuildMP3Parser, kAudioMP3Codecs },
   { "video/mp4", &BuildMP4Parser, kVideoMP4Codecs },
   { "audio/mp4", &BuildMP4Parser, kAudioMP4Codecs },
@@ -270,11 +268,6 @@ static bool VerifyCodec(
           return false;
       }
 #endif
-      if (codec_info->tag == CodecInfo::HISTOGRAM_OPUS) {
-        const CommandLine* cmd_line = CommandLine::ForCurrentProcess();
-        if (cmd_line->HasSwitch(switches::kDisableOpusPlayback))
-          return false;
-      }
       if (audio_codecs)
         audio_codecs->push_back(codec_info->tag);
       return true;
@@ -324,16 +317,6 @@ static bool CheckTypeAndCodecs(
     const SupportedTypeInfo& type_info = kSupportedTypeInfo[i];
     if (type == type_info.type) {
       if (codecs.empty()) {
-
-#if defined(USE_PROPRIETARY_CODECS)
-        if (type_info.codecs == kAudioMP3Codecs &&
-            !CommandLine::ForCurrentProcess()->HasSwitch(
-                switches::kEnableMP3StreamParser)) {
-          DVLOG(1) << "MP3StreamParser is not enabled.";
-          return false;
-        }
-#endif
-
         const CodecInfo* codec_info = type_info.codecs[0];
         if (codec_info && !codec_info->pattern &&
             VerifyCodec(codec_info, audio_codecs, video_codecs)) {
@@ -413,12 +396,14 @@ scoped_ptr<StreamParser> StreamParserFactory::Create(
     // Log the number of codecs specified, as well as the details on each one.
     UMA_HISTOGRAM_COUNTS_100("Media.MSE.NumberOfTracks", codecs.size());
     for (size_t i = 0; i < audio_codecs.size(); ++i) {
-      UMA_HISTOGRAM_ENUMERATION(
-          "Media.MSE.AudioCodec", audio_codecs[i], CodecInfo::HISTOGRAM_MAX);
+      UMA_HISTOGRAM_ENUMERATION("Media.MSE.AudioCodec",
+                                audio_codecs[i],
+                                CodecInfo::HISTOGRAM_MAX + 1);
     }
     for (size_t i = 0; i < video_codecs.size(); ++i) {
-      UMA_HISTOGRAM_ENUMERATION(
-          "Media.MSE.VideoCodec", video_codecs[i], CodecInfo::HISTOGRAM_MAX);
+      UMA_HISTOGRAM_ENUMERATION("Media.MSE.VideoCodec",
+                                video_codecs[i],
+                                CodecInfo::HISTOGRAM_MAX + 1);
     }
 
     stream_parser.reset(factory_function(codecs, log_cb));

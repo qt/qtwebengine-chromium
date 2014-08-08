@@ -31,36 +31,12 @@
 #define GlyphBuffer_h
 
 #include "platform/fonts/Glyph.h"
-#include "platform/fonts/GlyphBuffer.h"
 #include "platform/geometry/FloatSize.h"
 #include "wtf/Vector.h"
-
-#if OS(MACOSX)
-#include <ApplicationServices/ApplicationServices.h>
-#endif
 
 namespace WebCore {
 
 class SimpleFontData;
-
-typedef Glyph GlyphBufferGlyph;
-
-// CG uses CGSize instead of FloatSize so that the result of advances()
-// can be passed directly to CGContextShowGlyphsWithAdvances in FontMac.mm
-#if OS(MACOSX)
-struct GlyphBufferAdvance : CGSize {
-public:
-    GlyphBufferAdvance(CGSize size) : CGSize(size)
-    {
-    }
-
-    void setWidth(CGFloat width) { this->CGSize::width = width; }
-    CGFloat width() const { return this->CGSize::width; }
-    CGFloat height() const { return this->CGSize::height; }
-};
-#else
-typedef FloatSize GlyphBufferAdvance;
-#endif
 
 class GlyphBuffer {
 public:
@@ -74,10 +50,10 @@ public:
         m_advances.clear();
     }
 
-    GlyphBufferGlyph* glyphs(unsigned from) { return m_glyphs.data() + from; }
-    GlyphBufferAdvance* advances(unsigned from) { return m_advances.data() + from; }
-    const GlyphBufferGlyph* glyphs(unsigned from) const { return m_glyphs.data() + from; }
-    const GlyphBufferAdvance* advances(unsigned from) const { return m_advances.data() + from; }
+    Glyph* glyphs(unsigned from) { return m_glyphs.data() + from; }
+    FloatSize* advances(unsigned from) { return m_advances.data() + from; }
+    const Glyph* glyphs(unsigned from) const { return m_glyphs.data() + from; }
+    const FloatSize* advances(unsigned from) const { return m_advances.data() + from; }
 
     const SimpleFontData* fontDataAt(unsigned index) const { return m_fontData[index]; }
 
@@ -86,63 +62,41 @@ public:
         return m_glyphs[index];
     }
 
-    float advanceAt(unsigned index) const
+    FloatSize advanceAt(unsigned index) const
     {
-        return m_advances[index].width();
+        return m_advances[index];
     }
 
     void add(Glyph glyph, const SimpleFontData* font, float width)
     {
-        m_fontData.append(font);
-        m_glyphs.append(glyph);
-
-#if OS(MACOSX)
-        CGSize advance = { width, 0 };
-        m_advances.append(advance);
-#else
-        m_advances.append(FloatSize(width, 0));
-#endif
+        add(glyph, font, FloatSize(width, 0));
     }
 
-    void add(Glyph glyph, const SimpleFontData* font, GlyphBufferAdvance advance)
+    void add(Glyph glyph, const SimpleFontData* font, const FloatSize& advance)
     {
         m_fontData.append(font);
         m_glyphs.append(glyph);
         m_advances.append(advance);
     }
 
-    void reverse(unsigned from, unsigned length)
+    void reverse()
     {
-        for (unsigned i = from, end = from + length - 1; i < end; ++i, --end)
-            swap(i, end);
+        m_fontData.reverse();
+        m_glyphs.reverse();
+        m_advances.reverse();
     }
 
     void expandLastAdvance(float width)
     {
         ASSERT(!isEmpty());
-        GlyphBufferAdvance& lastAdvance = m_advances.last();
+        FloatSize& lastAdvance = m_advances.last();
         lastAdvance.setWidth(lastAdvance.width() + width);
     }
 
 private:
-    void swap(unsigned index1, unsigned index2)
-    {
-        const SimpleFontData* f = m_fontData[index1];
-        m_fontData[index1] = m_fontData[index2];
-        m_fontData[index2] = f;
-
-        GlyphBufferGlyph g = m_glyphs[index1];
-        m_glyphs[index1] = m_glyphs[index2];
-        m_glyphs[index2] = g;
-
-        GlyphBufferAdvance s = m_advances[index1];
-        m_advances[index1] = m_advances[index2];
-        m_advances[index2] = s;
-    }
-
     Vector<const SimpleFontData*, 2048> m_fontData;
-    Vector<GlyphBufferGlyph, 2048> m_glyphs;
-    Vector<GlyphBufferAdvance, 2048> m_advances;
+    Vector<Glyph, 2048> m_glyphs;
+    Vector<FloatSize, 2048> m_advances;
 };
 
 }

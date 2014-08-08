@@ -7,8 +7,7 @@
 
 #include <string>
 
-#include "base/basictypes.h"
-#include "base/compiler_specific.h"
+#include "base/macros.h"
 #include "ui/views/controls/button/button.h"
 #include "ui/views/examples/example_base.h"
 
@@ -18,16 +17,17 @@ class MessageBoxView;
 namespace examples {
 
 // A MessageBoxView example. This tests some of checkbox features as well.
-class MessageBoxExample : public ExampleBase, public ButtonListener {
+class VIEWS_EXAMPLES_EXPORT MessageBoxExample : public ExampleBase,
+                                                public ButtonListener {
  public:
   MessageBoxExample();
   virtual ~MessageBoxExample();
 
-  // Overridden from ExampleBase:
+  // ExampleBase:
   virtual void CreateExampleView(View* container) OVERRIDE;
 
  private:
-  // Overridden from ButtonListener:
+  // ButtonListener:
   virtual void ButtonPressed(Button* sender, const ui::Event& event) OVERRIDE;
 
   // The MessageBoxView to be tested.

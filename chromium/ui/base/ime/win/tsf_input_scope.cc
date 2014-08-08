@@ -29,7 +29,7 @@ void AppendNonTrivialInputScope(std::vector<InputScope>* input_scopes,
   input_scopes->push_back(input_scope);
 }
 
-class TSFInputScope : public ITfInputScope {
+class TSFInputScope FINAL : public ITfInputScope {
  public:
   explicit TSFInputScope(const std::vector<InputScope>& input_scopes)
       : input_scopes_(input_scopes),
@@ -116,7 +116,7 @@ SetInputScopesFunc g_set_input_scopes = NULL;
 bool g_get_proc_done = false;
 
 SetInputScopesFunc GetSetInputScopes() {
-  DCHECK_EQ(base::MessageLoop::TYPE_UI, base::MessageLoop::current()->type());
+  DCHECK(base::MessageLoopForUI::IsCurrent());
   // Thread safety is not required because this function is under UI thread.
   if (!g_get_proc_done) {
     g_get_proc_done = true;

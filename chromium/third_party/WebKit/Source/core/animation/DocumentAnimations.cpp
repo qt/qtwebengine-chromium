@@ -31,78 +31,66 @@
 #include "config.h"
 #include "core/animation/DocumentAnimations.h"
 
-#include "core/animation/ActiveAnimations.h"
 #include "core/animation/AnimationClock.h"
-#include "core/animation/DocumentTimeline.h"
+#include "core/animation/AnimationTimeline.h"
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
 #include "core/dom/Node.h"
-#include "core/frame/Frame.h"
+#include "core/dom/NodeRenderStyle.h"
 #include "core/frame/FrameView.h"
-#include "core/rendering/RenderLayerCompositor.h"
+#include "core/frame/LocalFrame.h"
 #include "core/rendering/RenderView.h"
+#include "core/rendering/compositing/RenderLayerCompositor.h"
 
 namespace WebCore {
 
 namespace {
 
-void updateAnimationTiming(Document& document, double monotonicAnimationStartTime)
+void updateAnimationTiming(Document& document, TimingUpdateReason reason)
 {
-    document.animationClock().updateTime(monotonicAnimationStartTime);
-    bool didTriggerStyleRecalc = document.timeline()->serviceAnimations();
-    didTriggerStyleRecalc |= document.transitionTimeline()->serviceAnimations();
-    if (!didTriggerStyleRecalc)
-        document.animationClock().unfreeze();
-}
-
-void dispatchAnimationEvents(Document& document)
-{
-    document.timeline()->dispatchEvents();
-    document.transitionTimeline()->dispatchEvents();
-}
-
-void dispatchAnimationEventsAsync(Document& document)
-{
-    document.timeline()->dispatchEventsAsync();
-    document.transitionTimeline()->dispatchEventsAsync();
+    document.timeline().serviceAnimations(reason);
 }
 
 } // namespace
 
-void DocumentAnimations::serviceOnAnimationFrame(Document& document, double monotonicAnimationStartTime)
+void DocumentAnimations::updateAnimationTimingForAnimationFrame(Document& document, double monotonicAnimationStartTime)
 {
-    if (!RuntimeEnabledFeatures::webAnimationsCSSEnabled())
-        return;
-
-    updateAnimationTiming(document, monotonicAnimationStartTime);
-    dispatchAnimationEvents(document);
+    document.animationClock().updateTime(monotonicAnimationStartTime);
+    updateAnimationTiming(document, TimingUpdateForAnimationFrame);
 }
 
-void DocumentAnimations::serviceBeforeGetComputedStyle(Node& node, CSSPropertyID property)
+void DocumentAnimations::updateOutdatedAnimationPlayersIfNeeded(Document& document)
 {
-    if (!RuntimeEnabledFeatures::webAnimationsCSSEnabled())
-        return;
+    if (needsOutdatedAnimationPlayerUpdate(document))
+        updateAnimationTiming(document, TimingUpdateOnDemand);
+}
 
-    if (node.isElementNode()) {
-        const Element& element = toElement(node);
-        if (const ActiveAnimations* activeAnimations = element.activeAnimations()) {
-            if (activeAnimations->hasActiveAnimationsOnCompositor(property))
-                updateAnimationTiming(element.document(), monotonicallyIncreasingTime());
+void DocumentAnimations::updateAnimationTimingForGetComputedStyle(Node& node, CSSPropertyID property)
+{
+    if (!node.isElementNode())
+        return;
+    const Element& element = toElement(node);
+    if (RenderStyle* style = element.renderStyle()) {
+        if ((property == CSSPropertyOpacity && style->isRunningOpacityAnimationOnCompositor())
+            || ((property == CSSPropertyTransform || property == CSSPropertyWebkitTransform) && style->isRunningTransformAnimationOnCompositor())
+            || (property == CSSPropertyWebkitFilter && style->isRunningFilterAnimationOnCompositor())) {
+            updateAnimationTiming(element.document(), TimingUpdateOnDemand);
         }
     }
-
 }
 
-void DocumentAnimations::serviceAfterStyleRecalc(Document& document)
+bool DocumentAnimations::needsOutdatedAnimationPlayerUpdate(const Document& document)
 {
-    if (!RuntimeEnabledFeatures::webAnimationsCSSEnabled())
-        return;
+    return document.timeline().hasOutdatedAnimationPlayer();
+}
 
-    if (document.cssPendingAnimations().startPendingAnimations() && document.view())
+void DocumentAnimations::startPendingAnimations(Document& document)
+{
+    ASSERT(document.lifecycle().state() == DocumentLifecycle::CompositingClean);
+    if (document.compositorPendingAnimations().startPendingAnimations()) {
+        ASSERT(document.view());
         document.view()->scheduleAnimation();
-
-    document.animationClock().unfreeze();
-    dispatchAnimationEventsAsync(document);
+    }
 }
 
 } // namespace WebCore

@@ -33,26 +33,26 @@
 
 namespace WebCore {
 
-class WebGLBuffer : public WebGLSharedObject, public ScriptWrappable {
+class WebGLBuffer FINAL : public WebGLSharedObject, public ScriptWrappable {
 public:
     virtual ~WebGLBuffer();
 
-    static PassRefPtr<WebGLBuffer> create(WebGLRenderingContext*);
+    static PassRefPtr<WebGLBuffer> create(WebGLRenderingContextBase*);
 
-    GC3Denum getTarget() const { return m_target; }
-    void setTarget(GC3Denum);
+    GLenum getTarget() const { return m_target; }
+    void setTarget(GLenum);
 
     bool hasEverBeenBound() const { return object() && m_target; }
 
 protected:
-    WebGLBuffer(WebGLRenderingContext*);
+    WebGLBuffer(WebGLRenderingContextBase*);
 
-    virtual void deleteObjectImpl(GraphicsContext3D*, Platform3DObject);
+    virtual void deleteObjectImpl(blink::WebGraphicsContext3D*, Platform3DObject) OVERRIDE;
 
 private:
-    virtual bool isBuffer() const { return true; }
+    virtual bool isBuffer() const OVERRIDE { return true; }
 
-    GC3Denum m_target;
+    GLenum m_target;
 };
 
 } // namespace WebCore

@@ -32,8 +32,8 @@
 #include "config.h"
 #include "core/html/forms/HiddenInputType.h"
 
-#include "HTMLNames.h"
-#include "InputTypeNames.h"
+#include "core/HTMLNames.h"
+#include "core/InputTypeNames.h"
 #include "core/html/FormDataList.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/forms/FormController.h"
@@ -43,9 +43,9 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-PassRefPtr<InputType> HiddenInputType::create(HTMLInputElement& element)
+PassRefPtrWillBeRawPtr<InputType> HiddenInputType::create(HTMLInputElement& element)
 {
-    return adoptRef(new HiddenInputType(element));
+    return adoptRefWillBeNoop(new HiddenInputType(element));
 }
 
 const AtomicString& HiddenInputType::formControlType() const

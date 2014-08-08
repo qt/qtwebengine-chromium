@@ -23,38 +23,38 @@
 #define SVGInlineTextBox_h
 
 #include "core/rendering/InlineTextBox.h"
+#include "core/rendering/svg/RenderSVGResource.h"
 #include "core/rendering/svg/SVGTextLayoutEngine.h"
 
 namespace WebCore {
 
 class RenderSVGResource;
-class SVGRootInlineBox;
 
 class SVGInlineTextBox FINAL : public InlineTextBox {
 public:
-    SVGInlineTextBox(RenderObject*);
+    SVGInlineTextBox(RenderObject&);
 
-    virtual bool isSVGInlineTextBox() const { return true; }
+    virtual bool isSVGInlineTextBox() const OVERRIDE { return true; }
 
-    virtual float virtualLogicalHeight() const { return m_logicalHeight; }
+    virtual float virtualLogicalHeight() const OVERRIDE { return m_logicalHeight; }
     void setLogicalHeight(float height) { m_logicalHeight = height; }
 
-    virtual int offsetForPosition(float x, bool includePartialGlyphs = true) const;
-    virtual float positionForOffset(int offset) const;
+    virtual int offsetForPosition(float x, bool includePartialGlyphs = true) const OVERRIDE;
+    virtual float positionForOffset(int offset) const OVERRIDE;
 
     void paintSelectionBackground(PaintInfo&);
-    virtual void paint(PaintInfo&, const LayoutPoint&, LayoutUnit lineTop, LayoutUnit lineBottom);
-    virtual LayoutRect localSelectionRect(int startPosition, int endPosition);
+    virtual void paint(PaintInfo&, const LayoutPoint&, LayoutUnit lineTop, LayoutUnit lineBottom) OVERRIDE;
+    virtual LayoutRect localSelectionRect(int startPosition, int endPosition) OVERRIDE;
 
     bool mapStartEndPositionsIntoFragmentCoordinates(const SVGTextFragment&, int& startPosition, int& endPosition) const;
 
-    virtual FloatRect calculateBoundaries() const;
+    virtual FloatRect calculateBoundaries() const OVERRIDE;
 
     void clearTextFragments() { m_textFragments.clear(); }
     Vector<SVGTextFragment>& textFragments() { return m_textFragments; }
     const Vector<SVGTextFragment>& textFragments() const { return m_textFragments; }
 
-    virtual void dirtyLineBoxes() OVERRIDE FINAL;
+    virtual void dirtyLineBoxes() OVERRIDE;
 
     bool startsNewTextChunk() const { return m_startsNewTextChunk; }
     void setStartsNewTextChunk(bool newTextChunk) { m_startsNewTextChunk = newTextChunk; }
@@ -65,23 +65,30 @@ public:
 private:
     TextRun constructTextRun(RenderStyle*, const SVGTextFragment&) const;
 
-    bool acquirePaintingResource(GraphicsContext*&, float scalingFactor, RenderObject*, RenderStyle*);
-    void releasePaintingResource(GraphicsContext*&, const Path*);
+    bool acquirePaintingResource(GraphicsContext*&, float scalingFactor, RenderObject*,
+        RenderStyle*, RenderSVGResourceModeFlags);
+    void releasePaintingResource(GraphicsContext*&, const Path*, RenderSVGResourceModeFlags);
 
-    bool prepareGraphicsContextForTextPainting(GraphicsContext*&, float scalingFactor, TextRun&, RenderStyle*);
-    void restoreGraphicsContextAfterTextPainting(GraphicsContext*&, TextRun&);
+    bool prepareGraphicsContextForTextPainting(GraphicsContext*&, float scalingFactor, TextRun&,
+        RenderStyle*, RenderSVGResourceModeFlags);
+    void restoreGraphicsContextAfterTextPainting(GraphicsContext*&, TextRun&, RenderSVGResourceModeFlags);
 
     void paintDecoration(GraphicsContext*, TextDecoration, const SVGTextFragment&);
-    void paintDecorationWithStyle(GraphicsContext*, TextDecoration, const SVGTextFragment&, RenderObject* decorationRenderer);
-    void paintTextWithShadows(GraphicsContext*, RenderStyle*, TextRun&, const SVGTextFragment&, int startPosition, int endPosition);
-    void paintText(GraphicsContext*, RenderStyle*, RenderStyle* selectionStyle, const SVGTextFragment&, bool hasSelection, bool paintSelectedTextOnly);
+    void paintDecorationWithStyle(GraphicsContext*, TextDecoration, const SVGTextFragment&,
+        RenderObject* decorationRenderer, RenderSVGResourceModeFlags);
+    void paintTextWithShadows(GraphicsContext*, RenderStyle*, TextRun&, const SVGTextFragment&,
+        int startPosition, int endPosition, RenderSVGResourceModeFlags);
+    void paintText(GraphicsContext*, RenderStyle*, RenderStyle* selectionStyle, const SVGTextFragment&,
+        RenderSVGResourceModeFlags, bool hasSelection, bool paintSelectedTextOnly);
+
+    virtual void paintDocumentMarker(GraphicsContext*, const FloatPoint&, DocumentMarker*, RenderStyle*, const Font&, bool) OVERRIDE FINAL;
+    virtual void paintTextMatchMarker(GraphicsContext*, const FloatPoint&, DocumentMarker*, RenderStyle*, const Font&) OVERRIDE FINAL;
 
     virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, LayoutUnit lineTop, LayoutUnit lineBottom) OVERRIDE;
 
 private:
     float m_logicalHeight;
-    unsigned m_paintingResourceMode : 4;
-    unsigned m_startsNewTextChunk : 1;
+    bool m_startsNewTextChunk : 1;
     RenderSVGResource* m_paintingResource;
     Vector<SVGTextFragment> m_textFragments;
 };

@@ -18,6 +18,7 @@
 #include "net/cert/cert_status_flags.h"
 #include "net/cert/cert_verifier.h"
 #include "net/cert/cert_verify_result.h"
+#include "net/cert/test_root_certs.h"
 #include "net/cert/x509_certificate.h"
 
 namespace net {
@@ -121,9 +122,28 @@ void GetCertChainInfo(X509_STORE_CTX* store_ctx,
     }
   }
 
+  // Set verify_result->verified_cert and
+  // verify_result->is_issued_by_known_root.
   if (verified_cert) {
     verify_result->verified_cert =
         X509Certificate::CreateFromHandle(verified_cert, verified_chain);
+
+    // For OpenSSL builds, only certificates used for unit tests are treated
+    // as not issued by known roots. The only way to determine whether a
+    // certificate is issued by a known root using OpenSSL is to examine
+    // distro-and-release specific hardcoded lists.
+    verify_result->is_issued_by_known_root = true;
+    if (TestRootCerts::HasInstance()) {
+      X509* root = NULL;
+      if (verified_chain.empty()) {
+        root = verified_cert;
+      } else {
+        root = verified_chain.back();
+      }
+      TestRootCerts* root_certs = TestRootCerts::GetInstance();
+      if (root_certs->Contains(root))
+          verify_result->is_issued_by_known_root = false;
+    }
   }
 }
 
@@ -213,14 +233,6 @@ int CertVerifyProcOpenSSL::VerifyInternal(
   AppendPublicKeyHashes(ctx.get(), &verify_result->public_key_hashes);
   if (IsCertStatusError(verify_result->cert_status))
     return MapCertStatusToNetError(verify_result->cert_status);
-
-  // Currently we only ues OpenSSL's default root CA paths, so treat all
-  // correctly verified certs as being from a known root.
-  // TODO(joth): if the motivations described in
-  // http://src.chromium.org/viewvc/chrome?view=rev&revision=80778 become an
-  // issue on OpenSSL builds, we will need to embed a hardcoded list of well
-  // known root CAs, as per the _mac and _win versions.
-  verify_result->is_issued_by_known_root = true;
 
   return OK;
 }

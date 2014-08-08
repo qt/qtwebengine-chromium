@@ -18,6 +18,10 @@
 #include "gpu/config/gpu_blacklist.h"
 #include "gpu/config/gpu_driver_bug_list.h"
 
+namespace base {
+class CommandLine;
+}
+
 namespace content {
 
 class CONTENT_EXPORT GpuDataManagerImplPrivate {
@@ -57,11 +61,11 @@ class CONTENT_EXPORT GpuDataManagerImplPrivate {
   void UpdateVideoMemoryUsageStats(
       const GPUVideoMemoryUsageStats& video_memory_usage_stats);
 
-  void AppendRendererCommandLine(CommandLine* command_line) const;
+  void AppendRendererCommandLine(base::CommandLine* command_line) const;
 
-  void AppendGpuCommandLine(CommandLine* command_line) const;
+  void AppendGpuCommandLine(base::CommandLine* command_line) const;
 
-  void AppendPluginCommandLine(CommandLine* command_line) const;
+  void AppendPluginCommandLine(base::CommandLine* command_line) const;
 
   void UpdateRendererWebPrefs(WebPreferences* prefs) const;
 
@@ -81,12 +85,6 @@ class CONTENT_EXPORT GpuDataManagerImplPrivate {
   base::ListValue* GetLogMessages() const;
 
   void HandleGpuSwitch();
-
-#if defined(OS_WIN)
-  // Is the GPU process using the accelerated surface to present, instead of
-  // presenting by itself.
-  bool IsUsingAcceleratedSurface() const;
-#endif
 
   bool CanUseGpuBrowserCompositor() const;
 
@@ -108,6 +106,8 @@ class CONTENT_EXPORT GpuDataManagerImplPrivate {
 
   void SetDisplayCount(unsigned int display_count);
   unsigned int GetDisplayCount() const;
+
+  bool UpdateActiveGpu(uint32 vendor_id, uint32 device_id);
 
   void OnGpuProcessInitFailure();
 
@@ -183,6 +183,8 @@ class CONTENT_EXPORT GpuDataManagerImplPrivate {
                       const std::string& gpu_driver_bug_list_json,
                       const gpu::GPUInfo& gpu_info);
 
+  void UpdateGpuInfoHelper();
+
   void UpdateBlacklistedFeatures(const std::set<int>& features);
 
   // This should only be called once at initialization time, when preliminary
@@ -251,8 +253,6 @@ class CONTENT_EXPORT GpuDataManagerImplPrivate {
   unsigned int display_count_;
 
   bool gpu_process_accessible_;
-
-  bool use_software_compositor_;
 
   // True if all future Initialize calls should be ignored.
   bool finalized_;

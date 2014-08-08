@@ -18,7 +18,9 @@
 struct WebPreferences;
 
 namespace blink {
+class WebElement;
 class WebFrame;
+class WebLocalFrame;
 class WebNode;
 class WebString;
 class WebURLRequest;
@@ -75,21 +77,13 @@ class CONTENT_EXPORT RenderView : public IPC::Sender {
   // Returns the associated WebView. May return NULL when the view is closing.
   virtual blink::WebView* GetWebView() = 0;
 
-  // Gets the focused node. If no such node exists then the node will be isNull.
-  virtual blink::WebNode GetFocusedNode() const = 0;
-
-  // Gets the node that the context menu was pressed over.
-  virtual blink::WebNode GetContextMenuNode() const = 0;
+  // Gets the focused element. If no such element exists then
+  // the element will be Null.
+  virtual blink::WebElement GetFocusedElement() const = 0;
 
   // Returns true if the parameter node is a textfield, text area, a content
   // editable div, or has an ARIA role of textbox.
   virtual bool IsEditableNode(const blink::WebNode& node) const = 0;
-
-  // Evaluates a string of JavaScript in a particular frame.
-  virtual void EvaluateScript(const base::string16& frame_xpath,
-                              const base::string16& jscript,
-                              int id,
-                              bool notify_result) = 0;
 
   // Returns true if we should display scrollbars for the given view size and
   // false if the scrollbars should be hidden.
@@ -104,16 +98,8 @@ class CONTENT_EXPORT RenderView : public IPC::Sender {
   // false, but set to true by some tests.
   virtual bool GetContentStateImmediately() const = 0;
 
-  // Filtered time per frame based on UpdateRect messages.
-  virtual float GetFilteredTimePerFrame() const = 0;
-
   // Returns the current visibility of the WebView.
   virtual blink::WebPageVisibilityState GetVisibilityState() const = 0;
-
-  // Displays a modal alert dialog containing the given message.  Returns
-  // once the user dismisses the dialog.
-  virtual void RunModalAlertDialog(blink::WebFrame* frame,
-                                   const blink::WebString& message) = 0;
 
   // Used by plugins that load data in this RenderView to update the loading
   // notifications.

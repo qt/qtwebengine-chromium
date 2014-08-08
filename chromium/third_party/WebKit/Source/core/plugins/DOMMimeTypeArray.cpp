@@ -20,14 +20,14 @@
 #include "config.h"
 #include "core/plugins/DOMMimeTypeArray.h"
 
-#include "core/frame/Frame.h"
+#include "core/frame/LocalFrame.h"
 #include "core/page/Page.h"
 #include "platform/plugins/PluginData.h"
 #include "wtf/text/AtomicString.h"
 
 namespace WebCore {
 
-DOMMimeTypeArray::DOMMimeTypeArray(Frame* frame)
+DOMMimeTypeArray::DOMMimeTypeArray(LocalFrame* frame)
     : DOMWindowProperty(frame)
 {
     ScriptWrappable::init(this);
@@ -45,14 +45,14 @@ unsigned DOMMimeTypeArray::length() const
     return data->mimes().size();
 }
 
-PassRefPtr<DOMMimeType> DOMMimeTypeArray::item(unsigned index)
+PassRefPtrWillBeRawPtr<DOMMimeType> DOMMimeTypeArray::item(unsigned index)
 {
     PluginData* data = getPluginData();
     if (!data)
-        return 0;
+        return nullptr;
     const Vector<MimeClassInfo>& mimes = data->mimes();
     if (index >= mimes.size())
-        return 0;
+        return nullptr;
     return DOMMimeType::create(data, m_frame, index).get();
 }
 
@@ -69,17 +69,17 @@ bool DOMMimeTypeArray::canGetItemsForName(const AtomicString& propertyName)
     return false;
 }
 
-PassRefPtr<DOMMimeType> DOMMimeTypeArray::namedItem(const AtomicString& propertyName)
+PassRefPtrWillBeRawPtr<DOMMimeType> DOMMimeTypeArray::namedItem(const AtomicString& propertyName)
 {
     PluginData *data = getPluginData();
     if (!data)
-        return 0;
+        return nullptr;
     const Vector<MimeClassInfo>& mimes = data->mimes();
     for (unsigned i = 0; i < mimes.size(); ++i) {
         if (mimes[i].type == propertyName)
             return DOMMimeType::create(data, m_frame, i).get();
     }
-    return 0;
+    return nullptr;
 }
 
 PluginData* DOMMimeTypeArray::getPluginData() const

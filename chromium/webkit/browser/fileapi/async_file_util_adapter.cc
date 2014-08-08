@@ -9,6 +9,7 @@
 #include "base/bind.h"
 #include "base/sequenced_task_runner.h"
 #include "base/task_runner_util.h"
+#include "base/thread_task_runner_handle.h"
 #include "webkit/browser/fileapi/file_system_context.h"
 #include "webkit/browser/fileapi/file_system_file_util.h"
 #include "webkit/browser/fileapi/file_system_operation_context.h"
@@ -19,7 +20,6 @@
 using base::Bind;
 using base::Callback;
 using base::Owned;
-using base::PlatformFileError;
 using base::Unretained;
 using webkit_blob::ShareableFileReference;
 
@@ -29,7 +29,7 @@ namespace {
 
 class EnsureFileExistsHelper {
  public:
-  EnsureFileExistsHelper() : error_(base::PLATFORM_FILE_OK), created_(false) {}
+  EnsureFileExistsHelper() : error_(base::File::FILE_OK), created_(false) {}
 
   void RunWork(FileSystemFileUtil* file_util,
                FileSystemOperationContext* context,
@@ -42,7 +42,7 @@ class EnsureFileExistsHelper {
   }
 
  private:
-  base::PlatformFileError error_;
+  base::File::Error error_;
   bool created_;
   DISALLOW_COPY_AND_ASSIGN(EnsureFileExistsHelper);
 };
@@ -50,7 +50,7 @@ class EnsureFileExistsHelper {
 class GetFileInfoHelper {
  public:
   GetFileInfoHelper()
-      : error_(base::PLATFORM_FILE_OK) {}
+      : error_(base::File::FILE_OK) {}
 
   void GetFileInfo(FileSystemFileUtil* file_util,
                    FileSystemOperationContext* context,
@@ -76,64 +76,67 @@ class GetFileInfoHelper {
   }
 
  private:
-  base::PlatformFileError error_;
-  base::PlatformFileInfo file_info_;
+  base::File::Error error_;
+  base::File::Info file_info_;
   base::FilePath platform_path_;
   webkit_blob::ScopedFile scoped_file_;
   DISALLOW_COPY_AND_ASSIGN(GetFileInfoHelper);
 };
 
-class ReadDirectoryHelper {
- public:
-  ReadDirectoryHelper() : error_(base::PLATFORM_FILE_OK) {}
+void ReadDirectoryHelper(FileSystemFileUtil* file_util,
+                         FileSystemOperationContext* context,
+                         const FileSystemURL& url,
+                         base::SingleThreadTaskRunner* origin_loop,
+                         const AsyncFileUtil::ReadDirectoryCallback& callback) {
+  base::File::Info file_info;
+  base::FilePath platform_path;
+  base::File::Error error = file_util->GetFileInfo(
+      context, url, &file_info, &platform_path);
 
-  void RunWork(FileSystemFileUtil* file_util,
-               FileSystemOperationContext* context,
-               const FileSystemURL& url) {
-    base::PlatformFileInfo file_info;
-    base::FilePath platform_path;
-    PlatformFileError error = file_util->GetFileInfo(
-        context, url, &file_info, &platform_path);
-    if (error != base::PLATFORM_FILE_OK) {
-      error_ = error;
-      return;
-    }
-    if (!file_info.is_directory) {
-      error_ = base::PLATFORM_FILE_ERROR_NOT_A_DIRECTORY;
-      return;
-    }
+  if (error == base::File::FILE_OK && !file_info.is_directory)
+    error = base::File::FILE_ERROR_NOT_A_DIRECTORY;
 
-    scoped_ptr<FileSystemFileUtil::AbstractFileEnumerator> file_enum(
-        file_util->CreateFileEnumerator(context, url));
-
-    base::FilePath current;
-    while (!(current = file_enum->Next()).empty()) {
-      DirectoryEntry entry;
-      entry.is_directory = file_enum->IsDirectory();
-      entry.name = VirtualPath::BaseName(current).value();
-      entry.size = file_enum->Size();
-      entry.last_modified_time = file_enum->LastModifiedTime();
-      entries_.push_back(entry);
-    }
-    error_ = base::PLATFORM_FILE_OK;
+  std::vector<DirectoryEntry> entries;
+  if (error != base::File::FILE_OK) {
+    origin_loop->PostTask(
+        FROM_HERE, base::Bind(callback, error, entries, false /* has_more */));
+    return;
   }
 
-  void Reply(const AsyncFileUtil::ReadDirectoryCallback& callback) {
-    callback.Run(error_, entries_, false /* has_more */);
-  }
+  // Note: Increasing this value may make some tests in LayoutTests meaningless.
+  // (Namely, read-directory-many.html and read-directory-sync-many.html are
+  // assuming that they are reading much more entries than this constant.)
+  const size_t kResultChunkSize = 100;
 
- private:
-  base::PlatformFileError error_;
-  std::vector<DirectoryEntry> entries_;
-  DISALLOW_COPY_AND_ASSIGN(ReadDirectoryHelper);
-};
+  scoped_ptr<FileSystemFileUtil::AbstractFileEnumerator> file_enum(
+      file_util->CreateFileEnumerator(context, url));
+
+  base::FilePath current;
+  while (!(current = file_enum->Next()).empty()) {
+    DirectoryEntry entry;
+    entry.is_directory = file_enum->IsDirectory();
+    entry.name = VirtualPath::BaseName(current).value();
+    entry.size = file_enum->Size();
+    entry.last_modified_time = file_enum->LastModifiedTime();
+    entries.push_back(entry);
+
+    if (entries.size() == kResultChunkSize) {
+      origin_loop->PostTask(
+          FROM_HERE, base::Bind(callback, base::File::FILE_OK, entries,
+                                true /* has_more */));
+      entries.clear();
+    }
+  }
+  origin_loop->PostTask(
+      FROM_HERE, base::Bind(callback, base::File::FILE_OK, entries,
+                            false /* has_more */));
+}
 
 void RunCreateOrOpenCallback(
+    FileSystemOperationContext* context,
     const AsyncFileUtil::CreateOrOpenCallback& callback,
-    base::PlatformFileError result,
-    base::PassPlatformFile file,
-    bool created) {
-  callback.Run(result, file, base::Closure());
+    base::File file) {
+  callback.Run(file.Pass(), base::Closure());
 }
 
 }  // namespace
@@ -153,14 +156,12 @@ void AsyncFileUtilAdapter::CreateOrOpen(
     int file_flags,
     const CreateOrOpenCallback& callback) {
   FileSystemOperationContext* context_ptr = context.release();
-  const bool success = base::FileUtilProxy::RelayCreateOrOpen(
+  base::PostTaskAndReplyWithResult(
       context_ptr->task_runner(),
+      FROM_HERE,
       Bind(&FileSystemFileUtil::CreateOrOpen, Unretained(sync_file_util_.get()),
            context_ptr, url, file_flags),
-      Bind(&FileSystemFileUtil::Close, Unretained(sync_file_util_.get()),
-           base::Owned(context_ptr)),
-      Bind(&RunCreateOrOpenCallback, callback));
-  DCHECK(success);
+      Bind(&RunCreateOrOpenCallback, base::Owned(context_ptr), callback));
 }
 
 void AsyncFileUtilAdapter::EnsureFileExists(
@@ -212,12 +213,11 @@ void AsyncFileUtilAdapter::ReadDirectory(
     const FileSystemURL& url,
     const ReadDirectoryCallback& callback) {
   FileSystemOperationContext* context_ptr = context.release();
-  ReadDirectoryHelper* helper = new ReadDirectoryHelper;
-  const bool success = context_ptr->task_runner()->PostTaskAndReply(
+  const bool success = context_ptr->task_runner()->PostTask(
       FROM_HERE,
-      Bind(&ReadDirectoryHelper::RunWork, Unretained(helper),
-           sync_file_util_.get(), base::Owned(context_ptr), url),
-      Bind(&ReadDirectoryHelper::Reply, Owned(helper), callback));
+      Bind(&ReadDirectoryHelper,
+           sync_file_util_.get(), base::Owned(context_ptr), url,
+           base::ThreadTaskRunnerHandle::Get(), callback));
   DCHECK(success);
 }
 
@@ -332,7 +332,7 @@ void AsyncFileUtilAdapter::DeleteRecursively(
     scoped_ptr<FileSystemOperationContext> context,
     const FileSystemURL& url,
     const StatusCallback& callback) {
-  callback.Run(base::PLATFORM_FILE_ERROR_INVALID_OPERATION);
+  callback.Run(base::File::FILE_ERROR_INVALID_OPERATION);
 }
 
 void AsyncFileUtilAdapter::CreateSnapshotFile(

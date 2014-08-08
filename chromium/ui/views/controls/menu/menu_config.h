@@ -6,7 +6,7 @@
 #define UI_VIEWS_CONTROLS_MENU_MENU_CONFIG_H_
 
 #include "third_party/skia/include/core/SkColor.h"
-#include "ui/gfx/font.h"
+#include "ui/gfx/font_list.h"
 #include "ui/views/views_export.h"
 
 namespace ui {
@@ -23,11 +23,8 @@ struct VIEWS_EXPORT MenuConfig {
 
   static const MenuConfig& instance(const ui::NativeTheme* theme);
 
-  // Font used by menus.
-  gfx::Font font;
-
-  // Normal text color.
-  SkColor text_color;
+  // Font list used by menus.
+  gfx::FontList font_list;
 
   // Color for the arrow to scroll bookmarks.
   SkColor arrow_color;
@@ -70,12 +67,10 @@ struct VIEWS_EXPORT MenuConfig {
   int check_width;
   int check_height;
 
-  // Size of the radio bullet.
+  // Width of the radio bullet.
   int radio_width;
-  int radio_height;
 
-  // Size of the submenu arrow.
-  int arrow_height;
+  // Width of the submenu arrow.
   int arrow_width;
 
   // Width of the gutter. Only used if render_gutter is true.
@@ -136,9 +131,7 @@ struct VIEWS_EXPORT MenuConfig {
   void Init(const ui::NativeTheme* theme);
 
   // TODO: temporary until we standardize.
-#if defined(USE_AURA)
   void InitAura(const ui::NativeTheme* theme);
-#endif
 };
 
 }  // namespace views

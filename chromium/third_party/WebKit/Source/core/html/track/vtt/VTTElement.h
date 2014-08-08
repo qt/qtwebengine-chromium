@@ -41,11 +41,11 @@ enum VTTNodeType {
 
 class VTTElement FINAL : public Element {
 public:
-    static PassRefPtr<VTTElement> create(const VTTNodeType, Document*);
-    static PassRefPtr<VTTElement> create(const QualifiedName&, Document*);
-    PassRefPtr<HTMLElement> createEquivalentHTMLElement(Document&);
+    static PassRefPtrWillBeRawPtr<VTTElement> create(const VTTNodeType, Document*);
+    static PassRefPtrWillBeRawPtr<VTTElement> create(const QualifiedName&, Document*);
+    PassRefPtrWillBeRawPtr<HTMLElement> createEquivalentHTMLElement(Document&);
 
-    virtual PassRefPtr<Element> cloneElementWithoutAttributesAndChildren() OVERRIDE;
+    virtual PassRefPtrWillBeRawPtr<Element> cloneElementWithoutAttributesAndChildren() OVERRIDE;
 
     void setVTTNodeType(VTTNodeType type) { m_webVTTNodeType = static_cast<unsigned>(type); }
     VTTNodeType webVTTNodeType() const { return static_cast<VTTNodeType>(m_webVTTNodeType); }
@@ -79,7 +79,7 @@ private:
     AtomicString m_language;
 };
 
-DEFINE_NODE_TYPE_CASTS(VTTElement, isVTTElement());
+DEFINE_ELEMENT_TYPE_CASTS(VTTElement, isVTTElement());
 
 } // namespace WebCore
 

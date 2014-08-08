@@ -28,49 +28,18 @@
 #include "config.h"
 #include "core/dom/MainThreadTaskRunner.h"
 
-#include "core/dom/ExecutionContext.h"
 #include "core/dom/ExecutionContextTask.h"
-#include "core/events/EventQueue.h"
+#include "core/testing/NullExecutionContext.h"
 #include "core/testing/UnitTestHelpers.h"
+#include "platform/heap/Handle.h"
+#include "wtf/Forward.h"
+#include "wtf/OwnPtr.h"
+#include "wtf/PassOwnPtr.h"
 #include <gtest/gtest.h>
 
 using namespace WebCore;
 
 namespace {
-
-class NullEventQueue : public EventQueue {
-public:
-    NullEventQueue() { }
-    virtual ~NullEventQueue() { }
-    virtual bool enqueueEvent(PassRefPtr<Event>) OVERRIDE { return true; }
-    virtual bool cancelEvent(Event*) OVERRIDE { return true; }
-    virtual void close() OVERRIDE { }
-};
-
-class NullExecutionContext : public ExecutionContext, public RefCounted<NullExecutionContext> {
-public:
-    using RefCounted<NullExecutionContext>::ref;
-    using RefCounted<NullExecutionContext>::deref;
-
-    virtual void refExecutionContext() OVERRIDE { ref(); }
-    virtual void derefExecutionContext() OVERRIDE { deref(); }
-    virtual EventQueue* eventQueue() const OVERRIDE { return m_queue.get(); }
-    virtual bool tasksNeedSuspension() { return m_tasksNeedSuspension; }
-
-    void setTasksNeedSuspention(bool flag) { m_tasksNeedSuspension = flag; }
-
-    NullExecutionContext();
-
-private:
-    bool m_tasksNeedSuspension;
-    OwnPtr<EventQueue> m_queue;
-};
-
-NullExecutionContext::NullExecutionContext()
-    : m_tasksNeedSuspension(false)
-    , m_queue(adoptPtr(new NullEventQueue()))
-{
-}
 
 class MarkingBooleanTask FINAL : public ExecutionContextTask {
 public:
@@ -95,7 +64,7 @@ private:
 
 TEST(MainThreadTaskRunnerTest, PostTask)
 {
-    RefPtr<NullExecutionContext> context = adoptRef(new NullExecutionContext());
+    RefPtrWillBeRawPtr<NullExecutionContext> context = adoptRefWillBeNoop(new NullExecutionContext());
     OwnPtr<MainThreadTaskRunner> runner = MainThreadTaskRunner::create(context.get());
     bool isMarked = false;
 
@@ -107,17 +76,17 @@ TEST(MainThreadTaskRunnerTest, PostTask)
 
 TEST(MainThreadTaskRunnerTest, SuspendTask)
 {
-    RefPtr<NullExecutionContext> context = adoptRef(new NullExecutionContext());
+    RefPtrWillBeRawPtr<NullExecutionContext> context = adoptRefWillBeNoop(new NullExecutionContext());
     OwnPtr<MainThreadTaskRunner> runner = MainThreadTaskRunner::create(context.get());
     bool isMarked = false;
 
-    context->setTasksNeedSuspention(true);
+    context->setTasksNeedSuspension(true);
     runner->postTask(MarkingBooleanTask::create(&isMarked));
     runner->suspend();
     WebCore::testing::runPendingTasks();
     EXPECT_FALSE(isMarked);
 
-    context->setTasksNeedSuspention(false);
+    context->setTasksNeedSuspension(false);
     runner->resume();
     WebCore::testing::runPendingTasks();
     EXPECT_TRUE(isMarked);
@@ -125,11 +94,11 @@ TEST(MainThreadTaskRunnerTest, SuspendTask)
 
 TEST(MainThreadTaskRunnerTest, RemoveRunner)
 {
-    RefPtr<NullExecutionContext> context = adoptRef(new NullExecutionContext());
+    RefPtrWillBeRawPtr<NullExecutionContext> context = adoptRefWillBeNoop(new NullExecutionContext());
     OwnPtr<MainThreadTaskRunner> runner = MainThreadTaskRunner::create(context.get());
     bool isMarked = false;
 
-    context->setTasksNeedSuspention(true);
+    context->setTasksNeedSuspension(true);
     runner->postTask(MarkingBooleanTask::create(&isMarked));
     runner.clear();
     WebCore::testing::runPendingTasks();

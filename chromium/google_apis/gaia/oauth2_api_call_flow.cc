@@ -10,6 +10,7 @@
 #include "base/basictypes.h"
 #include "base/strings/stringprintf.h"
 #include "google_apis/gaia/gaia_urls.h"
+#include "google_apis/gaia/oauth2_access_token_fetcher_impl.h"
 #include "net/base/escape.h"
 #include "net/base/load_flags.h"
 #include "net/http/http_status_code.h"
@@ -108,7 +109,6 @@ void OAuth2ApiCallFlow::BeginMintAccessToken() {
   oauth2_access_token_fetcher_->Start(
       GaiaUrls::GetInstance()->oauth2_chrome_client_id(),
       GaiaUrls::GetInstance()->oauth2_chrome_client_secret(),
-      refresh_token_,
       scopes_);
 }
 
@@ -126,7 +126,7 @@ void OAuth2ApiCallFlow::EndMintAccessToken(
 }
 
 OAuth2AccessTokenFetcher* OAuth2ApiCallFlow::CreateAccessTokenFetcher() {
-  return new OAuth2AccessTokenFetcher(this, context_);
+  return new OAuth2AccessTokenFetcherImpl(this, context_, refresh_token_);
 }
 
 void OAuth2ApiCallFlow::OnURLFetchComplete(const net::URLFetcher* source) {

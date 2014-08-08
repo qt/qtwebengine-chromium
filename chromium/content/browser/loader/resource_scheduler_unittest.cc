@@ -103,6 +103,7 @@ class FakeResourceMessageFilter : public ResourceMessageFilter {
           NULL  /* appcache_service */,
           NULL  /* blob_storage_context */,
           NULL  /* file_system_context */,
+          NULL  /* service_worker_context */,
           base::Bind(&FakeResourceMessageFilter::GetContexts,
                      base::Unretained(this))) {
   }
@@ -124,7 +125,6 @@ class ResourceSchedulerTest : public testing::Test {
  protected:
   ResourceSchedulerTest()
       : next_request_id_(0),
-        message_loop_(base::MessageLoop::TYPE_IO),
         ui_thread_(BrowserThread::UI, &message_loop_),
         io_thread_(BrowserThread::IO, &message_loop_) {
     scheduler_.OnClientCreated(kChildId, kRouteId);
@@ -140,7 +140,7 @@ class ResourceSchedulerTest : public testing::Test {
       net::RequestPriority priority,
       int route_id) {
     scoped_ptr<net::URLRequest> url_request(
-        context_.CreateRequest(GURL(url), priority, NULL));
+        context_.CreateRequest(GURL(url), priority, NULL, NULL));
     ResourceRequestInfoImpl* info = new ResourceRequestInfoImpl(
         PROCESS_TYPE_RENDERER,             // process_type
         kChildId,                          // child_id
@@ -149,9 +149,8 @@ class ResourceSchedulerTest : public testing::Test {
         ++next_request_id_,                // request_id
         MSG_ROUTING_NONE,                  // render_frame_id
         false,                             // is_main_frame
-        0,                                 // frame_id
         false,                             // parent_is_main_frame
-        0,                                 // parent_frame_id
+        0,                                 // parent_render_frame_id
         ResourceType::SUB_RESOURCE,        // resource_type
         PAGE_TRANSITION_LINK,              // transition_type
         false,                             // should_replace_current_entry
@@ -159,7 +158,8 @@ class ResourceSchedulerTest : public testing::Test {
         false,                             // is_stream
         true,                              // allow_download
         false,                             // has_user_gesture
-        blink::WebReferrerPolicyDefault,  // referrer_policy
+        blink::WebReferrerPolicyDefault,   // referrer_policy
+        blink::WebPageVisibilityStateVisible,  // visibility_state
         NULL,                              // context
         base::WeakPtr<ResourceMessageFilter>(),  // filter
         true);                             // is_async
@@ -189,20 +189,20 @@ class ResourceSchedulerTest : public testing::Test {
   }
 
   void ChangeRequestPriority(TestRequest* request,
-                             net::RequestPriority new_priority) {
+                             net::RequestPriority new_priority,
+                             int intra_priority = 0) {
     scoped_refptr<FakeResourceMessageFilter> filter(
         new FakeResourceMessageFilter(kChildId));
     const ResourceRequestInfoImpl* info = ResourceRequestInfoImpl::ForRequest(
         request->url_request());
     const GlobalRequestID& id = info->GetGlobalRequestID();
-    ResourceHostMsg_DidChangePriority msg(id.request_id, new_priority);
-    bool ok = false;
-    rdh_.OnMessageReceived(msg, filter.get(), &ok);
-    EXPECT_TRUE(ok);
+    ResourceHostMsg_DidChangePriority msg(id.request_id, new_priority,
+                                          intra_priority);
+    rdh_.OnMessageReceived(msg, filter.get());
   }
 
   int next_request_id_;
-  base::MessageLoop message_loop_;
+  base::MessageLoopForIO message_loop_;
   BrowserThreadImpl ui_thread_;
   BrowserThreadImpl io_thread_;
   ResourceDispatcherHostImpl rdh_;
@@ -454,6 +454,28 @@ TEST_F(ResourceSchedulerTest, ReprioritizedRequestGoesToBackOfQueue) {
   EXPECT_FALSE(idle->started());
 }
 
+TEST_F(ResourceSchedulerTest, HigherIntraPriorityGoesToFrontOfQueue) {
+  // Dummies to enforce scheduling.
+  scoped_ptr<TestRequest> high(NewRequest("http://host/high", net::HIGHEST));
+  scoped_ptr<TestRequest> low(NewRequest("http://host/high", net::LOWEST));
+
+  const int kMaxNumDelayableRequestsPerClient = 10;  // Should match the .cc.
+  ScopedVector<TestRequest> lows;
+  for (int i = 0; i < kMaxNumDelayableRequestsPerClient; ++i) {
+    string url = "http://host/low" + base::IntToString(i);
+    lows.push_back(NewRequest(url.c_str(), net::IDLE));
+  }
+
+  scoped_ptr<TestRequest> request(NewRequest("http://host/req", net::IDLE));
+  EXPECT_FALSE(request->started());
+
+  ChangeRequestPriority(request.get(), net::IDLE, 1);
+  EXPECT_FALSE(request->started());
+
+  scheduler_.OnWillInsertBody(kChildId, kRouteId);
+  EXPECT_TRUE(request->started());
+}
+
 TEST_F(ResourceSchedulerTest, NonHTTPSchedulesImmediately) {
   // Dummies to enforce scheduling.
   scoped_ptr<TestRequest> high(NewRequest("http://host/high", net::HIGHEST));
@@ -462,6 +484,51 @@ TEST_F(ResourceSchedulerTest, NonHTTPSchedulesImmediately) {
   scoped_ptr<TestRequest> request(
       NewRequest("chrome-extension://req", net::LOWEST));
   EXPECT_TRUE(request->started());
+}
+
+TEST_F(ResourceSchedulerTest, SpdyProxySchedulesImmediately) {
+  scoped_ptr<TestRequest> high(NewRequest("http://host/high", net::HIGHEST));
+  scoped_ptr<TestRequest> low(NewRequest("http://host/low", net::LOWEST));
+
+  scoped_ptr<TestRequest> request(NewRequest("http://host/req", net::IDLE));
+  EXPECT_FALSE(request->started());
+
+  scheduler_.OnReceivedSpdyProxiedHttpResponse(kChildId, kRouteId);
+  EXPECT_TRUE(request->started());
+
+  scoped_ptr<TestRequest> after(NewRequest("http://host/after", net::IDLE));
+  EXPECT_TRUE(after->started());
+}
+
+TEST_F(ResourceSchedulerTest, NewSpdyHostInDelayableRequests) {
+  scheduler_.OnWillInsertBody(kChildId, kRouteId);
+  const int kMaxNumDelayableRequestsPerClient = 10;  // Should match the .cc.
+
+  scoped_ptr<TestRequest> low1_spdy(
+      NewRequest("http://spdyhost1:8080/low", net::LOWEST));
+  // Cancel a request after we learn the server supports SPDY.
+  ScopedVector<TestRequest> lows;
+  for (int i = 0; i < kMaxNumDelayableRequestsPerClient - 1; ++i) {
+    string url = "http://host" + base::IntToString(i) + "/low";
+    lows.push_back(NewRequest(url.c_str(), net::LOWEST));
+  }
+  scoped_ptr<TestRequest> low1(NewRequest("http://host/low", net::LOWEST));
+  EXPECT_FALSE(low1->started());
+  http_server_properties_.SetSupportsSpdy(
+      net::HostPortPair("spdyhost1", 8080), true);
+  low1_spdy.reset();
+  EXPECT_TRUE(low1->started());
+
+  low1.reset();
+  scoped_ptr<TestRequest> low2_spdy(
+      NewRequest("http://spdyhost2:8080/low", net::IDLE));
+  // Reprioritize a request after we learn the server supports SPDY.
+  EXPECT_TRUE(low2_spdy->started());
+  http_server_properties_.SetSupportsSpdy(
+      net::HostPortPair("spdyhost2", 8080), true);
+  ChangeRequestPriority(low2_spdy.get(), net::LOWEST);
+  scoped_ptr<TestRequest> low2(NewRequest("http://host/low", net::LOWEST));
+  EXPECT_TRUE(low2->started());
 }
 
 }  // unnamed namespace

@@ -16,45 +16,29 @@
 #include "ppapi/native_client/src/trusted/plugin/plugin.h"
 #include "ppapi/native_client/src/trusted/plugin/utility.h"
 
-
-//////////////////////////////////////////////////////////////////////
-//  Temporary file access.
-//////////////////////////////////////////////////////////////////////
-
 namespace plugin {
 
-uint32_t TempFile::next_identifier = 0;
-
 TempFile::TempFile(Plugin* plugin) : plugin_(plugin),
-                                     existing_handle_(PP_kInvalidFileHandle) {
-  PLUGIN_PRINTF(("TempFile::TempFile\n"));
-  ++next_identifier;
-  SNPRINTF(reinterpret_cast<char *>(identifier_), sizeof identifier_,
-           "%" NACL_PRIu32, next_identifier);
+                                     internal_handle_(PP_kInvalidFileHandle) {
 }
 
-TempFile::~TempFile() {
-  PLUGIN_PRINTF(("TempFile::~TempFile\n"));
-}
+TempFile::~TempFile() { }
 
-void TempFile::Open(const pp::CompletionCallback& cb, bool writeable) {
-  PLUGIN_PRINTF(("TempFile::Open\n"));
-  PP_FileHandle file_handle;
-  if (existing_handle_ == PP_kInvalidFileHandle) {
-    file_handle =
+int32_t TempFile::Open(bool writeable) {
+  // TODO(teravest): Clean up this Open() behavior; this is really confusing as
+  // written.
+  if (internal_handle_ == PP_kInvalidFileHandle) {
+    internal_handle_ =
         plugin_->nacl_interface()->CreateTemporaryFile(plugin_->pp_instance());
-  } else {
-    file_handle = existing_handle_;
   }
 
-  pp::Core* core = pp::Module::Get()->core();
-  if (file_handle == PP_kInvalidFileHandle) {
+  if (internal_handle_ == PP_kInvalidFileHandle) {
     PLUGIN_PRINTF(("TempFile::Open failed w/ PP_kInvalidFileHandle\n"));
-    core->CallOnMainThread(0, cb, PP_ERROR_FAILED);
+    return PP_ERROR_FAILED;
   }
 
 #if NACL_WINDOWS
-  HANDLE handle = file_handle;
+  HANDLE handle = internal_handle_;
 
   //////// Now try the posix view.
   int rdwr_flag = writeable ? _O_RDWR : _O_RDONLY;
@@ -68,34 +52,29 @@ void TempFile::Open(const pp::CompletionCallback& cb, bool writeable) {
   }
   int32_t fd = posix_desc;
 #else
-  int32_t fd = file_handle;
+  int32_t fd = internal_handle_;
 #endif
 
   if (fd < 0) {
     PLUGIN_PRINTF(("TempFile::Open failed\n"));
-    core->CallOnMainThread(0, cb, PP_ERROR_FAILED);
-    return;
+    return PP_ERROR_FAILED;
   }
 
-  // dup the fd to make allow making a non-Quota-based wrapper.
-  // sel_ldr currently does not allow loading from Quota-backed descs,
-  // only plain host descs.  It's probably good hygiene to separate the
-  // read wrapper from the write wrapper anyway.
+  // dup the fd to make allow making separate read and write wrappers.
   int32_t read_fd = DUP(fd);
   if (read_fd == NACL_NO_FILE_DESC) {
     PLUGIN_PRINTF(("TempFile::Open DUP failed\n"));
-    core->CallOnMainThread(0, cb, PP_ERROR_FAILED);
-    return;
+    return PP_ERROR_FAILED;
   }
 
-  // The descriptor for a writeable file needs to have quota management.
   if (writeable) {
     write_wrapper_.reset(
-        plugin_->wrapper_factory()->MakeFileDescQuota(fd, O_RDWR, identifier_));
+        plugin_->wrapper_factory()->MakeFileDesc(fd, O_RDWR));
   }
+
   read_wrapper_.reset(
       plugin_->wrapper_factory()->MakeFileDesc(read_fd, O_RDONLY));
-  core->CallOnMainThread(0, cb, PP_OK);
+  return PP_OK;
 }
 
 bool TempFile::Reset() {
@@ -104,7 +83,15 @@ bool TempFile::Reset() {
   // backed by the same file, so it should also reset.
   CHECK(read_wrapper_.get() != NULL);
   nacl_off64_t newpos = read_wrapper_->Seek(0, SEEK_SET);
-  return newpos >= 0;
+  return newpos == 0;
+}
+
+PP_FileHandle TempFile::TakeFileHandle() {
+  PP_FileHandle to_return = internal_handle_;
+  internal_handle_ = PP_kInvalidFileHandle;
+  read_wrapper_.release();
+  write_wrapper_.release();
+  return to_return;
 }
 
 }  // namespace plugin

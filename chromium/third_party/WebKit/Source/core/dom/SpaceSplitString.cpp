@@ -164,7 +164,7 @@ void SpaceSplitString::set(const AtomicString& inputString, bool shouldFoldCase)
     if (shouldFoldCase && hasNonASCIIOrUpper(string))
         string = string.foldCase();
 
-    m_data = SpaceSplitStringData::create(string);
+    m_data = SpaceSplitStringData::create(AtomicString(string));
 }
 
 SpaceSplitStringData::~SpaceSplitStringData()
@@ -175,7 +175,7 @@ SpaceSplitStringData::~SpaceSplitStringData()
 
 PassRefPtr<SpaceSplitStringData> SpaceSplitStringData::create(const AtomicString& string)
 {
-    SpaceSplitStringData*& data = sharedDataMap().add(string, 0).iterator->value;
+    SpaceSplitStringData*& data = sharedDataMap().add(string, 0).storedValue->value;
     if (!data) {
         data = new SpaceSplitStringData(string);
         return adoptRef(data);

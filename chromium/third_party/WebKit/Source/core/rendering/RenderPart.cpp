@@ -25,8 +25,8 @@
 #include "config.h"
 #include "core/rendering/RenderPart.h"
 
-#include "core/frame/Frame.h"
 #include "core/frame/FrameView.h"
+#include "core/frame/LocalFrame.h"
 #include "core/html/HTMLFrameElementBase.h"
 #include "core/plugins/PluginView.h"
 #include "core/rendering/HitTestResult.h"
@@ -46,31 +46,14 @@ RenderPart::RenderPart(Element* node)
 
 RenderPart::~RenderPart()
 {
-    clearWidget();
 }
 
-void RenderPart::setWidget(PassRefPtr<Widget> widget)
+LayerType RenderPart::layerTypeRequired() const
 {
-    if (widget == this->widget())
-        return;
-
-    RenderWidget::setWidget(widget);
-
-    // make sure the scrollbars are set correctly for restore
-    // ### find better fix
-    viewCleared();
-}
-
-void RenderPart::viewCleared()
-{
-}
-
-bool RenderPart::requiresLayer() const
-{
-    if (RenderWidget::requiresLayer())
-        return true;
-
-    return requiresAcceleratedCompositing();
+    LayerType type = RenderWidget::layerTypeRequired();
+    if (type != NoLayer)
+        return type;
+    return ForcedLayer;
 }
 
 bool RenderPart::requiresAcceleratedCompositing() const
@@ -104,16 +87,13 @@ bool RenderPart::needsPreferredWidthsRecalculation() const
     return embeddedContentBox();
 }
 
-RenderBox* RenderPart::embeddedContentBox() const
-{
-    if (!node() || !widget() || !widget()->isFrameView())
-        return 0;
-    return toFrameView(widget())->embeddedContentBox();
-}
-
 bool RenderPart::nodeAtPoint(const HitTestRequest& request, HitTestResult& result, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction action)
 {
     if (!widget() || !widget()->isFrameView() || !request.allowsChildFrameContent())
+        return RenderWidget::nodeAtPoint(request, result, locationInContainer, accumulatedOffset, action);
+
+    // FIXME: Until RemoteFrames use RemoteFrameViews, we need an explicit check here.
+    if (toFrameView(widget())->frame().isRemoteFrameTemporary())
         return RenderWidget::nodeAtPoint(request, result, locationInContainer, accumulatedOffset, action);
 
     FrameView* childFrameView = toFrameView(widget());
@@ -147,6 +127,13 @@ bool RenderPart::nodeAtPoint(const HitTestRequest& request, HitTestResult& resul
     }
 
     return RenderWidget::nodeAtPoint(request, result, locationInContainer, accumulatedOffset, action);
+}
+
+CompositingReasons RenderPart::additionalCompositingReasons(CompositingTriggerFlags) const
+{
+    if (requiresAcceleratedCompositing())
+        return CompositingReasonIFrame;
+    return CompositingReasonNone;
 }
 
 }

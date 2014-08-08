@@ -26,15 +26,15 @@
 #include "config.h"
 #include "core/editing/SplitElementCommand.h"
 
-#include "HTMLNames.h"
 #include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "core/HTMLNames.h"
 #include "core/dom/Element.h"
 #include "wtf/Assertions.h"
 
 namespace WebCore {
 
-SplitElementCommand::SplitElementCommand(PassRefPtr<Element> element, PassRefPtr<Node> atChild)
+SplitElementCommand::SplitElementCommand(PassRefPtrWillBeRawPtr<Element> element, PassRefPtrWillBeRawPtr<Node> atChild)
     : SimpleEditCommand(element->document())
     , m_element2(element)
     , m_atChild(atChild)
@@ -49,7 +49,7 @@ void SplitElementCommand::executeApply()
     if (m_atChild->parentNode() != m_element2)
         return;
 
-    Vector<RefPtr<Node> > children;
+    WillBeHeapVector<RefPtrWillBeMember<Node> > children;
     for (Node* node = m_element2->firstChild(); node != m_atChild; node = node->nextSibling())
         children.append(node);
 
@@ -82,19 +82,20 @@ void SplitElementCommand::doUnapply()
     if (!m_element1 || !m_element1->rendererIsEditable() || !m_element2->rendererIsEditable())
         return;
 
-    Vector<RefPtr<Node> > children;
+    WillBeHeapVector<RefPtrWillBeMember<Node> > children;
     for (Node* node = m_element1->firstChild(); node; node = node->nextSibling())
         children.append(node);
 
-    RefPtr<Node> refChild = m_element2->firstChild();
+    RefPtrWillBeRawPtr<Node> refChild = m_element2->firstChild();
 
     size_t size = children.size();
     for (size_t i = 0; i < size; ++i)
         m_element2->insertBefore(children[i].get(), refChild.get(), IGNORE_EXCEPTION);
 
     // Recover the id attribute of the original element.
-    if (m_element1->hasAttribute(HTMLNames::idAttr))
-        m_element2->setAttribute(HTMLNames::idAttr, m_element1->getAttribute(HTMLNames::idAttr));
+    const AtomicString& id = m_element1->getAttribute(HTMLNames::idAttr);
+    if (!id.isNull())
+        m_element2->setAttribute(HTMLNames::idAttr, id);
 
     m_element1->remove(IGNORE_EXCEPTION);
 }
@@ -105,6 +106,14 @@ void SplitElementCommand::doReapply()
         return;
 
     executeApply();
+}
+
+void SplitElementCommand::trace(Visitor* visitor)
+{
+    visitor->trace(m_element1);
+    visitor->trace(m_element2);
+    visitor->trace(m_atChild);
+    SimpleEditCommand::trace(visitor);
 }
 
 } // namespace WebCore

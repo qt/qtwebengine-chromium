@@ -33,6 +33,7 @@
 
 #include "../WebCommon.h"
 #include "../WebString.h"
+#include "WebFallbackFont.h"
 #include "WebFontFamily.h"
 
 namespace blink {
@@ -44,15 +45,14 @@ struct WebFontRenderStyle;
 // https://code.google.com/p/chromium/wiki/LinuxSandboxIPC
 class WebSandboxSupport {
 public:
-    // Get a font family which contains glyphs for the given Unicode code-point.
+    // Get information to instantiate a font which contains glyphs for the given Unicode code-point.
     //   character: a UTF-32 codepoint
     //   preferredLocale: preferred locale identifier for the |characters|
     //                    (e.g. "en", "ja", "zh-CN")
     //
-    // Returns a string with the font family on an empty string if the
-    // request cannot be satisfied.
-    // Returns a WebFontFamily instance with the font name. The instance has empty font name if the request cannot be satisfied.
-    virtual void getFontFamilyForCharacter(WebUChar32, const char* preferredLocale, WebFontFamily*) = 0;
+    // Returns a WebFallbackFont instance with the font name and filename.
+    // The instance has empty font name if the request cannot be satisfied.
+    virtual void getFallbackFontForCharacter(WebUChar32, const char* preferredLocale, WebFallbackFont*) = 0;
 
     virtual void getRenderStyleForStrike(const char* family, int sizeAndStyle, WebFontRenderStyle*) = 0;
 };

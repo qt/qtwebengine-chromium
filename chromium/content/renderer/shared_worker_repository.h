@@ -8,24 +8,27 @@
 #include <set>
 
 #include "base/basictypes.h"
-#include "content/public/renderer/render_view_observer.h"
+#include "content/public/renderer/render_frame_observer.h"
+#include "third_party/WebKit/public/web/WebContentSecurityPolicy.h"
 #include "third_party/WebKit/public/web/WebSharedWorkerRepositoryClient.h"
 
 namespace content {
 
-class RenderViewImpl;
+class RenderFrameImpl;
 
-class SharedWorkerRepository : public RenderViewObserver,
+class SharedWorkerRepository : public RenderFrameObserver,
                                public blink::WebSharedWorkerRepositoryClient {
  public:
-  explicit SharedWorkerRepository(RenderViewImpl* render_view);
+  explicit SharedWorkerRepository(RenderFrameImpl* render_frame);
   virtual ~SharedWorkerRepository();
 
   // WebSharedWorkerRepositoryClient overrides.
   virtual blink::WebSharedWorkerConnector* createSharedWorkerConnector(
       const blink::WebURL& url,
       const blink::WebString& name,
-      DocumentID document_id) OVERRIDE;
+      DocumentID document_id,
+      const blink::WebString& content_security_policy,
+      blink::WebContentSecurityPolicyType) OVERRIDE;
   virtual void documentDetached(DocumentID document_id) OVERRIDE;
 
  private:

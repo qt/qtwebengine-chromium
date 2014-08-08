@@ -113,7 +113,8 @@ bool SharedMemory::Create(const SharedMemoryCreateOptions& options) {
     return false;
 
   size_t rounded_size = (options.size + kSectionMask) & ~kSectionMask;
-  name_ = ASCIIToWide(options.name == NULL ? "" : *options.name);
+  name_ = ASCIIToWide(options.name_deprecated == NULL ? "" :
+                          *options.name_deprecated);
   mapped_file_ = CreateFileMapping(INVALID_HANDLE_VALUE, NULL,
       PAGE_READWRITE, 0, static_cast<DWORD>(rounded_size),
       name_.empty() ? NULL : name_.c_str());
@@ -127,7 +128,7 @@ bool SharedMemory::Create(const SharedMemoryCreateOptions& options) {
     // If the file already existed, set requested_size_ to 0 to show that
     // we don't know the size.
     requested_size_ = 0;
-    if (!options.open_existing) {
+    if (!options.open_existing_deprecated) {
       Close();
       return false;
     }
@@ -161,6 +162,9 @@ bool SharedMemory::MapAt(off_t offset, size_t bytes) {
     return false;
 
   if (bytes > static_cast<size_t>(std::numeric_limits<int>::max()))
+    return false;
+
+  if (memory_)
     return false;
 
   memory_ = MapViewOfFile(mapped_file_,
@@ -230,27 +234,22 @@ void SharedMemory::Close() {
   }
 }
 
-void SharedMemory::Lock() {
-  Lock(INFINITE, NULL);
-}
-
-bool SharedMemory::Lock(uint32 timeout_ms, SECURITY_ATTRIBUTES* sec_attr) {
+void SharedMemory::LockDeprecated() {
   if (lock_ == NULL) {
     std::wstring name = name_;
     name.append(L"lock");
-    lock_ = CreateMutex(sec_attr, FALSE, name.c_str());
+    lock_ = CreateMutex(NULL, FALSE, name.c_str());
     if (lock_ == NULL) {
       DPLOG(ERROR) << "Could not create mutex.";
-      return false;  // there is nothing good we can do here.
+      NOTREACHED();
+      return;  // There is nothing good we can do here.
     }
   }
-  DWORD result = WaitForSingleObject(lock_, timeout_ms);
-
-  // Return false for WAIT_ABANDONED, WAIT_TIMEOUT or WAIT_FAILED.
-  return (result == WAIT_OBJECT_0);
+  DWORD result = WaitForSingleObject(lock_, INFINITE);
+  DCHECK_EQ(result, WAIT_OBJECT_0);
 }
 
-void SharedMemory::Unlock() {
+void SharedMemory::UnlockDeprecated() {
   DCHECK(lock_ != NULL);
   ReleaseMutex(lock_);
 }

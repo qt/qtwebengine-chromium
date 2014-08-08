@@ -123,10 +123,12 @@ InputEventAckState InputHandlerManager::HandleInputEvent(
 }
 
 void InputHandlerManager::DidOverscroll(int routing_id,
-                                        const cc::DidOverscrollParams& params) {
+                                        const DidOverscrollParams& params) {
   client_->DidOverscroll(routing_id, params);
 }
 
-
+void InputHandlerManager::DidStopFlinging(int routing_id) {
+  client_->DidStopFlinging(routing_id);
+}
 
 }  // namespace content

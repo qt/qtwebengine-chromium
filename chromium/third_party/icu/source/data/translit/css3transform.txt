@@ -9,65 +9,9 @@
 //
 root {
     RuleBasedTransliteratorIDs {
-        az-Lower {
-            file {
-                resource:process(transliterator) {"tr_Lower.txt"}
-                direction {"FORWARD"}
-            }
-        }
-
-        az-Title {
-            file {
-                resource:process(transliterator) {"tr_Title.txt"}
-                direction {"FORWARD"}
-            }
-        }
-
-        az-Upper {
-            file {
-                resource:process(transliterator) {"tr_Upper.txt"}
-                direction {"FORWARD"}
-            }
-        }
-
-        el-Lower {
-            file {
-                resource:process(transliterator) {"el_Lower.txt"}
-                direction {"FORWARD"}
-            }
-        }
-
-        el-Title {
-            file {
-                resource:process(transliterator) {"el_Title.txt"}
-                direction {"FORWARD"}
-            }
-        }
-
         el-Upper {
             file {
                 resource:process(transliterator) {"el_Upper.txt"}
-                direction {"FORWARD"}
-            }
-        }
-
-        tr-Lower {
-            file {
-                resource:process(transliterator) {"tr_Lower.txt"}
-                direction {"FORWARD"}
-            }
-        }
-
-        tr-Title {
-            file {
-                resource:process(transliterator) {"tr_Title.txt"}
-                direction {"FORWARD"}
-            }
-        }
-
-        tr-Upper {
-            file {
-                resource:process(transliterator) {"tr_Upper.txt"}
                 direction {"FORWARD"}
             }
         }

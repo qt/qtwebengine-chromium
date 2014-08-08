@@ -35,20 +35,11 @@ class HTMLElement;
 
 class HTMLDocument : public Document, public ResourceClient {
 public:
-    static PassRefPtr<HTMLDocument> create(const DocumentInit& initializer = DocumentInit())
+    static PassRefPtrWillBeRawPtr<HTMLDocument> create(const DocumentInit& initializer = DocumentInit())
     {
-        return adoptRef(new HTMLDocument(initializer));
+        return adoptRefWillBeNoop(new HTMLDocument(initializer));
     }
     virtual ~HTMLDocument();
-
-    const AtomicString& dir();
-    void setDir(const AtomicString&);
-
-    String designMode() const;
-    void setDesignMode(const String&);
-
-    Element* activeElement();
-    bool hasFocus();
 
     const AtomicString& bgColor() const;
     void setBgColor(const AtomicString&);
@@ -61,7 +52,7 @@ public:
     const AtomicString& vlinkColor() const;
     void setVlinkColor(const AtomicString&);
 
-    void clear();
+    void clear() { }
 
     void captureEvents() { }
     void releaseEvents() { }
@@ -76,12 +67,12 @@ public:
 
     using Document::write;
     using Document::writeln;
-    void write(DOMWindow*, const Vector<String>& text);
-    void writeln(DOMWindow*, const Vector<String>& text);
+    void write(LocalDOMWindow*, const Vector<String>& text, ExceptionState&);
+    void writeln(LocalDOMWindow*, const Vector<String>& text, ExceptionState&);
 
     static bool isCaseSensitiveAttribute(const QualifiedName&);
 
-    virtual PassRefPtr<Document> cloneDocumentWithoutChildren() OVERRIDE FINAL;
+    virtual PassRefPtrWillBeRawPtr<Document> cloneDocumentWithoutChildren() OVERRIDE FINAL;
 
 protected:
     HTMLDocument(const DocumentInit&, DocumentClassFlags extendedDocumentClasses = DefaultDocumentClass);

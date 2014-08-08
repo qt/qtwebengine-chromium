@@ -5,13 +5,10 @@
 #include "content/child/fileapi/webfilewriter_impl.h"
 
 #include "base/bind.h"
-#include "base/platform_file.h"
 #include "base/synchronization/waitable_event.h"
 #include "content/child/child_thread.h"
 #include "content/child/fileapi/file_system_dispatcher.h"
-#include "webkit/child/worker_task_runner.h"
-
-using webkit_glue::WorkerTaskRunner;
+#include "content/child/worker_task_runner.h"
 
 namespace content {
 
@@ -93,7 +90,7 @@ class WebFileWriterImpl::WriterBridge
     PostTaskToWorker(base::Bind(write_callback_, written_bytes_, complete));
   }
 
-  void DidFinish(base::PlatformFileError status) {
+  void DidFinish(base::File::Error status) {
     PostTaskToWorker(base::Bind(status_callback_, status));
   }
 

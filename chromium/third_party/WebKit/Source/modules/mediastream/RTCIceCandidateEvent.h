@@ -25,28 +25,30 @@
 #ifndef RTCIceCandidateEvent_h
 #define RTCIceCandidateEvent_h
 
-#include "core/events/Event.h"
+#include "modules/EventModules.h"
 #include "wtf/text/AtomicString.h"
 
 namespace WebCore {
 class RTCIceCandidate;
 
-class RTCIceCandidateEvent : public Event {
+class RTCIceCandidateEvent FINAL : public Event {
 public:
     virtual ~RTCIceCandidateEvent();
 
-    static PassRefPtr<RTCIceCandidateEvent> create();
-    static PassRefPtr<RTCIceCandidateEvent> create(bool canBubble, bool cancelable, PassRefPtr<RTCIceCandidate>);
+    static PassRefPtrWillBeRawPtr<RTCIceCandidateEvent> create();
+    static PassRefPtrWillBeRawPtr<RTCIceCandidateEvent> create(bool canBubble, bool cancelable, PassRefPtrWillBeRawPtr<RTCIceCandidate>);
 
     RTCIceCandidate* candidate() const;
 
-    virtual const AtomicString& interfaceName() const;
+    virtual const AtomicString& interfaceName() const OVERRIDE;
+
+    virtual void trace(Visitor*) OVERRIDE;
 
 private:
     RTCIceCandidateEvent();
-    RTCIceCandidateEvent(bool canBubble, bool cancelable, PassRefPtr<RTCIceCandidate>);
+    RTCIceCandidateEvent(bool canBubble, bool cancelable, PassRefPtrWillBeRawPtr<RTCIceCandidate>);
 
-    RefPtr<RTCIceCandidate> m_candidate;
+    RefPtrWillBeMember<RTCIceCandidate> m_candidate;
 };
 
 } // namespace WebCore

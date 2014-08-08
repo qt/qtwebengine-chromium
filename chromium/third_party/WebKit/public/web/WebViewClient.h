@@ -31,7 +31,6 @@
 #ifndef WebViewClient_h
 #define WebViewClient_h
 
-#include "../platform/WebColor.h"
 #include "../platform/WebGraphicsContext3D.h"
 #include "../platform/WebString.h"
 #include "WebAXEnums.h"
@@ -39,6 +38,8 @@
 #include "WebDragOperation.h"
 #include "WebFileChooserCompletion.h"
 #include "WebFileChooserParams.h"
+#include "WebFrame.h"
+#include "WebNavigatorContentUtilsClient.h"
 #include "WebPageVisibilityState.h"
 #include "WebPopupType.h"
 #include "WebTextAffinity.h"
@@ -48,8 +49,6 @@
 namespace blink {
 
 class WebAXObject;
-class WebColorChooser;
-class WebColorChooserClient;
 class WebCompositorOutputSurface;
 class WebDateTimeChooserCompletion;
 class WebDragData;
@@ -57,31 +56,21 @@ class WebElement;
 class WebExternalPopupMenu;
 class WebExternalPopupMenuClient;
 class WebFileChooserCompletion;
-class WebFrame;
-class WebGeolocationClient;
-class WebGeolocationService;
 class WebGestureEvent;
-class WebHelperPlugin;
 class WebHitTestResult;
 class WebImage;
 class WebInputElement;
 class WebKeyboardEvent;
-class WebMIDIClient;
 class WebNode;
-class WebNotificationPresenter;
+class WebPushClient;
 class WebRange;
-class WebSpeechInputController;
-class WebSpeechInputListener;
 class WebSpeechRecognizer;
 class WebStorageNamespace;
 class WebURL;
 class WebURLRequest;
-class WebUserMediaClient;
 class WebView;
 class WebWidget;
-struct WebColorSuggestion;
 struct WebConsoleMessage;
-struct WebContextMenuData;
 struct WebDateTimeChooserParams;
 struct WebPoint;
 struct WebPopupMenuInfo;
@@ -103,7 +92,7 @@ public:
     // could be fulfilled.  The client should not load the request.
     // The policy parameter indicates how the new view will be displayed in
     // WebWidgetClient::show.
-    virtual WebView* createView(WebFrame* creator,
+    virtual WebView* createView(WebLocalFrame* creator,
                                 const WebURLRequest& request,
                                 const WebWindowFeatures& features,
                                 const WebString& name,
@@ -125,21 +114,11 @@ public:
 
     // Misc ----------------------------------------------------------------
 
-    // Whether or not we should report a detailed message for the given source.
-    virtual bool shouldReportDetailedMessageForSource(const WebString& source) { return false; }
-
-    // A new message was added to the console.
-    virtual void didAddMessageToConsole(
-        const WebConsoleMessage&, const WebString& sourceName, unsigned sourceLine, const WebString& stackTrace) { }
-
     // Called when script in the page calls window.print().  If frame is
     // non-null, then it selects a particular frame, including its
     // children, to print.  Otherwise, the main frame and its children
     // should be printed.
-    virtual void printPage(WebFrame*) { }
-
-    // Called to retrieve the provider of desktop notifications.
-    virtual WebNotificationPresenter* notificationPresenter() { return 0; }
+    virtual void printPage(WebLocalFrame*) { }
 
     // This method enumerates all the files in the path. It returns immediately
     // and asynchronously invokes the WebFileChooserCompletion with all the
@@ -147,29 +126,13 @@ public:
     // will never be called.
     virtual bool enumerateChosenDirectory(const WebString& path, WebFileChooserCompletion*) { return false; }
 
-    // Creates the main WebFrame for the specified WebHelperPlugin.
-    // Called by WebHelperPlugin to provide the WebFrameClient interface for the WebFrame.
-    virtual void initializeHelperPluginWebFrame(WebHelperPlugin*) { }
-
-    // Navigational --------------------------------------------------------
-
-    // These notifications bracket any loading that occurs in the WebView.
-    virtual void didStartLoading() { }
-    virtual void didStopLoading() { }
-
-    // Notification that some progress was made loading the current page.
-    // loadProgress is a value between 0 (nothing loaded) and 1.0 (frame fully
-    // loaded).
-    virtual void didChangeLoadProgress(WebFrame*, double loadProgress) { }
 
     // Editing -------------------------------------------------------------
 
     // These methods allow the client to intercept and overrule editing
     // operations.
     virtual void didCancelCompositionOnSelectionChange() { }
-    virtual void didChangeSelection(bool isSelectionEmpty) { }
     virtual void didChangeContents() { }
-    virtual void didExecuteCommand(const WebString& commandName) { }
 
     // This method is called in response to WebView's handleInputEvent()
     // when the default action for the current keyboard event is not
@@ -180,22 +143,8 @@ public:
     // indicating that the default action should be suppressed.
     virtual bool handleCurrentKeyboardEvent() { return false; }
 
+
     // Dialogs -------------------------------------------------------------
-
-    // This method opens the color chooser and returns a new WebColorChooser
-    // instance. If there is a WebColorChooser already from the last time this
-    // was called, it ends the color chooser by calling endChooser, and replaces
-    // it with the new one. The given list of suggestions can be used to show a
-    // simple interface with a limited set of choices.
-
-    // FIXME: Should be removed when the chromium side change lands.
-    virtual WebColorChooser* createColorChooser(WebColorChooserClient*,
-                                                const WebColor&) { return 0; }
-
-    virtual WebColorChooser* createColorChooser(
-        WebColorChooserClient*,
-        const WebColor&,
-        const WebVector<WebColorSuggestion>&) { return 0; }
 
     // This method returns immediately after showing the dialog. When the
     // dialog is closed, it should call the WebFileChooserCompletion to
@@ -222,33 +171,6 @@ public:
     // Move the existing notifation popup to the new anchor position.
     virtual void moveValidationMessage(const WebRect& anchorInRootView) { }
 
-    // Displays a modal alert dialog containing the given message.  Returns
-    // once the user dismisses the dialog.
-    virtual void runModalAlertDialog(
-        WebFrame*, const WebString& message) { }
-
-    // Displays a modal confirmation dialog with the given message as
-    // description and OK/Cancel choices.  Returns true if the user selects
-    // 'OK' or false otherwise.
-    virtual bool runModalConfirmDialog(
-        WebFrame*, const WebString& message) { return false; }
-
-    // Displays a modal input dialog with the given message as description
-    // and OK/Cancel choices.  The input field is pre-filled with
-    // defaultValue.  Returns true if the user selects 'OK' or false
-    // otherwise.  Upon returning true, actualValue contains the value of
-    // the input field.
-    virtual bool runModalPromptDialog(
-        WebFrame*, const WebString& message, const WebString& defaultValue,
-        WebString* actualValue) { return false; }
-
-    // Displays a modal confirmation dialog containing the given message as
-    // description and OK/Cancel choices, where 'OK' means that it is okay
-    // to proceed with closing the view.  Returns true if the user selects
-    // 'OK' or false otherwise.
-    virtual bool runModalBeforeUnloadDialog(
-        WebFrame*, const WebString& message) { return true; }
-
 
     // UI ------------------------------------------------------------------
 
@@ -261,16 +183,8 @@ public:
     // Called when keyboard focus switches to an anchor with the given URL.
     virtual void setKeyboardFocusURL(const WebURL&) { }
 
-    // Shows a context menu with commands relevant to a specific element on
-    // the given frame. Additional context data is supplied.
-    virtual void showContextMenu(WebFrame*, const WebContextMenuData&) { }
-
-    // Called when the data attached to the currently displayed context menu is
-    // invalidated. The context menu may be closed if possible.
-    virtual void clearContextMenu() { }
-
     // Called when a drag-n-drop operation should begin.
-    virtual void startDragging(WebFrame*, const WebDragData&, WebDragOperationsMask, const WebImage&, const WebPoint& dragImageOffset) { }
+    virtual void startDragging(WebLocalFrame*, const WebDragData&, WebDragOperationsMask, const WebImage&, const WebPoint& dragImageOffset) { }
 
     // Called to determine if drag-n-drop operations may initiate a page
     // navigation.
@@ -284,8 +198,6 @@ public:
     // Called when a new node gets focused.
     virtual void focusedNodeChanged(const WebNode&) { }
 
-    virtual void numberOfWheelEventHandlersChanged(unsigned) { }
-
     // Indicates two things:
     //   1) This view may have a new layout now.
     //   2) Calling layout() is a no-op.
@@ -298,6 +210,7 @@ public:
 
     // Returns comma separated list of accept languages.
     virtual WebString acceptLanguages() { return WebString(); }
+
 
     // Session history -----------------------------------------------------
 
@@ -317,6 +230,7 @@ public:
     // Notifies embedder about an accessibility event.
     virtual void postAccessibilityEvent(const WebAXObject&, WebAXEvent) { }
 
+
     // Developer tools -----------------------------------------------------
 
     // Called to notify the client that the inspector's settings were
@@ -325,21 +239,12 @@ public:
 
     virtual void didUpdateInspectorSetting(const WebString& key, const WebString& value) { }
 
-    // Geolocation ---------------------------------------------------------
-
-    // Access the embedder API for (client-based) geolocation client .
-    virtual WebGeolocationClient* geolocationClient() { return 0; }
-    // Access the embedder API for (non-client-based) geolocation services.
-    virtual WebGeolocationService* geolocationService() { return 0; }
 
     // Speech --------------------------------------------------------------
 
-    // Access the embedder API for speech input services.
-    virtual WebSpeechInputController* speechInputController(
-        WebSpeechInputListener*) { return 0; }
-
     // Access the embedder API for speech recognition services.
     virtual WebSpeechRecognizer* speechRecognizer() { return 0; }
+
 
     // Zoom ----------------------------------------------------------------
 
@@ -351,11 +256,24 @@ public:
     // action that wasn't initiated by the client.
     virtual void zoomLevelChanged() { }
 
+
+    // Navigator Content Utils  --------------------------------------------
+
     // Registers a new URL handler for the given protocol.
     virtual void registerProtocolHandler(const WebString& scheme,
-                                         const WebString& baseUrl,
-                                         const WebString& url,
-                                         const WebString& title) { }
+        const WebURL& baseUrl,
+        const WebURL& url,
+        const WebString& title) { }
+
+    // Unregisters a given URL handler for the given protocol.
+    virtual void unregisterProtocolHandler(const WebString& scheme, const WebURL& baseUrl, const WebURL& url) { }
+
+    // Check if a given URL handler is registered for the given protocol.
+    virtual WebCustomHandlersState isProtocolHandlerRegistered(const WebString& scheme, const WebURL& baseUrl, const WebURL& url)
+    {
+        return WebCustomHandlersNew;
+    }
+
 
     // Visibility -----------------------------------------------------------
 
@@ -365,13 +283,10 @@ public:
         return WebPageVisibilityStateVisible;
     }
 
-    // Media Streams -------------------------------------------------------
 
-    virtual WebUserMediaClient* userMediaClient() { return 0; }
+    // Push Messaging -------------------------------------------------------
 
-    // Web MIDI -------------------------------------------------------------
-
-    virtual WebMIDIClient* webMIDIClient() { return 0; }
+    virtual WebPushClient* webPushClient() { return 0; }
 
 
     // Content detection ----------------------------------------------------
@@ -386,6 +301,7 @@ public:
 
     // Cancels any previously scheduled content intents that have not yet launched.
     virtual void cancelScheduledContentIntents() { }
+
 
     // Draggable regions ----------------------------------------------------
 

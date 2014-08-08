@@ -25,30 +25,32 @@
 #ifndef MediaStreamTrackEvent_h
 #define MediaStreamTrackEvent_h
 
-#include "core/events/Event.h"
+#include "modules/EventModules.h"
 #include "wtf/text/AtomicString.h"
 
 namespace WebCore {
 
 class MediaStreamTrack;
 
-class MediaStreamTrackEvent : public Event {
+class MediaStreamTrackEvent FINAL : public Event {
 public:
     virtual ~MediaStreamTrackEvent();
 
-    static PassRefPtr<MediaStreamTrackEvent> create();
-    static PassRefPtr<MediaStreamTrackEvent> create(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtr<MediaStreamTrack>);
+    static PassRefPtrWillBeRawPtr<MediaStreamTrackEvent> create();
+    static PassRefPtrWillBeRawPtr<MediaStreamTrackEvent> create(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtrWillBeRawPtr<MediaStreamTrack>);
 
     MediaStreamTrack* track() const;
 
     // Event
     virtual const AtomicString& interfaceName() const OVERRIDE;
 
+    virtual void trace(Visitor*) OVERRIDE;
+
 private:
     MediaStreamTrackEvent();
-    MediaStreamTrackEvent(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtr<MediaStreamTrack>);
+    MediaStreamTrackEvent(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtrWillBeRawPtr<MediaStreamTrack>);
 
-    RefPtr<MediaStreamTrack> m_track;
+    RefPtrWillBeMember<MediaStreamTrack> m_track;
 };
 
 } // namespace WebCore

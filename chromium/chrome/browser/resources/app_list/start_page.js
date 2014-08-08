@@ -67,17 +67,36 @@ cr.define('appList.startPage', function() {
   }
 
   /**
-   * Invoked when the app-list bubble is shown.
+   * Invoked when the hotword plugin availability is changed.
+   *
+   * @param {boolean} enabled Whether the plugin is enabled or not.
    */
-  function onAppListShown() {
-    speechManager.start();
+  function setHotwordEnabled(enabled) {
+    speechManager.setHotwordEnabled(enabled);
+  }
+
+  /**
+   * Sets the architecture of NaCl module to be loaded for hotword.
+   * @param {string} arch The architecture.
+   */
+  function setNaclArch(arch) {
+    speechManager.setNaclArch(arch);
+  }
+
+  /**
+   * Invoked when the app-list bubble is shown.
+   *
+   * @param {boolean} hotwordEnabled Whether the hotword is enabled or not.
+   */
+  function onAppListShown(hotwordEnabled) {
+    speechManager.onShown(hotwordEnabled);
   }
 
   /**
    * Invoked when the app-list bubble is hidden.
    */
   function onAppListHidden() {
-    speechManager.stop();
+    speechManager.onHidden();
   }
 
   /**
@@ -91,6 +110,8 @@ cr.define('appList.startPage', function() {
   return {
     initialize: initialize,
     setRecommendedApps: setRecommendedApps,
+    setHotwordEnabled: setHotwordEnabled,
+    setNaclArch: setNaclArch,
     onAppListShown: onAppListShown,
     onAppListHidden: onAppListHidden,
     toggleSpeechRecognition: toggleSpeechRecognition

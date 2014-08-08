@@ -1,31 +1,8 @@
 // Copyright 2013 the V8 project authors. All rights reserved.
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-//       copyright notice, this list of conditions and the following
-//       disclaimer in the documentation and/or other materials provided
-//       with the distribution.
-//     * Neither the name of Google Inc. nor the names of its
-//       contributors may be used to endorse or promote products derived
-//       from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
-#include "hydrogen-range-analysis.h"
+#include "src/hydrogen-range-analysis.h"
 
 namespace v8 {
 namespace internal {
@@ -78,7 +55,29 @@ void HRangeAnalysisPhase::Run() {
 
     // Go through all instructions of the current block.
     for (HInstructionIterator it(block); !it.Done(); it.Advance()) {
-      InferRange(it.Current());
+      HValue* value = it.Current();
+      InferRange(value);
+
+      // Compute the bailout-on-minus-zero flag.
+      if (value->IsChange()) {
+        HChange* instr = HChange::cast(value);
+        // Propagate flags for negative zero checks upwards from conversions
+        // int32-to-tagged and int32-to-double.
+        Representation from = instr->value()->representation();
+        ASSERT(from.Equals(instr->from()));
+        if (from.IsSmiOrInteger32()) {
+          ASSERT(instr->to().IsTagged() ||
+                instr->to().IsDouble() ||
+                instr->to().IsSmiOrInteger32());
+          PropagateMinusZeroChecks(instr->value());
+        }
+      } else if (value->IsCompareMinusZeroAndBranch()) {
+        HCompareMinusZeroAndBranch* instr =
+            HCompareMinusZeroAndBranch::cast(value);
+        if (instr->value()->representation().IsSmiOrInteger32()) {
+          PropagateMinusZeroChecks(instr->value());
+        }
+      }
     }
 
     // Continue analysis in all dominated blocks.
@@ -101,6 +100,22 @@ void HRangeAnalysisPhase::Run() {
       block = NULL;
     }
   }
+
+  // The ranges are not valid anymore due to SSI vs. SSA!
+  PoisonRanges();
+}
+
+
+void HRangeAnalysisPhase::PoisonRanges() {
+#ifdef DEBUG
+  for (int i = 0; i < graph()->blocks()->length(); ++i) {
+    HBasicBlock* block = graph()->blocks()->at(i);
+    for (HInstructionIterator it(block); !it.Done(); it.Advance()) {
+      HInstruction* instr = it.Current();
+      if (instr->HasRange()) instr->PoisonRange();
+    }
+  }
+#endif
 }
 
 
@@ -194,6 +209,81 @@ void HRangeAnalysisPhase::AddRange(HValue* value, Range* range) {
   TraceRange("New information was [%d,%d]\n",
              range->lower(),
              range->upper());
+}
+
+
+void HRangeAnalysisPhase::PropagateMinusZeroChecks(HValue* value) {
+  ASSERT(worklist_.is_empty());
+  ASSERT(in_worklist_.IsEmpty());
+
+  AddToWorklist(value);
+  while (!worklist_.is_empty()) {
+    value = worklist_.RemoveLast();
+
+    if (value->IsPhi()) {
+      // For phis, we must propagate the check to all of its inputs.
+      HPhi* phi = HPhi::cast(value);
+      for (int i = 0; i < phi->OperandCount(); ++i) {
+        AddToWorklist(phi->OperandAt(i));
+      }
+    } else if (value->IsUnaryMathOperation()) {
+      HUnaryMathOperation* instr = HUnaryMathOperation::cast(value);
+      if (instr->representation().IsSmiOrInteger32() &&
+          !instr->value()->representation().Equals(instr->representation())) {
+        if (instr->value()->range() == NULL ||
+            instr->value()->range()->CanBeMinusZero()) {
+          instr->SetFlag(HValue::kBailoutOnMinusZero);
+        }
+      }
+      if (instr->RequiredInputRepresentation(0).IsSmiOrInteger32() &&
+          instr->representation().Equals(
+              instr->RequiredInputRepresentation(0))) {
+        AddToWorklist(instr->value());
+      }
+    } else if (value->IsChange()) {
+      HChange* instr = HChange::cast(value);
+      if (!instr->from().IsSmiOrInteger32() &&
+          !instr->CanTruncateToInt32() &&
+          (instr->value()->range() == NULL ||
+           instr->value()->range()->CanBeMinusZero())) {
+        instr->SetFlag(HValue::kBailoutOnMinusZero);
+      }
+    } else if (value->IsForceRepresentation()) {
+      HForceRepresentation* instr = HForceRepresentation::cast(value);
+      AddToWorklist(instr->value());
+    } else if (value->IsMod()) {
+      HMod* instr = HMod::cast(value);
+      if (instr->range() == NULL || instr->range()->CanBeMinusZero()) {
+        instr->SetFlag(HValue::kBailoutOnMinusZero);
+        AddToWorklist(instr->left());
+      }
+    } else if (value->IsDiv() || value->IsMul()) {
+      HBinaryOperation* instr = HBinaryOperation::cast(value);
+      if (instr->range() == NULL || instr->range()->CanBeMinusZero()) {
+        instr->SetFlag(HValue::kBailoutOnMinusZero);
+      }
+      AddToWorklist(instr->right());
+      AddToWorklist(instr->left());
+    } else if (value->IsMathFloorOfDiv()) {
+      HMathFloorOfDiv* instr = HMathFloorOfDiv::cast(value);
+      instr->SetFlag(HValue::kBailoutOnMinusZero);
+    } else if (value->IsAdd() || value->IsSub()) {
+      HBinaryOperation* instr = HBinaryOperation::cast(value);
+      if (instr->range() == NULL || instr->range()->CanBeMinusZero()) {
+        // Propagate to the left argument. If the left argument cannot be -0,
+        // then the result of the add/sub operation cannot be either.
+        AddToWorklist(instr->left());
+      }
+    } else if (value->IsMathMinMax()) {
+      HMathMinMax* instr = HMathMinMax::cast(value);
+      AddToWorklist(instr->right());
+      AddToWorklist(instr->left());
+    }
+  }
+
+  in_worklist_.Clear();
+  ASSERT(in_worklist_.IsEmpty());
+  ASSERT(worklist_.is_empty());
 }
 
 

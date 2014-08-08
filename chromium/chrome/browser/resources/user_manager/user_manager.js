@@ -1,16 +1,18 @@
 // Copyright 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-<include src="../chromeos/login/screen.js"></include>
-<include src="../chromeos/login/bubble.js"></include>
-<include src="../chromeos/login/display_manager.js"></include>
+<include src="../login/screen.js"></include>
+<include src="../login/bubble.js"></include>
+<include src="../login/display_manager.js"></include>
 <include src="control_bar.js"></include>
-<include src="../chromeos/login/screen_account_picker.js"></include>
-<include src="../chromeos/login/user_pod_row.js"></include>
-<include src="../chromeos/login/resource_loader.js"></include>
+<include src="../login/screen_account_picker.js"></include>
+<include src="../login/user_pod_row.js"></include>
+<include src="../login/resource_loader.js"></include>
+<include src="user_manager_tutorial.js"></include>
 
 cr.define('cr.ui', function() {
   var DisplayManager = cr.ui.login.DisplayManager;
+  var UserManagerTutorial = cr.ui.login.UserManagerTutorial;
 
   /**
   * Constructs an Out of box controller. It manages initialization of screens,
@@ -37,11 +39,20 @@ cr.define('cr.ui', function() {
     // The ChromeOS account-picker will hide the AddUser button if a user is
     // logged in and the screen is "locked", so we must re-enabled it
     $('add-user-header-bar-item').hidden = false;
+
+    // Disable the context menu, as the Print/Inspect element items don't
+    // make sense when displayed as a widget.
+    document.addEventListener('contextmenu', function(e) {e.preventDefault();});
+
+    var hash = window.location.hash;
+    if (hash && hash == '#tutorial')
+      UserManagerTutorial.startTutorial();
   };
 
   /**
-   * Shows signin UI.
-   * @param {string} opt_email An optional email for signin UI.
+   * Open a new browser for the given profile.
+   * @param {string} email The user's email, if signed in.
+   * @param {string} displayName The user's display name.
    */
   Oobe.launchUser = function(email, displayName) {
     chrome.send('launchUser', [email, displayName]);
@@ -94,6 +105,15 @@ cr.define('cr.ui', function() {
     DisplayManager.refocusCurrentPod();
   };
 
+  /**
+   * Show the user manager tutorial
+   * @param {string} email The user's email, if signed in.
+   * @param {string} displayName The user's display name.
+   */
+  Oobe.showUserManagerTutorial = function() {
+    UserManagerTutorial.startTutorial();
+  };
+
   // Export
   return {
     Oobe: Oobe
@@ -105,6 +125,7 @@ cr.define('UserManager', function() {
 
   function initialize() {
     cr.ui.login.DisplayManager.initialize();
+    cr.ui.login.UserManagerTutorial.initialize();
     login.AccountPickerScreen.register();
     cr.ui.Bubble.decorate($('bubble'));
     login.HeaderBar.decorate($('login-header-bar'));

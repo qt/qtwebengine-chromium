@@ -49,7 +49,7 @@ WorkerConsole::~WorkerConsole()
 {
 }
 
-void WorkerConsole::reportMessageToClient(MessageLevel level, const String& message, PassRefPtr<ScriptCallStack> callStack)
+void WorkerConsole::reportMessageToClient(MessageLevel level, const String& message, PassRefPtrWillBeRawPtr<ScriptCallStack> callStack)
 {
     const ScriptCallFrame& lastCaller = callStack->at(0);
     m_scope->thread()->workerReportingProxy().reportConsoleMessage(ConsoleAPIMessageSource, level, message, lastCaller.lineNumber(), lastCaller.sourceURL());
@@ -60,6 +60,12 @@ ExecutionContext* WorkerConsole::context()
     if (!m_scope)
         return 0;
     return m_scope->executionContext();
+}
+
+void WorkerConsole::trace(Visitor* visitor)
+{
+    visitor->trace(m_scope);
+    ConsoleBase::trace(visitor);
 }
 
 // FIXME: add memory getter

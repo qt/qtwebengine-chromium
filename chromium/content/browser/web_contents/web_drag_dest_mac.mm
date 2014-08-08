@@ -253,6 +253,9 @@ int GetModifierFlags() {
   DCHECK(pboard);
   NSArray* types = [pboard types];
 
+  data->did_originate_from_renderer =
+      [types containsObject:ui::kChromeDragDummyPboardType];
+
   // Get URL if possible. To avoid exposing file system paths to web content,
   // filenames in the drag are not converted to file URLs.
   ui::PopulateURLAndTitleFromPasteboard(&data->url,
@@ -288,9 +291,9 @@ int GetModifierFlags() {
         BOOL exists = [[NSFileManager defaultManager]
                            fileExistsAtPath:filename];
         if (exists) {
-          data->filenames.push_back(
-              DropData::FileInfo(
-                  base::SysNSStringToUTF16(filename), base::string16()));
+          data->filenames.push_back(ui::FileInfo(
+              base::FilePath::FromUTF8Unsafe(base::SysNSStringToUTF8(filename)),
+              base::FilePath()));
         }
       }
     }

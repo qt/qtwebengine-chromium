@@ -27,6 +27,20 @@ class MediaLog;
 
 namespace content {
 
+class CONTENT_EXPORT BufferedDataSourceHost {
+ public:
+  // Notify the host of the total size of the media file.
+  virtual void SetTotalBytes(int64 total_bytes) = 0;
+
+  // Notify the host that byte range [start,end] has been buffered.
+  // TODO(fischman): remove this method when demuxing is push-based instead of
+  // pull-based.  http://crbug.com/131444
+  virtual void AddBufferedByteRange(int64 start, int64 end) = 0;
+
+ protected:
+  virtual ~BufferedDataSourceHost() {};
+};
+
 // A data source capable of loading URLs and buffering the data using an
 // in-memory sliding window.
 //
@@ -36,23 +50,23 @@ class CONTENT_EXPORT BufferedDataSource : public media::DataSource {
  public:
   typedef base::Callback<void(bool)> DownloadingCB;
 
-  // |downloading_cb| will be called whenever the downloading/paused state of
-  // the source changes.
-  BufferedDataSource(const scoped_refptr<base::MessageLoopProxy>& render_loop,
+  // |url| and |cors_mode| are passed to the object. Buffered byte range changes
+  // will be reported to |host|. |downloading_cb| will be called whenever the
+  // downloading/paused state of the source changes.
+  BufferedDataSource(const GURL& url,
+                     BufferedResourceLoader::CORSMode cors_mode,
+                     const scoped_refptr<base::MessageLoopProxy>& render_loop,
                      blink::WebFrame* frame,
                      media::MediaLog* media_log,
+                     BufferedDataSourceHost* host,
                      const DownloadingCB& downloading_cb);
   virtual ~BufferedDataSource();
 
-  // Initialize this object using |url| and |cors_mode|, executing |init_cb|
-  // with the result of initialization when it has completed.
+  // Executes |init_cb| with the result of initialization when it has completed.
   //
   // Method called on the render thread.
   typedef base::Callback<void(bool)> InitializeCB;
-  void Initialize(
-      const GURL& url,
-      BufferedResourceLoader::CORSMode cors_mode,
-      const InitializeCB& init_cb);
+  void Initialize(const InitializeCB& init_cb);
 
   // Adjusts the buffering algorithm based on the given preload value.
   void SetPreload(Preload preload);
@@ -79,9 +93,11 @@ class CONTENT_EXPORT BufferedDataSource : public media::DataSource {
   void MediaIsPlaying();
   void MediaIsPaused();
 
+  // Returns true if the resource is local.
+  bool assume_fully_buffered() { return !url_.SchemeIsHTTPOrHTTPS(); }
+
   // media::DataSource implementation.
   // Called from demuxer thread.
-  virtual void set_host(media::DataSourceHost* host) OVERRIDE;
   virtual void Stop(const base::Closure& closure) OVERRIDE;
 
   virtual void Read(int64 position, int size, uint8* data,
@@ -129,17 +145,9 @@ class CONTENT_EXPORT BufferedDataSource : public media::DataSource {
   void LoadingStateChangedCallback(BufferedResourceLoader::LoadingState state);
   void ProgressCallback(int64 position);
 
-  // Report a buffered byte range [start,end] or queue it for later
-  // reporting if set_host() hasn't been called yet.
-  void ReportOrQueueBufferedBytes(int64 start, int64 end);
-
-  void UpdateHostState_Locked();
-
   // Update |loader_|'s deferring strategy in response to a play/pause, or
   // change in playback rate.
   void UpdateDeferStrategy(bool paused);
-
-  base::WeakPtr<BufferedDataSource> weak_this_;
 
   // URL of the resource requested.
   GURL url_;
@@ -150,10 +158,6 @@ class CONTENT_EXPORT BufferedDataSource : public media::DataSource {
   // known, otherwise it will remain kPositionNotSpecified until the size is
   // determined by reaching EOF.
   int64 total_bytes_;
-
-  // Some resources are assumed to be fully buffered (i.e., file://) so we don't
-  // need to report what |loader_| has buffered.
-  bool assume_fully_buffered_;
 
   // This value will be true if this data source can only support streaming.
   // i.e. range request is not supported.
@@ -209,13 +213,14 @@ class CONTENT_EXPORT BufferedDataSource : public media::DataSource {
   // Current playback rate.
   float playback_rate_;
 
-  // Buffered byte ranges awaiting set_host() being called to report to host().
-  media::Ranges<int64> queued_buffered_byte_ranges_;
-
   scoped_refptr<media::MediaLog> media_log_;
+
+  // Host object to report buffered byte range changes to.
+  BufferedDataSourceHost* host_;
 
   DownloadingCB downloading_cb_;
 
+  // NOTE: Weak pointers must be invalidated before all other member variables.
   base::WeakPtrFactory<BufferedDataSource> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(BufferedDataSource);

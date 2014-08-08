@@ -1,29 +1,6 @@
 // Copyright 2009 the V8 project authors. All rights reserved.
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-//       copyright notice, this list of conditions and the following
-//       disclaimer in the documentation and/or other materials provided
-//       with the distribution.
-//     * Neither the name of Google Inc. nor the names of its
-//       contributors may be used to endorse or promote products derived
-//       from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
 
 #include <stdlib.h>
@@ -38,9 +15,9 @@
 #include <signal.h>
 
 
-#include "d8.h"
-#include "d8-debug.h"
-#include "debug.h"
+#include "src/d8.h"
+#include "src/d8-debug.h"
+#include "src/debug.h"
 
 
 namespace v8 {
@@ -106,7 +83,7 @@ static int LengthWithoutIncompleteUtf8(char* buffer, int len) {
 static bool WaitOnFD(int fd,
                      int read_timeout,
                      int total_timeout,
-                     struct timeval& start_time) {
+                     const struct timeval& start_time) {
   fd_set readfds, writefds, exceptfds;
   struct timeval timeout;
   int gone = 0;
@@ -202,7 +179,7 @@ class ExecArgs {
     exec_args_[0] = c_arg;
     int i = 1;
     for (unsigned j = 0; j < command_args->Length(); i++, j++) {
-      Handle<Value> arg(command_args->Get(Integer::New(j)));
+      Handle<Value> arg(command_args->Get(Integer::New(isolate, j)));
       String::Utf8Value utf8_arg(arg);
       if (*utf8_arg == NULL) {
         exec_args_[i] = NULL;  // Consistent state for destructor.
@@ -229,8 +206,8 @@ class ExecArgs {
     }
   }
   static const unsigned kMaxArgs = 1000;
-  char** arg_array() { return exec_args_; }
-  char* arg0() { return exec_args_[0]; }
+  char* const* arg_array() const { return exec_args_; }
+  const char* arg0() const { return exec_args_[0]; }
 
  private:
   char* exec_args_[kMaxArgs + 1];
@@ -272,7 +249,7 @@ static const int kWriteFD = 1;
 // It only returns if an error occurred.
 static void ExecSubprocess(int* exec_error_fds,
                            int* stdout_fds,
-                           ExecArgs& exec_args) {
+                           const ExecArgs& exec_args) {
   close(exec_error_fds[kReadFD]);  // Don't need this in the child.
   close(stdout_fds[kReadFD]);      // Don't need this in the child.
   close(1);                        // Close stdout.
@@ -311,10 +288,10 @@ static bool ChildLaunchedOK(Isolate* isolate, int* exec_error_fds) {
 // succeeded or false if an exception was thrown.
 static Handle<Value> GetStdout(Isolate* isolate,
                                int child_fd,
-                               struct timeval& start_time,
+                               const struct timeval& start_time,
                                int read_timeout,
                                int total_timeout) {
-  Handle<String> accumulator = String::Empty();
+  Handle<String> accumulator = String::Empty(isolate);
 
   int fullness = 0;
   static const int kStdoutReadBufferSize = 4096;
@@ -383,8 +360,8 @@ static Handle<Value> GetStdout(Isolate* isolate,
 // Get exit status of child.
 static bool WaitForChild(Isolate* isolate,
                          int pid,
-                         ZombieProtector& child_waiter,
-                         struct timeval& start_time,
+                         ZombieProtector& child_waiter,  // NOLINT
+                         const struct timeval& start_time,
                          int read_timeout,
                          int total_timeout) {
 #ifdef HAS_WAITID
@@ -723,19 +700,19 @@ void Shell::UnsetEnvironment(const v8::FunctionCallbackInfo<v8::Value>& args) {
 
 void Shell::AddOSMethods(Isolate* isolate, Handle<ObjectTemplate> os_templ) {
   os_templ->Set(String::NewFromUtf8(isolate, "system"),
-                FunctionTemplate::New(System));
+                FunctionTemplate::New(isolate, System));
   os_templ->Set(String::NewFromUtf8(isolate, "chdir"),
-                FunctionTemplate::New(ChangeDirectory));
+                FunctionTemplate::New(isolate, ChangeDirectory));
   os_templ->Set(String::NewFromUtf8(isolate, "setenv"),
-                FunctionTemplate::New(SetEnvironment));
+                FunctionTemplate::New(isolate, SetEnvironment));
   os_templ->Set(String::NewFromUtf8(isolate, "unsetenv"),
-                FunctionTemplate::New(UnsetEnvironment));
+                FunctionTemplate::New(isolate, UnsetEnvironment));
   os_templ->Set(String::NewFromUtf8(isolate, "umask"),
-                FunctionTemplate::New(SetUMask));
+                FunctionTemplate::New(isolate, SetUMask));
   os_templ->Set(String::NewFromUtf8(isolate, "mkdirp"),
-                FunctionTemplate::New(MakeDirectory));
+                FunctionTemplate::New(isolate, MakeDirectory));
   os_templ->Set(String::NewFromUtf8(isolate, "rmdir"),
-                FunctionTemplate::New(RemoveDirectory));
+                FunctionTemplate::New(isolate, RemoveDirectory));
 }
 
 }  // namespace v8

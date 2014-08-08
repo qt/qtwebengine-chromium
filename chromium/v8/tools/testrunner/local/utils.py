@@ -32,6 +32,7 @@ from os.path import isdir
 from os.path import join
 import platform
 import re
+import urllib2
 
 
 def GetSuitePaths(test_root):
@@ -78,6 +79,13 @@ def GuessOS():
     return None
 
 
+def UseSimulator(arch):
+  machine = platform.machine()
+  return (machine and
+      (arch == "mipsel" or arch == "arm" or arch == "arm64") and
+      not arch.startswith(machine))
+
+
 # This will default to building the 32 bit VM even on machines that are
 # capable of running the 64 bit VM.
 def DefaultArch():
@@ -106,3 +114,10 @@ def GuessWordsize():
 
 def IsWindows():
   return GuessOS() == 'windows'
+
+
+def URLRetrieve(source, destination):
+  """urllib is broken for SSL connections via a proxy therefore we
+  can't use urllib.urlretrieve()."""
+  with open(destination, 'w') as f:
+    f.write(urllib2.urlopen(source).read())

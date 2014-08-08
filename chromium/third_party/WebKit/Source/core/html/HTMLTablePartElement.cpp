@@ -25,15 +25,16 @@
 #include "config.h"
 #include "core/html/HTMLTablePartElement.h"
 
-#include "CSSPropertyNames.h"
-#include "CSSValueKeywords.h"
-#include "HTMLNames.h"
+#include "core/CSSPropertyNames.h"
+#include "core/CSSValueKeywords.h"
+#include "core/HTMLNames.h"
 #include "core/css/CSSImageValue.h"
 #include "core/css/StylePropertySet.h"
 #include "core/dom/Document.h"
 #include "core/dom/NodeRenderingTraversal.h"
 #include "core/html/HTMLTableElement.h"
 #include "core/html/parser/HTMLParserIdioms.h"
+#include "platform/weborigin/Referrer.h"
 
 namespace WebCore {
 
@@ -52,8 +53,11 @@ void HTMLTablePartElement::collectStyleForPresentationAttribute(const QualifiedN
         addHTMLColorToStyle(style, CSSPropertyBackgroundColor, value);
     else if (name == backgroundAttr) {
         String url = stripLeadingAndTrailingHTMLSpaces(value);
-        if (!url.isEmpty())
-            style->setProperty(CSSProperty(CSSPropertyBackgroundImage, CSSImageValue::create(document().completeURL(url).string())));
+        if (!url.isEmpty()) {
+            RefPtrWillBeRawPtr<CSSImageValue> imageValue = CSSImageValue::create(url, document().completeURL(url));
+            imageValue->setReferrer(Referrer(document().outgoingReferrer(), document().referrerPolicy()));
+            style->setProperty(CSSProperty(CSSPropertyBackgroundImage, imageValue.release()));
+        }
     } else if (name == valignAttr) {
         if (equalIgnoringCase(value, "top"))
             addPropertyToPresentationAttributeStyle(style, CSSPropertyVerticalAlign, CSSValueTop);
@@ -86,7 +90,7 @@ void HTMLTablePartElement::collectStyleForPresentationAttribute(const QualifiedN
 HTMLTableElement* HTMLTablePartElement::findParentTable() const
 {
     ContainerNode* parent = NodeRenderingTraversal::parent(this);
-    while (parent && !isHTMLTableElement(parent))
+    while (parent && !isHTMLTableElement(*parent))
         parent = NodeRenderingTraversal::parent(parent);
     return toHTMLTableElement(parent);
 }

@@ -30,10 +30,11 @@
 #include "platform/geometry/FloatRect.h"
 #include "platform/geometry/FloatSize.h"
 #include "platform/graphics/Image.h"
+#include "platform/weborigin/KURL.h"
 
 namespace WebCore {
 
-class SVGImageForContainer : public Image {
+class SVGImageForContainer FINAL : public Image {
 public:
     static PassRefPtr<SVGImageForContainer> create(SVGImage* image, const FloatSize& containerSize, float zoom)
     {
@@ -43,6 +44,7 @@ public:
     virtual bool isSVGImage() const OVERRIDE { return true; }
 
     virtual IntSize size() const OVERRIDE;
+    void setURL(const KURL& url) { m_image->setURL(url); }
 
     virtual bool usesContainerSize() const OVERRIDE { return m_image->usesContainerSize(); }
     virtual bool hasRelativeWidth() const OVERRIDE { return m_image->hasRelativeWidth(); }

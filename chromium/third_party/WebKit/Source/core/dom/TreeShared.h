@@ -21,6 +21,7 @@
 #ifndef TreeShared_h
 #define TreeShared_h
 
+#include "public/platform/WebPrivatePtr.h"
 #include "wtf/Assertions.h"
 #include "wtf/MainThread.h"
 #include "wtf/Noncopyable.h"
@@ -32,14 +33,14 @@ template<typename NodeType> class TreeShared;
 template<typename NodeType> void adopted(TreeShared<NodeType>*);
 #endif
 
-template<typename NodeType> class TreeShared {
+template<typename NodeType> class TreeShared : public NoBaseWillBeGarbageCollectedFinalized<NodeType> {
     WTF_MAKE_NONCOPYABLE(TreeShared);
 protected:
     TreeShared()
         : m_refCount(1)
 #if SECURITY_ASSERT_ENABLED
         , m_deletionHasBegun(false)
-#if !ASSERT_DISABLED
+#if ASSERT_ENABLED
         , m_inRemovedLastRefFunction(false)
         , m_adoptionIsRequired(true)
 #endif
@@ -69,23 +70,20 @@ public:
     void deref()
     {
         ASSERT(isMainThread());
-        ASSERT(m_refCount >= 0);
+        ASSERT(m_refCount > 0);
         ASSERT_WITH_SECURITY_IMPLICATION(!m_deletionHasBegun);
         ASSERT(!m_inRemovedLastRefFunction);
         ASSERT(!m_adoptionIsRequired);
         NodeType* thisNode = static_cast<NodeType*>(this);
-        if (--m_refCount <= 0 && !thisNode->hasTreeSharedParent()) {
-#if !ASSERT_DISABLED
+        if (!--m_refCount && !thisNode->hasTreeSharedParent()) {
+#if ASSERT_ENABLED
             m_inRemovedLastRefFunction = true;
 #endif
             thisNode->removedLastRef();
         }
     }
 
-    int refCount() const
-    {
-        return m_refCount;
-    }
+    int refCount() const { return m_refCount; }
 
 private:
     int m_refCount;
@@ -93,7 +91,7 @@ private:
 #if SECURITY_ASSERT_ENABLED
 public:
     bool m_deletionHasBegun;
-#if !ASSERT_DISABLED
+#if ASSERT_ENABLED
     bool m_inRemovedLastRefFunction;
 
 private:
@@ -108,8 +106,9 @@ template<typename NodeType> inline void adopted(TreeShared<NodeType>* object)
 {
     if (!object)
         return;
+
     ASSERT_WITH_SECURITY_IMPLICATION(!object->m_deletionHasBegun);
-#if !ASSERT_DISABLED
+#if ASSERT_ENABLED
     ASSERT(!object->m_inRemovedLastRefFunction);
     object->m_adoptionIsRequired = false;
 #endif

@@ -43,7 +43,11 @@ class BaseDateAndTimeInputType : public InputType {
 protected:
     BaseDateAndTimeInputType(HTMLInputElement& element) : InputType(element) { }
     virtual Decimal parseToNumber(const String&, const Decimal&) const OVERRIDE;
-    virtual bool parseToDateComponents(const String&, DateComponents*) const OVERRIDE;
+    // Parses the specified string for this InputType, and returns true if it
+    // is successfully parsed. An instance pointed by the DateComponents*
+    // parameter will have parsed values and be modified even if the parsing
+    // fails. The DateComponents* parameter may be 0.
+    bool parseToDateComponents(const String&, DateComponents*) const;
     virtual String sanitizeValue(const String&) const OVERRIDE;
     virtual String serialize(const Decimal&) const OVERRIDE;
     String serializeWithComponents(const DateComponents&) const;
@@ -55,7 +59,7 @@ private:
     virtual double valueAsDate() const OVERRIDE;
     virtual void setValueAsDate(double, ExceptionState&) const OVERRIDE;
     virtual double valueAsDouble() const OVERRIDE;
-    virtual void setValueAsDecimal(const Decimal&, TextFieldEventBehavior, ExceptionState&) const OVERRIDE;
+    virtual void setValueAsDouble(double, TextFieldEventBehavior, ExceptionState&) const OVERRIDE;
     virtual bool typeMismatchFor(const String&) const OVERRIDE;
     virtual bool typeMismatch() const OVERRIDE;
     virtual bool valueMissing(const String&) const OVERRIDE;

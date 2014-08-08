@@ -16,20 +16,34 @@
 #include "testing/platform_test.h"
 #include "url/gurl.h"
 
-class DummySocketStreamDelegate : public net::SocketStream::Delegate {
+namespace net {
+
+namespace {
+
+class DummySocketStreamDelegate : public SocketStream::Delegate {
  public:
   DummySocketStreamDelegate() {}
   virtual ~DummySocketStreamDelegate() {}
   virtual void OnConnected(
-      net::SocketStream* socket, int max_pending_send_allowed) OVERRIDE {}
-  virtual void OnSentData(net::SocketStream* socket,
+      SocketStream* socket, int max_pending_send_allowed) OVERRIDE {}
+  virtual void OnSentData(SocketStream* socket,
                           int amount_sent) OVERRIDE {}
-  virtual void OnReceivedData(net::SocketStream* socket,
+  virtual void OnReceivedData(SocketStream* socket,
                               const char* data, int len) OVERRIDE {}
-  virtual void OnClose(net::SocketStream* socket) OVERRIDE {}
+  virtual void OnClose(SocketStream* socket) OVERRIDE {}
 };
 
-namespace net {
+class WebSocketThrottleTestContext : public TestURLRequestContext {
+ public:
+  explicit WebSocketThrottleTestContext(bool enable_websocket_over_spdy)
+      : TestURLRequestContext(true) {
+    HttpNetworkSession::Params params;
+    params.enable_websocket_over_spdy = enable_websocket_over_spdy;
+    Init();
+  }
+};
+
+}  // namespace
 
 class WebSocketThrottleTest : public PlatformTest {
  protected:
@@ -60,11 +74,10 @@ class WebSocketThrottleTest : public PlatformTest {
 };
 
 TEST_F(WebSocketThrottleTest, Throttle) {
-  TestURLRequestContext context;
-  DummySocketStreamDelegate delegate;
   // TODO(toyoshim): We need to consider both spdy-enabled and spdy-disabled
   // configuration.
-  WebSocketJob::set_websocket_over_spdy_enabled(true);
+  WebSocketThrottleTestContext context(true);
+  DummySocketStreamDelegate delegate;
 
   // For host1: 1.2.3.4, 1.2.3.5, 1.2.3.6
   AddressList addr;
@@ -73,8 +86,7 @@ TEST_F(WebSocketThrottleTest, Throttle) {
   addr.push_back(MakeAddr(1, 2, 3, 6));
   scoped_refptr<WebSocketJob> w1(new WebSocketJob(&delegate));
   scoped_refptr<SocketStream> s1(
-      new SocketStream(GURL("ws://host1/"), w1.get()));
-  s1->set_context(&context);
+      new SocketStream(GURL("ws://host1/"), w1.get(), &context, NULL));
   w1->InitSocketStream(s1.get());
   WebSocketThrottleTest::MockSocketStreamConnect(s1.get(), addr);
 
@@ -94,8 +106,7 @@ TEST_F(WebSocketThrottleTest, Throttle) {
   addr.push_back(MakeAddr(1, 2, 3, 4));
   scoped_refptr<WebSocketJob> w2(new WebSocketJob(&delegate));
   scoped_refptr<SocketStream> s2(
-      new SocketStream(GURL("ws://host2/"), w2.get()));
-  s2->set_context(&context);
+      new SocketStream(GURL("ws://host2/"), w2.get(), &context, NULL));
   w2->InitSocketStream(s2.get());
   WebSocketThrottleTest::MockSocketStreamConnect(s2.get(), addr);
 
@@ -115,8 +126,7 @@ TEST_F(WebSocketThrottleTest, Throttle) {
   addr.push_back(MakeAddr(1, 2, 3, 5));
   scoped_refptr<WebSocketJob> w3(new WebSocketJob(&delegate));
   scoped_refptr<SocketStream> s3(
-      new SocketStream(GURL("ws://host3/"), w3.get()));
-  s3->set_context(&context);
+      new SocketStream(GURL("ws://host3/"), w3.get(), &context, NULL));
   w3->InitSocketStream(s3.get());
   WebSocketThrottleTest::MockSocketStreamConnect(s3.get(), addr);
 
@@ -136,8 +146,7 @@ TEST_F(WebSocketThrottleTest, Throttle) {
   addr.push_back(MakeAddr(1, 2, 3, 6));
   scoped_refptr<WebSocketJob> w4(new WebSocketJob(&delegate));
   scoped_refptr<SocketStream> s4(
-      new SocketStream(GURL("ws://host4/"), w4.get()));
-  s4->set_context(&context);
+      new SocketStream(GURL("ws://host4/"), w4.get(), &context, NULL));
   w4->InitSocketStream(s4.get());
   WebSocketThrottleTest::MockSocketStreamConnect(s4.get(), addr);
 
@@ -156,8 +165,7 @@ TEST_F(WebSocketThrottleTest, Throttle) {
   addr.push_back(MakeAddr(1, 2, 3, 6));
   scoped_refptr<WebSocketJob> w5(new WebSocketJob(&delegate));
   scoped_refptr<SocketStream> s5(
-      new SocketStream(GURL("ws://host5/"), w5.get()));
-  s5->set_context(&context);
+      new SocketStream(GURL("ws://host5/"), w5.get(), &context, NULL));
   w5->InitSocketStream(s5.get());
   WebSocketThrottleTest::MockSocketStreamConnect(s5.get(), addr);
 
@@ -176,8 +184,7 @@ TEST_F(WebSocketThrottleTest, Throttle) {
   addr.push_back(MakeAddr(1, 2, 3, 6));
   scoped_refptr<WebSocketJob> w6(new WebSocketJob(&delegate));
   scoped_refptr<SocketStream> s6(
-      new SocketStream(GURL("ws://host6/"), w6.get()));
-  s6->set_context(&context);
+      new SocketStream(GURL("ws://host6/"), w6.get(), &context, NULL));
   w6->InitSocketStream(s6.get());
   WebSocketThrottleTest::MockSocketStreamConnect(s6.get(), addr);
 
@@ -279,9 +286,8 @@ TEST_F(WebSocketThrottleTest, Throttle) {
 }
 
 TEST_F(WebSocketThrottleTest, NoThrottleForDuplicateAddress) {
-  TestURLRequestContext context;
+  WebSocketThrottleTestContext context(true);
   DummySocketStreamDelegate delegate;
-  WebSocketJob::set_websocket_over_spdy_enabled(true);
 
   // For localhost: 127.0.0.1, 127.0.0.1
   AddressList addr;
@@ -289,8 +295,7 @@ TEST_F(WebSocketThrottleTest, NoThrottleForDuplicateAddress) {
   addr.push_back(MakeAddr(127, 0, 0, 1));
   scoped_refptr<WebSocketJob> w1(new WebSocketJob(&delegate));
   scoped_refptr<SocketStream> s1(
-      new SocketStream(GURL("ws://localhost/"), w1.get()));
-  s1->set_context(&context);
+      new SocketStream(GURL("ws://localhost/"), w1.get(), &context, NULL));
   w1->InitSocketStream(s1.get());
   WebSocketThrottleTest::MockSocketStreamConnect(s1.get(), addr);
 
@@ -309,17 +314,15 @@ TEST_F(WebSocketThrottleTest, NoThrottleForDuplicateAddress) {
 // A connection should not be blocked by another connection to the same IP
 // with a different port.
 TEST_F(WebSocketThrottleTest, NoThrottleForDistinctPort) {
-  TestURLRequestContext context;
+  WebSocketThrottleTestContext context(false);
   DummySocketStreamDelegate delegate;
   IPAddressNumber localhost;
   ParseIPLiteralToNumber("127.0.0.1", &localhost);
-  WebSocketJob::set_websocket_over_spdy_enabled(false);
 
   // socket1: 127.0.0.1:80
   scoped_refptr<WebSocketJob> w1(new WebSocketJob(&delegate));
   scoped_refptr<SocketStream> s1(
-      new SocketStream(GURL("ws://localhost:80/"), w1.get()));
-  s1->set_context(&context);
+      new SocketStream(GURL("ws://localhost:80/"), w1.get(), &context, NULL));
   w1->InitSocketStream(s1.get());
   MockSocketStreamConnect(s1.get(),
                           AddressList::CreateFromIPAddress(localhost, 80));
@@ -332,8 +335,7 @@ TEST_F(WebSocketThrottleTest, NoThrottleForDistinctPort) {
   // socket2: 127.0.0.1:81
   scoped_refptr<WebSocketJob> w2(new WebSocketJob(&delegate));
   scoped_refptr<SocketStream> s2(
-      new SocketStream(GURL("ws://localhost:81/"), w2.get()));
-  s2->set_context(&context);
+      new SocketStream(GURL("ws://localhost:81/"), w2.get(), &context, NULL));
   w2->InitSocketStream(s2.get());
   MockSocketStreamConnect(s2.get(),
                           AddressList::CreateFromIPAddress(localhost, 81));
@@ -354,4 +356,4 @@ TEST_F(WebSocketThrottleTest, NoThrottleForDistinctPort) {
   base::MessageLoopForIO::current()->RunUntilIdle();
 }
 
-}
+}  // namespace net

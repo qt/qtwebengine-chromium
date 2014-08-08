@@ -37,7 +37,9 @@ struct BuildInfoSingletonTraits {
   }
 
   static const bool kRegisterAtExit = false;
+#ifndef NDEBUG
   static const bool kAllowedToAccessOnNonjoinableThread = true;
+#endif
 };
 
 BuildInfo::BuildInfo(JNIEnv* env)
@@ -55,6 +57,7 @@ BuildInfo::BuildInfo(JNIEnv* env)
           env, GetApplicationContext()))),
       package_name_(StrDupJString(Java_BuildInfo_getPackageName(
           env, GetApplicationContext()))),
+      build_type_(StrDupJString(Java_BuildInfo_getBuildType(env))),
       sdk_int_(Java_BuildInfo_getSdkInt(env)),
       java_exception_info_(NULL) {
 }

@@ -31,16 +31,16 @@
 #include "config.h"
 #include "bindings/v8/SerializedScriptValue.h"
 
-#include "V8Blob.h"
-#include "V8DOMFileSystem.h"
-#include "V8File.h"
-#include "V8FileList.h"
-#include "V8ImageData.h"
-#include "V8MessagePort.h"
-#include "bindings/v8/ScriptScope.h"
-#include "bindings/v8/ScriptState.h"
+#include "bindings/core/v8/V8Blob.h"
+#include "bindings/core/v8/V8File.h"
+#include "bindings/core/v8/V8FileList.h"
+#include "bindings/core/v8/V8ImageData.h"
+#include "bindings/core/v8/V8MessagePort.h"
+#include "bindings/modules/v8/V8DOMFileSystem.h"
+#include "bindings/modules/v8/V8Key.h"
+#include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/V8Binding.h"
-#include "bindings/v8/V8Utilities.h"
+#include "bindings/v8/WorkerScriptController.h"
 #include "bindings/v8/custom/V8ArrayBufferCustom.h"
 #include "bindings/v8/custom/V8ArrayBufferViewCustom.h"
 #include "bindings/v8/custom/V8DataViewCustom.h"
@@ -61,6 +61,12 @@
 #include "core/html/ImageData.h"
 #include "core/html/canvas/DataView.h"
 #include "platform/SharedBuffer.h"
+#include "platform/heap/Handle.h"
+#include "public/platform/Platform.h"
+#include "public/platform/WebBlobInfo.h"
+#include "public/platform/WebCrypto.h"
+#include "public/platform/WebCryptoKey.h"
+#include "public/platform/WebCryptoKeyAlgorithm.h"
 #include "wtf/ArrayBuffer.h"
 #include "wtf/ArrayBufferContents.h"
 #include "wtf/ArrayBufferView.h"
@@ -133,6 +139,12 @@ private:
     // need to rehash after every garbage collection because a key object may have been moved.
     template<typename G>
     struct V8HandlePtrHash {
+        static v8::Handle<G> unsafeHandleFromRawValue(const G* value)
+        {
+            const v8::Handle<G>* handle = reinterpret_cast<const v8::Handle<G>*>(&value);
+            return *handle;
+        }
+
         static unsigned hash(const G* key)
         {
             return static_cast<unsigned>(unsafeHandleFromRawValue(key)->GetIdentityHash());
@@ -186,10 +198,13 @@ enum SerializationTag {
     DateTag = 'D', // value:double -> Date (ref)
     MessagePortTag = 'M', // index:int -> MessagePort. Fills the result with transferred MessagePort.
     NumberTag = 'N', // value:double -> Number
-    BlobTag = 'b', // url:WebCoreString, type:WebCoreString, size:uint64_t -> Blob (ref)
+    BlobTag = 'b', // uuid:WebCoreString, type:WebCoreString, size:uint64_t -> Blob (ref)
+    BlobIndexTag = 'i', // index:int32_t -> Blob (ref)
     FileTag = 'f', // file:RawFile -> File (ref)
-    DOMFileSystemTag = 'd', // type:int32_t, name:WebCoreString, url:WebCoreString -> FileSystem (ref)
+    FileIndexTag = 'e', // index:int32_t -> File (ref)
+    DOMFileSystemTag = 'd', // type:int32_t, name:WebCoreString, uuid:WebCoreString -> FileSystem (ref)
     FileListTag = 'l', // length:uint32_t, files:RawFile[length] -> FileList (ref)
+    FileListIndexTag = 'L', // length:uint32_t, files:int32_t[length] -> FileList (ref)
     ImageDataTag = '#', // width:uint32_t, height:uint32_t, pixelDataLength:uint32_t, data:byte[pixelDataLength] -> ImageData (ref)
     ObjectTag = '{', // numProperties:uint32_t -> pops the last object from the open stack;
                      //                           fills it with the last numProperties name,value pairs pushed onto the deserialization stack
@@ -201,6 +216,13 @@ enum SerializationTag {
     ArrayBufferTag = 'B', // byteLength:uint32_t, data:byte[byteLength] -> ArrayBuffer (ref)
     ArrayBufferTransferTag = 't', // index:uint32_t -> ArrayBuffer. For ArrayBuffer transfer
     ArrayBufferViewTag = 'V', // subtag:byte, byteOffset:uint32_t, byteLength:uint32_t -> ArrayBufferView (ref). Consumes an ArrayBuffer from the top of the deserialization stack.
+    CryptoKeyTag = 'K', // subtag:byte, props, usages:uint32_t, keyDataLength:uint32_t, keyData:byte[keyDataLength]
+                        //   If subtag=AesKeyTag:
+                        //       props = keyLengthBytes:uint32_t, algorithmId:uint32_t
+                        //   If subtag=HmacKeyTag:
+                        //       props = keyLengthBytes:uint32_t, hashId:uint32_t
+                        //   If subtag=RsaHashedKeyTag:
+                        //       props = algorithmId:uint32_t, type:uint32_t, modulusLengthBits:uint32_t, publicExponentLength:uint32_t, publicExponent:byte[publicExponentLength], hashId:uint32_t
     ObjectReferenceTag = '^', // ref:uint32_t -> reference table[ref]
     GenerateFreshObjectTag = 'o', // -> empty object allocated an object ID and pushed onto the open stack (ref)
     GenerateFreshSparseArrayTag = 'a', // length:uint32_t -> empty array[length] allocated an object ID and pushed onto the open stack (ref)
@@ -224,6 +246,52 @@ enum ArrayBufferViewSubTag {
     FloatArrayTag = 'f',
     DoubleArrayTag = 'F',
     DataViewTag = '?'
+};
+
+enum CryptoKeySubTag {
+    AesKeyTag = 1,
+    HmacKeyTag = 2,
+    // ID 3 was used by RsaKeyTag, while still behind experimental flag.
+    RsaHashedKeyTag = 4,
+    // Maximum allowed value is 255
+};
+
+enum AssymetricCryptoKeyType {
+    PublicKeyType = 1,
+    PrivateKeyType = 2,
+    // Maximum allowed value is 2^32-1
+};
+
+enum CryptoKeyAlgorithmTag {
+    AesCbcTag = 1,
+    HmacTag = 2,
+    RsaSsaPkcs1v1_5Tag = 3,
+    // ID 4 was used by RsaEs, while still behind experimental flag.
+    Sha1Tag = 5,
+    Sha256Tag = 6,
+    Sha384Tag = 7,
+    Sha512Tag = 8,
+    AesGcmTag = 9,
+    RsaOaepTag = 10,
+    AesCtrTag = 11,
+    AesKwTag = 12,
+    // Maximum allowed value is 2^32-1
+};
+
+enum CryptoKeyUsage {
+    // Extractability is not a "usage" in the WebCryptoKeyUsages sense, however
+    // it fits conveniently into this bitfield.
+    ExtractableUsage = 1 << 0,
+
+    EncryptUsage = 1 << 1,
+    DecryptUsage = 1 << 2,
+    SignUsage = 1 << 3,
+    VerifyUsage = 1 << 4,
+    DeriveKeyUsage = 1 << 5,
+    WrapKeyUsage = 1 << 6,
+    UnwrapKeyUsage = 1 << 7,
+    DeriveBitsUsage = 1 << 8,
+    // Maximum allowed value is 1 << 31
 };
 
 static bool shouldCheckForCycles(int depth)
@@ -272,9 +340,8 @@ private:
 class Writer {
     WTF_MAKE_NONCOPYABLE(Writer);
 public:
-    explicit Writer(v8::Isolate* isolate)
+    Writer()
         : m_position(0)
-        , m_isolate(isolate)
     {
     }
 
@@ -392,6 +459,13 @@ public:
         doWriteUint64(size);
     }
 
+    void writeBlobIndex(int blobIndex)
+    {
+        ASSERT(blobIndex >= 0);
+        append(BlobIndexTag);
+        doWriteUint32(blobIndex);
+    }
+
     void writeDOMFileSystem(int type, const String& name, const String& url)
     {
         append(DOMFileSystemTag);
@@ -406,6 +480,12 @@ public:
         doWriteFile(file);
     }
 
+    void writeFileIndex(int blobIndex)
+    {
+        append(FileIndexTag);
+        doWriteUint32(blobIndex);
+    }
+
     void writeFileList(const FileList& fileList)
     {
         append(FileListTag);
@@ -413,6 +493,45 @@ public:
         doWriteUint32(length);
         for (unsigned i = 0; i < length; ++i)
             doWriteFile(*fileList.item(i));
+    }
+
+    void writeFileListIndex(const Vector<int>& blobIndices)
+    {
+        append(FileListIndexTag);
+        uint32_t length = blobIndices.size();
+        doWriteUint32(length);
+        for (unsigned i = 0; i < length; ++i)
+            doWriteUint32(blobIndices[i]);
+    }
+
+    bool writeCryptoKey(const blink::WebCryptoKey& key)
+    {
+        append(static_cast<uint8_t>(CryptoKeyTag));
+
+        switch (key.algorithm().paramsType()) {
+        case blink::WebCryptoKeyAlgorithmParamsTypeAes:
+            doWriteAesKey(key);
+            break;
+        case blink::WebCryptoKeyAlgorithmParamsTypeHmac:
+            doWriteHmacKey(key);
+            break;
+        case blink::WebCryptoKeyAlgorithmParamsTypeRsaHashed:
+            doWriteRsaHashedKey(key);
+            break;
+        case blink::WebCryptoKeyAlgorithmParamsTypeNone:
+            ASSERT_NOT_REACHED();
+            return false;
+        }
+
+        doWriteKeyUsages(key.usages(), key.extractable());
+
+        blink::WebVector<uint8_t> keyData;
+        if (!blink::Platform::current()->crypto()->serializeKeyForClone(key, keyData))
+            return false;
+
+        doWriteUint32(keyData.size());
+        append(keyData.data(), keyData.size());
+        return true;
     }
 
     void writeArrayBuffer(const ArrayBuffer& arrayBuffer)
@@ -429,7 +548,7 @@ public:
         ASSERT(static_cast<const uint8_t*>(arrayBuffer.data()) + arrayBufferView.byteOffset() ==
                static_cast<const uint8_t*>(arrayBufferView.baseAddress()));
 #endif
-        ArrayBufferView::ViewType type = arrayBufferView.getType();
+        ArrayBufferView::ViewType type = arrayBufferView.type();
 
         if (type == ArrayBufferView::TypeInt8)
             append(ByteArrayTag);
@@ -544,8 +663,6 @@ public:
         doWriteUint32(length);
     }
 
-    v8::Isolate* getIsolate() { return m_isolate; }
-
 private:
     void doWriteFile(const File& file)
     {
@@ -586,6 +703,112 @@ private:
     {
         StringUTF8Adaptor stringUTF8(string);
         doWriteString(stringUTF8.data(), stringUTF8.length());
+    }
+
+    void doWriteHmacKey(const blink::WebCryptoKey& key)
+    {
+        ASSERT(key.algorithm().paramsType() == blink::WebCryptoKeyAlgorithmParamsTypeHmac);
+
+        append(static_cast<uint8_t>(HmacKeyTag));
+        ASSERT(!(key.algorithm().hmacParams()->lengthBits() % 8));
+        doWriteUint32(key.algorithm().hmacParams()->lengthBits() / 8);
+        doWriteAlgorithmId(key.algorithm().hmacParams()->hash().id());
+    }
+
+    void doWriteAesKey(const blink::WebCryptoKey& key)
+    {
+        ASSERT(key.algorithm().paramsType() == blink::WebCryptoKeyAlgorithmParamsTypeAes);
+
+        append(static_cast<uint8_t>(AesKeyTag));
+        doWriteAlgorithmId(key.algorithm().id());
+        // Converting the key length from bits to bytes is lossless and makes
+        // it fit in 1 byte.
+        ASSERT(!(key.algorithm().aesParams()->lengthBits() % 8));
+        doWriteUint32(key.algorithm().aesParams()->lengthBits() / 8);
+    }
+
+    void doWriteRsaHashedKey(const blink::WebCryptoKey& key)
+    {
+        ASSERT(key.algorithm().rsaHashedParams());
+        append(static_cast<uint8_t>(RsaHashedKeyTag));
+
+        doWriteAlgorithmId(key.algorithm().id());
+
+        switch (key.type()) {
+        case blink::WebCryptoKeyTypePublic:
+            doWriteUint32(PublicKeyType);
+            break;
+        case blink::WebCryptoKeyTypePrivate:
+            doWriteUint32(PrivateKeyType);
+            break;
+        case blink::WebCryptoKeyTypeSecret:
+            ASSERT_NOT_REACHED();
+        }
+
+        const blink::WebCryptoRsaHashedKeyAlgorithmParams* params = key.algorithm().rsaHashedParams();
+        doWriteUint32(params->modulusLengthBits());
+        doWriteUint32(params->publicExponent().size());
+        append(params->publicExponent().data(), params->publicExponent().size());
+        doWriteAlgorithmId(key.algorithm().rsaHashedParams()->hash().id());
+    }
+
+    void doWriteAlgorithmId(blink::WebCryptoAlgorithmId id)
+    {
+        switch (id) {
+        case blink::WebCryptoAlgorithmIdAesCbc:
+            return doWriteUint32(AesCbcTag);
+        case blink::WebCryptoAlgorithmIdHmac:
+            return doWriteUint32(HmacTag);
+        case blink::WebCryptoAlgorithmIdRsaSsaPkcs1v1_5:
+            return doWriteUint32(RsaSsaPkcs1v1_5Tag);
+        case blink::WebCryptoAlgorithmIdSha1:
+            return doWriteUint32(Sha1Tag);
+        case blink::WebCryptoAlgorithmIdSha256:
+            return doWriteUint32(Sha256Tag);
+        case blink::WebCryptoAlgorithmIdSha384:
+            return doWriteUint32(Sha384Tag);
+        case blink::WebCryptoAlgorithmIdSha512:
+            return doWriteUint32(Sha512Tag);
+        case blink::WebCryptoAlgorithmIdAesGcm:
+            return doWriteUint32(AesGcmTag);
+        case blink::WebCryptoAlgorithmIdRsaOaep:
+            return doWriteUint32(RsaOaepTag);
+        case blink::WebCryptoAlgorithmIdAesCtr:
+            return doWriteUint32(AesCtrTag);
+        case blink::WebCryptoAlgorithmIdAesKw:
+            return doWriteUint32(AesKwTag);
+        }
+        ASSERT_NOT_REACHED();
+    }
+
+    void doWriteKeyUsages(const blink::WebCryptoKeyUsageMask usages, bool extractable)
+    {
+        // Reminder to update this when adding new key usages.
+        COMPILE_ASSERT(blink::EndOfWebCryptoKeyUsage == (1 << 7) + 1, UpdateMe);
+
+        uint32_t value = 0;
+
+        if (extractable)
+            value |= ExtractableUsage;
+
+        if (usages & blink::WebCryptoKeyUsageEncrypt)
+            value |= EncryptUsage;
+        if (usages & blink::WebCryptoKeyUsageDecrypt)
+            value |= DecryptUsage;
+        if (usages & blink::WebCryptoKeyUsageSign)
+            value |= SignUsage;
+        if (usages & blink::WebCryptoKeyUsageVerify)
+            value |= VerifyUsage;
+        if (usages & blink::WebCryptoKeyUsageDeriveKey)
+            value |= DeriveKeyUsage;
+        if (usages & blink::WebCryptoKeyUsageWrapKey)
+            value |= WrapKeyUsage;
+        if (usages & blink::WebCryptoKeyUsageUnwrapKey)
+            value |= UnwrapKeyUsage;
+        if (usages & blink::WebCryptoKeyUsageDeriveBits)
+            value |= DeriveBitsUsage;
+
+        doWriteUint32(value);
     }
 
     int bytesNeededToWireEncode(uint32_t value)
@@ -675,23 +898,22 @@ private:
 
     Vector<BufferValueType> m_buffer;
     unsigned m_position;
-    v8::Isolate* m_isolate;
 };
 
-static v8::Handle<v8::Object> toV8Object(MessagePort* impl, v8::Isolate* isolate)
+static v8::Handle<v8::Object> toV8Object(MessagePort* impl, v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)
 {
     if (!impl)
         return v8::Handle<v8::Object>();
-    v8::Handle<v8::Value> wrapper = toV8(impl, v8::Handle<v8::Object>(), isolate);
+    v8::Handle<v8::Value> wrapper = toV8(impl, creationContext, isolate);
     ASSERT(wrapper->IsObject());
     return wrapper.As<v8::Object>();
 }
 
-static v8::Handle<v8::ArrayBuffer> toV8Object(ArrayBuffer* impl, v8::Isolate* isolate)
+static v8::Handle<v8::ArrayBuffer> toV8Object(ArrayBuffer* impl, v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)
 {
     if (!impl)
         return v8::Handle<v8::ArrayBuffer>();
-    v8::Handle<v8::Value> wrapper = toV8(impl, v8::Handle<v8::Object>(), isolate);
+    v8::Handle<v8::Value> wrapper = toV8(impl, creationContext, isolate);
     ASSERT(wrapper->IsArrayBuffer());
     return wrapper.As<v8::ArrayBuffer>();
 }
@@ -703,28 +925,28 @@ public:
         Success,
         InputError,
         DataCloneError,
-        InvalidStateError,
-        JSException,
-        JSFailure
+        JSException
     };
 
-    Serializer(Writer& writer, MessagePortArray* messagePorts, ArrayBufferArray* arrayBuffers, BlobDataHandleMap& blobDataHandles, v8::TryCatch& tryCatch, v8::Isolate* isolate)
-        : m_writer(writer)
+    Serializer(Writer& writer, MessagePortArray* messagePorts, ArrayBufferArray* arrayBuffers, WebBlobInfoArray* blobInfo, BlobDataHandleMap& blobDataHandles, v8::TryCatch& tryCatch, ScriptState* scriptState)
+        : m_scriptState(scriptState)
+        , m_writer(writer)
         , m_tryCatch(tryCatch)
         , m_depth(0)
         , m_status(Success)
         , m_nextObjectReference(0)
+        , m_blobInfo(blobInfo)
         , m_blobDataHandles(blobDataHandles)
-        , m_isolate(isolate)
     {
         ASSERT(!tryCatch.HasCaught());
+        v8::Handle<v8::Object> creationContext = m_scriptState->context()->Global();
         if (messagePorts) {
             for (size_t i = 0; i < messagePorts->size(); i++)
-                m_transferredMessagePorts.set(toV8Object(messagePorts->at(i).get(), m_writer.getIsolate()), i);
+                m_transferredMessagePorts.set(toV8Object(messagePorts->at(i).get(), creationContext, isolate()), i);
         }
         if (arrayBuffers) {
             for (size_t i = 0; i < arrayBuffers->size(); i++)  {
-                v8::Handle<v8::Object> v8ArrayBuffer = toV8Object(arrayBuffers->at(i).get(), m_writer.getIsolate());
+                v8::Handle<v8::Object> v8ArrayBuffer = toV8Object(arrayBuffers->at(i).get(), creationContext, isolate());
                 // Coalesce multiple occurences of the same buffer to the first index.
                 if (!m_transferredArrayBuffers.contains(v8ArrayBuffer))
                     m_transferredArrayBuffers.set(v8ArrayBuffer, i);
@@ -732,15 +954,19 @@ public:
         }
     }
 
+    v8::Isolate* isolate() { return m_scriptState->isolate(); }
+
     Status serialize(v8::Handle<v8::Value> value)
     {
-        v8::HandleScope scope(m_isolate);
+        v8::HandleScope scope(isolate());
         m_writer.writeVersion();
         StateBase* state = doSerialize(value, 0);
         while (state)
             state = state->advance(*this);
         return m_status;
     }
+
+    String errorMessage() { return m_errorMessage; }
 
     // Functions used by serialization states.
     StateBase* doSerialize(v8::Handle<v8::Value>, StateBase* next);
@@ -752,12 +978,7 @@ public:
 
     StateBase* checkException(StateBase* state)
     {
-        return m_tryCatch.HasCaught() ? handleError(JSException, state) : 0;
-    }
-
-    StateBase* reportFailure(StateBase* state)
-    {
-        return handleError(JSFailure, state);
+        return m_tryCatch.HasCaught() ? handleError(JSException, "", state) : 0;
     }
 
     StateBase* writeObject(uint32_t numProperties, StateBase* state)
@@ -796,10 +1017,6 @@ private:
         // state.
         virtual StateBase* advance(Serializer&) = 0;
 
-        // Returns 1 if this state is currently serializing a property
-        // via an accessor and 0 otherwise.
-        virtual uint32_t execDepth() const { return 0; }
-
     protected:
         StateBase(v8::Handle<v8::Value> composite, StateBase* next)
             : m_composite(composite)
@@ -813,14 +1030,14 @@ private:
     };
 
     // Dummy state that is used to signal serialization errors.
-    class ErrorState : public StateBase {
+    class ErrorState FINAL : public StateBase {
     public:
         ErrorState()
             : StateBase(v8Undefined(), 0)
         {
         }
 
-        virtual StateBase* advance(Serializer&)
+        virtual StateBase* advance(Serializer&) OVERRIDE
         {
             delete this;
             return 0;
@@ -860,7 +1077,7 @@ private:
                     if (StateBase* newState = serializer.checkException(this))
                         return newState;
                     if (propertyName.IsEmpty())
-                        return serializer.reportFailure(this);
+                        return serializer.handleError(InputError, "Empty property names cannot be cloned.", this);
                     bool hasStringProperty = propertyName->IsString() && composite()->HasRealNamedProperty(propertyName.As<v8::String>());
                     if (StateBase* newState = serializer.checkException(this))
                         return newState;
@@ -905,33 +1122,33 @@ private:
         bool m_nameDone;
     };
 
-    class ObjectState : public AbstractObjectState {
+    class ObjectState FINAL : public AbstractObjectState {
     public:
         ObjectState(v8::Handle<v8::Object> object, StateBase* next)
             : AbstractObjectState(object, next)
         {
         }
 
-        virtual StateBase* advance(Serializer& serializer)
+        virtual StateBase* advance(Serializer& serializer) OVERRIDE
         {
             if (m_propertyNames.IsEmpty()) {
                 m_propertyNames = composite()->GetPropertyNames();
                 if (StateBase* newState = serializer.checkException(this))
                     return newState;
                 if (m_propertyNames.IsEmpty())
-                    return serializer.reportFailure(this);
+                    return serializer.handleError(InputError, "Empty property names cannot be cloned.", nextState());
             }
             return serializeProperties(false, serializer);
         }
 
     protected:
-        virtual StateBase* objectDone(unsigned numProperties, Serializer& serializer)
+        virtual StateBase* objectDone(unsigned numProperties, Serializer& serializer) OVERRIDE
         {
             return serializer.writeObject(numProperties, this);
         }
     };
 
-    class DenseArrayState : public AbstractObjectState {
+    class DenseArrayState FINAL : public AbstractObjectState {
     public:
         DenseArrayState(v8::Handle<v8::Array> array, v8::Handle<v8::Array> propertyNames, StateBase* next, v8::Isolate* isolate)
             : AbstractObjectState(array, next)
@@ -941,7 +1158,7 @@ private:
             m_propertyNames = v8::Local<v8::Array>::New(isolate, propertyNames);
         }
 
-        virtual StateBase* advance(Serializer& serializer)
+        virtual StateBase* advance(Serializer& serializer) OVERRIDE
         {
             while (m_arrayIndex < m_arrayLength) {
                 v8::Handle<v8::Value> value = composite().As<v8::Array>()->Get(m_arrayIndex);
@@ -955,7 +1172,7 @@ private:
         }
 
     protected:
-        virtual StateBase* objectDone(unsigned numProperties, Serializer& serializer)
+        virtual StateBase* objectDone(unsigned numProperties, Serializer& serializer) OVERRIDE
         {
             return serializer.writeDenseArray(numProperties, m_arrayLength, this);
         }
@@ -965,7 +1182,7 @@ private:
         uint32_t m_arrayLength;
     };
 
-    class SparseArrayState : public AbstractObjectState {
+    class SparseArrayState FINAL : public AbstractObjectState {
     public:
         SparseArrayState(v8::Handle<v8::Array> array, v8::Handle<v8::Array> propertyNames, StateBase* next, v8::Isolate* isolate)
             : AbstractObjectState(array, next)
@@ -973,13 +1190,13 @@ private:
             m_propertyNames = v8::Local<v8::Array>::New(isolate, propertyNames);
         }
 
-        virtual StateBase* advance(Serializer& serializer)
+        virtual StateBase* advance(Serializer& serializer) OVERRIDE
         {
             return serializeProperties(false, serializer);
         }
 
     protected:
-        virtual StateBase* objectDone(unsigned numProperties, Serializer& serializer)
+        virtual StateBase* objectDone(unsigned numProperties, Serializer& serializer) OVERRIDE
         {
             return serializer.writeSparseArray(numProperties, composite().As<v8::Array>()->Length(), this);
         }
@@ -989,7 +1206,7 @@ private:
     {
         ASSERT(state);
         ++m_depth;
-        return checkComposite(state) ? state : handleError(InputError, state);
+        return checkComposite(state) ? state : handleError(InputError, "Value being cloned is either cyclic or too deeply nested.", state);
     }
 
     StateBase* pop(StateBase* state)
@@ -1001,10 +1218,11 @@ private:
         return next;
     }
 
-    StateBase* handleError(Status errorStatus, StateBase* state)
+    StateBase* handleError(Status errorStatus, const String& message, StateBase* state)
     {
         ASSERT(errorStatus != Success);
         m_status = errorStatus;
+        m_errorMessage = message;
         while (state) {
             StateBase* tmp = state->nextState();
             delete state;
@@ -1056,13 +1274,20 @@ private:
         m_writer.writeBooleanObject(booleanObject->ValueOf());
     }
 
-    void writeBlob(v8::Handle<v8::Value> value)
+    StateBase* writeBlob(v8::Handle<v8::Value> value, StateBase* next)
     {
         Blob* blob = V8Blob::toNative(value.As<v8::Object>());
         if (!blob)
-            return;
-        m_writer.writeBlob(blob->uuid(), blob->type(), blob->size());
-        m_blobDataHandles.add(blob->uuid(), blob->blobDataHandle());
+            return 0;
+        if (blob->hasBeenClosed())
+            return handleError(DataCloneError, "A Blob object has been closed, and could therefore not be cloned.", next);
+        int blobIndex = -1;
+        m_blobDataHandles.set(blob->uuid(), blob->blobDataHandle());
+        if (appendBlobInfo(blob->uuid(), blob->type(), blob->size(), &blobIndex))
+            m_writer.writeBlobIndex(blobIndex);
+        else
+            m_writer.writeBlob(blob->uuid(), blob->type(), blob->size());
+        return 0;
     }
 
     StateBase* writeDOMFileSystem(v8::Handle<v8::Value> value, StateBase* next)
@@ -1071,29 +1296,61 @@ private:
         if (!fs)
             return 0;
         if (!fs->clonable())
-            return handleError(DataCloneError, next);
+            return handleError(DataCloneError, "A FileSystem object could not be cloned.", next);
         m_writer.writeDOMFileSystem(fs->type(), fs->name(), fs->rootURL().string());
         return 0;
     }
 
-    void writeFile(v8::Handle<v8::Value> value)
+    StateBase* writeFile(v8::Handle<v8::Value> value, StateBase* next)
     {
         File* file = V8File::toNative(value.As<v8::Object>());
         if (!file)
-            return;
-        m_writer.writeFile(*file);
-        m_blobDataHandles.add(file->uuid(), file->blobDataHandle());
+            return 0;
+        if (file->hasBeenClosed())
+            return handleError(DataCloneError, "A File object has been closed, and could therefore not be cloned.", next);
+        int blobIndex = -1;
+        m_blobDataHandles.set(file->uuid(), file->blobDataHandle());
+        if (appendFileInfo(file, &blobIndex)) {
+            ASSERT(blobIndex >= 0);
+            m_writer.writeFileIndex(blobIndex);
+        } else {
+            m_writer.writeFile(*file);
+        }
+        return 0;
     }
 
-    void writeFileList(v8::Handle<v8::Value> value)
+    StateBase* writeFileList(v8::Handle<v8::Value> value, StateBase* next)
     {
         FileList* fileList = V8FileList::toNative(value.As<v8::Object>());
         if (!fileList)
-            return;
-        m_writer.writeFileList(*fileList);
+            return 0;
         unsigned length = fileList->length();
-        for (unsigned i = 0; i < length; ++i)
-            m_blobDataHandles.add(fileList->item(i)->uuid(), fileList->item(i)->blobDataHandle());
+        Vector<int> blobIndices;
+        for (unsigned i = 0; i < length; ++i) {
+            int blobIndex = -1;
+            const File* file = fileList->item(i);
+            if (file->hasBeenClosed())
+                return handleError(DataCloneError, "A File object has been closed, and could therefore not be cloned.", next);
+            m_blobDataHandles.set(file->uuid(), file->blobDataHandle());
+            if (appendFileInfo(file, &blobIndex)) {
+                ASSERT(!i || blobIndex > 0);
+                ASSERT(blobIndex >= 0);
+                blobIndices.append(blobIndex);
+            }
+        }
+        if (!blobIndices.isEmpty())
+            m_writer.writeFileListIndex(blobIndices);
+        else
+            m_writer.writeFileList(*fileList);
+        return 0;
+    }
+
+    bool writeCryptoKey(v8::Handle<v8::Value> value)
+    {
+        Key* key = V8Key::toNative(value.As<v8::Object>());
+        if (!key)
+            return false;
+        return m_writer.writeCryptoKey(key->key());
     }
 
     void writeImageData(v8::Handle<v8::Value> value)
@@ -1118,10 +1375,10 @@ private:
         if (!arrayBufferView)
             return 0;
         if (!arrayBufferView->buffer())
-            return handleError(DataCloneError, next);
-        v8::Handle<v8::Value> underlyingBuffer = toV8(arrayBufferView->buffer(), v8::Handle<v8::Object>(), m_writer.getIsolate());
+            return handleError(DataCloneError, "An ArrayBuffer could not be cloned.", next);
+        v8::Handle<v8::Value> underlyingBuffer = toV8(arrayBufferView->buffer(), m_scriptState->context()->Global(), isolate());
         if (underlyingBuffer.IsEmpty())
-            return handleError(DataCloneError, next);
+            return handleError(DataCloneError, "An ArrayBuffer could not be cloned.", next);
         StateBase* stateOut = doSerializeArrayBuffer(underlyingBuffer, next);
         if (stateOut)
             return stateOut;
@@ -1146,7 +1403,7 @@ private:
         if (!arrayBuffer)
             return 0;
         if (arrayBuffer->isNeutered())
-            return handleError(InvalidStateError, next);
+            return handleError(DataCloneError, "An ArrayBuffer is neutered and could not be cloned.", next);
         ASSERT(!m_transferredArrayBuffers.contains(value.As<v8::Object>()));
         m_writer.writeArrayBuffer(*arrayBuffer);
         return 0;
@@ -1158,7 +1415,7 @@ private:
         if (!arrayBuffer)
             return 0;
         if (arrayBuffer->isNeutered())
-            return handleError(DataCloneError, next);
+            return handleError(DataCloneError, "An ArrayBuffer is neutered and could not be cloned.", next);
         m_writer.writeTransferredArrayBuffer(index);
         return 0;
     }
@@ -1181,11 +1438,11 @@ private:
 
         if (shouldSerializeDensely(length, propertyNames->Length())) {
             m_writer.writeGenerateFreshDenseArray(length);
-            return push(new DenseArrayState(array, propertyNames, next, m_isolate));
+            return push(new DenseArrayState(array, propertyNames, next, isolate()));
         }
 
         m_writer.writeGenerateFreshSparseArray(length);
-        return push(new SparseArrayState(array, propertyNames, next, m_isolate));
+        return push(new SparseArrayState(array, propertyNames, next, isolate()));
     }
 
     StateBase* startObjectState(v8::Handle<v8::Object> object, StateBase* next)
@@ -1204,34 +1461,68 @@ private:
         m_objectPool.set(object, objectReference);
     }
 
+    bool appendBlobInfo(const String& uuid, const String& type, unsigned long long size, int* index)
+    {
+        if (!m_blobInfo)
+            return false;
+        *index = m_blobInfo->size();
+        m_blobInfo->append(blink::WebBlobInfo(uuid, type, size));
+        return true;
+    }
+
+    bool appendFileInfo(const File* file, int* index)
+    {
+        if (!m_blobInfo)
+            return false;
+
+        long long size = -1;
+        double lastModified = invalidFileTime();
+        file->captureSnapshot(size, lastModified);
+        *index = m_blobInfo->size();
+        m_blobInfo->append(blink::WebBlobInfo(file->uuid(), file->path(), file->name(), file->type(), lastModified, size));
+        return true;
+    }
+
+    RefPtr<ScriptState> m_scriptState;
     Writer& m_writer;
     v8::TryCatch& m_tryCatch;
     int m_depth;
     Status m_status;
+    String m_errorMessage;
     typedef V8ObjectMap<v8::Object, uint32_t> ObjectPool;
     ObjectPool m_objectPool;
     ObjectPool m_transferredMessagePorts;
     ObjectPool m_transferredArrayBuffers;
     uint32_t m_nextObjectReference;
+    WebBlobInfoArray* m_blobInfo;
     BlobDataHandleMap& m_blobDataHandles;
-    v8::Isolate* m_isolate;
 };
+
+// Returns true if the provided object is to be considered a 'host object', as used in the
+// HTML5 structured clone algorithm.
+static bool isHostObject(v8::Handle<v8::Object> object)
+{
+    // If the object has any internal fields, then we won't be able to serialize or deserialize
+    // them; conveniently, this is also a quick way to detect DOM wrapper objects, because
+    // the mechanism for these relies on data stored in these fields. We should
+    // catch external array data as a special case.
+    return object->InternalFieldCount() || object->HasIndexedPropertiesInExternalArrayData();
+}
 
 Serializer::StateBase* Serializer::doSerialize(v8::Handle<v8::Value> value, StateBase* next)
 {
     m_writer.writeReferenceCount(m_nextObjectReference);
     uint32_t objectReference;
     uint32_t arrayBufferIndex;
-    WrapperWorldType currentWorldType = worldType(m_isolate);
     if ((value->IsObject() || value->IsDate() || value->IsRegExp())
         && m_objectPool.tryGet(value.As<v8::Object>(), &objectReference)) {
         // Note that IsObject() also detects wrappers (eg, it will catch the things
         // that we grey and write below).
         ASSERT(!value->IsString());
         m_writer.writeObjectReference(objectReference);
-    } else if (value.IsEmpty())
-        return reportFailure(next);
-    else if (value->IsUndefined())
+    } else if (value.IsEmpty()) {
+        return handleError(InputError, "The empty property name cannot be cloned.", next);
+    } else if (value->IsUndefined())
         m_writer.writeUndefined();
     else if (value->IsNull())
         m_writer.writeNull();
@@ -1245,22 +1536,22 @@ Serializer::StateBase* Serializer::doSerialize(v8::Handle<v8::Value> value, Stat
         m_writer.writeUint32(value->Uint32Value());
     else if (value->IsNumber())
         m_writer.writeNumber(value.As<v8::Number>()->Value());
-    else if (V8ArrayBufferView::hasInstance(value, m_isolate, currentWorldType))
+    else if (V8ArrayBufferView::hasInstance(value, isolate()))
         return writeAndGreyArrayBufferView(value.As<v8::Object>(), next);
     else if (value->IsString())
         writeString(value);
-    else if (V8MessagePort::hasInstance(value, m_isolate, currentWorldType)) {
+    else if (V8MessagePort::hasInstance(value, isolate())) {
         uint32_t messagePortIndex;
         if (m_transferredMessagePorts.tryGet(value.As<v8::Object>(), &messagePortIndex))
                 m_writer.writeTransferredMessagePort(messagePortIndex);
             else
-                return handleError(DataCloneError, next);
-    } else if (V8ArrayBuffer::hasInstance(value, m_isolate, currentWorldType) && m_transferredArrayBuffers.tryGet(value.As<v8::Object>(), &arrayBufferIndex))
+                return handleError(DataCloneError, "A MessagePort could not be cloned.", next);
+    } else if (V8ArrayBuffer::hasInstance(value, isolate()) && m_transferredArrayBuffers.tryGet(value.As<v8::Object>(), &arrayBufferIndex))
         return writeTransferredArrayBuffer(value, arrayBufferIndex, next);
     else {
         v8::Handle<v8::Object> jsObject = value.As<v8::Object>();
         if (jsObject.IsEmpty())
-            return handleError(DataCloneError, next);
+            return handleError(DataCloneError, "An object could not be cloned.", next);
         greyObject(jsObject);
         if (value->IsDate())
             m_writer.writeDate(value->NumberValue());
@@ -1272,26 +1563,29 @@ Serializer::StateBase* Serializer::doSerialize(v8::Handle<v8::Value> value, Stat
             writeBooleanObject(value);
         else if (value->IsArray()) {
             return startArrayState(value.As<v8::Array>(), next);
-        } else if (V8File::hasInstance(value, m_isolate, currentWorldType))
-            writeFile(value);
-        else if (V8Blob::hasInstance(value, m_isolate, currentWorldType))
-            writeBlob(value);
-        else if (V8DOMFileSystem::hasInstance(value, m_isolate, currentWorldType))
+        } else if (V8File::hasInstance(value, isolate()))
+            return writeFile(value, next);
+        else if (V8Blob::hasInstance(value, isolate()))
+            return writeBlob(value, next);
+        else if (V8DOMFileSystem::hasInstance(value, isolate()))
             return writeDOMFileSystem(value, next);
-        else if (V8FileList::hasInstance(value, m_isolate, currentWorldType))
-            writeFileList(value);
-        else if (V8ImageData::hasInstance(value, m_isolate, currentWorldType))
+        else if (V8FileList::hasInstance(value, isolate()))
+            return writeFileList(value, next);
+        else if (V8Key::hasInstance(value, isolate())) {
+            if (!writeCryptoKey(value))
+                return handleError(DataCloneError, "Couldn't serialize key data", next);
+        } else if (V8ImageData::hasInstance(value, isolate()))
             writeImageData(value);
         else if (value->IsRegExp())
             writeRegExp(value);
-        else if (V8ArrayBuffer::hasInstance(value, m_isolate, currentWorldType))
+        else if (V8ArrayBuffer::hasInstance(value, isolate()))
             return writeArrayBuffer(value, next);
         else if (value->IsObject()) {
             if (isHostObject(jsObject) || jsObject->IsCallable() || value->IsNativeError())
-                return handleError(DataCloneError, next);
+                return handleError(DataCloneError, "An object could not be cloned.", next);
             return startObjectState(jsObject, next);
         } else
-            return handleError(DataCloneError, next);
+            return handleError(DataCloneError, "A value could not be cloned.", next);
     }
     return 0;
 }
@@ -1319,12 +1613,13 @@ public:
 // restoring information about saved objects of composite types.
 class Reader {
 public:
-    Reader(const uint8_t* buffer, int length, v8::Isolate* isolate,  const BlobDataHandleMap& blobDataHandles)
-        : m_buffer(buffer)
+    Reader(const uint8_t* buffer, int length, const WebBlobInfoArray* blobInfo, BlobDataHandleMap& blobDataHandles, ScriptState* scriptState)
+        : m_scriptState(scriptState)
+        , m_buffer(buffer)
         , m_length(length)
         , m_position(0)
         , m_version(0)
-        , m_isolate(isolate)
+        , m_blobInfo(blobInfo)
         , m_blobDataHandles(blobDataHandles)
     {
         ASSERT(!(reinterpret_cast<size_t>(buffer) & 1));
@@ -1333,8 +1628,12 @@ public:
 
     bool isEof() const { return m_position >= m_length; }
 
-    v8::Isolate* isolate() const { return m_isolate; }
+    ScriptState* scriptState() const { return m_scriptState.get(); }
 
+private:
+    v8::Isolate* isolate() const { return m_scriptState->isolate(); }
+
+public:
     bool read(v8::Handle<v8::Value>* value, CompositeCreator& creator)
     {
         SerializationTag tag;
@@ -1342,7 +1641,7 @@ public:
             return false;
         switch (tag) {
         case ReferenceCountTag: {
-            if (m_version <= 0)
+            if (!m_version)
                 return false;
             uint32_t referenceTableSize;
             if (!doReadUint32(&referenceTableSize))
@@ -1359,16 +1658,16 @@ public:
         case PaddingTag:
             return true;
         case UndefinedTag:
-            *value = v8::Undefined(m_isolate);
+            *value = v8::Undefined(isolate());
             break;
         case NullTag:
-            *value = v8::Null(m_isolate);
+            *value = v8::Null(isolate());
             break;
         case TrueTag:
-            *value = v8BooleanWithCheck(true, m_isolate);
+            *value = v8Boolean(true, isolate());
             break;
         case FalseTag:
-            *value = v8BooleanWithCheck(false, m_isolate);
+            *value = v8Boolean(false, isolate());
             break;
         case TrueObjectTag:
             *value = v8::BooleanObject::New(true);
@@ -1414,12 +1713,14 @@ public:
             creator.pushObjectReference(*value);
             break;
         case BlobTag:
-            if (!readBlob(value))
+        case BlobIndexTag:
+            if (!readBlob(value, tag == BlobIndexTag))
                 return false;
             creator.pushObjectReference(*value);
             break;
         case FileTag:
-            if (!readFile(value))
+        case FileIndexTag:
+            if (!readFile(value, tag == FileIndexTag))
                 return false;
             creator.pushObjectReference(*value);
             break;
@@ -1429,7 +1730,13 @@ public:
             creator.pushObjectReference(*value);
             break;
         case FileListTag:
-            if (!readFileList(value))
+        case FileListIndexTag:
+            if (!readFileList(value, tag == FileListIndexTag))
+                return false;
+            creator.pushObjectReference(*value);
+            break;
+        case CryptoKeyTag:
+            if (!readCryptoKey(value))
                 return false;
             creator.pushObjectReference(*value);
             break;
@@ -1475,7 +1782,7 @@ public:
             break;
         }
         case ArrayBufferViewTag: {
-            if (m_version <= 0)
+            if (!m_version)
                 return false;
             if (!readArrayBufferView(value, creator))
                 return false;
@@ -1483,7 +1790,7 @@ public:
             break;
         }
         case ArrayBufferTag: {
-            if (m_version <= 0)
+            if (!m_version)
                 return false;
             if (!readArrayBuffer(value))
                 return false;
@@ -1491,14 +1798,14 @@ public:
             break;
         }
         case GenerateFreshObjectTag: {
-            if (m_version <= 0)
+            if (!m_version)
                 return false;
             if (!creator.newObject())
                 return false;
             return true;
         }
         case GenerateFreshSparseArrayTag: {
-            if (m_version <= 0)
+            if (!m_version)
                 return false;
             uint32_t length;
             if (!doReadUint32(&length))
@@ -1508,7 +1815,7 @@ public:
             return true;
         }
         case GenerateFreshDenseArrayTag: {
-            if (m_version <= 0)
+            if (!m_version)
                 return false;
             uint32_t length;
             if (!doReadUint32(&length))
@@ -1518,7 +1825,7 @@ public:
             return true;
         }
         case MessagePortTag: {
-            if (m_version <= 0)
+            if (!m_version)
                 return false;
             uint32_t index;
             if (!doReadUint32(&index))
@@ -1528,7 +1835,7 @@ public:
             break;
         }
         case ArrayBufferTransferTag: {
-            if (m_version <= 0)
+            if (!m_version)
                 return false;
             uint32_t index;
             if (!doReadUint32(&index))
@@ -1538,7 +1845,7 @@ public:
             break;
         }
         case ObjectReferenceTag: {
-            if (m_version <= 0)
+            if (!m_version)
                 return false;
             uint32_t reference;
             if (!doReadUint32(&reference))
@@ -1577,8 +1884,6 @@ public:
         m_version = version;
     }
 
-    v8::Isolate* getIsolate() { return m_isolate; }
-
 private:
     bool readTag(SerializationTag* tag)
     {
@@ -1609,7 +1914,7 @@ private:
             return false;
         if (m_position + length > m_length)
             return false;
-        *value = v8::String::NewFromUtf8(m_isolate, reinterpret_cast<const char*>(m_buffer + m_position), v8::String::kNormalString, length);
+        *value = v8::String::NewFromUtf8(isolate(), reinterpret_cast<const char*>(m_buffer + m_position), v8::String::kNormalString, length);
         m_position += length;
         return true;
     }
@@ -1622,7 +1927,7 @@ private:
         if (m_position + length > m_length)
             return false;
         ASSERT(!(m_position & 1));
-        *value = v8::String::NewFromTwoByte(m_isolate, reinterpret_cast<const uint16_t*>(m_buffer + m_position), v8::String::kNormalString, length / sizeof(UChar));
+        *value = v8::String::NewFromTwoByte(isolate(), reinterpret_cast<const uint16_t*>(m_buffer + m_position), v8::String::kNormalString, length / sizeof(UChar));
         m_position += length;
         return true;
     }
@@ -1653,7 +1958,7 @@ private:
         uint32_t rawValue;
         if (!doReadUint32(&rawValue))
             return false;
-        *value = v8::Integer::New(static_cast<int32_t>(ZigZag::decode(rawValue)), m_isolate);
+        *value = v8::Integer::New(isolate(), static_cast<int32_t>(ZigZag::decode(rawValue)));
         return true;
     }
 
@@ -1662,7 +1967,7 @@ private:
         uint32_t rawValue;
         if (!doReadUint32(&rawValue))
             return false;
-        *value = v8::Integer::NewFromUnsigned(rawValue, m_isolate);
+        *value = v8::Integer::NewFromUnsigned(isolate(), rawValue);
         return true;
     }
 
@@ -1671,7 +1976,7 @@ private:
         double numberValue;
         if (!doReadNumber(&numberValue))
             return false;
-        *value = v8DateOrNull(numberValue, m_isolate);
+        *value = v8DateOrNaN(numberValue, isolate());
         return true;
     }
 
@@ -1680,7 +1985,7 @@ private:
         double number;
         if (!doReadNumber(&number))
             return false;
-        *value = v8::Number::New(m_isolate, number);
+        *value = v8::Number::New(isolate(), number);
         return true;
     }
 
@@ -1689,7 +1994,7 @@ private:
         double number;
         if (!doReadNumber(&number))
             return false;
-        *value = v8::NumberObject::New(m_isolate, number);
+        *value = v8::NumberObject::New(isolate(), number);
         return true;
     }
 
@@ -1706,13 +2011,13 @@ private:
             return false;
         if (m_position + pixelDataLength > m_length)
             return false;
-        RefPtr<ImageData> imageData = ImageData::create(IntSize(width, height));
+        RefPtrWillBeRawPtr<ImageData> imageData = ImageData::create(IntSize(width, height));
         Uint8ClampedArray* pixelArray = imageData->data();
         ASSERT(pixelArray);
         ASSERT(pixelArray->length() >= pixelDataLength);
         memcpy(pixelArray->data(), m_buffer + m_position, pixelDataLength);
         m_position += pixelDataLength;
-        *value = toV8(imageData.release(), v8::Handle<v8::Object>(), m_isolate);
+        *value = toV8(imageData.release(), m_scriptState->context()->Global(), isolate());
         return true;
     }
 
@@ -1720,9 +2025,9 @@ private:
     {
         uint32_t byteLength;
         if (!doReadUint32(&byteLength))
-            return 0;
+            return nullptr;
         if (m_position + byteLength > m_length)
-            return 0;
+            return nullptr;
         const void* bufferStart = m_buffer + m_position;
         RefPtr<ArrayBuffer> arrayBuffer = ArrayBuffer::create(bufferStart, byteLength);
         arrayBuffer->setDeallocationObserver(V8ArrayBufferDeallocationObserver::instanceTemplate());
@@ -1735,7 +2040,7 @@ private:
         RefPtr<ArrayBuffer> arrayBuffer = doReadArrayBuffer();
         if (!arrayBuffer)
             return false;
-        *value = toV8(arrayBuffer.release(), v8::Handle<v8::Object>(), m_isolate);
+        *value = toV8(arrayBuffer.release(), m_scriptState->context()->Global(), isolate());
         return true;
     }
 
@@ -1759,60 +2064,62 @@ private:
         arrayBuffer = V8ArrayBuffer::toNative(arrayBufferV8Value.As<v8::Object>());
         if (!arrayBuffer)
             return false;
+
+        v8::Handle<v8::Object> creationContext = m_scriptState->context()->Global();
         switch (subTag) {
         case ByteArrayTag:
-            *value = toV8(Int8Array::create(arrayBuffer.release(), byteOffset, byteLength), v8::Handle<v8::Object>(), m_isolate);
+            *value = toV8(Int8Array::create(arrayBuffer.release(), byteOffset, byteLength), creationContext, isolate());
             break;
         case UnsignedByteArrayTag:
-            *value = toV8(Uint8Array::create(arrayBuffer.release(), byteOffset, byteLength), v8::Handle<v8::Object>(),  m_isolate);
+            *value = toV8(Uint8Array::create(arrayBuffer.release(), byteOffset, byteLength), creationContext,  isolate());
             break;
         case UnsignedByteClampedArrayTag:
-            *value = toV8(Uint8ClampedArray::create(arrayBuffer.release(), byteOffset, byteLength), v8::Handle<v8::Object>(), m_isolate);
+            *value = toV8(Uint8ClampedArray::create(arrayBuffer.release(), byteOffset, byteLength), creationContext, isolate());
             break;
         case ShortArrayTag: {
             uint32_t shortLength = byteLength / sizeof(int16_t);
             if (shortLength * sizeof(int16_t) != byteLength)
                 return false;
-            *value = toV8(Int16Array::create(arrayBuffer.release(), byteOffset, shortLength), v8::Handle<v8::Object>(), m_isolate);
+            *value = toV8(Int16Array::create(arrayBuffer.release(), byteOffset, shortLength), creationContext, isolate());
             break;
         }
         case UnsignedShortArrayTag: {
             uint32_t shortLength = byteLength / sizeof(uint16_t);
             if (shortLength * sizeof(uint16_t) != byteLength)
                 return false;
-            *value = toV8(Uint16Array::create(arrayBuffer.release(), byteOffset, shortLength), v8::Handle<v8::Object>(), m_isolate);
+            *value = toV8(Uint16Array::create(arrayBuffer.release(), byteOffset, shortLength), creationContext, isolate());
             break;
         }
         case IntArrayTag: {
             uint32_t intLength = byteLength / sizeof(int32_t);
             if (intLength * sizeof(int32_t) != byteLength)
                 return false;
-            *value = toV8(Int32Array::create(arrayBuffer.release(), byteOffset, intLength), v8::Handle<v8::Object>(), m_isolate);
+            *value = toV8(Int32Array::create(arrayBuffer.release(), byteOffset, intLength), creationContext, isolate());
             break;
         }
         case UnsignedIntArrayTag: {
             uint32_t intLength = byteLength / sizeof(uint32_t);
             if (intLength * sizeof(uint32_t) != byteLength)
                 return false;
-            *value = toV8(Uint32Array::create(arrayBuffer.release(), byteOffset, intLength), v8::Handle<v8::Object>(), m_isolate);
+            *value = toV8(Uint32Array::create(arrayBuffer.release(), byteOffset, intLength), creationContext, isolate());
             break;
         }
         case FloatArrayTag: {
             uint32_t floatLength = byteLength / sizeof(float);
             if (floatLength * sizeof(float) != byteLength)
                 return false;
-            *value = toV8(Float32Array::create(arrayBuffer.release(), byteOffset, floatLength), v8::Handle<v8::Object>(), m_isolate);
+            *value = toV8(Float32Array::create(arrayBuffer.release(), byteOffset, floatLength), creationContext, isolate());
             break;
         }
         case DoubleArrayTag: {
             uint32_t floatLength = byteLength / sizeof(double);
             if (floatLength * sizeof(double) != byteLength)
                 return false;
-            *value = toV8(Float64Array::create(arrayBuffer.release(), byteOffset, floatLength), v8::Handle<v8::Object>(), m_isolate);
+            *value = toV8(Float64Array::create(arrayBuffer.release(), byteOffset, floatLength), creationContext, isolate());
             break;
         }
         case DataViewTag:
-            *value = toV8(DataView::create(arrayBuffer.release(), byteOffset, byteLength), v8::Handle<v8::Object>(), m_isolate);
+            *value = toV8(DataView::create(arrayBuffer.release(), byteOffset, byteLength), creationContext, isolate());
             break;
         default:
             return false;
@@ -1835,21 +2142,35 @@ private:
         return true;
     }
 
-    bool readBlob(v8::Handle<v8::Value>* value)
+    bool readBlob(v8::Handle<v8::Value>* value, bool isIndexed)
     {
         if (m_version < 3)
             return false;
-        String uuid;
-        String type;
-        uint64_t size;
-        if (!readWebCoreString(&uuid))
-            return false;
-        if (!readWebCoreString(&type))
-            return false;
-        if (!doReadUint64(&size))
-            return false;
-        RefPtr<Blob> blob = Blob::create(getOrCreateBlobDataHandle(uuid, type, size));
-        *value = toV8(blob.release(), v8::Handle<v8::Object>(), m_isolate);
+        RefPtrWillBeRawPtr<Blob> blob;
+        if (isIndexed) {
+            if (m_version < 6)
+                return false;
+            ASSERT(m_blobInfo);
+            uint32_t index;
+            if (!doReadUint32(&index) || index >= m_blobInfo->size())
+                return false;
+            const blink::WebBlobInfo& info = (*m_blobInfo)[index];
+            blob = Blob::create(getOrCreateBlobDataHandle(info.uuid(), info.type(), info.size()));
+        } else {
+            ASSERT(!m_blobInfo);
+            String uuid;
+            String type;
+            uint64_t size;
+            ASSERT(!m_blobInfo);
+            if (!readWebCoreString(&uuid))
+                return false;
+            if (!readWebCoreString(&type))
+                return false;
+            if (!doReadUint64(&size))
+                return false;
+            blob = Blob::create(getOrCreateBlobDataHandle(uuid, type, size));
+        }
+        *value = toV8(blob.release(), m_scriptState->context()->Global(), isolate());
         return true;
     }
 
@@ -1864,42 +2185,108 @@ private:
             return false;
         if (!readWebCoreString(&url))
             return false;
-        RefPtr<DOMFileSystem> fs = DOMFileSystem::create(getExecutionContext(), name, static_cast<WebCore::FileSystemType>(type), KURL(ParsedURLString, url));
-        *value = toV8(fs.release(), v8::Handle<v8::Object>(), m_isolate);
+        DOMFileSystem* fs = DOMFileSystem::create(m_scriptState->executionContext(), name, static_cast<WebCore::FileSystemType>(type), KURL(ParsedURLString, url));
+        *value = toV8(fs, m_scriptState->context()->Global(), isolate());
         return true;
     }
 
-    bool readFile(v8::Handle<v8::Value>* value)
+    bool readFile(v8::Handle<v8::Value>* value, bool isIndexed)
     {
-        RefPtr<File> file = doReadFileHelper();
+        RefPtrWillBeRawPtr<File> file;
+        if (isIndexed) {
+            if (m_version < 6)
+                return false;
+            file = readFileIndexHelper();
+        } else {
+            file = readFileHelper();
+        }
         if (!file)
             return false;
-        *value = toV8(file.release(), v8::Handle<v8::Object>(), m_isolate);
+        *value = toV8(file.release(), m_scriptState->context()->Global(), isolate());
         return true;
     }
 
-    bool readFileList(v8::Handle<v8::Value>* value)
+    bool readFileList(v8::Handle<v8::Value>* value, bool isIndexed)
     {
         if (m_version < 3)
             return false;
         uint32_t length;
         if (!doReadUint32(&length))
             return false;
-        RefPtr<FileList> fileList = FileList::create();
+        RefPtrWillBeRawPtr<FileList> fileList = FileList::create();
         for (unsigned i = 0; i < length; ++i) {
-            RefPtr<File> file = doReadFileHelper();
+            RefPtrWillBeRawPtr<File> file;
+            if (isIndexed) {
+                if (m_version < 6)
+                    return false;
+                file = readFileIndexHelper();
+            } else {
+                file = readFileHelper();
+            }
             if (!file)
                 return false;
             fileList->append(file.release());
         }
-        *value = toV8(fileList.release(), v8::Handle<v8::Object>(), m_isolate);
+        *value = toV8(fileList.release(), m_scriptState->context()->Global(), isolate());
         return true;
     }
 
-    PassRefPtr<File> doReadFileHelper()
+    bool readCryptoKey(v8::Handle<v8::Value>* value)
+    {
+        uint32_t rawKeyType;
+        if (!doReadUint32(&rawKeyType))
+            return false;
+
+        blink::WebCryptoKeyAlgorithm algorithm;
+        blink::WebCryptoKeyType type = blink::WebCryptoKeyTypeSecret;
+
+        switch (static_cast<CryptoKeySubTag>(rawKeyType)) {
+        case AesKeyTag:
+            if (!doReadAesKey(algorithm, type))
+                return false;
+            break;
+        case HmacKeyTag:
+            if (!doReadHmacKey(algorithm, type))
+                return false;
+            break;
+        case RsaHashedKeyTag:
+            if (!doReadRsaHashedKey(algorithm, type))
+                return false;
+            break;
+        default:
+            return false;
+        }
+
+        blink::WebCryptoKeyUsageMask usages;
+        bool extractable;
+        if (!doReadKeyUsages(usages, extractable))
+            return false;
+
+        uint32_t keyDataLength;
+        if (!doReadUint32(&keyDataLength))
+            return false;
+
+        if (m_position + keyDataLength > m_length)
+            return false;
+
+        const uint8_t* keyData = m_buffer + m_position;
+        m_position += keyDataLength;
+
+        blink::WebCryptoKey key = blink::WebCryptoKey::createNull();
+        if (!blink::Platform::current()->crypto()->deserializeKeyForClone(
+            algorithm, type, extractable, usages, keyData, keyDataLength, key)) {
+            return false;
+        }
+
+        *value = toV8(Key::create(key), m_scriptState->context()->Global(), isolate());
+        return true;
+    }
+
+    PassRefPtrWillBeRawPtr<File> readFileHelper()
     {
         if (m_version < 3)
-            return 0;
+            return nullptr;
+        ASSERT(!m_blobInfo);
         String path;
         String name;
         String relativePath;
@@ -1909,24 +2296,36 @@ private:
         uint64_t size = 0;
         double lastModified = 0;
         if (!readWebCoreString(&path))
-            return 0;
+            return nullptr;
         if (m_version >= 4 && !readWebCoreString(&name))
-            return 0;
+            return nullptr;
         if (m_version >= 4 && !readWebCoreString(&relativePath))
-            return 0;
+            return nullptr;
         if (!readWebCoreString(&uuid))
-            return 0;
+            return nullptr;
         if (!readWebCoreString(&type))
-            return 0;
+            return nullptr;
         if (m_version >= 4 && !doReadUint32(&hasSnapshot))
-            return 0;
+            return nullptr;
         if (hasSnapshot) {
             if (!doReadUint64(&size))
-                return 0;
+                return nullptr;
             if (!doReadNumber(&lastModified))
-                return 0;
+                return nullptr;
         }
         return File::create(path, name, relativePath, hasSnapshot > 0, size, lastModified, getOrCreateBlobDataHandle(uuid, type));
+    }
+
+    PassRefPtrWillBeRawPtr<File> readFileIndexHelper()
+    {
+        if (m_version < 3)
+            return nullptr;
+        ASSERT(m_blobInfo);
+        uint32_t index;
+        if (!doReadUint32(&index) || index >= m_blobInfo->size())
+            return nullptr;
+        const blink::WebBlobInfo& info = (*m_blobInfo)[index];
+        return File::create(info.filePath(), info.fileName(), info.size(), info.lastModified(), getOrCreateBlobDataHandle(info.uuid(), info.type(), info.size()));
     }
 
     template<class T>
@@ -1976,7 +2375,7 @@ private:
         // the collection of BDH's for blobs to work, which would encourage lifetimes to be considered
         // when passing ssv's around cross process. At present, we get 'lucky' in some cases because
         // the blob in the src process happens to still exist at the time the dest process is deserializing.
-        // For example in sharedWorker.postMesssage(...).
+        // For example in sharedWorker.postMessage(...).
         BlobDataHandleMap::const_iterator it = m_blobDataHandles.find(uuid);
         if (it != m_blobDataHandles.end()) {
             // make assertions about type and size?
@@ -1985,18 +2384,171 @@ private:
         return BlobDataHandle::create(uuid, type, size);
     }
 
+    bool doReadHmacKey(blink::WebCryptoKeyAlgorithm& algorithm, blink::WebCryptoKeyType& type)
+    {
+        uint32_t lengthBytes;
+        if (!doReadUint32(&lengthBytes))
+            return false;
+        blink::WebCryptoAlgorithmId hash;
+        if (!doReadAlgorithmId(hash))
+            return false;
+        algorithm = blink::WebCryptoKeyAlgorithm::createHmac(hash, lengthBytes * 8);
+        type = blink::WebCryptoKeyTypeSecret;
+        return !algorithm.isNull();
+    }
+
+    bool doReadAesKey(blink::WebCryptoKeyAlgorithm& algorithm, blink::WebCryptoKeyType& type)
+    {
+        blink::WebCryptoAlgorithmId id;
+        if (!doReadAlgorithmId(id))
+            return false;
+        uint32_t lengthBytes;
+        if (!doReadUint32(&lengthBytes))
+            return false;
+        algorithm = blink::WebCryptoKeyAlgorithm::createAes(id, lengthBytes * 8);
+        type = blink::WebCryptoKeyTypeSecret;
+        return !algorithm.isNull();
+    }
+
+    bool doReadRsaHashedKey(blink::WebCryptoKeyAlgorithm& algorithm, blink::WebCryptoKeyType& type)
+    {
+        blink::WebCryptoAlgorithmId id;
+        if (!doReadAlgorithmId(id))
+            return false;
+
+        uint32_t rawType;
+        if (!doReadUint32(&rawType))
+            return false;
+
+        switch (static_cast<AssymetricCryptoKeyType>(rawType)) {
+        case PublicKeyType:
+            type = blink::WebCryptoKeyTypePublic;
+            break;
+        case PrivateKeyType:
+            type = blink::WebCryptoKeyTypePrivate;
+            break;
+        default:
+            return false;
+        }
+
+        uint32_t modulusLengthBits;
+        if (!doReadUint32(&modulusLengthBits))
+            return false;
+
+        uint32_t publicExponentSize;
+        if (!doReadUint32(&publicExponentSize))
+            return false;
+
+        if (m_position + publicExponentSize > m_length)
+            return false;
+
+        const uint8_t* publicExponent = m_buffer + m_position;
+        m_position += publicExponentSize;
+
+        blink::WebCryptoAlgorithmId hash;
+        if (!doReadAlgorithmId(hash))
+            return false;
+        algorithm = blink::WebCryptoKeyAlgorithm::createRsaHashed(id, modulusLengthBits, publicExponent, publicExponentSize, hash);
+
+        return !algorithm.isNull();
+    }
+
+    bool doReadAlgorithmId(blink::WebCryptoAlgorithmId& id)
+    {
+        uint32_t rawId;
+        if (!doReadUint32(&rawId))
+            return false;
+
+        switch (static_cast<CryptoKeyAlgorithmTag>(rawId)) {
+        case AesCbcTag:
+            id = blink::WebCryptoAlgorithmIdAesCbc;
+            return true;
+        case HmacTag:
+            id = blink::WebCryptoAlgorithmIdHmac;
+            return true;
+        case RsaSsaPkcs1v1_5Tag:
+            id = blink::WebCryptoAlgorithmIdRsaSsaPkcs1v1_5;
+            return true;
+        case Sha1Tag:
+            id = blink::WebCryptoAlgorithmIdSha1;
+            return true;
+        case Sha256Tag:
+            id = blink::WebCryptoAlgorithmIdSha256;
+            return true;
+        case Sha384Tag:
+            id = blink::WebCryptoAlgorithmIdSha384;
+            return true;
+        case Sha512Tag:
+            id = blink::WebCryptoAlgorithmIdSha512;
+            return true;
+        case AesGcmTag:
+            id = blink::WebCryptoAlgorithmIdAesGcm;
+            return true;
+        case RsaOaepTag:
+            id = blink::WebCryptoAlgorithmIdRsaOaep;
+            return true;
+        case AesCtrTag:
+            id = blink::WebCryptoAlgorithmIdAesCtr;
+            return true;
+        case AesKwTag:
+            id = blink::WebCryptoAlgorithmIdAesKw;
+            return true;
+        }
+
+        return false;
+    }
+
+    bool doReadKeyUsages(blink::WebCryptoKeyUsageMask& usages, bool& extractable)
+    {
+        // Reminder to update this when adding new key usages.
+        COMPILE_ASSERT(blink::EndOfWebCryptoKeyUsage == (1 << 7) + 1, UpdateMe);
+        const uint32_t allPossibleUsages = ExtractableUsage | EncryptUsage | DecryptUsage | SignUsage | VerifyUsage | DeriveKeyUsage | WrapKeyUsage | UnwrapKeyUsage | DeriveBitsUsage;
+
+        uint32_t rawUsages;
+        if (!doReadUint32(&rawUsages))
+            return false;
+
+        // Make sure it doesn't contain an unrecognized usage value.
+        if (rawUsages & ~allPossibleUsages)
+            return false;
+
+        usages = 0;
+
+        extractable = rawUsages & ExtractableUsage;
+
+        if (rawUsages & EncryptUsage)
+            usages |= blink::WebCryptoKeyUsageEncrypt;
+        if (rawUsages & DecryptUsage)
+            usages |= blink::WebCryptoKeyUsageDecrypt;
+        if (rawUsages & SignUsage)
+            usages |= blink::WebCryptoKeyUsageSign;
+        if (rawUsages & VerifyUsage)
+            usages |= blink::WebCryptoKeyUsageVerify;
+        if (rawUsages & DeriveKeyUsage)
+            usages |= blink::WebCryptoKeyUsageDeriveKey;
+        if (rawUsages & WrapKeyUsage)
+            usages |= blink::WebCryptoKeyUsageWrapKey;
+        if (rawUsages & UnwrapKeyUsage)
+            usages |= blink::WebCryptoKeyUsageUnwrapKey;
+        if (rawUsages & DeriveBitsUsage)
+            usages |= blink::WebCryptoKeyUsageDeriveBits;
+
+        return true;
+    }
+
+    RefPtr<ScriptState> m_scriptState;
     const uint8_t* m_buffer;
     const unsigned m_length;
     unsigned m_position;
     uint32_t m_version;
-    v8::Isolate* m_isolate;
+    const WebBlobInfoArray* m_blobInfo;
     const BlobDataHandleMap& m_blobDataHandles;
 };
 
 
 typedef Vector<WTF::ArrayBufferContents, 1> ArrayBufferContentsArray;
 
-class Deserializer : public CompositeCreator {
+class Deserializer FINAL : public CompositeCreator {
 public:
     Deserializer(Reader& reader, MessagePortArray* messagePorts, ArrayBufferContentsArray* arrayBufferContents)
         : m_reader(reader)
@@ -2009,35 +2561,36 @@ public:
 
     v8::Handle<v8::Value> deserialize()
     {
+        v8::Isolate* isolate = m_reader.scriptState()->isolate();
         if (!m_reader.readVersion(m_version) || m_version > SerializedScriptValue::wireFormatVersion)
-            return v8::Null(m_reader.getIsolate());
+            return v8::Null(isolate);
         m_reader.setVersion(m_version);
-        v8::EscapableHandleScope scope(m_reader.getIsolate());
+        v8::EscapableHandleScope scope(isolate);
         while (!m_reader.isEof()) {
             if (!doDeserialize())
-                return v8::Null(m_reader.getIsolate());
+                return v8::Null(isolate);
         }
         if (stackDepth() != 1 || m_openCompositeReferenceStack.size())
-            return v8::Null(m_reader.getIsolate());
+            return v8::Null(isolate);
         v8::Handle<v8::Value> result = scope.Escape(element(0));
         return result;
     }
 
-    virtual bool newSparseArray(uint32_t)
+    virtual bool newSparseArray(uint32_t) OVERRIDE
     {
-        v8::Local<v8::Array> array = v8::Array::New(m_reader.isolate(), 0);
+        v8::Local<v8::Array> array = v8::Array::New(m_reader.scriptState()->isolate(), 0);
         openComposite(array);
         return true;
     }
 
-    virtual bool newDenseArray(uint32_t length)
+    virtual bool newDenseArray(uint32_t length) OVERRIDE
     {
-        v8::Local<v8::Array> array = v8::Array::New(m_reader.isolate(), length);
+        v8::Local<v8::Array> array = v8::Array::New(m_reader.scriptState()->isolate(), length);
         openComposite(array);
         return true;
     }
 
-    virtual bool consumeTopOfStack(v8::Handle<v8::Value>* object)
+    virtual bool consumeTopOfStack(v8::Handle<v8::Value>* object) OVERRIDE
     {
         if (stackDepth() < 1)
             return false;
@@ -2046,40 +2599,16 @@ public:
         return true;
     }
 
-    virtual bool completeArray(uint32_t length, v8::Handle<v8::Value>* value)
+    virtual bool newObject() OVERRIDE
     {
-        if (length > stackDepth())
-            return false;
-        v8::Local<v8::Array> array;
-        if (m_version > 0) {
-            v8::Local<v8::Value> composite;
-            if (!closeComposite(&composite))
-                return false;
-            array = composite.As<v8::Array>();
-        } else {
-            array = v8::Array::New(m_reader.isolate(), length);
-        }
-        if (array.IsEmpty())
-            return false;
-        const int depth = stackDepth() - length;
-        // The V8 API ensures space exists for any index argument to Set; it will (eg) resize arrays as necessary.
-        for (unsigned i = 0; i < length; ++i)
-            array->Set(i, element(depth + i));
-        pop(length);
-        *value = array;
-        return true;
-    }
-
-    virtual bool newObject()
-    {
-        v8::Local<v8::Object> object = v8::Object::New();
+        v8::Local<v8::Object> object = v8::Object::New(m_reader.scriptState()->isolate());
         if (object.IsEmpty())
             return false;
         openComposite(object);
         return true;
     }
 
-    virtual bool completeObject(uint32_t numProperties, v8::Handle<v8::Value>* value)
+    virtual bool completeObject(uint32_t numProperties, v8::Handle<v8::Value>* value) OVERRIDE
     {
         v8::Local<v8::Object> object;
         if (m_version > 0) {
@@ -2087,14 +2616,15 @@ public:
             if (!closeComposite(&composite))
                 return false;
             object = composite.As<v8::Object>();
-        } else
-            object = v8::Object::New();
+        } else {
+            object = v8::Object::New(m_reader.scriptState()->isolate());
+        }
         if (object.IsEmpty())
             return false;
         return initializeObject(object, numProperties, value);
     }
 
-    virtual bool completeSparseArray(uint32_t numProperties, uint32_t length, v8::Handle<v8::Value>* value)
+    virtual bool completeSparseArray(uint32_t numProperties, uint32_t length, v8::Handle<v8::Value>* value) OVERRIDE
     {
         v8::Local<v8::Array> array;
         if (m_version > 0) {
@@ -2103,14 +2633,14 @@ public:
                 return false;
             array = composite.As<v8::Array>();
         } else {
-            array = v8::Array::New(m_reader.isolate());
+            array = v8::Array::New(m_reader.scriptState()->isolate());
         }
         if (array.IsEmpty())
             return false;
         return initializeObject(array, numProperties, value);
     }
 
-    virtual bool completeDenseArray(uint32_t numProperties, uint32_t length, v8::Handle<v8::Value>* value)
+    virtual bool completeDenseArray(uint32_t numProperties, uint32_t length, v8::Handle<v8::Value>* value) OVERRIDE
     {
         v8::Local<v8::Array> array;
         if (m_version > 0) {
@@ -2134,22 +2664,23 @@ public:
         return true;
     }
 
-    virtual void pushObjectReference(const v8::Handle<v8::Value>& object)
+    virtual void pushObjectReference(const v8::Handle<v8::Value>& object) OVERRIDE
     {
         m_objectPool.append(object);
     }
 
-    virtual bool tryGetTransferredMessagePort(uint32_t index, v8::Handle<v8::Value>* object)
+    virtual bool tryGetTransferredMessagePort(uint32_t index, v8::Handle<v8::Value>* object) OVERRIDE
     {
         if (!m_transferredMessagePorts)
             return false;
         if (index >= m_transferredMessagePorts->size())
             return false;
-        *object = toV8(m_transferredMessagePorts->at(index).get(), v8::Handle<v8::Object>(), m_reader.getIsolate());
+        v8::Handle<v8::Object> creationContext = m_reader.scriptState()->context()->Global();
+        *object = toV8(m_transferredMessagePorts->at(index).get(), creationContext, m_reader.scriptState()->isolate());
         return true;
     }
 
-    virtual bool tryGetTransferredArrayBuffer(uint32_t index, v8::Handle<v8::Value>* object)
+    virtual bool tryGetTransferredArrayBuffer(uint32_t index, v8::Handle<v8::Value>* object) OVERRIDE
     {
         if (!m_arrayBufferContents)
             return false;
@@ -2159,15 +2690,17 @@ public:
         if (result.IsEmpty()) {
             RefPtr<ArrayBuffer> buffer = ArrayBuffer::create(m_arrayBufferContents->at(index));
             buffer->setDeallocationObserver(V8ArrayBufferDeallocationObserver::instanceTemplate());
-            m_reader.isolate()->AdjustAmountOfExternalAllocatedMemory(buffer->byteLength());
-            result = toV8Object(buffer.get(), m_reader.getIsolate());
+            v8::Isolate* isolate = m_reader.scriptState()->isolate();
+            v8::Handle<v8::Object> creationContext = m_reader.scriptState()->context()->Global();
+            isolate->AdjustAmountOfExternalAllocatedMemory(buffer->byteLength());
+            result = toV8Object(buffer.get(), creationContext, isolate);
             m_arrayBuffers[index] = result;
         }
         *object = result;
         return true;
     }
 
-    virtual bool tryGetObjectFromObjectReference(uint32_t reference, v8::Handle<v8::Value>* object)
+    virtual bool tryGetObjectFromObjectReference(uint32_t reference, v8::Handle<v8::Value>* object) OVERRIDE
     {
         if (reference >= m_objectPool.size())
             return false;
@@ -2175,7 +2708,7 @@ public:
         return object;
     }
 
-    virtual uint32_t objectReferenceCount()
+    virtual uint32_t objectReferenceCount() OVERRIDE
     {
         return m_objectPool.size();
     }
@@ -2253,21 +2786,21 @@ private:
 
 } // namespace
 
-PassRefPtr<SerializedScriptValue> SerializedScriptValue::create(v8::Handle<v8::Value> value, MessagePortArray* messagePorts, ArrayBufferArray* arrayBuffers, bool& didThrow, v8::Isolate* isolate)
+PassRefPtr<SerializedScriptValue> SerializedScriptValue::create(v8::Handle<v8::Value> value, MessagePortArray* messagePorts, ArrayBufferArray* arrayBuffers, ExceptionState& exceptionState, v8::Isolate* isolate)
 {
-    return adoptRef(new SerializedScriptValue(value, messagePorts, arrayBuffers, didThrow, isolate));
+    return adoptRef(new SerializedScriptValue(value, messagePorts, arrayBuffers, 0, exceptionState, isolate));
 }
 
 PassRefPtr<SerializedScriptValue> SerializedScriptValue::createAndSwallowExceptions(v8::Handle<v8::Value> value, v8::Isolate* isolate)
 {
-    bool didThrow;
-    return adoptRef(new SerializedScriptValue(value, 0, 0, didThrow, isolate, DoNotThrowExceptions));
+    TrackExceptionState exceptionState;
+    return adoptRef(new SerializedScriptValue(value, 0, 0, 0, exceptionState, isolate));
 }
 
-PassRefPtr<SerializedScriptValue> SerializedScriptValue::create(const ScriptValue& value, bool& didThrow, ScriptState* state)
+PassRefPtr<SerializedScriptValue> SerializedScriptValue::create(const ScriptValue& value, WebBlobInfoArray* blobInfo, ExceptionState& exceptionState, v8::Isolate* isolate)
 {
-    ScriptScope scope(state);
-    return adoptRef(new SerializedScriptValue(value.v8Value(), 0, 0, didThrow, state->isolate()));
+    ASSERT(isolate->InContext());
+    return adoptRef(new SerializedScriptValue(value.v8Value(), 0, 0, blobInfo, exceptionState, isolate));
 }
 
 PassRefPtr<SerializedScriptValue> SerializedScriptValue::createFromWire(const String& data)
@@ -2296,7 +2829,7 @@ PassRefPtr<SerializedScriptValue> SerializedScriptValue::create(const String& da
 
 PassRefPtr<SerializedScriptValue> SerializedScriptValue::create(const String& data, v8::Isolate* isolate)
 {
-    Writer writer(isolate);
+    Writer writer;
     writer.writeWebCoreString(data);
     String wireData = writer.takeWireString();
     return adoptRef(new SerializedScriptValue(wireData));
@@ -2309,12 +2842,7 @@ PassRefPtr<SerializedScriptValue> SerializedScriptValue::create()
 
 PassRefPtr<SerializedScriptValue> SerializedScriptValue::nullValue()
 {
-    return nullValue(v8::Isolate::GetCurrent());
-}
-
-PassRefPtr<SerializedScriptValue> SerializedScriptValue::nullValue(v8::Isolate* isolate)
-{
-    Writer writer(isolate);
+    Writer writer;
     writer.writeNull();
     String wireData = writer.takeWireString();
     return adoptRef(new SerializedScriptValue(wireData));
@@ -2344,12 +2872,21 @@ SerializedScriptValue::SerializedScriptValue()
 {
 }
 
-inline void neuterBinding(ArrayBuffer* object)
+static void neuterArrayBufferInAllWorlds(ArrayBuffer* object)
 {
     v8::Isolate* isolate = v8::Isolate::GetCurrent();
-    Vector<DOMDataStore*>& allStores = V8PerIsolateData::from(isolate)->allStores();
-    for (size_t i = 0; i < allStores.size(); i++) {
-        v8::Handle<v8::Object> wrapper = allStores[i]->get<V8ArrayBuffer>(object, isolate);
+    if (isMainThread()) {
+        Vector<RefPtr<DOMWrapperWorld> > worlds;
+        DOMWrapperWorld::allWorldsInMainThread(worlds);
+        for (size_t i = 0; i < worlds.size(); i++) {
+            v8::Handle<v8::Object> wrapper = worlds[i]->domDataStore().get<V8ArrayBuffer>(object, isolate);
+            if (!wrapper.IsEmpty()) {
+                ASSERT(wrapper->IsArrayBuffer());
+                v8::Handle<v8::ArrayBuffer>::Cast(wrapper)->Neuter();
+            }
+        }
+    } else {
+        v8::Handle<v8::Object> wrapper = DOMWrapperWorld::current(isolate).domDataStore().get<V8ArrayBuffer>(object, isolate);
         if (!wrapper.IsEmpty()) {
             ASSERT(wrapper->IsArrayBuffer());
             v8::Handle<v8::ArrayBuffer>::Cast(wrapper)->Neuter();
@@ -2357,25 +2894,13 @@ inline void neuterBinding(ArrayBuffer* object)
     }
 }
 
-inline void neuterBinding(ArrayBufferView* object)
-{
-    v8::Isolate* isolate = v8::Isolate::GetCurrent();
-    Vector<DOMDataStore*>& allStores = V8PerIsolateData::from(isolate)->allStores();
-    for (size_t i = 0; i < allStores.size(); i++) {
-        v8::Handle<v8::Object> wrapper = allStores[i]->get<V8ArrayBufferView>(object, isolate);
-        if (!wrapper.IsEmpty())
-            wrapper->SetIndexedPropertiesToExternalArrayData(0, v8::kExternalByteArray, 0);
-    }
-}
-
-PassOwnPtr<SerializedScriptValue::ArrayBufferContentsArray> SerializedScriptValue::transferArrayBuffers(ArrayBufferArray& arrayBuffers, bool& didThrow, v8::Isolate* isolate)
+PassOwnPtr<SerializedScriptValue::ArrayBufferContentsArray> SerializedScriptValue::transferArrayBuffers(ArrayBufferArray& arrayBuffers, ExceptionState& exceptionState, v8::Isolate* isolate)
 {
     ASSERT(arrayBuffers.size());
 
     for (size_t i = 0; i < arrayBuffers.size(); i++) {
         if (arrayBuffers[i]->isNeutered()) {
-            setDOMException(InvalidStateError, isolate);
-            didThrow = true;
+            exceptionState.throwDOMException(DataCloneError, "ArrayBuffer at index " + String::number(i) + " is already neutered.");
             return nullptr;
         }
     }
@@ -2384,72 +2909,51 @@ PassOwnPtr<SerializedScriptValue::ArrayBufferContentsArray> SerializedScriptValu
 
     HashSet<ArrayBuffer*> visited;
     for (size_t i = 0; i < arrayBuffers.size(); i++) {
-        Vector<RefPtr<ArrayBufferView> > neuteredViews;
-
         if (visited.contains(arrayBuffers[i].get()))
             continue;
         visited.add(arrayBuffers[i].get());
 
-        bool result = arrayBuffers[i]->transfer(contents->at(i), neuteredViews);
+        bool result = arrayBuffers[i]->transfer(contents->at(i));
         if (!result) {
-            setDOMException(InvalidStateError, isolate);
-            didThrow = true;
+            exceptionState.throwDOMException(DataCloneError, "ArrayBuffer at index " + String::number(i) + " could not be transferred.");
             return nullptr;
         }
 
-        neuterBinding(arrayBuffers[i].get());
-        for (size_t j = 0; j < neuteredViews.size(); j++)
-            neuterBinding(neuteredViews[j].get());
+        neuterArrayBufferInAllWorlds(arrayBuffers[i].get());
     }
     return contents.release();
 }
 
-SerializedScriptValue::SerializedScriptValue(v8::Handle<v8::Value> value, MessagePortArray* messagePorts, ArrayBufferArray* arrayBuffers, bool& didThrow, v8::Isolate* isolate, ExceptionPolicy policy)
+SerializedScriptValue::SerializedScriptValue(v8::Handle<v8::Value> value, MessagePortArray* messagePorts, ArrayBufferArray* arrayBuffers, WebBlobInfoArray* blobInfo, ExceptionState& exceptionState, v8::Isolate* isolate)
     : m_externallyAllocatedMemory(0)
 {
-    didThrow = false;
-    Writer writer(isolate);
+    Writer writer;
     Serializer::Status status;
+    String errorMessage;
     {
         v8::TryCatch tryCatch;
-        Serializer serializer(writer, messagePorts, arrayBuffers, m_blobDataHandles, tryCatch, isolate);
+        Serializer serializer(writer, messagePorts, arrayBuffers, blobInfo, m_blobDataHandles, tryCatch, ScriptState::current(isolate));
         status = serializer.serialize(value);
         if (status == Serializer::JSException) {
-            didThrow = true;
             // If there was a JS exception thrown, re-throw it.
-            if (policy == ThrowExceptions)
-                tryCatch.ReThrow();
+            exceptionState.rethrowV8Exception(tryCatch.Exception());
             return;
         }
+        errorMessage = serializer.errorMessage();
     }
     switch (status) {
     case Serializer::InputError:
     case Serializer::DataCloneError:
-        // If there was an input error, throw a new exception outside
-        // of the TryCatch scope.
-        didThrow = true;
-        if (policy == ThrowExceptions)
-            setDOMException(DataCloneError, isolate);
-        return;
-    case Serializer::InvalidStateError:
-        didThrow = true;
-        if (policy == ThrowExceptions)
-            setDOMException(InvalidStateError, isolate);
-        return;
-    case Serializer::JSFailure:
-        // If there was a JS failure (but no exception), there's not
-        // much we can do except for unwinding the C++ stack by
-        // pretending there was a JS exception.
-        didThrow = true;
+        exceptionState.throwDOMException(DataCloneError, errorMessage);
         return;
     case Serializer::Success:
         m_data = writer.takeWireString();
         ASSERT(m_data.impl()->hasOneRef());
         if (arrayBuffers && arrayBuffers->size())
-            m_arrayBufferContentsArray = transferArrayBuffers(*arrayBuffers, didThrow, isolate);
+            m_arrayBufferContentsArray = transferArrayBuffers(*arrayBuffers, exceptionState, isolate);
         return;
     case Serializer::JSException:
-        // We should never get here because this case was handled above.
+        ASSERT_NOT_REACHED();
         break;
     }
     ASSERT_NOT_REACHED();
@@ -2463,10 +2967,10 @@ SerializedScriptValue::SerializedScriptValue(const String& wireData)
 
 v8::Handle<v8::Value> SerializedScriptValue::deserialize(MessagePortArray* messagePorts)
 {
-    return deserialize(v8::Isolate::GetCurrent(), messagePorts);
+    return deserialize(v8::Isolate::GetCurrent(), messagePorts, 0);
 }
 
-v8::Handle<v8::Value> SerializedScriptValue::deserialize(v8::Isolate* isolate, MessagePortArray* messagePorts)
+v8::Handle<v8::Value> SerializedScriptValue::deserialize(v8::Isolate* isolate, MessagePortArray* messagePorts, const WebBlobInfoArray* blobInfo)
 {
     if (!m_data.impl())
         return v8::Null(isolate);
@@ -2476,13 +2980,64 @@ v8::Handle<v8::Value> SerializedScriptValue::deserialize(v8::Isolate* isolate, M
     // storage. Instead, it should use SharedBuffer or Vector<uint8_t>. The
     // information stored in m_data isn't even encoded in UTF-16. Instead,
     // unicode characters are encoded as UTF-8 with two code units per UChar.
-    Reader reader(reinterpret_cast<const uint8_t*>(m_data.impl()->characters16()), 2 * m_data.length(), isolate, m_blobDataHandles);
+    Reader reader(reinterpret_cast<const uint8_t*>(m_data.impl()->characters16()), 2 * m_data.length(), blobInfo, m_blobDataHandles, ScriptState::current(isolate));
     Deserializer deserializer(reader, messagePorts, m_arrayBufferContentsArray.get());
 
     // deserialize() can run arbitrary script (e.g., setters), which could result in |this| being destroyed.
     // Holding a RefPtr ensures we are alive (along with our internal data) throughout the operation.
     RefPtr<SerializedScriptValue> protect(this);
     return deserializer.deserialize();
+}
+
+bool SerializedScriptValue::extractTransferables(v8::Local<v8::Value> value, int argumentIndex, MessagePortArray& ports, ArrayBufferArray& arrayBuffers, ExceptionState& exceptionState, v8::Isolate* isolate)
+{
+    if (isUndefinedOrNull(value)) {
+        ports.resize(0);
+        arrayBuffers.resize(0);
+        return true;
+    }
+
+    uint32_t length = 0;
+    if (value->IsArray()) {
+        v8::Local<v8::Array> array = v8::Local<v8::Array>::Cast(value);
+        length = array->Length();
+    } else if (toV8Sequence(value, length, isolate).IsEmpty()) {
+        exceptionState.throwTypeError(ExceptionMessages::notAnArrayTypeArgumentOrValue(argumentIndex + 1));
+        return false;
+    }
+
+    v8::Local<v8::Object> transferrables = v8::Local<v8::Object>::Cast(value);
+
+    // Validate the passed array of transferrables.
+    for (unsigned i = 0; i < length; ++i) {
+        v8::Local<v8::Value> transferrable = transferrables->Get(i);
+        // Validation of non-null objects, per HTML5 spec 10.3.3.
+        if (isUndefinedOrNull(transferrable)) {
+            exceptionState.throwDOMException(DataCloneError, "Value at index " + String::number(i) + " is an untransferable " + (transferrable->IsUndefined() ? "'undefined'" : "'null'") + " value.");
+            return false;
+        }
+        // Validation of Objects implementing an interface, per WebIDL spec 4.1.15.
+        if (V8MessagePort::hasInstance(transferrable, isolate)) {
+            RefPtr<MessagePort> port = V8MessagePort::toNative(v8::Handle<v8::Object>::Cast(transferrable));
+            // Check for duplicate MessagePorts.
+            if (ports.contains(port)) {
+                exceptionState.throwDOMException(DataCloneError, "Message port at index " + String::number(i) + " is a duplicate of an earlier port.");
+                return false;
+            }
+            ports.append(port.release());
+        } else if (V8ArrayBuffer::hasInstance(transferrable, isolate)) {
+            RefPtr<ArrayBuffer> arrayBuffer = V8ArrayBuffer::toNative(v8::Handle<v8::Object>::Cast(transferrable));
+            if (arrayBuffers.contains(arrayBuffer)) {
+                exceptionState.throwDOMException(DataCloneError, "ArrayBuffer at index " + String::number(i) + " is a duplicate of an earlier ArrayBuffer.");
+                return false;
+            }
+            arrayBuffers.append(arrayBuffer.release());
+        } else {
+            exceptionState.throwDOMException(DataCloneError, "Value at index " + String::number(i) + " does not have a transferable type.");
+            return false;
+        }
+    }
+    return true;
 }
 
 void SerializedScriptValue::registerMemoryAllocatedWithCurrentScriptContext()

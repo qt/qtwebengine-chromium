@@ -50,16 +50,13 @@ public:
         DeletionContext,
         GetterContext,
         SetterContext,
+        EnumerationContext,
+        QueryContext,
+        IndexedGetterContext,
+        IndexedSetterContext,
+        IndexedDeletionContext,
         UnknownContext, // FIXME: Remove this once we've flipped over to the new API.
     };
-
-    explicit ExceptionState(const v8::Handle<v8::Object>& creationContext, v8::Isolate* isolate)
-        : m_code(0)
-        , m_context(UnknownContext)
-        , m_propertyName(0)
-        , m_interfaceName(0)
-        , m_creationContext(creationContext)
-        , m_isolate(isolate) { }
 
     ExceptionState(Context context, const char* propertyName, const char* interfaceName, const v8::Handle<v8::Object>& creationContext, v8::Isolate* isolate)
         : m_code(0)
@@ -75,30 +72,23 @@ public:
         , m_propertyName(0)
         , m_interfaceName(interfaceName)
         , m_creationContext(creationContext)
-        , m_isolate(isolate) { ASSERT(m_context == ConstructionContext); }
+        , m_isolate(isolate) { ASSERT(m_context == ConstructionContext || m_context == EnumerationContext || m_context == IndexedSetterContext || m_context == IndexedGetterContext || m_context == IndexedDeletionContext); }
 
     virtual void throwDOMException(const ExceptionCode&, const String& message);
     virtual void throwTypeError(const String& message);
     virtual void throwSecurityError(const String& sanitizedMessage, const String& unsanitizedMessage = String());
 
-    // Please don't use these methods. Use ::throwDOMException and ::throwTypeError, and pass in a useful exception message.
-    virtual void throwUninformativeAndGenericDOMException(const ExceptionCode& ec) { throwDOMException(ec, String()); }
-    virtual void throwUninformativeAndGenericTypeError() { throwTypeError(String()); }
-
     bool hadException() const { return !m_exception.isEmpty() || m_code; }
     void clearException();
 
     ExceptionCode code() const { return m_code; }
+    const String& message() const { return m_message; }
 
     bool throwIfNeeded()
     {
-        if (m_exception.isEmpty()) {
-            if (!m_code)
-                return false;
-            throwUninformativeAndGenericDOMException(m_code);
-        }
-
-        V8ThrowException::throwError(m_exception.newLocal(m_isolate), m_isolate);
+        if (!hadException())
+            return false;
+        throwException();
         return true;
     }
 
@@ -106,14 +96,21 @@ public:
     const char* propertyName() const { return m_propertyName; }
     const char* interfaceName() const { return m_interfaceName; }
 
+    void rethrowV8Exception(v8::Handle<v8::Value> value)
+    {
+        setException(value);
+    }
+
 protected:
     ExceptionCode m_code;
     Context m_context;
+    String m_message;
     const char* m_propertyName;
     const char* m_interfaceName;
 
 private:
     void setException(v8::Handle<v8::Value>);
+    void throwException();
 
     String addExceptionContext(const String&) const;
 
@@ -122,12 +119,22 @@ private:
     v8::Isolate* m_isolate;
 };
 
-class TrackExceptionState : public ExceptionState {
+// Used if exceptions can/should not be directly thrown.
+class NonThrowableExceptionState FINAL : public ExceptionState {
 public:
-    TrackExceptionState(): ExceptionState(v8::Handle<v8::Object>(), 0) { }
-    virtual void throwDOMException(const ExceptionCode&, const String& message) OVERRIDE FINAL;
-    virtual void throwTypeError(const String& message = String()) OVERRIDE FINAL;
-    virtual void throwSecurityError(const String& sanitizedMessage, const String& unsanitizedMessage = String()) OVERRIDE FINAL;
+    NonThrowableExceptionState(): ExceptionState(ExceptionState::UnknownContext, 0, 0, v8::Handle<v8::Object>(), v8::Isolate::GetCurrent()) { }
+    virtual void throwDOMException(const ExceptionCode&, const String& message) OVERRIDE;
+    virtual void throwTypeError(const String& message = String()) OVERRIDE;
+    virtual void throwSecurityError(const String& sanitizedMessage, const String& unsanitizedMessage = String()) OVERRIDE;
+};
+
+// Used if any exceptions thrown are ignorable.
+class TrackExceptionState FINAL : public ExceptionState {
+public:
+    TrackExceptionState(): ExceptionState(ExceptionState::UnknownContext, 0, 0, v8::Handle<v8::Object>(), v8::Isolate::GetCurrent()) { }
+    virtual void throwDOMException(const ExceptionCode&, const String& message) OVERRIDE;
+    virtual void throwTypeError(const String& message = String()) OVERRIDE;
+    virtual void throwSecurityError(const String& sanitizedMessage, const String& unsanitizedMessage = String()) OVERRIDE;
 };
 
 } // namespace WebCore

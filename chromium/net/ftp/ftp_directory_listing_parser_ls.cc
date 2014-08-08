@@ -135,7 +135,7 @@ bool ParseFtpDirectoryListingLs(
       continue;
 
     std::vector<base::string16> columns;
-    base::SplitString(CollapseWhitespace(lines[i], false), ' ', &columns);
+    base::SplitString(base::CollapseWhitespace(lines[i], false), ' ', &columns);
 
     // Some FTP servers put a "total n" line at the beginning of the listing
     // (n is an integer). Allow such a line, but only once, and only if it's
@@ -167,7 +167,7 @@ bool ParseFtpDirectoryListingLs(
       // All those messages have in common is the string ".:",
       // where "." means the current directory, and ":" separates it
       // from the rest of the message, which may be empty.
-      if (lines[i].find(ASCIIToUTF16(".:")) != base::string16::npos)
+      if (lines[i].find(base::ASCIIToUTF16(".:")) != base::string16::npos)
         continue;
 
       return false;
@@ -216,7 +216,8 @@ bool ParseFtpDirectoryListingLs(
                                                     column_offset + 1);
 
     if (entry.type == FtpDirectoryListingEntry::SYMLINK) {
-      base::string16::size_type pos = entry.name.rfind(ASCIIToUTF16(" -> "));
+      base::string16::size_type pos =
+          entry.name.rfind(base::ASCIIToUTF16(" -> "));
 
       // We don't require the " -> " to be present. Some FTP servers don't send
       // the symlink target, possibly for security reasons.

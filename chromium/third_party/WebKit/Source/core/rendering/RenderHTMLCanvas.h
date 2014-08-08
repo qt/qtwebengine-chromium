@@ -36,15 +36,17 @@ class RenderHTMLCanvas FINAL : public RenderReplaced {
 public:
     explicit RenderHTMLCanvas(HTMLCanvasElement*);
 
-    virtual bool isCanvas() const { return true; }
-    virtual bool requiresLayer() const;
+    virtual bool isCanvas() const OVERRIDE { return true; }
+    virtual LayerType layerTypeRequired() const OVERRIDE;
 
     void canvasSizeChanged();
 
 private:
-    virtual const char* renderName() const { return "RenderHTMLCanvas"; }
-    virtual void paintReplaced(PaintInfo&, const LayoutPoint&);
-    virtual void intrinsicSizeChanged() { canvasSizeChanged(); }
+    virtual const char* renderName() const OVERRIDE { return "RenderHTMLCanvas"; }
+    virtual void paintReplaced(PaintInfo&, const LayoutPoint&) OVERRIDE;
+    virtual void intrinsicSizeChanged() OVERRIDE { canvasSizeChanged(); }
+
+    virtual CompositingReasons additionalCompositingReasons(CompositingTriggerFlags) const OVERRIDE;
 };
 
 DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderHTMLCanvas, isCanvas());

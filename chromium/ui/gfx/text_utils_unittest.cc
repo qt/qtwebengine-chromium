@@ -6,11 +6,12 @@
 
 #include "base/strings/utf_string_conversions.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "ui/gfx/font_list.h"
 
 namespace gfx {
 namespace {
 
-const char16 kAcceleratorChar = '&';
+const base::char16 kAcceleratorChar = '&';
 
 TEST(TextUtilsTest, RemoveAcceleratorChar) {
   struct TestData {
@@ -48,14 +49,32 @@ TEST(TextUtilsTest, RemoveAcceleratorChar) {
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(cases); ++i) {
     int accelerated_char_pos;
     int accelerated_char_span;
-    base::string16 result = RemoveAcceleratorChar(UTF8ToUTF16(cases[i].input),
-                                                  kAcceleratorChar,
-                                                  &accelerated_char_pos,
-                                                  &accelerated_char_span);
-    EXPECT_EQ(result, UTF8ToUTF16(cases[i].output));
+    base::string16 result = RemoveAcceleratorChar(
+        base::UTF8ToUTF16(cases[i].input),
+        kAcceleratorChar,
+        &accelerated_char_pos,
+        &accelerated_char_span);
+    EXPECT_EQ(result, base::UTF8ToUTF16(cases[i].output));
     EXPECT_EQ(accelerated_char_pos, cases[i].accelerated_char_pos);
     EXPECT_EQ(accelerated_char_span, cases[i].accelerated_char_span);
   }
+}
+
+// Disabled on Ozone since there are no fonts: crbug.com/320050
+#if defined(USE_OZONE)
+#define MAYBE_GetStringWidth DISABLED_GetStringWidth
+#else
+#define MAYBE_GetStringWidth GetStringWidth
+#endif
+TEST(TextUtilsTest, MAYBE_GetStringWidth) {
+  FontList font_list;
+  EXPECT_EQ(GetStringWidth(base::string16(), font_list), 0);
+  EXPECT_GT(GetStringWidth(base::ASCIIToUTF16("a"), font_list),
+            GetStringWidth(base::string16(), font_list));
+  EXPECT_GT(GetStringWidth(base::ASCIIToUTF16("ab"), font_list),
+            GetStringWidth(base::ASCIIToUTF16("a"), font_list));
+  EXPECT_GT(GetStringWidth(base::ASCIIToUTF16("abc"), font_list),
+            GetStringWidth(base::ASCIIToUTF16("ab"), font_list));
 }
 
 }  // namespace

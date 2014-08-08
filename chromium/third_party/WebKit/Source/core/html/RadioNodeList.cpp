@@ -26,7 +26,7 @@
 #include "config.h"
 #include "core/html/RadioNodeList.h"
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 #include "core/dom/Element.h"
 #include "core/dom/NodeRareData.h"
 #include "core/html/HTMLFormElement.h"
@@ -37,34 +37,38 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-RadioNodeList::RadioNodeList(Node* rootNode, const AtomicString& name)
-    : LiveNodeList(rootNode, RadioNodeListType, InvalidateForFormControls, rootNode->hasTagName(formTag) ? NodeListIsRootedAtDocument : NodeListIsRootedAtNode)
+RadioNodeList::RadioNodeList(ContainerNode& rootNode, const AtomicString& name, CollectionType type)
+    : LiveNodeList(rootNode, type, InvalidateForFormControls, isHTMLFormElement(rootNode) ? NodeListIsRootedAtDocument : NodeListIsRootedAtNode)
     , m_name(name)
+    , m_onlyMatchImgElements(type == RadioImgNodeListType)
 {
     ScriptWrappable::init(this);
 }
 
 RadioNodeList::~RadioNodeList()
 {
-    ownerNode()->nodeLists()->removeCacheWithAtomicName(this, RadioNodeListType, m_name);
+#if !ENABLE(OILPAN)
+    ownerNode().nodeLists()->removeCache(this, m_onlyMatchImgElements ? RadioImgNodeListType : RadioNodeListType, m_name);
+#endif
 }
 
-static inline HTMLInputElement* toRadioButtonInputElement(Node* node)
+static inline HTMLInputElement* toRadioButtonInputElement(Element& element)
 {
-    ASSERT(node->isElementNode());
-    if (!node->hasTagName(inputTag))
+    if (!isHTMLInputElement(element))
         return 0;
-    HTMLInputElement* inputElement = toHTMLInputElement(node);
-    if (!inputElement->isRadioButton() || inputElement->value().isEmpty())
+    HTMLInputElement& inputElement = toHTMLInputElement(element);
+    if (!inputElement.isRadioButton() || inputElement.value().isEmpty())
         return 0;
-    return inputElement;
+    return &inputElement;
 }
 
 String RadioNodeList::value() const
 {
-    for (unsigned i = 0; i < length(); ++i) {
-        Node* node = item(i);
-        const HTMLInputElement* inputElement = toRadioButtonInputElement(node);
+    if (m_onlyMatchImgElements)
+        return String();
+    unsigned length = this->length();
+    for (unsigned i = 0; i < length; ++i) {
+        const HTMLInputElement* inputElement = toRadioButtonInputElement(*item(i));
         if (!inputElement || !inputElement->checked())
             continue;
         return inputElement->value();
@@ -74,9 +78,11 @@ String RadioNodeList::value() const
 
 void RadioNodeList::setValue(const String& value)
 {
-    for (unsigned i = 0; i < length(); ++i) {
-        Node* node = item(i);
-        HTMLInputElement* inputElement = toRadioButtonInputElement(node);
+    if (m_onlyMatchImgElements)
+        return;
+    unsigned length = this->length();
+    for (unsigned i = 0; i < length; ++i) {
+        HTMLInputElement* inputElement = toRadioButtonInputElement(*item(i));
         if (!inputElement || inputElement->value() != value)
             continue;
         inputElement->setChecked(true);
@@ -84,28 +90,43 @@ void RadioNodeList::setValue(const String& value)
     }
 }
 
-bool RadioNodeList::checkElementMatchesRadioNodeListFilter(Element* testElement) const
+bool RadioNodeList::matchesByIdOrName(const Element& testElement) const
 {
-    ASSERT(testElement->hasTagName(objectTag) || testElement->isFormControlElement());
-    if (ownerNode()->hasTagName(formTag)) {
-        HTMLFormElement* formElement = toHTMLElement(testElement)->formOwner();
+    return testElement.getIdAttribute() == m_name || testElement.getNameAttribute() == m_name;
+}
+
+bool RadioNodeList::checkElementMatchesRadioNodeListFilter(const Element& testElement) const
+{
+    ASSERT(!m_onlyMatchImgElements);
+    ASSERT(isHTMLObjectElement(testElement) || testElement.isFormControlElement());
+    if (isHTMLFormElement(ownerNode())) {
+        HTMLFormElement* formElement = toHTMLElement(testElement).formOwner();
         if (!formElement || formElement != ownerNode())
             return false;
     }
 
-    return testElement->getIdAttribute() == m_name || testElement->getNameAttribute() == m_name;
+    return matchesByIdOrName(testElement);
 }
 
-bool RadioNodeList::nodeMatches(Element* testElement) const
+bool RadioNodeList::elementMatches(const Element& element) const
 {
-    if (!testElement->hasTagName(objectTag) && !testElement->isFormControlElement())
+    if (m_onlyMatchImgElements) {
+        if (!isHTMLImageElement(element))
+            return false;
+
+        if (toHTMLElement(element).formOwner() != ownerNode())
+            return false;
+
+        return matchesByIdOrName(element);
+    }
+
+    if (!isHTMLObjectElement(element) && !element.isFormControlElement())
         return false;
 
-    if (testElement->hasTagName(inputTag) && toHTMLInputElement(testElement)->isImageButton())
+    if (isHTMLInputElement(element) && toHTMLInputElement(element).isImageButton())
         return false;
 
-    return checkElementMatchesRadioNodeListFilter(testElement);
+    return checkElementMatchesRadioNodeListFilter(element);
 }
 
-} // namspace
-
+} // namespace

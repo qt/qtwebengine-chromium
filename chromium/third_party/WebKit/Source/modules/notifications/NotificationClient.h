@@ -34,16 +34,18 @@
 
 #include "core/html/VoidCallback.h"
 #include "modules/notifications/NotificationPermissionCallback.h"
-#include "wtf/PassRefPtr.h"
+#include "wtf/PassOwnPtr.h"
 
 namespace WebCore {
 
 class ExecutionContext;
-class NotificationBase;
+class Notification;
 
 class NotificationClient {
 
 public:
+    virtual ~NotificationClient() { }
+
     enum Permission {
         PermissionAllowed, // User has allowed notifications
         PermissionNotAllowed, // User has not yet allowed
@@ -51,29 +53,23 @@ public:
     };
 
     // Requests that a notification be shown.
-    virtual bool show(NotificationBase*) = 0;
+    virtual bool show(Notification*) = 0;
 
-    // Requests that a notification that has already been shown be canceled.
-    virtual void cancel(NotificationBase*) = 0;
+    // Requests that a notification that has already been shown be closed.
+    virtual void close(Notification*) = 0;
 
     // Informs the presenter that a Notification object has been destroyed
     // (such as by a page transition). The presenter may continue showing
     // the notification, but must not attempt to call the event handlers.
-    virtual void notificationObjectDestroyed(NotificationBase*) = 0;
+    virtual void notificationObjectDestroyed(Notification*) = 0;
 
-#if ENABLE(LEGACY_NOTIFICATIONS)
     // Requests user permission to show desktop notifications from a particular
     // script context. The callback parameter should be run when the user has
     // made a decision.
-    virtual void requestPermission(ExecutionContext*, PassOwnPtr<VoidCallback>) = 0;
-#endif
     virtual void requestPermission(ExecutionContext*, PassOwnPtr<NotificationPermissionCallback>) = 0;
 
     // Checks the current level of permission.
     virtual Permission checkPermission(ExecutionContext*) = 0;
-
-protected:
-    virtual ~NotificationClient() { }
 };
 
 } // namespace WebCore

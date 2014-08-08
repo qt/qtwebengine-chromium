@@ -27,19 +27,21 @@
 #define SpeechRecognitionAlternative_h
 
 #include "bindings/v8/ScriptWrappable.h"
-#include "wtf/RefCounted.h"
+#include "platform/heap/Handle.h"
 #include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
 class ExecutionContext;
 
-class SpeechRecognitionAlternative : public ScriptWrappable, public RefCounted<SpeechRecognitionAlternative> {
+class SpeechRecognitionAlternative : public GarbageCollectedFinalized<SpeechRecognitionAlternative>, public ScriptWrappable {
 public:
-    static PassRefPtr<SpeechRecognitionAlternative> create(const String&, double);
+    static SpeechRecognitionAlternative* create(const String&, double);
 
     const String& transcript() const { return m_transcript; }
     double confidence() const { return m_confidence; }
+
+    void trace(Visitor*) { }
 
 private:
     SpeechRecognitionAlternative(const String&, double);

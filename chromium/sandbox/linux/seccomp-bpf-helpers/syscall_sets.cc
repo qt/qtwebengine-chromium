@@ -14,12 +14,11 @@ namespace sandbox {
 // The implicitly defined sets form a partition of the sets of
 // system calls.
 
-// TODO(jln) we need to restrict the first parameter!
 bool SyscallSets::IsKill(int sysno) {
   switch (sysno) {
     case __NR_kill:
-    case __NR_tkill:
     case __NR_tgkill:
+    case __NR_tkill:  // Deprecated.
       return true;
     default:
       return false;
@@ -351,7 +350,6 @@ bool SyscallSets::IsKernelInternalApi(int sysno) {
 // This should be thought through in conjunction with IsFutex().
 bool SyscallSets::IsAllowedProcessStartOrDeath(int sysno) {
   switch (sysno) {
-    case __NR_clone:  // TODO(jln): restrict flags.
     case __NR_exit:
     case __NR_exit_group:
     case __NR_wait4:
@@ -360,6 +358,7 @@ bool SyscallSets::IsAllowedProcessStartOrDeath(int sysno) {
     case __NR_waitpid:
 #endif
       return true;
+    case __NR_clone:  // Should be parameter-restricted.
     case __NR_setns:  // Privileged.
     case __NR_fork:
 #if defined(__i386__) || defined(__x86_64__)
@@ -375,12 +374,12 @@ bool SyscallSets::IsAllowedProcessStartOrDeath(int sysno) {
 }
 
 // It's difficult to restrict those, but there is attack surface here.
-bool SyscallSets::IsFutex(int sysno) {
+bool SyscallSets::IsAllowedFutex(int sysno) {
   switch (sysno) {
-    case __NR_futex:
     case __NR_get_robust_list:
     case __NR_set_robust_list:
       return true;
+    case __NR_futex:
     default:
       return false;
   }
@@ -547,14 +546,14 @@ bool SyscallSets::IsAllowedGeneralIo(int sysno) {
   }
 }
 
-bool SyscallSets::IsAllowedPrctl(int sysno) {
+bool SyscallSets::IsPrctl(int sysno) {
   switch (sysno) {
-    case __NR_prctl:
-      return true;
-    default:
 #if defined(__x86_64__)
     case __NR_arch_prctl:
 #endif
+    case __NR_prctl:
+      return true;
+    default:
       return false;
   }
 }

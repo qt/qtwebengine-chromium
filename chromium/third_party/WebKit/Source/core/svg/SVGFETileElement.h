@@ -28,19 +28,18 @@ namespace WebCore {
 
 class SVGFETileElement FINAL : public SVGFilterPrimitiveStandardAttributes {
 public:
-    static PassRefPtr<SVGFETileElement> create(Document&);
+    DECLARE_NODE_FACTORY(SVGFETileElement);
+    SVGAnimatedString* in1() { return m_in1.get(); }
 
 private:
     explicit SVGFETileElement(Document&);
 
     bool isSupportedAttribute(const QualifiedName&);
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual void svgAttributeChanged(const QualifiedName&);
-    virtual PassRefPtr<FilterEffect> build(SVGFilterBuilder*, Filter*);
+    virtual void svgAttributeChanged(const QualifiedName&) OVERRIDE;
+    virtual PassRefPtr<FilterEffect> build(SVGFilterBuilder*, Filter*) OVERRIDE;
 
-    BEGIN_DECLARE_ANIMATED_PROPERTIES(SVGFETileElement)
-        DECLARE_ANIMATED_STRING(In1, in1)
-    END_DECLARE_ANIMATED_PROPERTIES
+    RefPtr<SVGAnimatedString> m_in1;
 };
 
 } // namespace WebCore

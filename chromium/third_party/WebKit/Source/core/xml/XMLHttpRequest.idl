@@ -37,9 +37,10 @@ enum XMLHttpRequestResponseType {
 };
 
 [
+    WillBeGarbageCollected,
     ActiveDOMObject,
     CustomConstructor(optional XMLHttpRequestOptions options),
-    GlobalContext=Window&WorkerGlobalScope,
+    Exposed=Window&Worker
 ] interface XMLHttpRequest : XMLHttpRequestEventTarget {
     // event handler attributes
     attribute EventHandler onreadystatechange;
@@ -56,9 +57,9 @@ enum XMLHttpRequestResponseType {
 
     [RaisesException=Setter] attribute boolean withCredentials;
 
-    [Custom, ActivityLogging=ForAllWorlds, RaisesException] void open(DOMString method, DOMString url, optional boolean async, optional DOMString user, optional DOMString password);
+    [Custom, LogActivity, LogAllWorlds, RaisesException] void open(DOMString method, DOMString url, optional boolean async, optional DOMString user, optional DOMString password);
 
-    [ActivityLogging=ForAllWorlds, RaisesException] void setRequestHeader(DOMString header, DOMString value);
+    [LogActivity, LogAllWorlds, RaisesException] void setRequestHeader(DOMString header, DOMString value);
 
     [Custom, RaisesException] void send();
 
@@ -74,6 +75,7 @@ enum XMLHttpRequestResponseType {
 
     [RaisesException=Setter] attribute XMLHttpRequestResponseType responseType;
     [Custom=Getter, RaisesException=Getter] readonly attribute object response;
+    readonly attribute DOMString responseURL;
 
     readonly attribute unsigned short status;
     readonly attribute DOMString statusText;

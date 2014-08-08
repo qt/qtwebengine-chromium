@@ -9,27 +9,29 @@
 #include <set>
 #include <string>
 
-#include "base/strings/string16.h"
-#include "base/time/time.h"
-#include "base/timer/timer.h"
-#include "ui/gfx/image/image.h"
-#include "ui/gfx/native_widget_types.h"
+#include "base/gtest_prod_util.h"
 #include "ui/message_center/message_center_export.h"
-#include "ui/message_center/notification.h"
 #include "ui/message_center/notification_blocker.h"
 #include "ui/message_center/notification_types.h"
 
 namespace base {
 class DictionaryValue;
+class TimeDelta;
+}
+
+namespace gfx {
+class Image;
 }
 
 namespace message_center {
 
-class NotificationDelegate;
-
 namespace test {
 class NotificationListTest;
 }
+
+class Notification;
+class NotificationDelegate;
+struct NotifierId;
 
 // Comparers used to auto-sort the lists of Notifications.
 struct MESSAGE_CENTER_EXPORT ComparePriorityTimestampSerial {
@@ -82,9 +84,6 @@ class MESSAGE_CENTER_EXPORT NotificationList {
                                  int button_index,
                                  const gfx::Image& image);
 
-  // Returns true if |id| matches a notification in the list.
-  bool HasNotification(const std::string& id);
-
   // Returns true if |id| matches a notification in the list and that
   // notification's type matches the given type.
   bool HasNotificationOfType(const std::string& id,
@@ -112,9 +111,6 @@ class MESSAGE_CENTER_EXPORT NotificationList {
   // Marks a specific popup item as displayed.
   void MarkSinglePopupAsDisplayed(const std::string& id);
 
-  // Marks the specified notification as expanded in the notification center.
-  void MarkNotificationAsExpanded(const std::string& id);
-
   NotificationDelegate* GetNotificationDelegate(const std::string& id);
 
   bool quiet_mode() const { return quiet_mode_; }
@@ -125,6 +121,10 @@ class MESSAGE_CENTER_EXPORT NotificationList {
   // Sets the current quiet mode to true. The quiet mode will expire in the
   // specified time-delta from now.
   void EnterQuietModeWithExpire(const base::TimeDelta& expires_in);
+
+  // Returns the notification with the corresponding id. If not found, returns
+  // NULL. Notification instance is owned by this list.
+  Notification* GetNotificationById(const std::string& id);
 
   // Returns all visible notifications, in a (priority-timestamp) order.
   // Suitable for rendering notifications in a MessageCenter.

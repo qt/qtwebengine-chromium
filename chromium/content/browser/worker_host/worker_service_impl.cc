@@ -11,6 +11,7 @@
 #include "base/threading/thread.h"
 #include "content/browser/devtools/worker_devtools_manager.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
+#include "content/browser/shared_worker/shared_worker_service_impl.h"
 #include "content/browser/worker_host/worker_message_filter.h"
 #include "content/browser/worker_host/worker_process_host.h"
 #include "content/common/view_messages.h"
@@ -18,6 +19,7 @@
 #include "content/public/browser/child_process_data.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/render_widget_host.h"
@@ -31,8 +33,17 @@
 
 namespace content {
 
+namespace {
+void AddRenderFrameID(std::set<std::pair<int, int> >* visible_frame_ids,
+                      RenderFrameHost* rfh) {
+  visible_frame_ids->insert(
+      std::pair<int, int>(rfh->GetProcess()->GetID(),
+                          rfh->GetRoutingID()));
+}
+}
+
 const int WorkerServiceImpl::kMaxWorkersWhenSeparate = 64;
-const int WorkerServiceImpl::kMaxWorkersPerTabWhenSeparate = 16;
+const int WorkerServiceImpl::kMaxWorkersPerFrameWhenSeparate = 16;
 
 class WorkerPrioritySetter
     : public NotificationObserver,
@@ -64,8 +75,8 @@ class WorkerPrioritySetter
   // widgets being shown.
   void RegisterObserver();
 
-  // Sets priorities for shared workers given a set of visible tabs (as a
-  // std::set of std::pair<render_process, render_view> ids.
+  // Sets priorities for shared workers given a set of visible frames (as a
+  // std::set of std::pair<render_process, render_frame> ids.
   void UpdateWorkerPrioritiesFromVisibleSet(
       const std::set<std::pair<int, int> >* visible);
 
@@ -107,7 +118,7 @@ void WorkerPrioritySetter::PostTaskToGatherAndUpdateWorkerPriorities() {
 
 void WorkerPrioritySetter::GatherVisibleIDsAndUpdateWorkerPriorities() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  std::set<std::pair<int, int> >* visible_renderer_ids =
+  std::set<std::pair<int, int> >* visible_frame_ids =
       new std::set<std::pair<int, int> >();
 
   // Gather up all the visible renderer process/view pairs
@@ -116,23 +127,28 @@ void WorkerPrioritySetter::GatherVisibleIDsAndUpdateWorkerPriorities() {
   while (RenderWidgetHost* widget = widgets->GetNextHost()) {
     if (widget->GetProcess()->VisibleWidgetCount() == 0)
       continue;
+    if (!widget->IsRenderView())
+      continue;
 
-    RenderWidgetHostView* render_view = widget->GetView();
-    if (render_view && render_view->IsShowing()) {
-      visible_renderer_ids->insert(
-          std::pair<int, int>(widget->GetProcess()->GetID(),
-                              widget->GetRoutingID()));
-    }
+    RenderWidgetHostView* widget_view = widget->GetView();
+    if (!widget_view || !widget_view->IsShowing())
+      continue;
+    RenderViewHost* rvh = RenderViewHost::From(widget);
+    WebContents* web_contents = WebContents::FromRenderViewHost(rvh);
+    if (!web_contents)
+      continue;
+    web_contents->ForEachFrame(
+        base::Bind(&AddRenderFrameID, visible_frame_ids));
   }
 
   BrowserThread::PostTask(
       BrowserThread::IO, FROM_HERE,
       base::Bind(&WorkerPrioritySetter::UpdateWorkerPrioritiesFromVisibleSet,
-                 this, base::Owned(visible_renderer_ids)));
+                 this, base::Owned(visible_frame_ids)));
 }
 
 void WorkerPrioritySetter::UpdateWorkerPrioritiesFromVisibleSet(
-    const std::set<std::pair<int, int> >* visible_renderer_ids) {
+    const std::set<std::pair<int, int> >* visible_frame_ids) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
 
   for (WorkerProcessHostIterator iter; !iter.Done(); ++iter) {
@@ -156,8 +172,8 @@ void WorkerPrioritySetter::UpdateWorkerPrioritiesFromVisibleSet(
       for (; info != first_instance->worker_document_set()->documents().end();
           ++info) {
         std::pair<int, int> id(
-            info->render_process_id(), info->render_view_id());
-        if (visible_renderer_ids->find(id) != visible_renderer_ids->end()) {
+            info->render_process_id(), info->render_frame_id());
+        if (visible_frame_ids->find(id) != visible_frame_ids->end()) {
           throttle = false;
           break;
         }
@@ -175,11 +191,11 @@ void WorkerPrioritySetter::UpdateWorkerPrioritiesFromVisibleSet(
 void WorkerPrioritySetter::OnRenderWidgetVisibilityChanged(
     std::pair<int, int> id) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  std::set<std::pair<int, int> > visible_renderer_ids;
+  std::set<std::pair<int, int> > visible_frame_ids;
 
-  visible_renderer_ids.insert(id);
+  visible_frame_ids.insert(id);
 
-  UpdateWorkerPrioritiesFromVisibleSet(&visible_renderer_ids);
+  UpdateWorkerPrioritiesFromVisibleSet(&visible_frame_ids);
 }
 
 void WorkerPrioritySetter::RegisterObserver() {
@@ -213,7 +229,16 @@ void WorkerPrioritySetter::Observe(int type,
 }
 
 WorkerService* WorkerService::GetInstance() {
-  return WorkerServiceImpl::GetInstance();
+  if (EmbeddedSharedWorkerEnabled())
+    return SharedWorkerServiceImpl::GetInstance();
+  else
+    return WorkerServiceImpl::GetInstance();
+}
+
+bool WorkerService::EmbeddedSharedWorkerEnabled() {
+  static bool disabled = CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kDisableEmbeddedSharedWorker);
+  return !disabled;
 }
 
 WorkerServiceImpl* WorkerServiceImpl::GetInstance() {
@@ -253,29 +278,6 @@ void WorkerServiceImpl::OnWorkerMessageFilterClosing(
     }
   }
 
-  for (WorkerProcessHost::Instances::iterator i =
-           pending_shared_workers_.begin();
-       i != pending_shared_workers_.end(); ) {
-     i->RemoveFilters(filter);
-     if (i->NumFilters() == 0) {
-      i = pending_shared_workers_.erase(i);
-    } else {
-      ++i;
-    }
-  }
-
-  // Also, see if that process had any pending shared workers.
-  for (WorkerProcessHost::Instances::iterator iter =
-           pending_shared_workers_.begin();
-       iter != pending_shared_workers_.end(); ) {
-    iter->worker_document_set()->RemoveAll(filter);
-    if (iter->worker_document_set()->IsEmpty()) {
-      iter = pending_shared_workers_.erase(iter);
-    } else {
-      ++iter;
-    }
-  }
-
   // Either a worker proceess has shut down, in which case we can start one of
   // the queued workers, or a renderer has shut down, in which case it doesn't
   // affect anything.  We call this function in both scenarios because then we
@@ -288,8 +290,38 @@ void WorkerServiceImpl::CreateWorker(
     int route_id,
     WorkerMessageFilter* filter,
     ResourceContext* resource_context,
-    const WorkerStoragePartition& partition) {
+    const WorkerStoragePartition& partition,
+    bool* url_mismatch) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  *url_mismatch = false;
+  WorkerProcessHost::WorkerInstance* existing_instance =
+      FindSharedWorkerInstance(
+          params.url, params.name, partition, resource_context);
+  if (existing_instance) {
+    if (params.url != existing_instance->url()) {
+      *url_mismatch = true;
+      return;
+    }
+    if (existing_instance->load_failed()) {
+      filter->Send(new ViewMsg_WorkerScriptLoadFailed(route_id));
+      return;
+    }
+    existing_instance->AddFilter(filter, route_id);
+    existing_instance->worker_document_set()->Add(
+        filter, params.document_id, filter->render_process_id(),
+        params.render_frame_route_id);
+    filter->Send(new ViewMsg_WorkerCreated(route_id));
+    return;
+  }
+  for (WorkerProcessHost::Instances::iterator i = queued_workers_.begin();
+       i != queued_workers_.end(); ++i) {
+    if (i->Matches(params.url, params.name, partition, resource_context) &&
+        params.url != i->url()) {
+      *url_mismatch = true;
+      return;
+    }
+  }
+
   // Generate a unique route id for the browser-worker communication that's
   // unique among all worker processes.  That way when the worker process sends
   // a wrapped IPC message through us, we know which WorkerProcessHost to give
@@ -297,61 +329,18 @@ void WorkerServiceImpl::CreateWorker(
   WorkerProcessHost::WorkerInstance instance(
       params.url,
       params.name,
+      params.content_security_policy,
+      params.security_policy_type,
       next_worker_route_id(),
-      0,
-      params.script_resource_appcache_id,
+      params.render_frame_route_id,
       resource_context,
       partition);
   instance.AddFilter(filter, route_id);
   instance.worker_document_set()->Add(
       filter, params.document_id, filter->render_process_id(),
-      params.render_view_route_id);
+      params.render_frame_route_id);
 
   CreateWorkerFromInstance(instance);
-}
-
-void WorkerServiceImpl::LookupSharedWorker(
-    const ViewHostMsg_CreateWorker_Params& params,
-    int route_id,
-    WorkerMessageFilter* filter,
-    ResourceContext* resource_context,
-    const WorkerStoragePartition& partition,
-    bool* exists,
-    bool* url_mismatch) {
-  *exists = true;
-  WorkerProcessHost::WorkerInstance* instance = FindSharedWorkerInstance(
-      params.url, params.name, partition, resource_context);
-
-  if (!instance) {
-    // If no worker instance currently exists, we need to create a pending
-    // instance - this is to make sure that any subsequent lookups passing a
-    // mismatched URL get the appropriate url_mismatch error at lookup time.
-    // Having named shared workers was a Really Bad Idea due to details like
-    // this.
-    instance = CreatePendingInstance(params.url, params.name,
-                                     resource_context, partition);
-    *exists = false;
-  }
-
-  // Make sure the passed-in instance matches the URL - if not, return an
-  // error.
-  if (params.url != instance->url()) {
-    *url_mismatch = true;
-    *exists = false;
-  } else {
-    *url_mismatch = false;
-    // Add our route ID to the existing instance so we can send messages to it.
-    instance->AddFilter(filter, route_id);
-
-    // Add the passed filter/document_id to the worker instance.
-    // TODO(atwilson): This won't work if the message is from a worker process.
-    // We don't support that yet though (this message is only sent from
-    // renderers) but when we do, we'll need to add code to pass in the current
-    // worker's document set for nested workers.
-    instance->worker_document_set()->Add(
-        filter, params.document_id, filter->render_process_id(),
-        params.render_view_route_id);
-  }
 }
 
 void WorkerServiceImpl::ForwardToWorker(const IPC::Message& message,
@@ -381,18 +370,6 @@ void WorkerServiceImpl::DocumentDetached(unsigned long long document_id,
     }
     ++iter;
   }
-
-  // Remove the document from any pending shared workers.
-  for (WorkerProcessHost::Instances::iterator iter =
-           pending_shared_workers_.begin();
-       iter != pending_shared_workers_.end(); ) {
-    iter->worker_document_set()->Remove(filter, document_id);
-    if (iter->worker_document_set()->IsEmpty()) {
-      iter = pending_shared_workers_.erase(iter);
-    } else {
-      ++iter;
-    }
-  }
 }
 
 bool WorkerServiceImpl::CreateWorkerFromInstance(
@@ -402,54 +379,6 @@ bool WorkerServiceImpl::CreateWorkerFromInstance(
     return true;
   }
 
-  // Check to see if this shared worker is already running (two pages may have
-  // tried to start up the worker simultaneously).
-  // See if a worker with this name already exists.
-  WorkerProcessHost::WorkerInstance* existing_instance =
-      FindSharedWorkerInstance(
-          instance.url(), instance.name(), instance.partition(),
-          instance.resource_context());
-  WorkerProcessHost::WorkerInstance::FilterInfo filter_info =
-      instance.GetFilter();
-  // If this worker is already running, no need to create a new copy. Just
-  // inform the caller that the worker has been created.
-  if (existing_instance) {
-    // Walk the worker's filter list to see if this client is listed. If not,
-    // then it means that the worker started by the client already exited so
-    // we should not attach to this new one (http://crbug.com/29243).
-    if (!existing_instance->HasFilter(filter_info.first, filter_info.second))
-      return false;
-    filter_info.first->Send(new ViewMsg_WorkerCreated(filter_info.second));
-    return true;
-  }
-
-  // Look to see if there's a pending instance.
-  WorkerProcessHost::WorkerInstance* pending = FindPendingInstance(
-      instance.url(), instance.name(), instance.partition(),
-      instance.resource_context());
-  // If there's no instance *and* no pending instance (or there is a pending
-  // instance but it does not contain our filter info), then it means the
-  // worker started up and exited already. Log a warning because this should
-  // be a very rare occurrence and is probably a bug, but it *can* happen so
-  // handle it gracefully.
-  if (!pending ||
-      !pending->HasFilter(filter_info.first, filter_info.second)) {
-    DLOG(WARNING) << "Pending worker already exited";
-    return false;
-  }
-
-  // Assign the accumulated document set and filter list for this pending
-  // worker to the new instance.
-  DCHECK(!pending->worker_document_set()->IsEmpty());
-  instance.ShareDocumentSet(*pending);
-  for (WorkerProcessHost::WorkerInstance::FilterList::const_iterator i =
-           pending->filters().begin();
-       i != pending->filters().end(); ++i) {
-    instance.AddFilter(i->first, i->second);
-  }
-  RemovePendingInstances(instance.url(), instance.name(),
-                         instance.partition(), instance.resource_context());
-
   // Remove any queued instances of this worker and copy over the filter to
   // this instance.
   for (WorkerProcessHost::Instances::iterator iter = queued_workers_.begin();
@@ -457,33 +386,36 @@ bool WorkerServiceImpl::CreateWorkerFromInstance(
     if (iter->Matches(instance.url(), instance.name(),
                       instance.partition(), instance.resource_context())) {
       DCHECK(iter->NumFilters() == 1);
+      DCHECK_EQ(instance.url(), iter->url());
       WorkerProcessHost::WorkerInstance::FilterInfo filter_info =
           iter->GetFilter();
-      instance.AddFilter(filter_info.first, filter_info.second);
+      instance.AddFilter(filter_info.filter(), filter_info.route_id());
       iter = queued_workers_.erase(iter);
     } else {
       ++iter;
     }
   }
 
-  WorkerMessageFilter* first_filter = instance.filters().begin()->first;
+  WorkerMessageFilter* first_filter = instance.filters().begin()->filter();
   WorkerProcessHost* worker = new WorkerProcessHost(
       instance.resource_context(), instance.partition());
   // TODO(atwilson): This won't work if the message is from a worker process.
   // We don't support that yet though (this message is only sent from
   // renderers) but when we do, we'll need to add code to pass in the current
   // worker's document set for nested workers.
-  if (!worker->Init(first_filter->render_process_id())) {
+  if (!worker->Init(first_filter->render_process_id(),
+                    instance.render_frame_id())) {
     delete worker;
     return false;
   }
 
-  worker->CreateWorker(instance);
+  worker->CreateWorker(
+      instance,
+      WorkerDevToolsManager::GetInstance()->WorkerCreated(worker, instance));
   FOR_EACH_OBSERVER(
       WorkerServiceObserver, observers_,
       WorkerCreated(instance.url(), instance.name(), worker->GetData().id,
                     instance.worker_route_id()));
-  WorkerDevToolsManager::GetInstance()->WorkerCreated(worker, instance);
   return true;
 }
 
@@ -497,9 +429,9 @@ bool WorkerServiceImpl::CanCreateWorkerProcess(
            parents.begin();
        parent_iter != parents.end(); ++parent_iter) {
     bool hit_total_worker_limit = false;
-    if (TabCanCreateWorkerProcess(parent_iter->render_process_id(),
-                                  parent_iter->render_view_id(),
-                                  &hit_total_worker_limit)) {
+    if (FrameCanCreateWorkerProcess(parent_iter->render_process_id(),
+                                    parent_iter->render_frame_id(),
+                                    &hit_total_worker_limit)) {
       return true;
     }
     // Return false if already at the global worker limit (no need to continue
@@ -512,9 +444,9 @@ bool WorkerServiceImpl::CanCreateWorkerProcess(
   return false;
 }
 
-bool WorkerServiceImpl::TabCanCreateWorkerProcess(
+bool WorkerServiceImpl::FrameCanCreateWorkerProcess(
     int render_process_id,
-    int render_view_id,
+    int render_frame_id,
     bool* hit_total_worker_limit) {
   int total_workers = 0;
   int workers_per_tab = 0;
@@ -528,9 +460,9 @@ bool WorkerServiceImpl::TabCanCreateWorkerProcess(
         *hit_total_worker_limit = true;
         return false;
       }
-      if (cur_instance->RendererIsParent(render_process_id, render_view_id)) {
+      if (cur_instance->FrameIsParent(render_process_id, render_frame_id)) {
         workers_per_tab++;
-        if (workers_per_tab >= kMaxWorkersPerTabWhenSeparate)
+        if (workers_per_tab >= kMaxWorkersPerFrameWhenSeparate)
           return false;
       }
     }
@@ -564,7 +496,7 @@ void WorkerServiceImpl::TryStartingQueuedWorker() {
 
 bool WorkerServiceImpl::GetRendererForWorker(int worker_process_id,
                                              int* render_process_id,
-                                             int* render_view_id) const {
+                                             int* render_frame_id) const {
   for (WorkerProcessHostIterator iter; !iter.Done(); ++iter) {
     if (iter.GetData().id != worker_process_id)
       continue;
@@ -578,7 +510,7 @@ bool WorkerServiceImpl::GetRendererForWorker(int worker_process_id,
     WorkerDocumentSet::DocumentInfoSet::const_iterator info =
         first_instance->worker_document_set()->documents().begin();
     *render_process_id = info->render_process_id();
-    *render_view_id = info->render_view_id();
+    *render_frame_id = info->render_frame_id();
     return true;
   }
   return false;
@@ -663,58 +595,6 @@ WorkerProcessHost::WorkerInstance* WorkerServiceImpl::FindSharedWorkerInstance(
     }
   }
   return NULL;
-}
-
-WorkerProcessHost::WorkerInstance* WorkerServiceImpl::FindPendingInstance(
-    const GURL& url,
-    const base::string16& name,
-    const WorkerStoragePartition& partition,
-    ResourceContext* resource_context) {
-  // Walk the pending instances looking for a matching pending worker.
-  for (WorkerProcessHost::Instances::iterator iter =
-           pending_shared_workers_.begin();
-       iter != pending_shared_workers_.end();
-       ++iter) {
-    if (iter->Matches(url, name, partition, resource_context))
-      return &(*iter);
-  }
-  return NULL;
-}
-
-
-void WorkerServiceImpl::RemovePendingInstances(
-    const GURL& url,
-    const base::string16& name,
-    const WorkerStoragePartition& partition,
-    ResourceContext* resource_context) {
-  // Walk the pending instances looking for a matching pending worker.
-  for (WorkerProcessHost::Instances::iterator iter =
-           pending_shared_workers_.begin();
-       iter != pending_shared_workers_.end(); ) {
-    if (iter->Matches(url, name, partition, resource_context)) {
-      iter = pending_shared_workers_.erase(iter);
-    } else {
-      ++iter;
-    }
-  }
-}
-
-WorkerProcessHost::WorkerInstance* WorkerServiceImpl::CreatePendingInstance(
-    const GURL& url,
-    const base::string16& name,
-    ResourceContext* resource_context,
-    const WorkerStoragePartition& partition) {
-  // Look for an existing pending shared worker.
-  WorkerProcessHost::WorkerInstance* instance =
-      FindPendingInstance(url, name, partition, resource_context);
-  if (instance)
-    return instance;
-
-  // No existing pending worker - create a new one.
-  WorkerProcessHost::WorkerInstance pending(
-      url, true, name, resource_context, partition);
-  pending_shared_workers_.push_back(pending);
-  return &pending_shared_workers_.back();
 }
 
 }  // namespace content

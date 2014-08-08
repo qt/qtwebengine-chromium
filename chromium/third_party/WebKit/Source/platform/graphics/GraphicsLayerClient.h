@@ -64,15 +64,9 @@ public:
     virtual ~GraphicsLayerClient() {}
 
     // Callback for when hardware-accelerated animation started.
-    virtual void notifyAnimationStarted(const GraphicsLayer*, double wallClockTime, double monotonicTime) = 0;
+    virtual void notifyAnimationStarted(const GraphicsLayer*, double monotonicTime) = 0;
 
     virtual void paintContents(const GraphicsLayer*, GraphicsContext&, GraphicsLayerPaintingPhase, const IntRect& inClip) = 0;
-    virtual void didCommitChangesForLayer(const GraphicsLayer*) const { }
-
-    // Provides current transform (taking transform-origin and animations into account). Input matrix has been
-    // initialized to identity already. Returns false if the layer has no transform.
-    virtual bool getCurrentTransform(const GraphicsLayer*, TransformationMatrix&) const { return false; }
-
     virtual bool isTrackingRepaints() const { return false; }
 
     virtual String debugName(const GraphicsLayer*) = 0;

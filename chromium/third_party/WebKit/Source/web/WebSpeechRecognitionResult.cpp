@@ -24,11 +24,14 @@
  */
 
 #include "config.h"
-#include "WebSpeechRecognitionResult.h"
+#include "public/web/WebSpeechRecognitionResult.h"
 
 #include "modules/speech/SpeechRecognitionAlternative.h"
 #include "modules/speech/SpeechRecognitionResult.h"
+#include "platform/heap/Handle.h"
 #include "wtf/PassRefPtr.h"
+#include "wtf/RawPtr.h"
+#include "wtf/RefPtr.h"
 #include "wtf/Vector.h"
 
 namespace blink {
@@ -42,7 +45,7 @@ void WebSpeechRecognitionResult::assign(const WebVector<WebString>& transcripts,
 {
     ASSERT(transcripts.size() == confidences.size());
 
-    Vector<RefPtr<WebCore::SpeechRecognitionAlternative> > alternatives(transcripts.size());
+    WebCore::HeapVector<WebCore::Member<WebCore::SpeechRecognitionAlternative> > alternatives(transcripts.size());
     for (size_t i = 0; i < transcripts.size(); ++i)
         alternatives[i] = WebCore::SpeechRecognitionAlternative::create(transcripts[i], confidences[i]);
 
@@ -54,7 +57,7 @@ void WebSpeechRecognitionResult::reset()
     m_private.reset();
 }
 
-WebSpeechRecognitionResult::operator PassRefPtr<WebCore::SpeechRecognitionResult>() const
+WebSpeechRecognitionResult::operator WebCore::SpeechRecognitionResult*() const
 {
     return m_private.get();
 }

@@ -36,19 +36,31 @@
 
 namespace WebCore {
 
-InspectorBaseAgentInterface::InspectorBaseAgentInterface(const String& name, InstrumentingAgents* instrumentingAgents, InspectorCompositeState* inspectorState)
+InspectorAgent::InspectorAgent(const String& name)
+    : m_name(name)
+{
+}
+
+InspectorAgent::~InspectorAgent()
+{
+}
+
+void InspectorAgent::appended(InstrumentingAgents* instrumentingAgents, InspectorState* inspectorState)
+{
+    m_instrumentingAgents = instrumentingAgents;
+    m_state = inspectorState;
+    init();
+}
+
+InspectorAgentRegistry::InspectorAgentRegistry(InstrumentingAgents* instrumentingAgents, InspectorCompositeState* inspectorState)
     : m_instrumentingAgents(instrumentingAgents)
-    , m_state(inspectorState->createAgentState(name))
-    , m_name(name)
+    , m_inspectorState(inspectorState)
 {
 }
 
-InspectorBaseAgentInterface::~InspectorBaseAgentInterface()
+void InspectorAgentRegistry::append(PassOwnPtr<InspectorAgent> agent)
 {
-}
-
-void InspectorAgentRegistry::append(PassOwnPtr<InspectorBaseAgentInterface> agent)
-{
+    agent->appended(m_instrumentingAgents, m_inspectorState->createAgentState(agent->name()));
     m_agents.append(agent);
 }
 
@@ -80,6 +92,12 @@ void InspectorAgentRegistry::discardAgents()
 {
     for (size_t i = 0; i < m_agents.size(); i++)
         m_agents[i]->discardAgent();
+}
+
+void InspectorAgentRegistry::flushPendingFrontendMessages()
+{
+    for (size_t i = 0; i < m_agents.size(); i++)
+        m_agents[i]->flushPendingFrontendMessages();
 }
 
 } // namespace WebCore

@@ -45,6 +45,9 @@ class CONTENT_EXPORT ChildProcessSecurityPolicyImpl
   virtual void GrantReadFile(int child_id, const base::FilePath& file) OVERRIDE;
   virtual void GrantCreateReadWriteFile(int child_id,
                                         const base::FilePath& file) OVERRIDE;
+  virtual void GrantCopyInto(int child_id, const base::FilePath& dir) OVERRIDE;
+  virtual void GrantDeleteFrom(int child_id,
+                               const base::FilePath& dir) OVERRIDE;
   virtual void GrantReadFileSystem(
       int child_id,
       const std::string& filesystem_id) OVERRIDE;
@@ -124,7 +127,7 @@ class CONTENT_EXPORT ChildProcessSecurityPolicyImpl
   void RevokeReadRawCookies(int child_id);
 
   // Grants permission to send system exclusive message to any MIDI devices.
-  void GrantSendMIDISysExMessage(int child_id);
+  void GrantSendMidiSysExMessage(int child_id);
 
   // Before servicing a child process's request for a URL, the browser should
   // call this method to determine whether the process has the capability to
@@ -184,7 +187,7 @@ class CONTENT_EXPORT ChildProcessSecurityPolicyImpl
       int policy);
 
   // Returns true if sending system exclusive messages is allowed.
-  bool CanSendMIDISysExMessage(int child_id);
+  bool CanSendMidiSysExMessage(int child_id);
 
  private:
   friend class ChildProcessSecurityPolicyInProcessBrowserTest;

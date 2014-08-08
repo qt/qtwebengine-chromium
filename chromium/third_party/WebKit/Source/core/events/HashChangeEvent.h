@@ -22,7 +22,6 @@
 #define HashChangeEvent_h
 
 #include "core/events/Event.h"
-#include "core/events/ThreadLocalEventNames.h"
 
 namespace WebCore {
 
@@ -35,21 +34,21 @@ struct HashChangeEventInit : public EventInit {
     String newURL;
 };
 
-class HashChangeEvent : public Event {
+class HashChangeEvent FINAL : public Event {
 public:
-    static PassRefPtr<HashChangeEvent> create()
+    static PassRefPtrWillBeRawPtr<HashChangeEvent> create()
     {
-        return adoptRef(new HashChangeEvent);
+        return adoptRefWillBeNoop(new HashChangeEvent);
     }
 
-    static PassRefPtr<HashChangeEvent> create(const String& oldURL, const String& newURL)
+    static PassRefPtrWillBeRawPtr<HashChangeEvent> create(const String& oldURL, const String& newURL)
     {
-        return adoptRef(new HashChangeEvent(oldURL, newURL));
+        return adoptRefWillBeNoop(new HashChangeEvent(oldURL, newURL));
     }
 
-    static PassRefPtr<HashChangeEvent> create(const AtomicString& type, const HashChangeEventInit& initializer)
+    static PassRefPtrWillBeRawPtr<HashChangeEvent> create(const AtomicString& type, const HashChangeEventInit& initializer)
     {
-        return adoptRef(new HashChangeEvent(type, initializer));
+        return adoptRefWillBeNoop(new HashChangeEvent(type, initializer));
     }
 
     void initHashChangeEvent(const AtomicString& eventType, bool canBubble, bool cancelable, const String& oldURL, const String& newURL)
@@ -66,7 +65,9 @@ public:
     const String& oldURL() const { return m_oldURL; }
     const String& newURL() const { return m_newURL; }
 
-    virtual const AtomicString& interfaceName() const { return EventNames::HashChangeEvent; }
+    virtual const AtomicString& interfaceName() const OVERRIDE { return EventNames::HashChangeEvent; }
+
+    virtual void trace(Visitor* visitor) OVERRIDE { Event::trace(visitor); }
 
 private:
     HashChangeEvent()

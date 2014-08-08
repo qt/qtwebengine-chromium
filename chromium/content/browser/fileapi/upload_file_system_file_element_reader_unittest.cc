@@ -2,22 +2,27 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "webkit/browser/fileapi/upload_file_system_file_element_reader.h"
+#include "content/browser/fileapi/upload_file_system_file_element_reader.h"
 
 #include "base/files/scoped_temp_dir.h"
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
+#include "content/public/test/async_file_test_helper.h"
 #include "content/public/test/test_file_system_context.h"
 #include "net/base/io_buffer.h"
 #include "net/base/test_completion_callback.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "webkit/browser/fileapi/async_file_test_helper.h"
 #include "webkit/browser/fileapi/file_system_backend.h"
 #include "webkit/browser/fileapi/file_system_context.h"
 #include "webkit/browser/fileapi/file_system_operation_context.h"
 #include "webkit/browser/fileapi/file_system_url.h"
 
-namespace fileapi {
+using content::AsyncFileTestHelper;
+using fileapi::FileSystemContext;
+using fileapi::FileSystemType;
+using fileapi::FileSystemURL;
+
+namespace content {
 
 namespace {
 
@@ -34,13 +39,13 @@ class UploadFileSystemFileElementReaderTest : public testing::Test {
   virtual void SetUp() OVERRIDE {
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
 
-    file_system_context_ = fileapi::CreateFileSystemContextForTesting(
+    file_system_context_ = CreateFileSystemContextForTesting(
         NULL, temp_dir_.path());
 
     file_system_context_->OpenFileSystem(
         GURL(kFileSystemURLOrigin),
         kFileSystemType,
-        OPEN_FILE_SYSTEM_CREATE_IF_NONEXISTENT,
+        fileapi::OPEN_FILE_SYSTEM_CREATE_IF_NONEXISTENT,
         base::Bind(&UploadFileSystemFileElementReaderTest::OnOpenFileSystem,
                    base::Unretained(this)));
     base::RunLoop().RunUntilIdle();
@@ -89,12 +94,12 @@ class UploadFileSystemFileElementReaderTest : public testing::Test {
             kFileSystemType,
             base::FilePath().AppendASCII(filename));
 
-    ASSERT_EQ(base::PLATFORM_FILE_OK,
+    ASSERT_EQ(base::File::FILE_OK,
               AsyncFileTestHelper::CreateFileWithData(
                   file_system_context_, url, buf, buf_size));
 
-    base::PlatformFileInfo file_info;
-    ASSERT_EQ(base::PLATFORM_FILE_OK,
+    base::File::Info file_info;
+    ASSERT_EQ(base::File::FILE_OK,
               AsyncFileTestHelper::GetMetadata(
                   file_system_context_, url, &file_info));
     *modification_time = file_info.last_modified;
@@ -102,8 +107,8 @@ class UploadFileSystemFileElementReaderTest : public testing::Test {
 
   void OnOpenFileSystem(const GURL& root,
                         const std::string& name,
-                        base::PlatformFileError result) {
-    ASSERT_EQ(base::PLATFORM_FILE_OK, result);
+                        base::File::Error result) {
+    ASSERT_EQ(base::File::FILE_OK, result);
     ASSERT_TRUE(root.is_valid());
     file_system_root_url_ = root;
   }
@@ -275,4 +280,4 @@ TEST_F(UploadFileSystemFileElementReaderTest, WrongURL) {
   EXPECT_EQ(net::ERR_FILE_NOT_FOUND, init_callback.WaitForResult());
 }
 
-}  // namespace fileapi
+}  // namespace content

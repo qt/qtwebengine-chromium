@@ -12,6 +12,7 @@
 #include "base/command_line.h"
 #include "base/logging.h"
 #include "base/mac/foundation_util.h"
+#include "base/mac/mach_logging.h"
 #include "base/mac/scoped_mach_port.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
@@ -27,11 +28,6 @@
 namespace content {
 
 namespace {
-
-// Prints a string representation of a Mach error code.
-std::string MachErrorCode(kern_return_t err) {
-  return base::StringPrintf("0x%x %s", err, mach_error_string(err));
-}
 
 // Mach message structure used in the child as a sending message.
 struct MachBroker_ChildSendMsg {
@@ -57,28 +53,27 @@ class MachListenerThreadDelegate : public base::PlatformThread::Delegate {
   }
 
   bool Init() {
-    DCHECK(server_port_ == MACH_PORT_NULL);
+    DCHECK(server_port_.get() == MACH_PORT_NULL);
 
     mach_port_t port;
     kern_return_t kr = mach_port_allocate(mach_task_self(),
                                           MACH_PORT_RIGHT_RECEIVE,
                                           &port);
     if (kr != KERN_SUCCESS) {
-      LOG(ERROR) << "Failed to allocate MachBroker server port: "
-                 << MachErrorCode(kr);
+      MACH_LOG(ERROR, kr) << "mach_port_allocate";
       return false;
     }
+    server_port_.reset(port);
 
     // Allocate a send right for the server port.
     kr = mach_port_insert_right(
         mach_task_self(), port, port, MACH_MSG_TYPE_MAKE_SEND);
     if (kr != KERN_SUCCESS) {
-      LOG(ERROR) << "Failed to insert send right for MachBroker server port: "
-                 << MachErrorCode(kr);
+      MACH_LOG(ERROR, kr) << "mach_port_insert_right";
       return false;
     }
-
-    server_port_.reset(port);
+    // Deallocate the right after registering with the bootstrap server.
+    base::mac::ScopedMachSendRight send_right(port);
 
     // Register the port with the bootstrap server. Because bootstrap_register
     // is deprecated, this has to be wraped in an ObjC interface.
@@ -96,33 +91,35 @@ class MachListenerThreadDelegate : public base::PlatformThread::Delegate {
     msg.header.msgh_size = sizeof(msg);
     msg.header.msgh_local_port = server_port_.get();
 
+    const mach_msg_option_t options = MACH_RCV_MSG |
+        MACH_RCV_TRAILER_TYPE(MACH_RCV_TRAILER_AUDIT) |
+        MACH_RCV_TRAILER_ELEMENTS(MACH_RCV_TRAILER_AUDIT);
+
     kern_return_t kr;
-    do {
+    while ((kr = mach_msg(&msg.header,
+                          options,
+                          0,
+                          sizeof(msg),
+                          server_port_,
+                          MACH_MSG_TIMEOUT_NONE,
+                          MACH_PORT_NULL)) == KERN_SUCCESS) {
       // Use the kernel audit information to make sure this message is from
       // a task that this process spawned. The kernel audit token contains the
       // unspoofable pid of the task that sent the message.
-      mach_msg_option_t options = MACH_RCV_MSG |
-          MACH_RCV_TRAILER_TYPE(MACH_RCV_TRAILER_AUDIT) |
-          MACH_RCV_TRAILER_ELEMENTS(MACH_RCV_TRAILER_AUDIT);
+      //
+      // TODO(rsesek): In the 10.7 SDK, there's audit_token_to_pid().
+      pid_t child_pid;
+      audit_token_to_au32(msg.trailer.msgh_audit,
+          NULL, NULL, NULL, NULL, NULL, &child_pid, NULL, NULL);
 
-      kr = mach_msg(&msg.header, options, 0, sizeof(msg), server_port_,
-          MACH_MSG_TIMEOUT_NONE, MACH_PORT_NULL);
-      if (kr == KERN_SUCCESS) {
-        // TODO(rsesek): In the 10.7 SDK, there's audit_token_to_pid().
-        pid_t child_pid;
-        audit_token_to_au32(msg.trailer.msgh_audit,
-            NULL, NULL, NULL, NULL, NULL, &child_pid, NULL, NULL);
+      mach_port_t child_task_port = msg.child_task_port.name;
 
-        mach_port_t child_task_port = msg.child_task_port.name;
+      // Take the lock and update the broker information.
+      base::AutoLock lock(broker_->GetLock());
+      broker_->FinalizePid(child_pid, child_task_port);
+    }
 
-        // Take the lock and update the broker information.
-        base::AutoLock lock(broker_->GetLock());
-        broker_->FinalizePid(child_pid, child_task_port);
-      }
-    } while (kr == KERN_SUCCESS);
-
-    LOG(ERROR) << "MachBroker thread exiting; mach_msg() likely failed: "
-               << MachErrorCode(kr);
+    MACH_LOG(ERROR, kr) << "mach_msg";
   }
 
  private:
@@ -130,28 +127,23 @@ class MachListenerThreadDelegate : public base::PlatformThread::Delegate {
   // NULL.
   MachBroker* broker_;  // weak
 
-  base::mac::ScopedMachPort server_port_;
+  base::mac::ScopedMachReceiveRight server_port_;
 
   DISALLOW_COPY_AND_ASSIGN(MachListenerThreadDelegate);
 };
 
+// static
 bool MachBroker::ChildSendTaskPortToParent() {
   // Look up the named MachBroker port that's been registered with the
   // bootstrap server.
-  mach_port_t bootstrap_port;
-  kern_return_t kr = task_get_bootstrap_port(mach_task_self(), &bootstrap_port);
-  if (kr != KERN_SUCCESS) {
-    LOG(ERROR) << "Failed to look up bootstrap port: " << MachErrorCode(kr);
-    return false;
-  }
-
   mach_port_t parent_port;
-  kr = bootstrap_look_up(bootstrap_port,
+  kern_return_t kr = bootstrap_look_up(bootstrap_port,
       const_cast<char*>(GetMachPortName().c_str()), &parent_port);
   if (kr != KERN_SUCCESS) {
-    LOG(ERROR) << "Failed to look up named parent port: " << MachErrorCode(kr);
+    BOOTSTRAP_LOG(ERROR, kr) << "bootstrap_look_up";
     return false;
   }
+  base::mac::ScopedMachSendRight scoped_right(parent_port);
 
   // Create the check in message. This will copy a send right on this process'
   // (the child's) task port and send it to the parent.
@@ -169,13 +161,24 @@ bool MachBroker::ChildSendTaskPortToParent() {
   kr = mach_msg(&msg.header, MACH_SEND_MSG | MACH_SEND_TIMEOUT, sizeof(msg),
       0, MACH_PORT_NULL, 100 /*milliseconds*/, MACH_PORT_NULL);
   if (kr != KERN_SUCCESS) {
-    LOG(ERROR) << "Failed to send task port to parent: " << MachErrorCode(kr);
+    MACH_LOG(ERROR, kr) << "mach_msg";
     return false;
   }
 
   return true;
 }
 
+// static
+std::string MachBroker::GetMachPortName() {
+  const CommandLine* command_line = CommandLine::ForCurrentProcess();
+  const bool is_child = command_line->HasSwitch(switches::kProcessType);
+
+  // In non-browser (child) processes, use the parent's pid.
+  const pid_t pid = is_child ? getppid() : getpid();
+  return base::StringPrintf("%s.rohitfork.%d", base::mac::BaseBundleID(), pid);
+}
+
+// static
 MachBroker* MachBroker::GetInstance() {
   return Singleton<MachBroker, LeakySingletonTraits<MachBroker> >::get();
 }
@@ -279,20 +282,8 @@ void MachBroker::InvalidatePid(base::ProcessHandle pid) {
 
   kern_return_t kr = mach_port_deallocate(mach_task_self(),
                                           it->second);
-  LOG_IF(WARNING, kr != KERN_SUCCESS)
-     << "Failed to mach_port_deallocate mach task " << it->second
-     << ", error " << MachErrorCode(kr);
+  MACH_LOG_IF(WARNING, kr != KERN_SUCCESS, kr) << "mach_port_deallocate";
   mach_map_.erase(it);
-}
-
-// static
-std::string MachBroker::GetMachPortName() {
-  const CommandLine* command_line = CommandLine::ForCurrentProcess();
-  const bool is_child = command_line->HasSwitch(switches::kProcessType);
-
-  // In non-browser (child) processes, use the parent's pid.
-  const pid_t pid = is_child ? getppid() : getpid();
-  return base::StringPrintf("%s.rohitfork.%d", base::mac::BaseBundleID(), pid);
 }
 
 void MachBroker::RegisterNotifications() {

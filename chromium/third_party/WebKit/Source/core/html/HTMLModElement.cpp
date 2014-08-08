@@ -23,7 +23,7 @@
 #include "config.h"
 #include "core/html/HTMLModElement.h"
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 
 namespace WebCore {
 
@@ -35,14 +35,21 @@ inline HTMLModElement::HTMLModElement(const QualifiedName& tagName, Document& do
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLModElement> HTMLModElement::create(const QualifiedName& tagName, Document& document)
-{
-    return adoptRef(new HTMLModElement(tagName, document));
-}
+DEFINE_ELEMENT_FACTORY_WITH_TAGNAME(HTMLModElement)
 
 bool HTMLModElement::isURLAttribute(const Attribute& attribute) const
 {
     return attribute.name() == citeAttr || HTMLElement::isURLAttribute(attribute);
+}
+
+bool HTMLModElement::hasLegalLinkAttribute(const QualifiedName& name) const
+{
+    return name == citeAttr || HTMLElement::hasLegalLinkAttribute(name);
+}
+
+const QualifiedName& HTMLModElement::subResourceAttributeName() const
+{
+    return citeAttr;
 }
 
 }

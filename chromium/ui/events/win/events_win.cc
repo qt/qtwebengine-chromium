@@ -77,6 +77,11 @@ bool IsNonClientMouseEvent(const base::NativeEvent& native_event) {
          native_event.message <= WM_NCXBUTTONDBLCLK);
 }
 
+bool IsMouseEvent(const base::NativeEvent& native_event) {
+  return IsClientMouseEvent(native_event) ||
+         IsNonClientMouseEvent(native_event);
+}
+
 bool IsMouseWheelEvent(const base::NativeEvent& native_event) {
   return native_event.message == WM_MOUSEWHEEL ||
          native_event.message == WM_MOUSEHWHEEL;
@@ -231,7 +236,7 @@ gfx::Point EventLocationFromNative(const base::NativeEvent& native_event) {
     native_point.y = GET_Y_LPARAM(native_event.lParam);
   }
   ScreenToClient(native_event.hwnd, &native_point);
-  return gfx::win::ScreenToDIPPoint(gfx::Point(native_point));
+  return gfx::Point(native_point);
 }
 
 gfx::Point EventSystemLocationFromNative(
@@ -250,9 +255,8 @@ const char* CodeFromNative(const base::NativeEvent& native_event) {
   return CodeForWindowsScanCode(scan_code);
 }
 
-bool IsMouseEvent(const base::NativeEvent& native_event) {
-  return IsClientMouseEvent(native_event) ||
-         IsNonClientMouseEvent(native_event);
+uint32 PlatformKeycodeFromNative(const base::NativeEvent& native_event) {
+  return static_cast<uint32>(native_event.wParam);
 }
 
 int GetChangedMouseButtonFlagsFromNative(
@@ -277,6 +281,13 @@ gfx::Vector2d GetMouseWheelOffset(const base::NativeEvent& native_event) {
   if (native_event.message == WM_MOUSEWHEEL)
     return gfx::Vector2d(0, GET_WHEEL_DELTA_WPARAM(native_event.wParam));
   return gfx::Vector2d(GET_WHEEL_DELTA_WPARAM(native_event.wParam), 0);
+}
+
+base::NativeEvent CopyNativeEvent(const base::NativeEvent& event) {
+  return event;
+}
+
+void ReleaseCopiedNativeEvent(const base::NativeEvent& event) {
 }
 
 void ClearTouchIdIfReleased(const base::NativeEvent& xev) {
@@ -353,16 +364,6 @@ bool IsNaturalScrollEnabled() {
 bool IsTouchpadEvent(const base::NativeEvent& event) {
   NOTIMPLEMENTED();
   return false;
-}
-
-bool IsNoopEvent(const base::NativeEvent& event) {
-  return event.message == WM_USER + 310;
-}
-
-base::NativeEvent CreateNoopEvent() {
-  MSG event = { NULL };
-  event.message = WM_USER + 310;
-  return event;
 }
 
 int GetModifiersFromACCEL(const ACCEL& accel) {

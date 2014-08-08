@@ -97,7 +97,7 @@ void ReplaceIllegalCharactersInPath(base::FilePath::StringType* file_name,
   DCHECK(!(IllegalCharacters::GetInstance()->contains(replace_char)));
 
   // Remove leading and trailing whitespace.
-  TrimWhitespace(*file_name, TRIM_ALL, file_name);
+  base::TrimWhitespace(*file_name, base::TRIM_ALL, file_name);
 
   IllegalCharacters* illegal = IllegalCharacters::GetInstance();
   int cursor = 0;  // The ICU macros expect an int.
@@ -145,14 +145,16 @@ bool LocaleAwareCompareFilenames(const base::FilePath& a,
 
 #if defined(OS_WIN)
   return base::i18n::CompareString16WithCollator(collator.get(),
-      WideToUTF16(a.value()), WideToUTF16(b.value())) == UCOL_LESS;
+      base::WideToUTF16(a.value()), base::WideToUTF16(b.value())) == UCOL_LESS;
 
 #elif defined(OS_POSIX)
   // On linux, the file system encoding is not defined. We assume
   // SysNativeMBToWide takes care of it.
-  return base::i18n::CompareString16WithCollator(collator.get(),
-      WideToUTF16(base::SysNativeMBToWide(a.value().c_str())),
-      WideToUTF16(base::SysNativeMBToWide(b.value().c_str()))) == UCOL_LESS;
+  return base::i18n::CompareString16WithCollator(
+      collator.get(),
+      base::WideToUTF16(base::SysNativeMBToWide(a.value().c_str())),
+      base::WideToUTF16(base::SysNativeMBToWide(b.value().c_str()))
+      ) == UCOL_LESS;
 #else
   #error Not implemented on your system
 #endif

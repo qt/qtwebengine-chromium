@@ -52,7 +52,7 @@ InjectedScript::InjectedScript()
 {
 }
 
-InjectedScript::InjectedScript(ScriptObject injectedScriptObject, InspectedStateAccessCheck accessCheck)
+InjectedScript::InjectedScript(ScriptValue injectedScriptObject, InspectedStateAccessCheck accessCheck)
     : InjectedScriptBase("InjectedScript", injectedScriptObject, accessCheck)
 {
 }
@@ -79,10 +79,11 @@ void InjectedScript::callFunctionOn(ErrorString* errorString, const String& obje
     makeEvalCall(errorString, function, result, wasThrown);
 }
 
-void InjectedScript::evaluateOnCallFrame(ErrorString* errorString, const ScriptValue& callFrames, const String& callFrameId, const String& expression, const String& objectGroup, bool includeCommandLineAPI, bool returnByValue, bool generatePreview, RefPtr<RemoteObject>* result, TypeBuilder::OptOutput<bool>* wasThrown)
+void InjectedScript::evaluateOnCallFrame(ErrorString* errorString, const ScriptValue& callFrames, const Vector<ScriptValue>& asyncCallStacks, const String& callFrameId, const String& expression, const String& objectGroup, bool includeCommandLineAPI, bool returnByValue, bool generatePreview, RefPtr<RemoteObject>* result, TypeBuilder::OptOutput<bool>* wasThrown)
 {
     ScriptFunctionCall function(injectedScriptObject(), "evaluateOnCallFrame");
     function.appendArgument(callFrames);
+    function.appendArgument(asyncCallStacks);
     function.appendArgument(callFrameId);
     function.appendArgument(expression);
     function.appendArgument(objectGroup);
@@ -210,7 +211,7 @@ void InjectedScript::getInternalProperties(ErrorString* errorString, const Strin
 
 Node* InjectedScript::nodeForObjectId(const String& objectId)
 {
-    if (hasNoValue() || !canAccessInspectedWindow())
+    if (isEmpty() || !canAccessInspectedWindow())
         return 0;
 
     ScriptFunctionCall function(injectedScriptObject(), "nodeForObjectId");
@@ -220,7 +221,7 @@ Node* InjectedScript::nodeForObjectId(const String& objectId)
     ScriptValue resultValue = callFunctionWithEvalEnabled(function, hadException);
     ASSERT(!hadException);
 
-    return InjectedScriptHost::scriptValueAsNode(resultValue);
+    return InjectedScriptHost::scriptValueAsNode(scriptState(), resultValue);
 }
 
 void InjectedScript::releaseObject(const String& objectId)
@@ -231,23 +232,24 @@ void InjectedScript::releaseObject(const String& objectId)
     makeCall(function, &result);
 }
 
-PassRefPtr<Array<CallFrame> > InjectedScript::wrapCallFrames(const ScriptValue& callFrames)
+PassRefPtr<Array<CallFrame> > InjectedScript::wrapCallFrames(const ScriptValue& callFrames, int asyncOrdinal)
 {
-    ASSERT(!hasNoValue());
+    ASSERT(!isEmpty());
     ScriptFunctionCall function(injectedScriptObject(), "wrapCallFrames");
     function.appendArgument(callFrames);
+    function.appendArgument(asyncOrdinal);
     bool hadException = false;
     ScriptValue callFramesValue = callFunctionWithEvalEnabled(function, hadException);
     ASSERT(!hadException);
     RefPtr<JSONValue> result = callFramesValue.toJSONValue(scriptState());
-    if (result->type() == JSONValue::TypeArray)
+    if (result && result->type() == JSONValue::TypeArray)
         return Array<CallFrame>::runtimeCast(result);
     return Array<CallFrame>::create();
 }
 
 PassRefPtr<TypeBuilder::Runtime::RemoteObject> InjectedScript::wrapObject(const ScriptValue& value, const String& groupName, bool generatePreview) const
 {
-    ASSERT(!hasNoValue());
+    ASSERT(!isEmpty());
     ScriptFunctionCall wrapFunction(injectedScriptObject(), "wrapObject");
     wrapFunction.appendArgument(value);
     wrapFunction.appendArgument(groupName);
@@ -256,25 +258,25 @@ PassRefPtr<TypeBuilder::Runtime::RemoteObject> InjectedScript::wrapObject(const 
     bool hadException = false;
     ScriptValue r = callFunctionWithEvalEnabled(wrapFunction, hadException);
     if (hadException)
-        return 0;
+        return nullptr;
     RefPtr<JSONObject> rawResult = r.toJSONValue(scriptState())->asObject();
     return TypeBuilder::Runtime::RemoteObject::runtimeCast(rawResult);
 }
 
 PassRefPtr<TypeBuilder::Runtime::RemoteObject> InjectedScript::wrapTable(const ScriptValue& table, const ScriptValue& columns) const
 {
-    ASSERT(!hasNoValue());
+    ASSERT(!isEmpty());
     ScriptFunctionCall wrapFunction(injectedScriptObject(), "wrapTable");
     wrapFunction.appendArgument(canAccessInspectedWindow());
     wrapFunction.appendArgument(table);
-    if (columns.hasNoValue())
+    if (columns.isEmpty())
         wrapFunction.appendArgument(false);
     else
         wrapFunction.appendArgument(columns);
     bool hadException = false;
     ScriptValue r = callFunctionWithEvalEnabled(wrapFunction, hadException);
     if (hadException)
-        return 0;
+        return nullptr;
     RefPtr<JSONObject> rawResult = r.toJSONValue(scriptState())->asObject();
     return TypeBuilder::Runtime::RemoteObject::runtimeCast(rawResult);
 }
@@ -286,7 +288,7 @@ PassRefPtr<TypeBuilder::Runtime::RemoteObject> InjectedScript::wrapNode(Node* no
 
 ScriptValue InjectedScript::findObjectById(const String& objectId) const
 {
-    ASSERT(!hasNoValue());
+    ASSERT(!isEmpty());
     ScriptFunctionCall function(injectedScriptObject(), "findObjectById");
     function.appendArgument(objectId);
 
@@ -296,24 +298,9 @@ ScriptValue InjectedScript::findObjectById(const String& objectId) const
     return resultValue;
 }
 
-ScriptValue InjectedScript::findCallFrameById(ErrorString* errorString, const ScriptValue& topCallFrame, const String& callFrameId)
-{
-    ScriptFunctionCall function(injectedScriptObject(), "callFrameForId");
-    function.appendArgument(topCallFrame);
-    function.appendArgument(callFrameId);
-    bool hadException = false;
-    ScriptValue resultValue = callFunctionWithEvalEnabled(function, hadException);
-    ASSERT(!hadException);
-    if (hadException || resultValue.hasNoValue() || !resultValue.isObject()) {
-        *errorString = "Internal error";
-        return ScriptValue();
-    }
-    return resultValue;
-}
-
 void InjectedScript::inspectNode(Node* node)
 {
-    ASSERT(!hasNoValue());
+    ASSERT(!isEmpty());
     ScriptFunctionCall function(injectedScriptObject(), "inspectNode");
     function.appendArgument(nodeAsScriptValue(node));
     RefPtr<JSONValue> result;
@@ -322,7 +309,7 @@ void InjectedScript::inspectNode(Node* node)
 
 void InjectedScript::releaseObjectGroup(const String& objectGroup)
 {
-    ASSERT(!hasNoValue());
+    ASSERT(!isEmpty());
     ScriptFunctionCall releaseFunction(injectedScriptObject(), "releaseObjectGroup");
     releaseFunction.appendArgument(objectGroup);
     bool hadException = false;

@@ -76,9 +76,11 @@
 #define WTF_COMPILER_SUPPORTS_CXX_NULLPTR 1
 #endif
 
-#if !COMPILER(CLANG)
+#if COMPILER(CLANG)
+/* Keep strong enums turned off when building with clang-cl: We cannot yet build all of Blink without fallback to cl.exe, and strong enums are exposed at ABI boundaries. */
+#undef WTF_COMPILER_SUPPORTS_CXX_STRONG_ENUMS
+#else
 #define WTF_COMPILER_SUPPORTS_CXX_OVERRIDE_CONTROL 1
-#define WTF_COMPILER_QUIRK_FINAL_IS_CALLED_SEALED 1
 #endif
 
 #endif
@@ -144,6 +146,8 @@
 #ifndef NEVER_INLINE
 #if COMPILER(GCC)
 #define NEVER_INLINE __attribute__((__noinline__))
+#elif COMPILER(MSVC)
+#define NEVER_INLINE __declspec(noinline)
 #else
 #define NEVER_INLINE
 #endif
@@ -186,17 +190,6 @@
 #endif
 
 
-/* NO_RETURN_WITH_VALUE */
-
-#ifndef NO_RETURN_WITH_VALUE
-#if !COMPILER(MSVC)
-#define NO_RETURN_WITH_VALUE NO_RETURN
-#else
-#define NO_RETURN_WITH_VALUE
-#endif
-#endif
-
-
 /* WARN_UNUSED_RETURN */
 
 #if COMPILER(GCC)
@@ -217,13 +210,7 @@
 
 #if COMPILER_SUPPORTS(CXX_OVERRIDE_CONTROL)
 #define OVERRIDE override
-
-#if COMPILER_QUIRK(FINAL_IS_CALLED_SEALED)
-#define FINAL sealed
-#else
 #define FINAL final
-#endif
-
 #else
 #define OVERRIDE
 #define FINAL
@@ -255,11 +242,6 @@
 #else
 #define OBJC_CLASS class
 #endif
-#endif
-
-/* ABI */
-#if defined(__ARM_EABI__) || defined(__EABI__)
-#define WTF_COMPILER_SUPPORTS_EABI 1
 #endif
 
 /* WTF_PRETTY_FUNCTION */

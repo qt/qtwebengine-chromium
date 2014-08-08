@@ -34,26 +34,15 @@ class ExceptionState;
 
 class HTMLTableSectionElement FINAL : public HTMLTablePartElement {
 public:
-    static PassRefPtr<HTMLTableSectionElement> create(const QualifiedName&, Document&);
+    DECLARE_ELEMENT_FACTORY_WITH_TAGNAME(HTMLTableSectionElement);
 
-    PassRefPtr<HTMLElement> insertRow(int index, ExceptionState&);
+    PassRefPtrWillBeRawPtr<HTMLElement> insertRow(ExceptionState&);
+    PassRefPtrWillBeRawPtr<HTMLElement> insertRow(int index, ExceptionState&);
     void deleteRow(int index, ExceptionState&);
 
     int numRows() const;
 
-    const AtomicString& align() const;
-    void setAlign(const AtomicString&);
-
-    const AtomicString& ch() const;
-    void setCh(const AtomicString&);
-
-    const AtomicString& chOff() const;
-    void setChOff(const AtomicString&);
-
-    const AtomicString& vAlign() const;
-    void setVAlign(const AtomicString&);
-
-    PassRefPtr<HTMLCollection> rows();
+    PassRefPtrWillBeRawPtr<HTMLCollection> rows();
 
 private:
     HTMLTableSectionElement(const QualifiedName& tagName, Document&);
@@ -61,12 +50,17 @@ private:
     virtual const StylePropertySet* additionalPresentationAttributeStyle() OVERRIDE;
 };
 
-inline bool isHTMLTableSectionElement(const Node& node)
+inline bool isHTMLTableSectionElement(const Element& element)
 {
-    return node.hasTagName(HTMLNames::tbodyTag) || node.hasTagName(HTMLNames::tfootTag) || node.hasTagName(HTMLNames::theadTag);
+    return element.hasTagName(HTMLNames::tbodyTag) || element.hasTagName(HTMLNames::tfootTag) || element.hasTagName(HTMLNames::theadTag);
 }
 
-DEFINE_NODE_TYPE_CASTS_WITH_FUNCTION(HTMLTableSectionElement);
+inline bool isHTMLTableSectionElement(const HTMLElement& element)
+{
+    return element.hasLocalName(HTMLNames::tbodyTag) || element.hasLocalName(HTMLNames::tfootTag) || element.hasLocalName(HTMLNames::theadTag);
+}
+
+DEFINE_HTMLELEMENT_TYPE_CASTS_WITH_FUNCTION(HTMLTableSectionElement);
 
 } //namespace
 

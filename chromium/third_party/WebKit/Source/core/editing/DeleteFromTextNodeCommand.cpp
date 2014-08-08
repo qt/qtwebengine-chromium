@@ -33,7 +33,7 @@
 
 namespace WebCore {
 
-DeleteFromTextNodeCommand::DeleteFromTextNodeCommand(PassRefPtr<Text> node, unsigned offset, unsigned count)
+DeleteFromTextNodeCommand::DeleteFromTextNodeCommand(PassRefPtrWillBeRawPtr<Text> node, unsigned offset, unsigned count)
     : SimpleEditCommand(node->document())
     , m_node(node)
     , m_offset(offset)
@@ -67,6 +67,12 @@ void DeleteFromTextNodeCommand::doUnapply()
         return;
 
     m_node->insertData(m_offset, m_text, IGNORE_EXCEPTION, CharacterData::DeprecatedRecalcStyleImmediatlelyForEditing);
+}
+
+void DeleteFromTextNodeCommand::trace(Visitor* visitor)
+{
+    visitor->trace(m_node);
+    SimpleEditCommand::trace(visitor);
 }
 
 } // namespace WebCore

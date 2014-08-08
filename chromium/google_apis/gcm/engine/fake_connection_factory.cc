@@ -10,7 +10,9 @@
 
 namespace gcm {
 
-FakeConnectionFactory::FakeConnectionFactory() {
+FakeConnectionFactory::FakeConnectionFactory()
+    : reconnect_pending_(false),
+      delay_reconnect_(false) {
 }
 
 FakeConnectionFactory::~FakeConnectionFactory() {
@@ -32,15 +34,31 @@ ConnectionHandler* FakeConnectionFactory::GetConnectionHandler() const {
 void FakeConnectionFactory::Connect() {
   mcs_proto::LoginRequest login_request;
   request_builder_.Run(&login_request);
-  connection_handler_->Init(login_request, scoped_ptr<net::StreamSocket>());
+  connection_handler_->Init(login_request, NULL);
 }
 
 bool FakeConnectionFactory::IsEndpointReachable() const {
   return connection_handler_.get() && connection_handler_->CanSendMessage();
 }
 
+std::string FakeConnectionFactory::GetConnectionStateString() const {
+  return "";
+}
+
 base::TimeTicks FakeConnectionFactory::NextRetryAttempt() const {
   return base::TimeTicks();
+}
+
+void FakeConnectionFactory::SignalConnectionReset(
+    ConnectionResetReason reason) {
+  if (!delay_reconnect_)
+    Connect();
+  else
+    reconnect_pending_ = true;
+}
+
+void FakeConnectionFactory::SetConnectionListener(
+    ConnectionListener* listener) {
 }
 
 }  // namespace gcm

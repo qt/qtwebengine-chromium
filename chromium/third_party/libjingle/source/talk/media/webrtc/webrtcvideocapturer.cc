@@ -32,6 +32,7 @@
 #endif
 
 #ifdef HAVE_WEBRTC_VIDEO
+#include "talk/base/criticalsection.h"
 #include "talk/base/logging.h"
 #include "talk/base/thread.h"
 #include "talk/base/timeutils.h"
@@ -189,11 +190,15 @@ bool WebRtcVideoCapturer::Init(const Device& device) {
     }
   }
   factory_->DestroyDeviceInfo(info);
+// TODO(fischman): Remove the following check
+// when capabilities for iOS are implemented
+// https://code.google.com/p/webrtc/issues/detail?id=2968
+#if !defined(IOS)
   if (supported.empty()) {
     LOG(LS_ERROR) << "Failed to find usable formats for id: " << device.id;
     return false;
   }
-
+#endif
   module_ = factory_->Create(0, vcm_id);
   if (!module_) {
     LOG(LS_ERROR) << "Failed to create capturer for id: " << device.id;
@@ -247,6 +252,7 @@ CaptureState WebRtcVideoCapturer::Start(const VideoFormat& capture_format) {
     return CS_NO_DEVICE;
   }
 
+  talk_base::CritScope cs(&critical_section_stopping_);
   // TODO(hellner): weird to return failure when it is in fact actually running.
   if (IsRunning()) {
     LOG(LS_ERROR) << "The capturer is already running";
@@ -263,8 +269,8 @@ CaptureState WebRtcVideoCapturer::Start(const VideoFormat& capture_format) {
 
   std::string camera_id(GetId());
   uint32 start = talk_base::Time();
-  if (module_->RegisterCaptureDataCallback(*this) != 0 ||
-      module_->StartCapture(cap) != 0) {
+  module_->RegisterCaptureDataCallback(*this);
+  if (module_->StartCapture(cap) != 0) {
     LOG(LS_ERROR) << "Camera '" << camera_id << "' failed to start";
     return CS_FAILED;
   }
@@ -278,7 +284,13 @@ CaptureState WebRtcVideoCapturer::Start(const VideoFormat& capture_format) {
   return CS_STARTING;
 }
 
+// Critical section blocks Stop from shutting down during callbacks from capture
+// thread to OnIncomingCapturedFrame. Note that the crit is try-locked in
+// OnFrameCaptured, as the lock ordering between this and the system component
+// controlling the camera is reversed: system frame -> OnIncomingCapturedFrame;
+// Stop -> system stop camera).
 void WebRtcVideoCapturer::Stop() {
+  talk_base::CritScope cs(&critical_section_stopping_);
   if (IsRunning()) {
     talk_base::Thread::Current()->Clear(this);
     module_->StopCapture();
@@ -313,7 +325,17 @@ bool WebRtcVideoCapturer::GetPreferredFourccs(
 
 void WebRtcVideoCapturer::OnIncomingCapturedFrame(const int32_t id,
     webrtc::I420VideoFrame& sample) {
-  ASSERT(IsRunning());
+  // This would be a normal CritScope, except that it's possible that:
+  // (1) whatever system component producing this frame has taken a lock, and
+  // (2) Stop() probably calls back into that system component, which may take
+  // the same lock. Due to the reversed order, we have to try-lock in order to
+  // avoid a potential deadlock. Besides, if we can't enter because we're
+  // stopping, we may as well drop the frame.
+  talk_base::TryCritScope cs(&critical_section_stopping_);
+  if (!cs.locked() || !IsRunning()) {
+    // Capturer has been stopped or is in the process of stopping.
+    return;
+  }
 
   ++captured_frames_;
   // Log the size and pixel aspect ratio of the first captured frame.

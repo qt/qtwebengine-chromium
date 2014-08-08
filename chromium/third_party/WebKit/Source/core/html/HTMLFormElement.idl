@@ -18,10 +18,12 @@
  * Boston, MA 02110-1301, USA.
  */
 
-interface HTMLFormElement : HTMLElement {
+[
+    OverrideBuiltins,
+] interface HTMLFormElement : HTMLElement {
     [Reflect=accept_charset] attribute DOMString acceptCharset;
-    [Reflect, URL, PerWorldBindings, ActivityLogging=SetterForIsolatedWorlds] attribute DOMString action;
-    [Reflect] attribute DOMString autocomplete;
+    [Reflect, URL, LogActivity=SetterOnly] attribute DOMString action;
+    [Reflect, ReflectOnly="on"|"off", ReflectMissing="on", ReflectInvalid="on"] attribute DOMString autocomplete;
     [CustomElementCallbacks] attribute DOMString enctype;
     [CustomElementCallbacks] attribute DOMString encoding;
     [CustomElementCallbacks] attribute DOMString method;
@@ -31,14 +33,12 @@ interface HTMLFormElement : HTMLElement {
 
     readonly attribute HTMLCollection elements;
     readonly attribute long length;
-    [ImplementedAs=item] getter Node(unsigned long index);
-    [ImplementedAs=anonymousNamedGetter, OverrideBuiltins, NotEnumerable] getter (NodeList or Node)(DOMString name);
+    [ImplementedAs=item] getter Element (unsigned long index);
+    [NotEnumerable] getter (RadioNodeList or Element) (DOMString name);
 
-    [ImplementedAs=submitFromJavaScript, PerWorldBindings, ActivityLogging=SetterForIsolatedWorlds] void submit();
+    [ImplementedAs=submitFromJavaScript, LogActivity] void submit();
     [CustomElementCallbacks] void reset();
     boolean checkValidity();
 
     [RuntimeEnabled=RequestAutocomplete] void requestAutocomplete();
-    [RuntimeEnabled=RequestAutocomplete] attribute EventHandler onautocomplete;
-    [RuntimeEnabled=RequestAutocomplete] attribute EventHandler onautocompleteerror;
 };

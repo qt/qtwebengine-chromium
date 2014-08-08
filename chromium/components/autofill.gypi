@@ -22,14 +22,14 @@
                    'autofill/core/browser/autofill_regex_constants.cc.utf8'],
       }],
     },
-    
+
     {
       'target_name': 'autofill_core_common',
       'type': 'static_library',
       'dependencies': [
         '../base/base.gyp:base',
+        '../ui/base/ui_base.gyp:ui_base',
         '../ui/gfx/gfx.gyp:gfx',
-        '../ui/ui.gyp:ui',
         '../url/url.gyp:url_lib',
       ],
       'conditions': [
@@ -41,7 +41,6 @@
       ],
       'include_dirs': [
         '..',
-        '<(SHARED_INTERMEDIATE_DIR)/autofill'
       ],
       'sources': [
         'autofill/core/browser/android/auxiliary_profile_loader_android.cc',
@@ -53,6 +52,8 @@
         'autofill/core/browser/android/personal_data_manager_android.cc',
         'autofill/core/common/autofill_constants.cc',
         'autofill/core/common/autofill_constants.h',
+        'autofill/core/common/autofill_data_validation.cc',
+        'autofill/core/common/autofill_data_validation.h',
         'autofill/core/common/autofill_pref_names.cc',
         'autofill/core/common/autofill_pref_names.h',
         'autofill/core/common/autofill_switches.cc',
@@ -73,6 +74,8 @@
         'autofill/core/common/password_form_fill_data.h',
         'autofill/core/common/password_generation_util.cc',
         'autofill/core/common/password_generation_util.h',
+        'autofill/core/common/save_password_progress_logger.cc',
+        'autofill/core/common/save_password_progress_logger.h',
         'autofill/core/common/web_element_descriptor.cc',
         'autofill/core/common/web_element_descriptor.h',
       ],
@@ -85,40 +88,38 @@
         '..',
       ],
       'dependencies': [
-        'autofill_core_common',
-        'autofill_regexes',
-        'component_strings.gyp:component_strings',
-        'encryptor',
-        'user_prefs',
-        'webdata_common',
         '../base/base.gyp:base',
         '../base/base.gyp:base_i18n',
         '../base/base.gyp:base_prefs',
         '../google_apis/google_apis.gyp:google_apis',
         '../skia/skia.gyp:skia',
         '../sql/sql.gyp:sql',
+        '../third_party/fips181/fips181.gyp:fips181',
         '../third_party/icu/icu.gyp:icui18n',
         '../third_party/icu/icu.gyp:icuuc',
         '../third_party/libjingle/libjingle.gyp:libjingle',
+        '../third_party/libaddressinput/libaddressinput.gyp:libaddressinput_util',
         '../third_party/libphonenumber/libphonenumber.gyp:libphonenumber',
+        '../ui/base/ui_base.gyp:ui_base',
         '../ui/gfx/gfx.gyp:gfx',
-        '../ui/ui.gyp:ui',
+        '../ui/gfx/gfx.gyp:gfx_geometry',
         '../url/url.gyp:url_lib',
-      ],
-      # TODO(blundell): Eliminate the need for this conditional dependence.
-      # crbug.com/328150
-      'conditions': [
-        ['OS != "ios"', {
-          'dependencies': [
-            '../webkit/webkit_resources.gyp:webkit_resources',
-          ],
-        }],
+        'autofill_core_common',
+        'autofill_regexes',
+        'components_resources.gyp:components_resources',
+        'components_strings.gyp:components_strings',
+        'keyed_service_core',
+        'os_crypt',
+        'pref_registry',
+        'webdata_common',
       ],
       'sources': [
         'autofill/core/browser/address.cc',
         'autofill/core/browser/address.h',
         'autofill/core/browser/address_field.cc',
         'autofill/core/browser/address_field.h',
+        'autofill/core/browser/address_i18n.cc',
+        'autofill/core/browser/address_i18n.h',
         'autofill/core/browser/autocomplete_history_manager.cc',
         'autofill/core/browser/autocomplete_history_manager.h',
         'autofill/core/browser/autofill-inl.h',
@@ -128,8 +129,6 @@
         'autofill/core/browser/autofill_data_model.h',
         'autofill/core/browser/autofill_download.cc',
         'autofill/core/browser/autofill_download.h',
-        'autofill/core/browser/autofill_download_url.cc',
-        'autofill/core/browser/autofill_download_url.h',
         'autofill/core/browser/autofill_driver.h',
         'autofill/core/browser/autofill_external_delegate.cc',
         'autofill/core/browser/autofill_external_delegate.h',
@@ -139,7 +138,7 @@
         'autofill/core/browser/autofill_ie_toolbar_import_win.h',
         'autofill/core/browser/autofill_manager.cc',
         'autofill/core/browser/autofill_manager.h',
-        'autofill/core/browser/autofill_manager_delegate.h',
+        'autofill/core/browser/autofill_client.h',
         'autofill/core/browser/autofill_manager_test_delegate.h',
         'autofill/core/browser/autofill_metrics.cc',
         'autofill/core/browser/autofill_metrics.h',
@@ -174,8 +173,6 @@
         'autofill/core/browser/form_structure.h',
         'autofill/core/browser/name_field.cc',
         'autofill/core/browser/name_field.h',
-        'autofill/core/browser/password_autofill_manager.cc',
-        'autofill/core/browser/password_autofill_manager.h',
         'autofill/core/browser/password_generator.cc',
         'autofill/core/browser/password_generator.h',
         'autofill/core/browser/personal_data_manager.cc',
@@ -188,6 +185,7 @@
         'autofill/core/browser/phone_number.h',
         'autofill/core/browser/phone_number_i18n.cc',
         'autofill/core/browser/phone_number_i18n.h',
+        'autofill/core/browser/popup_item_ids.h',
         'autofill/core/browser/state_names.cc',
         'autofill/core/browser/state_names.h',
         'autofill/core/browser/validation.cc',
@@ -196,6 +194,8 @@
         'autofill/core/browser/webdata/autofill_change.h',
         'autofill/core/browser/webdata/autofill_entry.cc',
         'autofill/core/browser/webdata/autofill_entry.h',
+        'autofill/core/browser/webdata/autofill_profile_syncable_service.cc',
+        'autofill/core/browser/webdata/autofill_profile_syncable_service.h',
         'autofill/core/browser/webdata/autofill_table.cc',
         'autofill/core/browser/webdata/autofill_table.h',
         'autofill/core/browser/webdata/autofill_webdata.h',
@@ -208,6 +208,36 @@
 
         # This file is generated by the autofill_regexes action.
         '<(SHARED_INTERMEDIATE_DIR)/autofill_regex_constants.cc',
+      ],
+      'variables': {
+        'conditions': [
+          ['android_webview_build == 1', {
+            # Android WebView doesn't support sync.
+            'autofill_enable_sync%': 0,
+          }, {
+            'autofill_enable_sync%': 1,
+          }],
+        ],
+      },
+      'conditions': [
+        ['autofill_enable_sync == 1', {
+          'defines': [
+            'AUTOFILL_ENABLE_SYNC',
+          ],
+          'dependencies': [
+            '../sync/sync.gyp:sync',
+          ],
+          'direct_dependent_settings': {
+            'defines': [
+              'AUTOFILL_ENABLE_SYNC',
+            ],
+          },
+        }, { # 'autofill_enable_sync == 0'
+          'sources!': [
+            'autofill/core/browser/webdata/autofill_profile_syncable_service.cc',
+            'autofill/core/browser/webdata/autofill_profile_syncable_service.h',
+          ],
+        }],
       ],
 
       # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
@@ -230,12 +260,12 @@
         'autofill/core/browser/autofill_test_utils.h',
         'autofill/core/browser/data_driven_test.cc',
         'autofill/core/browser/data_driven_test.h',
+        'autofill/core/browser/test_autofill_client.cc',
+        'autofill/core/browser/test_autofill_client.h',
         'autofill/core/browser/test_autofill_driver.cc',
         'autofill/core/browser/test_autofill_driver.h',
         'autofill/core/browser/test_autofill_external_delegate.cc',
         'autofill/core/browser/test_autofill_external_delegate.h',
-        'autofill/core/browser/test_autofill_manager_delegate.cc',
-        'autofill/core/browser/test_autofill_manager_delegate.h',
         'autofill/core/browser/test_personal_data_manager.cc',
         'autofill/core/browser/test_personal_data_manager.h',
       ],
@@ -259,9 +289,9 @@
             '..',
           ],
           'sources': [
-            'autofill/content/common/autofill_messages.h',
             'autofill/content/common/autofill_message_generator.cc',
             'autofill/content/common/autofill_message_generator.h',
+            'autofill/content/common/autofill_messages.h',
             'autofill/content/common/autofill_param_traits_macros.h',
           ],
         },
@@ -300,14 +330,6 @@
             '..',
           ],
           'dependencies': [
-            'autofill_content_common',
-            'autofill_content_risk_proto',
-            'autofill_core_browser',
-            'autofill_core_common',
-            'autofill_regexes',
-            'encryptor',
-            'user_prefs',
-            'webdata_common',
             '../base/base.gyp:base',
             '../base/base.gyp:base_i18n',
             '../base/base.gyp:base_prefs',
@@ -321,16 +343,24 @@
             '../third_party/icu/icu.gyp:icuuc',
             '../third_party/libjingle/libjingle.gyp:libjingle',
             '../third_party/libphonenumber/libphonenumber.gyp:libphonenumber',
+            '../ui/base/ui_base.gyp:ui_base',
             '../ui/gfx/gfx.gyp:gfx',
-            '../ui/ui.gyp:ui',
+            '../ui/gfx/gfx.gyp:gfx_geometry',
             '../url/url.gyp:url_lib',
-            '../webkit/webkit_resources.gyp:webkit_resources',
-
-            'component_strings.gyp:component_strings',
+            'autofill_content_common',
+            'autofill_content_risk_proto',
+            'autofill_core_browser',
+            'autofill_core_common',
+            'autofill_regexes',
+            'components_resources.gyp:components_resources',
+            'components_strings.gyp:components_strings',
+            'os_crypt',
+            'user_prefs',
+            'webdata_common',
           ],
           'sources': [
-            'autofill/content/browser/autofill_driver_impl.cc',
-            'autofill/content/browser/autofill_driver_impl.h',
+            'autofill/content/browser/content_autofill_driver.cc',
+            'autofill/content/browser/content_autofill_driver.h',
             'autofill/content/browser/request_autocomplete_manager.cc',
             'autofill/content/browser/request_autocomplete_manager.h',
             'autofill/content/browser/risk/fingerprint.cc',
@@ -360,6 +390,15 @@
 
           # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
           'msvs_disabled_warnings': [4267, ],
+
+          'conditions': [
+            [ 'OS == "android"', {
+              'sources!': [
+                'autofill/content/browser/risk/fingerprint.cc',
+                'autofill/content/browser/risk/fingerprint.h',
+              ],
+            }],
+          ],
         },
 
         {
@@ -369,15 +408,15 @@
             '..',
           ],
           'dependencies': [
-            'autofill_content_common',
-            'autofill_core_common',
             '../base/base.gyp:base',
-            '../content/content.gyp:content_renderer',
             '../content/content.gyp:content_common',
+            '../content/content.gyp:content_renderer',
             '../ipc/ipc.gyp:ipc',
             '../skia/skia.gyp:skia',
-
-            'component_strings.gyp:component_strings',
+            '../third_party/WebKit/public/blink.gyp:blink',
+            'autofill_content_common',
+            'autofill_core_common',
+            'components_strings.gyp:components_strings',
           ],
           'sources': [
             'autofill/content/renderer/autofill_agent.cc',
@@ -395,6 +434,8 @@
             'autofill/content/renderer/password_form_conversion_utils.h',
             'autofill/content/renderer/password_generation_agent.cc',
             'autofill/content/renderer/password_generation_agent.h',
+            'autofill/content/renderer/renderer_save_password_progress_logger.cc',
+            'autofill/content/renderer/renderer_save_password_progress_logger.h',
           ],
           # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
           'msvs_disabled_warnings': [4267, ],

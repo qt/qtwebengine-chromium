@@ -8,9 +8,8 @@
 
 #include "SkTileGrid.h"
 
-SkTileGrid::SkTileGrid(int xTileCount, int yTileCount, const SkTileGridPicture::TileGridInfo& info,
-    SkTileGridNextDatumFunctionPtr nextDatumFunction)
-{
+SkTileGrid::SkTileGrid(int xTileCount, int yTileCount, const SkTileGridFactory::TileGridInfo& info,
+                       SkTileGridNextDatumFunctionPtr nextDatumFunction) {
     fXTileCount = xTileCount;
     fYTileCount = yTileCount;
     fInfo = info;
@@ -28,6 +27,10 @@ SkTileGrid::SkTileGrid(int xTileCount, int yTileCount, const SkTileGridPicture::
 
 SkTileGrid::~SkTileGrid() {
     SkDELETE_ARRAY(fTileData);
+}
+
+int SkTileGrid::tileCount(int x, int y) {
+    return this->tile(x, y).count();
 }
 
 SkTDArray<void *>& SkTileGrid::tile(int x, int y) {

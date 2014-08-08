@@ -31,8 +31,7 @@
 #ifndef CallbackPromiseAdapter_h
 #define CallbackPromiseAdapter_h
 
-#include "bindings/v8/DOMRequestState.h"
-#include "bindings/v8/ScriptPromiseResolver.h"
+#include "bindings/v8/ScriptPromiseResolverWithContext.h"
 #include "public/platform/WebCallbacks.h"
 
 namespace WebCore {
@@ -40,16 +39,25 @@ namespace WebCore {
 // This class provides an easy way to convert from a Script-exposed
 // class (i.e. a class that has a toV8() overload) that uses Promises
 // to a WebKit API class that uses WebCallbacks. You can define
-// seperate Success and Error classes, but this example just uses one
+// separate Success and Error classes, but this example just uses one
 // object for both.
 //
 // To use:
 //
 // class MyClass ... {
 //    typedef blink::WebMyClass WebType;
-//    static PassRefPtr<MyClass> from(blink::WebMyClass* webInstance) {
+//    static PassRefPtr<MyClass> from(ScriptPromiseResolverWithContext* resolver,
+//                                    blink::WebMyClass* webInstance) {
 //        // convert/create as appropriate, but often it's just:
 //        return MyClass::create(adoptPtr(webInstance));
+//
+//        // Since promise resolving is done as an async task, it's not
+//        // guaranteed that the script context has seen the promise resolve
+//        // immediately after calling onSuccess/onError. You can use the
+//        // ScriptPromise from the resolver to schedule a task that executes
+//        // after resolving:
+//        ScriptState::Scope scope(resolver->scriptState());
+//        resolver->promise().then(...);
 //    }
 //
 // Now when calling into a WebKit API that requires a WebCallbacks<blink::WebMyClass, blink::WebMyClass>*:
@@ -61,28 +69,24 @@ namespace WebCore {
 // example that ownership of the WebCallbacks instance is being passed
 // in and it is up to the callee to free the WebCallbacks instace.
 template<typename S, typename T>
-class CallbackPromiseAdapter : public blink::WebCallbacks<typename S::WebType, typename T::WebType> {
+class CallbackPromiseAdapter FINAL : public blink::WebCallbacks<typename S::WebType, typename T::WebType> {
 public:
-    explicit CallbackPromiseAdapter(PassRefPtr<ScriptPromiseResolver> resolver, ExecutionContext* context)
+    CallbackPromiseAdapter(PassRefPtr<ScriptPromiseResolverWithContext> resolver)
         : m_resolver(resolver)
-        , m_requestState(context)
     {
     }
     virtual ~CallbackPromiseAdapter() { }
 
     virtual void onSuccess(typename S::WebType* result) OVERRIDE
     {
-        DOMRequestState::Scope scope(m_requestState);
-        m_resolver->resolve(S::from(result));
+        m_resolver->resolve(S::from(m_resolver.get(), result));
     }
-    void onError(typename T::WebType* error) OVERRIDE
+    virtual void onError(typename T::WebType* error) OVERRIDE
     {
-        DOMRequestState::Scope scope(m_requestState);
-        m_resolver->reject(T::from(error));
+        m_resolver->reject(T::from(m_resolver.get(), error));
     }
 private:
-    RefPtr<ScriptPromiseResolver> m_resolver;
-    DOMRequestState m_requestState;
+    RefPtr<ScriptPromiseResolverWithContext> m_resolver;
     WTF_MAKE_NONCOPYABLE(CallbackPromiseAdapter);
 };
 

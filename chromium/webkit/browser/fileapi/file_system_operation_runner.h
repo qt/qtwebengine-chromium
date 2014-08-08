@@ -161,11 +161,11 @@ class WEBKIT_STORAGE_BROWSER_EXPORT FileSystemOperationRunner
   // Copies in a single file from a different filesystem.
   //
   // This returns:
-  // - PLATFORM_FILE_ERROR_NOT_FOUND if |src_file_path|
+  // - File::FILE_ERROR_NOT_FOUND if |src_file_path|
   //   or the parent directory of |dest_url| does not exist.
-  // - PLATFORM_FILE_ERROR_INVALID_OPERATION if |dest_url| exists and
+  // - File::FILE_ERROR_INVALID_OPERATION if |dest_url| exists and
   //   is not a file.
-  // - PLATFORM_FILE_ERROR_FAILED if |dest_url| does not exist and
+  // - File::FILE_ERROR_FAILED if |dest_url| does not exist and
   //   its parent path is a file.
   //
   OperationID CopyInForeignFile(const base::FilePath& src_local_disk_path,
@@ -175,8 +175,8 @@ class WEBKIT_STORAGE_BROWSER_EXPORT FileSystemOperationRunner
   // Removes a single file.
   //
   // This returns:
-  // - PLATFORM_FILE_ERROR_NOT_FOUND if |url| does not exist.
-  // - PLATFORM_FILE_ERROR_NOT_A_FILE if |url| is not a file.
+  // - File::FILE_ERROR_NOT_FOUND if |url| does not exist.
+  // - File::FILE_ERROR_NOT_A_FILE if |url| is not a file.
   //
   OperationID RemoveFile(const FileSystemURL& url,
                          const StatusCallback& callback);
@@ -184,9 +184,9 @@ class WEBKIT_STORAGE_BROWSER_EXPORT FileSystemOperationRunner
   // Removes a single empty directory.
   //
   // This returns:
-  // - PLATFORM_FILE_ERROR_NOT_FOUND if |url| does not exist.
-  // - PLATFORM_FILE_ERROR_NOT_A_DIRECTORY if |url| is not a directory.
-  // - PLATFORM_FILE_ERROR_NOT_EMPTY if |url| is not empty.
+  // - File::FILE_ERROR_NOT_FOUND if |url| does not exist.
+  // - File::FILE_ERROR_NOT_A_DIRECTORY if |url| is not a directory.
+  // - File::FILE_ERROR_NOT_EMPTY if |url| is not empty.
   //
   OperationID RemoveDirectory(const FileSystemURL& url,
                               const StatusCallback& callback);
@@ -198,12 +198,12 @@ class WEBKIT_STORAGE_BROWSER_EXPORT FileSystemOperationRunner
   // details.
   //
   // This returns:
-  // - PLATFORM_FILE_ERROR_NOT_FOUND if |src_url|
+  // - File::FILE_ERROR_NOT_FOUND if |src_url|
   //   or the parent directory of |dest_url| does not exist.
-  // - PLATFORM_FILE_ERROR_NOT_A_FILE if |src_url| exists but is not a file.
-  // - PLATFORM_FILE_ERROR_INVALID_OPERATION if |dest_url| exists and
+  // - File::FILE_ERROR_NOT_A_FILE if |src_url| exists but is not a file.
+  // - File::FILE_ERROR_INVALID_OPERATION if |dest_url| exists and
   //   is not a file.
-  // - PLATFORM_FILE_ERROR_FAILED if |dest_url| does not exist and
+  // - File::FILE_ERROR_FAILED if |dest_url| does not exist and
   //   its parent path is a file.
   //
   OperationID CopyFileLocal(const FileSystemURL& src_url,
@@ -218,12 +218,12 @@ class WEBKIT_STORAGE_BROWSER_EXPORT FileSystemOperationRunner
   // For |option|, see file_system_operation.h for details.
   //
   // This returns:
-  // - PLATFORM_FILE_ERROR_NOT_FOUND if |src_url|
+  // - File::FILE_ERROR_NOT_FOUND if |src_url|
   //   or the parent directory of |dest_url| does not exist.
-  // - PLATFORM_FILE_ERROR_NOT_A_FILE if |src_url| exists but is not a file.
-  // - PLATFORM_FILE_ERROR_INVALID_OPERATION if |dest_url| exists and
+  // - File::FILE_ERROR_NOT_A_FILE if |src_url| exists but is not a file.
+  // - File::FILE_ERROR_INVALID_OPERATION if |dest_url| exists and
   //   is not a file.
-  // - PLATFORM_FILE_ERROR_FAILED if |dest_url| does not exist and
+  // - File::FILE_ERROR_FAILED if |dest_url| does not exist and
   //   its parent path is a file.
   //
   OperationID MoveFileLocal(const FileSystemURL& src_url,
@@ -234,8 +234,8 @@ class WEBKIT_STORAGE_BROWSER_EXPORT FileSystemOperationRunner
   // This is called only by pepper plugin as of writing to synchronously get
   // the underlying platform path to upload a file in the sandboxed filesystem
   // (e.g. TEMPORARY or PERSISTENT).
-  base::PlatformFileError SyncGetPlatformPath(const FileSystemURL& url,
-                                              base::FilePath* platform_path);
+  base::File::Error SyncGetPlatformPath(const FileSystemURL& url,
+                                        base::FilePath* platform_path);
 
  private:
   class BeginOperationScoper;
@@ -253,32 +253,31 @@ class WEBKIT_STORAGE_BROWSER_EXPORT FileSystemOperationRunner
 
   void DidFinish(const OperationHandle& handle,
                  const StatusCallback& callback,
-                 base::PlatformFileError rv);
+                 base::File::Error rv);
   void DidGetMetadata(const OperationHandle& handle,
                       const GetMetadataCallback& callback,
-                      base::PlatformFileError rv,
-                      const base::PlatformFileInfo& file_info);
+                      base::File::Error rv,
+                      const base::File::Info& file_info);
   void DidReadDirectory(const OperationHandle& handle,
                         const ReadDirectoryCallback& callback,
-                        base::PlatformFileError rv,
+                        base::File::Error rv,
                         const std::vector<DirectoryEntry>& entries,
                         bool has_more);
   void DidWrite(const OperationHandle& handle,
                 const WriteCallback& callback,
-                base::PlatformFileError rv,
+                base::File::Error rv,
                 int64 bytes,
                 bool complete);
   void DidOpenFile(
       const OperationHandle& handle,
       const OpenFileCallback& callback,
-      base::PlatformFileError rv,
-      base::PlatformFile file,
+      base::File file,
       const base::Closure& on_close_callback);
   void DidCreateSnapshot(
       const OperationHandle& handle,
       const SnapshotFileCallback& callback,
-      base::PlatformFileError rv,
-      const base::PlatformFileInfo& file_info,
+      base::File::Error rv,
+      const base::File::Info& file_info,
       const base::FilePath& platform_path,
       const scoped_refptr<webkit_blob::ShareableFileReference>& file_ref);
 

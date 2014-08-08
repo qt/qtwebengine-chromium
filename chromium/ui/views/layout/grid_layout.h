@@ -178,9 +178,10 @@ class VIEWS_EXPORT GridLayout : public LayoutManager {
   virtual void Layout(View* host) OVERRIDE;
 
   // Returns the preferred size for the GridLayout.
-  virtual gfx::Size GetPreferredSize(View* host) OVERRIDE;
+  virtual gfx::Size GetPreferredSize(const View* host) const OVERRIDE;
 
-  virtual int GetPreferredHeightForWidth(View* host, int width) OVERRIDE;
+  virtual int GetPreferredHeightForWidth(const View* host,
+                                         int width) const OVERRIDE;
 
   void set_minimum_size(const gfx::Size& size) { minimum_size_ = size; }
 
@@ -189,11 +190,14 @@ class VIEWS_EXPORT GridLayout : public LayoutManager {
   // they both call into this method. This sizes the Columns/Rows as
   // appropriate. If layout is true, width/height give the width/height the
   // of the host, otherwise they are ignored.
-  void SizeRowsAndColumns(bool layout, int width, int height, gfx::Size* pref);
+  void SizeRowsAndColumns(bool layout,
+                          int width,
+                          int height,
+                          gfx::Size* pref) const;
 
   // Calculates the master columns of all the column sets. See Column for
   // a description of what a master column is.
-  void CalculateMasterColumnsIfNecessary();
+  void CalculateMasterColumnsIfNecessary() const;
 
   // This is called internally from AddView. It adds the ViewState to the
   // appropriate structures, and updates internal fields such as next_column_.
@@ -205,12 +209,12 @@ class VIEWS_EXPORT GridLayout : public LayoutManager {
 
   // As the name says, updates the remaining_height of the ViewState for
   // all Rows the supplied ViewState touches.
-  void UpdateRemainingHeightFromRows(ViewState* state);
+  void UpdateRemainingHeightFromRows(ViewState* state) const;
 
   // If the view state's remaining height is > 0, it is distributed among
   // the rows the view state touches. This is used during layout to make
   // sure the Rows can accommodate a view.
-  void DistributeRemainingHeight(ViewState* state);
+  void DistributeRemainingHeight(ViewState* state) const;
 
   // Advances next_column_ past any padding columns.
   void SkipPaddingColumns();
@@ -222,7 +226,7 @@ class VIEWS_EXPORT GridLayout : public LayoutManager {
   View* const host_;
 
   // Whether or not we've calculated the master/linked columns.
-  bool calculated_master_columns_;
+  mutable bool calculated_master_columns_;
 
   // Used to verify a view isn't added with a row span that expands into
   // another column structure.
@@ -244,13 +248,13 @@ class VIEWS_EXPORT GridLayout : public LayoutManager {
   bool adding_view_;
 
   // ViewStates. This is ordered by row_span in ascending order.
-  std::vector<ViewState*> view_states_;
+  mutable std::vector<ViewState*> view_states_;
 
   // ColumnSets.
-  std::vector<ColumnSet*> column_sets_;
+  mutable std::vector<ColumnSet*> column_sets_;
 
   // Rows.
-  std::vector<Row*> rows_;
+  mutable std::vector<Row*> rows_;
 
   // Minimum preferred size.
   gfx::Size minimum_size_;
@@ -267,10 +271,11 @@ class VIEWS_EXPORT ColumnSet {
 
   // Adds a column for padding. When adding views, padding columns are
   // automatically skipped. For example, if you create a column set with
-  // two columns separated by a padding column, the first AddView automatically
+  // two columns separated by a padding column, the second AddView automatically
   // skips past the padding column. That is, to add two views, do:
   // layout->AddView(v1); layout->AddView(v2);, not:
   // layout->AddView(v1); layout->SkipColumns(1); layout->AddView(v2);
+  // See class description for details on |resize_percent|.
   void AddPaddingColumn(float resize_percent, int width);
 
   // Adds a column. The alignment gives the default alignment for views added
@@ -282,6 +287,7 @@ class VIEWS_EXPORT ColumnSet {
   // made as wide as the widest views in each column, even if extra space is
   // provided. In other words, GridLayout does not automatically resize views
   // unless the column is marked as resizable.
+  // See class description for details on |resize_percent|.
   void AddColumn(GridLayout::Alignment h_align,
                  GridLayout::Alignment v_align,
                  float resize_percent,

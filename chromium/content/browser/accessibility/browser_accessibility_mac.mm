@@ -7,7 +7,6 @@
 #import "content/browser/accessibility/browser_accessibility_mac.h"
 
 #import "content/browser/accessibility/browser_accessibility_cocoa.h"
-#import "content/browser/accessibility/browser_accessibility_delegate_mac.h"
 #include "content/browser/accessibility/browser_accessibility_manager_mac.h"
 
 namespace content {
@@ -21,19 +20,17 @@ BrowserAccessibilityMac::BrowserAccessibilityMac()
     : browser_accessibility_cocoa_(NULL) {
 }
 
-void BrowserAccessibilityMac::PreInitialize() {
-  BrowserAccessibility::PreInitialize();
+void BrowserAccessibilityMac::OnDataChanged() {
+  BrowserAccessibility::OnDataChanged();
 
-  if (browser_accessibility_cocoa_)
+  if (browser_accessibility_cocoa_) {
+    [browser_accessibility_cocoa_ childrenChanged];
     return;
+  }
 
   // We take ownership of the cocoa obj here.
-  BrowserAccessibilityManagerMac* manager =
-      static_cast<BrowserAccessibilityManagerMac*>(manager_);
   browser_accessibility_cocoa_ = [[BrowserAccessibilityCocoa alloc]
-      initWithObject:this
-      delegate:
-          (id<BrowserAccessibilityDelegateCocoa>)manager->parent_view()];
+      initWithObject:this];
 }
 
 void BrowserAccessibilityMac::NativeReleaseReference() {
@@ -51,16 +48,19 @@ bool BrowserAccessibilityMac::IsNative() const {
   return true;
 }
 
-void BrowserAccessibilityMac::DetachTree(
-    std::vector<BrowserAccessibility*>* nodes) {
-  [browser_accessibility_cocoa_ childrenChanged];
-  BrowserAccessibility::DetachTree(nodes);
-}
+void BrowserAccessibilityMac::RecreateNativeObject() {
+  if (!browser_accessibility_cocoa_)
+    return;
 
-void BrowserAccessibilityMac::SwapChildren(
-    std::vector<BrowserAccessibility*>& children) {
-  [browser_accessibility_cocoa_ childrenChanged];
-  BrowserAccessibility::SwapChildren(children);
+  // Preserve the children so that recreating the native object doesn't
+  // end up recreating the whole subtree.
+  base::scoped_nsobject<NSMutableArray> children;
+  [browser_accessibility_cocoa_ swapChildren:&children];
+  [browser_accessibility_cocoa_ detach];
+  [browser_accessibility_cocoa_ release];
+  browser_accessibility_cocoa_ = [[BrowserAccessibilityCocoa alloc]
+      initWithObject:this];
+  [browser_accessibility_cocoa_ swapChildren:&children];
 }
 
 BrowserAccessibilityCocoa* BrowserAccessibility::ToBrowserAccessibilityCocoa() {

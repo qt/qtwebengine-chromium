@@ -16,7 +16,6 @@
 #include "base/rand_util.h"
 #include "base/strings/string_util.h"
 #include "base/time/time.h"
-#include "net/base/filter.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/load_flags.h"
 #include "net/base/mime_util.h"
@@ -25,14 +24,14 @@
 #include "net/base/network_delegate.h"
 #include "net/base/sdch_manager.h"
 #include "net/cert/cert_status_flags.h"
-#include "net/cookies/cookie_monster.h"
+#include "net/cookies/cookie_store.h"
+#include "net/http/http_content_disposition.h"
 #include "net/http/http_network_session.h"
 #include "net/http/http_request_headers.h"
 #include "net/http/http_response_headers.h"
 #include "net/http/http_response_info.h"
 #include "net/http/http_status_code.h"
 #include "net/http/http_transaction.h"
-#include "net/http/http_transaction_delegate.h"
 #include "net/http/http_transaction_factory.h"
 #include "net/http/http_util.h"
 #include "net/ssl/ssl_cert_request_info.h"
@@ -60,12 +59,14 @@ class URLRequestHttpJob::HttpFilterContext : public FilterContext {
   // FilterContext implementation.
   virtual bool GetMimeType(std::string* mime_type) const OVERRIDE;
   virtual bool GetURL(GURL* gurl) const OVERRIDE;
+  virtual bool GetContentDisposition(std::string* disposition) const OVERRIDE;
   virtual base::Time GetRequestTime() const OVERRIDE;
   virtual bool IsCachedContent() const OVERRIDE;
   virtual bool IsDownload() const OVERRIDE;
   virtual bool IsSdchResponse() const OVERRIDE;
   virtual int64 GetByteReadCount() const OVERRIDE;
   virtual int GetResponseCode() const OVERRIDE;
+  virtual const URLRequestContext* GetURLRequestContext() const OVERRIDE;
   virtual void RecordPacketStats(StatisticSelector statistic) const OVERRIDE;
 
   // Method to allow us to reset filter context for a response that should have
@@ -76,84 +77,6 @@ class URLRequestHttpJob::HttpFilterContext : public FilterContext {
   URLRequestHttpJob* job_;
 
   DISALLOW_COPY_AND_ASSIGN(HttpFilterContext);
-};
-
-class URLRequestHttpJob::HttpTransactionDelegateImpl
-    : public HttpTransactionDelegate {
- public:
-  HttpTransactionDelegateImpl(URLRequest* request,
-                              NetworkDelegate* network_delegate)
-      : request_(request),
-        network_delegate_(network_delegate),
-        state_(NONE_ACTIVE) {}
-  virtual ~HttpTransactionDelegateImpl() { OnDetachRequest(); }
-  void OnDetachRequest() {
-    if (!IsRequestAndDelegateActive())
-      return;
-    NotifyStateChange(NetworkDelegate::REQUEST_WAIT_STATE_RESET);
-    state_ = NONE_ACTIVE;
-    request_ = NULL;
-  }
-  virtual void OnCacheActionStart() OVERRIDE {
-    HandleStateChange(NONE_ACTIVE,
-                      CACHE_ACTIVE,
-                      NetworkDelegate::REQUEST_WAIT_STATE_CACHE_START);
-  }
-  virtual void OnCacheActionFinish() OVERRIDE {
-    HandleStateChange(CACHE_ACTIVE,
-                      NONE_ACTIVE,
-                      NetworkDelegate::REQUEST_WAIT_STATE_CACHE_FINISH);
-  }
-  virtual void OnNetworkActionStart() OVERRIDE {
-    HandleStateChange(NONE_ACTIVE,
-                      NETWORK_ACTIVE,
-                      NetworkDelegate::REQUEST_WAIT_STATE_NETWORK_START);
-  }
-  virtual void OnNetworkActionFinish() OVERRIDE {
-    HandleStateChange(NETWORK_ACTIVE,
-                      NONE_ACTIVE,
-                      NetworkDelegate::REQUEST_WAIT_STATE_NETWORK_FINISH);
-  }
-
- private:
-  enum State {
-    NONE_ACTIVE,
-    CACHE_ACTIVE,
-    NETWORK_ACTIVE
-  };
-
-  // Returns true if this object still has an active request and network
-  // delegate.
-  bool IsRequestAndDelegateActive() const {
-    return request_ && network_delegate_;
-  }
-
-  // Notifies the |network_delegate_| object of a change in the state of the
-  // |request_| to the state given by the |request_wait_state| argument.
-  void NotifyStateChange(NetworkDelegate::RequestWaitState request_wait_state) {
-    network_delegate_->NotifyRequestWaitStateChange(*request_,
-                                                    request_wait_state);
-  }
-
-  // Checks the request and delegate are still active, changes |state_| from
-  // |expected_state| to |next_state|, and then notifies the network delegate of
-  // the change to |request_wait_state|.
-  void HandleStateChange(State expected_state,
-                         State next_state,
-                         NetworkDelegate::RequestWaitState request_wait_state) {
-    if (!IsRequestAndDelegateActive())
-      return;
-    DCHECK_EQ(expected_state, state_);
-    state_ = next_state;
-    NotifyStateChange(request_wait_state);
-  }
-
-  URLRequest* request_;
-  NetworkDelegate* network_delegate_;
-  // Internal state tracking, for sanity checking.
-  State state_;
-
-  DISALLOW_COPY_AND_ASSIGN(HttpTransactionDelegateImpl);
 };
 
 URLRequestHttpJob::HttpFilterContext::HttpFilterContext(URLRequestHttpJob* job)
@@ -174,6 +97,13 @@ bool URLRequestHttpJob::HttpFilterContext::GetURL(GURL* gurl) const {
     return false;
   *gurl = job_->request()->url();
   return true;
+}
+
+bool URLRequestHttpJob::HttpFilterContext::GetContentDisposition(
+    std::string* disposition) const {
+  HttpResponseHeaders* headers = job_->GetResponseHeaders();
+  void *iter = NULL;
+  return headers->EnumerateHeader(&iter, "Content-Disposition", disposition);
 }
 
 base::Time URLRequestHttpJob::HttpFilterContext::GetRequestTime() const {
@@ -205,6 +135,11 @@ int URLRequestHttpJob::HttpFilterContext::GetResponseCode() const {
   return job_->GetResponseCode();
 }
 
+const URLRequestContext*
+URLRequestHttpJob::HttpFilterContext::GetURLRequestContext() const {
+  return job_->request() ? job_->request()->context() : NULL;
+}
+
 void URLRequestHttpJob::HttpFilterContext::RecordPacketStats(
     StatisticSelector statistic) const {
   job_->RecordPacketStats(statistic);
@@ -229,7 +164,7 @@ URLRequestJob* URLRequestHttpJob::Factory(URLRequest* request,
     return new URLRequestRedirectJob(
         request, network_delegate, redirect_url,
         // Use status code 307 to preserve the method, so POST requests work.
-        URLRequestRedirectJob::REDIRECT_307_TEMPORARY_REDIRECT);
+        URLRequestRedirectJob::REDIRECT_307_TEMPORARY_REDIRECT, "HSTS");
   }
   return new URLRequestHttpJob(request,
                                network_delegate,
@@ -264,14 +199,12 @@ URLRequestHttpJob::URLRequestHttpJob(
       request_time_snapshot_(),
       final_packet_time_(),
       filter_context_(new HttpFilterContext(this)),
-      weak_factory_(this),
       on_headers_received_callback_(
           base::Bind(&URLRequestHttpJob::OnHeadersReceivedCallback,
                      base::Unretained(this))),
       awaiting_callback_(false),
-      http_transaction_delegate_(
-          new HttpTransactionDelegateImpl(request, network_delegate)),
-      http_user_agent_settings_(http_user_agent_settings) {
+      http_user_agent_settings_(http_user_agent_settings),
+      weak_factory_(this) {
   URLRequestThrottlerManager* manager = request->context()->throttler_manager();
   if (manager)
     throttling_entry_ = manager->RegisterRequestUrl(request->url());
@@ -293,20 +226,6 @@ URLRequestHttpJob::~URLRequestHttpJob() {
   // filter_context_ is still alive.
   DestroyFilters();
 
-  if (sdch_dictionary_url_.is_valid()) {
-    // Prior to reaching the destructor, request_ has been set to a NULL
-    // pointer, so request_->url() is no longer valid in the destructor, and we
-    // use an alternate copy |request_info_.url|.
-    SdchManager* manager = SdchManager::Global();
-    // To be extra safe, since this is a "different time" from when we decided
-    // to get the dictionary, we'll validate that an SdchManager is available.
-    // At shutdown time, care is taken to be sure that we don't delete this
-    // globally useful instance "too soon," so this check is just defensive
-    // coding to assure that IF the system is shutting down, we don't have any
-    // problem if the manager was deleted ahead of time.
-    if (manager)  // Defensive programming.
-      manager->FetchDictionary(request_info_.url, sdch_dictionary_url_);
-  }
   DoneWithRequest(ABORTED);
 }
 
@@ -335,7 +254,7 @@ void URLRequestHttpJob::Start() {
   // Privacy mode could still be disabled in OnCookiesLoaded if we are going
   // to send previously saved cookies.
   request_info_.privacy_mode = enable_privacy_mode ?
-      kPrivacyModeEnabled : kPrivacyModeDisabled;
+      PRIVACY_MODE_ENABLED : PRIVACY_MODE_DISABLED;
 
   // Strip Referer from request_info_.extra_headers to prevent, e.g., plugins
   // from overriding headers that are controlled using other means. Otherwise a
@@ -352,16 +271,13 @@ void URLRequestHttpJob::Start() {
   request_info_.extra_headers.SetHeaderIfMissing(
       HttpRequestHeaders::kUserAgent,
       http_user_agent_settings_ ?
-          http_user_agent_settings_->GetUserAgent(request_->url()) :
-          std::string());
+          http_user_agent_settings_->GetUserAgent() : std::string());
 
   AddExtraHeaders();
   AddCookieHeaderAndStart();
 }
 
 void URLRequestHttpJob::Kill() {
-  http_transaction_delegate_->OnDetachRequest();
-
   if (!transaction_.get())
     return;
 
@@ -389,8 +305,8 @@ void URLRequestHttpJob::NotifyHeadersComplete() {
   ProcessStrictTransportSecurityHeader();
   ProcessPublicKeyPinsHeader();
 
-  if (SdchManager::Global() &&
-      SdchManager::Global()->IsInSupportedDomain(request_->url())) {
+  SdchManager* sdch_manager(request()->context()->sdch_manager());
+  if (sdch_manager && sdch_manager->IsInSupportedDomain(request_->url())) {
     const std::string name = "Get-Dictionary";
     std::string url_text;
     void* iter = NULL;
@@ -401,11 +317,11 @@ void URLRequestHttpJob::NotifyHeadersComplete() {
     // Eventually we should wait until a dictionary is requested several times
     // before we even download it (so that we don't waste memory or bandwidth).
     if (GetResponseHeaders()->EnumerateHeader(&iter, name, &url_text)) {
-      // request_->url() won't be valid in the destructor, so we use an
-      // alternate copy.
-      DCHECK_EQ(request_->url(), request_info_.url);
       // Resolve suggested URL relative to request url.
-      sdch_dictionary_url_ = request_info_.url.Resolve(url_text);
+      GURL sdch_dictionary_url = request_->url().Resolve(url_text);
+      if (sdch_dictionary_url.is_valid()) {
+        sdch_manager->FetchDictionary(request_->url(), sdch_dictionary_url);
+      }
     }
   }
 
@@ -495,7 +411,7 @@ void URLRequestHttpJob::StartTransactionInternal() {
     DCHECK(request_->context()->http_transaction_factory());
 
     rv = request_->context()->http_transaction_factory()->CreateTransaction(
-        priority_, &transaction_, http_transaction_delegate_.get());
+        priority_, &transaction_);
 
     if (rv == OK && request_info_.url.SchemeIsWSOrWSS()) {
       // TODO(ricea): Implement WebSocket throttling semantics as defined in
@@ -511,6 +427,10 @@ void URLRequestHttpJob::StartTransactionInternal() {
     }
 
     if (rv == OK) {
+      transaction_->SetBeforeNetworkStartCallback(
+          base::Bind(&URLRequestHttpJob::NotifyBeforeNetworkStart,
+                     base::Unretained(this)));
+
       if (!throttling_entry_.get() ||
           !throttling_entry_->ShouldRejectRequest(*request_)) {
         rv = transaction_->Start(
@@ -535,6 +455,8 @@ void URLRequestHttpJob::StartTransactionInternal() {
 }
 
 void URLRequestHttpJob::AddExtraHeaders() {
+  SdchManager* sdch_manager = request()->context()->sdch_manager();
+
   // Supply Accept-Encoding field only if it is not already provided.
   // It should be provided IF the content is known to have restrictions on
   // potential encoding, such as streaming multi-media.
@@ -544,19 +466,24 @@ void URLRequestHttpJob::AddExtraHeaders() {
   // simple_data_source.
   if (!request_info_.extra_headers.HasHeader(
       HttpRequestHeaders::kAcceptEncoding)) {
-    bool advertise_sdch = SdchManager::Global() &&
-        SdchManager::Global()->IsInSupportedDomain(request_->url());
+    bool advertise_sdch = sdch_manager &&
+        // We don't support SDCH responses to POST as there is a possibility
+        // of having SDCH encoded responses returned (e.g. by the cache)
+        // which we cannot decode, and in those situations, we will need
+        // to retransmit the request without SDCH, which is illegal for a POST.
+        request()->method() != "POST" &&
+        sdch_manager->IsInSupportedDomain(request_->url());
     std::string avail_dictionaries;
     if (advertise_sdch) {
-      SdchManager::Global()->GetAvailDictionaryList(request_->url(),
-                                                    &avail_dictionaries);
+      sdch_manager->GetAvailDictionaryList(request_->url(),
+                                           &avail_dictionaries);
 
       // The AllowLatencyExperiment() is only true if we've successfully done a
       // full SDCH compression recently in this browser session for this host.
       // Note that for this path, there might be no applicable dictionaries,
       // and hence we can't participate in the experiment.
       if (!avail_dictionaries.empty() &&
-          SdchManager::Global()->AllowLatencyExperiment(request_->url())) {
+          sdch_manager->AllowLatencyExperiment(request_->url())) {
         // We are participating in the test (or control), and hence we'll
         // eventually record statistics via either SDCH_EXPERIMENT_DECODE or
         // SDCH_EXPERIMENT_HOLDBACK, and we'll need some packet timing data.
@@ -620,17 +547,12 @@ void URLRequestHttpJob::AddCookieHeaderAndStart() {
   if (!request_)
     return;
 
-  CookieStore* cookie_store = request_->context()->cookie_store();
+  CookieStore* cookie_store = GetCookieStore();
   if (cookie_store && !(request_info_.load_flags & LOAD_DO_NOT_SEND_COOKIES)) {
-    net::CookieMonster* cookie_monster = cookie_store->GetCookieMonster();
-    if (cookie_monster) {
-      cookie_monster->GetAllCookiesForURLAsync(
-          request_->url(),
-          base::Bind(&URLRequestHttpJob::CheckCookiePolicyAndLoad,
-                     weak_factory_.GetWeakPtr()));
-    } else {
-      CheckCookiePolicyAndLoad(CookieList());
-    }
+    cookie_store->GetAllCookiesForURLAsync(
+        request_->url(),
+        base::Bind(&URLRequestHttpJob::CheckCookiePolicyAndLoad,
+                   weak_factory_.GetWeakPtr()));
   } else {
     DoStartTransaction();
   }
@@ -639,7 +561,7 @@ void URLRequestHttpJob::AddCookieHeaderAndStart() {
 void URLRequestHttpJob::DoLoadCookies() {
   CookieOptions options;
   options.set_include_httponly();
-  request_->context()->cookie_store()->GetCookiesWithOptionsAsync(
+  GetCookieStore()->GetCookiesWithOptionsAsync(
       request_->url(), options,
       base::Bind(&URLRequestHttpJob::OnCookiesLoaded,
                  weak_factory_.GetWeakPtr()));
@@ -658,7 +580,7 @@ void URLRequestHttpJob::OnCookiesLoaded(const std::string& cookie_line) {
     request_info_.extra_headers.SetHeader(
         HttpRequestHeaders::kCookie, cookie_line);
     // Disable privacy mode as we are sending cookies anyway.
-    request_info_.privacy_mode = kPrivacyModeDisabled;
+    request_info_.privacy_mode = PRIVACY_MODE_DISABLED;
   }
   DoStartTransaction();
 }
@@ -719,8 +641,7 @@ void URLRequestHttpJob::SaveNextCookie() {
       new SharedBoolean(true);
 
   if (!(request_info_.load_flags & LOAD_DO_NOT_SAVE_COOKIES) &&
-      request_->context()->cookie_store() &&
-      response_cookies_.size() > 0) {
+      GetCookieStore() && response_cookies_.size() > 0) {
     CookieOptions options;
     options.set_include_httponly();
     options.set_server_time(response_date_);
@@ -738,7 +659,7 @@ void URLRequestHttpJob::SaveNextCookie() {
       if (CanSetCookie(
           response_cookies_[response_cookies_save_index_], &options)) {
         callback_pending->data = true;
-        request_->context()->cookie_store()->SetCookieWithOptionsAsync(
+        GetCookieStore()->SetCookieWithOptionsAsync(
             request_->url(), response_cookies_[response_cookies_save_index_],
             options, callback);
       }
@@ -852,9 +773,9 @@ void URLRequestHttpJob::OnStartCompleted(int result) {
   if (!request_)
     return;
 
-  // If the transaction was destroyed, then the job was cancelled, and
-  // we can just ignore this notification.
-  if (!transaction_.get())
+  // If the job is done (due to cancellation), can just ignore this
+  // notification.
+  if (done_)
     return;
 
   receive_headers_end_ = base::TimeTicks::Now();
@@ -879,17 +800,22 @@ void URLRequestHttpJob::OnStartCompleted(int result) {
   }
 
   if (result == OK) {
+    if (transaction_ && transaction_->GetResponseInfo()) {
+      SetProxyServer(transaction_->GetResponseInfo()->proxy_server);
+    }
     scoped_refptr<HttpResponseHeaders> headers = GetResponseHeaders();
     if (network_delegate()) {
       // Note that |this| may not be deleted until
       // |on_headers_received_callback_| or
       // |NetworkDelegate::URLRequestDestroyed()| has been called.
       OnCallToDelegate();
+      allowed_unsafe_redirect_url_ = GURL();
       int error = network_delegate()->NotifyHeadersReceived(
           request_,
           on_headers_received_callback_,
           headers.get(),
-          &override_response_headers_);
+          &override_response_headers_,
+          &allowed_unsafe_redirect_url_);
       if (error != net::OK) {
         if (error == net::ERR_IO_PENDING) {
           awaiting_callback_ = true;
@@ -917,14 +843,13 @@ void URLRequestHttpJob::OnStartCompleted(int result) {
       NotifySSLCertificateError(info, true);
     } else {
       // Maybe overridable, maybe not. Ask the delegate to decide.
-      TransportSecurityState::DomainState domain_state;
       const URLRequestContext* context = request_->context();
-      const bool fatal = context->transport_security_state() &&
-          context->transport_security_state()->GetDomainState(
+      TransportSecurityState* state = context->transport_security_state();
+      const bool fatal =
+          state &&
+          state->ShouldSSLErrorsBeFatal(
               request_info_.url.host(),
-              SSLConfigService::IsSNIAvailable(context->ssl_config_service()),
-              &domain_state) &&
-          domain_state.ShouldSSLErrorsBeFatal();
+              SSLConfigService::IsSNIAvailable(context->ssl_config_service()));
       NotifySSLCertificateError(
           transaction_->GetResponseInfo()->ssl_info, fatal);
     }
@@ -932,6 +857,10 @@ void URLRequestHttpJob::OnStartCompleted(int result) {
     NotifyCertificateRequested(
         transaction_->GetResponseInfo()->cert_request_info.get());
   } else {
+    // Even on an error, there may be useful information in the response
+    // info (e.g. whether there's a cached copy).
+    if (transaction_.get())
+      response_info_ = transaction_->GetResponseInfo();
     NotifyStartError(URLRequestStatus(URLRequestStatus::FAILED, result));
   }
 }
@@ -1023,9 +952,10 @@ bool URLRequestHttpJob::GetCharset(std::string* charset) {
 
 void URLRequestHttpJob::GetResponseInfo(HttpResponseInfo* info) {
   DCHECK(request_);
-  DCHECK(transaction_.get());
 
   if (response_info_) {
+    DCHECK(transaction_.get());
+
     *info = *response_info_;
     if (override_response_headers_.get())
       info->headers = override_response_headers_;
@@ -1105,11 +1035,26 @@ Filter* URLRequestHttpJob::SetupFilter() const {
       ? Filter::Factory(encoding_types, *filter_context_) : NULL;
 }
 
+bool URLRequestHttpJob::CopyFragmentOnRedirect(const GURL& location) const {
+  // Allow modification of reference fragments by default, unless
+  // |allowed_unsafe_redirect_url_| is set and equal to the redirect URL.
+  // When this is the case, we assume that the network delegate has set the
+  // desired redirect URL (with or without fragment), so it must not be changed
+  // any more.
+  return !allowed_unsafe_redirect_url_.is_valid() ||
+       allowed_unsafe_redirect_url_ != location;
+}
+
 bool URLRequestHttpJob::IsSafeRedirect(const GURL& location) {
   // HTTP is always safe.
   // TODO(pauljensen): Remove once crbug.com/146591 is fixed.
   if (location.is_valid() &&
       (location.scheme() == "http" || location.scheme() == "https")) {
+    return true;
+  }
+  // Delegates may mark a URL as safe for redirection.
+  if (allowed_unsafe_redirect_url_.is_valid() &&
+      allowed_unsafe_redirect_url_ == location) {
     return true;
   }
   // Query URLRequestJobFactory as to whether |location| would be safe to
@@ -1250,6 +1195,11 @@ void URLRequestHttpJob::ContinueDespiteLastError() {
                  weak_factory_.GetWeakPtr(), rv));
 }
 
+void URLRequestHttpJob::ResumeNetworkStart() {
+  DCHECK(transaction_.get());
+  transaction_->ResumeNetworkStart();
+}
+
 bool URLRequestHttpJob::ShouldFixMismatchedContentLength(int rv) const {
   // Some servers send the body compressed, but specify the content length as
   // the uncompressed size.  Although this violates the HTTP spec we want to
@@ -1316,9 +1266,35 @@ bool URLRequestHttpJob::GetFullRequestHeaders(
   return transaction_->GetFullRequestHeaders(headers);
 }
 
+int64 URLRequestHttpJob::GetTotalReceivedBytes() const {
+  if (!transaction_)
+    return 0;
+
+  return transaction_->GetTotalReceivedBytes();
+}
+
 void URLRequestHttpJob::DoneReading() {
-  if (transaction_.get())
+  if (transaction_) {
     transaction_->DoneReading();
+  }
+  DoneWithRequest(FINISHED);
+}
+
+void URLRequestHttpJob::DoneReadingRedirectResponse() {
+  if (transaction_) {
+    if (transaction_->GetResponseInfo()->headers->IsRedirect(NULL)) {
+      // If the original headers indicate a redirect, go ahead and cache the
+      // response, even if the |override_response_headers_| are a redirect to
+      // another location.
+      transaction_->DoneReading();
+    } else {
+      // Otherwise, |override_response_headers_| must be non-NULL and contain
+      // bogus headers indicating a redirect.
+      DCHECK(override_response_headers_);
+      DCHECK(override_response_headers_->IsRedirect(NULL));
+      transaction_->StopCaching();
+    }
+  }
   DoneWithRequest(FINISHED);
 }
 
@@ -1533,10 +1509,6 @@ HttpResponseHeaders* URLRequestHttpJob::GetResponseHeaders() const {
 
 void URLRequestHttpJob::NotifyURLRequestDestroyed() {
   awaiting_callback_ = false;
-}
-
-void URLRequestHttpJob::OnDetachRequest() {
-  http_transaction_delegate_->OnDetachRequest();
 }
 
 }  // namespace net

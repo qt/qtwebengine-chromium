@@ -10,12 +10,20 @@
     blaze-out/gcc-4.X.Y-crosstool-v17-hybrid-grtev3-k8-fastbuild/bin/java/com/google/ipc/invalidation/external/client/contrib/android_listener_manifest/AndroidManifest.xml
   -->
   <uses-sdk android:minSdkVersion="14" android:targetSdkVersion="14"/>
-  <!-- Declare and use permission allowing this application to receive GCM messages. -->
+  <!-- Declare and use permission allowing this application to receive GCM
+       messages. -->
   <permission android:name="com.google.ipc.invalidation.examples.android2.permission.C2D_MESSAGE" android:protectionLevel="signature"/>
   <uses-permission android:name="com.google.ipc.invalidation.examples.android2.permission.C2D_MESSAGE"/>
   <application>
     <!-- Configure the listener class for the application -->
     <meta-data android:name="ipc.invalidation.ticl.listener_service_class" android:value="com.google.ipc.invalidation.examples.android2.ExampleListener"/>
+    <!-- To enable background invalidations uncomment the following element:
+    -->
+    <!--<meta-data
+        android:name=
+        "ipc.invalidation.ticl.background_invalidation_listener_service_class"
+        android:value=
+        "com.google.ipc.invalidation.examples.android2.ExampleListener"/>-->
     <!-- Example activity -->
     <activity android:name="com.google.ipc.invalidation.examples.android2.MainActivity">
       <intent-filter>

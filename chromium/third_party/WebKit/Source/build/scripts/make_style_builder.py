@@ -31,25 +31,35 @@ import re
 import sys
 
 import in_generator
+import name_utilities
+from name_utilities import camelcase_property_name, lower_first
 import template_expander
 
 
 class StyleBuilderWriter(in_generator.Writer):
     class_name = 'StyleBuilder'
+    filters = {
+        'lower_first': lower_first,
+    }
 
     valid_values = {
         'svg': [True, False],
+        'font': [True, False],
         'custom_all': [True, False],
         'custom_initial': [True, False],
         'custom_inherit': [True, False],
         'custom_value': [True, False],
+        'direction_aware': [True, False],
+        'skip': [True, False],
     }
     defaults = {
-        'condition': None,
         'name_for_methods': None,
         'use_handlers_for': None,
         'svg': False,
+        'font': False,
         'converter': None,
+        'direction_aware': False,
+        'skip': False,
 # These depend on property name by default
         'type_name': None,
         'getter': None,
@@ -65,9 +75,9 @@ class StyleBuilderWriter(in_generator.Writer):
 
     def __init__(self, in_files):
         super(StyleBuilderWriter, self).__init__(in_files)
-        self._outputs = {("StyleBuilderFunctions.h"): self.generate_style_builder_functions_h,
-                         ("StyleBuilderFunctions.cpp"): self.generate_style_builder_functions_cpp,
-                         ("StyleBuilder.cpp"): self.generate_style_builder,
+        self._outputs = {('StyleBuilderFunctions.h'): self.generate_style_builder_functions_h,
+                         ('StyleBuilderFunctions.cpp'): self.generate_style_builder_functions_cpp,
+                         ('StyleBuilder.cpp'): self.generate_style_builder,
                         }
 
         self._properties = self.in_file.name_dictionaries
@@ -77,52 +87,42 @@ class StyleBuilderWriter(in_generator.Writer):
                 property[key] = value
 
         for property in self._properties:
-            cc = self._camelcase_property_name(property["name"])
-            property["property_id"] = "CSSProperty" + cc
-            cc = property["name_for_methods"] or cc.replace("Webkit", "")
-            property["camel_case_name"] = cc
-            set_if_none(property, "type_name", "E" + cc)
-            set_if_none(property, "getter", self._lower_first(cc))
-            set_if_none(property, "setter", "set" + cc)
-            set_if_none(property, "initial", "initial" + cc)
-            if property["custom_all"]:
-                property["custom_initial"] = True
-                property["custom_inherit"] = True
-                property["custom_value"] = True
+            cc = camelcase_property_name(property['name'])
+            property['property_id'] = 'CSSProperty' + cc
+            cc = property['name_for_methods'] or cc.replace('Webkit', '')
+            property['camel_case_name'] = cc
+            set_if_none(property, 'type_name', 'E' + cc)
+            set_if_none(property, 'getter', lower_first(cc))
+            set_if_none(property, 'setter', 'set' + cc)
+            set_if_none(property, 'initial', 'initial' + cc)
+            if property['custom_all']:
+                property['custom_initial'] = True
+                property['custom_inherit'] = True
+                property['custom_value'] = True
+            property['should_declare_functions'] = not property['use_handlers_for'] and not property['direction_aware'] and not property['skip']
 
-        self._properties = dict((property["property_id"], property) for property in self._properties)
+        self._properties = dict((property['property_id'], property) for property in self._properties)
 
-# FIXME: some of these might be better in a utils file
-    @staticmethod
-    def _camelcase_property_name(property_name):
-        return re.sub(r'(^[^-])|-(.)', lambda match: (match.group(1) or match.group(2)).upper(), property_name)
-
-    @staticmethod
-    def _lower_first(s):
-        return s[0].lower() + s[1:]
-
-    @staticmethod
-    def _upper_first(s):
-        return s[0].upper() + s[1:]
-
-    @template_expander.use_jinja("StyleBuilderFunctions.h.tmpl")
+    @template_expander.use_jinja('StyleBuilderFunctions.h.tmpl',
+                                 filters=filters)
     def generate_style_builder_functions_h(self):
         return {
-            "properties": self._properties,
+            'properties': self._properties,
         }
 
-    @template_expander.use_jinja("StyleBuilderFunctions.cpp.tmpl")
+    @template_expander.use_jinja('StyleBuilderFunctions.cpp.tmpl',
+                                 filters=filters)
     def generate_style_builder_functions_cpp(self):
         return {
-            "properties": self._properties,
+            'properties': self._properties,
         }
 
-    @template_expander.use_jinja("StyleBuilder.cpp.tmpl")
+    @template_expander.use_jinja('StyleBuilder.cpp.tmpl', filters=filters)
     def generate_style_builder(self):
         return {
-            "properties": self._properties,
+            'properties': self._properties,
         }
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     in_generator.Maker(StyleBuilderWriter).main(sys.argv)

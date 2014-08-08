@@ -7,6 +7,7 @@
 #include <sys/param.h>
 
 #include "base/bind.h"
+#include "base/files/file.h"
 #include "base/files/file_path.h"
 #include "base/mac/mac_util.h"
 #include "base/pickle.h"
@@ -23,15 +24,14 @@
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/drop_data.h"
-#include "content/public/common/url_constants.h"
 #include "grit/ui_resources.h"
 #include "net/base/escape.h"
-#include "net/base/file_stream.h"
+#include "net/base/filename_util.h"
 #include "net/base/mime_util.h"
-#include "net/base/net_util.h"
 #include "ui/base/clipboard/custom_data_helper.h"
 #include "ui/base/dragdrop/cocoa_dnd_util.h"
 #include "ui/gfx/image/image.h"
+#include "url/url_constants.h"
 
 using base::SysNSStringToUTF8;
 using base::SysUTF8ToNSString;
@@ -41,7 +41,6 @@ using content::DragDownloadFile;
 using content::DropData;
 using content::PromiseFileFinalizer;
 using content::RenderViewHostImpl;
-using net::FileStream;
 
 namespace {
 
@@ -85,9 +84,9 @@ base::FilePath GetFileNameFromDragData(const DropData& drop_data) {
 // is responsible for opening the file. It takes the drop data and an open file
 // stream.
 void PromiseWriterHelper(const DropData& drop_data,
-                         scoped_ptr<FileStream> file_stream) {
-  DCHECK(file_stream);
-  file_stream->WriteSync(drop_data.file_contents.data(),
+                         base::File file) {
+  DCHECK(file.IsValid());
+  file.WriteAtCurrentPos(drop_data.file_contents.data(),
                          drop_data.file_contents.length());
 }
 
@@ -147,7 +146,7 @@ void PromiseWriterHelper(const DropData& drop_data,
 - (void)lazyWriteToPasteboard:(NSPasteboard*)pboard forType:(NSString*)type {
   // NSHTMLPboardType requires the character set to be declared. Otherwise, it
   // assumes US-ASCII. Awesome.
-  const base::string16 kHtmlHeader = ASCIIToUTF16(
+  const base::string16 kHtmlHeader = base::ASCIIToUTF16(
       "<meta http-equiv=\"Content-Type\" content=\"text/html;charset=UTF-8\">");
 
   // Be extra paranoid; avoid crashing.
@@ -170,7 +169,7 @@ void PromiseWriterHelper(const DropData& drop_data,
     NSURL* url = [NSURL URLWithString:SysUTF8ToNSString(dropData_->url.spec())];
     // If NSURL creation failed, check for a badly-escaped JavaScript URL.
     // Strip out any existing escapes and then re-escape uniformly.
-    if (!url && dropData_->url.SchemeIs(content::kJavaScriptScheme)) {
+    if (!url && dropData_->url.SchemeIs(url::kJavaScriptScheme)) {
       net::UnescapeRule::Type unescapeRules =
           net::UnescapeRule::SPACES |
           net::UnescapeRule::URL_SPECIAL_CHARS |
@@ -292,27 +291,6 @@ void PromiseWriterHelper(const DropData& drop_data,
   [pasteboard_ declareTypes:[NSArray array] owner:nil];
 }
 
-- (void)moveDragTo:(NSPoint)screenPoint {
-  if (!contents_)
-    return;
-  RenderViewHostImpl* rvh = static_cast<RenderViewHostImpl*>(
-      contents_->GetRenderViewHost());
-  if (rvh) {
-    // Convert |screenPoint| to view coordinates and flip it.
-    NSPoint localPoint = NSZeroPoint;
-    if ([contentsView_ window])
-      localPoint = [self convertScreenPoint:screenPoint];
-    NSRect viewFrame = [contentsView_ frame];
-    localPoint.y = viewFrame.size.height - localPoint.y;
-    // Flip |screenPoint|.
-    NSRect screenFrame = [[[contentsView_ window] screen] frame];
-    screenPoint.y = screenFrame.size.height - screenPoint.y;
-
-    contents_->DragSourceMovedTo(localPoint.x, localPoint.y,
-                                 screenPoint.x, screenPoint.y);
-  }
-}
-
 - (NSString*)dragPromisedFileTo:(NSString*)path {
   // Be extra paranoid; avoid crashing.
   if (!dropData_) {
@@ -323,19 +301,18 @@ void PromiseWriterHelper(const DropData& drop_data,
   base::FilePath filePath(SysNSStringToUTF8(path));
   filePath = filePath.Append(downloadFileName_);
 
-  // CreateFileStreamForDrop() will call base::PathExists(),
+  // CreateFileForDrop() will call base::PathExists(),
   // which is blocking.  Since this operation is already blocking the
   // UI thread on OSX, it should be reasonable to let it happen.
   base::ThreadRestrictions::ScopedAllowIO allowIO;
-  scoped_ptr<FileStream> fileStream(content::CreateFileStreamForDrop(
-      &filePath, content::GetContentClient()->browser()->GetNetLog()));
-  if (!fileStream)
+  base::File file(content::CreateFileForDrop(&filePath));
+  if (!file.IsValid())
     return nil;
 
   if (downloadURL_.is_valid()) {
     scoped_refptr<DragDownloadFile> dragFileDownloader(new DragDownloadFile(
         filePath,
-        fileStream.Pass(),
+        file.Pass(),
         downloadURL_,
         content::Referrer(contents_->GetLastCommittedURL(),
                           dropData_->referrer_policy),
@@ -351,7 +328,7 @@ void PromiseWriterHelper(const DropData& drop_data,
                             FROM_HERE,
                             base::Bind(&PromiseWriterHelper,
                                        *dropData_,
-                                       base::Passed(&fileStream)));
+                                       base::Passed(&file)));
   }
 
   // The DragDownloadFile constructor may have altered the value of |filePath|
@@ -397,7 +374,7 @@ void PromiseWriterHelper(const DropData& drop_data,
         // name.
         std::string defaultName =
             content::GetContentClient()->browser()->GetDefaultDownloadName();
-        mimeType = UTF16ToUTF8(mimeType16);
+        mimeType = base::UTF16ToUTF8(mimeType16);
         downloadFileName_ =
             net::GenerateFileName(downloadURL_,
                                   std::string(),

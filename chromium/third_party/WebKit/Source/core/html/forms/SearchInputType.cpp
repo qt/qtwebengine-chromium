@@ -31,9 +31,9 @@
 #include "config.h"
 #include "core/html/forms/SearchInputType.h"
 
-#include "HTMLNames.h"
-#include "InputTypeNames.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "core/HTMLNames.h"
+#include "core/InputTypeNames.h"
 #include "core/events/KeyboardEvent.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/html/HTMLInputElement.h"
@@ -52,9 +52,9 @@ inline SearchInputType::SearchInputType(HTMLInputElement& element)
 {
 }
 
-PassRefPtr<InputType> SearchInputType::create(HTMLInputElement& element)
+PassRefPtrWillBeRawPtr<InputType> SearchInputType::create(HTMLInputElement& element)
 {
-    return adoptRef(new SearchInputType(element));
+    return adoptRefWillBeNoop(new SearchInputType(element));
 }
 
 void SearchInputType::countUsage()
@@ -108,7 +108,7 @@ void SearchInputType::handleKeydownEvent(KeyboardEvent* event)
 
     const String& key = event->keyIdentifier();
     if (key == "U+001B") {
-        RefPtr<HTMLInputElement> input(element());
+        RefPtrWillBeRawPtr<HTMLInputElement> input(element());
         input->setValueForUser("");
         input->onSearch();
         event->setDefaultHandled();
@@ -120,7 +120,7 @@ void SearchInputType::handleKeydownEvent(KeyboardEvent* event)
 void SearchInputType::startSearchEventTimer()
 {
     ASSERT(element().renderer());
-    unsigned length = element().innerTextValue().length();
+    unsigned length = element().innerEditorValue().length();
 
     if (!length) {
         stopSearchEventTimer();
@@ -130,7 +130,7 @@ void SearchInputType::startSearchEventTimer()
 
     // After typing the first key, we wait 0.5 seconds.
     // After the second key, 0.4 seconds, then 0.3, then 0.2 from then on.
-    m_searchEventTimer.startOneShot(max(0.2, 0.6 - 0.1 * length));
+    m_searchEventTimer.startOneShot(max(0.2, 0.6 - 0.1 * length), FROM_HERE);
 }
 
 void SearchInputType::stopSearchEventTimer()

@@ -34,29 +34,44 @@
 #include "bindings/v8/ScriptWrappable.h"
 #include "modules/filesystem/DOMFileSystem.h"
 #include "modules/filesystem/DirectoryReaderBase.h"
-#include "wtf/PassRefPtr.h"
-#include "wtf/RefCounted.h"
+#include "modules/filesystem/EntriesCallback.h"
+#include "platform/heap/Handle.h"
 #include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
-class EntriesCallback;
-class EntriesCallbacks;
 class ErrorCallback;
 
 class DirectoryReader : public DirectoryReaderBase, public ScriptWrappable {
 public:
-    static PassRefPtr<DirectoryReader> create(PassRefPtr<DOMFileSystemBase> fileSystem, const String& fullPath)
+    static DirectoryReader* create(DOMFileSystemBase* fileSystem, const String& fullPath)
     {
-        return adoptRef(new DirectoryReader(fileSystem, fullPath));
+        return new DirectoryReader(fileSystem, fullPath);
     }
+
+    virtual ~DirectoryReader();
 
     void readEntries(PassOwnPtr<EntriesCallback>, PassOwnPtr<ErrorCallback> = nullptr);
 
     DOMFileSystem* filesystem() const { return static_cast<DOMFileSystem*>(m_fileSystem.get()); }
 
+    virtual void trace(Visitor*) OVERRIDE;
+
 private:
-    DirectoryReader(PassRefPtr<DOMFileSystemBase>, const String& fullPath);
+    class EntriesCallbackHelper;
+    class ErrorCallbackHelper;
+
+    DirectoryReader(DOMFileSystemBase*, const String& fullPath);
+
+    void addEntries(const EntryHeapVector& entries);
+
+    void onError(FileError*);
+
+    bool m_isReading;
+    EntryHeapVector m_entries;
+    RefPtrWillBeMember<FileError> m_error;
+    OwnPtr<EntriesCallback> m_entriesCallback;
+    OwnPtr<ErrorCallback> m_errorCallback;
 };
 
 }

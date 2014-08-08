@@ -29,9 +29,9 @@
  */
 
 #include "config.h"
-#include "WebColorName.h"
+#include "public/web/WebColorName.h"
 
-#include "CSSValueKeywords.h"
+#include "core/CSSValueKeywords.h"
 #include "core/rendering/RenderTheme.h"
 #include "platform/graphics/Color.h"
 #include "public/platform/WebColor.h"
@@ -117,7 +117,7 @@ void setNamedColors(const WebColorName* colorNames, const WebColor* colors, size
         // Convert color to internal value identifier.
         int internalColorName = toCSSValueKeyword(colorName);
         if (internalColorName == CSSValueWebkitFocusRingColor) {
-            RenderTheme::setCustomFocusRingColor(color);
+            RenderTheme::theme().setCustomFocusRingColor(color);
             continue;
         }
     }

@@ -48,7 +48,6 @@ class CONTENT_EXPORT GpuMemoryManagerClientState {
  public:
   ~GpuMemoryManagerClientState();
   void SetVisible(bool visible);
-  void SetManagedMemoryStats(const gpu::ManagedMemoryStats& stats);
 
  private:
   friend class GpuMemoryManager;
@@ -80,25 +79,6 @@ class CONTENT_EXPORT GpuMemoryManagerClientState {
   // iterator in clients_nonsurface_.
   std::list<GpuMemoryManagerClientState*>::iterator list_iterator_;
   bool list_iterator_valid_;
-
-  // Statistics about memory usage.
-  gpu::ManagedMemoryStats managed_memory_stats_;
-  bool managed_memory_stats_received_;
-
-  // When managed_memory_stats_.bytes_nicetohave leaves the range
-  // [low_, high_], then re-adjust memory limits.
-  uint64 bytes_nicetohave_limit_low_;
-  uint64 bytes_nicetohave_limit_high_;
-
-  // The allocation for this client, used transiently during memory policy
-  // calculation.
-  uint64 bytes_allocation_when_visible_;
-
-  // The ideal allocation for this client for three performance levels, used
-  // transiently during memory policy calculation.
-  uint64 bytes_allocation_ideal_nicetohave_;
-  uint64 bytes_allocation_ideal_required_;
-  uint64 bytes_allocation_ideal_minimum_;
 
   // Set to disable allocating a frontbuffer or to disable allocations
   // for clients that don't have surfaces.

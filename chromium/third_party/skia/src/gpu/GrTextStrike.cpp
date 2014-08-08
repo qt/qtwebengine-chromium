@@ -5,18 +5,24 @@
  * found in the LICENSE file.
  */
 
-#include "GrAtlas.h"
 #include "GrGpu.h"
 #include "GrRectanizer.h"
 #include "GrTextStrike.h"
 #include "GrTextStrike_impl.h"
 #include "SkString.h"
 
-#if SK_DISTANCEFIELD_FONTS
-#include "edtaa3.h"
-#endif
+#include "SkDistanceFieldGen.h"
 
 ///////////////////////////////////////////////////////////////////////////////
+
+#define GR_ATLAS_TEXTURE_WIDTH 1024
+#define GR_ATLAS_TEXTURE_HEIGHT 2048
+
+#define GR_PLOT_WIDTH  256
+#define GR_PLOT_HEIGHT 256
+
+#define GR_NUM_PLOTS_X   (GR_ATLAS_TEXTURE_WIDTH / GR_PLOT_WIDTH)
+#define GR_NUM_PLOTS_Y   (GR_ATLAS_TEXTURE_HEIGHT / GR_PLOT_HEIGHT)
 
 #define FONT_CACHE_STATS 0
 #if FONT_CACHE_STATS
@@ -74,7 +80,13 @@ GrTextStrike* GrFontCache::generateStrike(GrFontScaler* scaler,
     GrPixelConfig config = mask_format_to_pixel_config(format);
     int atlasIndex = mask_format_to_atlas_index(format);
     if (NULL == fAtlasMgr[atlasIndex]) {
-        fAtlasMgr[atlasIndex] = SkNEW_ARGS(GrAtlasMgr, (fGpu, config));
+        SkISize textureSize = SkISize::Make(GR_ATLAS_TEXTURE_WIDTH,
+                                            GR_ATLAS_TEXTURE_HEIGHT);
+        fAtlasMgr[atlasIndex] = SkNEW_ARGS(GrAtlasMgr, (fGpu, config,
+                                                        textureSize,
+                                                        GR_NUM_PLOTS_X,
+                                                        GR_NUM_PLOTS_Y,
+                                                        true));
     }
     GrTextStrike* strike = SkNEW_ARGS(GrTextStrike,
                                       (this, scaler->getKey(), format, fAtlasMgr[atlasIndex]));
@@ -110,47 +122,39 @@ void GrFontCache::purgeStrike(GrTextStrike* strike) {
     delete strike;
 }
 
-void GrFontCache::purgeExceptFor(GrTextStrike* preserveStrike) {
+bool GrFontCache::freeUnusedPlot(GrTextStrike* preserveStrike) {
     SkASSERT(NULL != preserveStrike);
-    GrTextStrike* strike = fTail;
-    bool purge = true;
+
+    GrAtlasMgr* atlasMgr = preserveStrike->fAtlasMgr;
+    GrPlot* plot = atlasMgr->getUnusedPlot();
+    if (NULL == plot) {
+        return false;
+    }
+    plot->resetRects();
+
+    GrTextStrike* strike = fHead;
     GrMaskFormat maskFormat = preserveStrike->fMaskFormat;
     while (strike) {
-        if (strike == preserveStrike || maskFormat != strike->fMaskFormat) {
-            strike = strike->fPrev;
+        if (maskFormat != strike->fMaskFormat) {
+            strike = strike->fNext;
             continue;
         }
+
         GrTextStrike* strikeToPurge = strike;
-        strike = strikeToPurge->fPrev;
-        if (purge) {
-            // keep purging if we won't free up any atlases with this strike.
-            purge = strikeToPurge->fAtlas.isEmpty();
+        strike = strikeToPurge->fNext;
+        strikeToPurge->removePlot(plot);
+
+        // clear out any empty strikes (except this one)
+        if (strikeToPurge != preserveStrike && strikeToPurge->fAtlas.isEmpty()) {
             this->purgeStrike(strikeToPurge);
         }
     }
+
 #if FONT_CACHE_STATS
     ++g_PurgeCount;
 #endif
-}
 
-void GrFontCache::freePlotExceptFor(GrTextStrike* preserveStrike) {
-    SkASSERT(NULL != preserveStrike);
-    GrTextStrike* strike = fTail;
-    GrMaskFormat maskFormat = preserveStrike->fMaskFormat;
-    while (strike) {
-        if (strike == preserveStrike || maskFormat != strike->fMaskFormat) {
-            strike = strike->fPrev;
-            continue;
-        }
-        GrTextStrike* strikeToPurge = strike;
-        strike = strikeToPurge->fPrev;
-        if (strikeToPurge->removeUnusedPlots()) {
-            if (strikeToPurge->fAtlas.isEmpty()) {
-                this->purgeStrike(strikeToPurge);
-            }
-            break;
-        }
-    }
+    return true;
 }
 
 #ifdef SK_DEBUG
@@ -183,7 +187,6 @@ void GrFontCache::validate() const {
 }
 #endif
 
-#ifdef SK_DEVELOPER
 void GrFontCache::dump() const {
     static int gDumpCount = 0;
     for (int i = 0; i < kAtlasCount; ++i) {
@@ -191,24 +194,22 @@ void GrFontCache::dump() const {
             GrTexture* texture = fAtlasMgr[i]->getTexture();
             if (NULL != texture) {
                 SkString filename;
+#ifdef SK_BUILD_FOR_ANDROID
+                filename.printf("/sdcard/fontcache_%d%d.png", gDumpCount, i);
+#else
                 filename.printf("fontcache_%d%d.png", gDumpCount, i);
+#endif
                 texture->savePixels(filename.c_str());
             }
         }
     }
     ++gDumpCount;
 }
-#endif
 
 ///////////////////////////////////////////////////////////////////////////////
 
 #ifdef SK_DEBUG
     static int gCounter;
-#endif
-
-#if SK_DISTANCEFIELD_FONTS
-#define DISTANCE_FIELD_PAD   4
-#define DISTANCE_FIELD_RANGE (4.0)
 #endif
 
 /*
@@ -221,7 +222,7 @@ void GrFontCache::dump() const {
 
 GrTextStrike::GrTextStrike(GrFontCache* cache, const GrKey* key,
                            GrMaskFormat format,
-                           GrAtlasMgr* atlasMgr) : fPool(64), fAtlas(atlasMgr) {
+                           GrAtlasMgr* atlasMgr) : fPool(64) {
     fFontScalerKey = key;
     fFontScalerKey->ref();
 
@@ -236,15 +237,9 @@ GrTextStrike::GrTextStrike(GrFontCache* cache, const GrKey* key,
 #endif
 }
 
-// these signatures are needed because they're used with
-// SkTDArray::visitAll() (see destructor & removeUnusedAtlases())
+// this signature is needed because it's used with
+// SkTDArray::visitAll() (see destructor)
 static void free_glyph(GrGlyph*& glyph) { glyph->free(); }
-
-static void invalidate_glyph(GrGlyph*& glyph) {
-    if (glyph->fPlot && glyph->fPlot->drawToken().isIssued()) {
-        glyph->fPlot = NULL;
-    }
-}
 
 GrTextStrike::~GrTextStrike() {
     fFontScalerKey->unref();
@@ -259,32 +254,35 @@ GrTextStrike::~GrTextStrike() {
 GrGlyph* GrTextStrike::generateGlyph(GrGlyph::PackedID packed,
                                      GrFontScaler* scaler) {
     SkIRect bounds;
-    if (!scaler->getPackedGlyphBounds(packed, &bounds)) {
-        return NULL;
+    if (fUseDistanceField) {
+        if (!scaler->getPackedGlyphDFBounds(packed, &bounds)) {
+            return NULL;
+        }
+    } else {
+        if (!scaler->getPackedGlyphBounds(packed, &bounds)) {
+            return NULL;
+        }
     }
 
     GrGlyph* glyph = fPool.alloc();
-#if SK_DISTANCEFIELD_FONTS
-    // expand bounds to hold full distance field data
-    if (fUseDistanceField) {
-        bounds.fLeft   -= DISTANCE_FIELD_PAD;
-        bounds.fRight  += DISTANCE_FIELD_PAD;
-        bounds.fTop    -= DISTANCE_FIELD_PAD;
-        bounds.fBottom += DISTANCE_FIELD_PAD;
-    }
-#endif
     glyph->init(packed, bounds);
     fCache.insert(packed, glyph);
     return glyph;
 }
 
-bool GrTextStrike::removeUnusedPlots() {
-    fCache.getArray().visitAll(invalidate_glyph);
-    return fAtlasMgr->removeUnusedPlots(&fAtlas);
+void GrTextStrike::removePlot(const GrPlot* plot) {
+    SkTDArray<GrGlyph*>& glyphArray = fCache.getArray();
+    for (int i = 0; i < glyphArray.count(); ++i) {
+        if (plot == glyphArray[i]->fPlot) {
+            glyphArray[i]->fPlot = NULL;
+        }
+    }
+
+    fAtlasMgr->removePlot(&fAtlas, plot);
 }
 
 
-bool GrTextStrike::getGlyphAtlas(GrGlyph* glyph, GrFontScaler* scaler) {
+bool GrTextStrike::addGlyphToAtlas(GrGlyph* glyph, GrFontScaler* scaler) {
 #if 0   // testing hack to force us to flush our cache often
     static int gCounter;
     if ((++gCounter % 10) == 0) return false;
@@ -299,116 +297,26 @@ bool GrTextStrike::getGlyphAtlas(GrGlyph* glyph, GrFontScaler* scaler) {
 
     int bytesPerPixel = GrMaskFormatBytesPerPixel(fMaskFormat);
 
-    GrPlot* plot;
-#if SK_DISTANCEFIELD_FONTS
+    size_t size = glyph->fBounds.area() * bytesPerPixel;
+    SkAutoSMalloc<1024> storage(size);
     if (fUseDistanceField) {
-        SkASSERT(1 == bytesPerPixel);
-
-        // we've already expanded the glyph dimensions to match the final size
-        // but must shrink back down to get the packed glyph data
-        int dfWidth = glyph->width();
-        int dfHeight = glyph->height();
-        int width = dfWidth - 2*DISTANCE_FIELD_PAD;
-        int height = dfHeight - 2*DISTANCE_FIELD_PAD;
-        size_t stride = width*bytesPerPixel;
-
-        size_t size = width * height * bytesPerPixel;
-        SkAutoSMalloc<1024> storage(size);
-        if (!scaler->getPackedGlyphImage(glyph->fPackedID, width, height, stride, storage.get())) {
+        if (!scaler->getPackedGlyphDFImage(glyph->fPackedID, glyph->width(),
+                                           glyph->height(),
+                                           storage.get())) {
             return false;
         }
-
-        // alloc storage for distance field glyph
-        size_t dfSize = dfWidth * dfHeight * bytesPerPixel;
-        SkAutoSMalloc<1024> dfStorage(dfSize);
-
-        // copy glyph into distance field storage
-        sk_bzero(dfStorage.get(), dfSize);
-
-        unsigned char* ptr = (unsigned char*) storage.get();
-        unsigned char* dfPtr = (unsigned char*) dfStorage.get();
-        size_t dfStride = dfWidth*bytesPerPixel;
-        dfPtr += DISTANCE_FIELD_PAD*dfStride;
-        dfPtr += DISTANCE_FIELD_PAD*bytesPerPixel;
-
-        for (int i = 0; i < height; ++i) {
-            memcpy(dfPtr, ptr, stride);
-
-            dfPtr += dfStride;
-            ptr += stride;
-        }
-
-        // generate distance field data
-        SkAutoSMalloc<1024> distXStorage(dfWidth*dfHeight*sizeof(short));
-        SkAutoSMalloc<1024> distYStorage(dfWidth*dfHeight*sizeof(short));
-        SkAutoSMalloc<1024> outerDistStorage(dfWidth*dfHeight*sizeof(double));
-        SkAutoSMalloc<1024> innerDistStorage(dfWidth*dfHeight*sizeof(double));
-        SkAutoSMalloc<1024> gxStorage(dfWidth*dfHeight*sizeof(double));
-        SkAutoSMalloc<1024> gyStorage(dfWidth*dfHeight*sizeof(double));
-
-        short* distX = (short*) distXStorage.get();
-        short* distY = (short*) distYStorage.get();
-        double* outerDist = (double*) outerDistStorage.get();
-        double* innerDist = (double*) innerDistStorage.get();
-        double* gx = (double*) gxStorage.get();
-        double* gy = (double*) gyStorage.get();
-
-        dfPtr = (unsigned char*) dfStorage.get();
-        EDTAA::computegradient(dfPtr, dfWidth, dfHeight, gx, gy);
-        EDTAA::edtaa3(dfPtr, gx, gy, dfWidth, dfHeight, distX, distY, outerDist);
-
-        for (int i = 0; i < dfWidth*dfHeight; ++i) {
-            *dfPtr = 255 - *dfPtr;
-            dfPtr++;
-        }
-        dfPtr = (unsigned char*) dfStorage.get();
-        sk_bzero(gx, sizeof(double)*dfWidth*dfHeight);
-        sk_bzero(gy, sizeof(double)*dfWidth*dfHeight);
-        EDTAA::computegradient(dfPtr, dfWidth, dfHeight, gx, gy);
-        EDTAA::edtaa3(dfPtr, gx, gy, dfWidth, dfHeight, distX, distY, innerDist);
-
-        for (int i = 0; i < dfWidth*dfHeight; ++i) {
-            unsigned char val;
-            double outerval = outerDist[i];
-            if (outerval < 0.0) {
-                outerval = 0.0;
-            }
-            double innerval = innerDist[i];
-            if (innerval < 0.0) {
-                innerval = 0.0;
-            }
-            double dist = outerval - innerval;
-            if (dist <= -DISTANCE_FIELD_RANGE) {
-                val = 255;
-            } else if (dist > DISTANCE_FIELD_RANGE) {
-                val = 0;
-            } else {
-                val = (unsigned char)((DISTANCE_FIELD_RANGE-dist)*128.0/DISTANCE_FIELD_RANGE);
-            }
-            *dfPtr++ = val;
-        }
-
-        // copy to atlas
-        plot = fAtlasMgr->addToAtlas(&fAtlas, dfWidth, dfHeight, dfStorage.get(),
-                                     &glyph->fAtlasLocation);
-
     } else {
-#endif
-        size_t size = glyph->fBounds.area() * bytesPerPixel;
-        SkAutoSMalloc<1024> storage(size);
         if (!scaler->getPackedGlyphImage(glyph->fPackedID, glyph->width(),
                                          glyph->height(),
                                          glyph->width() * bytesPerPixel,
                                          storage.get())) {
             return false;
         }
-
-        plot = fAtlasMgr->addToAtlas(&fAtlas, glyph->width(),
-                                     glyph->height(), storage.get(),
-                                     &glyph->fAtlasLocation);
-#if SK_DISTANCEFIELD_FONTS
     }
-#endif
+
+    GrPlot* plot  = fAtlasMgr->addToAtlas(&fAtlas, glyph->width(),
+                                          glyph->height(), storage.get(),
+                                          &glyph->fAtlasLocation);
 
     if (NULL == plot) {
         return false;

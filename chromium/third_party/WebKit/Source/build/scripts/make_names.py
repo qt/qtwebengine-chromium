@@ -35,6 +35,8 @@ import template_expander
 import name_utilities
 
 def _symbol(entry):
+    if entry['Symbol'] is not None:
+        return entry['Symbol']
     # FIXME: Remove this special case for the ugly x-webkit-foo attributes.
     if entry['name'].startswith('-webkit-'):
         return entry['name'].replace('-', '_')[1:]
@@ -44,15 +46,18 @@ def _symbol(entry):
 class MakeNamesWriter(in_generator.Writer):
     defaults = {
         'Conditional': None,  # FIXME: Add support for Conditional.
-        'RuntimeEnabled': None,  # What should we do for runtime-enabled features?
         'ImplementedAs': None,
+        'RuntimeEnabled': None,  # What should we do for runtime-enabled features?
+        'Symbol': None,
     }
     default_parameters = {
-        'namespace': '',
         'export': '',
+        'namespace': '',
+        'suffix': '',
     }
     filters = {
         'cpp_name': name_utilities.cpp_name,
+        'enable_conditional': name_utilities.enable_conditional_if_endif,
         'hash': hasher.hash,
         'script_name': name_utilities.script_name,
         'symbol': _symbol,
@@ -63,16 +68,18 @@ class MakeNamesWriter(in_generator.Writer):
         super(MakeNamesWriter, self).__init__(in_file_path)
 
         namespace = self.in_file.parameters['namespace'].strip('"')
+        suffix = self.in_file.parameters['suffix'].strip('"')
         export = self.in_file.parameters['export'].strip('"')
 
         assert namespace, 'A namespace is required.'
 
         self._outputs = {
-            (namespace + 'Names.h'): self.generate_header,
-            (namespace + 'Names.cpp'): self.generate_implementation,
+            (namespace + suffix + 'Names.h'): self.generate_header,
+            (namespace + suffix + 'Names.cpp'): self.generate_implementation,
         }
         self._template_context = {
             'namespace': namespace,
+            'suffix': suffix,
             'export': export,
             'entries': self.in_file.name_dictionaries,
         }

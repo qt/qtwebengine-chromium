@@ -55,15 +55,13 @@ public:
     float runWidthSoFar() const { return m_runWidthSoFar; }
 
 #if ENABLE(SVG_FONTS)
-    String lastGlyphName() const { return m_lastGlyphName; }
-    void setLastGlyphName(const String& name) { m_lastGlyphName = name; }
     Vector<SVGGlyph::ArabicForm>& arabicForms() { return m_arabicForms; }
 #endif
 
     static bool supportsTypesettingFeatures(const Font& font)
     {
 
-        return !font.typesettingFeatures();
+        return !font.fontDescription().typesettingFeatures();
     }
 
     const Font* m_font;
@@ -78,7 +76,6 @@ public:
     float m_finalRoundingWidth;
 
 #if ENABLE(SVG_FONTS)
-    String m_lastGlyphName;
     Vector<SVGGlyph::ArabicForm> m_arabicForms;
 #endif
 

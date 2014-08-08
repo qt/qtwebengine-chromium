@@ -64,13 +64,16 @@ void TransformToFlattenedSkMatrix(const gfx::Transform& transform,
 skia::RefPtr<SkShader> CreateImageRepShader(const gfx::ImageSkiaRep& image_rep,
                                             SkShader::TileMode tile_mode,
                                             const SkMatrix& local_matrix) {
-  skia::RefPtr<SkShader> shader = skia::AdoptRef(SkShader::CreateBitmapShader(
-      image_rep.sk_bitmap(), tile_mode, tile_mode));
-  SkScalar scale_x = local_matrix.getScaleX();
-  SkScalar scale_y = local_matrix.getScaleY();
-  SkScalar bitmap_scale = SkFloatToScalar(image_rep.scale());
+  return CreateImageRepShaderForScale(image_rep, tile_mode, local_matrix,
+                                      image_rep.scale());
+}
 
-  // Unscale matrix by |bitmap_scale| such that the bitmap is drawn at the
+skia::RefPtr<SkShader> CreateImageRepShaderForScale(
+    const gfx::ImageSkiaRep& image_rep,
+    SkShader::TileMode tile_mode,
+    const SkMatrix& local_matrix,
+    SkScalar scale) {
+  // Unscale matrix by |scale| such that the bitmap is drawn at the
   // correct density.
   // Convert skew and translation to pixel coordinates.
   // Thus, for |bitmap_scale| = 2:
@@ -78,11 +81,12 @@ skia::RefPtr<SkShader> CreateImageRepShader(const gfx::ImageSkiaRep& image_rep,
   // should be converted to
   //   x scale = 1, x translation = 2 pixels.
   SkMatrix shader_scale = local_matrix;
-  shader_scale.preScale(bitmap_scale, bitmap_scale);
-  shader_scale.setScaleX(SkScalarDiv(scale_x, bitmap_scale));
-  shader_scale.setScaleY(SkScalarDiv(scale_y, bitmap_scale));
+  shader_scale.preScale(scale, scale);
+  shader_scale.setScaleX(local_matrix.getScaleX() / scale);
+  shader_scale.setScaleY(local_matrix.getScaleY() / scale);
 
-  shader->setLocalMatrix(shader_scale);
+  skia::RefPtr<SkShader> shader = skia::AdoptRef(SkShader::CreateBitmapShader(
+      image_rep.sk_bitmap(), tile_mode, tile_mode, &shader_scale));
   return shader;
 }
 
@@ -99,15 +103,20 @@ skia::RefPtr<SkShader> CreateGradientShader(int start_point,
       grad_points, grad_colors, NULL, 2, SkShader::kRepeat_TileMode));
 }
 
+static SkScalar RadiusToSigma(double radius) {
+  // This captures historically what skia did under the hood. Now skia accepts
+  // sigma, not radius, so we perform the conversion.
+  return radius > 0 ? SkDoubleToScalar(0.57735f * radius + 0.5) : 0;
+}
+
 skia::RefPtr<SkDrawLooper> CreateShadowDrawLooper(
     const std::vector<ShadowValue>& shadows) {
   if (shadows.empty())
     return skia::RefPtr<SkDrawLooper>();
 
-  skia::RefPtr<SkLayerDrawLooper> looper =
-      skia::AdoptRef(new SkLayerDrawLooper);
+  SkLayerDrawLooper::Builder looper_builder;
 
-  looper->addLayer();  // top layer of the original.
+  looper_builder.addLayer();  // top layer of the original.
 
   SkLayerDrawLooper::LayerInfo layer_info;
   layer_info.fPaintBits |= SkLayerDrawLooper::kMaskFilter_Bit;
@@ -123,19 +132,19 @@ skia::RefPtr<SkDrawLooper> CreateShadowDrawLooper(
     // SkBlurMaskFilter's blur radius defines the range to extend the blur from
     // original mask, which is half of blur amount as defined in ShadowValue.
     skia::RefPtr<SkMaskFilter> blur_mask = skia::AdoptRef(
-        SkBlurMaskFilter::Create(SkDoubleToScalar(shadow.blur() / 2),
-                                 SkBlurMaskFilter::kNormal_BlurStyle,
+        SkBlurMaskFilter::Create(kNormal_SkBlurStyle,
+                                 RadiusToSigma(shadow.blur() / 2),
                                  SkBlurMaskFilter::kHighQuality_BlurFlag));
     skia::RefPtr<SkColorFilter> color_filter = skia::AdoptRef(
         SkColorFilter::CreateModeFilter(shadow.color(),
                                         SkXfermode::kSrcIn_Mode));
 
-    SkPaint* paint = looper->addLayer(layer_info);
+    SkPaint* paint = looper_builder.addLayer(layer_info);
     paint->setMaskFilter(blur_mask.get());
     paint->setColorFilter(color_filter.get());
   }
 
-  return looper;
+  return skia::AdoptRef<SkDrawLooper>(looper_builder.detachLooper());
 }
 
 bool BitmapsAreEqual(const SkBitmap& bitmap1, const SkBitmap& bitmap2) {

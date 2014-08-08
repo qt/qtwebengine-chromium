@@ -29,6 +29,10 @@
 #define MP_USE_UINT_DIGIT 1
 #define SHA_NO_LONG_LONG 1
 
+#elif defined(__aarch64__)
+
+#define NSS_USE_64 1
+
 #else
 
 #error unknown processor architecture

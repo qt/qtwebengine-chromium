@@ -36,12 +36,13 @@
         '../build/scripts/scripts.gypi',
         '../build/win/precompile.gypi',
         '../modules/modules.gypi',
+        '../platform/blink_platform.gypi',
         '../wtf/wtf.gypi',
         'web.gypi',
     ],
     'targets': [
         {
-            'target_name': 'webkit',
+            'target_name': 'blink_web',
             'type': '<(component)',
             'variables': { 'enable_wexit_time_destructors': 1, },
             'dependencies': [
@@ -62,8 +63,6 @@
                 '<(DEPTH)/v8/tools/gyp/v8.gyp:v8',
             ],
             'include_dirs': [
-                '../../public/web',
-                '../web',
                 '<(angle_path)/include',
                 '<(DEPTH)/third_party/skia/include/utils',
             ],
@@ -72,15 +71,14 @@
                 'INSIDE_BLINK',
             ],
             'sources': [
-                '<@(webcore_platform_support_files)',
                 '<@(web_files)',
             ],
             'conditions': [
                 ['component=="shared_library"', {
                     'dependencies': [
-                        '../core/core.gyp:webcore_derived',
-                        '../core/core.gyp:webcore_test_support',
-                        '../modules/modules.gyp:modules_test_support',
+                        '../core/core.gyp:webcore_generated',
+                        '../core/core.gyp:webcore_testing',
+                        '../modules/modules.gyp:modules_testing',
                         '../wtf/wtf_tests.gyp:wtf_unittest_helpers',
                         '<(DEPTH)/base/base.gyp:test_support_base',
                         '<(DEPTH)/testing/gmock.gyp:gmock',
@@ -103,19 +101,16 @@
                         '<(DEPTH)/url/url.gyp:url_lib',
                         '<(DEPTH)/v8/tools/gyp/v8.gyp:v8',
                     ],
-                    'include_dirs': [
-                        # WARNING: Do not view this particular case as a precedent for
-                        # including WebCore headers in DumpRenderTree project.
-                        '../core/testing/v8', # for WebCoreTestSupport.h, needed to link in window.internals code.
-                    ],
                     'sources': [
-                        # Compile Blink unittest files into webkit.dll in component build mode
+                        # Compile Blink unittest files into blink_web.dll in component build mode
                         # since there're methods that are tested but not exported.
                         # WebUnitTests.* exports an API that runs all the unittests inside
-                        # webkit.dll.
+                        # blink_web.dll.
                         '<@(bindings_unittest_files)',
                         '<@(core_unittest_files)',
                         '<@(modules_unittest_files)',
+                        # FIXME: the next line should not be needed. We prefer to run these unit tests outside blink_web.dll.
+                        '<@(platform_web_unittest_files)',
                         '<@(web_unittest_files)',
                         'WebTestingSupport.cpp',
                         'tests/WebUnitTests.cpp',   # Components test runner support.
@@ -129,7 +124,7 @@
                         ['clang==1', {
                             # FIXME: It would be nice to enable this in shared builds too,
                             # but the test files have global constructors from the GTEST macro
-                            # and we pull in the test files into the webkit target in the
+                            # and we pull in the test files into the blink_web target in the
                             # shared build.
                             'cflags!': ['-Wglobal-constructors'],
                             'xcode_settings': {
@@ -151,9 +146,6 @@
                     'dependencies': [
                         '<(DEPTH)/build/linux/system.gyp:fontconfig',
                     ],
-                    'include_dirs': [
-                        '../../public/web/linux',
-                    ],
                 }, {
                     'sources/': [
                         ['exclude', 'linux/'],
@@ -163,40 +155,17 @@
                     'dependencies': [
                         '<(DEPTH)/build/linux/system.gyp:x11',
                     ],
-                    'include_dirs': [
-                        '../../public/web/x11',
-                    ],
                 }, {
                     'sources/': [
                         ['exclude', 'x11/'],
                     ]
                 }],
-                ['toolkit_uses_gtk == 1', {
-                    'dependencies': [
-                        '<(DEPTH)/build/linux/system.gyp:gtk',
-                    ],
-                    'include_dirs': [
-                        '../../public/web/gtk',
-                    ],
-                }, { # else: toolkit_uses_gtk != 1
-                    'sources/': [
-                        ['exclude', 'WebInputEventFactoryGtk.cpp$'],
-                    ],
-                }],
-                ['OS=="android"', {
-                    'include_dirs': [
-                        '../../public/web/android',
-                        '../../public/web/linux', # We need linux/WebFontRendering.h on Android.
-                    ],
-                }, { # else: OS!="android"
+                ['OS!="android"', {
                     'sources/': [
                         ['exclude', 'WebInputEventFactoryAndroid.cpp$'],
                     ],
                 }],
                 ['OS=="mac"', {
-                    'include_dirs': [
-                        '../../public/web/mac',
-                    ],
                     'link_settings': {
                         'libraries': [
                             '$(SDKROOT)/System/Library/Frameworks/Accelerate.framework',
@@ -209,20 +178,12 @@
                         ['exclude', 'mac/WebScrollbarTheme.cpp$'],
                     ],
                 }],
-                ['OS=="win"', {
-                    'include_dirs': [
-                        '../../public/web/win',
-                    ],
-                }, { # else: OS!="win"
+                ['OS!="win"', {
                     'sources/': [
                         ['exclude', 'WebInputEventFactoryWin.cpp$'],
                     ],
                 }],
-                ['use_default_render_theme==1', {
-                    'include_dirs': [
-                        '../../public/web/default',
-                    ],
-                }, { # else use_default_render_theme==0
+                ['use_default_render_theme==0', {
                     'sources/': [
                         ['exclude', 'default/WebRenderTheme.cpp'],
                     ],
@@ -251,7 +212,7 @@
                         ],
                     },
                     'inputs': [
-                        'scripts/make-file-arrays.py',
+                        '../build/scripts/make-file-arrays.py',
                         '<@(resources)',
                     ],
                     'outputs': [
@@ -260,7 +221,7 @@
                         ],
                     'action': [
                         'python',
-                        'scripts/make-file-arrays.py',
+                        '../build/scripts/make-file-arrays.py',
                         '--out-h=<(SHARED_INTERMEDIATE_DIR)/blink/PickerCommon.h',
                         '--out-cpp=<(SHARED_INTERMEDIATE_DIR)/blink/PickerCommon.cpp',
                         '<@(resources)',
@@ -279,7 +240,7 @@
                         ],
                     },
                     'inputs': [
-                        'scripts/make-file-arrays.py',
+                        '../build/scripts/make-file-arrays.py',
                         '<@(resources)'
                     ],
                     'outputs': [
@@ -288,7 +249,7 @@
                     ],
                     'action': [
                         'python',
-                        'scripts/make-file-arrays.py',
+                        '../build/scripts/make-file-arrays.py',
                         '--out-h=<(SHARED_INTERMEDIATE_DIR)/blink/CalendarPicker.h',
                         '--out-cpp=<(SHARED_INTERMEDIATE_DIR)/blink/CalendarPicker.cpp',
                         '<@(resources)',
@@ -304,7 +265,7 @@
                         ],
                     },
                     'inputs': [
-                        'scripts/make-file-arrays.py',
+                        '../build/scripts/make-file-arrays.py',
                         '<@(resources)',
                     ],
                     'outputs': [
@@ -313,7 +274,7 @@
                     ],
                     'action': [
                         'python',
-                        'scripts/make-file-arrays.py',
+                        '../build/scripts/make-file-arrays.py',
                         '--out-h=<(SHARED_INTERMEDIATE_DIR)/blink/ColorSuggestionPicker.h',
                         '--out-cpp=<(SHARED_INTERMEDIATE_DIR)/blink/ColorSuggestionPicker.cpp',
                         '<@(resources)',
@@ -322,7 +283,7 @@
             ],
         },
         {
-            'target_name': 'webkit_test_support',
+            'target_name': 'blink_web_test_support',
             'conditions': [
                 ['component=="shared_library"', {
                     'type': 'none',
@@ -330,14 +291,12 @@
                     'type': 'static_library',
                     'dependencies': [
                         '../config.gyp:config',
-                        '../core/core.gyp:webcore_test_support',
-                        '../modules/modules.gyp:modules_test_support',
+                        '../core/core.gyp:webcore_testing',
+                        '../modules/modules.gyp:modules_testing',
                         '../wtf/wtf.gyp:wtf',
                         '<(DEPTH)/skia/skia.gyp:skia',
                     ],
                     'include_dirs': [
-                        '../../public/web',
-                        '../core/testing/v8', # for WebCoreTestSupport.h, needed to link in window.internals code.
                         '../../',
                     ],
                     'sources': [

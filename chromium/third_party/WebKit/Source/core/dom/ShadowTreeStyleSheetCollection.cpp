@@ -27,25 +27,24 @@
 #include "config.h"
 #include "core/dom/ShadowTreeStyleSheetCollection.h"
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 #include "core/css/CSSStyleSheet.h"
 #include "core/css/resolver/StyleResolver.h"
 #include "core/dom/Element.h"
 #include "core/dom/StyleEngine.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/html/HTMLStyleElement.h"
-#include "core/frame/Settings.h"
 
 namespace WebCore {
 
 using namespace HTMLNames;
 
 ShadowTreeStyleSheetCollection::ShadowTreeStyleSheetCollection(ShadowRoot& shadowRoot)
-    : StyleSheetCollection(shadowRoot)
+    : TreeScopeStyleSheetCollection(shadowRoot)
 {
 }
 
-void ShadowTreeStyleSheetCollection::collectStyleSheets(StyleEngine* engine, StyleSheetCollectionBase& collection)
+void ShadowTreeStyleSheetCollection::collectStyleSheets(StyleEngine* engine, StyleSheetCollection& collection)
 {
     DocumentOrderedList::iterator begin = m_styleSheetCandidateNodes.begin();
     DocumentOrderedList::iterator end = m_styleSheetCandidateNodes.end();
@@ -54,32 +53,30 @@ void ShadowTreeStyleSheetCollection::collectStyleSheets(StyleEngine* engine, Sty
         StyleSheet* sheet = 0;
         CSSStyleSheet* activeSheet = 0;
 
-        if (!node->isHTMLElement() || !node->hasTagName(styleTag))
+        if (!isHTMLStyleElement(*node))
             continue;
 
-        Element* element = toElement(node);
-        AtomicString title = element->getAttribute(titleAttr);
+        HTMLStyleElement* element = toHTMLStyleElement(node);
+        const AtomicString& title = element->fastGetAttribute(titleAttr);
         bool enabledViaScript = false;
 
-        sheet = toHTMLStyleElement(node)->sheet();
+        sheet = element->sheet();
         if (sheet && !sheet->disabled() && sheet->isCSSStyleSheet())
             activeSheet = toCSSStyleSheet(sheet);
 
         // FIXME: clarify how PREFERRED or ALTERNATE works in shadow trees.
         // Should we set preferred/selected stylesheets name in shadow trees and
         // use the name in document?
-        AtomicString rel = element->getAttribute(relAttr);
         if (!enabledViaScript && sheet && !title.isEmpty()) {
             if (engine->preferredStylesheetSetName().isEmpty()) {
-                if (element->hasLocalName(styleTag) || !rel.contains("alternate")) {
-                    engine->setPreferredStylesheetSetName(title);
-                    engine->setSelectedStylesheetSetName(title);
-                }
+                engine->setPreferredStylesheetSetName(title);
+                engine->setSelectedStylesheetSetName(title);
             }
             if (title != engine->preferredStylesheetSetName())
                 activeSheet = 0;
         }
 
+        const AtomicString& rel = element->fastGetAttribute(relAttr);
         if (rel.contains("alternate") && title.isEmpty())
             activeSheet = 0;
 
@@ -90,9 +87,9 @@ void ShadowTreeStyleSheetCollection::collectStyleSheets(StyleEngine* engine, Sty
     }
 }
 
-bool ShadowTreeStyleSheetCollection::updateActiveStyleSheets(StyleEngine* engine, StyleResolverUpdateMode updateMode)
+void ShadowTreeStyleSheetCollection::updateActiveStyleSheets(StyleEngine* engine, StyleResolverUpdateMode updateMode)
 {
-    StyleSheetCollectionBase collection;
+    StyleSheetCollection collection;
     collectStyleSheets(engine, collection);
 
     StyleSheetChange change;
@@ -113,13 +110,11 @@ bool ShadowTreeStyleSheetCollection::updateActiveStyleSheets(StyleEngine* engine
         }
     }
     if (change.requiresFullStyleRecalc)
-        toShadowRoot(m_treeScope.rootNode())->host()->setNeedsStyleRecalc();
+        toShadowRoot(m_treeScope.rootNode()).host()->setNeedsStyleRecalc(SubtreeStyleChange);
 
     m_scopingNodesForStyleScoped.didRemoveScopingNodes();
     collection.swap(*this);
     updateUsesRemUnits();
-
-    return change.requiresFullStyleRecalc;
 }
 
 }

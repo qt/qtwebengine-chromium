@@ -24,7 +24,6 @@
 #include "config.h"
 #include "core/fetch/ImageResource.h"
 
-#include "RuntimeEnabledFeatures.h"
 #include "core/fetch/ImageResourceClient.h"
 #include "core/fetch/MemoryCache.h"
 #include "core/fetch/ResourceClient.h"
@@ -33,20 +32,20 @@
 #include "core/frame/FrameView.h"
 #include "core/rendering/RenderObject.h"
 #include "core/svg/graphics/SVGImage.h"
+#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/SharedBuffer.h"
+#include "platform/TraceEvent.h"
 #include "platform/graphics/BitmapImage.h"
 #include "wtf/CurrentTime.h"
 #include "wtf/StdLibExtras.h"
 #include "wtf/Vector.h"
-
-using namespace std;
 
 namespace WebCore {
 
 ImageResource::ImageResource(const ResourceRequest& resourceRequest)
     : Resource(resourceRequest, Image)
     , m_devicePixelRatioHeaderValue(1.0)
-    , m_image(0)
+    , m_image(nullptr)
     , m_loadingMultipartContent(false)
     , m_hasDevicePixelRatioHeaderValue(false)
 {
@@ -56,6 +55,15 @@ ImageResource::ImageResource(const ResourceRequest& resourceRequest)
 
 ImageResource::ImageResource(WebCore::Image* image)
     : Resource(ResourceRequest(""), Image)
+    , m_image(image)
+{
+    setStatus(Cached);
+    setLoading(false);
+    setCustomAcceptHeader();
+}
+
+ImageResource::ImageResource(const ResourceRequest& resourceRequest, WebCore::Image* image)
+    : Resource(resourceRequest, Image)
     , m_image(image)
 {
     setStatus(Cached);
@@ -120,6 +128,22 @@ void ImageResource::switchClientsToRevalidatedResource()
     }
 
     Resource::switchClientsToRevalidatedResource();
+}
+
+bool ImageResource::isSafeToUnlock() const
+{
+    // Note that |m_image| holds a reference to |m_data| in addition to the one held by the Resource parent class.
+    return !m_image || (m_image->hasOneRef() && m_data->refCount() == 2);
+}
+
+void ImageResource::destroyDecodedDataIfPossible()
+{
+    if (!hasClients() && !isLoading() && (!m_image || (m_image->hasOneRef() && m_image->isBitmapImage()))) {
+        m_image = nullptr;
+        setDecodedSize(0);
+    } else if (m_image && !errorOccurred()) {
+        m_image->destroyDecodedData(true);
+    }
 }
 
 void ImageResource::allClientsRemoved()
@@ -272,7 +296,7 @@ void ImageResource::notifyObservers(const IntRect* changeRect)
 
 void ImageResource::clear()
 {
-    destroyDecodedData();
+    prune();
     clearImage();
     m_pendingContainerSizeRequests.clear();
     setEncodedSize(0);
@@ -346,7 +370,7 @@ void ImageResource::updateImage(bool allDataReceived)
     if (sizeAvailable || allDataReceived) {
         if (!m_image || m_image->isNull()) {
             error(errorOccurred() ? status() : DecodeError);
-            if (inCache())
+            if (memoryCache()->contains(this))
                 memoryCache()->remove(this);
             return;
         }
@@ -390,20 +414,6 @@ void ImageResource::responseReceived(const ResourceResponse& response)
     Resource::responseReceived(response);
 }
 
-void ImageResource::destroyDecodedData()
-{
-    bool canDeleteImage = !m_image || (m_image->hasOneRef() && m_image->isBitmapImage());
-    if (isSafeToMakePurgeable() && canDeleteImage && !isLoading()) {
-        // Image refs the data buffer so we should not make it purgeable while the image is alive.
-        // Invoking addClient() will reconstruct the image object.
-        m_image = 0;
-        setDecodedSize(0);
-        makePurgeable(true);
-    } else if (m_image && !errorOccurred()) {
-        m_image->destroyDecodedData(true);
-    }
-}
-
 void ImageResource::decodedSizeChanged(const WebCore::Image* image, int delta)
 {
     if (!image || image != m_image)
@@ -416,12 +426,7 @@ void ImageResource::didDraw(const WebCore::Image* image)
 {
     if (!image || image != m_image)
         return;
-
-    double timeStamp = FrameView::currentFrameTimeStamp();
-    if (!timeStamp) // If didDraw is called outside of a Frame paint.
-        timeStamp = currentTime();
-
-    Resource::didAccessDecodedData(timeStamp);
+    Resource::didAccessDecodedData();
 }
 
 bool ImageResource::shouldPauseAnimation(const WebCore::Image* image)

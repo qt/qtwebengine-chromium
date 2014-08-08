@@ -30,10 +30,10 @@
 
 #include "config.h"
 
-#include "WebMediaStreamRegistry.h"
+#include "public/web/WebMediaStreamRegistry.h"
 
-#include "core/platform/mediastream/MediaStreamDescriptor.h"
 #include "modules/mediastream/MediaStreamRegistry.h"
+#include "platform/mediastream/MediaStreamDescriptor.h"
 #include "platform/weborigin/KURL.h"
 #include "public/platform/WebMediaStream.h"
 #include "public/platform/WebString.h"

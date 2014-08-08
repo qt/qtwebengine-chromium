@@ -4,7 +4,13 @@
 
 {
   'variables': {
-    'use_system_libwebp%': 0,
+    'conditions':[
+      ['skia_android_framework == 1', {
+        'use_system_libwebp': 1,
+      }, {
+        'use_system_libwebp%': 0,
+      }],
+    ],
   },
   'conditions': [
     ['use_system_libwebp==0', {
@@ -28,6 +34,7 @@
             '../third_party/externals/libwebp/src/dec/vp8l.c',
             '../third_party/externals/libwebp/src/dec/webp.c',
           ],
+          'cflags': [ '-w' ],
         },
         {
           'target_name': 'libwebp_demux',
@@ -38,6 +45,7 @@
           'sources': [
             '../third_party/externals/libwebp/src/demux/demux.c',
           ],
+          'cflags': [ '-w' ],
         },
         {
           'target_name': 'libwebp_dsp',
@@ -56,6 +64,7 @@
             '../third_party/externals/libwebp/src/dsp/upsampling_sse2.c',
             '../third_party/externals/libwebp/src/dsp/yuv.c',
           ],
+          'cflags': [ '-w' ],
           'conditions': [
             ['skia_os == "android"', {
               'dependencies' : [
@@ -81,7 +90,7 @@
               'cflags!': [
                 '-mfpu=vfpv3-d16',
               ],
-              'cflags': [ '-mfpu=neon' ],
+              'cflags': [ '-mfpu=neon', '-w' ],
             },{  # !(arm_version >= 7)
               'type': 'none',
             }],
@@ -133,6 +142,7 @@
             '../third_party/externals/libwebp/src/utils/thread.c',
             '../third_party/externals/libwebp/src/utils/utils.c',
           ],
+          'cflags': [ '-w' ],
         },
         {
           'target_name': 'libwebp',
@@ -156,20 +166,36 @@
         },
       ],
     }, {
+      # use_system_libwep == 1
       'targets': [
         {
           'target_name': 'libwebp',
           'type': 'none',
-          'direct_dependent_settings': {
-            'defines': [
-              'ENABLE_WEBP',
+          'conditions': [
+            [ 'skia_android_framework', {
+              'direct_dependent_settings': {
+                'libraries': [
+                  'libwebp-decode.a',
+                  'libwebp-encode.a',
+                ],
+              'include_dirs': [
+                'external/webp/include',
+              ],
+              },
+            }, { # skia_android_framework == 0
+              'direct_dependent_settings': {
+                'defines': [
+                  'ENABLE_WEBP',
+                ],
+                },
+                'link_settings': {
+                  'libraries': [
+                    '-lwebp',
+                  ],
+                },
+              },
             ],
-          },
-          'link_settings': {
-            'libraries': [
-              '-lwebp',
-            ],
-          },
+          ],
         }
       ],
     }],

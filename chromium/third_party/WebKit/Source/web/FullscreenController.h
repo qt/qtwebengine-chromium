@@ -31,13 +31,15 @@
 #ifndef FullscreenController_h
 #define FullscreenController_h
 
+#include "platform/geometry/FloatPoint.h"
 #include "platform/geometry/IntSize.h"
+#include "platform/heap/Handle.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/RefPtr.h"
 
 namespace WebCore {
 class Element;
-class Frame;
+class LocalFrame;
 }
 
 namespace blink {
@@ -55,6 +57,8 @@ public:
     void enterFullScreenForElement(WebCore::Element*);
     void exitFullScreenForElement(WebCore::Element*);
 
+    bool isFullscreen() { return m_fullScreenFrame; }
+
 protected:
     explicit FullscreenController(WebViewImpl*);
 
@@ -63,12 +67,13 @@ private:
 
     float m_exitFullscreenPageScaleFactor;
     WebCore::IntSize m_exitFullscreenScrollOffset;
+    WebCore::FloatPoint m_exitFullscreenPinchViewportOffset;
 
     // If set, the WebView is transitioning to fullscreen for this element.
-    RefPtr<WebCore::Element> m_provisionalFullScreenElement;
+    RefPtrWillBePersistent<WebCore::Element> m_provisionalFullScreenElement;
 
     // If set, the WebView is in fullscreen mode for an element in this frame.
-    RefPtr<WebCore::Frame> m_fullScreenFrame;
+    RefPtr<WebCore::LocalFrame> m_fullScreenFrame;
 
     bool m_isCancelingFullScreen;
 };

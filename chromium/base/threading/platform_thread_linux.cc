@@ -26,6 +26,7 @@
 namespace base {
 
 namespace {
+
 int ThreadNiceValue(ThreadPriority priority) {
   switch (priority) {
     case kThreadPriority_RealtimeAudio:
@@ -41,7 +42,8 @@ int ThreadNiceValue(ThreadPriority priority) {
       return 0;
   }
 }
-} // namespace
+
+}  // namespace
 
 // static
 void PlatformThread::SetName(const char* name) {
@@ -100,7 +102,14 @@ void InitOnThread() {}
 void TerminateOnThread() {}
 
 size_t GetDefaultThreadStackSize(const pthread_attr_t& attributes) {
+#if !defined(THREAD_SANITIZER) && !defined(MEMORY_SANITIZER)
   return 0;
+#else
+  // ThreadSanitizer bloats the stack heavily. Evidence has been that the
+  // default stack size isn't enough for some browser tests.
+  // MemorySanitizer needs this as a temporary fix for http://crbug.com/353687
+  return 2 * (1 << 23);  // 2 times 8192K (the default stack size on Linux).
+#endif
 }
 
 }  // namespace base

@@ -40,7 +40,7 @@ CSSFunctionValue::CSSFunctionValue(CSSParserFunction* function)
         m_args = CSSValueList::createFromParserValueList(function->args.get());
 }
 
-CSSFunctionValue::CSSFunctionValue(String name, PassRefPtr<CSSValueList> args)
+CSSFunctionValue::CSSFunctionValue(String name, PassRefPtrWillBeRawPtr<CSSValueList> args)
     : CSSValue(FunctionClass)
     , m_name(name)
     , m_args(args)
@@ -60,6 +60,12 @@ String CSSFunctionValue::customCSSText() const
 bool CSSFunctionValue::equals(const CSSFunctionValue& other) const
 {
     return m_name == other.m_name && compareCSSValuePtr(m_args, other.m_args);
+}
+
+void CSSFunctionValue::traceAfterDispatch(Visitor* visitor)
+{
+    visitor->trace(m_args);
+    CSSValue::traceAfterDispatch(visitor);
 }
 
 }

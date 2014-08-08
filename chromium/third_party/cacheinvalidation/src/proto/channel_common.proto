@@ -36,3 +36,20 @@ message ChannelMessageEncoding {
 
   }
 }
+
+message NetworkEndpointId {
+  enum NetworkAddress {
+    TEST = 1;  // A delivery service for testing
+
+    // Low numbers reserved.
+    ANDROID = 113;  // Android delivery service using c2dm / http.
+    LCS = 114;  // Lightweight connection service () channel.
+  }
+  optional NetworkAddress network_address = 1;
+  optional bytes client_address = 2;
+
+  // Optional. When true, the client is considered offline but the
+  // client_address is maintained so that the client can potentially be reached.
+  // When false or undefined, the client is considered online.
+  optional bool is_offline = 3;
+}

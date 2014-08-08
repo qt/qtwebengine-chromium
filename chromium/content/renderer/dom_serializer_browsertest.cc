@@ -13,12 +13,12 @@
 #include "content/public/common/content_switches.h"
 #include "content/public/renderer/render_view.h"
 #include "content/public/renderer/render_view_observer.h"
+#include "content/public/test/content_browser_test.h"
+#include "content/public/test/content_browser_test_utils.h"
 #include "content/public/test/test_utils.h"
 #include "content/renderer/savable_resources.h"
 #include "content/shell/browser/shell.h"
-#include "content/test/content_browser_test.h"
-#include "content/test/content_browser_test_utils.h"
-#include "net/base/net_util.h"
+#include "net/base/filename_util.h"
 #include "net/url_request/url_request_context.h"
 #include "third_party/WebKit/public/platform/WebCString.h"
 #include "third_party/WebKit/public/platform/WebData.h"
@@ -27,9 +27,9 @@
 #include "third_party/WebKit/public/platform/WebVector.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
 #include "third_party/WebKit/public/web/WebElement.h"
-#include "third_party/WebKit/public/web/WebFrame.h"
+#include "third_party/WebKit/public/web/WebElementCollection.h"
+#include "third_party/WebKit/public/web/WebLocalFrame.h"
 #include "third_party/WebKit/public/web/WebNode.h"
-#include "third_party/WebKit/public/web/WebNodeCollection.h"
 #include "third_party/WebKit/public/web/WebNodeList.h"
 #include "third_party/WebKit/public/web/WebPageSerializer.h"
 #include "third_party/WebKit/public/web/WebPageSerializerClient.h"
@@ -39,17 +39,24 @@ using blink::WebCString;
 using blink::WebData;
 using blink::WebDocument;
 using blink::WebElement;
+using blink::WebElementCollection;
 using blink::WebFrame;
+using blink::WebLocalFrame;
 using blink::WebNode;
-using blink::WebNodeCollection;
 using blink::WebNodeList;
 using blink::WebPageSerializer;
 using blink::WebPageSerializerClient;
-using blink::WebNode;
 using blink::WebString;
 using blink::WebURL;
 using blink::WebView;
 using blink::WebVector;
+
+namespace {
+
+// The first RenderFrame is routing ID 1, and the first RenderView is 2.
+const int kRenderViewRoutingId = 2;
+
+}
 
 namespace content {
 
@@ -66,16 +73,13 @@ WebFrame* FindSubFrameByURL(WebView* web_view, const GURL& url) {
     stack.pop_back();
     if (GURL(current_frame->document().url()) == url)
       return current_frame;
-    WebNodeCollection all = current_frame->document().all();
-    for (WebNode node = all.firstItem();
-         !node.isNull(); node = all.nextItem()) {
-      if (!node.isElementNode())
-        continue;
+    WebElementCollection all = current_frame->document().all();
+    for (WebElement element = all.firstItem();
+         !element.isNull(); element = all.nextItem()) {
       // Check frame tag and iframe tag
-      WebElement element = node.to<WebElement>();
       if (!element.hasTagName("frame") && !element.hasTagName("iframe"))
         continue;
-      WebFrame* sub_frame = WebFrame::fromFrameOwnerElement(element);
+      WebFrame* sub_frame = WebLocalFrame::fromFrameOwnerElement(element);
       if (sub_frame)
         stack.push_back(sub_frame);
     }
@@ -150,7 +154,7 @@ class LoadObserver : public RenderViewObserver {
       : RenderViewObserver(render_view),
         quit_closure_(quit_closure) {}
 
-  virtual void DidFinishLoad(blink::WebFrame* frame) OVERRIDE {
+  virtual void DidFinishLoad(blink::WebLocalFrame* frame) OVERRIDE {
     if (frame == render_view()->GetWebView()->mainFrame())
       quit_closure_.Run();
   }
@@ -168,9 +172,9 @@ class DomSerializerTests : public ContentBrowserTest,
 
   virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
     command_line->AppendSwitch(switches::kSingleProcess);
-#if defined(OS_WIN) && defined(USE_AURA)
+#if defined(OS_WIN)
     // Don't want to try to create a GPU process.
-    command_line->AppendSwitch(switches::kDisableAcceleratedCompositing);
+    command_line->AppendSwitch(switches::kDisableGpu);
 #endif
   }
 
@@ -223,7 +227,7 @@ class DomSerializerTests : public ContentBrowserTest,
   RenderView* GetRenderView() {
     // We could have the test on the UI thread get the WebContent's routing ID,
     // but we know this will be the first RV so skip that and just hardcode it.
-    return RenderView::FromRoutingID(1);
+    return RenderView::FromRoutingID(kRenderViewRoutingId);
   }
 
   WebView* GetWebView() {
@@ -276,7 +280,7 @@ class DomSerializerTests : public ContentBrowserTest,
     WebVector<WebString> local_paths;
     local_paths.assign(&file_path, 1);
     // Start serializing DOM.
-    bool result = WebPageSerializer::serialize(web_frame,
+    bool result = WebPageSerializer::serialize(web_frame->toWebLocalFrame(),
        recursive_serialization,
        static_cast<WebPageSerializerClient*>(this),
        links,
@@ -578,8 +582,8 @@ class DomSerializerTests : public ContentBrowserTest,
       '%', 0x2285, 0x00b9, '\'', 0
     };
     WebString value = body_element.getAttribute("title");
-    ASSERT_TRUE(UTF16ToWide(value) == parsed_value);
-    ASSERT_TRUE(UTF16ToWide(body_element.innerText()) == parsed_value);
+    ASSERT_TRUE(base::UTF16ToWide(value) == parsed_value);
+    ASSERT_TRUE(base::UTF16ToWide(body_element.innerText()) == parsed_value);
 
     // Do serialization.
     SerializeDomForURL(file_url, false);
@@ -607,13 +611,10 @@ class DomSerializerTests : public ContentBrowserTest,
     WebDocument doc = web_frame->document();
     ASSERT_TRUE(doc.isHTMLDocument());
     // Go through all descent nodes.
-    WebNodeCollection all = doc.all();
+    WebElementCollection all = doc.all();
     int original_base_tag_count = 0;
-    for (WebNode node = all.firstItem(); !node.isNull();
-         node = all.nextItem()) {
-      if (!node.isElementNode())
-        continue;
-      WebElement element = node.to<WebElement>();
+    for (WebElement element = all.firstItem(); !element.isNull();
+         element = all.nextItem()) {
       if (element.hasTagName("base")) {
         original_base_tag_count++;
       } else {
@@ -809,7 +810,12 @@ IN_PROC_BROWSER_TEST_F(DomSerializerTests, SerializeHTMLDOMWithoutDocType) {
 // Serialize XML document which has all 5 built-in entities. After
 // finishing serialization, the serialized contents should be same
 // with original XML document.
-IN_PROC_BROWSER_TEST_F(DomSerializerTests, SerializeXMLDocWithBuiltInEntities) {
+//
+// TODO(tiger@opera.com): Disabled in preparation of page serializer merge --
+// XML headers are handled differently in the merged serializer.
+// Bug: http://crbug.com/328354
+IN_PROC_BROWSER_TEST_F(DomSerializerTests,
+                       DISABLED_SerializeXMLDocWithBuiltInEntities) {
   base::FilePath page_file_path =
       GetTestFilePath("dom_serializer", "note.html");
   base::FilePath xml_file_path = GetTestFilePath("dom_serializer", "note.xml");
@@ -912,7 +918,7 @@ IN_PROC_BROWSER_TEST_F(DomSerializerTests, SerializeHTMLDOMWithEntitiesInText) {
 // Some attributes are handled differently in the merged serializer.
 // Bug: http://crbug.com/328354
 IN_PROC_BROWSER_TEST_F(DomSerializerTests,
-                       DISABLE_SerializeHTMLDOMWithEntitiesInAttributeValue) {
+                       DISABLED_SerializeHTMLDOMWithEntitiesInAttributeValue) {
   // Need to spin up the renderer and also navigate to a file url so that the
   // renderer code doesn't attempt a fork when it sees a load to file scheme
   // from non-file scheme.
@@ -951,7 +957,7 @@ IN_PROC_BROWSER_TEST_F(DomSerializerTests,
 // Base tags are handled a bit different in merged version.
 // Bug: http://crbug.com/328354
 IN_PROC_BROWSER_TEST_F(DomSerializerTests,
-                       DISABLE_SerializeHTMLDOMWithBaseTag) {
+                       DISABLED_SerializeHTMLDOMWithBaseTag) {
   base::FilePath page_file_path = GetTestFilePath(
       "dom_serializer", "html_doc_has_base_tag.htm");
 

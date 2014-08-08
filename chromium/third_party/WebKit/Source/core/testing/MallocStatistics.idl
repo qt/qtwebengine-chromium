@@ -24,6 +24,7 @@
  */
 
 [
+    WillBeGarbageCollected,
 ] interface MallocStatistics {
     readonly attribute unsigned long reservedVMBytes;
     readonly attribute unsigned long committedVMBytes;

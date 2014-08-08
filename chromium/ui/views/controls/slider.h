@@ -18,6 +18,10 @@ class SlideAnimation;
 
 namespace views {
 
+namespace test {
+class SliderTestApi;
+}
+
 class Slider;
 
 enum SliderChangeReason {
@@ -57,7 +61,7 @@ class VIEWS_EXPORT Slider : public View, public gfx::AnimationDelegate {
   // Set the delta used for changing the value via keyboard.
   void SetKeyboardIncrement(float increment);
 
-  void SetAccessibleName(const string16& name);
+  void SetAccessibleName(const base::string16& name);
 
   void set_enable_accessibility_events(bool enabled) {
     accessibility_events_enabled_ = enabled;
@@ -69,6 +73,8 @@ class VIEWS_EXPORT Slider : public View, public gfx::AnimationDelegate {
   void UpdateState(bool control_on);
 
  private:
+  friend class test::SliderTestApi;
+
   void SetValueInternal(float value, SliderChangeReason reason);
 
   // Should be called on the Mouse Down event. Used to calculate relative
@@ -81,20 +87,32 @@ class VIEWS_EXPORT Slider : public View, public gfx::AnimationDelegate {
 
   void OnPaintFocus(gfx::Canvas* canvas);
 
+  // Notify the listener_, if not NULL, that dragging started.
+  void OnSliderDragStarted();
+
+  // Notify the listener_, if not NULL, that dragging ended.
+  void OnSliderDragEnded();
+
   // views::View overrides:
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
   virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
   virtual bool OnMousePressed(const ui::MouseEvent& event) OVERRIDE;
   virtual bool OnMouseDragged(const ui::MouseEvent& event) OVERRIDE;
   virtual void OnMouseReleased(const ui::MouseEvent& event) OVERRIDE;
   virtual bool OnKeyPressed(const ui::KeyEvent& event) OVERRIDE;
-  virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
+  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
+  virtual void OnFocus() OVERRIDE;
+  virtual void OnBlur() OVERRIDE;
 
   // ui::EventHandler overrides:
   virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
 
   // gfx::AnimationDelegate overrides:
   virtual void AnimationProgressed(const gfx::Animation* animation) OVERRIDE;
+
+  void set_listener(SliderListener* listener) {
+    listener_ = listener;
+  }
 
   SliderListener* listener_;
   Orientation orientation_;
@@ -105,7 +123,7 @@ class VIEWS_EXPORT Slider : public View, public gfx::AnimationDelegate {
   float keyboard_increment_;
   float animating_value_;
   bool value_is_valid_;
-  string16 accessible_name_;
+  base::string16 accessible_name_;
   bool accessibility_events_enabled_;
   SkColor focus_border_color_;
 

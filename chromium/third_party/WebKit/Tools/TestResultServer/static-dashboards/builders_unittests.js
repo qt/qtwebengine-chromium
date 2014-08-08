@@ -32,7 +32,7 @@ test('loading steps', 4, function() {
     var tests = {}
     var baseUrl = 'http://dummyurl';
     var name = 'dummyname';
-    var master = new builders.BuilderMaster(name, baseUrl, tests);
+    var master = new builders.BuilderMaster({name: name, url_name: name, tests: tests);
 
     var builder = 'dummybuilder';
     var buildNumber = 12345;
@@ -61,7 +61,7 @@ test('builders.groupNamesForTestType', 4, function() {
     equal(names.indexOf('@ToT Chromium') != -1, true, 'include layout-tests in DEPS');
 
     names = builders.groupNamesForTestType('ash_unittests');
-    equal(names.indexOf('@ToT Blink') != -1, false, 'don\'t include interactive_ui_tests in ToT');
+    equal(names.indexOf('@ToT Blink') != -1, false, 'don\'t include ash_unittests in ToT');
     equal(names.indexOf('@ToT Chromium') != -1, true, 'include ash_unittests in DEPS');
 });
 
@@ -87,4 +87,14 @@ test('builders.loadBuildersList', 4, function() {
 
     builders.loadBuildersList('@ToT Chromium', 'ash_unittests');
     equal(expectedBuilder in builders.getBuilderGroup().builders, true, expectedBuilder + ' should be among current builders');
+});
+
+test('builders.master', 2, function() {
+    resetGlobals();
+
+    builders.loadBuildersList('@ToT Chromium', 'unit_tests');
+    equal(builders.master('Linux Tests').basePath, 'dummyurl2');
+
+    builders.loadBuildersList('@ToT Blink', 'unit_tests');
+    equal(builders.master('Linux Tests').basePath, 'dummyurl');
 });

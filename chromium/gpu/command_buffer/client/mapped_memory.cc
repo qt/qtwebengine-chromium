@@ -13,17 +13,22 @@
 
 namespace gpu {
 
-MemoryChunk::MemoryChunk(
-    int32 shm_id, gpu::Buffer shm, CommandBufferHelper* helper)
+MemoryChunk::MemoryChunk(int32 shm_id,
+                         scoped_refptr<gpu::Buffer> shm,
+                         CommandBufferHelper* helper,
+                         const base::Closure& poll_callback)
     : shm_id_(shm_id),
       shm_(shm),
-      allocator_(shm.size, helper, shm.ptr) {
-}
+      allocator_(shm->size(), helper, poll_callback, shm->memory()) {}
+
+MemoryChunk::~MemoryChunk() {}
 
 MappedMemoryManager::MappedMemoryManager(CommandBufferHelper* helper,
+                                         const base::Closure& poll_callback,
                                          size_t unused_memory_reclaim_limit)
     : chunk_size_multiple_(1),
       helper_(helper),
+      poll_callback_(poll_callback),
       allocated_memory_(0),
       max_free_bytes_(unused_memory_reclaim_limit) {
 }
@@ -82,10 +87,12 @@ void* MappedMemoryManager::Alloc(
       ((size + chunk_size_multiple_ - 1) / chunk_size_multiple_) *
       chunk_size_multiple_;
   int32 id = -1;
-  gpu::Buffer shm = cmd_buf->CreateTransferBuffer(chunk_size, &id);
+  scoped_refptr<gpu::Buffer> shm =
+      cmd_buf->CreateTransferBuffer(chunk_size, &id);
   if (id  < 0)
     return NULL;
-  MemoryChunk* mc = new MemoryChunk(id, shm, helper_);
+  DCHECK(shm);
+  MemoryChunk* mc = new MemoryChunk(id, shm, helper_, poll_callback_);
   allocated_memory_ += mc->GetSize();
   chunks_.push_back(mc);
   void* mem = mc->Alloc(size);

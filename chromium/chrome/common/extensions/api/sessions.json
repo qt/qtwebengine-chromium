@@ -16,7 +16,7 @@
             "minimum": 0,
             "maximum": 25,
             "optional": true,
-            "description": "The maximum number of entries to be fetched in the requested list. Omit this parameter to fetch the maximum number of entries ($ref:MAX_SESSION_RESULTS)."
+            "description": "The maximum number of entries to be fetched in the requested list. Omit this parameter to fetch the maximum number of entries ($(ref:sessions.MAX_SESSION_RESULTS))."
           }
         }
       },
@@ -25,15 +25,16 @@
         "type": "object",
         "properties": {
           "lastModified": {"type": "integer", "description": "The time when the window or tab was closed or modified, represented in milliseconds since the epoch."},
-          "tab": {"$ref": "tabs.Tab", "optional": true, "description": "The $ref:tabs.Tab, if this entry describes a tab. Either this or $ref:Session.window will be set."},
-          "window": {"$ref": "windows.Window", "optional": true, "description": "The $ref:windows.Window, if this entry describes a window. Either this or $ref:Session.tab will be set."}
+          "tab": {"$ref": "tabs.Tab", "optional": true, "description": "The $(ref:tabs.Tab), if this entry describes a tab. Either this or $(ref:sessions.Session.window) will be set."},
+          "window": {"$ref": "windows.Window", "optional": true, "description": "The $(ref:windows.Window), if this entry describes a window. Either this or $(ref:sessions.Session.tab) will be set."}
         }
       },
       {
         "id": "Device",
         "type": "object",
         "properties": {
-          "info": {"type": "string", "description": "Represents all information about a foreign device."},
+          "info": {"type": "string", "nodoc": true},
+          "deviceName": {"type": "string", "description": "The name of the foreign device."},
           "sessions": {"type": "array", "items": {"$ref": "Session"}, "description": "A list of open window sessions for the foreign device, sorted from most recently to least recently modified session."}
         }
       }
@@ -54,7 +55,7 @@
             "name": "callback",
             "parameters": [
               {
-                "name": "sessions", "type": "array", "items": { "$ref": "Session" }, "description": "The list of closed entries in reverse order that they were closed (the most recently closed tab or window will be at index <code>0</code>).The entries may contain either tabs or windows."
+                "name": "sessions", "type": "array", "items": { "$ref": "Session" }, "description": "The list of closed entries in reverse order that they were closed (the most recently closed tab or window will be at index <code>0</code>). The entries may contain either tabs or windows."
               }
             ]
           }
@@ -75,7 +76,7 @@
             "name": "callback",
             "parameters": [
               {
-                "name": "devices", "type": "array", "items": { "$ref": "Device" }, "description": "The list of $ref:Device objects for each synced session, sorted in order from device with most recently modified session to device with least recently modified session. $ref:tabs.Tab objects are sorted by recency in the $ref:windows.Window of the $ref:Session objects."
+                "name": "devices", "type": "array", "items": { "$ref": "Device" }, "description": "The list of $(ref:sessions.Device) objects for each synced session, sorted in order from device with most recently modified session to device with least recently modified session. $(ref:tabs.Tab) objects are sorted by recency in the $(ref:windows.Window) of the $(ref:sessions.Session) objects."
               }
             ]
           }
@@ -84,13 +85,13 @@
       {
         "name": "restore",
         "type": "function",
-        "description": "Reopens a $ref:windows.Window or $ref:tabs.Tab, with an optional callback to run when the entry has been restored.",
+        "description": "Reopens a $(ref:windows.Window) or $(ref:tabs.Tab), with an optional callback to run when the entry has been restored.",
         "parameters": [
           {
             "type": "string",
             "name": "sessionId",
             "optional": true,
-            "description": "The $ref:windows.Window.sessionId, or $ref:tabs.Tab.sessionId to restore."
+            "description": "The $(ref:windows.Window.sessionId), or $(ref:tabs.Tab.sessionId) to restore. If this parameter is not specified, the most recently closed session is restored."
           },
           {
             "type": "function",
@@ -100,17 +101,24 @@
               {
                 "$ref": "Session",
                 "name": "restoredSession",
-                "description": "A $ref:Session containing the restored $ref:windows.Window or $ref:tabs.Tab object."
+                "description": "A $(ref:sessions.Session) containing the restored $(ref:windows.Window) or $(ref:tabs.Tab) object."
               }
             ]
           }
         ]
       }
     ],
+    "events": [
+      {
+        "name": "onChanged",
+        "description": "Fired when recently closed tabs and/or windows are changed. This event does not monitor synced sessions changes.",
+        "type": "function"
+      }
+    ],
     "properties": {
       "MAX_SESSION_RESULTS": {
         "value": 25,
-        "description": "The maximum number of $ref:Session that will be included in a requested list."
+        "description": "The maximum number of $(ref:sessions.Session) that will be included in a requested list."
       }
     }
   }

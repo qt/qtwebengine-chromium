@@ -34,7 +34,7 @@ PassRefPtr<HTTPRequest> HTTPRequest::parseHTTPRequestFromBuffer(const char* data
 {
     if (!length) {
         failureReason = "No data to parse.";
-        return 0;
+        return nullptr;
     }
 
     // Request we will be building.
@@ -47,20 +47,19 @@ PassRefPtr<HTTPRequest> HTTPRequest::parseHTTPRequestFromBuffer(const char* data
     // 1. Parse Method + URL.
     size_t requestLineLength = request->parseRequestLine(pos, remainingLength, failureReason);
     if (!requestLineLength)
-        return 0;
+        return nullptr;
     pos += requestLineLength;
     remainingLength -= requestLineLength;
 
     // 2. Parse HTTP Headers.
     size_t headersLength = request->parseHeaders(pos, remainingLength, failureReason);
     if (!headersLength)
-        return 0;
+        return nullptr;
     pos += headersLength;
     remainingLength -= headersLength;
 
     // 3. Parse HTTP Data.
     size_t dataLength = request->parseRequestBody(pos, remainingLength);
-    pos += dataLength;
     remainingLength -= dataLength;
 
     // We should have processed the entire input.
@@ -82,7 +81,7 @@ size_t HTTPRequest::parseHeaders(const char* data, size_t length, String& failur
     const char* end = data + length;
     AtomicString name;
     AtomicString value;
-    for (; p < data + length; p++) {
+    while (p < data + length) {
         size_t consumedLength = parseHTTPHeader(p, end - p, failureReason, name, value);
         if (!consumedLength)
             return 0;

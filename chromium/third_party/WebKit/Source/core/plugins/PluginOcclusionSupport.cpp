@@ -31,12 +31,12 @@
 #include "config.h"
 #include "core/plugins/PluginOcclusionSupport.h"
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 #include "core/dom/Element.h"
+#include "core/frame/FrameView.h"
+#include "core/frame/LocalFrame.h"
 #include "core/html/HTMLElement.h"
 #include "core/html/HTMLFrameOwnerElement.h"
-#include "core/frame/Frame.h"
-#include "core/frame/FrameView.h"
 #include "core/rendering/RenderBox.h"
 #include "core/rendering/RenderObject.h"
 #include "platform/Widget.h"
@@ -100,7 +100,7 @@ static bool iframeIsAbovePlugin(const Vector<const RenderObject*>& iframeZstack,
                 return false;
             ASSERT(parent == ro2->parent());
 
-            for (const RenderObject* ro = parent->firstChild(); ro; ro = ro->nextSibling()) {
+            for (const RenderObject* ro = parent->slowFirstChild(); ro; ro = ro->nextSibling()) {
                 if (ro == ro1)
                     return false;
                 if (ro == ro2)
@@ -132,7 +132,7 @@ static void addTreeToOcclusions(const RenderObject* renderer, const IntRect& fra
         return;
     if (renderer->isBox() && intersectsRect(renderer, frameRect))
         addToOcclusions(toRenderBox(renderer), occlusions);
-    for (RenderObject* child = renderer->firstChild(); child; child = child->nextSibling())
+    for (RenderObject* child = renderer->slowFirstChild(); child; child = child->nextSibling())
         addTreeToOcclusions(child, frameRect, occlusions);
 }
 
@@ -173,13 +173,14 @@ void getPluginOcclusions(Element* element, Widget* parentWidget, const IntRect& 
         const FrameView* frameView = toFrameView((*it).get());
         // Check to make sure we can get both the element and the RenderObject
         // for this FrameView, if we can't just move on to the next object.
-        HTMLElement* element = frameView->frame().ownerElement();
+        // FIXME: Plugin occlusion by remote frames is probably broken.
+        HTMLElement* element = frameView->frame().deprecatedLocalOwner();
         if (!element || !element->renderer())
             continue;
 
         RenderObject* iframeRenderer = element->renderer();
 
-        if (element->hasTagName(HTMLNames::iframeTag) && intersectsRect(iframeRenderer, frameRect)) {
+        if (isHTMLIFrameElement(*element) && intersectsRect(iframeRenderer, frameRect)) {
             getObjectStack(iframeRenderer, &iframeZstack);
             if (iframeIsAbovePlugin(iframeZstack, pluginZstack))
                 addToOcclusions(toRenderBox(iframeRenderer), occlusions);
@@ -193,7 +194,7 @@ void getPluginOcclusions(Element* element, Widget* parentWidget, const IntRect& 
     // as being in the top layer.
     const Element* ancestor = topLayerAncestor(element);
     Document* document = parentFrameView->frame().document();
-    const Vector<RefPtr<Element> >& elements = document->topLayerElements();
+    const WillBeHeapVector<RefPtrWillBeMember<Element> >& elements = document->topLayerElements();
     size_t start = ancestor ? elements.find(ancestor) + 1 : 0;
     for (size_t i = start; i < elements.size(); ++i)
         addTreeToOcclusions(elements[i]->renderer(), frameRect, occlusions);

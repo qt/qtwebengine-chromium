@@ -31,14 +31,16 @@
 #ifndef ScriptPromise_h
 #define ScriptPromise_h
 
-#include "bindings/v8/ScopedPersistent.h"
+#include "bindings/v8/ScriptFunction.h"
 #include "bindings/v8/ScriptValue.h"
-#include "bindings/v8/V8ScriptRunner.h"
+#include "platform/heap/Handle.h"
+#include "wtf/PassOwnPtr.h"
+#include "wtf/PassRefPtr.h"
 #include <v8.h>
 
 namespace WebCore {
 
-class ExecutionContext;
+class DOMException;
 
 // ScriptPromise is the class for representing Promise values in C++ world.
 // ScriptPromise holds a Promise.
@@ -48,22 +50,13 @@ class ExecutionContext;
 class ScriptPromise {
 public:
     // Constructs an empty promise.
-    ScriptPromise()
-        : m_promise()
-    {
-    }
+    ScriptPromise() { }
 
-    explicit ScriptPromise(const ScriptValue& promise)
-        : m_promise(promise)
-    {
-        ASSERT(!m_promise.hasNoValue());
-    }
+    // Constructs a ScriptPromise from |promise|.
+    // If |promise| is not a Promise object, throws a v8 TypeError.
+    ScriptPromise(ScriptState*, v8::Handle<v8::Value> promise);
 
-    ScriptPromise(v8::Handle<v8::Value> promise, v8::Isolate* isolate)
-        : m_promise(promise, isolate)
-    {
-        ASSERT(!m_promise.hasNoValue());
-    }
+    ScriptPromise then(PassOwnPtr<ScriptFunction> onFulfilled, PassOwnPtr<ScriptFunction> onRejected = PassOwnPtr<ScriptFunction>());
 
     bool isObject() const
     {
@@ -90,9 +83,9 @@ public:
         return m_promise.isolate();
     }
 
-    bool hasNoValue() const
+    bool isEmpty() const
     {
-        return m_promise.hasNoValue();
+        return m_promise.isEmpty();
     }
 
     void clear()
@@ -100,10 +93,20 @@ public:
         m_promise.clear();
     }
 
-    static ScriptPromise createPending();
-    static ScriptPromise createPending(ExecutionContext*);
+    // Constructs and returns a ScriptPromise from |value|.
+    // if |value| is not a Promise object, returns a Promise object
+    // resolved with |value|.
+    // Returns |value| itself if it is a Promise.
+    static ScriptPromise cast(ScriptState*, const ScriptValue& /*value*/);
+    static ScriptPromise cast(ScriptState*, v8::Handle<v8::Value> /*value*/);
+
+    static ScriptPromise reject(ScriptState*, const ScriptValue&);
+    static ScriptPromise reject(ScriptState*, v8::Handle<v8::Value>);
+
+    static ScriptPromise rejectWithDOMException(ScriptState*, PassRefPtrWillBeRawPtr<DOMException>);
 
 private:
+    RefPtr<ScriptState> m_scriptState;
     ScriptValue m_promise;
 };
 

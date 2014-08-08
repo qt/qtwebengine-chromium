@@ -1,4 +1,3 @@
-
 /*
  * Copyright 2006 The Android Open Source Project
  *
@@ -18,8 +17,8 @@
 #include "SkImageFilter.h"
 #include "SkMaskFilter.h"
 #include "SkMaskGamma.h"
-#include "SkOrderedReadBuffer.h"
-#include "SkOrderedWriteBuffer.h"
+#include "SkReadBuffer.h"
+#include "SkWriteBuffer.h"
 #include "SkPaintDefaults.h"
 #include "SkPaintOptionsAndroid.h"
 #include "SkPathEffect.h"
@@ -35,6 +34,28 @@
 #include "SkTypeface.h"
 #include "SkXfermode.h"
 
+enum {
+    kColor_DirtyBit               = 1 <<  0,
+    kTextSize_DirtyBit            = 1 <<  1,
+    kTextScaleX_DirtyBit          = 1 <<  2,
+    kTextSkewX_DirtyBit           = 1 <<  3,
+    kStrokeWidth_DirtyBit         = 1 <<  4,
+    kStrokeMiter_DirtyBit         = 1 <<  5,
+
+    kPOD_DirtyBitMask             = 63,
+
+    kPathEffect_DirtyBit          = 1 <<  6,
+    kShader_DirtyBit              = 1 <<  7,
+    kXfermode_DirtyBit            = 1 <<  8,
+    kMaskFilter_DirtyBit          = 1 <<  9,
+    kColorFilter_DirtyBit         = 1 << 10,
+    kRasterizer_DirtyBit          = 1 << 11,
+    kLooper_DirtyBit              = 1 << 12,
+    kImageFilter_DirtyBit         = 1 << 13,
+    kTypeface_DirtyBit            = 1 << 14,
+    kAnnotation_DirtyBit          = 1 << 15,
+    kPaintOptionsAndroid_DirtyBit = 1 << 16,
+};
 
 // define this to get a printf for out-of-range parameter in setters
 // e.g. setTextSize(-1)
@@ -49,14 +70,7 @@
 #endif
 
 SkPaint::SkPaint() {
-    // since we may have padding, we zero everything so that our memcmp() call
-    // in operator== will work correctly.
-    // with this, we can skip 0 and null individual initializations
-    sk_bzero(this, sizeof(*this));
-
-#if 0   // not needed with the bzero call above
-    fTypeface   = NULL;
-    fTextSkewX  = 0;
+    fTypeface    = NULL;
     fPathEffect  = NULL;
     fShader      = NULL;
     fXfermode    = NULL;
@@ -66,20 +80,25 @@ SkPaint::SkPaint() {
     fLooper      = NULL;
     fImageFilter = NULL;
     fAnnotation  = NULL;
-    fWidth      = 0;
-#endif
 
-    fTextSize   = SkPaintDefaults_TextSize;
-    fTextScaleX = SK_Scalar1;
-    fColor      = SK_ColorBLACK;
-    fMiterLimit = SkPaintDefaults_MiterLimit;
-    fFlags      = SkPaintDefaults_Flags;
-    fCapType    = kDefault_Cap;
-    fJoinType   = kDefault_Join;
-    fTextAlign  = kLeft_Align;
-    fStyle      = kFill_Style;
+    fTextSize     = SkPaintDefaults_TextSize;
+    fTextScaleX   = SK_Scalar1;
+    fTextSkewX    = 0;
+    fColor        = SK_ColorBLACK;
+    fWidth        = 0;
+    fMiterLimit   = SkPaintDefaults_MiterLimit;
+
+    // Zero all bitfields, then set some non-zero defaults.
+    fBitfields    = 0;
+    fFlags        = SkPaintDefaults_Flags;
+    fCapType      = kDefault_Cap;
+    fJoinType     = kDefault_Join;
+    fTextAlign    = kLeft_Align;
+    fStyle        = kFill_Style;
     fTextEncoding = kUTF8_TextEncoding;
-    fHinting    = SkPaintDefaults_Hinting;
+    fHinting      = SkPaintDefaults_Hinting;
+
+    fDirtyBits    = 0;
 #ifdef SK_BUILD_FOR_ANDROID
     new (&fPaintOptionsAndroid) SkPaintOptionsAndroid;
     fGenerationID = 0;
@@ -87,22 +106,36 @@ SkPaint::SkPaint() {
 }
 
 SkPaint::SkPaint(const SkPaint& src) {
-    memcpy(this, &src, sizeof(src));
+#define COPY(field) field = src.field
+#define REF_COPY(field) field = SkSafeRef(src.field)
 
-    SkSafeRef(fTypeface);
-    SkSafeRef(fPathEffect);
-    SkSafeRef(fShader);
-    SkSafeRef(fXfermode);
-    SkSafeRef(fMaskFilter);
-    SkSafeRef(fColorFilter);
-    SkSafeRef(fRasterizer);
-    SkSafeRef(fLooper);
-    SkSafeRef(fImageFilter);
-    SkSafeRef(fAnnotation);
+    REF_COPY(fTypeface);
+    REF_COPY(fPathEffect);
+    REF_COPY(fShader);
+    REF_COPY(fXfermode);
+    REF_COPY(fMaskFilter);
+    REF_COPY(fColorFilter);
+    REF_COPY(fRasterizer);
+    REF_COPY(fLooper);
+    REF_COPY(fImageFilter);
+    REF_COPY(fAnnotation);
+
+    COPY(fTextSize);
+    COPY(fTextScaleX);
+    COPY(fTextSkewX);
+    COPY(fColor);
+    COPY(fWidth);
+    COPY(fMiterLimit);
+    COPY(fBitfields);
+    COPY(fDirtyBits);
 
 #ifdef SK_BUILD_FOR_ANDROID
     new (&fPaintOptionsAndroid) SkPaintOptionsAndroid(src.fPaintOptionsAndroid);
+    COPY(fGenerationID);
 #endif
+
+#undef COPY
+#undef REF_COPY
 }
 
 SkPaint::~SkPaint() {
@@ -119,52 +152,72 @@ SkPaint::~SkPaint() {
 }
 
 SkPaint& SkPaint::operator=(const SkPaint& src) {
+    if (this == &src) {
+        return *this;
+    }
+
+#define COPY(field) field = src.field
+#define REF_COPY(field) SkSafeUnref(field); field = SkSafeRef(src.field)
+
     SkASSERT(&src);
 
-    SkSafeRef(src.fTypeface);
-    SkSafeRef(src.fPathEffect);
-    SkSafeRef(src.fShader);
-    SkSafeRef(src.fXfermode);
-    SkSafeRef(src.fMaskFilter);
-    SkSafeRef(src.fColorFilter);
-    SkSafeRef(src.fRasterizer);
-    SkSafeRef(src.fLooper);
-    SkSafeRef(src.fImageFilter);
-    SkSafeRef(src.fAnnotation);
+    REF_COPY(fTypeface);
+    REF_COPY(fPathEffect);
+    REF_COPY(fShader);
+    REF_COPY(fXfermode);
+    REF_COPY(fMaskFilter);
+    REF_COPY(fColorFilter);
+    REF_COPY(fRasterizer);
+    REF_COPY(fLooper);
+    REF_COPY(fImageFilter);
+    REF_COPY(fAnnotation);
 
-    SkSafeUnref(fTypeface);
-    SkSafeUnref(fPathEffect);
-    SkSafeUnref(fShader);
-    SkSafeUnref(fXfermode);
-    SkSafeUnref(fMaskFilter);
-    SkSafeUnref(fColorFilter);
-    SkSafeUnref(fRasterizer);
-    SkSafeUnref(fLooper);
-    SkSafeUnref(fImageFilter);
-    SkSafeUnref(fAnnotation);
+    COPY(fTextSize);
+    COPY(fTextScaleX);
+    COPY(fTextSkewX);
+    COPY(fColor);
+    COPY(fWidth);
+    COPY(fMiterLimit);
+    COPY(fBitfields);
+    COPY(fDirtyBits);
 
 #ifdef SK_BUILD_FOR_ANDROID
     fPaintOptionsAndroid.~SkPaintOptionsAndroid();
-
-    uint32_t oldGenerationID = fGenerationID;
-#endif
-    memcpy(this, &src, sizeof(src));
-#ifdef SK_BUILD_FOR_ANDROID
-    fGenerationID = oldGenerationID + 1;
-
     new (&fPaintOptionsAndroid) SkPaintOptionsAndroid(src.fPaintOptionsAndroid);
+    ++fGenerationID;
 #endif
 
     return *this;
+
+#undef COPY
+#undef REF_COPY
 }
 
 bool operator==(const SkPaint& a, const SkPaint& b) {
+#define EQUAL(field) (a.field == b.field)
+    // Don't check fGenerationID or fDirtyBits, which can be different for logically equal paints.
+    return EQUAL(fTypeface)
+        && EQUAL(fPathEffect)
+        && EQUAL(fShader)
+        && EQUAL(fXfermode)
+        && EQUAL(fMaskFilter)
+        && EQUAL(fColorFilter)
+        && EQUAL(fRasterizer)
+        && EQUAL(fLooper)
+        && EQUAL(fImageFilter)
+        && EQUAL(fAnnotation)
+        && EQUAL(fTextSize)
+        && EQUAL(fTextScaleX)
+        && EQUAL(fTextSkewX)
+        && EQUAL(fColor)
+        && EQUAL(fWidth)
+        && EQUAL(fMiterLimit)
+        && EQUAL(fBitfields)
 #ifdef SK_BUILD_FOR_ANDROID
-    //assumes that fGenerationID is the last field in the struct
-    return !memcmp(&a, &b, SK_OFFSETOF(SkPaint, fGenerationID));
-#else
-    return !memcmp(&a, &b, sizeof(a));
+        && EQUAL(fPaintOptionsAndroid)
 #endif
+        ;
+#undef EQUAL
 }
 
 void SkPaint::reset() {
@@ -198,31 +251,14 @@ void SkPaint::setPaintOptionsAndroid(const SkPaintOptionsAndroid& options) {
     if (options != fPaintOptionsAndroid) {
         fPaintOptionsAndroid = options;
         GEN_ID_INC;
+        fDirtyBits |= kPaintOptionsAndroid_DirtyBit;
     }
 }
 #endif
 
-SkPaint::FilterLevel SkPaint::getFilterLevel() const {
-    int level = 0;
-    if (fFlags & kFilterBitmap_Flag) {
-        level |= 1;
-    }
-    if (fFlags & kHighQualityFilterBitmap_Flag) {
-        level |= 2;
-    }
-    return (FilterLevel)level;
-}
-
 void SkPaint::setFilterLevel(FilterLevel level) {
-    unsigned mask = kFilterBitmap_Flag | kHighQualityFilterBitmap_Flag;
-    unsigned flags = 0;
-    if (level & 1) {
-        flags |= kFilterBitmap_Flag;
-    }
-    if (level & 2) {
-        flags |= kHighQualityFilterBitmap_Flag;
-    }
-    this->setFlags((fFlags & ~mask) | flags);
+    GEN_ID_INC_EVAL((unsigned) level != fFilterLevel);
+    fFilterLevel = level;
 }
 
 void SkPaint::setHinting(Hinting hintingLevel) {
@@ -283,6 +319,10 @@ void SkPaint::setDevKernText(bool doDevKern) {
     this->setFlags(SkSetClearMask(fFlags, doDevKern, kDevKernText_Flag));
 }
 
+void SkPaint::setDistanceFieldTextTEMP(bool doDistanceFieldText) {
+    this->setFlags(SkSetClearMask(fFlags, doDistanceFieldText, kDistanceFieldTextTEMP_Flag));
+}
+
 void SkPaint::setStyle(Style style) {
     if ((unsigned)style < kStyleCount) {
         GEN_ID_INC_EVAL((unsigned)style != fStyle);
@@ -297,6 +337,7 @@ void SkPaint::setStyle(Style style) {
 void SkPaint::setColor(SkColor color) {
     GEN_ID_INC_EVAL(color != fColor);
     fColor = color;
+    fDirtyBits |= kColor_DirtyBit;
 }
 
 void SkPaint::setAlpha(U8CPU a) {
@@ -312,6 +353,7 @@ void SkPaint::setStrokeWidth(SkScalar width) {
     if (width >= 0) {
         GEN_ID_INC_EVAL(width != fWidth);
         fWidth = width;
+        fDirtyBits |= kStrokeWidth_DirtyBit;
     } else {
 #ifdef SK_REPORT_API_RANGE_CHECK
         SkDebugf("SkPaint::setStrokeWidth() called with negative value\n");
@@ -323,6 +365,7 @@ void SkPaint::setStrokeMiter(SkScalar limit) {
     if (limit >= 0) {
         GEN_ID_INC_EVAL(limit != fMiterLimit);
         fMiterLimit = limit;
+        fDirtyBits |= kStrokeMiter_DirtyBit;
     } else {
 #ifdef SK_REPORT_API_RANGE_CHECK
         SkDebugf("SkPaint::setStrokeMiter() called with negative value\n");
@@ -369,6 +412,7 @@ void SkPaint::setTextSize(SkScalar ts) {
     if (ts >= 0) {
         GEN_ID_INC_EVAL(ts != fTextSize);
         fTextSize = ts;
+        fDirtyBits |= kTextSize_DirtyBit;
     } else {
 #ifdef SK_REPORT_API_RANGE_CHECK
         SkDebugf("SkPaint::setTextSize() called with negative value\n");
@@ -379,11 +423,13 @@ void SkPaint::setTextSize(SkScalar ts) {
 void SkPaint::setTextScaleX(SkScalar scaleX) {
     GEN_ID_INC_EVAL(scaleX != fTextScaleX);
     fTextScaleX = scaleX;
+    fDirtyBits |= kTextScaleX_DirtyBit;
 }
 
 void SkPaint::setTextSkewX(SkScalar skewX) {
     GEN_ID_INC_EVAL(skewX != fTextSkewX);
     fTextSkewX = skewX;
+    fDirtyBits |= kTextSkewX_DirtyBit;
 }
 
 void SkPaint::setTextEncoding(TextEncoding encoding) {
@@ -399,33 +445,43 @@ void SkPaint::setTextEncoding(TextEncoding encoding) {
 
 ///////////////////////////////////////////////////////////////////////////////
 
+// Returns dst with the given bitmask enabled or disabled, depending on value.
+inline static uint32_t set_mask(uint32_t dst, uint32_t bitmask, bool value) {
+    return value ? (dst | bitmask) : (dst & ~bitmask);
+}
+
 SkTypeface* SkPaint::setTypeface(SkTypeface* font) {
     SkRefCnt_SafeAssign(fTypeface, font);
     GEN_ID_INC;
+    fDirtyBits = set_mask(fDirtyBits, kTypeface_DirtyBit, font != NULL);
     return font;
 }
 
 SkRasterizer* SkPaint::setRasterizer(SkRasterizer* r) {
     SkRefCnt_SafeAssign(fRasterizer, r);
     GEN_ID_INC;
+    fDirtyBits = set_mask(fDirtyBits, kRasterizer_DirtyBit, r != NULL);
     return r;
 }
 
 SkDrawLooper* SkPaint::setLooper(SkDrawLooper* looper) {
     SkRefCnt_SafeAssign(fLooper, looper);
     GEN_ID_INC;
+    fDirtyBits = set_mask(fDirtyBits, kLooper_DirtyBit, looper != NULL);
     return looper;
 }
 
 SkImageFilter* SkPaint::setImageFilter(SkImageFilter* imageFilter) {
     SkRefCnt_SafeAssign(fImageFilter, imageFilter);
     GEN_ID_INC;
+    fDirtyBits = set_mask(fDirtyBits, kImageFilter_DirtyBit, imageFilter != NULL);
     return imageFilter;
 }
 
 SkAnnotation* SkPaint::setAnnotation(SkAnnotation* annotation) {
     SkRefCnt_SafeAssign(fAnnotation, annotation);
     GEN_ID_INC;
+    fDirtyBits = set_mask(fDirtyBits, kAnnotation_DirtyBit, annotation != NULL);
     return annotation;
 }
 
@@ -470,42 +526,6 @@ static void DetachDescProc(SkTypeface* typeface, const SkDescriptor* desc,
     *((SkGlyphCache**)context) = SkGlyphCache::DetachCache(typeface, desc);
 }
 
-#ifdef SK_BUILD_FOR_ANDROID
-const SkGlyph& SkPaint::getUnicharMetrics(SkUnichar text,
-                                          const SkMatrix* deviceMatrix) {
-    SkGlyphCache* cache;
-    descriptorProc(NULL, deviceMatrix, DetachDescProc, &cache, true);
-
-    const SkGlyph& glyph = cache->getUnicharMetrics(text);
-
-    SkGlyphCache::AttachCache(cache);
-    return glyph;
-}
-
-const SkGlyph& SkPaint::getGlyphMetrics(uint16_t glyphId,
-                                        const SkMatrix* deviceMatrix) {
-    SkGlyphCache* cache;
-    descriptorProc(NULL, deviceMatrix, DetachDescProc, &cache, true);
-
-    const SkGlyph& glyph = cache->getGlyphIDMetrics(glyphId);
-
-    SkGlyphCache::AttachCache(cache);
-    return glyph;
-}
-
-const void* SkPaint::findImage(const SkGlyph& glyph,
-                               const SkMatrix* deviceMatrix) {
-    // See ::detachCache()
-    SkGlyphCache* cache;
-    descriptorProc(NULL, deviceMatrix, DetachDescProc, &cache, true);
-
-    const void* image = cache->findImage(glyph);
-
-    SkGlyphCache::AttachCache(cache);
-    return image;
-}
-#endif
-
 int SkPaint::textToGlyphs(const void* textData, size_t byteLength,
                           uint16_t glyphs[]) const {
     if (byteLength == 0) {
@@ -519,12 +539,11 @@ int SkPaint::textToGlyphs(const void* textData, size_t byteLength,
         case kUTF8_TextEncoding:
             return SkUTF8_CountUnichars((const char*)textData, byteLength);
         case kUTF16_TextEncoding:
-            return SkUTF16_CountUnichars((const uint16_t*)textData,
-                                         byteLength >> 1);
+            return SkUTF16_CountUnichars((const uint16_t*)textData, SkToInt(byteLength >> 1));
         case kUTF32_TextEncoding:
-            return byteLength >> 2;
+            return SkToInt(byteLength >> 2);
         case kGlyphID_TextEncoding:
-            return byteLength >> 1;
+            return SkToInt(byteLength >> 1);
         default:
             SkDEBUGFAIL("unknown text encoding");
         }
@@ -537,7 +556,7 @@ int SkPaint::textToGlyphs(const void* textData, size_t byteLength,
     if (this->getTextEncoding() == kGlyphID_TextEncoding) {
         // we want to ignore the low bit of byteLength
         memcpy(glyphs, textData, byteLength >> 1 << 1);
-        return byteLength >> 1;
+        return SkToInt(byteLength >> 1);
     }
 
     SkAutoGlyphCache autoCache(*this, NULL, NULL);
@@ -572,7 +591,7 @@ int SkPaint::textToGlyphs(const void* textData, size_t byteLength,
         default:
             SkDEBUGFAIL("unknown text encoding");
     }
-    return gptr - glyphs;
+    return SkToInt(gptr - glyphs);
 }
 
 bool SkPaint::containsText(const void* textData, size_t byteLength) const {
@@ -899,7 +918,7 @@ static const SkGlyph& sk_getMetrics_utf32_xy(SkGlyphCache* cache,
     SkASSERT(text != NULL);
 
     const int32_t* ptr = *(const int32_t**)text;
-    SkUnichar uni = *--ptr;
+    SkUnichar uni = *ptr++;
     *text = (const char*)ptr;
     return cache->getUnicharMetrics(uni, x, y);
 }
@@ -1010,16 +1029,9 @@ static void set_bounds(const SkGlyph& g, SkRect* bounds) {
 // we don't overflow along the way
 typedef int64_t Sk48Dot16;
 
-#ifdef SK_SCALAR_IS_FLOAT
-    static inline float Sk48Dot16ToScalar(Sk48Dot16 x) {
-        return (float) (x * 1.5258789e-5);   // x * (1 / 65536.0f)
-    }
-#else
-    static inline SkFixed Sk48Dot16ToScalar(Sk48Dot16 x) {
-        // just return the low 32bits
-        return static_cast<SkFixed>(x);
-    }
-#endif
+static inline float Sk48Dot16ToScalar(Sk48Dot16 x) {
+    return (float) (x * 1.5258789e-5);   // x * (1 / 65536.0f)
+}
 
 static void join_bounds_x(const SkGlyph& g, SkRect* bounds, Sk48Dot16 dx) {
     SkScalar sx = Sk48Dot16ToScalar(dx);
@@ -1303,6 +1315,8 @@ SkScalar SkPaint::getFontMetrics(FontMetrics* metrics, SkScalar zoom) const {
         metrics->fXMin = SkScalarMul(metrics->fXMin, scale);
         metrics->fXMax = SkScalarMul(metrics->fXMax, scale);
         metrics->fXHeight = SkScalarMul(metrics->fXHeight, scale);
+        metrics->fUnderlineThickness = SkScalarMul(metrics->fUnderlineThickness, scale);
+        metrics->fUnderlinePosition = SkScalarMul(metrics->fUnderlinePosition, scale);
     }
     return metrics->fDescent - metrics->fAscent + metrics->fLeading;
 }
@@ -1481,8 +1495,8 @@ void SkPaint::getPosTextPath(const void* textData, size_t length,
 }
 
 static void add_flattenable(SkDescriptor* desc, uint32_t tag,
-                            SkOrderedWriteBuffer* buffer) {
-    buffer->writeToMemory(desc->addEntry(tag, buffer->size(), NULL));
+                            SkWriteBuffer* buffer) {
+    buffer->writeToMemory(desc->addEntry(tag, buffer->bytesWritten(), NULL));
 }
 
 // SkFontHost can override this choice in FilterRec()
@@ -1544,10 +1558,10 @@ static SkColor computeLuminanceColor(const SkPaint& paint) {
 #endif
 
 static bool tooBigForLCD(const SkScalerContext::Rec& rec) {
-    SkScalar area = SkScalarMul(rec.fPost2x2[0][0], rec.fPost2x2[1][1]) -
-                    SkScalarMul(rec.fPost2x2[1][0], rec.fPost2x2[0][1]);
-    SkScalar size = SkScalarMul(area, rec.fTextSize);
-    return SkScalarAbs(size) > SkIntToScalar(SK_MAX_SIZE_FOR_LCDTEXT);
+    SkScalar area = rec.fPost2x2[0][0] * rec.fPost2x2[1][1] -
+                    rec.fPost2x2[1][0] * rec.fPost2x2[0][1];
+    SkScalar size = SkScalarSqrt(SkScalarAbs(area)) * rec.fTextSize;
+    return size > SkIntToScalar(SK_MAX_SIZE_FOR_LCDTEXT);
 }
 
 /*
@@ -1556,13 +1570,8 @@ static bool tooBigForLCD(const SkScalerContext::Rec& rec) {
  *  typically returns the same looking resuts for tiny changes in the matrix.
  */
 static SkScalar sk_relax(SkScalar x) {
-#ifdef SK_SCALAR_IS_FLOAT
     int n = sk_float_round2int(x * 1024);
     return n / 1024.0f;
-#else
-    // round to the nearest 10 fractional bits
-    return (x + (1 << 5)) & ~(1024 - 1);
-#endif
 }
 
 void SkScalerContext::MakeRec(const SkPaint& paint,
@@ -1659,7 +1668,7 @@ void SkScalerContext::MakeRec(const SkPaint& paint,
         flags |= SkScalerContext::kSubpixelPositioning_Flag;
     }
     if (paint.isAutohinted()) {
-        flags |= SkScalerContext::kAutohinting_Flag;
+        flags |= SkScalerContext::kForceAutohinting_Flag;
     }
     if (paint.isVerticalText()) {
         flags |= SkScalerContext::kVertical_Flag;
@@ -1728,6 +1737,7 @@ static SkScalar gDeviceGamma = SK_ScalarMin;
  * the returned SkMaskGamma pointer is refed or forgotten.
  */
 static const SkMaskGamma& cachedMaskGamma(SkScalar contrast, SkScalar paintGamma, SkScalar deviceGamma) {
+    gMaskGammaCacheMutex.assertHeld();
     if (0 == contrast && SK_Scalar1 == paintGamma && SK_Scalar1 == deviceGamma) {
         if (NULL == gLinearMaskGamma) {
             gLinearMaskGamma = SkNEW(SkMaskGamma);
@@ -1805,10 +1815,8 @@ void SkScalerContext::PostMakeRec(const SkPaint&, SkScalerContext::Rec* rec) {
 
 /*
  *  ignoreGamma tells us that the caller just wants metrics that are unaffected
- *  by gamma correction, so we jam the luminance field to 0 (most common value
- *  for black text) in hopes that we get a cache hit easier. A better solution
- *  would be for the fontcache lookup to know to ignore the luminance field
- *  entirely, but not sure how to do that and keep it fast.
+ *  by gamma correction, so we set the rec to ignore preblend: i.e. gamma = 1,
+ *  contrast = 0, luminanceColor = transparent black.
  */
 void SkPaint::descriptorProc(const SkDeviceProperties* deviceProperties,
                              const SkMatrix* deviceMatrix,
@@ -1818,7 +1826,7 @@ void SkPaint::descriptorProc(const SkDeviceProperties* deviceProperties,
 
     SkScalerContext::MakeRec(*this, deviceProperties, deviceMatrix, &rec);
     if (ignoreGamma) {
-        rec.setLuminanceColor(0);
+        rec.ignorePreBlend();
     }
 
     size_t          descSize = sizeof(rec);
@@ -1827,20 +1835,18 @@ void SkPaint::descriptorProc(const SkDeviceProperties* deviceProperties,
     SkMaskFilter*   mf = this->getMaskFilter();
     SkRasterizer*   ra = this->getRasterizer();
 
-    SkOrderedWriteBuffer    peBuffer(MIN_SIZE_FOR_EFFECT_BUFFER);
-    SkOrderedWriteBuffer    mfBuffer(MIN_SIZE_FOR_EFFECT_BUFFER);
-    SkOrderedWriteBuffer    raBuffer(MIN_SIZE_FOR_EFFECT_BUFFER);
+    SkWriteBuffer    peBuffer, mfBuffer, raBuffer;
 
     if (pe) {
         peBuffer.writeFlattenable(pe);
-        descSize += peBuffer.size();
+        descSize += peBuffer.bytesWritten();
         entryCount += 1;
         rec.fMaskFormat = SkMask::kA8_Format;   // force antialiasing when we do the scan conversion
         // seems like we could support kLCD as well at this point...
     }
     if (mf) {
         mfBuffer.writeFlattenable(mf);
-        descSize += mfBuffer.size();
+        descSize += mfBuffer.bytesWritten();
         entryCount += 1;
         rec.fMaskFormat = SkMask::kA8_Format;   // force antialiasing with maskfilters
         /* Pre-blend is not currently applied to filtered text.
@@ -1851,15 +1857,15 @@ void SkPaint::descriptorProc(const SkDeviceProperties* deviceProperties,
     }
     if (ra) {
         raBuffer.writeFlattenable(ra);
-        descSize += raBuffer.size();
+        descSize += raBuffer.bytesWritten();
         entryCount += 1;
         rec.fMaskFormat = SkMask::kA8_Format;   // force antialiasing when we do the scan conversion
     }
 
 #ifdef SK_BUILD_FOR_ANDROID
-    SkOrderedWriteBuffer androidBuffer(128);
+    SkWriteBuffer androidBuffer;
     fPaintOptionsAndroid.flatten(androidBuffer);
-    descSize += androidBuffer.size();
+    descSize += androidBuffer.bytesWritten();
     entryCount += 1;
 #endif
 
@@ -1944,9 +1950,10 @@ void SkPaint::descriptorProc(const SkDeviceProperties* deviceProperties,
 }
 
 SkGlyphCache* SkPaint::detachCache(const SkDeviceProperties* deviceProperties,
-                                   const SkMatrix* deviceMatrix) const {
+                                   const SkMatrix* deviceMatrix,
+                                   bool ignoreGamma) const {
     SkGlyphCache* cache;
-    this->descriptorProc(deviceProperties, deviceMatrix, DetachDescProc, &cache, false);
+    this->descriptorProc(deviceProperties, deviceMatrix, DetachDescProc, &cache, ignoreGamma);
     return cache;
 }
 
@@ -1961,6 +1968,33 @@ SkMaskGamma::PreBlend SkScalerContext::GetMaskPreBlend(const SkScalerContext::Re
                                                    rec.getDeviceGamma());
     return maskGamma.preBlend(rec.getLuminanceColor());
 }
+
+size_t SkScalerContext::GetGammaLUTSize(SkScalar contrast, SkScalar paintGamma,
+                                        SkScalar deviceGamma, int* width, int* height) {
+    SkAutoMutexAcquire ama(gMaskGammaCacheMutex);
+    const SkMaskGamma& maskGamma = cachedMaskGamma(contrast,
+                                                   paintGamma,
+                                                   deviceGamma);
+
+    maskGamma.getGammaTableDimensions(width, height);
+    size_t size = (*width)*(*height)*sizeof(uint8_t);
+
+    return size;
+}
+
+void SkScalerContext::GetGammaLUTData(SkScalar contrast, SkScalar paintGamma, SkScalar deviceGamma,
+                                      void* data) {
+    SkAutoMutexAcquire ama(gMaskGammaCacheMutex);
+    const SkMaskGamma& maskGamma = cachedMaskGamma(contrast,
+                                                   paintGamma,
+                                                   deviceGamma);
+    int width, height;
+    maskGamma.getGammaTableDimensions(&width, &height);
+    size_t size = width*height*sizeof(uint8_t);
+    const uint8_t* gammaTables = maskGamma.getGammaTables();
+    memcpy(data, gammaTables, size);
+}
+
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -1998,11 +2032,88 @@ static uint32_t pack_4(unsigned a, unsigned b, unsigned c, unsigned d) {
     return (a << 24) | (b << 16) | (c << 8) | d;
 }
 
+#ifdef SK_DEBUG
+    static void ASSERT_FITS_IN(uint32_t value, int bitCount) {
+        SkASSERT(bitCount > 0 && bitCount <= 32);
+        uint32_t mask = ~0U;
+        mask >>= (32 - bitCount);
+        SkASSERT(0 == (value & ~mask));
+    }
+#else
+    #define ASSERT_FITS_IN(value, bitcount)
+#endif
+
 enum FlatFlags {
     kHasTypeface_FlatFlag                      = 0x01,
     kHasEffects_FlatFlag                       = 0x02,
     kHasNonDefaultPaintOptionsAndroid_FlatFlag = 0x04,
+
+    kFlatFlagMask = 0x7,
 };
+
+enum BitsPerField {
+    kFlags_BPF  = 16,
+    kHint_BPF   = 2,
+    kAlign_BPF  = 2,
+    kFilter_BPF = 2,
+    kFlatFlags_BPF  = 3,
+};
+
+static inline int BPF_Mask(int bits) {
+    return (1 << bits) - 1;
+}
+
+static uint32_t pack_paint_flags(unsigned flags, unsigned hint, unsigned align,
+                                 unsigned filter, unsigned flatFlags) {
+    ASSERT_FITS_IN(flags, kFlags_BPF);
+    ASSERT_FITS_IN(hint, kHint_BPF);
+    ASSERT_FITS_IN(align, kAlign_BPF);
+    ASSERT_FITS_IN(filter, kFilter_BPF);
+    ASSERT_FITS_IN(flatFlags, kFlatFlags_BPF);
+
+    // left-align the fields of "known" size, and right-align the last (flatFlags) so it can easly
+    // add more bits in the future.
+    return (flags << 16) | (hint << 14) | (align << 12) | (filter << 10) | flatFlags;
+}
+
+static FlatFlags unpack_paint_flags(SkPaint* paint, uint32_t packed) {
+    paint->setFlags(packed >> 16);
+    paint->setHinting((SkPaint::Hinting)((packed >> 14) & BPF_Mask(kHint_BPF)));
+    paint->setTextAlign((SkPaint::Align)((packed >> 12) & BPF_Mask(kAlign_BPF)));
+    paint->setFilterLevel((SkPaint::FilterLevel)((packed >> 10) & BPF_Mask(kFilter_BPF)));
+    return (FlatFlags)(packed & kFlatFlagMask);
+}
+
+// V22_COMPATIBILITY_CODE
+static FlatFlags unpack_paint_flags_v22(SkPaint* paint, uint32_t packed) {
+    enum {
+        kFilterBitmap_Flag    = 0x02,
+        kHighQualityFilterBitmap_Flag = 0x4000,
+
+        kAll_Flags = kFilterBitmap_Flag | kHighQualityFilterBitmap_Flag
+    };
+
+    // previously flags:16, textAlign:8, flatFlags:8
+    // now flags:16, hinting:4, textAlign:4, flatFlags:8
+    unsigned flags = packed >> 16;
+    int filter = 0;
+    if (flags & kFilterBitmap_Flag) {
+        filter |= 1;
+    }
+    if (flags & kHighQualityFilterBitmap_Flag) {
+        filter |= 2;
+    }
+    paint->setFilterLevel((SkPaint::FilterLevel)filter);
+    flags &= ~kAll_Flags;   // remove these (now dead) bit flags
+
+    paint->setFlags(flags);
+
+    // hinting added later. 0 in this nibble means use the default.
+    uint32_t hinting = (packed >> 12) & 0xF;
+    paint->setHinting(0 == hinting ? SkPaint::kNormal_Hinting : static_cast<SkPaint::Hinting>(hinting-1));
+    paint->setTextAlign(static_cast<SkPaint::Align>((packed >> 8) & 0xF));
+    return (FlatFlags)(packed & kFlatFlagMask);
+}
 
 // The size of a flat paint's POD fields
 static const uint32_t kPODPaintSize =   5 * sizeof(SkScalar) +
@@ -2013,7 +2124,7 @@ static const uint32_t kPODPaintSize =   5 * sizeof(SkScalar) +
 /*  To save space/time, we analyze the paint, and write a truncated version of
     it if there are not tricky elements like shaders, etc.
  */
-void SkPaint::flatten(SkFlattenableWriteBuffer& buffer) const {
+void SkPaint::flatten(SkWriteBuffer& buffer) const {
     uint8_t flatFlags = 0;
     if (this->getTypeface()) {
         flatFlags |= kHasTypeface_FlatFlag;
@@ -2035,42 +2146,20 @@ void SkPaint::flatten(SkFlattenableWriteBuffer& buffer) const {
     }
 #endif
 
-    if (buffer.isOrderedBinaryBuffer()) {
-        SkASSERT(SkAlign4(kPODPaintSize) == kPODPaintSize);
-        uint32_t* ptr = buffer.getOrderedBinaryBuffer()->reserve(kPODPaintSize);
+    SkASSERT(SkAlign4(kPODPaintSize) == kPODPaintSize);
+    uint32_t* ptr = buffer.reserve(kPODPaintSize);
 
-        ptr = write_scalar(ptr, this->getTextSize());
-        ptr = write_scalar(ptr, this->getTextScaleX());
-        ptr = write_scalar(ptr, this->getTextSkewX());
-        ptr = write_scalar(ptr, this->getStrokeWidth());
-        ptr = write_scalar(ptr, this->getStrokeMiter());
-        *ptr++ = this->getColor();
-        // previously flags:16, textAlign:8, flatFlags:8
-        // now flags:16, hinting:4, textAlign:4, flatFlags:8
-        *ptr++ = (this->getFlags() << 16) |
-                 // hinting added later. 0 in this nibble means use the default.
-                 ((this->getHinting()+1) << 12) |
-                 (this->getTextAlign() << 8) |
-                 flatFlags;
-        *ptr++ = pack_4(this->getStrokeCap(), this->getStrokeJoin(),
-                        this->getStyle(), this->getTextEncoding());
-    } else {
-        buffer.writeScalar(fTextSize);
-        buffer.writeScalar(fTextScaleX);
-        buffer.writeScalar(fTextSkewX);
-        buffer.writeScalar(fWidth);
-        buffer.writeScalar(fMiterLimit);
-        buffer.writeColor(fColor);
-        buffer.writeUInt(fFlags);
-        buffer.writeUInt(fHinting);
-        buffer.writeUInt(fTextAlign);
-        buffer.writeUInt(flatFlags);
+    ptr = write_scalar(ptr, this->getTextSize());
+    ptr = write_scalar(ptr, this->getTextScaleX());
+    ptr = write_scalar(ptr, this->getTextSkewX());
+    ptr = write_scalar(ptr, this->getStrokeWidth());
+    ptr = write_scalar(ptr, this->getStrokeMiter());
+    *ptr++ = this->getColor();
 
-        buffer.writeUInt(fCapType);
-        buffer.writeUInt(fJoinType);
-        buffer.writeUInt(fStyle);
-        buffer.writeUInt(fTextEncoding);
-    }
+    *ptr++ = pack_paint_flags(this->getFlags(), this->getHinting(), this->getTextAlign(),
+                              this->getFilterLevel(), flatFlags);
+    *ptr++ = pack_4(this->getStrokeCap(), this->getStrokeJoin(),
+                    this->getStyle(), this->getTextEncoding());
 
     // now we're done with ptr and the (pre)reserved space. If we need to write
     // additional fields, use the buffer directly
@@ -2101,58 +2190,31 @@ void SkPaint::flatten(SkFlattenableWriteBuffer& buffer) const {
 #endif
 }
 
-void SkPaint::unflatten(SkFlattenableReadBuffer& buffer) {
-    uint8_t flatFlags = 0;
-    if (buffer.isOrderedBinaryBuffer()) {
-        SkASSERT(SkAlign4(kPODPaintSize) == kPODPaintSize);
-        const void* podData = buffer.getOrderedBinaryBuffer()->skip(kPODPaintSize);
-        const uint32_t* pod = reinterpret_cast<const uint32_t*>(podData);
+void SkPaint::unflatten(SkReadBuffer& buffer) {
+    SkASSERT(SkAlign4(kPODPaintSize) == kPODPaintSize);
+    const void* podData = buffer.skip(kPODPaintSize);
+    const uint32_t* pod = reinterpret_cast<const uint32_t*>(podData);
 
-        // the order we read must match the order we wrote in flatten()
-        this->setTextSize(read_scalar(pod));
-        this->setTextScaleX(read_scalar(pod));
-        this->setTextSkewX(read_scalar(pod));
-        this->setStrokeWidth(read_scalar(pod));
-        this->setStrokeMiter(read_scalar(pod));
-        this->setColor(*pod++);
+    // the order we read must match the order we wrote in flatten()
+    this->setTextSize(read_scalar(pod));
+    this->setTextScaleX(read_scalar(pod));
+    this->setTextSkewX(read_scalar(pod));
+    this->setStrokeWidth(read_scalar(pod));
+    this->setStrokeMiter(read_scalar(pod));
+    this->setColor(*pod++);
 
-        // previously flags:16, textAlign:8, flatFlags:8
-        // now flags:16, hinting:4, textAlign:4, flatFlags:8
-        uint32_t tmp = *pod++;
-        this->setFlags(tmp >> 16);
-
-        // hinting added later. 0 in this nibble means use the default.
-        uint32_t hinting = (tmp >> 12) & 0xF;
-        this->setHinting(0 == hinting ? kNormal_Hinting : static_cast<Hinting>(hinting-1));
-
-        this->setTextAlign(static_cast<Align>((tmp >> 8) & 0xF));
-
-        flatFlags = tmp & 0xFF;
-
-        tmp = *pod++;
-        this->setStrokeCap(static_cast<Cap>((tmp >> 24) & 0xFF));
-        this->setStrokeJoin(static_cast<Join>((tmp >> 16) & 0xFF));
-        this->setStyle(static_cast<Style>((tmp >> 8) & 0xFF));
-        this->setTextEncoding(static_cast<TextEncoding>((tmp >> 0) & 0xFF));
+    unsigned flatFlags = 0;
+    if (buffer.isVersionLT(SkReadBuffer::kFilterLevelIsEnum_Version)) {
+        flatFlags = unpack_paint_flags_v22(this, *pod++);
     } else {
-        this->setTextSize(buffer.readScalar());
-        this->setTextScaleX(buffer.readScalar());
-        this->setTextSkewX(buffer.readScalar());
-        // Skip the hinting scalar factor, which is not supported.
-        buffer.readScalar();
-        this->setStrokeWidth(buffer.readScalar());
-        this->setStrokeMiter(buffer.readScalar());
-        this->setColor(buffer.readColor());
-        this->setFlags(buffer.readUInt());
-        this->setHinting(static_cast<SkPaint::Hinting>(buffer.readUInt()));
-        this->setTextAlign(static_cast<SkPaint::Align>(buffer.readUInt()));
-        flatFlags = buffer.readUInt();
-
-        this->setStrokeCap(static_cast<SkPaint::Cap>(buffer.readUInt()));
-        this->setStrokeJoin(static_cast<SkPaint::Join>(buffer.readUInt()));
-        this->setStyle(static_cast<SkPaint::Style>(buffer.readUInt()));
-        this->setTextEncoding(static_cast<SkPaint::TextEncoding>(buffer.readUInt()));
+        flatFlags = unpack_paint_flags(this, *pod++);
     }
+
+    uint32_t tmp = *pod++;
+    this->setStrokeCap(static_cast<Cap>((tmp >> 24) & 0xFF));
+    this->setStrokeJoin(static_cast<Join>((tmp >> 16) & 0xFF));
+    this->setStyle(static_cast<Style>((tmp >> 8) & 0xFF));
+    this->setTextEncoding(static_cast<TextEncoding>((tmp >> 0) & 0xFF));
 
     if (flatFlags & kHasTypeface_FlatFlag) {
         this->setTypeface(buffer.readTypeface());
@@ -2171,7 +2233,7 @@ void SkPaint::unflatten(SkFlattenableReadBuffer& buffer) {
         SkSafeUnref(this->setImageFilter(buffer.readImageFilter()));
 
         if (buffer.readBool()) {
-            this->setAnnotation(SkNEW_ARGS(SkAnnotation, (buffer)))->unref();
+            this->setAnnotation(SkAnnotation::Create(buffer))->unref();
         }
     } else {
         this->setPathEffect(NULL);
@@ -2201,18 +2263,21 @@ void SkPaint::unflatten(SkFlattenableReadBuffer& buffer) {
 SkShader* SkPaint::setShader(SkShader* shader) {
     GEN_ID_INC_EVAL(shader != fShader);
     SkRefCnt_SafeAssign(fShader, shader);
+    fDirtyBits = set_mask(fDirtyBits, kShader_DirtyBit, shader != NULL);
     return shader;
 }
 
 SkColorFilter* SkPaint::setColorFilter(SkColorFilter* filter) {
     GEN_ID_INC_EVAL(filter != fColorFilter);
     SkRefCnt_SafeAssign(fColorFilter, filter);
+    fDirtyBits = set_mask(fDirtyBits, kColorFilter_DirtyBit, filter != NULL);
     return filter;
 }
 
 SkXfermode* SkPaint::setXfermode(SkXfermode* mode) {
     GEN_ID_INC_EVAL(mode != fXfermode);
     SkRefCnt_SafeAssign(fXfermode, mode);
+    fDirtyBits = set_mask(fDirtyBits, kXfermode_DirtyBit, mode != NULL);
     return mode;
 }
 
@@ -2220,18 +2285,21 @@ SkXfermode* SkPaint::setXfermodeMode(SkXfermode::Mode mode) {
     SkSafeUnref(fXfermode);
     fXfermode = SkXfermode::Create(mode);
     GEN_ID_INC;
+    fDirtyBits = set_mask(fDirtyBits, kXfermode_DirtyBit, fXfermode != NULL);
     return fXfermode;
 }
 
 SkPathEffect* SkPaint::setPathEffect(SkPathEffect* effect) {
     GEN_ID_INC_EVAL(effect != fPathEffect);
     SkRefCnt_SafeAssign(fPathEffect, effect);
+    fDirtyBits = set_mask(fDirtyBits, kPathEffect_DirtyBit, effect != NULL);
     return effect;
 }
 
 SkMaskFilter* SkPaint::setMaskFilter(SkMaskFilter* filter) {
     GEN_ID_INC_EVAL(filter != fMaskFilter);
     SkRefCnt_SafeAssign(fMaskFilter, filter);
+    fDirtyBits = set_mask(fDirtyBits, kMaskFilter_DirtyBit, filter != NULL);
     return filter;
 }
 
@@ -2302,10 +2370,14 @@ const SkRect& SkPaint::doComputeFastBounds(const SkRect& origSrc,
         this->getMaskFilter()->computeFastBounds(*storage, storage);
     }
 
+    if (this->getImageFilter()) {
+        this->getImageFilter()->computeFastBounds(*storage, storage);
+    }
+
     return *storage;
 }
 
-#ifdef SK_DEVELOPER
+#ifndef SK_IGNORE_TO_STRING
 void SkPaint::toString(SkString* str) const {
     str->append("<dl><dt>SkPaint:</dt><dd><dl>");
 
@@ -2475,7 +2547,6 @@ void SkPaint::toString(SkString* str) const {
 }
 #endif
 
-
 ///////////////////////////////////////////////////////////////////////////////
 
 static bool has_thick_frame(const SkPaint& paint) {
@@ -2513,7 +2584,7 @@ SkTextToPathIter::SkTextToPathIter( const char text[], size_t length,
         fPaint.setPathEffect(NULL);
     }
 
-    fCache = fPaint.detachCache(NULL, NULL);
+    fCache = fPaint.detachCache(NULL, NULL, false);
 
     SkPaint::Style  style = SkPaint::kFill_Style;
     SkPathEffect*   pe = NULL;
@@ -2597,4 +2668,98 @@ bool SkPaint::nothingToDraw() const {
         }
     }
     return false;
+}
+
+void SkPaint::setBitfields(uint32_t bitfields) {
+    fBitfields = bitfields;
+}
+
+inline static unsigned popcount(uint8_t x) {
+    // As in Hacker's delight, adapted for just 8 bits.
+    x = (x & 0x55) + ((x >> 1) & 0x55);  // a b c d w x y z -> a+b c+d w+x y+z
+    x = (x & 0x33) + ((x >> 2) & 0x33);  // a+b c+d w+x y+z -> a+b+c+d w+x+y+z
+    x = (x & 0x0F) + ((x >> 4) & 0x0F);  // a+b+c+d w+x+y+z -> a+b+c+d+w+x+y+z
+    return x;
+}
+
+void SkPaint::FlatteningTraits::Flatten(SkWriteBuffer& buffer, const SkPaint& paint) {
+    const uint32_t dirty = paint.fDirtyBits;
+
+    // Each of the low 7 dirty bits corresponds to a 4-byte flat value,
+    // plus one for the dirty bits and one for the bitfields
+    const size_t flatBytes = 4 * (popcount(dirty & kPOD_DirtyBitMask) + 2);
+    SkASSERT(flatBytes <= 32);
+    uint32_t* u32 = buffer.reserve(flatBytes);
+    *u32++ = dirty;
+    *u32++ = paint.getBitfields();
+    if (0 == dirty) {
+        return;
+    }
+
+#define F(dst, field) if (dirty & k##field##_DirtyBit) *dst++ = paint.get##field()
+    F(u32, Color);
+    SkScalar* f32 = reinterpret_cast<SkScalar*>(u32);
+    F(f32, TextSize);
+    F(f32, TextScaleX);
+    F(f32, TextSkewX);
+    F(f32, StrokeWidth);
+    F(f32, StrokeMiter);
+#undef F
+#define F(field) if (dirty & k##field##_DirtyBit) buffer.writeFlattenable(paint.get##field())
+    F(PathEffect);
+    F(Shader);
+    F(Xfermode);
+    F(MaskFilter);
+    F(ColorFilter);
+    F(Rasterizer);
+    F(Looper);
+    F(ImageFilter);
+#undef F
+    if (dirty & kTypeface_DirtyBit) buffer.writeTypeface(paint.getTypeface());
+    if (dirty & kAnnotation_DirtyBit) paint.getAnnotation()->writeToBuffer(buffer);
+#ifdef SK_BUILD_FOR_ANDROID
+    if (dirty & kPaintOptionsAndroid_DirtyBit) paint.getPaintOptionsAndroid().flatten(buffer);
+#endif
+}
+
+void SkPaint::FlatteningTraits::Unflatten(SkReadBuffer& buffer, SkPaint* paint) {
+    const uint32_t dirty = buffer.readUInt();
+    paint->setBitfields(buffer.readUInt());
+    if (dirty == 0) {
+        return;
+    }
+#define F(field, reader) if (dirty & k##field##_DirtyBit) paint->set##field(buffer.reader())
+// Same function, except it unrefs the object newly set on the paint:
+#define F_UNREF(field, reader)                      \
+    if (dirty & k##field##_DirtyBit)                \
+        paint->set##field(buffer.reader())->unref()
+
+    F(Color,       readUInt);
+    F(TextSize,    readScalar);
+    F(TextScaleX,  readScalar);
+    F(TextSkewX,   readScalar);
+    F(StrokeWidth, readScalar);
+    F(StrokeMiter, readScalar);
+    F_UNREF(PathEffect,  readPathEffect);
+    F_UNREF(Shader,      readShader);
+    F_UNREF(Xfermode,    readXfermode);
+    F_UNREF(MaskFilter,  readMaskFilter);
+    F_UNREF(ColorFilter, readColorFilter);
+    F_UNREF(Rasterizer,  readRasterizer);
+    F_UNREF(Looper,      readDrawLooper);
+    F_UNREF(ImageFilter, readImageFilter);
+    F(Typeface,    readTypeface);
+#undef F
+#undef F_UNREF
+    if (dirty & kAnnotation_DirtyBit) {
+        paint->setAnnotation(SkAnnotation::Create(buffer))->unref();
+    }
+#ifdef SK_BUILD_FOR_ANDROID
+    if (dirty & kPaintOptionsAndroid_DirtyBit) {
+        SkPaintOptionsAndroid options;
+        options.unflatten(buffer);
+        paint->setPaintOptionsAndroid(options);
+    }
+#endif
+    SkASSERT(dirty == paint->fDirtyBits);
 }

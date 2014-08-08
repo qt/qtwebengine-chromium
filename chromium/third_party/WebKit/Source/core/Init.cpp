@@ -31,32 +31,57 @@
 #include "config.h"
 #include "Init.h"
 
-#include "EventNames.h"
-#include "EventTargetNames.h"
-#include "EventTypeNames.h"
-#include "FetchInitiatorTypeNames.h"
-#include "FontFamilyNames.h"
-#include "HTMLNames.h"
-#include "InputTypeNames.h"
-#include "MathMLNames.h"
-#include "SVGNames.h"
-#include "XLinkNames.h"
-#include "XMLNSNames.h"
-#include "XMLNames.h"
-#include "core/css/MediaFeatureNames.h"
+#include "core/EventNames.h"
+#include "core/EventTargetNames.h"
+#include "core/EventTypeNames.h"
+#include "core/FetchInitiatorTypeNames.h"
+#include "core/HTMLNames.h"
+#include "core/HTMLTokenizerNames.h"
+#include "core/InputTypeNames.h"
+#include "core/MathMLNames.h"
+#include "core/MediaFeatureNames.h"
+#include "core/MediaTypeNames.h"
+#include "core/SVGNames.h"
+#include "core/XLinkNames.h"
+#include "core/XMLNSNames.h"
+#include "core/XMLNames.h"
+#include "core/dom/Document.h"
+#include "core/events/EventFactory.h"
+#include "core/html/parser/HTMLParserThread.h"
 #include "platform/EventTracer.h"
+#include "platform/FontFamilyNames.h"
 #include "platform/Partitions.h"
 #include "platform/PlatformThreadData.h"
+#include "platform/heap/Heap.h"
 #include "wtf/text/StringStatics.h"
 
 namespace WebCore {
 
-void init()
+void CoreInitializer::initEventNames()
 {
-    static bool isInited;
-    if (isInited)
+    EventNames::init();
+}
+
+void CoreInitializer::initEventTargetNames()
+{
+    EventTargetNames::init();
+}
+
+void CoreInitializer::registerEventFactory()
+{
+    static bool isRegistered = false;
+    if (isRegistered)
         return;
-    isInited = true;
+    isRegistered = true;
+
+    Document::registerEventFactory(EventFactory::create());
+}
+
+void CoreInitializer::init()
+{
+    if (m_isInited)
+        return;
+    m_isInited = true;
 
     // It would make logical sense to do this and WTF::StringStatics::init() in
     // WTF::initialize() but there are ordering dependencies.
@@ -67,27 +92,39 @@ void init()
     MathMLNames::init();
     XMLNSNames::init();
     XMLNames::init();
-    EventNames::init();
-    EventTargetNames::init();
+
+    initEventNames();
+    initEventTargetNames();
     EventTypeNames::init();
     FetchInitiatorTypeNames::init();
     FontFamilyNames::init();
+    HTMLTokenizerNames::init();
     InputTypeNames::init();
     MediaFeatureNames::init();
+    MediaTypeNames::init();
+
     WTF::StringStatics::init();
     QualifiedName::init();
     Partitions::init();
     EventTracer::initialize();
+
+    registerEventFactory();
 
     // Ensure that the main thread's thread-local data is initialized before
     // starting any worker threads.
     PlatformThreadData::current();
 
     StringImpl::freezeStaticStrings();
+
+    // Creates HTMLParserThread::shared, but does not start the thread.
+    HTMLParserThread::init();
 }
 
 void shutdown()
 {
+    // Make sure we stop the HTMLParserThread before Platform::current() is cleared.
+    HTMLParserThread::shutdown();
+
     Partitions::shutdown();
 }
 

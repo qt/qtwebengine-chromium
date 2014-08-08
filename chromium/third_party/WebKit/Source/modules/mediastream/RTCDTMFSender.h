@@ -28,23 +28,27 @@
 
 #include "bindings/v8/ScriptWrappable.h"
 #include "core/dom/ActiveDOMObject.h"
-#include "core/events/EventTarget.h"
+#include "modules/EventTargetModules.h"
 #include "platform/Timer.h"
-#include "platform/mediastream/RTCDTMFSenderHandlerClient.h"
+#include "public/platform/WebRTCDTMFSenderHandlerClient.h"
 #include "wtf/RefCounted.h"
+
+namespace blink {
+class WebRTCDTMFSenderHandler;
+class WebRTCPeerConnectionHandler;
+}
 
 namespace WebCore {
 
 class ExceptionState;
 class MediaStreamTrack;
-class RTCDTMFSenderHandler;
-class RTCPeerConnectionHandler;
 
-class RTCDTMFSender : public RefCounted<RTCDTMFSender>, public ScriptWrappable, public EventTargetWithInlineData, public RTCDTMFSenderHandlerClient, public ActiveDOMObject {
+class RTCDTMFSender FINAL : public RefCountedWillBeRefCountedGarbageCollected<RTCDTMFSender>, public ScriptWrappable, public EventTargetWithInlineData, public blink::WebRTCDTMFSenderHandlerClient, public ActiveDOMObject {
     REFCOUNTED_EVENT_TARGET(RTCDTMFSender);
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(RTCDTMFSender);
 public:
-    static PassRefPtr<RTCDTMFSender> create(ExecutionContext*, RTCPeerConnectionHandler*, PassRefPtr<MediaStreamTrack>, ExceptionState&);
-    ~RTCDTMFSender();
+    static PassRefPtrWillBeRawPtr<RTCDTMFSender> create(ExecutionContext*, blink::WebRTCPeerConnectionHandler*, PassRefPtrWillBeRawPtr<MediaStreamTrack>, ExceptionState&);
+    virtual ~RTCDTMFSender();
 
     bool canInsertDTMF() const;
     MediaStreamTrack* track() const;
@@ -65,25 +69,27 @@ public:
     // ActiveDOMObject
     virtual void stop() OVERRIDE;
 
-private:
-    RTCDTMFSender(ExecutionContext*, PassRefPtr<MediaStreamTrack>, PassOwnPtr<RTCDTMFSenderHandler>);
+    virtual void trace(Visitor*) OVERRIDE;
 
-    void scheduleDispatchEvent(PassRefPtr<Event>);
+private:
+    RTCDTMFSender(ExecutionContext*, PassRefPtrWillBeRawPtr<MediaStreamTrack>, PassOwnPtr<blink::WebRTCDTMFSenderHandler>);
+
+    void scheduleDispatchEvent(PassRefPtrWillBeRawPtr<Event>);
     void scheduledEventTimerFired(Timer<RTCDTMFSender>*);
 
-    // RTCDTMFSenderHandlerClient
-    virtual void didPlayTone(const String&) OVERRIDE;
+    // blink::WebRTCDTMFSenderHandlerClient
+    virtual void didPlayTone(const blink::WebString&) OVERRIDE;
 
-    RefPtr<MediaStreamTrack> m_track;
+    RefPtrWillBeMember<MediaStreamTrack> m_track;
     long m_duration;
     long m_interToneGap;
 
-    OwnPtr<RTCDTMFSenderHandler> m_handler;
+    OwnPtr<blink::WebRTCDTMFSenderHandler> m_handler;
 
     bool m_stopped;
 
     Timer<RTCDTMFSender> m_scheduledEventTimer;
-    Vector<RefPtr<Event> > m_scheduledEvents;
+    WillBeHeapVector<RefPtrWillBeMember<Event> > m_scheduledEvents;
 };
 
 } // namespace WebCore

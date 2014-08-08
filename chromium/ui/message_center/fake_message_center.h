@@ -26,9 +26,10 @@ class FakeMessageCenter : public MessageCenter {
   virtual size_t NotificationCount() const OVERRIDE;
   virtual size_t UnreadNotificationCount() const OVERRIDE;
   virtual bool HasPopupNotifications() const OVERRIDE;
-  virtual bool HasNotification(const std::string& id) OVERRIDE;
   virtual bool IsQuietMode() const OVERRIDE;
   virtual bool HasClickedListener(const std::string& id) OVERRIDE;
+  virtual message_center::Notification* FindVisibleNotificationById(
+      const std::string& id) OVERRIDE;
   virtual const NotificationList::Notifications& GetVisibleNotifications()
       OVERRIDE;
   virtual NotificationList::PopupNotifications GetPopupNotifications() OVERRIDE;
@@ -51,13 +52,14 @@ class FakeMessageCenter : public MessageCenter {
                                          const gfx::Image& image) OVERRIDE;
   virtual void DisableNotificationsByNotifier(
       const NotifierId& notifier_id) OVERRIDE;
-  virtual void ExpandNotification(const std::string& id) OVERRIDE;
   virtual void ClickOnNotification(const std::string& id) OVERRIDE;
   virtual void ClickOnNotificationButton(const std::string& id,
                                          int button_index) OVERRIDE;
   virtual void MarkSinglePopupAsShown(const std::string& id,
                                       bool mark_notification_as_read) OVERRIDE;
-  virtual void DisplayedNotification(const std::string& id) OVERRIDE;
+  virtual void DisplayedNotification(
+      const std::string& id,
+      const DisplaySource source) OVERRIDE;
   virtual void SetNotifierSettingsProvider(
       NotifierSettingsProvider* provider) OVERRIDE;
   virtual NotifierSettingsProvider* GetNotifierSettingsProvider() OVERRIDE;

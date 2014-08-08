@@ -26,6 +26,7 @@
 #ifndef ScrollbarThemeOverlay_h
 #define ScrollbarThemeOverlay_h
 
+#include "platform/graphics/Color.h"
 #include "platform/scroll/ScrollbarTheme.h"
 
 namespace WebCore {
@@ -36,7 +37,8 @@ class PLATFORM_EXPORT ScrollbarThemeOverlay : public ScrollbarTheme {
 public:
     enum HitTestBehavior { AllowHitTest, DisallowHitTest };
 
-    ScrollbarThemeOverlay(int thumbThickness, int scrollbarMargin, HitTestBehavior, Color = Color(128, 128, 128, 128));
+    ScrollbarThemeOverlay(int thumbThickness, int scrollbarMargin, HitTestBehavior);
+    ScrollbarThemeOverlay(int thumbThickness, int scrollbarMargin, HitTestBehavior, Color);
     virtual ~ScrollbarThemeOverlay() { }
 
     virtual int scrollbarThickness(ScrollbarControlSize) OVERRIDE;
@@ -61,6 +63,7 @@ private:
     int m_scrollbarMargin;
     HitTestBehavior m_allowHitTest;
     Color m_color;
+    const bool m_useSolidColor;
 };
 
 } // namespace WebCore

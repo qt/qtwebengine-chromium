@@ -17,7 +17,6 @@
        '<(webrtc_root)/common_video/common_video.gyp:common_video',
 
         # ModulesShared
-        '<(webrtc_root)/modules/modules.gyp:media_file',
         '<(webrtc_root)/modules/modules.gyp:rtp_rtcp',
         '<(webrtc_root)/modules/modules.gyp:webrtc_utility',
 
@@ -39,7 +38,6 @@
         'include/vie_base.h',
         'include/vie_capture.h',
         'include/vie_codec.h',
-        'include/vie_encryption.h',
         'include/vie_errors.h',
         'include/vie_external_codec.h',
         'include/vie_image_process.h',
@@ -56,7 +54,6 @@
         'vie_capture_impl.h',
         'vie_codec_impl.h',
         'vie_defines.h',
-        'vie_encryption_impl.h',
         'vie_external_codec_impl.h',
         'vie_image_process_impl.h',
         'vie_impl.h',
@@ -89,7 +86,6 @@
         'vie_base_impl.cc',
         'vie_capture_impl.cc',
         'vie_codec_impl.cc',
-        'vie_encryption_impl.cc',
         'vie_external_codec_impl.cc',
         'vie_image_process_impl.cc',
         'vie_impl.cc',
@@ -135,12 +131,14 @@
             'encoder_state_feedback_unittest.cc',
             'overuse_frame_detector_unittest.cc',
             'stream_synchronization_unittest.cc',
+            'vie_capturer_unittest.cc',
+            'vie_codec_unittest.cc',
             'vie_remb_unittest.cc',
           ],
           'conditions': [
             # TODO(henrike): remove build_with_chromium==1 when the bots are
             # using Chromium's buildbots.
-            ['build_with_chromium==1 and OS=="android" and gtest_target_type=="shared_library"', {
+            ['build_with_chromium==1 and OS=="android"', {
               'dependencies': [
                 '<(DEPTH)/testing/android/native_test.gyp:native_test_native_code',
               ],
@@ -151,7 +149,7 @@
       'conditions': [
         # TODO(henrike): remove build_with_chromium==1 when the bots are using
         # Chromium's buildbots.
-        ['build_with_chromium==1 and OS=="android" and gtest_target_type=="shared_library"', {
+        ['build_with_chromium==1 and OS=="android"', {
           'targets': [
             {
               'target_name': 'video_engine_core_unittests_apk_target',

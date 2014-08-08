@@ -29,7 +29,8 @@
  */
 
 #include "config.h"
-#include "WebInputEvent.h"
+#include "public/web/WebInputEvent.h"
+
 #include "platform/KeyboardCodes.h"
 #include "wtf/Assertions.h"
 #include "wtf/StringExtras.h"
@@ -52,7 +53,7 @@ struct SameSizeAsWebMouseEvent : public SameSizeAsWebInputEvent {
 };
 
 struct SameSizeAsWebMouseWheelEvent : public SameSizeAsWebMouseEvent {
-    int mousewheelData[10];
+    int mousewheelData[12];
 };
 
 struct SameSizeAsWebGestureEvent : public SameSizeAsWebInputEvent {
@@ -61,7 +62,7 @@ struct SameSizeAsWebGestureEvent : public SameSizeAsWebInputEvent {
 
 struct SameSizeAsWebTouchEvent : public SameSizeAsWebInputEvent {
     WebTouchPoint touchPoints[3 * WebTouchEvent::touchesLengthCap];
-    int touchData[3];
+    int touchData[4];
 };
 
 COMPILE_ASSERT(sizeof(WebInputEvent) == sizeof(SameSizeAsWebInputEvent), WebInputEvent_has_gaps);

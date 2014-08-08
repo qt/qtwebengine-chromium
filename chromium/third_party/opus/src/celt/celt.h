@@ -66,6 +66,10 @@ typedef struct {
 
 /* Encoder/decoder Requests */
 
+/* Expose this option again when variable framesize actually works */
+#define OPUS_FRAMESIZE_VARIABLE              5010 /**< Optimize the frame size dynamically */
+
+
 #define CELT_SET_PREDICTION_REQUEST    10002
 /** Controls the use of interframe prediction.
     0=Independent frames
@@ -118,7 +122,8 @@ int celt_encoder_get_size(int channels);
 
 int celt_encode_with_ec(OpusCustomEncoder * OPUS_RESTRICT st, const opus_val16 * pcm, int frame_size, unsigned char *compressed, int nbCompressedBytes, ec_enc *enc);
 
-int celt_encoder_init(CELTEncoder *st, opus_int32 sampling_rate, int channels);
+int celt_encoder_init(CELTEncoder *st, opus_int32 sampling_rate, int channels,
+                      int arch);
 
 
 
@@ -138,7 +143,7 @@ int celt_decode_with_ec(OpusCustomDecoder * OPUS_RESTRICT st, const unsigned cha
 #ifdef CUSTOM_MODES
 #define OPUS_CUSTOM_NOSTATIC
 #else
-#define OPUS_CUSTOM_NOSTATIC static inline
+#define OPUS_CUSTOM_NOSTATIC static OPUS_INLINE
 #endif
 
 static const unsigned char trim_icdf[11] = {126, 124, 119, 109, 87, 41, 19, 9, 4, 2, 0};
@@ -163,7 +168,7 @@ static const unsigned char fromOpusTable[16] = {
       0x00, 0x08, 0x10, 0x18
 };
 
-static inline int toOpus(unsigned char c)
+static OPUS_INLINE int toOpus(unsigned char c)
 {
    int ret=0;
    if (c<0xA0)
@@ -174,7 +179,7 @@ static inline int toOpus(unsigned char c)
       return ret|(c&0x7);
 }
 
-static inline int fromOpus(unsigned char c)
+static OPUS_INLINE int fromOpus(unsigned char c)
 {
    if (c<0x80)
       return -1;
@@ -190,7 +195,7 @@ extern const signed char tf_select_table[4][8];
 
 int resampling_factor(opus_int32 rate);
 
-void preemphasis(const opus_val16 * OPUS_RESTRICT pcmp, celt_sig * OPUS_RESTRICT inp,
+void celt_preemphasis(const opus_val16 * OPUS_RESTRICT pcmp, celt_sig * OPUS_RESTRICT inp,
                         int N, int CC, int upsample, const opus_val16 *coef, celt_sig *mem, int clip);
 
 void comb_filter(opus_val32 *y, opus_val32 *x, int T0, int T1, int N,

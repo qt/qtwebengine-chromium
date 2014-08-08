@@ -9,21 +9,36 @@
 namespace net {
 namespace tools {
 
-QuicDefaultPacketWriter::QuicDefaultPacketWriter(int fd) : fd_(fd) {}
+QuicDefaultPacketWriter::QuicDefaultPacketWriter(int fd)
+    : fd_(fd),
+      write_blocked_(false) {}
 
 QuicDefaultPacketWriter::~QuicDefaultPacketWriter() {}
 
 WriteResult QuicDefaultPacketWriter::WritePacket(
-    const char* buffer, size_t buf_len,
-    const net::IPAddressNumber& self_address,
-    const net::IPEndPoint& peer_address,
-    QuicBlockedWriterInterface* blocked_writer) {
-  return QuicSocketUtils::WritePacket(fd_, buffer, buf_len,
-                                      self_address, peer_address);
+    const char* buffer,
+    size_t buf_len,
+    const IPAddressNumber& self_address,
+    const IPEndPoint& peer_address) {
+  DCHECK(!IsWriteBlocked());
+  WriteResult result = QuicSocketUtils::WritePacket(
+      fd_, buffer, buf_len, self_address, peer_address);
+  if (result.status == WRITE_STATUS_BLOCKED) {
+    write_blocked_ = true;
+  }
+  return result;
 }
 
 bool QuicDefaultPacketWriter::IsWriteBlockedDataBuffered() const {
   return false;
+}
+
+bool QuicDefaultPacketWriter::IsWriteBlocked() const {
+  return write_blocked_;
+}
+
+void QuicDefaultPacketWriter::SetWritable() {
+  write_blocked_ = false;
 }
 
 }  // namespace tools

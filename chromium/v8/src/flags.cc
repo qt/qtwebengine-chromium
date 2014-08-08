@@ -1,53 +1,27 @@
 // Copyright 2006-2008 the V8 project authors. All rights reserved.
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-//       copyright notice, this list of conditions and the following
-//       disclaimer in the documentation and/or other materials provided
-//       with the distribution.
-//     * Neither the name of Google Inc. nor the names of its
-//       contributors may be used to endorse or promote products derived
-//       from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
 #include <ctype.h>
 #include <stdlib.h>
 
-#include "v8.h"
+#include "src/v8.h"
 
-#include "platform.h"
-#include "smart-pointers.h"
-#include "string-stream.h"
-
-#if V8_TARGET_ARCH_ARM
-#include "arm/assembler-arm-inl.h"
-#endif
+#include "src/assembler.h"
+#include "src/platform.h"
+#include "src/smart-pointers.h"
+#include "src/string-stream.h"
 
 namespace v8 {
 namespace internal {
 
 // Define all of our flags.
 #define FLAG_MODE_DEFINE
-#include "flag-definitions.h"
+#include "src/flag-definitions.h"
 
 // Define all of our flags default values.
 #define FLAG_MODE_DEFINE_DEFAULTS
-#include "flag-definitions.h"
+#include "src/flag-definitions.h"
 
 namespace {
 
@@ -186,7 +160,7 @@ struct Flag {
 
 Flag flags[] = {
 #define FLAG_MODE_META
-#include "flag-definitions.h"
+#include "src/flag-definitions.h"
 };
 
 const size_t num_flags = sizeof(flags) / sizeof(*flags);
@@ -331,7 +305,7 @@ static void SplitArgument(const char* arg,
       // make a copy so we can NUL-terminate flag name
       size_t n = arg - *name;
       CHECK(n < static_cast<size_t>(buffer_size));  // buffer is too small
-      OS::MemCopy(buffer, *name, n);
+      MemCopy(buffer, *name, n);
       buffer[n] = '\0';
       *name = buffer;
       // get the value
@@ -501,7 +475,7 @@ static char* SkipBlackSpace(char* p) {
 int FlagList::SetFlagsFromString(const char* str, int len) {
   // make a 0-terminated copy of str
   ScopedVector<char> copy0(len + 1);
-  OS::MemCopy(copy0.start(), str, len);
+  MemCopy(copy0.start(), str, len);
   copy0[len] = '\0';
 
   // strip leading white space
@@ -543,11 +517,8 @@ void FlagList::ResetAllFlags() {
 
 // static
 void FlagList::PrintHelp() {
-#if V8_TARGET_ARCH_ARM
   CpuFeatures::PrintTarget();
-  CpuFeatures::Probe();
   CpuFeatures::PrintFeatures();
-#endif  // V8_TARGET_ARCH_ARM
 
   printf("Usage:\n");
   printf("  shell [options] -e string\n");
@@ -566,7 +537,7 @@ void FlagList::PrintHelp() {
     Flag* f = &flags[i];
     SmartArrayPointer<const char> value = ToString(f);
     printf("  --%s (%s)\n        type: %s  default: %s\n",
-           f->name(), f->comment(), Type2String(f->type()), *value);
+           f->name(), f->comment(), Type2String(f->type()), value.get());
   }
 }
 
@@ -574,7 +545,7 @@ void FlagList::PrintHelp() {
 // static
 void FlagList::EnforceFlagImplications() {
 #define FLAG_MODE_DEFINE_IMPLICATIONS
-#include "flag-definitions.h"
+#include "src/flag-definitions.h"
 #undef FLAG_MODE_DEFINE_IMPLICATIONS
 }
 

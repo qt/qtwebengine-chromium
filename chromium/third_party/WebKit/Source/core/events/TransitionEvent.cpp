@@ -27,8 +27,6 @@
 #include "config.h"
 #include "core/events/TransitionEvent.h"
 
-#include "core/events/ThreadLocalEventNames.h"
-
 namespace WebCore {
 
 TransitionEventInit::TransitionEventInit()
@@ -82,6 +80,11 @@ const String& TransitionEvent::pseudoElement() const
 const AtomicString& TransitionEvent::interfaceName() const
 {
     return EventNames::TransitionEvent;
+}
+
+void TransitionEvent::trace(Visitor* visitor)
+{
+    Event::trace(visitor);
 }
 
 } // namespace WebCore

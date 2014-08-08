@@ -55,6 +55,7 @@
 #define BASE_METRICS_FIELD_TRIAL_H_
 
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -412,9 +413,12 @@ class BASE_EXPORT FieldTrialList {
   // browser process into this non-browser process, but could also be invoked
   // through a command line argument to the browser process. The created field
   // trials are marked as "used" for the purposes of active trial reporting if
-  // |mode| is ACTIVATE_TRIALS.
-  static bool CreateTrialsFromString(const std::string& prior_trials,
-                                     FieldTrialActivationMode mode);
+  // |mode| is ACTIVATE_TRIALS. Trial names in |ignored_trial_names| are ignored
+  // when parsing |prior_trials|.
+  static bool CreateTrialsFromString(
+      const std::string& prior_trials,
+      FieldTrialActivationMode mode,
+      const std::set<std::string>& ignored_trial_names);
 
   // Create a FieldTrial with the given |name| and using 100% probability for
   // the FieldTrial, force FieldTrial to have the same group string as
@@ -441,7 +445,7 @@ class BASE_EXPORT FieldTrialList {
 
  private:
   // A map from FieldTrial names to the actual instances.
-  typedef std::map<std::string, FieldTrial*> RegistrationList;
+  typedef std::map<std::string, FieldTrial*> RegistrationMap;
 
   // If one-time randomization is enabled, returns a weak pointer to the
   // corresponding EntropyProvider. Otherwise, returns NULL.
@@ -466,7 +470,7 @@ class BASE_EXPORT FieldTrialList {
 
   // Lock for access to registered_.
   base::Lock lock_;
-  RegistrationList registered_;
+  RegistrationMap registered_;
 
   // Entropy provider to be used for one-time randomized field trials. If NULL,
   // one-time randomization is not supported.

@@ -1,29 +1,6 @@
 // Copyright 2012 the V8 project authors. All rights reserved.
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-//       copyright notice, this list of conditions and the following
-//       disclaimer in the documentation and/or other materials provided
-//       with the distribution.
-//     * Neither the name of Google Inc. nor the names of its
-//       contributors may be used to endorse or promote products derived
-//       from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
 // This file relies on the fact that the following declaration has been made
 // in runtime.js:
@@ -103,7 +80,7 @@ function RegExpConstructor(pattern, flags) {
 // were called again.  In SpiderMonkey, this method returns the regexp object.
 // In JSC, it returns undefined.  For compatibility with JSC, we match their
 // behavior.
-function RegExpCompile(pattern, flags) {
+function RegExpCompileJS(pattern, flags) {
   // Both JSC and SpiderMonkey treat a missing pattern argument as the
   // empty subject string, and an actual undefined value passed as the
   // pattern as the string 'undefined'.  Note that JSC is inconsistent
@@ -131,23 +108,30 @@ function DoRegExpExec(regexp, string, index) {
 }
 
 
-function BuildResultFromMatchInfo(lastMatchInfo, s) {
-  var numResults = NUMBER_OF_CAPTURES(lastMatchInfo) >> 1;
-  var start = lastMatchInfo[CAPTURE0];
-  var end = lastMatchInfo[CAPTURE1];
-  var result = %_RegExpConstructResult(numResults, start, s);
-  result[0] = %_SubString(s, start, end);
+// This is kind of performance sensitive, so we want to avoid unnecessary
+// type checks on inputs. But we also don't want to inline it several times
+// manually, so we use a macro :-)
+macro RETURN_NEW_RESULT_FROM_MATCH_INFO(MATCHINFO, STRING)
+  var numResults = NUMBER_OF_CAPTURES(MATCHINFO) >> 1;
+  var start = MATCHINFO[CAPTURE0];
+  var end = MATCHINFO[CAPTURE1];
+  // Calculate the substring of the first match before creating the result array
+  // to avoid an unnecessary write barrier storing the first result.
+  var first = %_SubString(STRING, start, end);
+  var result = %_RegExpConstructResult(numResults, start, STRING);
+  result[0] = first;
+  if (numResults == 1) return result;
   var j = REGEXP_FIRST_CAPTURE + 2;
   for (var i = 1; i < numResults; i++) {
-    start = lastMatchInfo[j++];
+    start = MATCHINFO[j++];
     if (start != -1) {
-      end = lastMatchInfo[j];
-      result[i] = %_SubString(s, start, end);
+      end = MATCHINFO[j];
+      result[i] = %_SubString(STRING, start, end);
     }
     j++;
   }
   return result;
-}
+endmacro
 
 
 function RegExpExecNoTests(regexp, string, start) {
@@ -155,7 +139,7 @@ function RegExpExecNoTests(regexp, string, start) {
   var matchInfo = %_RegExpExec(regexp, string, start, lastMatchInfo);
   if (matchInfo !== null) {
     lastMatchInfoOverride = null;
-    return BuildResultFromMatchInfo(matchInfo, string);
+    RETURN_NEW_RESULT_FROM_MATCH_INFO(matchInfo, string);
   }
   regexp.lastIndex = 0;
   return null;
@@ -185,7 +169,6 @@ function RegExpExec(string) {
     i = 0;
   }
 
-  %_Log('regexp', 'regexp-exec,%0r,%1S,%2i', [this, string, lastIndex]);
   // matchIndices is either null or the lastMatchInfo array.
   var matchIndices = %_RegExpExec(this, string, i, lastMatchInfo);
 
@@ -199,7 +182,7 @@ function RegExpExec(string) {
   if (global) {
     this.lastIndex = lastMatchInfo[CAPTURE1];
   }
-  return BuildResultFromMatchInfo(matchIndices, string);
+  RETURN_NEW_RESULT_FROM_MATCH_INFO(matchIndices, string);
 }
 
 
@@ -229,7 +212,6 @@ function RegExpTest(string) {
       this.lastIndex = 0;
       return false;
     }
-    %_Log('regexp', 'regexp-exec,%0r,%1S,%2i', [this, string, lastIndex]);
     // matchIndices is either null or the lastMatchInfo array.
     var matchIndices = %_RegExpExec(this, string, i, lastMatchInfo);
     if (IS_NULL(matchIndices)) {
@@ -250,7 +232,6 @@ function RegExpTest(string) {
         %_StringCharCodeAt(regexp.source, 2) != 63) {  // '?'
       regexp = TrimRegExp(regexp);
     }
-    %_Log('regexp', 'regexp-exec,%0r,%1S,%2i', [regexp, string, lastIndex]);
     // matchIndices is either null or the lastMatchInfo array.
     var matchIndices = %_RegExpExec(regexp, string, 0, lastMatchInfo);
     if (IS_NULL(matchIndices)) {
@@ -407,7 +388,7 @@ function SetUpRegExp() {
     "exec", RegExpExec,
     "test", RegExpTest,
     "toString", RegExpToString,
-    "compile", RegExpCompile
+    "compile", RegExpCompileJS
   ));
 
   // The length of compile is 1 in SpiderMonkey.

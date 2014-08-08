@@ -29,7 +29,6 @@
 #include "platform/graphics/Pattern.h"
 #include "platform/graphics/UnacceleratedImageBufferSurface.h"
 #include "platform/graphics/filters/SkiaImageFilterBuilder.h"
-#include "platform/graphics/gpu/AcceleratedImageBufferSurface.h"
 #include "platform/text/TextStream.h"
 #include "platform/transforms/AffineTransform.h"
 #include "third_party/skia/include/core/SkDevice.h"
@@ -44,6 +43,11 @@ FETile::FETile(Filter* filter)
 PassRefPtr<FETile> FETile::create(Filter* filter)
 {
     return adoptRef(new FETile(filter));
+}
+
+FloatRect FETile::mapPaintRect(const FloatRect& rect, bool forward)
+{
+    return forward ? maxEffectRect() : inputEffect(0)->maxEffectRect();
 }
 
 void FETile::applySoftware()
@@ -64,25 +68,21 @@ void FETile::applySoftware()
     if (in->filterEffectType() == FilterEffectTypeSourceInput) {
         Filter* filter = this->filter();
         tileRect = filter->absoluteFilterRegion();
-        tileRect.scale(filter->filterResolution().width(), filter->filterResolution().height());
     }
 
     OwnPtr<ImageBufferSurface> surface;
     IntSize intTileSize = roundedIntSize(tileRect.size());
-    if (filter()->isAccelerated()) {
-        surface = adoptPtr(new AcceleratedImageBufferSurface(intTileSize));
-    }
-    if (!surface || !surface->isValid()) {
-        surface = adoptPtr(new UnacceleratedImageBufferSurface(intTileSize));
-    }
+    surface = adoptPtr(new UnacceleratedImageBufferSurface(intTileSize));
     OwnPtr<ImageBuffer> tileImage = ImageBuffer::create(surface.release());
     if (!tileImage)
         return;
 
     GraphicsContext* tileImageContext = tileImage->context();
-    tileImageContext->scale(FloatSize(intTileSize.width() / tileRect.width(), intTileSize.height() / tileRect.height()));
+    tileImageContext->scale(intTileSize.width() / tileRect.width(), intTileSize.height() / tileRect.height());
     tileImageContext->translate(-inMaxEffectLocation.x(), -inMaxEffectLocation.y());
-    tileImageContext->drawImageBuffer(in->asImageBuffer(), in->absolutePaintRect().location());
+
+    if (ImageBuffer* tileImageBuffer = in->asImageBuffer())
+        tileImageContext->drawImageBuffer(tileImageBuffer, IntRect(in->absolutePaintRect().location(), tileImageBuffer->size()));
 
     RefPtr<Pattern> pattern = Pattern::create(tileImage->copyImage(CopyBackingStore), true, true);
 
@@ -94,11 +94,27 @@ void FETile::applySoftware()
     filterContext->fillRect(FloatRect(FloatPoint(), absolutePaintRect().size()));
 }
 
+static FloatRect getRect(FilterEffect* effect)
+{
+    FloatRect result = effect->filter()->filterRegion();
+    FloatRect boundaries = effect->effectBoundaries();
+    if (effect->hasX())
+        result.setX(boundaries.x());
+    if (effect->hasY())
+        result.setY(boundaries.y());
+    if (effect->hasWidth())
+        result.setWidth(boundaries.width());
+    if (effect->hasHeight())
+        result.setHeight(boundaries.height());
+    return result;
+}
+
 PassRefPtr<SkImageFilter> FETile::createImageFilter(SkiaImageFilterBuilder* builder)
 {
     RefPtr<SkImageFilter> input(builder->build(inputEffect(0), operatingColorSpace()));
-    FloatRect srcRect = inputEffect(0) ? inputEffect(0)->effectBoundaries() : FloatRect();
-    return adoptRef(new SkTileImageFilter(srcRect, effectBoundaries(), input.get()));
+    FloatRect srcRect = inputEffect(0) ? getRect(inputEffect(0)) : filter()->filterRegion();
+    FloatRect dstRect = getRect(this);
+    return adoptRef(SkTileImageFilter::Create(srcRect, dstRect, input.get()));
 }
 
 TextStream& FETile::externalRepresentation(TextStream& ts, int indent) const

@@ -5,14 +5,12 @@
 #include "ui/views/controls/single_split_view.h"
 
 #include "skia/ext/skia_utils_win.h"
-#include "ui/base/accessibility/accessible_view_state.h"
+#include "ui/accessibility/ax_view_state.h"
+#include "ui/base/cursor/cursor.h"
 #include "ui/gfx/canvas.h"
 #include "ui/views/background.h"
 #include "ui/views/controls/single_split_view_listener.h"
-
-#if defined(USE_AURA)
-#include "ui/base/cursor/cursor.h"
-#endif
+#include "ui/views/native_cursor.h"
 
 namespace views {
 
@@ -62,16 +60,16 @@ const char* SingleSplitView::GetClassName() const {
   return kViewClassName;
 }
 
-void SingleSplitView::GetAccessibleState(ui::AccessibleViewState* state) {
-  state->role = ui::AccessibilityTypes::ROLE_GROUPING;
+void SingleSplitView::GetAccessibleState(ui::AXViewState* state) {
+  state->role = ui::AX_ROLE_GROUP;
   state->name = accessible_name_;
 }
 
-gfx::Size SingleSplitView::GetPreferredSize() {
+gfx::Size SingleSplitView::GetPreferredSize() const {
   int width = 0;
   int height = 0;
   for (int i = 0; i < 2 && i < child_count(); ++i) {
-    View* view = child_at(i);
+    const View* view = child_at(i);
     gfx::Size pref = view->GetPreferredSize();
     if (is_horizontal_) {
       width += pref.width();
@@ -91,14 +89,8 @@ gfx::Size SingleSplitView::GetPreferredSize() {
 gfx::NativeCursor SingleSplitView::GetCursor(const ui::MouseEvent& event) {
   if (!IsPointInDivider(event.location()))
     return gfx::kNullCursor;
-#if defined(USE_AURA)
-  return is_horizontal_ ?
-      ui::kCursorEastWestResize : ui::kCursorNorthSouthResize;
-#elif defined(OS_WIN)
-  static HCURSOR we_resize_cursor = LoadCursor(NULL, IDC_SIZEWE);
-  static HCURSOR ns_resize_cursor = LoadCursor(NULL, IDC_SIZENS);
-  return is_horizontal_ ? we_resize_cursor : ns_resize_cursor;
-#endif
+  return is_horizontal_ ? GetNativeEastWestResizeCursor()
+                        : GetNativeNorthSouthResizeCursor();
 }
 
 int SingleSplitView::GetDividerSize() const {
@@ -148,7 +140,7 @@ void SingleSplitView::CalculateChildrenBounds(
   }
 }
 
-void SingleSplitView::SetAccessibleName(const string16& name) {
+void SingleSplitView::SetAccessibleName(const base::string16& name) {
   accessible_name_ = name;
 }
 

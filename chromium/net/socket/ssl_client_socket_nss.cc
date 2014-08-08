@@ -271,11 +271,6 @@ BOOL WINAPI ClientCertFindCallback(PCCERT_CONTEXT cert_context,
 
 #endif
 
-void DestroyCertificates(CERTCertificate** certs, size_t len) {
-  for (size_t i = 0; i < len; i++)
-    CERT_DestroyCertificate(certs[i]);
-}
-
 // Helper functions to make it possible to log events from within the
 // SSLClientSocketNSS::Core.
 void AddLogEvent(const base::WeakPtr<BoundNetLog>& net_log,
@@ -335,7 +330,6 @@ class PeerCertificateChain {
   std::vector<base::StringPiece> AsStringPieceVector() const;
 
   bool empty() const { return certs_.empty(); }
-  size_t size() const { return certs_.size(); }
 
   CERTCertificate* operator[](size_t index) const {
     DCHECK_LT(index, certs_.size());
@@ -615,13 +609,6 @@ class SSLClientSocketNSS::Core : public base::RefCountedThreadSafe<Core> {
   bool Init(PRFileDesc* socket, memio_Private* buffers);
 
   // Called on the network task runner.
-  // Sets the predicted certificate chain that the peer will send, for use
-  // with the TLS CachedInfo extension. If called, it must not be called
-  // before Init() or after Connect().
-  void SetPredictedCertificates(
-      const std::vector<std::string>& predicted_certificates);
-
-  // Called on the network task runner.
   //
   // Attempts to perform an SSL handshake. If the handshake cannot be
   // completed synchronously, returns ERR_IO_PENDING, invoking |callback| on
@@ -648,9 +635,10 @@ class SSLClientSocketNSS::Core : public base::RefCountedThreadSafe<Core> {
   int Write(IOBuffer* buf, int buf_len, const CompletionCallback& callback);
 
   // Called on the network task runner.
-  bool IsConnected();
-  bool HasPendingAsyncOperation();
-  bool HasUnhandledReceivedData();
+  bool IsConnected() const;
+  bool HasPendingAsyncOperation() const;
+  bool HasUnhandledReceivedData() const;
+  bool WasEverUsed() const;
 
   // Called on the network task runner.
   // Causes the associated SSL/TLS session ID to be added to NSS's session
@@ -853,6 +841,10 @@ class SSLClientSocketNSS::Core : public base::RefCountedThreadSafe<Core> {
   bool nss_waiting_write_;
   bool nss_is_closed_;
 
+  // Set when Read() or Write() successfully reads or writes data to or from the
+  // network.
+  bool was_ever_used_;
+
   ////////////////////////////////////////////////////////////////////////////
   // Members that are ONLY accessed on the NSS task runner:
   ////////////////////////////////////////////////////////////////////////////
@@ -948,6 +940,7 @@ SSLClientSocketNSS::Core::Core(
       nss_waiting_read_(false),
       nss_waiting_write_(false),
       nss_is_closed_(false),
+      was_ever_used_(false),
       host_and_port_(host_and_port),
       ssl_config_(ssl_config),
       nss_fd_(NULL),
@@ -1015,7 +1008,13 @@ bool SSLClientSocketNSS::Core::Init(PRFileDesc* socket,
     DCHECK_EQ(dst, wire_protos.get() + wire_length);
     rv = SSL_SetNextProtoNego(nss_fd_, wire_protos.get(), wire_length);
     if (rv != SECSuccess)
-      LogFailedNSSFunction(*weak_net_log_, "SSL_SetNextProtoCallback", "");
+      LogFailedNSSFunction(*weak_net_log_, "SSL_SetNextProtoNego", "");
+    rv = SSL_OptionSet(nss_fd_, SSL_ENABLE_ALPN, PR_TRUE);
+    if (rv != SECSuccess)
+      LogFailedNSSFunction(*weak_net_log_, "SSL_OptionSet", "SSL_ENABLE_ALPN");
+    rv = SSL_OptionSet(nss_fd_, SSL_ENABLE_NPN, PR_TRUE);
+    if (rv != SECSuccess)
+      LogFailedNSSFunction(*weak_net_log_, "SSL_OptionSet", "SSL_ENABLE_NPN");
   }
 
   rv = SSL_AuthCertificateHook(
@@ -1062,57 +1061,6 @@ bool SSLClientSocketNSS::Core::Init(PRFileDesc* socket,
   }
 
   return true;
-}
-
-void SSLClientSocketNSS::Core::SetPredictedCertificates(
-    const std::vector<std::string>& predicted_certs) {
-  if (predicted_certs.empty())
-    return;
-
-  if (!OnNSSTaskRunner()) {
-    DCHECK(!detached_);
-    nss_task_runner_->PostTask(
-        FROM_HERE,
-        base::Bind(&Core::SetPredictedCertificates, this, predicted_certs));
-    return;
-  }
-
-  DCHECK(nss_fd_);
-
-  predicted_certs_ = predicted_certs;
-
-  scoped_ptr<CERTCertificate*[]> certs(
-      new CERTCertificate*[predicted_certs.size()]);
-
-  for (size_t i = 0; i < predicted_certs.size(); i++) {
-    SECItem derCert;
-    derCert.data = const_cast<uint8*>(reinterpret_cast<const uint8*>(
-        predicted_certs[i].data()));
-    derCert.len = predicted_certs[i].size();
-    certs[i] = CERT_NewTempCertificate(
-        CERT_GetDefaultCertDB(), &derCert, NULL /* no nickname given */,
-        PR_FALSE /* not permanent */, PR_TRUE /* copy DER data */);
-    if (!certs[i]) {
-      DestroyCertificates(&certs[0], i);
-      NOTREACHED();
-      return;
-    }
-  }
-
-  SECStatus rv;
-#ifdef SSL_ENABLE_CACHED_INFO
-  rv = SSL_SetPredictedPeerCertificates(nss_fd_, certs.get(),
-                                        predicted_certs.size());
-  DCHECK_EQ(SECSuccess, rv);
-#else
-  rv = SECFailure;  // Not implemented.
-#endif
-  DestroyCertificates(&certs[0], predicted_certs.size());
-
-  if (rv != SECSuccess) {
-    LOG(WARNING) << "SetPredictedCertificates failed: "
-                 << host_and_port_.ToString();
-  }
 }
 
 int SSLClientSocketNSS::Core::Connect(const CompletionCallback& callback) {
@@ -1205,8 +1153,11 @@ int SSLClientSocketNSS::Core::Read(IOBuffer* buf, int buf_len,
       return ERR_IO_PENDING;
     } else {
       DCHECK(!nss_waiting_read_);
-      if (rv <= 0)
+      if (rv <= 0) {
         nss_is_closed_ = true;
+      } else {
+        was_ever_used_ = true;
+      }
     }
   }
 
@@ -1259,27 +1210,35 @@ int SSLClientSocketNSS::Core::Write(IOBuffer* buf, int buf_len,
       return ERR_IO_PENDING;
     } else {
       DCHECK(!nss_waiting_write_);
-      if (rv < 0)
+      if (rv < 0) {
         nss_is_closed_ = true;
+      } else if (rv > 0) {
+        was_ever_used_ = true;
+      }
     }
   }
 
   return rv;
 }
 
-bool SSLClientSocketNSS::Core::IsConnected() {
+bool SSLClientSocketNSS::Core::IsConnected() const {
   DCHECK(OnNetworkTaskRunner());
   return !nss_is_closed_;
 }
 
-bool SSLClientSocketNSS::Core::HasPendingAsyncOperation() {
+bool SSLClientSocketNSS::Core::HasPendingAsyncOperation() const {
   DCHECK(OnNetworkTaskRunner());
   return nss_waiting_read_ || nss_waiting_write_;
 }
 
-bool SSLClientSocketNSS::Core::HasUnhandledReceivedData() {
+bool SSLClientSocketNSS::Core::HasUnhandledReceivedData() const {
   DCHECK(OnNetworkTaskRunner());
   return unhandled_buffer_size_ != 0;
+}
+
+bool SSLClientSocketNSS::Core::WasEverUsed() const {
+  DCHECK(OnNetworkTaskRunner());
+  return was_ever_used_;
 }
 
 void SSLClientSocketNSS::Core::CacheSessionIfNecessary() {
@@ -2184,7 +2143,12 @@ int SSLClientSocketNSS::Core::BufferSend() {
   const char* buf1;
   const char* buf2;
   unsigned int len1, len2;
-  memio_GetWriteParams(nss_bufs_, &buf1, &len1, &buf2, &len2);
+  if (memio_GetWriteParams(nss_bufs_, &buf1, &len1, &buf2, &len2)) {
+    // It is important this return synchronously to prevent spinning infinitely
+    // in the off-thread NSS case. The error code itself is ignored, so just
+    // return ERR_ABORTED. See https://crbug.com/381160.
+    return ERR_ABORTED;
+  }
   const unsigned int len = len1 + len2;
 
   int rv = 0;
@@ -2450,9 +2414,14 @@ void SSLClientSocketNSS::Core::UpdateSignedCertTimestamps() {
 }
 
 void SSLClientSocketNSS::Core::UpdateStapledOCSPResponse() {
+  PRBool ocsp_requested = PR_FALSE;
+  SSL_OptionGet(nss_fd_, SSL_ENABLE_OCSP_STAPLING, &ocsp_requested);
   const SECItemArray* ocsp_responses =
       SSL_PeerStapledOCSPResponses(nss_fd_);
-  if (!ocsp_responses || !ocsp_responses->len)
+  bool ocsp_responses_present = ocsp_responses && ocsp_responses->len;
+  if (ocsp_requested)
+    UMA_HISTOGRAM_BOOLEAN("Net.OCSPResponseStapled", ocsp_responses_present);
+  if (!ocsp_responses_present)
     return;
 
   nss_handshake_state_.stapled_ocsp_response = std::string(
@@ -2708,16 +2677,22 @@ void SSLClientSocketNSS::Core::DidNSSRead(int result) {
   DCHECK(OnNetworkTaskRunner());
   DCHECK(nss_waiting_read_);
   nss_waiting_read_ = false;
-  if (result <= 0)
+  if (result <= 0) {
     nss_is_closed_ = true;
+  } else {
+    was_ever_used_ = true;
+  }
 }
 
 void SSLClientSocketNSS::Core::DidNSSWrite(int result) {
   DCHECK(OnNetworkTaskRunner());
   DCHECK(nss_waiting_write_);
   nss_waiting_write_ = false;
-  if (result < 0)
+  if (result < 0) {
     nss_is_closed_ = true;
+  } else if (result > 0) {
+    was_ever_used_ = true;
+  }
 }
 
 void SSLClientSocketNSS::Core::BufferSendComplete(int result) {
@@ -2884,15 +2859,12 @@ bool SSLClientSocketNSS::GetSSLInfo(SSLInfo* ssl_info) {
   ssl_info->connection_status =
       core_->state().ssl_connection_status;
   ssl_info->public_key_hashes = server_cert_verify_result_.public_key_hashes;
-  for (HashValueVector::const_iterator i = side_pinned_public_keys_.begin();
-       i != side_pinned_public_keys_.end(); ++i) {
-    ssl_info->public_key_hashes.push_back(*i);
-  }
   ssl_info->is_issued_by_known_root =
       server_cert_verify_result_.is_issued_by_known_root;
   ssl_info->client_cert_sent =
       ssl_config_.send_client_cert && ssl_config_.client_cert.get();
   ssl_info->channel_id_sent = WasChannelIDSent();
+  ssl_info->pinning_failure_log = pinning_failure_log_;
 
   PRUint16 cipher_suite = SSLConnectionStatusToCipherSuite(
       core_->state().ssl_connection_status);
@@ -2917,8 +2889,7 @@ bool SSLClientSocketNSS::GetSSLInfo(SSLInfo* ssl_info) {
 void SSLClientSocketNSS::GetSSLCertRequestInfo(
     SSLCertRequestInfo* cert_request_info) {
   EnterFunction("");
-  // TODO(rch): switch SSLCertRequestInfo.host_and_port to a HostPortPair
-  cert_request_info->host_and_port = host_and_port_.ToString();
+  cert_request_info->host_and_port = host_and_port_;
   cert_request_info->cert_authorities = core_->state().cert_authorities;
   LeaveFunction("");
 }
@@ -3082,11 +3053,9 @@ void SSLClientSocketNSS::SetOmniboxSpeculation() {
 }
 
 bool SSLClientSocketNSS::WasEverUsed() const {
-  if (transport_.get() && transport_->socket()) {
-    return transport_->socket()->WasEverUsed();
-  }
-  NOTREACHED();
-  return false;
+  DCHECK(core_.get());
+
+  return core_->WasEverUsed();
 }
 
 bool SSLClientSocketNSS::UsingTCPFastOpen() const {
@@ -3121,11 +3090,11 @@ int SSLClientSocketNSS::Write(IOBuffer* buf, int buf_len,
   return rv;
 }
 
-bool SSLClientSocketNSS::SetReceiveBufferSize(int32 size) {
+int SSLClientSocketNSS::SetReceiveBufferSize(int32 size) {
   return transport_->socket()->SetReceiveBufferSize(size);
 }
 
-bool SSLClientSocketNSS::SetSendBufferSize(int32 size) {
+int SSLClientSocketNSS::SetSendBufferSize(int32 size) {
   return transport_->socket()->SetSendBufferSize(size);
 }
 
@@ -3273,14 +3242,6 @@ int SSLClientSocketNSS::InitializeSSLOptions() {
                          "SSL_ENABLE_SIGNED_CERT_TIMESTAMPS");
   }
 
-// Chromium patch to libssl
-#ifdef SSL_ENABLE_CACHED_INFO
-  rv = SSL_OptionSet(nss_fd_, SSL_ENABLE_CACHED_INFO,
-                     ssl_config_.cached_info_enabled);
-  if (rv != SECSuccess)
-    LogFailedNSSFunction(net_log_, "SSL_OptionSet", "SSL_ENABLE_CACHED_INFO");
-#endif
-
   rv = SSL_OptionSet(nss_fd_, SSL_HANDSHAKE_AS_CLIENT, PR_TRUE);
   if (rv != SECSuccess) {
     LogFailedNSSFunction(net_log_, "SSL_OptionSet", "SSL_HANDSHAKE_AS_CLIENT");
@@ -3308,7 +3269,7 @@ int SSLClientSocketNSS::InitializeSSLPeerName() {
 
   SockaddrStorage storage;
   if (!peer_address.ToSockAddr(storage.addr, &storage.addr_len))
-    return ERR_UNEXPECTED;
+    return ERR_ADDRESS_INVALID;
 
   PRNetAddr peername;
   memset(&peername, 0, sizeof(peername));
@@ -3541,12 +3502,13 @@ int SSLClientSocketNSS::DoVerifyCertComplete(int result) {
         ssl_config_.version_fallback;
     const std::string& host = host_and_port_.host();
 
-    TransportSecurityState::DomainState domain_state;
-    if (transport_security_state_->GetDomainState(host, sni_available,
-                                                  &domain_state) &&
-        domain_state.HasPublicKeyPins()) {
-      if (!domain_state.CheckPublicKeyPins(
-              server_cert_verify_result_.public_key_hashes)) {
+    if (transport_security_state_->HasPublicKeyPins(host, sni_available)) {
+      if (!transport_security_state_->CheckPublicKeyPins(
+              host,
+              sni_available,
+              server_cert_verify_result_.public_key_hashes,
+              &pinning_failure_log_)) {
+        LOG(ERROR) << pinning_failure_log_;
         result = ERR_SSL_PINNED_KEY_NOT_IN_CERT_CHAIN;
         UMA_HISTOGRAM_BOOLEAN("Net.PublicKeyPinSuccess", false);
         TransportSecurityState::ReportUMAOnPinFailure(host);
@@ -3652,6 +3614,11 @@ void SSLClientSocketNSS::AddSCTInfoToSSLInfo(SSLInfo* ssl_info) const {
         SignedCertificateTimestampAndStatus(*iter,
                                             ct::SCT_STATUS_LOG_UNKNOWN));
   }
+}
+
+scoped_refptr<X509Certificate>
+SSLClientSocketNSS::GetUnverifiedServerCertificateChain() const {
+  return core_->state().server_cert.get();
 }
 
 ServerBoundCertService* SSLClientSocketNSS::GetServerBoundCertService() const {

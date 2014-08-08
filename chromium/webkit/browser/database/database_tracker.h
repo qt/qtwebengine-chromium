@@ -9,12 +9,12 @@
 #include <set>
 #include <utility>
 
+#include "base/files/file.h"
 #include "base/files/file_path.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/observer_list.h"
-#include "base/platform_file.h"
 #include "base/strings/string16.h"
 #include "base/strings/string_util.h"
 #include "base/time/time.h"
@@ -24,6 +24,11 @@
 
 namespace base {
 class MessageLoopProxy;
+}
+
+namespace content {
+class DatabaseTracker_TestHelper_Test;
+class MockDatabaseTracker;
 }
 
 namespace sql {
@@ -164,11 +169,10 @@ class WEBKIT_STORAGE_BROWSER_EXPORT DatabaseTracker
 
   bool IsIncognitoProfile() const { return is_incognito_; }
 
-  void GetIncognitoFileHandle(const base::string16& vfs_file_path,
-                              base::PlatformFile* file_handle) const;
-  void SaveIncognitoFileHandle(const base::string16& vfs_file_path,
-                               const base::PlatformFile& file_handle);
-  bool CloseIncognitoFileHandle(const base::string16& vfs_file_path);
+  const base::File* GetIncognitoFile(const base::string16& vfs_file_path) const;
+  const base::File* SaveIncognitoFile(const base::string16& vfs_file_path,
+                                      base::File file);
+  void CloseIncognitoFileHandle(const base::string16& vfs_file_path);
   bool HasSavedIncognitoFileHandle(const base::string16& vfs_file_path) const;
 
   // Shutdown the database tracker, deleting database files if the tracker is
@@ -179,12 +183,13 @@ class WEBKIT_STORAGE_BROWSER_EXPORT DatabaseTracker
 
  private:
   friend class base::RefCountedThreadSafe<DatabaseTracker>;
-  friend class MockDatabaseTracker;  // for testing
+  friend class content::DatabaseTracker_TestHelper_Test;
+  friend class content::MockDatabaseTracker; // for testing
 
   typedef std::map<std::string, std::set<base::string16> > DatabaseSet;
   typedef std::vector<std::pair<net::CompletionCallback, DatabaseSet> >
       PendingDeletionCallbacks;
-  typedef std::map<base::string16, base::PlatformFile> FileHandlesMap;
+  typedef std::map<base::string16, base::File*> FileHandlesMap;
   typedef std::map<std::string, base::string16> OriginDirectoriesMap;
 
   class CachedOriginInfo : public OriginInfo {

@@ -5,6 +5,8 @@
 #include "gin/modules/module_runner_delegate.h"
 
 #include "gin/modules/module_registry.h"
+#include "gin/object_template_builder.h"
+#include "gin/public/context_holder.h"
 
 namespace gin {
 
@@ -17,38 +19,40 @@ ModuleRunnerDelegate::~ModuleRunnerDelegate() {
 }
 
 void ModuleRunnerDelegate::AddBuiltinModule(const std::string& id,
-                                            ModuleTemplateGetter templ) {
-  builtin_modules_[id] = templ;
+                                            ModuleGetter getter) {
+  builtin_modules_[id] = getter;
 }
 
 void ModuleRunnerDelegate::AttemptToLoadMoreModules(Runner* runner) {
-  ModuleRegistry* registry = ModuleRegistry::From(runner->context());
-  registry->AttemptToLoadMoreModules(runner->isolate());
+  ModuleRegistry* registry = ModuleRegistry::From(
+      runner->GetContextHolder()->context());
+  registry->AttemptToLoadMoreModules(runner->GetContextHolder()->isolate());
   module_provider_.AttempToLoadModules(
       runner, registry->unsatisfied_dependencies());
 }
 
 v8::Handle<v8::ObjectTemplate> ModuleRunnerDelegate::GetGlobalTemplate(
-    Runner* runner) {
-  v8::Handle<v8::ObjectTemplate> templ = v8::ObjectTemplate::New();
-  ModuleRegistry::RegisterGlobals(runner->isolate(), templ);
+    ShellRunner* runner,
+    v8::Isolate* isolate) {
+  v8::Handle<v8::ObjectTemplate> templ = ObjectTemplateBuilder(isolate).Build();
+  ModuleRegistry::RegisterGlobals(isolate, templ);
   return templ;
 }
 
-void ModuleRunnerDelegate::DidCreateContext(Runner* runner) {
-  RunnerDelegate::DidCreateContext(runner);
+void ModuleRunnerDelegate::DidCreateContext(ShellRunner* runner) {
+  ShellRunnerDelegate::DidCreateContext(runner);
 
-  v8::Handle<v8::Context> context = runner->context();
+  v8::Handle<v8::Context> context = runner->GetContextHolder()->context();
   ModuleRegistry* registry = ModuleRegistry::From(context);
 
+  v8::Isolate* isolate = runner->GetContextHolder()->isolate();
   for (BuiltinModuleMap::const_iterator it = builtin_modules_.begin();
        it != builtin_modules_.end(); ++it) {
-    registry->AddBuiltinModule(runner->isolate(), it->first,
-                               it->second(runner->isolate()));
+    registry->AddBuiltinModule(isolate, it->first, it->second(isolate));
   }
 }
 
-void ModuleRunnerDelegate::DidRunScript(Runner* runner) {
+void ModuleRunnerDelegate::DidRunScript(ShellRunner* runner) {
   AttemptToLoadMoreModules(runner);
 }
 

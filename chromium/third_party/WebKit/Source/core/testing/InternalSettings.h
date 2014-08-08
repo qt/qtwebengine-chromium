@@ -27,9 +27,10 @@
 #ifndef InternalSettings_h
 #define InternalSettings_h
 
-#include "InternalSettingsGenerated.h"
+#include "core/InternalSettingsGenerated.h"
 #include "core/editing/EditingBehaviorTypes.h"
 #include "platform/geometry/IntSize.h"
+#include "platform/heap/Handle.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/text/WTFString.h"
@@ -38,11 +39,16 @@ namespace WebCore {
 
 class Document;
 class ExceptionState;
-class Frame;
+class LocalFrame;
 class Page;
 class Settings;
 
-class InternalSettings : public InternalSettingsGenerated {
+#if ENABLE(OILPAN)
+class InternalSettings FINAL : public InternalSettingsGenerated, public HeapSupplement<Page> {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(InternalSettings);
+#else
+class InternalSettings FINAL : public InternalSettingsGenerated {
+#endif
 public:
     class Backup {
     public:
@@ -51,8 +57,7 @@ public:
 
         bool m_originalCSSExclusionsEnabled;
         bool m_originalAuthorShadowDOMForAnyElementEnabled;
-        bool m_originalExperimentalWebSocketEnabled;
-        bool m_originalStyleScoped;
+        bool m_originalCSP;
         bool m_originalOverlayScrollbarsEnabled;
         EditingBehaviorType m_originalEditingBehavior;
         bool m_originalTextAutosizingEnabled;
@@ -62,48 +67,41 @@ public:
         bool m_originalMockScrollbarsEnabled;
         bool m_langAttributeAwareFormControlUIEnabled;
         bool m_imagesEnabled;
-        bool m_shouldDisplaySubtitles;
-        bool m_shouldDisplayCaptions;
-        bool m_shouldDisplayTextDescriptions;
         String m_defaultVideoPosterURL;
-        bool m_originalCompositorDrivenAcceleratedScrollEnabled;
         bool m_originalLayerSquashingEnabled;
-        bool m_originalPasswordGenerationDecorationEnabled;
+        bool m_originalPseudoClassesInMatchingCriteriaInAuthorShadowTreesEnabled;
     };
 
-    static PassRefPtr<InternalSettings> create(Page* page)
+    static PassRefPtrWillBeRawPtr<InternalSettings> create(Page& page)
     {
-        return adoptRef(new InternalSettings(page));
+        return adoptRefWillBeNoop(new InternalSettings(page));
     }
-    static InternalSettings* from(Page*);
-    void hostDestroyed() { m_page = 0; }
+    static InternalSettings* from(Page&);
+
+#if !ENABLE(OILPAN)
+    void hostDestroyed() { m_page = nullptr; }
+#endif
 
     virtual ~InternalSettings();
     void resetToConsistentState();
 
-    void setStandardFontFamily(const String& family, const String& script, ExceptionState&);
-    void setSerifFontFamily(const String& family, const String& script, ExceptionState&);
-    void setSansSerifFontFamily(const String& family, const String& script, ExceptionState&);
-    void setFixedFontFamily(const String& family, const String& script, ExceptionState&);
-    void setCursiveFontFamily(const String& family, const String& script, ExceptionState&);
-    void setFantasyFontFamily(const String& family, const String& script, ExceptionState&);
-    void setPictographFontFamily(const String& family, const String& script, ExceptionState&);
+    void setStandardFontFamily(const AtomicString& family, const String& script, ExceptionState&);
+    void setSerifFontFamily(const AtomicString& family, const String& script, ExceptionState&);
+    void setSansSerifFontFamily(const AtomicString& family, const String& script, ExceptionState&);
+    void setFixedFontFamily(const AtomicString& family, const String& script, ExceptionState&);
+    void setCursiveFontFamily(const AtomicString& family, const String& script, ExceptionState&);
+    void setFantasyFontFamily(const AtomicString& family, const String& script, ExceptionState&);
+    void setPictographFontFamily(const AtomicString& family, const String& script, ExceptionState&);
 
     void setDefaultVideoPosterURL(const String& url, ExceptionState&);
     void setEditingBehavior(const String&, ExceptionState&);
     void setImagesEnabled(bool, ExceptionState&);
     void setMediaTypeOverride(const String& mediaType, ExceptionState&);
     void setMockScrollbarsEnabled(bool, ExceptionState&);
-    void setPasswordGenerationDecorationEnabled(bool, ExceptionState&);
     void setTextAutosizingEnabled(bool, ExceptionState&);
     void setAccessibilityFontScaleFactor(float fontScaleFactor, ExceptionState&);
     void setTextAutosizingWindowSizeOverride(int width, int height, ExceptionState&);
-    void setTouchEventEmulationEnabled(bool, ExceptionState&);
     void setViewportEnabled(bool, ExceptionState&);
-
-    // FIXME: This is a temporary flag and should be removed once accelerated
-    // overflow scroll is ready (crbug.com/254111).
-    void setCompositorDrivenAcceleratedScrollingEnabled(bool, ExceptionState&);
 
     // FIXME: This is a temporary flag and should be removed once squashing is
     // ready (crbug.com/261605).
@@ -114,19 +112,21 @@ public:
     // be removed or moved onto internals.runtimeFlags:
     void setAuthorShadowDOMForAnyElementEnabled(bool);
     void setCSSExclusionsEnabled(bool);
-    void setExperimentalWebSocketEnabled(bool);
     void setLangAttributeAwareFormControlUIEnabled(bool);
     void setOverlayScrollbarsEnabled(bool);
-    void setStyleScopedEnabled(bool);
+    void setExperimentalContentSecurityPolicyFeaturesEnabled(bool);
+    void setPseudoClassesInMatchingCriteriaInAuthorShadowTreesEnabled(bool);
+
+    virtual void trace(Visitor*) OVERRIDE;
 
 private:
-    explicit InternalSettings(Page*);
+    explicit InternalSettings(Page&);
 
     Settings* settings() const;
     Page* page() const { return m_page; }
     static const char* supplementName();
 
-    Page* m_page;
+    RawPtrWillBeWeakMember<Page> m_page;
     Backup m_backup;
 };
 

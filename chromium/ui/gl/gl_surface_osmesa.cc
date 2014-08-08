@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "base/logging.h"
+#include "third_party/mesa/src/include/GL/osmesa.h"
 #include "ui/gl/gl_bindings.h"
 #include "ui/gl/gl_context.h"
 #include "ui/gl/gl_surface_osmesa.h"
@@ -13,6 +14,10 @@ namespace gfx {
 GLSurfaceOSMesa::GLSurfaceOSMesa(unsigned format, const gfx::Size& size)
     : format_(format),
       size_(size) {
+  // Implementations of OSMesa surface do not support having a 0 size. In such
+  // cases use a (1, 1) surface.
+  if (size_.GetArea() == 0)
+    size_.SetSize(1, 1);
 }
 
 bool GLSurfaceOSMesa::Initialize() {
@@ -81,5 +86,14 @@ unsigned GLSurfaceOSMesa::GetFormat() {
 GLSurfaceOSMesa::~GLSurfaceOSMesa() {
   Destroy();
 }
+
+bool GLSurfaceOSMesaHeadless::IsOffscreen() { return false; }
+
+bool GLSurfaceOSMesaHeadless::SwapBuffers() { return true; }
+
+GLSurfaceOSMesaHeadless::GLSurfaceOSMesaHeadless()
+    : GLSurfaceOSMesa(OSMESA_BGRA, gfx::Size(1, 1)) {}
+
+GLSurfaceOSMesaHeadless::~GLSurfaceOSMesaHeadless() { Destroy(); }
 
 }  // namespace gfx

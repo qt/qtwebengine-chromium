@@ -5,9 +5,12 @@
 // The following is the C version of code from base/process_utils_linux.cc.
 // We shouldn't link against C++ code in a setuid binary.
 
-#define _GNU_SOURCE  // needed for O_DIRECTORY
+// Needed for O_DIRECTORY, must be defined before fcntl.h is included
+// (and it can be included earlier than the explicit #include below
+// in some versions of glibc).
+#define _GNU_SOURCE
 
-#include "process_util.h"
+#include "sandbox/linux/suid/process_util.h"
 
 #include <fcntl.h>
 #include <inttypes.h>
@@ -71,5 +74,5 @@ bool AdjustOOMScore(pid_t process, int score) {
 
   ssize_t bytes_written = write(fd, buf, len);
   close(fd);
-  return (bytes_written == len);
+  return (bytes_written == (ssize_t)len);
 }

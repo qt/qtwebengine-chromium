@@ -23,7 +23,7 @@ const float MathUtil::kPiFloat = 3.14159265358979323846f;
 
 static HomogeneousCoordinate ProjectHomogeneousPoint(
     const gfx::Transform& transform,
-    gfx::PointF p) {
+    const gfx::PointF& p) {
   // In this case, the layer we are trying to project onto is perpendicular to
   // ray (point p and z-axis direction) that we are trying to project. This
   // happens when the layer is rotated so that it is infinitesimally thin, or
@@ -39,6 +39,15 @@ static HomogeneousCoordinate ProjectHomogeneousPoint(
   HomogeneousCoordinate result(p.x(), p.y(), z, 1.0);
   transform.matrix().mapMScalars(result.vec, result.vec);
   return result;
+}
+
+static HomogeneousCoordinate ProjectHomogeneousPoint(
+    const gfx::Transform& transform,
+    const gfx::PointF& p,
+    bool* clipped) {
+  HomogeneousCoordinate h = ProjectHomogeneousPoint(transform, p);
+  *clipped = h.w() <= 0;
+  return h;
 }
 
 static HomogeneousCoordinate MapHomogeneousPoint(
@@ -87,22 +96,29 @@ static inline void ExpandBoundsToIncludePoint(float* xmin,
                                               float* xmax,
                                               float* ymin,
                                               float* ymax,
-                                              gfx::PointF p) {
+                                              const gfx::PointF& p) {
   *xmin = std::min(p.x(), *xmin);
   *xmax = std::max(p.x(), *xmax);
   *ymin = std::min(p.y(), *ymin);
   *ymax = std::max(p.y(), *ymax);
 }
 
-static inline void AddVertexToClippedQuad(gfx::PointF new_vertex,
+static inline void AddVertexToClippedQuad(const gfx::PointF& new_vertex,
                                           gfx::PointF clipped_quad[8],
                                           int* num_vertices_in_clipped_quad) {
   clipped_quad[*num_vertices_in_clipped_quad] = new_vertex;
   (*num_vertices_in_clipped_quad)++;
 }
 
-gfx::Rect MathUtil::MapClippedRect(const gfx::Transform& transform,
-                                   gfx::Rect src_rect) {
+gfx::Rect MathUtil::MapEnclosingClippedRect(const gfx::Transform& transform,
+                                            const gfx::Rect& src_rect) {
+  if (transform.IsIdentityOrIntegerTranslation()) {
+    return src_rect +
+           gfx::Vector2d(
+               static_cast<int>(SkMScalarToFloat(transform.matrix().get(0, 3))),
+               static_cast<int>(
+                   SkMScalarToFloat(transform.matrix().get(1, 3))));
+  }
   return gfx::ToEnclosingRect(MapClippedRect(transform, gfx::RectF(src_rect)));
 }
 
@@ -134,6 +150,19 @@ gfx::RectF MathUtil::MapClippedRect(const gfx::Transform& transform,
   HomogeneousCoordinate hc2(result[8], result[9], result[10], result[11]);
   HomogeneousCoordinate hc3(result[12], result[13], result[14], result[15]);
   return ComputeEnclosingClippedRect(hc0, hc1, hc2, hc3);
+}
+
+gfx::Rect MathUtil::ProjectEnclosingClippedRect(const gfx::Transform& transform,
+                                                const gfx::Rect& src_rect) {
+  if (transform.IsIdentityOrIntegerTranslation()) {
+    return src_rect +
+           gfx::Vector2d(
+               static_cast<int>(SkMScalarToFloat(transform.matrix().get(0, 3))),
+               static_cast<int>(
+                   SkMScalarToFloat(transform.matrix().get(1, 3))));
+  }
+  return gfx::ToEnclosingRect(
+      ProjectClippedRect(transform, gfx::RectF(src_rect)));
 }
 
 gfx::RectF MathUtil::ProjectClippedRect(const gfx::Transform& transform,
@@ -223,8 +252,9 @@ void MathUtil::MapClippedQuad(const gfx::Transform& transform,
   DCHECK_LE(*num_vertices_in_clipped_quad, 8);
 }
 
-gfx::RectF MathUtil::ComputeEnclosingRectOfVertices(gfx::PointF vertices[],
-                                                    int num_vertices) {
+gfx::RectF MathUtil::ComputeEnclosingRectOfVertices(
+    const gfx::PointF vertices[],
+    int num_vertices) {
   if (num_vertices < 2)
     return gfx::RectF();
 
@@ -356,7 +386,7 @@ gfx::QuadF MathUtil::MapQuad(const gfx::Transform& transform,
 }
 
 gfx::PointF MathUtil::MapPoint(const gfx::Transform& transform,
-                               gfx::PointF p,
+                               const gfx::PointF& p,
                                bool* clipped) {
   HomogeneousCoordinate h = MapHomogeneousPoint(transform, gfx::Point3F(p));
 
@@ -421,28 +451,27 @@ gfx::QuadF MathUtil::ProjectQuad(const gfx::Transform& transform,
 }
 
 gfx::PointF MathUtil::ProjectPoint(const gfx::Transform& transform,
-                                   gfx::PointF p,
+                                   const gfx::PointF& p,
                                    bool* clipped) {
-  HomogeneousCoordinate h = ProjectHomogeneousPoint(transform, p);
-
-  if (h.w() > 0) {
-    // The cartesian coordinates will be valid in this case.
-    *clipped = false;
-    return h.CartesianPoint2d();
-  }
-
-  // The cartesian coordinates will be invalid after dividing by w.
-  *clipped = true;
-
+  HomogeneousCoordinate h = ProjectHomogeneousPoint(transform, p, clipped);
   // Avoid dividing by w if w == 0.
   if (!h.w())
     return gfx::PointF();
 
-  // This return value will be invalid because clipped == true, but (1) users of
+  // This return value will be invalid if clipped == true, but (1) users of
   // this code should be ignoring the return value when clipped == true anyway,
   // and (2) this behavior is more consistent with existing behavior of WebKit
   // transforms if the user really does not ignore the return value.
   return h.CartesianPoint2d();
+}
+
+gfx::Point3F MathUtil::ProjectPoint3D(const gfx::Transform& transform,
+                                      const gfx::PointF& p,
+                                      bool* clipped) {
+  HomogeneousCoordinate h = ProjectHomogeneousPoint(transform, p, clipped);
+  if (!h.w())
+    return gfx::Point3F();
+  return h.CartesianPoint3d();
 }
 
 gfx::RectF MathUtil::ScaleRectProportional(const gfx::RectF& input_outer_rect,
@@ -465,13 +494,17 @@ gfx::RectF MathUtil::ScaleRectProportional(const gfx::RectF& input_outer_rect,
   return output_inner_rect;
 }
 
+static inline bool NearlyZero(double value) {
+  return std::abs(value) < std::numeric_limits<double>::epsilon();
+}
+
 static inline float ScaleOnAxis(double a, double b, double c) {
-  if (!b && !c)
-    return a;
-  if (!a && !c)
-    return b;
-  if (!a && !b)
-    return c;
+  if (NearlyZero(b) && NearlyZero(c))
+    return std::abs(a);
+  if (NearlyZero(a) && NearlyZero(c))
+    return std::abs(b);
+  if (NearlyZero(a) && NearlyZero(b))
+    return std::abs(c);
 
   // Do the sqrt as a double to not lose precision.
   return static_cast<float>(std::sqrt(a * a + b * b + c * c));
@@ -491,37 +524,37 @@ gfx::Vector2dF MathUtil::ComputeTransform2dScaleComponents(
   return gfx::Vector2dF(x_scale, y_scale);
 }
 
-float MathUtil::SmallestAngleBetweenVectors(gfx::Vector2dF v1,
-                                            gfx::Vector2dF v2) {
+float MathUtil::SmallestAngleBetweenVectors(const gfx::Vector2dF& v1,
+                                            const gfx::Vector2dF& v2) {
   double dot_product = gfx::DotProduct(v1, v2) / v1.Length() / v2.Length();
   // Clamp to compensate for rounding errors.
   dot_product = std::max(-1.0, std::min(1.0, dot_product));
   return static_cast<float>(Rad2Deg(std::acos(dot_product)));
 }
 
-gfx::Vector2dF MathUtil::ProjectVector(gfx::Vector2dF source,
-                                       gfx::Vector2dF destination) {
+gfx::Vector2dF MathUtil::ProjectVector(const gfx::Vector2dF& source,
+                                       const gfx::Vector2dF& destination) {
   float projected_length =
       gfx::DotProduct(source, destination) / destination.LengthSquared();
   return gfx::Vector2dF(projected_length * destination.x(),
                         projected_length * destination.y());
 }
 
-scoped_ptr<base::Value> MathUtil::AsValue(gfx::Size s) {
+scoped_ptr<base::Value> MathUtil::AsValue(const gfx::Size& s) {
   scoped_ptr<base::DictionaryValue> res(new base::DictionaryValue());
   res->SetDouble("width", s.width());
   res->SetDouble("height", s.height());
   return res.PassAs<base::Value>();
 }
 
-scoped_ptr<base::Value> MathUtil::AsValue(gfx::SizeF s) {
+scoped_ptr<base::Value> MathUtil::AsValue(const gfx::SizeF& s) {
   scoped_ptr<base::DictionaryValue> res(new base::DictionaryValue());
   res->SetDouble("width", s.width());
   res->SetDouble("height", s.height());
   return res.PassAs<base::Value>();
 }
 
-scoped_ptr<base::Value> MathUtil::AsValue(gfx::Rect r) {
+scoped_ptr<base::Value> MathUtil::AsValue(const gfx::Rect& r) {
   scoped_ptr<base::ListValue> res(new base::ListValue());
   res->AppendInteger(r.x());
   res->AppendInteger(r.y());
@@ -551,10 +584,25 @@ bool MathUtil::FromValue(const base::Value* raw_value, gfx::Rect* out_rect) {
   return true;
 }
 
-scoped_ptr<base::Value> MathUtil::AsValue(gfx::PointF pt) {
+scoped_ptr<base::Value> MathUtil::AsValue(const gfx::PointF& pt) {
   scoped_ptr<base::ListValue> res(new base::ListValue());
   res->AppendDouble(pt.x());
   res->AppendDouble(pt.y());
+  return res.PassAs<base::Value>();
+}
+
+scoped_ptr<base::Value> MathUtil::AsValue(const gfx::Point3F& pt) {
+  scoped_ptr<base::ListValue> res(new base::ListValue());
+  res->AppendDouble(pt.x());
+  res->AppendDouble(pt.y());
+  res->AppendDouble(pt.z());
+  return res.PassAs<base::Value>();
+}
+
+scoped_ptr<base::Value> MathUtil::AsValue(const gfx::Vector2d& v) {
+  scoped_ptr<base::ListValue> res(new base::ListValue());
+  res->AppendInteger(v.x());
+  res->AppendInteger(v.y());
   return res.PassAs<base::Value>();
 }
 

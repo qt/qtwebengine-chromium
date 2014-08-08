@@ -32,19 +32,23 @@
 #define AnimatableValue_h
 
 #include "core/css/CSSValue.h"
+#include "platform/heap/Handle.h"
 #include "wtf/RefCounted.h"
 
 namespace WebCore {
 
-class AnimatableValue : public RefCounted<AnimatableValue> {
+class AnimatableValue : public RefCountedWillBeGarbageCollectedFinalized<AnimatableValue> {
 public:
     virtual ~AnimatableValue() { }
 
     static const AnimatableValue* neutralValue();
 
-    static PassRefPtr<AnimatableValue> interpolate(const AnimatableValue*, const AnimatableValue*, double fraction);
-    // For noncommutative values read add(A, B) to mean the value A with B composed onto it.
-    static PassRefPtr<AnimatableValue> add(const AnimatableValue*, const AnimatableValue*);
+    static PassRefPtrWillBeRawPtr<AnimatableValue> interpolate(const AnimatableValue*, const AnimatableValue*, double fraction);
+    static double distance(const AnimatableValue* from, const AnimatableValue* to);
+    static bool usesDefaultInterpolation(const AnimatableValue* from, const AnimatableValue* to)
+    {
+        return !from->isSameType(to) || from->usesDefaultInterpolationWith(to);
+    }
 
     bool equals(const AnimatableValue* value) const
     {
@@ -64,6 +68,7 @@ public:
     bool isLengthBox() const { return type() == TypeLengthBox; }
     bool isLengthBoxAndBool() const { return type() == TypeLengthBoxAndBool; }
     bool isLengthPoint() const { return type() == TypeLengthPoint; }
+    bool isLengthPoint3D() const { return type() == TypeLengthPoint3D; }
     bool isLengthSize() const { return type() == TypeLengthSize; }
     bool isNeutral() const { return type() == TypeNeutral; }
     bool isRepeatable() const { return type() == TypeRepeatable; }
@@ -82,10 +87,7 @@ public:
         return value->type() == type();
     }
 
-    bool usesNonDefaultInterpolationWith(const AnimatableValue* value) const
-    {
-        return isSameType(value) && !isUnknown();
-    }
+    virtual void trace(Visitor*) { }
 
 protected:
     enum AnimatableType {
@@ -98,6 +100,7 @@ protected:
         TypeLengthBox,
         TypeLengthBoxAndBool,
         TypeLengthPoint,
+        TypeLengthPoint3D,
         TypeLengthSize,
         TypeNeutral,
         TypeRepeatable,
@@ -111,20 +114,21 @@ protected:
         TypeVisibility,
     };
 
-    virtual PassRefPtr<AnimatableValue> interpolateTo(const AnimatableValue*, double fraction) const = 0;
-    static PassRefPtr<AnimatableValue> defaultInterpolateTo(const AnimatableValue* left, const AnimatableValue* right, double fraction) { return takeConstRef((fraction < 0.5) ? left : right); }
-
-    // For noncommutative values read A->addWith(B) to mean the value A with B composed onto it.
-    virtual PassRefPtr<AnimatableValue> addWith(const AnimatableValue*) const;
-    static PassRefPtr<AnimatableValue> defaultAddWith(const AnimatableValue* left, const AnimatableValue* right) { return takeConstRef(right); }
+    virtual bool usesDefaultInterpolationWith(const AnimatableValue* value) const { return false; }
+    virtual PassRefPtrWillBeRawPtr<AnimatableValue> interpolateTo(const AnimatableValue*, double fraction) const = 0;
+    static PassRefPtrWillBeRawPtr<AnimatableValue> defaultInterpolateTo(const AnimatableValue* left, const AnimatableValue* right, double fraction) { return takeConstRef((fraction < 0.5) ? left : right); }
 
     template <class T>
-    static PassRefPtr<T> takeConstRef(const T* value) { return PassRefPtr<T>(const_cast<T*>(value)); }
+    static PassRefPtrWillBeRawPtr<T> takeConstRef(const T* value) { return PassRefPtrWillBeRawPtr<T>(const_cast<T*>(value)); }
 
 private:
     virtual AnimatableType type() const = 0;
     // Implementations can assume that the object being compared has the same type as the object this is called on
     virtual bool equalTo(const AnimatableValue*) const = 0;
+
+    virtual double distanceTo(const AnimatableValue*) const;
+
+    template <class Keyframe> friend class KeyframeEffectModel;
 };
 
 #define DEFINE_ANIMATABLE_VALUE_TYPE_CASTS(thisType, predicate) \

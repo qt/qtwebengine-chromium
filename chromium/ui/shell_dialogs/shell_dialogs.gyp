@@ -14,8 +14,8 @@
         '../../base/base.gyp:base',
         '../../base/base.gyp:base_i18n',
         '../../skia/skia.gyp:skia',
-        '../base/strings/ui_strings.gyp:ui_strings',
-        '../ui.gyp:ui',
+        '../base/ui_base.gyp:ui_base',
+        '../strings/ui_strings.gyp:ui_strings',
       ],
       'defines': [
         'SHELL_DIALOGS_IMPLEMENTATION',
@@ -27,14 +27,8 @@
         'base_shell_dialog.h',
         'base_shell_dialog_win.cc',
         'base_shell_dialog_win.h',
-        'gtk/select_file_dialog_impl.cc',
-        'gtk/select_file_dialog_impl.h',
-        'gtk/select_file_dialog_impl_gtk.cc',
-        'gtk/select_file_dialog_impl_kde.cc',
         'linux_shell_dialog.cc',
         'linux_shell_dialog.h',
-        'print_settings_dialog_win.cc',
-        'print_settings_dialog_win.h',
         'select_file_dialog.cc',
         'select_file_dialog.h',
         'select_file_dialog_android.cc',
@@ -64,7 +58,7 @@
         ['OS=="android"',
           {
             'dependencies': [
-              '../ui.gyp:ui_base_jni_headers',
+              '../base/ui_base.gyp:ui_base_jni_headers',
             ],
             'include_dirs': [
               '<(SHARED_INTERMEDIATE_DIR)/ui',
@@ -83,7 +77,28 @@
             ],
           }
         ],
+        ['OS=="win"',
+          {
+            'dependencies': [
+              '../../win8/win8.gyp:metro_viewer',
+            ],
+          }
+        ],
       ],
     },  # target_name: shell_dialogs
+    {
+      'target_name': 'shell_dialogs_unittests',
+      'type': 'executable',
+      'dependencies': [
+        '../../base/base.gyp:base',
+        '../../base/base.gyp:test_support_base',
+        '../../base/base.gyp:run_all_unittests',
+        '../../testing/gtest.gyp:gtest',
+        'shell_dialogs',
+      ],
+      'sources': [
+        'select_file_dialog_win_unittest.cc',
+      ],
+    },
   ],
 }

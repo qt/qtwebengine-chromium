@@ -101,7 +101,7 @@ Font PlatformFontWin::DeriveFontWithHeight(int height, int style) {
     int font_height = font.GetHeight();
     int font_size = font.GetFontSize();
     while (font_height > height && font_size != min_font_size) {
-      font = font.DeriveFont(-1, style);
+      font = font.Derive(-1, style);
       if (font_height == font.GetHeight() && font_size == font.GetFontSize())
         break;
       font_height = font.GetHeight();
@@ -145,18 +145,9 @@ int PlatformFontWin::GetCapHeight() const {
   return font_ref_->cap_height();
 }
 
-int PlatformFontWin::GetAverageCharacterWidth() const {
-  return font_ref_->ave_char_width();
-}
-
-int PlatformFontWin::GetStringWidth(const base::string16& text) const {
-  return Canvas::GetStringWidth(text,
-                                Font(const_cast<PlatformFontWin*>(this)));
-}
-
 int PlatformFontWin::GetExpectedTextWidth(int length) const {
   return length * std::min(font_ref_->GetDluBaseX(),
-                           GetAverageCharacterWidth());
+                           font_ref_->ave_char_width());
 }
 
 int PlatformFontWin::GetStyle() const {
@@ -211,7 +202,7 @@ void PlatformFontWin::InitWithCopyOfHFONT(HFONT hfont) {
 void PlatformFontWin::InitWithFontNameAndSize(const std::string& font_name,
                                               int font_size) {
   HFONT hf = ::CreateFont(-font_size, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                          UTF8ToUTF16(font_name).c_str());
+                          base::UTF8ToUTF16(font_name).c_str());
   font_ref_ = CreateHFontRef(hf);
 }
 
@@ -289,7 +280,7 @@ PlatformFontWin::HFontRef::HFontRef(HFONT hfont,
 
   LOGFONT font_info;
   GetObject(hfont_, sizeof(LOGFONT), &font_info);
-  font_name_ = UTF16ToUTF8(base::string16(font_info.lfFaceName));
+  font_name_ = base::UTF16ToUTF8(base::string16(font_info.lfFaceName));
   if (font_info.lfHeight < 0)
     requested_font_size_ = -font_info.lfHeight;
 }

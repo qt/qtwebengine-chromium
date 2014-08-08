@@ -27,7 +27,7 @@
 #include "config.h"
 #include "core/css/resolver/ScopedStyleResolver.h"
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 #include "core/css/CSSStyleSheet.h"
 #include "core/css/PageRuleCollector.h"
 #include "core/css/RuleFeature.h"
@@ -49,57 +49,41 @@ ContainerNode* ScopedStyleResolver::scopingNodeFor(Document& document, const CSS
     Document* sheetDocument = sheet->ownerDocument();
     if (!sheetDocument)
         return 0;
+
     Node* ownerNode = sheet->ownerNode();
-    if (!ownerNode || !isHTMLStyleElement(ownerNode))
+    if (!isHTMLStyleElement(ownerNode))
         return &document;
 
-    HTMLStyleElement* styleElement = toHTMLStyleElement(ownerNode);
-    if (!styleElement->scoped()) {
-        if (styleElement->isInShadowTree())
-            return styleElement->containingShadowRoot();
-        return &document;
-    }
-
-    ContainerNode* parent = styleElement->parentNode();
-    if (!parent)
-        return 0;
-
-    return (parent->isElementNode() || parent->isShadowRoot()) ? parent : 0;
+    HTMLStyleElement& styleElement = toHTMLStyleElement(*ownerNode);
+    if (styleElement.isInShadowTree())
+        return styleElement.containingShadowRoot();
+    return &document;
 }
 
-void ScopedStyleResolver::addRulesFromSheet(StyleSheetContents* sheet, const MediaQueryEvaluator& medium, StyleResolver* resolver)
+void ScopedStyleResolver::addRulesFromSheet(CSSStyleSheet* cssSheet, const MediaQueryEvaluator& medium, StyleResolver* resolver)
 {
-    m_authorStyleSheets.append(sheet);
+    m_authorStyleSheets.append(cssSheet);
+    StyleSheetContents* sheet = cssSheet->contents();
 
     AddRuleFlags addRuleFlags = resolver->document().securityOrigin()->canRequest(sheet->baseURL()) ? RuleHasDocumentSecurityOrigin : RuleHasNoSpecialState;
     const RuleSet& ruleSet = sheet->ensureRuleSet(medium, addRuleFlags);
     resolver->addMediaQueryResults(ruleSet.viewportDependentMediaQueryResults());
-    resolver->processScopedRules(ruleSet, sheet->baseURL(), &m_scopingNode);
+    resolver->processScopedRules(ruleSet, cssSheet, m_scopingNode);
 }
 
-void ScopedStyleResolver::collectFeaturesTo(RuleFeatureSet& features)
+void ScopedStyleResolver::collectFeaturesTo(RuleFeatureSet& features, HashSet<const StyleSheetContents*>& visitedSharedStyleSheetContents)
 {
-    for (size_t i = 0; i < m_authorStyleSheets.size(); ++i)
-        features.add(m_authorStyleSheets[i]->ruleSet().features());
+    for (size_t i = 0; i < m_authorStyleSheets.size(); ++i) {
+        StyleSheetContents* contents = m_authorStyleSheets[i]->contents();
+        if (contents->hasOneClient() || visitedSharedStyleSheetContents.add(contents).isNewEntry)
+            features.add(contents->ruleSet().features());
+    }
 }
 
 void ScopedStyleResolver::resetAuthorStyle()
 {
     m_authorStyleSheets.clear();
     m_keyframesRuleMap.clear();
-}
-
-bool ScopedStyleResolver::checkRegionStyle(Element* regionElement)
-{
-    for (size_t i = 0; i < m_authorStyleSheets.size(); ++i) {
-        const RuleSet& ruleSet = m_authorStyleSheets[i]->ruleSet();
-        for (unsigned i = 0; i < ruleSet.m_regionSelectorsAndRuleSets.size(); ++i) {
-            ASSERT(ruleSet.m_regionSelectorsAndRuleSets.at(i).ruleSet.get());
-            if (checkRegionSelector(ruleSet.m_regionSelectorsAndRuleSets.at(i).selector, regionElement))
-                return true;
-        }
-    }
-    return false;
 }
 
 const StyleRuleKeyframes* ScopedStyleResolver::keyframeStylesForAnimation(const StringImpl* animationName)
@@ -114,7 +98,7 @@ const StyleRuleKeyframes* ScopedStyleResolver::keyframeStylesForAnimation(const 
     return it->value.get();
 }
 
-void ScopedStyleResolver::addKeyframeStyle(PassRefPtr<StyleRuleKeyframes> rule)
+void ScopedStyleResolver::addKeyframeStyle(PassRefPtrWillBeRawPtr<StyleRuleKeyframes> rule)
 {
     AtomicString s(rule->name());
     if (rule->isVendorPrefixed()) {
@@ -136,16 +120,13 @@ void ScopedStyleResolver::collectMatchingAuthorRules(ElementRuleCollector& colle
     if (!applyAuthorStyles)
         behaviorAtBoundary |= SelectorChecker::ScopeContainsLastMatchedElement;
 
-    if (m_scopingNode.isShadowRoot()) {
-        scopingNode = toShadowRoot(m_scopingNode).host();
-        behaviorAtBoundary |= SelectorChecker::ScopeIsShadowHost;
-    }
+    if (m_scopingNode.isShadowRoot())
+        behaviorAtBoundary |= SelectorChecker::ScopeIsShadowRoot;
 
     RuleRange ruleRange = collector.matchedResult().ranges.authorRuleRange();
     for (size_t i = 0; i < m_authorStyleSheets.size(); ++i) {
-        MatchRequest matchRequest(&m_authorStyleSheets[i]->ruleSet(), includeEmptyRules, scopingNode, applyAuthorStyles, i);
+        MatchRequest matchRequest(&m_authorStyleSheets[i]->contents()->ruleSet(), includeEmptyRules, scopingNode, m_authorStyleSheets[i], applyAuthorStyles, i);
         collector.collectMatchingRules(matchRequest, ruleRange, static_cast<SelectorChecker::BehaviorAtBoundary>(behaviorAtBoundary), cascadeScope, cascadeOrder);
-        collector.collectMatchingRulesForRegion(matchRequest, ruleRange, static_cast<SelectorChecker::BehaviorAtBoundary>(behaviorAtBoundary), cascadeScope, cascadeOrder);
     }
 }
 
@@ -154,7 +135,7 @@ void ScopedStyleResolver::matchPageRules(PageRuleCollector& collector)
     // Only consider the global author RuleSet for @page rules, as per the HTML5 spec.
     ASSERT(m_scopingNode.isDocumentNode());
     for (size_t i = 0; i < m_authorStyleSheets.size(); ++i)
-        collector.matchPageRules(&m_authorStyleSheets[i]->ruleSet());
+        collector.matchPageRules(&m_authorStyleSheets[i]->contents()->ruleSet());
 }
 
 void ScopedStyleResolver::collectViewportRulesTo(StyleResolver* resolver) const
@@ -162,7 +143,7 @@ void ScopedStyleResolver::collectViewportRulesTo(StyleResolver* resolver) const
     if (!m_scopingNode.isDocumentNode())
         return;
     for (size_t i = 0; i < m_authorStyleSheets.size(); ++i)
-        resolver->viewportStyleResolver()->collectViewportRules(&m_authorStyleSheets[i]->ruleSet(), ViewportStyleResolver::AuthorOrigin);
+        resolver->viewportStyleResolver()->collectViewportRules(&m_authorStyleSheets[i]->contents()->ruleSet(), ViewportStyleResolver::AuthorOrigin);
 }
 
 } // namespace WebCore

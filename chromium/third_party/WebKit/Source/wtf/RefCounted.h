@@ -79,15 +79,6 @@ public:
         return m_refCount;
     }
 
-    void relaxAdoptionRequirement()
-    {
-        ASSERT_WITH_SECURITY_IMPLICATION(!m_deletionHasBegun);
-#if CHECK_REF_COUNTED_LIFECYCLE
-        ASSERT(m_adoptionIsRequired);
-        m_adoptionIsRequired = false;
-#endif
-    }
-
 protected:
     RefCountedBase()
         : m_refCount(1)
@@ -118,14 +109,14 @@ protected:
 #endif
 
         ASSERT(m_refCount > 0);
-        if (m_refCount == 1) {
+        --m_refCount;
+        if (!m_refCount) {
 #if SECURITY_ASSERT_ENABLED
             m_deletionHasBegun = true;
 #endif
             return true;
         }
 
-        --m_refCount;
 #if CHECK_REF_COUNTED_LIFECYCLE
         // Stop thread verification when the ref goes to 1 because it
         // is safe to be passed to another thread at this point.

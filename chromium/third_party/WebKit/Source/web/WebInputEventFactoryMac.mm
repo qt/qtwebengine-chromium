@@ -25,14 +25,14 @@
  */
 
 #include "config.h"
-#include "WebInputEventFactory.h"
+#include "public/web/mac/WebInputEventFactory.h"
 
 #include <ApplicationServices/ApplicationServices.h>
 #import <AvailabilityMacros.h>
 #import <Cocoa/Cocoa.h>
 
-#include "WebInputEvent.h"
 #include "platform/WindowsKeyboardCodes.h"
+#include "public/web/WebInputEvent.h"
 #include "wtf/ASCIICType.h"
 
 #if __MAC_OS_X_VERSION_MAX_ALLOWED == 1060
@@ -364,19 +364,6 @@ static int windowsKeyCodeForKeyEvent(NSEvent* event)
     // Map Mac virtual key code directly to Windows one for any keys not handled above.
     // E.g. the key next to Caps Lock has the same Event.keyCode on U.S. keyboard ('A') and on Russian keyboard (CYRILLIC LETTER EF).
     return windowsKeyCodeForKeyCode([event keyCode]);
-}
-
-static WebInputEvent::Type gestureEventTypeForEvent(NSEvent *event)
-{
-    switch ([event type]) {
-    case NSEventTypeBeginGesture:
-        return WebInputEvent::GestureScrollBegin;
-    case NSEventTypeEndGesture:
-        return WebInputEvent::GestureScrollEnd;
-    default:
-        ASSERT_NOT_REACHED();
-        return WebInputEvent::GestureScrollEnd;
-    }
 }
 
 static inline NSString* textFromEvent(NSEvent* event)
@@ -978,7 +965,7 @@ static WebMouseWheelEvent::Phase momentumPhaseForEvent(NSEvent *event)
     return phaseForNSEventPhase(eventMomentumPhase);
 }
 
-WebMouseWheelEvent WebInputEventFactory::mouseWheelEvent(NSEvent* event, NSView* view)
+WebMouseWheelEvent WebInputEventFactory::mouseWheelEvent(NSEvent* event, NSView* view, bool canRubberbandLeft, bool canRubberbandRight)
 {
     WebMouseWheelEvent result;
 
@@ -988,6 +975,9 @@ WebMouseWheelEvent WebInputEventFactory::mouseWheelEvent(NSEvent* event, NSView*
     result.modifiers = modifiersFromEvent(event);
 
     setWebEventLocationFromEventInView(&result, event, view);
+
+    result.canRubberbandLeft = canRubberbandLeft;
+    result.canRubberbandRight = canRubberbandRight;
 
     // Of Mice and Men
     // ---------------
@@ -1138,9 +1128,20 @@ WebGestureEvent WebInputEventFactory::gestureEvent(NSEvent *event, NSView *view)
     result.globalX = temp.globalX;
     result.globalY = temp.globalY;
 
-    result.type = gestureEventTypeForEvent(event);
     result.modifiers = modifiersFromEvent(event);
     result.timeStampSeconds = [event timestamp];
+
+    // MacOS X gestures are used only for pinch support.
+    result.sourceDevice = WebGestureDeviceTouchpad;
+    switch ([event type]) {
+    case NSEventTypeMagnify:
+        result.type = WebInputEvent::GesturePinchUpdate;
+        result.data.pinchUpdate.scale = [event magnification] + 1.0;
+        break;
+    default:
+        ASSERT_NOT_REACHED();
+        result.type = WebInputEvent::Undefined;
+    }
 
     return result;
 }

@@ -4,23 +4,32 @@
 
 #include "content/common/gpu/media/rendering_helper.h"
 
+#include <algorithm>
+#include <numeric>
+#include <vector>
+
 #include "base/bind.h"
 #include "base/mac/scoped_nsautorelease_pool.h"
 #include "base/message_loop/message_loop.h"
 #include "base/strings/stringize_macros.h"
 #include "base/synchronization/waitable_event.h"
 #include "ui/gl/gl_context.h"
-#include "ui/gl/gl_context_stub.h"
+#include "ui/gl/gl_context_stub_with_extensions.h"
 #include "ui/gl/gl_implementation.h"
 #include "ui/gl/gl_surface.h"
 
+#if defined(OS_WIN)
+#include <windows.h>
+#endif
+
+#if defined(USE_X11)
+#include "ui/gfx/x/x11_types.h"
+#endif
+
 #ifdef GL_VARIANT_GLX
-typedef GLXWindow NativeWindowType;
-struct ScopedPtrXFree {
+struct XFreeDeleter {
   void operator()(void* x) const { ::XFree(x); }
 };
-#else  // EGL
-typedef EGLNativeWindowType NativeWindowType;
 #endif
 
 // Helper for Shader creation.
@@ -43,42 +52,6 @@ static void CreateShader(GLuint program,
   CHECK_EQ(static_cast<int>(glGetError()), GL_NO_ERROR);
 }
 
-namespace {
-
-// Lightweight GLContext stub implementation that returns a constructed
-// extensions string.  We use this to create a context that we can use to
-// initialize GL extensions with, without actually creating a platform context.
-class GLContextStubWithExtensions : public gfx::GLContextStub {
- public:
-  GLContextStubWithExtensions() {}
-  virtual std::string GetExtensions() OVERRIDE;
-
-  void AddExtensionsString(const char* extensions);
-
- protected:
-  virtual ~GLContextStubWithExtensions() {}
-
- private:
-  std::string extensions_;
-
-  DISALLOW_COPY_AND_ASSIGN(GLContextStubWithExtensions);
-};
-
-void GLContextStubWithExtensions::AddExtensionsString(const char* extensions) {
-  if (extensions == NULL)
-    return;
-
-  if (extensions_.size() != 0)
-    extensions_ += ' ';
-  extensions_ += extensions;
-}
-
-std::string GLContextStubWithExtensions::GetExtensions() {
-  return extensions_;
-}
-
-}  // anonymous
-
 namespace content {
 
 RenderingHelperParams::RenderingHelperParams() {}
@@ -96,59 +69,47 @@ static const gfx::GLImplementation kGLImplementation =
 #endif
 
 RenderingHelper::RenderingHelper() {
+#if defined(GL_VARIANT_EGL)
+  gl_surface_ = EGL_NO_SURFACE;
+#endif
+
+#if defined(OS_WIN)
+  window_ = NULL;
+#else
+  x_window_ = (Window)0;
+#endif
+
   Clear();
 }
 
 RenderingHelper::~RenderingHelper() {
-  CHECK_EQ(window_dimensions_.size(), 0U) <<
-    "Must call UnInitialize before dtor.";
+  CHECK_EQ(clients_.size(), 0U) << "Must call UnInitialize before dtor.";
   Clear();
-}
-
-void RenderingHelper::MakeCurrent(int window_id) {
-#if GL_VARIANT_GLX
-  if (window_id < 0) {
-    CHECK(glXMakeContextCurrent(x_display_, GLX_NONE, GLX_NONE, NULL));
-  } else {
-    CHECK(glXMakeContextCurrent(
-        x_display_, x_windows_[window_id], x_windows_[window_id], gl_context_));
-  }
-#else  // EGL
-  if (window_id < 0) {
-    CHECK(eglMakeCurrent(gl_display_, EGL_NO_SURFACE, EGL_NO_SURFACE,
-                         EGL_NO_CONTEXT)) << eglGetError();
-  } else {
-    CHECK(eglMakeCurrent(gl_display_, gl_surfaces_[window_id],
-                         gl_surfaces_[window_id], gl_context_))
-        << eglGetError();
-  }
-#endif
 }
 
 void RenderingHelper::Initialize(const RenderingHelperParams& params,
                                  base::WaitableEvent* done) {
-  // Use window_dimensions_.size() != 0 as a proxy for the class having already
-  // been Initialize()'d, and UnInitialize() before continuing.
-  if (window_dimensions_.size()) {
+  // Use cients_.size() != 0 as a proxy for the class having already been
+  // Initialize()'d, and UnInitialize() before continuing.
+  if (clients_.size()) {
     base::WaitableEvent done(false, false);
     UnInitialize(&done);
     done.Wait();
   }
 
-  gfx::InitializeGLBindings(kGLImplementation);
-  scoped_refptr<GLContextStubWithExtensions> stub_context(
-      new GLContextStubWithExtensions());
+  frame_duration_ = params.rendering_fps > 0
+                        ? base::TimeDelta::FromSeconds(1) / params.rendering_fps
+                        : base::TimeDelta();
 
-  CHECK_GT(params.window_dimensions.size(), 0U);
-  CHECK_EQ(params.frame_dimensions.size(), params.window_dimensions.size());
-  window_dimensions_ = params.window_dimensions;
-  frame_dimensions_ = params.frame_dimensions;
+  gfx::InitializeStaticGLBindings(kGLImplementation);
+  scoped_refptr<gfx::GLContextStubWithExtensions> stub_context(
+      new gfx::GLContextStubWithExtensions());
+
   render_as_thumbnails_ = params.render_as_thumbnails;
   message_loop_ = base::MessageLoop::current();
-  CHECK_GT(params.num_windows, 0);
 
 #if GL_VARIANT_GLX
-  x_display_ = base::MessagePumpForUI::GetDefaultXDisplay();
+  x_display_ = gfx::GetXDisplay();
   CHECK(x_display_);
   CHECK(glXQueryVersion(x_display_, NULL, NULL));
   const int fbconfig_attr[] = {
@@ -160,7 +121,7 @@ void RenderingHelper::Initialize(const RenderingHelperParams& params,
     GL_NONE,
   };
   int num_fbconfigs;
-  scoped_ptr_malloc<GLXFBConfig, ScopedPtrXFree> glx_fb_configs(
+  scoped_ptr<GLXFBConfig, XFreeDeleter> glx_fb_configs(
       glXChooseFBConfig(x_display_, DefaultScreen(x_display_), fbconfig_attr,
                         &num_fbconfigs));
   CHECK(glx_fb_configs.get());
@@ -171,21 +132,29 @@ void RenderingHelper::Initialize(const RenderingHelperParams& params,
   CHECK(gl_context_);
   stub_context->AddExtensionsString(
       reinterpret_cast<const char*>(glGetString(GL_EXTENSIONS)));
+  stub_context->SetGLVersionString(
+      reinterpret_cast<const char*>(glGetString(GL_VERSION)));
 
+  Screen* screen = DefaultScreenOfDisplay(x_display_);
+  screen_size_ = gfx::Size(XWidthOfScreen(screen), XHeightOfScreen(screen));
 #else // EGL
   EGLNativeDisplayType native_display;
 
 #if defined(OS_WIN)
   native_display = EGL_DEFAULT_DISPLAY;
+  screen_size_ =
+      gfx::Size(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
 #else
-  x_display_ = base::MessagePumpForUI::GetDefaultXDisplay();
+  x_display_ = gfx::GetXDisplay();
   CHECK(x_display_);
   native_display = x_display_;
-#endif
 
+  Screen* screen = DefaultScreenOfDisplay(x_display_);
+  screen_size_ = gfx::Size(XWidthOfScreen(screen), XHeightOfScreen(screen));
+#endif
   gl_display_ = eglGetDisplay(native_display);
   CHECK(gl_display_);
-  CHECK(eglInitialize(gl_display_, NULL, NULL)) << glGetError();
+  CHECK(eglInitialize(gl_display_, NULL, NULL)) << eglGetError();
 
   static EGLint rgba8888[] = {
     EGL_RED_SIZE, 8,
@@ -208,65 +177,79 @@ void RenderingHelper::Initialize(const RenderingHelperParams& params,
       reinterpret_cast<const char*>(glGetString(GL_EXTENSIONS)));
   stub_context->AddExtensionsString(
       eglQueryString(gl_display_, EGL_EXTENSIONS));
+  stub_context->SetGLVersionString(
+      reinterpret_cast<const char*>(glGetString(GL_VERSION)));
 #endif
-
-  // Per-window/surface X11 & EGL initialization.
-  for (int i = 0; i < params.num_windows; ++i) {
-    // Arrange X windows whimsically, with some padding.
-    int j = i % window_dimensions_.size();
-    int width = window_dimensions_[j].width();
-    int height = window_dimensions_[j].height();
-    CHECK_GT(width, 0);
-    CHECK_GT(height, 0);
-    int top_left_x = (width + 20) * (i % 4);
-    int top_left_y = (height + 12) * (i % 3);
+  clients_ = params.clients;
+  CHECK_GT(clients_.size(), 0U);
+  LayoutRenderingAreas();
 
 #if defined(OS_WIN)
-    NativeWindowType window =
-        CreateWindowEx(0, L"Static", L"VideoDecodeAcceleratorTest",
-                       WS_OVERLAPPEDWINDOW | WS_VISIBLE, top_left_x,
-                       top_left_y, width, height, NULL, NULL, NULL,
-                       NULL);
-    CHECK(window != NULL);
-    windows_.push_back(window);
+  window_ = CreateWindowEx(0,
+                           L"Static",
+                           L"VideoDecodeAcceleratorTest",
+                           WS_OVERLAPPEDWINDOW | WS_VISIBLE,
+                           0,
+                           0,
+                           screen_size_.width(),
+                           screen_size_.height(),
+                           NULL,
+                           NULL,
+                           NULL,
+                           NULL);
+  CHECK(window_ != NULL);
 #else
-    int depth = DefaultDepth(x_display_, DefaultScreen(x_display_));
+  int depth = DefaultDepth(x_display_, DefaultScreen(x_display_));
 
 #if defined(GL_VARIANT_GLX)
-    CHECK_EQ(depth, x_visual_->depth);
+  CHECK_EQ(depth, x_visual_->depth);
 #endif
 
-    XSetWindowAttributes window_attributes;
-    window_attributes.background_pixel =
-        BlackPixel(x_display_, DefaultScreen(x_display_));
-    window_attributes.override_redirect = true;
+  XSetWindowAttributes window_attributes;
+  window_attributes.background_pixel =
+      BlackPixel(x_display_, DefaultScreen(x_display_));
+  window_attributes.override_redirect = true;
 
-    NativeWindowType window = XCreateWindow(
-        x_display_, DefaultRootWindow(x_display_),
-        top_left_x, top_left_y, width, height,
-        0 /* border width */,
-        depth, CopyFromParent /* class */, CopyFromParent /* visual */,
-        (CWBackPixel | CWOverrideRedirect), &window_attributes);
-    XStoreName(x_display_, window, "VideoDecodeAcceleratorTest");
-    XSelectInput(x_display_, window, ExposureMask);
-    XMapWindow(x_display_, window);
-    x_windows_.push_back(window);
+  x_window_ = XCreateWindow(x_display_,
+                            DefaultRootWindow(x_display_),
+                            0,
+                            0,
+                            screen_size_.width(),
+                            screen_size_.height(),
+                            0 /* border width */,
+                            depth,
+                            CopyFromParent /* class */,
+                            CopyFromParent /* visual */,
+                            (CWBackPixel | CWOverrideRedirect),
+                            &window_attributes);
+  XStoreName(x_display_, x_window_, "VideoDecodeAcceleratorTest");
+  XSelectInput(x_display_, x_window_, ExposureMask);
+  XMapWindow(x_display_, x_window_);
 #endif
 
 #if GL_VARIANT_EGL
-    EGLSurface egl_surface =
-        eglCreateWindowSurface(gl_display_, egl_config, window, NULL);
-    gl_surfaces_.push_back(egl_surface);
-    CHECK_NE(egl_surface, EGL_NO_SURFACE);
+#if defined(OS_WIN)
+  gl_surface_ =
+      eglCreateWindowSurface(gl_display_, egl_config, window_, NULL);
+#else
+  gl_surface_ =
+      eglCreateWindowSurface(gl_display_, egl_config, x_window_, NULL);
 #endif
-    MakeCurrent(i);
-  }
+  CHECK_NE(gl_surface_, EGL_NO_SURFACE);
+#endif
+
+#if GL_VARIANT_GLX
+  CHECK(glXMakeContextCurrent(x_display_, x_window_, x_window_, gl_context_));
+#else  // EGL
+  CHECK(eglMakeCurrent(gl_display_, gl_surface_, gl_surface_, gl_context_))
+      << eglGetError();
+#endif
 
   // Must be done after a context is made current.
-  gfx::InitializeGLExtensionBindings(kGLImplementation, stub_context.get());
+  gfx::InitializeDynamicGLBindings(kGLImplementation, stub_context.get());
 
   if (render_as_thumbnails_) {
-    CHECK_EQ(window_dimensions_.size(), 1U);
+    CHECK_EQ(clients_.size(), 1U);
 
     GLint max_texture_size;
     glGetIntegerv(GL_MAX_TEXTURE_SIZE, &max_texture_size);
@@ -383,11 +366,17 @@ void RenderingHelper::Initialize(const RenderingHelperParams& params,
   int tc_location = glGetAttribLocation(program_, "in_tc");
   glEnableVertexAttribArray(tc_location);
   glVertexAttribPointer(tc_location, 2, GL_FLOAT, GL_FALSE, 0, kTextureCoords);
+
+  if (frame_duration_ != base::TimeDelta()) {
+    render_timer_.Start(
+        FROM_HERE, frame_duration_, this, &RenderingHelper::RenderContent);
+  }
   done->Signal();
 }
 
 void RenderingHelper::UnInitialize(base::WaitableEvent* done) {
   CHECK_EQ(base::MessageLoop::current(), message_loop_);
+  render_timer_.Stop();
   if (render_as_thumbnails_) {
     glDeleteTextures(1, &thumbnails_texture_id_);
     glDeleteFramebuffersEXT(1, &thumbnails_fbo_id_);
@@ -396,10 +385,11 @@ void RenderingHelper::UnInitialize(base::WaitableEvent* done) {
 
   glXDestroyContext(x_display_, gl_context_);
 #else // EGL
-  MakeCurrent(-1);
+  CHECK(eglMakeCurrent(
+      gl_display_, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT))
+      << eglGetError();
   CHECK(eglDestroyContext(gl_display_, gl_context_));
-  for (size_t i = 0; i < gl_surfaces_.size(); ++i)
-    CHECK(eglDestroySurface(gl_display_, gl_surfaces_[i]));
+  CHECK(eglDestroySurface(gl_display_, gl_surface_));
   CHECK(eglTerminate(gl_display_));
 #endif
   gfx::ClearGLBindings();
@@ -407,27 +397,28 @@ void RenderingHelper::UnInitialize(base::WaitableEvent* done) {
   done->Signal();
 }
 
-void RenderingHelper::CreateTexture(int window_id,
-                                    uint32 texture_target,
+void RenderingHelper::CreateTexture(uint32 texture_target,
                                     uint32* texture_id,
+                                    const gfx::Size& size,
                                     base::WaitableEvent* done) {
   if (base::MessageLoop::current() != message_loop_) {
-    message_loop_->PostTask(
-        FROM_HERE,
-        base::Bind(&RenderingHelper::CreateTexture, base::Unretained(this),
-                   window_id, texture_target, texture_id, done));
+    message_loop_->PostTask(FROM_HERE,
+                            base::Bind(&RenderingHelper::CreateTexture,
+                                       base::Unretained(this),
+                                       texture_target,
+                                       texture_id,
+                                       size,
+                                       done));
     return;
   }
-  MakeCurrent(window_id);
   glGenTextures(1, texture_id);
   glBindTexture(texture_target, *texture_id);
-  int dimensions_id = window_id % frame_dimensions_.size();
   if (texture_target == GL_TEXTURE_2D) {
     glTexImage2D(GL_TEXTURE_2D,
                  0,
                  GL_RGBA,
-                 frame_dimensions_[dimensions_id].width(),
-                 frame_dimensions_[dimensions_id].height(),
+                 size.width(),
+                 size.height(),
                  0,
                  GL_RGBA,
                  GL_UNSIGNED_BYTE,
@@ -439,77 +430,47 @@ void RenderingHelper::CreateTexture(int window_id,
   glTexParameteri(texture_target, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
   glTexParameteri(texture_target, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
   CHECK_EQ(static_cast<int>(glGetError()), GL_NO_ERROR);
-  CHECK(texture_id_to_surface_index_.insert(
-      std::make_pair(*texture_id, window_id)).second);
   done->Signal();
 }
 
-void RenderingHelper::RenderTexture(uint32 texture_target, uint32 texture_id) {
+// Helper function to set GL viewport.
+static inline void GLSetViewPort(const gfx::Rect& area) {
+  glViewport(area.x(), area.y(), area.width(), area.height());
+  glScissor(area.x(), area.y(), area.width(), area.height());
+}
+
+void RenderingHelper::RenderThumbnail(uint32 texture_target,
+                                      uint32 texture_id) {
   CHECK_EQ(base::MessageLoop::current(), message_loop_);
-  size_t window_id = texture_id_to_surface_index_[texture_id];
-  MakeCurrent(window_id);
+  const int width = thumbnail_size_.width();
+  const int height = thumbnail_size_.height();
+  const int thumbnails_in_row = thumbnails_fbo_size_.width() / width;
+  const int thumbnails_in_column = thumbnails_fbo_size_.height() / height;
+  const int row = (frame_count_ / thumbnails_in_row) % thumbnails_in_column;
+  const int col = frame_count_ % thumbnails_in_row;
 
-  int dimensions_id = window_id % window_dimensions_.size();
-  int width = window_dimensions_[dimensions_id].width();
-  int height = window_dimensions_[dimensions_id].height();
+  gfx::Rect area(col * width, row * height, width, height);
 
-  if (render_as_thumbnails_) {
-    glBindFramebufferEXT(GL_FRAMEBUFFER, thumbnails_fbo_id_);
-    const int thumbnails_in_row =
-        thumbnails_fbo_size_.width() / thumbnail_size_.width();
-    const int thumbnails_in_column =
-        thumbnails_fbo_size_.height() / thumbnail_size_.height();
-    const int row = (frame_count_ / thumbnails_in_row) % thumbnails_in_column;
-    const int col = frame_count_ % thumbnails_in_row;
-    const int x = col * thumbnail_size_.width();
-    const int y = row * thumbnail_size_.height();
+  glUniform1i(glGetUniformLocation(program_, "tex_flip"), 0);
+  glBindFramebufferEXT(GL_FRAMEBUFFER, thumbnails_fbo_id_);
+  GLSetViewPort(area);
+  RenderTexture(texture_target, texture_id);
+  glBindFramebufferEXT(GL_FRAMEBUFFER, 0);
+  ++frame_count_;
+}
 
-    glViewport(x, y, thumbnail_size_.width(), thumbnail_size_.height());
-    glScissor(x, y, thumbnail_size_.width(), thumbnail_size_.height());
-    glUniform1i(glGetUniformLocation(program_, "tex_flip"), 0);
-  } else {
-    glViewport(0, 0, width, height);
-    glScissor(0, 0, width, height);
-    glUniform1i(glGetUniformLocation(program_, "tex_flip"), 1);
-  }
-
-  // Unbound texture samplers default to (0, 0, 0, 1).  Use this fact to switch
-  // between GL_TEXTURE_2D and GL_TEXTURE_EXTERNAL_OES as appopriate.
+void RenderingHelper::RenderTexture(uint32 texture_target, uint32 texture_id) {
+  // The ExternalOES sampler is bound to GL_TEXTURE1 and the Texture2D sampler
+  // is bound to GL_TEXTURE0.
   if (texture_target == GL_TEXTURE_2D) {
     glActiveTexture(GL_TEXTURE0 + 0);
-    glBindTexture(GL_TEXTURE_2D, texture_id);
-    glActiveTexture(GL_TEXTURE0 + 1);
-    glBindTexture(texture_target, 0);
   } else if (texture_target == GL_TEXTURE_EXTERNAL_OES) {
-    glActiveTexture(GL_TEXTURE0 + 0);
-    glBindTexture(GL_TEXTURE_2D, 0);
     glActiveTexture(GL_TEXTURE0 + 1);
-    glBindTexture(texture_target, texture_id);
   }
+  glBindTexture(texture_target, texture_id);
   glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+  glBindTexture(texture_target, 0);
   CHECK_EQ(static_cast<int>(glGetError()), GL_NO_ERROR);
-
-  ++frame_count_;
-
-  if (render_as_thumbnails_) {
-    // Copy from FBO to screen
-    glUniform1i(glGetUniformLocation(program_, "tex_flip"), 1);
-    glBindFramebufferEXT(GL_FRAMEBUFFER, 0);
-    glViewport(0, 0, width, height);
-    glScissor(0, 0, width, height);
-    glActiveTexture(GL_TEXTURE0 + 0);
-    glBindTexture(GL_TEXTURE_2D, thumbnails_texture_id_);
-    glActiveTexture(GL_TEXTURE0 + 1);
-    glBindTexture(texture_target, 0);
-    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-  }
-
-#if GL_VARIANT_GLX
-  glXSwapBuffers(x_display_, x_windows_[window_id]);
-#else  // EGL
-  eglSwapBuffers(gl_display_, gl_surfaces_[window_id]);
-  CHECK_EQ(static_cast<int>(eglGetError()), EGL_SUCCESS);
-#endif
 }
 
 void RenderingHelper::DeleteTexture(uint32 texture_id) {
@@ -517,9 +478,7 @@ void RenderingHelper::DeleteTexture(uint32 texture_id) {
   CHECK_EQ(static_cast<int>(glGetError()), GL_NO_ERROR);
 }
 
-void* RenderingHelper::GetGLContext() {
-  return gl_context_;
-}
+NativeContextType RenderingHelper::GetGLContext() { return gl_context_; }
 
 void* RenderingHelper::GetGLDisplay() {
 #if GL_VARIANT_GLX
@@ -530,14 +489,12 @@ void* RenderingHelper::GetGLDisplay() {
 }
 
 void RenderingHelper::Clear() {
-  window_dimensions_.clear();
-  frame_dimensions_.clear();
-  texture_id_to_surface_index_.clear();
+  clients_.clear();
   message_loop_ = NULL;
   gl_context_ = NULL;
 #if GL_VARIANT_EGL
   gl_display_ = EGL_NO_DISPLAY;
-  gl_surfaces_.clear();
+  gl_surface_ = EGL_NO_SURFACE;
 #endif
   render_as_thumbnails_ = false;
   frame_count_ = 0;
@@ -545,19 +502,19 @@ void RenderingHelper::Clear() {
   thumbnails_texture_id_ = 0;
 
 #if defined(OS_WIN)
-  for (size_t i = 0; i < windows_.size(); ++i) {
-    DestroyWindow(windows_[i]);
+  if (window_) {
+    DestroyWindow(window_);
+    window_ = NULL;
   }
-  windows_.clear();
 #else
   // Destroy resources acquired in Initialize, in reverse-acquisition order.
-  for (size_t i = 0; i < x_windows_.size(); ++i) {
-    CHECK(XUnmapWindow(x_display_, x_windows_[i]));
-    CHECK(XDestroyWindow(x_display_, x_windows_[i]));
+  if (x_window_) {
+    CHECK(XUnmapWindow(x_display_, x_window_));
+    CHECK(XDestroyWindow(x_display_, x_window_));
+    x_window_ = (Window)0;
   }
   // Mimic newly created object.
   x_display_ = NULL;
-  x_windows_.clear();
 #endif
 }
 
@@ -597,4 +554,82 @@ void RenderingHelper::GetThumbnailsAsRGB(std::vector<unsigned char>* rgb,
   done->Signal();
 }
 
+void RenderingHelper::RenderContent() {
+  glUniform1i(glGetUniformLocation(program_, "tex_flip"), 1);
+
+  if (render_as_thumbnails_) {
+    // In render_as_thumbnails_ mode, we render the FBO content on the
+    // screen instead of the decoded textures.
+    GLSetViewPort(render_areas_[0]);
+    RenderTexture(GL_TEXTURE_2D, thumbnails_texture_id_);
+  } else {
+    for (size_t i = 0; i < clients_.size(); ++i) {
+      if (clients_[i]) {
+        GLSetViewPort(render_areas_[i]);
+        clients_[i]->RenderContent(this);
+      }
+    }
+  }
+
+#if GL_VARIANT_GLX
+  glXSwapBuffers(x_display_, x_window_);
+#else  // EGL
+  eglSwapBuffers(gl_display_, gl_surface_);
+  CHECK_EQ(static_cast<int>(eglGetError()), EGL_SUCCESS);
+#endif
+}
+
+// Helper function for the LayoutRenderingAreas(). The |lengths| are the
+// heights(widths) of the rows(columns). It scales the elements in
+// |lengths| proportionally so that the sum of them equal to |total_length|.
+// It also outputs the coordinates of the rows(columns) to |offsets|.
+static void ScaleAndCalculateOffsets(std::vector<int>* lengths,
+                                     std::vector<int>* offsets,
+                                     int total_length) {
+  int sum = std::accumulate(lengths->begin(), lengths->end(), 0);
+  for (size_t i = 0; i < lengths->size(); ++i) {
+    lengths->at(i) = lengths->at(i) * total_length / sum;
+    offsets->at(i) = (i == 0) ? 0 : offsets->at(i - 1) + lengths->at(i - 1);
+  }
+}
+
+void RenderingHelper::LayoutRenderingAreas() {
+  // Find the number of colums and rows.
+  // The smallest n * n or n * (n + 1) > number of clients.
+  size_t cols = sqrt(clients_.size() - 1) + 1;
+  size_t rows = (clients_.size() + cols - 1) / cols;
+
+  // Find the widths and heights of the grid.
+  std::vector<int> widths(cols);
+  std::vector<int> heights(rows);
+  std::vector<int> offset_x(cols);
+  std::vector<int> offset_y(rows);
+
+  for (size_t i = 0; i < clients_.size(); ++i) {
+    const gfx::Size& window_size = clients_[i]->GetWindowSize();
+    widths[i % cols] = std::max(widths[i % cols], window_size.width());
+    heights[i / cols] = std::max(heights[i / cols], window_size.height());
+  }
+
+  ScaleAndCalculateOffsets(&widths, &offset_x, screen_size_.width());
+  ScaleAndCalculateOffsets(&heights, &offset_y, screen_size_.height());
+
+  // Put each render_area_ in the center of each cell.
+  render_areas_.clear();
+  for (size_t i = 0; i < clients_.size(); ++i) {
+    const gfx::Size& window_size = clients_[i]->GetWindowSize();
+    float scale =
+        std::min(static_cast<float>(widths[i % cols]) / window_size.width(),
+                 static_cast<float>(heights[i / cols]) / window_size.height());
+
+    // Don't scale up the texture.
+    scale = std::min(1.0f, scale);
+
+    size_t w = scale * window_size.width();
+    size_t h = scale * window_size.height();
+    size_t x = offset_x[i % cols] + (widths[i % cols] - w) / 2;
+    size_t y = offset_y[i / cols] + (heights[i / cols] - h) / 2;
+    render_areas_.push_back(gfx::Rect(x, y, w, h));
+  }
+}
 }  // namespace content

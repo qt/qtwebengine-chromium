@@ -34,6 +34,7 @@
 #include "core/loader/EmptyClients.h"
 #include "core/page/Page.h"
 #include "platform/geometry/IntSize.h"
+#include "platform/heap/Handle.h"
 #include "wtf/FastAllocBase.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/OwnPtr.h"
@@ -42,18 +43,18 @@
 namespace WebCore {
 
 class Document;
-class Frame;
+class LocalFrame;
 class FrameView;
 class IntSize;
 
-// Creates a dummy Page, Frame, and FrameView whose clients are all no-op.
+// Creates a dummy Page, LocalFrame, and FrameView whose clients are all no-op.
 //
 // This class can be used when you write unit tests for components which do not work correctly without renderers.
 // To make sure the renderers are created, you need to call |frameView().layout()| after you add nodes into
 // |document()|.
 //
-// Since DummyPageHolder stores empty clients in it, it must outlive the Page, Frame, FrameView and any other objects
-// created by it. DummyPageHolder's destructor ensures this condition by checking remaining references to the Frame.
+// Since DummyPageHolder stores empty clients in it, it must outlive the Page, LocalFrame, FrameView and any other objects
+// created by it. DummyPageHolder's destructor ensures this condition by checking remaining references to the LocalFrame.
 
 class DummyPageHolder {
     WTF_MAKE_NONCOPYABLE(DummyPageHolder);
@@ -63,23 +64,17 @@ public:
     ~DummyPageHolder();
 
     Page& page() const;
-    Frame& frame() const;
+    LocalFrame& frame() const;
     FrameView& frameView() const;
     Document& document() const;
 
 private:
     explicit DummyPageHolder(const IntSize& initialViewSize);
 
-    OwnPtr<Page> m_page;
-    RefPtr<Frame> m_frame;
+    OwnPtrWillBePersistent<Page> m_page;
+    RefPtr<LocalFrame> m_frame;
 
     Page::PageClients m_pageClients;
-    EmptyChromeClient m_chromeClient;
-    EmptyContextMenuClient m_contextMenuClient;
-    EmptyEditorClient m_editorClient;
-    EmptyDragClient m_dragClient;
-    EmptyInspectorClient m_inspectorClient;
-    EmptyBackForwardClient m_backForwardClient;
     EmptyFrameLoaderClient m_frameLoaderClient;
 };
 

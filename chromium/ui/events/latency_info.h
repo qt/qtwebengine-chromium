@@ -5,10 +5,11 @@
 #ifndef UI_EVENTS_LATENCY_INFO_H_
 #define UI_EVENTS_LATENCY_INFO_H_
 
-#include <map>
 #include <utility>
+#include <vector>
 
 #include "base/basictypes.h"
+#include "base/containers/small_map.h"
 #include "base/time/time.h"
 #include "ui/events/events_base_export.h"
 
@@ -19,6 +20,8 @@ enum LatencyComponentType {
   // BEGIN COMPONENT is when we show the latency begin in chrome://tracing.
   // Timestamp when the input event is sent from RenderWidgetHost to renderer.
   INPUT_EVENT_LATENCY_BEGIN_RWH_COMPONENT,
+  // Timestamp when the input event is received in plugin.
+  INPUT_EVENT_LATENCY_BEGIN_PLUGIN_COMPONENT,
   // ---------------------------NORMAL COMPONENT-------------------------------
   // Timestamp when the scroll update gesture event is sent from RWH to
   // renderer. In Aura, touch event's LatencyInfo is carried over to the gesture
@@ -64,6 +67,10 @@ enum LatencyComponentType {
   // This component indicates that the cached LatencyInfo number exceeds the
   // maximal allowed size.
   LATENCY_INFO_LIST_TERMINATED_OVERFLOW_COMPONENT,
+  // Timestamp when the input event is considered not cause any rendering
+  // damage in plugin and thus terminated.
+  INPUT_EVENT_LATENCY_TERMINATED_PLUGIN_COMPONENT,
+  LATENCY_COMPONENT_TYPE_LAST = INPUT_EVENT_LATENCY_TERMINATED_PLUGIN_COMPONENT
 };
 
 struct EVENTS_BASE_EXPORT LatencyInfo {
@@ -78,17 +85,31 @@ struct EVENTS_BASE_EXPORT LatencyInfo {
     uint32 event_count;
   };
 
+  // Empirically determined constant based on a typical scroll sequence.
+  enum { kTypicalMaxComponentsPerLatencyInfo = 6 };
+
   // Map a Latency Component (with a component-specific int64 id) to a
   // component info.
-  typedef std::map<std::pair<LatencyComponentType, int64>, LatencyComponent>
-      LatencyMap;
+  typedef base::SmallMap<
+      std::map<std::pair<LatencyComponentType, int64>, LatencyComponent>,
+      kTypicalMaxComponentsPerLatencyInfo> LatencyMap;
 
   LatencyInfo();
 
   ~LatencyInfo();
 
-  // Merges the contents of another LatencyInfo into this one.
-  void MergeWith(const LatencyInfo& other);
+  // Returns true if the vector |latency_info| is valid. Returns false
+  // if it is not valid and log the |referring_msg|.
+  // This function is mainly used to check the latency_info vector that
+  // is passed between processes using IPC message has reasonable size
+  // so that we are confident the IPC message is not corrupted/compromised.
+  // This check will go away once the IPC system has better built-in scheme
+  // for corruption/compromise detection.
+  static bool Verify(const std::vector<LatencyInfo>& latency_info,
+                     const char* referring_msg);
+
+  // Copy LatencyComponents with type |type| from |other| into |this|.
+  void CopyLatencyFrom(const LatencyInfo& other, LatencyComponentType type);
 
   // Add LatencyComponents that are in |other| but not in |this|.
   void AddNewLatencyFrom(const LatencyInfo& other);
@@ -101,13 +122,11 @@ struct EVENTS_BASE_EXPORT LatencyInfo {
 
   // Modifies the current sequence number and adds a certain number of events
   // for a specific component.
-  // TODO(miletus): Remove the |dump_to_trace| once we remove MergeWith().
   void AddLatencyNumberWithTimestamp(LatencyComponentType component,
                                      int64 id,
                                      int64 component_sequence_number,
                                      base::TimeTicks time,
-                                     uint32 event_count,
-                                     bool dump_to_trace);
+                                     uint32 event_count);
 
   // Returns true if the a component with |type| and |id| is found in
   // the latency_components and the component is stored to |output| if

@@ -43,6 +43,14 @@ cr.define('print_preview', function() {
     this.metrics_ = metrics;
 
     /**
+     * Whether or not a UMA histogram for the register promo being shown was
+     * already recorded.
+     * @type {bool}
+     * @private
+     */
+    this.registerPromoShownMetricRecorded_ = false;
+
+    /**
      * Search box used to search through the destination lists.
      * @type {!print_preview.SearchBox}
      * @private
@@ -83,6 +91,9 @@ cr.define('print_preview', function() {
    * @enum {string}
    */
   DestinationSearch.EventType = {
+    // Dispatched when user requests to sign-in into another Google account.
+    ADD_ACCOUNT: 'print_preview.DestinationSearch.ADD_ACCOUNT',
+
     // Dispatched when the user requests to manage their cloud destinations.
     MANAGE_CLOUD_DESTINATIONS:
         'print_preview.DestinationSearch.MANAGE_CLOUD_DESTINATIONS',
@@ -103,6 +114,14 @@ cr.define('print_preview', function() {
    */
   DestinationSearch.LIST_BOTTOM_PADDING_ = 18;
 
+  /**
+   * Number of unregistered destinations that may be promoted to the top.
+   * @type {number}
+   * @const
+   * @private
+   */
+  DestinationSearch.MAX_PROMOTED_UNREGISTERED_PRINTERS_ = 2;
+
   DestinationSearch.prototype = {
     __proto__: print_preview.Component.prototype,
 
@@ -113,14 +132,23 @@ cr.define('print_preview', function() {
 
     /** @param {boolean} isVisible Whether the component is visible. */
     setIsVisible: function(isVisible) {
+      if (this.getIsVisible() == isVisible) {
+        return;
+      }
       if (isVisible) {
+        setIsVisible(this.getElement(), true);
+        setTimeout(function(element) {
+          element.classList.remove('transparent');
+        }.bind(this, this.getElement()), 0);
         this.searchBox_.focus();
-        this.getElement().classList.remove('transparent');
         var promoEl = this.getChildElement('.cloudprint-promo');
         if (getIsVisible(promoEl)) {
           this.metrics_.incrementDestinationSearchBucket(
               print_preview.Metrics.DestinationSearchBucket.
                   CLOUDPRINT_PROMO_SHOWN);
+        }
+        if (this.userInfo_.initialized) {
+          this.onUsersChanged_();
         }
         this.reflowLists_();
       } else {
@@ -131,17 +159,6 @@ cr.define('print_preview', function() {
         this.searchBox_.setQuery('');
         this.filterLists_(null);
       }
-    },
-
-    /** @param {string} email Email of the logged-in user. */
-    setCloudPrintEmail: function(email) {
-      var userInfoEl = this.getChildElement('.user-info');
-      userInfoEl.textContent = localStrings.getStringF('userInfo', email);
-      userInfoEl.title = localStrings.getStringF('userInfo', email);
-      setIsVisible(userInfoEl, true);
-      setIsVisible(this.getChildElement('.cloud-list'), true);
-      setIsVisible(this.getChildElement('.cloudprint-promo'), false);
-      this.reflowLists_();
     },
 
     /** Shows the Google Cloud Print promotion banner. */
@@ -158,6 +175,20 @@ cr.define('print_preview', function() {
     /** @override */
     enterDocument: function() {
       print_preview.Component.prototype.enterDocument.call(this);
+
+      this.getElement().addEventListener('webkitTransitionEnd', function f(e) {
+        if (e.target != e.currentTarget || e.propertyName != 'opacity')
+          return;
+        if (e.target.classList.contains('transparent')) {
+          setIsVisible(e.target, false);
+        }
+      });
+
+      this.tracker.add(
+          this.getChildElement('.account-select'),
+          'change',
+          this.onAccountChange_.bind(this));
+
       this.tracker.add(
           this.getChildElement('.page > .close-button'),
           'click',
@@ -196,7 +227,7 @@ cr.define('print_preview', function() {
       this.tracker.add(
           this.destinationStore_,
           print_preview.DestinationStore.EventType.DESTINATION_SEARCH_DONE,
-          this.updateThrobbers_.bind(this));
+          this.onDestinationSearchDone_.bind(this));
 
       this.tracker.add(
           this.localList_,
@@ -216,8 +247,8 @@ cr.define('print_preview', function() {
 
       this.tracker.add(
           this.userInfo_,
-          print_preview.UserInfo.EventType.EMAIL_CHANGE,
-          this.onEmailChange_.bind(this));
+          print_preview.UserInfo.EventType.USERS_CHANGED,
+          this.onUsersChanged_.bind(this));
 
       this.tracker.add(window, 'resize', this.onWindowResize_.bind(this));
 
@@ -237,6 +268,8 @@ cr.define('print_preview', function() {
           'cloudPrintPromotion',
           '<span class="sign-in link-button">',
           '</span>');
+      this.getChildElement('.account-select-label').textContent =
+          localStrings.getString('accountSelectTitle');
     },
 
     /**
@@ -280,7 +313,11 @@ cr.define('print_preview', function() {
       var recentDestinations = [];
       var localDestinations = [];
       var cloudDestinations = [];
-      this.destinationStore_.destinations.forEach(function(destination) {
+      var unregisteredCloudDestinations = [];
+
+      var destinations =
+          this.destinationStore_.destinations(this.userInfo_.activeUser);
+      destinations.forEach(function(destination) {
         if (destination.isRecent) {
           recentDestinations.push(destination);
         }
@@ -288,12 +325,31 @@ cr.define('print_preview', function() {
             destination.origin == print_preview.Destination.Origin.DEVICE) {
           localDestinations.push(destination);
         } else {
-          cloudDestinations.push(destination);
+          if (destination.connectionStatus ==
+                print_preview.Destination.ConnectionStatus.UNREGISTERED) {
+            unregisteredCloudDestinations.push(destination);
+          } else {
+            cloudDestinations.push(destination);
+          }
         }
       });
+
+      if (unregisteredCloudDestinations.length != 0 &&
+          !this.registerPromoShownMetricRecorded_) {
+        this.metrics_.incrementDestinationSearchBucket(
+          print_preview.Metrics.DestinationSearchBucket.REGISTER_PROMO_SHOWN);
+        this.registerPromoShownMetricRecorded_ = true;
+      }
+
+      var finalCloudDestinations = unregisteredCloudDestinations.slice(
+        0, DestinationSearch.MAX_PROMOTED_UNREGISTERED_PRINTERS_).concat(
+          cloudDestinations,
+          unregisteredCloudDestinations.slice(
+            DestinationSearch.MAX_PROMOTED_UNREGISTERED_PRINTERS_));
+
       this.recentList_.updateDestinations(recentDestinations);
       this.localList_.updateDestinations(localDestinations);
-      this.cloudList_.updateDestinations(cloudDestinations);
+      this.cloudList_.updateDestinations(finalCloudDestinations);
     },
 
     /**
@@ -311,34 +367,57 @@ cr.define('print_preview', function() {
         lists.push(this.cloudList_);
       }
 
+      var getListsTotalHeight = function(lists, counts) {
+        return lists.reduce(function(sum, list, index) {
+          return sum + list.getEstimatedHeightInPixels(counts[index]) +
+              DestinationSearch.LIST_BOTTOM_PADDING_;
+        }, 0);
+      };
+      var getCounts = function(lists, count) {
+        return lists.map(function(list) { return count; });
+      };
+
       var availableHeight = this.getAvailableListsHeight_();
-      this.getChildElement('.lists').style.maxHeight = availableHeight + 'px';
+      var listsEl = this.getChildElement('.lists');
+      listsEl.style.maxHeight = availableHeight + 'px';
 
       var maxListLength = lists.reduce(function(prevCount, list) {
         return Math.max(prevCount, list.getDestinationsCount());
       }, 0);
       for (var i = 1; i <= maxListLength; i++) {
-        var listsHeight = lists.reduce(function(sum, list) {
-          return sum + list.getEstimatedHeightInPixels(i) +
-              DestinationSearch.LIST_BOTTOM_PADDING_;
-        }, 0);
-        if (listsHeight > availableHeight) {
-          i -= 1;
+        if (getListsTotalHeight(lists, getCounts(lists, i)) > availableHeight) {
+          i--;
           break;
         }
       }
+      var counts = getCounts(lists, i);
+      // Fill up the possible n-1 free slots left by the previous loop.
+      if (getListsTotalHeight(lists, counts) < availableHeight) {
+        for (var countIndex = 0; countIndex < counts.length; countIndex++) {
+          counts[countIndex]++;
+          if (getListsTotalHeight(lists, counts) > availableHeight) {
+            counts[countIndex]--;
+            break;
+          }
+        }
+      }
 
-      lists.forEach(function(list) {
-        list.updateShortListSize(i);
+      lists.forEach(function(list, index) {
+        list.updateShortListSize(counts[index]);
       });
 
       // Set height of the list manually so that search filter doesn't change
       // lists height.
-      this.getChildElement('.lists').style.height =
-          lists.reduce(function(sum, list) {
-            return sum + list.getEstimatedHeightInPixels(i) +
-                DestinationSearch.LIST_BOTTOM_PADDING_;
-          }, 0) + 'px';
+      var listsHeight = getListsTotalHeight(lists, counts) + 'px';
+      if (listsHeight != listsEl.style.height) {
+        // Try to close account select if there's a possibility it's open now.
+        var accountSelectEl = this.getChildElement('.account-select');
+        if (!accountSelectEl.disabled) {
+          accountSelectEl.disabled = true;
+          accountSelectEl.disabled = false;
+        }
+        listsEl.style.height = listsHeight;
+      }
     },
 
     /**
@@ -354,6 +433,36 @@ cr.define('print_preview', function() {
       this.recentList_.setIsThrobberVisible(
           this.destinationStore_.isLocalDestinationSearchInProgress &&
           this.destinationStore_.isCloudDestinationSearchInProgress);
+      this.reflowLists_();
+    },
+
+    /**
+     * Called when user's logged in accounts change. Updates the UI.
+     * @private
+     */
+    onUsersChanged_: function() {
+      var loggedIn = this.userInfo_.loggedIn;
+      if (loggedIn) {
+        var accountSelectEl = this.getChildElement('.account-select');
+        accountSelectEl.innerHTML = '';
+        this.userInfo_.users.forEach(function(account) {
+          var option = document.createElement('option');
+          option.text = account;
+          option.value = account;
+          accountSelectEl.add(option);
+        });
+        var option = document.createElement('option');
+        option.text = localStrings.getString('addAccountTitle');
+        option.value = '';
+        accountSelectEl.add(option);
+
+        accountSelectEl.selectedIndex =
+            this.userInfo_.users.indexOf(this.userInfo_.activeUser);
+      }
+
+      setIsVisible(this.getChildElement('.user-info'), loggedIn);
+      setIsVisible(this.getChildElement('.cloud-list'), loggedIn);
+      setIsVisible(this.getChildElement('.cloudprint-promo'), !loggedIn);
       this.reflowLists_();
     },
 
@@ -398,7 +507,8 @@ cr.define('print_preview', function() {
      * @private
      */
     onDestinationStoreSelect_: function() {
-      var destinations = this.destinationStore_.destinations;
+      var destinations =
+          this.destinationStore_.destinations(this.userInfo_.activeUser);
       var recentDestinations = [];
       destinations.forEach(function(destination) {
         if (destination.isRecent) {
@@ -415,6 +525,17 @@ cr.define('print_preview', function() {
      * @private
      */
     onDestinationsInserted_: function() {
+      this.renderDestinations_();
+      this.reflowLists_();
+    },
+
+    /**
+     * Called when destinations are inserted into the store. Rerenders
+     * destinations.
+     * @private
+     */
+    onDestinationSearchDone_: function() {
+      this.updateThrobbers_();
       this.renderDestinations_();
       this.reflowLists_();
     },
@@ -451,6 +572,34 @@ cr.define('print_preview', function() {
     },
 
     /**
+     * Called when item in the Accounts list is selected. Initiates active user
+     * switch or, for 'Add account...' item, opens Google sign-in page.
+     * @private
+     */
+    onAccountChange_: function() {
+      var accountSelectEl = this.getChildElement('.account-select');
+      var account =
+          accountSelectEl.options[accountSelectEl.selectedIndex].value;
+      if (account) {
+        this.userInfo_.activeUser = account;
+        this.destinationStore_.reloadUserCookieBasedDestinations();
+        this.metrics_.incrementDestinationSearchBucket(
+            print_preview.Metrics.DestinationSearchBucket.ACCOUNT_CHANGED);
+      } else {
+        cr.dispatchSimpleEvent(this, DestinationSearch.EventType.ADD_ACCOUNT);
+        // Set selection back to the active user.
+        for (var i = 0; i < accountSelectEl.options.length; i++) {
+          if (accountSelectEl.options[i].value == this.userInfo_.activeUser) {
+            accountSelectEl.selectedIndex = i;
+            break;
+          }
+        }
+        this.metrics_.incrementDestinationSearchBucket(
+            print_preview.Metrics.DestinationSearchBucket.ADD_ACCOUNT_SELECTED);
+      }
+    },
+
+    /**
      * Called when the close button on the cloud print promo is clicked. Hides
      * the promo.
      * @private
@@ -476,17 +625,6 @@ cr.define('print_preview', function() {
      */
     onAnimationEnd_: function() {
       this.getChildElement('.page').classList.remove('pulse');
-    },
-
-    /**
-     * Called when the user's email field has changed. Updates the UI.
-     * @private
-     */
-    onEmailChange_: function() {
-      var userEmail = this.userInfo_.getUserEmail();
-      if (userEmail) {
-        this.setCloudPrintEmail(userEmail);
-      }
     },
 
     /**

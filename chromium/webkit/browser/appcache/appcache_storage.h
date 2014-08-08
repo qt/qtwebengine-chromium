@@ -19,6 +19,14 @@
 
 class GURL;
 
+namespace content {
+FORWARD_DECLARE_TEST(AppCacheStorageTest, DelegateReferences);
+FORWARD_DECLARE_TEST(AppCacheStorageTest, UsageMap);
+class AppCacheQuotaClientTest;
+class AppCacheResponseTest;
+class AppCacheStorageTest;
+}
+
 namespace appcache {
 
 class AppCache;
@@ -26,7 +34,7 @@ class AppCacheEntry;
 class AppCacheGroup;
 class AppCacheResponseReader;
 class AppCacheResponseWriter;
-class AppCacheService;
+class AppCacheServiceImpl;
 struct AppCacheInfoCollection;
 struct HttpResponseInfoIOBuffer;
 
@@ -52,14 +60,16 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AppCacheStorage {
         bool would_exceed_quota) {}
 
     // If the operation fails, success will be false.
-    virtual void OnGroupMadeObsolete(AppCacheGroup* group, bool success) {}
+    virtual void OnGroupMadeObsolete(AppCacheGroup* group,
+                                     bool success,
+                                     int response_code) {}
 
     // If a load fails the 'response_info' will be NULL.
     virtual void OnResponseInfoLoaded(
         AppCacheResponseInfo* response_info, int64 response_id) {}
 
     // If no response is found, entry.response_id() and
-    // fallback_entry.response_id() will be kNoResponseId.
+    // fallback_entry.response_id() will be kAppCacheNoResponseId.
     // If the response is the entry for an intercept or fallback
     // namespace, the url of the namespece entry is returned.
     // If a response is found, the cache id and manifest url of the
@@ -73,7 +83,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AppCacheStorage {
     virtual ~Delegate() {}
   };
 
-  explicit AppCacheStorage(AppCacheService* service);
+  explicit AppCacheStorage(AppCacheServiceImpl* service);
   virtual ~AppCacheStorage();
 
   // Schedules a task to retrieve basic info about all groups and caches
@@ -140,8 +150,9 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AppCacheStorage {
   // Schedules a task to update persistent storage and doom the group and all
   // related caches and responses for deletion. Upon completion the in-memory
   // instance is marked as obsolete and the delegate callback is called.
-  virtual void MakeGroupObsolete(
-      AppCacheGroup* group, Delegate* delegate) = 0;
+  virtual void MakeGroupObsolete(AppCacheGroup* group,
+                                 Delegate* delegate,
+                                 int response_code) = 0;
 
   // Cancels all pending callbacks for the delegate. The delegate callbacks
   // will not be invoked after, however any scheduled operations will still
@@ -173,8 +184,6 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AppCacheStorage {
   virtual void DeleteResponses(
       const GURL& manifest_url, const std::vector<int64>& response_ids) = 0;
 
-  virtual void PurgeMemory() = 0;
-
   // Generates unique storage ids for different object types.
   int64 NewCacheId() {
     return ++last_cache_id_;
@@ -190,12 +199,12 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AppCacheStorage {
   const UsageMap* usage_map() { return &usage_map_; }
 
   // Simple ptr back to the service object that owns us.
-  AppCacheService* service() { return service_; }
+  AppCacheServiceImpl* service() { return service_; }
 
  protected:
-  friend class AppCacheQuotaClientTest;
-  friend class AppCacheResponseTest;
-  friend class AppCacheStorageTest;
+  friend class content::AppCacheQuotaClientTest;
+  friend class content::AppCacheResponseTest;
+  friend class content::AppCacheStorageTest;
 
   // Helper to call a collection of delegates.
   #define FOR_EACH_DELEGATE(delegates, func_and_args)                \
@@ -303,15 +312,15 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AppCacheStorage {
 
   UsageMap usage_map_;  // maps origin to usage
   AppCacheWorkingSet working_set_;
-  AppCacheService* service_;
+  AppCacheServiceImpl* service_;
   DelegateReferenceMap delegate_references_;
   PendingResponseInfoLoads pending_info_loads_;
 
   // The set of last ids must be retrieved from storage prior to being used.
   static const int64 kUnitializedId;
 
-  FRIEND_TEST_ALL_PREFIXES(AppCacheStorageTest, DelegateReferences);
-  FRIEND_TEST_ALL_PREFIXES(AppCacheStorageTest, UsageMap);
+  FRIEND_TEST_ALL_PREFIXES(content::AppCacheStorageTest, DelegateReferences);
+  FRIEND_TEST_ALL_PREFIXES(content::AppCacheStorageTest, UsageMap);
 
   DISALLOW_COPY_AND_ASSIGN(AppCacheStorage);
 };

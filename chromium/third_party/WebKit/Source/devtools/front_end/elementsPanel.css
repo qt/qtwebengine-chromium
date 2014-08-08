@@ -31,17 +31,22 @@
     flex: 1 1;
     overflow: auto;
     padding-left: 0;
+    -webkit-transform: translateZ(0);
 }
 
 #elements-crumbs {
     flex: 0 0 19px;
-    background-color: rgb(236, 236, 236);
+    background-color: white;
     border-top: 1px solid #ccc;
+    overflow: hidden;
+    height: 19px;
+    width: 100%;
 }
 
 #elements-content > ol {
     display: inline-block;
     min-height: 100%;
+    -webkit-transform: translateZ(0);
 }
 
 #elements-content .editing {
@@ -147,7 +152,6 @@
     padding: 3px;
     margin: 3px;
     min-width: 80px;
-    text-align: center;
     overflow: visible;
 }
 
@@ -205,7 +209,7 @@
     height: 16px;
 }
 
-.styles-section.read-only {
+.styles-section.read-only:not(.computed-style) {
     background-color: rgb(240, 240, 240);
 }
 
@@ -215,6 +219,15 @@
 
 .styles-section.computed-style .properties li.not-parsed-ok {
     margin-left: -6px;
+}
+
+.styles-section .properties li.filter-match,
+.styles-section .simple-selector.filter-match {
+    background-color: rgba(255, 255, 0, 0.5);
+}
+
+.styles-section .properties li.overloaded.filter-match {
+    background-color: rgba(255, 255, 0, 0.25);
 }
 
 .styles-section .properties li.not-parsed-ok .exclamation-mark {
@@ -305,7 +318,6 @@
 .styles-section .properties li {
     margin-left: 12px;
     padding-left: 22px;
-    padding-top: 0;
     white-space: normal;
     text-overflow: ellipsis;
     overflow: hidden;
@@ -364,7 +376,7 @@
 .styles-section.matched-styles .properties li.parent .expand-element {
     -webkit-user-select: none;
     background-image: url(Images/statusbarButtonGlyphs.png);
-    background-size: 320px 120px;
+    background-size: 320px 144px;
     margin-right: 2px;
     margin-left: -6px;
     opacity: 0.55;
@@ -375,7 +387,7 @@
 
 @media (-webkit-min-device-pixel-ratio: 1.5) {
 .styles-section.matched-styles .properties li.parent .expand-element {
-    background-image: url(Images/statusbarButtonGlyphs2x.png);
+    background-image: url(Images/statusbarButtonGlyphs_2x.png);
 }
 } /* media */
 
@@ -443,7 +455,6 @@
 }
 
 .styles-element-state-pane {
-    background-color: rgb(240, 240, 240);
     overflow: hidden;
     margin-top: -56px;
     padding-top: 18px;
@@ -462,9 +473,9 @@
     border-spacing: 0;
 }
 
-.styles-element-state-pane input {
-    margin: 2px;
-    vertical-align: -2px;
+.styles-element-state-pane label {
+    display: flex;
+    margin: 1px;
 }
 
 .styles-selector {
@@ -475,7 +486,7 @@
     display: none;
 }
 
-.body.show-inherited .styles-section .properties .inherited {
+.styles-section.styles-show-inherited .properties .inherited {
     display: block;
 }
 
@@ -523,7 +534,7 @@
 .event-bars .event-bar .header::before {
     -webkit-user-select: none;
     background-image: url(Images/statusbarButtonGlyphs.png);
-    background-size: 320px 120px;
+    background-size: 320px 144px;
     opacity: 0.5;
     content: "a";
     color: transparent;
@@ -536,7 +547,7 @@
 
 @media (-webkit-min-device-pixel-ratio: 1.5) {
 .event-bars .event-bar .header::before {
-    background-image: url(Images/statusbarButtonGlyphs2x.png);
+    background-image: url(Images/statusbarButtonGlyphs_2x.png);
 }
 } /* media */
 
@@ -563,7 +574,6 @@
 }
 
 .sidebar-pane.composite {
-    overflow: hidden;
     position: absolute;
 }
 
@@ -574,10 +584,46 @@
 .sidebar-pane.composite .metrics {
     border-bottom: 1px solid rgb(64%, 64%, 64%);
     height: 206px;
-    display: -webkit-flex;
-    -webkit-flex-direction: column;
+    display: flex;
+    flex-direction: column;
     -webkit-align-items: center;
     -webkit-justify-content: center;
+}
+
+.sidebar-pane .metrics-and-styles,
+.sidebar-pane .metrics-and-computed {
+    display: flex !important;
+    flex-direction: column !important;
+    position: relative;
+}
+
+.sidebar-pane .style-panes-wrapper {
+    flex: 1;
+    overflow-y: auto;
+    position: relative;
+}
+
+.sidebar-pane.composite .metrics-and-computed .sidebar-pane-toolbar,
+.sidebar-pane.composite .metrics-and-styles .sidebar-pane-toolbar {
+    position: absolute;
+}
+
+.sidebar-pane-filter-box {
+    display: flex;
+    border-top: 1px solid rgb(191, 191, 191);
+    flex-basis: 19px;
+}
+
+.sidebar-pane-filter-box > input {
+    outline: none !important;
+    border: none;
+    width: 100%;
+    margin: 0 4px;
+    background: transparent;
+}
+
+.styles-filter-engaged {
+    background-color: rgba(255, 255, 0, 0.5);
 }
 
 .sidebar-pane.composite .metrics-and-computed .sidebar-pane-toolbar {
@@ -615,12 +661,26 @@
     border-bottom: none;
 }
 
+.styles-section.computed-style > .header > .sidebar-pane-subtitle {
+    line-height: 17px;
+    margin: 2px;
+    -webkit-user-select: none;
+}
+
+.styles-section.computed-style > .header > .sidebar-pane-subtitle > input {
+    vertical-align: middle;
+}
+
 .sidebar-pane.composite .sidebar-pane-toolbar > .sidebar-pane-subtitle {
     left: 8px;
 }
 
-.sidebar-pane.composite .styles-section.read-only {
-    background-color: inherit;
+.sidebar-pane > .body > .split-view {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    right: 0;
 }
 
 .panel.elements .sidebar-pane-toolbar > select {
@@ -669,6 +729,7 @@
     display: inline-block;
     width: 0;
     opacity: 0;
+    pointer-events: none;
 }
 
 li.child-editing .styles-clipboard-only {

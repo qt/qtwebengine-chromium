@@ -8,10 +8,11 @@
 #define GPU_COMMAND_BUFFER_COMMON_CMD_BUFFER_COMMON_H_
 
 #include <stddef.h>
+#include <stdint.h>
 
 #include "base/logging.h"
+#include "base/macros.h"
 #include "gpu/command_buffer/common/bitfield_helpers.h"
-#include "gpu/command_buffer/common/types.h"
 #include "gpu/gpu_export.h"
 
 namespace gpu {
@@ -23,26 +24,30 @@ namespace cmd {
   };
 }  // namespace cmd
 
+// Pack & unpack Command cmd_flags
+#define CMD_FLAG_SET_TRACE_LEVEL(level)     ((level & 3) << 0)
+#define CMD_FLAG_GET_TRACE_LEVEL(cmd_flags) ((cmd_flags >> 0) & 3)
+
 // Computes the number of command buffer entries needed for a certain size. In
 // other words it rounds up to a multiple of entries.
-inline uint32 ComputeNumEntries(size_t size_in_bytes) {
-  return static_cast<uint32>(
-      (size_in_bytes + sizeof(uint32) - 1) / sizeof(uint32));  // NOLINT
+inline uint32_t ComputeNumEntries(size_t size_in_bytes) {
+  return static_cast<uint32_t>(
+      (size_in_bytes + sizeof(uint32_t) - 1) / sizeof(uint32_t));  // NOLINT
 }
 
 // Rounds up to a multiple of entries in bytes.
 inline size_t RoundSizeToMultipleOfEntries(size_t size_in_bytes) {
-  return ComputeNumEntries(size_in_bytes) * sizeof(uint32);  // NOLINT
+  return ComputeNumEntries(size_in_bytes) * sizeof(uint32_t);  // NOLINT
 }
 
 // Struct that defines the command header in the command buffer.
 struct CommandHeader {
-  Uint32 size:21;
-  Uint32 command:11;
+  uint32_t size:21;
+  uint32_t command:11;
 
-  GPU_EXPORT static const int32 kMaxSize = (1 << 21) - 1;
+  GPU_EXPORT static const int32_t kMaxSize = (1 << 21) - 1;
 
-  void Init(uint32 _command, int32 _size) {
+  void Init(uint32_t _command, int32_t _size) {
     DCHECK_LE(_size, kMaxSize);
     command = _command;
     size = _size;
@@ -58,7 +63,7 @@ struct CommandHeader {
 
   // Sets the header by a size in bytes of the immediate data after the command.
   template <typename T>
-  void SetCmdBySize(uint32 size_of_data_in_bytes) {
+  void SetCmdBySize(uint32_t size_of_data_in_bytes) {
     COMPILE_ASSERT(T::kArgFlags == cmd::kAtLeastN, Cmd_kArgFlags_not_kAtLeastN);
     Init(T::kCmdId,
          ComputeNumEntries(sizeof(T) + size_of_data_in_bytes));  // NOLINT
@@ -66,7 +71,7 @@ struct CommandHeader {
 
   // Sets the header by a size in bytes.
   template <typename T>
-  void SetCmdByTotalSize(uint32 size_in_bytes) {
+  void SetCmdByTotalSize(uint32_t size_in_bytes) {
     COMPILE_ASSERT(T::kArgFlags == cmd::kAtLeastN, Cmd_kArgFlags_not_kAtLeastN);
     DCHECK_GE(size_in_bytes, sizeof(T));  // NOLINT
     Init(T::kCmdId, ComputeNumEntries(size_in_bytes));
@@ -78,19 +83,19 @@ COMPILE_ASSERT(sizeof(CommandHeader) == 4, Sizeof_CommandHeader_is_not_4);
 // Union that defines possible command buffer entries.
 union CommandBufferEntry {
   CommandHeader value_header;
-  Uint32 value_uint32;
-  Int32 value_int32;
+  uint32_t value_uint32;
+  int32_t value_int32;
   float value_float;
 };
 
-const size_t kCommandBufferEntrySize = 4;
+#define GPU_COMMAND_BUFFER_ENTRY_ALIGNMENT 4
+const size_t kCommandBufferEntrySize = GPU_COMMAND_BUFFER_ENTRY_ALIGNMENT;
 
 COMPILE_ASSERT(sizeof(CommandBufferEntry) == kCommandBufferEntrySize,
                Sizeof_CommandBufferEntry_is_not_4);
 
-// Make sure the compiler does not add extra padding to any of the command
-// structures.
-#pragma pack(push, 1)
+// Command buffer is GPU_COMMAND_BUFFER_ENTRY_ALIGNMENT byte aligned.
+#pragma pack(push, GPU_COMMAND_BUFFER_ENTRY_ALIGNMENT)
 
 // Gets the address of memory just after a structure in a typesafe way. This is
 // used for IMMEDIATE commands to get the address of the place to put the data.
@@ -119,7 +124,7 @@ void* NextCmdAddress(void* cmd) {
 //   cmd: Address of command.
 //   size_of_data_in_bytes: Size of the data for the command.
 template <typename T>
-void* NextImmediateCmdAddress(void* cmd, uint32 size_of_data_in_bytes) {
+void* NextImmediateCmdAddress(void* cmd, uint32_t size_of_data_in_bytes) {
   COMPILE_ASSERT(T::kArgFlags == cmd::kAtLeastN, Cmd_kArgFlags_not_kAtLeastN);
   return reinterpret_cast<char*>(cmd) + sizeof(T) +   // NOLINT
       RoundSizeToMultipleOfEntries(size_of_data_in_bytes);
@@ -131,7 +136,8 @@ void* NextImmediateCmdAddress(void* cmd, uint32 size_of_data_in_bytes) {
 //   cmd: Address of command.
 //   size_of_cmd_in_bytes: Size of the cmd and data.
 template <typename T>
-void* NextImmediateCmdAddressTotalSize(void* cmd, uint32 total_size_in_bytes) {
+void* NextImmediateCmdAddressTotalSize(void* cmd,
+                                       uint32_t total_size_in_bytes) {
   COMPILE_ASSERT(T::kArgFlags == cmd::kAtLeastN, Cmd_kArgFlags_not_kAtLeastN);
   DCHECK_GE(total_size_in_bytes, sizeof(T));  // NOLINT
   return reinterpret_cast<char*>(cmd) +
@@ -177,17 +183,18 @@ struct Noop {
   typedef Noop ValueType;
   static const CommandId kCmdId = kNoop;
   static const cmd::ArgFlags kArgFlags = cmd::kAtLeastN;
+  static const uint8_t cmd_flags = CMD_FLAG_SET_TRACE_LEVEL(3);
 
-  void SetHeader(uint32 skip_count) {
+  void SetHeader(uint32_t skip_count) {
     DCHECK_GT(skip_count, 0u);
     header.Init(kCmdId, skip_count);
   }
 
-  void Init(uint32 skip_count) {
+  void Init(uint32_t skip_count) {
     SetHeader(skip_count);
   }
 
-  static void* Set(void* cmd, uint32 skip_count) {
+  static void* Set(void* cmd, uint32_t skip_count) {
     static_cast<ValueType*>(cmd)->Init(skip_count);
     return NextImmediateCmdAddress<ValueType>(
         cmd, skip_count * sizeof(CommandBufferEntry));  // NOLINT
@@ -205,22 +212,23 @@ struct SetToken {
   typedef SetToken ValueType;
   static const CommandId kCmdId = kSetToken;
   static const cmd::ArgFlags kArgFlags = cmd::kFixed;
+  static const uint8_t cmd_flags = CMD_FLAG_SET_TRACE_LEVEL(3);
 
   void SetHeader() {
     header.SetCmd<ValueType>();
   }
 
-  void Init(uint32 _token) {
+  void Init(uint32_t _token) {
     SetHeader();
     token = _token;
   }
-  static void* Set(void* cmd, uint32 token) {
+  static void* Set(void* cmd, uint32_t token) {
     static_cast<ValueType*>(cmd)->Init(token);
     return NextCmdAddress<ValueType>(cmd);
   }
 
   CommandHeader header;
-  uint32 token;
+  uint32_t token;
 };
 
 COMPILE_ASSERT(sizeof(SetToken) == 8, Sizeof_SetToken_is_not_8);
@@ -245,24 +253,25 @@ struct SetBucketSize {
   typedef SetBucketSize ValueType;
   static const CommandId kCmdId = kSetBucketSize;
   static const cmd::ArgFlags kArgFlags = cmd::kFixed;
+  static const uint8_t cmd_flags = CMD_FLAG_SET_TRACE_LEVEL(3);
 
   void SetHeader() {
     header.SetCmd<ValueType>();
   }
 
-  void Init(uint32 _bucket_id, uint32 _size) {
+  void Init(uint32_t _bucket_id, uint32_t _size) {
     SetHeader();
     bucket_id = _bucket_id;
     size = _size;
   }
-  static void* Set(void* cmd, uint32 _bucket_id, uint32 _size) {
+  static void* Set(void* cmd, uint32_t _bucket_id, uint32_t _size) {
     static_cast<ValueType*>(cmd)->Init(_bucket_id, _size);
     return NextCmdAddress<ValueType>(cmd);
   }
 
   CommandHeader header;
-  uint32 bucket_id;
-  uint32 size;
+  uint32_t bucket_id;
+  uint32_t size;
 };
 
 COMPILE_ASSERT(sizeof(SetBucketSize) == 12, Sizeof_SetBucketSize_is_not_8);
@@ -280,16 +289,17 @@ struct SetBucketData {
   typedef SetBucketData ValueType;
   static const CommandId kCmdId = kSetBucketData;
   static const cmd::ArgFlags kArgFlags = cmd::kFixed;
+  static const uint8_t cmd_flags = CMD_FLAG_SET_TRACE_LEVEL(3);
 
   void SetHeader() {
     header.SetCmd<ValueType>();
   }
 
-  void Init(uint32 _bucket_id,
-            uint32 _offset,
-            uint32 _size,
-            uint32 _shared_memory_id,
-            uint32 _shared_memory_offset) {
+  void Init(uint32_t _bucket_id,
+            uint32_t _offset,
+            uint32_t _size,
+            uint32_t _shared_memory_id,
+            uint32_t _shared_memory_offset) {
     SetHeader();
     bucket_id = _bucket_id;
     offset = _offset;
@@ -298,11 +308,11 @@ struct SetBucketData {
     shared_memory_offset = _shared_memory_offset;
   }
   static void* Set(void* cmd,
-                   uint32 _bucket_id,
-                   uint32 _offset,
-                   uint32 _size,
-                   uint32 _shared_memory_id,
-                   uint32 _shared_memory_offset) {
+                   uint32_t _bucket_id,
+                   uint32_t _offset,
+                   uint32_t _size,
+                   uint32_t _shared_memory_id,
+                   uint32_t _shared_memory_offset) {
     static_cast<ValueType*>(cmd)->Init(
         _bucket_id,
         _offset,
@@ -313,11 +323,11 @@ struct SetBucketData {
   }
 
   CommandHeader header;
-  uint32 bucket_id;
-  uint32 offset;
-  uint32 size;
-  uint32 shared_memory_id;
-  uint32 shared_memory_offset;
+  uint32_t bucket_id;
+  uint32_t offset;
+  uint32_t size;
+  uint32_t shared_memory_id;
+  uint32_t shared_memory_offset;
 };
 
 COMPILE_ASSERT(sizeof(SetBucketData) == 24, Sizeof_SetBucketData_is_not_24);
@@ -341,23 +351,24 @@ struct SetBucketDataImmediate {
   typedef SetBucketDataImmediate ValueType;
   static const CommandId kCmdId = kSetBucketDataImmediate;
   static const cmd::ArgFlags kArgFlags = cmd::kAtLeastN;
+  static const uint8_t cmd_flags = CMD_FLAG_SET_TRACE_LEVEL(3);
 
-  void SetHeader(uint32 size) {
+  void SetHeader(uint32_t size) {
     header.SetCmdBySize<ValueType>(size);
   }
 
-  void Init(uint32 _bucket_id,
-            uint32 _offset,
-            uint32 _size) {
+  void Init(uint32_t _bucket_id,
+            uint32_t _offset,
+            uint32_t _size) {
     SetHeader(_size);
     bucket_id = _bucket_id;
     offset = _offset;
     size = _size;
   }
   static void* Set(void* cmd,
-                   uint32 _bucket_id,
-                   uint32 _offset,
-                   uint32 _size) {
+                   uint32_t _bucket_id,
+                   uint32_t _offset,
+                   uint32_t _size) {
     static_cast<ValueType*>(cmd)->Init(
         _bucket_id,
         _offset,
@@ -366,9 +377,9 @@ struct SetBucketDataImmediate {
   }
 
   CommandHeader header;
-  uint32 bucket_id;
-  uint32 offset;
-  uint32 size;
+  uint32_t bucket_id;
+  uint32_t offset;
+  uint32_t size;
 };
 
 COMPILE_ASSERT(sizeof(SetBucketDataImmediate) == 16,
@@ -396,19 +407,20 @@ struct GetBucketStart {
   typedef GetBucketStart ValueType;
   static const CommandId kCmdId = kGetBucketStart;
   static const cmd::ArgFlags kArgFlags = cmd::kFixed;
+  static const uint8_t cmd_flags = CMD_FLAG_SET_TRACE_LEVEL(3);
 
-  typedef uint32 Result;
+  typedef uint32_t Result;
 
   void SetHeader() {
     header.SetCmd<ValueType>();
   }
 
-  void Init(uint32 _bucket_id,
-            uint32 _result_memory_id,
-            uint32 _result_memory_offset,
-            uint32 _data_memory_size,
-            uint32 _data_memory_id,
-            uint32 _data_memory_offset) {
+  void Init(uint32_t _bucket_id,
+            uint32_t _result_memory_id,
+            uint32_t _result_memory_offset,
+            uint32_t _data_memory_size,
+            uint32_t _data_memory_id,
+            uint32_t _data_memory_offset) {
     SetHeader();
     bucket_id = _bucket_id;
     result_memory_id = _result_memory_id;
@@ -418,12 +430,12 @@ struct GetBucketStart {
     data_memory_offset = _data_memory_offset;
   }
   static void* Set(void* cmd,
-                   uint32 _bucket_id,
-                   uint32 _result_memory_id,
-                   uint32 _result_memory_offset,
-                   uint32 _data_memory_size,
-                   uint32 _data_memory_id,
-                   uint32 _data_memory_offset) {
+                   uint32_t _bucket_id,
+                   uint32_t _result_memory_id,
+                   uint32_t _result_memory_offset,
+                   uint32_t _data_memory_size,
+                   uint32_t _data_memory_id,
+                   uint32_t _data_memory_offset) {
     static_cast<ValueType*>(cmd)->Init(
         _bucket_id,
         _result_memory_id,
@@ -435,12 +447,12 @@ struct GetBucketStart {
   }
 
   CommandHeader header;
-  uint32 bucket_id;
-  uint32 result_memory_id;
-  uint32 result_memory_offset;
-  uint32 data_memory_size;
-  uint32 data_memory_id;
-  uint32 data_memory_offset;
+  uint32_t bucket_id;
+  uint32_t result_memory_id;
+  uint32_t result_memory_offset;
+  uint32_t data_memory_size;
+  uint32_t data_memory_id;
+  uint32_t data_memory_offset;
 };
 
 COMPILE_ASSERT(sizeof(GetBucketStart) == 28, Sizeof_GetBucketStart_is_not_28);
@@ -465,16 +477,17 @@ struct GetBucketData {
   typedef GetBucketData ValueType;
   static const CommandId kCmdId = kGetBucketData;
   static const cmd::ArgFlags kArgFlags = cmd::kFixed;
+  static const uint8_t cmd_flags = CMD_FLAG_SET_TRACE_LEVEL(3);
 
   void SetHeader() {
     header.SetCmd<ValueType>();
   }
 
-  void Init(uint32 _bucket_id,
-            uint32 _offset,
-            uint32 _size,
-            uint32 _shared_memory_id,
-            uint32 _shared_memory_offset) {
+  void Init(uint32_t _bucket_id,
+            uint32_t _offset,
+            uint32_t _size,
+            uint32_t _shared_memory_id,
+            uint32_t _shared_memory_offset) {
     SetHeader();
     bucket_id = _bucket_id;
     offset = _offset;
@@ -483,11 +496,11 @@ struct GetBucketData {
     shared_memory_offset = _shared_memory_offset;
   }
   static void* Set(void* cmd,
-                   uint32 _bucket_id,
-                   uint32 _offset,
-                   uint32 _size,
-                   uint32 _shared_memory_id,
-                   uint32 _shared_memory_offset) {
+                   uint32_t _bucket_id,
+                   uint32_t _offset,
+                   uint32_t _size,
+                   uint32_t _shared_memory_id,
+                   uint32_t _shared_memory_offset) {
     static_cast<ValueType*>(cmd)->Init(
         _bucket_id,
         _offset,
@@ -498,11 +511,11 @@ struct GetBucketData {
   }
 
   CommandHeader header;
-  uint32 bucket_id;
-  uint32 offset;
-  uint32 size;
-  uint32 shared_memory_id;
-  uint32 shared_memory_offset;
+  uint32_t bucket_id;
+  uint32_t offset;
+  uint32_t size;
+  uint32_t shared_memory_id;
+  uint32_t shared_memory_offset;
 };
 
 COMPILE_ASSERT(sizeof(GetBucketData) == 24, Sizeof_GetBucketData_is_not_20);

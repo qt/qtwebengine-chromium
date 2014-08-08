@@ -32,6 +32,8 @@ class EncodedFrameObserver;
 
 namespace vcm {
 
+class DebugRecorder;
+
 class VCMProcessTimer {
  public:
   VCMProcessTimer(uint32_t periodMs, Clock* clock)
@@ -52,7 +54,8 @@ class VideoSender {
  public:
   typedef VideoCodingModule::SenderNackMode SenderNackMode;
 
-  VideoSender(const int32_t id, Clock* clock);
+  VideoSender(Clock* clock, EncodedImageCallback* post_encode_callback);
+
   ~VideoSender();
 
   int32_t InitializeSender();
@@ -68,7 +71,8 @@ class VideoSender {
                                   uint8_t payloadType,
                                   bool internalSource);
 
-  int32_t CodecConfigParameters(uint8_t* buffer, int32_t size);
+  int32_t CodecConfigParameters(uint8_t* buffer, int32_t size) const;
+  int32_t SentFrameCount(VCMFrameCount* frameCount);
   int Bitrate(unsigned int* bitrate) const;
   int FrameRate(unsigned int* framerate) const;
 
@@ -88,7 +92,6 @@ class VideoSender {
 
   int32_t IntraFrameRequest(int stream_index);
   int32_t EnableFrameDropper(bool enable);
-  int32_t SentFrameCount(VCMFrameCount* frameCount) const;
 
   int SetSenderNackMode(SenderNackMode mode);
   int SetSenderReferenceSelection(bool enable);
@@ -96,20 +99,18 @@ class VideoSender {
   int SetSenderKeyFramePeriod(int periodMs);
 
   int StartDebugRecording(const char* file_name_utf8);
-  int StopDebugRecording();
+  void StopDebugRecording();
 
   void SuspendBelowMinBitrate();
   bool VideoSuspended() const;
-
-  void RegisterPostEncodeImageCallback(
-      EncodedImageCallback* post_encode_callback);
 
   int32_t TimeUntilNextProcess();
   int32_t Process();
 
  private:
-  int32_t _id;
   Clock* clock_;
+
+  scoped_ptr<DebugRecorder> recorder_;
 
   scoped_ptr<CriticalSectionWrapper> process_crit_sect_;
   CriticalSectionWrapper* _sendCritSect;
@@ -118,17 +119,19 @@ class VideoSender {
   std::vector<FrameType> _nextFrameTypes;
   media_optimization::MediaOptimization _mediaOpt;
   VCMSendStatisticsCallback* _sendStatsCallback;
-  FILE* _encoderInputFile;
   VCMCodecDataBase _codecDataBase;
   bool frame_dropper_enabled_;
   VCMProcessTimer _sendStatsTimer;
+
+  VCMQMSettingsCallback* qm_settings_callback_;
+  VCMProtectionCallback* protection_callback_;
 };
 
 class VideoReceiver {
  public:
   typedef VideoCodingModule::ReceiverRobustness ReceiverRobustness;
 
-  VideoReceiver(const int32_t id, Clock* clock, EventFactory* event_factory);
+  VideoReceiver(Clock* clock, EventFactory* event_factory);
   ~VideoReceiver();
 
   int32_t InitializeReceiver();
@@ -196,7 +199,6 @@ class VideoReceiver {
                     // in any frame
   };
 
-  int32_t _id;
   Clock* clock_;
   scoped_ptr<CriticalSectionWrapper> process_crit_sect_;
   CriticalSectionWrapper* _receiveCritSect;

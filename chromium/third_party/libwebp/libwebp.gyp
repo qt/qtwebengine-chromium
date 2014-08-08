@@ -66,7 +66,7 @@
     {
       'target_name': 'libwebp_dsp_neon',
       'conditions': [
-        ['target_arch == "arm" and arm_version >= 7', {
+        ['target_arch == "arm" and arm_version >= 7 and (arm_neon == 1 or arm_neon_optional == 1)', {
           'type': 'static_library',
           'include_dirs': ['.'],
           'sources': [
@@ -118,6 +118,7 @@
       'type': 'static_library',
       'include_dirs': ['.'],
       'sources': [
+        'utils/alpha_processing.c',
         'utils/bit_reader.c',
         'utils/bit_writer.c',
         'utils/color_cache.c',
@@ -126,6 +127,7 @@
         'utils/huffman_encode.c',
         'utils/quant_levels.c',
         'utils/quant_levels_dec.c',
+        'utils/random.c',
         'utils/rescaler.c',
         'utils/thread.c',
         'utils/utils.c',

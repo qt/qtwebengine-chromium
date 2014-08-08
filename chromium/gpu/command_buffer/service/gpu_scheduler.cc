@@ -28,7 +28,7 @@ const int64 kUnscheduleFenceTimeOutDelay = 10000;
 const int64 kRescheduleTimeOutDelay = 1000;
 #endif
 
-GpuScheduler::GpuScheduler(CommandBuffer* command_buffer,
+GpuScheduler::GpuScheduler(CommandBufferServiceBase* command_buffer,
                            AsyncAPIInterface* handler,
                            gles2::GLES2Decoder* decoder)
     : command_buffer_(command_buffer),
@@ -47,7 +47,7 @@ void GpuScheduler::PutChanged() {
      "gpu", "GpuScheduler:PutChanged",
      "decoder", decoder_ ? decoder_->GetLogger()->GetLogPrefix() : "None");
 
-  CommandBuffer::State state = command_buffer_->GetState();
+  CommandBuffer::State state = command_buffer_->GetLastState();
 
   // If there is no parser, exit.
   if (!parser_.get()) {
@@ -69,6 +69,8 @@ void GpuScheduler::PutChanged() {
 
   base::TimeTicks begin_time(base::TimeTicks::HighResNow());
   error::Error error = error::kNoError;
+  if (decoder_)
+    decoder_->BeginDecoding();
   while (!parser_->IsEmpty()) {
     if (IsPreempted())
       break;
@@ -108,6 +110,7 @@ void GpuScheduler::PutChanged() {
       command_buffer_->SetContextLostReason(decoder_->GetContextLostReason());
       command_buffer_->SetParseError(error::kLostContext);
     }
+    decoder_->EndDecoding();
     decoder_->AddProcessingCommandsTime(
         base::TimeTicks::HighResNow() - begin_time);
   }
@@ -178,7 +181,7 @@ void GpuScheduler::SetSchedulingChangedCallback(
   scheduling_changed_callback_ = callback;
 }
 
-Buffer GpuScheduler::GetSharedMemoryBuffer(int32 shm_id) {
+scoped_refptr<Buffer> GpuScheduler::GetSharedMemoryBuffer(int32 shm_id) {
   return command_buffer_->GetTransferBuffer(shm_id);
 }
 
@@ -187,8 +190,9 @@ void GpuScheduler::set_token(int32 token) {
 }
 
 bool GpuScheduler::SetGetBuffer(int32 transfer_buffer_id) {
-  Buffer ring_buffer = command_buffer_->GetTransferBuffer(transfer_buffer_id);
-  if (!ring_buffer.ptr) {
+  scoped_refptr<Buffer> ring_buffer =
+      command_buffer_->GetTransferBuffer(transfer_buffer_id);
+  if (!ring_buffer) {
     return false;
   }
 
@@ -197,10 +201,7 @@ bool GpuScheduler::SetGetBuffer(int32 transfer_buffer_id) {
   }
 
   parser_->SetBuffer(
-      ring_buffer.ptr,
-      ring_buffer.size,
-      0,
-      ring_buffer.size);
+      ring_buffer->memory(), ring_buffer->size(), 0, ring_buffer->size());
 
   SetGetOffset(0);
   return true;

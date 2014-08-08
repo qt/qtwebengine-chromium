@@ -28,15 +28,18 @@
 #include "config.h"
 #include "core/html/forms/InputType.h"
 
-#include "InputTypeNames.h"
-#include "RuntimeEnabledFeatures.h"
+#include "bindings/v8/ExceptionMessages.h"
+#include "bindings/v8/ExceptionState.h"
+#include "core/InputTypeNames.h"
 #include "core/accessibility/AXObjectCache.h"
 #include "core/dom/NodeRenderStyle.h"
 #include "core/events/KeyboardEvent.h"
 #include "core/events/ScopedEventQueue.h"
 #include "core/fileapi/FileList.h"
+#include "core/frame/FrameHost.h"
 #include "core/html/FormDataList.h"
 #include "core/html/HTMLInputElement.h"
+#include "core/html/HTMLShadowElement.h"
 #include "core/html/forms/ButtonInputType.h"
 #include "core/html/forms/CheckboxInputType.h"
 #include "core/html/forms/ColorInputType.h"
@@ -61,9 +64,9 @@
 #include "core/html/forms/URLInputType.h"
 #include "core/html/forms/WeekInputType.h"
 #include "core/html/parser/HTMLParserIdioms.h"
-#include "core/html/shadow/HTMLShadowElement.h"
-#include "core/page/Page.h"
 #include "core/rendering/RenderTheme.h"
+#include "platform/ColorChooser.h"
+#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/text/PlatformLocale.h"
 #include "platform/text/TextBreakIterator.h"
 
@@ -71,9 +74,8 @@ namespace WebCore {
 
 using blink::WebLocalizedString;
 using namespace HTMLNames;
-using namespace std;
 
-typedef PassRefPtr<InputType> (*InputTypeFactoryFunction)(HTMLInputElement&);
+typedef PassRefPtrWillBeRawPtr<InputType> (*InputTypeFactoryFunction)(HTMLInputElement&);
 typedef HashMap<AtomicString, InputTypeFactoryFunction, CaseFoldingHash> InputTypeFactoryMap;
 
 static PassOwnPtr<InputTypeFactoryMap> createInputTypeFactoryMap()
@@ -81,8 +83,7 @@ static PassOwnPtr<InputTypeFactoryMap> createInputTypeFactoryMap()
     OwnPtr<InputTypeFactoryMap> map = adoptPtr(new InputTypeFactoryMap);
     map->add(InputTypeNames::button, ButtonInputType::create);
     map->add(InputTypeNames::checkbox, CheckboxInputType::create);
-    if (RuntimeEnabledFeatures::inputTypeColorEnabled())
-        map->add(InputTypeNames::color, ColorInputType::create);
+    map->add(InputTypeNames::color, ColorInputType::create);
     map->add(InputTypeNames::date, DateInputType::create);
     map->add(InputTypeNames::datetime_local, DateTimeLocalInputType::create);
     map->add(InputTypeNames::email, EmailInputType::create);
@@ -100,8 +101,7 @@ static PassOwnPtr<InputTypeFactoryMap> createInputTypeFactoryMap()
     map->add(InputTypeNames::tel, TelephoneInputType::create);
     map->add(InputTypeNames::time, TimeInputType::create);
     map->add(InputTypeNames::url, URLInputType::create);
-    if (RuntimeEnabledFeatures::inputTypeWeekEnabled())
-        map->add(InputTypeNames::week, WeekInputType::create);
+    map->add(InputTypeNames::week, WeekInputType::create);
     // No need to register "text" because it is the default type.
     return map.release();
 }
@@ -112,7 +112,7 @@ static const InputTypeFactoryMap* factoryMap()
     return factoryMap;
 }
 
-PassRefPtr<InputType> InputType::create(HTMLInputElement& element, const AtomicString& typeName)
+PassRefPtrWillBeRawPtr<InputType> InputType::create(HTMLInputElement& element, const AtomicString& typeName)
 {
     InputTypeFactoryFunction factory = typeName.isEmpty() ? 0 : factoryMap()->get(typeName);
     if (!factory)
@@ -120,7 +120,7 @@ PassRefPtr<InputType> InputType::create(HTMLInputElement& element, const AtomicS
     return factory(element);
 }
 
-PassRefPtr<InputType> InputType::createText(HTMLInputElement& element)
+PassRefPtrWillBeRawPtr<InputType> InputType::createText(HTMLInputElement& element)
 {
     return TextInputType::create(element);
 }
@@ -133,23 +133,8 @@ const AtomicString& InputType::normalizeTypeName(const AtomicString& typeName)
     return it == factoryMap()->end() ? InputTypeNames::text : it->key;
 }
 
-bool InputType::canChangeFromAnotherType(const AtomicString& normalizedTypeName)
-{
-    // Don't allow the type to be changed to file after the first type change.
-    // In other engines this might mean a JavaScript programmer could set a text
-    // field's value to something like /etc/passwd and then change it to a file
-    // input. I don't think this would actually occur in Blink, but this rule
-    // still may be important for compatibility.
-    return normalizedTypeName != InputTypeNames::file;
-}
-
 InputType::~InputType()
 {
-}
-
-bool InputType::themeSupportsDataListUI(InputType* type)
-{
-    return RenderTheme::theme().supportsDataListUI(type->formControlType());
 }
 
 bool InputType::isTextField() const
@@ -210,22 +195,22 @@ double InputType::valueAsDate() const
 
 void InputType::setValueAsDate(double, ExceptionState& exceptionState) const
 {
-    exceptionState.throwUninformativeAndGenericDOMException(InvalidStateError);
+    exceptionState.throwDOMException(InvalidStateError, "This input element does not support Date values.");
 }
 
 double InputType::valueAsDouble() const
 {
-    return numeric_limits<double>::quiet_NaN();
+    return std::numeric_limits<double>::quiet_NaN();
 }
 
 void InputType::setValueAsDouble(double doubleValue, TextFieldEventBehavior eventBehavior, ExceptionState& exceptionState) const
 {
-    setValueAsDecimal(Decimal::fromDouble(doubleValue), eventBehavior, exceptionState);
+    exceptionState.throwDOMException(InvalidStateError, "This input element does not support Number values.");
 }
 
-void InputType::setValueAsDecimal(const Decimal&, TextFieldEventBehavior, ExceptionState& exceptionState) const
+void InputType::setValueAsDecimal(const Decimal& newValue, TextFieldEventBehavior eventBehavior, ExceptionState&) const
 {
-    exceptionState.throwUninformativeAndGenericDOMException(InvalidStateError);
+    element().setValue(serialize(newValue), eventBehavior);
 }
 
 bool InputType::supportsValidation() const
@@ -437,12 +422,6 @@ Decimal InputType::parseToNumberOrNaN(const String& string) const
     return parseToNumber(string, Decimal::nan());
 }
 
-bool InputType::parseToDateComponents(const String&, DateComponents*) const
-{
-    ASSERT_NOT_REACHED();
-    return false;
-}
-
 String InputType::serialize(const Decimal&) const
 {
     ASSERT_NOT_REACHED();
@@ -458,8 +437,8 @@ void InputType::dispatchSimulatedClickIfActive(KeyboardEvent* event) const
 
 Chrome* InputType::chrome() const
 {
-    if (Page* page = element().document().page())
-        return &page->chrome();
+    if (FrameHost* host = element().document().frameHost())
+        return &host->chrome();
     return 0;
 }
 
@@ -534,7 +513,7 @@ FileList* InputType::files()
     return 0;
 }
 
-void InputType::setFiles(PassRefPtr<FileList>)
+void InputType::setFiles(PassRefPtrWillBeRawPtr<FileList>)
 {
 }
 
@@ -568,10 +547,15 @@ bool InputType::storesValueSeparateFromAttribute()
     return true;
 }
 
+bool InputType::shouldDispatchFormControlChangeEvent(String& oldValue, String& newValue)
+{
+    return !equalIgnoringNullity(oldValue, newValue);
+}
+
 void InputType::setValue(const String& sanitizedValue, bool valueChanged, TextFieldEventBehavior eventBehavior)
 {
     element().setValueInternal(sanitizedValue, eventBehavior);
-    element().setNeedsStyleRecalc();
+    element().setNeedsStyleRecalc(SubtreeStyleChange);
     if (!valueChanged)
         return;
     switch (eventBehavior) {
@@ -617,11 +601,6 @@ String InputType::droppedFileSystemId()
 {
     ASSERT_NOT_REACHED();
     return String();
-}
-
-bool InputType::shouldResetOnDocumentActivation()
-{
-    return false;
 }
 
 bool InputType::shouldRespectListAttribute()
@@ -685,11 +664,6 @@ bool InputType::isInteractiveContent() const
 }
 
 bool InputType::isNumberField() const
-{
-    return false;
-}
-
-bool InputType::isSubmitButton() const
 {
     return false;
 }
@@ -764,10 +738,6 @@ bool InputType::supportsReadOnly() const
     return false;
 }
 
-void InputType::updatePlaceholderText()
-{
-}
-
 String InputType::defaultToolTip() const
 {
     return String();
@@ -781,6 +751,16 @@ Decimal InputType::findClosestTickMarkValue(const Decimal&)
 
 void InputType::handleDOMActivateEvent(Event*)
 {
+}
+
+bool InputType::hasLegalLinkAttribute(const QualifiedName&) const
+{
+    return false;
+}
+
+const QualifiedName& InputType::subResourceAttributeName() const
+{
+    return QualifiedName::null();
 }
 
 bool InputType::supportsIndeterminateAppearance() const
@@ -808,46 +788,64 @@ unsigned InputType::width() const
     return 0;
 }
 
-void InputType::applyStep(int count, AnyStepHandling anyStepHandling, TextFieldEventBehavior eventBehavior, ExceptionState& exceptionState)
+void InputType::applyStep(const Decimal& current, int count, AnyStepHandling anyStepHandling, TextFieldEventBehavior eventBehavior, ExceptionState& exceptionState)
 {
     StepRange stepRange(createStepRange(anyStepHandling));
     if (!stepRange.hasStep()) {
-        exceptionState.throwUninformativeAndGenericDOMException(InvalidStateError);
+        exceptionState.throwDOMException(InvalidStateError, "This form element does not have an allowed value step.");
         return;
     }
 
-    const Decimal current = parseToNumberOrNaN(element().value());
-    if (!current.isFinite()) {
-        exceptionState.throwUninformativeAndGenericDOMException(InvalidStateError);
-        return;
-    }
-    Decimal newValue = current + stepRange.step() * count;
-    if (!newValue.isFinite()) {
-        exceptionState.throwUninformativeAndGenericDOMException(InvalidStateError);
-        return;
-    }
-
-    const Decimal acceptableErrorValue = stepRange.acceptableError();
-    if (newValue - stepRange.minimum() < -acceptableErrorValue) {
-        exceptionState.throwUninformativeAndGenericDOMException(InvalidStateError);
-        return;
-    }
-    if (newValue < stepRange.minimum())
-        newValue = stepRange.minimum();
+    EventQueueScope scope;
+    const Decimal step = stepRange.step();
 
     const AtomicString& stepString = element().fastGetAttribute(stepAttr);
-    if (!equalIgnoringCase(stepString, "any"))
-        newValue = stepRange.alignValueForStep(current, newValue);
+    if (!equalIgnoringCase(stepString, "any") && stepRange.stepMismatch(current)) {
+        // Snap-to-step / clamping steps
+        // If the current value is not matched to step value:
+        // - The value should be the larger matched value nearest to 0 if count > 0
+        //   e.g. <input type=number value=3 min=-100 step=3> -> 5
+        // - The value should be the smaller matched value nearest to 0 if count < 0
+        //   e.g. <input type=number value=3 min=-100 step=3> -> 2
+        //
 
-    if (newValue - stepRange.maximum() > acceptableErrorValue) {
-        exceptionState.throwUninformativeAndGenericDOMException(InvalidStateError);
-        return;
+        ASSERT(!step.isZero());
+        Decimal newValue;
+        const Decimal base = stepRange.stepBase();
+        if (count < 0)
+            newValue = base + ((current - base) / step).floor() * step;
+        else if (count > 0)
+            newValue = base + ((current - base) / step).ceiling() * step;
+        else
+            newValue = current;
+
+        if (newValue < stepRange.minimum())
+            newValue = stepRange.minimum();
+        if (newValue > stepRange.maximum())
+            newValue = stepRange.maximum();
+
+        setValueAsDecimal(newValue, count == 1 || count == -1 ? DispatchChangeEvent : DispatchNoEvent, IGNORE_EXCEPTION);
+        if (count > 1) {
+            applyStep(newValue, count - 1, AnyIsDefaultStep, DispatchChangeEvent, IGNORE_EXCEPTION);
+            return;
+        }
+        if (count < -1) {
+            applyStep(newValue, count + 1, AnyIsDefaultStep, DispatchChangeEvent, IGNORE_EXCEPTION);
+            return;
+        }
+    } else {
+        Decimal newValue = current + stepRange.step() * count;
+
+        if (!equalIgnoringCase(stepString, "any"))
+            newValue = stepRange.alignValueForStep(current, newValue);
+
+        if (newValue > stepRange.maximum())
+            newValue = newValue - stepRange.step();
+        else if (newValue < stepRange.minimum())
+            newValue = newValue + stepRange.step();
+
+        setValueAsDecimal(newValue, eventBehavior, exceptionState);
     }
-    if (newValue > stepRange.maximum())
-        newValue = stepRange.maximum();
-
-    setValueAsDecimal(newValue, eventBehavior, exceptionState);
-
     if (AXObjectCache* cache = element().document().existingAXObjectCache())
         cache->postNotification(&element(), AXObjectCache::AXValueChanged, true);
 }
@@ -868,17 +866,18 @@ StepRange InputType::createStepRange(AnyStepHandling) const
 void InputType::stepUp(int n, ExceptionState& exceptionState)
 {
     if (!isSteppable()) {
-        exceptionState.throwUninformativeAndGenericDOMException(InvalidStateError);
+        exceptionState.throwDOMException(InvalidStateError, "This form element is not steppable.");
         return;
     }
-    applyStep(n, RejectAny, DispatchNoEvent, exceptionState);
+    const Decimal current = parseToNumber(element().value(), 0);
+    applyStep(current, n, RejectAny, DispatchNoEvent, exceptionState);
 }
 
 void InputType::stepUpFromRenderer(int n)
 {
-    // The differences from stepUp()/stepDown():
+    // The only difference from stepUp()/stepDown() is the extra treatment
+    // of the current value before applying the step:
     //
-    // Difference 1: the current value
     // If the current value is not a number, including empty, the current value is assumed as 0.
     //   * If 0 is in-range, and matches to step value
     //     - The value should be the +step if n > 0
@@ -901,13 +900,6 @@ void InputType::stepUpFromRenderer(int n)
     // If the current value is larger than the maximum value:
     //  - The value should be the maximum value if n < 0
     //  - Nothing should happen if n > 0
-    //
-    // Difference 2: clamping steps
-    // If the current value is not matched to step value:
-    // - The value should be the larger matched value nearest to 0 if n > 0
-    //   e.g. <input type=number value=3 min=-100 step=3> -> 5
-    // - The value should be the smaler matched value nearest to 0 if n < 0
-    //   e.g. <input type=number value=3 min=-100 step=3> -> 2
     //
     // n is assumed as -n if step < 0.
 
@@ -936,8 +928,7 @@ void InputType::stepUpFromRenderer(int n)
     else
         sign = 0;
 
-    String currentStringValue = element().value();
-    Decimal current = parseToNumberOrNaN(currentStringValue);
+    Decimal current = parseToNumberOrNaN(element().value());
     if (!current.isFinite()) {
         current = defaultValueForStepUp();
         const Decimal nextDiff = step * n;
@@ -948,33 +939,10 @@ void InputType::stepUpFromRenderer(int n)
         setValueAsDecimal(current, DispatchNoEvent, IGNORE_EXCEPTION);
     }
     if ((sign > 0 && current < stepRange.minimum()) || (sign < 0 && current > stepRange.maximum())) {
-        setValueAsDecimal(sign > 0 ? stepRange.minimum() : stepRange.maximum(), DispatchInputAndChangeEvent, IGNORE_EXCEPTION);
-    } else {
-        if (stepMismatch(element().value())) {
-            ASSERT(!step.isZero());
-            const Decimal base = stepRange.stepBase();
-            Decimal newValue;
-            if (sign < 0)
-                newValue = base + ((current - base) / step).floor() * step;
-            else if (sign > 0)
-                newValue = base + ((current - base) / step).ceiling() * step;
-            else
-                newValue = current;
-
-            if (newValue < stepRange.minimum())
-                newValue = stepRange.minimum();
-            if (newValue > stepRange.maximum())
-                newValue = stepRange.maximum();
-
-            setValueAsDecimal(newValue, n == 1 || n == -1 ? DispatchInputAndChangeEvent : DispatchNoEvent, IGNORE_EXCEPTION);
-            if (n > 1)
-                applyStep(n - 1, AnyIsDefaultStep, DispatchInputAndChangeEvent, IGNORE_EXCEPTION);
-            else if (n < -1)
-                applyStep(n + 1, AnyIsDefaultStep, DispatchInputAndChangeEvent, IGNORE_EXCEPTION);
-        } else {
-            applyStep(n, AnyIsDefaultStep, DispatchInputAndChangeEvent, IGNORE_EXCEPTION);
-        }
+        setValueAsDecimal(sign > 0 ? stepRange.minimum() : stepRange.maximum(), DispatchChangeEvent, IGNORE_EXCEPTION);
+        return;
     }
+    applyStep(current, n, AnyIsDefaultStep, DispatchChangeEvent, IGNORE_EXCEPTION);
 }
 
 void InputType::countUsageIfVisible(UseCounter::Feature feature) const

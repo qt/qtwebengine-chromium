@@ -18,6 +18,5 @@
  */
 
 partial interface Navigator {
-    [RuntimeEnabled=Geolocation] readonly attribute Geolocation geolocation;
+    readonly attribute Geolocation geolocation;
 };
-

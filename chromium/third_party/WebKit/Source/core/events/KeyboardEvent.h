@@ -45,7 +45,7 @@ struct KeyboardEventInit : public UIEventInit {
     bool repeat;
 };
 
-class KeyboardEvent : public UIEventWithKeyState {
+class KeyboardEvent FINAL : public UIEventWithKeyState {
 public:
     enum KeyLocationCode {
         DOM_KEY_LOCATION_STANDARD   = 0x00,
@@ -54,26 +54,26 @@ public:
         DOM_KEY_LOCATION_NUMPAD     = 0x03
     };
 
-    static PassRefPtr<KeyboardEvent> create()
+    static PassRefPtrWillBeRawPtr<KeyboardEvent> create()
     {
-        return adoptRef(new KeyboardEvent);
+        return adoptRefWillBeNoop(new KeyboardEvent);
     }
 
-    static PassRefPtr<KeyboardEvent> create(const PlatformKeyboardEvent& platformEvent, AbstractView* view)
+    static PassRefPtrWillBeRawPtr<KeyboardEvent> create(const PlatformKeyboardEvent& platformEvent, AbstractView* view)
     {
-        return adoptRef(new KeyboardEvent(platformEvent, view));
+        return adoptRefWillBeNoop(new KeyboardEvent(platformEvent, view));
     }
 
-    static PassRefPtr<KeyboardEvent> create(const AtomicString& type, const KeyboardEventInit& initializer)
+    static PassRefPtrWillBeRawPtr<KeyboardEvent> create(const AtomicString& type, const KeyboardEventInit& initializer)
     {
-        return adoptRef(new KeyboardEvent(type, initializer));
+        return adoptRefWillBeNoop(new KeyboardEvent(type, initializer));
     }
 
-    static PassRefPtr<KeyboardEvent> create(const AtomicString& type, bool canBubble, bool cancelable, AbstractView* view,
+    static PassRefPtrWillBeRawPtr<KeyboardEvent> create(const AtomicString& type, bool canBubble, bool cancelable, AbstractView* view,
         const String& keyIdentifier, unsigned location,
         bool ctrlKey, bool altKey, bool shiftKey, bool metaKey, bool altGraphKey)
     {
-        return adoptRef(new KeyboardEvent(type, canBubble, cancelable, view, keyIdentifier, location,
+        return adoptRefWillBeNoop(new KeyboardEvent(type, canBubble, cancelable, view, keyIdentifier, location,
         ctrlKey, altKey, shiftKey, metaKey, altGraphKey));
     }
 
@@ -92,13 +92,15 @@ public:
 
     const PlatformKeyboardEvent* keyEvent() const { return m_keyEvent.get(); }
 
-    int keyCode() const; // key code for keydown and keyup, character for keypress
-    int charCode() const; // character code for keypress, 0 for keydown and keyup
+    virtual int keyCode() const OVERRIDE; // key code for keydown and keyup, character for keypress
+    virtual int charCode() const OVERRIDE; // character code for keypress, 0 for keydown and keyup
     bool repeat() const { return m_isAutoRepeat; }
 
-    virtual const AtomicString& interfaceName() const;
-    virtual bool isKeyboardEvent() const;
-    virtual int which() const;
+    virtual const AtomicString& interfaceName() const OVERRIDE;
+    virtual bool isKeyboardEvent() const OVERRIDE;
+    virtual int which() const OVERRIDE;
+
+    virtual void trace(Visitor*) OVERRIDE;
 
 private:
     KeyboardEvent();
@@ -115,13 +117,11 @@ private:
     bool m_isAutoRepeat : 1;
 };
 
-KeyboardEvent* findKeyboardEvent(Event*);
-
 class KeyboardEventDispatchMediator : public EventDispatchMediator {
 public:
-    static PassRefPtr<KeyboardEventDispatchMediator> create(PassRefPtr<KeyboardEvent>);
+    static PassRefPtrWillBeRawPtr<KeyboardEventDispatchMediator> create(PassRefPtrWillBeRawPtr<KeyboardEvent>);
 private:
-    explicit KeyboardEventDispatchMediator(PassRefPtr<KeyboardEvent>);
+    explicit KeyboardEventDispatchMediator(PassRefPtrWillBeRawPtr<KeyboardEvent>);
     virtual bool dispatchEvent(EventDispatcher*) const OVERRIDE;
 };
 

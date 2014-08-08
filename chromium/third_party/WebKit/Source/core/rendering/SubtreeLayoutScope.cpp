@@ -36,21 +36,15 @@
 
 namespace WebCore {
 
-SubtreeLayoutScope::SubtreeLayoutScope(RenderObject* root)
+SubtreeLayoutScope::SubtreeLayoutScope(RenderObject& root)
     : m_root(root)
 {
-    RELEASE_ASSERT(m_root->document().view()->isInLayout());
+    RELEASE_ASSERT(m_root.document().view()->isInPerformLayout());
 }
 
 SubtreeLayoutScope::~SubtreeLayoutScope()
 {
-    // Partial layout early-exits layout and will leave the tree as needing layout.
-    if (m_root->frameView()->partialLayout().isStopping()) {
-        ASSERT(m_root->needsLayout());
-        return;
-    }
-
-    RELEASE_ASSERT(!m_root->needsLayout());
+    RELEASE_ASSERT(!m_root.needsLayout());
 
 #ifndef NDEBUG
     for (HashSet<RenderObject*>::iterator it = m_renderersToLayout.begin(); it != m_renderersToLayout.end(); ++it)
@@ -60,13 +54,13 @@ SubtreeLayoutScope::~SubtreeLayoutScope()
 
 void SubtreeLayoutScope::setNeedsLayout(RenderObject* descendant)
 {
-    ASSERT(descendant->isDescendantOf(m_root));
-    descendant->setNeedsLayout(MarkContainingBlockChain, this);
+    ASSERT(descendant->isDescendantOf(&m_root));
+    descendant->setNeedsLayoutAndFullPaintInvalidation(MarkContainingBlockChain, this);
 }
 
 void SubtreeLayoutScope::setChildNeedsLayout(RenderObject* descendant)
 {
-    ASSERT(descendant->isDescendantOf(m_root));
+    ASSERT(descendant->isDescendantOf(&m_root));
     descendant->setChildNeedsLayout(MarkContainingBlockChain, this);
 }
 

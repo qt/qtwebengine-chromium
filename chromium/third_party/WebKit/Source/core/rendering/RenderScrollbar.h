@@ -32,19 +32,19 @@
 
 namespace WebCore {
 
-class Frame;
+class LocalFrame;
 class Node;
 class RenderBox;
 class RenderScrollbarPart;
 class RenderStyle;
 
-class RenderScrollbar : public Scrollbar {
+class RenderScrollbar FINAL : public Scrollbar {
 protected:
-    RenderScrollbar(ScrollableArea*, ScrollbarOrientation, Node*, Frame*);
+    RenderScrollbar(ScrollableArea*, ScrollbarOrientation, Node*, LocalFrame*);
 
 public:
     friend class Scrollbar;
-    static PassRefPtr<Scrollbar> createCustomScrollbar(ScrollableArea*, ScrollbarOrientation, Node*, Frame* owningFrame = 0);
+    static PassRefPtr<Scrollbar> createCustomScrollbar(ScrollableArea*, ScrollbarOrientation, Node*, LocalFrame* owningFrame = 0);
     virtual ~RenderScrollbar();
 
     RenderBox* owningRenderer() const;
@@ -57,20 +57,20 @@ public:
 
     int minimumThumbLength();
 
-    virtual bool isOverlayScrollbar() const { return false; }
+    virtual bool isOverlayScrollbar() const OVERRIDE { return false; }
 
 private:
     virtual void setParent(Widget*) OVERRIDE;
-    virtual void setEnabled(bool);
+    virtual void setEnabled(bool) OVERRIDE;
 
-    virtual void paint(GraphicsContext*, const IntRect& damageRect);
+    virtual void paint(GraphicsContext*, const IntRect& damageRect) OVERRIDE;
 
-    virtual void setHoveredPart(ScrollbarPart);
-    virtual void setPressedPart(ScrollbarPart);
+    virtual void setHoveredPart(ScrollbarPart) OVERRIDE;
+    virtual void setPressedPart(ScrollbarPart) OVERRIDE;
 
-    virtual void styleChanged();
+    virtual void styleChanged() OVERRIDE;
 
-    virtual bool isCustomScrollbar() const { return true; }
+    virtual bool isCustomScrollbar() const OVERRIDE { return true; }
 
     void updateScrollbarParts(bool destroy = false);
 
@@ -81,9 +81,9 @@ private:
     // so we keep a reference to the Node which caused this custom scrollbar creation.
     // This will not create a reference cycle as the Widget tree is owned by our containing
     // FrameView which this Node pointer can in no way keep alive. See webkit bug 80610.
-    RefPtr<Node> m_owner;
+    RefPtrWillBePersistent<Node> m_owner;
 
-    Frame* m_owningFrame;
+    LocalFrame* m_owningFrame;
     HashMap<unsigned, RenderScrollbarPart*> m_parts;
 };
 

@@ -233,11 +233,11 @@ std::string DhcpProxyScriptAdapterFetcher::GetPacURLFromDhcp(
   // The maximum message size is typically 4096 bytes on Windows per
   // http://support.microsoft.com/kb/321592
   DWORD result_buffer_size = 4096;
-  scoped_ptr_malloc<BYTE> result_buffer;
+  scoped_ptr<BYTE, base::FreeDeleter> result_buffer;
   int retry_count = 0;
   DWORD res = NO_ERROR;
   do {
-    result_buffer.reset(reinterpret_cast<BYTE*>(malloc(result_buffer_size)));
+    result_buffer.reset(static_cast<BYTE*>(malloc(result_buffer_size)));
 
     // Note that while the DHCPCAPI_REQUEST_SYNCHRONOUS flag seems to indicate
     // there might be an asynchronous mode, there seems to be (at least in
@@ -261,7 +261,7 @@ std::string DhcpProxyScriptAdapterFetcher::GetPacURLFromDhcp(
   } while (res == ERROR_MORE_DATA && retry_count <= 3);
 
   if (res != NO_ERROR) {
-    LOG(INFO) << "Error fetching PAC URL from DHCP: " << res;
+    VLOG(1) << "Error fetching PAC URL from DHCP: " << res;
     UMA_HISTOGRAM_COUNTS("Net.DhcpWpadUnhandledDhcpError", 1);
   } else if (wpad_params.nBytesData) {
     return SanitizeDhcpApiString(
@@ -288,7 +288,7 @@ std::string DhcpProxyScriptAdapterFetcher::SanitizeDhcpApiString(
   // the server is giving us back a buffer with embedded NULLs,
   // something is broken anyway.  Finally, trim trailing whitespace.
   std::string result(std::string(data, count_bytes).c_str());
-  TrimWhitespaceASCII(result, TRIM_TRAILING, &result);
+  base::TrimWhitespaceASCII(result, base::TRIM_TRAILING, &result);
   return result;
 }
 

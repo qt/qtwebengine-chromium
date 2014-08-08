@@ -34,11 +34,11 @@
 #include "bindings/v8/ScriptWrappable.h"
 #include "core/dom/ActiveDOMObject.h"
 #include "core/events/EventListener.h"
-#include "core/events/EventTarget.h"
-#include "core/events/ThreadLocalEventNames.h"
+#include "modules/EventTargetModules.h"
 #include "modules/websockets/WebSocketChannel.h"
 #include "modules/websockets/WebSocketChannelClient.h"
 #include "platform/Timer.h"
+#include "platform/heap/Handle.h"
 #include "platform/weborigin/KURL.h"
 #include "wtf/Deque.h"
 #include "wtf/Forward.h"
@@ -51,16 +51,17 @@ namespace WebCore {
 class Blob;
 class ExceptionState;
 
-class WebSocket : public RefCounted<WebSocket>, public ScriptWrappable, public EventTargetWithInlineData, public ActiveDOMObject, public WebSocketChannelClient {
+class WebSocket : public RefCountedWillBeRefCountedGarbageCollected<WebSocket>, public ScriptWrappable, public EventTargetWithInlineData, public ActiveDOMObject, public WebSocketChannelClient {
     REFCOUNTED_EVENT_TARGET(WebSocket);
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(WebSocket);
 public:
-    static const char* subProtocolSeperator();
+    static const char* subprotocolSeperator();
     // WebSocket instances must be used with a wrapper since this class's
     // lifetime management is designed assuming the V8 holds a ref on it while
     // hasPendingActivity() returns true.
-    static PassRefPtr<WebSocket> create(ExecutionContext*, const String& url, ExceptionState&);
-    static PassRefPtr<WebSocket> create(ExecutionContext*, const String& url, const String& protocol, ExceptionState&);
-    static PassRefPtr<WebSocket> create(ExecutionContext*, const String& url, const Vector<String>& protocols, ExceptionState&);
+    static PassRefPtrWillBeRawPtr<WebSocket> create(ExecutionContext*, const String& url, ExceptionState&);
+    static PassRefPtrWillBeRawPtr<WebSocket> create(ExecutionContext*, const String& url, const String& protocol, ExceptionState&);
+    static PassRefPtrWillBeRawPtr<WebSocket> create(ExecutionContext*, const String& url, const Vector<String>& protocols, ExceptionState&);
     virtual ~WebSocket();
 
     enum State {
@@ -70,8 +71,6 @@ public:
         CLOSED = 3
     };
 
-    void connect(const String& url, ExceptionState&);
-    void connect(const String& url, const String& protocol, ExceptionState&);
     void connect(const String& url, const Vector<String>& protocols, ExceptionState&);
 
     void send(const String& message, ExceptionState&);
@@ -117,28 +116,43 @@ public:
     virtual void stop() OVERRIDE;
 
     // WebSocketChannelClient functions.
-    virtual void didConnect() OVERRIDE;
+    virtual void didConnect(const String& subprotocol, const String& extensions) OVERRIDE;
     virtual void didReceiveMessage(const String& message) OVERRIDE;
     virtual void didReceiveBinaryData(PassOwnPtr<Vector<char> >) OVERRIDE;
     virtual void didReceiveMessageError() OVERRIDE;
-    virtual void didUpdateBufferedAmount(unsigned long bufferedAmount) OVERRIDE;
+    virtual void didConsumeBufferedAmount(unsigned long) OVERRIDE;
     virtual void didStartClosingHandshake() OVERRIDE;
-    virtual void didClose(unsigned long unhandledBufferedAmount, ClosingHandshakeCompletionStatus, unsigned short code, const String& reason) OVERRIDE;
+    virtual void didClose(ClosingHandshakeCompletionStatus, unsigned short code, const String& reason) OVERRIDE;
+
+    virtual void trace(Visitor*) OVERRIDE;
+
+    static bool isValidSubprotocolString(const String&);
+
+protected:
+    explicit WebSocket(ExecutionContext*);
 
 private:
-    class EventQueue : public RefCounted<EventQueue> {
+    // FIXME: This should inherit WebCore::EventQueue.
+    class EventQueue FINAL : public RefCountedWillBeGarbageCollectedFinalized<EventQueue> {
     public:
-        static PassRefPtr<EventQueue> create(EventTarget* target) { return adoptRef(new EventQueue(target)); }
-        virtual ~EventQueue();
+        static PassRefPtrWillBeRawPtr<EventQueue> create(EventTarget* target)
+        {
+            return adoptRefWillBeNoop(new EventQueue(target));
+        }
+        ~EventQueue();
 
         // Dispatches the event if this queue is active.
         // Queues the event if this queue is suspended.
         // Does nothing otherwise.
-        void dispatch(PassRefPtr<Event> /* event */);
+        void dispatch(PassRefPtrWillBeRawPtr<Event> /* event */);
+
+        bool isEmpty() const;
 
         void suspend();
         void resume();
         void stop();
+
+        void trace(Visitor*);
 
     private:
         enum State {
@@ -156,11 +170,24 @@ private:
 
         State m_state;
         EventTarget* m_target;
-        Deque<RefPtr<Event> > m_events;
+        WillBeHeapDeque<RefPtrWillBeMember<Event> > m_events;
         Timer<EventQueue> m_resumeTimer;
     };
 
-    explicit WebSocket(ExecutionContext*);
+    enum WebSocketSendType {
+        WebSocketSendTypeString,
+        WebSocketSendTypeArrayBuffer,
+        WebSocketSendTypeArrayBufferView,
+        WebSocketSendTypeBlob,
+        WebSocketSendTypeMax,
+    };
+
+    // This function is virtual for unittests.
+    // FIXME: Move WebSocketChannel::create here.
+    virtual PassRefPtrWillBeRawPtr<WebSocketChannel> createChannel(ExecutionContext* context, WebSocketChannelClient* client)
+    {
+        return WebSocketChannel::create(context, client);
+    }
 
     // Adds a console message with JSMessageSource and ErrorMessageLevel.
     void logError(const String& message);
@@ -172,30 +199,40 @@ private:
 
     size_t getFramingOverhead(size_t payloadSize);
 
-    // Checks the result of WebSocketChannel::send() method, and shows console
-    // message and sets ec appropriately.
-    void handleSendResult(WebSocketChannel::SendResult, ExceptionState&);
+    // Checks the result of WebSocketChannel::send() method, and:
+    // - shows console message
+    // - sets ExceptionState appropriately
+    // - reports data for UMA.
+    void handleSendResult(WebSocketChannel::SendResult, ExceptionState&, WebSocketSendType);
 
     // Updates m_bufferedAmountAfterClose given the amount of data passed to
     // send() method after the state changed to CLOSING or CLOSED.
     void updateBufferedAmountAfterClose(unsigned long);
+    void reflectBufferedAmountConsumption(Timer<WebSocket>*);
+
+    void releaseChannel();
 
     enum BinaryType {
         BinaryTypeBlob,
         BinaryTypeArrayBuffer
     };
 
-    RefPtr<WebSocketChannel> m_channel;
+    RefPtrWillBeMember<WebSocketChannel> m_channel;
 
     State m_state;
     KURL m_url;
     unsigned long m_bufferedAmount;
+    // The consumed buffered amount that will be reflected to m_bufferedAmount
+    // later. It will be cleared once reflected.
+    unsigned long m_consumedBufferedAmount;
     unsigned long m_bufferedAmountAfterClose;
     BinaryType m_binaryType;
+    // The subprotocol the server selected.
     String m_subprotocol;
     String m_extensions;
 
-    RefPtr<EventQueue> m_eventQueue;
+    RefPtrWillBeMember<EventQueue> m_eventQueue;
+    Timer<WebSocket> m_bufferedAmountConsumeTimer;
 };
 
 } // namespace WebCore

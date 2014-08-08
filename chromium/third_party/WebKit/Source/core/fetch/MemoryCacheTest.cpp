@@ -57,7 +57,8 @@ public:
             setDecodedSize(this->size());
         }
 
-        virtual void destroyDecodedData()
+    protected:
+        virtual void destroyDecodedDataIfPossible() OVERRIDE
         {
             setDecodedSize(0);
         }
@@ -152,7 +153,7 @@ TEST_F(MemoryCacheTest, DeadResourceEviction)
     const unsigned maxDeadCapacity = 0;
     memoryCache()->setCapacities(minDeadCapacity, maxDeadCapacity, totalCapacity);
 
-    ResourcePtr<Resource> cachedResource =
+    Resource* cachedResource =
         new Resource(ResourceRequest(""), Resource::Raw);
     const char data[5] = "abcd";
     cachedResource->appendData(data, 3);
@@ -163,7 +164,7 @@ TEST_F(MemoryCacheTest, DeadResourceEviction)
     ASSERT_EQ(0u, memoryCache()->deadSize());
     ASSERT_EQ(0u, memoryCache()->liveSize());
 
-    memoryCache()->add(cachedResource.get());
+    memoryCache()->add(cachedResource);
     ASSERT_EQ(cachedResource->size(), memoryCache()->deadSize());
     ASSERT_EQ(0u, memoryCache()->liveSize());
 
@@ -182,8 +183,8 @@ TEST_F(MemoryCacheTest, LiveResourceEvictionAtEndOfTask)
     const unsigned maxDeadCapacity = 0;
     memoryCache()->setCapacities(minDeadCapacity, maxDeadCapacity, totalCapacity);
     const char data[6] = "abcde";
-    ResourcePtr<Resource> cachedDeadResource =
-        new Resource(ResourceRequest(""), Resource::Raw);
+    Resource* cachedDeadResource =
+        new Resource(ResourceRequest("hhtp://foo"), Resource::Raw);
     cachedDeadResource->appendData(data, 3);
     ResourcePtr<Resource> cachedLiveResource =
         new FakeDecodedResource(ResourceRequest(""), Resource::Raw);
@@ -193,7 +194,7 @@ TEST_F(MemoryCacheTest, LiveResourceEvictionAtEndOfTask)
 
     class Task1 : public blink::WebThread::Task {
     public:
-        Task1(const ResourcePtr<Resource>& live, const ResourcePtr<Resource>& dead)
+        Task1(const ResourcePtr<Resource>& live, Resource* dead)
             : m_live(live)
             , m_dead(dead)
         { }
@@ -208,9 +209,9 @@ TEST_F(MemoryCacheTest, LiveResourceEvictionAtEndOfTask)
             ASSERT_EQ(0u, memoryCache()->deadSize());
             ASSERT_EQ(0u, memoryCache()->liveSize());
 
-            memoryCache()->add(m_dead.get());
+            memoryCache()->add(m_dead);
             memoryCache()->add(m_live.get());
-            memoryCache()->insertInLiveDecodedResourcesList(m_live.get());
+            memoryCache()->updateDecodedResource(m_live.get(), UpdateForPropertyChange);
             ASSERT_EQ(m_dead->size(), memoryCache()->deadSize());
             ASSERT_EQ(m_live->size(), memoryCache()->liveSize());
             ASSERT_GT(m_live->decodedSize(), 0u);
@@ -222,7 +223,8 @@ TEST_F(MemoryCacheTest, LiveResourceEvictionAtEndOfTask)
         }
 
     private:
-        ResourcePtr<Resource> m_live, m_dead;
+        ResourcePtr<Resource> m_live;
+        Resource* m_dead;
     };
 
     class Task2 : public blink::WebThread::Task {
@@ -255,7 +257,7 @@ TEST_F(MemoryCacheTest, ClientRemoval)
 {
     const char data[6] = "abcde";
     ResourcePtr<Resource> resource1 =
-        new FakeDecodedResource(ResourceRequest(""), Resource::Raw);
+        new FakeDecodedResource(ResourceRequest("http://foo.com"), Resource::Raw);
     MockImageResourceClient client1;
     resource1->addClient(&client1);
     resource1->appendData(data, 4);
@@ -266,7 +268,7 @@ TEST_F(MemoryCacheTest, ClientRemoval)
     resource2->appendData(data, 4);
 
     const unsigned minDeadCapacity = 0;
-    const unsigned maxDeadCapacity = resource1->size() - 1;
+    const unsigned maxDeadCapacity = ((resource1->size() + resource2->size()) / 2) - 1;
     const unsigned totalCapacity = maxDeadCapacity;
     memoryCache()->setCapacities(minDeadCapacity, maxDeadCapacity, totalCapacity);
     memoryCache()->add(resource1.get());
@@ -286,8 +288,8 @@ TEST_F(MemoryCacheTest, ClientRemoval)
     ASSERT_GT(resource2->decodedSize(), 0u);
     ASSERT_EQ(memoryCache()->deadSize(), resource1->size());
     ASSERT_EQ(memoryCache()->liveSize(), resource2->size());
-    ASSERT_TRUE(resource1->inCache());
-    ASSERT_TRUE(resource2->inCache());
+    ASSERT_TRUE(memoryCache()->contains(resource1.get()));
+    ASSERT_TRUE(memoryCache()->contains(resource2.get()));
 
     // Removing the client from resource2 should result in immediate
     // eviction of resource2 because we are over the prune deferral limit.
@@ -296,8 +298,8 @@ TEST_F(MemoryCacheTest, ClientRemoval)
     ASSERT_GT(resource2->decodedSize(), 0u);
     ASSERT_EQ(memoryCache()->deadSize(), resource1->size());
     ASSERT_EQ(memoryCache()->liveSize(), 0u);
-    ASSERT_TRUE(resource1->inCache());
-    ASSERT_FALSE(resource2->inCache());
+    ASSERT_TRUE(memoryCache()->contains(resource1.get()));
+    ASSERT_FALSE(memoryCache()->contains(resource2.get()));
 }
 
 // Verifies that CachedResources are evicted from the decode cache
@@ -307,7 +309,7 @@ TEST_F(MemoryCacheTest, DecodeCacheOrder)
     memoryCache()->setDelayBeforeLiveDecodedPrune(0);
     memoryCache()->setMaxPruneDeferralDelay(0);
     ResourcePtr<FakeDecodedResource> cachedImageLowPriority =
-        new FakeDecodedResource(ResourceRequest(""), Resource::Raw);
+        new FakeDecodedResource(ResourceRequest("http://foo.com"), Resource::Raw);
     ResourcePtr<FakeDecodedResource> cachedImageHighPriority =
         new FakeDecodedResource(ResourceRequest(""), Resource::Raw);
 
@@ -344,14 +346,14 @@ TEST_F(MemoryCacheTest, DecodeCacheOrder)
     ASSERT_EQ(memoryCache()->liveSize(), highPrioritySize + lowPrioritySize);
 
     // Insert all items in the decoded items list with the same priority
-    memoryCache()->insertInLiveDecodedResourcesList(cachedImageHighPriority.get());
-    memoryCache()->insertInLiveDecodedResourcesList(cachedImageLowPriority.get());
+    memoryCache()->updateDecodedResource(cachedImageHighPriority.get(), UpdateForPropertyChange);
+    memoryCache()->updateDecodedResource(cachedImageLowPriority.get(), UpdateForPropertyChange);
     ASSERT_EQ(memoryCache()->deadSize(), 0u);
     ASSERT_EQ(memoryCache()->liveSize(), totalSize);
 
     // Now we will assign their priority and make sure they are moved to the correct buckets.
-    cachedImageLowPriority->setCacheLiveResourcePriority(Resource::CacheLiveResourcePriorityLow);
-    cachedImageHighPriority->setCacheLiveResourcePriority(Resource::CacheLiveResourcePriorityHigh);
+    memoryCache()->updateDecodedResource(cachedImageLowPriority.get(), UpdateForPropertyChange, MemoryCacheLiveResourcePriorityLow);
+    memoryCache()->updateDecodedResource(cachedImageHighPriority.get(), UpdateForPropertyChange, MemoryCacheLiveResourcePriorityHigh);
 
     // Should first prune the LowPriority item.
     memoryCache()->setCapacities(memoryCache()->minDeadCapacity(), memoryCache()->liveSize() - 10, memoryCache()->liveSize() - 10);
@@ -365,4 +367,44 @@ TEST_F(MemoryCacheTest, DecodeCacheOrder)
     ASSERT_EQ(memoryCache()->deadSize(), 0u);
     ASSERT_EQ(memoryCache()->liveSize(), totalSize - lowPriorityMockDecodeSize - highPriorityMockDecodeSize);
 }
+
+TEST_F(MemoryCacheTest, MultipleReplace)
+{
+    ResourcePtr<FakeResource> resource1 = new FakeResource(ResourceRequest(""), Resource::Raw);
+    memoryCache()->add(resource1.get());
+
+    ResourcePtr<FakeResource> resource2 = new FakeResource(ResourceRequest(""), Resource::Raw);
+    memoryCache()->replace(resource2.get(), resource1.get());
+    EXPECT_TRUE(memoryCache()->contains(resource2.get()));
+    EXPECT_FALSE(memoryCache()->contains(resource1.get()));
+
+    ResourcePtr<FakeResource> resource3 = new FakeResource(ResourceRequest(""), Resource::Raw);
+    memoryCache()->replace(resource3.get(), resource2.get());
+    EXPECT_TRUE(memoryCache()->contains(resource3.get()));
+    EXPECT_FALSE(memoryCache()->contains(resource2.get()));
+}
+
+TEST_F(MemoryCacheTest, RemoveDuringRevalidation)
+{
+    ResourcePtr<FakeResource> resource1 = new FakeResource(ResourceRequest(""), Resource::Raw);
+    memoryCache()->add(resource1.get());
+
+    ResourcePtr<FakeResource> resource2 = new FakeResource(ResourceRequest(""), Resource::Raw);
+    memoryCache()->remove(resource1.get());
+    memoryCache()->add(resource2.get());
+    EXPECT_TRUE(memoryCache()->contains(resource2.get()));
+    EXPECT_FALSE(memoryCache()->contains(resource1.get()));
+
+    ResourcePtr<FakeResource> resource3 = new FakeResource(ResourceRequest(""), Resource::Raw);
+    memoryCache()->remove(resource2.get());
+    memoryCache()->add(resource3.get());
+    EXPECT_TRUE(memoryCache()->contains(resource3.get()));
+    EXPECT_FALSE(memoryCache()->contains(resource2.get()));
+
+    memoryCache()->replace(resource1.get(), resource2.get());
+    EXPECT_TRUE(memoryCache()->contains(resource1.get()));
+    EXPECT_FALSE(memoryCache()->contains(resource2.get()));
+    EXPECT_FALSE(memoryCache()->contains(resource3.get()));
+}
+
 } // namespace

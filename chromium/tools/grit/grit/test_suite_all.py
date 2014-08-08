@@ -42,7 +42,10 @@ class TestSuiteAll(unittest.TestSuite):
     import grit.format.resource_map_unittest
     import grit.format.policy_templates.policy_template_generator_unittest
     import grit.format.policy_templates.writers.adm_writer_unittest
+    import grit.format.policy_templates.writers.adml_writer_unittest
+    import grit.format.policy_templates.writers.admx_writer_unittest
     import grit.format.policy_templates.writers.doc_writer_unittest
+    import grit.format.policy_templates.writers.ios_plist_writer_unittest
     import grit.format.policy_templates.writers.json_writer_unittest
     import grit.format.policy_templates.writers.plist_strings_writer_unittest
     import grit.format.policy_templates.writers.plist_writer_unittest
@@ -97,8 +100,14 @@ class TestSuiteAll(unittest.TestSuite):
             PolicyTemplateGeneratorUnittest,
         grit.format.policy_templates.writers.adm_writer_unittest.
             AdmWriterUnittest,
+        grit.format.policy_templates.writers.adml_writer_unittest.
+            AdmlWriterUnittest,
+        grit.format.policy_templates.writers.admx_writer_unittest.
+            AdmxWriterUnittest,
         grit.format.policy_templates.writers.doc_writer_unittest.
             DocWriterUnittest,
+        grit.format.policy_templates.writers.ios_plist_writer_unittest.
+            IOSPListWriterUnittest,
         grit.format.policy_templates.writers.json_writer_unittest.
             JsonWriterUnittest,
         grit.format.policy_templates.writers.plist_strings_writer_unittest.

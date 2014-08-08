@@ -12,8 +12,9 @@ login.createScreen('ErrorMessageScreen', 'error-message', function() {
 
   /** @const */ var FIX_PROXY_SETTINGS_ID = 'proxy-settings-fix-link';
 
-  // Id of the element which holds current network name.
-  /** @const */ var CURRENT_NETWORK_NAME_ID = 'captive-portal-network-name';
+  // Class of the elements which hold current network name.
+  /** @const */ var CURRENT_NETWORK_NAME_CLASS =
+      'portal-network-name';
 
   // Link which triggers frame reload.
   /** @const */ var RELOAD_PAGE_ID = 'proxy-error-signin-retry-link';
@@ -26,8 +27,13 @@ login.createScreen('ErrorMessageScreen', 'error-message', function() {
     ERROR_SCREEN_UI_STATE.SIGNIN,
     ERROR_SCREEN_UI_STATE.MANAGED_USER_CREATION_FLOW,
     ERROR_SCREEN_UI_STATE.KIOSK_MODE,
-    ERROR_SCREEN_UI_STATE.LOCAL_STATE_ERROR
+    ERROR_SCREEN_UI_STATE.LOCAL_STATE_ERROR,
+    ERROR_SCREEN_UI_STATE.AUTO_ENROLLMENT_ERROR,
+    ERROR_SCREEN_UI_STATE.ROLLBACK_ERROR,
   ];
+
+  // The help topic linked from the auto enrollment error message.
+  /** @const */ var HELP_TOPIC_AUTO_ENROLLMENT = 4632009;
 
   // Possible error states of the screen.
   /** @const */ var ERROR_STATE = {
@@ -35,7 +41,8 @@ login.createScreen('ErrorMessageScreen', 'error-message', function() {
     PORTAL: 'error-state-portal',
     OFFLINE: 'error-state-offline',
     PROXY: 'error-state-proxy',
-    AUTH_EXT_TIMEOUT: 'error-state-auth-ext-timeout'
+    AUTH_EXT_TIMEOUT: 'error-state-auth-ext-timeout',
+    KIOSK_ONLINE: 'error-state-kiosk-online'
   };
 
   // Possible error states of the screen. Must be in the same order as
@@ -45,7 +52,8 @@ login.createScreen('ErrorMessageScreen', 'error-message', function() {
     ERROR_STATE.PORTAL,
     ERROR_STATE.OFFLINE,
     ERROR_STATE.PROXY,
-    ERROR_STATE.AUTH_EXT_TIMEOUT
+    ERROR_STATE.AUTH_EXT_TIMEOUT,
+    ERROR_STATE.KIOSK_ONLINE
   ];
 
   return {
@@ -56,7 +64,8 @@ login.createScreen('ErrorMessageScreen', 'error-message', function() {
       'allowGuestSignin',
       'allowOfflineLogin',
       'setUIState',
-      'setErrorState'
+      'setErrorState',
+      'showConnectingIndicator'
     ],
 
     // Error screen initial UI state.
@@ -75,9 +84,20 @@ login.createScreen('ErrorMessageScreen', 'error-message', function() {
      * Updates localized content of the screen that is not updated via template.
      */
     updateLocalizedContent: function() {
+      $('auto-enrollment-offline-message-text').innerHTML =
+          loadTimeData.getStringF(
+              'autoEnrollmentOfflineMessageBody',
+              '<b class="' + CURRENT_NETWORK_NAME_CLASS + '"></b>',
+              '<a id="auto-enrollment-learn-more" class="signin-link" ' +
+                  '"href="#">',
+              '</a>');
+      $('auto-enrollment-learn-more').onclick = function() {
+        chrome.send('launchHelpApp', [HELP_TOPIC_AUTO_ENROLLMENT]);
+      };
+
       $('captive-portal-message-text').innerHTML = loadTimeData.getStringF(
         'captivePortalMessage',
-        '<b id="' + CURRENT_NETWORK_NAME_ID + '"></b>',
+        '<b class="' + CURRENT_NETWORK_NAME_CLASS + '"></b>',
         '<a id="' + FIX_CAPTIVE_PORTAL_ID + '" class="signin-link" href="#">',
         '</a>');
       $(FIX_CAPTIVE_PORTAL_ID).onclick = function() {
@@ -118,9 +138,15 @@ login.createScreen('ErrorMessageScreen', 'error-message', function() {
           'guestSignin',
           '<a id="error-guest-signin-link" class="signin-link" href="#">',
           '</a>');
-      $('error-guest-signin-link').onclick = function() {
-        chrome.send('launchIncognito');
-      };
+      $('error-guest-signin-link').onclick = this.launchGuestSession_;
+
+      $('error-guest-signin-fix-network').innerHTML = loadTimeData.getStringF(
+          'guestSigninFixNetwork',
+          '<a id="error-guest-fix-network-signin-link" class="signin-link" ' +
+              'href="#">',
+          '</a>');
+      $('error-guest-fix-network-signin-link').onclick =
+          this.launchGuestSession_;
 
       $('error-offline-login').innerHTML = loadTimeData.getStringF(
           'offlineLogin',
@@ -129,6 +155,15 @@ login.createScreen('ErrorMessageScreen', 'error-message', function() {
       $('error-offline-login-link').onclick = function() {
         chrome.send('offlineLogin');
       };
+
+      var ellipsis = '';
+      for (var i = 1; i <= 3; ++i) {
+        ellipsis +=
+            '<span id="connecting-indicator-ellipsis-' + i + '">.</span>';
+      }
+      $('connecting-indicator').innerHTML =
+          loadTimeData.getStringF('connectingIndicatorText', ellipsis);
+
       this.onContentChange_();
     },
 
@@ -149,6 +184,8 @@ login.createScreen('ErrorMessageScreen', 'error-message', function() {
         this.allowGuestSignin(data['guestSigninAllowed']);
       if ('offlineLoginAllowed' in data)
         this.allowOfflineLogin(data['offlineLoginAllowed']);
+      if ('showConnectingIndicator' in data)
+        this.showConnectingIndicator(data['showConnectingIndicator']);
     },
 
     /**
@@ -173,6 +210,44 @@ login.createScreen('ErrorMessageScreen', 'error-message', function() {
         e.stopPropagation();
       });
       buttons.push(rebootButton);
+
+      var diagnoseButton = this.ownerDocument.createElement('button');
+      diagnoseButton.textContent = loadTimeData.getString('diagnoseButton');
+      diagnoseButton.classList.add('show-with-ui-state-kiosk-mode');
+      diagnoseButton.addEventListener('click', function(e) {
+        chrome.send('diagnoseButtonClicked');
+        e.stopPropagation();
+      });
+      buttons.push(diagnoseButton);
+
+      var certsButton = this.ownerDocument.createElement('button');
+      certsButton.textContent = loadTimeData.getString('configureCertsButton');
+      certsButton.classList.add('show-with-ui-state-kiosk-mode');
+      certsButton.addEventListener('click', function(e) {
+        chrome.send('configureCertsClicked');
+        e.stopPropagation();
+      });
+      buttons.push(certsButton);
+
+      var continueButton = this.ownerDocument.createElement('button');
+      continueButton.id = 'continue-network-config-btn';
+      continueButton.textContent = loadTimeData.getString('continueButton');
+      continueButton.classList.add('show-with-error-state-kiosk-online');
+      continueButton.addEventListener('click', function(e) {
+        chrome.send('continueAppLaunch');
+        e.stopPropagation();
+      });
+      buttons.push(continueButton);
+
+      var okButton = this.ownerDocument.createElement('button');
+      okButton.id = 'ok-error-screen-btn';
+      okButton.textContent = loadTimeData.getString('okButton');
+      okButton.classList.add('show-with-ui-state-rollback-error');
+      okButton.addEventListener('click', function(e) {
+        chrome.send('cancelOnReset');
+        e.stopPropagation();
+      });
+      buttons.push(okButton);
 
       var spacer = this.ownerDocument.createElement('div');
       spacer.classList.add('button-spacer');
@@ -220,7 +295,10 @@ login.createScreen('ErrorMessageScreen', 'error-message', function() {
       */
     setErrorState_: function(error_state, network) {
       this.classList.remove(this.error_state);
-      $(CURRENT_NETWORK_NAME_ID).textContent = network;
+      var networkNameElems =
+          document.getElementsByClassName(CURRENT_NETWORK_NAME_CLASS);
+      for (var i = 0; i < networkNameElems.length; ++i)
+        networkNameElems[i].textContent = network;
       this.error_state = error_state;
       this.classList.add(this.error_state);
       this.onContentChange_();
@@ -232,6 +310,15 @@ login.createScreen('ErrorMessageScreen', 'error-message', function() {
     onContentChange_: function() {
       if (Oobe.getInstance().currentScreen === this)
         Oobe.getInstance().updateScreenSize(this);
+    },
+
+    /**
+     * Event handler for guest session launch.
+     * @private
+     */
+    launchGuestSession_: function() {
+      chrome.send(Oobe.getInstance().isOobeUI() ?
+          'launchOobeGuestSession' : 'launchIncognito');
     },
 
     /**
@@ -269,6 +356,15 @@ login.createScreen('ErrorMessageScreen', 'error-message', function() {
       */
     setErrorState: function(error_state, network) {
       this.setErrorState_(ERROR_STATES[error_state], network);
+    },
+
+    /**
+     * Updates visibility of the label indicating we're reconnecting.
+     * @param {boolean} show Whether the label should be shown.
+     */
+    showConnectingIndicator: function(show) {
+      this.classList.toggle('show-connecting-indicator', show);
+      this.onContentChange_();
     }
   };
 });

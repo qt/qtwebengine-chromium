@@ -6,6 +6,7 @@
 #define CHROME_BROWSER_UI_WEBUI_ACCESSIBILITY_UI_H_
 
 #include "content/public/browser/web_ui_controller.h"
+#include "content/public/browser/web_ui_data_source.h"
 
 namespace base {
   class ListValue;

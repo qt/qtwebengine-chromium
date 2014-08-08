@@ -6,8 +6,11 @@
 
 #include "base/debug/trace_event.h"
 #include "base/message_loop/message_loop_proxy.h"
+#include "media/base/bind_to_current_loop.h"
 #include "media/base/video_frame.h"
 #include "media/base/video_util.h"
+
+const int kMinFrameSize = 2;
 
 namespace content {
 
@@ -19,8 +22,9 @@ RTCVideoRenderer::RTCVideoRenderer(
       repaint_cb_(repaint_cb),
       message_loop_proxy_(base::MessageLoopProxy::current()),
       state_(STOPPED),
-      first_frame_rendered_(false),
-      video_track_(video_track) {
+      frame_size_(kMinFrameSize, kMinFrameSize),
+      video_track_(video_track),
+      weak_factory_(this) {
 }
 
 RTCVideoRenderer::~RTCVideoRenderer() {
@@ -29,15 +33,20 @@ RTCVideoRenderer::~RTCVideoRenderer() {
 void RTCVideoRenderer::Start() {
   DCHECK(message_loop_proxy_->BelongsToCurrentThread());
   DCHECK_EQ(state_, STOPPED);
-  DCHECK(!first_frame_rendered_);
 
-  AddToVideoTrack(this, video_track_);
+  AddToVideoTrack(
+      this,
+      media::BindToCurrentLoop(
+          base::Bind(
+              &RTCVideoRenderer::OnVideoFrame,
+              weak_factory_.GetWeakPtr())),
+      video_track_);
   state_ = STARTED;
 
   if (video_track_.source().readyState() ==
           blink::WebMediaStreamSource::ReadyStateEnded ||
       !video_track_.isEnabled()) {
-    MaybeRenderSignalingFrame();
+    RenderSignalingFrame();
   }
 }
 
@@ -45,8 +54,10 @@ void RTCVideoRenderer::Stop() {
   DCHECK(message_loop_proxy_->BelongsToCurrentThread());
   DCHECK(state_ == STARTED || state_ == PAUSED);
   RemoveFromVideoTrack(this, video_track_);
+  weak_factory_.InvalidateWeakPtrs();
   state_ = STOPPED;
-  first_frame_rendered_ = false;
+  frame_size_.set_width(kMinFrameSize);
+  frame_size_.set_height(kMinFrameSize);
 }
 
 void RTCVideoRenderer::Play() {
@@ -67,43 +78,44 @@ void RTCVideoRenderer::OnReadyStateChanged(
     blink::WebMediaStreamSource::ReadyState state) {
   DCHECK(message_loop_proxy_->BelongsToCurrentThread());
   if (state == blink::WebMediaStreamSource::ReadyStateEnded)
-    MaybeRenderSignalingFrame();
+    RenderSignalingFrame();
 }
 
 void RTCVideoRenderer::OnEnabledChanged(bool enabled) {
   DCHECK(message_loop_proxy_->BelongsToCurrentThread());
   if (!enabled)
-    MaybeRenderSignalingFrame();
+    RenderSignalingFrame();
 }
 
 void RTCVideoRenderer::OnVideoFrame(
-    const scoped_refptr<media::VideoFrame>& frame) {
+    const scoped_refptr<media::VideoFrame>& frame,
+    const media::VideoCaptureFormat& format,
+    const base::TimeTicks& estimated_capture_time) {
   DCHECK(message_loop_proxy_->BelongsToCurrentThread());
   if (state_ != STARTED) {
     return;
   }
 
+  frame_size_ = frame->natural_size();
+
   TRACE_EVENT_INSTANT1("rtc_video_renderer",
                        "OnVideoFrame",
                        TRACE_EVENT_SCOPE_THREAD,
                        "timestamp",
-                       frame->GetTimestamp().InMilliseconds());
+                       frame->timestamp().InMilliseconds());
   repaint_cb_.Run(frame);
-  first_frame_rendered_ = true;
 }
 
-void RTCVideoRenderer::MaybeRenderSignalingFrame() {
-  // Render a small black frame if no frame has been rendered.
+void RTCVideoRenderer::RenderSignalingFrame() {
   // This is necessary to make sure audio can play if the video tag src is
   // a MediaStream video track that has been rejected, ended or disabled.
-  if (first_frame_rendered_)
-    return;
-
-  const int kMinFrameSize = 2;
-  const gfx::Size size(kMinFrameSize, kMinFrameSize);
+  // It also ensure that the renderer don't hold a reference to a real video
+  // frame if no more frames are provided. This is since there might be a
+  // finite number of available buffers. E.g, video that
+  // originates from a video camera.
   scoped_refptr<media::VideoFrame> video_frame =
-      media::VideoFrame::CreateBlackFrame(size);
-  OnVideoFrame(video_frame);
+      media::VideoFrame::CreateBlackFrame(frame_size_);
+  OnVideoFrame(video_frame, media::VideoCaptureFormat(), base::TimeTicks());
 }
 
 }  // namespace content

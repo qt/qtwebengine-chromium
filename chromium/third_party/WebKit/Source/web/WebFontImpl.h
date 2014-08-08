@@ -31,31 +31,31 @@
 #ifndef WebFontImpl_h
 #define WebFontImpl_h
 
-#include "WebFont.h"
 #include "platform/fonts/Font.h"
+#include "public/web/WebFont.h"
 
 namespace WebCore { class FontDescription; }
 
 namespace blink {
 
-class WebFontImpl : public WebFont {
+class WebFontImpl FINAL : public WebFont {
 public:
-    WebFontImpl(const WebCore::FontDescription&, float letterSpacing, float wordSpacing);
+    WebFontImpl(const WebCore::FontDescription&);
 
-    virtual WebFontDescription fontDescription() const;
+    virtual WebFontDescription fontDescription() const OVERRIDE;
 
-    virtual int ascent() const;
-    virtual int descent() const;
-    virtual int height() const;
-    virtual int lineSpacing() const;
-    virtual float xHeight() const;
+    virtual int ascent() const OVERRIDE;
+    virtual int descent() const OVERRIDE;
+    virtual int height() const OVERRIDE;
+    virtual int lineSpacing() const OVERRIDE;
+    virtual float xHeight() const OVERRIDE;
 
     virtual void drawText(WebCanvas*, const WebTextRun&, const WebFloatPoint& leftBaseline, WebColor,
-                          const WebRect& clip, bool canvasIsOpaque, int from = 0, int to = -1) const;
-    virtual int calculateWidth(const WebTextRun&) const;
-    virtual int offsetForPosition(const WebTextRun&, float position) const;
+        const WebRect& clip, bool canvasIsOpaque, int from = 0, int to = -1) const OVERRIDE;
+    virtual int calculateWidth(const WebTextRun&) const OVERRIDE;
+    virtual int offsetForPosition(const WebTextRun&, float position) const OVERRIDE;
     virtual WebFloatRect selectionRectForText(const WebTextRun&, const WebFloatPoint& leftBaseline,
-                                              int height, int from = 0, int to = -1) const;
+        int height, int from = 0, int to = -1) const OVERRIDE;
 
 private:
     WebCore::Font m_font;

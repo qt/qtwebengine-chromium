@@ -165,6 +165,9 @@ class WAVEDecoder {
   // The number of bytes in the data portion of the chunk.
   size_t chunk_size_;
 
+  // The total number of bytes in the encoded data.
+  size_t data_size_;
+
   // The current position within the WAVE file.
   const uint8_t* buffer_;
 
@@ -183,7 +186,8 @@ class WAVEDecoder {
 };
 
 WAVEDecoder::WAVEDecoder(const uint8_t* encoded_data, size_t data_size)
-    : buffer_(encoded_data),
+    : data_size_(data_size),
+      buffer_(encoded_data),
       buffer_end_(encoded_data + 1),
       bytes_per_sample_(0),
       number_of_channels_(0),
@@ -246,6 +250,10 @@ bool WAVEDecoder::ReadChunkHeader() {
   // Adjust for padding
   if (chunk_size_ % 2)
     ++chunk_size_;
+
+  // Check for completely bogus chunk size.
+  if (chunk_size_ > data_size_)
+    return false;
 
   return true;
 }
@@ -377,8 +385,8 @@ bool WAVEDecoder::DecodeWAVEFile(blink::WebAudioBus* destination_bus) {
       return CopyDataChunkToBus(destination_bus);
     } else {
       // Ignore these chunks that we don't know about.
-      VLOG(0) << "Ignoring WAVE chunk `" << chunk_id_ << "' size "
-              << chunk_size_;
+      DVLOG(0) << "Ignoring WAVE chunk `" << chunk_id_ << "' size "
+               << chunk_size_;
     }
 
     // Advance to next chunk.
@@ -405,21 +413,30 @@ static void CopyPcmDataToBus(int input_fd,
 
   int16_t pipe_data[PIPE_BUF / sizeof(int16_t)];
   size_t decoded_frames = 0;
+  size_t current_sample_in_frame = 0;
   ssize_t nread;
 
   while ((nread = HANDLE_EINTR(read(input_fd, pipe_data, sizeof(pipe_data)))) >
          0) {
     size_t samples_in_pipe = nread / sizeof(int16_t);
-    for (size_t m = 0; m < samples_in_pipe; m += number_of_channels) {
+
+    // The pipe may not contain a whole number of frames.  This is
+    // especially true if the number of channels is greater than
+    // 2. Thus, keep track of which sample in a frame is being
+    // processed, so we handle the boundary at the end of the pipe
+    // correctly.
+    for (size_t m = 0; m < samples_in_pipe; ++m) {
       if (decoded_frames >= number_of_frames)
         break;
 
-      for (size_t k = 0; k < number_of_channels; ++k) {
-        int16_t sample = pipe_data[m + k];
-        destination_bus->channelData(k)[decoded_frames] =
-            ConvertSampleToFloat(sample);
+      destination_bus->channelData(current_sample_in_frame)[decoded_frames] =
+          ConvertSampleToFloat(pipe_data[m]);
+      ++current_sample_in_frame;
+
+      if (current_sample_in_frame >= number_of_channels) {
+        current_sample_in_frame = 0;
+        ++decoded_frames;
       }
-      ++decoded_frames;
     }
   }
 
@@ -494,7 +511,7 @@ static bool TryWAVEFileDecoder(blink::WebAudioBus* destination_bus,
 // of a pipe.  The MediaCodec class will decode the data from the
 // shared memory and write the PCM samples back to us over a pipe.
 bool DecodeAudioFileData(blink::WebAudioBus* destination_bus, const char* data,
-                         size_t data_size, double sample_rate,
+                         size_t data_size,
                          scoped_refptr<ThreadSafeSender> sender) {
   // Try to decode the data as a WAVE file first.  If it can't be
   // decoded, use MediaCodec.  See crbug.com/259048.

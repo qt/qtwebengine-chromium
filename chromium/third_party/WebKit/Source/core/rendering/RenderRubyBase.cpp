@@ -73,8 +73,8 @@ void RenderRubyBase::moveChildren(RenderRubyBase* toBase, RenderObject* beforeCh
     else
         moveBlockChildren(toBase, beforeChild);
 
-    setNeedsLayoutAndPrefWidthsRecalc();
-    toBase->setNeedsLayoutAndPrefWidthsRecalc();
+    setNeedsLayoutAndPrefWidthsRecalcAndFullPaintInvalidation();
+    toBase->setNeedsLayoutAndPrefWidthsRecalcAndFullPaintInvalidation();
 }
 
 void RenderRubyBase::moveInlineChildren(RenderRubyBase* toBase, RenderObject* beforeChild)
@@ -130,20 +130,12 @@ void RenderRubyBase::moveBlockChildren(RenderRubyBase* toBase, RenderObject* bef
     moveChildrenTo(toBase, firstChild(), beforeChild);
 }
 
-RenderRubyRun* RenderRubyBase::rubyRun() const
-{
-    ASSERT(parent());
-    ASSERT(parent()->isRubyRun());
-
-    return toRenderRubyRun(parent());
-}
-
 ETextAlign RenderRubyBase::textAlignmentForLine(bool /* endsWithSoftBreak */) const
 {
     return JUSTIFY;
 }
 
-void RenderRubyBase::adjustInlineDirectionLineBounds(int expansionOpportunityCount, float& logicalLeft, float& logicalWidth) const
+void RenderRubyBase::adjustInlineDirectionLineBounds(unsigned expansionOpportunityCount, float& logicalLeft, float& logicalWidth) const
 {
     int maxPreferredLogicalWidth = this->maxPreferredLogicalWidth();
     if (maxPreferredLogicalWidth >= logicalWidth)

@@ -22,6 +22,7 @@
           'variables': {
             'grit_cmd': ['python', '../../../tools/grit/grit.py'],
             'grit_grd_file': '<(SHARED_INTERMEDIATE_DIR)/devtools/devtools_resources.grd',
+            'grit_rc_header_format%': '',
           },
           'inputs': [
             '<(grit_grd_file)',
@@ -35,14 +36,47 @@
           ],
           'action': ['<@(grit_cmd)',
                      '-i', '<(grit_grd_file)', 'build',
-                     '-f', 'GRIT_DIR/../gritsettings/resource_ids',
+                     '-f', '<(DEPTH)/tools/gritsettings/resource_ids',
                      '-o', '<(grit_out_dir)',
                      '-D', 'SHARED_INTERMEDIATE_DIR=<(SHARED_INTERMEDIATE_DIR)',
-                     '<@(grit_defines)' ],
+                     '<@(grit_defines)',
+                     '<@(grit_rc_header_format)'],
           'message': 'Generating resources from <(grit_grd_file)',
-          'msvs_cygwin_shell': 1,
+        },
+        {
+          'action_name': 'devtools_protocol_constants',
+          'variables': {
+            'blink_protocol': '../../../third_party/WebKit/Source/devtools/protocol.json',
+            'browser_protocol': 'browser_protocol.json',
+            'generator': '../../public/browser/devtools_protocol_constants_generator.py',
+            'package': 'content'
+          },
+          'inputs': [
+            '<(blink_protocol)',
+            '<(browser_protocol)',
+            '<(generator)',
+          ],
+          'outputs': [
+            '<(SHARED_INTERMEDIATE_DIR)/<(package)/browser/devtools/devtools_protocol_constants.cc',
+            '<(SHARED_INTERMEDIATE_DIR)/<(package)/browser/devtools/devtools_protocol_constants.h'
+          ],
+          'action':[
+            'python',
+            '<(generator)',
+            '<(package)',
+            '<(SHARED_INTERMEDIATE_DIR)/<(package)/browser/devtools/devtools_protocol_constants.cc',
+            '<(SHARED_INTERMEDIATE_DIR)/<(package)/browser/devtools/devtools_protocol_constants.h',
+            '<(blink_protocol)',
+            '<(browser_protocol)',
+          ],
+          'message': 'Generating DevTools protocol constants from <(blink_protocol)'
         }
       ],
+      'direct_dependent_settings': {
+        'include_dirs': [
+          '<(SHARED_INTERMEDIATE_DIR)',
+        ]
+      },
       'includes': [ '../../../build/grit_target.gypi' ],
     },
   ],

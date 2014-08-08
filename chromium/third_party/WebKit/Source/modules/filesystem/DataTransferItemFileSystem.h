@@ -31,7 +31,7 @@
 #ifndef DataTransferItemFileSystem_h
 #define DataTransferItemFileSystem_h
 
-#include "wtf/PassRefPtr.h"
+#include "platform/heap/Handle.h"
 
 namespace WebCore {
 
@@ -41,7 +41,7 @@ class ExecutionContext;
 
 class DataTransferItemFileSystem {
 public:
-    static PassRefPtr<Entry> webkitGetAsEntry(ExecutionContext*, DataTransferItem*);
+    static Entry* webkitGetAsEntry(ExecutionContext*, DataTransferItem&);
 
 private:
     DataTransferItemFileSystem();

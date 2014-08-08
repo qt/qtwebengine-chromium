@@ -33,11 +33,11 @@ scoped_refptr<PaintedScrollbarLayer> PaintedScrollbarLayer::Create(
       new PaintedScrollbarLayer(scrollbar.Pass(), scroll_layer_id));
 }
 
-PaintedScrollbarLayer::PaintedScrollbarLayer(
-    scoped_ptr<Scrollbar> scrollbar,
-    int scroll_layer_id)
+PaintedScrollbarLayer::PaintedScrollbarLayer(scoped_ptr<Scrollbar> scrollbar,
+                                             int scroll_layer_id)
     : scrollbar_(scrollbar.Pass()),
       scroll_layer_id_(scroll_layer_id),
+      clip_layer_id_(Layer::INVALID_ID),
       thumb_thickness_(scrollbar_->ThumbThickness()),
       thumb_length_(scrollbar_->ThumbLength()),
       is_overlay_(scrollbar_->IsOverlay()),
@@ -52,11 +52,19 @@ int PaintedScrollbarLayer::ScrollLayerId() const {
   return scroll_layer_id_;
 }
 
-void PaintedScrollbarLayer::SetScrollLayerId(int id) {
-  if (id == scroll_layer_id_)
+void PaintedScrollbarLayer::SetScrollLayer(int layer_id) {
+  if (layer_id == scroll_layer_id_)
     return;
 
-  scroll_layer_id_ = id;
+  scroll_layer_id_ = layer_id;
+  SetNeedsFullTreeSync();
+}
+
+void PaintedScrollbarLayer::SetClipLayer(int layer_id) {
+  if (layer_id == clip_layer_id_)
+    return;
+
+  clip_layer_id_ = layer_id;
   SetNeedsFullTreeSync();
 }
 
@@ -92,6 +100,7 @@ void PaintedScrollbarLayer::CalculateContentsScale(
     float ideal_contents_scale,
     float device_scale_factor,
     float page_scale_factor,
+    float maximum_animation_contents_scale,
     bool animating_transform_to_screen,
     float* contents_scale_x,
     float* contents_scale_y,
@@ -100,6 +109,7 @@ void PaintedScrollbarLayer::CalculateContentsScale(
       ClampScaleToMaxTextureSize(ideal_contents_scale),
       device_scale_factor,
       page_scale_factor,
+      maximum_animation_contents_scale,
       animating_transform_to_screen,
       contents_scale_x,
       contents_scale_y,
@@ -108,6 +118,8 @@ void PaintedScrollbarLayer::CalculateContentsScale(
 
 void PaintedScrollbarLayer::PushPropertiesTo(LayerImpl* layer) {
   ContentsScalingLayer::PushPropertiesTo(layer);
+
+  PushScrollClipPropertiesTo(layer);
 
   PaintedScrollbarLayerImpl* scrollbar_layer =
       static_cast<PaintedScrollbarLayerImpl*>(layer);
@@ -136,6 +148,14 @@ ScrollbarLayerInterface* PaintedScrollbarLayer::ToScrollbarLayer() {
   return this;
 }
 
+void PaintedScrollbarLayer::PushScrollClipPropertiesTo(LayerImpl* layer) {
+  PaintedScrollbarLayerImpl* scrollbar_layer =
+      static_cast<PaintedScrollbarLayerImpl*>(layer);
+
+  scrollbar_layer->SetScrollLayerById(scroll_layer_id_);
+  scrollbar_layer->SetClipLayerById(clip_layer_id_);
+}
+
 void PaintedScrollbarLayer::SetLayerTreeHost(LayerTreeHost* host) {
   // When the LTH is set to null or has changed, then this layer should remove
   // all of its associated resources.
@@ -148,11 +168,11 @@ void PaintedScrollbarLayer::SetLayerTreeHost(LayerTreeHost* host) {
 }
 
 gfx::Rect PaintedScrollbarLayer::ScrollbarLayerRectToContentRect(
-    gfx::Rect layer_rect) const {
+    const gfx::Rect& layer_rect) const {
   // Don't intersect with the bounds as in LayerRectToContentRect() because
   // layer_rect here might be in coordinates of the containing layer.
   gfx::Rect expanded_rect = gfx::ScaleToEnclosingRect(
-      layer_rect, contents_scale_y(), contents_scale_y());
+      layer_rect, contents_scale_x(), contents_scale_y());
   // We should never return a rect bigger than the content_bounds().
   gfx::Size clamped_size = expanded_rect.size();
   clamped_size.SetToMin(content_bounds());
@@ -169,7 +189,7 @@ gfx::Rect PaintedScrollbarLayer::OriginThumbRect() const {
     thumb_size =
         gfx::Size(scrollbar_->ThumbThickness(), scrollbar_->ThumbLength());
   }
-  return ScrollbarLayerRectToContentRect(gfx::Rect(thumb_size));
+  return gfx::Rect(thumb_size);
 }
 
 void PaintedScrollbarLayer::UpdateThumbAndTrackGeometry() {
@@ -184,11 +204,12 @@ void PaintedScrollbarLayer::UpdateThumbAndTrackGeometry() {
 }
 
 bool PaintedScrollbarLayer::Update(ResourceUpdateQueue* queue,
-                                   const OcclusionTracker* occlusion) {
+                                   const OcclusionTracker<Layer>* occlusion) {
   UpdateThumbAndTrackGeometry();
 
+  gfx::Rect track_layer_rect = gfx::Rect(location_, bounds());
   gfx::Rect scaled_track_rect = ScrollbarLayerRectToContentRect(
-      gfx::Rect(location_, bounds()));
+      track_layer_rect);
 
   if (track_rect_.IsEmpty() || scaled_track_rect.IsEmpty())
     return false;
@@ -203,12 +224,16 @@ bool PaintedScrollbarLayer::Update(ResourceUpdateQueue* queue,
     return false;
 
   track_resource_ = ScopedUIResource::Create(
-      layer_tree_host(), RasterizeScrollbarPart(scaled_track_rect, TRACK));
+      layer_tree_host(),
+      RasterizeScrollbarPart(track_layer_rect, scaled_track_rect, TRACK));
 
-  gfx::Rect thumb_rect = OriginThumbRect();
-  if (has_thumb_ && !thumb_rect.IsEmpty()) {
+  gfx::Rect thumb_layer_rect = OriginThumbRect();
+  gfx::Rect scaled_thumb_rect =
+      ScrollbarLayerRectToContentRect(thumb_layer_rect);
+  if (has_thumb_ && !scaled_thumb_rect.IsEmpty()) {
     thumb_resource_ = ScopedUIResource::Create(
-        layer_tree_host(), RasterizeScrollbarPart(thumb_rect, THUMB));
+        layer_tree_host(),
+        RasterizeScrollbarPart(thumb_layer_rect, scaled_thumb_rect, THUMB));
   }
 
   // UI resources changed so push properties is needed.
@@ -217,21 +242,26 @@ bool PaintedScrollbarLayer::Update(ResourceUpdateQueue* queue,
 }
 
 UIResourceBitmap PaintedScrollbarLayer::RasterizeScrollbarPart(
-    gfx::Rect rect,
+    const gfx::Rect& layer_rect,
+    const gfx::Rect& content_rect,
     ScrollbarPart part) {
-  DCHECK(!rect.size().IsEmpty());
+  DCHECK(!content_rect.size().IsEmpty());
+  DCHECK(!layer_rect.size().IsEmpty());
 
   SkBitmap skbitmap;
-  skbitmap.setConfig(SkBitmap::kARGB_8888_Config, rect.width(), rect.height());
-  skbitmap.allocPixels();
-
+  skbitmap.allocN32Pixels(content_rect.width(), content_rect.height());
   SkCanvas skcanvas(skbitmap);
-  skcanvas.translate(SkFloatToScalar(-rect.x()), SkFloatToScalar(-rect.y()));
-  skcanvas.scale(SkFloatToScalar(contents_scale_x()),
-                 SkFloatToScalar(contents_scale_y()));
 
-  gfx::Rect layer_rect = gfx::ScaleToEnclosingRect(
-      rect, 1.f / contents_scale_x(), 1.f / contents_scale_y());
+  float scale_x =
+      content_rect.width() / static_cast<float>(layer_rect.width());
+  float scale_y =
+      content_rect.height() / static_cast<float>(layer_rect.height());
+
+  skcanvas.scale(SkFloatToScalar(scale_x),
+                 SkFloatToScalar(scale_y));
+  skcanvas.translate(SkFloatToScalar(-layer_rect.x()),
+                     SkFloatToScalar(-layer_rect.y()));
+
   SkRect layer_skrect = RectToSkRect(layer_rect);
   SkPaint paint;
   paint.setAntiAlias(false);

@@ -41,14 +41,14 @@ class PLATFORM_EXPORT DiscardablePixelRefAllocator : public SkBitmap::Allocator 
     // SkBitmap::Allocator implementation. The discardable memory allocated
     // after this call is locked and will not be purged until next
     // onUnlockPixels().
-    virtual bool allocPixelRef(SkBitmap*, SkColorTable*);
+    virtual bool allocPixelRef(SkBitmap*, SkColorTable*) OVERRIDE;
 };
 
 // PixelRef object whose memory can be discarded when pixels are unlocked.
 class PLATFORM_EXPORT DiscardablePixelRef : public SkPixelRef {
 public:
-    DiscardablePixelRef(const SkImageInfo&, PassOwnPtr<SkMutex>);
-    ~DiscardablePixelRef();
+    DiscardablePixelRef(const SkImageInfo&, size_t rowBytes, PassOwnPtr<SkMutex>);
+    virtual ~DiscardablePixelRef();
 
     static bool isDiscardable(SkPixelRef*);
     bool allocAndLockDiscardableMemory(size_t);
@@ -57,13 +57,14 @@ public:
 
 protected:
     // SkPixelRef implementation.
-    virtual void* onLockPixels(SkColorTable**);
-    virtual void onUnlockPixels();
+    virtual bool onNewLockPixels(LockRec*) OVERRIDE;
+    virtual void onUnlockPixels() OVERRIDE;
 
 private:
     void* m_lockedMemory;
     OwnPtr<blink::WebDiscardableMemory> m_discardable;
     OwnPtr<SkMutex> m_mutex;
+    size_t m_rowBytes;
 };
 
 } // namespace WebCore

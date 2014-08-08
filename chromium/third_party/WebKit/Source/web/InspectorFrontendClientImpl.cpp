@@ -29,18 +29,17 @@
  */
 
 #include "config.h"
-#include "InspectorFrontendClientImpl.h"
+#include "web/InspectorFrontendClientImpl.h"
 
 #include "V8InspectorFrontendHost.h"
-#include "WebDevToolsFrontendClient.h"
-#include "WebDevToolsFrontendImpl.h"
 #include "bindings/v8/ScriptController.h"
-#include "core/dom/Document.h"
+#include "core/frame/LocalFrame.h"
 #include "core/inspector/InspectorFrontendHost.h"
-#include "core/frame/Frame.h"
 #include "core/page/Page.h"
 #include "public/platform/WebFloatPoint.h"
 #include "public/platform/WebString.h"
+#include "public/web/WebDevToolsFrontendClient.h"
+#include "web/WebDevToolsFrontendImpl.h"
 #include "wtf/text/WTFString.h"
 
 using namespace WebCore;
@@ -63,63 +62,90 @@ InspectorFrontendClientImpl::~InspectorFrontendClientImpl()
 void InspectorFrontendClientImpl::windowObjectCleared()
 {
     v8::Isolate* isolate = v8::Isolate::GetCurrent();
-    v8::HandleScope handleScope(isolate);
-    v8::Handle<v8::Context> frameContext = m_frontendPage->mainFrame() ? m_frontendPage->mainFrame()->script().currentWorldContext() : v8::Local<v8::Context>();
-    v8::Context::Scope contextScope(frameContext);
+    ASSERT(m_frontendPage->mainFrame());
+    ScriptState* scriptState = ScriptState::forMainWorld(m_frontendPage->deprecatedLocalMainFrame());
+    ScriptState::Scope scope(scriptState);
 
     if (m_frontendHost)
         m_frontendHost->disconnectClient();
     m_frontendHost = InspectorFrontendHost::create(this, m_frontendPage);
-    v8::Handle<v8::Value> frontendHostObj = toV8(m_frontendHost.get(), v8::Handle<v8::Object>(), frameContext->GetIsolate());
-    v8::Handle<v8::Object> global = frameContext->Global();
+    v8::Handle<v8::Object> global = scriptState->context()->Global();
+    v8::Handle<v8::Value> frontendHostObj = toV8(m_frontendHost.get(), global, scriptState->isolate());
 
     global->Set(v8::String::NewFromUtf8(isolate, "InspectorFrontendHost"), frontendHostObj);
-
-    ScriptController* scriptController = m_frontendPage->mainFrame() ? &m_frontendPage->mainFrame()->script() : 0;
+    ScriptController* scriptController = m_frontendPage->mainFrame() ? &m_frontendPage->deprecatedLocalMainFrame()->script() : 0;
     if (scriptController) {
-        String installLegacyOverrides =
-            "" // Support for legacy front-ends (<M31). Do not add items here.
-            "(function(host, methodNames) {"
-            "    var callId = 0;"
-            "    function dispatch(methodName)"
+        String installAdditionalAPI =
+            "" // Wrap messages that go to embedder.
+            "(function(host, methodEntries) {"
+            "    host._lastCallId = 0;"
+            "    host._callbacks = [];"
+            "    host.embedderMessageAck = function(id, error)"
             "    {"
-            "        var argsArray = Array.prototype.slice.call(arguments, 1);"
-            "        var message = {\"method\": methodName, \"id\": ++callId};"
+            "        var callback = host._callbacks[id];"
+            "        delete host._callbacks[id];"
+            "        if (callback)"
+            "            callback(error);"
+            "    };"
+            "    function dispatch(methodName, argumentCount)"
+            "    {"
+            "        var callId = ++host._lastCallId;"
+            "        var argsArray = Array.prototype.slice.call(arguments, 2);"
+            "        var callback = argsArray[argsArray.length - 1];"
+            "        if (typeof callback === \"function\") {"
+            "            argsArray.pop();"
+            "            host._callbacks[callId] = callback;"
+            "        }"
+            "        var message = { \"id\": callId, \"method\": methodName };"
+            "        argsArray = argsArray.slice(0, argumentCount);"
             "        if (argsArray.length)"
             "            message.params = argsArray;"
-            "        this.sendMessageToEmbedder(JSON.stringify(message));"
+            "        host.sendMessageToEmbedder(JSON.stringify(message));"
             "    };"
-            "    methodNames.forEach(function(methodName) { host[methodName] = dispatch.bind(host, methodName); });"
+            "    methodEntries.forEach(function(methodEntry) { host[methodEntry[0]] = dispatch.bind(null, methodEntry[0], methodEntry[1]); });"
             "})(InspectorFrontendHost,"
-            "    ['addFileSystem',"
-            "     'append',"
-            "     'bringToFront',"
-            "     'indexPath',"
-            "     'moveWindowBy',"
-            "     'openInNewTab',"
-            "     'removeFileSystem',"
-            "     'requestFileSystems',"
-            "     'requestSetDockSide',"
-            "     'save',"
-            "     'searchInPath',"
-            "     'stopIndexing']);"
+            "    [['addFileSystem', 0],"
+            "     ['append', 2],"
+            "     ['bringToFront', 0],"
+            "     ['closeWindow', 0],"
+            "     ['indexPath', 2],"
+            "     ['inspectElementCompleted', 0],"
+            "     ['inspectedURLChanged', 1],"
+            "     ['moveWindowBy', 2],"
+            "     ['openInNewTab', 1],"
+            "     ['openUrlOnRemoteDeviceAndInspect', 2],"
+            "     ['removeFileSystem', 1],"
+            "     ['requestFileSystems', 0],"
+            "     ['resetZoom', 0],"
+            "     ['save', 3],"
+            "     ['searchInPath', 3],"
+            "     ['setWhitelistedShortcuts', 1],"
+            "     ['setContentsResizingStrategy', 2],"
+            "     ['setInspectedPageBounds', 1],"
+            "     ['setIsDocked', 1],"
+            "     ['subscribe', 1],"
+            "     ['stopIndexing', 1],"
+            "     ['unsubscribe', 1],"
+            "     ['zoomIn', 0],"
+            "     ['zoomOut', 0]]);"
+            ""
+            "" // Support for legacy front-ends (<M34). Do not add items here.
+            "InspectorFrontendHost.requestSetDockSide = function(dockSide)"
+            "{"
+            "    InspectorFrontendHost.setIsDocked(dockSide !== \"undocked\");"
+            "};"
+            "InspectorFrontendHost.supportsFileSystems = function() { return true; };"
             ""
             "" // Support for legacy front-ends (<M28). Do not add items here.
             "InspectorFrontendHost.canInspectWorkers = function() { return true; };"
             "InspectorFrontendHost.canSaveAs = function() { return true; };"
             "InspectorFrontendHost.canSave = function() { return true; };"
-            "InspectorFrontendHost.supportsFileSystems = function() { return true; };"
             "InspectorFrontendHost.loaded = function() {};"
             "InspectorFrontendHost.hiddenPanels = function() { return ""; };"
             "InspectorFrontendHost.localizedStringsURL = function() { return ""; };"
             "InspectorFrontendHost.close = function(url) { };";
-        scriptController->executeScriptInMainWorld(installLegacyOverrides, ScriptController::ExecuteScriptWhenScriptsDisabled);
+        scriptController->executeScriptInMainWorld(installAdditionalAPI, ScriptController::ExecuteScriptWhenScriptsDisabled);
     }
-}
-
-void InspectorFrontendClientImpl::inspectedURLChanged(const String& url)
-{
-    m_frontendPage->mainFrame()->document()->setTitle("Developer Tools - " + url);
 }
 
 void InspectorFrontendClientImpl::sendMessageToBackend(const String& message)

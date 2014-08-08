@@ -7,14 +7,19 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/files/file_path.h"
+#include "base/memory/scoped_vector.h"
 #include "base/process/process.h"
+#include "base/stl_util.h"
 #include "base/strings/utf_string_conversions.h"
+#include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/indexed_db/indexed_db_callbacks.h"
 #include "content/browser/indexed_db/indexed_db_connection.h"
 #include "content/browser/indexed_db/indexed_db_context_impl.h"
 #include "content/browser/indexed_db/indexed_db_cursor.h"
 #include "content/browser/indexed_db/indexed_db_database_callbacks.h"
 #include "content/browser/indexed_db/indexed_db_metadata.h"
+#include "content/browser/indexed_db/indexed_db_pending_connection.h"
+#include "content/browser/indexed_db/indexed_db_value.h"
 #include "content/browser/renderer_host/render_message_filter.h"
 #include "content/common/indexed_db/indexed_db_messages.h"
 #include "content/public/browser/browser_thread.h"
@@ -23,6 +28,7 @@
 #include "content/public/common/result_codes.h"
 #include "third_party/WebKit/public/platform/WebIDBDatabaseException.h"
 #include "url/gurl.h"
+#include "webkit/browser/blob/blob_storage_context.h"
 #include "webkit/browser/database/database_util.h"
 #include "webkit/common/database/database_identifier.h"
 
@@ -32,14 +38,50 @@ using blink::WebIDBKey;
 namespace content {
 
 IndexedDBDispatcherHost::IndexedDBDispatcherHost(
-    IndexedDBContextImpl* indexed_db_context)
-    : indexed_db_context_(indexed_db_context),
+    int ipc_process_id,
+    net::URLRequestContextGetter* request_context_getter,
+    IndexedDBContextImpl* indexed_db_context,
+    ChromeBlobStorageContext* blob_storage_context)
+    : BrowserMessageFilter(IndexedDBMsgStart),
+      request_context_getter_(request_context_getter),
+      request_context_(NULL),
+      indexed_db_context_(indexed_db_context),
+      blob_storage_context_(blob_storage_context),
       database_dispatcher_host_(new DatabaseDispatcherHost(this)),
-      cursor_dispatcher_host_(new CursorDispatcherHost(this)) {
+      cursor_dispatcher_host_(new CursorDispatcherHost(this)),
+      ipc_process_id_(ipc_process_id) {
   DCHECK(indexed_db_context_);
 }
 
-IndexedDBDispatcherHost::~IndexedDBDispatcherHost() {}
+IndexedDBDispatcherHost::IndexedDBDispatcherHost(
+    int ipc_process_id,
+    net::URLRequestContext* request_context,
+    IndexedDBContextImpl* indexed_db_context,
+    ChromeBlobStorageContext* blob_storage_context)
+    : BrowserMessageFilter(IndexedDBMsgStart),
+      request_context_(request_context),
+      indexed_db_context_(indexed_db_context),
+      blob_storage_context_(blob_storage_context),
+      database_dispatcher_host_(new DatabaseDispatcherHost(this)),
+      cursor_dispatcher_host_(new CursorDispatcherHost(this)),
+      ipc_process_id_(ipc_process_id) {
+  DCHECK(indexed_db_context_);
+}
+
+IndexedDBDispatcherHost::~IndexedDBDispatcherHost() {
+  STLDeleteValues(&blob_data_handle_map_);
+}
+
+void IndexedDBDispatcherHost::OnChannelConnected(int32 peer_pid) {
+  BrowserMessageFilter::OnChannelConnected(peer_pid);
+
+  if (request_context_getter_.get()) {
+    DCHECK(!request_context_);
+    request_context_ = request_context_getter_->GetURLRequestContext();
+    request_context_getter_ = NULL;
+    DCHECK(request_context_);
+  }
+}
 
 void IndexedDBDispatcherHost::OnChannelClosing() {
   bool success = indexed_db_context_->TaskRunner()->PostTask(
@@ -76,30 +118,31 @@ void IndexedDBDispatcherHost::ResetDispatcherHosts() {
 
 base::TaskRunner* IndexedDBDispatcherHost::OverrideTaskRunnerForMessage(
     const IPC::Message& message) {
-  if (IPC_MESSAGE_CLASS(message) == IndexedDBMsgStart)
+  if (IPC_MESSAGE_CLASS(message) == IndexedDBMsgStart &&
+      message.type() != IndexedDBHostMsg_DatabasePut::ID)
     return indexed_db_context_->TaskRunner();
   return NULL;
 }
 
-bool IndexedDBDispatcherHost::OnMessageReceived(const IPC::Message& message,
-                                                bool* message_was_ok) {
+bool IndexedDBDispatcherHost::OnMessageReceived(const IPC::Message& message) {
   if (IPC_MESSAGE_CLASS(message) != IndexedDBMsgStart)
     return false;
 
-  DCHECK(indexed_db_context_->TaskRunner()->RunsTasksOnCurrentThread());
+  DCHECK(indexed_db_context_->TaskRunner()->RunsTasksOnCurrentThread() ||
+         message.type() == IndexedDBHostMsg_DatabasePut::ID);
 
-  bool handled =
-      database_dispatcher_host_->OnMessageReceived(message, message_was_ok) ||
-      cursor_dispatcher_host_->OnMessageReceived(message, message_was_ok);
+  bool handled = database_dispatcher_host_->OnMessageReceived(message) ||
+                 cursor_dispatcher_host_->OnMessageReceived(message);
 
   if (!handled) {
     handled = true;
-    IPC_BEGIN_MESSAGE_MAP_EX(IndexedDBDispatcherHost, message, *message_was_ok)
+    IPC_BEGIN_MESSAGE_MAP(IndexedDBDispatcherHost, message)
       IPC_MESSAGE_HANDLER(IndexedDBHostMsg_FactoryGetDatabaseNames,
                           OnIDBFactoryGetDatabaseNames)
       IPC_MESSAGE_HANDLER(IndexedDBHostMsg_FactoryOpen, OnIDBFactoryOpen)
       IPC_MESSAGE_HANDLER(IndexedDBHostMsg_FactoryDeleteDatabase,
                           OnIDBFactoryDeleteDatabase)
+      IPC_MESSAGE_HANDLER(IndexedDBHostMsg_AckReceivedBlobs, OnAckReceivedBlobs)
       IPC_MESSAGE_UNHANDLED(handled = false)
     IPC_END_MESSAGE_MAP()
   }
@@ -166,6 +209,22 @@ uint32 IndexedDBDispatcherHost::TransactionIdToProcessId(
   return (host_transaction_id >> 32) & 0xffffffff;
 }
 
+void IndexedDBDispatcherHost::HoldBlobDataHandle(
+    const std::string& uuid,
+    scoped_ptr<webkit_blob::BlobDataHandle>& blob_data_handle) {
+  DCHECK(!ContainsKey(blob_data_handle_map_, uuid));
+  blob_data_handle_map_[uuid] = blob_data_handle.release();
+}
+
+void IndexedDBDispatcherHost::DropBlobDataHandle(const std::string& uuid) {
+  BlobDataHandleMap::iterator iter = blob_data_handle_map_.find(uuid);
+  if (iter != blob_data_handle_map_.end()) {
+    delete iter->second;
+    blob_data_handle_map_.erase(iter);
+  } else {
+    DLOG(FATAL) << "Failed to find blob UUID in map:" << uuid;
+  }
+}
 
 IndexedDBCursor* IndexedDBDispatcherHost::GetCursorFromId(int32 ipc_cursor_id) {
   DCHECK(indexed_db_context_->TaskRunner()->RunsTasksOnCurrentThread());
@@ -185,7 +244,6 @@ IndexedDBCursor* IndexedDBDispatcherHost::GetCursorFromId(int32 ipc_cursor_id) {
            web_metadata.object_stores.begin();
        iter != web_metadata.object_stores.end();
        ++iter) {
-
     const content::IndexedDBObjectStoreMetadata& web_store_metadata =
         iter->second;
     ::IndexedDBObjectStoreMetadata idb_store_metadata;
@@ -226,7 +284,8 @@ void IndexedDBDispatcherHost::OnIDBFactoryGetDatabaseNames(
       new IndexedDBCallbacks(
           this, params.ipc_thread_id, params.ipc_callbacks_id),
       origin_url,
-      indexed_db_path);
+      indexed_db_path,
+      request_context_);
 }
 
 void IndexedDBDispatcherHost::OnIDBFactoryOpen(
@@ -251,13 +310,14 @@ void IndexedDBDispatcherHost::OnIDBFactoryOpen(
   scoped_refptr<IndexedDBDatabaseCallbacks> database_callbacks =
       new IndexedDBDatabaseCallbacks(
           this, params.ipc_thread_id, params.ipc_database_callbacks_id);
-  Context()->GetIDBFactory()->Open(params.name,
-                                   params.version,
-                                   host_transaction_id,
-                                   callbacks,
-                                   database_callbacks,
-                                   origin_url,
-                                   indexed_db_path);
+  IndexedDBPendingConnection connection(callbacks,
+                                        database_callbacks,
+                                        ipc_process_id_,
+                                        host_transaction_id,
+                                        params.version);
+  DCHECK(request_context_);
+  Context()->GetIDBFactory()->Open(
+      params.name, connection, request_context_, origin_url, indexed_db_path);
 }
 
 void IndexedDBDispatcherHost::OnIDBFactoryDeleteDatabase(
@@ -266,12 +326,30 @@ void IndexedDBDispatcherHost::OnIDBFactoryDeleteDatabase(
   GURL origin_url =
       webkit_database::GetOriginFromIdentifier(params.database_identifier);
   base::FilePath indexed_db_path = indexed_db_context_->data_path();
+  DCHECK(request_context_);
   Context()->GetIDBFactory()->DeleteDatabase(
       params.name,
+      request_context_,
       new IndexedDBCallbacks(
           this, params.ipc_thread_id, params.ipc_callbacks_id),
       origin_url,
       indexed_db_path);
+}
+
+// OnPutHelper exists only to allow us to hop threads while holding a reference
+// to the IndexedDBDispatcherHost.
+void IndexedDBDispatcherHost::OnPutHelper(
+    const IndexedDBHostMsg_DatabasePut_Params& params,
+    std::vector<webkit_blob::BlobDataHandle*> handles) {
+  database_dispatcher_host_->OnPut(params, handles);
+}
+
+void IndexedDBDispatcherHost::OnAckReceivedBlobs(
+    const std::vector<std::string>& uuids) {
+  DCHECK(indexed_db_context_->TaskRunner()->RunsTasksOnCurrentThread());
+  std::vector<std::string>::const_iterator iter;
+  for (iter = uuids.begin(); iter != uuids.end(); ++iter)
+    DropBlobDataHandle(*iter);
 }
 
 void IndexedDBDispatcherHost::FinishTransaction(int64 host_transaction_id,
@@ -305,7 +383,7 @@ ObjectType* IndexedDBDispatcherHost::GetOrTerminateProcess(
   if (!return_object) {
     NOTREACHED() << "Uh oh, couldn't find object with id "
                  << ipc_return_object_id;
-    RecordAction(UserMetricsAction("BadMessageTerminate_IDBMF"));
+    RecordAction(base::UserMetricsAction("BadMessageTerminate_IDBMF"));
     BadMessageReceived();
   }
   return return_object;
@@ -320,7 +398,7 @@ ObjectType* IndexedDBDispatcherHost::GetOrTerminateProcess(
   if (!return_object) {
     NOTREACHED() << "Uh oh, couldn't find object with id "
                  << ipc_return_object_id;
-    RecordAction(UserMetricsAction("BadMessageTerminate_IDBMF"));
+    RecordAction(base::UserMetricsAction("BadMessageTerminate_IDBMF"));
     BadMessageReceived();
   }
   return return_object;
@@ -381,13 +459,15 @@ void IndexedDBDispatcherHost::DatabaseDispatcherHost::CloseAll() {
 }
 
 bool IndexedDBDispatcherHost::DatabaseDispatcherHost::OnMessageReceived(
-    const IPC::Message& message,
-    bool* msg_is_ok) {
+    const IPC::Message& message) {
+
   DCHECK(
+      (message.type() == IndexedDBHostMsg_DatabasePut::ID) ||
       parent_->indexed_db_context_->TaskRunner()->RunsTasksOnCurrentThread());
+
   bool handled = true;
-  IPC_BEGIN_MESSAGE_MAP_EX(
-      IndexedDBDispatcherHost::DatabaseDispatcherHost, message, *msg_is_ok)
+  IPC_BEGIN_MESSAGE_MAP(
+      IndexedDBDispatcherHost::DatabaseDispatcherHost, message)
     IPC_MESSAGE_HANDLER(IndexedDBHostMsg_DatabaseCreateObjectStore,
                         OnCreateObjectStore)
     IPC_MESSAGE_HANDLER(IndexedDBHostMsg_DatabaseDeleteObjectStore,
@@ -397,7 +477,7 @@ bool IndexedDBDispatcherHost::DatabaseDispatcherHost::OnMessageReceived(
     IPC_MESSAGE_HANDLER(IndexedDBHostMsg_DatabaseClose, OnClose)
     IPC_MESSAGE_HANDLER(IndexedDBHostMsg_DatabaseDestroyed, OnDestroyed)
     IPC_MESSAGE_HANDLER(IndexedDBHostMsg_DatabaseGet, OnGet)
-    IPC_MESSAGE_HANDLER(IndexedDBHostMsg_DatabasePut, OnPut)
+    IPC_MESSAGE_HANDLER(IndexedDBHostMsg_DatabasePut, OnPutWrapper)
     IPC_MESSAGE_HANDLER(IndexedDBHostMsg_DatabaseSetIndexKeys, OnSetIndexKeys)
     IPC_MESSAGE_HANDLER(IndexedDBHostMsg_DatabaseSetIndexesReady,
                         OnSetIndexesReady)
@@ -411,6 +491,7 @@ bool IndexedDBDispatcherHost::DatabaseDispatcherHost::OnMessageReceived(
     IPC_MESSAGE_HANDLER(IndexedDBHostMsg_DatabaseCommit, OnCommit)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
+
   return handled;
 }
 
@@ -492,6 +573,8 @@ void IndexedDBDispatcherHost::DatabaseDispatcherHost::OnDestroyed(
   DCHECK(
       parent_->indexed_db_context_->TaskRunner()->RunsTasksOnCurrentThread());
   IndexedDBConnection* connection = map_.Lookup(ipc_object_id);
+  if (connection->IsConnected())
+    connection->Close();
   parent_->Context()
       ->ConnectionClosed(database_url_map_[ipc_object_id], connection);
   database_url_map_.erase(ipc_object_id);
@@ -518,10 +601,30 @@ void IndexedDBDispatcherHost::DatabaseDispatcherHost::OnGet(
       callbacks);
 }
 
-void IndexedDBDispatcherHost::DatabaseDispatcherHost::OnPut(
+void IndexedDBDispatcherHost::DatabaseDispatcherHost::OnPutWrapper(
     const IndexedDBHostMsg_DatabasePut_Params& params) {
+  std::vector<webkit_blob::BlobDataHandle*> handles;
+  for (size_t i = 0; i < params.blob_or_file_info.size(); ++i) {
+    const IndexedDBMsg_BlobOrFileInfo& info = params.blob_or_file_info[i];
+    handles.push_back(parent_->blob_storage_context_->context()
+                          ->GetBlobDataFromUUID(info.uuid)
+                          .release());
+  }
+  parent_->indexed_db_context_->TaskRunner()->PostTask(
+      FROM_HERE,
+      base::Bind(
+          &IndexedDBDispatcherHost::OnPutHelper, parent_, params, handles));
+}
+
+void IndexedDBDispatcherHost::DatabaseDispatcherHost::OnPut(
+    const IndexedDBHostMsg_DatabasePut_Params& params,
+    std::vector<webkit_blob::BlobDataHandle*> handles) {
+
   DCHECK(
       parent_->indexed_db_context_->TaskRunner()->RunsTasksOnCurrentThread());
+
+  ScopedVector<webkit_blob::BlobDataHandle> scoped_handles;
+  scoped_handles.swap(handles);
 
   IndexedDBConnection* connection =
       parent_->GetOrTerminateProcess(&map_, params.ipc_database_id);
@@ -531,26 +634,44 @@ void IndexedDBDispatcherHost::DatabaseDispatcherHost::OnPut(
       parent_, params.ipc_thread_id, params.ipc_callbacks_id));
 
   int64 host_transaction_id = parent_->HostTransactionId(params.transaction_id);
-  if (params.index_ids.size() != params.index_keys.size()) {
-    connection->database()->Abort(
-        host_transaction_id,
-        IndexedDBDatabaseError(
-            blink::WebIDBDatabaseExceptionUnknownError,
-            "Malformed IPC message: index_ids.size() != index_keys.size()"));
-    parent_->BadMessageReceived();
-    return;
+
+  std::vector<IndexedDBBlobInfo> blob_info(params.blob_or_file_info.size());
+
+  ChildProcessSecurityPolicyImpl* policy =
+      ChildProcessSecurityPolicyImpl::GetInstance();
+
+  for (size_t i = 0; i < params.blob_or_file_info.size(); ++i) {
+    const IndexedDBMsg_BlobOrFileInfo& info = params.blob_or_file_info[i];
+    if (info.is_file) {
+      base::FilePath path = base::FilePath::FromUTF16Unsafe(info.file_path);
+      if (!policy->CanReadFile(parent_->ipc_process_id_, path)) {
+        parent_->BadMessageReceived();
+        return;
+      }
+      blob_info[i] =
+          IndexedDBBlobInfo(info.uuid, path, info.file_name, info.mime_type);
+      if (info.size != static_cast<uint64_t>(-1)) {
+        blob_info[i].set_last_modified(
+            base::Time::FromDoubleT(info.last_modified));
+        blob_info[i].set_size(info.size);
+      }
+    } else {
+      blob_info[i] = IndexedDBBlobInfo(info.uuid, info.mime_type, info.size);
+    }
   }
 
   // TODO(alecflett): Avoid a copy here.
-  std::string value_copy(params.value);
+  IndexedDBValue value;
+  value.bits = params.value;
+  value.blob_info.swap(blob_info);
   connection->database()->Put(
       host_transaction_id,
       params.object_store_id,
-      &value_copy,
+      &value,
+      &scoped_handles,
       make_scoped_ptr(new IndexedDBKey(params.key)),
       static_cast<IndexedDBDatabase::PutMode>(params.put_mode),
       callbacks,
-      params.index_ids,
       params.index_keys);
   TransactionIDToSizeMap* map =
       &parent_->database_dispatcher_host_->transaction_size_map_;
@@ -569,21 +690,10 @@ void IndexedDBDispatcherHost::DatabaseDispatcherHost::OnSetIndexKeys(
     return;
 
   int64 host_transaction_id = parent_->HostTransactionId(params.transaction_id);
-  if (params.index_ids.size() != params.index_keys.size()) {
-    connection->database()->Abort(
-        host_transaction_id,
-        IndexedDBDatabaseError(
-            blink::WebIDBDatabaseExceptionUnknownError,
-            "Malformed IPC message: index_ids.size() != index_keys.size()"));
-    parent_->BadMessageReceived();
-    return;
-  }
-
   connection->database()->SetIndexKeys(
       host_transaction_id,
       params.object_store_id,
       make_scoped_ptr(new IndexedDBKey(params.primary_key)),
-      params.index_ids,
       params.index_keys);
 }
 
@@ -773,14 +883,10 @@ IndexedDBDispatcherHost::CursorDispatcherHost::CursorDispatcherHost(
 IndexedDBDispatcherHost::CursorDispatcherHost::~CursorDispatcherHost() {}
 
 bool IndexedDBDispatcherHost::CursorDispatcherHost::OnMessageReceived(
-    const IPC::Message& message,
-    bool* msg_is_ok) {
-  DCHECK(
-      parent_->indexed_db_context_->TaskRunner()->RunsTasksOnCurrentThread());
-
+    const IPC::Message& message) {
   bool handled = true;
-  IPC_BEGIN_MESSAGE_MAP_EX(
-      IndexedDBDispatcherHost::CursorDispatcherHost, message, *msg_is_ok)
+  IPC_BEGIN_MESSAGE_MAP(
+      IndexedDBDispatcherHost::CursorDispatcherHost, message)
     IPC_MESSAGE_HANDLER(IndexedDBHostMsg_CursorAdvance, OnAdvance)
     IPC_MESSAGE_HANDLER(IndexedDBHostMsg_CursorContinue, OnContinue)
     IPC_MESSAGE_HANDLER(IndexedDBHostMsg_CursorPrefetch, OnPrefetch)
@@ -788,6 +894,11 @@ bool IndexedDBDispatcherHost::CursorDispatcherHost::OnMessageReceived(
     IPC_MESSAGE_HANDLER(IndexedDBHostMsg_CursorDestroyed, OnDestroyed)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
+
+  DCHECK(
+      !handled ||
+      parent_->indexed_db_context_->TaskRunner()->RunsTasksOnCurrentThread());
+
   return handled;
 }
 
@@ -795,7 +906,7 @@ void IndexedDBDispatcherHost::CursorDispatcherHost::OnAdvance(
     int32 ipc_cursor_id,
     int32 ipc_thread_id,
     int32 ipc_callbacks_id,
-    unsigned long count) {
+    uint32 count) {
   DCHECK(
       parent_->indexed_db_context_->TaskRunner()->RunsTasksOnCurrentThread());
   IndexedDBCursor* idb_cursor =
@@ -860,7 +971,11 @@ void IndexedDBDispatcherHost::CursorDispatcherHost::OnPrefetchReset(
   if (!idb_cursor)
     return;
 
-  idb_cursor->PrefetchReset(used_prefetches, unused_prefetches);
+  leveldb::Status s =
+      idb_cursor->PrefetchReset(used_prefetches, unused_prefetches);
+  // TODO(cmumford): Handle this error (crbug.com/363397)
+  if (!s.ok())
+    DLOG(ERROR) << "Unable to reset prefetch";
 }
 
 void IndexedDBDispatcherHost::CursorDispatcherHost::OnDestroyed(

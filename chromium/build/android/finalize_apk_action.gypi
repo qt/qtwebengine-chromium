@@ -9,7 +9,6 @@
 #  {
 #    'action_name': 'some descriptive action name',
 #    'variables': {
-#      'inputs': [ 'input_path1', 'input_path2' ],
 #      'input_apk_path': 'relative/path/to/input.apk',
 #      'output_apk_path': 'relative/path/to/output.apk',
 #    },
@@ -20,27 +19,34 @@
 {
   'message': 'Signing/aligning <(_target_name) APK: <(input_apk_path)',
   'variables': {
-    'inputs': [],
     'keystore_path%': '<(DEPTH)/build/android/ant/chromium-debug.keystore',
+    'keystore_name%': 'chromiumdebugkey',
+    'keystore_password%': 'chromium',
+    'conditions': [
+        # Webview doesn't use zipalign.
+        ['android_webview_build==0', {
+          'zipalign_path%': ['<!@(find <(android_sdk_root) -name zipalign)'],
+        }, {
+          'zipalign_path%': "",
+        }],
+    ],
   },
   'inputs': [
     '<(DEPTH)/build/android/gyp/util/build_utils.py',
     '<(DEPTH)/build/android/gyp/finalize_apk.py',
     '<(keystore_path)',
     '<(input_apk_path)',
-    '>@(inputs)',
   ],
   'outputs': [
     '<(output_apk_path)',
   ],
   'action': [
     'python', '<(DEPTH)/build/android/gyp/finalize_apk.py',
-    '--android-sdk-root=<(android_sdk_root)',
+    '--zipalign-path=<(zipalign_path)',
     '--unsigned-apk-path=<(input_apk_path)',
     '--final-apk-path=<(output_apk_path)',
-    '--keystore-path=<(keystore_path)',
-
-    # TODO(newt): remove this once crbug.com/177552 is fixed in ninja.
-    '--ignore=>!(echo \'>(_inputs)\' | md5sum)',
+    '--key-path=<(keystore_path)',
+    '--key-name=<(keystore_name)',
+    '--key-passwd=<(keystore_password)',
   ],
 }

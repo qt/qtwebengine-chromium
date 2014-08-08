@@ -7,12 +7,11 @@
 #include "base/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/message_loop/message_loop_proxy.h"
-#include "base/platform_file.h"
 #include "base/run_loop.h"
+#include "content/public/test/async_file_test_helper.h"
 #include "content/public/test/test_file_system_context.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
-#include "webkit/browser/fileapi/async_file_test_helper.h"
 #include "webkit/browser/fileapi/file_system_context.h"
 #include "webkit/browser/fileapi/file_system_quota_client.h"
 #include "webkit/browser/fileapi/file_system_usage_cache.h"
@@ -21,7 +20,11 @@
 #include "webkit/common/fileapi/file_system_util.h"
 #include "webkit/common/quota/quota_types.h"
 
-namespace fileapi {
+using content::AsyncFileTestHelper;
+using fileapi::FileSystemQuotaClient;
+using fileapi::FileSystemURL;
+
+namespace content {
 namespace {
 
 const char kDummyURL1[] = "http://www.dummy.org";
@@ -78,8 +81,9 @@ class FileSystemQuotaClientTest : public testing::Test {
     return usage_;
   }
 
-  const std::set<GURL>& GetOriginsForType(FileSystemQuotaClient* quota_client,
-                                          quota::StorageType type) {
+  const std::set<GURL>& GetOriginsForType(
+      FileSystemQuotaClient* quota_client,
+      quota::StorageType type) {
     origins_.clear();
     quota_client->GetOriginsForType(
         type,
@@ -89,9 +93,10 @@ class FileSystemQuotaClientTest : public testing::Test {
     return origins_;
   }
 
-  const std::set<GURL>& GetOriginsForHost(FileSystemQuotaClient* quota_client,
-                                          quota::StorageType type,
-                                          const std::string& host) {
+  const std::set<GURL>& GetOriginsForHost(
+      FileSystemQuotaClient* quota_client,
+      quota::StorageType type,
+      const std::string& host) {
     origins_.clear();
     quota_client->GetOriginsForHost(
         type, host,
@@ -101,9 +106,10 @@ class FileSystemQuotaClientTest : public testing::Test {
     return origins_;
   }
 
-  void RunAdditionalOriginUsageTask(FileSystemQuotaClient* quota_client,
-                                    const std::string& origin_url,
-                                    quota::StorageType type) {
+  void RunAdditionalOriginUsageTask(
+      FileSystemQuotaClient* quota_client,
+      const std::string& origin_url,
+      quota::StorageType type) {
     quota_client->GetOriginUsage(
         GURL(origin_url), type,
         base::Bind(&FileSystemQuotaClientTest::OnGetAdditionalUsage,
@@ -113,13 +119,14 @@ class FileSystemQuotaClientTest : public testing::Test {
   bool CreateFileSystemDirectory(const base::FilePath& file_path,
                                  const std::string& origin_url,
                                  quota::StorageType storage_type) {
-    FileSystemType type = QuotaStorageTypeToFileSystemType(storage_type);
+    fileapi::FileSystemType type =
+        fileapi::QuotaStorageTypeToFileSystemType(storage_type);
     FileSystemURL url = file_system_context_->CreateCrackedFileSystemURL(
         GURL(origin_url), type, file_path);
 
-    base::PlatformFileError result =
+    base::File::Error result =
         AsyncFileTestHelper::CreateDirectory(file_system_context_, url);
-    return result == base::PLATFORM_FILE_OK;
+    return result == base::File::FILE_OK;
   }
 
   bool CreateFileSystemFile(const base::FilePath& file_path,
@@ -129,18 +136,19 @@ class FileSystemQuotaClientTest : public testing::Test {
     if (file_path.empty())
       return false;
 
-    FileSystemType type = QuotaStorageTypeToFileSystemType(storage_type);
+    fileapi::FileSystemType type =
+        fileapi::QuotaStorageTypeToFileSystemType(storage_type);
     FileSystemURL url = file_system_context_->CreateCrackedFileSystemURL(
         GURL(origin_url), type, file_path);
 
-    base::PlatformFileError result =
+    base::File::Error result =
         AsyncFileTestHelper::CreateFile(file_system_context_, url);
-    if (result != base::PLATFORM_FILE_OK)
+    if (result != base::File::FILE_OK)
       return false;
 
     result = AsyncFileTestHelper::TruncateFile(
         file_system_context_, url, file_size);
-    return result == base::PLATFORM_FILE_OK;
+    return result == base::File::FILE_OK;
   }
 
   void InitializeOriginFiles(FileSystemQuotaClient* quota_client,
@@ -181,7 +189,8 @@ class FileSystemQuotaClientTest : public testing::Test {
           GURL(files[i].origin_url) == GURL(origin_url)) {
         base::FilePath path = base::FilePath().AppendASCII(files[i].name);
         if (!path.empty()) {
-          file_paths_cost += ObfuscatedFileUtil::ComputeFilePathCost(path);
+          file_paths_cost += fileapi::ObfuscatedFileUtil::ComputeFilePathCost(
+              path);
         }
       }
     }
@@ -224,7 +233,7 @@ class FileSystemQuotaClientTest : public testing::Test {
 
   base::ScopedTempDir data_dir_;
   base::MessageLoop message_loop_;
-  scoped_refptr<FileSystemContext> file_system_context_;
+  scoped_refptr<fileapi::FileSystemContext> file_system_context_;
   base::WeakPtrFactory<FileSystemQuotaClientTest> weak_factory_;
   int64 usage_;
   int additional_callback_count_;
@@ -558,4 +567,4 @@ TEST_F(FileSystemQuotaClientTest, DeleteOriginTest) {
                            kTemporary));
 }
 
-}  // namespace fileapi
+}  // namespace content

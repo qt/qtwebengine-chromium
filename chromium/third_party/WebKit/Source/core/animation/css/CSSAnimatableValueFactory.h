@@ -31,7 +31,7 @@
 #ifndef CSSAnimatableValueFactory_h
 #define CSSAnimatableValueFactory_h
 
-#include "CSSPropertyNames.h"
+#include "core/CSSPropertyNames.h"
 #include "core/animation/AnimatableValue.h"
 #include "wtf/PassRefPtr.h"
 
@@ -41,9 +41,9 @@ class RenderStyle;
 
 class CSSAnimatableValueFactory {
 public:
-    static PassRefPtr<AnimatableValue> create(CSSPropertyID, const RenderStyle&);
+    static PassRefPtrWillBeRawPtr<AnimatableValue> create(CSSPropertyID, const RenderStyle&);
 private:
-    static PassRefPtr<AnimatableValue> createFromColor(CSSPropertyID, const RenderStyle&);
+    static PassRefPtrWillBeRawPtr<AnimatableValue> createFromColor(CSSPropertyID, const RenderStyle&);
 };
 
 } // namespace WebCore

@@ -23,7 +23,7 @@ namespace content {
 namespace {
 
 base::SyncSocket::Handle DuplicateHandle(base::SyncSocket::Handle handle) {
-  base::SyncSocket::Handle out_handle = base::kInvalidPlatformFileValue;
+  base::SyncSocket::Handle out_handle = base::SyncSocket::kInvalidHandle;
 #if defined(OS_WIN)
   DWORD options = DUPLICATE_SAME_ACCESS;
   if (!::DuplicateHandle(::GetCurrentProcess(),
@@ -33,25 +33,23 @@ base::SyncSocket::Handle DuplicateHandle(base::SyncSocket::Handle handle) {
                          0,
                          FALSE,
                          options)) {
-    out_handle = base::kInvalidPlatformFileValue;
+    out_handle = base::SyncSocket::kInvalidHandle;
   }
 #elif defined(OS_POSIX)
   // If asked to close the source, we can simply re-use the source fd instead of
   // dup()ing and close()ing.
   out_handle = ::dup(handle);
 #else
-  #error Not implemented.
+#error Not implemented.
 #endif
   return out_handle;
 }
 
 }  // namespace
 
-PepperBrokerDispatcherWrapper::PepperBrokerDispatcherWrapper() {
-}
+PepperBrokerDispatcherWrapper::PepperBrokerDispatcherWrapper() {}
 
-PepperBrokerDispatcherWrapper::~PepperBrokerDispatcherWrapper() {
-}
+PepperBrokerDispatcherWrapper::~PepperBrokerDispatcherWrapper() {}
 
 bool PepperBrokerDispatcherWrapper::Init(
     base::ProcessId broker_pid,
@@ -66,8 +64,7 @@ bool PepperBrokerDispatcherWrapper::Init(
 #endif
 
   dispatcher_delegate_.reset(new PepperProxyChannelDelegateImpl);
-  dispatcher_.reset(
-      new ppapi::proxy::BrokerHostDispatcher());
+  dispatcher_.reset(new ppapi::proxy::BrokerHostDispatcher());
 
   if (!dispatcher_->InitBrokerWithChannel(dispatcher_delegate_.get(),
                                           broker_pid,
@@ -92,8 +89,8 @@ int32_t PepperBrokerDispatcherWrapper::SendHandleToBroker(
     return PP_ERROR_FAILED;
 
   int32_t result;
-  if (!dispatcher_->Send(
-      new PpapiMsg_ConnectToPlugin(instance, foreign_socket_handle, &result))) {
+  if (!dispatcher_->Send(new PpapiMsg_ConnectToPlugin(
+          instance, foreign_socket_handle, &result))) {
     // The plugin did not receive the handle, so it must be closed.
     // The easiest way to clean it up is to just put it in an object
     // and then close it. This failure case is not performance critical.
@@ -191,7 +188,7 @@ void PepperBroker::OnBrokerPermissionResult(PPB_Broker_Impl* client,
   if (!result) {
     // Report failure.
     client->BrokerConnected(
-        ppapi::PlatformFileToInt(base::kInvalidPlatformFileValue),
+        ppapi::PlatformFileToInt(base::SyncSocket::kInvalidHandle),
         PP_ERROR_NOACCESS);
     pending_connects_.erase(entry);
     return;
@@ -209,20 +206,19 @@ void PepperBroker::OnBrokerPermissionResult(PPB_Broker_Impl* client,
   entry->second.is_authorized = true;
 }
 
-PepperBroker::PendingConnection::PendingConnection() : is_authorized(false) {
-}
+PepperBroker::PendingConnection::PendingConnection() : is_authorized(false) {}
 
-PepperBroker::PendingConnection::~PendingConnection() {
-}
+PepperBroker::PendingConnection::~PendingConnection() {}
 
 void PepperBroker::ReportFailureToClients(int error_code) {
   DCHECK_NE(PP_OK, error_code);
   for (ClientMap::iterator i = pending_connects_.begin();
-       i != pending_connects_.end(); ++i) {
+       i != pending_connects_.end();
+       ++i) {
     base::WeakPtr<PPB_Broker_Impl>& weak_ptr = i->second.client;
     if (weak_ptr.get()) {
       weak_ptr->BrokerConnected(
-          ppapi::PlatformFileToInt(base::kInvalidPlatformFileValue),
+          ppapi::PlatformFileToInt(base::SyncSocket::kInvalidHandle),
           error_code);
     }
   }
@@ -230,7 +226,7 @@ void PepperBroker::ReportFailureToClients(int error_code) {
 }
 
 void PepperBroker::ConnectPluginToBroker(PPB_Broker_Impl* client) {
-  base::SyncSocket::Handle plugin_handle = base::kInvalidPlatformFileValue;
+  base::SyncSocket::Handle plugin_handle = base::SyncSocket::kInvalidHandle;
   int32_t result = PP_OK;
 
   // The socket objects will be deleted when this function exits, closing the

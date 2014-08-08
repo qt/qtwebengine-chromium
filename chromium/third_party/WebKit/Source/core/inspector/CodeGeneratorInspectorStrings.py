@@ -33,8 +33,8 @@ frontend_domain_class = (
 """    class $domainClassName {
     public:
         $domainClassName(InspectorFrontendChannel* inspectorFrontendChannel) : m_inspectorFrontendChannel(inspectorFrontendChannel) { }
-${frontendDomainMethodDeclarations}        void setInspectorFrontendChannel(InspectorFrontendChannel* inspectorFrontendChannel) { m_inspectorFrontendChannel = inspectorFrontendChannel; }
-        InspectorFrontendChannel* getInspectorFrontendChannel() { return m_inspectorFrontendChannel; }
+${frontendDomainMethodDeclarations}
+        void flush() { m_inspectorFrontendChannel->flush(); }
     private:
         InspectorFrontendChannel* m_inspectorFrontendChannel;
     };
@@ -44,23 +44,19 @@ ${frontendDomainMethodDeclarations}        void setInspectorFrontendChannel(Insp
 """)
 
 backend_method = (
-"""void InspectorBackendDispatcherImpl::${domainName}_$methodName(long callId, JSONObject*$requestMessageObject)
+"""void InspectorBackendDispatcherImpl::${domainName}_$methodName(long callId, JSONObject*$requestMessageObject, JSONArray* protocolErrors)
 {
-    RefPtr<JSONArray> protocolErrors = JSONArray::create();
-
     if (!$agentField)
         protocolErrors->pushString("${domainName} handler is not available.");
-$methodOutCode
-$methodInCode
-    RefPtr<JSONObject> result = JSONObject::create();
-    RefPtr<JSONValue> resultErrorData;
-    ErrorString error;
-    if (!protocolErrors->length()) {
-        $agentField->$methodName(&error$agentCallParams);
-
-$errorCook${responseCook}
+$methodCode
+    if (protocolErrors->length()) {
+        reportProtocolError(&callId, InvalidParams, String::format(InvalidParamsFormatString, commandName($commandNameIndex)), protocolErrors);
+        return;
     }
-    sendResponse(callId, result, commandName($commandNameIndex), protocolErrors, error, resultErrorData);
+$agentCallParamsDeclaration
+    $agentField->$methodName($agentCallParams);
+$responseCook
+    sendResponse(callId, $sendResponseCallParams);
 }
 """)
 
@@ -69,7 +65,7 @@ frontend_method = ("""void InspectorFrontend::$domainName::$eventName($parameter
     RefPtr<JSONObject> jsonMessage = JSONObject::create();
     jsonMessage->setString("method", "$domainName.$eventName");
 $code    if (m_inspectorFrontendChannel)
-        m_inspectorFrontendChannel->sendMessageToFrontend(jsonMessage->toJSONString());
+        m_inspectorFrontendChannel->sendMessageToFrontend(jsonMessage.release());
 }
 """)
 
@@ -91,7 +87,7 @@ callback_failure_method = (
     if (error) {
         errorDataValue = $argument;
     }
-    sendIfActive(0, error, errorDataValue.release());
+    sendIfActive(nullptr, error, errorDataValue.release());
 }
 """)
 
@@ -101,23 +97,23 @@ frontend_h = (
 #define InspectorFrontend_h
 
 #include "InspectorTypeBuilder.h"
+#include "core/inspector/InspectorFrontendChannel.h"
 #include "platform/JSONValues.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
-class InspectorFrontendChannel;
-
 typedef String ErrorString;
 
 class InspectorFrontend {
 public:
     InspectorFrontend(InspectorFrontendChannel*);
-
+    InspectorFrontendChannel* channel() { return m_inspectorFrontendChannel; }
 
 $domainClassList
 private:
+    InspectorFrontendChannel* m_inspectorFrontendChannel;
 ${fieldDeclarations}};
 
 } // namespace WebCore
@@ -136,7 +132,6 @@ backend_h = (
 
 namespace WebCore {
 
-class InspectorAgent;
 class JSONObject;
 class JSONArray;
 class InspectorFrontendChannel;
@@ -215,7 +210,6 @@ backend_cpp = (
 #include "config.h"
 #include "InspectorBackendDispatcher.h"
 
-#include "core/inspector/InspectorAgent.h"
 #include "core/inspector/InspectorFrontendChannel.h"
 #include "core/inspector/JSONParser.h"
 #include "platform/JSONValues.h"
@@ -249,7 +243,7 @@ $constructorInit
     virtual void reportProtocolError(const long* const callId, CommonErrorCode, const String& errorMessage, PassRefPtr<JSONValue> data) const;
     using InspectorBackendDispatcher::reportProtocolError;
 
-    void sendResponse(long callId, PassRefPtr<JSONObject> result, const ErrorString&invocationError, PassRefPtr<JSONValue> errorData);
+    void sendResponse(long callId, const ErrorString& invocationError, PassRefPtr<JSONValue> errorData, PassRefPtr<JSONObject> result);
     bool isActive() { return m_inspectorFrontendChannel; }
 
 $setters
@@ -260,18 +254,27 @@ $methodDeclarations
 $fieldDeclarations
 
     template<typename R, typename V, typename V0>
-    static R getPropertyValueImpl(JSONObject* object, const String& name, bool* valueFound, JSONArray* protocolErrors, V0 initial_value, bool (*as_method)(JSONValue*, V*), const char* type_name);
+    static R getPropertyValueImpl(JSONObject* object, const char* name, bool* valueFound, JSONArray* protocolErrors, V0 initial_value, bool (*as_method)(JSONValue*, V*), const char* type_name);
 
-    static int getInt(JSONObject* object, const String& name, bool* valueFound, JSONArray* protocolErrors);
-    static double getDouble(JSONObject* object, const String& name, bool* valueFound, JSONArray* protocolErrors);
-    static String getString(JSONObject* object, const String& name, bool* valueFound, JSONArray* protocolErrors);
-    static bool getBoolean(JSONObject* object, const String& name, bool* valueFound, JSONArray* protocolErrors);
-    static PassRefPtr<JSONObject> getObject(JSONObject* object, const String& name, bool* valueFound, JSONArray* protocolErrors);
-    static PassRefPtr<JSONArray> getArray(JSONObject* object, const String& name, bool* valueFound, JSONArray* protocolErrors);
+    static int getInt(JSONObject* object, const char* name, bool* valueFound, JSONArray* protocolErrors);
+    static double getDouble(JSONObject* object, const char* name, bool* valueFound, JSONArray* protocolErrors);
+    static String getString(JSONObject* object, const char* name, bool* valueFound, JSONArray* protocolErrors);
+    static bool getBoolean(JSONObject* object, const char* name, bool* valueFound, JSONArray* protocolErrors);
+    static PassRefPtr<JSONObject> getObject(JSONObject* object, const char* name, bool* valueFound, JSONArray* protocolErrors);
+    static PassRefPtr<JSONArray> getArray(JSONObject* object, const char* name, bool* valueFound, JSONArray* protocolErrors);
 
-    void sendResponse(long callId, PassRefPtr<JSONObject> result, const char* commandName, PassRefPtr<JSONArray> protocolErrors, ErrorString invocationError, PassRefPtr<JSONValue> errorData);
-
+    void sendResponse(long callId, ErrorString invocationError, PassRefPtr<JSONObject> result)
+    {
+        sendResponse(callId, invocationError, RefPtr<JSONValue>(), result);
+    }
+    void sendResponse(long callId, ErrorString invocationError)
+    {
+        sendResponse(callId, invocationError, RefPtr<JSONValue>(), JSONObject::create());
+    }
+    static const char InvalidParamsFormatString[];
 };
+
+const char InspectorBackendDispatcherImpl::InvalidParamsFormatString[] = "Some arguments of method '%s' can't be processed";
 
 $methods
 
@@ -284,13 +287,13 @@ PassRefPtr<InspectorBackendDispatcher> InspectorBackendDispatcher::create(Inspec
 void InspectorBackendDispatcherImpl::dispatch(const String& message)
 {
     RefPtr<InspectorBackendDispatcher> protect = this;
-    typedef void (InspectorBackendDispatcherImpl::*CallHandler)(long callId, JSONObject* messageObject);
+    typedef void (InspectorBackendDispatcherImpl::*CallHandler)(long callId, JSONObject* messageObject, JSONArray* protocolErrors);
     typedef HashMap<String, CallHandler> DispatchMap;
     DEFINE_STATIC_LOCAL(DispatchMap, dispatchMap, );
     long callId = 0;
 
     if (dispatchMap.isEmpty()) {
-        static CallHandler handlers[] = {
+        static const CallHandler handlers[] = {
 $messageHandlers
         };
         for (size_t i = 0; i < kMethodNamesEnumSize; ++i)
@@ -338,20 +341,11 @@ $messageHandlers
         return;
     }
 
-    ((*this).*it->value)(callId, messageObject.get());
+    RefPtr<JSONArray> protocolErrors = JSONArray::create();
+    ((*this).*it->value)(callId, messageObject.get(), protocolErrors.get());
 }
 
-void InspectorBackendDispatcherImpl::sendResponse(long callId, PassRefPtr<JSONObject> result, const char* commandName, PassRefPtr<JSONArray> protocolErrors, ErrorString invocationError, PassRefPtr<JSONValue> errorData)
-{
-    if (protocolErrors->length()) {
-        String errorMessage = String::format("Some arguments of method '%s' can't be processed", commandName);
-        reportProtocolError(&callId, InvalidParams, errorMessage, protocolErrors);
-        return;
-    }
-    sendResponse(callId, result, invocationError, errorData);
-}
-
-void InspectorBackendDispatcherImpl::sendResponse(long callId, PassRefPtr<JSONObject> result, const ErrorString& invocationError, PassRefPtr<JSONValue> errorData)
+void InspectorBackendDispatcherImpl::sendResponse(long callId, const ErrorString& invocationError, PassRefPtr<JSONValue> errorData, PassRefPtr<JSONObject> result)
 {
     if (invocationError.length()) {
         reportProtocolError(&callId, ServerError, invocationError, errorData);
@@ -359,10 +353,10 @@ void InspectorBackendDispatcherImpl::sendResponse(long callId, PassRefPtr<JSONOb
     }
 
     RefPtr<JSONObject> responseMessage = JSONObject::create();
-    responseMessage->setObject("result", result);
     responseMessage->setNumber("id", callId);
+    responseMessage->setObject("result", result);
     if (m_inspectorFrontendChannel)
-        m_inspectorFrontendChannel->sendMessageToFrontend(responseMessage->toJSONString());
+        m_inspectorFrontendChannel->sendMessageToFrontend(responseMessage.release());
 }
 
 void InspectorBackendDispatcher::reportProtocolError(const long* const callId, CommonErrorCode code, const String& errorMessage) const
@@ -397,11 +391,11 @@ void InspectorBackendDispatcherImpl::reportProtocolError(const long* const callI
     else
         message->setValue("id", JSONValue::null());
     if (m_inspectorFrontendChannel)
-        m_inspectorFrontendChannel->sendMessageToFrontend(message->toJSONString());
+        m_inspectorFrontendChannel->sendMessageToFrontend(message.release());
 }
 
 template<typename R, typename V, typename V0>
-R InspectorBackendDispatcherImpl::getPropertyValueImpl(JSONObject* object, const String& name, bool* valueFound, JSONArray* protocolErrors, V0 initial_value, bool (*as_method)(JSONValue*, V*), const char* type_name)
+R InspectorBackendDispatcherImpl::getPropertyValueImpl(JSONObject* object, const char* name, bool* valueFound, JSONArray* protocolErrors, V0 initial_value, bool (*as_method)(JSONValue*, V*), const char* type_name)
 {
     ASSERT(protocolErrors);
 
@@ -413,7 +407,7 @@ R InspectorBackendDispatcherImpl::getPropertyValueImpl(JSONObject* object, const
     if (!object) {
         if (!valueFound) {
             // Required parameter in missing params container.
-            protocolErrors->pushString(String::format("'params' object must contain required parameter '%s' with type '%s'.", name.utf8().data(), type_name));
+            protocolErrors->pushString(String::format("'params' object must contain required parameter '%s' with type '%s'.", name, type_name));
         }
         return value;
     }
@@ -423,12 +417,12 @@ R InspectorBackendDispatcherImpl::getPropertyValueImpl(JSONObject* object, const
 
     if (valueIterator == end) {
         if (!valueFound)
-            protocolErrors->pushString(String::format("Parameter '%s' with type '%s' was not found.", name.utf8().data(), type_name));
+            protocolErrors->pushString(String::format("Parameter '%s' with type '%s' was not found.", name, type_name));
         return value;
     }
 
     if (!as_method(valueIterator->value.get(), &value))
-        protocolErrors->pushString(String::format("Parameter '%s' has wrong type. It must be '%s'.", name.utf8().data(), type_name));
+        protocolErrors->pushString(String::format("Parameter '%s' has wrong type. It must be '%s'.", name, type_name));
     else
         if (valueFound)
             *valueFound = true;
@@ -444,32 +438,32 @@ struct AsMethodBridges {
     static bool asArray(JSONValue* value, RefPtr<JSONArray>* output) { return value->asArray(output); }
 };
 
-int InspectorBackendDispatcherImpl::getInt(JSONObject* object, const String& name, bool* valueFound, JSONArray* protocolErrors)
+int InspectorBackendDispatcherImpl::getInt(JSONObject* object, const char* name, bool* valueFound, JSONArray* protocolErrors)
 {
     return getPropertyValueImpl<int, int, int>(object, name, valueFound, protocolErrors, 0, AsMethodBridges::asInt, "Number");
 }
 
-double InspectorBackendDispatcherImpl::getDouble(JSONObject* object, const String& name, bool* valueFound, JSONArray* protocolErrors)
+double InspectorBackendDispatcherImpl::getDouble(JSONObject* object, const char* name, bool* valueFound, JSONArray* protocolErrors)
 {
     return getPropertyValueImpl<double, double, double>(object, name, valueFound, protocolErrors, 0, AsMethodBridges::asDouble, "Number");
 }
 
-String InspectorBackendDispatcherImpl::getString(JSONObject* object, const String& name, bool* valueFound, JSONArray* protocolErrors)
+String InspectorBackendDispatcherImpl::getString(JSONObject* object, const char* name, bool* valueFound, JSONArray* protocolErrors)
 {
     return getPropertyValueImpl<String, String, String>(object, name, valueFound, protocolErrors, "", AsMethodBridges::asString, "String");
 }
 
-bool InspectorBackendDispatcherImpl::getBoolean(JSONObject* object, const String& name, bool* valueFound, JSONArray* protocolErrors)
+bool InspectorBackendDispatcherImpl::getBoolean(JSONObject* object, const char* name, bool* valueFound, JSONArray* protocolErrors)
 {
     return getPropertyValueImpl<bool, bool, bool>(object, name, valueFound, protocolErrors, false, AsMethodBridges::asBoolean, "Boolean");
 }
 
-PassRefPtr<JSONObject> InspectorBackendDispatcherImpl::getObject(JSONObject* object, const String& name, bool* valueFound, JSONArray* protocolErrors)
+PassRefPtr<JSONObject> InspectorBackendDispatcherImpl::getObject(JSONObject* object, const char* name, bool* valueFound, JSONArray* protocolErrors)
 {
     return getPropertyValueImpl<PassRefPtr<JSONObject>, RefPtr<JSONObject>, JSONObject*>(object, name, valueFound, protocolErrors, 0, AsMethodBridges::asObject, "Object");
 }
 
-PassRefPtr<JSONArray> InspectorBackendDispatcherImpl::getArray(JSONObject* object, const String& name, bool* valueFound, JSONArray* protocolErrors)
+PassRefPtr<JSONArray> InspectorBackendDispatcherImpl::getArray(JSONObject* object, const char* name, bool* valueFound, JSONArray* protocolErrors)
 {
     return getPropertyValueImpl<PassRefPtr<JSONArray>, RefPtr<JSONArray>, JSONArray*>(object, name, valueFound, protocolErrors, 0, AsMethodBridges::asArray, "Array");
 }
@@ -498,7 +492,7 @@ InspectorBackendDispatcher::CallbackBase::~CallbackBase() {}
 void InspectorBackendDispatcher::CallbackBase::sendFailure(const ErrorString& error)
 {
     ASSERT(error.length());
-    sendIfActive(0, error, PassRefPtr<JSONValue>());
+    sendIfActive(nullptr, error, PassRefPtr<JSONValue>());
 }
 
 bool InspectorBackendDispatcher::CallbackBase::isActive()
@@ -510,7 +504,7 @@ void InspectorBackendDispatcher::CallbackBase::sendIfActive(PassRefPtr<JSONObjec
 {
     if (m_alreadySent)
         return;
-    m_backendImpl->sendResponse(m_id, partialMessage, invocationError, errorData);
+    m_backendImpl->sendResponse(m_id, invocationError, errorData, partialMessage);
     m_alreadySent = true;
 }
 
@@ -532,7 +526,9 @@ frontend_cpp = (
 namespace WebCore {
 
 InspectorFrontend::InspectorFrontend(InspectorFrontendChannel* inspectorFrontendChannel)
-    : $constructorInit{
+    : m_inspectorFrontendChannel(inspectorFrontendChannel)
+    , $constructorInit
+{
 }
 
 $methods
@@ -663,6 +659,11 @@ public:
         return static_cast<Array<T>*>(static_cast<JSONArrayBase*>(array.get()));
     }
 
+    void concat(PassRefPtr<Array<T> > array)
+    {
+        return ArrayItemHelper<T>::Traits::concat(this->openAccessors(), array->openAccessors());
+    }
+
 #if $validatorIfdefName
     static void assertCorrectValue(JSONValue* value)
     {
@@ -680,6 +681,12 @@ struct StructItemTraits {
     static void pushRefPtr(JSONArray* array, PassRefPtr<JSONValue> value)
     {
         array->pushValue(value);
+    }
+
+    static void concat(JSONArray* array, JSONArray* anotherArray)
+    {
+        for (JSONArray::iterator it = anotherArray->begin(); it != anotherArray->end(); ++it)
+            array->pushValue(*it);
     }
 
 #if $validatorIfdefName
@@ -890,7 +897,6 @@ $validatorCode
 param_container_access_code = """
     RefPtr<JSONObject> paramsContainer = requestMessageObject->getObject("params");
     JSONObject* paramsContainerPtr = paramsContainer.get();
-    JSONArray* protocolErrorsPtr = protocolErrors.get();
 """
 
 class_binding_builder_part_1 = (

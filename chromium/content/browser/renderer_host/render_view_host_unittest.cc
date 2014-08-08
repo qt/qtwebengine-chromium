@@ -5,9 +5,10 @@
 #include "base/path_service.h"
 #include "base/strings/utf_string_conversions.h"
 #include "content/browser/child_process_security_policy_impl.h"
+#include "content/browser/frame_host/render_frame_host_impl.h"
+#include "content/browser/renderer_host/render_view_host_delegate_view.h"
 #include "content/common/input_messages.h"
 #include "content/common/view_messages.h"
-#include "content/port/browser/render_view_host_delegate_view.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/common/bindings_policy.h"
 #include "content/public/common/drop_data.h"
@@ -17,7 +18,7 @@
 #include "content/test/test_content_browser_client.h"
 #include "content/test/test_render_view_host.h"
 #include "content/test/test_web_contents.h"
-#include "net/base/net_util.h"
+#include "net/base/filename_util.h"
 #include "third_party/WebKit/public/web/WebDragOperation.h"
 
 namespace content {
@@ -28,7 +29,7 @@ class RenderViewHostTestBrowserClient : public TestContentBrowserClient {
   virtual ~RenderViewHostTestBrowserClient() {}
 
   virtual bool IsHandledURL(const GURL& url) OVERRIDE {
-    return url.scheme() == chrome::kFileScheme;
+    return url.scheme() == url::kFileScheme;
   }
 
  private:
@@ -62,7 +63,8 @@ class RenderViewHostTest : public RenderViewHostImplTestHarness {
 TEST_F(RenderViewHostTest, FilterAbout) {
   test_rvh()->SendNavigate(1, GURL("about:cache"));
   ASSERT_TRUE(controller().GetVisibleEntry());
-  EXPECT_EQ(GURL(kAboutBlankURL), controller().GetVisibleEntry()->GetURL());
+  EXPECT_EQ(GURL(url::kAboutBlankURL),
+            controller().GetVisibleEntry()->GetURL());
 }
 
 // Create a full screen popup RenderWidgetHost and View.
@@ -71,10 +73,9 @@ TEST_F(RenderViewHostTest, CreateFullscreenWidget) {
   test_rvh()->CreateNewFullscreenWidget(routing_id);
 }
 
-// Makes sure that RenderViewHost::is_waiting_for_unload_ack_ is false when
-// reloading a page. If is_waiting_for_unload_ack_ is not false when reloading
-// the contents may get closed out even though the user pressed the reload
-// button.
+// Makes sure that the RenderViewHost is not waiting for an unload ack when
+// reloading a page. If this is not the case, when reloading, the contents may
+// get closed out even though the user pressed the reload button.
 TEST_F(RenderViewHostTest, ResetUnloadOnReload) {
   const GURL url1("http://foo1");
   const GURL url2("http://foo2");
@@ -84,12 +85,11 @@ TEST_F(RenderViewHostTest, ResetUnloadOnReload) {
   // . go to a page.
   // . go to a new page, preferably one that takes a while to resolve, such
   //   as one on a site that doesn't exist.
-  //   . After this step is_waiting_for_unload_ack_ has been set to true on
-  //     the first RVH.
+  //   . After this step IsWaitingForUnloadACK returns true on the first RVH.
   // . click stop before the page has been commited.
   // . click reload.
-  //   . is_waiting_for_unload_ack_ is still true, and the if the hang monitor
-  //     fires the contents gets closed.
+  //   . IsWaitingForUnloadACK still returns true, and if the hang monitor fires
+  //     the contents gets closed.
 
   NavigateAndCommit(url1);
   controller().LoadURL(
@@ -97,10 +97,10 @@ TEST_F(RenderViewHostTest, ResetUnloadOnReload) {
   // Simulate the ClosePage call which is normally sent by the net::URLRequest.
   rvh()->ClosePage();
   // Needed so that navigations are not suspended on the RVH.
-  test_rvh()->SendShouldCloseACK(true);
+  test_rvh()->SendBeforeUnloadACK(true);
   contents()->Stop();
   controller().Reload(false);
-  EXPECT_FALSE(test_rvh()->is_waiting_for_unload_ack());
+  EXPECT_FALSE(test_rvh()->IsWaitingForUnloadACK());
 }
 
 // Ensure we do not grant bindings to a process shared with unprivileged views.
@@ -117,13 +117,6 @@ class MockDraggingRenderViewHostDelegateView
     : public RenderViewHostDelegateView {
  public:
   virtual ~MockDraggingRenderViewHostDelegateView() {}
-  virtual void ShowPopupMenu(const gfx::Rect& bounds,
-                             int item_height,
-                             double item_font_size,
-                             int selected_item,
-                             const std::vector<MenuItem>& items,
-                             bool right_aligned,
-                             bool allow_multiple_selection) OVERRIDE {}
   virtual void StartDragging(const DropData& drop_data,
                              blink::WebDragOperationsMask allowed_ops,
                              const gfx::ImageSkia& image,
@@ -160,8 +153,8 @@ TEST_F(RenderViewHostTest, StartDragging) {
   drop_data.url = file_url;
   drop_data.html_base_url = file_url;
   test_rvh()->TestOnStartDragging(drop_data);
-  EXPECT_EQ(GURL(kAboutBlankURL), delegate_view.drag_url());
-  EXPECT_EQ(GURL(kAboutBlankURL), delegate_view.html_base_url());
+  EXPECT_EQ(GURL(url::kAboutBlankURL), delegate_view.drag_url());
+  EXPECT_EQ(GURL(url::kAboutBlankURL), delegate_view.html_base_url());
 
   GURL http_url = GURL("http://www.domain.com/index.html");
   drop_data.url = http_url;
@@ -198,8 +191,8 @@ TEST_F(RenderViewHostTest, DragEnteredFileURLsStillBlocked) {
   GURL dragged_file_url = net::FilePathToFileURL(dragged_file_path);
   GURL sensitive_file_url = net::FilePathToFileURL(sensitive_file_path);
   dropped_data.url = highlighted_file_url;
-  dropped_data.filenames.push_back(DropData::FileInfo(
-      UTF8ToUTF16(dragged_file_path.AsUTF8Unsafe()), base::string16()));
+  dropped_data.filenames.push_back(
+      ui::FileInfo(dragged_file_path, base::FilePath()));
 
   rvh()->DragTargetDragEnter(dropped_data, client_point, screen_point,
                               blink::WebDragOperationNone, 0);
@@ -215,48 +208,6 @@ TEST_F(RenderViewHostTest, DragEnteredFileURLsStillBlocked) {
   EXPECT_FALSE(policy->CanRequestURL(id, sensitive_file_url));
   EXPECT_FALSE(policy->CanReadFile(id, sensitive_file_path));
 }
-
-// The test that follow trigger DCHECKS in debug build.
-#if defined(NDEBUG) && !defined(DCHECK_ALWAYS_ON)
-
-// Test that when we fail to de-serialize a message, RenderViewHost calls the
-// ReceivedBadMessage() handler.
-TEST_F(RenderViewHostTest, BadMessageHandlerRenderViewHost) {
-  EXPECT_EQ(0, process()->bad_msg_count());
-  // craft an incorrect ViewHostMsg_UpdateTargetURL message. The real one has
-  // two payload items but the one we construct has none.
-  IPC::Message message(0, ViewHostMsg_UpdateTargetURL::ID,
-                       IPC::Message::PRIORITY_NORMAL);
-  test_rvh()->OnMessageReceived(message);
-  EXPECT_EQ(1, process()->bad_msg_count());
-}
-
-// Test that when we fail to de-serialize a message, RenderWidgetHost calls the
-// ReceivedBadMessage() handler.
-TEST_F(RenderViewHostTest, BadMessageHandlerRenderWidgetHost) {
-  EXPECT_EQ(0, process()->bad_msg_count());
-  // craft an incorrect ViewHostMsg_UpdateRect message. The real one has
-  // one payload item but the one we construct has none.
-  IPC::Message message(0, ViewHostMsg_UpdateRect::ID,
-                       IPC::Message::PRIORITY_NORMAL);
-  test_rvh()->OnMessageReceived(message);
-  EXPECT_EQ(1, process()->bad_msg_count());
-}
-
-// Test that OnInputEventAck() detects bad messages.
-TEST_F(RenderViewHostTest, BadMessageHandlerInputEventAck) {
-  EXPECT_EQ(0, process()->bad_msg_count());
-  // InputHostMsg_HandleInputEvent_ACK is defined taking 0 params but
-  // the code actually expects it to have at least one int para, this this
-  // bogus message will not fail at de-serialization but should fail in
-  // OnInputEventAck() processing.
-  IPC::Message message(0, InputHostMsg_HandleInputEvent_ACK::ID,
-                       IPC::Message::PRIORITY_NORMAL);
-  test_rvh()->OnMessageReceived(message);
-  EXPECT_EQ(1, process()->bad_msg_count());
-}
-
-#endif
 
 TEST_F(RenderViewHostTest, MessageWithBadHistoryItemFiles) {
   base::FilePath file_path;
@@ -288,10 +239,10 @@ TEST_F(RenderViewHostTest, NavigationWithBadHistoryItemFiles) {
 }
 
 TEST_F(RenderViewHostTest, RoutingIdSane) {
-  EXPECT_EQ(test_rvh()->GetProcess(),
-            test_rvh()->main_render_frame_host()->GetProcess());
-  EXPECT_NE(test_rvh()->GetRoutingID(),
-            test_rvh()->main_render_frame_host()->routing_id());
+  RenderFrameHostImpl* root_rfh =
+      contents()->GetFrameTree()->root()->current_frame_host();
+  EXPECT_EQ(test_rvh()->GetProcess(), root_rfh->GetProcess());
+  EXPECT_NE(test_rvh()->GetRoutingID(), root_rfh->routing_id());
 }
 
 }  // namespace content

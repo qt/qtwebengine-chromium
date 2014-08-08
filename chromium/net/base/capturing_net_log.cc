@@ -55,6 +55,14 @@ bool CapturingNetLog::CapturedEntry::GetIntegerValue(
   return params->GetInteger(name, value);
 }
 
+bool CapturingNetLog::CapturedEntry::GetListValue(
+    const std::string& name,
+    base::ListValue** value) const {
+  if (!params)
+    return false;
+  return params->GetList(name, value);
+}
+
 bool CapturingNetLog::CapturedEntry::GetNetErrorCode(int* value) const {
   return GetIntegerValue("net_error", value);
 }
@@ -106,7 +114,7 @@ void CapturingNetLog::Observer::OnAddEntry(const net::NetLog::Entry& entry) {
   // Using Dictionaries instead of Values makes checking values a little
   // simpler.
   base::DictionaryValue* param_dict = NULL;
-  Value* param_value = entry.ParametersToValue();
+  base::Value* param_value = entry.ParametersToValue();
   if (param_value && !param_value->GetAsDictionary(&param_dict))
     delete param_value;
 

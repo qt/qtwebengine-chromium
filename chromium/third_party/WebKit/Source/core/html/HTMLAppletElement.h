@@ -31,7 +31,7 @@ class KURL;
 
 class HTMLAppletElement FINAL : public HTMLPlugInElement {
 public:
-    static PassRefPtr<HTMLAppletElement> create(Document&, bool createdByParser);
+    static PassRefPtrWillBeRawPtr<HTMLAppletElement> create(Document&, bool createdByParser);
 
 protected:
     virtual RenderWidget* renderWidgetForJSBindings() const OVERRIDE;
@@ -41,6 +41,7 @@ private:
 
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
     virtual bool isURLAttribute(const Attribute&) const OVERRIDE;
+    virtual bool hasLegalLinkAttribute(const QualifiedName&) const OVERRIDE;
 
     virtual bool rendererIsNeeded(const RenderStyle&) OVERRIDE;
     virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;

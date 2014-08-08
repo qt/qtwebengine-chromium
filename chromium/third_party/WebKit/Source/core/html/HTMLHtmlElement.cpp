@@ -24,28 +24,25 @@
 #include "config.h"
 #include "core/html/HTMLHtmlElement.h"
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 #include "core/dom/Document.h"
 #include "core/dom/DocumentParser.h"
+#include "core/frame/LocalFrame.h"
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/appcache/ApplicationCacheHost.h"
-#include "core/frame/Frame.h"
 
 namespace WebCore {
 
 using namespace HTMLNames;
 
-HTMLHtmlElement::HTMLHtmlElement(Document& document)
+inline HTMLHtmlElement::HTMLHtmlElement(Document& document)
     : HTMLElement(htmlTag, document)
 {
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLHtmlElement> HTMLHtmlElement::create(Document& document)
-{
-    return adoptRef(new HTMLHtmlElement(document));
-}
+DEFINE_NODE_FACTORY(HTMLHtmlElement)
 
 bool HTMLHtmlElement::isURLAttribute(const Attribute& attribute) const
 {
@@ -65,7 +62,7 @@ void HTMLHtmlElement::insertedByParser()
     if (!documentLoader)
         return;
 
-    const AtomicString& manifest = getAttribute(manifestAttr);
+    const AtomicString& manifest = fastGetAttribute(manifestAttr);
     if (manifest.isEmpty())
         documentLoader->applicationCacheHost()->selectCacheWithoutManifest();
     else

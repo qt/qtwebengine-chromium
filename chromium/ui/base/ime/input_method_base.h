@@ -10,7 +10,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "ui/base/ime/input_method.h"
-#include "ui/base/ui_export.h"
+#include "ui/base/ui_base_export.h"
 
 namespace gfx {
 class Rect;
@@ -24,7 +24,7 @@ class TextInputClient;
 
 // A helper class providing functionalities shared among ui::InputMethod
 // implementations.
-class UI_EXPORT InputMethodBase
+class UI_BASE_EXPORT InputMethodBase
    : NON_EXPORTED_BASE(public InputMethod),
      public base::SupportsWeakPtr<InputMethodBase> {
  public:
@@ -50,6 +50,7 @@ class UI_EXPORT InputMethodBase
   virtual TextInputType GetTextInputType() const OVERRIDE;
   virtual TextInputMode GetTextInputMode() const OVERRIDE;
   virtual bool CanComposeInline() const OVERRIDE;
+  virtual void ShowImeIfNeeded() OVERRIDE;
 
   virtual void AddObserver(InputMethodObserver* observer) OVERRIDE;
   virtual void RemoveObserver(InputMethodObserver* observer) OVERRIDE;

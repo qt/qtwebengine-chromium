@@ -60,29 +60,29 @@ BrowserAccessibilityWin
  public:
   BEGIN_COM_MAP(BrowserAccessibilityWin)
     COM_INTERFACE_ENTRY2(IDispatch, IAccessible2)
-    COM_INTERFACE_ENTRY2(IAccessible, IAccessible2)
-    COM_INTERFACE_ENTRY2(IAccessibleText, IAccessibleHypertext)
+    COM_INTERFACE_ENTRY(IAccessible)
     COM_INTERFACE_ENTRY(IAccessible2)
     COM_INTERFACE_ENTRY(IAccessibleApplication)
+    COM_INTERFACE_ENTRY(IAccessibleEx)
     COM_INTERFACE_ENTRY(IAccessibleHyperlink)
     COM_INTERFACE_ENTRY(IAccessibleHypertext)
     COM_INTERFACE_ENTRY(IAccessibleImage)
     COM_INTERFACE_ENTRY(IAccessibleTable)
     COM_INTERFACE_ENTRY(IAccessibleTable2)
     COM_INTERFACE_ENTRY(IAccessibleTableCell)
+    COM_INTERFACE_ENTRY(IAccessibleText)
     COM_INTERFACE_ENTRY(IAccessibleValue)
+    COM_INTERFACE_ENTRY(IRawElementProviderSimple)
     COM_INTERFACE_ENTRY(IServiceProvider)
     COM_INTERFACE_ENTRY(ISimpleDOMDocument)
     COM_INTERFACE_ENTRY(ISimpleDOMNode)
     COM_INTERFACE_ENTRY(ISimpleDOMText)
-    COM_INTERFACE_ENTRY(IAccessibleEx)
-    COM_INTERFACE_ENTRY(IRawElementProviderSimple)
   END_COM_MAP()
 
   // Represents a non-static text node in IAccessibleHypertext. This character
   // is embedded in the response to IAccessibleText::get_text, indicating the
   // position where a non-static text child object appears.
-  CONTENT_EXPORT static const char16 kEmbeddedCharacter[];
+  CONTENT_EXPORT static const base::char16 kEmbeddedCharacter[];
 
   // Mappings from roles and states to human readable strings. Initialize
   // with |InitializeStringMaps|.
@@ -100,13 +100,12 @@ BrowserAccessibilityWin
   //
   // BrowserAccessibility methods.
   //
-  CONTENT_EXPORT virtual void PreInitialize() OVERRIDE;
-  CONTENT_EXPORT virtual void PostInitialize() OVERRIDE;
+  CONTENT_EXPORT virtual void OnDataChanged() OVERRIDE;
+  CONTENT_EXPORT virtual void OnUpdateFinished() OVERRIDE;
   CONTENT_EXPORT virtual void NativeAddReference() OVERRIDE;
   CONTENT_EXPORT virtual void NativeReleaseReference() OVERRIDE;
   CONTENT_EXPORT virtual bool IsNative() const OVERRIDE;
-  CONTENT_EXPORT virtual void SetLocation(const gfx::Rect& new_location)
-      OVERRIDE;
+  CONTENT_EXPORT virtual void OnLocationChanged() const OVERRIDE;
 
   //
   // IAccessible methods.
@@ -772,10 +771,6 @@ BrowserAccessibilityWin
     return ia2_attributes_;
   }
 
-  // BrowserAccessibility::role is shadowed by IAccessible2::role, so
-  // we provide an alias for it.
-  int32 blink_role() const { return BrowserAccessibility::role(); }
-
  private:
   // Add one to the reference count and return the same object. Always
   // use this method when returning a BrowserAccessibilityWin object as
@@ -790,29 +785,29 @@ BrowserAccessibilityWin
   BrowserAccessibilityWin* GetTargetFromChildID(const VARIANT& var_id);
 
   // Initialize the role and state metadata from the role enum and state
-  // bitmasks defined in AccessibilityNodeData.
+  // bitmasks defined in ui::AXNodeData.
   void InitRoleAndState();
 
   // Retrieve the value of an attribute from the string attribute map and
   // if found and nonempty, allocate a new BSTR (with SysAllocString)
   // and return S_OK. If not found or empty, return S_FALSE.
   HRESULT GetStringAttributeAsBstr(
-      AccessibilityNodeData::StringAttribute attribute,
+      ui::AXStringAttribute attribute,
       BSTR* value_bstr);
 
   // If the string attribute |attribute| is present, add its value as an
   // IAccessible2 attribute with the name |ia2_attr|.
-  void StringAttributeToIA2(AccessibilityNodeData::StringAttribute attribute,
+  void StringAttributeToIA2(ui::AXStringAttribute attribute,
                             const char* ia2_attr);
 
   // If the bool attribute |attribute| is present, add its value as an
   // IAccessible2 attribute with the name |ia2_attr|.
-  void BoolAttributeToIA2(AccessibilityNodeData::BoolAttribute attribute,
+  void BoolAttributeToIA2(ui::AXBoolAttribute attribute,
                           const char* ia2_attr);
 
   // If the int attribute |attribute| is present, add its value as an
   // IAccessible2 attribute with the name |ia2_attr|.
-  void IntAttributeToIA2(AccessibilityNodeData::IntAttribute attribute,
+  void IntAttributeToIA2(ui::AXIntAttribute attribute,
                          const char* ia2_attr);
 
   // Get the value text, which might come from the floating-point
@@ -838,9 +833,9 @@ BrowserAccessibilityWin
                     LONG start_offset,
                     ui::TextBoundaryDirection direction);
 
-  // Return a pointer to the object corresponding to the given renderer_id,
+  // Return a pointer to the object corresponding to the given id,
   // does not make a new reference.
-  BrowserAccessibilityWin* GetFromRendererID(int32 renderer_id);
+  BrowserAccessibilityWin* GetFromID(int32 id);
 
   // Windows-specific unique ID (unique within the browser process),
   // used for get_accChild, NotifyWinEvent, and as the unique ID for

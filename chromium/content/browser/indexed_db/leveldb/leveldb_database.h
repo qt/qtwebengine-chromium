@@ -12,6 +12,7 @@
 #include "base/strings/string16.h"
 #include "base/strings/string_piece.h"
 #include "content/common/content_export.h"
+#include "third_party/leveldatabase/src/include/leveldb/comparator.h"
 #include "third_party/leveldatabase/src/include/leveldb/status.h"
 
 namespace leveldb {
@@ -38,35 +39,61 @@ class LevelDBSnapshot {
 
   leveldb::DB* db_;
   const leveldb::Snapshot* snapshot_;
+
+  DISALLOW_COPY_AND_ASSIGN(LevelDBSnapshot);
 };
 
 class CONTENT_EXPORT LevelDBLock {
-public:
+ public:
+  LevelDBLock() {}
   virtual ~LevelDBLock() {}
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(LevelDBLock);
 };
 
 class CONTENT_EXPORT LevelDBDatabase {
  public:
+  class ComparatorAdapter : public leveldb::Comparator {
+   public:
+    explicit ComparatorAdapter(const LevelDBComparator* comparator);
+
+    virtual int Compare(const leveldb::Slice& a,
+                        const leveldb::Slice& b) const OVERRIDE;
+
+    virtual const char* Name() const OVERRIDE;
+
+    virtual void FindShortestSeparator(std::string* start,
+                                       const leveldb::Slice& limit) const
+        OVERRIDE;
+    virtual void FindShortSuccessor(std::string* key) const OVERRIDE;
+
+   private:
+    const LevelDBComparator* comparator_;
+  };
+
   static leveldb::Status Open(const base::FilePath& file_name,
                               const LevelDBComparator* comparator,
                               scoped_ptr<LevelDBDatabase>* db,
                               bool* is_disk_full = 0);
   static scoped_ptr<LevelDBDatabase> OpenInMemory(
       const LevelDBComparator* comparator);
-  static bool Destroy(const base::FilePath& file_name);
+  static leveldb::Status Destroy(const base::FilePath& file_name);
   static scoped_ptr<LevelDBLock> LockForTesting(
       const base::FilePath& file_name);
   virtual ~LevelDBDatabase();
 
-  bool Put(const base::StringPiece& key, std::string* value);
-  bool Remove(const base::StringPiece& key);
-  virtual bool Get(const base::StringPiece& key,
-                   std::string* value,
-                   bool* found,
-                   const LevelDBSnapshot* = 0);
-  bool Write(const LevelDBWriteBatch& write_batch);
+  leveldb::Status Put(const base::StringPiece& key, std::string* value);
+  leveldb::Status Remove(const base::StringPiece& key);
+  virtual leveldb::Status Get(const base::StringPiece& key,
+                              std::string* value,
+                              bool* found,
+                              const LevelDBSnapshot* = 0);
+  leveldb::Status Write(const LevelDBWriteBatch& write_batch);
   scoped_ptr<LevelDBIterator> CreateIterator(const LevelDBSnapshot* = 0);
   const LevelDBComparator* Comparator() const;
+  void Compact(const base::StringPiece& start, const base::StringPiece& stop);
+  void CompactAll();
 
  protected:
   LevelDBDatabase();

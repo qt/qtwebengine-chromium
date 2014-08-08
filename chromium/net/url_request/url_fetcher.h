@@ -13,6 +13,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/supports_user_data.h"
 #include "net/base/net_export.h"
+#include "net/url_request/url_request.h"
 
 class GURL;
 
@@ -36,8 +37,9 @@ typedef std::vector<std::string> ResponseCookies;
 
 // To use this class, create an instance with the desired URL and a pointer to
 // the object to be notified when the URL has been loaded:
-//   URLFetcher* fetcher = URLFetcher::Create("http://www.google.com",
-//                                            URLFetcher::GET, this);
+//   scoped_ptr<URLFetcher> fetcher(URLFetcher::Create("http://www.google.com",
+//                                                     URLFetcher::GET,
+//                                                     this));
 //
 // You must also set a request context getter:
 //
@@ -50,6 +52,8 @@ typedef std::vector<std::string> ResponseCookies;
 // Finally, start the request:
 //   fetcher->Start();
 //
+// You may cancel the request by destroying the URLFetcher:
+//   fetcher.reset();
 //
 // The object you supply as a delegate must inherit from
 // URLFetcherDelegate; when the fetch is completed,
@@ -93,6 +97,7 @@ class NET_EXPORT URLFetcher {
   // |url| is the URL to send the request to.
   // |request_type| is the type of request to make.
   // |d| the object that will receive the callback on fetch completion.
+  // Caller is responsible for destroying the returned URLFetcher.
   static URLFetcher* Create(const GURL& url,
                             URLFetcher::RequestType request_type,
                             URLFetcherDelegate* d);
@@ -100,6 +105,7 @@ class NET_EXPORT URLFetcher {
   // Like above, but if there's a URLFetcherFactory registered with the
   // implementation it will be used. |id| may be used during testing to identify
   // who is creating the URLFetcher.
+  // Caller is responsible for destroying the returned URLFetcher.
   static URLFetcher* Create(int id,
                             const GURL& url,
                             URLFetcher::RequestType request_type,
@@ -170,6 +176,11 @@ class NET_EXPORT URLFetcher {
   // started.
   virtual void SetReferrer(const std::string& referrer) = 0;
 
+  // The referrer policy to apply when updating the referrer during redirects.
+  // The referrer policy may only be changed before Start() is called.
+  virtual void SetReferrerPolicy(
+      URLRequest::ReferrerPolicy referrer_policy) = 0;
+
   // Set extra headers on the request.  Must be called before the request
   // is started.
   // This replaces the entire extra request headers.
@@ -180,9 +191,6 @@ class NET_EXPORT URLFetcher {
   // headers.  Must be called before the request is started.
   // This appends the header to the current extra request headers.
   virtual void AddExtraRequestHeader(const std::string& header_line) = 0;
-
-  virtual void GetExtraRequestHeaders(
-      HttpRequestHeaders* headers) const = 0;
 
   // Set the URLRequestContext on the request.  Must be called before the
   // request is started.
@@ -278,7 +286,7 @@ class NET_EXPORT URLFetcher {
   // if an error prevented any response from being received.
   virtual int GetResponseCode() const = 0;
 
-  // Cookies recieved.
+  // Cookies received.
   virtual const ResponseCookies& GetCookies() const = 0;
 
   // Reports that the received content was malformed.

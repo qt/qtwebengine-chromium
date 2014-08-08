@@ -15,7 +15,7 @@ namespace cc {
 class CC_EXPORT PictureLayerTilingSet {
  public:
   PictureLayerTilingSet(PictureLayerTilingClient* client,
-                        gfx::Size layer_bounds);
+                        const gfx::Size& layer_bounds);
   ~PictureLayerTilingSet();
 
   void SetClient(PictureLayerTilingClient* client);
@@ -25,15 +25,15 @@ class CC_EXPORT PictureLayerTilingSet {
   // Delete any tilings that don't meet |minimum_contents_scale|.  Recreate
   // any tiles that intersect |layer_invalidation|.  Update the size of all
   // tilings to |new_layer_bounds|.
-  void SyncTilings(
-     const PictureLayerTilingSet& other,
-     gfx::Size new_layer_bounds,
-     const Region& layer_invalidation,
-     float minimum_contents_scale);
+  // Returns true if we had at least one high res tiling synced.
+  bool SyncTilings(const PictureLayerTilingSet& other,
+                   const gfx::Size& new_layer_bounds,
+                   const Region& layer_invalidation,
+                   float minimum_contents_scale);
+
+  void RemoveTilesInRegion(const Region& region);
 
   gfx::Size layer_bounds() const { return layer_bounds_; }
-
-  void SetCanUseLCDText(bool can_use_lcd_text);
 
   PictureLayerTiling* AddTiling(float contents_scale);
   size_t num_tilings() const { return tilings_.size(); }
@@ -54,20 +54,6 @@ class CC_EXPORT PictureLayerTilingSet {
   // Remove all tiles; keep all tilings.
   void RemoveAllTiles();
 
-  void UpdateTilePriorities(
-      WhichTree tree,
-      gfx::Size device_viewport,
-      gfx::Rect viewport_in_content_space,
-      gfx::Rect visible_content_rect,
-      gfx::Size last_layer_bounds,
-      gfx::Size current_layer_bounds,
-      float last_layer_contents_scale,
-      float current_layer_contents_scale,
-      const gfx::Transform& last_screen_transform,
-      const gfx::Transform& current_screen_transform,
-      double current_frame_time_in_seconds,
-      size_t max_tiles_for_interest_area);
-
   void DidBecomeActive();
   void DidBecomeRecycled();
 
@@ -80,7 +66,7 @@ class CC_EXPORT PictureLayerTilingSet {
    public:
     CoverageIterator(const PictureLayerTilingSet* set,
       float contents_scale,
-      gfx::Rect content_rect,
+      const gfx::Rect& content_rect,
       float ideal_contents_scale);
     ~CoverageIterator();
 

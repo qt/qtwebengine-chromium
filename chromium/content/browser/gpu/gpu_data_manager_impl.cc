@@ -139,19 +139,19 @@ void GpuDataManagerImpl::UpdateVideoMemoryUsageStats(
 }
 
 void GpuDataManagerImpl::AppendRendererCommandLine(
-    CommandLine* command_line) const {
+    base::CommandLine* command_line) const {
   base::AutoLock auto_lock(lock_);
   private_->AppendRendererCommandLine(command_line);
 }
 
 void GpuDataManagerImpl::AppendGpuCommandLine(
-    CommandLine* command_line) const {
+    base::CommandLine* command_line) const {
   base::AutoLock auto_lock(lock_);
   private_->AppendGpuCommandLine(command_line);
 }
 
 void GpuDataManagerImpl::AppendPluginCommandLine(
-    CommandLine* command_line) const {
+    base::CommandLine* command_line) const {
   base::AutoLock auto_lock(lock_);
   private_->AppendPluginCommandLine(command_line);
 }
@@ -206,13 +206,6 @@ void GpuDataManagerImpl::HandleGpuSwitch() {
   private_->HandleGpuSwitch();
 }
 
-#if defined(OS_WIN)
-bool GpuDataManagerImpl::IsUsingAcceleratedSurface() const {
-  base::AutoLock auto_lock(lock_);
-  return private_->IsUsingAcceleratedSurface();
-}
-#endif
-
 void GpuDataManagerImpl::BlockDomainFrom3DAPIs(
     const GURL& url, DomainGuilt guilt) {
   base::AutoLock auto_lock(lock_);
@@ -246,6 +239,11 @@ void GpuDataManagerImpl::SetDisplayCount(unsigned int display_count) {
 unsigned int GpuDataManagerImpl::GetDisplayCount() const {
   base::AutoLock auto_lock(lock_);
   return private_->GetDisplayCount();
+}
+
+bool GpuDataManagerImpl::UpdateActiveGpu(uint32 vendor_id, uint32 device_id) {
+  base::AutoLock auto_lock(lock_);
+  return private_->UpdateActiveGpu(vendor_id, device_id);
 }
 
 void GpuDataManagerImpl::Notify3DAPIBlocked(const GURL& url,

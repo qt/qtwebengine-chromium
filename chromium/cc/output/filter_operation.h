@@ -11,6 +11,7 @@
 #include "skia/ext/refptr.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "third_party/skia/include/core/SkImageFilter.h"
+#include "third_party/skia/include/core/SkRegion.h"
 #include "third_party/skia/include/core/SkScalar.h"
 #include "ui/gfx/point.h"
 
@@ -37,6 +38,8 @@ class CC_EXPORT FilterOperation {
     ZOOM,
     REFERENCE,
     SATURATING_BRIGHTNESS,  // Not used in CSS/SVG.
+    ALPHA_THRESHOLD,  // Not used in CSS/SVG.
+    FILTER_TYPE_LAST = ALPHA_THRESHOLD
   };
 
   FilterOperation(const FilterOperation& other);
@@ -49,6 +52,11 @@ class CC_EXPORT FilterOperation {
     DCHECK_NE(type_, COLOR_MATRIX);
     DCHECK_NE(type_, REFERENCE);
     return amount_;
+  }
+
+  float outer_threshold() const {
+    DCHECK_EQ(type_, ALPHA_THRESHOLD);
+    return outer_threshold_;
   }
 
   gfx::Point drop_shadow_offset() const {
@@ -74,6 +82,11 @@ class CC_EXPORT FilterOperation {
   int zoom_inset() const {
     DCHECK_EQ(type_, ZOOM);
     return zoom_inset_;
+  }
+
+  const SkRegion& region() const {
+    DCHECK_EQ(type_, ALPHA_THRESHOLD);
+    return region_;
   }
 
   static FilterOperation CreateGrayscaleFilter(float amount) {
@@ -112,7 +125,7 @@ class CC_EXPORT FilterOperation {
     return FilterOperation(BLUR, amount);
   }
 
-  static FilterOperation CreateDropShadowFilter(gfx::Point offset,
+  static FilterOperation CreateDropShadowFilter(const gfx::Point& offset,
                                                 float std_deviation,
                                                 SkColor color) {
     return FilterOperation(DROP_SHADOW, offset, std_deviation, color);
@@ -135,6 +148,13 @@ class CC_EXPORT FilterOperation {
     return FilterOperation(SATURATING_BRIGHTNESS, amount);
   }
 
+  static FilterOperation CreateAlphaThresholdFilter(const SkRegion& region,
+                                                    float inner_threshold,
+                                                    float outer_threshold) {
+    return FilterOperation(ALPHA_THRESHOLD, region,
+                           inner_threshold, outer_threshold);
+  }
+
   bool operator==(const FilterOperation& other) const;
 
   bool operator!=(const FilterOperation& other) const {
@@ -154,7 +174,12 @@ class CC_EXPORT FilterOperation {
     amount_ = amount;
   }
 
-  void set_drop_shadow_offset(gfx::Point offset) {
+  void set_outer_threshold(float outer_threshold) {
+    DCHECK_EQ(type_, ALPHA_THRESHOLD);
+    outer_threshold_ = outer_threshold;
+  }
+
+  void set_drop_shadow_offset(const gfx::Point& offset) {
     DCHECK_EQ(type_, DROP_SHADOW);
     drop_shadow_offset_ = offset;
   }
@@ -180,6 +205,11 @@ class CC_EXPORT FilterOperation {
     zoom_inset_ = inset;
   }
 
+  void set_region(const SkRegion& region) {
+    DCHECK_EQ(type_, ALPHA_THRESHOLD);
+    region_ = region;
+  }
+
   // Given two filters of the same type, returns a filter operation created by
   // linearly interpolating a |progress| fraction from |from| to |to|. If either
   // |from| or |to| (but not both) is null, it is treated as a no-op filter of
@@ -196,7 +226,7 @@ class CC_EXPORT FilterOperation {
   FilterOperation(FilterType type, float amount);
 
   FilterOperation(FilterType type,
-                  gfx::Point offset,
+                  const gfx::Point& offset,
                   float stdDeviation,
                   SkColor color);
 
@@ -207,13 +237,20 @@ class CC_EXPORT FilterOperation {
   FilterOperation(FilterType type,
                   const skia::RefPtr<SkImageFilter>& image_filter);
 
+  FilterOperation(FilterType type,
+                  const SkRegion& region,
+                  float inner_threshold,
+                  float outer_threshold);
+
   FilterType type_;
   float amount_;
+  float outer_threshold_;
   gfx::Point drop_shadow_offset_;
   SkColor drop_shadow_color_;
   skia::RefPtr<SkImageFilter> image_filter_;
   SkScalar matrix_[20];
   int zoom_inset_;
+  SkRegion region_;
 };
 
 }  // namespace cc

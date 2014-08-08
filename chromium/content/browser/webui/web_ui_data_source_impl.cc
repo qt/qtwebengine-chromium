@@ -10,15 +10,41 @@
 #include "base/memory/ref_counted_memory.h"
 #include "base/strings/string_util.h"
 #include "content/public/common/content_client.h"
+#include "grit/content_resources.h"
+#include "mojo/public/js/bindings/constants.h"
 #include "ui/base/webui/jstemplate_builder.h"
 #include "ui/base/webui/web_ui_util.h"
 
 namespace content {
 
+// static
 WebUIDataSource* WebUIDataSource::Create(const std::string& source_name) {
   return new WebUIDataSourceImpl(source_name);
 }
 
+// static
+WebUIDataSource* WebUIDataSource::AddMojoDataSource(
+    BrowserContext* browser_context) {
+  WebUIDataSource* mojo_source = Create("mojo");
+
+  static const struct {
+    const char* path;
+    int id;
+  } resources[] = {
+    { mojo::kCodecModuleName, IDR_MOJO_CODEC_JS },
+    { mojo::kConnectionModuleName, IDR_MOJO_CONNECTION_JS },
+    { mojo::kConnectorModuleName, IDR_MOJO_CONNECTOR_JS },
+    { mojo::kRouterModuleName, IDR_MOJO_ROUTER_JS },
+    { mojo::kUnicodeModuleName, IDR_MOJO_UNICODE_JS },
+  };
+  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(resources); ++i)
+    mojo_source->AddResourcePath(resources[i].path, resources[i].id);
+
+  URLDataManager::AddWebUIDataSource(browser_context, mojo_source);
+  return mojo_source;
+}
+
+// static
 void WebUIDataSource::Add(BrowserContext* browser_context,
                           WebUIDataSource* source) {
   URLDataManager::AddWebUIDataSource(browser_context, source);
@@ -44,9 +70,9 @@ class WebUIDataSourceImpl::InternalDataSource : public URLDataSource {
   virtual void StartDataRequest(
       const std::string& path,
       int render_process_id,
-      int render_view_id,
+      int render_frame_id,
       const URLDataSource::GotDataCallback& callback) OVERRIDE {
-    return parent_->StartDataRequest(path, render_process_id, render_view_id,
+    return parent_->StartDataRequest(path, render_process_id, render_frame_id,
                                      callback);
   }
   virtual bool ShouldReplaceExistingSource() const OVERRIDE {
@@ -188,7 +214,7 @@ std::string WebUIDataSourceImpl::GetMimeType(const std::string& path) const {
 void WebUIDataSourceImpl::StartDataRequest(
     const std::string& path,
     int render_process_id,
-    int render_view_id,
+    int render_frame_id,
     const URLDataSource::GotDataCallback& callback) {
   if (!filter_callback_.is_null() &&
       filter_callback_.Run(path, callback)) {

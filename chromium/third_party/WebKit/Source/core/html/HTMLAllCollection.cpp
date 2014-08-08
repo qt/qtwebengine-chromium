@@ -31,13 +31,14 @@
 
 namespace WebCore {
 
-PassRefPtr<HTMLAllCollection> HTMLAllCollection::create(Node* node, CollectionType type)
+PassRefPtrWillBeRawPtr<HTMLAllCollection> HTMLAllCollection::create(ContainerNode& node, CollectionType type)
 {
-    return adoptRef(new HTMLAllCollection(node, type));
+    ASSERT_UNUSED(type, type == DocAll);
+    return adoptRefWillBeNoop(new HTMLAllCollection(node));
 }
 
-HTMLAllCollection::HTMLAllCollection(Node* node, CollectionType type)
-    : HTMLCollection(node, type, DoesNotOverrideItemAfter)
+HTMLAllCollection::HTMLAllCollection(ContainerNode& node)
+    : HTMLCollection(node, DocAll, DoesNotOverrideItemAfter)
 {
     ScriptWrappable::init(this);
 }
@@ -46,27 +47,28 @@ HTMLAllCollection::~HTMLAllCollection()
 {
 }
 
-Node* HTMLAllCollection::namedItemWithIndex(const AtomicString& name, unsigned index) const
+Element* HTMLAllCollection::namedItemWithIndex(const AtomicString& name, unsigned index) const
 {
-    updateNameCache();
+    updateIdNameCache();
 
-    if (Vector<Element*>* cache = idCache(name)) {
-        if (index < cache->size())
-            return cache->at(index);
-        index -= cache->size();
+    const NamedItemCache& cache = namedItemCache();
+    if (WillBeHeapVector<RawPtrWillBeMember<Element> >* elements = cache.getElementsById(name)) {
+        if (index < elements->size())
+            return elements->at(index);
+        index -= elements->size();
     }
 
-    if (Vector<Element*>* cache = nameCache(name)) {
-        if (index < cache->size())
-            return cache->at(index);
+    if (WillBeHeapVector<RawPtrWillBeMember<Element> >* elements = cache.getElementsByName(name)) {
+        if (index < elements->size())
+            return elements->at(index);
     }
 
     return 0;
 }
 
-void HTMLAllCollection::anonymousNamedGetter(const AtomicString& name, bool& returnValue0Enabled, RefPtr<NodeList>& returnValue0, bool& returnValue1Enabled, RefPtr<Node>& returnValue1)
+void HTMLAllCollection::namedGetter(const AtomicString& name, bool& returnValue0Enabled, RefPtrWillBeRawPtr<NodeList>& returnValue0, bool& returnValue1Enabled, RefPtrWillBeRawPtr<Element>& returnValue1)
 {
-    Vector<RefPtr<Node> > namedItems;
+    WillBeHeapVector<RefPtrWillBeMember<Element> > namedItems;
     this->namedItems(name, namedItems);
 
     if (!namedItems.size())
@@ -82,11 +84,6 @@ void HTMLAllCollection::anonymousNamedGetter(const AtomicString& name, bool& ret
     // http://www.whatwg.org/specs/web-apps/current-work/multipage/common-dom-interfaces.html#htmlallcollection
     returnValue0Enabled = true;
     returnValue0 = NamedNodesCollection::create(namedItems);
-}
-
-PassRefPtr<NodeList> HTMLAllCollection::tags(const String& name)
-{
-    return ownerNode()->getElementsByTagName(name);
 }
 
 } // namespace WebCore

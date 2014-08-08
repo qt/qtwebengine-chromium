@@ -33,26 +33,6 @@
 
 #include "config.h"
 
-#include "WebAXEnums.h"
-#include "WebAXObject.h"
-#include "WebApplicationCacheHost.h"
-#include "WebConsoleMessage.h"
-#include "WebContentSecurityPolicy.h"
-#include "WebFontDescription.h"
-#include "WebFormElement.h"
-#include "WebGeolocationError.h"
-#include "WebGeolocationPosition.h"
-#include "WebIconURL.h"
-#include "WebInputElement.h"
-#include "WebNotificationPresenter.h"
-#include "WebPageVisibilityState.h"
-#include "WebSettings.h"
-#include "WebSpeechRecognizerClient.h"
-#include "WebTextAffinity.h"
-#include "WebTextCheckingResult.h"
-#include "WebTextCheckingType.h"
-#include "WebTextDecorationType.h"
-#include "WebView.h"
 #include "bindings/v8/SerializedScriptValue.h"
 #include "core/accessibility/AXObject.h"
 #include "core/accessibility/AXObjectCache.h"
@@ -61,18 +41,17 @@
 #include "core/dom/IconURL.h"
 #include "core/editing/TextAffinity.h"
 #include "core/fileapi/FileError.h"
-#include "core/frame/ContentSecurityPolicy.h"
+#include "core/frame/Settings.h"
+#include "core/frame/csp/ContentSecurityPolicy.h"
 #include "core/html/HTMLFormElement.h"
 #include "core/html/HTMLInputElement.h"
+#include "core/html/HTMLMediaElement.h"
 #include "core/html/shadow/TextControlInnerElements.h"
+#include "core/loader/FrameLoaderTypes.h"
 #include "core/loader/NavigationPolicy.h"
 #include "core/loader/appcache/ApplicationCacheHost.h"
-#include "core/page/InjectedStyleSheet.h"
+#include "core/page/InjectedStyleSheets.h"
 #include "core/page/PageVisibilityState.h"
-#include "core/frame/Settings.h"
-#include "core/platform/mediastream/RTCDataChannelHandlerClient.h"
-#include "core/platform/mediastream/RTCPeerConnectionHandlerClient.h"
-#include "core/rendering/CompositingReasons.h"
 #include "core/rendering/style/RenderStyleConstants.h"
 #include "modules/geolocation/GeolocationError.h"
 #include "modules/geolocation/GeolocationPosition.h"
@@ -80,26 +59,27 @@
 #include "modules/indexeddb/IDBKeyPath.h"
 #include "modules/indexeddb/IDBMetadata.h"
 #include "modules/indexeddb/IndexedDB.h"
-#include "modules/indexeddb/chromium/IDBFactoryBackendInterfaceChromium.h"
+#include "modules/navigatorcontentutils/NavigatorContentUtilsClient.h"
 #include "modules/notifications/NotificationClient.h"
-#include "modules/quota/StorageQuota.h"
+#include "modules/quota/DeprecatedStorageQuota.h"
 #include "modules/speech/SpeechRecognitionError.h"
 #include "platform/Cursor.h"
 #include "platform/FileMetadata.h"
 #include "platform/FileSystemType.h"
-#include "platform/drm/ContentDecryptionModuleSession.h"
+#include "platform/PlatformMouseEvent.h"
 #include "platform/fonts/FontDescription.h"
 #include "platform/fonts/FontSmoothingMode.h"
 #include "platform/graphics/filters/FilterOperation.h"
 #include "platform/graphics/media/MediaPlayer.h"
 #include "platform/mediastream/MediaStreamSource.h"
+#include "platform/network/ContentSecurityPolicyParsers.h"
 #include "platform/network/ResourceLoadPriority.h"
 #include "platform/network/ResourceResponse.h"
 #include "platform/text/TextChecking.h"
 #include "platform/text/TextDecoration.h"
 #include "platform/weborigin/ReferrerPolicy.h"
+#include "public/platform/WebApplicationCacheHost.h"
 #include "public/platform/WebClipboard.h"
-#include "public/platform/WebCompositingReasons.h"
 #include "public/platform/WebCursorInfo.h"
 #include "public/platform/WebFileError.h"
 #include "public/platform/WebFileInfo.h"
@@ -116,17 +96,39 @@
 #include "public/platform/WebMediaPlayerClient.h"
 #include "public/platform/WebMediaSource.h"
 #include "public/platform/WebMediaStreamSource.h"
-#include "public/platform/WebRTCDataChannelHandlerClient.h"
-#include "public/platform/WebRTCPeerConnectionHandlerClient.h"
 #include "public/platform/WebReferrerPolicy.h"
 #include "public/platform/WebScrollbar.h"
+#include "public/platform/WebScrollbarBehavior.h"
 #include "public/platform/WebStorageQuotaError.h"
 #include "public/platform/WebStorageQuotaType.h"
 #include "public/platform/WebURLRequest.h"
 #include "public/platform/WebURLResponse.h"
+#include "public/web/WebAXEnums.h"
+#include "public/web/WebAXObject.h"
+#include "public/web/WebConsoleMessage.h"
+#include "public/web/WebContentSecurityPolicy.h"
+#include "public/web/WebFontDescription.h"
+#include "public/web/WebFormElement.h"
+#include "public/web/WebGeolocationError.h"
+#include "public/web/WebGeolocationPosition.h"
+#include "public/web/WebHistoryCommitType.h"
+#include "public/web/WebHistoryItem.h"
+#include "public/web/WebIconURL.h"
+#include "public/web/WebInputElement.h"
+#include "public/web/WebInputEvent.h"
 #include "public/web/WebNavigationPolicy.h"
+#include "public/web/WebNavigatorContentUtilsClient.h"
+#include "public/web/WebNotificationPresenter.h"
+#include "public/web/WebPageVisibilityState.h"
 #include "public/web/WebSerializedScriptValueVersion.h"
+#include "public/web/WebSettings.h"
+#include "public/web/WebSpeechRecognizerClient.h"
+#include "public/web/WebTextAffinity.h"
+#include "public/web/WebTextCheckingResult.h"
+#include "public/web/WebTextCheckingType.h"
+#include "public/web/WebTextDecorationType.h"
 #include "public/web/WebTouchAction.h"
+#include "public/web/WebView.h"
 #include "wtf/Assertions.h"
 #include "wtf/text/StringImpl.h"
 
@@ -135,12 +137,6 @@
 
 #define COMPILE_ASSERT_MATCHING_UINT64(webkit_name, webcore_name) \
     COMPILE_ASSERT(blink::webkit_name == WebCore::webcore_name, mismatching_enums)
-
-// These constants are in WTF, bring them into WebCore so the ASSERT still works for them!
-namespace WebCore {
-    using WTF::TextCaseSensitive;
-    using WTF::TextCaseInsensitive;
-};
 
 COMPILE_ASSERT_MATCHING_ENUM(WebAXEventActiveDescendantChanged, AXObjectCache::AXActiveDescendantChanged);
 COMPILE_ASSERT_MATCHING_ENUM(WebAXEventAlert, AXObjectCache::AXAlert);
@@ -161,6 +157,7 @@ COMPILE_ASSERT_MATCHING_ENUM(WebAXEventMenuListValueChanged, AXObjectCache::AXMe
 COMPILE_ASSERT_MATCHING_ENUM(WebAXEventRowCollapsed, AXObjectCache::AXRowCollapsed);
 COMPILE_ASSERT_MATCHING_ENUM(WebAXEventRowCountChanged, AXObjectCache::AXRowCountChanged);
 COMPILE_ASSERT_MATCHING_ENUM(WebAXEventRowExpanded, AXObjectCache::AXRowExpanded);
+COMPILE_ASSERT_MATCHING_ENUM(WebAXEventScrollPositionChanged, AXObjectCache::AXScrollPositionChanged);
 COMPILE_ASSERT_MATCHING_ENUM(WebAXEventScrolledToAnchor, AXObjectCache::AXScrolledToAnchor);
 COMPILE_ASSERT_MATCHING_ENUM(WebAXEventSelectedChildrenChanged, AXObjectCache::AXSelectedChildrenChanged);
 COMPILE_ASSERT_MATCHING_ENUM(WebAXEventSelectedTextChanged, AXObjectCache::AXSelectedTextChanged);
@@ -198,6 +195,7 @@ COMPILE_ASSERT_MATCHING_ENUM(WebAXRoleDiv, DivRole);
 COMPILE_ASSERT_MATCHING_ENUM(WebAXRoleDocument, DocumentRole);
 COMPILE_ASSERT_MATCHING_ENUM(WebAXRoleDrawer, DrawerRole);
 COMPILE_ASSERT_MATCHING_ENUM(WebAXRoleEditableText, EditableTextRole);
+COMPILE_ASSERT_MATCHING_ENUM(WebAXRoleEmbeddedObject, EmbeddedObjectRole);
 COMPILE_ASSERT_MATCHING_ENUM(WebAXRoleFooter, FooterRole);
 COMPILE_ASSERT_MATCHING_ENUM(WebAXRoleForm, FormRole);
 COMPILE_ASSERT_MATCHING_ENUM(WebAXRoleGrid, GridRole);
@@ -205,6 +203,7 @@ COMPILE_ASSERT_MATCHING_ENUM(WebAXRoleGroup, GroupRole);
 COMPILE_ASSERT_MATCHING_ENUM(WebAXRoleGrowArea, GrowAreaRole);
 COMPILE_ASSERT_MATCHING_ENUM(WebAXRoleHeading, HeadingRole);
 COMPILE_ASSERT_MATCHING_ENUM(WebAXRoleHelpTag, HelpTagRole);
+COMPILE_ASSERT_MATCHING_ENUM(WebAXRoleIframe, IframeRole);
 COMPILE_ASSERT_MATCHING_ENUM(WebAXRoleIgnored, IgnoredRole);
 COMPILE_ASSERT_MATCHING_ENUM(WebAXRoleImageMapLink, ImageMapLinkRole);
 COMPILE_ASSERT_MATCHING_ENUM(WebAXRoleImageMap, ImageMapRole);
@@ -399,24 +398,15 @@ COMPILE_ASSERT_MATCHING_ENUM(WebIconURL::TypeFavicon, Favicon);
 COMPILE_ASSERT_MATCHING_ENUM(WebIconURL::TypeTouch, TouchIcon);
 COMPILE_ASSERT_MATCHING_ENUM(WebIconURL::TypeTouchPrecomposed, TouchPrecomposedIcon);
 
-#if ENABLE(INPUT_SPEECH)
-COMPILE_ASSERT_MATCHING_ENUM(WebInputElement::Idle, InputFieldSpeechButtonElement::Idle);
-COMPILE_ASSERT_MATCHING_ENUM(WebInputElement::Recording, InputFieldSpeechButtonElement::Recording);
-COMPILE_ASSERT_MATCHING_ENUM(WebInputElement::Recognizing, InputFieldSpeechButtonElement::Recognizing);
-#endif
-
 COMPILE_ASSERT_MATCHING_ENUM(WebNode::ElementNode, Node::ELEMENT_NODE);
 COMPILE_ASSERT_MATCHING_ENUM(WebNode::AttributeNode, Node::ATTRIBUTE_NODE);
 COMPILE_ASSERT_MATCHING_ENUM(WebNode::TextNode, Node::TEXT_NODE);
 COMPILE_ASSERT_MATCHING_ENUM(WebNode::CDataSectionNode, Node::CDATA_SECTION_NODE);
-COMPILE_ASSERT_MATCHING_ENUM(WebNode::EntityNode, Node::ENTITY_NODE);
 COMPILE_ASSERT_MATCHING_ENUM(WebNode::ProcessingInstructionsNode, Node::PROCESSING_INSTRUCTION_NODE);
 COMPILE_ASSERT_MATCHING_ENUM(WebNode::CommentNode, Node::COMMENT_NODE);
 COMPILE_ASSERT_MATCHING_ENUM(WebNode::DocumentNode, Node::DOCUMENT_NODE);
 COMPILE_ASSERT_MATCHING_ENUM(WebNode::DocumentTypeNode, Node::DOCUMENT_TYPE_NODE);
 COMPILE_ASSERT_MATCHING_ENUM(WebNode::DocumentFragmentNode, Node::DOCUMENT_FRAGMENT_NODE);
-COMPILE_ASSERT_MATCHING_ENUM(WebNode::NotationNode, Node::NOTATION_NODE);
-COMPILE_ASSERT_MATCHING_ENUM(WebNode::XPathNamespaceNode, Node::XPATH_NAMESPACE_NODE);
 
 COMPILE_ASSERT_MATCHING_ENUM(WebMediaPlayer::NetworkStateEmpty, MediaPlayer::Empty);
 COMPILE_ASSERT_MATCHING_ENUM(WebMediaPlayer::NetworkStateIdle, MediaPlayer::Idle);
@@ -426,29 +416,20 @@ COMPILE_ASSERT_MATCHING_ENUM(WebMediaPlayer::NetworkStateFormatError, MediaPlaye
 COMPILE_ASSERT_MATCHING_ENUM(WebMediaPlayer::NetworkStateNetworkError, MediaPlayer::NetworkError);
 COMPILE_ASSERT_MATCHING_ENUM(WebMediaPlayer::NetworkStateDecodeError, MediaPlayer::DecodeError);
 
-COMPILE_ASSERT_MATCHING_ENUM(WebMediaPlayer::ReadyStateHaveNothing, MediaPlayer::HaveNothing);
-COMPILE_ASSERT_MATCHING_ENUM(WebMediaPlayer::ReadyStateHaveMetadata, MediaPlayer::HaveMetadata);
-COMPILE_ASSERT_MATCHING_ENUM(WebMediaPlayer::ReadyStateHaveCurrentData, MediaPlayer::HaveCurrentData);
-COMPILE_ASSERT_MATCHING_ENUM(WebMediaPlayer::ReadyStateHaveFutureData, MediaPlayer::HaveFutureData);
-COMPILE_ASSERT_MATCHING_ENUM(WebMediaPlayer::ReadyStateHaveEnoughData, MediaPlayer::HaveEnoughData);
+COMPILE_ASSERT_MATCHING_ENUM(WebMediaPlayer::ReadyStateHaveNothing, HTMLMediaElement::HAVE_NOTHING);
+COMPILE_ASSERT_MATCHING_ENUM(WebMediaPlayer::ReadyStateHaveMetadata, HTMLMediaElement::HAVE_METADATA);
+COMPILE_ASSERT_MATCHING_ENUM(WebMediaPlayer::ReadyStateHaveCurrentData, HTMLMediaElement::HAVE_CURRENT_DATA);
+COMPILE_ASSERT_MATCHING_ENUM(WebMediaPlayer::ReadyStateHaveFutureData, HTMLMediaElement::HAVE_FUTURE_DATA);
+COMPILE_ASSERT_MATCHING_ENUM(WebMediaPlayer::ReadyStateHaveEnoughData, HTMLMediaElement::HAVE_ENOUGH_DATA);
 
 COMPILE_ASSERT_MATCHING_ENUM(WebMediaPlayer::PreloadNone, MediaPlayer::None);
 COMPILE_ASSERT_MATCHING_ENUM(WebMediaPlayer::PreloadMetaData, MediaPlayer::MetaData);
 COMPILE_ASSERT_MATCHING_ENUM(WebMediaPlayer::PreloadAuto, MediaPlayer::Auto);
 
-COMPILE_ASSERT_MATCHING_ENUM(WebMediaPlayer::MediaKeyExceptionNoError, MediaPlayer::NoError);
-COMPILE_ASSERT_MATCHING_ENUM(WebMediaPlayer::MediaKeyExceptionInvalidPlayerState, MediaPlayer::InvalidPlayerState);
-COMPILE_ASSERT_MATCHING_ENUM(WebMediaPlayer::MediaKeyExceptionKeySystemNotSupported, MediaPlayer::KeySystemNotSupported);
-
-COMPILE_ASSERT_MATCHING_ENUM(WebMediaPlayerClient::MediaKeyErrorCodeUnknown, MediaPlayerClient::UnknownError);
-COMPILE_ASSERT_MATCHING_ENUM(WebMediaPlayerClient::MediaKeyErrorCodeClient, MediaPlayerClient::ClientError);
-COMPILE_ASSERT_MATCHING_ENUM(WebMediaPlayerClient::MediaKeyErrorCodeService, MediaPlayerClient::ServiceError);
-COMPILE_ASSERT_MATCHING_ENUM(WebMediaPlayerClient::MediaKeyErrorCodeOutput, MediaPlayerClient::OutputError);
-COMPILE_ASSERT_MATCHING_ENUM(WebMediaPlayerClient::MediaKeyErrorCodeHardwareChange, MediaPlayerClient::HardwareChangeError);
-COMPILE_ASSERT_MATCHING_ENUM(WebMediaPlayerClient::MediaKeyErrorCodeDomain, MediaPlayerClient::DomainError);
-
-COMPILE_ASSERT_MATCHING_ENUM(WebContentDecryptionModuleSession::Client::MediaKeyErrorCodeUnknown, ContentDecryptionModuleSessionClient::UnknownError);
-COMPILE_ASSERT_MATCHING_ENUM(WebContentDecryptionModuleSession::Client::MediaKeyErrorCodeClient, ContentDecryptionModuleSessionClient::ClientError);
+COMPILE_ASSERT_MATCHING_ENUM(WebMouseEvent::ButtonNone, NoButton);
+COMPILE_ASSERT_MATCHING_ENUM(WebMouseEvent::ButtonLeft, LeftButton);
+COMPILE_ASSERT_MATCHING_ENUM(WebMouseEvent::ButtonMiddle, MiddleButton);
+COMPILE_ASSERT_MATCHING_ENUM(WebMouseEvent::ButtonRight, RightButton);
 
 COMPILE_ASSERT_MATCHING_ENUM(WebNotificationPresenter::PermissionAllowed, NotificationClient::PermissionAllowed);
 COMPILE_ASSERT_MATCHING_ENUM(WebNotificationPresenter::PermissionNotAllowed, NotificationClient::PermissionNotAllowed);
@@ -478,6 +459,11 @@ COMPILE_ASSERT_MATCHING_ENUM(WebScrollbar::AllParts, AllParts);
 COMPILE_ASSERT_MATCHING_ENUM(WebScrollbar::ScrollbarOverlayStyleDefault, ScrollbarOverlayStyleDefault);
 COMPILE_ASSERT_MATCHING_ENUM(WebScrollbar::ScrollbarOverlayStyleDark, ScrollbarOverlayStyleDark);
 COMPILE_ASSERT_MATCHING_ENUM(WebScrollbar::ScrollbarOverlayStyleLight, ScrollbarOverlayStyleLight);
+
+COMPILE_ASSERT_MATCHING_ENUM(WebScrollbarBehavior::ButtonNone, NoButton);
+COMPILE_ASSERT_MATCHING_ENUM(WebScrollbarBehavior::ButtonLeft, LeftButton);
+COMPILE_ASSERT_MATCHING_ENUM(WebScrollbarBehavior::ButtonMiddle, MiddleButton);
+COMPILE_ASSERT_MATCHING_ENUM(WebScrollbarBehavior::ButtonRight, RightButton);
 
 COMPILE_ASSERT_MATCHING_ENUM(WebSettings::EditingBehaviorMac, EditingMacBehavior);
 COMPILE_ASSERT_MATCHING_ENUM(WebSettings::EditingBehaviorWin, EditingWindowsBehavior);
@@ -510,11 +496,6 @@ COMPILE_ASSERT_MATCHING_ENUM(WebIDBKeyPathTypeString, IDBKeyPath::StringType);
 COMPILE_ASSERT_MATCHING_ENUM(WebIDBKeyPathTypeArray, IDBKeyPath::ArrayType);
 
 COMPILE_ASSERT_MATCHING_ENUM(WebIDBMetadata::NoIntVersion, IDBDatabaseMetadata::NoIntVersion);
-
-COMPILE_ASSERT_MATCHING_ENUM(WebIDBCursor::Next, IndexedDB::CursorNext);
-COMPILE_ASSERT_MATCHING_ENUM(WebIDBCursor::NextNoDuplicate, IndexedDB::CursorNextNoDuplicate);
-COMPILE_ASSERT_MATCHING_ENUM(WebIDBCursor::Prev, IndexedDB::CursorPrev);
-COMPILE_ASSERT_MATCHING_ENUM(WebIDBCursor::PrevNoDuplicate, IndexedDB::CursorPrevNoDuplicate);
 
 COMPILE_ASSERT_MATCHING_ENUM(WebFileSystem::TypeTemporary, FileSystemTypeTemporary);
 COMPILE_ASSERT_MATCHING_ENUM(WebFileSystem::TypePersistent, FileSystemTypePersistent);
@@ -557,8 +538,8 @@ COMPILE_ASSERT_MATCHING_ENUM(WebStorageQuotaErrorInvalidModification, InvalidMod
 COMPILE_ASSERT_MATCHING_ENUM(WebStorageQuotaErrorInvalidAccess, InvalidAccessError);
 COMPILE_ASSERT_MATCHING_ENUM(WebStorageQuotaErrorAbort, AbortError);
 
-COMPILE_ASSERT_MATCHING_ENUM(WebStorageQuotaTypeTemporary, StorageQuota::Temporary);
-COMPILE_ASSERT_MATCHING_ENUM(WebStorageQuotaTypePersistent, StorageQuota::Persistent);
+COMPILE_ASSERT_MATCHING_ENUM(WebStorageQuotaTypeTemporary, DeprecatedStorageQuota::Temporary);
+COMPILE_ASSERT_MATCHING_ENUM(WebStorageQuotaTypePersistent, DeprecatedStorageQuota::Persistent);
 
 COMPILE_ASSERT_MATCHING_ENUM(WebPageVisibilityStateVisible, PageVisibilityStateVisible);
 COMPILE_ASSERT_MATCHING_ENUM(WebPageVisibilityStateHidden, PageVisibilityStateHidden);
@@ -569,31 +550,6 @@ COMPILE_ASSERT_MATCHING_ENUM(WebMediaStreamSource::TypeVideo, MediaStreamSource:
 COMPILE_ASSERT_MATCHING_ENUM(WebMediaStreamSource::ReadyStateLive, MediaStreamSource::ReadyStateLive);
 COMPILE_ASSERT_MATCHING_ENUM(WebMediaStreamSource::ReadyStateMuted, MediaStreamSource::ReadyStateMuted);
 COMPILE_ASSERT_MATCHING_ENUM(WebMediaStreamSource::ReadyStateEnded, MediaStreamSource::ReadyStateEnded);
-
-COMPILE_ASSERT_MATCHING_ENUM(WebRTCPeerConnectionHandlerClient::SignalingStateStable, RTCPeerConnectionHandlerClient::SignalingStateStable);
-COMPILE_ASSERT_MATCHING_ENUM(WebRTCPeerConnectionHandlerClient::SignalingStateHaveLocalOffer, RTCPeerConnectionHandlerClient::SignalingStateHaveLocalOffer);
-COMPILE_ASSERT_MATCHING_ENUM(WebRTCPeerConnectionHandlerClient::SignalingStateHaveRemoteOffer, RTCPeerConnectionHandlerClient::SignalingStateHaveRemoteOffer);
-COMPILE_ASSERT_MATCHING_ENUM(WebRTCPeerConnectionHandlerClient::SignalingStateHaveLocalPrAnswer, RTCPeerConnectionHandlerClient::SignalingStateHaveLocalPrAnswer);
-COMPILE_ASSERT_MATCHING_ENUM(WebRTCPeerConnectionHandlerClient::SignalingStateHaveRemotePrAnswer, RTCPeerConnectionHandlerClient::SignalingStateHaveRemotePrAnswer);
-COMPILE_ASSERT_MATCHING_ENUM(WebRTCPeerConnectionHandlerClient::SignalingStateClosed, RTCPeerConnectionHandlerClient::SignalingStateClosed);
-
-COMPILE_ASSERT_MATCHING_ENUM(WebRTCPeerConnectionHandlerClient::ICEConnectionStateStarting, RTCPeerConnectionHandlerClient::IceConnectionStateNew);
-COMPILE_ASSERT_MATCHING_ENUM(WebRTCPeerConnectionHandlerClient::ICEConnectionStateNew, RTCPeerConnectionHandlerClient::IceConnectionStateNew);
-COMPILE_ASSERT_MATCHING_ENUM(WebRTCPeerConnectionHandlerClient::ICEConnectionStateChecking, RTCPeerConnectionHandlerClient::IceConnectionStateChecking);
-COMPILE_ASSERT_MATCHING_ENUM(WebRTCPeerConnectionHandlerClient::ICEConnectionStateConnected, RTCPeerConnectionHandlerClient::IceConnectionStateConnected);
-COMPILE_ASSERT_MATCHING_ENUM(WebRTCPeerConnectionHandlerClient::ICEConnectionStateCompleted, RTCPeerConnectionHandlerClient::IceConnectionStateCompleted);
-COMPILE_ASSERT_MATCHING_ENUM(WebRTCPeerConnectionHandlerClient::ICEConnectionStateFailed, RTCPeerConnectionHandlerClient::IceConnectionStateFailed);
-COMPILE_ASSERT_MATCHING_ENUM(WebRTCPeerConnectionHandlerClient::ICEConnectionStateDisconnected, RTCPeerConnectionHandlerClient::IceConnectionStateDisconnected);
-COMPILE_ASSERT_MATCHING_ENUM(WebRTCPeerConnectionHandlerClient::ICEConnectionStateClosed, RTCPeerConnectionHandlerClient::IceConnectionStateClosed);
-
-COMPILE_ASSERT_MATCHING_ENUM(WebRTCPeerConnectionHandlerClient::ICEGatheringStateNew, RTCPeerConnectionHandlerClient::IceGatheringStateNew);
-COMPILE_ASSERT_MATCHING_ENUM(WebRTCPeerConnectionHandlerClient::ICEGatheringStateGathering, RTCPeerConnectionHandlerClient::IceGatheringStateGathering);
-COMPILE_ASSERT_MATCHING_ENUM(WebRTCPeerConnectionHandlerClient::ICEGatheringStateComplete, RTCPeerConnectionHandlerClient::IceGatheringStateComplete);
-
-COMPILE_ASSERT_MATCHING_ENUM(WebRTCDataChannelHandlerClient::ReadyStateConnecting, RTCDataChannelHandlerClient::ReadyStateConnecting);
-COMPILE_ASSERT_MATCHING_ENUM(WebRTCDataChannelHandlerClient::ReadyStateOpen, RTCDataChannelHandlerClient::ReadyStateOpen);
-COMPILE_ASSERT_MATCHING_ENUM(WebRTCDataChannelHandlerClient::ReadyStateClosing, RTCDataChannelHandlerClient::ReadyStateClosing);
-COMPILE_ASSERT_MATCHING_ENUM(WebRTCDataChannelHandlerClient::ReadyStateClosed, RTCDataChannelHandlerClient::ReadyStateClosed);
 
 COMPILE_ASSERT_MATCHING_ENUM(WebSpeechRecognizerClient::OtherError, SpeechRecognitionError::ErrorCodeOther);
 COMPILE_ASSERT_MATCHING_ENUM(WebSpeechRecognizerClient::NoSpeechError, SpeechRecognitionError::ErrorCodeNoSpeech);
@@ -610,17 +566,13 @@ COMPILE_ASSERT_MATCHING_ENUM(WebReferrerPolicyDefault, ReferrerPolicyDefault);
 COMPILE_ASSERT_MATCHING_ENUM(WebReferrerPolicyNever, ReferrerPolicyNever);
 COMPILE_ASSERT_MATCHING_ENUM(WebReferrerPolicyOrigin, ReferrerPolicyOrigin);
 
-COMPILE_ASSERT_MATCHING_ENUM(WebContentSecurityPolicyTypeReport, ContentSecurityPolicy::Report);
-COMPILE_ASSERT_MATCHING_ENUM(WebContentSecurityPolicyTypeEnforce, ContentSecurityPolicy::Enforce);
+COMPILE_ASSERT_MATCHING_ENUM(WebContentSecurityPolicyTypeReport, ContentSecurityPolicyHeaderTypeReport);
+COMPILE_ASSERT_MATCHING_ENUM(WebContentSecurityPolicyTypeEnforce, ContentSecurityPolicyHeaderTypeEnforce);
 
 COMPILE_ASSERT_MATCHING_ENUM(WebURLResponse::Unknown, ResourceResponse::Unknown);
 COMPILE_ASSERT_MATCHING_ENUM(WebURLResponse::HTTP_0_9, ResourceResponse::HTTP_0_9);
 COMPILE_ASSERT_MATCHING_ENUM(WebURLResponse::HTTP_1_0, ResourceResponse::HTTP_1_0);
 COMPILE_ASSERT_MATCHING_ENUM(WebURLResponse::HTTP_1_1, ResourceResponse::HTTP_1_1);
-
-COMPILE_ASSERT_MATCHING_ENUM(WebMediaPlayer::CORSModeUnspecified, MediaPlayerClient::Unspecified);
-COMPILE_ASSERT_MATCHING_ENUM(WebMediaPlayer::CORSModeAnonymous, MediaPlayerClient::Anonymous);
-COMPILE_ASSERT_MATCHING_ENUM(WebMediaPlayer::CORSModeUseCredentials, MediaPlayerClient::UseCredentials);
 
 COMPILE_ASSERT_MATCHING_ENUM(WebFormElement::AutocompleteResultSuccess, HTMLFormElement::AutocompleteResultSuccess);
 COMPILE_ASSERT_MATCHING_ENUM(WebFormElement::AutocompleteResultErrorDisabled, HTMLFormElement::AutocompleteResultErrorDisabled);
@@ -636,11 +588,20 @@ COMPILE_ASSERT_MATCHING_ENUM(WebURLRequest::PriorityVeryHigh, ResourceLoadPriori
 
 COMPILE_ASSERT_MATCHING_ENUM(WebNavigationPolicyIgnore, NavigationPolicyIgnore);
 COMPILE_ASSERT_MATCHING_ENUM(WebNavigationPolicyDownload, NavigationPolicyDownload);
+COMPILE_ASSERT_MATCHING_ENUM(WebNavigationPolicyDownloadTo, NavigationPolicyDownloadTo);
 COMPILE_ASSERT_MATCHING_ENUM(WebNavigationPolicyCurrentTab, NavigationPolicyCurrentTab);
 COMPILE_ASSERT_MATCHING_ENUM(WebNavigationPolicyNewBackgroundTab, NavigationPolicyNewBackgroundTab);
 COMPILE_ASSERT_MATCHING_ENUM(WebNavigationPolicyNewForegroundTab, NavigationPolicyNewForegroundTab);
 COMPILE_ASSERT_MATCHING_ENUM(WebNavigationPolicyNewWindow, NavigationPolicyNewWindow);
 COMPILE_ASSERT_MATCHING_ENUM(WebNavigationPolicyNewPopup, NavigationPolicyNewPopup);
+
+COMPILE_ASSERT_MATCHING_ENUM(WebStandardCommit, StandardCommit);
+COMPILE_ASSERT_MATCHING_ENUM(WebBackForwardCommit, BackForwardCommit);
+COMPILE_ASSERT_MATCHING_ENUM(WebInitialCommitInChildFrame, InitialCommitInChildFrame);
+COMPILE_ASSERT_MATCHING_ENUM(WebHistoryInertCommit, HistoryInertCommit);
+
+COMPILE_ASSERT_MATCHING_ENUM(WebHistorySameDocumentLoad, HistorySameDocumentLoad);
+COMPILE_ASSERT_MATCHING_ENUM(WebHistoryDifferentDocumentLoad, HistoryDifferentDocumentLoad);
 
 COMPILE_ASSERT_MATCHING_ENUM(WebConsoleMessage::LevelDebug, DebugMessageLevel);
 COMPILE_ASSERT_MATCHING_ENUM(WebConsoleMessage::LevelLog, LogMessageLevel);
@@ -648,44 +609,14 @@ COMPILE_ASSERT_MATCHING_ENUM(WebConsoleMessage::LevelWarning, WarningMessageLeve
 COMPILE_ASSERT_MATCHING_ENUM(WebConsoleMessage::LevelError, ErrorMessageLevel);
 COMPILE_ASSERT_MATCHING_ENUM(WebConsoleMessage::LevelInfo, InfoMessageLevel);
 
+COMPILE_ASSERT_MATCHING_ENUM(WebCustomHandlersNew, NavigatorContentUtilsClient::CustomHandlersNew);
+COMPILE_ASSERT_MATCHING_ENUM(WebCustomHandlersRegistered, NavigatorContentUtilsClient::CustomHandlersRegistered);
+COMPILE_ASSERT_MATCHING_ENUM(WebCustomHandlersDeclined, NavigatorContentUtilsClient::CustomHandlersDeclined);
+
 COMPILE_ASSERT_MATCHING_ENUM(WebTouchActionNone, TouchActionNone);
 COMPILE_ASSERT_MATCHING_ENUM(WebTouchActionAuto, TouchActionAuto);
 COMPILE_ASSERT_MATCHING_ENUM(WebTouchActionPanX, TouchActionPanX);
 COMPILE_ASSERT_MATCHING_ENUM(WebTouchActionPanY, TouchActionPanY);
+COMPILE_ASSERT_MATCHING_ENUM(WebTouchActionPinchZoom, TouchActionPinchZoom);
 
-COMPILE_ASSERT_MATCHING_UINT64(CompositingReasonUnknown, CompositingReasonNone);
-COMPILE_ASSERT_MATCHING_UINT64(CompositingReason3DTransform, CompositingReason3DTransform);
-COMPILE_ASSERT_MATCHING_UINT64(CompositingReasonVideo, CompositingReasonVideo);
-COMPILE_ASSERT_MATCHING_UINT64(CompositingReasonCanvas, CompositingReasonCanvas);
-COMPILE_ASSERT_MATCHING_UINT64(CompositingReasonPlugin, CompositingReasonPlugin);
-COMPILE_ASSERT_MATCHING_UINT64(CompositingReasonIFrame, CompositingReasonIFrame);
-COMPILE_ASSERT_MATCHING_UINT64(CompositingReasonBackfaceVisibilityHidden, CompositingReasonBackfaceVisibilityHidden);
-COMPILE_ASSERT_MATCHING_UINT64(CompositingReasonAnimation, CompositingReasonAnimation);
-COMPILE_ASSERT_MATCHING_UINT64(CompositingReasonFilters, CompositingReasonFilters);
-COMPILE_ASSERT_MATCHING_UINT64(CompositingReasonPositionFixed, CompositingReasonPositionFixed);
-COMPILE_ASSERT_MATCHING_UINT64(CompositingReasonPositionSticky, CompositingReasonPositionSticky);
-COMPILE_ASSERT_MATCHING_UINT64(CompositingReasonOverflowScrollingTouch, CompositingReasonOverflowScrollingTouch);
-COMPILE_ASSERT_MATCHING_UINT64(CompositingReasonAssumedOverlap, CompositingReasonAssumedOverlap);
-COMPILE_ASSERT_MATCHING_UINT64(CompositingReasonOverlap, CompositingReasonOverlap);
-COMPILE_ASSERT_MATCHING_UINT64(CompositingReasonNegativeZIndexChildren, CompositingReasonNegativeZIndexChildren);
-COMPILE_ASSERT_MATCHING_UINT64(CompositingReasonTransformWithCompositedDescendants, CompositingReasonTransformWithCompositedDescendants);
-COMPILE_ASSERT_MATCHING_UINT64(CompositingReasonOpacityWithCompositedDescendants, CompositingReasonOpacityWithCompositedDescendants);
-COMPILE_ASSERT_MATCHING_UINT64(CompositingReasonMaskWithCompositedDescendants, CompositingReasonMaskWithCompositedDescendants);
-COMPILE_ASSERT_MATCHING_UINT64(CompositingReasonReflectionWithCompositedDescendants, CompositingReasonReflectionWithCompositedDescendants);
-COMPILE_ASSERT_MATCHING_UINT64(CompositingReasonFilterWithCompositedDescendants, CompositingReasonFilterWithCompositedDescendants);
-COMPILE_ASSERT_MATCHING_UINT64(CompositingReasonBlendingWithCompositedDescendants, CompositingReasonBlendingWithCompositedDescendants);
-COMPILE_ASSERT_MATCHING_UINT64(CompositingReasonClipsCompositingDescendants, CompositingReasonClipsCompositingDescendants);
-COMPILE_ASSERT_MATCHING_UINT64(CompositingReasonPerspective, CompositingReasonPerspective);
-COMPILE_ASSERT_MATCHING_UINT64(CompositingReasonPreserve3D, CompositingReasonPreserve3D);
-COMPILE_ASSERT_MATCHING_UINT64(CompositingReasonReflectionOfCompositedParent, CompositingReasonReflectionOfCompositedParent);
-COMPILE_ASSERT_MATCHING_UINT64(CompositingReasonRoot, CompositingReasonRoot);
-COMPILE_ASSERT_MATCHING_UINT64(CompositingReasonLayerForClip, CompositingReasonLayerForClip);
-COMPILE_ASSERT_MATCHING_UINT64(CompositingReasonLayerForScrollbar, CompositingReasonLayerForScrollbar);
-COMPILE_ASSERT_MATCHING_UINT64(CompositingReasonLayerForScrollingContainer, CompositingReasonLayerForScrollingContainer);
-COMPILE_ASSERT_MATCHING_UINT64(CompositingReasonLayerForForeground, CompositingReasonLayerForForeground);
-COMPILE_ASSERT_MATCHING_UINT64(CompositingReasonLayerForBackground, CompositingReasonLayerForBackground);
-COMPILE_ASSERT_MATCHING_UINT64(CompositingReasonLayerForMask, CompositingReasonLayerForMask);
-COMPILE_ASSERT_MATCHING_UINT64(CompositingReasonOverflowScrollingParent, CompositingReasonOverflowScrollingParent);
-COMPILE_ASSERT_MATCHING_UINT64(CompositingReasonOutOfFlowClipping, CompositingReasonOutOfFlowClipping);
-COMPILE_ASSERT_MATCHING_UINT64(CompositingReasonIsolateCompositedDescendants, CompositingReasonIsolateCompositedDescendants);
 COMPILE_ASSERT_MATCHING_UINT64(kSerializedScriptValueVersion, SerializedScriptValue::wireFormatVersion);

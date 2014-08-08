@@ -15,7 +15,7 @@
  *     otherwise, we generate an error. Chrome may unload event pages waiting
  *     for an event. When the event fires, Chrome will reload the event page. We
  *     don't require event listeners to fire because they are generally not
- *     predictable (like a location change event).
+ *     predictable (like a button clicked event).
  * (2) Task Manager (built with buildTaskManager() call) provides controlling
  *     mutually excluding chains of callbacks called tasks. Task Manager uses
  *     WrapperPlugins to add instrumentation code to 'wrapper' to determine
@@ -29,13 +29,21 @@
  */
 var NOTIFICATION_CARDS_URL = 'https://www.googleapis.com/chromenow/v1';
 
-var DEBUG_MODE = localStorage['debug_mode'];
+/**
+ * Returns true if debug mode is enabled.
+ * localStorage returns items as strings, which means if we store a boolean,
+ * it returns a string. Use this function to compare against true.
+ * @return {boolean} Whether debug mode is enabled.
+ */
+function isInDebugMode() {
+  return localStorage.debug_mode === 'true';
+}
 
 /**
  * Initializes for debug or release modes of operation.
  */
 function initializeDebug() {
-  if (DEBUG_MODE) {
+  if (isInDebugMode()) {
     NOTIFICATION_CARDS_URL =
         localStorage['server_url'] || NOTIFICATION_CARDS_URL;
   }
@@ -44,10 +52,28 @@ function initializeDebug() {
 initializeDebug();
 
 /**
- * Location Card Storage.
+ * Conditionally allow console.log output based off of the debug mode.
  */
-if (localStorage['locationCardsShown'] === undefined)
-  localStorage['locationCardsShown'] = 0;
+console.log = function() {
+  var originalConsoleLog = console.log;
+  return function() {
+    if (isInDebugMode()) {
+      originalConsoleLog.apply(console, arguments);
+    }
+  };
+}();
+
+/**
+ * Explanation Card Storage.
+ */
+if (localStorage['explanatoryCardsShown'] === undefined)
+  localStorage['explanatoryCardsShown'] = 0;
+
+/**
+ * Location Card Count Cleanup.
+ */
+if (localStorage.locationCardsShown !== undefined)
+  localStorage.removeItem('locationCardsShown');
 
 /**
  * Builds an error object with a message that may be sent to the server.
@@ -76,16 +102,16 @@ function verify(condition, message) {
  * Builds a request to the notification server.
  * @param {string} method Request method.
  * @param {string} handlerName Server handler to send the request to.
- * @param {string=} contentType Value for the Content-type header.
+ * @param {string=} opt_contentType Value for the Content-type header.
  * @return {XMLHttpRequest} Server request.
  */
-function buildServerRequest(method, handlerName, contentType) {
+function buildServerRequest(method, handlerName, opt_contentType) {
   var request = new XMLHttpRequest();
 
   request.responseType = 'text';
   request.open(method, NOTIFICATION_CARDS_URL + '/' + handlerName, true);
-  if (contentType)
-    request.setRequestHeader('Content-type', contentType);
+  if (opt_contentType)
+    request.setRequestHeader('Content-type', opt_contentType);
 
   return request;
 }
@@ -143,6 +169,8 @@ function sendErrorReport(error) {
     trace: filteredStack
   };
 
+  // We use relatively direct calls here because the instrumentation may be in
+  // a bad state. Wrappers and promises should not be involved in the reporting.
   var request = buildServerRequest('POST', 'jserrors', 'application/json');
   request.onloadend = function(event) {
     console.log('sendErrorReport status: ' + request.status);
@@ -165,13 +193,15 @@ var errorReported = false;
  */
 function reportError(error) {
   var message = 'Critical error:\n' + error.stack;
-  console.error(message);
+  if (isInDebugMode())
+    console.error(message);
+
   if (!errorReported) {
     errorReported = true;
     chrome.metricsPrivate.getIsCrashReportingEnabled(function(isEnabled) {
       if (isEnabled)
         sendErrorReport(error);
-      if (DEBUG_MODE)
+      if (isInDebugMode())
         alert(message);
     });
   }
@@ -297,7 +327,7 @@ var wrapper = (function() {
           wrapperPluginInstance.prologue();
 
         // Call the original callback.
-        callback.apply(null, arguments);
+        var returnValue = callback.apply(null, arguments);
 
         if (wrapperPluginInstance)
           wrapperPluginInstance.epilogue();
@@ -305,6 +335,8 @@ var wrapper = (function() {
         verify(isInWrappedCallback,
                'Instrumented callback is not instrumented upon exit');
         isInWrappedCallback = false;
+
+        return returnValue;
       } catch (error) {
         reportError(error);
       }
@@ -408,7 +440,250 @@ wrapper.instrumentChromeApiFunction('alarms.onAlarm.addListener', 0);
 wrapper.instrumentChromeApiFunction('identity.getAuthToken', 1);
 wrapper.instrumentChromeApiFunction('identity.onSignInChanged.addListener', 0);
 wrapper.instrumentChromeApiFunction('identity.removeCachedAuthToken', 1);
+wrapper.instrumentChromeApiFunction('storage.local.get', 1);
 wrapper.instrumentChromeApiFunction('webstorePrivate.getBrowserLogin', 0);
+
+/**
+ * Promise adapter for all JS promises to the task manager.
+ */
+function registerPromiseAdapter() {
+  var originalThen = Promise.prototype.then;
+  var originalCatch = Promise.prototype.catch;
+
+  /**
+   * Takes a promise and adds the callback tracker to it.
+   * @param {object} promise Promise that receives the callback tracker.
+   */
+  function instrumentPromise(promise) {
+    if (promise.__tracker === undefined) {
+      promise.__tracker = createPromiseCallbackTracker(promise);
+    }
+  }
+
+  Promise.prototype.then = function(onResolved, onRejected) {
+    instrumentPromise(this);
+    return this.__tracker.handleThen(onResolved, onRejected);
+  }
+
+  Promise.prototype.catch = function(onRejected) {
+    instrumentPromise(this);
+    return this.__tracker.handleCatch(onRejected);
+  }
+
+  /**
+   * Promise Callback Tracker.
+   * Handles coordination of 'then' and 'catch' callbacks in a task
+   * manager compatible way. For an individual promise, either the 'then'
+   * arguments or the 'catch' arguments will be processed, never both.
+   *
+   * Example:
+   *     var p = new Promise([Function]);
+   *     p.then([ThenA]);
+   *     p.then([ThenB]);
+   *     p.catch([CatchA]);
+   *     On resolution, [ThenA] and [ThenB] will be used. [CatchA] is discarded.
+   *     On rejection, vice versa.
+   *
+   * Clarification:
+   *     Chained promises create a new promise that is tracked separately from
+   *     the originaing promise, as the example below demonstrates:
+   *
+   *     var p = new Promise([Function]));
+   *     p.then([ThenA]).then([ThenB]).catch([CatchA]);
+   *         ^             ^             ^
+   *         |             |             + Returns a new promise.
+   *         |             + Returns a new promise.
+   *         + Returns a new promise.
+   *
+   *     Four promises exist in the above statement, each with its own
+   *     resolution and rejection state. However, by default, this state is
+   *     chained to the previous promise's resolution or rejection
+   *     state.
+   *
+   *     If p resolves, then the 'then' calls will execute until all the 'then'
+   *     clauses are executed. If the result of either [ThenA] or [ThenB] is a
+   *     promise, then that execution state will guide the remaining chain.
+   *     Similarly, if [CatchA] returns a promise, it can also guide the
+   *     remaining chain. In this specific case, the chain ends, so there
+   *     is nothing left to do.
+   * @param {object} promise Promise being tracked.
+   * @return {object} A promise callback tracker.
+   */
+  function createPromiseCallbackTracker(promise) {
+    /**
+     * Callback Tracker. Holds an array of callbacks created for this promise.
+     * The indirection allows quick checks against the array and clearing the
+     * array without ugly splicing and copying.
+     * @typedef {{
+     *   callback: array.<Function>=
+     * }}
+     */
+    var CallbackTracker;
+
+    /** @type {CallbackTracker} */
+    var thenTracker = {callbacks: []};
+    /** @type {CallbackTracker} */
+    var catchTracker = {callbacks: []};
+
+    /**
+     * Returns true if the specified value is callable.
+     * @param {*} value Value to check.
+     * @return {boolean} True if the value is a callable.
+     */
+    function isCallable(value) {
+      return typeof value === 'function';
+    }
+
+    /**
+     * Takes a tracker and clears its callbacks in a manner consistent with
+     * the task manager. For the task manager, it also calls all callbacks
+     * by no-oping them first and then calling them.
+     * @param {CallbackTracker} tracker Tracker to clear.
+     */
+    function clearTracker(tracker) {
+      if (tracker.callbacks) {
+        var callbacksToClear = tracker.callbacks;
+        // No-ops all callbacks of this type.
+        tracker.callbacks = undefined;
+        // Do not wrap the promise then argument!
+        // It will call wrapped callbacks.
+        originalThen.call(Promise.resolve(), function() {
+          for (var i = 0; i < callbacksToClear.length; i++) {
+            callbacksToClear[i]();
+          }
+        });
+      }
+    }
+
+    /**
+     * Takes the argument to a 'then' or 'catch' function and applies
+     * a wrapping to callables consistent to ECMA promises.
+     * @param {*} maybeCallback Argument to 'then' or 'catch'.
+     * @param {CallbackTracker} sameTracker Tracker for the call type.
+     *     Example: If the argument is from a 'then' call, use thenTracker.
+     * @param {CallbackTracker} otherTracker Tracker for the opposing call type.
+     *     Example: If the argument is from a 'then' call, use catchTracker.
+     * @return {*} Consumable argument with necessary wrapping applied.
+     */
+    function registerAndWrapMaybeCallback(
+          maybeCallback, sameTracker, otherTracker) {
+      // If sameTracker.callbacks is undefined, we've reached an ending state
+      // that means this callback will never be called back.
+      // We will still forward this call on to let the promise system
+      // handle further processing, but since this promise is in an ending state
+      // we can be confident it will never be called back.
+      if (isCallable(maybeCallback) &&
+          !maybeCallback.wrappedByPromiseTracker &&
+          sameTracker.callbacks) {
+        var handler = wrapper.wrapCallback(function() {
+          if (sameTracker.callbacks) {
+            clearTracker(otherTracker);
+            return maybeCallback.apply(null, arguments);
+          }
+        }, false);
+        // Harmony promises' catch calls will call into handleThen,
+        // double-wrapping all catch callbacks. Regular promise catch calls do
+        // not call into handleThen. Setting an attribute on the wrapped
+        // function is compatible with both promise implementations.
+        handler.wrappedByPromiseTracker = true;
+        sameTracker.callbacks.push(handler);
+        return handler;
+      } else {
+        return maybeCallback;
+      }
+    }
+
+    /**
+     * Tracks then calls equivalent to Promise.prototype.then.
+     * @param {*} onResolved Argument to use if the promise is resolved.
+     * @param {*} onRejected Argument to use if the promise is rejected.
+     * @return {object} Promise resulting from the 'then' call.
+     */
+    function handleThen(onResolved, onRejected) {
+      var resolutionHandler =
+          registerAndWrapMaybeCallback(onResolved, thenTracker, catchTracker);
+      var rejectionHandler =
+          registerAndWrapMaybeCallback(onRejected, catchTracker, thenTracker);
+      return originalThen.call(promise, resolutionHandler, rejectionHandler);
+    }
+
+    /**
+     * Tracks then calls equivalent to Promise.prototype.catch.
+     * @param {*} onRejected Argument to use if the promise is rejected.
+     * @return {object} Promise resulting from the 'catch' call.
+     */
+    function handleCatch(onRejected) {
+      var rejectionHandler =
+          registerAndWrapMaybeCallback(onRejected, catchTracker, thenTracker);
+      return originalCatch.call(promise, rejectionHandler);
+    }
+
+    // Register at least one resolve and reject callback so we always receive
+    // a callback to update the task manager and clear the callbacks
+    // that will never occur.
+    //
+    // The then form is used to avoid reentrancy by handleCatch,
+    // which ends up calling handleThen.
+    handleThen(function() {}, function() {});
+
+    return {
+      handleThen: handleThen,
+      handleCatch: handleCatch
+    };
+  }
+}
+
+registerPromiseAdapter();
+
+/**
+ * Control promise rejection.
+ * @enum {number}
+ */
+var PromiseRejection = {
+  /** Disallow promise rejection */
+  DISALLOW: 0,
+  /** Allow promise rejection */
+  ALLOW: 1
+};
+
+/**
+ * Provides the promise equivalent of instrumented.storage.local.get.
+ * @param {Object} defaultStorageObject Default storage object to fill.
+ * @param {PromiseRejection=} opt_allowPromiseRejection If
+ *     PromiseRejection.ALLOW, allow promise rejection on errors, otherwise the
+ *     default storage object is resolved.
+ * @return {Promise} A promise that fills the default storage object. On
+ *     failure, if promise rejection is allowed, the promise is rejected,
+ *     otherwise it is resolved to the default storage object.
+ */
+function fillFromChromeLocalStorage(
+    defaultStorageObject,
+    opt_allowPromiseRejection) {
+  return new Promise(function(resolve, reject) {
+    // We have to create a keys array because keys with a default value
+    // of undefined will cause that key to not be looked up!
+    var keysToGet = [];
+    for (var key in defaultStorageObject) {
+      keysToGet.push(key);
+    }
+    instrumented.storage.local.get(keysToGet, function(items) {
+      if (items) {
+        // Merge the result with the default storage object to ensure all keys
+        // requested have either the default value or the retrieved storage
+        // value.
+        var result = {};
+        for (var key in defaultStorageObject) {
+          result[key] = (key in items) ? items[key] : defaultStorageObject[key];
+        }
+        resolve(result);
+      } else if (opt_allowPromiseRejection === PromiseRejection.ALLOW) {
+        reject();
+      } else {
+        resolve(defaultStorageObject);
+      }
+    });
+  });
+}
 
 /**
  * Builds the object to manage tasks (mutually exclusive chains of events).
@@ -604,21 +879,19 @@ function buildAttemptManager(
   }
 
   /**
-   * Schedules next attempt.
-   * @param {number=} opt_previousDelaySeconds Previous delay in a sequence of
-   *     retry attempts, if specified. Not specified for scheduling first retry
-   *     in the exponential sequence.
+   * Schedules the alarm with a random factor to reduce the chance that all
+   * clients will fire their timers at the same time.
+   * @param {number} durationSeconds Number of seconds before firing the alarm.
    */
-  function scheduleNextAttempt(opt_previousDelaySeconds) {
-    var base = opt_previousDelaySeconds ? opt_previousDelaySeconds * 2 :
-                                          initialDelaySeconds;
-    var newRetryDelaySeconds =
-        Math.min(base * (1 + 0.2 * Math.random()), maximumDelaySeconds);
+  function scheduleAlarm(durationSeconds) {
+    var randomizedRetryDuration =
+        Math.min(durationSeconds * (1 + 0.2 * Math.random()),
+                 maximumDelaySeconds);
 
-    createAlarm(newRetryDelaySeconds);
+    createAlarm(randomizedRetryDuration);
 
     var items = {};
-    items[currentDelayStorageKey] = newRetryDelaySeconds;
+    items[currentDelayStorageKey] = randomizedRetryDuration;
     chrome.storage.local.set(items);
   }
 
@@ -633,7 +906,7 @@ function buildAttemptManager(
       createAlarm(opt_firstDelaySeconds);
       chrome.storage.local.remove(currentDelayStorageKey);
     } else {
-      scheduleNextAttempt();
+      scheduleAlarm(initialDelaySeconds);
     }
   }
 
@@ -646,20 +919,25 @@ function buildAttemptManager(
   }
 
   /**
-   * Plans for the next attempt.
-   * @param {function()} callback Completion callback. It will be invoked after
-   *     the planning is done.
+   * Schedules an exponential backoff retry.
+   * @return {Promise} A promise to schedule the retry.
    */
-  function planForNext(callback) {
-    instrumented.storage.local.get(currentDelayStorageKey, function(items) {
-      if (!items) {
-        items = {};
-        items[currentDelayStorageKey] = maximumDelaySeconds;
-      }
-      console.log('planForNext-get-storage ' + JSON.stringify(items));
-      scheduleNextAttempt(items[currentDelayStorageKey]);
-      callback();
-    });
+  function scheduleRetry() {
+    var request = {};
+    request[currentDelayStorageKey] = undefined;
+    return fillFromChromeLocalStorage(request, PromiseRejection.ALLOW)
+        .catch(function() {
+          request[currentDelayStorageKey] = maximumDelaySeconds;
+          return Promise.resolve(request);
+        })
+        .then(function(items) {
+          console.log('scheduleRetry-get-storage ' + JSON.stringify(items));
+          var retrySeconds = initialDelaySeconds;
+          if (items[currentDelayStorageKey]) {
+            retrySeconds = items[currentDelayStorageKey] * 2;
+          }
+          scheduleAlarm(retrySeconds);
+        });
   }
 
   instrumented.alarms.onAlarm.addListener(function(alarm) {
@@ -672,7 +950,7 @@ function buildAttemptManager(
 
   return {
     start: start,
-    planForNext: planForNext,
+    scheduleRetry: scheduleRetry,
     stop: stop,
     isRunning: isRunning
   };
@@ -689,36 +967,46 @@ function buildAuthenticationManager() {
 
   /**
    * Gets an OAuth2 access token.
-   * @param {function(string=)} callback Called on completion.
-   *     The string contains the token. It's undefined if there was an error.
+   * @return {Promise} A promise to get the authentication token. If there is
+   *     no token, the request is rejected.
    */
-  function getAuthToken(callback) {
-    instrumented.identity.getAuthToken({interactive: false}, function(token) {
-      token = chrome.runtime.lastError ? undefined : token;
-      callback(token);
+  function getAuthToken() {
+    return new Promise(function(resolve, reject) {
+      instrumented.identity.getAuthToken({interactive: false}, function(token) {
+        if (chrome.runtime.lastError || !token) {
+          reject();
+        } else {
+          resolve(token);
+        }
+      });
     });
   }
 
   /**
    * Determines whether there is an account attached to the profile.
-   * @param {function(boolean)} callback Called on completion.
+   * @return {Promise} A promise to determine if there is an account attached
+   *     to the profile.
    */
-  function isSignedIn(callback) {
-    instrumented.webstorePrivate.getBrowserLogin(function(accountInfo) {
-      callback(!!accountInfo.login);
+  function isSignedIn() {
+    return new Promise(function(resolve) {
+      instrumented.webstorePrivate.getBrowserLogin(function(accountInfo) {
+        resolve(!!accountInfo.login);
+      });
     });
   }
 
   /**
    * Removes the specified cached token.
    * @param {string} token Authentication Token to remove from the cache.
-   * @param {function()} callback Called on completion.
+   * @return {Promise} A promise that resolves on completion.
    */
-  function removeToken(token, callback) {
-    instrumented.identity.removeCachedAuthToken({token: token}, function() {
-      // Let Chrome now about a possible problem with the token.
-      getAuthToken(function() {});
-      callback();
+  function removeToken(token) {
+    return new Promise(function(resolve) {
+      instrumented.identity.removeCachedAuthToken({token: token}, function() {
+        // Let Chrome know about a possible problem with the token.
+        getAuthToken();
+        resolve();
+      });
     });
   }
 
@@ -738,18 +1026,18 @@ function buildAuthenticationManager() {
    * If it doesn't, it notifies the listeners of the change.
    */
   function checkAndNotifyListeners() {
-    isSignedIn(function(signedIn) {
-      instrumented.storage.local.get('lastSignedInState', function(items) {
-        items = items || {};
-        if (items.lastSignedInState != signedIn) {
-          chrome.storage.local.set(
-              {lastSignedInState: signedIn});
-          listeners.forEach(function(callback) {
-            callback();
-          });
-        }
+    isSignedIn().then(function(signedIn) {
+      fillFromChromeLocalStorage({lastSignedInState: undefined})
+          .then(function(items) {
+            if (items.lastSignedInState != signedIn) {
+              chrome.storage.local.set(
+                  {lastSignedInState: signedIn});
+              listeners.forEach(function(callback) {
+                callback();
+              });
+            }
+        });
       });
-    });
   }
 
   instrumented.identity.onSignInChanged.addListener(function() {

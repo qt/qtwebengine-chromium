@@ -15,9 +15,9 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/shared_memory.h"
 #include "base/memory/weak_ptr.h"
-#include "gpu/command_buffer/common/command_buffer.h"
 #include "gpu/command_buffer/service/cmd_buffer_engine.h"
 #include "gpu/command_buffer/service/cmd_parser.h"
+#include "gpu/command_buffer/service/command_buffer_service.h"
 #include "gpu/command_buffer/service/gles2_cmd_decoder.h"
 #include "gpu/gpu_export.h"
 
@@ -52,7 +52,7 @@ class GPU_EXPORT GpuScheduler
     : NON_EXPORTED_BASE(public CommandBufferEngine),
       public base::SupportsWeakPtr<GpuScheduler> {
  public:
-  GpuScheduler(CommandBuffer* command_buffer,
+  GpuScheduler(CommandBufferServiceBase* command_buffer,
                AsyncAPIInterface* handler,
                gles2::GLES2Decoder* decoder);
 
@@ -83,7 +83,7 @@ class GPU_EXPORT GpuScheduler
   void SetSchedulingChangedCallback(const SchedulingChangedCallback& callback);
 
   // Implementation of CommandBufferEngine.
-  virtual Buffer GetSharedMemoryBuffer(int32 shm_id) OVERRIDE;
+  virtual scoped_refptr<Buffer> GetSharedMemoryBuffer(int32 shm_id) OVERRIDE;
   virtual void set_token(int32 token) OVERRIDE;
   virtual bool SetGetBuffer(int32 transfer_buffer_id) OVERRIDE;
   virtual bool SetGetOffset(int32 offset) OVERRIDE;
@@ -114,7 +114,7 @@ class GPU_EXPORT GpuScheduler
   // The GpuScheduler holds a weak reference to the CommandBuffer. The
   // CommandBuffer owns the GpuScheduler and holds a strong reference to it
   // through the ProcessCommands callback.
-  CommandBuffer* command_buffer_;
+  CommandBufferServiceBase* command_buffer_;
 
   // The parser uses this to execute commands.
   AsyncAPIInterface* handler_;

@@ -26,22 +26,18 @@
 #ifndef EventDispatcher_h
 #define EventDispatcher_h
 
-#include "core/events/EventContext.h"
 #include "core/dom/SimulatedClickOptions.h"
-#include "wtf/Forward.h"
+#include "platform/heap/Handle.h"
 #include "wtf/PassRefPtr.h"
+#include "wtf/RefPtr.h"
 
 namespace WebCore {
 
 class Event;
 class EventDispatchMediator;
-class EventTarget;
 class FrameView;
 class Node;
-class PlatformKeyboardEvent;
-class PlatformMouseEvent;
-class ShadowRoot;
-class TreeScope;
+class NodeEventContext;
 class WindowEventContext;
 
 enum EventDispatchContinuation {
@@ -50,9 +46,10 @@ enum EventDispatchContinuation {
 };
 
 class EventDispatcher {
+    STACK_ALLOCATED();
 public:
-    static bool dispatchEvent(Node*, PassRefPtr<EventDispatchMediator>);
-    static void dispatchScopedEvent(Node*, PassRefPtr<EventDispatchMediator>);
+    static bool dispatchEvent(Node*, PassRefPtrWillBeRawPtr<EventDispatchMediator>);
+    static void dispatchScopedEvent(Node*, PassRefPtrWillBeRawPtr<EventDispatchMediator>);
 
     static void dispatchSimulatedClick(Node*, Event* underlyingEvent, SimulatedClickMouseEventOptions);
 
@@ -61,8 +58,8 @@ public:
     Event* event() const { return m_event.get(); }
 
 private:
-    EventDispatcher(Node*, PassRefPtr<Event>);
-    const EventContext* topEventContext();
+    EventDispatcher(Node*, PassRefPtrWillBeRawPtr<Event>);
+    const NodeEventContext* topNodeEventContext();
 
     EventDispatchContinuation dispatchEventPreProcess(void*& preDispatchEventHandlerResult);
     EventDispatchContinuation dispatchEventAtCapturing(WindowEventContext&);
@@ -70,8 +67,8 @@ private:
     void dispatchEventAtBubbling(WindowEventContext&);
     void dispatchEventPostProcess(void* preDispatchEventHandlerResult);
 
-    RefPtr<Node> m_node;
-    RefPtr<Event> m_event;
+    RefPtrWillBeMember<Node> m_node;
+    RefPtrWillBeMember<Event> m_event;
     RefPtr<FrameView> m_view;
 #ifndef NDEBUG
     bool m_eventDispatched;

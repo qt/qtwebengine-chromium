@@ -360,7 +360,12 @@ def DefineMember(filenode, node, member, release, include_version, meta):
   """
   cgen = CGen()
   rtype, name, arrays, args = cgen.GetComponents(member, release, 'return')
-  body = 'VLOG(4) << \"%s::%s()\";\n' % (node.GetName(), member.GetName())
+  log_body = '\"%s::%s()\";' % (node.GetName(), member.GetName())
+  if len(log_body) > 69:  # Prevent lines over 80 characters.
+    body = 'VLOG(4) <<\n'
+    body += '    %s\n' % log_body
+  else:
+    body = 'VLOG(4) << %s\n' % log_body
 
   if _IsTypeCheck(node, member, args):
     body += '%s\n' % _MakeEnterLine(filenode, node, member, args[0], False,
@@ -460,9 +465,7 @@ class TGen(GeneratorByFile):
     includes = ['ppapi/c/pp_errors.h',
                 'ppapi/shared_impl/tracked_callback.h',
                 'ppapi/thunk/enter.h',
-                'ppapi/thunk/ppb_instance_api.h',
-                'ppapi/thunk/resource_creation_api.h',
-                'ppapi/thunk/thunk.h']
+                'ppapi/thunk/ppapi_thunk_export.h']
     includes.append(_GetHeaderFileName(filenode))
     for api in meta.Apis():
       includes.append('%s' % api.lower())
@@ -547,10 +550,11 @@ class TGen(GeneratorByFile):
     out.Write('}  // namespace\n')
     out.Write('\n')
     for thunk_type, thunk_name in version_list:
-      thunk_decl = 'const %s* Get%s_Thunk() {\n' % (thunk_type, thunk_type)
+      thunk_decl = ('PPAPI_THUNK_EXPORT const %s* Get%s_Thunk() {\n' %
+                    (thunk_type, thunk_type))
       if len(thunk_decl) > 80:
-        thunk_decl = 'const %s*\n    Get%s_Thunk() {\n' % (thunk_type,
-                                                           thunk_type)
+        thunk_decl = ('PPAPI_THUNK_EXPORT const %s*\n    Get%s_Thunk() {\n' %
+                      (thunk_type, thunk_type))
       out.Write(thunk_decl)
       out.Write('  return &%s;\n' % thunk_name)
       out.Write('}\n')

@@ -6,6 +6,7 @@
   'targets': [
     {
       'target_name': 'gtest',
+      'toolsets': ['host', 'target'],
       'type': 'static_library',
       'sources': [
         'gtest/include/gtest/gtest-death-test.h',
@@ -50,6 +51,16 @@
       'dependencies': [
         'gtest_prod',
       ],
+      'defines': [
+        # In order to allow regex matches in gtest to be shared between Windows
+        # and other systems, we tell gtest to always use it's internal engine.
+        'GTEST_HAS_POSIX_RE=0',
+      ],
+      'all_dependent_settings': {
+        'defines': [
+          'GTEST_HAS_POSIX_RE=0',
+        ],
+      },
       'conditions': [
         ['OS == "mac" or OS == "ios"', {
           'sources': [
@@ -162,16 +173,6 @@
             'defines': [
               'GTEST_USE_OWN_TR1_TUPLE=1',
               'GTEST_HAS_TR1_TUPLE=1',
-            ],
-          },
-        }],
-        ['OS=="win" and (MSVS_VERSION=="2012" or MSVS_VERSION=="2012e")', {
-          'defines': [
-            '_VARIADIC_MAX=10',
-          ],
-          'direct_dependent_settings': {
-            'defines': [
-              '_VARIADIC_MAX=10',
             ],
           },
         }],

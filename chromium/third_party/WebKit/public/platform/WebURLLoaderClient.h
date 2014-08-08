@@ -64,10 +64,14 @@ public:
     virtual void didReceiveCachedMetadata(WebURLLoader*, const char* data, int dataLength) { }
 
     // Called when the load completes successfully.
-    virtual void didFinishLoading(WebURLLoader*, double finishTime) { }
+    // |totalEncodedDataLength| may be equal to kUnknownEncodedDataLength.
+    virtual void didFinishLoading(WebURLLoader* loader, double finishTime, int64_t totalEncodedDataLength) { }
 
     // Called when the load completes with an error.
     virtual void didFail(WebURLLoader*, const WebURLError&) { }
+
+    // Value passed to didFinishLoading when total encoded data length isn't known.
+    static const int64_t kUnknownEncodedDataLength = -1;
 
 protected:
     virtual ~WebURLLoaderClient() { }

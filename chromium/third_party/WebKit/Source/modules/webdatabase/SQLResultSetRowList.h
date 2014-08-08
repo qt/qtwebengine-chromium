@@ -31,14 +31,16 @@
 
 #include "bindings/v8/ScriptWrappable.h"
 #include "modules/webdatabase/sqlite/SQLValue.h"
+#include "platform/heap/Handle.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 
 namespace WebCore {
 
-class SQLResultSetRowList : public RefCounted<SQLResultSetRowList>, public ScriptWrappable {
+class SQLResultSetRowList : public RefCountedWillBeGarbageCollectedFinalized<SQLResultSetRowList>, public ScriptWrappable {
 public:
-    static PassRefPtr<SQLResultSetRowList> create() { return adoptRef(new SQLResultSetRowList); }
+    static PassRefPtrWillBeRawPtr<SQLResultSetRowList> create() { return adoptRefWillBeNoop(new SQLResultSetRowList); }
+    void trace(Visitor*) { }
 
     const Vector<String>& columnNames() const { return m_columns; }
     const Vector<SQLValue>& values() const { return m_result; }

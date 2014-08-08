@@ -14,9 +14,8 @@
 #include "content/browser/accessibility/browser_accessibility_manager.h"
 #include "content/browser/accessibility/browser_accessibility_state_impl.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
+#include "content/browser/renderer_host/render_widget_host_view_base.h"
 #include "content/common/view_message_enums.h"
-#include "content/port/browser/render_widget_host_view_port.h"
-#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/favicon_status.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/render_process_host.h"
@@ -75,7 +74,7 @@ base::DictionaryValue* BuildTargetDescriptor(RenderViewHost* rvh) {
     // TODO(nasko): Fix the following code to use a consistent set of data
     // across the URL, title, and favicon.
     url = web_contents->GetURL();
-    title = UTF16ToUTF8(web_contents->GetTitle());
+    title = base::UTF16ToUTF8(web_contents->GetTitle());
     NavigationController& controller = web_contents->GetController();
     NavigationEntry* entry = controller.GetVisibleEntry();
     if (entry != NULL && entry->GetURL().is_valid())
@@ -90,18 +89,26 @@ base::DictionaryValue* BuildTargetDescriptor(RenderViewHost* rvh) {
                                accessibility_mode);
 }
 
-void SendTargetsData(
-    const WebUIDataSource::GotDataCallback& callback) {
+bool HandleRequestCallback(BrowserContext* current_context,
+                           const std::string& path,
+                           const WebUIDataSource::GotDataCallback& callback) {
+  if (path != kDataFile)
+    return false;
   scoped_ptr<base::ListValue> rvh_list(new base::ListValue());
 
   scoped_ptr<RenderWidgetHostIterator> widgets(
       RenderWidgetHost::GetRenderWidgetHosts());
+
   while (RenderWidgetHost* widget = widgets->GetNextHost()) {
     // Ignore processes that don't have a connection, such as crashed tabs.
     if (!widget->GetProcess()->HasConnection())
       continue;
     if (!widget->IsRenderView())
         continue;
+    RenderWidgetHostImpl* rwhi = RenderWidgetHostImpl::From(widget);
+    BrowserContext* context = rwhi->GetProcess()->GetBrowserContext();
+    if (context != current_context)
+      continue;
 
     RenderViewHost* rvh = RenderViewHost::From(widget);
     rvh_list->Append(BuildTargetDescriptor(rvh));
@@ -109,7 +116,7 @@ void SendTargetsData(
 
   scoped_ptr<base::DictionaryValue> data(new base::DictionaryValue());
   data->Set("list", rvh_list.release());
-  scoped_ptr<base::FundamentalValue> a11y_mode(new base::FundamentalValue(
+  scoped_ptr<base::FundamentalValue> a11y_mode(base::Value::CreateIntegerValue(
       BrowserAccessibilityStateImpl::GetInstance()->accessibility_mode()));
   data->Set("global_a11y_mode", a11y_mode.release());
 
@@ -117,22 +124,12 @@ void SendTargetsData(
   base::JSONWriter::Write(data.get(), &json_string);
 
   callback.Run(base::RefCountedString::TakeString(&json_string));
-}
-
-bool HandleRequestCallback(
-    const std::string& path,
-    const WebUIDataSource::GotDataCallback& callback) {
-  if (path != kDataFile)
-    return false;
-
-  SendTargetsData(callback);
   return true;
 }
 
 }  // namespace
 
-AccessibilityUI::AccessibilityUI(WebUI* web_ui)
-  : WebUIController(web_ui) {
+AccessibilityUI::AccessibilityUI(WebUI* web_ui) : WebUIController(web_ui) {
   // Set up the chrome://accessibility source.
   WebUIDataSource* html_source =
       WebUIDataSource::Create(kChromeUIAccessibilityHost);
@@ -141,11 +138,11 @@ AccessibilityUI::AccessibilityUI(WebUI* web_ui)
   web_ui->RegisterMessageCallback(
       "toggleAccessibility",
       base::Bind(&AccessibilityUI::ToggleAccessibility,
-               base::Unretained(this)));
+                 base::Unretained(this)));
   web_ui->RegisterMessageCallback(
       "toggleGlobalAccessibility",
       base::Bind(&AccessibilityUI::ToggleGlobalAccessibility,
-               base::Unretained(this)));
+                 base::Unretained(this)));
   web_ui->RegisterMessageCallback(
       "requestAccessibilityTree",
       base::Bind(&AccessibilityUI::RequestAccessibilityTree,
@@ -156,26 +153,26 @@ AccessibilityUI::AccessibilityUI(WebUI* web_ui)
   html_source->AddResourcePath("accessibility.css", IDR_ACCESSIBILITY_CSS);
   html_source->AddResourcePath("accessibility.js", IDR_ACCESSIBILITY_JS);
   html_source->SetDefaultResource(IDR_ACCESSIBILITY_HTML);
-  html_source->SetRequestFilter(base::Bind(&HandleRequestCallback));
+  html_source->SetRequestFilter(
+      base::Bind(&HandleRequestCallback,
+                 web_ui->GetWebContents()->GetBrowserContext()));
 
   BrowserContext* browser_context =
-    web_ui->GetWebContents()->GetBrowserContext();
+      web_ui->GetWebContents()->GetBrowserContext();
   WebUIDataSource::Add(browser_context, html_source);
 }
 
-AccessibilityUI::~AccessibilityUI() {
-}
+AccessibilityUI::~AccessibilityUI() {}
 
 void AccessibilityUI::ToggleAccessibility(const base::ListValue* args) {
   std::string process_id_str;
   std::string route_id_str;
   int process_id;
   int route_id;
-  CHECK(args->GetSize() == 2);
+  CHECK_EQ(2U, args->GetSize());
   CHECK(args->GetString(0, &process_id_str));
   CHECK(args->GetString(1, &route_id_str));
-  CHECK(base::StringToInt(process_id_str,
-                          &process_id));
+  CHECK(base::StringToInt(process_id_str, &process_id));
   CHECK(base::StringToInt(route_id_str, &route_id));
 
   RenderViewHost* rvh = RenderViewHost::FromID(process_id, route_id);
@@ -185,20 +182,20 @@ void AccessibilityUI::ToggleAccessibility(const base::ListValue* args) {
   if (!rwhi)
     return;
   AccessibilityMode mode = rwhi->accessibility_mode();
-  if (mode == AccessibilityModeOff)
-    rwhi->SetAccessibilityMode(AccessibilityModeComplete);
+  if ((mode & AccessibilityModeComplete) != AccessibilityModeComplete)
+    rwhi->AddAccessibilityMode(AccessibilityModeComplete);
   else
-    rwhi->SetAccessibilityMode(AccessibilityModeOff);
+    rwhi->ResetAccessibilityMode();
 }
 
 void AccessibilityUI::ToggleGlobalAccessibility(const base::ListValue* args) {
   BrowserAccessibilityStateImpl* state =
       BrowserAccessibilityStateImpl::GetInstance();
   AccessibilityMode mode = state->accessibility_mode();
-  AccessibilityMode new_mode = (mode == AccessibilityModeOff
-                                ? AccessibilityModeComplete
-                                : AccessibilityModeOff);
-  state->SetAccessibilityMode(new_mode);
+  if ((mode & AccessibilityModeComplete) != AccessibilityModeComplete)
+    state->EnableAccessibility();
+  else
+    state->DisableAccessibility();
 }
 
 void AccessibilityUI::RequestAccessibilityTree(const base::ListValue* args) {
@@ -206,7 +203,7 @@ void AccessibilityUI::RequestAccessibilityTree(const base::ListValue* args) {
   std::string route_id_str;
   int process_id;
   int route_id;
-  CHECK(args->GetSize() == 2);
+  CHECK_EQ(2U, args->GetSize());
   CHECK(args->GetString(0, &process_id_str));
   CHECK(args->GetString(1, &route_id_str));
   CHECK(base::StringToInt(process_id_str, &process_id));
@@ -223,7 +220,7 @@ void AccessibilityUI::RequestAccessibilityTree(const base::ListValue* args) {
   }
 
   scoped_ptr<base::DictionaryValue> result(BuildTargetDescriptor(rvh));
-  RenderWidgetHostViewPort* host_view = static_cast<RenderWidgetHostViewPort*>(
+  RenderWidgetHostViewBase* host_view = static_cast<RenderWidgetHostViewBase*>(
       WebContents::FromRenderViewHost(rvh)->GetRenderWidgetHostView());
   if (!host_view) {
     result->Set("error",
@@ -244,13 +241,14 @@ void AccessibilityUI::RequestAccessibilityTree(const base::ListValue* args) {
   }
   std::vector<AccessibilityTreeFormatter::Filter> filters;
   filters.push_back(AccessibilityTreeFormatter::Filter(
-      ASCIIToUTF16("*"),
+      base::ASCIIToUTF16("*"),
       AccessibilityTreeFormatter::Filter::ALLOW));
   formatter->SetFilters(filters);
   formatter->FormatAccessibilityTree(&accessibility_contents_utf16);
 
   result->Set("tree",
-              new base::StringValue(UTF16ToUTF8(accessibility_contents_utf16)));
+              new base::StringValue(
+                  base::UTF16ToUTF8(accessibility_contents_utf16)));
   web_ui()->CallJavascriptFunction("accessibility.showTree", *(result.get()));
 }
 

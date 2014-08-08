@@ -29,10 +29,12 @@
  */
 
 #include "config.h"
-#include "V8EventTarget.h"
+#include "bindings/core/v8/V8EventTarget.h"
 
-#include "EventTargetHeaders.h"
-#include "EventTargetInterfaces.h"
+#include "core/EventTargetHeaders.h"
+#include "core/EventTargetInterfaces.h"
+#include "modules/EventTargetModulesHeaders.h"
+#include "modules/EventTargetModulesInterfaces.h"
 
 namespace WebCore {
 
@@ -47,6 +49,7 @@ v8::Handle<v8::Value> toV8(EventTarget* impl, v8::Handle<v8::Object> creationCon
 
     AtomicString desiredInterface = impl->interfaceName();
     EVENT_TARGET_INTERFACES_FOR_EACH(TRY_TO_WRAP_WITH_INTERFACE)
+    EVENT_TARGET_MODULES_INTERFACES_FOR_EACH(TRY_TO_WRAP_WITH_INTERFACE)
 
     ASSERT_NOT_REACHED();
     return v8Undefined();

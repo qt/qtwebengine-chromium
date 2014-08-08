@@ -8,7 +8,6 @@
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "third_party/skia/include/core/SkColor.h"
-#include "ui/gfx/font.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/views/controls/button/custom_button.h"
 #include "ui/views/controls/image_view.h"
@@ -17,6 +16,7 @@
 
 namespace views {
 
+class LabelButtonBorder;
 class Painter;
 
 // LabelButton is an alternative to TextButton, it's not focusable by default.
@@ -28,7 +28,7 @@ class VIEWS_EXPORT LabelButton : public CustomButton,
 
   static const char kViewClassName[];
 
-  LabelButton(ButtonListener* listener, const string16& text);
+  LabelButton(ButtonListener* listener, const base::string16& text);
   virtual ~LabelButton();
 
   // Get or set the image shown for the specified button state.
@@ -37,27 +37,36 @@ class VIEWS_EXPORT LabelButton : public CustomButton,
   void SetImage(ButtonState for_state, const gfx::ImageSkia& image);
 
   // Get or set the text shown on the button.
-  const string16& GetText() const;
-  void SetText(const string16& text);
+  const base::string16& GetText() const;
+  virtual void SetText(const base::string16& text);
 
   // Set the text color shown for the specified button state.
   void SetTextColor(ButtonState for_state, SkColor color);
+
+  // Set drop shadows underneath the text.
+  void SetTextShadows(const gfx::ShadowValues& shadows);
+
+  // Sets whether subpixel rendering is used on the label.
+  void SetTextSubpixelRenderingEnabled(bool enabled);
 
   // Get or set the text's multi-line property to break on '\n', etc.
   bool GetTextMultiLine() const;
   void SetTextMultiLine(bool text_multi_line);
 
-  // Get or set the font used by this button.
-  const gfx::Font& GetFont() const;
-  void SetFont(const gfx::Font& font);
+  // Get or set the font list used by this button.
+  const gfx::FontList& GetFontList() const;
+  void SetFontList(const gfx::FontList& font_list);
 
   // Set the elide behavior of this button.
-  void SetElideBehavior(Label::ElideBehavior elide_behavior);
+  void SetElideBehavior(gfx::ElideBehavior elide_behavior);
 
   // Get or set the horizontal alignment used for the button; reversed in RTL.
   // The optional image will lead the text, unless the button is right-aligned.
   gfx::HorizontalAlignment GetHorizontalAlignment() const;
   void SetHorizontalAlignment(gfx::HorizontalAlignment alignment);
+
+  // Set the directionality mode used for the button text.
+  void SetDirectionalityMode(gfx::DirectionalityMode mode);
 
   // Call set_min_size(gfx::Size()) to clear the monotonically increasing size.
   void set_min_size(const gfx::Size& min_size) { min_size_ = min_size; }
@@ -72,9 +81,11 @@ class VIEWS_EXPORT LabelButton : public CustomButton,
   void SetStyle(ButtonStyle style);
 
   void SetFocusPainter(scoped_ptr<Painter> focus_painter);
+  Painter* focus_painter() { return focus_painter_.get(); }
 
   // View:
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual void SetBorder(scoped_ptr<Border> border) OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
   virtual void Layout() OVERRIDE;
   virtual const char* GetClassName() const OVERRIDE;
 
@@ -82,10 +93,15 @@ class VIEWS_EXPORT LabelButton : public CustomButton,
   ImageView* image() const { return image_; }
   Label* label() const { return label_; }
 
+  // Returns the available area for the label and image. Subclasses can change
+  // these bounds if they need room to do manual painting.
+  virtual gfx::Rect GetChildAreaBounds();
+
   // View:
   virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
   virtual void OnFocus() OVERRIDE;
   virtual void OnBlur() OVERRIDE;
+  virtual void OnNativeThemeChanged(const ui::NativeTheme* theme) OVERRIDE;
 
   // Fill |params| with information about the button.
   virtual void GetExtraParams(ui::NativeTheme::ExtraParams* params) const;
@@ -93,8 +109,16 @@ class VIEWS_EXPORT LabelButton : public CustomButton,
   // Resets colors from the NativeTheme, explicitly set colors are unchanged.
   virtual void ResetColorsFromNativeTheme();
 
+  // Creates the default border for this button. This can be overridden by
+  // subclasses or by LinuxUI.
+  virtual scoped_ptr<LabelButtonBorder> CreateDefaultBorder() const;
+
   // Updates the image view to contain the appropriate button state image.
   void UpdateImage();
+
+  // Updates the border as per the NativeTheme, unless a different border was
+  // set with SetBorder.
+  void UpdateThemedBorder();
 
   // NativeThemeDelegate:
   virtual gfx::Rect GetThemePaintRect() const OVERRIDE;
@@ -104,14 +128,13 @@ class VIEWS_EXPORT LabelButton : public CustomButton,
   FRIEND_TEST_ALL_PREFIXES(LabelButtonTest, Label);
   FRIEND_TEST_ALL_PREFIXES(LabelButtonTest, Image);
   FRIEND_TEST_ALL_PREFIXES(LabelButtonTest, LabelAndImage);
-  FRIEND_TEST_ALL_PREFIXES(LabelButtonTest, Font);
+  FRIEND_TEST_ALL_PREFIXES(LabelButtonTest, FontList);
 
   // CustomButton:
   virtual void StateChanged() OVERRIDE;
 
   // View:
   virtual void ChildPreferredSizeChanged(View* child) OVERRIDE;
-  virtual void OnNativeThemeChanged(const ui::NativeTheme* theme) OVERRIDE;
 
   // NativeThemeDelegate:
   virtual ui::NativeTheme::Part GetThemePart() const OVERRIDE;
@@ -127,6 +150,10 @@ class VIEWS_EXPORT LabelButton : public CustomButton,
   ImageView* image_;
   Label* label_;
 
+  // The cached font lists in the normal and bold style.
+  gfx::FontList cached_normal_font_list_;
+  gfx::FontList cached_bold_font_list_;
+
   // The images and colors for each button state.
   gfx::ImageSkia button_state_images_[STATE_COUNT];
   SkColor button_state_colors_[STATE_COUNT];
@@ -135,7 +162,7 @@ class VIEWS_EXPORT LabelButton : public CustomButton,
   bool explicitly_set_colors_[STATE_COUNT];
 
   // |min_size_| increases monotonically with the preferred size.
-  gfx::Size min_size_;
+  mutable gfx::Size min_size_;
   // |max_size_| may be set to clamp the preferred size.
   gfx::Size max_size_;
 
@@ -146,6 +173,9 @@ class VIEWS_EXPORT LabelButton : public CustomButton,
 
   // The button's overall style.
   ButtonStyle style_;
+
+  // True if current border was set by UpdateThemedBorder. Defaults to true.
+  bool border_is_themed_border_;
 
   scoped_ptr<Painter> focus_painter_;
 

@@ -32,12 +32,9 @@ inline SVGFontFaceNameElement::SVGFontFaceNameElement(Document& document)
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<SVGFontFaceNameElement> SVGFontFaceNameElement::create(Document& document)
-{
-    return adoptRef(new SVGFontFaceNameElement(document));
-}
+DEFINE_NODE_FACTORY(SVGFontFaceNameElement)
 
-PassRefPtr<CSSFontFaceSrcValue> SVGFontFaceNameElement::srcValue() const
+PassRefPtrWillBeRawPtr<CSSFontFaceSrcValue> SVGFontFaceNameElement::srcValue() const
 {
     return CSSFontFaceSrcValue::createLocal(fastGetAttribute(SVGNames::nameAttr));
 }

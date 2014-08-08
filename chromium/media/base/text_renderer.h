@@ -14,10 +14,11 @@
 #include "media/base/demuxer_stream.h"
 #include "media/base/media_export.h"
 #include "media/base/pipeline_status.h"
+#include "media/base/text_ranges.h"
 #include "media/base/text_track.h"
 
 namespace base {
-class MessageLoopProxy;
+class SingleThreadTaskRunner;
 }
 
 namespace media {
@@ -30,12 +31,13 @@ class TextTrackConfig;
 // demuxer text stream.
 class MEDIA_EXPORT TextRenderer {
  public:
-  // |message_loop| is the thread on which TextRenderer will execute.
+  // |task_runner| is the thread on which TextRenderer will execute.
   //
   // |add_text_track_cb] is called when the demuxer requests (via its host)
   // that a new text track be created.
-  TextRenderer(const scoped_refptr<base::MessageLoopProxy>& message_loop,
-               const AddTextTrackCB& add_text_track_cb);
+  TextRenderer(
+      const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
+      const AddTextTrackCB& add_text_track_cb);
   ~TextRenderer();
 
   // |ended_cb| is executed when all of the text tracks have reached
@@ -81,6 +83,7 @@ class MEDIA_EXPORT TextRenderer {
 
     ReadState read_state;
     scoped_ptr<TextTrack> text_track;
+    TextRanges text_ranges_;
   };
 
   // Callback delivered by the demuxer |text_stream| when
@@ -101,9 +104,7 @@ class MEDIA_EXPORT TextRenderer {
   // Utility function to post a read request on |text_stream|.
   void Read(TextTrackState* state, DemuxerStream* text_stream);
 
-  scoped_refptr<base::MessageLoopProxy> message_loop_;
-  base::WeakPtrFactory<TextRenderer> weak_factory_;
-  base::WeakPtr<TextRenderer> weak_this_;
+  scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
   const AddTextTrackCB add_text_track_cb_;
 
   // Callbacks provided during Initialize().
@@ -136,6 +137,9 @@ class MEDIA_EXPORT TextRenderer {
   // Indicates which text streams have not delivered end-of-stream yet.
   typedef std::set<DemuxerStream*> PendingEosSet;
   PendingEosSet pending_eos_set_;
+
+  // NOTE: Weak pointers must be invalidated before all other member variables.
+  base::WeakPtrFactory<TextRenderer> weak_factory_;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(TextRenderer);
 };

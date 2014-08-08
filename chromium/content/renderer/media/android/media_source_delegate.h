@@ -67,13 +67,7 @@ class MediaSourceDelegate : public media::DemuxerHost {
       const UpdateNetworkStateCB& update_network_state_cb,
       const DurationChangeCB& duration_change_cb);
 
-#if defined(GOOGLE_TV)
-  void InitializeMediaStream(
-      media::Demuxer* demuxer,
-      const UpdateNetworkStateCB& update_network_state_cb);
-#endif
-
-  const blink::WebTimeRanges& Buffered();
+  blink::WebTimeRanges Buffered() const;
   size_t DecodedFrameCount() const;
   size_t DroppedFrameCount() const;
   size_t AudioDecodedByteCount() const;
@@ -100,29 +94,23 @@ class MediaSourceDelegate : public media::DemuxerHost {
   // cached data since last keyframe. See http://crbug.com/304234.
   void Seek(const base::TimeDelta& seek_time, bool is_browser_seek);
 
-  void NotifyKeyAdded(const std::string& key_system);
-
   // Called when DemuxerStreamPlayer needs to read data from ChunkDemuxer.
   void OnReadFromDemuxer(media::DemuxerStream::Type type);
-
-  // Called when the player needs the new config data from ChunkDemuxer.
-  void OnMediaConfigRequest();
 
   // Called by the Destroyer to destroy an instance of this object.
   void Destroy();
 
- private:
-  typedef base::Callback<void(scoped_ptr<media::DemuxerData> data)>
-      ReadFromDemuxerAckCB;
-  typedef base::Callback<void(scoped_ptr<media::DemuxerConfigs> configs)>
-      DemuxerReadyCB;
+  // Called on the main thread to check whether the video stream is encrypted.
+  bool IsVideoEncrypted();
 
+  // Gets the ChunkDemuxer timeline offset.
+  base::Time GetTimelineOffset() const;
+
+ private:
   // This is private to enforce use of the Destroyer.
   virtual ~MediaSourceDelegate();
 
   // Methods inherited from DemuxerHost.
-  virtual void SetTotalBytes(int64 total_bytes) OVERRIDE;
-  virtual void AddBufferedByteRange(int64 start, int64 end) OVERRIDE;
   virtual void AddBufferedTimeRange(base::TimeDelta start,
                                     base::TimeDelta end) OVERRIDE;
   virtual void SetDuration(base::TimeDelta duration) OVERRIDE;
@@ -154,12 +142,15 @@ class MediaSourceDelegate : public media::DemuxerHost {
   void ResetVideoDecryptingDemuxerStream();
   void FinishResettingDecryptingDemuxerStreams();
 
+  // Callback for ChunkDemuxer::Stop() and helper for deleting |this| on the
+  // main thread.
   void OnDemuxerStopDone();
+  void DeleteSelf();
+
   void OnDemuxerOpened();
   void OnNeedKey(const std::string& type,
                  const std::vector<uint8>& init_data);
   void NotifyDemuxerReady();
-  bool CanNotifyDemuxerReady();
 
   void StopDemuxer();
   void InitializeDemuxer();
@@ -176,9 +167,7 @@ class MediaSourceDelegate : public media::DemuxerHost {
                      const scoped_refptr<media::DecoderBuffer>& buffer);
 
   // Helper function for calculating duration.
-  int GetDurationMs();
-
-  bool HasEncryptedStream();
+  base::TimeDelta GetDuration() const;
 
   bool IsSeeking() const;
 
@@ -190,14 +179,10 @@ class MediaSourceDelegate : public media::DemuxerHost {
   base::TimeDelta FindBufferedBrowserSeekTime_Locked(
       const base::TimeDelta& seek_time) const;
 
-  // Message loop for main renderer thread and corresponding weak pointer.
-  const scoped_refptr<base::MessageLoopProxy> main_loop_;
-  base::WeakPtrFactory<MediaSourceDelegate> main_weak_factory_;
-  base::WeakPtr<MediaSourceDelegate> main_weak_this_;
-
-  // Message loop for media thread and corresponding weak pointer.
-  const scoped_refptr<base::MessageLoopProxy> media_loop_;
-  base::WeakPtrFactory<MediaSourceDelegate> media_weak_factory_;
+  // Get the demuxer configs for a particular stream identified by |is_audio|.
+  // Returns true on success, of false otherwise.
+  bool GetDemuxerConfigFromStream(media::DemuxerConfigs* configs,
+                                  bool is_audio);
 
   RendererDemuxerAndroid* demuxer_client_;
   int demuxer_client_id_;
@@ -207,7 +192,6 @@ class MediaSourceDelegate : public media::DemuxerHost {
   DurationChangeCB duration_change_cb_;
 
   scoped_ptr<media::ChunkDemuxer> chunk_demuxer_;
-  media::Demuxer* demuxer_;
   bool is_demuxer_ready_;
 
   media::SetDecryptorReadyCB set_decryptor_ready_cb_;
@@ -220,15 +204,9 @@ class MediaSourceDelegate : public media::DemuxerHost {
 
   media::PipelineStatistics statistics_;
   media::Ranges<base::TimeDelta> buffered_time_ranges_;
-  // Keep a list of buffered time ranges.
-  blink::WebTimeRanges buffered_web_time_ranges_;
 
   MediaSourceOpenedCB media_source_opened_cb_;
   media::Demuxer::NeedKeyCB need_key_cb_;
-
-  // The currently selected key system. Empty string means that no key system
-  // has been selected.
-  blink::WebString current_key_system_;
 
   // Temporary for EME v0.1. In the future the init data type should be passed
   // through GenerateKeyRequest() directly from WebKit.
@@ -237,6 +215,10 @@ class MediaSourceDelegate : public media::DemuxerHost {
   // Lock used to serialize access for |seeking_|.
   mutable base::Lock seeking_lock_;
   bool seeking_;
+
+  // Lock used to serialize access for |is_video_encrypted_|.
+  mutable base::Lock is_video_encrypted_lock_;
+  bool is_video_encrypted_;
 
   // Track if we are currently performing a browser seek, and track whether or
   // not a regular seek is expected soon. If a regular seek is expected soon,
@@ -247,12 +229,16 @@ class MediaSourceDelegate : public media::DemuxerHost {
   base::TimeDelta browser_seek_time_;
   bool expecting_regular_seek_;
 
-#if defined(GOOGLE_TV)
-  bool key_added_;
-  std::string key_system_;
-#endif  // defined(GOOGLE_TV)
-
   size_t access_unit_size_;
+
+  // Message loop for main renderer and media threads.
+  const scoped_refptr<base::MessageLoopProxy> main_loop_;
+  const scoped_refptr<base::MessageLoopProxy> media_loop_;
+
+  // NOTE: Weak pointers must be invalidated before all other member variables.
+  base::WeakPtrFactory<MediaSourceDelegate> main_weak_factory_;
+  base::WeakPtrFactory<MediaSourceDelegate> media_weak_factory_;
+  base::WeakPtr<MediaSourceDelegate> main_weak_this_;
 
   DISALLOW_COPY_AND_ASSIGN(MediaSourceDelegate);
 };

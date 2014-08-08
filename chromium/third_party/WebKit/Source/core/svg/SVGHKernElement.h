@@ -23,14 +23,14 @@
 #define SVGHKernElement_h
 
 #if ENABLE(SVG_FONTS)
-#include "SVGNames.h"
+#include "core/SVGNames.h"
 #include "core/svg/SVGFontElement.h"
 
 namespace WebCore {
 
 class SVGHKernElement FINAL : public SVGElement {
 public:
-    static PassRefPtr<SVGHKernElement> create(Document&);
+    DECLARE_NODE_FACTORY(SVGHKernElement);
 
     void buildHorizontalKerningPair(KerningPairVector&);
 
@@ -40,10 +40,8 @@ private:
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
     virtual void removedFrom(ContainerNode*) OVERRIDE;
 
-    virtual bool rendererIsNeeded(const RenderStyle&) { return false; }
+    virtual bool rendererIsNeeded(const RenderStyle&) OVERRIDE { return false; }
 };
-
-DEFINE_NODE_TYPE_CASTS(SVGHKernElement, hasTagName(SVGNames::hkernTag));
 
 } // namespace WebCore
 

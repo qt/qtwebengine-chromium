@@ -30,11 +30,12 @@
     Constructor(DOMString scriptUrl),
     ConstructorCallWith=ExecutionContext,
     RaisesException=Constructor,
+    WillBeGarbageCollected,
 ] interface Worker : EventTarget {
 
     attribute EventHandler onmessage;
 
-    [Custom, RaisesException] void postMessage(SerializedScriptValue message, optional Array messagePorts);
+    [Custom, RaisesException] void postMessage(SerializedScriptValue message, optional MessagePort[] messagePorts);
     void terminate();
 };
 

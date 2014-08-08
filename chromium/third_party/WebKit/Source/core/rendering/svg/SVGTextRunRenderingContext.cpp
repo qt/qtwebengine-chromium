@@ -23,7 +23,6 @@
 #if ENABLE(SVG_FONTS)
 #include "core/rendering/svg/SVGTextRunRenderingContext.h"
 
-#include "SVGNames.h"
 #include "core/rendering/RenderObject.h"
 #include "core/rendering/svg/RenderSVGInlineText.h"
 #include "core/rendering/svg/RenderSVGResourceSolidColor.h"
@@ -45,6 +44,10 @@ static inline const SVGFontData* svgFontAndFontFaceElementForFontData(const Simp
 
     RefPtr<CustomFontData> customFontData = fontData->customFontData();
     const SVGFontData* svgFontData = static_cast<const SVGFontData*>(customFontData.get());
+
+    // FIXME crbug.com/359380 : The current editing impl references the font after the svg font nodes are removed.
+    if (svgFontData->shouldSkipDrawing())
+        return 0;
 
     fontFace = svgFontData->svgFontFaceElement();
     ASSERT(fontFace);
@@ -73,12 +76,12 @@ static inline RenderSVGResource* activePaintingResourceFromRun(const TextRun& ru
     return 0;
 }
 
-float SVGTextRunRenderingContext::floatWidthUsingSVGFont(const Font& font, const TextRun& run, int& charsConsumed, String& glyphName) const
+float SVGTextRunRenderingContext::floatWidthUsingSVGFont(const Font& font, const TextRun& run, int& charsConsumed, Glyph& glyphId) const
 {
     WidthIterator it(&font, run);
     GlyphBuffer glyphBuffer;
     charsConsumed += it.advance(run.length(), &glyphBuffer);
-    glyphName = it.lastGlyphName();
+    glyphId = !glyphBuffer.isEmpty() ? glyphBuffer.glyphAt(0) : 0;
     return it.runWidthSoFar();
 }
 
@@ -119,14 +122,17 @@ void SVGTextRunRenderingContext::drawSVGGlyphs(GraphicsContext* context, const T
     glyphOrigin.setX(svgFontData->horizontalOriginX() * scale);
     glyphOrigin.setY(svgFontData->horizontalOriginY() * scale);
 
+    unsigned short resourceMode = context->textDrawingMode() == TextModeStroke ? ApplyToStrokeMode : ApplyToFillMode;
+    // From a resource perspective this ought to be treated as "text mode".
+    resourceMode |= ApplyToTextMode;
+
     FloatPoint currentPoint = point;
-    RenderSVGResourceMode resourceMode = context->textDrawingMode() == TextModeStroke ? ApplyToStrokeMode : ApplyToFillMode;
     for (int i = 0; i < numGlyphs; ++i) {
         Glyph glyph = glyphBuffer.glyphAt(from + i);
         if (!glyph)
             continue;
 
-        float advance = glyphBuffer.advanceAt(from + i);
+        float advance = glyphBuffer.advanceAt(from + i).width();
         SVGGlyph svgGlyph = fontElement->svgGlyphForGlyph(glyph);
         ASSERT(!svgGlyph.isPartOfLigature);
         ASSERT(svgGlyph.tableEntry == glyph);
@@ -198,7 +204,7 @@ GlyphData SVGTextRunRenderingContext::glyphDataForCharacter(const Font& font, co
             RenderObject* parentRenderObject = renderObject->isText() ? renderObject->parent() : renderObject;
             ASSERT(parentRenderObject);
             if (Element* parentRenderObjectElement = toElement(parentRenderObject->node())) {
-                if (parentRenderObjectElement->hasTagName(SVGNames::altGlyphTag))
+                if (isSVGAltGlyphElement(*parentRenderObjectElement))
                     glyphData.fontData = primaryFont;
             }
         }

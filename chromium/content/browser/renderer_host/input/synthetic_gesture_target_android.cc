@@ -32,14 +32,17 @@ bool SyntheticGestureTargetAndroid::RegisterTouchEventSynthesizer(JNIEnv* env) {
 
 void SyntheticGestureTargetAndroid::TouchSetPointer(
     JNIEnv* env, int index, int x, int y, int id) {
+  TRACE_EVENT0("input", "SyntheticGestureTargetAndroid::TouchSetPointer");
   Java_TouchEventSynthesizer_setPointer(env, touch_event_synthesizer_.obj(),
                                       index, x, y, id);
 }
 
 void SyntheticGestureTargetAndroid::TouchInject(
-    JNIEnv* env, Action action, int pointer_count) {
+    JNIEnv* env, Action action, int pointer_count, int64 time_in_ms) {
+  TRACE_EVENT0("input", "SyntheticGestureTargetAndroid::TouchInject");
   Java_TouchEventSynthesizer_inject(env, touch_event_synthesizer_.obj(),
-                                  static_cast<int>(action), pointer_count);
+                                    static_cast<int>(action), pointer_count,
+                                    time_in_ms);
 }
 
 void SyntheticGestureTargetAndroid::DispatchWebTouchEventToPlatform(
@@ -70,7 +73,18 @@ void SyntheticGestureTargetAndroid::DispatchWebTouchEventToPlatform(
     TouchSetPointer(env, i, point->position.x, point->position.y, point->id);
   }
 
-  TouchInject(env, action, num_touches);
+  TouchInject(env, action, num_touches,
+              static_cast<int64>(web_touch.timeStampSeconds * 1000.0));
+}
+
+void SyntheticGestureTargetAndroid::DispatchWebMouseWheelEventToPlatform(
+    const blink::WebMouseWheelEvent& web_wheel, const ui::LatencyInfo&) {
+  CHECK(false);
+}
+
+void SyntheticGestureTargetAndroid::DispatchWebMouseEventToPlatform(
+    const blink::WebMouseEvent& web_mouse, const ui::LatencyInfo&) {
+  CHECK(false);
 }
 
 SyntheticGestureParams::GestureSourceType
@@ -78,15 +92,17 @@ SyntheticGestureTargetAndroid::GetDefaultSyntheticGestureSourceType() const {
   return SyntheticGestureParams::TOUCH_INPUT;
 }
 
-bool SyntheticGestureTargetAndroid::SupportsSyntheticGestureSourceType(
-    SyntheticGestureParams::GestureSourceType gesture_source_type) const {
-  return gesture_source_type == SyntheticGestureParams::TOUCH_INPUT;
-}
-
-int SyntheticGestureTargetAndroid::GetTouchSlopInDips() const {
+float SyntheticGestureTargetAndroid::GetTouchSlopInDips() const {
   float device_scale_factor =
       gfx::Screen::GetNativeScreen()->GetPrimaryDisplay().device_scale_factor();
   return gfx::ViewConfiguration::GetTouchSlopInPixels() / device_scale_factor;
+}
+
+float SyntheticGestureTargetAndroid::GetMinScalingSpanInDips() const {
+  float device_scale_factor =
+      gfx::Screen::GetNativeScreen()->GetPrimaryDisplay().device_scale_factor();
+  return
+      gfx::ViewConfiguration::GetMinScalingSpanInPixels() / device_scale_factor;
 }
 
 }  // namespace content

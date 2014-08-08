@@ -33,8 +33,7 @@ PepperFileSystemHost::PepperFileSystemHost(RendererPpapiHost* host,
       type_(type),
       opened_(false),
       called_open_(false),
-      weak_factory_(this) {
-}
+      weak_factory_(this) {}
 
 PepperFileSystemHost::PepperFileSystemHost(RendererPpapiHost* host,
                                            PP_Instance instance,
@@ -47,29 +46,24 @@ PepperFileSystemHost::PepperFileSystemHost(RendererPpapiHost* host,
       opened_(true),
       root_url_(root_url),
       called_open_(true),
-      weak_factory_(this) {
-}
+      weak_factory_(this) {}
 
-PepperFileSystemHost::~PepperFileSystemHost() {
-}
+PepperFileSystemHost::~PepperFileSystemHost() {}
 
 int32_t PepperFileSystemHost::OnResourceMessageReceived(
     const IPC::Message& msg,
     ppapi::host::HostMessageContext* context) {
-  IPC_BEGIN_MESSAGE_MAP(PepperFileSystemHost, msg)
-    PPAPI_DISPATCH_HOST_RESOURCE_CALL(
-        PpapiHostMsg_FileSystem_Open,
-        OnHostMsgOpen)
+  PPAPI_BEGIN_MESSAGE_MAP(PepperFileSystemHost, msg)
+    PPAPI_DISPATCH_HOST_RESOURCE_CALL(PpapiHostMsg_FileSystem_Open,
+                                      OnHostMsgOpen)
     PPAPI_DISPATCH_HOST_RESOURCE_CALL(
         PpapiHostMsg_FileSystem_InitIsolatedFileSystem,
         OnHostMsgInitIsolatedFileSystem)
-  IPC_END_MESSAGE_MAP()
+  PPAPI_END_MESSAGE_MAP()
   return PP_ERROR_FAILED;
 }
 
-bool PepperFileSystemHost::IsFileSystemHost() {
-  return true;
-}
+bool PepperFileSystemHost::IsFileSystemHost() { return true; }
 
 void PepperFileSystemHost::DidOpenFileSystem(
     const std::string& /* name_unused */,
@@ -81,9 +75,8 @@ void PepperFileSystemHost::DidOpenFileSystem(
   reply_context_ = ppapi::host::ReplyMessageContext();
 }
 
-void PepperFileSystemHost::DidFailOpenFileSystem(
-    base::PlatformFileError error) {
-  int32 pp_error = ppapi::PlatformFileErrorToPepperError(error);
+void PepperFileSystemHost::DidFailOpenFileSystem(base::File::Error error) {
+  int32 pp_error = ppapi::FileErrorToPepperError(error);
   opened_ = (pp_error == PP_OK);
   reply_context_.params.set_result(pp_error);
   host()->SendReply(reply_context_, PpapiPluginMsg_FileSystem_OpenReply());

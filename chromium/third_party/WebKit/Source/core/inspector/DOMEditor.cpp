@@ -42,11 +42,9 @@
 #include "core/inspector/InspectorHistory.h"
 #include "wtf/RefPtr.h"
 
-using namespace std;
-
 namespace WebCore {
 
-class DOMEditor::RemoveChildAction : public InspectorHistory::Action {
+class DOMEditor::RemoveChildAction FINAL : public InspectorHistory::Action {
     WTF_MAKE_NONCOPYABLE(RemoveChildAction);
 public:
     RemoveChildAction(Node* parentNode, Node* node)
@@ -56,34 +54,42 @@ public:
     {
     }
 
-    virtual bool perform(ExceptionState& exceptionState)
+    virtual bool perform(ExceptionState& exceptionState) OVERRIDE
     {
         m_anchorNode = m_node->nextSibling();
         return redo(exceptionState);
     }
 
-    virtual bool undo(ExceptionState& exceptionState)
+    virtual bool undo(ExceptionState& exceptionState) OVERRIDE
     {
         m_parentNode->insertBefore(m_node.get(), m_anchorNode.get(), exceptionState);
         return !exceptionState.hadException();
     }
 
-    virtual bool redo(ExceptionState& exceptionState)
+    virtual bool redo(ExceptionState& exceptionState) OVERRIDE
     {
         m_parentNode->removeChild(m_node.get(), exceptionState);
         return !exceptionState.hadException();
     }
 
+    virtual void trace(Visitor* visitor) OVERRIDE
+    {
+        visitor->trace(m_parentNode);
+        visitor->trace(m_node);
+        visitor->trace(m_anchorNode);
+        InspectorHistory::Action::trace(visitor);
+    }
+
 private:
-    RefPtr<Node> m_parentNode;
-    RefPtr<Node> m_node;
-    RefPtr<Node> m_anchorNode;
+    RefPtrWillBeMember<Node> m_parentNode;
+    RefPtrWillBeMember<Node> m_node;
+    RefPtrWillBeMember<Node> m_anchorNode;
 };
 
-class DOMEditor::InsertBeforeAction : public InspectorHistory::Action {
+class DOMEditor::InsertBeforeAction FINAL : public InspectorHistory::Action {
     WTF_MAKE_NONCOPYABLE(InsertBeforeAction);
 public:
-    InsertBeforeAction(Node* parentNode, PassRefPtr<Node> node, Node* anchorNode)
+    InsertBeforeAction(Node* parentNode, PassRefPtrWillBeRawPtr<Node> node, Node* anchorNode)
         : InspectorHistory::Action("InsertBefore")
         , m_parentNode(parentNode)
         , m_node(node)
@@ -91,10 +97,10 @@ public:
     {
     }
 
-    virtual bool perform(ExceptionState& exceptionState)
+    virtual bool perform(ExceptionState& exceptionState) OVERRIDE
     {
         if (m_node->parentNode()) {
-            m_removeChildAction = adoptPtr(new RemoveChildAction(m_node->parentNode(), m_node.get()));
+            m_removeChildAction = adoptRefWillBeNoop(new RemoveChildAction(m_node->parentNode(), m_node.get()));
             if (!m_removeChildAction->perform(exceptionState))
                 return false;
         }
@@ -102,7 +108,7 @@ public:
         return !exceptionState.hadException();
     }
 
-    virtual bool undo(ExceptionState& exceptionState)
+    virtual bool undo(ExceptionState& exceptionState) OVERRIDE
     {
         m_parentNode->removeChild(m_node.get(), exceptionState);
         if (exceptionState.hadException())
@@ -112,7 +118,7 @@ public:
         return true;
     }
 
-    virtual bool redo(ExceptionState& exceptionState)
+    virtual bool redo(ExceptionState& exceptionState) OVERRIDE
     {
         if (m_removeChildAction && !m_removeChildAction->redo(exceptionState))
             return false;
@@ -120,14 +126,23 @@ public:
         return !exceptionState.hadException();
     }
 
+    virtual void trace(Visitor* visitor) OVERRIDE
+    {
+        visitor->trace(m_parentNode);
+        visitor->trace(m_node);
+        visitor->trace(m_anchorNode);
+        visitor->trace(m_removeChildAction);
+        InspectorHistory::Action::trace(visitor);
+    }
+
 private:
-    RefPtr<Node> m_parentNode;
-    RefPtr<Node> m_node;
-    RefPtr<Node> m_anchorNode;
-    OwnPtr<RemoveChildAction> m_removeChildAction;
+    RefPtrWillBeMember<Node> m_parentNode;
+    RefPtrWillBeMember<Node> m_node;
+    RefPtrWillBeMember<Node> m_anchorNode;
+    RefPtrWillBeMember<RemoveChildAction> m_removeChildAction;
 };
 
-class DOMEditor::RemoveAttributeAction : public InspectorHistory::Action {
+class DOMEditor::RemoveAttributeAction FINAL : public InspectorHistory::Action {
     WTF_MAKE_NONCOPYABLE(RemoveAttributeAction);
 public:
     RemoveAttributeAction(Element* element, const AtomicString& name)
@@ -137,31 +152,37 @@ public:
     {
     }
 
-    virtual bool perform(ExceptionState& exceptionState)
+    virtual bool perform(ExceptionState& exceptionState) OVERRIDE
     {
         m_value = m_element->getAttribute(m_name);
         return redo(exceptionState);
     }
 
-    virtual bool undo(ExceptionState& exceptionState)
+    virtual bool undo(ExceptionState& exceptionState) OVERRIDE
     {
         m_element->setAttribute(m_name, m_value, exceptionState);
         return true;
     }
 
-    virtual bool redo(ExceptionState&)
+    virtual bool redo(ExceptionState&) OVERRIDE
     {
         m_element->removeAttribute(m_name);
         return true;
     }
 
+    virtual void trace(Visitor* visitor) OVERRIDE
+    {
+        visitor->trace(m_element);
+        InspectorHistory::Action::trace(visitor);
+    }
+
 private:
-    RefPtr<Element> m_element;
+    RefPtrWillBeMember<Element> m_element;
     AtomicString m_name;
     AtomicString m_value;
 };
 
-class DOMEditor::SetAttributeAction : public InspectorHistory::Action {
+class DOMEditor::SetAttributeAction FINAL : public InspectorHistory::Action {
     WTF_MAKE_NONCOPYABLE(SetAttributeAction);
 public:
     SetAttributeAction(Element* element, const AtomicString& name, const AtomicString& value)
@@ -173,15 +194,16 @@ public:
     {
     }
 
-    virtual bool perform(ExceptionState& exceptionState)
+    virtual bool perform(ExceptionState& exceptionState) OVERRIDE
     {
-        m_hadAttribute = m_element->hasAttribute(m_name);
+        const AtomicString& value = m_element->getAttribute(m_name);
+        m_hadAttribute = !value.isNull();
         if (m_hadAttribute)
-            m_oldValue = m_element->getAttribute(m_name);
+            m_oldValue = value;
         return redo(exceptionState);
     }
 
-    virtual bool undo(ExceptionState& exceptionState)
+    virtual bool undo(ExceptionState& exceptionState) OVERRIDE
     {
         if (m_hadAttribute)
             m_element->setAttribute(m_name, m_oldValue, exceptionState);
@@ -190,21 +212,27 @@ public:
         return true;
     }
 
-    virtual bool redo(ExceptionState& exceptionState)
+    virtual bool redo(ExceptionState& exceptionState) OVERRIDE
     {
         m_element->setAttribute(m_name, m_value, exceptionState);
         return true;
     }
 
+    virtual void trace(Visitor* visitor) OVERRIDE
+    {
+        visitor->trace(m_element);
+        InspectorHistory::Action::trace(visitor);
+    }
+
 private:
-    RefPtr<Element> m_element;
+    RefPtrWillBeMember<Element> m_element;
     AtomicString m_name;
     AtomicString m_value;
     bool m_hadAttribute;
     AtomicString m_oldValue;
 };
 
-class DOMEditor::SetOuterHTMLAction : public InspectorHistory::Action {
+class DOMEditor::SetOuterHTMLAction FINAL : public InspectorHistory::Action {
     WTF_MAKE_NONCOPYABLE(SetOuterHTMLAction);
 public:
     SetOuterHTMLAction(Node* node, const String& html)
@@ -212,13 +240,13 @@ public:
         , m_node(node)
         , m_nextSibling(node->nextSibling())
         , m_html(html)
-        , m_newNode(0)
-        , m_history(adoptPtr(new InspectorHistory()))
-        , m_domEditor(adoptPtr(new DOMEditor(m_history.get())))
+        , m_newNode(nullptr)
+        , m_history(adoptPtrWillBeNoop(new InspectorHistory()))
+        , m_domEditor(adoptPtrWillBeNoop(new DOMEditor(m_history.get())))
     {
     }
 
-    virtual bool perform(ExceptionState& exceptionState)
+    virtual bool perform(ExceptionState& exceptionState) OVERRIDE
     {
         m_oldHTML = createMarkup(m_node.get());
         ASSERT(m_node->ownerDocument());
@@ -227,12 +255,12 @@ public:
         return !exceptionState.hadException();
     }
 
-    virtual bool undo(ExceptionState& exceptionState)
+    virtual bool undo(ExceptionState& exceptionState) OVERRIDE
     {
         return m_history->undo(exceptionState);
     }
 
-    virtual bool redo(ExceptionState& exceptionState)
+    virtual bool redo(ExceptionState& exceptionState) OVERRIDE
     {
         return m_history->redo(exceptionState);
     }
@@ -242,17 +270,27 @@ public:
         return m_newNode;
     }
 
+    virtual void trace(Visitor* visitor) OVERRIDE
+    {
+        visitor->trace(m_node);
+        visitor->trace(m_nextSibling);
+        visitor->trace(m_newNode);
+        visitor->trace(m_history);
+        visitor->trace(m_domEditor);
+        InspectorHistory::Action::trace(visitor);
+    }
+
 private:
-    RefPtr<Node> m_node;
-    RefPtr<Node> m_nextSibling;
+    RefPtrWillBeMember<Node> m_node;
+    RefPtrWillBeMember<Node> m_nextSibling;
     String m_html;
     String m_oldHTML;
-    Node* m_newNode;
-    OwnPtr<InspectorHistory> m_history;
-    OwnPtr<DOMEditor> m_domEditor;
+    RawPtrWillBeMember<Node> m_newNode;
+    OwnPtrWillBeMember<InspectorHistory> m_history;
+    OwnPtrWillBeMember<DOMEditor> m_domEditor;
 };
 
-class DOMEditor::ReplaceWholeTextAction : public InspectorHistory::Action {
+class DOMEditor::ReplaceWholeTextAction FINAL : public InspectorHistory::Action {
     WTF_MAKE_NONCOPYABLE(ReplaceWholeTextAction);
 public:
     ReplaceWholeTextAction(Text* textNode, const String& text)
@@ -262,34 +300,40 @@ public:
     {
     }
 
-    virtual bool perform(ExceptionState& exceptionState)
+    virtual bool perform(ExceptionState& exceptionState) OVERRIDE
     {
         m_oldText = m_textNode->wholeText();
         return redo(exceptionState);
     }
 
-    virtual bool undo(ExceptionState&)
+    virtual bool undo(ExceptionState&) OVERRIDE
     {
         m_textNode->replaceWholeText(m_oldText);
         return true;
     }
 
-    virtual bool redo(ExceptionState&)
+    virtual bool redo(ExceptionState&) OVERRIDE
     {
         m_textNode->replaceWholeText(m_text);
         return true;
     }
 
+    virtual void trace(Visitor* visitor) OVERRIDE
+    {
+        visitor->trace(m_textNode);
+        InspectorHistory::Action::trace(visitor);
+    }
+
 private:
-    RefPtr<Text> m_textNode;
+    RefPtrWillBeMember<Text> m_textNode;
     String m_text;
     String m_oldText;
 };
 
-class DOMEditor::ReplaceChildNodeAction : public InspectorHistory::Action {
+class DOMEditor::ReplaceChildNodeAction FINAL : public InspectorHistory::Action {
     WTF_MAKE_NONCOPYABLE(ReplaceChildNodeAction);
 public:
-    ReplaceChildNodeAction(Node* parentNode, PassRefPtr<Node> newNode, Node* oldNode)
+    ReplaceChildNodeAction(Node* parentNode, PassRefPtrWillBeRawPtr<Node> newNode, Node* oldNode)
         : InspectorHistory::Action("ReplaceChildNode")
         , m_parentNode(parentNode)
         , m_newNode(newNode)
@@ -297,30 +341,38 @@ public:
     {
     }
 
-    virtual bool perform(ExceptionState& exceptionState)
+    virtual bool perform(ExceptionState& exceptionState) OVERRIDE
     {
         return redo(exceptionState);
     }
 
-    virtual bool undo(ExceptionState& exceptionState)
+    virtual bool undo(ExceptionState& exceptionState) OVERRIDE
     {
         m_parentNode->replaceChild(m_oldNode, m_newNode.get(), exceptionState);
         return !exceptionState.hadException();
     }
 
-    virtual bool redo(ExceptionState& exceptionState)
+    virtual bool redo(ExceptionState& exceptionState) OVERRIDE
     {
         m_parentNode->replaceChild(m_newNode, m_oldNode.get(), exceptionState);
         return !exceptionState.hadException();
     }
 
+    virtual void trace(Visitor* visitor) OVERRIDE
+    {
+        visitor->trace(m_parentNode);
+        visitor->trace(m_newNode);
+        visitor->trace(m_oldNode);
+        InspectorHistory::Action::trace(visitor);
+    }
+
 private:
-    RefPtr<Node> m_parentNode;
-    RefPtr<Node> m_newNode;
-    RefPtr<Node> m_oldNode;
+    RefPtrWillBeMember<Node> m_parentNode;
+    RefPtrWillBeMember<Node> m_newNode;
+    RefPtrWillBeMember<Node> m_oldNode;
 };
 
-class DOMEditor::SetNodeValueAction : public InspectorHistory::Action {
+class DOMEditor::SetNodeValueAction FINAL : public InspectorHistory::Action {
     WTF_MAKE_NONCOPYABLE(SetNodeValueAction);
 public:
     SetNodeValueAction(Node* node, const String& value)
@@ -330,77 +382,80 @@ public:
     {
     }
 
-    virtual bool perform(ExceptionState&)
+    virtual bool perform(ExceptionState&) OVERRIDE
     {
         m_oldValue = m_node->nodeValue();
         return redo(IGNORE_EXCEPTION);
     }
 
-    virtual bool undo(ExceptionState&)
+    virtual bool undo(ExceptionState&) OVERRIDE
     {
         m_node->setNodeValue(m_oldValue);
         return true;
     }
 
-    virtual bool redo(ExceptionState&)
+    virtual bool redo(ExceptionState&) OVERRIDE
     {
         m_node->setNodeValue(m_value);
         return true;
     }
 
+    virtual void trace(Visitor* visitor) OVERRIDE
+    {
+        visitor->trace(m_node);
+        InspectorHistory::Action::trace(visitor);
+    }
+
 private:
-    RefPtr<Node> m_node;
+    RefPtrWillBeMember<Node> m_node;
     String m_value;
     String m_oldValue;
 };
 
 DOMEditor::DOMEditor(InspectorHistory* history) : m_history(history) { }
 
-DOMEditor::~DOMEditor() { }
-
-bool DOMEditor::insertBefore(Node* parentNode, PassRefPtr<Node> node, Node* anchorNode, ExceptionState& exceptionState)
+bool DOMEditor::insertBefore(Node* parentNode, PassRefPtrWillBeRawPtr<Node> node, Node* anchorNode, ExceptionState& exceptionState)
 {
-    return m_history->perform(adoptPtr(new InsertBeforeAction(parentNode, node, anchorNode)), exceptionState);
+    return m_history->perform(adoptRefWillBeNoop(new InsertBeforeAction(parentNode, node, anchorNode)), exceptionState);
 }
 
 bool DOMEditor::removeChild(Node* parentNode, Node* node, ExceptionState& exceptionState)
 {
-    return m_history->perform(adoptPtr(new RemoveChildAction(parentNode, node)), exceptionState);
+    return m_history->perform(adoptRefWillBeNoop(new RemoveChildAction(parentNode, node)), exceptionState);
 }
 
 bool DOMEditor::setAttribute(Element* element, const String& name, const String& value, ExceptionState& exceptionState)
 {
-    return m_history->perform(adoptPtr(new SetAttributeAction(element, name, value)), exceptionState);
+    return m_history->perform(adoptRefWillBeNoop(new SetAttributeAction(element, AtomicString(name), AtomicString(value))), exceptionState);
 }
 
 bool DOMEditor::removeAttribute(Element* element, const String& name, ExceptionState& exceptionState)
 {
-    return m_history->perform(adoptPtr(new RemoveAttributeAction(element, name)), exceptionState);
+    return m_history->perform(adoptRefWillBeNoop(new RemoveAttributeAction(element, AtomicString(name))), exceptionState);
 }
 
 bool DOMEditor::setOuterHTML(Node* node, const String& html, Node** newNode, ExceptionState& exceptionState)
 {
-    OwnPtr<SetOuterHTMLAction> action = adoptPtr(new SetOuterHTMLAction(node, html));
-    SetOuterHTMLAction* rawAction = action.get();
-    bool result = m_history->perform(action.release(), exceptionState);
+    RefPtrWillBeRawPtr<SetOuterHTMLAction> action = adoptRefWillBeNoop(new SetOuterHTMLAction(node, html));
+    bool result = m_history->perform(action, exceptionState);
     if (result)
-        *newNode = rawAction->newNode();
+        *newNode = action->newNode();
     return result;
 }
 
 bool DOMEditor::replaceWholeText(Text* textNode, const String& text, ExceptionState& exceptionState)
 {
-    return m_history->perform(adoptPtr(new ReplaceWholeTextAction(textNode, text)), exceptionState);
+    return m_history->perform(adoptRefWillBeNoop(new ReplaceWholeTextAction(textNode, text)), exceptionState);
 }
 
-bool DOMEditor::replaceChild(Node* parentNode, PassRefPtr<Node> newNode, Node* oldNode, ExceptionState& exceptionState)
+bool DOMEditor::replaceChild(Node* parentNode, PassRefPtrWillBeRawPtr<Node> newNode, Node* oldNode, ExceptionState& exceptionState)
 {
-    return m_history->perform(adoptPtr(new ReplaceChildNodeAction(parentNode, newNode, oldNode)), exceptionState);
+    return m_history->perform(adoptRefWillBeNoop(new ReplaceChildNodeAction(parentNode, newNode, oldNode)), exceptionState);
 }
 
 bool DOMEditor::setNodeValue(Node* node, const String& value, ExceptionState& exceptionState)
 {
-    return m_history->perform(adoptPtr(new SetNodeValueAction(node, value)), exceptionState);
+    return m_history->perform(adoptRefWillBeNoop(new SetNodeValueAction(node, value)), exceptionState);
 }
 
 static void populateErrorString(ExceptionState& exceptionState, ErrorString* errorString)
@@ -409,7 +464,7 @@ static void populateErrorString(ExceptionState& exceptionState, ErrorString* err
         *errorString = DOMException::getErrorName(exceptionState.code());
 }
 
-bool DOMEditor::insertBefore(Node* parentNode, PassRefPtr<Node> node, Node* anchorNode, ErrorString* errorString)
+bool DOMEditor::insertBefore(Node* parentNode, PassRefPtrWillBeRawPtr<Node> node, Node* anchorNode, ErrorString* errorString)
 {
     TrackExceptionState exceptionState;
     bool result = insertBefore(parentNode, node, anchorNode, exceptionState);
@@ -455,6 +510,11 @@ bool DOMEditor::replaceWholeText(Text* textNode, const String& text, ErrorString
     bool result = replaceWholeText(textNode, text, exceptionState);
     populateErrorString(exceptionState, errorString);
     return result;
+}
+
+void DOMEditor::trace(Visitor* visitor)
+{
+    visitor->trace(m_history);
 }
 
 } // namespace WebCore

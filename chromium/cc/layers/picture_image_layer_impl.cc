@@ -27,47 +27,32 @@ scoped_ptr<LayerImpl> PictureImageLayerImpl::CreateLayerImpl(
   return PictureImageLayerImpl::Create(tree_impl, id()).PassAs<LayerImpl>();
 }
 
-void PictureImageLayerImpl::CalculateContentsScale(
-    float ideal_contents_scale,
-    float device_scale_factor,
-    float page_scale_factor,
-    bool animating_transform_to_screen,
-    float* contents_scale_x,
-    float* contents_scale_y,
-    gfx::Size* content_bounds) {
-  // CalculateRasterContentsScale always returns 1.f, so make that the ideal
-  // scale.
-  ideal_contents_scale = 1.f;
-  PictureLayerImpl::CalculateContentsScale(ideal_contents_scale,
-                                           device_scale_factor,
-                                           page_scale_factor,
-                                           animating_transform_to_screen,
-                                           contents_scale_x,
-                                           contents_scale_y,
-                                           content_bounds);
-}
-
 void PictureImageLayerImpl::GetDebugBorderProperties(
     SkColor* color, float* width) const {
   *color = DebugColors::ImageLayerBorderColor();
   *width = DebugColors::ImageLayerBorderWidth(layer_tree_impl());
 }
 
-bool PictureImageLayerImpl::ShouldAdjustRasterScale(
-    bool animating_transform_to_screen) const {
+bool PictureImageLayerImpl::ShouldAdjustRasterScale() const {
   return false;
 }
 
-void PictureImageLayerImpl::RecalculateRasterScales(
-    bool animating_transform_to_screen) {
-  // Defaults from PictureLayerImpl.
-  PictureLayerImpl::RecalculateRasterScales(animating_transform_to_screen);
-
+void PictureImageLayerImpl::RecalculateRasterScales() {
   // Don't scale images during rastering to ensure image quality, save memory
   // and avoid frequent re-rastering on change of scale.
-  raster_contents_scale_ = std::max(1.f, MinimumContentsScale());
+  raster_page_scale_ = 1.f;
+  raster_device_scale_ = 1.f;
+  raster_source_scale_ = std::max(1.f, MinimumContentsScale());
+  raster_contents_scale_ = raster_source_scale_;
   // We don't need low res tiles.
   low_res_raster_contents_scale_ = raster_contents_scale_;
+}
+
+void PictureImageLayerImpl::UpdateIdealScales() {
+  ideal_contents_scale_ = 1.f;
+  ideal_page_scale_ = 1.f;
+  ideal_device_scale_ = 1.f;
+  ideal_source_scale_ = 1.f;
 }
 
 }  // namespace cc

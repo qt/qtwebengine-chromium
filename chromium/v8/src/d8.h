@@ -1,41 +1,18 @@
 // Copyright 2012 the V8 project authors. All rights reserved.
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-//       copyright notice, this list of conditions and the following
-//       disclaimer in the documentation and/or other materials provided
-//       with the distribution.
-//     * Neither the name of Google Inc. nor the names of its
-//       contributors may be used to endorse or promote products derived
-//       from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
 #ifndef V8_D8_H_
 #define V8_D8_H_
 
 #ifndef V8_SHARED
-#include "allocation.h"
-#include "hashmap.h"
-#include "smart-pointers.h"
-#include "v8.h"
+#include "src/allocation.h"
+#include "src/hashmap.h"
+#include "src/smart-pointers.h"
+#include "src/v8.h"
 #else
-#include "../include/v8.h"
-#endif  // V8_SHARED
+#include "include/v8.h"
+#endif  // !V8_SHARED
 
 namespace v8 {
 
@@ -113,7 +90,7 @@ class CounterMap {
   static bool Match(void* key1, void* key2);
   i::HashMap hash_map_;
 };
-#endif  // V8_SHARED
+#endif  // !V8_SHARED
 
 
 class LineEditor {
@@ -143,7 +120,7 @@ class SourceGroup {
       next_semaphore_(0),
       done_semaphore_(0),
       thread_(NULL),
-#endif  // V8_SHARED
+#endif  // !V8_SHARED
       argv_(NULL),
       begin_offset_(0),
       end_offset_(0) {}
@@ -183,7 +160,7 @@ class SourceGroup {
   i::Semaphore next_semaphore_;
   i::Semaphore done_semaphore_;
   i::Thread* thread_;
-#endif  // V8_SHARED
+#endif  // !V8_SHARED
 
   void ExitShell(int exit_code);
   Handle<String> ReadFile(Isolate* isolate, const char* name);
@@ -218,13 +195,10 @@ class BinaryResource : public v8::String::ExternalAsciiStringResource {
 class ShellOptions {
  public:
   ShellOptions() :
-#ifndef V8_SHARED
-     num_parallel_files(0),
-     parallel_files(NULL),
-#endif  // V8_SHARED
      script_executed(false),
      last_run(true),
      send_idle_notification(false),
+     invoke_weak_callbacks(false),
      stress_opt(false),
      stress_deopt(false),
      interactive_shell(false),
@@ -233,22 +207,21 @@ class ShellOptions {
      expected_to_throw(false),
      mock_arraybuffer_allocator(false),
      num_isolates(1),
-     isolate_sources(NULL) { }
+     isolate_sources(NULL),
+     icu_data_file(NULL) { }
 
   ~ShellOptions() {
-#ifndef V8_SHARED
-    delete[] parallel_files;
-#endif  // V8_SHARED
     delete[] isolate_sources;
   }
 
-#ifndef V8_SHARED
-  int num_parallel_files;
-  char** parallel_files;
-#endif  // V8_SHARED
+  bool use_interactive_shell() {
+    return (interactive_shell || !script_executed) && !test_shell;
+  }
+
   bool script_executed;
   bool last_run;
   bool send_idle_notification;
+  bool invoke_weak_callbacks;
   bool stress_opt;
   bool stress_deopt;
   bool interactive_shell;
@@ -258,6 +231,7 @@ class ShellOptions {
   bool mock_arraybuffer_allocator;
   int num_isolates;
   SourceGroup* isolate_sources;
+  const char* icu_data_file;
 };
 
 #ifdef V8_SHARED
@@ -291,18 +265,15 @@ class Shell : public i::AllStatic {
                                int max,
                                size_t buckets);
   static void AddHistogramSample(void* histogram, int sample);
-  static void MapCounters(const char* name);
+  static void MapCounters(v8::Isolate* isolate, const char* name);
 
-#ifdef ENABLE_DEBUGGER_SUPPORT
-  static Handle<Object> DebugMessageDetails(Isolate* isolate,
-                                            Handle<String> message);
-  static Handle<Value> DebugCommandToJSONRequest(Isolate* isolate,
-                                                 Handle<String> command);
-  static void DispatchDebugMessages();
-#endif  // ENABLE_DEBUGGER_SUPPORT
+  static Local<Object> DebugMessageDetails(Isolate* isolate,
+                                           Handle<String> message);
+  static Local<Value> DebugCommandToJSONRequest(Isolate* isolate,
+                                                Handle<String> command);
 
   static void PerformanceNow(const v8::FunctionCallbackInfo<v8::Value>& args);
-#endif  // V8_SHARED
+#endif  // !V8_SHARED
 
   static void RealmCurrent(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void RealmOwner(const v8::FunctionCallbackInfo<v8::Value>& args);
@@ -398,7 +369,7 @@ class Shell : public i::AllStatic {
 
   static Counter* GetCounter(const char* name, bool is_histogram);
   static void InstallUtilityScript(Isolate* isolate);
-#endif  // V8_SHARED
+#endif  // !V8_SHARED
   static void Initialize(Isolate* isolate);
   static void InitializeDebugger(Isolate* isolate);
   static void RunShell(Isolate* isolate);

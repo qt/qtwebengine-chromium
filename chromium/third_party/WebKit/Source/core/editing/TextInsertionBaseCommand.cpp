@@ -31,7 +31,7 @@
 #include "core/dom/Element.h"
 #include "core/dom/Node.h"
 #include "core/editing/FrameSelection.h"
-#include "core/frame/Frame.h"
+#include "core/frame/LocalFrame.h"
 
 namespace WebCore {
 
@@ -40,7 +40,7 @@ TextInsertionBaseCommand::TextInsertionBaseCommand(Document& document)
 {
 }
 
-void TextInsertionBaseCommand::applyTextInsertionCommand(Frame* frame, PassRefPtr<TextInsertionBaseCommand> command, const VisibleSelection& selectionForInsertion, const VisibleSelection& endingSelection)
+void TextInsertionBaseCommand::applyTextInsertionCommand(LocalFrame* frame, PassRefPtrWillBeRawPtr<TextInsertionBaseCommand> command, const VisibleSelection& selectionForInsertion, const VisibleSelection& endingSelection)
 {
     bool changeSelection = selectionForInsertion != endingSelection;
     if (changeSelection) {
@@ -63,7 +63,7 @@ String dispatchBeforeTextInsertedEvent(const String& text, const VisibleSelectio
     if (Node* startNode = selectionForInsertion.start().containerNode()) {
         if (startNode->rootEditableElement()) {
             // Send BeforeTextInsertedEvent. The event handler will update text if necessary.
-            RefPtr<BeforeTextInsertedEvent> evt = BeforeTextInsertedEvent::create(text);
+            RefPtrWillBeRawPtr<BeforeTextInsertedEvent> evt = BeforeTextInsertedEvent::create(text);
             startNode->rootEditableElement()->dispatchEvent(evt, IGNORE_EXCEPTION);
             newText = evt->text();
         }
@@ -77,7 +77,7 @@ bool canAppendNewLineFeedToSelection(const VisibleSelection& selection)
     if (!node)
         return false;
 
-    RefPtr<BeforeTextInsertedEvent> event = BeforeTextInsertedEvent::create(String("\n"));
+    RefPtrWillBeRawPtr<BeforeTextInsertedEvent> event = BeforeTextInsertedEvent::create(String("\n"));
     node->dispatchEvent(event, IGNORE_EXCEPTION);
     return event->text().length();
 }

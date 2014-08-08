@@ -28,25 +28,27 @@
 
 #include "bindings/v8/ScriptWrappable.h"
 #include "modules/device_orientation/DeviceMotionData.h"
+#include "platform/heap/Handle.h"
 #include "wtf/RefCounted.h"
 
 namespace WebCore {
 
-class DeviceRotationRate : public ScriptWrappable, public RefCounted<DeviceRotationRate> {
+class DeviceRotationRate : public RefCountedWillBeGarbageCollectedFinalized<DeviceRotationRate>, public ScriptWrappable {
 public:
-    static PassRefPtr<DeviceRotationRate> create(PassRefPtr<DeviceMotionData::RotationRate> rotationRate)
+    static PassRefPtrWillBeRawPtr<DeviceRotationRate> create(PassRefPtrWillBeRawPtr<DeviceMotionData::RotationRate> rotationRate)
     {
-        return adoptRef(new DeviceRotationRate(rotationRate));
+        return adoptRefWillBeNoop(new DeviceRotationRate(rotationRate));
     }
+    void trace(Visitor*);
 
     double alpha(bool& isNull) const;
     double beta(bool& isNull) const;
     double gamma(bool& isNull) const;
 
 private:
-    DeviceRotationRate(PassRefPtr<DeviceMotionData::RotationRate>);
+    DeviceRotationRate(PassRefPtrWillBeRawPtr<DeviceMotionData::RotationRate>);
 
-    RefPtr<DeviceMotionData::RotationRate> m_rotationRate;
+    RefPtrWillBeMember<DeviceMotionData::RotationRate> m_rotationRate;
 };
 
 } // namespace WebCore

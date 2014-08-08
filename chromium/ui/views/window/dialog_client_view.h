@@ -57,12 +57,13 @@ class VIEWS_EXPORT DialogClientView : public ClientView,
                                 View* focused_now) OVERRIDE;
 
   // View implementation:
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
   virtual void Layout() OVERRIDE;
   virtual bool AcceleratorPressed(const ui::Accelerator& accelerator) OVERRIDE;
   virtual void ViewHierarchyChanged(
       const ViewHierarchyChangedDetails& details) OVERRIDE;
   virtual void NativeViewHierarchyChanged() OVERRIDE;
+  virtual void OnNativeThemeChanged(const ui::NativeTheme* theme) OVERRIDE;
 
   // ButtonListener implementation:
   virtual void ButtonPressed(Button* sender, const ui::Event& event) OVERRIDE;

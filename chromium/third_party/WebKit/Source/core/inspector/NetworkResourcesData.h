@@ -29,7 +29,8 @@
 #ifndef NetworkResourcesData_h
 #define NetworkResourcesData_h
 
-#include "core/fetch/TextResourceDecoder.h"
+#include "core/dom/ContextLifecycleObserver.h"
+#include "core/html/parser/TextResourceDecoder.h"
 #include "core/inspector/InspectorPageAgent.h"
 #include "platform/network/HTTPHeaderMap.h"
 #include "platform/weborigin/KURL.h"
@@ -41,15 +42,18 @@
 
 namespace WebCore {
 
+class ExecutionContext;
 class Resource;
 class FormData;
 class ResourceResponse;
 class SharedBuffer;
 class TextResourceDecoder;
 
-class XHRReplayData : public RefCounted<XHRReplayData> {
+class XHRReplayData
+    : public RefCounted<XHRReplayData>
+    , public ContextLifecycleObserver {
 public:
-    static PassRefPtr<XHRReplayData> create(const AtomicString& method, const KURL&, bool async, PassRefPtr<FormData>, bool includeCredentials);
+    static PassRefPtr<XHRReplayData> create(ExecutionContext*, const AtomicString& method, const KURL&, bool async, PassRefPtr<FormData>, bool includeCredentials);
 
     void addHeader(const AtomicString& key, const AtomicString& value);
     const AtomicString& method() const { return m_method; }
@@ -60,7 +64,7 @@ public:
     bool includeCredentials() const { return m_includeCredentials; }
 
 private:
-    XHRReplayData(const AtomicString& method, const KURL&, bool async, PassRefPtr<FormData>, bool includeCredentials);
+    XHRReplayData(ExecutionContext*, const AtomicString& method, const KURL&, bool async, PassRefPtr<FormData>, bool includeCredentials);
 
     AtomicString m_method;
     KURL m_url;
@@ -156,14 +160,12 @@ public:
     void maybeAddResourceData(const String& requestId, const char* data, size_t dataLength);
     void maybeDecodeDataToContent(const String& requestId);
     void addResource(const String& requestId, Resource*);
-    void addResourceSharedBuffer(const String& requestId, PassRefPtr<SharedBuffer>, const String& textEncodingName);
     ResourceData const* data(const String& requestId);
     Vector<String> removeResource(Resource*);
     void clear(const String& preservedLoaderId = String());
 
     void setResourcesDataSizeLimits(size_t maximumResourcesContentSize, size_t maximumSingleResourceContentSize);
     void setXHRReplayData(const String& requestId, XHRReplayData*);
-    void reuseXHRReplayData(const String& requestId, const String& reusedRequestId);
     XHRReplayData* xhrReplayData(const String& requestId);
     Vector<ResourceData*> resources();
 

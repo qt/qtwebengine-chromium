@@ -9,8 +9,10 @@
 #include "base/stl_util.h"
 #include "base/time/time.h"
 #include "base/values.h"
+#include "ui/gfx/image/image.h"
 #include "ui/message_center/message_center_style.h"
 #include "ui/message_center/notification.h"
+#include "ui/message_center/notification_blocker.h"
 #include "ui/message_center/notification_types.h"
 
 namespace message_center {
@@ -158,10 +160,6 @@ bool NotificationList::SetNotificationButtonIcon(
   return true;
 }
 
-bool NotificationList::HasNotification(const std::string& id) {
-  return GetNotification(id) != notifications_.end();
-}
-
 bool NotificationList::HasNotificationOfType(const std::string& id,
                                              const NotificationType type) {
   Notifications::iterator iter = GetNotification(id);
@@ -250,12 +248,6 @@ void NotificationList::MarkSinglePopupAsDisplayed(const std::string& id) {
     (*iter)->set_is_read(true);
 }
 
-void NotificationList::MarkNotificationAsExpanded(const std::string& id) {
-  Notifications::iterator iter = GetNotification(id);
-  if (iter != notifications_.end())
-    (*iter)->set_is_expanded(true);
-}
-
 NotificationDelegate* NotificationList::GetNotificationDelegate(
     const std::string& id) {
   Notifications::iterator iter = GetNotification(id);
@@ -273,6 +265,13 @@ void NotificationList::SetQuietMode(bool quiet_mode) {
       (*iter)->set_shown_as_popup(true);
     }
   }
+}
+
+Notification* NotificationList::GetNotificationById(const std::string& id) {
+  Notifications::iterator iter = GetNotification(id);
+  if (iter != notifications_.end())
+    return *iter;
+  return NULL;
 }
 
 NotificationList::Notifications NotificationList::GetVisibleNotifications(

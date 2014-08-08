@@ -34,18 +34,17 @@
 #include "modules/websockets/WebSocketHandshake.h"
 
 #include "core/dom/Document.h"
-#include "core/dom/ExecutionContext.h"
 #include "core/inspector/ScriptCallStack.h"
 #include "core/loader/CookieJar.h"
 #include "modules/websockets/WebSocket.h"
 #include "platform/Cookie.h"
+#include "platform/Crypto.h"
 #include "platform/Logging.h"
 #include "platform/network/HTTPHeaderMap.h"
 #include "platform/network/HTTPParsers.h"
 #include "platform/weborigin/SecurityOrigin.h"
 #include "public/platform/Platform.h"
 #include "wtf/CryptographicallyRandomNumber.h"
-#include "wtf/SHA1.h"
 #include "wtf/StdLibExtras.h"
 #include "wtf/StringExtras.h"
 #include "wtf/Vector.h"
@@ -56,22 +55,10 @@
 
 namespace WebCore {
 
-namespace {
-
-// FIXME: The spec says that the Sec-WebSocket-Protocol header in a handshake
-// response can't be null if the header in a request is not null.
-// Some servers are not accustomed to the shutdown,
-// so we provide an adhoc white-list for it tentatively.
-const char* const missingProtocolWhiteList[] = {
-    "ica.citrix.com",
-};
-
 String formatHandshakeFailureReason(const String& detail)
 {
     return "Error during WebSocket handshake: " + detail;
 }
-
-} // namespace
 
 static String resourceName(const KURL& url)
 {
@@ -104,10 +91,9 @@ static String hostName(const KURL& url, bool secure)
 static const size_t maxInputSampleSize = 128;
 static String trimInputSample(const char* p, size_t len)
 {
-    String s = String(p, std::min<size_t>(len, maxInputSampleSize));
     if (len > maxInputSampleSize)
-        s.append(horizontalEllipsis);
-    return s;
+        return String(p, maxInputSampleSize) + horizontalEllipsis;
+    return String(p, len);
 }
 
 static String generateSecWebSocketKey()
@@ -121,21 +107,24 @@ static String generateSecWebSocketKey()
 String WebSocketHandshake::getExpectedWebSocketAccept(const String& secWebSocketKey)
 {
     static const char webSocketKeyGUID[] = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
-    static const size_t sha1HashSize = 20; // FIXME: This should be defined in SHA1.h.
-    SHA1 sha1;
     CString keyData = secWebSocketKey.ascii();
-    sha1.addBytes(reinterpret_cast<const uint8_t*>(keyData.data()), keyData.length());
-    sha1.addBytes(reinterpret_cast<const uint8_t*>(webSocketKeyGUID), strlen(webSocketKeyGUID));
-    Vector<uint8_t, sha1HashSize> hash;
-    sha1.computeHash(hash);
-    return base64Encode(reinterpret_cast<const char*>(hash.data()), sha1HashSize);
+
+    StringBuilder digestable;
+    digestable.append(secWebSocketKey);
+    digestable.append(webSocketKeyGUID, strlen(webSocketKeyGUID));
+    CString digestableCString = digestable.toString().utf8();
+    DigestValue digest;
+    bool digestSuccess = computeDigest(HashAlgorithmSha1, digestableCString.data(), digestableCString.length(), digest);
+    RELEASE_ASSERT(digestSuccess);
+
+    return base64Encode(reinterpret_cast<const char*>(digest.data()), sha1HashSize);
 }
 
-WebSocketHandshake::WebSocketHandshake(const KURL& url, const String& protocol, ExecutionContext* context)
+WebSocketHandshake::WebSocketHandshake(const KURL& url, const String& protocol, Document* document)
     : m_url(url)
     , m_clientProtocol(protocol)
     , m_secure(m_url.protocolIs("wss"))
-    , m_context(context)
+    , m_document(document)
     , m_mode(Incomplete)
 {
     m_secWebSocketKey = generateSecWebSocketKey();
@@ -179,7 +168,7 @@ bool WebSocketHandshake::secure() const
 
 String WebSocketHandshake::clientOrigin() const
 {
-    return m_context->securityOrigin()->toString();
+    return m_document->securityOrigin()->toString();
 }
 
 String WebSocketHandshake::clientLocation() const
@@ -194,6 +183,8 @@ String WebSocketHandshake::clientLocation() const
 
 CString WebSocketHandshake::clientHandshakeMessage() const
 {
+    ASSERT(m_document);
+
     // Keep the following consistent with clientHandshakeRequest().
     StringBuilder builder;
 
@@ -209,15 +200,6 @@ CString WebSocketHandshake::clientHandshakeMessage() const
     if (!m_clientProtocol.isEmpty())
         fields.append("Sec-WebSocket-Protocol: " + m_clientProtocol);
 
-    KURL url = httpURLForAuthenticationAndCookies();
-    if (m_context->isDocument()) {
-        Document* document = toDocument(m_context);
-        String cookie = cookieRequestHeaderFieldValue(document, url);
-        if (!cookie.isEmpty())
-            fields.append("Cookie: " + cookie);
-        // Set "Cookie2: <cookie>" if cookies 2 exists for url?
-    }
-
     // Add no-cache headers to avoid compatibility issue.
     // There are some proxies that rewrite "Connection: upgrade"
     // to "Connection: close" in the response if a request doesn't contain
@@ -231,8 +213,7 @@ CString WebSocketHandshake::clientHandshakeMessage() const
     if (extensionValue.length())
         fields.append("Sec-WebSocket-Extensions: " + extensionValue);
 
-    // Add a User-Agent header.
-    fields.append("User-Agent: " + m_context->userAgent(m_context->url()));
+    fields.append("User-Agent: " + m_document->userAgent(m_document->url()));
 
     // Fields in the handshake are sent by the client in a random order; the
     // order is not meaningful. Thus, it's ok to send the order we constructed
@@ -250,37 +231,36 @@ CString WebSocketHandshake::clientHandshakeMessage() const
 
 PassRefPtr<WebSocketHandshakeRequest> WebSocketHandshake::clientHandshakeRequest() const
 {
+    ASSERT(m_document);
+
     // Keep the following consistent with clientHandshakeMessage().
     // FIXME: do we need to store m_secWebSocketKey1, m_secWebSocketKey2 and
     // m_key3 in WebSocketHandshakeRequest?
-    RefPtr<WebSocketHandshakeRequest> request = WebSocketHandshakeRequest::create("GET", m_url);
+    RefPtr<WebSocketHandshakeRequest> request = WebSocketHandshakeRequest::create(m_url);
     request->addHeaderField("Upgrade", "websocket");
     request->addHeaderField("Connection", "Upgrade");
-    request->addHeaderField("Host", hostName(m_url, m_secure));
-    request->addHeaderField("Origin", clientOrigin());
+    request->addHeaderField("Host", AtomicString(hostName(m_url, m_secure)));
+    request->addHeaderField("Origin", AtomicString(clientOrigin()));
     if (!m_clientProtocol.isEmpty())
-        request->addHeaderField("Sec-WebSocket-Protocol", m_clientProtocol);
+        request->addHeaderField("Sec-WebSocket-Protocol", AtomicString(m_clientProtocol));
 
     KURL url = httpURLForAuthenticationAndCookies();
-    if (m_context->isDocument()) {
-        Document* document = toDocument(m_context);
-        String cookie = cookieRequestHeaderFieldValue(document, url);
-        if (!cookie.isEmpty())
-            request->addHeaderField("Cookie", cookie);
-        // Set "Cookie2: <cookie>" if cookies 2 exists for url?
-    }
+
+    String cookie = cookieRequestHeaderFieldValue(m_document, url);
+    if (!cookie.isEmpty())
+        request->addHeaderField("Cookie", AtomicString(cookie));
+    // Set "Cookie2: <cookie>" if cookies 2 exists for url?
 
     request->addHeaderField("Pragma", "no-cache");
     request->addHeaderField("Cache-Control", "no-cache");
 
-    request->addHeaderField("Sec-WebSocket-Key", m_secWebSocketKey);
+    request->addHeaderField("Sec-WebSocket-Key", AtomicString(m_secWebSocketKey));
     request->addHeaderField("Sec-WebSocket-Version", "13");
     const String extensionValue = m_extensionDispatcher.createHeaderValue();
     if (extensionValue.length())
-        request->addHeaderField("Sec-WebSocket-Extensions", extensionValue);
+        request->addHeaderField("Sec-WebSocket-Extensions", AtomicString(extensionValue));
 
-    // Add a User-Agent header.
-    request->addHeaderField("User-Agent", m_context->userAgent(m_context->url()));
+    request->addHeaderField("User-Agent", AtomicString(m_document->userAgent(m_document->url())));
 
     return request.release();
 }
@@ -291,9 +271,9 @@ void WebSocketHandshake::reset()
     m_extensionDispatcher.reset();
 }
 
-void WebSocketHandshake::clearExecutionContext()
+void WebSocketHandshake::clearDocument()
 {
-    m_context = 0;
+    m_document = 0;
 }
 
 int WebSocketHandshake::readServerHandshake(const char* header, size_t len)
@@ -351,16 +331,6 @@ String WebSocketHandshake::failureReason() const
 const AtomicString& WebSocketHandshake::serverWebSocketProtocol() const
 {
     return m_response.headerFields().get("sec-websocket-protocol");
-}
-
-const AtomicString& WebSocketHandshake::serverSetCookie() const
-{
-    return m_response.headerFields().get("set-cookie");
-}
-
-const AtomicString& WebSocketHandshake::serverSetCookie2() const
-{
-    return m_response.headerFields().get("set-cookie2");
 }
 
 const AtomicString& WebSocketHandshake::serverUpgrade() const
@@ -482,7 +452,7 @@ const char* WebSocketHandshake::readHTTPHeaders(const char* start, const char* e
     bool sawSecWebSocketAcceptHeaderField = false;
     bool sawSecWebSocketProtocolHeaderField = false;
     const char* p = start;
-    for (; p < end; p++) {
+    while (p < end) {
         size_t consumedLength = parseHTTPHeader(p, end - p, m_failureReason, name, value);
         if (!consumedLength)
             return 0;
@@ -520,7 +490,7 @@ const char* WebSocketHandshake::readHTTPHeaders(const char* start, const char* e
 
     String extensions = m_extensionDispatcher.acceptedExtensions();
     if (!extensions.isEmpty())
-        m_response.addHeaderField("Sec-WebSocket-Extensions", extensions);
+        m_response.addHeaderField("Sec-WebSocket-Extensions", AtomicString(extensions));
     return p;
 }
 
@@ -563,26 +533,14 @@ bool WebSocketHandshake::checkResponseHeaders()
             return false;
         }
         Vector<String> result;
-        m_clientProtocol.split(String(WebSocket::subProtocolSeperator()), result);
+        m_clientProtocol.split(String(WebSocket::subprotocolSeperator()), result);
         if (!result.contains(serverWebSocketProtocol)) {
             m_failureReason = formatHandshakeFailureReason("'Sec-WebSocket-Protocol' header value '" + serverWebSocketProtocol + "' in response does not match any of sent values");
             return false;
         }
     } else if (!m_clientProtocol.isEmpty()) {
-        // FIXME: Some servers are not accustomed to this failure, so we provide an adhoc white-list for it tentatively.
-        Vector<String> protocols;
-        m_clientProtocol.split(String(WebSocket::subProtocolSeperator()), protocols);
-        bool match = false;
-        for (size_t i = 0; i < protocols.size() && !match; ++i) {
-            for (size_t j = 0; j < WTF_ARRAY_LENGTH(missingProtocolWhiteList) && !match; ++j) {
-                if (protocols[i] == missingProtocolWhiteList[j])
-                    match = true;
-            }
-        }
-        if (!match) {
-            m_failureReason = formatHandshakeFailureReason("Sent non-empty 'Sec-WebSocket-Protocol' header but no response was received");
-            return false;
-        }
+        m_failureReason = formatHandshakeFailureReason("Sent non-empty 'Sec-WebSocket-Protocol' header but no response was received");
+        return false;
     }
     return true;
 }

@@ -19,12 +19,14 @@
       'nacl_newlib_out_dir': '<(PRODUCT_DIR)/>(nexe_destination_dir)/newlib',
       'nacl_glibc_out_dir': '<(PRODUCT_DIR)/>(nexe_destination_dir)/glibc',
       'nacl_pnacl_newlib_out_dir': '<(PRODUCT_DIR)/>(nexe_destination_dir)/pnacl',
+      'nacl_pnacl_newlib_nonsfi_out_dir': '<(PRODUCT_DIR)/>(nexe_destination_dir)/nonsfi',
       'target_conditions': [
         ['nexe_target!=""', {
           # These variables are used for nexe building and for library building.
           'out_newlib32%': '>(nacl_newlib_out_dir)/>(nexe_target)_newlib_x86_32.nexe',
           'out_newlib64%': '>(nacl_newlib_out_dir)/>(nexe_target)_newlib_x86_64.nexe',
           'out_newlib_arm%': '>(nacl_newlib_out_dir)/>(nexe_target)_newlib_arm.nexe',
+          'out_newlib_mips%': '>(nacl_newlib_out_dir)/>(nexe_target)_newlib_mips32.nexe',
           'nmf_newlib%': '>(nacl_newlib_out_dir)/>(nexe_target).nmf',
           'out_glibc32%': '>(nacl_glibc_out_dir)/>(nexe_target)_glibc_x86_32.nexe',
           'out_glibc64%': '>(nacl_glibc_out_dir)/>(nexe_target)_glibc_x86_64.nexe',
@@ -32,12 +34,14 @@
           'nmf_glibc%': '>(nacl_glibc_out_dir)/>(nexe_target).nmf',
           'out_pnacl_newlib%': '>(nacl_pnacl_newlib_out_dir)/>(nexe_target)_newlib_pnacl.pexe',
           'nmf_pnacl_newlib%': '>(nacl_pnacl_newlib_out_dir)/>(nexe_target).nmf',
+          'out_pnacl_newlib_x86_32_nonsfi_nexe': '>(nacl_pnacl_newlib_nonsfi_out_dir)/>(nexe_target)_pnacl_newlib_x32_nonsfi.nexe',
+          'nmf_pnacl_newlib_nonsfi%': '>(nacl_pnacl_newlib_nonsfi_out_dir)/>(nexe_target).nmf',
         }],
       ],
     },
     'dependencies': [
        '<(DEPTH)/native_client/src/untrusted/nacl/nacl.gyp:nacl_lib',
-       '<(DEPTH)/ppapi/ppapi_untrusted.gyp:ppapi_cpp_lib',
+       '<(DEPTH)/ppapi/ppapi_nacl.gyp:ppapi_cpp_lib',
        '<(DEPTH)/ppapi/native_client/native_client.gyp:ppapi_lib',
     ],
     'target_conditions': [
@@ -51,7 +55,7 @@
           },
         ],
       }],
-      ['test_files!=[] and "<(target_arch)"!="arm" and disable_glibc==0 and build_glibc==1', {
+      ['test_files!=[] and "<(target_arch)"!="arm" and "<(target_arch)"!="mipsel" and disable_glibc==0 and build_glibc==1', {
         'copies': [
           {
             'destination': '>(nacl_glibc_out_dir)',
@@ -61,10 +65,21 @@
           },
         ],
       }],
+      # Nonsfi pnacl copy is covered below.
       ['test_files!=[] and build_pnacl_newlib==1 and disable_pnacl==0', {
         'copies': [
           {
             'destination': '>(nacl_pnacl_newlib_out_dir)',
+            'files': [
+              '>@(test_files)',
+            ],
+          },
+        ],
+      }],
+      ['test_files!=[] and build_pnacl_newlib==1 and enable_x86_32_nonsfi==1', {
+        'copies': [
+          {
+            'destination': '>(nacl_pnacl_newlib_nonsfi_out_dir)',
             'files': [
               '>@(test_files)',
             ],
@@ -78,6 +93,7 @@
           'enable_x86_64%': 0,
           'enable_x86_32%': 0,
           'enable_arm%': 0,
+          'enable_mips%': 0,
           'include_dirs': [
             '<(DEPTH)',
           ],
@@ -90,6 +106,8 @@
             '--strip-all',
           ],
           'create_nmf': '<(DEPTH)/native_client_sdk/src/tools/create_nmf.py',
+          'create_nmf_args_portable%': [],
+          'create_nonsfi_test_nmf': '<(DEPTH)/ppapi/tests/create_nonsfi_test_nmf.py',
         },
         'target_conditions': [
           ['generate_nmf==1 and build_newlib==1', {
@@ -100,24 +118,32 @@
                 'outputs': ['>(nmf_newlib)'],
                 'action': [
                   'python',
-                  '>@(_inputs)',
+                  '>(create_nmf)',
                   '--output=>(nmf_newlib)',
+                  '>@(create_nmf_args_portable)',
                 ],
                 'target_conditions': [
                   ['enable_x86_64==1', {
                     'inputs': ['>(out_newlib64)'],
+                    'action': ['>(out_newlib64)'],
                   }],
                   ['enable_x86_32==1', {
                     'inputs': ['>(out_newlib32)'],
+                    'action': ['>(out_newlib32)'],
                   }],
                   ['enable_arm==1', {
                     'inputs': ['>(out_newlib_arm)'],
+                    'action': ['>(out_newlib_arm)'],
+                  }],
+                  ['enable_mips==1', {
+                    'inputs': ['>(out_newlib_mips)'],
+                    'action': ['>(out_newlib_mips)'],
                   }],
                 ],
               },
             ],
           }],
-          ['"<(target_arch)"!="arm" and generate_nmf==1 and disable_glibc==0 and build_glibc==1', {
+          ['"<(target_arch)"!="arm" and "<(target_arch)"!="mipsel" and generate_nmf==1 and disable_glibc==0 and build_glibc==1', {
             'variables': {
               # NOTE: Use /lib, not /lib64 here; it is a symbolic link which
               # doesn't work on Windows.
@@ -135,16 +161,18 @@
                 'outputs': ['>(nmf_glibc)'],
                 'action': [
                   'python',
-                  '>@(_inputs)',
+                  '>(create_nmf)',
                   '--objdump=>(nacl_objdump)',
                   '--output=>(nmf_glibc)',
                   '--path-prefix=>(nexe_target)_libs',
                   '--stage-dependencies=<(nacl_glibc_out_dir)',
+                  '>@(create_nmf_args_portable)',
                 ],
                 'target_conditions': [
                   ['enable_x86_64==1', {
                     'inputs': ['>(out_glibc64)'],
                     'action': [
+                      '>(out_glibc64)',
                       '--library-path=>(libdir_glibc64)',
                       '--library-path=>(tc_lib_dir_glibc64)',
                     ],
@@ -152,6 +180,7 @@
                   ['enable_x86_32==1', {
                     'inputs': ['>(out_glibc32)'],
                     'action': [
+                      '>(out_glibc32)',
                       '--library-path=>(libdir_glibc32)',
                       '--library-path=>(tc_lib_dir_glibc32)',
                     ],
@@ -171,8 +200,30 @@
                 'outputs': ['>(nmf_pnacl_newlib)'],
                 'action': [
                   'python',
-                  '>@(_inputs)',
+                  '>(create_nmf)',
                   '--output=>(nmf_pnacl_newlib)',
+                  '>(out_pnacl_newlib)',
+                  '>@(create_nmf_args_portable)',
+                ],
+              },
+            ],
+          }],
+          ['generate_nmf==1 and build_pnacl_newlib==1 and disable_pnacl==0 and enable_x86_32_nonsfi==1', {
+            'actions': [
+              {
+                'action_name': 'Generate PNACL NEWLIB nonsfi NMF',
+                # If we add support for ARM, we should split the dependency on
+                # out_pnacl_newlib_x86_32_nonsfi_nexe to 'target_conditions',
+                # similar to build_newlib=1 config declared above.
+                'inputs': ['>(create_nonsfi_test_nmf)',
+                           '>(out_pnacl_newlib_x86_32_nonsfi_nexe)'],
+                'outputs': ['>(nmf_pnacl_newlib_nonsfi)'],
+                'action': [
+                  'python',
+                  '>(create_nonsfi_test_nmf)',
+                  '--output=>(nmf_pnacl_newlib_nonsfi)',
+                  '--program=>(out_pnacl_newlib_x86_32_nonsfi_nexe)',
+                  '>@(create_nmf_args_portable)'
                 ],
               },
             ],

@@ -26,14 +26,17 @@
 #ifndef WebGLObject_h
 #define WebGLObject_h
 
-#include "platform/graphics/GraphicsContext3D.h"
+#include "platform/graphics/GraphicsTypes3D.h"
 #include "wtf/RefCounted.h"
+
+namespace blink {
+class WebGraphicsContext3D;
+}
 
 namespace WebCore {
 
-class GraphicsContext3D;
 class WebGLContextGroup;
-class WebGLRenderingContext;
+class WebGLRenderingContextBase;
 
 class WebGLObject : public RefCounted<WebGLObject> {
 public:
@@ -44,10 +47,10 @@ public:
     // deleteObject may not always delete the OpenGL resource.  For programs and
     // shaders, deletion is delayed until they are no longer attached.
     // FIXME: revisit this when resource sharing between contexts are implemented.
-    void deleteObject(GraphicsContext3D*);
+    void deleteObject(blink::WebGraphicsContext3D*);
 
     void onAttached() { ++m_attachmentCount; }
-    void onDetached(GraphicsContext3D*);
+    void onDetached(blink::WebGraphicsContext3D*);
 
     // This indicates whether the client side issue a delete call already, not
     // whether the OpenGL resource is deleted.
@@ -55,22 +58,22 @@ public:
     bool isDeleted() { return m_deleted; }
 
     // True if this object belongs to the group or context.
-    virtual bool validate(const WebGLContextGroup*, const WebGLRenderingContext*) const = 0;
+    virtual bool validate(const WebGLContextGroup*, const WebGLRenderingContextBase*) const = 0;
 
 protected:
-    WebGLObject(WebGLRenderingContext*);
+    WebGLObject(WebGLRenderingContextBase*);
 
     // setObject should be only called once right after creating a WebGLObject.
     void setObject(Platform3DObject);
 
     // deleteObjectImpl should be only called once to delete the OpenGL resource.
-    virtual void deleteObjectImpl(GraphicsContext3D*, Platform3DObject) = 0;
+    virtual void deleteObjectImpl(blink::WebGraphicsContext3D*, Platform3DObject) = 0;
 
     virtual bool hasGroupOrContext() const = 0;
 
     virtual void detach();
 
-    virtual GraphicsContext3D* getAGraphicsContext3D() const = 0;
+    virtual blink::WebGraphicsContext3D* getAWebGraphicsContext3D() const = 0;
 
 private:
     Platform3DObject m_object;

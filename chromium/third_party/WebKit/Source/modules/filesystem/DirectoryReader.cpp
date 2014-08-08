@@ -38,19 +38,105 @@
 
 namespace WebCore {
 
-DirectoryReader::DirectoryReader(PassRefPtr<DOMFileSystemBase> fileSystem, const String& fullPath)
+class DirectoryReader::EntriesCallbackHelper : public EntriesCallback {
+public:
+    explicit EntriesCallbackHelper(DirectoryReader* reader)
+        : m_reader(reader)
+    {
+    }
+
+    virtual void handleEvent(const EntryHeapVector& entries) OVERRIDE
+    {
+        m_reader->addEntries(entries);
+    }
+
+private:
+    // FIXME: This Persistent keeps the reader alive until all of the readDirectory results are received. crbug.com/350285
+    Persistent<DirectoryReader> m_reader;
+};
+
+class DirectoryReader::ErrorCallbackHelper : public ErrorCallback {
+public:
+    explicit ErrorCallbackHelper(DirectoryReader* reader)
+        : m_reader(reader)
+    {
+    }
+
+    virtual void handleEvent(FileError* error) OVERRIDE
+    {
+        m_reader->onError(error);
+    }
+
+private:
+    Persistent<DirectoryReader> m_reader;
+};
+
+DirectoryReader::DirectoryReader(DOMFileSystemBase* fileSystem, const String& fullPath)
     : DirectoryReaderBase(fileSystem, fullPath)
+    , m_isReading(false)
 {
     ScriptWrappable::init(this);
 }
 
+DirectoryReader::~DirectoryReader()
+{
+}
+
 void DirectoryReader::readEntries(PassOwnPtr<EntriesCallback> entriesCallback, PassOwnPtr<ErrorCallback> errorCallback)
 {
-    if (!m_hasMoreEntries) {
-        filesystem()->scheduleCallback(entriesCallback, EntryVector());
+    if (!m_isReading) {
+        m_isReading = true;
+        filesystem()->readDirectory(this, m_fullPath, adoptPtr(new EntriesCallbackHelper(this)), adoptPtr(new ErrorCallbackHelper(this)));
+    }
+
+    if (m_error) {
+        filesystem()->scheduleCallback(errorCallback, PassRefPtrWillBeRawPtr<FileError>(m_error.get()));
         return;
     }
-    filesystem()->readDirectory(this, m_fullPath, entriesCallback, errorCallback);
+
+    if (m_entriesCallback) {
+        // Non-null m_entriesCallback means multiple readEntries() calls are made concurrently. We don't allow doing it.
+        filesystem()->scheduleCallback(errorCallback, FileError::create(FileError::INVALID_STATE_ERR));
+        return;
+    }
+
+    if (!m_hasMoreEntries || !m_entries.isEmpty()) {
+        filesystem()->scheduleCallback(entriesCallback, m_entries);
+        m_entries.clear();
+        return;
+    }
+
+    m_entriesCallback = entriesCallback;
+    m_errorCallback = errorCallback;
+}
+
+void DirectoryReader::addEntries(const EntryHeapVector& entries)
+{
+    m_entries.appendVector(entries);
+    m_errorCallback = nullptr;
+    if (m_entriesCallback) {
+        OwnPtr<EntriesCallback> entriesCallback = m_entriesCallback.release();
+        EntryHeapVector entries;
+        entries.swap(m_entries);
+        entriesCallback->handleEvent(entries);
+    }
+}
+
+void DirectoryReader::onError(FileError* error)
+{
+    m_error = error;
+    m_entriesCallback = nullptr;
+    if (m_errorCallback) {
+        OwnPtr<ErrorCallback> errorCallback = m_errorCallback.release();
+        errorCallback->handleEvent(error);
+    }
+}
+
+void DirectoryReader::trace(Visitor* visitor)
+{
+    visitor->trace(m_entries);
+    visitor->trace(m_error);
+    DirectoryReaderBase::trace(visitor);
 }
 
 }

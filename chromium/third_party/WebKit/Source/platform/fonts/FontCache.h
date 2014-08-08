@@ -33,6 +33,7 @@
 #include <limits.h>
 #include "platform/PlatformExport.h"
 #include "wtf/Forward.h"
+#include "wtf/HashMap.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
 #include "wtf/Vector.h"
@@ -41,23 +42,25 @@
 #include "wtf/unicode/Unicode.h"
 
 #if OS(WIN)
+#include "SkFontMgr.h"
 #include <windows.h>
 #include <objidl.h>
 #include <mlang.h>
+struct IDWriteFactory;
 #endif
 
-#if OS(WIN) && !ENABLE(GDI_FONTS_ON_WINDOWS)
-#include "SkFontMgr.h"
+#if OS(ANDROID)
+#include <unicode/uscript.h>
 #endif
 
 class SkTypeface;
 
 namespace WebCore {
 
+class FontCacheClient;
 class FontPlatformData;
 class FontData;
 class FontDescription;
-class FontSelector;
 class OpenTypeVerticalData;
 class SimpleFontData;
 
@@ -75,7 +78,7 @@ public:
 
     // This method is implemented by the plaform and used by
     // FontFastPath to lookup the font for a given character.
-    PassRefPtr<SimpleFontData> platformFallbackForCharacter(const FontDescription&, UChar32, const SimpleFontData* fontDataToSubstitute, bool disallowSynthetics);
+    PassRefPtr<SimpleFontData> fallbackFontForCharacter(const FontDescription&, UChar32, const SimpleFontData* fontDataToSubstitute);
 
     // Also implemented by the platform.
     void platformInit();
@@ -85,8 +88,10 @@ public:
     SimpleFontData* getNonRetainedLastResortFallbackFont(const FontDescription&);
     bool isPlatformFontAvailable(const FontDescription&, const AtomicString&);
 
-    void addClient(FontSelector*);
-    void removeClient(FontSelector*);
+    void addClient(FontCacheClient*);
+#if !ENABLE(OILPAN)
+    void removeClient(FontCacheClient*);
+#endif
 
     unsigned short generation();
     void invalidate();
@@ -95,9 +100,14 @@ public:
     PassRefPtr<SimpleFontData> fontDataFromDescriptionAndLogFont(const FontDescription&, ShouldRetain, const LOGFONT&, wchar_t* outFontFamilyName);
 #endif
 
-#if OS(WIN) && !ENABLE(GDI_FONTS_ON_WINDOWS)
-    bool useSubpixelPositioning() const { return m_useSubpixelPositioning; }
+#if OS(WIN)
+    bool useSubpixelPositioning() const { return s_useSubpixelPositioning; }
     SkFontMgr* fontManager() { return m_fontManager.get(); }
+    static bool useDirectWrite() { return s_useDirectWrite; }
+    static void setUseDirectWrite(bool useDirectWrite) { s_useDirectWrite = useDirectWrite; }
+    static void setDirectWriteFactory(IDWriteFactory* factory) { s_directWriteFactory = factory; }
+    static void setUseSubpixelPositioning(bool useSubpixelPositioning) { s_useSubpixelPositioning = useSubpixelPositioning; }
+    static void addSideloadedFontForTesting(SkTypeface*);
 #endif
 
 #if ENABLE(OPENTYPE_VERTICAL)
@@ -108,12 +118,14 @@ public:
 #if OS(ANDROID)
     static AtomicString getGenericFamilyNameForScript(const AtomicString& familyName, UScriptCode);
 #else
-    struct SimpleFontFamily {
+    struct PlatformFallbackFont {
         String name;
+        CString filename;
+        int ttcIndex;
         bool isBold;
         bool isItalic;
     };
-    static void getFontFamilyForCharacter(UChar32, const char* preferredLocale, SimpleFontFamily*);
+    static void getFontForCharacter(UChar32, const char* preferredLocale, PlatformFallbackFont*);
 #endif
 
 private:
@@ -144,9 +156,12 @@ private:
     // Don't purge if this count is > 0;
     int m_purgePreventCount;
 
-#if OS(WIN) && !ENABLE(GDI_FONTS_ON_WINDOWS)
+#if OS(WIN)
     OwnPtr<SkFontMgr> m_fontManager;
-    bool m_useSubpixelPositioning;
+    static bool s_useDirectWrite;
+    static IDWriteFactory* s_directWriteFactory;
+    static bool s_useSubpixelPositioning;
+    static HashMap<String, SkTypeface*>* s_sideloadedFonts;
 #endif
 
 #if OS(MACOSX) || OS(ANDROID)

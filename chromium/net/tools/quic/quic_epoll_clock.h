@@ -5,6 +5,7 @@
 #ifndef NET_TOOLS_QUIC_QUIC_EPOLL_CLOCK_H_
 #define NET_TOOLS_QUIC_QUIC_EPOLL_CLOCK_H_
 
+#include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "net/quic/quic_clock.h"
 #include "net/quic/quic_time.h"
@@ -31,6 +32,9 @@ class QuicEpollClock : public QuicClock {
 
  protected:
   EpollServer* epoll_server_;
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(QuicEpollClock);
 };
 
 }  // namespace tools

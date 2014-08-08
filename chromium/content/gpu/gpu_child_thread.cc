@@ -19,6 +19,11 @@
 #include "ipc/ipc_sync_message_filter.h"
 #include "ui/gl/gl_implementation.h"
 
+#if defined(USE_OZONE)
+#include "ui/ozone/ozone_platform.h"
+#include "ui/ozone/public/gpu_platform_support.h"
+#endif
+
 namespace content {
 namespace {
 
@@ -65,11 +70,14 @@ GpuChildThread::GpuChildThread(const std::string& channel_id)
   DCHECK(
       CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess) ||
       CommandLine::ForCurrentProcess()->HasSwitch(switches::kInProcessGPU));
+#if !defined(OS_ANDROID)
   // For single process and in-process GPU mode, we need to load and
   // initialize the GL implementation and locate the GL entry points here.
-  if (!gfx::GLSurface::InitializeOneOff()) {
-    VLOG(1) << "gfx::GLSurface::InitializeOneOff()";
-  }
+  // On Android, GLSurface::InitializeOneOff() is called from BrowserMainLoop
+  // before getting here. crbug.com/326295
+  if (!gfx::GLSurface::InitializeOneOff())
+    VLOG(1) << "gfx::GLSurface::InitializeOneOff failed";
+#endif
   g_thread_safe_sender.Get() = thread_safe_sender();
 }
 
@@ -94,9 +102,8 @@ bool GpuChildThread::Send(IPC::Message* msg) {
 }
 
 bool GpuChildThread::OnControlMessageReceived(const IPC::Message& msg) {
-  bool msg_is_ok = true;
   bool handled = true;
-  IPC_BEGIN_MESSAGE_MAP_EX(GpuChildThread, msg, msg_is_ok)
+  IPC_BEGIN_MESSAGE_MAP(GpuChildThread, msg)
     IPC_MESSAGE_HANDLER(GpuMsg_Initialize, OnInitialize)
     IPC_MESSAGE_HANDLER(GpuMsg_CollectGraphicsInfo, OnCollectGraphicsInfo)
     IPC_MESSAGE_HANDLER(GpuMsg_GetVideoMemoryUsageStats,
@@ -106,16 +113,26 @@ bool GpuChildThread::OnControlMessageReceived(const IPC::Message& msg) {
     IPC_MESSAGE_HANDLER(GpuMsg_Hang, OnHang)
     IPC_MESSAGE_HANDLER(GpuMsg_DisableWatchdog, OnDisableWatchdog)
     IPC_MESSAGE_UNHANDLED(handled = false)
-  IPC_END_MESSAGE_MAP_EX()
+  IPC_END_MESSAGE_MAP()
 
   if (handled)
     return true;
+
+#if defined(USE_OZONE)
+  if (ui::OzonePlatform::GetInstance()
+          ->GetGpuPlatformSupport()
+          ->OnMessageReceived(msg))
+    return true;
+#endif
 
   return gpu_channel_manager_.get() &&
       gpu_channel_manager_->OnMessageReceived(msg);
 }
 
 void GpuChildThread::OnInitialize() {
+  // Record initialization only after collecting the GPU info because that can
+  // take a significant amount of time.
+  gpu_info_.initialization_time = base::Time::Now() - process_start_time_;
   Send(new GpuHostMsg_Initialized(!dead_on_arrival_, gpu_info_));
   while (!deferred_messages_.empty()) {
     Send(deferred_messages_.front());
@@ -123,7 +140,7 @@ void GpuChildThread::OnInitialize() {
   }
 
   if (dead_on_arrival_) {
-    VLOG(1) << "Exiting GPU process due to errors during initialization";
+    LOG(ERROR) << "Exiting GPU process due to errors during initialization";
     base::MessageLoop::current()->Quit();
     return;
   }
@@ -139,23 +156,20 @@ void GpuChildThread::OnInitialize() {
   if (!in_browser_process_)
     logging::SetLogMessageHandler(GpuProcessLogMessageHandler);
 
-  // Record initialization only after collecting the GPU info because that can
-  // take a significant amount of time.
-  gpu_info_.initialization_time = base::Time::Now() - process_start_time_;
-
   // Defer creation of the render thread. This is to prevent it from handling
   // IPC messages before the sandbox has been enabled and all other necessary
   // initialization has succeeded.
   gpu_channel_manager_.reset(
-      new GpuChannelManager(this,
+      new GpuChannelManager(GetRouter(),
                             watchdog_thread_.get(),
                             ChildProcess::current()->io_message_loop_proxy(),
                             ChildProcess::current()->GetShutDownEvent()));
 
-  // Ensure the browser process receives the GPU info before a reply to any
-  // subsequent IPC it might send.
-  if (!in_browser_process_)
-    Send(new GpuHostMsg_GraphicsInfoCollected(gpu_info_));
+#if defined(USE_OZONE)
+  ui::OzonePlatform::GetInstance()
+      ->GetGpuPlatformSupport()
+      ->OnChannelEstablished(this);
+#endif
 }
 
 void GpuChildThread::StopWatchdog() {
@@ -173,8 +187,19 @@ void GpuChildThread::OnCollectGraphicsInfo() {
          in_browser_process_);
 #endif  // OS_WIN
 
-  if (!gpu::CollectContextGraphicsInfo(&gpu_info_))
-    VLOG(1) << "gpu::CollectGraphicsInfo failed";
+  gpu::CollectInfoResult result =
+      gpu::CollectContextGraphicsInfo(&gpu_info_);
+  switch (result) {
+    case gpu::kCollectInfoFatalFailure:
+      LOG(ERROR) << "gpu::CollectGraphicsInfo failed (fatal).";
+      // TODO(piman): can we signal overall failure?
+      break;
+    case gpu::kCollectInfoNonFatalFailure:
+      VLOG(1) << "gpu::CollectGraphicsInfo failed (non-fatal).";
+      break;
+    case gpu::kCollectInfoSuccess:
+      break;
+  }
   GetContentClient()->SetGpuInfo(gpu_info_);
 
 #if defined(OS_WIN)

@@ -14,11 +14,11 @@
 #include "base/files/file_util_proxy.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/shared_memory.h"
-#include "base/platform_file.h"
 #include "content/browser/streams/stream.h"
 #include "content/browser/streams/stream_context.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/browser_message_filter.h"
+#include "webkit/browser/fileapi/file_system_context.h"
 #include "webkit/browser/fileapi/file_system_operation_runner.h"
 #include "webkit/common/blob/blob_data.h"
 #include "webkit/common/fileapi/file_system_types.h"
@@ -33,7 +33,6 @@ class Time;
 
 namespace fileapi {
 class FileSystemURL;
-class FileSystemContext;
 class FileSystemOperationRunner;
 struct DirectoryEntry;
 struct FileSystemInfo;
@@ -44,8 +43,11 @@ class URLRequestContext;
 class URLRequestContextGetter;
 }  // namespace net
 
-namespace webkit_blob {
+namespace content {
 class BlobStorageHost;
+}
+
+namespace webkit_blob {
 class ShareableFileReference;
 }
 
@@ -77,8 +79,7 @@ class CONTENT_EXPORT FileAPIMessageFilter : public BrowserMessageFilter {
   virtual void OnChannelClosing() OVERRIDE;
   virtual base::TaskRunner* OverrideTaskRunnerForMessage(
       const IPC::Message& message) OVERRIDE;
-  virtual bool OnMessageReceived(const IPC::Message& message,
-                                 bool* message_was_ok) OVERRIDE;
+  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 
  protected:
   virtual ~FileAPIMessageFilter();
@@ -137,7 +138,6 @@ class CONTENT_EXPORT FileAPIMessageFilter : public BrowserMessageFilter {
                                   size_t buffer_size);
   void OnFinishBuildingBlob(const std::string& uuid,
                              const std::string& content_type);
-  void OnCancelBuildingBlob(const std::string& uuid);
   void OnIncrementBlobRefCount(const std::string& uuid);
   void OnDecrementBlobRefCount(const std::string& uuid);
   void OnRegisterPublicBlobURL(const GURL& public_url, const std::string& uuid);
@@ -162,35 +162,37 @@ class CONTENT_EXPORT FileAPIMessageFilter : public BrowserMessageFilter {
   void OnRemoveStream(const GURL& url);
 
   // Callback functions to be used when each file operation is finished.
-  void DidFinish(int request_id, base::PlatformFileError result);
-  void DidCancel(int request_id, base::PlatformFileError result);
+  void DidFinish(int request_id, base::File::Error result);
   void DidGetMetadata(int request_id,
-                      base::PlatformFileError result,
-                      const base::PlatformFileInfo& info);
+                      base::File::Error result,
+                      const base::File::Info& info);
+  void DidGetMetadataForStreaming(int request_id,
+                                  base::File::Error result,
+                                  const base::File::Info& info);
   void DidReadDirectory(int request_id,
-                        base::PlatformFileError result,
+                        base::File::Error result,
                         const std::vector<fileapi::DirectoryEntry>& entries,
                         bool has_more);
   void DidWrite(int request_id,
-                base::PlatformFileError result,
+                base::File::Error result,
                 int64 bytes,
                 bool complete);
   void DidOpenFileSystem(int request_id,
                          const GURL& root,
                          const std::string& filesystem_name,
-                         base::PlatformFileError result);
+                         base::File::Error result);
   void DidResolveURL(int request_id,
-                     base::PlatformFileError result,
+                     base::File::Error result,
                      const fileapi::FileSystemInfo& info,
                      const base::FilePath& file_path,
-                     bool is_directory);
+                     fileapi::FileSystemContext::ResolvedEntryType type);
   void DidDeleteFileSystem(int request_id,
-                           base::PlatformFileError result);
+                           base::File::Error result);
   void DidCreateSnapshot(
       int request_id,
       const fileapi::FileSystemURL& url,
-      base::PlatformFileError result,
-      const base::PlatformFileInfo& info,
+      base::File::Error result,
+      const base::File::Info& info,
       const base::FilePath& platform_path,
       const scoped_refptr<webkit_blob::ShareableFileReference>& file_ref);
 
@@ -216,8 +218,8 @@ class CONTENT_EXPORT FileAPIMessageFilter : public BrowserMessageFilter {
   typedef std::map<int, OperationID> OperationsMap;
   OperationsMap operations_;
 
-  // The getter holds the context until Init() can be called from the
-  // IO thread, which will extract the net::URLRequestContext from it.
+  // The getter holds the context until OnChannelConnected() can be called from
+  // the IO thread, which will extract the net::URLRequestContext from it.
   scoped_refptr<net::URLRequestContextGetter> request_context_getter_;
   net::URLRequestContext* request_context_;
 
@@ -228,7 +230,7 @@ class CONTENT_EXPORT FileAPIMessageFilter : public BrowserMessageFilter {
 
   // Keeps track of blobs used in this process and cleans up
   // when the renderer process dies.
-  scoped_ptr<webkit_blob::BlobStorageHost> blob_storage_host_;
+  scoped_ptr<BlobStorageHost> blob_storage_host_;
 
   // Keep track of stream URLs registered in this process. Need to unregister
   // all of them when the renderer process dies.

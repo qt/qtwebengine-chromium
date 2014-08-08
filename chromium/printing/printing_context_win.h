@@ -14,13 +14,10 @@
 #include "build/build_config.h"
 #include "printing/printing_context.h"
 #include "ui/gfx/native_widget_types.h"
-#include "ui/shell_dialogs/print_settings_dialog_win.h"
 
 namespace printing {
 
-class PRINTING_EXPORT PrintingContextWin
-    : public PrintingContext,
-      public ui::PrintSettingsDialogWin::Observer {
+class PRINTING_EXPORT PrintingContextWin : public PrintingContext {
  public:
   explicit PrintingContextWin(const std::string& app_locale);
   ~PrintingContextWin();
@@ -43,21 +40,13 @@ class PRINTING_EXPORT PrintingContextWin
   virtual void ReleaseContext() OVERRIDE;
   virtual gfx::NativeDrawingContext context() const OVERRIDE;
 
-  // PrintSettingsDialogWin::Observer implementation:
-  virtual void PrintSettingsConfirmed(PRINTDLGEX* dialog_options) OVERRIDE;
-  virtual void PrintSettingsCancelled(PRINTDLGEX* dialog_options) OVERRIDE;
-
-#if defined(UNIT_TEST) || defined(PRINTING_IMPLEMENTATION)
-  // Sets a fake PrintDlgEx function pointer in tests.
-  void SetPrintDialog(HRESULT (__stdcall *print_dialog_func)(LPPRINTDLGEX)) {
-    print_dialog_func_ = print_dialog_func;
-  }
-#endif  // defined(UNIT_TEST)
-
   // Allocates the HDC for a specific DEVMODE.
   static bool AllocateContext(const std::wstring& printer_name,
                               const DEVMODE* dev_mode,
                               gfx::NativeDrawingContext* context);
+
+ protected:
+  virtual HRESULT ShowPrintDialog(PRINTDLGEX* options);
 
  private:
   // Class that manages the PrintDlgEx() callbacks. This is meant to be a
@@ -89,16 +78,6 @@ class PRINTING_EXPORT PrintingContextWin
 
   // The dialog box for the time it is shown.
   volatile HWND dialog_box_;
-
-  // Function pointer that defaults to PrintDlgEx. It can be changed using
-  // SetPrintDialog() in tests.
-  HRESULT (__stdcall *print_dialog_func_)(LPPRINTDLGEX);
-
-  // Where to notify when the dialog is closed.
-  PrintSettingsCallback callback_;
-
-  // Wrapper around native print dialog that runs it on a background thread.
-  scoped_refptr<ui::PrintSettingsDialogWin> print_settings_dialog_;
 
   DISALLOW_COPY_AND_ASSIGN(PrintingContextWin);
 };

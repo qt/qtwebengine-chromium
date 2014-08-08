@@ -62,29 +62,40 @@ static const size_t kSystemPageBaseMask = ~kSystemPageOffsetMask;
 // kPageAllocationGranularity.
 // If addr is null, then a suitable and randomized address will be chosen
 // automatically.
-// This call will exit the process if the allocation cannot be satisfied.
+// This call will return null if the allocation cannot be satisfied.
 WTF_EXPORT void* allocPages(void* addr, size_t len, size_t align);
 
 // Free one or more pages.
 // addr and len must match a previous call to allocPages().
 WTF_EXPORT void freePages(void* addr, size_t len);
 
-// Mark one or more system pages as being inaccessible. This is not reversible.
-// Subsequently accessing any address in the range will fault, the addresses
-// will not be re-used by future allocations.
+// Mark one or more system pages as being inaccessible.
+// Subsequently accessing any address in the range will fault, and the
+// addresses will not be re-used by future allocations.
 // len must be a multiple of kSystemPageSize bytes.
 WTF_EXPORT void setSystemPagesInaccessible(void* addr, size_t len);
 
+// Mark one or more system pages as being accessible.
+// The pages will be readable and writeable.
+// len must be a multiple of kSystemPageSize bytes.
+WTF_EXPORT void setSystemPagesAccessible(void* addr, size_t len);
+
 // Decommit one or more system pages. Decommitted means that the physical memory
 // is released to the system, but the virtual address space remains reserved.
-// System pages are re-committed by writing to them.
+// System pages are re-committed by calling recommitSystemPages(). Touching
+// a decommitted page _may_ fault.
 // Clients should not make any assumptions about the contents of decommitted
 // system pages, before or after they write to the page. The only guarantee
 // provided is that the contents of the system page will be deterministic again
-// after writing to it. In particlar note that system pages are not guaranteed
-// to be zero-filled upon re-commit.
+// after recommitting and writing to it. In particlar note that system pages are// not guaranteed to be zero-filled upon re-commit.
 // len must be a multiple of kSystemPageSize bytes.
 WTF_EXPORT void decommitSystemPages(void* addr, size_t len);
+
+// Recommit one or more system pages. Decommitted system pages must be
+// recommitted before they are read are written again.
+// Note that this operation may be a no-op on some platforms.
+// len must be a multiple of kSystemPageSize bytes.
+WTF_EXPORT void recommitSystemPages(void* addr, size_t len);
 
 } // namespace WTF
 

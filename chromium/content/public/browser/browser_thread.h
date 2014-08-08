@@ -10,14 +10,11 @@
 #include "base/basictypes.h"
 #include "base/callback.h"
 #include "base/location.h"
+#include "base/logging.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/task_runner_util.h"
 #include "base/time/time.h"
 #include "content/common/content_export.h"
-
-#if defined(UNIT_TEST)
-#include "base/logging.h"
-#endif  // UNIT_TEST
 
 namespace base {
 class MessageLoop;
@@ -29,6 +26,13 @@ namespace content {
 
 class BrowserThreadDelegate;
 class BrowserThreadImpl;
+
+// Use DCHECK_CURRENTLY_ON(BrowserThread::ID) to assert that a function can only
+// be called on the named BrowserThread.
+#define DCHECK_CURRENTLY_ON(thread_identifier)                      \
+  (DCHECK(::content::BrowserThread::CurrentlyOn(thread_identifier)) \
+   << ::content::BrowserThread::GetDCheckCurrentlyOnErrorMessage(   \
+          thread_identifier))
 
 ///////////////////////////////////////////////////////////////////////////////
 // BrowserThread
@@ -181,24 +185,24 @@ class CONTENT_EXPORT BrowserThread {
   // Returns the thread pool used for blocking file I/O. Use this object to
   // perform random blocking operations such as file writes or querying the
   // Windows registry.
-  static base::SequencedWorkerPool* GetBlockingPool();
+  static base::SequencedWorkerPool* GetBlockingPool() WARN_UNUSED_RESULT;
 
   // Callable on any thread.  Returns whether the given well-known thread is
   // initialized.
-  static bool IsThreadInitialized(ID identifier);
+  static bool IsThreadInitialized(ID identifier) WARN_UNUSED_RESULT;
 
   // Callable on any thread.  Returns whether you're currently on a particular
-  // thread.
-  static bool CurrentlyOn(ID identifier);
+  // thread.  To DCHECK this, use the DCHECK_CURRENTLY_ON() macro above.
+  static bool CurrentlyOn(ID identifier) WARN_UNUSED_RESULT;
 
   // Callable on any thread.  Returns whether the threads message loop is valid.
   // If this returns false it means the thread is in the process of shutting
   // down.
-  static bool IsMessageLoopValid(ID identifier);
+  static bool IsMessageLoopValid(ID identifier) WARN_UNUSED_RESULT;
 
   // If the current message loop is one of the known threads, returns true and
   // sets identifier to its ID.  Otherwise returns false.
-  static bool GetCurrentThreadIdentifier(ID* identifier);
+  static bool GetCurrentThreadIdentifier(ID* identifier) WARN_UNUSED_RESULT;
 
   // Callers can hold on to a refcounted MessageLoopProxy beyond the lifetime
   // of the thread.
@@ -265,6 +269,9 @@ class CONTENT_EXPORT BrowserThread {
   struct DeleteOnIOThread : public DeleteOnThread<IO> { };
   struct DeleteOnFileThread : public DeleteOnThread<FILE> { };
   struct DeleteOnDBThread : public DeleteOnThread<DB> { };
+
+  // Returns an appropriate error message for when DCHECK_CURRENTLY_ON() fails.
+  static std::string GetDCheckCurrentlyOnErrorMessage(ID expected);
 
  private:
   friend class BrowserThreadImpl;

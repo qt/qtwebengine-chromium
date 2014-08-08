@@ -30,6 +30,7 @@
 #include "core/fetch/ResourceOwner.h"
 #include "core/html/track/vtt/VTTParser.h"
 #include "platform/Timer.h"
+#include "platform/heap/Handle.h"
 #include "wtf/OwnPtr.h"
 
 namespace WebCore {
@@ -46,24 +47,27 @@ public:
     virtual void newRegionsAvailable(TextTrackLoader*) = 0;
 };
 
-class TextTrackLoader : public ResourceOwner<RawResource>, private VTTParserClient {
+class TextTrackLoader FINAL : public NoBaseWillBeGarbageCollectedFinalized<TextTrackLoader>, public ResourceOwner<RawResource>, private VTTParserClient {
     WTF_MAKE_NONCOPYABLE(TextTrackLoader);
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
 public:
-    static PassOwnPtr<TextTrackLoader> create(TextTrackLoaderClient& client, Document& document)
+    static PassOwnPtrWillBeRawPtr<TextTrackLoader> create(TextTrackLoaderClient& client, Document& document)
     {
-        return adoptPtr(new TextTrackLoader(client, document));
+        return adoptPtrWillBeNoop(new TextTrackLoader(client, document));
     }
     virtual ~TextTrackLoader();
 
-    bool load(const KURL&, const String& crossOriginMode);
+    bool load(const KURL&, const AtomicString& crossOriginMode);
     void cancelLoad();
 
     enum State { Idle, Loading, Finished, Failed };
     State loadState() { return m_state; }
 
-    void getNewCues(Vector<RefPtr<VTTCue> >& outputCues);
-    void getNewRegions(Vector<RefPtr<VTTRegion> >& outputRegions);
+    void getNewCues(WillBeHeapVector<RefPtrWillBeMember<VTTCue> >& outputCues);
+    void getNewRegions(WillBeHeapVector<RefPtrWillBeMember<VTTRegion> >& outputRegions);
+
+    void trace(Visitor*);
+
 private:
 
     // RawResourceClient
@@ -78,14 +82,13 @@ private:
     TextTrackLoader(TextTrackLoaderClient&, Document&);
 
     void cueLoadTimerFired(Timer<TextTrackLoader>*);
-    void corsPolicyPreventedLoad();
+    void corsPolicyPreventedLoad(SecurityOrigin*, const KURL&);
 
     TextTrackLoaderClient& m_client;
-    OwnPtr<VTTParser> m_cueParser;
+    OwnPtrWillBeMember<VTTParser> m_cueParser;
     // FIXME: Remove this pointer and get the Document from m_client.
     Document& m_document;
     Timer<TextTrackLoader> m_cueLoadTimer;
-    String m_crossOriginMode;
     State m_state;
     bool m_newCuesAvailable;
 };

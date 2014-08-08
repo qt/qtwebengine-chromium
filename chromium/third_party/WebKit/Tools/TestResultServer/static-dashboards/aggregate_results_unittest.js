@@ -38,16 +38,17 @@ function setupAggregateResultsData(includeRevisonNumbers)
 
     var builderName = 'Blink Linux';
     LOAD_BUILDBOT_DATA({
+        "no_upload_test_types": [],
         "masters": [
             {
                 "groups": [ "@ToT Blink" ],
                 "name": "ChromiumWebkit",
+                "url_name": "chromium.webkit",
                 "tests": {
                     "layout-tests": {
                         "builders": [builderName]
                     }
                 },
-                "url": "http://build.chromium.org/p/chromium.win"
             }
         ]
     });

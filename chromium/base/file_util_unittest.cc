@@ -12,14 +12,22 @@
 #include <winioctl.h>
 #endif
 
+#if defined(OS_POSIX)
+#include <errno.h>
+#include <fcntl.h>
+#include <unistd.h>
+#endif
+
 #include <algorithm>
 #include <fstream>
 #include <set>
+#include <vector>
 
 #include "base/base_paths.h"
 #include "base/file_util.h"
 #include "base/files/file_enumerator.h"
 #include "base/files/file_path.h"
+#include "base/files/scoped_file.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/path_service.h"
 #include "base/strings/utf_string_conversions.h"
@@ -485,25 +493,6 @@ TEST_F(FileUtilTest, DevicePathToDriveLetter) {
       &win32_path));
 }
 
-TEST_F(FileUtilTest, GetPlatformFileInfoForDirectory) {
-  FilePath empty_dir = temp_dir_.path().Append(FPL("gpfi_test"));
-  ASSERT_TRUE(CreateDirectory(empty_dir));
-  win::ScopedHandle dir(
-      ::CreateFile(empty_dir.value().c_str(),
-                   FILE_ALL_ACCESS,
-                   FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                   NULL,
-                   OPEN_EXISTING,
-                   FILE_FLAG_BACKUP_SEMANTICS,  // Needed to open a directory.
-                   NULL));
-  ASSERT_TRUE(dir.IsValid());
-  PlatformFileInfo info;
-  EXPECT_TRUE(GetPlatformFileInfo(dir.Get(), &info));
-  EXPECT_TRUE(info.is_directory);
-  EXPECT_FALSE(info.is_symbolic_link);
-  EXPECT_EQ(0, info.size);
-}
-
 TEST_F(FileUtilTest, CreateTemporaryFileInDirLongPathTest) {
   // Test that CreateTemporaryFileInDir() creates a path and returns a long path
   // if it is available. This test requires that:
@@ -643,6 +632,17 @@ TEST_F(FileUtilTest, DeleteNonExistent) {
   ASSERT_FALSE(PathExists(non_existent));
 }
 
+TEST_F(FileUtilTest, DeleteNonExistentWithNonExistentParent) {
+  FilePath non_existent = temp_dir_.path().AppendASCII("bogus_topdir");
+  non_existent = non_existent.AppendASCII("bogus_subdir");
+  ASSERT_FALSE(PathExists(non_existent));
+
+  EXPECT_TRUE(DeleteFile(non_existent, false));
+  ASSERT_FALSE(PathExists(non_existent));
+  EXPECT_TRUE(DeleteFile(non_existent, true));
+  ASSERT_FALSE(PathExists(non_existent));
+}
+
 TEST_F(FileUtilTest, DeleteFile) {
   // Create a file
   FilePath file_name = temp_dir_.path().Append(FPL("Test DeleteFile 1.txt"));
@@ -716,7 +716,7 @@ TEST_F(FileUtilTest, ChangeFilePermissionsAndRead) {
 
   // Write file.
   EXPECT_EQ(static_cast<int>(kData.length()),
-            file_util::WriteFile(file_name, kData.data(), kData.length()));
+            WriteFile(file_name, kData.data(), kData.length()));
   EXPECT_TRUE(PathExists(file_name));
 
   // Make sure the file is readable.
@@ -755,7 +755,7 @@ TEST_F(FileUtilTest, ChangeFilePermissionsAndWrite) {
 
   // Write file.
   EXPECT_EQ(static_cast<int>(kData.length()),
-            file_util::WriteFile(file_name, kData.data(), kData.length()));
+            WriteFile(file_name, kData.data(), kData.length()));
   EXPECT_TRUE(PathExists(file_name));
 
   // Make sure the file is writable.
@@ -769,8 +769,7 @@ TEST_F(FileUtilTest, ChangeFilePermissionsAndWrite) {
   EXPECT_TRUE(GetPosixFilePermissions(file_name, &mode));
   EXPECT_FALSE(mode & FILE_PERMISSION_WRITE_BY_USER);
   // Make sure the file can't be write.
-  EXPECT_EQ(-1,
-            file_util::WriteFile(file_name, kData.data(), kData.length()));
+  EXPECT_EQ(-1, WriteFile(file_name, kData.data(), kData.length()));
   EXPECT_FALSE(PathIsWritable(file_name));
 
   // Give read permission.
@@ -780,7 +779,7 @@ TEST_F(FileUtilTest, ChangeFilePermissionsAndWrite) {
   EXPECT_TRUE(mode & FILE_PERMISSION_WRITE_BY_USER);
   // Make sure the file can be write.
   EXPECT_EQ(static_cast<int>(kData.length()),
-            file_util::WriteFile(file_name, kData.data(), kData.length()));
+            WriteFile(file_name, kData.data(), kData.length()));
   EXPECT_TRUE(PathIsWritable(file_name));
 
   // Delete the file.
@@ -800,7 +799,7 @@ TEST_F(FileUtilTest, ChangeDirectoryPermissionsAndEnumerate) {
   EXPECT_FALSE(PathExists(file_name));
   const std::string kData("hello");
   EXPECT_EQ(static_cast<int>(kData.length()),
-            file_util::WriteFile(file_name, kData.data(), kData.length()));
+            WriteFile(file_name, kData.data(), kData.length()));
   EXPECT_TRUE(PathExists(file_name));
 
   // Make sure the directory has the all permissions.
@@ -817,7 +816,7 @@ TEST_F(FileUtilTest, ChangeDirectoryPermissionsAndEnumerate) {
   FileEnumerator f1(subdir_path, true, FileEnumerator::FILES);
   EXPECT_TRUE(PathExists(subdir_path));
   FindResultCollector c1(f1);
-  EXPECT_EQ(c1.size(), 0);
+  EXPECT_EQ(0, c1.size());
   EXPECT_FALSE(GetPosixFilePermissions(file_name, &mode));
 
   // Give the permissions to the directory.
@@ -829,7 +828,7 @@ TEST_F(FileUtilTest, ChangeDirectoryPermissionsAndEnumerate) {
   FileEnumerator f2(subdir_path, true, FileEnumerator::FILES);
   FindResultCollector c2(f2);
   EXPECT_TRUE(c2.HasFile(file_name));
-  EXPECT_EQ(c2.size(), 1);
+  EXPECT_EQ(1, c2.size());
 
   // Delete the file.
   EXPECT_TRUE(DeleteFile(subdir_path, true));
@@ -1379,6 +1378,60 @@ TEST_F(FileUtilTest, CopyDirectoryWithTrailingSeparators) {
   EXPECT_TRUE(PathExists(file_name_to));
 }
 
+// Sets the source file to read-only.
+void SetReadOnly(const FilePath& path) {
+#if defined(OS_WIN)
+  // On Windows, it involves setting a bit.
+  DWORD attrs = GetFileAttributes(path.value().c_str());
+  ASSERT_NE(INVALID_FILE_ATTRIBUTES, attrs);
+  ASSERT_TRUE(SetFileAttributes(
+      path.value().c_str(), attrs | FILE_ATTRIBUTE_READONLY));
+  attrs = GetFileAttributes(path.value().c_str());
+  // Files in the temporary directory should not be indexed ever. If this
+  // assumption change, fix this unit test accordingly.
+  // FILE_ATTRIBUTE_NOT_CONTENT_INDEXED doesn't exist on XP.
+  DWORD expected = FILE_ATTRIBUTE_ARCHIVE | FILE_ATTRIBUTE_READONLY;
+  if (win::GetVersion() >= win::VERSION_VISTA)
+    expected |= FILE_ATTRIBUTE_NOT_CONTENT_INDEXED;
+  ASSERT_EQ(expected, attrs);
+#else
+  // On all other platforms, it involves removing the write bit.
+  EXPECT_TRUE(SetPosixFilePermissions(path, S_IRUSR));
+#endif
+}
+
+bool IsReadOnly(const FilePath& path) {
+#if defined(OS_WIN)
+  DWORD attrs = GetFileAttributes(path.value().c_str());
+  EXPECT_NE(INVALID_FILE_ATTRIBUTES, attrs);
+  return attrs & FILE_ATTRIBUTE_READONLY;
+#else
+  int mode = 0;
+  EXPECT_TRUE(GetPosixFilePermissions(path, &mode));
+  return !(mode & S_IWUSR);
+#endif
+}
+
+TEST_F(FileUtilTest, CopyDirectoryACL) {
+  // Create a directory.
+  FilePath src = temp_dir_.path().Append(FILE_PATH_LITERAL("src"));
+  CreateDirectory(src);
+  ASSERT_TRUE(PathExists(src));
+
+  // Create a file under the directory.
+  FilePath src_file = src.Append(FILE_PATH_LITERAL("src.txt"));
+  CreateTextFile(src_file, L"Gooooooooooooooooooooogle");
+  SetReadOnly(src_file);
+  ASSERT_TRUE(IsReadOnly(src_file));
+
+  // Copy the directory recursively.
+  FilePath dst = temp_dir_.path().Append(FILE_PATH_LITERAL("dst"));
+  FilePath dst_file = dst.Append(FILE_PATH_LITERAL("src.txt"));
+  EXPECT_TRUE(CopyDirectory(src, dst, true));
+
+  ASSERT_FALSE(IsReadOnly(dst_file));
+}
+
 TEST_F(FileUtilTest, CopyFile) {
   // Create a directory
   FilePath dir_name_from =
@@ -1415,6 +1468,27 @@ TEST_F(FileUtilTest, CopyFile) {
   EXPECT_EQ(file_contents, read_contents);
   EXPECT_TRUE(PathExists(dest_file2_test));
   EXPECT_TRUE(PathExists(dest_file2));
+}
+
+TEST_F(FileUtilTest, CopyFileACL) {
+  // While FileUtilTest.CopyFile asserts the content is correctly copied over,
+  // this test case asserts the access control bits are meeting expectations in
+  // CopyFileUnsafe().
+  FilePath src = temp_dir_.path().Append(FILE_PATH_LITERAL("src.txt"));
+  const std::wstring file_contents(L"Gooooooooooooooooooooogle");
+  CreateTextFile(src, file_contents);
+
+  // Set the source file to read-only.
+  ASSERT_FALSE(IsReadOnly(src));
+  SetReadOnly(src);
+  ASSERT_TRUE(IsReadOnly(src));
+
+  // Copy the file.
+  FilePath dst = temp_dir_.path().Append(FILE_PATH_LITERAL("dst.txt"));
+  ASSERT_TRUE(CopyFile(src, dst));
+  EXPECT_EQ(file_contents, ReadTextFile(dst));
+
+  ASSERT_FALSE(IsReadOnly(dst));
 }
 
 // file_util winds up using autoreleased objects on the Mac, so this needs
@@ -1611,6 +1685,21 @@ TEST_F(FileUtilTest, CreateAndOpenTemporaryFileTest) {
   }
 }
 
+TEST_F(FileUtilTest, FileToFILE) {
+  File file;
+  FILE* stream = FileToFILE(file.Pass(), "w");
+  EXPECT_FALSE(stream);
+
+  FilePath file_name = temp_dir_.path().Append(FPL("The file.txt"));
+  file = File(file_name, File::FLAG_CREATE | File::FLAG_WRITE);
+  EXPECT_TRUE(file.IsValid());
+
+  stream = FileToFILE(file.Pass(), "w");
+  EXPECT_TRUE(stream);
+  EXPECT_FALSE(file.IsValid());
+  EXPECT_TRUE(CloseFile(stream));
+}
+
 TEST_F(FileUtilTest, CreateNewTempDirectoryTest) {
   FilePath temp_dir;
   ASSERT_TRUE(CreateNewTempDirectory(FilePath::StringType(), &temp_dir));
@@ -1629,10 +1718,23 @@ TEST_F(FileUtilTest, CreateNewTemporaryDirInDirTest) {
   EXPECT_TRUE(DeleteFile(new_dir, false));
 }
 
+#if defined(OS_POSIX)
 TEST_F(FileUtilTest, GetShmemTempDirTest) {
   FilePath dir;
   EXPECT_TRUE(GetShmemTempDir(false, &dir));
   EXPECT_TRUE(DirectoryExists(dir));
+}
+#endif
+
+TEST_F(FileUtilTest, GetHomeDirTest) {
+#if !defined(OS_ANDROID)  // Not implemented on Android.
+  // We don't actually know what the home directory is supposed to be without
+  // calling some OS functions which would just duplicate the implementation.
+  // So here we just test that it returns something "reasonable".
+  FilePath home = GetHomeDir();
+  ASSERT_FALSE(home.empty());
+  ASSERT_TRUE(home.IsAbsolute());
+#endif
 }
 
 TEST_F(FileUtilTest, CreateDirectoryTest) {
@@ -1712,8 +1814,8 @@ TEST_F(FileUtilTest, DetectDirectoryTest) {
 TEST_F(FileUtilTest, FileEnumeratorTest) {
   // Test an empty directory.
   FileEnumerator f0(temp_dir_.path(), true, FILES_AND_DIRECTORIES);
-  EXPECT_EQ(f0.Next().value(), FPL(""));
-  EXPECT_EQ(f0.Next().value(), FPL(""));
+  EXPECT_EQ(FPL(""), f0.Next().value());
+  EXPECT_EQ(FPL(""), f0.Next().value());
 
   // Test an empty directory, non-recursively, including "..".
   FileEnumerator f0_dotdot(temp_dir_.path(), false,
@@ -1749,7 +1851,7 @@ TEST_F(FileUtilTest, FileEnumeratorTest) {
   EXPECT_TRUE(c1.HasFile(file2_abs));
   EXPECT_TRUE(c1.HasFile(dir2file));
   EXPECT_TRUE(c1.HasFile(dir2innerfile));
-  EXPECT_EQ(c1.size(), 4);
+  EXPECT_EQ(4, c1.size());
 
   // Only enumerate directories.
   FileEnumerator f2(temp_dir_.path(), true, FileEnumerator::DIRECTORIES);
@@ -1757,7 +1859,7 @@ TEST_F(FileUtilTest, FileEnumeratorTest) {
   EXPECT_TRUE(c2.HasFile(dir1));
   EXPECT_TRUE(c2.HasFile(dir2));
   EXPECT_TRUE(c2.HasFile(dir2inner));
-  EXPECT_EQ(c2.size(), 3);
+  EXPECT_EQ(3, c2.size());
 
   // Only enumerate directories non-recursively.
   FileEnumerator f2_non_recursive(
@@ -1765,7 +1867,7 @@ TEST_F(FileUtilTest, FileEnumeratorTest) {
   FindResultCollector c2_non_recursive(f2_non_recursive);
   EXPECT_TRUE(c2_non_recursive.HasFile(dir1));
   EXPECT_TRUE(c2_non_recursive.HasFile(dir2));
-  EXPECT_EQ(c2_non_recursive.size(), 2);
+  EXPECT_EQ(2, c2_non_recursive.size());
 
   // Only enumerate directories, non-recursively, including "..".
   FileEnumerator f2_dotdot(temp_dir_.path(), false,
@@ -1775,7 +1877,7 @@ TEST_F(FileUtilTest, FileEnumeratorTest) {
   EXPECT_TRUE(c2_dotdot.HasFile(dir1));
   EXPECT_TRUE(c2_dotdot.HasFile(dir2));
   EXPECT_TRUE(c2_dotdot.HasFile(temp_dir_.path().Append(FPL(".."))));
-  EXPECT_EQ(c2_dotdot.size(), 3);
+  EXPECT_EQ(3, c2_dotdot.size());
 
   // Enumerate files and directories.
   FileEnumerator f3(temp_dir_.path(), true, FILES_AND_DIRECTORIES);
@@ -1787,7 +1889,7 @@ TEST_F(FileUtilTest, FileEnumeratorTest) {
   EXPECT_TRUE(c3.HasFile(dir2file));
   EXPECT_TRUE(c3.HasFile(dir2inner));
   EXPECT_TRUE(c3.HasFile(dir2innerfile));
-  EXPECT_EQ(c3.size(), 7);
+  EXPECT_EQ(7, c3.size());
 
   // Non-recursive operation.
   FileEnumerator f4(temp_dir_.path(), false, FILES_AND_DIRECTORIES);
@@ -1796,7 +1898,7 @@ TEST_F(FileUtilTest, FileEnumeratorTest) {
   EXPECT_TRUE(c4.HasFile(dir2));
   EXPECT_TRUE(c4.HasFile(file1));
   EXPECT_TRUE(c4.HasFile(file2_abs));
-  EXPECT_EQ(c4.size(), 4);
+  EXPECT_EQ(4, c4.size());
 
   // Enumerate with a pattern.
   FileEnumerator f5(temp_dir_.path(), true, FILES_AND_DIRECTORIES, FPL("dir*"));
@@ -1806,7 +1908,7 @@ TEST_F(FileUtilTest, FileEnumeratorTest) {
   EXPECT_TRUE(c5.HasFile(dir2file));
   EXPECT_TRUE(c5.HasFile(dir2inner));
   EXPECT_TRUE(c5.HasFile(dir2innerfile));
-  EXPECT_EQ(c5.size(), 5);
+  EXPECT_EQ(5, c5.size());
 
 #if defined(OS_WIN)
   {
@@ -1824,7 +1926,7 @@ TEST_F(FileUtilTest, FileEnumeratorTest) {
       EXPECT_TRUE(c6.HasFile(inner2));
       EXPECT_TRUE(c6.HasFile(inner2.Append(FPL("innerfile.txt"))));
       EXPECT_TRUE(c6.HasFile(dir1.Append(FPL("dir2file.txt"))));
-      EXPECT_EQ(c6.size(), 3);
+      EXPECT_EQ(3, c6.size());
     }
 
     // No changes for non recursive operation.
@@ -1834,7 +1936,7 @@ TEST_F(FileUtilTest, FileEnumeratorTest) {
     EXPECT_TRUE(c7.HasFile(dir2));
     EXPECT_TRUE(c7.HasFile(file1));
     EXPECT_TRUE(c7.HasFile(file2_abs));
-    EXPECT_EQ(c7.size(), 4);
+    EXPECT_EQ(4, c7.size());
 
     // Should not enumerate inside dir1 when using recursion.
     FileEnumerator f8(temp_dir_.path(), true, FILES_AND_DIRECTORIES);
@@ -1846,7 +1948,7 @@ TEST_F(FileUtilTest, FileEnumeratorTest) {
     EXPECT_TRUE(c8.HasFile(dir2file));
     EXPECT_TRUE(c8.HasFile(dir2inner));
     EXPECT_TRUE(c8.HasFile(dir2innerfile));
-    EXPECT_EQ(c8.size(), 7);
+    EXPECT_EQ(7, c8.size());
   }
 #endif
 
@@ -1875,14 +1977,115 @@ TEST_F(FileUtilTest, AppendToFile) {
   FilePath foobar(data_dir.Append(FILE_PATH_LITERAL("foobar.txt")));
 
   std::string data("hello");
-  EXPECT_EQ(-1, file_util::AppendToFile(foobar, data.c_str(), data.length()));
+  EXPECT_EQ(-1, AppendToFile(foobar, data.c_str(), data.length()));
   EXPECT_EQ(static_cast<int>(data.length()),
-            file_util::WriteFile(foobar, data.c_str(), data.length()));
+            WriteFile(foobar, data.c_str(), data.length()));
   EXPECT_EQ(static_cast<int>(data.length()),
-            file_util::AppendToFile(foobar, data.c_str(), data.length()));
+            AppendToFile(foobar, data.c_str(), data.length()));
 
   const std::wstring read_content = ReadTextFile(foobar);
   EXPECT_EQ(L"hellohello", read_content);
+}
+
+TEST_F(FileUtilTest, ReadFile) {
+  // Create a test file to be read.
+  const std::string kTestData("The quick brown fox jumps over the lazy dog.");
+  FilePath file_path =
+      temp_dir_.path().Append(FILE_PATH_LITERAL("ReadFileTest"));
+
+  ASSERT_EQ(static_cast<int>(kTestData.size()),
+            WriteFile(file_path, kTestData.data(), kTestData.size()));
+
+  // Make buffers with various size.
+  std::vector<char> small_buffer(kTestData.size() / 2);
+  std::vector<char> exact_buffer(kTestData.size());
+  std::vector<char> large_buffer(kTestData.size() * 2);
+
+  // Read the file with smaller buffer.
+  int bytes_read_small = ReadFile(
+      file_path, &small_buffer[0], static_cast<int>(small_buffer.size()));
+  EXPECT_EQ(static_cast<int>(small_buffer.size()), bytes_read_small);
+  EXPECT_EQ(
+      std::string(kTestData.begin(), kTestData.begin() + small_buffer.size()),
+      std::string(small_buffer.begin(), small_buffer.end()));
+
+  // Read the file with buffer which have exactly same size.
+  int bytes_read_exact = ReadFile(
+      file_path, &exact_buffer[0], static_cast<int>(exact_buffer.size()));
+  EXPECT_EQ(static_cast<int>(kTestData.size()), bytes_read_exact);
+  EXPECT_EQ(kTestData, std::string(exact_buffer.begin(), exact_buffer.end()));
+
+  // Read the file with larger buffer.
+  int bytes_read_large = ReadFile(
+      file_path, &large_buffer[0], static_cast<int>(large_buffer.size()));
+  EXPECT_EQ(static_cast<int>(kTestData.size()), bytes_read_large);
+  EXPECT_EQ(kTestData, std::string(large_buffer.begin(),
+                                   large_buffer.begin() + kTestData.size()));
+
+  // Make sure the return value is -1 if the file doesn't exist.
+  FilePath file_path_not_exist =
+      temp_dir_.path().Append(FILE_PATH_LITERAL("ReadFileNotExistTest"));
+  EXPECT_EQ(-1,
+            ReadFile(file_path_not_exist,
+                     &exact_buffer[0],
+                     static_cast<int>(exact_buffer.size())));
+}
+
+TEST_F(FileUtilTest, ReadFileToString) {
+  const char kTestData[] = "0123";
+  std::string data;
+
+  FilePath file_path =
+      temp_dir_.path().Append(FILE_PATH_LITERAL("ReadFileToStringTest"));
+  FilePath file_path_dangerous =
+      temp_dir_.path().Append(FILE_PATH_LITERAL("..")).
+      Append(temp_dir_.path().BaseName()).
+      Append(FILE_PATH_LITERAL("ReadFileToStringTest"));
+
+  // Create test file.
+  ASSERT_EQ(4, WriteFile(file_path, kTestData, 4));
+
+  EXPECT_TRUE(ReadFileToString(file_path, &data));
+  EXPECT_EQ(kTestData, data);
+
+  data = "temp";
+  EXPECT_FALSE(ReadFileToString(file_path, &data, 0));
+  EXPECT_EQ(0u, data.length());
+
+  data = "temp";
+  EXPECT_FALSE(ReadFileToString(file_path, &data, 2));
+  EXPECT_EQ("01", data);
+
+  data.clear();
+  EXPECT_FALSE(ReadFileToString(file_path, &data, 3));
+  EXPECT_EQ("012", data);
+
+  data.clear();
+  EXPECT_TRUE(ReadFileToString(file_path, &data, 4));
+  EXPECT_EQ("0123", data);
+
+  data.clear();
+  EXPECT_TRUE(ReadFileToString(file_path, &data, 6));
+  EXPECT_EQ("0123", data);
+
+  EXPECT_TRUE(ReadFileToString(file_path, NULL, 6));
+
+  EXPECT_TRUE(ReadFileToString(file_path, NULL));
+
+  data = "temp";
+  EXPECT_FALSE(ReadFileToString(file_path_dangerous, &data));
+  EXPECT_EQ(0u, data.length());
+
+  // Delete test file.
+  EXPECT_TRUE(base::DeleteFile(file_path, false));
+
+  data = "temp";
+  EXPECT_FALSE(ReadFileToString(file_path, &data));
+  EXPECT_EQ(0u, data.length());
+
+  data = "temp";
+  EXPECT_FALSE(ReadFileToString(file_path, &data, 6));
+  EXPECT_EQ(0u, data.length());
 }
 
 TEST_F(FileUtilTest, TouchFile) {
@@ -1897,13 +2100,13 @@ TEST_F(FileUtilTest, TouchFile) {
 
   FilePath foobar(data_dir.Append(FILE_PATH_LITERAL("foobar.txt")));
   std::string data("hello");
-  ASSERT_TRUE(file_util::WriteFile(foobar, data.c_str(), data.length()));
+  ASSERT_TRUE(WriteFile(foobar, data.c_str(), data.length()));
 
   Time access_time;
   // This timestamp is divisible by one day (in local timezone),
   // to make it work on FAT too.
   ASSERT_TRUE(Time::FromString("Wed, 16 Nov 1994, 00:00:00",
-                                     &access_time));
+                               &access_time));
 
   Time modification_time;
   // Note that this timestamp is divisible by two (seconds) - FAT stores
@@ -1912,12 +2115,12 @@ TEST_F(FileUtilTest, TouchFile) {
               &modification_time));
 
   ASSERT_TRUE(TouchFile(foobar, access_time, modification_time));
-  PlatformFileInfo file_info;
+  File::Info file_info;
   ASSERT_TRUE(GetFileInfo(foobar, &file_info));
-  EXPECT_EQ(file_info.last_accessed.ToInternalValue(),
-            access_time.ToInternalValue());
-  EXPECT_EQ(file_info.last_modified.ToInternalValue(),
-            modification_time.ToInternalValue());
+  EXPECT_EQ(access_time.ToInternalValue(),
+            file_info.last_accessed.ToInternalValue());
+  EXPECT_EQ(modification_time.ToInternalValue(),
+            file_info.last_modified.ToInternalValue());
 }
 
 TEST_F(FileUtilTest, IsDirectoryEmpty) {
@@ -1931,7 +2134,7 @@ TEST_F(FileUtilTest, IsDirectoryEmpty) {
 
   FilePath foo(empty_dir.Append(FILE_PATH_LITERAL("foo.txt")));
   std::string bar("baz");
-  ASSERT_TRUE(file_util::WriteFile(foo, bar.c_str(), bar.length()));
+  ASSERT_TRUE(WriteFile(foo, bar.c_str(), bar.length()));
 
   EXPECT_FALSE(IsDirectoryEmpty(empty_dir));
 }
@@ -2008,23 +2211,23 @@ TEST_F(VerifyPathControlledByUserTest, BadPaths) {
                                      .AppendASCII("not")
                                      .AppendASCII("exist");
   EXPECT_FALSE(
-      file_util::VerifyPathControlledByUser(
+      base::VerifyPathControlledByUser(
           base_dir_, does_not_exist, uid_, ok_gids_));
 
   // |base| not a subpath of |path|.
   EXPECT_FALSE(
-      file_util::VerifyPathControlledByUser(
+      base::VerifyPathControlledByUser(
           sub_dir_, base_dir_, uid_, ok_gids_));
 
   // An empty base path will fail to be a prefix for any path.
   FilePath empty;
   EXPECT_FALSE(
-      file_util::VerifyPathControlledByUser(
+      base::VerifyPathControlledByUser(
           empty, base_dir_, uid_, ok_gids_));
 
   // Finding that a bad call fails proves nothing unless a good call succeeds.
   EXPECT_TRUE(
-      file_util::VerifyPathControlledByUser(
+      base::VerifyPathControlledByUser(
           base_dir_, sub_dir_, uid_, ok_gids_));
 }
 
@@ -2037,10 +2240,10 @@ TEST_F(VerifyPathControlledByUserTest, Symlinks) {
       << "Failed to create symlink.";
 
   EXPECT_FALSE(
-      file_util::VerifyPathControlledByUser(
+      base::VerifyPathControlledByUser(
           base_dir_, file_link, uid_, ok_gids_));
   EXPECT_FALSE(
-      file_util::VerifyPathControlledByUser(
+      base::VerifyPathControlledByUser(
           file_link, file_link, uid_, ok_gids_));
 
   // Symlink from one directory to another within the path.
@@ -2052,16 +2255,16 @@ TEST_F(VerifyPathControlledByUserTest, Symlinks) {
   ASSERT_TRUE(PathExists(file_path_with_link));
 
   EXPECT_FALSE(
-      file_util::VerifyPathControlledByUser(
+      base::VerifyPathControlledByUser(
           base_dir_, file_path_with_link, uid_, ok_gids_));
 
   EXPECT_FALSE(
-      file_util::VerifyPathControlledByUser(
+      base::VerifyPathControlledByUser(
           link_to_sub_dir, file_path_with_link, uid_, ok_gids_));
 
   // Symlinks in parents of base path are allowed.
   EXPECT_TRUE(
-      file_util::VerifyPathControlledByUser(
+      base::VerifyPathControlledByUser(
           file_path_with_link, file_path_with_link, uid_, ok_gids_));
 }
 
@@ -2079,35 +2282,35 @@ TEST_F(VerifyPathControlledByUserTest, OwnershipChecks) {
 
   // We control these paths.
   EXPECT_TRUE(
-      file_util::VerifyPathControlledByUser(
+      base::VerifyPathControlledByUser(
           base_dir_, sub_dir_, uid_, ok_gids_));
   EXPECT_TRUE(
-      file_util::VerifyPathControlledByUser(
+      base::VerifyPathControlledByUser(
           base_dir_, text_file_, uid_, ok_gids_));
   EXPECT_TRUE(
-      file_util::VerifyPathControlledByUser(
+      base::VerifyPathControlledByUser(
           sub_dir_, text_file_, uid_, ok_gids_));
 
   // Another user does not control these paths.
   EXPECT_FALSE(
-      file_util::VerifyPathControlledByUser(
+      base::VerifyPathControlledByUser(
           base_dir_, sub_dir_, bad_uid, ok_gids_));
   EXPECT_FALSE(
-      file_util::VerifyPathControlledByUser(
+      base::VerifyPathControlledByUser(
           base_dir_, text_file_, bad_uid, ok_gids_));
   EXPECT_FALSE(
-      file_util::VerifyPathControlledByUser(
+      base::VerifyPathControlledByUser(
           sub_dir_, text_file_, bad_uid, ok_gids_));
 
   // Another group does not control the paths.
   EXPECT_FALSE(
-      file_util::VerifyPathControlledByUser(
+      base::VerifyPathControlledByUser(
           base_dir_, sub_dir_, uid_, bad_gids_));
   EXPECT_FALSE(
-      file_util::VerifyPathControlledByUser(
+      base::VerifyPathControlledByUser(
           base_dir_, text_file_, uid_, bad_gids_));
   EXPECT_FALSE(
-      file_util::VerifyPathControlledByUser(
+      base::VerifyPathControlledByUser(
           sub_dir_, text_file_, uid_, bad_gids_));
 }
 
@@ -2122,36 +2325,36 @@ TEST_F(VerifyPathControlledByUserTest, GroupWriteTest) {
 
   // Any group is okay because the path is not group-writable.
   EXPECT_TRUE(
-      file_util::VerifyPathControlledByUser(
+      base::VerifyPathControlledByUser(
           base_dir_, sub_dir_, uid_, ok_gids_));
   EXPECT_TRUE(
-      file_util::VerifyPathControlledByUser(
+      base::VerifyPathControlledByUser(
           base_dir_, text_file_, uid_, ok_gids_));
   EXPECT_TRUE(
-      file_util::VerifyPathControlledByUser(
+      base::VerifyPathControlledByUser(
           sub_dir_, text_file_, uid_, ok_gids_));
 
   EXPECT_TRUE(
-      file_util::VerifyPathControlledByUser(
+      base::VerifyPathControlledByUser(
           base_dir_, sub_dir_, uid_, bad_gids_));
   EXPECT_TRUE(
-      file_util::VerifyPathControlledByUser(
+      base::VerifyPathControlledByUser(
           base_dir_, text_file_, uid_, bad_gids_));
   EXPECT_TRUE(
-      file_util::VerifyPathControlledByUser(
+      base::VerifyPathControlledByUser(
           sub_dir_, text_file_, uid_, bad_gids_));
 
   // No group is okay, because we don't check the group
   // if no group can write.
   std::set<gid_t> no_gids;  // Empty set of gids.
   EXPECT_TRUE(
-      file_util::VerifyPathControlledByUser(
+      base::VerifyPathControlledByUser(
           base_dir_, sub_dir_, uid_, no_gids));
   EXPECT_TRUE(
-      file_util::VerifyPathControlledByUser(
+      base::VerifyPathControlledByUser(
           base_dir_, text_file_, uid_, no_gids));
   EXPECT_TRUE(
-      file_util::VerifyPathControlledByUser(
+      base::VerifyPathControlledByUser(
           sub_dir_, text_file_, uid_, no_gids));
 
 
@@ -2165,23 +2368,23 @@ TEST_F(VerifyPathControlledByUserTest, GroupWriteTest) {
 
   // Now |ok_gids_| works, but |bad_gids_| fails.
   EXPECT_TRUE(
-      file_util::VerifyPathControlledByUser(
+      base::VerifyPathControlledByUser(
           base_dir_, sub_dir_, uid_, ok_gids_));
   EXPECT_TRUE(
-      file_util::VerifyPathControlledByUser(
+      base::VerifyPathControlledByUser(
           base_dir_, text_file_, uid_, ok_gids_));
   EXPECT_TRUE(
-      file_util::VerifyPathControlledByUser(
+      base::VerifyPathControlledByUser(
           sub_dir_, text_file_, uid_, ok_gids_));
 
   EXPECT_FALSE(
-      file_util::VerifyPathControlledByUser(
+      base::VerifyPathControlledByUser(
           base_dir_, sub_dir_, uid_, bad_gids_));
   EXPECT_FALSE(
-      file_util::VerifyPathControlledByUser(
+      base::VerifyPathControlledByUser(
           base_dir_, text_file_, uid_, bad_gids_));
   EXPECT_FALSE(
-      file_util::VerifyPathControlledByUser(
+      base::VerifyPathControlledByUser(
           sub_dir_, text_file_, uid_, bad_gids_));
 
   // Because any group in the group set is allowed,
@@ -2194,13 +2397,13 @@ TEST_F(VerifyPathControlledByUserTest, GroupWriteTest) {
       std::inserter(multiple_gids, multiple_gids.begin()));
 
   EXPECT_TRUE(
-      file_util::VerifyPathControlledByUser(
+      base::VerifyPathControlledByUser(
           base_dir_, sub_dir_, uid_, multiple_gids));
   EXPECT_TRUE(
-      file_util::VerifyPathControlledByUser(
+      base::VerifyPathControlledByUser(
           base_dir_, text_file_, uid_, multiple_gids));
   EXPECT_TRUE(
-      file_util::VerifyPathControlledByUser(
+      base::VerifyPathControlledByUser(
           sub_dir_, text_file_, uid_, multiple_gids));
 }
 
@@ -2215,78 +2418,78 @@ TEST_F(VerifyPathControlledByUserTest, WriteBitChecks) {
 
   // Initialy, we control all parts of the path.
   EXPECT_TRUE(
-      file_util::VerifyPathControlledByUser(
+      base::VerifyPathControlledByUser(
           base_dir_, sub_dir_, uid_, ok_gids_));
   EXPECT_TRUE(
-      file_util::VerifyPathControlledByUser(
+      base::VerifyPathControlledByUser(
           base_dir_, text_file_, uid_, ok_gids_));
   EXPECT_TRUE(
-      file_util::VerifyPathControlledByUser(
+      base::VerifyPathControlledByUser(
           sub_dir_, text_file_, uid_, ok_gids_));
 
   // Make base_dir_ world-writable.
   ASSERT_NO_FATAL_FAILURE(
       ChangePosixFilePermissions(base_dir_, S_IWOTH, 0u));
   EXPECT_FALSE(
-      file_util::VerifyPathControlledByUser(
+      base::VerifyPathControlledByUser(
           base_dir_, sub_dir_, uid_, ok_gids_));
   EXPECT_FALSE(
-      file_util::VerifyPathControlledByUser(
+      base::VerifyPathControlledByUser(
           base_dir_, text_file_, uid_, ok_gids_));
   EXPECT_TRUE(
-      file_util::VerifyPathControlledByUser(
+      base::VerifyPathControlledByUser(
           sub_dir_, text_file_, uid_, ok_gids_));
 
   // Make sub_dir_ world writable.
   ASSERT_NO_FATAL_FAILURE(
       ChangePosixFilePermissions(sub_dir_, S_IWOTH, 0u));
   EXPECT_FALSE(
-      file_util::VerifyPathControlledByUser(
+      base::VerifyPathControlledByUser(
           base_dir_, sub_dir_, uid_, ok_gids_));
   EXPECT_FALSE(
-      file_util::VerifyPathControlledByUser(
+      base::VerifyPathControlledByUser(
           base_dir_, text_file_, uid_, ok_gids_));
   EXPECT_FALSE(
-      file_util::VerifyPathControlledByUser(
+      base::VerifyPathControlledByUser(
           sub_dir_, text_file_, uid_, ok_gids_));
 
   // Make text_file_ world writable.
   ASSERT_NO_FATAL_FAILURE(
       ChangePosixFilePermissions(text_file_, S_IWOTH, 0u));
   EXPECT_FALSE(
-      file_util::VerifyPathControlledByUser(
+      base::VerifyPathControlledByUser(
           base_dir_, sub_dir_, uid_, ok_gids_));
   EXPECT_FALSE(
-      file_util::VerifyPathControlledByUser(
+      base::VerifyPathControlledByUser(
           base_dir_, text_file_, uid_, ok_gids_));
   EXPECT_FALSE(
-      file_util::VerifyPathControlledByUser(
+      base::VerifyPathControlledByUser(
           sub_dir_, text_file_, uid_, ok_gids_));
 
   // Make sub_dir_ non-world writable.
   ASSERT_NO_FATAL_FAILURE(
       ChangePosixFilePermissions(sub_dir_, 0u, S_IWOTH));
   EXPECT_FALSE(
-      file_util::VerifyPathControlledByUser(
+      base::VerifyPathControlledByUser(
           base_dir_, sub_dir_, uid_, ok_gids_));
   EXPECT_FALSE(
-      file_util::VerifyPathControlledByUser(
+      base::VerifyPathControlledByUser(
           base_dir_, text_file_, uid_, ok_gids_));
   EXPECT_FALSE(
-      file_util::VerifyPathControlledByUser(
+      base::VerifyPathControlledByUser(
           sub_dir_, text_file_, uid_, ok_gids_));
 
   // Make base_dir_ non-world-writable.
   ASSERT_NO_FATAL_FAILURE(
       ChangePosixFilePermissions(base_dir_, 0u, S_IWOTH));
   EXPECT_TRUE(
-      file_util::VerifyPathControlledByUser(
+      base::VerifyPathControlledByUser(
           base_dir_, sub_dir_, uid_, ok_gids_));
   EXPECT_FALSE(
-      file_util::VerifyPathControlledByUser(
+      base::VerifyPathControlledByUser(
           base_dir_, text_file_, uid_, ok_gids_));
   EXPECT_FALSE(
-      file_util::VerifyPathControlledByUser(
+      base::VerifyPathControlledByUser(
           sub_dir_, text_file_, uid_, ok_gids_));
 
   // Back to the initial state: Nothing is writable, so every path
@@ -2294,13 +2497,13 @@ TEST_F(VerifyPathControlledByUserTest, WriteBitChecks) {
   ASSERT_NO_FATAL_FAILURE(
       ChangePosixFilePermissions(text_file_, 0u, S_IWOTH));
   EXPECT_TRUE(
-      file_util::VerifyPathControlledByUser(
+      base::VerifyPathControlledByUser(
           base_dir_, sub_dir_, uid_, ok_gids_));
   EXPECT_TRUE(
-      file_util::VerifyPathControlledByUser(
+      base::VerifyPathControlledByUser(
           base_dir_, text_file_, uid_, ok_gids_));
   EXPECT_TRUE(
-      file_util::VerifyPathControlledByUser(
+      base::VerifyPathControlledByUser(
           sub_dir_, text_file_, uid_, ok_gids_));
 }
 
@@ -2329,9 +2532,9 @@ TEST_F(FileUtilTest, ValidContentUriTest) {
 
   // We should be able to read the file.
   char* buffer = new char[image_size];
-  int fd = OpenContentUriForRead(path);
-  EXPECT_LT(0, fd);
-  EXPECT_TRUE(ReadFromFD(fd, buffer, image_size));
+  File file = OpenContentUriForRead(path);
+  EXPECT_TRUE(file.IsValid());
+  EXPECT_TRUE(file.ReadAtCurrentPos(buffer, image_size));
   delete[] buffer;
 }
 
@@ -2344,10 +2547,47 @@ TEST_F(FileUtilTest, NonExistentContentUriTest) {
   EXPECT_FALSE(GetFileSize(path, &size));
 
   // We should not be able to read the file.
-  int fd = OpenContentUriForRead(path);
-  EXPECT_EQ(-1, fd);
+  File file = OpenContentUriForRead(path);
+  EXPECT_FALSE(file.IsValid());
 }
 #endif
+
+TEST(ScopedFD, ScopedFDDoesClose) {
+  int fds[2];
+  char c = 0;
+  ASSERT_EQ(0, pipe(fds));
+  const int write_end = fds[1];
+  base::ScopedFD read_end_closer(fds[0]);
+  {
+    base::ScopedFD write_end_closer(fds[1]);
+  }
+  // This is the only thread. This file descriptor should no longer be valid.
+  int ret = close(write_end);
+  EXPECT_EQ(-1, ret);
+  EXPECT_EQ(EBADF, errno);
+  // Make sure read(2) won't block.
+  ASSERT_EQ(0, fcntl(fds[0], F_SETFL, O_NONBLOCK));
+  // Reading the pipe should EOF.
+  EXPECT_EQ(0, read(fds[0], &c, 1));
+}
+
+#if defined(GTEST_HAS_DEATH_TEST)
+void CloseWithScopedFD(int fd) {
+  base::ScopedFD fd_closer(fd);
+}
+#endif
+
+TEST(ScopedFD, ScopedFDCrashesOnCloseFailure) {
+  int fds[2];
+  ASSERT_EQ(0, pipe(fds));
+  base::ScopedFD read_end_closer(fds[0]);
+  EXPECT_EQ(0, IGNORE_EINTR(close(fds[1])));
+#if defined(GTEST_HAS_DEATH_TEST)
+  // This is the only thread. This file descriptor should no longer be valid.
+  // Trying to close it should crash. This is important for security.
+  EXPECT_DEATH(CloseWithScopedFD(fds[1]), "");
+#endif
+}
 
 #endif  // defined(OS_POSIX)
 

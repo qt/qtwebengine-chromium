@@ -36,7 +36,7 @@
 namespace WebCore {
 namespace XPath {
 
-Filter::Filter(PassOwnPtr<Expression> expr, Vector<OwnPtr<Predicate> >& predicates)
+Filter::Filter(PassOwnPtrWillBeRawPtr<Expression> expr, WillBeHeapVector<OwnPtrWillBeMember<Predicate> >& predicates)
     : m_expr(expr)
 {
     m_predicates.swap(predicates);
@@ -49,6 +49,13 @@ Filter::~Filter()
 {
 }
 
+void Filter::trace(Visitor* visitor)
+{
+    visitor->trace(m_expr);
+    visitor->trace(m_predicates);
+    Expression::trace(visitor);
+}
+
 Value Filter::evaluate() const
 {
     Value v = m_expr->evaluate();
@@ -58,7 +65,7 @@ Value Filter::evaluate() const
 
     EvaluationContext& evaluationContext = Expression::evaluationContext();
     for (unsigned i = 0; i < m_predicates.size(); i++) {
-        NodeSet newNodes;
+        OwnPtrWillBeRawPtr<NodeSet> newNodes(NodeSet::create());
         evaluationContext.size = nodes.size();
         evaluationContext.position = 0;
 
@@ -69,9 +76,9 @@ Value Filter::evaluate() const
             ++evaluationContext.position;
 
             if (m_predicates[i]->evaluate())
-                newNodes.append(node);
+                newNodes->append(node);
         }
-        nodes.swap(newNodes);
+        nodes.swap(*newNodes);
     }
 
     return v;
@@ -85,7 +92,17 @@ LocationPath::LocationPath()
 
 LocationPath::~LocationPath()
 {
+#if !ENABLE(OILPAN)
     deleteAllValues(m_steps);
+#endif
+}
+
+void LocationPath::trace(Visitor* visitor)
+{
+#if ENABLE(OILPAN)
+    visitor->trace(m_steps);
+#endif
+    Expression::trace(visitor);
 }
 
 Value LocationPath::evaluate() const
@@ -105,15 +122,15 @@ Value LocationPath::evaluate() const
         if (context->inDocument())
             context = context->ownerDocument();
         else
-            context = context->highestAncestor();
+            context = &context->highestAncestorOrSelf();
     }
 
-    NodeSet nodes;
-    nodes.append(context);
-    evaluate(nodes);
+    OwnPtrWillBeRawPtr<NodeSet> nodes(NodeSet::create());
+    nodes->append(context);
+    evaluate(*nodes);
 
     evaluationContext = backupContext;
-    return Value(nodes, Value::adopt);
+    return Value(nodes.release(), Value::adopt);
 }
 
 void LocationPath::evaluate(NodeSet& nodes) const
@@ -122,7 +139,7 @@ void LocationPath::evaluate(NodeSet& nodes) const
 
     for (unsigned i = 0; i < m_steps.size(); i++) {
         Step* step = m_steps[i];
-        NodeSet newNodes;
+        OwnPtrWillBeRawPtr<NodeSet> newNodes(NodeSet::create());
         HashSet<Node*> newNodesSet;
 
         bool needToCheckForDuplicateNodes = !nodes.subtreesAreDisjoint() || (step->axis() != Step::ChildAxis && step->axis() != Step::SelfAxis
@@ -133,23 +150,23 @@ void LocationPath::evaluate(NodeSet& nodes) const
 
         // This is a simplified check that can be improved to handle more cases.
         if (nodes.subtreesAreDisjoint() && (step->axis() == Step::ChildAxis || step->axis() == Step::SelfAxis))
-            newNodes.markSubtreesDisjoint(true);
+            newNodes->markSubtreesDisjoint(true);
 
         for (unsigned j = 0; j < nodes.size(); j++) {
-            NodeSet matches;
-            step->evaluate(nodes[j], matches);
+            OwnPtrWillBeRawPtr<NodeSet> matches(NodeSet::create());
+            step->evaluate(nodes[j], *matches);
 
-            if (!matches.isSorted())
+            if (!matches->isSorted())
                 resultIsSorted = false;
 
-            for (size_t nodeIndex = 0; nodeIndex < matches.size(); ++nodeIndex) {
-                Node* node = matches[nodeIndex];
+            for (size_t nodeIndex = 0; nodeIndex < matches->size(); ++nodeIndex) {
+                Node* node = (*matches)[nodeIndex];
                 if (!needToCheckForDuplicateNodes || newNodesSet.add(node).isNewEntry)
-                    newNodes.append(node);
+                    newNodes->append(node);
             }
         }
 
-        nodes.swap(newNodes);
+        nodes.swap(*newNodes);
     }
 
     nodes.markSorted(resultIsSorted);
@@ -162,7 +179,9 @@ void LocationPath::appendStep(Step* step)
         bool dropSecondStep;
         optimizeStepPair(m_steps[stepCount - 1], step, dropSecondStep);
         if (dropSecondStep) {
+#if !ENABLE(OILPAN)
             delete step;
+#endif
             return;
         }
     }
@@ -176,7 +195,9 @@ void LocationPath::insertFirstStep(Step* step)
         bool dropSecondStep;
         optimizeStepPair(step, m_steps[0], dropSecondStep);
         if (dropSecondStep) {
+#if !ENABLE(OILPAN)
             delete m_steps[0];
+#endif
             m_steps[0] = step;
             return;
         }
@@ -186,8 +207,8 @@ void LocationPath::insertFirstStep(Step* step)
 }
 
 Path::Path(Expression* filter, LocationPath* path)
-    : m_filter(filter)
-    , m_path(path)
+    : m_filter(adoptPtrWillBeNoop(filter))
+    , m_path(adoptPtrWillBeNoop(path))
 {
     setIsContextNodeSensitive(filter->isContextNodeSensitive());
     setIsContextPositionSensitive(filter->isContextPositionSensitive());
@@ -196,8 +217,13 @@ Path::Path(Expression* filter, LocationPath* path)
 
 Path::~Path()
 {
-    delete m_filter;
-    delete m_path;
+}
+
+void Path::trace(Visitor* visitor)
+{
+    visitor->trace(m_filter);
+    visitor->trace(m_path);
+    Expression::trace(visitor);
 }
 
 Value Path::evaluate() const

@@ -11,6 +11,7 @@
 #include "base/i18n/rtl.h"
 #include "base/lazy_instance.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/win/i18n.h"
 #include "base/win/windows_version.h"
 #include "grit/app_locale_settings.h"
@@ -20,7 +21,7 @@
 
 namespace {
 
-void AdjustLogFont(const string16& font_family,
+void AdjustLogFont(const base::string16& font_family,
                    double font_size_scaler,
                    double dpi_scale,
                    LOGFONT* logfont) {
@@ -113,7 +114,7 @@ bool IsLocaleSupportedByOS(const std::string& locale) {
       !LowerCaseEqualsASCII(locale, "am") || IsFontPresent(L"Abyssinica SIL"));
 }
 
-bool NeedOverrideDefaultUIFont(string16* override_font_family,
+bool NeedOverrideDefaultUIFont(base::string16* override_font_family,
                                double* font_size_scaler) {
   // This is rather simple-minded to deal with the UI font size
   // issue for some Indian locales (ml, bn, hi) for which
@@ -130,7 +131,7 @@ bool NeedOverrideDefaultUIFont(string16* override_font_family,
     ui_font_size_scaler_id = IDS_UI_FONT_SIZE_SCALER_XP;
   }
 
-  string16 ui_font_family = GetStringUTF16(ui_font_family_id);
+  base::string16 ui_font_family = GetStringUTF16(ui_font_family_id);
   int scaler100;
   if (!base::StringToInt(l10n_util::GetStringUTF16(ui_font_size_scaler_id),
                          &scaler100))
@@ -161,7 +162,7 @@ void AdjustUIFont(LOGFONT* logfont) {
 }
 
 void AdjustUIFontForDIP(float dpi_scale, LOGFONT* logfont) {
-  string16 ui_font_family = L"default";
+  base::string16 ui_font_family = L"default";
   double ui_font_size_scaler = 1;
   if (NeedOverrideDefaultUIFont(&ui_font_family, &ui_font_size_scaler) ||
       dpi_scale != 1) {
@@ -170,7 +171,7 @@ void AdjustUIFontForDIP(float dpi_scale, LOGFONT* logfont) {
 }
 
 void AdjustUIFontForWindow(HWND hwnd) {
-  string16 ui_font_family;
+  base::string16 ui_font_family;
   double ui_font_size_scaler;
   if (NeedOverrideDefaultUIFont(&ui_font_family, &ui_font_size_scaler)) {
     LOGFONT logfont;
@@ -185,12 +186,12 @@ void AdjustUIFontForWindow(HWND hwnd) {
 }
 
 void OverrideLocaleWithUILanguageList() {
-  std::vector<std::wstring> ui_languages;
+  std::vector<base::string16> ui_languages;
   if (base::win::i18n::GetThreadPreferredUILanguageList(&ui_languages)) {
     std::vector<std::string> ascii_languages;
     ascii_languages.reserve(ui_languages.size());
     std::transform(ui_languages.begin(), ui_languages.end(),
-                   std::back_inserter(ascii_languages), &WideToASCII);
+                   std::back_inserter(ascii_languages), &base::UTF16ToASCII);
     override_locale_holder.Get().swap_value(&ascii_languages);
   } else {
     NOTREACHED() << "Failed to determine the UI language for locale override.";

@@ -9,7 +9,8 @@
 #include <vector>
 
 #include "base/basictypes.h"
-#include "ipc/ipc_channel_proxy.h"
+#include "base/memory/scoped_ptr.h"
+#include "ipc/message_filter.h"
 
 namespace base {
 class HistogramDeltaSerialization;
@@ -18,12 +19,12 @@ class MessageLoopProxy;
 
 namespace content {
 
-class ChildHistogramMessageFilter : public IPC::ChannelProxy::MessageFilter {
+class ChildHistogramMessageFilter : public IPC::MessageFilter {
  public:
   ChildHistogramMessageFilter();
 
-  // IPC::ChannelProxy::MessageFilter implementation.
-  virtual void OnFilterAdded(IPC::Channel* channel) OVERRIDE;
+  // IPC::MessageFilter implementation.
+  virtual void OnFilterAdded(IPC::Sender* sender) OVERRIDE;
   virtual void OnFilterRemoved() OVERRIDE;
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 
@@ -41,7 +42,7 @@ class ChildHistogramMessageFilter : public IPC::ChannelProxy::MessageFilter {
   // Send only a delta to what we have already sent.
   void UploadAllHistograms(int sequence_number);
 
-  IPC::Channel* channel_;
+  IPC::Sender* sender_;
 
   scoped_refptr<base::MessageLoopProxy> io_message_loop_;
 

@@ -24,17 +24,18 @@
  */
 
 [
+    GarbageCollected
 ] interface IDBIndex {
     readonly attribute DOMString name;
     readonly attribute IDBObjectStore objectStore;
-    [CallWith=ExecutionContext] readonly attribute any keyPath;
+    [CallWith=ScriptState] readonly attribute any keyPath;
     readonly attribute boolean unique;
     readonly attribute boolean multiEntry;
 
-    [CallWith=ExecutionContext, RaisesException] IDBRequest openCursor([Default=Undefined] optional any range, [Default=NullString] optional DOMString direction);
-    [CallWith=ExecutionContext, RaisesException] IDBRequest openKeyCursor([Default=Undefined] optional any range, [Default=NullString] optional DOMString direction);
+    [CallWith=ScriptState, RaisesException] IDBRequest openCursor([Default=Undefined] optional any range, optional DOMString direction = null);
+    [CallWith=ScriptState, RaisesException] IDBRequest openKeyCursor([Default=Undefined] optional any range, optional DOMString direction = null);
 
-    [CallWith=ExecutionContext, RaisesException] IDBRequest get(any key);
-    [CallWith=ExecutionContext, RaisesException] IDBRequest getKey(any key);
-    [CallWith=ExecutionContext, RaisesException] IDBRequest count([Default=Undefined] optional any key);
+    [CallWith=ScriptState, RaisesException] IDBRequest get(any key);
+    [CallWith=ScriptState, RaisesException] IDBRequest getKey(any key);
+    [CallWith=ScriptState, RaisesException] IDBRequest count([Default=Undefined] optional any key);
 };

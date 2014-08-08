@@ -33,7 +33,7 @@
 
 #include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/SerializedScriptValue.h"
-#include "core/frame/DOMWindow.h"
+#include "core/frame/LocalDOMWindow.h"
 #include "core/workers/DedicatedWorkerThread.h"
 #include "core/workers/WorkerClients.h"
 #include "core/workers/WorkerObjectProxy.h"
@@ -41,14 +41,14 @@
 
 namespace WebCore {
 
-PassRefPtr<DedicatedWorkerGlobalScope> DedicatedWorkerGlobalScope::create(DedicatedWorkerThread* thread, PassOwnPtr<WorkerThreadStartupData> startupData, double timeOrigin)
+PassRefPtrWillBeRawPtr<DedicatedWorkerGlobalScope> DedicatedWorkerGlobalScope::create(DedicatedWorkerThread* thread, PassOwnPtrWillBeRawPtr<WorkerThreadStartupData> startupData, double timeOrigin)
 {
-    RefPtr<DedicatedWorkerGlobalScope> context = adoptRef(new DedicatedWorkerGlobalScope(startupData->m_scriptURL, startupData->m_userAgent, thread, timeOrigin, startupData->m_workerClients.release()));
+    RefPtrWillBeRawPtr<DedicatedWorkerGlobalScope> context = adoptRefWillBeRefCountedGarbageCollected(new DedicatedWorkerGlobalScope(startupData->m_scriptURL, startupData->m_userAgent, thread, timeOrigin, startupData->m_workerClients.release()));
     context->applyContentSecurityPolicyFromString(startupData->m_contentSecurityPolicy, startupData->m_contentSecurityPolicyType);
     return context.release();
 }
 
-DedicatedWorkerGlobalScope::DedicatedWorkerGlobalScope(const KURL& url, const String& userAgent, DedicatedWorkerThread* thread, double timeOrigin, PassOwnPtr<WorkerClients> workerClients)
+DedicatedWorkerGlobalScope::DedicatedWorkerGlobalScope(const KURL& url, const String& userAgent, DedicatedWorkerThread* thread, double timeOrigin, PassOwnPtrWillBeRawPtr<WorkerClients> workerClients)
     : WorkerGlobalScope(url, userAgent, thread, timeOrigin, workerClients)
 {
     ScriptWrappable::init(this);
@@ -78,9 +78,48 @@ void DedicatedWorkerGlobalScope::importScripts(const Vector<String>& urls, Excep
     thread()->workerObjectProxy().reportPendingActivity(hasPendingActivity());
 }
 
-DedicatedWorkerThread* DedicatedWorkerGlobalScope::thread()
+DedicatedWorkerThread* DedicatedWorkerGlobalScope::thread() const
 {
     return static_cast<DedicatedWorkerThread*>(Base::thread());
+}
+
+class UseCounterTask : public ExecutionContextTask {
+public:
+    static PassOwnPtr<UseCounterTask> createCount(UseCounter::Feature feature) { return adoptPtr(new UseCounterTask(feature, false)); }
+    static PassOwnPtr<UseCounterTask> createDeprecation(UseCounter::Feature feature) { return adoptPtr(new UseCounterTask(feature, true)); }
+
+private:
+    UseCounterTask(UseCounter::Feature feature, bool isDeprecation)
+        : m_feature(feature)
+        , m_isDeprecation(isDeprecation)
+    {
+    }
+
+    virtual void performTask(ExecutionContext* context) OVERRIDE
+    {
+        if (m_isDeprecation)
+            UseCounter::countDeprecation(*toDocument(context), m_feature);
+        else
+            UseCounter::count(*toDocument(context), m_feature);
+    }
+
+    UseCounter::Feature m_feature;
+    bool m_isDeprecation;
+};
+
+void DedicatedWorkerGlobalScope::countFeature(UseCounter::Feature feature) const
+{
+    thread()->workerObjectProxy().postTaskToMainExecutionContext(UseCounterTask::createCount(feature));
+}
+
+void DedicatedWorkerGlobalScope::countDeprecation(UseCounter::Feature feature) const
+{
+    thread()->workerObjectProxy().postTaskToMainExecutionContext(UseCounterTask::createDeprecation(feature));
+}
+
+void DedicatedWorkerGlobalScope::trace(Visitor* visitor)
+{
+    WorkerGlobalScope::trace(visitor);
 }
 
 } // namespace WebCore

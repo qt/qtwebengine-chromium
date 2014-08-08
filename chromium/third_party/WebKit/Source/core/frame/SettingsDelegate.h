@@ -56,13 +56,12 @@ public:
         MultisamplingChange,
         ImageLoadingChange,
         TextAutosizingChange,
+        ScriptEnableChange,
+        FontFamilyChange,
+        AcceleratedCompositingChange,
     };
 
     virtual void settingsChanged(ChangeType) = 0;
-
-    // FIXME: This is a hack until the Inspector code can
-    // be removed from Settings. http://crbug.com/327476
-    virtual Page* page() = 0;
 
 protected:
     OwnPtr<Settings> const m_settings;

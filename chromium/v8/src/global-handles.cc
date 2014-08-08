@@ -1,36 +1,13 @@
 // Copyright 2009 the V8 project authors. All rights reserved.
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-//       copyright notice, this list of conditions and the following
-//       disclaimer in the documentation and/or other materials provided
-//       with the distribution.
-//     * Neither the name of Google Inc. nor the names of its
-//       contributors may be used to endorse or promote products derived
-//       from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
-#include "v8.h"
+#include "src/v8.h"
 
-#include "api.h"
-#include "global-handles.h"
+#include "src/api.h"
+#include "src/global-handles.h"
 
-#include "vm-state-inl.h"
+#include "src/vm-state-inl.h"
 
 namespace v8 {
 namespace internal {
@@ -169,13 +146,6 @@ class GlobalHandles::Node {
     flags_ = IsInNewSpaceList::update(flags_, v);
   }
 
-  bool is_revivable_callback() {
-    return IsRevivableCallback::decode(flags_);
-  }
-  void set_revivable_callback(bool v) {
-    flags_ = IsRevivableCallback::update(flags_, v);
-  }
-
   bool IsNearDeath() const {
     // Check for PENDING to ensure correct answer when processing callbacks.
     return state() == PENDING || state() == NEAR_DEATH;
@@ -234,27 +204,21 @@ class GlobalHandles::Node {
     parameter_or_next_free_.next_free = value;
   }
 
-  void MakeWeak(void* parameter,
-                WeakCallback weak_callback,
-                RevivableCallback revivable_callback) {
-    ASSERT((weak_callback == NULL) != (revivable_callback == NULL));
+  void MakeWeak(void* parameter, WeakCallback weak_callback) {
+    ASSERT(weak_callback != NULL);
     ASSERT(state() != FREE);
+    CHECK(object_ != NULL);
     set_state(WEAK);
     set_parameter(parameter);
-    if (weak_callback != NULL) {
-      weak_callback_ = weak_callback;
-      set_revivable_callback(false);
-    } else {
-      weak_callback_ =
-          reinterpret_cast<WeakCallback>(revivable_callback);
-      set_revivable_callback(true);
-    }
+    weak_callback_ = weak_callback;
   }
 
-  void ClearWeakness() {
+  void* ClearWeakness() {
     ASSERT(state() != FREE);
+    void* p = parameter();
     set_state(NORMAL);
     set_parameter(NULL);
+    return p;
   }
 
   bool PostGarbageCollectionProcessing(Isolate* isolate) {
@@ -278,24 +242,16 @@ class GlobalHandles::Node {
       // Leaving V8.
       VMState<EXTERNAL> state(isolate);
       HandleScope handle_scope(isolate);
-      if (is_revivable_callback()) {
-        RevivableCallback revivable =
-            reinterpret_cast<RevivableCallback>(weak_callback_);
-        revivable(reinterpret_cast<v8::Isolate*>(isolate),
-                  reinterpret_cast<Persistent<Value>*>(&object),
-                  par);
-      } else {
-        Handle<Object> handle(*object, isolate);
-        v8::WeakCallbackData<v8::Value, void> data(
-            reinterpret_cast<v8::Isolate*>(isolate),
-            v8::Utils::ToLocal(handle),
-            par);
-        weak_callback_(data);
-      }
+      Handle<Object> handle(*object, isolate);
+      v8::WeakCallbackData<v8::Value, void> data(
+          reinterpret_cast<v8::Isolate*>(isolate),
+          v8::Utils::ToLocal(handle),
+          par);
+      weak_callback_(data);
     }
     // Absence of explicit cleanup or revival of weak handle
     // in most of the cases would lead to memory leak.
-    ASSERT(state() != NEAR_DEATH);
+    CHECK(state() != NEAR_DEATH);
     return true;
   }
 
@@ -325,7 +281,6 @@ class GlobalHandles::Node {
   class IsIndependent:        public BitField<bool,  4, 1> {};
   class IsPartiallyDependent: public BitField<bool,  5, 1> {};
   class IsInNewSpaceList:     public BitField<bool,  6, 1> {};
-  class IsRevivableCallback:  public BitField<bool,  7, 1> {};
 
   uint8_t flags_;
 
@@ -522,15 +477,13 @@ void GlobalHandles::Destroy(Object** location) {
 
 void GlobalHandles::MakeWeak(Object** location,
                              void* parameter,
-                             WeakCallback weak_callback,
-                             RevivableCallback revivable_callback) {
-  Node::FromLocation(location)->MakeWeak(
-      parameter, weak_callback, revivable_callback);
+                             WeakCallback weak_callback) {
+  Node::FromLocation(location)->MakeWeak(parameter, weak_callback);
 }
 
 
-void GlobalHandles::ClearWeakness(Object** location) {
-  Node::FromLocation(location)->ClearWeakness();
+void* GlobalHandles::ClearWeakness(Object** location) {
+  return Node::FromLocation(location)->ClearWeakness();
 }
 
 
@@ -658,21 +611,21 @@ bool GlobalHandles::IterateObjectGroups(ObjectVisitor* v,
 }
 
 
-bool GlobalHandles::PostGarbageCollectionProcessing(
+int GlobalHandles::PostGarbageCollectionProcessing(
     GarbageCollector collector, GCTracer* tracer) {
   // Process weak global handle callbacks. This must be done after the
   // GC is completely done, because the callbacks may invoke arbitrary
   // API functions.
   ASSERT(isolate_->heap()->gc_state() == Heap::NOT_IN_GC);
   const int initial_post_gc_processing_count = ++post_gc_processing_count_;
-  bool next_gc_likely_to_collect_more = false;
+  int freed_nodes = 0;
   if (collector == SCAVENGER) {
     for (int i = 0; i < new_space_nodes_.length(); ++i) {
       Node* node = new_space_nodes_[i];
       ASSERT(node->is_in_new_space_list());
       if (!node->IsRetainer()) {
         // Free nodes do not have weak callbacks. Do not use them to compute
-        // the next_gc_likely_to_collect_more.
+        // the freed_nodes.
         continue;
       }
       // Skip dependent handles. Their weak callbacks might expect to be
@@ -688,29 +641,29 @@ bool GlobalHandles::PostGarbageCollectionProcessing(
           // PostGarbageCollection processing.  The current node might
           // have been deleted in that round, so we need to bail out (or
           // restart the processing).
-          return next_gc_likely_to_collect_more;
+          return freed_nodes;
         }
       }
       if (!node->IsRetainer()) {
-        next_gc_likely_to_collect_more = true;
+        freed_nodes++;
       }
     }
   } else {
     for (NodeIterator it(this); !it.done(); it.Advance()) {
       if (!it.node()->IsRetainer()) {
         // Free nodes do not have weak callbacks. Do not use them to compute
-        // the next_gc_likely_to_collect_more.
+        // the freed_nodes.
         continue;
       }
       it.node()->clear_partially_dependent();
       if (it.node()->PostGarbageCollectionProcessing(isolate_)) {
         if (initial_post_gc_processing_count != post_gc_processing_count_) {
           // See the comment above.
-          return next_gc_likely_to_collect_more;
+          return freed_nodes;
         }
       }
       if (!it.node()->IsRetainer()) {
-        next_gc_likely_to_collect_more = true;
+        freed_nodes++;
       }
     }
   }
@@ -733,7 +686,7 @@ bool GlobalHandles::PostGarbageCollectionProcessing(
     }
   }
   new_space_nodes_.Rewind(last);
-  return next_gc_likely_to_collect_more;
+  return freed_nodes;
 }
 
 

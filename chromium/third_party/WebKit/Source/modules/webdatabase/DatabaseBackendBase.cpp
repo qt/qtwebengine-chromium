@@ -31,6 +31,7 @@
 #include "modules/webdatabase/DatabaseBackendBase.h"
 
 #include "core/dom/ExceptionCode.h"
+#include "core/dom/ExecutionContext.h"
 #include "platform/Logging.h"
 #include "modules/webdatabase/DatabaseAuthorizer.h"
 #include "modules/webdatabase/DatabaseBase.h"
@@ -199,7 +200,7 @@ const char* DatabaseBackendBase::databaseInfoTableName()
     return infoTableName;
 }
 
-DatabaseBackendBase::DatabaseBackendBase(PassRefPtr<DatabaseContext> databaseContext, const String& name,
+DatabaseBackendBase::DatabaseBackendBase(DatabaseContext* databaseContext, const String& name,
     const String& expectedVersion, const String& displayName, unsigned long estimatedSize, DatabaseType databaseType)
     : m_databaseContext(databaseContext)
     , m_name(name.isolatedCopy())
@@ -219,7 +220,7 @@ DatabaseBackendBase::DatabaseBackendBase(PassRefPtr<DatabaseContext> databaseCon
         m_name = "";
 
     {
-        MutexLocker locker(guidMutex());
+        SafePointAwareMutexLocker locker(guidMutex());
         m_guid = guidForOriginAndName(securityOrigin()->toString(), name);
         HashSet<DatabaseBackendBase*>* hashSet = guidToDatabaseMap().get(m_guid);
         if (!hashSet) {
@@ -247,6 +248,13 @@ DatabaseBackendBase::~DatabaseBackendBase()
     ASSERT(!m_opened);
 }
 
+void DatabaseBackendBase::trace(Visitor* visitor)
+{
+    visitor->trace(m_databaseContext);
+    visitor->trace(m_sqliteDatabase);
+    visitor->trace(m_databaseAuthorizer);
+}
+
 void DatabaseBackendBase::closeDatabase()
 {
     if (!m_opened)
@@ -254,10 +262,11 @@ void DatabaseBackendBase::closeDatabase()
 
     m_sqliteDatabase.close();
     m_opened = false;
+    databaseContext()->didCloseDatabase(*this);
     // See comment at the top this file regarding calling removeOpenDatabase().
     DatabaseTracker::tracker().removeOpenDatabase(this);
     {
-        MutexLocker locker(guidMutex());
+        SafePointAwareMutexLocker locker(guidMutex());
 
         HashSet<DatabaseBackendBase*>* hashSet = guidToDatabaseMap().get(m_guid);
         ASSERT(hashSet);
@@ -320,7 +329,7 @@ bool DatabaseBackendBase::performOpenAndVerify(bool shouldSetVersionInNewDatabas
 
     String currentVersion;
     {
-        MutexLocker locker(guidMutex());
+        SafePointAwareMutexLocker locker(guidMutex());
 
         GuidVersionMap::iterator entry = guidToVersionMap().find(m_guid);
         if (entry != guidToVersionMap().end()) {
@@ -406,8 +415,9 @@ bool DatabaseBackendBase::performOpenAndVerify(bool shouldSetVersionInNewDatabas
     }
 
     ASSERT(m_databaseAuthorizer);
-    m_sqliteDatabase.setAuthorizer(m_databaseAuthorizer);
+    m_sqliteDatabase.setAuthorizer(m_databaseAuthorizer.get());
 
+    databaseContext()->didOpenDatabase(*this);
     // See comment at the top this file regarding calling addOpenDatabase().
     DatabaseTracker::tracker().addOpenDatabase(this);
     m_opened = true;
@@ -449,11 +459,6 @@ String DatabaseBackendBase::fileName() const
 {
     // Return a deep copy for ref counting thread safety
     return m_filename.isolatedCopy();
-}
-
-DatabaseDetails DatabaseBackendBase::details() const
-{
-    return DatabaseDetails(stringIdentifier(), displayName(), estimatedSize(), 0);
 }
 
 bool DatabaseBackendBase::getVersionFromDatabase(String& version, bool shouldCacheVersion)
@@ -501,14 +506,14 @@ void DatabaseBackendBase::setExpectedVersion(const String& version)
 
 String DatabaseBackendBase::getCachedVersion() const
 {
-    MutexLocker locker(guidMutex());
+    SafePointAwareMutexLocker locker(guidMutex());
     return guidToVersionMap().get(m_guid).isolatedCopy();
 }
 
 void DatabaseBackendBase::setCachedVersion(const String& actualVersion)
 {
     // Update the in memory database version map.
-    MutexLocker locker(guidMutex());
+    SafePointAwareMutexLocker locker(guidMutex());
     updateGuidVersionMap(m_guid, actualVersion);
 }
 
@@ -530,12 +535,6 @@ void DatabaseBackendBase::enableAuthorizer()
 {
     ASSERT(m_databaseAuthorizer);
     m_databaseAuthorizer->enable();
-}
-
-void DatabaseBackendBase::setAuthorizerReadOnly()
-{
-    ASSERT(m_databaseAuthorizer);
-    m_databaseAuthorizer->setReadOnly();
 }
 
 void DatabaseBackendBase::setAuthorizerPermissions(int permissions)
@@ -587,7 +586,7 @@ void DatabaseBackendBase::incrementalVacuumIfNeeded()
         int result = m_sqliteDatabase.runIncrementalVacuumCommand();
         reportVacuumDatabaseResult(result);
         if (result != SQLResultOk)
-            m_frontend->logErrorMessage(formatErrorMessage("error vacuuming database", result, m_sqliteDatabase.lastErrorMsg()));
+            logErrorMessage(formatErrorMessage("error vacuuming database", result, m_sqliteDatabase.lastErrorMsg()));
     }
 }
 
@@ -663,5 +662,14 @@ void DatabaseBackendBase::reportVacuumDatabaseResult(int sqliteErrorCode)
     }
 }
 
+void DatabaseBackendBase::logErrorMessage(const String& message)
+{
+    executionContext()->addConsoleMessage(StorageMessageSource, ErrorMessageLevel, message);
+}
+
+ExecutionContext* DatabaseBackendBase::executionContext() const
+{
+    return databaseContext()->executionContext();
+}
 
 } // namespace WebCore

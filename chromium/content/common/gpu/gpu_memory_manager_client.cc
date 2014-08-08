@@ -20,13 +20,6 @@ GpuMemoryManagerClientState::GpuMemoryManagerClientState(
       has_surface_(has_surface),
       visible_(visible),
       list_iterator_valid_(false),
-      managed_memory_stats_received_(false),
-      bytes_nicetohave_limit_low_(0),
-      bytes_nicetohave_limit_high_(0),
-      bytes_allocation_when_visible_(0),
-      bytes_allocation_ideal_nicetohave_(0),
-      bytes_allocation_ideal_required_(0),
-      bytes_allocation_ideal_minimum_(0),
       hibernated_(false) {
 }
 
@@ -36,11 +29,6 @@ GpuMemoryManagerClientState::~GpuMemoryManagerClientState() {
 
 void GpuMemoryManagerClientState::SetVisible(bool visible) {
   memory_manager_->SetClientStateVisible(this, visible);
-}
-
-void GpuMemoryManagerClientState::SetManagedMemoryStats(
-    const gpu::ManagedMemoryStats& stats) {
-  memory_manager_->SetClientStateManagedMemoryStats(this, stats);
 }
 
 }  // namespace content

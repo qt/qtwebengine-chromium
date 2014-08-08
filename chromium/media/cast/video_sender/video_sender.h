@@ -15,25 +15,22 @@
 #include "media/cast/cast_config.h"
 #include "media/cast/cast_environment.h"
 #include "media/cast/congestion_control/congestion_control.h"
-#include "media/cast/net/rtp_sender/rtp_sender.h"
+#include "media/cast/logging/logging_defines.h"
 #include "media/cast/rtcp/rtcp.h"
-
-namespace crypto {
-  class Encryptor;
-}
+#include "media/cast/rtp_timestamp_helper.h"
 
 namespace media {
+
 class VideoFrame;
-}
 
-namespace media {
 namespace cast {
 
-class VideoEncoder;
-class LocalRtcpVideoSenderFeedback;
-class LocalRtpVideoSenderStatistics;
 class LocalVideoEncoderCallback;
-class PacedPacketSender;
+class VideoEncoder;
+
+namespace transport {
+class CastTransportSender;
+}
 
 // Not thread safe. Only called from the main cast thread.
 // This class owns all objects related to sending video, objects that create RTP
@@ -41,101 +38,139 @@ class PacedPacketSender;
 // RTCP packets.
 // Additionally it posts a bunch of delayed tasks to the main thread for various
 // timeouts.
-class VideoSender : public base::NonThreadSafe,
+class VideoSender : public RtcpSenderFeedback,
+                    public base::NonThreadSafe,
                     public base::SupportsWeakPtr<VideoSender> {
  public:
   VideoSender(scoped_refptr<CastEnvironment> cast_environment,
               const VideoSenderConfig& video_config,
-              VideoEncoderController* const video_encoder_controller,
-              PacedPacketSender* const paced_packet_sender);
+              const CreateVideoEncodeAcceleratorCallback& create_vea_cb,
+              const CreateVideoEncodeMemoryCallback& create_video_encode_mem_cb,
+              transport::CastTransportSender* const transport_sender);
 
   virtual ~VideoSender();
 
-  // The video_frame must be valid until the closure callback is called.
-  // The closure callback is called from the video encoder thread as soon as
-  // the encoder is done with the frame; it does not mean that the encoded frame
-  // has been sent out.
-  void InsertRawVideoFrame(
-      const scoped_refptr<media::VideoFrame>& video_frame,
-      const base::TimeTicks& capture_time);
+  CastInitializationStatus InitializationResult() const {
+    return cast_initialization_status_;
+  }
 
-  // The video_frame must be valid until the closure callback is called.
-  // The closure callback is called from the main thread as soon as
-  // the cast sender is done with the frame; it does not mean that the encoded
-  // frame has been sent out.
-  void InsertCodedVideoFrame(const EncodedVideoFrame* video_frame,
-                             const base::TimeTicks& capture_time,
-                             const base::Closure callback);
+  // Note: It is not guaranteed that |video_frame| will actually be encoded and
+  // sent, if VideoSender detects too many frames in flight.  Therefore, clients
+  // should be careful about the rate at which this method is called.
+  //
+  // Note: It is invalid to call this method if InitializationResult() returns
+  // anything but STATUS_VIDEO_INITIALIZED.
+  void InsertRawVideoFrame(const scoped_refptr<media::VideoFrame>& video_frame,
+                           const base::TimeTicks& capture_time);
 
   // Only called from the main cast thread.
-  void IncomingRtcpPacket(const uint8* packet, size_t length,
-                          const base::Closure callback);
+  void IncomingRtcpPacket(scoped_ptr<Packet> packet);
 
  protected:
   // Protected for testability.
-  void OnReceivedCastFeedback(const RtcpCastMessage& cast_feedback);
+  virtual void OnReceivedCastFeedback(const RtcpCastMessage& cast_feedback)
+      OVERRIDE;
 
  private:
-  friend class LocalRtcpVideoSenderFeedback;
-
-  // Schedule when we should send the next RTPC report,
-  // via a PostDelayedTask to the main cast thread.
+  // Schedule and execute periodic sending of RTCP report.
   void ScheduleNextRtcpReport();
-  void SendRtcpReport();
+  void SendRtcpReport(bool schedule_future_reports);
 
-  // Schedule when we should check that we have received an acknowledgment, or a
-  // loss report from our remote peer. If we have not heard back from our remote
-  // peer we speculatively resend our oldest unacknowledged frame (the whole
-  // frame). Note for this to happen we need to lose all pending packets (in
-  // normal operation 3 full frames), hence this is the last resort to prevent
-  // us getting stuck after a long outage.
+  // Schedule and execute periodic checks for re-sending packets.  If no
+  // acknowledgements have been received for "too long," VideoSender will
+  // speculatively re-send certain packets of an unacked frame to kick-start
+  // re-transmission.  This is a last resort tactic to prevent the session from
+  // getting stuck after a long outage.
   void ScheduleNextResendCheck();
   void ResendCheck();
+  void ResendForKickstart();
 
-  // Monitor how many frames that are silently dropped by the video sender
-  // per time unit.
-  void ScheduleNextSkippedFramesCheck();
-  void SkippedFramesCheck();
+  // Returns true if there are too many frames in flight, as defined by the
+  // configured target playout delay plus simple logic.  When this is true,
+  // InsertRawVideoFrame() will silenty drop frames instead of sending them to
+  // the video encoder.
+  bool AreTooManyFramesInFlight() const;
 
-  void SendEncodedVideoFrame(const EncodedVideoFrame* video_frame,
-                             const base::TimeTicks& capture_time);
-  void ResendFrame(uint32 resend_frame_id);
-  void ReceivedAck(uint32 acked_frame_id);
-  void UpdateFramesInFlight();
+  // Called by the |video_encoder_| with the next EncodeFrame to send.
+  void SendEncodedVideoFrame(int requested_bitrate_before_encode,
+                             scoped_ptr<transport::EncodedFrame> encoded_frame);
 
-  void SendEncodedVideoFrameMainThread(
-      scoped_ptr<EncodedVideoFrame> video_frame,
-      const base::TimeTicks& capture_time);
+  const scoped_refptr<CastEnvironment> cast_environment_;
 
-  void InitializeTimers();
+  // The total amount of time between a frame's capture/recording on the sender
+  // and its playback on the receiver (i.e., shown to a user).  This is fixed as
+  // a value large enough to give the system sufficient time to encode,
+  // transmit/retransmit, receive, decode, and render; given its run-time
+  // environment (sender/receiver hardware performance, network conditions,
+  // etc.).
+  const base::TimeDelta target_playout_delay_;
 
-  // Caller must allocate the destination |encrypted_video_frame| the data
-  // member will be resized to hold the encrypted size.
-  bool EncryptVideoFrame(const EncodedVideoFrame& encoded_frame,
-                         EncodedVideoFrame* encrypted_video_frame);
+  // Sends encoded frames over the configured transport (e.g., UDP).  In
+  // Chromium, this could be a proxy that first sends the frames from a renderer
+  // process to the browser process over IPC, with the browser process being
+  // responsible for "packetizing" the frames and pushing packets into the
+  // network layer.
+  transport::CastTransportSender* const transport_sender_;
 
-  const base::TimeDelta rtp_max_delay_;
-  const int max_frame_rate_;
+  // Maximum number of outstanding frames before the encoding and sending of
+  // new frames shall halt.
+  const int max_unacked_frames_;
 
-  scoped_refptr<CastEnvironment> cast_environment_;
-  scoped_ptr<LocalRtcpVideoSenderFeedback> rtcp_feedback_;
-  scoped_ptr<LocalRtpVideoSenderStatistics> rtp_video_sender_statistics_;
+  // Encodes media::VideoFrame images into EncodedFrames.  Per configuration,
+  // this will point to either the internal software-based encoder or a proxy to
+  // a hardware-based encoder.
   scoped_ptr<VideoEncoder> video_encoder_;
-  scoped_ptr<Rtcp> rtcp_;
-  scoped_ptr<RtpSender> rtp_sender_;
-  VideoEncoderController* video_encoder_controller_;
-  uint8 max_unacked_frames_;
-  scoped_ptr<crypto::Encryptor> encryptor_;
-  std::string iv_mask_;
-  int last_acked_frame_id_;
-  int last_sent_frame_id_;
-  int duplicate_ack_;
+
+  // Manages sending/receiving of RTCP packets, including sender/receiver
+  // reports.
+  Rtcp rtcp_;
+
+  // Records lip-sync (i.e., mapping of RTP <--> NTP timestamps), and
+  // extrapolates this mapping to any other point in time.
+  RtpTimestampHelper rtp_timestamp_helper_;
+
+  // Counts how many RTCP reports are being "aggressively" sent (i.e., one per
+  // frame) at the start of the session.  Once a threshold is reached, RTCP
+  // reports are instead sent at the configured interval + random drift.
+  int num_aggressive_rtcp_reports_sent_;
+
+  // The number of frames currently being processed in |video_encoder_|.
+  int frames_in_encoder_;
+
+  // This is "null" until the first frame is sent.  Thereafter, this tracks the
+  // last time any frame was sent or re-sent.
   base::TimeTicks last_send_time_;
-  base::TimeTicks last_checked_skip_count_time_;
-  int last_skip_count_;
+
+  // The ID of the last frame sent.  Logic throughout VideoSender assumes this
+  // can safely wrap-around.  This member is invalid until
+  // |!last_send_time_.is_null()|.
+  uint32 last_sent_frame_id_;
+
+  // The ID of the latest (not necessarily the last) frame that has been
+  // acknowledged.  Logic throughout VideoSender assumes this can safely
+  // wrap-around.  This member is invalid until |!last_send_time_.is_null()|.
+  uint32 latest_acked_frame_id_;
+
+  // Counts the number of duplicate ACK that are being received.  When this
+  // number reaches a threshold, the sender will take this as a sign that the
+  // receiver hasn't yet received the first packet of the next frame.  In this
+  // case, VideoSender will trigger a re-send of the next frame.
+  int duplicate_ack_counter_;
+
+  // When we get close to the max number of un-acked frames, we set lower
+  // the bitrate drastically to ensure that we catch up. Without this we
+  // risk getting stuck in a catch-up state forever.
   CongestionControl congestion_control_;
 
-  bool initialized_;
+  // If this sender is ready for use, this is STATUS_VIDEO_INITIALIZED.
+  CastInitializationStatus cast_initialization_status_;
+
+  // This is a "good enough" mapping for finding the RTP timestamp associated
+  // with a video frame. The key is the lowest 8 bits of frame id (which is
+  // what is sent via RTCP). This map is used for logging purposes.
+  RtpTimestamp frame_id_to_rtp_timestamp_[256];
+
+  // NOTE: Weak pointers must be invalidated before all other member variables.
   base::WeakPtrFactory<VideoSender> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(VideoSender);
@@ -145,4 +180,3 @@ class VideoSender : public base::NonThreadSafe,
 }  // namespace media
 
 #endif  // MEDIA_CAST_VIDEO_SENDER_VIDEO_SENDER_H_
-

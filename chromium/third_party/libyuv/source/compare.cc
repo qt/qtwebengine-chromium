@@ -46,6 +46,8 @@ uint32 HashDjb2_AVX2(const uint8* src, int count, uint32 seed);
 // hash seed of 5381 recommended.
 LIBYUV_API
 uint32 HashDjb2(const uint8* src, uint64 count, uint32 seed) {
+  const int kBlockSize = 1 << 15;  // 32768;
+  int remainder;
   uint32 (*HashDjb2_SSE)(const uint8* src, int count, uint32 seed) = HashDjb2_C;
 #if defined(HAS_HASHDJB2_SSE41)
   if (TestCpuFlag(kCpuHasSSE41)) {
@@ -58,19 +60,18 @@ uint32 HashDjb2(const uint8* src, uint64 count, uint32 seed) {
   }
 #endif
 
-  const int kBlockSize = 1 << 15;  // 32768;
-  while (count >= static_cast<uint64>(kBlockSize)) {
+  while (count >= (uint64)(kBlockSize)) {
     seed = HashDjb2_SSE(src, kBlockSize, seed);
     src += kBlockSize;
     count -= kBlockSize;
   }
-  int remainder = static_cast<int>(count) & ~15;
+  remainder = (int)(count) & ~15;
   if (remainder) {
     seed = HashDjb2_SSE(src, remainder, seed);
     src += remainder;
     count -= remainder;
   }
-  remainder = static_cast<int>(count) & 15;
+  remainder = (int)(count) & 15;
   if (remainder) {
     seed = HashDjb2_C(src, remainder, seed);
   }
@@ -98,6 +99,13 @@ uint32 SumSquareError_AVX2(const uint8* src_a, const uint8* src_b, int count);
 LIBYUV_API
 uint64 ComputeSumSquareError(const uint8* src_a, const uint8* src_b,
                              int count) {
+  // SumSquareError returns values 0 to 65535 for each squared difference.
+  // Up to 65536 of those can be summed and remain within a uint32.
+  // After each block of 65536 pixels, accumulate into a uint64.
+  const int kBlockSize = 65536;
+  int remainder = count & (kBlockSize - 1) & ~31;
+  uint64 sse = 0;
+  int i;
   uint32 (*SumSquareError)(const uint8* src_a, const uint8* src_b, int count) =
       SumSquareError_C;
 #if defined(HAS_SUMSQUAREERROR_NEON)
@@ -118,20 +126,14 @@ uint64 ComputeSumSquareError(const uint8* src_a, const uint8* src_b,
     SumSquareError = SumSquareError_AVX2;
   }
 #endif
-  // SumSquareError returns values 0 to 65535 for each squared difference.
-  // Up to 65536 of those can be summed and remain within a uint32.
-  // After each block of 65536 pixels, accumulate into a uint64.
-  const int kBlockSize = 65536;
-  uint64 sse = 0;
 #ifdef _OPENMP
 #pragma omp parallel for reduction(+: sse)
 #endif
-  for (int i = 0; i < (count - (kBlockSize - 1)); i += kBlockSize) {
+  for (i = 0; i < (count - (kBlockSize - 1)); i += kBlockSize) {
     sse += SumSquareError(src_a + i, src_b + i, kBlockSize);
   }
   src_a += count & ~(kBlockSize - 1);
   src_b += count & ~(kBlockSize - 1);
-  int remainder = count & (kBlockSize - 1) & ~31;
   if (remainder) {
     sse += SumSquareError(src_a, src_b, remainder);
     src_a += remainder;
@@ -148,33 +150,17 @@ LIBYUV_API
 uint64 ComputeSumSquareErrorPlane(const uint8* src_a, int stride_a,
                                   const uint8* src_b, int stride_b,
                                   int width, int height) {
+  uint64 sse = 0;
+  int h;
   // Coalesce rows.
   if (stride_a == width &&
       stride_b == width) {
-    return ComputeSumSquareError(src_a, src_b, width * height);
+    width *= height;
+    height = 1;
+    stride_a = stride_b = 0;
   }
-  uint32 (*SumSquareError)(const uint8* src_a, const uint8* src_b, int count) =
-      SumSquareError_C;
-#if defined(HAS_SUMSQUAREERROR_NEON)
-  if (TestCpuFlag(kCpuHasNEON)) {
-    SumSquareError = SumSquareError_NEON;
-  }
-#endif
-#if defined(HAS_SUMSQUAREERROR_SSE2)
-  if (TestCpuFlag(kCpuHasSSE2) && IS_ALIGNED(width, 16) &&
-      IS_ALIGNED(src_a, 16) && IS_ALIGNED(stride_a, 16) &&
-      IS_ALIGNED(src_b, 16) && IS_ALIGNED(stride_b, 16)) {
-    SumSquareError = SumSquareError_SSE2;
-  }
-#endif
-#if defined(HAS_SUMSQUAREERROR_AVX2)
-  if (TestCpuFlag(kCpuHasAVX2) && IS_ALIGNED(width, 32)) {
-    SumSquareError = SumSquareError_AVX2;
-  }
-#endif
-  uint64 sse = 0;
-  for (int h = 0; h < height; ++h) {
-    sse += SumSquareError(src_a, src_b, width);
+  for (h = 0; h < height; ++h) {
+    sse += ComputeSumSquareError(src_a, src_b, width);
     src_a += stride_a;
     src_b += stride_b;
   }
@@ -185,7 +171,7 @@ LIBYUV_API
 double SumSquareErrorToPsnr(uint64 sse, uint64 count) {
   double psnr;
   if (sse > 0) {
-    double mse = static_cast<double>(count) / static_cast<double>(sse);
+    double mse = (double)(count) / (double)(sse);
     psnr = 10.0 * log10(255.0 * 255.0 * mse);
   } else {
     psnr = kMaxPsnr;      // Limit to prevent divide by 0
@@ -243,8 +229,10 @@ static double Ssim8x8_C(const uint8* src_a, int stride_a,
   int64 sum_sq_b = 0;
   int64 sum_axb = 0;
 
-  for (int i = 0; i < 8; ++i) {
-    for (int j = 0; j < 8; ++j) {
+  int i;
+  for (i = 0; i < 8; ++i) {
+    int j;
+    for (j = 0; j < 8; ++j) {
       sum_a += src_a[j];
       sum_b += src_b[j];
       sum_sq_a += src_a[j] * src_a[j];
@@ -256,26 +244,29 @@ static double Ssim8x8_C(const uint8* src_a, int stride_a,
     src_b += stride_b;
   }
 
-  const int64 count = 64;
-  // scale the constants by number of pixels
-  const int64 c1 = (cc1 * count * count) >> 12;
-  const int64 c2 = (cc2 * count * count) >> 12;
+  {
+    const int64 count = 64;
+    // scale the constants by number of pixels
+    const int64 c1 = (cc1 * count * count) >> 12;
+    const int64 c2 = (cc2 * count * count) >> 12;
 
-  const int64 sum_a_x_sum_b = sum_a * sum_b;
+    const int64 sum_a_x_sum_b = sum_a * sum_b;
 
-  const int64 ssim_n = (2 * sum_a_x_sum_b + c1) *
-                       (2 * count * sum_axb - 2 * sum_a_x_sum_b + c2);
+    const int64 ssim_n = (2 * sum_a_x_sum_b + c1) *
+                         (2 * count * sum_axb - 2 * sum_a_x_sum_b + c2);
 
-  const int64 sum_a_sq = sum_a*sum_a;
-  const int64 sum_b_sq = sum_b*sum_b;
+    const int64 sum_a_sq = sum_a*sum_a;
+    const int64 sum_b_sq = sum_b*sum_b;
 
-  const int64 ssim_d = (sum_a_sq + sum_b_sq + c1) *
-                       (count * sum_sq_a - sum_a_sq +
-                        count * sum_sq_b - sum_b_sq + c2);
+    const int64 ssim_d = (sum_a_sq + sum_b_sq + c1) *
+                         (count * sum_sq_a - sum_a_sq +
+                          count * sum_sq_b - sum_b_sq + c2);
 
-  if (ssim_d == 0.0)
-    return DBL_MAX;
-  return ssim_n * 1.0 / ssim_d;
+    if (ssim_d == 0.0) {
+      return DBL_MAX;
+    }
+    return ssim_n * 1.0 / ssim_d;
+  }
 }
 
 // We are using a 8x8 moving window with starting location of each 8x8 window
@@ -287,15 +278,14 @@ double CalcFrameSsim(const uint8* src_a, int stride_a,
                      int width, int height) {
   int samples = 0;
   double ssim_total = 0;
-
   double (*Ssim8x8)(const uint8* src_a, int stride_a,
-                    const uint8* src_b, int stride_b);
-
-  Ssim8x8 = Ssim8x8_C;
+                    const uint8* src_b, int stride_b) = Ssim8x8_C;
 
   // sample point start with each 4x4 location
-  for (int i = 0; i < height - 8; i += 4) {
-    for (int j = 0; j < width - 8; j += 4) {
+  int i;
+  for (i = 0; i < height - 8; i += 4) {
+    int j;
+    for (j = 0; j < width - 8; j += 4) {
       ssim_total += Ssim8x8(src_a + j, stride_a, src_b + j, stride_b);
       samples++;
     }

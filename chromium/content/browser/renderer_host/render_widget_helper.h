@@ -30,10 +30,12 @@ namespace base {
 class TimeDelta;
 }
 
+struct GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params;
 struct ViewHostMsg_CreateWindow_Params;
 struct ViewMsg_SwapOut_Params;
 
 namespace content {
+class GpuProcessHost;
 class ResourceDispatcherHostImpl;
 class SessionStorageNamespace;
 
@@ -134,11 +136,6 @@ class RenderWidgetHelper
   // created by CreateNewWindow which initially blocked the requests.
   void ResumeRequestsForView(int route_id);
 
-#if defined(OS_POSIX) && !defined(TOOLKIT_GTK) && !defined(OS_ANDROID)
-  // Given the id of a transport DIB, return a mapping to it or NULL on error.
-  TransportDIB* MapTransportDIB(TransportDIB::Id dib_id);
-#endif
-
   // IO THREAD ONLY -----------------------------------------------------------
 
   // Called on the IO thread when a BackingStore message is received.
@@ -170,6 +167,12 @@ class RenderWidgetHelper
 
   // Called on the IO thread to handle the freeing of a transport DIB
   void FreeTransportDIB(TransportDIB::Id dib_id);
+#endif
+
+#if defined(OS_MACOSX)
+  static void OnNativeSurfaceBuffersSwappedOnIOThread(
+      GpuProcessHost* gpu_process_host,
+      const GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params& params);
 #endif
 
  private:

@@ -15,7 +15,7 @@
 #include "base/logging.h"
 #include "url/url_canon.h"
 
-namespace url_canon {
+namespace url {
 
 // Character type handling -----------------------------------------------------
 
@@ -148,8 +148,6 @@ extern const base::char16 kUnicodeReplacementCharacter;
 // |*begin| will be updated to point to the last character consumed so it
 // can be incremented in a loop and will be ready for the next character.
 // (for a single-byte ASCII character, it will not be changed).
-//
-// Implementation is in url_canon_icu.cc.
 URL_EXPORT bool ReadUTFChar(const char* str, int* begin, int length,
                             unsigned* code_point_out);
 
@@ -225,10 +223,8 @@ inline void AppendUTF8EscapedValue(unsigned char_value, CanonOutput* output) {
 // |*begin| will be updated to point to the last character consumed so it
 // can be incremented in a loop and will be ready for the next character.
 // (for a single-16-bit-word character, it will not be changed).
-//
-// Implementation is in url_canon_icu.cc.
 URL_EXPORT bool ReadUTFChar(const base::char16* str, int* begin, int length,
-                            unsigned* code_point);
+                            unsigned* code_point_out);
 
 // Equivalent to U16_APPEND_UNSAFE in ICU but uses our output method.
 inline void AppendUTF16Value(unsigned code_point,
@@ -354,7 +350,7 @@ URL_EXPORT bool ConvertUTF8ToUTF16(const char* input, int input_len,
 // Converts from UTF-16 to 8-bit using the character set converter. If the
 // converter is NULL, this will use UTF-8.
 void ConvertUTF16ToQueryEncoding(const base::char16* input,
-                                 const url_parse::Component& query,
+                                 const Component& query,
                                  CharsetConverter* converter,
                                  CanonOutput* output);
 
@@ -370,7 +366,7 @@ void ConvertUTF16ToQueryEncoding(const base::char16* input,
 void SetupOverrideComponents(const char* base,
                              const Replacements<char>& repl,
                              URLComponentSource<char>* source,
-                             url_parse::Parsed* parsed);
+                             Parsed* parsed);
 
 // Like the above 8-bit version, except that it additionally converts the
 // UTF-16 input to UTF-8 before doing the overrides.
@@ -392,16 +388,16 @@ bool SetupUTF16OverrideComponents(const char* base,
                                   const Replacements<base::char16>& repl,
                                   CanonOutput* utf8_buffer,
                                   URLComponentSource<char>* source,
-                                  url_parse::Parsed* parsed);
+                                  Parsed* parsed);
 
 // Implemented in url_canon_path.cc, these are required by the relative URL
 // resolver as well, so we declare them here.
 bool CanonicalizePartialPath(const char* spec,
-                             const url_parse::Component& path,
+                             const Component& path,
                              int path_begin_in_output,
                              CanonOutput* output);
 bool CanonicalizePartialPath(const base::char16* spec,
-                             const url_parse::Component& path,
+                             const Component& path,
                              int path_begin_in_output,
                              CanonOutput* output);
 
@@ -432,6 +428,6 @@ inline unsigned long long _strtoui64(const char* nptr,
 
 #endif  // WIN32
 
-}  // namespace url_canon
+}  // namespace url
 
 #endif  // URL_URL_CANON_INTERNAL_H_

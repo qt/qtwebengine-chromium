@@ -3,14 +3,17 @@
 // found in the LICENSE file.
 
 #include <set>
+#include <string>
 #include <vector>
 
 #include "base/file_util.h"
+#include "base/files/file.h"
 #include "base/files/file_enumerator.h"
 #include "base/files/file_path.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/path_service.h"
 #include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/platform_test.h"
 #include "third_party/zlib/google/zip.h"
@@ -21,6 +24,11 @@ namespace {
 // Make the test a PlatformTest to setup autorelease pools properly on Mac.
 class ZipTest : public PlatformTest {
  protected:
+  enum ValidYearType {
+    VALID_YEAR,
+    INVALID_YEAR
+  };
+
   virtual void SetUp() {
     PlatformTest::SetUp();
 
@@ -96,6 +104,58 @@ class ZipTest : public PlatformTest {
     }
 
     EXPECT_EQ(expected_count, count);
+  }
+
+  // This function does the following:
+  // 1) Creates a test.txt file with the given last modification timestamp
+  // 2) Zips test.txt and extracts it back into a different location.
+  // 3) Confirms that test.txt in the output directory has the specified
+  //    last modification timestamp if it is valid (|valid_year| is true).
+  //    If the timestamp is not supported by the zip format, the last
+  //    modification defaults to the current time.
+  void TestTimeStamp(const char* date_time, ValidYearType valid_year) {
+    SCOPED_TRACE(std::string("TestTimeStamp(") + date_time + ")");
+    base::ScopedTempDir temp_dir;
+    ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+
+    base::FilePath zip_file = temp_dir.path().AppendASCII("out.zip");
+    base::FilePath src_dir = temp_dir.path().AppendASCII("input");
+    base::FilePath out_dir = temp_dir.path().AppendASCII("output");
+
+    base::FilePath src_file = src_dir.AppendASCII("test.txt");
+    base::FilePath out_file = out_dir.AppendASCII("test.txt");
+
+    EXPECT_TRUE(base::CreateDirectory(src_dir));
+    EXPECT_TRUE(base::CreateDirectory(out_dir));
+
+    base::Time test_mtime;
+    ASSERT_TRUE(base::Time::FromString(date_time, &test_mtime));
+
+    // Adjusting the current timestamp to the resolution that the zip file
+    // supports, which is 2 seconds. Note that between this call to Time::Now()
+    // and zip::Zip() the clock can advance a bit, hence the use of EXPECT_GE.
+    base::Time::Exploded now_parts;
+    base::Time::Now().LocalExplode(&now_parts);
+    now_parts.second = now_parts.second & ~1;
+    now_parts.millisecond = 0;
+    base::Time now_time = base::Time::FromLocalExploded(now_parts);
+
+    EXPECT_EQ(1, base::WriteFile(src_file, "1", 1));
+    EXPECT_TRUE(base::TouchFile(src_file, base::Time::Now(), test_mtime));
+
+    EXPECT_TRUE(zip::Zip(src_dir, zip_file, true));
+    ASSERT_TRUE(zip::Unzip(zip_file, out_dir));
+
+    base::File::Info file_info;
+    EXPECT_TRUE(base::GetFileInfo(out_file, &file_info));
+    EXPECT_EQ(file_info.size, 1);
+
+    if (valid_year == VALID_YEAR) {
+      EXPECT_EQ(file_info.last_modified, test_mtime);
+    } else {
+      // Invalid date means the modification time will default to 'now'.
+      EXPECT_GE(file_info.last_modified, now_time);
+    }
   }
 
   // The path to temporary directory used to contain the test operations.
@@ -192,6 +252,28 @@ TEST_F(ZipTest, ZipNonASCIIDir) {
   TestUnzipFile(zip_file, true);
 }
 
+TEST_F(ZipTest, ZipTimeStamp) {
+  // The dates tested are arbitrary, with some constraints. The zip format can
+  // only store years from 1980 to 2107 and an even number of seconds, due to it
+  // using the ms dos date format.
+
+  // Valid arbitrary date.
+  TestTimeStamp("23 Oct 1997 23:22:20", VALID_YEAR);
+
+  // Date before 1980, zip format limitation, must default to unix epoch.
+  TestTimeStamp("29 Dec 1979 21:00:10", INVALID_YEAR);
+
+  // Despite the minizip headers telling the maximum year should be 2044, it
+  // can actually go up to 2107. Beyond that, the dos date format cannot store
+  // the year (2107-1980=127). To test that limit, the input file needs to be
+  // touched, but the code that modifies the file access and modification times
+  // relies on time_t which is defined as long, therefore being in many
+  // platforms just a 4-byte integer, like 32-bit Mac OSX or linux. As such, it
+  // suffers from the year-2038 bug. Therefore 2038 is the highest we can test
+  // in all platforms reliably.
+  TestTimeStamp("02 Jan 2038 23:59:58", VALID_YEAR);
+}
+
 #if defined(OS_POSIX)
 TEST_F(ZipTest, ZipFiles) {
   base::FilePath src_dir;
@@ -200,17 +282,17 @@ TEST_F(ZipTest, ZipFiles) {
 
   base::ScopedTempDir temp_dir;
   ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
-  base::FilePath zip_file = temp_dir.path().AppendASCII("out.zip");
+  base::FilePath zip_name = temp_dir.path().AppendASCII("out.zip");
 
-  const int flags = base::PLATFORM_FILE_CREATE | base::PLATFORM_FILE_WRITE;
-  const base::PlatformFile zip_fd =
-      base::CreatePlatformFile(zip_file, flags, NULL, NULL);
-  ASSERT_LE(0, zip_fd);
-  EXPECT_TRUE(zip::ZipFiles(src_dir, zip_file_list_, zip_fd));
-  base::ClosePlatformFile(zip_fd);
+  base::File zip_file(zip_name,
+                      base::File::FLAG_CREATE | base::File::FLAG_WRITE);
+  ASSERT_TRUE(zip_file.IsValid());
+  EXPECT_TRUE(zip::ZipFiles(src_dir, zip_file_list_,
+                            zip_file.GetPlatformFile()));
+  zip_file.Close();
 
   zip::ZipReader reader;
-  EXPECT_TRUE(reader.Open(zip_file));
+  EXPECT_TRUE(reader.Open(zip_name));
   EXPECT_EQ(zip_file_list_.size(), static_cast<size_t>(reader.num_entries()));
   for (size_t i = 0; i < zip_file_list_.size(); ++i) {
     EXPECT_TRUE(reader.LocateAndOpenEntry(zip_file_list_[i]));
@@ -221,5 +303,32 @@ TEST_F(ZipTest, ZipFiles) {
 }
 #endif  // defined(OS_POSIX)
 
-}  // namespace
+TEST_F(ZipTest, UnzipFilesWithIncorrectSize) {
+  base::FilePath test_data_folder;
+  ASSERT_TRUE(GetTestDataDirectory(&test_data_folder));
 
+  // test_mismatch_size.zip contains files with names from 0.txt to 7.txt with
+  // sizes from 0 to 7 bytes respectively, but the metadata in the zip file says
+  // the uncompressed size is 3 bytes. The ZipReader and minizip code needs to
+  // be clever enough to get all the data out.
+  base::FilePath test_zip_file =
+      test_data_folder.AppendASCII("test_mismatch_size.zip");
+
+  base::ScopedTempDir scoped_temp_dir;
+  ASSERT_TRUE(scoped_temp_dir.CreateUniqueTempDir());
+  const base::FilePath& temp_dir = scoped_temp_dir.path();
+
+  ASSERT_TRUE(zip::Unzip(test_zip_file, temp_dir));
+  EXPECT_TRUE(base::DirectoryExists(temp_dir.AppendASCII("d")));
+
+  for (int i = 0; i < 8; i++) {
+    SCOPED_TRACE(base::StringPrintf("Processing %d.txt", i));
+    base::FilePath file_path = temp_dir.AppendASCII(
+        base::StringPrintf("%d.txt", i));
+    int64 file_size = -1;
+    EXPECT_TRUE(base::GetFileSize(file_path, &file_size));
+    EXPECT_EQ(static_cast<int64>(i), file_size);
+  }
+}
+
+}  // namespace

@@ -83,7 +83,9 @@ cr.define('options', function() {
         self.closeOverlay_();
       };
       $('stop-syncing-ok').onclick = function() {
-        chrome.send('SyncSetupStopSyncing');
+        var deleteProfile = $('delete-profile') != undefined &&
+            $('delete-profile').checked;
+        chrome.send('SyncSetupStopSyncing', [deleteProfile]);
         self.closeOverlay_();
       };
     },
@@ -114,6 +116,8 @@ cr.define('options', function() {
     onEncryptionRadioChanged_: function() {
       var visible = $('full-encryption-option').checked;
       $('sync-custom-passphrase').hidden = !visible;
+      chrome.send('coreOptionsUserMetricsAction',
+                  ['Options_SyncSetEncryption']);
     },
 
     /**
@@ -180,13 +184,6 @@ cr.define('options', function() {
       }
     },
 
-    // Returns true if none of the visible checkboxes are checked.
-    noDataTypesChecked_: function() {
-      var query = '.sync-type-checkbox:not([hidden]) input:checked';
-      var checkboxes = $('choose-data-types-body').querySelectorAll(query);
-      return checkboxes.length == 0;
-    },
-
     checkPassphraseMatch_: function() {
       var emptyError = $('empty-error');
       var mismatchError = $('mismatch-error');
@@ -215,16 +212,6 @@ cr.define('options', function() {
     },
 
     sendConfiguration_: function() {
-      // Trying to submit, so hide previous errors.
-      $('error-text').hidden = true;
-
-      var chooseWhatToSync = $('sync-select-datatypes').selectedIndex ==
-                             DataTypeSelection.CHOOSE_WHAT_TO_SYNC;
-      if (chooseWhatToSync && this.noDataTypesChecked_()) {
-        $('error-text').hidden = false;
-        return;
-      }
-
       var encryptAllData = $('full-encryption-option').checked;
 
       var usePassphrase;
@@ -395,6 +382,8 @@ cr.define('options', function() {
      */
     handleDataTypeClick_: function() {
       dataTypeBoxes_[this.id] = this.checked;
+      chrome.send('coreOptionsUserMetricsAction',
+                  ['Options_SyncToggleDataType']);
     },
 
     setEncryptionRadios_: function(args) {
@@ -489,6 +478,9 @@ cr.define('options', function() {
     },
 
     showSyncEverythingPage_: function() {
+      chrome.send('coreOptionsUserMetricsAction',
+                  ['Options_SyncSetDefault']);
+
       // Determine whether to bring the OK button into focus.
       var wasConfirmPageHidden = !this.confirmPageVisible_;
       this.confirmPageVisible_ = true;
@@ -743,6 +735,7 @@ cr.define('options', function() {
      */
     showSetupUI_: function() {
       chrome.send('SyncSetupShowSetupUI');
+      chrome.send('coreOptionsUserMetricsAction', ['Options_SyncShowAdvanced']);
     },
 
     /**

@@ -22,8 +22,6 @@ class SK_API SkRasterizer : public SkFlattenable {
 public:
     SK_DECLARE_INST_COUNT(SkRasterizer)
 
-    SkRasterizer() {}
-
     /** Turn the path into a mask, respecting the specified local->device matrix.
     */
     bool rasterize(const SkPath& path, const SkMatrix& matrix,
@@ -33,7 +31,8 @@ public:
     SK_DEFINE_FLATTENABLE_TYPE(SkRasterizer)
 
 protected:
-    SkRasterizer(SkFlattenableReadBuffer& buffer) : INHERITED(buffer) {}
+    SkRasterizer() {}
+    SkRasterizer(SkReadBuffer& buffer) : INHERITED(buffer) {}
 
     virtual bool onRasterize(const SkPath& path, const SkMatrix& matrix,
                              const SkIRect* clipBounds,

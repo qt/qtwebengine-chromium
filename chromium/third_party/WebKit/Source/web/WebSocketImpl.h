@@ -31,22 +31,23 @@
 #ifndef WebSocketImpl_h
 #define WebSocketImpl_h
 
-#include "WebSocket.h"
-#include "WebSocketClient.h"
 #include "modules/websockets/WebSocketChannelClient.h"
+#include "platform/heap/Handle.h"
 #include "public/platform/WebCommon.h"
+#include "public/platform/WebString.h"
+#include "public/web/WebSocket.h"
+#include "public/web/WebSocketClient.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/RefPtr.h"
 
-namespace WebCore { class MainThreadWebSocketChannel; }
+namespace WebCore { class WebSocketChannel; }
 
 namespace blink {
 
 class WebDocument;
-class WebString;
 class WebURL;
 
-class WebSocketImpl : public WebSocket, public WebCore::WebSocketChannelClient {
+class WebSocketImpl FINAL : public WebSocket, public WebCore::WebSocketChannelClient {
 public:
     WebSocketImpl(const WebDocument&, WebSocketClient*);
     virtual ~WebSocketImpl();
@@ -66,18 +67,24 @@ public:
     virtual void disconnect() OVERRIDE;
 
     // WebSocketChannelClient
-    virtual void didConnect() OVERRIDE;
+    virtual void didConnect(const String& subprotocol, const String& extensions) OVERRIDE;
     virtual void didReceiveMessage(const String& message) OVERRIDE;
     virtual void didReceiveBinaryData(PassOwnPtr<Vector<char> > binaryData) OVERRIDE;
     virtual void didReceiveMessageError() OVERRIDE;
-    virtual void didUpdateBufferedAmount(unsigned long bufferedAmount) OVERRIDE;
+    virtual void didConsumeBufferedAmount(unsigned long consumed) OVERRIDE;
     virtual void didStartClosingHandshake() OVERRIDE;
-    virtual void didClose(unsigned long bufferedAmount, ClosingHandshakeCompletionStatus, unsigned short code, const String& reason) OVERRIDE;
+    virtual void didClose(ClosingHandshakeCompletionStatus, unsigned short code, const String& reason) OVERRIDE;
 
 private:
-    RefPtr<WebCore::MainThreadWebSocketChannel> m_private;
+    RefPtrWillBePersistent<WebCore::WebSocketChannel> m_private;
     WebSocketClient* m_client;
     BinaryType m_binaryType;
+    WebString m_subprotocol;
+    WebString m_extensions;
+    bool m_isClosingOrClosed;
+    // m_bufferedAmount includes m_bufferedAmountAfterClose.
+    unsigned long m_bufferedAmount;
+    unsigned long m_bufferedAmountAfterClose;
 };
 
 } // namespace blink

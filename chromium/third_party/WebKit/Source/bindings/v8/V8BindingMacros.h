@@ -33,64 +33,83 @@
 
 namespace WebCore {
 
-#define V8TRYCATCH(type, var, value) \
-    type var;                             \
-    {                                     \
-        v8::TryCatch block;               \
-        var = (value);                    \
-        if (block.HasCaught())            \
-            return block.ReThrow();       \
+// Naming scheme:
+// TO*_RETURNTYPE[_ARGTYPE]...
+// ...using _DEFAULT instead of _ANY..._ANY when returing a default value.
+
+#define TONATIVE_EXCEPTION(type, var, value) \
+    type var;                                \
+    {                                        \
+        v8::TryCatch block;                  \
+        var = (value);                       \
+        if (UNLIKELY(block.HasCaught()))     \
+            return block.ReThrow();          \
     }
 
-#define V8TRYCATCH_RETURN(type, var, value, retVal) \
-    type var;                                       \
-    {                                               \
-        v8::TryCatch block;                         \
-        var = (value);                              \
-        if (block.HasCaught()) {                    \
-            block.ReThrow();                        \
-            return retVal;                          \
-        }                                           \
-    }
-
-#define V8TRYCATCH_VOID(type, var, value) \
-    type var;                             \
-    {                                     \
-        v8::TryCatch block;               \
-        var = (value);                    \
-        if (block.HasCaught()) {          \
-            block.ReThrow();              \
-            return;                       \
-        }                                 \
-    }
-
-#define V8TRYCATCH_WITH_TYPECHECK_VOID(type, var, value, isolate) \
-    type var;                                                     \
-    {                                                             \
-        bool ok = true;                                           \
-        {                                                         \
-            v8::TryCatch block;                                   \
-            var = (value);                                        \
-            if (block.HasCaught()) {                              \
-                block.ReThrow();                                  \
-                return;                                           \
-            }                                                     \
-        }                                                         \
-        if (UNLIKELY(!ok)) {                                      \
-            throwUninformativeAndGenericTypeError(isolate);       \
-            return;                                               \
-        }                                                         \
-    }
-
-#define V8TRYCATCH_FOR_V8STRINGRESOURCE_RETURN(type, var, value, retVal) \
-    type var(value);                                                     \
-    if (!var.prepare())                                                  \
-        return retVal;
-
-#define V8TRYCATCH_FOR_V8STRINGRESOURCE_VOID(type, var, value) \
-    type var(value);                                                 \
-    if (!var.prepare())                                              \
+#define TONATIVE_VOID_INTERNAL(var, value) \
+    var = (value);                         \
+    if (UNLIKELY(block.HasCaught()))       \
         return;
+
+#define TONATIVE_VOID(type, var, value)        \
+    type var;                                  \
+    {                                          \
+        v8::TryCatch block;                    \
+        V8RethrowTryCatchScope rethrow(block); \
+        TONATIVE_VOID_INTERNAL(var, value);    \
+    }
+
+#define TONATIVE_DEFAULT(type, var, value, retVal) \
+    type var;                                      \
+    {                                              \
+        v8::TryCatch block;                        \
+        var = (value);                             \
+        if (UNLIKELY(block.HasCaught())) {         \
+            block.ReThrow();                       \
+            return retVal;                         \
+        }                                          \
+    }
+
+#define TONATIVE_VOID_EXCEPTIONSTATE_INTERNAL(var, value, exceptionState) \
+    var = (value);                                                        \
+    if (UNLIKELY(block.HasCaught() || exceptionState.throwIfNeeded()))    \
+        return;                                                           \
+
+#define TONATIVE_VOID_EXCEPTIONSTATE(type, var, value, exceptionState)     \
+    type var;                                                              \
+    {                                                                      \
+        v8::TryCatch block;                                                \
+        V8RethrowTryCatchScope rethrow(block);                             \
+        TONATIVE_VOID_EXCEPTIONSTATE_INTERNAL(var, value, exceptionState); \
+    }
+
+#define TONATIVE_DEFAULT_EXCEPTIONSTATE(type, var, value, exceptionState, retVal) \
+    type var;                                                                     \
+    {                                                                             \
+        v8::TryCatch block;                                                       \
+        V8RethrowTryCatchScope rethrow(block);                                    \
+        var = (value);                                                            \
+        if (UNLIKELY(block.HasCaught() || exceptionState.throwIfNeeded()))        \
+            return retVal;                                                        \
+    }
+
+// type is an instance of class template V8StringResource<>,
+// but Mode argument varies; using type (not Mode) for consistency
+// with other macros and ease of code generation
+#define TOSTRING_VOID(type, var, value) \
+    type var(value);                    \
+    if (UNLIKELY(!var.prepare()))       \
+        return;
+
+#define TOSTRING_VOID_INTERNAL(var, value) \
+    var = (value);                         \
+    if (UNLIKELY(!var.prepare()))          \
+        return;
+
+#define TOSTRING_DEFAULT(type, var, value, retVal) \
+    type var(value);                               \
+    if (UNLIKELY(!var.prepare()))                  \
+        return retVal;
 
 } // namespace WebCore
 

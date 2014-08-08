@@ -7,12 +7,24 @@
 #include "base/logging.h"
 #include "base/strings/utf_string_conversions.h"
 #include "third_party/skia/include/core/SkPaint.h"
-#include "ui/base/accessibility/accessible_view_state.h"
+#include "ui/accessibility/ax_view_state.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/insets.h"
 #include "ui/views/painter.h"
 
 namespace views {
+
+namespace {
+
+// Returns the pixels for the bitmap in |image| at scale |image_scale|.
+void* GetBitmapPixels(const gfx::ImageSkia& img, float image_scale) {
+  DCHECK_NE(0.0f, image_scale);
+  const SkBitmap& bitmap = img.GetRepresentation(image_scale).sk_bitmap();
+  SkAutoLockPixels pixel_lock(bitmap);
+  return bitmap.getPixels();
+}
+
+}  // namespace
 
 ImageView::ImageView()
     : image_size_set_(false),
@@ -58,7 +70,7 @@ void ImageView::SetImageSize(const gfx::Size& image_size) {
   PreferredSizeChanged();
 }
 
-bool ImageView::GetImageSize(gfx::Size* image_size) {
+bool ImageView::GetImageSize(gfx::Size* image_size) const {
   DCHECK(image_size);
   if (image_size_set_)
     *image_size = image_size_;
@@ -79,7 +91,7 @@ void ImageView::SetFocusPainter(scoped_ptr<Painter> focus_painter) {
   focus_painter_ = focus_painter.Pass();
 }
 
-gfx::Size ImageView::GetPreferredSize() {
+gfx::Size ImageView::GetPreferredSize() const {
   gfx::Insets insets = GetInsets();
   if (image_size_set_) {
     gfx::Size image_size;
@@ -99,8 +111,7 @@ bool ImageView::IsImageEqual(const gfx::ImageSkia& img) const {
   // the backing store but also the pixels of the last image we painted.
   return image_.BackedBySameObjectAs(img) &&
       last_paint_scale_ != 0.0f &&
-      last_painted_bitmap_pixels_ ==
-      img.GetRepresentation(last_paint_scale_).sk_bitmap().getPixels();
+      last_painted_bitmap_pixels_ == GetBitmapPixels(img, last_paint_scale_);
 }
 
 gfx::Point ImageView::ComputeImageOrigin(const gfx::Size& image_size) const {
@@ -150,8 +161,8 @@ void ImageView::OnPaint(gfx::Canvas* canvas) {
   Painter::PaintFocusPainter(this, canvas, focus_painter_.get());
 }
 
-void ImageView::GetAccessibleState(ui::AccessibleViewState* state) {
-  state->role = ui::AccessibilityTypes::ROLE_GRAPHIC;
+void ImageView::GetAccessibleState(ui::AXViewState* state) {
+  state->role = ui::AX_ROLE_IMAGE;
   state->name = tooltip_text_;
 }
 
@@ -177,15 +188,16 @@ ImageView::Alignment ImageView::GetVerticalAlignment() const {
   return vert_alignment_;
 }
 
-void ImageView::SetTooltipText(const string16& tooltip) {
+void ImageView::SetTooltipText(const base::string16& tooltip) {
   tooltip_text_ = tooltip;
 }
 
-string16 ImageView::GetTooltipText() const {
+base::string16 ImageView::GetTooltipText() const {
   return tooltip_text_;
 }
 
-bool ImageView::GetTooltipText(const gfx::Point& p, string16* tooltip) const {
+bool ImageView::GetTooltipText(const gfx::Point& p,
+                               base::string16* tooltip) const {
   if (tooltip_text_.empty())
     return false;
 
@@ -193,10 +205,9 @@ bool ImageView::GetTooltipText(const gfx::Point& p, string16* tooltip) const {
   return true;
 }
 
-bool ImageView::HitTestRect(const gfx::Rect& rect) const {
-  return interactive_ ? View::HitTestRect(rect) : false;
+bool ImageView::CanProcessEventsWithinSubtree() const {
+  return interactive_;
 }
-
 
 void ImageView::OnPaintImage(gfx::Canvas* canvas) {
   last_paint_scale_ = canvas->image_scale();
@@ -212,15 +223,14 @@ void ImageView::OnPaintImage(gfx::Canvas* canvas) {
   if (image_bounds.size() != gfx::Size(image_.width(), image_.height())) {
     // Resize case
     SkPaint paint;
-    paint.setFilterBitmap(true);
+    paint.setFilterLevel(SkPaint::kLow_FilterLevel);
     canvas->DrawImageInt(image_, 0, 0, image_.width(), image_.height(),
         image_bounds.x(), image_bounds.y(), image_bounds.width(),
         image_bounds.height(), true, paint);
   } else {
     canvas->DrawImageInt(image_, image_bounds.x(), image_bounds.y());
   }
-  last_painted_bitmap_pixels_ =
-      image_.GetRepresentation(last_paint_scale_).sk_bitmap().getPixels();
+  last_painted_bitmap_pixels_ = GetBitmapPixels(image_, last_paint_scale_);
 }
 
 }  // namespace views

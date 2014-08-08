@@ -25,10 +25,10 @@
 #include "net/base/net_errors.h"
 #include "net/base/net_export.h"
 #include "net/base/test_completion_callback.h"
-#include "net/disk_cache/backend_impl.h"
+#include "net/disk_cache/blockfile/backend_impl.h"
+#include "net/disk_cache/blockfile/rankings.h"
 #include "net/disk_cache/disk_cache.h"
 #include "net/disk_cache/disk_cache_test_util.h"
-#include "net/disk_cache/rankings.h"
 
 using base::Time;
 
@@ -47,7 +47,7 @@ int RunSlave(RankCrashes action) {
   base::FilePath exe;
   PathService::Get(base::FILE_EXE, &exe);
 
-  CommandLine cmdline(exe);
+  base::CommandLine cmdline(exe);
   cmdline.AppendArg(base::IntToString(action));
 
   base::ProcessHandle handle;

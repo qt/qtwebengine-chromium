@@ -42,40 +42,41 @@ public:
     void setExplicitValue(int value);
     void clearExplicitValue();
 
-    void setNotInList(bool notInList) { m_notInList = notInList; }
+    void setNotInList(bool);
     bool notInList() const { return m_notInList; }
 
     const String& markerText() const;
-    String markerTextWithSuffix() const;
 
     void updateListMarkerNumbers();
-    void updateMarkerLocation();
 
     static void updateItemValuesForOrderedList(const HTMLOListElement*);
     static unsigned itemCountForOrderedList(const HTMLOListElement*);
 
+    bool isEmpty() const;
+
 private:
-    virtual const char* renderName() const { return "RenderListItem"; }
+    virtual const char* renderName() const OVERRIDE { return "RenderListItem"; }
 
-    virtual bool isListItem() const { return true; }
+    virtual bool isListItem() const OVERRIDE { return true; }
 
-    virtual void willBeDestroyed();
+    virtual void willBeDestroyed() OVERRIDE;
 
     virtual void insertedIntoTree() OVERRIDE;
     virtual void willBeRemovedFromTree() OVERRIDE;
 
-    virtual bool isEmpty() const;
-    virtual void paint(PaintInfo&, const LayoutPoint&);
+    virtual void paint(PaintInfo&, const LayoutPoint&) OVERRIDE;
 
-    virtual void layout();
+    virtual void layout() OVERRIDE;
 
-    virtual bool supportsPartialLayout() const OVERRIDE { return false; }
+    // Returns true if we re-attached and updated the location of the marker.
+    bool updateMarkerLocation();
+    void updateMarkerLocationAndInvalidateWidth();
 
     void positionListMarker();
 
-    virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle);
+    virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle) OVERRIDE;
 
-    virtual void addOverflowFromChildren();
+    virtual void addOverflowFromChildren() OVERRIDE;
 
     inline int calcValue() const;
     void updateValueNow() const;

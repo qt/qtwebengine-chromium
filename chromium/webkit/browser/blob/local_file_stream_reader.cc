@@ -8,7 +8,6 @@
 #include "base/files/file_util_proxy.h"
 #include "base/location.h"
 #include "base/logging.h"
-#include "base/platform_file.h"
 #include "base/task_runner.h"
 #include "net/base/file_stream.h"
 #include "net/base/io_buffer.h"
@@ -18,17 +17,9 @@ namespace webkit_blob {
 
 namespace {
 
-const int kOpenFlagsForRead = base::PLATFORM_FILE_OPEN |
-                              base::PLATFORM_FILE_READ |
-                              base::PLATFORM_FILE_ASYNC;
-
-// Verify if the underlying file has not been modified.
-bool VerifySnapshotTime(const base::Time& expected_modification_time,
-                        const base::PlatformFileInfo& file_info) {
-  return expected_modification_time.is_null() ||
-         expected_modification_time.ToTimeT() ==
-             file_info.last_modified.ToTimeT();
-}
+const int kOpenFlagsForRead = base::File::FLAG_OPEN |
+                              base::File::FLAG_READ |
+                              base::File::FLAG_ASYNC;
 
 }  // namespace
 
@@ -97,7 +88,7 @@ void LocalFileStreamReader::DidVerifyForOpen(
     return;
   }
 
-  stream_impl_.reset(new net::FileStream(NULL, task_runner_));
+  stream_impl_.reset(new net::FileStream(task_runner_));
   const int result = stream_impl_->Open(
       file_path_, kOpenFlagsForRead,
       base::Bind(&LocalFileStreamReader::DidOpenFileStream,
@@ -158,14 +149,14 @@ void LocalFileStreamReader::DidOpenForRead(
 
 void LocalFileStreamReader::DidGetFileInfoForGetLength(
     const net::Int64CompletionCallback& callback,
-    base::PlatformFileError error,
-    const base::PlatformFileInfo& file_info) {
+    base::File::Error error,
+    const base::File::Info& file_info) {
   if (file_info.is_directory) {
     callback.Run(net::ERR_FILE_NOT_FOUND);
     return;
   }
-  if (error != base::PLATFORM_FILE_OK) {
-    callback.Run(net::PlatformFileErrorToNetError(error));
+  if (error != base::File::FILE_OK) {
+    callback.Run(net::FileErrorToNetError(error));
     return;
   }
   if (!VerifySnapshotTime(expected_modification_time_, file_info)) {

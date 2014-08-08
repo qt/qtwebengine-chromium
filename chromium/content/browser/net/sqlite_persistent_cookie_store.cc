@@ -12,6 +12,7 @@
 #include "base/basictypes.h"
 #include "base/bind.h"
 #include "base/callback.h"
+#include "base/command_line.h"
 #include "base/file_util.h"
 #include "base/files/file_path.h"
 #include "base/location.h"
@@ -28,6 +29,7 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/cookie_crypto_delegate.h"
 #include "content/public/browser/cookie_store_factory.h"
+#include "content/public/common/content_switches.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "net/cookies/canonical_cookie.h"
 #include "net/cookies/cookie_constants.h"
@@ -75,7 +77,7 @@ class SQLitePersistentCookieStore::Backend
       const scoped_refptr<base::SequencedTaskRunner>& background_task_runner,
       bool restore_old_session_cookies,
       quota::SpecialStoragePolicy* special_storage_policy,
-      scoped_ptr<CookieCryptoDelegate> crypto_delegate)
+      CookieCryptoDelegate* crypto_delegate)
       : path_(path),
         num_pending_(0),
         force_keep_session_state_(false),
@@ -88,7 +90,7 @@ class SQLitePersistentCookieStore::Backend
         background_task_runner_(background_task_runner),
         num_priority_waiting_(0),
         total_priority_requests_(0),
-        crypto_(crypto_delegate.Pass()) {}
+        crypto_(crypto_delegate) {}
 
   // Creates or loads the SQLite database.
   void Load(const LoadedCallback& loaded_callback);
@@ -273,7 +275,9 @@ class SQLitePersistentCookieStore::Backend
   base::TimeDelta priority_wait_duration_;
   // Class with functions that do cryptographic operations (for protecting
   // cookies stored persistently).
-  scoped_ptr<CookieCryptoDelegate> crypto_;
+  //
+  // Not owned.
+  CookieCryptoDelegate* crypto_;
 
   DISALLOW_COPY_AND_ASSIGN(Backend);
 };
@@ -630,7 +634,7 @@ bool SQLitePersistentCookieStore::Backend::InitializeDatabase() {
     std::string key =
         net::registry_controlled_domains::GetDomainAndRegistry(
             domain,
-            net::registry_controlled_domains::EXCLUDE_PRIVATE_REGISTRIES);
+            net::registry_controlled_domains::INCLUDE_PRIVATE_REGISTRIES);
 
     keys_to_load_[key].insert(domain);
   }
@@ -717,7 +721,7 @@ bool SQLitePersistentCookieStore::Backend::LoadCookiesForDomains(
     while (smt.Step()) {
       std::string value;
       std::string encrypted_value = smt.ColumnString(4);
-      if (!encrypted_value.empty() && crypto_.get()) {
+      if (!encrypted_value.empty() && crypto_) {
         crypto_->DecryptString(encrypted_value, &value);
       } else {
         DCHECK(encrypted_value.empty());
@@ -996,7 +1000,7 @@ void SQLitePersistentCookieStore::Backend::Commit() {
         add_smt.BindInt64(0, po->cc().CreationDate().ToInternalValue());
         add_smt.BindString(1, po->cc().Domain());
         add_smt.BindString(2, po->cc().Name());
-        if (crypto_.get()) {
+        if (crypto_) {
           std::string encrypted_value;
           add_smt.BindCString(3, "");  // value
           crypto_->EncryptString(po->cc().Value(), &encrypted_value);
@@ -1202,13 +1206,13 @@ SQLitePersistentCookieStore::SQLitePersistentCookieStore(
     const scoped_refptr<base::SequencedTaskRunner>& background_task_runner,
     bool restore_old_session_cookies,
     quota::SpecialStoragePolicy* special_storage_policy,
-    scoped_ptr<CookieCryptoDelegate> crypto_delegate)
+    CookieCryptoDelegate* crypto_delegate)
     : backend_(new Backend(path,
                            client_task_runner,
                            background_task_runner,
                            restore_old_session_cookies,
                            special_storage_policy,
-                           crypto_delegate.Pass())) {
+                           crypto_delegate)) {
 }
 
 void SQLitePersistentCookieStore::Load(const LoadedCallback& loaded_callback) {
@@ -1248,40 +1252,86 @@ SQLitePersistentCookieStore::~SQLitePersistentCookieStore() {
   // a reference if the background runner has not run Close() yet.
 }
 
-net::CookieStore* CreatePersistentCookieStore(
-    const base::FilePath& path,
-    bool restore_old_session_cookies,
-    quota::SpecialStoragePolicy* storage_policy,
-    net::CookieMonster::Delegate* cookie_monster_delegate,
-    const scoped_refptr<base::SequencedTaskRunner>& client_task_runner,
-    const scoped_refptr<base::SequencedTaskRunner>& background_task_runner,
-    scoped_ptr<CookieCryptoDelegate> crypto_delegate) {
-  SQLitePersistentCookieStore* persistent_store =
-      new SQLitePersistentCookieStore(
-          path,
-          client_task_runner,
-          background_task_runner,
-          restore_old_session_cookies,
-          storage_policy,
-          crypto_delegate.Pass());
-  return new net::CookieMonster(persistent_store, cookie_monster_delegate);
+CookieStoreConfig::CookieStoreConfig()
+  : session_cookie_mode(EPHEMERAL_SESSION_COOKIES),
+    crypto_delegate(NULL) {
+  // Default to an in-memory cookie store.
 }
 
-net::CookieStore* CreatePersistentCookieStore(
-    const base::FilePath& path,
-    bool restore_old_session_cookies,
-    quota::SpecialStoragePolicy* storage_policy,
-    net::CookieMonster::Delegate* cookie_monster_delegate,
-    scoped_ptr<CookieCryptoDelegate> crypto_delegate) {
-  return CreatePersistentCookieStore(
-      path,
-      restore_old_session_cookies,
-      storage_policy,
-      cookie_monster_delegate,
-      BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO),
-      BrowserThread::GetBlockingPool()->GetSequencedTaskRunner(
-          BrowserThread::GetBlockingPool()->GetSequenceToken()),
-      crypto_delegate.Pass());
+CookieStoreConfig::CookieStoreConfig(
+     const base::FilePath& path,
+    SessionCookieMode session_cookie_mode,
+     quota::SpecialStoragePolicy* storage_policy,
+    net::CookieMonsterDelegate* cookie_delegate)
+  : path(path),
+    session_cookie_mode(session_cookie_mode),
+    storage_policy(storage_policy),
+    cookie_delegate(cookie_delegate),
+    crypto_delegate(NULL) {
+  CHECK(!path.empty() || session_cookie_mode == EPHEMERAL_SESSION_COOKIES);
+}
+
+CookieStoreConfig::~CookieStoreConfig() {
+}
+
+net::CookieStore* CreateCookieStore(const CookieStoreConfig& config) {
+  net::CookieMonster* cookie_monster = NULL;
+
+  if (config.path.empty()) {
+    // Empty path means in-memory store.
+    cookie_monster = new net::CookieMonster(NULL, config.cookie_delegate);
+  } else {
+    scoped_refptr<base::SequencedTaskRunner> client_task_runner =
+        config.client_task_runner;
+    scoped_refptr<base::SequencedTaskRunner> background_task_runner =
+        config.background_task_runner;
+
+    if (!client_task_runner) {
+      client_task_runner =
+          BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO);
+    }
+
+    if (!background_task_runner) {
+      background_task_runner =
+          BrowserThread::GetBlockingPool()->GetSequencedTaskRunner(
+              BrowserThread::GetBlockingPool()->GetSequenceToken());
+    }
+
+    SQLitePersistentCookieStore* persistent_store =
+        new SQLitePersistentCookieStore(
+            config.path,
+            client_task_runner,
+            background_task_runner,
+            (config.session_cookie_mode ==
+             CookieStoreConfig::RESTORED_SESSION_COOKIES),
+            config.storage_policy,
+            config.crypto_delegate);
+
+    cookie_monster =
+        new net::CookieMonster(persistent_store, config.cookie_delegate);
+    if ((config.session_cookie_mode ==
+         CookieStoreConfig::PERSISTANT_SESSION_COOKIES) ||
+        (config.session_cookie_mode ==
+         CookieStoreConfig::RESTORED_SESSION_COOKIES)) {
+      cookie_monster->SetPersistSessionCookies(true);
+    }
+  }
+
+  // In the case of Android WebView, the cookie store may be created
+  // before the browser process fully initializes -- certainly before
+  // the main loop ever runs. In this situation, the CommandLine singleton
+  // will not have been set up. Android tests do not need file cookies
+  // so always ignore them here.
+  //
+  // TODO(ajwong): Remove the InitializedForCurrentProcess() check
+  // once http://crbug.com/331424 is resolved.
+  if (CommandLine::InitializedForCurrentProcess() &&
+      CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableFileCookies)) {
+    cookie_monster->SetEnableFileScheme(true);
+  }
+
+  return cookie_monster;
 }
 
 }  // namespace content

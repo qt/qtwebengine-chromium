@@ -25,7 +25,6 @@
 
 #include "core/rendering/InlineBox.h"
 #include "core/rendering/RenderText.h" // so textRenderer() can be inline
-#include "platform/graphics/GraphicsContext.h"
 #include "platform/text/TextRun.h"
 #include "wtf/Forward.h"
 
@@ -33,6 +32,7 @@ namespace WebCore {
 
 struct CompositionUnderline;
 class DocumentMarker;
+class GraphicsContext;
 
 const unsigned short cNoTruncation = USHRT_MAX;
 const unsigned short cFullTruncation = USHRT_MAX - 1;
@@ -43,7 +43,7 @@ Color correctedTextColor(Color textColor, Color backgroundColor);
 
 class InlineTextBox : public InlineBox {
 public:
-    InlineTextBox(RenderObject* obj)
+    InlineTextBox(RenderObject& obj)
         : InlineBox(obj)
         , m_prevTextBox(0)
         , m_nextTextBox(0)
@@ -72,7 +72,7 @@ public:
 
     unsigned short truncation() { return m_truncation; }
 
-    virtual void markDirty(bool dirty = true) OVERRIDE FINAL;
+    virtual void markDirty() OVERRIDE FINAL;
 
     using InlineBox::hasHyphen;
     using InlineBox::setHasHyphen;
@@ -94,8 +94,8 @@ public:
     LayoutUnit logicalRightVisualOverflow() const { return logicalOverflowRect().maxX(); }
 
 #ifndef NDEBUG
-    virtual void showBox(int = 0) const;
-    virtual const char* boxName() const;
+    virtual void showBox(int = 0) const OVERRIDE;
+    virtual const char* boxName() const OVERRIDE;
 #endif
 
     enum RotationDirection { Counterclockwise, Clockwise };
@@ -111,18 +111,18 @@ private:
 
 public:
     TextRun constructTextRunForInspector(RenderStyle*, const Font&) const;
-    virtual FloatRect calculateBoundaries() const { return FloatRect(x(), y(), width(), height()); }
+    virtual FloatRect calculateBoundaries() const OVERRIDE { return FloatRect(x(), y(), width(), height()); }
 
     virtual LayoutRect localSelectionRect(int startPos, int endPos);
     bool isSelected(int startPos, int endPos) const;
     void selectionStartEnd(int& sPos, int& ePos);
 
 protected:
-    virtual void paint(PaintInfo&, const LayoutPoint&, LayoutUnit lineTop, LayoutUnit lineBottom);
+    virtual void paint(PaintInfo&, const LayoutPoint&, LayoutUnit lineTop, LayoutUnit lineBottom) OVERRIDE;
     virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, LayoutUnit lineTop, LayoutUnit lineBottom) OVERRIDE;
 
 public:
-    RenderText* textRenderer() const;
+    RenderText& textRenderer() const;
 
 private:
     virtual void deleteLine() OVERRIDE FINAL;
@@ -175,16 +175,22 @@ private:
     unsigned short m_truncation; // Where to truncate when text overflow is applied.  We use special constants to
                       // denote no truncation (the whole run paints) and full truncation (nothing paints at all).
 
+    unsigned underlinePaintStart(const CompositionUnderline&);
+    unsigned underlinePaintEnd(const CompositionUnderline&);
+
 protected:
-    void paintCompositionBackground(GraphicsContext*, const FloatPoint& boxOrigin, RenderStyle*, const Font&, int startPos, int endPos);
+    void paintSingleCompositionBackgroundRun(GraphicsContext*, const FloatPoint& boxOrigin, RenderStyle*, const Font&, Color backgroundColor, int startPos, int endPos);
+    void paintCompositionBackgrounds(GraphicsContext*, const FloatPoint& boxOrigin, RenderStyle*, const Font&, bool useCustomUnderlines);
     void paintDocumentMarkers(GraphicsContext*, const FloatPoint& boxOrigin, RenderStyle*, const Font&, bool background);
     void paintCompositionUnderline(GraphicsContext*, const FloatPoint& boxOrigin, const CompositionUnderline&);
 
+    // These functions both paint markers and update the DocumentMarker's renderedRect.
+    virtual void paintDocumentMarker(GraphicsContext*, const FloatPoint& boxOrigin, DocumentMarker*, RenderStyle*, const Font&, bool grammar);
+    virtual void paintTextMatchMarker(GraphicsContext*, const FloatPoint& boxOrigin, DocumentMarker*, RenderStyle*, const Font&);
+
 private:
-    void paintDecoration(GraphicsContext*, const FloatPoint& boxOrigin, TextDecoration, TextDecorationStyle, const ShadowList*);
+    void paintDecoration(GraphicsContext*, const FloatPoint& boxOrigin, TextDecoration, const ShadowList*);
     void paintSelection(GraphicsContext*, const FloatPoint& boxOrigin, RenderStyle*, const Font&, Color textColor);
-    void paintDocumentMarker(GraphicsContext*, const FloatPoint& boxOrigin, DocumentMarker*, RenderStyle*, const Font&, bool grammar);
-    void paintTextMatchMarker(GraphicsContext*, const FloatPoint& boxOrigin, DocumentMarker*, RenderStyle*, const Font&);
 
     TextRun::ExpansionBehavior expansionBehavior() const
     {
@@ -195,7 +201,7 @@ private:
 
 DEFINE_INLINE_BOX_TYPE_CASTS(InlineTextBox);
 
-inline RenderText* InlineTextBox::textRenderer() const
+inline RenderText& InlineTextBox::textRenderer() const
 {
     return toRenderText(renderer());
 }

@@ -45,14 +45,16 @@ class VIEWS_EXPORT TouchEditingMenuView : public BubbleDelegateView,
   // If there are no actions available for the menu, returns NULL. Otherwise,
   // returns a new instance of TouchEditingMenuView.
   static TouchEditingMenuView* Create(TouchEditingMenuController* controller,
-                                      gfx::Rect anchor_rect,
+                                      const gfx::Rect& anchor_rect,
+                                      const gfx::Size& handle_image_size,
                                       gfx::NativeView context);
 
   void Close();
 
  private:
   TouchEditingMenuView(TouchEditingMenuController* controller,
-                       gfx::Rect anchor_rect,
+                       const gfx::Rect& anchor_rect,
+                       const gfx::Size& handle_image_size,
                        gfx::NativeView context);
 
   // views::WidgetDelegate overrides:
@@ -69,7 +71,7 @@ class VIEWS_EXPORT TouchEditingMenuView : public BubbleDelegateView,
   void CreateButtons();
 
   // Helper method to create a single button.
-  Button* CreateButton(const string16& title, int tag);
+  Button* CreateButton(const base::string16& title, int tag);
 
   TouchEditingMenuController* controller_;
 

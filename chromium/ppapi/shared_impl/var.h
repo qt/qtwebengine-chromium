@@ -10,7 +10,6 @@
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/shared_memory.h"
-#include "base/platform_file.h"
 #include "ppapi/c/pp_var.h"
 #include "ppapi/shared_impl/host_resource.h"
 #include "ppapi/shared_impl/ppapi_shared_export.h"
@@ -172,10 +171,9 @@ class PPAPI_SHARED_EXPORT ArrayBufferVar : public Var {
   //
   // Returns true if creating the shared memory (and copying) is successful,
   // false otherwise.
-  virtual bool CopyToNewShmem(
-      PP_Instance instance,
-      int *host_shm_handle_id,
-      base::SharedMemoryHandle *plugin_shm_handle) = 0;
+  virtual bool CopyToNewShmem(PP_Instance instance,
+                              int* host_shm_handle_id,
+                              base::SharedMemoryHandle* plugin_shm_handle) = 0;
 
   // Var override.
   virtual ArrayBufferVar* AsArrayBufferVar() OVERRIDE;

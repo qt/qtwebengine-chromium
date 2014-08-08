@@ -19,8 +19,9 @@ mangle(SYMBOL):
 ; 4. ARGB frame
 ; 5. Width
 ; 6. Source dx
+; 7. Lookup table address
 
-PROLOGUE  6, 7, 3, Y, U, V, ARGB, R1, R2, TEMP
+PROLOGUE  7, 7, 3, Y, U, V, ARGB, R1, R2, TEMP
 
 %ifdef ARCH_X86_64
 %define     WORD_SIZE   QWORD
@@ -28,34 +29,22 @@ PROLOGUE  6, 7, 3, Y, U, V, ARGB, R1, R2, TEMP
 %define     WORD_SIZE   DWORD
 %endif
 
-%ifdef PIC
   PUSH      R1q  ; Width
-%endif
   PUSH      R2q  ; Source dx
 
 %define     SOURCE_DX   WORD_SIZE [rsp]
 
-; PIC code.
-%ifdef PIC
-  LOAD_SYM  R1q, mangle(kCoefficientsRgbY)
+  mov       R1q, TEMPq
+
 %define     WIDTH       WORD_SIZE [rsp + gprsize]
 %define     TABLE       R1q
-%define     Xq           R2q
-
-; Non-PIC code.
-%else
-%define     WIDTH       R1q
-%define     TABLE       mangle(kCoefficientsRgbY)
-%define     Xq           R2q
-%endif
+%define     Xq          R2q
 
   ; Set Xq index to 0.
   xor       Xq, Xq
   jmp       .scaleend
 
 .scaleloop:
-  ; TABLE can either be a register or a symbol depending on this is
-  ; PIC or not.
   mov       TEMPq, Xq
   sar       TEMPq, 17
   movzx     TEMPd, BYTE [Uq + TEMPq]
@@ -83,8 +72,6 @@ PROLOGUE  6, 7, 3, Y, U, V, ARGB, R1, R2, TEMP
   add       ARGBq, 8
 
 .scaleend:
-  ; WIDTH can either be a register or memory depending on this is
-  ; PIC or not.
   sub       WIDTH, 2
   jns       .scaleloop
 
@@ -109,9 +96,5 @@ PROLOGUE  6, 7, 3, Y, U, V, ARGB, R1, R2, TEMP
   movd      DWORD [ARGBq], mm1
 
 .scaledone:
-%ifdef PIC
   ADD       rsp, 2 * gprsize
-%else
-  ADD       rsp, gprsize
-%endif
   RET

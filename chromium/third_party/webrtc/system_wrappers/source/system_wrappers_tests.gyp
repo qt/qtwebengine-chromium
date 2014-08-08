@@ -23,14 +23,16 @@
         'condition_variable_unittest.cc',
         'critical_section_unittest.cc',
         'event_tracer_unittest.cc',
-        'list_unittest.cc',
         'logging_unittest.cc',
         'data_log_unittest.cc',
         'data_log_unittest_disabled.cc',
         'data_log_helpers_unittest.cc',
         'data_log_c_helpers_unittest.c',
         'data_log_c_helpers_unittest.h',
+        'rtp_to_ntp_unittest.cc',
+        'scoped_vector_unittest.cc',
         'stringize_macros_unittest.cc',
+        'stl_util_unittest.cc',
         'thread_unittest.cc',
         'thread_posix_unittest.cc',
         'unittest_utilities_unittest.cc',
@@ -46,7 +48,7 @@
         }],
         # TODO(henrike): remove build_with_chromium==1 when the bots are
         # using Chromium's buildbots.
-        ['build_with_chromium==1 and OS=="android" and gtest_target_type=="shared_library"', {
+        ['build_with_chromium==1 and OS=="android"', {
           'dependencies': [
             '<(DEPTH)/testing/android/native_test.gyp:native_test_native_code',
           ],
@@ -61,7 +63,7 @@
   'conditions': [
     # TODO(henrike): remove build_with_chromium==1 when the bots are using
     # Chromium's buildbots.
-    ['include_tests==1 and build_with_chromium==1 and OS=="android" and gtest_target_type=="shared_library"', {
+    ['include_tests==1 and build_with_chromium==1 and OS=="android"', {
       'targets': [
         {
           'target_name': 'system_wrappers_unittests_apk_target',

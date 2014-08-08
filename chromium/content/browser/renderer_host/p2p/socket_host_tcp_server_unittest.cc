@@ -91,16 +91,19 @@ class P2PSocketHostTcpServerTest : public testing::Test {
  protected:
   virtual void SetUp() OVERRIDE {
     socket_ = new FakeServerSocket();
-    socket_host_.reset(new P2PSocketHostTcpServer(
-        &sender_, 0, P2P_SOCKET_TCP_CLIENT));
+    socket_host_.reset(
+        new P2PSocketHostTcpServer(&sender_, 0, P2P_SOCKET_TCP_CLIENT));
     socket_host_->socket_.reset(socket_);
 
     EXPECT_CALL(sender_, Send(
         MatchMessage(static_cast<uint32>(P2PMsg_OnSocketCreated::ID))))
         .WillOnce(DoAll(DeleteArg<0>(), Return(true)));
 
+    P2PHostAndIPEndPoint dest;
+    dest.ip_address = ParseAddress(kTestIpAddress1, kTestPort1);
+
     socket_host_->Init(ParseAddress(kTestLocalIpAddress, 0),
-                       ParseAddress(kTestIpAddress1, kTestPort1));
+                       dest);
     EXPECT_TRUE(socket_->listening());
   }
 

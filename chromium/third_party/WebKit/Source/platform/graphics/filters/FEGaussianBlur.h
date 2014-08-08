@@ -38,14 +38,12 @@ public:
     float stdDeviationY() const;
     void setStdDeviationY(float);
 
-    static float calculateStdDeviation(float);
-
-    virtual void determineAbsolutePaintRect();
     virtual FloatRect mapRect(const FloatRect&, bool forward = true) OVERRIDE FINAL;
-    static void calculateKernelSize(Filter*, unsigned& kernelSizeX, unsigned& kernelSizeY, float stdX, float stdY);
-    static void calculateUnscaledKernelSize(unsigned& kernelSizeX, unsigned& kernelSizeY, float stdX, float stdY);
+    virtual FloatRect determineAbsolutePaintRect(const FloatRect& requestedRect) OVERRIDE;
+    static IntSize calculateKernelSize(Filter*, const FloatPoint& std);
+    static IntSize calculateUnscaledKernelSize(const FloatPoint& std);
 
-    virtual TextStream& externalRepresentation(TextStream&, int indention) const;
+    virtual TextStream& externalRepresentation(TextStream&, int indention) const OVERRIDE;
 
 private:
     static const int s_minimalRectDimension = 100 * 100; // Empirical data limit for parallel jobs
@@ -63,50 +61,15 @@ private:
         unsigned kernelSizeY;
     };
 
-    static void platformApplyWorker(PlatformApplyParameters*);
-
     FEGaussianBlur(Filter*, float, float);
 
     virtual void applySoftware() OVERRIDE;
-    virtual bool applySkia() OVERRIDE;
 
-    static inline void kernelPosition(int boxBlur, unsigned& std, int& dLeft, int& dRight);
-    inline void platformApply(Uint8ClampedArray* srcPixelArray, Uint8ClampedArray* tmpPixelArray, unsigned kernelSizeX, unsigned kernelSizeY, IntSize& paintSize);
-
-    inline void platformApplyGeneric(Uint8ClampedArray* srcPixelArray, Uint8ClampedArray* tmpPixelArray, unsigned kernelSizeX, unsigned kernelSizeY, IntSize& paintSize);
     virtual PassRefPtr<SkImageFilter> createImageFilter(SkiaImageFilterBuilder*) OVERRIDE;
 
     float m_stdX;
     float m_stdY;
 };
-
-inline void FEGaussianBlur::kernelPosition(int boxBlur, unsigned& std, int& dLeft, int& dRight)
-{
-    // check http://www.w3.org/TR/SVG/filters.html#feGaussianBlurElement for details
-    switch (boxBlur) {
-    case 0:
-        if (!(std % 2)) {
-            dLeft = std / 2 - 1;
-            dRight = std - dLeft;
-        } else {
-            dLeft = std / 2;
-            dRight = std - dLeft;
-        }
-        break;
-    case 1:
-        if (!(std % 2)) {
-            dLeft++;
-            dRight--;
-        }
-        break;
-    case 2:
-        if (!(std % 2)) {
-            dRight++;
-            std++;
-        }
-        break;
-    }
-}
 
 } // namespace WebCore
 

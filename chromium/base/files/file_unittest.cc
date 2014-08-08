@@ -11,16 +11,27 @@
 using base::File;
 using base::FilePath;
 
-TEST(File, Create) {
+TEST(FileTest, Create) {
   base::ScopedTempDir temp_dir;
   ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
   FilePath file_path = temp_dir.path().AppendASCII("create_file_1");
 
   {
+    // Don't create a File at all.
+    File file;
+    EXPECT_FALSE(file.IsValid());
+    EXPECT_EQ(base::File::FILE_ERROR_FAILED, file.error_details());
+
+    File file2(base::File::FILE_ERROR_TOO_MANY_OPENED);
+    EXPECT_FALSE(file2.IsValid());
+    EXPECT_EQ(base::File::FILE_ERROR_TOO_MANY_OPENED, file2.error_details());
+  }
+
+  {
     // Open a file that doesn't exist.
     File file(file_path, base::File::FLAG_OPEN | base::File::FLAG_READ);
     EXPECT_FALSE(file.IsValid());
-    EXPECT_EQ(base::File::FILE_ERROR_NOT_FOUND, file.error());
+    EXPECT_EQ(base::File::FILE_ERROR_NOT_FOUND, file.error_details());
   }
 
   {
@@ -28,7 +39,7 @@ TEST(File, Create) {
     File file(file_path, base::File::FLAG_OPEN_ALWAYS | base::File::FLAG_READ);
     EXPECT_TRUE(file.IsValid());
     EXPECT_TRUE(file.created());
-    EXPECT_EQ(base::File::FILE_OK, file.error());
+    EXPECT_EQ(base::File::FILE_OK, file.error_details());
   }
 
   {
@@ -36,7 +47,20 @@ TEST(File, Create) {
     File file(file_path, base::File::FLAG_OPEN | base::File::FLAG_READ);
     EXPECT_TRUE(file.IsValid());
     EXPECT_FALSE(file.created());
-    EXPECT_EQ(base::File::FILE_OK, file.error());
+    EXPECT_EQ(base::File::FILE_OK, file.error_details());
+
+    // This time verify closing the file.
+    file.Close();
+    EXPECT_FALSE(file.IsValid());
+  }
+
+  {
+    // Open an existing file through Initialize
+    File file;
+    file.Initialize(file_path, base::File::FLAG_OPEN | base::File::FLAG_READ);
+    EXPECT_TRUE(file.IsValid());
+    EXPECT_FALSE(file.created());
+    EXPECT_EQ(base::File::FILE_OK, file.error_details());
 
     // This time verify closing the file.
     file.Close();
@@ -48,16 +72,16 @@ TEST(File, Create) {
     File file(file_path, base::File::FLAG_CREATE | base::File::FLAG_READ);
     EXPECT_FALSE(file.IsValid());
     EXPECT_FALSE(file.created());
-    EXPECT_EQ(base::File::FILE_ERROR_EXISTS, file.error());
+    EXPECT_EQ(base::File::FILE_ERROR_EXISTS, file.error_details());
   }
 
   {
     // Create or overwrite a file.
     File file(file_path,
-              base::File::FLAG_CREATE_ALWAYS | base::File::FLAG_READ);
+              base::File::FLAG_CREATE_ALWAYS | base::File::FLAG_WRITE);
     EXPECT_TRUE(file.IsValid());
     EXPECT_TRUE(file.created());
-    EXPECT_EQ(base::File::FILE_OK, file.error());
+    EXPECT_EQ(base::File::FILE_OK, file.error_details());
   }
 
   {
@@ -68,13 +92,31 @@ TEST(File, Create) {
                   base::File::FLAG_DELETE_ON_CLOSE);
     EXPECT_TRUE(file.IsValid());
     EXPECT_TRUE(file.created());
-    EXPECT_EQ(base::File::FILE_OK, file.error());
+    EXPECT_EQ(base::File::FILE_OK, file.error_details());
   }
 
   EXPECT_FALSE(base::PathExists(file_path));
 }
 
-TEST(File, DeleteOpenFile) {
+TEST(FileTest, Async) {
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  FilePath file_path = temp_dir.path().AppendASCII("create_file");
+
+  {
+    File file(file_path, base::File::FLAG_OPEN_ALWAYS | base::File::FLAG_ASYNC);
+    EXPECT_TRUE(file.IsValid());
+    EXPECT_TRUE(file.async());
+  }
+
+  {
+    File file(file_path, base::File::FLAG_OPEN_ALWAYS);
+    EXPECT_TRUE(file.IsValid());
+    EXPECT_FALSE(file.async());
+  }
+}
+
+TEST(FileTest, DeleteOpenFile) {
   base::ScopedTempDir temp_dir;
   ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
   FilePath file_path = temp_dir.path().AppendASCII("create_file_1");
@@ -85,7 +127,7 @@ TEST(File, DeleteOpenFile) {
                 base::File::FLAG_SHARE_DELETE);
   EXPECT_TRUE(file.IsValid());
   EXPECT_TRUE(file.created());
-  EXPECT_EQ(base::File::FILE_OK, file.error());
+  EXPECT_EQ(base::File::FILE_OK, file.error_details());
 
   // Open an existing file and mark it as delete on close.
   File same_file(file_path,
@@ -93,7 +135,7 @@ TEST(File, DeleteOpenFile) {
                      base::File::FLAG_READ);
   EXPECT_TRUE(file.IsValid());
   EXPECT_FALSE(same_file.created());
-  EXPECT_EQ(base::File::FILE_OK, same_file.error());
+  EXPECT_EQ(base::File::FILE_OK, same_file.error_details());
 
   // Close both handles and check that the file is gone.
   file.Close();
@@ -101,7 +143,7 @@ TEST(File, DeleteOpenFile) {
   EXPECT_FALSE(base::PathExists(file_path));
 }
 
-TEST(File, ReadWrite) {
+TEST(FileTest, ReadWrite) {
   base::ScopedTempDir temp_dir;
   ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
   FilePath file_path = temp_dir.path().AppendASCII("read_write_file");
@@ -173,7 +215,7 @@ TEST(File, ReadWrite) {
     EXPECT_EQ(data_to_write[i - kOffsetBeyondEndOfFile], data_read_2[i]);
 }
 
-TEST(File, Append) {
+TEST(FileTest, Append) {
   base::ScopedTempDir temp_dir;
   ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
   FilePath file_path = temp_dir.path().AppendASCII("append_file");
@@ -221,7 +263,7 @@ TEST(File, Append) {
 }
 
 
-TEST(File, Truncate) {
+TEST(FileTest, Length) {
   base::ScopedTempDir temp_dir;
   ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
   FilePath file_path = temp_dir.path().AppendASCII("truncate_file");
@@ -229,6 +271,7 @@ TEST(File, Truncate) {
             base::File::FLAG_CREATE | base::File::FLAG_READ |
                 base::File::FLAG_WRITE);
   ASSERT_TRUE(file.IsValid());
+  EXPECT_EQ(0, file.GetLength());
 
   // Write "test" to the file.
   char data_to_write[] = "test";
@@ -239,7 +282,8 @@ TEST(File, Truncate) {
   // Extend the file.
   const int kExtendedFileLength = 10;
   int64 file_size = 0;
-  EXPECT_TRUE(file.Truncate(kExtendedFileLength));
+  EXPECT_TRUE(file.SetLength(kExtendedFileLength));
+  EXPECT_EQ(kExtendedFileLength, file.GetLength());
   EXPECT_TRUE(GetFileSize(file_path, &file_size));
   EXPECT_EQ(kExtendedFileLength, file_size);
 
@@ -254,7 +298,8 @@ TEST(File, Truncate) {
 
   // Truncate the file.
   const int kTruncatedFileLength = 2;
-  EXPECT_TRUE(file.Truncate(kTruncatedFileLength));
+  EXPECT_TRUE(file.SetLength(kTruncatedFileLength));
+  EXPECT_EQ(kTruncatedFileLength, file.GetLength());
   EXPECT_TRUE(GetFileSize(file_path, &file_size));
   EXPECT_EQ(kTruncatedFileLength, file_size);
 
@@ -267,9 +312,9 @@ TEST(File, Truncate) {
 
 // Flakily fails: http://crbug.com/86494
 #if defined(OS_ANDROID)
-TEST(File, TouchGetInfo) {
+TEST(FileTest, TouchGetInfo) {
 #else
-TEST(File, DISABLED_TouchGetInfo) {
+TEST(FileTest, DISABLED_TouchGetInfo) {
 #endif
   base::ScopedTempDir temp_dir;
   ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
@@ -333,18 +378,17 @@ TEST(File, DISABLED_TouchGetInfo) {
             creation_time.ToInternalValue());
 }
 
-TEST(File, ReadFileAtCurrentPosition) {
+TEST(FileTest, ReadAtCurrentPosition) {
   base::ScopedTempDir temp_dir;
   ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
-  FilePath file_path =
-      temp_dir.path().AppendASCII("read_file_at_current_position");
+  FilePath file_path = temp_dir.path().AppendASCII("read_at_current_position");
   File file(file_path,
             base::File::FLAG_CREATE | base::File::FLAG_READ |
                 base::File::FLAG_WRITE);
   EXPECT_TRUE(file.IsValid());
 
   const char kData[] = "test";
-  const int kDataSize = arraysize(kData) - 1;
+  const int kDataSize = sizeof(kData) - 1;
   EXPECT_EQ(kDataSize, file.Write(0, kData, kDataSize));
 
   EXPECT_EQ(0, file.Seek(base::File::FROM_BEGIN, 0));
@@ -355,6 +399,53 @@ TEST(File, ReadFileAtCurrentPosition) {
   EXPECT_EQ(kDataSize - first_chunk_size,
             file.ReadAtCurrentPos(buffer + first_chunk_size,
                                   kDataSize - first_chunk_size));
-  EXPECT_EQ(std::string(buffer, buffer + kDataSize),
-            std::string(kData));
+  EXPECT_EQ(std::string(buffer, buffer + kDataSize), std::string(kData));
 }
+
+TEST(FileTest, WriteAtCurrentPosition) {
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  FilePath file_path = temp_dir.path().AppendASCII("write_at_current_position");
+  File file(file_path,
+            base::File::FLAG_CREATE | base::File::FLAG_READ |
+                base::File::FLAG_WRITE);
+  EXPECT_TRUE(file.IsValid());
+
+  const char kData[] = "test";
+  const int kDataSize = sizeof(kData) - 1;
+
+  int first_chunk_size = kDataSize / 2;
+  EXPECT_EQ(first_chunk_size, file.WriteAtCurrentPos(kData, first_chunk_size));
+  EXPECT_EQ(kDataSize - first_chunk_size,
+            file.WriteAtCurrentPos(kData + first_chunk_size,
+                                   kDataSize - first_chunk_size));
+
+  char buffer[kDataSize];
+  EXPECT_EQ(kDataSize, file.Read(0, buffer, kDataSize));
+  EXPECT_EQ(std::string(buffer, buffer + kDataSize), std::string(kData));
+}
+
+#if defined(OS_WIN)
+TEST(FileTest, GetInfoForDirectory) {
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  FilePath empty_dir = temp_dir.path().Append(FILE_PATH_LITERAL("gpfi_test"));
+  ASSERT_TRUE(CreateDirectory(empty_dir));
+
+  base::File dir(
+      ::CreateFile(empty_dir.value().c_str(),
+                   FILE_ALL_ACCESS,
+                   FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                   NULL,
+                   OPEN_EXISTING,
+                   FILE_FLAG_BACKUP_SEMANTICS,  // Needed to open a directory.
+                   NULL));
+  ASSERT_TRUE(dir.IsValid());
+
+  base::File::Info info;
+  EXPECT_TRUE(dir.GetInfo(&info));
+  EXPECT_TRUE(info.is_directory);
+  EXPECT_FALSE(info.is_symbolic_link);
+  EXPECT_EQ(0, info.size);
+}
+#endif  // defined(OS_WIN)

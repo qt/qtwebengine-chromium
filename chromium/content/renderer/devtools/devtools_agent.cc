@@ -12,6 +12,7 @@
 #include "base/process/process.h"
 #include "base/strings/string_number_conversions.h"
 #include "content/common/devtools_messages.h"
+#include "content/common/frame_messages.h"
 #include "content/common/gpu/gpu_messages.h"
 #include "content/common/view_messages.h"
 #include "content/renderer/devtools/devtools_agent_filter.h"
@@ -23,6 +24,7 @@
 #include "third_party/WebKit/public/web/WebConsoleMessage.h"
 #include "third_party/WebKit/public/web/WebConsoleMessage.h"
 #include "third_party/WebKit/public/web/WebDevToolsAgent.h"
+#include "third_party/WebKit/public/web/WebDeviceEmulationParams.h"
 #include "third_party/WebKit/public/web/WebFrame.h"
 #include "third_party/WebKit/public/web/WebSettings.h"
 #include "third_party/WebKit/public/web/WebView.h"
@@ -75,7 +77,8 @@ DevToolsAgent::DevToolsAgent(RenderViewImpl* render_view)
     : RenderViewObserver(render_view),
       is_attached_(false),
       is_devtools_client_(false),
-      gpu_route_id_(MSG_ROUTING_NONE) {
+      gpu_route_id_(MSG_ROUTING_NONE),
+      paused_in_mouse_move_(false) {
   g_agent_for_routing_id.Get()[routing_id()] = this;
 
   render_view->webview()->setDevToolsAgentClient(this);
@@ -85,7 +88,7 @@ DevToolsAgent::DevToolsAgent(RenderViewImpl* render_view)
 
 DevToolsAgent::~DevToolsAgent() {
   g_agent_for_routing_id.Get().erase(routing_id());
-  setTraceEventCallback(NULL);
+  resetTraceEventCallback();
 }
 
 // Called on the Renderer thread.
@@ -105,7 +108,7 @@ bool DevToolsAgent::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
 
-  if (message.type() == ViewMsg_Navigate::ID ||
+  if (message.type() == FrameMsg_Navigate::ID ||
       message.type() == ViewMsg_Close::ID)
     ContinueProgram();  // Don't want to swallow the message.
 
@@ -118,7 +121,7 @@ void DevToolsAgent::sendMessageToInspectorFrontend(
                                                          message.utf8()));
 }
 
-int DevToolsAgent::hostIdentifier() {
+int DevToolsAgent::debuggerId() {
   return routing_id();
 }
 
@@ -132,25 +135,47 @@ blink::WebDevToolsAgentClient::WebKitClientMessageLoop*
   return new WebKitClientMessageLoopImpl();
 }
 
-void DevToolsAgent::clearBrowserCache() {
-  Send(new DevToolsHostMsg_ClearBrowserCache(routing_id()));
+void DevToolsAgent::willEnterDebugLoop() {
+  RenderViewImpl* impl = static_cast<RenderViewImpl*>(render_view());
+  paused_in_mouse_move_ = impl->SendAckForMouseMoveFromDebugger();
 }
 
-void DevToolsAgent::clearBrowserCookies() {
-  Send(new DevToolsHostMsg_ClearBrowserCookies(routing_id()));
+void DevToolsAgent::didExitDebugLoop() {
+  RenderViewImpl* impl = static_cast<RenderViewImpl*>(render_view());
+  if (paused_in_mouse_move_) {
+    impl->IgnoreAckForMouseMoveFromDebugger();
+    paused_in_mouse_move_ = false;
+  }
 }
 
-void DevToolsAgent::setTraceEventCallback(TraceEventCallback cb) {
+void DevToolsAgent::resetTraceEventCallback()
+{
+  TraceLog::GetInstance()->SetEventCallbackDisabled();
+  base::subtle::NoBarrier_Store(&event_callback_, 0);
+}
+
+void DevToolsAgent::setTraceEventCallback(const WebString& category_filter,
+                                          TraceEventCallback cb) {
   TraceLog* trace_log = TraceLog::GetInstance();
   base::subtle::NoBarrier_Store(&event_callback_,
                                 reinterpret_cast<base::subtle::AtomicWord>(cb));
   if (!!cb) {
     trace_log->SetEventCallbackEnabled(base::debug::CategoryFilter(
-        base::debug::CategoryFilter::kDefaultCategoryFilterString),
-        TraceEventCallbackWrapper);
+        category_filter.utf8()), TraceEventCallbackWrapper);
   } else {
     trace_log->SetEventCallbackDisabled();
   }
+}
+
+void DevToolsAgent::enableTracing(const WebString& category_filter) {
+  TraceLog* trace_log = TraceLog::GetInstance();
+  trace_log->SetEnabled(base::debug::CategoryFilter(category_filter.utf8()),
+                        TraceLog::RECORDING_MODE,
+                        TraceLog::RECORD_UNTIL_FULL);
+}
+
+void DevToolsAgent::disableTracing() {
+  TraceLog::GetInstance()->SetDisabled();
 }
 
 // static
@@ -181,10 +206,13 @@ void DevToolsAgent::startGPUEventsRecording() {
   if (!gpu_channel_host)
     return;
   DCHECK(gpu_route_id_ == MSG_ROUTING_NONE);
+  int32 route_id = gpu_channel_host->GenerateRouteID();
+  bool succeeded = false;
   gpu_channel_host->Send(
-      new GpuChannelMsg_DevToolsStartEventsRecording(&gpu_route_id_));
-  DCHECK(gpu_route_id_ != MSG_ROUTING_NONE);
-  if (gpu_route_id_ != MSG_ROUTING_NONE) {
+      new GpuChannelMsg_DevToolsStartEventsRecording(route_id, &succeeded));
+  DCHECK(succeeded);
+  if (succeeded) {
+    gpu_route_id_ = route_id;
     gpu_channel_host->AddRoute(gpu_route_id_, AsWeakPtr());
   }
 }
@@ -205,26 +233,29 @@ void DevToolsAgent::OnGpuTasksChunk(const std::vector<GpuTaskInfo>& tasks) {
     return;
   for (size_t i = 0; i < tasks.size(); i++) {
     const GpuTaskInfo& task = tasks[i];
-    WebDevToolsAgent::GPUEvent event(task.timestamp, task.phase, task.foreign,
-        static_cast<size_t>(task.used_gpu_memory_bytes));
+    WebDevToolsAgent::GPUEvent event(
+        task.timestamp, task.phase, task.foreign, task.gpu_memory_used_bytes);
+    event.limitGPUMemoryBytes = task.gpu_memory_limit_bytes;
     web_agent->processGPUEvent(event);
   }
 }
 
 void DevToolsAgent::enableDeviceEmulation(
-    const blink::WebRect& device_rect,
-    const blink::WebRect& view_rect,
-    float device_scale_factor,
-    bool fit_to_view) {
+    const blink::WebDeviceEmulationParams& params) {
   RenderViewImpl* impl = static_cast<RenderViewImpl*>(render_view());
-  impl->webview()->settings()->setForceCompositingMode(true);
-  impl->EnableScreenMetricsEmulation(gfx::Rect(device_rect),
-      gfx::Rect(view_rect), device_scale_factor, fit_to_view);
+  impl->EnableScreenMetricsEmulation(params);
 }
 
 void DevToolsAgent::disableDeviceEmulation() {
   RenderViewImpl* impl = static_cast<RenderViewImpl*>(render_view());
   impl->DisableScreenMetricsEmulation();
+}
+
+void DevToolsAgent::setTouchEventEmulationEnabled(
+    bool enabled, bool allow_pinch) {
+  RenderViewImpl* impl = static_cast<RenderViewImpl*>(render_view());
+  impl->Send(new ViewHostMsg_SetTouchEventEmulationEnabled(
+      impl->routing_id(), enabled, allow_pinch));
 }
 
 #if defined(USE_TCMALLOC) && !defined(OS_WIN)
@@ -242,26 +273,28 @@ void DevToolsAgent::visitAllocatedObjects(AllocatedObjectVisitor* visitor) {
 }
 
 // static
-DevToolsAgent* DevToolsAgent::FromHostId(int host_id) {
-  IdToAgentMap::iterator it = g_agent_for_routing_id.Get().find(host_id);
+DevToolsAgent* DevToolsAgent::FromRoutingId(int routing_id) {
+  IdToAgentMap::iterator it = g_agent_for_routing_id.Get().find(routing_id);
   if (it != g_agent_for_routing_id.Get().end()) {
     return it->second;
   }
   return NULL;
 }
 
-void DevToolsAgent::OnAttach() {
+void DevToolsAgent::OnAttach(const std::string& host_id) {
   WebDevToolsAgent* web_agent = GetWebAgent();
   if (web_agent) {
-    web_agent->attach();
+    web_agent->attach(WebString::fromUTF8(host_id));
     is_attached_ = true;
   }
 }
 
-void DevToolsAgent::OnReattach(const std::string& agent_state) {
+void DevToolsAgent::OnReattach(const std::string& host_id,
+                               const std::string& agent_state) {
   WebDevToolsAgent* web_agent = GetWebAgent();
   if (web_agent) {
-    web_agent->reattach(WebString::fromUTF8(agent_state));
+    web_agent->reattach(WebString::fromUTF8(host_id),
+                        WebString::fromUTF8(agent_state));
     is_attached_ = true;
   }
 }
@@ -281,11 +314,13 @@ void DevToolsAgent::OnDispatchOnInspectorBackend(const std::string& message) {
     web_agent->dispatchOnInspectorBackend(WebString::fromUTF8(message));
 }
 
-void DevToolsAgent::OnInspectElement(int x, int y) {
+void DevToolsAgent::OnInspectElement(
+    const std::string& host_id, int x, int y) {
   WebDevToolsAgent* web_agent = GetWebAgent();
   if (web_agent) {
-    web_agent->attach();
+    web_agent->attach(WebString::fromUTF8(host_id));
     web_agent->inspectElementAt(WebPoint(x, y));
+    is_attached_ = true;
   }
 }
 

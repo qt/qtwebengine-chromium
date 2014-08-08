@@ -48,8 +48,9 @@ class MEDIA_EXPORT AudioManagerBase : public AudioManager {
 
   virtual ~AudioManagerBase();
 
-  virtual scoped_refptr<base::MessageLoopProxy> GetMessageLoop() OVERRIDE;
-  virtual scoped_refptr<base::MessageLoopProxy> GetWorkerLoop() OVERRIDE;
+  virtual scoped_refptr<base::SingleThreadTaskRunner> GetTaskRunner() OVERRIDE;
+  virtual scoped_refptr<base::SingleThreadTaskRunner> GetWorkerTaskRunner()
+      OVERRIDE;
 
   virtual base::string16 GetAudioInputDeviceModel() OVERRIDE;
 
@@ -63,16 +64,14 @@ class MEDIA_EXPORT AudioManagerBase : public AudioManager {
 
   virtual AudioOutputStream* MakeAudioOutputStream(
       const AudioParameters& params,
-      const std::string& device_id,
-      const std::string& input_device_id) OVERRIDE;
+      const std::string& device_id) OVERRIDE;
 
   virtual AudioInputStream* MakeAudioInputStream(
       const AudioParameters& params, const std::string& device_id) OVERRIDE;
 
   virtual AudioOutputStream* MakeAudioOutputStreamProxy(
       const AudioParameters& params,
-      const std::string& device_id,
-      const std::string& input_device_id) OVERRIDE;
+      const std::string& device_id) OVERRIDE;
 
   // Called internally by the audio stream when it has been closed.
   virtual void ReleaseOutputStream(AudioOutputStream* stream);
@@ -84,11 +83,9 @@ class MEDIA_EXPORT AudioManagerBase : public AudioManager {
       const AudioParameters& params) = 0;
 
   // Creates the output stream for the |AUDIO_PCM_LOW_LATENCY| format.
-  // |input_device_id| is used by unified IO to open the correct input device.
   virtual AudioOutputStream* MakeLowLatencyOutputStream(
       const AudioParameters& params,
-      const std::string& device_id,
-      const std::string& input_device_id) = 0;
+      const std::string& device_id) = 0;
 
   // Creates the input stream for the |AUDIO_PCM_LINEAR| format. The legacy
   // name is also from |AUDIO_PCM_LINEAR|.
@@ -99,7 +96,7 @@ class MEDIA_EXPORT AudioManagerBase : public AudioManager {
   virtual AudioInputStream* MakeLowLatencyInputStream(
       const AudioParameters& params, const std::string& device_id) = 0;
 
-  // Listeners will be notified on the AudioManager::GetMessageLoop() loop.
+  // Listeners will be notified on the GetTaskRunner() task runner.
   virtual void AddOutputDeviceChangeListener(
       AudioDeviceListener* listener) OVERRIDE;
   virtual void RemoveOutputDeviceChangeListener(
@@ -118,7 +115,9 @@ class MEDIA_EXPORT AudioManagerBase : public AudioManager {
   virtual scoped_ptr<AudioLog> CreateAudioLog(
       AudioLogFactory::AudioComponent component) OVERRIDE;
 
-  virtual void FixWedgedAudio() OVERRIDE;
+  // Get number of input or output streams.
+  int input_stream_count() const { return num_input_streams_; }
+  int output_stream_count() const { return num_output_streams_; }
 
  protected:
   AudioManagerBase(AudioLogFactory* audio_log_factory);
@@ -155,10 +154,6 @@ class MEDIA_EXPORT AudioManagerBase : public AudioManager {
   // Implementations that don't yet support this should return an empty string.
   virtual std::string GetDefaultOutputDeviceID();
 
-  // Get number of input or output streams.
-  int input_stream_count() { return num_input_streams_; }
-  int output_stream_count() { return num_output_streams_; }
-
  private:
   struct DispatcherParams;
   typedef ScopedVector<DispatcherParams> AudioOutputDispatchers;
@@ -187,10 +182,10 @@ class MEDIA_EXPORT AudioManagerBase : public AudioManager {
   // Thread used to interact with audio streams created by this audio manager.
   base::Thread audio_thread_;
 
-  // The message loop of the audio thread this object runs on. Used for internal
+  // The task runner of the audio thread this object runs on. Used for internal
   // tasks which run on the audio thread even after Shutdown() has been started
-  // and GetMessageLoop() starts returning NULL.
-  scoped_refptr<base::MessageLoopProxy> message_loop_;
+  // and GetTaskRunner() starts returning NULL.
+  scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
 
   // Map of cached AudioOutputDispatcher instances.  Must only be touched
   // from the audio thread (no locking).

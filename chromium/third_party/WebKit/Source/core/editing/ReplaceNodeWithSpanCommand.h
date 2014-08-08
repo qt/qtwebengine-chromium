@@ -38,23 +38,25 @@ namespace WebCore {
 class HTMLElement;
 
 // More accurately, this is ReplaceElementWithSpanPreservingChildrenAndAttributesCommand
-class ReplaceNodeWithSpanCommand : public SimpleEditCommand {
+class ReplaceNodeWithSpanCommand FINAL : public SimpleEditCommand {
 public:
-    static PassRefPtr<ReplaceNodeWithSpanCommand> create(PassRefPtr<HTMLElement> element)
+    static PassRefPtrWillBeRawPtr<ReplaceNodeWithSpanCommand> create(PassRefPtrWillBeRawPtr<HTMLElement> element)
     {
-        return adoptRef(new ReplaceNodeWithSpanCommand(element));
+        return adoptRefWillBeNoop(new ReplaceNodeWithSpanCommand(element));
     }
 
     HTMLElement* spanElement() { return m_spanElement.get(); }
 
+    virtual void trace(Visitor*) OVERRIDE;
+
 private:
-    explicit ReplaceNodeWithSpanCommand(PassRefPtr<HTMLElement>);
+    explicit ReplaceNodeWithSpanCommand(PassRefPtrWillBeRawPtr<HTMLElement>);
 
     virtual void doApply() OVERRIDE;
     virtual void doUnapply() OVERRIDE;
 
-    RefPtr<HTMLElement> m_elementToReplace;
-    RefPtr<HTMLElement> m_spanElement;
+    RefPtrWillBeMember<HTMLElement> m_elementToReplace;
+    RefPtrWillBeMember<HTMLElement> m_spanElement;
 };
 
 } // namespace WebCore

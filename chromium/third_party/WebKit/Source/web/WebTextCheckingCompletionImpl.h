@@ -31,15 +31,15 @@
 #ifndef WebTextCheckingCompletionImpl_h
 #define WebTextCheckingCompletionImpl_h
 
-#include "WebTextCheckingCompletion.h"
 #include "platform/text/TextChecking.h"
+#include "public/web/WebTextCheckingCompletion.h"
 #include "wtf/RefPtr.h"
 
 namespace blink {
 
 class EditorClientImpl;
 
-class WebTextCheckingCompletionImpl : public WebTextCheckingCompletion {
+class WebTextCheckingCompletionImpl FINAL : public WebTextCheckingCompletion {
 public:
     explicit WebTextCheckingCompletionImpl(WTF::PassRefPtr<WebCore::TextCheckingRequest> request)
         : m_request(request)

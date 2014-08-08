@@ -161,7 +161,7 @@ mnote_canon_tag_get_title (MnoteCanonTag t)
 	unsigned int i;
 
 #if defined(BIND_TEXTDOMAIN)
-        bindtextdomain (GETTEXT_PACKAGE, LOCALEDIR);
+	bindtextdomain (GETTEXT_PACKAGE, LOCALEDIR); 
 #endif
 	for (i = 0; i < sizeof (table) / sizeof (table[0]); i++)
 		if (table[i].tag == t) return (_(table[i].title));

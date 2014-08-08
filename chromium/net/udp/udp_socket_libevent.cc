@@ -47,10 +47,10 @@ int GetIPv4AddressFromIndex(int socket, uint32 index, uint32* address){
   ifreq ifr;
   ifr.ifr_addr.sa_family = AF_INET;
   if (!if_indextoname(index, ifr.ifr_name))
-    return ERR_FAILED;
+    return MapSystemError(errno);
   int rv = ioctl(socket, SIOCGIFADDR, &ifr);
-  if (!rv)
-    return MapSystemError(rv);
+  if (rv == -1)
+    return MapSystemError(errno);
   *address = reinterpret_cast<sockaddr_in*>(&ifr.ifr_addr)->sin_addr.s_addr;
   return OK;
 }
@@ -128,7 +128,7 @@ int UDPSocketLibevent::GetPeerAddress(IPEndPoint* address) const {
       return MapSystemError(errno);
     scoped_ptr<IPEndPoint> address(new IPEndPoint());
     if (!address->FromSockAddr(storage.addr, storage.addr_len))
-      return ERR_FAILED;
+      return ERR_ADDRESS_INVALID;
     remote_address_.reset(address.release());
   }
 
@@ -148,7 +148,7 @@ int UDPSocketLibevent::GetLocalAddress(IPEndPoint* address) const {
       return MapSystemError(errno);
     scoped_ptr<IPEndPoint> address(new IPEndPoint());
     if (!address->FromSockAddr(storage.addr, storage.addr_len))
-      return ERR_FAILED;
+      return ERR_ADDRESS_INVALID;
     local_address_.reset(address.release());
     net_log_.AddEvent(NetLog::TYPE_UDP_LOCAL_ADDRESS,
                       CreateNetLogUDPConnectCallback(local_address_.get()));
@@ -271,7 +271,7 @@ int UDPSocketLibevent::InternalConnect(const IPEndPoint& address) {
   // else connect() does the DatagramSocket::DEFAULT_BIND
 
   if (rv < 0) {
-    UMA_HISTOGRAM_SPARSE_SLOWLY("Net.UdpSocketRandomBindErrorCode", rv);
+    UMA_HISTOGRAM_SPARSE_SLOWLY("Net.UdpSocketRandomBindErrorCode", -rv);
     Close();
     return rv;
   }
@@ -315,20 +315,22 @@ int UDPSocketLibevent::Bind(const IPEndPoint& address) {
   return rv;
 }
 
-bool UDPSocketLibevent::SetReceiveBufferSize(int32 size) {
+int UDPSocketLibevent::SetReceiveBufferSize(int32 size) {
   DCHECK(CalledOnValidThread());
   int rv = setsockopt(socket_, SOL_SOCKET, SO_RCVBUF,
                       reinterpret_cast<const char*>(&size), sizeof(size));
-  DCHECK(!rv) << "Could not set socket receive buffer size: " << errno;
-  return rv == 0;
+  int last_error = errno;
+  DCHECK(!rv) << "Could not set socket receive buffer size: " << last_error;
+  return rv == 0 ? OK : MapSystemError(last_error);
 }
 
-bool UDPSocketLibevent::SetSendBufferSize(int32 size) {
+int UDPSocketLibevent::SetSendBufferSize(int32 size) {
   DCHECK(CalledOnValidThread());
   int rv = setsockopt(socket_, SOL_SOCKET, SO_SNDBUF,
                       reinterpret_cast<const char*>(&size), sizeof(size));
-  DCHECK(!rv) << "Could not set socket send buffer size: " << errno;
-  return rv == 0;
+  int last_error = errno;
+  DCHECK(!rv) << "Could not set socket send buffer size: " << last_error;
+  return rv == 0 ? OK : MapSystemError(last_error);
 }
 
 void UDPSocketLibevent::AllowAddressReuse() {
@@ -397,7 +399,7 @@ void UDPSocketLibevent::LogRead(int result,
     return;
   }
 
-  if (net_log_.IsLoggingAllEvents()) {
+  if (net_log_.IsLogging()) {
     DCHECK(addr_len > 0);
     DCHECK(addr);
 
@@ -448,7 +450,7 @@ void UDPSocketLibevent::LogWrite(int result,
     return;
   }
 
-  if (net_log_.IsLoggingAllEvents()) {
+  if (net_log_.IsLogging()) {
     net_log_.AddEvent(
         NetLog::TYPE_UDP_BYTES_SENT,
         CreateNetLogUDPDataTranferCallback(result, bytes, address));
@@ -476,7 +478,7 @@ int UDPSocketLibevent::InternalRecvFrom(IOBuffer* buf, int buf_len,
   if (bytes_transferred >= 0) {
     result = bytes_transferred;
     if (address && !address->FromSockAddr(storage.addr, storage.addr_len))
-      result = ERR_FAILED;
+      result = ERR_ADDRESS_INVALID;
   } else {
     result = MapSystemError(errno);
   }
@@ -494,7 +496,7 @@ int UDPSocketLibevent::InternalSendTo(IOBuffer* buf, int buf_len,
     storage.addr_len = 0;
   } else {
     if (!address->ToSockAddr(storage.addr, &storage.addr_len)) {
-      int result = ERR_FAILED;
+      int result = ERR_ADDRESS_INVALID;
       LogWrite(result, NULL, NULL);
       return result;
     }
@@ -612,6 +614,13 @@ int UDPSocketLibevent::DoBind(const IPEndPoint& address) {
     return OK;
   int last_error = errno;
   UMA_HISTOGRAM_SPARSE_SLOWLY("Net.UdpSocketBindErrorFromPosix", last_error);
+#if defined(OS_CHROMEOS)
+  if (last_error == EINVAL)
+    return ERR_ADDRESS_IN_USE;
+#elif defined(OS_MACOSX)
+  if (last_error == EADDRNOTAVAIL)
+    return ERR_ADDRESS_IN_USE;
+#endif
   return MapSystemError(last_error);
 }
 
@@ -758,6 +767,10 @@ int UDPSocketLibevent::SetDiffServCodePoint(DiffServCodePoint dscp) {
     return MapSystemError(errno);
 
   return OK;
+}
+
+void UDPSocketLibevent::DetachFromThread() {
+  base::NonThreadSafe::DetachFromThread();
 }
 
 }  // namespace net

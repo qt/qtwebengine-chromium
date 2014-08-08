@@ -63,13 +63,21 @@ class ResourceCreationAPI {
                                           int32_t target_segment,
                                           uint32_t selection_start,
                                           uint32_t selection_end) = 0;
-  virtual PP_Resource CreateKeyboardInputEvent(
+  virtual PP_Resource CreateKeyboardInputEvent_1_0(
       PP_Instance instance,
       PP_InputEvent_Type type,
       PP_TimeTicks time_stamp,
       uint32_t modifiers,
       uint32_t key_code,
       struct PP_Var character_text) = 0;
+  virtual PP_Resource CreateKeyboardInputEvent_1_2(
+      PP_Instance instance,
+      PP_InputEvent_Type type,
+      PP_TimeTicks time_stamp,
+      uint32_t modifiers,
+      uint32_t key_code,
+      struct PP_Var character_text,
+      struct PP_Var code) = 0;
   virtual PP_Resource CreateMouseInputEvent(
       PP_Instance instance,
       PP_InputEvent_Type type,
@@ -84,9 +92,6 @@ class ResourceCreationAPI {
       PP_InputEvent_Type type,
       PP_TimeTicks time_stamp,
       uint32_t modifiers) = 0;
-  virtual PP_Resource CreateResourceArray(PP_Instance instance,
-                                          const PP_Resource elements[],
-                                          uint32_t size) = 0;
   virtual PP_Resource CreateTrueTypeFont(
       PP_Instance instance,
       const PP_TrueTypeFontDesc_Dev* desc) = 0;
@@ -114,6 +119,7 @@ class ResourceCreationAPI {
   virtual PP_Resource CreateAudioConfig(PP_Instance instance,
                                         PP_AudioSampleRate sample_rate,
                                         uint32_t sample_frame_count) = 0;
+  virtual PP_Resource CreateCompositor(PP_Instance instance) = 0;
   virtual PP_Resource CreateFileChooser(PP_Instance instance,
                                         PP_FileChooserMode_Dev mode,
                                         const PP_Var& accept_types) = 0;
@@ -136,6 +142,7 @@ class ResourceCreationAPI {
                                             PP_ImageDataFormat format,
                                             const PP_Size* size,
                                             PP_Bool init_to_zero) = 0;
+  virtual PP_Resource CreateMediaStreamVideoTrack(PP_Instance instance) = 0;
   virtual PP_Resource CreateNetAddressFromIPv4Address(
       PP_Instance instance,
       const PP_NetAddress_IPv4* ipv4_addr) = 0;
@@ -154,6 +161,7 @@ class ResourceCreationAPI {
   virtual PP_Resource CreateTCPSocketPrivate(PP_Instance instace) = 0;
   virtual PP_Resource CreateUDPSocket(PP_Instance instace) = 0;
   virtual PP_Resource CreateUDPSocketPrivate(PP_Instance instace) = 0;
+  virtual PP_Resource CreateVideoDecoder(PP_Instance instance) = 0;
   virtual PP_Resource CreateVideoDestination(PP_Instance instance) = 0;
   virtual PP_Resource CreateVideoSource(PP_Instance instance) = 0;
   virtual PP_Resource CreateWebSocket(PP_Instance instance) = 0;
@@ -179,7 +187,7 @@ class ResourceCreationAPI {
                                       PP_Bool vertical) = 0;
   virtual PP_Resource CreateTalk(PP_Instance instance) = 0;
   virtual PP_Resource CreateVideoCapture(PP_Instance instance) = 0;
-  virtual PP_Resource CreateVideoDecoder(
+  virtual PP_Resource CreateVideoDecoderDev(
       PP_Instance instance,
       PP_Resource context3d_id,
       PP_VideoDecoder_Profile profile) = 0;

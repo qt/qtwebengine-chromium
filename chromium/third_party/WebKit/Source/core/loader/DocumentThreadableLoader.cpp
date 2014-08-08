@@ -37,9 +37,10 @@
 #include "core/fetch/FetchRequest.h"
 #include "core/fetch/Resource.h"
 #include "core/fetch/ResourceFetcher.h"
-#include "core/frame/ContentSecurityPolicy.h"
-#include "core/frame/Frame.h"
+#include "core/frame/LocalFrame.h"
+#include "core/frame/csp/ContentSecurityPolicy.h"
 #include "core/inspector/InspectorInstrumentation.h"
+#include "core/inspector/InspectorTraceEvents.h"
 #include "core/loader/CrossOriginPreflightResultCache.h"
 #include "core/loader/DocumentThreadableLoaderClient.h"
 #include "core/loader/FrameLoader.h"
@@ -52,37 +53,48 @@
 
 namespace WebCore {
 
-void DocumentThreadableLoader::loadResourceSynchronously(Document* document, const ResourceRequest& request, ThreadableLoaderClient& client, const ThreadableLoaderOptions& options)
+void DocumentThreadableLoader::loadResourceSynchronously(Document& document, const ResourceRequest& request, ThreadableLoaderClient& client, const ThreadableLoaderOptions& options, const ResourceLoaderOptions& resourceLoaderOptions)
 {
     // The loader will be deleted as soon as this function exits.
-    RefPtr<DocumentThreadableLoader> loader = adoptRef(new DocumentThreadableLoader(document, &client, LoadSynchronously, request, options));
+    RefPtr<DocumentThreadableLoader> loader = adoptRef(new DocumentThreadableLoader(document, &client, LoadSynchronously, request, options, resourceLoaderOptions));
     ASSERT(loader->hasOneRef());
 }
 
-PassRefPtr<DocumentThreadableLoader> DocumentThreadableLoader::create(Document* document, ThreadableLoaderClient* client, const ResourceRequest& request, const ThreadableLoaderOptions& options)
+PassRefPtr<DocumentThreadableLoader> DocumentThreadableLoader::create(Document& document, ThreadableLoaderClient* client, const ResourceRequest& request, const ThreadableLoaderOptions& options, const ResourceLoaderOptions& resourceLoaderOptions)
 {
-    RefPtr<DocumentThreadableLoader> loader = adoptRef(new DocumentThreadableLoader(document, client, LoadAsynchronously, request, options));
+    RefPtr<DocumentThreadableLoader> loader = adoptRef(new DocumentThreadableLoader(document, client, LoadAsynchronously, request, options, resourceLoaderOptions));
     if (!loader->resource())
-        loader = 0;
+        loader = nullptr;
     return loader.release();
 }
 
-DocumentThreadableLoader::DocumentThreadableLoader(Document* document, ThreadableLoaderClient* client, BlockingBehavior blockingBehavior, const ResourceRequest& request, const ThreadableLoaderOptions& options)
+DocumentThreadableLoader::DocumentThreadableLoader(Document& document, ThreadableLoaderClient* client, BlockingBehavior blockingBehavior, const ResourceRequest& request, const ThreadableLoaderOptions& options, const ResourceLoaderOptions& resourceLoaderOptions)
     : m_client(client)
     , m_document(document)
     , m_options(options)
+    , m_resourceLoaderOptions(resourceLoaderOptions)
+    , m_forceDoNotAllowStoredCredentials(false)
+    , m_securityOrigin(m_resourceLoaderOptions.securityOrigin)
     , m_sameOriginRequest(securityOrigin()->canRequest(request.url()))
     , m_simpleRequest(true)
     , m_async(blockingBehavior == LoadAsynchronously)
     , m_timeoutTimer(this, &DocumentThreadableLoader::didTimeout)
 {
-    ASSERT(document);
     ASSERT(client);
     // Setting an outgoing referer is only supported in the async code path.
     ASSERT(m_async || request.httpReferrer().isEmpty());
 
+    // Save any CORS simple headers on the request here. If this request redirects cross-origin, we cancel the old request
+    // create a new one, and copy these headers.
+    const HTTPHeaderMap& headerMap = request.httpHeaderFields();
+    HTTPHeaderMap::const_iterator end = headerMap.end();
+    for (HTTPHeaderMap::const_iterator it = headerMap.begin(); it != end; ++it) {
+        if (isOnAccessControlSimpleRequestHeaderWhitelist(it->key, it->value))
+            m_simpleRequestHeaders.add(it->key, it->value);
+    }
+
     if (m_sameOriginRequest || m_options.crossOriginRequestPolicy == AllowCrossOriginRequests) {
-        loadRequest(request, DoSecurityCheck);
+        loadRequest(request, m_resourceLoaderOptions);
         return;
     }
 
@@ -98,42 +110,37 @@ void DocumentThreadableLoader::makeCrossOriginAccessRequest(const ResourceReques
 {
     ASSERT(m_options.crossOriginRequestPolicy == UseAccessControl);
 
-    OwnPtr<ResourceRequest> crossOriginRequest = adoptPtr(new ResourceRequest(request));
+    if ((m_options.preflightPolicy == ConsiderPreflight && isSimpleCrossOriginAccessRequest(request.httpMethod(), request.httpHeaderFields())) || m_options.preflightPolicy == PreventPreflight) {
+        // Cross-origin requests are only allowed for HTTP and registered schemes. We would catch this when checking response headers later, but there is no reason to send a request that's guaranteed to be denied.
+        if (!SchemeRegistry::shouldTreatURLSchemeAsCORSEnabled(request.url().protocol())) {
+            m_client->didFailAccessControlCheck(ResourceError(errorDomainBlinkInternal, 0, request.url().string(), "Cross origin requests are only supported for HTTP."));
+            return;
+        }
 
-    if ((m_options.preflightPolicy == ConsiderPreflight && isSimpleCrossOriginAccessRequest(crossOriginRequest->httpMethod(), crossOriginRequest->httpHeaderFields())) || m_options.preflightPolicy == PreventPreflight) {
-        updateRequestForAccessControl(*crossOriginRequest, securityOrigin(), m_options.allowCredentials);
-        makeSimpleCrossOriginAccessRequest(*crossOriginRequest);
+        ResourceRequest crossOriginRequest(request);
+        ResourceLoaderOptions crossOriginOptions(m_resourceLoaderOptions);
+        updateRequestForAccessControl(crossOriginRequest, securityOrigin(), effectiveAllowCredentials());
+        loadRequest(crossOriginRequest, crossOriginOptions);
     } else {
         m_simpleRequest = false;
+
+        OwnPtr<ResourceRequest> crossOriginRequest = adoptPtr(new ResourceRequest(request));
+        OwnPtr<ResourceLoaderOptions> crossOriginOptions = adoptPtr(new ResourceLoaderOptions(m_resourceLoaderOptions));
         // Do not set the Origin header for preflight requests.
-        updateRequestForAccessControl(*crossOriginRequest, 0, m_options.allowCredentials);
+        updateRequestForAccessControl(*crossOriginRequest, 0, effectiveAllowCredentials());
         m_actualRequest = crossOriginRequest.release();
+        m_actualOptions = crossOriginOptions.release();
 
-        if (CrossOriginPreflightResultCache::shared().canSkipPreflight(securityOrigin()->toString(), m_actualRequest->url(), m_options.allowCredentials, m_actualRequest->httpMethod(), m_actualRequest->httpHeaderFields()))
-            preflightSuccess();
-        else
-            makeCrossOriginAccessRequestWithPreflight(*m_actualRequest);
+        if (CrossOriginPreflightResultCache::shared().canSkipPreflight(securityOrigin()->toString(), m_actualRequest->url(), effectiveAllowCredentials(), m_actualRequest->httpMethod(), m_actualRequest->httpHeaderFields())) {
+            loadActualRequest();
+        } else {
+            ResourceRequest preflightRequest = createAccessControlPreflightRequest(*m_actualRequest, securityOrigin());
+            // Create a ResourceLoaderOptions for preflight.
+            ResourceLoaderOptions preflightOptions = *m_actualOptions;
+            preflightOptions.allowCredentials = DoNotAllowStoredCredentials;
+            loadRequest(preflightRequest, preflightOptions);
+        }
     }
-}
-
-void DocumentThreadableLoader::makeSimpleCrossOriginAccessRequest(const ResourceRequest& request)
-{
-    ASSERT(m_options.preflightPolicy != ForcePreflight);
-    ASSERT(m_options.preflightPolicy == PreventPreflight || isSimpleCrossOriginAccessRequest(request.httpMethod(), request.httpHeaderFields()));
-
-    // Cross-origin requests are only allowed for HTTP and registered schemes. We would catch this when checking response headers later, but there is no reason to send a request that's guaranteed to be denied.
-    if (!SchemeRegistry::shouldTreatURLSchemeAsCORSEnabled(request.url().protocol())) {
-        m_client->didFailAccessControlCheck(ResourceError(errorDomainBlinkInternal, 0, request.url().string(), "Cross origin requests are only supported for HTTP."));
-        return;
-    }
-
-    loadRequest(request, DoSecurityCheck);
-}
-
-void DocumentThreadableLoader::makeCrossOriginAccessRequestWithPreflight(const ResourceRequest& request)
-{
-    ResourceRequest preflightRequest = createAccessControlPreflightRequest(request, securityOrigin());
-    loadRequest(preflightRequest, DoSecurityCheck);
 }
 
 DocumentThreadableLoader::~DocumentThreadableLoader()
@@ -157,7 +164,7 @@ void DocumentThreadableLoader::cancelWithError(const ResourceError& error)
             errorForCallback = ResourceError(errorDomainBlinkInternal, 0, resource()->url().string(), "Load cancelled");
             errorForCallback.setIsCancellation(true);
         }
-        didFail(resource()->identifier(), errorForCallback);
+        m_client->didFail(errorForCallback);
     }
     clearResource();
     m_client = 0;
@@ -193,19 +200,21 @@ void DocumentThreadableLoader::redirectReceived(Resource* resource, ResourceRequ
     // original request was not same-origin.
     if (m_options.crossOriginRequestPolicy == UseAccessControl) {
 
-        InspectorInstrumentation::didReceiveCORSRedirectResponse(m_document->frame(), resource->identifier(), m_document->frame()->loader().documentLoader(), redirectResponse, 0);
+        InspectorInstrumentation::didReceiveCORSRedirectResponse(m_document.frame(), resource->identifier(), m_document.frame()->loader().documentLoader(), redirectResponse, 0);
 
         bool allowRedirect = false;
         String accessControlErrorDescription;
 
         if (m_simpleRequest) {
-            allowRedirect = checkCrossOriginAccessRedirectionUrl(request.url(), accessControlErrorDescription)
-                            && (m_sameOriginRequest || passesAccessControlCheck(redirectResponse, m_options.allowCredentials, securityOrigin(), accessControlErrorDescription));
+            allowRedirect = CrossOriginAccessControl::isLegalRedirectLocation(request.url(), accessControlErrorDescription)
+                && (m_sameOriginRequest || passesAccessControlCheck(redirectResponse, effectiveAllowCredentials(), securityOrigin(), accessControlErrorDescription));
         } else {
             accessControlErrorDescription = "The request was redirected to '"+ request.url().string() + "', which is disallowed for cross-origin requests that require preflight.";
         }
 
         if (allowRedirect) {
+            // FIXME: consider combining this with CORS redirect handling performed by
+            // CrossOriginAccessControl::handleRedirect().
             clearResource();
 
             RefPtr<SecurityOrigin> originalOrigin = SecurityOrigin::create(redirectResponse.url());
@@ -214,21 +223,24 @@ void DocumentThreadableLoader::redirectReceived(Resource* resource, ResourceRequ
             // set the source origin to a globally unique identifier. (If the original request was same-origin, the origin of the new request
             // should be the original URL origin.)
             if (!m_sameOriginRequest && !originalOrigin->isSameSchemeHostPort(requestOrigin.get()))
-                m_options.securityOrigin = SecurityOrigin::createUnique();
+                m_securityOrigin = SecurityOrigin::createUnique();
             // Force any subsequent requests to use these checks.
             m_sameOriginRequest = false;
 
             // Since the request is no longer same-origin, if the user didn't request credentials in
             // the first place, update our state so we neither request them nor expect they must be allowed.
-            if (m_options.credentialsRequested == ClientDidNotRequestCredentials)
-                m_options.allowCredentials = DoNotAllowStoredCredentials;
+            if (m_resourceLoaderOptions.credentialsRequested == ClientDidNotRequestCredentials)
+                m_forceDoNotAllowStoredCredentials = true;
 
             // Remove any headers that may have been added by the network layer that cause access control to fail.
-            request.clearHTTPContentType();
             request.clearHTTPReferrer();
             request.clearHTTPOrigin();
             request.clearHTTPUserAgent();
-            request.clearHTTPAccept();
+            // Add any CORS simple request headers which we previously saved from the original request.
+            HTTPHeaderMap::const_iterator end = m_simpleRequestHeaders.end();
+            for (HTTPHeaderMap::const_iterator it = m_simpleRequestHeaders.begin(); it != end; ++it) {
+                request.setHTTPHeaderField(it->key, it->value);
+            }
             makeCrossOriginAccessRequest(request);
             return;
         }
@@ -260,66 +272,75 @@ void DocumentThreadableLoader::dataDownloaded(Resource* resource, int dataLength
 void DocumentThreadableLoader::responseReceived(Resource* resource, const ResourceResponse& response)
 {
     ASSERT_UNUSED(resource, resource == this->resource());
-    didReceiveResponse(resource->identifier(), response);
+    handleResponse(resource->identifier(), response);
 }
 
-void DocumentThreadableLoader::didReceiveResponse(unsigned long identifier, const ResourceResponse& response)
+void DocumentThreadableLoader::handlePreflightResponse(unsigned long identifier, const ResourceResponse& response)
+{
+    // Notifying the inspector here is necessary because a call to handlePreflightFailure() might synchronously
+    // cause the underlying ResourceLoader to be cancelled before it tells the inspector about the response.
+    // In that case, if we don't tell the inspector about the response now, the resource type in the inspector
+    // will default to "other" instead of something more descriptive.
+    DocumentLoader* loader = m_document.frame()->loader().documentLoader();
+    TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "ResourceReceiveResponse", "data", InspectorReceiveResponseEvent::data(identifier, m_document.frame(), response));
+    // FIXME(361045): remove InspectorInstrumentation calls once DevTools Timeline migrates to tracing.
+    InspectorInstrumentation::didReceiveResourceResponse(m_document.frame(), identifier, loader, response, resource() ? resource()->loader() : 0);
+
+    String accessControlErrorDescription;
+
+    if (!passesAccessControlCheck(response, effectiveAllowCredentials(), securityOrigin(), accessControlErrorDescription)) {
+        handlePreflightFailure(response.url().string(), accessControlErrorDescription);
+        return;
+    }
+
+    if (!passesPreflightStatusCheck(response, accessControlErrorDescription)) {
+        handlePreflightFailure(response.url().string(), accessControlErrorDescription);
+        return;
+    }
+
+    OwnPtr<CrossOriginPreflightResultCacheItem> preflightResult = adoptPtr(new CrossOriginPreflightResultCacheItem(effectiveAllowCredentials()));
+    if (!preflightResult->parse(response, accessControlErrorDescription)
+        || !preflightResult->allowsCrossOriginMethod(m_actualRequest->httpMethod(), accessControlErrorDescription)
+        || !preflightResult->allowsCrossOriginHeaders(m_actualRequest->httpHeaderFields(), accessControlErrorDescription)) {
+        handlePreflightFailure(response.url().string(), accessControlErrorDescription);
+        return;
+    }
+
+    CrossOriginPreflightResultCache::shared().appendEntry(securityOrigin()->toString(), m_actualRequest->url(), preflightResult.release());
+}
+
+void DocumentThreadableLoader::handleResponse(unsigned long identifier, const ResourceResponse& response)
 {
     ASSERT(m_client);
 
-    String accessControlErrorDescription;
     if (m_actualRequest) {
-        DocumentLoader* loader = m_document->frame()->loader().documentLoader();
-        InspectorInstrumentation::didReceiveResourceResponse(m_document->frame(), identifier, loader, response, resource() ? resource()->loader() : 0);
-
-        if (!passesAccessControlCheck(response, m_options.allowCredentials, securityOrigin(), accessControlErrorDescription)) {
-            preflightFailure(identifier, response.url().string(), accessControlErrorDescription);
-            return;
-        }
-
-        if (!passesPreflightStatusCheck(response, accessControlErrorDescription)) {
-            preflightFailure(identifier, response.url().string(), accessControlErrorDescription);
-            return;
-        }
-
-        OwnPtr<CrossOriginPreflightResultCacheItem> preflightResult = adoptPtr(new CrossOriginPreflightResultCacheItem(m_options.allowCredentials));
-        if (!preflightResult->parse(response, accessControlErrorDescription)
-            || !preflightResult->allowsCrossOriginMethod(m_actualRequest->httpMethod(), accessControlErrorDescription)
-            || !preflightResult->allowsCrossOriginHeaders(m_actualRequest->httpHeaderFields(), accessControlErrorDescription)) {
-            preflightFailure(identifier, response.url().string(), accessControlErrorDescription);
-            return;
-        }
-
-        CrossOriginPreflightResultCache::shared().appendEntry(securityOrigin()->toString(), m_actualRequest->url(), preflightResult.release());
-    } else {
-        if (!m_sameOriginRequest && m_options.crossOriginRequestPolicy == UseAccessControl) {
-            if (!passesAccessControlCheck(response, m_options.allowCredentials, securityOrigin(), accessControlErrorDescription)) {
-                m_client->didFailAccessControlCheck(ResourceError(errorDomainBlinkInternal, 0, response.url().string(), accessControlErrorDescription));
-                return;
-            }
-        }
-
-        m_client->didReceiveResponse(identifier, response);
+        handlePreflightResponse(identifier, response);
+        return;
     }
+
+    if (!m_sameOriginRequest && m_options.crossOriginRequestPolicy == UseAccessControl) {
+        String accessControlErrorDescription;
+        if (!passesAccessControlCheck(response, effectiveAllowCredentials(), securityOrigin(), accessControlErrorDescription)) {
+            m_client->didFailAccessControlCheck(ResourceError(errorDomainBlinkInternal, 0, response.url().string(), accessControlErrorDescription));
+            return;
+        }
+    }
+
+    m_client->didReceiveResponse(identifier, response);
 }
 
 void DocumentThreadableLoader::dataReceived(Resource* resource, const char* data, int dataLength)
 {
-    ASSERT(resource == this->resource());
-    didReceiveData(resource->identifier(), data, dataLength);
+    ASSERT_UNUSED(resource, resource == this->resource());
+    handleReceivedData(data, dataLength);
 }
 
-void DocumentThreadableLoader::didReceiveData(unsigned long identifier, const char* data, int dataLength)
+void DocumentThreadableLoader::handleReceivedData(const char* data, int dataLength)
 {
     ASSERT(m_client);
-
     // Preflight data should be invisible to clients.
-    if (m_actualRequest) {
-        InspectorInstrumentation::didReceiveData(m_document->frame(), identifier, 0, 0, dataLength);
-        return;
-    }
-
-    m_client->didReceiveData(data, dataLength);
+    if (!m_actualRequest)
+        m_client->didReceiveData(data, dataLength);
 }
 
 void DocumentThreadableLoader::notifyFinished(Resource* resource)
@@ -330,28 +351,19 @@ void DocumentThreadableLoader::notifyFinished(Resource* resource)
     m_timeoutTimer.stop();
 
     if (resource->errorOccurred())
-        didFail(resource->identifier(), resource->resourceError());
+        m_client->didFail(resource->resourceError());
     else
-        didFinishLoading(resource->identifier(), resource->loadFinishTime());
+        handleSuccessfulFinish(resource->identifier(), resource->loadFinishTime());
 }
 
-void DocumentThreadableLoader::didFinishLoading(unsigned long identifier, double finishTime)
+void DocumentThreadableLoader::handleSuccessfulFinish(unsigned long identifier, double finishTime)
 {
     if (m_actualRequest) {
-        InspectorInstrumentation::didFinishLoading(m_document->frame(), identifier, m_document->frame()->loader().documentLoader(), finishTime);
         ASSERT(!m_sameOriginRequest);
         ASSERT(m_options.crossOriginRequestPolicy == UseAccessControl);
-        preflightSuccess();
+        loadActualRequest();
     } else
         m_client->didFinishLoading(identifier, finishTime);
-}
-
-void DocumentThreadableLoader::didFail(unsigned long identifier, const ResourceError& error)
-{
-    if (m_actualRequest)
-        InspectorInstrumentation::didFailLoading(m_document->frame(), identifier, m_document->frame()->loader().documentLoader(), error);
-
-    m_client->didFail(error);
 }
 
 void DocumentThreadableLoader::didTimeout(Timer<DocumentThreadableLoader>* timer)
@@ -366,67 +378,70 @@ void DocumentThreadableLoader::didTimeout(Timer<DocumentThreadableLoader>* timer
     cancelWithError(error);
 }
 
-void DocumentThreadableLoader::preflightSuccess()
+void DocumentThreadableLoader::loadActualRequest()
 {
     OwnPtr<ResourceRequest> actualRequest;
     actualRequest.swap(m_actualRequest);
+    OwnPtr<ResourceLoaderOptions> actualOptions;
+    actualOptions.swap(m_actualOptions);
 
-    actualRequest->setHTTPOrigin(securityOrigin()->toString());
+    actualRequest->setHTTPOrigin(securityOrigin()->toAtomicString());
 
     clearResource();
 
-    // It should be ok to skip the security check since we already asked about the preflight request.
-    loadRequest(*actualRequest, SkipSecurityCheck);
+    loadRequest(*actualRequest, *actualOptions);
 }
 
-void DocumentThreadableLoader::preflightFailure(unsigned long identifier, const String& url, const String& errorDescription)
+void DocumentThreadableLoader::handlePreflightFailure(const String& url, const String& errorDescription)
 {
     ResourceError error(errorDomainBlinkInternal, 0, url, errorDescription);
-    if (m_actualRequest)
-        InspectorInstrumentation::didFailLoading(m_document->frame(), identifier, m_document->frame()->loader().documentLoader(), error);
-    m_actualRequest = nullptr; // Prevent didFinishLoading() from bypassing access check.
+
+    // Prevent handleSuccessfulFinish() from bypassing access check.
+    m_actualRequest = nullptr;
+
     m_client->didFailAccessControlCheck(error);
 }
 
-void DocumentThreadableLoader::loadRequest(const ResourceRequest& request, SecurityCheckPolicy securityCheck)
+void DocumentThreadableLoader::loadRequest(const ResourceRequest& request, ResourceLoaderOptions resourceLoaderOptions)
 {
     // Any credential should have been removed from the cross-site requests.
     const KURL& requestURL = request.url();
-    m_options.securityCheck = securityCheck;
     ASSERT(m_sameOriginRequest || requestURL.user().isEmpty());
     ASSERT(m_sameOriginRequest || requestURL.pass().isEmpty());
 
-    ThreadableLoaderOptions options = m_options;
+    // Update resourceLoaderOptions with enforced values.
+    if (m_forceDoNotAllowStoredCredentials)
+        resourceLoaderOptions.allowCredentials = DoNotAllowStoredCredentials;
+    resourceLoaderOptions.securityOrigin = m_securityOrigin;
     if (m_async) {
-        options.crossOriginCredentialPolicy = DoNotAskClientForCrossOriginCredentials;
         if (m_actualRequest) {
-            // Don't sniff content or send load callbacks for the preflight request.
-            options.sendLoadCallbacks = DoNotSendCallbacks;
-            options.sniffContent = DoNotSniffContent;
-            // Keep buffering the data for the preflight request.
-            options.dataBufferingPolicy = BufferData;
+            resourceLoaderOptions.sniffContent = DoNotSniffContent;
+            resourceLoaderOptions.dataBufferingPolicy = BufferData;
         }
 
         if (m_options.timeoutMilliseconds > 0)
-            m_timeoutTimer.startOneShot(m_options.timeoutMilliseconds / 1000.0);
+            m_timeoutTimer.startOneShot(m_options.timeoutMilliseconds / 1000.0, FROM_HERE);
 
-        FetchRequest newRequest(request, m_options.initiator, options);
+        FetchRequest newRequest(request, m_options.initiator, resourceLoaderOptions);
         ASSERT(!resource());
-        setResource(m_document->fetcher()->fetchRawResource(newRequest));
+        if (request.targetType() == ResourceRequest::TargetIsMedia)
+            setResource(m_document.fetcher()->fetchMedia(newRequest));
+        else
+            setResource(m_document.fetcher()->fetchRawResource(newRequest));
         if (resource() && resource()->loader()) {
             unsigned long identifier = resource()->identifier();
-            InspectorInstrumentation::documentThreadableLoaderStartedLoadingForClient(m_document, identifier, m_client);
+            InspectorInstrumentation::documentThreadableLoaderStartedLoadingForClient(&m_document, identifier, m_client);
         }
         return;
     }
 
-    FetchRequest fetchRequest(request, m_options.initiator, options);
-    ResourcePtr<Resource> resource = m_document->fetcher()->fetchSynchronously(fetchRequest);
+    FetchRequest fetchRequest(request, m_options.initiator, resourceLoaderOptions);
+    ResourcePtr<Resource> resource = m_document.fetcher()->fetchSynchronously(fetchRequest);
     ResourceResponse response = resource ? resource->response() : ResourceResponse();
     unsigned long identifier = resource ? resource->identifier() : std::numeric_limits<unsigned long>::max();
     ResourceError error = resource ? resource->resourceError() : ResourceError();
 
-    InspectorInstrumentation::documentThreadableLoaderStartedLoadingForClient(m_document, identifier, m_client);
+    InspectorInstrumentation::documentThreadableLoaderStartedLoadingForClient(&m_document, identifier, m_client);
 
     if (!resource) {
         m_client->didFail(error);
@@ -448,13 +463,13 @@ void DocumentThreadableLoader::loadRequest(const ResourceRequest& request, Secur
         return;
     }
 
-    didReceiveResponse(identifier, response);
+    handleResponse(identifier, response);
 
     SharedBuffer* data = resource->resourceBuffer();
     if (data)
-        didReceiveData(identifier, data->data(), data->size());
+        handleReceivedData(data->data(), data->size());
 
-    didFinishLoading(identifier, 0.0);
+    handleSuccessfulFinish(identifier, 0.0);
 }
 
 bool DocumentThreadableLoader::isAllowedRedirect(const KURL& url) const
@@ -469,27 +484,19 @@ bool DocumentThreadableLoader::isAllowedByPolicy(const KURL& url) const
 {
     if (m_options.contentSecurityPolicyEnforcement != EnforceConnectSrcDirective)
         return true;
-    return m_document->contentSecurityPolicy()->allowConnectToSource(url);
+    return m_document.contentSecurityPolicy()->allowConnectToSource(url);
+}
+
+StoredCredentials DocumentThreadableLoader::effectiveAllowCredentials() const
+{
+    if (m_forceDoNotAllowStoredCredentials)
+        return DoNotAllowStoredCredentials;
+    return m_resourceLoaderOptions.allowCredentials;
 }
 
 SecurityOrigin* DocumentThreadableLoader::securityOrigin() const
 {
-    return m_options.securityOrigin ? m_options.securityOrigin.get() : m_document->securityOrigin();
-}
-
-bool DocumentThreadableLoader::checkCrossOriginAccessRedirectionUrl(const KURL& requestUrl, String& errorDescription)
-{
-    if (!SchemeRegistry::shouldTreatURLSchemeAsCORSEnabled(requestUrl.protocol())) {
-        errorDescription = "The request was redirected to a URL ('" + requestUrl.string() + "') which has a disallowed scheme for cross-origin requests.";
-        return false;
-    }
-
-    if (!(requestUrl.user().isEmpty() && requestUrl.pass().isEmpty())) {
-        errorDescription = "The request was redirected to a URL ('" + requestUrl.string() + "') containing userinfo, which is disallowed for cross-origin requests.";
-        return false;
-    }
-
-    return true;
+    return m_securityOrigin ? m_securityOrigin.get() : m_document.securityOrigin();
 }
 
 } // namespace WebCore

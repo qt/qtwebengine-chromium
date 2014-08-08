@@ -26,20 +26,18 @@ interface Attr : Node {
 
     [MeasureAs=AttributeSpecified] readonly attribute boolean specified;
 
-    [TreatReturnedNullStringAs=Null, TreatNullAs=NullString, RaisesException=Setter, CustomElementCallbacks] attribute DOMString value;
+    [ImplementedAs=valueForBindings, TreatReturnedNullStringAs=Null, TreatNullAs=NullString, CustomElementCallbacks] attribute DOMString value;
+    [TreatReturnedNullStringAs=Null, TreatNullAs=NullString, DeprecateAs=AttrNodeValue, ImplementedAs=valueForBindings] attribute DOMString nodeValue;
+    [TreatReturnedNullStringAs=Null, TreatNullAs=NullString, DeprecateAs=AttrTextContent, ImplementedAs=valueForBindings] attribute DOMString textContent;
 
     // DOM Level 2
 
-    [MeasureAs=AttributeOwnerElement] readonly attribute Element ownerElement;
-
-    // DOM Level 3
-
-    [MeasureAs=AttributeIsId] readonly attribute boolean isId;
+    [DeprecateAs=AttributeOwnerElement] readonly attribute Element ownerElement;
 
     // DOM 4
 
-    [TreatReturnedNullStringAs=Null, TreatNullAs=NullString, PerWorldBindings, RaisesException=Setter] attribute DOMString prefix;
-    [TreatReturnedNullStringAs=Null, PerWorldBindings] readonly attribute DOMString namespaceURI;
-    [TreatReturnedNullStringAs=Null, PerWorldBindings] readonly attribute DOMString localName;
+    [TreatReturnedNullStringAs=Null] readonly attribute DOMString prefix;
+    [TreatReturnedNullStringAs=Null] readonly attribute DOMString namespaceURI;
+    [TreatReturnedNullStringAs=Null] readonly attribute DOMString localName;
 };
 

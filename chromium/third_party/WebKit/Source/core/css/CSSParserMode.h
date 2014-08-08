@@ -32,12 +32,13 @@
 #define CSSParserMode_h
 
 #include "platform/weborigin/KURL.h"
+#include "platform/weborigin/Referrer.h"
 
 namespace WebCore {
 
 class Document;
 
-// Must not grow beyond 3 bytes, due to packing in StylePropertySet.
+// Must not grow beyond 3 bits, due to packing in StylePropertySet.
 enum CSSParserMode {
     HTMLStandardMode,
     HTMLQuirksMode,
@@ -88,11 +89,18 @@ inline bool isUseCounterEnabledForMode(CSSParserMode mode)
     return mode != UASheetMode;
 }
 
+class UseCounter;
+
 class CSSParserContext {
     WTF_MAKE_FAST_ALLOCATED;
 public:
-    CSSParserContext(CSSParserMode);
-    CSSParserContext(const Document&, const KURL& baseURL = KURL(), const String& charset = emptyString());
+    CSSParserContext(CSSParserMode, UseCounter*);
+    // FIXME: We shouldn't need the UseCounter argument as we could infer it from the Document
+    // but some callers want to disable use counting (e.g. the WebInspector).
+    CSSParserContext(const Document&, UseCounter*, const KURL& baseURL = KURL(), const String& charset = emptyString());
+    // FIXME: This constructor shouldn't exist if we properly piped the UseCounter through the CSS
+    // subsystem. Currently the UseCounter life time is too crazy and we need a way to override it.
+    CSSParserContext(const CSSParserContext&, UseCounter*);
 
     bool operator==(const CSSParserContext&) const;
     bool operator!=(const CSSParserContext& other) const { return !(*this == other); }
@@ -100,6 +108,7 @@ public:
     CSSParserMode mode() const { return m_mode; }
     const KURL& baseURL() const { return m_baseURL; }
     const String& charset() const { return m_charset; }
+    const Referrer& referrer() const { return m_referrer; }
     bool isHTMLDocument() const { return m_isHTMLDocument; }
 
     // This quirk is to maintain compatibility with Android apps built on
@@ -112,13 +121,21 @@ public:
     void setMode(CSSParserMode mode) { m_mode = mode; }
     void setBaseURL(const KURL& baseURL) { m_baseURL = baseURL; }
     void setCharset(const String& charset) { m_charset = charset; }
+    void setReferrer(const Referrer& referrer) { m_referrer = referrer; }
+
+    KURL completeURL(const String& url) const;
+
+    UseCounter* useCounter() const { return m_useCounter; }
 
 private:
     KURL m_baseURL;
     String m_charset;
     CSSParserMode m_mode;
+    Referrer m_referrer;
     bool m_isHTMLDocument;
     bool m_useLegacyBackgroundSizeShorthandBehavior;
+
+    UseCounter* m_useCounter;
 };
 
 const CSSParserContext& strictCSSParserContext();

@@ -7,6 +7,7 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "content/browser/renderer_host/input/input_router_client.h"
+#include "content/common/input/did_overscroll_params.h"
 
 namespace content {
 
@@ -25,11 +26,13 @@ class MockInputRouterClient : public InputRouterClient {
   virtual void IncrementInFlightEventCount() OVERRIDE;
   virtual void DecrementInFlightEventCount() OVERRIDE;
   virtual void OnHasTouchEventHandlers(bool has_handlers) OVERRIDE;
-  virtual OverscrollController* GetOverscrollController() const OVERRIDE;
-  virtual void DidFlush() OVERRIDE;
   virtual void SetNeedsFlush() OVERRIDE;
+  virtual void DidFlush() OVERRIDE;
+  virtual void DidOverscroll(const DidOverscrollParams& params) OVERRIDE;
 
   bool GetAndResetFilterEventCalled();
+  size_t GetAndResetDidFlushCount();
+  DidOverscrollParams GetAndResetOverscroll();
 
   void set_input_router(InputRouter* input_router) {
     input_router_ = input_router;
@@ -46,9 +49,6 @@ class MockInputRouterClient : public InputRouterClient {
     filter_state_ = INPUT_EVENT_ACK_STATE_NO_CONSUMER_EXISTS;
   }
 
-  bool did_flush_called() const { return did_flush_called_; }
-  bool needs_flush_called() const { return set_needs_flush_called_; }
-
  private:
   InputRouter* input_router_;
   int in_flight_event_count_;
@@ -59,8 +59,10 @@ class MockInputRouterClient : public InputRouterClient {
   bool filter_input_event_called_;
   scoped_ptr<InputEvent> last_filter_event_;
 
-  bool did_flush_called_;
+  size_t did_flush_called_count_;
   bool set_needs_flush_called_;
+
+  DidOverscrollParams overscroll_;
 };
 
 }  // namespace content

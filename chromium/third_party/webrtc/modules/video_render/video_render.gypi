@@ -87,6 +87,12 @@
             'android/video_render_android_surface_view.cc',
             'android/video_render_opengles20.cc',
           ],
+        }, {
+          'link_settings': {
+            'libraries': [
+              '-lGLESv2',
+            ],
+          },
         }],
         ['OS!="ios" or include_internal_video_render==0', {
           'sources!': [
@@ -112,6 +118,12 @@
             'linux/video_x11_channel.cc',
             'linux/video_x11_render.cc',
           ],
+        }, {
+          'link_settings': {
+            'libraries': [
+              '-lXext',
+            ],
+          },
         }],
         ['OS!="mac" or include_internal_video_render==0', {
           'sources!': [
@@ -130,6 +142,9 @@
           ],
         }],
         ['OS=="ios"', {
+          'xcode_settings': {
+            'CLANG_ENABLE_OBJC_ARC': 'YES',
+          },
           'all_dependent_settings': {
             'xcode_settings': {
               'OTHER_LDFLAGS': [
@@ -205,11 +220,11 @@
               ],
             }],
             ['OS=="linux"', {
-              'libraries': [
-                '-lrt',
-                '-lXext',
-                '-lX11',
-              ],
+              'link_settings': {
+                'libraries': [
+                  '-lX11',
+                ],
+              },
             }],
             ['OS=="mac"', {
               'xcode_settings': {

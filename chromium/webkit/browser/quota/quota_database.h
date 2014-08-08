@@ -19,6 +19,10 @@
 #include "webkit/browser/webkit_storage_browser_export.h"
 #include "webkit/common/quota/quota_types.h"
 
+namespace content {
+class QuotaDatabaseTest;
+}
+
 namespace sql {
 class Connection;
 class MetaTable;
@@ -160,8 +164,8 @@ class WEBKIT_STORAGE_BROWSER_EXPORT_PRIVATE QuotaDatabase {
       const IndexSchema* indexes, size_t indexes_size);
 
   // |callback| may return false to stop reading data.
-  bool DumpQuotaTable(QuotaTableCallback* callback);
-  bool DumpOriginInfoTable(OriginInfoTableCallback* callback);
+  bool DumpQuotaTable(const QuotaTableCallback& callback);
+  bool DumpOriginInfoTable(const OriginInfoTableCallback& callback);
 
   base::FilePath db_file_path_;
 
@@ -172,7 +176,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT_PRIVATE QuotaDatabase {
 
   base::OneShotTimer<QuotaDatabase> timer_;
 
-  friend class QuotaDatabaseTest;
+  friend class content::QuotaDatabaseTest;
   friend class QuotaManager;
 
   static const TableSchema kTables[];

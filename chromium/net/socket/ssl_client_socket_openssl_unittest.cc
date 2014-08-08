@@ -16,7 +16,6 @@
 #include "base/file_util.h"
 #include "base/files/file_path.h"
 #include "base/memory/ref_counted.h"
-#include "base/memory/scoped_handle.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/values.h"
 #include "crypto/openssl_util.h"
@@ -35,9 +34,7 @@
 #include "net/socket/client_socket_handle.h"
 #include "net/socket/socket_test_util.h"
 #include "net/socket/tcp_client_socket.h"
-#include "net/ssl/default_server_bound_cert_store.h"
 #include "net/ssl/openssl_client_key_store.h"
-#include "net/ssl/server_bound_cert_service.h"
 #include "net/ssl/ssl_cert_request_info.h"
 #include "net/ssl/ssl_config_service.h"
 #include "net/test/cert_test_util.h"
@@ -49,6 +46,8 @@ namespace net {
 
 namespace {
 
+// These client auth tests are currently dependent on OpenSSL's struct X509.
+#if defined(USE_OPENSSL_CERTS)
 typedef OpenSSLClientKeyStore::ScopedEVP_PKEY ScopedEVP_PKEY;
 
 // BIO_free is a macro, it can't be used as a template parameter.
@@ -61,35 +60,6 @@ typedef crypto::ScopedOpenSSL<RSA, RSA_free> ScopedRSA;
 typedef crypto::ScopedOpenSSL<BIGNUM, BN_free> ScopedBIGNUM;
 
 const SSLConfig kDefaultSSLConfig;
-
-// A ServerBoundCertStore that always returns an error when asked for a
-// certificate.
-class FailingServerBoundCertStore : public ServerBoundCertStore {
-  virtual int GetServerBoundCert(const std::string& server_identifier,
-                                 base::Time* expiration_time,
-                                 std::string* private_key_result,
-                                 std::string* cert_result,
-                                 const GetCertCallback& callback) OVERRIDE {
-    return ERR_UNEXPECTED;
-  }
-  virtual void SetServerBoundCert(const std::string& server_identifier,
-                                  base::Time creation_time,
-                                  base::Time expiration_time,
-                                  const std::string& private_key,
-                                  const std::string& cert) OVERRIDE {}
-  virtual void DeleteServerBoundCert(const std::string& server_identifier,
-                                     const base::Closure& completion_callback)
-      OVERRIDE {}
-  virtual void DeleteAllCreatedBetween(base::Time delete_begin,
-                                       base::Time delete_end,
-                                       const base::Closure& completion_callback)
-      OVERRIDE {}
-  virtual void DeleteAll(const base::Closure& completion_callback) OVERRIDE {}
-  virtual void GetAllServerBoundCerts(const GetCertListCallback& callback)
-      OVERRIDE {}
-  virtual int GetCertCount() OVERRIDE { return 0; }
-  virtual void SetForceKeepSessionState() OVERRIDE {}
-};
 
 // Loads a PEM-encoded private key file into a scoped EVP_PKEY object.
 // |filepath| is the private key file path.
@@ -139,20 +109,6 @@ class SSLClientSocketOpenSSLClientAuthTest : public PlatformTest {
   }
 
  protected:
-  void EnabledChannelID() {
-    cert_service_.reset(
-        new ServerBoundCertService(new DefaultServerBoundCertStore(NULL),
-                                   base::MessageLoopProxy::current()));
-    context_.server_bound_cert_service = cert_service_.get();
-  }
-
-  void EnabledFailingChannelID() {
-    cert_service_.reset(
-        new ServerBoundCertService(new FailingServerBoundCertStore(),
-                                   base::MessageLoopProxy::current()));
-    context_.server_bound_cert_service = cert_service_.get();
-  }
-
   scoped_ptr<SSLClientSocket> CreateSSLClientSocket(
       scoped_ptr<StreamSocket> transport_socket,
       const HostPortPair& host_and_port,
@@ -234,7 +190,6 @@ class SSLClientSocketOpenSSLClientAuthTest : public PlatformTest {
     return ssl_info.client_cert_sent;
   }
 
-  scoped_ptr<ServerBoundCertService> cert_service_;
   ClientSocketFactory* socket_factory_;
   scoped_ptr<MockCertVerifier> cert_verifier_;
   scoped_ptr<TransportSecurityState> transport_security_state_;
@@ -321,45 +276,7 @@ TEST_F(SSLClientSocketOpenSSLClientAuthTest, SendGoodCert) {
   sock_->Disconnect();
   EXPECT_FALSE(sock_->IsConnected());
 }
-
-// Connect to a server using channel id. It should allow the connection.
-TEST_F(SSLClientSocketOpenSSLClientAuthTest, SendChannelID) {
-  SpawnedTestServer::SSLOptions ssl_options;
-
-  ASSERT_TRUE(ConnectToTestServer(ssl_options));
-
-  EnabledChannelID();
-  SSLConfig ssl_config = kDefaultSSLConfig;
-  ssl_config.channel_id_enabled = true;
-
-  int rv;
-  ASSERT_TRUE(CreateAndConnectSSLClientSocket(ssl_config, &rv));
-
-  EXPECT_EQ(OK, rv);
-  EXPECT_TRUE(sock_->IsConnected());
-  EXPECT_TRUE(sock_->WasChannelIDSent());
-
-  sock_->Disconnect();
-  EXPECT_FALSE(sock_->IsConnected());
-}
-
-// Connect to a server using channel id but without sending a key. It should
-// fail.
-TEST_F(SSLClientSocketOpenSSLClientAuthTest, FailingChannelID) {
-  SpawnedTestServer::SSLOptions ssl_options;
-
-  ASSERT_TRUE(ConnectToTestServer(ssl_options));
-
-  EnabledFailingChannelID();
-  SSLConfig ssl_config = kDefaultSSLConfig;
-  ssl_config.channel_id_enabled = true;
-
-  int rv;
-  ASSERT_TRUE(CreateAndConnectSSLClientSocket(ssl_config, &rv));
-
-  EXPECT_EQ(ERR_UNEXPECTED, rv);
-  EXPECT_FALSE(sock_->IsConnected());
-}
+#endif  // defined(USE_OPENSSL_CERTS)
 
 }  // namespace
 }  // namespace net

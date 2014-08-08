@@ -30,7 +30,6 @@
 #include "core/rendering/RenderReplica.h"
 
 #include "core/rendering/GraphicsContextAnnotator.h"
-#include "core/rendering/LayoutRectRecorder.h"
 #include "core/rendering/RenderLayer.h"
 
 namespace WebCore {
@@ -58,9 +57,9 @@ RenderReplica::~RenderReplica()
 
 void RenderReplica::layout()
 {
-    LayoutRectRecorder recorder(*this);
     setFrameRect(parentBox()->borderBoxRect());
-    updateLayerTransform();
+    addVisualOverflow(parentBox()->visualOverflowRect());
+    updateLayerTransformAfterLayout();
     clearNeedsLayout();
 }
 
@@ -84,7 +83,7 @@ void RenderReplica::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset)
         // Turn around and paint the parent layer. Use temporary clipRects, so that the layer doesn't end up caching clip rects
         // computing using the wrong rootLayer
         RenderLayer* rootPaintingLayer = layer()->transform() ? layer()->parent() : layer()->enclosingTransformedAncestor();
-        LayerPaintingInfo paintingInfo(rootPaintingLayer, paintInfo.rect, PaintBehaviorNormal, LayoutSize(), 0, paintInfo.renderRegion);
+        LayerPaintingInfo paintingInfo(rootPaintingLayer, paintInfo.rect, PaintBehaviorNormal, LayoutSize(), 0);
         PaintLayerFlags flags = PaintLayerHaveTransparency | PaintLayerAppliedTransform | PaintLayerTemporaryClipRects | PaintLayerPaintingReflection;
         layer()->parent()->paintLayer(paintInfo.context, paintingInfo, flags);
     } else if (paintInfo.phase == PaintPhaseMask)

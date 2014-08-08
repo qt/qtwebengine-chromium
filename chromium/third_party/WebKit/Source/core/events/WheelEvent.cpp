@@ -24,8 +24,7 @@
 #include "config.h"
 #include "core/events/WheelEvent.h"
 
-#include "core/dom/Clipboard.h"
-#include "core/events/ThreadLocalEventNames.h"
+#include "core/clipboard/Clipboard.h"
 #include "platform/PlatformWheelEvent.h"
 
 namespace WebCore {
@@ -62,13 +61,13 @@ WheelEvent::WheelEvent(const AtomicString& type, const WheelEventInit& initializ
 }
 
 WheelEvent::WheelEvent(const FloatPoint& wheelTicks, const FloatPoint& rawDelta, unsigned deltaMode,
-    PassRefPtr<AbstractView> view, const IntPoint& screenLocation, const IntPoint& pageLocation,
+    PassRefPtrWillBeRawPtr<AbstractView> view, const IntPoint& screenLocation, const IntPoint& pageLocation,
     bool ctrlKey, bool altKey, bool shiftKey, bool metaKey, bool directionInvertedFromDevice)
     : MouseEvent(EventTypeNames::wheel,
                  true, true, view, 0, screenLocation.x(), screenLocation.y(),
                  pageLocation.x(), pageLocation.y(),
                  0, 0,
-                 ctrlKey, altKey, shiftKey, metaKey, 0, 0, 0, false)
+                 ctrlKey, altKey, shiftKey, metaKey, 0, nullptr, nullptr, false)
     , m_wheelDelta(wheelTicks.x() * TickMultiplier, wheelTicks.y() * TickMultiplier)
     , m_deltaX(-rawDelta.x())
     , m_deltaY(-rawDelta.y())
@@ -79,7 +78,7 @@ WheelEvent::WheelEvent(const FloatPoint& wheelTicks, const FloatPoint& rawDelta,
     ScriptWrappable::init(this);
 }
 
-void WheelEvent::initWheelEvent(int rawDeltaX, int rawDeltaY, PassRefPtr<AbstractView> view,
+void WheelEvent::initWheelEvent(int rawDeltaX, int rawDeltaY, PassRefPtrWillBeRawPtr<AbstractView> view,
                                 int screenX, int screenY, int pageX, int pageY,
                                 bool ctrlKey, bool altKey, bool shiftKey, bool metaKey)
 {
@@ -103,7 +102,7 @@ void WheelEvent::initWheelEvent(int rawDeltaX, int rawDeltaY, PassRefPtr<Abstrac
     initCoordinates(IntPoint(pageX, pageY));
 }
 
-void WheelEvent::initWebKitWheelEvent(int rawDeltaX, int rawDeltaY, PassRefPtr<AbstractView> view,
+void WheelEvent::initWebKitWheelEvent(int rawDeltaX, int rawDeltaY, PassRefPtrWillBeRawPtr<AbstractView> view,
                                       int screenX, int screenY, int pageX, int pageY,
                                       bool ctrlKey, bool altKey, bool shiftKey, bool metaKey)
 {
@@ -126,17 +125,22 @@ bool WheelEvent::isWheelEvent() const
     return true;
 }
 
+void WheelEvent::trace(Visitor* visitor)
+{
+    MouseEvent::trace(visitor);
+}
+
 inline static unsigned deltaMode(const PlatformWheelEvent& event)
 {
     return event.granularity() == ScrollByPageWheelEvent ? WheelEvent::DOM_DELTA_PAGE : WheelEvent::DOM_DELTA_PIXEL;
 }
 
-PassRefPtr<WheelEventDispatchMediator> WheelEventDispatchMediator::create(const PlatformWheelEvent& event, PassRefPtr<AbstractView> view)
+PassRefPtrWillBeRawPtr<WheelEventDispatchMediator> WheelEventDispatchMediator::create(const PlatformWheelEvent& event, PassRefPtrWillBeRawPtr<AbstractView> view)
 {
-    return adoptRef(new WheelEventDispatchMediator(event, view));
+    return adoptRefWillBeNoop(new WheelEventDispatchMediator(event, view));
 }
 
-WheelEventDispatchMediator::WheelEventDispatchMediator(const PlatformWheelEvent& event, PassRefPtr<AbstractView> view)
+WheelEventDispatchMediator::WheelEventDispatchMediator(const PlatformWheelEvent& event, PassRefPtrWillBeRawPtr<AbstractView> view)
 {
     if (!(event.deltaX() || event.deltaY()))
         return;

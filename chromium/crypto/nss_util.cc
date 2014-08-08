@@ -13,10 +13,7 @@
 #include <prtime.h>
 #include <secmod.h>
 
-#if defined(OS_LINUX)
-#include <linux/nfs_fs.h>
-#include <sys/vfs.h>
-#elif defined(OS_OPENBSD)
+#if defined(OS_OPENBSD)
 #include <sys/mount.h>
 #include <sys/param.h>
 #endif
@@ -24,23 +21,26 @@
 #include <map>
 #include <vector>
 
-#include "base/callback.h"
+#include "base/base_paths.h"
+#include "base/bind.h"
 #include "base/cpu.h"
 #include "base/debug/alias.h"
 #include "base/debug/stack_trace.h"
 #include "base/environment.h"
 #include "base/file_util.h"
 #include "base/files/file_path.h"
-#include "base/files/scoped_temp_dir.h"
 #include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
 #include "base/native_library.h"
+#include "base/path_service.h"
 #include "base/stl_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/threading/thread_checker.h"
 #include "base/threading/thread_restrictions.h"
+#include "base/threading/worker_pool.h"
 #include "build/build_config.h"
 
 // USE_NSS means we use NSS for everything crypto-related.  If USE_NSS is not
@@ -82,7 +82,8 @@ std::string GetNSSErrorMessage() {
 
 #if defined(USE_NSS)
 base::FilePath GetDefaultConfigDirectory() {
-  base::FilePath dir = base::GetHomeDir();
+  base::FilePath dir;
+  PathService::Get(base::DIR_HOME, &dir);
   if (dir.empty()) {
     LOG(ERROR) << "Failed to get home directory.";
     return dir;
@@ -146,21 +147,25 @@ char* PKCS11PasswordFunc(PK11SlotInfo* slot, PRBool retry, void* arg) {
 // Because this function sets an environment variable it must be run before we
 // go multi-threaded.
 void UseLocalCacheOfNSSDatabaseIfNFS(const base::FilePath& database_dir) {
-#if defined(OS_LINUX) || defined(OS_OPENBSD)
-  struct statfs buf;
-  if (statfs(database_dir.value().c_str(), &buf) == 0) {
+  bool db_on_nfs = false;
 #if defined(OS_LINUX)
-    if (buf.f_type == NFS_SUPER_MAGIC) {
+  base::FileSystemType fs_type = base::FILE_SYSTEM_UNKNOWN;
+  if (base::GetFileSystemType(database_dir, &fs_type))
+    db_on_nfs = (fs_type == base::FILE_SYSTEM_NFS);
 #elif defined(OS_OPENBSD)
-    if (strcmp(buf.f_fstypename, MOUNT_NFS) == 0) {
+  struct statfs buf;
+  if (statfs(database_dir.value().c_str(), &buf) == 0)
+    db_on_nfs = (strcmp(buf.f_fstypename, MOUNT_NFS) == 0);
+#else
+  NOTIMPLEMENTED();
 #endif
-      scoped_ptr<base::Environment> env(base::Environment::Create());
-      const char* use_cache_env_var = "NSS_SDB_USE_CACHE";
-      if (!env->HasVar(use_cache_env_var))
-        env->SetVar(use_cache_env_var, "yes");
-    }
+
+  if (db_on_nfs) {
+    scoped_ptr<base::Environment> env(base::Environment::Create());
+    static const char kUseCacheEnvVar[] = "NSS_SDB_USE_CACHE";
+    if (!env->HasVar(kUseCacheEnvVar))
+      env->SetVar(kUseCacheEnvVar, "yes");
   }
-#endif  // defined(OS_LINUX) || defined(OS_OPENBSD)
 }
 
 #endif  // defined(USE_NSS)
@@ -263,6 +268,14 @@ class ChromeOSUserData {
 class NSSInitSingleton {
  public:
 #if defined(OS_CHROMEOS)
+  // Used with PostTaskAndReply to pass handles to worker thread and back.
+  struct TPMModuleAndSlot {
+    explicit TPMModuleAndSlot(SECMODModule* init_chaps_module)
+        : chaps_module(init_chaps_module), tpm_slot(NULL) {}
+    SECMODModule* chaps_module;
+    PK11SlotInfo* tpm_slot;
+  };
+
   void OpenPersistentNSSDB() {
     DCHECK(thread_checker_.CalledOnValidThread());
 
@@ -310,21 +323,57 @@ class NSSInitSingleton {
     return tpm_token_enabled_for_nss_;
   }
 
-  bool InitializeTPMToken(int token_slot_id) {
+  void InitializeTPMToken(int token_slot_id,
+                          const base::Callback<void(bool)>& callback) {
     DCHECK(thread_checker_.CalledOnValidThread());
-
+    // Should not be called while there is already an initialization in
+    // progress.
+    DCHECK(!initializing_tpm_token_);
     // If EnableTPMTokenForNSS hasn't been called, return false.
-    if (!tpm_token_enabled_for_nss_)
-      return false;
+    if (!tpm_token_enabled_for_nss_) {
+      base::MessageLoop::current()->PostTask(FROM_HERE,
+                                             base::Bind(callback, false));
+      return;
+    }
 
     // If everything is already initialized, then return true.
-    if (chaps_module_ && tpm_slot_)
-      return true;
+    // Note that only |tpm_slot_| is checked, since |chaps_module_| could be
+    // NULL in tests while |tpm_slot_| has been set to the test DB.
+    if (tpm_slot_) {
+      base::MessageLoop::current()->PostTask(FROM_HERE,
+                                             base::Bind(callback, true));
+      return;
+    }
 
+    // Note that a reference is not taken to chaps_module_. This is safe since
+    // NSSInitSingleton is Leaky, so the reference it holds is never released.
+    scoped_ptr<TPMModuleAndSlot> tpm_args(new TPMModuleAndSlot(chaps_module_));
+    TPMModuleAndSlot* tpm_args_ptr = tpm_args.get();
+    if (base::WorkerPool::PostTaskAndReply(
+            FROM_HERE,
+            base::Bind(&NSSInitSingleton::InitializeTPMTokenOnWorkerThread,
+                       token_slot_id,
+                       tpm_args_ptr),
+            base::Bind(&NSSInitSingleton::OnInitializedTPMToken,
+                       base::Unretained(this),  // NSSInitSingleton is leaky
+                       callback,
+                       base::Passed(&tpm_args)),
+            true /* task_is_slow */
+            )) {
+      initializing_tpm_token_ = true;
+    } else {
+      base::MessageLoop::current()->PostTask(FROM_HERE,
+                                             base::Bind(callback, false));
+    }
+  }
+
+  static void InitializeTPMTokenOnWorkerThread(CK_SLOT_ID token_slot_id,
+                                               TPMModuleAndSlot* tpm_args) {
     // This tries to load the Chaps module so NSS can talk to the hardware
     // TPM.
-    if (!chaps_module_) {
-      chaps_module_ = LoadModule(
+    if (!tpm_args->chaps_module) {
+      DVLOG(3) << "Loading chaps...";
+      tpm_args->chaps_module = LoadModule(
           kChapsModuleName,
           kChapsPath,
           // For more details on these parameters, see:
@@ -333,31 +382,39 @@ class NSSInitSingleton {
           //   read from this slot without requiring a call to C_Login.
           // askpw=only -- Only authenticate to the token when necessary.
           "NSS=\"slotParams=(0={slotFlags=[PublicCerts] askpw=only})\"");
-      if (!chaps_module_ && test_slot_) {
-        // chromeos_unittests try to test the TPM initialization process. If we
-        // have a test DB open, pretend that it is the TPM slot.
-        tpm_slot_ = PK11_ReferenceSlot(test_slot_);
-        return true;
-      }
     }
-    if (chaps_module_){
-      tpm_slot_ = GetTPMSlotForId(token_slot_id);
+    if (tpm_args->chaps_module) {
+      tpm_args->tpm_slot =
+          GetTPMSlotForIdOnWorkerThread(tpm_args->chaps_module, token_slot_id);
+    }
+  }
 
-      if (!tpm_slot_)
-        return false;
+  void OnInitializedTPMToken(const base::Callback<void(bool)>& callback,
+                             scoped_ptr<TPMModuleAndSlot> tpm_args) {
+    DCHECK(thread_checker_.CalledOnValidThread());
+    DVLOG(2) << "Loaded chaps: " << !!tpm_args->chaps_module
+             << ", got tpm slot: " << !!tpm_args->tpm_slot;
 
+    chaps_module_ = tpm_args->chaps_module;
+    tpm_slot_ = tpm_args->tpm_slot;
+    if (!chaps_module_ && test_slot_) {
+      // chromeos_unittests try to test the TPM initialization process. If we
+      // have a test DB open, pretend that it is the TPM slot.
+      tpm_slot_ = PK11_ReferenceSlot(test_slot_);
+    }
+    initializing_tpm_token_ = false;
+
+    if (tpm_slot_) {
       TPMReadyCallbackList callback_list;
       callback_list.swap(tpm_ready_callback_list_);
-      for (TPMReadyCallbackList::iterator i =
-               callback_list.begin();
+      for (TPMReadyCallbackList::iterator i = callback_list.begin();
            i != callback_list.end();
            ++i) {
         (*i).Run();
       }
-
-      return true;
     }
-    return false;
+
+    callback.Run(!!tpm_slot_);
   }
 
   bool IsTPMTokenReady(const base::Closure& callback) {
@@ -384,18 +441,16 @@ class NSSInitSingleton {
   // Note that CK_SLOT_ID is an unsigned long, but cryptohome gives us the slot
   // id as an int. This should be safe since this is only used with chaps, which
   // we also control.
-  PK11SlotInfo* GetTPMSlotForId(CK_SLOT_ID slot_id) {
-    DCHECK(thread_checker_.CalledOnValidThread());
-
-    if (!chaps_module_)
-      return NULL;
+  static PK11SlotInfo* GetTPMSlotForIdOnWorkerThread(SECMODModule* chaps_module,
+                                                     CK_SLOT_ID slot_id) {
+    DCHECK(chaps_module);
 
     DVLOG(3) << "Poking chaps module.";
-    SECStatus rv = SECMOD_UpdateSlotList(chaps_module_);
+    SECStatus rv = SECMOD_UpdateSlotList(chaps_module);
     if (rv != SECSuccess)
       PLOG(ERROR) << "SECMOD_UpdateSlotList failed: " << PORT_GetError();
 
-    PK11SlotInfo* slot = SECMOD_LookupSlot(chaps_module_->moduleID, slot_id);
+    PK11SlotInfo* slot = SECMOD_LookupSlot(chaps_module->moduleID, slot_id);
     if (!slot)
       LOG(ERROR) << "TPM slot " << slot_id << " not found.";
     return slot;
@@ -429,14 +484,40 @@ class NSSInitSingleton {
                                     CK_SLOT_ID slot_id) {
     DCHECK(thread_checker_.CalledOnValidThread());
     DCHECK(chromeos_user_map_.find(username_hash) != chromeos_user_map_.end());
-    chromeos_user_map_[username_hash]
-        ->SetPrivateSlot(ScopedPK11Slot(GetTPMSlotForId(slot_id)));
+
+    if (!chaps_module_)
+      return;
+
+    // Note that a reference is not taken to chaps_module_. This is safe since
+    // NSSInitSingleton is Leaky, so the reference it holds is never released.
+    scoped_ptr<TPMModuleAndSlot> tpm_args(new TPMModuleAndSlot(chaps_module_));
+    TPMModuleAndSlot* tpm_args_ptr = tpm_args.get();
+    base::WorkerPool::PostTaskAndReply(
+        FROM_HERE,
+        base::Bind(&NSSInitSingleton::InitializeTPMTokenOnWorkerThread,
+                   slot_id,
+                   tpm_args_ptr),
+        base::Bind(&NSSInitSingleton::OnInitializedTPMForChromeOSUser,
+                   base::Unretained(this),  // NSSInitSingleton is leaky
+                   username_hash,
+                   base::Passed(&tpm_args)),
+        true /* task_is_slow */
+        );
+  }
+
+  void OnInitializedTPMForChromeOSUser(const std::string& username_hash,
+                                       scoped_ptr<TPMModuleAndSlot> tpm_args) {
+    DCHECK(thread_checker_.CalledOnValidThread());
+    DVLOG(2) << "Got tpm slot for " << username_hash << " "
+             << !!tpm_args->tpm_slot;
+    chromeos_user_map_[username_hash]->SetPrivateSlot(
+        ScopedPK11Slot(tpm_args->tpm_slot));
   }
 
   void InitializePrivateSoftwareSlotForChromeOSUser(
       const std::string& username_hash) {
     DCHECK(thread_checker_.CalledOnValidThread());
-    LOG(WARNING) << "using software private slot for " << username_hash;
+    VLOG(1) << "using software private slot for " << username_hash;
     DCHECK(chromeos_user_map_.find(username_hash) != chromeos_user_map_.end());
     chromeos_user_map_[username_hash]->SetPrivateSlot(
         chromeos_user_map_[username_hash]->GetPublicSlot());
@@ -445,6 +526,12 @@ class NSSInitSingleton {
   ScopedPK11Slot GetPublicSlotForChromeOSUser(
       const std::string& username_hash) {
     DCHECK(thread_checker_.CalledOnValidThread());
+
+    if (username_hash.empty()) {
+      DVLOG(2) << "empty username_hash";
+      return ScopedPK11Slot();
+    }
+
     if (test_slot_) {
       DVLOG(2) << "returning test_slot_ for " << username_hash;
       return ScopedPK11Slot(PK11_ReferenceSlot(test_slot_));
@@ -461,6 +548,16 @@ class NSSInitSingleton {
       const std::string& username_hash,
       const base::Callback<void(ScopedPK11Slot)>& callback) {
     DCHECK(thread_checker_.CalledOnValidThread());
+
+    if (username_hash.empty()) {
+      DVLOG(2) << "empty username_hash";
+      if (!callback.is_null()) {
+        base::MessageLoop::current()->PostTask(
+            FROM_HERE, base::Bind(callback, base::Passed(ScopedPK11Slot())));
+      }
+      return ScopedPK11Slot();
+    }
+
     DCHECK(chromeos_user_map_.find(username_hash) != chromeos_user_map_.end());
 
     if (test_slot_) {
@@ -469,6 +566,14 @@ class NSSInitSingleton {
     }
 
     return chromeos_user_map_[username_hash]->GetPrivateSlot(callback);
+  }
+
+  void CloseTestChromeOSUser(const std::string& username_hash) {
+    DCHECK(thread_checker_.CalledOnValidThread());
+    ChromeOSUserMap::iterator i = chromeos_user_map_.find(username_hash);
+    DCHECK(i != chromeos_user_map_.end());
+    delete i->second;
+    chromeos_user_map_.erase(i);
   }
 #endif  // defined(OS_CHROMEOS)
 
@@ -564,6 +669,7 @@ class NSSInitSingleton {
 
   NSSInitSingleton()
       : tpm_token_enabled_for_nss_(false),
+        initializing_tpm_token_(false),
         chaps_module_(NULL),
         software_slot_(NULL),
         test_slot_(NULL),
@@ -728,9 +834,9 @@ class NSSInitSingleton {
   }
 
   // Load the given module for this NSS session.
-  SECMODModule* LoadModule(const char* name,
-                           const char* library_path,
-                           const char* params) {
+  static SECMODModule* LoadModule(const char* name,
+                                  const char* library_path,
+                                  const char* params) {
     std::string modparams = base::StringPrintf(
         "name=\"%s\" library=\"%s\" %s",
         name, library_path, params ? params : "");
@@ -792,6 +898,7 @@ class NSSInitSingleton {
   static bool force_nodb_init_;
 
   bool tpm_token_enabled_for_nss_;
+  bool initializing_tpm_token_;
   typedef std::vector<base::Closure> TPMReadyCallbackList;
   TPMReadyCallbackList tpm_ready_callback_list_;
   SECMODModule* chaps_module_;
@@ -884,10 +991,10 @@ void LoadNSSLibraries() {
   paths.push_back(base::FilePath("/usr/lib/arm-linux-gnueabihf/nss"));
 #else
   paths.push_back(base::FilePath("/usr/lib/arm-linux-gnueabi/nss"));
-#endif
+#endif  // defined(__ARM_PCS_VFP)
 #elif defined(ARCH_CPU_MIPSEL)
   paths.push_back(base::FilePath("/usr/lib/mipsel-linux-gnu/nss"));
-#endif
+#endif  // defined(ARCH_CPU_X86_64)
 
   // A list of library files to load.
   std::vector<std::string> libs;
@@ -913,7 +1020,7 @@ void LoadNSSLibraries() {
   } else {
     LOG(ERROR) << "Failed to load NSS libraries.";
   }
-#endif
+#endif  // defined(USE_NSS)
 }
 
 bool CheckNSSVersion(const char* version) {
@@ -979,8 +1086,30 @@ bool IsTPMTokenReady(const base::Closure& callback) {
   return g_nss_singleton.Get().IsTPMTokenReady(callback);
 }
 
-bool InitializeTPMToken(int token_slot_id) {
-  return g_nss_singleton.Get().InitializeTPMToken(token_slot_id);
+void InitializeTPMToken(int token_slot_id,
+                        const base::Callback<void(bool)>& callback) {
+  g_nss_singleton.Get().InitializeTPMToken(token_slot_id, callback);
+}
+
+ScopedTestNSSChromeOSUser::ScopedTestNSSChromeOSUser(
+    const std::string& username_hash)
+    : username_hash_(username_hash), constructed_successfully_(false) {
+  if (!temp_dir_.CreateUniqueTempDir())
+    return;
+  constructed_successfully_ =
+      InitializeNSSForChromeOSUser(username_hash,
+                                   username_hash,
+                                   false /* is_primary_user */,
+                                   temp_dir_.path());
+}
+
+ScopedTestNSSChromeOSUser::~ScopedTestNSSChromeOSUser() {
+  if (constructed_successfully_)
+    g_nss_singleton.Get().CloseTestChromeOSUser(username_hash_);
+}
+
+void ScopedTestNSSChromeOSUser::FinishInit() {
+  InitializePrivateSoftwareSlotForChromeOSUser(username_hash_);
 }
 
 bool InitializeNSSForChromeOSUser(

@@ -340,7 +340,7 @@
         },
       ],
     }],
-    [ 'OS=="linux" or OS=="android"', {
+    [ 'OS=="linux" or OS=="android" or OS=="freebsd"', {
       'conditions': [
         ['OS=="android"', {
           'defines': [
@@ -398,6 +398,8 @@
             'src/common/dwarf_line_to_module.h',
             'src/common/language.cc',
             'src/common/language.h',
+            'src/common/linux/crc32.cc',
+            'src/common/linux/crc32.h',
             'src/common/linux/dump_symbols.cc',
             'src/common/linux/dump_symbols.h',
             'src/common/linux/elf_symbols_to_module.cc',
@@ -614,6 +616,9 @@
               'include_dirs': [
                 'src/common/android/include',
               ],
+              'sources': [
+                'src/common/android/breakpad_getcontext_unittest.cc',
+              ],
             }],
           ],
         },
@@ -756,24 +761,7 @@
             'src',
             'src/client/mac/Framework',
             'src/common/mac',
-            # For GTMLogger.
-            '<(DEPTH)/third_party/GTM',
-            '<(DEPTH)/third_party/GTM/Foundation',
           ],
-          'link_settings': {
-            # Build the version of GTMLogger.m in third_party rather than the
-            # one in src/common/mac because the former catches all exceptions
-            # whereas the latter lets them propagate, which can cause odd
-            # crashes.
-            'sources': [
-              '<(DEPTH)/third_party/GTM/Foundation/GTMLogger.h',
-              '<(DEPTH)/third_party/GTM/Foundation/GTMLogger.m',
-            ],
-            'include_dirs': [
-              '<(DEPTH)/third_party/GTM',
-              '<(DEPTH)/third_party/GTM/Foundation',
-            ],
-          },
         }
       ]
     }],
@@ -866,6 +854,21 @@
           'dependencies': [
             'breakpad_utilities',
           ],
+        }
+      ],
+    }],
+    ['OS=="android"', {
+      'targets': [
+        {
+          'target_name': 'breakpad_unittests_stripped',
+          'type': 'none',
+          'dependencies': [ 'breakpad_unittests' ],
+          'actions': [{
+            'action_name': 'strip breakpad_unittests',
+            'inputs': [ '<(PRODUCT_DIR)/breakpad_unittests' ],
+            'outputs': [ '<(PRODUCT_DIR)/breakpad_unittests_stripped' ],
+            'action': [ '<(android_strip)', '<@(_inputs)', '-o', '<@(_outputs)' ],
+          }],
         }
       ],
     }],

@@ -58,17 +58,17 @@ TEST(EventTest, GetCharacter) {
 
 TEST(EventTest, ClickCount) {
   const gfx::Point origin(0, 0);
-  MouseEvent mouseev(ET_MOUSE_PRESSED, origin, origin, 0);
+  MouseEvent mouseev(ET_MOUSE_PRESSED, origin, origin, 0, 0);
   for (int i = 1; i <=3 ; ++i) {
     mouseev.SetClickCount(i);
     EXPECT_EQ(i, mouseev.GetClickCount());
   }
 }
 
-TEST(EventTest, Repeated) {
+TEST(EventTest, RepeatedClick) {
   const gfx::Point origin(0, 0);
-  MouseEvent mouse_ev1(ET_MOUSE_PRESSED, origin, origin, 0);
-  MouseEvent mouse_ev2(ET_MOUSE_PRESSED, origin, origin, 0);
+  MouseEvent mouse_ev1(ET_MOUSE_PRESSED, origin, origin, 0, 0);
+  MouseEvent mouse_ev2(ET_MOUSE_PRESSED, origin, origin, 0, 0);
   LocatedEventTestApi test_ev1(&mouse_ev1);
   LocatedEventTestApi test_ev2(&mouse_ev2);
 
@@ -96,6 +96,68 @@ TEST(EventTest, Repeated) {
   test_ev1.set_time_stamp(start);
   test_ev2.set_time_stamp(later);
   EXPECT_FALSE(MouseEvent::IsRepeatedClickEvent(mouse_ev1, mouse_ev2));
+}
+
+// Tests that an event only increases the click count and gets marked as a
+// double click if a release event was seen for the previous click. This
+// prevents the same PRESSED event from being processed twice:
+// http://crbug.com/389162
+TEST(EventTest, DoubleClickRequiresRelease) {
+  const gfx::Point origin1(0, 0);
+  const gfx::Point origin2(100, 0);
+  scoped_ptr<MouseEvent> ev;
+  base::TimeDelta start = base::TimeDelta::FromMilliseconds(0);
+
+  ev.reset(new MouseEvent(ET_MOUSE_PRESSED, origin1, origin1, 0, 0));
+  ev->set_time_stamp(start);
+  EXPECT_EQ(1, MouseEvent::GetRepeatCount(*ev));
+  ev.reset(new MouseEvent(ET_MOUSE_PRESSED, origin1, origin1, 0, 0));
+  ev->set_time_stamp(start);
+  EXPECT_EQ(1, MouseEvent::GetRepeatCount(*ev));
+
+  ev.reset(new MouseEvent(ET_MOUSE_PRESSED, origin2, origin2, 0, 0));
+  ev->set_time_stamp(start);
+  EXPECT_EQ(1, MouseEvent::GetRepeatCount(*ev));
+  ev.reset(new MouseEvent(ET_MOUSE_RELEASED, origin2, origin2, 0, 0));
+  ev->set_time_stamp(start);
+  EXPECT_EQ(1, MouseEvent::GetRepeatCount(*ev));
+  ev.reset(new MouseEvent(ET_MOUSE_PRESSED, origin2, origin2, 0, 0));
+  ev->set_time_stamp(start);
+  EXPECT_EQ(2, MouseEvent::GetRepeatCount(*ev));
+  ev.reset(new MouseEvent(ET_MOUSE_RELEASED, origin2, origin2, 0, 0));
+  ev->set_time_stamp(start);
+  EXPECT_EQ(2, MouseEvent::GetRepeatCount(*ev));
+  MouseEvent::ResetLastClickForTest();
+}
+
+// Tests that clicking right and then left clicking does not generate a double
+// click.
+TEST(EventTest, SingleClickRightLeft) {
+  const gfx::Point origin(0, 0);
+  scoped_ptr<MouseEvent> ev;
+  base::TimeDelta start = base::TimeDelta::FromMilliseconds(0);
+
+  ev.reset(new MouseEvent(ET_MOUSE_PRESSED, origin, origin,
+                          ui::EF_RIGHT_MOUSE_BUTTON,
+                          ui::EF_RIGHT_MOUSE_BUTTON));
+  ev->set_time_stamp(start);
+  EXPECT_EQ(1, MouseEvent::GetRepeatCount(*ev));
+  ev.reset(new MouseEvent(ET_MOUSE_PRESSED, origin, origin,
+                          ui::EF_LEFT_MOUSE_BUTTON,
+                          ui::EF_LEFT_MOUSE_BUTTON));
+  ev->set_time_stamp(start);
+  EXPECT_EQ(1, MouseEvent::GetRepeatCount(*ev));
+  ev.reset(new MouseEvent(ET_MOUSE_RELEASED, origin, origin,
+                          ui::EF_LEFT_MOUSE_BUTTON,
+                          ui::EF_LEFT_MOUSE_BUTTON));
+  ev->set_time_stamp(start);
+  EXPECT_EQ(1, MouseEvent::GetRepeatCount(*ev));
+  ev.reset(new MouseEvent(ET_MOUSE_PRESSED, origin, origin,
+                          ui::EF_LEFT_MOUSE_BUTTON,
+                          ui::EF_LEFT_MOUSE_BUTTON));
+  ev->set_time_stamp(start);
+  EXPECT_EQ(2, MouseEvent::GetRepeatCount(*ev));
+  MouseEvent::ResetLastClickForTest();
 }
 
 TEST(EventTest, KeyEvent) {
@@ -330,5 +392,67 @@ TEST(EventTest, KeyEventCode) {
   }
 #endif  // OS_WIN
 }
+
+#if defined(USE_X11) || defined(OS_WIN)
+TEST(EventTest, AutoRepeat) {
+  KeycodeConverter* conv = KeycodeConverter::GetInstance();
+
+  const uint16 kNativeCodeA = conv->CodeToNativeKeycode("KeyA");
+  const uint16 kNativeCodeB = conv->CodeToNativeKeycode("KeyB");
+#if defined(USE_X11)
+  ScopedXI2Event native_event_a_pressed;
+  native_event_a_pressed.InitKeyEvent(ET_KEY_PRESSED, VKEY_A, kNativeCodeA);
+  ScopedXI2Event native_event_a_released;
+  native_event_a_released.InitKeyEvent(ET_KEY_RELEASED, VKEY_A, kNativeCodeA);
+  ScopedXI2Event native_event_b_pressed;
+  native_event_b_pressed.InitKeyEvent(ET_KEY_PRESSED, VKEY_B, kNativeCodeB);
+  ScopedXI2Event native_event_a_pressed_nonstandard_state;
+  native_event_a_pressed_nonstandard_state.InitKeyEvent(
+      ET_KEY_PRESSED, VKEY_A, kNativeCodeA);
+  // IBUS-GTK uses the mask (1 << 25) to detect reposted event.
+  static_cast<XEvent*>(native_event_a_pressed_nonstandard_state)->xkey.state |=
+      1 << 25;
+#elif defined(OS_WIN)
+  const LPARAM lParam_a = GetLParamFromScanCode(kNativeCodeA);
+  const LPARAM lParam_b = GetLParamFromScanCode(kNativeCodeB);
+  MSG native_event_a_pressed = { NULL, WM_KEYDOWN, VKEY_A, lParam_a };
+  MSG native_event_a_released = { NULL, WM_KEYUP, VKEY_A, lParam_a };
+  MSG native_event_b_pressed = { NULL, WM_KEYUP, VKEY_B, lParam_b };
+#endif
+  KeyEvent key_a1(native_event_a_pressed, false);
+  EXPECT_FALSE(key_a1.IsRepeat());
+  KeyEvent key_a1_released(native_event_a_released, false);
+  EXPECT_FALSE(key_a1_released.IsRepeat());
+
+  KeyEvent key_a2(native_event_a_pressed, false);
+  EXPECT_FALSE(key_a2.IsRepeat());
+  KeyEvent key_a2_repeated(native_event_a_pressed, false);
+  EXPECT_TRUE(key_a2_repeated.IsRepeat());
+  KeyEvent key_a2_released(native_event_a_released, false);
+  EXPECT_FALSE(key_a2_released.IsRepeat());
+
+  KeyEvent key_a3(native_event_a_pressed, false);
+  EXPECT_FALSE(key_a3.IsRepeat());
+  KeyEvent key_b(native_event_b_pressed, false);
+  EXPECT_FALSE(key_b.IsRepeat());
+  KeyEvent key_a3_again(native_event_a_pressed, false);
+  EXPECT_FALSE(key_a3_again.IsRepeat());
+  KeyEvent key_a3_repeated(native_event_a_pressed, false);
+  EXPECT_TRUE(key_a3_repeated.IsRepeat());
+  KeyEvent key_a3_repeated2(native_event_a_pressed, false);
+  EXPECT_TRUE(key_a3_repeated2.IsRepeat());
+  KeyEvent key_a3_released(native_event_a_released, false);
+  EXPECT_FALSE(key_a3_released.IsRepeat());
+
+#if defined(USE_X11)
+  KeyEvent key_a4_pressed(native_event_a_pressed, false);
+  EXPECT_FALSE(key_a4_pressed.IsRepeat());
+
+  KeyEvent key_a4_pressed_nonstandard_state(
+      native_event_a_pressed_nonstandard_state, false);
+  EXPECT_FALSE(key_a4_pressed_nonstandard_state.IsRepeat());
+#endif
+}
+#endif  // USE_X11 || OS_WIN
 
 }  // namespace ui

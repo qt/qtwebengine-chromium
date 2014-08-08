@@ -38,24 +38,23 @@ ACTION_P3(CheckCountAndPostQuitTask, count, limit, loop) {
 
 class MockAudioInputCallback : public AudioInputStream::AudioInputCallback {
  public:
-  MOCK_METHOD5(OnData, void(AudioInputStream* stream,
-                            const uint8* src, uint32 size,
-                            uint32 hardware_delay_bytes, double volume));
-  MOCK_METHOD1(OnClose, void(AudioInputStream* stream));
+  MOCK_METHOD4(OnData,
+               void(AudioInputStream* stream,
+                    const AudioBus* src,
+                    uint32 hardware_delay_bytes,
+                    double volume));
   MOCK_METHOD1(OnError, void(AudioInputStream* stream));
 };
 
 class FakeAudioInputCallback : public AudioInputStream::AudioInputCallback {
  public:
   FakeAudioInputCallback()
-    : closed_(false),
-      error_(false),
-      data_event_(false, false) {
-  }
+      : error_(false),
+        data_event_(false, false),
+        num_received_audio_frames_(0) {}
 
-  const std::vector<uint8>& received_data() const { return received_data_; }
-  bool closed() const { return closed_; }
   bool error() const { return error_; }
+  int num_received_audio_frames() const { return num_received_audio_frames_; }
 
   // Waits until OnData() is called on another thread.
   void WaitForData() {
@@ -63,14 +62,12 @@ class FakeAudioInputCallback : public AudioInputStream::AudioInputCallback {
   }
 
   virtual void OnData(AudioInputStream* stream,
-                      const uint8* src, uint32 size,
-                      uint32 hardware_delay_bytes, double volume) OVERRIDE {
-    received_data_.insert(received_data_.end(), src, src + size);
+                      const AudioBus* src,
+                      uint32 hardware_delay_bytes,
+                      double volume) OVERRIDE {
+    EXPECT_NE(hardware_delay_bytes, 0u);
+    num_received_audio_frames_ += src->frames();
     data_event_.Signal();
-  }
-
-  virtual void OnClose(AudioInputStream* stream) OVERRIDE {
-    closed_ = true;
   }
 
   virtual void OnError(AudioInputStream* stream) OVERRIDE {
@@ -78,9 +75,8 @@ class FakeAudioInputCallback : public AudioInputStream::AudioInputCallback {
   }
 
  private:
-  std::vector<uint8> received_data_;
+  int num_received_audio_frames_;
   base::WaitableEvent data_event_;
-  bool closed_;
   bool error_;
 
   DISALLOW_COPY_AND_ASSIGN(FakeAudioInputCallback);
@@ -94,8 +90,9 @@ class WriteToFileAudioSink : public AudioInputStream::AudioInputCallback {
   // 2 bytes per sample, 2 channels, 10ms @ 48kHz, 10 seconds <=> 1920000 bytes.
   static const size_t kMaxBufferSize = 2 * 2 * 480 * 100 * 10;
 
-  explicit WriteToFileAudioSink(const char* file_name)
-      : buffer_(0, kMaxBufferSize),
+  explicit WriteToFileAudioSink(const char* file_name, int bits_per_sample)
+      : bits_per_sample_(bits_per_sample),
+        buffer_(0, kMaxBufferSize),
         bytes_to_write_(0) {
     base::FilePath file_path;
     EXPECT_TRUE(PathService::Get(base::DIR_EXE, &file_path));
@@ -103,6 +100,7 @@ class WriteToFileAudioSink : public AudioInputStream::AudioInputCallback {
     binary_file_ = base::OpenFile(file_path, "wb");
     DLOG_IF(ERROR, !binary_file_) << "Failed to open binary PCM data file.";
     VLOG(0) << ">> Output file: " << file_path.value() << " has been created.";
+    VLOG(0) << "bits_per_sample_:" << bits_per_sample_;
   }
 
   virtual ~WriteToFileAudioSink() {
@@ -125,22 +123,28 @@ class WriteToFileAudioSink : public AudioInputStream::AudioInputCallback {
 
   // AudioInputStream::AudioInputCallback implementation.
   virtual void OnData(AudioInputStream* stream,
-                      const uint8* src,
-                      uint32 size,
+                      const AudioBus* src,
                       uint32 hardware_delay_bytes,
                       double volume) {
+    EXPECT_EQ(bits_per_sample_, 16);
+    const int num_samples = src->frames() * src->channels();
+    scoped_ptr<int16> interleaved(new int16[num_samples]);
+    const int bytes_per_sample = sizeof(*interleaved);
+    src->ToInterleaved(src->frames(), bytes_per_sample, interleaved.get());
+
     // Store data data in a temporary buffer to avoid making blocking
     // fwrite() calls in the audio callback. The complete buffer will be
     // written to file in the destructor.
-    if (buffer_.Append(src, size)) {
+    const int size = bytes_per_sample * num_samples;
+    if (buffer_.Append((const uint8*)interleaved.get(), size)) {
       bytes_to_write_ += size;
     }
   }
 
-  virtual void OnClose(AudioInputStream* stream) {}
   virtual void OnError(AudioInputStream* stream) {}
 
  private:
+  int bits_per_sample_;
   media::SeekableBuffer buffer_;
   FILE* binary_file_;
   size_t bytes_to_write_;
@@ -169,14 +173,13 @@ class AudioInputStreamWrapper {
   explicit AudioInputStreamWrapper(AudioManager* audio_manager)
       : com_init_(ScopedCOMInitializer::kMTA),
         audio_man_(audio_manager),
-        format_(AudioParameters::AUDIO_PCM_LOW_LATENCY),
-        channel_layout_(CHANNEL_LAYOUT_STEREO),
-        bits_per_sample_(16) {
-    // Use native/mixing sample rate and 10ms frame size as default.
-    sample_rate_ = static_cast<int>(
-        WASAPIAudioInputStream::HardwareSampleRate(
-            AudioManagerBase::kDefaultDeviceId));
-    samples_per_packet_ = sample_rate_ / 100;
+        default_params_(
+            audio_manager->GetInputStreamParameters(
+                  AudioManagerBase::kDefaultDeviceId)) {
+    EXPECT_EQ(format(), AudioParameters::AUDIO_PCM_LOW_LATENCY);
+    frames_per_buffer_ = default_params_.frames_per_buffer();
+    // We expect the default buffer size to be a 10ms buffer.
+    EXPECT_EQ(frames_per_buffer_, sample_rate() / 100);
   }
 
   ~AudioInputStreamWrapper() {}
@@ -188,36 +191,35 @@ class AudioInputStreamWrapper {
 
   // Creates AudioInputStream object using non-default parameters where the
   // frame size is modified.
-  AudioInputStream* Create(int samples_per_packet) {
-    samples_per_packet_ = samples_per_packet;
+  AudioInputStream* Create(int frames_per_buffer) {
+    frames_per_buffer_ = frames_per_buffer;
     return CreateInputStream();
   }
 
-  AudioParameters::Format format() const { return format_; }
+  AudioParameters::Format format() const { return default_params_.format(); }
   int channels() const {
-    return ChannelLayoutToChannelCount(channel_layout_);
+    return ChannelLayoutToChannelCount(default_params_.channel_layout());
   }
-  int bits_per_sample() const { return bits_per_sample_; }
-  int sample_rate() const { return sample_rate_; }
-  int samples_per_packet() const { return samples_per_packet_; }
+  int bits_per_sample() const { return default_params_.bits_per_sample(); }
+  int sample_rate() const { return default_params_.sample_rate(); }
+  int frames_per_buffer() const { return frames_per_buffer_; }
 
  private:
   AudioInputStream* CreateInputStream() {
     AudioInputStream* ais = audio_man_->MakeAudioInputStream(
-        AudioParameters(format_, channel_layout_, sample_rate_,
-                        bits_per_sample_, samples_per_packet_),
-                        AudioManagerBase::kDefaultDeviceId);
+        AudioParameters(format(), default_params_.channel_layout(),
+                        default_params_.input_channels(),
+                        sample_rate(), bits_per_sample(), frames_per_buffer_,
+                        default_params_.effects()),
+        AudioManagerBase::kDefaultDeviceId);
     EXPECT_TRUE(ais);
     return ais;
   }
 
   ScopedCOMInitializer com_init_;
   AudioManager* audio_man_;
-  AudioParameters::Format format_;
-  ChannelLayout channel_layout_;
-  int bits_per_sample_;
-  int sample_rate_;
-  int samples_per_packet_;
+  const AudioParameters default_params_;
+  int frames_per_buffer_;
 };
 
 // Convenience method which creates a default AudioInputStream object.
@@ -278,10 +280,9 @@ TEST(WinAudioInputTest, WASAPIAudioInputStreamHardwareSampleRate) {
   for (media::AudioDeviceNames::const_iterator it = device_names.begin();
        it != device_names.end(); ++it) {
     // Retrieve the hardware sample rate given a specified audio input device.
-    // TODO(tommi): ensure that we don't have to cast here.
-    int fs = static_cast<int>(WASAPIAudioInputStream::HardwareSampleRate(
-        it->unique_id));
-    EXPECT_GE(fs, 0);
+    AudioParameters params = WASAPIAudioInputStream::GetInputStreamParameters(
+        it->unique_id);
+    EXPECT_GE(params.sample_rate(), 0);
   }
 }
 
@@ -316,8 +317,6 @@ TEST(WinAudioInputTest, WASAPIAudioInputStreamOpenStartAndClose) {
   EXPECT_TRUE(ais->Open());
   MockAudioInputCallback sink;
   ais->Start(&sink);
-  EXPECT_CALL(sink, OnClose(ais.get()))
-      .Times(1);
   ais.Close();
 }
 
@@ -332,8 +331,6 @@ TEST(WinAudioInputTest, WASAPIAudioInputStreamOpenStartStopAndClose) {
   MockAudioInputCallback sink;
   ais->Start(&sink);
   ais->Stop();
-  EXPECT_CALL(sink, OnClose(ais.get()))
-      .Times(1);
   ais.Close();
 }
 
@@ -364,9 +361,6 @@ TEST(WinAudioInputTest, WASAPIAudioInputStreamMiscCallingSequences) {
   EXPECT_FALSE(wais->started());
   ais->Stop();
   EXPECT_FALSE(wais->started());
-
-  EXPECT_CALL(sink, OnClose(ais.get()))
-    .Times(1);
   ais.Close();
 }
 
@@ -389,14 +383,13 @@ TEST(WinAudioInputTest, WASAPIAudioInputStreamTestPacketSizes) {
   MockAudioInputCallback sink;
 
   // Derive the expected size in bytes of each recorded packet.
-  uint32 bytes_per_packet = aisw.channels() * aisw.samples_per_packet() *
+  uint32 bytes_per_packet = aisw.channels() * aisw.frames_per_buffer() *
       (aisw.bits_per_sample() / 8);
 
   // We use 10ms packets and will run the test until ten packets are received.
   // All should contain valid packets of the same size and a valid delay
   // estimate.
-  EXPECT_CALL(sink, OnData(
-      ais.get(), NotNull(), bytes_per_packet, Gt(bytes_per_packet), _))
+  EXPECT_CALL(sink, OnData(ais.get(), NotNull(), Gt(bytes_per_packet), _))
       .Times(AtLeast(10))
       .WillRepeatedly(CheckCountAndPostQuitTask(&count, 10, &loop));
   ais->Start(&sink);
@@ -404,54 +397,44 @@ TEST(WinAudioInputTest, WASAPIAudioInputStreamTestPacketSizes) {
   ais->Stop();
 
   // Store current packet size (to be used in the subsequent tests).
-  int samples_per_packet_10ms = aisw.samples_per_packet();
+  int frames_per_buffer_10ms = aisw.frames_per_buffer();
 
-  EXPECT_CALL(sink, OnClose(ais.get()))
-      .Times(1);
   ais.Close();
 
   // 20 ms packet size.
 
   count = 0;
-  ais.Reset(aisw.Create(2 * samples_per_packet_10ms));
+  ais.Reset(aisw.Create(2 * frames_per_buffer_10ms));
   EXPECT_TRUE(ais->Open());
-  bytes_per_packet = aisw.channels() * aisw.samples_per_packet() *
+  bytes_per_packet = aisw.channels() * aisw.frames_per_buffer() *
       (aisw.bits_per_sample() / 8);
 
-  EXPECT_CALL(sink, OnData(
-      ais.get(), NotNull(), bytes_per_packet, Gt(bytes_per_packet), _))
+  EXPECT_CALL(sink, OnData(ais.get(), NotNull(), Gt(bytes_per_packet), _))
       .Times(AtLeast(10))
       .WillRepeatedly(CheckCountAndPostQuitTask(&count, 10, &loop));
   ais->Start(&sink);
   loop.Run();
   ais->Stop();
-
-  EXPECT_CALL(sink, OnClose(ais.get()))
-      .Times(1);
   ais.Close();
 
   // 5 ms packet size.
 
   count = 0;
-  ais.Reset(aisw.Create(samples_per_packet_10ms / 2));
+  ais.Reset(aisw.Create(frames_per_buffer_10ms / 2));
   EXPECT_TRUE(ais->Open());
-  bytes_per_packet = aisw.channels() * aisw.samples_per_packet() *
+  bytes_per_packet = aisw.channels() * aisw.frames_per_buffer() *
     (aisw.bits_per_sample() / 8);
 
-  EXPECT_CALL(sink, OnData(
-      ais.get(), NotNull(), bytes_per_packet, Gt(bytes_per_packet), _))
+  EXPECT_CALL(sink, OnData(ais.get(), NotNull(), Gt(bytes_per_packet), _))
       .Times(AtLeast(10))
       .WillRepeatedly(CheckCountAndPostQuitTask(&count, 10, &loop));
   ais->Start(&sink);
   loop.Run();
   ais->Stop();
-
-  EXPECT_CALL(sink, OnClose(ais.get()))
-      .Times(1);
   ais.Close();
 }
 
-// Test that we can capture loopback stream.
+// Test that we can capture a stream in loopback.
 TEST(WinAudioInputTest, WASAPIAudioInputStreamLoopback) {
   scoped_ptr<AudioManager> audio_manager(AudioManager::CreateForTesting());
   if (!audio_manager->HasAudioOutputDevices() || !CoreAudioUtil::IsSupported())
@@ -459,6 +442,7 @@ TEST(WinAudioInputTest, WASAPIAudioInputStreamLoopback) {
 
   AudioParameters params = audio_manager->GetInputStreamParameters(
       AudioManagerBase::kLoopbackInputDeviceId);
+  EXPECT_EQ(params.effects(), 0);
 
   AudioParameters output_params =
       audio_manager->GetOutputStreamParameters(std::string());
@@ -475,8 +459,7 @@ TEST(WinAudioInputTest, WASAPIAudioInputStreamLoopback) {
   sink.WaitForData();
   stream.Close();
 
-  EXPECT_FALSE(sink.received_data().empty());
-  EXPECT_TRUE(sink.closed());
+  EXPECT_GT(sink.num_received_audio_frames(), 0);
   EXPECT_FALSE(sink.error());
 }
 
@@ -501,7 +484,7 @@ TEST(WinAudioInputTest, DISABLED_WASAPIAudioInputStreamRecordToFile) {
   EXPECT_TRUE(ais->Open());
 
   VLOG(0) << ">> Sample rate: " << aisw.sample_rate() << " [Hz]";
-  WriteToFileAudioSink file_sink(file_name);
+  WriteToFileAudioSink file_sink(file_name, aisw.bits_per_sample());
   VLOG(0) << ">> Speak into the default microphone while recording.";
   ais->Start(&file_sink);
   base::PlatformThread::Sleep(TestTimeouts::action_timeout());

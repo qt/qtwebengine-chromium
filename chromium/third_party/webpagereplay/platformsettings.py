@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Provides cross-platform utility fuctions.
+"""Provides cross-platform utility functions.
 
 Example:
   import platformsettings
@@ -26,12 +26,14 @@ For the full list of functions, see the bottom of the file.
 """
 
 import atexit
+import distutils.spawn
 import fileinput
 import logging
 import os
 import platform
 import re
 import socket
+import stat
 import subprocess
 import sys
 import tempfile
@@ -69,29 +71,23 @@ class CalledProcessError(PlatformSettingsError):
             ' '.join(self.cmd), self.returncode)
 
 
-def _check_output(*args):
-  """Run Popen(*args) and return its output as a byte string.
+def FindExecutable(executable):
+  """Finds the given executable in PATH.
 
-  Python 2.7 has subprocess.check_output. This is essentially the same
-  except that, as a convenience, all the positional args are used as
-  command arguments.
+  Since WPR may be invoked as sudo, meaning PATH is empty, we also hardcode a
+  few common paths.
 
-  Args:
-    *args: sequence of program arguments
-  Raises:
-    CalledProcessError if the program returns non-zero exit status.
   Returns:
-    output as a byte string.
+    The fully qualified path with .exe appended if appropriate or None if it
+    doesn't exist.
   """
-  command_args = [str(a) for a in args]
-  logging.debug(' '.join(command_args))
-  process = subprocess.Popen(command_args,
-      stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-  output = process.communicate()[0]
-  retcode = process.poll()
-  if retcode:
-    raise CalledProcessError(retcode, command_args)
-  return output
+  return distutils.spawn.find_executable(executable,
+                                         os.pathsep.join([os.environ['PATH'],
+                                                          '/sbin',
+                                                          '/usr/bin',
+                                                          '/usr/sbin/',
+                                                          '/usr/local/sbin',
+                                                          ]))
 
 
 class _BasePlatformSettings(object):
@@ -127,25 +123,51 @@ class _BasePlatformSettings(object):
     raise NotImplementedError
 
   def ipfw(self, *args):
-    ipfw_cmd = self._ipfw_cmd() + args
-    return _check_output(*ipfw_cmd)
-
-  def ping_rtt(self, hostname):
-    """Pings the hostname by calling the OS system ping command.
-    Also stores the result internally.
-
-    Args:
-      hostname: hostname of the server to be pinged
-    Returns:
-      round trip time to the server in seconds, or 0 if unable to calculate RTT
-    """
-    raise NotImplementedError
+    ipfw_cmd = (self._ipfw_cmd(), ) + args
+    return self._check_output(*ipfw_cmd, elevate_privilege=True)
 
   def _get_cwnd(self):
     return None
 
   def _set_cwnd(self, args):
     pass
+
+  def _elevate_privilege_for_cmd(self, args):
+    return args
+
+  def _check_output(self, *args, **kwargs):
+    """Run Popen(*args) and return its output as a byte string.
+
+    Python 2.7 has subprocess.check_output. This is essentially the same
+    except that, as a convenience, all the positional args are used as
+    command arguments and the |elevate_privilege| kwarg is supported.
+
+    Args:
+      *args: sequence of program arguments
+      elevate_privilege: Run the command with elevated privileges.
+    Raises:
+      CalledProcessError if the program returns non-zero exit status.
+    Returns:
+      output as a byte string.
+    """
+    command_args = [str(a) for a in args]
+
+    if os.path.sep not in command_args[0]:
+      qualified_command = FindExecutable(command_args[0])
+      assert qualified_command, 'Failed to find %s in path' % command_args[0]
+      command_args[0] = qualified_command
+
+    if kwargs.get('elevate_privilege'):
+      command_args = self._elevate_privilege_for_cmd(command_args)
+
+    logging.debug(' '.join(command_args))
+    process = subprocess.Popen(
+        command_args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    output = process.communicate()[0]
+    retcode = process.poll()
+    if retcode:
+      raise CalledProcessError(retcode, command_args)
+    return output
 
   def set_temporary_tcp_init_cwnd(self, cwnd):
     cwnd = int(cwnd)
@@ -170,6 +192,12 @@ class _BasePlatformSettings(object):
     """
     logging.error('Platform does not support loopback configuration.')
 
+  def _save_primary_interface_properties(self):
+    self._orig_nameserver = self.get_original_primary_nameserver()
+
+  def _restore_primary_interface_properties(self):
+    self._set_primary_nameserver(self._orig_nameserver)
+
   def _get_primary_nameserver(self):
     raise NotImplementedError
 
@@ -184,21 +212,16 @@ class _BasePlatformSettings(object):
     return self._original_nameserver
 
   def set_temporary_primary_nameserver(self, nameserver):
-    orig_nameserver = self.get_original_primary_nameserver()
+    self._save_primary_interface_properties()
     self._set_primary_nameserver(nameserver)
     if self._get_primary_nameserver() == nameserver:
       logging.info('Changed temporary primary nameserver to %s', nameserver)
-      atexit.register(self._set_primary_nameserver, orig_nameserver)
+      atexit.register(self._restore_primary_interface_properties)
     else:
       raise self._get_dns_update_error()
 
 
 class _PosixPlatformSettings(_BasePlatformSettings):
-  PING_PATTERN = r'rtt min/avg/max/mdev = \d+\.\d+/(\d+\.\d+)/\d+\.\d+/\d+\.\d+'
-  PING_CMD = ('ping', '-c', '3', '-i', '0.2', '-W', '1')
-  # For OsX Lion non-root:
-  PING_RESTRICTED_CMD = ('ping', '-c', '1', '-i', '1', '-W', '1')
-  SUDO_PATH = '/usr/bin/sudo'
 
   def rerun_as_administrator(self):
     """If needed, rerun the program with administrative privileges.
@@ -207,79 +230,45 @@ class _PosixPlatformSettings(_BasePlatformSettings):
     """
     if os.geteuid() != 0:
       logging.warn('Rerunning with sudo: %s', sys.argv)
-      os.execv(self.SUDO_PATH, ['--'] + sys.argv)
+      os.execv('/usr/bin/sudo', ['--'] + sys.argv)
+
+  def _elevate_privilege_for_cmd(self, args):
+    def IsSetUID(path):
+      return (os.stat(path).st_mode & stat.S_ISUID) == stat.S_ISUID
+
+    def IsElevated():
+      p = subprocess.Popen(
+          ['sudo', '-nv'], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+          stderr=subprocess.STDOUT)
+      stdout = p.communicate()[0]
+      # Some versions of sudo set the returncode based on whether sudo requires
+      # a password currently. Other versions return output when password is
+      # required and no output when the user is already authenticated.
+      return not p.returncode and not stdout
+
+    if not IsSetUID(args[0]):
+      args = ['sudo'] + args
+
+      if not IsElevated():
+        print 'WPR needs to run %s under sudo. Please authenticate.' % args[1]
+        subprocess.check_call(['sudo', '-v'])  # Synchronously authenticate.
+
+        prompt = ('Would you like to always allow %s to run without sudo '
+                  '(via `sudo chmod +s %s`)? (y/N)' % (args[1], args[1]))
+        if raw_input(prompt).lower() == 'y':
+          subprocess.check_call(['sudo', 'chmod', '+s', args[1]])
+    return args
 
   def _ipfw_cmd(self):
-    for ipfw_path in ['/usr/local/sbin/ipfw', '/sbin/ipfw']:
-      if os.path.exists(ipfw_path):
-        ipfw_cmd = (self.SUDO_PATH, ipfw_path)
-        self._ipfw_cmd = lambda: ipfw_cmd  # skip rechecking paths
-        return ipfw_cmd
-    raise PlatformSettingsError('ipfw not found.')
-
-  def _ping(self, hostname):
-    """Return ping output or None if ping fails.
-
-    Initially pings 'localhost' to test for ping command that works.
-    If the tests fails, subsequent calls will return None without calling ping.
-
-    Args:
-      hostname: host to ping
-    Returns:
-      ping stdout string, or None if ping unavailable
-    Raises:
-      CalledProcessError if ping returns non-zero exit
-    """
-    if not hasattr(self, 'ping_cmd'):
-      test_host = 'localhost'
-      for self.ping_cmd in (self.PING_CMD, self.PING_RESTRICTED_CMD):
-        try:
-          if self._ping(test_host):
-            break
-        except (CalledProcessError, OSError) as e:
-          last_ping_error = e
-      else:
-        logging.critical('Ping configuration failed: %s', last_ping_error)
-        self.ping_cmd = None
-    if self.ping_cmd:
-      cmd = list(self.ping_cmd) + [hostname]
-      return self._check_output(*cmd)
-    return None
-
-  def ping_rtt(self, hostname):
-    """Pings the hostname by calling the OS system ping command.
-
-    Args:
-      hostname: hostname of the server to be pinged
-    Returns:
-      round trip time to the server in milliseconds, or 0 if unavailable
-    """
-    rtt = 0
-    output = None
-    try:
-      output = self._ping(hostname)
-    except CalledProcessError as e:
-      logging.critical('Ping failed: %s', e)
-    if output:
-      match = re.search(self.PING_PATTERN, output)
-      if match:
-        rtt = float(match.groups()[0])
-      else:
-        logging.warning('Unable to ping %s: %s', hostname, output)
-    return rtt
-
+    return 'ipfw'
 
   def _get_dns_update_error(self):
     return DnsUpdateError('Did you run under sudo?')
 
-  @classmethod
-  def _sysctl(cls, *args, **kwargs):
-    sysctl_args = []
+  def _sysctl(self, *args, **kwargs):
+    sysctl_args = [FindExecutable('sysctl')]
     if kwargs.get('use_sudo'):
-      sysctl_args.append(cls.SUDO_PATH)
-    sysctl_args.append('/usr/sbin/sysctl')
-    if not os.path.exists(sysctl_args[-1]):
-      sysctl_args[-1] = '/sbin/sysctl'
+      sysctl_args = self._elevate_privilege_for_cmd(sysctl_args)
     sysctl_args.extend(str(a) for a in args)
     sysctl = subprocess.Popen(
         sysctl_args, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
@@ -306,21 +295,17 @@ class _PosixPlatformSettings(_BasePlatformSettings):
       logging.error('Unable to get sysctl %s: %s', name, rv)
       return None
 
-  def _check_output(self, *args):
-    """Allow tests to override this."""
-    return _check_output(*args)
-
 
 class _OsxPlatformSettings(_PosixPlatformSettings):
   LOCAL_SLOWSTART_MIB_NAME = 'net.inet.tcp.local_slowstart_flightsize'
 
   def _scutil(self, cmd):
-    scutil = subprocess.Popen(
-        ['/usr/sbin/scutil'], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+    scutil = subprocess.Popen([FindExecutable('scutil')],
+                               stdin=subprocess.PIPE, stdout=subprocess.PIPE)
     return scutil.communicate(cmd)[0]
 
   def _ifconfig(self, *args):
-    return _check_output(self.SUDO_PATH, '/sbin/ifconfig', *args)
+    return self._check_output('ifconfig', *args, elevate_privilege=True)
 
   def set_sysctl(self, name, value):
     rv = self._sysctl('-w', '%s=%s' % (name, value), use_sudo=True)[0]
@@ -386,6 +371,41 @@ class _OsxPlatformSettings(_PosixPlatformSettings):
       'set %s' % self._get_dns_service_key()
     ])
     self._scutil(command)
+
+
+class _FreeBSDPlatformSettings(_PosixPlatformSettings):
+  """Partial implementation for FreeBSD.  Does not allow a DNS server to be
+  launched nor ipfw to be used.
+  """
+  RESOLV_CONF = '/etc/resolv.conf'
+
+  def _get_default_route_line(self):
+    raise NotImplementedError
+
+  def _set_cwnd(self, cwnd):
+    raise NotImplementedError
+
+  def _get_cwnd(self):
+    raise NotImplementedError
+
+  def setup_temporary_loopback_config(self):
+    raise NotImplementedError
+
+  def _write_resolve_conf(self, dns):
+    raise NotImplementedError
+
+  def _get_primary_nameserver(self):
+    try:
+      resolv_file = open(self.RESOLV_CONF)
+    except IOError:
+      raise DnsReadError()
+    for line in resolv_file:
+      if line.startswith('nameserver '):
+        return line.split()[1]
+    raise DnsReadError()
+
+  def _set_primary_nameserver(self, dns):
+    raise NotImplementedError
 
 
 class _LinuxPlatformSettings(_PosixPlatformSettings):
@@ -527,13 +547,13 @@ class _WindowsPlatformSettings(_BasePlatformSettings):
     return time.clock()
 
   def _arp(self, *args):
-    return _check_output('arp', *args)
+    return self._check_output('arp', *args)
 
   def _route(self, *args):
-    return _check_output('route', *args)
+    return self._check_output('route', *args)
 
   def _ipconfig(self, *args):
-    return _check_output('ipconfig', *args)
+    return self._check_output('ipconfig', *args)
 
   def _get_mac_address(self, ip):
     """Return the MAC address for the given ip."""
@@ -581,28 +601,69 @@ class _WindowsPlatformSettings(_BasePlatformSettings):
         DNS servers configured through DHCP:  192.168.1.1
         Register with which suffix:           Primary only
     """
-    return _check_output('netsh', 'interface', 'ip', 'show', 'dns')
+    return self._check_output('netsh', 'interface', 'ip', 'show', 'dns')
 
+  def _netsh_set_dns(self, iface_name, addr):
+    """Modify DNS information on the primary interface."""
+    output = self._check_output('netsh', 'interface', 'ip', 'set', 'dns',
+                                iface_name, 'static', addr)
+
+  def _netsh_set_dns_dhcp(self, iface_name):
+    """Modify DNS information on the primary interface."""
+    output = self._check_output('netsh', 'interface', 'ip', 'set', 'dns',
+                                iface_name, 'dhcp')
+                           
+  def _get_interfaces_with_dns(self):
+    output = self._netsh_show_dns()
+    lines = output.split('\n')
+    iface_re = re.compile(r'^Configuration for interface \"(?P<name>.*)\"')
+    dns_re = re.compile(r'(?P<kind>.*):\s+(?P<dns>\d+\.\d+\.\d+\.\d+)')
+    iface_name = None
+    iface_dns = None
+    iface_kind = None
+    ifaces = []
+    for line in lines:
+      iface_match = iface_re.match(line)
+      if iface_match:
+        iface_name = iface_match.group('name')
+      dns_match = dns_re.match(line)
+      if dns_match:
+        iface_dns = dns_match.group('dns')
+        iface_dns_config = dns_match.group('kind').strip()
+        if iface_dns_config == "Statically Configured DNS Servers":
+          iface_kind = "static"
+        elif iface_dns_config == "DNS servers configured through DHCP":
+          iface_kind = "dhcp"
+      if iface_name and iface_dns and iface_kind:
+        ifaces.append( (iface_dns, iface_name, iface_kind) )
+        iface_name = None
+        iface_dns = None
+    return ifaces
+
+  def _save_primary_interface_properties(self):
+    # TODO(etienneb): On windows, an interface can have multiple DNS server
+    # configured. We should save/restore all of them.
+    ifaces = self._get_interfaces_with_dns()
+    self._primary_interfaces = ifaces
+    
+  def _restore_primary_interface_properties(self):
+    for iface in self._primary_interfaces:
+      (iface_dns, iface_name, iface_kind) = iface 
+      self._netsh_set_dns(iface_name, iface_dns)
+      if iface_kind == "dhcp":
+        self._netsh_set_dns_dhcp(iface_name)
+    
   def _get_primary_nameserver(self):
-    match = re.search(r':\s+(\d+\.\d+\.\d+\.\d+)', self._netsh_show_dns())
-    return match.group(1) if match else None
-
+    ifaces = self._get_interfaces_with_dns()
+    if not len(ifaces):
+      raise DnsUpdateError("Interface with valid DNS configured not found.")
+    (iface_dns, iface_name, iface_kind) = ifaces[0]
+    return iface_dns
+  
   def _set_primary_nameserver(self, dns):
-    vbs = """
-Set objWMIService = GetObject( _
-   "winmgmts:{impersonationLevel=impersonate}!\\\\.\\root\\cimv2")
-Set colNetCards = objWMIService.ExecQuery( _
-    "Select * From Win32_NetworkAdapterConfiguration Where IPEnabled = True")
-For Each objNetCard in colNetCards
-  arrDNSServers = Array("%s")
-  objNetCard.SetDNSServerSearchOrder(arrDNSServers)
-Next
-""" % dns
-    vbs_file = tempfile.NamedTemporaryFile(suffix='.vbs', delete=False)
-    vbs_file.write(vbs)
-    vbs_file.close()
-    subprocess.check_call(['cscript', '//nologo', vbs_file.name])
-    os.remove(vbs_file.name)
+    for iface in self._primary_interfaces:
+      (iface_dns, iface_name, iface_kind) = iface 
+      self._netsh_set_dns(iface_name, dns)
 
 
 class _WindowsXpPlatformSettings(_WindowsPlatformSettings):
@@ -620,6 +681,8 @@ def _new_platform_settings(system, release):
     return _WindowsXpPlatformSettings()
   if system == 'Windows':
     return _WindowsPlatformSettings()
+  if system == 'FreeBSD':
+    return _FreeBSDPlatformSettings()
   raise NotImplementedError('Sorry %s %s is not supported.' % (system, release))
 
 
@@ -634,7 +697,6 @@ timer = _inst.timer
 get_server_ip_address = _inst.get_server_ip_address
 get_httpproxy_ip_address = _inst.get_httpproxy_ip_address
 ipfw = _inst.ipfw
-ping_rtt = _inst.ping_rtt
 set_temporary_tcp_init_cwnd = _inst.set_temporary_tcp_init_cwnd
 setup_temporary_loopback_config = _inst.setup_temporary_loopback_config
 

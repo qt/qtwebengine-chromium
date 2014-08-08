@@ -23,11 +23,8 @@
             'debugger.gyp:debugger',
             'pdfviewer.gyp:pdfviewer',
             #'v8.gyp:SkV8Example',
+            #'webtry.gyp:webtry',
             ],
-        }],
-        # DM assumes you've got a GPU.
-        ['skia_gpu == 1', {
-          'dependencies': [ 'dm.gyp:dm' ],
         }],
       ],
     },

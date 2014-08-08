@@ -10,10 +10,7 @@
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/image/image_unittest_util.h"
 
-#if defined(TOOLKIT_GTK)
-#include <gtk/gtk.h>
-#include "ui/gfx/gtk_util.h"
-#elif defined(OS_IOS)
+#if defined(OS_IOS)
 #include "base/mac/foundation_util.h"
 #include "skia/ext/skia_utils_ios.h"
 #elif defined(OS_MACOSX)
@@ -75,7 +72,7 @@ TEST_F(ImageTest, EmptyImage) {
 
 // Test constructing a gfx::Image from an empty PlatformImage.
 TEST_F(ImageTest, EmptyImageFromEmptyPlatformImage) {
-#if defined(OS_IOS) || defined(OS_MACOSX) || defined(TOOLKIT_GTK)
+#if defined(OS_IOS) || defined(OS_MACOSX)
   gfx::Image image1(NULL);
   EXPECT_TRUE(image1.IsEmpty());
   EXPECT_EQ(0, image1.Width());
@@ -246,12 +243,24 @@ TEST_F(ImageTest, MultiResolutionPNGToImageSkia) {
   scales.push_back(1.0f);
   scales.push_back(2.0f);
   gfx::ImageSkia image_skia = image.AsImageSkia();
-  EXPECT_TRUE(gt::ImageSkiaStructureMatches(image_skia, kSize1x, kSize1x,
-                                            scales));
   EXPECT_TRUE(gt::IsEqual(bytes1x,
       image_skia.GetRepresentation(1.0f).sk_bitmap()));
   EXPECT_TRUE(gt::IsEqual(bytes2x,
       image_skia.GetRepresentation(2.0f).sk_bitmap()));
+  EXPECT_TRUE(gt::ImageSkiaStructureMatches(image_skia, kSize1x, kSize1x,
+                                            scales));
+#if !defined(OS_IOS)
+  // IOS does not support arbitrary scale factors.
+  gfx::ImageSkiaRep rep_1_6x = image_skia.GetRepresentation(1.6f);
+  ASSERT_FALSE(rep_1_6x.is_null());
+  ASSERT_EQ(1.6f, rep_1_6x.scale());
+  EXPECT_EQ("40x40", rep_1_6x.pixel_size().ToString());
+
+  gfx::ImageSkiaRep rep_0_8x = image_skia.GetRepresentation(0.8f);
+  ASSERT_FALSE(rep_0_8x.is_null());
+  ASSERT_EQ(0.8f, rep_0_8x.scale());
+  EXPECT_EQ("20x20", rep_0_8x.pixel_size().ToString());
+#endif
 }
 
 TEST_F(ImageTest, MultiResolutionPNGToPlatform) {
@@ -436,27 +445,6 @@ TEST_F(ImageTest, PlatformToSkiaToCopy) {
   delete bitmap;
 }
 
-#if defined(TOOLKIT_GTK)
-TEST_F(ImageTest, SkiaToGdkCopy) {
-  GdkPixbuf* pixbuf;
-
-  {
-    gfx::Image image(gt::CreateImageSkia(25, 25));
-    pixbuf = image.CopyGdkPixbuf();
-  }
-
-  EXPECT_TRUE(pixbuf);
-  g_object_unref(pixbuf);
-}
-
-TEST_F(ImageTest, SkiaToCairoCreatesGdk) {
-  gfx::Image image(gt::CreateImageSkia(25, 25));
-  EXPECT_FALSE(image.HasRepresentation(gfx::Image::kImageRepGdk));
-  EXPECT_TRUE(image.ToCairo());
-  EXPECT_TRUE(image.HasRepresentation(gfx::Image::kImageRepGdk));
-}
-#endif
-
 #if defined(OS_IOS)
 TEST_F(ImageTest, SkiaToCocoaTouchCopy) {
   UIImage* ui_image;
@@ -495,9 +483,8 @@ TEST_F(ImageTest, SkBitmapConversionPreservesOrientation) {
   const int width = 50;
   const int height = 50;
   SkBitmap bitmap;
-  bitmap.setConfig(SkBitmap::kARGB_8888_Config, width, height);
-  bitmap.allocPixels();
-  bitmap.eraseRGB(0, 255, 0);
+  bitmap.allocN32Pixels(width, height);
+  bitmap.eraseARGB(255, 0, 255, 0);
 
   // Paint the upper half of the image in red (lower half is in green).
   SkCanvas canvas(bitmap);
@@ -538,9 +525,7 @@ TEST_F(ImageTest, SkBitmapConversionPreservesTransparency) {
   const int width = 50;
   const int height = 50;
   SkBitmap bitmap;
-  bitmap.setConfig(SkBitmap::kARGB_8888_Config, width, height, 0,
-                   kPremul_SkAlphaType);
-  bitmap.allocPixels();
+  bitmap.allocN32Pixels(width, height);
   bitmap.eraseARGB(0, 0, 255, 0);
 
   // Paint the upper half of the image in red (lower half is transparent).

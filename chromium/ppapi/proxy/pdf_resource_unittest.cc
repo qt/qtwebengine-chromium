@@ -65,10 +65,10 @@ TEST_F(PDFResourceTest, SearchString) {
       new PDFResource(Connection(&sink(), &sink()), pp_instance()));
   pdf_resource->SetLocaleForTest("en-US");
 
-  string16 input;
-  string16 term;
-  UTF8ToUTF16("abcdefabcdef", 12, &input);
-  UTF8ToUTF16("bc", 2, &term);
+  base::string16 input;
+  base::string16 term;
+  base::UTF8ToUTF16("abcdefabcdef", 12, &input);
+  base::UTF8ToUTF16("bc", 2, &term);
 
   PP_PrivateFindResult* results;
   int count = 0;

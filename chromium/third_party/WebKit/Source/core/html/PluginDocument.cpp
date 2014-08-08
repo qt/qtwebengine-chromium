@@ -25,17 +25,17 @@
 #include "config.h"
 #include "core/html/PluginDocument.h"
 
-#include "HTMLNames.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "core/HTMLNames.h"
 #include "core/dom/RawDataDocumentParser.h"
+#include "core/frame/FrameView.h"
+#include "core/frame/LocalFrame.h"
 #include "core/html/HTMLBodyElement.h"
 #include "core/html/HTMLEmbedElement.h"
 #include "core/html/HTMLHtmlElement.h"
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderClient.h"
-#include "core/frame/Frame.h"
-#include "core/frame/FrameView.h"
 #include "core/plugins/PluginView.h"
 #include "core/rendering/RenderEmbeddedObject.h"
 
@@ -46,15 +46,21 @@ using namespace HTMLNames;
 // FIXME: Share more code with MediaDocumentParser.
 class PluginDocumentParser : public RawDataDocumentParser {
 public:
-    static PassRefPtr<PluginDocumentParser> create(PluginDocument* document)
+    static PassRefPtrWillBeRawPtr<PluginDocumentParser> create(PluginDocument* document)
     {
-        return adoptRef(new PluginDocumentParser(document));
+        return adoptRefWillBeNoop(new PluginDocumentParser(document));
+    }
+
+    virtual void trace(Visitor* visitor) OVERRIDE
+    {
+        visitor->trace(m_embedElement);
+        RawDataDocumentParser::trace(visitor);
     }
 
 private:
     PluginDocumentParser(Document* document)
         : RawDataDocumentParser(document)
-        , m_embedElement(0)
+        , m_embedElement(nullptr)
     {
     }
 
@@ -66,7 +72,7 @@ private:
 
     PluginView* pluginView() const;
 
-    RefPtr<HTMLEmbedElement> m_embedElement;
+    RefPtrWillBeMember<HTMLEmbedElement> m_embedElement;
 };
 
 void PluginDocumentParser::createDocumentStructure()
@@ -76,7 +82,7 @@ void PluginDocumentParser::createDocumentStructure()
     ASSERT(document());
     RELEASE_ASSERT(document()->loader());
 
-    Frame* frame = document()->frame();
+    LocalFrame* frame = document()->frame();
     if (!frame)
         return;
 
@@ -84,12 +90,12 @@ void PluginDocumentParser::createDocumentStructure()
     if (!frame->settings() || !frame->loader().allowPlugins(NotAboutToInstantiatePlugin))
         return;
 
-    RefPtr<HTMLHtmlElement> rootElement = HTMLHtmlElement::create(*document());
+    RefPtrWillBeRawPtr<HTMLHtmlElement> rootElement = HTMLHtmlElement::create(*document());
     rootElement->insertedByParser();
     document()->appendChild(rootElement);
     frame->loader().dispatchDocumentElementAvailable();
 
-    RefPtr<HTMLBodyElement> body = HTMLBodyElement::create(*document());
+    RefPtrWillBeRawPtr<HTMLBodyElement> body = HTMLBodyElement::create(*document());
     body->setAttribute(marginwidthAttr, "0");
     body->setAttribute(marginheightAttr, "0");
     body->setAttribute(styleAttr, "background-color: rgb(38,38,38)");
@@ -134,7 +140,7 @@ void PluginDocumentParser::finish()
             view->didFinishLoading();
         else
             view->didFailLoading(error);
-        m_embedElement = 0;
+        m_embedElement = nullptr;
     }
     RawDataDocumentParser::finish();
 }
@@ -156,7 +162,7 @@ PluginDocument::PluginDocument(const DocumentInit& initializer)
     lockCompatibilityMode();
 }
 
-PassRefPtr<DocumentParser> PluginDocument::createParser()
+PassRefPtrWillBeRawPtr<DocumentParser> PluginDocument::createParser()
 {
     return PluginDocumentParser::create(this);
 }
@@ -178,20 +184,14 @@ Node* PluginDocument::pluginNode()
 void PluginDocument::detach(const AttachContext& context)
 {
     // Release the plugin node so that we don't have a circular reference.
-    m_pluginNode = 0;
+    m_pluginNode = nullptr;
     HTMLDocument::detach(context);
 }
 
-void PluginDocument::cancelManualPluginLoad()
+void PluginDocument::trace(Visitor* visitor)
 {
-    // PluginDocument::cancelManualPluginLoad should only be called once, but there are issues
-    // with how many times we call beforeload on object elements. <rdar://problem/8441094>.
-    if (!shouldLoadPluginManually())
-        return;
-
-    DocumentLoader* documentLoader = frame()->loader().activeDocumentLoader();
-    documentLoader->cancelMainResourceLoad(ResourceError::cancelledError(documentLoader->request().url()));
-    setShouldLoadPluginManually(false);
+    visitor->trace(m_pluginNode);
+    HTMLDocument::trace(visitor);
 }
 
 }

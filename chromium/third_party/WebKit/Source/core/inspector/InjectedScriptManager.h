@@ -34,13 +34,14 @@
 #include "wtf/Forward.h"
 #include "wtf/HashMap.h"
 #include "wtf/text/WTFString.h"
+#include <v8.h>
 
 namespace WebCore {
 
-class DOMWindow;
+class LocalDOMWindow;
 class InjectedScript;
 class InjectedScriptHost;
-class ScriptObject;
+class ScriptValue;
 
 class InjectedScriptManager {
     WTF_MAKE_NONCOPYABLE(InjectedScriptManager); WTF_MAKE_FAST_ALLOCATED;
@@ -58,7 +59,7 @@ public:
     int injectedScriptIdFor(ScriptState*);
     InjectedScript injectedScriptForObjectId(const String& objectId);
     void discardInjectedScripts();
-    void discardInjectedScriptsFor(DOMWindow*);
+    void discardInjectedScriptsFor(LocalDOMWindow*);
     void releaseObjectGroup(const String& objectGroup);
 
     typedef bool (*InspectedStateAccessCheck)(ScriptState*);
@@ -70,7 +71,7 @@ private:
     explicit InjectedScriptManager(InspectedStateAccessCheck);
 
     String injectedScriptSource();
-    ScriptObject createInjectedScript(const String& source, ScriptState*, int id);
+    ScriptValue createInjectedScript(const String& source, ScriptState*, int id);
 
     static bool canAccessInspectedWindow(ScriptState*);
     static bool canAccessInspectedWorkerGlobalScope(ScriptState*);
@@ -80,7 +81,7 @@ private:
     IdToInjectedScriptMap m_idToInjectedScript;
     RefPtr<InjectedScriptHost> m_injectedScriptHost;
     InspectedStateAccessCheck m_inspectedStateAccessCheck;
-    typedef HashMap<ScriptState*, int> ScriptStateToId;
+    typedef HashMap<RefPtr<ScriptState>, int> ScriptStateToId;
     ScriptStateToId m_scriptStateToId;
 };
 

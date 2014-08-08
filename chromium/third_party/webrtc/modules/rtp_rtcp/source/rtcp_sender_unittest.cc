@@ -278,12 +278,13 @@ class RtcpSenderTest : public ::testing::Test {
       : over_use_detector_options_(),
         clock_(1335900000),
         rtp_payload_registry_(new RTPPayloadRegistry(
-            0, RTPPayloadStrategy::CreateStrategy(false))),
+            RTPPayloadStrategy::CreateStrategy(false))),
         remote_bitrate_observer_(),
         remote_bitrate_estimator_(
             RemoteBitrateEstimatorFactory().Create(
                 &remote_bitrate_observer_,
                 &clock_,
+                kMimdControl,
                 kRemoteBitrateEstimatorMinBitrateBps)),
         receive_statistics_(ReceiveStatistics::Create(&clock_)) {
     test_transport_ = new TestTransport();

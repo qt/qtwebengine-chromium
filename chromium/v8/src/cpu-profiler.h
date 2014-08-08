@@ -1,39 +1,16 @@
 // Copyright 2012 the V8 project authors. All rights reserved.
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-//       copyright notice, this list of conditions and the following
-//       disclaimer in the documentation and/or other materials provided
-//       with the distribution.
-//     * Neither the name of Google Inc. nor the names of its
-//       contributors may be used to endorse or promote products derived
-//       from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
 #ifndef V8_CPU_PROFILER_H_
 #define V8_CPU_PROFILER_H_
 
-#include "allocation.h"
-#include "atomicops.h"
-#include "circular-queue.h"
-#include "platform/time.h"
-#include "sampler.h"
-#include "unbound-queue.h"
+#include "src/allocation.h"
+#include "src/base/atomicops.h"
+#include "src/circular-queue.h"
+#include "src/platform/time.h"
+#include "src/sampler.h"
+#include "src/unbound-queue.h"
 
 namespace v8 {
 namespace internal {
@@ -49,6 +26,7 @@ class ProfileGenerator;
 #define CODE_EVENTS_TYPE_LIST(V)                                   \
   V(CODE_CREATION,    CodeCreateEventRecord)                       \
   V(CODE_MOVE,        CodeMoveEventRecord)                         \
+  V(CODE_DISABLE_OPT, CodeDisableOptEventRecord)                   \
   V(SHARED_FUNC_MOVE, SharedFunctionInfoMoveEventRecord)           \
   V(REPORT_BUILTIN,   ReportBuiltinEventRecord)
 
@@ -83,6 +61,15 @@ class CodeMoveEventRecord : public CodeEventRecord {
  public:
   Address from;
   Address to;
+
+  INLINE(void UpdateCodeMap(CodeMap* code_map));
+};
+
+
+class CodeDisableOptEventRecord : public CodeEventRecord {
+ public:
+  Address start;
+  const char* bailout_reason;
 
   INLINE(void UpdateCodeMap(CodeMap* code_map));
 };
@@ -157,6 +144,11 @@ class ProfilerEventsProcessor : public Thread {
   // next record of the buffer.
   inline TickSample* StartTickSample();
   inline void FinishTickSample();
+
+  // SamplingCircularQueue has stricter alignment requirements than a normal new
+  // can fulfil, so we need to provide our own new/delete here.
+  void* operator new(size_t size);
+  void operator delete(void* ptr);
 
  private:
   // Called from events processing thread (Run() method.)
@@ -243,6 +235,7 @@ class CpuProfiler : public CodeEventListener {
                                Code* code, int args_count);
   virtual void CodeMovingGCEvent() {}
   virtual void CodeMoveEvent(Address from, Address to);
+  virtual void CodeDisableOptEvent(Code* code, SharedFunctionInfo* shared);
   virtual void CodeDeleteEvent(Address from);
   virtual void GetterCallbackEvent(Name* name, Address entry_point);
   virtual void RegExpCodeCreateEvent(Code* code, String* source);
@@ -268,7 +261,6 @@ class CpuProfiler : public CodeEventListener {
   Isolate* isolate_;
   TimeDelta sampling_interval_;
   CpuProfilesCollection* profiles_;
-  unsigned next_profile_uid_;
   ProfileGenerator* generator_;
   ProfilerEventsProcessor* processor_;
   bool saved_is_logging_;

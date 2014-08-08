@@ -29,14 +29,13 @@
 #include "platform/geometry/IntPoint.h"
 #include "wtf/FastAllocBase.h"
 #include "wtf/Vector.h"
+#include "wtf/VectorTraits.h"
 
 #if OS(MACOSX)
 typedef struct CGRect CGRect;
 
-#ifdef NSGEOMETRY_TYPES_SAME_AS_CGGEOMETRY_TYPES
-typedef struct CGRect NSRect;
-#else
-typedef struct _NSRect NSRect;
+#ifdef __OBJC__
+#import <Foundation/Foundation.h>
 #endif
 #endif
 
@@ -154,13 +153,18 @@ public:
 
 #if OS(MACOSX)
     operator CGRect() const;
-#if !defined(NSGEOMETRY_TYPES_SAME_AS_CGGEOMETRY_TYPES)
+#if defined(__OBJC__) && !defined(NSGEOMETRY_TYPES_SAME_AS_CGGEOMETRY_TYPES)
     operator NSRect() const;
 #endif
 #endif
 
     operator SkRect() const;
     operator SkIRect() const;
+
+#ifndef NDEBUG
+    // Prints the rect to the screen.
+    void show() const;
+#endif
 
 private:
     IntPoint m_location;
@@ -195,11 +199,18 @@ inline bool operator!=(const IntRect& a, const IntRect& b)
 
 #if OS(MACOSX)
 PLATFORM_EXPORT IntRect enclosingIntRect(const CGRect&);
-#if !defined(NSGEOMETRY_TYPES_SAME_AS_CGGEOMETRY_TYPES)
+#if defined(__OBJC__) && !defined(NSGEOMETRY_TYPES_SAME_AS_CGGEOMETRY_TYPES)
 PLATFORM_EXPORT IntRect enclosingIntRect(const NSRect&);
 #endif
 #endif
 
 } // namespace WebCore
+
+namespace WTF {
+
+template<>
+struct VectorTraits<WebCore::IntRect> : SimpleClassVectorTraits<WebCore::IntRect> { };
+
+} // namespace WTF
 
 #endif // IntRect_h

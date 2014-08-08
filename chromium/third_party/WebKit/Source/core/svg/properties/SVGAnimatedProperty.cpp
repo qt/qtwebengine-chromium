@@ -1,21 +1,31 @@
 /*
- * Copyright (C) Research In Motion Limited 2010. All rights reserved.
- * Copyright (C) 2013 Samsung Electronics. All rights reserved.
+ * Copyright (C) 2013 Google Inc. All rights reserved.
  *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Library General Public
- * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are
+ * met:
  *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Library General Public License for more details.
+ *     * Redistributions of source code must retain the above copyright
+ * notice, this list of conditions and the following disclaimer.
+ *     * Redistributions in binary form must reproduce the above
+ * copyright notice, this list of conditions and the following disclaimer
+ * in the documentation and/or other materials provided with the
+ * distribution.
+ *     * Neither the name of Google Inc. nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
  *
- * You should have received a copy of the GNU Library General Public License
- * along with this library; see the file COPYING.LIB.  If not, write to
- * the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
- * Boston, MA 02110-1301, USA.
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+ * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+ * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+ * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #include "config.h"
@@ -25,58 +35,37 @@
 
 namespace WebCore {
 
-SVGAnimatedProperty::SVGAnimatedProperty(SVGElement* contextElement, const QualifiedName& attributeName, AnimatedPropertyType animatedPropertyType)
-    : m_contextElement(contextElement)
-    , m_attributeName(attributeName)
-    , m_animatedPropertyType(animatedPropertyType)
-    , m_isAnimating(false)
+SVGAnimatedPropertyBase::SVGAnimatedPropertyBase(AnimatedPropertyType type, SVGElement* contextElement, const QualifiedName& attributeName)
+    : m_type(type)
     , m_isReadOnly(false)
-{
-    contextElement->setContextElement();
-}
-
-SVGAnimatedProperty::~SVGAnimatedProperty()
-{
-    // Assure that animationEnded() was called, if animationStarted() was called before.
-    ASSERT(!m_isAnimating);
-}
-
-void SVGAnimatedProperty::detachAnimatedPropertiesForElement(SVGElement* element)
-{
-    // Remove wrappers from cache.
-    Cache* cache = animatedPropertyCache();
-
-    Vector<SVGAnimatedPropertyDescription> keysToRemove;
-
-    const Cache::const_iterator end = cache->end();
-    for (Cache::const_iterator it = cache->begin(); it != end; ++it) {
-        if (it->key.m_element == element) {
-            it->value->resetContextElement();
-            keysToRemove.append(it->key);
-        }
-    }
-
-    for (Vector<SVGAnimatedPropertyDescription>::const_iterator it = keysToRemove.begin(); it != keysToRemove.end(); ++it) {
-        // http://crbug.com/333156 :
-        // There are cases where detachAnimatedPropertiesForElement is called recursively from ~SVGAnimatedProperty.
-        // This below protect makes this function safe by deferring the recursive call until we finish touching the HashMap.
-        RefPtr<SVGAnimatedProperty> protect = cache->get(*it);
-        cache->remove(*it);
-    }
-}
-
-void SVGAnimatedProperty::commitChange()
+    , m_contextElement(contextElement)
+    , m_attributeName(attributeName)
 {
     ASSERT(m_contextElement);
-    ASSERT_WITH_SECURITY_IMPLICATION(!m_contextElement->m_deletionHasBegun);
-    m_contextElement->invalidateSVGAttributes();
-    m_contextElement->svgAttributeChanged(m_attributeName);
+    ASSERT(m_attributeName != QualifiedName::null());
+    // FIXME: setContextElement should be delayed until V8 wrapper is created.
+    // FIXME: oilpan: or we can remove this backref ptr hack in oilpan.
+    m_contextElement->setContextElement();
 }
 
-SVGAnimatedProperty::Cache* SVGAnimatedProperty::animatedPropertyCache()
+SVGAnimatedPropertyBase::~SVGAnimatedPropertyBase()
 {
-    static Cache* s_cache = new Cache;
-    return s_cache;
+}
+
+void SVGAnimatedPropertyBase::animationEnded()
+{
+    synchronizeAttribute();
+}
+
+void SVGAnimatedPropertyBase::synchronizeAttribute()
+{
+    AtomicString value(currentValueBase()->valueAsString());
+    m_contextElement->setSynchronizedLazyAttribute(m_attributeName, value);
+}
+
+bool SVGAnimatedPropertyBase::isSpecified() const
+{
+    return isAnimating() || contextElement()->hasAttribute(attributeName());
 }
 
 } // namespace WebCore

@@ -22,6 +22,7 @@
 #ifndef SVGParserUtilities_h
 #define SVGParserUtilities_h
 
+#include "core/html/parser/HTMLParserIdioms.h"
 #include "core/svg/SVGTransform.h"
 #include "platform/text/ParserUtilities.h"
 #include "wtf/HashSet.h"
@@ -32,19 +33,22 @@ typedef Vector<UnicodeRange> UnicodeRanges;
 namespace WebCore {
 
 class FloatPoint;
-class FloatRect;
-class SVGPointList;
-class SVGTransformList;
+
+enum WhitespaceMode {
+    DisallowWhitespace = 0,
+    AllowLeadingWhitespace = 0x1,
+    AllowTrailingWhitespace = 0x2,
+    AllowLeadingAndTrailingWhitespace = AllowLeadingWhitespace | AllowTrailingWhitespace
+};
 
 template <typename CharType>
 bool parseSVGNumber(CharType* ptr, size_t length, double& number);
-bool parseNumber(const LChar*& ptr, const LChar* end, float& number, bool skip = true);
-bool parseNumber(const UChar*& ptr, const UChar* end, float& number, bool skip = true);
-bool parseNumberFromString(const String&, float& number, bool skip = true);
+bool parseNumber(const LChar*& ptr, const LChar* end, float& number, WhitespaceMode = AllowLeadingAndTrailingWhitespace);
+bool parseNumber(const UChar*& ptr, const UChar* end, float& number, WhitespaceMode = AllowLeadingAndTrailingWhitespace);
 bool parseNumberOptionalNumber(const String& s, float& h, float& v);
+bool parseNumberOrPercentage(const String& s, float& number);
 bool parseArcFlag(const LChar*& ptr, const LChar* end, bool& flag);
 bool parseArcFlag(const UChar*& ptr, const UChar* end, bool& flag);
-bool parseRect(const String&, FloatRect&);
 
 template <typename CharType>
 bool parseFloatPoint(const CharType*& current, const CharType* end, FloatPoint&);
@@ -53,18 +57,10 @@ bool parseFloatPoint2(const CharType*& current, const CharType* end, FloatPoint&
 template <typename CharType>
 bool parseFloatPoint3(const CharType*& current, const CharType* end, FloatPoint&, FloatPoint&, FloatPoint&);
 
-// SVG allows several different whitespace characters:
-// http://www.w3.org/TR/SVG/paths.html#PathDataBNF
-template <typename CharType>
-inline bool isSVGSpace(CharType c)
-{
-    return c == ' ' || c == '\t' || c == '\n' || c == '\r';
-}
-
 template <typename CharType>
 inline bool skipOptionalSVGSpaces(const CharType*& ptr, const CharType* end)
 {
-    while (ptr < end && isSVGSpace(*ptr))
+    while (ptr < end && isHTMLSpace<CharType>(*ptr))
         ptr++;
     return ptr < end;
 }
@@ -72,7 +68,7 @@ inline bool skipOptionalSVGSpaces(const CharType*& ptr, const CharType* end)
 template <typename CharType>
 inline bool skipOptionalSVGSpacesOrDelimiter(const CharType*& ptr, const CharType* end, char delimiter = ',')
 {
-    if (ptr < end && !isSVGSpace(*ptr) && *ptr != delimiter)
+    if (ptr < end && !isHTMLSpace<CharType>(*ptr) && *ptr != delimiter)
         return false;
     if (skipOptionalSVGSpaces(ptr, end)) {
         if (ptr < end && *ptr == delimiter) {
@@ -83,23 +79,13 @@ inline bool skipOptionalSVGSpacesOrDelimiter(const CharType*& ptr, const CharTyp
     return ptr < end;
 }
 
-bool pointsListFromSVGData(SVGPointList& pointsList, const String& points);
 Vector<String> parseDelimitedString(const String& input, const char seperator);
 bool parseKerningUnicodeString(const String& input, UnicodeRanges&, HashSet<String>& stringList);
 bool parseGlyphName(const String& input, HashSet<String>& values);
 
-enum TransformParsingMode {
-    ClearList,
-    DoNotClearList
-};
-
-bool parseTransformAttribute(SVGTransformList&, const LChar*& ptr, const LChar* end, TransformParsingMode = ClearList);
-bool parseTransformAttribute(SVGTransformList&, const UChar*& ptr, const UChar* end, TransformParsingMode = ClearList);
-
-bool parseTransformValue(unsigned type, const LChar*& ptr, const LChar* end, SVGTransform&);
-bool parseTransformValue(unsigned type, const UChar*& ptr, const UChar* end, SVGTransform&);
-
-SVGTransform::SVGTransformType parseTransformType(const String&);
+template<typename CharType>
+bool parseAndSkipTransformType(const CharType*& ptr, const CharType* end, SVGTransformType&);
+SVGTransformType parseTransformType(const String&);
 
 } // namespace WebCore
 

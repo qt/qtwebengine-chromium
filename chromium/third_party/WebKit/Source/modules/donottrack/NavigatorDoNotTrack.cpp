@@ -31,13 +31,13 @@
 #include "config.h"
 #include "modules/donottrack/NavigatorDoNotTrack.h"
 
-#include "core/loader/FrameLoaderClient.h"
-#include "core/frame/Frame.h"
+#include "core/frame/LocalFrame.h"
 #include "core/frame/Navigator.h"
+#include "core/loader/FrameLoaderClient.h"
 
 namespace WebCore {
 
-NavigatorDoNotTrack::NavigatorDoNotTrack(Frame* frame)
+NavigatorDoNotTrack::NavigatorDoNotTrack(LocalFrame* frame)
     : DOMWindowProperty(frame)
 {
 }
@@ -51,24 +51,26 @@ const char* NavigatorDoNotTrack::supplementName()
     return "NavigatorDoNotTrack";
 }
 
-NavigatorDoNotTrack* NavigatorDoNotTrack::from(Navigator* navigator)
+NavigatorDoNotTrack& NavigatorDoNotTrack::from(Navigator& navigator)
 {
-    NavigatorDoNotTrack* supplement = static_cast<NavigatorDoNotTrack*>(Supplement<Navigator>::from(navigator, supplementName()));
+    NavigatorDoNotTrack* supplement = static_cast<NavigatorDoNotTrack*>(WillBeHeapSupplement<Navigator>::from(navigator, supplementName()));
     if (!supplement) {
-        supplement = new NavigatorDoNotTrack(navigator->frame());
-        provideTo(navigator, supplementName(), adoptPtr(supplement));
+        supplement = new NavigatorDoNotTrack(navigator.frame());
+        provideTo(navigator, supplementName(), adoptPtrWillBeNoop(supplement));
     }
-    return supplement;
+    return *supplement;
 }
 
-String NavigatorDoNotTrack::doNotTrack(Navigator* navigator)
+String NavigatorDoNotTrack::doNotTrack(Navigator& navigator)
 {
-    return NavigatorDoNotTrack::from(navigator)->doNotTrack();
+    return NavigatorDoNotTrack::from(navigator).doNotTrack();
 }
 
 String NavigatorDoNotTrack::doNotTrack()
 {
-    return frame() ? frame()->loader().client()->doNotTrackValue() : String();
+    if (!frame() || !frame()->loader().client())
+        return String();
+    return frame()->loader().client()->doNotTrackValue();
 }
 
 } // namespace WebCore

@@ -277,21 +277,35 @@ void TransportProxy::SetIceRole(IceRole role) {
 }
 
 bool TransportProxy::SetLocalTransportDescription(
-    const TransportDescription& description, ContentAction action) {
+    const TransportDescription& description,
+    ContentAction action,
+    std::string* error_desc) {
   // If this is an answer, finalize the negotiation.
   if (action == CA_ANSWER) {
     CompleteNegotiation();
   }
-  return transport_->get()->SetLocalTransportDescription(description, action);
+  bool result = transport_->get()->SetLocalTransportDescription(description,
+                                                                action,
+                                                                error_desc);
+  if (result)
+    local_description_set_ = true;
+  return result;
 }
 
 bool TransportProxy::SetRemoteTransportDescription(
-    const TransportDescription& description, ContentAction action) {
+    const TransportDescription& description,
+    ContentAction action,
+    std::string* error_desc) {
   // If this is an answer, finalize the negotiation.
   if (action == CA_ANSWER) {
     CompleteNegotiation();
   }
-  return transport_->get()->SetRemoteTransportDescription(description, action);
+  bool result = transport_->get()->SetRemoteTransportDescription(description,
+                                                                 action,
+                                                                 error_desc);
+  if (result)
+    remote_description_set_ = true;
+  return result;
 }
 
 void TransportProxy::OnSignalingReady() {
@@ -418,16 +432,22 @@ bool BaseSession::SetIdentity(talk_base::SSLIdentity* identity) {
 }
 
 bool BaseSession::PushdownTransportDescription(ContentSource source,
-                                               ContentAction action) {
+                                               ContentAction action,
+                                               std::string* error_desc) {
   if (source == CS_LOCAL) {
-    return PushdownLocalTransportDescription(local_description_, action);
+    return PushdownLocalTransportDescription(local_description_,
+                                             action,
+                                             error_desc);
   }
-  return PushdownRemoteTransportDescription(remote_description_, action);
+  return PushdownRemoteTransportDescription(remote_description_,
+                                            action,
+                                            error_desc);
 }
 
 bool BaseSession::PushdownLocalTransportDescription(
     const SessionDescription* sdesc,
-    ContentAction action) {
+    ContentAction action,
+    std::string* error_desc) {
   // Update the Transports with the right information, and trigger them to
   // start connecting.
   for (TransportMap::iterator iter = transports_.begin();
@@ -438,7 +458,8 @@ bool BaseSession::PushdownLocalTransportDescription(
     bool ret = GetTransportDescription(
         sdesc, iter->second->content_name(), &tdesc);
     if (ret) {
-      if (!iter->second->SetLocalTransportDescription(tdesc, action)) {
+      if (!iter->second->SetLocalTransportDescription(tdesc, action,
+                                                      error_desc)) {
         return false;
       }
 
@@ -451,7 +472,8 @@ bool BaseSession::PushdownLocalTransportDescription(
 
 bool BaseSession::PushdownRemoteTransportDescription(
     const SessionDescription* sdesc,
-    ContentAction action) {
+    ContentAction action,
+    std::string* error_desc) {
   // Update the Transports with the right information.
   for (TransportMap::iterator iter = transports_.begin();
        iter != transports_.end(); ++iter) {
@@ -462,7 +484,8 @@ bool BaseSession::PushdownRemoteTransportDescription(
     bool ret = GetTransportDescription(
         sdesc, iter->second->content_name(), &tdesc);
     if (ret) {
-      if (!iter->second->SetRemoteTransportDescription(tdesc, action)) {
+      if (!iter->second->SetRemoteTransportDescription(tdesc, action,
+                                                       error_desc)) {
         return false;
       }
     }
@@ -522,11 +545,17 @@ TransportProxy* BaseSession::GetOrCreateTransportProxy(
       this, &BaseSession::OnTransportCandidatesAllocationDone);
   transport->SignalRoleConflict.connect(
       this, &BaseSession::OnRoleConflict);
+  transport->SignalCompleted.connect(
+      this, &BaseSession::OnTransportCompleted);
+  transport->SignalFailed.connect(
+      this, &BaseSession::OnTransportFailed);
 
   transproxy = new TransportProxy(worker_thread_, sid_, content_name,
                                   new TransportWrapper(transport));
   transproxy->SignalCandidatesReady.connect(
       this, &BaseSession::OnTransportProxyCandidatesReady);
+  if (identity_)
+    transproxy->SetIdentity(identity_);
   transports_[content_name] = transproxy;
 
   return transproxy;
@@ -611,10 +640,11 @@ void BaseSession::SetState(State state) {
   SignalNewDescription();
 }
 
-void BaseSession::SetError(Error error) {
+void BaseSession::SetError(Error error, const std::string& error_desc) {
   ASSERT(signaling_thread_->IsCurrent());
   if (error != error_) {
     error_ = error;
+    error_desc_ = error_desc;
     SignalError(this, error);
   }
 }
@@ -738,9 +768,9 @@ void BaseSession::OnTransportCandidatesAllocationDone(Transport* transport) {
   // Transport, since this removes the need to manually iterate over all
   // the transports, as is needed to make sure signals are handled properly
   // when BUNDLEing.
-#if 0
-  ASSERT(!IsCandidateAllocationDone());
-#endif
+  // TODO(juberti): Per b/7998978, devs and QA are hitting this assert in ways
+  // that make it prohibitively difficult to run dbg builds. Disabled for now.
+  //ASSERT(!IsCandidateAllocationDone());
   for (TransportMap::iterator iter = transports_.begin();
        iter != transports_.end(); ++iter) {
     if (iter->second->impl() == transport) {
@@ -856,7 +886,7 @@ void BaseSession::OnMessage(talk_base::Message *pmsg) {
   switch (pmsg->message_id) {
   case MSG_TIMEOUT:
     // Session timeout has occured.
-    SetError(ERROR_TIME);
+    SetError(ERROR_TIME, "Session timeout has occured.");
     break;
 
   case MSG_STATE:
@@ -925,7 +955,7 @@ bool Session::Initiate(const std::string &to,
   // the TransportDescriptions.
   SpeculativelyConnectAllTransportChannels();
 
-  PushdownTransportDescription(CS_LOCAL, CA_OFFER);
+  PushdownTransportDescription(CS_LOCAL, CA_OFFER, NULL);
   SetState(Session::STATE_SENTINITIATE);
   return true;
 }
@@ -946,7 +976,7 @@ bool Session::Accept(const SessionDescription* sdesc) {
     return false;
   }
   // TODO(juberti): Add BUNDLE support to transport-info messages.
-  PushdownTransportDescription(CS_LOCAL, CA_ANSWER);
+  PushdownTransportDescription(CS_LOCAL, CA_ANSWER, NULL);
   MaybeEnableMuxingSupport();  // Enable transport channel mux if supported.
   SetState(Session::STATE_SENTACCEPT);
   return true;
@@ -1261,8 +1291,10 @@ void Session::OnFailedSend(const buzz::XmlElement* orig_stanza,
     if (!OnRedirectError(redirect, &error)) {
       // TODO: Should we send a message back?  The standard
       // says nothing about it.
-      LOG(LS_ERROR) << "Failed to redirect: " << error.text;
-      SetError(ERROR_RESPONSE);
+      std::ostringstream desc;
+      desc << "Failed to redirect: " << error.text;
+      LOG(LS_ERROR) << desc.str();
+      SetError(ERROR_RESPONSE, desc.str());
     }
     return;
   }
@@ -1290,7 +1322,7 @@ void Session::OnFailedSend(const buzz::XmlElement* orig_stanza,
   } else if ((error_type != "continue") && (error_type != "wait")) {
     // We do not set an error if the other side said it is okay to continue
     // (possibly after waiting).  These errors can be ignored.
-    SetError(ERROR_RESPONSE);
+    SetError(ERROR_RESPONSE, "");
   }
 }
 
@@ -1318,7 +1350,7 @@ bool Session::OnInitiateMessage(const SessionMessage& msg,
                                                 init.transports,
                                                 init.groups));
   // Updating transport with TransportDescription.
-  PushdownTransportDescription(CS_REMOTE, CA_OFFER);
+  PushdownTransportDescription(CS_REMOTE, CA_OFFER, NULL);
   SetState(STATE_RECEIVEDINITIATE);
 
   // Users of Session may listen to state change and call Reject().
@@ -1352,7 +1384,7 @@ bool Session::OnAcceptMessage(const SessionMessage& msg, MessageError* error) {
                                                 accept.transports,
                                                 accept.groups));
   // Updating transport with TransportDescription.
-  PushdownTransportDescription(CS_REMOTE, CA_ANSWER);
+  PushdownTransportDescription(CS_REMOTE, CA_ANSWER, NULL);
   MaybeEnableMuxingSupport();  // Enable transport channel mux if supported.
   SetState(STATE_RECEIVEDACCEPT);
 
@@ -1496,8 +1528,8 @@ bool Session::CheckState(State expected, MessageError* error) {
   return true;
 }
 
-void Session::SetError(Error error) {
-  BaseSession::SetError(error);
+void Session::SetError(Error error, const std::string& error_desc) {
+  BaseSession::SetError(error, error_desc);
   if (error != ERROR_NONE)
     signaling_thread()->Post(this, MSG_ERROR);
 }

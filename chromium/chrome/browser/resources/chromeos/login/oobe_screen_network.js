@@ -10,6 +10,7 @@ login.createScreen('NetworkScreen', 'connect', function() {
   return {
     EXTERNAL_API: [
       'enableContinueButton',
+      'setInputMethod',
       'setTimezone',
       'showError'
     ],
@@ -91,6 +92,17 @@ login.createScreen('NetworkScreen', 'connect', function() {
     },
 
     /**
+     * Sets the current input method.
+     * @param {string} inputMethodId The ID of the input method to select.
+     */
+    setInputMethod: function(inputMethodId) {
+      option = $('keyboard-select').querySelector(
+          'option[value="' + inputMethodId + '"]');
+      if (option)
+        option.selected = true;
+    },
+
+    /**
      * Sets the current timezone.
      * @param {string} timezoneId The timezone ID to select.
      */
@@ -108,6 +120,7 @@ login.createScreen('NetworkScreen', 'connect', function() {
       messageDiv.className = 'error-message-bubble';
       messageDiv.textContent = message;
       error.appendChild(messageDiv);
+      error.setAttribute('role', 'alert');
 
       $('bubble').showContentForElement($('networks-list'),
                                         cr.ui.Bubble.Attachment.BOTTOM,

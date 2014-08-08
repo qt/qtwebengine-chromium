@@ -32,25 +32,29 @@
 #define DOMWindowPagePopup_h
 
 #include "platform/Supplementable.h"
+#include "platform/heap/Handle.h"
 
 namespace WebCore {
 
-class DOMWindow;
+class LocalDOMWindow;
 class PagePopupClient;
 class PagePopupController;
 
-class DOMWindowPagePopup : public Supplement<DOMWindow> {
+class DOMWindowPagePopup FINAL : public NoBaseWillBeGarbageCollected<DOMWindowPagePopup>, public WillBeHeapSupplement<LocalDOMWindow> {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(DOMWindowPagePopup);
 public:
-    static PagePopupController* pagePopupController(DOMWindow*);
-    static void install(DOMWindow*, PagePopupClient*);
-    static void uninstall(DOMWindow*);
-    ~DOMWindowPagePopup();
+    static PagePopupController* pagePopupController(LocalDOMWindow&);
+    static void install(LocalDOMWindow&, PagePopupClient*);
+    static void uninstall(LocalDOMWindow&);
+    DECLARE_EMPTY_VIRTUAL_DESTRUCTOR_WILL_BE_REMOVED(DOMWindowPagePopup);
+
+    void trace(Visitor*);
 
 private:
     explicit DOMWindowPagePopup(PagePopupClient*);
     static const char* supplementName();
 
-    RefPtr<PagePopupController> m_controller;
+    RefPtrWillBeMember<PagePopupController> m_controller;
 };
 
 }

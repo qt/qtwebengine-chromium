@@ -32,6 +32,7 @@
 namespace WebCore {
 
 class InsertionPoint;
+class RenderObject;
 
 namespace NodeRenderingTraversal {
 
@@ -39,30 +40,31 @@ class ParentDetails {
 public:
     ParentDetails()
         : m_insertionPoint(0)
-        , m_resetStyleInheritance(false)
     { }
 
     const InsertionPoint* insertionPoint() const { return m_insertionPoint; }
-    bool resetStyleInheritance() const { return m_resetStyleInheritance; }
 
     void didTraverseInsertionPoint(const InsertionPoint*);
-    void didTraverseShadowRoot(const ShadowRoot*);
 
     bool operator==(const ParentDetails& other)
     {
-        return m_insertionPoint == other.m_insertionPoint
-            && m_resetStyleInheritance == other.m_resetStyleInheritance;
+        return m_insertionPoint == other.m_insertionPoint;
     }
 
 private:
     const InsertionPoint* m_insertionPoint;
-    bool m_resetStyleInheritance;
 };
 
 ContainerNode* parent(const Node*);
 ContainerNode* parent(const Node*, ParentDetails*);
+bool contains(const ContainerNode*, const Node*);
 Node* nextSibling(const Node*);
 Node* previousSibling(const Node*);
+Node* previous(const Node*, const Node* stayWithin);
+Node* next(const Node*, const Node* stayWithin);
+RenderObject* nextSiblingRenderer(const Node*);
+RenderObject* previousSiblingRenderer(const Node*);
+RenderObject* nextInTopLayer(const Element*);
 
 inline ContainerNode* parent(const Node* node)
 {

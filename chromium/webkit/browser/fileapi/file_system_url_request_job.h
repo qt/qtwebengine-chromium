@@ -7,10 +7,10 @@
 
 #include <string>
 
+#include "base/files/file.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "base/platform_file.h"
 #include "net/http/http_byte_range.h"
 #include "net/url_request/url_request_job.h"
 #include "webkit/browser/fileapi/file_system_url.h"
@@ -36,6 +36,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT_PRIVATE FileSystemURLRequestJob
   FileSystemURLRequestJob(
       net::URLRequest* request,
       net::NetworkDelegate* network_delegate,
+      const std::string& storage_domain,
       FileSystemContext* file_system_context);
 
   // URLRequestJob methods:
@@ -60,12 +61,13 @@ class WEBKIT_STORAGE_BROWSER_EXPORT_PRIVATE FileSystemURLRequestJob
   virtual ~FileSystemURLRequestJob();
 
   void StartAsync();
-  void DidGetMetadata(
-      base::PlatformFileError error_code,
-      const base::PlatformFileInfo& file_info);
+  void DidAttemptAutoMount(base::File::Error result);
+  void DidGetMetadata(base::File::Error error_code,
+                      const base::File::Info& file_info);
   void DidRead(int result);
   void NotifyFailed(int rv);
 
+  const std::string storage_domain_;
   FileSystemContext* file_system_context_;
   scoped_ptr<webkit_blob::FileStreamReader> reader_;
   FileSystemURL url_;

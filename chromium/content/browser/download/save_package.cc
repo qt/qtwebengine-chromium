@@ -38,12 +38,12 @@
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/resource_context.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/common/url_constants.h"
+#include "net/base/filename_util.h"
 #include "net/base/io_buffer.h"
 #include "net/base/mime_util.h"
-#include "net/base/net_util.h"
 #include "net/url_request/url_request_context.h"
 #include "third_party/WebKit/public/web/WebPageSerializerClient.h"
+#include "url/url_constants.h"
 
 using base::Time;
 using blink::WebPageSerializerClient;
@@ -259,9 +259,9 @@ GURL SavePackage::GetUrlToBeSaved() {
   // "real" url of the page) from the NavigationEntry because it reflects its
   // origin rather than the displayed one (returned by GetURL) which may be
   // different (like having "view-source:" on the front).
-  NavigationEntry* active_entry =
-      web_contents()->GetController().GetActiveEntry();
-  return active_entry->GetURL();
+  NavigationEntry* visible_entry =
+      web_contents()->GetController().GetVisibleEntry();
+  return visible_entry->GetURL();
 }
 
 void SavePackage::Cancel(bool user_action) {
@@ -1222,7 +1222,7 @@ base::FilePath SavePackage::GetSuggestedNameForSaveAs(
   // similarly).
   if (title_ == net::FormatUrl(page_url_, accept_langs)) {
     std::string url_path;
-    if (!page_url_.SchemeIs(chrome::kDataScheme)) {
+    if (!page_url_.SchemeIs(url::kDataScheme)) {
       std::vector<std::string> url_parts;
       base::SplitString(page_url_.path(), '/', &url_parts);
       if (!url_parts.empty()) {
@@ -1299,7 +1299,7 @@ const base::FilePath::CharType* SavePackage::ExtensionForMimeType(
 #if defined(OS_POSIX)
   base::FilePath::StringType mime_type(contents_mime_type);
 #elif defined(OS_WIN)
-  base::FilePath::StringType mime_type(UTF8ToWide(contents_mime_type));
+  base::FilePath::StringType mime_type(base::UTF8ToWide(contents_mime_type));
 #endif  // OS_WIN
   for (uint32 i = 0; i < ARRAYSIZE_UNSAFE(extensions); ++i) {
     if (mime_type == extensions[i].mime_type)

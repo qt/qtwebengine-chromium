@@ -20,13 +20,18 @@ class WebSharedWorker;
 namespace content {
 
 class SharedWorkerDevToolsAgent;
+class WebMessagePortChannelImpl;
 
 // This class creates a WebSharedWorker, and translates incoming IPCs to the
 // appropriate WebSharedWorker APIs.
 class WebSharedWorkerStub : public IPC::Listener {
  public:
-  WebSharedWorkerStub(const base::string16& name, int route_id,
-                      const WorkerAppCacheInitInfo& appcache_init_info);
+  WebSharedWorkerStub(const GURL& url,
+                      const base::string16& name,
+                      const base::string16& content_security_policy,
+                      blink::WebContentSecurityPolicyType security_policy_type,
+                      bool pause_on_start,
+                      int route_id);
 
   // IPC::Listener implementation.
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
@@ -35,15 +40,14 @@ class WebSharedWorkerStub : public IPC::Listener {
   // Invoked when the WebSharedWorkerClientProxy is shutting down.
   void Shutdown();
 
+  void WorkerScriptLoaded();
+  void WorkerScriptLoadFailed();
+
   // Called after terminating the worker context to make sure that the worker
   // actually terminates (is not stuck in an infinite loop).
   void EnsureWorkerContextTerminates();
 
   WebSharedWorkerClientProxy* client() { return &client_; }
-
-  const WorkerAppCacheInitInfo& appcache_init_info() const {
-    return appcache_init_info_;
-  }
 
   // Returns the script url of this worker.
   const GURL& url();
@@ -53,32 +57,24 @@ class WebSharedWorkerStub : public IPC::Listener {
   virtual ~WebSharedWorkerStub();
 
   void OnConnect(int sent_message_port_id, int routing_id);
-  void OnStartWorkerContext(
-      const GURL& url, const base::string16& user_agent,
-      const base::string16& source_code,
-      const base::string16& content_security_policy,
-      blink::WebContentSecurityPolicyType policy_type);
 
   void OnTerminateWorkerContext();
 
   ScopedChildProcessReference process_ref_;
 
   int route_id_;
-  WorkerAppCacheInitInfo appcache_init_info_;
 
   // WebSharedWorkerClient that responds to outgoing API calls
   // from the worker object.
   WebSharedWorkerClientProxy client_;
 
   blink::WebSharedWorker* impl_;
-  base::string16 name_;
-  bool started_;
+  bool running_;
   GURL url_;
   scoped_ptr<SharedWorkerDevToolsAgent> worker_devtools_agent_;
 
-  typedef std::pair<int, int> PendingConnectInfo;
-  typedef std::vector<PendingConnectInfo> PendingConnectInfoList;
-  PendingConnectInfoList pending_connects_;
+  typedef std::vector<WebMessagePortChannelImpl*> PendingChannelList;
+  PendingChannelList pending_channels_;
 
   DISALLOW_COPY_AND_ASSIGN(WebSharedWorkerStub);
 };

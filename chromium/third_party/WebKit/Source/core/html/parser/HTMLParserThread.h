@@ -31,22 +31,37 @@
 #ifndef HTMLParserThread_h
 #define HTMLParserThread_h
 
+#include "platform/heap/glue/MessageLoopInterruptor.h"
+#include "platform/heap/glue/PendingGCRunner.h"
+#include "public/platform/WebThread.h"
 #include "wtf/Functional.h"
 #include "wtf/OwnPtr.h"
-#include "public/platform/WebThread.h"
 
 namespace WebCore {
 
+class TaskSynchronizer;
+
 class HTMLParserThread {
 public:
+    static void init();
+    static void shutdown();
+
+    // It is an error to call shared() before init() or after shutdown();
     static HTMLParserThread* shared();
+
     void postTask(const Closure&);
+    blink::WebThread& platformThread();
+    bool isRunning();
 
 private:
     HTMLParserThread();
     ~HTMLParserThread();
+    void setupHTMLParserThread();
+    void cleanupHTMLParserThread(TaskSynchronizer*);
 
     OwnPtr<blink::WebThread> m_thread;
+    OwnPtr<PendingGCRunner> m_pendingGCRunner;
+    OwnPtr<MessageLoopInterruptor> m_messageLoopInterruptor;
 };
 
 } // namespace WebCore

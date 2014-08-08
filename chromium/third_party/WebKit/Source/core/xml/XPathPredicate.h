@@ -32,93 +32,100 @@
 
 namespace WebCore {
 
-    namespace XPath {
+namespace XPath {
 
-        class Number : public Expression {
-        public:
-            explicit Number(double);
-        private:
-            virtual Value evaluate() const;
-            virtual Value::Type resultType() const { return Value::NumberValue; }
+class Number FINAL : public Expression {
+public:
+    explicit Number(double);
+    virtual void trace(Visitor*) OVERRIDE;
 
-            Value m_value;
-        };
+private:
+    virtual Value evaluate() const OVERRIDE;
+    virtual Value::Type resultType() const OVERRIDE { return Value::NumberValue; }
 
-        class StringExpression : public Expression {
-        public:
-            explicit StringExpression(const String&);
-        private:
-            virtual Value evaluate() const;
-            virtual Value::Type resultType() const { return Value::StringValue; }
+    Value m_value;
+};
 
-            Value m_value;
-        };
+class StringExpression FINAL : public Expression {
+public:
+    explicit StringExpression(const String&);
+    virtual void trace(Visitor*) OVERRIDE;
 
-        class Negative : public Expression {
-        private:
-            virtual Value evaluate() const;
-            virtual Value::Type resultType() const { return Value::NumberValue; }
-        };
+private:
+    virtual Value evaluate() const OVERRIDE;
+    virtual Value::Type resultType() const OVERRIDE { return Value::StringValue; }
 
-        class NumericOp : public Expression {
-        public:
-            enum Opcode {
-                OP_Add, OP_Sub, OP_Mul, OP_Div, OP_Mod
-            };
-            NumericOp(Opcode, PassOwnPtr<Expression> lhs, PassOwnPtr<Expression> rhs);
-        private:
-            virtual Value evaluate() const;
-            virtual Value::Type resultType() const { return Value::NumberValue; }
+    Value m_value;
+};
 
-            Opcode m_opcode;
-        };
+class Negative FINAL : public Expression {
+private:
+    virtual Value evaluate() const OVERRIDE;
+    virtual Value::Type resultType() const OVERRIDE { return Value::NumberValue; }
+};
 
-        class EqTestOp : public Expression {
-        public:
-            enum Opcode { OP_EQ, OP_NE, OP_GT, OP_LT, OP_GE, OP_LE };
-            EqTestOp(Opcode, PassOwnPtr<Expression> lhs, PassOwnPtr<Expression> rhs);
-            virtual Value evaluate() const;
-        private:
-            virtual Value::Type resultType() const { return Value::BooleanValue; }
-            bool compare(const Value&, const Value&) const;
+class NumericOp FINAL : public Expression {
+public:
+    enum Opcode {
+        OP_Add, OP_Sub, OP_Mul, OP_Div, OP_Mod
+    };
+    NumericOp(Opcode, PassOwnPtrWillBeRawPtr<Expression> lhs, PassOwnPtrWillBeRawPtr<Expression> rhs);
 
-            Opcode m_opcode;
-        };
+private:
+    virtual Value evaluate() const OVERRIDE;
+    virtual Value::Type resultType() const OVERRIDE { return Value::NumberValue; }
 
-        class LogicalOp : public Expression {
-        public:
-            enum Opcode { OP_And, OP_Or };
-            LogicalOp(Opcode, PassOwnPtr<Expression> lhs, PassOwnPtr<Expression> rhs);
-        private:
-            virtual Value::Type resultType() const { return Value::BooleanValue; }
-            bool shortCircuitOn() const;
-            virtual Value evaluate() const;
+    Opcode m_opcode;
+};
 
-            Opcode m_opcode;
-        };
+class EqTestOp FINAL : public Expression {
+public:
+    enum Opcode { OpcodeEqual, OpcodeNotEqual, OpcodeGreaterThan, OpcodeLessThan, OpcodeGreaterOrEqual, OpcodeLessOrEqual };
+    EqTestOp(Opcode, PassOwnPtrWillBeRawPtr<Expression> lhs, PassOwnPtrWillBeRawPtr<Expression> rhs);
+    virtual Value evaluate() const OVERRIDE;
 
-        class Union : public Expression {
-        private:
-            virtual Value evaluate() const;
-            virtual Value::Type resultType() const { return Value::NodeSetValue; }
-        };
+private:
+    virtual Value::Type resultType() const OVERRIDE { return Value::BooleanValue; }
+    bool compare(const Value&, const Value&) const;
 
-        class Predicate {
-            WTF_MAKE_NONCOPYABLE(Predicate); WTF_MAKE_FAST_ALLOCATED;
-        public:
-            explicit Predicate(PassOwnPtr<Expression>);
-            ~Predicate();
-            bool evaluate() const;
+    Opcode m_opcode;
+};
 
-            bool isContextPositionSensitive() const { return m_expr->isContextPositionSensitive() || m_expr->resultType() == Value::NumberValue; }
-            bool isContextSizeSensitive() const { return m_expr->isContextSizeSensitive(); }
+class LogicalOp FINAL : public Expression {
+public:
+    enum Opcode { OP_And, OP_Or };
+    LogicalOp(Opcode, PassOwnPtrWillBeRawPtr<Expression> lhs, PassOwnPtrWillBeRawPtr<Expression> rhs);
 
-        private:
-            OwnPtr<Expression> m_expr;
-        };
+private:
+    virtual Value::Type resultType() const OVERRIDE { return Value::BooleanValue; }
+    bool shortCircuitOn() const;
+    virtual Value evaluate() const OVERRIDE;
 
-    }
+    Opcode m_opcode;
+};
+
+class Union FINAL : public Expression {
+private:
+    virtual Value evaluate() const OVERRIDE;
+    virtual Value::Type resultType() const OVERRIDE { return Value::NodeSetValue; }
+};
+
+class Predicate FINAL : public NoBaseWillBeGarbageCollected<Predicate> {
+    WTF_MAKE_NONCOPYABLE(Predicate); WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+    DECLARE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(Predicate);
+public:
+    explicit Predicate(PassOwnPtrWillBeRawPtr<Expression>);
+    void trace(Visitor*);
+
+    bool evaluate() const;
+    bool isContextPositionSensitive() const { return m_expr->isContextPositionSensitive() || m_expr->resultType() == Value::NumberValue; }
+    bool isContextSizeSensitive() const { return m_expr->isContextSizeSensitive(); }
+
+private:
+    OwnPtrWillBeMember<Expression> m_expr;
+};
 
 }
 
+}
 #endif // XPathPredicate_h

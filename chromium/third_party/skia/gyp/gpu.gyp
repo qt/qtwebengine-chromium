@@ -1,3 +1,4 @@
+# GYP for building gpu
 {
   'target_defaults': {
     'conditions': [
@@ -73,6 +74,9 @@
         '../include/gpu',
       ],
     },
+    'defines': [
+      'GR_COMPRESS_ALPHA_MASK=0',
+    ],
   },
   'targets': [
     {
@@ -81,10 +85,10 @@
       'type': 'static_library',
       'standalone_static_library': 1,
       'dependencies': [
-        'angle.gyp:*',
         'core.gyp:*',
-        'edtaa.gyp:*',
         'utils.gyp:*',
+        'etc1.gyp:libetc1',
+        'ktx.gyp:libSkKTX',
       ],
       'includes': [
         'gpu.gypi',
@@ -93,9 +97,6 @@
         '../include/gpu',
         '../src/core',
         '../src/gpu',
-      ],
-      'export_dependent_settings': [
-        'angle.gyp:*',
       ],
       'sources': [
         '<@(skgpu_sources)',
@@ -107,11 +108,6 @@
         'gpu.gypi', # Makes the gypi appear in IDEs (but does not modify the build).
       ],
       'conditions': [
-        [ 'skia_nv_path_rendering', {
-          'defines': [
-            'GR_GL_USE_NV_PATH_RENDERING=1',
-          ],
-        }],
         [ 'skia_stroke_path_rendering', {
           'sources': [
             '../experimental/StrokePathRenderer/GrStrokePathRenderer.h',
@@ -140,17 +136,6 @@
           ],
           'defines': [
             'GR_CHROME_UTILS=1',
-          ],
-        }],
-        [ 'skia_distancefield_fonts', {
-          'sources': [
-            '<(skia_include_path)/gpu/GrDistanceFieldTextContext.h',
-            '<(skia_src_path)/gpu/GrDistanceFieldTextContext.cpp',
-            '<(skia_src_path)/gpu/effects/GrDistanceFieldTextureEffect.cpp',
-            '<(skia_src_path)/gpu/effects/GrDistanceFieldTextureEffect.h',
-          ],
-          'defines': [
-            'GR_DISTANCEFIELD_FONTS=1',
           ],
         }],
         [ 'skia_os == "linux" or skia_os == "chromeos"', {
@@ -213,15 +198,16 @@
             '../src/gpu/gl/GrGLCreateNativeInterface_none.cpp',
           ],
         }],
-        [ 'not skia_angle', {
+        [ 'skia_angle', {
+          'dependencies': [
+            'angle.gyp:*',
+          ],
+          'export_dependent_settings': [
+            'angle.gyp:*',
+          ],
+        }, { # not skia_angle
           'sources!': [
             '<@(skgpu_angle_gl_sources)',
-          ],
-          'dependencies!': [
-            'angle.gyp:*',
-          ],
-          'export_dependent_settings!': [
-            'angle.gyp:*',
           ],
         }],
         [ 'skia_os == "android"', {

@@ -26,34 +26,34 @@
 #ifndef ColorChooserUIController_h
 #define ColorChooserUIController_h
 
-#include "WebColorChooserClient.h"
 #include "platform/ColorChooser.h"
 #include "platform/text/PlatformLocale.h"
+#include "public/web/WebColorChooserClient.h"
 #include "wtf/OwnPtr.h"
 
 namespace WebCore {
 class ColorChooserClient;
+class LocalFrame;
 }
 
 namespace blink {
 
-class ChromeClientImpl;
 class WebColorChooser;
 
 class ColorChooserUIController : public WebColorChooserClient, public WebCore::ColorChooser {
 public:
-    ColorChooserUIController(ChromeClientImpl*, WebCore::ColorChooserClient*);
+    ColorChooserUIController(WebCore::LocalFrame*, WebCore::ColorChooserClient*);
     virtual ~ColorChooserUIController();
 
     virtual void openUI();
 
     // ColorChooser functions:
-    virtual void setSelectedColor(const WebCore::Color&) OVERRIDE;
+    virtual void setSelectedColor(const WebCore::Color&) OVERRIDE FINAL;
     virtual void endChooser() OVERRIDE;
 
     // WebColorChooserClient functions:
-    virtual void didChooseColor(const WebColor&) OVERRIDE;
-    virtual void didEndChooser() OVERRIDE;
+    virtual void didChooseColor(const WebColor&) OVERRIDE FINAL;
+    virtual void didEndChooser() OVERRIDE FINAL;
 
 protected:
     void openColorChooser();
@@ -61,7 +61,7 @@ protected:
 
 private:
 
-    ChromeClientImpl* m_chromeClient;
+    WebCore::LocalFrame* m_frame;
     WebCore::ColorChooserClient* m_client;
 };
 

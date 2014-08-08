@@ -19,6 +19,10 @@ namespace base {
 class TaskRunner;
 }
 
+namespace IPC {
+class MessageFilter;
+}
+
 namespace content {
 struct BrowserMessageFilterTraits;
 
@@ -29,11 +33,13 @@ class CONTENT_EXPORT BrowserMessageFilter
           BrowserMessageFilter, BrowserMessageFilterTraits>,
       public IPC::Sender {
  public:
-  BrowserMessageFilter();
+  explicit BrowserMessageFilter(uint32 message_class_to_filter);
+  BrowserMessageFilter(const uint32* message_classes_to_filter,
+                       size_t num_message_classes_to_filter);
 
-  // These match the corresponding IPC::ChannelProxy::MessageFilter methods and
-  // are always called on the IO thread.
-  virtual void OnFilterAdded(IPC::Channel* channel) {}
+  // These match the corresponding IPC::MessageFilter methods and are always
+  // called on the IO thread.
+  virtual void OnFilterAdded(IPC::Sender* sender) {}
   virtual void OnFilterRemoved() {}
   virtual void OnChannelClosing() {}
   virtual void OnChannelConnected(int32 peer_pid) {}
@@ -69,8 +75,7 @@ class CONTENT_EXPORT BrowserMessageFilter
   // Your function will normally be called on the IO thread.  However, if your
   // OverrideXForMessage modifies the thread used to dispatch the message,
   // your function will be called on the requested thread.
-  virtual bool OnMessageReceived(const IPC::Message& message,
-                                 bool* message_was_ok) = 0;
+  virtual bool OnMessageReceived(const IPC::Message& message) = 0;
 
   // Can be called on any thread, after OnChannelConnected is called.
   base::ProcessHandle PeerHandle();
@@ -91,6 +96,10 @@ class CONTENT_EXPORT BrowserMessageFilter
   // Can be called on any thread.
   virtual void BadMessageReceived();
 
+  const std::vector<uint32>& message_classes_to_filter() const {
+    return message_classes_to_filter_;
+  }
+
  protected:
   virtual ~BrowserMessageFilter();
 
@@ -106,16 +115,18 @@ class CONTENT_EXPORT BrowserMessageFilter
   // This is private because the only classes that need access to it are made
   // friends above. This is only guaranteed to be valid on creation, after that
   // this class could outlive the filter.
-  IPC::ChannelProxy::MessageFilter* GetFilter();
+  IPC::MessageFilter* GetFilter();
 
-  // This implements IPC::ChannelProxy::MessageFilter so that we can hide that
-  // from child classes. Internal keeps a reference to this class, which is why
-  // there's a weak pointer back. This class could outlive Internal based on
-  // what the child class does in its OnDestruct method.
+  // This implements IPC::MessageFilter so that we can hide that from child
+  // classes. Internal keeps a reference to this class, which is why there's a
+  // weak pointer back. This class could outlive Internal based on what the
+  // child class does in its OnDestruct method.
   Internal* internal_;
 
-  IPC::Channel* channel_;
+  IPC::Sender* sender_;
   base::ProcessId peer_pid_;
+
+  std::vector<uint32> message_classes_to_filter_;
 
 #if defined(OS_WIN)
   base::Lock peer_handle_lock_;

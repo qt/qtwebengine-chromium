@@ -59,9 +59,15 @@ enum {
 };
 
 static const int64 kMaxDistance = ~(static_cast<int64>(1) << 63);
+#ifdef LINUX
 static const int kYU12Penalty = 16;  // Needs to be higher than MJPG index.
+#endif
 static const int kDefaultScreencastFps = 5;
 typedef talk_base::TypedMessageData<CaptureState> StateChangeParams;
+
+// Limit stats data collections to ~20 seconds of 30fps data before dropping
+// old data in case stats aren't reset for long periods of time.
+static const size_t kMaxAccumulatorSize = 600;
 
 }  // namespace
 
@@ -92,11 +98,19 @@ bool CapturedFrame::GetDataSize(uint32* size) const {
 /////////////////////////////////////////////////////////////////////
 // Implementation of class VideoCapturer
 /////////////////////////////////////////////////////////////////////
-VideoCapturer::VideoCapturer() : thread_(talk_base::Thread::Current()) {
+VideoCapturer::VideoCapturer()
+    : thread_(talk_base::Thread::Current()),
+      adapt_frame_drops_data_(kMaxAccumulatorSize),
+      effect_frame_drops_data_(kMaxAccumulatorSize),
+      frame_time_data_(kMaxAccumulatorSize) {
   Construct();
 }
 
-VideoCapturer::VideoCapturer(talk_base::Thread* thread) : thread_(thread) {
+VideoCapturer::VideoCapturer(talk_base::Thread* thread)
+    : thread_(thread),
+      adapt_frame_drops_data_(kMaxAccumulatorSize),
+      effect_frame_drops_data_(kMaxAccumulatorSize),
+      frame_time_data_(kMaxAccumulatorSize) {
   Construct();
 }
 
@@ -111,6 +125,10 @@ void VideoCapturer::Construct() {
   screencast_max_pixels_ = 0;
   muted_ = false;
   black_frame_count_down_ = kNumBlackFramesOnMute;
+  enable_video_adapter_ = true;
+  adapt_frame_drops_ = 0;
+  effect_frame_drops_ = 0;
+  previous_frame_time_ = 0.0;
 }
 
 const std::vector<VideoFormat>* VideoCapturer::GetSupportedFormats() const {
@@ -118,6 +136,7 @@ const std::vector<VideoFormat>* VideoCapturer::GetSupportedFormats() const {
 }
 
 bool VideoCapturer::StartCapturing(const VideoFormat& capture_format) {
+  previous_frame_time_ = frame_length_time_reporter_.TimerNow();
   CaptureState result = Start(capture_format);
   const bool success = (result == CS_RUNNING) || (result == CS_STARTING);
   if (!success) {
@@ -257,7 +276,7 @@ bool VideoCapturer::GetBestCaptureFormat(const VideoFormat& format,
     best_format->width = best->width;
     best_format->height = best->height;
     best_format->fourcc = best->fourcc;
-    best_format->interval = talk_base::_max(format.interval, best->interval);
+    best_format->interval = best->interval;
     LOG(LS_INFO) << " Best " << best_format->ToString() << " Interval "
                  << best_format->interval << " distance " << best_distance;
   }
@@ -301,8 +320,23 @@ std::string VideoCapturer::ToString(const CapturedFrame* captured_frame) const {
 
   std::ostringstream ss;
   ss << fourcc_name << captured_frame->width << "x" << captured_frame->height
-     << "x" << VideoFormat::IntervalToFps(captured_frame->elapsed_time);
+     << "x" << VideoFormat::IntervalToFpsFloat(captured_frame->elapsed_time);
   return ss.str();
+}
+
+void VideoCapturer::GetStats(VariableInfo<int>* adapt_drops_stats,
+                             VariableInfo<int>* effect_drops_stats,
+                             VariableInfo<double>* frame_time_stats,
+                             VideoFormat* last_captured_frame_format) {
+  talk_base::CritScope cs(&frame_stats_crit_);
+  GetVariableSnapshot(adapt_frame_drops_data_, adapt_drops_stats);
+  GetVariableSnapshot(effect_frame_drops_data_, effect_drops_stats);
+  GetVariableSnapshot(frame_time_data_, frame_time_stats);
+  *last_captured_frame_format = last_captured_frame_format_;
+
+  adapt_frame_drops_data_.Reset();
+  effect_frame_drops_data_.Reset();
+  frame_time_data_.Reset();
 }
 
 void VideoCapturer::OnFrameCaptured(VideoCapturer*,
@@ -477,23 +511,29 @@ void VideoCapturer::OnFrameCaptured(VideoCapturer*,
   }
 
   VideoFrame* adapted_frame = &i420_frame;
-  if (!SignalAdaptFrame.is_empty() && !IsScreencast()) {
+  if (enable_video_adapter_ && !IsScreencast()) {
     VideoFrame* out_frame = NULL;
-    SignalAdaptFrame(this, adapted_frame, &out_frame);
+    video_adapter_.AdaptFrame(adapted_frame, &out_frame);
     if (!out_frame) {
-      return;  // VideoAdapter dropped the frame.
+      // VideoAdapter dropped the frame.
+      ++adapt_frame_drops_;
+      return;
     }
     adapted_frame = out_frame;
   }
 
   if (!muted_ && !ApplyProcessors(adapted_frame)) {
     // Processor dropped the frame.
+    ++effect_frame_drops_;
     return;
   }
   if (muted_) {
     adapted_frame->SetToBlack();
   }
   SignalVideoFrame(this, adapted_frame);
+
+  UpdateStats(captured_frame);
+
 #endif  // VIDEO_FRAME_NAME
 }
 
@@ -577,9 +617,9 @@ int64 VideoCapturer::GetFormatDistance(const VideoFormat& desired,
   int desired_width = desired.width;
   int desired_height = desired.height;
   int64 delta_w = supported.width - desired_width;
-  int64 supported_fps = VideoFormat::IntervalToFps(supported.interval);
-  int64 delta_fps =
-      supported_fps - VideoFormat::IntervalToFps(desired.interval);
+  float supported_fps = VideoFormat::IntervalToFpsFloat(supported.interval);
+  float delta_fps =
+      supported_fps - VideoFormat::IntervalToFpsFloat(desired.interval);
   // Check height of supported height compared to height we would like it to be.
   int64 aspect_h =
       desired_width ? supported.width * desired_height / desired_width
@@ -606,9 +646,9 @@ int64 VideoCapturer::GetFormatDistance(const VideoFormat& desired,
   // Require camera fps to be at least 96% of what is requested, or higher,
   // if resolution differs. 96% allows for slight variations in fps. e.g. 29.97
   if (delta_fps < 0) {
-    int64 min_desirable_fps = delta_w ?
-    VideoFormat::IntervalToFps(desired.interval) * 29 / 30 :
-    VideoFormat::IntervalToFps(desired.interval) * 24 / 30;
+    float min_desirable_fps = delta_w ?
+    VideoFormat::IntervalToFpsFloat(desired.interval) * 28.f / 30.f :
+    VideoFormat::IntervalToFpsFloat(desired.interval) * 23.f / 30.f;
     delta_fps = -delta_fps;
     if (supported_fps < min_desirable_fps) {
       distance |= static_cast<int64>(1) << 62;
@@ -616,10 +656,11 @@ int64 VideoCapturer::GetFormatDistance(const VideoFormat& desired,
       distance |= static_cast<int64>(1) << 15;
     }
   }
+  int64 idelta_fps = static_cast<int>(delta_fps);
 
   // 12 bits for width and height and 8 bits for fps and fourcc.
   distance |=
-      (delta_w << 28) | (delta_h << 16) | (delta_fps << 8) | delta_fourcc;
+      (delta_w << 28) | (delta_h << 16) | (idelta_fps << 8) | delta_fourcc;
 
   return distance;
 }
@@ -665,6 +706,37 @@ bool VideoCapturer::ShouldFilterFormat(const VideoFormat& format) const {
   }
   return format.width > max_format_->width ||
          format.height > max_format_->height;
+}
+
+void VideoCapturer::UpdateStats(const CapturedFrame* captured_frame) {
+  // Update stats protected from fetches from different thread.
+  talk_base::CritScope cs(&frame_stats_crit_);
+
+  last_captured_frame_format_.width = captured_frame->width;
+  last_captured_frame_format_.height = captured_frame->height;
+  // TODO(ronghuawu): Useful to report interval as well?
+  last_captured_frame_format_.interval = 0;
+  last_captured_frame_format_.fourcc = captured_frame->fourcc;
+
+  double time_now = frame_length_time_reporter_.TimerNow();
+  if (previous_frame_time_ != 0.0) {
+    adapt_frame_drops_data_.AddSample(adapt_frame_drops_);
+    effect_frame_drops_data_.AddSample(effect_frame_drops_);
+    frame_time_data_.AddSample(time_now - previous_frame_time_);
+  }
+  previous_frame_time_ = time_now;
+  effect_frame_drops_ = 0;
+  adapt_frame_drops_ = 0;
+}
+
+template<class T>
+void VideoCapturer::GetVariableSnapshot(
+    const talk_base::RollingAccumulator<T>& data,
+    VariableInfo<T>* stats) {
+  stats->max_val = data.ComputeMax();
+  stats->mean = data.ComputeMean();
+  stats->min_val = data.ComputeMin();
+  stats->variance = data.ComputeVariance();
 }
 
 }  // namespace cricket

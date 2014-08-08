@@ -14,13 +14,13 @@ unsigned g_next_serial_number_ = 0;
 
 namespace message_center {
 
-NotificationItem::NotificationItem(const string16& title,
-                                   const string16& message)
+NotificationItem::NotificationItem(const base::string16& title,
+                                   const base::string16& message)
  : title(title),
    message(message) {
 }
 
-ButtonInfo::ButtonInfo(const string16& title)
+ButtonInfo::ButtonInfo(const base::string16& title)
  : title(title) {
 }
 
@@ -36,9 +36,9 @@ RichNotificationData::RichNotificationData(const RichNotificationData& other)
     : priority(other.priority),
       never_timeout(other.never_timeout),
       timestamp(other.timestamp),
-      expanded_message(other.expanded_message),
       context_message(other.context_message),
       image(other.image),
+      small_image(other.small_image),
       items(other.items),
       progress(other.progress),
       buttons(other.buttons),
@@ -50,10 +50,10 @@ RichNotificationData::~RichNotificationData() {}
 
 Notification::Notification(NotificationType type,
                            const std::string& id,
-                           const string16& title,
-                           const string16& message,
+                           const base::string16& title,
+                           const base::string16& message,
                            const gfx::Image& icon,
-                           const string16& display_source,
+                           const base::string16& display_source,
                            const NotifierId& notifier_id,
                            const RichNotificationData& optional_fields,
                            NotificationDelegate* delegate)
@@ -68,7 +68,6 @@ Notification::Notification(NotificationType type,
       optional_fields_(optional_fields),
       shown_as_popup_(false),
       is_read_(false),
-      is_expanded_(false),
       delegate_(delegate) {}
 
 Notification::Notification(const Notification& other)
@@ -83,7 +82,6 @@ Notification::Notification(const Notification& other)
       optional_fields_(other.optional_fields_),
       shown_as_popup_(other.shown_as_popup_),
       is_read_(other.is_read_),
-      is_expanded_(other.is_expanded_),
       delegate_(other.delegate_) {}
 
 Notification& Notification::operator=(const Notification& other) {
@@ -98,7 +96,6 @@ Notification& Notification::operator=(const Notification& other) {
   optional_fields_ = other.optional_fields_;
   shown_as_popup_ = other.shown_as_popup_;
   is_read_ = other.is_read_;
-  is_expanded_ = other.is_expanded_;
   delegate_ = other.delegate_;
 
   return *this;
@@ -113,7 +110,6 @@ bool Notification::IsRead() const {
 void Notification::CopyState(Notification* base) {
   shown_as_popup_ = base->shown_as_popup();
   is_read_ = base->is_read_;
-  is_expanded_ = base->is_expanded();
   if (!delegate_.get())
     delegate_ = base->delegate();
   optional_fields_.never_timeout = base->never_timeout();

@@ -5,10 +5,12 @@
 #include "sandbox/linux/services/broker_process.h"
 
 #include <fcntl.h>
+#include <signal.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #include <algorithm>
@@ -16,12 +18,16 @@
 #include <vector>
 
 #include "base/basictypes.h"
+#include "base/callback.h"
 #include "base/compiler_specific.h"
+#include "base/files/scoped_file.h"
 #include "base/logging.h"
+#include "base/memory/scoped_vector.h"
 #include "base/pickle.h"
 #include "base/posix/eintr_wrapper.h"
 #include "base/posix/unix_domain_socket_linux.h"
 #include "base/process/process_metrics.h"
+#include "base/third_party/valgrind/valgrind.h"
 #include "build/build_config.h"
 #include "sandbox/linux/services/linux_syscalls.h"
 
@@ -30,6 +36,22 @@
 #endif
 
 namespace {
+
+bool IsRunningOnValgrind() { return RUNNING_ON_VALGRIND; }
+
+// A little open(2) wrapper to handle some oddities for us. In the general case
+// make a direct system call since we want to keep in control of the broker
+// process' system calls profile to be able to loosely sandbox it.
+int sys_open(const char* pathname, int flags) {
+  // Always pass a defined |mode| in case flags mistakenly contains O_CREAT.
+  const int mode = 0;
+  if (IsRunningOnValgrind()) {
+    // Valgrind does not support AT_FDCWD, just use libc's open() in this case.
+    return open(pathname, flags, mode);
+  } else {
+    return syscall(__NR_openat, AT_FDCWD, pathname, flags, mode);
+  }
+}
 
 static const size_t kMaxMessageLength = 4096;
 
@@ -132,11 +154,19 @@ BrokerProcess::BrokerProcess(int denied_errno,
 
 BrokerProcess::~BrokerProcess() {
   if (initialized_ && ipc_socketpair_ != -1) {
-    close(ipc_socketpair_);
+    // Closing the socket should be enough to notify the child to die,
+    // unless it has been duplicated.
+    PCHECK(0 == IGNORE_EINTR(close(ipc_socketpair_)));
+    PCHECK(0 == kill(broker_pid_, SIGKILL));
+    siginfo_t process_info;
+    // Reap the child.
+    int ret = HANDLE_EINTR(waitid(P_PID, broker_pid_, &process_info, WEXITED));
+    PCHECK(0 == ret);
   }
 }
 
-bool BrokerProcess::Init(bool (*sandbox_callback)(void)) {
+bool BrokerProcess::Init(
+    const base::Callback<bool(void)>& broker_process_init_callback) {
   CHECK(!initialized_);
   int socket_pair[2];
   // Use SOCK_SEQPACKET, because we need to preserve message boundaries
@@ -147,7 +177,9 @@ bool BrokerProcess::Init(bool (*sandbox_callback)(void)) {
     return false;
   }
 
+#if !defined(THREAD_SANITIZER)
   DCHECK_EQ(1, base::GetNumberOfThreads(base::GetCurrentProcessHandle()));
+#endif
   int child_pid = fork();
   if (child_pid == -1) {
     close(socket_pair[0]);
@@ -173,10 +205,7 @@ bool BrokerProcess::Init(bool (*sandbox_callback)(void)) {
     shutdown(socket_pair[0], SHUT_WR);
     ipc_socketpair_ = socket_pair[0];
     is_child_ = true;
-    // Enable the sandbox if provided.
-    if (sandbox_callback) {
-      CHECK(sandbox_callback());
-    }
+    CHECK(broker_process_init_callback.Run());
     initialized_ = true;
     for (;;) {
       HandleRequest();
@@ -292,8 +321,7 @@ int BrokerProcess::PathAndFlagsSyscall(enum IPCCommands syscall_type,
 // that we will then close.
 // A request should start with an int that will be used as the command type.
 bool BrokerProcess::HandleRequest() const {
-
-  std::vector<int> fds;
+  ScopedVector<base::ScopedFD> fds;
   char buf[kMaxMessageLength];
   errno = 0;
   const ssize_t msg_len = UnixDomainSocket::RecvMsg(ipc_socketpair_, buf,
@@ -306,12 +334,13 @@ bool BrokerProcess::HandleRequest() const {
 
   // The parent should send exactly one file descriptor, on which we
   // will write the reply.
-  if (msg_len < 0 || fds.size() != 1 || fds.at(0) < 0) {
+  // TODO(mdempsky): ScopedVector doesn't have 'at()', only 'operator[]'.
+  if (msg_len < 0 || fds.size() != 1 || fds[0]->get() < 0) {
     PLOG(ERROR) << "Error reading message from the client";
     return false;
   }
 
-  const int temporary_ipc = fds.at(0);
+  base::ScopedFD temporary_ipc(fds[0]->Pass());
 
   Pickle pickle(buf, msg_len);
   PickleIterator iter(pickle);
@@ -324,15 +353,13 @@ bool BrokerProcess::HandleRequest() const {
       case kCommandOpen:
         // We reply on the file descriptor sent to us via the IPC channel.
         r = HandleRemoteCommand(static_cast<IPCCommands>(command_type),
-                                temporary_ipc, pickle, iter);
+                                temporary_ipc.get(), pickle, iter);
         break;
       default:
         NOTREACHED();
         r = false;
         break;
     }
-    int ret = IGNORE_EINTR(close(temporary_ipc));
-    DCHECK(!ret) << "Could not close temporary IPC channel";
     return r;
   }
 
@@ -375,7 +402,7 @@ bool BrokerProcess::HandleRemoteCommand(IPCCommands command_type, int reply_ipc,
 
   // Close anything we have opened in this process.
   for (std::vector<int>::iterator it = opened_files.begin();
-       it < opened_files.end(); ++it) {
+       it != opened_files.end(); ++it) {
     int ret = IGNORE_EINTR(close(*it));
     DCHECK(!ret) << "Could not close file descriptor";
   }
@@ -423,9 +450,7 @@ void BrokerProcess::OpenFileForIPC(const std::string& requested_filename,
 
   if (safe_to_open_file) {
     CHECK(file_to_open);
-    // We're doing a 2-parameter open, so we don't support O_CREAT. It doesn't
-    // hurt to always pass a third argument though.
-    int opened_fd = syscall(__NR_open, file_to_open, flags, 0);
+    int opened_fd = sys_open(file_to_open, flags);
     if (opened_fd < 0) {
       write_pickle->WriteInt(-errno);
     } else {

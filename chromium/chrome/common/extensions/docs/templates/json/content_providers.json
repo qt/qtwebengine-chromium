@@ -41,6 +41,14 @@
 //    this to true. Otherwise, it's safer and more efficient to omit it.
 
 {
+  "cr-chrome-docs-home": {
+    "chromium": {
+      "dir": "chrome/docs"
+    },
+    "defaultExtensions": [".html", ".md"],
+    "serveFrom": "home",
+    "supportsTemplates": true
+  },
   "cr-extensions-examples": {
     "chromium": {
       "dir": "chrome/common/extensions/docs/examples"
@@ -52,6 +60,7 @@
     "chromium": {
       "dir": "chrome/common/extensions/docs/templates/public"
     },
+    "defaultExtensions": [".html", ".md"],
     "serveFrom": "",
     "supportsTemplates": true
   },
@@ -63,31 +72,32 @@
   },
   "cr-native-client": {
     "chromium": {
-      "dir": "components/nacl/docs/dev"
+      "dir": "native_client_sdk/doc_generated"
     },
-    "serveFrom": "nacl",
+    "defaultExtensions": [".html", ".md"],
+    "serveFrom": "native-client",
     "supportsTemplates": true
   },
-  //"devtools-docs": {
-  //  "github": {
-  //    "owner": "GoogleChrome",
-  //    "repo": "devtools-docs-migration"
-  //  },
-  //  "serveFrom": "devtools",
-  //  "supportsTemplates": true
-  //},
+  "devtools-docs": {
+    "defaultExtensions": [".html", ".md"],
+    "gcs": {
+      "bucket": "gs://chromedocs-devtools"
+    },
+    "serveFrom": "devtools",
+    "supportsTemplates": true
+  },
   "multidevice-docs": {
-    "github": {
-      "owner": "GoogleChrome",
-      "repo": "multi-device"
+    "defaultExtensions": [".html", ".md"],
+    "gcs": {
+      "bucket": "gs://chromedocs-multidevice"
     },
     "serveFrom": "multidevice",
     "supportsTemplates": true
   },
   "webstore-docs": {
-    "github": {
-      "owner": "GoogleChrome",
-      "repo": "webstore-docs"
+    "defaultExtensions": [".html", ".md"],
+    "gcs": {
+      "bucket": "gs://chromedocs-webstore"
     },
     "serveFrom": "webstore",
     "supportsTemplates": true

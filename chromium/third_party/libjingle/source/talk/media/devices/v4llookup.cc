@@ -12,12 +12,11 @@
 #include <fcntl.h>
 #include <linux/types.h>
 #include <linux/videodev2.h>
+#include <string.h>
 #include <sys/ioctl.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
-
-#include <cstring>
 
 #include "talk/base/logging.h"
 
@@ -50,10 +49,10 @@ bool V4LLookup::CheckIsV4L2Device(const std::string& device_path) {
 
           is_v4l2 = true;
         } else {
-          LOG(LS_ERROR) << "VIDIOC_QUERYCAP failed for " << device_path;
+          LOG_ERRNO(LS_ERROR) << "VIDIOC_QUERYCAP failed for " << device_path;
         }
       } else {
-        LOG(LS_ERROR) << "Failed to open " << device_path;
+        LOG_ERRNO(LS_ERROR) << "Failed to open " << device_path;
       }
     }
   }

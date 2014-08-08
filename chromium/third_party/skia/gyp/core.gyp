@@ -15,15 +15,16 @@
       'include_dirs': [
         '../include/config',
         '../include/core',
-        '../include/lazy',
         '../include/pathops',
         '../include/pipe',
         '../include/ports',
         '../include/utils',
         '../include/xml',
         '../src/core',
-        '../src/opts',
+        '../src/sfnt',
         '../src/image',
+        '../src/opts',
+        '../src/utils',
       ],
       'sources': [
         'core.gypi', # Makes the gypi appear in IDEs (but does not modify the build).
@@ -97,13 +98,10 @@
       ],
       'direct_dependent_settings': {
         'include_dirs': [
-          'config',
           '../include/config',
           '../include/core',
-          '../include/lazy',
           '../include/pathops',
           '../include/pipe',
-          'ext',
         ],
         'conditions': [
           [ 'skia_os == "mac"', {

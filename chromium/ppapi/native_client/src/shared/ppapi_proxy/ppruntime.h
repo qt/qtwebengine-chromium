@@ -8,20 +8,12 @@
 #define NATIVE_CLIENT_SRC_SHARED_PPAPI_PROXY_PPRUNTIME_H_
 
 #include "native_client/src/include/portability.h"
-#include "native_client/src/untrusted/irt/irt_ppapi.h"
+#include "ppapi/nacl_irt/public/irt_ppapi.h"
 
 EXTERN_C_BEGIN
 
-// Initialize srpc connection to the browser. Some APIs like manifest file
-// opening do not need full ppapi initialization and so can be used after
-// this function returns.
-int IrtInit(void);
-
 // The entry point for the main thread of the PPAPI plugin process.
 int PpapiPluginMain(void);
-
-void PpapiPluginRegisterThreadCreator(
-    const struct PP_ThreadFunctions* new_funcs);
 
 EXTERN_C_END
 

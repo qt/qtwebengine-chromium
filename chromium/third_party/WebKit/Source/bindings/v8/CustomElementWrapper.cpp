@@ -31,13 +31,13 @@
 #include "config.h"
 #include "bindings/v8/CustomElementWrapper.h"
 
-#include "V8HTMLElement.h"
-#include "V8HTMLElementWrapperFactory.h"
-#include "V8SVGElement.h"
-#include "V8SVGElementWrapperFactory.h"
+#include "bindings/core/v8/V8HTMLElement.h"
+#include "bindings/core/v8/V8SVGElement.h"
 #include "bindings/v8/DOMDataStore.h"
 #include "bindings/v8/DOMWrapperWorld.h"
 #include "bindings/v8/V8PerContextData.h"
+#include "core/V8HTMLElementWrapperFactory.h" // FIXME: should be bindings/core/v8
+#include "core/V8SVGElementWrapperFactory.h" // FIXME: should be bindings/core/v8
 #include "core/dom/custom/CustomElement.h"
 #include "core/html/HTMLElement.h"
 #include "core/html/HTMLUnknownElement.h"
@@ -86,23 +86,21 @@ v8::Handle<v8::Object> createUpgradeCandidateWrapper(ElementType* element, v8::H
 }
 
 template<typename ElementType, typename WrapperType>
-v8::Handle<v8::Object> CustomElementWrapper<ElementType, WrapperType>::wrap(PassRefPtr<ElementType> element, v8::Handle<v8::Object> creationContext, v8::Isolate* isolate, v8::Handle<v8::Object> (*createSpecificWrapper)(ElementType* element, v8::Handle<v8::Object> creationContext, v8::Isolate*))
+v8::Handle<v8::Object> CustomElementWrapper<ElementType, WrapperType>::wrap(PassRefPtrWillBeRawPtr<ElementType> element, v8::Handle<v8::Object> creationContext, v8::Isolate* isolate, v8::Handle<v8::Object> (*createSpecificWrapper)(ElementType* element, v8::Handle<v8::Object> creationContext, v8::Isolate*))
 {
     ASSERT(DOMDataStore::getWrapper<V8Element>(element.get(), isolate).IsEmpty());
 
-    // FIXME: creationContext.IsEmpty() should never happen. Remove
-    // this when callers (like InspectorController::inspect) are fixed
-    // to never pass an empty creation context.
-    v8::Handle<v8::Context> context = creationContext.IsEmpty() ? isolate->GetCurrentContext() : creationContext->CreationContext();
+    ASSERT(!creationContext.IsEmpty());
+    v8::Handle<v8::Context> context = creationContext->CreationContext();
 
-    if (!element->isUpgradedCustomElement() || DOMWrapperWorld::isolatedWorld(context))
+    if (!element->isUpgradedCustomElement() || DOMWrapperWorld::world(context).isIsolatedWorld())
         return createUpgradeCandidateWrapper(element.get(), creationContext, isolate, createSpecificWrapper);
 
     V8PerContextData* perContextData = V8PerContextData::from(context);
     if (!perContextData)
         return v8::Handle<v8::Object>();
 
-    CustomElementBinding* binding = perContextData->customElementBinding(CustomElement::definitionFor(element.get()));
+    CustomElementBinding* binding = perContextData->customElementBinding(element->customElementDefinition());
     v8::Handle<v8::Object> wrapper = V8DOMWrapper::createWrapper(creationContext, binding->wrapperType(), element.get(), isolate);
     if (wrapper.IsEmpty())
         return v8::Handle<v8::Object>();

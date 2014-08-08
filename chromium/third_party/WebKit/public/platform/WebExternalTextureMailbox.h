@@ -36,13 +36,20 @@ namespace blink {
 struct WebExternalTextureMailbox {
     signed char name[64];
     unsigned syncPoint;
+    bool allowOverlay;
 
     WebExternalTextureMailbox()
         : syncPoint(0)
+        , allowOverlay(false)
     {
         memset(name, 0, sizeof(name));
     }
 };
+
+inline bool nameEquals(const WebExternalTextureMailbox& a, const WebExternalTextureMailbox& b)
+{
+    return !memcmp(a.name, b.name, sizeof(a.name));
+}
 
 } // namespace blink
 

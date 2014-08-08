@@ -14,37 +14,56 @@
 #include "net/quic/quic_framer.h"
 #include "net/quic/quic_packet_writer.h"
 #include "net/quic/quic_protocol.h"
+#include "net/quic/quic_utils.h"
 #include "net/quic/test_tools/quic_test_utils.h"
 #include "net/tools/quic/test_tools/mock_epoll_server.h"
 #include "net/tools/quic/test_tools/quic_test_utils.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-using net::test::FramerVisitorCapturingPublicReset;
-using testing::_;
+using net::test::BuildUnsizedDataPacket;
+using net::test::NoOpFramerVisitor;
+using net::test::QuicVersionMax;
+using net::test::QuicVersionMin;
 using testing::Args;
+using testing::Assign;
+using testing::DoAll;
 using testing::Matcher;
 using testing::MatcherInterface;
+using testing::NiceMock;
 using testing::Return;
+using testing::ReturnPointee;
 using testing::SetArgPointee;
+using testing::StrictMock;
 using testing::Truly;
+using testing::_;
 
 namespace net {
 namespace tools {
 namespace test {
 
+class FramerVisitorCapturingPublicReset : public NoOpFramerVisitor {
+ public:
+  FramerVisitorCapturingPublicReset() {}
+  virtual ~FramerVisitorCapturingPublicReset() OVERRIDE {}
+
+  virtual void OnPublicResetPacket(
+      const QuicPublicResetPacket& public_reset) OVERRIDE {
+    public_reset_packet_ = public_reset;
+  }
+
+  const QuicPublicResetPacket public_reset_packet() {
+    return public_reset_packet_;
+  }
+
+ private:
+  QuicPublicResetPacket public_reset_packet_;
+};
+
 class QuicTimeWaitListManagerPeer {
  public:
-  static QuicVersion version(QuicTimeWaitListManager* manager) {
-    return manager->framer_.version();
-  }
-
-  static bool is_write_blocked(QuicTimeWaitListManager* manager) {
-    return manager->is_write_blocked_;
-  }
-
   static bool ShouldSendResponse(QuicTimeWaitListManager* manager,
-                          int received_packet_count) {
+                                 int received_packet_count) {
     return manager->ShouldSendResponse(received_packet_count);
   }
 
@@ -52,21 +71,14 @@ class QuicTimeWaitListManagerPeer {
     return manager->kTimeWaitPeriod_;
   }
 
-  static QuicVersion GetQuicVersionFromGuid(QuicTimeWaitListManager* manager,
-                                            QuicGuid guid) {
-    return manager->GetQuicVersionFromGuid(guid);
+  static QuicVersion GetQuicVersionFromConnectionId(
+      QuicTimeWaitListManager* manager,
+      QuicConnectionId connection_id) {
+    return manager->GetQuicVersionFromConnectionId(connection_id);
   }
 };
 
 namespace {
-
-class TestTimeWaitListManager : public QuicTimeWaitListManager {
- public:
-  TestTimeWaitListManager(QuicPacketWriter* writer,
-                          EpollServer* epoll_server)
-      : QuicTimeWaitListManager(writer, epoll_server, QuicSupportedVersions()) {
-  }
-};
 
 class MockFakeTimeEpollServer : public FakeTimeEpollServer {
  public:
@@ -74,45 +86,57 @@ class MockFakeTimeEpollServer : public FakeTimeEpollServer {
                                    EpollAlarmCallbackInterface* alarm));
 };
 
-class QuicTimeWaitListManagerTest : public testing::Test {
+class QuicTimeWaitListManagerTest : public ::testing::Test {
  protected:
   QuicTimeWaitListManagerTest()
-      : time_wait_list_manager_(
-          &writer_, &epoll_server_, QuicSupportedVersions()),
+      : time_wait_list_manager_(&writer_, &visitor_,
+                                &epoll_server_, QuicSupportedVersions()),
         framer_(QuicSupportedVersions(), QuicTime::Zero(), true),
-        guid_(45) {
+        connection_id_(45),
+        client_address_(net::test::TestPeerIPAddress(), kTestPort),
+        writer_is_blocked_(false) {}
+
+  virtual ~QuicTimeWaitListManagerTest() OVERRIDE {}
+
+  virtual void SetUp() OVERRIDE {
+    EXPECT_CALL(writer_, IsWriteBlocked())
+        .WillRepeatedly(ReturnPointee(&writer_is_blocked_));
+    EXPECT_CALL(writer_, IsWriteBlockedDataBuffered())
+        .WillRepeatedly(Return(false));
   }
 
-  virtual ~QuicTimeWaitListManagerTest() {}
-
-  void AddGuid(QuicGuid guid) {
-    AddGuid(guid, net::test::QuicVersionMax(), NULL);
+  void AddConnectionId(QuicConnectionId connection_id) {
+    AddConnectionId(connection_id, QuicVersionMax(), NULL);
   }
 
-  void AddGuid(QuicGuid guid,
-               QuicVersion version,
-               QuicEncryptedPacket* packet) {
-    time_wait_list_manager_.AddGuidToTimeWait(guid, version, packet);
+  void AddConnectionId(QuicConnectionId connection_id,
+                       QuicVersion version,
+                       QuicEncryptedPacket* packet) {
+    time_wait_list_manager_.AddConnectionIdToTimeWait(
+        connection_id, version, packet);
   }
 
-  bool IsGuidInTimeWait(QuicGuid guid) {
-    return time_wait_list_manager_.IsGuidInTimeWait(guid);
+  bool IsConnectionIdInTimeWait(QuicConnectionId connection_id) {
+    return time_wait_list_manager_.IsConnectionIdInTimeWait(connection_id);
   }
 
-  void ProcessPacket(QuicGuid guid, const QuicEncryptedPacket& packet) {
+  void ProcessPacket(QuicConnectionId connection_id,
+                     QuicPacketSequenceNumber sequence_number) {
+    QuicEncryptedPacket packet(NULL, 0);
     time_wait_list_manager_.ProcessPacket(server_address_,
                                           client_address_,
-                                          guid,
+                                          connection_id,
+                                          sequence_number,
                                           packet);
   }
 
   QuicEncryptedPacket* ConstructEncryptedPacket(
       EncryptionLevel level,
-      QuicGuid guid,
+      QuicConnectionId connection_id,
       QuicPacketSequenceNumber sequence_number) {
     QuicPacketHeader header;
-    header.public_header.guid = guid;
-    header.public_header.guid_length = PACKET_8BYTE_GUID;
+    header.public_header.connection_id = connection_id;
+    header.public_header.connection_id_length = PACKET_8BYTE_CONNECTION_ID;
     header.public_header.version_flag = false;
     header.public_header.reset_flag = false;
     header.public_header.sequence_number_length = PACKET_6BYTE_SEQUENCE_NUMBER;
@@ -127,7 +151,7 @@ class QuicTimeWaitListManagerTest : public testing::Test {
     QuicFrames frames;
     frames.push_back(frame);
     scoped_ptr<QuicPacket> packet(
-        framer_.BuildUnsizedDataPacket(header, frames).packet);
+        BuildUnsizedDataPacket(&framer_, header, frames).packet);
     EXPECT_TRUE(packet != NULL);
     QuicEncryptedPacket* encrypted = framer_.EncryptPacket(ENCRYPTION_NONE,
                                                            sequence_number,
@@ -136,26 +160,28 @@ class QuicTimeWaitListManagerTest : public testing::Test {
     return encrypted;
   }
 
-  MockFakeTimeEpollServer epoll_server_;
-  MockPacketWriter writer_;
+  NiceMock<MockFakeTimeEpollServer> epoll_server_;
+  StrictMock<MockPacketWriter> writer_;
+  StrictMock<MockQuicServerSessionVisitor> visitor_;
   QuicTimeWaitListManager time_wait_list_manager_;
   QuicFramer framer_;
-  QuicGuid guid_;
+  QuicConnectionId connection_id_;
   IPEndPoint server_address_;
   IPEndPoint client_address_;
+  bool writer_is_blocked_;
 };
 
 class ValidatePublicResetPacketPredicate
     : public MatcherInterface<const std::tr1::tuple<const char*, int> > {
  public:
-  explicit ValidatePublicResetPacketPredicate(QuicGuid guid,
+  explicit ValidatePublicResetPacketPredicate(QuicConnectionId connection_id,
                                               QuicPacketSequenceNumber number)
-      : guid_(guid), sequence_number_(number) {
+      : connection_id_(connection_id), sequence_number_(number) {
   }
 
   virtual bool MatchAndExplain(
       const std::tr1::tuple<const char*, int> packet_buffer,
-      testing::MatchResultListener* /* listener */) const {
+      testing::MatchResultListener* /* listener */) const OVERRIDE {
     FramerVisitorCapturingPublicReset visitor;
     QuicFramer framer(QuicSupportedVersions(),
                       QuicTime::Zero(),
@@ -165,119 +191,73 @@ class ValidatePublicResetPacketPredicate
                                   std::tr1::get<1>(packet_buffer));
     framer.ProcessPacket(encrypted);
     QuicPublicResetPacket packet = visitor.public_reset_packet();
-    return guid_ == packet.public_header.guid &&
+    return connection_id_ == packet.public_header.connection_id &&
         packet.public_header.reset_flag && !packet.public_header.version_flag &&
-        sequence_number_ == packet.rejected_sequence_number;
+        sequence_number_ == packet.rejected_sequence_number &&
+        net::test::TestPeerIPAddress() == packet.client_address.address() &&
+        kTestPort == packet.client_address.port();
   }
 
-  virtual void DescribeTo(::std::ostream* os) const { }
+  virtual void DescribeTo(::std::ostream* os) const OVERRIDE {}
 
-  virtual void DescribeNegationTo(::std::ostream* os) const { }
+  virtual void DescribeNegationTo(::std::ostream* os) const OVERRIDE {}
 
  private:
-  QuicGuid guid_;
+  QuicConnectionId connection_id_;
   QuicPacketSequenceNumber sequence_number_;
 };
 
 
 Matcher<const std::tr1::tuple<const char*, int> > PublicResetPacketEq(
-    QuicGuid guid,
+    QuicConnectionId connection_id,
     QuicPacketSequenceNumber sequence_number) {
-  return MakeMatcher(new ValidatePublicResetPacketPredicate(guid,
+  return MakeMatcher(new ValidatePublicResetPacketPredicate(connection_id,
                                                             sequence_number));
 }
 
-TEST_F(QuicTimeWaitListManagerTest, CheckGuidInTimeWait) {
-  EXPECT_FALSE(IsGuidInTimeWait(guid_));
-  AddGuid(guid_);
-  EXPECT_TRUE(IsGuidInTimeWait(guid_));
+TEST_F(QuicTimeWaitListManagerTest, CheckConnectionIdInTimeWait) {
+  EXPECT_FALSE(IsConnectionIdInTimeWait(connection_id_));
+  AddConnectionId(connection_id_);
+  EXPECT_TRUE(IsConnectionIdInTimeWait(connection_id_));
 }
 
 TEST_F(QuicTimeWaitListManagerTest, SendConnectionClose) {
   size_t kConnectionCloseLength = 100;
-  AddGuid(guid_,
-          net::test::QuicVersionMax(),
-          new QuicEncryptedPacket(
-              new char[kConnectionCloseLength], kConnectionCloseLength, true));
+  AddConnectionId(
+      connection_id_,
+      QuicVersionMax(),
+      new QuicEncryptedPacket(
+          new char[kConnectionCloseLength], kConnectionCloseLength, true));
   const int kRandomSequenceNumber = 1;
-  scoped_ptr<QuicEncryptedPacket> packet(
-      ConstructEncryptedPacket(ENCRYPTION_NONE, guid_, kRandomSequenceNumber));
   EXPECT_CALL(writer_, WritePacket(_, kConnectionCloseLength,
                                    server_address_.address(),
-                                   client_address_,
-                                   &time_wait_list_manager_))
+                                   client_address_))
       .WillOnce(Return(WriteResult(WRITE_STATUS_OK, 1)));
 
-  ProcessPacket(guid_, *packet);
+  ProcessPacket(connection_id_, kRandomSequenceNumber);
 }
 
 TEST_F(QuicTimeWaitListManagerTest, SendPublicReset) {
-  AddGuid(guid_);
+  AddConnectionId(connection_id_);
   const int kRandomSequenceNumber = 1;
-  scoped_ptr<QuicEncryptedPacket> packet(
-      ConstructEncryptedPacket(ENCRYPTION_NONE, guid_, kRandomSequenceNumber));
   EXPECT_CALL(writer_, WritePacket(_, _,
                                    server_address_.address(),
-                                   client_address_,
-                                   &time_wait_list_manager_))
-      .With(Args<0, 1>(PublicResetPacketEq(guid_,
+                                   client_address_))
+      .With(Args<0, 1>(PublicResetPacketEq(connection_id_,
                                            kRandomSequenceNumber)))
-      .WillOnce(Return(WriteResult(WRITE_STATUS_OK, packet->length())));
+      .WillOnce(Return(WriteResult(WRITE_STATUS_OK, 0)));
 
-  ProcessPacket(guid_, *packet);
-}
-
-TEST_F(QuicTimeWaitListManagerTest, SendPublicResetUndecryptable) {
-  AddGuid(guid_);
-  const int kRandomSequenceNumber = 1;
-  scoped_ptr<QuicEncryptedPacket> packet(
-      ConstructEncryptedPacket(
-          ENCRYPTION_INITIAL, guid_, kRandomSequenceNumber));
-  EXPECT_CALL(writer_, WritePacket(_, _,
-                                   server_address_.address(),
-                                   client_address_,
-                                   &time_wait_list_manager_))
-      .With(Args<0, 1>(PublicResetPacketEq(guid_,
-                                           kRandomSequenceNumber)))
-      .WillOnce(Return(WriteResult(WRITE_STATUS_OK, packet->length())));
-
-  ProcessPacket(guid_, *packet);
-}
-
-TEST_F(QuicTimeWaitListManagerTest, DropInvalidPacket) {
-  AddGuid(guid_);
-  const char buffer[] = "invalid";
-  QuicEncryptedPacket packet(buffer, arraysize(buffer));
-  // Will get called for a valid packet since received packet count = 1 (2 ^ 0).
-  EXPECT_CALL(writer_, WritePacket(_, _, _, _, _)).Times(0);
-  ProcessPacket(guid_, packet);
-}
-
-TEST_F(QuicTimeWaitListManagerTest, DropPublicResetPacket) {
-  AddGuid(guid_);
-  QuicPublicResetPacket packet;
-  packet.public_header.guid = guid_;
-  packet.public_header.version_flag = false;
-  packet.public_header.reset_flag = true;
-  packet.rejected_sequence_number = 239191;
-  packet.nonce_proof = 1010101;
-  scoped_ptr<QuicEncryptedPacket> public_reset_packet(
-      QuicFramer::BuildPublicResetPacket(packet));
-  // Will get called for a data packet since received packet count = 1 (2 ^ 0).
-  EXPECT_CALL(writer_, WritePacket(_, _, _, _, _)).Times(0);
-  ProcessPacket(guid_, *public_reset_packet);
+  ProcessPacket(connection_id_, kRandomSequenceNumber);
 }
 
 TEST_F(QuicTimeWaitListManagerTest, SendPublicResetWithExponentialBackOff) {
-  AddGuid(guid_);
+  AddConnectionId(connection_id_);
   for (int sequence_number = 1; sequence_number < 101; ++sequence_number) {
-    scoped_ptr<QuicEncryptedPacket> packet(
-        ConstructEncryptedPacket(ENCRYPTION_NONE, guid_, sequence_number));
     if ((sequence_number & (sequence_number - 1)) == 0) {
-      EXPECT_CALL(writer_, WritePacket(_, _, _, _, _))
+      EXPECT_CALL(writer_, WritePacket(_, _, _, _))
           .WillOnce(Return(WriteResult(WRITE_STATUS_OK, 1)));
     }
-    ProcessPacket(guid_, *packet);
+    ProcessPacket(connection_id_, sequence_number);
     // Send public reset with exponential back off.
     if ((sequence_number & (sequence_number - 1)) == 0) {
       EXPECT_TRUE(QuicTimeWaitListManagerPeer::ShouldSendResponse(
@@ -289,157 +269,192 @@ TEST_F(QuicTimeWaitListManagerTest, SendPublicResetWithExponentialBackOff) {
   }
 }
 
-TEST_F(QuicTimeWaitListManagerTest, CleanUpOldGuids) {
-  const int kGuidCount = 100;
-  const int kOldGuidCount = 31;
+TEST_F(QuicTimeWaitListManagerTest, CleanUpOldConnectionIds) {
+  const int kConnectionIdCount = 100;
+  const int kOldConnectionIdCount = 31;
 
-  // Add guids such that their expiry time is kTimeWaitPeriod_.
+  // Add connection_ids such that their expiry time is kTimeWaitPeriod_.
   epoll_server_.set_now_in_usec(0);
-  for (int guid = 1; guid <= kOldGuidCount; ++guid) {
-    AddGuid(guid);
+  for (int connection_id = 1;
+       connection_id <= kOldConnectionIdCount;
+       ++connection_id) {
+    AddConnectionId(connection_id);
   }
 
-  // Add remaining guids such that their add time is 2 * kTimeWaitPeriod.
+  // Add remaining connection_ids such that their add time is
+  // 2 * kTimeWaitPeriod.
   const QuicTime::Delta time_wait_period =
       QuicTimeWaitListManagerPeer::time_wait_period(&time_wait_list_manager_);
   epoll_server_.set_now_in_usec(time_wait_period.ToMicroseconds());
-  for (int guid = kOldGuidCount + 1; guid <= kGuidCount; ++guid) {
-    AddGuid(guid);
+  for (int connection_id = kOldConnectionIdCount + 1;
+       connection_id <= kConnectionIdCount;
+       ++connection_id) {
+    AddConnectionId(connection_id);
   }
 
   QuicTime::Delta offset = QuicTime::Delta::FromMicroseconds(39);
   // Now set the current time as time_wait_period + offset usecs.
   epoll_server_.set_now_in_usec(time_wait_period.Add(offset).ToMicroseconds());
-  // After all the old guids are cleaned up, check the next alarm interval.
+  // After all the old connection_ids are cleaned up, check the next alarm
+  // interval.
   int64 next_alarm_time = epoll_server_.ApproximateNowInUsec() +
       time_wait_period.Subtract(offset).ToMicroseconds();
   EXPECT_CALL(epoll_server_, RegisterAlarm(next_alarm_time, _));
 
-  time_wait_list_manager_.CleanUpOldGuids();
-  for (int guid = 1; guid <= kGuidCount; ++guid) {
-    EXPECT_EQ(guid > kOldGuidCount, IsGuidInTimeWait(guid))
-        << "kOldGuidCount: " << kOldGuidCount
-        << " guid: " <<  guid;
+  time_wait_list_manager_.CleanUpOldConnectionIds();
+  for (int connection_id = 1;
+       connection_id <= kConnectionIdCount;
+       ++connection_id) {
+    EXPECT_EQ(connection_id > kOldConnectionIdCount,
+              IsConnectionIdInTimeWait(connection_id))
+        << "kOldConnectionIdCount: " << kOldConnectionIdCount
+        << " connection_id: " <<  connection_id;
   }
 }
 
 TEST_F(QuicTimeWaitListManagerTest, SendQueuedPackets) {
-  QuicGuid guid = 1;
-  AddGuid(guid);
+  QuicConnectionId connection_id = 1;
+  AddConnectionId(connection_id);
   QuicPacketSequenceNumber sequence_number = 234;
-  scoped_ptr<QuicEncryptedPacket> packet(
-      ConstructEncryptedPacket(ENCRYPTION_NONE, guid, sequence_number));
+  scoped_ptr<QuicEncryptedPacket> packet(ConstructEncryptedPacket(
+      ENCRYPTION_NONE, connection_id, sequence_number));
   // Let first write through.
   EXPECT_CALL(writer_, WritePacket(_, _,
                                    server_address_.address(),
-                                   client_address_,
-                                   &time_wait_list_manager_))
-      .With(Args<0, 1>(PublicResetPacketEq(guid,
+                                   client_address_))
+      .With(Args<0, 1>(PublicResetPacketEq(connection_id,
                                            sequence_number)))
       .WillOnce(Return(WriteResult(WRITE_STATUS_OK, packet->length())));
-  ProcessPacket(guid, *packet);
-  EXPECT_FALSE(
-      QuicTimeWaitListManagerPeer::is_write_blocked(&time_wait_list_manager_));
+  ProcessPacket(connection_id, sequence_number);
 
   // write block for the next packet.
   EXPECT_CALL(writer_, WritePacket(_, _,
                                    server_address_.address(),
-                                   client_address_,
-                                   &time_wait_list_manager_))
-      .With(Args<0, 1>(PublicResetPacketEq(guid,
+                                   client_address_))
+      .With(Args<0, 1>(PublicResetPacketEq(connection_id,
                                            sequence_number)))
-      .WillOnce(Return(WriteResult(WRITE_STATUS_BLOCKED, EAGAIN)));
-  ProcessPacket(guid, *packet);
+      .WillOnce(DoAll(
+          Assign(&writer_is_blocked_, true),
+          Return(WriteResult(WRITE_STATUS_BLOCKED, EAGAIN))));
+  EXPECT_CALL(visitor_, OnWriteBlocked(&time_wait_list_manager_));
+  ProcessPacket(connection_id, sequence_number);
   // 3rd packet. No public reset should be sent;
-  ProcessPacket(guid, *packet);
-  EXPECT_TRUE(
-      QuicTimeWaitListManagerPeer::is_write_blocked(&time_wait_list_manager_));
+  ProcessPacket(connection_id, sequence_number);
 
-  // write packet should not be called since already write blocked but the
+  // write packet should not be called since we are write blocked but the
   // should be queued.
-  QuicGuid other_guid = 2;
-  AddGuid(other_guid);
+  QuicConnectionId other_connection_id = 2;
+  AddConnectionId(other_connection_id);
   QuicPacketSequenceNumber other_sequence_number = 23423;
   scoped_ptr<QuicEncryptedPacket> other_packet(
       ConstructEncryptedPacket(
-          ENCRYPTION_NONE, other_guid, other_sequence_number));
-  EXPECT_CALL(writer_, WritePacket(_, _, _, _, _))
+          ENCRYPTION_NONE, other_connection_id, other_sequence_number));
+  EXPECT_CALL(writer_, WritePacket(_, _, _, _))
       .Times(0);
-  ProcessPacket(other_guid, *other_packet);
+  EXPECT_CALL(visitor_, OnWriteBlocked(&time_wait_list_manager_));
+  ProcessPacket(other_connection_id, other_sequence_number);
 
   // Now expect all the write blocked public reset packets to be sent again.
+  writer_is_blocked_ = false;
   EXPECT_CALL(writer_, WritePacket(_, _,
                                    server_address_.address(),
-                                   client_address_,
-                                   &time_wait_list_manager_))
-      .With(Args<0, 1>(PublicResetPacketEq(guid,
+                                   client_address_))
+      .With(Args<0, 1>(PublicResetPacketEq(connection_id,
                                            sequence_number)))
       .WillOnce(Return(WriteResult(WRITE_STATUS_OK, packet->length())));
   EXPECT_CALL(writer_, WritePacket(_, _,
                                    server_address_.address(),
-                                   client_address_,
-                                   &time_wait_list_manager_))
-      .With(Args<0, 1>(PublicResetPacketEq(other_guid,
+                                   client_address_))
+      .With(Args<0, 1>(PublicResetPacketEq(other_connection_id,
                                            other_sequence_number)))
       .WillOnce(Return(WriteResult(WRITE_STATUS_OK,
                                    other_packet->length())));
   time_wait_list_manager_.OnCanWrite();
-  EXPECT_FALSE(
-      QuicTimeWaitListManagerPeer::is_write_blocked(&time_wait_list_manager_));
-}
-
-TEST_F(QuicTimeWaitListManagerTest, MakeSureFramerUsesCorrectVersion) {
-  const int kRandomSequenceNumber = 1;
-  scoped_ptr<QuicEncryptedPacket> packet;
-
-  AddGuid(guid_, net::test::QuicVersionMin(), NULL);
-  framer_.set_version(net::test::QuicVersionMin());
-  packet.reset(
-      ConstructEncryptedPacket(ENCRYPTION_NONE, guid_, kRandomSequenceNumber));
-
-  // Reset packet should be written, using the minimum quic version.
-  EXPECT_CALL(writer_, WritePacket(_, _, _, _, _)).Times(1)
-      .WillOnce(Return(WriteResult(WRITE_STATUS_OK, 0)));
-  ProcessPacket(guid_, *packet);
-  EXPECT_EQ(QuicTimeWaitListManagerPeer::version(&time_wait_list_manager_),
-            net::test::QuicVersionMin());
-
-  // New guid
-  ++guid_;
-
-  AddGuid(guid_, net::test::QuicVersionMax(), NULL);
-  framer_.set_version(net::test::QuicVersionMax());
-  packet.reset(
-      ConstructEncryptedPacket(ENCRYPTION_NONE, guid_, kRandomSequenceNumber));
-
-  // Reset packet should be written, using the maximum quic version.
-  EXPECT_CALL(writer_, WritePacket(_, _, _, _, _)).Times(1)
-    .WillOnce(Return(WriteResult(WRITE_STATUS_OK, 0)));
-  ProcessPacket(guid_, *packet);
-  EXPECT_EQ(QuicTimeWaitListManagerPeer::version(&time_wait_list_manager_),
-            net::test::QuicVersionMax());
 }
 
 TEST_F(QuicTimeWaitListManagerTest, GetQuicVersionFromMap) {
-  const int kGuid1 = 123;
-  const int kGuid2 = 456;
-  const int kGuid3 = 789;
+  const int kConnectionId1 = 123;
+  const int kConnectionId2 = 456;
+  const int kConnectionId3 = 789;
 
-  AddGuid(kGuid1, net::test::QuicVersionMin(), NULL);
-  AddGuid(kGuid2, net::test::QuicVersionMax(), NULL);
-  AddGuid(kGuid3, net::test::QuicVersionMax(), NULL);
+  AddConnectionId(kConnectionId1, QuicVersionMin(), NULL);
+  AddConnectionId(kConnectionId2, QuicVersionMax(), NULL);
+  AddConnectionId(kConnectionId3, QuicVersionMax(), NULL);
 
-  EXPECT_EQ(net::test::QuicVersionMin(),
-            QuicTimeWaitListManagerPeer::GetQuicVersionFromGuid(
-                &time_wait_list_manager_, kGuid1));
-  EXPECT_EQ(net::test::QuicVersionMax(),
-            QuicTimeWaitListManagerPeer::GetQuicVersionFromGuid(
-                &time_wait_list_manager_, kGuid2));
-  EXPECT_EQ(net::test::QuicVersionMax(),
-            QuicTimeWaitListManagerPeer::GetQuicVersionFromGuid(
-                &time_wait_list_manager_, kGuid3));
+  EXPECT_EQ(QuicVersionMin(),
+            QuicTimeWaitListManagerPeer::GetQuicVersionFromConnectionId(
+                &time_wait_list_manager_, kConnectionId1));
+  EXPECT_EQ(QuicVersionMax(),
+            QuicTimeWaitListManagerPeer::GetQuicVersionFromConnectionId(
+                &time_wait_list_manager_, kConnectionId2));
+  EXPECT_EQ(QuicVersionMax(),
+            QuicTimeWaitListManagerPeer::GetQuicVersionFromConnectionId(
+                &time_wait_list_manager_, kConnectionId3));
 }
 
+TEST_F(QuicTimeWaitListManagerTest, AddConnectionIdTwice) {
+  // Add connection_ids such that their expiry time is kTimeWaitPeriod_.
+  epoll_server_.set_now_in_usec(0);
+  AddConnectionId(connection_id_);
+  EXPECT_TRUE(IsConnectionIdInTimeWait(connection_id_));
+  size_t kConnectionCloseLength = 100;
+  AddConnectionId(
+      connection_id_,
+      QuicVersionMax(),
+      new QuicEncryptedPacket(
+          new char[kConnectionCloseLength], kConnectionCloseLength, true));
+  EXPECT_TRUE(IsConnectionIdInTimeWait(connection_id_));
+
+  EXPECT_CALL(writer_, WritePacket(_,
+                                   kConnectionCloseLength,
+                                   server_address_.address(),
+                                   client_address_))
+      .WillOnce(Return(WriteResult(WRITE_STATUS_OK, 1)));
+
+  const int kRandomSequenceNumber = 1;
+  ProcessPacket(connection_id_, kRandomSequenceNumber);
+
+  const QuicTime::Delta time_wait_period =
+      QuicTimeWaitListManagerPeer::time_wait_period(&time_wait_list_manager_);
+
+  QuicTime::Delta offset = QuicTime::Delta::FromMicroseconds(39);
+  // Now set the current time as time_wait_period + offset usecs.
+  epoll_server_.set_now_in_usec(time_wait_period.Add(offset).ToMicroseconds());
+  // After the connection_ids are cleaned up, check the next alarm interval.
+  int64 next_alarm_time = epoll_server_.ApproximateNowInUsec() +
+      time_wait_period.ToMicroseconds();
+
+  EXPECT_CALL(epoll_server_, RegisterAlarm(next_alarm_time, _));
+  time_wait_list_manager_.CleanUpOldConnectionIds();
+  EXPECT_FALSE(IsConnectionIdInTimeWait(connection_id_));
+}
+
+TEST_F(QuicTimeWaitListManagerTest, ConnectionIdsOrderedByTime) {
+  // Simple randomization: the values of connection_ids are swapped based on the
+  // current seconds on the clock. If the container is broken, the test will be
+  // 50% flaky.
+  int odd_second = static_cast<int>(epoll_server_.ApproximateNowInUsec()) % 2;
+  EXPECT_TRUE(odd_second == 0 || odd_second == 1);
+  const QuicConnectionId kConnectionId1 = odd_second;
+  const QuicConnectionId kConnectionId2 = 1 - odd_second;
+
+  // 1 will hash lower than 2, but we add it later. They should come out in the
+  // add order, not hash order.
+  epoll_server_.set_now_in_usec(0);
+  AddConnectionId(kConnectionId1);
+  epoll_server_.set_now_in_usec(10);
+  AddConnectionId(kConnectionId2);
+
+  const QuicTime::Delta time_wait_period =
+      QuicTimeWaitListManagerPeer::time_wait_period(&time_wait_list_manager_);
+  epoll_server_.set_now_in_usec(time_wait_period.ToMicroseconds() + 1);
+
+  EXPECT_CALL(epoll_server_, RegisterAlarm(_, _));
+
+  time_wait_list_manager_.CleanUpOldConnectionIds();
+  EXPECT_FALSE(IsConnectionIdInTimeWait(kConnectionId1));
+  EXPECT_TRUE(IsConnectionIdInTimeWait(kConnectionId2));
+}
 }  // namespace
 }  // namespace test
 }  // namespace tools

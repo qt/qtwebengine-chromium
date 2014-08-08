@@ -7,11 +7,9 @@
 
 #include <map>
 
+#include "base/files/file.h"
 #include "base/memory/singleton.h"
-#include "base/platform_file.h"
 #include "base/process/process.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_registrar.h"
 #include "ipc/ipc_platform_file.h"
 
 namespace base {
@@ -19,9 +17,10 @@ class FilePath;
 }
 
 namespace content {
+
 class WebContents;
 
-class MHTMLGenerationManager : public NotificationObserver {
+class MHTMLGenerationManager {
  public:
   static MHTMLGenerationManager* GetInstance();
 
@@ -37,7 +36,7 @@ class MHTMLGenerationManager : public NotificationObserver {
   // Instructs the render view to generate a MHTML representation of the current
   // page for |web_contents|.
   void StreamMHTML(WebContents* web_contents,
-                   const base::PlatformFile file,
+                   base::File file,
                    const GenerateMHTMLCallback& callback);
 
   // Notification from the renderer that the MHTML generation finished.
@@ -47,23 +46,7 @@ class MHTMLGenerationManager : public NotificationObserver {
 
  private:
   friend struct DefaultSingletonTraits<MHTMLGenerationManager>;
-
-  struct Job{
-    Job();
-    ~Job();
-
-    // The handles to file the MHTML is saved to, for the browser and renderer
-    // processes.
-    base::PlatformFile browser_file;
-    IPC::PlatformFileForTransit renderer_file;
-
-    // The IDs mapping to a specific contents.
-    int process_id;
-    int routing_id;
-
-    // The callback to call once generation is complete.
-    GenerateMHTMLCallback callback;
-  };
+  class Job;
 
   MHTMLGenerationManager();
   virtual ~MHTMLGenerationManager();
@@ -74,15 +57,14 @@ class MHTMLGenerationManager : public NotificationObserver {
                   base::ProcessHandle renderer_process);
 
   // Called on the UI thread when the file that should hold the MHTML data has
-  // been created.  This returns a handle to that file for the browser process
-  // and one for the renderer process. These handles are
-  // kInvalidPlatformFileValue if the file could not be opened.
-  void FileHandleAvailable(int job_id,
-                           base::PlatformFile browser_file,
-                           IPC::PlatformFileForTransit renderer_file);
+  // been created.  This receives a handle to that file for the browser process
+  // and one for the renderer process.
+  void FileAvailable(int job_id,
+                     base::File browser_file,
+                     IPC::PlatformFileForTransit renderer_file);
 
   // Called on the file thread to close the file the MHTML was saved to.
-  void CloseFile(base::PlatformFile file);
+  void CloseFile(base::File file);
 
   // Called on the UI thread when a job has been processed (successfully or
   // not).  Closes the file and removes the job from the job map.
@@ -92,14 +74,11 @@ class MHTMLGenerationManager : public NotificationObserver {
   // Creates an register a new job.
   int NewJob(WebContents* web_contents, const GenerateMHTMLCallback& callback);
 
-  // Implementation of NotificationObserver.
-  virtual void Observe(int type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details) OVERRIDE;
+  // Called when the render process connected to a job exits.
+  void RenderProcessExited(Job* job);
 
-  typedef std::map<int, Job> IDToJobMap;
+  typedef std::map<int, Job*> IDToJobMap;
   IDToJobMap id_to_job_;
-  NotificationRegistrar registrar_;
 
   DISALLOW_COPY_AND_ASSIGN(MHTMLGenerationManager);
 };

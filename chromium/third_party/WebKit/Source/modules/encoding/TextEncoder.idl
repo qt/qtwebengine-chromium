@@ -30,10 +30,12 @@
 
 [
     RuntimeEnabled=EncodingAPI,
-    GlobalContext=Window&WorkerGlobalScope,
-    Constructor([Default=NullString] optional DOMString utfLabel),
-    RaisesException=Constructor
+    Exposed=Window&Worker,
+    Constructor(optional DOMString utfLabel = null),
+    RaisesException=Constructor,
+    GarbageCollected,
+    MeasureAs=TextEncoderConstructor
 ] interface TextEncoder {
     readonly attribute DOMString encoding;
-    Uint8Array encode([Default=NullString] optional DOMString input, optional Dictionary options);
+    [MeasureAs=TextEncoderEncode] Uint8Array encode(optional ScalarValueString input = null, optional Dictionary options);
 };

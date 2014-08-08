@@ -31,9 +31,11 @@ namespace WebCore {
 enum StyleRecalcChange {
     NoChange,
     NoInherit,
+    UpdatePseudoElements,
     Inherit,
     Force,
     Reattach,
+    ReattachNoRenderer
 };
 
 static const size_t PrintColorAdjustBits = 1;
@@ -42,37 +44,18 @@ enum PrintColorAdjust {
     PrintColorAdjustExact
 };
 
-// The difference between two styles.  The following values are used:
-// (1) StyleDifferenceEqual - The two styles are identical.
-// (2) StyleDifferenceRecompositeLayer - The layer needs its position and transform updated, but no repaint.
-// (3) StyleDifferenceRepaint - The object just needs to be repainted.
-// (4) StyleDifferenceRepaintIfTextOrColorChange - The object needs to be repainted if it contains text or properties dependent on color (e.g., border or outline).
-// (5) StyleDifferenceRepaintLayer - The layer and its descendant layers needs to be repainted.
-// (6) StyleDifferenceLayoutPositionedMovementOnly - Only the position of this positioned object has been updated.
-// (7) StyleDifferenceSimplifiedLayout - Only overflow needs to be recomputed.
-// (8) StyleDifferenceSimplifiedLayoutAndPositionedMovement - Both positioned movement and simplified layout updates are required.
-// (9) StyleDifferenceLayout - A full layout is required.
-enum StyleDifference {
-    StyleDifferenceEqual,
-    StyleDifferenceRecompositeLayer,
-    StyleDifferenceRepaint,
-    StyleDifferenceRepaintIfTextOrColorChange,
-    StyleDifferenceRepaintLayer,
-    StyleDifferenceLayoutPositionedMovementOnly,
-    StyleDifferenceSimplifiedLayout,
-    StyleDifferenceSimplifiedLayoutAndPositionedMovement,
-    StyleDifferenceLayout
-};
-
 // When some style properties change, different amounts of work have to be done depending on
 // context (e.g. whether the property is changing on an element which has a compositing layer).
 // A simple StyleDifference does not provide enough information so we return a bit mask of
-// StyleDifferenceContextSensitiveProperties from RenderStyle::diff() too.
+// StyleDifferenceContextSensitiveProperties from RenderStyle::visualInvalidationDiff() too.
 enum StyleDifferenceContextSensitiveProperty {
     ContextSensitivePropertyNone = 0,
     ContextSensitivePropertyTransform = (1 << 0),
     ContextSensitivePropertyOpacity = (1 << 1),
-    ContextSensitivePropertyFilter = (1 << 2)
+    ContextSensitivePropertyZIndex = (1 << 2),
+    ContextSensitivePropertyFilter = (1 << 3),
+    // The object needs to be repainted if it contains text or properties dependent on color (e.g., border or outline).
+    ContextSensitivePropertyTextOrColor = (1 << 4)
 };
 
 // Static pseudo styles. Dynamic ones are produced on the fly.
@@ -81,13 +64,13 @@ enum PseudoId {
     // If you add or remove a public ID, you must update _pseudoBits in RenderStyle.
     NOPSEUDO, FIRST_LINE, FIRST_LETTER, BEFORE, AFTER, BACKDROP, SELECTION, FIRST_LINE_INHERITED, SCROLLBAR,
     // Internal IDs follow:
-    SCROLLBAR_THUMB, SCROLLBAR_BUTTON, SCROLLBAR_TRACK, SCROLLBAR_TRACK_PIECE, SCROLLBAR_CORNER, RESIZER,
-    INPUT_LIST_BUTTON,
+    SCROLLBAR_THUMB, SCROLLBAR_BUTTON, SCROLLBAR_TRACK, SCROLLBAR_TRACK_PIECE, SCROLLBAR_CORNER, RESIZER, INPUT_LIST_BUTTON,
+    // Special values follow:
     AFTER_LAST_INTERNAL_PSEUDOID,
-    FULL_SCREEN, FULL_SCREEN_DOCUMENT, FULL_SCREEN_ANCESTOR,
     FIRST_PUBLIC_PSEUDOID = FIRST_LINE,
     FIRST_INTERNAL_PSEUDOID = SCROLLBAR_THUMB,
-    PUBLIC_PSEUDOID_MASK = ((1 << FIRST_INTERNAL_PSEUDOID) - 1) & ~((1 << FIRST_PUBLIC_PSEUDOID) - 1)
+    PUBLIC_PSEUDOID_MASK = ((1 << FIRST_INTERNAL_PSEUDOID) - 1) & ~((1 << FIRST_PUBLIC_PSEUDOID) - 1),
+    PSEUDO_ELEMENT_MASK = (1 << (BEFORE - 1)) | (1 << (AFTER - 1)) | (1 << (BACKDROP - 1))
 };
 
 enum ColumnFill { ColumnFillBalance, ColumnFillAuto };
@@ -191,7 +174,6 @@ enum EBoxDirection { BNORMAL, BREVERSE };
 // CSS3 Flexbox Properties
 
 enum EAlignContent { AlignContentFlexStart, AlignContentFlexEnd, AlignContentCenter, AlignContentSpaceBetween, AlignContentSpaceAround, AlignContentStretch };
-enum EAlignItems { AlignAuto, AlignFlexStart, AlignFlexEnd, AlignCenter, AlignStretch, AlignBaseline };
 enum EFlexDirection { FlowRow, FlowRowReverse, FlowColumn, FlowColumnReverse };
 enum EFlexWrap { FlexNoWrap, FlexWrap, FlexWrapReverse };
 enum EJustifyContent { JustifyFlexStart, JustifyFlexEnd, JustifyCenter, JustifySpaceBetween, JustifySpaceAround };
@@ -330,11 +312,9 @@ enum QuoteType {
 
 enum EBorderFit { BorderFitBorder, BorderFitLines };
 
-enum EAnimationFillMode { AnimationFillModeNone, AnimationFillModeForwards, AnimationFillModeBackwards, AnimationFillModeBoth };
-
 enum EAnimPlayState {
-    AnimPlayStatePlaying = 0x0,
-    AnimPlayStatePaused = 0x1
+    AnimPlayStatePlaying,
+    AnimPlayStatePaused
 };
 
 enum EWhiteSpace {
@@ -413,8 +393,8 @@ enum ECursor {
     CURSOR_PROGRESS,
     CURSOR_NO_DROP,
     CURSOR_NOT_ALLOWED,
-    CURSOR_WEBKIT_ZOOM_IN,
-    CURSOR_WEBKIT_ZOOM_OUT,
+    CURSOR_ZOOM_IN,
+    CURSOR_ZOOM_OUT,
     CURSOR_E_RESIZE,
     CURSOR_NE_RESIZE,
     CURSOR_NW_RESIZE,
@@ -450,7 +430,9 @@ enum EDisplay {
     TABLE_CAPTION, BOX, INLINE_BOX,
     FLEX, INLINE_FLEX,
     GRID, INLINE_GRID,
-    NONE
+    NONE,
+    FIRST_TABLE_DISPLAY = TABLE,
+    LAST_TABLE_DISPLAY = TABLE_CAPTION
 };
 
 enum EInsideLink {
@@ -495,16 +477,6 @@ enum ImageResolutionSnap { ImageResolutionNoSnap = 0, ImageResolutionSnapPixels 
 
 enum Order { LogicalOrder = 0, VisualOrder };
 
-enum RegionFragment { AutoRegionFragment, BreakRegionFragment };
-
-enum ColumnAxis { HorizontalColumnAxis, VerticalColumnAxis, AutoColumnAxis };
-
-enum ColumnProgression { NormalColumnProgression, ReverseColumnProgression };
-
-enum LineSnap { LineSnapNone, LineSnapBaseline, LineSnapContain };
-
-enum LineAlign { LineAlignNone, LineAlignEdges };
-
 enum WrapFlow { WrapFlowAuto, WrapFlowBoth, WrapFlowStart, WrapFlowEnd, WrapFlowMaximum, WrapFlowClear };
 
 enum WrapThrough { WrapThroughWrap, WrapThroughNone };
@@ -515,12 +487,13 @@ enum GridAutoFlow { AutoFlowNone, AutoFlowColumn, AutoFlowRow };
 
 enum DraggableRegionMode { DraggableRegionNone, DraggableRegionDrag, DraggableRegionNoDrag };
 
-static const size_t TouchActionBits = 3;
+static const size_t TouchActionBits = 4;
 enum TouchAction {
     TouchActionAuto = 0x0,
     TouchActionNone = 0x1,
     TouchActionPanX = 0x2,
-    TouchActionPanY = 0x4
+    TouchActionPanY = 0x4,
+    TouchActionPinchZoom = 0x8,
 };
 inline TouchAction operator| (TouchAction a, TouchAction b) { return TouchAction(int(a) | int(b)); }
 inline TouchAction& operator|= (TouchAction& a, TouchAction b) { return a = a | b; }
@@ -531,12 +504,34 @@ enum EIsolation { IsolationAuto, IsolationIsolate };
 
 enum TouchActionDelay { TouchActionDelayNone, TouchActionDelayScript };
 
+enum ItemPosition {
+    ItemPositionAuto,
+    ItemPositionStretch,
+    ItemPositionBaseline,
+    ItemPositionCenter,
+    ItemPositionStart,
+    ItemPositionEnd,
+    ItemPositionSelfStart,
+    ItemPositionSelfEnd,
+    ItemPositionFlexStart,
+    ItemPositionFlexEnd,
+    ItemPositionLeft,
+    ItemPositionRight
+};
+
+enum OverflowAlignment {
+    OverflowAlignmentDefault,
+    OverflowAlignmentTrue,
+    OverflowAlignmentSafe
+};
+
 // Reasonable maximum to prevent insane font sizes from causing crashes on some platforms (such as Windows).
 static const float maximumAllowedFontSize = 1000000.0f;
 
 enum TextIndentLine { TextIndentFirstLine, TextIndentEachLine };
+enum TextIndentType { TextIndentNormal, TextIndentHanging };
 
-enum LayoutBox { MarginBox, BorderBox, PaddingBox, ContentBox };
+enum CSSBoxType { BoxMissing = 0, MarginBox, BorderBox, PaddingBox, ContentBox };
 
 } // namespace WebCore
 

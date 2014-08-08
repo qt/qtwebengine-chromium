@@ -30,7 +30,6 @@
 #include "platform/geometry/FloatRect.h"
 #include "platform/geometry/IntRectExtent.h"
 #include "platform/geometry/LayoutRect.h"
-#include "platform/graphics/GraphicsContext.h"
 #include "platform/graphics/ImageBuffer.h"
 #include "platform/graphics/filters/Filter.h"
 #include "platform/graphics/filters/FilterEffect.h"
@@ -42,9 +41,6 @@
 
 namespace WebCore {
 
-class ShaderResource;
-class CustomFilterProgram;
-class Document;
 class GraphicsContext;
 class RenderLayer;
 class RenderObject;
@@ -74,7 +70,7 @@ private:
     bool m_haveFilterEffect;
 };
 
-class FilterEffectRenderer : public Filter
+class FilterEffectRenderer FINAL : public Filter
 {
     WTF_MAKE_FAST_ALLOCATED;
 public:
@@ -83,12 +79,12 @@ public:
         return adoptRef(new FilterEffectRenderer());
     }
 
-    void setSourceImageRect(const FloatRect& sourceImageRect)
+    void setSourceImageRect(const IntRect& sourceImageRect)
     {
         m_sourceDrawingRegion = sourceImageRect;
         m_graphicsBufferAttached = false;
     }
-    virtual FloatRect sourceImageRect() const { return m_sourceDrawingRegion; }
+    virtual IntRect sourceImageRect() const OVERRIDE { return m_sourceDrawingRegion; }
 
     GraphicsContext* inputContext();
     ImageBuffer* output() const { return lastEffect()->asImageBuffer(); }
@@ -104,7 +100,6 @@ public:
     bool hasFilterThatMovesPixels() const { return m_hasFilterThatMovesPixels; }
     LayoutRect computeSourceImageRectForDirtyRect(const LayoutRect& filterBoxRect, const LayoutRect& dirtyRect);
 
-    bool hasCustomShaderFilter() const { return m_hasCustomShaderFilter; }
     PassRefPtr<FilterEffect> lastEffect() const
     {
         return m_lastEffect;
@@ -114,7 +109,7 @@ private:
     FilterEffectRenderer();
     virtual ~FilterEffectRenderer();
 
-    FloatRect m_sourceDrawingRegion;
+    IntRect m_sourceDrawingRegion;
 
     RefPtr<SourceGraphic> m_sourceGraphic;
     RefPtr<FilterEffect> m_lastEffect;
@@ -123,7 +118,6 @@ private:
 
     bool m_graphicsBufferAttached;
     bool m_hasFilterThatMovesPixels;
-    bool m_hasCustomShaderFilter;
 };
 
 } // namespace WebCore

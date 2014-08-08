@@ -28,7 +28,7 @@
 #ifndef ShadowTreeStyleSheetCollection_h
 #define ShadowTreeStyleSheetCollection_h
 
-#include "core/dom/StyleSheetCollection.h"
+#include "core/dom/TreeScopeStyleSheetCollection.h"
 
 namespace WebCore {
 
@@ -38,15 +38,21 @@ class StyleSheet;
 class StyleSheetCollection;
 class StyleEngine;
 
-class ShadowTreeStyleSheetCollection FINAL : public StyleSheetCollection {
-    WTF_MAKE_NONCOPYABLE(ShadowTreeStyleSheetCollection); WTF_MAKE_FAST_ALLOCATED;
+class ShadowTreeStyleSheetCollection FINAL : public TreeScopeStyleSheetCollection {
+    WTF_MAKE_NONCOPYABLE(ShadowTreeStyleSheetCollection);
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
 public:
     explicit ShadowTreeStyleSheetCollection(ShadowRoot&);
 
-    bool updateActiveStyleSheets(StyleEngine*, StyleResolverUpdateMode);
+    void updateActiveStyleSheets(StyleEngine*, StyleResolverUpdateMode);
+
+    virtual void trace(Visitor* visitor) OVERRIDE
+    {
+        TreeScopeStyleSheetCollection::trace(visitor);
+    }
 
 private:
-    void collectStyleSheets(StyleEngine*, StyleSheetCollectionBase&);
+    void collectStyleSheets(StyleEngine*, StyleSheetCollection&);
 };
 
 }

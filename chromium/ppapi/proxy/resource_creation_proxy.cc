@@ -7,6 +7,7 @@
 #include "ppapi/c/pp_errors.h"
 #include "ppapi/c/pp_size.h"
 #include "ppapi/proxy/audio_input_resource.h"
+#include "ppapi/proxy/compositor_resource.h"
 #include "ppapi/proxy/connection.h"
 #include "ppapi/proxy/file_chooser_resource.h"
 #include "ppapi/proxy/file_io_resource.h"
@@ -18,6 +19,7 @@
 #include "ppapi/proxy/graphics_2d_resource.h"
 #include "ppapi/proxy/host_resolver_private_resource.h"
 #include "ppapi/proxy/host_resolver_resource.h"
+#include "ppapi/proxy/media_stream_video_track_resource.h"
 #include "ppapi/proxy/net_address_resource.h"
 #include "ppapi/proxy/network_monitor_resource.h"
 #include "ppapi/proxy/output_protection_resource.h"
@@ -46,6 +48,7 @@
 #include "ppapi/proxy/url_request_info_resource.h"
 #include "ppapi/proxy/url_response_info_resource.h"
 #include "ppapi/proxy/video_capture_resource.h"
+#include "ppapi/proxy/video_decoder_resource.h"
 #include "ppapi/proxy/video_destination_resource.h"
 #include "ppapi/proxy/video_source_resource.h"
 #include "ppapi/proxy/websocket_resource.h"
@@ -54,7 +57,6 @@
 #include "ppapi/shared_impl/ppb_audio_config_shared.h"
 #include "ppapi/shared_impl/ppb_audio_shared.h"
 #include "ppapi/shared_impl/ppb_input_event_shared.h"
-#include "ppapi/shared_impl/ppb_resource_array_shared.h"
 #include "ppapi/shared_impl/var.h"
 #include "ppapi/thunk/enter.h"
 #include "ppapi/thunk/ppb_image_data_api.h"
@@ -108,16 +110,30 @@ PP_Resource ResourceCreationProxy::CreateIMEInputEvent(
       segment_offsets, target_segment, selection_start, selection_end);
 }
 
-PP_Resource ResourceCreationProxy::CreateKeyboardInputEvent(
+PP_Resource ResourceCreationProxy::CreateKeyboardInputEvent_1_0(
     PP_Instance instance,
     PP_InputEvent_Type type,
     PP_TimeTicks time_stamp,
     uint32_t modifiers,
     uint32_t key_code,
     struct PP_Var character_text) {
+  PP_Var code = StringVar::StringToPPVar("");
   return PPB_InputEvent_Shared::CreateKeyboardInputEvent(
       OBJECT_IS_PROXY, instance, type, time_stamp, modifiers, key_code,
-      character_text);
+      character_text, code);
+}
+
+PP_Resource ResourceCreationProxy::CreateKeyboardInputEvent_1_2(
+    PP_Instance instance,
+    PP_InputEvent_Type type,
+    PP_TimeTicks time_stamp,
+    uint32_t modifiers,
+    uint32_t key_code,
+    struct PP_Var character_text,
+    struct PP_Var code) {
+  return PPB_InputEvent_Shared::CreateKeyboardInputEvent(
+      OBJECT_IS_PROXY, instance, type, time_stamp, modifiers, key_code,
+      character_text, code);
 }
 
 PP_Resource ResourceCreationProxy::CreateMouseInputEvent(
@@ -141,15 +157,6 @@ PP_Resource ResourceCreationProxy::CreateTouchInputEvent(
     uint32_t modifiers) {
   return PPB_InputEvent_Shared::CreateTouchInputEvent(
       OBJECT_IS_PROXY, instance, type, time_stamp, modifiers);
-}
-
-PP_Resource ResourceCreationProxy::CreateResourceArray(
-    PP_Instance instance,
-    const PP_Resource elements[],
-    uint32_t size) {
-  PPB_ResourceArray_Shared* object = new PPB_ResourceArray_Shared(
-      OBJECT_IS_PROXY, instance, elements, size);
-  return object->GetReference();
 }
 
 PP_Resource ResourceCreationProxy::CreateTrueTypeFont(
@@ -211,6 +218,10 @@ PP_Resource ResourceCreationProxy::CreateAudioConfig(
     uint32_t sample_frame_count) {
   return PPB_AudioConfig_Shared::Create(
       OBJECT_IS_PROXY, instance, sample_rate, sample_frame_count);
+}
+
+PP_Resource ResourceCreationProxy::CreateCompositor(PP_Instance instance) {
+  return (new CompositorResource(GetConnection(), instance))->GetReference();
 }
 
 PP_Resource ResourceCreationProxy::CreateFileChooser(
@@ -286,6 +297,12 @@ PP_Resource ResourceCreationProxy::CreateImageDataSimple(
       format, *size, init_to_zero);
 }
 
+PP_Resource ResourceCreationProxy::CreateMediaStreamVideoTrack(
+    PP_Instance instance) {
+  return (new MediaStreamVideoTrackResource(GetConnection(),
+                                            instance))->GetReference();
+}
+
 PP_Resource ResourceCreationProxy::CreateNetAddressFromIPv4Address(
     PP_Instance instance,
     const PP_NetAddress_IPv4* ipv4_addr) {
@@ -356,6 +373,10 @@ PP_Resource ResourceCreationProxy::CreateUDPSocketPrivate(
     PP_Instance instance) {
   return (new UDPSocketPrivateResource(
       GetConnection(), instance))->GetReference();
+}
+
+PP_Resource ResourceCreationProxy::CreateVideoDecoder(PP_Instance instance) {
+  return (new VideoDecoderResource(GetConnection(), instance))->GetReference();
 }
 
 PP_Resource ResourceCreationProxy::CreateVideoDestination(
@@ -454,7 +475,7 @@ PP_Resource ResourceCreationProxy::CreateVideoCapture(PP_Instance instance) {
       ->GetReference();
 }
 
-PP_Resource ResourceCreationProxy::CreateVideoDecoder(
+PP_Resource ResourceCreationProxy::CreateVideoDecoderDev(
     PP_Instance instance,
     PP_Resource context3d_id,
     PP_VideoDecoder_Profile profile) {

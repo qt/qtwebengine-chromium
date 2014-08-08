@@ -45,19 +45,42 @@
         # We set it automatically based on 'OS' (the host OS), but allow the
         # user to override it via GYP_DEFINES if they like.
         'skia_os%': '<(OS)',
+
+        'skia_android_framework%': 0,
+        'skia_arch_type%': 'x86',
+        'arm_version%': 0,
+        'arm_neon%': 0,
       },
 
       # Re-define all variables defined within the level-3 'variables' dict,
       # so that siblings of the level-2 'variables' dict can see them.
-      'skia_os%': '<(skia_os)',
+      # (skia_os will depend on skia_android_framework.)
+      'skia_android_framework%': '<(skia_android_framework)',
+      'skia_arch_type%': '<(skia_arch_type)',
+      'arm_version%': '<(arm_version)',
+      'arm_neon%': '<(arm_neon)',
 
       'conditions': [
+        [ 'skia_android_framework == 1', {
+          'skia_os%': 'android',
+          'skia_chrome_utils%': 0,
+          'skia_use_system_json%': 1,
+        }, {
+          'skia_os%': '<(skia_os)',
+          'skia_chrome_utils%': 1,
+          'skia_use_system_json%': 0,
+        }],
         [ 'skia_os == "win"', {
           'os_posix%': 0,
         }, {
           'os_posix%': 1,
         }],
-        [ 'skia_os in ["linux", "freebsd", "openbsd", "solaris"]', {
+        [ 'skia_os in ["linux"]', {
+          'skia_poppler_enabled%': 1,
+        }, {
+          'skia_poppler_enabled%': 0,
+        }],
+        [ 'skia_os in ["linux", "freebsd", "openbsd", "solaris", "mac"] or skia_arch_type == "arm64"', {
           'skia_arch_width%': 64,
         }, {
           'skia_arch_width%': 32,
@@ -71,31 +94,59 @@
           'skia_arch_type%': 'arm',
           'arm_version%': 7,
           'arm_neon%': 0, # neon asm files known not to work with the ios build
-        },{ # skia_os is not ios
-          'skia_arch_type%': 'x86',
-          'arm_version%': 0,
-          'arm_neon%': 0,
         }],
+        [ 'skia_os in ["android", "nacl"] and not skia_android_framework',
+          # skia_freetype_static - on OS variants that normally would
+          #     dynamically link the system FreeType library, don't do
+          #     that; instead statically link to the version in
+          #     third_party/freetype and third_party/externals/freetype.
+          {
+            'skia_freetype_static%': '1',
+          }, {
+            'skia_freetype_static%': '0',
+          }
+        ],
       ],
+
+      # skia_giflib_static - on OS variants that normally would link giflib
+      #     with '-lgif' and include the headers from '/usr/include/gif_lib.h',
+      #     don't do that; instead compile and staticlly link the version of
+      #     giflib in third_party/externals/giflib.
+      'skia_giflib_static%': '0',
+
+      # skia_libpng_static - on OS variants that normally would link libpng
+      #     with '-lpng' and include the headers from '/usr/include/png.h',
+      #     don't do that; instead compile and staticlly link the version of
+      #     libpng in third_party/externals/libpng.
+      'skia_libpng_static%': '0',
+
+      # skia_zlib_static - on OS variants that normally would link zlib with
+      #     '-lz' or libz.dylib and include the headers from '<zlib.h>',
+      #     don't do that; instead compile and staticlly link the version of
+      #     zlib in third_party/externals/zlib.
+      'skia_zlib_static%': '0',
+
+      # skia_no_fontconfig - On POSIX systems that would normally use the
+      #     SkFontHost_fontconfig interface; use the SkFontHost_linux
+      #     version instead.
+      'skia_no_fontconfig%': '0',
 
       'skia_sanitizer%': '',
       'skia_scalar%': 'float',
       'skia_mesa%': 0,
-      'skia_nv_path_rendering%': 0,
       'skia_stroke_path_rendering%': 0,
       'skia_android_path_rendering%': 0,
       'skia_resource_cache_mb_limit%': 0,
       'skia_resource_cache_count_limit%': 0,
       'skia_angle%': 0,
-      'skia_chrome_utils%': 1,
       'skia_directwrite%': 0,
       'skia_gpu%': 1,
-      'skia_osx_sdkroot%': '',
+      'skia_osx_deployment_target%': '',
       'skia_profile_enabled%': 0,
       'skia_win_debuggers_path%': '',
       'skia_shared_lib%': 0,
       'skia_opencl%': 0,
-      'skia_distancefield_fonts%': 0,
+      'skia_force_distancefield_fonts%': 0,
 
       # These variables determine the default optimization level for different
       # compilers.
@@ -105,7 +156,8 @@
 
     'conditions': [
       [ 'skia_os == "win" and skia_arch_width == 32 or '
-        'skia_os in ["linux", "freebsd", "openbsd", "solaris", "android"] or '
+        'skia_os in ["linux", "freebsd", "openbsd", "solaris", "android"] '
+            'and skia_android_framework == 0 or '
         'skia_os == "mac" and skia_arch_width == 32', {
         'skia_warnings_as_errors%': 1,
       }, {
@@ -135,32 +187,44 @@
     'arm_version%': '<(arm_version)',
     'arm_neon%': '<(arm_neon)',
     'arm_neon_optional%': 0,
+    'mips_arch_variant%': 'mips32',
+    'mips_dsp%': 0,
     'skia_os%': '<(skia_os)',
     'os_posix%': '<(os_posix)',
+
+    'skia_freetype_static%': '<(skia_freetype_static)',
+    'skia_giflib_static%': '<(skia_giflib_static)',
+    'skia_libpng_static%': '<(skia_libpng_static)',
+    'skia_zlib_static%': '<(skia_zlib_static)',
+    'skia_no_fontconfig%': '<(skia_no_fontconfig)',
     'skia_sanitizer%': '<(skia_sanitizer)',
     'skia_scalar%': '<(skia_scalar)',
     'skia_mesa%': '<(skia_mesa)',
-    'skia_nv_path_rendering%': '<(skia_nv_path_rendering)',
     'skia_stroke_path_rendering%': '<(skia_stroke_path_rendering)',
+    'skia_android_framework%': '<(skia_android_framework)',
+    'skia_use_system_json%': '<(skia_use_system_json)',
     'skia_android_path_rendering%': '<(skia_android_path_rendering)',
     'skia_resource_cache_mb_limit%': '<(skia_resource_cache_mb_limit)',
     'skia_resource_cache_count_limit%': '<(skia_resource_cache_count_limit)',
     'skia_angle%': '<(skia_angle)',
+    'skia_poppler_enabled%': '<(skia_poppler_enabled)',
     'skia_arch_width%': '<(skia_arch_width)',
     'skia_arch_type%': '<(skia_arch_type)',
     'skia_chrome_utils%': '<(skia_chrome_utils)',
     'skia_directwrite%': '<(skia_directwrite)',
     'skia_gpu%': '<(skia_gpu)',
     'skia_win_exceptions%': 0,
-    'skia_osx_sdkroot%': '<(skia_osx_sdkroot)',
+    'skia_osx_deployment_target%': '<(skia_osx_deployment_target)',
     'skia_profile_enabled%': '<(skia_profile_enabled)',
     'skia_shared_lib%': '<(skia_shared_lib)',
     'skia_opencl%': '<(skia_opencl)',
-    'skia_distancefield_fonts%': '<(skia_distancefield_fonts)',
+    'skia_force_distancefield_fonts%': '<(skia_force_distancefield_fonts)',
     'skia_static_initializers%': '<(skia_static_initializers)',
     'ios_sdk_version%': '6.0',
     'skia_win_debuggers_path%': '<(skia_win_debuggers_path)',
     'skia_run_pdfviewer_in_gm%': 0,
+    'skia_disable_inlining%': 0,
+    'skia_moz2d%': 0,
 
     # These are referenced by our .gypi files that list files (e.g. core.gypi)
     #

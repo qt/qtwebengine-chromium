@@ -25,7 +25,7 @@
 #include "config.h"
 #include "core/rendering/RenderLayerModelObject.h"
 
-#include "core/frame/Frame.h"
+#include "core/frame/LocalFrame.h"
 #include "core/rendering/RenderLayer.h"
 #include "core/rendering/RenderView.h"
 
@@ -53,10 +53,10 @@ void RenderLayerModelObject::destroyLayer()
     m_layer = nullptr;
 }
 
-void RenderLayerModelObject::createLayer()
+void RenderLayerModelObject::createLayer(LayerType type)
 {
     ASSERT(!m_layer);
-    m_layer = adoptPtr(new RenderLayer(this));
+    m_layer = adoptPtr(new RenderLayer(this, type));
     setHasLayer(true);
     m_layer->insertOnlyThisLayer();
 }
@@ -75,7 +75,7 @@ void RenderLayerModelObject::willBeDestroyed()
 {
     if (isPositioned()) {
         // Don't use this->view() because the document's renderView has been set to 0 during destruction.
-        if (Frame* frame = this->frame()) {
+        if (LocalFrame* frame = this->frame()) {
             if (FrameView* frameView = frame->view()) {
                 if (style()->hasViewportConstrainedPosition())
                     frameView->removeViewportConstrainedObject(this);
@@ -88,43 +88,29 @@ void RenderLayerModelObject::willBeDestroyed()
     destroyLayer();
 }
 
-void RenderLayerModelObject::styleWillChange(StyleDifference diff, const RenderStyle* newStyle)
+void RenderLayerModelObject::styleWillChange(StyleDifference diff, const RenderStyle& newStyle)
 {
     s_wasFloating = isFloating();
 
     // If our z-index changes value or our visibility changes,
     // we need to dirty our stacking context's z-order list.
     RenderStyle* oldStyle = style();
-    if (oldStyle && newStyle) {
-        if (parent()) {
-            // Do a repaint with the old style first, e.g., for example if we go from
-            // having an outline to not having an outline.
-            if (diff == StyleDifferenceRepaintLayer) {
-                layer()->repainter().repaintIncludingDescendants();
-                if (!(oldStyle->clip() == newStyle->clip()))
-                    layer()->clipper().clearClipRectsIncludingDescendants();
-            } else if (diff == StyleDifferenceRepaint || newStyle->outlineSize() < oldStyle->outlineSize())
-                repaint();
-        }
-
-        if (diff == StyleDifferenceLayout || diff == StyleDifferenceSimplifiedLayout) {
-            // When a layout hint happens, we go ahead and do a repaint of the layer, since the layer could
-            // end up being destroyed.
+    if (oldStyle) {
+        // Do a repaint with the old style first through RenderLayerRepainter.
+        // RenderObject::styleWillChange takes care of repainting objects without RenderLayers.
+        if (parent() && diff.needsRepaintLayer()) {
+            layer()->repainter().repaintIncludingNonCompositingDescendants();
+            if (oldStyle->hasClip() != newStyle.hasClip()
+                || oldStyle->clip() != newStyle.clip())
+                layer()->clipper().clearClipRectsIncludingDescendants();
+        } else if (diff.needsFullLayout()) {
             if (hasLayer()) {
-                if (oldStyle->position() != newStyle->position()
-                    || oldStyle->zIndex() != newStyle->zIndex()
-                    || oldStyle->hasAutoZIndex() != newStyle->hasAutoZIndex()
-                    || !(oldStyle->clip() == newStyle->clip())
-                    || oldStyle->hasClip() != newStyle->hasClip()
-                    || oldStyle->opacity() != newStyle->opacity()
-                    || oldStyle->transform() != newStyle->transform()
-                    || oldStyle->filter() != newStyle->filter()
-                    )
-                layer()->repainter().repaintIncludingDescendants();
-            } else if (newStyle->hasTransform() || newStyle->opacity() < 1 || newStyle->hasFilter()) {
+                if (!layer()->hasCompositedLayerMapping() && oldStyle->position() != newStyle.position())
+                    layer()->repainter().repaintIncludingNonCompositingDescendants();
+            } else if (newStyle.hasTransform() || newStyle.opacity() < 1 || newStyle.hasFilter()) {
                 // If we don't have a layer yet, but we are going to get one because of transform or opacity,
                 //  then we need to repaint the old position of the object.
-                repaint();
+                paintInvalidationForWholeRenderer();
             }
         }
     }
@@ -135,22 +121,27 @@ void RenderLayerModelObject::styleWillChange(StyleDifference diff, const RenderS
 void RenderLayerModelObject::styleDidChange(StyleDifference diff, const RenderStyle* oldStyle)
 {
     bool hadTransform = hasTransform();
-    bool hadLayer = hasLayer();
-    bool layerWasSelfPainting = hadLayer && layer()->isSelfPaintingLayer();
 
     RenderObject::styleDidChange(diff, oldStyle);
     updateFromStyle();
 
-    if (requiresLayer()) {
+    LayerType type = layerTypeRequired();
+    if (type != NoLayer) {
         if (!layer() && layerCreationAllowedForSubtree()) {
             if (s_wasFloating && isFloating())
                 setChildNeedsLayout();
-            createLayer();
+            createLayer(type);
             if (parent() && !needsLayout() && containingBlock()) {
-                layer()->repainter().setRepaintStatus(NeedsFullRepaint);
-                // There is only one layer to update, it is not worth using |cachedOffset| since
-                // we are not sure the value will be used.
-                layer()->updateLayerPositions(0);
+                // FIXME: This invalidation is overly broad. We should update to
+                // do the correct invalidation at RenderStyle::diff time. crbug.com/349061
+                if (RuntimeEnabledFeatures::repaintAfterLayoutEnabled())
+                    layer()->renderer()->setShouldDoFullPaintInvalidationAfterLayout(true);
+                else
+                    layer()->repainter().setRepaintStatus(NeedsFullRepaint);
+                // Hit in animations/interpolation/perspective-interpolation.html
+                // FIXME: I suspect we can remove this assert disabler now.
+                DisableCompositingQueryAsserts disabler;
+                layer()->updateLayerPositionRecursive();
             }
         }
     } else if (layer() && layer()->parent()) {
@@ -160,13 +151,14 @@ void RenderLayerModelObject::styleDidChange(StyleDifference diff, const RenderSt
         if (s_wasFloating && isFloating())
             setChildNeedsLayout();
         if (hadTransform)
-            setNeedsLayoutAndPrefWidthsRecalc();
+            setNeedsLayoutAndPrefWidthsRecalcAndFullPaintInvalidation();
     }
 
     if (layer()) {
+        // FIXME: Ideally we shouldn't need this setter but we can't easily infer an overflow-only layer
+        // from the style.
+        layer()->setLayerType(type);
         layer()->styleChanged(diff, oldStyle);
-        if (hadLayer && layer()->isSelfPaintingLayer() != layerWasSelfPainting)
-            setChildNeedsLayout();
     }
 
     if (FrameView *frameView = view()->frameView()) {

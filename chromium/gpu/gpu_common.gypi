@@ -48,24 +48,4 @@
       'command_buffer/client/vertex_array_object_manager.h',
     ]
   },
-  'conditions': [
-    # Special target to wrap a gtest_target_type==shared_library
-    # gpu_unittests into an android apk for execution.
-    ['OS == "android" and gtest_target_type == "shared_library"', {
-      'targets': [
-        {
-          'target_name': 'gpu_unittests_apk',
-          'type': 'none',
-          'dependencies': [
-            'gpu_unittests',
-          ],
-          'variables': {
-            'test_suite_name': 'gpu_unittests',
-            'input_shlib_path': '<(SHARED_LIB_DIR)/<(SHARED_LIB_PREFIX)gpu_unittests<(SHARED_LIB_SUFFIX)',
-          },
-          'includes': [ '../build/apk_test.gypi' ],
-        },
-      ],
-    }],
-  ],
 }

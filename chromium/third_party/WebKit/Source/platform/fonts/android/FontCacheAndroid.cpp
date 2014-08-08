@@ -64,15 +64,16 @@ static AtomicString getFamilyNameForCharacter(UChar32 c, UScriptCode script)
 
     SkString skiaFamilyName;
     if (!SkGetFallbackFamilyNameForChar(c, locale, &skiaFamilyName) || skiaFamilyName.isEmpty())
-        return AtomicString();
+        return emptyAtom;
+
     return skiaFamilyName.c_str();
 }
 
-PassRefPtr<SimpleFontData> FontCache::platformFallbackForCharacter(const FontDescription& fontDescription, UChar32 c, const SimpleFontData*, bool)
+PassRefPtr<SimpleFontData> FontCache::fallbackFontForCharacter(const FontDescription& fontDescription, UChar32 c, const SimpleFontData*)
 {
     AtomicString familyName = getFamilyNameForCharacter(c, fontDescription.script());
     if (familyName.isEmpty())
-        return 0;
+        return getLastResortFallbackFont(fontDescription, DoNotRetain);
     return fontDataFromFontPlatformData(getFontPlatformData(fontDescription, familyName), DoNotRetain);
 }
 

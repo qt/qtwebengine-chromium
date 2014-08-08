@@ -33,16 +33,15 @@
 #include "modules/mediastream/RTCPeerConnection.h"
 
 #include "bindings/v8/ArrayValue.h"
+#include "bindings/v8/ExceptionMessages.h"
 #include "bindings/v8/ExceptionState.h"
 #include "core/dom/Document.h"
-#include "core/events/Event.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/ExecutionContext.h"
+#include "core/frame/LocalFrame.h"
 #include "core/html/VoidCallback.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderClient.h"
-#include "core/frame/Frame.h"
-#include "core/platform/mediastream/RTCDataChannelHandler.h"
 #include "modules/mediastream/MediaConstraintsImpl.h"
 #include "modules/mediastream/MediaStreamEvent.h"
 #include "modules/mediastream/RTCDTMFSender.h"
@@ -57,29 +56,50 @@
 #include "modules/mediastream/RTCStatsRequestImpl.h"
 #include "modules/mediastream/RTCVoidRequestImpl.h"
 #include "platform/mediastream/RTCConfiguration.h"
+#include "public/platform/Platform.h"
+#include "public/platform/WebMediaStream.h"
+#include "public/platform/WebRTCConfiguration.h"
+#include "public/platform/WebRTCDataChannelHandler.h"
 #include "public/platform/WebRTCDataChannelInit.h"
 #include "public/platform/WebRTCICECandidate.h"
 #include "public/platform/WebRTCSessionDescription.h"
+#include "public/platform/WebRTCSessionDescriptionRequest.h"
+#include "public/platform/WebRTCStatsRequest.h"
+#include "public/platform/WebRTCVoidRequest.h"
 
 namespace WebCore {
+
+namespace {
+
+static bool throwExceptionIfSignalingStateClosed(RTCPeerConnection::SignalingState state, ExceptionState& exceptionState)
+{
+    if (state == RTCPeerConnection::SignalingStateClosed) {
+        exceptionState.throwDOMException(InvalidStateError, "The RTCPeerConnection's signalingState is 'closed'.");
+        return true;
+    }
+
+    return false;
+}
+
+} // namespace
 
 PassRefPtr<RTCConfiguration> RTCPeerConnection::parseConfiguration(const Dictionary& configuration, ExceptionState& exceptionState)
 {
     if (configuration.isUndefinedOrNull())
-        return 0;
+        return nullptr;
 
     ArrayValue iceServers;
     bool ok = configuration.get("iceServers", iceServers);
     if (!ok || iceServers.isUndefinedOrNull()) {
-        exceptionState.throwUninformativeAndGenericDOMException(TypeMismatchError);
-        return 0;
+        exceptionState.throwTypeError("Malformed RTCConfiguration");
+        return nullptr;
     }
 
     size_t numberOfServers;
     ok = iceServers.length(numberOfServers);
     if (!ok) {
-        exceptionState.throwUninformativeAndGenericDOMException(TypeMismatchError);
-        return 0;
+        exceptionState.throwTypeError("Malformed RTCConfiguration");
+        return nullptr;
     }
 
     RefPtr<RTCConfiguration> rtcConfiguration = RTCConfiguration::create();
@@ -88,232 +108,252 @@ PassRefPtr<RTCConfiguration> RTCPeerConnection::parseConfiguration(const Diction
         Dictionary iceServer;
         ok = iceServers.get(i, iceServer);
         if (!ok) {
-            exceptionState.throwUninformativeAndGenericDOMException(TypeMismatchError);
-            return 0;
+            exceptionState.throwTypeError("Malformed RTCIceServer");
+            return nullptr;
         }
 
-        String urlString, username, credential;
-        ok = iceServer.get("url", urlString);
-        if (!ok) {
-            exceptionState.throwUninformativeAndGenericDOMException(TypeMismatchError);
-            return 0;
-        }
-        KURL url(KURL(), urlString);
-        if (!url.isValid() || !(url.protocolIs("turn") || url.protocolIs("turns") || url.protocolIs("stun"))) {
-            exceptionState.throwUninformativeAndGenericDOMException(TypeMismatchError);
-            return 0;
+        Vector<String> names;
+        iceServer.getOwnPropertyNames(names);
+
+        Vector<String> urlStrings;
+        if (names.contains("urls")) {
+            if (!iceServer.get("urls", urlStrings) || !urlStrings.size()) {
+                String urlString;
+                if (iceServer.get("urls", urlString)) {
+                    urlStrings.append(urlString);
+                } else {
+                    exceptionState.throwTypeError("Malformed RTCIceServer");
+                    return nullptr;
+                }
+            }
+        } else if (names.contains("url")) {
+            String urlString;
+            if (iceServer.get("url", urlString)) {
+                urlStrings.append(urlString);
+            } else {
+                exceptionState.throwTypeError("Malformed RTCIceServer");
+                return nullptr;
+            }
+        } else {
+            exceptionState.throwTypeError("Malformed RTCIceServer");
+            return nullptr;
         }
 
+        String username, credential;
         iceServer.get("username", username);
         iceServer.get("credential", credential);
 
-        rtcConfiguration->appendServer(RTCIceServer::create(url, username, credential));
+        for (Vector<String>::iterator iter = urlStrings.begin(); iter != urlStrings.end(); ++iter) {
+            KURL url(KURL(), *iter);
+            if (!url.isValid() || !(url.protocolIs("turn") || url.protocolIs("turns") || url.protocolIs("stun"))) {
+                exceptionState.throwTypeError("Malformed URL");
+                return nullptr;
+            }
+
+            rtcConfiguration->appendServer(RTCIceServer::create(url, username, credential));
+        }
     }
 
     return rtcConfiguration.release();
 }
 
-PassRefPtr<RTCPeerConnection> RTCPeerConnection::create(ExecutionContext* context, const Dictionary& rtcConfiguration, const Dictionary& mediaConstraints, ExceptionState& exceptionState)
+PassRefPtrWillBeRawPtr<RTCPeerConnection> RTCPeerConnection::create(ExecutionContext* context, const Dictionary& rtcConfiguration, const Dictionary& mediaConstraints, ExceptionState& exceptionState)
 {
     RefPtr<RTCConfiguration> configuration = parseConfiguration(rtcConfiguration, exceptionState);
     if (exceptionState.hadException())
-        return 0;
+        return nullptr;
 
-    RefPtr<MediaConstraints> constraints = MediaConstraintsImpl::create(mediaConstraints, exceptionState);
+    blink::WebMediaConstraints constraints = MediaConstraintsImpl::create(mediaConstraints, exceptionState);
     if (exceptionState.hadException())
-        return 0;
+        return nullptr;
 
-    RefPtr<RTCPeerConnection> peerConnection = adoptRef(new RTCPeerConnection(context, configuration.release(), constraints.release(), exceptionState));
+    RefPtrWillBeRawPtr<RTCPeerConnection> peerConnection = adoptRefWillBeRefCountedGarbageCollected(new RTCPeerConnection(context, configuration.release(), constraints, exceptionState));
     peerConnection->suspendIfNeeded();
     if (exceptionState.hadException())
-        return 0;
+        return nullptr;
 
     return peerConnection.release();
 }
 
-RTCPeerConnection::RTCPeerConnection(ExecutionContext* context, PassRefPtr<RTCConfiguration> configuration, PassRefPtr<MediaConstraints> constraints, ExceptionState& exceptionState)
+RTCPeerConnection::RTCPeerConnection(ExecutionContext* context, PassRefPtr<RTCConfiguration> configuration, blink::WebMediaConstraints constraints, ExceptionState& exceptionState)
     : ActiveDOMObject(context)
     , m_signalingState(SignalingStateStable)
-    , m_iceGatheringState(IceGatheringStateNew)
-    , m_iceConnectionState(IceConnectionStateNew)
+    , m_iceGatheringState(ICEGatheringStateNew)
+    , m_iceConnectionState(ICEConnectionStateNew)
     , m_dispatchScheduledEventRunner(this, &RTCPeerConnection::dispatchScheduledEvent)
     , m_stopped(false)
+    , m_closed(false)
 {
     ScriptWrappable::init(this);
     Document* document = toDocument(executionContext());
 
+    // If we fail, set |m_closed| and |m_stopped| to true, to avoid hitting the assert in the destructor.
+
     if (!document->frame()) {
-        exceptionState.throwUninformativeAndGenericDOMException(NotSupportedError);
+        m_closed = true;
+        m_stopped = true;
+        exceptionState.throwDOMException(NotSupportedError, "PeerConnections may not be created in detached documents.");
         return;
     }
 
-    m_peerHandler = RTCPeerConnectionHandler::create(this);
+    m_peerHandler = adoptPtr(blink::Platform::current()->createRTCPeerConnectionHandler(this));
     if (!m_peerHandler) {
-        exceptionState.throwUninformativeAndGenericDOMException(NotSupportedError);
+        m_closed = true;
+        m_stopped = true;
+        exceptionState.throwDOMException(NotSupportedError, "No PeerConnection handler can be created, perhaps WebRTC is disabled?");
         return;
     }
 
     document->frame()->loader().client()->dispatchWillStartUsingPeerConnectionHandler(m_peerHandler.get());
 
     if (!m_peerHandler->initialize(configuration, constraints)) {
-        exceptionState.throwUninformativeAndGenericDOMException(NotSupportedError);
+        m_closed = true;
+        m_stopped = true;
+        exceptionState.throwDOMException(NotSupportedError, "Failed to initialize native PeerConnection.");
         return;
     }
 }
 
 RTCPeerConnection::~RTCPeerConnection()
 {
+    // This checks that close() or stop() is called before the destructor.
+    // We are assuming that a wrapper is always created when RTCPeerConnection is created.
+    ASSERT(m_closed || m_stopped);
+
+#if !ENABLE(OILPAN)
     stop();
+#endif
 }
 
 void RTCPeerConnection::createOffer(PassOwnPtr<RTCSessionDescriptionCallback> successCallback, PassOwnPtr<RTCErrorCallback> errorCallback, const Dictionary& mediaConstraints, ExceptionState& exceptionState)
 {
-    if (m_signalingState == SignalingStateClosed) {
-        exceptionState.throwUninformativeAndGenericDOMException(InvalidStateError);
+    if (throwExceptionIfSignalingStateClosed(m_signalingState, exceptionState))
         return;
-    }
 
-    if (!successCallback) {
-        exceptionState.throwUninformativeAndGenericDOMException(TypeMismatchError);
-        return;
-    }
+    ASSERT(successCallback);
 
-    RefPtr<MediaConstraints> constraints = MediaConstraintsImpl::create(mediaConstraints, exceptionState);
+    blink::WebMediaConstraints constraints = MediaConstraintsImpl::create(mediaConstraints, exceptionState);
     if (exceptionState.hadException())
         return;
 
-    RefPtr<RTCSessionDescriptionRequestImpl> request = RTCSessionDescriptionRequestImpl::create(executionContext(), successCallback, errorCallback);
+    RefPtr<RTCSessionDescriptionRequest> request = RTCSessionDescriptionRequestImpl::create(executionContext(), this, successCallback, errorCallback);
     m_peerHandler->createOffer(request.release(), constraints);
 }
 
 void RTCPeerConnection::createAnswer(PassOwnPtr<RTCSessionDescriptionCallback> successCallback, PassOwnPtr<RTCErrorCallback> errorCallback, const Dictionary& mediaConstraints, ExceptionState& exceptionState)
 {
-    if (m_signalingState == SignalingStateClosed) {
-        exceptionState.throwUninformativeAndGenericDOMException(InvalidStateError);
+    if (throwExceptionIfSignalingStateClosed(m_signalingState, exceptionState))
         return;
-    }
 
-    if (!successCallback) {
-        exceptionState.throwUninformativeAndGenericDOMException(TypeMismatchError);
-        return;
-    }
+    ASSERT(successCallback);
 
-    RefPtr<MediaConstraints> constraints = MediaConstraintsImpl::create(mediaConstraints, exceptionState);
+    blink::WebMediaConstraints constraints = MediaConstraintsImpl::create(mediaConstraints, exceptionState);
     if (exceptionState.hadException())
         return;
 
-    RefPtr<RTCSessionDescriptionRequestImpl> request = RTCSessionDescriptionRequestImpl::create(executionContext(), successCallback, errorCallback);
-    m_peerHandler->createAnswer(request.release(), constraints.release());
+    RefPtr<RTCSessionDescriptionRequest> request = RTCSessionDescriptionRequestImpl::create(executionContext(), this, successCallback, errorCallback);
+    m_peerHandler->createAnswer(request.release(), constraints);
 }
 
-void RTCPeerConnection::setLocalDescription(PassRefPtr<RTCSessionDescription> prpSessionDescription, PassOwnPtr<VoidCallback> successCallback, PassOwnPtr<RTCErrorCallback> errorCallback, ExceptionState& exceptionState)
+void RTCPeerConnection::setLocalDescription(PassRefPtrWillBeRawPtr<RTCSessionDescription> prpSessionDescription, PassOwnPtr<VoidCallback> successCallback, PassOwnPtr<RTCErrorCallback> errorCallback, ExceptionState& exceptionState)
 {
-    if (m_signalingState == SignalingStateClosed) {
-        exceptionState.throwUninformativeAndGenericDOMException(InvalidStateError);
+    if (throwExceptionIfSignalingStateClosed(m_signalingState, exceptionState))
         return;
-    }
 
-    RefPtr<RTCSessionDescription> sessionDescription = prpSessionDescription;
+    RefPtrWillBeRawPtr<RTCSessionDescription> sessionDescription = prpSessionDescription;
     if (!sessionDescription) {
-        exceptionState.throwUninformativeAndGenericDOMException(TypeMismatchError);
+        exceptionState.throwDOMException(TypeMismatchError, ExceptionMessages::argumentNullOrIncorrectType(1, "RTCSessionDescription"));
         return;
     }
 
-    RefPtr<RTCVoidRequestImpl> request = RTCVoidRequestImpl::create(executionContext(), successCallback, errorCallback);
+    RefPtr<RTCVoidRequest> request = RTCVoidRequestImpl::create(executionContext(), this, successCallback, errorCallback);
     m_peerHandler->setLocalDescription(request.release(), sessionDescription->webSessionDescription());
 }
 
-PassRefPtr<RTCSessionDescription> RTCPeerConnection::localDescription(ExceptionState& exceptionState)
+PassRefPtrWillBeRawPtr<RTCSessionDescription> RTCPeerConnection::localDescription(ExceptionState& exceptionState)
 {
     blink::WebRTCSessionDescription webSessionDescription = m_peerHandler->localDescription();
     if (webSessionDescription.isNull())
-        return 0;
+        return nullptr;
 
-    RefPtr<RTCSessionDescription> sessionDescription = RTCSessionDescription::create(webSessionDescription);
-    return sessionDescription.release();
+    return RTCSessionDescription::create(webSessionDescription);
 }
 
-void RTCPeerConnection::setRemoteDescription(PassRefPtr<RTCSessionDescription> prpSessionDescription, PassOwnPtr<VoidCallback> successCallback, PassOwnPtr<RTCErrorCallback> errorCallback, ExceptionState& exceptionState)
+void RTCPeerConnection::setRemoteDescription(PassRefPtrWillBeRawPtr<RTCSessionDescription> prpSessionDescription, PassOwnPtr<VoidCallback> successCallback, PassOwnPtr<RTCErrorCallback> errorCallback, ExceptionState& exceptionState)
 {
-    if (m_signalingState == SignalingStateClosed) {
-        exceptionState.throwUninformativeAndGenericDOMException(InvalidStateError);
+    if (throwExceptionIfSignalingStateClosed(m_signalingState, exceptionState))
         return;
-    }
 
-    RefPtr<RTCSessionDescription> sessionDescription = prpSessionDescription;
+    RefPtrWillBeRawPtr<RTCSessionDescription> sessionDescription = prpSessionDescription;
     if (!sessionDescription) {
-        exceptionState.throwUninformativeAndGenericDOMException(TypeMismatchError);
+        exceptionState.throwDOMException(TypeMismatchError, ExceptionMessages::argumentNullOrIncorrectType(1, "RTCSessionDescription"));
         return;
     }
 
-    RefPtr<RTCVoidRequestImpl> request = RTCVoidRequestImpl::create(executionContext(), successCallback, errorCallback);
+    RefPtr<RTCVoidRequest> request = RTCVoidRequestImpl::create(executionContext(), this, successCallback, errorCallback);
     m_peerHandler->setRemoteDescription(request.release(), sessionDescription->webSessionDescription());
 }
 
-PassRefPtr<RTCSessionDescription> RTCPeerConnection::remoteDescription(ExceptionState& exceptionState)
+PassRefPtrWillBeRawPtr<RTCSessionDescription> RTCPeerConnection::remoteDescription(ExceptionState& exceptionState)
 {
     blink::WebRTCSessionDescription webSessionDescription = m_peerHandler->remoteDescription();
     if (webSessionDescription.isNull())
-        return 0;
+        return nullptr;
 
-    RefPtr<RTCSessionDescription> desc = RTCSessionDescription::create(webSessionDescription);
-    return desc.release();
+    return RTCSessionDescription::create(webSessionDescription);
 }
 
 void RTCPeerConnection::updateIce(const Dictionary& rtcConfiguration, const Dictionary& mediaConstraints, ExceptionState& exceptionState)
 {
-    if (m_signalingState == SignalingStateClosed) {
-        exceptionState.throwUninformativeAndGenericDOMException(InvalidStateError);
+    if (throwExceptionIfSignalingStateClosed(m_signalingState, exceptionState))
         return;
-    }
 
     RefPtr<RTCConfiguration> configuration = parseConfiguration(rtcConfiguration, exceptionState);
     if (exceptionState.hadException())
         return;
 
-    RefPtr<MediaConstraints> constraints = MediaConstraintsImpl::create(mediaConstraints, exceptionState);
+    blink::WebMediaConstraints constraints = MediaConstraintsImpl::create(mediaConstraints, exceptionState);
     if (exceptionState.hadException())
         return;
 
-    bool valid = m_peerHandler->updateIce(configuration, constraints);
+    bool valid = m_peerHandler->updateICE(configuration.release(), constraints);
     if (!valid)
-        exceptionState.throwUninformativeAndGenericDOMException(SyntaxError);
+        exceptionState.throwDOMException(SyntaxError, "Could not update the ICE Agent with the given configuration.");
 }
 
 void RTCPeerConnection::addIceCandidate(RTCIceCandidate* iceCandidate, ExceptionState& exceptionState)
 {
-    if (m_signalingState == SignalingStateClosed) {
-        exceptionState.throwUninformativeAndGenericDOMException(InvalidStateError);
+    if (throwExceptionIfSignalingStateClosed(m_signalingState, exceptionState))
         return;
-    }
 
     if (!iceCandidate) {
-        exceptionState.throwUninformativeAndGenericDOMException(TypeMismatchError);
+        exceptionState.throwDOMException(TypeMismatchError, ExceptionMessages::argumentNullOrIncorrectType(1, "RTCIceCandidate"));
         return;
     }
 
-    bool valid = m_peerHandler->addIceCandidate(iceCandidate->webCandidate());
+    bool valid = m_peerHandler->addICECandidate(iceCandidate->webCandidate());
     if (!valid)
-        exceptionState.throwUninformativeAndGenericDOMException(SyntaxError);
+        exceptionState.throwDOMException(SyntaxError, "The ICE candidate could not be added.");
 }
 
 void RTCPeerConnection::addIceCandidate(RTCIceCandidate* iceCandidate, PassOwnPtr<VoidCallback> successCallback, PassOwnPtr<RTCErrorCallback> errorCallback, ExceptionState& exceptionState)
 {
-    if (m_signalingState == SignalingStateClosed) {
-        exceptionState.throwUninformativeAndGenericDOMException(InvalidStateError);
+    if (throwExceptionIfSignalingStateClosed(m_signalingState, exceptionState))
+        return;
+
+    if (!iceCandidate) {
+        exceptionState.throwDOMException(TypeMismatchError, ExceptionMessages::argumentNullOrIncorrectType(1, "RTCIceCandidate"));
         return;
     }
+    ASSERT(successCallback);
+    ASSERT(errorCallback);
 
-    if (!iceCandidate || !successCallback || !errorCallback) {
-        exceptionState.throwUninformativeAndGenericDOMException(TypeMismatchError);
-        return;
+    RefPtr<RTCVoidRequest> request = RTCVoidRequestImpl::create(executionContext(), this, successCallback, errorCallback);
+
+    bool implemented = m_peerHandler->addICECandidate(request.release(), iceCandidate->webCandidate());
+    if (!implemented) {
+        exceptionState.throwDOMException(NotSupportedError, "This method is not yet implemented.");
     }
-
-    RefPtr<RTCVoidRequestImpl> request = RTCVoidRequestImpl::create(executionContext(), successCallback, errorCallback);
-
-    bool implemented = m_peerHandler->addIceCandidate(request.release(), iceCandidate->webCandidate());
-    if (!implemented)
-        exceptionState.throwUninformativeAndGenericDOMException(NotSupportedError);
 }
 
 String RTCPeerConnection::signalingState() const
@@ -340,11 +380,11 @@ String RTCPeerConnection::signalingState() const
 String RTCPeerConnection::iceGatheringState() const
 {
     switch (m_iceGatheringState) {
-    case IceGatheringStateNew:
+    case ICEGatheringStateNew:
         return "new";
-    case IceGatheringStateGathering:
+    case ICEGatheringStateGathering:
         return "gathering";
-    case IceGatheringStateComplete:
+    case ICEGatheringStateComplete:
         return "complete";
     }
 
@@ -355,19 +395,19 @@ String RTCPeerConnection::iceGatheringState() const
 String RTCPeerConnection::iceConnectionState() const
 {
     switch (m_iceConnectionState) {
-    case IceConnectionStateNew:
+    case ICEConnectionStateNew:
         return "new";
-    case IceConnectionStateChecking:
+    case ICEConnectionStateChecking:
         return "checking";
-    case IceConnectionStateConnected:
+    case ICEConnectionStateConnected:
         return "connected";
-    case IceConnectionStateCompleted:
+    case ICEConnectionStateCompleted:
         return "completed";
-    case IceConnectionStateFailed:
+    case ICEConnectionStateFailed:
         return "failed";
-    case IceConnectionStateDisconnected:
+    case ICEConnectionStateDisconnected:
         return "disconnected";
-    case IceConnectionStateClosed:
+    case ICEConnectionStateClosed:
         return "closed";
     }
 
@@ -375,23 +415,21 @@ String RTCPeerConnection::iceConnectionState() const
     return String();
 }
 
-void RTCPeerConnection::addStream(PassRefPtr<MediaStream> prpStream, const Dictionary& mediaConstraints, ExceptionState& exceptionState)
+void RTCPeerConnection::addStream(PassRefPtrWillBeRawPtr<MediaStream> prpStream, const Dictionary& mediaConstraints, ExceptionState& exceptionState)
 {
-    if (m_signalingState == SignalingStateClosed) {
-        exceptionState.throwUninformativeAndGenericDOMException(InvalidStateError);
+    if (throwExceptionIfSignalingStateClosed(m_signalingState, exceptionState))
         return;
-    }
 
-    RefPtr<MediaStream> stream = prpStream;
+    RefPtrWillBeRawPtr<MediaStream> stream = prpStream;
     if (!stream) {
-        exceptionState.throwUninformativeAndGenericDOMException(TypeMismatchError);
+        exceptionState.throwDOMException(TypeMismatchError, ExceptionMessages::argumentNullOrIncorrectType(1, "MediaStream"));
         return;
     }
 
     if (m_localStreams.contains(stream))
         return;
 
-    RefPtr<MediaConstraints> constraints = MediaConstraintsImpl::create(mediaConstraints, exceptionState);
+    blink::WebMediaConstraints constraints = MediaConstraintsImpl::create(mediaConstraints, exceptionState);
     if (exceptionState.hadException())
         return;
 
@@ -399,22 +437,20 @@ void RTCPeerConnection::addStream(PassRefPtr<MediaStream> prpStream, const Dicti
 
     bool valid = m_peerHandler->addStream(stream->descriptor(), constraints);
     if (!valid)
-        exceptionState.throwUninformativeAndGenericDOMException(SyntaxError);
+        exceptionState.throwDOMException(SyntaxError, "Unable to add the provided stream.");
 }
 
-void RTCPeerConnection::removeStream(PassRefPtr<MediaStream> prpStream, ExceptionState& exceptionState)
+void RTCPeerConnection::removeStream(PassRefPtrWillBeRawPtr<MediaStream> prpStream, ExceptionState& exceptionState)
 {
-    if (m_signalingState == SignalingStateClosed) {
-        exceptionState.throwUninformativeAndGenericDOMException(InvalidStateError);
+    if (throwExceptionIfSignalingStateClosed(m_signalingState, exceptionState))
         return;
-    }
 
     if (!prpStream) {
-        exceptionState.throwUninformativeAndGenericDOMException(TypeMismatchError);
+        exceptionState.throwDOMException(TypeMismatchError, ExceptionMessages::argumentNullOrIncorrectType(1, "MediaStream"));
         return;
     }
 
-    RefPtr<MediaStream> stream = prpStream;
+    RefPtrWillBeRawPtr<MediaStream> stream = prpStream;
 
     size_t pos = m_localStreams.find(stream);
     if (pos == kNotFound)
@@ -452,17 +488,15 @@ MediaStream* RTCPeerConnection::getStreamById(const String& streamId)
 
 void RTCPeerConnection::getStats(PassOwnPtr<RTCStatsCallback> successCallback, PassRefPtr<MediaStreamTrack> selector)
 {
-    RefPtr<RTCStatsRequestImpl> statsRequest = RTCStatsRequestImpl::create(executionContext(), successCallback, selector);
+    RefPtr<RTCStatsRequest> statsRequest = RTCStatsRequestImpl::create(executionContext(), this, successCallback, selector);
     // FIXME: Add passing selector as part of the statsRequest.
     m_peerHandler->getStats(statsRequest.release());
 }
 
-PassRefPtr<RTCDataChannel> RTCPeerConnection::createDataChannel(String label, const Dictionary& options, ExceptionState& exceptionState)
+PassRefPtrWillBeRawPtr<RTCDataChannel> RTCPeerConnection::createDataChannel(String label, const Dictionary& options, ExceptionState& exceptionState)
 {
-    if (m_signalingState == SignalingStateClosed) {
-        exceptionState.throwUninformativeAndGenericDOMException(InvalidStateError);
-        return 0;
-    }
+    if (throwExceptionIfSignalingStateClosed(m_signalingState, exceptionState))
+        return nullptr;
 
     blink::WebRTCDataChannelInit init;
     options.get("ordered", init.ordered);
@@ -480,9 +514,9 @@ PassRefPtr<RTCDataChannel> RTCPeerConnection::createDataChannel(String label, co
     options.get("protocol", protocolString);
     init.protocol = protocolString;
 
-    RefPtr<RTCDataChannel> channel = RTCDataChannel::create(executionContext(), m_peerHandler.get(), label, init, exceptionState);
+    RefPtrWillBeRawPtr<RTCDataChannel> channel = RTCDataChannel::create(executionContext(), this, m_peerHandler.get(), label, init, exceptionState);
     if (exceptionState.hadException())
-        return 0;
+        return nullptr;
     m_dataChannels.append(channel);
     return channel.release();
 }
@@ -496,98 +530,104 @@ bool RTCPeerConnection::hasLocalStreamWithTrackId(const String& trackId)
     return false;
 }
 
-PassRefPtr<RTCDTMFSender> RTCPeerConnection::createDTMFSender(PassRefPtr<MediaStreamTrack> prpTrack, ExceptionState& exceptionState)
+PassRefPtrWillBeRawPtr<RTCDTMFSender> RTCPeerConnection::createDTMFSender(PassRefPtrWillBeRawPtr<MediaStreamTrack> prpTrack, ExceptionState& exceptionState)
 {
-    if (m_signalingState == SignalingStateClosed) {
-        exceptionState.throwUninformativeAndGenericDOMException(InvalidStateError);
-        return 0;
-    }
+    if (throwExceptionIfSignalingStateClosed(m_signalingState, exceptionState))
+        return nullptr;
 
     if (!prpTrack) {
-        exceptionState.throwUninformativeAndGenericTypeError();
-        return 0;
+        exceptionState.throwTypeError(ExceptionMessages::argumentNullOrIncorrectType(1, "MediaStreamTrack"));
+        return nullptr;
     }
 
-    RefPtr<MediaStreamTrack> track = prpTrack;
+    RefPtrWillBeRawPtr<MediaStreamTrack> track = prpTrack;
 
     if (!hasLocalStreamWithTrackId(track->id())) {
-        exceptionState.throwUninformativeAndGenericDOMException(SyntaxError);
-        return 0;
+        exceptionState.throwDOMException(SyntaxError, "No local stream is available for the track provided.");
+        return nullptr;
     }
 
-    RefPtr<RTCDTMFSender> dtmfSender = RTCDTMFSender::create(executionContext(), m_peerHandler.get(), track.release(), exceptionState);
+    RefPtrWillBeRawPtr<RTCDTMFSender> dtmfSender = RTCDTMFSender::create(executionContext(), m_peerHandler.get(), track.release(), exceptionState);
     if (exceptionState.hadException())
-        return 0;
+        return nullptr;
     return dtmfSender.release();
 }
 
 void RTCPeerConnection::close(ExceptionState& exceptionState)
 {
-    if (m_signalingState == SignalingStateClosed) {
-        exceptionState.throwUninformativeAndGenericDOMException(InvalidStateError);
+    if (throwExceptionIfSignalingStateClosed(m_signalingState, exceptionState))
         return;
-    }
 
     m_peerHandler->stop();
+    m_closed = true;
 
-    changeIceConnectionState(IceConnectionStateClosed);
-    changeIceGatheringState(IceGatheringStateComplete);
+    changeIceConnectionState(ICEConnectionStateClosed);
+    changeIceGatheringState(ICEGatheringStateComplete);
     changeSignalingState(SignalingStateClosed);
 }
 
 void RTCPeerConnection::negotiationNeeded()
 {
+    ASSERT(!m_closed);
     scheduleDispatchEvent(Event::create(EventTypeNames::negotiationneeded));
 }
 
-void RTCPeerConnection::didGenerateIceCandidate(blink::WebRTCICECandidate webCandidate)
+void RTCPeerConnection::didGenerateICECandidate(const blink::WebRTCICECandidate& webCandidate)
 {
+    ASSERT(!m_closed);
     ASSERT(executionContext()->isContextThread());
     if (webCandidate.isNull())
-        scheduleDispatchEvent(RTCIceCandidateEvent::create(false, false, 0));
+        scheduleDispatchEvent(RTCIceCandidateEvent::create(false, false, nullptr));
     else {
-        RefPtr<RTCIceCandidate> iceCandidate = RTCIceCandidate::create(webCandidate);
+        RefPtrWillBeRawPtr<RTCIceCandidate> iceCandidate = RTCIceCandidate::create(webCandidate);
         scheduleDispatchEvent(RTCIceCandidateEvent::create(false, false, iceCandidate.release()));
     }
 }
 
 void RTCPeerConnection::didChangeSignalingState(SignalingState newState)
 {
+    ASSERT(!m_closed);
     ASSERT(executionContext()->isContextThread());
     changeSignalingState(newState);
 }
 
-void RTCPeerConnection::didChangeIceGatheringState(IceGatheringState newState)
+void RTCPeerConnection::didChangeICEGatheringState(ICEGatheringState newState)
 {
+    ASSERT(!m_closed);
     ASSERT(executionContext()->isContextThread());
     changeIceGatheringState(newState);
 }
 
-void RTCPeerConnection::didChangeIceConnectionState(IceConnectionState newState)
+void RTCPeerConnection::didChangeICEConnectionState(ICEConnectionState newState)
 {
+    ASSERT(!m_closed);
     ASSERT(executionContext()->isContextThread());
     changeIceConnectionState(newState);
 }
 
-void RTCPeerConnection::didAddRemoteStream(PassRefPtr<MediaStreamDescriptor> streamDescriptor)
+void RTCPeerConnection::didAddRemoteStream(const blink::WebMediaStream& remoteStream)
 {
+    ASSERT(!m_closed);
     ASSERT(executionContext()->isContextThread());
 
     if (m_signalingState == SignalingStateClosed)
         return;
 
-    RefPtr<MediaStream> stream = MediaStream::create(executionContext(), streamDescriptor);
+    RefPtrWillBeRawPtr<MediaStream> stream = MediaStream::create(executionContext(), remoteStream);
     m_remoteStreams.append(stream);
 
     scheduleDispatchEvent(MediaStreamEvent::create(EventTypeNames::addstream, false, false, stream.release()));
 }
 
-void RTCPeerConnection::didRemoveRemoteStream(MediaStreamDescriptor* streamDescriptor)
+void RTCPeerConnection::didRemoveRemoteStream(const blink::WebMediaStream& remoteStream)
 {
+    ASSERT(!m_closed);
     ASSERT(executionContext()->isContextThread());
+
+    MediaStreamDescriptor* streamDescriptor = remoteStream;
     ASSERT(streamDescriptor->client());
 
-    RefPtr<MediaStream> stream = static_cast<MediaStream*>(streamDescriptor->client());
+    RefPtrWillBeRawPtr<MediaStream> stream = static_cast<MediaStream*>(streamDescriptor->client());
     stream->streamEnded();
 
     if (m_signalingState == SignalingStateClosed)
@@ -600,17 +640,23 @@ void RTCPeerConnection::didRemoveRemoteStream(MediaStreamDescriptor* streamDescr
     scheduleDispatchEvent(MediaStreamEvent::create(EventTypeNames::removestream, false, false, stream.release()));
 }
 
-void RTCPeerConnection::didAddRemoteDataChannel(PassOwnPtr<RTCDataChannelHandler> handler)
+void RTCPeerConnection::didAddRemoteDataChannel(blink::WebRTCDataChannelHandler* handler)
 {
+    ASSERT(!m_closed);
     ASSERT(executionContext()->isContextThread());
 
     if (m_signalingState == SignalingStateClosed)
         return;
 
-    RefPtr<RTCDataChannel> channel = RTCDataChannel::create(executionContext(), handler);
+    RefPtrWillBeRawPtr<RTCDataChannel> channel = RTCDataChannel::create(executionContext(), this, adoptPtr(handler));
     m_dataChannels.append(channel);
 
     scheduleDispatchEvent(RTCDataChannelEvent::create(EventTypeNames::datachannel, false, false, channel.release()));
+}
+
+void RTCPeerConnection::releasePeerConnectionHandler()
+{
+    stop();
 }
 
 const AtomicString& RTCPeerConnection::interfaceName() const
@@ -639,14 +685,17 @@ void RTCPeerConnection::stop()
         return;
 
     m_stopped = true;
-    m_iceConnectionState = IceConnectionStateClosed;
+    m_iceConnectionState = ICEConnectionStateClosed;
     m_signalingState = SignalingStateClosed;
 
-    Vector<RefPtr<RTCDataChannel> >::iterator i = m_dataChannels.begin();
+    WillBeHeapVector<RefPtrWillBeMember<RTCDataChannel> >::iterator i = m_dataChannels.begin();
     for (; i != m_dataChannels.end(); ++i)
         (*i)->stop();
+    m_dataChannels.clear();
 
     m_dispatchScheduledEventRunner.stop();
+
+    m_peerHandler.clear();
 }
 
 void RTCPeerConnection::changeSignalingState(SignalingState signalingState)
@@ -657,20 +706,20 @@ void RTCPeerConnection::changeSignalingState(SignalingState signalingState)
     }
 }
 
-void RTCPeerConnection::changeIceGatheringState(IceGatheringState iceGatheringState)
+void RTCPeerConnection::changeIceGatheringState(ICEGatheringState iceGatheringState)
 {
     m_iceGatheringState = iceGatheringState;
 }
 
-void RTCPeerConnection::changeIceConnectionState(IceConnectionState iceConnectionState)
+void RTCPeerConnection::changeIceConnectionState(ICEConnectionState iceConnectionState)
 {
-    if (m_iceConnectionState != IceConnectionStateClosed && m_iceConnectionState != iceConnectionState) {
+    if (m_iceConnectionState != ICEConnectionStateClosed && m_iceConnectionState != iceConnectionState) {
         m_iceConnectionState = iceConnectionState;
         scheduleDispatchEvent(Event::create(EventTypeNames::iceconnectionstatechange));
     }
 }
 
-void RTCPeerConnection::scheduleDispatchEvent(PassRefPtr<Event> event)
+void RTCPeerConnection::scheduleDispatchEvent(PassRefPtrWillBeRawPtr<Event> event)
 {
     m_scheduledEvents.append(event);
 
@@ -682,14 +731,23 @@ void RTCPeerConnection::dispatchScheduledEvent()
     if (m_stopped)
         return;
 
-    Vector<RefPtr<Event> > events;
+    WillBeHeapVector<RefPtrWillBeMember<Event> > events;
     events.swap(m_scheduledEvents);
 
-    Vector<RefPtr<Event> >::iterator it = events.begin();
+    WillBeHeapVector<RefPtrWillBeMember<Event> >::iterator it = events.begin();
     for (; it != events.end(); ++it)
         dispatchEvent((*it).release());
 
     events.clear();
+}
+
+void RTCPeerConnection::trace(Visitor* visitor)
+{
+    visitor->trace(m_localStreams);
+    visitor->trace(m_remoteStreams);
+    visitor->trace(m_dataChannels);
+    visitor->trace(m_scheduledEvents);
+    EventTargetWithInlineData::trace(visitor);
 }
 
 } // namespace WebCore

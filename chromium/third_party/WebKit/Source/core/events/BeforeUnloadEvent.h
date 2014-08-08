@@ -26,17 +26,16 @@
 #define BeforeUnloadEvent_h
 
 #include "core/events/Event.h"
-#include "core/events/ThreadLocalEventNames.h"
 
 namespace WebCore {
 
-class BeforeUnloadEvent : public Event {
+class BeforeUnloadEvent FINAL : public Event {
 public:
     virtual ~BeforeUnloadEvent();
 
-    static PassRefPtr<BeforeUnloadEvent> create()
+    static PassRefPtrWillBeRawPtr<BeforeUnloadEvent> create()
     {
-        return adoptRef(new BeforeUnloadEvent);
+        return adoptRefWillBeNoop(new BeforeUnloadEvent);
     }
 
     virtual bool isBeforeUnloadEvent() const OVERRIDE;
@@ -45,6 +44,8 @@ public:
     String returnValue() const { return m_returnValue; }
 
     virtual const AtomicString& interfaceName() const OVERRIDE { return EventNames::BeforeUnloadEvent; }
+
+    virtual void trace(Visitor*) OVERRIDE;
 
 private:
     BeforeUnloadEvent();

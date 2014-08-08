@@ -56,7 +56,7 @@
           'action_name': 'proguard_<(_target_name)',
           'message': 'Proguard preprocessing <(_target_name) jar',
           'inputs': [
-            '<(android_sdk_root)/tools/proguard/bin/proguard.sh',
+            '<(android_sdk_root)/tools/proguard/lib/proguard.jar',
             '<(DEPTH)/build/android/gyp/util/build_utils.py',
             '<(DEPTH)/build/android/gyp/proguard.py',
             '<(jar_path)',
@@ -67,14 +67,11 @@
           ],
           'action': [
             'python', '<(DEPTH)/build/android/gyp/proguard.py',
-            '--proguard-path=<(android_sdk_root)/tools/proguard/bin/proguard.sh',
+            '--proguard-path=<(android_sdk_root)/tools/proguard/lib/proguard.jar',
             '--input-path=<(jar_path)',
             '--output-path=<(dex_input_jar_path)',
             '--proguard-config=<(proguard_config)',
             '--classpath=>(input_jars_paths)',
-
-            # TODO(newt): remove this once http://crbug.com/177552 is fixed in ninja.
-            '--ignore=>!(echo \'>(_inputs)\' | md5sum)',
           ]
         },
       ],
@@ -84,25 +81,13 @@
     {
       'action_name': 'dex_<(_target_name)',
       'message': 'Dexing <(_target_name) jar',
-      'inputs': [
-        '<(DEPTH)/build/android/gyp/util/build_utils.py',
-        '<(DEPTH)/build/android/gyp/dex.py',
-        '<(dex_input_jar_path)',
-      ],
-      'outputs': [
-        '<(dex_path)',
-      ],
-      'action': [
-        'python', '<(DEPTH)/build/android/gyp/dex.py',
-        '--dex-path=<(dex_path)',
-        '--android-sdk-tools=<(android_sdk_tools)',
-
-        # TODO(newt): remove this once http://crbug.com/177552 is fixed in ninja.
-        '--ignore=>!(echo \'>(_inputs)\' | md5sum)',
-
-        '<(dex_input_jar_path)',
-      ]
+      'variables': {
+        'dex_input_paths': [
+          '<(dex_input_jar_path)',
+        ],
+        'output_path': '<(dex_path)',
+      },
+      'includes': [ 'android/dex_action.gypi' ],
     },
-
   ],
 }

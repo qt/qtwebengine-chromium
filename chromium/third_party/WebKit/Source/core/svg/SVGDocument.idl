@@ -19,10 +19,9 @@
  * Boston, MA 02110-1301, USA.
  */
 
-interface SVGDocument : Document {
-    readonly attribute SVGSVGElement        rootElement;
-
-    // Overwrite the one in events::DocumentEvent
-    [RaisesException] Event createEvent([Default=Undefined] optional DOMString eventType);
+[
+    ImplementedAs=SVGDocumentExtensions
+] partial interface Document {
+    [MeasureAs=SVGDocumentRootElement] readonly attribute SVGSVGElement        rootElement;
 };
 

@@ -40,6 +40,7 @@
 #include "core/html/parser/HTMLToken.h"
 #include "core/html/parser/HTMLTokenizer.h"
 #include "core/html/parser/HTMLTreeBuilderSimulator.h"
+#include "core/html/parser/TextResourceDecoder.h"
 #include "core/html/parser/XSSAuditor.h"
 #include "core/html/parser/XSSAuditorDelegate.h"
 #include "platform/text/SegmentedString.h"
@@ -64,14 +65,16 @@ class ScriptSourceCode;
 
 class PumpSession;
 
-class HTMLDocumentParser :  public ScriptableDocumentParser, HTMLScriptRunnerHost, ResourceClient {
-    WTF_MAKE_FAST_ALLOCATED;
+class HTMLDocumentParser :  public ScriptableDocumentParser, private HTMLScriptRunnerHost {
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(HTMLDocumentParser);
 public:
-    static PassRefPtr<HTMLDocumentParser> create(HTMLDocument* document, bool reportErrors)
+    static PassRefPtrWillBeRawPtr<HTMLDocumentParser> create(HTMLDocument& document, bool reportErrors)
     {
-        return adoptRef(new HTMLDocumentParser(document, reportErrors));
+        return adoptRefWillBeNoop(new HTMLDocumentParser(document, reportErrors));
     }
     virtual ~HTMLDocumentParser();
+    virtual void trace(Visitor*) OVERRIDE;
 
     // Exposed for HTMLParserScheduler
     void resumeParsingAfterYield();
@@ -80,11 +83,11 @@ public:
 
     HTMLTokenizer* tokenizer() const { return m_tokenizer.get(); }
 
-    virtual TextPosition textPosition() const;
-    virtual OrdinalNumber lineNumber() const;
+    virtual TextPosition textPosition() const OVERRIDE FINAL;
+    virtual OrdinalNumber lineNumber() const OVERRIDE FINAL;
 
-    virtual void suspendScheduledTasks();
-    virtual void resumeScheduledTasks();
+    virtual void suspendScheduledTasks() OVERRIDE FINAL;
+    virtual void resumeScheduledTasks() OVERRIDE FINAL;
 
     struct ParsedChunk {
         OwnPtr<CompactHTMLTokenStream> tokens;
@@ -96,15 +99,20 @@ public:
         TokenPreloadScannerCheckpoint preloadScannerCheckpoint;
     };
     void didReceiveParsedChunkFromBackgroundParser(PassOwnPtr<ParsedChunk>);
+    void didReceiveEncodingDataFromBackgroundParser(const DocumentEncodingData&);
+
+    virtual void appendBytes(const char* bytes, size_t length) OVERRIDE;
+    virtual void flush() OVERRIDE FINAL;
+    virtual void setDecoder(PassOwnPtr<TextResourceDecoder>) OVERRIDE FINAL;
 
     UseCounter* useCounter() { return UseCounter::getFrom(contextForParsingSession()); }
 
 protected:
-    virtual void insert(const SegmentedString&) OVERRIDE;
+    virtual void insert(const SegmentedString&) OVERRIDE FINAL;
     virtual void append(PassRefPtr<StringImpl>) OVERRIDE;
-    virtual void finish() OVERRIDE;
+    virtual void finish() OVERRIDE FINAL;
 
-    HTMLDocumentParser(HTMLDocument*, bool reportErrors);
+    HTMLDocumentParser(HTMLDocument&, bool reportErrors);
     HTMLDocumentParser(DocumentFragment*, Element* contextElement, ParserContentPolicy);
 
     HTMLTreeBuilder* treeBuilder() const { return m_treeBuilder.get(); }
@@ -112,31 +120,27 @@ protected:
     void forcePlaintextForTextDocument();
 
 private:
-    static PassRefPtr<HTMLDocumentParser> create(DocumentFragment* fragment, Element* contextElement, ParserContentPolicy parserContentPolicy)
+    static PassRefPtrWillBeRawPtr<HTMLDocumentParser> create(DocumentFragment* fragment, Element* contextElement, ParserContentPolicy parserContentPolicy)
     {
-        return adoptRef(new HTMLDocumentParser(fragment, contextElement, parserContentPolicy));
+        return adoptRefWillBeNoop(new HTMLDocumentParser(fragment, contextElement, parserContentPolicy));
     }
 
     // DocumentParser
-    virtual void pinToMainThread() OVERRIDE;
-    virtual void detach() OVERRIDE;
-    virtual bool hasInsertionPoint() OVERRIDE;
-    virtual bool processingData() const OVERRIDE;
-    virtual void prepareToStopParsing() OVERRIDE;
-    virtual void stopParsing() OVERRIDE;
-    virtual bool isWaitingForScripts() const OVERRIDE;
-    virtual bool isExecutingScript() const OVERRIDE;
-    virtual void executeScriptsWaitingForResources() OVERRIDE;
+    virtual void pinToMainThread() OVERRIDE FINAL;
+    virtual void detach() OVERRIDE FINAL;
+    virtual bool hasInsertionPoint() OVERRIDE FINAL;
+    virtual bool processingData() const OVERRIDE FINAL;
+    virtual void prepareToStopParsing() OVERRIDE FINAL;
+    virtual void stopParsing() OVERRIDE FINAL;
+    virtual bool isWaitingForScripts() const OVERRIDE FINAL;
+    virtual bool isExecutingScript() const OVERRIDE FINAL;
+    virtual void executeScriptsWaitingForResources() OVERRIDE FINAL;
 
     // HTMLScriptRunnerHost
-    virtual void watchForLoad(Resource*) OVERRIDE;
-    virtual void stopWatchingForLoad(Resource*) OVERRIDE;
-    virtual HTMLInputStream& inputStream() { return m_input; }
-    virtual bool hasPreloadScanner() const { return m_preloadScanner.get() && !shouldUseThreading(); }
-    virtual void appendCurrentInputStreamToPreloadScannerAndScan() OVERRIDE;
-
-    // ResourceClient
-    virtual void notifyFinished(Resource*);
+    virtual void notifyScriptLoaded(Resource*) OVERRIDE FINAL;
+    virtual HTMLInputStream& inputStream() OVERRIDE FINAL { return m_input; }
+    virtual bool hasPreloadScanner() const OVERRIDE FINAL { return m_preloadScanner.get() && !shouldUseThreading(); }
+    virtual void appendCurrentInputStreamToPreloadScannerAndScan() OVERRIDE FINAL;
 
     void startBackgroundParser();
     void stopBackgroundParser();
@@ -179,8 +183,8 @@ private:
 
     OwnPtr<HTMLToken> m_token;
     OwnPtr<HTMLTokenizer> m_tokenizer;
-    OwnPtr<HTMLScriptRunner> m_scriptRunner;
-    OwnPtr<HTMLTreeBuilder> m_treeBuilder;
+    OwnPtrWillBeMember<HTMLScriptRunner> m_scriptRunner;
+    OwnPtrWillBeMember<HTMLTreeBuilder> m_treeBuilder;
     OwnPtr<HTMLPreloadScanner> m_preloadScanner;
     OwnPtr<HTMLPreloadScanner> m_insertionPreloadScanner;
     OwnPtr<HTMLParserScheduler> m_parserScheduler;

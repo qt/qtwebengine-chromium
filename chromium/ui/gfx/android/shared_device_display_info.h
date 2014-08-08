@@ -18,12 +18,16 @@ class SharedDeviceDisplayInfo {
  public:
   static SharedDeviceDisplayInfo* GetInstance();
 
+  // See documentation in DeviceDisplayInfo.java
   int GetDisplayHeight();
   int GetDisplayWidth();
+  int GetPhysicalDisplayHeight();
+  int GetPhysicalDisplayWidth();
   int GetBitsPerPixel();
   int GetBitsPerComponent();
   double GetDIPScale();
   int GetSmallestDIPWidth();
+  int GetRotationDegrees();
 
   // Registers methods with JNI and returns true if succeeded.
   static bool RegisterSharedDeviceDisplayInfo(JNIEnv* env);
@@ -32,10 +36,13 @@ class SharedDeviceDisplayInfo {
                     jobject jobj,
                     jint display_height,
                     jint display_width,
+                    jint physical_display_height,
+                    jint physical_display_width,
                     jint bits_per_pixel,
                     jint bits_per_component,
                     jdouble dip_scale,
-                    jint smallest_dip_width);
+                    jint smallest_dip_width,
+                    jint rotation_degrees);
  private:
   friend struct DefaultSingletonTraits<SharedDeviceDisplayInfo>;
 
@@ -45,20 +52,26 @@ class SharedDeviceDisplayInfo {
                          jobject jobj,
                          jint display_height,
                          jint display_width,
+                         jint physical_display_height,
+                         jint physical_display_width,
                          jint bits_per_pixel,
                          jint bits_per_component,
                          jdouble dip_scale,
-                         jint smallest_dip_width);
+                         jint smallest_dip_width,
+                         jint rotation_degrees);
 
   base::Lock lock_;
   base::android::ScopedJavaGlobalRef<jobject> j_device_info_;
 
   int display_height_;
   int display_width_;
+  int physical_display_height_;
+  int physical_display_width_;
   int bits_per_pixel_;
   int bits_per_component_;
   double dip_scale_;
   int smallest_dip_width_;
+  int rotation_degrees_;
 
   DISALLOW_COPY_AND_ASSIGN(SharedDeviceDisplayInfo);
 };

@@ -73,6 +73,9 @@ def PrepareCmake():
   CallSubProcess( ['make', 'cmake'], cwd=CMAKE_DIR)
 
 
+_ANDROID_SETUP = 'source build/envsetup.sh && lunch full-eng'
+
+
 def PrepareAndroidTree():
   """Prepare an Android tree to run 'android' format tests."""
   if os.environ['BUILDBOT_CLOBBER'] == '1':
@@ -103,11 +106,32 @@ def PrepareAndroidTree():
   print '@@@BUILD_STEP Build Android@@@'
   CallSubProcess(
       ['/bin/bash',
-       '-c', 'source build/envsetup.sh && lunch full-eng && make -j4'],
+       '-c', '%s && make -j4' % _ANDROID_SETUP],
       cwd=ANDROID_DIR)
 
 
-def GypTestFormat(title, format=None, msvs_version=None):
+def StartAndroidEmulator():
+  """Start an android emulator from the built android tree."""
+  print '@@@BUILD_STEP Start Android emulator@@@'
+  android_host_bin = '$ANDROID_HOST_OUT/bin'
+  subprocess.Popen(
+      ['/bin/bash', '-c',
+       '%s && %s/emulator -no-window' % (_ANDROID_SETUP, android_host_bin)],
+      cwd=ANDROID_DIR)
+  CallSubProcess(
+      ['/bin/bash', '-c',
+       '%s && %s/adb wait-for-device' % (_ANDROID_SETUP, android_host_bin)],
+      cwd=ANDROID_DIR)
+
+
+def StopAndroidEmulator():
+  """Stop all android emulators."""
+  print '@@@BUILD_STEP Stop Android emulator@@@'
+  # If this fails, it's because there is no emulator running.
+  subprocess.call(['pkill', 'emulator.*'])
+
+
+def GypTestFormat(title, format=None, msvs_version=None, tests=[]):
   """Run the gyp tests for a given format, emitting annotator tags.
 
   See annotator docs at:
@@ -131,14 +155,13 @@ def GypTestFormat(title, format=None, msvs_version=None):
        '--passed',
        '--format', format,
        '--path', CMAKE_BIN_DIR,
-       '--chdir', 'trunk'])
+       '--chdir', 'trunk'] + tests)
   if format == 'android':
     # gyptest needs the environment setup from envsetup/lunch in order to build
     # using the 'android' backend, so this is done in a single shell.
     retcode = subprocess.call(
         ['/bin/bash',
-         '-c', 'source build/envsetup.sh && lunch full-eng && cd %s && %s'
-         % (ROOT_DIR, command)],
+         '-c', '%s && cd %s && %s' % (_ANDROID_SETUP, ROOT_DIR, command)],
         cwd=ANDROID_DIR, env=env)
   else:
     retcode = subprocess.call(command, cwd=ROOT_DIR, env=env, shell=True)
@@ -160,7 +183,11 @@ def GypBuild():
   # The Android gyp bot runs on linux so this must be tested first.
   if os.environ['BUILDBOT_BUILDERNAME'] == 'gyp-android':
     PrepareAndroidTree()
-    retcode += GypTestFormat('android')
+    StartAndroidEmulator()
+    try:
+      retcode += GypTestFormat('android')
+    finally:
+      StopAndroidEmulator()
   elif sys.platform.startswith('linux'):
     retcode += GypTestFormat('ninja')
     retcode += GypTestFormat('make')
@@ -173,6 +200,12 @@ def GypBuild():
   elif sys.platform == 'win32':
     retcode += GypTestFormat('ninja')
     if os.environ['BUILDBOT_BUILDERNAME'] == 'gyp-win64':
+      retcode += GypTestFormat('msvs-ninja-2012', format='msvs-ninja',
+                               msvs_version='2012',
+                               tests=[
+                                   'test\generator-output\gyptest-actions.py',
+                                   'test\generator-output\gyptest-relocate.py',
+                                   'test\generator-output\gyptest-rules.py'])
       retcode += GypTestFormat('msvs-2010', format='msvs', msvs_version='2010')
       retcode += GypTestFormat('msvs-2012', format='msvs', msvs_version='2012')
   else:

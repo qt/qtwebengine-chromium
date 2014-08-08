@@ -33,7 +33,7 @@
 
 #include "core/animation/AnimationEffect.h"
 #include "core/animation/Timing.h"
-#include "core/platform/animation/TimingFunction.h"
+#include "platform/animation/TimingFunction.h"
 #include "wtf/Vector.h"
 
 namespace WebCore {
@@ -49,7 +49,6 @@ class CompositorAnimationsTimingFunctionReverser {
 public:
     static PassRefPtr<TimingFunction> reverse(const LinearTimingFunction* timefunc);
     static PassRefPtr<TimingFunction> reverse(const CubicBezierTimingFunction* timefunc);
-    static PassRefPtr<TimingFunction> reverse(const ChainedTimingFunction* timefunc);
     static PassRefPtr<TimingFunction> reverse(const TimingFunction* timefunc);
 };
 
@@ -61,7 +60,7 @@ public:
     virtual bool isCandidateForAnimationOnCompositor(const Timing&, const AnimationEffect&);
     virtual bool canStartAnimationOnCompositor(const Element&);
     // FIXME: This should return void. We should know ahead of time whether these animations can be started.
-    virtual bool startAnimationOnCompositor(const Element&, const Timing&, const AnimationEffect&, Vector<int>& startedAnimationIds);
+    virtual bool startAnimationOnCompositor(const Element&, double startTime, const Timing&, const AnimationEffect&, Vector<int>& startedAnimationIds);
     virtual void cancelAnimationOnCompositor(const Element&, int id);
     virtual void pauseAnimationForTestingOnCompositor(const Element&, int id, double pauseTime);
 

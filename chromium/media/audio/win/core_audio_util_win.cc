@@ -146,7 +146,7 @@ static std::string GetDeviceID(IMMDevice* device) {
   ScopedCoMem<WCHAR> device_id_com;
   std::string device_id;
   if (SUCCEEDED(device->GetId(&device_id_com)))
-    WideToUTF8(device_id_com, wcslen(device_id_com), &device_id);
+    base::WideToUTF8(device_id_com, wcslen(device_id_com), &device_id);
   return device_id;
 }
 
@@ -154,7 +154,7 @@ bool CoreAudioUtil::IsSupported() {
   // It is possible to force usage of WaveXxx APIs by using a command line flag.
   const CommandLine* cmd_line = CommandLine::ForCurrentProcess();
   if (cmd_line->HasSwitch(switches::kForceWaveAudio)) {
-    LOG(WARNING) << "Forcing usage of Windows WaveXxx APIs";
+    DVLOG(1) << "Forcing usage of Windows WaveXxx APIs";
     return false;
   }
 
@@ -230,6 +230,18 @@ ScopedComPtr<IMMDeviceEnumerator> CoreAudioUtil::CreateDeviceEnumerator() {
   ScopedComPtr<IMMDeviceEnumerator> device_enumerator;
   HRESULT hr = device_enumerator.CreateInstance(__uuidof(MMDeviceEnumerator),
                                                 NULL, CLSCTX_INPROC_SERVER);
+  if (hr == CO_E_NOTINITIALIZED) {
+    LOG(ERROR) << "CoCreateInstance fails with CO_E_NOTINITIALIZED";
+    // We have seen crashes which indicates that this method can in fact
+    // fail with CO_E_NOTINITIALIZED in combination with certain 3rd party
+    // modules. Calling CoInitializeEx is an attempt to resolve the reported
+    // issues. See http://crbug.com/378465 for details.
+    hr = CoInitializeEx(NULL, COINIT_MULTITHREADED);
+    if (SUCCEEDED(hr)) {
+      hr = device_enumerator.CreateInstance(__uuidof(MMDeviceEnumerator),
+                                            NULL, CLSCTX_INPROC_SERVER);
+    }
+  }
   CHECK(SUCCEEDED(hr));
   return device_enumerator;
 }
@@ -288,8 +300,8 @@ ScopedComPtr<IMMDevice> CoreAudioUtil::CreateDevice(
 
   // Retrieve an audio device specified by an endpoint device-identification
   // string.
-  HRESULT hr = device_enumerator->GetDevice(UTF8ToUTF16(device_id).c_str(),
-                                            endpoint_device.Receive());
+  HRESULT hr = device_enumerator->GetDevice(
+      base::UTF8ToUTF16(device_id).c_str(), endpoint_device.Receive());
   DVLOG_IF(1, FAILED(hr)) << "IMMDeviceEnumerator::GetDevice: "
                           << std::hex << hr;
   return endpoint_device;
@@ -316,9 +328,9 @@ HRESULT CoreAudioUtil::GetDeviceName(IMMDevice* device, AudioDeviceName* name) {
   if (FAILED(hr))
     return hr;
   if (friendly_name.get().vt == VT_LPWSTR && friendly_name.get().pwszVal) {
-    WideToUTF8(friendly_name.get().pwszVal,
-               wcslen(friendly_name.get().pwszVal),
-               &device_name.device_name);
+    base::WideToUTF8(friendly_name.get().pwszVal,
+                     wcslen(friendly_name.get().pwszVal),
+                     &device_name.device_name);
   }
 
   *name = device_name;
@@ -367,9 +379,9 @@ std::string CoreAudioUtil::GetAudioControllerID(IMMDevice* device,
   }
 
   std::string controller_id;
-  WideToUTF8(instance_id.get().pwszVal,
-             wcslen(instance_id.get().pwszVal),
-             &controller_id);
+  base::WideToUTF8(instance_id.get().pwszVal,
+                   wcslen(instance_id.get().pwszVal),
+                   &controller_id);
 
   return controller_id;
 }
@@ -672,7 +684,20 @@ HRESULT CoreAudioUtil::GetPreferredAudioParameters(
     // actual error code. The exact value is not important here.
     return AUDCLNT_E_ENDPOINT_CREATE_FAILED;
   }
-  return GetPreferredAudioParameters(client, params);
+
+  HRESULT hr = GetPreferredAudioParameters(client, params);
+  if (FAILED(hr))
+    return hr;
+
+  if (role == eCommunications) {
+    // Raise the 'DUCKING' flag for default communication devices.
+    *params = AudioParameters(params->format(), params->channel_layout(),
+        params->channels(), params->input_channels(), params->sample_rate(),
+        params->bits_per_sample(), params->frames_per_buffer(),
+        params->effects() | AudioParameters::DUCKING);
+  }
+
+  return hr;
 }
 
 HRESULT CoreAudioUtil::GetPreferredAudioParameters(

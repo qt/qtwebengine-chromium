@@ -31,11 +31,10 @@
 #include "config.h"
 #include "core/html/forms/ColorInputType.h"
 
-#include "CSSPropertyNames.h"
-#include "InputTypeNames.h"
-#include "RuntimeEnabledFeatures.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "bindings/v8/ScriptController.h"
+#include "core/CSSPropertyNames.h"
+#include "core/InputTypeNames.h"
 #include "core/events/MouseEvent.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/html/HTMLDataListElement.h"
@@ -44,6 +43,8 @@
 #include "core/html/HTMLOptionElement.h"
 #include "core/page/Chrome.h"
 #include "core/rendering/RenderView.h"
+#include "platform/ColorChooser.h"
+#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/UserGestureIndicator.h"
 #include "platform/graphics/Color.h"
 #include "wtf/PassOwnPtr.h"
@@ -68,13 +69,13 @@ static bool isValidColorString(const String& value)
     // We don't accept #rgb and #aarrggbb formats.
     if (value.length() != 7)
         return false;
-    Color color(value);
-    return color.isValid() && !color.hasAlpha();
+    Color color;
+    return color.setFromString(value) && !color.hasAlpha();
 }
 
-PassRefPtr<InputType> ColorInputType::create(HTMLInputElement& element)
+PassRefPtrWillBeRawPtr<InputType> ColorInputType::create(HTMLInputElement& element)
 {
-    return adoptRef(new ColorInputType(element));
+    return adoptRefWillBeNoop(new ColorInputType(element));
 }
 
 ColorInputType::~ColorInputType()
@@ -117,7 +118,10 @@ String ColorInputType::sanitizeValue(const String& proposedValue) const
 
 Color ColorInputType::valueAsColor() const
 {
-    return Color(element().value());
+    Color color;
+    bool success = color.setFromString(element().value());
+    ASSERT_UNUSED(success, success);
+    return color;
 }
 
 void ColorInputType::createShadowSubtree()
@@ -125,14 +129,14 @@ void ColorInputType::createShadowSubtree()
     ASSERT(element().shadow());
 
     Document& document = element().document();
-    RefPtr<HTMLDivElement> wrapperElement = HTMLDivElement::create(document);
-    wrapperElement->setPseudo(AtomicString("-webkit-color-swatch-wrapper", AtomicString::ConstructFromLiteral));
-    RefPtr<HTMLDivElement> colorSwatch = HTMLDivElement::create(document);
-    colorSwatch->setPseudo(AtomicString("-webkit-color-swatch", AtomicString::ConstructFromLiteral));
+    RefPtrWillBeRawPtr<HTMLDivElement> wrapperElement = HTMLDivElement::create(document);
+    wrapperElement->setShadowPseudoId(AtomicString("-webkit-color-swatch-wrapper", AtomicString::ConstructFromLiteral));
+    RefPtrWillBeRawPtr<HTMLDivElement> colorSwatch = HTMLDivElement::create(document);
+    colorSwatch->setShadowPseudoId(AtomicString("-webkit-color-swatch", AtomicString::ConstructFromLiteral));
     wrapperElement->appendChild(colorSwatch.release());
     element().userAgentShadowRoot()->appendChild(wrapperElement.release());
 
-    updateColorSwatch();
+    element().updateView();
 }
 
 void ColorInputType::setValue(const String& value, bool valueChanged, TextFieldEventBehavior eventBehavior)
@@ -142,7 +146,7 @@ void ColorInputType::setValue(const String& value, bool valueChanged, TextFieldE
     if (!valueChanged)
         return;
 
-    updateColorSwatch();
+    element().updateView();
     if (m_chooser)
         m_chooser->setSelectedColor(valueAsColor());
 }
@@ -157,7 +161,7 @@ void ColorInputType::handleDOMActivateEvent(Event* event)
 
     Chrome* chrome = this->chrome();
     if (chrome && !m_chooser)
-        m_chooser = chrome->createColorChooser(this, valueAsColor());
+        m_chooser = chrome->createColorChooser(element().document().frame(), this, valueAsColor());
 
     event->setDefaultHandled();
 }
@@ -169,7 +173,7 @@ void ColorInputType::closePopupView()
 
 bool ColorInputType::shouldRespectListAttribute()
 {
-    return InputType::themeSupportsDataListUI(this);
+    return true;
 }
 
 bool ColorInputType::typeMismatchFor(const String& value) const
@@ -182,7 +186,7 @@ void ColorInputType::didChooseColor(const Color& color)
     if (element().isDisabledFormControl() || color == valueAsColor())
         return;
     element().setValueFromRenderer(color.serialized());
-    updateColorSwatch();
+    element().updateView();
     element().dispatchFormControlChangeEvent();
 }
 
@@ -197,7 +201,7 @@ void ColorInputType::endColorChooser()
         m_chooser->endChooser();
 }
 
-void ColorInputType::updateColorSwatch()
+void ColorInputType::updateView()
 {
     HTMLElement* colorSwatch = shadowColorSwatch();
     if (!colorSwatch)
@@ -224,30 +228,25 @@ Color ColorInputType::currentColor()
 
 bool ColorInputType::shouldShowSuggestions() const
 {
-    if (RuntimeEnabledFeatures::dataListElementEnabled())
-        return element().fastHasAttribute(listAttr);
-
-    return false;
+    return element().fastHasAttribute(listAttr);
 }
 
 Vector<ColorSuggestion> ColorInputType::suggestions() const
 {
     Vector<ColorSuggestion> suggestions;
-    if (RuntimeEnabledFeatures::dataListElementEnabled()) {
-        HTMLDataListElement* dataList = element().dataList();
-        if (dataList) {
-            RefPtr<HTMLCollection> options = dataList->options();
-            for (unsigned i = 0; HTMLOptionElement* option = toHTMLOptionElement(options->item(i)); i++) {
-                if (!element().isValidValue(option->value()))
-                    continue;
-                Color color(option->value());
-                if (!color.isValid())
-                    continue;
-                ColorSuggestion suggestion(color, option->label().left(maxSuggestionLabelLength));
-                suggestions.append(suggestion);
-                if (suggestions.size() >= maxSuggestions)
-                    break;
-            }
+    HTMLDataListElement* dataList = element().dataList();
+    if (dataList) {
+        RefPtrWillBeRawPtr<HTMLCollection> options = dataList->options();
+        for (unsigned i = 0; HTMLOptionElement* option = toHTMLOptionElement(options->item(i)); i++) {
+            if (!element().isValidValue(option->value()))
+                continue;
+            Color color;
+            if (!color.setFromString(option->value()))
+                continue;
+            ColorSuggestion suggestion(color, option->label().left(maxSuggestionLabelLength));
+            suggestions.append(suggestion);
+            if (suggestions.size() >= maxSuggestions)
+                break;
         }
     }
     return suggestions;

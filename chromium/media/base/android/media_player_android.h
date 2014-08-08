@@ -16,7 +16,7 @@
 
 namespace media {
 
-class MediaDrmBridge;
+class BrowserCdm;
 class MediaPlayerManager;
 
 // This class serves as the base class for different media player
@@ -34,6 +34,12 @@ class MEDIA_EXPORT MediaPlayerAndroid {
     MEDIA_ERROR_INVALID_CODE,
   };
 
+  // Callback when the player needs decoding resources.
+  typedef base::Callback<void(int player_id)> RequestMediaResourcesCB;
+
+  // Callback when the player releases decoding resources.
+  typedef base::Callback<void(int player_id)> ReleaseMediaResourcesCB;
+
   // Passing an external java surface object to the player.
   virtual void SetVideoSurface(gfx::ScopedJavaSurface surface) = 0;
 
@@ -46,7 +52,7 @@ class MEDIA_EXPORT MediaPlayerAndroid {
   // Seek to a particular position, based on renderer signaling actual seek
   // with MediaPlayerHostMsg_Seek. If eventual success, OnSeekComplete() will be
   // called.
-  virtual void SeekTo(const base::TimeDelta& timestamp) = 0;
+  virtual void SeekTo(base::TimeDelta timestamp) = 0;
 
   // Release the player resources.
   virtual void Release() = 0;
@@ -55,7 +61,6 @@ class MEDIA_EXPORT MediaPlayerAndroid {
   virtual void SetVolume(double volume) = 0;
 
   // Get the media information from the player.
-  virtual bool IsRemote() const;
   virtual int GetVideoWidth() = 0;
   virtual int GetVideoHeight() = 0;
   virtual base::TimeDelta GetDuration() = 0;
@@ -68,20 +73,28 @@ class MEDIA_EXPORT MediaPlayerAndroid {
   virtual GURL GetUrl();
   virtual GURL GetFirstPartyForCookies();
 
-  // Pass a drm bridge to a player.
-  virtual void SetDrmBridge(MediaDrmBridge* drm_bridge);
+  // Associates the |cdm| with this player.
+  virtual void SetCdm(BrowserCdm* cdm);
 
-  // Notifies the player that a decryption key has been added. The player
-  // may want to start/resume playback if it is waiting for a key.
-  virtual void OnKeyAdded();
+  // Check whether the player still uses the current surface.
+  virtual bool IsSurfaceInUse() const = 0;
 
   int player_id() { return player_id_; }
 
+  GURL frame_url() { return frame_url_; }
+
  protected:
   MediaPlayerAndroid(int player_id,
-                     MediaPlayerManager* manager);
+                     MediaPlayerManager* manager,
+                     const RequestMediaResourcesCB& request_media_resources_cb,
+                     const ReleaseMediaResourcesCB& release_media_resources_cb,
+                     const GURL& frame_url);
 
   MediaPlayerManager* manager() { return manager_; }
+
+  RequestMediaResourcesCB request_media_resources_cb_;
+
+  ReleaseMediaResourcesCB release_media_resources_cb_;
 
  private:
   // Player ID assigned to this player.
@@ -89,6 +102,9 @@ class MEDIA_EXPORT MediaPlayerAndroid {
 
   // Resource manager for all the media players.
   MediaPlayerManager* manager_;
+
+  // Url for the frame that contains this player.
+  GURL frame_url_;
 
   DISALLOW_COPY_AND_ASSIGN(MediaPlayerAndroid);
 };

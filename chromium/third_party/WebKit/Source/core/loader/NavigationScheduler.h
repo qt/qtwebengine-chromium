@@ -32,6 +32,7 @@
 #define NavigationScheduler_h
 
 #include "platform/Timer.h"
+#include "platform/weborigin/Referrer.h"
 #include "wtf/Forward.h"
 #include "wtf/HashMap.h"
 #include "wtf/Noncopyable.h"
@@ -44,7 +45,7 @@ namespace WebCore {
 
 class Document;
 class FormSubmission;
-class Frame;
+class LocalFrame;
 class ScheduledNavigation;
 
 class NavigationDisablerForBeforeUnload {
@@ -70,14 +71,14 @@ class NavigationScheduler {
     WTF_MAKE_NONCOPYABLE(NavigationScheduler);
 
 public:
-    explicit NavigationScheduler(Frame*);
+    explicit NavigationScheduler(LocalFrame*);
     ~NavigationScheduler();
 
     bool locationChangePending();
 
     void scheduleRedirect(double delay, const String& url);
-    void scheduleLocationChange(Document*, const String& url, const String& referrer, bool lockBackForwardList = true);
-    void scheduleFormSubmission(PassRefPtr<FormSubmission>);
+    void scheduleLocationChange(Document*, const String& url, const Referrer& referrer, bool lockBackForwardList = true);
+    void scheduleFormSubmission(PassRefPtrWillBeRawPtr<FormSubmission>);
     void scheduleRefresh();
     void scheduleHistoryNavigation(int steps);
 
@@ -93,9 +94,9 @@ private:
     void timerFired(Timer<NavigationScheduler>*);
     void schedule(PassOwnPtr<ScheduledNavigation>);
 
-    static bool mustLockBackForwardList(Frame* targetFrame);
+    static bool mustLockBackForwardList(LocalFrame* targetFrame);
 
-    Frame* m_frame;
+    LocalFrame* m_frame;
     Timer<NavigationScheduler> m_timer;
     OwnPtr<ScheduledNavigation> m_redirect;
 };

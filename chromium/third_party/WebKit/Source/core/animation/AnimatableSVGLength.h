@@ -36,34 +36,35 @@
 
 namespace WebCore {
 
-class AnimatableSVGLength: public AnimatableValue {
+class AnimatableSVGLength FINAL : public AnimatableValue {
 public:
     virtual ~AnimatableSVGLength() { }
 
-    static PassRefPtr<AnimatableSVGLength> create(const SVGLength& length)
+    static PassRefPtrWillBeRawPtr<AnimatableSVGLength> create(PassRefPtr<SVGLength> length)
     {
-        return adoptRef(new AnimatableSVGLength(length));
+        return adoptRefWillBeNoop(new AnimatableSVGLength(length));
     }
 
-    const SVGLength& toSVGLength() const
+    SVGLength* toSVGLength() const
     {
-        return m_length;
+        return m_length.get();
     }
+
+    virtual void trace(Visitor* visitor) OVERRIDE { AnimatableValue::trace(visitor); }
 
 protected:
-    virtual PassRefPtr<AnimatableValue> interpolateTo(const AnimatableValue*, double fraction) const OVERRIDE;
-    virtual PassRefPtr<AnimatableValue> addWith(const AnimatableValue*) const OVERRIDE;
+    virtual PassRefPtrWillBeRawPtr<AnimatableValue> interpolateTo(const AnimatableValue*, double fraction) const OVERRIDE;
 
 private:
-    AnimatableSVGLength(const SVGLength& length)
+    AnimatableSVGLength(PassRefPtr<SVGLength> length)
         : m_length(length)
     {
     }
 
-    virtual AnimatableType type() const { return TypeSVGLength; }
+    virtual AnimatableType type() const OVERRIDE { return TypeSVGLength; }
     virtual bool equalTo(const AnimatableValue*) const OVERRIDE;
 
-    SVGLength m_length;
+    RefPtr<SVGLength> m_length;
 };
 
 DEFINE_ANIMATABLE_VALUE_TYPE_CASTS(AnimatableSVGLength, isSVGLength());

@@ -6,8 +6,6 @@
 
 #if defined(OS_WIN)
 #include <windows.h>
-#elif defined(TOOLKIT_GTK)
-#include <gdk/gdk.h>
 #endif
 
 #include "base/i18n/rtl.h"
@@ -26,19 +24,22 @@ namespace ui {
 Accelerator::Accelerator()
     : key_code_(ui::VKEY_UNKNOWN),
       type_(ui::ET_KEY_PRESSED),
-      modifiers_(0) {
+      modifiers_(0),
+      is_repeat_(false) {
 }
 
 Accelerator::Accelerator(KeyboardCode keycode, int modifiers)
     : key_code_(keycode),
       type_(ui::ET_KEY_PRESSED),
-      modifiers_(modifiers) {
+      modifiers_(modifiers),
+      is_repeat_(false) {
 }
 
 Accelerator::Accelerator(const Accelerator& accelerator) {
   key_code_ = accelerator.key_code_;
   type_ = accelerator.type_;
   modifiers_ = accelerator.modifiers_;
+  is_repeat_ = accelerator.is_repeat_;
   if (accelerator.platform_accelerator_.get())
     platform_accelerator_ = accelerator.platform_accelerator_->CreateCopy();
 }
@@ -51,6 +52,7 @@ Accelerator& Accelerator::operator=(const Accelerator& accelerator) {
     key_code_ = accelerator.key_code_;
     type_ = accelerator.type_;
     modifiers_ = accelerator.modifiers_;
+    is_repeat_ = accelerator.is_repeat_;
     if (accelerator.platform_accelerator_.get())
       platform_accelerator_ = accelerator.platform_accelerator_->CreateCopy();
     else
@@ -68,14 +70,15 @@ bool Accelerator::operator <(const Accelerator& rhs) const {
 }
 
 bool Accelerator::operator ==(const Accelerator& rhs) const {
-  if (platform_accelerator_.get() != rhs.platform_accelerator_.get() &&
-      ((!platform_accelerator_.get() || !rhs.platform_accelerator_.get()) ||
-       !platform_accelerator_->Equals(*rhs.platform_accelerator_))) {
-    return false;
-  }
+  if ((key_code_ == rhs.key_code_) && (type_ == rhs.type_) &&
+      (modifiers_ == rhs.modifiers_))
+    return true;
 
-  return (key_code_ == rhs.key_code_) && (type_ == rhs.type_) &&
-      (modifiers_ == rhs.modifiers_);
+  bool platform_equal =
+      platform_accelerator_.get() && rhs.platform_accelerator_.get() &&
+      platform_accelerator_.get() == rhs.platform_accelerator_.get();
+
+  return platform_equal;
 }
 
 bool Accelerator::operator !=(const Accelerator& rhs) const {
@@ -96,6 +99,10 @@ bool Accelerator::IsAltDown() const {
 
 bool Accelerator::IsCmdDown() const {
   return (modifiers_ & EF_COMMAND_DOWN) != 0;
+}
+
+bool Accelerator::IsRepeat() const {
+  return is_repeat_;
 }
 
 base::string16 Accelerator::GetShortcutText() const {
@@ -191,23 +198,6 @@ base::string16 Accelerator::GetShortcutText() const {
     if (c != 0)
       shortcut +=
           static_cast<base::string16::value_type>(base::ToUpperASCII(c));
-#elif defined(TOOLKIT_GTK)
-    const gchar* name = NULL;
-    switch (key_code_) {
-      case ui::VKEY_OEM_2:
-        name = static_cast<const gchar*>("/");
-        break;
-      default:
-        name = gdk_keyval_name(gdk_keyval_to_lower(key_code_));
-        break;
-    }
-    if (name) {
-      if (name[0] != 0 && name[1] == 0)
-        shortcut +=
-            static_cast<base::string16::value_type>(g_ascii_toupper(name[0]));
-      else
-        shortcut += UTF8ToUTF16(name);
-    }
 #endif
   } else {
     shortcut = l10n_util::GetStringUTF16(string_id);
@@ -262,7 +252,7 @@ base::string16 Accelerator::GetShortcutText() const {
   if (adjust_shortcut_for_rtl) {
     int key_length = static_cast<int>(shortcut_rtl.length());
     DCHECK_GT(key_length, 0);
-    shortcut_rtl.append(ASCIIToUTF16("+"));
+    shortcut_rtl.append(base::ASCIIToUTF16("+"));
 
     // Subtracting the size of the shortcut key and 1 for the '+' sign.
     shortcut_rtl.append(shortcut, 0, shortcut.length() - key_length - 1);

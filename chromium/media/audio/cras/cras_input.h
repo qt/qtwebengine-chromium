@@ -10,8 +10,6 @@
 #include <string>
 
 #include "base/compiler_specific.h"
-#include "base/memory/scoped_ptr.h"
-#include "base/memory/weak_ptr.h"
 #include "media/audio/agc_audio_stream.h"
 #include "media/audio/audio_io.h"
 #include "media/audio/audio_parameters.h"
@@ -53,7 +51,7 @@ class CrasInputStream : public AgcAudioStream<AudioInputStream> {
                           const timespec* sample_ts,
                           void* arg);
 
-  // Handles notificaiton that there was an error with the playback stream.
+  // Handles notification that there was an error with the playback stream.
   static int StreamError(cras_client* client,
                          cras_stream_id_t stream_id,
                          int err,
@@ -100,9 +98,11 @@ class CrasInputStream : public AgcAudioStream<AudioInputStream> {
   // Direction of the stream.
   const CRAS_STREAM_DIRECTION stream_direction_;
 
+  scoped_ptr<AudioBus> audio_bus_;
+
   DISALLOW_COPY_AND_ASSIGN(CrasInputStream);
 };
 
 }  // namespace media
 
-#endif  // MEDIA_AUDIO_CRAS_ALSA_INPUT_H_
+#endif  // MEDIA_AUDIO_CRAS_CRAS_INPUT_H_

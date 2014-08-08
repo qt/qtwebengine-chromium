@@ -28,6 +28,7 @@
 
 #include "core/page/DragActions.h"
 #include "platform/geometry/IntPoint.h"
+#include "platform/heap/Handle.h"
 #include "platform/weborigin/KURL.h"
 #include "wtf/Forward.h"
 
@@ -39,9 +40,9 @@ namespace WebCore {
     class DragData;
     class DragImage;
     struct DragSession;
-    struct DragState;
+    class DragState;
     class Element;
-    class Frame;
+    class LocalFrame;
     class FrameSelection;
     class HTMLInputElement;
     class Image;
@@ -51,12 +52,13 @@ namespace WebCore {
     class PlatformMouseEvent;
     class Range;
 
-    class DragController {
-        WTF_MAKE_NONCOPYABLE(DragController); WTF_MAKE_FAST_ALLOCATED;
+    class DragController FINAL : public NoBaseWillBeGarbageCollectedFinalized<DragController> {
+        WTF_MAKE_NONCOPYABLE(DragController);
+        WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
     public:
         ~DragController();
 
-        static PassOwnPtr<DragController> create(Page*, DragClient*);
+        static PassOwnPtrWillBeRawPtr<DragController> create(Page*, DragClient*);
 
         DragSession dragEntered(DragData*);
         void dragExited(DragData*);
@@ -67,11 +69,13 @@ namespace WebCore {
             ImmediateSelectionDragResolution,
             DelayedSelectionDragResolution,
         };
-        Node* draggableNode(const Frame*, Node*, const IntPoint&, SelectionDragPolicy, DragSourceAction&) const;
+        Node* draggableNode(const LocalFrame*, Node*, const IntPoint&, SelectionDragPolicy, DragSourceAction&) const;
         void dragEnded();
 
-        bool populateDragClipboard(Frame* src, const DragState&, const IntPoint& dragOrigin);
-        bool startDrag(Frame* src, const DragState&, const PlatformMouseEvent& dragEvent, const IntPoint& dragOrigin);
+        bool populateDragClipboard(LocalFrame* src, const DragState&, const IntPoint& dragOrigin);
+        bool startDrag(LocalFrame* src, const DragState&, const PlatformMouseEvent& dragEvent, const IntPoint& dragOrigin);
+
+        void trace(Visitor*);
 
         static const int DragIconRightInset;
         static const int DragIconBottomInset;
@@ -79,7 +83,7 @@ namespace WebCore {
     private:
         DragController(Page*, DragClient*);
 
-        bool dispatchTextInputEventFor(Frame*, DragData*);
+        bool dispatchTextInputEventFor(LocalFrame*, DragData*);
         bool canProcessDrag(DragData*);
         bool concludeEditDrag(DragData*);
         DragSession dragEnteredOrUpdated(DragData*);
@@ -93,15 +97,15 @@ namespace WebCore {
 
         void mouseMovedIntoDocument(Document*);
 
-        void doSystemDrag(DragImage*, const IntPoint& dragLocation, const IntPoint& dragOrigin, Clipboard*, Frame*, bool forLink);
+        void doSystemDrag(DragImage*, const IntPoint& dragLocation, const IntPoint& dragOrigin, Clipboard*, LocalFrame*, bool forLink);
         void cleanupAfterSystemDrag();
 
-        Page* m_page;
+        RawPtrWillBeMember<Page> m_page;
         DragClient* m_client;
 
-        RefPtr<Document> m_documentUnderMouse; // The document the mouse was last dragged over.
-        RefPtr<Document> m_dragInitiator; // The Document (if any) that initiated the drag.
-        RefPtr<HTMLInputElement> m_fileInputElementUnderMouse;
+        RefPtrWillBeMember<Document> m_documentUnderMouse; // The document the mouse was last dragged over.
+        RefPtrWillBeMember<Document> m_dragInitiator; // The Document (if any) that initiated the drag.
+        RefPtrWillBeMember<HTMLInputElement> m_fileInputElementUnderMouse;
         bool m_documentIsHandlingDrag;
 
         DragDestinationAction m_dragDestinationAction;

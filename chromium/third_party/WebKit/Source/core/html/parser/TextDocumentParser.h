@@ -30,18 +30,18 @@
 
 namespace WebCore {
 
-class TextDocumentParser : public HTMLDocumentParser {
+class TextDocumentParser FINAL : public HTMLDocumentParser {
 public:
-    static PassRefPtr<TextDocumentParser> create(HTMLDocument* document)
+    static PassRefPtrWillBeRawPtr<TextDocumentParser> create(HTMLDocument& document)
     {
-        return adoptRef(new TextDocumentParser(document));
+        return adoptRefWillBeNoop(new TextDocumentParser(document));
     }
     virtual ~TextDocumentParser();
 
 private:
-    explicit TextDocumentParser(HTMLDocument*);
+    explicit TextDocumentParser(HTMLDocument&);
 
-    virtual void append(PassRefPtr<StringImpl>);
+    virtual void appendBytes(const char*, size_t) OVERRIDE;
     void insertFakePreElement();
 
     bool m_haveInsertedFakePreElement;

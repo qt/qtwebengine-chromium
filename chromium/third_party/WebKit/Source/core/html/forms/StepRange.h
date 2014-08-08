@@ -71,7 +71,6 @@ public:
     StepRange();
     StepRange(const StepRange&);
     StepRange(const Decimal& stepBase, const Decimal& minimum, const Decimal& maximum, const Decimal& step, const StepDescription&);
-    Decimal acceptableError() const;
     Decimal alignValueForStep(const Decimal& currentValue, const Decimal& newValue) const;
     Decimal clampValue(const Decimal& value) const;
     bool hasStep() const { return m_hasStep; }
@@ -80,7 +79,6 @@ public:
     static Decimal parseStep(AnyStepHandling, const StepDescription&, const String&);
     Decimal step() const { return m_step; }
     Decimal stepBase() const { return m_stepBase; }
-    int stepScaleFactor() const { return m_stepDescription.stepScaleFactor; }
     bool stepMismatch(const Decimal&) const;
 
     // Clamp the middle value according to the step
@@ -106,6 +104,7 @@ public:
 
 private:
     StepRange& operator =(const StepRange&);
+    Decimal acceptableError() const;
     Decimal roundByStep(const Decimal& value, const Decimal& base) const;
 
     const Decimal m_maximum; // maximum must be >= minimum.

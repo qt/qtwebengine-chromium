@@ -20,8 +20,9 @@ class DelegatedFrameProviderTest
  protected:
   DelegatedFrameProviderTest() : resources_available_(false) {}
 
-  scoped_ptr<DelegatedFrameData> CreateFrameData(gfx::Rect root_output_rect,
-                                                 gfx::Rect root_damage_rect) {
+  scoped_ptr<DelegatedFrameData> CreateFrameData(
+          const gfx::Rect& root_output_rect,
+          const gfx::Rect& root_damage_rect) {
     scoped_ptr<DelegatedFrameData> frame(new DelegatedFrameData);
 
     scoped_ptr<RenderPass> root_pass(RenderPass::Create());
@@ -37,16 +38,18 @@ class DelegatedFrameProviderTest
                                ResourceProvider::ResourceId resource_id) {
     TransferableResource resource;
     resource.id = resource_id;
-    resource.target = GL_TEXTURE_2D;
+    resource.mailbox_holder.texture_target = GL_TEXTURE_2D;
     frame->resource_list.push_back(resource);
   }
 
   void AddTextureQuad(DelegatedFrameData* frame,
                       ResourceProvider::ResourceId resource_id) {
-    scoped_ptr<SharedQuadState> sqs = SharedQuadState::Create();
+    SharedQuadState* sqs =
+        frame->render_pass_list[0]->CreateAndAppendSharedQuadState();
     scoped_ptr<TextureDrawQuad> quad = TextureDrawQuad::Create();
     float vertex_opacity[4] = {1.f, 1.f, 1.f, 1.f};
-    quad->SetNew(sqs.get(),
+    quad->SetNew(sqs,
+                 gfx::Rect(0, 0, 10, 10),
                  gfx::Rect(0, 0, 10, 10),
                  gfx::Rect(0, 0, 10, 10),
                  resource_id,
@@ -56,7 +59,6 @@ class DelegatedFrameProviderTest
                  SK_ColorTRANSPARENT,
                  vertex_opacity,
                  false);
-    frame->render_pass_list[0]->shared_quad_state_list.push_back(sqs.Pass());
     frame->render_pass_list[0]->quad_list.push_back(quad.PassAs<DrawQuad>());
   }
 

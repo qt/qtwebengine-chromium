@@ -235,7 +235,6 @@ void ParamTraits<ppapi::proxy::SerializedHandle>::Write(Message* m,
       ParamTraits<base::SharedMemoryHandle>::Write(m, p.shmem());
       break;
     case ppapi::proxy::SerializedHandle::SOCKET:
-    case ppapi::proxy::SerializedHandle::CHANNEL_HANDLE:
     case ppapi::proxy::SerializedHandle::FILE:
       ParamTraits<IPC::PlatformFileForTransit>::Write(m, p.descriptor());
       break;
@@ -269,18 +268,10 @@ bool ParamTraits<ppapi::proxy::SerializedHandle>::Read(const Message* m,
       }
       break;
     }
-    case ppapi::proxy::SerializedHandle::CHANNEL_HANDLE: {
-      IPC::PlatformFileForTransit desc;
-      if (ParamTraits<IPC::PlatformFileForTransit>::Read(m, iter, &desc)) {
-        r->set_channel_handle(desc);
-        return true;
-      }
-      break;
-    }
     case ppapi::proxy::SerializedHandle::FILE: {
       IPC::PlatformFileForTransit desc;
       if (ParamTraits<IPC::PlatformFileForTransit>::Read(m, iter, &desc)) {
-        r->set_file_handle(desc, header.open_flag);
+        r->set_file_handle(desc, header.open_flags, header.file_io);
         return true;
       }
       break;
@@ -640,6 +631,33 @@ bool ParamTraits<ppapi::SocketOptionData>::Read(const Message* m,
 // static
 void ParamTraits<ppapi::SocketOptionData>::Log(const param_type& p,
                                                std::string* l) {
+}
+
+// ppapi::CompositorLayerData --------------------------------------------------
+
+// static
+void ParamTraits<ppapi::CompositorLayerData::Transform>::Write(
+    Message* m,
+    const param_type& p) {
+  for (size_t i = 0; i < arraysize(p.matrix); i++)
+    ParamTraits<float>::Write(m, p.matrix[i]);
+}
+
+// static
+bool ParamTraits<ppapi::CompositorLayerData::Transform>::Read(
+    const Message* m,
+    PickleIterator* iter,
+    param_type* r) {
+  for (size_t i = 0; i < arraysize(r->matrix);i++) {
+    if (!ParamTraits<float>::Read(m, iter, &r->matrix[i]))
+      return false;
+  }
+  return true;
+}
+
+void ParamTraits<ppapi::CompositorLayerData::Transform>::Log(
+    const param_type& p,
+    std::string* l) {
 }
 
 }  // namespace IPC

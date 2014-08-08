@@ -6,20 +6,28 @@
 
 #include "content/browser/loader/resource_dispatcher_host_impl.h"
 #include "content/browser/loader/resource_scheduler.h"
+#include "content/common/frame_messages.h"
 #include "content/common/view_messages.h"
 #include "content/public/common/page_transition_types.h"
 
 namespace content {
+namespace {
+const uint32 kFilteredMessageClasses[] = {
+  FrameMsgStart,
+  ViewMsgStart,
+};
+}  // namespace
 
 ResourceSchedulerFilter::ResourceSchedulerFilter(int child_id)
-    : child_id_(child_id) {
+    : BrowserMessageFilter(
+          kFilteredMessageClasses, arraysize(kFilteredMessageClasses)),
+      child_id_(child_id) {
 }
 
 ResourceSchedulerFilter::~ResourceSchedulerFilter() {
 }
 
-bool ResourceSchedulerFilter::OnMessageReceived(const IPC::Message& message,
-                                                bool* message_was_ok) {
+bool ResourceSchedulerFilter::OnMessageReceived(const IPC::Message& message) {
   ResourceScheduler* scheduler =
       ResourceDispatcherHostImpl::Get()->scheduler();
   // scheduler can be NULL during shutdown, in which case it's ok to ignore the
@@ -28,10 +36,10 @@ bool ResourceSchedulerFilter::OnMessageReceived(const IPC::Message& message,
     return false;
 
   switch (message.type()) {
-    case ViewHostMsg_FrameNavigate::ID: {
+    case FrameHostMsg_DidCommitProvisionalLoad::ID: {
       PickleIterator iter(message);
-      ViewHostMsg_FrameNavigate_Params params;
-      if (!IPC::ParamTraits<ViewHostMsg_FrameNavigate_Params>::Read(
+      FrameHostMsg_DidCommitProvisionalLoad_Params params;
+      if (!IPC::ParamTraits<FrameHostMsg_DidCommitProvisionalLoad_Params>::Read(
           &message, &iter, &params)) {
         break;
       }

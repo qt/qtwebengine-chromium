@@ -16,6 +16,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "net/base/mime_util.h"
 #include "net/base/platform_mime_util.h"
+#include "net/http/http_util.h"
 
 #if defined(OS_ANDROID)
 #include "base/android/build_info.h"
@@ -69,7 +70,11 @@ class MimeUtil : public PlatformMimeUtil {
   bool MatchesMimeType(const std::string &mime_type_pattern,
                        const std::string &mime_type) const;
 
-  bool IsMimeType(const std::string& type_string) const;
+  bool ParseMimeTypeWithoutParameter(const std::string& type_string,
+                                     std::string* top_level_type,
+                                     std::string* subtype) const;
+
+  bool IsValidTopLevelMimeType(const std::string& type_string) const;
 
   bool AreSupportedMediaCodecs(const std::vector<std::string>& codecs) const;
 
@@ -158,6 +163,7 @@ static const MimeInfo secondary_mappings[] = {
   { "image/tiff", "tiff,tif" },
   { "image/x-xbitmap", "xbm" },
   { "image/svg+xml", "svg,svgz" },
+  { "image/x-png", "png"},
   { "message/rfc822", "eml" },
   { "text/plain", "txt,text" },
   { "text/html", "ehtml" },
@@ -260,7 +266,8 @@ static const char* const supported_image_types[] = {
   "image/bmp",
   "image/vnd.microsoft.icon",    // ico
   "image/x-icon",    // ico
-  "image/x-xbitmap"  // xbm
+  "image/x-xbitmap",  // xbm
+  "image/x-png"
 };
 
 // A list of media types: http://en.wikipedia.org/wiki/Internet_media_type
@@ -281,6 +288,12 @@ static const char* const common_media_types[] = {
   // Wav.
   "audio/wav",
   "audio/x-wav",
+
+#if defined(OS_ANDROID)
+  // HLS. Supported by Android ICS and above.
+  "application/vnd.apple.mpegurl",
+  "application/x-mpegurl",
+#endif
 };
 
 // List of proprietary types only supported by Google Chrome.
@@ -405,6 +418,10 @@ static const char* const supported_javascript_types[] = {
 
 #if defined(OS_ANDROID)
 static bool IsCodecSupportedOnAndroid(const std::string& codec) {
+  // Theora is not supported in Android
+  if (!codec.compare("theora"))
+    return false;
+
   // VP9 is supported only in KitKat+ (API Level 19).
   if ((!codec.compare("vp9") || !codec.compare("vp9.0")) &&
       base::android::BuildInfo::GetInstance()->sdk_int() < 19) {
@@ -414,6 +431,16 @@ static bool IsCodecSupportedOnAndroid(const std::string& codec) {
   // TODO(vigneshv): Change this similar to the VP9 check once Opus is
   // supported on Android (http://crbug.com/318436).
   if (!codec.compare("opus")) {
+    return false;
+  }
+  return true;
+}
+
+static bool IsMimeTypeSupportedOnAndroid(const std::string& mimeType) {
+  // HLS codecs are supported in ICS and above (API level 14)
+  if ((!mimeType.compare("application/vnd.apple.mpegurl") ||
+      !mimeType.compare("application/x-mpegurl")) &&
+      base::android::BuildInfo::GetInstance()->sdk_int() < 14) {
     return false;
   }
   return true;
@@ -428,7 +455,19 @@ struct MediaFormatStrict {
 static const MediaFormatStrict format_codec_mappings[] = {
   { "video/webm", "opus,vorbis,vp8,vp8.0,vp9,vp9.0" },
   { "audio/webm", "opus,vorbis" },
-  { "audio/wav", "1" }
+  { "audio/wav", "1" },
+  { "audio/x-wav", "1" },
+  { "video/ogg", "opus,theora,vorbis" },
+  { "audio/ogg", "opus,vorbis" },
+  { "application/ogg", "opus,theora,vorbis" },
+  { "audio/mpeg", ",mp3" }, // Note: The comma before the 'mp3'results in an
+                            // empty string codec ID and indicates
+                            // a missing codecs= parameter is also valid.
+                            // The presense of 'mp3' is not RFC compliant,
+                            // but is common in the wild so it is a defacto
+                            // standard.
+  { "audio/mp3", "" },
+  { "audio/x-mp3", "" }
 };
 
 MimeUtil::MimeUtil() {
@@ -438,11 +477,22 @@ MimeUtil::MimeUtil() {
 // static
 bool MimeUtil::AreSupportedCodecs(const MimeMappings& supported_codecs,
                                   const std::vector<std::string>& codecs) {
+  if (supported_codecs.empty())
+    return codecs.empty();
+
+  // If no codecs are specified in the mimetype, check to see if a missing
+  // codecs parameter is allowed.
+  if (codecs.empty())
+    return supported_codecs.find(std::string()) != supported_codecs.end();
+
   for (size_t i = 0; i < codecs.size(); ++i) {
-    if (supported_codecs.find(codecs[i]) == supported_codecs.end())
+    if (codecs[i].empty() ||
+        supported_codecs.find(codecs[i]) == supported_codecs.end()) {
       return false;
+    }
   }
-  return !codecs.empty();
+
+  return true;
 }
 
 void MimeUtil::InitializeMimeTypeMaps() {
@@ -458,16 +508,26 @@ void MimeUtil::InitializeMimeTypeMaps() {
     unsupported_text_map_.insert(unsupported_text_types[i]);
   for (size_t i = 0; i < arraysize(supported_javascript_types); ++i)
     non_image_map_.insert(supported_javascript_types[i]);
-  for (size_t i = 0; i < arraysize(common_media_types); ++i)
+  for (size_t i = 0; i < arraysize(common_media_types); ++i) {
+#if defined(OS_ANDROID)
+    if (!IsMimeTypeSupportedOnAndroid(common_media_types[i]))
+      continue;
+#endif
     non_image_map_.insert(common_media_types[i]);
+  }
 #if defined(USE_PROPRIETARY_CODECS)
   for (size_t i = 0; i < arraysize(proprietary_media_types); ++i)
     non_image_map_.insert(proprietary_media_types[i]);
 #endif
 
   // Initialize the supported media types.
-  for (size_t i = 0; i < arraysize(common_media_types); ++i)
+  for (size_t i = 0; i < arraysize(common_media_types); ++i) {
+#if defined(OS_ANDROID)
+    if (!IsMimeTypeSupportedOnAndroid(common_media_types[i]))
+      continue;
+#endif
     media_map_.insert(common_media_types[i]);
+  }
 #if defined(USE_PROPRIETARY_CODECS)
   for (size_t i = 0; i < arraysize(proprietary_media_types); ++i)
     media_map_.insert(proprietary_media_types[i]);
@@ -518,7 +578,9 @@ bool MimeUtil::IsSupportedMediaMimeType(const std::string& mime_type) const {
 bool MimeUtil::IsSupportedNonImageMimeType(const std::string& mime_type) const {
   return non_image_map_.find(mime_type) != non_image_map_.end() ||
       (mime_type.compare(0, 5, "text/") == 0 &&
-       !IsUnsupportedTextMimeType(mime_type));
+       !IsUnsupportedTextMimeType(mime_type)) ||
+      (mime_type.compare(0, 12, "application/") == 0 &&
+       MatchesMimeType("application/*+json", mime_type));
 }
 
 bool MimeUtil::IsUnsupportedTextMimeType(const std::string& mime_type) const {
@@ -616,47 +678,45 @@ bool MimeUtil::MatchesMimeType(const std::string& mime_type_pattern,
   return MatchesMimeTypeParameters(mime_type_pattern, mime_type);
 }
 
-// See http://www.iana.org/assignments/media-types/index.html
+// See http://www.iana.org/assignments/media-types/media-types.xhtml
 static const char* legal_top_level_types[] = {
-  "application/",
-  "audio/",
-  "example/",
-  "image/",
-  "message/",
-  "model/",
-  "multipart/",
-  "text/",
-  "video/",
+  "application",
+  "audio",
+  "example",
+  "image",
+  "message",
+  "model",
+  "multipart",
+  "text",
+  "video",
 };
 
-bool MimeUtil::IsMimeType(const std::string& type_string) const {
-  // MIME types are always ASCII and case-insensitive (at least, the top-level
-  // and secondary types we care about).
-  if (!IsStringASCII(type_string))
+bool MimeUtil::ParseMimeTypeWithoutParameter(
+    const std::string& type_string,
+    std::string* top_level_type,
+    std::string* subtype) const {
+  std::vector<std::string> components;
+  base::SplitString(type_string, '/', &components);
+  if (components.size() != 2 ||
+      !HttpUtil::IsToken(components[0]) ||
+      !HttpUtil::IsToken(components[1]))
     return false;
 
-  if (type_string == "*/*" || type_string == "*")
-    return true;
+  if (top_level_type)
+    *top_level_type = components[0];
+  if (subtype)
+    *subtype = components[1];
+  return true;
+}
 
+bool MimeUtil::IsValidTopLevelMimeType(const std::string& type_string) const {
+  std::string lower_type = StringToLowerASCII(type_string);
   for (size_t i = 0; i < arraysize(legal_top_level_types); ++i) {
-    if (StartsWithASCII(type_string, legal_top_level_types[i], false) &&
-        type_string.length() > strlen(legal_top_level_types[i])) {
+    if (lower_type.compare(legal_top_level_types[i]) == 0)
       return true;
-    }
   }
 
-  // If there's a "/" separator character, and the token before it is
-  // "x-" + (ascii characters), it is also a MIME type.
-  size_t slash = type_string.find('/');
-  if (slash < 3 ||
-      slash == std::string::npos || slash == type_string.length() - 1) {
-    return false;
-  }
-
-  if (StartsWithASCII(type_string, "x-", false))
-    return true;
-
-  return false;
+  return type_string.size() > 2 && StartsWithASCII(type_string, "x-", false);
 }
 
 bool MimeUtil::AreSupportedMediaCodecs(
@@ -761,8 +821,15 @@ bool MatchesMimeType(const std::string& mime_type_pattern,
   return g_mime_util.Get().MatchesMimeType(mime_type_pattern, mime_type);
 }
 
-bool IsMimeType(const std::string& type_string) {
-  return g_mime_util.Get().IsMimeType(type_string);
+bool ParseMimeTypeWithoutParameter(const std::string& type_string,
+                                   std::string* top_level_type,
+                                   std::string* subtype) {
+  return g_mime_util.Get().ParseMimeTypeWithoutParameter(
+      type_string, top_level_type, subtype);
+}
+
+bool IsValidTopLevelMimeType(const std::string& type_string) {
+  return g_mime_util.Get().IsValidTopLevelMimeType(type_string);
 }
 
 bool AreSupportedMediaCodecs(const std::vector<std::string>& codecs) {
@@ -870,11 +937,11 @@ void GetExtensionsFromHardCodedMappings(
   for (size_t i = 0; i < mappings_len; ++i) {
     if (StartsWithASCII(mappings[i].mime_type, leading_mime_type, false)) {
       std::vector<string> this_extensions;
-      base::SplitStringUsingSubstr(mappings[i].extensions, ",",
-                                   &this_extensions);
+      base::SplitString(mappings[i].extensions, ',', &this_extensions);
       for (size_t j = 0; j < this_extensions.size(); ++j) {
 #if defined(OS_WIN)
-        base::FilePath::StringType extension(UTF8ToWide(this_extensions[j]));
+        base::FilePath::StringType extension(
+            base::UTF8ToWide(this_extensions[j]));
 #else
         base::FilePath::StringType extension(this_extensions[j]);
 #endif

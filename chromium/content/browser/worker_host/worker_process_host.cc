@@ -23,6 +23,8 @@
 #include "content/browser/devtools/worker_devtools_manager.h"
 #include "content/browser/devtools/worker_devtools_message_filter.h"
 #include "content/browser/fileapi/fileapi_message_filter.h"
+#include "content/browser/frame_host/render_frame_host_delegate.h"
+#include "content/browser/frame_host/render_frame_host_impl.h"
 #include "content/browser/indexed_db/indexed_db_dispatcher_host.h"
 #include "content/browser/loader/resource_message_filter.h"
 #include "content/browser/message_port_message_filter.h"
@@ -34,6 +36,7 @@
 #include "content/browser/renderer_host/render_view_host_delegate.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/renderer_host/socket_stream_dispatcher_host.h"
+#include "content/browser/renderer_host/websocket_dispatcher_host.h"
 #include "content/browser/resource_context_impl.h"
 #include "content/browser/worker_host/worker_message_filter.h"
 #include "content/browser/worker_host/worker_service_impl.h"
@@ -45,6 +48,7 @@
 #include "content/public/browser/user_metrics.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/result_codes.h"
+#include "content/public/common/sandboxed_process_launcher_delegate.h"
 #include "ipc/ipc_switches.h"
 #include "net/base/mime_util.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
@@ -56,36 +60,81 @@
 
 #if defined(OS_WIN)
 #include "content/common/sandbox_win.h"
-#include "content/public/common/sandboxed_process_launcher_delegate.h"
 #endif
 
 namespace content {
 namespace {
 
-#if defined(OS_WIN)
 // NOTE: changes to this class need to be reviewed by the security team.
 class WorkerSandboxedProcessLauncherDelegate
     : public content::SandboxedProcessLauncherDelegate {
  public:
-  WorkerSandboxedProcessLauncherDelegate() {}
+  WorkerSandboxedProcessLauncherDelegate(ChildProcessHost* host,
+                                         bool debugging_child)
+#if defined(OS_POSIX)
+      : ipc_fd_(host->TakeClientFileDescriptor()),
+        debugging_child_(debugging_child)
+#endif  // OS_POSIX
+  {}
+
   virtual ~WorkerSandboxedProcessLauncherDelegate() {}
 
+#if defined(OS_WIN)
   virtual void PreSpawnTarget(sandbox::TargetPolicy* policy,
                               bool* success) {
     AddBaseHandleClosePolicy(policy);
   }
-};
+#elif defined(OS_POSIX)
+  virtual bool ShouldUseZygote() OVERRIDE {
+    return !debugging_child_;
+  }
+  virtual int GetIpcFd() OVERRIDE {
+    return ipc_fd_;
+  }
 #endif  // OS_WIN
 
-}  // namespace
+ private:
+#if defined(OS_POSIX)
+  int ipc_fd_;
+  bool debugging_child_;
+#endif  // OS_POSIX
+};
 
 // Notifies RenderViewHost that one or more worker objects crashed.
-void WorkerCrashCallback(int render_process_unique_id, int render_view_id) {
-  RenderViewHostImpl* host =
-      RenderViewHostImpl::FromID(render_process_unique_id, render_view_id);
+void WorkerCrashCallback(int render_process_unique_id, int render_frame_id) {
+  RenderFrameHostImpl* host =
+      RenderFrameHostImpl::FromID(render_process_unique_id, render_frame_id);
   if (host)
-    host->GetDelegate()->WorkerCrashed();
+    host->delegate()->WorkerCrashed(host);
 }
+
+void WorkerCreatedCallback(int render_process_id,
+                           int render_frame_id,
+                           int worker_process_id) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  RenderFrameHost* render_frame_host =
+      RenderFrameHost::FromID(render_process_id, render_frame_id);
+  if (!render_frame_host)
+    return;
+  SiteInstance* site_instance = render_frame_host->GetSiteInstance();
+  GetContentClient()->browser()->WorkerProcessCreated(site_instance,
+                                                      worker_process_id);
+}
+
+void WorkerTerminatedCallback(int render_process_id,
+                              int render_frame_id,
+                              int worker_process_id) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  RenderFrameHost* render_frame_host =
+      RenderFrameHost::FromID(render_process_id, render_frame_id);
+  if (!render_frame_host)
+    return;
+  SiteInstance* site_instance = render_frame_host->GetSiteInstance();
+  GetContentClient()->browser()->WorkerProcessTerminated(site_instance,
+                                                         worker_process_id);
+}
+
+}  // namespace
 
 WorkerProcessHost::WorkerProcessHost(
     ResourceContext* resource_context,
@@ -102,14 +151,16 @@ WorkerProcessHost::WorkerProcessHost(
 WorkerProcessHost::~WorkerProcessHost() {
   // If we crashed, tell the RenderViewHosts.
   for (Instances::iterator i = instances_.begin(); i != instances_.end(); ++i) {
-    const WorkerDocumentSet::DocumentInfoSet& parents =
-        i->worker_document_set()->documents();
-    for (WorkerDocumentSet::DocumentInfoSet::const_iterator parent_iter =
-             parents.begin(); parent_iter != parents.end(); ++parent_iter) {
-      BrowserThread::PostTask(
-          BrowserThread::UI, FROM_HERE,
-          base::Bind(&WorkerCrashCallback, parent_iter->render_process_id(),
-                     parent_iter->render_view_id()));
+    if (!i->load_failed()) {
+      const WorkerDocumentSet::DocumentInfoSet& parents =
+          i->worker_document_set()->documents();
+      for (WorkerDocumentSet::DocumentInfoSet::const_iterator parent_iter =
+               parents.begin(); parent_iter != parents.end(); ++parent_iter) {
+        BrowserThread::PostTask(
+            BrowserThread::UI, FROM_HERE,
+            base::Bind(&WorkerCrashCallback, parent_iter->render_process_id(),
+                       parent_iter->render_frame_id()));
+      }
     }
     WorkerServiceImpl::GetInstance()->NotifyWorkerDestroyed(
         this, i->worker_route_id());
@@ -123,7 +174,7 @@ bool WorkerProcessHost::Send(IPC::Message* message) {
   return process_->Send(message);
 }
 
-bool WorkerProcessHost::Init(int render_process_id) {
+bool WorkerProcessHost::Init(int render_process_id, int render_frame_id) {
   std::string channel_id = process_->GetHost()->CreateChannel();
   if (channel_id.empty())
     return false;
@@ -153,18 +204,19 @@ bool WorkerProcessHost::Init(int render_process_id) {
     switches::kDisableFileSystem,
     switches::kDisableSeccompFilterSandbox,
     switches::kEnableExperimentalWebPlatformFeatures,
+    switches::kEnablePreciseMemoryInfo,
     switches::kEnableServiceWorker,
 #if defined(OS_MACOSX)
     switches::kEnableSandboxLogging,
 #endif
-    switches::kJavaScriptFlags
+    switches::kJavaScriptFlags,
+    switches::kNoSandbox
   };
   cmd_line->CopySwitchesFrom(*CommandLine::ForCurrentProcess(), kSwitchNames,
                              arraysize(kSwitchNames));
 
+bool debugging_child = false;
 #if defined(OS_POSIX)
-  bool use_zygote = true;
-
   if (CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kWaitForDebuggerChildren)) {
     // Look to pass-on the kWaitForDebugger flag.
@@ -172,36 +224,26 @@ bool WorkerProcessHost::Init(int render_process_id) {
         switches::kWaitForDebuggerChildren);
     if (value.empty() || value == switches::kWorkerProcess) {
       cmd_line->AppendSwitch(switches::kWaitForDebugger);
-      use_zygote = false;
-    }
-  }
-
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kDebugChildren)) {
-    // Look to pass-on the kDebugOnStart flag.
-    std::string value = CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
-        switches::kDebugChildren);
-    if (value.empty() || value == switches::kWorkerProcess) {
-      // launches a new xterm, and runs the worker process in gdb, reading
-      // optional commands from gdb_chrome file in the working directory.
-      cmd_line->PrependWrapper("xterm -e gdb -x gdb_chrome --args");
-      use_zygote = false;
+      debugging_child = true;
     }
   }
 #endif
 
   process_->Launch(
-#if defined(OS_WIN)
-      new WorkerSandboxedProcessLauncherDelegate,
-#elif defined(OS_POSIX)
-      use_zygote,
-      base::EnvironmentMap(),
-#endif
+      new WorkerSandboxedProcessLauncherDelegate(process_->GetHost(),
+                                                 debugging_child),
       cmd_line);
 
   ChildProcessSecurityPolicyImpl::GetInstance()->AddWorker(
       process_->GetData().id, render_process_id);
   CreateMessageFilters(render_process_id);
 
+  BrowserThread::PostTask(
+      BrowserThread::UI, FROM_HERE,
+      base::Bind(&WorkerCreatedCallback,
+                 render_process_id,
+                 render_frame_id,
+                 process_->GetData().id));
   return true;
 }
 
@@ -223,6 +265,7 @@ void WorkerProcessHost::CreateMessageFilters(int render_process_id) {
       partition_.appcache_service(),
       blob_storage_context,
       partition_.filesystem_context(),
+      partition_.service_worker_context(),
       get_contexts_callback);
   process_->AddFilter(resource_message_filter);
 
@@ -265,12 +308,26 @@ void WorkerProcessHost::CreateMessageFilters(int render_process_id) {
           resource_context_);
   socket_stream_dispatcher_host_ = socket_stream_dispatcher_host;
   process_->AddFilter(socket_stream_dispatcher_host);
+
+  WebSocketDispatcherHost::GetRequestContextCallback
+      websocket_request_context_callback(
+          base::Bind(&WorkerProcessHost::GetRequestContext,
+                     base::Unretained(this),
+                     ResourceType::SUB_RESOURCE));
+
+  process_->AddFilter(new WebSocketDispatcherHost(
+      render_process_id, websocket_request_context_callback));
+
   process_->AddFilter(new WorkerDevToolsMessageFilter(process_->GetData().id));
   process_->AddFilter(
-      new IndexedDBDispatcherHost(partition_.indexed_db_context()));
+      new IndexedDBDispatcherHost(process_->GetData().id,
+                                  url_request_context,
+                                  partition_.indexed_db_context(),
+                                  blob_storage_context));
 }
 
-void WorkerProcessHost::CreateWorker(const WorkerInstance& instance) {
+void WorkerProcessHost::CreateWorker(const WorkerInstance& instance,
+                                     bool pause_on_start) {
   ChildProcessSecurityPolicyImpl::GetInstance()->GrantRequestURL(
       process_->GetData().id, instance.url());
 
@@ -279,9 +336,10 @@ void WorkerProcessHost::CreateWorker(const WorkerInstance& instance) {
   WorkerProcessMsg_CreateWorker_Params params;
   params.url = instance.url();
   params.name = instance.name();
+  params.content_security_policy = instance.content_security_policy();
+  params.security_policy_type = instance.security_policy_type();
+  params.pause_on_start = pause_on_start;
   params.route_id = instance.worker_route_id();
-  params.creator_process_id = instance.parent_process_id();
-  params.shared_worker_appcache_id = instance.main_resource_appcache_id();
   Send(new WorkerProcessMsg_CreateWorker(params));
 
   UpdateTitle();
@@ -292,8 +350,7 @@ void WorkerProcessHost::CreateWorker(const WorkerInstance& instance) {
   for (WorkerInstance::FilterList::const_iterator i =
            instance.filters().begin();
        i != instance.filters().end(); ++i) {
-    CHECK(i->first);
-    i->first->Send(new ViewMsg_WorkerCreated(i->second));
+    i->filter()->Send(new ViewMsg_WorkerCreated(i->route_id()));
   }
 }
 
@@ -301,7 +358,7 @@ bool WorkerProcessHost::FilterMessage(const IPC::Message& message,
                                       WorkerMessageFilter* filter) {
   for (Instances::iterator i = instances_.begin(); i != instances_.end(); ++i) {
     if (!i->closed() && i->HasFilter(filter, message.routing_id())) {
-      RelayMessage(message, worker_message_filter_.get(), i->worker_route_id());
+      RelayMessage(message, filter, &(*i));
       return true;
     }
   }
@@ -316,44 +373,28 @@ void WorkerProcessHost::OnProcessLaunched() {
 }
 
 bool WorkerProcessHost::OnMessageReceived(const IPC::Message& message) {
-  bool msg_is_ok = true;
   bool handled = true;
-  IPC_BEGIN_MESSAGE_MAP_EX(WorkerProcessHost, message, msg_is_ok)
+  IPC_BEGIN_MESSAGE_MAP(WorkerProcessHost, message)
     IPC_MESSAGE_HANDLER(WorkerHostMsg_WorkerContextClosed,
                         OnWorkerContextClosed)
+    IPC_MESSAGE_HANDLER(WorkerHostMsg_WorkerContextDestroyed,
+                        OnWorkerContextDestroyed)
+    IPC_MESSAGE_HANDLER(WorkerHostMsg_WorkerScriptLoaded,
+                        OnWorkerScriptLoaded)
+    IPC_MESSAGE_HANDLER(WorkerHostMsg_WorkerScriptLoadFailed,
+                        OnWorkerScriptLoadFailed)
+    IPC_MESSAGE_HANDLER(WorkerHostMsg_WorkerConnected,
+                        OnWorkerConnected)
     IPC_MESSAGE_HANDLER(WorkerProcessHostMsg_AllowDatabase, OnAllowDatabase)
-    IPC_MESSAGE_HANDLER(WorkerProcessHostMsg_AllowFileSystem, OnAllowFileSystem)
+    IPC_MESSAGE_HANDLER(WorkerProcessHostMsg_RequestFileSystemAccessSync,
+                        OnRequestFileSystemAccessSync)
     IPC_MESSAGE_HANDLER(WorkerProcessHostMsg_AllowIndexedDB, OnAllowIndexedDB)
     IPC_MESSAGE_HANDLER(WorkerProcessHostMsg_ForceKillWorker,
                         OnForceKillWorkerProcess)
     IPC_MESSAGE_UNHANDLED(handled = false)
-  IPC_END_MESSAGE_MAP_EX()
+  IPC_END_MESSAGE_MAP()
 
-  if (!msg_is_ok) {
-    NOTREACHED();
-    RecordAction(UserMetricsAction("BadMessageTerminate_WPH"));
-    base::KillProcess(
-        process_->GetData().handle, RESULT_CODE_KILLED_BAD_MESSAGE, false);
-  }
-
-  if (handled)
-    return true;
-
-  if (message.type() == WorkerHostMsg_WorkerContextDestroyed::ID) {
-    WorkerServiceImpl::GetInstance()->NotifyWorkerDestroyed(
-        this, message.routing_id());
-  }
-
-  for (Instances::iterator i = instances_.begin(); i != instances_.end(); ++i) {
-    if (i->worker_route_id() == message.routing_id()) {
-      if (message.type() == WorkerHostMsg_WorkerContextDestroyed::ID) {
-        instances_.erase(i);
-        UpdateTitle();
-      }
-      return true;
-    }
-  }
-  return false;
+  return handled;
 }
 
 // Sent to notify the browser process when a worker context invokes close(), so
@@ -370,6 +411,57 @@ void WorkerProcessHost::OnWorkerContextClosed(int worker_route_id) {
   }
 }
 
+void WorkerProcessHost::OnWorkerContextDestroyed(int worker_route_id) {
+  WorkerServiceImpl::GetInstance()->NotifyWorkerDestroyed(
+      this, worker_route_id);
+  for (Instances::iterator i = instances_.begin(); i != instances_.end(); ++i) {
+    if (i->worker_route_id() == worker_route_id) {
+      instances_.erase(i);
+      UpdateTitle();
+      return;
+    }
+  }
+}
+
+void WorkerProcessHost::OnWorkerScriptLoaded(int worker_route_id) {
+  WorkerDevToolsManager::GetInstance()->WorkerContextStarted(this,
+                                                             worker_route_id);
+}
+
+void WorkerProcessHost::OnWorkerScriptLoadFailed(int worker_route_id) {
+  bool shutdown = true;
+  for (Instances::iterator i = instances_.begin(); i != instances_.end(); ++i) {
+    if (i->worker_route_id() != worker_route_id) {
+      shutdown = false;
+      continue;
+    }
+    i->set_load_failed(true);
+    for (WorkerInstance::FilterList::const_iterator j = i->filters().begin();
+          j != i->filters().end(); ++j) {
+      j->filter()->Send(new ViewMsg_WorkerScriptLoadFailed(j->route_id()));
+    }
+  }
+  if (shutdown) {
+    base::KillProcess(
+          process_->GetData().handle, RESULT_CODE_NORMAL_EXIT, false);
+  }
+}
+
+void WorkerProcessHost::OnWorkerConnected(int message_port_id,
+                                          int worker_route_id) {
+  for (Instances::iterator i = instances_.begin(); i != instances_.end(); ++i) {
+    if (i->worker_route_id() != worker_route_id)
+      continue;
+    for (WorkerInstance::FilterList::const_iterator j = i->filters().begin();
+          j != i->filters().end(); ++j) {
+      if (j->message_port_id() != message_port_id)
+        continue;
+      j->filter()->Send(new ViewMsg_WorkerConnected(j->route_id()));
+      return;
+    }
+  }
+}
+
 void WorkerProcessHost::OnAllowDatabase(int worker_route_id,
                                         const GURL& url,
                                         const base::string16& name,
@@ -378,14 +470,14 @@ void WorkerProcessHost::OnAllowDatabase(int worker_route_id,
                                         bool* result) {
   *result = GetContentClient()->browser()->AllowWorkerDatabase(
       url, name, display_name, estimated_size, resource_context_,
-      GetRenderViewIDsForWorker(worker_route_id));
+      GetRenderFrameIDsForWorker(worker_route_id));
 }
 
-void WorkerProcessHost::OnAllowFileSystem(int worker_route_id,
-                                          const GURL& url,
-                                          bool* result) {
+void WorkerProcessHost::OnRequestFileSystemAccessSync(int worker_route_id,
+                                                      const GURL& url,
+                                                      bool* result) {
   *result = GetContentClient()->browser()->AllowWorkerFileSystem(
-      url, resource_context_, GetRenderViewIDsForWorker(worker_route_id));
+      url, resource_context_, GetRenderFrameIDsForWorker(worker_route_id));
 }
 
 void WorkerProcessHost::OnAllowIndexedDB(int worker_route_id,
@@ -393,7 +485,8 @@ void WorkerProcessHost::OnAllowIndexedDB(int worker_route_id,
                                          const base::string16& name,
                                          bool* result) {
   *result = GetContentClient()->browser()->AllowWorkerIndexedDB(
-      url, name, resource_context_, GetRenderViewIDsForWorker(worker_route_id));
+      url, name, resource_context_,
+      GetRenderFrameIDsForWorker(worker_route_id));
 }
 
 void WorkerProcessHost::OnForceKillWorkerProcess() {
@@ -401,42 +494,41 @@ void WorkerProcessHost::OnForceKillWorkerProcess() {
     base::KillProcess(
           process_->GetData().handle, RESULT_CODE_NORMAL_EXIT, false);
   else
-    RecordAction(UserMetricsAction("WorkerProcess_BadProcessToKill"));
+    RecordAction(base::UserMetricsAction("WorkerProcess_BadProcessToKill"));
 }
 
 void WorkerProcessHost::RelayMessage(
     const IPC::Message& message,
-    WorkerMessageFilter* filter,
-    int route_id) {
+    WorkerMessageFilter* incoming_filter,
+    WorkerInstance* instance) {
   if (message.type() == WorkerMsg_Connect::ID) {
     // Crack the SharedWorker Connect message to setup routing for the port.
-    int sent_message_port_id;
-    int new_routing_id;
-    if (!WorkerMsg_Connect::Read(
-            &message, &sent_message_port_id, &new_routing_id)) {
+    WorkerMsg_Connect::Param params;
+    if (!WorkerMsg_Connect::Read(&message, &params))
       return;
-    }
-    new_routing_id = filter->GetNextRoutingID();
+
+    int sent_message_port_id = params.a;
+    int new_routing_id = params.b;
+    new_routing_id = worker_message_filter_->GetNextRoutingID();
     MessagePortService::GetInstance()->UpdateMessagePort(
         sent_message_port_id,
-        filter->message_port_message_filter(),
+        worker_message_filter_->message_port_message_filter(),
         new_routing_id);
 
+    instance->SetMessagePortID(incoming_filter,
+                               message.routing_id(),
+                               sent_message_port_id);
     // Resend the message with the new routing id.
-    filter->Send(new WorkerMsg_Connect(
-        route_id, sent_message_port_id, new_routing_id));
+    worker_message_filter_->Send(new WorkerMsg_Connect(
+        instance->worker_route_id(), sent_message_port_id, new_routing_id));
 
     // Send any queued messages for the sent port.
     MessagePortService::GetInstance()->SendQueuedMessagesIfPossible(
         sent_message_port_id);
   } else {
     IPC::Message* new_message = new IPC::Message(message);
-    new_message->set_routing_id(route_id);
-    filter->Send(new_message);
-    if (message.type() == WorkerMsg_StartWorkerContext::ID) {
-      WorkerDevToolsManager::GetInstance()->WorkerContextStarted(
-          this, route_id);
-    }
+    new_message->set_routing_id(instance->worker_route_id());
+    worker_message_filter_->Send(new_message);
     return;
   }
 }
@@ -459,11 +551,27 @@ void WorkerProcessHost::FilterShutdown(WorkerMessageFilter* filter) {
     bool shutdown = false;
     i->RemoveFilters(filter);
 
+    int render_frame_id = 0;
+    const WorkerDocumentSet::DocumentInfoSet& documents =
+        i->worker_document_set()->documents();
+    for (WorkerDocumentSet::DocumentInfoSet::const_iterator doc =
+         documents.begin(); doc != documents.end(); ++doc) {
+      if (doc->filter() == filter) {
+        render_frame_id = doc->render_frame_id();
+        break;
+      }
+    }
     i->worker_document_set()->RemoveAll(filter);
     if (i->worker_document_set()->IsEmpty()) {
       shutdown = true;
     }
     if (shutdown) {
+      BrowserThread::PostTask(
+          BrowserThread::UI, FROM_HERE,
+          base::Bind(&WorkerTerminatedCallback,
+                     filter->render_process_id(),
+                     render_frame_id,
+                     process_->GetData().id));
       Send(new WorkerMsg_TerminateWorkerContext(i->worker_route_id()));
       i = instances_.erase(i);
     } else {
@@ -487,7 +595,7 @@ void WorkerProcessHost::UpdateTitle() {
     if (title.empty()) {
       title = net::registry_controlled_domains::GetDomainAndRegistry(
           i->url(),
-          net::registry_controlled_domains::EXCLUDE_PRIVATE_REGISTRIES);
+          net::registry_controlled_domains::INCLUDE_PRIVATE_REGISTRIES);
     }
 
     // Use the host name if the domain is empty, i.e. localhost or IP address.
@@ -508,15 +616,31 @@ void WorkerProcessHost::UpdateTitle() {
     display_title += *i;
   }
 
-  process_->SetName(UTF8ToUTF16(display_title));
+  process_->SetName(base::UTF8ToUTF16(display_title));
 }
 
 void WorkerProcessHost::DocumentDetached(WorkerMessageFilter* filter,
                                          unsigned long long document_id) {
   // Walk all instances and remove the document from their document set.
   for (Instances::iterator i = instances_.begin(); i != instances_.end();) {
+    int render_frame_id = 0;
+    const WorkerDocumentSet::DocumentInfoSet& documents =
+        i->worker_document_set()->documents();
+    for (WorkerDocumentSet::DocumentInfoSet::const_iterator doc =
+         documents.begin(); doc != documents.end(); ++doc) {
+      if (doc->filter() == filter && doc->document_id() == document_id) {
+        render_frame_id = doc->render_frame_id();
+        break;
+      }
+    }
     i->worker_document_set()->Remove(filter, document_id);
     if (i->worker_document_set()->IsEmpty()) {
+      BrowserThread::PostTask(
+          BrowserThread::UI, FROM_HERE,
+          base::Bind(&WorkerTerminatedCallback,
+                     filter->render_process_id(),
+                     render_frame_id,
+                     process_->GetData().id));
       // This worker has no more associated documents - shut it down.
       Send(new WorkerMsg_TerminateWorkerContext(i->worker_route_id()));
       i = instances_.erase(i);
@@ -539,7 +663,7 @@ const ChildProcessData& WorkerProcessHost::GetData() {
   return process_->GetData();
 }
 
-std::vector<std::pair<int, int> > WorkerProcessHost::GetRenderViewIDsForWorker(
+std::vector<std::pair<int, int> > WorkerProcessHost::GetRenderFrameIDsForWorker(
     int worker_route_id) {
   std::vector<std::pair<int, int> > result;
   WorkerProcessHost::Instances::const_iterator i;
@@ -551,7 +675,7 @@ std::vector<std::pair<int, int> > WorkerProcessHost::GetRenderViewIDsForWorker(
     for (WorkerDocumentSet::DocumentInfoSet::const_iterator doc =
          documents.begin(); doc != documents.end(); ++doc) {
       result.push_back(
-          std::make_pair(doc->render_process_id(), doc->render_view_id()));
+          std::make_pair(doc->render_process_id(), doc->render_frame_id()));
     }
     break;
   }
@@ -573,42 +697,39 @@ net::URLRequestContext* WorkerProcessHost::GetRequestContext(
 WorkerProcessHost::WorkerInstance::WorkerInstance(
     const GURL& url,
     const base::string16& name,
+    const base::string16& content_security_policy,
+    blink::WebContentSecurityPolicyType security_policy_type,
     int worker_route_id,
-    int parent_process_id,
-    int64 main_resource_appcache_id,
+    int render_frame_id,
     ResourceContext* resource_context,
     const WorkerStoragePartition& partition)
     : url_(url),
       closed_(false),
       name_(name),
+      content_security_policy_(content_security_policy),
+      security_policy_type_(security_policy_type),
       worker_route_id_(worker_route_id),
-      parent_process_id_(parent_process_id),
-      main_resource_appcache_id_(main_resource_appcache_id),
+      render_frame_id_(render_frame_id),
       worker_document_set_(new WorkerDocumentSet()),
       resource_context_(resource_context),
-      partition_(partition) {
-  DCHECK(resource_context_);
-}
-
-WorkerProcessHost::WorkerInstance::WorkerInstance(
-    const GURL& url,
-    bool shared,
-    const base::string16& name,
-    ResourceContext* resource_context,
-    const WorkerStoragePartition& partition)
-    : url_(url),
-      closed_(false),
-      name_(name),
-      worker_route_id_(MSG_ROUTING_NONE),
-      parent_process_id_(0),
-      main_resource_appcache_id_(0),
-      worker_document_set_(new WorkerDocumentSet()),
-      resource_context_(resource_context),
-      partition_(partition) {
+      partition_(partition),
+      load_failed_(false) {
   DCHECK(resource_context_);
 }
 
 WorkerProcessHost::WorkerInstance::~WorkerInstance() {
+}
+
+void WorkerProcessHost::WorkerInstance::SetMessagePortID(
+    WorkerMessageFilter* filter,
+    int route_id,
+    int message_port_id) {
+  for (FilterList::iterator i = filters_.begin(); i != filters_.end(); ++i) {
+    if (i->filter() == filter && i->route_id() == route_id) {
+      i->set_message_port_id(message_port_id);
+      return;
+    }
+  }
 }
 
 // Compares an instance based on the algorithm in the WebWorkers spec - an
@@ -656,7 +777,7 @@ void WorkerProcessHost::WorkerInstance::AddFilter(WorkerMessageFilter* filter,
 void WorkerProcessHost::WorkerInstance::RemoveFilter(
     WorkerMessageFilter* filter, int route_id) {
   for (FilterList::iterator i = filters_.begin(); i != filters_.end();) {
-    if (i->first == filter && i->second == route_id)
+    if (i->filter() == filter && i->route_id() == route_id)
       i = filters_.erase(i);
     else
       ++i;
@@ -668,7 +789,7 @@ void WorkerProcessHost::WorkerInstance::RemoveFilter(
 void WorkerProcessHost::WorkerInstance::RemoveFilters(
     WorkerMessageFilter* filter) {
   for (FilterList::iterator i = filters_.begin(); i != filters_.end();) {
-    if (i->first == filter)
+    if (i->filter() == filter)
       i = filters_.erase(i);
     else
       ++i;
@@ -679,21 +800,21 @@ bool WorkerProcessHost::WorkerInstance::HasFilter(
     WorkerMessageFilter* filter, int route_id) const {
   for (FilterList::const_iterator i = filters_.begin(); i != filters_.end();
        ++i) {
-    if (i->first == filter && i->second == route_id)
+    if (i->filter() == filter && i->route_id() == route_id)
       return true;
   }
   return false;
 }
 
-bool WorkerProcessHost::WorkerInstance::RendererIsParent(
-    int render_process_id, int render_view_id) const {
+bool WorkerProcessHost::WorkerInstance::FrameIsParent(
+    int render_process_id, int render_frame_id) const {
   const WorkerDocumentSet::DocumentInfoSet& parents =
       worker_document_set()->documents();
   for (WorkerDocumentSet::DocumentInfoSet::const_iterator parent_iter =
            parents.begin();
        parent_iter != parents.end(); ++parent_iter) {
     if (parent_iter->render_process_id() == render_process_id &&
-        parent_iter->render_view_id() == render_view_id) {
+        parent_iter->render_frame_id() == render_frame_id) {
       return true;
     }
   }

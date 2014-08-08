@@ -21,65 +21,37 @@
 #define SVGFEMorphologyElement_h
 
 #include "core/svg/SVGAnimatedEnumeration.h"
-#include "core/svg/SVGAnimatedNumber.h"
+#include "core/svg/SVGAnimatedNumberOptionalNumber.h"
 #include "core/svg/SVGFilterPrimitiveStandardAttributes.h"
 #include "platform/graphics/filters/FEMorphology.h"
 
 namespace WebCore {
 
-template<>
-struct SVGPropertyTraits<MorphologyOperatorType> {
-    static unsigned highestEnumValue() { return FEMORPHOLOGY_OPERATOR_DILATE; }
-
-    static String toString(MorphologyOperatorType type)
-    {
-        switch (type) {
-        case FEMORPHOLOGY_OPERATOR_UNKNOWN:
-            return emptyString();
-        case FEMORPHOLOGY_OPERATOR_ERODE:
-            return "erode";
-        case FEMORPHOLOGY_OPERATOR_DILATE:
-            return "dilate";
-        }
-
-        ASSERT_NOT_REACHED();
-        return emptyString();
-    }
-
-    static MorphologyOperatorType fromString(const String& value)
-    {
-        if (value == "erode")
-            return FEMORPHOLOGY_OPERATOR_ERODE;
-        if (value == "dilate")
-            return FEMORPHOLOGY_OPERATOR_DILATE;
-        return FEMORPHOLOGY_OPERATOR_UNKNOWN;
-    }
-};
+template<> const SVGEnumerationStringEntries& getStaticStringEntries<MorphologyOperatorType>();
 
 class SVGFEMorphologyElement FINAL : public SVGFilterPrimitiveStandardAttributes {
 public:
-    static PassRefPtr<SVGFEMorphologyElement> create(Document&);
+    DECLARE_NODE_FACTORY(SVGFEMorphologyElement);
 
     void setRadius(float radiusX, float radiusY);
+
+    SVGAnimatedNumber* radiusX() { return m_radius->firstNumber(); }
+    SVGAnimatedNumber* radiusY() { return m_radius->secondNumber(); }
+    SVGAnimatedString* in1() { return m_in1.get(); }
+    SVGAnimatedEnumeration<MorphologyOperatorType>* svgOperator() { return m_svgOperator.get(); }
 
 private:
     explicit SVGFEMorphologyElement(Document&);
 
     bool isSupportedAttribute(const QualifiedName&);
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual bool setFilterEffectAttribute(FilterEffect*, const QualifiedName&);
-    virtual void svgAttributeChanged(const QualifiedName&);
-    virtual PassRefPtr<FilterEffect> build(SVGFilterBuilder*, Filter*);
+    virtual bool setFilterEffectAttribute(FilterEffect*, const QualifiedName&) OVERRIDE;
+    virtual void svgAttributeChanged(const QualifiedName&) OVERRIDE;
+    virtual PassRefPtr<FilterEffect> build(SVGFilterBuilder*, Filter*) OVERRIDE;
 
-    static const AtomicString& radiusXIdentifier();
-    static const AtomicString& radiusYIdentifier();
-
-    BEGIN_DECLARE_ANIMATED_PROPERTIES(SVGFEMorphologyElement)
-        DECLARE_ANIMATED_STRING(In1, in1)
-        DECLARE_ANIMATED_ENUMERATION(SVGOperator, svgOperator, MorphologyOperatorType)
-        DECLARE_ANIMATED_NUMBER(RadiusX, radiusX)
-        DECLARE_ANIMATED_NUMBER(RadiusY, radiusY)
-    END_DECLARE_ANIMATED_PROPERTIES
+    RefPtr<SVGAnimatedNumberOptionalNumber> m_radius;
+    RefPtr<SVGAnimatedString> m_in1;
+    RefPtr<SVGAnimatedEnumeration<MorphologyOperatorType> > m_svgOperator;
 };
 
 } // namespace WebCore

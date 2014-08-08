@@ -6,6 +6,7 @@
 #define MEDIA_BASE_DECODER_BUFFER_H_
 
 #include <string>
+#include <utility>
 
 #include "base/logging.h"
 #include "base/memory/aligned_memory.h"
@@ -65,17 +66,16 @@ class MEDIA_EXPORT DecoderBuffer
     return timestamp_;
   }
 
-  void set_timestamp(const base::TimeDelta& timestamp) {
-    DCHECK(!end_of_stream());
-    timestamp_ = timestamp;
-  }
+  // TODO(dalecurtis): This should be renamed at some point, but to avoid a yak
+  // shave keep as a virtual with hacker_style() for now.
+  virtual void set_timestamp(base::TimeDelta timestamp);
 
   base::TimeDelta duration() const {
     DCHECK(!end_of_stream());
     return duration_;
   }
 
-  void set_duration(const base::TimeDelta& duration) {
+  void set_duration(base::TimeDelta duration) {
     DCHECK(!end_of_stream());
     duration_ = duration;
   }
@@ -105,12 +105,18 @@ class MEDIA_EXPORT DecoderBuffer
     return side_data_size_;
   }
 
-  base::TimeDelta discard_padding() const {
+  // A discard window indicates the amount of data which should be discard from
+  // this buffer after decoding.  The first value is the amount of the front and
+  // the second the amount off the back.  A value of kInfiniteDuration() for the
+  // first value indicates the entire buffer should be discarded; the second
+  // value must be base::TimeDelta() in this case.
+  typedef std::pair<base::TimeDelta, base::TimeDelta> DiscardPadding;
+  const DiscardPadding& discard_padding() const {
     DCHECK(!end_of_stream());
     return discard_padding_;
   }
 
-  void set_discard_padding(const base::TimeDelta discard_padding) {
+  void set_discard_padding(const DiscardPadding& discard_padding) {
     DCHECK(!end_of_stream());
     discard_padding_ = discard_padding;
   }
@@ -128,6 +134,20 @@ class MEDIA_EXPORT DecoderBuffer
   // If there's no data in this buffer, it represents end of stream.
   bool end_of_stream() const {
     return data_ == NULL;
+  }
+
+  // Indicates this buffer is part of a splice around |splice_timestamp_|.
+  // Returns kNoTimestamp() if the buffer is not part of a splice.
+  base::TimeDelta splice_timestamp() const {
+    DCHECK(!end_of_stream());
+    return splice_timestamp_;
+  }
+
+  // When set to anything but kNoTimestamp() indicates this buffer is part of a
+  // splice around |splice_timestamp|.
+  void set_splice_timestamp(base::TimeDelta splice_timestamp) {
+    DCHECK(!end_of_stream());
+    splice_timestamp_ = splice_timestamp;
   }
 
   // Returns a human-readable string describing |*this|.
@@ -148,11 +168,12 @@ class MEDIA_EXPORT DecoderBuffer
   base::TimeDelta duration_;
 
   int size_;
-  scoped_ptr<uint8, base::ScopedPtrAlignedFree> data_;
+  scoped_ptr<uint8, base::AlignedFreeDeleter> data_;
   int side_data_size_;
-  scoped_ptr<uint8, base::ScopedPtrAlignedFree> side_data_;
+  scoped_ptr<uint8, base::AlignedFreeDeleter> side_data_;
   scoped_ptr<DecryptConfig> decrypt_config_;
-  base::TimeDelta discard_padding_;
+  DiscardPadding discard_padding_;
+  base::TimeDelta splice_timestamp_;
 
   // Constructor helper method for memory allocations.
   void Initialize();

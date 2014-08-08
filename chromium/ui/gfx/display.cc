@@ -35,12 +35,11 @@ float GetForcedDeviceScaleFactorImpl() {
   return static_cast<float>(scale_in_double);
 }
 
-const int64 kInvalidDisplayIDForCompileTimeInit = -1;
-int64 internal_display_id_ = kInvalidDisplayIDForCompileTimeInit;
+int64 internal_display_id_ = -1;
 
 }  // namespace
 
-const int64 Display::kInvalidDisplayID = kInvalidDisplayIDForCompileTimeInit;
+const int64 Display::kInvalidDisplayID = -1;
 
 // static
 float Display::GetForcedDeviceScaleFactor() {
@@ -51,7 +50,9 @@ float Display::GetForcedDeviceScaleFactor() {
 
 //static
 bool Display::HasForceDeviceScaleFactor() {
-  return HasForceDeviceScaleFactorImpl();
+  static const bool kHasForceDeviceScaleFactor =
+      HasForceDeviceScaleFactorImpl();
+  return kHasForceDeviceScaleFactor;
 }
 
 Display::Display()
@@ -81,6 +82,42 @@ Display::Display(int64 id, const gfx::Rect& bounds)
 }
 
 Display::~Display() {
+}
+
+int Display::RotationAsDegree() const {
+  switch (rotation_) {
+    case ROTATE_0:
+      return 0;
+    case ROTATE_90:
+      return 90;
+    case ROTATE_180:
+      return 180;
+    case ROTATE_270:
+      return 270;
+  }
+
+  NOTREACHED();
+  return 0;
+}
+
+void Display::SetRotationAsDegree(int rotation) {
+  switch (rotation) {
+    case 0:
+      rotation_ = ROTATE_0;
+      break;
+    case 90:
+      rotation_ = ROTATE_90;
+      break;
+    case 180:
+      rotation_ = ROTATE_180;
+      break;
+    case 270:
+      rotation_ = ROTATE_270;
+      break;
+    default:
+      // We should not reach that but we will just ignore the call if we do.
+      NOTREACHED();
+  }
 }
 
 Insets Display::GetWorkAreaInsets() const {

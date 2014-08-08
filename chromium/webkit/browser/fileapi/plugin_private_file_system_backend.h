@@ -18,6 +18,10 @@ namespace base {
 class SequencedTaskRunner;
 }
 
+namespace content {
+class PluginPrivateFileSystemBackendTest;
+}
+
 namespace quota {
 class SpecialStoragePolicy;
 }
@@ -31,7 +35,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT PluginPrivateFileSystemBackend
       public FileSystemQuotaUtil {
  public:
   class FileSystemIDToPluginMap;
-  typedef base::Callback<void(base::PlatformFileError result)> StatusCallback;
+  typedef base::Callback<void(base::File::Error result)> StatusCallback;
 
   PluginPrivateFileSystemBackend(
       base::SequencedTaskRunner* file_task_runner,
@@ -57,19 +61,18 @@ class WEBKIT_STORAGE_BROWSER_EXPORT PluginPrivateFileSystemBackend
   // FileSystemBackend overrides.
   virtual bool CanHandleType(FileSystemType type) const OVERRIDE;
   virtual void Initialize(FileSystemContext* context) OVERRIDE;
-  virtual void OpenFileSystem(
-      const GURL& origin_url,
-      FileSystemType type,
-      OpenFileSystemMode mode,
-      const OpenFileSystemCallback& callback) OVERRIDE;
+  virtual void ResolveURL(const FileSystemURL& url,
+                          OpenFileSystemMode mode,
+                          const OpenFileSystemCallback& callback) OVERRIDE;
   virtual AsyncFileUtil* GetAsyncFileUtil(FileSystemType type) OVERRIDE;
   virtual CopyOrMoveFileValidatorFactory* GetCopyOrMoveFileValidatorFactory(
       FileSystemType type,
-      base::PlatformFileError* error_code) OVERRIDE;
+      base::File::Error* error_code) OVERRIDE;
   virtual FileSystemOperation* CreateFileSystemOperation(
       const FileSystemURL& url,
       FileSystemContext* context,
-      base::PlatformFileError* error_code) const OVERRIDE;
+      base::File::Error* error_code) const OVERRIDE;
+  virtual bool SupportsStreaming(const FileSystemURL& url) const OVERRIDE;
   virtual scoped_ptr<webkit_blob::FileStreamReader> CreateFileStreamReader(
       const FileSystemURL& url,
       int64 offset,
@@ -82,19 +85,19 @@ class WEBKIT_STORAGE_BROWSER_EXPORT PluginPrivateFileSystemBackend
   virtual FileSystemQuotaUtil* GetQuotaUtil() OVERRIDE;
 
   // FileSystemQuotaUtil overrides.
-  virtual base::PlatformFileError DeleteOriginDataOnFileThread(
+  virtual base::File::Error DeleteOriginDataOnFileTaskRunner(
       FileSystemContext* context,
       quota::QuotaManagerProxy* proxy,
       const GURL& origin_url,
       FileSystemType type) OVERRIDE;
-  virtual void GetOriginsForTypeOnFileThread(
+  virtual void GetOriginsForTypeOnFileTaskRunner(
       FileSystemType type,
       std::set<GURL>* origins) OVERRIDE;
-  virtual void GetOriginsForHostOnFileThread(
+  virtual void GetOriginsForHostOnFileTaskRunner(
       FileSystemType type,
       const std::string& host,
       std::set<GURL>* origins) OVERRIDE;
-  virtual int64 GetOriginUsageOnFileThread(
+  virtual int64 GetOriginUsageOnFileTaskRunner(
       FileSystemContext* context,
       const GURL& origin_url,
       FileSystemType type) OVERRIDE;
@@ -122,7 +125,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT PluginPrivateFileSystemBackend
       FileSystemType type) const OVERRIDE;
 
  private:
-  friend class PluginPrivateFileSystemBackendTest;
+  friend class content::PluginPrivateFileSystemBackendTest;
 
   ObfuscatedFileUtil* obfuscated_file_util();
   const base::FilePath& base_path() const { return base_path_; }

@@ -31,35 +31,38 @@
 #ifndef UndoStack_h
 #define UndoStack_h
 
+#include "platform/heap/Handle.h"
 #include "wtf/Deque.h"
 #include "wtf/Forward.h"
 
 namespace WebCore {
 
-class Frame;
+class LocalFrame;
 class UndoStep;
 
-class UndoStack {
+class UndoStack FINAL : public NoBaseWillBeGarbageCollected<UndoStack> {
+    DECLARE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(UndoStack)
 public:
-    static PassOwnPtr<UndoStack> create();
+    static PassOwnPtrWillBeRawPtr<UndoStack> create();
 
-    ~UndoStack();
-
-    void registerUndoStep(PassRefPtr<UndoStep>);
-    void registerRedoStep(PassRefPtr<UndoStep>);
-    void didUnloadFrame(const Frame&);
+    void registerUndoStep(PassRefPtrWillBeRawPtr<UndoStep>);
+    void registerRedoStep(PassRefPtrWillBeRawPtr<UndoStep>);
+    void didUnloadFrame(const LocalFrame&);
     bool canUndo() const;
     bool canRedo() const;
     void undo();
     void redo();
 
+    void trace(Visitor*);
+
 private:
     UndoStack();
 
-    bool m_inRedo;
+    typedef WillBeHeapDeque<RefPtrWillBeMember<UndoStep> > UndoStepStack;
 
-    typedef Deque<RefPtr<UndoStep> > UndoStepStack;
-    void filterOutUndoSteps(UndoStepStack&, const Frame&);
+    void filterOutUndoSteps(UndoStepStack&, const LocalFrame&);
+
+    bool m_inRedo;
     UndoStepStack m_undoStack;
     UndoStepStack m_redoStack;
 };

@@ -9,8 +9,8 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/test/browser_test_utils.h"
+#include "content/public/test/content_browser_test_utils.h"
 #include "content/shell/browser/shell.h"
-#include "content/test/content_browser_test_utils.h"
 
 // TODO(wolenetz): Fix Media.YUV* tests on MSVS 2012 x64. crbug.com/180074
 #if defined(OS_WIN) && defined(ARCH_CPU_X86_64) && _MSC_VER == 1700
@@ -25,14 +25,6 @@ namespace content {
 const char MediaBrowserTest::kEnded[] = "ENDED";
 const char MediaBrowserTest::kError[] = "ERROR";
 const char MediaBrowserTest::kFailed[] = "FAILED";
-
-void MediaBrowserTest::SetUp() {
-  // TODO(danakj): The GPU Video Decoder needs real GL bindings.
-  // crbug.com/269087
-  UseRealGLBindings();
-
-  ContentBrowserTest::SetUp();
-}
 
 void MediaBrowserTest::RunMediaTestPage(
     const char* html_page, std::vector<StringPair>* query_params,
@@ -59,7 +51,7 @@ void MediaBrowserTest::RunMediaTestPage(
 }
 
 void MediaBrowserTest::RunTest(const GURL& gurl, const char* expected) {
-  const base::string16 expected_title = ASCIIToUTF16(expected);
+  const base::string16 expected_title = base::ASCIIToUTF16(expected);
   DVLOG(1) << "Running test URL: " << gurl;
   TitleWatcher title_watcher(shell()->web_contents(), expected_title);
   AddWaitForTitles(&title_watcher);
@@ -70,9 +62,9 @@ void MediaBrowserTest::RunTest(const GURL& gurl, const char* expected) {
 }
 
 void MediaBrowserTest::AddWaitForTitles(content::TitleWatcher* title_watcher) {
-  title_watcher->AlsoWaitForTitle(ASCIIToUTF16(kEnded));
-  title_watcher->AlsoWaitForTitle(ASCIIToUTF16(kError));
-  title_watcher->AlsoWaitForTitle(ASCIIToUTF16(kFailed));
+  title_watcher->AlsoWaitForTitle(base::ASCIIToUTF16(kEnded));
+  title_watcher->AlsoWaitForTitle(base::ASCIIToUTF16(kError));
+  title_watcher->AlsoWaitForTitle(base::ASCIIToUTF16(kFailed));
 }
 
 // Tests playback and seeking of an audio or video file over file or http based
@@ -115,6 +107,14 @@ IN_PROC_BROWSER_TEST_P(MediaTest, VideoBearSilentTheora) {
 
 IN_PROC_BROWSER_TEST_P(MediaTest, VideoBearWebm) {
   PlayVideo("bear.webm", GetParam());
+}
+
+IN_PROC_BROWSER_TEST_P(MediaTest, VideoBearOpusWebm) {
+  PlayVideo("bear-opus.webm", GetParam());
+}
+
+IN_PROC_BROWSER_TEST_P(MediaTest, VideoBearOpusOgg) {
+  PlayVideo("bear-opus.ogg", GetParam());
 }
 
 IN_PROC_BROWSER_TEST_P(MediaTest, VideoBearSilentWebm) {
@@ -201,7 +201,7 @@ IN_PROC_BROWSER_TEST_P(MediaTest, VideoTulipWebm) {
 // Covers tear-down when navigating away as opposed to browser exiting.
 IN_PROC_BROWSER_TEST_F(MediaTest, Navigate) {
   PlayVideo("bear.ogv", false);
-  NavigateToURL(shell(), GURL(kAboutBlankURL));
+  NavigateToURL(shell(), GURL(url::kAboutBlankURL));
   EXPECT_FALSE(shell()->web_contents()->IsCrashed());
 }
 
@@ -217,12 +217,15 @@ IN_PROC_BROWSER_TEST_F(MediaTest, MAYBE(Yuv422pTheora)) {
 }
 
 IN_PROC_BROWSER_TEST_F(MediaTest, MAYBE(Yuv444pTheora)) {
-  // TODO(scherkus): Support YUV444 http://crbug.com/104711
-  RunColorFormatTest("yuv424p.ogv", "ERROR");
+  RunColorFormatTest("yuv444p.ogv", "ENDED");
 }
 
 IN_PROC_BROWSER_TEST_F(MediaTest, MAYBE(Yuv420pVp8)) {
   RunColorFormatTest("yuv420p.webm", "ENDED");
+}
+
+IN_PROC_BROWSER_TEST_F(MediaTest, MAYBE(Yuv444pVp9)) {
+  RunColorFormatTest("yuv444p.webm", "ENDED");
 }
 
 #if defined(USE_PROPRIETARY_CODECS)
@@ -231,8 +234,7 @@ IN_PROC_BROWSER_TEST_F(MediaTest, MAYBE(Yuv420pH264)) {
 }
 
 IN_PROC_BROWSER_TEST_F(MediaTest, MAYBE(Yuvj420pH264)) {
-  // TODO(rileya): Support YUVJ420P properly http://crbug.com/310273
-  RunColorFormatTest("yuvj420p.mp4", "FAILED");
+  RunColorFormatTest("yuvj420p.mp4", "ENDED");
 }
 
 IN_PROC_BROWSER_TEST_F(MediaTest, MAYBE(Yuv422pH264)) {
@@ -240,8 +242,7 @@ IN_PROC_BROWSER_TEST_F(MediaTest, MAYBE(Yuv422pH264)) {
 }
 
 IN_PROC_BROWSER_TEST_F(MediaTest, MAYBE(Yuv444pH264)) {
-  // TODO(scherkus): Support YUV444 http://crbug.com/104711
-  RunColorFormatTest("yuv444p.mp4", "ERROR");
+  RunColorFormatTest("yuv444p.mp4", "ENDED");
 }
 
 #if defined(OS_CHROMEOS)

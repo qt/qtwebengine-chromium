@@ -19,6 +19,7 @@
 #include "content/public/browser/browser_child_process_host_iterator.h"
 #include "content/public/common/process_type.h"
 #include "ipc/ipc_sender.h"
+#include "third_party/WebKit/public/web/WebContentSecurityPolicy.h"
 #include "url/gurl.h"
 #include "webkit/common/resource_type.h"
 
@@ -41,6 +42,7 @@ class BrowserChildProcessHostImpl;
 class IndexedDBContextImpl;
 class ResourceContext;
 class SocketStreamDispatcherHost;
+class WorkerMessageFilter;
 class WorkerServiceImpl;
 
 // The WorkerProcessHost is the interface that represents the browser side of
@@ -58,29 +60,40 @@ class WorkerProcessHost : public BrowserChildProcessHostDelegate,
    public:
     WorkerInstance(const GURL& url,
                    const base::string16& name,
+                   const base::string16& content_security_policy,
+                   blink::WebContentSecurityPolicyType security_policy_type,
                    int worker_route_id,
-                   int parent_process_id,
-                   int64 main_resource_appcache_id,
-                   ResourceContext* resource_context,
-                   const WorkerStoragePartition& partition);
-    // Used for pending instances. Rest of the parameters are ignored.
-    WorkerInstance(const GURL& url,
-                   bool shared,
-                   const base::string16& name,
+                   int render_frame_id,
                    ResourceContext* resource_context,
                    const WorkerStoragePartition& partition);
     ~WorkerInstance();
 
     // Unique identifier for a worker client.
-    typedef std::pair<WorkerMessageFilter*, int> FilterInfo;
+    class FilterInfo {
+     public:
+      FilterInfo(WorkerMessageFilter* filter, int route_id)
+          : filter_(filter), route_id_(route_id), message_port_id_(0) { }
+      WorkerMessageFilter* filter() const { return filter_; }
+      int route_id() const { return route_id_; }
+      int message_port_id() const { return message_port_id_; }
+      void set_message_port_id(int id) { message_port_id_ = id; }
+
+     private:
+      WorkerMessageFilter* filter_;
+      int route_id_;
+      int message_port_id_;
+    };
 
     // APIs to manage the filter list for a given instance.
     void AddFilter(WorkerMessageFilter* filter, int route_id);
     void RemoveFilter(WorkerMessageFilter* filter, int route_id);
     void RemoveFilters(WorkerMessageFilter* filter);
     bool HasFilter(WorkerMessageFilter* filter, int route_id) const;
-    bool RendererIsParent(int render_process_id, int render_view_id) const;
+    bool FrameIsParent(int render_process_id, int render_frame_id) const;
     int NumFilters() const { return filters_.size(); }
+    void SetMessagePortID(WorkerMessageFilter* filter,
+                          int route_id,
+                          int message_port_id);
     // Returns the single filter (must only be one).
     FilterInfo GetFilter() const;
 
@@ -108,11 +121,14 @@ class WorkerProcessHost : public BrowserChildProcessHostDelegate,
     void set_closed(bool closed) { closed_ = closed; }
     const GURL& url() const { return url_; }
     const base::string16 name() const { return name_; }
-    int worker_route_id() const { return worker_route_id_; }
-    int parent_process_id() const { return parent_process_id_; }
-    int64 main_resource_appcache_id() const {
-      return main_resource_appcache_id_;
+    const base::string16 content_security_policy() const {
+        return content_security_policy_;
     }
+    blink::WebContentSecurityPolicyType security_policy_type() const {
+        return security_policy_type_;
+    }
+    int worker_route_id() const { return worker_route_id_; }
+    int render_frame_id() const { return render_frame_id_; }
     WorkerDocumentSet* worker_document_set() const {
       return worker_document_set_.get();
     }
@@ -122,19 +138,23 @@ class WorkerProcessHost : public BrowserChildProcessHostDelegate,
     const WorkerStoragePartition& partition() const {
       return partition_;
     }
+    void set_load_failed(bool failed) { load_failed_ = failed; }
+    bool load_failed() { return load_failed_; }
 
    private:
     // Set of all filters (clients) associated with this worker.
     GURL url_;
     bool closed_;
     base::string16 name_;
+    base::string16 content_security_policy_;
+    blink::WebContentSecurityPolicyType security_policy_type_;
     int worker_route_id_;
-    int parent_process_id_;
-    int64 main_resource_appcache_id_;
+    int render_frame_id_;
     FilterList filters_;
     scoped_refptr<WorkerDocumentSet> worker_document_set_;
     ResourceContext* const resource_context_;
     WorkerStoragePartition partition_;
+    bool load_failed_;
   };
 
   WorkerProcessHost(ResourceContext* resource_context,
@@ -145,12 +165,12 @@ class WorkerProcessHost : public BrowserChildProcessHostDelegate,
   virtual bool Send(IPC::Message* message) OVERRIDE;
 
   // Starts the process.  Returns true iff it succeeded.
-  // |render_process_id| is the renderer process responsible for starting this
-  // worker.
-  bool Init(int render_process_id);
+  // |render_process_id| and |render_frame_id| are the renderer process and the
+  // renderer frame responsible for starting this worker.
+  bool Init(int render_process_id, int render_frame_id);
 
   // Creates a worker object in the process.
-  void CreateWorker(const WorkerInstance& instance);
+  void CreateWorker(const WorkerInstance& instance, bool pause_on_start);
 
   // Returns true iff the given message from a renderer process was forwarded to
   // the worker.
@@ -194,15 +214,19 @@ class WorkerProcessHost : public BrowserChildProcessHostDelegate,
   void CreateMessageFilters(int render_process_id);
 
   void OnWorkerContextClosed(int worker_route_id);
+  void OnWorkerContextDestroyed(int worker_route_id);
+  void OnWorkerScriptLoaded(int worker_route_id);
+  void OnWorkerScriptLoadFailed(int worker_route_id);
+  void OnWorkerConnected(int message_port_id, int worker_route_id);
   void OnAllowDatabase(int worker_route_id,
                        const GURL& url,
                        const base::string16& name,
                        const base::string16& display_name,
                        unsigned long estimated_size,
                        bool* result);
-  void OnAllowFileSystem(int worker_route_id,
-                         const GURL& url,
-                         bool* result);
+  void OnRequestFileSystemAccessSync(int worker_route_id,
+                                     const GURL& url,
+                                     bool* result);
   void OnAllowIndexedDB(int worker_route_id,
                         const GURL& url,
                         const base::string16& name,
@@ -212,8 +236,8 @@ class WorkerProcessHost : public BrowserChildProcessHostDelegate,
   // Relays a message to the given endpoint.  Takes care of parsing the message
   // if it contains a message port and sending it a valid route id.
   void RelayMessage(const IPC::Message& message,
-                    WorkerMessageFilter* filter,
-                    int route_id);
+                    WorkerMessageFilter* incoming_filter,
+                    WorkerInstance* instance);
 
   void ShutdownSocketStreamDispatcherHostIfNecessary();
 
@@ -222,9 +246,9 @@ class WorkerProcessHost : public BrowserChildProcessHostDelegate,
   // Updates the title shown in the task manager.
   void UpdateTitle();
 
-  // Return a vector of all the render process/render view IDs that use the
+  // Return a vector of all the render process/render frame  IDs that use the
   // given worker.
-  std::vector<std::pair<int, int> > GetRenderViewIDsForWorker(int route_id);
+  std::vector<std::pair<int, int> > GetRenderFrameIDsForWorker(int route_id);
 
   // Callbacks for ResourceMessageFilter and SocketStreamDispatcherHost.
   void GetContexts(const ResourceHostMsg_Request& request,

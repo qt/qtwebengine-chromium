@@ -41,6 +41,7 @@
 
 namespace blink {
 
+class WebCompositeAndReadbackAsyncCallback;
 class WebInputEvent;
 class WebLayerTreeView;
 class WebMouseEvent;
@@ -66,6 +67,13 @@ public:
     // Called to resize the WebWidget.
     virtual void resize(const WebSize&) { }
 
+    // Resizes the unscaled pinch viewport. Normally the unscaled pinch
+    // viewport is the same size as the main frame. The passed size becomes the
+    // size of the viewport when unscaled (i.e. scale = 1). This is used to
+    // shrink the visible viewport to allow things like the ChromeOS virtual
+    // keyboard to overlay over content but allow scrolling it into view.
+    virtual void resizePinchViewport(const WebSize&) { }
+
     // Ends a group of resize events that was started with a call to
     // willStartLiveResize.
     virtual void willEndLiveResize() { }
@@ -86,29 +94,6 @@ public:
     // and it may result in calls to WebWidgetClient::didInvalidateRect.
     virtual void layout() { }
 
-    // Called to toggle the WebWidget in or out of force compositing mode. This
-    // should be called before paint.
-    virtual void enterForceCompositingMode(bool enter) { }
-
-    // Called to notify the WebWidget that the widget has exited compositing
-    // mode and cannot reenter.
-    virtual void didExitCompositingMode() { }
-
-    enum PaintOptions {
-        // Attempt to fulfill the painting request by reading back from the
-        // compositor, assuming we're using a compositor to render.
-        ReadbackFromCompositorIfAvailable,
-
-        // Force the widget to rerender onto the canvas using software. This
-        // mode ignores 3d transforms and ignores GPU-resident content, such
-        // as video, canvas, and WebGL.
-        //
-        // Note: This option exists on OS(ANDROID) and will hopefully be
-        //       removed once the link disambiguation feature renders using
-        //       the compositor.
-        ForceSoftwareRenderingAndIgnoreGPUResidentContent,
-    };
-
     // Called to paint the rectangular region within the WebWidget
     // onto the specified canvas at (viewPort.x,viewPort.y). You MUST call
     // Layout before calling this method. It is okay to call paint
@@ -116,7 +101,14 @@ public:
     // changes are made to the WebWidget (e.g., once events are
     // processed, it should be assumed that another call to layout is
     // warranted before painting again).
-    virtual void paint(WebCanvas*, const WebRect& viewPort, PaintOptions = ReadbackFromCompositorIfAvailable) { }
+    virtual void paint(WebCanvas*, const WebRect& viewPort) { }
+
+    virtual void paintCompositedDeprecated(WebCanvas*, const WebRect&) { }
+
+    // The caller is responsible for keeping the WebCompositeAndReadbackAsyncCallback
+    // object alive until it is called. This should only be called when
+    // isAcceleratedCompositingActive() is true.
+    virtual void compositeAndReadbackAsync(WebCompositeAndReadbackAsyncCallback*) { }
 
     // Returns true if we've started tracking repaint rectangles.
     virtual bool isTrackingRepaints() const { return false; }
@@ -226,8 +218,6 @@ public:
     virtual bool isPagePopup() const { return false; }
     // Returns true if the WebWidget created is of type WebPopupMenu.
     virtual bool isPopupMenu() const { return false; }
-    // Returns true if the WebWidget created is of type WebHelperPlugin.
-    virtual bool isHelperPlugin() const { return false; }
 
     // The WebLayerTreeView initialized on this WebWidgetClient will be going away and
     // is no longer safe to access.

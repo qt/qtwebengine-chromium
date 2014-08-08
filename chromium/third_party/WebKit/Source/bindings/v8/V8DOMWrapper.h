@@ -34,6 +34,7 @@
 #include "bindings/v8/DOMDataStore.h"
 #include <v8.h>
 #include "wtf/PassRefPtr.h"
+#include "wtf/RawPtr.h"
 #include "wtf/text/AtomicString.h"
 
 namespace WebCore {
@@ -42,46 +43,102 @@ struct WrapperTypeInfo;
 
     class V8DOMWrapper {
     public:
-#ifndef NDEBUG
-        // Checks if a v8 value can be a DOM wrapper
-        static bool maybeDOMWrapper(v8::Handle<v8::Value>);
-#endif
-
         static v8::Local<v8::Object> createWrapper(v8::Handle<v8::Object> creationContext, const WrapperTypeInfo*, void*, v8::Isolate*);
 
         template<typename V8T, typename T>
         static inline v8::Handle<v8::Object> associateObjectWithWrapper(PassRefPtr<T>, const WrapperTypeInfo*, v8::Handle<v8::Object>, v8::Isolate*, WrapperConfiguration::Lifetime);
+        template<typename V8T, typename T>
+        static inline v8::Handle<v8::Object> associateObjectWithWrapper(RawPtr<T> object, const WrapperTypeInfo* wrapperTypeInfo, v8::Handle<v8::Object> wrapper, v8::Isolate* isolate, WrapperConfiguration::Lifetime lifetime)
+        {
+            return associateObjectWithWrapper<V8T, T>(object.get(), wrapperTypeInfo, wrapper, isolate, lifetime);
+        }
+        template<typename V8T, typename T>
+        static inline v8::Handle<v8::Object> associateObjectWithWrapper(T*, const WrapperTypeInfo*, v8::Handle<v8::Object>, v8::Isolate*, WrapperConfiguration::Lifetime);
         static inline void setNativeInfo(v8::Handle<v8::Object>, const WrapperTypeInfo*, void*);
+        static inline void setNativeInfoForHiddenWrapper(v8::Handle<v8::Object>, const WrapperTypeInfo*, void*);
+        static inline void setNativeInfoWithPersistentHandle(v8::Handle<v8::Object>, const WrapperTypeInfo*, void*, PersistentNode*);
         static inline void clearNativeInfo(v8::Handle<v8::Object>, const WrapperTypeInfo*);
 
         static bool isDOMWrapper(v8::Handle<v8::Value>);
-        static bool isWrapperOfType(v8::Handle<v8::Value>, const WrapperTypeInfo*);
     };
 
-    inline void V8DOMWrapper::setNativeInfo(v8::Handle<v8::Object> wrapper, const WrapperTypeInfo* type, void* object)
+    inline void V8DOMWrapper::setNativeInfo(v8::Handle<v8::Object> wrapper, const WrapperTypeInfo* wrapperTypeInfo, void* object)
     {
         ASSERT(wrapper->InternalFieldCount() >= 2);
         ASSERT(object);
-        ASSERT(type);
+        ASSERT(wrapperTypeInfo);
+#if ENABLE(OILPAN)
+        ASSERT(wrapperTypeInfo->gcType == RefCountedObject);
+#else
+        ASSERT(wrapperTypeInfo->gcType == RefCountedObject || wrapperTypeInfo->gcType == WillBeGarbageCollectedObject);
+#endif
         wrapper->SetAlignedPointerInInternalField(v8DOMWrapperObjectIndex, object);
-        wrapper->SetAlignedPointerInInternalField(v8DOMWrapperTypeIndex, const_cast<WrapperTypeInfo*>(type));
+        wrapper->SetAlignedPointerInInternalField(v8DOMWrapperTypeIndex, const_cast<WrapperTypeInfo*>(wrapperTypeInfo));
     }
 
-    inline void V8DOMWrapper::clearNativeInfo(v8::Handle<v8::Object> wrapper, const WrapperTypeInfo* type)
+    inline void V8DOMWrapper::setNativeInfoForHiddenWrapper(v8::Handle<v8::Object> wrapper, const WrapperTypeInfo* wrapperTypeInfo, void* object)
+    {
+        // see V8WindowShell::installDOMWindow() comment for why this version is needed and safe.
+        ASSERT(wrapper->InternalFieldCount() >= 2);
+        ASSERT(object);
+        ASSERT(wrapperTypeInfo);
+#if ENABLE(OILPAN)
+        ASSERT(wrapperTypeInfo->gcType != RefCountedObject);
+#else
+        ASSERT(wrapperTypeInfo->gcType == RefCountedObject || wrapperTypeInfo->gcType == WillBeGarbageCollectedObject);
+#endif
+
+        // Clear out the last internal field, which is assumed to contain a valid persistent pointer value.
+        if (wrapperTypeInfo->gcType == GarbageCollectedObject) {
+            wrapper->SetAlignedPointerInInternalField(wrapper->InternalFieldCount() - 1, 0);
+        } else if (wrapperTypeInfo->gcType == WillBeGarbageCollectedObject) {
+#if ENABLE(OILPAN)
+            wrapper->SetAlignedPointerInInternalField(wrapper->InternalFieldCount() - 1, 0);
+#endif
+        }
+        wrapper->SetAlignedPointerInInternalField(v8DOMWrapperObjectIndex, object);
+        wrapper->SetAlignedPointerInInternalField(v8DOMWrapperTypeIndex, const_cast<WrapperTypeInfo*>(wrapperTypeInfo));
+    }
+
+    inline void V8DOMWrapper::setNativeInfoWithPersistentHandle(v8::Handle<v8::Object> wrapper, const WrapperTypeInfo* wrapperTypeInfo, void* object, PersistentNode* handle)
+    {
+        ASSERT(wrapper->InternalFieldCount() >= 3);
+        ASSERT(object);
+        ASSERT(wrapperTypeInfo);
+        ASSERT(wrapperTypeInfo->gcType != RefCountedObject);
+        wrapper->SetAlignedPointerInInternalField(v8DOMWrapperObjectIndex, object);
+        wrapper->SetAlignedPointerInInternalField(v8DOMWrapperTypeIndex, const_cast<WrapperTypeInfo*>(wrapperTypeInfo));
+        // Persistent handle is stored in the last internal field.
+        wrapper->SetAlignedPointerInInternalField(wrapper->InternalFieldCount() - 1, handle);
+    }
+
+    inline void V8DOMWrapper::clearNativeInfo(v8::Handle<v8::Object> wrapper, const WrapperTypeInfo* wrapperTypeInfo)
     {
         ASSERT(wrapper->InternalFieldCount() >= 2);
-        ASSERT(type);
-        wrapper->SetAlignedPointerInInternalField(v8DOMWrapperTypeIndex, const_cast<WrapperTypeInfo*>(type));
+        ASSERT(wrapperTypeInfo);
+        // clearNativeInfo() is used only by NP objects, which are not garbage collected.
+        ASSERT(wrapperTypeInfo->gcType == RefCountedObject);
+        wrapper->SetAlignedPointerInInternalField(v8DOMWrapperTypeIndex, const_cast<WrapperTypeInfo*>(wrapperTypeInfo));
         wrapper->SetAlignedPointerInInternalField(v8DOMWrapperObjectIndex, 0);
     }
 
     template<typename V8T, typename T>
-    inline v8::Handle<v8::Object> V8DOMWrapper::associateObjectWithWrapper(PassRefPtr<T> object, const WrapperTypeInfo* type, v8::Handle<v8::Object> wrapper, v8::Isolate* isolate, WrapperConfiguration::Lifetime lifetime)
+    inline v8::Handle<v8::Object> V8DOMWrapper::associateObjectWithWrapper(PassRefPtr<T> object, const WrapperTypeInfo* wrapperTypeInfo, v8::Handle<v8::Object> wrapper, v8::Isolate* isolate, WrapperConfiguration::Lifetime lifetime)
     {
-        setNativeInfo(wrapper, type, V8T::toInternalPointer(object.get()));
-        ASSERT(maybeDOMWrapper(wrapper));
+        setNativeInfo(wrapper, wrapperTypeInfo, V8T::toInternalPointer(object.get()));
+        ASSERT(isDOMWrapper(wrapper));
         WrapperConfiguration configuration = buildWrapperConfiguration(object.get(), lifetime);
         DOMDataStore::setWrapper<V8T>(object.leakRef(), wrapper, isolate, configuration);
+        return wrapper;
+    }
+
+    template<typename V8T, typename T>
+    inline v8::Handle<v8::Object> V8DOMWrapper::associateObjectWithWrapper(T* object, const WrapperTypeInfo* wrapperTypeInfo, v8::Handle<v8::Object> wrapper, v8::Isolate* isolate, WrapperConfiguration::Lifetime lifetime)
+    {
+        setNativeInfoWithPersistentHandle(wrapper, wrapperTypeInfo, V8T::toInternalPointer(object), new Persistent<T>(object));
+        ASSERT(isDOMWrapper(wrapper));
+        WrapperConfiguration configuration = buildWrapperConfiguration(object, lifetime);
+        DOMDataStore::setWrapper<V8T>(object, wrapper, isolate, configuration);
         return wrapper;
     }
 
@@ -91,11 +148,10 @@ struct WrapperTypeInfo;
             : m_didEnterContext(false)
             , m_context(isolate->GetCurrentContext())
         {
-            // FIXME: Remove all empty creationContexts from caller sites.
-            // If a creationContext is empty, we will end up creating a new object
-            // in the context currently entered. This is wrong.
-            if (creationContext.IsEmpty())
-                return;
+            // creationContext should not be empty. Because if we have an
+            // empty creationContext, we will end up creating
+            // a new object in the context currently entered. This is wrong.
+            RELEASE_ASSERT(!creationContext.IsEmpty());
             v8::Handle<v8::Context> contextForWrapper = creationContext->CreationContext();
             // For performance, we enter the context only if the currently running context
             // is different from the context that we are about to enter.

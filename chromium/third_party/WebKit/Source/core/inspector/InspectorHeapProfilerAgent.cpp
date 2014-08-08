@@ -32,7 +32,6 @@
 #include "core/inspector/InspectorHeapProfilerAgent.h"
 
 #include "bindings/v8/ScriptProfiler.h"
-#include "bindings/v8/ScriptScope.h"
 #include "core/inspector/InjectedScript.h"
 #include "core/inspector/InjectedScriptHost.h"
 #include "core/inspector/InspectorState.h"
@@ -41,8 +40,12 @@
 
 namespace WebCore {
 
+typedef uint32_t SnapshotObjectId;
+
 namespace HeapProfilerAgentState {
 static const char heapProfilerEnabled[] = "heapProfilerEnabled";
+static const char heapObjectsTrackingEnabled[] = "heapObjectsTrackingEnabled";
+static const char allocationTrackingEnabled[] = "allocationTrackingEnabled";
 }
 
 class InspectorHeapProfilerAgent::HeapStatsUpdateTask {
@@ -57,13 +60,13 @@ private:
     Timer<HeapStatsUpdateTask> m_timer;
 };
 
-PassOwnPtr<InspectorHeapProfilerAgent> InspectorHeapProfilerAgent::create(InstrumentingAgents* instrumentingAgents, InspectorCompositeState* inspectorState, InjectedScriptManager* injectedScriptManager)
+PassOwnPtr<InspectorHeapProfilerAgent> InspectorHeapProfilerAgent::create(InjectedScriptManager* injectedScriptManager)
 {
-    return adoptPtr(new InspectorHeapProfilerAgent(instrumentingAgents, inspectorState, injectedScriptManager));
+    return adoptPtr(new InspectorHeapProfilerAgent(injectedScriptManager));
 }
 
-InspectorHeapProfilerAgent::InspectorHeapProfilerAgent(InstrumentingAgents* instrumentingAgents, InspectorCompositeState* inspectorState, InjectedScriptManager* injectedScriptManager)
-    : InspectorBaseAgent<InspectorHeapProfilerAgent>("HeapProfiler", instrumentingAgents, inspectorState)
+InspectorHeapProfilerAgent::InspectorHeapProfilerAgent(InjectedScriptManager* injectedScriptManager)
+    : InspectorBaseAgent<InspectorHeapProfilerAgent>("HeapProfiler")
     , m_injectedScriptManager(injectedScriptManager)
     , m_frontend(0)
     , m_nextUserInitiatedHeapSnapshotNumber(1)
@@ -74,25 +77,6 @@ InspectorHeapProfilerAgent::~InspectorHeapProfilerAgent()
 {
 }
 
-void InspectorHeapProfilerAgent::clearProfiles(ErrorString*)
-{
-    m_snapshots.clear();
-    m_nextUserInitiatedHeapSnapshotNumber = 1;
-    stopTrackingHeapObjectsInternal();
-    resetFrontendProfiles();
-    m_injectedScriptManager->injectedScriptHost()->clearInspectedObjects();
-}
-
-void InspectorHeapProfilerAgent::resetFrontendProfiles()
-{
-    if (!m_frontend)
-        return;
-    if (!m_state->getBoolean(HeapProfilerAgentState::heapProfilerEnabled))
-        return;
-    if (m_snapshots.isEmpty())
-        m_frontend->resetProfiles();
-}
-
 void InspectorHeapProfilerAgent::setFrontend(InspectorFrontend* frontend)
 {
     m_frontend = frontend->heapprofiler();
@@ -101,28 +85,26 @@ void InspectorHeapProfilerAgent::setFrontend(InspectorFrontend* frontend)
 void InspectorHeapProfilerAgent::clearFrontend()
 {
     m_frontend = 0;
+
+    m_nextUserInitiatedHeapSnapshotNumber = 1;
+    stopTrackingHeapObjectsInternal();
+    m_injectedScriptManager->injectedScriptHost()->clearInspectedObjects();
+
     ErrorString error;
-    clearProfiles(&error);
     disable(&error);
 }
 
 void InspectorHeapProfilerAgent::restore()
 {
-    resetFrontendProfiles();
+    if (m_state->getBoolean(HeapProfilerAgentState::heapProfilerEnabled))
+        m_frontend->resetProfiles();
+    if (m_state->getBoolean(HeapProfilerAgentState::heapObjectsTrackingEnabled))
+        startTrackingHeapObjectsInternal(m_state->getBoolean(HeapProfilerAgentState::allocationTrackingEnabled));
 }
 
 void InspectorHeapProfilerAgent::collectGarbage(WebCore::ErrorString*)
 {
     ScriptProfiler::collectGarbage();
-}
-
-PassRefPtr<TypeBuilder::HeapProfiler::ProfileHeader> InspectorHeapProfilerAgent::createSnapshotHeader(const ScriptHeapSnapshot& snapshot)
-{
-    RefPtr<TypeBuilder::HeapProfiler::ProfileHeader> header = TypeBuilder::HeapProfiler::ProfileHeader::create()
-        .setUid(snapshot.uid())
-        .setTitle(snapshot.title());
-    header->setMaxJSObjectId(snapshot.maxSnapshotJSObjectId());
-    return header.release();
 }
 
 InspectorHeapProfilerAgent::HeapStatsUpdateTask::HeapStatsUpdateTask(InspectorHeapProfilerAgent* heapProfilerAgent)
@@ -141,10 +123,10 @@ void InspectorHeapProfilerAgent::HeapStatsUpdateTask::onTimer(Timer<HeapStatsUpd
 void InspectorHeapProfilerAgent::HeapStatsUpdateTask::startTimer()
 {
     ASSERT(!m_timer.isActive());
-    m_timer.startRepeating(0.05);
+    m_timer.startRepeating(0.05, FROM_HERE);
 }
 
-class InspectorHeapProfilerAgent::HeapStatsStream : public ScriptProfiler::OutputStream {
+class InspectorHeapProfilerAgent::HeapStatsStream FINAL : public ScriptProfiler::OutputStream {
 public:
     HeapStatsStream(InspectorHeapProfilerAgent* heapProfilerAgent)
         : m_heapProfilerAgent(heapProfilerAgent)
@@ -161,13 +143,12 @@ private:
     InspectorHeapProfilerAgent* m_heapProfilerAgent;
 };
 
-void InspectorHeapProfilerAgent::startTrackingHeapObjects(ErrorString*)
+void InspectorHeapProfilerAgent::startTrackingHeapObjects(ErrorString*, const bool* trackAllocations)
 {
-    if (m_heapStatsUpdateTask)
-        return;
-    ScriptProfiler::startTrackingHeapObjects();
-    m_heapStatsUpdateTask = adoptPtr(new HeapStatsUpdateTask(this));
-    m_heapStatsUpdateTask->startTimer();
+    m_state->setBoolean(HeapProfilerAgentState::heapObjectsTrackingEnabled, true);
+    bool allocationTrackingEnabled = trackAllocations && *trackAllocations;
+    m_state->setBoolean(HeapProfilerAgentState::allocationTrackingEnabled, allocationTrackingEnabled);
+    startTrackingHeapObjectsInternal(allocationTrackingEnabled);
 }
 
 void InspectorHeapProfilerAgent::requestHeapStatsUpdate()
@@ -200,6 +181,15 @@ void InspectorHeapProfilerAgent::stopTrackingHeapObjects(ErrorString* error, con
     stopTrackingHeapObjectsInternal();
 }
 
+void InspectorHeapProfilerAgent::startTrackingHeapObjectsInternal(bool trackAllocations)
+{
+    if (m_heapStatsUpdateTask)
+        return;
+    ScriptProfiler::startTrackingHeapObjects(trackAllocations);
+    m_heapStatsUpdateTask = adoptPtr(new HeapStatsUpdateTask(this));
+    m_heapStatsUpdateTask->startTimer();
+}
+
 void InspectorHeapProfilerAgent::stopTrackingHeapObjectsInternal()
 {
     if (!m_heapStatsUpdateTask)
@@ -207,6 +197,8 @@ void InspectorHeapProfilerAgent::stopTrackingHeapObjectsInternal()
     ScriptProfiler::stopTrackingHeapObjects();
     m_heapStatsUpdateTask->resetTimer();
     m_heapStatsUpdateTask.clear();
+    m_state->setBoolean(HeapProfilerAgentState::heapObjectsTrackingEnabled, false);
+    m_state->setBoolean(HeapProfilerAgentState::allocationTrackingEnabled, false);
 }
 
 void InspectorHeapProfilerAgent::enable(ErrorString*)
@@ -217,59 +209,36 @@ void InspectorHeapProfilerAgent::enable(ErrorString*)
 void InspectorHeapProfilerAgent::disable(ErrorString* error)
 {
     stopTrackingHeapObjectsInternal();
+    ScriptProfiler::clearHeapObjectIds();
     m_state->setBoolean(HeapProfilerAgentState::heapProfilerEnabled, false);
 }
 
-void InspectorHeapProfilerAgent::getHeapSnapshot(ErrorString* errorString, int rawUid)
+void InspectorHeapProfilerAgent::takeHeapSnapshot(ErrorString* errorString, const bool* reportProgress)
 {
-    class OutputStream : public ScriptHeapSnapshot::OutputStream {
-    public:
-        OutputStream(InspectorFrontend::HeapProfiler* frontend, unsigned uid)
-            : m_frontend(frontend), m_uid(uid) { }
-        void Write(const String& chunk) { m_frontend->addHeapSnapshotChunk(m_uid, chunk); }
-        void Close() { }
-    private:
-        InspectorFrontend::HeapProfiler* m_frontend;
-        int m_uid;
-    };
-
-    unsigned uid = static_cast<unsigned>(rawUid);
-    IdToHeapSnapshotMap::iterator it = m_snapshots.find(uid);
-    if (it == m_snapshots.end()) {
-        *errorString = "Profile wasn't found";
-        return;
-    }
-    RefPtr<ScriptHeapSnapshot> snapshot = it->value;
-    if (m_frontend) {
-        OutputStream stream(m_frontend, uid);
-        snapshot->writeJSON(&stream);
-    }
-}
-
-void InspectorHeapProfilerAgent::removeProfile(ErrorString*, int rawUid)
-{
-    unsigned uid = static_cast<unsigned>(rawUid);
-    if (m_snapshots.contains(uid))
-        m_snapshots.remove(uid);
-}
-
-void InspectorHeapProfilerAgent::takeHeapSnapshot(ErrorString*, const bool* reportProgress)
-{
-    class HeapSnapshotProgress: public ScriptProfiler::HeapSnapshotProgress {
+    class HeapSnapshotProgress FINAL : public ScriptProfiler::HeapSnapshotProgress {
     public:
         explicit HeapSnapshotProgress(InspectorFrontend::HeapProfiler* frontend)
             : m_frontend(frontend) { }
-        void Start(int totalWork)
+        virtual void Start(int totalWork) OVERRIDE
         {
             m_totalWork = totalWork;
         }
-        void Worked(int workDone)
+        virtual void Worked(int workDone) OVERRIDE
         {
-            if (m_frontend)
-                m_frontend->reportHeapSnapshotProgress(workDone, m_totalWork);
+            if (m_frontend) {
+                m_frontend->reportHeapSnapshotProgress(workDone, m_totalWork, 0);
+                m_frontend->flush();
+            }
         }
-        void Done() { }
-        bool isCanceled() { return false; }
+        virtual void Done() OVERRIDE
+        {
+            const bool finished = true;
+            if (m_frontend) {
+                m_frontend->reportHeapSnapshotProgress(m_totalWork, m_totalWork, &finished);
+                m_frontend->flush();
+            }
+        }
+        virtual bool isCanceled() OVERRIDE { return false; }
     private:
         InspectorFrontend::HeapProfiler* m_frontend;
         int m_totalWork;
@@ -278,10 +247,28 @@ void InspectorHeapProfilerAgent::takeHeapSnapshot(ErrorString*, const bool* repo
     String title = "Snapshot " + String::number(m_nextUserInitiatedHeapSnapshotNumber++);
     HeapSnapshotProgress progress(reportProgress && *reportProgress ? m_frontend : 0);
     RefPtr<ScriptHeapSnapshot> snapshot = ScriptProfiler::takeHeapSnapshot(title, &progress);
-    if (snapshot) {
-        m_snapshots.add(snapshot->uid(), snapshot);
-        if (m_frontend)
-            m_frontend->addProfileHeader(createSnapshotHeader(*snapshot));
+    if (!snapshot) {
+        *errorString = "Failed to take heap snapshot";
+        return;
+    }
+
+    class OutputStream : public ScriptHeapSnapshot::OutputStream {
+    public:
+        explicit OutputStream(InspectorFrontend::HeapProfiler* frontend)
+            : m_frontend(frontend) { }
+        void Write(const String& chunk)
+        {
+            m_frontend->addHeapSnapshotChunk(chunk);
+            m_frontend->flush();
+        }
+        void Close() { }
+    private:
+        InspectorFrontend::HeapProfiler* m_frontend;
+    };
+
+    if (m_frontend) {
+        OutputStream stream(m_frontend);
+        snapshot->writeJSON(&stream);
     }
 }
 
@@ -293,13 +280,13 @@ void InspectorHeapProfilerAgent::getObjectByHeapObjectId(ErrorString* error, con
         *error = "Invalid heap snapshot object id";
         return;
     }
-    ScriptObject heapObject = ScriptProfiler::objectByHeapObjectId(id);
-    if (heapObject.hasNoValue()) {
+    ScriptValue heapObject = ScriptProfiler::objectByHeapObjectId(id);
+    if (heapObject.isEmpty()) {
         *error = "Object is not available";
         return;
     }
     InjectedScript injectedScript = m_injectedScriptManager->injectedScriptFor(heapObject.scriptState());
-    if (injectedScript.hasNoValue()) {
+    if (injectedScript.isEmpty()) {
         *error = "Object is not available. Inspected context is gone";
         return;
     }
@@ -311,13 +298,13 @@ void InspectorHeapProfilerAgent::getObjectByHeapObjectId(ErrorString* error, con
 void InspectorHeapProfilerAgent::getHeapObjectId(ErrorString* errorString, const String& objectId, String* heapSnapshotObjectId)
 {
     InjectedScript injectedScript = m_injectedScriptManager->injectedScriptForObjectId(objectId);
-    if (injectedScript.hasNoValue()) {
+    if (injectedScript.isEmpty()) {
         *errorString = "Inspected context has gone";
         return;
     }
     ScriptValue value = injectedScript.findObjectById(objectId);
-    ScriptScope scope(injectedScript.scriptState());
-    if (value.hasNoValue() || value.isUndefined()) {
+    ScriptState::Scope scope(injectedScript.scriptState());
+    if (value.isEmpty() || value.isUndefined()) {
         *errorString = "Object with given id not found";
         return;
     }

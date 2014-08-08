@@ -19,7 +19,7 @@ namespace internal {
 bool CopyFileUnsafe(const FilePath& from_path, const FilePath& to_path) {
   ThreadRestrictions::AssertIOAllowed();
   return (copyfile(from_path.value().c_str(),
-                   to_path.value().c_str(), NULL, COPYFILE_ALL) == 0);
+                   to_path.value().c_str(), NULL, COPYFILE_DATA) == 0);
 }
 
 }  // namespace internal
@@ -32,8 +32,21 @@ bool GetTempDir(base::FilePath* path) {
   return true;
 }
 
-bool GetShmemTempDir(bool executable, base::FilePath* path) {
-  return GetTempDir(path);
+FilePath GetHomeDir() {
+  NSString* tmp = NSHomeDirectory();
+  if (tmp != nil) {
+    FilePath mac_home_dir = base::mac::NSStringToFilePath(tmp);
+    if (!mac_home_dir.empty())
+      return mac_home_dir;
+  }
+
+  // Fall back on temp dir if no home directory is defined.
+  FilePath rv;
+  if (GetTempDir(&rv))
+    return rv;
+
+  // Last resort.
+  return FilePath("/tmp");
 }
 
 }  // namespace base

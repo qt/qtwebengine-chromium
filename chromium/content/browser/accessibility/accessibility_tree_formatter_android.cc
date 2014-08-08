@@ -14,7 +14,6 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "content/browser/accessibility/browser_accessibility_android.h"
-#include "content/common/accessibility_node_data.h"
 
 using base::StringPrintf;
 
@@ -68,7 +67,7 @@ void AccessibilityTreeFormatter::Initialize() {
 }
 
 void AccessibilityTreeFormatter::AddProperties(
-    const BrowserAccessibility& node, DictionaryValue* dict) {
+    const BrowserAccessibility& node, base::DictionaryValue* dict) {
   const BrowserAccessibilityAndroid* android_node =
       static_cast<const BrowserAccessibilityAndroid*>(&node);
 
@@ -116,13 +115,13 @@ void AccessibilityTreeFormatter::AddProperties(
 }
 
 base::string16 AccessibilityTreeFormatter::ToString(
-    const DictionaryValue& dict,
+    const base::DictionaryValue& dict,
     const base::string16& indent) {
   base::string16 line;
 
   base::string16 class_value;
   dict.GetString("class", &class_value);
-  WriteAttribute(true, UTF16ToUTF8(class_value), &line);
+  WriteAttribute(true, base::UTF16ToUTF8(class_value), &line);
 
   for (unsigned i = 0; i < arraysize(BOOL_ATTRIBUTES); i++) {
     const char* attribute_name = BOOL_ATTRIBUTES[i];
@@ -151,7 +150,7 @@ base::string16 AccessibilityTreeFormatter::ToString(
                    &line);
   }
 
-  return indent + line + ASCIIToUTF16("\n");
+  return indent + line + base::ASCIIToUTF16("\n");
 }
 
 // static

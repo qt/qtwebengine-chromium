@@ -51,14 +51,6 @@ class NET_EXPORT NetworkDelegate : public base::NonThreadSafe {
   };
   typedef base::Callback<void(AuthRequiredResponse)> AuthCallback;
 
-  enum RequestWaitState {
-    REQUEST_WAIT_STATE_CACHE_START,
-    REQUEST_WAIT_STATE_CACHE_FINISH,
-    REQUEST_WAIT_STATE_NETWORK_START,
-    REQUEST_WAIT_STATE_NETWORK_FINISH,
-    REQUEST_WAIT_STATE_RESET
-  };
-
   virtual ~NetworkDelegate() {}
 
   // Notification interface called by the network stack. Note that these
@@ -77,7 +69,8 @@ class NET_EXPORT NetworkDelegate : public base::NonThreadSafe {
       URLRequest* request,
       const CompletionCallback& callback,
       const HttpResponseHeaders* original_response_headers,
-      scoped_refptr<HttpResponseHeaders>* override_response_headers);
+      scoped_refptr<HttpResponseHeaders>* override_response_headers,
+      GURL* allowed_unsafe_redirect_url);
   void NotifyBeforeRedirect(URLRequest* request,
                             const GURL& new_location);
   void NotifyResponseStarted(URLRequest* request);
@@ -103,21 +96,21 @@ class NET_EXPORT NetworkDelegate : public base::NonThreadSafe {
   int NotifyBeforeSocketStreamConnect(SocketStream* socket,
                                       const CompletionCallback& callback);
 
-  void NotifyRequestWaitStateChange(const URLRequest& request,
-                                    RequestWaitState state);
-
  private:
   // This is the interface for subclasses of NetworkDelegate to implement. These
   // member functions will be called by the respective public notification
   // member function, which will perform basic sanity checking.
 
   // Called before a request is sent. Allows the delegate to rewrite the URL
-  // being fetched by modifying |new_url|. |callback| and |new_url| are valid
-  // only until OnURLRequestDestroyed is called for this request. Returns a net
-  // status code, generally either OK to continue with the request or
-  // ERR_IO_PENDING if the result is not ready yet. A status code other than OK
-  // and ERR_IO_PENDING will cancel the request and report the status code as
-  // the reason.
+  // being fetched by modifying |new_url|. If set, the URL must be valid. The
+  // reference fragment from the original URL is not automatically appended to
+  // |new_url|; callers are responsible for copying the reference fragment if
+  // desired.
+  // |callback| and |new_url| are valid only until OnURLRequestDestroyed is
+  // called for this request. Returns a net status code, generally either OK to
+  // continue with the request or ERR_IO_PENDING if the result is not ready yet.
+  // A status code other than OK and ERR_IO_PENDING will cancel the request and
+  // report the status code as the reason.
   //
   // The default implementation returns OK (continue with request).
   virtual int OnBeforeURLRequest(URLRequest* request,
@@ -144,6 +137,11 @@ class NET_EXPORT NetworkDelegate : public base::NonThreadSafe {
   // network, these must not be modified. |override_response_headers| can be set
   // to new values, that should be considered as overriding
   // |original_response_headers|.
+  // If the response is a redirect, and the Location response header value is
+  // identical to |allowed_unsafe_redirect_url|, then the redirect is never
+  // blocked and the reference fragment is not copied from the original URL
+  // to the redirection target.
+  //
   // |callback|, |original_response_headers|, and |override_response_headers|
   // are only valid until OnURLRequestDestroyed is called for this request.
   // See OnBeforeURLRequest for return value description. Returns OK by default.
@@ -151,7 +149,8 @@ class NET_EXPORT NetworkDelegate : public base::NonThreadSafe {
       URLRequest* request,
       const CompletionCallback& callback,
       const HttpResponseHeaders* original_response_headers,
-      scoped_refptr<HttpResponseHeaders>* override_response_headers);
+      scoped_refptr<HttpResponseHeaders>* override_response_headers,
+      GURL* allowed_unsafe_redirect_url);
 
   // Called right after a redirect response code was received.
   // |new_location| is only valid until OnURLRequestDestroyed is called for this
@@ -237,13 +236,6 @@ class NET_EXPORT NetworkDelegate : public base::NonThreadSafe {
   // See OnBeforeURLRequest for return value description. Returns OK by default.
   virtual int OnBeforeSocketStreamConnect(
       SocketStream* socket, const CompletionCallback& callback);
-
-  // Called when the completion of a URLRequest is blocking on a cache
-  // action or a network action, or when that is no longer the case.
-  // REQUEST_WAIT_STATE_RESET indicates for a given URLRequest
-  // cancellation of any pending waits for this request.
-  virtual void OnRequestWaitStateChange(const URLRequest& request,
-                                        RequestWaitState state);
 };
 
 }  // namespace net

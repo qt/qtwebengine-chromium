@@ -4,14 +4,18 @@
 
 #include "google_apis/gcm/engine/mcs_client.h"
 
+#include "base/command_line.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "base/strings/string_number_conversions.h"
-#include "components/webdata/encryptor/encryptor.h"
+#include "base/test/simple_test_clock.h"
+#include "google_apis/gcm/base/fake_encryptor.h"
 #include "google_apis/gcm/base/mcs_util.h"
 #include "google_apis/gcm/engine/fake_connection_factory.h"
 #include "google_apis/gcm/engine/fake_connection_handler.h"
+#include "google_apis/gcm/engine/gcm_store_impl.h"
+#include "google_apis/gcm/monitoring/fake_gcm_stats_recorder.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace gcm {
@@ -30,27 +34,43 @@ const int kMessageBatchSize = 6;
 // TODO(zea): get this (and other constants) directly from the mcs client.
 const int kAckLimitSize = 10;
 
+// TTL value for reliable messages.
+const int kTTLValue = 5 * 60;  // 5 minutes.
+
 // Helper for building arbitrary data messages.
 MCSMessage BuildDataMessage(const std::string& from,
                             const std::string& category,
+                            const std::string& message_id,
                             int last_stream_id_received,
-                            const std::string persistent_id) {
+                            const std::string& persistent_id,
+                            int ttl,
+                            uint64 sent,
+                            int queued,
+                            const std::string& token,
+                            const uint64& user_id) {
   mcs_proto::DataMessageStanza data_message;
+  data_message.set_id(message_id);
   data_message.set_from(from);
   data_message.set_category(category);
   data_message.set_last_stream_id_received(last_stream_id_received);
   if (!persistent_id.empty())
     data_message.set_persistent_id(persistent_id);
+  data_message.set_ttl(ttl);
+  data_message.set_sent(sent);
+  data_message.set_queued(queued);
+  data_message.set_token(token);
+  data_message.set_device_user_id(user_id);
   return MCSMessage(kDataMessageStanzaTag, data_message);
 }
 
 // MCSClient with overriden exposed persistent id logic.
 class TestMCSClient : public MCSClient {
  public:
-  TestMCSClient(const base::FilePath& rmq_path,
+  TestMCSClient(base::Clock* clock,
                 ConnectionFactory* connection_factory,
-                scoped_refptr<base::SequencedTaskRunner> blocking_task_runner)
-    : MCSClient(rmq_path, connection_factory, blocking_task_runner),
+                GCMStore* gcm_store,
+                gcm::GCMStatsRecorder* recorder)
+    : MCSClient("", clock, connection_factory, gcm_store, recorder),
       next_id_(0) {
   }
 
@@ -67,10 +87,14 @@ class MCSClientTest : public testing::Test {
   MCSClientTest();
   virtual ~MCSClientTest();
 
+  virtual void SetUp() OVERRIDE;
+
   void BuildMCSClient();
   void InitializeClient();
+  void StoreCredentials();
   void LoginClient(const std::vector<std::string>& acknowledged_ids);
 
+  base::SimpleTestClock* clock() { return &clock_; }
   TestMCSClient* mcs_client() const { return mcs_client_.get(); }
   FakeConnectionFactory* connection_factory() {
     return &connection_factory_;
@@ -80,6 +104,11 @@ class MCSClientTest : public testing::Test {
   uint64 restored_security_token() const { return restored_security_token_; }
   MCSMessage* received_message() const { return received_message_.get(); }
   std::string sent_message_id() const { return sent_message_id_;}
+  MCSClient::MessageSendStatus message_send_status() const {
+    return message_send_status_;
+  }
+
+  void SetDeviceCredentialsCallback(bool success);
 
   FakeConnectionHandler* GetFakeHandler() const;
 
@@ -87,15 +116,19 @@ class MCSClientTest : public testing::Test {
   void PumpLoop();
 
  private:
-  void InitializationCallback(bool success,
-                              uint64 restored_android_id,
-                              uint64 restored_security_token);
+  void ErrorCallback();
   void MessageReceivedCallback(const MCSMessage& message);
-  void MessageSentCallback(const std::string& message_id);
+  void MessageSentCallback(int64 user_serial_number,
+                           const std::string& app_id,
+                           const std::string& message_id,
+                           MCSClient::MessageSendStatus status);
+
+  base::SimpleTestClock clock_;
 
   base::ScopedTempDir temp_directory_;
   base::MessageLoop message_loop_;
   scoped_ptr<base::RunLoop> run_loop_;
+  scoped_ptr<GCMStore> gcm_store_;
 
   FakeConnectionFactory connection_factory_;
   scoped_ptr<TestMCSClient> mcs_client_;
@@ -104,52 +137,73 @@ class MCSClientTest : public testing::Test {
   uint64 restored_security_token_;
   scoped_ptr<MCSMessage> received_message_;
   std::string sent_message_id_;
+  MCSClient::MessageSendStatus message_send_status_;
+
+  gcm::FakeGCMStatsRecorder recorder_;
 };
 
 MCSClientTest::MCSClientTest()
     : run_loop_(new base::RunLoop()),
-      init_success_(false),
+      init_success_(true),
       restored_android_id_(0),
-      restored_security_token_(0) {
+      restored_security_token_(0),
+      message_send_status_(MCSClient::SENT) {
   EXPECT_TRUE(temp_directory_.CreateUniqueTempDir());
   run_loop_.reset(new base::RunLoop());
 
-  // On OSX, prevent the Keychain permissions popup during unit tests.
-#if defined(OS_MACOSX)
-    Encryptor::UseMockKeychain(true);
-#endif
+  // Advance the clock to a non-zero time.
+  clock_.Advance(base::TimeDelta::FromSeconds(1));
 }
 
 MCSClientTest::~MCSClientTest() {}
 
+void MCSClientTest::SetUp() {
+  testing::Test::SetUp();
+}
+
 void MCSClientTest::BuildMCSClient() {
-  mcs_client_.reset(
-      new TestMCSClient(temp_directory_.path(),
-                        &connection_factory_,
-                        message_loop_.message_loop_proxy()));
+  gcm_store_.reset(new GCMStoreImpl(
+      temp_directory_.path(),
+      message_loop_.message_loop_proxy(),
+      make_scoped_ptr<Encryptor>(new FakeEncryptor)));
+  mcs_client_.reset(new TestMCSClient(&clock_,
+                                      &connection_factory_,
+                                      gcm_store_.get(),
+                                      &recorder_));
 }
 
 void MCSClientTest::InitializeClient() {
-  mcs_client_->Initialize(base::Bind(&MCSClientTest::InitializationCallback,
-                                     base::Unretained(this)),
-                          base::Bind(&MCSClientTest::MessageReceivedCallback,
-                                     base::Unretained(this)),
-                          base::Bind(&MCSClientTest::MessageSentCallback,
-                                     base::Unretained(this)));
-  run_loop_->Run();
+  gcm_store_->Load(base::Bind(
+      &MCSClient::Initialize,
+      base::Unretained(mcs_client_.get()),
+      base::Bind(&MCSClientTest::ErrorCallback,
+                 base::Unretained(this)),
+      base::Bind(&MCSClientTest::MessageReceivedCallback,
+                 base::Unretained(this)),
+      base::Bind(&MCSClientTest::MessageSentCallback, base::Unretained(this))));
+  run_loop_->RunUntilIdle();
   run_loop_.reset(new base::RunLoop());
 }
 
 void MCSClientTest::LoginClient(
     const std::vector<std::string>& acknowledged_ids) {
   scoped_ptr<mcs_proto::LoginRequest> login_request =
-      BuildLoginRequest(kAndroidId, kSecurityToken);
+      BuildLoginRequest(kAndroidId, kSecurityToken, "");
   for (size_t i = 0; i < acknowledged_ids.size(); ++i)
     login_request->add_received_persistent_id(acknowledged_ids[i]);
   GetFakeHandler()->ExpectOutgoingMessage(
       MCSMessage(kLoginRequestTag,
                  login_request.PassAs<const google::protobuf::MessageLite>()));
   mcs_client_->Login(kAndroidId, kSecurityToken);
+  run_loop_->Run();
+  run_loop_.reset(new base::RunLoop());
+}
+
+void MCSClientTest::StoreCredentials() {
+  gcm_store_->SetDeviceCredentials(
+      kAndroidId, kSecurityToken,
+      base::Bind(&MCSClientTest::SetDeviceCredentialsCallback,
+                 base::Unretained(this)));
   run_loop_->Run();
   run_loop_.reset(new base::RunLoop());
 }
@@ -169,13 +223,9 @@ void MCSClientTest::PumpLoop() {
   run_loop_.reset(new base::RunLoop());
 }
 
-void MCSClientTest::InitializationCallback(bool success,
-                                           uint64 restored_android_id,
-                                           uint64 restored_security_token) {
-  init_success_ = success;
-  restored_android_id_ = restored_android_id;
-  restored_security_token_ = restored_security_token;
-  DVLOG(1) << "Initialization callback invoked, killing loop.";
+void MCSClientTest::ErrorCallback() {
+  init_success_ = false;
+  DVLOG(1) << "Error callback invoked, killing loop.";
   run_loop_->Quit();
 }
 
@@ -185,8 +235,18 @@ void MCSClientTest::MessageReceivedCallback(const MCSMessage& message) {
   run_loop_->Quit();
 }
 
-void MCSClientTest::MessageSentCallback(const std::string& message_id) {
+void MCSClientTest::MessageSentCallback(int64 user_serial_number,
+                                        const std::string& app_id,
+                                        const std::string& message_id,
+                                        MCSClient::MessageSendStatus status) {
   DVLOG(1) << "Message sent callback invoked, killing loop.";
+  sent_message_id_ = message_id;
+  message_send_status_ = status;
+  run_loop_->Quit();
+}
+
+void MCSClientTest::SetDeviceCredentialsCallback(bool success) {
+  ASSERT_TRUE(success);
   run_loop_->Quit();
 }
 
@@ -194,8 +254,6 @@ void MCSClientTest::MessageSentCallback(const std::string& message_id) {
 TEST_F(MCSClientTest, InitializeNew) {
   BuildMCSClient();
   InitializeClient();
-  EXPECT_EQ(0U, restored_android_id());
-  EXPECT_EQ(0U, restored_security_token());
   EXPECT_TRUE(init_success());
 }
 
@@ -206,11 +264,10 @@ TEST_F(MCSClientTest, InitializeExisting) {
   InitializeClient();
   LoginClient(std::vector<std::string>());
 
-  // Rebuild the client, to reload from the RMQ.
+  // Rebuild the client, to reload from the GCM store.
+  StoreCredentials();
   BuildMCSClient();
   InitializeClient();
-  EXPECT_EQ(kAndroidId, restored_android_id());
-  EXPECT_EQ(kSecurityToken, restored_security_token());
   EXPECT_TRUE(init_success());
 }
 
@@ -225,15 +282,18 @@ TEST_F(MCSClientTest, LoginSuccess) {
   EXPECT_EQ(kLoginResponseTag, received_message()->tag());
 }
 
-// Encounter a server error during the login attempt.
+// Encounter a server error during the login attempt. Should trigger a
+// reconnect.
 TEST_F(MCSClientTest, FailLogin) {
   BuildMCSClient();
   InitializeClient();
   GetFakeHandler()->set_fail_login(true);
+  connection_factory()->set_delay_reconnect(true);
   LoginClient(std::vector<std::string>());
   EXPECT_FALSE(connection_factory()->IsEndpointReachable());
   EXPECT_FALSE(init_success());
   EXPECT_FALSE(received_message());
+  EXPECT_TRUE(connection_factory()->reconnect_pending());
 }
 
 // Send a message without RMQ support.
@@ -241,11 +301,29 @@ TEST_F(MCSClientTest, SendMessageNoRMQ) {
   BuildMCSClient();
   InitializeClient();
   LoginClient(std::vector<std::string>());
-  MCSMessage message(BuildDataMessage("from", "category", 1, ""));
+  MCSMessage message(
+      BuildDataMessage("from", "category", "X", 1, "", 0, 1, 0, "", 0));
   GetFakeHandler()->ExpectOutgoingMessage(message);
-  mcs_client()->SendMessage(message, false);
-  EXPECT_TRUE(GetFakeHandler()->
-                  AllOutgoingMessagesReceived());
+  mcs_client()->SendMessage(message);
+  EXPECT_TRUE(GetFakeHandler()->AllOutgoingMessagesReceived());
+}
+
+// Send a message without RMQ support while disconnected. Message send should
+// fail immediately, invoking callback.
+TEST_F(MCSClientTest, SendMessageNoRMQWhileDisconnected) {
+  BuildMCSClient();
+  InitializeClient();
+
+  EXPECT_TRUE(sent_message_id().empty());
+  MCSMessage message(
+      BuildDataMessage("from", "category", "X", 1, "", 0, 1, 0, "", 0));
+  mcs_client()->SendMessage(message);
+
+  // Message sent callback should be invoked, but no message should actually
+  // be sent.
+  EXPECT_EQ("X", sent_message_id());
+  EXPECT_EQ(MCSClient::NO_CONNECTION_ON_ZERO_TTL, message_send_status());
+  EXPECT_TRUE(GetFakeHandler()->AllOutgoingMessagesReceived());
 }
 
 // Send a message with RMQ support.
@@ -253,11 +331,11 @@ TEST_F(MCSClientTest, SendMessageRMQ) {
   BuildMCSClient();
   InitializeClient();
   LoginClient(std::vector<std::string>());
-  MCSMessage message(BuildDataMessage("from", "category", 1, "1"));
+  MCSMessage message(BuildDataMessage(
+      "from", "category", "X", 1, "1", kTTLValue, 1, 0, "", 0));
   GetFakeHandler()->ExpectOutgoingMessage(message);
-  mcs_client()->SendMessage(message, true);
-  EXPECT_TRUE(GetFakeHandler()->
-                  AllOutgoingMessagesReceived());
+  mcs_client()->SendMessage(message);
+  EXPECT_TRUE(GetFakeHandler()->AllOutgoingMessagesReceived());
 }
 
 // Send a message with RMQ support while disconnected. On reconnect, the message
@@ -267,26 +345,31 @@ TEST_F(MCSClientTest, SendMessageRMQWhileDisconnected) {
   InitializeClient();
   LoginClient(std::vector<std::string>());
   GetFakeHandler()->set_fail_send(true);
-  MCSMessage message(BuildDataMessage("from", "category", 1, "1"));
+  MCSMessage message(BuildDataMessage(
+      "from", "category", "X", 1, "1", kTTLValue, 1, 0, "", 0));
 
   // The initial (failed) send.
   GetFakeHandler()->ExpectOutgoingMessage(message);
   // The login request.
   GetFakeHandler()->ExpectOutgoingMessage(
-      MCSMessage(kLoginRequestTag,
-                 BuildLoginRequest(kAndroidId, kSecurityToken).
-                     PassAs<const google::protobuf::MessageLite>()));
+      MCSMessage(
+          kLoginRequestTag,
+          BuildLoginRequest(kAndroidId, kSecurityToken, "").
+              PassAs<const google::protobuf::MessageLite>()));
   // The second (re)send.
-  GetFakeHandler()->ExpectOutgoingMessage(message);
-  mcs_client()->SendMessage(message, true);
-  EXPECT_FALSE(GetFakeHandler()->
-                  AllOutgoingMessagesReceived());
+  MCSMessage message2(BuildDataMessage(
+      "from", "category", "X", 1, "1", kTTLValue, 1, kTTLValue - 1, "", 0));
+  GetFakeHandler()->ExpectOutgoingMessage(message2);
+  mcs_client()->SendMessage(message);
+  PumpLoop();         // Wait for the queuing to happen.
+  EXPECT_EQ(MCSClient::QUEUED, message_send_status());
+  EXPECT_FALSE(GetFakeHandler()->AllOutgoingMessagesReceived());
   GetFakeHandler()->set_fail_send(false);
+  clock()->Advance(base::TimeDelta::FromSeconds(kTTLValue - 1));
   connection_factory()->Connect();
   WaitForMCSEvent();  // Wait for the login to finish.
   PumpLoop();         // Wait for the send to happen.
-  EXPECT_TRUE(GetFakeHandler()->
-                  AllOutgoingMessagesReceived());
+  EXPECT_TRUE(GetFakeHandler()->AllOutgoingMessagesReceived());
 }
 
 // Send a message with RMQ support without receiving an acknowledgement. On
@@ -296,23 +379,28 @@ TEST_F(MCSClientTest, SendMessageRMQOnRestart) {
   InitializeClient();
   LoginClient(std::vector<std::string>());
   GetFakeHandler()->set_fail_send(true);
-  MCSMessage message(BuildDataMessage("from", "category", 1, "1"));
+  MCSMessage message(BuildDataMessage(
+      "from", "category", "X", 1, "1", kTTLValue, 1, 0, "", 0));
 
   // The initial (failed) send.
   GetFakeHandler()->ExpectOutgoingMessage(message);
   GetFakeHandler()->set_fail_send(false);
-  mcs_client()->SendMessage(message, true);
-  EXPECT_TRUE(GetFakeHandler()->
-                  AllOutgoingMessagesReceived());
+  mcs_client()->SendMessage(message);
+  PumpLoop();
+  EXPECT_TRUE(GetFakeHandler()->AllOutgoingMessagesReceived());
 
   // Rebuild the client, which should resend the old message.
+  StoreCredentials();
   BuildMCSClient();
   InitializeClient();
+
+  clock()->Advance(base::TimeDelta::FromSeconds(kTTLValue - 1));
+  MCSMessage message2(BuildDataMessage(
+      "from", "category", "X", 1, "1", kTTLValue, 1, kTTLValue - 1, "", 0));
   LoginClient(std::vector<std::string>());
-  GetFakeHandler()->ExpectOutgoingMessage(message);
+  GetFakeHandler()->ExpectOutgoingMessage(message2);
   PumpLoop();
-  EXPECT_TRUE(GetFakeHandler()->
-                  AllOutgoingMessagesReceived());
+  EXPECT_TRUE(GetFakeHandler()->AllOutgoingMessagesReceived());
 }
 
 // Send messages with RMQ support, followed by receiving a stream ack. On
@@ -324,13 +412,21 @@ TEST_F(MCSClientTest, SendMessageRMQWithStreamAck) {
 
   // Send some messages.
   for (int i = 1; i <= kMessageBatchSize; ++i) {
-    MCSMessage message(
-        BuildDataMessage("from", "category", 1, base::IntToString(i)));
+    MCSMessage message(BuildDataMessage("from",
+                                        "category",
+                                        "X",
+                                        1,
+                                        base::IntToString(i),
+                                        kTTLValue,
+                                        1,
+                                        0,
+                                        "",
+                                        0));
     GetFakeHandler()->ExpectOutgoingMessage(message);
-    mcs_client()->SendMessage(message, true);
+    mcs_client()->SendMessage(message);
+    PumpLoop();
   }
-  EXPECT_TRUE(GetFakeHandler()->
-                  AllOutgoingMessagesReceived());
+  EXPECT_TRUE(GetFakeHandler()->AllOutgoingMessagesReceived());
 
   // Receive the ack.
   scoped_ptr<mcs_proto::IqStanza> ack = BuildStreamAck();
@@ -341,6 +437,7 @@ TEST_F(MCSClientTest, SendMessageRMQWithStreamAck) {
   WaitForMCSEvent();
 
   // Reconnect and ensure no messages are resent.
+  StoreCredentials();
   BuildMCSClient();
   InitializeClient();
   LoginClient(std::vector<std::string>());
@@ -358,16 +455,25 @@ TEST_F(MCSClientTest, SendMessageRMQAckOnReconnect) {
   std::vector<std::string> id_list;
   for (int i = 1; i <= kMessageBatchSize; ++i) {
     id_list.push_back(base::IntToString(i));
-    MCSMessage message(
-        BuildDataMessage("from", "category", 1, id_list.back()));
+    MCSMessage message(BuildDataMessage("from",
+                                        "category",
+                                        id_list.back(),
+                                        1,
+                                        id_list.back(),
+                                        kTTLValue,
+                                        1,
+                                        0,
+                                        "",
+                                        0));
     GetFakeHandler()->ExpectOutgoingMessage(message);
-    mcs_client()->SendMessage(message, true);
+    mcs_client()->SendMessage(message);
+    PumpLoop();
   }
-  EXPECT_TRUE(GetFakeHandler()->
-                  AllOutgoingMessagesReceived());
+  EXPECT_TRUE(GetFakeHandler()->AllOutgoingMessagesReceived());
 
   // Rebuild the client, and receive an acknowledgment for the messages as
   // part of the login response.
+  StoreCredentials();
   BuildMCSClient();
   InitializeClient();
   LoginClient(std::vector<std::string>());
@@ -375,9 +481,7 @@ TEST_F(MCSClientTest, SendMessageRMQAckOnReconnect) {
   GetFakeHandler()->ReceiveMessage(
       MCSMessage(kIqStanzaTag,
                  ack.PassAs<const google::protobuf::MessageLite>()));
-  WaitForMCSEvent();
-  EXPECT_TRUE(GetFakeHandler()->
-                  AllOutgoingMessagesReceived());
+  EXPECT_TRUE(GetFakeHandler()->AllOutgoingMessagesReceived());
 }
 
 // Send messages with RMQ support. On restart, receive a SelectiveAck with
@@ -392,16 +496,25 @@ TEST_F(MCSClientTest, SendMessageRMQPartialAckOnReconnect) {
   std::vector<std::string> id_list;
   for (int i = 1; i <= kMessageBatchSize; ++i) {
     id_list.push_back(base::IntToString(i));
-    MCSMessage message(
-        BuildDataMessage("from", "category", 1, id_list.back()));
+    MCSMessage message(BuildDataMessage("from",
+                                        "category",
+                                        id_list.back(),
+                                        1,
+                                        id_list.back(),
+                                        kTTLValue,
+                                        1,
+                                        0,
+                                        "",
+                                        0));
     GetFakeHandler()->ExpectOutgoingMessage(message);
-    mcs_client()->SendMessage(message, true);
+    mcs_client()->SendMessage(message);
+    PumpLoop();
   }
-  EXPECT_TRUE(GetFakeHandler()->
-                  AllOutgoingMessagesReceived());
+  EXPECT_TRUE(GetFakeHandler()->AllOutgoingMessagesReceived());
 
   // Rebuild the client, and receive an acknowledgment for the messages as
   // part of the login response.
+  StoreCredentials();
   BuildMCSClient();
   InitializeClient();
   LoginClient(std::vector<std::string>());
@@ -414,11 +527,16 @@ TEST_F(MCSClientTest, SendMessageRMQPartialAckOnReconnect) {
                        id_list.begin() + kMessageBatchSize / 2,
                        id_list.end());
   for (int i = 1; i <= kMessageBatchSize / 2; ++i) {
-    MCSMessage message(
-        BuildDataMessage("from",
-                         "category",
-                         2,
-                         remaining_ids[i - 1]));
+    MCSMessage message(BuildDataMessage("from",
+                                        "category",
+                                        remaining_ids[i - 1],
+                                        2,
+                                        remaining_ids[i - 1],
+                                        kTTLValue,
+                                        1,
+                                        0,
+                                        "",
+                                        0));
     GetFakeHandler()->ExpectOutgoingMessage(message);
   }
   scoped_ptr<mcs_proto::IqStanza> ack(BuildSelectiveAck(acked_ids));
@@ -426,8 +544,8 @@ TEST_F(MCSClientTest, SendMessageRMQPartialAckOnReconnect) {
       MCSMessage(kIqStanzaTag,
                  ack.PassAs<const google::protobuf::MessageLite>()));
   WaitForMCSEvent();
-  EXPECT_TRUE(GetFakeHandler()->
-                  AllOutgoingMessagesReceived());
+  PumpLoop();
+  EXPECT_TRUE(GetFakeHandler()->AllOutgoingMessagesReceived());
 }
 
 // Receive some messages. On restart, the login request should contain the
@@ -441,14 +559,15 @@ TEST_F(MCSClientTest, AckOnLogin) {
   std::vector<std::string> id_list;
   for (int i = 1; i <= kMessageBatchSize; ++i) {
     id_list.push_back(base::IntToString(i));
-    MCSMessage message(
-        BuildDataMessage("from", "category", i, id_list.back()));
+    MCSMessage message(BuildDataMessage(
+        "from", "category", "X", 1, id_list.back(), kTTLValue, 1, 0, "", 0));
     GetFakeHandler()->ReceiveMessage(message);
     WaitForMCSEvent();
     PumpLoop();
   }
 
   // Restart the client.
+  StoreCredentials();
   BuildMCSClient();
   InitializeClient();
   LoginClient(id_list);
@@ -465,20 +584,34 @@ TEST_F(MCSClientTest, AckOnSend) {
   std::vector<std::string> id_list;
   for (int i = 1; i <= kMessageBatchSize; ++i) {
     id_list.push_back(base::IntToString(i));
-    MCSMessage message(
-        BuildDataMessage("from", "category", i, id_list.back()));
+    MCSMessage message(BuildDataMessage("from",
+                                        "category",
+                                        id_list.back(),
+                                        1,
+                                        id_list.back(),
+                                        kTTLValue,
+                                        1,
+                                        0,
+                                        "",
+                                        0));
     GetFakeHandler()->ReceiveMessage(message);
-    WaitForMCSEvent();
     PumpLoop();
   }
 
   // Trigger a message send, which should acknowledge via stream ack.
-  MCSMessage message(
-      BuildDataMessage("from", "category", kMessageBatchSize + 1, "1"));
+  MCSMessage message(BuildDataMessage("from",
+                                      "category",
+                                      "X",
+                                      kMessageBatchSize + 1,
+                                      "1",
+                                      kTTLValue,
+                                      1,
+                                      0,
+                                      "",
+                                      0));
   GetFakeHandler()->ExpectOutgoingMessage(message);
-  mcs_client()->SendMessage(message, true);
-  EXPECT_TRUE(GetFakeHandler()->
-                  AllOutgoingMessagesReceived());
+  mcs_client()->SendMessage(message);
+  EXPECT_TRUE(GetFakeHandler()->AllOutgoingMessagesReceived());
 }
 
 // Receive the ack limit in messages, which should trigger an automatic
@@ -499,14 +632,21 @@ TEST_F(MCSClientTest, AckWhenLimitReachedWithHeartbeat) {
   std::vector<std::string> id_list;
   for (int i = 1; i <= kAckLimitSize; ++i) {
     id_list.push_back(base::IntToString(i));
-    MCSMessage message(
-        BuildDataMessage("from", "category", i, id_list.back()));
+    MCSMessage message(BuildDataMessage("from",
+                                        "category",
+                                        id_list.back(),
+                                        1,
+                                        id_list.back(),
+                                        kTTLValue,
+                                        1,
+                                        0,
+                                        "",
+                                        0));
     GetFakeHandler()->ReceiveMessage(message);
     WaitForMCSEvent();
     PumpLoop();
   }
-  EXPECT_TRUE(GetFakeHandler()->
-                  AllOutgoingMessagesReceived());
+  EXPECT_TRUE(GetFakeHandler()->AllOutgoingMessagesReceived());
 
   // Receive a heartbeat confirming the ack (and receive the heartbeat ack).
   scoped_ptr<mcs_proto::HeartbeatPing> heartbeat(
@@ -523,16 +663,135 @@ TEST_F(MCSClientTest, AckWhenLimitReachedWithHeartbeat) {
   GetFakeHandler()->ReceiveMessage(
       MCSMessage(kHeartbeatPingTag,
                  heartbeat.PassAs<const google::protobuf::MessageLite>()));
-  WaitForMCSEvent();
-  EXPECT_TRUE(GetFakeHandler()->
-                  AllOutgoingMessagesReceived());
+  PumpLoop();
+  EXPECT_TRUE(GetFakeHandler()->AllOutgoingMessagesReceived());
 
   // Rebuild the client. Nothing should be sent on login.
+  StoreCredentials();
   BuildMCSClient();
   InitializeClient();
   LoginClient(std::vector<std::string>());
-  EXPECT_TRUE(GetFakeHandler()->
-                  AllOutgoingMessagesReceived());
+  EXPECT_TRUE(GetFakeHandler()->AllOutgoingMessagesReceived());
+}
+
+// If a message's TTL has expired by the time it reaches the front of the send
+// queue, it should be dropped.
+TEST_F(MCSClientTest, ExpiredTTLOnSend) {
+  BuildMCSClient();
+  InitializeClient();
+  LoginClient(std::vector<std::string>());
+  MCSMessage message(BuildDataMessage(
+      "from", "category", "X", 1, "1", kTTLValue, 1, 0, "", 0));
+
+  // Advance time to after the TTL.
+  clock()->Advance(base::TimeDelta::FromSeconds(kTTLValue + 2));
+  EXPECT_TRUE(sent_message_id().empty());
+  mcs_client()->SendMessage(message);
+
+  // No messages should be sent, but the callback should still be invoked.
+  EXPECT_EQ("X", sent_message_id());
+  EXPECT_EQ(MCSClient::TTL_EXCEEDED, message_send_status());
+  EXPECT_TRUE(GetFakeHandler()->AllOutgoingMessagesReceived());
+}
+
+TEST_F(MCSClientTest, ExpiredTTLOnRestart) {
+  BuildMCSClient();
+  InitializeClient();
+  LoginClient(std::vector<std::string>());
+  GetFakeHandler()->set_fail_send(true);
+  MCSMessage message(BuildDataMessage(
+      "from", "category", "X", 1, "1", kTTLValue, 1, 0, "", 0));
+
+  // The initial (failed) send.
+  GetFakeHandler()->ExpectOutgoingMessage(message);
+  GetFakeHandler()->set_fail_send(false);
+  mcs_client()->SendMessage(message);
+  PumpLoop();
+  EXPECT_TRUE(GetFakeHandler()->AllOutgoingMessagesReceived());
+
+  // Move the clock forward and rebuild the client, which should fail the
+  // message send on restart.
+  clock()->Advance(base::TimeDelta::FromSeconds(kTTLValue + 2));
+  StoreCredentials();
+  BuildMCSClient();
+  InitializeClient();
+  LoginClient(std::vector<std::string>());
+  PumpLoop();
+  EXPECT_EQ("X", sent_message_id());
+  EXPECT_EQ(MCSClient::TTL_EXCEEDED, message_send_status());
+  EXPECT_TRUE(GetFakeHandler()->AllOutgoingMessagesReceived());
+}
+
+// Sending two messages with the same collapse key and same app id while
+// disconnected should only send the latter of the two on reconnection.
+TEST_F(MCSClientTest, CollapseKeysSameApp) {
+  BuildMCSClient();
+  InitializeClient();
+  MCSMessage message(BuildDataMessage(
+      "from", "app", "message id 1", 1, "1", kTTLValue, 1, 0, "token", 0));
+  mcs_client()->SendMessage(message);
+
+  MCSMessage message2(BuildDataMessage(
+      "from", "app", "message id 2", 1, "1", kTTLValue, 1, 0, "token", 0));
+  mcs_client()->SendMessage(message2);
+
+  LoginClient(std::vector<std::string>());
+  GetFakeHandler()->ExpectOutgoingMessage(message2);
+  PumpLoop();
+}
+
+// Sending two messages with the same collapse key and different app id while
+// disconnected should not perform any collapsing.
+TEST_F(MCSClientTest, CollapseKeysDifferentApp) {
+  BuildMCSClient();
+  InitializeClient();
+  MCSMessage message(BuildDataMessage(
+      "from", "app", "message id 1", 1, "1", kTTLValue, 1, 0, "token", 0));
+  mcs_client()->SendMessage(message);
+
+  MCSMessage message2(BuildDataMessage("from",
+                                       "app 2",
+                                       "message id 2",
+                                       1,
+                                       "2",
+                                       kTTLValue,
+                                       1,
+                                       0,
+                                       "token",
+                                       0));
+  mcs_client()->SendMessage(message2);
+
+  LoginClient(std::vector<std::string>());
+  GetFakeHandler()->ExpectOutgoingMessage(message);
+  GetFakeHandler()->ExpectOutgoingMessage(message2);
+  PumpLoop();
+}
+
+// Sending two messages with the same collapse key and app id, but different
+// user, while disconnected, should not perform any collapsing.
+TEST_F(MCSClientTest, CollapseKeysDifferentUser) {
+  BuildMCSClient();
+  InitializeClient();
+  MCSMessage message(BuildDataMessage(
+      "from", "app", "message id 1", 1, "1", kTTLValue, 1, 0, "token", 0));
+  mcs_client()->SendMessage(message);
+
+  MCSMessage message2(BuildDataMessage("from",
+                                       "app",
+                                       "message id 2",
+                                       1,
+                                       "2",
+                                       kTTLValue,
+                                       1,
+                                       0,
+                                       "token",
+                                       1));
+  mcs_client()->SendMessage(message2);
+
+  LoginClient(std::vector<std::string>());
+  GetFakeHandler()->ExpectOutgoingMessage(message);
+  GetFakeHandler()->ExpectOutgoingMessage(message2);
+  PumpLoop();
 }
 
 } // namespace

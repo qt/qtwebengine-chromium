@@ -33,17 +33,10 @@
 
 namespace WebCore {
 
-PassRefPtr<AnimatableValue> AnimatableShadow::interpolateTo(const AnimatableValue* value, double fraction) const
+PassRefPtrWillBeRawPtr<AnimatableValue> AnimatableShadow::interpolateTo(const AnimatableValue* value, double fraction) const
 {
     const AnimatableShadow* shadowList = toAnimatableShadow(value);
     return AnimatableShadow::create(ShadowList::blend(m_shadowList.get(), shadowList->m_shadowList.get(), fraction));
-}
-
-PassRefPtr<AnimatableValue> AnimatableShadow::addWith(const AnimatableValue* value) const
-{
-    // FIXME: The spec doesn't specify anything for shadow in particular, but
-    // the default behaviour is probably not what one would expect.
-    return AnimatableValue::defaultAddWith(this, value);
 }
 
 bool AnimatableShadow::equalTo(const AnimatableValue* value) const

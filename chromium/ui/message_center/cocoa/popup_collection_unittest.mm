@@ -10,19 +10,20 @@
 #include "base/run_loop.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
-#import "ui/base/test/ui_cocoa_test_helper.h"
+#import "ui/gfx/test/ui_cocoa_test_helper.h"
 #import "ui/message_center/cocoa/notification_controller.h"
 #import "ui/message_center/cocoa/popup_controller.h"
 #include "ui/message_center/message_center.h"
 #include "ui/message_center/message_center_style.h"
 #include "ui/message_center/notification.h"
 
+using base::ASCIIToUTF16;
+
 namespace message_center {
 
 class PopupCollectionTest : public ui::CocoaTest {
  public:
-  PopupCollectionTest()
-    : message_loop_(base::MessageLoop::TYPE_UI) {
+  PopupCollectionTest() {
     message_center::MessageCenter::Initialize();
     center_ = message_center::MessageCenter::Get();
     collection_.reset(
@@ -56,7 +57,7 @@ class PopupCollectionTest : public ui::CocoaTest {
         ASCIIToUTF16("This is the first notification to"
                      " be displayed"),
         gfx::Image(),
-        string16(),
+        base::string16(),
         DummyNotifierId(),
         message_center::RichNotificationData(),
         NULL));
@@ -68,7 +69,7 @@ class PopupCollectionTest : public ui::CocoaTest {
         ASCIIToUTF16("Two"),
         ASCIIToUTF16("This is the second notification."),
         gfx::Image(),
-        string16(),
+        base::string16(),
         DummyNotifierId(),
         message_center::RichNotificationData(),
         NULL));
@@ -85,7 +86,7 @@ class PopupCollectionTest : public ui::CocoaTest {
                      "set the screen size too small or "
                      "if the notification is way too big"),
         gfx::Image(),
-        string16(),
+        base::string16(),
         DummyNotifierId(),
         message_center::RichNotificationData(),
         NULL));
@@ -109,7 +110,7 @@ class PopupCollectionTest : public ui::CocoaTest {
     nested_run_loop_.reset();
   }
 
-  base::MessageLoop message_loop_;
+  base::MessageLoopForUI message_loop_;
   scoped_ptr<base::RunLoop> nested_run_loop_;
   message_center::MessageCenter* center_;
   base::scoped_nsobject<MCPopupCollection> collection_;
@@ -140,7 +141,7 @@ TEST_F(PopupCollectionTest, AttemptFourOneOffscreen) {
       ASCIIToUTF16("Four"),
       ASCIIToUTF16("This is the fourth notification."),
       gfx::Image(),
-      string16(),
+      base::string16(),
       DummyNotifierId(),
       message_center::RichNotificationData(),
       NULL));
@@ -189,7 +190,7 @@ TEST_F(PopupCollectionTest, LayoutSpacing) {
       ASCIIToUTF16("Four"),
       ASCIIToUTF16("This is the fourth notification."),
       gfx::Image(),
-      string16(),
+      base::string16(),
       DummyNotifierId(),
       optional,
       NULL));
@@ -227,7 +228,7 @@ TEST_F(PopupCollectionTest, TinyScreen) {
       ASCIIToUTF16("This is the first notification to"
               " be displayed"),
       gfx::Image(),
-      string16(),
+      base::string16(),
       DummyNotifierId(),
       message_center::RichNotificationData(),
       NULL));
@@ -249,7 +250,7 @@ TEST_F(PopupCollectionTest, TinyScreen) {
               "very very very very very very very "
               "long notification."),
       gfx::Image(),
-      string16(),
+      base::string16(),
       DummyNotifierId(),
       message_center::RichNotificationData(),
       NULL));
@@ -293,7 +294,7 @@ TEST_F(PopupCollectionTest, UpdateIconAndBody) {
               "updated to have a significantly "
               "longer body"),
       gfx::Image(),
-      string16(),
+      base::string16(),
       DummyNotifierId(),
       message_center::RichNotificationData(),
       NULL));
@@ -312,6 +313,43 @@ TEST_F(PopupCollectionTest, UpdateIconAndBody) {
   EXPECT_EQ("3", [[popups objectAtIndex:2] notificationID]);
 }
 
+TEST_F(PopupCollectionTest, UpdatePriority) {
+  scoped_ptr<message_center::Notification> notification;
+  notification.reset(new message_center::Notification(
+      message_center::NOTIFICATION_TYPE_SIMPLE,
+      "1",
+      ASCIIToUTF16("One"),
+      ASCIIToUTF16("This notification should not yet toast."),
+      gfx::Image(),
+      base::string16(),
+      DummyNotifierId(),
+      message_center::RichNotificationData(),
+      NULL));
+  notification->set_priority(-1);
+
+  center_->AddNotification(notification.Pass());
+  WaitForAnimationEnded();
+  NSArray* popups = [collection_ popups];
+  EXPECT_EQ(0u, [popups count]);
+
+  // Raise priority -1 to 1. Notification should display.
+  notification.reset(new message_center::Notification(
+      message_center::NOTIFICATION_TYPE_SIMPLE,
+      "1",
+      ASCIIToUTF16("One"),
+      ASCIIToUTF16("This notification should now toast"),
+      gfx::Image(),
+      base::string16(),
+      DummyNotifierId(),
+      message_center::RichNotificationData(),
+      NULL));
+  notification->set_priority(1);
+
+  center_->UpdateNotification("1", notification.Pass());
+  WaitForAnimationEnded();
+  EXPECT_EQ(1u, [popups count]);
+}
+
 TEST_F(PopupCollectionTest, CloseCollectionBeforeNewPopupAnimationEnds) {
   // Add a notification and don't wait for the animation to finish.
   scoped_ptr<message_center::Notification> notification;
@@ -322,7 +360,7 @@ TEST_F(PopupCollectionTest, CloseCollectionBeforeNewPopupAnimationEnds) {
       ASCIIToUTF16("This is the first notification to"
                    " be displayed"),
       gfx::Image(),
-      string16(),
+      base::string16(),
       DummyNotifierId(),
       message_center::RichNotificationData(),
       NULL));
@@ -355,7 +393,7 @@ TEST_F(PopupCollectionTest, CloseCollectionBeforeUpdatePopupAnimationEnds) {
       ASCIIToUTF16("One"),
       ASCIIToUTF16("New message."),
       gfx::Image(),
-      string16(),
+      base::string16(),
       DummyNotifierId(),
       message_center::RichNotificationData(),
       NULL));

@@ -23,8 +23,9 @@
 #include "config.h"
 #include "core/html/HTMLTitleElement.h"
 
-#include "HTMLNames.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "core/HTMLNames.h"
+#include "core/dom/ChildListMutationScope.h"
 #include "core/dom/Document.h"
 #include "core/dom/Text.h"
 #include "core/rendering/style/RenderStyle.h"
@@ -37,15 +38,13 @@ using namespace HTMLNames;
 
 inline HTMLTitleElement::HTMLTitleElement(Document& document)
     : HTMLElement(titleTag, document)
+    , m_ignoreTitleUpdatesWhenChildrenChange(false)
 {
     setHasCustomStyleCallbacks();
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLTitleElement> HTMLTitleElement::create(Document& document)
-{
-    return adoptRef(new HTMLTitleElement(document));
-}
+DEFINE_NODE_FACTORY(HTMLTitleElement)
 
 Node::InsertionNotificationRequest HTMLTitleElement::insertedInto(ContainerNode* insertionPoint)
 {
@@ -65,7 +64,7 @@ void HTMLTitleElement::removedFrom(ContainerNode* insertionPoint)
 void HTMLTitleElement::childrenChanged(bool changedByParser, Node* beforeChange, Node* afterChange, int childCountDelta)
 {
     HTMLElement::childrenChanged(changedByParser, beforeChange, afterChange, childCountDelta);
-    if (inDocument() && !isInShadowTree())
+    if (inDocument() && !isInShadowTree() && !m_ignoreTitleUpdatesWhenChildrenChange)
         document().setTitleElement(text(), this);
 }
 
@@ -83,23 +82,16 @@ String HTMLTitleElement::text() const
 
 void HTMLTitleElement::setText(const String &value)
 {
-    RefPtr<Node> protectFromMutationEvents(this);
+    RefPtrWillBeRawPtr<Node> protectFromMutationEvents(this);
+    ChildListMutationScope mutation(*this);
 
-    int numChildren = childNodeCount();
+    // Avoid calling Document::setTitleElement() during intermediate steps.
+    m_ignoreTitleUpdatesWhenChildrenChange = !value.isEmpty();
+    removeChildren();
+    m_ignoreTitleUpdatesWhenChildrenChange = false;
 
-    if (numChildren == 1 && firstChild()->isTextNode())
-        toText(firstChild())->setData(value);
-    else {
-        // We make a copy here because entity of "value" argument can be Document::m_title,
-        // which goes empty during removeChildren() invocation below,
-        // which causes HTMLTitleElement::childrenChanged(), which ends up Document::setTitle().
-        String valueCopy(value);
-
-        if (numChildren > 0)
-            removeChildren();
-
-        appendChild(document().createTextNode(valueCopy.impl()), IGNORE_EXCEPTION);
-    }
+    if (!value.isEmpty())
+        appendChild(document().createTextNode(value.impl()), IGNORE_EXCEPTION);
 }
 
 }

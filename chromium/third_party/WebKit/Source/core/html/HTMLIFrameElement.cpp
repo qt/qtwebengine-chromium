@@ -25,8 +25,8 @@
 #include "config.h"
 #include "core/html/HTMLIFrameElement.h"
 
-#include "CSSPropertyNames.h"
-#include "HTMLNames.h"
+#include "core/CSSPropertyNames.h"
+#include "core/HTMLNames.h"
 #include "core/html/HTMLDocument.h"
 #include "core/rendering/RenderIFrame.h"
 
@@ -39,17 +39,13 @@ inline HTMLIFrameElement::HTMLIFrameElement(Document& document)
     , m_didLoadNonEmptyDocument(false)
 {
     ScriptWrappable::init(this);
-    setHasCustomStyleCallbacks();
 }
 
-PassRefPtr<HTMLIFrameElement> HTMLIFrameElement::create(Document& document)
-{
-    return adoptRef(new HTMLIFrameElement(document));
-}
+DEFINE_NODE_FACTORY(HTMLIFrameElement)
 
 bool HTMLIFrameElement::isPresentationAttribute(const QualifiedName& name) const
 {
-    if (name == widthAttr || name == heightAttr || name == alignAttr || name == frameborderAttr || name == seamlessAttr)
+    if (name == widthAttr || name == heightAttr || name == alignAttr || name == frameborderAttr)
         return true;
     return HTMLFrameElementBase::isPresentationAttribute(name);
 }
@@ -63,7 +59,7 @@ void HTMLIFrameElement::collectStyleForPresentationAttribute(const QualifiedName
     else if (name == alignAttr)
         applyAlignmentAttributeToStyle(value, style);
     else if (name == frameborderAttr) {
-        // Frame border doesn't really match the HTML4 spec definition for iframes. It simply adds
+        // LocalFrame border doesn't really match the HTML4 spec definition for iframes. It simply adds
         // a presentational hint that the border should be off if set to zero.
         if (!value.toInt()) {
             // Add a rule that nulls out our border width.
@@ -87,12 +83,9 @@ void HTMLIFrameElement::parseAttribute(const QualifiedName& name, const AtomicSt
         setSandboxFlags(value.isNull() ? SandboxNone : parseSandboxPolicy(value, invalidTokens));
         if (!invalidTokens.isNull())
             document().addConsoleMessage(OtherMessageSource, ErrorMessageLevel, "Error while parsing the 'sandbox' attribute: " + invalidTokens);
-    } else if (name == seamlessAttr) {
-        // If we're adding or removing the seamless attribute, we need to force the content document to recalculate its StyleResolver.
-        if (contentDocument())
-            contentDocument()->styleResolverChanged(RecalcStyleDeferred);
-    } else
+    } else {
         HTMLFrameElementBase::parseAttribute(name, value);
+    }
 }
 
 bool HTMLIFrameElement::rendererIsNeeded(const RenderStyle& style)
@@ -118,20 +111,6 @@ void HTMLIFrameElement::removedFrom(ContainerNode* insertionPoint)
     HTMLFrameElementBase::removedFrom(insertionPoint);
     if (insertionPoint->inDocument() && document().isHTMLDocument() && !insertionPoint->isInShadowTree())
         toHTMLDocument(document()).removeExtraNamedItem(m_name);
-}
-
-bool HTMLIFrameElement::shouldDisplaySeamlessly() const
-{
-    return contentDocument() && contentDocument()->shouldDisplaySeamlesslyWithParent();
-}
-
-void HTMLIFrameElement::didRecalcStyle(StyleRecalcChange styleChange)
-{
-    if (!shouldDisplaySeamlessly())
-        return;
-    Document* childDocument = contentDocument();
-    if (shouldRecalcStyle(styleChange, childDocument))
-        contentDocument()->recalcStyle(styleChange);
 }
 
 bool HTMLIFrameElement::isInteractiveContent() const

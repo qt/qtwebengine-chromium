@@ -17,12 +17,12 @@ class VIEWS_EXPORT RadioButton : public Checkbox {
   // The button's class name.
   static const char kViewClassName[];
 
-  RadioButton(const string16& label, int group_id);
+  RadioButton(const base::string16& label, int group_id);
   virtual ~RadioButton();
 
   // Overridden from View:
   virtual const char* GetClassName() const OVERRIDE;
-  virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
+  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
   virtual View* GetSelectedViewForGroup(int group) OVERRIDE;
   virtual bool IsGroupFocusTraversable() const OVERRIDE;
   virtual void OnFocus() OVERRIDE;
@@ -30,7 +30,7 @@ class VIEWS_EXPORT RadioButton : public Checkbox {
   // Overridden from Button:
   virtual void NotifyClick(const ui::Event& event) OVERRIDE;
 
-  // Overridden from TextButtonBase:
+  // Overridden from LabelButton:
   virtual ui::NativeTheme::Part GetThemePart() const OVERRIDE;
 
   // Overridden from Checkbox:

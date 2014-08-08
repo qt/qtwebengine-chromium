@@ -18,15 +18,6 @@ OSExchangeData::DownloadFileInfo::DownloadFileInfo(
 
 OSExchangeData::DownloadFileInfo::~DownloadFileInfo() {}
 
-OSExchangeData::FileInfo::FileInfo(
-    const base::FilePath& path,
-    const base::FilePath& display_name)
-    : path(path),
-      display_name(display_name) {
-}
-
-OSExchangeData::FileInfo::~FileInfo() {}
-
 OSExchangeData::OSExchangeData() : provider_(CreateProvider()) {
 }
 
@@ -34,6 +25,14 @@ OSExchangeData::OSExchangeData(Provider* provider) : provider_(provider) {
 }
 
 OSExchangeData::~OSExchangeData() {
+}
+
+void OSExchangeData::MarkOriginatedFromRenderer() {
+  provider_->MarkOriginatedFromRenderer();
+}
+
+bool OSExchangeData::DidOriginateFromRenderer() const {
+  return provider_->DidOriginateFromRenderer();
 }
 
 void OSExchangeData::SetString(const base::string16& data) {
@@ -86,8 +85,8 @@ bool OSExchangeData::HasString() const {
   return provider_->HasString();
 }
 
-bool OSExchangeData::HasURL() const {
-  return provider_->HasURL();
+bool OSExchangeData::HasURL(FilenameToURLPolicy policy) const {
+  return provider_->HasURL(policy);
 }
 
 bool OSExchangeData::HasFile() const {
@@ -98,43 +97,18 @@ bool OSExchangeData::HasCustomFormat(const CustomFormat& format) const {
   return provider_->HasCustomFormat(format);
 }
 
-bool OSExchangeData::HasAllFormats(
-    int formats,
-    const std::set<CustomFormat>& custom_formats) const {
-  if ((formats & STRING) != 0 && !HasString())
-    return false;
-  if ((formats & URL) != 0 && !HasURL())
-    return false;
-#if defined(OS_WIN)
-  if ((formats & FILE_CONTENTS) != 0 && !provider_->HasFileContents())
-    return false;
-#endif
-#if defined(OS_WIN) || defined(USE_AURA)
-  if ((formats & HTML) != 0 && !provider_->HasHtml())
-    return false;
-#endif
-  if ((formats & FILE_NAME) != 0 && !provider_->HasFile())
-    return false;
-  for (std::set<CustomFormat>::const_iterator i = custom_formats.begin();
-       i != custom_formats.end(); ++i) {
-    if (!HasCustomFormat(*i))
-      return false;
-  }
-  return true;
-}
-
 bool OSExchangeData::HasAnyFormat(
     int formats,
     const std::set<CustomFormat>& custom_formats) const {
   if ((formats & STRING) != 0 && HasString())
     return true;
-  if ((formats & URL) != 0 && HasURL())
+  if ((formats & URL) != 0 && HasURL(CONVERT_FILENAMES))
     return true;
 #if defined(OS_WIN)
   if ((formats & FILE_CONTENTS) != 0 && provider_->HasFileContents())
     return true;
 #endif
-#if defined(OS_WIN) || defined(USE_AURA)
+#if defined(USE_AURA)
   if ((formats & HTML) != 0 && provider_->HasHtml())
     return true;
 #endif
@@ -162,13 +136,9 @@ bool OSExchangeData::GetFileContents(base::FilePath* filename,
 void OSExchangeData::SetDownloadFileInfo(const DownloadFileInfo& download) {
   provider_->SetDownloadFileInfo(download);
 }
-
-void OSExchangeData::SetInDragLoop(bool in_drag_loop) {
-  provider_->SetInDragLoop(in_drag_loop);
-}
 #endif
 
-#if defined(OS_WIN) || defined(USE_AURA)
+#if defined(USE_AURA)
 void OSExchangeData::SetHtml(const base::string16& html, const GURL& base_url) {
   provider_->SetHtml(html, base_url);
 }

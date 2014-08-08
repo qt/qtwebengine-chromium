@@ -25,7 +25,7 @@
 #include "config.h"
 #include "bindings/v8/V8ThrowException.h"
 
-#include "V8DOMException.h"
+#include "bindings/core/v8/V8DOMException.h"
 #include "bindings/v8/V8Binding.h"
 #include "core/dom/DOMException.h"
 #include "core/dom/ExceptionCode.h"
@@ -55,7 +55,7 @@ v8::Handle<v8::Value> V8ThrowException::createDOMException(int ec, const String&
     if (ec == TypeError)
         return V8ThrowException::createTypeError(sanitizedMessage, isolate);
 
-    RefPtr<DOMException> domException = DOMException::create(ec, sanitizedMessage, unsanitizedMessage);
+    RefPtrWillBeRawPtr<DOMException> domException = DOMException::create(ec, sanitizedMessage, unsanitizedMessage);
     v8::Handle<v8::Value> exception = toV8(domException, creationContext, isolate);
 
     if (exception.IsEmpty())

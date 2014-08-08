@@ -89,29 +89,30 @@ body.platform-linux {
     box-sizing: border-box;
 }
 
-.controls-line button {
+.controls-line .button {
     width: 26px;
     margin-left: -1px;
     margin-right: 0;
     padding: 0;
 }
 
-.controls-line button:hover {
+.controls-line .button:hover {
     cursor: pointer;
 }
 
-.controls-line button .glyph {
+.controls-line .button .glyph {
     width: 100%;
     height: 100%;
     background-color: rgba(0, 0, 0, 0.75);
     opacity: 0.8;
     -webkit-mask-repeat: no-repeat;
     -webkit-mask-position: center;
+    position: relative;
 }
 
-.controls-line button:active {
-    border: 1px solid rgb(120, 120, 120);
-    z-index: 1;
+.controls-line .button:active .glyph {
+    top: 1px;
+    left: 1px;
 }
 
 #resume-button .glyph {
@@ -155,6 +156,9 @@ const lightGridColor = "rgba(0,0,0,0.2)";
 const darkGridColor = "rgba(0,0,0,0.7)";
 const transparentColor = "rgba(0, 0, 0, 0)";
 const gridBackgroundColor = "rgba(255, 255, 255, 0.8)";
+// CSS shapes
+const shapeHighlightColor = "rgba(96, 82, 127, 0.8)";
+const shapeMarginHighlightColor = "rgba(96, 82, 127, 0.6)";
 
 function drawPausedInDebuggerMessage(message)
 {
@@ -365,7 +369,7 @@ function drawViewSize(drawViewSizeWithGrid)
     case "linux": context.font = "14px dejavu sans mono"; break;
     }
 
-    var frameWidth = frameViewFullSize.width || canvasWidth;
+    var frameWidth = canvasWidth;
     var textWidth = context.measureText(text).width;
     context.fillStyle = gridBackgroundColor;
     context.fillRect(frameWidth - textWidth - 12, drawGridBoolean ? 15 : 0, frameWidth, 25);
@@ -379,7 +383,6 @@ function drawViewSize(drawViewSizeWithGrid)
 function reset(resetData)
 {
     window.viewportSize = resetData.viewportSize;
-    window.frameViewFullSize = resetData.frameViewFullSize;
     window.deviceScaleFactor = resetData.deviceScaleFactor;
     window.pageZoomFactor = resetData.pageZoomFactor;
     window.pageScaleFactor = resetData.pageScaleFactor;
@@ -425,14 +428,15 @@ function _drawElementTitle(highlight)
     var titleWidth = elementTitle.offsetWidth + 6;
     var titleHeight = elementTitle.offsetHeight + 4;
 
-    var anchorTop = marginQuad[0].y;
-    var anchorBottom = marginQuad[3].y
+    var anchorTop = Math.min(marginQuad[0].y, marginQuad[1].y, marginQuad[2].y, marginQuad[3].y);
+    var anchorBottom = Math.max(marginQuad[0].y, marginQuad[1].y, marginQuad[2].y, marginQuad[3].y);
+    var anchorLeft = Math.min(marginQuad[0].x, marginQuad[1].x, marginQuad[2].x, marginQuad[3].x);
 
     const arrowHeight = 7;
     var renderArrowUp = false;
     var renderArrowDown = false;
 
-    var boxX = Math.max(2, marginQuad[0].x);
+    var boxX = Math.max(2, anchorLeft);
     if (boxX + titleWidth > canvasWidth)
         boxX = canvasWidth - titleWidth - 2;
 
@@ -541,6 +545,54 @@ function _drawRulers(highlight, rulerAtRight, rulerAtBottom)
 
     context.restore();
 }
+// CSS shapes 
+function drawPath(commands, fillColor)
+{
+    context.save();
+    context.beginPath();
+
+    var commandsIndex = 0;
+    var commandsLength = commands.length;
+    while (commandsIndex < commandsLength) {
+        switch (commands[commandsIndex++]) {
+        case "M":
+            context.moveTo(commands[commandsIndex++], commands[commandsIndex++]);
+            break;
+        case "L":
+            context.lineTo(commands[commandsIndex++], commands[commandsIndex++]);
+            break;
+        case "C":
+            context.bezierCurveTo(commands[commandsIndex++], commands[commandsIndex++], commands[commandsIndex++],
+                                  commands[commandsIndex++], commands[commandsIndex++], commands[commandsIndex++]);
+            break;
+        case "Q":
+            context.quadraticCurveTo(commands[commandsIndex++], commands[commandsIndex++], commands[commandsIndex++],
+                                     commands[commandsIndex++]);
+            break;
+        case "Z":
+            context.closePath();
+            break;
+        }
+    }
+    context.closePath();
+    context.fillStyle = fillColor;
+    context.fill();
+
+    context.restore();
+}
+
+function drawShapeHighlight(shapeInfo)
+{
+    if (shapeInfo.marginShape)
+        drawPath(shapeInfo.marginShape, shapeMarginHighlightColor);
+    else
+        drawOutlinedQuad(shapeInfo.bounds, shapeHighlightColor, shapeHighlightColor);
+
+    if (shapeInfo.shape)
+        drawPath(shapeInfo.shape, shapeHighlightColor);
+   else
+        drawOutlinedQuad(shapeInfo.bounds, shapeHighlightColor, shapeHighlightColor);
+}
 
 function drawNodeHighlight(highlight)
 {
@@ -613,6 +665,8 @@ function drawNodeHighlight(highlight)
         _drawGrid(rulerAtRight, rulerAtBottom);
         _drawRulers(highlight, rulerAtRight, rulerAtBottom);
     }
+    if (highlight.elementInfo && highlight.elementInfo.shapeOutsideInfo)
+        drawShapeHighlight(highlight.elementInfo.shapeOutsideInfo);
     _drawElementTitle(highlight);
 
     context.restore();
@@ -683,8 +737,8 @@ document.addEventListener("keydown", onDocumentKeyDown);
 <body class="fill">
 <div class="controls-line">
     <div class="message-box"><div id="paused-in-debugger"></div></div>
-    <button id="resume-button" title="Resume script execution (F8)."><div class="glyph"></div></button>
-    <button id="step-over-button" title="Step over next function call (F10)."><div class="glyph"></div></button>
+    <div class="button" id="resume-button" title="Resume script execution (F8)."><div class="glyph"></div></div>
+    <div class="button" id="step-over-button" title="Step over next function call (F10)."><div class="glyph"></div></div>
 </div>
 </body>
 <canvas id="canvas" class="fill"></canvas>

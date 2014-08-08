@@ -22,6 +22,7 @@
 #include "testing/gtest/include/gtest/gtest.h"
 
 #if defined(OS_WIN)
+#include "base/message_loop/message_pump_dispatcher.h"
 #include "base/message_loop/message_pump_win.h"
 #include "base/process/memory.h"
 #include "base/strings/string16.h"
@@ -35,15 +36,15 @@ namespace base {
 
 namespace {
 
-MessagePump* TypeDefaultMessagePumpFactory() {
+scoped_ptr<MessagePump> TypeDefaultMessagePumpFactory() {
   return MessageLoop::CreateMessagePumpForType(MessageLoop::TYPE_DEFAULT);
 }
 
-MessagePump* TypeIOMessagePumpFactory() {
+scoped_ptr<MessagePump> TypeIOMessagePumpFactory() {
   return MessageLoop::CreateMessagePumpForType(MessageLoop::TYPE_IO);
 }
 
-MessagePump* TypeUIMessagePumpFactory() {
+scoped_ptr<MessagePump> TypeUIMessagePumpFactory() {
   return MessageLoop::CreateMessagePumpForType(MessageLoop::TYPE_UI);
 }
 
@@ -52,34 +53,9 @@ class Foo : public RefCounted<Foo> {
   Foo() : test_count_(0) {
   }
 
-  void Test0() {
-    ++test_count_;
-  }
-
   void Test1ConstRef(const std::string& a) {
     ++test_count_;
     result_.append(a);
-  }
-
-  void Test1Ptr(std::string* a) {
-    ++test_count_;
-    result_.append(*a);
-  }
-
-  void Test1Int(int a) {
-    test_count_ += a;
-  }
-
-  void Test2Ptr(std::string* a, std::string* b) {
-    ++test_count_;
-    result_.append(*a);
-    result_.append(*b);
-  }
-
-  void Test2Mixed(const std::string& a, std::string* b) {
-    ++test_count_;
-    result_.append(a);
-    result_.append(*b);
   }
 
   int test_count() const { return test_count_; }
@@ -165,120 +141,6 @@ void RunTest_PostDelayedTask_SharedTimer_SubPump() {
   RunLoop().RunUntilIdle();
 
   EXPECT_TRUE(run_time.is_null());
-}
-
-LONG WINAPI BadExceptionHandler(EXCEPTION_POINTERS *ex_info) {
-  ADD_FAILURE() << "bad exception handler";
-  ::ExitProcess(ex_info->ExceptionRecord->ExceptionCode);
-  return EXCEPTION_EXECUTE_HANDLER;
-}
-
-// This task throws an SEH exception: initially write to an invalid address.
-// If the right SEH filter is installed, it will fix the error.
-class Crasher : public RefCounted<Crasher> {
- public:
-  // Ctor. If trash_SEH_handler is true, the task will override the unhandled
-  // exception handler with one sure to crash this test.
-  explicit Crasher(bool trash_SEH_handler)
-      : trash_SEH_handler_(trash_SEH_handler) {
-  }
-
-  void Run() {
-    PlatformThread::Sleep(TimeDelta::FromMilliseconds(1));
-    if (trash_SEH_handler_)
-      ::SetUnhandledExceptionFilter(&BadExceptionHandler);
-    // Generate a SEH fault. We do it in asm to make sure we know how to undo
-    // the damage.
-
-#if defined(_M_IX86)
-
-    __asm {
-      mov eax, dword ptr [Crasher::bad_array_]
-      mov byte ptr [eax], 66
-    }
-
-#elif defined(_M_X64)
-
-    bad_array_[0] = 66;
-
-#else
-#error "needs architecture support"
-#endif
-
-    MessageLoop::current()->QuitWhenIdle();
-  }
-  // Points the bad array to a valid memory location.
-  static void FixError() {
-    bad_array_ = &valid_store_;
-  }
-
- private:
-  bool trash_SEH_handler_;
-  static volatile char* bad_array_;
-  static char valid_store_;
-};
-
-volatile char* Crasher::bad_array_ = 0;
-char Crasher::valid_store_ = 0;
-
-// This SEH filter fixes the problem and retries execution. Fixing requires
-// that the last instruction: mov eax, [Crasher::bad_array_] to be retried
-// so we move the instruction pointer 5 bytes back.
-LONG WINAPI HandleCrasherException(EXCEPTION_POINTERS *ex_info) {
-  if (ex_info->ExceptionRecord->ExceptionCode != EXCEPTION_ACCESS_VIOLATION)
-    return EXCEPTION_EXECUTE_HANDLER;
-
-  Crasher::FixError();
-
-#if defined(_M_IX86)
-
-  ex_info->ContextRecord->Eip -= 5;
-
-#elif defined(_M_X64)
-
-  ex_info->ContextRecord->Rip -= 5;
-
-#endif
-
-  return EXCEPTION_CONTINUE_EXECUTION;
-}
-
-void RunTest_Crasher(MessageLoop::Type message_loop_type) {
-  MessageLoop loop(message_loop_type);
-
-  if (::IsDebuggerPresent())
-    return;
-
-  LPTOP_LEVEL_EXCEPTION_FILTER old_SEH_filter =
-      ::SetUnhandledExceptionFilter(&HandleCrasherException);
-
-  MessageLoop::current()->PostTask(
-      FROM_HERE,
-      Bind(&Crasher::Run, new Crasher(false)));
-  MessageLoop::current()->set_exception_restoration(true);
-  MessageLoop::current()->Run();
-  MessageLoop::current()->set_exception_restoration(false);
-
-  ::SetUnhandledExceptionFilter(old_SEH_filter);
-}
-
-void RunTest_CrasherNasty(MessageLoop::Type message_loop_type) {
-  MessageLoop loop(message_loop_type);
-
-  if (::IsDebuggerPresent())
-    return;
-
-  LPTOP_LEVEL_EXCEPTION_FILTER old_SEH_filter =
-      ::SetUnhandledExceptionFilter(&HandleCrasherException);
-
-  MessageLoop::current()->PostTask(
-      FROM_HERE,
-      Bind(&Crasher::Run, new Crasher(true)));
-  MessageLoop::current()->set_exception_restoration(true);
-  MessageLoop::current()->Run();
-  MessageLoop::current()->set_exception_restoration(false);
-
-  ::SetUnhandledExceptionFilter(old_SEH_filter);
 }
 
 const wchar_t kMessageBoxTitle[] = L"MessageLoop Unit Test";
@@ -559,11 +421,11 @@ void PostNTasksThenQuit(int posts_remaining) {
 
 #if defined(OS_WIN)
 
-class DispatcherImpl : public MessageLoopForUI::Dispatcher {
+class DispatcherImpl : public MessagePumpDispatcher {
  public:
   DispatcherImpl() : dispatch_count_(0) {}
 
-  virtual bool Dispatch(const NativeEvent& msg) OVERRIDE {
+  virtual uint32_t Dispatch(const NativeEvent& msg) OVERRIDE {
     ::TranslateMessage(&msg);
     ::DispatchMessage(&msg);
     // Do not count WM_TIMER since it is not what we post and it will cause
@@ -571,7 +433,8 @@ class DispatcherImpl : public MessageLoopForUI::Dispatcher {
     if (msg.message != WM_TIMER)
       ++dispatch_count_;
     // We treat WM_LBUTTONUP as the last message.
-    return msg.message != WM_LBUTTONUP;
+    return msg.message == WM_LBUTTONUP ? POST_DISPATCH_QUIT_LOOP
+                                       : POST_DISPATCH_NONE;
   }
 
   int dispatch_count_;
@@ -779,18 +642,6 @@ RUN_MESSAGE_LOOP_TESTS(IO, &TypeIOMessagePumpFactory);
 #if defined(OS_WIN)
 TEST(MessageLoopTest, PostDelayedTask_SharedTimer_SubPump) {
   RunTest_PostDelayedTask_SharedTimer_SubPump();
-}
-
-TEST(MessageLoopTest, Crasher) {
-  RunTest_Crasher(MessageLoop::TYPE_DEFAULT);
-  RunTest_Crasher(MessageLoop::TYPE_UI);
-  RunTest_Crasher(MessageLoop::TYPE_IO);
-}
-
-TEST(MessageLoopTest, CrasherNasty) {
-  RunTest_CrasherNasty(MessageLoop::TYPE_DEFAULT);
-  RunTest_CrasherNasty(MessageLoop::TYPE_UI);
-  RunTest_CrasherNasty(MessageLoop::TYPE_IO);
 }
 
 // This test occasionally hangs http://crbug.com/44567

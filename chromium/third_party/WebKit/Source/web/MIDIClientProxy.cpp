@@ -29,14 +29,11 @@
  */
 
 #include "config.h"
-#include "MIDIClientProxy.h"
+#include "web/MIDIClientProxy.h"
 
-#include "WebMIDIClient.h"
-#include "WebMIDIPermissionRequest.h"
-#include "modules/webmidi/MIDIAccess.h"
-#include "wtf/RefPtr.h"
-
-using WebCore::MIDIAccess;
+#include "modules/webmidi/MIDIAccessInitializer.h"
+#include "public/web/WebMIDIClient.h"
+#include "public/web/WebMIDIPermissionRequest.h"
 
 namespace blink {
 
@@ -45,18 +42,18 @@ MIDIClientProxy::MIDIClientProxy(WebMIDIClient* client)
 {
 }
 
-void MIDIClientProxy::requestSysExPermission(PassRefPtr<MIDIAccess> access)
+void MIDIClientProxy::requestSysexPermission(WebCore::MIDIAccessInitializer* initializer)
 {
     if (m_client)
-        m_client->requestSysExPermission(WebMIDIPermissionRequest(access));
+        m_client->requestSysexPermission(WebMIDIPermissionRequest(initializer));
     else
-        access->setSysExEnabled(false);
+        initializer->setSysexEnabled(false);
 }
 
-void MIDIClientProxy::cancelSysExPermissionRequest(MIDIAccess* access)
+void MIDIClientProxy::cancelSysexPermissionRequest(WebCore::MIDIAccessInitializer* initializer)
 {
     if (m_client)
-        m_client->cancelSysExPermissionRequest(WebMIDIPermissionRequest(access));
+        m_client->cancelSysexPermissionRequest(WebMIDIPermissionRequest(initializer));
 }
 
 } // namespace blink

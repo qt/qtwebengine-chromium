@@ -28,8 +28,15 @@
 
 """Windows implementation of the Port interface."""
 
+import errno
 import os
 import logging
+
+try:
+    import _winreg
+except ImportError as e:
+    _winreg = None
+    WindowsError = Exception  # this shuts up pylint.
 
 from webkitpy.layout_tests.breakpad.dump_reader_win import DumpReaderWin
 from webkitpy.layout_tests.models import test_run_results
@@ -50,6 +57,8 @@ class WinPort(base.Port):
     FALLBACK_PATHS['xp'] = ['win-xp'] + FALLBACK_PATHS['win7']
 
     DEFAULT_BUILD_DIRECTORIES = ('build', 'out')
+
+    BUILD_REQUIREMENTS_URL = 'http://www.chromium.org/developers/how-tos/build-instructions-windows'
 
     @classmethod
     def determine_full_port_name(cls, host, options, port_name):
@@ -74,9 +83,53 @@ class WinPort(base.Port):
 
     def additional_drt_flag(self):
         flags = super(WinPort, self).additional_drt_flag()
+        flags += ['--enable-direct-write']
         if not self.get_option('disable_breakpad'):
             flags += ['--enable-crash-reporter', '--crash-dumps-dir=%s' % self._dump_reader.crash_dumps_directory()]
         return flags
+
+    def check_httpd(self):
+        res = super(WinPort, self).check_httpd()
+        if self.get_option('use_apache'):
+            # In order to run CGI scripts on Win32 that use unix shebang lines, we need to
+            # create entries in the registry that remap the extensions (.pl and .cgi) to the
+            # appropriate Win32 paths. The command line arguments must match the command
+            # line arguments in the shebang line exactly.
+            if _winreg:
+                res = self._check_reg(r'.cgi\Shell\ExecCGI\Command') and res
+                res = self._check_reg(r'.pl\Shell\ExecCGI\Command') and res
+            else:
+                _log.warning("Could not check the registry; http may not work correctly.")
+
+        return res
+
+    def _check_reg(self, sub_key):
+        # see comments in check_httpd(), above, for why this routine exists and what it's doing.
+        try:
+            # Note that we HKCR is a union of HKLM and HKCR (with the latter
+            # overridding the former), so reading from HKCR ensures that we get
+            # the value if it is set in either place. See als comments below.
+            hkey = _winreg.OpenKey(_winreg.HKEY_CLASSES_ROOT, sub_key)
+            args = _winreg.QueryValue(hkey, '').split()
+            _winreg.CloseKey(hkey)
+
+            # In order to keep multiple checkouts from stepping on each other, we simply check that an
+            # existing entry points to a valid path and has the right command line.
+            if len(args) == 2 and self._filesystem.exists(args[0]) and args[0].endswith('perl.exe') and args[1] == '-wT':
+                return True
+        except WindowsError, e:
+            if e.errno != errno.ENOENT:
+                raise e
+            # The key simply probably doesn't exist.
+            pass
+
+        # Note that we write to HKCU so that we don't need privileged access
+        # to the registry, and that will get reflected in HKCR when it is read, above.
+        cmdline = self.path_from_chromium_base('third_party', 'perl', 'perl', 'bin', 'perl.exe') + ' -wT'
+        hkey = _winreg.CreateKeyEx(_winreg.HKEY_CURRENT_USER, 'Software\\Classes\\' + sub_key, 0, _winreg.KEY_WRITE)
+        _winreg.SetValue(hkey, '', _winreg.REG_SZ, cmdline)
+        _winreg.CloseKey(hkey)
+        return True
 
     def setup_test_run(self):
         super(WinPort, self).setup_test_run()
@@ -105,9 +158,14 @@ class WinPort(base.Port):
         # We should add the variable to an explicit whitelist in base.Port.
         # FIXME: This is a temporary hack to get the cr-win bot online until
         # someone from the cr-win port can take a look.
+        use_apache = self.get_option('use_apache')
+        apache_envvars = ['SYSTEMDRIVE', 'SYSTEMROOT', 'TEMP', 'TMP']
         for key, value in os.environ.items():
-            if key not in env:
+            if key not in env and (not use_apache or key in apache_envvars):
                 env[key] = value
+
+        if use_apache:
+            return env
 
         # Put the cygwin directory first in the path to find cygwin1.dll.
         env["PATH"] = "%s;%s" % (self.path_from_chromium_base("third_party", "cygwin", "bin"), env["PATH"])
@@ -144,38 +202,34 @@ class WinPort(base.Port):
         path = filename[len(self.layout_tests_dir()) + 1:]
         return path.replace('\\', '/')
 
-    #
-    # PROTECTED ROUTINES
-    #
+    def uses_apache(self):
+        return self.get_option('use_apache')
 
-    def _uses_apache(self):
-        return False
+    def path_to_apache(self):
+        return self.path_from_chromium_base('third_party', 'apache-win32', 'bin', 'httpd.exe')
+
+    def path_to_apache_config_file(self):
+        return self._filesystem.join(self.layout_tests_dir(), 'http', 'conf', 'win-httpd.conf')
 
     def _lighttpd_path(self, *comps):
         return self.path_from_chromium_base('third_party', 'lighttpd', 'win', *comps)
 
-    def _path_to_apache(self):
-        return self.path_from_chromium_base('third_party', 'cygwin', 'usr', 'sbin', 'httpd')
-
-    def _path_to_apache_config_file(self):
-        return self._filesystem.join(self.layout_tests_dir(), 'http', 'conf', 'cygwin-httpd.conf')
-
-    def _path_to_lighttpd(self):
+    def path_to_lighttpd(self):
         return self._lighttpd_path('LightTPD.exe')
 
-    def _path_to_lighttpd_modules(self):
+    def path_to_lighttpd_modules(self):
         return self._lighttpd_path('lib')
 
-    def _path_to_lighttpd_php(self):
+    def path_to_lighttpd_php(self):
         return self._lighttpd_path('php5', 'php-cgi.exe')
+
+    #
+    # PROTECTED ROUTINES
+    #
 
     def _path_to_driver(self, configuration=None):
         binary_name = '%s.exe' % self.driver_name()
         return self._build_path_with_configuration(configuration, binary_name)
-
-    def _path_to_helper(self):
-        binary_name = 'LayoutTestHelper.exe'
-        return self._build_path(binary_name)
 
     def _path_to_crash_service(self):
         binary_name = 'content_shell_crash_service.exe'
@@ -193,7 +247,7 @@ class WinPort(base.Port):
         result = self._check_file_exists(self._path_to_crash_service(), "content_shell_crash_service.exe")
         if not result:
             _log.error("    Could not find crash service, unexpected crashes won't be symbolized.")
-            _log.error('    Did you build the target all_webkit?')
+            _log.error('    Did you build the target blink_tests?')
             _log.error('')
         return result
 

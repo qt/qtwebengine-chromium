@@ -27,7 +27,7 @@
 namespace WebCore {
 
 UIEventInit::UIEventInit()
-    : view(0)
+    : view(nullptr)
     , detail(0)
 {
 }
@@ -38,7 +38,7 @@ UIEvent::UIEvent()
     ScriptWrappable::init(this);
 }
 
-UIEvent::UIEvent(const AtomicString& eventType, bool canBubbleArg, bool cancelableArg, PassRefPtr<AbstractView> viewArg, int detailArg)
+UIEvent::UIEvent(const AtomicString& eventType, bool canBubbleArg, bool cancelableArg, PassRefPtrWillBeRawPtr<AbstractView> viewArg, int detailArg)
     : Event(eventType, canBubbleArg, cancelableArg)
     , m_view(viewArg)
     , m_detail(detailArg)
@@ -58,7 +58,7 @@ UIEvent::~UIEvent()
 {
 }
 
-void UIEvent::initUIEvent(const AtomicString& typeArg, bool canBubbleArg, bool cancelableArg, PassRefPtr<AbstractView> viewArg, int detailArg)
+void UIEvent::initUIEvent(const AtomicString& typeArg, bool canBubbleArg, bool cancelableArg, PassRefPtrWillBeRawPtr<AbstractView> viewArg, int detailArg)
 {
     if (dispatched())
         return;
@@ -112,6 +112,12 @@ int UIEvent::pageY() const
 int UIEvent::which() const
 {
     return 0;
+}
+
+void UIEvent::trace(Visitor* visitor)
+{
+    visitor->trace(m_view);
+    Event::trace(visitor);
 }
 
 } // namespace WebCore

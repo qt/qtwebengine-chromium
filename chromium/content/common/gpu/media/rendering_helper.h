@@ -9,7 +9,10 @@
 #include <vector>
 
 #include "base/basictypes.h"
-#include "ui/gfx/size.h"
+#include "base/time/time.h"
+#include "base/timer/timer.h"
+#include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/geometry/size.h"
 #include "ui/gl/gl_bindings.h"
 
 namespace base {
@@ -27,31 +30,26 @@ typedef EGLContext NativeContextType;
 
 namespace content {
 
-struct RenderingHelperParams {
-  RenderingHelperParams();
-  ~RenderingHelperParams();
-
-  bool suppress_swap_to_display;
-  int num_windows;
-  // Dimensions of window(s) created for displaying frames. In the
-  // case of thumbnail rendering, these won't match the frame dimensions.
-  std::vector<gfx::Size> window_dimensions;
-  // Dimensions of video frame texture(s).
-  std::vector<gfx::Size> frame_dimensions;
-  // Whether the frames are rendered as scaled thumbnails within a
-  // larger FBO that is in turn rendered to the window.
-  bool render_as_thumbnails;
-  // The size of the FBO containing all visible thumbnails.
-  gfx::Size thumbnails_page_size;
-  // The size of each thumbnail within the FBO.
-  gfx::Size thumbnail_size;
-};
+struct RenderingHelperParams;
 
 // Creates and draws textures used by the video decoder.
 // This class is not thread safe and thus all the methods of this class
 // (except for ctor/dtor) ensure they're being run on a single thread.
 class RenderingHelper {
  public:
+  // Interface for the content provider of the RenderingHelper.
+  class Client {
+   public:
+    // Callback to tell client to render the content.
+    virtual void RenderContent(RenderingHelper* helper) = 0;
+
+    // Callback to get the desired window size of the client.
+    virtual const gfx::Size& GetWindowSize() = 0;
+
+   protected:
+    virtual ~Client() {}
+  };
+
   RenderingHelper();
   ~RenderingHelper();
 
@@ -62,24 +60,29 @@ class RenderingHelper {
   // Undo the effects of Initialize() and signal |*done|.
   void UnInitialize(base::WaitableEvent* done);
 
-  // Return a newly-created GLES2 texture id rendering to a specific window, and
+  // Return a newly-created GLES2 texture id of the specified size, and
   // signal |*done|.
-  void CreateTexture(int window_id,
-                     uint32 texture_target,
+  void CreateTexture(uint32 texture_target,
                      uint32* texture_id,
+                     const gfx::Size& size,
                      base::WaitableEvent* done);
 
-  // Render |texture_id| to the screen using target |texture_target|.
+  // Render thumbnail in the |texture_id| to the FBO buffer using target
+  // |texture_target|.
+  void RenderThumbnail(uint32 texture_target, uint32 texture_id);
+
+  // Render |texture_id| to the current view port of the screen using target
+  // |texture_target|.
   void RenderTexture(uint32 texture_target, uint32 texture_id);
 
   // Delete |texture_id|.
   void DeleteTexture(uint32 texture_id);
 
-  // Get the platform specific handle to the OpenGL context.
-  void* GetGLContext();
-
   // Get the platform specific handle to the OpenGL display.
   void* GetGLDisplay();
+
+  // Get the platform specific handle to the OpenGL context.
+  NativeContextType GetGLContext();
 
   // Get rendered thumbnails as RGB.
   // Sets alpha_solid to true if the alpha channel is entirely 0xff.
@@ -90,30 +93,36 @@ class RenderingHelper {
  private:
   void Clear();
 
-  // Make window_id's surface current w/ the GL context, or release the context
-  // if |window_id < 0|.
-  void MakeCurrent(int window_id);
+  void RenderContent();
 
+  void LayoutRenderingAreas();
+
+  // Timer to trigger the RenderContent() repeatly.
+  base::RepeatingTimer<RenderingHelper> render_timer_;
   base::MessageLoop* message_loop_;
-  std::vector<gfx::Size> window_dimensions_;
-  std::vector<gfx::Size> frame_dimensions_;
 
   NativeContextType gl_context_;
-  std::map<uint32, int> texture_id_to_surface_index_;
 
 #if defined(GL_VARIANT_EGL)
   EGLDisplay gl_display_;
-  std::vector<EGLSurface> gl_surfaces_;
+  EGLSurface gl_surface_;
 #else
   XVisualInfo* x_visual_;
 #endif
 
 #if defined(OS_WIN)
-  std::vector<HWND> windows_;
+  HWND window_;
 #else
   Display* x_display_;
-  std::vector<Window> x_windows_;
+  Window x_window_;
 #endif
+
+  gfx::Size screen_size_;
+
+  // The rendering area of each window on the screen.
+  std::vector<gfx::Rect> render_areas_;
+
+  std::vector<base::WeakPtr<Client> > clients_;
 
   bool render_as_thumbnails_;
   int frame_count_;
@@ -122,10 +131,29 @@ class RenderingHelper {
   gfx::Size thumbnails_fbo_size_;
   gfx::Size thumbnail_size_;
   GLuint program_;
+  base::TimeDelta frame_duration_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderingHelper);
 };
 
+struct RenderingHelperParams {
+  RenderingHelperParams();
+  ~RenderingHelperParams();
+
+  // The rendering FPS.
+  int rendering_fps;
+
+  // The clients who provide the content for rendering.
+  std::vector<base::WeakPtr<RenderingHelper::Client> > clients;
+
+  // Whether the frames are rendered as scaled thumbnails within a
+  // larger FBO that is in turn rendered to the window.
+  bool render_as_thumbnails;
+  // The size of the FBO containing all visible thumbnails.
+  gfx::Size thumbnails_page_size;
+  // The size of each thumbnail within the FBO.
+  gfx::Size thumbnail_size;
+};
 }  // namespace content
 
 #endif  // CONTENT_COMMON_GPU_MEDIA_RENDERING_HELPER_H_

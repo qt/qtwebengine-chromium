@@ -7,7 +7,6 @@
 
 #include "base/atomic_ref_count.h"
 #include "base/callback.h"
-#include "base/cancelable_callback.h"
 #include "base/memory/ref_counted.h"
 #include "base/timer/timer.h"
 #include "media/audio/audio_io.h"
@@ -70,7 +69,6 @@ class MEDIA_EXPORT AudioOutputController
    public:
     virtual void OnCreated() = 0;
     virtual void OnPlaying() = 0;
-    virtual void OnPowerMeasured(float power_dbfs, bool clipped) = 0;
     virtual void OnPaused() = 0;
     virtual void OnError() = 0;
     virtual void OnDeviceChange(int new_buffer_size, int new_sample_rate) = 0;
@@ -93,9 +91,8 @@ class MEDIA_EXPORT AudioOutputController
     virtual void UpdatePendingBytes(uint32 bytes) = 0;
 
     // Attempts to completely fill |dest|, zeroing |dest| if the request can not
-    // be fulfilled (due to timeout).  |source| may optionally be provided for
-    // input data.
-    virtual void Read(const AudioBus* source, AudioBus* dest) = 0;
+    // be fulfilled (due to timeout).
+    virtual void Read(AudioBus* dest) = 0;
 
     // Close this synchronous reader.
     virtual void Close() = 0;
@@ -107,13 +104,11 @@ class MEDIA_EXPORT AudioOutputController
   // OnCreated() call from the same audio manager thread.  |audio_manager| must
   // outlive AudioOutputController.
   // The |output_device_id| can be either empty (default device) or specify a
-  // specific hardware device for audio output.  The |input_device_id| is
-  // used only for unified audio when opening up input and output at the same
-  // time (controlled by |params.input_channel_count()|).
+  // specific hardware device for audio output.
   static scoped_refptr<AudioOutputController> Create(
       AudioManager* audio_manager, EventHandler* event_handler,
       const AudioParameters& params, const std::string& output_device_id,
-      const std::string& input_device_id, SyncReader* sync_reader);
+      SyncReader* sync_reader);
 
   // Methods to control playback of the stream.
 
@@ -155,9 +150,6 @@ class MEDIA_EXPORT AudioOutputController
   // AudioSourceCallback implementation.
   virtual int OnMoreData(AudioBus* dest,
                          AudioBuffersState buffers_state) OVERRIDE;
-  virtual int OnMoreIOData(AudioBus* source,
-                           AudioBus* dest,
-                           AudioBuffersState buffers_state) OVERRIDE;
   virtual void OnError(AudioOutputStream* stream) OVERRIDE;
 
   // AudioDeviceListener implementation.  When called AudioOutputController will
@@ -170,6 +162,10 @@ class MEDIA_EXPORT AudioOutputController
   virtual const AudioParameters& GetAudioParameters() OVERRIDE;
   virtual void StartDiverting(AudioOutputStream* to_stream) OVERRIDE;
   virtual void StopDiverting() OVERRIDE;
+
+  // Accessor for AudioPowerMonitor::ReadCurrentPowerAndClip().  See comments in
+  // audio_power_monitor.h for usage.  This may be called on any thread.
+  std::pair<float, bool> ReadCurrentPowerAndClip();
 
  protected:
   // Internal state of the source.
@@ -186,14 +182,9 @@ class MEDIA_EXPORT AudioOutputController
   virtual ~AudioOutputController();
 
  private:
-  // We are polling sync reader if data became available.
-  static const int kPollNumAttempts;
-  static const int kPollPauseInMilliseconds;
-
   AudioOutputController(AudioManager* audio_manager, EventHandler* handler,
                         const AudioParameters& params,
                         const std::string& output_device_id,
-                        const std::string& input_device_id,
                         SyncReader* sync_reader);
 
   // The following methods are executed on the audio manager thread.
@@ -208,22 +199,13 @@ class MEDIA_EXPORT AudioOutputController
   void DoStartDiverting(AudioOutputStream* to_stream);
   void DoStopDiverting();
 
-  // Calls EventHandler::OnPowerMeasured() with the current power level and then
-  // schedules itself to be called again later.
-  void ReportPowerMeasurementPeriodically();
-
   // Helper method that stops the physical stream.
   void StopStream();
 
   // Helper method that stops, closes, and NULLs |*stream_|.
   void DoStopCloseAndClearStream();
 
-  // Sanity-check that entry/exit to OnMoreIOData() by the hardware audio thread
-  // happens only between AudioOutputStream::Start() and Stop().
-  void AllowEntryToOnMoreIOData();
-  void DisallowEntryToOnMoreIOData();
-
-  // Checks if a stream was started successfully but never calls OnMoreIOData().
+  // Checks if a stream was started successfully but never calls OnMoreData().
   void WedgeCheck();
 
   AudioManager* const audio_manager_;
@@ -233,9 +215,6 @@ class MEDIA_EXPORT AudioOutputController
   // Specifies the device id of the output device to open or empty for the
   // default output device.
   std::string output_device_id_;
-
-  // Used by the unified IO to open the correct input device.
-  const std::string input_device_id_;
 
   AudioOutputStream* stream_;
 
@@ -250,25 +229,15 @@ class MEDIA_EXPORT AudioOutputController
   // is not required for reading on the audio manager thread.
   State state_;
 
-  // Binary semaphore, used to ensure that only one thread enters the
-  // OnMoreIOData() method, and only when it is valid to do so.  This is for
-  // sanity-checking the behavior of platform implementations of
-  // AudioOutputStream.  In other words, multiple contention is not expected,
-  // nor in the design here.
-  base::AtomicRefCount num_allowed_io_;
-
   // SyncReader is used only in low latency mode for synchronous reading.
   SyncReader* const sync_reader_;
 
   // The message loop of audio manager thread that this object runs on.
-  const scoped_refptr<base::MessageLoopProxy> message_loop_;
+  const scoped_refptr<base::SingleThreadTaskRunner> message_loop_;
 
 #if defined(AUDIO_POWER_MONITORING)
-  // Scans audio samples from OnMoreIOData() as input to compute power levels.
+  // Scans audio samples from OnMoreData() as input to compute power levels.
   AudioPowerMonitor power_monitor_;
-
-  // Periodic callback to report power levels during playback.
-  base::CancelableClosure power_poll_callback_;
 #endif
 
   // Flags when we've asked for a stream to start but it never did.

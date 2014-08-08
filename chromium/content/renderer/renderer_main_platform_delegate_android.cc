@@ -3,10 +3,17 @@
 // found in the LICENSE file.
 
 #include "content/renderer/renderer_main_platform_delegate.h"
+
+#include "base/command_line.h"
 #include "base/logging.h"
+#include "content/public/common/content_switches.h"
+
+#ifdef USE_SECCOMP_BPF
+#include "content/common/sandbox_linux/android/sandbox_bpf_base_policy_android.h"
+#include "sandbox/linux/seccomp-bpf/sandbox_bpf.h"
+#endif
 
 #ifdef ENABLE_VTUNE_JIT_INTERFACE
-#include "content/public/common/content_switches.h"
 #include "v8/src/third_party/vtune/v8-vtune.h"
 #endif
 
@@ -31,15 +38,18 @@ void RendererMainPlatformDelegate::PlatformInitialize() {
 void RendererMainPlatformDelegate::PlatformUninitialize() {
 }
 
-bool RendererMainPlatformDelegate::InitSandboxTests(bool no_sandbox) {
-  return true;
-}
-
 bool RendererMainPlatformDelegate::EnableSandbox() {
-  return true;
-}
+#ifdef USE_SECCOMP_BPF
+  if (!base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableSeccompFilterSandbox)) {
+    return true;
+  }
 
-void RendererMainPlatformDelegate::RunSandboxTests(bool no_sandbox) {
+  sandbox::SandboxBPF sandbox;
+  sandbox.SetSandboxPolicy(new SandboxBPFBasePolicyAndroid());
+  CHECK(sandbox.StartSandbox(sandbox::SandboxBPF::PROCESS_MULTI_THREADED));
+#endif
+  return true;
 }
 
 }  // namespace content

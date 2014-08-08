@@ -7,7 +7,6 @@
 #include "base/bind.h"
 #include "base/location.h"
 #include "base/logging.h"
-#include "base/memory/weak_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/single_thread_task_runner.h"
 #include "base/strings/stringprintf.h"
@@ -129,7 +128,7 @@ void UserInputMonitorWinCore::StartMonitor(EventBitMask type) {
     window_.reset(new base::win::MessageWindow());
     if (!window_->Create(base::Bind(&UserInputMonitorWinCore::HandleMessage,
                                     base::Unretained(this)))) {
-      LOG_GETLASTERROR(ERROR) << "Failed to create the raw input window";
+      PLOG(ERROR) << "Failed to create the raw input window";
       window_.reset();
       return;
     }
@@ -138,8 +137,7 @@ void UserInputMonitorWinCore::StartMonitor(EventBitMask type) {
   // Register to receive raw mouse and/or keyboard input.
   scoped_ptr<RAWINPUTDEVICE> device(GetRawInputDevices(type, RIDEV_INPUTSINK));
   if (!RegisterRawInputDevices(device.get(), 1, sizeof(*device))) {
-    LOG_GETLASTERROR(ERROR)
-        << "RegisterRawInputDevices() failed for RIDEV_INPUTSINK";
+    PLOG(ERROR) << "RegisterRawInputDevices() failed for RIDEV_INPUTSINK";
     window_.reset();
     return;
   }
@@ -163,8 +161,7 @@ void UserInputMonitorWinCore::StopMonitor(EventBitMask type) {
   scoped_ptr<RAWINPUTDEVICE> device(GetRawInputDevices(type, RIDEV_REMOVE));
 
   if (!RegisterRawInputDevices(device.get(), 1, sizeof(*device))) {
-    LOG_GETLASTERROR(INFO)
-        << "RegisterRawInputDevices() failed for RIDEV_REMOVE";
+    PLOG(INFO) << "RegisterRawInputDevices() failed for RIDEV_REMOVE";
   }
 
   events_monitored_ &= ~type;
@@ -184,7 +181,7 @@ LRESULT UserInputMonitorWinCore::OnInput(HRAWINPUT input_handle) {
   UINT result = GetRawInputData(
       input_handle, RID_INPUT, NULL, &size, sizeof(RAWINPUTHEADER));
   if (result == -1) {
-    LOG_GETLASTERROR(ERROR) << "GetRawInputData() failed";
+    PLOG(ERROR) << "GetRawInputData() failed";
     return 0;
   }
   DCHECK_EQ(0u, result);
@@ -195,7 +192,7 @@ LRESULT UserInputMonitorWinCore::OnInput(HRAWINPUT input_handle) {
   result = GetRawInputData(
       input_handle, RID_INPUT, buffer.get(), &size, sizeof(RAWINPUTHEADER));
   if (result == -1) {
-    LOG_GETLASTERROR(ERROR) << "GetRawInputData() failed";
+    PLOG(ERROR) << "GetRawInputData() failed";
     return 0;
   }
   DCHECK_EQ(size, result);

@@ -4,6 +4,8 @@
 
 #include "ui/views/controls/slider.h"
 
+#include <algorithm>
+
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
 #include "base/strings/stringprintf.h"
@@ -12,7 +14,7 @@
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "third_party/skia/include/core/SkPaint.h"
-#include "ui/base/accessibility/accessible_view_state.h"
+#include "ui/accessibility/ax_view_state.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/events/event.h"
 #include "ui/gfx/animation/slide_animation.h"
@@ -45,7 +47,7 @@ enum BorderElements {
   CENTER_RIGHT,
   RIGHT,
 };
-}
+}  // namespace
 
 namespace views {
 
@@ -81,7 +83,7 @@ void Slider::SetValueInternal(float value, SliderChangeReason reason) {
 
   value_is_valid_ = true;
   if (value < 0.0)
-   value = 0.0;
+    value = 0.0;
   else if (value > 1.0)
     value = 1.0;
   if (value_ == value)
@@ -104,7 +106,7 @@ void Slider::SetValueInternal(float value, SliderChangeReason reason) {
   }
   if (accessibility_events_enabled_ && GetWidget()) {
     NotifyAccessibilityEvent(
-        ui::AccessibilityTypes::EVENT_VALUE_CHANGED, true);
+        ui::AX_EVENT_VALUE_CHANGED, true);
   }
 }
 
@@ -167,7 +169,7 @@ void Slider::UpdateState(bool control_on) {
   SchedulePaint();
 }
 
-void Slider::SetAccessibleName(const string16& name) {
+void Slider::SetAccessibleName(const base::string16& name) {
   accessible_name_ = name;
 }
 
@@ -184,7 +186,7 @@ void Slider::OnPaintFocus(gfx::Canvas* canvas) {
   }
 }
 
-gfx::Size Slider::GetPreferredSize() {
+gfx::Size Slider::GetPreferredSize() const {
   const int kSizeMajor = 200;
   const int kSizeMinor = 40;
 
@@ -267,8 +269,7 @@ void Slider::OnPaint(gfx::Canvas* canvas) {
 bool Slider::OnMousePressed(const ui::MouseEvent& event) {
   if (!event.IsOnlyLeftMouseButton())
     return false;
-  if (listener_)
-    listener_->SliderDragStarted(this);
+  OnSliderDragStarted();
   PrepareForMove(event.location());
   MoveButtonTo(event.location());
   return true;
@@ -280,8 +281,7 @@ bool Slider::OnMouseDragged(const ui::MouseEvent& event) {
 }
 
 void Slider::OnMouseReleased(const ui::MouseEvent& event) {
-  if (listener_)
-    listener_->SliderDragEnded(this);
+  OnSliderDragEnded();
 }
 
 bool Slider::OnKeyPressed(const ui::KeyEvent& event) {
@@ -305,16 +305,37 @@ bool Slider::OnKeyPressed(const ui::KeyEvent& event) {
   return false;
 }
 
+void Slider::OnFocus() {
+  View::OnFocus();
+  SchedulePaint();
+}
+
+void Slider::OnBlur() {
+  View::OnBlur();
+  SchedulePaint();
+}
+
 void Slider::OnGestureEvent(ui::GestureEvent* event) {
-  if (event->type() == ui::ET_GESTURE_SCROLL_BEGIN ||
-      event->type() == ui::ET_GESTURE_TAP_DOWN) {
-    PrepareForMove(event->location());
-    MoveButtonTo(event->location());
-    event->SetHandled();
-  } else if (event->type() == ui::ET_GESTURE_SCROLL_UPDATE ||
-             event->type() == ui::ET_GESTURE_SCROLL_END) {
-    MoveButtonTo(event->location());
-    event->SetHandled();
+  switch (event->type()) {
+    // In a multi point gesture only the touch point will generate
+    // an ET_GESTURE_TAP_DOWN event.
+    case ui::ET_GESTURE_TAP_DOWN:
+      OnSliderDragStarted();
+      PrepareForMove(event->location());
+      // Intentional fall through to next case.
+    case ui::ET_GESTURE_SCROLL_BEGIN:
+    case ui::ET_GESTURE_SCROLL_UPDATE:
+      MoveButtonTo(event->location());
+      event->SetHandled();
+      break;
+    case ui::ET_GESTURE_END:
+      MoveButtonTo(event->location());
+      event->SetHandled();
+      if (event->details().touch_points() <= 1)
+        OnSliderDragEnded();
+      break;
+    default:
+      break;
   }
 }
 
@@ -323,11 +344,21 @@ void Slider::AnimationProgressed(const gfx::Animation* animation) {
   SchedulePaint();
 }
 
-void Slider::GetAccessibleState(ui::AccessibleViewState* state) {
-  state->role = ui::AccessibilityTypes::ROLE_SLIDER;
+void Slider::GetAccessibleState(ui::AXViewState* state) {
+  state->role = ui::AX_ROLE_SLIDER;
   state->name = accessible_name_;
-  state->value = UTF8ToUTF16(
-      base::StringPrintf("%d%%", (int)(value_ * 100 + 0.5)));
+  state->value = base::UTF8ToUTF16(
+      base::StringPrintf("%d%%", static_cast<int>(value_ * 100 + 0.5)));
+}
+
+void Slider::OnSliderDragStarted() {
+  if (listener_)
+    listener_->SliderDragStarted(this);
+}
+
+void Slider::OnSliderDragEnded() {
+  if (listener_)
+    listener_->SliderDragEnded(this);
 }
 
 }  // namespace views

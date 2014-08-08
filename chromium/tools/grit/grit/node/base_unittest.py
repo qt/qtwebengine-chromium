@@ -192,6 +192,67 @@ class NodeUnittest(unittest.TestCase):
     self.failUnlessEqual(output_nodes[2].attrs['filename'],
                          'de/generated_resources.rc')
 
+  def testEvaluateExpression(self):
+    def AssertExpr(expected_value, expr, defs, target_platform,
+                   extra_variables):
+      self.failUnlessEqual(expected_value, base.Node.EvaluateExpression(
+          expr, defs, target_platform, extra_variables))
+
+    AssertExpr(True, "True", {}, 'linux', {})
+    AssertExpr(False, "False", {}, 'linux', {})
+    AssertExpr(True, "True or False", {}, 'linux', {})
+    AssertExpr(False, "True and False", {}, 'linux', {})
+    AssertExpr(True, "os == 'linux'", {}, 'linux', {})
+    AssertExpr(False, "os == 'linux'", {}, 'ios', {})
+    AssertExpr(True, "'foo' in defs", {'foo': 'bar'}, 'ios', {})
+    AssertExpr(False, "'foo' in defs", {'baz': 'bar'}, 'ios', {})
+    AssertExpr(False, "'foo' in defs", {}, 'ios', {})
+    AssertExpr(True, "is_linux", {}, 'linux2', {})
+    AssertExpr(False, "is_linux", {}, 'win32', {})
+    AssertExpr(True, "is_macosx", {}, 'darwin', {})
+    AssertExpr(False, "is_macosx", {}, 'ios', {})
+    AssertExpr(True, "is_win", {}, 'win32', {})
+    AssertExpr(False, "is_win", {}, 'darwin', {})
+    AssertExpr(True, "is_android", {}, 'android', {})
+    AssertExpr(False, "is_android", {}, 'linux3', {})
+    AssertExpr(True, "is_ios", {}, 'ios', {})
+    AssertExpr(False, "is_ios", {}, 'darwin', {})
+    AssertExpr(True, "is_posix", {}, 'linux2', {})
+    AssertExpr(True, "is_posix", {}, 'darwin', {})
+    AssertExpr(True, "is_posix", {}, 'android', {})
+    AssertExpr(True, "is_posix", {}, 'ios', {})
+    AssertExpr(True, "is_posix", {}, 'freebsd7', {})
+    AssertExpr(False, "is_posix", {}, 'win32', {})
+    AssertExpr(True, "pp_ifdef('foo')", {'foo': True}, 'win32', {})
+    AssertExpr(True, "pp_ifdef('foo')", {'foo': False}, 'win32', {})
+    AssertExpr(False, "pp_ifdef('foo')", {'bar': True}, 'win32', {})
+    AssertExpr(True, "pp_if('foo')", {'foo': True}, 'win32', {})
+    AssertExpr(False, "pp_if('foo')", {'foo': False}, 'win32', {})
+    AssertExpr(False, "pp_if('foo')", {'bar': True}, 'win32', {})
+    AssertExpr(True, "foo", {'foo': True}, 'win32', {})
+    AssertExpr(False, "foo", {'foo': False}, 'win32', {})
+    AssertExpr(False, "foo", {'bar': True}, 'win32', {})
+    AssertExpr(True, "foo == 'baz'", {'foo': 'baz'}, 'win32', {})
+    AssertExpr(False, "foo == 'baz'", {'foo': True}, 'win32', {})
+    AssertExpr(False, "foo == 'baz'", {}, 'win32', {})
+    AssertExpr(True, "lang == 'de'", {}, 'win32', {'lang': 'de'})
+    AssertExpr(False, "lang == 'de'", {}, 'win32', {'lang': 'fr'})
+    AssertExpr(False, "lang == 'de'", {}, 'win32', {})
+
+    # Test a couple more complex expressions for good measure.
+    AssertExpr(True, "is_ios and (lang in ['de', 'fr'] or foo)",
+               {'foo': 'bar'}, 'ios', {'lang': 'fr', 'context': 'today'})
+    AssertExpr(False, "is_ios and (lang in ['de', 'fr'] or foo)",
+               {'foo': False}, 'linux2', {'lang': 'fr', 'context': 'today'})
+    AssertExpr(False, "is_ios and (lang in ['de', 'fr'] or foo)",
+               {'baz': 'bar'}, 'ios', {'lang': 'he', 'context': 'today'})
+    AssertExpr(True, "foo == 'bar' or not baz",
+               {'foo': 'bar', 'fun': True}, 'ios', {'lang': 'en'})
+    AssertExpr(True, "foo == 'bar' or not baz",
+               {}, 'ios', {'lang': 'en', 'context': 'java'})
+    AssertExpr(False, "foo == 'bar' or not baz",
+               {'foo': 'ruz', 'baz': True}, 'ios', {'lang': 'en'})
+
 if __name__ == '__main__':
   unittest.main()
 

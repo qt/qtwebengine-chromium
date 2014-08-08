@@ -38,8 +38,8 @@ void PopulateSpdyHeaderBlock(const BalsaHeaders& headers,
        hi != headers.header_lines_end();
        ++hi) {
     if ((hi->second.length() == 0) && !allow_empty_values) {
-      DLOG(INFO) << "Dropping empty header " << hi->first.as_string()
-                 << " from headers";
+      DVLOG(1) << "Dropping empty header " << hi->first.as_string()
+               << " from headers";
       continue;
     }
 
@@ -157,8 +157,8 @@ string SpdyUtils::SerializeResponseHeaders(
 
 // static
 string SpdyUtils::SerializeUncompressedHeaders(const SpdyHeaderBlock& headers) {
-  int length = SpdyFramer::GetSerializedLength(SPDY3, &headers);
-  SpdyFrameBuilder builder(length);
+  size_t length = SpdyFramer::GetSerializedLength(SPDY3, &headers);
+  SpdyFrameBuilder builder(length, SPDY3);
   SpdyFramer::WriteHeaderBlock(&builder, SPDY3, &headers);
   scoped_ptr<SpdyFrame> block(builder.take());
   return string(block->data(), length);

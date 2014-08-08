@@ -42,23 +42,22 @@ class Page;
 
 typedef String ErrorString;
 
-class InspectorInputAgent : public InspectorBaseAgent<InspectorInputAgent>, public InspectorBackendDispatcher::InputCommandHandler {
+class InspectorInputAgent FINAL : public InspectorBaseAgent<InspectorInputAgent>, public InspectorBackendDispatcher::InputCommandHandler {
     WTF_MAKE_NONCOPYABLE(InspectorInputAgent);
 public:
-    static PassOwnPtr<InspectorInputAgent> create(InstrumentingAgents* instrumentingAgents, InspectorCompositeState* inspectorState, Page* page, InspectorClient* client)
+    static PassOwnPtr<InspectorInputAgent> create(Page* page, InspectorClient* client)
     {
-        return adoptPtr(new InspectorInputAgent(instrumentingAgents, inspectorState, page, client));
+        return adoptPtr(new InspectorInputAgent(page, client));
     }
 
-    ~InspectorInputAgent();
+    virtual ~InspectorInputAgent();
 
     // Methods called from the frontend for simulating input.
-    virtual void dispatchKeyEvent(ErrorString*, const String& type, const int* modifiers, const double* timestamp, const String* text, const String* unmodifiedText, const String* keyIdentifier, const int* windowsVirtualKeyCode, const int* nativeVirtualKeyCode, const int* macCharCode, const bool* autoRepeat, const bool* isKeypad, const bool* isSystemKey);
-    virtual void dispatchMouseEvent(ErrorString*, const String& type, int x, int y, const int* modifiers, const double* timestamp, const String* button, const int* clickCount, const bool* deviceSpace);
-    virtual void dispatchTouchEvent(ErrorString*, const String& type, const RefPtr<JSONArray>& touchPoints, const int* modifiers, const double* timestamp);
-    virtual void dispatchGestureEvent(ErrorString*, const String& type, int x, int y, const double* timestamp, const int* deltaX, const int* deltaY, const double* scale);
+    virtual void dispatchKeyEvent(ErrorString*, const String& type, const int* modifiers, const double* timestamp, const String* text, const String* unmodifiedText, const String* keyIdentifier, const int* windowsVirtualKeyCode, const int* nativeVirtualKeyCode, const bool* autoRepeat, const bool* isKeypad, const bool* isSystemKey) OVERRIDE;
+    virtual void dispatchMouseEvent(ErrorString*, const String& type, int x, int y, const int* modifiers, const double* timestamp, const String* button, const int* clickCount, const bool* deviceSpace) OVERRIDE;
+    virtual void dispatchTouchEvent(ErrorString*, const String& type, const RefPtr<JSONArray>& touchPoints, const int* modifiers, const double* timestamp) OVERRIDE;
 private:
-    InspectorInputAgent(InstrumentingAgents*, InspectorCompositeState*, Page*, InspectorClient*);
+    InspectorInputAgent(Page*, InspectorClient*);
 
     Page* m_page;
     InspectorClient* m_client;

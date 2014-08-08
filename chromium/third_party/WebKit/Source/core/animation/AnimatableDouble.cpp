@@ -31,18 +31,18 @@
 #include "config.h"
 #include "core/animation/AnimatableDouble.h"
 
-#include "core/css/CSSPrimitiveValue.h"
-#include "core/css/CSSValuePool.h"
 #include "platform/animation/AnimationUtilities.h"
+#include <math.h>
 
 namespace WebCore {
 
-PassRefPtr<CSSValue> AnimatableDouble::toCSSValue() const
+bool AnimatableDouble::usesDefaultInterpolationWith(const AnimatableValue* value) const
 {
-    return cssValuePool().createValue(m_number, CSSPrimitiveValue::CSS_NUMBER);
+    const AnimatableDouble* other = toAnimatableDouble(value);
+    return (m_constraint == InterpolationIsNonContinuousWithZero) && (!m_number || !other->m_number);
 }
 
-PassRefPtr<AnimatableValue> AnimatableDouble::interpolateTo(const AnimatableValue* value, double fraction) const
+PassRefPtrWillBeRawPtr<AnimatableValue> AnimatableDouble::interpolateTo(const AnimatableValue* value, double fraction) const
 {
     const AnimatableDouble* other = toAnimatableDouble(value);
     ASSERT(m_constraint == other->m_constraint);
@@ -51,21 +51,15 @@ PassRefPtr<AnimatableValue> AnimatableDouble::interpolateTo(const AnimatableValu
     return AnimatableDouble::create(blend(m_number, other->m_number, fraction));
 }
 
-PassRefPtr<AnimatableValue> AnimatableDouble::addWith(const AnimatableValue* value) const
-{
-    // Optimization for adding with 0.
-    if (!m_number)
-        return takeConstRef(value);
-    const AnimatableDouble* other = toAnimatableDouble(value);
-    if (!other->m_number)
-        return takeConstRef(this);
-
-    return AnimatableDouble::create(m_number + other->m_number);
-}
-
 bool AnimatableDouble::equalTo(const AnimatableValue* value) const
 {
     return m_number == toAnimatableDouble(value)->m_number;
+}
+
+double AnimatableDouble::distanceTo(const AnimatableValue* value) const
+{
+    const AnimatableDouble* other = toAnimatableDouble(value);
+    return fabs(m_number - other->m_number);
 }
 
 } // namespace WebCore

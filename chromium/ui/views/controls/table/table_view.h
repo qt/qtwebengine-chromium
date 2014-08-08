@@ -11,7 +11,7 @@
 #include "ui/base/models/list_selection_model.h"
 #include "ui/base/models/table_model.h"
 #include "ui/base/models/table_model_observer.h"
-#include "ui/gfx/font.h"
+#include "ui/gfx/font_list.h"
 #include "ui/views/view.h"
 #include "ui/views/views_export.h"
 
@@ -166,12 +166,12 @@ class VIEWS_EXPORT TableView
 
   // View overrides:
   virtual void Layout() OVERRIDE;
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
   virtual bool OnKeyPressed(const ui::KeyEvent& event) OVERRIDE;
   virtual bool OnMousePressed(const ui::MouseEvent& event) OVERRIDE;
   virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
   virtual bool GetTooltipText(const gfx::Point& p,
-                              string16* tooltip) const OVERRIDE;
+                              base::string16* tooltip) const OVERRIDE;
   virtual bool GetTooltipTextOrigin(const gfx::Point& p,
                                     gfx::Point* loc) const OVERRIDE;
 
@@ -291,7 +291,7 @@ class VIEWS_EXPORT TableView
   // sets |tooltip| and/or |tooltip_origin| as appropriate, each of which may be
   // NULL.
   bool GetTooltipImpl(const gfx::Point& location,
-                      string16* tooltip,
+                      base::string16* tooltip,
                       gfx::Point* tooltip_origin) const;
 
   ui::TableModel* model_;
@@ -316,7 +316,7 @@ class VIEWS_EXPORT TableView
   // The selection, in terms of the model.
   ui::ListSelectionModel selection_model_;
 
-  gfx::Font font_;
+  gfx::FontList font_list_;
 
   int row_height_;
 

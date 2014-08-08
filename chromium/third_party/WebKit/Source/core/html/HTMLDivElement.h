@@ -29,17 +29,14 @@ namespace WebCore {
 
 class HTMLDivElement : public HTMLElement {
 public:
-    static PassRefPtr<HTMLDivElement> create(Document&);
+    DECLARE_NODE_FACTORY(HTMLDivElement);
 
 protected:
     explicit HTMLDivElement(Document&);
 
 private:
-    virtual bool isPresentationAttribute(const QualifiedName&) const OVERRIDE;
     virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) OVERRIDE;
 };
-
-DEFINE_NODE_TYPE_CASTS(HTMLDivElement, hasTagName(HTMLNames::divTag));
 
 } // namespace WebCore
 

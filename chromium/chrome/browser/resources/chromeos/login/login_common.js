@@ -6,11 +6,12 @@
  * @fileoverview Common OOBE controller methods.
  */
 
-<include src="screen.js"></include>
+<include src="../../login/screen.js"></include>
+<include src="screen_context.js"></include>
 <include src="../user_images_grid.js"></include>
 <include src="apps_menu.js"></include>
-<include src="bubble.js"></include>
-<include src="display_manager.js"></include>
+<include src="../../login/bubble.js"></include>
+<include src="../../login/display_manager.js"></include>
 <include src="header_bar.js"></include>
 <include src="network_dropdown.js"></include>
 <include src="oobe_screen_reset.js"></include>
@@ -18,7 +19,7 @@
 <include src="oobe_screen_enable_kiosk.js"></include>
 <include src="oobe_screen_terms_of_service.js"></include>
 <include src="oobe_screen_user_image.js"></include>
-<include src="screen_account_picker.js"></include>
+<include src="../../login/screen_account_picker.js"></include>
 <include src="screen_app_launch_splash.js"></include>
 <include src="screen_error_message.js"></include>
 <include src="screen_gaia_signin.js"></include>
@@ -27,9 +28,9 @@
 <include src="screen_tpm_error.js"></include>
 <include src="screen_wrong_hwid.js"></include>
 <include src="screen_confirm_password.js"></include>
-<include src="screen_message_box.js"></include>
-<include src="user_pod_row.js"></include>
-<include src="resource_loader.js"></include>
+<include src="screen_fatal_error.js"></include>
+<include src="../../login/user_pod_row.js"></include>
+<include src="../../login/resource_loader.js"></include>
 
 cr.define('cr.ui', function() {
   var DisplayManager = cr.ui.login.DisplayManager;
@@ -42,6 +43,12 @@ cr.define('cr.ui', function() {
   */
   function Oobe() {
   }
+
+  /**
+   * Delay in milliseconds between start of OOBE animation and start of
+   * header bar animation.
+   */
+  var HEADER_BAR_DELAY_MS = 300;
 
   cr.addSingletonGetter(Oobe);
 
@@ -81,13 +88,21 @@ cr.define('cr.ui', function() {
   Oobe.showOobeUI = function(showOobe) {
     if (showOobe) {
       document.body.classList.add('oobe-display');
+
+      // Callback to animate the header bar in.
+      var showHeaderBar = function() {
+        login.HeaderBar.animateIn(function() {
+          chrome.send('headerBarVisible');
+        });
+      };
+      // Start asynchronously so the OOBE network screen comes in first.
+      window.setTimeout(showHeaderBar, HEADER_BAR_DELAY_MS);
     } else {
       document.body.classList.remove('oobe-display');
       Oobe.getInstance().prepareForLoginDisplay_();
     }
 
-    // Don't show header bar for OOBE.
-    Oobe.getInstance().headerHidden = showOobe;
+    Oobe.getInstance().headerHidden = false;
   };
 
   /**
@@ -183,17 +198,6 @@ cr.define('cr.ui', function() {
   };
 
   /**
-   * Handles login success notification.
-   */
-  Oobe.onLoginSuccess = function(username) {
-    if (Oobe.getInstance().currentScreen.id == SCREEN_ACCOUNT_PICKER) {
-      // TODO(nkostylev): Enable animation back when session start jank
-      // is reduced. See http://crosbug.com/11116 http://crosbug.com/18307
-      // $('pod-row').startAuthenticatedAnimation();
-    }
-  };
-
-  /**
    * Sets text content for a div with |labelId|.
    * @param {string} labelId Id of the label div.
    * @param {string} labelText Text for the label.
@@ -241,22 +245,86 @@ cr.define('cr.ui', function() {
   };
 
   /**
-   * Login for autotests.
+   * Skip to login screen for telemetry.
+   */
+  Oobe.skipToLoginForTesting = function() {
+    Oobe.disableSigninUI();
+    chrome.send('skipToLoginForTesting');
+  };
+
+  /**
+   * Login for telemetry.
    * @param {string} username Login username.
    * @param {string} password Login password.
    */
   Oobe.loginForTesting = function(username, password) {
+    Oobe.disableSigninUI();
     chrome.send('skipToLoginForTesting', [username]);
-    chrome.send('completeLogin', [username, password]);
+    chrome.send('completeLogin', [username, password, false]);
   };
 
   /**
-   * Authenticate for autotests.
+   * Guest login for telemetry.
+   */
+  Oobe.guestLoginForTesting = function() {
+    Oobe.skipToLoginForTesting();
+    chrome.send('launchIncognito');
+  };
+
+  /**
+   * Authenticate for telemetry - used for screenlocker.
    * @param {string} username Login username.
    * @param {string} password Login password.
    */
   Oobe.authenticateForTesting = function(username, password) {
+    Oobe.disableSigninUI();
     chrome.send('authenticateUser', [username, password]);
+  };
+
+  /**
+   * Gaia login screen for telemetry.
+   */
+  Oobe.addUserForTesting = function() {
+    Oobe.skipToLoginForTesting();
+    chrome.send('addUser');
+  };
+
+  /**
+   * Hotrod requisition for telemetry.
+   */
+  Oobe.remoraRequisitionForTesting = function() {
+    chrome.send('setDeviceRequisition', ['remora']);
+  };
+
+  /**
+   * Finish enterprise enrollment for telemetry.
+   */
+  Oobe.enterpriseEnrollmentDone = function() {
+    chrome.send('oauthEnrollClose', ['done']);
+  };
+
+  /**
+   * Shows/hides login UI control bar with buttons like [Shut down].
+   */
+  Oobe.showControlBar = function(show) {
+    Oobe.getInstance().headerHidden = !show;
+  };
+
+  /**
+   * Sets the current state of the virtual keyboard (shown/hidden, size).
+   */
+  Oobe.setKeyboardState = function(shown, width, height) {
+    Oobe.getInstance().virtualKeyboardShown = shown;
+    Oobe.getInstance().setVirtualKeyboardSize(width, height);
+  };
+
+  /**
+   * Sets the current size of the client area (display size).
+   * @param {number} width client area width
+   * @param {number} height client area height
+   */
+  Oobe.setClientAreaSize = function(width, height) {
+    Oobe.getInstance().setClientAreaSize(width, height);
   };
 
   // Export

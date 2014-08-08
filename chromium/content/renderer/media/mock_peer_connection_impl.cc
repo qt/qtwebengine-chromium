@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "content/renderer/media/mock_media_stream_dependency_factory.h"
 #include "content/renderer/media/mock_peer_connection_impl.h"
 
 #include <vector>
 
 #include "base/logging.h"
+#include "content/renderer/media/webrtc/mock_peer_connection_dependency_factory.h"
 
 using testing::_;
 using webrtc::AudioTrackInterface;
@@ -205,7 +205,7 @@ const char MockPeerConnectionImpl::kDummyOffer[] = "dummy offer";
 const char MockPeerConnectionImpl::kDummyAnswer[] = "dummy answer";
 
 MockPeerConnectionImpl::MockPeerConnectionImpl(
-    MockMediaStreamDependencyFactory* factory)
+    MockPeerConnectionDependencyFactory* factory)
     : dependency_factory_(factory),
       local_streams_(new talk_base::RefCountedObject<MockStreamCollection>),
       remote_streams_(new talk_base::RefCountedObject<MockStreamCollection>),
@@ -263,12 +263,14 @@ MockPeerConnectionImpl::CreateDataChannel(const std::string& label,
 
 bool MockPeerConnectionImpl::GetStats(
     webrtc::StatsObserver* observer,
-    webrtc::MediaStreamTrackInterface* track) {
+    webrtc::MediaStreamTrackInterface* track,
+    StatsOutputLevel level) {
   if (!getstats_result_)
     return false;
 
-  std::vector<webrtc::StatsReport> reports;
-  webrtc::StatsReport report;
+  DCHECK_EQ(kStatsOutputLevelStandard, level);
+  std::vector<webrtc::StatsReport> reports(track ? 1 : 2);
+  webrtc::StatsReport& report = reports[0];
   report.id = "1234";
   report.type = "ssrc";
   report.timestamp = 42;
@@ -276,17 +278,17 @@ bool MockPeerConnectionImpl::GetStats(
   value.name = "trackname";
   value.value = "trackvalue";
   report.values.push_back(value);
-  reports.push_back(report);
   // If selector is given, we pass back one report.
   // If selector is not given, we pass back two.
   if (!track) {
-    report.id = "nontrack";
-    report.type = "generic";
-    report.timestamp = 44;
+    webrtc::StatsReport& report2 = reports[1];
+    report2.id = "nontrack";
+    report2.type = "generic";
+    report2.timestamp = 44;
+    report2.values.push_back(value);
     value.name = "somename";
     value.value = "somevalue";
-    report.values.push_back(value);
-    reports.push_back(report);
+    report2.values.push_back(value);
   }
   // Note that the callback is synchronous, not asynchronous; it will
   // happen before the request call completes.
@@ -351,6 +353,11 @@ bool MockPeerConnectionImpl::AddIceCandidate(
   sdp_mid_ = candidate->sdp_mid();
   sdp_mline_index_ = candidate->sdp_mline_index();
   return candidate->ToString(&ice_sdp_);
+}
+
+void MockPeerConnectionImpl::RegisterUMAObserver(
+    webrtc::UMAObserver* observer) {
+  NOTIMPLEMENTED();
 }
 
 }  // namespace content

@@ -59,13 +59,13 @@
 #endif
 
 #define DECLARE_VARIABLE(type, name)                                          \
-  namespace FLAG__namespace_do_not_use_directly_use_DECLARE_##type##_instead {  \
+  namespace FLAG__namespace_do_not_use_directly_use_DECLARE_##type##_instead {\
   extern PERFTOOLS_DLL_DECL type FLAGS_##name;                                \
   }                                                                           \
   using FLAG__namespace_do_not_use_directly_use_DECLARE_##type##_instead::FLAGS_##name
 
 #define DEFINE_VARIABLE(type, name, value, meaning) \
-  namespace FLAG__namespace_do_not_use_directly_use_DECLARE_##type##_instead {  \
+  namespace FLAG__namespace_do_not_use_directly_use_DECLARE_##type##_instead {\
   PERFTOOLS_DLL_DECL type FLAGS_##name(value);                                \
   char FLAGS_no##name;                                                        \
   }                                                                           \
@@ -100,16 +100,15 @@
 #define DEFINE_double(name, value, meaning) \
   DEFINE_VARIABLE(double, name, value, meaning)
 
-// Special case for string, because we have to specify the namespace
-// std::string, which doesn't play nicely with our FLAG__namespace hackery.
+// Special case for string, because of the pointer type.
 #define DECLARE_string(name)                                          \
   namespace FLAG__namespace_do_not_use_directly_use_DECLARE_string_instead {  \
-  extern std::string FLAGS_##name;                                                   \
+  extern const char* FLAGS_##name;                                            \
   }                                                                           \
   using FLAG__namespace_do_not_use_directly_use_DECLARE_string_instead::FLAGS_##name
 #define DEFINE_string(name, value, meaning) \
   namespace FLAG__namespace_do_not_use_directly_use_DECLARE_string_instead {  \
-  std::string FLAGS_##name(value);                                                   \
+  const char* FLAGS_##name = value;                                           \
   char FLAGS_no##name;                                                        \
   }                                                                           \
   using FLAG__namespace_do_not_use_directly_use_DECLARE_string_instead::FLAGS_##name
@@ -118,6 +117,8 @@
 // file), make it easier to initialize flags from the environment.
 // They are functions in Android because __system_property_get() doesn't
 // return a string.
+
+#if defined(ENABLE_PROFILING)
 
 #if defined(__ANDROID__) || defined(ANDROID)
 
@@ -177,5 +178,15 @@ inline double EnvToDouble(const char* envname, double dflt) {
   (!getenv(envname) ? (dflt) : strtod(getenv(envname), NULL))
 
 #endif  // defined(__ANDROID__) || defined(ANDROID)
+
+#else  // defined(ENABLE_PROFILING)
+
+#define EnvToString(envname, dflt) (dflt)
+#define EnvToBool(envname, dflt) (dflt)
+#define EnvToInt(envname, dflt) (dflt)
+#define EnvToInt64(envname, dflt) (dflt)
+#define EnvToDouble(envname, dflt) (dflt)
+
+#endif  // defined(ENABLE_PROFILING)
 
 #endif  // BASE_COMMANDLINEFLAGS_H_

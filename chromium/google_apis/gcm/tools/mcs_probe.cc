@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <cstdio>
 #include <string>
+#include <vector>
 
 #include "base/at_exit.h"
 #include "base/command_line.h"
@@ -20,11 +21,17 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/threading/thread.h"
 #include "base/threading/worker_pool.h"
+#include "base/time/default_clock.h"
 #include "base/values.h"
+#include "google_apis/gcm/base/fake_encryptor.h"
 #include "google_apis/gcm/base/mcs_message.h"
 #include "google_apis/gcm/base/mcs_util.h"
+#include "google_apis/gcm/engine/checkin_request.h"
 #include "google_apis/gcm/engine/connection_factory_impl.h"
+#include "google_apis/gcm/engine/gcm_store_impl.h"
+#include "google_apis/gcm/engine/gservices_settings.h"
 #include "google_apis/gcm/engine/mcs_client.h"
+#include "google_apis/gcm/monitoring/fake_gcm_stats_recorder.h"
 #include "net/base/host_mapping_rules.h"
 #include "net/base/net_log_logger.h"
 #include "net/cert/cert_verifier.h"
@@ -47,6 +54,35 @@
 // prints out any events.
 namespace gcm {
 namespace {
+
+const net::BackoffEntry::Policy kDefaultBackoffPolicy = {
+  // Number of initial errors (in sequence) to ignore before applying
+  // exponential back-off rules.
+  0,
+
+  // Initial delay for exponential back-off in ms.
+  15000,  // 15 seconds.
+
+  // Factor by which the waiting time will be multiplied.
+  2,
+
+  // Fuzzing percentage. ex: 10% will spread requests randomly
+  // between 90%-100% of the calculated time.
+  0.5,  // 50%.
+
+  // Maximum amount of time we are willing to delay our request in ms.
+  1000 * 60 * 5, // 5 minutes.
+
+  // Time to keep an entry from being discarded even when it
+  // has no significant state, -1 to never discard.
+  -1,
+
+  // Don't use initial delay unless the last request was an error.
+  false,
+};
+
+// Default values used to communicate with the check-in server.
+const char kChromeVersion[] = "Chrome MCS Probe";
 
 // The default server to communicate with.
 const char kMCSServerHost[] = "mtalk.google.com";
@@ -82,8 +118,14 @@ void MessageReceivedCallback(const MCSMessage& message) {
   }
 }
 
-void MessageSentCallback(const std::string& local_id) {
-  LOG(INFO) << "Message sent. Status: " << local_id;
+void MessageSentCallback(int64 user_serial_number,
+                         const std::string& app_id,
+                         const std::string& message_id,
+                         MCSClient::MessageSendStatus status) {
+  LOG(INFO) << "Message sent. Serial number: " << user_serial_number
+            << " Application ID: " << app_id
+            << " Message ID: " << message_id
+            << " Message send status: " << status;
 }
 
 // Needed to use a real host resolver.
@@ -164,16 +206,22 @@ class MCSProbe {
   uint64 secret() const { return secret_; }
 
  private:
+  void CheckIn();
   void InitializeNetworkState();
   void BuildNetworkSession();
 
-  void InitializationCallback(bool success,
-                              uint64 restored_android_id,
-                              uint64 restored_security_token);
+  void LoadCallback(scoped_ptr<GCMStore::LoadResult> load_result);
+  void UpdateCallback(bool success);
+  void ErrorCallback();
+  void OnCheckInCompleted(
+      const checkin_proto::AndroidCheckinResponse& checkin_response);
+  void StartMCSLogin();
+
+  base::DefaultClock clock_;
 
   CommandLine command_line_;
 
-  base::FilePath rmq_path_;
+  base::FilePath gcm_store_path_;
   uint64 android_id_;
   uint64 secret_;
   std::string server_host_;
@@ -195,7 +243,10 @@ class MCSProbe {
   scoped_refptr<net::HttpNetworkSession> network_session_;
   scoped_ptr<net::ProxyService> proxy_service_;
 
+  FakeGCMStatsRecorder recorder_;
+  scoped_ptr<GCMStore> gcm_store_;
   scoped_ptr<MCSClient> mcs_client_;
+  scoped_ptr<CheckinRequest> checkin_request_;
 
   scoped_ptr<ConnectionFactoryImpl> connection_factory_;
 
@@ -208,14 +259,14 @@ MCSProbe::MCSProbe(
     const CommandLine& command_line,
     scoped_refptr<net::URLRequestContextGetter> url_request_context_getter)
     : command_line_(command_line),
-      rmq_path_(base::FilePath(FILE_PATH_LITERAL("gcm_rmq_store"))),
+      gcm_store_path_(base::FilePath(FILE_PATH_LITERAL("gcm_store"))),
       android_id_(0),
       secret_(0),
       server_port_(0),
       url_request_context_getter_(url_request_context_getter),
       file_thread_("FileThread") {
   if (command_line.HasSwitch(kRMQFileName)) {
-    rmq_path_ = command_line.GetSwitchValuePath(kRMQFileName);
+    gcm_store_path_ = command_line.GetSwitchValuePath(kRMQFileName);
   }
   if (command_line.HasSwitch(kAndroidIdSwitch)) {
     base::StringToUint64(command_line.GetSwitchValueASCII(kAndroidIdSwitch),
@@ -244,20 +295,62 @@ void MCSProbe::Start() {
   file_thread_.Start();
   InitializeNetworkState();
   BuildNetworkSession();
+  std::vector<GURL> endpoints(1,
+                              GURL("https://" +
+                                   net::HostPortPair(server_host_,
+                                                     server_port_).ToString()));
   connection_factory_.reset(
-      new ConnectionFactoryImpl(GURL("https://" + net::HostPortPair(
-                                    server_host_, server_port_).ToString()),
+      new ConnectionFactoryImpl(endpoints,
+                                kDefaultBackoffPolicy,
                                 network_session_,
-                                &net_log_));
-  mcs_client_.reset(new MCSClient(rmq_path_,
+                                &net_log_,
+                                &recorder_));
+  gcm_store_.reset(
+      new GCMStoreImpl(gcm_store_path_,
+                       file_thread_.message_loop_proxy(),
+                       make_scoped_ptr<Encryptor>(new FakeEncryptor)));
+  mcs_client_.reset(new MCSClient("probe",
+                                  &clock_,
                                   connection_factory_.get(),
-                                  file_thread_.message_loop_proxy()));
+                                  gcm_store_.get(),
+                                  &recorder_));
   run_loop_.reset(new base::RunLoop());
-  mcs_client_->Initialize(base::Bind(&MCSProbe::InitializationCallback,
-                                     base::Unretained(this)),
-                          base::Bind(&MessageReceivedCallback),
-                          base::Bind(&MessageSentCallback));
+  gcm_store_->Load(base::Bind(&MCSProbe::LoadCallback,
+                              base::Unretained(this)));
   run_loop_->Run();
+}
+
+void MCSProbe::LoadCallback(scoped_ptr<GCMStore::LoadResult> load_result) {
+  DCHECK(load_result->success);
+  if (android_id_ != 0 && secret_ != 0) {
+    DVLOG(1) << "Presetting MCS id " << android_id_;
+    load_result->device_android_id = android_id_;
+    load_result->device_security_token = secret_;
+    gcm_store_->SetDeviceCredentials(android_id_,
+                                     secret_,
+                                     base::Bind(&MCSProbe::UpdateCallback,
+                                                base::Unretained(this)));
+  } else {
+    android_id_ = load_result->device_android_id;
+    secret_ = load_result->device_security_token;
+    DVLOG(1) << "Loaded MCS id " << android_id_;
+  }
+  mcs_client_->Initialize(
+      base::Bind(&MCSProbe::ErrorCallback, base::Unretained(this)),
+      base::Bind(&MessageReceivedCallback),
+      base::Bind(&MessageSentCallback),
+      load_result.Pass());
+
+  if (!android_id_ || !secret_) {
+    DVLOG(1) << "Checkin to generate new MCS credentials.";
+    CheckIn();
+    return;
+  }
+
+  StartMCSLogin();
+}
+
+void MCSProbe::UpdateCallback(bool success) {
 }
 
 void MCSProbe::InitializeNetworkState() {
@@ -317,7 +410,6 @@ void MCSProbe::BuildNetworkSession() {
   session_params.network_delegate = NULL;  // TODO(zea): implement?
   session_params.host_mapping_rules = host_mapping_rules_.get();
   session_params.ignore_certificate_errors = true;
-  session_params.http_pipelining_enabled = false;
   session_params.testing_fixed_http_port = 0;
   session_params.testing_fixed_https_port = 0;
   session_params.net_log = &net_log_;
@@ -326,16 +418,59 @@ void MCSProbe::BuildNetworkSession() {
   network_session_ = new net::HttpNetworkSession(session_params);
 }
 
-void MCSProbe::InitializationCallback(bool success,
-                                      uint64 restored_android_id,
-                                      uint64 restored_security_token) {
-  LOG(INFO) << "Initialization " << (success ? "success!" : "failure!");
-  if (restored_android_id && restored_security_token) {
-    android_id_ = restored_android_id;
-    secret_ = restored_security_token;
-  }
-  if (success)
-    mcs_client_->Login(android_id_, secret_);
+void MCSProbe::ErrorCallback() {
+  LOG(INFO) << "MCS error happened";
+}
+
+void MCSProbe::CheckIn() {
+  LOG(INFO) << "Check-in request initiated.";
+  checkin_proto::ChromeBuildProto chrome_build_proto;
+  chrome_build_proto.set_platform(
+      checkin_proto::ChromeBuildProto::PLATFORM_LINUX);
+  chrome_build_proto.set_channel(
+      checkin_proto::ChromeBuildProto::CHANNEL_CANARY);
+  chrome_build_proto.set_chrome_version(kChromeVersion);
+
+  CheckinRequest::RequestInfo request_info(
+      0, 0, std::string(), chrome_build_proto);
+
+  checkin_request_.reset(new CheckinRequest(
+      GServicesSettings::DefaultCheckinURL(),
+      request_info,
+      kDefaultBackoffPolicy,
+      base::Bind(&MCSProbe::OnCheckInCompleted, base::Unretained(this)),
+      url_request_context_getter_.get(),
+      &recorder_));
+  checkin_request_->Start();
+}
+
+void MCSProbe::OnCheckInCompleted(
+    const checkin_proto::AndroidCheckinResponse& checkin_response) {
+  bool success = checkin_response.has_android_id() &&
+                 checkin_response.android_id() != 0UL &&
+                 checkin_response.has_security_token() &&
+                 checkin_response.security_token() != 0UL;
+  LOG(INFO) << "Check-in request completion "
+            << (success ? "success!" : "failure!");
+
+  if (!success)
+    return;
+
+  android_id_ = checkin_response.android_id();
+  secret_ = checkin_response.security_token();
+
+  gcm_store_->SetDeviceCredentials(android_id_,
+                                   secret_,
+                                   base::Bind(&MCSProbe::UpdateCallback,
+                                              base::Unretained(this)));
+
+  StartMCSLogin();
+}
+
+void MCSProbe::StartMCSLogin() {
+  LOG(INFO) << "MCS login initiated.";
+
+  mcs_client_->Login(android_id_, secret_);
 }
 
 int MCSProbeMain(int argc, char* argv[]) {

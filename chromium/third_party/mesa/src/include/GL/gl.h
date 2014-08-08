@@ -72,7 +72,8 @@
 #  define GLAPIENTRY
 #endif /* WIN32 && !CYGWIN */
 
-#if (defined(__BEOS__) && defined(__POWERPC__)) || defined(__QUICKDRAW__)
+/* See https://bugs.freedesktop.org/show_bug.cgi?id=77749 */
+#if (defined(__BEOS__) && defined(__POWERPC__)) /* || defined(__QUICKDRAW__) */
 #  define PRAGMA_EXPORT_SUPPORTED		1
 #endif
 

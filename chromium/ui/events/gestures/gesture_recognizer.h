@@ -11,6 +11,7 @@
 #include "ui/events/event_constants.h"
 #include "ui/events/events_export.h"
 #include "ui/events/gestures/gesture_types.h"
+#include "ui/gfx/geometry/point_f.h"
 
 namespace ui {
 // A GestureRecognizer is an abstract base class for conversion of touch events
@@ -19,6 +20,7 @@ class EVENTS_EXPORT GestureRecognizer {
  public:
   static GestureRecognizer* Create();
   static GestureRecognizer* Get();
+  static void Reset();
 
   // List of GestureEvent*.
   typedef ScopedVector<GestureEvent> Gestures;
@@ -34,8 +36,9 @@ class EVENTS_EXPORT GestureRecognizer {
                                                 GestureConsumer* consumer) = 0;
 
   // This is called when the consumer is destroyed. So this should cleanup any
-  // internal state maintained for |consumer|.
-  virtual void CleanupStateForConsumer(GestureConsumer* consumer) = 0;
+  // internal state maintained for |consumer|. Returns true iff there was
+  // state relating to |consumer| to clean up.
+  virtual bool CleanupStateForConsumer(GestureConsumer* consumer) = 0;
 
   // Return the window which should handle this TouchEvent, in the case where
   // the touch is already associated with a target.
@@ -46,10 +49,12 @@ class EVENTS_EXPORT GestureRecognizer {
   virtual GestureConsumer* GetTargetForGestureEvent(
       const GestureEvent& event) = 0;
 
-  // If there is an active touch within
-  // GestureConfiguration::max_separation_for_gesture_touches_in_pixels,
-  // of |location|, returns the target of the nearest active touch.
-  virtual GestureConsumer* GetTargetForLocation(const gfx::Point& location) = 0;
+  // Returns the target of the nearest active touch with source device of
+  // |source_device_id|, within
+  // GestureConfiguration::max_separation_for_gesture_touches_in_pixels of
+  // |location|, or NULL if no such point exists.
+  virtual GestureConsumer* GetTargetForLocation(
+      const gfx::PointF& location, int source_device_id) = 0;
 
   // Makes |new_consumer| the target for events previously targeting
   // |current_consumer|. All other targets are canceled.
@@ -65,10 +70,11 @@ class EVENTS_EXPORT GestureRecognizer {
   // point and true is returned. If no touch events have been processed for
   // |consumer| false is returned and |point| is untouched.
   virtual bool GetLastTouchPointForTarget(GestureConsumer* consumer,
-                                          gfx::Point* point) = 0;
+                                          gfx::PointF* point) = 0;
 
-  // Sends a touch cancel event for every active touch.
-  virtual void CancelActiveTouches(GestureConsumer* consumer) = 0;
+  // Sends a touch cancel event for every active touch. Returns true iff any
+  // touch cancels were sent.
+  virtual bool CancelActiveTouches(GestureConsumer* consumer) = 0;
 
   // Subscribes |helper| for dispatching async gestures such as long press.
   // The Gesture Recognizer does NOT take ownership of |helper| and it is the

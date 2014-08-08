@@ -32,23 +32,26 @@
 #define MIDIPort_h
 
 #include "bindings/v8/ScriptWrappable.h"
-#include "core/dom/ActiveDOMObject.h"
-#include "core/events/EventTarget.h"
+#include "modules/EventTargetModules.h"
+#include "platform/heap/Handle.h"
 #include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
 #include "wtf/Vector.h"
 
 namespace WebCore {
 
-class MIDIPort : public RefCounted<MIDIPort>, public ScriptWrappable, public ActiveDOMObject, public EventTargetWithInlineData {
+class MIDIAccess;
+
+class MIDIPort : public RefCountedWillBeRefCountedGarbageCollected<MIDIPort>, public ScriptWrappable, public EventTargetWithInlineData {
     REFCOUNTED_EVENT_TARGET(MIDIPort);
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(MIDIPort);
 public:
     enum MIDIPortTypeCode {
         MIDIPortTypeInput,
         MIDIPortTypeOutput
     };
 
-    virtual ~MIDIPort();
+    virtual ~MIDIPort() { }
 
     String id() const { return m_id; }
     String manufacturer() const { return m_manufacturer; }
@@ -56,14 +59,18 @@ public:
     String type() const;
     String version() const { return m_version; }
 
+    MIDIAccess* midiAccess() const { return m_access; }
+
+    virtual void trace(Visitor*) OVERRIDE;
+
     DEFINE_ATTRIBUTE_EVENT_LISTENER(disconnect);
 
     // EventTarget
     virtual const AtomicString& interfaceName() const OVERRIDE { return EventTargetNames::MIDIPort; }
-    virtual ExecutionContext* executionContext() const OVERRIDE { return ActiveDOMObject::executionContext(); }
+    virtual ExecutionContext* executionContext() const OVERRIDE FINAL;
 
 protected:
-    MIDIPort(ExecutionContext*, const String& id, const String& manufacturer, const String& name, MIDIPortTypeCode, const String& version);
+    MIDIPort(MIDIAccess*, const String& id, const String& manufacturer, const String& name, MIDIPortTypeCode, const String& version);
 
 private:
     String m_id;
@@ -71,9 +78,8 @@ private:
     String m_name;
     MIDIPortTypeCode m_type;
     String m_version;
+    RawPtrWillBeMember<MIDIAccess> m_access;
 };
-
-typedef Vector<RefPtr<MIDIPort> > MIDIPortVector;
 
 } // namespace WebCore
 

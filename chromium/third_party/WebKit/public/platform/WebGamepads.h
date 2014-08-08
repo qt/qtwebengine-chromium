@@ -30,9 +30,9 @@
 #include "wtf/Assertions.h"
 #endif
 
-namespace blink {
-
 #pragma pack(push, 1)
+
+namespace blink {
 
 // This structure is intentionally POD and fixed size so that it can be stored
 // in shared memory between hardware polling threads and the rest of the
@@ -52,7 +52,7 @@ public:
 };
 
 #if BLINK_IMPLEMENTATION
-COMPILE_ASSERT(sizeof(WebGamepads) == 1864, WebGamepads_has_wrong_size);
+COMPILE_ASSERT(sizeof(WebGamepads) == 2888, WebGamepads_has_wrong_size);
 #endif
 
 #pragma pack(pop)

@@ -11,7 +11,6 @@
 
 #include "base/basictypes.h"
 #include "base/logging.h"
-#include "base/memory/scoped_handle.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/win/scoped_gdi_object.h"
 #include "base/win/scoped_hdc.h"
@@ -27,7 +26,6 @@
 #include "ui/gfx/gdi_util.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/rect_conversions.h"
-#include "ui/gfx/sys_color_change_listener.h"
 #include "ui/gfx/win/dpi.h"
 #include "ui/native_theme/common_theme.h"
 
@@ -50,6 +48,7 @@ const SkColor kUnfocusedBorderColor = SkColorSetRGB(0xd9, 0xd9, 0xd9);
 const SkColor kButtonBackgroundColor = SkColorSetRGB(0xde, 0xde, 0xde);
 const SkColor kButtonHighlightColor = SkColorSetARGB(200, 255, 255, 255);
 const SkColor kButtonHoverColor = SkColorSetRGB(6, 45, 117);
+const SkColor kButtonHoverBackgroundColor = SkColorSetRGB(0xEA, 0xEA, 0xEA);
 // MenuItem:
 const SkColor kEnabledMenuItemForegroundColor = SkColorSetRGB(6, 45, 117);
 const SkColor kDisabledMenuItemForegroundColor = SkColorSetRGB(161, 161, 146);
@@ -87,16 +86,17 @@ void SetCheckerboardShader(SkPaint* paint, const RECT& align_rect) {
   temp_bitmap.setConfig(SkBitmap::kARGB_8888_Config, 2, 2);
   temp_bitmap.setPixels(buffer);
   SkBitmap bitmap;
-  temp_bitmap.copyTo(&bitmap, temp_bitmap.config());
-  skia::RefPtr<SkShader> shader = skia::AdoptRef(
-      SkShader::CreateBitmapShader(
-          bitmap, SkShader::kRepeat_TileMode, SkShader::kRepeat_TileMode));
+  temp_bitmap.copyTo(&bitmap);
 
   // Align the pattern with the upper corner of |align_rect|.
-  SkMatrix matrix;
-  matrix.setTranslate(SkIntToScalar(align_rect.left),
-                      SkIntToScalar(align_rect.top));
-  shader->setLocalMatrix(matrix);
+  SkMatrix local_matrix;
+  local_matrix.setTranslate(SkIntToScalar(align_rect.left),
+                            SkIntToScalar(align_rect.top));
+  skia::RefPtr<SkShader> shader =
+      skia::AdoptRef(SkShader::CreateBitmapShader(bitmap,
+                                                  SkShader::kRepeat_TileMode,
+                                                  SkShader::kRepeat_TileMode,
+                                                  &local_matrix));
   paint->setShader(shader.get());
 }
 
@@ -127,14 +127,6 @@ RECT InsetRect(const RECT* rect, int size) {
   return result.ToRECT();
 }
 
-// Returns true if using a high contrast theme.
-bool UsingHighContrastTheme() {
-  HIGHCONTRAST result;
-  result.cbSize = sizeof(HIGHCONTRAST);
-  return SystemParametersInfo(SPI_GETHIGHCONTRAST, result.cbSize, &result, 0) &&
-      (result.dwFlags & HCF_HIGHCONTRASTON) == HCF_HIGHCONTRASTON;
-}
-
 }  // namespace
 
 namespace ui {
@@ -143,6 +135,18 @@ bool NativeThemeWin::IsThemingActive() const {
   if (is_theme_active_)
     return !!is_theme_active_();
   return false;
+}
+
+bool NativeThemeWin::IsUsingHighContrastTheme() const {
+  if (is_using_high_contrast_valid_)
+    return is_using_high_contrast_;
+  HIGHCONTRAST result;
+  result.cbSize = sizeof(HIGHCONTRAST);
+  is_using_high_contrast_ =
+      SystemParametersInfo(SPI_GETHIGHCONTRAST, result.cbSize, &result, 0) &&
+      (result.dwFlags & HCF_HIGHCONTRASTON) == HCF_HIGHCONTRASTON;
+  is_using_high_contrast_valid_ = true;
+  return is_using_high_contrast_;
 }
 
 HRESULT NativeThemeWin::GetThemeColor(ThemeName theme,
@@ -208,16 +212,6 @@ bool NativeThemeWin::IsClassicTheme(ThemeName name) const {
   return !GetThemeHandle(name);
 }
 
-// TODO(sky): seems like we should default to NativeThemeWin, but that currently
-// breaks a couple of tests (FocusTraversalTest.NormalTraversal in
-// views_unittests).
-#if !defined(USE_AURA)
-// static
-NativeTheme* NativeTheme::instance() {
-  return NativeThemeWin::instance();
-}
-#endif
-
 // static
 NativeThemeWin* NativeThemeWin::instance() {
   CR_DEFINE_STATIC_LOCAL(NativeThemeWin, s_native_theme, ());
@@ -233,7 +227,6 @@ gfx::Size NativeThemeWin::GetPartSize(Part part,
 
   // The GetThemePartSize call below returns the default size without
   // accounting for user customization (crbug/218291).
-  SIZE size;
   switch (part) {
     case kScrollbarDownArrow:
     case kScrollbarLeftArrow:
@@ -242,14 +235,18 @@ gfx::Size NativeThemeWin::GetPartSize(Part part,
     case kScrollbarHorizontalThumb:
     case kScrollbarVerticalThumb:
     case kScrollbarHorizontalTrack:
-    case kScrollbarVerticalTrack:
-      size.cx = size.cy = gfx::win::GetSystemMetricsInDIP(SM_CXVSCROLL);
-      return gfx::Size(size.cx, size.cy);
+    case kScrollbarVerticalTrack: {
+      int size = gfx::win::GetSystemMetricsInDIP(SM_CXVSCROLL);
+      if (size == 0)
+        size = 17;
+      return gfx::Size(size, size);
+    }
   }
 
   int part_id = GetWindowsPart(part, state, extra);
   int state_id = GetWindowsState(part, state, extra);
 
+  SIZE size;
   HDC hdc = GetDC(NULL);
   HRESULT hr = GetThemePartSize(GetThemeName(part), hdc, part_id, state_id,
                                 NULL, TS_TRUE, &size);
@@ -286,6 +283,9 @@ void NativeThemeWin::Paint(SkCanvas* canvas,
     return;
 
   switch (part) {
+    case kComboboxArrow:
+      CommonThemePaintComboboxArrow(canvas, rect);
+      return;
     case kMenuPopupGutter:
       CommonThemePaintMenuGutter(canvas, rect);
       return;
@@ -349,7 +349,9 @@ NativeThemeWin::NativeThemeWin()
       set_theme_properties_(NULL),
       is_theme_active_(NULL),
       get_theme_int_(NULL),
-      color_change_listener_(this) {
+      color_change_listener_(this),
+      is_using_high_contrast_(false),
+      is_using_high_contrast_valid_(false) {
   if (theme_dll_) {
     draw_theme_ = reinterpret_cast<DrawThemeBackgroundPtr>(
         GetProcAddress(theme_dll_, "DrawThemeBackground"));
@@ -389,6 +391,8 @@ NativeThemeWin::~NativeThemeWin() {
 
 void NativeThemeWin::OnSysColorChange() {
   UpdateSystemColors();
+  is_using_high_contrast_valid_ = false;
+  NotifyObservers();
 }
 
 void NativeThemeWin::UpdateSystemColors() {
@@ -450,6 +454,9 @@ void NativeThemeWin::PaintDirect(SkCanvas* canvas,
     case kScrollbarVerticalTrack:
       PaintScrollbarTrack(canvas, hdc, part, state, rect,
                           extra.scrollbar_track);
+      break;
+    case kScrollbarCorner:
+      canvas->drawColor(SK_ColorWHITE, SkXfermode::kSrc_Mode);
       break;
     case kScrollbarHorizontalThumb:
     case kScrollbarVerticalThumb:
@@ -519,12 +526,16 @@ SkColor NativeThemeWin::GetSystemColor(ColorId color_id) const {
       return kButtonHighlightColor;
     case kColorId_ButtonHoverColor:
       return kButtonHoverColor;
+    case kColorId_ButtonHoverBackgroundColor:
+      return kButtonHoverBackgroundColor;
 
     // MenuItem
     case kColorId_EnabledMenuItemForegroundColor:
       return kEnabledMenuItemForegroundColor;
     case kColorId_DisabledMenuItemForegroundColor:
       return kDisabledMenuItemForegroundColor;
+    case kColorId_DisabledEmphasizedMenuItemForegroundColor:
+      return SK_ColorBLACK;
     case kColorId_FocusedMenuItemBackgroundColor:
       return kFocusedMenuItemBackgroundColor;
     case kColorId_MenuSeparatorColor:
@@ -565,7 +576,7 @@ SkColor NativeThemeWin::GetSystemColor(ColorId color_id) const {
     case kColorId_TreeSelectionBackgroundFocused:
       return system_colors_[COLOR_HIGHLIGHT];
     case kColorId_TreeSelectionBackgroundUnfocused:
-      return system_colors_[UsingHighContrastTheme() ?
+      return system_colors_[IsUsingHighContrastTheme() ?
                               COLOR_MENUHIGHLIGHT : COLOR_BTNFACE];
     case kColorId_TreeArrow:
       return system_colors_[COLOR_WINDOWTEXT];
@@ -582,10 +593,54 @@ SkColor NativeThemeWin::GetSystemColor(ColorId color_id) const {
     case kColorId_TableSelectionBackgroundFocused:
       return system_colors_[COLOR_HIGHLIGHT];
     case kColorId_TableSelectionBackgroundUnfocused:
-      return system_colors_[UsingHighContrastTheme() ?
+      return system_colors_[IsUsingHighContrastTheme() ?
                               COLOR_MENUHIGHLIGHT : COLOR_BTNFACE];
     case kColorId_TableGroupingIndicatorColor:
       return system_colors_[COLOR_GRAYTEXT];
+
+    // Results Tables
+    case kColorId_ResultsTableNormalBackground:
+      return system_colors_[COLOR_WINDOW];
+    case kColorId_ResultsTableHoveredBackground:
+      return color_utils::AlphaBlend(system_colors_[COLOR_HIGHLIGHT],
+                                     system_colors_[COLOR_WINDOW], 0x40);
+    case kColorId_ResultsTableSelectedBackground:
+      return system_colors_[COLOR_HIGHLIGHT];
+    case kColorId_ResultsTableNormalText:
+    case kColorId_ResultsTableHoveredText:
+      return system_colors_[COLOR_WINDOWTEXT];
+    case kColorId_ResultsTableSelectedText:
+      return system_colors_[COLOR_HIGHLIGHTTEXT];
+    case kColorId_ResultsTableNormalDimmedText:
+      return color_utils::AlphaBlend(system_colors_[COLOR_WINDOWTEXT],
+                                     system_colors_[COLOR_WINDOW], 0x80);
+    case kColorId_ResultsTableHoveredDimmedText:
+      return color_utils::AlphaBlend(
+          system_colors_[COLOR_WINDOWTEXT],
+          GetSystemColor(kColorId_ResultsTableHoveredBackground), 0x80);
+    case kColorId_ResultsTableSelectedDimmedText:
+      return color_utils::AlphaBlend(system_colors_[COLOR_HIGHLIGHTTEXT],
+                                     system_colors_[COLOR_HIGHLIGHT], 0x80);
+    case kColorId_ResultsTableNormalUrl:
+      return color_utils::GetReadableColor(SkColorSetRGB(0, 128, 0),
+                                           system_colors_[COLOR_WINDOW]);
+    case kColorId_ResultsTableHoveredUrl:
+      return color_utils::GetReadableColor(
+          SkColorSetRGB(0, 128, 0),
+          GetSystemColor(kColorId_ResultsTableHoveredBackground));
+    case kColorId_ResultsTableSelectedUrl:
+      return color_utils::GetReadableColor(SkColorSetRGB(0, 128, 0),
+                                           system_colors_[COLOR_HIGHLIGHT]);
+    case kColorId_ResultsTableNormalDivider:
+      return color_utils::AlphaBlend(system_colors_[COLOR_WINDOWTEXT],
+                                     system_colors_[COLOR_WINDOW], 0x34);
+    case kColorId_ResultsTableHoveredDivider:
+      return color_utils::AlphaBlend(
+          system_colors_[COLOR_WINDOWTEXT],
+          GetSystemColor(kColorId_ResultsTableHoveredBackground), 0x34);
+    case kColorId_ResultsTableSelectedDivider:
+      return color_utils::AlphaBlend(system_colors_[COLOR_HIGHLIGHTTEXT],
+                                     system_colors_[COLOR_HIGHLIGHT], 0x34);
 
     default:
       NOTREACHED();
@@ -609,6 +664,8 @@ void NativeThemeWin::PaintIndirect(SkCanvas* canvas,
       skia::BitmapPlatformDevice::Create(
           rect.width(), rect.height(), false, NULL));
   DCHECK(device);
+  if (!device)
+    return;
   SkCanvas offscreen_canvas(device.get());
   DCHECK(skia::SupportsPlatformPaint(&offscreen_canvas));
 
@@ -649,7 +706,7 @@ void NativeThemeWin::PaintIndirect(SkCanvas* canvas,
   const SkBitmap& hdc_bitmap =
       offscreen_canvas.getDevice()->accessBitmap(false);
   SkBitmap bitmap;
-  hdc_bitmap.copyTo(&bitmap, SkBitmap::kARGB_8888_Config);
+  hdc_bitmap.copyTo(&bitmap, kPMColor_SkColorType);
 
   // Post-process the pixels to fix up the alpha values (see big comment above).
   const SkPMColor placeholder_value = SkPreMultiplyColor(placeholder);

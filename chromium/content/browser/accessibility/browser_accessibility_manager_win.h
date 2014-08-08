@@ -14,22 +14,22 @@
 namespace content {
 class BrowserAccessibilityWin;
 
-class AccessibleHWND;
+class LegacyRenderWidgetHostHWND;
 
 // Manages a tree of BrowserAccessibilityWin objects.
 class CONTENT_EXPORT BrowserAccessibilityManagerWin
     : public BrowserAccessibilityManager {
  public:
   BrowserAccessibilityManagerWin(
-      HWND parent_hwnd,
+      content::LegacyRenderWidgetHostHWND* accessible_hwnd,
       IAccessible* parent_iaccessible,
-      const AccessibilityNodeData& src,
+      const ui::AXTreeUpdate& initial_tree,
       BrowserAccessibilityDelegate* delegate,
       BrowserAccessibilityFactory* factory = new BrowserAccessibilityFactory());
 
   virtual ~BrowserAccessibilityManagerWin();
 
-  static AccessibilityNodeData GetEmptyDocument();
+  static ui::AXTreeUpdate GetEmptyDocument();
 
   // Get the closest containing HWND.
   HWND parent_hwnd() { return parent_hwnd_; }
@@ -40,14 +40,19 @@ class CONTENT_EXPORT BrowserAccessibilityManagerWin
     parent_iaccessible_ = parent_iaccessible;
   }
 
+  void SetAccessibleHWND(LegacyRenderWidgetHostHWND* accessible_hwnd);
+
   // Calls NotifyWinEvent if the parent window's IAccessible pointer is known.
   void MaybeCallNotifyWinEvent(DWORD event, LONG child_id);
 
+  // AXTree methods
+  virtual void OnNodeWillBeDeleted(ui::AXNode* node) OVERRIDE;
+  virtual void OnNodeCreated(ui::AXNode* node) OVERRIDE;
+
   // BrowserAccessibilityManager methods
-  virtual void AddNodeToMap(BrowserAccessibility* node);
-  virtual void RemoveNode(BrowserAccessibility* node) OVERRIDE;
+  virtual void OnWindowFocused() OVERRIDE;
   virtual void NotifyAccessibilityEvent(
-      blink::WebAXEvent event_type, BrowserAccessibility* node) OVERRIDE;
+      ui::AXEvent event_type, BrowserAccessibility* node) OVERRIDE;
 
   // Track this object and post a VISIBLE_DATA_CHANGED notification when
   // its container scrolls.
@@ -60,6 +65,10 @@ class CONTENT_EXPORT BrowserAccessibilityManagerWin
 
   // Called when |accessible_hwnd_| is deleted by its parent.
   void OnAccessibleHwndDeleted();
+
+ protected:
+  // BrowserAccessibilityManager methods
+  virtual void OnRootChanged(ui::AXNode* new_root) OVERRIDE;
 
  private:
   // The closest ancestor HWND.
@@ -77,13 +86,15 @@ class CONTENT_EXPORT BrowserAccessibilityManagerWin
   BrowserAccessibilityWin* tracked_scroll_object_;
 
   // A mapping from the Windows-specific unique IDs (unique within the
-  // browser process) to renderer ids within this page.
-  base::hash_map<long, int32> unique_id_to_renderer_id_map_;
-
-  bool is_chrome_frame_;
+  // browser process) to accessibility ids within this page.
+  base::hash_map<long, int32> unique_id_to_ax_id_map_;
 
   // Owned by its parent; OnAccessibleHwndDeleted gets called upon deletion.
-  AccessibleHWND* accessible_hwnd_;
+  LegacyRenderWidgetHostHWND* accessible_hwnd_;
+
+  // Set to true if we need to fire a focus event on the root as soon as
+  // possible.
+  bool focus_event_on_root_needed_;
 
   DISALLOW_COPY_AND_ASSIGN(BrowserAccessibilityManagerWin);
 };

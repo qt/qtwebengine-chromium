@@ -44,9 +44,14 @@ public:
     ALWAYS_INLINE static PartitionRoot* getObjectModelPartition() { return m_objectModelAllocator.root(); }
     ALWAYS_INLINE static PartitionRoot* getRenderingPartition() { return m_renderingAllocator.root(); }
 
+    static size_t currentDOMMemoryUsage()
+    {
+        return m_objectModelAllocator.root()->totalSizeOfCommittedPages;
+    }
+
 private:
-    static PartitionAllocator<3072> m_objectModelAllocator;
-    static PartitionAllocator<1024> m_renderingAllocator;
+    static SizeSpecificPartitionAllocator<3072> m_objectModelAllocator;
+    static SizeSpecificPartitionAllocator<1024> m_renderingAllocator;
 };
 
 } // namespace WebCore

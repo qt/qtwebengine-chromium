@@ -26,35 +26,33 @@
 #include "config.h"
 
 #include "core/html/canvas/OESElementIndexUint.h"
-#include "platform/graphics/Extensions3D.h"
 
 namespace WebCore {
 
-OESElementIndexUint::OESElementIndexUint(WebGLRenderingContext* context)
+OESElementIndexUint::OESElementIndexUint(WebGLRenderingContextBase* context)
     : WebGLExtension(context)
 {
     ScriptWrappable::init(this);
-    context->graphicsContext3D()->extensions()->ensureEnabled("GL_OES_element_index_uint");
+    context->extensionsUtil()->ensureExtensionEnabled("GL_OES_element_index_uint");
 }
 
 OESElementIndexUint::~OESElementIndexUint()
 {
 }
 
-WebGLExtension::ExtensionName OESElementIndexUint::name() const
+WebGLExtensionName OESElementIndexUint::name() const
 {
     return OESElementIndexUintName;
 }
 
-PassRefPtr<OESElementIndexUint> OESElementIndexUint::create(WebGLRenderingContext* context)
+PassRefPtr<OESElementIndexUint> OESElementIndexUint::create(WebGLRenderingContextBase* context)
 {
     return adoptRef(new OESElementIndexUint(context));
 }
 
-bool OESElementIndexUint::supported(WebGLRenderingContext* context)
+bool OESElementIndexUint::supported(WebGLRenderingContextBase* context)
 {
-    Extensions3D* extensions = context->graphicsContext3D()->extensions();
-    return extensions->supports("GL_OES_element_index_uint");
+    return context->extensionsUtil()->supportsExtension("GL_OES_element_index_uint");
 }
 
 const char* OESElementIndexUint::extensionName()

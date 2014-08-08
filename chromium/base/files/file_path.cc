@@ -521,7 +521,7 @@ FilePath FilePath::Append(const FilePath& component) const {
 }
 
 FilePath FilePath::AppendASCII(const StringPiece& component) const {
-  DCHECK(IsStringASCII(component));
+  DCHECK(base::IsStringASCII(component));
 #if defined(OS_WIN)
   return Append(ASCIIToUTF16(component.as_string()));
 #elif defined(OS_POSIX)
@@ -587,7 +587,7 @@ string16 FilePath::LossyDisplayName() const {
 }
 
 std::string FilePath::MaybeAsASCII() const {
-  if (IsStringASCII(path_))
+  if (base::IsStringASCII(path_))
     return path_;
   return std::string();
 }
@@ -632,9 +632,9 @@ string16 FilePath::LossyDisplayName() const {
 }
 
 std::string FilePath::MaybeAsASCII() const {
-  if (IsStringASCII(path_))
-    return WideToASCII(path_);
-  return "";
+  if (base::IsStringASCII(path_))
+    return UTF16ToASCII(path_);
+  return std::string();
 }
 
 std::string FilePath::AsUTF8Unsafe() const {
@@ -1292,10 +1292,16 @@ void FilePath::StripTrailingSeparatorsInternal() {
 }
 
 FilePath FilePath::NormalizePathSeparators() const {
+  return NormalizePathSeparatorsTo(kSeparators[0]);
+}
+
+FilePath FilePath::NormalizePathSeparatorsTo(CharType separator) const {
 #if defined(FILE_PATH_USES_WIN_SEPARATORS)
+  DCHECK_NE(kSeparators + kSeparatorsLength,
+            std::find(kSeparators, kSeparators + kSeparatorsLength, separator));
   StringType copy = path_;
-  for (size_t i = 1; i < kSeparatorsLength; ++i) {
-    std::replace(copy.begin(), copy.end(), kSeparators[i], kSeparators[0]);
+  for (size_t i = 0; i < kSeparatorsLength; ++i) {
+    std::replace(copy.begin(), copy.end(), kSeparators[i], separator);
   }
   return FilePath(copy);
 #else

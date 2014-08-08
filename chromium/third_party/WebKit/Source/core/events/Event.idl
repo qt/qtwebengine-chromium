@@ -20,6 +20,7 @@
 
 // Introduced in DOM Level 2:
 [
+    WillBeGarbageCollected,
     Custom=Wrap,
     EventConstructor,
 ] interface Event {
@@ -67,11 +68,9 @@
     void stopImmediatePropagation();
 
     // IE Extensions
-    readonly attribute EventTarget      srcElement;
-    [ImplementedAs=legacyReturnValue, DeprecateAs=EventReturnValue] attribute boolean returnValue;
-             attribute boolean          cancelBubble;
-
-    [RuntimeEnabled=ShadowDOM] readonly attribute NodeList path;
-
-    [Custom=Getter] readonly attribute Clipboard clipboardData;
+    [MeasureAs=EventSrcElement] readonly attribute EventTarget srcElement;
+    [CallWith=ExecutionContext, ImplementedAs=legacyReturnValue, MeasureAs=EventReturnValue] attribute boolean returnValue;
+    [MeasureAs=EventCancelBubble] attribute boolean cancelBubble;
+    [MeasureAs=EventPath] readonly attribute NodeList path;
+    [Custom=Getter, MeasureAs=EventClipboardData] readonly attribute DataTransfer clipboardData;
 };

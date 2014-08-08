@@ -23,6 +23,7 @@
 #ifndef CSSRule_h
 #define CSSRule_h
 
+#include "platform/heap/Handle.h"
 #include "wtf/RefCounted.h"
 #include "wtf/text/WTFString.h"
 
@@ -32,7 +33,7 @@ class CSSParserContext;
 class CSSStyleSheet;
 class StyleRuleBase;
 
-class CSSRule : public RefCounted<CSSRule> {
+class CSSRule : public RefCountedWillBeGarbageCollectedFinalized<CSSRule> {
 public:
     virtual ~CSSRule() { }
 
@@ -53,7 +54,6 @@ public:
         WEBKIT_KEYFRAME_RULE = KEYFRAME_RULE,
         SUPPORTS_RULE = 12,
         VIEWPORT_RULE = 15,
-        WEBKIT_REGION_RULE = 16,
         WEBKIT_FILTER_RULE = 17
     };
 
@@ -72,6 +72,8 @@ public:
         m_parentIsRule = true;
         m_parentRule = rule;
     }
+
+    virtual void trace(Visitor*);
 
     CSSStyleSheet* parentStyleSheet() const
     {
@@ -102,6 +104,7 @@ private:
     mutable unsigned char m_hasCachedSelectorText : 1;
     unsigned char m_parentIsRule : 1;
 
+    // These should be Members, but no Members in unions.
     union {
         CSSRule* m_parentRule;
         CSSStyleSheet* m_parentStyleSheet;

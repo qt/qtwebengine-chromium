@@ -24,10 +24,11 @@ namespace {
 // that limit this to 6, so we're temporarily holding it at that level.
 const size_t kDefaultMaxProcTasks = 6u;
 
-PrioritizedDispatcher::Limits GetDispatcherLimits(
-    const HostResolver::Options& options) {
-  PrioritizedDispatcher::Limits limits(NUM_PRIORITIES,
-                                       options.max_concurrent_resolves);
+}  // namespace
+
+PrioritizedDispatcher::Limits HostResolver::Options::GetDispatcherLimits()
+    const {
+  PrioritizedDispatcher::Limits limits(NUM_PRIORITIES, max_concurrent_resolves);
 
   // If not using default, do not use the field trial.
   if (limits.total_jobs != HostResolver::kDefaultParallelism)
@@ -82,8 +83,6 @@ PrioritizedDispatcher::Limits GetDispatcherLimits(
   return limits;
 }
 
-}  // namespace
-
 HostResolver::Options::Options()
     : max_concurrent_resolves(kDefaultParallelism),
       max_retry_attempts(kDefaultRetryAttempts),
@@ -95,7 +94,8 @@ HostResolver::RequestInfo::RequestInfo(const HostPortPair& host_port_pair)
       address_family_(ADDRESS_FAMILY_UNSPECIFIED),
       host_resolver_flags_(0),
       allow_cached_response_(true),
-      is_speculative_(false) {}
+      is_speculative_(false),
+      is_my_ip_address_(false) {}
 
 HostResolver::~HostResolver() {
 }
@@ -116,22 +116,15 @@ base::Value* HostResolver::GetDnsConfigAsValue() const {
 }
 
 // static
-scoped_ptr<HostResolver>
-HostResolver::CreateSystemResolver(const Options& options, NetLog* net_log) {
-  scoped_ptr<HostCache> cache;
-  if (options.enable_caching)
-    cache = HostCache::CreateDefaultCache();
-  return scoped_ptr<HostResolver>(new HostResolverImpl(
-      cache.Pass(),
-      GetDispatcherLimits(options),
-      HostResolverImpl::ProcTaskParams(NULL, options.max_retry_attempts),
-      net_log));
+scoped_ptr<HostResolver> HostResolver::CreateSystemResolver(
+    const Options& options,
+    NetLog* net_log) {
+  return scoped_ptr<HostResolver>(new HostResolverImpl(options, net_log));
 }
 
 // static
-scoped_ptr<HostResolver>
-HostResolver::CreateDefaultResolver(NetLog* net_log) {
-  return CreateSystemResolver(Options(), net_log);
+scoped_ptr<HostResolver> HostResolver::CreateDefaultResolver(NetLog* net_log) {
+  return scoped_ptr<HostResolver>(new HostResolverImpl(Options(), net_log));
 }
 
 HostResolver::HostResolver() {

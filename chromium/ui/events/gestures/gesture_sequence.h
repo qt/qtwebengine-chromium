@@ -7,6 +7,7 @@
 
 #include "base/timer/timer.h"
 #include "ui/events/event_constants.h"
+#include "ui/events/gesture_event_details.h"
 #include "ui/events/gestures/gesture_point.h"
 #include "ui/events/gestures/gesture_recognizer.h"
 #include "ui/gfx/rect.h"
@@ -19,7 +20,12 @@ class GestureEvent;
 enum GestureState {
   GS_NO_GESTURE,
   GS_PENDING_SYNTHETIC_CLICK,
+  // One finger is down: tap could occur, but scroll cannot until the number of
+  // active touch points changes.
   GS_PENDING_SYNTHETIC_CLICK_NO_SCROLL,
+  // One finger is down: no gestures can occur until the number of active touch
+  // points changes.
+  GS_SYNTHETIC_CLICK_ABORTED,
   GS_SCROLL,
   GS_PINCH,
   GS_PENDING_TWO_FINGER_TAP,
@@ -32,6 +38,11 @@ enum ScrollType {
   ST_FREE,
   ST_HORIZONTAL,
   ST_VERTICAL,
+};
+
+enum IsFirstScroll {
+  FS_FIRST_SCROLL,
+  FS_NOT_FIRST_SCROLL,
 };
 
 // Delegates dispatch of gesture events for which the GestureSequence does not
@@ -64,7 +75,9 @@ class EVENTS_EXPORT GestureSequence {
   const GesturePoint* points() const { return points_; }
   int point_count() const { return point_count_; }
 
-  const gfx::Point& last_touch_location() const { return last_touch_location_; }
+  const gfx::PointF& last_touch_location() const {
+    return last_touch_location_;
+  }
 
  protected:
   virtual base::OneShotTimer<GestureSequence>* CreateTimer();
@@ -90,7 +103,7 @@ class EVENTS_EXPORT GestureSequence {
   // includes some common information (e.g. number of touch-points in the
   // gesture etc.) in the gesture event as well.
   GestureEvent* CreateGestureEvent(const GestureEventDetails& details,
-                                   const gfx::Point& location,
+                                   const gfx::PointF& location,
                                    int flags,
                                    base::Time timestamp,
                                    unsigned int touch_id_bitmask);
@@ -115,15 +128,16 @@ class EVENTS_EXPORT GestureSequence {
 
   // Scroll gestures.
   void AppendScrollGestureBegin(const GesturePoint& point,
-                                const gfx::Point& location,
+                                const gfx::PointF& location,
                                 Gestures* gestures);
   void AppendScrollGestureEnd(const GesturePoint& point,
-                              const gfx::Point& location,
+                              const gfx::PointF& location,
                               Gestures* gestures,
                               float x_velocity,
                               float y_velocity);
   void AppendScrollGestureUpdate(GesturePoint& point,
-                                 Gestures* gestures);
+                                 Gestures* gestures,
+                                 IsFirstScroll is_first_scroll);
 
   // Pinch gestures.
   void AppendPinchGestureBegin(const GesturePoint& p1,
@@ -158,7 +172,8 @@ class EVENTS_EXPORT GestureSequence {
                        Gestures* gestures);
   bool ScrollUpdate(const TouchEvent& event,
                     GesturePoint& point,
-                    Gestures* gestures);
+                    Gestures* gestures,
+                    IsFirstScroll is_first_scroll);
   bool TouchDown(const TouchEvent& event,
                  const GesturePoint& point,
                  Gestures* gestures);
@@ -193,6 +208,8 @@ class EVENTS_EXPORT GestureSequence {
 
   void StopTimersIfRequired(const TouchEvent& event);
 
+  void StartRailFreeScroll(const GesturePoint& point, Gestures* gestures);
+
   // Current state of gesture recognizer.
   GestureState state_;
 
@@ -201,11 +218,11 @@ class EVENTS_EXPORT GestureSequence {
 
   // We maintain the smallest axis-aligned rectangle that contains all the
   // current touch-points. This box is updated after every touch-event.
-  gfx::Rect bounding_box_;
+  gfx::RectF bounding_box_;
 
   // The center of the bounding box used in the latest multi-finger scroll
   // update gesture.
-  gfx::Point latest_multi_scroll_update_location_;
+  gfx::PointF latest_multi_scroll_update_location_;
 
   // The last scroll update prediction offset. This is removed from the scroll
   // distance on the next update since the page has already been scrolled this
@@ -233,7 +250,7 @@ class EVENTS_EXPORT GestureSequence {
   int point_count_;
 
   // Location of the last touch event.
-  gfx::Point last_touch_location_;
+  gfx::PointF last_touch_location_;
 
   GestureSequenceDelegate* delegate_;
 

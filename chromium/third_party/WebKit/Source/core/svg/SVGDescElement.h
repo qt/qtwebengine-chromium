@@ -27,14 +27,12 @@ namespace WebCore {
 
 class SVGDescElement FINAL : public SVGElement {
 public:
-    static PassRefPtr<SVGDescElement> create(Document&);
-
-    String description() const;
+    DECLARE_NODE_FACTORY(SVGDescElement);
 
 private:
     explicit SVGDescElement(Document&);
 
-    virtual bool rendererIsNeeded(const RenderStyle&) { return false; }
+    virtual bool rendererIsNeeded(const RenderStyle&) OVERRIDE { return false; }
 };
 
 } // namespace WebCore

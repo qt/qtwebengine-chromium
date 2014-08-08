@@ -24,7 +24,7 @@
  */
 
 #include "config.h"
-#include "WebGeolocationError.h"
+#include "public/web/WebGeolocationError.h"
 
 #include "modules/geolocation/GeolocationError.h"
 #include "public/platform/WebString.h"
@@ -48,18 +48,18 @@ void WebGeolocationError::reset()
     m_private.reset();
 }
 
-WebGeolocationError::WebGeolocationError(PassRefPtr<GeolocationError> error)
+WebGeolocationError::WebGeolocationError(GeolocationError* error)
 {
     m_private = error;
 }
 
-WebGeolocationError& WebGeolocationError::operator=(PassRefPtr<GeolocationError> error)
+WebGeolocationError& WebGeolocationError::operator=(GeolocationError* error)
 {
     m_private = error;
     return *this;
 }
 
-WebGeolocationError::operator PassRefPtr<GeolocationError>() const
+WebGeolocationError::operator GeolocationError*() const
 {
     return m_private.get();
 }

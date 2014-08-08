@@ -22,7 +22,6 @@ MockInputMethod::MockInputMethod()
       cancel_composition_called_(false),
       input_locale_changed_(false),
       locale_("en-US"),
-      direction_(base::i18n::LEFT_TO_RIGHT),
       active_(true) {
 }
 
@@ -35,7 +34,6 @@ MockInputMethod::MockInputMethod(internal::InputMethodDelegate* delegate)
       cancel_composition_called_(false),
       input_locale_changed_(false),
       locale_("en-US"),
-      direction_(base::i18n::LEFT_TO_RIGHT),
       active_(true) {
   SetDelegate(delegate);
 }
@@ -90,7 +88,7 @@ void MockInputMethod::DispatchKeyEvent(const ui::KeyEvent& key) {
           client->ClearCompositionText();
       }
     } else if (key.type() == ui::ET_KEY_PRESSED) {
-      char16 ch = key.GetCharacter();
+      base::char16 ch = key.GetCharacter();
       client->InsertChar(ch, key.flags());
     }
   }
@@ -124,16 +122,15 @@ std::string MockInputMethod::GetInputLocale() {
   return locale_;
 }
 
-base::i18n::TextDirection MockInputMethod::GetInputTextDirection() {
-  return direction_;
-}
-
 bool MockInputMethod::IsActive() {
   return active_;
 }
 
 bool MockInputMethod::IsCandidatePopupOpen() const {
   return false;
+}
+
+void MockInputMethod::ShowImeIfNeeded() {
 }
 
 bool MockInputMethod::IsMock() const {
@@ -159,21 +156,13 @@ void MockInputMethod::SetCompositionTextForNextKey(
   composition_ = composition;
 }
 
-void MockInputMethod::SetResultTextForNextKey(const string16& result) {
+void MockInputMethod::SetResultTextForNextKey(const base::string16& result) {
   result_text_ = result;
 }
 
 void MockInputMethod::SetInputLocale(const std::string& locale) {
   if (locale_ != locale) {
     locale_ = locale;
-    OnInputMethodChanged();
-  }
-}
-
-void MockInputMethod::SetInputTextDirection(
-    base::i18n::TextDirection direction) {
-  if (direction_ != direction) {
-    direction_ = direction;
     OnInputMethodChanged();
   }
 }

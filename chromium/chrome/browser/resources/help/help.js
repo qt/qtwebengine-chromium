@@ -56,8 +56,7 @@ cr.define('help', function() {
       uber.onContentFrameLoaded();
 
       // Set the title.
-      var title = loadTimeData.getString('helpTitle');
-      uber.invokeMethodOnParent('setTitle', {title: title});
+      uber.setTitle(loadTimeData.getString('aboutTitle'));
 
       $('product-license').innerHTML = loadTimeData.getString('productLicense');
       if (cr.isChromeOS) {
@@ -72,7 +71,7 @@ cr.define('help', function() {
       $('get-help').onclick = function() {
         chrome.send('openHelpPage');
       };
-<if expr="pp_ifdef('_google_chrome')">
+<if expr="_google_chrome">
       $('report-issue').onclick = function() {
         chrome.send('openFeedbackDialog');
       };
@@ -246,6 +245,15 @@ cr.define('help', function() {
      * @private
      */
     setUpdateStatus_: function(status, message) {
+      if (cr.isMac &&
+          $('update-status-message') &&
+          $('update-status-message').hidden) {
+        // Chrome has reached the end of the line on this system. The
+        // update-obsolete-system message is displayed. No other auto-update
+        // status should be displayed.
+        return;
+      }
+
       var channel = this.targetChannel_;
       if (status == 'checking') {
         this.setUpdateImage_('working');
@@ -335,6 +343,30 @@ cr.define('help', function() {
       } else if (state == 'disabled') {
         $('promote').disabled = true;
         $('promote').hidden = false;
+      }
+    },
+
+    /**
+     * @private
+     */
+    setObsoleteSystem_: function(obsolete) {
+      if (cr.isMac && $('update-obsolete-system-container')) {
+        $('update-obsolete-system-container').hidden = !obsolete;
+      }
+    },
+
+    /**
+     * @private
+     */
+    setObsoleteSystemEndOfTheLine_: function(endOfTheLine) {
+      if (cr.isMac &&
+          $('update-obsolete-system-container') &&
+          !$('update-obsolete-system-container').hidden &&
+          $('update-status-message')) {
+        $('update-status-message').hidden = endOfTheLine;
+        if (endOfTheLine) {
+          this.setUpdateImage_('failed');
+        }
       }
     },
 
@@ -461,8 +493,12 @@ cr.define('help', function() {
     HelpPage.getInstance().setPromotionState_(state);
   };
 
-  HelpPage.setObsoleteOS = function(obsolete) {
-    HelpPage.getInstance().setObsoleteOS_(obsolete);
+  HelpPage.setObsoleteSystem = function(obsolete) {
+    HelpPage.getInstance().setObsoleteSystem_(obsolete);
+  };
+
+  HelpPage.setObsoleteSystemEndOfTheLine = function(endOfTheLine) {
+    HelpPage.getInstance().setObsoleteSystemEndOfTheLine_(endOfTheLine);
   };
 
   HelpPage.setOSVersion = function(version) {

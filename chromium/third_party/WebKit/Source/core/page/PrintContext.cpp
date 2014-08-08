@@ -21,8 +21,8 @@
 #include "config.h"
 #include "core/page/PrintContext.h"
 
-#include "core/frame/Frame.h"
 #include "core/frame/FrameView.h"
+#include "core/frame/LocalFrame.h"
 #include "core/rendering/RenderView.h"
 #include "platform/graphics/GraphicsContext.h"
 
@@ -41,7 +41,7 @@ const float printingMinimumShrinkFactor = 1.25f;
 // behavior matches MacIE and Mozilla, at least)
 const float printingMaximumShrinkFactor = 2;
 
-PrintContext::PrintContext(Frame* frame)
+PrintContext::PrintContext(LocalFrame* frame)
     : m_frame(frame)
     , m_isPrinting(false)
     , m_linkedDestinationsValid(false)
@@ -168,25 +168,7 @@ void PrintContext::begin(float width, float height)
     FloatSize minLayoutSize = m_frame->resizePageRectsKeepingRatio(originalPageSize, FloatSize(width * printingMinimumShrinkFactor, height * printingMinimumShrinkFactor));
 
     // This changes layout, so callers need to make sure that they don't paint to screen while in printing mode.
-    m_frame->setPrinting(true, minLayoutSize, originalPageSize, printingMaximumShrinkFactor / printingMinimumShrinkFactor, AdjustViewSize);
-}
-
-float PrintContext::computeAutomaticScaleFactor(const FloatSize& availablePaperSize)
-{
-    if (!m_frame->view())
-        return 1;
-
-    bool useViewWidth = true;
-    if (m_frame->document() && m_frame->document()->renderView())
-        useViewWidth = m_frame->document()->renderView()->style()->isHorizontalWritingMode();
-
-    float viewLogicalWidth = useViewWidth ? m_frame->view()->contentsWidth() : m_frame->view()->contentsHeight();
-    if (viewLogicalWidth < 1)
-        return 1;
-
-    float maxShrinkToFitScaleFactor = 1 / printingMaximumShrinkFactor;
-    float shrinkToFitScaleFactor = (useViewWidth ? availablePaperSize.width() : availablePaperSize.height()) / viewLogicalWidth;
-    return max(maxShrinkToFitScaleFactor, shrinkToFitScaleFactor);
+    m_frame->setPrinting(true, minLayoutSize, originalPageSize, printingMaximumShrinkFactor / printingMinimumShrinkFactor);
 }
 
 void PrintContext::spoolPage(GraphicsContext& ctx, int pageNumber, float width)
@@ -196,7 +178,7 @@ void PrintContext::spoolPage(GraphicsContext& ctx, int pageNumber, float width)
     float scale = width / pageRect.width();
 
     ctx.save();
-    ctx.scale(FloatSize(scale, scale));
+    ctx.scale(scale, scale);
     ctx.translate(-pageRect.x(), -pageRect.y());
     ctx.clip(pageRect);
     m_frame->view()->paintContents(&ctx, pageRect);
@@ -205,21 +187,11 @@ void PrintContext::spoolPage(GraphicsContext& ctx, int pageNumber, float width)
     ctx.restore();
 }
 
-void PrintContext::spoolRect(GraphicsContext& ctx, const IntRect& rect)
-{
-    // FIXME: Not correct for vertical text.
-    ctx.save();
-    ctx.translate(-rect.x(), -rect.y());
-    ctx.clip(rect);
-    m_frame->view()->paintContents(&ctx, rect);
-    ctx.restore();
-}
-
 void PrintContext::end()
 {
     ASSERT(m_isPrinting);
     m_isPrinting = false;
-    m_frame->setPrinting(false, FloatSize(), FloatSize(), 0, AdjustViewSize);
+    m_frame->setPrinting(false, FloatSize(), FloatSize(), 0);
     m_linkedDestinations.clear();
     m_linkedDestinationsValid = false;
 }
@@ -237,14 +209,14 @@ static RenderBoxModelObject* enclosingBoxModelObject(RenderObject* object)
 int PrintContext::pageNumberForElement(Element* element, const FloatSize& pageSizeInPixels)
 {
     // Make sure the element is not freed during the layout.
-    RefPtr<Element> elementRef(element);
+    RefPtrWillBeRawPtr<Element> protect(element);
     element->document().updateLayout();
 
     RenderBoxModelObject* box = enclosingBoxModelObject(element->renderer());
     if (!box)
         return -1;
 
-    Frame* frame = element->document().frame();
+    LocalFrame* frame = element->document().frame();
     FloatRect pageRect(FloatPoint(0, 0), pageSizeInPixels);
     PrintContext printContext(frame);
     printContext.begin(pageRect.width(), pageRect.height());
@@ -305,7 +277,7 @@ void PrintContext::outputLinkedDestinations(GraphicsContext& graphicsContext, No
     }
 }
 
-String PrintContext::pageProperty(Frame* frame, const char* propertyName, int pageNumber)
+String PrintContext::pageProperty(LocalFrame* frame, const char* propertyName, int pageNumber)
 {
     Document* document = frame->document();
     PrintContext printContext(frame);
@@ -331,12 +303,12 @@ String PrintContext::pageProperty(Frame* frame, const char* propertyName, int pa
     return String("pageProperty() unimplemented for: ") + propertyName;
 }
 
-bool PrintContext::isPageBoxVisible(Frame* frame, int pageNumber)
+bool PrintContext::isPageBoxVisible(LocalFrame* frame, int pageNumber)
 {
     return frame->document()->isPageBoxVisible(pageNumber);
 }
 
-String PrintContext::pageSizeAndMarginsInPixels(Frame* frame, int pageNumber, int width, int height, int marginTop, int marginRight, int marginBottom, int marginLeft)
+String PrintContext::pageSizeAndMarginsInPixels(LocalFrame* frame, int pageNumber, int width, int height, int marginTop, int marginRight, int marginBottom, int marginLeft)
 {
     IntSize pageSize(width, height);
     frame->document()->pageSizeAndMarginsInPixels(pageNumber, pageSize, marginTop, marginRight, marginBottom, marginLeft);
@@ -345,7 +317,7 @@ String PrintContext::pageSizeAndMarginsInPixels(Frame* frame, int pageNumber, in
            String::number(marginTop) + ' ' + String::number(marginRight) + ' ' + String::number(marginBottom) + ' ' + String::number(marginLeft);
 }
 
-int PrintContext::numberOfPages(Frame* frame, const FloatSize& pageSizeInPixels)
+int PrintContext::numberOfPages(LocalFrame* frame, const FloatSize& pageSizeInPixels)
 {
     frame->document()->updateLayout();
 
@@ -359,9 +331,9 @@ int PrintContext::numberOfPages(Frame* frame, const FloatSize& pageSizeInPixels)
     return printContext.pageCount();
 }
 
-void PrintContext::spoolAllPagesWithBoundaries(Frame* frame, GraphicsContext& graphicsContext, const FloatSize& pageSizeInPixels)
+void PrintContext::spoolAllPagesWithBoundaries(LocalFrame* frame, GraphicsContext& graphicsContext, const FloatSize& pageSizeInPixels)
 {
-    if (!frame->document() || !frame->view() || !frame->document()->renderer())
+    if (!frame->document() || !frame->view() || !frame->document()->renderView())
         return;
 
     frame->document()->updateLayout();
@@ -382,7 +354,7 @@ void PrintContext::spoolAllPagesWithBoundaries(Frame* frame, GraphicsContext& gr
 
     graphicsContext.save();
     graphicsContext.translate(0, totalHeight);
-    graphicsContext.scale(FloatSize(1, -1));
+    graphicsContext.scale(1, -1);
 
     int currentHeight = 0;
     for (size_t pageIndex = 0; pageIndex < pageRects.size(); pageIndex++) {

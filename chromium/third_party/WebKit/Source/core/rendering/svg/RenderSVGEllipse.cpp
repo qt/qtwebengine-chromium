@@ -28,9 +28,9 @@
 
 #include "core/rendering/svg/RenderSVGEllipse.h"
 
-#include "SVGNames.h"
 #include "core/svg/SVGCircleElement.h"
 #include "core/svg/SVGEllipseElement.h"
+#include "platform/graphics/GraphicsContext.h"
 
 namespace WebCore {
 
@@ -53,19 +53,21 @@ void RenderSVGEllipse::updateShapeFromElement()
     m_center = FloatPoint();
     m_radii = FloatSize();
 
-    // Fallback to RenderSVGShape if shape has a non-scaling stroke.
-    if (hasNonScalingStroke()) {
-        RenderSVGShape::updateShapeFromElement();
-        m_usePathFallback = true;
-        return;
-    } else
-        m_usePathFallback = false;
-
     calculateRadiiAndCenter();
 
-    // Spec: "A value of zero disables rendering of the element."
-    if (m_radii.width() <= 0 || m_radii.height() <= 0)
+    // Spec: "A negative value is an error. A value of zero disables rendering of the element."
+    if (m_radii.width() < 0 || m_radii.height() < 0)
         return;
+
+    if (!m_radii.isEmpty()) {
+        // Fallback to RenderSVGShape if shape has a non-scaling stroke.
+        if (hasNonScalingStroke()) {
+            RenderSVGShape::updateShapeFromElement();
+            m_usePathFallback = true;
+            return;
+        }
+        m_usePathFallback = false;
+    }
 
     m_fillBoundingBox = FloatRect(m_center.x() - m_radii.width(), m_center.y() - m_radii.height(), 2 * m_radii.width(), 2 * m_radii.height());
     m_strokeBoundingBox = m_fillBoundingBox;
@@ -76,21 +78,21 @@ void RenderSVGEllipse::updateShapeFromElement()
 void RenderSVGEllipse::calculateRadiiAndCenter()
 {
     ASSERT(element());
-    if (element()->hasTagName(SVGNames::circleTag)) {
-        SVGCircleElement* circle = toSVGCircleElement(element());
+    if (isSVGCircleElement(*element())) {
+        SVGCircleElement& circle = toSVGCircleElement(*element());
 
-        SVGLengthContext lengthContext(circle);
-        float radius = circle->rCurrentValue().value(lengthContext);
+        SVGLengthContext lengthContext(&circle);
+        float radius = circle.r()->currentValue()->value(lengthContext);
         m_radii = FloatSize(radius, radius);
-        m_center = FloatPoint(circle->cxCurrentValue().value(lengthContext), circle->cyCurrentValue().value(lengthContext));
+        m_center = FloatPoint(circle.cx()->currentValue()->value(lengthContext), circle.cy()->currentValue()->value(lengthContext));
         return;
     }
 
-    SVGEllipseElement* ellipse = toSVGEllipseElement(element());
+    SVGEllipseElement& ellipse = toSVGEllipseElement(*element());
 
-    SVGLengthContext lengthContext(ellipse);
-    m_radii = FloatSize(ellipse->rxCurrentValue().value(lengthContext), ellipse->ryCurrentValue().value(lengthContext));
-    m_center = FloatPoint(ellipse->cxCurrentValue().value(lengthContext), ellipse->cyCurrentValue().value(lengthContext));
+    SVGLengthContext lengthContext(&ellipse);
+    m_radii = FloatSize(ellipse.rx()->currentValue()->value(lengthContext), ellipse.ry()->currentValue()->value(lengthContext));
+    m_center = FloatPoint(ellipse.cx()->currentValue()->value(lengthContext), ellipse.cy()->currentValue()->value(lengthContext));
 }
 
 void RenderSVGEllipse::fillShape(GraphicsContext* context) const

@@ -23,23 +23,20 @@
 #include "config.h"
 #include "core/html/HTMLUListElement.h"
 
-#include "CSSPropertyNames.h"
-#include "HTMLNames.h"
+#include "core/CSSPropertyNames.h"
+#include "core/HTMLNames.h"
 
 namespace WebCore {
 
 using namespace HTMLNames;
 
-HTMLUListElement::HTMLUListElement(Document& document)
+inline HTMLUListElement::HTMLUListElement(Document& document)
     : HTMLElement(ulTag, document)
 {
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLUListElement> HTMLUListElement::create(Document& document)
-{
-    return adoptRef(new HTMLUListElement(document));
-}
+DEFINE_NODE_FACTORY(HTMLUListElement)
 
 bool HTMLUListElement::isPresentationAttribute(const QualifiedName& name) const
 {

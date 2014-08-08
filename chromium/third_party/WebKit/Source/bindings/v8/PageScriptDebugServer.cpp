@@ -32,15 +32,20 @@
 #include "bindings/v8/PageScriptDebugServer.h"
 
 
-#include "V8Window.h"
+#include "bindings/core/v8/V8Window.h"
+#include "bindings/v8/DOMWrapperWorld.h"
 #include "bindings/v8/ScriptController.h"
 #include "bindings/v8/ScriptSourceCode.h"
 #include "bindings/v8/V8Binding.h"
 #include "bindings/v8/V8ScriptRunner.h"
 #include "bindings/v8/V8WindowShell.h"
+#include "core/frame/FrameConsole.h"
+#include "core/frame/FrameHost.h"
+#include "core/frame/LocalFrame.h"
+#include "core/frame/UseCounter.h"
 #include "core/inspector/InspectorInstrumentation.h"
+#include "core/inspector/InspectorTraceEvents.h"
 #include "core/inspector/ScriptDebugListener.h"
-#include "core/frame/Frame.h"
 #include "core/page/Page.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
@@ -50,17 +55,20 @@
 
 namespace WebCore {
 
-static Frame* retrieveFrameWithGlobalObjectCheck(v8::Handle<v8::Context> context)
+static LocalFrame* retrieveFrameWithGlobalObjectCheck(v8::Handle<v8::Context> context)
 {
     if (context.IsEmpty())
         return 0;
 
-    // Test that context has associated global dom window object.
-    v8::Handle<v8::Object> global = context->Global();
-    if (global.IsEmpty())
+    // FIXME: This is a temporary hack for crbug.com/345014.
+    // Currently it's possible that V8 can trigger Debugger::ProcessDebugEvent for a context
+    // that is being initialized (i.e., inside Context::New() of the context).
+    // We should fix the V8 side so that it won't trigger the event for a half-baked context
+    // because there is no way in the embedder side to check if the context is half-baked or not.
+    if (isMainThread() && DOMWrapperWorld::windowIsBeingInitialized())
         return 0;
 
-    global = global->FindInstanceInPrototypeChain(V8Window::domTemplate(context->GetIsolate(), worldTypeInMainThread(context->GetIsolate())));
+    v8::Handle<v8::Value> global = V8Window::findInstanceInPrototypeChain(context->Global(), context->GetIsolate());
     if (global.IsEmpty())
         return 0;
 
@@ -82,31 +90,44 @@ PageScriptDebugServer& PageScriptDebugServer::shared()
     return server;
 }
 
+v8::Isolate* PageScriptDebugServer::s_mainThreadIsolate = 0;
+
+void PageScriptDebugServer::setMainThreadIsolate(v8::Isolate* isolate)
+{
+    s_mainThreadIsolate = isolate;
+}
+
 PageScriptDebugServer::PageScriptDebugServer()
-    : ScriptDebugServer(v8::Isolate::GetCurrent())
+    : ScriptDebugServer(s_mainThreadIsolate)
     , m_pausedPage(0)
+{
+}
+
+PageScriptDebugServer::~PageScriptDebugServer()
 {
 }
 
 void PageScriptDebugServer::addListener(ScriptDebugListener* listener, Page* page)
 {
-    ScriptController& scriptController = page->mainFrame()->script();
+    ScriptController& scriptController = page->deprecatedLocalMainFrame()->script();
     if (!scriptController.canExecuteScripts(NotAboutToExecuteScript))
         return;
 
     v8::HandleScope scope(m_isolate);
+
+    if (!m_listenersMap.size()) {
+        v8::Debug::SetDebugEventListener(&PageScriptDebugServer::v8DebugEventCallback, v8::External::New(m_isolate, this));
+        ensureDebuggerScriptCompiled();
+    }
+
     v8::Local<v8::Context> debuggerContext = v8::Debug::GetDebugContext();
     v8::Context::Scope contextScope(debuggerContext);
 
     v8::Local<v8::Object> debuggerScript = m_debuggerScript.newLocal(m_isolate);
-    if (!m_listenersMap.size()) {
-        ensureDebuggerScriptCompiled();
-        ASSERT(!debuggerScript->IsUndefined());
-        v8::Debug::SetDebugEventListener2(&PageScriptDebugServer::v8DebugEventCallback, v8::External::New(m_isolate, this));
-    }
+    ASSERT(!debuggerScript->IsUndefined());
     m_listenersMap.set(page, listener);
 
-    V8WindowShell* shell = scriptController.existingWindowShell(mainThreadNormalWorld());
+    V8WindowShell* shell = scriptController.existingWindowShell(DOMWrapperWorld::mainWorld());
     if (!shell || !shell->isContextInitialized())
         return;
     v8::Local<v8::Context> context = shell->context();
@@ -118,7 +139,7 @@ void PageScriptDebugServer::addListener(ScriptDebugListener* listener, Page* pag
     ASSERT(!value->IsUndefined() && value->IsArray());
     v8::Handle<v8::Array> scriptsArray = v8::Handle<v8::Array>::Cast(value);
     for (unsigned i = 0; i < scriptsArray->Length(); ++i)
-        dispatchDidParseSource(listener, v8::Handle<v8::Object>::Cast(scriptsArray->Get(v8::Integer::New(i, m_isolate))));
+        dispatchDidParseSource(listener, v8::Handle<v8::Object>::Cast(scriptsArray->Get(v8::Integer::New(m_isolate, i))));
 }
 
 void PageScriptDebugServer::removeListener(ScriptDebugListener* listener, Page* page)
@@ -131,9 +152,16 @@ void PageScriptDebugServer::removeListener(ScriptDebugListener* listener, Page* 
 
     m_listenersMap.remove(page);
 
-    if (m_listenersMap.isEmpty())
-        v8::Debug::SetDebugEventListener2(0);
-    // FIXME: Remove all breakpoints set by the agent.
+    if (m_listenersMap.isEmpty()) {
+        discardDebuggerScript();
+        v8::Debug::SetDebugEventListener(0);
+        // FIXME: Remove all breakpoints set by the agent.
+    }
+}
+
+void PageScriptDebugServer::interruptAndRun(PassOwnPtr<Task> task)
+{
+    ScriptDebugServer::interruptAndRun(task, s_mainThreadIsolate);
 }
 
 void PageScriptDebugServer::setClientMessageLoop(PassOwnPtr<ClientMessageLoop> clientMessageLoop)
@@ -141,11 +169,11 @@ void PageScriptDebugServer::setClientMessageLoop(PassOwnPtr<ClientMessageLoop> c
     m_clientMessageLoop = clientMessageLoop;
 }
 
-void PageScriptDebugServer::compileScript(ScriptState* state, const String& expression, const String& sourceURL, String* scriptId, String* exceptionMessage)
+void PageScriptDebugServer::compileScript(ScriptState* scriptState, const String& expression, const String& sourceURL, String* scriptId, String* exceptionDetailsText, int* lineNumber, int* columnNumber, RefPtrWillBeRawPtr<ScriptCallStack>* stackTrace)
 {
-    ExecutionContext* executionContext = state->executionContext();
-    RefPtr<Frame> protect = toDocument(executionContext)->frame();
-    ScriptDebugServer::compileScript(state, expression, sourceURL, scriptId, exceptionMessage);
+    ExecutionContext* executionContext = scriptState->executionContext();
+    RefPtr<LocalFrame> protect = toDocument(executionContext)->frame();
+    ScriptDebugServer::compileScript(scriptState, expression, sourceURL, scriptId, exceptionDetailsText, lineNumber, columnNumber, stackTrace);
     if (!scriptId->isNull())
         m_compiledScriptURLs.set(*scriptId, sourceURL);
 }
@@ -156,27 +184,31 @@ void PageScriptDebugServer::clearCompiledScripts()
     m_compiledScriptURLs.clear();
 }
 
-void PageScriptDebugServer::runScript(ScriptState* state, const String& scriptId, ScriptValue* result, bool* wasThrown, String* exceptionMessage)
+void PageScriptDebugServer::runScript(ScriptState* scriptState, const String& scriptId, ScriptValue* result, bool* wasThrown, String* exceptionDetailsText, int* lineNumber, int* columnNumber, RefPtrWillBeRawPtr<ScriptCallStack>* stackTrace)
 {
     String sourceURL = m_compiledScriptURLs.take(scriptId);
 
-    ExecutionContext* executionContext = state->executionContext();
-    Frame* frame = toDocument(executionContext)->frame();
+    ExecutionContext* executionContext = scriptState->executionContext();
+    LocalFrame* frame = toDocument(executionContext)->frame();
+    TRACE_EVENT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "EvaluateScript", "data", InspectorEvaluateScriptEvent::data(frame, sourceURL, TextPosition::minimumPosition().m_line.oneBasedInt()));
+    TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline.stack"), "CallStack", "stack", InspectorCallStackEvent::currentCallStack());
+    // FIXME(361045): remove InspectorInstrumentation calls once DevTools Timeline migrates to tracing.
     InspectorInstrumentationCookie cookie;
     if (frame)
         cookie = InspectorInstrumentation::willEvaluateScript(frame, sourceURL, TextPosition::minimumPosition().m_line.oneBasedInt());
 
-    RefPtr<Frame> protect = frame;
-    ScriptDebugServer::runScript(state, scriptId, result, wasThrown, exceptionMessage);
+    RefPtr<LocalFrame> protect = frame;
+    ScriptDebugServer::runScript(scriptState, scriptId, result, wasThrown, exceptionDetailsText, lineNumber, columnNumber, stackTrace);
 
     if (frame)
         InspectorInstrumentation::didEvaluateScript(cookie);
+    TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "UpdateCounters", "data", InspectorUpdateCountersEvent::data());
 }
 
 ScriptDebugListener* PageScriptDebugServer::getDebugListenerForContext(v8::Handle<v8::Context> context)
 {
     v8::HandleScope scope(m_isolate);
-    Frame* frame = retrieveFrameWithGlobalObjectCheck(context);
+    LocalFrame* frame = retrieveFrameWithGlobalObjectCheck(context);
     if (!frame)
         return 0;
     return m_listenersMap.get(frame->page());
@@ -185,7 +217,7 @@ ScriptDebugListener* PageScriptDebugServer::getDebugListenerForContext(v8::Handl
 void PageScriptDebugServer::runMessageLoopOnPause(v8::Handle<v8::Context> context)
 {
     v8::HandleScope scope(m_isolate);
-    Frame* frame = retrieveFrameWithGlobalObjectCheck(context);
+    LocalFrame* frame = retrieveFrameWithGlobalObjectCheck(context);
     m_pausedPage = frame->page();
 
     // Wait for continue or step command.
@@ -206,7 +238,7 @@ void PageScriptDebugServer::quitMessageLoopOnPause()
 void PageScriptDebugServer::preprocessBeforeCompile(const v8::Debug::EventDetails& eventDetails)
 {
     v8::Handle<v8::Context> eventContext = eventDetails.GetEventContext();
-    Frame* frame = retrieveFrameWithGlobalObjectCheck(eventContext);
+    LocalFrame* frame = retrieveFrameWithGlobalObjectCheck(eventContext);
     if (!frame)
         return;
 
@@ -236,7 +268,7 @@ void PageScriptDebugServer::preprocessBeforeCompile(const v8::Debug::EventDetail
 
 static bool isCreatingPreprocessor = false;
 
-bool PageScriptDebugServer::canPreprocess(Frame* frame)
+bool PageScriptDebugServer::canPreprocess(LocalFrame* frame)
 {
     ASSERT(frame);
 
@@ -247,7 +279,7 @@ bool PageScriptDebugServer::canPreprocess(Frame* frame)
     // Web page to ensure that the debugger's console initialization code has completed.
     if (!m_scriptPreprocessor) {
         TemporaryChange<bool> isPreprocessing(isCreatingPreprocessor, true);
-        m_scriptPreprocessor = adoptPtr(new ScriptPreprocessor(*m_preprocessorSourceCode.get(), frame->script(), frame->page()->console()));
+        m_scriptPreprocessor = adoptPtr(new ScriptPreprocessor(*m_preprocessorSourceCode.get(), frame));
     }
 
     if (m_scriptPreprocessor->isValid())
@@ -260,7 +292,7 @@ bool PageScriptDebugServer::canPreprocess(Frame* frame)
 }
 
 // Source to Source processing iff debugger enabled and it has loaded a preprocessor.
-PassOwnPtr<ScriptSourceCode> PageScriptDebugServer::preprocess(Frame* frame, const ScriptSourceCode& sourceCode)
+PassOwnPtr<ScriptSourceCode> PageScriptDebugServer::preprocess(LocalFrame* frame, const ScriptSourceCode& sourceCode)
 {
     if (!canPreprocess(frame))
         return PassOwnPtr<ScriptSourceCode>();
@@ -269,12 +301,24 @@ PassOwnPtr<ScriptSourceCode> PageScriptDebugServer::preprocess(Frame* frame, con
     return adoptPtr(new ScriptSourceCode(preprocessedSource, sourceCode.url()));
 }
 
-String PageScriptDebugServer::preprocessEventListener(Frame* frame, const String& source, const String& url, const String& functionName)
+String PageScriptDebugServer::preprocessEventListener(LocalFrame* frame, const String& source, const String& url, const String& functionName)
 {
     if (!canPreprocess(frame))
         return source;
 
     return m_scriptPreprocessor->preprocessSourceCode(source, url, functionName);
+}
+
+void PageScriptDebugServer::muteWarningsAndDeprecations()
+{
+    FrameConsole::mute();
+    UseCounter::muteForInspector();
+}
+
+void PageScriptDebugServer::unmuteWarningsAndDeprecations()
+{
+    FrameConsole::unmute();
+    UseCounter::unmuteForInspector();
 }
 
 } // namespace WebCore

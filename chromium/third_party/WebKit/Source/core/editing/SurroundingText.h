@@ -31,26 +31,32 @@
 #ifndef SurroundingText_h
 #define SurroundingText_h
 
+#include "platform/heap/Handle.h"
 #include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
+class Position;
 class Range;
-class VisiblePosition;
 
 class SurroundingText {
     WTF_MAKE_NONCOPYABLE(SurroundingText);
 public:
-    SurroundingText(const VisiblePosition&, unsigned maxLength);
+    SurroundingText(const Range&, unsigned maxLength);
+    SurroundingText(const Position&, unsigned maxLength);
 
     String content() const;
-    unsigned positionOffsetInContent() const;
+    unsigned startOffsetInContent() const;
+    unsigned endOffsetInContent() const;
 
-    PassRefPtr<Range> rangeFromContentOffsets(unsigned startOffsetInContent, unsigned endOffsetInContent);
+    PassRefPtrWillBeRawPtr<Range> rangeFromContentOffsets(unsigned startOffsetInContent, unsigned endOffsetInContent);
 
 private:
-    RefPtr<Range> m_contentRange;
-    size_t m_positionOffsetInContent;
+    void initialize(const Position&, const Position&, unsigned maxLength);
+
+    RefPtrWillBePersistent<Range> m_contentRange;
+    size_t m_startOffsetInContent;
+    size_t m_endOffsetInContent;
 };
 
 } // namespace WebCore

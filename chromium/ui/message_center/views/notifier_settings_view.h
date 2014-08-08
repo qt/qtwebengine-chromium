@@ -43,6 +43,8 @@ class MESSAGE_CENTER_EXPORT NotifierSettingsView
   virtual void UpdateIconImage(const NotifierId& notifier_id,
                                const gfx::Image& icon) OVERRIDE;
   virtual void NotifierGroupChanged() OVERRIDE;
+  virtual void NotifierEnabledChanged(const NotifierId& notifier_id,
+                                      bool enabled) OVERRIDE;
 
   void set_provider(NotifierSettingsProvider* new_provider) {
     provider_ = new_provider;
@@ -71,7 +73,7 @@ class MESSAGE_CENTER_EXPORT NotifierSettingsView
     // Overridden from views::ButtonListener:
     virtual void ButtonPressed(views::Button* button,
                                const ui::Event& event) OVERRIDE;
-    virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
+    virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
 
     bool ShouldHaveLearnMoreButton() const;
     // Helper function to reset the layout when the view has substantially
@@ -95,8 +97,8 @@ class MESSAGE_CENTER_EXPORT NotifierSettingsView
 
   // Overridden from views::View:
   virtual void Layout() OVERRIDE;
-  virtual gfx::Size GetMinimumSize() OVERRIDE;
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual gfx::Size GetMinimumSize() const OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
   virtual bool OnKeyPressed(const ui::KeyEvent& event) OVERRIDE;
   virtual bool OnMouseWheel(const ui::MouseWheelEvent& event) OVERRIDE;
 

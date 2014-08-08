@@ -24,8 +24,8 @@
 
 #include "core/fetch/DocumentResource.h"
 
+#include "core/dom/XMLDocument.h"
 #include "platform/SharedBuffer.h"
-#include "core/svg/SVGDocument.h"
 #include "wtf/text/StringBuilder.h"
 
 namespace WebCore {
@@ -65,15 +65,15 @@ void DocumentResource::checkNotify()
     Resource::checkNotify();
 }
 
-PassRefPtr<Document> DocumentResource::createDocument(const KURL& url)
+PassRefPtrWillBeRawPtr<Document> DocumentResource::createDocument(const KURL& url)
 {
     switch (type()) {
     case SVGDocument:
-        return SVGDocument::create(DocumentInit(url));
+        return XMLDocument::createSVG(DocumentInit(url));
     default:
         // FIXME: We'll add more types to support HTMLImports.
         ASSERT_NOT_REACHED();
-        return 0;
+        return nullptr;
     }
 }
 

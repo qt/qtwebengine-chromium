@@ -11,18 +11,13 @@ MockGpuVideoAcceleratorFactories::MockGpuVideoAcceleratorFactories() {}
 MockGpuVideoAcceleratorFactories::~MockGpuVideoAcceleratorFactories() {}
 
 scoped_ptr<VideoDecodeAccelerator>
-MockGpuVideoAcceleratorFactories::CreateVideoDecodeAccelerator(
-    VideoCodecProfile profile,
-    VideoDecodeAccelerator::Client* client) {
-  return scoped_ptr<VideoDecodeAccelerator>(
-      DoCreateVideoDecodeAccelerator(profile, client));
+MockGpuVideoAcceleratorFactories::CreateVideoDecodeAccelerator() {
+  return scoped_ptr<VideoDecodeAccelerator>(DoCreateVideoDecodeAccelerator());
 }
 
 scoped_ptr<VideoEncodeAccelerator>
-MockGpuVideoAcceleratorFactories::CreateVideoEncodeAccelerator(
-    VideoEncodeAccelerator::Client* client) {
-  return scoped_ptr<VideoEncodeAccelerator>(
-      DoCreateVideoEncodeAccelerator(client));
+MockGpuVideoAcceleratorFactories::CreateVideoEncodeAccelerator() {
+  return scoped_ptr<VideoEncodeAccelerator>(DoCreateVideoEncodeAccelerator());
 }
 
 }  // namespace media

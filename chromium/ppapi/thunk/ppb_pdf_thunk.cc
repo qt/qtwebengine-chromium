@@ -147,6 +147,20 @@ PP_Bool IsOutOfProcess(PP_Instance instance) {
   return enter.functions()->IsOutOfProcess();
 }
 
+void SetSelectedText(PP_Instance instance,
+                     const char* selected_text) {
+  EnterInstanceAPI<PPB_PDF_API> enter(instance);
+  if (enter.succeeded())
+    enter.functions()->SetSelectedText(selected_text);
+}
+
+void SetLinkUnderCursor(PP_Instance instance, const char* url) {
+  EnterInstanceAPI<PPB_PDF_API> enter(instance);
+  if (enter.failed())
+    return;
+  enter.functions()->SetLinkUnderCursor(url);
+}
+
 const PPB_PDF g_ppb_pdf_thunk = {
   &GetLocalizedString,
   &GetResourceImage,
@@ -165,6 +179,8 @@ const PPB_PDF g_ppb_pdf_thunk = {
   &GetResourceImageForScale,
   &ModalPromptForPassword,
   &IsOutOfProcess,
+  &SetSelectedText,
+  &SetLinkUnderCursor,
 };
 
 }  // namespace

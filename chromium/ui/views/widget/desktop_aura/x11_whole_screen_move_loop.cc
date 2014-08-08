@@ -8,16 +8,20 @@
 // Get rid of a macro from Xlib.h that conflicts with Aura's RootWindow class.
 #undef RootWindow
 
-#include "base/debug/stack_trace.h"
+#include "base/bind.h"
 #include "base/message_loop/message_loop.h"
-#include "base/message_loop/message_pump_x11.h"
 #include "base/run_loop.h"
+#include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/aura/env.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/aura/window_tree_host.h"
 #include "ui/base/x/x11_util.h"
 #include "ui/events/event.h"
+#include "ui/events/event_utils.h"
+#include "ui/events/keycodes/keyboard_code_conversion_x.h"
+#include "ui/events/platform/scoped_event_dispatcher.h"
+#include "ui/events/platform/x11/x11_event_source.h"
 #include "ui/gfx/point_conversions.h"
 #include "ui/gfx/screen.h"
 #include "ui/views/controls/image_view.h"
@@ -27,9 +31,14 @@ namespace views {
 
 namespace {
 
+// The minimum alpha before we declare a pixel transparent when searching in
+// our source image.
+const uint32 kMinAlpha = 32;
+const unsigned char kDragWidgetOpacity = 0xc0;
+
 class ScopedCapturer {
  public:
-  explicit ScopedCapturer(aura::RootWindowHost* host)
+  explicit ScopedCapturer(aura::WindowTreeHost* host)
       : host_(host) {
     host_->SetCapture();
   }
@@ -39,7 +48,7 @@ class ScopedCapturer {
   }
 
  private:
-  aura::RootWindowHost* host_;
+  aura::WindowTreeHost* host_;
 
   DISALLOW_COPY_AND_ASSIGN(ScopedCapturer);
 };
@@ -50,15 +59,42 @@ X11WholeScreenMoveLoop::X11WholeScreenMoveLoop(
     X11WholeScreenMoveLoopDelegate* delegate)
     : delegate_(delegate),
       in_move_loop_(false),
-      grab_input_window_(None) {
+      should_reset_mouse_flags_(false),
+      grab_input_window_(None),
+      canceled_(false),
+      has_grab_(false),
+      weak_factory_(this) {
+  last_xmotion_.type = LASTEvent;
 }
 
 X11WholeScreenMoveLoop::~X11WholeScreenMoveLoop() {}
 
-////////////////////////////////////////////////////////////////////////////////
-// DesktopRootWindowHostLinux, MessageLoop::Dispatcher implementation:
+void X11WholeScreenMoveLoop::DispatchMouseMovement() {
+  if (!weak_factory_.HasWeakPtrs())
+    return;
+  weak_factory_.InvalidateWeakPtrs();
+  DCHECK_EQ(MotionNotify, last_xmotion_.type);
+  delegate_->OnMouseMovement(&last_xmotion_);
+  last_xmotion_.type = LASTEvent;
+}
 
-bool X11WholeScreenMoveLoop::Dispatch(const base::NativeEvent& event) {
+////////////////////////////////////////////////////////////////////////////////
+// DesktopWindowTreeHostLinux, ui::PlatformEventDispatcher implementation:
+
+bool X11WholeScreenMoveLoop::CanDispatchEvent(const ui::PlatformEvent& event) {
+  return in_move_loop_;
+}
+
+uint32_t X11WholeScreenMoveLoop::DispatchEvent(const ui::PlatformEvent& event) {
+  // This method processes all events for the grab_input_window_ as well as
+  // mouse events for all windows while the move loop is active - even before
+  // the grab is granted by X. This allows mouse notification events that were
+  // sent after the capture was requested but before the capture was granted
+  // to be dispatched. It is especially important to process the mouse release
+  // event that should have stopped the drag even if that mouse release happened
+  // before the grab was granted.
+  if (!in_move_loop_)
+    return ui::POST_DISPATCH_PERFORM_DEFAULT;
   XEvent* xev = event;
 
   // Note: the escape key is handled in the tab drag controller, which has
@@ -70,70 +106,152 @@ bool X11WholeScreenMoveLoop::Dispatch(const base::NativeEvent& event) {
         gfx::Point location = gfx::ToFlooredPoint(
             screen->GetCursorScreenPoint() - drag_offset_);
         drag_widget_->SetBounds(gfx::Rect(location, drag_image_.size()));
+        drag_widget_->StackAtTop();
       }
-      delegate_->OnMouseMovement(&xev->xmotion);
-      break;
+      last_xmotion_ = xev->xmotion;
+      if (!weak_factory_.HasWeakPtrs()) {
+        // Post a task to dispatch mouse movement event when control returns to
+        // the message loop. This allows smoother dragging since the events are
+        // dispatched without waiting for the drag widget updates.
+        base::MessageLoopForUI::current()->PostTask(
+            FROM_HERE,
+            base::Bind(&X11WholeScreenMoveLoop::DispatchMouseMovement,
+                       weak_factory_.GetWeakPtr()));
+      }
+      return ui::POST_DISPATCH_NONE;
     }
     case ButtonRelease: {
       if (xev->xbutton.button == Button1) {
         // Assume that drags are being done with the left mouse button. Only
         // break the drag if the left mouse button was released.
+        DispatchMouseMovement();
         delegate_->OnMouseReleased();
+      }
+      return ui::POST_DISPATCH_NONE;
+    }
+    case KeyPress: {
+      if (ui::KeyboardCodeFromXKeyEvent(xev) == ui::VKEY_ESCAPE) {
+        canceled_ = true;
+        EndMoveLoop();
+        return ui::POST_DISPATCH_NONE;
       }
       break;
     }
+    case FocusOut: {
+      if (xev->xfocus.mode != NotifyGrab)
+        has_grab_ = false;
+      break;
+    }
+    case GenericEvent: {
+      ui::EventType type = ui::EventTypeFromNative(xev);
+      switch (type) {
+        case ui::ET_MOUSE_MOVED:
+        case ui::ET_MOUSE_DRAGGED:
+        case ui::ET_MOUSE_RELEASED: {
+          XEvent xevent = {0};
+          if (type == ui::ET_MOUSE_RELEASED) {
+            xevent.type = ButtonRelease;
+            xevent.xbutton.button = ui::EventButtonFromNative(xev);
+          } else {
+            xevent.type = MotionNotify;
+          }
+          xevent.xany.display = xev->xgeneric.display;
+          xevent.xany.window = grab_input_window_;
+          // The fields used below are in the same place for all of events
+          // above. Using xmotion from XEvent's unions to avoid repeating
+          // the code.
+          xevent.xmotion.root = DefaultRootWindow(xev->xgeneric.display);
+          xevent.xmotion.time = ui::EventTimeFromNative(xev).InMilliseconds();
+          gfx::Point point(ui::EventSystemLocationFromNative(xev));
+          xevent.xmotion.x_root = point.x();
+          xevent.xmotion.y_root = point.y();
+          DispatchEvent(&xevent);
+          return ui::POST_DISPATCH_NONE;
+        }
+        default:
+          break;
+      }
+    }
   }
 
-  return true;
+  return (event->xany.window == grab_input_window_) ?
+      ui::POST_DISPATCH_NONE : ui::POST_DISPATCH_PERFORM_DEFAULT;
 }
-
-////////////////////////////////////////////////////////////////////////////////
-// DesktopRootWindowHostLinux, aura::client::WindowMoveClient implementation:
 
 bool X11WholeScreenMoveLoop::RunMoveLoop(aura::Window* source,
                                          gfx::NativeCursor cursor) {
-  // Start a capture on the host, so that it continues to receive events during
-  // the drag.
-  ScopedCapturer capturer(source->GetDispatcher()->host());
-
   DCHECK(!in_move_loop_);  // Can only handle one nested loop at a time.
-  in_move_loop_ = true;
 
-  XDisplay* display = gfx::GetXDisplay();
+  // Start a capture on the host, so that it continues to receive events during
+  // the drag. This may be second time we are capturing the mouse events - the
+  // first being when a mouse is first pressed. That first capture needs to be
+  // released before the call to GrabPointerAndKeyboard below, otherwise it may
+  // get released while we still need the pointer grab, which is why we restrict
+  // the scope here.
+  {
+    ScopedCapturer capturer(source->GetHost());
 
-  grab_input_window_ = CreateDragInputWindow(display);
-  if (!drag_image_.isNull())
-    CreateDragImageWindow();
-  base::MessagePumpX11::Current()->AddDispatcherForWindow(
-      this, grab_input_window_);
-
-  if (!GrabPointerWithCursor(cursor))
+    grab_input_window_ = CreateDragInputWindow(gfx::GetXDisplay());
+    // Releasing ScopedCapturer ensures that any other instance of
+    // X11ScopedCapture will not prematurely release grab that will be acquired
+    // below.
+  }
+  // TODO(varkha): Consider integrating GrabPointerAndKeyboard with
+  // ScopedCapturer to avoid possibility of logically keeping multiple grabs.
+  if (!GrabPointerAndKeyboard(cursor)) {
+    XDestroyWindow(gfx::GetXDisplay(), grab_input_window_);
     return false;
+  }
+
+  scoped_ptr<ui::ScopedEventDispatcher> old_dispatcher =
+      nested_dispatcher_.Pass();
+  nested_dispatcher_ =
+         ui::PlatformEventSource::GetInstance()->OverrideDispatcher(this);
+  if (!drag_image_.isNull() && CheckIfIconValid())
+    CreateDragImageWindow();
 
   // We are handling a mouse drag outside of the aura::RootWindow system. We
   // must manually make aura think that the mouse button is pressed so that we
   // don't draw extraneous tooltips.
-  aura::Env::GetInstance()->set_mouse_button_flags(ui::EF_LEFT_MOUSE_BUTTON);
+  aura::Env* env = aura::Env::GetInstance();
+  if (!env->IsMouseButtonDown()) {
+    env->set_mouse_button_flags(ui::EF_LEFT_MOUSE_BUTTON);
+    should_reset_mouse_flags_ = true;
+  }
 
+  in_move_loop_ = true;
+  canceled_ = false;
   base::MessageLoopForUI* loop = base::MessageLoopForUI::current();
   base::MessageLoop::ScopedNestableTaskAllower allow_nested(loop);
-  base::RunLoop run_loop(aura::Env::GetInstance()->GetDispatcher());
+  base::RunLoop run_loop;
   quit_closure_ = run_loop.QuitClosure();
   run_loop.Run();
-  return true;
+  nested_dispatcher_ = old_dispatcher.Pass();
+  return !canceled_;
 }
 
 void X11WholeScreenMoveLoop::UpdateCursor(gfx::NativeCursor cursor) {
-  DCHECK(in_move_loop_);
-  GrabPointerWithCursor(cursor);
+  if (in_move_loop_) {
+    // If we're still in the move loop, regrab the pointer with the updated
+    // cursor. Note: we can be called from handling an XdndStatus message after
+    // EndMoveLoop() was called, but before we return from the nested RunLoop.
+    GrabPointerAndKeyboard(cursor);
+  }
 }
 
 void X11WholeScreenMoveLoop::EndMoveLoop() {
   if (!in_move_loop_)
     return;
 
+  // Prevent DispatchMouseMovement from dispatching any posted motion event.
+  weak_factory_.InvalidateWeakPtrs();
+  last_xmotion_.type = LASTEvent;
+
   // We undo our emulated mouse click from RunMoveLoop();
-  aura::Env::GetInstance()->set_mouse_button_flags(0);
+  if (should_reset_mouse_flags_) {
+    aura::Env::GetInstance()->set_mouse_button_flags(0);
+    should_reset_mouse_flags_ = false;
+  }
 
   // TODO(erg): Is this ungrab the cause of having to click to give input focus
   // on drawn out windows? Not ungrabbing here screws the X server until I kill
@@ -141,13 +259,18 @@ void X11WholeScreenMoveLoop::EndMoveLoop() {
 
   // Ungrab before we let go of the window.
   XDisplay* display = gfx::GetXDisplay();
-  XUngrabPointer(display, CurrentTime);
+  // Only ungrab pointer if capture was not switched to another window.
+  if (has_grab_) {
+    XUngrabPointer(display, CurrentTime);
+    XUngrabKeyboard(display, CurrentTime);
+  }
 
-  base::MessagePumpX11::Current()->RemoveDispatcherForWindow(
-      grab_input_window_);
+  // Restore the previous dispatcher.
+  nested_dispatcher_.reset();
   drag_widget_.reset();
   delegate_->OnMoveLoopEnded();
   XDestroyWindow(display, grab_input_window_);
+  grab_input_window_ = None;
 
   in_move_loop_ = false;
   quit_closure_.Run();
@@ -162,9 +285,10 @@ void X11WholeScreenMoveLoop::SetDragImage(const gfx::ImageSkia& image,
   drag_offset_.set_y(0.f);
 }
 
-bool X11WholeScreenMoveLoop::GrabPointerWithCursor(gfx::NativeCursor cursor) {
+bool X11WholeScreenMoveLoop::GrabPointerAndKeyboard(gfx::NativeCursor cursor) {
   XDisplay* display = gfx::GetXDisplay();
   XGrabServer(display);
+
   XUngrabPointer(display, CurrentTime);
   int ret = XGrabPointer(
       display,
@@ -176,14 +300,28 @@ bool X11WholeScreenMoveLoop::GrabPointerWithCursor(gfx::NativeCursor cursor) {
       None,
       cursor.platform(),
       CurrentTime);
-  XUngrabServer(display);
   if (ret != GrabSuccess) {
-    DLOG(ERROR) << "Grabbing new tab for dragging failed: "
+    DLOG(ERROR) << "Grabbing pointer for dragging failed: "
                 << ui::GetX11ErrorString(display, ret);
-    return false;
+  } else {
+    has_grab_ = true;
+    XUngrabKeyboard(display, CurrentTime);
+    ret = XGrabKeyboard(
+        display,
+        grab_input_window_,
+        False,
+        GrabModeAsync,
+        GrabModeAsync,
+        CurrentTime);
+    if (ret != GrabSuccess) {
+      DLOG(ERROR) << "Grabbing keyboard for dragging failed: "
+                  << ui::GetX11ErrorString(display, ret);
+    }
   }
 
-  return true;
+  XUngrabServer(display);
+  XFlush(display);
+  return ret == GrabSuccess;
 }
 
 Window X11WholeScreenMoveLoop::CreateDragInputWindow(XDisplay* display) {
@@ -196,7 +334,7 @@ Window X11WholeScreenMoveLoop::CreateDragInputWindow(XDisplay* display) {
   XSetWindowAttributes swa;
   memset(&swa, 0, sizeof(swa));
   swa.event_mask = ButtonPressMask | ButtonReleaseMask | PointerMotionMask |
-                   StructureNotifyMask;
+                   KeyPressMask | KeyReleaseMask | StructureNotifyMask;
   swa.override_redirect = True;
   Window window = XCreateWindow(display,
                                 DefaultRootWindow(display),
@@ -204,7 +342,7 @@ Window X11WholeScreenMoveLoop::CreateDragInputWindow(XDisplay* display) {
                                 0, CopyFromParent, InputOnly, CopyFromParent,
                                 attribute_mask, &swa);
   XMapRaised(display, window);
-  base::MessagePumpX11::Current()->BlockUntilWindowMapped(window);
+  ui::X11EventSource::GetInstance()->BlockUntilWindowMapped(window);
   return window;
 }
 
@@ -221,17 +359,35 @@ void X11WholeScreenMoveLoop::CreateDragImageWindow() {
   widget->set_focus_on_creation(false);
   widget->set_frame_type(Widget::FRAME_TYPE_FORCE_NATIVE);
   widget->Init(params);
+  widget->SetOpacity(kDragWidgetOpacity);
   widget->GetNativeWindow()->SetName("DragWindow");
 
   ImageView* image = new ImageView();
   image->SetImage(drag_image_);
   image->SetBounds(0, 0, drag_image_.width(), drag_image_.height());
   widget->SetContentsView(image);
-
   widget->Show();
   widget->GetNativeWindow()->layer()->SetFillsBoundsOpaquely(false);
 
   drag_widget_.reset(widget);
+}
+
+bool X11WholeScreenMoveLoop::CheckIfIconValid() {
+  // Because we need a GL context per window, we do a quick check so that we
+  // don't make another context if the window would just be displaying a mostly
+  // transparent image.
+  const SkBitmap* in_bitmap = drag_image_.bitmap();
+  SkAutoLockPixels in_lock(*in_bitmap);
+  for (int y = 0; y < in_bitmap->height(); ++y) {
+    uint32* in_row = in_bitmap->getAddr32(0, y);
+
+    for (int x = 0; x < in_bitmap->width(); ++x) {
+      if (SkColorGetA(in_row[x]) > kMinAlpha)
+        return true;
+    }
+  }
+
+  return false;
 }
 
 }  // namespace views

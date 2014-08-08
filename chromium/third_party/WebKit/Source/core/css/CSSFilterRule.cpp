@@ -45,8 +45,10 @@ CSSFilterRule::CSSFilterRule(StyleRuleFilter* filterRule, CSSStyleSheet* parent)
 
 CSSFilterRule::~CSSFilterRule()
 {
+#if !ENABLE(OILPAN)
     if (m_propertiesCSSOMWrapper)
         m_propertiesCSSOMWrapper->clearParentRule();
+#endif
 }
 
 CSSStyleDeclaration* CSSFilterRule::style() const
@@ -65,7 +67,7 @@ String CSSFilterRule::cssText() const
     result.append(filterName);
     result.appendLiteral(" { ");
 
-    String descs = m_filterRule->properties()->asText();
+    String descs = m_filterRule->properties().asText();
     result.append(descs);
     if (!descs.isEmpty())
         result.append(' ');
@@ -80,6 +82,13 @@ void CSSFilterRule::reattach(StyleRuleBase* rule)
     m_filterRule = toStyleRuleFilter(rule);
     if (m_propertiesCSSOMWrapper)
         m_propertiesCSSOMWrapper->reattach(m_filterRule->mutableProperties());
+}
+
+void CSSFilterRule::trace(Visitor* visitor)
+{
+    visitor->trace(m_filterRule);
+    visitor->trace(m_propertiesCSSOMWrapper);
+    CSSRule::trace(visitor);
 }
 
 } // namespace WebCore

@@ -46,8 +46,8 @@ class SSLServerSocketNSS : public SSLServerSocket {
                    const CompletionCallback& callback) OVERRIDE;
   virtual int Write(IOBuffer* buf, int buf_len,
                     const CompletionCallback& callback) OVERRIDE;
-  virtual bool SetReceiveBufferSize(int32 size) OVERRIDE;
-  virtual bool SetSendBufferSize(int32 size) OVERRIDE;
+  virtual int SetReceiveBufferSize(int32 size) OVERRIDE;
+  virtual int SetSendBufferSize(int32 size) OVERRIDE;
 
   // StreamSocket implementation.
   virtual int Connect(const CompletionCallback& callback) OVERRIDE;
@@ -99,7 +99,7 @@ class SSLServerSocketNSS : public SSLServerSocket {
                                       PRBool is_server);
   static void HandshakeCallback(PRFileDesc* socket, void* arg);
 
-  virtual int Init();
+  int Init();
 
   // Members used to send and receive buffer.
   bool transport_send_busy_;

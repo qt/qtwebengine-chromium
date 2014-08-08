@@ -22,6 +22,7 @@
 #ifndef BidiResolver_h
 #define BidiResolver_h
 
+#include "platform/text/BidiCharacterRun.h"
 #include "platform/text/BidiContext.h"
 #include "platform/text/BidiRunList.h"
 #include "platform/text/TextDirection.h"
@@ -32,7 +33,10 @@
 
 namespace WebCore {
 
-template <class Iterator> struct MidpointState {
+class RenderObject;
+
+template <class Iterator> class MidpointState {
+public:
     MidpointState()
     {
         reset();
@@ -40,18 +44,83 @@ template <class Iterator> struct MidpointState {
 
     void reset()
     {
-        numMidpoints = 0;
-        currentMidpoint = 0;
-        betweenMidpoints = false;
+        m_numMidpoints = 0;
+        m_currentMidpoint = 0;
+        m_betweenMidpoints = false;
     }
 
+    void startIgnoringSpaces(const Iterator& midpoint)
+    {
+        ASSERT(!(m_numMidpoints % 2));
+        addMidpoint(midpoint);
+    }
+
+    void stopIgnoringSpaces(const Iterator& midpoint)
+    {
+        ASSERT(m_numMidpoints % 2);
+        addMidpoint(midpoint);
+    }
+
+    // When ignoring spaces, this needs to be called for objects that need line boxes such as RenderInlines or
+    // hard line breaks to ensure that they're not ignored.
+    void ensureLineBoxInsideIgnoredSpaces(RenderObject* renderer)
+    {
+        Iterator midpoint(0, renderer, 0);
+        stopIgnoringSpaces(midpoint);
+        startIgnoringSpaces(midpoint);
+    }
+
+    // Adding a pair of midpoints before a character will split it out into a new line box.
+    void ensureCharacterGetsLineBox(Iterator& textParagraphSeparator)
+    {
+        startIgnoringSpaces(Iterator(0, textParagraphSeparator.object(), textParagraphSeparator.offset() - 1));
+        stopIgnoringSpaces(Iterator(0, textParagraphSeparator.object(), textParagraphSeparator.offset()));
+    }
+
+    void checkMidpoints(Iterator& lBreak)
+    {
+        // Check to see if our last midpoint is a start point beyond the line break. If so,
+        // shave it off the list, and shave off a trailing space if the previous end point doesn't
+        // preserve whitespace.
+        if (lBreak.object() && m_numMidpoints && !(m_numMidpoints % 2)) {
+            Iterator* midpointsIterator = m_midpoints.data();
+            Iterator& endpoint = midpointsIterator[m_numMidpoints - 2];
+            const Iterator& startpoint = midpointsIterator[m_numMidpoints - 1];
+            Iterator currpoint = endpoint;
+            while (!currpoint.atEnd() && currpoint != startpoint && currpoint != lBreak)
+                currpoint.increment();
+            if (currpoint == lBreak) {
+                // We hit the line break before the start point. Shave off the start point.
+                m_numMidpoints--;
+                if (endpoint.object()->style()->collapseWhiteSpace() && endpoint.object()->isText())
+                    endpoint.setOffset(endpoint.offset() - 1);
+            }
+        }
+    }
+
+    Vector<Iterator>& midpoints() { return m_midpoints; }
+    const unsigned& numMidpoints() const { return m_numMidpoints; }
+    const unsigned& currentMidpoint() const { return m_currentMidpoint; }
+    void incrementCurrentMidpoint() { m_currentMidpoint++; }
+    const bool& betweenMidpoints() const { return m_betweenMidpoints; }
+    void setBetweenMidpoints(bool betweenMidpoint) { m_betweenMidpoints = betweenMidpoint; }
+private:
     // The goal is to reuse the line state across multiple
     // lines so we just keep an array around for midpoints and never clear it across multiple
     // lines. We track the number of items and position using the two other variables.
-    Vector<Iterator> midpoints;
-    unsigned numMidpoints;
-    unsigned currentMidpoint;
-    bool betweenMidpoints;
+    Vector<Iterator> m_midpoints;
+    unsigned m_numMidpoints;
+    unsigned m_currentMidpoint;
+    bool m_betweenMidpoints;
+
+    void addMidpoint(const Iterator& midpoint)
+    {
+        if (m_midpoints.size() <= m_numMidpoints)
+            m_midpoints.grow(m_numMidpoints + 10);
+
+        Iterator* midpointsIterator = m_midpoints.data();
+        midpointsIterator[m_numMidpoints++] = midpoint;
+    }
 };
 
 // The BidiStatus at a given position (typically the end of a line) can
@@ -112,50 +181,6 @@ inline bool operator!=(const BidiStatus& status1, const BidiStatus& status2)
     return !(status1 == status2);
 }
 
-struct BidiCharacterRun {
-    BidiCharacterRun(int start, int stop, BidiContext* context, WTF::Unicode::Direction dir)
-        : m_override(context->override())
-        , m_next(0)
-        , m_start(start)
-        , m_stop(stop)
-    {
-        ASSERT(m_start <= m_stop);
-        if (dir == WTF::Unicode::OtherNeutral)
-            dir = context->dir();
-
-        m_level = context->level();
-
-        // add level of run (cases I1 & I2)
-        if (m_level % 2) {
-            if (dir == WTF::Unicode::LeftToRight || dir == WTF::Unicode::ArabicNumber || dir == WTF::Unicode::EuropeanNumber)
-                m_level++;
-        } else {
-            if (dir == WTF::Unicode::RightToLeft)
-                m_level++;
-            else if (dir == WTF::Unicode::ArabicNumber || dir == WTF::Unicode::EuropeanNumber)
-                m_level += 2;
-        }
-    }
-
-    int start() const { return m_start; }
-    int stop() const { return m_stop; }
-    unsigned char level() const { return m_level; }
-    bool reversed(bool visuallyOrdered) { return m_level % 2 && !visuallyOrdered; }
-    bool dirOverride(bool visuallyOrdered) { return m_override || visuallyOrdered; }
-
-    BidiCharacterRun* next() const { return m_next; }
-    void setNext(BidiCharacterRun* next) { m_next = next; }
-
-    // Do not add anything apart from bitfields until after m_next. See https://bugs.webkit.org/show_bug.cgi?id=100173
-    bool m_override : 1;
-    bool m_hasHyphen : 1; // Used by BidiRun subclass which is a layering violation but enables us to save 8 bytes per object on 64-bit.
-    bool m_startsSegment : 1; // Same comment as m_hasHyphen.
-    unsigned char m_level;
-    BidiCharacterRun* m_next;
-    int m_start;
-    int m_stop;
-};
-
 enum VisualDirectionOverride {
     NoVisualOverride,
     VisualLeftToRightOverride,
@@ -172,6 +197,7 @@ public:
         , m_reachedEndOfLine(false)
         , m_emptyRun(true)
         , m_nestedIsolateCount(0)
+        , m_trailingSpaceRun(0)
     {
     }
 
@@ -203,6 +229,7 @@ public:
     {
         ASSERT(s.context);
         m_status = s;
+        m_paragraphDirectionality = s.context->dir() == WTF::Unicode::LeftToRight ? LTR : RTL;
     }
 
     MidpointState<Iterator>& midpointState() { return m_midpointState; }
@@ -217,7 +244,7 @@ public:
     void embed(WTF::Unicode::Direction, BidiEmbeddingSource);
     bool commitExplicitEmbedding();
 
-    void createBidiRunsForLine(const Iterator& end, VisualDirectionOverride = NoVisualOverride, bool hardLineBreak = false);
+    void createBidiRunsForLine(const Iterator& end, VisualDirectionOverride = NoVisualOverride, bool hardLineBreak = false, bool reorderRuns = true);
 
     BidiRunList<Run>& runs() { return m_runs; }
 
@@ -236,12 +263,15 @@ public:
 
     Iterator endOfLine() const { return m_endOfLine; }
 
+    Run* trailingSpaceRun() const { return m_trailingSpaceRun; }
+
 protected:
     void increment() { m_current.increment(); }
     // FIXME: Instead of InlineBidiResolvers subclassing this method, we should
     // pass in some sort of Traits object which knows how to create runs for appending.
     void appendRun();
 
+    Run* addTrailingRun(int, int, Run*, BidiContext*, TextDirection) { return 0; }
     Iterator m_current;
     // sor and eor are "start of run" and "end of run" respectively and correpond
     // to abreviations used in UBA spec: http://unicode.org/reports/tr9/#BD7
@@ -265,6 +295,8 @@ protected:
 
     unsigned m_nestedIsolateCount;
     Vector<Run*> m_isolatedRuns;
+    Run* m_trailingSpaceRun;
+    TextDirection m_paragraphDirectionality;
 
 private:
     void raiseExplicitEmbeddingLevel(WTF::Unicode::Direction from, WTF::Unicode::Direction to);
@@ -273,6 +305,11 @@ private:
 
     void updateStatusLastFromCurrentDirection(WTF::Unicode::Direction);
     void reorderRunsFromLevels();
+
+    bool needsToApplyL1Rule() { return false; }
+    int findFirstTrailingSpaceAtRun(Run*) { return 0; }
+    // http://www.unicode.org/reports/tr9/#L1
+    void applyL1Rule();
 
     Vector<BidiEmbedding, 8> m_currentExplicitEmbeddingSequence;
     HashMap<Run *, MidpointState<Iterator> > m_midpointStateForIsolatedRun;
@@ -414,6 +451,45 @@ void BidiResolver<Iterator, Run>::raiseExplicitEmbeddingLevel(WTF::Unicode::Dire
     setLastDir(to);
     setLastStrongDir(to);
     m_eor = Iterator();
+}
+
+template <class Iterator, class Run>
+void BidiResolver<Iterator, Run>::applyL1Rule()
+{
+    ASSERT(m_runs.runCount());
+    if (!needsToApplyL1Rule())
+        return;
+
+    Run* trailingSpaceRun = m_runs.logicallyLastRun();
+
+    int firstSpace = findFirstTrailingSpaceAtRun(trailingSpaceRun);
+    if (firstSpace == trailingSpaceRun->stop())
+        return;
+
+    bool shouldReorder = trailingSpaceRun != (m_paragraphDirectionality == LTR ? m_runs.lastRun() : m_runs.firstRun());
+    if (firstSpace != trailingSpaceRun->start()) {
+        BidiContext* baseContext = context();
+        while (BidiContext* parent = baseContext->parent())
+            baseContext = parent;
+
+        m_trailingSpaceRun = addTrailingRun(firstSpace, trailingSpaceRun->m_stop, trailingSpaceRun, baseContext, m_paragraphDirectionality);
+        ASSERT(m_trailingSpaceRun);
+        trailingSpaceRun->m_stop = firstSpace;
+        return;
+    }
+    if (!shouldReorder) {
+        m_trailingSpaceRun = trailingSpaceRun;
+        return;
+    }
+
+    if (m_paragraphDirectionality == LTR) {
+        m_runs.moveRunToEnd(trailingSpaceRun);
+        trailingSpaceRun->m_level = 0;
+    } else {
+        m_runs.moveRunToBeginning(trailingSpaceRun);
+        trailingSpaceRun->m_level = 1;
+    }
+    m_trailingSpaceRun = trailingSpaceRun;
 }
 
 template <class Iterator, class Run>
@@ -584,11 +660,12 @@ TextDirection BidiResolver<Iterator, Run>::determineParagraphDirectionality(bool
 }
 
 template <class Iterator, class Run>
-void BidiResolver<Iterator, Run>::createBidiRunsForLine(const Iterator& end, VisualDirectionOverride override, bool hardLineBreak)
+void BidiResolver<Iterator, Run>::createBidiRunsForLine(const Iterator& end, VisualDirectionOverride override, bool hardLineBreak, bool reorderRuns)
 {
     using namespace WTF::Unicode;
 
     ASSERT(m_direction == OtherNeutral);
+    m_trailingSpaceRun = 0;
 
     m_endOfLine = end;
 
@@ -982,9 +1059,13 @@ void BidiResolver<Iterator, Run>::createBidiRunsForLine(const Iterator& end, Vis
     }
 
     m_runs.setLogicallyLastRun(m_runs.lastRun());
-    reorderRunsFromLevels();
+    if (reorderRuns)
+        reorderRunsFromLevels();
     m_endOfRunAtEndOfLine = Iterator();
     m_endOfLine = Iterator();
+
+    if (!hardLineBreak && m_runs.runCount())
+        applyL1Rule();
 }
 
 template <class Iterator, class Run>

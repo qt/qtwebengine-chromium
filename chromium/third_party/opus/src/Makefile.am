@@ -22,11 +22,24 @@ else
 SILK_SOURCES += $(SILK_SOURCES_FLOAT)
 endif
 
+if DISABLE_FLOAT_API
+else
 OPUS_SOURCES += $(OPUS_SOURCES_FLOAT)
+endif
 
 if CPU_ARM
 CELT_SOURCES += $(CELT_SOURCES_ARM)
+SILK_SOURCES += $(SILK_SOURCES_ARM)
+if OPUS_ARM_EXTERNAL_ASM
+nodist_libopus_la_SOURCES = $(CELT_SOURCES_ARM_ASM:.s=-gnu.S)
+BUILT_SOURCES = $(CELT_SOURCES_ARM_ASM:.s=-gnu.S) \
+ $(CELT_AM_SOURCES_ARM_ASM:.s.in=.s) \
+ $(CELT_AM_SOURCES_ARM_ASM:.s.in=-gnu.S)
 endif
+endif
+
+CLEANFILES = $(CELT_SOURCES_ARM_ASM:.s=-gnu.S) \
+ $(CELT_AM_SOURCES_ARM_ASM:.s.in=-gnu.S)
 
 include celt_headers.mk
 include silk_headers.mk
@@ -103,11 +116,13 @@ endif
 endif
 
 EXTRA_DIST = version.mk \
-	     opus.pc.in \
+             opus.pc.in \
              opus-uninstalled.pc.in \
              opus.m4 \
              Makefile.unix \
              tests/run_vectors.sh \
+             celt/arm/arm2gnu.pl \
+             celt/arm/celt_pitch_xcorr_arm.s \
              win32/VS2010/silk_float.vcxproj \
              win32/VS2010/celt.vcxproj.filters \
              win32/VS2010/opus.vcxproj \
@@ -203,3 +218,14 @@ dist-hook:
 
 
 .PHONY: opus check-opus install-opus docs install-docs
+
+# automake doesn't do dependency tracking for asm files, that I can tell
+$(CELT_SOURCES_ARM_ASM:%.s=%-gnu.S): celt/arm/armopts-gnu.S
+$(CELT_SOURCES_ARM_ASM:%.s=%-gnu.S): $(top_srcdir)/celt/arm/arm2gnu.pl
+
+# convert ARM asm to GNU as format
+%-gnu.S: $(top_srcdir)/%.s
+	$(top_srcdir)/celt/arm/arm2gnu.pl < $< > $@
+# For autoconf-modified sources (e.g., armopts.s)
+%-gnu.S: %.s
+	$(top_srcdir)/celt/arm/arm2gnu.pl < $< > $@

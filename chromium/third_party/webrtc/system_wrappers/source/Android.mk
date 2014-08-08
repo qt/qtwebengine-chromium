@@ -17,7 +17,6 @@ LOCAL_MODULE := libwebrtc_system_wrappers
 LOCAL_MODULE_TAGS := optional
 LOCAL_CPP_EXTENSION := .cc
 LOCAL_SRC_FILES := \
-    android/cpu-features.c \
     cpu_features_android.c \
     sort.cc \
     aligned_malloc.cc \
@@ -36,11 +35,13 @@ LOCAL_SRC_FILES := \
     condition_variable_posix.cc \
     critical_section_posix.cc \
     event_posix.cc \
+    rtp_to_ntp.cc \
     sleep.cc \
     thread_posix.cc \
     tick_util.cc \
+    timestamp_extrapolator.cc \
     trace_posix.cc \
-    rw_lock_posix.cc 
+    rw_lock_posix.cc
 
 LOCAL_CFLAGS := \
     $(MY_WEBRTC_COMMON_DEFS)
@@ -55,6 +56,8 @@ LOCAL_SHARED_LIBRARIES := \
     libcutils \
     libdl \
     libstlport
+
+LOCAL_STATIC_LIBRARIES := cpufeatures
 
 ifndef NDK_ROOT
 include external/stlport/libstlport.mk

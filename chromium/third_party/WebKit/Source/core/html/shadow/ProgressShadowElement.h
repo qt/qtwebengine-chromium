@@ -41,55 +41,40 @@ class HTMLProgressElement;
 
 class ProgressShadowElement : public HTMLDivElement {
 public:
-    ProgressShadowElement(Document&);
+    explicit ProgressShadowElement(Document&);
     HTMLProgressElement* progressElement() const;
 
 protected:
-    virtual bool rendererIsNeeded(const RenderStyle&);
+    virtual bool rendererIsNeeded(const RenderStyle&) OVERRIDE;
 };
 
 class ProgressInnerElement FINAL : public ProgressShadowElement {
 public:
-    static PassRefPtr<ProgressInnerElement> create(Document&);
+    DECLARE_NODE_FACTORY(ProgressInnerElement);
 
 private:
-    ProgressInnerElement(Document&);
+    explicit ProgressInnerElement(Document&);
 
     virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
-    virtual bool rendererIsNeeded(const RenderStyle&);
+    virtual bool rendererIsNeeded(const RenderStyle&) OVERRIDE;
 };
-
-inline PassRefPtr<ProgressInnerElement> ProgressInnerElement::create(Document& document)
-{
-    return adoptRef(new ProgressInnerElement(document));
-}
 
 class ProgressBarElement FINAL : public ProgressShadowElement {
 public:
-    static PassRefPtr<ProgressBarElement> create(Document&);
+    DECLARE_NODE_FACTORY(ProgressBarElement);
 
 private:
-    ProgressBarElement(Document&);
+    explicit ProgressBarElement(Document&);
 };
-
-inline PassRefPtr<ProgressBarElement> ProgressBarElement::create(Document& document)
-{
-    return adoptRef(new ProgressBarElement(document));
-}
 
 class ProgressValueElement FINAL : public ProgressShadowElement {
 public:
-    static PassRefPtr<ProgressValueElement> create(Document&);
+    DECLARE_NODE_FACTORY(ProgressValueElement);
     void setWidthPercentage(double);
 
 private:
-    ProgressValueElement(Document&);
+    explicit ProgressValueElement(Document&);
 };
-
-inline PassRefPtr<ProgressValueElement> ProgressValueElement::create(Document& document)
-{
-    return adoptRef(new ProgressValueElement(document));
-}
 
 }
 

@@ -48,11 +48,18 @@ XMLHttpRequestProgressEventThrottle::~XMLHttpRequestProgressEventThrottle()
 {
 }
 
-void XMLHttpRequestProgressEventThrottle::dispatchProgressEvent(bool lengthComputable, unsigned long long loaded, unsigned long long total)
+void XMLHttpRequestProgressEventThrottle::dispatchProgressEvent(const AtomicString& type, bool lengthComputable, unsigned long long loaded, unsigned long long total)
 {
+    RefPtrWillBeRawPtr<XMLHttpRequestProgressEvent> progressEvent = XMLHttpRequestProgressEvent::create(type, lengthComputable, loaded, total);
+
+    if (type != EventTypeNames::progress) {
+        dispatchEvent(progressEvent);
+        return;
+    }
+
     if (m_deferEvents) {
         // Only store the latest progress event while suspended.
-        m_deferredProgressEvent = XMLHttpRequestProgressEvent::create(EventTypeNames::progress, lengthComputable, loaded, total);
+        m_deferredProgressEvent = progressEvent;
         return;
     }
 
@@ -64,8 +71,8 @@ void XMLHttpRequestProgressEventThrottle::dispatchProgressEvent(bool lengthCompu
         ASSERT(!m_loaded);
         ASSERT(!m_total);
 
-        dispatchEvent(XMLHttpRequestProgressEvent::create(EventTypeNames::progress, lengthComputable, loaded, total));
-        startRepeating(minimumProgressEventDispatchingIntervalInSeconds);
+        dispatchEvent(progressEvent);
+        startRepeating(minimumProgressEventDispatchingIntervalInSeconds, FROM_HERE);
         return;
     }
 
@@ -75,7 +82,7 @@ void XMLHttpRequestProgressEventThrottle::dispatchProgressEvent(bool lengthCompu
     m_total = total;
 }
 
-void XMLHttpRequestProgressEventThrottle::dispatchReadyStateChangeEvent(PassRefPtr<Event> event, ProgressEventAction progressEventAction)
+void XMLHttpRequestProgressEventThrottle::dispatchReadyStateChangeEvent(PassRefPtrWillBeRawPtr<Event> event, ProgressEventAction progressEventAction)
 {
     if (progressEventAction == FlushProgressEvent || progressEventAction == FlushDeferredProgressEvent) {
         if (!flushDeferredProgressEvent() && progressEventAction == FlushProgressEvent)
@@ -85,7 +92,7 @@ void XMLHttpRequestProgressEventThrottle::dispatchReadyStateChangeEvent(PassRefP
     dispatchEvent(event);
 }
 
-void XMLHttpRequestProgressEventThrottle::dispatchEvent(PassRefPtr<Event> event)
+void XMLHttpRequestProgressEventThrottle::dispatchEvent(PassRefPtrWillBeRawPtr<Event> event)
 {
     ASSERT(event);
     if (m_deferEvents) {
@@ -94,16 +101,9 @@ void XMLHttpRequestProgressEventThrottle::dispatchEvent(PassRefPtr<Event> event)
             return;
         }
         m_deferredEvents.append(event);
-    } else
+    } else {
         m_target->dispatchEvent(event);
-}
-
-void XMLHttpRequestProgressEventThrottle::dispatchEventAndLoadEnd(const AtomicString& type, bool lengthComputable, unsigned long long bytesSent, unsigned long long total)
-{
-    ASSERT(type == EventTypeNames::load || type == EventTypeNames::abort || type == EventTypeNames::error || type == EventTypeNames::timeout);
-
-    dispatchEvent(XMLHttpRequestProgressEvent::create(type, lengthComputable, bytesSent, total));
-    dispatchEvent(XMLHttpRequestProgressEvent::create(EventTypeNames::loadend, lengthComputable, bytesSent, total));
+    }
 }
 
 bool XMLHttpRequestProgressEventThrottle::flushDeferredProgressEvent()
@@ -111,7 +111,7 @@ bool XMLHttpRequestProgressEventThrottle::flushDeferredProgressEvent()
     if (m_deferEvents && m_deferredProgressEvent) {
         // Move the progress event to the queue, to get it in the right order on resume.
         m_deferredEvents.append(m_deferredProgressEvent);
-        m_deferredProgressEvent = 0;
+        m_deferredProgressEvent = nullptr;
         return true;
     }
     return false;
@@ -122,7 +122,7 @@ void XMLHttpRequestProgressEventThrottle::deliverProgressEvent()
     if (!hasEventToDispatch())
         return;
 
-    PassRefPtr<Event> event = XMLHttpRequestProgressEvent::create(EventTypeNames::progress, m_lengthComputable, m_loaded, m_total);
+    RefPtrWillBeRawPtr<Event> event = XMLHttpRequestProgressEvent::create(EventTypeNames::progress, m_lengthComputable, m_loaded, m_total);
     m_loaded = 0;
     m_total = 0;
 
@@ -139,14 +139,14 @@ void XMLHttpRequestProgressEventThrottle::dispatchDeferredEvents(Timer<XMLHttpRe
     m_deferEvents = false;
 
     // Take over the deferred events before dispatching them which can potentially add more.
-    Vector<RefPtr<Event> > deferredEvents;
+    WillBeHeapVector<RefPtrWillBeMember<Event> > deferredEvents;
     m_deferredEvents.swap(deferredEvents);
 
-    RefPtr<Event> deferredProgressEvent = m_deferredProgressEvent;
-    m_deferredProgressEvent = 0;
+    RefPtrWillBeRawPtr<Event> deferredProgressEvent = m_deferredProgressEvent;
+    m_deferredProgressEvent = nullptr;
 
-    Vector<RefPtr<Event> >::const_iterator it = deferredEvents.begin();
-    const Vector<RefPtr<Event> >::const_iterator end = deferredEvents.end();
+    WillBeHeapVector<RefPtrWillBeMember<Event> >::const_iterator it = deferredEvents.begin();
+    const WillBeHeapVector<RefPtrWillBeMember<Event> >::const_iterator end = deferredEvents.end();
     for (; it != end; ++it)
         dispatchEvent(*it);
 
@@ -213,7 +213,14 @@ void XMLHttpRequestProgressEventThrottle::resume()
     // the list of active DOM objects to resume them, and any activated JS event-handler
     // could insert new active DOM objects to the list.
     // m_deferEvents is kept true until all deferred events have been dispatched.
-    m_dispatchDeferredEventsTimer.startOneShot(0);
+    m_dispatchDeferredEventsTimer.startOneShot(0, FROM_HERE);
+}
+
+void XMLHttpRequestProgressEventThrottle::trace(Visitor* visitor)
+{
+    visitor->trace(m_target);
+    visitor->trace(m_deferredProgressEvent);
+    visitor->trace(m_deferredEvents);
 }
 
 } // namespace WebCore

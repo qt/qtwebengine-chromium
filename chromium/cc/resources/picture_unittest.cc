@@ -10,11 +10,10 @@
 #include "cc/test/fake_content_layer_client.h"
 #include "cc/test/skia_common.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/skia/include/core/SkBBHFactory.h"
 #include "third_party/skia/include/core/SkCanvas.h"
-#include "third_party/skia/include/core/SkDevice.h"
 #include "third_party/skia/include/core/SkGraphics.h"
 #include "third_party/skia/include/core/SkPixelRef.h"
-#include "third_party/skia/include/core/SkTileGridPicture.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/skia_util.h"
 
@@ -26,7 +25,7 @@ TEST(PictureTest, AsBase64String) {
 
   gfx::Rect layer_rect(100, 100);
 
-  SkTileGridPicture::TileGridInfo tile_grid_info;
+  SkTileGridFactory::TileGridInfo tile_grid_info;
   tile_grid_info.fTileInterval = SkISize::Make(100, 100);
   tile_grid_info.fMargin.setEmpty();
   tile_grid_info.fOffset.setZero();
@@ -44,73 +43,88 @@ TEST(PictureTest, AsBase64String) {
   tmp.reset(new base::StringValue("abc!@#$%"));
   scoped_refptr<Picture> invalid_picture =
       Picture::CreateFromValue(tmp.get());
-  EXPECT_TRUE(!invalid_picture.get());
+  EXPECT_FALSE(invalid_picture.get());
+
+  Picture::RecordingMode kRecordingModes[] = {Picture::RECORD_NORMALLY,
+                                              Picture::RECORD_WITH_SKRECORD};
 
   // Single full-size rect picture.
   content_layer_client.add_draw_rect(layer_rect, red_paint);
-  scoped_refptr<Picture> one_rect_picture = Picture::Create(layer_rect);
-  one_rect_picture->Record(&content_layer_client,
-                           tile_grid_info);
-  scoped_ptr<base::Value> serialized_one_rect(
-      one_rect_picture->AsValue());
 
-  // Reconstruct the picture.
-  scoped_refptr<Picture> one_rect_picture_check =
-      Picture::CreateFromValue(serialized_one_rect.get());
-  EXPECT_TRUE(!!one_rect_picture_check.get());
+  for (size_t i = 0; i < arraysize(kRecordingModes); ++i) {
+    scoped_refptr<Picture> one_rect_picture =
+        Picture::Create(layer_rect,
+                        &content_layer_client,
+                        tile_grid_info,
+                        false,
+                        0,
+                        kRecordingModes[i]);
+    scoped_ptr<base::Value> serialized_one_rect(one_rect_picture->AsValue());
 
-  // Check for equivalence.
-  unsigned char one_rect_buffer[4 * 100 * 100] = {0};
-  DrawPicture(one_rect_buffer, layer_rect, one_rect_picture);
-  unsigned char one_rect_buffer_check[4 * 100 * 100] = {0};
-  DrawPicture(one_rect_buffer_check, layer_rect, one_rect_picture_check);
+    // Reconstruct the picture.
+    scoped_refptr<Picture> one_rect_picture_check =
+        Picture::CreateFromValue(serialized_one_rect.get());
+    EXPECT_TRUE(!!one_rect_picture_check.get());
 
-  EXPECT_EQ(one_rect_picture->LayerRect(),
-            one_rect_picture_check->LayerRect());
-  EXPECT_EQ(one_rect_picture->OpaqueRect(),
-            one_rect_picture_check->OpaqueRect());
-  EXPECT_TRUE(
-      memcmp(one_rect_buffer, one_rect_buffer_check, 4 * 100 * 100) == 0);
+    // Check for equivalence.
+    unsigned char one_rect_buffer[4 * 100 * 100] = {0};
+    DrawPicture(one_rect_buffer, layer_rect, one_rect_picture);
+    unsigned char one_rect_buffer_check[4 * 100 * 100] = {0};
+    DrawPicture(one_rect_buffer_check, layer_rect, one_rect_picture_check);
+
+    EXPECT_EQ(one_rect_picture->LayerRect(),
+              one_rect_picture_check->LayerRect());
+    EXPECT_EQ(one_rect_picture->OpaqueRect(),
+              one_rect_picture_check->OpaqueRect());
+    EXPECT_TRUE(memcmp(one_rect_buffer, one_rect_buffer_check, 4 * 100 * 100) ==
+                0);
+  }
 
   // Two rect picture.
   content_layer_client.add_draw_rect(gfx::Rect(25, 25, 50, 50), green_paint);
-  scoped_refptr<Picture> two_rect_picture = Picture::Create(layer_rect);
-  two_rect_picture->Record(&content_layer_client,
-                           tile_grid_info);
 
-  scoped_ptr<base::Value> serialized_two_rect(
-      two_rect_picture->AsValue());
+  for (size_t i = 0; i < arraysize(kRecordingModes); ++i) {
+    scoped_refptr<Picture> two_rect_picture =
+        Picture::Create(layer_rect,
+                        &content_layer_client,
+                        tile_grid_info,
+                        false,
+                        0,
+                        Picture::RECORD_NORMALLY);
 
-  // Reconstruct the picture.
-  scoped_refptr<Picture> two_rect_picture_check =
-      Picture::CreateFromValue(serialized_two_rect.get());
-  EXPECT_TRUE(!!two_rect_picture_check.get());
+    scoped_ptr<base::Value> serialized_two_rect(two_rect_picture->AsValue());
 
-  // Check for equivalence.
-  unsigned char two_rect_buffer[4 * 100 * 100] = {0};
-  DrawPicture(two_rect_buffer, layer_rect, two_rect_picture);
-  unsigned char two_rect_buffer_check[4 * 100 * 100] = {0};
-  DrawPicture(two_rect_buffer_check, layer_rect, two_rect_picture_check);
+    // Reconstruct the picture.
+    scoped_refptr<Picture> two_rect_picture_check =
+        Picture::CreateFromValue(serialized_two_rect.get());
+    EXPECT_TRUE(!!two_rect_picture_check.get());
 
-  EXPECT_EQ(two_rect_picture->LayerRect(),
-            two_rect_picture_check->LayerRect());
-  EXPECT_EQ(two_rect_picture->OpaqueRect(),
-            two_rect_picture_check->OpaqueRect());
-  EXPECT_TRUE(
-      memcmp(two_rect_buffer, two_rect_buffer_check, 4 * 100 * 100) == 0);
+    // Check for equivalence.
+    unsigned char two_rect_buffer[4 * 100 * 100] = {0};
+    DrawPicture(two_rect_buffer, layer_rect, two_rect_picture);
+    unsigned char two_rect_buffer_check[4 * 100 * 100] = {0};
+    DrawPicture(two_rect_buffer_check, layer_rect, two_rect_picture_check);
+
+    EXPECT_EQ(two_rect_picture->LayerRect(),
+              two_rect_picture_check->LayerRect());
+    EXPECT_EQ(two_rect_picture->OpaqueRect(),
+              two_rect_picture_check->OpaqueRect());
+    EXPECT_TRUE(memcmp(two_rect_buffer, two_rect_buffer_check, 4 * 100 * 100) ==
+                0);
+  }
 }
 
 TEST(PictureTest, PixelRefIterator) {
   gfx::Rect layer_rect(2048, 2048);
 
-  SkTileGridPicture::TileGridInfo tile_grid_info;
+  SkTileGridFactory::TileGridInfo tile_grid_info;
   tile_grid_info.fTileInterval = SkISize::Make(512, 512);
   tile_grid_info.fMargin.setEmpty();
   tile_grid_info.fOffset.setZero();
 
   FakeContentLayerClient content_layer_client;
 
-  // Lazy pixel refs are found in the following grids:
+  // Discardable pixel refs are found in the following grids:
   // |---|---|---|---|
   // |   | x |   | x |
   // |---|---|---|---|
@@ -120,23 +134,26 @@ TEST(PictureTest, PixelRefIterator) {
   // |---|---|---|---|
   // | x |   | x |   |
   // |---|---|---|---|
-  SkBitmap lazy_bitmap[4][4];
+  SkBitmap discardable_bitmap[4][4];
   for (int y = 0; y < 4; ++y) {
     for (int x = 0; x < 4; ++x) {
       if ((x + y) & 1) {
-        CreateBitmap(gfx::Size(500, 500), "lazy", &lazy_bitmap[y][x]);
+        CreateBitmap(
+            gfx::Size(500, 500), "discardable", &discardable_bitmap[y][x]);
         SkPaint paint;
         content_layer_client.add_draw_bitmap(
-            lazy_bitmap[y][x],
+            discardable_bitmap[y][x],
             gfx::Point(x * 512 + 6, y * 512 + 6), paint);
       }
     }
   }
 
-  scoped_refptr<Picture> picture = Picture::Create(layer_rect);
-  picture->Record(&content_layer_client,
-                  tile_grid_info);
-  picture->GatherPixelRefs(tile_grid_info);
+  scoped_refptr<Picture> picture = Picture::Create(layer_rect,
+                                                   &content_layer_client,
+                                                   tile_grid_info,
+                                                   true,
+                                                   0,
+                                                   Picture::RECORD_NORMALLY);
 
   // Default iterator does not have any pixel refs
   {
@@ -149,7 +166,8 @@ TEST(PictureTest, PixelRefIterator) {
                                          picture.get());
       if ((x + y) & 1) {
         EXPECT_TRUE(iterator) << x << " " << y;
-        EXPECT_TRUE(*iterator == lazy_bitmap[y][x].pixelRef()) << x << " " << y;
+        EXPECT_TRUE(*iterator == discardable_bitmap[y][x].pixelRef()) << x <<
+            " " << y;
         EXPECT_FALSE(++iterator) << x << " " << y;
       } else {
         EXPECT_FALSE(iterator) << x << " " << y;
@@ -161,13 +179,13 @@ TEST(PictureTest, PixelRefIterator) {
     Picture::PixelRefIterator iterator(gfx::Rect(512, 512, 2048, 2048),
                                        picture.get());
     EXPECT_TRUE(iterator);
-    EXPECT_TRUE(*iterator == lazy_bitmap[1][2].pixelRef());
+    EXPECT_TRUE(*iterator == discardable_bitmap[1][2].pixelRef());
     EXPECT_TRUE(++iterator);
-    EXPECT_TRUE(*iterator == lazy_bitmap[2][1].pixelRef());
+    EXPECT_TRUE(*iterator == discardable_bitmap[2][1].pixelRef());
     EXPECT_TRUE(++iterator);
-    EXPECT_TRUE(*iterator == lazy_bitmap[2][3].pixelRef());
+    EXPECT_TRUE(*iterator == discardable_bitmap[2][3].pixelRef());
     EXPECT_TRUE(++iterator);
-    EXPECT_TRUE(*iterator == lazy_bitmap[3][2].pixelRef());
+    EXPECT_TRUE(*iterator == discardable_bitmap[3][2].pixelRef());
     EXPECT_FALSE(++iterator);
   }
 
@@ -175,39 +193,39 @@ TEST(PictureTest, PixelRefIterator) {
   Picture::PixelRefIterator iterator(gfx::Rect(512, 512, 2048, 2048),
                                      picture.get());
   EXPECT_TRUE(iterator);
-  EXPECT_TRUE(*iterator == lazy_bitmap[1][2].pixelRef());
+  EXPECT_TRUE(*iterator == discardable_bitmap[1][2].pixelRef());
   EXPECT_TRUE(++iterator);
-  EXPECT_TRUE(*iterator == lazy_bitmap[2][1].pixelRef());
+  EXPECT_TRUE(*iterator == discardable_bitmap[2][1].pixelRef());
 
   // copy now points to the same spot as iterator,
   // but both can be incremented independently.
   Picture::PixelRefIterator copy = iterator;
   EXPECT_TRUE(++iterator);
-  EXPECT_TRUE(*iterator == lazy_bitmap[2][3].pixelRef());
+  EXPECT_TRUE(*iterator == discardable_bitmap[2][3].pixelRef());
   EXPECT_TRUE(++iterator);
-  EXPECT_TRUE(*iterator == lazy_bitmap[3][2].pixelRef());
+  EXPECT_TRUE(*iterator == discardable_bitmap[3][2].pixelRef());
   EXPECT_FALSE(++iterator);
 
   EXPECT_TRUE(copy);
-  EXPECT_TRUE(*copy == lazy_bitmap[2][1].pixelRef());
+  EXPECT_TRUE(*copy == discardable_bitmap[2][1].pixelRef());
   EXPECT_TRUE(++copy);
-  EXPECT_TRUE(*copy == lazy_bitmap[2][3].pixelRef());
+  EXPECT_TRUE(*copy == discardable_bitmap[2][3].pixelRef());
   EXPECT_TRUE(++copy);
-  EXPECT_TRUE(*copy == lazy_bitmap[3][2].pixelRef());
+  EXPECT_TRUE(*copy == discardable_bitmap[3][2].pixelRef());
   EXPECT_FALSE(++copy);
 }
 
 TEST(PictureTest, PixelRefIteratorNonZeroLayer) {
   gfx::Rect layer_rect(1024, 0, 2048, 2048);
 
-  SkTileGridPicture::TileGridInfo tile_grid_info;
+  SkTileGridFactory::TileGridInfo tile_grid_info;
   tile_grid_info.fTileInterval = SkISize::Make(512, 512);
   tile_grid_info.fMargin.setEmpty();
   tile_grid_info.fOffset.setZero();
 
   FakeContentLayerClient content_layer_client;
 
-  // Lazy pixel refs are found in the following grids:
+  // Discardable pixel refs are found in the following grids:
   // |---|---|---|---|
   // |   | x |   | x |
   // |---|---|---|---|
@@ -217,23 +235,26 @@ TEST(PictureTest, PixelRefIteratorNonZeroLayer) {
   // |---|---|---|---|
   // | x |   | x |   |
   // |---|---|---|---|
-  SkBitmap lazy_bitmap[4][4];
+  SkBitmap discardable_bitmap[4][4];
   for (int y = 0; y < 4; ++y) {
     for (int x = 0; x < 4; ++x) {
       if ((x + y) & 1) {
-        CreateBitmap(gfx::Size(500, 500), "lazy", &lazy_bitmap[y][x]);
+        CreateBitmap(
+            gfx::Size(500, 500), "discardable", &discardable_bitmap[y][x]);
         SkPaint paint;
         content_layer_client.add_draw_bitmap(
-            lazy_bitmap[y][x],
+            discardable_bitmap[y][x],
             gfx::Point(1024 + x * 512 + 6, y * 512 + 6), paint);
       }
     }
   }
 
-  scoped_refptr<Picture> picture = Picture::Create(layer_rect);
-  picture->Record(&content_layer_client,
-                  tile_grid_info);
-  picture->GatherPixelRefs(tile_grid_info);
+  scoped_refptr<Picture> picture = Picture::Create(layer_rect,
+                                                   &content_layer_client,
+                                                   tile_grid_info,
+                                                   true,
+                                                   0,
+                                                   Picture::RECORD_NORMALLY);
 
   // Default iterator does not have any pixel refs
   {
@@ -246,7 +267,7 @@ TEST(PictureTest, PixelRefIteratorNonZeroLayer) {
           gfx::Rect(1024 + x * 512, y * 512, 500, 500), picture.get());
       if ((x + y) & 1) {
         EXPECT_TRUE(iterator) << x << " " << y;
-        EXPECT_TRUE(*iterator == lazy_bitmap[y][x].pixelRef());
+        EXPECT_TRUE(*iterator == discardable_bitmap[y][x].pixelRef());
         EXPECT_FALSE(++iterator) << x << " " << y;
       } else {
         EXPECT_FALSE(iterator) << x << " " << y;
@@ -258,13 +279,13 @@ TEST(PictureTest, PixelRefIteratorNonZeroLayer) {
     Picture::PixelRefIterator iterator(gfx::Rect(1024 + 512, 512, 2048, 2048),
                                        picture.get());
     EXPECT_TRUE(iterator);
-    EXPECT_TRUE(*iterator == lazy_bitmap[1][2].pixelRef());
+    EXPECT_TRUE(*iterator == discardable_bitmap[1][2].pixelRef());
     EXPECT_TRUE(++iterator);
-    EXPECT_TRUE(*iterator == lazy_bitmap[2][1].pixelRef());
+    EXPECT_TRUE(*iterator == discardable_bitmap[2][1].pixelRef());
     EXPECT_TRUE(++iterator);
-    EXPECT_TRUE(*iterator == lazy_bitmap[2][3].pixelRef());
+    EXPECT_TRUE(*iterator == discardable_bitmap[2][3].pixelRef());
     EXPECT_TRUE(++iterator);
-    EXPECT_TRUE(*iterator == lazy_bitmap[3][2].pixelRef());
+    EXPECT_TRUE(*iterator == discardable_bitmap[3][2].pixelRef());
     EXPECT_FALSE(++iterator);
   }
 
@@ -273,25 +294,25 @@ TEST(PictureTest, PixelRefIteratorNonZeroLayer) {
     Picture::PixelRefIterator iterator(gfx::Rect(1024 + 512, 512, 2048, 2048),
                                        picture.get());
     EXPECT_TRUE(iterator);
-    EXPECT_TRUE(*iterator == lazy_bitmap[1][2].pixelRef());
+    EXPECT_TRUE(*iterator == discardable_bitmap[1][2].pixelRef());
     EXPECT_TRUE(++iterator);
-    EXPECT_TRUE(*iterator == lazy_bitmap[2][1].pixelRef());
+    EXPECT_TRUE(*iterator == discardable_bitmap[2][1].pixelRef());
 
     // copy now points to the same spot as iterator,
     // but both can be incremented independently.
     Picture::PixelRefIterator copy = iterator;
     EXPECT_TRUE(++iterator);
-    EXPECT_TRUE(*iterator == lazy_bitmap[2][3].pixelRef());
+    EXPECT_TRUE(*iterator == discardable_bitmap[2][3].pixelRef());
     EXPECT_TRUE(++iterator);
-    EXPECT_TRUE(*iterator == lazy_bitmap[3][2].pixelRef());
+    EXPECT_TRUE(*iterator == discardable_bitmap[3][2].pixelRef());
     EXPECT_FALSE(++iterator);
 
     EXPECT_TRUE(copy);
-    EXPECT_TRUE(*copy == lazy_bitmap[2][1].pixelRef());
+    EXPECT_TRUE(*copy == discardable_bitmap[2][1].pixelRef());
     EXPECT_TRUE(++copy);
-    EXPECT_TRUE(*copy == lazy_bitmap[2][3].pixelRef());
+    EXPECT_TRUE(*copy == discardable_bitmap[2][3].pixelRef());
     EXPECT_TRUE(++copy);
-    EXPECT_TRUE(*copy == lazy_bitmap[3][2].pixelRef());
+    EXPECT_TRUE(*copy == discardable_bitmap[3][2].pixelRef());
     EXPECT_FALSE(++copy);
   }
 
@@ -321,14 +342,14 @@ TEST(PictureTest, PixelRefIteratorNonZeroLayer) {
 TEST(PictureTest, PixelRefIteratorOnePixelQuery) {
   gfx::Rect layer_rect(2048, 2048);
 
-  SkTileGridPicture::TileGridInfo tile_grid_info;
+  SkTileGridFactory::TileGridInfo tile_grid_info;
   tile_grid_info.fTileInterval = SkISize::Make(512, 512);
   tile_grid_info.fMargin.setEmpty();
   tile_grid_info.fOffset.setZero();
 
   FakeContentLayerClient content_layer_client;
 
-  // Lazy pixel refs are found in the following grids:
+  // Discardable pixel refs are found in the following grids:
   // |---|---|---|---|
   // |   | x |   | x |
   // |---|---|---|---|
@@ -338,23 +359,26 @@ TEST(PictureTest, PixelRefIteratorOnePixelQuery) {
   // |---|---|---|---|
   // | x |   | x |   |
   // |---|---|---|---|
-  SkBitmap lazy_bitmap[4][4];
+  SkBitmap discardable_bitmap[4][4];
   for (int y = 0; y < 4; ++y) {
     for (int x = 0; x < 4; ++x) {
       if ((x + y) & 1) {
-        CreateBitmap(gfx::Size(500, 500), "lazy", &lazy_bitmap[y][x]);
+        CreateBitmap(
+            gfx::Size(500, 500), "discardable", &discardable_bitmap[y][x]);
         SkPaint paint;
         content_layer_client.add_draw_bitmap(
-            lazy_bitmap[y][x],
+            discardable_bitmap[y][x],
             gfx::Point(x * 512 + 6, y * 512 + 6), paint);
       }
     }
   }
 
-  scoped_refptr<Picture> picture = Picture::Create(layer_rect);
-  picture->Record(&content_layer_client,
-                  tile_grid_info);
-  picture->GatherPixelRefs(tile_grid_info);
+  scoped_refptr<Picture> picture = Picture::Create(layer_rect,
+                                                   &content_layer_client,
+                                                   tile_grid_info,
+                                                   true,
+                                                   0,
+                                                   Picture::RECORD_NORMALLY);
 
   for (int y = 0; y < 4; ++y) {
     for (int x = 0; x < 4; ++x) {
@@ -362,7 +386,7 @@ TEST(PictureTest, PixelRefIteratorOnePixelQuery) {
           gfx::Rect(x * 512, y * 512 + 256, 1, 1), picture.get());
       if ((x + y) & 1) {
         EXPECT_TRUE(iterator) << x << " " << y;
-        EXPECT_TRUE(*iterator == lazy_bitmap[y][x].pixelRef());
+        EXPECT_TRUE(*iterator == discardable_bitmap[y][x].pixelRef());
         EXPECT_FALSE(++iterator) << x << " " << y;
       } else {
         EXPECT_FALSE(iterator) << x << " " << y;
@@ -376,7 +400,7 @@ TEST(PictureTest, CreateFromSkpValue) {
 
   gfx::Rect layer_rect(100, 200);
 
-  SkTileGridPicture::TileGridInfo tile_grid_info;
+  SkTileGridFactory::TileGridInfo tile_grid_info;
   tile_grid_info.fTileInterval = SkISize::Make(100, 200);
   tile_grid_info.fMargin.setEmpty();
   tile_grid_info.fOffset.setZero();
@@ -398,9 +422,13 @@ TEST(PictureTest, CreateFromSkpValue) {
 
   // Single full-size rect picture.
   content_layer_client.add_draw_rect(layer_rect, red_paint);
-  scoped_refptr<Picture> one_rect_picture = Picture::Create(layer_rect);
-  one_rect_picture->Record(&content_layer_client,
-                           tile_grid_info);
+  scoped_refptr<Picture> one_rect_picture =
+      Picture::Create(layer_rect,
+                      &content_layer_client,
+                      tile_grid_info,
+                      false,
+                      0,
+                      Picture::RECORD_NORMALLY);
   scoped_ptr<base::Value> serialized_one_rect(
       one_rect_picture->AsValue());
 
@@ -421,5 +449,64 @@ TEST(PictureTest, CreateFromSkpValue) {
   EXPECT_EQ(100, one_rect_picture_check->OpaqueRect().width());
   EXPECT_EQ(200, one_rect_picture_check->OpaqueRect().height());
 }
+
+TEST(PictureTest, RecordingModes) {
+  SkGraphics::Init();
+
+  gfx::Rect layer_rect(100, 200);
+
+  SkTileGridFactory::TileGridInfo tile_grid_info;
+  tile_grid_info.fTileInterval = SkISize::Make(100, 200);
+  tile_grid_info.fMargin.setEmpty();
+  tile_grid_info.fOffset.setZero();
+
+  FakeContentLayerClient content_layer_client;
+  EXPECT_EQ(NULL, content_layer_client.last_canvas());
+
+  scoped_refptr<Picture> picture = Picture::Create(layer_rect,
+                                                   &content_layer_client,
+                                                   tile_grid_info,
+                                                   false,
+                                                   0,
+                                                   Picture::RECORD_NORMALLY);
+  EXPECT_TRUE(content_layer_client.last_canvas() != NULL);
+  EXPECT_EQ(ContentLayerClient::GRAPHICS_CONTEXT_ENABLED,
+            content_layer_client.last_context_status());
+  EXPECT_TRUE(picture);
+
+  picture = Picture::Create(layer_rect,
+                            &content_layer_client,
+                            tile_grid_info,
+                            false,
+                            0,
+                            Picture::RECORD_WITH_SK_NULL_CANVAS);
+  EXPECT_TRUE(content_layer_client.last_canvas() != NULL);
+  EXPECT_EQ(ContentLayerClient::GRAPHICS_CONTEXT_ENABLED,
+            content_layer_client.last_context_status());
+  EXPECT_TRUE(picture);
+
+  picture = Picture::Create(layer_rect,
+                            &content_layer_client,
+                            tile_grid_info,
+                            false,
+                            0,
+                            Picture::RECORD_WITH_PAINTING_DISABLED);
+  EXPECT_TRUE(content_layer_client.last_canvas() != NULL);
+  EXPECT_EQ(ContentLayerClient::GRAPHICS_CONTEXT_DISABLED,
+            content_layer_client.last_context_status());
+  EXPECT_TRUE(picture);
+
+  picture = Picture::Create(layer_rect,
+                            &content_layer_client,
+                            tile_grid_info,
+                            false,
+                            0,
+                            Picture::RECORD_WITH_SKRECORD);
+  EXPECT_TRUE(content_layer_client.last_canvas() != NULL);
+  EXPECT_TRUE(picture);
+
+  EXPECT_EQ(4, Picture::RECORDING_MODE_COUNT);
+}
+
 }  // namespace
 }  // namespace cc

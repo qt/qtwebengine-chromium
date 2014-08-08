@@ -36,25 +36,26 @@ class ExceptionState;
 class XPathExpression;
 class XPathResult;
 
-class DocumentXPathEvaluator : public DocumentSupplement {
+class DocumentXPathEvaluator FINAL : public NoBaseWillBeGarbageCollected<DocumentXPathEvaluator>, public DocumentSupplement {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(DocumentXPathEvaluator);
 public:
-    virtual ~DocumentXPathEvaluator();
+    static DocumentXPathEvaluator& from(DocumentSupplementable&);
 
-    static DocumentXPathEvaluator* from(DocumentSupplementable*);
-
-    static PassRefPtr<XPathExpression> createExpression(DocumentSupplementable*,
-        const String& expression, PassRefPtr<XPathNSResolver>, ExceptionState&);
-    static PassRefPtr<XPathNSResolver> createNSResolver(DocumentSupplementable*, Node* nodeResolver);
-    static PassRefPtr<XPathResult> evaluate(DocumentSupplementable*,
-        const String& expression, Node* contextNode, PassRefPtr<XPathNSResolver>,
+    static PassRefPtrWillBeRawPtr<XPathExpression> createExpression(DocumentSupplementable&,
+        const String& expression, PassRefPtrWillBeRawPtr<XPathNSResolver>, ExceptionState&);
+    static PassRefPtrWillBeRawPtr<XPathNSResolver> createNSResolver(DocumentSupplementable&, Node* nodeResolver);
+    static PassRefPtrWillBeRawPtr<XPathResult> evaluate(DocumentSupplementable&,
+        const String& expression, Node* contextNode, PassRefPtrWillBeRawPtr<XPathNSResolver>,
         unsigned short type, XPathResult*, ExceptionState&);
+
+    virtual void trace(Visitor*) OVERRIDE;
 
 private:
     DocumentXPathEvaluator();
 
     static const char* supplementName() { return "DocumentXPathEvaluator"; }
 
-    RefPtr<XPathEvaluator> m_xpathEvaluator;
+    RefPtrWillBeMember<XPathEvaluator> m_xpathEvaluator;
 };
 
 } // namespace WebCore

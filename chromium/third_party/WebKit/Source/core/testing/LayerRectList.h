@@ -44,19 +44,24 @@ class ClientRectList;
 class LayerRect;
 class Node;
 
-class LayerRectList : public RefCounted<LayerRectList> {
+class LayerRectList FINAL : public RefCountedWillBeGarbageCollected<LayerRectList> {
+    DECLARE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(LayerRectList);
 public:
-    static PassRefPtr<LayerRectList> create() { return adoptRef(new LayerRectList); }
-    ~LayerRectList();
+    static PassRefPtrWillBeRawPtr<LayerRectList> create()
+    {
+        return adoptRefWillBeNoop(new LayerRectList);
+    }
 
     unsigned length() const;
     LayerRect* item(unsigned index);
-    void append(PassRefPtr<Node> layerRootNode, const String& layerName, PassRefPtr<ClientRect> layerRelativeRect);
+    void append(PassRefPtrWillBeRawPtr<Node> layerAssociatedNode, const String& layerName, int layerOffsetX, int layerOffsetY, PassRefPtrWillBeRawPtr<ClientRect> layerRelativeRect);
+
+    void trace(Visitor*);
 
 private:
     LayerRectList();
 
-    Vector<RefPtr<LayerRect> > m_list;
+    WillBeHeapVector<RefPtrWillBeMember<LayerRect> > m_list;
 };
 
 } // namespace WebCore

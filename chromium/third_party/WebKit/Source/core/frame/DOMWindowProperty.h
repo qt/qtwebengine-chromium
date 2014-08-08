@@ -28,23 +28,23 @@
 
 namespace WebCore {
 
-class DOMWindow;
-class Frame;
+class LocalDOMWindow;
+class LocalFrame;
 
 class DOMWindowProperty {
 public:
-    explicit DOMWindowProperty(Frame*);
+    explicit DOMWindowProperty(LocalFrame*);
 
     virtual void willDestroyGlobalObjectInFrame();
     virtual void willDetachGlobalObjectFromFrame();
 
-    Frame* frame() const { return m_frame; }
+    LocalFrame* frame() const { return m_frame; }
 
 protected:
     virtual ~DOMWindowProperty();
 
-    Frame* m_frame;
-    DOMWindow* m_associatedDOMWindow;
+    LocalFrame* m_frame;
+    LocalDOMWindow* m_associatedDOMWindow;
 };
 
 }

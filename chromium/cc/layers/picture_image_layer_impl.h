@@ -21,23 +21,16 @@ class CC_EXPORT PictureImageLayerImpl : public PictureLayerImpl {
   virtual const char* LayerTypeAsString() const OVERRIDE;
   virtual scoped_ptr<LayerImpl> CreateLayerImpl(
       LayerTreeImpl* tree_impl) OVERRIDE;
-  virtual void CalculateContentsScale(float ideal_contents_scale,
-                                      float device_scale_factor,
-                                      float page_scale_factor,
-                                      bool animating_transform_to_screen,
-                                      float* contents_scale_x,
-                                      float* contents_scale_y,
-                                      gfx::Size* content_bounds) OVERRIDE;
 
  protected:
   PictureImageLayerImpl(LayerTreeImpl* tree_impl, int id);
 
-  virtual bool ShouldAdjustRasterScale(
-      bool animating_transform_to_screen) const OVERRIDE;
-  virtual void RecalculateRasterScales(
-      bool animating_transform_to_screen) OVERRIDE;
+  virtual bool ShouldAdjustRasterScale() const OVERRIDE;
+  virtual void RecalculateRasterScales() OVERRIDE;
   virtual void GetDebugBorderProperties(
       SkColor* color, float* width) const OVERRIDE;
+
+  virtual void UpdateIdealScales() OVERRIDE;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(PictureImageLayerImpl);

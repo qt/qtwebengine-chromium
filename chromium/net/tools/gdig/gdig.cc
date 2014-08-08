@@ -16,6 +16,7 @@
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
 #include "net/base/address_list.h"
 #include "net/base/ip_endpoint.h"
@@ -275,8 +276,9 @@ GDig::Result GDig::Main(int argc, const char* argv[]) {
 }
 
 bool GDig::ParseCommandLine(int argc, const char* argv[]) {
-  CommandLine::Init(argc, argv);
-  const CommandLine& parsed_command_line = *CommandLine::ForCurrentProcess();
+  base::CommandLine::Init(argc, argv);
+  const base::CommandLine& parsed_command_line =
+      *base::CommandLine::ForCurrentProcess();
 
   if (parsed_command_line.HasSwitch("config_timeout")) {
     int timeout_seconds = 0;
@@ -299,7 +301,6 @@ bool GDig::ParseCommandLine(int argc, const char* argv[]) {
       std::map<std::string, NetLog::LogLevel> log_levels;
       log_levels["all"] = NetLog::LOG_ALL;
       log_levels["no_bytes"] = NetLog::LOG_ALL_BUT_BYTES;
-      log_levels["basic"] = NetLog::LOG_BASIC;
 
       if (log_levels.find(log_param) != log_levels.end()) {
         level = log_levels[log_param];
@@ -362,7 +363,7 @@ bool GDig::ParseCommandLine(int argc, const char* argv[]) {
     ReplayLogEntry entry;
     entry.start_time = base::TimeDelta();
 #if defined(OS_WIN)
-    entry.domain_name = WideToASCII(parsed_command_line.GetArgs()[0]);
+    entry.domain_name = base::UTF16ToASCII(parsed_command_line.GetArgs()[0]);
 #else
     entry.domain_name = parsed_command_line.GetArgs()[0];
 #endif
@@ -420,12 +421,11 @@ void GDig::OnDnsConfig(const DnsConfig& dns_config_const) {
 
   scoped_ptr<DnsClient> dns_client(DnsClient::CreateClient(NULL));
   dns_client->SetConfig(dns_config);
+  HostResolver::Options options;
+  options.max_concurrent_resolves = parallellism_;
+  options.max_retry_attempts = 1u;
   scoped_ptr<HostResolverImpl> resolver(
-      new HostResolverImpl(
-          HostCache::CreateDefaultCache(),
-          PrioritizedDispatcher::Limits(NUM_PRIORITIES, parallellism_),
-          HostResolverImpl::ProcTaskParams(NULL, 1),
-          log_.get()));
+      new HostResolverImpl(options, log_.get()));
   resolver->SetDnsClient(dns_client.Pass());
   resolver_ = resolver.Pass();
 

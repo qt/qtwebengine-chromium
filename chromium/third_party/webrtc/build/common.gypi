@@ -14,8 +14,7 @@
     'variables': {
       'variables': {
         'variables': {
-          # This will be set to zero in the supplement.gypi triggered by a
-          # gclient hook in the standalone build.
+          # This will already be set to zero by supplement.gypi
           'build_with_chromium%': 1,
         },
         'build_with_chromium%': '<(build_with_chromium)',
@@ -26,11 +25,13 @@
             'webrtc_root%': '<(DEPTH)/third_party/webrtc',
             'apk_tests_path%': '<(DEPTH)/third_party/webrtc/build/apk_tests.gyp',
             'modules_java_gyp_path%': '<(DEPTH)/third_party/webrtc/modules/modules_java_chromium.gyp',
+            'gen_core_neon_offsets_gyp%': '<(DEPTH)/third_party/webrtc/modules/audio_processing/gen_core_neon_offsets_chromium.gyp',
           }, {
             'build_with_libjingle%': 0,
             'webrtc_root%': '<(DEPTH)/webrtc',
             'apk_tests_path%': '<(DEPTH)/webrtc/build/apk_test_noop.gyp',
             'modules_java_gyp_path%': '<(DEPTH)/webrtc/modules/modules_java.gyp',
+            'gen_core_neon_offsets_gyp%':'<(DEPTH)/webrtc/modules/audio_processing/gen_core_neon_offsets.gyp',
           }],
         ],
       },
@@ -39,7 +40,7 @@
       'webrtc_root%': '<(webrtc_root)',
       'apk_tests_path%': '<(apk_tests_path)',
       'modules_java_gyp_path%': '<(modules_java_gyp_path)',
-
+      'gen_core_neon_offsets_gyp%': '<(gen_core_neon_offsets_gyp)',
       'webrtc_vp8_dir%': '<(webrtc_root)/modules/video_coding/codecs/vp8',
       'rbe_components_path%': '<(webrtc_root)/modules/remote_bitrate_estimator',
       'include_opus%': 1,
@@ -49,9 +50,16 @@
     'webrtc_root%': '<(webrtc_root)',
     'apk_tests_path%': '<(apk_tests_path)',
     'modules_java_gyp_path%': '<(modules_java_gyp_path)',
+    'gen_core_neon_offsets_gyp%': '<(gen_core_neon_offsets_gyp)',
     'webrtc_vp8_dir%': '<(webrtc_vp8_dir)',
     'include_opus%': '<(include_opus)',
     'rbe_components_path%': '<(rbe_components_path)',
+    'external_libraries%': '0',
+    'json_root%': '<(DEPTH)/third_party/jsoncpp/source/include/',
+    # openssl needs to be defined or gyp will complain. Is is only used when
+    # when providing external libraries so just use current directory as a
+    # placeholder.
+    'ssl_root%': '.',
 
     # The Chromium common.gypi we use treats all gyp files without
     # chromium_code==1 as third party code. This disables many of the
@@ -60,6 +68,9 @@
     # We can set this here to have WebRTC code treated as Chromium code. Our
     # third party code will still have the reduced warning settings.
     'chromium_code': 1,
+
+    # Set to 1 to enable code coverage on Linux using the gcov library.
+    'coverage%': 0,
 
     # Remote bitrate estimator logging/plotting.
     'enable_bwe_test_logging%': 0,
@@ -80,9 +91,14 @@
     'enable_protobuf%': 1,
 
     # Disable these to not build components which can be externally provided.
+    'build_json%': 1,
     'build_libjpeg%': 1,
     'build_libyuv%': 1,
     'build_libvpx%': 1,
+    'build_ssl%': 1,
+
+    # Disable by default
+    'have_dbus_glib%': 0,
 
     # Enable to use the Mozilla internal settings.
     'build_with_mozilla%': 0,
@@ -110,9 +126,6 @@
 
         # Exclude internal video render module in Chromium build.
         'include_internal_video_render%': 0,
-
-        # Include ndk cpu features in Chromium build.
-        'include_ndk_cpu_features%': 1,
       }, {  # Settings for the standalone (not-in-Chromium) build.
         # TODO(andrew): For now, disable the Chrome plugins, which causes a
         # flood of chromium-style warnings. Investigate enabling them:
@@ -123,7 +136,6 @@
         'include_internal_audio_device%': 1,
         'include_internal_video_capture%': 1,
         'include_internal_video_render%': 1,
-        'include_ndk_cpu_features%': 0,
       }],
       ['build_with_libjingle==1', {
         'include_tests%': 0,
@@ -135,7 +147,6 @@
       ['OS=="ios"', {
         'build_libjpeg%': 0,
         'enable_protobuf%': 0,
-        'include_tests%': 0,
       }],
       ['target_arch=="arm" or target_arch=="armv7"', {
         'prefer_fixed_point%': 1,
@@ -144,9 +155,6 @@
   },
   'target_defaults': {
     'include_dirs': [
-      # Allow includes to be prefixed with webrtc/ in case it is not an
-      # immediate subdirectory of <(DEPTH).
-      '../..',
       # To include the top-level directory when building in Chrome, so we can
       # use full paths (e.g. headers inside testing/ or third_party/).
       '<(DEPTH)',
@@ -161,6 +169,14 @@
           'WEBRTC_MOZILLA_BUILD',
          ],
       }],
+      ['have_dbus_glib==1', {
+        'defines': [
+          'HAVE_DBUS_GLIB',
+         ],
+         'cflags': [
+           '<!@(pkg-config --cflags dbus-glib-1)',
+         ],
+      }],
       ['enable_video==1', {
         'defines': ['WEBRTC_MODULE_UTILITY_VIDEO',],
       }],
@@ -168,22 +184,46 @@
         'defines': [
           # Changes settings for Chromium build.
           'WEBRTC_CHROMIUM_BUILD',
+          'LOGGING_INSIDE_WEBRTC',
+        ],
+        'include_dirs': [
+          # overrides must be included first as that is the mechanism for
+          # selecting the override headers in Chromium.
+          '../overrides',
+          # Allow includes to be prefixed with webrtc/ in case it is not an
+          # immediate subdirectory of <(DEPTH).
+          '../..',
         ],
       }, {
         'conditions': [
           ['os_posix==1', {
-            'cflags': [
-              '-Wextra',
-              # We need to repeat some flags from Chromium's common.gypi here
-              # that get overridden by -Wextra.
-              '-Wno-unused-parameter',
-              '-Wno-missing-field-initializers',
-              '-Wno-strict-overflow',
+            'conditions': [
+              # -Wextra is currently disabled in Chromium's common.gypi. Enable
+              # for targets that can handle it. For Android/arm64 right now
+              # there will be an 'enumeral and non-enumeral type in conditional
+              # expression' warning in android_tools/ndk_experimental's version
+              # of stlport.
+              # See: https://code.google.com/p/chromium/issues/detail?id=379699
+              ['target_arch!="arm64" or OS!="android"', {
+                'cflags': [
+                  '-Wextra',
+                  # We need to repeat some flags from Chromium's common.gypi
+                  # here that get overridden by -Wextra.
+                  '-Wno-unused-parameter',
+                  '-Wno-missing-field-initializers',
+                  '-Wno-strict-overflow',
+                ],
+              }],
             ],
             'cflags_cc': [
               '-Wnon-virtual-dtor',
               # This is enabled for clang; enable for gcc as well.
               '-Woverloaded-virtual',
+            ],
+          }],
+          ['clang==1', {
+            'cflags': [
+              '-Wthread-safety',
             ],
           }],
         ],
@@ -258,6 +298,18 @@
           }],
         ],
       }],
+      ['coverage==1 and OS=="linux"', {
+        'cflags': [ '-ftest-coverage',
+                    '-fprofile-arcs' ],
+        'link_settings': { 'libraries': [ '-lgcov' ] },
+      }],
+      ['os_posix==1', {
+        # For access to standard POSIXish features, use WEBRTC_POSIX instead of
+        # a more specific macro.
+        'defines': [
+          'WEBRTC_POSIX',
+        ],
+      }],
       ['OS=="ios"', {
         'defines': [
           'WEBRTC_MAC',
@@ -313,9 +365,6 @@
       }],
     ], # conditions
     'direct_dependent_settings': {
-      'include_dirs': [
-        '../..',
-      ],
       'conditions': [
         ['build_with_mozilla==1', {
           'defines': [
@@ -327,6 +376,16 @@
           'defines': [
             # Changes settings for Chromium build.
             'WEBRTC_CHROMIUM_BUILD',
+          ],
+          'include_dirs': [
+            # overrides must be included first as that is the mechanism for
+            # selecting the override headers in Chromium.
+            '../overrides',
+            '../..',
+          ],
+        }, {
+          'include_dirs': [
+            '../..',
           ],
         }],
         ['OS=="mac"', {
@@ -362,6 +421,13 @@
                ],
              }]
            ],
+        }],
+        ['os_posix==1', {
+          # For access to standard POSIXish features, use WEBRTC_POSIX instead
+          # of a more specific macro.
+          'defines': [
+            'WEBRTC_POSIX',
+          ],
         }],
       ],
     },

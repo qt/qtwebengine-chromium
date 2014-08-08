@@ -12,11 +12,11 @@
 #include "content/public/browser/resource_dispatcher_host_delegate.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/test/browser_test_utils.h"
+#include "content/public/test/content_browser_test.h"
+#include "content/public/test/content_browser_test_utils.h"
 #include "content/public/test/test_utils.h"
 #include "content/shell/browser/shell.h"
 #include "content/shell/common/shell_switches.h"
-#include "content/test/content_browser_test.h"
-#include "content/test/content_browser_test_utils.h"
 #include "content/test/net/url_request_mock_http_job.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "net/url_request/url_request.h"
@@ -32,6 +32,8 @@
 #else
 #define MAYBE(x) x
 #endif
+
+using base::ASCIIToUTF16;
 
 namespace content {
 namespace {
@@ -62,9 +64,6 @@ class PluginTest : public ContentBrowserTest {
                       KEY_WRITE) == ERROR_SUCCESS) {
         regkey.CreateKey(L"BROWSER_TESTS.EXE", KEY_READ);
       }
-    } else if (strcmp(test_info->name(), "FlashSecurity") == 0) {
-      command_line->AppendSwitchASCII(switches::kTestSandbox,
-                                      "security_tests.dll");
     }
 #elif defined(OS_MACOSX)
     base::FilePath plugin_dir;
@@ -329,9 +328,10 @@ IN_PROC_BROWSER_TEST_F(PluginTest,
 
 // If this flakes, reopen http://crbug.com/17645
 // As of 6 July 2011, this test is flaky on Windows (perhaps due to timing out).
-#if !defined(OS_MACOSX)
+#if !defined(OS_MACOSX) && !defined(OS_LINUX)
 // Disabled on Mac because the plugin side isn't implemented yet, see
 // "TODO(port)" in plugin_javascript_open_popup.cc.
+// Disabled on Linux because we don't support NPAPI any more.
 IN_PROC_BROWSER_TEST_F(PluginTest, MAYBE(OpenPopupWindowWithPlugin)) {
   LoadAndWait(GetURL("get_javascript_open_popup_with_plugin.html"));
 }

@@ -13,10 +13,12 @@
 # f - List of files to extract.
 #
 
+export LC_ALL=C
+
 # Avoid things like -n messing up the grepping below.
 unset GREP_OPTIONS
 
-while getopts "d:a:f:" flag
+while getopts "d:a:f:r:" flag
 do
   if [ "$flag" = "d" ]; then
     out_dir=$OPTARG
@@ -24,6 +26,8 @@ do
     lib_files="$OPTARG $lib_files"
   elif [ "$flag" = "f" ]; then
     obj_files="$OPTARG $obj_files"
+  elif [ "$flag" = "r" ]; then
+    ar=$OPTARG
   fi
 done
 
@@ -40,12 +44,14 @@ if [ -z "$lib_file" ]; then
   exit
 fi
 
-# Find the appropriate ar to use.
-ar="ar"
-if [ -n "$AR_target" ]; then
-  ar=$AR_target
-elif [ -n "$AR" ]; then
-  ar=$AR
+if [ ! -f "$ar" ]; then
+  # Find the appropriate ar to use.
+  ar="ar"
+  if [ -n "$AR_target" ]; then
+    ar=$AR_target
+  elif [ -n "$AR" ]; then
+    ar=$AR
+  fi
 fi
 
 obj_list="$($ar t $lib_file | grep '\.o$')"

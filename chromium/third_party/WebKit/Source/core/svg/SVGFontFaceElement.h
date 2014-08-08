@@ -23,8 +23,9 @@
 #define SVGFontFaceElement_h
 
 #if ENABLE(SVG_FONTS)
-#include "SVGNames.h"
+#include "core/SVGNames.h"
 #include "core/svg/SVGElement.h"
+#include "wtf/WeakPtr.h"
 
 namespace WebCore {
 
@@ -33,7 +34,7 @@ class StyleRuleFontFace;
 
 class SVGFontFaceElement FINAL : public SVGElement {
 public:
-    static PassRefPtr<SVGFontFaceElement> create(Document&);
+    DECLARE_NODE_FACTORY(SVGFontFaceElement);
 
     unsigned unitsPerEm() const;
     int xHeight() const;
@@ -51,23 +52,25 @@ public:
     void rebuildFontFace();
 
     StyleRuleFontFace* fontFaceRule() const { return m_fontFaceRule.get(); }
+    WeakPtr<SVGFontFaceElement> createWeakRef() { return m_weakFactory.createWeakPtr(); }
+
+    virtual void trace(Visitor*) OVERRIDE;
 
 private:
     explicit SVGFontFaceElement(Document&);
 
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
 
-    virtual void childrenChanged(bool changedByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0);
+    virtual void childrenChanged(bool changedByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0) OVERRIDE;
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
     virtual void removedFrom(ContainerNode*) OVERRIDE;
 
     virtual bool rendererIsNeeded(const RenderStyle&) OVERRIDE { return false; }
 
-    RefPtr<StyleRuleFontFace> m_fontFaceRule;
-    SVGFontElement* m_fontElement;
+    RefPtrWillBeMember<StyleRuleFontFace> m_fontFaceRule;
+    RawPtrWillBeMember<SVGFontElement> m_fontElement;
+    WeakPtrFactory<SVGFontFaceElement> m_weakFactory;
 };
-
-DEFINE_NODE_TYPE_CASTS(SVGFontFaceElement, hasTagName(SVGNames::font_faceTag));
 
 } // namespace WebCore
 

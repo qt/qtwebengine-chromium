@@ -7,6 +7,7 @@
 #include "base/bind.h"
 #include "gpu/command_buffer/common/gles2_cmd_format.h"
 #include "gpu/command_buffer/service/gl_utils.h"
+#include "gpu/command_buffer/service/gpu_service_test.h"
 #include "gpu/command_buffer/service/shader_manager.h"
 #include "gpu/command_buffer/service/shader_translator.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -65,7 +66,7 @@ class ProgramBinaryEmulator {
   const char* binary_;
 };
 
-class MemoryProgramCacheTest : public testing::Test {
+class MemoryProgramCacheTest : public GpuServiceTest {
  public:
   static const size_t kCacheSizeBytes = 1024;
   static const GLuint kVertexShaderClientId = 90;
@@ -92,8 +93,7 @@ class MemoryProgramCacheTest : public testing::Test {
 
  protected:
   virtual void SetUp() {
-    gl_.reset(new ::testing::StrictMock<gfx::MockGLInterface>());
-    ::gfx::GLInterface::SetGLInterface(gl_.get());
+    GpuServiceTest::SetUp();
 
     vertex_shader_ = shader_manager_.CreateShader(kVertexShaderClientId,
                                                   kVertexShaderServiceId,
@@ -137,11 +137,6 @@ class MemoryProgramCacheTest : public testing::Test {
     fragment_shader_->SetStatus(true, NULL, NULL);
   }
 
-  virtual void TearDown() {
-    ::gfx::GLInterface::SetGLInterface(NULL);
-    gl_.reset();
-  }
-
   void SetExpectationsForSaveLinkedProgram(
       const GLint program_id,
       ProgramBinaryEmulator* emulator) const {
@@ -181,8 +176,6 @@ class MemoryProgramCacheTest : public testing::Test {
                 .WillOnce(SetArgPointee<2>(GL_FALSE));
   }
 
-  // Use StrictMock to make 100% sure we know how GL will be called.
-  scoped_ptr< ::testing::StrictMock<gfx::MockGLInterface> > gl_;
   scoped_ptr<MemoryProgramCache> cache_;
   ShaderManager shader_manager_;
   Shader* vertex_shader_;
@@ -481,7 +474,6 @@ TEST_F(MemoryProgramCacheTest, LoadFailOnDifferentMap) {
 }
 
 TEST_F(MemoryProgramCacheTest, MemoryProgramCacheEviction) {
-  typedef ShaderTranslator::VariableMap VariableMap;
   const GLenum kFormat = 1;
   const int kProgramId = 10;
   const int kBinaryLength = 20;

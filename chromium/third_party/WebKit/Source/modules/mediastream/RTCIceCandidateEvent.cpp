@@ -26,19 +26,18 @@
 
 #include "modules/mediastream/RTCIceCandidateEvent.h"
 
-#include "core/events/ThreadLocalEventNames.h"
 #include "modules/mediastream/RTCIceCandidate.h"
 
 namespace WebCore {
 
-PassRefPtr<RTCIceCandidateEvent> RTCIceCandidateEvent::create()
+PassRefPtrWillBeRawPtr<RTCIceCandidateEvent> RTCIceCandidateEvent::create()
 {
-    return adoptRef(new RTCIceCandidateEvent);
+    return adoptRefWillBeNoop(new RTCIceCandidateEvent);
 }
 
-PassRefPtr<RTCIceCandidateEvent> RTCIceCandidateEvent::create(bool canBubble, bool cancelable, PassRefPtr<RTCIceCandidate> candidate)
+PassRefPtrWillBeRawPtr<RTCIceCandidateEvent> RTCIceCandidateEvent::create(bool canBubble, bool cancelable, PassRefPtrWillBeRawPtr<RTCIceCandidate> candidate)
 {
-    return adoptRef(new RTCIceCandidateEvent(canBubble, cancelable, candidate));
+    return adoptRefWillBeNoop(new RTCIceCandidateEvent(canBubble, cancelable, candidate));
 }
 
 RTCIceCandidateEvent::RTCIceCandidateEvent()
@@ -46,7 +45,7 @@ RTCIceCandidateEvent::RTCIceCandidateEvent()
     ScriptWrappable::init(this);
 }
 
-RTCIceCandidateEvent::RTCIceCandidateEvent(bool canBubble, bool cancelable, PassRefPtr<RTCIceCandidate> candidate)
+RTCIceCandidateEvent::RTCIceCandidateEvent(bool canBubble, bool cancelable, PassRefPtrWillBeRawPtr<RTCIceCandidate> candidate)
     : Event(EventTypeNames::icecandidate, canBubble, cancelable)
     , m_candidate(candidate)
 {
@@ -65,6 +64,12 @@ RTCIceCandidate* RTCIceCandidateEvent::candidate() const
 const AtomicString& RTCIceCandidateEvent::interfaceName() const
 {
     return EventNames::RTCIceCandidateEvent;
+}
+
+void RTCIceCandidateEvent::trace(Visitor* visitor)
+{
+    visitor->trace(m_candidate);
+    Event::trace(visitor);
 }
 
 } // namespace WebCore

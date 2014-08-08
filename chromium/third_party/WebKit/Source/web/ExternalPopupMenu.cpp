@@ -29,28 +29,30 @@
  */
 
 #include "config.h"
-#include "ExternalPopupMenu.h"
+#include "web/ExternalPopupMenu.h"
 
-#include "WebExternalPopupMenu.h"
-#include "WebMenuItemInfo.h"
-#include "WebPopupMenuInfo.h"
-#include "WebViewClient.h"
-#include "core/frame/Frame.h"
 #include "core/frame/FrameView.h"
+#include "core/frame/LocalFrame.h"
 #include "platform/PopupMenuClient.h"
 #include "platform/geometry/FloatQuad.h"
 #include "platform/geometry/IntPoint.h"
 #include "platform/text/TextDirection.h"
 #include "public/platform/WebVector.h"
+#include "public/web/WebExternalPopupMenu.h"
+#include "public/web/WebMenuItemInfo.h"
+#include "public/web/WebPopupMenuInfo.h"
+#include "public/web/WebViewClient.h"
+#include "web/WebViewImpl.h"
 
 using namespace WebCore;
 
 namespace blink {
 
-ExternalPopupMenu::ExternalPopupMenu(Frame& frame, PopupMenuClient* popupMenuClient, WebViewClient* webViewClient)
+ExternalPopupMenu::ExternalPopupMenu(LocalFrame& frame, PopupMenuClient* popupMenuClient, WebViewImpl& webView)
     : m_popupMenuClient(popupMenuClient)
     , m_frameView(frame.view())
-    , m_webViewClient(webViewClient)
+    , m_webView(webView)
+    , m_dispatchEventTimer(this, &ExternalPopupMenu::dispatchEvent)
     , m_webExternalPopupMenu(0)
 {
 }
@@ -62,22 +64,43 @@ ExternalPopupMenu::~ExternalPopupMenu()
 void ExternalPopupMenu::show(const FloatQuad& controlPosition, const IntSize&, int index)
 {
     IntRect rect(controlPosition.enclosingBoundingBox());
-    // WebCore reuses the PopupMenu of a page.
+    // WebCore reuses the PopupMenu of an element.
     // For simplicity, we do recreate the actual external popup everytime.
-    hide();
+    if (m_webExternalPopupMenu) {
+        m_webExternalPopupMenu->close();
+        m_webExternalPopupMenu = 0;
+    }
 
     WebPopupMenuInfo info;
     getPopupMenuInfo(&info);
     if (info.items.isEmpty())
         return;
-    m_webExternalPopupMenu =
-        m_webViewClient->createExternalPopupMenu(info, this);
-    if (m_webExternalPopupMenu)
+    m_webExternalPopupMenu = m_webView.client()->createExternalPopupMenu(info, this);
+    if (m_webExternalPopupMenu) {
         m_webExternalPopupMenu->show(m_frameView->contentsToWindow(rect));
-    else {
+#if OS(MACOSX)
+        const WebInputEvent* currentEvent = WebViewImpl::currentInputEvent();
+        if (currentEvent && currentEvent->type == WebInputEvent::MouseDown) {
+            m_syntheticEvent = adoptPtr(new WebMouseEvent);
+            *m_syntheticEvent = *static_cast<const WebMouseEvent*>(currentEvent);
+            m_syntheticEvent->type = WebInputEvent::MouseUp;
+            m_dispatchEventTimer.startOneShot(0, FROM_HERE);
+            // FIXME: show() is asynchronous. If preparing a popup is slow and
+            // a user released the mouse button before showing the popup,
+            // mouseup and click events are correctly dispatched. Dispatching
+            // the synthetic mouseup event is redundant in this case.
+        }
+#endif
+    } else {
         // The client might refuse to create a popup (when there is already one pending to be shown for example).
         didCancel();
     }
+}
+
+void ExternalPopupMenu::dispatchEvent(Timer<ExternalPopupMenu>*)
+{
+    m_webView.handleInputEvent(*m_syntheticEvent);
+    m_syntheticEvent.clear();
 }
 
 void ExternalPopupMenu::hide()
@@ -114,11 +137,8 @@ void ExternalPopupMenu::didAcceptIndex(int index)
     RefPtr<ExternalPopupMenu> guard(this);
 
     if (m_popupMenuClient) {
+        m_popupMenuClient->popupDidHide();
         m_popupMenuClient->valueChanged(index);
-        // The call to valueChanged above might have lead to a call to
-        // disconnectClient, so we might not have a PopupMenuClient anymore.
-        if (m_popupMenuClient)
-            m_popupMenuClient->popupDidHide();
     }
     m_webExternalPopupMenu = 0;
 }
@@ -185,7 +205,7 @@ void ExternalPopupMenu::getPopupMenuInfo(WebPopupMenuInfo* info)
     }
 
     info->itemHeight = m_popupMenuClient->menuStyle().font().fontMetrics().height();
-    info->itemFontSize = static_cast<int>(m_popupMenuClient->menuStyle().font().size());
+    info->itemFontSize = static_cast<int>(m_popupMenuClient->menuStyle().font().fontDescription().computedSize());
     info->selectedIndex = m_popupMenuClient->selectedIndex();
     info->rightAligned = m_popupMenuClient->menuStyle().textDirection() == WebCore::RTL;
     info->allowMultipleSelection = m_popupMenuClient->multiple();

@@ -122,7 +122,7 @@ ScopedPath::ScopedPath(const base::FilePath& path_to_add)
   if (!new_value.empty())
     new_value += ";";
 
-  new_value += WideToUTF8(path_to_add.value());
+  new_value += base::WideToUTF8(path_to_add.value());
 
   path_modified_ = environment_->SetVar("PATH", new_value);
 }
@@ -141,7 +141,7 @@ ScopedPath::~ScopedPath() {
 namespace net {
 
 bool LocalTestServer::LaunchPython(const base::FilePath& testserver_path) {
-  CommandLine python_command(CommandLine::NO_PROGRAM);
+  base::CommandLine python_command(base::CommandLine::NO_PROGRAM);
   if (!GetPythonCommand(&python_command))
     return false;
 

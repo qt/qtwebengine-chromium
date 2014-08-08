@@ -30,7 +30,57 @@
 namespace WebCore {
     class CSSSelectorList;
 
-    // this class represents a selector for a StyleRule
+    // This class represents a selector for a StyleRule.
+
+    // CSS selector representation is somewhat complicated and subtle. A representative list of selectors is
+    // in CSSSelectorTest; run it in a debug build to see useful debugging output.
+    //
+    // ** tagHistory() and relation():
+    //
+    // Selectors are represented as a linked list of simple selectors (defined more or less according to
+    // http://www.w3.org/TR/css3-selectors/#simple-selectors-dfn). The tagHistory() method returns the next
+    // simple selector in the list. The relation() method returns the relationship of the current simple selector to
+    // the one in tagHistory(). For example, the CSS selector .a.b #c is represented as:
+    //
+    // selectorText(): .a.b #c
+    // --> (relation == Descendant)
+    //   selectorText(): .a.b
+    //   --> (relation == SubSelector)
+    //     selectorText(): .b
+    //
+    // Note that currently a bare selector such as ".a" has a relation() of Descendant. This is a bug - instead the relation should be
+    // "None".
+    //
+    // The order of tagHistory() varies depending on the situation.
+    // * Relations using combinators (http://www.w3.org/TR/css3-selectors/#combinators), such as descendant, sibling, etc., are parsed
+    //   right-to-left (in the example above, this is why .c is earlier in the tagHistory() chain than .a.b).
+    // * SubSelector relations are parsed left-to-right in most cases (such as the .a.b example above); a counter-example is the
+    //   ::content pseudo-element. Most (all?) other pseudo elements and pseudo classes are parsed left-to-right.
+    // * ShadowPseudo relations are parsed right-to-left. Example: summary::-webkit-details-marker is parsed as:
+    //   selectorText(): summary::-webkit-details-marker
+    //    --> (relation == ShadowPseudo)
+    //     selectorText(): summary
+    //
+    // ** match():
+    //
+    // The match of the current simple selector tells us the type of selector, such as class, id, tagname, or pseudo-class.
+    // Inline comments in the Match enum give examples of when each type would occur.
+    //
+    // ** value(), attribute():
+    //
+    // value() tells you the value of the simple selector. For example, for class selectors, value() will tell you the class string,
+    // and for id selectors it will tell you the id(). See below for the special case of attribute selectors.
+    //
+    // ** Attribute selectors.
+    //
+    // Attribute selectors return the attribute name in the attribute() method. The value() method returns the value matched against
+    // in case of selectors like [attr="value"].
+    //
+    // ** isCustomPseudoElement():
+    //
+    // It appears this is used only for pseudo elements that appear in user-agent shadow DOM. They are not exposed to author-created
+    // shadow DOM.
+
     class CSSSelector {
         WTF_MAKE_FAST_ALLOCATED;
     public:
@@ -50,36 +100,37 @@ namespace WebCore {
 
         // tag == -1 means apply to all elements (Selector = *)
 
+        // http://www.w3.org/TR/css3-selectors/#specificity
+        // We use 256 as the base of the specificity number system.
         unsigned specificity() const;
 
         /* how the attribute value has to match.... Default is Exact */
         enum Match {
             Unknown = 0,
-            Tag,
-            Id,
-            Class,
-            Exact,
-            Set,
-            List,
-            Hyphen,
-            PseudoClass,
-            PseudoElement,
+            Tag, // Example: div
+            Id, // Example: #id
+            Class, // example: .class
+            PseudoClass, // Example:  :nth-child(2)
+            PseudoElement, // Example: ::first-line
+            PagePseudoClass, // ??
+            Exact, // Example: E[foo="bar"]
+            Set, // Example: E[foo]
+            Hyphen, // Example: E[foo|="bar"]
+            List, // Example: E[foo~="bar"]
             Contain, // css3: E[foo*="bar"]
             Begin, // css3: E[foo^="bar"]
             End, // css3: E[foo$="bar"]
-            PagePseudoClass
+            FirstAttributeSelectorMatch = Exact,
         };
 
         enum Relation {
-            Descendant = 0,
-            Child,
-            DirectAdjacent,
-            IndirectAdjacent,
-            SubSelector,
-            ShadowPseudo,
-            // FIXME: rename ChildTree and DescendantTree when the spec for this is written down.
-            ChildTree,
-            DescendantTree
+            Descendant = 0, // "Space" combinator
+            Child, // > combinator
+            DirectAdjacent, // + combinator
+            IndirectAdjacent, // ~ combinator
+            SubSelector, // "No space" combinator
+            ShadowPseudo, // Special case of shadow DOM pseudo elements / shadow pseudo element
+            ShadowDeep // /deep/ combinator
         };
 
         enum PseudoType {
@@ -161,11 +212,11 @@ namespace WebCore {
             PseudoCue,
             PseudoFutureCue,
             PseudoPastCue,
-            PseudoSeamlessDocument,
-            PseudoDistributed,
             PseudoUnresolved,
             PseudoContent,
-            PseudoHost
+            PseudoHost,
+            PseudoHostContext,
+            PseudoShadow
         };
 
         enum MarginBoxType {
@@ -210,8 +261,14 @@ namespace WebCore {
         // how you use the returned QualifiedName.
         // http://www.w3.org/TR/css3-selectors/#attrnmsp
         const QualifiedName& attribute() const;
+        // Returns the argument of a parameterized selector. For example, nth-child(2) would have an argument of 2.
         const AtomicString& argument() const { return m_hasRareData ? m_data.m_rareData->m_argument : nullAtom; }
         const CSSSelectorList* selectorList() const { return m_hasRareData ? m_data.m_rareData->m_selectorList.get() : 0; }
+
+#ifndef NDEBUG
+        void show() const;
+        void show(int indent) const;
+#endif
 
         void setValue(const AtomicString&);
         void setAttribute(const QualifiedName&);
@@ -228,11 +285,25 @@ namespace WebCore {
         bool isDirectAdjacentSelector() const { return m_relation == DirectAdjacent; }
         bool isSiblingSelector() const;
         bool isAttributeSelector() const;
-        bool isDistributedPseudoElement() const;
         bool isContentPseudoElement() const;
+        bool isShadowPseudoElement() const;
         bool isHostPseudoClass() const;
 
+        // FIXME: selectors with no tagHistory() get a relation() of Descendant (and sometimes even SubSelector). It should instead be
+        // None.
         Relation relation() const { return static_cast<Relation>(m_relation); }
+        void setRelation(Relation relation)
+        {
+            m_relation = relation;
+            ASSERT(static_cast<Relation>(m_relation) == relation); // using a bitfield.
+        }
+
+        Match match() const { return static_cast<Match>(m_match); }
+        void setMatch(Match match)
+        {
+            m_match = match;
+            ASSERT(static_cast<Match>(m_match) == match); // using a bitfield.
+        }
 
         bool isLastInSelectorList() const { return m_isLastInSelectorList; }
         void setLastInSelectorList() { m_isLastInSelectorList = true; }
@@ -248,11 +319,10 @@ namespace WebCore {
         bool relationIsAffectedByPseudoContent() const { return m_relationIsAffectedByPseudoContent; }
         void setRelationIsAffectedByPseudoContent() { m_relationIsAffectedByPseudoContent = true; }
 
+    private:
         unsigned m_relation           : 3; // enum Relation
         mutable unsigned m_match      : 4; // enum Match
         mutable unsigned m_pseudoType : 8; // PseudoType
-
-    private:
         mutable unsigned m_parsedNth      : 1; // Used for :nth-*
         unsigned m_isLastInSelectorList   : 1;
         unsigned m_isLastInTagHistory     : 1;
@@ -269,13 +339,13 @@ namespace WebCore {
         CSSSelector& operator=(const CSSSelector&);
 
         struct RareData : public RefCounted<RareData> {
-            static PassRefPtr<RareData> create(PassRefPtr<StringImpl> value) { return adoptRef(new RareData(value)); }
+            static PassRefPtr<RareData> create(const AtomicString& value) { return adoptRef(new RareData(value)); }
             ~RareData();
 
             bool parseNth();
             bool matchNth(int count);
 
-            StringImpl* m_value; // Plain pointer to keep things uniform with the union.
+            AtomicString m_value;
             int m_a; // Used for :nth-*
             int m_b; // Used for :nth-*
             QualifiedName m_attribute; // used for attribute selector
@@ -283,7 +353,7 @@ namespace WebCore {
             OwnPtr<CSSSelectorList> m_selectorList; // Used for :-webkit-any and :not
 
         private:
-            RareData(PassRefPtr<StringImpl> value);
+            RareData(const AtomicString& value);
         };
         void createRareData();
 
@@ -321,7 +391,7 @@ inline bool CSSSelector::isCustomPseudoElement() const
 
 inline bool CSSSelector::isHostPseudoClass() const
 {
-    return m_match == PseudoClass && m_pseudoType == PseudoHost;
+    return m_match == PseudoClass && (m_pseudoType == PseudoHost || m_pseudoType == PseudoHostContext);
 }
 
 inline bool CSSSelector::isSiblingSelector() const
@@ -344,23 +414,17 @@ inline bool CSSSelector::isSiblingSelector() const
 
 inline bool CSSSelector::isAttributeSelector() const
 {
-    return m_match == CSSSelector::Exact
-        || m_match ==  CSSSelector::Set
-        || m_match == CSSSelector::List
-        || m_match == CSSSelector::Hyphen
-        || m_match == CSSSelector::Contain
-        || m_match == CSSSelector::Begin
-        || m_match == CSSSelector::End;
-}
-
-inline bool CSSSelector::isDistributedPseudoElement() const
-{
-    return m_match == PseudoElement && pseudoType() == PseudoDistributed;
+    return m_match >= FirstAttributeSelectorMatch;
 }
 
 inline bool CSSSelector::isContentPseudoElement() const
 {
     return m_match == PseudoElement && pseudoType() == PseudoContent;
+}
+
+inline bool CSSSelector::isShadowPseudoElement() const
+{
+    return m_match == PseudoElement && pseudoType() == PseudoShadow;
 }
 
 inline void CSSSelector::setValue(const AtomicString& value)
@@ -369,10 +433,7 @@ inline void CSSSelector::setValue(const AtomicString& value)
     ASSERT(m_pseudoType == PseudoNotParsed);
     // Need to do ref counting manually for the union.
     if (m_hasRareData) {
-        if (m_data.m_rareData->m_value)
-            m_data.m_rareData->m_value->deref();
-        m_data.m_rareData->m_value = value.impl();
-        m_data.m_rareData->m_value->ref();
+        m_data.m_rareData->m_value = value;
         return;
     }
     if (m_data.m_value)
@@ -454,11 +515,12 @@ inline const QualifiedName& CSSSelector::tagQName() const
 inline const AtomicString& CSSSelector::value() const
 {
     ASSERT(m_match != Tag);
+    if (m_hasRareData)
+        return m_data.m_rareData->m_value;
     // AtomicString is really just a StringImpl* so the cast below is safe.
     // FIXME: Perhaps call sites could be changed to accept StringImpl?
-    return *reinterpret_cast<const AtomicString*>(m_hasRareData ? &m_data.m_rareData->m_value : &m_data.m_value);
+    return *reinterpret_cast<const AtomicString*>(&m_data.m_value);
 }
-
 
 } // namespace WebCore
 

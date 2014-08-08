@@ -10,6 +10,7 @@
 #include "base/memory/scoped_vector.h"
 #include "cc/base/ref_counted_managed.h"
 #include "cc/resources/managed_tile_state.h"
+#include "cc/resources/picture_pile_impl.h"
 #include "cc/resources/raster_mode.h"
 #include "cc/resources/tile_priority.h"
 #include "ui/gfx/rect.h"
@@ -17,14 +18,9 @@
 
 namespace cc {
 
-class PicturePileImpl;
-
 class CC_EXPORT Tile : public RefCountedManaged<Tile> {
  public:
-  enum TileRasterFlags {
-    USE_LCD_TEXT = 1 << 0,
-    USE_GPU_RASTERIZATION = 1 << 1
-  };
+  enum TileRasterFlags { USE_PICTURE_ANALYSIS = 1 << 0 };
 
   typedef uint64 Id;
 
@@ -44,6 +40,19 @@ class CC_EXPORT Tile : public RefCountedManaged<Tile> {
     return priority_[tree];
   }
 
+  TilePriority priority_for_tree_priority(TreePriority tree_priority) const {
+    switch (tree_priority) {
+      case SMOOTHNESS_TAKES_PRIORITY:
+        return priority_[ACTIVE_TREE];
+      case NEW_CONTENT_TAKES_PRIORITY:
+        return priority_[PENDING_TREE];
+      case SAME_PRIORITY_FOR_BOTH_TREES:
+        return combined_priority();
+    }
+    NOTREACHED();
+    return TilePriority();
+  }
+
   TilePriority combined_priority() const {
     return TilePriority(priority_[ACTIVE_TREE],
                         priority_[PENDING_TREE]);
@@ -57,26 +66,20 @@ class CC_EXPORT Tile : public RefCountedManaged<Tile> {
     return priority_[PENDING_TREE].required_for_activation;
   }
 
-  void set_can_use_lcd_text(bool can_use_lcd_text) {
-    if (can_use_lcd_text)
-      flags_ |= USE_LCD_TEXT;
-    else
-      flags_ &= ~USE_LCD_TEXT;
+  bool use_picture_analysis() const {
+    return !!(flags_ & USE_PICTURE_ANALYSIS);
   }
 
-  bool can_use_lcd_text() const {
-    return !!(flags_ & USE_LCD_TEXT);
+  bool NeedsRasterForMode(RasterMode mode) const {
+    return !managed_state_.tile_versions[mode].IsReadyToDraw();
   }
 
-  void set_use_gpu_rasterization(bool use_gpu_rasterization) {
-    if (use_gpu_rasterization)
-      flags_ |= USE_GPU_RASTERIZATION;
-    else
-      flags_ &= ~USE_GPU_RASTERIZATION;
-  }
-
-  bool use_gpu_rasterization() const {
-    return !!(flags_ & USE_GPU_RASTERIZATION);
+  bool HasResources() const {
+    for (int mode = 0; mode < NUM_RASTER_MODES; ++mode) {
+      if (managed_state_.tile_versions[mode].has_resource())
+        return true;
+    }
+    return false;
   }
 
   scoped_ptr<base::Value> AsValue() const;
@@ -98,10 +101,6 @@ class CC_EXPORT Tile : public RefCountedManaged<Tile> {
   }
 
   gfx::Rect opaque_rect() const { return opaque_rect_; }
-  bool has_text(RasterMode mode) const {
-    return managed_state_.tile_versions[mode].has_text_;
-  }
-
   float contents_scale() const { return contents_scale_; }
   gfx::Rect content_rect() const { return content_rect_; }
 
@@ -116,14 +115,18 @@ class CC_EXPORT Tile : public RefCountedManaged<Tile> {
 
   size_t GPUMemoryUsageInBytes() const;
 
+  gfx::Size size() const { return tile_size_.size(); }
+
+  RasterMode DetermineRasterModeForTree(WhichTree tree) const;
+  RasterMode DetermineOverallRasterMode() const;
+
+  // Functionality used in tests.
   RasterMode GetRasterModeForTesting() const {
     return managed_state().raster_mode;
   }
   ManagedTileState::TileVersion& GetTileVersionForTesting(RasterMode mode) {
     return managed_state_.tile_versions[mode];
   }
-
-  gfx::Size size() const { return tile_size_.size(); }
 
  private:
   friend class TileManager;
@@ -135,9 +138,9 @@ class CC_EXPORT Tile : public RefCountedManaged<Tile> {
   // Methods called by by tile manager.
   Tile(TileManager* tile_manager,
        PicturePileImpl* picture_pile,
-       gfx::Size tile_size,
-       gfx::Rect content_rect,
-       gfx::Rect opaque_rect,
+       const gfx::Size& tile_size,
+       const gfx::Rect& content_rect,
+       const gfx::Rect& opaque_rect,
        float contents_scale,
        int layer_id,
        int source_frame_number,
@@ -146,6 +149,7 @@ class CC_EXPORT Tile : public RefCountedManaged<Tile> {
 
   ManagedTileState& managed_state() { return managed_state_; }
   const ManagedTileState& managed_state() const { return managed_state_; }
+  RasterMode DetermineRasterModeForResolution(TileResolution resolution) const;
 
   TileManager* tile_manager_;
   scoped_refptr<PicturePileImpl> picture_pile_;

@@ -6,7 +6,7 @@
  */
 
 #include "SkFontLCDConfig.h"
-#include "SkOnce.h"
+#include "SkLazyPtr.h"
 
 static SkFontLCDConfig::LCDOrientation gLCDOrientation = SkFontLCDConfig::kHorizontal_LCDOrientation;
 static SkFontLCDConfig::LCDOrder gLCDOrder = SkFontLCDConfig::kRGB_LCDOrder;
@@ -92,38 +92,44 @@ SkFontStyleSet* SkFontStyleSet::CreateEmpty() {
 
 class SkEmptyFontMgr : public SkFontMgr {
 protected:
-    virtual int onCountFamilies() SK_OVERRIDE {
+    virtual int onCountFamilies() const SK_OVERRIDE {
         return 0;
     }
-    virtual void onGetFamilyName(int index, SkString* familyName) SK_OVERRIDE {
+    virtual void onGetFamilyName(int index, SkString* familyName) const SK_OVERRIDE {
         SkDEBUGFAIL("onGetFamilyName called with bad index");
     }
-    virtual SkFontStyleSet* onCreateStyleSet(int index) SK_OVERRIDE {
+    virtual SkFontStyleSet* onCreateStyleSet(int index) const SK_OVERRIDE {
         SkDEBUGFAIL("onCreateStyleSet called with bad index");
         return NULL;
     }
-    virtual SkFontStyleSet* onMatchFamily(const char[]) SK_OVERRIDE {
+    virtual SkFontStyleSet* onMatchFamily(const char[]) const SK_OVERRIDE {
         return SkFontStyleSet::CreateEmpty();
     }
 
     virtual SkTypeface* onMatchFamilyStyle(const char[],
-                                           const SkFontStyle&) SK_OVERRIDE {
+                                           const SkFontStyle&) const SK_OVERRIDE {
+        return NULL;
+    }
+    virtual SkTypeface* onMatchFamilyStyleCharacter(const char familyName[],
+                                                    const SkFontStyle& style,
+                                                    const char bpc47[],
+                                                    uint32_t character) const SK_OVERRIDE {
         return NULL;
     }
     virtual SkTypeface* onMatchFaceStyle(const SkTypeface*,
-                                         const SkFontStyle&) SK_OVERRIDE {
+                                         const SkFontStyle&) const SK_OVERRIDE {
         return NULL;
     }
-    virtual SkTypeface* onCreateFromData(SkData*, int) SK_OVERRIDE {
+    virtual SkTypeface* onCreateFromData(SkData*, int) const SK_OVERRIDE {
         return NULL;
     }
-    virtual SkTypeface* onCreateFromStream(SkStream*, int) SK_OVERRIDE {
+    virtual SkTypeface* onCreateFromStream(SkStream*, int) const SK_OVERRIDE {
         return NULL;
     }
-    virtual SkTypeface* onCreateFromFile(const char[], int) SK_OVERRIDE {
+    virtual SkTypeface* onCreateFromFile(const char[], int) const SK_OVERRIDE {
         return NULL;
     }
-    virtual SkTypeface* onLegacyCreateTypeface(const char [], unsigned) SK_OVERRIDE {
+    virtual SkTypeface* onLegacyCreateTypeface(const char [], unsigned) const SK_OVERRIDE {
         return NULL;
     }
 };
@@ -135,47 +141,52 @@ static SkFontStyleSet* emptyOnNull(SkFontStyleSet* fsset) {
     return fsset;
 }
 
-int SkFontMgr::countFamilies() {
+int SkFontMgr::countFamilies() const {
     return this->onCountFamilies();
 }
 
-void SkFontMgr::getFamilyName(int index, SkString* familyName) {
+void SkFontMgr::getFamilyName(int index, SkString* familyName) const {
     this->onGetFamilyName(index, familyName);
 }
 
-SkFontStyleSet* SkFontMgr::createStyleSet(int index) {
+SkFontStyleSet* SkFontMgr::createStyleSet(int index) const {
     return emptyOnNull(this->onCreateStyleSet(index));
 }
 
-SkFontStyleSet* SkFontMgr::matchFamily(const char familyName[]) {
+SkFontStyleSet* SkFontMgr::matchFamily(const char familyName[]) const {
     return emptyOnNull(this->onMatchFamily(familyName));
 }
 
 SkTypeface* SkFontMgr::matchFamilyStyle(const char familyName[],
-                                        const SkFontStyle& fs) {
+                                        const SkFontStyle& fs) const {
     return this->onMatchFamilyStyle(familyName, fs);
 }
 
+SkTypeface* SkFontMgr::matchFamilyStyleCharacter(const char familyName[], const SkFontStyle& style,
+                                                 const char bpc47[], uint32_t character) const {
+    return this->onMatchFamilyStyleCharacter(familyName, style, bpc47, character);
+}
+
 SkTypeface* SkFontMgr::matchFaceStyle(const SkTypeface* face,
-                                      const SkFontStyle& fs) {
+                                      const SkFontStyle& fs) const {
     return this->onMatchFaceStyle(face, fs);
 }
 
-SkTypeface* SkFontMgr::createFromData(SkData* data, int ttcIndex) {
+SkTypeface* SkFontMgr::createFromData(SkData* data, int ttcIndex) const {
     if (NULL == data) {
         return NULL;
     }
     return this->onCreateFromData(data, ttcIndex);
 }
 
-SkTypeface* SkFontMgr::createFromStream(SkStream* stream, int ttcIndex) {
+SkTypeface* SkFontMgr::createFromStream(SkStream* stream, int ttcIndex) const {
     if (NULL == stream) {
         return NULL;
     }
     return this->onCreateFromStream(stream, ttcIndex);
 }
 
-SkTypeface* SkFontMgr::createFromFile(const char path[], int ttcIndex) {
+SkTypeface* SkFontMgr::createFromFile(const char path[], int ttcIndex) const {
     if (NULL == path) {
         return NULL;
     }
@@ -183,23 +194,18 @@ SkTypeface* SkFontMgr::createFromFile(const char path[], int ttcIndex) {
 }
 
 SkTypeface* SkFontMgr::legacyCreateTypeface(const char familyName[],
-                                            unsigned styleBits) {
+                                            unsigned styleBits) const {
     return this->onLegacyCreateTypeface(familyName, styleBits);
 }
 
-void set_up_default(SkFontMgr** singleton) {
-  *singleton = SkFontMgr::Factory();
-  // we never want to return NULL
-  if (NULL == *singleton) {
-      *singleton = SkNEW(SkEmptyFontMgr);
-  }
+SkFontMgr* SkFontMgr::CreateDefault() {
+    SkFontMgr* fm = SkFontMgr::Factory();
+    return fm ? fm : SkNEW(SkEmptyFontMgr);
 }
 
 SkFontMgr* SkFontMgr::RefDefault() {
-    static SkFontMgr* gFM = NULL;
-    SK_DECLARE_STATIC_ONCE(once);
-    SkOnce(&once, set_up_default, &gFM);
-    return SkRef(gFM);
+    SK_DECLARE_STATIC_LAZY_PTR(SkFontMgr, singleton, CreateDefault);
+    return SkRef(singleton.get());
 }
 
 //////////////////////////////////////////////////////////////////////////

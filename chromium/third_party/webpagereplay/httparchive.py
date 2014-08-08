@@ -22,13 +22,13 @@ To view the content of all URLs from example.com:
   $ ./httparchive.py cat --host example.com archive.wpr
 
 To view the content of a particular URL:
-  $ ./httparchive.py cat --host www.example.com --path /foo archive.wpr
+  $ ./httparchive.py cat --host www.example.com --full_path /foo archive.wpr
 
 To view the content of all URLs:
   $ ./httparchive.py cat archive.wpr
 
 To edit a particular URL:
-  $ ./httparchive.py edit --host www.example.com --path /foo archive.wpr
+  $ ./httparchive.py edit --host www.example.com --full_path /foo archive.wpr
 
 To print statistics of an archive:
   $ ./httparchive.py stats archive.wpr
@@ -40,6 +40,7 @@ To merge multiple archives
   $ ./httparchive.py merge --merged_file new.wpr archive1.wpr archive2.wpr ...
 """
 
+import calendar
 import difflib
 import email.utils
 import httplib
@@ -56,8 +57,6 @@ import tempfile
 import time
 import urlparse
 from collections import defaultdict
-
-import platformsettings
 
 
 def LogRunTime(fn):
@@ -86,7 +85,6 @@ class HttpArchive(dict, persistentmixin.PersistentMixin):
     Persist(filename)
 
   Attributes:
-    server_rtt: dict of {hostname, server rtt in milliseconds}
     responses_by_host: dict of {hostname, {request: response}}. This must remain
         in sync with the underlying dict of self. It is used as an optimization
         so that get_requests() doesn't have to linearly search all requests in
@@ -94,7 +92,6 @@ class HttpArchive(dict, persistentmixin.PersistentMixin):
   """
 
   def __init__(self):
-    self.server_rtt = {}
     self.responses_by_host = defaultdict(dict)
 
   def __setstate__(self, state):
@@ -126,21 +123,6 @@ class HttpArchive(dict, persistentmixin.PersistentMixin):
   def __delitem__(self, key):
     super(HttpArchive, self).__delitem__(key)
     del self.responses_by_host[key.host][key]
-
-  def get_server_rtt(self, server):
-    """Retrieves the round trip time (rtt) to the server
-
-    Args:
-      server: the hostname of the server
-
-    Returns:
-      round trip time to the server in seconds, or 0 if unavailable
-    """
-    if server not in self.server_rtt:
-      # TODO(tonyg): Pinging inline with the request causes timeouts. Need to
-      # find a way to restore this functionality.
-      self.server_rtt[server] = 0  # platform_settings.ping_rtt(server)
-    return self.server_rtt[server]
 
   def get(self, request, default=None):
     """Return the archived response for a given request.
@@ -185,8 +167,8 @@ class HttpArchive(dict, persistentmixin.PersistentMixin):
   def get_conditional_status(self, request, response):
     status = 200
     last_modified = email.utils.parsedate(
-        response.get_header_case_insensitive('last-modified'))
-    response_etag = response.get_header_case_insensitive('etag')
+        response.update_date(response.get_header('last-modified')))
+    response_etag = response.get_header('etag')
     is_get_or_head = request.command.upper() in ('GET', 'HEAD')
 
     match_value = request.headers.get('if-match', None)
@@ -233,25 +215,27 @@ class HttpArchive(dict, persistentmixin.PersistentMixin):
         return True
     return False
 
-  def get_requests(self, command=None, host=None, path=None, is_ssl=None,
+  def get_requests(self, command=None, host=None, full_path=None, is_ssl=None,
                    use_query=True):
     """Return a list of requests that match the given args."""
     if host:
       return [r for r in self.responses_by_host[host]
-              if r.matches(command, None, path, is_ssl, use_query=use_query)]
+              if r.matches(command, None, full_path, is_ssl,
+                           use_query=use_query)]
     else:
       return [r for r in self
-              if r.matches(command, host, path, is_ssl, use_query=use_query)]
+              if r.matches(command, host, full_path, is_ssl,
+                           use_query=use_query)]
 
-  def ls(self, command=None, host=None, path=None):
+  def ls(self, command=None, host=None, full_path=None):
     """List all URLs that match given params."""
     return ''.join(sorted(
-        '%s\n' % r for r in self.get_requests(command, host, path)))
+        '%s\n' % r for r in self.get_requests(command, host, full_path)))
 
-  def cat(self, command=None, host=None, path=None):
+  def cat(self, command=None, host=None, full_path=None):
     """Print the contents of all URLs that match given params."""
     out = StringIO.StringIO()
-    for request in self.get_requests(command, host, path):
+    for request in self.get_requests(command, host, full_path):
       print >>out, str(request)
       print >>out, 'Untrimmed request headers:'
       for k in request.headers:
@@ -281,9 +265,9 @@ class HttpArchive(dict, persistentmixin.PersistentMixin):
       print >>out, '=' * 70
     return out.getvalue()
 
-  def stats(self, command=None, host=None, path=None):
+  def stats(self, command=None, host=None, full_path=None):
     """Print stats about the archive for all URLs that match given params."""
-    matching_requests = self.get_requests(command, host, path)
+    matching_requests = self.get_requests(command, host, full_path)
     if not matching_requests:
       print 'Failed to find any requests matching given command, host, path.'
       return
@@ -338,21 +322,22 @@ class HttpArchive(dict, persistentmixin.PersistentMixin):
           self[r] = http_archive_other[r]
     self.Persist('%s' % merged_archive)
 
-  def edit(self, command=None, host=None, path=None):
+  def edit(self, command=None, host=None, full_path=None):
     """Edits the single request which matches given params."""
     editor = os.getenv('EDITOR')
     if not editor:
       print 'You must set the EDITOR environmental variable.'
       return
 
-    matching_requests = self.get_requests(command, host, path)
+    matching_requests = self.get_requests(command, host, full_path)
     if not matching_requests:
-      print 'Failed to find any requests matching given command, host, path.'
+      print ('Failed to find any requests matching given command, host, '
+             'full_path.')
       return
 
     if len(matching_requests) > 1:
       print 'Found multiple matching requests. Please refine.'
-      print self.ls(command, host, path)
+      print self.ls(command, host, full_path)
 
     response = self[matching_requests[0]]
     tmp_file = tempfile.NamedTemporaryFile(delete=False)
@@ -369,16 +354,16 @@ class HttpArchive(dict, persistentmixin.PersistentMixin):
       request: an ArchivedHttpRequest
       use_path: If True, closest matching request's path component must match.
         (Note: this refers to the 'path' component within the URL, not the
-         query string component.)
-        If use_path=False, candidate will NOT match in example below
+         'full path' which includes the query string component.)
+        If use_path=True, candidate will NOT match in example below
         e.g. request   = GET www.test.com/path?aaa
              candidate = GET www.test.com/diffpath?aaa
     Returns:
       If a close match is found, return the instance of ArchivedHttpRequest.
       Otherwise, return None.
     """
-    path = request.path if use_path else None
-    requests = self.get_requests(request.command, request.host, path,
+    full_path = request.full_path if use_path else None
+    requests = self.get_requests(request.command, request.host, full_path,
                                  is_ssl=request.is_ssl, use_query=not use_path)
 
     if not requests:
@@ -444,21 +429,23 @@ class ArchivedHttpRequest(object):
       'if-none-match', 'if-match',
       'if-modified-since', 'if-unmodified-since']
 
-  def __init__(self, command, host, path, request_body, headers, is_ssl=False):
+  def __init__(self, command, host, full_path, request_body, headers,
+               is_ssl=False):
     """Initialize an ArchivedHttpRequest.
 
     Args:
       command: a string (e.g. 'GET' or 'POST').
       host: a host name (e.g. 'www.google.com').
-      path: a request path (e.g. '/search?q=dogs').
+      full_path: a request path.  Includes everything after the host & port in
+          the URL (e.g. '/search?q=dogs').
       request_body: a request body string for a POST or None.
       headers: {key: value, ...} where key and value are strings.
       is_ssl: a boolean which is True iff request is make via SSL.
     """
     self.command = command
     self.host = host
-    self.path = path
-    self.path_without_query = urlparse.urlparse(path).path
+    self.full_path = full_path
+    self.path = urlparse.urlparse(full_path).path if full_path else None
     self.request_body = request_body
     self.headers = headers
     self.is_ssl = is_ssl
@@ -468,10 +455,10 @@ class ArchivedHttpRequest(object):
   def __str__(self):
     scheme = 'https' if self.is_ssl else 'http'
     return '%s %s://%s%s %s' % (
-        self.command, scheme, self.host, self.path, self.trimmed_headers)
+        self.command, scheme, self.host, self.full_path, self.trimmed_headers)
 
   def __repr__(self):
-    return repr((self.command, self.host, self.path, self.request_body,
+    return repr((self.command, self.host, self.full_path, self.request_body,
                  self.trimmed_headers, self.is_ssl))
 
   def __hash__(self):
@@ -500,11 +487,19 @@ class ArchivedHttpRequest(object):
       raise HttpArchiveException(
           'Archived HTTP request is missing "headers". The HTTP archive is'
           ' likely from a previous version and must be re-recorded.')
+    if 'path' in state:
+      # before, 'path' and 'path_without_query' were used and 'path' was
+      # pickled.  Now, 'path' has been renamed to 'full_path' and
+      # 'path_without_query' has been renamed to 'path'.  'full_path' is
+      # pickled, but 'path' is not.  If we see 'path' here it means we are
+      # dealing with an older archive.
+      state['full_path'] = state['path']
+      del state['path']
     state['trimmed_headers'] = self._TrimHeaders(dict(state['headers']))
     if 'is_ssl' not in state:
       state['is_ssl'] = False
     self.__dict__.update(state)
-    self.path_without_query = urlparse.urlparse(self.path).path
+    self.path = urlparse.urlparse(self.full_path).path
     self.formatted_request = self._GetFormattedRequest()
 
   def __getstate__(self):
@@ -515,7 +510,7 @@ class ArchivedHttpRequest(object):
     """
     state = self.__dict__.copy()
     del state['trimmed_headers']
-    del state['path_without_query']
+    del state['path']
     del state['formatted_request']
     return state
 
@@ -526,7 +521,7 @@ class ArchivedHttpRequest(object):
       A string consisting of the request. Example:
       'GET www.example.com/path\nHeader-Key: header value\n'
     """
-    parts = ['%s %s%s\n' % (self.command, self.host, self.path)]
+    parts = ['%s %s%s\n' % (self.command, self.host, self.full_path)]
     if self.request_body:
       parts.append('%s\n' % self.request_body)
     for k, v in self.trimmed_headers:
@@ -534,14 +529,14 @@ class ArchivedHttpRequest(object):
       parts.append('%s: %s\n' % (k, v))
     return ''.join(parts)
 
-  def matches(self, command=None, host=None, path_with_query=None, is_ssl=None,
+  def matches(self, command=None, host=None, full_path=None, is_ssl=None,
               use_query=True):
     """Returns true iff the request matches all parameters.
 
     Args:
       command: a string (e.g. 'GET' or 'POST').
       host: a host name (e.g. 'www.google.com').
-      path_with_query: a request path with query string (e.g. '/search?q=dogs')
+      full_path: a request path with query string (e.g. '/search?q=dogs')
       is_ssl: whether the request is secure.
       use_query:
         If use_query is True, request matching uses both the hierarchical path
@@ -563,12 +558,12 @@ class ArchivedHttpRequest(object):
       return False
     if host is not None and host != self.host:
       return False
-    if path_with_query is None:
+    if full_path is None:
       return True
     if use_query:
-      return path_with_query == self.path
+      return full_path == self.full_path
     else:
-      return self.path_without_query == urlparse.urlparse(path_with_query).path
+      return self.path == urlparse.urlparse(full_path).path
 
   @classmethod
   def _TrimHeaders(cls, headers):
@@ -578,6 +573,7 @@ class ArchivedHttpRequest(object):
     - accept: Causes problems with www.bing.com. During record, CSS is fetched
               with *. During replay, it's text/css.
     - accept-charset, accept-language, referer: vary between clients.
+    - cache-control:  sometimes sent from Chrome with 'max-age=0' as value.
     - connection, method, scheme, url, version: Cause problems with spdy.
     - cookie: Extremely sensitive to request/response order.
     - keep-alive: Not supported by Web Page Replay.
@@ -604,7 +600,7 @@ class ArchivedHttpRequest(object):
       if headers['accept-encoding'].endswith(','):
         headers['accept-encoding'] = headers['accept-encoding'][:-1]
     undesirable_keys = [
-        'accept', 'accept-charset', 'accept-language',
+        'accept', 'accept-charset', 'accept-language', 'cache-control',
         'connection', 'cookie', 'keep-alive', 'method',
         'referer', 'scheme', 'url', 'version', 'user-agent', 'proxy-connection',
         'x-chrome-variations']
@@ -622,7 +618,7 @@ class ArchivedHttpRequest(object):
     stripped_headers = dict((k, v) for k, v in self.headers.iteritems()
                             if k.lower() not in self.CONDITIONAL_HEADERS)
     return ArchivedHttpRequest(
-        self.command, self.host, self.path, self.request_body,
+        self.command, self.host, self.full_path, self.request_body,
         stripped_headers, self.is_ssl)
 
 class ArchivedHttpResponse(object):
@@ -651,8 +647,14 @@ class ArchivedHttpResponse(object):
           Concatenating the chunks gives the complete contents
           (i.e. the chunks do not have any lengths or delimiters).
           Do not include the final, zero-length chunk that marks the end.
-      delays: dict of (ms) delays before "headers" and "data". For example,
-          {'headers': 50, 'data': [0, 10, 10]}
+      delays: dict of (ms) delays for 'connect', 'headers' and 'data'.
+          e.g. {'connect': 50, 'headers': 150, 'data': [0, 10, 10]}
+          connect - The time to connect to the server.
+            Each resource has a value because Replay's record mode captures it.
+            This includes the time for the SYN and SYN/ACK (1 rtt).
+          headers - The time elapsed between the TCP connect and the headers.
+            This typically includes all the server-time to generate a response.
+          data - If the response is chunked, these are the times for each chunk.
     """
     self.version = version
     self.status = status
@@ -667,6 +669,7 @@ class ArchivedHttpResponse(object):
     expected_num_delays = len(self.response_data)
     if not self.delays:
       self.delays = {
+          'connect': 0,
           'headers': 0,
           'data': [0] * expected_num_delays
           }
@@ -697,6 +700,7 @@ class ArchivedHttpResponse(object):
     """
     if 'server_delays' in state:
       state['delays'] = {
+          'connect': 0,
           'headers': 0,
           'data': state['server_delays']
           }
@@ -708,15 +712,9 @@ class ArchivedHttpResponse(object):
 
   def get_header(self, key, default=None):
     for k, v in self.headers:
-      if key == k:
-        return v
-    return default
-
-  def get_header_case_insensitive(self, key):
-    for k, v in self.headers:
       if key.lower() == k.lower():
         return v
-    return None
+    return default
 
   def set_header(self, key, value):
     for i, (k, v) in enumerate(self.headers):
@@ -727,9 +725,40 @@ class ArchivedHttpResponse(object):
 
   def remove_header(self, key):
     for i, (k, v) in enumerate(self.headers):
-      if key == k:
+      if key.lower() == k.lower():
         self.headers.pop(i)
         return
+
+  def _get_epoch_seconds(self, date_str):
+    """Return the epoch seconds of a date header.
+
+    Args:
+      date_str: a date string (e.g. "Thu, 01 Dec 1994 16:00:00 GMT")
+    Returns:
+      epoch seconds as a float
+    """
+    date_tuple = email.utils.parsedate(date_str)
+    if date_tuple:
+      return calendar.timegm(date_tuple)
+    return None
+
+  def update_date(self, date_str, now=None):
+    """Return an updated date based on its delta from the "Date" header.
+
+    For example, if |date_str| is one week later than the "Date" header,
+    then the returned date string is one week later than the current date.
+
+    Args:
+      date_str: a date string (e.g. "Thu, 01 Dec 1994 16:00:00 GMT")
+    Returns:
+      a date string
+    """
+    date_seconds = self._get_epoch_seconds(self.get_header('date'))
+    header_seconds = self._get_epoch_seconds(date_str)
+    if date_seconds and header_seconds:
+      updated_seconds = header_seconds + (now or time.time()) - date_seconds
+      return email.utils.formatdate(updated_seconds, usegmt=True)
+    return date_str
 
   def is_gzip(self):
     return self.get_header('content-encoding') == 'gzip'
@@ -748,7 +777,8 @@ class ArchivedHttpResponse(object):
     content_type = self.get_header('content-type')
     if (not content_type or
         not (content_type.startswith('text/') or
-             content_type == 'application/x-javascript')):
+             content_type == 'application/x-javascript' or
+             content_type.startswith('application/json'))):
       return None
     if self.is_compressed():
       uncompressed_chunks = httpzlib.uncompress_chunks(
@@ -794,6 +824,7 @@ class ArchivedHttpResponse(object):
     Args:
       delays_text: JSON encoded text such as the following:
           {
+            connect: 80,
             headers: 80,
             data: [6, 55, 0]
           }
@@ -854,10 +885,10 @@ def main():
       action='store',
       type='string',
       help='Only show URLs matching this host.')
-  option_parser.add_option('-p', '--path', default=None,
+  option_parser.add_option('-p', '--full_path', default=None,
       action='store',
       type='string',
-      help='Only show URLs matching this path.')
+      help='Only show URLs matching this full path.')
   option_parser.add_option('-f', '--merged_file', default=None,
         action='store',
         type='string',
@@ -878,18 +909,18 @@ def main():
 
   http_archive = HttpArchive.Load(replay_file)
   if command == 'ls':
-    print http_archive.ls(options.command, options.host, options.path)
+    print http_archive.ls(options.command, options.host, options.full_path)
   elif command == 'cat':
-    print http_archive.cat(options.command, options.host, options.path)
+    print http_archive.cat(options.command, options.host, options.full_path)
   elif command == 'stats':
-    print http_archive.stats(options.command, options.host, options.path)
+    print http_archive.stats(options.command, options.host, options.full_path)
   elif command == 'merge':
     if not options.merged_file:
       print 'Error: Must specify a merged file name (use --merged_file)'
       return
     http_archive.merge(options.merged_file, args[2:])
   elif command == 'edit':
-    http_archive.edit(options.command, options.host, options.path)
+    http_archive.edit(options.command, options.host, options.full_path)
     http_archive.Persist(replay_file)
   else:
     option_parser.error('Unknown command "%s"' % command)

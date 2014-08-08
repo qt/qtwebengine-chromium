@@ -13,6 +13,7 @@
 #include "net/cert/cert_verifier.h"
 #include "net/dns/mock_host_resolver.h"
 #include "net/http/http_network_session.h"
+#include "net/http/http_response_headers.h"
 #include "net/http/http_server_properties_impl.h"
 #include "net/http/transport_security_state.h"
 #include "net/ssl/default_server_bound_cert_store.h"
@@ -94,6 +95,8 @@ void TestURLRequestContext::Init() {
     EXPECT_FALSE(client_socket_factory_);
   } else {
     HttpNetworkSession::Params params;
+    if (http_network_session_params_)
+      params = *http_network_session_params_;
     params.client_socket_factory = client_socket_factory();
     params.host_resolver = host_resolver();
     params.cert_verifier = cert_verifier();
@@ -168,10 +171,12 @@ TestDelegate::TestDelegate()
       cancel_in_rd_pending_(false),
       quit_on_complete_(true),
       quit_on_redirect_(false),
+      quit_on_before_network_start_(false),
       allow_certificate_errors_(false),
       response_started_count_(0),
       received_bytes_count_(0),
       received_redirect_count_(0),
+      received_before_network_start_count_(0),
       received_data_before_response_(false),
       request_failed_(false),
       have_certificate_errors_(false),
@@ -203,6 +208,15 @@ void TestDelegate::OnReceivedRedirect(URLRequest* request,
                                            base::MessageLoop::QuitClosure());
   } else if (cancel_in_rr_) {
     request->Cancel();
+  }
+}
+
+void TestDelegate::OnBeforeNetworkStart(URLRequest* request, bool* defer) {
+  received_before_network_start_count_++;
+  if (quit_on_before_network_start_) {
+    *defer = true;
+    base::MessageLoop::current()->PostTask(FROM_HERE,
+                                           base::MessageLoop::QuitClosure());
   }
 }
 
@@ -399,7 +413,8 @@ int TestNetworkDelegate::OnHeadersReceived(
     URLRequest* request,
     const CompletionCallback& callback,
     const HttpResponseHeaders* original_response_headers,
-    scoped_refptr<HttpResponseHeaders>* override_response_headers) {
+    scoped_refptr<HttpResponseHeaders>* override_response_headers,
+    GURL* allowed_unsafe_redirect_url) {
   int req_id = request->identifier();
   event_order_[req_id] += "OnHeadersReceived\n";
   InitRequestStatesIfNew(req_id);
@@ -414,6 +429,20 @@ int TestNetworkDelegate::OnHeadersReceived(
   // Basic authentication sends a second request from the URLRequestHttpJob
   // layer before the URLRequest reports that a response has started.
   next_states_[req_id] |= kStageBeforeSendHeaders;
+
+  if (!redirect_on_headers_received_url_.is_empty()) {
+    *override_response_headers =
+        new net::HttpResponseHeaders(original_response_headers->raw_headers());
+    (*override_response_headers)->ReplaceStatusLine("HTTP/1.1 302 Found");
+    (*override_response_headers)->RemoveHeader("Location");
+    (*override_response_headers)->AddHeader(
+        "Location: " + redirect_on_headers_received_url_.spec());
+
+    redirect_on_headers_received_url_ = GURL();
+
+    if (!allowed_unsafe_redirect_url_.is_empty())
+      *allowed_unsafe_redirect_url = allowed_unsafe_redirect_url_;
+  }
 
   return OK;
 }
@@ -572,11 +601,6 @@ int TestNetworkDelegate::OnBeforeSocketStreamConnect(
     SocketStream* socket,
     const CompletionCallback& callback) {
   return OK;
-}
-
-void TestNetworkDelegate::OnRequestWaitStateChange(
-    const URLRequest& request,
-    RequestWaitState state) {
 }
 
 // static

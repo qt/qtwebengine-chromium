@@ -48,6 +48,9 @@ AudioNode::AudioNode(AudioContext* context, float sampleRate)
     , m_nodeType(NodeTypeUnknown)
     , m_context(context)
     , m_sampleRate(sampleRate)
+#if ENABLE(OILPAN)
+    , m_keepAlive(adoptPtr(new Persistent<AudioNode>(this)))
+#endif
     , m_lastProcessingTime(-1)
     , m_lastNonSilentTime(-1)
     , m_normalRefCount(1) // start out with normal refCount == 1 (like WTF::RefCounted class)
@@ -137,12 +140,6 @@ void AudioNode::setNodeType(NodeType type)
 #if DEBUG_AUDIONODE_REFERENCES
     ++s_nodeCount[type];
 #endif
-}
-
-void AudioNode::lazyInitialize()
-{
-    if (!isInitialized())
-        initialize();
 }
 
 void AudioNode::addInput(PassOwnPtr<AudioNodeInput> input)
@@ -309,9 +306,7 @@ void AudioNode::setChannelCountMode(const String& mode, ExceptionState& exceptio
     } else if (mode == "explicit") {
         m_channelCountMode = Explicit;
     } else {
-        exceptionState.throwDOMException(
-            InvalidStateError,
-            "invalid mode '" + mode + "'; must be 'max', 'clamped-max', or 'explicit'.");
+        ASSERT_NOT_REACHED();
     }
 
     if (m_channelCountMode != oldMode)
@@ -340,9 +335,7 @@ void AudioNode::setChannelInterpretation(const String& interpretation, Exception
     } else if (interpretation == "discrete") {
         m_channelInterpretation = AudioBus::Discrete;
     } else {
-        exceptionState.throwDOMException(
-            InvalidStateError,
-            "invalid interpretation '" + interpretation + "'; must be 'speakers' or 'discrete'.");
+        ASSERT_NOT_REACHED();
     }
 }
 
@@ -478,6 +471,9 @@ void AudioNode::disableOutputsIfNecessary()
 
 void AudioNode::ref(RefType refType)
 {
+#if ENABLE(OILPAN)
+    ASSERT(m_keepAlive);
+#endif
     switch (refType) {
     case RefTypeNormal:
         atomicIncrement(&m_normalRefCount);
@@ -531,7 +527,7 @@ void AudioNode::deref(RefType refType)
     // Once AudioContext::uninitialize() is called there's no more chances for deleteMarkedNodes() to get called, so we call here.
     // We can't call in AudioContext::~AudioContext() since it will never be called as long as any AudioNode is alive
     // because AudioNodes keep a reference to the context.
-    if (context()->isAudioThreadFinished())
+    if (!context()->isInitialized())
         context()->deleteMarkedNodes();
 }
 
@@ -591,6 +587,25 @@ void AudioNode::printNodeCounts()
 }
 
 #endif // DEBUG_AUDIONODE_REFERENCES
+
+void AudioNode::trace(Visitor* visitor)
+{
+    visitor->trace(m_context);
+    EventTargetWithInlineData::trace(visitor);
+}
+
+#if ENABLE(OILPAN)
+void AudioNode::clearKeepAlive()
+{
+    // It is safe to drop the self-persistent when the ref count
+    // of a AudioNode reaches zero. At that point, the
+    // AudioNode node is removed from the AudioContext and
+    // it cannot be reattached. Therefore, the reference count
+    // will not go above zero again.
+    ASSERT(m_keepAlive);
+    m_keepAlive = nullptr;
+}
+#endif
 
 } // namespace WebCore
 

@@ -491,9 +491,17 @@ sub parselicense($) {
 	$license = "MIT/X11 (BSD like) $license";
     } elsif ($licensetext =~ /Permission is hereby granted, without written agreement and without license or royalty fees, to use, copy, modify, and distribute this software and its documentation for any purpose/) {
 	$license = "MIT/X11 (BSD like) $license";
+    } elsif ($licensetext =~ /Permission to use, copy, modify, distribute, and sell this software and its documentation for any purpose is hereby granted without fee/) {
+	$license = "MIT/X11 (BSD like) $license";
+    } elsif ($licensetext  =~ /MIT .* License/) {
+	$license = "MIT/X11 (BSD like) $license";
     }
 
-    if ($licensetext  =~ /This file is distributed under the University of Illinois Open Source License/){
+    if ($licensetext  =~ /This file is part of the Independent JPEG Group(')?s software.*For conditions of distribution and use, see the accompanying README file/i) {
+	$license = "Independent JPEG Group License $license";
+    }
+
+    if ($licensetext  =~ /the University of Illinois Open Source License/){
 	$license = "University of Illinois/NCSA Open Source License (BSD like) $license";
     }
 
@@ -523,6 +531,8 @@ sub parselicense($) {
         $license = "BSD-like $license";
     } elsif ($licensetext =~ /GOVERNED BY A BSD-STYLE SOURCE LICENSE/) {
         $license = "BSD-like $license";
+    } elsif ($licensetext =~ /BSD 3-Clause license/) {
+        $license = "BSD (3 clause) $license";
     }
 
     if ($licensetext =~ /Mozilla Public License( Version|, v.) ([^ ]+[^., ]),?/) {
@@ -567,7 +577,7 @@ sub parselicense($) {
 	$license = "SGI Free Software License B $license";
     }
 
-    if ($licensetext =~ /in the public domain/i) {
+    if ($licensetext =~ /(in|into) the public domain/i) {
 	$license = "Public domain $license";
     }
 
@@ -620,6 +630,17 @@ sub parselicense($) {
 
     if ($licensetext =~ /These materials are protected by copyright laws and contain material proprietary to the Khronos Group, Inc\. You may use these materials for implementing Khronos specifications, without altering or removing any trademark, copyright or other notice from the specification/) {
         $license = $license . "Khronos Group";
+    }
+
+    if ($licensetext =~ /This file is part of the FreeType project, and may only be used(,)? modified(,)? and distributed under the terms of the FreeType project license, LICENSE\.TXT\. By continuing to use, modify, or distribute this file you indicate that you have read the license and understand and accept it fully/) {
+        $license = "FreeType (BSD like) $license";
+    }
+    if ($licensetext =~ /This software, and all works of authorship, whether in source or object code form as indicated by the copyright notice.*is made available, and may only be used, modified, and distributed under the FreeType Project License, LICENSE\.TXT\. Additionally, subject to the terms and conditions of the FreeType Project License, each contributor to the Work hereby grants to any individual or legal entity exercising permissions granted by the FreeType Project License and this section.*a perpetual, worldwide, non-exclusive, no-charge, royalty-free, irrevocable.*patent license to make/) {
+        $license = "FreeType (BSD like) with patent clause $license";
+    }
+
+    if ($licensetext =~ /Anti-Grain Geometry.*Permission to copy, use, modify, sell and distribute this software is granted provided this copyright notice appears in all copies. This software is provided as is without express or impl/) {
+        $license = "Anti-Grain Geometry $license";
     }
 
     $license = "UNKNOWN" unless $license;

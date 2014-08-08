@@ -31,9 +31,9 @@
 #include "config.h"
 #include "core/inspector/InspectorResourceAgent.h"
 
-#include "FetchInitiatorTypeNames.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "bindings/v8/ScriptCallStackFactory.h"
+#include "core/FetchInitiatorTypeNames.h"
 #include "core/dom/Document.h"
 #include "core/dom/ScriptableDocumentParser.h"
 #include "core/fetch/FetchInitiatorInfo.h"
@@ -41,9 +41,8 @@
 #include "core/fetch/Resource.h"
 #include "core/fetch/ResourceFetcher.h"
 #include "core/fetch/ResourceLoader.h"
-#include "core/frame/Frame.h"
+#include "core/frame/LocalFrame.h"
 #include "core/inspector/IdentifiersFactory.h"
-#include "core/inspector/InspectorClient.h"
 #include "core/inspector/InspectorOverlay.h"
 #include "core/inspector/InspectorPageAgent.h"
 #include "core/inspector/InspectorState.h"
@@ -57,7 +56,6 @@
 #include "core/loader/ThreadableLoaderClient.h"
 #include "core/page/Page.h"
 #include "core/xml/XMLHttpRequest.h"
-#include "modules/websockets/WebSocketFrame.h"
 #include "platform/JSONValues.h"
 #include "platform/network/HTTPHeaderMap.h"
 #include "platform/network/ResourceError.h"
@@ -82,6 +80,10 @@ static const char userAgentOverride[] = "userAgentOverride";
 
 namespace {
 
+// Keep in sync with kDevToolsRequestInitiator defined in devtools_network_controller.cc
+const char kDevToolsRequestInitiator[] = "X-DevTools-Request-Initiator";
+const char kDevToolsEmulateNetworkConditionsClientId[] = "X-DevTools-Emulate-Network-Conditions-Client-Id";
+
 static PassRefPtr<JSONObject> buildObjectForHeaders(const HTTPHeaderMap& headers)
 {
     RefPtr<JSONObject> headersObject = JSONObject::create();
@@ -91,7 +93,7 @@ static PassRefPtr<JSONObject> buildObjectForHeaders(const HTTPHeaderMap& headers
     return headersObject;
 }
 
-class InspectorThreadableLoaderClient : public ThreadableLoaderClient {
+class InspectorThreadableLoaderClient FINAL : public ThreadableLoaderClient {
     WTF_MAKE_NONCOPYABLE(InspectorThreadableLoaderClient);
 public:
     InspectorThreadableLoaderClient(PassRefPtr<LoadResourceForFrontendCallback> callback)
@@ -100,7 +102,7 @@ public:
 
     virtual ~InspectorThreadableLoaderClient() { }
 
-    virtual void didReceiveResponse(unsigned long identifier, const ResourceResponse& response)
+    virtual void didReceiveResponse(unsigned long identifier, const ResourceResponse& response) OVERRIDE
     {
         WTF::TextEncoding textEncoding(response.textEncodingName());
         bool useDetector = false;
@@ -113,7 +115,7 @@ public:
         m_responseHeaders = response.httpHeaderFields();
     }
 
-    virtual void didReceiveData(const char* data, int dataLength)
+    virtual void didReceiveData(const char* data, int dataLength) OVERRIDE
     {
         if (!dataLength)
             return;
@@ -124,7 +126,7 @@ public:
         m_responseText = m_responseText.concatenateWith(m_decoder->decode(data, dataLength));
     }
 
-    virtual void didFinishLoading(unsigned long /*identifier*/, double /*finishTime*/)
+    virtual void didFinishLoading(unsigned long /*identifier*/, double /*finishTime*/) OVERRIDE
     {
         if (m_decoder)
             m_responseText = m_responseText.concatenateWith(m_decoder->flush());
@@ -132,13 +134,13 @@ public:
         dispose();
     }
 
-    virtual void didFail(const ResourceError&)
+    virtual void didFail(const ResourceError&) OVERRIDE
     {
         m_callback->sendFailure("Loading resource for inspector failed");
         dispose();
     }
 
-    virtual void didFailRedirectCheck()
+    virtual void didFailRedirectCheck() OVERRIDE
     {
         m_callback->sendFailure("Loading resource for inspector failed redirect check");
         dispose();
@@ -158,7 +160,7 @@ public:
 private:
     void dispose()
     {
-        m_loader = 0;
+        m_loader = nullptr;
         delete this;
     }
 
@@ -232,8 +234,7 @@ static PassRefPtr<TypeBuilder::Network::Request> buildObjectForResourceRequest(c
 static PassRefPtr<TypeBuilder::Network::Response> buildObjectForResourceResponse(const ResourceResponse& response, DocumentLoader* loader)
 {
     if (response.isNull())
-        return 0;
-
+        return nullptr;
 
     double status;
     String statusText;
@@ -245,10 +246,12 @@ static PassRefPtr<TypeBuilder::Network::Response> buildObjectForResourceResponse
         statusText = response.httpStatusText();
     }
     RefPtr<JSONObject> headers;
-    if (response.resourceLoadInfo())
+    if (response.resourceLoadInfo() && response.resourceLoadInfo()->responseHeaders.size())
         headers = buildObjectForHeaders(response.resourceLoadInfo()->responseHeaders);
     else
         headers = buildObjectForHeaders(response.httpHeaderFields());
+
+    int64_t encodedDataLength = response.resourceLoadInfo() ? response.resourceLoadInfo()->encodedDataLength : -1;
 
     RefPtr<TypeBuilder::Network::Response> responseObject = TypeBuilder::Network::Response::create()
         .setUrl(urlWithoutFragment(response.url()).string())
@@ -257,7 +260,8 @@ static PassRefPtr<TypeBuilder::Network::Response> buildObjectForResourceResponse
         .setHeaders(headers)
         .setMimeType(response.mimeType())
         .setConnectionReused(response.connectionReused())
-        .setConnectionId(response.connectionID());
+        .setConnectionId(response.connectionID())
+        .setEncodedDataLength(encodedDataLength);
 
     responseObject->setFromDiskCache(response.wasCached());
     if (response.resourceLoadTiming())
@@ -266,10 +270,16 @@ static PassRefPtr<TypeBuilder::Network::Response> buildObjectForResourceResponse
     if (response.resourceLoadInfo()) {
         if (!response.resourceLoadInfo()->responseHeadersText.isEmpty())
             responseObject->setHeadersText(response.resourceLoadInfo()->responseHeadersText);
-
-        responseObject->setRequestHeaders(buildObjectForHeaders(response.resourceLoadInfo()->requestHeaders));
+        if (response.resourceLoadInfo()->requestHeaders.size())
+            responseObject->setRequestHeaders(buildObjectForHeaders(response.resourceLoadInfo()->requestHeaders));
         if (!response.resourceLoadInfo()->requestHeadersText.isEmpty())
             responseObject->setRequestHeadersText(response.resourceLoadInfo()->requestHeadersText);
+    }
+
+    AtomicString remoteIPAddress = response.remoteIPAddress();
+    if (!remoteIPAddress.isEmpty()) {
+        responseObject->setRemoteIPAddress(remoteIPAddress);
+        responseObject->setRemotePort(response.remotePort());
     }
 
     return responseObject;
@@ -289,6 +299,10 @@ void InspectorResourceAgent::willSendRequest(unsigned long identifier, DocumentL
     // Ignore the request initiated internally.
     if (initiatorInfo.name == FetchInitiatorTypeNames::internal)
         return;
+
+    if (!m_hostId.isEmpty())
+        request.addHTTPHeaderField(kDevToolsEmulateNetworkConditionsClientId, AtomicString(m_hostId));
+
     String requestId = IdentifiersFactory::requestId(identifier);
     m_resourcesData->resourceCreated(requestId, m_pageAgent->loaderId(loader));
 
@@ -299,18 +313,14 @@ void InspectorResourceAgent::willSendRequest(unsigned long identifier, DocumentL
         for (JSONObject::const_iterator it = headers->begin(); it != end; ++it) {
             String value;
             if (it->value->asString(&value))
-                request.setHTTPHeaderField(it->key, value);
+                request.setHTTPHeaderField(AtomicString(it->key), AtomicString(value));
         }
     }
 
-    request.setReportLoadTiming(true);
     request.setReportRawHeaders(true);
 
-    if (m_state->getBoolean(ResourceAgentState::cacheDisabled)) {
-        request.setHTTPHeaderField("Pragma", "no-cache");
-        request.setCachePolicy(ReloadIgnoringCacheData);
-        request.setHTTPHeaderField("Cache-Control", "no-cache");
-    }
+    if (m_state->getBoolean(ResourceAgentState::cacheDisabled))
+        request.setCachePolicy(ReloadBypassingCache);
 
     String frameId = m_pageAgent->frameId(loader->frame());
 
@@ -329,7 +339,19 @@ void InspectorResourceAgent::markResourceAsCached(unsigned long identifier)
     m_frontend->requestServedFromCache(IdentifiersFactory::requestId(identifier));
 }
 
-void InspectorResourceAgent::didReceiveResourceResponse(Frame*, unsigned long identifier, DocumentLoader* loader, const ResourceResponse& response, ResourceLoader* resourceLoader)
+bool isResponseEmpty(PassRefPtr<TypeBuilder::Network::Response> response)
+{
+    if (!response)
+        return true;
+
+    RefPtr<JSONValue> status = response->get("status");
+    RefPtr<JSONValue> mimeType = response->get("mimeType");
+    RefPtr<JSONObject> headers = response->getObject("headers");
+
+    return !status && !mimeType && (!headers || !headers->size());
+}
+
+void InspectorResourceAgent::didReceiveResourceResponse(LocalFrame* frame, unsigned long identifier, DocumentLoader* loader, const ResourceResponse& response, ResourceLoader* resourceLoader)
 {
     if (!loader)
         return;
@@ -362,11 +384,13 @@ void InspectorResourceAgent::didReceiveResourceResponse(Frame*, unsigned long id
 
     m_resourcesData->responseReceived(requestId, m_pageAgent->frameId(loader->frame()), response);
     m_resourcesData->setResourceType(requestId, type);
-    m_frontend->responseReceived(requestId, m_pageAgent->frameId(loader->frame()), m_pageAgent->loaderId(loader), currentTime(), InspectorPageAgent::resourceTypeJson(type), resourceResponse);
+
+    if (!isResponseEmpty(resourceResponse))
+        m_frontend->responseReceived(requestId, m_pageAgent->frameId(loader->frame()), m_pageAgent->loaderId(loader), currentTime(), InspectorPageAgent::resourceTypeJson(type), resourceResponse);
     // If we revalidated the resource and got Not modified, send content length following didReceiveResponse
     // as there will be no calls to didReceiveData from the network stack.
     if (isNotModified && cachedResource && cachedResource->encodedSize())
-        didReceiveData(identifier, 0, cachedResource->encodedSize(), 0);
+        didReceiveData(frame, identifier, 0, cachedResource->encodedSize(), 0);
 }
 
 static bool isErrorStatusCode(int statusCode)
@@ -374,7 +398,7 @@ static bool isErrorStatusCode(int statusCode)
     return statusCode >= 400;
 }
 
-void InspectorResourceAgent::didReceiveData(unsigned long identifier, const char* data, int dataLength, int encodedDataLength)
+void InspectorResourceAgent::didReceiveData(LocalFrame*, unsigned long identifier, const char* data, int dataLength, int encodedDataLength)
 {
     String requestId = IdentifiersFactory::requestId(identifier);
 
@@ -387,7 +411,7 @@ void InspectorResourceAgent::didReceiveData(unsigned long identifier, const char
     m_frontend->dataReceived(requestId, currentTime(), dataLength, encodedDataLength);
 }
 
-void InspectorResourceAgent::didFinishLoading(unsigned long identifier, DocumentLoader* loader, double monotonicFinishTime)
+void InspectorResourceAgent::didFinishLoading(unsigned long identifier, DocumentLoader* loader, double monotonicFinishTime, int64_t encodedDataLength)
 {
     double finishTime = 0.0;
     // FIXME: Expose all of the timing details to inspector and have it calculate finishTime.
@@ -398,21 +422,21 @@ void InspectorResourceAgent::didFinishLoading(unsigned long identifier, Document
     m_resourcesData->maybeDecodeDataToContent(requestId);
     if (!finishTime)
         finishTime = currentTime();
-    m_frontend->loadingFinished(requestId, finishTime);
+    m_frontend->loadingFinished(requestId, finishTime, encodedDataLength);
 }
 
-void InspectorResourceAgent::didReceiveCORSRedirectResponse(Frame* frame, unsigned long identifier, DocumentLoader* loader, const ResourceResponse& response, ResourceLoader* resourceLoader)
+void InspectorResourceAgent::didReceiveCORSRedirectResponse(LocalFrame* frame, unsigned long identifier, DocumentLoader* loader, const ResourceResponse& response, ResourceLoader* resourceLoader)
 {
     // Update the response and finish loading
     didReceiveResourceResponse(frame, identifier, loader, response, resourceLoader);
-    didFinishLoading(identifier, loader, 0);
+    didFinishLoading(identifier, loader, 0, blink::WebURLLoaderClient::kUnknownEncodedDataLength);
 }
 
-void InspectorResourceAgent::didFailLoading(unsigned long identifier, DocumentLoader* loader, const ResourceError& error)
+void InspectorResourceAgent::didFailLoading(unsigned long identifier, const ResourceError& error)
 {
     String requestId = IdentifiersFactory::requestId(identifier);
     bool canceled = error.isCancellation();
-    m_frontend->loadingFailed(requestId, currentTime(), error.localizedDescription(), canceled ? &canceled : 0);
+    m_frontend->loadingFailed(requestId, currentTime(), InspectorPageAgent::resourceTypeJson(m_resourcesData->resourceType(requestId)), error.localizedDescription(), canceled ? &canceled : 0);
 }
 
 void InspectorResourceAgent::scriptImported(unsigned long identifier, const String& sourceString)
@@ -434,14 +458,16 @@ void InspectorResourceAgent::documentThreadableLoaderStartedLoadingForClient(uns
     if (it == m_pendingXHRReplayData.end())
         return;
 
+    m_resourcesData->setResourceType(IdentifiersFactory::requestId(identifier), InspectorPageAgent::XHRResource);
     XHRReplayData* xhrReplayData = it->value.get();
     String requestId = IdentifiersFactory::requestId(identifier);
     m_resourcesData->setXHRReplayData(requestId, xhrReplayData);
 }
 
-void InspectorResourceAgent::willLoadXHR(XMLHttpRequest*, ThreadableLoaderClient* client, const AtomicString& method, const KURL& url, bool async, PassRefPtr<FormData> formData, const HTTPHeaderMap& headers, bool includeCredentials)
+void InspectorResourceAgent::willLoadXHR(XMLHttpRequest* xhr, ThreadableLoaderClient* client, const AtomicString& method, const KURL& url, bool async, FormData* formData, const HTTPHeaderMap& headers, bool includeCredentials)
 {
-    RefPtr<XHRReplayData> xhrReplayData = XHRReplayData::create(method, urlWithoutFragment(url), async, formData, includeCredentials);
+    ASSERT(xhr);
+    RefPtr<XHRReplayData> xhrReplayData = XHRReplayData::create(xhr->executionContext(), method, urlWithoutFragment(url), async, formData, includeCredentials);
     HTTPHeaderMap::const_iterator end = headers.end();
     for (HTTPHeaderMap::const_iterator it = headers.begin(); it!= end; ++it)
         xhrReplayData->addHeader(it->key, it->value);
@@ -453,7 +479,7 @@ void InspectorResourceAgent::didFailXHRLoading(XMLHttpRequest*, ThreadableLoader
     m_pendingXHRReplayData.remove(client);
 }
 
-void InspectorResourceAgent::didFinishXHRLoading(XMLHttpRequest*, ThreadableLoaderClient* client, unsigned long identifier, ScriptString sourceString, const String&, const String&, unsigned)
+void InspectorResourceAgent::didFinishXHRLoading(XMLHttpRequest*, ThreadableLoaderClient* client, unsigned long identifier, ScriptString sourceString, const AtomicString&, const String&, const String&, unsigned)
 {
     m_pendingXHRReplayData.remove(client);
 }
@@ -485,7 +511,7 @@ void InspectorResourceAgent::willRecalculateStyle(Document*)
     m_isRecalculatingStyle = true;
 }
 
-void InspectorResourceAgent::didRecalculateStyle()
+void InspectorResourceAgent::didRecalculateStyle(int)
 {
     m_isRecalculatingStyle = false;
     m_styleRecalculationInitiator = nullptr;
@@ -499,7 +525,7 @@ void InspectorResourceAgent::didScheduleStyleRecalculation(Document* document)
 
 PassRefPtr<TypeBuilder::Network::Initiator> InspectorResourceAgent::buildInitiatorObject(Document* document, const FetchInitiatorInfo& initiatorInfo)
 {
-    RefPtr<ScriptCallStack> stackTrace = createScriptCallStack(ScriptCallStack::maxCallStackSizeToCapture, true);
+    RefPtrWillBeRawPtr<ScriptCallStack> stackTrace = createScriptCallStack(ScriptCallStack::maxCallStackSizeToCapture, true);
     if (stackTrace && stackTrace->size() > 0) {
         RefPtr<TypeBuilder::Network::Initiator> initiatorObject = TypeBuilder::Network::Initiator::create()
             .setType(TypeBuilder::Network::Initiator::Type::Script);
@@ -531,19 +557,29 @@ void InspectorResourceAgent::didCreateWebSocket(Document*, unsigned long identif
     m_frontend->webSocketCreated(IdentifiersFactory::requestId(identifier), urlWithoutFragment(requestURL).string());
 }
 
-void InspectorResourceAgent::willSendWebSocketHandshakeRequest(Document*, unsigned long identifier, const WebSocketHandshakeRequest& request)
+void InspectorResourceAgent::willSendWebSocketHandshakeRequest(Document*, unsigned long identifier, const WebSocketHandshakeRequest* request)
 {
+    ASSERT(request);
     RefPtr<TypeBuilder::Network::WebSocketRequest> requestObject = TypeBuilder::Network::WebSocketRequest::create()
-        .setHeaders(buildObjectForHeaders(request.headerFields()));
+        .setHeaders(buildObjectForHeaders(request->headerFields()));
     m_frontend->webSocketWillSendHandshakeRequest(IdentifiersFactory::requestId(identifier), currentTime(), requestObject);
 }
 
-void InspectorResourceAgent::didReceiveWebSocketHandshakeResponse(Document*, unsigned long identifier, const WebSocketHandshakeResponse& response)
+void InspectorResourceAgent::didReceiveWebSocketHandshakeResponse(Document*, unsigned long identifier, const WebSocketHandshakeRequest* request, const WebSocketHandshakeResponse* response)
 {
+    ASSERT(response);
     RefPtr<TypeBuilder::Network::WebSocketResponse> responseObject = TypeBuilder::Network::WebSocketResponse::create()
-        .setStatus(response.statusCode())
-        .setStatusText(response.statusText())
-        .setHeaders(buildObjectForHeaders(response.headerFields()));
+        .setStatus(response->statusCode())
+        .setStatusText(response->statusText())
+        .setHeaders(buildObjectForHeaders(response->headerFields()));
+
+    if (!response->headersText().isEmpty())
+        responseObject->setHeadersText(response->headersText());
+    if (request) {
+        responseObject->setRequestHeaders(buildObjectForHeaders(request->headerFields()));
+        if (!request->headersText().isEmpty())
+            responseObject->setRequestHeadersText(request->headersText());
+    }
     m_frontend->webSocketHandshakeResponseReceived(IdentifiersFactory::requestId(identifier), currentTime(), responseObject);
 }
 
@@ -552,21 +588,21 @@ void InspectorResourceAgent::didCloseWebSocket(Document*, unsigned long identifi
     m_frontend->webSocketClosed(IdentifiersFactory::requestId(identifier), currentTime());
 }
 
-void InspectorResourceAgent::didReceiveWebSocketFrame(unsigned long identifier, const WebSocketFrame& frame)
+void InspectorResourceAgent::didReceiveWebSocketFrame(unsigned long identifier, int opCode, bool masked, const char* payload, size_t payloadLength)
 {
     RefPtr<TypeBuilder::Network::WebSocketFrame> frameObject = TypeBuilder::Network::WebSocketFrame::create()
-        .setOpcode(frame.opCode)
-        .setMask(frame.masked)
-        .setPayloadData(String(frame.payload, frame.payloadLength));
+        .setOpcode(opCode)
+        .setMask(masked)
+        .setPayloadData(String(payload, payloadLength));
     m_frontend->webSocketFrameReceived(IdentifiersFactory::requestId(identifier), currentTime(), frameObject);
 }
 
-void InspectorResourceAgent::didSendWebSocketFrame(unsigned long identifier, const WebSocketFrame& frame)
+void InspectorResourceAgent::didSendWebSocketFrame(unsigned long identifier, int opCode, bool masked, const char* payload, size_t payloadLength)
 {
     RefPtr<TypeBuilder::Network::WebSocketFrame> frameObject = TypeBuilder::Network::WebSocketFrame::create()
-        .setOpcode(frame.opCode)
-        .setMask(frame.masked)
-        .setPayloadData(String(frame.payload, frame.payloadLength));
+        .setOpcode(opCode)
+        .setMask(masked)
+        .setPayloadData(String(payload, payloadLength));
     m_frontend->webSocketFrameSent(IdentifiersFactory::requestId(identifier), currentTime(), frameObject);
 }
 
@@ -647,12 +683,19 @@ void InspectorResourceAgent::getResponseBody(ErrorString* errorString, const Str
 
 void InspectorResourceAgent::replayXHR(ErrorString*, const String& requestId)
 {
-    RefPtr<XMLHttpRequest> xhr = XMLHttpRequest::create(m_pageAgent->mainFrame()->document());
     String actualRequestId = requestId;
 
     XHRReplayData* xhrReplayData = m_resourcesData->xhrReplayData(requestId);
     if (!xhrReplayData)
         return;
+
+    ExecutionContext* executionContext = xhrReplayData->executionContext();
+    if (!executionContext) {
+        m_resourcesData->setXHRReplayData(requestId, 0);
+        return;
+    }
+
+    RefPtrWillBeRawPtr<XMLHttpRequest> xhr = XMLHttpRequest::create(executionContext);
 
     Resource* cachedResource = memoryCache()->resourceForURL(xhrReplayData->url());
     if (cachedResource)
@@ -670,19 +713,9 @@ void InspectorResourceAgent::canClearBrowserCache(ErrorString*, bool* result)
     *result = true;
 }
 
-void InspectorResourceAgent::clearBrowserCache(ErrorString*)
-{
-    m_client->clearBrowserCache();
-}
-
 void InspectorResourceAgent::canClearBrowserCookies(ErrorString*, bool* result)
 {
     *result = true;
-}
-
-void InspectorResourceAgent::clearBrowserCookies(ErrorString*)
-{
-    m_client->clearBrowserCookies();
 }
 
 void InspectorResourceAgent::setCacheDisabled(ErrorString*, bool cacheDisabled)
@@ -690,12 +723,16 @@ void InspectorResourceAgent::setCacheDisabled(ErrorString*, bool cacheDisabled)
     m_state->setBoolean(ResourceAgentState::cacheDisabled, cacheDisabled);
     if (cacheDisabled)
         memoryCache()->evictResources();
+    for (Frame* frame = m_pageAgent->mainFrame(); frame; frame = frame->tree().traverseNext()) {
+        if (frame->isLocalFrame())
+            toLocalFrame(frame)->document()->fetcher()->garbageCollectDocumentResources();
+    }
 }
 
 void InspectorResourceAgent::loadResourceForFrontend(ErrorString* errorString, const String& frameId, const String& url, const RefPtr<JSONObject>* requestHeaders, PassRefPtr<LoadResourceForFrontendCallback> prpCallback)
 {
     RefPtr<LoadResourceForFrontendCallback> callback = prpCallback;
-    Frame* frame = m_pageAgent->assertFrame(errorString, frameId);
+    LocalFrame* frame = m_pageAgent->assertFrame(errorString, frameId);
     if (!frame)
         return;
 
@@ -716,17 +753,19 @@ void InspectorResourceAgent::loadResourceForFrontend(ErrorString* errorString, c
                 *errorString = "Request header \"" + it->key + "\" value is not a string";
                 return;
             }
-            request.addHTTPHeaderField(it->key, value);
+            request.addHTTPHeaderField(AtomicString(it->key), AtomicString(value));
         }
     }
+    request.addHTTPHeaderField(kDevToolsRequestInitiator, "frontend");
 
     ThreadableLoaderOptions options;
-    options.allowCredentials = AllowStoredCredentials;
     options.crossOriginRequestPolicy = AllowCrossOriginRequests;
-    options.sendLoadCallbacks = SendCallbacks;
+
+    ResourceLoaderOptions resourceLoaderOptions;
+    resourceLoaderOptions.allowCredentials = AllowStoredCredentials;
 
     InspectorThreadableLoaderClient* inspectorThreadableLoaderClient = new InspectorThreadableLoaderClient(callback);
-    RefPtr<DocumentThreadableLoader> loader = DocumentThreadableLoader::create(document, inspectorThreadableLoaderClient, request, options);
+    RefPtr<DocumentThreadableLoader> loader = DocumentThreadableLoader::create(*document, inspectorThreadableLoaderClient, request, options, resourceLoaderOptions);
     if (!loader) {
         inspectorThreadableLoaderClient->didFailLoaderCreation();
         return;
@@ -737,7 +776,7 @@ void InspectorResourceAgent::loadResourceForFrontend(ErrorString* errorString, c
     inspectorThreadableLoaderClient->setLoader(loader.release());
 }
 
-void InspectorResourceAgent::didCommitLoad(Frame* frame, DocumentLoader* loader)
+void InspectorResourceAgent::didCommitLoad(LocalFrame* frame, DocumentLoader* loader)
 {
     if (loader->frame() != frame->page()->mainFrame())
         return;
@@ -748,18 +787,23 @@ void InspectorResourceAgent::didCommitLoad(Frame* frame, DocumentLoader* loader)
     m_resourcesData->clear(m_pageAgent->loaderId(loader));
 }
 
-void InspectorResourceAgent::frameScheduledNavigation(Frame* frame, double)
+void InspectorResourceAgent::frameScheduledNavigation(LocalFrame* frame, double)
 {
     RefPtr<TypeBuilder::Network::Initiator> initiator = buildInitiatorObject(frame->document(), FetchInitiatorInfo());
     m_frameNavigationInitiatorMap.set(m_pageAgent->frameId(frame), initiator);
 }
 
-void InspectorResourceAgent::frameClearedScheduledNavigation(Frame* frame)
+void InspectorResourceAgent::frameClearedScheduledNavigation(LocalFrame* frame)
 {
     m_frameNavigationInitiatorMap.remove(m_pageAgent->frameId(frame));
 }
 
-bool InspectorResourceAgent::fetchResourceContent(Frame* frame, const KURL& url, String* content, bool* base64Encoded)
+void InspectorResourceAgent::setHostId(const String& hostId)
+{
+    m_hostId = hostId;
+}
+
+bool InspectorResourceAgent::fetchResourceContent(LocalFrame* frame, const KURL& url, String* content, bool* base64Encoded)
 {
     // First try to fetch content from the cached resource.
     Resource* cachedResource = frame->document()->fetcher()->cachedResource(url);
@@ -780,10 +824,9 @@ bool InspectorResourceAgent::fetchResourceContent(Frame* frame, const KURL& url,
     return false;
 }
 
-InspectorResourceAgent::InspectorResourceAgent(InstrumentingAgents* instrumentingAgents, InspectorPageAgent* pageAgent, InspectorClient* client, InspectorCompositeState* state)
-    : InspectorBaseAgent<InspectorResourceAgent>("Network", instrumentingAgents, state)
+InspectorResourceAgent::InspectorResourceAgent(InspectorPageAgent* pageAgent)
+    : InspectorBaseAgent<InspectorResourceAgent>("Network")
     , m_pageAgent(pageAgent)
-    , m_client(client)
     , m_frontend(0)
     , m_resourcesData(adoptPtr(new NetworkResourcesData()))
     , m_isRecalculatingStyle(false)

@@ -44,14 +44,8 @@ class CONTENT_EXPORT WorkerServiceImpl
                     int route_id,
                     WorkerMessageFilter* filter,
                     ResourceContext* resource_context,
-                    const WorkerStoragePartition& worker_partition);
-  void LookupSharedWorker(const ViewHostMsg_CreateWorker_Params& params,
-                          int route_id,
-                          WorkerMessageFilter* filter,
-                          ResourceContext* resource_context,
-                          const WorkerStoragePartition& worker_partition,
-                          bool* exists,
-                          bool* url_error);
+                    const WorkerStoragePartition& worker_partition,
+                    bool* url_mismatch);
   void ForwardToWorker(const IPC::Message& message,
                        WorkerMessageFilter* filter);
   void DocumentDetached(unsigned long long document_id,
@@ -62,13 +56,13 @@ class CONTENT_EXPORT WorkerServiceImpl
   int next_worker_route_id() { return ++next_worker_route_id_; }
 
   // Given a worker's process id, return the IDs of the renderer process and
-  // render view that created it.  For shared workers, this returns the first
+  // render frame that created it.  For shared workers, this returns the first
   // parent.
   // TODO(dimich): This code assumes there is 1 worker per worker process, which
   // is how it is today until V8 can run in separate threads.
   bool GetRendererForWorker(int worker_process_id,
                             int* render_process_id,
-                            int* render_view_id) const;
+                            int* render_frame_id) const;
   const WorkerProcessHost::WorkerInstance* FindWorkerInstance(
       int worker_process_id);
 
@@ -80,7 +74,7 @@ class CONTENT_EXPORT WorkerServiceImpl
 
   // Used when we run each worker in a separate process.
   static const int kMaxWorkersWhenSeparate;
-  static const int kMaxWorkersPerTabWhenSeparate;
+  static const int kMaxWorkersPerFrameWhenSeparate;
 
  private:
   friend struct DefaultSingletonTraits<WorkerServiceImpl>;
@@ -96,31 +90,14 @@ class CONTENT_EXPORT WorkerServiceImpl
   bool CanCreateWorkerProcess(
       const WorkerProcessHost::WorkerInstance& instance);
 
-  // Checks if the tab associated with the passed RenderView can create a
+  // Checks if the frame associated with the passed RenderFrame can create a
   // worker process based on the process limit when we're using a strategy of
   // one worker per process.
-  bool TabCanCreateWorkerProcess(
-      int render_process_id, int render_route_id, bool* hit_total_worker_limit);
+  bool FrameCanCreateWorkerProcess(
+      int render_process_id, int render_frame_id, bool* hit_total_worker_limit);
 
   // Tries to see if any of the queued workers can be created.
   void TryStartingQueuedWorker();
-
-  // APIs for manipulating our set of pending shared worker instances.
-  WorkerProcessHost::WorkerInstance* CreatePendingInstance(
-      const GURL& url,
-      const base::string16& name,
-      ResourceContext* resource_context,
-      const WorkerStoragePartition& worker_partition);
-  WorkerProcessHost::WorkerInstance* FindPendingInstance(
-      const GURL& url,
-      const base::string16& name,
-      const WorkerStoragePartition& worker_partition,
-      ResourceContext* resource_context);
-  void RemovePendingInstances(
-      const GURL& url,
-      const base::string16& name,
-      const WorkerStoragePartition& worker_partition,
-      ResourceContext* resource_context);
 
   WorkerProcessHost::WorkerInstance* FindSharedWorkerInstance(
       const GURL& url,
@@ -133,11 +110,6 @@ class CONTENT_EXPORT WorkerServiceImpl
   int next_worker_route_id_;
 
   WorkerProcessHost::Instances queued_workers_;
-
-  // These are shared workers that have been looked up, but not created yet.
-  // We need to keep a list of these to synchronously detect shared worker
-  // URL mismatches when two pages launch shared workers simultaneously.
-  WorkerProcessHost::Instances pending_shared_workers_;
 
   ObserverList<WorkerServiceObserver> observers_;
 

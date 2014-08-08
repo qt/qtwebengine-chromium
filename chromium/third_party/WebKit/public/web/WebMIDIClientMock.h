@@ -46,12 +46,12 @@ public:
     BLINK_EXPORT WebMIDIClientMock();
     virtual ~WebMIDIClientMock() { reset(); }
 
-    BLINK_EXPORT void setSysExPermission(bool);
+    BLINK_EXPORT void setSysexPermission(bool);
     BLINK_EXPORT void resetMock();
 
     // WebMIDIClient
-    virtual void requestSysExPermission(const WebMIDIPermissionRequest&) OVERRIDE;
-    virtual void cancelSysExPermissionRequest(const WebMIDIPermissionRequest&) OVERRIDE;
+    virtual void requestSysexPermission(const WebMIDIPermissionRequest&) OVERRIDE;
+    virtual void cancelSysexPermissionRequest(const WebMIDIPermissionRequest&) OVERRIDE;
 
 private:
     BLINK_EXPORT void reset();

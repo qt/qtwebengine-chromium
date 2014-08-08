@@ -17,8 +17,10 @@
 #include "media/filters/opus_audio_decoder.h"
 #include "media/filters/vpx_video_decoder.h"
 
+using ::testing::_;
 using ::testing::AnyNumber;
 using ::testing::AtMost;
+using ::testing::SaveArg;
 
 namespace media {
 
@@ -28,13 +30,13 @@ const char kNullAudioHash[] = "0.00,0.00,0.00,0.00,0.00,0.00,";
 PipelineIntegrationTestBase::PipelineIntegrationTestBase()
     : hashing_enabled_(false),
       clockless_playback_(false),
-      pipeline_(new Pipeline(message_loop_.message_loop_proxy(),
-                             new MediaLog())),
+      pipeline_(
+          new Pipeline(message_loop_.message_loop_proxy(), new MediaLog())),
       ended_(false),
       pipeline_status_(PIPELINE_OK),
-      last_video_frame_format_(VideoFrame::UNKNOWN) {
+      last_video_frame_format_(VideoFrame::UNKNOWN),
+      hardware_config_(AudioParameters(), AudioParameters()) {
   base::MD5Init(&md5_context_);
-  EXPECT_CALL(*this, OnSetOpaque(true)).Times(AnyNumber());
 }
 
 PipelineIntegrationTestBase::~PipelineIntegrationTestBase() {
@@ -102,16 +104,17 @@ void PipelineIntegrationTestBase::OnError(PipelineStatus status) {
 
 bool PipelineIntegrationTestBase::Start(const base::FilePath& file_path,
                                         PipelineStatus expected_status) {
-  EXPECT_CALL(*this, OnBufferingState(Pipeline::kHaveMetadata))
-      .Times(AtMost(1));
-  EXPECT_CALL(*this, OnBufferingState(Pipeline::kPrerollCompleted))
-      .Times(AtMost(1));
+  EXPECT_CALL(*this, OnMetadata(_)).Times(AtMost(1))
+      .WillRepeatedly(SaveArg<0>(&metadata_));
+  EXPECT_CALL(*this, OnPrerollCompleted()).Times(AtMost(1));
   pipeline_->Start(
       CreateFilterCollection(file_path, NULL),
       base::Bind(&PipelineIntegrationTestBase::OnEnded, base::Unretained(this)),
       base::Bind(&PipelineIntegrationTestBase::OnError, base::Unretained(this)),
       QuitOnStatusCB(expected_status),
-      base::Bind(&PipelineIntegrationTestBase::OnBufferingState,
+      base::Bind(&PipelineIntegrationTestBase::OnMetadata,
+                 base::Unretained(this)),
+      base::Bind(&PipelineIntegrationTestBase::OnPrerollCompleted,
                  base::Unretained(this)),
       base::Closure());
   message_loop_.Run();
@@ -135,17 +138,18 @@ bool PipelineIntegrationTestBase::Start(const base::FilePath& file_path) {
 
 bool PipelineIntegrationTestBase::Start(const base::FilePath& file_path,
                                         Decryptor* decryptor) {
-  EXPECT_CALL(*this, OnBufferingState(Pipeline::kHaveMetadata))
-      .Times(AtMost(1));
-  EXPECT_CALL(*this, OnBufferingState(Pipeline::kPrerollCompleted))
-      .Times(AtMost(1));
+  EXPECT_CALL(*this, OnMetadata(_)).Times(AtMost(1))
+      .WillRepeatedly(SaveArg<0>(&metadata_));
+  EXPECT_CALL(*this, OnPrerollCompleted()).Times(AtMost(1));
   pipeline_->Start(
       CreateFilterCollection(file_path, decryptor),
       base::Bind(&PipelineIntegrationTestBase::OnEnded, base::Unretained(this)),
       base::Bind(&PipelineIntegrationTestBase::OnError, base::Unretained(this)),
       base::Bind(&PipelineIntegrationTestBase::OnStatusCallback,
                  base::Unretained(this)),
-      base::Bind(&PipelineIntegrationTestBase::OnBufferingState,
+      base::Bind(&PipelineIntegrationTestBase::OnMetadata,
+                 base::Unretained(this)),
+      base::Bind(&PipelineIntegrationTestBase::OnPrerollCompleted,
                  base::Unretained(this)),
       base::Closure());
   message_loop_.Run();
@@ -163,7 +167,7 @@ void PipelineIntegrationTestBase::Pause() {
 bool PipelineIntegrationTestBase::Seek(base::TimeDelta seek_time) {
   ended_ = false;
 
-  EXPECT_CALL(*this, OnBufferingState(Pipeline::kPrerollCompleted));
+  EXPECT_CALL(*this, OnPrerollCompleted());
   pipeline_->Seek(seek_time, QuitOnStatusCB(PIPELINE_OK));
   message_loop_.Run();
   return (pipeline_status_ == PIPELINE_OK);
@@ -211,7 +215,8 @@ PipelineIntegrationTestBase::CreateFilterCollection(
     const base::FilePath& file_path,
     Decryptor* decryptor) {
   FileDataSource* file_data_source = new FileDataSource();
-  CHECK(file_data_source->Initialize(file_path));
+  CHECK(file_data_source->Initialize(file_path)) << "Is " << file_path.value()
+                                                 << " missing?";
   data_source_.reset(file_data_source);
 
   Demuxer::NeedKeyCB need_key_cb = base::Bind(
@@ -248,8 +253,6 @@ PipelineIntegrationTestBase::CreateFilterCollection(
                  decryptor),
       base::Bind(&PipelineIntegrationTestBase::OnVideoRendererPaint,
                  base::Unretained(this)),
-      base::Bind(&PipelineIntegrationTestBase::OnSetOpaque,
-                 base::Unretained(this)),
       false));
   collection->SetVideoRenderer(renderer.Pass());
 
@@ -261,9 +264,16 @@ PipelineIntegrationTestBase::CreateFilterCollection(
 
   ScopedVector<AudioDecoder> audio_decoders;
   audio_decoders.push_back(
-      new FFmpegAudioDecoder(message_loop_.message_loop_proxy()));
+      new FFmpegAudioDecoder(message_loop_.message_loop_proxy(), LogCB()));
   audio_decoders.push_back(
       new OpusAudioDecoder(message_loop_.message_loop_proxy()));
+
+  AudioParameters out_params(AudioParameters::AUDIO_PCM_LOW_LATENCY,
+                             CHANNEL_LAYOUT_STEREO,
+                             44100,
+                             16,
+                             512);
+  hardware_config_.UpdateOutputConfig(out_params);
 
   AudioRendererImpl* audio_renderer_impl = new AudioRendererImpl(
       message_loop_.message_loop_proxy(),
@@ -273,12 +283,10 @@ PipelineIntegrationTestBase::CreateFilterCollection(
       audio_decoders.Pass(),
       base::Bind(&PipelineIntegrationTestBase::SetDecryptor,
                  base::Unretained(this),
-                 decryptor));
-  // Disable underflow if hashing is enabled.
-  if (hashing_enabled_) {
+                 decryptor),
+      &hardware_config_);
+  if (hashing_enabled_)
     audio_sink_->StartAudioHashForTesting();
-    audio_renderer_impl->DisableUnderflowForTesting();
-  }
   scoped_ptr<AudioRenderer> audio_renderer(audio_renderer_impl);
   collection->SetAudioRenderer(audio_renderer.Pass());
 

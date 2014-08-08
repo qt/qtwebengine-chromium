@@ -36,27 +36,36 @@
 
 namespace WebCore {
 
-AnimatableStrokeDasharrayList::AnimatableStrokeDasharrayList(const Vector<SVGLength>& lengths)
+AnimatableStrokeDasharrayList::AnimatableStrokeDasharrayList(PassRefPtr<SVGLengthList> passLengths)
 {
-    for (size_t i = 0; i < lengths.size(); ++i)
-        m_values.append(AnimatableSVGLength::create(lengths[i]));
+    RefPtr<SVGLengthList> lengths = passLengths;
+    SVGLengthList::ConstIterator it = lengths->begin();
+    SVGLengthList::ConstIterator itEnd = lengths->end();
+    for (; it != itEnd; ++it)
+        m_values.append(AnimatableSVGLength::create(*it));
 }
 
-Vector<SVGLength> AnimatableStrokeDasharrayList::toSVGLengthVector() const
+PassRefPtr<SVGLengthList> AnimatableStrokeDasharrayList::toSVGLengthList() const
 {
-    Vector<SVGLength> lengths(m_values.size());
+    RefPtr<SVGLengthList> lengths = SVGLengthList::create();
     for (size_t i = 0; i < m_values.size(); ++i) {
-        lengths[i] = toAnimatableSVGLength(m_values[i].get())->toSVGLength();
-        if (lengths[i].valueInSpecifiedUnits() < 0)
-            lengths[i].setValueInSpecifiedUnits(0);
+        RefPtr<SVGLength> length = toAnimatableSVGLength(m_values[i].get())->toSVGLength()->clone();
+        if (length->valueInSpecifiedUnits() < 0)
+            length->setValueInSpecifiedUnits(0);
+        lengths->append(length);
     }
-    return lengths;
+    return lengths.release();
 }
 
-PassRefPtr<AnimatableValue> AnimatableStrokeDasharrayList::interpolateTo(const AnimatableValue* value, double fraction) const
+bool AnimatableStrokeDasharrayList::usesDefaultInterpolationWith(const AnimatableValue* value) const
 {
-    Vector<RefPtr<AnimatableValue> > from = m_values;
-    Vector<RefPtr<AnimatableValue> > to = toAnimatableStrokeDasharrayList(value)->m_values;
+    return false;
+}
+
+PassRefPtrWillBeRawPtr<AnimatableValue> AnimatableStrokeDasharrayList::interpolateTo(const AnimatableValue* value, double fraction) const
+{
+    WillBeHeapVector<RefPtrWillBeMember<AnimatableValue> > from = m_values;
+    WillBeHeapVector<RefPtrWillBeMember<AnimatableValue> > to = toAnimatableStrokeDasharrayList(value)->m_values;
 
     // The spec states that if the sum of all values is zero, this should be
     // treated like a value of 'none', which means that a solid line is drawn.
@@ -66,12 +75,7 @@ PassRefPtr<AnimatableValue> AnimatableStrokeDasharrayList::interpolateTo(const A
     if (from.isEmpty() && to.isEmpty())
         return takeConstRef(this);
     if (from.isEmpty() || to.isEmpty()) {
-        DEFINE_STATIC_REF(AnimatableSVGLength, zeroPixels, 0);
-        if (!zeroPixels) {
-            SVGLength length;
-            length.newValueSpecifiedUnits(LengthTypePX, 0, IGNORE_EXCEPTION);
-            zeroPixels = AnimatableSVGLength::create(length).leakRef();
-        }
+        DEFINE_STATIC_REF_WILL_BE_PERSISTENT(AnimatableSVGLength, zeroPixels, (AnimatableSVGLength::create(SVGLength::create())));
         if (from.isEmpty()) {
             from.append(zeroPixels);
             from.append(zeroPixels);
@@ -82,10 +86,15 @@ PassRefPtr<AnimatableValue> AnimatableStrokeDasharrayList::interpolateTo(const A
         }
     }
 
-    Vector<RefPtr<AnimatableValue> > interpolatedValues;
+    WillBeHeapVector<RefPtrWillBeMember<AnimatableValue> > interpolatedValues;
     bool success = interpolateLists(from, to, fraction, interpolatedValues);
     ASSERT_UNUSED(success, success);
-    return adoptRef(new AnimatableStrokeDasharrayList(interpolatedValues));
+    return adoptRefWillBeNoop(new AnimatableStrokeDasharrayList(interpolatedValues));
+}
+
+void AnimatableStrokeDasharrayList::trace(Visitor* visitor)
+{
+    AnimatableRepeatable::trace(visitor);
 }
 
 } // namespace WebCore

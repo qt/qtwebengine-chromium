@@ -30,9 +30,22 @@
       'win_debug_Optimization': '2',
       # Run time checks are incompatible with any level of optimizations.
       'win_debug_RuntimeChecks': '0',
+      'conditions': [
+        ['OS == "win"', {
+          # Setting the optimizations to 'speed' or to 'max' results in a lot of
+          # unresolved symbols. The only supported mode is 'size' (see
+          # crbug.com/264459).
+          'optimize' :'size',
+        }],
+      ],
     },
   },
   'variables': {
+    # Make sure asm_sources is always defined even if an arch doesn't have any
+    # asm sources (e.g. mips or x86 with forcefully disabled asm).
+    'asm_sources': [
+    ],
+
     # Allow overriding the selection of which FFmpeg binaries to copy via an
     # environment variable.  Affects the ffmpeg_binaries target.
     'conditions': [
@@ -42,19 +55,16 @@
       }, {
         'ffmpeg_config%': '<(target_arch)',
       }],
-      ['target_arch == "mipsel"', {
-        'asm_sources': [
-        ],
-      }],
-      ['OS == "win" and (MSVS_VERSION == "2013" or MSVS_VERSION == "2013e")', {
-        'os_config%': 'win-vs2013',
-      }, {
+      ['OS == "mac" or OS == "win" or OS == "openbsd"', {
+        'os_config%': '<(OS)',
+      }, {  # all other Unix OS's use the linux config
         'conditions': [
-          ['OS == "mac" or OS == "win" or OS == "openbsd"', {
-            'os_config%': '<(OS)',
-          }, {  # all other Unix OS's use the linux config
+          ['msan==1', {
+            # MemorySanitizer doesn't like assembly code.
+            'os_config%': 'linux-noasm',
+          }, {
             'os_config%': 'linux',
-          }],
+          }]
         ],
       }],
       ['chromeos == 1', {
@@ -63,8 +73,6 @@
         'ffmpeg_branding%': '<(branding)',
       }],
     ],
-
-    'ffmpeg_variant%': '<(target_arch)',
 
     'build_ffmpegsumo%': 1,
 
@@ -77,15 +85,11 @@
     'extra_header': 'chromium/ffmpeg_stub_headers.fragment',
   },
   'conditions': [
-    ['target_arch != "arm"', {
+    ['target_arch != "arm" and os_config != "linux-noasm"', {
       'targets': [
         {
           'target_name': 'ffmpeg_yasm',
           'type': 'static_library',
-          # VS2010 does not correctly incrementally link obj files generated
-          # from asm files. This flag disables UseLibraryDependencyInputs to
-          # avoid this problem.
-          'msvs_2010_disable_uldi_when_referenced': 1,
           'includes': [
             'ffmpeg_generated.gypi',
             '../yasm/yasm_compile.gypi',
@@ -135,59 +139,6 @@
         },
       ] # targets
     }], # arch != arm
-    ['OS == "win" and clang == 0 and MSVS_VERSION != "2013" and MSVS_VERSION != "2013e"', {
-      # Convert the source code from c99 to c89 if we're on Windows and not
-      # using clang, which can compile c99 directly.  Clang support is
-      # experimental and unsupported. VS2013 also supports enough of C99 to
-      # be able to avoid this conversion.
-      'variables': {
-        'converter_script': 'chromium/scripts/c99conv.py',
-        'converter_executable': 'chromium/binaries/c99conv.exe',
-        # Path to platform configuration files.
-        'platform_config_root': 'chromium/config/<(ffmpeg_branding)/<(os_config)/<(ffmpeg_config)',
-      },
-      'includes': [
-        'ffmpeg_generated.gypi',
-      ],
-      'targets': [{
-        'target_name': 'convert_ffmpeg_sources',
-        'type': 'none',
-        'sources': [
-          '<@(c_sources)',
-        ],
-        'rules': [
-          {
-            'rule_name': 'convert_c99_to_c89',
-            'extension': 'c',
-            'inputs': [
-              '<(converter_script)',
-              '<(converter_executable)',
-              # Since we don't know the dependency graph for header includes
-              # we need to list them all here to ensure a header change causes
-              # a recompilation.
-              '<(platform_config_root)/config.h',
-              '<(platform_config_root)/libavutil/avconfig.h',
-              '<@(c_headers)',
-            ],
-            # Argh!  Required so that the msvs generator will properly convert
-            # RULE_INPUT_DIRNAME to a relative path.
-            'msvs_external_rule': 1,
-            'outputs': [
-              '<(shared_generated_dir)/<(RULE_INPUT_DIRNAME)/<(RULE_INPUT_ROOT).c',
-            ],
-            'action': [
-              'python',
-              '<(converter_script)',
-              '<(RULE_INPUT_PATH)',
-              '<(shared_generated_dir)/<(RULE_INPUT_DIRNAME)/<(RULE_INPUT_ROOT).c',
-              '-I', '<(platform_config_root)',
-            ],
-            'message': 'Converting <(RULE_INPUT_PATH) from C99 to C89.',
-            'process_outputs_as_sources': 1,
-          },
-        ],
-      }],
-    }],
     ['build_ffmpegsumo != 0', {
       'includes': [
         'ffmpeg_generated.gypi',
@@ -201,6 +152,7 @@
           'target_name': 'ffmpegsumo',
           'type': 'loadable_module',
           'sources': [
+            '<@(c_sources)',
             '<(platform_config_root)/config.h',
             '<(platform_config_root)/libavutil/avconfig.h',
           ],
@@ -213,21 +165,20 @@
             '_POSIX_C_SOURCE=200112',
             '_XOPEN_SOURCE=600',
             'PIC',
+            # Disable deprecated features which generate spammy warnings.
+            'FF_API_PIX_FMT_DESC=0',
+            'FF_API_OLD_DECODE_AUDIO=0',
+            'FF_API_DESTRUCT_PACKET=0',
+            'FF_API_GET_BUFFER=0',
           ],
           'cflags': [
             '-fPIC',
             '-fomit-frame-pointer',
+            # ffmpeg uses its own deprecated functions.
+            '-Wno-deprecated-declarations',
           ],
           'conditions': [
-            ['OS != "win" or clang == 1 or MSVS_VERSION == "2013" or MSVS_VERSION == "2013e"', {
-              # If we're not doing C99 conversion, add the normal source code.
-              'sources': ['<@(c_sources)'],
-            }, {
-              # Otherwise, compile the converted source code.
-              'dependencies': ['convert_ffmpeg_sources'],
-              'sources': ['<@(converter_outputs)'],
-            }],
-            ['target_arch != "arm" and target_arch != "mipsel"', {
+            ['target_arch != "arm" and target_arch != "mipsel" and os_config != "linux-noasm"', {
               'dependencies': [
                 'ffmpeg_yasm',
               ],
@@ -235,6 +186,7 @@
             ['clang == 1', {
               'xcode_settings': {
                 'WARNING_CFLAGS': [
+                  '-Wno-absolute-value',
                   # ffmpeg uses its own deprecated functions.
                   '-Wno-deprecated-declarations',
                   # ffmpeg doesn't care about pointer constness.
@@ -248,7 +200,7 @@
                 ],
               },
               'cflags': [
-                '-Wno-deprecated-declarations',
+                '-Wno-absolute-value',
                 '-Wno-incompatible-pointer-types',
                 '-Wno-logical-op-parentheses',
                 '-Wno-parentheses',
@@ -352,9 +304,6 @@
                 '-fno-math-errno',
                 '-fno-signed-zeros',
                 '-fno-tree-vectorize',
-                '-fomit-frame-pointer',
-                # Don't warn about libavformat using its own deprecated APIs.
-                '-Wno-deprecated-declarations',
               ],
               'cflags!': [
                 # Ensure the symbols are exported.
@@ -459,11 +408,6 @@
                 }],
               ],
               'msvs_settings': {
-                # This magical incantation is necessary because VC++ will compile
-                # object files to same directory... even if they have the same name!
-                'VCCLCompilerTool': {
-                  'ObjectFile': '$(IntDir)/%(RelativeDir)/',
-                },
                 # Ignore warnings about a local symbol being inefficiently imported,
                 # upstream is working on a fix.
                 'VCLinkerTool': {
@@ -488,8 +432,7 @@
                              '-m', 'ffmpegsumo.dll',
                              '<@(_inputs)',
                   ],
-                  'message': 'Generating FFmpeg export definitions.',
-                  'msvs_cygwin_shell': 1,
+                  'message': 'Generating FFmpeg export definitions',
                 },
               ],
             }],
@@ -571,7 +514,7 @@
                          '-t', '<(outfile_type)',
                          '<@(RULE_INPUT_PATH)',
               ],
-              'message': 'Generating FFmpeg import libraries.',
+              'message': 'Generating FFmpeg import libraries',
             },
           ],
         }, {  # else OS != "win", use POSIX stub generator
@@ -631,7 +574,7 @@
                          '<@(_inputs)',
               ],
               'process_outputs_as_sources': 1,
-              'message': 'Generating FFmpeg stubs for dynamic loading.',
+              'message': 'Generating FFmpeg stubs for dynamic loading',
             },
           ],
           'conditions': [

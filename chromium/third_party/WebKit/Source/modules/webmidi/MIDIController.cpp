@@ -31,7 +31,7 @@
 #include "config.h"
 #include "modules/webmidi/MIDIController.h"
 
-#include "modules/webmidi/MIDIAccess.h"
+#include "modules/webmidi/MIDIAccessInitializer.h"
 #include "modules/webmidi/MIDIClient.h"
 
 namespace WebCore {
@@ -41,34 +41,34 @@ const char* MIDIController::supplementName()
     return "MIDIController";
 }
 
-MIDIController::MIDIController(MIDIClient* client)
+MIDIController::MIDIController(PassOwnPtr<MIDIClient> client)
     : m_client(client)
 {
-    ASSERT(client);
+    ASSERT(m_client);
 }
 
 MIDIController::~MIDIController()
 {
 }
 
-PassOwnPtr<MIDIController> MIDIController::create(MIDIClient* client)
+PassOwnPtrWillBeRawPtr<MIDIController> MIDIController::create(PassOwnPtr<MIDIClient> client)
 {
-    return adoptPtr(new MIDIController(client));
+    return adoptPtrWillBeNoop(new MIDIController(client));
 }
 
-void MIDIController::requestSysExPermission(PassRefPtr<MIDIAccess> access)
+void MIDIController::requestSysexPermission(MIDIAccessInitializer* initializer)
 {
-    m_client->requestSysExPermission(access);
+    m_client->requestSysexPermission(initializer);
 }
 
-void MIDIController::cancelSysExPermissionRequest(MIDIAccess* access)
+void MIDIController::cancelSysexPermissionRequest(MIDIAccessInitializer* initializer)
 {
-    m_client->cancelSysExPermissionRequest(access);
+    m_client->cancelSysexPermissionRequest(initializer);
 }
 
-void provideMIDITo(Page* page, MIDIClient* client)
+void provideMIDITo(LocalFrame& frame, PassOwnPtr<MIDIClient> client)
 {
-    MIDIController::provideTo(page, MIDIController::supplementName(), MIDIController::create(client));
+    MIDIController::provideTo(frame, MIDIController::supplementName(), MIDIController::create(client));
 }
 
 } // namespace WebCore

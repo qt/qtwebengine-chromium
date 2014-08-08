@@ -6,6 +6,7 @@
 
 #include "base/logging.h"
 #include "net/quic/crypto/crypto_protocol.h"
+#include "net/quic/quic_server_id.h"
 #include "net/tools/quic/quic_spdy_client_stream.h"
 
 using std::string;
@@ -14,30 +15,38 @@ namespace net {
 namespace tools {
 
 QuicClientSession::QuicClientSession(
-    const string& server_hostname,
+    const QuicServerId& server_id,
     const QuicConfig& config,
     QuicConnection* connection,
     QuicCryptoClientConfig* crypto_config)
-    : QuicSession(connection, config),
-      crypto_stream_(server_hostname, this, crypto_config) {
+    : QuicClientSessionBase(connection, config),
+      crypto_stream_(server_id, this, NULL, crypto_config) {
 }
 
 QuicClientSession::~QuicClientSession() {
 }
 
+void QuicClientSession::OnProofValid(
+    const QuicCryptoClientConfig::CachedState& /*cached*/) {
+}
+
+void QuicClientSession::OnProofVerifyDetailsAvailable(
+    const ProofVerifyDetails& /*verify_details*/) {
+}
+
 QuicSpdyClientStream* QuicClientSession::CreateOutgoingDataStream() {
   if (!crypto_stream_.encryption_established()) {
-    DLOG(INFO) << "Encryption not active so no outgoing stream created.";
+    DVLOG(1) << "Encryption not active so no outgoing stream created.";
     return NULL;
   }
   if (GetNumOpenStreams() >= get_max_open_streams()) {
-    DLOG(INFO) << "Failed to create a new outgoing stream. "
-               << "Already " << GetNumOpenStreams() << " open.";
+    DVLOG(1) << "Failed to create a new outgoing stream. "
+             << "Already " << GetNumOpenStreams() << " open.";
     return NULL;
   }
   if (goaway_received()) {
-    DLOG(INFO) << "Failed to create a new outgoing stream. "
-               << "Already received goaway.";
+    DVLOG(1) << "Failed to create a new outgoing stream. "
+             << "Already received goaway.";
     return NULL;
   }
   QuicSpdyClientStream* stream

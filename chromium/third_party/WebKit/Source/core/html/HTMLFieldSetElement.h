@@ -30,16 +30,17 @@ namespace WebCore {
 
 class FormAssociatedElement;
 class HTMLCollection;
+class HTMLFormControlsCollection;
 
 class HTMLFieldSetElement FINAL : public HTMLFormControlElement {
 public:
-    static PassRefPtr<HTMLFieldSetElement> create(Document&, HTMLFormElement*);
+    static PassRefPtrWillBeRawPtr<HTMLFieldSetElement> create(Document&, HTMLFormElement*);
+    virtual void trace(Visitor*) OVERRIDE;
     HTMLLegendElement* legend() const;
 
-    PassRefPtr<HTMLCollection> elements();
+    PassRefPtrWillBeRawPtr<HTMLFormControlsCollection> elements();
 
-    const Vector<FormAssociatedElement*>& associatedElements() const;
-    unsigned length() const;
+    const FormAssociatedElement::List& associatedElements() const;
 
 protected:
     virtual void disabledAttributeChanged() OVERRIDE;
@@ -47,23 +48,21 @@ protected:
 private:
     HTMLFieldSetElement(Document&, HTMLFormElement*);
 
-    virtual bool isEnumeratable() const { return true; }
-    virtual bool supportsFocus() const;
-    virtual RenderObject* createRenderer(RenderStyle*);
-    virtual const AtomicString& formControlType() const;
-    virtual bool recalcWillValidate() const { return false; }
+    virtual bool isEnumeratable() const OVERRIDE { return true; }
+    virtual bool supportsFocus() const OVERRIDE;
+    virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
+    virtual const AtomicString& formControlType() const OVERRIDE;
+    virtual bool recalcWillValidate() const OVERRIDE { return false; }
     virtual void childrenChanged(bool changedByParser, Node* beforeChange, Node* afterChange, int childCountDelta) OVERRIDE;
     virtual bool areAuthorShadowsAllowed() const OVERRIDE { return false; }
 
     static void invalidateDisabledStateUnder(Element&);
     void refreshElementsIfNeeded() const;
 
-    mutable Vector<FormAssociatedElement*> m_associatedElements;
+    mutable FormAssociatedElement::List m_associatedElements;
     // When dom tree is modified, we have to refresh the m_associatedElements array.
     mutable uint64_t m_documentVersion;
 };
-
-DEFINE_NODE_TYPE_CASTS(HTMLFieldSetElement, hasTagName(HTMLNames::fieldsetTag));
 
 } // namespace
 

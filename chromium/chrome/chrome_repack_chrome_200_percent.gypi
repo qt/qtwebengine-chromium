@@ -5,10 +5,12 @@
   'action_name': 'repack_chrome_resources_200_percent',
   'variables': {
     'pak_inputs': [
+      '<(SHARED_INTERMEDIATE_DIR)/components/component_resources_200_percent.pak',
+      '<(SHARED_INTERMEDIATE_DIR)/ui/ui_resources/ui_resources_200_percent.pak',
       '<(grit_out_dir)/renderer_resources_200_percent.pak',
       '<(grit_out_dir)/theme_resources_200_percent.pak',
-      '<(SHARED_INTERMEDIATE_DIR)/ui/ui_resources/ui_resources_200_percent.pak',
     ],
+    'pak_output': '<(SHARED_INTERMEDIATE_DIR)/repack/chrome_200_percent.pak',
     'conditions': [
       ['OS != "ios"', {
         'pak_inputs': [
@@ -17,17 +19,10 @@
       }],
       ['use_ash==1', {
         'pak_inputs': [
-          '<(SHARED_INTERMEDIATE_DIR)/ash/ash_resources/ash_resources_200_percent.pak',
+          '<(SHARED_INTERMEDIATE_DIR)/ash/resources/ash_resources_200_percent.pak',
         ],
       }],
     ],
   },
-  'inputs': [
-    '<(repack_path)',
-    '<@(pak_inputs)',
-  ],
-  'outputs': [
-    '<(SHARED_INTERMEDIATE_DIR)/repack/chrome_200_percent.pak',
-  ],
-  'action': ['python', '<(repack_path)', '<@(_outputs)', '<@(pak_inputs)'],
+  'includes': [ '../build/repack_action.gypi' ],
 }

@@ -85,13 +85,14 @@
 
 .audit-launcher-view button:active {
     background-color: rgb(215, 215, 215);
-    background-image: -webkit-gradient(linear, left top, left bottom, from(rgb(194, 194, 194)), to(rgb(239, 239, 239)));
+    background-image: linear-gradient(to bottom, rgb(194, 194, 194), rgb(239, 239, 239));
 }
 
 .panel-enabler-view.audit-launcher-view label {
     padding: 0 0 5px 0;
     margin: 0;
-    -webkit-flex: none;
+    display: flex;
+    flex-shrink: 0;
 }
 
 .panel-enabler-view.audit-launcher-view label.disabled {
@@ -100,6 +101,8 @@
 
 .audit-launcher-view input[type="checkbox"] {
     margin-left: 0;
+    height: 14px;
+    width: 14px;
 }
 
 .audit-result-view {
@@ -120,12 +123,13 @@
 .audit-result-view .severity-warning,
 .audit-result-view .severity-info {
     background-image: url(Images/statusbarButtonGlyphs.png);
-    background-size: 320px 120px;
+    background-size: 320px 144px;
     display: inline-block;
     width: 10px;
+    margin-right: -10px;
     height: 10px;
-    float: left;
-    margin-left: -28px;
+    position: relative;
+    left: -28px;
     margin-top: 3px;
 }
 
@@ -133,7 +137,7 @@
 .audit-result-view .severity-severe,
 .audit-result-view .severity-warning,
 .audit-result-view .severity-info {
-    background-image: url(Images/statusbarButtonGlyphs2x.png);
+    background-image: url(Images/statusbarButtonGlyphs_2x.png);
 }
 } /* media */
 
@@ -152,7 +156,7 @@
 .audit-result-tree li.parent::before {
     -webkit-user-select: none;
     background-image: url(Images/statusbarButtonGlyphs.png);
-    background-size: 320px 120px;
+    background-size: 320px 144px;
     opacity: 0.5;
     float: left;
     width: 8px;
@@ -167,7 +171,7 @@
 
 @media (-webkit-min-device-pixel-ratio: 1.5) {
 .audit-result-tree li.parent::before {
-    background-image: url(Images/statusbarButtonGlyphs2x.png);
+    background-image: url(Images/statusbarButtonGlyphs_2x.png);
 }
 } /* media */
 

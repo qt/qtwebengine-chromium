@@ -22,10 +22,28 @@ namespace {
 // conflict with other groups that could be in the dialog content.
 const int kButtonGroup = 6666;
 
+#if defined(OS_WIN) || defined(OS_CHROMEOS)
+const bool kIsOkButtonOnLeftSide = true;
+#else
+const bool kIsOkButtonOnLeftSide = false;
+#endif
+
 // Returns true if the given view should be shown (i.e. exists and is
 // visible).
 bool ShouldShow(View* view) {
   return view && view->visible();
+}
+
+// Do the layout for a button.
+void LayoutButton(LabelButton* button, gfx::Rect* row_bounds) {
+  if (!button)
+    return;
+
+  const gfx::Size size = button->GetPreferredSize();
+  row_bounds->set_width(row_bounds->width() - size.width());
+  button->SetBounds(row_bounds->right(), row_bounds->y(),
+                    size.width(), row_bounds->height());
+  row_bounds->set_width(row_bounds->width() - kRelatedButtonHSpacing);
 }
 
 }  // namespace
@@ -157,7 +175,7 @@ void DialogClientView::OnDidChangeFocus(View* focused_before,
 ////////////////////////////////////////////////////////////////////////////////
 // DialogClientView, View overrides:
 
-gfx::Size DialogClientView::GetPreferredSize() {
+gfx::Size DialogClientView::GetPreferredSize() const {
   // Initialize the size to fit the buttons and extra view row.
   gfx::Size size(
       (ok_button_ ? ok_button_->GetPreferredSize().width() : 0) +
@@ -213,19 +231,12 @@ void DialogClientView::Layout() {
     const int height = GetButtonsAndExtraViewRowHeight();
     gfx::Rect row_bounds(bounds.x(), bounds.bottom() - height,
                          bounds.width(), height);
-    if (cancel_button_) {
-      const gfx::Size size = cancel_button_->GetPreferredSize();
-      row_bounds.set_width(row_bounds.width() - size.width());
-      cancel_button_->SetBounds(row_bounds.right(), row_bounds.y(),
-                                size.width(), height);
-      row_bounds.set_width(row_bounds.width() - kRelatedButtonHSpacing);
-    }
-    if (ok_button_) {
-      const gfx::Size size = ok_button_->GetPreferredSize();
-      row_bounds.set_width(row_bounds.width() - size.width());
-      ok_button_->SetBounds(row_bounds.right(), row_bounds.y(),
-                            size.width(), height);
-      row_bounds.set_width(row_bounds.width() - kRelatedButtonHSpacing);
+    if (kIsOkButtonOnLeftSide) {
+      LayoutButton(cancel_button_, &row_bounds);
+      LayoutButton(ok_button_, &row_bounds);
+    } else {
+      LayoutButton(ok_button_, &row_bounds);
+      LayoutButton(cancel_button_, &row_bounds);
     }
     if (extra_view_) {
       row_bounds.set_width(std::min(row_bounds.width(),
@@ -254,13 +265,6 @@ void DialogClientView::ViewHierarchyChanged(
     const ViewHierarchyChangedDetails& details) {
   ClientView::ViewHierarchyChanged(details);
   if (details.is_add && details.child == this) {
-    // The old dialog style needs an explicit background color, while the new
-    // dialog style simply inherits the bubble's frame view color.
-    const DialogDelegate* dialog = GetDialogDelegate();
-    if (dialog && !dialog->UseNewStyleForThisDialog())
-      set_background(views::Background::CreateSolidBackground(GetNativeTheme()->
-          GetSystemColor(ui::NativeTheme::kColorId_DialogBackground)));
-
     focus_manager_ = GetFocusManager();
     if (focus_manager_)
       GetFocusManager()->AddFocusChangeListener(this);
@@ -290,6 +294,17 @@ void DialogClientView::NativeViewHierarchyChanged() {
     focus_manager_ = focus_manager;
     if (focus_manager_)
       focus_manager_->AddFocusChangeListener(this);
+  }
+}
+
+void DialogClientView::OnNativeThemeChanged(const ui::NativeTheme* theme) {
+  // The old dialog style needs an explicit background color, while the new
+  // dialog style simply inherits the bubble's frame view color.
+  const DialogDelegate* dialog = GetDialogDelegate();
+
+  if (dialog && !dialog->UseNewStyleForThisDialog()) {
+    set_background(views::Background::CreateSolidBackground(GetNativeTheme()->
+        GetSystemColor(ui::NativeTheme::kColorId_DialogBackground)));
   }
 }
 
@@ -359,7 +374,7 @@ void DialogClientView::ChildVisibilityChanged(View* child) {
 // DialogClientView, private:
 
 LabelButton* DialogClientView::CreateDialogButton(ui::DialogButton type) {
-  const string16 title = GetDialogDelegate()->GetDialogButtonLabel(type);
+  const base::string16 title = GetDialogDelegate()->GetDialogButtonLabel(type);
   LabelButton* button = NULL;
   if (GetDialogDelegate()->UseNewStyleForThisDialog() &&
       GetDialogDelegate()->GetDefaultDialogButton() == type &&
@@ -367,7 +382,7 @@ LabelButton* DialogClientView::CreateDialogButton(ui::DialogButton type) {
     button = new BlueButton(this, title);
   } else {
     button = new LabelButton(this, title);
-    button->SetStyle(Button::STYLE_NATIVE_TEXTBUTTON);
+    button->SetStyle(Button::STYLE_BUTTON);
   }
   button->SetFocusable(true);
 

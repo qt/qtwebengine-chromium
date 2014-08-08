@@ -27,36 +27,50 @@
 #define MediaKeySession_h
 
 #include "bindings/v8/ScriptWrappable.h"
-#include "core/dom/ContextLifecycleObserver.h"
-#include "core/events/EventTarget.h"
+#include "core/dom/ActiveDOMObject.h"
+#include "modules/EventTargetModules.h"
 #include "platform/Timer.h"
-#include "platform/drm/ContentDecryptionModuleSession.h"
+#include "platform/heap/Handle.h"
+#include "public/platform/WebContentDecryptionModuleSession.h"
 #include "wtf/Deque.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/Uint8Array.h"
+#include "wtf/WeakPtr.h"
 #include "wtf/text/WTFString.h"
+
+namespace blink {
+class WebContentDecryptionModule;
+}
 
 namespace WebCore {
 
-class ContentDecryptionModule;
-class ContentDecryptionModuleSession;
 class ExceptionState;
 class GenericEventQueue;
 class MediaKeyError;
 class MediaKeys;
 
-// References are held by JS and MediaKeys.
-// Because this object controls the lifetime of the ContentDecryptionModuleSession,
-// it may outlive any references to it as long as the MediaKeys object is alive.
-// The ContentDecryptionModuleSession has the same lifetime as this object.
-class MediaKeySession
-    : public RefCounted<MediaKeySession>, public ScriptWrappable, public EventTargetWithInlineData, public ContextLifecycleObserver
-    , private ContentDecryptionModuleSessionClient {
-    REFCOUNTED_EVENT_TARGET(MediaKeySession);
+// References are held by JS only. However, even if all JS references are
+// dropped, it won't be garbage collected until close event received or
+// MediaKeys goes away (as determined by the validity of a WeakPtr). This allows
+// the CDM to continue to fire events for this session, as long as the session
+// is open.
+//
+// WeakPtr<MediaKeys> is used instead of having MediaKeys and MediaKeySession
+// keep references to each other, and then having to inform the other object
+// when it gets destroyed.
+//
+// Because this object controls the lifetime of the WebContentDecryptionModuleSession,
+// it may outlive any JavaScript references as long as the MediaKeys object is alive.
+// The WebContentDecryptionModuleSession has the same lifetime as this object.
+class MediaKeySession FINAL
+    : public RefCountedGarbageCollectedWillBeGarbageCollectedFinalized<MediaKeySession>, public ActiveDOMObject, public ScriptWrappable, public EventTargetWithInlineData
+    , private blink::WebContentDecryptionModuleSession::Client {
+    DEFINE_EVENT_TARGET_REFCOUNTING_WILL_BE_REMOVED(RefCountedGarbageCollected<MediaKeySession>);
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(MediaKeySession);
 public:
-    static PassRefPtr<MediaKeySession> create(ExecutionContext*, ContentDecryptionModule*, MediaKeys*);
-    ~MediaKeySession();
+    static MediaKeySession* create(ExecutionContext*, blink::WebContentDecryptionModule*, MediaKeys*);
+    virtual ~MediaKeySession();
 
     const String& keySystem() const { return m_keySystem; }
     String sessionId() const;
@@ -64,46 +78,63 @@ public:
     void setError(MediaKeyError*);
     MediaKeyError* error() { return m_error.get(); }
 
-    void generateKeyRequest(const String& mimeType, Uint8Array* initData);
-    void update(Uint8Array* key, ExceptionState&);
-    void close();
+    void initializeNewSession(const String& mimeType, const Uint8Array& initData);
+    void update(Uint8Array* response, ExceptionState&);
+    void release(ExceptionState&);
 
-    void enqueueEvent(PassRefPtr<Event>);
+    void enqueueEvent(PassRefPtrWillBeRawPtr<Event>);
 
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(webkitkeyadded);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(webkitkeyerror);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(webkitkeymessage);
-
+    // EventTarget
     virtual const AtomicString& interfaceName() const OVERRIDE;
     virtual ExecutionContext* executionContext() const OVERRIDE;
 
-private:
-    MediaKeySession(ExecutionContext*, ContentDecryptionModule*, MediaKeys*);
-    void keyRequestTimerFired(Timer<MediaKeySession>*);
-    void addKeyTimerFired(Timer<MediaKeySession>*);
+    // ActiveDOMObject
+    virtual bool hasPendingActivity() const OVERRIDE;
+    virtual void stop() OVERRIDE;
 
-    // ContentDecryptionModuleSessionClient
-    virtual void keyAdded() OVERRIDE;
-    virtual void keyError(MediaKeyErrorCode, unsigned long systemCode) OVERRIDE;
-    virtual void keyMessage(const unsigned char* message, size_t messageLength, const KURL& destinationURL) OVERRIDE;
+    virtual void trace(Visitor*) OVERRIDE;
+
+private:
+    // A struct holding the pending action.
+    struct PendingAction {
+        enum Type {
+            Update,
+            Release
+        };
+        const Type type;
+        const RefPtr<Uint8Array> data;
+
+        static PassOwnPtr<PendingAction> CreatePendingUpdate(PassRefPtr<Uint8Array> data);
+        static PassOwnPtr<PendingAction> CreatePendingRelease();
+        ~PendingAction();
+
+    private:
+        PendingAction(Type, PassRefPtr<Uint8Array> data);
+    };
+
+    MediaKeySession(ExecutionContext*, blink::WebContentDecryptionModule*, MediaKeys*);
+    void actionTimerFired(Timer<MediaKeySession>*);
+
+    // blink::WebContentDecryptionModuleSession::Client
+    virtual void message(const unsigned char* message, size_t messageLength, const blink::WebURL& destinationURL) OVERRIDE;
+    virtual void ready() OVERRIDE;
+    virtual void close() OVERRIDE;
+    virtual void error(MediaKeyErrorCode, unsigned long systemCode) OVERRIDE;
+    virtual void error(blink::WebContentDecryptionModuleException, unsigned long systemCode, const blink::WebString& errorMessage) OVERRIDE;
 
     String m_keySystem;
     RefPtr<MediaKeyError> m_error;
-    OwnPtr<GenericEventQueue> m_asyncEventQueue;
-    OwnPtr<ContentDecryptionModuleSession> m_session;
-    // Used to remove the reference from the parent MediaKeys when close()'d.
-    MediaKeys* m_keys;
+    OwnPtrWillBeMember<GenericEventQueue> m_asyncEventQueue;
+    OwnPtr<blink::WebContentDecryptionModuleSession> m_session;
 
-    struct PendingKeyRequest {
-        PendingKeyRequest(const String& mimeType, Uint8Array* initData) : mimeType(mimeType), initData(initData) { }
-        String mimeType;
-        RefPtr<Uint8Array> initData;
-    };
-    Deque<PendingKeyRequest> m_pendingKeyRequests;
-    Timer<MediaKeySession> m_keyRequestTimer;
+    // Used to determine if MediaKeys is still active.
+    WeakMember<MediaKeys> m_keys;
 
-    Deque<RefPtr<Uint8Array> > m_pendingKeys;
-    Timer<MediaKeySession> m_addKeyTimer;
+    // Is the CDM finished with this session?
+    bool m_isClosed;
+
+    Deque<OwnPtr<PendingAction> > m_pendingActions;
+    Timer<MediaKeySession> m_actionTimer;
 };
 
 }

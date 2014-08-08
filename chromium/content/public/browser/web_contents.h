@@ -18,23 +18,24 @@
 #include "content/public/browser/page_navigator.h"
 #include "content/public/browser/save_page_type.h"
 #include "content/public/browser/web_ui.h"
+#include "content/public/common/stop_find_action.h"
 #include "ipc/ipc_sender.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/base/window_open_disposition.h"
 #include "ui/gfx/native_widget_types.h"
-#include "ui/gfx/size.h"
+#include "ui/gfx/rect.h"
 
 #if defined(OS_ANDROID)
 #include "base/android/scoped_java_ref.h"
 #endif
 
 namespace base {
+class DictionaryValue;
 class TimeTicks;
 }
 
-namespace gfx {
-class Rect;
-class Size;
+namespace blink {
+struct WebFindOptions;
 }
 
 namespace net {
@@ -52,7 +53,8 @@ class RenderViewHost;
 class RenderWidgetHostView;
 class SiteInstance;
 class WebContentsDelegate;
-class WebContentsView;
+struct CustomContextMenuContext;
+struct DropData;
 struct RendererPreferences;
 
 // WebContents is the core class in content/. A WebContents renders web content
@@ -62,7 +64,7 @@ struct RendererPreferences;
 //   scoped_ptr<content::WebContents> web_contents(
 //       content::WebContents::Create(
 //           content::WebContents::CreateParams(browser_context)));
-//   gfx::NativeView view = web_contents->GetView()->GetNativeView();
+//   gfx::NativeView view = web_contents->GetNativeView();
 //   // |view| is an HWND, NSView*, GtkWidget*, etc.; insert it into the view
 //   // hierarchy wherever it needs to go.
 //
@@ -81,6 +83,7 @@ class WebContents : public PageNavigator,
  public:
   struct CONTENT_EXPORT CreateParams {
     explicit CreateParams(BrowserContext* context);
+    ~CreateParams();
     CreateParams(BrowserContext* context, SiteInstance* site);
 
     BrowserContext* browser_context;
@@ -90,7 +93,13 @@ class WebContents : public PageNavigator,
     // privileged process.
     SiteInstance* site_instance;
 
+    // The opener WebContents is the WebContents that initiated this request,
+    // if any.
     WebContents* opener;
+
+    // If the opener is suppressed, then the new WebContents doesn't hold a
+    // reference to its opener.
+    bool opener_suppressed;
     int routing_id;
     int main_frame_routing_id;
 
@@ -99,6 +108,14 @@ class WebContents : public PageNavigator,
 
     // True if the contents should be initially hidden.
     bool initially_hidden;
+
+    // If this instance ID is non-zero then it indicates that this WebContents
+    // should behave as a guest.
+    int guest_instance_id;
+
+    // TODO(fsamuel): This is temporary. Remove this once all guests are created
+    // from the content embedder.
+    scoped_ptr<base::DictionaryValue> guest_extra_params;
 
     // Used to specify the location context which display the new view should
     // belong. This can be NULL if not needed.
@@ -126,6 +143,8 @@ class WebContents : public PageNavigator,
   // render view host's delegate isn't a WebContents.
   CONTENT_EXPORT static WebContents* FromRenderViewHost(
       const RenderViewHost* rvh);
+
+  CONTENT_EXPORT static WebContents* FromRenderFrameHost(RenderFrameHost* rfh);
 
   virtual ~WebContents() {}
 
@@ -156,7 +175,7 @@ class WebContents : public PageNavigator,
   virtual const GURL& GetVisibleURL() const = 0;
 
   // Gets the last committed URL. It represents the current page that is
-  // displayed in  this WebContents. It represents the current security
+  // displayed in this WebContents. It represents the current security
   // context.
   virtual const GURL& GetLastCommittedURL() const = 0;
 
@@ -167,29 +186,19 @@ class WebContents : public PageNavigator,
   // Returns the main frame for the currently active view.
   virtual RenderFrameHost* GetMainFrame() = 0;
 
+  // Returns the focused frame for the currently active view.
+  virtual RenderFrameHost* GetFocusedFrame() = 0;
+
+  // Calls |on_frame| for each frame in the currently active view.
+  virtual void ForEachFrame(
+      const base::Callback<void(RenderFrameHost*)>& on_frame) = 0;
+
+  // Sends the given IPC to all frames in the currently active view. This is a
+  // convenience method instead of calling ForEach.
+  virtual void SendToAllFrames(IPC::Message* message) = 0;
+
   // Gets the current RenderViewHost for this tab.
   virtual RenderViewHost* GetRenderViewHost() const = 0;
-
-  typedef base::Callback<void(RenderViewHost* /* render_view_host */,
-                              int /* x */,
-                              int /* y */)> GetRenderViewHostCallback;
-  // Gets the RenderViewHost at coordinates (|x|, |y|) for this WebContents via
-  // |callback|.
-  // This can be different than the current RenderViewHost if there is a
-  // BrowserPlugin at the specified position.
-  virtual void GetRenderViewHostAtPosition(
-      int x,
-      int y,
-      const GetRenderViewHostCallback& callback) = 0;
-
-  // Returns the WebContents embedding this WebContents, if any.
-  // If this is a top-level WebContents then it returns NULL.
-  virtual WebContents* GetEmbedderWebContents() const = 0;
-
-  // Gets the instance ID of the current WebContents if it is embedded
-  // within a BrowserPlugin. The instance ID of a WebContents uniquely
-  // identifies it within its embedder WebContents.
-  virtual int GetEmbeddedInstanceID() const = 0;
 
   // Gets the current RenderViewHost's routing id. Returns
   // MSG_ROUTING_NONE when there is no RenderViewHost.
@@ -202,9 +211,6 @@ class WebContents : public PageNavigator,
   // Returns the currently active fullscreen widget. If there is none, returns
   // NULL.
   virtual RenderWidgetHostView* GetFullscreenRenderWidgetHostView() const = 0;
-
-  // The WebContentsView will never change and is guaranteed non-NULL.
-  virtual WebContentsView* GetView() const = 0;
 
   // Create a WebUI page for the given url. In most cases, this doesn't need to
   // be called by embedders since content will create its own WebUI objects as
@@ -220,7 +226,7 @@ class WebContents : public PageNavigator,
   virtual void SetUserAgentOverride(const std::string& override) = 0;
   virtual const std::string& GetUserAgentOverride() const = 0;
 
-#if defined(OS_WIN) && defined(USE_AURA)
+#if defined(OS_WIN)
   virtual void SetParentNativeViewAccessible(
       gfx::NativeViewAccessible accessible_parent) = 0;
 #endif
@@ -249,25 +255,30 @@ class WebContents : public PageNavigator,
   // returns the current SiteInstance.
   virtual SiteInstance* GetPendingSiteInstance() const = 0;
 
-  // Return whether this WebContents is loading a resource.
+  // Returns whether this WebContents is loading a resource.
   virtual bool IsLoading() const = 0;
+
+  // Returns whether this WebContents is loading and and the load is to a
+  // different top-level document (rather than being a navigation within the
+  // same document). This being true implies that IsLoading() is also true.
+  virtual bool IsLoadingToDifferentDocument() const = 0;
 
   // Returns whether this WebContents is waiting for a first-response for the
   // main resource of the page.
   virtual bool IsWaitingForResponse() const = 0;
 
-  // Return the current load state and the URL associated with it.
+  // Returns the current load state and the URL associated with it.
   virtual const net::LoadStateWithParam& GetLoadState() const = 0;
   virtual const base::string16& GetLoadStateHost() const = 0;
 
-  // Return the upload progress.
+  // Returns the upload progress.
   virtual uint64 GetUploadSize() const = 0;
   virtual uint64 GetUploadPosition() const = 0;
 
   // Returns a set of the site URLs currently committed in this tab.
   virtual std::set<GURL> GetSitesInTab() const = 0;
 
-  // Return the character encoding of the page.
+  // Returns the character encoding of the page.
   virtual const std::string& GetEncoding() const = 0;
 
   // True if this is a secure page which displayed insecure content.
@@ -277,8 +288,11 @@ class WebContents : public PageNavigator,
 
   // Indicates whether the WebContents is being captured (e.g., for screenshots
   // or mirroring).  Increment calls must be balanced with an equivalent number
-  // of decrement calls.
-  virtual void IncrementCapturerCount() = 0;
+  // of decrement calls.  |capture_size| specifies the capturer's video
+  // resolution, but can be empty to mean "unspecified."  The first screen
+  // capturer that provides a non-empty |capture_size| will override the value
+  // returned by GetPreferredSize() until all captures have ended.
+  virtual void IncrementCapturerCount(const gfx::Size& capture_size) = 0;
   virtual void DecrementCapturerCount() = 0;
   virtual int GetCapturerCount() const = 0;
 
@@ -296,8 +310,9 @@ class WebContents : public PageNavigator,
   // change. See InvalidateType enum.
   virtual void NotifyNavigationStateChanged(unsigned changed_flags) = 0;
 
-  // Get the last time that the WebContents was made visible with WasShown()
-  virtual base::TimeTicks GetLastSelectedTime() const = 0;
+  // Get the last time that the WebContents was made active (either when it was
+  // created or shown with WasShown()).
+  virtual base::TimeTicks GetLastActiveTime() const = 0;
 
   // Invoked when the WebContents becomes shown/hidden.
   virtual void WasShown() = 0;
@@ -309,6 +324,17 @@ class WebContents : public PageNavigator,
   // returns false.
   virtual bool NeedToFireBeforeUnload() = 0;
 
+  // Runs the beforeunload handler for the main frame. See also ClosePage and
+  // SwapOut in RenderViewHost, which run the unload handler.
+  //
+  // |for_cross_site_transition| indicates whether this call is for the current
+  // frame during a cross-process navigation. False means we're closing the
+  // entire tab.
+  //
+  // TODO(creis): We should run the beforeunload handler for every frame that
+  // has one.
+  virtual void DispatchBeforeUnload(bool for_cross_site_transition) = 0;
+
   // Commands ------------------------------------------------------------------
 
   // Stop any pending navigation.
@@ -318,7 +344,74 @@ class WebContents : public PageNavigator,
   // heap-allocated pointer is owned by the caller.
   virtual WebContents* Clone() = 0;
 
+  // Reloads the focused frame.
+  virtual void ReloadFocusedFrame(bool ignore_cache) = 0;
+
+  // Editing commands ----------------------------------------------------------
+
+  virtual void Undo() = 0;
+  virtual void Redo() = 0;
+  virtual void Cut() = 0;
+  virtual void Copy() = 0;
+  virtual void CopyToFindPboard() = 0;
+  virtual void Paste() = 0;
+  virtual void PasteAndMatchStyle() = 0;
+  virtual void Delete() = 0;
+  virtual void SelectAll() = 0;
+  virtual void Unselect() = 0;
+
+  // Replaces the currently selected word or a word around the cursor.
+  virtual void Replace(const base::string16& word) = 0;
+
+  // Replaces the misspelling in the current selection.
+  virtual void ReplaceMisspelling(const base::string16& word) = 0;
+
+  // Let the renderer know that the menu has been closed.
+  virtual void NotifyContextMenuClosed(
+      const CustomContextMenuContext& context) = 0;
+
+  // Executes custom context menu action that was provided from Blink.
+  virtual void ExecuteCustomContextMenuCommand(
+      int action, const CustomContextMenuContext& context) = 0;
+
   // Views and focus -----------------------------------------------------------
+
+  // Returns the native widget that contains the contents of the tab.
+  virtual gfx::NativeView GetNativeView() = 0;
+
+  // Returns the native widget with the main content of the tab (i.e. the main
+  // render view host, though there may be many popups in the tab as children of
+  // the container).
+  virtual gfx::NativeView GetContentNativeView() = 0;
+
+  // Returns the outermost native view. This will be used as the parent for
+  // dialog boxes.
+  virtual gfx::NativeWindow GetTopLevelNativeWindow() = 0;
+
+  // Computes the rectangle for the native widget that contains the contents of
+  // the tab in the screen coordinate system.
+  virtual gfx::Rect GetContainerBounds() = 0;
+
+  // Get the bounds of the View, relative to the parent.
+  virtual gfx::Rect GetViewBounds() = 0;
+
+  // Returns the current drop data, if any.
+  virtual DropData* GetDropData() = 0;
+
+  // Sets focus to the native widget for this tab.
+  virtual void Focus() = 0;
+
+  // Sets focus to the appropriate element when the WebContents is shown the
+  // first time.
+  virtual void SetInitialFocus() = 0;
+
+  // Stores the currently focused view.
+  virtual void StoreFocus() = 0;
+
+  // Restores focus to the last focus view. If StoreFocus has not yet been
+  // invoked, SetInitialFocus is invoked.
+  virtual void RestoreFocus() = 0;
+
   // Focuses the first (last if |reverse| is true) element in the page.
   // Invoked when this tab is getting the focus through tab traversal (|reverse|
   // is true when using Shift-Tab).
@@ -359,9 +452,6 @@ class WebContents : public PageNavigator,
       const base::Callback<void(
           int64 /* size of the file */)>& callback) = 0;
 
-  // Returns true if the active NavigationEntry's page_id equals page_id.
-  virtual bool IsActiveEntry(int32 page_id) = 0;
-
   // Returns the contents MIME type after a navigation.
   virtual const std::string& GetContentsMimeType() const = 0;
 
@@ -401,9 +491,6 @@ class WebContents : public PageNavigator,
   // the getter only useful from within TAB_CLOSED notification
   virtual void SetClosedByUserGesture(bool value) = 0;
   virtual bool GetClosedByUserGesture() const = 0;
-
-  // Gets the zoom level for this tab.
-  virtual double GetZoomLevel() const = 0;
 
   // Gets the zoom percent for this tab.
   virtual int GetZoomPercent(bool* enable_increment,
@@ -466,14 +553,46 @@ class WebContents : public PageNavigator,
                             uint32_t max_bitmap_size,
                             const ImageDownloadCallback& callback) = 0;
 
-  // Sets the zoom level for the current page and all BrowserPluginGuests
-  // within the page.
-  virtual void SetZoomLevel(double level) = 0;
+  // Returns true if the WebContents is responsible for displaying a subframe
+  // in a different process from its parent page.
+  // TODO: this doesn't really belong here. With site isolation, this should be
+  // removed since we can then embed iframes in different processes.
+  virtual bool IsSubframe() const = 0;
+
+  // Finds text on a page.
+  virtual void Find(int request_id,
+                    const base::string16& search_text,
+                    const blink::WebFindOptions& options) = 0;
+
+  // Notifies the renderer that the user has closed the FindInPage window
+  // (and what action to take regarding the selection).
+  virtual void StopFinding(StopFindAction action) = 0;
+
+  // Requests the renderer to insert CSS into the main frame's document.
+  virtual void InsertCSS(const std::string& css) = 0;
 
 #if defined(OS_ANDROID)
   CONTENT_EXPORT static WebContents* FromJavaWebContents(
       jobject jweb_contents_android);
   virtual base::android::ScopedJavaLocalRef<jobject> GetJavaWebContents() = 0;
+#elif defined(OS_MACOSX)
+  // The web contents view assumes that its view will never be overlapped by
+  // another view (either partially or fully). This allows it to perform
+  // optimizations. If the view is in a view hierarchy where it might be
+  // overlapped by another view, notify the view by calling this with |true|.
+  virtual void SetAllowOverlappingViews(bool overlapping) = 0;
+
+  // Returns true if overlapping views are allowed, false otherwise.
+  virtual bool GetAllowOverlappingViews() = 0;
+
+  // To draw two overlapping web contents view, the underlaying one should
+  // know about the overlaying one. Caller must ensure that |overlay| exists
+  // until |RemoveOverlayView| is called.
+  virtual void SetOverlayView(WebContents* overlay,
+                              const gfx::Point& offset) = 0;
+
+  // Removes the previously set overlay view.
+  virtual void RemoveOverlayView() = 0;
 #endif  // OS_ANDROID
 
  private:

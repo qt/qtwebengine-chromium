@@ -26,7 +26,7 @@
 
 #include "platform/fonts/FontCache.h"
 
-#include "public/platform/linux/WebFontFamily.h"
+#include "public/platform/linux/WebFallbackFont.h"
 #include "public/platform/linux/WebFontInfo.h"
 #include "public/platform/linux/WebSandboxSupport.h"
 #include "public/platform/Platform.h"
@@ -34,16 +34,19 @@
 
 namespace WebCore {
 
-void FontCache::getFontFamilyForCharacter(UChar32 c, const char* preferredLocale, FontCache::SimpleFontFamily* family)
+void FontCache::getFontForCharacter(UChar32 c, const char* preferredLocale, FontCache::PlatformFallbackFont* fallbackFont)
 {
-    blink::WebFontFamily webFamily;
-    if (blink::Platform::current()->sandboxSupport())
-        blink::Platform::current()->sandboxSupport()->getFontFamilyForCharacter(c, preferredLocale, &webFamily);
-    else
-        blink::WebFontInfo::familyForChar(c, preferredLocale, &webFamily);
-    family->name = String::fromUTF8(CString(webFamily.name));
-    family->isBold = webFamily.isBold;
-    family->isItalic = webFamily.isItalic;
+    blink::WebFallbackFont webFallbackFont;
+    if (blink::Platform::current()->sandboxSupport()) {
+        blink::Platform::current()->sandboxSupport()->getFallbackFontForCharacter(c, preferredLocale, &webFallbackFont);
+    } else {
+        blink::WebFontInfo::fallbackFontForChar(c, preferredLocale, &webFallbackFont);
+    }
+    fallbackFont->name = String::fromUTF8(CString(webFallbackFont.name));
+    fallbackFont->filename = webFallbackFont.filename;
+    fallbackFont->ttcIndex = webFallbackFont.ttcIndex;
+    fallbackFont->isBold = webFallbackFont.isBold;
+    fallbackFont->isItalic = webFallbackFont.isItalic;
 }
 
 }

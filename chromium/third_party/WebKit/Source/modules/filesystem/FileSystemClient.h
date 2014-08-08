@@ -37,8 +37,9 @@
 
 namespace WebCore {
 
-class Page;
 class ExecutionContext;
+class LocalFrame;
+class PermissionCallbacks;
 class WorkerClients;
 
 class FileSystemClient {
@@ -47,10 +48,11 @@ public:
     FileSystemClient() { }
     virtual ~FileSystemClient() { }
 
-    virtual bool allowFileSystem(ExecutionContext*) = 0;
+    virtual bool requestFileSystemAccessSync(ExecutionContext*) = 0;
+    virtual void requestFileSystemAccessAsync(ExecutionContext*, PassOwnPtr<WebCore::PermissionCallbacks>) = 0;
 };
 
-void provideLocalFileSystemTo(Page*, PassOwnPtr<FileSystemClient>);
+void provideLocalFileSystemTo(LocalFrame&, PassOwnPtr<FileSystemClient>);
 
 void provideLocalFileSystemToWorker(WorkerClients*, PassOwnPtr<FileSystemClient>);
 

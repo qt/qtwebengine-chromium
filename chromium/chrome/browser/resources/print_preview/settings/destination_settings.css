@@ -16,8 +16,12 @@
 #destination-settings .destination-settings-box {
   -webkit-box-align: center;
   display: -webkit-box;
-  height: 29px;
+  height: 28px;
   margin-bottom: 10px;
+}
+
+.destination-settings-box.stale {
+  opacity: 0.4;
 }
 
 #destination-settings .destination-settings-change-button {
@@ -33,7 +37,7 @@
 
 .destination-settings-info-wrapper {
   -webkit-box-flex: 1;
-  height: 29px;
+  height: 28px;
   position: relative;
 }
 
@@ -61,7 +65,7 @@
   -webkit-box-orient: vertical;
   -webkit-box-pack: center;
   display: -webkit-box;
-  height: 29px;
+  height: 28px;
 }
 
 .destination-settings-name,
@@ -73,6 +77,11 @@
 
 .destination-settings-location {
   opacity: 0.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.destination-settings-offline-status {
   overflow: hidden;
   text-overflow: ellipsis;
 }

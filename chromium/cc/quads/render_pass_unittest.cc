@@ -28,7 +28,7 @@ struct RenderPassSize {
   SharedQuadStateList shared_quad_state_list;
   gfx::Transform transform_to_root_target;
   gfx::Rect output_rect;
-  gfx::RectF damage_rect;
+  gfx::Rect damage_rect;
   bool has_transparent_background;
   ScopedPtrVector<CopyOutputRequest> copy_callbacks;
 };
@@ -79,20 +79,20 @@ TEST(RenderPassTest, CopyShouldBeIdenticalExceptIdAndQuads) {
   pass->copy_requests.push_back(CopyOutputRequest::CreateEmptyRequest());
 
   // Stick a quad in the pass, this should not get copied.
-  scoped_ptr<SharedQuadState> shared_state = SharedQuadState::Create();
+  SharedQuadState* shared_state = pass->CreateAndAppendSharedQuadState();
   shared_state->SetAll(gfx::Transform(),
                        gfx::Size(),
                        gfx::Rect(),
                        gfx::Rect(),
                        false,
                        1,
-                       SkXfermode::kSrcOver_Mode);
-  pass->AppendSharedQuadState(shared_state.Pass());
+                       SkXfermode::kSrcOver_Mode,
+                       0);
 
   scoped_ptr<CheckerboardDrawQuad> checkerboard_quad =
       CheckerboardDrawQuad::Create();
   checkerboard_quad->SetNew(
-      pass->shared_quad_state_list.back(), gfx::Rect(), SkColor());
+      pass->shared_quad_state_list.back(), gfx::Rect(), gfx::Rect(), SkColor());
   pass->quad_list.push_back(checkerboard_quad.PassAs<DrawQuad>());
 
   RenderPass::Id new_id(63, 4);
@@ -130,49 +130,57 @@ TEST(RenderPassTest, CopyAllShouldBeIdentical) {
                has_transparent_background);
 
   // Two quads using one shared state.
-  scoped_ptr<SharedQuadState> shared_state1 = SharedQuadState::Create();
+  SharedQuadState* shared_state1 = pass->CreateAndAppendSharedQuadState();
   shared_state1->SetAll(gfx::Transform(),
                         gfx::Size(1, 1),
                         gfx::Rect(),
                         gfx::Rect(),
                         false,
                         1,
-                        SkXfermode::kSrcOver_Mode);
-  pass->AppendSharedQuadState(shared_state1.Pass());
+                        SkXfermode::kSrcOver_Mode,
+                        0);
 
   scoped_ptr<CheckerboardDrawQuad> checkerboard_quad1 =
       CheckerboardDrawQuad::Create();
-  checkerboard_quad1->SetNew(
-      pass->shared_quad_state_list.back(), gfx::Rect(1, 1, 1, 1), SkColor());
+  checkerboard_quad1->SetNew(pass->shared_quad_state_list.back(),
+                             gfx::Rect(1, 1, 1, 1),
+                             gfx::Rect(1, 1, 1, 1),
+                             SkColor());
   pass->quad_list.push_back(checkerboard_quad1.PassAs<DrawQuad>());
 
   scoped_ptr<CheckerboardDrawQuad> checkerboard_quad2 =
       CheckerboardDrawQuad::Create();
-  checkerboard_quad2->SetNew(
-      pass->shared_quad_state_list.back(), gfx::Rect(2, 2, 2, 2), SkColor());
+  checkerboard_quad2->SetNew(pass->shared_quad_state_list.back(),
+                             gfx::Rect(2, 2, 2, 2),
+                             gfx::Rect(2, 2, 2, 2),
+                             SkColor());
   pass->quad_list.push_back(checkerboard_quad2.PassAs<DrawQuad>());
 
   // And two quads using another shared state.
-  scoped_ptr<SharedQuadState> shared_state2 = SharedQuadState::Create();
+  SharedQuadState* shared_state2 = pass->CreateAndAppendSharedQuadState();
   shared_state2->SetAll(gfx::Transform(),
                         gfx::Size(2, 2),
                         gfx::Rect(),
                         gfx::Rect(),
                         false,
                         1,
-                        SkXfermode::kSrcOver_Mode);
-  pass->AppendSharedQuadState(shared_state2.Pass());
+                        SkXfermode::kSrcOver_Mode,
+                        0);
 
   scoped_ptr<CheckerboardDrawQuad> checkerboard_quad3 =
       CheckerboardDrawQuad::Create();
-  checkerboard_quad3->SetNew(
-      pass->shared_quad_state_list.back(), gfx::Rect(3, 3, 3, 3), SkColor());
+  checkerboard_quad3->SetNew(pass->shared_quad_state_list.back(),
+                             gfx::Rect(3, 3, 3, 3),
+                             gfx::Rect(3, 3, 3, 3),
+                             SkColor());
   pass->quad_list.push_back(checkerboard_quad3.PassAs<DrawQuad>());
 
   scoped_ptr<CheckerboardDrawQuad> checkerboard_quad4 =
       CheckerboardDrawQuad::Create();
-  checkerboard_quad4->SetNew(
-      pass->shared_quad_state_list.back(), gfx::Rect(4, 4, 4, 4), SkColor());
+  checkerboard_quad4->SetNew(pass->shared_quad_state_list.back(),
+                             gfx::Rect(4, 4, 4, 4),
+                             gfx::Rect(4, 4, 4, 4),
+                             SkColor());
   pass->quad_list.push_back(checkerboard_quad4.PassAs<DrawQuad>());
 
   // A second render pass with a quad.
@@ -190,25 +198,29 @@ TEST(RenderPassTest, CopyAllShouldBeIdentical) {
                   contrib_transform_to_root,
                   contrib_has_transparent_background);
 
-  scoped_ptr<SharedQuadState> contrib_shared_state = SharedQuadState::Create();
+  SharedQuadState* contrib_shared_state =
+      contrib->CreateAndAppendSharedQuadState();
   contrib_shared_state->SetAll(gfx::Transform(),
                                gfx::Size(2, 2),
                                gfx::Rect(),
                                gfx::Rect(),
                                false,
                                1,
-                               SkXfermode::kSrcOver_Mode);
-  contrib->AppendSharedQuadState(contrib_shared_state.Pass());
+                               SkXfermode::kSrcOver_Mode,
+                               0);
 
   scoped_ptr<CheckerboardDrawQuad> contrib_quad =
       CheckerboardDrawQuad::Create();
-  contrib_quad->SetNew(
-      contrib->shared_quad_state_list.back(), gfx::Rect(3, 3, 3, 3), SkColor());
+  contrib_quad->SetNew(contrib->shared_quad_state_list.back(),
+                       gfx::Rect(3, 3, 3, 3),
+                       gfx::Rect(3, 3, 3, 3),
+                       SkColor());
   contrib->quad_list.push_back(contrib_quad.PassAs<DrawQuad>());
 
   // And a RenderPassDrawQuad for the contributing pass.
   scoped_ptr<RenderPassDrawQuad> pass_quad = RenderPassDrawQuad::Create();
   pass_quad->SetNew(pass->shared_quad_state_list.back(),
+                    contrib_output_rect,
                     contrib_output_rect,
                     contrib_id,
                     false,  // is_replica
@@ -247,59 +259,63 @@ TEST(RenderPassTest, CopyAllWithCulledQuads) {
                has_transparent_background);
 
   // A shared state with a quad.
-  scoped_ptr<SharedQuadState> shared_state1 = SharedQuadState::Create();
+  SharedQuadState* shared_state1 = pass->CreateAndAppendSharedQuadState();
   shared_state1->SetAll(gfx::Transform(),
                         gfx::Size(1, 1),
                         gfx::Rect(),
                         gfx::Rect(),
                         false,
                         1,
-                        SkXfermode::kSrcOver_Mode);
-  pass->AppendSharedQuadState(shared_state1.Pass());
+                        SkXfermode::kSrcOver_Mode,
+                        0);
 
   scoped_ptr<CheckerboardDrawQuad> checkerboard_quad1 =
       CheckerboardDrawQuad::Create();
-  checkerboard_quad1->SetNew(
-      pass->shared_quad_state_list.back(), gfx::Rect(1, 1, 1, 1), SkColor());
+  checkerboard_quad1->SetNew(pass->shared_quad_state_list.back(),
+                             gfx::Rect(1, 1, 1, 1),
+                             gfx::Rect(1, 1, 1, 1),
+                             SkColor());
   pass->quad_list.push_back(checkerboard_quad1.PassAs<DrawQuad>());
 
   // A shared state with no quads, they were culled.
-  scoped_ptr<SharedQuadState> shared_state2 = SharedQuadState::Create();
+  SharedQuadState* shared_state2 = pass->CreateAndAppendSharedQuadState();
   shared_state2->SetAll(gfx::Transform(),
                         gfx::Size(2, 2),
                         gfx::Rect(),
                         gfx::Rect(),
                         false,
                         1,
-                        SkXfermode::kSrcOver_Mode);
-  pass->AppendSharedQuadState(shared_state2.Pass());
+                        SkXfermode::kSrcOver_Mode,
+                        0);
 
   // A second shared state with no quads.
-  scoped_ptr<SharedQuadState> shared_state3 = SharedQuadState::Create();
+  SharedQuadState* shared_state3 = pass->CreateAndAppendSharedQuadState();
   shared_state3->SetAll(gfx::Transform(),
                         gfx::Size(2, 2),
                         gfx::Rect(),
                         gfx::Rect(),
                         false,
                         1,
-                        SkXfermode::kSrcOver_Mode);
-  pass->AppendSharedQuadState(shared_state3.Pass());
+                        SkXfermode::kSrcOver_Mode,
+                        0);
 
   // A last shared state with a quad again.
-  scoped_ptr<SharedQuadState> shared_state4 = SharedQuadState::Create();
+  SharedQuadState* shared_state4 = pass->CreateAndAppendSharedQuadState();
   shared_state4->SetAll(gfx::Transform(),
                         gfx::Size(2, 2),
                         gfx::Rect(),
                         gfx::Rect(),
                         false,
                         1,
-                        SkXfermode::kSrcOver_Mode);
-  pass->AppendSharedQuadState(shared_state4.Pass());
+                        SkXfermode::kSrcOver_Mode,
+                        0);
 
   scoped_ptr<CheckerboardDrawQuad> checkerboard_quad2 =
       CheckerboardDrawQuad::Create();
-  checkerboard_quad2->SetNew(
-      pass->shared_quad_state_list.back(), gfx::Rect(3, 3, 3, 3), SkColor());
+  checkerboard_quad2->SetNew(pass->shared_quad_state_list.back(),
+                             gfx::Rect(3, 3, 3, 3),
+                             gfx::Rect(3, 3, 3, 3),
+                             SkColor());
   pass->quad_list.push_back(checkerboard_quad2.PassAs<DrawQuad>());
 
   pass_list.push_back(pass.PassAs<RenderPass>());

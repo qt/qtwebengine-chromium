@@ -36,6 +36,7 @@
 #include "platform/geometry/LayoutRect.h"
 
 #include "wtf/HashMap.h"
+#include "wtf/HashSet.h"
 #include "wtf/OwnPtr.h"
 
 namespace WebCore {
@@ -46,22 +47,32 @@ public:
         NotVisible,
         Visible,
     };
-    ResourceLoadPriorityOptimizer();
-    ~ResourceLoadPriorityOptimizer();
-    void notifyImageResourceVisibility(ImageResource*, VisibilityStatus);
+    void notifyImageResourceVisibility(ImageResource*, VisibilityStatus, const LayoutRect&);
+    void updateAllImageResourcePriorities();
+    void addRenderObject(RenderObject*);
+    void removeRenderObject(RenderObject*);
+
+    static ResourceLoadPriorityOptimizer* resourceLoadPriorityOptimizer();
 
 private:
+    ResourceLoadPriorityOptimizer();
+    ~ResourceLoadPriorityOptimizer();
+
     void updateImageResourcesWithLoadPriority();
 
     struct ResourceAndVisibility {
-        ResourceAndVisibility(ImageResource*, VisibilityStatus);
+        ResourceAndVisibility(ImageResource*, VisibilityStatus, uint32_t);
         ~ResourceAndVisibility();
         ResourcePtr<ImageResource> imageResource;
         VisibilityStatus status;
+        int screenArea;
     };
 
-    typedef HashMap<unsigned long, OwnPtr<ResourceAndVisibility> > ImageResourceMap;
+    typedef HashMap<unsigned long, OwnPtr<ResourceAndVisibility>, WTF::IntHash<unsigned>, WTF::UnsignedWithZeroKeyHashTraits<unsigned> > ImageResourceMap;
     ImageResourceMap m_imageResources;
+
+    typedef HashSet<RenderObject*> RenderObjectSet;
+    RenderObjectSet m_objects;
 };
 
 }

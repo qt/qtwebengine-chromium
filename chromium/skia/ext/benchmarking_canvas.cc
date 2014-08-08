@@ -6,7 +6,6 @@
 #include "base/logging.h"
 #include "base/time/time.h"
 #include "skia/ext/benchmarking_canvas.h"
-#include "third_party/skia/include/core/SkBitmapDevice.h"
 #include "third_party/skia/include/utils/SkProxyCanvas.h"
 
 namespace skia {
@@ -25,9 +24,7 @@ class TimingCanvas : public SkProxyCanvas {
 public:
   TimingCanvas(int width, int height, const BenchmarkingCanvas* track_canvas)
       : tracking_canvas_(track_canvas) {
-    skia::RefPtr<SkBaseDevice> device = skia::AdoptRef(
-        SkNEW_ARGS(SkBitmapDevice, (SkBitmap::kARGB_8888_Config, width, height)));
-    canvas_ = skia::AdoptRef(SkNEW_ARGS(SkCanvas, (device.get())));
+    canvas_ = skia::AdoptRef(SkCanvas::NewRasterN32(width, height));
 
     setProxy(canvas_.get());
   }
@@ -43,44 +40,21 @@ public:
   }
 
   // SkCanvas overrides.
-  virtual int save(SaveFlags flags = kMatrixClip_SaveFlag) OVERRIDE {
+  virtual void willSave() OVERRIDE {
     AutoStamper stamper(this);
-    return SkProxyCanvas::save(flags);
+    SkProxyCanvas::willSave();
   }
 
-  virtual int saveLayer(const SkRect* bounds, const SkPaint* paint,
-                        SaveFlags flags = kARGB_ClipLayer_SaveFlag) OVERRIDE {
+  virtual SaveLayerStrategy willSaveLayer(const SkRect* bounds,
+                                          const SkPaint* paint,
+                                          SaveFlags flags) OVERRIDE {
     AutoStamper stamper(this);
-    return SkProxyCanvas::saveLayer(bounds, paint, flags);
+    return SkProxyCanvas::willSaveLayer(bounds, paint, flags);
   }
 
-  virtual void restore() OVERRIDE {
+  virtual void willRestore() OVERRIDE {
     AutoStamper stamper(this);
-    SkProxyCanvas::restore();
-  }
-
-  virtual bool clipRect(const SkRect& rect, SkRegion::Op op,
-                        bool doAa) OVERRIDE {
-    AutoStamper stamper(this);
-    return SkProxyCanvas::clipRect(rect, op, doAa);
-  }
-
-  virtual bool clipRRect(const SkRRect& rrect, SkRegion::Op op,
-                         bool doAa) OVERRIDE {
-    AutoStamper stamper(this);
-    return SkProxyCanvas::clipRRect(rrect, op, doAa);
-  }
-
-  virtual bool clipPath(const SkPath& path, SkRegion::Op op,
-                        bool doAa) OVERRIDE {
-    AutoStamper stamper(this);
-    return SkProxyCanvas::clipPath(path, op, doAa);
-  }
-
-  virtual bool clipRegion(const SkRegion& region,
-                          SkRegion::Op op = SkRegion::kIntersect_Op) OVERRIDE {
-    AutoStamper stamper(this);
-    return SkProxyCanvas::clipRegion(region, op);
+    SkProxyCanvas::willRestore();
   }
 
   virtual void drawPaint(const SkPaint& paint) OVERRIDE {
@@ -140,38 +114,6 @@ public:
     SkProxyCanvas::drawSprite(bitmap, left, top, paint);
   }
 
-  virtual void drawText(const void* text, size_t byteLength, SkScalar x,
-                        SkScalar y, const SkPaint& paint) OVERRIDE {
-    AutoStamper stamper(this);
-    SkProxyCanvas::drawText(text, byteLength, x, y, paint);
-  }
-
-  virtual void drawPosText(const void* text, size_t byteLength,
-                           const SkPoint pos[],
-                           const SkPaint& paint) OVERRIDE {
-    AutoStamper stamper(this);
-    SkProxyCanvas::drawPosText(text, byteLength, pos, paint);
-  }
-
-  virtual void drawPosTextH(const void* text, size_t byteLength,
-                            const SkScalar xpos[], SkScalar constY,
-                            const SkPaint& paint) OVERRIDE {
-    AutoStamper stamper(this);
-    SkProxyCanvas::drawPosTextH(text, byteLength, xpos, constY, paint);
-  }
-
-  virtual void drawTextOnPath(const void* text, size_t byteLength,
-                              const SkPath& path, const SkMatrix* matrix,
-                              const SkPaint& paint) OVERRIDE {
-    AutoStamper stamper(this);
-    SkProxyCanvas::drawTextOnPath(text, byteLength, path, matrix, paint);
-  }
-
-  virtual void drawPicture(SkPicture& picture) OVERRIDE {
-    AutoStamper stamper(this);
-    SkProxyCanvas::drawPicture(picture);
-  }
-
   virtual void drawVertices(VertexMode vmode, int vertexCount,
                             const SkPoint vertices[], const SkPoint texs[],
                             const SkColor colors[], SkXfermode* xmode,
@@ -185,6 +127,63 @@ public:
   virtual void drawData(const void* data, size_t length) OVERRIDE {
     AutoStamper stamper(this);
     SkProxyCanvas::drawData(data, length);
+  }
+
+protected:
+  virtual void onDrawText(const void* text, size_t byteLength, SkScalar x,
+                          SkScalar y, const SkPaint& paint) OVERRIDE {
+    AutoStamper stamper(this);
+    SkProxyCanvas::onDrawText(text, byteLength, x, y, paint);
+  }
+
+  virtual void onDrawPosText(const void* text, size_t byteLength,
+                             const SkPoint pos[],
+                             const SkPaint& paint) OVERRIDE {
+    AutoStamper stamper(this);
+    SkProxyCanvas::onDrawPosText(text, byteLength, pos, paint);
+  }
+
+  virtual void onDrawPosTextH(const void* text, size_t byteLength,
+                              const SkScalar xpos[], SkScalar constY,
+                              const SkPaint& paint) OVERRIDE {
+    AutoStamper stamper(this);
+    SkProxyCanvas::onDrawPosTextH(text, byteLength, xpos, constY, paint);
+  }
+
+  virtual void onDrawTextOnPath(const void* text, size_t byteLength,
+                                const SkPath& path, const SkMatrix* matrix,
+                                const SkPaint& paint) OVERRIDE {
+    AutoStamper stamper(this);
+    SkProxyCanvas::onDrawTextOnPath(text, byteLength, path, matrix, paint);
+  }
+
+  virtual void onClipRect(const SkRect& rect, SkRegion::Op op,
+                          ClipEdgeStyle edge_style) OVERRIDE {
+    AutoStamper stamper(this);
+    SkProxyCanvas::onClipRect(rect, op, edge_style);
+  }
+
+  virtual void onClipRRect(const SkRRect& rrect, SkRegion::Op op,
+                          ClipEdgeStyle edge_style) OVERRIDE {
+    AutoStamper stamper(this);
+    SkProxyCanvas::onClipRRect(rrect, op, edge_style);
+  }
+
+  virtual void onClipPath(const SkPath& path, SkRegion::Op op,
+                          ClipEdgeStyle edge_style) OVERRIDE {
+    AutoStamper stamper(this);
+    SkProxyCanvas::onClipPath(path, op, edge_style);
+  }
+
+  virtual void onClipRegion(const SkRegion& region,
+                            SkRegion::Op op) OVERRIDE {
+    AutoStamper stamper(this);
+    SkProxyCanvas::onClipRegion(region, op);
+  }
+
+  virtual void onDrawPicture(const SkPicture* picture) OVERRIDE {
+    AutoStamper stamper(this);
+    SkProxyCanvas::onDrawPicture(picture);
   }
 
 private:

@@ -60,7 +60,7 @@ class TypedArrayBase : public ArrayBufferView {
         return m_length;
     }
 
-    virtual unsigned byteLength() const
+    virtual unsigned byteLength() const OVERRIDE FINAL
     {
         return m_length * sizeof(T);
     }
@@ -93,7 +93,7 @@ protected:
     {
         RefPtr<ArrayBuffer> buffer = ArrayBuffer::create(length, sizeof(T));
         if (!buffer.get())
-            return 0;
+            return nullptr;
         return create<Subclass>(buffer, 0, length);
     }
 
@@ -114,7 +114,7 @@ protected:
     {
         RefPtr<ArrayBuffer> buf(buffer);
         if (!verifySubRange<T>(buf, byteOffset, length))
-            return 0;
+            return nullptr;
 
         return adoptRef(new Subclass(buf, byteOffset, length));
     }
@@ -124,7 +124,7 @@ protected:
     {
         RefPtr<ArrayBuffer> buffer = ArrayBuffer::createUninitialized(length, sizeof(T));
         if (!buffer.get())
-            return 0;
+            return nullptr;
         return create<Subclass>(buffer, 0, length);
     }
 
@@ -137,7 +137,7 @@ protected:
         return create<Subclass>(buffer(), offset, length);
     }
 
-    virtual void neuter()
+    virtual void neuter() OVERRIDE FINAL
     {
         ArrayBufferView::neuter();
         m_length = 0;

@@ -29,12 +29,18 @@ struct CC_EXPORT DrawProperties {
         num_descendants_that_draw_content(0),
         num_unclipped_descendants(0),
         layer_or_descendant_has_copy_request(false),
+        layer_or_descendant_has_input_handler(false),
         has_child_with_a_scroll_parent(false),
         sorted_for_recursion(false),
         index_of_first_descendants_addition(0),
         num_descendants_added(0),
         index_of_first_render_surface_layer_list_addition(0),
-        num_render_surfaces_added(0) {}
+        num_render_surfaces_added(0),
+        last_drawn_render_surface_layer_list_id(0),
+        ideal_contents_scale(0.f),
+        maximum_animation_contents_scale(0.f),
+        page_scale_factor(0.f),
+        device_scale_factor(0.f) {}
 
   // Transforms objects from content space to target surface space, where
   // this layer would be drawn.
@@ -101,6 +107,9 @@ struct CC_EXPORT DrawProperties {
   // present on it.
   bool layer_or_descendant_has_copy_request;
 
+  // If true, the layer or one of its descendants has a wheel or touch handler.
+  bool layer_or_descendant_has_input_handler;
+
   // This is true if the layer has any direct child that has a scroll parent.
   // This layer will not be the scroll parent in this case. This information
   // lets us avoid work in CalculateDrawPropertiesInternal -- if none of our
@@ -118,6 +127,30 @@ struct CC_EXPORT DrawProperties {
   size_t num_descendants_added;
   size_t index_of_first_render_surface_layer_list_addition;
   size_t num_render_surfaces_added;
+
+  // Each time we generate a new render surface layer list, an ID is used to
+  // identify it. |last_drawn_render_surface_layer_list_id| is set to the ID
+  // that marked the render surface layer list generation which last updated
+  // these draw properties and determined that this layer will draw itself.
+  // If these draw properties are not a part of the render surface layer list,
+  // or the layer doesn't contribute anything, then this ID will be either out
+  // of date or 0.
+  int last_drawn_render_surface_layer_list_id;
+
+  // The scale at which content for the layer should be rastered in order to be
+  // perfectly crisp.
+  float ideal_contents_scale;
+
+  // The maximum scale during the layers current animation at which content
+  // should be rastered at to be crisp.
+  float maximum_animation_contents_scale;
+
+  // The page scale factor that is applied to the layer. Since some layers may
+  // have page scale applied and others not, this may differ between layers.
+  float page_scale_factor;
+
+  // The device scale factor that is applied to the layer.
+  float device_scale_factor;
 };
 
 }  // namespace cc

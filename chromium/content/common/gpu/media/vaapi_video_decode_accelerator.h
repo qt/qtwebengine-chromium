@@ -25,7 +25,6 @@
 #include "content/common/content_export.h"
 #include "content/common/gpu/media/vaapi_h264_decoder.h"
 #include "content/common/gpu/media/vaapi_wrapper.h"
-#include "content/common/gpu/media/video_decode_accelerator_impl.h"
 #include "media/base/bitstream_buffer.h"
 #include "media/video/picture.h"
 #include "media/video/video_decode_accelerator.h"
@@ -42,16 +41,16 @@ namespace content {
 // stopped during |this->Destroy()|, so any tasks posted to the decoder thread
 // can assume |*this| is still alive.  See |weak_this_| below for more details.
 class CONTENT_EXPORT VaapiVideoDecodeAccelerator
-    : public VideoDecodeAcceleratorImpl {
+    : public media::VideoDecodeAccelerator {
  public:
   VaapiVideoDecodeAccelerator(
-      Display* x_display, GLXContext glx_context,
-      Client* client,
+      Display* x_display,
       const base::Callback<bool(void)>& make_context_current);
   virtual ~VaapiVideoDecodeAccelerator();
 
   // media::VideoDecodeAccelerator implementation.
-  virtual bool Initialize(media::VideoCodecProfile profile) OVERRIDE;
+  virtual bool Initialize(media::VideoCodecProfile profile,
+                          Client* client) OVERRIDE;
   virtual void Decode(const media::BitstreamBuffer& bitstream_buffer) OVERRIDE;
   virtual void AssignPictureBuffers(
       const std::vector<media::PictureBuffer>& buffers) OVERRIDE;
@@ -59,11 +58,9 @@ class CONTENT_EXPORT VaapiVideoDecodeAccelerator
   virtual void Flush() OVERRIDE;
   virtual void Reset() OVERRIDE;
   virtual void Destroy() OVERRIDE;
+  virtual bool CanDecodeOnIOThread() OVERRIDE;
 
 private:
-  // Notify the client that |output_id| is ready for displaying.
-  void NotifyPictureReady(int32 input_id, int32 output_id);
-
   // Notify the client that an error has occurred and decoding cannot continue.
   void NotifyError(Error error);
 
@@ -153,7 +150,6 @@ private:
 
   // Client-provided X/GLX state.
   Display* x_display_;
-  GLXContext glx_context_;
   base::Callback<bool(void)> make_context_current_;
   GLXFBConfig fb_config_;
 
@@ -238,9 +234,12 @@ private:
   // decoder thread to the ChildThread should use |weak_this_|.
   base::WeakPtr<VaapiVideoDecodeAccelerator> weak_this_;
 
+  // Callback used when creating VASurface objects.
+  VASurface::ReleaseCB va_surface_release_cb_;
+
   // To expose client callbacks from VideoDecodeAccelerator.
   // NOTE: all calls to these objects *MUST* be executed on message_loop_.
-  base::WeakPtrFactory<Client> client_ptr_factory_;
+  scoped_ptr<base::WeakPtrFactory<Client> > client_ptr_factory_;
   base::WeakPtr<Client> client_;
 
   scoped_ptr<VaapiWrapper> vaapi_wrapper_;
@@ -268,6 +267,9 @@ private:
   // Last requested number/resolution of output picture buffers.
   size_t requested_num_pics_;
   gfx::Size requested_pic_size_;
+
+  // The WeakPtrFactory for |weak_this_|.
+  base::WeakPtrFactory<VaapiVideoDecodeAccelerator> weak_this_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(VaapiVideoDecodeAccelerator);
 };

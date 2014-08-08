@@ -27,9 +27,8 @@
 #include "base/win/scoped_handle.h"
 #endif
 
-class CommandLine;
-
 namespace base {
+class CommandLine;
 class FilePath;
 }
 
@@ -45,7 +44,7 @@ class PpapiThread : public ChildThread,
                     public ppapi::proxy::PluginDispatcher::PluginDelegate,
                     public ppapi::proxy::PluginProxyDelegate {
  public:
-  PpapiThread(const CommandLine& command_line, bool is_broker);
+  PpapiThread(const base::CommandLine& command_line, bool is_broker);
   virtual ~PpapiThread();
   virtual void Shutdown() OVERRIDE;
 
@@ -57,6 +56,7 @@ class PpapiThread : public ChildThread,
     LOAD_FAILED,
     ENTRY_POINT_MISSING,
     INIT_FAILED,
+    FILE_MISSING,
     // NOTE: Add new values only immediately above this line.
     LOAD_RESULT_MAX  // Boundary value for UMA_HISTOGRAM_ENUMERATION.
   };
@@ -93,8 +93,7 @@ class PpapiThread : public ChildThread,
 
   // Message handlers.
   void OnLoadPlugin(const base::FilePath& path,
-                    const ppapi::PpapiPermissions& permissions,
-                    bool supports_dev_channel);
+                    const ppapi::PpapiPermissions& permissions);
   void OnCreateChannel(base::ProcessId renderer_pid,
                        int renderer_child_id,
                        bool incognito);
@@ -113,6 +112,10 @@ class PpapiThread : public ChildThread,
   void SavePluginName(const base::FilePath& path);
 
   void ReportLoadResult(const base::FilePath& path, LoadResult result);
+
+  // Reports |error| to UMA when plugin load fails.
+  void ReportLoadErrorCode(const base::FilePath& path,
+                           const base::NativeLibraryLoadError& error);
 
   // True if running in a broker process rather than a normal plugin process.
   bool is_broker_;

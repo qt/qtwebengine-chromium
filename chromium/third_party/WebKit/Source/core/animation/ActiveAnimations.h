@@ -44,15 +44,15 @@ class CSSAnimations;
 class RenderObject;
 class Element;
 
-// FIXME: Move these to CompositorAnimations
-bool shouldCompositeForActiveAnimations(const RenderObject&);
-bool hasActiveAnimations(const RenderObject&, CSSPropertyID);
-bool hasActiveAnimationsOnCompositor(const RenderObject&, CSSPropertyID);
-
-class ActiveAnimations {
+class ActiveAnimations : public NoBaseWillBeGarbageCollectedFinalized<ActiveAnimations> {
+    WTF_MAKE_NONCOPYABLE(ActiveAnimations);
 public:
     ActiveAnimations()
-        : m_animationStyleChange(false) { }
+        : m_animationStyleChange(false)
+    {
+    }
+
+    ~ActiveAnimations();
 
     // Animations that are currently active for this element, their effects will be applied
     // during a style recalc. CSS Transitions are included in this stack.
@@ -63,26 +63,43 @@ public:
     CSSAnimations& cssAnimations() { return m_cssAnimations; }
     const CSSAnimations& cssAnimations() const { return m_cssAnimations; }
 
-    typedef HashCountedSet<Player*> PlayerSet;
-    // Players which have animations targeting this element.
-    const PlayerSet& players() const { return m_players; }
-    PlayerSet& players() { return m_players; }
+    typedef WillBeHeapHashMap<RawPtrWillBeWeakMember<AnimationPlayer>, int> AnimationPlayerCountedSet;
+    // AnimationPlayers which have animations targeting this element.
+    const AnimationPlayerCountedSet& players() const { return m_players; }
+    void addPlayer(AnimationPlayer*);
+    void removePlayer(AnimationPlayer*);
 
+#if ENABLE(OILPAN)
     bool isEmpty() const { return m_defaultStack.isEmpty() && m_cssAnimations.isEmpty(); }
+#else
+    bool isEmpty() const { return m_defaultStack.isEmpty() && m_cssAnimations.isEmpty() && m_animations.isEmpty(); }
+#endif
 
-    bool hasActiveAnimations(CSSPropertyID) const;
-    bool hasActiveAnimationsOnCompositor(CSSPropertyID) const;
     void cancelAnimationOnCompositor();
 
+    void updateAnimationFlags(RenderStyle&);
     void setAnimationStyleChange(bool animationStyleChange) { m_animationStyleChange = animationStyleChange; }
+
+#if !ENABLE(OILPAN)
+    void addAnimation(Animation* animation) { m_animations.append(animation); }
+    void notifyAnimationDestroyed(Animation* animation) { m_animations.remove(m_animations.find(animation)); }
+#endif
+
+    void trace(Visitor*);
 
 private:
     bool isAnimationStyleChange() const { return m_animationStyleChange; }
 
     AnimationStack m_defaultStack;
     CSSAnimations m_cssAnimations;
-    PlayerSet m_players;
+    AnimationPlayerCountedSet m_players;
     bool m_animationStyleChange;
+
+#if !ENABLE(OILPAN)
+    // FIXME: Oilpan: This is to avoid a reference cycle that keeps Elements alive
+    // and won't be needed once the Node hierarchy becomes traceable.
+    Vector<Animation*> m_animations;
+#endif
 
     // CSSAnimations checks if a style change is due to animation.
     friend class CSSAnimations;

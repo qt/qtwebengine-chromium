@@ -20,17 +20,17 @@ namespace {
 
 class TiledLayerImplTest : public testing::Test {
  public:
-  TiledLayerImplTest() : host_impl_(&proxy_) {}
+  TiledLayerImplTest() : host_impl_(&proxy_, &shared_bitmap_manager_) {}
 
   scoped_ptr<TiledLayerImpl> CreateLayerNoTiles(
-      gfx::Size tile_size,
-      gfx::Size layer_size,
+      const gfx::Size& tile_size,
+      const gfx::Size& layer_size,
       LayerTilingData::BorderTexelOption border_texels) {
     scoped_ptr<TiledLayerImpl> layer =
         TiledLayerImpl::Create(host_impl_.active_tree(), 1);
     scoped_ptr<LayerTilingData> tiler =
         LayerTilingData::Create(tile_size, border_texels);
-    tiler->SetBounds(layer_size);
+    tiler->SetTilingRect(gfx::Rect(layer_size));
     layer->SetTilingData(*tiler);
     layer->set_skips_draw(false);
     layer->draw_properties().visible_content_rect =
@@ -46,13 +46,11 @@ class TiledLayerImplTest : public testing::Test {
   // Create a default tiled layer with textures for all tiles and a default
   // visibility of the entire layer size.
   scoped_ptr<TiledLayerImpl> CreateLayer(
-      gfx::Size tile_size,
-      gfx::Size layer_size,
+      const gfx::Size& tile_size,
+      const gfx::Size& layer_size,
       LayerTilingData::BorderTexelOption border_texels) {
     scoped_ptr<TiledLayerImpl> layer =
         CreateLayerNoTiles(tile_size, layer_size, border_texels);
-
-    layer->SetDrawsContent(true);
 
     ResourceProvider::ResourceId resource_id = 1;
     for (int i = 0; i < layer->TilingForTesting()->num_tiles_x(); ++i) {
@@ -67,24 +65,25 @@ class TiledLayerImplTest : public testing::Test {
     return layer.Pass();
   }
 
-  void GetQuads(QuadList* quads,
-                SharedQuadStateList* shared_states,
-                gfx::Size tile_size,
-                gfx::Size layer_size,
+  void GetQuads(RenderPass* render_pass,
+                const gfx::Size& tile_size,
+                const gfx::Size& layer_size,
                 LayerTilingData::BorderTexelOption border_texel_option,
-                gfx::Rect visible_content_rect) {
+                const gfx::Rect& visible_content_rect) {
     scoped_ptr<TiledLayerImpl> layer =
         CreateLayer(tile_size, layer_size, border_texel_option);
     layer->draw_properties().visible_content_rect = visible_content_rect;
     layer->SetBounds(layer_size);
 
-    MockQuadCuller quad_culler(quads, shared_states);
+    MockOcclusionTracker<LayerImpl> occlusion_tracker;
+    MockQuadCuller quad_culler(render_pass, &occlusion_tracker);
     AppendQuadsData data;
     layer->AppendQuads(&quad_culler, &data);
   }
 
  protected:
   FakeImplProxy proxy_;
+  TestSharedBitmapManager shared_bitmap_manager_;
   FakeLayerTreeHostImpl host_impl_;
 };
 
@@ -99,7 +98,10 @@ TEST_F(TiledLayerImplTest, EmptyQuadList) {
   {
     scoped_ptr<TiledLayerImpl> layer =
         CreateLayer(tile_size, layer_size, LayerTilingData::NO_BORDER_TEXELS);
-    MockQuadCuller quad_culler;
+    MockOcclusionTracker<LayerImpl> occlusion_tracker;
+    scoped_ptr<RenderPass> render_pass = RenderPass::Create();
+    MockQuadCuller quad_culler(render_pass.get(), &occlusion_tracker);
+
     AppendQuadsData data;
     EXPECT_TRUE(layer->WillDraw(DRAW_MODE_HARDWARE, NULL));
     layer->AppendQuads(&quad_culler, &data);
@@ -114,7 +116,10 @@ TEST_F(TiledLayerImplTest, EmptyQuadList) {
         CreateLayer(tile_size, layer_size, LayerTilingData::NO_BORDER_TEXELS);
     layer->draw_properties().visible_content_rect = gfx::Rect();
 
-    MockQuadCuller quad_culler;
+    MockOcclusionTracker<LayerImpl> occlusion_tracker;
+    scoped_ptr<RenderPass> render_pass = RenderPass::Create();
+    MockQuadCuller quad_culler(render_pass.get(), &occlusion_tracker);
+
     EXPECT_FALSE(layer->WillDraw(DRAW_MODE_HARDWARE, NULL));
   }
 
@@ -126,7 +131,10 @@ TEST_F(TiledLayerImplTest, EmptyQuadList) {
     gfx::Rect outside_bounds(-100, -100, 50, 50);
     layer->draw_properties().visible_content_rect = outside_bounds;
 
-    MockQuadCuller quad_culler;
+    MockOcclusionTracker<LayerImpl> occlusion_tracker;
+    scoped_ptr<RenderPass> render_pass = RenderPass::Create();
+    MockQuadCuller quad_culler(render_pass.get(), &occlusion_tracker);
+
     AppendQuadsData data;
     EXPECT_TRUE(layer->WillDraw(DRAW_MODE_HARDWARE, NULL));
     layer->AppendQuads(&quad_culler, &data);
@@ -140,7 +148,10 @@ TEST_F(TiledLayerImplTest, EmptyQuadList) {
         CreateLayer(tile_size, layer_size, LayerTilingData::NO_BORDER_TEXELS);
     layer->set_skips_draw(true);
 
-    MockQuadCuller quad_culler;
+    MockOcclusionTracker<LayerImpl> occlusion_tracker;
+    scoped_ptr<RenderPass> render_pass = RenderPass::Create();
+    MockQuadCuller quad_culler(render_pass.get(), &occlusion_tracker);
+
     AppendQuadsData data;
     layer->AppendQuads(&quad_culler, &data);
     EXPECT_EQ(quad_culler.quad_list().size(), 0u);
@@ -159,7 +170,10 @@ TEST_F(TiledLayerImplTest, Checkerboarding) {
 
   // No checkerboarding
   {
-    MockQuadCuller quad_culler;
+    MockOcclusionTracker<LayerImpl> occlusion_tracker;
+    scoped_ptr<RenderPass> render_pass = RenderPass::Create();
+    MockQuadCuller quad_culler(render_pass.get(), &occlusion_tracker);
+
     AppendQuadsData data;
     layer->AppendQuads(&quad_culler, &data);
     EXPECT_EQ(quad_culler.quad_list().size(), 4u);
@@ -175,7 +189,10 @@ TEST_F(TiledLayerImplTest, Checkerboarding) {
 
   // All checkerboarding
   {
-    MockQuadCuller quad_culler;
+    MockOcclusionTracker<LayerImpl> occlusion_tracker;
+    scoped_ptr<RenderPass> render_pass = RenderPass::Create();
+    MockQuadCuller quad_culler(render_pass.get(), &occlusion_tracker);
+
     AppendQuadsData data;
     layer->AppendQuads(&quad_culler, &data);
     EXPECT_LT(0u, data.num_missing_tiles);
@@ -199,15 +216,14 @@ class TiledLayerImplBorderTest : public TiledLayerImplTest {
   void CoverageVisibleRectOnTileBoundaries(
       LayerTilingData::BorderTexelOption borders) {
     gfx::Size layer_size(1000, 1000);
-    QuadList quads;
-    SharedQuadStateList shared_states;
-    GetQuads(&quads,
-             &shared_states,
+    scoped_ptr<RenderPass> render_pass = RenderPass::Create();
+    GetQuads(render_pass.get(),
              gfx::Size(100, 100),
              layer_size,
              borders,
              gfx::Rect(layer_size));
-    LayerTestCommon::VerifyQuadsExactlyCoverRect(quads, gfx::Rect(layer_size));
+    LayerTestCommon::VerifyQuadsExactlyCoverRect(render_pass->quad_list,
+                                                 gfx::Rect(layer_size));
   }
 
   void CoverageVisibleRectIntersectsTiles(
@@ -218,30 +234,28 @@ class TiledLayerImplBorderTest : public TiledLayerImplTest {
     gfx::Rect visible_content_rect = gfx::BoundingRect(top_left, bottom_right);
 
     gfx::Size layer_size(250, 250);
-    QuadList quads;
-    SharedQuadStateList shared_states;
-    GetQuads(&quads,
-             &shared_states,
+    scoped_ptr<RenderPass> render_pass = RenderPass::Create();
+    GetQuads(render_pass.get(),
              gfx::Size(50, 50),
              gfx::Size(250, 250),
              LayerTilingData::NO_BORDER_TEXELS,
              visible_content_rect);
-    LayerTestCommon::VerifyQuadsExactlyCoverRect(quads, visible_content_rect);
+    LayerTestCommon::VerifyQuadsExactlyCoverRect(render_pass->quad_list,
+                                                 visible_content_rect);
   }
 
   void CoverageVisibleRectIntersectsBounds(
       LayerTilingData::BorderTexelOption borders) {
     gfx::Size layer_size(220, 210);
     gfx::Rect visible_content_rect(layer_size);
-    QuadList quads;
-    SharedQuadStateList shared_states;
-    GetQuads(&quads,
-             &shared_states,
+    scoped_ptr<RenderPass> render_pass = RenderPass::Create();
+    GetQuads(render_pass.get(),
              gfx::Size(100, 100),
              layer_size,
              LayerTilingData::NO_BORDER_TEXELS,
              visible_content_rect);
-    LayerTestCommon::VerifyQuadsExactlyCoverRect(quads, visible_content_rect);
+    LayerTestCommon::VerifyQuadsExactlyCoverRect(render_pass->quad_list,
+                                                 visible_content_rect);
   }
 };
 WITH_AND_WITHOUT_BORDER_TEST(CoverageVisibleRectOnTileBoundaries);
@@ -253,17 +267,16 @@ WITH_AND_WITHOUT_BORDER_TEST(CoverageVisibleRectIntersectsBounds);
 TEST_F(TiledLayerImplTest, TextureInfoForLayerNoBorders) {
   gfx::Size tile_size(50, 50);
   gfx::Size layer_size(250, 250);
-  QuadList quads;
-  SharedQuadStateList shared_states;
-  GetQuads(&quads,
-           &shared_states,
+  scoped_ptr<RenderPass> render_pass = RenderPass::Create();
+  GetQuads(render_pass.get(),
            tile_size,
            layer_size,
            LayerTilingData::NO_BORDER_TEXELS,
            gfx::Rect(layer_size));
 
-  for (size_t i = 0; i < quads.size(); ++i) {
-    const TileDrawQuad* quad = TileDrawQuad::MaterialCast(quads[i]);
+  for (size_t i = 0; i < render_pass->quad_list.size(); ++i) {
+    const TileDrawQuad* quad =
+        TileDrawQuad::MaterialCast(render_pass->quad_list[i]);
 
     EXPECT_NE(0u, quad->resource_id) << LayerTestCommon::quad_string << i;
     EXPECT_EQ(gfx::RectF(gfx::PointF(), tile_size), quad->tex_coord_rect)
@@ -302,6 +315,79 @@ TEST_F(TiledLayerImplTest, GPUMemoryUsage) {
   layer->PushTileProperties(2, 0, empty_resource, gfx::Rect(0, 0, 1, 1), false);
 
   EXPECT_EQ(layer->GPUMemoryUsageInBytes(), 0u);
+}
+
+TEST_F(TiledLayerImplTest, EmptyMask) {
+  gfx::Size tile_size(20, 20);
+  gfx::Size layer_size(0, 0);
+  scoped_ptr<TiledLayerImpl> layer =
+      CreateLayer(tile_size, layer_size, LayerTilingData::NO_BORDER_TEXELS);
+
+  EXPECT_EQ(0u, layer->ContentsResourceId());
+  EXPECT_EQ(0, layer->TilingForTesting()->num_tiles_x());
+  EXPECT_EQ(0, layer->TilingForTesting()->num_tiles_y());
+}
+
+TEST_F(TiledLayerImplTest, Occlusion) {
+  gfx::Size tile_size(100, 100);
+  gfx::Size layer_bounds(1000, 1000);
+  gfx::Size viewport_size(1000, 1000);
+
+  LayerTestCommon::LayerImplTest impl;
+
+  TiledLayerImpl* tiled_layer = impl.AddChildToRoot<TiledLayerImpl>();
+  tiled_layer->SetBounds(layer_bounds);
+  tiled_layer->SetContentBounds(layer_bounds);
+  tiled_layer->SetDrawsContent(true);
+  tiled_layer->set_skips_draw(false);
+
+  scoped_ptr<LayerTilingData> tiler =
+      LayerTilingData::Create(tile_size, LayerTilingData::NO_BORDER_TEXELS);
+  tiler->SetTilingRect(gfx::Rect(layer_bounds));
+  tiled_layer->SetTilingData(*tiler);
+
+  ResourceProvider::ResourceId resource_id = 1;
+  for (int i = 0; i < tiled_layer->TilingForTesting()->num_tiles_x(); ++i) {
+    for (int j = 0; j < tiled_layer->TilingForTesting()->num_tiles_y(); ++j)
+      tiled_layer->PushTileProperties(i, j, resource_id++, gfx::Rect(), false);
+  }
+
+  impl.CalcDrawProps(viewport_size);
+
+  {
+    SCOPED_TRACE("No occlusion");
+    gfx::Rect occluded;
+    impl.AppendQuadsWithOcclusion(tiled_layer, occluded);
+
+    LayerTestCommon::VerifyQuadsExactlyCoverRect(impl.quad_list(),
+                                                 gfx::Rect(layer_bounds));
+    EXPECT_EQ(100u, impl.quad_list().size());
+  }
+
+  {
+    SCOPED_TRACE("Full occlusion");
+    gfx::Rect occluded(tiled_layer->visible_content_rect());
+    impl.AppendQuadsWithOcclusion(tiled_layer, occluded);
+
+    LayerTestCommon::VerifyQuadsExactlyCoverRect(impl.quad_list(), gfx::Rect());
+    EXPECT_EQ(impl.quad_list().size(), 0u);
+  }
+
+  {
+    SCOPED_TRACE("Partial occlusion");
+    gfx::Rect occluded(150, 0, 200, 1000);
+    impl.AppendQuadsWithOcclusion(tiled_layer, occluded);
+
+    size_t partially_occluded_count = 0;
+    LayerTestCommon::VerifyQuadsCoverRectWithOcclusion(
+        impl.quad_list(),
+        gfx::Rect(layer_bounds),
+        occluded,
+        &partially_occluded_count);
+    // The layer outputs one quad, which is partially occluded.
+    EXPECT_EQ(100u - 10u, impl.quad_list().size());
+    EXPECT_EQ(10u + 10u, partially_occluded_count);
+  }
 }
 
 }  // namespace

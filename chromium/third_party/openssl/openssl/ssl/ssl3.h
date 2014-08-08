@@ -388,6 +388,7 @@ typedef struct ssl3_buffer_st
 #define TLS1_FLAGS_TLS_PADDING_BUG		0x0008
 #define TLS1_FLAGS_SKIP_CERT_VERIFY		0x0010
 #define TLS1_FLAGS_KEEP_HANDSHAKE		0x0020
+#define SSL3_FLAGS_CCS_OK			0x0080
  
 /* SSL3_FLAGS_SGC_RESTART_DONE is set when we
  * restart a handshake because of MS SGC and so prevents us
@@ -508,7 +509,7 @@ typedef struct ssl3_state_st
 		/* used for certificate requests */
 		int cert_req;
 		int ctype_num;
-		char ctype[SSL3_CT_NUMBER];
+		unsigned char ctype[SSL3_CT_NUMBER];
 		STACK_OF(X509_NAME) *ca_names;
 
 		int use_rsa_tmp;

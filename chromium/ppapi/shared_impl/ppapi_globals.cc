@@ -36,7 +36,7 @@ PpapiGlobals::~PpapiGlobals() {
   ppapi_globals = NULL;
 }
 
-//Static Getter for the global singleton.
+// Static Getter for the global singleton.
 PpapiGlobals* PpapiGlobals::Get() {
   if (ppapi_globals)
     return ppapi_globals;
@@ -61,12 +61,21 @@ void PpapiGlobals::ResetMainThreadMessageLoopForTesting() {
   main_loop_proxy_ = base::MessageLoopProxy::current();
 }
 
-bool PpapiGlobals::IsHostGlobals() const {
-  return false;
+bool PpapiGlobals::IsHostGlobals() const { return false; }
+
+bool PpapiGlobals::IsPluginGlobals() const { return false; }
+
+void PpapiGlobals::MarkPluginIsActive() {}
+
+void PpapiGlobals::AddLatencyInfo(const ui::LatencyInfo& latency_info,
+                                   PP_Instance instance) {
+  latency_info_for_frame_[instance].push_back(latency_info);
 }
 
-bool PpapiGlobals::IsPluginGlobals() const {
-  return false;
+void PpapiGlobals::TransferLatencyInfoTo(
+    std::vector<ui::LatencyInfo>* latency_info, PP_Instance instance) {
+  latency_info->swap(latency_info_for_frame_[instance]);
+  latency_info_for_frame_.erase(instance);
 }
 
 // static

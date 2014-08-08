@@ -111,13 +111,13 @@ std::vector<std::string> CreateTestScopes() {
 static IssueAdviceInfo CreateIssueAdvice() {
   IssueAdviceInfo ia;
   IssueAdviceInfoEntry e1;
-  e1.description = ASCIIToUTF16("Manage your calendars");
-  e1.details.push_back(ASCIIToUTF16("View and manage your calendars"));
+  e1.description = base::ASCIIToUTF16("Manage your calendars");
+  e1.details.push_back(base::ASCIIToUTF16("View and manage your calendars"));
   ia.push_back(e1);
   IssueAdviceInfoEntry e2;
-  e2.description = ASCIIToUTF16("Manage your documents");
-  e2.details.push_back(ASCIIToUTF16("View your documents"));
-  e2.details.push_back(ASCIIToUTF16("Upload new documents"));
+  e2.description = base::ASCIIToUTF16("Manage your documents");
+  e2.details.push_back(base::ASCIIToUTF16("View your documents"));
+  e2.details.push_back(base::ASCIIToUTF16("Upload new documents"));
   ia.push_back(e2);
   return ia;
 }
@@ -170,9 +170,9 @@ class OAuth2MintTokenFlowTest : public testing::Test {
 
   // Helper to parse the given string to DictionaryValue.
   static base::DictionaryValue* ParseJson(const std::string& str) {
-    scoped_ptr<Value> value(base::JSONReader::Read(str));
+    scoped_ptr<base::Value> value(base::JSONReader::Read(str));
     EXPECT_TRUE(value.get());
-    EXPECT_EQ(Value::TYPE_DICTIONARY, value->GetType());
+    EXPECT_EQ(base::Value::TYPE_DICTIONARY, value->GetType());
     return static_cast<base::DictionaryValue*>(value.release());
   }
 

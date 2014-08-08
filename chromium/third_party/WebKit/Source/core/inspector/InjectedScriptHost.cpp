@@ -31,19 +31,15 @@
 #include "config.h"
 #include "core/inspector/InjectedScriptHost.h"
 
-#include "core/inspector/InspectorAgent.h"
 #include "core/inspector/InspectorConsoleAgent.h"
 #include "core/inspector/InspectorDOMAgent.h"
-#include "core/inspector/InspectorDOMStorageAgent.h"
-#include "core/inspector/InspectorDatabaseAgent.h"
 #include "core/inspector/InspectorDebuggerAgent.h"
+#include "core/inspector/InspectorInspectorAgent.h"
 #include "core/inspector/InstrumentingAgents.h"
 #include "platform/JSONValues.h"
 
 #include "wtf/RefPtr.h"
 #include "wtf/text/StringBuilder.h"
-
-using namespace std;
 
 namespace WebCore {
 
@@ -72,15 +68,15 @@ void InjectedScriptHost::disconnect()
 
 void InjectedScriptHost::inspectImpl(PassRefPtr<JSONValue> object, PassRefPtr<JSONValue> hints)
 {
-    if (InspectorAgent* inspectorAgent = m_instrumentingAgents ? m_instrumentingAgents->inspectorAgent() : 0) {
+    if (InspectorInspectorAgent* inspectorAgent = m_instrumentingAgents ? m_instrumentingAgents->inspectorInspectorAgent() : 0) {
         RefPtr<TypeBuilder::Runtime::RemoteObject> remoteObject = TypeBuilder::Runtime::RemoteObject::runtimeCast(object);
         inspectorAgent->inspect(remoteObject, hints->asObject());
     }
 }
 
-void InjectedScriptHost::getEventListenersImpl(Node* node, Vector<EventListenerInfo>& listenersArray)
+void InjectedScriptHost::getEventListenersImpl(EventTarget* target, Vector<EventListenerInfo>& listenersArray)
 {
-    InspectorDOMAgent::getEventListeners(node, listenersArray, false);
+    InspectorDOMAgent::getEventListeners(target, listenersArray, false);
 }
 
 void InjectedScriptHost::clearConsoleMessages()
@@ -108,25 +104,11 @@ void InjectedScriptHost::clearInspectedObjects()
     m_inspectedObjects.clear();
 }
 
-InjectedScriptHost::InspectableObject* InjectedScriptHost::inspectedObject(unsigned int num)
+InjectedScriptHost::InspectableObject* InjectedScriptHost::inspectedObject(unsigned num)
 {
     if (num >= m_inspectedObjects.size())
         return m_defaultInspectableObject.get();
     return m_inspectedObjects[num].get();
-}
-
-String InjectedScriptHost::databaseIdImpl(Database* database)
-{
-    if (InspectorDatabaseAgent* databaseAgent = m_instrumentingAgents ? m_instrumentingAgents->inspectorDatabaseAgent() : 0)
-        return databaseAgent->databaseId(database);
-    return String();
-}
-
-String InjectedScriptHost::storageIdImpl(Storage* storage)
-{
-    if (InspectorDOMStorageAgent* domStorageAgent = m_instrumentingAgents ? m_instrumentingAgents->inspectorDOMStorageAgent() : 0)
-        return domStorageAgent->storageId(storage);
-    return String();
 }
 
 void InjectedScriptHost::debugFunction(const String& scriptId, int lineNumber, int columnNumber)

@@ -32,6 +32,7 @@ namespace WebCore {
 class TreeScope;
 
 class TreeScopeAdopter {
+    STACK_ALLOCATED();
 public:
     TreeScopeAdopter(Node& toAdopt, TreeScope& newScope);
 
@@ -47,8 +48,8 @@ public:
 private:
     void updateTreeScope(Node&) const;
     void moveTreeToNewScope(Node&) const;
-    void moveTreeToNewDocument(Node&, Document& oldDocument, Document* newDocument) const;
-    void moveNodeToNewDocument(Node&, Document& oldDocument, Document* newDocument) const;
+    void moveTreeToNewDocument(Node&, Document& oldDocument, Document& newDocument) const;
+    void moveNodeToNewDocument(Node&, Document& oldDocument, Document& newDocument) const;
 
     Node& m_toAdopt;
     TreeScope& m_newScope;

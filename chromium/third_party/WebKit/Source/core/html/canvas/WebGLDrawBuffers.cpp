@@ -27,36 +27,33 @@
 
 #include "core/html/canvas/WebGLDrawBuffers.h"
 
-#include "platform/graphics/Extensions3D.h"
-
 namespace WebCore {
 
-WebGLDrawBuffers::WebGLDrawBuffers(WebGLRenderingContext* context)
+WebGLDrawBuffers::WebGLDrawBuffers(WebGLRenderingContextBase* context)
     : WebGLExtension(context)
 {
     ScriptWrappable::init(this);
-    context->graphicsContext3D()->extensions()->ensureEnabled("GL_EXT_draw_buffers");
+    context->extensionsUtil()->ensureExtensionEnabled("GL_EXT_draw_buffers");
 }
 
 WebGLDrawBuffers::~WebGLDrawBuffers()
 {
 }
 
-WebGLExtension::ExtensionName WebGLDrawBuffers::name() const
+WebGLExtensionName WebGLDrawBuffers::name() const
 {
-    return WebGLExtension::WebGLDrawBuffersName;
+    return WebGLDrawBuffersName;
 }
 
-PassRefPtr<WebGLDrawBuffers> WebGLDrawBuffers::create(WebGLRenderingContext* context)
+PassRefPtr<WebGLDrawBuffers> WebGLDrawBuffers::create(WebGLRenderingContextBase* context)
 {
     return adoptRef(new WebGLDrawBuffers(context));
 }
 
 // static
-bool WebGLDrawBuffers::supported(WebGLRenderingContext* context)
+bool WebGLDrawBuffers::supported(WebGLRenderingContextBase* context)
 {
-    Extensions3D* extensions = context->graphicsContext3D()->extensions();
-    return (extensions->supports("GL_EXT_draw_buffers")
+    return (context->extensionsUtil()->supportsExtension("GL_EXT_draw_buffers")
         && satisfiesWebGLRequirements(context));
 }
 
@@ -65,12 +62,12 @@ const char* WebGLDrawBuffers::extensionName()
     return "WEBGL_draw_buffers";
 }
 
-void WebGLDrawBuffers::drawBuffersWEBGL(const Vector<GC3Denum>& buffers)
+void WebGLDrawBuffers::drawBuffersWEBGL(const Vector<GLenum>& buffers)
 {
     if (isLost())
         return;
-    GC3Dsizei n = buffers.size();
-    const GC3Denum* bufs = buffers.data();
+    GLsizei n = buffers.size();
+    const GLenum* bufs = buffers.data();
     if (!m_context->m_framebufferBinding) {
         if (n != 1) {
             m_context->synthesizeGLError(GL_INVALID_VALUE, "drawBuffersWEBGL", "more than one buffer");
@@ -81,16 +78,16 @@ void WebGLDrawBuffers::drawBuffersWEBGL(const Vector<GC3Denum>& buffers)
             return;
         }
         // Because the backbuffer is simulated on all current WebKit ports, we need to change BACK to COLOR_ATTACHMENT0.
-        GC3Denum value = (bufs[0] == GL_BACK) ? GL_COLOR_ATTACHMENT0 : GL_NONE;
-        m_context->graphicsContext3D()->extensions()->drawBuffersEXT(1, &value);
+        GLenum value = (bufs[0] == GL_BACK) ? GL_COLOR_ATTACHMENT0 : GL_NONE;
+        m_context->webContext()->drawBuffersEXT(1, &value);
         m_context->setBackDrawBuffer(bufs[0]);
     } else {
         if (n > m_context->maxDrawBuffers()) {
             m_context->synthesizeGLError(GL_INVALID_VALUE, "drawBuffersWEBGL", "more than max draw buffers");
             return;
         }
-        for (GC3Dsizei i = 0; i < n; ++i) {
-            if (bufs[i] != GL_NONE && bufs[i] != static_cast<GC3Denum>(Extensions3D::COLOR_ATTACHMENT0_EXT + i)) {
+        for (GLsizei i = 0; i < n; ++i) {
+            if (bufs[i] != GL_NONE && bufs[i] != static_cast<GLenum>(GL_COLOR_ATTACHMENT0_EXT + i)) {
                 m_context->synthesizeGLError(GL_INVALID_OPERATION, "drawBuffersWEBGL", "COLOR_ATTACHMENTi_EXT or NONE");
                 return;
             }
@@ -100,15 +97,16 @@ void WebGLDrawBuffers::drawBuffersWEBGL(const Vector<GC3Denum>& buffers)
 }
 
 // static
-bool WebGLDrawBuffers::satisfiesWebGLRequirements(WebGLRenderingContext* webglContext)
+bool WebGLDrawBuffers::satisfiesWebGLRequirements(WebGLRenderingContextBase* webglContext)
 {
-    GraphicsContext3D* context = webglContext->graphicsContext3D();
+    blink::WebGraphicsContext3D* context = webglContext->webContext();
+    Extensions3DUtil* extensionsUtil = webglContext->extensionsUtil();
 
     // This is called after we make sure GL_EXT_draw_buffers is supported.
-    GC3Dint maxDrawBuffers = 0;
-    GC3Dint maxColorAttachments = 0;
-    context->getIntegerv(Extensions3D::MAX_DRAW_BUFFERS_EXT, &maxDrawBuffers);
-    context->getIntegerv(Extensions3D::MAX_COLOR_ATTACHMENTS_EXT, &maxColorAttachments);
+    GLint maxDrawBuffers = 0;
+    GLint maxColorAttachments = 0;
+    context->getIntegerv(GL_MAX_DRAW_BUFFERS_EXT, &maxDrawBuffers);
+    context->getIntegerv(GL_MAX_COLOR_ATTACHMENTS_EXT, &maxColorAttachments);
     if (maxDrawBuffers < 4 || maxColorAttachments < 4)
         return false;
 
@@ -116,11 +114,11 @@ bool WebGLDrawBuffers::satisfiesWebGLRequirements(WebGLRenderingContext* webglCo
     context->bindFramebuffer(GL_FRAMEBUFFER, fbo);
 
     const unsigned char* buffer = 0; // Chromium doesn't allow init data for depth/stencil tetxures.
-    bool supportsDepth = (context->extensions()->supports("GL_CHROMIUM_depth_texture")
-        || context->extensions()->supports("GL_OES_depth_texture")
-        || context->extensions()->supports("GL_ARB_depth_texture"));
-    bool supportsDepthStencil = (context->extensions()->supports("GL_EXT_packed_depth_stencil")
-        || context->extensions()->supports("GL_OES_packed_depth_stencil"));
+    bool supportsDepth = (extensionsUtil->supportsExtension("GL_CHROMIUM_depth_texture")
+        || extensionsUtil->supportsExtension("GL_OES_depth_texture")
+        || extensionsUtil->supportsExtension("GL_ARB_depth_texture"));
+    bool supportsDepthStencil = (extensionsUtil->supportsExtension("GL_EXT_packed_depth_stencil")
+        || extensionsUtil->supportsExtension("GL_OES_packed_depth_stencil"));
     Platform3DObject depthStencil = 0;
     if (supportsDepthStencil) {
         depthStencil = context->createTexture();
@@ -136,8 +134,8 @@ bool WebGLDrawBuffers::satisfiesWebGLRequirements(WebGLRenderingContext* webglCo
 
     Vector<Platform3DObject> colors;
     bool ok = true;
-    GC3Dint maxAllowedBuffers = std::min(maxDrawBuffers, maxColorAttachments);
-    for (GC3Dint i = 0; i < maxAllowedBuffers; ++i) {
+    GLint maxAllowedBuffers = std::min(maxDrawBuffers, maxColorAttachments);
+    for (GLint i = 0; i < maxAllowedBuffers; ++i) {
         Platform3DObject color = context->createTexture();
         colors.append(color);
         context->bindTexture(GL_TEXTURE_2D, color);

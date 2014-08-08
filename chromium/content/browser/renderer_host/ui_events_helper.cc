@@ -4,6 +4,7 @@
 
 #include "content/browser/renderer_host/ui_events_helper.h"
 
+#include "content/common/input/web_touch_event_traits.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "ui/events/event.h"
 #include "ui/events/event_constants.h"
@@ -120,19 +121,12 @@ bool MakeUITouchEventsFromWebTouchEvents(
     const blink::WebTouchPoint& point = touch.touches[i];
     if (WebTouchPointStateToEventType(point.state) != type)
       continue;
-    // In aura, the touch-event needs to be in the screen coordinate, since the
-    // touch-event is routed to RootWindow first. In Windows, on the other hand,
-    // the touch-event is dispatched directly to the gesture-recognizer, so the
-    // location needs to be in the local coordinate space.
-#if defined(USE_AURA)
-    gfx::Point location;
+    // ui events start in the co-ordinate space of the EventDispatcher.
+    gfx::PointF location;
     if (coordinate_system == LOCAL_COORDINATES)
-      location = gfx::Point(point.position.x, point.position.y);
+      location = point.position;
     else
-      location = gfx::Point(point.screenPosition.x, point.screenPosition.y);
-#else
-    gfx::Point location(point.position.x, point.position.y);
-#endif
+      location = point.screenPosition;
     ui::TouchEvent* uievent = new ui::TouchEvent(type,
           location,
           flags,
@@ -178,6 +172,10 @@ blink::WebGestureEvent MakeWebGestureEventFromUIEvent(
       break;
     case ui::ET_GESTURE_SCROLL_BEGIN:
       gesture_event.type = blink::WebInputEvent::GestureScrollBegin;
+      gesture_event.data.scrollBegin.deltaXHint =
+          event.details().scroll_x_hint();
+      gesture_event.data.scrollBegin.deltaYHint =
+          event.details().scroll_y_hint();
       break;
     case ui::ET_GESTURE_SCROLL_UPDATE:
       gesture_event.type = blink::WebInputEvent::GestureScrollUpdate;
@@ -228,14 +226,14 @@ blink::WebGestureEvent MakeWebGestureEventFromUIEvent(
       break;
     case ui::ET_GESTURE_BEGIN:
     case ui::ET_GESTURE_END:
-    case ui::ET_GESTURE_MULTIFINGER_SWIPE:
+    case ui::ET_GESTURE_SWIPE:
       gesture_event.type = blink::WebInputEvent::Undefined;
       break;
     default:
       NOTREACHED() << "Unknown gesture type: " << event.type();
   }
 
-  gesture_event.sourceDevice = blink::WebGestureEvent::Touchscreen;
+  gesture_event.sourceDevice = blink::WebGestureDeviceTouchscreen;
   gesture_event.modifiers = EventFlagsToWebEventModifiers(event.flags());
   gesture_event.timeStampSeconds = event.time_stamp().InSecondsF();
 
@@ -316,7 +314,7 @@ blink::WebTouchPoint* UpdateWebTouchEventFromUIEvent(
   point->position.x = event.x();
   point->position.y = event.y();
 
-  const gfx::Point root_point = event.root_location();
+  const gfx::PointF& root_point = event.root_location_f();
   point->screenPosition.x = root_point.x();
   point->screenPosition.y = root_point.y();
 
@@ -328,8 +326,9 @@ blink::WebTouchPoint* UpdateWebTouchEventFromUIEvent(
   }
 
   // Update the type of the touch event.
-  web_event->type = TouchEventTypeFromEvent(event);
-  web_event->timeStampSeconds = event.time_stamp().InSecondsF();
+  WebTouchEventTraits::ResetType(TouchEventTypeFromEvent(event),
+                                 event.time_stamp().InSecondsF(),
+                                 web_event);
   web_event->modifiers = EventFlagsToWebEventModifiers(event.flags());
 
   return point;

@@ -12,38 +12,45 @@
 #include "base/memory/weak_ptr.h"
 #include "base/run_loop.h"
 #include "base/strings/stringprintf.h"
+#include "content/browser/fileapi/mock_file_change_observer.h"
+#include "content/browser/quota/mock_quota_manager.h"
+#include "content/browser/quota/mock_quota_manager_proxy.h"
+#include "content/public/test/async_file_test_helper.h"
 #include "content/public/test/sandbox_file_system_test_helper.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
-#include "webkit/browser/fileapi/async_file_test_helper.h"
 #include "webkit/browser/fileapi/file_system_context.h"
 #include "webkit/browser/fileapi/file_system_file_util.h"
 #include "webkit/browser/fileapi/file_system_operation_context.h"
 #include "webkit/browser/fileapi/file_system_operation_runner.h"
-#include "webkit/browser/fileapi/mock_file_change_observer.h"
 #include "webkit/browser/fileapi/sandbox_file_system_backend.h"
-#include "webkit/browser/quota/mock_quota_manager.h"
 #include "webkit/browser/quota/quota_manager.h"
+#include "webkit/browser/quota/quota_manager_proxy.h"
 #include "webkit/common/blob/shareable_file_reference.h"
 #include "webkit/common/fileapi/file_system_util.h"
 
+using content::AsyncFileTestHelper;
+using fileapi::FileSystemOperation;
+using fileapi::FileSystemOperationContext;
+using fileapi::FileSystemOperationRunner;
+using fileapi::FileSystemURL;
 using quota::QuotaManager;
 using quota::QuotaManagerProxy;
 using webkit_blob::ShareableFileReference;
 
-namespace fileapi {
+namespace content {
 
 namespace {
 
 const int kFileOperationStatusNotSet = 1;
 
 void AssertFileErrorEq(const tracked_objects::Location& from_here,
-                       base::PlatformFileError expected,
-                       base::PlatformFileError actual) {
+                       base::File::Error expected,
+                       base::File::Error actual) {
   ASSERT_EQ(expected, actual) << from_here.ToString();
 }
 
-}  // namespace (anonymous)
+}  // namespace
 
 // Test class for FileSystemOperationImpl.
 class FileSystemOperationImplTest
@@ -56,16 +63,17 @@ class FileSystemOperationImplTest
  protected:
   virtual void SetUp() OVERRIDE {
     EXPECT_TRUE(base_.CreateUniqueTempDir());
-    change_observers_ = MockFileChangeObserver::CreateList(&change_observer_);
+    change_observers_ = fileapi::MockFileChangeObserver::CreateList(
+        &change_observer_);
 
     base::FilePath base_dir = base_.path().AppendASCII("filesystem");
     quota_manager_ =
-        new quota::MockQuotaManager(false /* is_incognito */,
+        new MockQuotaManager(false /* is_incognito */,
                                     base_dir,
                                     base::MessageLoopProxy::current().get(),
                                     base::MessageLoopProxy::current().get(),
                                     NULL /* special storage policy */);
-    quota_manager_proxy_ = new quota::MockQuotaManagerProxy(
+    quota_manager_proxy_ = new MockQuotaManagerProxy(
         quota_manager(), base::MessageLoopProxy::current().get());
     sandbox_file_system_.SetUp(base_dir, quota_manager_proxy_.get());
     sandbox_file_system_.AddFileChangeObserver(&change_observer_);
@@ -84,9 +92,9 @@ class FileSystemOperationImplTest
   }
 
   int status() const { return status_; }
-  const base::PlatformFileInfo& info() const { return info_; }
+  const base::File::Info& info() const { return info_; }
   const base::FilePath& path() const { return path_; }
-  const std::vector<DirectoryEntry>& entries() const {
+  const std::vector<fileapi::DirectoryEntry>& entries() const {
     return entries_;
   }
 
@@ -94,20 +102,20 @@ class FileSystemOperationImplTest
     return shareable_file_ref_.get();
   }
 
-  quota::MockQuotaManager* quota_manager() {
-    return static_cast<quota::MockQuotaManager*>(quota_manager_.get());
+  MockQuotaManager* quota_manager() {
+    return static_cast<MockQuotaManager*>(quota_manager_.get());
   }
 
-  quota::MockQuotaManagerProxy* quota_manager_proxy() {
-    return static_cast<quota::MockQuotaManagerProxy*>(
+  MockQuotaManagerProxy* quota_manager_proxy() {
+    return static_cast<MockQuotaManagerProxy*>(
         quota_manager_proxy_.get());
   }
 
- FileSystemFileUtil* file_util() {
+  fileapi::FileSystemFileUtil* file_util() {
     return sandbox_file_system_.file_util();
   }
 
-  MockFileChangeObserver* change_observer() {
+  fileapi::MockFileChangeObserver* change_observer() {
     return &change_observer_;
   }
 
@@ -142,7 +150,7 @@ class FileSystemOperationImplTest
   FileSystemURL CreateFile(const std::string& path) {
     FileSystemURL url = URLForPath(path);
     bool created = false;
-    EXPECT_EQ(base::PLATFORM_FILE_OK,
+    EXPECT_EQ(base::File::FILE_OK,
               file_util()->EnsureFileExists(NewContext().get(),
                                             url, &created));
     EXPECT_TRUE(created);
@@ -151,14 +159,14 @@ class FileSystemOperationImplTest
 
   FileSystemURL CreateDirectory(const std::string& path) {
     FileSystemURL url = URLForPath(path);
-    EXPECT_EQ(base::PLATFORM_FILE_OK,
+    EXPECT_EQ(base::File::FILE_OK,
               file_util()->CreateDirectory(NewContext().get(), url,
                                            false /* exclusive */, true));
     return url;
   }
 
   int64 GetFileSize(const std::string& path) {
-    base::PlatformFileInfo info;
+    base::File::Info info;
     EXPECT_TRUE(base::GetFileInfo(PlatformPath(path), &info));
     return info.size;
   }
@@ -185,27 +193,27 @@ class FileSystemOperationImplTest
                       weak_factory_.GetWeakPtr());
   }
 
-  void DidFinish(base::PlatformFileError status) {
+  void DidFinish(base::File::Error status) {
     status_ = status;
   }
 
   void DidReadDirectory(
-      base::PlatformFileError status,
-      const std::vector<DirectoryEntry>& entries,
+      base::File::Error status,
+      const std::vector<fileapi::DirectoryEntry>& entries,
       bool /* has_more */) {
     entries_ = entries;
     status_ = status;
   }
 
-  void DidGetMetadata(base::PlatformFileError status,
-                      const base::PlatformFileInfo& info) {
+  void DidGetMetadata(base::File::Error status,
+                      const base::File::Info& info) {
     info_ = info;
     status_ = status;
   }
 
   void DidCreateSnapshotFile(
-      base::PlatformFileError status,
-      const base::PlatformFileInfo& info,
+      base::File::Error status,
+      const base::File::Info& info,
       const base::FilePath& platform_path,
       const scoped_refptr<ShareableFileReference>& shareable_file_ref) {
     info_ = info;
@@ -238,7 +246,7 @@ class FileSystemOperationImplTest
         sandbox_file_system_.file_system_context(), url);
     operation_runner()->Remove(url, false /* recursive */,
                                base::Bind(&AssertFileErrorEq, FROM_HERE,
-                                          base::PLATFORM_FILE_OK));
+                                          base::File::FILE_OK));
     base::RunLoop().RunUntilIdle();
     change_observer()->ResetCount();
 
@@ -269,6 +277,7 @@ class FileSystemOperationImplTest
                               quota + quota_delta);
   }
 
+ private:
   base::MessageLoop message_loop_;
   scoped_refptr<QuotaManager> quota_manager_;
   scoped_refptr<QuotaManagerProxy> quota_manager_proxy_;
@@ -280,13 +289,13 @@ class FileSystemOperationImplTest
 
   // For post-operation status.
   int status_;
-  base::PlatformFileInfo info_;
+  base::File::Info info_;
   base::FilePath path_;
-  std::vector<DirectoryEntry> entries_;
+  std::vector<fileapi::DirectoryEntry> entries_;
   scoped_refptr<ShareableFileReference> shareable_file_ref_;
 
-  MockFileChangeObserver change_observer_;
-  ChangeObserverList change_observers_;
+  fileapi::MockFileChangeObserver change_observer_;
+  fileapi::ChangeObserverList change_observers_;
 
   base::WeakPtrFactory<FileSystemOperationImplTest> weak_factory_;
 
@@ -299,7 +308,7 @@ TEST_F(FileSystemOperationImplTest, TestMoveFailureSrcDoesntExist) {
                            FileSystemOperation::OPTION_NONE,
                            RecordStatusCallback());
   base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(base::PLATFORM_FILE_ERROR_NOT_FOUND, status());
+  EXPECT_EQ(base::File::FILE_ERROR_NOT_FOUND, status());
   EXPECT_TRUE(change_observer()->HasNoChange());
 }
 
@@ -311,7 +320,7 @@ TEST_F(FileSystemOperationImplTest, TestMoveFailureContainsPath) {
                            FileSystemOperation::OPTION_NONE,
                            RecordStatusCallback());
   base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(base::PLATFORM_FILE_ERROR_INVALID_OPERATION, status());
+  EXPECT_EQ(base::File::FILE_ERROR_INVALID_OPERATION, status());
   EXPECT_TRUE(change_observer()->HasNoChange());
 }
 
@@ -325,7 +334,7 @@ TEST_F(FileSystemOperationImplTest, TestMoveFailureSrcDirExistsDestFile) {
                            FileSystemOperation::OPTION_NONE,
                            RecordStatusCallback());
   base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(base::PLATFORM_FILE_ERROR_INVALID_OPERATION, status());
+  EXPECT_EQ(base::File::FILE_ERROR_INVALID_OPERATION, status());
   EXPECT_TRUE(change_observer()->HasNoChange());
 }
 
@@ -340,7 +349,7 @@ TEST_F(FileSystemOperationImplTest,
                            FileSystemOperation::OPTION_NONE,
                            RecordStatusCallback());
   base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(base::PLATFORM_FILE_ERROR_NOT_EMPTY, status());
+  EXPECT_EQ(base::File::FILE_ERROR_NOT_EMPTY, status());
   EXPECT_TRUE(change_observer()->HasNoChange());
 }
 
@@ -354,7 +363,7 @@ TEST_F(FileSystemOperationImplTest, TestMoveFailureSrcFileExistsDestDir) {
                            FileSystemOperation::OPTION_NONE,
                            RecordStatusCallback());
   base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(base::PLATFORM_FILE_ERROR_INVALID_OPERATION, status());
+  EXPECT_EQ(base::File::FILE_ERROR_INVALID_OPERATION, status());
   EXPECT_TRUE(change_observer()->HasNoChange());
 }
 
@@ -365,7 +374,7 @@ TEST_F(FileSystemOperationImplTest, TestMoveFailureDestParentDoesntExist) {
                            FileSystemOperation::OPTION_NONE,
                            RecordStatusCallback());
   base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(base::PLATFORM_FILE_ERROR_NOT_FOUND, status());
+  EXPECT_EQ(base::File::FILE_ERROR_NOT_FOUND, status());
   EXPECT_TRUE(change_observer()->HasNoChange());
 }
 
@@ -377,7 +386,7 @@ TEST_F(FileSystemOperationImplTest, TestMoveSuccessSrcFileAndOverwrite) {
                            FileSystemOperation::OPTION_NONE,
                            RecordStatusCallback());
   base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(base::PLATFORM_FILE_OK, status());
+  EXPECT_EQ(base::File::FILE_OK, status());
   EXPECT_TRUE(FileExists("dest"));
 
   EXPECT_EQ(1, change_observer()->get_and_reset_modify_file_count());
@@ -394,7 +403,7 @@ TEST_F(FileSystemOperationImplTest, TestMoveSuccessSrcFileAndNew) {
                            FileSystemOperation::OPTION_NONE,
                            RecordStatusCallback());
   base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(base::PLATFORM_FILE_OK, status());
+  EXPECT_EQ(base::File::FILE_OK, status());
   EXPECT_TRUE(FileExists("new"));
 
   EXPECT_EQ(1, change_observer()->get_and_reset_create_file_from_count());
@@ -410,7 +419,7 @@ TEST_F(FileSystemOperationImplTest, TestMoveSuccessSrcDirAndOverwrite) {
                            FileSystemOperation::OPTION_NONE,
                            RecordStatusCallback());
   base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(base::PLATFORM_FILE_OK, status());
+  EXPECT_EQ(base::File::FILE_OK, status());
   EXPECT_FALSE(DirectoryExists("src"));
 
   EXPECT_EQ(1, change_observer()->get_and_reset_create_directory_count());
@@ -430,7 +439,7 @@ TEST_F(FileSystemOperationImplTest, TestMoveSuccessSrcDirAndNew) {
                            FileSystemOperation::OPTION_NONE,
                            RecordStatusCallback());
   base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(base::PLATFORM_FILE_OK, status());
+  EXPECT_EQ(base::File::FILE_OK, status());
   EXPECT_FALSE(DirectoryExists("src"));
   EXPECT_TRUE(DirectoryExists("dest/new"));
 
@@ -450,7 +459,7 @@ TEST_F(FileSystemOperationImplTest, TestMoveSuccessSrcDirRecursive) {
                            FileSystemOperation::OPTION_NONE,
                            RecordStatusCallback());
   base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(base::PLATFORM_FILE_OK, status());
+  EXPECT_EQ(base::File::FILE_OK, status());
   EXPECT_TRUE(DirectoryExists("dest/dir"));
   EXPECT_TRUE(FileExists("dest/dir/sub"));
 
@@ -461,13 +470,33 @@ TEST_F(FileSystemOperationImplTest, TestMoveSuccessSrcDirRecursive) {
   EXPECT_TRUE(change_observer()->HasNoChange());
 }
 
+TEST_F(FileSystemOperationImplTest, TestMoveSuccessSamePath) {
+  FileSystemURL src_dir(CreateDirectory("src"));
+  CreateDirectory("src/dir");
+  CreateFile("src/dir/sub");
+
+  operation_runner()->Move(src_dir, src_dir,
+                           FileSystemOperation::OPTION_NONE,
+                           RecordStatusCallback());
+  base::RunLoop().RunUntilIdle();
+  EXPECT_EQ(base::File::FILE_OK, status());
+  EXPECT_TRUE(DirectoryExists("src/dir"));
+  EXPECT_TRUE(FileExists("src/dir/sub"));
+
+  EXPECT_EQ(0, change_observer()->get_and_reset_remove_directory_count());
+  EXPECT_EQ(0, change_observer()->get_and_reset_create_directory_count());
+  EXPECT_EQ(0, change_observer()->get_and_reset_remove_file_count());
+  EXPECT_EQ(0, change_observer()->get_and_reset_create_file_from_count());
+  EXPECT_TRUE(change_observer()->HasNoChange());
+}
+
 TEST_F(FileSystemOperationImplTest, TestCopyFailureSrcDoesntExist) {
   operation_runner()->Copy(URLForPath("a"), URLForPath("b"),
                            FileSystemOperation::OPTION_NONE,
                            FileSystemOperationRunner::CopyProgressCallback(),
                            RecordStatusCallback());
   base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(base::PLATFORM_FILE_ERROR_NOT_FOUND, status());
+  EXPECT_EQ(base::File::FILE_ERROR_NOT_FOUND, status());
   EXPECT_TRUE(change_observer()->HasNoChange());
 }
 
@@ -480,7 +509,7 @@ TEST_F(FileSystemOperationImplTest, TestCopyFailureContainsPath) {
                            FileSystemOperationRunner::CopyProgressCallback(),
                            RecordStatusCallback());
   base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(base::PLATFORM_FILE_ERROR_INVALID_OPERATION, status());
+  EXPECT_EQ(base::File::FILE_ERROR_INVALID_OPERATION, status());
   EXPECT_TRUE(change_observer()->HasNoChange());
 }
 
@@ -495,7 +524,7 @@ TEST_F(FileSystemOperationImplTest, TestCopyFailureSrcDirExistsDestFile) {
                            FileSystemOperationRunner::CopyProgressCallback(),
                            RecordStatusCallback());
   base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(base::PLATFORM_FILE_ERROR_INVALID_OPERATION, status());
+  EXPECT_EQ(base::File::FILE_ERROR_INVALID_OPERATION, status());
   EXPECT_TRUE(change_observer()->HasNoChange());
 }
 
@@ -511,7 +540,7 @@ TEST_F(FileSystemOperationImplTest,
                            FileSystemOperationRunner::CopyProgressCallback(),
                            RecordStatusCallback());
   base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(base::PLATFORM_FILE_ERROR_NOT_EMPTY, status());
+  EXPECT_EQ(base::File::FILE_ERROR_NOT_EMPTY, status());
   EXPECT_TRUE(change_observer()->HasNoChange());
 }
 
@@ -525,7 +554,7 @@ TEST_F(FileSystemOperationImplTest, TestCopyFailureSrcFileExistsDestDir) {
                            FileSystemOperationRunner::CopyProgressCallback(),
                            RecordStatusCallback());
   base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(base::PLATFORM_FILE_ERROR_INVALID_OPERATION, status());
+  EXPECT_EQ(base::File::FILE_ERROR_INVALID_OPERATION, status());
   EXPECT_TRUE(change_observer()->HasNoChange());
 }
 
@@ -538,7 +567,7 @@ TEST_F(FileSystemOperationImplTest, TestCopyFailureDestParentDoesntExist) {
                            FileSystemOperationRunner::CopyProgressCallback(),
                            RecordStatusCallback());
   base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(base::PLATFORM_FILE_ERROR_NOT_FOUND, status());
+  EXPECT_EQ(base::File::FILE_ERROR_NOT_FOUND, status());
   EXPECT_TRUE(change_observer()->HasNoChange());
 }
 
@@ -548,7 +577,7 @@ TEST_F(FileSystemOperationImplTest, TestCopyFailureByQuota) {
   FileSystemURL dest_dir(CreateDirectory("dest"));
   operation_runner()->Truncate(src_file, 6, RecordStatusCallback());
   base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(base::PLATFORM_FILE_OK, status());
+  EXPECT_EQ(base::File::FILE_OK, status());
   EXPECT_EQ(6, GetFileSize("src/file"));
 
   FileSystemURL dest_file(URLForPath("dest/file"));
@@ -561,7 +590,7 @@ TEST_F(FileSystemOperationImplTest, TestCopyFailureByQuota) {
                            FileSystemOperationRunner::CopyProgressCallback(),
                            RecordStatusCallback());
   base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(base::PLATFORM_FILE_ERROR_NO_SPACE, status());
+  EXPECT_EQ(base::File::FILE_ERROR_NO_SPACE, status());
   EXPECT_FALSE(FileExists("dest/file"));
 }
 
@@ -574,7 +603,7 @@ TEST_F(FileSystemOperationImplTest, TestCopySuccessSrcFileAndOverwrite) {
                            FileSystemOperationRunner::CopyProgressCallback(),
                            RecordStatusCallback());
   base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(base::PLATFORM_FILE_OK, status());
+  EXPECT_EQ(base::File::FILE_OK, status());
   EXPECT_TRUE(FileExists("dest"));
   EXPECT_EQ(2, quota_manager_proxy()->notify_storage_accessed_count());
 
@@ -590,7 +619,7 @@ TEST_F(FileSystemOperationImplTest, TestCopySuccessSrcFileAndNew) {
                            FileSystemOperationRunner::CopyProgressCallback(),
                            RecordStatusCallback());
   base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(base::PLATFORM_FILE_OK, status());
+  EXPECT_EQ(base::File::FILE_OK, status());
   EXPECT_TRUE(FileExists("new"));
   EXPECT_EQ(2, quota_manager_proxy()->notify_storage_accessed_count());
 
@@ -607,7 +636,7 @@ TEST_F(FileSystemOperationImplTest, TestCopySuccessSrcDirAndOverwrite) {
                            FileSystemOperationRunner::CopyProgressCallback(),
                            RecordStatusCallback());
   base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(base::PLATFORM_FILE_OK, status());
+  EXPECT_EQ(base::File::FILE_OK, status());
 
   // Make sure we've overwritten but not copied the source under the |dest_dir|.
   EXPECT_TRUE(DirectoryExists("dest"));
@@ -628,7 +657,7 @@ TEST_F(FileSystemOperationImplTest, TestCopySuccessSrcDirAndNew) {
                            FileSystemOperationRunner::CopyProgressCallback(),
                            RecordStatusCallback());
   base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(base::PLATFORM_FILE_OK, status());
+  EXPECT_EQ(base::File::FILE_OK, status());
   EXPECT_TRUE(DirectoryExists("dest"));
   EXPECT_GE(quota_manager_proxy()->notify_storage_accessed_count(), 2);
 
@@ -649,7 +678,7 @@ TEST_F(FileSystemOperationImplTest, TestCopySuccessSrcDirRecursive) {
                            RecordStatusCallback());
   base::RunLoop().RunUntilIdle();
 
-  EXPECT_EQ(base::PLATFORM_FILE_OK, status());
+  EXPECT_EQ(base::File::FILE_OK, status());
   EXPECT_TRUE(DirectoryExists("dest/dir"));
   EXPECT_TRUE(FileExists("dest/dir/sub"));
 
@@ -662,12 +691,33 @@ TEST_F(FileSystemOperationImplTest, TestCopySuccessSrcDirRecursive) {
   EXPECT_TRUE(change_observer()->HasNoChange());
 }
 
+TEST_F(FileSystemOperationImplTest, TestCopySuccessSamePath) {
+  FileSystemURL src_dir(CreateDirectory("src"));
+  CreateDirectory("src/dir");
+  CreateFile("src/dir/sub");
+
+  operation_runner()->Copy(src_dir, src_dir,
+                           FileSystemOperation::OPTION_NONE,
+                           FileSystemOperationRunner::CopyProgressCallback(),
+                           RecordStatusCallback());
+  base::RunLoop().RunUntilIdle();
+
+  EXPECT_EQ(base::File::FILE_OK, status());
+  EXPECT_TRUE(DirectoryExists("src/dir"));
+  EXPECT_TRUE(FileExists("src/dir/sub"));
+
+  EXPECT_EQ(0, change_observer()->get_and_reset_create_directory_count());
+  EXPECT_EQ(0, change_observer()->get_and_reset_remove_file_count());
+  EXPECT_EQ(0, change_observer()->get_and_reset_create_file_from_count());
+  EXPECT_TRUE(change_observer()->HasNoChange());
+}
+
 TEST_F(FileSystemOperationImplTest, TestCopyInForeignFileSuccess) {
   base::FilePath src_local_disk_file_path;
   base::CreateTemporaryFile(&src_local_disk_file_path);
   const char test_data[] = "foo";
   int data_size = ARRAYSIZE_UNSAFE(test_data);
-  file_util::WriteFile(src_local_disk_file_path, test_data, data_size);
+  base::WriteFile(src_local_disk_file_path, test_data, data_size);
 
   FileSystemURL dest_dir(CreateDirectory("dest"));
 
@@ -681,7 +731,7 @@ TEST_F(FileSystemOperationImplTest, TestCopyInForeignFileSuccess) {
   base::RunLoop().RunUntilIdle();
 
   EXPECT_EQ(1, change_observer()->create_file_count());
-  EXPECT_EQ(base::PLATFORM_FILE_OK, status());
+  EXPECT_EQ(base::File::FILE_OK, status());
   EXPECT_TRUE(FileExists("dest/file"));
   int64 after_usage;
   GetUsageAndQuota(&after_usage, NULL);
@@ -699,7 +749,7 @@ TEST_F(FileSystemOperationImplTest, TestCopyInForeignFileFailureByQuota) {
   base::FilePath src_local_disk_file_path;
   base::CreateTemporaryFile(&src_local_disk_file_path);
   const char test_data[] = "foo";
-  file_util::WriteFile(src_local_disk_file_path, test_data,
+  base::WriteFile(src_local_disk_file_path, test_data,
                        ARRAYSIZE_UNSAFE(test_data));
 
   FileSystemURL dest_dir(CreateDirectory("dest"));
@@ -712,7 +762,7 @@ TEST_F(FileSystemOperationImplTest, TestCopyInForeignFileFailureByQuota) {
 
   EXPECT_FALSE(FileExists("dest/file"));
   EXPECT_EQ(0, change_observer()->create_file_count());
-  EXPECT_EQ(base::PLATFORM_FILE_ERROR_NO_SPACE, status());
+  EXPECT_EQ(base::File::FILE_ERROR_NO_SPACE, status());
 }
 
 TEST_F(FileSystemOperationImplTest, TestCreateFileFailure) {
@@ -720,7 +770,7 @@ TEST_F(FileSystemOperationImplTest, TestCreateFileFailure) {
   FileSystemURL file(CreateFile("file"));
   operation_runner()->CreateFile(file, true, RecordStatusCallback());
   base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(base::PLATFORM_FILE_ERROR_EXISTS, status());
+  EXPECT_EQ(base::File::FILE_ERROR_EXISTS, status());
   EXPECT_TRUE(change_observer()->HasNoChange());
 }
 
@@ -729,7 +779,7 @@ TEST_F(FileSystemOperationImplTest, TestCreateFileSuccessFileExists) {
   FileSystemURL file(CreateFile("file"));
   operation_runner()->CreateFile(file, false, RecordStatusCallback());
   base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(base::PLATFORM_FILE_OK, status());
+  EXPECT_EQ(base::File::FILE_OK, status());
   EXPECT_TRUE(FileExists("file"));
 
   // The file was already there; did nothing.
@@ -741,7 +791,7 @@ TEST_F(FileSystemOperationImplTest, TestCreateFileSuccessExclusive) {
   operation_runner()->CreateFile(URLForPath("new"), true,
                                  RecordStatusCallback());
   base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(base::PLATFORM_FILE_OK, status());
+  EXPECT_EQ(base::File::FILE_OK, status());
   EXPECT_TRUE(FileExists("new"));
   EXPECT_EQ(1, change_observer()->get_and_reset_create_file_count());
 }
@@ -751,7 +801,7 @@ TEST_F(FileSystemOperationImplTest, TestCreateFileSuccessFileDoesntExist) {
   operation_runner()->CreateFile(URLForPath("nonexistent"), false,
                                  RecordStatusCallback());
   base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(base::PLATFORM_FILE_OK, status());
+  EXPECT_EQ(base::File::FILE_OK, status());
   EXPECT_EQ(1, change_observer()->get_and_reset_create_file_count());
 }
 
@@ -762,7 +812,7 @@ TEST_F(FileSystemOperationImplTest,
       URLForPath("nonexistent/dir"), false, false,
       RecordStatusCallback());
   base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(base::PLATFORM_FILE_ERROR_NOT_FOUND, status());
+  EXPECT_EQ(base::File::FILE_ERROR_NOT_FOUND, status());
   EXPECT_TRUE(change_observer()->HasNoChange());
 }
 
@@ -772,7 +822,7 @@ TEST_F(FileSystemOperationImplTest, TestCreateDirFailureDirExists) {
   operation_runner()->CreateDirectory(dir, true, false,
                                       RecordStatusCallback());
   base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(base::PLATFORM_FILE_ERROR_EXISTS, status());
+  EXPECT_EQ(base::File::FILE_ERROR_EXISTS, status());
   EXPECT_TRUE(change_observer()->HasNoChange());
 }
 
@@ -782,7 +832,7 @@ TEST_F(FileSystemOperationImplTest, TestCreateDirFailureFileExists) {
   operation_runner()->CreateDirectory(file, true, false,
                                       RecordStatusCallback());
   base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(base::PLATFORM_FILE_ERROR_EXISTS, status());
+  EXPECT_EQ(base::File::FILE_ERROR_EXISTS, status());
   EXPECT_TRUE(change_observer()->HasNoChange());
 }
 
@@ -792,14 +842,14 @@ TEST_F(FileSystemOperationImplTest, TestCreateDirSuccess) {
   operation_runner()->CreateDirectory(dir, false, false,
                                       RecordStatusCallback());
   base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(base::PLATFORM_FILE_OK, status());
+  EXPECT_EQ(base::File::FILE_OK, status());
   EXPECT_TRUE(change_observer()->HasNoChange());
 
   // Dir doesn't exist.
   operation_runner()->CreateDirectory(URLForPath("new"), false, false,
                                       RecordStatusCallback());
   base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(base::PLATFORM_FILE_OK, status());
+  EXPECT_EQ(base::File::FILE_OK, status());
   EXPECT_TRUE(DirectoryExists("new"));
   EXPECT_EQ(1, change_observer()->get_and_reset_create_directory_count());
 }
@@ -809,7 +859,7 @@ TEST_F(FileSystemOperationImplTest, TestCreateDirSuccessExclusive) {
   operation_runner()->CreateDirectory(URLForPath("new"), true, false,
                                       RecordStatusCallback());
   base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(base::PLATFORM_FILE_OK, status());
+  EXPECT_EQ(base::File::FILE_OK, status());
   EXPECT_TRUE(DirectoryExists("new"));
   EXPECT_EQ(1, change_observer()->get_and_reset_create_directory_count());
   EXPECT_TRUE(change_observer()->HasNoChange());
@@ -819,17 +869,17 @@ TEST_F(FileSystemOperationImplTest, TestExistsAndMetadataFailure) {
   operation_runner()->GetMetadata(URLForPath("nonexistent"),
                                   RecordMetadataCallback());
   base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(base::PLATFORM_FILE_ERROR_NOT_FOUND, status());
+  EXPECT_EQ(base::File::FILE_ERROR_NOT_FOUND, status());
 
   operation_runner()->FileExists(URLForPath("nonexistent"),
                                  RecordStatusCallback());
   base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(base::PLATFORM_FILE_ERROR_NOT_FOUND, status());
+  EXPECT_EQ(base::File::FILE_ERROR_NOT_FOUND, status());
 
   operation_runner()->DirectoryExists(URLForPath("nonexistent"),
                                       RecordStatusCallback());
   base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(base::PLATFORM_FILE_ERROR_NOT_FOUND, status());
+  EXPECT_EQ(base::File::FILE_ERROR_NOT_FOUND, status());
   EXPECT_TRUE(change_observer()->HasNoChange());
 }
 
@@ -840,23 +890,23 @@ TEST_F(FileSystemOperationImplTest, TestExistsAndMetadataSuccess) {
 
   operation_runner()->DirectoryExists(dir, RecordStatusCallback());
   base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(base::PLATFORM_FILE_OK, status());
+  EXPECT_EQ(base::File::FILE_OK, status());
   ++read_access;
 
   operation_runner()->GetMetadata(dir, RecordMetadataCallback());
   base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(base::PLATFORM_FILE_OK, status());
+  EXPECT_EQ(base::File::FILE_OK, status());
   EXPECT_TRUE(info().is_directory);
   ++read_access;
 
   operation_runner()->FileExists(file, RecordStatusCallback());
   base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(base::PLATFORM_FILE_OK, status());
+  EXPECT_EQ(base::File::FILE_OK, status());
   ++read_access;
 
   operation_runner()->GetMetadata(file, RecordMetadataCallback());
   base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(base::PLATFORM_FILE_OK, status());
+  EXPECT_EQ(base::File::FILE_OK, status());
   EXPECT_FALSE(info().is_directory);
   ++read_access;
 
@@ -869,12 +919,12 @@ TEST_F(FileSystemOperationImplTest, TestTypeMismatchErrors) {
   FileSystemURL dir(CreateDirectory("dir"));
   operation_runner()->FileExists(dir, RecordStatusCallback());
   base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(base::PLATFORM_FILE_ERROR_NOT_A_FILE, status());
+  EXPECT_EQ(base::File::FILE_ERROR_NOT_A_FILE, status());
 
   FileSystemURL file(CreateFile("file"));
   operation_runner()->DirectoryExists(file, RecordStatusCallback());
   base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(base::PLATFORM_FILE_ERROR_NOT_A_DIRECTORY, status());
+  EXPECT_EQ(base::File::FILE_ERROR_NOT_A_DIRECTORY, status());
 }
 
 TEST_F(FileSystemOperationImplTest, TestReadDirFailure) {
@@ -882,13 +932,13 @@ TEST_F(FileSystemOperationImplTest, TestReadDirFailure) {
   operation_runner()->ReadDirectory(URLForPath("nonexistent"),
                                     RecordReadDirectoryCallback());
   base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(base::PLATFORM_FILE_ERROR_NOT_FOUND, status());
+  EXPECT_EQ(base::File::FILE_ERROR_NOT_FOUND, status());
 
   // File exists.
   FileSystemURL file(CreateFile("file"));
   operation_runner()->ReadDirectory(file, RecordReadDirectoryCallback());
   base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(base::PLATFORM_FILE_ERROR_NOT_A_DIRECTORY, status());
+  EXPECT_EQ(base::File::FILE_ERROR_NOT_A_DIRECTORY, status());
   EXPECT_TRUE(change_observer()->HasNoChange());
 }
 
@@ -903,7 +953,7 @@ TEST_F(FileSystemOperationImplTest, TestReadDirSuccess) {
 
   operation_runner()->ReadDirectory(parent_dir, RecordReadDirectoryCallback());
   base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(base::PLATFORM_FILE_OK, status());
+  EXPECT_EQ(base::File::FILE_OK, status());
   EXPECT_EQ(2u, entries().size());
 
   for (size_t i = 0; i < entries().size(); ++i) {
@@ -921,7 +971,7 @@ TEST_F(FileSystemOperationImplTest, TestRemoveFailure) {
   operation_runner()->Remove(URLForPath("nonexistent"), false /* recursive */,
                              RecordStatusCallback());
   base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(base::PLATFORM_FILE_ERROR_NOT_FOUND, status());
+  EXPECT_EQ(base::File::FILE_ERROR_NOT_FOUND, status());
 
   // It's an error to try to remove a non-empty directory if recursive flag
   // is false.
@@ -936,7 +986,7 @@ TEST_F(FileSystemOperationImplTest, TestRemoveFailure) {
   operation_runner()->Remove(parent_dir, false /* recursive */,
                              RecordStatusCallback());
   base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(base::PLATFORM_FILE_ERROR_NOT_EMPTY, status());
+  EXPECT_EQ(base::File::FILE_ERROR_NOT_EMPTY, status());
   EXPECT_TRUE(change_observer()->HasNoChange());
 }
 
@@ -946,7 +996,7 @@ TEST_F(FileSystemOperationImplTest, TestRemoveSuccess) {
   operation_runner()->Remove(empty_dir, false /* recursive */,
                              RecordStatusCallback());
   base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(base::PLATFORM_FILE_OK, status());
+  EXPECT_EQ(base::File::FILE_OK, status());
   EXPECT_FALSE(DirectoryExists("empty_dir"));
 
   EXPECT_EQ(1, change_observer()->get_and_reset_remove_directory_count());
@@ -972,7 +1022,7 @@ TEST_F(FileSystemOperationImplTest, TestRemoveSuccessRecursive) {
   operation_runner()->Remove(parent_dir, true /* recursive */,
                              RecordStatusCallback());
   base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(base::PLATFORM_FILE_OK, status());
+  EXPECT_EQ(base::File::FILE_OK, status());
   EXPECT_FALSE(DirectoryExists("parent_dir"));
 
   EXPECT_EQ(2, change_observer()->get_and_reset_remove_directory_count());
@@ -987,12 +1037,12 @@ TEST_F(FileSystemOperationImplTest, TestTruncate) {
   char test_data[] = "test data";
   int data_size = static_cast<int>(sizeof(test_data));
   EXPECT_EQ(data_size,
-            file_util::WriteFile(platform_path, test_data, data_size));
+            base::WriteFile(platform_path, test_data, data_size));
 
   // Check that its length is the size of the data written.
   operation_runner()->GetMetadata(file, RecordMetadataCallback());
   base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(base::PLATFORM_FILE_OK, status());
+  EXPECT_EQ(base::File::FILE_OK, status());
   EXPECT_FALSE(info().is_directory);
   EXPECT_EQ(data_size, info().size);
 
@@ -1000,7 +1050,7 @@ TEST_F(FileSystemOperationImplTest, TestTruncate) {
   int length = 17;
   operation_runner()->Truncate(file, length, RecordStatusCallback());
   base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(base::PLATFORM_FILE_OK, status());
+  EXPECT_EQ(base::File::FILE_OK, status());
 
   EXPECT_EQ(1, change_observer()->get_and_reset_modify_file_count());
   EXPECT_TRUE(change_observer()->HasNoChange());
@@ -1021,7 +1071,7 @@ TEST_F(FileSystemOperationImplTest, TestTruncate) {
   length = 3;
   operation_runner()->Truncate(file, length, RecordStatusCallback());
   base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(base::PLATFORM_FILE_OK, status());
+  EXPECT_EQ(base::File::FILE_OK, status());
 
   EXPECT_EQ(1, change_observer()->get_and_reset_modify_file_count());
   EXPECT_TRUE(change_observer()->HasNoChange());
@@ -1046,7 +1096,7 @@ TEST_F(FileSystemOperationImplTest, TestTruncateFailureByQuota) {
 
   operation_runner()->Truncate(file, 10, RecordStatusCallback());
   base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(base::PLATFORM_FILE_OK, status());
+  EXPECT_EQ(base::File::FILE_OK, status());
   EXPECT_EQ(1, change_observer()->get_and_reset_modify_file_count());
   EXPECT_TRUE(change_observer()->HasNoChange());
 
@@ -1054,7 +1104,7 @@ TEST_F(FileSystemOperationImplTest, TestTruncateFailureByQuota) {
 
   operation_runner()->Truncate(file, 11, RecordStatusCallback());
   base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(base::PLATFORM_FILE_ERROR_NO_SPACE, status());
+  EXPECT_EQ(base::File::FILE_ERROR_NO_SPACE, status());
   EXPECT_TRUE(change_observer()->HasNoChange());
 
   EXPECT_EQ(10, GetFileSize("dir/file"));
@@ -1064,7 +1114,7 @@ TEST_F(FileSystemOperationImplTest, TestTouchFile) {
   FileSystemURL file(CreateFile("file"));
   base::FilePath platform_path = PlatformPath("file");
 
-  base::PlatformFileInfo info;
+  base::File::Info info;
   EXPECT_TRUE(base::GetFileInfo(platform_path, &info));
   EXPECT_FALSE(info.is_directory);
   EXPECT_EQ(0, info.size);
@@ -1080,7 +1130,7 @@ TEST_F(FileSystemOperationImplTest, TestTouchFile) {
   operation_runner()->TouchFile(file, new_accessed_time, new_modified_time,
                                 RecordStatusCallback());
   base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(base::PLATFORM_FILE_OK, status());
+  EXPECT_EQ(base::File::FILE_OK, status());
   EXPECT_TRUE(change_observer()->HasNoChange());
 
   EXPECT_TRUE(base::GetFileInfo(platform_path, &info));
@@ -1099,7 +1149,7 @@ TEST_F(FileSystemOperationImplTest, TestCreateSnapshotFile) {
   FileSystemURL file(CreateFile("dir/file"));
   operation_runner()->FileExists(file, RecordStatusCallback());
   base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(base::PLATFORM_FILE_OK, status());
+  EXPECT_EQ(base::File::FILE_OK, status());
 
   // See if we can get a 'snapshot' file info for the file.
   // Since FileSystemOperationImpl assumes the file exists in the local
@@ -1107,7 +1157,7 @@ TEST_F(FileSystemOperationImplTest, TestCreateSnapshotFile) {
   // as the file itself.
   operation_runner()->CreateSnapshotFile(file, RecordSnapshotFileCallback());
   base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(base::PLATFORM_FILE_OK, status());
+  EXPECT_EQ(base::File::FILE_OK, status());
   EXPECT_FALSE(info().is_directory);
   EXPECT_EQ(PlatformPath("dir/file"), path());
   EXPECT_TRUE(change_observer()->HasNoChange());
@@ -1134,16 +1184,16 @@ TEST_F(FileSystemOperationImplTest,
 
   operation_runner()->Truncate(
       child_file1, 5000,
-      base::Bind(&AssertFileErrorEq, FROM_HERE, base::PLATFORM_FILE_OK));
+      base::Bind(&AssertFileErrorEq, FROM_HERE, base::File::FILE_OK));
   operation_runner()->Truncate(
       child_file2, 400,
-      base::Bind(&AssertFileErrorEq, FROM_HERE, base::PLATFORM_FILE_OK));
+      base::Bind(&AssertFileErrorEq, FROM_HERE, base::File::FILE_OK));
   operation_runner()->Truncate(
       grandchild_file1, 30,
-      base::Bind(&AssertFileErrorEq, FROM_HERE, base::PLATFORM_FILE_OK));
+      base::Bind(&AssertFileErrorEq, FROM_HERE, base::File::FILE_OK));
   operation_runner()->Truncate(
       grandchild_file2, 2,
-      base::Bind(&AssertFileErrorEq, FROM_HERE, base::PLATFORM_FILE_OK));
+      base::Bind(&AssertFileErrorEq, FROM_HERE, base::File::FILE_OK));
   base::RunLoop().RunUntilIdle();
 
   const int64 all_file_size = 5000 + 400 + 30 + 2;
@@ -1152,7 +1202,7 @@ TEST_F(FileSystemOperationImplTest,
 
   operation_runner()->Move(
       src, dest, FileSystemOperation::OPTION_NONE,
-      base::Bind(&AssertFileErrorEq, FROM_HERE, base::PLATFORM_FILE_OK));
+      base::Bind(&AssertFileErrorEq, FROM_HERE, base::File::FILE_OK));
   base::RunLoop().RunUntilIdle();
 
   EXPECT_FALSE(DirectoryExists("src/dir"));
@@ -1187,16 +1237,16 @@ TEST_F(FileSystemOperationImplTest,
 
   operation_runner()->Truncate(
       child_file1, 8000,
-      base::Bind(&AssertFileErrorEq, FROM_HERE, base::PLATFORM_FILE_OK));
+      base::Bind(&AssertFileErrorEq, FROM_HERE, base::File::FILE_OK));
   operation_runner()->Truncate(
       child_file2, 700,
-      base::Bind(&AssertFileErrorEq, FROM_HERE, base::PLATFORM_FILE_OK));
+      base::Bind(&AssertFileErrorEq, FROM_HERE, base::File::FILE_OK));
   operation_runner()->Truncate(
       grandchild_file1, 60,
-      base::Bind(&AssertFileErrorEq, FROM_HERE, base::PLATFORM_FILE_OK));
+      base::Bind(&AssertFileErrorEq, FROM_HERE, base::File::FILE_OK));
   operation_runner()->Truncate(
       grandchild_file2, 5,
-      base::Bind(&AssertFileErrorEq, FROM_HERE, base::PLATFORM_FILE_OK));
+      base::Bind(&AssertFileErrorEq, FROM_HERE, base::File::FILE_OK));
   base::RunLoop().RunUntilIdle();
 
   const int64 child_file_size = 8000 + 700;
@@ -1212,7 +1262,7 @@ TEST_F(FileSystemOperationImplTest,
   operation_runner()->Copy(
       src, dest1, FileSystemOperation::OPTION_NONE,
       FileSystemOperationRunner::CopyProgressCallback(),
-      base::Bind(&AssertFileErrorEq, FROM_HERE, base::PLATFORM_FILE_OK));
+      base::Bind(&AssertFileErrorEq, FROM_HERE, base::File::FILE_OK));
   base::RunLoop().RunUntilIdle();
 
   expected_usage += all_file_size + child_path_cost + grandchild_path_cost;
@@ -1228,7 +1278,7 @@ TEST_F(FileSystemOperationImplTest,
   operation_runner()->Copy(
       child_dir, dest2, FileSystemOperation::OPTION_NONE,
       FileSystemOperationRunner::CopyProgressCallback(),
-      base::Bind(&AssertFileErrorEq, FROM_HERE, base::PLATFORM_FILE_OK));
+      base::Bind(&AssertFileErrorEq, FROM_HERE, base::File::FILE_OK));
   base::RunLoop().RunUntilIdle();
 
   expected_usage += grandchild_file_size + grandchild_path_cost;
@@ -1238,4 +1288,4 @@ TEST_F(FileSystemOperationImplTest,
   EXPECT_EQ(expected_usage, usage);
 }
 
-}  // namespace fileapi
+}  // namespace content

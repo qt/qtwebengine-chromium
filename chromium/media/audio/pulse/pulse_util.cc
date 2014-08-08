@@ -41,8 +41,6 @@ pa_channel_position ChromiumToPAChannelPosition(Channels channel) {
       return PA_CHANNEL_POSITION_SIDE_LEFT;
     case SIDE_RIGHT:
       return PA_CHANNEL_POSITION_SIDE_RIGHT;
-    case CHANNELS_MAX:
-      return PA_CHANNEL_POSITION_INVALID;
     default:
       NOTREACHED() << "Invalid channel: " << channel;
       return PA_CHANNEL_POSITION_INVALID;
@@ -86,7 +84,7 @@ pa_channel_map ChannelLayoutToPAChannelMap(ChannelLayout channel_layout) {
   pa_channel_map_init(&channel_map);
 
   channel_map.channels = ChannelLayoutToChannelCount(channel_layout);
-  for (Channels ch = LEFT; ch < CHANNELS_MAX;
+  for (Channels ch = LEFT; ch <= CHANNELS_MAX;
        ch = static_cast<Channels>(ch + 1)) {
     int channel_index = ChannelOrder(channel_layout, ch);
     if (channel_index < 0)
@@ -205,6 +203,7 @@ bool CreateOutputStream(pa_threaded_mainloop** mainloop,
                         pa_context** context,
                         pa_stream** stream,
                         const AudioParameters& params,
+                        const std::string& device_id,
                         pa_stream_notify_cb_t stream_callback,
                         pa_stream_request_cb_t write_callback,
                         void* user_data) {
@@ -287,12 +286,16 @@ bool CreateOutputStream(pa_threaded_mainloop** mainloop,
   // and error.
   RETURN_ON_FAILURE(
       pa_stream_connect_playback(
-          *stream, NULL, &pa_buffer_attributes,
+          *stream,
+          device_id == AudioManagerBase::kDefaultDeviceId ?
+              NULL : device_id.c_str(),
+          &pa_buffer_attributes,
           static_cast<pa_stream_flags_t>(
               PA_STREAM_INTERPOLATE_TIMING | PA_STREAM_ADJUST_LATENCY |
               PA_STREAM_AUTO_TIMING_UPDATE | PA_STREAM_NOT_MONOTONIC |
               PA_STREAM_START_CORKED),
-          NULL, NULL) == 0,
+          NULL,
+          NULL) == 0,
       "pa_stream_connect_playback FAILED ");
 
   // Wait for the stream to be ready.

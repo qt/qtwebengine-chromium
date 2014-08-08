@@ -39,32 +39,34 @@ namespace WebCore {
 
 class AudioContext;
 
-class MediaStreamAudioSourceNode : public AudioSourceNode, public AudioSourceProviderClient {
+class MediaStreamAudioSourceNode FINAL : public AudioSourceNode, public AudioSourceProviderClient {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(MediaStreamAudioSourceNode);
 public:
-    static PassRefPtr<MediaStreamAudioSourceNode> create(AudioContext*, MediaStream*, MediaStreamTrack*, AudioSourceProvider*);
+    static PassRefPtrWillBeRawPtr<MediaStreamAudioSourceNode> create(AudioContext*, MediaStream*, MediaStreamTrack*, PassOwnPtr<AudioSourceProvider>);
 
     virtual ~MediaStreamAudioSourceNode();
 
     MediaStream* mediaStream() { return m_mediaStream.get(); }
 
     // AudioNode
-    virtual void process(size_t framesToProcess);
-    virtual void reset();
+    virtual void process(size_t framesToProcess) OVERRIDE;
 
     // AudioSourceProviderClient
-    virtual void setFormat(size_t numberOfChannels, float sampleRate);
+    virtual void setFormat(size_t numberOfChannels, float sampleRate) OVERRIDE;
 
-    AudioSourceProvider* audioSourceProvider() const { return m_audioSourceProvider; }
+    AudioSourceProvider* audioSourceProvider() const { return m_audioSourceProvider.get(); }
+
+    virtual void trace(Visitor*) OVERRIDE;
 
 private:
-    MediaStreamAudioSourceNode(AudioContext*, MediaStream*, MediaStreamTrack*, AudioSourceProvider*);
+    MediaStreamAudioSourceNode(AudioContext*, MediaStream*, MediaStreamTrack*, PassOwnPtr<AudioSourceProvider>);
 
     // As an audio source, we will never propagate silence.
     virtual bool propagatesSilence() const OVERRIDE { return false; }
 
-    RefPtr<MediaStream> m_mediaStream;
-    RefPtr<MediaStreamTrack> m_audioTrack;
-    AudioSourceProvider* m_audioSourceProvider;
+    RefPtrWillBeMember<MediaStream> m_mediaStream;
+    RefPtrWillBeMember<MediaStreamTrack> m_audioTrack;
+    OwnPtr<AudioSourceProvider> m_audioSourceProvider;
 
     Mutex m_processLock;
 

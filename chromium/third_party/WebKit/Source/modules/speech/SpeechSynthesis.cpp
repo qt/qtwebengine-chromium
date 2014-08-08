@@ -34,9 +34,9 @@
 
 namespace WebCore {
 
-PassRefPtr<SpeechSynthesis> SpeechSynthesis::create(ExecutionContext* context)
+SpeechSynthesis* SpeechSynthesis::create(ExecutionContext* context)
 {
-    return adoptRef(new SpeechSynthesis(context));
+    return adoptRefCountedGarbageCollectedWillBeNoop(new SpeechSynthesis(context));
 }
 
 SpeechSynthesis::SpeechSynthesis(ExecutionContext* context)
@@ -47,7 +47,7 @@ SpeechSynthesis::SpeechSynthesis(ExecutionContext* context)
     ScriptWrappable::init(this);
 }
 
-void SpeechSynthesis::setPlatformSynthesizer(PassOwnPtr<PlatformSpeechSynthesizer> synthesizer)
+void SpeechSynthesis::setPlatformSynthesizer(PlatformSpeechSynthesizer* synthesizer)
 {
     m_platformSpeechSynthesizer = synthesizer;
 }
@@ -60,20 +60,20 @@ ExecutionContext* SpeechSynthesis::executionContext() const
 void SpeechSynthesis::voicesDidChange()
 {
     m_voiceList.clear();
-    if (!executionContext()->activeDOMObjectsAreStopped())
+    if (executionContext() && !executionContext()->activeDOMObjectsAreStopped())
         dispatchEvent(Event::create(EventTypeNames::voiceschanged));
 }
 
-const Vector<RefPtr<SpeechSynthesisVoice> >& SpeechSynthesis::getVoices()
+const HeapVector<Member<SpeechSynthesisVoice> >& SpeechSynthesis::getVoices()
 {
     if (m_voiceList.size())
         return m_voiceList;
 
     // If the voiceList is empty, that's the cue to get the voices from the platform again.
-    const Vector<RefPtr<PlatformSpeechSynthesisVoice> >& platformVoices = m_platformSpeechSynthesizer->voiceList();
+    const HeapVector<Member<PlatformSpeechSynthesisVoice> >& platformVoices = m_platformSpeechSynthesizer->voiceList();
     size_t voiceCount = platformVoices.size();
     for (size_t k = 0; k < voiceCount; k++)
-        m_voiceList.append(SpeechSynthesisVoice::create(platformVoices[k]));
+        m_voiceList.append(SpeechSynthesisVoice::create(platformVoices[k].get()));
 
     return m_voiceList;
 }
@@ -116,14 +116,16 @@ void SpeechSynthesis::speak(SpeechSynthesisUtterance* utterance, ExceptionState&
 
     m_utteranceQueue.append(utterance);
 
-    // If the queue was empty, speak this immediately and add it to the queue.
+    // If the queue was empty, speak this immediately.
     if (m_utteranceQueue.size() == 1)
         startSpeakingImmediately();
 }
 
 void SpeechSynthesis::cancel()
 {
-    // Remove all the items from the utterance queue.
+    // Remove all the items from the utterance queue. The platform
+    // may still have references to some of these utterances and may
+    // fire events on them asynchronously.
     m_utteranceQueue.clear();
     m_platformSpeechSynthesizer->cancel();
 }
@@ -143,7 +145,7 @@ void SpeechSynthesis::resume()
 
 void SpeechSynthesis::fireEvent(const AtomicString& type, SpeechSynthesisUtterance* utterance, unsigned long charIndex, const String& name)
 {
-    if (!executionContext()->activeDOMObjectsAreStopped())
+    if (executionContext() && !executionContext()->activeDOMObjectsAreStopped())
         utterance->dispatchEvent(SpeechSynthesisEvent::create(type, charIndex, (currentTime() - utterance->startTime()), name));
 }
 
@@ -163,7 +165,6 @@ void SpeechSynthesis::handleSpeakingCompleted(SpeechSynthesisUtterance* utteranc
     // sent an event on an utterance before it got the message that we
     // canceled it, and we should always report to the user what actually
     // happened.
-
     fireEvent(errorOccurred ? EventTypeNames::error : EventTypeNames::end, utterance, 0, String());
 
     // Start the next utterance if we just finished one and one was pending.
@@ -171,7 +172,7 @@ void SpeechSynthesis::handleSpeakingCompleted(SpeechSynthesisUtterance* utteranc
         startSpeakingImmediately();
 }
 
-void SpeechSynthesis::boundaryEventOccurred(PassRefPtr<PlatformSpeechSynthesisUtterance> utterance, SpeechBoundary boundary, unsigned charIndex)
+void SpeechSynthesis::boundaryEventOccurred(PlatformSpeechSynthesisUtterance* utterance, SpeechBoundary boundary, unsigned charIndex)
 {
     DEFINE_STATIC_LOCAL(const String, wordBoundaryString, ("word"));
     DEFINE_STATIC_LOCAL(const String, sentenceBoundaryString, ("sentence"));
@@ -188,33 +189,33 @@ void SpeechSynthesis::boundaryEventOccurred(PassRefPtr<PlatformSpeechSynthesisUt
     }
 }
 
-void SpeechSynthesis::didStartSpeaking(PassRefPtr<PlatformSpeechSynthesisUtterance> utterance)
+void SpeechSynthesis::didStartSpeaking(PlatformSpeechSynthesisUtterance* utterance)
 {
     if (utterance->client())
         fireEvent(EventTypeNames::start, static_cast<SpeechSynthesisUtterance*>(utterance->client()), 0, String());
 }
 
-void SpeechSynthesis::didPauseSpeaking(PassRefPtr<PlatformSpeechSynthesisUtterance> utterance)
+void SpeechSynthesis::didPauseSpeaking(PlatformSpeechSynthesisUtterance* utterance)
 {
     m_isPaused = true;
     if (utterance->client())
         fireEvent(EventTypeNames::pause, static_cast<SpeechSynthesisUtterance*>(utterance->client()), 0, String());
 }
 
-void SpeechSynthesis::didResumeSpeaking(PassRefPtr<PlatformSpeechSynthesisUtterance> utterance)
+void SpeechSynthesis::didResumeSpeaking(PlatformSpeechSynthesisUtterance* utterance)
 {
     m_isPaused = false;
     if (utterance->client())
         fireEvent(EventTypeNames::resume, static_cast<SpeechSynthesisUtterance*>(utterance->client()), 0, String());
 }
 
-void SpeechSynthesis::didFinishSpeaking(PassRefPtr<PlatformSpeechSynthesisUtterance> utterance)
+void SpeechSynthesis::didFinishSpeaking(PlatformSpeechSynthesisUtterance* utterance)
 {
     if (utterance->client())
         handleSpeakingCompleted(static_cast<SpeechSynthesisUtterance*>(utterance->client()), false);
 }
 
-void SpeechSynthesis::speakingErrorOccurred(PassRefPtr<PlatformSpeechSynthesisUtterance> utterance)
+void SpeechSynthesis::speakingErrorOccurred(PlatformSpeechSynthesisUtterance* utterance)
 {
     if (utterance->client())
         handleSpeakingCompleted(static_cast<SpeechSynthesisUtterance*>(utterance->client()), true);
@@ -229,7 +230,16 @@ SpeechSynthesisUtterance* SpeechSynthesis::currentSpeechUtterance() const
 
 const AtomicString& SpeechSynthesis::interfaceName() const
 {
-    return EventTargetNames::SpeechSynthesisUtterance;
+    return EventTargetNames::SpeechSynthesis;
+}
+
+void SpeechSynthesis::trace(Visitor* visitor)
+{
+    visitor->trace(m_platformSpeechSynthesizer);
+    visitor->trace(m_voiceList);
+    visitor->trace(m_utteranceQueue);
+    PlatformSpeechSynthesizerClient::trace(visitor);
+    EventTargetWithInlineData::trace(visitor);
 }
 
 } // namespace WebCore

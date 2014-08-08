@@ -24,19 +24,20 @@
  */
 
 [
+    WillBeGarbageCollected,
     ActiveDOMObject,
     Conditional=WEB_AUDIO,
     Constructor,
-    Constructor(unsigned long numberOfChannels, unsigned long numberOfFrames, float sampleRate),
     ConstructorCallWith=Document,
     NoInterfaceObject,
     RaisesException=Constructor,
 ] interface AudioContext : EventTarget {
+    
     // All rendered audio ultimately connects to destination, which represents the audio hardware.
     readonly attribute AudioDestinationNode destination;
 
     // All scheduled times are relative to this time in seconds.
-    readonly attribute float currentTime;
+    readonly attribute double currentTime;
 
     // All AudioNodes in the context run at this sample-rate (sample-frames per second).
     readonly attribute float sampleRate;
@@ -44,11 +45,7 @@
     // All panning is relative to this listener.
     readonly attribute AudioListener listener;
 
-    // Number of AudioBufferSourceNodes that are currently playing.
-    readonly attribute unsigned long activeSourceCount;
-
     [RaisesException] AudioBuffer createBuffer(unsigned long numberOfChannels, unsigned long numberOfFrames, float sampleRate);
-    [RaisesException] AudioBuffer createBuffer(ArrayBuffer? buffer, boolean mixToMono);
 
     // Asynchronous audio file data decoding.
     [RaisesException] void decodeAudioData(ArrayBuffer audioData, AudioBufferCallback successCallback, optional AudioBufferCallback errorCallback);
@@ -82,10 +79,4 @@
     // void prepareOfflineBufferRendering(unsigned long numberOfChannels, unsigned long numberOfFrames, float sampleRate);
     attribute EventHandler oncomplete;
     void startRendering();
-
-    [MeasureAs=LegacyWebAudio, ImplementedAs=createGain] GainNode createGainNode();
-    [MeasureAs=LegacyWebAudio, ImplementedAs=createDelay, RaisesException] DelayNode createDelayNode(optional double maxDelayTime);
-
-    [MeasureAs=LegacyWebAudio, ImplementedAs=createScriptProcessor, RaisesException] ScriptProcessorNode createJavaScriptNode(unsigned long bufferSize, optional unsigned long numberOfInputChannels, optional unsigned long numberOfOutputChannels);
-
 };

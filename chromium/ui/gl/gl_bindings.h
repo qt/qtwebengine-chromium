@@ -74,6 +74,7 @@
 #define GL_UNPACK_PREMULTIPLY_ALPHA_CHROMIUM             0x9241
 #define GL_UNPACK_UNPREMULTIPLY_ALPHA_CHROMIUM           0x9242
 #define GL_UNPACK_COLORSPACE_CONVERSION_CHROMIUM         0x9243
+#define GL_BIND_GENERATES_RESOURCE_CHROMIUM              0x9244
 
 // GL_CHROMIUM_gpu_memory_manager
 #define GL_TEXTURE_POOL_CHROMIUM                         0x6000
@@ -127,6 +128,14 @@
 #define GL_ASYNC_PIXEL_UNPACK_COMPLETED_CHROMIUM         0x84F5
 #define GL_ASYNC_PIXEL_PACK_COMPLETED_CHROMIUM           0x84F6
 
+// GL_CHROMIUM_sync_query
+#define GL_COMMANDS_COMPLETED_CHROMIUM                   0x84F7
+
+// GL_CHROMIUM_image
+#define GL_IMAGE_ROWBYTES_CHROMIUM                       0x78F0
+#define GL_IMAGE_MAP_CHROMIUM                            0x78F1
+#define GL_IMAGE_SCANOUT_CHROMIUM                        0x78F2
+
 // GL_OES_texure_3D
 #define GL_SAMPLER_3D_OES                                0x8B5F
 
@@ -147,6 +156,17 @@
 
 // GL_OES_compressed_ETC1_RGB8_texture
 #define GL_ETC1_RGB8_OES                                 0x8D64
+
+// GL_AMD_compressed_ATC_texture
+#define GL_ATC_RGB_AMD                                   0x8C92
+#define GL_ATC_RGBA_EXPLICIT_ALPHA_AMD                   0x8C93
+#define GL_ATC_RGBA_INTERPOLATED_ALPHA_AMD               0x87EE
+
+// GL_IMG_texture_compression_pvrtc
+#define GL_COMPRESSED_RGB_PVRTC_4BPPV1_IMG               0x8C00
+#define GL_COMPRESSED_RGB_PVRTC_2BPPV1_IMG               0x8C01
+#define GL_COMPRESSED_RGBA_PVRTC_4BPPV1_IMG              0x8C02
+#define GL_COMPRESSED_RGBA_PVRTC_2BPPV1_IMG              0x8C03
 
 // GL_OES_vertex_array_object
 #define GL_VERTEX_ARRAY_BINDING_OES                      0x85B5
@@ -225,28 +245,30 @@ typedef uint64 EGLuint64CHROMIUM;
 namespace gfx {
 
 struct GL_EXPORT DriverGL {
-  void Initialize();
-  void InitializeExtensions(GLContext* context);
+  void InitializeStaticBindings();
+  void InitializeCustomDynamicBindings(GLContext* context);
   void InitializeDebugBindings();
+  void InitializeNullDrawBindings();
+  // TODO(danakj): Remove this when all test suites are using null-draw.
+  bool HasInitializedNullDrawBindings();
+  bool SetNullDrawBindingsEnabled(bool enabled);
   void ClearBindings();
-  void UpdateDebugExtensionBindings();
 
   ProcsGL fn;
   ProcsGL orig_fn;
   ProcsGL debug_fn;
   ExtensionsGL ext;
+  bool null_draw_bindings_enabled;
 
  private:
-  void InitializeBindings();
-  void InitializeExtensionBindings(GLContext* context);
+  void InitializeDynamicBindings(GLContext* context);
 };
 
 struct GL_EXPORT DriverOSMESA {
-  void InitializeBindings();
-  void InitializeExtensionBindings(GLContext* context);
+  void InitializeStaticBindings();
+  void InitializeDynamicBindings(GLContext* context);
   void InitializeDebugBindings();
   void ClearBindings();
-  void UpdateDebugExtensionBindings();
 
   ProcsOSMESA fn;
   ProcsOSMESA debug_fn;
@@ -255,11 +277,10 @@ struct GL_EXPORT DriverOSMESA {
 
 #if defined(OS_WIN)
 struct GL_EXPORT DriverWGL {
-  void InitializeBindings();
-  void InitializeExtensionBindings(GLContext* context);
+  void InitializeStaticBindings();
+  void InitializeDynamicBindings(GLContext* context);
   void InitializeDebugBindings();
   void ClearBindings();
-  void UpdateDebugExtensionBindings();
 
   ProcsWGL fn;
   ProcsWGL debug_fn;
@@ -269,11 +290,10 @@ struct GL_EXPORT DriverWGL {
 
 #if defined(OS_WIN) || defined(USE_X11) || defined(OS_ANDROID) || defined(USE_OZONE)
 struct GL_EXPORT DriverEGL {
-  void InitializeBindings();
-  void InitializeExtensionBindings(GLContext* context);
+  void InitializeStaticBindings();
+  void InitializeDynamicBindings(GLContext* context);
   void InitializeDebugBindings();
   void ClearBindings();
-  void UpdateDebugExtensionBindings();
 
   ProcsEGL fn;
   ProcsEGL debug_fn;
@@ -283,11 +303,10 @@ struct GL_EXPORT DriverEGL {
 
 #if defined(USE_X11)
 struct GL_EXPORT DriverGLX {
-  void InitializeBindings();
-  void InitializeExtensionBindings(GLContext* context);
+  void InitializeStaticBindings();
+  void InitializeDynamicBindings(GLContext* context);
   void InitializeDebugBindings();
   void ClearBindings();
-  void UpdateDebugExtensionBindings();
 
   ProcsGLX fn;
   ProcsGLX debug_fn;
@@ -328,9 +347,6 @@ GL_EXPORT extern EGLApi* g_current_egl_context;
 GL_EXPORT extern DriverEGL g_driver_egl;
 
 #endif
-
-// Find an entry point to the mock GL implementation.
-void* GL_BINDING_CALL GetMockGLProcAddress(const char* name);
 
 }  // namespace gfx
 

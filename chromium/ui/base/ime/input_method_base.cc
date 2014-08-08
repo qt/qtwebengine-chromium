@@ -10,6 +10,8 @@
 #include "ui/base/ime/input_method_delegate.h"
 #include "ui/base/ime/input_method_observer.h"
 #include "ui/base/ime/text_input_client.h"
+#include "ui/base/ime/text_input_focus_manager.h"
+#include "ui/base/ui_base_switches_util.h"
 #include "ui/events/event.h"
 
 namespace ui {
@@ -56,6 +58,9 @@ void InputMethodBase::DetachTextInputClient(TextInputClient* client) {
 }
 
 TextInputClient* InputMethodBase::GetTextInputClient() const {
+  if (switches::IsTextInputFocusManagerEnabled())
+    return TextInputFocusManager::GetInstance()->GetFocusedTextInputClient();
+
   return system_toplevel_window_focused_ ? text_input_client_ : NULL;
 }
 
@@ -78,6 +83,10 @@ TextInputMode InputMethodBase::GetTextInputMode() const {
 bool InputMethodBase::CanComposeInline() const {
   TextInputClient* client = GetTextInputClient();
   return client ? client->CanComposeInline() : true;
+}
+
+void InputMethodBase::ShowImeIfNeeded() {
+  FOR_EACH_OBSERVER(InputMethodObserver, observer_list_, OnShowImeIfNeeded());
 }
 
 void InputMethodBase::AddObserver(InputMethodObserver* observer) {
@@ -107,11 +116,7 @@ bool InputMethodBase::DispatchKeyEventPostIME(
   if (!delegate_)
     return false;
 
-  if (!event.HasNativeEvent())
-    return delegate_->DispatchFabricatedKeyEventPostIME(
-        event.type(), event.key_code(), event.flags());
-
-  return delegate_->DispatchKeyEventPostIME(event.native_event());
+  return delegate_->DispatchKeyEventPostIME(event);
 }
 
 void InputMethodBase::NotifyTextInputStateChanged(
@@ -123,6 +128,9 @@ void InputMethodBase::NotifyTextInputStateChanged(
 
 void InputMethodBase::SetFocusedTextInputClientInternal(
     TextInputClient* client) {
+  if (switches::IsTextInputFocusManagerEnabled())
+    return;
+
   TextInputClient* old = text_input_client_;
   if (old == client)
     return;
@@ -152,18 +160,18 @@ void InputMethodBase::OnCandidateWindowHidden() {
 }
 
 void InputMethodBase::CandidateWindowShownCallback() {
-  if (text_input_client_)
-    text_input_client_->OnCandidateWindowShown();
+  if (TextInputClient* text_input_client = GetTextInputClient())
+    text_input_client->OnCandidateWindowShown();
 }
 
 void InputMethodBase::CandidateWindowUpdatedCallback() {
-  if (text_input_client_)
-    text_input_client_->OnCandidateWindowUpdated();
+  if (TextInputClient* text_input_client = GetTextInputClient())
+    text_input_client->OnCandidateWindowUpdated();
 }
 
 void InputMethodBase::CandidateWindowHiddenCallback() {
-  if (text_input_client_)
-    text_input_client_->OnCandidateWindowHidden();
+  if (TextInputClient* text_input_client = GetTextInputClient())
+    text_input_client->OnCandidateWindowHidden();
 }
 
 }  // namespace ui

@@ -23,9 +23,10 @@
 #define Chrome_h
 
 #include "core/loader/NavigationPolicy.h"
-#include "core/page/FocusDirection.h"
+#include "core/page/FocusType.h"
 #include "platform/Cursor.h"
 #include "platform/HostWindow.h"
+#include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
 
 namespace WebCore {
@@ -37,8 +38,7 @@ class DateTimeChooser;
 class DateTimeChooserClient;
 class FileChooser;
 class FloatRect;
-class Frame;
-class Geolocation;
+class LocalFrame;
 class HTMLInputElement;
 class HitTestResult;
 class IntRect;
@@ -53,9 +53,9 @@ struct DateTimeChooserParameters;
 struct ViewportDescription;
 struct WindowFeatures;
 
-class Chrome : public HostWindow {
+class Chrome FINAL : public HostWindow {
 public:
-    ~Chrome();
+    virtual ~Chrome();
 
     static PassOwnPtr<Chrome> create(Page*, ChromeClient*);
 
@@ -65,14 +65,12 @@ public:
     virtual void invalidateContentsAndRootView(const IntRect&) OVERRIDE;
     virtual void invalidateContentsForSlowScroll(const IntRect&) OVERRIDE;
     virtual void scroll(const IntSize&, const IntRect&, const IntRect&) OVERRIDE;
-    virtual IntPoint screenToRootView(const IntPoint&) const OVERRIDE;
     virtual IntRect rootViewToScreen(const IntRect&) const OVERRIDE;
     virtual blink::WebScreenInfo screenInfo() const OVERRIDE;
 
     virtual void scheduleAnimation() OVERRIDE;
 
-    void contentsSizeChanged(Frame*, const IntSize&) const;
-    void layoutUpdated(Frame*) const;
+    void contentsSizeChanged(LocalFrame*, const IntSize&) const;
 
     void setCursor(const Cursor&);
 
@@ -82,10 +80,9 @@ public:
     FloatRect pageRect() const;
 
     void focus() const;
-    void unfocus() const;
 
-    bool canTakeFocus(FocusDirection) const;
-    void takeFocus(FocusDirection) const;
+    bool canTakeFocus(FocusType) const;
+    void takeFocus(FocusType) const;
 
     void focusedNodeChanged(Node*) const;
 
@@ -103,14 +100,14 @@ public:
     bool menubarVisible() const;
 
     bool canRunBeforeUnloadConfirmPanel();
-    bool runBeforeUnloadConfirmPanel(const String& message, Frame*);
+    bool runBeforeUnloadConfirmPanel(const String& message, LocalFrame*);
 
     void closeWindowSoon();
 
-    void runJavaScriptAlert(Frame*, const String&);
-    bool runJavaScriptConfirm(Frame*, const String&);
-    bool runJavaScriptPrompt(Frame*, const String& message, const String& defaultValue, String& result);
-    void setStatusbarText(Frame*, const String&);
+    void runJavaScriptAlert(LocalFrame*, const String&);
+    bool runJavaScriptConfirm(LocalFrame*, const String&);
+    bool runJavaScriptPrompt(LocalFrame*, const String& message, const String& defaultValue, String& result);
+    void setStatusbarText(LocalFrame*, const String&);
 
     IntRect windowResizerRect() const;
 
@@ -118,22 +115,24 @@ public:
 
     void setToolTip(const HitTestResult&);
 
-    void print(Frame*);
+    void print(LocalFrame*);
 
-    PassOwnPtr<ColorChooser> createColorChooser(ColorChooserClient*, const Color& initialColor);
-    PassRefPtr<DateTimeChooser> openDateTimeChooser(DateTimeChooserClient*, const DateTimeChooserParameters&);
+    PassOwnPtr<ColorChooser> createColorChooser(LocalFrame*, ColorChooserClient*, const Color& initialColor);
+    PassRefPtrWillBeRawPtr<DateTimeChooser> openDateTimeChooser(DateTimeChooserClient*, const DateTimeChooserParameters&);
     void openTextDataListChooser(HTMLInputElement&);
 
-    void runOpenPanel(Frame*, PassRefPtr<FileChooser>);
+    void runOpenPanel(LocalFrame*, PassRefPtr<FileChooser>);
     void enumerateChosenDirectory(FileChooser*);
 
     void dispatchViewportPropertiesDidChange(const ViewportDescription&) const;
 
     bool hasOpenedPopup() const;
-    PassRefPtr<PopupMenu> createPopupMenu(Frame&, PopupMenuClient*) const;
+    PassRefPtr<PopupMenu> createPopupMenu(LocalFrame&, PopupMenuClient*) const;
 
     void registerPopupOpeningObserver(PopupOpeningObserver*);
     void unregisterPopupOpeningObserver(PopupOpeningObserver*);
+
+    void willBeDestroyed();
 
 private:
     Chrome(Page*, ChromeClient*);

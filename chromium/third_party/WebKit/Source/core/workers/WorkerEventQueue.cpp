@@ -30,12 +30,13 @@
 #include "core/dom/ExecutionContext.h"
 #include "core/dom/ExecutionContextTask.h"
 #include "core/events/Event.h"
+#include "core/inspector/InspectorInstrumentation.h"
 
 namespace WebCore {
 
-PassOwnPtr<WorkerEventQueue> WorkerEventQueue::create(ExecutionContext* context)
+PassOwnPtrWillBeRawPtr<WorkerEventQueue> WorkerEventQueue::create(ExecutionContext* context)
 {
-    return adoptPtr(new WorkerEventQueue(context));
+    return adoptPtrWillBeNoop(new WorkerEventQueue(context));
 }
 
 WorkerEventQueue::WorkerEventQueue(ExecutionContext* context)
@@ -46,12 +47,19 @@ WorkerEventQueue::WorkerEventQueue(ExecutionContext* context)
 
 WorkerEventQueue::~WorkerEventQueue()
 {
-    close();
+    ASSERT(m_eventTaskMap.isEmpty());
+}
+
+void WorkerEventQueue::trace(Visitor* visitor)
+{
+    visitor->trace(m_executionContext);
+    visitor->trace(m_eventTaskMap);
+    EventQueue::trace(visitor);
 }
 
 class WorkerEventQueue::EventDispatcherTask : public ExecutionContextTask {
 public:
-    static PassOwnPtr<EventDispatcherTask> create(PassRefPtr<Event> event, WorkerEventQueue* eventQueue)
+    static PassOwnPtr<EventDispatcherTask> create(PassRefPtrWillBeRawPtr<Event> event, WorkerEventQueue* eventQueue)
     {
         return adoptPtr(new EventDispatcherTask(event, eventQueue));
     }
@@ -62,7 +70,7 @@ public:
             m_eventQueue->removeEvent(m_event.get());
     }
 
-    void dispatchEvent(ExecutionContext*, PassRefPtr<Event> event)
+    void dispatchEvent(ExecutionContext*, PassRefPtrWillBeRawPtr<Event> event)
     {
         event->target()->dispatchEvent(event);
     }
@@ -83,28 +91,30 @@ public:
     }
 
 private:
-    EventDispatcherTask(PassRefPtr<Event> event, WorkerEventQueue* eventQueue)
+    EventDispatcherTask(PassRefPtrWillBeRawPtr<Event> event, WorkerEventQueue* eventQueue)
         : m_event(event)
         , m_eventQueue(eventQueue)
         , m_isCancelled(false)
     {
     }
 
-    RefPtr<Event> m_event;
+    RefPtrWillBePersistent<Event> m_event;
     WorkerEventQueue* m_eventQueue;
     bool m_isCancelled;
 };
 
 void WorkerEventQueue::removeEvent(Event* event)
 {
+    InspectorInstrumentation::didRemoveEvent(event->target(), event);
     m_eventTaskMap.remove(event);
 }
 
-bool WorkerEventQueue::enqueueEvent(PassRefPtr<Event> prpEvent)
+bool WorkerEventQueue::enqueueEvent(PassRefPtrWillBeRawPtr<Event> prpEvent)
 {
     if (m_isClosed)
         return false;
-    RefPtr<Event> event = prpEvent;
+    RefPtrWillBeRawPtr<Event> event = prpEvent;
+    InspectorInstrumentation::didEnqueueEvent(event->target(), event.get());
     OwnPtr<EventDispatcherTask> task = EventDispatcherTask::create(event, this);
     m_eventTaskMap.add(event.release(), task.get());
     m_executionContext->postTask(task.release());
@@ -125,7 +135,9 @@ void WorkerEventQueue::close()
 {
     m_isClosed = true;
     for (EventTaskMap::iterator it = m_eventTaskMap.begin(); it != m_eventTaskMap.end(); ++it) {
+        Event* event = it->key.get();
         EventDispatcherTask* task = it->value;
+        InspectorInstrumentation::didRemoveEvent(event->target(), event);
         task->cancel();
     }
     m_eventTaskMap.clear();

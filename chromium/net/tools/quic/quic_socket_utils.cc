@@ -11,6 +11,7 @@
 #include <sys/uio.h>
 #include <string>
 
+#include "base/basictypes.h"
 #include "base/logging.h"
 #include "net/quic/quic_protocol.h"
 
@@ -51,7 +52,7 @@ IPAddressNumber QuicSocketUtils::GetAddressFromMsghdr(struct msghdr *hdr) {
 
 // static
 bool QuicSocketUtils::GetOverflowFromMsghdr(struct msghdr *hdr,
-                                            int *dropped_packets) {
+                                            uint32 *dropped_packets) {
   if (hdr->msg_controllen > 0) {
     struct cmsghdr *cmsg;
     for (cmsg = CMSG_FIRSTHDR(hdr);
@@ -79,8 +80,26 @@ int QuicSocketUtils::SetGetAddressInfo(int fd, int address_family) {
 }
 
 // static
+bool QuicSocketUtils::SetSendBufferSize(int fd, size_t size) {
+  if (setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &size, sizeof(size)) != 0) {
+    LOG(ERROR) << "Failed to set socket send size";
+    return false;
+  }
+  return true;
+}
+
+// static
+bool QuicSocketUtils::SetReceiveBufferSize(int fd, size_t size) {
+  if (setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &size, sizeof(size)) != 0) {
+    LOG(ERROR) << "Failed to set socket recv size";
+    return false;
+  }
+  return true;
+}
+
+// static
 int QuicSocketUtils::ReadPacket(int fd, char* buffer, size_t buf_len,
-                                int* dropped_packets,
+                                uint32* dropped_packets,
                                 IPAddressNumber* self_address,
                                 IPEndPoint* peer_address) {
   CHECK(peer_address != NULL);
@@ -135,6 +154,28 @@ int QuicSocketUtils::ReadPacket(int fd, char* buffer, size_t buf_len,
   return bytes_read;
 }
 
+size_t QuicSocketUtils::SetIpInfoInCmsg(const IPAddressNumber& self_address,
+                                        cmsghdr* cmsg) {
+  if (GetAddressFamily(self_address) == ADDRESS_FAMILY_IPV4) {
+    cmsg->cmsg_len = CMSG_LEN(sizeof(in_pktinfo));
+    cmsg->cmsg_level = IPPROTO_IP;
+    cmsg->cmsg_type = IP_PKTINFO;
+    in_pktinfo* pktinfo = reinterpret_cast<in_pktinfo*>(CMSG_DATA(cmsg));
+    memset(pktinfo, 0, sizeof(in_pktinfo));
+    pktinfo->ipi_ifindex = 0;
+    memcpy(&pktinfo->ipi_spec_dst, &self_address[0], self_address.size());
+    return sizeof(in_pktinfo);
+  } else {
+    cmsg->cmsg_len = CMSG_LEN(sizeof(in6_pktinfo));
+    cmsg->cmsg_level = IPPROTO_IPV6;
+    cmsg->cmsg_type = IPV6_PKTINFO;
+    in6_pktinfo* pktinfo = reinterpret_cast<in6_pktinfo*>(CMSG_DATA(cmsg));
+    memset(pktinfo, 0, sizeof(in6_pktinfo));
+    memcpy(&pktinfo->ipi6_addr, &self_address[0], self_address.size());
+    return sizeof(in6_pktinfo);
+  }
+}
+
 // static
 WriteResult QuicSocketUtils::WritePacket(int fd,
                                          const char* buffer,
@@ -164,30 +205,11 @@ WriteResult QuicSocketUtils::WritePacket(int fd,
   if (self_address.empty()) {
     hdr.msg_control = 0;
     hdr.msg_controllen = 0;
-  } else if (GetAddressFamily(self_address) == ADDRESS_FAMILY_IPV4) {
-    hdr.msg_control = cbuf;
-    hdr.msg_controllen = kSpaceForIp;
-    cmsghdr* cmsg = CMSG_FIRSTHDR(&hdr);
-
-    cmsg->cmsg_len = CMSG_LEN(sizeof(in_pktinfo));
-    cmsg->cmsg_level = IPPROTO_IP;
-    cmsg->cmsg_type = IP_PKTINFO;
-    in_pktinfo* pktinfo = reinterpret_cast<in_pktinfo*>(CMSG_DATA(cmsg));
-    memset(pktinfo, 0, sizeof(in_pktinfo));
-    pktinfo->ipi_ifindex = 0;
-    memcpy(&pktinfo->ipi_spec_dst, &self_address[0], self_address.size());
-    hdr.msg_controllen = cmsg->cmsg_len;
   } else {
     hdr.msg_control = cbuf;
     hdr.msg_controllen = kSpaceForIp;
-    cmsghdr* cmsg = CMSG_FIRSTHDR(&hdr);
-
-    cmsg->cmsg_len = CMSG_LEN(sizeof(in6_pktinfo));
-    cmsg->cmsg_level = IPPROTO_IPV6;
-    cmsg->cmsg_type = IPV6_PKTINFO;
-    in6_pktinfo* pktinfo = reinterpret_cast<in6_pktinfo*>(CMSG_DATA(cmsg));
-    memset(pktinfo, 0, sizeof(in6_pktinfo));
-    memcpy(&pktinfo->ipi6_addr, &self_address[0], self_address.size());
+    cmsghdr *cmsg = CMSG_FIRSTHDR(&hdr);
+    SetIpInfoInCmsg(self_address, cmsg);
     hdr.msg_controllen = cmsg->cmsg_len;
   }
 

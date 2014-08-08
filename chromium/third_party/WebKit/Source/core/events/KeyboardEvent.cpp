@@ -23,7 +23,6 @@
 #include "config.h"
 #include "core/events/KeyboardEvent.h"
 
-#include "core/events/ThreadLocalEventNames.h"
 #include "platform/PlatformKeyboardEvent.h"
 #include "platform/WindowsKeyboardCodes.h"
 
@@ -217,21 +216,17 @@ int KeyboardEvent::which() const
     return keyCode();
 }
 
-KeyboardEvent* findKeyboardEvent(Event* event)
+void KeyboardEvent::trace(Visitor* visitor)
 {
-    for (Event* e = event; e; e = e->underlyingEvent()) {
-        if (e->isKeyboardEvent())
-            return toKeyboardEvent(e);
-    }
-    return 0;
+    UIEventWithKeyState::trace(visitor);
 }
 
-PassRefPtr<KeyboardEventDispatchMediator> KeyboardEventDispatchMediator::create(PassRefPtr<KeyboardEvent> event)
+PassRefPtrWillBeRawPtr<KeyboardEventDispatchMediator> KeyboardEventDispatchMediator::create(PassRefPtrWillBeRawPtr<KeyboardEvent> event)
 {
-    return adoptRef(new KeyboardEventDispatchMediator(event));
+    return adoptRefWillBeNoop(new KeyboardEventDispatchMediator(event));
 }
 
-KeyboardEventDispatchMediator::KeyboardEventDispatchMediator(PassRefPtr<KeyboardEvent> event)
+KeyboardEventDispatchMediator::KeyboardEventDispatchMediator(PassRefPtrWillBeRawPtr<KeyboardEvent> event)
     : EventDispatchMediator(event)
 {
 }

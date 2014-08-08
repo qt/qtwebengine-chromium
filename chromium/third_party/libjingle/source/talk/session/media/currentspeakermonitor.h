@@ -39,16 +39,34 @@
 namespace cricket {
 
 class BaseSession;
-class Call;
 class Session;
 struct AudioInfo;
 struct MediaStreams;
 
-// Note that the call's audio monitor must be started before this is started.
+class AudioSourceContext {
+ public:
+  sigslot::signal2<AudioSourceContext*, const cricket::AudioInfo&>
+      SignalAudioMonitor;
+  sigslot::signal2<AudioSourceContext*, cricket::BaseSession*>
+      SignalMediaStreamsReset;
+  sigslot::signal4<AudioSourceContext*, cricket::BaseSession*,
+      const cricket::MediaStreams&, const cricket::MediaStreams&>
+          SignalMediaStreamsUpdate;
+};
+
+// CurrentSpeakerMonitor can be used to monitor the audio-levels from
+// many audio-sources and report on changes in the loudest audio-source.
+// Its a generic type and relies on an AudioSourceContext which is aware of
+// the audio-sources. AudioSourceContext needs to provide two signals namely
+// SignalAudioInfoMonitor - provides audio info of the all current speakers.
+// SignalMediaSourcesUpdated - provides updates when a speaker leaves or joins.
+// Note that the AudioSourceContext's audio monitor must be started
+// before this is started.
 // It's recommended that the audio monitor be started with a 100 ms period.
 class CurrentSpeakerMonitor : public sigslot::has_slots<> {
  public:
-  CurrentSpeakerMonitor(Call* call, BaseSession* session);
+  CurrentSpeakerMonitor(AudioSourceContext* audio_source_context,
+                        BaseSession* session);
   ~CurrentSpeakerMonitor();
 
   BaseSession* session() const { return session_; }
@@ -62,16 +80,19 @@ class CurrentSpeakerMonitor : public sigslot::has_slots<> {
   void set_min_time_between_switches(uint32 min_time_between_switches);
 
   // This is fired when the current speaker changes, and provides his audio
-  // SSRC.  This only fires after the audio monitor on the underlying Call has
-  // been started.
+  // SSRC.  This only fires after the audio monitor on the underlying
+  // AudioSourceContext has been started.
   sigslot::signal2<CurrentSpeakerMonitor*, uint32> SignalUpdate;
 
  private:
-  void OnAudioMonitor(Call* call, const AudioInfo& info);
-  void OnMediaStreamsUpdate(Call* call,
-                            Session* session,
+  void OnAudioMonitor(AudioSourceContext* audio_source_context,
+                      const AudioInfo& info);
+  void OnMediaStreamsUpdate(AudioSourceContext* audio_source_context,
+                            BaseSession* session,
                             const MediaStreams& added,
                             const MediaStreams& removed);
+  void OnMediaStreamsReset(AudioSourceContext* audio_source_context,
+                           BaseSession* session);
 
   // These are states that a participant will pass through so that we gradually
   // recognize that they have started and stopped speaking.  This avoids
@@ -85,7 +106,7 @@ class CurrentSpeakerMonitor : public sigslot::has_slots<> {
   };
 
   bool started_;
-  Call* call_;
+  AudioSourceContext* audio_source_context_;
   BaseSession* session_;
   std::map<uint32, SpeakingState> ssrc_to_speaking_state_map_;
   uint32 current_speaker_ssrc_;

@@ -48,7 +48,7 @@ public:
 
     // FieldOwner implementer must call removeEventHandler when
     // it doesn't handle event, e.g. at destruction.
-    class FieldOwner {
+    class FieldOwner : public WillBeGarbageCollectedMixin {
     public:
         virtual ~FieldOwner();
         virtual void didBlurFromField() = 0;
@@ -59,6 +59,7 @@ public:
         virtual bool isFieldOwnerDisabled() const = 0;
         virtual bool isFieldOwnerReadOnly() const = 0;
         virtual AtomicString localeIdentifier() const = 0;
+        virtual void fieldDidChangeValueByKeyboard() = 0;
     };
 
     virtual void defaultEventHandler(Event*) OVERRIDE;
@@ -66,7 +67,7 @@ public:
     bool isDisabled() const;
     virtual float maximumWidth(const Font&);
     virtual void populateDateTimeFieldsState(DateTimeFieldsState&) = 0;
-    void removeEventHandler() { m_fieldOwner = 0; }
+    void removeEventHandler() { m_fieldOwner = nullptr; }
     void setDisabled();
     virtual void setEmptyValue(EventBehavior = DispatchNoEvent) = 0;
     virtual void setValueAsDate(const DateComponents&) = 0;
@@ -76,11 +77,10 @@ public:
     virtual void stepUp() = 0;
     virtual String value() const = 0;
     virtual String visibleValue() const = 0;
+    virtual void trace(Visitor*) OVERRIDE;
 
 protected:
     DateTimeFieldElement(Document&, FieldOwner&);
-    virtual void didBlur();
-    virtual void didFocus();
     void focusOnNextField();
     virtual void handleKeyboardEvent(KeyboardEvent*) = 0;
     void initialize(const AtomicString& pseudo, const String& axHelpText, int axMinimum, int axMaximum);
@@ -90,14 +90,17 @@ protected:
     virtual int valueAsInteger() const = 0;
     virtual int valueForARIAValueNow() const;
 
+    // Node functions.
+    virtual void setFocus(bool) OVERRIDE;
+
 private:
     void defaultKeyboardEventHandler(KeyboardEvent*);
-    virtual bool isDateTimeFieldElement() const OVERRIDE;
+    virtual bool isDateTimeFieldElement() const OVERRIDE FINAL;
     bool isFieldOwnerDisabled() const;
     bool isFieldOwnerReadOnly() const;
     virtual bool supportsFocus() const OVERRIDE FINAL;
 
-    FieldOwner* m_fieldOwner;
+    RawPtrWillBeMember<FieldOwner> m_fieldOwner;
 };
 
 } // namespace WebCore

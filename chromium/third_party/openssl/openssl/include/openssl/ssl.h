@@ -547,6 +547,13 @@ struct ssl_session_st
 #ifndef OPENSSL_NO_SRP
 	char *srp_username;
 #endif
+
+	/* original_handshake_hash contains the handshake hash (either
+	 * SHA-1+MD5 or SHA-2, depending on TLS version) for the original, full
+	 * handshake that created a session. This is used by Channel IDs during
+	 * resumption. */
+	unsigned char original_handshake_hash[EVP_MAX_MD_SIZE];
+	unsigned int original_handshake_hash_len;
 	};
 
 #endif
@@ -1981,6 +1988,9 @@ STACK_OF(X509_NAME) *SSL_get_client_CA_list(const SSL *s);
 STACK_OF(X509_NAME) *SSL_CTX_get_client_CA_list(const SSL_CTX *s);
 int SSL_add_client_CA(SSL *ssl,X509 *x);
 int SSL_CTX_add_client_CA(SSL_CTX *ctx,X509 *x);
+
+void SSL_get_client_certificate_types(const SSL *s, const unsigned char **ctype,
+	size_t *ctype_num);
 
 void SSL_set_connect_state(SSL *s);
 void SSL_set_accept_state(SSL *s);

@@ -21,6 +21,8 @@
 #ifndef SVGDocumentExtensions_h
 #define SVGDocumentExtensions_h
 
+#include "platform/geometry/FloatPoint.h"
+#include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
 #include "wtf/HashMap.h"
 #include "wtf/HashSet.h"
@@ -36,15 +38,16 @@ class SVGElement;
 class SVGFontFaceElement;
 #endif
 class SVGResourcesCache;
-class SVGSMILElement;
 class SVGSVGElement;
 class Element;
 
-class SVGDocumentExtensions {
-    WTF_MAKE_NONCOPYABLE(SVGDocumentExtensions); WTF_MAKE_FAST_ALLOCATED;
+typedef WillBeHeapHashSet<RawPtrWillBeMember<SVGElement> > SVGElementSet;
+
+class SVGDocumentExtensions : public NoBaseWillBeGarbageCollectedFinalized<SVGDocumentExtensions> {
+    WTF_MAKE_NONCOPYABLE(SVGDocumentExtensions); WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
 public:
     typedef HashSet<Element*> SVGPendingElements;
-    SVGDocumentExtensions(Document*);
+    explicit SVGDocumentExtensions(Document*);
     ~SVGDocumentExtensions();
 
     void addTimeContainer(SVGSVGElement*);
@@ -54,9 +57,10 @@ public:
     void removeResource(const AtomicString& id);
     RenderSVGResourceContainer* resourceById(const AtomicString& id) const;
 
+    static void serviceOnAnimationFrame(Document&, double monotonicAnimationStartTime);
+
     void startAnimations();
     void pauseAnimations();
-    void unpauseAnimations();
     void dispatchSVGLoadEventToOutermostSVGElements();
 
     void reportWarning(const String&);
@@ -64,7 +68,7 @@ public:
 
     SVGResourcesCache* resourcesCache() const { return m_resourcesCache.get(); }
 
-    HashSet<SVGElement*>* setOfElementsReferencingTarget(SVGElement* referencedElement) const;
+    SVGElementSet* setOfElementsReferencingTarget(SVGElement* referencedElement) const;
     void addElementReferencingTarget(SVGElement* referencingElement, SVGElement* referencedElement);
     void removeAllTargetReferencesForElement(SVGElement*);
     void rebuildAllElementReferencesForTarget(SVGElement*);
@@ -76,24 +80,41 @@ public:
     void invalidateSVGRootsWithRelativeLengthDescendents(SubtreeLayoutScope*);
 
 #if ENABLE(SVG_FONTS)
-    const HashSet<SVGFontFaceElement*>& svgFontFaceElements() const { return m_svgFontFaceElements; }
+    const WillBeHeapHashSet<RawPtrWillBeMember<SVGFontFaceElement> >& svgFontFaceElements() const { return m_svgFontFaceElements; }
     void registerSVGFontFaceElement(SVGFontFaceElement*);
     void unregisterSVGFontFaceElement(SVGFontFaceElement*);
+
+    void registerPendingSVGFontFaceElementsForRemoval(PassRefPtrWillBeRawPtr<SVGFontFaceElement>);
+    void removePendingSVGFontFaceElementsForRemoval();
 #endif
 
+    bool zoomAndPanEnabled() const;
+
+    void startPan(const FloatPoint& start);
+    void updatePan(const FloatPoint& pos) const;
+
+    static SVGSVGElement* rootElement(const Document&);
+    SVGSVGElement* rootElement() const;
+
+    void trace(Visitor*);
+
 private:
-    Document* m_document; // weak reference
-    HashSet<SVGSVGElement*> m_timeContainers; // For SVG 1.2 support this will need to be made more general.
+    RawPtrWillBeMember<Document> m_document;
+    WillBeHeapHashSet<RawPtrWillBeMember<SVGSVGElement> > m_timeContainers; // For SVG 1.2 support this will need to be made more general.
 #if ENABLE(SVG_FONTS)
-    HashSet<SVGFontFaceElement*> m_svgFontFaceElements;
+    WillBeHeapHashSet<RawPtrWillBeMember<SVGFontFaceElement> > m_svgFontFaceElements;
+    // SVGFontFaceElements that are pending and scheduled for removal.
+    WillBeHeapHashSet<RefPtrWillBeMember<SVGFontFaceElement> > m_pendingSVGFontFaceElementsForRemoval;
 #endif
     HashMap<AtomicString, RenderSVGResourceContainer*> m_resources;
     HashMap<AtomicString, OwnPtr<SVGPendingElements> > m_pendingResources; // Resources that are pending.
     HashMap<AtomicString, OwnPtr<SVGPendingElements> > m_pendingResourcesForRemoval; // Resources that are pending and scheduled for removal.
-    HashMap<SVGElement*, OwnPtr<HashSet<SVGElement*> > > m_elementDependencies;
+    typedef WillBeHeapHashMap<RawPtrWillBeMember<SVGElement>, OwnPtrWillBeMember<SVGElementSet> > ElementDependenciesMap;
+    ElementDependenciesMap m_elementDependencies;
     OwnPtr<SVGResourcesCache> m_resourcesCache;
-    HashSet<SVGSVGElement*> m_relativeLengthSVGRoots; // Root SVG elements with relative length descendants.
-#if !ASSERT_DISABLED
+    WillBeHeapHashSet<RawPtrWillBeMember<SVGSVGElement> > m_relativeLengthSVGRoots; // Root SVG elements with relative length descendants.
+    FloatPoint m_translate;
+#if ASSERT_ENABLED
     bool m_inRelativeLengthSVGRootsInvalidation;
 #endif
 
@@ -108,6 +129,8 @@ public:
     void clearHasPendingResourcesIfPossible(Element*);
     void removeElementFromPendingResources(Element*);
     PassOwnPtr<SVGPendingElements> removePendingResource(const AtomicString& id);
+
+    void serviceAnimations(double monotonicAnimationStartTime);
 
     // The following two functions are used for scheduling a pending resource to be removed.
     void markPendingResourcesForRemoval(const AtomicString&);

@@ -24,73 +24,55 @@
 
 namespace WebCore {
 
-    class Frame;
-    class TreeScope;
+class Frame;
+class TreeScope;
 
-    class FrameTree {
-        WTF_MAKE_NONCOPYABLE(FrameTree);
-    public:
-        const static unsigned invalidCount = static_cast<unsigned>(-1);
+class FrameTree {
+    WTF_MAKE_NONCOPYABLE(FrameTree);
+public:
+    explicit FrameTree(Frame* thisFrame);
+    ~FrameTree();
 
-        FrameTree(Frame* thisFrame, Frame* parentFrame)
-            : m_thisFrame(thisFrame)
-            , m_parent(parentFrame)
-            , m_previousSibling(0)
-            , m_lastChild(0)
-            , m_scopedChildCount(invalidCount)
-        {
-        }
+    const AtomicString& name() const { return m_name; }
+    const AtomicString& uniqueName() const { return m_uniqueName; }
+    // If |name| is not empty, |fallbackName| is ignored. Otherwise,
+    // |fallbackName| is used as a source of uniqueName.
+    void setName(const AtomicString& name, const AtomicString& fallbackName = nullAtom);
 
-        ~FrameTree();
+    Frame* parent() const;
+    Frame* top() const;
+    Frame* previousSibling() const;
+    Frame* nextSibling() const;
+    Frame* firstChild() const;
+    Frame* lastChild() const;
 
-        const AtomicString& name() const { return m_name; }
-        const AtomicString& uniqueName() const { return m_uniqueName; }
-        void setName(const AtomicString&);
-        Frame* parent() const;
-        void setParent(Frame* parent) { m_parent = parent; }
+    bool isDescendantOf(const Frame* ancestor) const;
+    Frame* traversePreviousWithWrap(bool) const;
+    Frame* traverseNext(const Frame* stayWithin = 0) const;
+    Frame* traverseNextWithWrap(bool) const;
 
-        Frame* nextSibling() const { return m_nextSibling.get(); }
-        Frame* previousSibling() const { return m_previousSibling; }
-        Frame* firstChild() const { return m_firstChild.get(); }
-        Frame* lastChild() const { return m_lastChild; }
+    Frame* child(const AtomicString& name) const;
+    Frame* find(const AtomicString& name) const;
+    unsigned childCount() const;
 
-        bool isDescendantOf(const Frame* ancestor) const;
-        Frame* traverseNext(const Frame* stayWithin = 0) const;
-        Frame* traverseNextWithWrap(bool) const;
-        Frame* traversePreviousWithWrap(bool) const;
+    Frame* scopedChild(unsigned index) const;
+    Frame* scopedChild(const AtomicString& name) const;
+    unsigned scopedChildCount() const;
+    void invalidateScopedChildCount();
 
-        void appendChild(PassRefPtr<Frame>);
-        void detachFromParent() { m_parent = 0; }
-        void removeChild(Frame*);
+private:
+    Frame* deepLastChild() const;
+    AtomicString uniqueChildName(const AtomicString& requestedName) const;
+    bool uniqueNameExists(const AtomicString& name) const;
+    unsigned scopedChildCount(TreeScope*) const;
 
-        Frame* child(const AtomicString& name) const;
-        Frame* find(const AtomicString& name) const;
-        unsigned childCount() const;
+    Frame* m_thisFrame;
 
-        Frame* top() const;
+    AtomicString m_name; // The actual frame name (may be empty).
+    AtomicString m_uniqueName;
 
-        Frame* scopedChild(unsigned index) const;
-        Frame* scopedChild(const AtomicString& name) const;
-        unsigned scopedChildCount() const;
-
-    private:
-        Frame* deepLastChild() const;
-        AtomicString uniqueChildName(const AtomicString& requestedName) const;
-        unsigned scopedChildCount(TreeScope*) const;
-
-        Frame* m_thisFrame;
-
-        Frame* m_parent;
-        AtomicString m_name; // The actual frame name (may be empty).
-        AtomicString m_uniqueName;
-
-        // FIXME: use ListRefPtr?
-        RefPtr<Frame> m_nextSibling;
-        Frame* m_previousSibling;
-        RefPtr<Frame> m_firstChild;
-        Frame* m_lastChild;
-        mutable unsigned m_scopedChildCount;
-    };
+    mutable unsigned m_scopedChildCount;
+};
 
 } // namespace WebCore
 

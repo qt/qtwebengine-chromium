@@ -24,6 +24,7 @@
  */
 
 [
+    GarbageCollected,
     NoInterfaceObject
 ] interface SpeechRecognitionResultList {
     readonly attribute unsigned long length;

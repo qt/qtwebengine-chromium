@@ -23,7 +23,9 @@
 
 #include "core/rendering/svg/RenderSVGBlock.h"
 
+#include "core/rendering/RenderView.h"
 #include "core/rendering/style/ShadowList.h"
+#include "core/rendering/svg/SVGRenderSupport.h"
 #include "core/rendering/svg/SVGResourcesCache.h"
 #include "core/svg/SVGElement.h"
 
@@ -50,7 +52,7 @@ void RenderSVGBlock::updateFromStyle()
 
     // RenderSVGlock, used by Render(SVGText|ForeignObject), is not allowed to call setHasOverflowClip(true).
     // RenderBlock assumes a layer to be present when the overflow clip functionality is requested. Both
-    // Render(SVGText|ForeignObject) return 'false' on 'requiresLayer'. Fine for RenderSVGText.
+    // Render(SVGText|ForeignObject) return 'NoLayer' on 'layerTypeRequired'. Fine for RenderSVGText.
     //
     // If we want to support overflow rules for <foreignObject> we can choose between two solutions:
     // a) make RenderSVGForeignObject require layers and SVG layer aware
@@ -77,11 +79,46 @@ void RenderSVGBlock::willBeDestroyed()
 
 void RenderSVGBlock::styleDidChange(StyleDifference diff, const RenderStyle* oldStyle)
 {
-    if (diff == StyleDifferenceLayout)
+    if (diff.needsFullLayout())
         setNeedsBoundariesUpdate();
 
     RenderBlock::styleDidChange(diff, oldStyle);
     SVGResourcesCache::clientStyleChanged(this, diff, style());
+}
+
+void RenderSVGBlock::mapLocalToContainer(const RenderLayerModelObject* repaintContainer, TransformState& transformState, MapCoordinatesFlags, bool* wasFixed) const
+{
+    SVGRenderSupport::mapLocalToContainer(this, repaintContainer, transformState, wasFixed);
+}
+
+const RenderObject* RenderSVGBlock::pushMappingToContainer(const RenderLayerModelObject* ancestorToStopAt, RenderGeometryMap& geometryMap) const
+{
+    return SVGRenderSupport::pushMappingToContainer(this, ancestorToStopAt, geometryMap);
+}
+
+LayoutRect RenderSVGBlock::clippedOverflowRectForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer) const
+{
+    return SVGRenderSupport::clippedOverflowRectForRepaint(this, paintInvalidationContainer);
+}
+
+void RenderSVGBlock::computeFloatRectForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer, FloatRect& paintInvalidationRect, bool fixed) const
+{
+    SVGRenderSupport::computeFloatRectForRepaint(this, paintInvalidationContainer, paintInvalidationRect, fixed);
+}
+
+bool RenderSVGBlock::nodeAtPoint(const HitTestRequest&, HitTestResult&, const HitTestLocation&, const LayoutPoint&, HitTestAction)
+{
+    ASSERT_NOT_REACHED();
+    return false;
+}
+
+void RenderSVGBlock::invalidateTreeAfterLayout(const RenderLayerModelObject& paintInvalidationContainer)
+{
+    if (!shouldCheckForPaintInvalidationAfterLayout())
+        return;
+
+    ForceHorriblySlowRectMapping slowRectMapping(*this);
+    RenderBlockFlow::invalidateTreeAfterLayout(paintInvalidationContainer);
 }
 
 }

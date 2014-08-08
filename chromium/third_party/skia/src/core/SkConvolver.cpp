@@ -405,7 +405,7 @@ void BGRAConvolve2D(const unsigned char* sourceData,
                 const unsigned char* src[4];
                 unsigned char* outRow[4];
                 for (int i = 0; i < 4; ++i) {
-                    src[i] = &sourceData[(nextXRow + i) * sourceByteRowStride];
+                    src[i] = &sourceData[(uint64_t)(nextXRow + i) * sourceByteRowStride];
                     outRow[i] = rowBuffer.advanceRow();
                 }
                 convolveProcs.fConvolve4RowsHorizontally(src, filterX, outRow);
@@ -416,16 +416,16 @@ void BGRAConvolve2D(const unsigned char* sourceData,
                     nextXRow < lastFilterOffset + lastFilterLength -
                     avoidSimdRows) {
                     convolveProcs.fConvolveHorizontally(
-                        &sourceData[nextXRow * sourceByteRowStride],
+                        &sourceData[(uint64_t)nextXRow * sourceByteRowStride],
                         filterX, rowBuffer.advanceRow(), sourceHasAlpha);
                 } else {
                     if (sourceHasAlpha) {
                         ConvolveHorizontally<true>(
-                            &sourceData[nextXRow * sourceByteRowStride],
+                            &sourceData[(uint64_t)nextXRow * sourceByteRowStride],
                             filterX, rowBuffer.advanceRow());
                     } else {
                         ConvolveHorizontally<false>(
-                            &sourceData[nextXRow * sourceByteRowStride],
+                            &sourceData[(uint64_t)nextXRow * sourceByteRowStride],
                             filterX, rowBuffer.advanceRow());
                     }
                 }
@@ -434,7 +434,7 @@ void BGRAConvolve2D(const unsigned char* sourceData,
         }
 
         // Compute where in the output image this row of final data will go.
-        unsigned char* curOutputRow = &output[outY * outputByteRowStride];
+        unsigned char* curOutputRow = &output[(uint64_t)outY * outputByteRowStride];
 
         // Get the list of rows that the circular buffer has, in order.
         int firstRowInCircularBuffer;

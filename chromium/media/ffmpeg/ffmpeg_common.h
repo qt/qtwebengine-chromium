@@ -15,9 +15,18 @@
 #include "media/base/media_export.h"
 #include "media/base/video_decoder_config.h"
 #include "media/base/video_frame.h"
+#include "media/ffmpeg/ffmpeg_deleters.h"
 
 // Include FFmpeg header files.
 extern "C" {
+// Disable deprecated features which result in spammy compile warnings.  This
+// list of defines must mirror those in the 'defines' section of the ffmpeg.gyp
+// file or the headers below will generate different structures.
+#define FF_API_PIX_FMT_DESC 0
+#define FF_API_OLD_DECODE_AUDIO 0
+#define FF_API_DESTRUCT_PACKET 0
+#define FF_API_GET_BUFFER 0
+
 // Temporarily disable possible loss of data warning.
 // TODO(scherkus): fix and upstream the compiler warnings.
 MSVC_PUSH_DISABLE_WARNING(4244);
@@ -37,48 +46,31 @@ namespace media {
 class AudioDecoderConfig;
 class VideoDecoderConfig;
 
-// Wraps FFmpeg's av_free() in a class that can be passed as a template argument
-// to scoped_ptr_malloc.
-class ScopedPtrAVFree {
- public:
-  inline void operator()(void* x) const {
-    av_free(x);
-  }
-};
+// The following implement the deleters declared in ffmpeg_deleters.h (which
+// contains the declarations needed for use with |scoped_ptr| without #include
+// "pollution").
 
-// This assumes that the AVPacket being captured was allocated outside of
-// FFmpeg via the new operator.  Do not use this with AVPacket instances that
-// are allocated via malloc() or av_malloc().
-class ScopedPtrAVFreePacket {
- public:
-  inline void operator()(void* x) const {
-    AVPacket* packet = static_cast<AVPacket*>(x);
-    av_free_packet(packet);
-    delete packet;
-  }
-};
+inline void ScopedPtrAVFree::operator()(void* x) const {
+  av_free(x);
+}
 
-// Frees an AVCodecContext object in a class that can be passed as a Deleter
-// argument to scoped_ptr_malloc.
-class ScopedPtrAVFreeContext {
- public:
-  inline void operator()(void* x) const {
-    AVCodecContext* codec_context = static_cast<AVCodecContext*>(x);
-    av_free(codec_context->extradata);
-    avcodec_close(codec_context);
-    av_free(codec_context);
-  }
-};
+inline void ScopedPtrAVFreePacket::operator()(void* x) const {
+  AVPacket* packet = static_cast<AVPacket*>(x);
+  av_free_packet(packet);
+  delete packet;
+}
 
-// Frees an AVFrame object in a class that can be passed as a Deleter argument
-// to scoped_ptr_malloc.
-class ScopedPtrAVFreeFrame {
- public:
-  inline void operator()(void* x) const {
-    AVFrame* frame = static_cast<AVFrame*>(x);
-    avcodec_free_frame(&frame);
-  }
-};
+inline void ScopedPtrAVFreeContext::operator()(void* x) const {
+  AVCodecContext* codec_context = static_cast<AVCodecContext*>(x);
+  av_free(codec_context->extradata);
+  avcodec_close(codec_context);
+  av_free(codec_context);
+}
+
+inline void ScopedPtrAVFreeFrame::operator()(void* x) const {
+  AVFrame* frame = static_cast<AVFrame*>(x);
+  av_frame_free(&frame);
+}
 
 // Converts an int64 timestamp in |time_base| units to a base::TimeDelta.
 // For example if |timestamp| equals 11025 and |time_base| equals {1, 44100}
@@ -110,21 +102,33 @@ void VideoDecoderConfigToAVCodecContext(
     const VideoDecoderConfig& config,
     AVCodecContext* codec_context);
 
+MEDIA_EXPORT void AVCodecContextToAudioDecoderConfig(
+    const AVCodecContext* codec_context,
+    bool is_encrypted,
+    AudioDecoderConfig* config,
+    bool record_stats);
+
 // Converts FFmpeg's channel layout to chrome's ChannelLayout.  |channels| can
 // be used when FFmpeg's channel layout is not informative in order to make a
 // good guess about the plausible channel layout based on number of channels.
-ChannelLayout ChannelLayoutToChromeChannelLayout(int64_t layout,
-                                                 int channels);
+MEDIA_EXPORT ChannelLayout ChannelLayoutToChromeChannelLayout(int64_t layout,
+                                                              int channels);
 
 // Converts FFmpeg's audio sample format to Chrome's SampleFormat.
 MEDIA_EXPORT SampleFormat
     AVSampleFormatToSampleFormat(AVSampleFormat sample_format);
 
 // Converts FFmpeg's pixel formats to its corresponding supported video format.
-VideoFrame::Format PixelFormatToVideoFormat(PixelFormat pixel_format);
+MEDIA_EXPORT VideoFrame::Format PixelFormatToVideoFormat(
+    PixelFormat pixel_format);
 
 // Converts video formats to its corresponding FFmpeg's pixel formats.
 PixelFormat VideoFormatToPixelFormat(VideoFrame::Format video_format);
+
+// Convert FFmpeg UTC representation (YYYY-MM-DD HH:MM:SS) to base::Time.
+// Returns true and sets |*out| if |date_utc| contains a valid
+// date string. Otherwise returns fals and timeline_offset is unmodified.
+MEDIA_EXPORT bool FFmpegUTCDateToTime(const char* date_utc, base::Time* out);
 
 }  // namespace media
 

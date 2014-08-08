@@ -9,18 +9,20 @@
 #include "base/basictypes.h"
 #include "base/logging.h"
 #include "base/mac/mac_logging.h"
-#include "media/audio/audio_manager_base.h"
-
+#include "media/audio/mac/audio_manager_mac.h"
+#include "media/base/audio_bus.h"
 
 namespace media {
 
 PCMQueueInAudioInputStream::PCMQueueInAudioInputStream(
-    AudioManagerBase* manager, const AudioParameters& params)
+    AudioManagerMac* manager,
+    const AudioParameters& params)
     : manager_(manager),
       callback_(NULL),
       audio_queue_(NULL),
       buffer_size_bytes_(0),
-      started_(false) {
+      started_(false),
+      audio_bus_(media::AudioBus::Create(params)) {
   // We must have a manager.
   DCHECK(manager_);
   // A frame is one sample across all channels. In interleaved audio the per
@@ -65,6 +67,21 @@ void PCMQueueInAudioInputStream::Start(AudioInputCallback* callback) {
   DLOG_IF(ERROR, !audio_queue_) << "Open() has not been called successfully";
   if (callback_ || !audio_queue_)
     return;
+
+  // Check if we should defer Start() for http://crbug.com/160920.
+  if (manager_->ShouldDeferStreamStart()) {
+    // Use a cancellable closure so that if Stop() is called before Start()
+    // actually runs, we can cancel the pending start.
+    deferred_start_cb_.Reset(base::Bind(
+        &PCMQueueInAudioInputStream::Start, base::Unretained(this), callback));
+    manager_->GetTaskRunner()->PostDelayedTask(
+        FROM_HERE,
+        deferred_start_cb_.callback(),
+        base::TimeDelta::FromSeconds(
+            AudioManagerMac::kStartDelayInSecsForPowerEvents));
+    return;
+  }
+
   callback_ = callback;
   OSStatus err = AudioQueueStart(audio_queue_, NULL);
   if (err != noErr) {
@@ -75,6 +92,7 @@ void PCMQueueInAudioInputStream::Start(AudioInputCallback* callback) {
 }
 
 void PCMQueueInAudioInputStream::Stop() {
+  deferred_start_cb_.Cancel();
   if (!audio_queue_ || !started_)
     return;
 
@@ -85,9 +103,12 @@ void PCMQueueInAudioInputStream::Stop() {
     HandleError(err);
 
   started_ = false;
+  callback_ = NULL;
 }
 
 void PCMQueueInAudioInputStream::Close() {
+  Stop();
+
   // It is valid to call Close() before calling Open() or Start(), thus
   // |audio_queue_| and |callback_| might be NULL.
   if (audio_queue_) {
@@ -96,10 +117,7 @@ void PCMQueueInAudioInputStream::Close() {
     if (err != noErr)
       HandleError(err);
   }
-  if (callback_) {
-    callback_->OnClose(this);
-    callback_ = NULL;
-  }
+
   manager_->ReleaseInputStream(this);
   // CARE: This object may now be destroyed.
 }
@@ -200,11 +218,11 @@ void PCMQueueInAudioInputStream::HandleInputBuffer(
     if (elapsed < kMinDelay)
       base::PlatformThread::Sleep(kMinDelay - elapsed);
 
-    callback_->OnData(this,
-                      reinterpret_cast<const uint8*>(audio_buffer->mAudioData),
-                      audio_buffer->mAudioDataByteSize,
-                      audio_buffer->mAudioDataByteSize,
-                      0.0);
+    uint8* audio_data = reinterpret_cast<uint8*>(audio_buffer->mAudioData);
+    audio_bus_->FromInterleaved(
+        audio_data, audio_bus_->frames(), format_.mBitsPerChannel / 8);
+    callback_->OnData(
+        this, audio_bus_.get(), audio_buffer->mAudioDataByteSize, 0.0);
 
     last_fill_ = base::TimeTicks::Now();
   }

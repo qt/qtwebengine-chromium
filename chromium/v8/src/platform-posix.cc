@@ -1,33 +1,10 @@
 // Copyright 2012 the V8 project authors. All rights reserved.
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-//       copyright notice, this list of conditions and the following
-//       disclaimer in the documentation and/or other materials provided
-//       with the distribution.
-//     * Neither the name of Google Inc. nor the names of its
-//       contributors may be used to endorse or promote products derived
-//       from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
-// Platform specific code for POSIX goes here. This is not a platform on its
-// own but contains the parts which are the same across POSIX platforms Linux,
-// Mac OS, FreeBSD and OpenBSD.
+// Platform-specific code for POSIX goes here. This is not a platform on its
+// own, but contains the parts which are the same across the POSIX platforms
+// Linux, MacOS, FreeBSD, OpenBSD, NetBSD and QNX.
 
 #include <dlfcn.h>
 #include <pthread.h>
@@ -40,7 +17,6 @@
 #include <time.h>
 
 #include <sys/mman.h>
-#include <sys/socket.h>
 #include <sys/resource.h>
 #include <sys/time.h>
 #include <sys/types.h>
@@ -64,11 +40,14 @@
 #include <android/log.h>
 #endif
 
-#include "v8.h"
+#include "src/v8.h"
 
-#include "codegen.h"
-#include "isolate-inl.h"
-#include "platform.h"
+#include "src/isolate-inl.h"
+#include "src/platform.h"
+
+#ifdef V8_FAST_TLS_SUPPORTED
+#include "src/base/atomicops.h"
+#endif
 
 namespace v8 {
 namespace internal {
@@ -77,15 +56,8 @@ namespace internal {
 static const pthread_t kNoThread = (pthread_t) 0;
 
 
-uint64_t OS::CpuFeaturesImpliedByPlatform() {
-#if V8_OS_MACOSX
-  // Mac OS X requires all these to install so we can assume they are present.
-  // These constants are defined by the CPUid instructions.
-  const uint64_t one = 1;
-  return (one << SSE2) | (one << CMOV);
-#else
-  return 0;  // Nothing special about the other systems.
-#endif
+int OS::NumberOfProcessorsOnline() {
+  return static_cast<int>(sysconf(_SC_NPROCESSORS_ONLN));
 }
 
 
@@ -96,6 +68,12 @@ intptr_t OS::MaxVirtualMemory() {
   struct rlimit limit;
   int result = getrlimit(RLIMIT_DATA, &limit);
   if (result != 0) return 0;
+#if V8_OS_NACL
+  // The NaCl compiler doesn't like resource.h constants.
+  if (static_cast<int>(limit.rlim_cur) == -1) return 0;
+#else
+  if (limit.rlim_cur == RLIM_INFINITY) return 0;
+#endif
   return limit.rlim_cur;
 }
 
@@ -130,6 +108,13 @@ uint64_t OS::TotalPhysicalMemory() {
     return 0;
   }
   return static_cast<uint64_t>(memory_info.dwTotalPhys);
+#elif V8_OS_QNX
+  struct stat stat_buf;
+  if (stat("/proc", &stat_buf) != 0) {
+    UNREACHABLE();
+    return 0;
+  }
+  return static_cast<uint64_t>(stat_buf.st_size);
 #else
   intptr_t pages = sysconf(_SC_PHYS_PAGES);
   intptr_t page_size = sysconf(_SC_PAGESIZE);
@@ -176,10 +161,10 @@ void OS::Free(void* address, const size_t size) {
 
 // Get rid of writable permission on code allocations.
 void OS::ProtectCode(void* address, const size_t size) {
-#if defined(__CYGWIN__)
+#if V8_OS_CYGWIN
   DWORD old_protect;
   VirtualProtect(address, size, PAGE_EXECUTE_READ, &old_protect);
-#elif defined(__native_client__)
+#elif V8_OS_NACL
   // The Native Client port of V8 uses an interpreter, so
   // code pages don't need PROT_EXEC.
   mprotect(address, size, PROT_READ);
@@ -191,7 +176,7 @@ void OS::ProtectCode(void* address, const size_t size) {
 
 // Create guard pages.
 void OS::Guard(void* address, const size_t size) {
-#if defined(__CYGWIN__)
+#if V8_OS_CYGWIN
   DWORD oldprotect;
   VirtualProtect(address, size, PAGE_NOACCESS, &oldprotect);
 #else
@@ -201,10 +186,15 @@ void OS::Guard(void* address, const size_t size) {
 
 
 void* OS::GetRandomMmapAddr() {
-#if defined(__native_client__)
+#if V8_OS_NACL
   // TODO(bradchen): restore randomization once Native Client gets
   // smarter about using mmap address hints.
   // See http://code.google.com/p/nativeclient/issues/3341
+  return NULL;
+#endif
+#if defined(ADDRESS_SANITIZER) || defined(MEMORY_SANITIZER) || \
+    defined(THREAD_SANITIZER)
+  // Dynamic tools do not support custom mmap addresses.
   return NULL;
 #endif
   Isolate* isolate = Isolate::UncheckedCurrent();
@@ -247,7 +237,7 @@ void* OS::GetRandomMmapAddr() {
 
 
 size_t OS::AllocateAlignment() {
-  return getpagesize();
+  return static_cast<size_t>(sysconf(_SC_PAGESIZE));
 }
 
 
@@ -258,10 +248,10 @@ void OS::Sleep(int milliseconds) {
 
 
 void OS::Abort() {
-  // Redirect to std abort to signal abnormal program termination.
-  if (FLAG_break_on_abort) {
-    DebugBreak();
+  if (FLAG_hard_abort) {
+    V8_IMMEDIATE_CRASH();
   }
+  // Redirect to std abort to signal abnormal program termination.
   abort();
 }
 
@@ -269,6 +259,8 @@ void OS::Abort() {
 void OS::DebugBreak() {
 #if V8_HOST_ARCH_ARM
   asm("bkpt 0");
+#elif V8_HOST_ARCH_ARM64
+  asm("brk 0");
 #elif V8_HOST_ARCH_MIPS
   asm("break");
 #elif V8_HOST_ARCH_IA32
@@ -287,37 +279,6 @@ void OS::DebugBreak() {
 
 // ----------------------------------------------------------------------------
 // Math functions
-
-double modulo(double x, double y) {
-  return fmod(x, y);
-}
-
-
-#define UNARY_MATH_FUNCTION(name, generator)             \
-static UnaryMathFunction fast_##name##_function = NULL;  \
-void init_fast_##name##_function() {                     \
-  fast_##name##_function = generator;                    \
-}                                                        \
-double fast_##name(double x) {                           \
-  return (*fast_##name##_function)(x);                   \
-}
-
-UNARY_MATH_FUNCTION(sin, CreateTranscendentalFunction(TranscendentalCache::SIN))
-UNARY_MATH_FUNCTION(cos, CreateTranscendentalFunction(TranscendentalCache::COS))
-UNARY_MATH_FUNCTION(tan, CreateTranscendentalFunction(TranscendentalCache::TAN))
-UNARY_MATH_FUNCTION(log, CreateTranscendentalFunction(TranscendentalCache::LOG))
-UNARY_MATH_FUNCTION(exp, CreateExpFunction())
-UNARY_MATH_FUNCTION(sqrt, CreateSqrtFunction())
-
-#undef UNARY_MATH_FUNCTION
-
-
-void lazily_initialize_fast_exp() {
-  if (fast_exp_function == NULL) {
-    init_fast_exp_function();
-  }
-}
-
 
 double OS::nan_value() {
   // NAN from math.h is defined in C99 and not in POSIX.
@@ -349,9 +310,27 @@ double OS::TimeCurrentMillis() {
 }
 
 
-double OS::DaylightSavingsOffset(double time) {
+class TimezoneCache {};
+
+
+TimezoneCache* OS::CreateTimezoneCache() {
+  return NULL;
+}
+
+
+void OS::DisposeTimezoneCache(TimezoneCache* cache) {
+  ASSERT(cache == NULL);
+}
+
+
+void OS::ClearTimezoneCache(TimezoneCache* cache) {
+  ASSERT(cache == NULL);
+}
+
+
+double OS::DaylightSavingsOffset(double time, TimezoneCache*) {
   if (std::isnan(time)) return nan_value();
-  time_t tv = static_cast<time_t>(floor(time/msPerSecond));
+  time_t tv = static_cast<time_t>(std::floor(time/msPerSecond));
   struct tm* t = localtime(&tv);
   if (NULL == t) return nan_value();
   return t->tm_isdst > 0 ? 3600 * msPerSecond : 0;
@@ -443,90 +422,28 @@ void OS::VPrintError(const char* format, va_list args) {
 }
 
 
-int OS::SNPrintF(Vector<char> str, const char* format, ...) {
+int OS::SNPrintF(char* str, int length, const char* format, ...) {
   va_list args;
   va_start(args, format);
-  int result = VSNPrintF(str, format, args);
+  int result = VSNPrintF(str, length, format, args);
   va_end(args);
   return result;
 }
 
 
-int OS::VSNPrintF(Vector<char> str,
+int OS::VSNPrintF(char* str,
+                  int length,
                   const char* format,
                   va_list args) {
-  int n = vsnprintf(str.start(), str.length(), format, args);
-  if (n < 0 || n >= str.length()) {
+  int n = vsnprintf(str, length, format, args);
+  if (n < 0 || n >= length) {
     // If the length is zero, the assignment fails.
-    if (str.length() > 0)
-      str[str.length() - 1] = '\0';
+    if (length > 0)
+      str[length - 1] = '\0';
     return -1;
   } else {
     return n;
   }
-}
-
-
-#if V8_TARGET_ARCH_IA32
-static void MemMoveWrapper(void* dest, const void* src, size_t size) {
-  memmove(dest, src, size);
-}
-
-
-// Initialize to library version so we can call this at any time during startup.
-static OS::MemMoveFunction memmove_function = &MemMoveWrapper;
-
-// Defined in codegen-ia32.cc.
-OS::MemMoveFunction CreateMemMoveFunction();
-
-// Copy memory area. No restrictions.
-void OS::MemMove(void* dest, const void* src, size_t size) {
-  if (size == 0) return;
-  // Note: here we rely on dependent reads being ordered. This is true
-  // on all architectures we currently support.
-  (*memmove_function)(dest, src, size);
-}
-
-#elif defined(V8_HOST_ARCH_ARM)
-void OS::MemCopyUint16Uint8Wrapper(uint16_t* dest,
-                               const uint8_t* src,
-                               size_t chars) {
-  uint16_t *limit = dest + chars;
-  while (dest < limit) {
-    *dest++ = static_cast<uint16_t>(*src++);
-  }
-}
-
-
-OS::MemCopyUint8Function OS::memcopy_uint8_function = &OS::MemCopyUint8Wrapper;
-OS::MemCopyUint16Uint8Function OS::memcopy_uint16_uint8_function =
-    &OS::MemCopyUint16Uint8Wrapper;
-// Defined in codegen-arm.cc.
-OS::MemCopyUint8Function CreateMemCopyUint8Function(
-    OS::MemCopyUint8Function stub);
-OS::MemCopyUint16Uint8Function CreateMemCopyUint16Uint8Function(
-    OS::MemCopyUint16Uint8Function stub);
-#endif
-
-
-void OS::PostSetUp() {
-#if V8_TARGET_ARCH_IA32
-  OS::MemMoveFunction generated_memmove = CreateMemMoveFunction();
-  if (generated_memmove != NULL) {
-    memmove_function = generated_memmove;
-  }
-#elif defined(V8_HOST_ARCH_ARM)
-  OS::memcopy_uint8_function =
-      CreateMemCopyUint8Function(&OS::MemCopyUint8Wrapper);
-  OS::memcopy_uint16_uint8_function =
-      CreateMemCopyUint16Uint8Function(&OS::MemCopyUint16Uint8Wrapper);
-#endif
-  init_fast_sin_function();
-  init_fast_cos_function();
-  init_fast_tan_function();
-  init_fast_log_function();
-  // fast_exp is initialized lazily.
-  init_fast_sqrt_function();
 }
 
 
@@ -539,8 +456,8 @@ char* OS::StrChr(char* str, int c) {
 }
 
 
-void OS::StrNCpy(Vector<char> dest, const char* src, size_t n) {
-  strncpy(dest.start(), src, n);
+void OS::StrNCpy(char* dest, int length, const char* src, size_t n) {
+  strncpy(dest, src, n);
 }
 
 
@@ -552,6 +469,8 @@ class Thread::PlatformData : public Malloced {
  public:
   PlatformData() : thread_(kNoThread) {}
   pthread_t thread_;  // Thread handle for pthread.
+  // Synchronizes thread creation
+  Mutex thread_creation_mutex_;
 };
 
 Thread::Thread(const Options& options)
@@ -571,12 +490,12 @@ Thread::~Thread() {
 
 
 static void SetThreadName(const char* name) {
-#if defined(__DragonFly__) || defined(__FreeBSD__) || defined(__OpenBSD__)
+#if V8_OS_DRAGONFLYBSD || V8_OS_FREEBSD || V8_OS_OPENBSD
   pthread_set_name_np(pthread_self(), name);
-#elif defined(__NetBSD__)
+#elif V8_OS_NETBSD
   STATIC_ASSERT(Thread::kMaxThreadNameLength <= PTHREAD_MAX_NAMELEN_NP);
   pthread_setname_np(pthread_self(), "%s", name);
-#elif defined(__APPLE__)
+#elif V8_OS_MACOSX
   // pthread_setname_np is only available in 10.6 or later, so test
   // for it at runtime.
   int (*dynamic_pthread_setname_np)(const char*);
@@ -599,10 +518,10 @@ static void SetThreadName(const char* name) {
 
 static void* ThreadEntry(void* arg) {
   Thread* thread = reinterpret_cast<Thread*>(arg);
-  // This is also initialized by the first argument to pthread_create() but we
-  // don't know which thread will run first (the original thread or the new
-  // one) so we initialize it here too.
-  thread->data()->thread_ = pthread_self();
+  // We take the lock here to make sure that pthread_create finished first since
+  // we don't know which thread will run first (the original thread or the new
+  // one).
+  { LockGuard<Mutex> lock_guard(&thread->data()->thread_creation_mutex_); }
   SetThreadName(thread->name());
   ASSERT(thread->data()->thread_ != kNoThread);
   thread->NotifyStartedAndRun();
@@ -623,13 +542,16 @@ void Thread::Start() {
   result = pthread_attr_init(&attr);
   ASSERT_EQ(0, result);
   // Native client uses default stack size.
-#if !defined(__native_client__)
+#if !V8_OS_NACL
   if (stack_size_ > 0) {
     result = pthread_attr_setstacksize(&attr, static_cast<size_t>(stack_size_));
     ASSERT_EQ(0, result);
   }
 #endif
-  result = pthread_create(&data_->thread_, &attr, ThreadEntry, this);
+  {
+    LockGuard<Mutex> lock_guard(&data_->thread_creation_mutex_);
+    result = pthread_create(&data_->thread_, &attr, ThreadEntry, this);
+  }
   ASSERT_EQ(0, result);
   result = pthread_attr_destroy(&attr);
   ASSERT_EQ(0, result);
@@ -651,7 +573,7 @@ void Thread::YieldCPU() {
 
 
 static Thread::LocalStorageKey PthreadKeyToLocalKey(pthread_key_t pthread_key) {
-#if defined(__CYGWIN__)
+#if V8_OS_CYGWIN
   // We need to cast pthread_key_t to Thread::LocalStorageKey in two steps
   // because pthread_key_t is a pointer type on Cygwin. This will probably not
   // work on 64-bit platforms, but Cygwin doesn't support 64-bit anyway.
@@ -665,7 +587,7 @@ static Thread::LocalStorageKey PthreadKeyToLocalKey(pthread_key_t pthread_key) {
 
 
 static pthread_key_t LocalKeyToPthreadKey(Thread::LocalStorageKey local_key) {
-#if defined(__CYGWIN__)
+#if V8_OS_CYGWIN
   STATIC_ASSERT(sizeof(Thread::LocalStorageKey) == sizeof(pthread_key_t));
   intptr_t ptr_key = static_cast<intptr_t>(local_key);
   return reinterpret_cast<pthread_key_t>(ptr_key);
@@ -677,7 +599,7 @@ static pthread_key_t LocalKeyToPthreadKey(Thread::LocalStorageKey local_key) {
 
 #ifdef V8_FAST_TLS_SUPPORTED
 
-static Atomic32 tls_base_offset_initialized = 0;
+static base::Atomic32 tls_base_offset_initialized = 0;
 intptr_t kMacTlsBaseOffset = 0;
 
 // It's safe to do the initialization more that once, but it has to be
@@ -713,7 +635,7 @@ static void InitializeTlsBaseOffset() {
     kMacTlsBaseOffset = 0;
   }
 
-  Release_Store(&tls_base_offset_initialized, 1);
+  base::Release_Store(&tls_base_offset_initialized, 1);
 }
 
 

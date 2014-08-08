@@ -32,7 +32,7 @@
 
 #ifdef __FreeBSD__
 #include <sys/cdefs.h>
-__FBSDID("$FreeBSD: head/sys/netinet/sctp_usrreq.c 257555 2013-11-02 20:12:19Z tuexen $");
+__FBSDID("$FreeBSD: head/sys/netinet/sctp_usrreq.c 263237 2014-03-16 12:32:16Z tuexen $");
 #endif
 
 #include <netinet/sctp_os.h>
@@ -76,6 +76,8 @@ void
 sctp_init(uint16_t port,
           int (*conn_output)(void *addr, void *buffer, size_t length, uint8_t tos, uint8_t set_df),
           void (*debug_printf)(const char *format, ...))
+#elif defined(__APPLE__) && (!defined(APPLE_LEOPARD) && !defined(APPLE_SNOWLEOPARD) &&!defined(APPLE_LION) && !defined(APPLE_MOUNTAINLION))
+sctp_init(struct protosw *pp SCTP_UNUSED, struct domain *dp SCTP_UNUSED)
 #else
 sctp_init(void)
 #endif
@@ -84,6 +86,7 @@ sctp_init(void)
 	u_long sb_max_adj;
 
 #endif
+#if defined(__Userspace__)
 #if defined(__Userspace_os_Windows)
 #if defined(INET) || defined(INET6)
 	WSADATA wsaData;
@@ -95,6 +98,10 @@ sctp_init(void)
 #endif
 	InitializeConditionVariable(&accept_cond);
 	InitializeCriticalSection(&accept_mtx);
+#else
+	pthread_cond_init(&accept_cond, NULL);
+	pthread_mutex_init(&accept_mtx, NULL);
+#endif
 #endif
 	/* Initialize and modify the sysctled variables */
 	sctp_init_sysctls();
@@ -172,8 +179,7 @@ sctp_init(void)
 #if defined(__APPLE__)
 	SCTP_BASE_VAR(sctp_main_timer_ticks) = 0;
 	sctp_start_main_timer();
-	sctp_address_monitor_start();
-	sctp_over_udp_start();
+	timeout(sctp_delayed_startup, NULL, 1);
 #endif
 }
 
@@ -181,6 +187,7 @@ void
 sctp_finish(void)
 {
 #if defined(__APPLE__)
+	untimeout(sctp_delayed_startup, NULL);
 	sctp_over_udp_stop();
 	sctp_address_monitor_stop();
 	sctp_stop_main_timer();
@@ -430,8 +437,10 @@ sctp_notify(struct sctp_inpcb *inp,
 	    (icmph->icmp_code == ICMP_UNREACH_ISOLATED) ||
 	    (icmph->icmp_code == ICMP_UNREACH_NET_PROHIB) ||
 	    (icmph->icmp_code == ICMP_UNREACH_HOST_PROHIB) ||
-#ifdef __Panda__
+#if defined(__Panda__)
 	    (icmph->icmp_code == ICMP_UNREACH_ADMIN)) {
+#elif defined(__Userspace_os_NetBSD)
+	    (icmph->icmp_code == ICMP_UNREACH_ADMIN_PROHIBIT)) {
 #else
 	    (icmph->icmp_code == ICMP_UNREACH_FILTER_PROHIB)) {
 #endif
@@ -1286,17 +1295,7 @@ sctp_disconnect(struct socket *so)
 				    (asoc->state & SCTP_STATE_PARTIAL_MSG_LEFT)) {
 					struct mbuf *op_err;
 				abort_anyway:
-					op_err = sctp_get_mbuf_for_msg(sizeof(struct sctp_paramhdr),
-								       0, M_NOWAIT, 1, MT_DATA);
-					if (op_err) {
-						/* Fill in the user initiated abort */
-						struct sctp_paramhdr *ph;
-
-						SCTP_BUF_LEN(op_err) = sizeof(struct sctp_paramhdr);
-						ph = mtod(op_err, struct sctp_paramhdr *);
-						ph->param_type = htons(SCTP_CAUSE_USER_INITIATED_ABT);
-						ph->param_length = htons(SCTP_BUF_LEN(op_err));
-					}
+					op_err = sctp_generate_cause(SCTP_CAUSE_USER_INITIATED_ABT, "");
 					stcb->sctp_ep->last_abort_code = SCTP_FROM_SCTP_USRREQ+SCTP_LOC_4;
 					sctp_send_abort_tcb(stcb, op_err, SCTP_SO_LOCKED);
 					SCTP_STAT_INCR_COUNTER32(sctps_aborted);
@@ -1494,17 +1493,7 @@ sctp_shutdown(struct socket *so)
 			    (asoc->state & SCTP_STATE_PARTIAL_MSG_LEFT)) {
 				struct mbuf *op_err;
 			abort_anyway:
-				op_err = sctp_get_mbuf_for_msg(sizeof(struct sctp_paramhdr),
-							       0, M_NOWAIT, 1, MT_DATA);
-				if (op_err) {
-					/* Fill in the user initiated abort */
-					struct sctp_paramhdr *ph;
-
-					SCTP_BUF_LEN(op_err) = sizeof(struct sctp_paramhdr);
-					ph = mtod(op_err, struct sctp_paramhdr *);
-					ph->param_type = htons( SCTP_CAUSE_USER_INITIATED_ABT);
-					ph->param_length = htons(SCTP_BUF_LEN(op_err));
-				}
+				op_err = sctp_generate_cause(SCTP_CAUSE_USER_INITIATED_ABT, "");
 				stcb->sctp_ep->last_abort_code = SCTP_FROM_SCTP_USRREQ+SCTP_LOC_6;
 				sctp_abort_an_association(stcb->sctp_ep, stcb,
 							  op_err, SCTP_SO_LOCKED);
@@ -3434,7 +3423,7 @@ sctp_getopt(struct socket *so, int optname, void *optval, size_t *optsize,
 
 		if (stcb) {
 			/* simply copy out the sockaddr_storage... */
-			int len;
+			size_t len;
 
 			len = *optsize;
 #ifdef HAVE_SA_LEN
@@ -7792,7 +7781,7 @@ sctp_peeraddr(struct socket *so, struct mbuf *nam)
 
 #if defined(__FreeBSD__) || defined(__APPLE__) || defined(__Windows__)
 struct pr_usrreqs sctp_usrreqs = {
-#if __FreeBSD_version >= 600000
+#if defined(__FreeBSD__)
 	.pru_abort = sctp_abort,
 	.pru_accept = sctp_accept,
 	.pru_attach = sctp_attach,
@@ -7816,45 +7805,51 @@ struct pr_usrreqs sctp_usrreqs = {
 	.pru_sockaddr = sctp_ingetaddr,
 	.pru_sosend = sctp_sosend,
 	.pru_soreceive = sctp_soreceive
-#else
+#elif defined(__APPLE__)
+	.pru_abort = sctp_abort,
+	.pru_accept = sctp_accept,
+	.pru_attach = sctp_attach,
+	.pru_bind = sctp_bind,
+	.pru_connect = sctp_connect,
+	.pru_connect2 = pru_connect2_notsupp,
+	.pru_control = in_control,
+	.pru_detach = sctp_detach,
+	.pru_disconnect = sctp_disconnect,
+	.pru_listen = sctp_listen,
+	.pru_peeraddr = sctp_peeraddr,
+	.pru_rcvd = NULL,
+	.pru_rcvoob = pru_rcvoob_notsupp,
+	.pru_send = sctp_sendm,
+	.pru_sense = pru_sense_null,
+	.pru_shutdown = sctp_shutdown,
+	.pru_sockaddr = sctp_ingetaddr,
+	.pru_sosend = sctp_sosend,
+	.pru_soreceive = sctp_soreceive,
+	.pru_sopoll = sopoll
+#elif defined(__Windows__)
 	sctp_abort,
 	sctp_accept,
 	sctp_attach,
 	sctp_bind,
 	sctp_connect,
 	pru_connect2_notsupp,
-#if defined(__Windows__)
 	NULL,
 	NULL,
-#else
-	in_control,
-	sctp_detach,
-#endif
 	sctp_disconnect,
 	sctp_listen,
 	sctp_peeraddr,
 	NULL,
 	pru_rcvoob_notsupp,
-#if defined(__Windows__)
 	NULL,
-#else
-	sctp_sendm,
-#endif
 	pru_sense_null,
 	sctp_shutdown,
-#if defined(__Windows__)
 	sctp_flush,
-#endif
 	sctp_ingetaddr,
 	sctp_sosend,
 	sctp_soreceive,
-#if defined(__Windows__)
 	sopoll_generic,
 	NULL,
 	sctp_close
-#else
-	sopoll
-#endif
 #endif
 };
 #elif !defined(__Panda__) && !defined(__Userspace__)

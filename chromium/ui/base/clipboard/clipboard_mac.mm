@@ -227,18 +227,18 @@ void Clipboard::Clear(ClipboardType type) {
 }
 
 void Clipboard::ReadAvailableTypes(ClipboardType type,
-                                   std::vector<string16>* types,
+                                   std::vector<base::string16>* types,
                                    bool* contains_filenames) const {
   DCHECK(CalledOnValidThread());
   types->clear();
   if (IsFormatAvailable(Clipboard::GetPlainTextFormatType(), type))
-    types->push_back(UTF8ToUTF16(kMimeTypeText));
+    types->push_back(base::UTF8ToUTF16(kMimeTypeText));
   if (IsFormatAvailable(Clipboard::GetHtmlFormatType(), type))
-    types->push_back(UTF8ToUTF16(kMimeTypeHTML));
+    types->push_back(base::UTF8ToUTF16(kMimeTypeHTML));
   if (IsFormatAvailable(Clipboard::GetRtfFormatType(), type))
-    types->push_back(UTF8ToUTF16(kMimeTypeRTF));
+    types->push_back(base::UTF8ToUTF16(kMimeTypeRTF));
   if ([NSImage canInitWithPasteboard:GetPasteboard()])
-    types->push_back(UTF8ToUTF16(kMimeTypePNG));
+    types->push_back(base::UTF8ToUTF16(kMimeTypePNG));
   *contains_filenames = false;
 
   NSPasteboard* pb = GetPasteboard();
@@ -249,15 +249,13 @@ void Clipboard::ReadAvailableTypes(ClipboardType type,
   }
 }
 
-void Clipboard::ReadText(ClipboardType type, string16* result) const {
+void Clipboard::ReadText(ClipboardType type, base::string16* result) const {
   DCHECK(CalledOnValidThread());
   DCHECK_EQ(type, CLIPBOARD_TYPE_COPY_PASTE);
   NSPasteboard* pb = GetPasteboard();
   NSString* contents = [pb stringForType:NSStringPboardType];
 
-  UTF8ToUTF16([contents UTF8String],
-              [contents lengthOfBytesUsingEncoding:NSUTF8StringEncoding],
-              result);
+  *result = base::SysNSStringToUTF16(contents);
 }
 
 void Clipboard::ReadAsciiText(ClipboardType type, std::string* result) const {
@@ -273,7 +271,7 @@ void Clipboard::ReadAsciiText(ClipboardType type, std::string* result) const {
 }
 
 void Clipboard::ReadHTML(ClipboardType type,
-                         string16* markup,
+                         base::string16* markup,
                          std::string* src_url,
                          uint32* fragment_start,
                          uint32* fragment_end) const {
@@ -295,9 +293,7 @@ void Clipboard::ReadHTML(ClipboardType type,
     NSString* contents = [pb stringForType:bestType];
     if ([bestType isEqualToString:NSRTFPboardType])
       contents = [pb htmlFromRtf];
-    UTF8ToUTF16([contents UTF8String],
-                [contents lengthOfBytesUsingEncoding:NSUTF8StringEncoding],
-                markup);
+    *markup = base::SysNSStringToUTF16(contents);
   }
 
   *fragment_start = 0;
@@ -331,8 +327,8 @@ SkBitmap Clipboard::ReadImage(ClipboardType type) const {
 }
 
 void Clipboard::ReadCustomData(ClipboardType clipboard_type,
-                               const string16& type,
-                               string16* result) const {
+                               const base::string16& type,
+                               base::string16* result) const {
   DCHECK(CalledOnValidThread());
   DCHECK_EQ(clipboard_type, CLIPBOARD_TYPE_COPY_PASTE);
 
@@ -344,15 +340,13 @@ void Clipboard::ReadCustomData(ClipboardType clipboard_type,
   }
 }
 
-void Clipboard::ReadBookmark(string16* title, std::string* url) const {
+void Clipboard::ReadBookmark(base::string16* title, std::string* url) const {
   DCHECK(CalledOnValidThread());
   NSPasteboard* pb = GetPasteboard();
 
   if (title) {
     NSString* contents = [pb stringForType:kUTTypeURLName];
-    UTF8ToUTF16([contents UTF8String],
-                [contents lengthOfBytesUsingEncoding:NSUTF8StringEncoding],
-                title);
+    *title = base::SysNSStringToUTF16(contents);
   }
 
   if (url) {

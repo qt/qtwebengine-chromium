@@ -31,16 +31,14 @@ class PPAPI_THUNK_EXPORT PPB_Graphics3D_API {
 
   // Graphics3DTrusted API.
   virtual PP_Bool SetGetBuffer(int32_t shm_id) = 0;
-  virtual gpu::CommandBuffer::State GetState() = 0;
-  virtual int32_t CreateTransferBuffer(uint32_t size) = 0;
+  virtual scoped_refptr<gpu::Buffer> CreateTransferBuffer(uint32_t size,
+                                                          int32_t* id) = 0;
   virtual PP_Bool DestroyTransferBuffer(int32_t id) = 0;
-  virtual PP_Bool GetTransferBuffer(int32_t id,
-                                    int* shm_handle,
-                                    uint32_t* shm_size) = 0;
   virtual PP_Bool Flush(int32_t put_offset) = 0;
-  virtual gpu::CommandBuffer::State FlushSync(int32_t put_offset) = 0;
-  virtual gpu::CommandBuffer::State FlushSyncFast(int32_t put_offset,
-                                                  int32_t last_known_get) = 0;
+  virtual gpu::CommandBuffer::State WaitForTokenInRange(int32_t start,
+                                                        int32_t end) = 0;
+  virtual gpu::CommandBuffer::State WaitForGetOffsetInRange(int32_t start,
+                                                            int32_t end) = 0;
 
   // GLESChromiumTextureMapping.
   virtual void* MapTexSubImage2DCHROMIUM(GLenum target,

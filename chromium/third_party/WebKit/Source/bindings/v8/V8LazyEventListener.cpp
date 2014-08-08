@@ -31,29 +31,29 @@
 #include "config.h"
 #include "bindings/v8/V8LazyEventListener.h"
 
-#include "V8Document.h"
-#include "V8HTMLFormElement.h"
-#include "V8Node.h"
+#include "bindings/core/v8/V8Document.h"
+#include "bindings/core/v8/V8HTMLFormElement.h"
+#include "bindings/core/v8/V8Node.h"
 #include "bindings/v8/ScriptController.h"
 #include "bindings/v8/ScriptSourceCode.h"
 #include "bindings/v8/V8Binding.h"
 #include "bindings/v8/V8DOMWrapper.h"
-#include "bindings/v8/V8HiddenPropertyName.h"
+#include "bindings/v8/V8HiddenValue.h"
 #include "bindings/v8/V8ScriptRunner.h"
 #include "core/dom/Document.h"
 #include "core/dom/Node.h"
 #include "core/html/HTMLElement.h"
 #include "core/html/HTMLFormElement.h"
 #include "core/inspector/InspectorInstrumentation.h"
-#include "core/frame/ContentSecurityPolicy.h"
-#include "core/frame/Frame.h"
+#include "core/frame/LocalFrame.h"
+#include "core/frame/csp/ContentSecurityPolicy.h"
 
 #include "wtf/StdLibExtras.h"
 
 namespace WebCore {
 
 V8LazyEventListener::V8LazyEventListener(const AtomicString& functionName, const AtomicString& eventParameterName, const String& code, const String sourceURL, const TextPosition& position, Node* node, v8::Isolate* isolate)
-    : V8AbstractEventListener(true, mainThreadNormalWorld(), isolate)
+    : V8AbstractEventListener(true, isolate)
     , m_functionName(functionName)
     , m_eventParameterName(eventParameterName)
     , m_code(code)
@@ -64,35 +64,31 @@ V8LazyEventListener::V8LazyEventListener(const AtomicString& functionName, const
 }
 
 template<typename T>
-v8::Handle<v8::Object> toObjectWrapper(T* domObject, v8::Isolate* isolate)
+v8::Handle<v8::Object> toObjectWrapper(T* domObject, ScriptState* scriptState)
 {
     if (!domObject)
-        return v8::Object::New();
-    v8::Handle<v8::Value> value = toV8(domObject, v8::Handle<v8::Object>(), isolate);
+        return v8::Object::New(scriptState->isolate());
+    v8::Handle<v8::Value> value = toV8(domObject, scriptState->context()->Global(), scriptState->isolate());
     if (value.IsEmpty())
-        return v8::Object::New();
-    return v8::Local<v8::Object>::New(isolate, value.As<v8::Object>());
+        return v8::Object::New(scriptState->isolate());
+    return v8::Local<v8::Object>::New(scriptState->isolate(), value.As<v8::Object>());
 }
 
-v8::Local<v8::Value> V8LazyEventListener::callListenerFunction(ExecutionContext* context, v8::Handle<v8::Value> jsEvent, Event* event)
+v8::Local<v8::Value> V8LazyEventListener::callListenerFunction(v8::Handle<v8::Value> jsEvent, Event* event)
 {
-    v8::Local<v8::Object> listenerObject = getListenerObject(context);
+    v8::Local<v8::Object> listenerObject = getListenerObject(scriptState()->executionContext());
     if (listenerObject.IsEmpty())
         return v8::Local<v8::Value>();
 
     v8::Local<v8::Function> handlerFunction = listenerObject.As<v8::Function>();
-    v8::Local<v8::Object> receiver = getReceiverObject(context, event);
+    v8::Local<v8::Object> receiver = getReceiverObject(event);
     if (handlerFunction.IsEmpty() || receiver.IsEmpty())
         return v8::Local<v8::Value>();
 
-    // FIXME: Can |context| be 0 here?
-    if (!context)
+    if (!scriptState()->executionContext()->isDocument())
         return v8::Local<v8::Value>();
 
-    if (!context->isDocument())
-        return v8::Local<v8::Value>();
-
-    Frame* frame = toDocument(context)->frame();
+    LocalFrame* frame = toDocument(scriptState()->executionContext())->frame();
     if (!frame)
         return v8::Local<v8::Value>();
 
@@ -105,11 +101,32 @@ v8::Local<v8::Value> V8LazyEventListener::callListenerFunction(ExecutionContext*
 
 static void V8LazyEventListenerToString(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
-    v8SetReturnValue(info, info.Holder()->GetHiddenValue(V8HiddenPropertyName::toStringString(info.GetIsolate())));
+    v8SetReturnValue(info, V8HiddenValue::getHiddenValue(info.GetIsolate(), info.Holder(), V8HiddenValue::toStringString(info.GetIsolate())));
+}
+
+void V8LazyEventListener::handleEvent(ExecutionContext* context, Event* event)
+{
+    v8::HandleScope handleScope(toIsolate(context));
+    // V8LazyEventListener doesn't know the associated context when created.
+    // Thus we lazily get the associated context and set a ScriptState on V8AbstractEventListener.
+    v8::Local<v8::Context> v8Context = toV8Context(context, world());
+    if (v8Context.IsEmpty())
+        return;
+    setScriptState(ScriptState::from(v8Context));
+
+    V8AbstractEventListener::handleEvent(context, event);
 }
 
 void V8LazyEventListener::prepareListenerObject(ExecutionContext* context)
 {
+    v8::HandleScope handleScope(toIsolate(context));
+    // V8LazyEventListener doesn't know the associated context when created.
+    // Thus we lazily get the associated context and set a ScriptState on V8AbstractEventListener.
+    v8::Local<v8::Context> v8Context = toV8Context(context, world());
+    if (v8Context.IsEmpty())
+        return;
+    setScriptState(ScriptState::from(v8Context));
+
     if (context->isDocument() && !toDocument(context)->allowInlineEventHandlers(m_node, this, m_sourceURL, m_position.m_line)) {
         clearListenerObject();
         return;
@@ -120,17 +137,7 @@ void V8LazyEventListener::prepareListenerObject(ExecutionContext* context)
 
     ASSERT(context->isDocument());
 
-    v8::Isolate* isolate = toIsolate(context);
-    v8::HandleScope handleScope(isolate);
-
-    // Use the outer scope to hold context.
-    v8::Local<v8::Context> v8Context = toV8Context(context, world());
-    // Bail out if we cannot get the context.
-    if (v8Context.IsEmpty())
-        return;
-
-    v8::Context::Scope scope(v8Context);
-
+    ScriptState::Scope scope(scriptState());
     String listenerSource =  InspectorInstrumentation::preprocessEventListener(toDocument(context)->frame(), m_code, m_sourceURL, m_functionName);
 
     // FIXME: Remove the following 'with' hack.
@@ -159,9 +166,9 @@ void V8LazyEventListener::prepareListenerObject(ExecutionContext* context)
             "};"
         "}}}})";
 
-    v8::Handle<v8::String> codeExternalString = v8String(isolate, code);
+    v8::Handle<v8::String> codeExternalString = v8String(isolate(), code);
 
-    v8::Local<v8::Value> result = V8ScriptRunner::compileAndRunInternalScript(codeExternalString, isolate, m_sourceURL, m_position, 0);
+    v8::Local<v8::Value> result = V8ScriptRunner::compileAndRunInternalScript(codeExternalString, isolate(), m_sourceURL, m_position);
     if (result.IsEmpty())
         return;
 
@@ -173,22 +180,22 @@ void V8LazyEventListener::prepareListenerObject(ExecutionContext* context)
     if (m_node && m_node->isHTMLElement())
         formElement = toHTMLElement(m_node)->formOwner();
 
-    v8::Handle<v8::Object> nodeWrapper = toObjectWrapper<Node>(m_node, isolate);
-    v8::Handle<v8::Object> formWrapper = toObjectWrapper<HTMLFormElement>(formElement, isolate);
-    v8::Handle<v8::Object> documentWrapper = toObjectWrapper<Document>(m_node ? m_node->ownerDocument() : 0, isolate);
+    v8::Handle<v8::Object> nodeWrapper = toObjectWrapper<Node>(m_node, scriptState());
+    v8::Handle<v8::Object> formWrapper = toObjectWrapper<HTMLFormElement>(formElement, scriptState());
+    v8::Handle<v8::Object> documentWrapper = toObjectWrapper<Document>(m_node ? m_node->ownerDocument() : 0, scriptState());
 
-    v8::Local<v8::Object> thisObject = v8::Object::New();
+    v8::Local<v8::Object> thisObject = v8::Object::New(isolate());
     if (thisObject.IsEmpty())
         return;
-    if (!thisObject->ForceSet(v8::Integer::New(0, isolate), nodeWrapper))
+    if (!thisObject->ForceSet(v8::Integer::New(isolate(), 0), nodeWrapper))
         return;
-    if (!thisObject->ForceSet(v8::Integer::New(1, isolate), formWrapper))
+    if (!thisObject->ForceSet(v8::Integer::New(isolate(), 1), formWrapper))
         return;
-    if (!thisObject->ForceSet(v8::Integer::New(2, isolate), documentWrapper))
+    if (!thisObject->ForceSet(v8::Integer::New(isolate(), 2), documentWrapper))
         return;
 
     // FIXME: Remove this code when we stop doing the 'with' hack above.
-    v8::Local<v8::Value> innerValue = V8ScriptRunner::callInternalFunction(intermediateFunction, thisObject, 0, 0, isolate);
+    v8::Local<v8::Value> innerValue = V8ScriptRunner::callInternalFunction(intermediateFunction, thisObject, 0, 0, isolate());
     if (innerValue.IsEmpty() || !innerValue->IsFunction())
         return;
 
@@ -202,20 +209,12 @@ void V8LazyEventListener::prepareListenerObject(ExecutionContext* context)
     // source returned (sometimes a RegExp is applied as well) for some
     // other use. That fails miserably if the actual wrapper source is
     // returned.
-    v8::Handle<v8::FunctionTemplate> toStringTemplate =
-        V8PerIsolateData::current()->lazyEventListenerToStringTemplate();
-    if (toStringTemplate.IsEmpty())
-        toStringTemplate = v8::FunctionTemplate::New(isolate, V8LazyEventListenerToString);
-    v8::Local<v8::Function> toStringFunction;
-    if (!toStringTemplate.IsEmpty())
-        toStringFunction = toStringTemplate->GetFunction();
-    if (!toStringFunction.IsEmpty()) {
-        String toStringString = "function " + m_functionName + "(" + m_eventParameterName + ") {\n  " + m_code + "\n}";
-        wrappedFunction->SetHiddenValue(V8HiddenPropertyName::toStringString(isolate), v8String(isolate, toStringString));
-        wrappedFunction->Set(v8AtomicString(isolate, "toString"), toStringFunction);
-    }
-
-    wrappedFunction->SetName(v8String(isolate, m_functionName));
+    v8::Local<v8::Function> toStringFunction = v8::Function::New(isolate(), V8LazyEventListenerToString);
+    ASSERT(!toStringFunction.IsEmpty());
+    String toStringString = "function " + m_functionName + "(" + m_eventParameterName + ") {\n  " + m_code + "\n}";
+    V8HiddenValue::setHiddenValue(isolate(), wrappedFunction, V8HiddenValue::toStringString(isolate()), v8String(isolate(), toStringString));
+    wrappedFunction->Set(v8AtomicString(isolate(), "toString"), toStringFunction);
+    wrappedFunction->SetName(v8String(isolate(), m_functionName));
 
     // FIXME: Remove the following comment-outs.
     // See https://bugs.webkit.org/show_bug.cgi?id=85152 for more details.

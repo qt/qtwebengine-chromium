@@ -28,13 +28,14 @@
 #include "config.h"
 #include "core/loader/EmptyClients.h"
 
+#include "core/frame/LocalFrame.h"
 #include "core/html/HTMLFormElement.h"
 #include "core/loader/DocumentLoader.h"
-#include "core/loader/FormState.h"
-#include "core/frame/Frame.h"
+#include "core/storage/StorageNamespace.h"
 #include "platform/ColorChooser.h"
 #include "platform/DateTimeChooser.h"
 #include "platform/FileChooser.h"
+#include "public/platform/WebApplicationCacheHost.h"
 #include "public/platform/WebServiceWorkerProvider.h"
 #include "public/platform/WebServiceWorkerProviderClient.h"
 
@@ -62,6 +63,9 @@ void fillWithEmptyClients(Page::PageClients& pageClients)
 
     static SpellCheckerClient* dummySpellCheckerClient = adoptPtr(new EmptySpellCheckerClient).leakPtr();
     pageClients.spellCheckerClient = dummySpellCheckerClient;
+
+    static StorageClient* dummyStorageClient = adoptPtr(new EmptyStorageClient).leakPtr();
+    pageClients.storageClient = dummyStorageClient;
 }
 
 class EmptyPopupMenu : public PopupMenu {
@@ -72,26 +76,26 @@ public:
     virtual void disconnectClient() OVERRIDE { }
 };
 
-PassRefPtr<PopupMenu> EmptyChromeClient::createPopupMenu(Frame&, PopupMenuClient*) const
+PassRefPtr<PopupMenu> EmptyChromeClient::createPopupMenu(LocalFrame&, PopupMenuClient*) const
 {
     return adoptRef(new EmptyPopupMenu());
 }
 
-PassOwnPtr<ColorChooser> EmptyChromeClient::createColorChooser(ColorChooserClient*, const Color&)
+PassOwnPtr<ColorChooser> EmptyChromeClient::createColorChooser(LocalFrame*, ColorChooserClient*, const Color&)
 {
     return nullptr;
 }
 
-PassRefPtr<DateTimeChooser> EmptyChromeClient::openDateTimeChooser(DateTimeChooserClient*, const DateTimeChooserParameters&)
+PassRefPtrWillBeRawPtr<DateTimeChooser> EmptyChromeClient::openDateTimeChooser(DateTimeChooserClient*, const DateTimeChooserParameters&)
 {
-    return PassRefPtr<DateTimeChooser>();
+    return nullptr;
 }
 
 void EmptyChromeClient::openTextDataListChooser(HTMLInputElement&)
 {
 }
 
-void EmptyChromeClient::runOpenPanel(Frame*, PassRefPtr<FileChooser>)
+void EmptyChromeClient::runOpenPanel(LocalFrame*, PassRefPtr<FileChooser>)
 {
 }
 
@@ -105,43 +109,53 @@ NavigationPolicy EmptyFrameLoaderClient::decidePolicyForNavigation(const Resourc
     return NavigationPolicyIgnore;
 }
 
-void EmptyFrameLoaderClient::dispatchWillSendSubmitEvent(PassRefPtr<FormState>)
+void EmptyFrameLoaderClient::dispatchWillSendSubmitEvent(HTMLFormElement*)
 {
 }
 
-void EmptyFrameLoaderClient::dispatchWillSubmitForm(PassRefPtr<FormState>)
+void EmptyFrameLoaderClient::dispatchWillSubmitForm(HTMLFormElement*)
 {
 }
 
-PassRefPtr<DocumentLoader> EmptyFrameLoaderClient::createDocumentLoader(const ResourceRequest& request, const SubstituteData& substituteData)
+PassRefPtr<DocumentLoader> EmptyFrameLoaderClient::createDocumentLoader(LocalFrame* frame, const ResourceRequest& request, const SubstituteData& substituteData)
 {
-    return DocumentLoader::create(request, substituteData);
+    return DocumentLoader::create(frame, request, substituteData);
 }
 
-PassRefPtr<Frame> EmptyFrameLoaderClient::createFrame(const KURL&, const String&, const String&, HTMLFrameOwnerElement*)
+PassRefPtr<LocalFrame> EmptyFrameLoaderClient::createFrame(const KURL&, const AtomicString&, const Referrer&, HTMLFrameOwnerElement*)
 {
-    return 0;
+    return nullptr;
 }
 
-PassRefPtr<Widget> EmptyFrameLoaderClient::createPlugin(const IntSize&, HTMLPlugInElement*, const KURL&, const Vector<String>&, const Vector<String>&, const String&, bool)
+PassRefPtr<Widget> EmptyFrameLoaderClient::createPlugin(HTMLPlugInElement*, const KURL&, const Vector<String>&, const Vector<String>&, const String&, bool, DetachedPluginPolicy)
 {
-    return 0;
+    return nullptr;
 }
 
-PassRefPtr<Widget> EmptyFrameLoaderClient::createJavaAppletWidget(const IntSize&, HTMLAppletElement*, const KURL&, const Vector<String>&, const Vector<String>&)
+PassRefPtr<Widget> EmptyFrameLoaderClient::createJavaAppletWidget(HTMLAppletElement*, const KURL&, const Vector<String>&, const Vector<String>&)
 {
-    return 0;
+    return nullptr;
 }
 
 void EmptyTextCheckerClient::requestCheckingOfString(PassRefPtr<TextCheckingRequest>)
 {
 }
 
-void EmptyFrameLoaderClient::didRequestAutocomplete(PassRefPtr<FormState>)
+void EmptyFrameLoaderClient::didRequestAutocomplete(HTMLFormElement*)
 {
 }
 
-PassOwnPtr<blink::WebServiceWorkerProvider> EmptyFrameLoaderClient::createServiceWorkerProvider(PassOwnPtr<blink::WebServiceWorkerProviderClient>)
+PassOwnPtr<blink::WebServiceWorkerProvider> EmptyFrameLoaderClient::createServiceWorkerProvider()
+{
+    return nullptr;
+}
+
+PassOwnPtr<blink::WebApplicationCacheHost> EmptyFrameLoaderClient::createApplicationCacheHost(blink::WebApplicationCacheHostClient*)
+{
+    return nullptr;
+}
+
+PassOwnPtr<StorageNamespace> EmptyStorageClient::createSessionStorageNamespace()
 {
     return nullptr;
 }

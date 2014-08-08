@@ -31,24 +31,29 @@
 
 #include "bindings/v8/ScriptWrappable.h"
 #include "core/frame/DOMWindowProperty.h"
+#include "platform/heap/Handle.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 
 namespace WebCore {
 
-    class Frame;
+    class LocalFrame;
 
-    class BarProp : public ScriptWrappable, public RefCounted<BarProp>, public DOMWindowProperty {
+    class BarProp FINAL : public RefCountedWillBeGarbageCollectedFinalized<BarProp>, public ScriptWrappable, public DOMWindowProperty {
     public:
         enum Type { Locationbar, Menubar, Personalbar, Scrollbars, Statusbar, Toolbar };
 
-        static PassRefPtr<BarProp> create(Frame* frame, Type type) { return adoptRef(new BarProp(frame, type)); }
+        static PassRefPtrWillBeRawPtr<BarProp> create(LocalFrame* frame, Type type)
+        {
+            return adoptRefWillBeNoop(new BarProp(frame, type));
+        }
 
-        Type type() const;
         bool visible() const;
 
+        void trace(Visitor*) { }
+
     private:
-        BarProp(Frame*, Type);
+        BarProp(LocalFrame*, Type);
         Type m_type;
     };
 

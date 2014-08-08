@@ -39,18 +39,21 @@
         'resources',
       ],
       'include_dirs': [
-        '../../src',
+        '../..',
       ],
-      'sources': [
+      'sources': [  ### gcmole(all) ###
         '<(generated_file)',
         'cctest.cc',
         'gay-fixed.cc',
         'gay-precision.cc',
         'gay-shortest.cc',
+        'print-extension.cc',
+        'profiler-extension.cc',
         'test-accessors.cc',
         'test-alloc.cc',
         'test-api.cc',
         'test-ast.cc',
+        'test-atomicops.cc',
         'test-bignum.cc',
         'test-bignum-dtoa.cc',
         'test-circular-queue.cc',
@@ -80,13 +83,19 @@
         'test-hashmap.cc',
         'test-heap.cc',
         'test-heap-profiler.cc',
+        'test-hydrogen-types.cc',
+        'test-libplatform-task-queue.cc',
+        'test-libplatform-worker-thread.cc',
         'test-list.cc',
         'test-liveedit.cc',
         'test-lockers.cc',
         'test-log.cc',
+        'test-microtask-delivery.cc',
         'test-mark-compact.cc',
+        'test-mementos.cc',
         'test-mutex.cc',
         'test-object-observe.cc',
+        'test-ordered-hash-table.cc',
         'test-parsing.cc',
         'test-platform.cc',
         'test-platform-tls.cc',
@@ -97,7 +106,6 @@
         'test-representation.cc',
         'test-semaphore.cc',
         'test-serialize.cc',
-        'test-socket.cc',
         'test-spaces.cc',
         'test-strings.cc',
         'test-symbols.cc',
@@ -112,11 +120,12 @@
         'test-version.cc',
         'test-weakmaps.cc',
         'test-weaksets.cc',
-        'test-weaktypedarrays.cc'
+        'test-weaktypedarrays.cc',
+        'trace-extension.cc'
       ],
       'conditions': [
         ['v8_target_arch=="ia32"', {
-          'sources': [
+          'sources': [  ### gcmole(arch:ia32) ###
             'test-assembler-ia32.cc',
             'test-code-stubs.cc',
             'test-code-stubs-ia32.cc',
@@ -127,17 +136,18 @@
           ],
         }],
         ['v8_target_arch=="x64"', {
-          'sources': [
+          'sources': [  ### gcmole(arch:x64) ###
             'test-assembler-x64.cc',
             'test-code-stubs.cc',
             'test-code-stubs-x64.cc',
             'test-cpu-x64.cc',
+            'test-disasm-x64.cc',
             'test-macro-assembler-x64.cc',
             'test-log-stack-tracer.cc'
           ],
         }],
         ['v8_target_arch=="arm"', {
-          'sources': [
+          'sources': [  ### gcmole(arch:arm) ###
             'test-assembler-arm.cc',
             'test-code-stubs.cc',
             'test-code-stubs-arm.cc',
@@ -145,14 +155,39 @@
             'test-macro-assembler-arm.cc'
           ],
         }],
+        ['v8_target_arch=="arm64"', {
+          'sources': [  ### gcmole(arch:arm64) ###
+            'test-utils-arm64.cc',
+            'test-assembler-arm64.cc',
+            'test-code-stubs.cc',
+            'test-code-stubs-arm64.cc',
+            'test-disasm-arm64.cc',
+            'test-fuzz-arm64.cc',
+            'test-javascript-arm64.cc',
+            'test-js-arm64-variables.cc'
+          ],
+        }],
         ['v8_target_arch=="mipsel"', {
-          'sources': [
+          'sources': [  ### gcmole(arch:mipsel) ###
             'test-assembler-mips.cc',
+            'test-code-stubs.cc',
+            'test-code-stubs-mips.cc',
             'test-disasm-mips.cc',
             'test-macro-assembler-mips.cc'
           ],
         }],
-        [ 'OS=="linux"', {
+        ['v8_target_arch=="x87"', {
+          'sources': [  ### gcmole(arch:x87) ###
+            'test-assembler-x87.cc',
+            'test-code-stubs.cc',
+            'test-code-stubs-x87.cc',
+            'test-cpu-x87.cc',
+            'test-disasm-x87.cc',
+            'test-macro-assembler-x87.cc',
+            'test-log-stack-tracer.cc'
+          ],
+        }],
+        [ 'OS=="linux" or OS=="qnx"', {
           'sources': [
             'test-platform-linux.cc',
           ],
@@ -182,7 +217,7 @@
             },
             {
               'dependencies': [
-                '../../tools/gyp/v8.gyp:v8_nosnapshot.<(v8_target_arch)',
+                '../../tools/gyp/v8.gyp:v8_nosnapshot',
               ],
             }],
           ],

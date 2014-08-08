@@ -75,18 +75,19 @@ scoped_refptr<VideoFrame> VideoFramePool::PoolImpl::CreateFrame(
           pool_frame->visible_rect() == visible_rect &&
           pool_frame->natural_size() == natural_size) {
         frame = pool_frame;
-        frame->SetTimestamp(kNoTimestamp());
+        frame->set_timestamp(timestamp);
         break;
       }
   }
 
   if (!frame) {
     frame = VideoFrame::CreateFrame(
-        format, coded_size, visible_rect, natural_size, kNoTimestamp());
+        format, coded_size, visible_rect, natural_size, timestamp);
   }
 
   return VideoFrame::WrapVideoFrame(
-      frame, base::Bind(&VideoFramePool::PoolImpl::FrameReleased, this, frame));
+      frame, frame->visible_rect(), frame->natural_size(),
+      base::Bind(&VideoFramePool::PoolImpl::FrameReleased, this, frame));
 }
 
 void VideoFramePool::PoolImpl::Shutdown() {

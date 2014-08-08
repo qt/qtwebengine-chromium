@@ -37,7 +37,6 @@ static const SchemeToFactory kBuiltinFactories[] = {
   { "ws", URLRequestHttpJob::Factory },
   { "wss", URLRequestHttpJob::Factory },
 #endif  // !defined(OS_IOS)
-
 };
 
 // static
@@ -58,12 +57,7 @@ URLRequestJob* URLRequestJobManager::CreateJob(
   job_factory = request->context()->job_factory();
 
   const std::string& scheme = request->url().scheme();  // already lowercase
-  if (job_factory) {
-    if (!job_factory->IsHandledProtocol(scheme)) {
-      return new URLRequestErrorJob(
-          request, network_delegate, ERR_UNKNOWN_URL_SCHEME);
-    }
-  } else if (!SupportsScheme(scheme)) {
+  if (!job_factory->IsHandledProtocol(scheme)) {
     return new URLRequestErrorJob(
         request, network_delegate, ERR_UNKNOWN_URL_SCHEME);
   }
@@ -86,24 +80,10 @@ URLRequestJob* URLRequestJobManager::CreateJob(
     }
   }
 
-  if (job_factory) {
-    URLRequestJob* job = job_factory->MaybeCreateJobWithProtocolHandler(
-        scheme, request, network_delegate);
-    if (job)
-      return job;
-  }
-
-  // TODO(willchan): Remove this in favor of
-  // URLRequestJobFactory::ProtocolHandler.
-  // See if the request should be handled by a registered protocol factory.
-  // If the registered factory returns null, then we want to fall-back to the
-  // built-in protocol factory.
-  FactoryMap::const_iterator i = factories_.find(scheme);
-  if (i != factories_.end()) {
-    URLRequestJob* job = i->second(request, network_delegate, scheme);
-    if (job)
-      return job;
-  }
+  URLRequestJob* job = job_factory->MaybeCreateJobWithProtocolHandler(
+      scheme, request, network_delegate);
+  if (job)
+    return job;
 
   // See if the request should be handled by a built-in protocol factory.
   for (size_t i = 0; i < arraysize(kBuiltinFactories); ++i) {
@@ -137,13 +117,8 @@ URLRequestJob* URLRequestJobManager::MaybeInterceptRedirect(
   job_factory = request->context()->job_factory();
 
   const std::string& scheme = request->url().scheme();  // already lowercase
-  if (job_factory) {
-    if (!job_factory->IsHandledProtocol(scheme)) {
-      return NULL;
-    }
-  } else if (!SupportsScheme(scheme)) {
+  if (!job_factory->IsHandledProtocol(scheme))
     return NULL;
-  }
 
   InterceptorList::const_iterator i;
   for (i = interceptors_.begin(); i != interceptors_.end(); ++i) {
@@ -169,13 +144,8 @@ URLRequestJob* URLRequestJobManager::MaybeInterceptResponse(
   job_factory = request->context()->job_factory();
 
   const std::string& scheme = request->url().scheme();  // already lowercase
-  if (job_factory) {
-    if (!job_factory->IsHandledProtocol(scheme)) {
-      return NULL;
-    }
-  } else if (!SupportsScheme(scheme)) {
+  if (!job_factory->IsHandledProtocol(scheme))
     return NULL;
-  }
 
   InterceptorList::const_iterator i;
   for (i = interceptors_.begin(); i != interceptors_.end(); ++i) {
@@ -187,41 +157,14 @@ URLRequestJob* URLRequestJobManager::MaybeInterceptResponse(
   return NULL;
 }
 
-bool URLRequestJobManager::SupportsScheme(const std::string& scheme) const {
-  // The set of registered factories may change on another thread.
-  {
-    base::AutoLock locked(lock_);
-    if (factories_.find(scheme) != factories_.end())
-      return true;
-  }
-
-  for (size_t i = 0; i < arraysize(kBuiltinFactories); ++i)
+// static
+bool URLRequestJobManager::SupportsScheme(const std::string& scheme) {
+  for (size_t i = 0; i < arraysize(kBuiltinFactories); ++i) {
     if (LowerCaseEqualsASCII(scheme, kBuiltinFactories[i].scheme))
       return true;
+  }
 
   return false;
-}
-
-URLRequest::ProtocolFactory* URLRequestJobManager::RegisterProtocolFactory(
-    const std::string& scheme,
-    URLRequest::ProtocolFactory* factory) {
-  DCHECK(IsAllowedThread());
-
-  base::AutoLock locked(lock_);
-
-  URLRequest::ProtocolFactory* old_factory;
-  FactoryMap::iterator i = factories_.find(scheme);
-  if (i != factories_.end()) {
-    old_factory = i->second;
-  } else {
-    old_factory = NULL;
-  }
-  if (factory) {
-    factories_[scheme] = factory;
-  } else if (i != factories_.end()) {  // uninstall any old one
-    factories_.erase(i);
-  }
-  return old_factory;
 }
 
 void URLRequestJobManager::RegisterRequestInterceptor(

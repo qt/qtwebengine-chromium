@@ -21,14 +21,19 @@
 #include "content/common/websocket.h"
 #include "ipc/ipc_message_macros.h"
 #include "url/gurl.h"
+#include "url/origin.h"
 
 #undef IPC_MESSAGE_EXPORT
 #define IPC_MESSAGE_EXPORT CONTENT_EXPORT
 #define IPC_MESSAGE_START WebSocketMsgStart
 
+IPC_ENUM_TRAITS_MAX_VALUE(content::WebSocketMessageType,
+                          content::WEB_SOCKET_MESSAGE_TYPE_LAST)
+
 IPC_STRUCT_TRAITS_BEGIN(content::WebSocketHandshakeRequest)
   IPC_STRUCT_TRAITS_MEMBER(url)
   IPC_STRUCT_TRAITS_MEMBER(headers)
+  IPC_STRUCT_TRAITS_MEMBER(headers_text)
   IPC_STRUCT_TRAITS_MEMBER(request_time)
 IPC_STRUCT_TRAITS_END()
 
@@ -37,6 +42,7 @@ IPC_STRUCT_TRAITS_BEGIN(content::WebSocketHandshakeResponse)
   IPC_STRUCT_TRAITS_MEMBER(status_code)
   IPC_STRUCT_TRAITS_MEMBER(status_text)
   IPC_STRUCT_TRAITS_MEMBER(headers)
+  IPC_STRUCT_TRAITS_MEMBER(headers_text)
   IPC_STRUCT_TRAITS_MEMBER(response_time)
 IPC_STRUCT_TRAITS_END()
 
@@ -52,10 +58,11 @@ IPC_STRUCT_TRAITS_END()
 // The browser process will not send |channel_id| as-is to the remote server; it
 // will try to use a short id on the wire. This saves the renderer from
 // having to try to choose the ids cleverly.
-IPC_MESSAGE_ROUTED3(WebSocketHostMsg_AddChannelRequest,
+IPC_MESSAGE_ROUTED4(WebSocketHostMsg_AddChannelRequest,
                     GURL /* socket_url */,
                     std::vector<std::string> /* requested_protocols */,
-                    GURL /* origin */)
+                    url::Origin /* origin */,
+                    int /* render_frame_id */)
 
 // WebSocket messages sent from the browser to the renderer.
 
@@ -100,8 +107,6 @@ IPC_MESSAGE_ROUTED1(WebSocketMsg_NotifyFailure,
                     std::string /* message */)
 
 // WebSocket messages that can be sent in either direction.
-
-IPC_ENUM_TRAITS(content::WebSocketMessageType)
 
 // Send a non-control frame on |channel_id|. If the sender is the renderer, it
 // will be sent to the remote server. If the sender is the browser, it comes
@@ -149,3 +154,7 @@ IPC_MESSAGE_ROUTED3(WebSocketMsg_DropChannel,
                     bool /* was_clean */,
                     unsigned short /* code */,
                     std::string /* reason */)
+
+// Notify the renderer that a closing handshake has been initiated by the
+// server, so that it can set the Javascript readyState to CLOSING.
+IPC_MESSAGE_ROUTED0(WebSocketMsg_NotifyClosing)

@@ -31,154 +31,102 @@
 #include "config.h"
 #include "modules/webmidi/MIDIAccess.h"
 
-#include "core/dom/DOMError.h"
 #include "core/dom/Document.h"
 #include "core/loader/DocumentLoadTiming.h"
 #include "core/loader/DocumentLoader.h"
-#include "modules/webmidi/MIDIAccessPromise.h"
+#include "modules/webmidi/MIDIAccessInitializer.h"
 #include "modules/webmidi/MIDIConnectionEvent.h"
 #include "modules/webmidi/MIDIController.h"
+#include "modules/webmidi/MIDIOptions.h"
 #include "modules/webmidi/MIDIPort.h"
+#include "platform/AsyncMethodRunner.h"
+#include <v8.h>
 
 namespace WebCore {
 
-PassRefPtr<MIDIAccess> MIDIAccess::create(ExecutionContext* context, MIDIAccessPromise* promise)
+MIDIAccess::MIDIAccess(PassOwnPtr<MIDIAccessor> accessor, bool sysexEnabled, const Vector<MIDIAccessInitializer::PortDescriptor>& ports, ExecutionContext* executionContext)
+    : ActiveDOMObject(executionContext)
+    , m_accessor(accessor)
+    , m_sysexEnabled(sysexEnabled)
 {
-    RefPtr<MIDIAccess> midiAccess(adoptRef(new MIDIAccess(context, promise)));
-    midiAccess->suspendIfNeeded();
-    midiAccess->startRequest();
-    return midiAccess.release();
+    ScriptWrappable::init(this);
+    m_accessor->setClient(this);
+    for (size_t i = 0; i < ports.size(); ++i) {
+        const MIDIAccessInitializer::PortDescriptor& port = ports[i];
+        if (port.type == MIDIPort::MIDIPortTypeInput) {
+            m_inputs.append(MIDIInput::create(this, port.id, port.manufacturer, port.name, port.version));
+        } else {
+            m_outputs.append(MIDIOutput::create(this, m_outputs.size(), port.id, port.manufacturer, port.name, port.version));
+        }
+    }
 }
 
 MIDIAccess::~MIDIAccess()
 {
-    stop();
-}
-
-MIDIAccess::MIDIAccess(ExecutionContext* context, MIDIAccessPromise* promise)
-    : ActiveDOMObject(context)
-    , m_promise(promise)
-    , m_hasAccess(false)
-    , m_sysExEnabled(false)
-    , m_requesting(false)
-{
-    ScriptWrappable::init(this);
-    m_accessor = MIDIAccessor::create(this);
-}
-
-void MIDIAccess::setSysExEnabled(bool enable)
-{
-    m_requesting = false;
-    m_sysExEnabled = enable;
-    if (enable)
-        m_accessor->startSession();
-    else
-        permissionDenied();
 }
 
 void MIDIAccess::didAddInputPort(const String& id, const String& manufacturer, const String& name, const String& version)
 {
     ASSERT(isMainThread());
-
-    m_inputs.append(MIDIInput::create(this, executionContext(), id, manufacturer, name, version));
+    m_inputs.append(MIDIInput::create(this, id, manufacturer, name, version));
 }
 
 void MIDIAccess::didAddOutputPort(const String& id, const String& manufacturer, const String& name, const String& version)
 {
     ASSERT(isMainThread());
-
     unsigned portIndex = m_outputs.size();
-    m_outputs.append(MIDIOutput::create(this, portIndex, executionContext(), id, manufacturer, name, version));
-}
-
-void MIDIAccess::didStartSession(bool success)
-{
-    ASSERT(isMainThread());
-
-    m_hasAccess = success;
-    if (success)
-        m_promise->fulfill();
-    else
-        m_promise->reject(DOMError::create("InvalidStateError"));
+    m_outputs.append(MIDIOutput::create(this, portIndex, id, manufacturer, name, version));
 }
 
 void MIDIAccess::didReceiveMIDIData(unsigned portIndex, const unsigned char* data, size_t length, double timeStamp)
 {
     ASSERT(isMainThread());
+    if (portIndex >= m_inputs.size())
+        return;
 
-    if (m_hasAccess && portIndex < m_inputs.size()) {
-        // Convert from time in seconds which is based on the time coordinate system of monotonicallyIncreasingTime()
-        // into time in milliseconds (a DOMHighResTimeStamp) according to the same time coordinate system as performance.now().
-        // This is how timestamps are defined in the Web MIDI spec.
-        Document* document = toDocument(executionContext());
-        ASSERT(document);
+    // Convert from time in seconds which is based on the time coordinate system of monotonicallyIncreasingTime()
+    // into time in milliseconds (a DOMHighResTimeStamp) according to the same time coordinate system as performance.now().
+    // This is how timestamps are defined in the Web MIDI spec.
+    Document* document = toDocument(executionContext());
+    ASSERT(document);
 
-        double timeStampInMilliseconds = 1000 * document->loader()->timing()->monotonicTimeToZeroBasedDocumentTime(timeStamp);
+    double timeStampInMilliseconds = 1000 * document->loader()->timing()->monotonicTimeToZeroBasedDocumentTime(timeStamp);
 
-        m_inputs[portIndex]->didReceiveMIDIData(portIndex, data, length, timeStampInMilliseconds);
-    }
+    m_inputs[portIndex]->didReceiveMIDIData(portIndex, data, length, timeStampInMilliseconds);
 }
 
 void MIDIAccess::sendMIDIData(unsigned portIndex, const unsigned char* data, size_t length, double timeStampInMilliseconds)
 {
-    if (m_hasAccess && portIndex < m_outputs.size() && data && length > 1) {
-        // Convert from a time in milliseconds (a DOMHighResTimeStamp) according to the same time coordinate system as performance.now()
-        // into a time in seconds which is based on the time coordinate system of monotonicallyIncreasingTime().
-        double timeStamp;
+    if (!data || !length || portIndex >= m_outputs.size())
+        return;
+    // Convert from a time in milliseconds (a DOMHighResTimeStamp) according to the same time coordinate system as performance.now()
+    // into a time in seconds which is based on the time coordinate system of monotonicallyIncreasingTime().
+    double timeStamp;
 
-        if (!timeStampInMilliseconds) {
-            // We treat a value of 0 (which is the default value) as special, meaning "now".
-            // We need to translate it exactly to 0 seconds.
-            timeStamp = 0;
-        } else {
-            Document* document = toDocument(executionContext());
-            ASSERT(document);
-            double documentStartTime = document->loader()->timing()->referenceMonotonicTime();
-            timeStamp = documentStartTime + 0.001 * timeStampInMilliseconds;
-        }
-
-        m_accessor->sendMIDIData(portIndex, data, length, timeStamp);
+    if (!timeStampInMilliseconds) {
+        // We treat a value of 0 (which is the default value) as special, meaning "now".
+        // We need to translate it exactly to 0 seconds.
+        timeStamp = 0;
+    } else {
+        Document* document = toDocument(executionContext());
+        ASSERT(document);
+        double documentStartTime = document->loader()->timing()->referenceMonotonicTime();
+        timeStamp = documentStartTime + 0.001 * timeStampInMilliseconds;
     }
+
+    m_accessor->sendMIDIData(portIndex, data, length, timeStamp);
 }
 
 void MIDIAccess::stop()
 {
-    m_hasAccess = false;
-    if (!m_requesting)
-        return;
-    m_requesting = false;
-    Document* document = toDocument(executionContext());
-    ASSERT(document);
-    MIDIController* controller = MIDIController::from(document->page());
-    ASSERT(controller);
-    controller->cancelSysExPermissionRequest(this);
-
     m_accessor.clear();
 }
 
-void MIDIAccess::startRequest()
+void MIDIAccess::trace(Visitor* visitor)
 {
-    if (!m_promise->options()->sysex) {
-        m_accessor->startSession();
-        return;
-    }
-    Document* document = toDocument(executionContext());
-    ASSERT(document);
-    MIDIController* controller = MIDIController::from(document->page());
-    if (controller) {
-        m_requesting = true;
-        controller->requestSysExPermission(this);
-    } else {
-        permissionDenied();
-    }
-}
-
-void MIDIAccess::permissionDenied()
-{
-    ASSERT(isMainThread());
-
-    m_hasAccess = false;
-    m_promise->reject(DOMError::create("SecurityError"));
+    visitor->trace(m_inputs);
+    visitor->trace(m_outputs);
+    EventTargetWithInlineData::trace(visitor);
 }
 
 } // namespace WebCore

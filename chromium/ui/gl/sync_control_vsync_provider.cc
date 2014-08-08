@@ -24,7 +24,7 @@ const double kRelativeIntervalDifferenceThreshold = 0.05;
 namespace gfx {
 
 SyncControlVSyncProvider::SyncControlVSyncProvider()
-    : VSyncProvider(), last_media_stream_counter_(0) {
+    : VSyncProvider(), last_media_stream_counter_(0), invalid_msc_(false) {
   // On platforms where we can't get an accurate reading on the refresh
   // rate we fall back to the assumption that we're displaying 60 frames
   // per second.
@@ -54,9 +54,11 @@ void SyncControlVSyncProvider::GetVSyncParameters(
   // Both Intel and Mali drivers will return TRUE for GetSyncValues
   // but a value of 0 for MSC if they cannot access the CRTC data structure
   // associated with the surface. crbug.com/231945
-  if (media_stream_counter == 0) {
-    LOG(ERROR) << "glXGetSyncValuesOML should not return TRUE with a "
-               << "media stream counter of 0.";
+  bool prev_invalid_msc = invalid_msc_;
+  invalid_msc_ = (media_stream_counter == 0);
+  if (invalid_msc_) {
+    LOG_IF(ERROR, !prev_invalid_msc) << "glXGetSyncValuesOML "
+        "should not return TRUE with a media stream counter of 0.";
     return;
   }
 
@@ -123,16 +125,23 @@ void SyncControlVSyncProvider::GetVSyncParameters(
     if (relative_change < kRelativeIntervalDifferenceThreshold) {
       if (new_interval.InMicroseconds() < kMinVsyncIntervalUs ||
           new_interval.InMicroseconds() > kMaxVsyncIntervalUs) {
-        LOG(FATAL) << "Calculated bogus refresh interval of "
-                   << new_interval.InMicroseconds() << " us. "
-                   << "Last time base of " << last_timebase_.ToInternalValue()
-                   << " us. "
-                   << "Current time base of " << timebase.ToInternalValue()
-                   << " us. "
-                   << "Last media stream count of "
-                   << last_media_stream_counter_ << ". "
-                   << "Current media stream count of " << media_stream_counter
-                   << ".";
+#if defined(USE_ASH)
+        // On ash platforms (ChromeOS essentially), the real refresh interval is
+        // queried from XRandR, regardless of the value calculated here, and
+        // this value is overriden by ui::CompositorVSyncManager.  The log
+        // should not be fatal in this case. Reconsider all this when XRandR
+        // support is added to non-ash platforms.
+        // http://crbug.com/340851
+        LOG(ERROR)
+#else
+        LOG(FATAL)
+#endif  // USE_ASH
+            << "Calculated bogus refresh interval="
+            << new_interval.InMicroseconds()
+            << " us., last_timebase_=" << last_timebase_.ToInternalValue()
+            << " us., timebase=" << timebase.ToInternalValue()
+            << " us., last_media_stream_counter_=" << last_media_stream_counter_
+            << ", media_stream_counter=" << media_stream_counter;
       } else {
         last_good_interval_ = new_interval;
       }

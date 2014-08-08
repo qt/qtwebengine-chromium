@@ -13,7 +13,6 @@
 
 #include "base/bind.h"
 #include "base/callback_helpers.h"
-#include "base/debug/alias.h"
 #include "base/memory/singleton.h"
 #include "base/metrics/histogram.h"
 #include "base/synchronization/lock.h"
@@ -23,6 +22,7 @@
 #include "net/cert/cert_verifier.h"
 #include "net/cert/single_request_cert_verifier.h"
 #include "net/cert/x509_certificate_net_log_param.h"
+#include "net/socket/openssl_ssl_util.h"
 #include "net/socket/ssl_error_params.h"
 #include "net/socket/ssl_session_cache_openssl.h"
 #include "net/ssl/openssl_client_key_store.h"
@@ -87,149 +87,6 @@ int GetNetSSLVersion(SSL* ssl) {
   }
 }
 
-int MapOpenSSLErrorSSL() {
-  // Walk down the error stack to find the SSLerr generated reason.
-  unsigned long error_code;
-  do {
-    error_code = ERR_get_error();
-    if (error_code == 0)
-      return ERR_SSL_PROTOCOL_ERROR;
-  } while (ERR_GET_LIB(error_code) != ERR_LIB_SSL);
-
-  DVLOG(1) << "OpenSSL SSL error, reason: " << ERR_GET_REASON(error_code)
-           << ", name: " << ERR_error_string(error_code, NULL);
-  switch (ERR_GET_REASON(error_code)) {
-    case SSL_R_READ_TIMEOUT_EXPIRED:
-      return ERR_TIMED_OUT;
-    case SSL_R_BAD_RESPONSE_ARGUMENT:
-      return ERR_INVALID_ARGUMENT;
-    case SSL_R_UNKNOWN_CERTIFICATE_TYPE:
-    case SSL_R_UNKNOWN_CIPHER_TYPE:
-    case SSL_R_UNKNOWN_KEY_EXCHANGE_TYPE:
-    case SSL_R_UNKNOWN_PKEY_TYPE:
-    case SSL_R_UNKNOWN_REMOTE_ERROR_TYPE:
-    case SSL_R_UNKNOWN_SSL_VERSION:
-      return ERR_NOT_IMPLEMENTED;
-    case SSL_R_UNSUPPORTED_SSL_VERSION:
-    case SSL_R_NO_CIPHER_MATCH:
-    case SSL_R_NO_SHARED_CIPHER:
-    case SSL_R_TLSV1_ALERT_INSUFFICIENT_SECURITY:
-    case SSL_R_TLSV1_ALERT_PROTOCOL_VERSION:
-    case SSL_R_UNSUPPORTED_PROTOCOL:
-      return ERR_SSL_VERSION_OR_CIPHER_MISMATCH;
-    case SSL_R_SSLV3_ALERT_BAD_CERTIFICATE:
-    case SSL_R_SSLV3_ALERT_UNSUPPORTED_CERTIFICATE:
-    case SSL_R_SSLV3_ALERT_CERTIFICATE_REVOKED:
-    case SSL_R_SSLV3_ALERT_CERTIFICATE_EXPIRED:
-    case SSL_R_SSLV3_ALERT_CERTIFICATE_UNKNOWN:
-    case SSL_R_TLSV1_ALERT_ACCESS_DENIED:
-    case SSL_R_TLSV1_ALERT_UNKNOWN_CA:
-      return ERR_BAD_SSL_CLIENT_AUTH_CERT;
-    case SSL_R_BAD_DECOMPRESSION:
-    case SSL_R_SSLV3_ALERT_DECOMPRESSION_FAILURE:
-      return ERR_SSL_DECOMPRESSION_FAILURE_ALERT;
-    case SSL_R_SSLV3_ALERT_BAD_RECORD_MAC:
-      return ERR_SSL_BAD_RECORD_MAC_ALERT;
-    case SSL_R_TLSV1_ALERT_DECRYPT_ERROR:
-      return ERR_SSL_DECRYPT_ERROR_ALERT;
-    case SSL_R_UNSAFE_LEGACY_RENEGOTIATION_DISABLED:
-      return ERR_SSL_UNSAFE_NEGOTIATION;
-    case SSL_R_WRONG_NUMBER_OF_KEY_BITS:
-      return ERR_SSL_WEAK_SERVER_EPHEMERAL_DH_KEY;
-    // SSL_R_UNKNOWN_PROTOCOL is reported if premature application data is
-    // received (see http://crbug.com/42538), and also if all the protocol
-    // versions supported by the server were disabled in this socket instance.
-    // Mapped to ERR_SSL_PROTOCOL_ERROR for compatibility with other SSL sockets
-    // in the former scenario.
-    case SSL_R_UNKNOWN_PROTOCOL:
-    case SSL_R_SSL_HANDSHAKE_FAILURE:
-    case SSL_R_DECRYPTION_FAILED:
-    case SSL_R_DECRYPTION_FAILED_OR_BAD_RECORD_MAC:
-    case SSL_R_DH_PUBLIC_VALUE_LENGTH_IS_WRONG:
-    case SSL_R_DIGEST_CHECK_FAILED:
-    case SSL_R_DUPLICATE_COMPRESSION_ID:
-    case SSL_R_ECGROUP_TOO_LARGE_FOR_CIPHER:
-    case SSL_R_ENCRYPTED_LENGTH_TOO_LONG:
-    case SSL_R_ERROR_IN_RECEIVED_CIPHER_LIST:
-    case SSL_R_EXCESSIVE_MESSAGE_SIZE:
-    case SSL_R_EXTRA_DATA_IN_MESSAGE:
-    case SSL_R_GOT_A_FIN_BEFORE_A_CCS:
-    case SSL_R_ILLEGAL_PADDING:
-    case SSL_R_INVALID_CHALLENGE_LENGTH:
-    case SSL_R_INVALID_COMMAND:
-    case SSL_R_INVALID_PURPOSE:
-    case SSL_R_INVALID_STATUS_RESPONSE:
-    case SSL_R_INVALID_TICKET_KEYS_LENGTH:
-    case SSL_R_KEY_ARG_TOO_LONG:
-    case SSL_R_READ_WRONG_PACKET_TYPE:
-    // SSL_do_handshake reports this error when the server responds to a
-    // ClientHello with a fatal close_notify alert.
-    case SSL_AD_REASON_OFFSET + SSL_AD_CLOSE_NOTIFY:
-    case SSL_R_SSLV3_ALERT_UNEXPECTED_MESSAGE:
-    // TODO(joth): SSL_R_SSLV3_ALERT_HANDSHAKE_FAILURE may be returned from the
-    // server after receiving ClientHello if there's no common supported cipher.
-    // Ideally we'd map that specific case to ERR_SSL_VERSION_OR_CIPHER_MISMATCH
-    // to match the NSS implementation. See also http://goo.gl/oMtZW
-    case SSL_R_SSLV3_ALERT_HANDSHAKE_FAILURE:
-    case SSL_R_SSLV3_ALERT_NO_CERTIFICATE:
-    case SSL_R_SSLV3_ALERT_ILLEGAL_PARAMETER:
-    case SSL_R_TLSV1_ALERT_DECODE_ERROR:
-    case SSL_R_TLSV1_ALERT_DECRYPTION_FAILED:
-    case SSL_R_TLSV1_ALERT_EXPORT_RESTRICTION:
-    case SSL_R_TLSV1_ALERT_INTERNAL_ERROR:
-    case SSL_R_TLSV1_ALERT_NO_RENEGOTIATION:
-    case SSL_R_TLSV1_ALERT_RECORD_OVERFLOW:
-    case SSL_R_TLSV1_ALERT_USER_CANCELLED:
-      return ERR_SSL_PROTOCOL_ERROR;
-    default:
-      LOG(WARNING) << "Unmapped error reason: " << ERR_GET_REASON(error_code);
-      return ERR_FAILED;
-  }
-}
-
-// Converts an OpenSSL error code into a net error code, walking the OpenSSL
-// error stack if needed. Note that |tracer| is not currently used in the
-// implementation, but is passed in anyway as this ensures the caller will clear
-// any residual codes left on the error stack.
-int MapOpenSSLError(int err, const crypto::OpenSSLErrStackTracer& tracer) {
-  switch (err) {
-    case SSL_ERROR_WANT_READ:
-    case SSL_ERROR_WANT_WRITE:
-      return ERR_IO_PENDING;
-    case SSL_ERROR_SYSCALL:
-      LOG(ERROR) << "OpenSSL SYSCALL error, earliest error code in "
-                    "error queue: " << ERR_peek_error() << ", errno: "
-                 << errno;
-      return ERR_SSL_PROTOCOL_ERROR;
-    case SSL_ERROR_SSL:
-      return MapOpenSSLErrorSSL();
-    default:
-      // TODO(joth): Implement full mapping.
-      LOG(WARNING) << "Unknown OpenSSL error " << err;
-      return ERR_SSL_PROTOCOL_ERROR;
-  }
-}
-
-// We do certificate verification after handshake, so we disable the default
-// by registering a no-op verify function.
-int NoOpVerifyCallback(X509_STORE_CTX*, void *) {
-  DVLOG(3) << "skipping cert verify";
-  return 1;
-}
-
-// Utility to construct the appropriate set & clear masks for use the OpenSSL
-// options and mode configuration functions. (SSL_set_options etc)
-struct SslSetClearMask {
-  SslSetClearMask() : set_mask(0), clear_mask(0) {}
-  void ConfigureFlag(long flag, bool state) {
-    (state ? set_mask : clear_mask) |= flag;
-    // Make sure we haven't got any intersection in the set & clear options.
-    DCHECK_EQ(0, set_mask & clear_mask) << flag << ":" << state;
-  }
-  long set_mask;
-  long clear_mask;
-};
-
 // Compute a unique key string for the SSL session cache. |socket| is an
 // input socket object. Return a string.
 std::string GetSocketSessionCacheKey(const SSLClientSocketOpenSSL& socket) {
@@ -268,16 +125,15 @@ class SSLClientSocketOpenSSL::SSLContext {
     DCHECK_NE(ssl_socket_data_index_, -1);
     ssl_ctx_.reset(SSL_CTX_new(SSLv23_client_method()));
     session_cache_.Reset(ssl_ctx_.get(), kDefaultSessionCacheConfig);
-    SSL_CTX_set_cert_verify_callback(ssl_ctx_.get(), NoOpVerifyCallback, NULL);
+    SSL_CTX_set_cert_verify_callback(ssl_ctx_.get(), CertVerifyCallback, NULL);
     SSL_CTX_set_client_cert_cb(ssl_ctx_.get(), ClientCertCallback);
     SSL_CTX_set_channel_id_cb(ssl_ctx_.get(), ChannelIDCallback);
-#if defined(OPENSSL_NPN_NEGOTIATED)
+    SSL_CTX_set_verify(ssl_ctx_.get(), SSL_VERIFY_PEER, NULL);
     // TODO(kristianm): Only select this if ssl_config_.next_proto is not empty.
     // It would be better if the callback were not a global setting,
     // but that is an OpenSSL issue.
     SSL_CTX_set_next_proto_select_cb(ssl_ctx_.get(), SelectNextProtoCallback,
                                      NULL);
-#endif
   }
 
   static std::string GetSessionCacheKey(const SSL* ssl) {
@@ -300,6 +156,15 @@ class SSLClientSocketOpenSSL::SSLContext {
     socket->ChannelIDRequestCallback(ssl, pkey);
   }
 
+  static int CertVerifyCallback(X509_STORE_CTX *store_ctx, void *arg) {
+    SSL* ssl = reinterpret_cast<SSL*>(X509_STORE_CTX_get_ex_data(
+        store_ctx, SSL_get_ex_data_X509_STORE_CTX_idx()));
+    SSLClientSocketOpenSSL* socket = GetInstance()->GetClientSocketFromSSL(ssl);
+    CHECK(socket);
+
+    return socket->CertVerifyCallback(store_ctx);
+  }
+
   static int SelectNextProtoCallback(SSL* ssl,
                                      unsigned char** out, unsigned char* outlen,
                                      const unsigned char* in,
@@ -317,6 +182,137 @@ class SSLClientSocketOpenSSL::SSLContext {
   SSLSessionCacheOpenSSL session_cache_;
 };
 
+// PeerCertificateChain is a helper object which extracts the certificate
+// chain, as given by the server, from an OpenSSL socket and performs the needed
+// resource management. The first element of the chain is the leaf certificate
+// and the other elements are in the order given by the server.
+class SSLClientSocketOpenSSL::PeerCertificateChain {
+ public:
+  explicit PeerCertificateChain(STACK_OF(X509)* chain) { Reset(chain); }
+  PeerCertificateChain(const PeerCertificateChain& other) { *this = other; }
+  ~PeerCertificateChain() {}
+  PeerCertificateChain& operator=(const PeerCertificateChain& other);
+
+  // Resets the PeerCertificateChain to the set of certificates in|chain|,
+  // which may be NULL, indicating to empty the store certificates.
+  // Note: If an error occurs, such as being unable to parse the certificates,
+  // this will behave as if Reset(NULL) was called.
+  void Reset(STACK_OF(X509)* chain);
+
+  // Note that when USE_OPENSSL is defined, OSCertHandle is X509*
+  const scoped_refptr<X509Certificate>& AsOSChain() const { return os_chain_; }
+
+  size_t size() const {
+    if (!openssl_chain_.get())
+      return 0;
+    return sk_X509_num(openssl_chain_.get());
+  }
+
+  X509* operator[](size_t index) const {
+    DCHECK_LT(index, size());
+    return sk_X509_value(openssl_chain_.get(), index);
+  }
+
+  bool IsValid() { return os_chain_.get() && openssl_chain_.get(); }
+
+ private:
+  static void FreeX509Stack(STACK_OF(X509)* cert_chain) {
+    sk_X509_pop_free(cert_chain, X509_free);
+  }
+
+  friend class crypto::ScopedOpenSSL<STACK_OF(X509), FreeX509Stack>;
+
+  crypto::ScopedOpenSSL<STACK_OF(X509), FreeX509Stack> openssl_chain_;
+
+  scoped_refptr<X509Certificate> os_chain_;
+};
+
+SSLClientSocketOpenSSL::PeerCertificateChain&
+SSLClientSocketOpenSSL::PeerCertificateChain::operator=(
+    const PeerCertificateChain& other) {
+  if (this == &other)
+    return *this;
+
+  // os_chain_ is reference counted by scoped_refptr;
+  os_chain_ = other.os_chain_;
+
+  // Must increase the reference count manually for sk_X509_dup
+  openssl_chain_.reset(sk_X509_dup(other.openssl_chain_.get()));
+  for (int i = 0; i < sk_X509_num(openssl_chain_.get()); ++i) {
+    X509* x = sk_X509_value(openssl_chain_.get(), i);
+    CRYPTO_add(&x->references, 1, CRYPTO_LOCK_X509);
+  }
+  return *this;
+}
+
+#if defined(USE_OPENSSL_CERTS)
+// When OSCertHandle is typedef'ed to X509, this implementation does a short cut
+// to avoid converting back and forth between der and X509 struct.
+void SSLClientSocketOpenSSL::PeerCertificateChain::Reset(
+    STACK_OF(X509)* chain) {
+  openssl_chain_.reset(NULL);
+  os_chain_ = NULL;
+
+  if (!chain)
+    return;
+
+  X509Certificate::OSCertHandles intermediates;
+  for (int i = 1; i < sk_X509_num(chain); ++i)
+    intermediates.push_back(sk_X509_value(chain, i));
+
+  os_chain_ =
+      X509Certificate::CreateFromHandle(sk_X509_value(chain, 0), intermediates);
+
+  // sk_X509_dup does not increase reference count on the certs in the stack.
+  openssl_chain_.reset(sk_X509_dup(chain));
+
+  std::vector<base::StringPiece> der_chain;
+  for (int i = 0; i < sk_X509_num(openssl_chain_.get()); ++i) {
+    X509* x = sk_X509_value(openssl_chain_.get(), i);
+    // Increase the reference count for the certs in openssl_chain_.
+    CRYPTO_add(&x->references, 1, CRYPTO_LOCK_X509);
+  }
+}
+#else  // !defined(USE_OPENSSL_CERTS)
+void SSLClientSocketOpenSSL::PeerCertificateChain::Reset(
+    STACK_OF(X509)* chain) {
+  openssl_chain_.reset(NULL);
+  os_chain_ = NULL;
+
+  if (!chain)
+    return;
+
+  // sk_X509_dup does not increase reference count on the certs in the stack.
+  openssl_chain_.reset(sk_X509_dup(chain));
+
+  std::vector<base::StringPiece> der_chain;
+  for (int i = 0; i < sk_X509_num(openssl_chain_.get()); ++i) {
+    X509* x = sk_X509_value(openssl_chain_.get(), i);
+
+    // Increase the reference count for the certs in openssl_chain_.
+    CRYPTO_add(&x->references, 1, CRYPTO_LOCK_X509);
+
+    unsigned char* cert_data = NULL;
+    int cert_data_length = i2d_X509(x, &cert_data);
+    if (cert_data_length && cert_data)
+      der_chain.push_back(base::StringPiece(reinterpret_cast<char*>(cert_data),
+                                            cert_data_length));
+  }
+
+  os_chain_ = X509Certificate::CreateFromDERCertChain(der_chain);
+
+  for (size_t i = 0; i < der_chain.size(); ++i) {
+    OPENSSL_free(const_cast<char*>(der_chain[i].data()));
+  }
+
+  if (der_chain.size() !=
+      static_cast<size_t>(sk_X509_num(openssl_chain_.get()))) {
+    openssl_chain_.reset(NULL);
+    os_chain_ = NULL;
+  }
+}
+#endif  // defined(USE_OPENSSL_CERTS)
+
 // static
 SSLSessionCacheOpenSSL::Config
     SSLClientSocketOpenSSL::SSLContext::kDefaultSessionCacheConfig = {
@@ -331,6 +327,9 @@ void SSLClientSocket::ClearSessionCache() {
   SSLClientSocketOpenSSL::SSLContext* context =
       SSLClientSocketOpenSSL::SSLContext::GetInstance();
   context->session_cache()->Flush();
+#if defined(USE_OPENSSL_CERTS)
+  OpenSSLClientKeyStore::GetInstance()->Flush();
+#endif
 }
 
 SSLClientSocketOpenSSL::SSLClientSocketOpenSSL(
@@ -344,7 +343,9 @@ SSLClientSocketOpenSSL::SSLClientSocketOpenSSL(
       weak_factory_(this),
       pending_read_error_(kNoPendingReadResult),
       transport_write_error_(OK),
+      server_cert_chain_(new PeerCertificateChain(NULL)),
       completed_handshake_(false),
+      was_ever_used_(false),
       client_auth_cert_needed_(false),
       cert_verifier_(context.cert_verifier),
       server_bound_cert_service_(context.server_bound_cert_service),
@@ -359,8 +360,7 @@ SSLClientSocketOpenSSL::SSLClientSocketOpenSSL(
       npn_status_(kNextProtoUnsupported),
       channel_id_request_return_value_(ERR_UNEXPECTED),
       channel_id_xtn_negotiated_(false),
-      net_log_(transport_->socket()->NetLog()) {
-}
+      net_log_(transport_->socket()->NetLog()) {}
 
 SSLClientSocketOpenSSL::~SSLClientSocketOpenSSL() {
   Disconnect();
@@ -368,8 +368,9 @@ SSLClientSocketOpenSSL::~SSLClientSocketOpenSSL() {
 
 void SSLClientSocketOpenSSL::GetSSLCertRequestInfo(
     SSLCertRequestInfo* cert_request_info) {
-  cert_request_info->host_and_port = host_and_port_.ToString();
+  cert_request_info->host_and_port = host_and_port_;
   cert_request_info->cert_authorities = cert_authorities_;
+  cert_request_info->cert_key_types = cert_key_types_;
 }
 
 SSLClientSocket::NextProtoStatus SSLClientSocketOpenSSL::GetNextProto(
@@ -391,11 +392,9 @@ int SSLClientSocketOpenSSL::ExportKeyingMaterial(
   crypto::OpenSSLErrStackTracer err_tracer(FROM_HERE);
 
   int rv = SSL_export_keying_material(
-      ssl_, out, outlen, const_cast<char*>(label.data()),
-      label.size(),
-      reinterpret_cast<unsigned char*>(const_cast<char*>(context.data())),
-      context.length(),
-      context.length() > 0);
+      ssl_, out, outlen, label.data(), label.size(),
+      reinterpret_cast<const unsigned char*>(context.data()),
+      context.length(), context.length() > 0);
 
   if (rv != 1) {
     int ssl_error = SSL_get_error(ssl_, rv);
@@ -408,6 +407,7 @@ int SSLClientSocketOpenSSL::ExportKeyingMaterial(
 }
 
 int SSLClientSocketOpenSSL::GetTLSUniqueChannelBinding(std::string* out) {
+  NOTIMPLEMENTED();
   return ERR_NOT_IMPLEMENTED;
 }
 
@@ -415,17 +415,17 @@ int SSLClientSocketOpenSSL::Connect(const CompletionCallback& callback) {
   net_log_.BeginEvent(NetLog::TYPE_SSL_CONNECT);
 
   // Set up new ssl object.
-  if (!Init()) {
-    int result = ERR_UNEXPECTED;
-    net_log_.EndEventWithNetErrorCode(NetLog::TYPE_SSL_CONNECT, result);
-    return result;
+  int rv = Init();
+  if (rv != OK) {
+    net_log_.EndEventWithNetErrorCode(NetLog::TYPE_SSL_CONNECT, rv);
+    return rv;
   }
 
   // Set SSL to client mode. Handshake happens in the loop below.
   SSL_set_connect_state(ssl_);
 
   GotoState(STATE_HANDSHAKE);
-  int rv = DoHandshakeLoop(net::OK);
+  rv = DoHandshakeLoop(OK);
   if (rv == ERR_IO_PENDING) {
     user_connect_callback_ = callback;
   } else {
@@ -474,6 +474,7 @@ void SSLClientSocketOpenSSL::Disconnect() {
   completed_handshake_ = false;
 
   cert_authorities_.clear();
+  cert_key_types_.clear();
   client_auth_cert_needed_ = false;
 }
 
@@ -534,11 +535,7 @@ void SSLClientSocketOpenSSL::SetOmniboxSpeculation() {
 }
 
 bool SSLClientSocketOpenSSL::WasEverUsed() const {
-  if (transport_.get() && transport_->socket())
-    return transport_->socket()->WasEverUsed();
-
-  NOTREACHED();
-  return false;
+  return was_ever_used_;
 }
 
 bool SSLClientSocketOpenSSL::UsingTCPFastOpen() const {
@@ -609,6 +606,8 @@ int SSLClientSocketOpenSSL::Read(IOBuffer* buf,
   if (rv == ERR_IO_PENDING) {
     user_read_callback_ = callback;
   } else {
+    if (rv > 0)
+      was_ever_used_ = true;
     user_read_buf_ = NULL;
     user_read_buf_len_ = 0;
   }
@@ -627,6 +626,8 @@ int SSLClientSocketOpenSSL::Write(IOBuffer* buf,
   if (rv == ERR_IO_PENDING) {
     user_write_callback_ = callback;
   } else {
+    if (rv > 0)
+      was_ever_used_ = true;
     user_write_buf_ = NULL;
     user_write_buf_len_ = 0;
   }
@@ -634,15 +635,15 @@ int SSLClientSocketOpenSSL::Write(IOBuffer* buf,
   return rv;
 }
 
-bool SSLClientSocketOpenSSL::SetReceiveBufferSize(int32 size) {
+int SSLClientSocketOpenSSL::SetReceiveBufferSize(int32 size) {
   return transport_->socket()->SetReceiveBufferSize(size);
 }
 
-bool SSLClientSocketOpenSSL::SetSendBufferSize(int32 size) {
+int SSLClientSocketOpenSSL::SetSendBufferSize(int32 size) {
   return transport_->socket()->SetSendBufferSize(size);
 }
 
-bool SSLClientSocketOpenSSL::Init() {
+int SSLClientSocketOpenSSL::Init() {
   DCHECK(!ssl_);
   DCHECK(!transport_bio_);
 
@@ -651,10 +652,10 @@ bool SSLClientSocketOpenSSL::Init() {
 
   ssl_ = SSL_new(context->ssl_ctx());
   if (!ssl_ || !context->SetClientSocketForSSL(ssl_, this))
-    return false;
+    return ERR_UNEXPECTED;
 
   if (!SSL_set_tlsext_host_name(ssl_, host_and_port_.host().c_str()))
-    return false;
+    return ERR_UNEXPECTED;
 
   trying_cached_session_ = context->session_cache()->SetSSLSessionWithKey(
       ssl_, GetSocketSessionCacheKey(*this));
@@ -662,7 +663,7 @@ bool SSLClientSocketOpenSSL::Init() {
   BIO* ssl_bio = NULL;
   // 0 => use default buffer sizes.
   if (!BIO_new_bio_pair(&ssl_bio, 0, &transport_bio_, 0))
-    return false;
+    return ERR_UNEXPECTED;
   DCHECK(ssl_bio);
   DCHECK(transport_bio_);
 
@@ -677,22 +678,16 @@ bool SSLClientSocketOpenSSL::Init() {
   bool tls1_enabled = (ssl_config_.version_min <= SSL_PROTOCOL_VERSION_TLS1 &&
                        ssl_config_.version_max >= SSL_PROTOCOL_VERSION_TLS1);
   options.ConfigureFlag(SSL_OP_NO_TLSv1, !tls1_enabled);
-#if defined(SSL_OP_NO_TLSv1_1)
   bool tls1_1_enabled =
       (ssl_config_.version_min <= SSL_PROTOCOL_VERSION_TLS1_1 &&
        ssl_config_.version_max >= SSL_PROTOCOL_VERSION_TLS1_1);
   options.ConfigureFlag(SSL_OP_NO_TLSv1_1, !tls1_1_enabled);
-#endif
-#if defined(SSL_OP_NO_TLSv1_2)
   bool tls1_2_enabled =
       (ssl_config_.version_min <= SSL_PROTOCOL_VERSION_TLS1_2 &&
        ssl_config_.version_max >= SSL_PROTOCOL_VERSION_TLS1_2);
   options.ConfigureFlag(SSL_OP_NO_TLSv1_2, !tls1_2_enabled);
-#endif
 
-#if defined(SSL_OP_NO_COMPRESSION)
   options.ConfigureFlag(SSL_OP_NO_COMPRESSION, true);
-#endif
 
   // TODO(joth): Set this conditionally, see http://crbug.com/55410
   options.ConfigureFlag(SSL_OP_LEGACY_SERVER_CONNECT, true);
@@ -703,13 +698,10 @@ bool SSLClientSocketOpenSSL::Init() {
   // Same as above, this time for the SSL mode.
   SslSetClearMask mode;
 
-#if defined(SSL_MODE_RELEASE_BUFFERS)
   mode.ConfigureFlag(SSL_MODE_RELEASE_BUFFERS, true);
-#endif
 
-#if defined(SSL_MODE_SMALL_BUFFERS)
-  mode.ConfigureFlag(SSL_MODE_SMALL_BUFFERS, true);
-#endif
+  mode.ConfigureFlag(SSL_MODE_HANDSHAKE_CUTTHROUGH,
+                     ssl_config_.false_start_enabled);
 
   SSL_set_mode(ssl_, mode.set_mask);
   SSL_clear_mode(ssl_, mode.clear_mask);
@@ -760,12 +752,14 @@ bool SSLClientSocketOpenSSL::Init() {
     SSL_enable_tls_channel_id(ssl_);
   }
 
-  return true;
+  return OK;
 }
 
 void SSLClientSocketOpenSSL::DoReadCallback(int rv) {
   // Since Run may result in Read being called, clear |user_read_callback_|
   // up front.
+  if (rv > 0)
+    was_ever_used_ = true;
   user_read_buf_ = NULL;
   user_read_buf_len_ = 0;
   base::ResetAndReturn(&user_read_callback_).Run(rv);
@@ -774,6 +768,8 @@ void SSLClientSocketOpenSSL::DoReadCallback(int rv) {
 void SSLClientSocketOpenSSL::DoWriteCallback(int rv) {
   // Since Run may result in Write being called, clear |user_write_callback_|
   // up front.
+  if (rv > 0)
+    was_ever_used_ = true;
   user_write_buf_ = NULL;
   user_write_buf_len_ = 0;
   base::ResetAndReturn(&user_write_callback_).Run(rv);
@@ -796,7 +792,7 @@ bool SSLClientSocketOpenSSL::DoTransportIO() {
 
 int SSLClientSocketOpenSSL::DoHandshake() {
   crypto::OpenSSLErrStackTracer err_tracer(FROM_HERE);
-  int net_error = net::OK;
+  int net_error = OK;
   int rv = SSL_do_handshake(ssl_);
 
   if (client_auth_cert_needed_) {
@@ -914,25 +910,11 @@ void SSLClientSocketOpenSSL::DoConnectCallback(int rv) {
 }
 
 X509Certificate* SSLClientSocketOpenSSL::UpdateServerCert() {
-  if (server_cert_.get())
-    return server_cert_.get();
+  server_cert_chain_->Reset(SSL_get_peer_cert_chain(ssl_));
+  server_cert_ = server_cert_chain_->AsOSChain();
 
-  crypto::ScopedOpenSSL<X509, X509_free> cert(SSL_get_peer_certificate(ssl_));
-  if (!cert.get()) {
-    LOG(WARNING) << "SSL_get_peer_certificate returned NULL";
-    return NULL;
-  }
-
-  // Unlike SSL_get_peer_certificate, SSL_get_peer_cert_chain does not
-  // increment the reference so sk_X509_free does not need to be called.
-  STACK_OF(X509)* chain = SSL_get_peer_cert_chain(ssl_);
-  X509Certificate::OSCertHandles intermediates;
-  if (chain) {
-    for (int i = 0; i < sk_X509_num(chain); ++i)
-      intermediates.push_back(sk_X509_value(chain, i));
-  }
-  server_cert_ = X509Certificate::CreateFromHandle(cert.get(), intermediates);
-  DCHECK(server_cert_.get());
+  if (!server_cert_chain_->IsValid())
+    DVLOG(1) << "UpdateServerCert received invalid certificate chain from peer";
 
   return server_cert_.get();
 }
@@ -1270,10 +1252,7 @@ int SSLClientSocketOpenSSL::TransportReadComplete(int result) {
     DCHECK(recv_buffer_.get());
     int ret = BIO_write(transport_bio_, recv_buffer_->data(), result);
     // A write into a memory BIO should always succeed.
-    // Force values on the stack for http://crbug.com/335557
-    base::debug::Alias(&result);
-    base::debug::Alias(&ret);
-    CHECK_EQ(result, ret);
+    DCHECK_EQ(result, ret);
   }
   recv_buffer_ = NULL;
   transport_recv_busy_ = false;
@@ -1287,7 +1266,6 @@ int SSLClientSocketOpenSSL::ClientCertRequestCallback(SSL* ssl,
   DCHECK(ssl == ssl_);
   DCHECK(*x509 == NULL);
   DCHECK(*pkey == NULL);
-
   if (!ssl_config_.send_client_cert) {
     // First pass: we know that a client certificate is needed, but we do not
     // have one at hand.
@@ -1303,11 +1281,21 @@ int SSLClientSocketOpenSSL::ClientCertRequestCallback(SSL* ssl,
       OPENSSL_free(str);
     }
 
+    const unsigned char* client_cert_types;
+    size_t num_client_cert_types;
+    SSL_get_client_certificate_types(ssl, &client_cert_types,
+                                     &num_client_cert_types);
+    for (size_t i = 0; i < num_client_cert_types; i++) {
+      cert_key_types_.push_back(
+          static_cast<SSLClientCertType>(client_cert_types[i]));
+    }
+
     return -1;  // Suspends handshake.
   }
 
   // Second pass: a client certificate should have been selected.
   if (ssl_config_.client_cert.get()) {
+#if defined(USE_OPENSSL_CERTS)
     // A note about ownership: FetchClientCertPrivateKey() increments
     // the reference count of the EVP_PKEY. Ownership of this reference
     // is passed directly to OpenSSL, which will release the reference
@@ -1323,6 +1311,10 @@ int SSLClientSocketOpenSSL::ClientCertRequestCallback(SSL* ssl,
       return 1;
     }
     LOG(WARNING) << "Client cert found without private key";
+#else  // !defined(USE_OPENSSL_CERTS)
+    // OS handling of client certificates is not yet implemented.
+    NOTIMPLEMENTED();
+#endif  // defined(USE_OPENSSL_CERTS)
   }
 
   // Send no client certificate.
@@ -1363,8 +1355,30 @@ void SSLClientSocketOpenSSL::ChannelIDRequestCallback(SSL* ssl,
           ServerBoundCertService::kEPKIPassword,
           encrypted_private_key_info,
           subject_public_key_info));
+  if (!ec_private_key)
+    return;
   set_channel_id_sent(true);
   *pkey = EVP_PKEY_dup(ec_private_key->key());
+}
+
+int SSLClientSocketOpenSSL::CertVerifyCallback(X509_STORE_CTX* store_ctx) {
+  if (!completed_handshake_) {
+    // If the first handshake hasn't completed then we accept any certificates
+    // because we verify after the handshake.
+    return 1;
+  }
+
+  CHECK(server_cert_.get());
+
+  PeerCertificateChain chain(store_ctx->untrusted);
+  if (chain.IsValid() && server_cert_->Equals(chain.AsOSChain()))
+    return 1;
+
+  if (!chain.IsValid())
+    LOG(ERROR) << "Received invalid certificate chain between handshakes";
+  else
+    LOG(ERROR) << "Server certificate changed between handshakes";
+  return 0;
 }
 
 // SelectNextProtoCallback is called by OpenSSL during the handshake. If the
@@ -1375,7 +1389,6 @@ int SSLClientSocketOpenSSL::SelectNextProtoCallback(unsigned char** out,
                                                     unsigned char* outlen,
                                                     const unsigned char* in,
                                                     unsigned int inlen) {
-#if defined(OPENSSL_NPN_NEGOTIATED)
   if (ssl_config_.next_protos.empty()) {
     *out = reinterpret_cast<uint8*>(
         const_cast<char*>(kDefaultSupportedNPNProtocol));
@@ -1415,8 +1428,12 @@ int SSLClientSocketOpenSSL::SelectNextProtoCallback(unsigned char** out,
   npn_proto_.assign(reinterpret_cast<const char*>(*out), *outlen);
   server_protos_.assign(reinterpret_cast<const char*>(in), inlen);
   DVLOG(2) << "next protocol: '" << npn_proto_ << "' status: " << npn_status_;
-#endif
   return SSL_TLSEXT_ERR_OK;
+}
+
+scoped_refptr<X509Certificate>
+SSLClientSocketOpenSSL::GetUnverifiedServerCertificateChain() const {
+  return server_cert_;
 }
 
 }  // namespace net

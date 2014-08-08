@@ -27,42 +27,40 @@
 
 #include "core/html/canvas/WebGLDepthTexture.h"
 
-#include "platform/graphics/Extensions3D.h"
-
 namespace WebCore {
 
-WebGLDepthTexture::WebGLDepthTexture(WebGLRenderingContext* context)
+WebGLDepthTexture::WebGLDepthTexture(WebGLRenderingContextBase* context)
     : WebGLExtension(context)
 {
     ScriptWrappable::init(this);
-    context->graphicsContext3D()->extensions()->ensureEnabled("GL_CHROMIUM_depth_texture");
+    context->extensionsUtil()->ensureExtensionEnabled("GL_CHROMIUM_depth_texture");
 }
 
 WebGLDepthTexture::~WebGLDepthTexture()
 {
 }
 
-WebGLExtension::ExtensionName WebGLDepthTexture::name() const
+WebGLExtensionName WebGLDepthTexture::name() const
 {
     return WebGLDepthTextureName;
 }
 
-PassRefPtr<WebGLDepthTexture> WebGLDepthTexture::create(WebGLRenderingContext* context)
+PassRefPtr<WebGLDepthTexture> WebGLDepthTexture::create(WebGLRenderingContextBase* context)
 {
     return adoptRef(new WebGLDepthTexture(context));
 }
 
-bool WebGLDepthTexture::supported(WebGLRenderingContext* context)
+bool WebGLDepthTexture::supported(WebGLRenderingContextBase* context)
 {
-    Extensions3D* extensions = context->graphicsContext3D()->extensions();
+    Extensions3DUtil* extensionsUtil = context->extensionsUtil();
     // Emulating the UNSIGNED_INT_24_8_WEBGL texture internal format in terms
     // of two separate texture objects is too difficult, so disable depth
     // textures unless a packed depth/stencil format is available.
-    if (!extensions->supports("GL_OES_packed_depth_stencil"))
+    if (!extensionsUtil->supportsExtension("GL_OES_packed_depth_stencil"))
         return false;
-    return extensions->supports("GL_CHROMIUM_depth_texture")
-        || extensions->supports("GL_OES_depth_texture")
-        || extensions->supports("GL_ARB_depth_texture");
+    return extensionsUtil->supportsExtension("GL_CHROMIUM_depth_texture")
+        || extensionsUtil->supportsExtension("GL_OES_depth_texture")
+        || extensionsUtil->supportsExtension("GL_ARB_depth_texture");
 }
 
 const char* WebGLDepthTexture::extensionName()

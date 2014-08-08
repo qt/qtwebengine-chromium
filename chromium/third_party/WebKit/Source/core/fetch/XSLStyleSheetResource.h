@@ -34,21 +34,18 @@ namespace WebCore {
 class ResourceFetcher;
 class TextResourceDecoder;
 
-class XSLStyleSheetResource : public StyleSheetResource {
+class XSLStyleSheetResource FINAL : public StyleSheetResource {
 public:
-    XSLStyleSheetResource(const ResourceRequest&);
+    XSLStyleSheetResource(const ResourceRequest&, const String& charset);
 
     const String& sheet() const { return m_sheet; }
 
-    virtual void didAddClient(ResourceClient*);
-    virtual void setEncoding(const String&);
-    virtual String encoding() const;
+    virtual void didAddClient(ResourceClient*) OVERRIDE;
 
 protected:
-    virtual void checkNotify();
+    virtual void checkNotify() OVERRIDE;
 
     String m_sheet;
-    OwnPtr<TextResourceDecoder> m_decoder;
 };
 
 DEFINE_RESOURCE_TYPE_CASTS(XSLStyleSheet);

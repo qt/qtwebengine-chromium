@@ -1,28 +1,31 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright (c) 2014 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <stdio.h>
 #include <string.h>
 
 #include <iostream>
+#include <queue>
 #include <sstream>
-#include <list>
-#include <map>
-#include <set>
-#include <vector>
 
 #include "ppapi/c/pp_errors.h"
 #include "ppapi/c/ppb_console.h"
 #include "ppapi/c/ppb_opengles2.h"
-#include "ppapi/cpp/dev/video_decoder_client_dev.h"
-#include "ppapi/cpp/dev/video_decoder_dev.h"
 #include "ppapi/cpp/graphics_3d.h"
 #include "ppapi/cpp/graphics_3d_client.h"
+#include "ppapi/cpp/input_event.h"
 #include "ppapi/cpp/instance.h"
 #include "ppapi/cpp/module.h"
 #include "ppapi/cpp/rect.h"
 #include "ppapi/cpp/var.h"
+#include "ppapi/cpp/video_decoder.h"
+
+// VP8 is more likely to work on different versions of Chrome. Undefine this
+// to decode H264.
+#define USE_VP8_TESTDATA_INSTEAD_OF_H264
 #include "ppapi/examples/video_decode/testdata.h"
+
 #include "ppapi/lib/gl/include/GLES2/gl2.h"
 #include "ppapi/lib/gl/include/GLES2/gl2ext.h"
 #include "ppapi/utility/completion_callback_factory.h"
@@ -35,34 +38,39 @@
 
 // Assert |context_| isn't holding any GL Errors.  Done as a macro instead of a
 // function to preserve line number information in the failure message.
-#define assertNoGLError() \
-  assert(!gles2_if_->GetError(context_->pp_resource()));
+#define assertNoGLError() assert(!gles2_if_->GetError(context_->pp_resource()));
 
 namespace {
 
-struct PictureBufferInfo {
-  PP_PictureBuffer_Dev buffer;
-  GLenum texture_target;
-};
-
 struct Shader {
-  Shader() : program(0),
-             texcoord_scale_location(0) {}
+  Shader() : program(0), texcoord_scale_location(0) {}
+  ~Shader() {}
 
   GLuint program;
   GLint texcoord_scale_location;
 };
 
-class VideoDecodeDemoInstance : public pp::Instance,
-                                public pp::Graphics3DClient,
-                                public pp::VideoDecoderClient_Dev {
- public:
-  VideoDecodeDemoInstance(PP_Instance instance, pp::Module* module);
-  virtual ~VideoDecodeDemoInstance();
+class Decoder;
+class MyInstance;
 
-  // pp::Instance implementation (see PPP_Instance).
+struct PendingPicture {
+  PendingPicture(Decoder* decoder, const PP_VideoPicture& picture)
+      : decoder(decoder), picture(picture) {}
+  ~PendingPicture() {}
+
+  Decoder* decoder;
+  PP_VideoPicture picture;
+};
+
+class MyInstance : public pp::Instance, public pp::Graphics3DClient {
+ public:
+  MyInstance(PP_Instance instance, pp::Module* module);
+  virtual ~MyInstance();
+
+  // pp::Instance implementation.
   virtual void DidChangeView(const pp::Rect& position,
                              const pp::Rect& clip_ignored);
+  virtual bool HandleInputEvent(const pp::InputEvent& event);
 
   // pp::Graphics3DClient implementation.
   virtual void Graphics3DContextLost() {
@@ -73,109 +81,55 @@ class VideoDecodeDemoInstance : public pp::Instance,
     assert(false && "Unexpectedly lost graphics context");
   }
 
-  // pp::VideoDecoderClient_Dev implementation.
-  virtual void ProvidePictureBuffers(
-      PP_Resource decoder,
-      uint32_t req_num_of_bufs,
-      const PP_Size& dimensions,
-      uint32_t texture_target);
-  virtual void DismissPictureBuffer(PP_Resource decoder,
-                                    int32_t picture_buffer_id);
-  virtual void PictureReady(PP_Resource decoder, const PP_Picture_Dev& picture);
-  virtual void NotifyError(PP_Resource decoder, PP_VideoDecodeError_Dev error);
+  void PaintPicture(Decoder* decoder, const PP_VideoPicture& picture);
 
  private:
-  enum { kNumConcurrentDecodes = 7,
-         kNumDecoders = 2 };  // Baked into viewport rendering.
-
-  // A single decoder's client interface.
-  class DecoderClient {
-   public:
-    DecoderClient(VideoDecodeDemoInstance* gles2,
-                  pp::VideoDecoder_Dev* decoder);
-    ~DecoderClient();
-
-    void DecodeNextNALUs();
-
-    // Per-decoder implementation of part of pp::VideoDecoderClient_Dev.
-    void ProvidePictureBuffers(
-        uint32_t req_num_of_bufs,
-        PP_Size dimensions,
-        uint32_t texture_target);
-    void DismissPictureBuffer(int32_t picture_buffer_id);
-
-    const PictureBufferInfo& GetPictureBufferInfoById(int id);
-    pp::VideoDecoder_Dev* decoder() { return decoder_; }
-
-   private:
-    void DecodeNextNALU();
-    static void GetNextNALUBoundary(size_t start_pos, size_t* end_pos);
-    void DecoderBitstreamDone(int32_t result, int bitstream_buffer_id);
-    void DecoderFlushDone(int32_t result);
-
-    VideoDecodeDemoInstance* gles2_;
-    pp::VideoDecoder_Dev* decoder_;
-    pp::CompletionCallbackFactory<DecoderClient> callback_factory_;
-    int next_picture_buffer_id_;
-    int next_bitstream_buffer_id_;
-    size_t encoded_data_next_pos_to_decode_;
-    std::set<int> bitstream_ids_at_decoder_;
-    // Map of texture buffers indexed by buffer id.
-    typedef std::map<int, PictureBufferInfo> PictureBufferMap;
-    PictureBufferMap picture_buffers_by_id_;
-    // Map of bitstream buffers indexed by id.
-    typedef std::map<int, pp::Buffer_Dev*> BitstreamBufferMap;
-    BitstreamBufferMap bitstream_buffers_by_id_;
-  };
-
-  // Initialize Video Decoders.
-  void InitializeDecoders();
-
-  // GL-related functions.
-  void InitGL();
-  GLuint CreateTexture(int32_t width, int32_t height, GLenum texture_target);
-  void CreateGLObjects();
-  void Create2DProgramOnce();
-  void CreateRectangleARBProgramOnce();
-  Shader CreateProgram(const char* vertex_shader,
-                       const char* fragment_shader);
-  void CreateShader(GLuint program, GLenum type, const char* source, int size);
-  void DeleteTexture(GLuint id);
-  void PaintFinished(int32_t result, PP_Resource decoder,
-                     int picture_buffer_id);
-
-  // Log an error to the developer console and stderr (though the latter may be
-  // closed due to sandboxing or blackholed for other reasons) by creating a
-  // temporary of this type and streaming to it.  Example usage:
+  // Log an error to the developer console and stderr by creating a temporary
+  // object of this type and streaming to it.  Example usage:
   // LogError(this).s() << "Hello world: " << 42;
   class LogError {
    public:
-    LogError(VideoDecodeDemoInstance* demo) : demo_(demo) {}
+    LogError(MyInstance* instance) : instance_(instance) {}
     ~LogError() {
       const std::string& msg = stream_.str();
-      demo_->console_if_->Log(demo_->pp_instance(), PP_LOGLEVEL_ERROR,
-                              pp::Var(msg).pp_var());
+      instance_->console_if_->Log(
+          instance_->pp_instance(), PP_LOGLEVEL_ERROR, pp::Var(msg).pp_var());
       std::cerr << msg << std::endl;
     }
     // Impl note: it would have been nicer to have LogError derive from
     // std::ostringstream so that it can be streamed to directly, but lookup
     // rules turn streamed string literals to hex pointers on output.
     std::ostringstream& s() { return stream_; }
+
    private:
-    VideoDecodeDemoInstance* demo_;  // Unowned.
+    MyInstance* instance_;
     std::ostringstream stream_;
   };
+
+  void InitializeDecoders();
+
+  // GL-related functions.
+  void InitGL();
+  void CreateGLObjects();
+  void Create2DProgramOnce();
+  void CreateRectangleARBProgramOnce();
+  Shader CreateProgram(const char* vertex_shader, const char* fragment_shader);
+  void CreateShader(GLuint program, GLenum type, const char* source, int size);
+  void PaintNextPicture();
+  void PaintFinished(int32_t result);
 
   pp::Size plugin_size_;
   bool is_painting_;
   // When decode outpaces render, we queue up decoded pictures for later
-  // painting.  Elements are <decoder,picture>.
-  std::list<std::pair<PP_Resource, PP_Picture_Dev> > pictures_pending_paint_;
+  // painting.
+  typedef std::queue<PendingPicture> PendingPictureQueue;
+  PendingPictureQueue pending_pictures_;
+
   int num_frames_rendered_;
   PP_TimeTicks first_frame_delivered_ticks_;
   PP_TimeTicks last_swap_request_ticks_;
   PP_TimeTicks swap_ticks_;
-  pp::CompletionCallbackFactory<VideoDecodeDemoInstance> callback_factory_;
+  pp::CompletionCallbackFactory<MyInstance> callback_factory_;
 
   // Unowned pointers.
   const PPB_Console* console_if_;
@@ -184,8 +138,8 @@ class VideoDecodeDemoInstance : public pp::Instance,
 
   // Owned data.
   pp::Graphics3D* context_;
-  typedef std::map<int, DecoderClient*> Decoders;
-  Decoders video_decoders_;
+  typedef std::vector<Decoder*> DecoderList;
+  DecoderList video_decoders_;
 
   // Shader program to draw GL_TEXTURE_2D target.
   Shader shader_2d_;
@@ -193,66 +147,260 @@ class VideoDecodeDemoInstance : public pp::Instance,
   Shader shader_rectangle_arb_;
 };
 
-VideoDecodeDemoInstance::DecoderClient::DecoderClient(
-      VideoDecodeDemoInstance* gles2, pp::VideoDecoder_Dev* decoder)
-    : gles2_(gles2), decoder_(decoder), callback_factory_(this),
-      next_picture_buffer_id_(0),
-      next_bitstream_buffer_id_(0), encoded_data_next_pos_to_decode_(0) {
+class Decoder {
+ public:
+  Decoder(MyInstance* instance, int id, const pp::Graphics3D& graphics_3d);
+  ~Decoder();
+
+  int id() const { return id_; }
+  bool flushing() const { return flushing_; }
+  bool resetting() const { return resetting_; }
+
+  void Reset();
+  void RecyclePicture(const PP_VideoPicture& picture);
+
+  PP_TimeTicks GetAverageLatency() {
+    return num_pictures_ ? total_latency_ / num_pictures_ : 0;
+  }
+
+ private:
+  void InitializeDone(int32_t result);
+  void Start();
+  void DecodeNextFrame();
+  void DecodeDone(int32_t result);
+  void PictureReady(int32_t result, PP_VideoPicture picture);
+  void FlushDone(int32_t result);
+  void ResetDone(int32_t result);
+
+  MyInstance* instance_;
+  int id_;
+
+  pp::VideoDecoder* decoder_;
+  pp::CompletionCallbackFactory<Decoder> callback_factory_;
+
+  size_t encoded_data_next_pos_to_decode_;
+  int next_picture_id_;
+  bool flushing_;
+  bool resetting_;
+
+  const PPB_Core* core_if_;
+  static const int kMaxDecodeDelay = 128;
+  PP_TimeTicks decode_time_[kMaxDecodeDelay];
+  PP_TimeTicks total_latency_;
+  int num_pictures_;
+};
+
+#if defined USE_VP8_TESTDATA_INSTEAD_OF_H264
+
+// VP8 is stored in an IVF container.
+// Helpful description: http://wiki.multimedia.cx/index.php?title=IVF
+
+static void GetNextFrame(size_t* start_pos, size_t* end_pos) {
+  size_t current_pos = *start_pos;
+  if (current_pos == 0)
+    current_pos = 32;  // Skip stream header.
+  uint32_t frame_size = kData[current_pos] + (kData[current_pos + 1] << 8) +
+                        (kData[current_pos + 2] << 16) +
+                        (kData[current_pos + 3] << 24);
+  current_pos += 12;  // Skip frame header.
+  *start_pos = current_pos;
+  *end_pos = current_pos + frame_size;
 }
 
-VideoDecodeDemoInstance::DecoderClient::~DecoderClient() {
+#else  // !USE_VP8_TESTDATA_INSTEAD_OF_H264
+
+// Returns true if the current position is at the start of a NAL unit.
+static bool LookingAtNAL(const unsigned char* encoded, size_t pos) {
+  // H264 frames start with 0, 0, 0, 1 in our test data.
+  return pos + 3 < kDataLen && encoded[pos] == 0 && encoded[pos + 1] == 0 &&
+         encoded[pos + 2] == 0 && encoded[pos + 3] == 1;
+}
+
+static void GetNextFrame(size_t* start_pos, size_t* end_pos) {
+  assert(LookingAtNAL(kData, *start_pos));
+  *end_pos = *start_pos;
+  *end_pos += 4;
+  while (*end_pos < kDataLen && !LookingAtNAL(kData, *end_pos)) {
+    ++*end_pos;
+  }
+}
+
+#endif  // USE_VP8_TESTDATA_INSTEAD_OF_H264
+
+Decoder::Decoder(MyInstance* instance,
+                 int id,
+                 const pp::Graphics3D& graphics_3d)
+    : instance_(instance),
+      id_(id),
+      decoder_(new pp::VideoDecoder(instance)),
+      callback_factory_(this),
+      encoded_data_next_pos_to_decode_(0),
+      next_picture_id_(0),
+      flushing_(false),
+      resetting_(false),
+      total_latency_(0.0),
+      num_pictures_(0) {
+  core_if_ = static_cast<const PPB_Core*>(
+      pp::Module::Get()->GetBrowserInterface(PPB_CORE_INTERFACE));
+
+#if defined USE_VP8_TESTDATA_INSTEAD_OF_H264
+  const PP_VideoProfile kBitstreamProfile = PP_VIDEOPROFILE_VP8MAIN;
+#else
+  const PP_VideoProfile kBitstreamProfile = PP_VIDEOPROFILE_H264MAIN;
+#endif
+
+  assert(!decoder_->is_null());
+  decoder_->Initialize(graphics_3d,
+                       kBitstreamProfile,
+                       PP_TRUE /* allow_software_fallback */,
+                       callback_factory_.NewCallback(&Decoder::InitializeDone));
+}
+
+Decoder::~Decoder() {
   delete decoder_;
-  decoder_ = NULL;
-
-  for (BitstreamBufferMap::iterator it = bitstream_buffers_by_id_.begin();
-       it != bitstream_buffers_by_id_.end(); ++it) {
-    delete it->second;
-  }
-  bitstream_buffers_by_id_.clear();
-
-  for (PictureBufferMap::iterator it = picture_buffers_by_id_.begin();
-       it != picture_buffers_by_id_.end(); ++it) {
-    gles2_->DeleteTexture(it->second.buffer.texture_id);
-  }
-  picture_buffers_by_id_.clear();
 }
 
-VideoDecodeDemoInstance::VideoDecodeDemoInstance(PP_Instance instance,
-                                                 pp::Module* module)
-    : pp::Instance(instance), pp::Graphics3DClient(this),
-      pp::VideoDecoderClient_Dev(this),
+void Decoder::InitializeDone(int32_t result) {
+  assert(decoder_);
+  assert(result == PP_OK);
+  Start();
+}
+
+void Decoder::Start() {
+  assert(decoder_);
+
+  encoded_data_next_pos_to_decode_ = 0;
+
+  // Register callback to get the first picture. We call GetPicture again in
+  // PictureReady to continuously receive pictures as they're decoded.
+  decoder_->GetPicture(
+      callback_factory_.NewCallbackWithOutput(&Decoder::PictureReady));
+
+  // Start the decode loop.
+  DecodeNextFrame();
+}
+
+void Decoder::Reset() {
+  assert(decoder_);
+  assert(!resetting_);
+  resetting_ = true;
+  decoder_->Reset(callback_factory_.NewCallback(&Decoder::ResetDone));
+}
+
+void Decoder::RecyclePicture(const PP_VideoPicture& picture) {
+  assert(decoder_);
+  decoder_->RecyclePicture(picture);
+}
+
+void Decoder::DecodeNextFrame() {
+  assert(decoder_);
+  if (encoded_data_next_pos_to_decode_ <= kDataLen) {
+    // If we've just reached the end of the bitstream, flush and wait.
+    if (!flushing_ && encoded_data_next_pos_to_decode_ == kDataLen) {
+      flushing_ = true;
+      decoder_->Flush(callback_factory_.NewCallback(&Decoder::FlushDone));
+      return;
+    }
+
+    // Find the start of the next frame.
+    size_t start_pos = encoded_data_next_pos_to_decode_;
+    size_t end_pos;
+    GetNextFrame(&start_pos, &end_pos);
+    encoded_data_next_pos_to_decode_ = end_pos;
+    // Decode the frame. On completion, DecodeDone will call DecodeNextFrame
+    // to implement a decode loop.
+    uint32_t size = static_cast<uint32_t>(end_pos - start_pos);
+    decode_time_[next_picture_id_ % kMaxDecodeDelay] = core_if_->GetTimeTicks();
+    decoder_->Decode(next_picture_id_++,
+                     size,
+                     kData + start_pos,
+                     callback_factory_.NewCallback(&Decoder::DecodeDone));
+  }
+}
+
+void Decoder::DecodeDone(int32_t result) {
+  assert(decoder_);
+  // Break out of the decode loop on abort.
+  if (result == PP_ERROR_ABORTED)
+    return;
+  assert(result == PP_OK);
+  if (!flushing_ && !resetting_)
+    DecodeNextFrame();
+}
+
+void Decoder::PictureReady(int32_t result, PP_VideoPicture picture) {
+  assert(decoder_);
+  // Break out of the get picture loop on abort.
+  if (result == PP_ERROR_ABORTED)
+    return;
+  assert(result == PP_OK);
+
+  num_pictures_++;
+  PP_TimeTicks latency = core_if_->GetTimeTicks() -
+                         decode_time_[picture.decode_id % kMaxDecodeDelay];
+  total_latency_ += latency;
+
+  decoder_->GetPicture(
+      callback_factory_.NewCallbackWithOutput(&Decoder::PictureReady));
+  instance_->PaintPicture(this, picture);
+}
+
+void Decoder::FlushDone(int32_t result) {
+  assert(decoder_);
+  assert(result == PP_OK || result == PP_ERROR_ABORTED);
+  assert(flushing_);
+  flushing_ = false;
+}
+
+void Decoder::ResetDone(int32_t result) {
+  assert(decoder_);
+  assert(result == PP_OK);
+  assert(resetting_);
+  resetting_ = false;
+
+  Start();
+}
+
+MyInstance::MyInstance(PP_Instance instance, pp::Module* module)
+    : pp::Instance(instance),
+      pp::Graphics3DClient(this),
       is_painting_(false),
       num_frames_rendered_(0),
       first_frame_delivered_ticks_(-1),
+      last_swap_request_ticks_(-1),
       swap_ticks_(0),
       callback_factory_(this),
       context_(NULL) {
-  assert((console_if_ = static_cast<const PPB_Console*>(
-      module->GetBrowserInterface(PPB_CONSOLE_INTERFACE))));
-  assert((core_if_ = static_cast<const PPB_Core*>(
-      module->GetBrowserInterface(PPB_CORE_INTERFACE))));
-  assert((gles2_if_ = static_cast<const PPB_OpenGLES2*>(
-      module->GetBrowserInterface(PPB_OPENGLES2_INTERFACE))));
+  console_if_ = static_cast<const PPB_Console*>(
+      pp::Module::Get()->GetBrowserInterface(PPB_CONSOLE_INTERFACE));
+  core_if_ = static_cast<const PPB_Core*>(
+      pp::Module::Get()->GetBrowserInterface(PPB_CORE_INTERFACE));
+  gles2_if_ = static_cast<const PPB_OpenGLES2*>(
+      pp::Module::Get()->GetBrowserInterface(PPB_OPENGLES2_INTERFACE));
+
+  RequestInputEvents(PP_INPUTEVENT_CLASS_MOUSE);
 }
 
-VideoDecodeDemoInstance::~VideoDecodeDemoInstance() {
-  if (shader_2d_.program)
-    gles2_if_->DeleteProgram(context_->pp_resource(), shader_2d_.program);
-  if (shader_rectangle_arb_.program) {
-    gles2_if_->DeleteProgram(
-        context_->pp_resource(), shader_rectangle_arb_.program);
-  }
+MyInstance::~MyInstance() {
+  if (!context_)
+    return;
 
-  for (Decoders::iterator it = video_decoders_.begin();
-       it != video_decoders_.end(); ++it) {
-    delete it->second;
-  }
-  video_decoders_.clear();
+  PP_Resource graphics_3d = context_->pp_resource();
+  if (shader_2d_.program)
+    gles2_if_->DeleteProgram(graphics_3d, shader_2d_.program);
+  if (shader_rectangle_arb_.program)
+    gles2_if_->DeleteProgram(graphics_3d, shader_rectangle_arb_.program);
+
+  for (DecoderList::iterator it = video_decoders_.begin();
+       it != video_decoders_.end();
+       ++it)
+    delete *it;
+
   delete context_;
 }
 
-void VideoDecodeDemoInstance::DidChangeView(
-    const pp::Rect& position, const pp::Rect& clip_ignored) {
+void MyInstance::DidChangeView(const pp::Rect& position,
+                               const pp::Rect& clip_ignored) {
   if (position.width() == 0 || position.height() == 0)
     return;
   if (plugin_size_.width()) {
@@ -266,234 +414,144 @@ void VideoDecodeDemoInstance::DidChangeView(
   InitializeDecoders();
 }
 
-void VideoDecodeDemoInstance::InitializeDecoders() {
+bool MyInstance::HandleInputEvent(const pp::InputEvent& event) {
+  switch (event.GetType()) {
+    case PP_INPUTEVENT_TYPE_MOUSEDOWN: {
+      pp::MouseInputEvent mouse_event(event);
+      // Reset all decoders on mouse down.
+      if (mouse_event.GetButton() == PP_INPUTEVENT_MOUSEBUTTON_LEFT) {
+        // Reset decoders.
+        for (size_t i = 0; i < video_decoders_.size(); i++) {
+          if (!video_decoders_[i]->resetting())
+            video_decoders_[i]->Reset();
+        }
+      }
+      return true;
+    }
+
+    default:
+      return false;
+  }
+}
+
+void MyInstance::InitializeDecoders() {
   assert(video_decoders_.empty());
-  for (int i = 0; i < kNumDecoders; ++i) {
-    DecoderClient* client = new DecoderClient(
-        this, new pp::VideoDecoder_Dev(
-            this, *context_, PP_VIDEODECODER_H264PROFILE_MAIN));
-    assert(!client->decoder()->is_null());
-    assert(video_decoders_.insert(std::make_pair(
-        client->decoder()->pp_resource(), client)).second);
-    client->DecodeNextNALUs();
-  }
+  // Create two decoders with ids 0 and 1.
+  video_decoders_.push_back(new Decoder(this, 0, *context_));
+  video_decoders_.push_back(new Decoder(this, 1, *context_));
 }
 
-void VideoDecodeDemoInstance::DecoderClient::DecoderBitstreamDone(
-    int32_t result, int bitstream_buffer_id) {
-  assert(bitstream_ids_at_decoder_.erase(bitstream_buffer_id) == 1);
-  BitstreamBufferMap::iterator it =
-      bitstream_buffers_by_id_.find(bitstream_buffer_id);
-  assert(it != bitstream_buffers_by_id_.end());
-  delete it->second;
-  bitstream_buffers_by_id_.erase(it);
-  DecodeNextNALUs();
-}
-
-void VideoDecodeDemoInstance::DecoderClient::DecoderFlushDone(int32_t result) {
-  assert(result == PP_OK);
-  // Check that each bitstream buffer ID we handed to the decoder got handed
-  // back to us.
-  assert(bitstream_ids_at_decoder_.empty());
-  delete decoder_;
-  decoder_ = NULL;
-}
-
-static bool LookingAtNAL(const unsigned char* encoded, size_t pos) {
-  return pos + 3 < kDataLen &&
-      encoded[pos] == 0 && encoded[pos + 1] == 0 &&
-      encoded[pos + 2] == 0 && encoded[pos + 3] == 1;
-}
-
-void VideoDecodeDemoInstance::DecoderClient::GetNextNALUBoundary(
-    size_t start_pos, size_t* end_pos) {
-  assert(LookingAtNAL(kData, start_pos));
-  *end_pos = start_pos;
-  *end_pos += 4;
-  while (*end_pos + 3 < kDataLen &&
-         !LookingAtNAL(kData, *end_pos)) {
-    ++*end_pos;
-  }
-  if (*end_pos + 3 >= kDataLen) {
-    *end_pos = kDataLen;
-    return;
-  }
-}
-
-void VideoDecodeDemoInstance::DecoderClient::DecodeNextNALUs() {
-  while (encoded_data_next_pos_to_decode_ <= kDataLen &&
-         bitstream_ids_at_decoder_.size() < kNumConcurrentDecodes) {
-    DecodeNextNALU();
-  }
-}
-
-void VideoDecodeDemoInstance::DecoderClient::DecodeNextNALU() {
-  if (encoded_data_next_pos_to_decode_ == kDataLen) {
-    ++encoded_data_next_pos_to_decode_;
-    pp::CompletionCallback cb = callback_factory_.NewCallback(
-        &VideoDecodeDemoInstance::DecoderClient::DecoderFlushDone);
-    decoder_->Flush(cb);
-    return;
-  }
-  size_t start_pos = encoded_data_next_pos_to_decode_;
-  size_t end_pos;
-  GetNextNALUBoundary(start_pos, &end_pos);
-  pp::Buffer_Dev* buffer = new pp::Buffer_Dev(gles2_, end_pos - start_pos);
-  PP_VideoBitstreamBuffer_Dev bitstream_buffer;
-  int id = ++next_bitstream_buffer_id_;
-  bitstream_buffer.id = id;
-  bitstream_buffer.size = end_pos - start_pos;
-  bitstream_buffer.data = buffer->pp_resource();
-  memcpy(buffer->data(), kData + start_pos, end_pos - start_pos);
-  assert(bitstream_buffers_by_id_.insert(std::make_pair(id, buffer)).second);
-
-  pp::CompletionCallback cb =
-      callback_factory_.NewCallback(
-          &VideoDecodeDemoInstance::DecoderClient::DecoderBitstreamDone, id);
-  assert(bitstream_ids_at_decoder_.insert(id).second);
-  encoded_data_next_pos_to_decode_ = end_pos;
-  decoder_->Decode(bitstream_buffer, cb);
-}
-
-void VideoDecodeDemoInstance::ProvidePictureBuffers(PP_Resource decoder,
-                                                    uint32_t req_num_of_bufs,
-                                                    const PP_Size& dimensions,
-                                                    uint32_t texture_target) {
-  DecoderClient* client = video_decoders_[decoder];
-  assert(client);
-  client->ProvidePictureBuffers(req_num_of_bufs, dimensions, texture_target);
-}
-
-void VideoDecodeDemoInstance::DecoderClient::ProvidePictureBuffers(
-    uint32_t req_num_of_bufs,
-    PP_Size dimensions,
-    uint32_t texture_target) {
-  std::vector<PP_PictureBuffer_Dev> buffers;
-  for (uint32_t i = 0; i < req_num_of_bufs; ++i) {
-    PictureBufferInfo info;
-    info.buffer.size = dimensions;
-    info.texture_target = texture_target;
-    info.buffer.texture_id = gles2_->CreateTexture(
-        dimensions.width, dimensions.height, info.texture_target);
-    int id = ++next_picture_buffer_id_;
-    info.buffer.id = id;
-    buffers.push_back(info.buffer);
-    assert(picture_buffers_by_id_.insert(std::make_pair(id, info)).second);
-  }
-  decoder_->AssignPictureBuffers(buffers);
-}
-
-const PictureBufferInfo&
-VideoDecodeDemoInstance::DecoderClient::GetPictureBufferInfoById(
-    int id) {
-  PictureBufferMap::iterator it = picture_buffers_by_id_.find(id);
-  assert(it != picture_buffers_by_id_.end());
-  return it->second;
-}
-
-void VideoDecodeDemoInstance::DismissPictureBuffer(PP_Resource decoder,
-                                             int32_t picture_buffer_id) {
-  DecoderClient* client = video_decoders_[decoder];
-  assert(client);
-  client->DismissPictureBuffer(picture_buffer_id);
-}
-
-void VideoDecodeDemoInstance::DecoderClient::DismissPictureBuffer(
-    int32_t picture_buffer_id) {
-  gles2_->DeleteTexture(GetPictureBufferInfoById(
-      picture_buffer_id).buffer.texture_id);
-  picture_buffers_by_id_.erase(picture_buffer_id);
-}
-
-void VideoDecodeDemoInstance::PictureReady(PP_Resource decoder,
-                                     const PP_Picture_Dev& picture) {
+void MyInstance::PaintPicture(Decoder* decoder,
+                              const PP_VideoPicture& picture) {
   if (first_frame_delivered_ticks_ == -1)
     assert((first_frame_delivered_ticks_ = core_if_->GetTimeTicks()) != -1);
-  if (is_painting_) {
-    pictures_pending_paint_.push_back(std::make_pair(decoder, picture));
-    return;
-  }
-  DecoderClient* client = video_decoders_[decoder];
-  assert(client);
-  const PictureBufferInfo& info =
-      client->GetPictureBufferInfoById(picture.picture_buffer_id);
+
+  pending_pictures_.push(PendingPicture(decoder, picture));
+  if (!is_painting_)
+    PaintNextPicture();
+}
+
+void MyInstance::PaintNextPicture() {
   assert(!is_painting_);
   is_painting_ = true;
+
+  const PendingPicture& next = pending_pictures_.front();
+  Decoder* decoder = next.decoder;
+  const PP_VideoPicture& picture = next.picture;
+
   int x = 0;
   int y = 0;
-  if (client != video_decoders_.begin()->second) {
-    x = plugin_size_.width() / kNumDecoders;
-    y = plugin_size_.height() / kNumDecoders;
+  int half_width = plugin_size_.width() / 2;
+  int half_height = plugin_size_.height() / 2;
+  if (decoder->id() != 0) {
+    x = half_width;
+    y = half_height;
   }
 
-  if (info.texture_target == GL_TEXTURE_2D) {
+  PP_Resource graphics_3d = context_->pp_resource();
+  if (picture.texture_target == GL_TEXTURE_2D) {
     Create2DProgramOnce();
-    gles2_if_->UseProgram(context_->pp_resource(), shader_2d_.program);
+    gles2_if_->UseProgram(graphics_3d, shader_2d_.program);
     gles2_if_->Uniform2f(
-        context_->pp_resource(), shader_2d_.texcoord_scale_location, 1.0, 1.0);
+        graphics_3d, shader_2d_.texcoord_scale_location, 1.0, 1.0);
   } else {
-    assert(info.texture_target == GL_TEXTURE_RECTANGLE_ARB);
+    assert(picture.texture_target == GL_TEXTURE_RECTANGLE_ARB);
     CreateRectangleARBProgramOnce();
-    gles2_if_->UseProgram(
-        context_->pp_resource(), shader_rectangle_arb_.program);
-    gles2_if_->Uniform2f(context_->pp_resource(),
+    gles2_if_->UseProgram(graphics_3d, shader_rectangle_arb_.program);
+    gles2_if_->Uniform2f(graphics_3d,
                          shader_rectangle_arb_.texcoord_scale_location,
-                         info.buffer.size.width,
-                         info.buffer.size.height);
+                         picture.texture_size.width,
+                         picture.texture_size.height);
   }
 
-  gles2_if_->Viewport(context_->pp_resource(), x, y,
-                      plugin_size_.width() / kNumDecoders,
-                      plugin_size_.height() / kNumDecoders);
-  gles2_if_->ActiveTexture(context_->pp_resource(), GL_TEXTURE0);
+  gles2_if_->Viewport(graphics_3d, x, y, half_width, half_height);
+  gles2_if_->ActiveTexture(graphics_3d, GL_TEXTURE0);
   gles2_if_->BindTexture(
-      context_->pp_resource(), info.texture_target, info.buffer.texture_id);
-  gles2_if_->DrawArrays(context_->pp_resource(), GL_TRIANGLE_STRIP, 0, 4);
+      graphics_3d, picture.texture_target, picture.texture_id);
+  gles2_if_->DrawArrays(graphics_3d, GL_TRIANGLE_STRIP, 0, 4);
 
-  gles2_if_->UseProgram(context_->pp_resource(), 0);
+  gles2_if_->UseProgram(graphics_3d, 0);
 
-  pp::CompletionCallback cb =
-      callback_factory_.NewCallback(
-          &VideoDecodeDemoInstance::PaintFinished, decoder, info.buffer.id);
   last_swap_request_ticks_ = core_if_->GetTimeTicks();
-  assert(context_->SwapBuffers(cb) == PP_OK_COMPLETIONPENDING);
+  context_->SwapBuffers(
+      callback_factory_.NewCallback(&MyInstance::PaintFinished));
 }
 
-void VideoDecodeDemoInstance::NotifyError(PP_Resource decoder,
-                                          PP_VideoDecodeError_Dev error) {
-  LogError(this).s() << "Received error: " << error;
-  assert(false && "Unexpected error; see stderr for details");
-}
-
-// This object is the global object representing this plugin library as long
-// as it is loaded.
-class VideoDecodeDemoModule : public pp::Module {
- public:
-  VideoDecodeDemoModule() : pp::Module() {}
-  virtual ~VideoDecodeDemoModule() {}
-
-  virtual pp::Instance* CreateInstance(PP_Instance instance) {
-    return new VideoDecodeDemoInstance(instance, this);
+void MyInstance::PaintFinished(int32_t result) {
+  assert(result == PP_OK);
+  swap_ticks_ += core_if_->GetTimeTicks() - last_swap_request_ticks_;
+  is_painting_ = false;
+  ++num_frames_rendered_;
+  if (num_frames_rendered_ % 50 == 0) {
+    double elapsed = core_if_->GetTimeTicks() - first_frame_delivered_ticks_;
+    double fps = (elapsed > 0) ? num_frames_rendered_ / elapsed : 1000;
+    double ms_per_swap = (swap_ticks_ * 1e3) / num_frames_rendered_;
+    double secs_average_latency = 0;
+    for (DecoderList::iterator it = video_decoders_.begin();
+         it != video_decoders_.end();
+         ++it)
+      secs_average_latency += (*it)->GetAverageLatency();
+    secs_average_latency /= video_decoders_.size();
+    double ms_average_latency = 1000 * secs_average_latency;
+    LogError(this).s() << "Rendered frames: " << num_frames_rendered_
+                       << ", fps: " << fps
+                       << ", with average ms/swap of: " << ms_per_swap
+                       << ", with average latency (ms) of: "
+                       << ms_average_latency;
   }
-};
 
-void VideoDecodeDemoInstance::InitGL() {
+  // If the decoders were reset, this will be empty.
+  if (pending_pictures_.empty())
+    return;
+
+  const PendingPicture& next = pending_pictures_.front();
+  Decoder* decoder = next.decoder;
+  const PP_VideoPicture& picture = next.picture;
+  decoder->RecyclePicture(picture);
+  pending_pictures_.pop();
+
+  // Keep painting as long as we have pictures.
+  if (!pending_pictures_.empty())
+    PaintNextPicture();
+}
+
+void MyInstance::InitGL() {
   assert(plugin_size_.width() && plugin_size_.height());
   is_painting_ = false;
 
   assert(!context_);
   int32_t context_attributes[] = {
-    PP_GRAPHICS3DATTRIB_ALPHA_SIZE, 8,
-    PP_GRAPHICS3DATTRIB_BLUE_SIZE, 8,
-    PP_GRAPHICS3DATTRIB_GREEN_SIZE, 8,
-    PP_GRAPHICS3DATTRIB_RED_SIZE, 8,
-    PP_GRAPHICS3DATTRIB_DEPTH_SIZE, 0,
-    PP_GRAPHICS3DATTRIB_STENCIL_SIZE, 0,
-    PP_GRAPHICS3DATTRIB_SAMPLES, 0,
-    PP_GRAPHICS3DATTRIB_SAMPLE_BUFFERS, 0,
-    PP_GRAPHICS3DATTRIB_WIDTH, plugin_size_.width(),
-    PP_GRAPHICS3DATTRIB_HEIGHT, plugin_size_.height(),
-    PP_GRAPHICS3DATTRIB_NONE,
+      PP_GRAPHICS3DATTRIB_ALPHA_SIZE,     8,
+      PP_GRAPHICS3DATTRIB_BLUE_SIZE,      8,
+      PP_GRAPHICS3DATTRIB_GREEN_SIZE,     8,
+      PP_GRAPHICS3DATTRIB_RED_SIZE,       8,
+      PP_GRAPHICS3DATTRIB_DEPTH_SIZE,     0,
+      PP_GRAPHICS3DATTRIB_STENCIL_SIZE,   0,
+      PP_GRAPHICS3DATTRIB_SAMPLES,        0,
+      PP_GRAPHICS3DATTRIB_SAMPLE_BUFFERS, 0,
+      PP_GRAPHICS3DATTRIB_WIDTH,          plugin_size_.width(),
+      PP_GRAPHICS3DATTRIB_HEIGHT,         plugin_size_.height(),
+      PP_GRAPHICS3DATTRIB_NONE,
   };
   context_ = new pp::Graphics3D(this, context_attributes);
   assert(!context_->is_null());
@@ -508,80 +566,23 @@ void VideoDecodeDemoInstance::InitGL() {
   CreateGLObjects();
 }
 
-void VideoDecodeDemoInstance::PaintFinished(int32_t result, PP_Resource decoder,
-                                      int picture_buffer_id) {
-  assert(result == PP_OK);
-  swap_ticks_ += core_if_->GetTimeTicks() - last_swap_request_ticks_;
-  is_painting_ = false;
-  ++num_frames_rendered_;
-  if (num_frames_rendered_ % 50 == 0) {
-    double elapsed = core_if_->GetTimeTicks() - first_frame_delivered_ticks_;
-    double fps = (elapsed > 0) ? num_frames_rendered_ / elapsed : 1000;
-    double ms_per_swap = (swap_ticks_ * 1e3) / num_frames_rendered_;
-    LogError(this).s() << "Rendered frames: " << num_frames_rendered_
-                       << ", fps: " << fps << ", with average ms/swap of: "
-                       << ms_per_swap;
-  }
-  DecoderClient* client = video_decoders_[decoder];
-  if (client && client->decoder())
-    client->decoder()->ReusePictureBuffer(picture_buffer_id);
-  if (!pictures_pending_paint_.empty()) {
-    std::pair<PP_Resource, PP_Picture_Dev> decoder_picture =
-        pictures_pending_paint_.front();
-    pictures_pending_paint_.pop_front();
-    PictureReady(decoder_picture.first, decoder_picture.second);
-  }
-}
-
-GLuint VideoDecodeDemoInstance::CreateTexture(int32_t width,
-                                              int32_t height,
-                                              GLenum texture_target) {
-  GLuint texture_id;
-  gles2_if_->GenTextures(context_->pp_resource(), 1, &texture_id);
-  assertNoGLError();
-  // Assign parameters.
-  gles2_if_->ActiveTexture(context_->pp_resource(), GL_TEXTURE0);
-  gles2_if_->BindTexture(context_->pp_resource(), texture_target, texture_id);
-  gles2_if_->TexParameteri(
-      context_->pp_resource(), texture_target, GL_TEXTURE_MIN_FILTER,
-      GL_NEAREST);
-  gles2_if_->TexParameteri(
-      context_->pp_resource(), texture_target, GL_TEXTURE_MAG_FILTER,
-      GL_NEAREST);
-  gles2_if_->TexParameterf(
-      context_->pp_resource(), texture_target, GL_TEXTURE_WRAP_S,
-      GL_CLAMP_TO_EDGE);
-  gles2_if_->TexParameterf(
-      context_->pp_resource(), texture_target, GL_TEXTURE_WRAP_T,
-      GL_CLAMP_TO_EDGE);
-
-  if (texture_target == GL_TEXTURE_2D) {
-    gles2_if_->TexImage2D(
-        context_->pp_resource(), texture_target, 0, GL_RGBA, width, height, 0,
-        GL_RGBA, GL_UNSIGNED_BYTE, NULL);
-  }
-  assertNoGLError();
-  return texture_id;
-}
-
-void VideoDecodeDemoInstance::DeleteTexture(GLuint id) {
-  gles2_if_->DeleteTextures(context_->pp_resource(), 1, &id);
-}
-
-void VideoDecodeDemoInstance::CreateGLObjects() {
+void MyInstance::CreateGLObjects() {
   // Assign vertex positions and texture coordinates to buffers for use in
   // shader program.
   static const float kVertices[] = {
-    -1, 1, -1, -1, 1, 1, 1, -1,  // Position coordinates.
-    0, 1, 0, 0, 1, 1, 1, 0,      // Texture coordinates.
+      -1, -1, -1, 1, 1, -1, 1, 1,  // Position coordinates.
+      0,  1,  0,  0, 1, 1,  1, 0,  // Texture coordinates.
   };
 
   GLuint buffer;
   gles2_if_->GenBuffers(context_->pp_resource(), 1, &buffer);
   gles2_if_->BindBuffer(context_->pp_resource(), GL_ARRAY_BUFFER, buffer);
 
-  gles2_if_->BufferData(context_->pp_resource(), GL_ARRAY_BUFFER,
-                        sizeof(kVertices), kVertices, GL_STATIC_DRAW);
+  gles2_if_->BufferData(context_->pp_resource(),
+                        GL_ARRAY_BUFFER,
+                        sizeof(kVertices),
+                        kVertices,
+                        GL_STATIC_DRAW);
   assertNoGLError();
 }
 
@@ -596,7 +597,7 @@ static const char kVertexShader[] =
     "    gl_Position = a_position;       \n"
     "}";
 
-void VideoDecodeDemoInstance::Create2DProgramOnce() {
+void MyInstance::Create2DProgramOnce() {
   if (shader_2d_.program)
     return;
   static const char kFragmentShader2D[] =
@@ -611,7 +612,7 @@ void VideoDecodeDemoInstance::Create2DProgramOnce() {
   assertNoGLError();
 }
 
-void VideoDecodeDemoInstance::CreateRectangleARBProgramOnce() {
+void MyInstance::CreateRectangleARBProgramOnce() {
   if (shader_rectangle_arb_.program)
     return;
   static const char kFragmentShaderRectangle[] =
@@ -627,22 +628,25 @@ void VideoDecodeDemoInstance::CreateRectangleARBProgramOnce() {
       CreateProgram(kVertexShader, kFragmentShaderRectangle);
 }
 
-Shader VideoDecodeDemoInstance::CreateProgram(const char* vertex_shader,
-                                              const char* fragment_shader) {
+Shader MyInstance::CreateProgram(const char* vertex_shader,
+                                 const char* fragment_shader) {
   Shader shader;
 
   // Create shader program.
   shader.program = gles2_if_->CreateProgram(context_->pp_resource());
-  CreateShader(shader.program, GL_VERTEX_SHADER, vertex_shader,
-               strlen(vertex_shader));
-  CreateShader(shader.program, GL_FRAGMENT_SHADER, fragment_shader,
+  CreateShader(
+      shader.program, GL_VERTEX_SHADER, vertex_shader, strlen(vertex_shader));
+  CreateShader(shader.program,
+               GL_FRAGMENT_SHADER,
+               fragment_shader,
                strlen(fragment_shader));
   gles2_if_->LinkProgram(context_->pp_resource(), shader.program);
   gles2_if_->UseProgram(context_->pp_resource(), shader.program);
   gles2_if_->Uniform1i(
       context_->pp_resource(),
       gles2_if_->GetUniformLocation(
-          context_->pp_resource(), shader.program, "s_texture"), 0);
+          context_->pp_resource(), shader.program, "s_texture"),
+      0);
   assertNoGLError();
 
   shader.texcoord_scale_location = gles2_if_->GetUniformLocation(
@@ -655,11 +659,16 @@ Shader VideoDecodeDemoInstance::CreateProgram(const char* vertex_shader,
   assertNoGLError();
 
   gles2_if_->EnableVertexAttribArray(context_->pp_resource(), pos_location);
-  gles2_if_->VertexAttribPointer(context_->pp_resource(), pos_location, 2,
-                                 GL_FLOAT, GL_FALSE, 0, 0);
+  gles2_if_->VertexAttribPointer(
+      context_->pp_resource(), pos_location, 2, GL_FLOAT, GL_FALSE, 0, 0);
   gles2_if_->EnableVertexAttribArray(context_->pp_resource(), tc_location);
   gles2_if_->VertexAttribPointer(
-      context_->pp_resource(), tc_location, 2, GL_FLOAT, GL_FALSE, 0,
+      context_->pp_resource(),
+      tc_location,
+      2,
+      GL_FLOAT,
+      GL_FALSE,
+      0,
       static_cast<float*>(0) + 8);  // Skip position coordinates.
 
   gles2_if_->UseProgram(context_->pp_resource(), 0);
@@ -667,19 +676,34 @@ Shader VideoDecodeDemoInstance::CreateProgram(const char* vertex_shader,
   return shader;
 }
 
-void VideoDecodeDemoInstance::CreateShader(
-    GLuint program, GLenum type, const char* source, int size) {
+void MyInstance::CreateShader(GLuint program,
+                              GLenum type,
+                              const char* source,
+                              int size) {
   GLuint shader = gles2_if_->CreateShader(context_->pp_resource(), type);
   gles2_if_->ShaderSource(context_->pp_resource(), shader, 1, &source, &size);
   gles2_if_->CompileShader(context_->pp_resource(), shader);
   gles2_if_->AttachShader(context_->pp_resource(), program, shader);
   gles2_if_->DeleteShader(context_->pp_resource(), shader);
 }
+
+// This object is the global object representing this plugin library as long
+// as it is loaded.
+class MyModule : public pp::Module {
+ public:
+  MyModule() : pp::Module() {}
+  virtual ~MyModule() {}
+
+  virtual pp::Instance* CreateInstance(PP_Instance instance) {
+    return new MyInstance(instance, this);
+  }
+};
+
 }  // anonymous namespace
 
 namespace pp {
 // Factory function for your specialization of the Module object.
 Module* CreateModule() {
-  return new VideoDecodeDemoModule();
+  return new MyModule();
 }
 }  // namespace pp

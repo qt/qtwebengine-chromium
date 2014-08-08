@@ -24,6 +24,7 @@
  */
 
 [
+    GarbageCollected,
     NoInterfaceObject
 ] interface PositionError {
     readonly attribute unsigned short code;

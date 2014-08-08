@@ -29,27 +29,29 @@
 #define ChangeVersionWrapper_h
 
 #include "modules/webdatabase/SQLTransactionBackend.h"
+#include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
 
 namespace WebCore {
 
-class SQLError;
+class SQLErrorData;
 
-class ChangeVersionWrapper : public SQLTransactionWrapper {
+class ChangeVersionWrapper FINAL : public SQLTransactionWrapper {
 public:
-    static PassRefPtr<ChangeVersionWrapper> create(const String& oldVersion, const String& newVersion) { return adoptRef(new ChangeVersionWrapper(oldVersion, newVersion)); }
+    static PassRefPtrWillBeRawPtr<ChangeVersionWrapper> create(const String& oldVersion, const String& newVersion) { return adoptRefWillBeNoop(new ChangeVersionWrapper(oldVersion, newVersion)); }
 
-    virtual bool performPreflight(SQLTransactionBackend*);
-    virtual bool performPostflight(SQLTransactionBackend*);
-    virtual SQLError* sqlError() const { return m_sqlError.get(); }
-    virtual void handleCommitFailedAfterPostflight(SQLTransactionBackend*);
+    virtual void trace(Visitor* visitor) OVERRIDE { SQLTransactionWrapper::trace(visitor); }
+    virtual bool performPreflight(SQLTransactionBackend*) OVERRIDE;
+    virtual bool performPostflight(SQLTransactionBackend*) OVERRIDE;
+    virtual SQLErrorData* sqlError() const OVERRIDE { return m_sqlError.get(); }
+    virtual void handleCommitFailedAfterPostflight(SQLTransactionBackend*) OVERRIDE;
 
 private:
     ChangeVersionWrapper(const String& oldVersion, const String& newVersion);
 
     String m_oldVersion;
     String m_newVersion;
-    RefPtr<SQLError> m_sqlError;
+    OwnPtr<SQLErrorData> m_sqlError;
 };
 
 } // namespace WebCore

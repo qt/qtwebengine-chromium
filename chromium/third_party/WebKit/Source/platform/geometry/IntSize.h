@@ -28,14 +28,13 @@
 #define IntSize_h
 
 #include "platform/PlatformExport.h"
+#include "public/platform/WebCommon.h"
 
 #if OS(MACOSX)
 typedef struct CGSize CGSize;
 
-#ifdef NSGEOMETRY_TYPES_SAME_AS_CGGEOMETRY_TYPES
-typedef struct CGSize NSSize;
-#else
-typedef struct _NSSize NSSize;
+#ifdef __OBJC__
+#import <Foundation/Foundation.h>
 #endif
 #endif
 
@@ -99,9 +98,10 @@ public:
             m_height = minimumSize.height();
     }
 
-    int area() const
+    // Return area in a uint64_t to avoid overflow.
+    uint64_t area() const
     {
-        return m_width * m_height;
+        return static_cast<uint64_t>(width()) * height();
     }
 
     int diagonalLengthSquared() const
@@ -118,7 +118,7 @@ public:
     explicit IntSize(const CGSize&); // don't do this implicitly since it's lossy
     operator CGSize() const;
 
-#if !defined(NSGEOMETRY_TYPES_SAME_AS_CGGEOMETRY_TYPES)
+#if defined(__OBJC__) && !defined(NSGEOMETRY_TYPES_SAME_AS_CGGEOMETRY_TYPES)
     explicit IntSize(const NSSize &); // don't do this implicitly since it's lossy
     operator NSSize() const;
 #endif

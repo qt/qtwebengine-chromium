@@ -19,6 +19,8 @@
 
 namespace content {
 
+class WebContentsImpl;
+
 // HostZoomMap needs to be deleted on the UI thread because it listens
 // to notifications on there (and holds a NotificationRegistrar).
 class CONTENT_EXPORT HostZoomMapImpl : public NON_EXPORTED_BASE(HostZoomMap),
@@ -33,6 +35,10 @@ class CONTENT_EXPORT HostZoomMapImpl : public NON_EXPORTED_BASE(HostZoomMap),
   virtual double GetZoomLevelForHostAndScheme(
       const std::string& scheme,
       const std::string& host) const OVERRIDE;
+  // TODO(wjmaclean) Should we use a GURL here? crbug.com/384486
+  virtual bool HasZoomLevel(const std::string& scheme,
+                            const std::string& host) const OVERRIDE;
+  virtual ZoomLevelVector GetAllZoomLevels() const OVERRIDE;
   virtual void SetZoomLevelForHost(
       const std::string& host,
       double level) OVERRIDE;
@@ -40,10 +46,36 @@ class CONTENT_EXPORT HostZoomMapImpl : public NON_EXPORTED_BASE(HostZoomMap),
       const std::string& scheme,
       const std::string& host,
       double level) OVERRIDE;
+  virtual bool UsesTemporaryZoomLevel(int render_process_id,
+                                      int render_view_id) const OVERRIDE;
+  virtual void SetTemporaryZoomLevel(int render_process_id,
+                                     int render_view_id,
+                                     double level) OVERRIDE;
+
+  virtual void ClearTemporaryZoomLevel(int render_process_id,
+                                       int render_view_id) OVERRIDE;
   virtual double GetDefaultZoomLevel() const OVERRIDE;
   virtual void SetDefaultZoomLevel(double level) OVERRIDE;
   virtual scoped_ptr<Subscription> AddZoomLevelChangedCallback(
       const ZoomLevelChangedCallback& callback) OVERRIDE;
+
+  // Returns the current zoom level for the specified WebContents. This may
+  // be a temporary zoom level, depending on UsesTemporaryZoomLevel().
+  double GetZoomLevelForWebContents(
+      const WebContentsImpl& web_contents_impl) const;
+
+  // Sets the zoom level for this WebContents. If this WebContents is using
+  // a temporary zoom level, then level is only applied to this WebContents.
+  // Otherwise, the level will be applied on a host level.
+  void SetZoomLevelForWebContents(const WebContentsImpl& web_contents_impl,
+                                  double level);
+
+  // Sets the zoom level for the specified view. The level may be set for only
+  // this view, or for the host, depending on UsesTemporaryZoomLevel().
+  void SetZoomLevelForView(int render_process_id,
+                           int render_view_id,
+                           double level,
+                           const std::string& host);
 
   // Returns the temporary zoom level that's only valid for the lifetime of
   // the given WebContents (i.e. isn't saved and doesn't affect other
@@ -53,24 +85,38 @@ class CONTENT_EXPORT HostZoomMapImpl : public NON_EXPORTED_BASE(HostZoomMap),
   double GetTemporaryZoomLevel(int render_process_id,
                                int render_view_id) const;
 
-  // Sets the temporary zoom level that's only valid for the lifetime of this
-  // WebContents.
-  //
-  // This should only be called on the UI thread.
-  void SetTemporaryZoomLevel(int render_process_id,
-                             int render_view_id,
-                             double level);
-
   // NotificationObserver implementation.
   virtual void Observe(int type,
                        const NotificationSource& source,
                        const NotificationDetails& details) OVERRIDE;
 
  private:
-  double GetZoomLevelForHost(const std::string& host) const;
-
   typedef std::map<std::string, double> HostZoomLevels;
   typedef std::map<std::string, HostZoomLevels> SchemeHostZoomLevels;
+
+  struct RenderViewKey {
+    int render_process_id;
+    int render_view_id;
+    RenderViewKey(int render_process_id, int render_view_id)
+        : render_process_id(render_process_id),
+          render_view_id(render_view_id) {}
+    bool operator<(const RenderViewKey& other) const {
+      return render_process_id < other.render_process_id ||
+             ((render_process_id == other.render_process_id) &&
+              (render_view_id < other.render_view_id));
+    }
+  };
+
+  typedef std::map<RenderViewKey, double> TemporaryZoomLevels;
+
+  double GetZoomLevelForHost(const std::string& host) const;
+
+  // Notifies the renderers from this browser context to change the zoom level
+  // for the specified host and scheme.
+  // TODO(wjmaclean) Should we use a GURL here? crbug.com/384486
+  void SendZoomLevelChange(const std::string& scheme,
+                           const std::string& host,
+                           double level);
 
   // Callbacks called when zoom level changes.
   base::CallbackList<void(const ZoomLevelChange&)>
@@ -81,15 +127,9 @@ class CONTENT_EXPORT HostZoomMapImpl : public NON_EXPORTED_BASE(HostZoomMap),
   SchemeHostZoomLevels scheme_host_zoom_levels_;
   double default_zoom_level_;
 
-  struct TemporaryZoomLevel {
-    int render_process_id;
-    int render_view_id;
-    double zoom_level;
-  };
-
   // Don't expect more than a couple of tabs that are using a temporary zoom
   // level, so vector is fine for now.
-  std::vector<TemporaryZoomLevel> temporary_zoom_levels_;
+  TemporaryZoomLevels temporary_zoom_levels_;
 
   // Used around accesses to |host_zoom_levels_|, |default_zoom_level_| and
   // |temporary_zoom_levels_| to guarantee thread safety.

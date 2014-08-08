@@ -43,33 +43,36 @@ public:
     virtual ~AnimatableRepeatable() { }
 
     // This will consume the vector passed into it.
-    static PassRefPtr<AnimatableRepeatable> create(Vector<RefPtr<AnimatableValue> >& values)
+    static PassRefPtrWillBeRawPtr<AnimatableRepeatable> create(WillBeHeapVector<RefPtrWillBeMember<AnimatableValue> >& values)
     {
-        return adoptRef(new AnimatableRepeatable(values));
+        return adoptRefWillBeNoop(new AnimatableRepeatable(values));
     }
 
-    const Vector<RefPtr<AnimatableValue> >& values() const { return m_values; }
+    const WillBeHeapVector<RefPtrWillBeMember<AnimatableValue> >& values() const { return m_values; }
+
+    virtual void trace(Visitor*) OVERRIDE;
 
 protected:
     AnimatableRepeatable()
     {
     }
-    AnimatableRepeatable(Vector<RefPtr<AnimatableValue> >& values)
+    AnimatableRepeatable(WillBeHeapVector<RefPtrWillBeMember<AnimatableValue> >& values)
     {
         ASSERT(!values.isEmpty());
         m_values.swap(values);
     }
 
-    static bool interpolateLists(const Vector<RefPtr<AnimatableValue> >& fromValues, const Vector<RefPtr<AnimatableValue> >& toValues, double fraction, Vector<RefPtr<AnimatableValue> >& interpolatedValues);
+    static bool interpolateLists(const WillBeHeapVector<RefPtrWillBeMember<AnimatableValue> >& fromValues, const WillBeHeapVector<RefPtrWillBeMember<AnimatableValue> >& toValues, double fraction, WillBeHeapVector<RefPtrWillBeMember<AnimatableValue> >& interpolatedValues);
 
-    Vector<RefPtr<AnimatableValue> > m_values;
+    virtual bool usesDefaultInterpolationWith(const AnimatableValue*) const OVERRIDE;
+
+    WillBeHeapVector<RefPtrWillBeMember<AnimatableValue> > m_values;
 
 private:
-    virtual PassRefPtr<AnimatableValue> interpolateTo(const AnimatableValue*, double fraction) const OVERRIDE;
-    virtual PassRefPtr<AnimatableValue> addWith(const AnimatableValue*) const OVERRIDE;
+    virtual PassRefPtrWillBeRawPtr<AnimatableValue> interpolateTo(const AnimatableValue*, double fraction) const OVERRIDE;
 
     virtual AnimatableType type() const OVERRIDE { return TypeRepeatable; }
-    virtual bool equalTo(const AnimatableValue*) const OVERRIDE;
+    virtual bool equalTo(const AnimatableValue*) const OVERRIDE FINAL;
 };
 
 DEFINE_TYPE_CASTS(AnimatableRepeatable, AnimatableValue, value, (value->isRepeatable() || value->isStrokeDasharrayList()), (value.isRepeatable() || value.isStrokeDasharrayList()));

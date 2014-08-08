@@ -54,39 +54,36 @@ public:
 private:
     HTMLSelectElement* selectElement() const;
 
-    virtual bool isMenuList() const { return true; }
+    virtual bool isMenuList() const OVERRIDE { return true; }
+    virtual bool isChildAllowed(RenderObject*, RenderStyle*) const OVERRIDE;
 
-    virtual void addChild(RenderObject* newChild, RenderObject* beforeChild = 0);
-    virtual void removeChild(RenderObject*);
-    virtual bool createsAnonymousWrapper() const { return true; }
+    virtual void addChild(RenderObject* newChild, RenderObject* beforeChild = 0) OVERRIDE;
+    virtual void removeChild(RenderObject*) OVERRIDE;
+    virtual bool createsAnonymousWrapper() const OVERRIDE { return true; }
 
-    virtual void updateFromElement();
+    virtual void updateFromElement() OVERRIDE;
 
-    virtual LayoutRect controlClipRect(const LayoutPoint&) const;
-    virtual bool hasControlClip() const { return true; }
+    virtual LayoutRect controlClipRect(const LayoutPoint&) const OVERRIDE;
+    virtual bool hasControlClip() const OVERRIDE { return true; }
     virtual bool canHaveGeneratedChildren() const OVERRIDE { return false; }
 
-    virtual const char* renderName() const { return "RenderMenuList"; }
+    virtual const char* renderName() const OVERRIDE { return "RenderMenuList"; }
 
     virtual void computeIntrinsicLogicalWidths(LayoutUnit& minLogicalWidth, LayoutUnit& maxLogicalWidth) const OVERRIDE;
     virtual void computePreferredLogicalWidths() OVERRIDE;
 
-    virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle);
+    virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle) OVERRIDE;
 
     // PopupMenuClient methods
     virtual void valueChanged(unsigned listIndex, bool fireOnChange = true) OVERRIDE;
     virtual void selectionChanged(unsigned, bool) OVERRIDE { }
     virtual void selectionCleared() OVERRIDE { }
     virtual String itemText(unsigned listIndex) const OVERRIDE;
-    virtual String itemLabel(unsigned listIndex) const OVERRIDE;
-    virtual String itemIcon(unsigned listIndex) const OVERRIDE;
     virtual String itemToolTip(unsigned listIndex) const OVERRIDE;
     virtual String itemAccessibilityText(unsigned listIndex) const OVERRIDE;
     virtual bool itemIsEnabled(unsigned listIndex) const OVERRIDE;
     virtual PopupMenuStyle itemStyle(unsigned listIndex) const OVERRIDE;
     virtual PopupMenuStyle menuStyle() const OVERRIDE;
-    virtual int clientInsetLeft() const OVERRIDE;
-    virtual int clientInsetRight() const OVERRIDE;
     virtual LayoutUnit clientPaddingLeft() const OVERRIDE;
     virtual LayoutUnit clientPaddingRight() const OVERRIDE;
     virtual int listSize() const OVERRIDE;
@@ -95,15 +92,11 @@ private:
     virtual bool itemIsSeparator(unsigned listIndex) const OVERRIDE;
     virtual bool itemIsLabel(unsigned listIndex) const OVERRIDE;
     virtual bool itemIsSelected(unsigned listIndex) const OVERRIDE;
-    virtual bool valueShouldChangeOnHotTrack() const OVERRIDE { return true; }
     virtual void setTextFromItem(unsigned listIndex) OVERRIDE;
     virtual void listBoxSelectItem(int listIndex, bool allowMultiplySelections, bool shift, bool fireOnChangeNow = true) OVERRIDE;
     virtual bool multiple() const OVERRIDE;
-    virtual FontSelector* fontSelector() const OVERRIDE;
-    virtual HostWindow* hostWindow() const OVERRIDE;
-    virtual PassRefPtr<Scrollbar> createScrollbar(ScrollableArea*, ScrollbarOrientation, ScrollbarControlSize) OVERRIDE;
 
-    virtual bool hasLineIfEmpty() const { return true; }
+    virtual bool hasLineIfEmpty() const OVERRIDE { return true; }
 
     // Flexbox defines baselines differently than regular blocks.
     // For backwards compatibility, menulists need to do the regular block behavior.

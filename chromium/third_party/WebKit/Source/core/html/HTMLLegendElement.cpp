@@ -25,7 +25,7 @@
 #include "config.h"
 #include "core/html/HTMLLegendElement.h"
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 #include "core/dom/ElementTraversal.h"
 #include "core/html/HTMLFieldSetElement.h"
 #include "core/html/HTMLFormControlElement.h"
@@ -41,39 +41,30 @@ inline HTMLLegendElement::HTMLLegendElement(Document& document)
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLLegendElement> HTMLLegendElement::create(Document& document)
-{
-    return adoptRef(new HTMLLegendElement(document));
-}
+DEFINE_NODE_FACTORY(HTMLLegendElement)
 
 HTMLFormControlElement* HTMLLegendElement::associatedControl()
 {
     // Check if there's a fieldset belonging to this legend.
     Element* fieldset = parentElement();
-    while (fieldset && !fieldset->hasTagName(fieldsetTag))
+    while (fieldset && !isHTMLFieldSetElement(*fieldset))
         fieldset = fieldset->parentElement();
     if (!fieldset)
         return 0;
 
     // Find first form element inside the fieldset that is not a legend element.
     // FIXME: Should we consider tabindex?
-    Element* element = fieldset;
-    while ((element = ElementTraversal::next(*element, fieldset))) {
-        if (element->isFormControlElement())
-            return toHTMLFormControlElement(element);
-    }
-
-    return 0;
+    return Traversal<HTMLFormControlElement>::next(*fieldset, fieldset);
 }
 
-void HTMLLegendElement::focus(bool, FocusDirection direction)
+void HTMLLegendElement::focus(bool, FocusType type)
 {
     if (isFocusable())
-        Element::focus(true, direction);
+        Element::focus(true, type);
 
     // To match other browsers' behavior, never restore previous selection.
     if (HTMLFormControlElement* control = associatedControl())
-        control->focus(false, direction);
+        control->focus(false, type);
 }
 
 void HTMLLegendElement::accessKeyAction(bool sendMouseEvents)
@@ -88,7 +79,7 @@ HTMLFormElement* HTMLLegendElement::form() const
     // its parent, then the form attribute must return the same value as the
     // form attribute on that fieldset element. Otherwise, it must return null.
     ContainerNode* fieldset = parentNode();
-    if (!fieldset || !fieldset->hasTagName(fieldsetTag))
+    if (!isHTMLFieldSetElement(fieldset))
         return 0;
 
     return toHTMLFieldSetElement(fieldset)->formOwner();

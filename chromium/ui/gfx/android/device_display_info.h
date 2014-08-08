@@ -26,6 +26,18 @@ class GFX_EXPORT DeviceDisplayInfo {
   // Returns display width in physical pixels.
   int GetDisplayWidth();
 
+  // Returns real display height in physical pixels.
+  // This version does not subtract window decorations etc.
+  // WARNING: This is only supported on JB-MR1 (sdk >= 17). Either
+  //          check the SDK-level, or check for '0' being returned.
+  int GetPhysicalDisplayHeight();
+
+  // Returns real display width in physical pixels.
+  // This version does not subtract window decorations etc.
+  // WARNING: This is only supported on JB-MR1 (sdk >= 17). Either
+  //          check the SDK-level, or check for '0' being returned.
+  int GetPhysicalDisplayWidth();
+
   // Returns number of bits per pixel.
   int GetBitsPerPixel();
 
@@ -38,6 +50,11 @@ class GFX_EXPORT DeviceDisplayInfo {
 
   // Smallest possible screen size in density-independent pixels.
   int GetSmallestDIPWidth();
+
+  // Returns the display rotation angle from its natural orientation. Expected
+  // values are one of { 0, 90, 180, 270 }.
+  // See DeviceDispayInfo.java for more information.
+  int GetRotationDegrees();
 
  private:
   DISALLOW_COPY_AND_ASSIGN(DeviceDisplayInfo);

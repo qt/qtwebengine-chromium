@@ -22,8 +22,9 @@
 #ifndef SVGFESpecularLightingElement_h
 #define SVGFESpecularLightingElement_h
 
-#include "SVGNames.h"
+#include "core/SVGNames.h"
 #include "core/svg/SVGAnimatedNumber.h"
+#include "core/svg/SVGAnimatedNumberOptionalNumber.h"
 #include "core/svg/SVGFELightElement.h"
 #include "core/svg/SVGFilterPrimitiveStandardAttributes.h"
 #include "platform/graphics/filters/FESpecularLighting.h"
@@ -32,32 +33,33 @@ namespace WebCore {
 
 class SVGFESpecularLightingElement FINAL : public SVGFilterPrimitiveStandardAttributes {
 public:
-    static PassRefPtr<SVGFESpecularLightingElement> create(Document&);
+    DECLARE_NODE_FACTORY(SVGFESpecularLightingElement);
     void lightElementAttributeChanged(const SVGFELightElement*, const QualifiedName&);
 
+    SVGAnimatedNumber* specularConstant() { return m_specularConstant.get(); }
+    SVGAnimatedNumber* specularExponent() { return m_specularExponent.get(); }
+    SVGAnimatedNumber* surfaceScale() { return m_surfaceScale.get(); }
+    SVGAnimatedNumber* kernelUnitLengthX() { return m_kernelUnitLength->firstNumber(); }
+    SVGAnimatedNumber* kernelUnitLengthY() { return m_kernelUnitLength->secondNumber(); }
+    SVGAnimatedString* in1() { return m_in1.get(); }
 private:
     explicit SVGFESpecularLightingElement(Document&);
 
     bool isSupportedAttribute(const QualifiedName&);
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual bool setFilterEffectAttribute(FilterEffect*, const QualifiedName&);
-    virtual void svgAttributeChanged(const QualifiedName&);
-    virtual PassRefPtr<FilterEffect> build(SVGFilterBuilder*, Filter*);
+    virtual bool setFilterEffectAttribute(FilterEffect*, const QualifiedName&) OVERRIDE;
+    virtual void svgAttributeChanged(const QualifiedName&) OVERRIDE;
+    virtual PassRefPtr<FilterEffect> build(SVGFilterBuilder*, Filter*) OVERRIDE;
 
     static const AtomicString& kernelUnitLengthXIdentifier();
     static const AtomicString& kernelUnitLengthYIdentifier();
 
-    BEGIN_DECLARE_ANIMATED_PROPERTIES(SVGFESpecularLightingElement)
-        DECLARE_ANIMATED_STRING(In1, in1)
-        DECLARE_ANIMATED_NUMBER(SpecularConstant, specularConstant)
-        DECLARE_ANIMATED_NUMBER(SpecularExponent, specularExponent)
-        DECLARE_ANIMATED_NUMBER(SurfaceScale, surfaceScale)
-        DECLARE_ANIMATED_NUMBER(KernelUnitLengthX, kernelUnitLengthX)
-        DECLARE_ANIMATED_NUMBER(KernelUnitLengthY, kernelUnitLengthY)
-    END_DECLARE_ANIMATED_PROPERTIES
+    RefPtr<SVGAnimatedNumber> m_specularConstant;
+    RefPtr<SVGAnimatedNumber> m_specularExponent;
+    RefPtr<SVGAnimatedNumber> m_surfaceScale;
+    RefPtr<SVGAnimatedNumberOptionalNumber> m_kernelUnitLength;
+    RefPtr<SVGAnimatedString> m_in1;
 };
-
-DEFINE_NODE_TYPE_CASTS(SVGFESpecularLightingElement, hasTagName(SVGNames::feSpecularLightingTag));
 
 } // namespace WebCore
 

@@ -28,8 +28,8 @@
 
 #include "core/accessibility/AXObjectCache.h"
 #include "core/accessibility/AXScrollbar.h"
-#include "core/frame/Frame.h"
 #include "core/frame/FrameView.h"
+#include "core/frame/LocalFrame.h"
 #include "core/html/HTMLFrameOwnerElement.h"
 
 namespace WebCore {
@@ -103,14 +103,14 @@ void AXScrollView::updateScrollbars()
         m_horizontalScrollbar = addChildScrollbar(m_scrollView->horizontalScrollbar());
     } else if (!m_scrollView->horizontalScrollbar() && m_horizontalScrollbar) {
         removeChildScrollbar(m_horizontalScrollbar.get());
-        m_horizontalScrollbar = 0;
+        m_horizontalScrollbar = nullptr;
     }
 
     if (m_scrollView->verticalScrollbar() && !m_verticalScrollbar) {
         m_verticalScrollbar = addChildScrollbar(m_scrollView->verticalScrollbar());
     } else if (!m_scrollView->verticalScrollbar() && m_verticalScrollbar) {
         removeChildScrollbar(m_verticalScrollbar.get());
-        m_verticalScrollbar = 0;
+        m_verticalScrollbar = nullptr;
     }
 }
 
@@ -137,8 +137,8 @@ AXScrollbar* AXScrollView::addChildScrollbar(Scrollbar* scrollbar)
 void AXScrollView::clearChildren()
 {
     AXObject::clearChildren();
-    m_verticalScrollbar = 0;
-    m_horizontalScrollbar = 0;
+    m_verticalScrollbar = nullptr;
+    m_horizontalScrollbar = nullptr;
 }
 
 bool AXScrollView::computeAccessibilityIsIgnored() const
@@ -168,7 +168,7 @@ AXObject* AXScrollView::webAreaObject() const
         return 0;
 
     Document* doc = toFrameView(m_scrollView)->frame().document();
-    if (!doc || !doc->renderer())
+    if (!doc || !doc->renderView())
         return 0;
 
     return axObjectCache()->getOrCreate(doc);
@@ -209,7 +209,8 @@ AXObject* AXScrollView::parentObject() const
     if (!m_scrollView || !m_scrollView->isFrameView())
         return 0;
 
-    HTMLFrameOwnerElement* owner = toFrameView(m_scrollView)->frame().ownerElement();
+    // FIXME: Broken for OOPI.
+    HTMLFrameOwnerElement* owner = toFrameView(m_scrollView)->frame().deprecatedLocalOwner();
     if (owner && owner->renderer())
         return axObjectCache()->getOrCreate(owner);
 
@@ -221,7 +222,7 @@ AXObject* AXScrollView::parentObjectIfExists() const
     if (!m_scrollView || !m_scrollView->isFrameView())
         return 0;
 
-    HTMLFrameOwnerElement* owner = toFrameView(m_scrollView)->frame().ownerElement();
+    HTMLFrameOwnerElement* owner = toFrameView(m_scrollView)->frame().deprecatedLocalOwner();
     if (owner && owner->renderer())
         return axObjectCache()->get(owner);
 

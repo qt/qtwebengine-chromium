@@ -29,30 +29,30 @@
  */
 
 #include "config.h"
-#include "WebDOMMediaStreamTrack.h"
+#include "public/web/WebDOMMediaStreamTrack.h"
 
 #include "V8MediaStreamTrack.h"
 #include "modules/mediastream/MediaStreamTrack.h"
 
 namespace blink {
 
-WebDOMMediaStreamTrack::WebDOMMediaStreamTrack(PassRefPtr<WebCore::MediaStreamTrack> track)
+WebDOMMediaStreamTrack::WebDOMMediaStreamTrack(PassRefPtrWillBeRawPtr<WebCore::MediaStreamTrack> track)
     : m_private(track)
 {
 }
 
 WebDOMMediaStreamTrack WebDOMMediaStreamTrack::fromV8Value(v8::Handle<v8::Value> value)
 {
-    if (WebCore::V8MediaStreamTrack::hasInstanceInAnyWorld(value, v8::Isolate::GetCurrent())) {
+    if (WebCore::V8MediaStreamTrack::hasInstance(value, v8::Isolate::GetCurrent())) {
         v8::Handle<v8::Object> object = v8::Handle<v8::Object>::Cast(value);
         return WebDOMMediaStreamTrack(WebCore::V8MediaStreamTrack::toNative(object));
     }
-    return WebDOMMediaStreamTrack(0);
+    return WebDOMMediaStreamTrack(nullptr);
 }
 
 void WebDOMMediaStreamTrack::reset()
 {
-    m_private = 0;
+    m_private.reset();
 }
 
 void WebDOMMediaStreamTrack::assign(const WebDOMMediaStreamTrack& b)

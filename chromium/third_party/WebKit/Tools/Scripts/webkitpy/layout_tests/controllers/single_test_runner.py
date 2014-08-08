@@ -31,6 +31,7 @@ import logging
 import re
 import time
 
+from webkitpy.layout_tests.controllers import repaint_overlay
 from webkitpy.layout_tests.controllers import test_result_writer
 from webkitpy.layout_tests.port.driver import DeviceFailure, DriverInput, DriverOutput
 from webkitpy.layout_tests.models import test_expectations
@@ -107,10 +108,12 @@ class SingleTestRunner(object):
             args = self._port.lookup_virtual_test_args(self._test_name)
         else:
             test_name = self._test_name
-            args = []
+            args = self._port.lookup_physical_test_args(self._test_name)
         return DriverInput(test_name, self._timeout, image_hash, self._should_run_pixel_test, args)
 
     def run(self):
+        if self._options.enable_sanitizer:
+            return self._run_sanitized_test()
         if self._reference_files:
             if self._options.reset_results:
                 reftest_type = set([reference_file[0] for reference_file in self._reference_files])
@@ -121,6 +124,16 @@ class SingleTestRunner(object):
         if self._options.reset_results:
             return self._run_rebaseline()
         return self._run_compare_test()
+
+    def _run_sanitized_test(self):
+        # running a sanitized test means that we ignore the actual test output and just look
+        # for timeouts and crashes (real or forced by the driver). Most crashes should
+        # indicate problems found by a sanitizer (ASAN, LSAN, etc.), but we will report
+        # on other crashes and timeouts as well in order to detect at least *some* basic failures.
+        driver_output = self._driver.run_test(self._driver_input(), self._stop_when_done)
+        failures = self._handle_error(driver_output)
+        return TestResult(self._test_name, failures, driver_output.test_time, driver_output.has_stderr(),
+                          pid=driver_output.pid)
 
     def _run_compare_test(self):
         driver_output = self._driver.run_test(self._driver_input(), self._stop_when_done)
@@ -220,6 +233,10 @@ class SingleTestRunner(object):
                 _log.debug("%s %s crashed, (stderr lines):" % (self._worker_name, testname))
             else:
                 _log.debug("%s %s crashed, (no stderr)" % (self._worker_name, testname))
+        elif driver_output.leak:
+            failures.append(test_failures.FailureLeak(bool(reference_filename),
+                                                      driver_output.leak_log))
+            _log.debug("%s %s leaked" % (self._worker_name, testname))
         elif driver_output.error:
             _log.debug("%s %s output stderr lines:" % (self._worker_name, testname))
         for line in driver_output.error.splitlines():
@@ -236,12 +253,53 @@ class SingleTestRunner(object):
             return TestResult(self._test_name, failures, driver_output.test_time, driver_output.has_stderr(),
                               pid=driver_output.pid)
 
-        failures.extend(self._compare_text(expected_driver_output.text, driver_output.text))
-        failures.extend(self._compare_audio(expected_driver_output.audio, driver_output.audio))
-        if self._should_run_pixel_test:
-            failures.extend(self._compare_image(expected_driver_output, driver_output))
+        is_testharness_test, testharness_failures = self._compare_testharness_test(driver_output, expected_driver_output)
+        if is_testharness_test:
+            failures.extend(testharness_failures)
+        else:
+            failures.extend(self._compare_text(expected_driver_output.text, driver_output.text))
+            failures.extend(self._compare_audio(expected_driver_output.audio, driver_output.audio))
+            if self._should_run_pixel_test:
+                failures.extend(self._compare_image(expected_driver_output, driver_output))
         return TestResult(self._test_name, failures, driver_output.test_time, driver_output.has_stderr(),
-                          pid=driver_output.pid)
+                          pid=driver_output.pid,
+                          has_repaint_overlay=repaint_overlay.result_contains_repaint_rects(expected_driver_output.text))
+
+    def _compare_testharness_test(self, driver_output, expected_driver_output):
+        if expected_driver_output.image or expected_driver_output.audio or expected_driver_output.text:
+            return False, []
+
+        if driver_output.image or driver_output.audio or self._is_render_tree(driver_output.text):
+            return False, []
+
+        failures = []
+        found_a_pass = False
+        text = driver_output.text or ''
+        lines = text.strip().splitlines()
+        lines = [line.strip() for line in lines]
+        header = 'This is a testharness.js-based test.'
+        footer = 'Harness: the test ran to completion.'
+        if not lines or not header in lines:
+            return False, []
+        if not footer in lines:
+            return True, [test_failures.FailureTestHarnessAssertion()]
+
+        for line in lines:
+            if line == header or line == footer or line.startswith('PASS'):
+                continue
+            # CONSOLE output can happen during tests and shouldn't break them.
+            if line.startswith('CONSOLE'):
+                continue
+
+            if line.startswith('FAIL') or line.startswith('TIMEOUT'):
+                return True, [test_failures.FailureTestHarnessAssertion()]
+
+            # Fail the test if there is any unrecognized output.
+            return True, [test_failures.FailureTestHarnessAssertion()]
+        return True, []
+
+    def _is_render_tree(self, text):
+        return text and "layer at (0,0) size 800x600" in text
 
     def _compare_text(self, expected_text, actual_text):
         failures = []
@@ -318,9 +376,13 @@ class SingleTestRunner(object):
         putAllMismatchBeforeMatch = sorted
         reference_test_names = []
         for expectation, reference_filename in putAllMismatchBeforeMatch(self._reference_files):
+            if self._port.lookup_virtual_test_base(self._test_name):
+                args = self._port.lookup_virtual_test_args(self._test_name)
+            else:
+                args = self._port.lookup_physical_test_args(self._test_name)
             reference_test_name = self._port.relative_test_filename(reference_filename)
             reference_test_names.append(reference_test_name)
-            driver_input = DriverInput(reference_test_name, self._timeout, image_hash=None, should_run_pixel_test=True, args=self._port.lookup_virtual_test_args(reference_test_name))
+            driver_input = DriverInput(reference_test_name, self._timeout, image_hash=None, should_run_pixel_test=True, args=args)
             reference_output = self._driver.run_test(driver_input, self._stop_when_done)
             test_result = self._compare_output_with_reference(reference_output, test_output, reference_filename, expectation == '!=')
 

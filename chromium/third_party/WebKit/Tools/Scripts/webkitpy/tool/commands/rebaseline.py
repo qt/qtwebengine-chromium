@@ -23,7 +23,7 @@
 # LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
 # DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
 # THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# (INCLUDING NEGLIGENCE OR/ OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 import json
@@ -72,6 +72,13 @@ class AbstractRebaseliningCommand(AbstractDeclarativeCommand):
     def __init__(self, options=None):
         super(AbstractRebaseliningCommand, self).__init__(options=options)
         self._baseline_suffix_list = BASELINE_SUFFIX_LIST
+        self._scm_changes = {'add': [], 'delete': [], 'remove-lines': []}
+
+    def _add_to_scm_later(self, path):
+        self._scm_changes['add'].append(path)
+
+    def _delete_from_scm_later(self, path):
+        self._scm_changes['delete'].append(path)
 
 
 class BaseInternalRebaselineCommand(AbstractRebaseliningCommand):
@@ -82,10 +89,6 @@ class BaseInternalRebaselineCommand(AbstractRebaseliningCommand):
             optparse.make_option("--builder", help="Builder to pull new baselines from"),
             optparse.make_option("--test", help="Test to rebaseline"),
             ])
-        self._scm_changes = {'add': [], 'remove-lines': []}
-
-    def _add_to_scm(self, path):
-        self._scm_changes['add'].append(path)
 
     def _baseline_directory(self, builder_name):
         port = self._tool.port_factory.get_from_builder_name(builder_name)
@@ -168,7 +171,7 @@ class CopyExistingBaselinesInternal(BaseInternalRebaselineCommand):
             self._tool.filesystem.maybe_make_directory(self._tool.filesystem.dirname(new_baseline))
             self._tool.filesystem.copyfile(old_baseline, new_baseline)
             if not self._tool.scm().exists(new_baseline):
-                self._add_to_scm(new_baseline)
+                self._add_to_scm_later(new_baseline)
 
     def execute(self, options, args, tool):
         for suffix in options.suffixes.split(','):
@@ -192,7 +195,7 @@ class RebaselineTest(BaseInternalRebaselineCommand):
         filesystem.maybe_make_directory(filesystem.dirname(target_baseline))
         filesystem.write_binary_file(target_baseline, data)
         if not self._tool.scm().exists(target_baseline):
-            self._add_to_scm(target_baseline)
+            self._add_to_scm_later(target_baseline)
 
     def _rebaseline_test(self, builder_name, test_name, suffix, results_url):
         baseline_directory = self._baseline_directory(builder_name)
@@ -231,13 +234,18 @@ class OptimizeBaselines(AbstractRebaseliningCommand):
     argument_names = "TEST_NAMES"
 
     def __init__(self):
-        super(OptimizeBaselines, self).__init__(options=[self.suffixes_option] + self.platform_options)
+        super(OptimizeBaselines, self).__init__(options=[
+            self.suffixes_option,
+            optparse.make_option('--no-modify-scm', action='store_true', default=False, help='Dump SCM commands as JSON instead of '),
+            ] + self.platform_options)
 
     def _optimize_baseline(self, optimizer, test_name):
         for suffix in self._baseline_suffix_list:
             baseline_name = _baseline_name(self._tool.filesystem, test_name, suffix)
-            if not optimizer.optimize(baseline_name):
+            succeeded, files_to_delete, files_to_add = optimizer.optimize(baseline_name)
+            if not succeeded:
                 print "Heuristics failed to optimize %s" % baseline_name
+            return files_to_delete, files_to_add
 
     def execute(self, options, args, tool):
         self._baseline_suffix_list = options.suffixes.split(',')
@@ -246,11 +254,17 @@ class OptimizeBaselines(AbstractRebaseliningCommand):
             print "No port names match '%s'" % options.platform
             return
 
-        optimizer = BaselineOptimizer(tool, port_names)
+        optimizer = BaselineOptimizer(tool, port_names, skip_scm_commands=options.no_modify_scm)
         port = tool.port_factory.get(port_names[0])
         for test_name in port.tests(args):
             _log.info("Optimizing %s" % test_name)
-            self._optimize_baseline(optimizer, test_name)
+            files_to_delete, files_to_add = self._optimize_baseline(optimizer, test_name)
+            for path in files_to_delete:
+                self._delete_from_scm_later(path)
+            for path in files_to_add:
+                self._add_to_scm_later(path)
+
+        print json.dumps(self._scm_changes)
 
 
 class AnalyzeBaselines(AbstractRebaseliningCommand):
@@ -288,7 +302,7 @@ class AnalyzeBaselines(AbstractRebaseliningCommand):
             print "No port names match '%s'" % options.platform
             return
 
-        self._baseline_optimizer = self._optimizer_class(tool, port_names)
+        self._baseline_optimizer = self._optimizer_class(tool, port_names, skip_scm_commands=False)
         self._port = tool.port_factory.get(port_names[0])
         for test_name in self._port.tests(args):
             self._analyze_baseline(options, test_name)
@@ -312,6 +326,8 @@ class AbstractParallelRebaselineCommand(AbstractRebaseliningCommand):
     def _release_builders(self):
         release_builders = []
         for builder_name in builders.all_builder_names():
+            if builder_name.find('ASAN') != -1:
+                continue
             port = self._tool.port_factory.get_from_builder_name(builder_name)
             if port.test_configuration().build_type == 'release':
                 release_builders.append(builder_name)
@@ -352,6 +368,7 @@ class AbstractParallelRebaselineCommand(AbstractRebaseliningCommand):
         cwd = self._tool.scm().checkout_root
         copy_baseline_commands = []
         rebaseline_commands = []
+        lines_to_remove = {}
         port = self._tool.port_factory.get()
 
         for test_prefix in test_prefix_list:
@@ -359,6 +376,11 @@ class AbstractParallelRebaselineCommand(AbstractRebaseliningCommand):
                 for builder in self._builders_to_fetch_from(test_prefix_list[test_prefix]):
                     actual_failures_suffixes = self._suffixes_for_actual_failures(test, builder, test_prefix_list[test_prefix][builder])
                     if not actual_failures_suffixes:
+                        # If we're not going to rebaseline the test because it's passing on this
+                        # builder, we still want to remove the line from TestExpectations.
+                        if test not in lines_to_remove:
+                            lines_to_remove[test] = []
+                        lines_to_remove[test].append(builder)
                         continue
 
                     suffixes = ','.join(actual_failures_suffixes)
@@ -369,10 +391,11 @@ class AbstractParallelRebaselineCommand(AbstractRebaseliningCommand):
                         cmd_line.append('--verbose')
                     copy_baseline_commands.append(tuple([[path_to_webkit_patch, 'copy-existing-baselines-internal'] + cmd_line, cwd]))
                     rebaseline_commands.append(tuple([[path_to_webkit_patch, 'rebaseline-test-internal'] + cmd_line, cwd]))
-        return copy_baseline_commands, rebaseline_commands
+        return copy_baseline_commands, rebaseline_commands, lines_to_remove
 
-    def _files_to_add(self, command_results):
+    def _serial_commands(self, command_results):
         files_to_add = set()
+        files_to_delete = set()
         lines_to_remove = {}
         for output in [result[1].split('\n') for result in command_results]:
             file_added = False
@@ -382,6 +405,8 @@ class AbstractParallelRebaselineCommand(AbstractRebaseliningCommand):
                         parsed_line = json.loads(line)
                         if 'add' in parsed_line:
                             files_to_add.update(parsed_line['add'])
+                        if 'delete' in parsed_line:
+                            files_to_delete.update(parsed_line['delete'])
                         if 'remove-lines' in parsed_line:
                             for line_to_remove in parsed_line['remove-lines']:
                                 test = line_to_remove['test']
@@ -396,49 +421,66 @@ class AbstractParallelRebaselineCommand(AbstractRebaseliningCommand):
             if not file_added:
                 _log.debug('Could not add file based off output "%s"' % output)
 
-        return list(files_to_add), lines_to_remove
+        return list(files_to_add), list(files_to_delete), lines_to_remove
 
     def _optimize_baselines(self, test_prefix_list, verbose=False):
-        # We don't run this in parallel because modifying the SCM in parallel is unreliable.
+        optimize_commands = []
         for test in test_prefix_list:
             all_suffixes = set()
             for builder in self._builders_to_fetch_from(test_prefix_list[test]):
                 all_suffixes.update(self._suffixes_for_actual_failures(test, builder, test_prefix_list[test][builder]))
+
             # FIXME: We should propagate the platform options as well.
-            self._run_webkit_patch(['optimize-baselines', '--suffixes', ','.join(all_suffixes), test], verbose)
+            cmd_line = ['--no-modify-scm', '--suffixes', ','.join(all_suffixes), test]
+            if verbose:
+                cmd_line.append('--verbose')
+
+            path_to_webkit_patch = self._tool.path()
+            cwd = self._tool.scm().checkout_root
+            optimize_commands.append(tuple([[path_to_webkit_patch, 'optimize-baselines'] + cmd_line, cwd]))
+        return optimize_commands
 
     def _update_expectations_files(self, lines_to_remove):
-        # FIXME: This routine is way too expensive. We're creating N ports and N TestExpectations
-        # objects and (re-)writing the actual expectations file N times, for each test we update.
-        # We should be able to update everything in memory, once, and then write the file out a single time.
+        # FIXME: This routine is way too expensive. We're creating O(n ports) TestExpectations objects.
+        # This is slow and uses a lot of memory.
+        tests = lines_to_remove.keys()
+        to_remove = []
+
+        # This is so we remove lines for builders that skip this test, e.g. Android skips most
+        # tests and we don't want to leave stray [ Android ] lines in TestExpectations..
+        # This is only necessary for "webkit-patch rebaseline" and for rebaselining expected
+        # failures from garden-o-matic. rebaseline-expectations and auto-rebaseline will always
+        # pass the exact set of ports to rebaseline.
+        for port_name in self._tool.port_factory.all_port_names():
+            port = self._tool.port_factory.get(port_name)
+            generic_expectations = TestExpectations(port, tests=tests, include_overrides=False)
+            full_expectations = TestExpectations(port, tests=tests, include_overrides=True)
+            for test in tests:
+                if self._port_skips_test(port, test, generic_expectations, full_expectations):
+                    for test_configuration in port.all_test_configurations():
+                        if test_configuration.version == port.test_configuration().version:
+                            to_remove.append((test, test_configuration))
+
         for test in lines_to_remove:
             for builder in lines_to_remove[test]:
                 port = self._tool.port_factory.get_from_builder_name(builder)
-                path = port.path_to_generic_test_expectations_file()
-                expectations = TestExpectations(port, include_overrides=False)
                 for test_configuration in port.all_test_configurations():
                     if test_configuration.version == port.test_configuration().version:
-                        expectationsString = expectations.remove_configuration_from_test(test, test_configuration)
-                self._tool.filesystem.write_text_file(path, expectationsString)
+                        to_remove.append((test, test_configuration))
 
-            for port_name in self._tool.port_factory.all_port_names():
-                port = self._tool.port_factory.get(port_name)
-                generic_expectations = TestExpectations(port, tests=[test], include_overrides=False)
-                if self._port_skips_test(port, test, generic_expectations):
-                    for test_configuration in port.all_test_configurations():
-                        if test_configuration.version == port.test_configuration().version:
-                            expectationsString = generic_expectations.remove_configuration_from_test(test, test_configuration)
-                    generic_path = port.path_to_generic_test_expectations_file()
-                    self._tool.filesystem.write_text_file(generic_path, expectationsString)
+        port = self._tool.port_factory.get()
+        expectations = TestExpectations(port, include_overrides=False)
+        expectationsString = expectations.remove_configurations(to_remove)
+        path = port.path_to_generic_test_expectations_file()
+        self._tool.filesystem.write_text_file(path, expectationsString)
 
-    def _port_skips_test(self, port, test, generic_expectations):
+    def _port_skips_test(self, port, test, generic_expectations, full_expectations):
         fs = port.host.filesystem
         if port.default_smoke_test_only():
             smoke_test_filename = fs.join(port.layout_tests_dir(), 'SmokeTests')
             if fs.exists(smoke_test_filename) and test not in fs.read_text_file(smoke_test_filename):
                 return True
 
-        full_expectations = TestExpectations(port, tests=[test], include_overrides=True)
         return (SKIP in full_expectations.get_expectations(test) and
                 SKIP not in generic_expectations.get_expectations(test))
 
@@ -449,11 +491,12 @@ class AbstractParallelRebaselineCommand(AbstractRebaseliningCommand):
             if line:
                 print >> sys.stderr, line  # FIXME: Figure out how to log properly.
 
-        files_to_add, lines_to_remove = self._files_to_add(command_results)
+        files_to_add, files_to_delete, lines_to_remove = self._serial_commands(command_results)
+        if files_to_delete:
+            self._tool.scm().delete_list(files_to_delete)
         if files_to_add:
-            self._tool.scm().add_list(list(files_to_add))
-        if lines_to_remove:
-            self._update_expectations_files(lines_to_remove)
+            self._tool.scm().add_list(files_to_add)
+        return lines_to_remove
 
     def _rebaseline(self, options, test_prefix_list):
         for test, builders_to_check in sorted(test_prefix_list.items()):
@@ -461,14 +504,25 @@ class AbstractParallelRebaselineCommand(AbstractRebaseliningCommand):
             for builder, suffixes in sorted(builders_to_check.items()):
                 _log.debug("  %s: %s" % (builder, ",".join(suffixes)))
 
-        copy_baseline_commands, rebaseline_commands = self._rebaseline_commands(test_prefix_list, options)
+        copy_baseline_commands, rebaseline_commands, extra_lines_to_remove = self._rebaseline_commands(test_prefix_list, options)
+        lines_to_remove = {}
+
         if copy_baseline_commands:
             self._run_in_parallel_and_update_scm(copy_baseline_commands)
         if rebaseline_commands:
-            self._run_in_parallel_and_update_scm(rebaseline_commands)
+            lines_to_remove = self._run_in_parallel_and_update_scm(rebaseline_commands)
+
+        for test in extra_lines_to_remove:
+            if test in lines_to_remove:
+                lines_to_remove[test] = lines_to_remove[test] + extra_lines_to_remove[test]
+            else:
+                lines_to_remove[test] = extra_lines_to_remove[test]
+
+        if lines_to_remove:
+            self._update_expectations_files(lines_to_remove)
 
         if options.optimize:
-            self._optimize_baselines(test_prefix_list, options.verbose)
+            self._run_in_parallel_and_update_scm(self._optimize_baselines(test_prefix_list, options.verbose))
 
     def _suffixes_for_actual_failures(self, test, builder_name, existing_suffixes):
         actual_results = self.builder_data()[builder_name].actual_results(test)
@@ -597,71 +651,20 @@ class AutoRebaseline(AbstractParallelRebaselineCommand):
     # FIXME: http://crbug.com/263676 Obviously we should fix the uploader here.
     MAX_LINES_TO_REBASELINE = 200
 
+    SECONDS_BEFORE_GIVING_UP = 300
+
     def __init__(self):
         super(AutoRebaseline, self).__init__(options=[
             # FIXME: Remove this option.
             self.no_optimize_option,
             # FIXME: Remove this option.
             self.results_directory_option,
-            optparse.make_option("--log-server", help="Server to send logs to.")
             ])
 
-    def _log_to_server(self, log_server, query):
-        if not log_server:
-            return
-        urllib2.urlopen("http://" + log_server + "/updatelog", data=urllib.urlencode(query))
-
-    # Logs when there are no NeedsRebaseline lines in TestExpectations.
-    # These entries overwrite the existing log entry if the existing
-    # entry is also a noneedsrebaseline entry. This is special cased
-    # so that the log doesn't get bloated with entries like this
-    # when there are no tests that needs rebaselining.
-    def _log_no_needs_rebaseline_lines(self, log_server):
-        self._log_to_server(log_server, {
-            "noneedsrebaseline": "on",
-        })
-
-    # Uploaded log entries append to the existing entry unless the
-    # newentry flag is set. In that case it starts a new entry to
-    # start appending to. So, we need to call this on any fresh run
-    # that is going to end up logging stuff (i.e. any run that isn't
-    # a noneedsrebaseline run).
-    def _start_new_log_entry(self, log_server):
-        self._log_to_server(log_server, {
-            "log": "",
-            "newentry": "on",
-        })
-
-    def _configure_logging(self, log_server):
-        if not log_server:
-            return
-
-        def _log_alias(query):
-            self._log_to_server(log_server, query)
-
-        class LogHandler(logging.Handler):
-            def __init__(self):
-                logging.Handler.__init__(self)
-                self._records = []
-
-            # Since this does not have the newentry flag, it will append
-            # to the most recent log entry (i.e. the one created by
-            # _start_new_log_entry.
-            def emit(self, record):
-                _log_alias({
-                    "log": record.getMessage(),
-                })
-
-        handler = LogHandler()
-        _log.setLevel(logging.DEBUG)
-        handler.setLevel(logging.DEBUG)
-        _log.addHandler(handler)
-
-    def bot_revision_data(self, log_server):
+    def bot_revision_data(self):
         revisions = []
         for result in self.builder_data().values():
             if result.run_was_interrupted():
-                self._start_new_log_entry(log_server)
                 _log.error("Can't rebaseline because the latest run on %s exited early." % result.builder_name())
                 return []
             revisions.append({
@@ -670,7 +673,7 @@ class AutoRebaseline(AbstractParallelRebaselineCommand):
             })
         return revisions
 
-    def tests_to_rebaseline(self, tool, min_revision, print_revisions, log_server):
+    def tests_to_rebaseline(self, tool, min_revision, print_revisions):
         port = tool.port_factory.get()
         expectations_file_path = port.path_to_generic_test_expectations_file()
 
@@ -689,8 +692,6 @@ class AutoRebaseline(AbstractParallelRebaselineCommand):
             if "NeedsRebaseline" not in line_without_comments:
                 continue
 
-            if not has_any_needs_rebaseline_lines:
-                self._start_new_log_entry(log_server)
             has_any_needs_rebaseline_lines = True
 
             parsed_line = re.match("^(\S*)[^(]*\((\S*).*?([^ ]*)\ \[[^[]*$", line_without_comments)
@@ -760,8 +761,24 @@ class AutoRebaseline(AbstractParallelRebaselineCommand):
         subprocess_command = ['git', 'cl'] + command
         if options.verbose:
             subprocess_command.append('--verbose')
-        # Use call instead of run_command so that stdout doesn't get swallowed.
-        self._tool.executive.call(subprocess_command)
+
+        process = self._tool.executive.popen(subprocess_command, stdout=self._tool.executive.PIPE, stderr=self._tool.executive.STDOUT)
+        last_output_time = time.time()
+
+        # git cl sometimes completely hangs. Bail if we haven't gotten any output to stdout/stderr in a while.
+        while process.poll() == None and time.time() < last_output_time + self.SECONDS_BEFORE_GIVING_UP:
+            # FIXME: This doesn't make any sense. readline blocks, so all this code to
+            # try and bail is useless. Instead, we should do the readline calls on a
+            # subthread. Then the rest of this code would make sense.
+            out = process.stdout.readline().rstrip('\n')
+            if out:
+                last_output_time = time.time()
+                _log.info(out)
+
+        if process.poll() == None:
+            _log.error('Command hung: %s' % subprocess_command)
+            return False
+        return True
 
     # FIXME: Move this somewhere more general.
     def tree_status(self):
@@ -782,18 +799,12 @@ class AutoRebaseline(AbstractParallelRebaselineCommand):
             _log.error("Cannot proceed with working directory changes. Clean working directory first.")
             return
 
-        self._configure_logging(options.log_server)
-
-        revision_data = self.bot_revision_data(options.log_server)
+        revision_data = self.bot_revision_data()
         if not revision_data:
             return
 
         min_revision = int(min([item["revision"] for item in revision_data]))
-        tests, revision, author, bugs, has_any_needs_rebaseline_lines = self.tests_to_rebaseline(tool, min_revision, print_revisions=options.verbose, log_server=options.log_server)
-
-        if not has_any_needs_rebaseline_lines:
-            self._log_no_needs_rebaseline_lines(options.log_server)
-            return
+        tests, revision, author, bugs, has_any_needs_rebaseline_lines = self.tests_to_rebaseline(tool, min_revision, print_revisions=options.verbose)
 
         if options.verbose:
             _log.info("Min revision across all bots is %s." % min_revision)
@@ -821,25 +832,22 @@ class AutoRebaseline(AbstractParallelRebaselineCommand):
             # to rebaseline, but we'll still need to update TestExpectations.
             if test_prefix_list:
                 self._rebaseline(options, test_prefix_list)
-            # If a test is not failing on the bot, we don't try to rebaseline it, but we still
-            # want to remove the NeedsRebaseline line.
-            self._update_expectations_files(lines_to_remove)
 
             tool.scm().commit_locally_with_message(self.commit_message(author, revision, bugs))
-
-            # FIXME: Log the upload, pull and dcommit stdout/stderr to the log-server.
 
             # FIXME: It would be nice if we could dcommit the patch without uploading, but still
             # go through all the precommit hooks. For rebaselines with lots of files, uploading
             # takes a long time and sometimes fails, but we don't want to commit if, e.g. the
             # tree is closed.
-            self._run_git_cl_command(options, ['upload', '-f'])
+            did_finish = self._run_git_cl_command(options, ['upload', '-f'])
 
-            # Uploading can take a very long time. Do another pull to make sure TestExpectations is up to date,
-            # so the dcommit can go through.
-            tool.executive.run_command(['git', 'pull'])
+            if did_finish:
+                # Uploading can take a very long time. Do another pull to make sure TestExpectations is up to date,
+                # so the dcommit can go through.
+                # FIXME: Log the pull and dcommit stdout/stderr to the log-server.
+                tool.executive.run_command(['git', 'pull'])
 
-            self._run_git_cl_command(options, ['dcommit', '-f'])
+                self._run_git_cl_command(options, ['dcommit', '-f'])
         finally:
             self._run_git_cl_command(options, ['set_close'])
             tool.scm().ensure_cleanly_tracking_remote_master()
@@ -853,17 +861,51 @@ class RebaselineOMatic(AbstractDeclarativeCommand):
     show_in_main_help = True
 
     SLEEP_TIME_IN_SECONDS = 30
+    LOG_SERVER = 'blinkrebaseline.appspot.com'
+
+    # Uploaded log entries append to the existing entry unless the
+    # newentry flag is set. In that case it starts a new entry to
+    # start appending to.
+    def _log_to_server(self, log='', is_new_entry=False):
+        query = {
+            'log': log,
+        }
+        if is_new_entry:
+            query['newentry'] = 'on'
+        urllib2.urlopen("http://" + self.LOG_SERVER + "/updatelog", data=urllib.urlencode(query))
+
+    def _log_line(self, handle):
+        out = handle.readline().rstrip('\n')
+        if out:
+            if self._verbose:
+                print out
+            self._log_to_server(out)
+        return out
+
+    def _run_logged_command(self, command):
+        process = self._tool.executive.popen(command, stdout=self._tool.executive.PIPE, stderr=self._tool.executive.STDOUT)
+
+        out = self._log_line(process.stdout)
+        while out:
+            # FIXME: This should probably batch up lines if they're available and log to the server once.
+            out = self._log_line(process.stdout)
+
+    def _do_one_rebaseline(self):
+        try:
+            old_branch_name = self._tool.scm().current_branch()
+            self._log_to_server(is_new_entry=True)
+            self._run_logged_command(['git', 'pull'])
+            rebaseline_command = [self._tool.filesystem.join(self._tool.scm().checkout_root, 'Tools', 'Scripts', 'webkit-patch'), 'auto-rebaseline']
+            if self._verbose:
+                rebaseline_command.append('--verbose')
+            self._run_logged_command(rebaseline_command)
+        except:
+            traceback.print_exc(file=sys.stderr)
+            # Sometimes git crashes and leaves us on a detached head.
+            self._tool.scm().checkout_branch(old_branch_name)
 
     def execute(self, options, args, tool):
+        self._verbose = options.verbose
         while True:
-            try:
-                tool.executive.run_command(['git', 'pull'])
-                rebaseline_command = [tool.filesystem.join(tool.scm().checkout_root, 'Tools', 'Scripts', 'webkit-patch'), 'auto-rebaseline', '--log-server', 'blinkrebaseline.appspot.com']
-                if options.verbose:
-                    rebaseline_command.append('--verbose')
-                # Use call instead of run_command so that stdout doesn't get swallowed.
-                tool.executive.call(rebaseline_command)
-            except:
-                traceback.print_exc(file=sys.stderr)
-
+            self._do_one_rebaseline()
             time.sleep(self.SLEEP_TIME_IN_SECONDS)

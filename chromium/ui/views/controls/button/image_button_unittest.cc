@@ -60,25 +60,6 @@ TEST_F(ImageButtonTest, Basics) {
   EXPECT_FALSE(button.GetImageToPaint().isNull());
   EXPECT_EQ(10, button.GetImageToPaint().width());
   EXPECT_EQ(20, button.GetImageToPaint().height());
-
-  // Set an overlay image.
-  gfx::ImageSkia overlay_image = CreateTestImage(12, 22);
-  button.SetOverlayImage(&overlay_image);
-  EXPECT_EQ(12, button.overlay_image_.width());
-  EXPECT_EQ(22, button.overlay_image_.height());
-
-  // By convention, preferred size doesn't change, even though pushed image
-  // is bigger.
-  EXPECT_EQ("10x20", button.GetPreferredSize().ToString());
-
-  // We're still painting the normal image.
-  EXPECT_FALSE(button.GetImageToPaint().isNull());
-  EXPECT_EQ(10, button.GetImageToPaint().width());
-  EXPECT_EQ(20, button.GetImageToPaint().height());
-
-  // Reset the overlay image.
-  button.SetOverlayImage(NULL);
-  EXPECT_TRUE(button.overlay_image_.isNull());
 }
 
 TEST_F(ImageButtonTest, SetAndGetImage) {
@@ -116,11 +97,11 @@ TEST_F(ImageButtonTest, ImagePositionWithBorder) {
   EXPECT_EQ(gfx::Point().ToString(),
             button.ComputeImagePaintPosition(image).ToString());
 
-  button.set_border(views::Border::CreateEmptyBorder(10, 5, 0, 0));
+  button.SetBorder(views::Border::CreateEmptyBorder(10, 5, 0, 0));
   EXPECT_EQ(gfx::Point(5, 10).ToString(),
             button.ComputeImagePaintPosition(image).ToString());
 
-  button.set_border(NULL);
+  button.SetBorder(Border::NullBorder());
   button.SetBounds(0, 0, 50, 50);
   EXPECT_EQ(gfx::Point().ToString(),
             button.ComputeImagePaintPosition(image).ToString());
@@ -129,7 +110,7 @@ TEST_F(ImageButtonTest, ImagePositionWithBorder) {
                            ImageButton::ALIGN_MIDDLE);
   EXPECT_EQ(gfx::Point(15, 10).ToString(),
             button.ComputeImagePaintPosition(image).ToString());
-  button.set_border(views::Border::CreateEmptyBorder(10, 10, 0, 0));
+  button.SetBorder(views::Border::CreateEmptyBorder(10, 10, 0, 0));
   EXPECT_EQ(gfx::Point(20, 15).ToString(),
             button.ComputeImagePaintPosition(image).ToString());
 }

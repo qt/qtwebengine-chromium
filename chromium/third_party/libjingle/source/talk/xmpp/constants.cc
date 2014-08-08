@@ -118,6 +118,10 @@ const char STR_MUC_ROOM_FEATURE_HANGOUT[] = "muc_es";
 const char STR_MUC_ROOM_FEATURE_HANGOUT_LITE[] = "muc_lite";
 const char STR_MUC_ROOM_FEATURE_BROADCAST[] = "broadcast";
 const char STR_MUC_ROOM_FEATURE_MULTI_USER_VC[] = "muc_muvc";
+const char STR_MUC_ROOM_FEATURE_RECORDABLE[] = "recordable";
+const char STR_MUC_ROOM_FEATURE_CUSTOM_RECORDING[] = "custom_recording";
+const char STR_MUC_ROOM_OWNER_PROFILE_ID[] = "muc#roominfo_owner_profile_id";
+const char STR_MUC_ROOM_FEATURE_ABUSE_RECORDABLE[] = "abuse_recordable";
 
 const char STR_ID_TYPE_CONVERSATION[] = "conversation";
 const char NS_GOOGLE_MUC_HANGOUT[] = "google:muc#hangout";
@@ -213,7 +217,6 @@ const char NS_GOOGLE_AUTH_PROTOCOL[] =
     "http://www.google.com/talk/protocol/auth";
 const StaticQName QN_GOOGLE_AUTH_CLIENT_USES_FULL_BIND_RESULT =
     { NS_GOOGLE_AUTH_PROTOCOL, "client-uses-full-bind-result" };
-const char NS_GOOGLE_AUTH_OLD[] = "google:auth";
 const StaticQName QN_GOOGLE_ALLOW_NON_GOOGLE_ID_XMPP_LOGIN =
     { NS_GOOGLE_AUTH_PROTOCOL, "allow-non-google-login" };
 const StaticQName QN_GOOGLE_AUTH_SERVICE =
@@ -342,8 +345,6 @@ const StaticQName QN_NICK = { STR_EMPTY, "nick" };
 const StaticQName QN_SUBSCRIPTION = { STR_EMPTY, "subscription" };
 const StaticQName QN_TITLE1 = { STR_EMPTY, "title1" };
 const StaticQName QN_TITLE2 = { STR_EMPTY, "title2" };
-const StaticQName QN_SOURCE = { STR_EMPTY, "source" };
-const StaticQName QN_TIME = { STR_EMPTY, "time" };
 
 const StaticQName QN_XMLNS_CLIENT = { NS_XMLNS, STR_CLIENT };
 const StaticQName QN_XMLNS_SERVER = { NS_XMLNS, STR_SERVER };

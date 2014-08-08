@@ -29,17 +29,16 @@
  */
 
 #include "config.h"
-#include "WebFormElement.h"
+#include "public/web/WebFormElement.h"
 
-#include "HTMLNames.h"
-#include "WebFormControlElement.h"
-#include "WebInputElement.h"
+#include "core/HTMLNames.h"
 #include "core/html/HTMLFormControlElement.h"
 #include "core/html/HTMLFormElement.h"
 #include "core/html/HTMLInputElement.h"
-#include "core/loader/FormState.h"
 #include "public/platform/WebString.h"
 #include "public/platform/WebURL.h"
+#include "public/web/WebFormControlElement.h"
+#include "public/web/WebInputElement.h"
 #include "wtf/PassRefPtr.h"
 
 using namespace WebCore;
@@ -79,7 +78,7 @@ void WebFormElement::submit()
 void WebFormElement::getNamedElements(const WebString& name,
                                       WebVector<WebNode>& result)
 {
-    Vector<RefPtr<Node> > tempVector;
+    WillBeHeapVector<RefPtrWillBeMember<Element> > tempVector;
     unwrap<HTMLFormElement>()->getNamedElements(name, tempVector);
     result.assign(tempVector);
 }
@@ -87,19 +86,19 @@ void WebFormElement::getNamedElements(const WebString& name,
 void WebFormElement::getFormControlElements(WebVector<WebFormControlElement>& result) const
 {
     const HTMLFormElement* form = constUnwrap<HTMLFormElement>();
-    Vector<RefPtr<HTMLFormControlElement> > formControlElements;
+    Vector<WebFormControlElement> formControlElements;
 
-    const Vector<FormAssociatedElement*>& associatedElements = form->associatedElements();
-    for (Vector<FormAssociatedElement*>::const_iterator it = associatedElements.begin(); it != associatedElements.end(); ++it) {
+    const FormAssociatedElement::List& associatedElements = form->associatedElements();
+    for (FormAssociatedElement::List::const_iterator it = associatedElements.begin(); it != associatedElements.end(); ++it) {
         if ((*it)->isFormControlElement())
             formControlElements.append(toHTMLFormControlElement(*it));
     }
     result.assign(formControlElements);
 }
 
-bool WebFormElement::checkValidityWithoutDispatchingEvents()
+bool WebFormElement::checkValidity()
 {
-    return unwrap<HTMLFormElement>()->checkValidityWithoutDispatchingEvents();
+    return unwrap<HTMLFormElement>()->checkValidity();
 }
 
 void WebFormElement::finishRequestAutocomplete(WebFormElement::AutocompleteResult result)
@@ -107,18 +106,18 @@ void WebFormElement::finishRequestAutocomplete(WebFormElement::AutocompleteResul
     unwrap<HTMLFormElement>()->finishRequestAutocomplete(static_cast<HTMLFormElement::AutocompleteResult>(result));
 }
 
-WebFormElement::WebFormElement(const PassRefPtr<HTMLFormElement>& e)
+WebFormElement::WebFormElement(const PassRefPtrWillBeRawPtr<HTMLFormElement>& e)
     : WebElement(e)
 {
 }
 
-WebFormElement& WebFormElement::operator=(const PassRefPtr<HTMLFormElement>& e)
+WebFormElement& WebFormElement::operator=(const PassRefPtrWillBeRawPtr<HTMLFormElement>& e)
 {
     m_private = e;
     return *this;
 }
 
-WebFormElement::operator PassRefPtr<HTMLFormElement>() const
+WebFormElement::operator PassRefPtrWillBeRawPtr<HTMLFormElement>() const
 {
     return toHTMLFormElement(m_private.get());
 }

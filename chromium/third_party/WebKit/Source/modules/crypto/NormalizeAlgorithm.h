@@ -31,38 +31,33 @@
 #ifndef NormalizeAlgorithm_h
 #define NormalizeAlgorithm_h
 
+#include "public/platform/WebCrypto.h"
 #include "public/platform/WebCryptoAlgorithm.h"
+#include "public/platform/WebString.h"
 #include "wtf/Assertions.h"
-
-namespace blink { class WebCryptoAlgorithm; }
+#include "wtf/Forward.h"
 
 namespace WebCore {
 
 class Dictionary;
-class ExceptionState;
 
-enum AlgorithmOperation {
-    Encrypt,
-    Decrypt,
-    Sign,
-    Verify,
-    Digest,
-    GenerateKey,
-    ImportKey,
-    DeriveKey,
-    WrapKey,
-    UnwrapKey,
-    // <---- End of list (keep this up-to-date)
-    LastAlgorithmOperation = UnwrapKey,
+struct AlgorithmError {
+    blink::WebCryptoErrorType errorType;
+    blink::WebString errorDetails;
 };
 
-// Normalizes an algorithm identifier (dictionary) into a WebCryptoAlgorithm. If
-// normalization fails then returns false and sets the ExceptionState.
-bool normalizeAlgorithm(const Dictionary&, AlgorithmOperation, blink::WebCryptoAlgorithm&, ExceptionState&) WARN_UNUSED_RETURN;
-
-// Returns a null-terminated C-string literal. Caller can assume the pointer
-// will be valid for the program's entire runtime.
-const char* algorithmIdToName(blink::WebCryptoAlgorithmId);
+// Converts a javascript Dictionary to a WebCryptoAlgorithm object.
+//
+// This corresponds with "normalizing" [1] the algorithm, and then validating
+// the expected parameters for the algorithm/operation combination.
+//
+// On success returns true and sets the WebCryptoAlgorithm.
+//
+// On failure normalizeAlgorithm returns false and sets the AlgorithmError with
+// a error type and a (non-localized) debug string.
+//
+// [1] http://www.w3.org/TR/WebCryptoAPI/#algorithm-normalizing-rules
+bool normalizeAlgorithm(const Dictionary&, blink::WebCryptoOperation, blink::WebCryptoAlgorithm&, AlgorithmError*) WARN_UNUSED_RETURN;
 
 } // namespace WebCore
 

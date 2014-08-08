@@ -45,14 +45,13 @@ class MultipartResponseDelegate;
 namespace content {
 class RenderFrameImpl;
 class RenderViewImpl;
-class WebPluginDelegate;
+class WebPluginDelegateProxy;
 
 // This is the WebKit side of the plugin implementation that forwards calls,
 // after changing out of WebCore types, to a delegate.  The delegate may
 // be in a different process.
 class WebPluginImpl : public WebPlugin,
-                      public blink::WebPlugin,
-                      public blink::WebURLLoaderClient {
+                      public blink::WebPlugin {
  public:
   WebPluginImpl(
       blink::WebFrame* frame,
@@ -68,7 +67,6 @@ class WebPluginImpl : public WebPlugin,
                                          uint32 length);
 
   blink::WebFrame* webframe() { return webframe_; }
-  WebPluginDelegate* delegate() { return delegate_; }
 
   // blink::WebPlugin methods:
   virtual bool initialize(
@@ -211,21 +209,21 @@ class WebPluginImpl : public WebPlugin,
   // WebURLLoaderClient implementation.  We implement this interface in the
   // renderer process, and then use the simple WebPluginResourceClient interface
   // to relay the callbacks to the plugin.
-  virtual void willSendRequest(blink::WebURLLoader* loader,
-                               blink::WebURLRequest& request,
-                               const blink::WebURLResponse& response);
-  virtual void didSendData(blink::WebURLLoader* loader,
-                           unsigned long long bytes_sent,
-                           unsigned long long total_bytes_to_be_sent);
-  virtual void didReceiveResponse(blink::WebURLLoader* loader,
+  void willSendRequest(blink::WebURLLoader* loader,
+                       blink::WebURLRequest& request,
+                       const blink::WebURLResponse& response);
+  void didSendData(blink::WebURLLoader* loader,
+                   unsigned long long bytes_sent,
+                   unsigned long long total_bytes_to_be_sent);
+  void didReceiveResponse(blink::WebURLLoader* loader,
                                   const blink::WebURLResponse& response);
 
-  virtual void didReceiveData(blink::WebURLLoader* loader, const char *buffer,
-                              int data_length, int encoded_data_length);
-  virtual void didFinishLoading(blink::WebURLLoader* loader,
-                                double finishTime);
-  virtual void didFail(blink::WebURLLoader* loader,
-                       const blink::WebURLError& error);
+  void didReceiveData(blink::WebURLLoader* loader, const char *buffer,
+                      int data_length, int encoded_data_length);
+  void didFinishLoading(blink::WebURLLoader* loader,
+                        double finishTime);
+  void didFail(blink::WebURLLoader* loader,
+               const blink::WebURLError& error);
 
   // Helper function to remove the stored information about a resource
   // request given its index in m_clients.
@@ -272,8 +270,6 @@ class WebPluginImpl : public WebPlugin,
   // Check for invalid chars like @, ;, \ before the first / (in path).
   bool IsValidUrl(const GURL& url, Referrer referrer_flag);
 
-  WebPluginDelegate* CreatePluginDelegate();
-
   std::vector<ClientInfo> clients_;
 
   bool windowless_;
@@ -291,7 +287,7 @@ class WebPluginImpl : public WebPlugin,
   base::WeakPtr<RenderViewImpl> render_view_;
   blink::WebFrame* webframe_;
 
-  WebPluginDelegate* delegate_;
+  WebPluginDelegateProxy* delegate_;
 
   // This is just a weak reference.
   blink::WebPluginContainer* container_;
@@ -333,6 +329,40 @@ class WebPluginImpl : public WebPlugin,
   std::vector<std::string> arg_values_;
 
   base::WeakPtrFactory<WebPluginImpl> weak_factory_;
+
+  class LoaderClient : public blink::WebURLLoaderClient {
+   public:
+    LoaderClient(WebPluginImpl*);
+
+    virtual void willSendRequest(blink::WebURLLoader*,
+                                 blink::WebURLRequest&,
+                                 const blink::WebURLResponse&) OVERRIDE;
+    virtual void didSendData(blink::WebURLLoader*,
+                             unsigned long long bytesSent,
+                             unsigned long long totalBytesToBeSent) OVERRIDE;
+    virtual void didReceiveResponse(blink::WebURLLoader*,
+                                    const blink::WebURLResponse&) OVERRIDE;
+    virtual void didDownloadData(blink::WebURLLoader*,
+                                 int dataLength,
+                                 int encodedDataLength) OVERRIDE;
+    virtual void didReceiveData(blink::WebURLLoader*,
+                                const char* data,
+                                int dataLength,
+                                int encodedDataLength) OVERRIDE;
+    virtual void didReceiveCachedMetadata(blink::WebURLLoader*,
+                                          const char* data,
+                                          int dataLength) OVERRIDE;
+    virtual void didFinishLoading(blink::WebURLLoader*,
+                                  double finishTime,
+                                  int64_t total_encoded_data_length) OVERRIDE;
+    virtual void didFail(blink::WebURLLoader*,
+                         const blink::WebURLError&) OVERRIDE;
+
+   private:
+    WebPluginImpl* parent_;
+  };
+
+  LoaderClient loader_client_;
 
   DISALLOW_COPY_AND_ASSIGN(WebPluginImpl);
 };

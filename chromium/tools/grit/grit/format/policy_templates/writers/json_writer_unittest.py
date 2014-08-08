@@ -235,13 +235,13 @@ class JsonWriterUnittest(writer_unittest_common.WriterUnittestCommon):
     # Tests a policy group with a single policy of type 'dict'.
     example = {
       'bool': True,
-      'int': 10,
-      'string': 'abc',
-      'list': [1, 2, 3],
       'dict': {
         'a': 1,
         'b': 2,
-      }
+      },
+      'int': 10,
+      'list': [1, 2, 3],
+      'string': 'abc',
     }
     grd = self.PrepareTest(
         '{'
@@ -264,8 +264,8 @@ class JsonWriterUnittest(writer_unittest_common.WriterUnittestCommon):
         '  // Example Dictionary Policy\n' +
         HEADER_DELIMETER +
         '  // Example Dictionary Policy\n\n'
-        '  //"DictionaryPolicy": {\'bool\': True, \'dict\': {\'a\': 1, '
-        '\'b\': 2}, \'int\': 10, \'list\': [1, 2, 3], \'string\': \'abc\'}\n\n'
+        '  //"DictionaryPolicy": {"bool": true, "dict": {"a": 1, '
+        '"b": 2}, "int": 10, "list": [1, 2, 3], "string": "abc"}\n\n'
         '}')
     self.CompareOutputs(output, expected_output)
 

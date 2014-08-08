@@ -23,49 +23,40 @@
 #define SVGAElement_h
 
 #include "core/svg/SVGAnimatedBoolean.h"
-#include "core/svg/SVGExternalResourcesRequired.h"
 #include "core/svg/SVGGraphicsElement.h"
 #include "core/svg/SVGURIReference.h"
 
 namespace WebCore {
 
 class SVGAElement FINAL : public SVGGraphicsElement,
-                          public SVGURIReference,
-                          public SVGExternalResourcesRequired {
+                          public SVGURIReference {
 public:
-    static PassRefPtr<SVGAElement> create(Document&);
+    DECLARE_NODE_FACTORY(SVGAElement);
+    SVGAnimatedString* svgTarget() { return m_svgTarget.get(); }
 
 private:
     explicit SVGAElement(Document&);
 
-    virtual bool isValid() const { return SVGTests::isValid(); }
-
-    virtual String title() const;
-    virtual String target() const { return svgTargetCurrentValue(); }
+    virtual String title() const OVERRIDE;
 
     bool isSupportedAttribute(const QualifiedName&);
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual void svgAttributeChanged(const QualifiedName&);
+    virtual void svgAttributeChanged(const QualifiedName&) OVERRIDE;
 
-    virtual RenderObject* createRenderer(RenderStyle*);
+    virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
 
-    virtual void defaultEventHandler(Event*);
+    virtual void defaultEventHandler(Event*) OVERRIDE;
 
     virtual bool supportsFocus() const OVERRIDE;
     virtual bool isMouseFocusable() const OVERRIDE;
     virtual bool isKeyboardFocusable() const OVERRIDE;
-    virtual bool rendererIsFocusable() const OVERRIDE;
-    virtual bool isURLAttribute(const Attribute&) const;
+    virtual bool isURLAttribute(const Attribute&) const OVERRIDE;
+    virtual bool canStartSelection() const OVERRIDE;
+    virtual short tabIndex() const OVERRIDE;
 
-    virtual bool childShouldCreateRenderer(const Node& child) const;
+    virtual bool willRespondToMouseClickEvents() OVERRIDE;
 
-    BEGIN_DECLARE_ANIMATED_PROPERTIES(SVGAElement)
-        // This declaration used to define a non-virtual "String& target() const" method, that clashes with "virtual String Element::target() const".
-        // That's why it has been renamed to "svgTarget", the CodeGenerators take care of calling svgTargetAnimated() instead of targetAnimated(), see CodeGenerator.pm.
-        DECLARE_ANIMATED_STRING(SVGTarget, svgTarget)
-        DECLARE_ANIMATED_STRING(Href, href)
-        DECLARE_ANIMATED_BOOLEAN(ExternalResourcesRequired, externalResourcesRequired)
-    END_DECLARE_ANIMATED_PROPERTIES
+    RefPtr<SVGAnimatedString> m_svgTarget;
 };
 
 } // namespace WebCore

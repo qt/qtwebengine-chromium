@@ -183,6 +183,9 @@ class CC_EXPORT KeyframedTransformAnimationCurve
   virtual gfx::Transform GetValue(double t) const OVERRIDE;
   virtual bool AnimatedBoundsForBox(const gfx::BoxF& box,
                                     gfx::BoxF* bounds) const OVERRIDE;
+  virtual bool AffectsScale() const OVERRIDE;
+  virtual bool IsTranslation() const OVERRIDE;
+  virtual bool MaximumScale(float* max_scale) const OVERRIDE;
 
  private:
   KeyframedTransformAnimationCurve();
@@ -210,6 +213,7 @@ class CC_EXPORT KeyframedFilterAnimationCurve
 
   // FilterAnimationCurve implementation
   virtual FilterOperations GetValue(double t) const OVERRIDE;
+  virtual bool HasFilterThatMovesPixels() const OVERRIDE;
 
  private:
   KeyframedFilterAnimationCurve();

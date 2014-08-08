@@ -31,17 +31,23 @@
 #ifndef WebFrame_h
 #define WebFrame_h
 
-#include "../platform/WebCanvas.h"
-#include "../platform/WebFileSystem.h"
-#include "../platform/WebFileSystemType.h"
-#include "../platform/WebMessagePortChannel.h"
-#include "../platform/WebReferrerPolicy.h"
-#include "../platform/WebURL.h"
+#include "WebCompositionUnderline.h"
+#include "WebHistoryItem.h"
 #include "WebIconURL.h"
 #include "WebNode.h"
 #include "WebURLLoaderOptions.h"
+#include "public/platform/WebCanvas.h"
+#include "public/platform/WebMessagePortChannel.h"
+#include "public/platform/WebPrivateOwnPtr.h"
+#include "public/platform/WebReferrerPolicy.h"
+#include "public/platform/WebURL.h"
+#include "public/platform/WebURLRequest.h"
 
 struct NPObject;
+
+#if BLINK_IMPLEMENTATION
+namespace WebCore { class Frame; }
+#endif
 
 namespace v8 {
 class Context;
@@ -54,19 +60,22 @@ template <class T> class Local;
 
 namespace blink {
 
+class OpenedFrameTracker;
 class WebData;
 class WebDataSource;
 class WebDocument;
 class WebElement;
 class WebFormElement;
 class WebFrameClient;
-class WebHistoryItem;
 class WebInputElement;
 class WebLayer;
+class WebLocalFrame;
 class WebPerformance;
 class WebPermissionClient;
 class WebRange;
+class WebRemoteFrame;
 class WebSecurityOrigin;
+class WebSharedWorkerRepositoryClient;
 class WebString;
 class WebURL;
 class WebURLLoader;
@@ -85,6 +94,12 @@ struct WebURLLoaderOptions;
 
 template <typename T> class WebVector;
 
+// Frames may be rendered in process ('local') or out of process ('remote').
+// A remote frame is always cross-site; a local frame may be either same-site or
+// cross-site.
+// WebFrame is the base class for both WebLocalFrame and WebRemoteFrame and
+// contains methods that are valid on both local and remote frames, such as
+// getting a frame's parent or its opener.
 class WebFrame {
 public:
     // Control of renderTreeAsText output
@@ -95,39 +110,15 @@ public:
     };
     typedef unsigned RenderAsTextControls;
 
-    // Creates a WebFrame. Delete this WebFrame by calling WebFrame::close().
-    // It is valid to pass a null client pointer.
-    BLINK_EXPORT static WebFrame* create(WebFrameClient*);
-
-    // Same as create(WebFrameClient*) except the embedder may explicitly pass
-    // in the identifier for the WebFrame. This can be used with
-    // generateEmbedderIdentifier() if constructing the WebFrameClient for this
-    // frame requires the identifier.
-    //
-    // FIXME: Move the embedderIdentifier concept fully to the embedder and
-    // remove this factory method.
-    BLINK_EXPORT static WebFrame* create(WebFrameClient*, long long embedderIdentifier);
-
-    // Generates an identifier suitable for use with create() above.
-    // Never returns -1.
-    BLINK_EXPORT static long long generateEmbedderIdentifier();
-
     // Returns the number of live WebFrame objects, used for leak checking.
     BLINK_EXPORT static int instanceCount();
 
-    // Returns the WebFrame associated with the current V8 context. This
-    // function can return 0 if the context is associated with a Document that
-    // is not currently being displayed in a Frame.
-    BLINK_EXPORT static WebFrame* frameForCurrentContext();
+    virtual bool isWebLocalFrame() const = 0;
+    virtual WebLocalFrame* toWebLocalFrame() = 0;
+    virtual bool isWebRemoteFrame() const = 0;
+    virtual WebRemoteFrame* toWebRemoteFrame() = 0;
 
-    // Returns the frame corresponding to the given context. This can return 0
-    // if the context is detached from the frame, or if the context doesn't
-    // correspond to a frame (e.g., workers).
-    BLINK_EXPORT static WebFrame* frameForContext(v8::Handle<v8::Context>);
-
-    // Returns the frame inside a given frame or iframe element. Returns 0 if
-    // the given element is not a frame, iframe or if the frame is empty.
-    BLINK_EXPORT static WebFrame* fromFrameOwnerElement(const WebElement&);
+    BLINK_EXPORT void swap(WebFrame*);
 
     // This method closes and deletes the WebFrame.
     virtual void close() = 0;
@@ -146,16 +137,15 @@ public:
     // frame name unique within the hierarchy.
     virtual void setName(const WebString&) = 0;
 
-    // A globally unique identifier for this frame.
-    // FIXME: Convert users to embedderIdentifier() and remove identifier().
-    long long identifier() const { return embedderIdentifier(); }
-    virtual long long embedderIdentifier() const = 0;
-
     // The urls of the given combination types of favicon (if any) specified by
     // the document loaded in this frame. The iconTypesMask is a bit-mask of
     // WebIconURL::Type values, used to select from the available set of icon
     // URLs
     virtual WebVector<WebIconURL> iconURLs(int iconTypesMask) const = 0;
+
+    // Notify the WebFrame as to whether its frame will be rendered in a
+    // separate renderer process.
+    virtual void setIsRemote(bool) = 0;
 
     // For a WebFrame with contents being rendered in another process, this
     // sets a layer for use by the in-process compositor. WebLayer should be
@@ -164,6 +154,7 @@ public:
 
     // Initializes the various client interfaces.
     virtual void setPermissionClient(WebPermissionClient*) = 0;
+    virtual void setSharedWorkerRepositoryClient(WebSharedWorkerRepositoryClient*) = 0;
 
 
     // Geometry -----------------------------------------------------------
@@ -201,39 +192,42 @@ public:
     virtual WebView* view() const = 0;
 
     // Returns the frame that opened this frame or 0 if there is none.
-    virtual WebFrame* opener() const = 0;
+    BLINK_EXPORT WebFrame* opener() const;
 
     // Sets the frame that opened this one or 0 if there is none.
-    virtual void setOpener(const WebFrame*) = 0;
+    virtual void setOpener(WebFrame*);
 
     // Reset the frame that opened this frame to 0.
     // This is executed between layout tests runs
     void clearOpener() { setOpener(0); }
 
+    // Adds the given frame as a child of this frame.
+    BLINK_EXPORT void appendChild(WebFrame*);
+
+    // Removes the given child from this frame.
+    virtual void removeChild(WebFrame*);
+
     // Returns the parent frame or 0 if this is a top-most frame.
-    virtual WebFrame* parent() const = 0;
+    BLINK_EXPORT WebFrame* parent() const;
 
     // Returns the top-most frame in the hierarchy containing this frame.
-    virtual WebFrame* top() const = 0;
+    BLINK_EXPORT WebFrame* top() const;
 
     // Returns the first/last child frame.
-    virtual WebFrame* firstChild() const = 0;
-    virtual WebFrame* lastChild() const = 0;
+    BLINK_EXPORT WebFrame* firstChild() const;
+    BLINK_EXPORT WebFrame* lastChild() const;
 
-    // Returns the next/previous sibling frame.
-    virtual WebFrame* nextSibling() const = 0;
-    virtual WebFrame* previousSibling() const = 0;
+    // Returns the previous/next sibling frame.
+    BLINK_EXPORT WebFrame* previousSibling() const;
+    BLINK_EXPORT WebFrame* nextSibling() const;
 
-    // Returns the next/previous frame in "frame traversal order"
+    // Returns the previous/next frame in "frame traversal order",
     // optionally wrapping around.
-    virtual WebFrame* traverseNext(bool wrap) const = 0;
-    virtual WebFrame* traversePrevious(bool wrap) const = 0;
+    BLINK_EXPORT WebFrame* traversePrevious(bool wrap) const;
+    BLINK_EXPORT WebFrame* traverseNext(bool wrap) const;
 
     // Returns the child frame identified by the given name.
-    virtual WebFrame* findChildByName(const WebString& name) const = 0;
-
-    // Returns the child frame identified by the given xpath expression.
-    virtual WebFrame* findChildByExpression(const WebString& xpath) const = 0;
+    BLINK_EXPORT WebFrame* findChildByName(const WebString& name) const;
 
 
     // Content ------------------------------------------------------------
@@ -241,6 +235,16 @@ public:
     virtual WebDocument document() const = 0;
 
     virtual WebPerformance performance() const = 0;
+
+
+    // Closing -------------------------------------------------------------
+
+    // Runs beforeunload handlers for this frame, returning false if a
+    // handler suppressed unloading.
+    virtual bool dispatchBeforeUnloadEvent() = 0;
+
+    // Runs unload handlers for this frame.
+    virtual void dispatchUnloadEvent() = 0;
 
 
     // Scripting ----------------------------------------------------------
@@ -311,7 +315,7 @@ public:
     // canExecute().
     virtual v8::Handle<v8::Value> callFunctionEvenIfScriptDisabled(
         v8::Handle<v8::Function>,
-        v8::Handle<v8::Object>,
+        v8::Handle<v8::Value>,
         int argc,
         v8::Handle<v8::Value> argv[]) = 0;
 
@@ -321,23 +325,6 @@ public:
     // the "main world" or an "isolated world" is, then you probably shouldn't
     // be calling this API.
     virtual v8::Local<v8::Context> mainWorldScriptContext() const = 0;
-
-    // Creates an instance of file system object.
-    virtual v8::Handle<v8::Value> createFileSystem(WebFileSystemType,
-        const WebString& name,
-        const WebString& rootURL) = 0;
-    // Creates an instance of serializable file system object.
-    // FIXME: Remove this API after we have a better way of creating serialized
-    // file system object.
-    virtual v8::Handle<v8::Value> createSerializableFileSystem(WebFileSystemType,
-        const WebString& name,
-        const WebString& rootURL) = 0;
-    // Creates an instance of file or directory entry object.
-    virtual v8::Handle<v8::Value> createFileEntry(WebFileSystemType,
-        const WebString& fileSystemName,
-        const WebString& fileSystemRootURL,
-        const WebString& filePath,
-        bool isDirectory) = 0;
 
     // Navigation ----------------------------------------------------------
 
@@ -353,8 +340,11 @@ public:
     virtual void loadRequest(const WebURLRequest&) = 0;
 
     // Load the given history state, corresponding to a back/forward
-    // navigation.
-    virtual void loadHistoryItem(const WebHistoryItem&) = 0;
+    // navigation of a frame. Multiple frames may be navigated via separate calls.
+    virtual void loadHistoryItem(
+        const WebHistoryItem&,
+        WebHistoryLoadType,
+        WebURLRequest::CachePolicy = WebURLRequest::UseProtocolCachePolicy) = 0;
 
     // Loads the given data with specific mime type and optional text
     // encoding.  For HTML data, baseURL indicates the security origin of
@@ -387,14 +377,6 @@ public:
 
     // Returns the data source that is currently loaded.
     virtual WebDataSource* dataSource() const = 0;
-
-    // Returns the previous history item.  Check WebHistoryItem::isNull()
-    // before using.
-    virtual WebHistoryItem previousHistoryItem() const = 0;
-
-    // Returns the current history item.  Check WebHistoryItem::isNull()
-    // before using.
-    virtual WebHistoryItem currentHistoryItem() const = 0;
 
     // View-source rendering mode.  Set this before loading an URL to cause
     // it to be rendered in view-source mode.
@@ -483,6 +465,10 @@ public:
     // the root editable element.
     virtual void moveRangeSelection(const WebPoint& base, const WebPoint& extent) = 0;
     virtual void moveCaretSelection(const WebPoint&) = 0;
+
+    virtual bool setEditableSelectionOffsets(int start, int end) = 0;
+    virtual bool setCompositionFromExistingText(int compositionStart, int compositionEnd, const WebVector<WebCompositionUnderline>& underlines) = 0;
+    virtual void extendSelectionAndDelete(int before, int after) = 0;
 
     virtual void setCaretVisible(bool) = 0;
 
@@ -617,13 +603,26 @@ public:
     virtual int selectNearestFindMatch(const WebFloatPoint&,
                                        WebRect* selectionRect) = 0;
 
+
+    // Set the tickmarks for the frame. This will override the default tickmarks
+    // generated by find results. If this is called with an empty array, the
+    // default behavior will be restored.
+    virtual void setTickmarks(const WebVector<WebRect>&) = 0;
+
     // OrientationChange event ---------------------------------------------
 
+    // Notify the frame that the screen orientation has changed.
+    virtual void sendOrientationChangeEvent() = 0;
+
+    // FIXME: this is only there for backward compatibility, it will be removed.
     // Orientation is the interface orientation in degrees.
     // Some examples are:
     //  0 is straight up; -90 is when the device is rotated 90 clockwise;
     //  90 is when rotated counter clockwise.
-    virtual void sendOrientationChangeEvent(int orientation) = 0;
+    void sendOrientationChangeEvent(int orientation)
+    {
+        sendOrientationChangeEvent();
+    }
 
     // Events --------------------------------------------------------------
 
@@ -674,9 +673,30 @@ public:
     // text form. This is used only by layout tests.
     virtual WebString layerTreeAsText(bool showDebugInfo = false) const = 0;
 
+#if BLINK_IMPLEMENTATION
+    static WebFrame* fromFrame(WebCore::Frame*);
+#endif
+
 protected:
-    ~WebFrame() { }
+    explicit WebFrame();
+    virtual ~WebFrame();
+
+private:
+    friend class OpenedFrameTracker;
+
+    WebFrame* m_parent;
+    WebFrame* m_previousSibling;
+    WebFrame* m_nextSibling;
+    WebFrame* m_firstChild;
+    WebFrame* m_lastChild;
+
+    WebFrame* m_opener;
+    WebPrivateOwnPtr<OpenedFrameTracker> m_openedFrameTracker;
 };
+
+#if BLINK_IMPLEMENTATION
+WebCore::Frame* toWebCoreFrame(const WebFrame*);
+#endif
 
 } // namespace blink
 

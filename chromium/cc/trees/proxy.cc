@@ -20,18 +20,22 @@ base::SingleThreadTaskRunner* Proxy::ImplThreadTaskRunner() const {
 }
 
 bool Proxy::IsMainThread() const {
-#ifndef NDEBUG
-  DCHECK(main_task_runner_.get());
+#if DCHECK_IS_ON
   if (impl_thread_is_overridden_)
     return false;
-  return main_task_runner_->BelongsToCurrentThread();
+
+  bool is_main_thread = base::PlatformThread::CurrentId() == main_thread_id_;
+  if (is_main_thread && main_task_runner_.get()) {
+    DCHECK(main_task_runner_->BelongsToCurrentThread());
+  }
+  return is_main_thread;
 #else
   return true;
 #endif
 }
 
 bool Proxy::IsImplThread() const {
-#ifndef NDEBUG
+#if DCHECK_IS_ON
   if (impl_thread_is_overridden_)
     return true;
   if (!impl_task_runner_.get())
@@ -42,42 +46,43 @@ bool Proxy::IsImplThread() const {
 #endif
 }
 
-#ifndef NDEBUG
+#if DCHECK_IS_ON
 void Proxy::SetCurrentThreadIsImplThread(bool is_impl_thread) {
   impl_thread_is_overridden_ = is_impl_thread;
 }
 #endif
 
 bool Proxy::IsMainThreadBlocked() const {
-#ifndef NDEBUG
+#if DCHECK_IS_ON
   return is_main_thread_blocked_;
 #else
   return true;
 #endif
 }
 
-#ifndef NDEBUG
+#if DCHECK_IS_ON
 void Proxy::SetMainThreadBlocked(bool is_main_thread_blocked) {
   is_main_thread_blocked_ = is_main_thread_blocked;
 }
 #endif
 
-Proxy::Proxy(
-    scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner)
+Proxy::Proxy(scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner)
     : main_task_runner_(base::MessageLoopProxy::current()),
-#ifdef NDEBUG
-      impl_task_runner_(impl_task_runner) {}
+#if !DCHECK_IS_ON
+      impl_task_runner_(impl_task_runner) {
 #else
       impl_task_runner_(impl_task_runner),
+      main_thread_id_(base::PlatformThread::CurrentId()),
       impl_thread_is_overridden_(false),
-      is_main_thread_blocked_(false) {}
+      is_main_thread_blocked_(false) {
 #endif
+}
 
 Proxy::~Proxy() {
   DCHECK(IsMainThread());
 }
 
-scoped_ptr<base::Value> Proxy::SchedulerStateAsValueForTesting() {
+scoped_ptr<base::Value> Proxy::SchedulerAsValueForTesting() {
   return make_scoped_ptr(base::Value::CreateNullValue());
 }
 

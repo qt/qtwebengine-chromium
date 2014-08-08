@@ -52,7 +52,7 @@ Node::NodeType DocumentType::nodeType() const
     return DOCUMENT_TYPE_NODE;
 }
 
-PassRefPtr<Node> DocumentType::cloneNode(bool /*deep*/)
+PassRefPtrWillBeRawPtr<Node> DocumentType::cloneNode(bool /*deep*/)
 {
     return create(&document(), m_name, m_publicId, m_systemId);
 }
@@ -71,7 +71,7 @@ Node::InsertionNotificationRequest DocumentType::insertedInto(ContainerNode* ins
 
 void DocumentType::removedFrom(ContainerNode* insertionPoint)
 {
-    document().setDoctype(0);
+    document().setDoctype(nullptr);
     Node::removedFrom(insertionPoint);
 }
 

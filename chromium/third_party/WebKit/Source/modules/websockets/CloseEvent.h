@@ -31,8 +31,7 @@
 #ifndef CloseEvent_h
 #define CloseEvent_h
 
-#include "core/events/Event.h"
-#include "core/events/ThreadLocalEventNames.h"
+#include "modules/EventModules.h"
 
 namespace WebCore {
 
@@ -48,21 +47,21 @@ struct CloseEventInit : public EventInit {
     String reason;
 };
 
-class CloseEvent : public Event {
+class CloseEvent FINAL : public Event {
 public:
-    static PassRefPtr<CloseEvent> create()
+    static PassRefPtrWillBeRawPtr<CloseEvent> create()
     {
-        return adoptRef(new CloseEvent());
+        return adoptRefWillBeNoop(new CloseEvent());
     }
 
-    static PassRefPtr<CloseEvent> create(bool wasClean, unsigned short code, const String& reason)
+    static PassRefPtrWillBeRawPtr<CloseEvent> create(bool wasClean, unsigned short code, const String& reason)
     {
-        return adoptRef(new CloseEvent(wasClean, code, reason));
+        return adoptRefWillBeNoop(new CloseEvent(wasClean, code, reason));
     }
 
-    static PassRefPtr<CloseEvent> create(const AtomicString& type, const CloseEventInit& initializer)
+    static PassRefPtrWillBeRawPtr<CloseEvent> create(const AtomicString& type, const CloseEventInit& initializer)
     {
-        return adoptRef(new CloseEvent(type, initializer));
+        return adoptRefWillBeNoop(new CloseEvent(type, initializer));
     }
 
     bool wasClean() const { return m_wasClean; }
@@ -71,6 +70,8 @@ public:
 
     // Event function.
     virtual const AtomicString& interfaceName() const OVERRIDE { return EventNames::CloseEvent; }
+
+    virtual void trace(Visitor* visitor) OVERRIDE { Event::trace(visitor); }
 
 private:
     CloseEvent()

@@ -49,12 +49,12 @@ namespace WebCore {
 class DOMWrapperWorld;
 class ExecutionContext;
 class Event;
-class Frame;
 class HTMLDocument;
 class HTMLPlugInElement;
 class KURL;
-class ScriptSourceCode;
+class LocalFrame;
 class ScriptState;
+class ScriptSourceCode;
 class SecurityOrigin;
 class V8WindowShell;
 class Widget;
@@ -73,17 +73,17 @@ public:
         DoNotExecuteScriptWhenScriptsDisabled
     };
 
-    ScriptController(Frame*);
+    ScriptController(LocalFrame*);
     ~ScriptController();
 
     bool initializeMainWorld();
-    V8WindowShell* windowShell(DOMWrapperWorld*);
-    V8WindowShell* existingWindowShell(DOMWrapperWorld*);
+    V8WindowShell* windowShell(DOMWrapperWorld&);
+    V8WindowShell* existingWindowShell(DOMWrapperWorld&);
 
     // Evaluate JavaScript in the main world.
     void executeScriptInMainWorld(const String&, ExecuteScriptPolicy = DoNotExecuteScriptWhenScriptsDisabled);
     void executeScriptInMainWorld(const ScriptSourceCode&, AccessControlStatus = NotSharableCrossOrigin);
-    ScriptValue executeScriptInMainWorldAndReturnValue(const ScriptSourceCode&);
+    v8::Local<v8::Value> executeScriptInMainWorldAndReturnValue(const ScriptSourceCode&);
     v8::Local<v8::Value> executeScriptAndReturnValue(v8::Handle<v8::Context>, const ScriptSourceCode&, AccessControlStatus = NotSharableCrossOrigin);
 
     // Executes JavaScript in an isolated world. The script gets its own global scope,
@@ -94,13 +94,13 @@ public:
     // Otherwise, a new world is created.
     //
     // FIXME: Get rid of extensionGroup here.
-    void executeScriptInIsolatedWorld(int worldID, const Vector<ScriptSourceCode>& sources, int extensionGroup, Vector<ScriptValue>* results);
+    void executeScriptInIsolatedWorld(int worldID, const Vector<ScriptSourceCode>& sources, int extensionGroup, Vector<v8::Local<v8::Value> >* results);
 
     // Returns true if argument is a JavaScript URL.
     bool executeScriptIfJavaScriptURL(const KURL&);
 
-    v8::Local<v8::Value> callFunction(v8::Handle<v8::Function>, v8::Handle<v8::Object>, int argc, v8::Handle<v8::Value> argv[]);
-    static v8::Local<v8::Value> callFunction(ExecutionContext*, v8::Handle<v8::Function>, v8::Handle<v8::Object> receiver, int argc, v8::Handle<v8::Value> info[], v8::Isolate*);
+    v8::Local<v8::Value> callFunction(v8::Handle<v8::Function>, v8::Handle<v8::Value>, int argc, v8::Handle<v8::Value> argv[]);
+    static v8::Local<v8::Value> callFunction(ExecutionContext*, v8::Handle<v8::Function>, v8::Handle<v8::Value> receiver, int argc, v8::Handle<v8::Value> info[], v8::Isolate*);
 
     // Returns true if the current world is isolated, and has its own Content
     // Security Policy. In this case, the policy of the main world should be
@@ -108,29 +108,21 @@ public:
     bool shouldBypassMainWorldContentSecurityPolicy();
 
     // Creates a property of the global object of a frame.
-    void bindToWindowObject(Frame*, const String& key, NPObject*);
+    void bindToWindowObject(LocalFrame*, const String& key, NPObject*);
 
     PassRefPtr<SharedPersistent<v8::Object> > createPluginWrapper(Widget*);
 
     void enableEval();
     void disableEval(const String& errorMessage);
 
-    static bool canAccessFromCurrentOrigin(Frame*);
+    static bool canAccessFromCurrentOrigin(LocalFrame*);
 
     static void setCaptureCallStackForUncaughtExceptions(bool);
     void collectIsolatedContexts(Vector<std::pair<ScriptState*, SecurityOrigin*> >&);
 
     bool canExecuteScripts(ReasonForCallingCanExecuteScripts);
 
-    // Returns V8 Context. If none exists, creates a new context.
-    // It is potentially slow and consumes memory.
-    static v8::Local<v8::Context> mainWorldContext(Frame*);
-    v8::Local<v8::Context> mainWorldContext();
-    v8::Local<v8::Context> currentWorldContext();
-
     TextPosition eventHandlerPosition() const;
-
-    const String* sourceURL() const { return m_sourceURL; } // 0 if we are not evaluating any script.
 
     void clearWindowShell();
     void updateDocument();
@@ -138,12 +130,11 @@ public:
     void namedItemAdded(HTMLDocument*, const AtomicString&);
     void namedItemRemoved(HTMLDocument*, const AtomicString&);
 
-    void updateSecurityOrigin();
+    void updateSecurityOrigin(SecurityOrigin*);
     void clearScriptObjects();
     void cleanupScriptObjectsForPlugin(Widget*);
 
     void clearForClose();
-    void clearForOutOfMemory();
 
     NPObject* createScriptObjectForPluginElement(HTMLPlugInElement*);
     NPObject* windowScriptNPObject();
@@ -163,10 +154,9 @@ private:
     typedef HashMap<int, OwnPtr<V8WindowShell> > IsolatedWorldMap;
     typedef HashMap<Widget*, NPObject*> PluginObjectMap;
 
-    ScriptValue evaluateScriptInMainWorld(const ScriptSourceCode&, AccessControlStatus, ExecuteScriptPolicy);
-    void clearForClose(bool destroyGlobal);
+    v8::Local<v8::Value> evaluateScriptInMainWorld(const ScriptSourceCode&, AccessControlStatus, ExecuteScriptPolicy);
 
-    Frame* m_frame;
+    LocalFrame* m_frame;
     const String* m_sourceURL;
     v8::Isolate* m_isolate;
 

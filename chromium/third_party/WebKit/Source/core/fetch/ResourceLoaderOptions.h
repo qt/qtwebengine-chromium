@@ -36,11 +36,6 @@
 
 namespace WebCore {
 
-enum SendCallbackPolicy {
-    SendCallbacks,
-    DoNotSendCallbacks
-};
-
 enum ContentSniffingPolicy {
     SniffContent,
     DoNotSniffContent
@@ -49,16 +44,6 @@ enum ContentSniffingPolicy {
 enum DataBufferingPolicy {
     BufferData,
     DoNotBufferData
-};
-
-enum ClientCrossOriginCredentialPolicy {
-    AskClientForCrossOriginCredentials,
-    DoNotAskClientForCrossOriginCredentials
-};
-
-enum SecurityCheckPolicy {
-    SkipSecurityCheck,
-    DoSecurityCheck
 };
 
 enum ContentSecurityPolicyCheck {
@@ -97,58 +82,56 @@ enum SynchronousPolicy {
     RequestAsynchronously
 };
 
+// A resource fetch can be marked as being CORS enabled. The loader
+// must perform an access check upon seeing the response.
+enum CORSEnabled {
+    NotCORSEnabled,
+    IsCORSEnabled
+};
+
 struct ResourceLoaderOptions {
     ResourceLoaderOptions()
-        : sendLoadCallbacks(DoNotSendCallbacks)
-        , sniffContent(DoNotSniffContent)
+        : sniffContent(DoNotSniffContent)
         , dataBufferingPolicy(BufferData)
         , allowCredentials(DoNotAllowStoredCredentials)
         , credentialsRequested(ClientDidNotRequestCredentials)
-        , crossOriginCredentialPolicy(DoNotAskClientForCrossOriginCredentials)
-        , securityCheck(DoSecurityCheck)
         , contentSecurityPolicyOption(CheckContentSecurityPolicy)
         , requestInitiatorContext(DocumentContext)
         , mixedContentBlockingTreatment(TreatAsDefaultForType)
         , synchronousPolicy(RequestAsynchronously)
+        , corsEnabled(NotCORSEnabled)
     {
     }
 
     ResourceLoaderOptions(
-        SendCallbackPolicy sendLoadCallbacks,
         ContentSniffingPolicy sniffContent,
         DataBufferingPolicy dataBufferingPolicy,
         StoredCredentials allowCredentials,
         CredentialRequest credentialsRequested,
-        ClientCrossOriginCredentialPolicy crossOriginCredentialPolicy,
-        SecurityCheckPolicy securityCheck,
         ContentSecurityPolicyCheck contentSecurityPolicyOption,
         RequestInitiatorContext requestInitiatorContext)
-        : sendLoadCallbacks(sendLoadCallbacks)
-        , sniffContent(sniffContent)
+        : sniffContent(sniffContent)
         , dataBufferingPolicy(dataBufferingPolicy)
         , allowCredentials(allowCredentials)
         , credentialsRequested(credentialsRequested)
-        , crossOriginCredentialPolicy(crossOriginCredentialPolicy)
-        , securityCheck(securityCheck)
         , contentSecurityPolicyOption(contentSecurityPolicyOption)
         , requestInitiatorContext(requestInitiatorContext)
         , mixedContentBlockingTreatment(TreatAsDefaultForType)
         , synchronousPolicy(RequestAsynchronously)
+        , corsEnabled(NotCORSEnabled)
     {
     }
 
-    SendCallbackPolicy sendLoadCallbacks;
     ContentSniffingPolicy sniffContent;
     DataBufferingPolicy dataBufferingPolicy;
     StoredCredentials allowCredentials; // Whether HTTP credentials and cookies are sent with the request.
     CredentialRequest credentialsRequested; // Whether the client (e.g. XHR) wanted credentials in the first place.
-    ClientCrossOriginCredentialPolicy crossOriginCredentialPolicy; // Whether we will ask the client for credentials (if we allow credentials at all).
-    SecurityCheckPolicy securityCheck;
     ContentSecurityPolicyCheck contentSecurityPolicyOption;
     FetchInitiatorInfo initiatorInfo;
     RequestInitiatorContext requestInitiatorContext;
     MixedContentBlockingTreatment mixedContentBlockingTreatment;
     SynchronousPolicy synchronousPolicy;
+    CORSEnabled corsEnabled; // If the resource is loaded out-of-origin, whether or not to use CORS.
     RefPtr<SecurityOrigin> securityOrigin;
 };
 

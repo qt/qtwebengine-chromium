@@ -26,11 +26,11 @@
 #include "config.h"
 #include "core/rendering/RenderScrollbarPart.h"
 
-#include "core/rendering/LayoutRectRecorder.h"
 #include "core/rendering/PaintInfo.h"
 #include "core/rendering/RenderScrollbar.h"
 #include "core/rendering/RenderScrollbarTheme.h"
 #include "core/rendering/RenderView.h"
+#include "platform/LengthFunctions.h"
 
 using namespace std;
 
@@ -56,7 +56,6 @@ RenderScrollbarPart* RenderScrollbarPart::createAnonymous(Document* document, Re
 
 void RenderScrollbarPart::layout()
 {
-    LayoutRectRecorder recorder(*this);
     setLocation(LayoutPoint()); // We don't worry about positioning ourselves. We're just determining our minimum width/height.
     if (m_scrollbar->orientation() == HorizontalScrollbar)
         layoutHorizontalPart();
@@ -88,10 +87,10 @@ void RenderScrollbarPart::layoutVerticalPart()
     }
 }
 
-static int calcScrollbarThicknessUsing(SizeType sizeType, const Length& length, int containingLength, RenderView* renderView)
+static int calcScrollbarThicknessUsing(SizeType sizeType, const Length& length, int containingLength)
 {
     if (!length.isIntrinsicOrAuto() || (sizeType == MinSize && length.isAuto()))
-        return minimumValueForLength(length, containingLength, renderView);
+        return minimumValueForLength(length, containingLength);
     return ScrollbarTheme::theme()->scrollbarThickness();
 }
 
@@ -99,36 +98,34 @@ void RenderScrollbarPart::computeScrollbarWidth()
 {
     if (!m_scrollbar->owningRenderer())
         return;
-    RenderView* renderView = view();
     // FIXME: We are querying layout information but nothing guarantees that it's up-to-date, especially since we are called at style change.
     // FIXME: Querying the style's border information doesn't work on table cells with collapsing borders.
     int visibleSize = m_scrollbar->owningRenderer()->width() - m_scrollbar->owningRenderer()->style()->borderLeftWidth() - m_scrollbar->owningRenderer()->style()->borderRightWidth();
-    int w = calcScrollbarThicknessUsing(MainOrPreferredSize, style()->width(), visibleSize, renderView);
-    int minWidth = calcScrollbarThicknessUsing(MinSize, style()->minWidth(), visibleSize, renderView);
-    int maxWidth = style()->maxWidth().isUndefined() ? w : calcScrollbarThicknessUsing(MaxSize, style()->maxWidth(), visibleSize, renderView);
+    int w = calcScrollbarThicknessUsing(MainOrPreferredSize, style()->width(), visibleSize);
+    int minWidth = calcScrollbarThicknessUsing(MinSize, style()->minWidth(), visibleSize);
+    int maxWidth = style()->maxWidth().isUndefined() ? w : calcScrollbarThicknessUsing(MaxSize, style()->maxWidth(), visibleSize);
     setWidth(max(minWidth, min(maxWidth, w)));
 
     // Buttons and track pieces can all have margins along the axis of the scrollbar.
-    m_marginBox.setLeft(minimumValueForLength(style()->marginLeft(), visibleSize, renderView));
-    m_marginBox.setRight(minimumValueForLength(style()->marginRight(), visibleSize, renderView));
+    m_marginBox.setLeft(minimumValueForLength(style()->marginLeft(), visibleSize));
+    m_marginBox.setRight(minimumValueForLength(style()->marginRight(), visibleSize));
 }
 
 void RenderScrollbarPart::computeScrollbarHeight()
 {
     if (!m_scrollbar->owningRenderer())
         return;
-    RenderView* renderView = view();
     // FIXME: We are querying layout information but nothing guarantees that it's up-to-date, especially since we are called at style change.
     // FIXME: Querying the style's border information doesn't work on table cells with collapsing borders.
     int visibleSize = m_scrollbar->owningRenderer()->height() -  m_scrollbar->owningRenderer()->style()->borderTopWidth() - m_scrollbar->owningRenderer()->style()->borderBottomWidth();
-    int h = calcScrollbarThicknessUsing(MainOrPreferredSize, style()->height(), visibleSize, renderView);
-    int minHeight = calcScrollbarThicknessUsing(MinSize, style()->minHeight(), visibleSize, renderView);
-    int maxHeight = style()->maxHeight().isUndefined() ? h : calcScrollbarThicknessUsing(MaxSize, style()->maxHeight(), visibleSize, renderView);
+    int h = calcScrollbarThicknessUsing(MainOrPreferredSize, style()->height(), visibleSize);
+    int minHeight = calcScrollbarThicknessUsing(MinSize, style()->minHeight(), visibleSize);
+    int maxHeight = style()->maxHeight().isUndefined() ? h : calcScrollbarThicknessUsing(MaxSize, style()->maxHeight(), visibleSize);
     setHeight(max(minHeight, min(maxHeight, h)));
 
     // Buttons and track pieces can all have margins along the axis of the scrollbar.
-    m_marginBox.setTop(minimumValueForLength(style()->marginTop(), visibleSize, renderView));
-    m_marginBox.setBottom(minimumValueForLength(style()->marginBottom(), visibleSize, renderView));
+    m_marginBox.setTop(minimumValueForLength(style()->marginTop(), visibleSize));
+    m_marginBox.setBottom(minimumValueForLength(style()->marginBottom(), visibleSize));
 }
 
 void RenderScrollbarPart::computePreferredLogicalWidths()
@@ -141,7 +138,7 @@ void RenderScrollbarPart::computePreferredLogicalWidths()
     clearPreferredLogicalWidthsDirty();
 }
 
-void RenderScrollbarPart::styleWillChange(StyleDifference diff, const RenderStyle* newStyle)
+void RenderScrollbarPart::styleWillChange(StyleDifference diff, const RenderStyle& newStyle)
 {
     RenderBlock::styleWillChange(diff, newStyle);
     setInline(false);
@@ -154,7 +151,7 @@ void RenderScrollbarPart::styleDidChange(StyleDifference diff, const RenderStyle
     clearPositionedState();
     setFloating(false);
     setHasOverflowClip(false);
-    if (oldStyle && m_scrollbar && m_part != NoPart && diff >= StyleDifferenceRepaint)
+    if (oldStyle && m_scrollbar && m_part != NoPart && (diff.needsRepaint() || diff.needsLayout()))
         m_scrollbar->theme()->invalidatePart(m_scrollbar, m_part);
 }
 

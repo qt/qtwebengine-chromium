@@ -8,6 +8,7 @@
 
 #include "base/bind.h"
 #include "base/files/file_path.h"
+#include "base/logging.h"
 #include "base/path_service.h"
 #include "base/threading/thread.h"
 #include "media/base/decrypt_config.h"
@@ -17,7 +18,8 @@
 #include "media/ffmpeg/ffmpeg_common.h"
 #include "media/filters/ffmpeg_demuxer.h"
 #include "media/filters/file_data_source.h"
-#include "media/webm/webm_crypto_helpers.h"
+#include "media/formats/mp4/avc.h"
+#include "media/formats/webm/webm_crypto_helpers.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using ::testing::AnyNumber;
@@ -75,8 +77,6 @@ class FFmpegDemuxerTest : public testing::Test {
   void CreateDemuxer(const std::string& name) {
     CHECK(!demuxer_);
 
-    EXPECT_CALL(host_, SetTotalBytes(_)).Times(AnyNumber());
-    EXPECT_CALL(host_, AddBufferedByteRange(_, _)).Times(AnyNumber());
     EXPECT_CALL(host_, AddBufferedTimeRange(_, _)).Times(AnyNumber());
 
     CreateDataSource(name);
@@ -167,14 +167,11 @@ class FFmpegDemuxerTest : public testing::Test {
     return demuxer_->glue_->format_context();
   }
 
-  void ReadUntilEndOfStream() {
-    // We should expect an end of stream buffer.
-    DemuxerStream* audio = demuxer_->GetStream(DemuxerStream::AUDIO);
-
+  void ReadUntilEndOfStream(DemuxerStream* stream) {
     bool got_eos_buffer = false;
     const int kMaxBuffers = 170;
     for (int i = 0; !got_eos_buffer && i < kMaxBuffers; i++) {
-      audio->Read(base::Bind(&EosOnReadDone, &got_eos_buffer));
+      stream->Read(base::Bind(&EosOnReadDone, &got_eos_buffer));
       message_loop_.Run();
     }
 
@@ -414,7 +411,7 @@ TEST_F(FFmpegDemuxerTest, Read_EndOfStream) {
   // Verify that end of stream buffers are created.
   CreateDemuxer("bear-320x240.webm");
   InitializeDemuxer();
-  ReadUntilEndOfStream();
+  ReadUntilEndOfStream(demuxer_->GetStream(DemuxerStream::AUDIO));
 }
 
 TEST_F(FFmpegDemuxerTest, Read_EndOfStreamText) {
@@ -442,8 +439,37 @@ TEST_F(FFmpegDemuxerTest, Read_EndOfStream_NoDuration) {
   CreateDemuxer("bear-320x240.webm");
   InitializeDemuxer();
   set_duration_known(false);
-  EXPECT_CALL(host_, SetDuration(_));
-  ReadUntilEndOfStream();
+  EXPECT_CALL(host_, SetDuration(base::TimeDelta::FromMilliseconds(2767)));
+  ReadUntilEndOfStream(demuxer_->GetStream(DemuxerStream::AUDIO));
+  ReadUntilEndOfStream(demuxer_->GetStream(DemuxerStream::VIDEO));
+}
+
+TEST_F(FFmpegDemuxerTest, Read_EndOfStream_NoDuration_VideoOnly) {
+  // Verify that end of stream buffers are created.
+  CreateDemuxer("bear-320x240-video-only.webm");
+  InitializeDemuxer();
+  set_duration_known(false);
+  EXPECT_CALL(host_, SetDuration(base::TimeDelta::FromMilliseconds(2703)));
+  ReadUntilEndOfStream(demuxer_->GetStream(DemuxerStream::VIDEO));
+}
+
+TEST_F(FFmpegDemuxerTest, Read_EndOfStream_NoDuration_AudioOnly) {
+  // Verify that end of stream buffers are created.
+  CreateDemuxer("bear-320x240-audio-only.webm");
+  InitializeDemuxer();
+  set_duration_known(false);
+  EXPECT_CALL(host_, SetDuration(base::TimeDelta::FromMilliseconds(2767)));
+  ReadUntilEndOfStream(demuxer_->GetStream(DemuxerStream::AUDIO));
+}
+
+TEST_F(FFmpegDemuxerTest, Read_EndOfStream_NoDuration_UnsupportedStream) {
+  // Verify that end of stream buffers are created and we don't crash
+  // if there are streams in the file that we don't support.
+  CreateDemuxer("vorbis_audio_wmv_video.mkv");
+  InitializeDemuxer();
+  set_duration_known(false);
+  EXPECT_CALL(host_, SetDuration(base::TimeDelta::FromMilliseconds(1014)));
+  ReadUntilEndOfStream(demuxer_->GetStream(DemuxerStream::AUDIO));
 }
 
 TEST_F(FFmpegDemuxerTest, Seek) {
@@ -574,40 +600,6 @@ TEST_F(FFmpegDemuxerTest, Stop) {
   demuxer_.reset();
 }
 
-TEST_F(FFmpegDemuxerTest, DisableAudioStream) {
-  // We are doing the following things here:
-  // 1. Initialize the demuxer with audio and video stream.
-  // 2. Send a "disable audio stream" message to the demuxer.
-  // 3. Demuxer will free audio packets even if audio stream was initialized.
-  CreateDemuxer("bear-320x240.webm");
-  InitializeDemuxer();
-
-  // Submit a "disable audio stream" message to the demuxer.
-  demuxer_->OnAudioRendererDisabled();
-  message_loop_.RunUntilIdle();
-
-  // Get our streams.
-  DemuxerStream* video = demuxer_->GetStream(DemuxerStream::VIDEO);
-  DemuxerStream* audio = demuxer_->GetStream(DemuxerStream::AUDIO);
-  ASSERT_TRUE(video);
-  ASSERT_TRUE(audio);
-
-  // The audio stream should have been prematurely stopped.
-  EXPECT_FALSE(IsStreamStopped(DemuxerStream::VIDEO));
-  EXPECT_TRUE(IsStreamStopped(DemuxerStream::AUDIO));
-
-  // Attempt a read from the video stream: it should return valid data.
-  video->Read(NewReadCB(FROM_HERE, 22084, 0));
-  message_loop_.Run();
-
-  // Attempt a read from the audio stream: it should immediately return end of
-  // stream without requiring the message loop to read data.
-  bool got_eos_buffer = false;
-  audio->Read(base::Bind(&EosOnReadDone, &got_eos_buffer));
-  message_loop_.RunUntilIdle();
-  EXPECT_TRUE(got_eos_buffer);
-}
-
 // Verify that seek works properly when the WebM cues data is at the start of
 // the file instead of at the end.
 TEST_F(FFmpegDemuxerTest, SeekWithCuesBeforeFirstCluster) {
@@ -647,24 +639,21 @@ TEST_F(FFmpegDemuxerTest, SeekWithCuesBeforeFirstCluster) {
   message_loop_.Run();
 }
 
+#if defined(USE_PROPRIETARY_CODECS)
 // Ensure ID3v1 tag reading is disabled.  id3_test.mp3 has an ID3v1 tag with the
 // field "title" set to "sample for id3 test".
 TEST_F(FFmpegDemuxerTest, NoID3TagData) {
-#if !defined(USE_PROPRIETARY_CODECS)
-  return;
-#endif
   CreateDemuxer("id3_test.mp3");
   InitializeDemuxer();
   EXPECT_FALSE(av_dict_get(format_context()->metadata, "title", NULL, 0));
 }
+#endif
 
+#if defined(USE_PROPRIETARY_CODECS)
 // Ensure MP3 files with large image/video based ID3 tags demux okay.  FFmpeg
 // will hand us a video stream to the data which will likely be in a format we
 // don't accept as video; e.g. PNG.
 TEST_F(FFmpegDemuxerTest, Mp3WithVideoStreamID3TagData) {
-#if !defined(USE_PROPRIETARY_CODECS)
-  return;
-#endif
   CreateDemuxer("id3_png_test.mp3");
   InitializeDemuxer();
 
@@ -672,6 +661,7 @@ TEST_F(FFmpegDemuxerTest, Mp3WithVideoStreamID3TagData) {
   EXPECT_FALSE(demuxer_->GetStream(DemuxerStream::VIDEO));
   EXPECT_TRUE(demuxer_->GetStream(DemuxerStream::AUDIO));
 }
+#endif
 
 // Ensure a video with an unsupported audio track still results in the video
 // stream being demuxed.
@@ -695,15 +685,68 @@ TEST_F(FFmpegDemuxerTest, UnsupportedVideoSupportedAudioDemux) {
   EXPECT_TRUE(demuxer_->GetStream(DemuxerStream::AUDIO));
 }
 
+#if defined(USE_PROPRIETARY_CODECS)
 // FFmpeg returns null data pointers when samples have zero size, leading to
 // mistakenly creating end of stream buffers http://crbug.com/169133
 TEST_F(FFmpegDemuxerTest, MP4_ZeroStszEntry) {
-#if !defined(USE_PROPRIETARY_CODECS)
-  return;
-#endif
   CreateDemuxer("bear-1280x720-zero-stsz-entry.mp4");
   InitializeDemuxer();
-  ReadUntilEndOfStream();
+  ReadUntilEndOfStream(demuxer_->GetStream(DemuxerStream::AUDIO));
 }
+
+
+static void ValidateAnnexB(DemuxerStream* stream,
+                           DemuxerStream::Status status,
+                           const scoped_refptr<DecoderBuffer>& buffer) {
+  EXPECT_EQ(status, DemuxerStream::kOk);
+
+  if (buffer->end_of_stream()) {
+    base::MessageLoop::current()->PostTask(
+        FROM_HERE, base::MessageLoop::QuitWhenIdleClosure());
+    return;
+  }
+
+  bool is_valid =
+      mp4::AVC::IsValidAnnexB(buffer->data(), buffer->data_size());
+  EXPECT_TRUE(is_valid);
+
+  if (!is_valid) {
+    LOG(ERROR) << "Buffer contains invalid Annex B data.";
+    base::MessageLoop::current()->PostTask(
+        FROM_HERE, base::MessageLoop::QuitWhenIdleClosure());
+    return;
+  }
+
+  stream->Read(base::Bind(&ValidateAnnexB, stream));
+};
+
+TEST_F(FFmpegDemuxerTest, IsValidAnnexB) {
+  const char* files[] = {
+    "bear-1280x720-av_frag.mp4",
+    "bear-1280x720-av_with-aud-nalus_frag.mp4"
+  };
+
+  for (size_t i = 0; i < arraysize(files); ++i) {
+    DVLOG(1) << "Testing " << files[i];
+    CreateDemuxer(files[i]);
+    InitializeDemuxer();
+
+    // Ensure the expected streams are present.
+    DemuxerStream* stream = demuxer_->GetStream(DemuxerStream::VIDEO);
+    ASSERT_TRUE(stream);
+    stream->EnableBitstreamConverter();
+
+    stream->Read(base::Bind(&ValidateAnnexB, stream));
+    message_loop_.Run();
+
+    WaitableMessageLoopEvent event;
+    demuxer_->Stop(event.GetClosure());
+    event.RunAndWait();
+    demuxer_.reset();
+    data_source_.reset();
+  }
+}
+
+#endif
 
 }  // namespace media

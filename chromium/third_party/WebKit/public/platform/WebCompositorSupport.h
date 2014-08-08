@@ -74,12 +74,13 @@ public:
 
     virtual WebNinePatchLayer* createNinePatchLayer() { return 0; }
 
+    // TODO(dshwang): This isn't used anymore.
     virtual WebSolidColorLayer* createSolidColorLayer() { return 0; }
 
     // The ownership of the WebScrollbarThemeGeometry pointer is passed to Chromium.
     virtual WebScrollbarLayer* createScrollbarLayer(WebScrollbar*, WebScrollbarThemePainter, WebScrollbarThemeGeometry*) { return 0; }
 
-    virtual WebScrollbarLayer* createSolidColorScrollbarLayer(WebScrollbar::Orientation, int thumbThickness, bool isLeftSideVerticalScrollbar) { return 0; }
+    virtual WebScrollbarLayer* createSolidColorScrollbarLayer(WebScrollbar::Orientation, int thumbThickness, int trackStart, bool isLeftSideVerticalScrollbar) { return 0; }
 
     // Animation ----------------------------------------------------
 

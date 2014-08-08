@@ -7,6 +7,7 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
+#include "base/files/file.h"
 #include "net/base/completion_callback.h"
 #include "webkit/browser/webkit_storage_browser_export.h"
 
@@ -55,6 +56,11 @@ class FileStreamReader {
                               const fileapi::FileSystemURL& url,
                               int64 initial_offset,
                               const base::Time& expected_modification_time);
+
+  // Verify if the underlying file has not been modified.
+  WEBKIT_STORAGE_BROWSER_EXPORT static bool VerifySnapshotTime(
+      const base::Time& expected_modification_time,
+      const base::File::Info& file_info);
 
   // It is valid to delete the reader at any time.  If the stream is deleted
   // while it has a pending read, its callback will not be called.

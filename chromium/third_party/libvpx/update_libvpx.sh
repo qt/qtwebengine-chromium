@@ -11,7 +11,8 @@
 
 # Usage:
 #
-# $ ./update_libvpx.sh [branch]
+# $ ./update_libvpx.sh [branch | revision | file or url containing a revision]
+# When specifying a branch it may be necessary to prefix with origin/
 
 # Tools required for running this tool:
 #
@@ -19,18 +20,25 @@
 # 2. svn
 # 3. git
 
+export LC_ALL=C
+
 # Location for the remote git repository.
 GIT_REPO="http://git.chromium.org/webm/libvpx.git"
 
-GIT_BRANCH="master"
+GIT_BRANCH="origin/master"
 LIBVPX_SRC_DIR="source/libvpx"
 BASE_DIR=`pwd`
 
 if [ -n "$1" ]; then
   GIT_BRANCH="$1"
+  if [ -f "$1"  ]; then
+    GIT_BRANCH=$(<"$1")
+  elif [[ $1 = http* ]]; then
+    GIT_BRANCH=`curl $1`
+  fi
 fi
 
-prev_hash="$(egrep "Commit: [a-Z0-9]" README.chromium | awk '{ print $2 }')"
+prev_hash="$(egrep "^Commit: [[:alnum:]]" README.chromium | awk '{ print $2 }')"
 echo "prev_hash:$prev_hash"
 
 rm -rf $(svn ls $LIBVPX_SRC_DIR)
@@ -50,23 +58,26 @@ git commit -a -m "Current libvpx"
 git remote add origin $GIT_REPO
 git fetch
 
-add="$(git diff-index --diff-filter=D origin/$GIT_BRANCH | \
+add="$(git diff-index --diff-filter=D $GIT_BRANCH | \
 tr -s '\t' ' ' | cut -f6 -d\ )"
-delete="$(git diff-index --diff-filter=A origin/$GIT_BRANCH | \
+delete="$(git diff-index --diff-filter=A $GIT_BRANCH | \
 tr -s '\t' ' ' | cut -f6 -d\ )"
 
 # Switch the content to the latest git repo.
-git checkout -b tot origin/$GIT_BRANCH
+git checkout -b tot $GIT_BRANCH
 
 # Output the current commit hash.
 hash=$(git log -1 --format="%H")
 echo "Current HEAD: $hash"
 
 # Output log for upstream from current hash.
-found_prev_hash="$(git log | grep $prev_hash)"
 if [ -n "$prev_hash" ]; then
   echo "git log from upstream:"
-  pretty_git_log="$(git log --pretty="%h %s" $prev_hash..HEAD)"
+  pretty_git_log="$(git log --no-merges --pretty="%h %s" $prev_hash..$hash)"
+  if [ -z "$pretty_git_log" ]; then
+    echo "No log found. Checking for reverts."
+    pretty_git_log="$(git log --no-merges --pretty="%h %s" $hash..$prev_hash)"
+  fi
   echo "$pretty_git_log"
 fi
 

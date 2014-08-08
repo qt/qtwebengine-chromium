@@ -7,8 +7,8 @@
 #include "base/logging.h"
 #include "base/metrics/histogram_base.h"
 #include "base/metrics/histogram_snapshot_manager.h"
+#include "base/numerics/safe_conversions.h"
 #include "base/pickle.h"
-#include "base/safe_numerics.h"
 #include "base/values.h"
 
 namespace base {
@@ -66,7 +66,7 @@ void HistogramDeltaSerialization::PrepareAndSerializeDeltas(
   // the histograms, so that the receiving process can distinguish them from the
   // local histograms.
   histogram_snapshot_manager_.PrepareDeltas(
-      Histogram::kIPCSerializationSourceFlag, false);
+      Histogram::kIPCSerializationSourceFlag, Histogram::kNoFlags);
   serialized_deltas_ = NULL;
 }
 
@@ -75,7 +75,7 @@ void HistogramDeltaSerialization::DeserializeAndAddSamples(
     const std::vector<std::string>& serialized_deltas) {
   for (std::vector<std::string>::const_iterator it = serialized_deltas.begin();
        it != serialized_deltas.end(); ++it) {
-    Pickle pickle(it->data(), checked_numeric_cast<int>(it->size()));
+    Pickle pickle(it->data(), checked_cast<int>(it->size()));
     PickleIterator iter(pickle);
     DeserializeHistogramAndAddSamples(&iter);
   }

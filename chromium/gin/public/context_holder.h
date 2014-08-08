@@ -25,9 +25,7 @@ enum ContextEmbedderDataFields {
 
 class PerContextData;
 
-// ContextHolder is a generic class for holding a v8::Context. Rather than
-// using ContextHolder directly, most code should use a subclass of
-// ContextHolder, such as Runner.
+// ContextHolder is a generic class for holding a v8::Context.
 class GIN_EXPORT ContextHolder {
  public:
   explicit ContextHolder(v8::Isolate* isolate);
@@ -43,7 +41,7 @@ class GIN_EXPORT ContextHolder {
 
  private:
   v8::Isolate* isolate_;
-  v8::Persistent<v8::Context> context_;
+  v8::UniquePersistent<v8::Context> context_;
   scoped_ptr<PerContextData> data_;
 
   DISALLOW_COPY_AND_ASSIGN(ContextHolder);

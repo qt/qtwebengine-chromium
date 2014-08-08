@@ -28,6 +28,7 @@
 
 #include "core/dom/Range.h"
 #include "core/editing/FindOptions.h"
+#include "platform/heap/Handle.h"
 #include "wtf/Vector.h"
 
 namespace WebCore {
@@ -44,25 +45,14 @@ enum TextIteratorBehavior {
     TextIteratorEmitsOriginalText = 1 << 3,
     TextIteratorStopsOnFormControls = 1 << 4,
     TextIteratorEmitsImageAltText = 1 << 5,
-    TextIteratorEntersAuthorShadowRoots = 1 << 6
+    TextIteratorEntersAuthorShadowRoots = 1 << 6,
+    TextIteratorEmitsObjectReplacementCharacter = 1 << 7
 };
 typedef unsigned TextIteratorBehaviorFlags;
 
-// FIXME: Can't really answer this question correctly without knowing the white-space mode.
-// FIXME: Move this somewhere else in the editing directory. It doesn't belong here.
-inline bool isCollapsibleWhitespace(UChar c)
-{
-    switch (c) {
-        case ' ':
-        case '\n':
-            return true;
-        default:
-            return false;
-    }
-}
-
 String plainText(const Range*, TextIteratorBehaviorFlags = TextIteratorDefaultBehavior);
-PassRefPtr<Range> findPlainText(const Range*, const String&, FindOptions);
+PassRefPtrWillBeRawPtr<Range> findPlainText(const Range*, const String&, FindOptions);
+void findPlainText(const Position& inputStart, const Position& inputEnd, const String&, FindOptions, Position& resultStart, Position& resultEnd);
 
 class BitStack {
 public:
@@ -85,8 +75,11 @@ private:
 // chunks so as to optimize for performance of the iteration.
 
 class TextIterator {
+    STACK_ALLOCATED();
 public:
     explicit TextIterator(const Range*, TextIteratorBehaviorFlags = TextIteratorDefaultBehavior);
+    // [start, end] indicates the document range that the iteration should take place within (both ends inclusive).
+    TextIterator(const Position& start, const Position& end, TextIteratorBehaviorFlags = TextIteratorDefaultBehavior);
     ~TextIterator();
 
     bool atEnd() const { return !m_positionNode || m_shouldStop; }
@@ -113,11 +106,16 @@ public:
         }
     }
 
-    PassRefPtr<Range> range() const;
+    PassRefPtrWillBeRawPtr<Range> range() const;
     Node* node() const;
 
-    static int rangeLength(const Range*, bool spacesForReplacedElements = false);
-    static PassRefPtr<Range> subrange(Range* entireRange, int characterOffset, int characterCount);
+    // Computes the length of the given range using a text iterator. The default
+    // iteration behavior is to always emit object replacement characters for
+    // replaced elements. When |forSelectionPreservation| is set to true, it
+    // also emits spaces for other non-text nodes using the
+    // |TextIteratorEmitsCharactersBetweenAllVisiblePosition| mode.
+    static int rangeLength(const Range*, bool forSelectionPreservation = false);
+    static PassRefPtrWillBeRawPtr<Range> subrange(Range* entireRange, int characterOffset, int characterCount);
 
 private:
     enum IterationProgress {
@@ -127,6 +125,8 @@ private:
         HandledNode,
         HandledChildren
     };
+
+    void initialize(const Position& start, const Position& end);
 
     int startOffset() const { return m_positionStartOffset; }
     const String& string() const { return m_text; }
@@ -146,22 +146,22 @@ private:
 
     // Current position, not necessarily of the text being returned, but position
     // as we walk through the DOM tree.
-    Node* m_node;
+    RawPtrWillBeMember<Node> m_node;
     int m_offset;
     IterationProgress m_iterationProgress;
     BitStack m_fullyClippedStack;
     int m_shadowDepth;
 
     // The range.
-    Node* m_startContainer;
+    RawPtrWillBeMember<Node> m_startContainer;
     int m_startOffset;
-    Node* m_endContainer;
+    RawPtrWillBeMember<Node> m_endContainer;
     int m_endOffset;
-    Node* m_pastEndNode;
+    RawPtrWillBeMember<Node> m_pastEndNode;
 
     // The current text and its position, in the form to be returned from the iterator.
-    Node* m_positionNode;
-    mutable Node* m_positionOffsetBaseNode;
+    RawPtrWillBeMember<Node> m_positionNode;
+    mutable RawPtrWillBeMember<Node> m_positionOffsetBaseNode;
     mutable int m_positionStartOffset;
     mutable int m_positionEndOffset;
     int m_textLength;
@@ -178,7 +178,7 @@ private:
     RenderText *m_firstLetterText;
 
     // Used to do the whitespace collapsing logic.
-    Node* m_lastTextNode;
+    RawPtrWillBeMember<Node> m_lastTextNode;
     bool m_lastTextNodeEndedWithCollapsedSpace;
     UChar m_lastCharacter;
 
@@ -214,12 +214,15 @@ private:
     bool m_emitsImageAltText;
 
     bool m_entersAuthorShadowRoots;
+
+    bool m_emitsObjectReplacementCharacter;
 };
 
 // Iterates through the DOM range, returning all the text, and 0-length boundaries
 // at points where replaced elements break up the text flow. The text comes back in
 // chunks so as to optimize for performance of the iteration.
 class SimplifiedBackwardsTextIterator {
+    STACK_ALLOCATED();
 public:
     explicit SimplifiedBackwardsTextIterator(const Range*, TextIteratorBehaviorFlags = TextIteratorDefaultBehavior);
 
@@ -241,7 +244,7 @@ public:
             m_textContainer.prependTo(output, m_textOffset, m_textLength);
     }
 
-    PassRefPtr<Range> range() const;
+    PassRefPtrWillBeRawPtr<Range> range() const;
 
 private:
     void exitNode();
@@ -254,21 +257,21 @@ private:
 
     // Current position, not necessarily of the text being returned, but position
     // as we walk through the DOM tree.
-    Node* m_node;
+    RawPtrWillBeMember<Node> m_node;
     int m_offset;
     bool m_handledNode;
     bool m_handledChildren;
     BitStack m_fullyClippedStack;
 
     // End of the range.
-    Node* m_startNode;
+    RawPtrWillBeMember<Node> m_startNode;
     int m_startOffset;
     // Start of the range.
-    Node* m_endNode;
+    RawPtrWillBeMember<Node> m_endNode;
     int m_endOffset;
 
     // The current text and its position, in the form to be returned from the iterator.
-    Node* m_positionNode;
+    RawPtrWillBeMember<Node> m_positionNode;
     int m_positionStartOffset;
     int m_positionEndOffset;
 
@@ -277,7 +280,7 @@ private:
     int m_textLength;
 
     // Used to do the whitespace logic.
-    Node* m_lastTextNode;
+    RawPtrWillBeMember<Node> m_lastTextNode;
     UChar m_lastCharacter;
 
     // Used for whitespace characters that aren't in the DOM, so we can point at them.
@@ -302,8 +305,10 @@ private:
 // Builds on the text iterator, adding a character position so we can walk one
 // character at a time, or faster, as needed. Useful for searching.
 class CharacterIterator {
+    STACK_ALLOCATED();
 public:
     explicit CharacterIterator(const Range*, TextIteratorBehaviorFlags = TextIteratorDefaultBehavior);
+    CharacterIterator(const Position& start, const Position& end, TextIteratorBehaviorFlags = TextIteratorDefaultBehavior);
 
     void advance(int numCharacters);
 
@@ -316,12 +321,12 @@ public:
     template<typename BufferType>
     void appendTextTo(BufferType& output) { m_textIterator.appendTextTo(output, m_runOffset); }
 
-    String string(int numChars);
-
     int characterOffset() const { return m_offset; }
-    PassRefPtr<Range> range() const;
+    PassRefPtrWillBeRawPtr<Range> range() const;
 
 private:
+    void initialize();
+
     int m_offset;
     int m_runOffset;
     bool m_atBreak;
@@ -330,6 +335,7 @@ private:
 };
 
 class BackwardsCharacterIterator {
+    STACK_ALLOCATED();
 public:
     explicit BackwardsCharacterIterator(const Range*, TextIteratorBehaviorFlags = TextIteratorDefaultBehavior);
 
@@ -337,7 +343,7 @@ public:
 
     bool atEnd() const { return m_textIterator.atEnd(); }
 
-    PassRefPtr<Range> range() const;
+    PassRefPtrWillBeRawPtr<Range> range() const;
 
 private:
     int m_offset;
@@ -350,6 +356,7 @@ private:
 // Very similar to the TextIterator, except that the chunks of text returned are "well behaved",
 // meaning they never end split up a word.  This is useful for spellcheck or (perhaps one day) searching.
 class WordAwareIterator {
+    STACK_ALLOCATED();
 public:
     explicit WordAwareIterator(const Range*);
     ~WordAwareIterator();
@@ -361,14 +368,11 @@ public:
     UChar characterAt(unsigned index) const;
     int length() const;
 
-    // Range of the text we're currently returning
-    PassRefPtr<Range> range() const { return m_range; }
-
 private:
     Vector<UChar> m_buffer;
     // Did we have to look ahead in the textIterator to confirm the current chunk?
     bool m_didLookAhead;
-    RefPtr<Range> m_range;
+    RefPtrWillBeMember<Range> m_range;
     TextIterator m_textIterator;
 };
 

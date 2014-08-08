@@ -10,9 +10,11 @@
 #include "content/common/content_export.h"
 #include "content/common/input/synthetic_gesture_params.h"
 
-namespace content {
+namespace blink {
+class WebInputEvent;
+}
 
-class InputEvent;
+namespace content {
 
 // Interface between the synthetic gesture controller and the RenderWidgetHost.
 class CONTENT_EXPORT SyntheticGestureTarget {
@@ -23,11 +25,8 @@ class CONTENT_EXPORT SyntheticGestureTarget {
   // Allows synthetic gestures to insert input events in the highest level of
   // input processing on the target platform (e.g. Java on Android), so that
   // the event traverses the entire input processing stack.
-  virtual void DispatchInputEventToPlatform(const InputEvent& event) = 0;
-
-  // Called by SyntheticGestureController when a gesture has finished.
-  virtual void OnSyntheticGestureCompleted(
-      SyntheticGesture::Result result) = 0;
+  virtual void DispatchInputEventToPlatform(
+      const blink::WebInputEvent& event) = 0;
 
   // Called by SyntheticGestureController to request a flush at a time
   // appropriate for the platform, e.g. aligned with vsync.
@@ -37,17 +36,17 @@ class CONTENT_EXPORT SyntheticGestureTarget {
   virtual SyntheticGestureParams::GestureSourceType
       GetDefaultSyntheticGestureSourceType() const = 0;
 
-  // Check if a particular gesture type is supported by the target.
-  virtual bool SupportsSyntheticGestureSourceType(
-      SyntheticGestureParams::GestureSourceType gesture_source_type) const = 0;
-
   // After how much time of inaction does the target assume that a pointer has
   // stopped moving.
   virtual base::TimeDelta PointerAssumedStoppedTime() const = 0;
 
   // Returns the maximum number of DIPs a touch pointer can move without being
   // considered moving by the platform.
-  virtual int GetTouchSlopInDips() const = 0;
+  virtual float GetTouchSlopInDips() const = 0;
+
+  // Returns the minimum number of DIPs two touch pointers have to be apart
+  // to perform a pinch-zoom.
+  virtual float GetMinScalingSpanInDips() const = 0;
 };
 
 }  // namespace content

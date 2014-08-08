@@ -43,21 +43,21 @@ struct MediaKeyEventInit : public EventInit {
     unsigned short systemCode;
 };
 
-class MediaKeyEvent : public Event {
+class MediaKeyEvent FINAL : public Event {
 public:
     virtual ~MediaKeyEvent();
 
-    static PassRefPtr<MediaKeyEvent> create()
+    static PassRefPtrWillBeRawPtr<MediaKeyEvent> create()
     {
-        return adoptRef(new MediaKeyEvent);
+        return adoptRefWillBeNoop(new MediaKeyEvent);
     }
 
-    static PassRefPtr<MediaKeyEvent> create(const AtomicString& type, const MediaKeyEventInit& initializer)
+    static PassRefPtrWillBeRawPtr<MediaKeyEvent> create(const AtomicString& type, const MediaKeyEventInit& initializer)
     {
-        return adoptRef(new MediaKeyEvent(type, initializer));
+        return adoptRefWillBeNoop(new MediaKeyEvent(type, initializer));
     }
 
-    virtual const AtomicString& interfaceName() const;
+    virtual const AtomicString& interfaceName() const OVERRIDE;
 
     String keySystem() const { return m_keySystem; }
     String sessionId() const { return m_sessionId; }
@@ -67,6 +67,8 @@ public:
     MediaKeyError* errorCode() const { return m_errorCode.get(); }
     MediaKeyError* errorCode(bool& isNull) const { isNull = !m_errorCode; return m_errorCode.get(); }
     unsigned short systemCode() const { return m_systemCode; }
+
+    virtual void trace(Visitor*) OVERRIDE;
 
 private:
     MediaKeyEvent();

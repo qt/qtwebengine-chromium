@@ -32,7 +32,9 @@
 #define FormSubmission_h
 
 #include "core/loader/FormState.h"
+#include "platform/heap/Handle.h"
 #include "platform/weborigin/KURL.h"
+#include "platform/weborigin/Referrer.h"
 
 namespace WTF{
 class TextEncoding;
@@ -46,7 +48,7 @@ class FormData;
 struct FrameLoadRequest;
 class HTMLFormElement;
 
-class FormSubmission : public RefCounted<FormSubmission> {
+class FormSubmission : public RefCountedWillBeGarbageCollectedFinalized<FormSubmission> {
 public:
     enum Method { GetMethod, PostMethod, DialogMethod };
 
@@ -56,7 +58,7 @@ public:
         Attributes()
             : m_method(GetMethod)
             , m_isMultiPartForm(false)
-            , m_encodingType("application/x-www-form-urlencoded")
+            , m_encodingType("application/x-www-form-urlencoded", AtomicString::ConstructFromLiteral)
         {
         }
 
@@ -68,11 +70,11 @@ public:
         const String& action() const { return m_action; }
         void parseAction(const String&);
 
-        const String& target() const { return m_target; }
-        void setTarget(const String& target) { m_target = target; }
+        const AtomicString& target() const { return m_target; }
+        void setTarget(const AtomicString& target) { m_target = target; }
 
-        const String& encodingType() const { return m_encodingType; }
-        static String parseEncodingType(const String&);
+        const AtomicString& encodingType() const { return m_encodingType; }
+        static AtomicString parseEncodingType(const String&);
         void updateEncodingType(const String&);
         bool isMultiPartForm() const { return m_isMultiPartForm; }
 
@@ -86,12 +88,13 @@ public:
         bool m_isMultiPartForm;
 
         String m_action;
-        String m_target;
-        String m_encodingType;
+        AtomicString m_target;
+        AtomicString m_encodingType;
         String m_acceptCharset;
     };
 
-    static PassRefPtr<FormSubmission> create(HTMLFormElement*, const Attributes&, PassRefPtr<Event> event, FormSubmissionTrigger);
+    static PassRefPtrWillBeRawPtr<FormSubmission> create(HTMLFormElement*, const Attributes&, PassRefPtrWillBeRawPtr<Event>, FormSubmissionTrigger);
+    void trace(Visitor*);
 
     void populateFrameLoadRequest(FrameLoadRequest&);
 
@@ -99,36 +102,32 @@ public:
 
     Method method() const { return m_method; }
     const KURL& action() const { return m_action; }
-    const String& target() const { return m_target; }
-    void clearTarget() { m_target = String(); }
-    const String& contentType() const { return m_contentType; }
+    const AtomicString& target() const { return m_target; }
+    void clearTarget() { m_target = nullAtom; }
     FormState* state() const { return m_formState.get(); }
     FormData* data() const { return m_formData.get(); }
-    const String boundary() const { return m_boundary; }
     Event* event() const { return m_event.get(); }
 
-    const String& referrer() const { return m_referrer; }
-    void setReferrer(const String& referrer) { m_referrer = referrer; }
-    const String& origin() const { return m_origin; }
+    void setReferrer(const Referrer& referrer) { m_referrer = referrer; }
     void setOrigin(const String& origin) { m_origin = origin; }
 
     const String& result() const { return m_result; }
 
 private:
-    FormSubmission(Method, const KURL& action, const String& target, const String& contentType, PassRefPtr<FormState>, PassRefPtr<FormData>, const String& boundary, PassRefPtr<Event>);
+    FormSubmission(Method, const KURL& action, const AtomicString& target, const AtomicString& contentType, PassRefPtrWillBeRawPtr<FormState>, PassRefPtr<FormData>, const String& boundary, PassRefPtrWillBeRawPtr<Event>);
     // FormSubmission for DialogMethod
     FormSubmission(const String& result);
 
     // FIXME: Hold an instance of Attributes instead of individual members.
     Method m_method;
     KURL m_action;
-    String m_target;
-    String m_contentType;
-    RefPtr<FormState> m_formState;
+    AtomicString m_target;
+    AtomicString m_contentType;
+    RefPtrWillBeMember<FormState> m_formState;
     RefPtr<FormData> m_formData;
     String m_boundary;
-    RefPtr<Event> m_event;
-    String m_referrer;
+    RefPtrWillBeMember<Event> m_event;
+    Referrer m_referrer;
     String m_origin;
     String m_result;
 };

@@ -5,8 +5,12 @@
 // The following is duplicated from base/linux_utils.cc.
 // We shouldn't link against C++ code in a setuid binary.
 
-#define _GNU_SOURCE  // For O_DIRECTORY
-#include "linux_util.h"
+// Needed for O_DIRECTORY, must be defined before fcntl.h is included
+// (and it can be included earlier than the explicit #include below
+// in some versions of glibc).
+#define _GNU_SOURCE
+
+#include "sandbox/linux/suid/linux_util.h"
 
 #include <dirent.h>
 #include <errno.h>
@@ -26,7 +30,8 @@ static const char kSocketLinkPrefix[] = "socket:[";
 // socket.
 //   inode_out: (output) set to the inode number on success
 //   path: e.g. /proc/1234/fd/5 (must be a UNIX domain socket descriptor)
-static bool ProcPathGetInodeAt(ino_t* inode_out, int base_dir_fd,
+static bool ProcPathGetInodeAt(ino_t* inode_out,
+                               int base_dir_fd,
                                const char* path) {
   // We also check that the path is relative.
   if (!inode_out || !path || *path == '/')
@@ -40,7 +45,7 @@ static bool ProcPathGetInodeAt(ino_t* inode_out, int base_dir_fd,
   if (memcmp(kSocketLinkPrefix, buf, sizeof(kSocketLinkPrefix) - 1))
     return false;
 
-  char *endptr = NULL;
+  char* endptr = NULL;
   errno = 0;
   const unsigned long long int inode_ull =
       strtoull(buf + sizeof(kSocketLinkPrefix) - 1, &endptr, 10);
@@ -72,7 +77,7 @@ bool FindProcessHoldingSocket(pid_t* pid_out, ino_t socket_inode) {
   const uid_t uid = getuid();
   struct dirent* dent;
   while ((dent = readdir(proc))) {
-    char *endptr = NULL;
+    char* endptr = NULL;
     errno = 0;
     const unsigned long int pid_ul = strtoul(dent->d_name, &endptr, 10);
     if (pid_ul == ULONG_MAX || !endptr || *endptr || errno != 0)

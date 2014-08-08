@@ -1,6 +1,5 @@
-<!-- TODO(noamsml): i18n before submitting -->
 <!DOCTYPE HTML>
-<html>
+<html i18n-values="dir:textdirection">
 <head>
   <meta charset="utf-8">
   <title i18n-content="devicesTitle"></title>
@@ -23,7 +22,6 @@
     <div class="overlay" id="overlay" hidden>
       <div id="register-overlay" class="page">
         <div class="close-button"></div>
-
         <div id="register-page-confirm" class="register-page">
           <h1 i18n-content="confirmRegistration"></h1>
           <div class="dialog-contents">
@@ -31,6 +29,13 @@
             </div>
 
             <div class="button-list">
+              <div id="register-overlay-login-promo"
+                   class="inline-login-promo"
+                   hidden>
+                <span i18n-content="registerNeedLogin"></span>
+                <button class="link-button" id="register-overlay-login-button"
+                        i18n-content="cloudDevicesLogin"></button>
+              </div>
               <button class="register-cancel" i18n-content="cancel"></button>
               <button id="register-continue-button"
                       i18n-content="serviceRegister">
@@ -73,6 +78,9 @@
     </div>
 
     <header>
+      <button id="back-button" class="link-button" hidden>
+        <span i18n-content="backButton"></span>
+      </button>
       <h1 i18n-content="devicesTitle"></h1>
     </header>
 
@@ -92,7 +100,7 @@
 
       <div class="devices" id="register-device-list"></div>
 
-      <if expr="not pp_ifdef('chromeos') and not is_macosx">
+      <if expr="not chromeos">
         <section id="cloud-print-connector-section">
           <h2 i18n-content="titleConnector"></h2>
           <div>

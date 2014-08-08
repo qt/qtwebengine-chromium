@@ -13,6 +13,7 @@ namespace printing {
 PRINTING_EXPORT extern const char kIsFirstRequest[];
 PRINTING_EXPORT extern const char kPreviewRequestID[];
 PRINTING_EXPORT extern const char kPreviewUIID[];
+PRINTING_EXPORT extern const char kSettingCapabilities[];
 PRINTING_EXPORT extern const char kSettingCloudPrintId[];
 PRINTING_EXPORT extern const char kSettingCloudPrintDialog[];
 PRINTING_EXPORT extern const char kSettingCollate[];
@@ -31,6 +32,10 @@ PRINTING_EXPORT extern const char kSettingHeaderFooterDate[];
 PRINTING_EXPORT extern const char kSettingHeaderFooterTitle[];
 PRINTING_EXPORT extern const char kSettingHeaderFooterURL[];
 PRINTING_EXPORT extern const char kSettingLandscape[];
+PRINTING_EXPORT extern const char kSettingMediaSize[];
+PRINTING_EXPORT extern const char kSettingMediaSizeHeightMicrons[];
+PRINTING_EXPORT extern const char kSettingMediaSizeWidthMicrons[];
+PRINTING_EXPORT extern const char kSettingMediaSizeVendorId[];
 PRINTING_EXPORT extern const char kSettingMarginBottom[];
 PRINTING_EXPORT extern const char kSettingMarginLeft[];
 PRINTING_EXPORT extern const char kSettingMarginRight[];
@@ -44,13 +49,15 @@ PRINTING_EXPORT extern const char kSettingPageRangeTo[];
 PRINTING_EXPORT extern const char kSettingPageWidth[];
 PRINTING_EXPORT extern const char kSettingPageHeight[];
 PRINTING_EXPORT extern const char kSettingPreviewModifiable[];
-PRINTING_EXPORT extern const char kSettingPrintableAreaX[];
-PRINTING_EXPORT extern const char kSettingPrintableAreaY[];
-PRINTING_EXPORT extern const char kSettingPrintableAreaWidth[];
-PRINTING_EXPORT extern const char kSettingPrintableAreaHeight[];
-PRINTING_EXPORT extern const char kSettingPrinterName[];
 PRINTING_EXPORT extern const char kSettingPrintToPDF[];
 PRINTING_EXPORT extern const char kSettingPrintWithPrivet[];
+PRINTING_EXPORT extern const char kSettingPrintableAreaHeight[];
+PRINTING_EXPORT extern const char kSettingPrintableAreaWidth[];
+PRINTING_EXPORT extern const char kSettingPrintableAreaX[];
+PRINTING_EXPORT extern const char kSettingPrintableAreaY[];
+PRINTING_EXPORT extern const char kSettingPrinterDescription[];
+PRINTING_EXPORT extern const char kSettingPrinterName[];
+PRINTING_EXPORT extern const char kSettingPrinterOptions[];
 PRINTING_EXPORT extern const char kSettingTicket[];
 PRINTING_EXPORT extern const char kSettingShouldPrintBackgrounds[];
 PRINTING_EXPORT extern const char kSettingShouldPrintSelectionOnly[];
@@ -130,6 +137,7 @@ enum MarginType {
   NO_MARGINS,
   PRINTABLE_AREA_MARGINS,
   CUSTOM_MARGINS,
+  MARGIN_TYPE_LAST = CUSTOM_MARGINS
 };
 
 }  // namespace printing

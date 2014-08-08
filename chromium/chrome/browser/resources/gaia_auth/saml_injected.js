@@ -4,15 +4,60 @@
 
 /**
  * @fileoverview
- * Script to be injected into SAML provider pages that do not support the
- * auth service provider postMessage API. It serves two main purposes:
+ * Script to be injected into SAML provider pages, serving three main purposes:
  * 1. Signal hosting extension that an external page is loaded so that the
- *    UI around it could be changed accordingly;
- * 2. Scrape password and send it back to be used for encrypt user data and
- *    use for offline login;
+ *    UI around it should be changed accordingly;
+ * 2. Provide an API via which the SAML provider can pass user credentials to
+ *    Chrome OS, allowing the password to be used for encrypting user data and
+ *    offline login.
+ * 3. Scrape password fields, making the password available to Chrome OS even if
+ *    the SAML provider does not support the credential passing API.
  */
 
 (function() {
+  function APICallForwarder() {
+  }
+
+  /**
+   * The credential passing API is used by sending messages to the SAML page's
+   * |window| object. This class forwards API calls from the SAML page to a
+   * background script and API responses from the background script to the SAML
+   * page. Communication with the background script occurs via a |Channel|.
+   */
+  APICallForwarder.prototype = {
+    // Channel to which API calls are forwarded.
+    channel_: null,
+
+    /**
+     * Initialize the API call forwarder.
+     * @param {!Object} channel Channel to which API calls should be forwarded.
+     */
+    init: function(channel) {
+      this.channel_ = channel;
+      this.channel_.registerMessage('apiResponse',
+                                    this.onAPIResponse_.bind(this));
+
+      window.addEventListener('message', this.onMessage_.bind(this));
+    },
+
+    onMessage_: function(event) {
+      if (event.source != window ||
+          typeof event.data != 'object' ||
+          !event.data.hasOwnProperty('type') ||
+          event.data.type != 'gaia_saml_api') {
+        return;
+      }
+      // Forward API calls to the background script.
+      this.channel_.send({name: 'apiCall', call: event.data.call});
+    },
+
+    onAPIResponse_: function(msg) {
+      // Forward API responses to the SAML page.
+      window.postMessage({type: 'gaia_saml_api_reply', response: msg.response},
+                         '/');
+    }
+  };
+
   /**
    * A class to scrape password from type=password input elements under a given
    * docRoot and send them back via a Channel.
@@ -51,11 +96,7 @@
 
       for (var i = 0; i < this.passwordFields_.length; ++i) {
         this.passwordFields_[i].addEventListener(
-            'change', this.onPasswordChanged_.bind(this, i));
-        // 'keydown' event is needed for the case that the form is submitted
-        // on enter key, in which case no 'change' event is dispatched.
-        this.passwordFields_[i].addEventListener(
-            'keydown', this.onPasswordKeyDown_.bind(this, i));
+            'input', this.onPasswordChanged_.bind(this, i));
 
         this.passwordValues_[i] = this.passwordFields_[i].value;
       }
@@ -89,18 +130,6 @@
      */
     onPasswordChanged_: function(index) {
       this.maybeSendUpdatedPassword(index);
-    },
-
-    /**
-     * Handles 'keydown' event to trigger password change detection and
-     * updates on enter key.
-     * @param {number} index The index of the password fields in
-     *     |passwordFields_|.
-     * @param {Event} e The keydown event.
-     */
-    onPasswordKeyDown_: function(index, e) {
-      if (e.keyIdentifier == 'Enter')
-        this.maybeSendUpdatedPassword(index);
     }
   };
 
@@ -140,6 +169,9 @@
       channel = new Channel();
       channel.connect('injected');
       channel.send({name: 'pageLoaded', url: pageURL});
+
+      apiCallForwarder = new APICallForwarder();
+      apiCallForwarder.init(channel);
 
       passwordScraper = new PasswordInputScraper();
       passwordScraper.init(channel, pageURL, document.documentElement);

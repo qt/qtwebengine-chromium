@@ -5,6 +5,7 @@
 #include "base/auto_reset.h"
 #include "base/command_line.h"
 #include "base/run_loop.h"
+#include "content/browser/gpu/compositor_util.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/common/input/synthetic_web_input_event_builders.h"
@@ -13,9 +14,9 @@
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/common/content_switches.h"
+#include "content/public/test/content_browser_test.h"
+#include "content/public/test/content_browser_test_utils.h"
 #include "content/shell/browser/shell.h"
-#include "content/test/content_browser_test.h"
-#include "content/test/content_browser_test_utils.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "ui/events/event_switches.h"
 #include "ui/events/latency_info.h"
@@ -82,7 +83,8 @@ namespace content {
 class InputEventMessageFilter : public BrowserMessageFilter {
  public:
   InputEventMessageFilter()
-      : type_(WebInputEvent::Undefined),
+      : BrowserMessageFilter(InputMsgStart),
+        type_(WebInputEvent::Undefined),
         state_(INPUT_EVENT_ACK_STATE_UNKNOWN) {}
 
   void WaitForAck(WebInputEvent::Type type) {
@@ -106,13 +108,12 @@ class InputEventMessageFilter : public BrowserMessageFilter {
   }
 
   // BrowserMessageFilter:
-  virtual bool OnMessageReceived(const IPC::Message& message,
-                                 bool* message_was_ok) OVERRIDE {
+  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE {
     if (message.type() == InputHostMsg_HandleInputEvent_ACK::ID) {
-      ui::LatencyInfo latency;
-      WebInputEvent::Type type = WebInputEvent::Undefined;
-      InputEventAckState ack = INPUT_EVENT_ACK_STATE_UNKNOWN;
-      InputHostMsg_HandleInputEvent_ACK::Read(&message, &type, &ack, &latency);
+      InputHostMsg_HandleInputEvent_ACK::Param params;
+      InputHostMsg_HandleInputEvent_ACK::Read(&message, &params);
+      WebInputEvent::Type type = params.a.type;
+      InputEventAckState ack = params.a.state;
       BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
           base::Bind(&InputEventMessageFilter::ReceivedEventAck,
                      this, type, ack));
@@ -127,8 +128,7 @@ class InputEventMessageFilter : public BrowserMessageFilter {
   DISALLOW_COPY_AND_ASSIGN(InputEventMessageFilter);
 };
 
-class TouchInputBrowserTest : public ContentBrowserTest,
-                              public testing::WithParamInterface<std::string> {
+class TouchInputBrowserTest : public ContentBrowserTest {
  public:
   TouchInputBrowserTest() {}
   virtual ~TouchInputBrowserTest() {}
@@ -159,37 +159,21 @@ class TouchInputBrowserTest : public ContentBrowserTest,
     host->GetProcess()->AddFilter(filter_);
   }
 
-  // ContentBrowserTest:
-  virtual void SetUp() OVERRIDE {
-    // We expect real pixel output for these tests.
-    UseRealGLContexts();
-
-    // On legacy windows, these tests need real GL bindings to pass.
-#if defined(OS_WIN) && !defined(USE_AURA)
-    UseRealGLBindings();
-#endif
-
-    ContentBrowserTest::SetUp();
-  }
-
   virtual void SetUpCommandLine(CommandLine* cmd) OVERRIDE {
     cmd->AppendSwitchASCII(switches::kTouchEvents,
                            switches::kTouchEventsEnabled);
-    cmd->AppendSwitch(GetParam());
   }
 
   scoped_refptr<InputEventMessageFilter> filter_;
 };
 
-// Touch input event tests don't work on Mac with the legacy software renderer.
-// These can be enabled when software compositing is enabled.
-// http://crbug.com/268038
 #if defined(OS_MACOSX)
+// TODO(ccameron): Failing on mac: crbug.com/346363
 #define MAYBE_TouchNoHandler DISABLED_TouchNoHandler
 #else
 #define MAYBE_TouchNoHandler TouchNoHandler
 #endif
-IN_PROC_BROWSER_TEST_P(TouchInputBrowserTest, MAYBE_TouchNoHandler) {
+IN_PROC_BROWSER_TEST_F(TouchInputBrowserTest, MAYBE_TouchNoHandler) {
   LoadURLAndAddFilter();
   SyntheticWebTouchEvent touch;
 
@@ -199,7 +183,7 @@ IN_PROC_BROWSER_TEST_P(TouchInputBrowserTest, MAYBE_TouchNoHandler) {
   GetWidgetHost()->ForwardTouchEventWithLatencyInfo(touch, ui::LatencyInfo());
   filter()->WaitForAck(WebInputEvent::TouchStart);
 
-  if (GetParam() == std::string(switches::kEnableThreadedCompositing)) {
+  if (content::IsThreadedCompositingEnabled()) {
     EXPECT_EQ(INPUT_EVENT_ACK_STATE_NO_CONSUMER_EXISTS,
               filter()->last_ack_state());
   } else {
@@ -215,15 +199,7 @@ IN_PROC_BROWSER_TEST_P(TouchInputBrowserTest, MAYBE_TouchNoHandler) {
   touch.ResetPoints();
 }
 
-// Touch input event tests don't work on Mac with the legacy software renderer.
-// These can be enabled when software compositing is enabled.
-// http://crbug.com/268038
-#if defined(OS_MACOSX)
-#define MAYBE_TouchHandlerNoConsume DISABLED_TouchHandlerNoConsume
-#else
-#define MAYBE_TouchHandlerNoConsume TouchHandlerNoConsume
-#endif
-IN_PROC_BROWSER_TEST_P(TouchInputBrowserTest, MAYBE_TouchHandlerNoConsume) {
+IN_PROC_BROWSER_TEST_F(TouchInputBrowserTest, TouchHandlerNoConsume) {
   LoadURLAndAddFilter();
   SyntheticWebTouchEvent touch;
 
@@ -240,15 +216,7 @@ IN_PROC_BROWSER_TEST_P(TouchInputBrowserTest, MAYBE_TouchHandlerNoConsume) {
   touch.ResetPoints();
 }
 
-// Touch input event tests don't work on Mac with the legacy software renderer.
-// These can be enabled when software compositing is enabled.
-// http://crbug.com/268038
-#if defined(OS_MACOSX)
-#define MAYBE_TouchHandlerConsume DISABLED_TouchHandlerConsume
-#else
-#define MAYBE_TouchHandlerConsume TouchHandlerConsume
-#endif
-IN_PROC_BROWSER_TEST_P(TouchInputBrowserTest, MAYBE_TouchHandlerConsume) {
+IN_PROC_BROWSER_TEST_F(TouchInputBrowserTest, TouchHandlerConsume) {
   LoadURLAndAddFilter();
   SyntheticWebTouchEvent touch;
 
@@ -264,15 +232,13 @@ IN_PROC_BROWSER_TEST_P(TouchInputBrowserTest, MAYBE_TouchHandlerConsume) {
   filter()->WaitForAck(WebInputEvent::TouchEnd);
 }
 
-// Touch input event tests don't work on Mac with the legacy software renderer.
-// These can be enabled when software compositing is enabled.
-// http://crbug.com/268038
 #if defined(OS_MACOSX)
+// TODO(ccameron): Failing on mac: crbug.com/346363
 #define MAYBE_MultiPointTouchPress DISABLED_MultiPointTouchPress
 #else
 #define MAYBE_MultiPointTouchPress MultiPointTouchPress
 #endif
-IN_PROC_BROWSER_TEST_P(TouchInputBrowserTest, MAYBE_MultiPointTouchPress) {
+IN_PROC_BROWSER_TEST_F(TouchInputBrowserTest, MAYBE_MultiPointTouchPress) {
   LoadURLAndAddFilter();
   SyntheticWebTouchEvent touch;
 
@@ -281,7 +247,7 @@ IN_PROC_BROWSER_TEST_P(TouchInputBrowserTest, MAYBE_MultiPointTouchPress) {
   touch.PressPoint(25, 25);
   GetWidgetHost()->ForwardTouchEventWithLatencyInfo(touch, ui::LatencyInfo());
   filter()->WaitForAck(WebInputEvent::TouchStart);
-  if (GetParam() == std::string(switches::kEnableThreadedCompositing)) {
+  if (content::IsThreadedCompositingEnabled()) {
     EXPECT_EQ(INPUT_EVENT_ACK_STATE_NO_CONSUMER_EXISTS,
               filter()->last_ack_state());
   } else {
@@ -295,13 +261,5 @@ IN_PROC_BROWSER_TEST_P(TouchInputBrowserTest, MAYBE_MultiPointTouchPress) {
   filter()->WaitForAck(WebInputEvent::TouchStart);
   EXPECT_EQ(INPUT_EVENT_ACK_STATE_CONSUMED, filter()->last_ack_state());
 }
-
-INSTANTIATE_TEST_CASE_P(WithoutInputHandlerProxy, TouchInputBrowserTest,
-    ::testing::Values(std::string(switches::kDisableThreadedCompositing)));
-
-#if !defined(OS_MACOSX)
-INSTANTIATE_TEST_CASE_P(WithInputHandlerProxy, TouchInputBrowserTest,
-    ::testing::Values(std::string(switches::kEnableThreadedCompositing)));
-#endif
 
 }  // namespace content

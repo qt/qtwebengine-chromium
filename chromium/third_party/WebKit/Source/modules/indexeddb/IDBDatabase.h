@@ -30,18 +30,18 @@
 #include "bindings/v8/ScriptWrappable.h"
 #include "core/dom/ActiveDOMObject.h"
 #include "core/dom/DOMStringList.h"
-#include "core/events/Event.h"
-#include "core/events/EventTarget.h"
+#include "modules/EventModules.h"
+#include "modules/EventTargetModules.h"
 #include "modules/indexeddb/IDBDatabaseCallbacks.h"
 #include "modules/indexeddb/IDBMetadata.h"
 #include "modules/indexeddb/IDBObjectStore.h"
 #include "modules/indexeddb/IDBTransaction.h"
 #include "modules/indexeddb/IndexedDB.h"
+#include "platform/heap/Handle.h"
 #include "public/platform/WebIDBDatabase.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/PassRefPtr.h"
-#include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
 
 namespace WebCore {
@@ -50,12 +50,17 @@ class DOMError;
 class ExceptionState;
 class ExecutionContext;
 
-class IDBDatabase : public RefCounted<IDBDatabase>, public ScriptWrappable, public EventTargetWithInlineData, public ActiveDOMObject {
-    REFCOUNTED_EVENT_TARGET(IDBDatabase);
-
+class IDBDatabase FINAL
+    : public RefCountedGarbageCollectedWillBeGarbageCollectedFinalized<IDBDatabase>
+    , public ScriptWrappable
+    , public EventTargetWithInlineData
+    , public ActiveDOMObject {
+    DEFINE_EVENT_TARGET_REFCOUNTING_WILL_BE_REMOVED(RefCountedGarbageCollected<IDBDatabase>);
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(IDBDatabase);
 public:
-    static PassRefPtr<IDBDatabase> create(ExecutionContext*, PassOwnPtr<blink::WebIDBDatabase>, PassRefPtr<IDBDatabaseCallbacks>);
-    ~IDBDatabase();
+    static IDBDatabase* create(ExecutionContext*, PassOwnPtr<blink::WebIDBDatabase>, IDBDatabaseCallbacks*);
+    virtual ~IDBDatabase();
+    virtual void trace(Visitor*) OVERRIDE;
 
     void setMetadata(const IDBDatabaseMetadata& metadata) { m_metadata = metadata; }
     void indexCreated(int64_t objectStoreId, const IDBIndexMetadata&);
@@ -65,14 +70,14 @@ public:
 
     // Implement the IDL
     const String& name() const { return m_metadata.name; }
-    ScriptValue version(ExecutionContext*) const;
-    PassRefPtr<DOMStringList> objectStoreNames() const;
+    ScriptValue version(ScriptState*) const;
+    PassRefPtrWillBeRawPtr<DOMStringList> objectStoreNames() const;
 
-    PassRefPtr<IDBObjectStore> createObjectStore(const String& name, const Dictionary&, ExceptionState&);
-    PassRefPtr<IDBObjectStore> createObjectStore(const String& name, const IDBKeyPath&, bool autoIncrement, ExceptionState&);
-    PassRefPtr<IDBTransaction> transaction(ExecutionContext* context, PassRefPtr<DOMStringList> scope, const String& mode, ExceptionState& exceptionState) { return transaction(context, *scope, mode, exceptionState); }
-    PassRefPtr<IDBTransaction> transaction(ExecutionContext*, const Vector<String>&, const String& mode, ExceptionState&);
-    PassRefPtr<IDBTransaction> transaction(ExecutionContext*, const String&, const String& mode, ExceptionState&);
+    IDBObjectStore* createObjectStore(const String& name, const Dictionary&, ExceptionState&);
+    IDBObjectStore* createObjectStore(const String& name, const IDBKeyPath&, bool autoIncrement, ExceptionState&);
+    IDBTransaction* transaction(ExecutionContext* context, PassRefPtrWillBeRawPtr<DOMStringList> scope, const String& mode, ExceptionState& exceptionState) { return transaction(context, *scope, mode, exceptionState); }
+    IDBTransaction* transaction(ExecutionContext*, const Vector<String>&, const String& mode, ExceptionState&);
+    IDBTransaction* transaction(ExecutionContext*, const String&, const String& mode, ExceptionState&);
     void deleteObjectStore(const String& name, ExceptionState&);
     void close();
 
@@ -82,9 +87,9 @@ public:
     DEFINE_ATTRIBUTE_EVENT_LISTENER(versionchange);
 
     // IDBDatabaseCallbacks
-    virtual void onVersionChange(int64_t oldVersion, int64_t newVersion);
-    virtual void onAbort(int64_t, PassRefPtr<DOMError>);
-    virtual void onComplete(int64_t);
+    void onVersionChange(int64_t oldVersion, int64_t newVersion);
+    void onAbort(int64_t, PassRefPtrWillBeRawPtr<DOMError>);
+    void onComplete(int64_t);
 
     // ActiveDOMObject
     virtual bool hasPendingActivity() const OVERRIDE;
@@ -97,10 +102,10 @@ public:
     bool isClosePending() const { return m_closePending; }
     void forceClose();
     const IDBDatabaseMetadata& metadata() const { return m_metadata; }
-    void enqueueEvent(PassRefPtr<Event>);
+    void enqueueEvent(PassRefPtrWillBeRawPtr<Event>);
 
     using EventTarget::dispatchEvent;
-    virtual bool dispatchEvent(PassRefPtr<Event>) OVERRIDE;
+    virtual bool dispatchEvent(PassRefPtrWillBeRawPtr<Event>) OVERRIDE;
 
     int64_t findObjectStoreId(const String& name) const;
     bool containsObjectStore(const String& name) const
@@ -108,9 +113,12 @@ public:
         return findObjectStoreId(name) != IDBObjectStoreMetadata::InvalidId;
     }
 
+    // Will return nullptr if this database is stopped.
     blink::WebIDBDatabase* backend() const { return m_backend.get(); }
 
     static int64_t nextTransactionId();
+
+    void ackReceivedBlobs(const Vector<blink::WebBlobInfo>*);
 
     static const char indexDeletedErrorMessage[];
     static const char isKeyCursorErrorMessage[];
@@ -125,16 +133,18 @@ public:
     static const char sourceDeletedErrorMessage[];
     static const char transactionFinishedErrorMessage[];
     static const char transactionInactiveErrorMessage[];
+    static const char transactionReadOnlyErrorMessage[];
+    static const char databaseClosedErrorMessage[];
 
 private:
-    IDBDatabase(ExecutionContext*, PassOwnPtr<blink::WebIDBDatabase>, PassRefPtr<IDBDatabaseCallbacks>);
+    IDBDatabase(ExecutionContext*, PassOwnPtr<blink::WebIDBDatabase>, IDBDatabaseCallbacks*);
 
     void closeConnection();
 
     IDBDatabaseMetadata m_metadata;
     OwnPtr<blink::WebIDBDatabase> m_backend;
-    RefPtr<IDBTransaction> m_versionChangeTransaction;
-    typedef HashMap<int64_t, RefPtr<IDBTransaction> > TransactionMap;
+    Member<IDBTransaction> m_versionChangeTransaction;
+    typedef HeapHashMap<int64_t, Member<IDBTransaction> > TransactionMap;
     TransactionMap m_transactions;
 
     bool m_closePending;
@@ -142,9 +152,9 @@ private:
 
     // Keep track of the versionchange events waiting to be fired on this
     // database so that we can cancel them if the database closes.
-    Vector<RefPtr<Event> > m_enqueuedEvents;
+    WillBeHeapVector<RefPtrWillBeMember<Event> > m_enqueuedEvents;
 
-    RefPtr<IDBDatabaseCallbacks> m_databaseCallbacks;
+    Member<IDBDatabaseCallbacks> m_databaseCallbacks;
 };
 
 } // namespace WebCore

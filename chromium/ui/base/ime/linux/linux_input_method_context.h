@@ -5,10 +5,9 @@
 #ifndef UI_BASE_IME_LINUX_LINUX_INPUT_METHOD_CONTEXT_H_
 #define UI_BASE_IME_LINUX_LINUX_INPUT_METHOD_CONTEXT_H_
 
-#include "base/i18n/rtl.h"
 #include "base/strings/string16.h"
 #include "ui/base/ime/text_input_type.h"
-#include "ui/base/ui_export.h"
+#include "ui/base/ui_base_export.h"
 
 namespace gfx {
 class Rect;
@@ -21,7 +20,7 @@ class KeyEvent;
 
 // An interface of input method context for input method frameworks on
 // GNU/Linux and likes.
-class UI_EXPORT LinuxInputMethodContext {
+class UI_BASE_EXPORT LinuxInputMethodContext {
  public:
   virtual ~LinuxInputMethodContext() {}
 
@@ -34,9 +33,6 @@ class UI_EXPORT LinuxInputMethodContext {
   // before calling DispatchKeyEvent().
   virtual void Reset() = 0;
 
-  // Returns the text direction of the current keyboard layout or input method.
-  virtual base::i18n::TextDirection GetInputTextDirection() const = 0;
-
   // Notifies the context that the text input type has changed.
   virtual void OnTextInputTypeChanged(TextInputType text_input_type) = 0;
 
@@ -46,7 +42,7 @@ class UI_EXPORT LinuxInputMethodContext {
 };
 
 // An interface of callback functions called from LinuxInputMethodContext.
-class UI_EXPORT LinuxInputMethodContextDelegate {
+class UI_BASE_EXPORT LinuxInputMethodContextDelegate {
  public:
   virtual ~LinuxInputMethodContextDelegate() {}
 

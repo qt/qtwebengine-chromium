@@ -31,22 +31,71 @@
 #ifndef ElementAnimation_h
 #define ElementAnimation_h
 
-#include "bindings/v8/Dictionary.h"
-#include "core/css/CSSParser.h"
+#include "core/animation/Animation.h"
+#include "core/animation/AnimationTimeline.h"
+#include "core/animation/EffectInput.h"
+#include "core/animation/TimingInput.h"
+#include "core/dom/Document.h"
+#include "core/dom/Element.h"
+#include "platform/RuntimeEnabledFeatures.h"
 
 namespace WebCore {
 
-class Element;
+class Dictionary;
 
 class ElementAnimation {
 public:
-    static CSSPropertyID camelCaseCSSPropertyNameToID(const String& propertyName);
-    static void animate(Element*, Vector<Dictionary> keyframesDictionaryVector, double duration = 0);
+    static AnimationPlayer* animate(Element& element, PassRefPtrWillBeRawPtr<AnimationEffect> effect, const Dictionary& timingInputDictionary)
+    {
+        return animateInternal(element, effect, TimingInput::convert(timingInputDictionary));
+    }
+
+    static AnimationPlayer* animate(Element& element, PassRefPtrWillBeRawPtr<AnimationEffect> effect, double duration)
+    {
+        return animateInternal(element, effect, TimingInput::convert(duration));
+    }
+
+    static AnimationPlayer* animate(Element& element, PassRefPtrWillBeRawPtr<AnimationEffect> effect)
+    {
+        return animateInternal(element, effect, Timing());
+    }
+
+    static AnimationPlayer* animate(Element& element, const Vector<Dictionary>& keyframeDictionaryVector, const Dictionary& timingInputDictionary, ExceptionState& exceptionState)
+    {
+        RefPtrWillBeRawPtr<AnimationEffect> effect = EffectInput::convert(&element, keyframeDictionaryVector, exceptionState);
+        if (exceptionState.hadException())
+            return 0;
+        ASSERT(effect);
+        return animateInternal(element, effect.release(), TimingInput::convert(timingInputDictionary));
+    }
+
+    static AnimationPlayer* animate(Element& element, const Vector<Dictionary>& keyframeDictionaryVector, double duration, ExceptionState& exceptionState)
+    {
+        RefPtrWillBeRawPtr<AnimationEffect> effect = EffectInput::convert(&element, keyframeDictionaryVector, exceptionState);
+        if (exceptionState.hadException())
+            return 0;
+        ASSERT(effect);
+        return animateInternal(element, effect.release(), TimingInput::convert(duration));
+    }
+
+    static AnimationPlayer* animate(Element& element, const Vector<Dictionary>& keyframeDictionaryVector, ExceptionState& exceptionState)
+    {
+        RefPtrWillBeRawPtr<AnimationEffect> effect = EffectInput::convert(&element, keyframeDictionaryVector, exceptionState);
+        if (exceptionState.hadException())
+            return 0;
+        ASSERT(effect);
+        return animateInternal(element, effect.release(), Timing());
+    }
 
 private:
-    static void startAnimation(Element*, Vector<Dictionary> keyframesDictionaryVector, double duration = 0);
-
-    friend class AnimationElementAnimationTest;
+    static AnimationPlayer* animateInternal(Element& element, PassRefPtrWillBeRawPtr<AnimationEffect> effect, const Timing& timing)
+    {
+        if (RuntimeEnabledFeatures::webAnimationsElementAnimateEnabled()) {
+            RefPtrWillBeRawPtr<Animation> animation = Animation::create(&element, effect, timing);
+            return element.document().timeline().play(animation.get());
+        }
+        return 0;
+    }
 };
 
 } // namespace WebCore

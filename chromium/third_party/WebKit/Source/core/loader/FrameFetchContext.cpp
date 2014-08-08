@@ -32,19 +32,20 @@
 #include "core/loader/FrameFetchContext.h"
 
 #include "core/dom/Document.h"
+#include "core/frame/LocalFrame.h"
 #include "core/inspector/InspectorInstrumentation.h"
+#include "core/inspector/InspectorTraceEvents.h"
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderClient.h"
 #include "core/loader/ProgressTracker.h"
-#include "core/frame/Frame.h"
 #include "core/page/Page.h"
 #include "core/frame/Settings.h"
 #include "platform/weborigin/SecurityPolicy.h"
 
 namespace WebCore {
 
-FrameFetchContext::FrameFetchContext(Frame* frame)
+FrameFetchContext::FrameFetchContext(LocalFrame* frame)
     : m_frame(frame)
 {
 }
@@ -54,29 +55,43 @@ void FrameFetchContext::reportLocalLoadFailed(const KURL& url)
     FrameLoader::reportLocalLoadFailed(m_frame, url.elidedString());
 }
 
-void FrameFetchContext::addAdditionalRequestHeaders(Document& document, ResourceRequest& request, Resource::Type type)
+void FrameFetchContext::addAdditionalRequestHeaders(Document* document, ResourceRequest& request, FetchResourceType type)
 {
-    if (type != Resource::MainResource) {
+    bool isMainResource = type == FetchMainResource;
+    if (!isMainResource) {
         String outgoingReferrer;
         String outgoingOrigin;
         if (request.httpReferrer().isNull()) {
-            outgoingReferrer = document.outgoingReferrer();
-            outgoingOrigin = document.outgoingOrigin();
+            outgoingReferrer = document->outgoingReferrer();
+            outgoingOrigin = document->outgoingOrigin();
         } else {
             outgoingReferrer = request.httpReferrer();
             outgoingOrigin = SecurityOrigin::createFromString(outgoingReferrer)->toString();
         }
 
-        outgoingReferrer = SecurityPolicy::generateReferrerHeader(document.referrerPolicy(), request.url(), outgoingReferrer);
+        outgoingReferrer = SecurityPolicy::generateReferrerHeader(document->referrerPolicy(), request.url(), outgoingReferrer);
         if (outgoingReferrer.isEmpty())
             request.clearHTTPReferrer();
         else if (!request.httpReferrer())
-            request.setHTTPReferrer(outgoingReferrer);
+            request.setHTTPReferrer(Referrer(outgoingReferrer, document->referrerPolicy()));
 
-        FrameLoader::addHTTPOriginIfNeeded(request, outgoingOrigin);
+        FrameLoader::addHTTPOriginIfNeeded(request, AtomicString(outgoingOrigin));
     }
 
-    m_frame->loader().addExtraFieldsToRequest(request);
+    // The remaining modifications are only necessary for HTTP and HTTPS.
+    if (!request.url().isEmpty() && !request.url().protocolIsInHTTPFamily())
+        return;
+
+    m_frame->loader().applyUserAgent(request);
+
+    // Default to sending an empty Origin header if one hasn't been set yet.
+    FrameLoader::addHTTPOriginIfNeeded(request, nullAtom);
+}
+
+void FrameFetchContext::setFirstPartyForCookies(ResourceRequest& request)
+{
+    if (m_frame->tree().top()->isLocalFrame())
+        request.setFirstPartyForCookies(toLocalFrame(m_frame->tree().top())->document()->firstPartyForCookies());
 }
 
 CachePolicy FrameFetchContext::cachePolicy(Document* document) const
@@ -88,8 +103,9 @@ CachePolicy FrameFetchContext::cachePolicy(Document* document) const
     if (loadType == FrameLoadTypeReloadFromOrigin)
         return CachePolicyReload;
 
-    if (Frame* parentFrame = m_frame->tree().parent()) {
-        CachePolicy parentCachePolicy = parentFrame->loader().fetchContext().cachePolicy(parentFrame->document());
+    Frame* parentFrame = m_frame->tree().parent();
+    if (parentFrame && parentFrame->isLocalFrame()) {
+        CachePolicy parentCachePolicy = toLocalFrame(parentFrame)->loader().fetchContext().cachePolicy(toLocalFrame(parentFrame)->document());
         if (parentCachePolicy != CachePolicyVerify)
             return parentCachePolicy;
     }
@@ -110,18 +126,21 @@ CachePolicy FrameFetchContext::cachePolicy(Document* document) const
 // cannot see imported documents.
 inline DocumentLoader* FrameFetchContext::ensureLoader(DocumentLoader* loader)
 {
-    return loader ? loader : m_frame->loader().activeDocumentLoader();
+    return loader ? loader : m_frame->loader().documentLoader();
 }
 
-void FrameFetchContext::dispatchDidChangeResourcePriority(unsigned long identifier, ResourceLoadPriority loadPriority)
+void FrameFetchContext::dispatchDidChangeResourcePriority(unsigned long identifier, ResourceLoadPriority loadPriority, int intraPriorityValue)
 {
-    m_frame->loader().client()->dispatchDidChangeResourcePriority(identifier, loadPriority);
+    m_frame->loader().client()->dispatchDidChangeResourcePriority(identifier, loadPriority, intraPriorityValue);
 }
 
 void FrameFetchContext::dispatchWillSendRequest(DocumentLoader* loader, unsigned long identifier, ResourceRequest& request, const ResourceResponse& redirectResponse, const FetchInitiatorInfo& initiatorInfo)
 {
     m_frame->loader().applyUserAgent(request);
     m_frame->loader().client()->dispatchWillSendRequest(loader, identifier, request, redirectResponse);
+    TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "ResourceSendRequest", "data", InspectorSendRequestEvent::data(identifier, m_frame, request));
+    TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline.stack"), "CallStack", "stack", InspectorCallStackEvent::currentCallStack());
+    // FIXME(361045): remove InspectorInstrumentation calls once DevTools Timeline migrates to tracing.
     InspectorInstrumentation::willSendRequest(m_frame, identifier, ensureLoader(loader), request, redirectResponse, initiatorInfo);
 }
 
@@ -132,40 +151,45 @@ void FrameFetchContext::dispatchDidLoadResourceFromMemoryCache(const ResourceReq
 
 void FrameFetchContext::dispatchDidReceiveResponse(DocumentLoader* loader, unsigned long identifier, const ResourceResponse& r, ResourceLoader* resourceLoader)
 {
-    if (Page* page = m_frame->page())
-        page->progress().incrementProgress(identifier, r);
+    m_frame->loader().progress().incrementProgress(identifier, r);
     m_frame->loader().client()->dispatchDidReceiveResponse(loader, identifier, r);
+    TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "ResourceReceiveResponse", "data", InspectorReceiveResponseEvent::data(identifier, m_frame, r));
+    // FIXME(361045): remove InspectorInstrumentation calls once DevTools Timeline migrates to tracing.
     InspectorInstrumentation::didReceiveResourceResponse(m_frame, identifier, ensureLoader(loader), r, resourceLoader);
 }
 
 void FrameFetchContext::dispatchDidReceiveData(DocumentLoader*, unsigned long identifier, const char* data, int dataLength, int encodedDataLength)
 {
-    if (Page* page = m_frame->page())
-        page->progress().incrementProgress(identifier, data, dataLength);
+    m_frame->loader().progress().incrementProgress(identifier, data, dataLength);
+    TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "ResourceReceivedData", "data", InspectorReceiveDataEvent::data(identifier, m_frame, encodedDataLength));
+    // FIXME(361045): remove InspectorInstrumentation calls once DevTools Timeline migrates to tracing.
     InspectorInstrumentation::didReceiveData(m_frame, identifier, data, dataLength, encodedDataLength);
 }
 
 void FrameFetchContext::dispatchDidDownloadData(DocumentLoader*, unsigned long identifier, int dataLength, int encodedDataLength)
 {
-    if (Page* page = m_frame->page())
-        page->progress().incrementProgress(identifier, 0, dataLength);
+    m_frame->loader().progress().incrementProgress(identifier, 0, dataLength);
+    TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "ResourceReceivedData", "data", InspectorReceiveDataEvent::data(identifier, m_frame, encodedDataLength));
+    // FIXME(361045): remove InspectorInstrumentation calls once DevTools Timeline migrates to tracing.
     InspectorInstrumentation::didReceiveData(m_frame, identifier, 0, dataLength, encodedDataLength);
 }
 
-void FrameFetchContext::dispatchDidFinishLoading(DocumentLoader* loader, unsigned long identifier, double finishTime)
+void FrameFetchContext::dispatchDidFinishLoading(DocumentLoader* loader, unsigned long identifier, double finishTime, int64_t encodedDataLength)
 {
-    if (Page* page = m_frame->page())
-        page->progress().completeProgress(identifier);
+    m_frame->loader().progress().completeProgress(identifier);
     m_frame->loader().client()->dispatchDidFinishLoading(loader, identifier);
 
-    InspectorInstrumentation::didFinishLoading(m_frame, identifier, ensureLoader(loader), finishTime);
+    TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "ResourceFinish", "data", InspectorResourceFinishEvent::data(identifier, finishTime, false));
+    // FIXME(361045): remove InspectorInstrumentation calls once DevTools Timeline migrates to tracing.
+    InspectorInstrumentation::didFinishLoading(m_frame, identifier, ensureLoader(loader), finishTime, encodedDataLength);
 }
 
 void FrameFetchContext::dispatchDidFail(DocumentLoader* loader, unsigned long identifier, const ResourceError& error)
 {
-    if (Page* page = m_frame->page())
-        page->progress().completeProgress(identifier);
-    InspectorInstrumentation::didFailLoading(m_frame, identifier, ensureLoader(loader), error);
+    m_frame->loader().progress().completeProgress(identifier);
+    TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "ResourceFinish", "data", InspectorResourceFinishEvent::data(identifier, 0, true));
+    // FIXME(361045): remove InspectorInstrumentation calls once DevTools Timeline migrates to tracing.
+    InspectorInstrumentation::didFailLoading(m_frame, identifier, error);
 }
 
 void FrameFetchContext::sendRemainingDelegateMessages(DocumentLoader* loader, unsigned long identifier, const ResourceResponse& response, int dataLength)
@@ -176,7 +200,7 @@ void FrameFetchContext::sendRemainingDelegateMessages(DocumentLoader* loader, un
     if (dataLength > 0)
         dispatchDidReceiveData(ensureLoader(loader), identifier, 0, dataLength, 0);
 
-    dispatchDidFinishLoading(ensureLoader(loader), identifier, 0);
+    dispatchDidFinishLoading(ensureLoader(loader), identifier, 0, 0);
 }
 
 } // namespace WebCore

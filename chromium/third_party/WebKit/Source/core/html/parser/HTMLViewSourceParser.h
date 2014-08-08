@@ -31,19 +31,20 @@
 #include "core/html/parser/HTMLInputStream.h"
 #include "core/html/parser/HTMLSourceTracker.h"
 #include "core/html/parser/HTMLTokenizer.h"
+#include "core/html/parser/XSSAuditor.h"
 
 namespace WebCore {
 
 class HTMLViewSourceParser FINAL :  public DecodedDataDocumentParser {
 public:
-    static PassRefPtr<HTMLViewSourceParser> create(HTMLViewSourceDocument* document, const String& mimeType)
+    static PassRefPtrWillBeRawPtr<HTMLViewSourceParser> create(HTMLViewSourceDocument& document, const String& mimeType)
     {
-        return adoptRef(new HTMLViewSourceParser(document, mimeType));
+        return adoptRefWillBeNoop(new HTMLViewSourceParser(document, mimeType));
     }
     virtual ~HTMLViewSourceParser() { }
 
 private:
-    HTMLViewSourceParser(HTMLViewSourceDocument*, const String& mimeType);
+    HTMLViewSourceParser(HTMLViewSourceDocument&, const String& mimeType);
 
     // DocumentParser
     virtual void insert(const SegmentedString&) OVERRIDE { ASSERT_NOT_REACHED(); }
@@ -59,6 +60,7 @@ private:
     HTMLToken m_token;
     HTMLSourceTracker m_sourceTracker;
     OwnPtr<HTMLTokenizer> m_tokenizer;
+    XSSAuditor m_xssAuditor;
 };
 
 }

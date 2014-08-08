@@ -22,35 +22,18 @@
 
 #include "core/svg/SVGDefsElement.h"
 
-#include "SVGNames.h"
+#include "core/SVGNames.h"
 #include "core/rendering/svg/RenderSVGHiddenContainer.h"
 
 namespace WebCore {
-
-// Animated property definitions
-DEFINE_ANIMATED_BOOLEAN(SVGDefsElement, SVGNames::externalResourcesRequiredAttr, ExternalResourcesRequired, externalResourcesRequired)
-
-BEGIN_REGISTER_ANIMATED_PROPERTIES(SVGDefsElement)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(externalResourcesRequired)
-    REGISTER_PARENT_ANIMATED_PROPERTIES(SVGGraphicsElement)
-END_REGISTER_ANIMATED_PROPERTIES
 
 inline SVGDefsElement::SVGDefsElement(Document& document)
     : SVGGraphicsElement(SVGNames::defsTag, document)
 {
     ScriptWrappable::init(this);
-    registerAnimatedPropertiesForSVGDefsElement();
 }
 
-PassRefPtr<SVGDefsElement> SVGDefsElement::create(Document& document)
-{
-    return adoptRef(new SVGDefsElement(document));
-}
-
-bool SVGDefsElement::isValid() const
-{
-    return SVGTests::isValid();
-}
+DEFINE_NODE_FACTORY(SVGDefsElement)
 
 RenderObject* SVGDefsElement::createRenderer(RenderStyle*)
 {

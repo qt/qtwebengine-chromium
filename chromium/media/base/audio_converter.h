@@ -73,9 +73,8 @@ class MEDIA_EXPORT AudioConverter {
                  bool disable_fifo);
   ~AudioConverter();
 
-  // Converts audio from all inputs into the |dest|.  |dest| must be sized for
-  // data matching the output AudioParameters provided during construction.  If
-  // an |initial_delay| is specified, it will be propagated to each input.
+  // Converts audio from all inputs into the |dest|. If an |initial_delay| is
+  // specified, it will be propagated to each input.
   void Convert(AudioBus* dest);
   void ConvertWithDelay(const base::TimeDelta& initial_delay, AudioBus* dest);
 
@@ -87,6 +86,12 @@ class MEDIA_EXPORT AudioConverter {
   // Flushes all buffered data.
   void Reset();
 
+  // The maximum size in frames that guarantees we will only make a single call
+  // to each input's ProvideInput for more data.
+  int ChunkSize() const;
+
+  bool empty() const { return transform_inputs_.empty(); }
+
  private:
   // Provides input to the MultiChannelResampler.  Called by the resampler when
   // more data is necessary.
@@ -96,6 +101,9 @@ class MEDIA_EXPORT AudioConverter {
   // necessary.
   void SourceCallback(int fifo_frame_delay, AudioBus* audio_bus);
 
+  // (Re)creates the temporary |unmixed_audio_| buffer if necessary.
+  void CreateUnmixedAudioIfNecessary(int frames);
+
   // Set of inputs for Convert().
   typedef std::list<InputCallback*> InputCallbackSet;
   InputCallbackSet transform_inputs_;
@@ -103,6 +111,7 @@ class MEDIA_EXPORT AudioConverter {
   // Used to buffer data between the client and the output device in cases where
   // the client buffer size is not the same as the output device buffer size.
   scoped_ptr<AudioPullFifo> audio_fifo_;
+  int chunk_size_;
 
   // Handles resampling.
   scoped_ptr<MultiChannelResampler> resampler_;

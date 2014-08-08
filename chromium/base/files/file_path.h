@@ -189,6 +189,13 @@ class BASE_EXPORT FilePath {
   // Returns a vector of all of the components of the provided path. It is
   // equivalent to calling DirName().value() on the path's root component,
   // and BaseName().value() on each child component.
+  //
+  // To make sure this is lossless so we can differentiate absolute and
+  // relative paths, the root slash will be included even though no other
+  // slashes will be. The precise behavior is:
+  //
+  // Posix:  "/foo/bar"  ->  [ "/", "foo", "bar" ]
+  // Windows:  "C:\foo\bar"  ->  [ "C:", "\\", "foo", "bar" ]
   void GetComponents(std::vector<FilePath::StringType>* components) const;
 
   // Returns true if this FilePath is a strict parent of the |child|. Absolute
@@ -239,7 +246,7 @@ class BASE_EXPORT FilePath {
   // TODO(davidben): Check all our extension-sensitive code to see if
   // we can rename this to Extension() and the other to something like
   // LongExtension(), defaulting to short extensions and leaving the
-  // long "extensions" to logic like file_util::GetUniquePathNumber().
+  // long "extensions" to logic like base::GetUniquePathNumber().
   StringType FinalExtension() const;
 
   // Returns "C:\pics\jojo" for path "C:\pics\jojo.jpg"
@@ -314,8 +321,8 @@ class BASE_EXPORT FilePath {
   // separator.
   FilePath StripTrailingSeparators() const WARN_UNUSED_RESULT;
 
-  // Returns true if this FilePath contains any attempt to reference a parent
-  // directory (i.e. has a path component that is ".."
+  // Returns true if this FilePath contains an attempt to reference a parent
+  // directory (e.g. has a path component that is "..").
   bool ReferencesParent() const;
 
   // Return a Unicode human-readable version of this path.
@@ -366,6 +373,10 @@ class BASE_EXPORT FilePath {
   // Normalize all path separators to backslash on Windows
   // (if FILE_PATH_USES_WIN_SEPARATORS is true), or do nothing on POSIX systems.
   FilePath NormalizePathSeparators() const;
+
+  // Normalize all path separattors to given type on Windows
+  // (if FILE_PATH_USES_WIN_SEPARATORS is true), or do nothing on POSIX systems.
+  FilePath NormalizePathSeparatorsTo(CharType separator) const;
 
   // Compare two strings in the same way the file system does.
   // Note that these always ignore case, even on file systems that are case-

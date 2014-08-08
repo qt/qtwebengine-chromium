@@ -31,8 +31,8 @@
 
 namespace content {
 // static
-CONTENT_EXPORT RendererPpapiHost*
-RendererPpapiHost::GetForPPInstance(PP_Instance instance) {
+CONTENT_EXPORT RendererPpapiHost* RendererPpapiHost::GetForPPInstance(
+    PP_Instance instance) {
   return RendererPpapiHostImpl::GetForPPInstance(instance);
 }
 
@@ -42,10 +42,10 @@ RendererPpapiHostImpl::RendererPpapiHostImpl(
     ppapi::proxy::HostDispatcher* dispatcher,
     const ppapi::PpapiPermissions& permissions)
     : module_(module),
-      dispatcher_(dispatcher) {
+      dispatcher_(dispatcher),
+      is_external_plugin_host_(false) {
   // Hook the PpapiHost up to the dispatcher for out-of-process communication.
-  ppapi_host_.reset(
-      new ppapi::host::PpapiHost(dispatcher, permissions));
+  ppapi_host_.reset(new ppapi::host::PpapiHost(dispatcher, permissions));
   ppapi_host_->AddHostFactoryFilter(scoped_ptr<ppapi::host::HostFactory>(
       new ContentRendererPepperHostFactory(this)));
   dispatcher->AddFilter(ppapi_host_.get());
@@ -56,8 +56,7 @@ RendererPpapiHostImpl::RendererPpapiHostImpl(
 RendererPpapiHostImpl::RendererPpapiHostImpl(
     PluginModule* module,
     const ppapi::PpapiPermissions& permissions)
-    : module_(module),
-      dispatcher_(NULL) {
+    : module_(module), dispatcher_(NULL), is_external_plugin_host_(false) {
   // Hook the host up to the in-process router.
   in_process_router_.reset(new PepperInProcessRouter(this));
   ppapi_host_.reset(new ppapi::host::PpapiHost(
@@ -80,8 +79,8 @@ RendererPpapiHostImpl* RendererPpapiHostImpl::CreateOnModuleForOutOfProcess(
     ppapi::proxy::HostDispatcher* dispatcher,
     const ppapi::PpapiPermissions& permissions) {
   DCHECK(!module->renderer_ppapi_host());
-  RendererPpapiHostImpl* result = new RendererPpapiHostImpl(
-      module, dispatcher, permissions);
+  RendererPpapiHostImpl* result =
+      new RendererPpapiHostImpl(module, dispatcher, permissions);
 
   // Takes ownership of pointer.
   module->SetRendererPpapiHost(scoped_ptr<RendererPpapiHostImpl>(result));
@@ -94,8 +93,8 @@ RendererPpapiHostImpl* RendererPpapiHostImpl::CreateOnModuleForInProcess(
     PluginModule* module,
     const ppapi::PpapiPermissions& permissions) {
   DCHECK(!module->renderer_ppapi_host());
-  RendererPpapiHostImpl* result = new RendererPpapiHostImpl(
-      module, permissions);
+  RendererPpapiHostImpl* result =
+      new RendererPpapiHostImpl(module, permissions);
 
   // Takes ownership of pointer.
   module->SetRendererPpapiHost(scoped_ptr<RendererPpapiHostImpl>(result));
@@ -128,12 +127,16 @@ PepperPluginInstanceImpl* RendererPpapiHostImpl::GetPluginInstanceImpl(
   return GetAndValidateInstance(instance);
 }
 
+bool RendererPpapiHostImpl::IsExternalPluginHost() const {
+  return is_external_plugin_host_;
+}
+
 ppapi::host::PpapiHost* RendererPpapiHostImpl::GetPpapiHost() {
   return ppapi_host_.get();
 }
 
 RenderFrame* RendererPpapiHostImpl::GetRenderFrameForInstance(
-    PP_Instance instance) const  {
+    PP_Instance instance) const {
   PepperPluginInstanceImpl* instance_object = GetAndValidateInstance(instance);
   if (!instance_object)
     return NULL;
@@ -164,7 +167,7 @@ PepperPluginInstance* RendererPpapiHostImpl::GetPluginInstance(
 }
 
 blink::WebPluginContainer* RendererPpapiHostImpl::GetContainerForInstance(
-      PP_Instance instance) const {
+    PP_Instance instance) const {
   PepperPluginInstanceImpl* instance_object = GetAndValidateInstance(instance);
   if (!instance_object)
     return NULL;
@@ -173,7 +176,7 @@ blink::WebPluginContainer* RendererPpapiHostImpl::GetContainerForInstance(
 
 base::ProcessId RendererPpapiHostImpl::GetPluginPID() const {
   if (dispatcher_)
-    return dispatcher_->channel()->peer_pid();
+    return dispatcher_->channel()->GetPeerPID();
   return base::kNullProcessId;
 }
 
@@ -203,18 +206,10 @@ gfx::Point RendererPpapiHostImpl::PluginPointToRenderFrame(
     PP_Instance instance,
     const gfx::Point& pt) const {
   PepperPluginInstanceImpl* plugin_instance = GetAndValidateInstance(instance);
-  if (!plugin_instance)
+  if (!plugin_instance || plugin_instance->flash_fullscreen()) {
+    // Flash fullscreen is special in that it renders into its own separate,
+    // dedicated window.  So, do not offset the point.
     return pt;
-
-  RenderFrameImpl* render_frame = static_cast<RenderFrameImpl*>(
-      GetRenderFrameForInstance(instance));
-  if (plugin_instance->view_data().is_fullscreen ||
-      plugin_instance->flash_fullscreen()) {
-    blink::WebRect window_rect = render_frame->GetRenderWidget()->windowRect();
-    blink::WebRect screen_rect =
-        render_frame->GetRenderWidget()->screenInfo().rect;
-    return gfx::Point(pt.x() - window_rect.x + screen_rect.x,
-                      pt.y() - window_rect.y + screen_rect.y);
   }
   return gfx::Point(pt.x() + plugin_instance->view_data().rect.point.x,
                     pt.y() + plugin_instance->view_data().rect.point.y);
@@ -228,15 +223,22 @@ IPC::PlatformFileForTransit RendererPpapiHostImpl::ShareHandleWithRemote(
     // Duplicate the file handle for in process mode so this function
     // has the same semantics for both in process mode and out of
     // process mode (i.e., the remote side must cloes the handle).
-    return BrokerGetFileHandleForProcess(handle,
-                                         base::GetCurrentProcId(),
-                                         should_close_source);
+    return BrokerGetFileHandleForProcess(
+        handle, base::GetCurrentProcId(), should_close_source);
   }
   return dispatcher_->ShareHandleWithRemote(handle, should_close_source);
 }
 
 bool RendererPpapiHostImpl::IsRunningInProcess() const {
   return is_running_in_process_;
+}
+
+std::string RendererPpapiHostImpl::GetPluginName() const {
+  return module_->name();
+}
+
+void RendererPpapiHostImpl::SetToExternalPluginHost() {
+  is_external_plugin_host_ = true;
 }
 
 void RendererPpapiHostImpl::CreateBrowserResourceHosts(
@@ -247,13 +249,12 @@ void RendererPpapiHostImpl::CreateBrowserResourceHosts(
   PepperBrowserConnection* browser_connection =
       PepperBrowserConnection::Get(render_frame);
   if (!browser_connection) {
-    base::MessageLoop::current()->PostTask(FROM_HERE,
+    base::MessageLoop::current()->PostTask(
+        FROM_HERE,
         base::Bind(callback, std::vector<int>(nested_msgs.size(), 0)));
   } else {
-    browser_connection->SendBrowserCreate(module_->GetPluginChildId(),
-                                          instance,
-                                          nested_msgs,
-                                          callback);
+    browser_connection->SendBrowserCreate(
+        module_->GetPluginChildId(), instance, nested_msgs, callback);
   }
 }
 

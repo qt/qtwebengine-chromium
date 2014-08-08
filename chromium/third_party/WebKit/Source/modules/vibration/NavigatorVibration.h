@@ -28,12 +28,14 @@
 
 namespace WebCore {
 
-class Frame;
+class LocalFrame;
 class Navigator;
 
-class NavigatorVibration
-    : public Supplement<Page>
+class NavigatorVibration FINAL
+    : public NoBaseWillBeGarbageCollectedFinalized<NavigatorVibration>
+    , public WillBeHeapSupplement<Page>
     , public PageLifecycleObserver {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(NavigatorVibration);
 public:
     typedef Vector<unsigned> VibrationPattern;
 
@@ -46,18 +48,20 @@ public:
 
     // Inherited from PageLifecycleObserver
     virtual void pageVisibilityChanged() OVERRIDE;
-    virtual void didCommitLoad(Frame*) OVERRIDE;
+    virtual void didCommitLoad(LocalFrame*) OVERRIDE;
 
-    static bool vibrate(Navigator*, unsigned time);
-    static bool vibrate(Navigator*, const VibrationPattern&);
-    static NavigatorVibration* from(Page*);
+    static bool vibrate(Navigator&, unsigned time);
+    static bool vibrate(Navigator&, const VibrationPattern&);
+    static NavigatorVibration& from(Page&);
 
     bool isVibrating() const { return m_isVibrating; }
 
     VibrationPattern pattern() const { return m_pattern; }
 
+    virtual void trace(Visitor* visitor) OVERRIDE { WillBeHeapSupplement<Page>::trace(visitor); }
+
 private:
-    explicit NavigatorVibration(Page*);
+    explicit NavigatorVibration(Page&);
     static const char* supplementName();
 
     Timer<NavigatorVibration> m_timerStart;

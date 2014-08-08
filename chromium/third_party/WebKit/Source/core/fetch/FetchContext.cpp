@@ -40,7 +40,7 @@ FetchContext& FetchContext::nullInstance()
     return instance;
 }
 
-void FetchContext::dispatchDidChangeResourcePriority(unsigned long, ResourceLoadPriority)
+void FetchContext::dispatchDidChangeResourcePriority(unsigned long, ResourceLoadPriority, int)
 {
 }
 
@@ -48,7 +48,11 @@ void FetchContext::reportLocalLoadFailed(const KURL&)
 {
 }
 
-void FetchContext::addAdditionalRequestHeaders(Document&, ResourceRequest&, Resource::Type)
+void FetchContext::addAdditionalRequestHeaders(Document*, ResourceRequest&, FetchResourceType)
+{
+}
+
+void FetchContext::setFirstPartyForCookies(ResourceRequest&)
 {
 }
 
@@ -77,7 +81,7 @@ void FetchContext::dispatchDidDownloadData(DocumentLoader*, unsigned long, int, 
 {
 }
 
-void FetchContext::dispatchDidFinishLoading(DocumentLoader*, unsigned long, double)
+void FetchContext::dispatchDidFinishLoading(DocumentLoader*, unsigned long, double, int64_t)
 {
 }
 

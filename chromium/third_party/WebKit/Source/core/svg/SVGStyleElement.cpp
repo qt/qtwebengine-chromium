@@ -38,12 +38,14 @@ inline SVGStyleElement::SVGStyleElement(Document& document, bool createdByParser
 
 SVGStyleElement::~SVGStyleElement()
 {
+#if !ENABLE(OILPAN)
     StyleElement::clearDocumentData(document(), this);
+#endif
 }
 
-PassRefPtr<SVGStyleElement> SVGStyleElement::create(Document& document, bool createdByParser)
+PassRefPtrWillBeRawPtr<SVGStyleElement> SVGStyleElement::create(Document& document, bool createdByParser)
 {
-    return adoptRef(new SVGStyleElement(document, createdByParser));
+    return adoptRefWillBeNoop(new SVGStyleElement(document, createdByParser));
 }
 
 bool SVGStyleElement::disabled() const
@@ -146,6 +148,12 @@ void SVGStyleElement::childrenChanged(bool changedByParser, Node* beforeChange, 
 {
     SVGElement::childrenChanged(changedByParser, beforeChange, afterChange, childCountDelta);
     StyleElement::childrenChanged(this);
+}
+
+void SVGStyleElement::trace(Visitor* visitor)
+{
+    StyleElement::trace(visitor);
+    SVGElement::trace(visitor);
 }
 
 }

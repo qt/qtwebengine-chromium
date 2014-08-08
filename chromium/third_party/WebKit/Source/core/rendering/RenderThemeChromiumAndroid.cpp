@@ -26,9 +26,9 @@
 #include "config.h"
 #include "core/rendering/RenderThemeChromiumAndroid.h"
 
-#include "CSSValueKeywords.h"
-#include "InputTypeNames.h"
-#include "UserAgentStyleSheets.h"
+#include "core/CSSValueKeywords.h"
+#include "core/InputTypeNames.h"
+#include "core/UserAgentStyleSheets.h"
 #include "core/rendering/PaintInfo.h"
 #include "core/rendering/RenderMediaControls.h"
 #include "core/rendering/RenderObject.h"
@@ -38,7 +38,7 @@
 #include "platform/graphics/Color.h"
 #include "platform/scroll/ScrollbarTheme.h"
 #include "public/platform/Platform.h"
-#include "public/platform/default/WebThemeEngine.h"
+#include "public/platform/WebThemeEngine.h"
 #include "wtf/StdLibExtras.h"
 
 namespace WebCore {
@@ -56,16 +56,6 @@ RenderTheme& RenderTheme::theme()
 
 RenderThemeChromiumAndroid::~RenderThemeChromiumAndroid()
 {
-}
-
-Color RenderThemeChromiumAndroid::systemColor(CSSValueID cssValueId) const
-{
-    if (isRunningLayoutTest() && cssValueId == CSSValueButtonface) {
-        // Match Linux button color in layout tests.
-        static const Color linuxButtonGrayColor(0xffdddddd);
-        return linuxButtonGrayColor;
-    }
-    return RenderTheme::systemColor(cssValueId);
 }
 
 String RenderThemeChromiumAndroid::extraMediaControlsStyleSheet()
@@ -89,11 +79,6 @@ void RenderThemeChromiumAndroid::adjustInnerSpinButtonStyle(RenderStyle* style, 
         style->setWidth(Length(size.width(), Fixed));
         style->setMinWidth(Length(size.width(), Fixed));
     }
-}
-
-bool RenderThemeChromiumAndroid::paintMediaOverlayPlayButton(RenderObject* object, const PaintInfo& paintInfo, const IntRect& rect)
-{
-    return RenderMediaControls::paintMediaControlsPart(MediaOverlayPlayButton, object, paintInfo, rect);
 }
 
 int RenderThemeChromiumAndroid::menuListArrowPadding() const

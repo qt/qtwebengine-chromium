@@ -29,12 +29,11 @@
  */
 
 #include "config.h"
-#include "V8File.h"
+#include "bindings/core/v8/V8File.h"
 
-#include "RuntimeEnabledFeatures.h"
 #include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/custom/V8BlobCustomHelpers.h"
-#include "core/fileapi/BlobBuilder.h"
+#include "platform/RuntimeEnabledFeatures.h"
 
 namespace WebCore {
 
@@ -66,7 +65,7 @@ void V8File::constructorCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
         }
     }
 
-    V8TRYCATCH_FOR_V8STRINGRESOURCE_VOID(V8StringResource<>, fileName, info[1]);
+    TOSTRING_VOID(V8StringResource<>, fileName, info[1]);
 
     V8BlobCustomHelpers::ParsedProperties properties(true);
     if (info.Length() > 2) {
@@ -84,12 +83,14 @@ void V8File::constructorCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
         properties.setDefaultLastModified();
     }
 
-    BlobBuilder blobBuilder;
+    OwnPtr<BlobData> blobData = BlobData::create();
+    blobData->setContentType(properties.contentType());
     v8::Local<v8::Object> blobParts = v8::Local<v8::Object>::Cast(info[0]);
-    if (!V8BlobCustomHelpers::processBlobParts(blobParts, length, properties.endings(), blobBuilder, info.GetIsolate()))
+    if (!V8BlobCustomHelpers::processBlobParts(blobParts, length, properties.normalizeLineEndingsToNative(), *blobData, info.GetIsolate()))
         return;
 
-    RefPtr<File> file = blobBuilder.createFile(properties.contentType(), fileName, properties.lastModified());
+    long long fileSize = blobData->length();
+    RefPtrWillBeRawPtr<File> file = File::create(fileName, properties.lastModified(), BlobDataHandle::create(blobData.release(), fileSize));
     v8SetReturnValue(info, file.release());
 }
 

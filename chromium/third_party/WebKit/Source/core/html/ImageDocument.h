@@ -35,32 +35,41 @@ class HTMLImageElement;
 
 class ImageDocument FINAL : public HTMLDocument {
 public:
-    static PassRefPtr<ImageDocument> create(const DocumentInit& initializer = DocumentInit())
+    static PassRefPtrWillBeRawPtr<ImageDocument> create(const DocumentInit& initializer = DocumentInit())
     {
-        return adoptRef(new ImageDocument(initializer));
+        return adoptRefWillBeNoop(new ImageDocument(initializer));
     }
+
+    enum ScaleType {
+        ScaleZoomedDocument,
+        ScaleOnlyUnzoomedDocument
+    };
 
     ImageResource* cachedImage();
     HTMLImageElement* imageElement() const { return m_imageElement.get(); }
 
-    void windowSizeChanged();
+    void windowSizeChanged(ScaleType);
     void imageUpdated();
     void imageClicked(int x, int y);
 
-private:
-    ImageDocument(const DocumentInit&);
+    virtual void trace(Visitor*) OVERRIDE;
 
-    virtual PassRefPtr<DocumentParser> createParser() OVERRIDE;
+private:
+    explicit ImageDocument(const DocumentInit&);
+
+    virtual PassRefPtrWillBeRawPtr<DocumentParser> createParser() OVERRIDE;
+#if !ENABLE(OILPAN)
     virtual void dispose() OVERRIDE;
+#endif
 
     void createDocumentStructure();
-    void resizeImageToFit();
-    void restoreImageSize();
+    void resizeImageToFit(ScaleType);
+    void restoreImageSize(ScaleType);
     bool imageFitsInWindow() const;
     bool shouldShrinkToFit() const;
     float scale() const;
 
-    RefPtr<HTMLImageElement> m_imageElement;
+    RefPtrWillBeMember<HTMLImageElement> m_imageElement;
 
     // Whether enough of the image has been loaded to determine its size
     bool m_imageSizeIsKnown;

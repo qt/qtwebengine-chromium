@@ -13,16 +13,67 @@
 #include "base/values.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
+#include "net/quic/crypto/proof_verifier_chromium.h"
+#include "net/quic/crypto/quic_server_info.h"
 #include "net/quic/quic_connection_helper.h"
 #include "net/quic/quic_crypto_client_stream_factory.h"
 #include "net/quic/quic_default_packet_writer.h"
+#include "net/quic/quic_server_id.h"
 #include "net/quic/quic_stream_factory.h"
+#include "net/ssl/ssl_connection_status_flags.h"
 #include "net/ssl/ssl_info.h"
 #include "net/udp/datagram_client_socket.h"
 
 namespace net {
 
 namespace {
+
+// The length of time to wait for a 0-RTT handshake to complete
+// before allowing the requests to possibly proceed over TCP.
+const int k0RttHandshakeTimeoutMs = 300;
+
+// Histograms for tracking down the crashes from http://crbug.com/354669
+// Note: these values must be kept in sync with the corresponding values in:
+// tools/metrics/histograms/histograms.xml
+enum Location {
+  DESTRUCTOR = 0,
+  ADD_OBSERVER = 1,
+  TRY_CREATE_STREAM = 2,
+  CREATE_OUTGOING_RELIABLE_STREAM = 3,
+  NOTIFY_FACTORY_OF_SESSION_CLOSED_LATER = 4,
+  NOTIFY_FACTORY_OF_SESSION_CLOSED = 5,
+  NUM_LOCATIONS = 6,
+};
+
+void RecordUnexpectedOpenStreams(Location location) {
+  UMA_HISTOGRAM_ENUMERATION("Net.QuicSession.UnexpectedOpenStreams", location,
+                            NUM_LOCATIONS);
+}
+
+void RecordUnexpectedObservers(Location location) {
+  UMA_HISTOGRAM_ENUMERATION("Net.QuicSession.UnexpectedObservers", location,
+                            NUM_LOCATIONS);
+}
+
+void RecordUnexpectedNotGoingAway(Location location) {
+  UMA_HISTOGRAM_ENUMERATION("Net.QuicSession.UnexpectedNotGoingAway", location,
+                            NUM_LOCATIONS);
+}
+
+// Histogram for recording the different reasons that a QUIC session is unable
+// to complete the handshake.
+enum HandshakeFailureReason {
+  HANDSHAKE_FAILURE_UNKNOWN = 0,
+  HANDSHAKE_FAILURE_BLACK_HOLE = 1,
+  HANDSHAKE_FAILURE_PUBLIC_RESET = 2,
+  NUM_HANDSHAKE_FAILURE_REASONS = 3,
+};
+
+void RecordHandshakeFailureReason(HandshakeFailureReason reason) {
+  UMA_HISTOGRAM_ENUMERATION(
+      "Net.QuicSession.ConnectionClose.HandshakeNotConfirmed.Reason",
+      reason, NUM_HANDSHAKE_FAILURE_REASONS);
+}
 
 // Note: these values must be kept in sync with the corresponding values in:
 // tools/metrics/histograms/histograms.xml
@@ -86,49 +137,74 @@ QuicClientSession::QuicClientSession(
     scoped_ptr<QuicDefaultPacketWriter> writer,
     QuicStreamFactory* stream_factory,
     QuicCryptoClientStreamFactory* crypto_client_stream_factory,
-    const string& server_hostname,
+    scoped_ptr<QuicServerInfo> server_info,
+    const QuicServerId& server_id,
     const QuicConfig& config,
     QuicCryptoClientConfig* crypto_config,
+    base::TaskRunner* task_runner,
     NetLog* net_log)
-    : QuicSession(connection, config),
+    : QuicClientSessionBase(connection,
+                            config),
       require_confirmation_(false),
       stream_factory_(stream_factory),
       socket_(socket.Pass()),
       writer_(writer.Pass()),
       read_buffer_(new IOBufferWithSize(kMaxPacketSize)),
+      server_info_(server_info.Pass()),
       read_pending_(false),
       num_total_streams_(0),
+      task_runner_(task_runner),
       net_log_(BoundNetLog::Make(net_log, NetLog::SOURCE_QUIC_SESSION)),
       logger_(net_log_),
       num_packets_read_(0),
+      going_away_(false),
       weak_factory_(this) {
   crypto_stream_.reset(
       crypto_client_stream_factory ?
           crypto_client_stream_factory->CreateQuicCryptoClientStream(
-              server_hostname, this, crypto_config) :
-          new QuicCryptoClientStream(server_hostname, this, crypto_config));
+              server_id, this, crypto_config) :
+          new QuicCryptoClientStream(server_id, this,
+                                     new ProofVerifyContextChromium(net_log_),
+                                     crypto_config));
 
   connection->set_debug_visitor(&logger_);
   // TODO(rch): pass in full host port proxy pair
   net_log_.BeginEvent(
       NetLog::TYPE_QUIC_SESSION,
-      NetLog::StringCallback("host", &server_hostname));
+      NetLog::StringCallback("host", &server_id.host()));
 }
 
 QuicClientSession::~QuicClientSession() {
-  // The session must be closed before it is destroyed.
-  DCHECK(streams()->empty());
-  CloseAllStreams(ERR_UNEXPECTED);
-  DCHECK(observers_.empty());
-  CloseAllObservers(ERR_UNEXPECTED);
+  if (!streams()->empty())
+    RecordUnexpectedOpenStreams(DESTRUCTOR);
+  if (!observers_.empty())
+    RecordUnexpectedObservers(DESTRUCTOR);
+  if (!going_away_)
+    RecordUnexpectedNotGoingAway(DESTRUCTOR);
 
-  connection()->set_debug_visitor(NULL);
-  net_log_.EndEvent(NetLog::TYPE_QUIC_SESSION);
+  while (!streams()->empty() ||
+         !observers_.empty() ||
+         !stream_requests_.empty()) {
+    // The session must be closed before it is destroyed.
+    DCHECK(streams()->empty());
+    CloseAllStreams(ERR_UNEXPECTED);
+    DCHECK(observers_.empty());
+    CloseAllObservers(ERR_UNEXPECTED);
 
-  while (!stream_requests_.empty()) {
-    StreamRequest* request = stream_requests_.front();
-    stream_requests_.pop_front();
-    request->OnRequestCompleteFailure(ERR_ABORTED);
+    connection()->set_debug_visitor(NULL);
+    net_log_.EndEvent(NetLog::TYPE_QUIC_SESSION);
+
+    while (!stream_requests_.empty()) {
+      StreamRequest* request = stream_requests_.front();
+      stream_requests_.pop_front();
+      request->OnRequestCompleteFailure(ERR_ABORTED);
+    }
+  }
+
+  if (connection()->connected()) {
+    // Ensure that the connection is closed by the time the session is
+    // destroyed.
+    connection()->CloseConnection(QUIC_INTERNAL_ERROR, false);
   }
 
   if (IsEncryptionEstablished())
@@ -138,17 +214,59 @@ QuicClientSession::~QuicClientSession() {
   else
     RecordHandshakeState(STATE_FAILED);
 
+  UMA_HISTOGRAM_COUNTS("Net.QuicSession.NumTotalStreams", num_total_streams_);
   UMA_HISTOGRAM_COUNTS("Net.QuicNumSentClientHellos",
                        crypto_stream_->num_sent_client_hellos());
-  if (IsCryptoHandshakeConfirmed()) {
-    UMA_HISTOGRAM_COUNTS("Net.QuicNumSentClientHellosCryptoHandshakeConfirmed",
-                         crypto_stream_->num_sent_client_hellos());
-  }
+  if (!IsCryptoHandshakeConfirmed())
+    return;
 
-  UMA_HISTOGRAM_COUNTS("Net.QuicSession.NumTotalStreams", num_total_streams_);
+  // Sending one client_hello means we had zero handshake-round-trips.
+  int round_trip_handshakes = crypto_stream_->num_sent_client_hellos() - 1;
+
+  // Don't bother with these histogram during tests, which mock out
+  // num_sent_client_hellos().
+  if (round_trip_handshakes < 0 || !stream_factory_)
+    return;
+
+  bool port_selected = stream_factory_->enable_port_selection();
+  SSLInfo ssl_info;
+  if (!GetSSLInfo(&ssl_info) || !ssl_info.cert) {
+    if (port_selected) {
+      UMA_HISTOGRAM_CUSTOM_COUNTS("Net.QuicSession.ConnectSelectPortForHTTP",
+                                  round_trip_handshakes, 0, 3, 4);
+    } else {
+      UMA_HISTOGRAM_CUSTOM_COUNTS("Net.QuicSession.ConnectRandomPortForHTTP",
+                                  round_trip_handshakes, 0, 3, 4);
+    }
+  } else {
+    if (port_selected) {
+      UMA_HISTOGRAM_CUSTOM_COUNTS("Net.QuicSession.ConnectSelectPortForHTTPS",
+                                  round_trip_handshakes, 0, 3, 4);
+    } else {
+      UMA_HISTOGRAM_CUSTOM_COUNTS("Net.QuicSession.ConnectRandomPortForHTTPS",
+                                  round_trip_handshakes, 0, 3, 4);
+    }
+  }
+  const QuicConnectionStats stats = connection()->GetStats();
+  if (stats.max_sequence_reordering == 0)
+    return;
+  const uint64 kMaxReordering = 100;
+  uint64 reordering = kMaxReordering;
+  if (stats.min_rtt_us > 0 ) {
+    reordering =
+        GG_UINT64_C(100) * stats.max_time_reordering_us / stats.min_rtt_us;
+  }
+  UMA_HISTOGRAM_CUSTOM_COUNTS("Net.QuicSession.MaxReorderingTime",
+                                reordering, 0, kMaxReordering, 50);
+  if (stats.min_rtt_us > 100 * 1000) {
+    UMA_HISTOGRAM_CUSTOM_COUNTS("Net.QuicSession.MaxReorderingTimeLongRtt",
+                                reordering, 0, kMaxReordering, 50);
+  }
+  UMA_HISTOGRAM_COUNTS("Net.QuicSession.MaxReordering",
+                       stats.max_sequence_reordering);
 }
 
-bool QuicClientSession::OnStreamFrames(
+void QuicClientSession::OnStreamFrames(
     const std::vector<QuicStreamFrame>& frames) {
   // Record total number of stream frames.
   UMA_HISTOGRAM_COUNTS("Net.QuicNumStreamFramesInPacket", frames.size());
@@ -169,6 +287,12 @@ bool QuicClientSession::OnStreamFrames(
 }
 
 void QuicClientSession::AddObserver(Observer* observer) {
+  if (going_away_) {
+    RecordUnexpectedObservers(ADD_OBSERVER);
+    observer->OnSessionClosed(ERR_UNEXPECTED);
+    return;
+  }
+
   DCHECK(!ContainsKey(observers_, observer));
   observers_.insert(observer);
 }
@@ -192,6 +316,11 @@ int QuicClientSession::TryCreateStream(StreamRequest* request,
 
   if (!connection()->connected()) {
     DVLOG(1) << "Already closed.";
+    return ERR_CONNECTION_CLOSED;
+  }
+
+  if (going_away_) {
+    RecordUnexpectedOpenStreams(TRY_CREATE_STREAM);
     return ERR_CONNECTION_CLOSED;
   }
 
@@ -221,15 +350,18 @@ QuicReliableClientStream* QuicClientSession::CreateOutgoingDataStream() {
   }
   if (GetNumOpenStreams() >= get_max_open_streams()) {
     DVLOG(1) << "Failed to create a new outgoing stream. "
-               << "Already " << GetNumOpenStreams() << " open.";
+             << "Already " << GetNumOpenStreams() << " open.";
     return NULL;
   }
   if (goaway_received()) {
     DVLOG(1) << "Failed to create a new outgoing stream. "
-               << "Already received goaway.";
+             << "Already received goaway.";
     return NULL;
   }
-
+  if (going_away_) {
+    RecordUnexpectedOpenStreams(CREATE_OUTGOING_RELIABLE_STREAM);
+    return NULL;
+  }
   return CreateOutgoingReliableStreamImpl();
 }
 
@@ -248,14 +380,60 @@ QuicCryptoClientStream* QuicClientSession::GetCryptoStream() {
   return crypto_stream_.get();
 };
 
-bool QuicClientSession::GetSSLInfo(SSLInfo* ssl_info) {
-  DCHECK(crypto_stream_.get());
-  return crypto_stream_->GetSSLInfo(ssl_info);
+// TODO(rtenneti): Add unittests for GetSSLInfo which exercise the various ways
+// we learn about SSL info (sync vs async vs cached).
+bool QuicClientSession::GetSSLInfo(SSLInfo* ssl_info) const {
+  ssl_info->Reset();
+  if (!cert_verify_result_) {
+    return false;
+  }
+
+  ssl_info->cert_status = cert_verify_result_->cert_status;
+  ssl_info->cert = cert_verify_result_->verified_cert;
+
+  // TODO(wtc): Define QUIC "cipher suites".
+  // Report the TLS cipher suite that most closely resembles the crypto
+  // parameters of the QUIC connection.
+  QuicTag aead = crypto_stream_->crypto_negotiated_params().aead;
+  int cipher_suite;
+  int security_bits;
+  switch (aead) {
+    case kAESG:
+      cipher_suite = 0xc02f;  // TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+      security_bits = 128;
+      break;
+    case kCC12:
+      cipher_suite = 0xcc13;  // TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
+      security_bits = 256;
+      break;
+    default:
+      NOTREACHED();
+      return false;
+  }
+  int ssl_connection_status = 0;
+  ssl_connection_status |=
+      (cipher_suite & SSL_CONNECTION_CIPHERSUITE_MASK) <<
+       SSL_CONNECTION_CIPHERSUITE_SHIFT;
+  ssl_connection_status |=
+      (SSL_CONNECTION_VERSION_QUIC & SSL_CONNECTION_VERSION_MASK) <<
+       SSL_CONNECTION_VERSION_SHIFT;
+
+  ssl_info->public_key_hashes = cert_verify_result_->public_key_hashes;
+  ssl_info->is_issued_by_known_root =
+      cert_verify_result_->is_issued_by_known_root;
+
+  ssl_info->connection_status = ssl_connection_status;
+  ssl_info->client_cert_sent = false;
+  ssl_info->channel_id_sent = false;
+  ssl_info->security_bits = security_bits;
+  ssl_info->handshake_type = SSLInfo::HANDSHAKE_FULL;
+  return true;
 }
 
 int QuicClientSession::CryptoConnect(bool require_confirmation,
                                      const CompletionCallback& callback) {
   require_confirmation_ = require_confirmation;
+  handshake_start_ = base::TimeTicks::Now();
   RecordHandshakeState(STATE_STARTED);
   if (!crypto_stream_->CryptoConnect()) {
     // TODO(wtc): change crypto_stream_.CryptoConnect() to return a
@@ -263,11 +441,34 @@ int QuicClientSession::CryptoConnect(bool require_confirmation,
     return ERR_CONNECTION_FAILED;
   }
 
-  bool can_notify = require_confirmation_ ?
-      IsCryptoHandshakeConfirmed() : IsEncryptionEstablished();
-  if (can_notify) {
+  if (IsCryptoHandshakeConfirmed())
     return OK;
+
+  // Unless we require handshake confirmation, activate the session if
+  // we have established initial encryption.
+  if (!require_confirmation_ && IsEncryptionEstablished()) {
+    // To mitigate the effects of hanging 0-RTT connections, set up a timer to
+    // cancel any requests, if the handshake takes too long.
+    task_runner_->PostDelayedTask(
+        FROM_HERE,
+        base::Bind(&QuicClientSession::OnConnectTimeout,
+                   weak_factory_.GetWeakPtr()),
+        base::TimeDelta::FromMilliseconds(k0RttHandshakeTimeoutMs));
+    return OK;
+
   }
+
+  callback_ = callback;
+  return ERR_IO_PENDING;
+}
+
+int QuicClientSession::ResumeCryptoConnect(const CompletionCallback& callback) {
+
+  if (IsCryptoHandshakeConfirmed())
+    return OK;
+
+  if (!connection()->connected())
+    return ERR_QUIC_HANDSHAKE_FAILED;
 
   callback_ = callback;
   return ERR_IO_PENDING;
@@ -277,6 +478,27 @@ int QuicClientSession::GetNumSentClientHellos() const {
   return crypto_stream_->num_sent_client_hellos();
 }
 
+bool QuicClientSession::CanPool(const std::string& hostname) const {
+  // TODO(rch): When QUIC supports channel ID or client certificates, this
+  // logic will need to be revised.
+  DCHECK(connection()->connected());
+  SSLInfo ssl_info;
+  if (!GetSSLInfo(&ssl_info) || !ssl_info.cert) {
+    // We can always pool with insecure QUIC sessions.
+    return true;
+  }
+
+  // Disable pooling for secure sessions.
+  // TODO(rch): re-enable this.
+  return false;
+
+#if 0
+  bool unused = false;
+  // Only pool secure QUIC sessions if the cert matches the new hostname.
+  return ssl_info.cert->VerifyNameMatch(hostname, &unused);
+#endif
+}
+
 QuicDataStream* QuicClientSession::CreateIncomingDataStream(
     QuicStreamId id) {
   DLOG(ERROR) << "Server push not supported";
@@ -284,13 +506,20 @@ QuicDataStream* QuicClientSession::CreateIncomingDataStream(
 }
 
 void QuicClientSession::CloseStream(QuicStreamId stream_id) {
+  ReliableQuicStream* stream = GetStream(stream_id);
+  if (stream) {
+    logger_.UpdateReceivedFrameCounts(
+        stream_id, stream->num_frames_received(),
+        stream->num_duplicate_frames_received());
+  }
   QuicSession::CloseStream(stream_id);
   OnClosedStream();
 }
 
 void QuicClientSession::SendRstStream(QuicStreamId id,
-                                      QuicRstStreamErrorCode error) {
-  QuicSession::SendRstStream(id, error);
+                                      QuicRstStreamErrorCode error,
+                                      QuicStreamOffset bytes_written) {
+  QuicSession::SendRstStream(id, error, bytes_written);
   OnClosedStream();
 }
 
@@ -299,6 +528,7 @@ void QuicClientSession::OnClosedStream() {
       !stream_requests_.empty() &&
       crypto_stream_->encryption_established() &&
       !goaway_received() &&
+      !going_away_ &&
       connection()->connected()) {
     StreamRequest* request = stream_requests_.front();
     stream_requests_.pop_front();
@@ -320,6 +550,8 @@ void QuicClientSession::OnCryptoHandshakeEvent(CryptoHandshakeEvent event) {
     base::ResetAndReturn(&callback_).Run(OK);
   }
   if (event == HANDSHAKE_CONFIRMED) {
+    UMA_HISTOGRAM_TIMES("Net.QuicSession.HandshakeConfirmedTime",
+                        base::TimeTicks::Now() - handshake_start_);
     ObserverSet::iterator it = observers_.begin();
     while (it != observers_.end()) {
       Observer* observer = *it;
@@ -357,11 +589,28 @@ void QuicClientSession::OnConnectionClosed(QuicErrorCode error,
         "Net.QuicSession.ConnectionClose.NumOpenStreams.TimedOut",
         GetNumOpenStreams());
     if (!IsCryptoHandshakeConfirmed()) {
-      // If there have been any streams created, they were 0-RTT speculative
-      // requests that have not be serviced.
+      UMA_HISTOGRAM_COUNTS(
+          "Net.QuicSession.ConnectionClose.NumOpenStreams.HandshakeTimedOut",
+          GetNumOpenStreams());
       UMA_HISTOGRAM_COUNTS(
           "Net.QuicSession.ConnectionClose.NumTotalStreams.HandshakeTimedOut",
           num_total_streams_);
+    }
+  }
+
+  if (!IsCryptoHandshakeConfirmed()) {
+    if (error == QUIC_PUBLIC_RESET) {
+      RecordHandshakeFailureReason(HANDSHAKE_FAILURE_PUBLIC_RESET);
+    } else if (connection()->GetStats().packets_received == 0) {
+      RecordHandshakeFailureReason(HANDSHAKE_FAILURE_BLACK_HOLE);
+      UMA_HISTOGRAM_SPARSE_SLOWLY(
+          "Net.QuicSession.ConnectionClose.HandshakeFailureBlackHole.QuicError",
+          error);
+    } else {
+      RecordHandshakeFailureReason(HANDSHAKE_FAILURE_UNKNOWN);
+      UMA_HISTOGRAM_SPARSE_SLOWLY(
+          "Net.QuicSession.ConnectionClose.HandshakeFailureUnknown.QuicError",
+          error);
     }
   }
 
@@ -385,6 +634,34 @@ void QuicClientSession::OnSuccessfulVersionNegotiation(
   QuicSession::OnSuccessfulVersionNegotiation(version);
 }
 
+void QuicClientSession::OnProofValid(
+    const QuicCryptoClientConfig::CachedState& cached) {
+  DCHECK(cached.proof_valid());
+
+  if (!server_info_ || !server_info_->IsReadyToPersist()) {
+    return;
+  }
+
+  QuicServerInfo::State* state = server_info_->mutable_state();
+
+  state->server_config = cached.server_config();
+  state->source_address_token = cached.source_address_token();
+  state->server_config_sig = cached.signature();
+  state->certs = cached.certs();
+
+  server_info_->Persist();
+}
+
+void QuicClientSession::OnProofVerifyDetailsAvailable(
+    const ProofVerifyDetails& verify_details) {
+  const CertVerifyResult* cert_verify_result_other =
+      &(reinterpret_cast<const ProofVerifyDetailsChromium*>(
+          &verify_details))->cert_verify_result;
+  CertVerifyResult* result_copy = new CertVerifyResult;
+  result_copy->CopyFrom(*cert_verify_result_other);
+  cert_verify_result_.reset(result_copy);
+}
+
 void QuicClientSession::StartReading() {
   if (read_pending_) {
     return;
@@ -402,8 +679,8 @@ void QuicClientSession::StartReading() {
   if (++num_packets_read_ > 32) {
     num_packets_read_ = 0;
     // Data was read, process it.
-    // Schedule the work through the message loop to avoid recursive
-    // callbacks.
+    // Schedule the work through the message loop to 1) prevent infinite
+    // recursion and 2) avoid blocking the thread for too long.
     base::MessageLoop::current()->PostTask(
         FROM_HERE,
         base::Bind(&QuicClientSession::OnReadComplete,
@@ -430,7 +707,8 @@ void QuicClientSession::CloseSessionOnErrorInner(int net_error,
       NetLog::TYPE_QUIC_SESSION_CLOSE_ON_ERROR,
       NetLog::IntegerCallback("net_error", net_error));
 
-  connection()->CloseConnection(quic_error, false);
+  if (connection()->connected())
+    connection()->CloseConnection(quic_error, false);
   DCHECK(!connection()->connected());
 }
 
@@ -451,15 +729,41 @@ void QuicClientSession::CloseAllObservers(int net_error) {
   }
 }
 
-base::Value* QuicClientSession::GetInfoAsValue(const HostPortPair& pair) const {
+base::Value* QuicClientSession::GetInfoAsValue(
+    const std::set<HostPortPair>& aliases) {
   base::DictionaryValue* dict = new base::DictionaryValue();
-  dict->SetString("host_port_pair", pair.ToString());
+  // TODO(rch): remove "host_port_pair" when Chrome 34 is stable.
+  dict->SetString("host_port_pair", aliases.begin()->ToString());
   dict->SetString("version", QuicVersionToString(connection()->version()));
   dict->SetInteger("open_streams", GetNumOpenStreams());
+  base::ListValue* stream_list = new base::ListValue();
+  for (base::hash_map<QuicStreamId, QuicDataStream*>::const_iterator it
+           = streams()->begin();
+       it != streams()->end();
+       ++it) {
+    stream_list->Append(new base::StringValue(
+        base::Uint64ToString(it->second->id())));
+  }
+  dict->Set("active_streams", stream_list);
+
   dict->SetInteger("total_streams", num_total_streams_);
   dict->SetString("peer_address", peer_address().ToString());
-  dict->SetString("guid", base::Uint64ToString(guid()));
+  dict->SetString("connection_id", base::Uint64ToString(connection_id()));
   dict->SetBoolean("connected", connection()->connected());
+  const QuicConnectionStats& stats = connection()->GetStats();
+  dict->SetInteger("packets_sent", stats.packets_sent);
+  dict->SetInteger("packets_received", stats.packets_received);
+  dict->SetInteger("packets_lost", stats.packets_lost);
+  SSLInfo ssl_info;
+  dict->SetBoolean("secure", GetSSLInfo(&ssl_info) && ssl_info.cert);
+
+  base::ListValue* alias_list = new base::ListValue();
+  for (std::set<HostPortPair>::const_iterator it = aliases.begin();
+       it != aliases.end(); it++) {
+    alias_list->Append(new base::StringValue(it->ToString()));
+  }
+  dict->Set("aliases", alias_list);
+
   return dict;
 }
 
@@ -481,9 +785,7 @@ void QuicClientSession::OnReadComplete(int result) {
     return;
   }
 
-  scoped_refptr<IOBufferWithSize> buffer(read_buffer_);
-  read_buffer_ = new IOBufferWithSize(kMaxPacketSize);
-  QuicEncryptedPacket packet(buffer->data(), result);
+  QuicEncryptedPacket packet(read_buffer_->data(), result);
   IPEndPoint local_address;
   IPEndPoint peer_address;
   socket_->GetLocalAddress(&local_address);
@@ -492,18 +794,26 @@ void QuicClientSession::OnReadComplete(int result) {
   // use a weak pointer to be safe.
   connection()->ProcessUdpPacket(local_address, peer_address, packet);
   if (!connection()->connected()) {
-    stream_factory_->OnSessionClosed(this);
+    NotifyFactoryOfSessionClosedLater();
     return;
   }
   StartReading();
 }
 
 void QuicClientSession::NotifyFactoryOfSessionGoingAway() {
+  going_away_ = true;
   if (stream_factory_)
     stream_factory_->OnSessionGoingAway(this);
 }
 
 void QuicClientSession::NotifyFactoryOfSessionClosedLater() {
+  if (!streams()->empty())
+    RecordUnexpectedOpenStreams(NOTIFY_FACTORY_OF_SESSION_CLOSED_LATER);
+
+  if (!going_away_)
+    RecordUnexpectedNotGoingAway(NOTIFY_FACTORY_OF_SESSION_CLOSED_LATER);
+
+  going_away_ = true;
   DCHECK_EQ(0u, GetNumOpenStreams());
   DCHECK(!connection()->connected());
   base::MessageLoop::current()->PostTask(
@@ -513,10 +823,31 @@ void QuicClientSession::NotifyFactoryOfSessionClosedLater() {
 }
 
 void QuicClientSession::NotifyFactoryOfSessionClosed() {
+  if (!streams()->empty())
+    RecordUnexpectedOpenStreams(NOTIFY_FACTORY_OF_SESSION_CLOSED);
+
+  if (!going_away_)
+    RecordUnexpectedNotGoingAway(NOTIFY_FACTORY_OF_SESSION_CLOSED);
+
+  going_away_ = true;
   DCHECK_EQ(0u, GetNumOpenStreams());
   // Will delete |this|.
   if (stream_factory_)
     stream_factory_->OnSessionClosed(this);
+}
+
+void QuicClientSession::OnConnectTimeout() {
+  DCHECK(callback_.is_null());
+  DCHECK(IsEncryptionEstablished());
+
+  if (IsCryptoHandshakeConfirmed())
+    return;
+
+  // TODO(rch): re-enable this code once beta is cut.
+  //  if (stream_factory_)
+  //    stream_factory_->OnSessionConnectTimeout(this);
+  //  CloseAllStreams(ERR_QUIC_HANDSHAKE_FAILED);
+  //  DCHECK_EQ(0u, GetNumOpenStreams());
 }
 
 }  // namespace net

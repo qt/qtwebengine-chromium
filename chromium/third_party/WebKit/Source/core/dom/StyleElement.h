@@ -29,11 +29,13 @@ namespace WebCore {
 class ContainerNode;
 class Document;
 class Element;
+class TreeScope;
 
-class StyleElement {
+class StyleElement : public WillBeGarbageCollectedMixin {
 public:
     StyleElement(Document*, bool createdByParser);
     virtual ~StyleElement();
+    virtual void trace(Visitor*);
 
 protected:
     virtual const AtomicString& type() const = 0;
@@ -46,20 +48,22 @@ protected:
     void startLoadingDynamicSheet(Document&);
 
     void processStyleSheet(Document&, Element*);
-    void removedFromDocument(Document&, Element*, ContainerNode* scopingNode = 0);
+    void removedFromDocument(Document&, Element*);
+    void removedFromDocument(Document&, Element*, ContainerNode* scopingNode, TreeScope&);
     void clearDocumentData(Document&, Element*);
     void childrenChanged(Element*);
     void finishParsingChildren(Element*);
 
-    RefPtr<CSSStyleSheet> m_sheet;
+    RefPtrWillBeMember<CSSStyleSheet> m_sheet;
 
 private:
     void createSheet(Element*, const String& text = String());
     void process(Element*);
-    void clearSheet();
+    void clearSheet(Element* ownerElement = 0);
 
-    bool m_createdByParser;
-    bool m_loading;
+    bool m_createdByParser : 1;
+    bool m_loading : 1;
+    bool m_registeredAsCandidate : 1;
     TextPosition m_startPosition;
 };
 

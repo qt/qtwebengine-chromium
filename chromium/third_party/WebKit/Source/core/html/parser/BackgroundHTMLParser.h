@@ -26,14 +26,14 @@
 #ifndef BackgroundHTMLParser_h
 #define BackgroundHTMLParser_h
 
+#include "core/dom/DocumentEncodingData.h"
 #include "core/html/parser/BackgroundHTMLInputStream.h"
 #include "core/html/parser/CompactHTMLToken.h"
 #include "core/html/parser/HTMLParserOptions.h"
 #include "core/html/parser/HTMLPreloadScanner.h"
 #include "core/html/parser/HTMLSourceTracker.h"
-#include "core/html/parser/HTMLToken.h"
-#include "core/html/parser/HTMLTokenizer.h"
 #include "core/html/parser/HTMLTreeBuilderSimulator.h"
+#include "core/html/parser/TextResourceDecoder.h"
 #include "core/html/parser/XSSAuditorDelegate.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/WeakPtr.h"
@@ -41,6 +41,7 @@
 namespace WebCore {
 
 class HTMLDocumentParser;
+class SharedBuffer;
 class XSSAuditor;
 
 class BackgroundHTMLParser {
@@ -51,13 +52,10 @@ public:
         WeakPtr<HTMLDocumentParser> parser;
         OwnPtr<XSSAuditor> xssAuditor;
         OwnPtr<TokenPreloadScanner> preloadScanner;
+        OwnPtr<TextResourceDecoder> decoder;
     };
 
-    static void create(PassRefPtr<WeakReference<BackgroundHTMLParser> > reference, PassOwnPtr<Configuration> config)
-    {
-        new BackgroundHTMLParser(reference, config);
-        // Caller must free by calling stop().
-    }
+    static void start(PassRefPtr<WeakReference<BackgroundHTMLParser> >, PassOwnPtr<Configuration>);
 
     struct Checkpoint {
         WeakPtr<HTMLDocumentParser> parser;
@@ -69,7 +67,11 @@ public:
         String unparsedInput;
     };
 
-    void append(const String&);
+    void appendRawBytesFromParserThread(const char* data, int dataLength);
+
+    void appendRawBytesFromMainThread(PassOwnPtr<Vector<char> >);
+    void setDecoder(PassOwnPtr<TextResourceDecoder>);
+    void flush();
     void resumeFrom(PassOwnPtr<Checkpoint>);
     void startedChunkWithCheckpoint(HTMLInputCheckpoint);
     void finish();
@@ -79,10 +81,13 @@ public:
 
 private:
     BackgroundHTMLParser(PassRefPtr<WeakReference<BackgroundHTMLParser> >, PassOwnPtr<Configuration>);
+    ~BackgroundHTMLParser();
 
+    void appendDecodedBytes(const String&);
     void markEndOfFile();
     void pumpTokenizer();
     void sendTokensToMainThread();
+    void updateDocument(const String& decodedData);
 
     WeakPtrFactory<BackgroundHTMLParser> m_weakFactory;
     BackgroundHTMLInputStream m_input;
@@ -99,6 +104,8 @@ private:
 
     OwnPtr<XSSAuditor> m_xssAuditor;
     OwnPtr<TokenPreloadScanner> m_preloadScanner;
+    OwnPtr<TextResourceDecoder> m_decoder;
+    DocumentEncodingData m_lastSeenEncodingData;
 };
 
 }

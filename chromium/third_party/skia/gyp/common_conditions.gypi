@@ -5,9 +5,23 @@
     'SK_ALLOW_STATIC_GLOBAL_INITIALIZERS=<(skia_static_initializers)',
     'SK_SUPPORT_GPU=<(skia_gpu)',
     'SK_SUPPORT_OPENCL=<(skia_opencl)',
-    'SK_DISTANCEFIELD_FONTS=<(skia_distancefield_fonts)',
+    'SK_FORCE_DISTANCEFIELD_FONTS=<(skia_force_distancefield_fonts)',
   ],
   'conditions' : [
+    [ 'skia_arch_type == "arm64"', {
+      'cflags': [
+        '-ffp-contract=off',
+      ],
+    }],
+
+    # As of M35, Chrome requires SSE2 on x86 (and SSSE3 on Mac).
+    [ 'skia_arch_type == "x86"', {
+      'cflags': [
+        '-msse2',
+        '-mfpmath=sse',
+      ],
+    }],
+
     [ 'skia_os == "win"',
       {
         'defines': [
@@ -15,7 +29,11 @@
           '_CRT_SECURE_NO_WARNINGS',
           'GR_GL_FUNCTION_TYPE=__stdcall',
         ],
+        'msvs_disabled_warnings': [
+            4345,  # This is an FYI about a behavior change from long ago.  Chrome stifles it too.
+        ],
         'msvs_cygwin_shell': 0,
+        'msvs_disabled_warnings': [4275],
         'msvs_settings': {
           'VCCLCompilerTool': {
             'WarningLevel': '3',
@@ -25,6 +43,7 @@
             'AdditionalOptions': [ '/MP', ],
           },
           'VCLinkerTool': {
+            'LargeAddressAware': 2,  # 2 means "Yes, please let me use more RAM on 32-bit builds."
             'AdditionalDependencies': [
               'OpenGL32.lib',
               'usp10.lib',
@@ -87,6 +106,29 @@
           },
         },
         'conditions' : [
+          # Gyp's ninja generator depends on these specially named
+          # configurations to build 64-bit on Windows.
+          # See http://skbug.com/2348
+          #
+          # We handle the 64- vs 32-bit variations elsewhere, so I think it's
+          # OK for us to just make these inherit non-archwidth-specific
+          # configurations without modification.
+          #
+          # See http://skbug.com/2442 : These targets cause problems in the
+          # MSVS build, so only include them if gyp is generating a ninja build.
+          [ '"ninja" in "<!(echo %GYP_GENERATORS%)"', {
+            'configurations': {
+              'Debug_x64': {
+                'inherit_from': ['Debug'],
+              },
+              'Release_x64': {
+                'inherit_from': ['Release'],
+              },
+              'Release_Developer_x64': {
+                'inherit_from': ['Release_Developer'],
+              },
+            },
+          }],
           [ 'skia_arch_width == 64', {
             'msvs_configuration_platform': 'x64',
           }],
@@ -130,16 +172,31 @@
           '-Wpointer-arith',
 
           '-Wno-unused-parameter',
-          '-Wno-c++11-extensions',
         ],
         'cflags_cc': [
           '-fno-rtti',
           '-Wnon-virtual-dtor',
+          '-Wno-invalid-offsetof',  # GCC <4.6 is old-school strict about what is POD.
         ],
         'conditions': [
+          [ 'skia_android_framework==0', {
+            'cflags': [
+              # This flag is not supported by Android build system.
+              '-Wno-c++11-extensions',
+            ],
+          }],
           [ 'skia_warnings_as_errors', {
             'cflags': [
               '-Werror',
+            ],
+          }],
+          # For profiling; reveals some costs, exaggerates others (e.g. trivial setters & getters).
+          [ 'skia_disable_inlining', {
+            'cflags': [
+              '-fno-inline',
+              '-fno-default-inline',
+              '-finline-limit=0',
+              '-fno-omit-frame-pointer',
             ],
           }],
           [ 'skia_arch_type == "arm" and arm_thumb == 1', {
@@ -189,10 +246,112 @@
               }],
             ],
           }],
+          [ 'skia_arch_type == "mips"', {
+            'cflags': [
+              '-EL',
+            ],
+            'conditions': [
+              [ 'mips_arch_variant == "mips32r2"', {
+                'cflags': [
+                  '-march=mips32r2',
+                ],
+                'conditions': [
+                  [ 'mips_dsp == 1', {
+                    'cflags': [
+                      '-mdsp',
+                    ],
+                  }],
+                  [ 'mips_dsp == 2', {
+                    'cflags': [
+                      '-mdspr2',
+                    ],
+                    'defines': [
+                      '__MIPS_HAVE_DSPR2',
+                    ],
+                  }],
+                ],
+              }],
+            ],
+          }],
         ],
       },
     ],
 
+    ['skia_android_framework', {
+      'includes' : [
+        'skia_for_android_framework_defines.gypi',
+      ],
+      'cflags': [
+        # Skia does not enforce this usage pattern so we disable it here to avoid
+        # unecessary log spew when building
+        '-Wno-unused-parameter',
+
+        # Android's -D_FORTIFY_SOURCE=2 extensions are incompatibile with SkString.
+        # Revert to -D_FORTIFY_SOURCE=1
+        '-U_FORTIFY_SOURCE',
+        '-D_FORTIFY_SOURCE=1',
+      ],
+      # Remove flags which are either unnecessary or problematic for the
+      # Android framework build. Many of these flags are removed simply because
+      # they were not previously in the Android framework makefile, and we did
+      # did not intend to add them when generating the makefile.
+      # TODO (scroggo): Investigate whether any of these flags are actually
+      # needed/would be beneficial.
+      'cflags!': [
+        # Android has one makefile, used for both debugging (after manual
+        # modification) and release. Turn off debug info by default.
+        '-g',
+        '-march=armv7-a',
+        '-mthumb',
+        '-mfpu=neon',
+        '-mfloat-abi=softfp',
+        # This flag is not supported by Android build system.
+        '-Wno-c++11-extensions',
+        '-fno-exceptions',
+        '-fstrict-aliasing',
+        # Remove flags to turn on warnings, since most people building Android
+        # are not focused on Skia and do not need the extra warning info.
+        '-Wall',
+        '-Wextra',
+        '-Winit-self',
+        '-Wpointer-arith',
+      ],
+      'cflags_cc!': [
+        '-fno-rtti',
+        '-Wnon-virtual-dtor',
+      ],
+      'defines': [
+        'DCT_IFAST_SUPPORTED',
+        # using freetype's embolden allows us to adjust fake bold settings at
+        # draw-time, at which point we know which SkTypeface is being drawn
+        'SK_USE_FREETYPE_EMBOLDEN',
+        'SK_SFNTLY_SUBSETTER "sample/chromium/font_subsetter.h"',
+        # When built as part of the system image we can enable certian non-NDK
+        # compliant optimizations.
+        'SK_BUILD_FOR_ANDROID_FRAMEWORK',
+        # Optimizations for chromium (m30)
+        'GR_GL_CUSTOM_SETUP_HEADER "gl/GrGLConfig_chrome.h"',
+        'IGNORE_ROT_AA_RECT_OPT',
+        # Disable this check because it is too strict for some chromium-specific
+        # subclasses of SkPixelRef. See bug: crbug.com/171776.
+        'SK_DISABLE_PIXELREF_LOCKCOUNT_BALANCE_CHECK',
+        'SkLONGLONG int64_t',
+        'SK_DEFAULT_FONT_CACHE_LIMIT   (768 * 1024)',
+        'SK_ATOMICS_PLATFORM_H "../../src/ports/SkAtomics_sync.h"',
+        'SK_MUTEX_PLATFORM_H "../../src/ports/SkMutex_pthread.h"',
+        # Still need to switch Android to the new name for N32.
+        'kNative_8888_SkColorType kN32_SkColorType',
+        # Needed until we fix skbug.com/2440.
+        'SK_SUPPORT_LEGACY_CLIPTOLAYERFLAG',
+        # Transitional, for deprecated SkCanvas::SaveFlags methods.
+        'SK_ATTR_DEPRECATED=SK_NOTHING_ARG1',
+        'SK_SUPPORT_LEGACY_SHADER_LOCALMATRIX',
+        'SK_DEFAULT_GLOBAL_DISCARDABLE_MEMORY_POOL_SIZE (512 * 1024)',
+        'SK_IGNORE_ETC1_SUPPORT',
+        # Defines from skia_for_android_framework_defines.gypi
+        '<@(skia_for_android_framework_defines)',
+      ],
+    }],
 
     [ 'skia_os in ["linux", "freebsd", "openbsd", "solaris", "nacl", "chromeos"]',
       {
@@ -228,12 +387,19 @@
             'defines': [
               'SK_BUILD_FOR_NACL',
             ],
+            'variables': {
+              'nacl_sdk_root': '<!(echo ${NACL_SDK_ROOT})',
+            },
             'link_settings': {
               'libraries': [
                 '-lppapi',
                 '-lppapi_cpp',
                 '-lnosys',
                 '-pthread',
+              ],
+              'ldflags': [
+                '-L<(nacl_sdk_root)/lib/newlib_x86_<(skia_arch_width)/Release',
+                '-L<(nacl_sdk_root)/ports/lib/newlib_x86_<(skia_arch_width)/Release',
               ],
             },
           }, { # skia_os != "nacl"
@@ -283,12 +449,25 @@
                   }],
                 ],
               }],
+              [ 'skia_sanitizer == "undefined"', {
+                'cflags': [ '-fPIC' ],
+                'cflags_cc!': ['-fno-rtti'],
+                'target_conditions': [
+                  [ '_type == "executable"', {
+                    'cflags': [ '-fPIE' ],
+                    'ldflags': [ '-pie' ],
+                  }],
+                ],
+              }],
             ],
           }],
           [ 'skia_clang_build', {
             'cflags': [
               # Extra warnings we like but that only Clang knows about.
               '-Wstring-conversion',
+            ],
+            'cflags!': [
+                '-mfpmath=sse',  # Clang doesn't need to be told this, and sometimes gets confused.
             ],
           }],
           [ 'skia_keep_frame_pointer', {
@@ -300,9 +479,6 @@
 
     [ 'skia_os == "mac"',
       {
-        'variables': {
-          'mac_sdk%': '<!(python <(DEPTH)/tools/find_mac_sdk.py 10.6)',
-        },
         'defines': [
           'SK_BUILD_FOR_MAC',
         ],
@@ -324,14 +500,7 @@
                 '-Wall',
                 '-Wextra',
                 '-Wno-unused-parameter',
-              ],
-            },
-          }],
-# This old compiler is really bad at figuring out when things are uninitialized, so ignore it.
-          [ '<(mac_sdk)==10.6', {
-            'xcode_settings': {
-              'OTHER_CPLUSPLUSFLAGS': [
-                '-Wno-uninitialized',
+                '-Wno-uninitialized',  # Disabled because we think GCC 4.2 is bad at this.
               ],
             },
           }],
@@ -359,12 +528,12 @@
         'xcode_settings': {
           'GCC_SYMBOLS_PRIVATE_EXTERN': 'NO',
           'conditions': [
-            [ 'skia_osx_sdkroot==""', {
-              'SDKROOT': 'macosx<(mac_sdk)',  # -isysroot
+            [ 'skia_osx_deployment_target==""', {
+              'MACOSX_DEPLOYMENT_TARGET': '10.6', # -mmacos-version-min, passed in environment to ld.
             }, {
-              'SDKROOT': '<(skia_osx_sdkroot)',  # -isysroot
+              'MACOSX_DEPLOYMENT_TARGET': '<(skia_osx_deployment_target)',
             }],
-           ],
+          ],
 # trying to get this to work, but it needs clang I think...
 #          'WARNING_CFLAGS': '-Wexit-time-destructors',
           'CLANG_WARN_CXX0X_EXTENSIONS': 'NO',
@@ -423,7 +592,7 @@
           },
         },
         'xcode_settings': {
-          'ARCHS': ['armv6', 'armv7'],
+          'ARCHS': ['armv7'],
           'CODE_SIGNING_REQUIRED': 'NO',
           'CODE_SIGN_IDENTITY[sdk=iphoneos*]': '',
           'IPHONEOS_DEPLOYMENT_TARGET': '<(ios_sdk_version)',
@@ -443,6 +612,14 @@
         'defines': [
           'SK_BUILD_FOR_ANDROID',
           'SK_FONTHOST_DOES_NOT_USE_FONTMGR',
+
+          # Android Text Tuning
+          'SK_GAMMA_EXPONENT=1.4',
+          'SK_GAMMA_CONTRAST=0.0',
+        ],
+        # Android defines a fixed gamma exponent instead of using SRGB
+        'defines!': [
+          'SK_GAMMA_SRGB',
         ],
         'configurations': {
           'Debug': {
@@ -462,6 +639,15 @@
           '-fuse-ld=gold',
         ],
         'conditions': [
+          [ 'skia_android_framework', {
+            'libraries!': [
+              '-lstdc++',
+              '-lm',
+            ],
+            'cflags!': [
+              '-fuse-ld=gold',
+            ],
+          }],
           [ 'skia_shared_lib', {
             'cflags': [
               '-fPIC',
@@ -485,6 +671,13 @@
         'SK_USE_POSIX_THREADS',
       ],
     }],
+
+    [ 'skia_moz2d', {
+      'defines': [
+        # add flags here (e.g. SK_SUPPORT_LEGACY_...) needed by moz2d
+      ],
+    }],
+
   ], # end 'conditions'
   # The Xcode SYMROOT must be at the root. See build/common.gypi in chromium for more details
   'xcode_settings': {

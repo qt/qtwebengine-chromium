@@ -32,13 +32,12 @@ using base::string16;
 
 namespace {
 
-// Force the singleton used by Empty[W]String[16] to be a unique type. This
+// Force the singleton used by EmptyString[16] to be a unique type. This
 // prevents other code that might accidentally use Singleton<string> from
 // getting our internal one.
 struct EmptyStrings {
   EmptyStrings() {}
   const std::string s;
-  const std::wstring ws;
   const string16 s16;
 
   static EmptyStrings* GetInstance() {
@@ -108,17 +107,13 @@ const std::string& EmptyString() {
   return EmptyStrings::GetInstance()->s;
 }
 
-const std::wstring& EmptyWString() {
-  return EmptyStrings::GetInstance()->ws;
-}
-
 const string16& EmptyString16() {
   return EmptyStrings::GetInstance()->s16;
 }
 
 template<typename STR>
 bool ReplaceCharsT(const STR& input,
-                   const typename STR::value_type replace_chars[],
+                   const STR& replace_chars,
                    const STR& replace_with,
                    STR* output) {
   bool removed = false;
@@ -137,41 +132,41 @@ bool ReplaceCharsT(const STR& input,
 }
 
 bool ReplaceChars(const string16& input,
-                  const char16 replace_chars[],
+                  const base::StringPiece16& replace_chars,
                   const string16& replace_with,
                   string16* output) {
-  return ReplaceCharsT(input, replace_chars, replace_with, output);
+  return ReplaceCharsT(input, replace_chars.as_string(), replace_with, output);
 }
 
 bool ReplaceChars(const std::string& input,
-                  const char replace_chars[],
+                  const base::StringPiece& replace_chars,
                   const std::string& replace_with,
                   std::string* output) {
-  return ReplaceCharsT(input, replace_chars, replace_with, output);
+  return ReplaceCharsT(input, replace_chars.as_string(), replace_with, output);
 }
 
 bool RemoveChars(const string16& input,
-                 const char16 remove_chars[],
+                 const base::StringPiece16& remove_chars,
                  string16* output) {
-  return ReplaceChars(input, remove_chars, string16(), output);
+  return ReplaceChars(input, remove_chars.as_string(), string16(), output);
 }
 
 bool RemoveChars(const std::string& input,
-                 const char remove_chars[],
+                 const base::StringPiece& remove_chars,
                  std::string* output) {
-  return ReplaceChars(input, remove_chars, std::string(), output);
+  return ReplaceChars(input, remove_chars.as_string(), std::string(), output);
 }
 
 template<typename STR>
 TrimPositions TrimStringT(const STR& input,
-                          const typename STR::value_type trim_chars[],
+                          const STR& trim_chars,
                           TrimPositions positions,
                           STR* output) {
   // Find the edges of leading/trailing whitespace as desired.
-  const typename STR::size_type last_char = input.length() - 1;
-  const typename STR::size_type first_good_char = (positions & TRIM_LEADING) ?
+  const size_t last_char = input.length() - 1;
+  const size_t first_good_char = (positions & TRIM_LEADING) ?
       input.find_first_not_of(trim_chars) : 0;
-  const typename STR::size_type last_good_char = (positions & TRIM_TRAILING) ?
+  const size_t last_good_char = (positions & TRIM_TRAILING) ?
       input.find_last_not_of(trim_chars) : last_char;
 
   // When the string was all whitespace, report that we stripped off whitespace
@@ -195,15 +190,17 @@ TrimPositions TrimStringT(const STR& input,
 }
 
 bool TrimString(const string16& input,
-                const char16 trim_chars[],
+                const base::StringPiece16& trim_chars,
                 string16* output) {
-  return TrimStringT(input, trim_chars, TRIM_ALL, output) != TRIM_NONE;
+  return TrimStringT(input, trim_chars.as_string(), TRIM_ALL, output) !=
+      TRIM_NONE;
 }
 
 bool TrimString(const std::string& input,
-                const char trim_chars[],
+                const base::StringPiece& trim_chars,
                 std::string* output) {
-  return TrimStringT(input, trim_chars, TRIM_ALL, output) != TRIM_NONE;
+  return TrimStringT(input, trim_chars.as_string(), TRIM_ALL, output) !=
+      TRIM_NONE;
 }
 
 void TruncateUTF8ToByteSize(const std::string& input,
@@ -242,18 +239,17 @@ void TruncateUTF8ToByteSize(const std::string& input,
     output->clear();
 }
 
-}  // namespace base
-
-TrimPositions TrimWhitespace(const base::string16& input,
+TrimPositions TrimWhitespace(const string16& input,
                              TrimPositions positions,
-                             base::string16* output) {
-  return base::TrimStringT(input, base::kWhitespaceUTF16, positions, output);
+                             string16* output) {
+  return TrimStringT(input, base::string16(kWhitespaceUTF16), positions,
+                     output);
 }
 
 TrimPositions TrimWhitespaceASCII(const std::string& input,
                                   TrimPositions positions,
                                   std::string* output) {
-  return base::TrimStringT(input, base::kWhitespaceASCII, positions, output);
+  return TrimStringT(input, std::string(kWhitespaceASCII), positions, output);
 }
 
 // This function is only for backward-compatibility.
@@ -316,49 +312,14 @@ std::string CollapseWhitespaceASCII(const std::string& text,
   return CollapseWhitespaceT(text, trim_sequences_with_line_breaks);
 }
 
-bool ContainsOnlyWhitespaceASCII(const std::string& str) {
-  for (std::string::const_iterator i(str.begin()); i != str.end(); ++i) {
-    if (!IsAsciiWhitespace(*i))
-      return false;
-  }
-  return true;
+bool ContainsOnlyChars(const StringPiece& input,
+                       const StringPiece& characters) {
+  return input.find_first_not_of(characters) == StringPiece::npos;
 }
 
-bool ContainsOnlyWhitespace(const base::string16& str) {
-  return str.find_first_not_of(base::kWhitespaceUTF16) == string16::npos;
-}
-
-template<typename STR>
-static bool ContainsOnlyCharsT(const STR& input, const STR& characters) {
-  for (typename STR::const_iterator iter = input.begin();
-       iter != input.end(); ++iter) {
-    if (characters.find(*iter) == STR::npos)
-      return false;
-  }
-  return true;
-}
-
-bool ContainsOnlyChars(const string16& input, const string16& characters) {
-  return ContainsOnlyCharsT(input, characters);
-}
-
-bool ContainsOnlyChars(const std::string& input,
-                       const std::string& characters) {
-  return ContainsOnlyCharsT(input, characters);
-}
-
-#if !defined(WCHAR_T_IS_UTF16)
-bool IsStringASCII(const std::wstring& str);
-#endif
-
-std::string WideToASCII(const std::wstring& wide) {
-  DCHECK(IsStringASCII(wide)) << wide;
-  return std::string(wide.begin(), wide.end());
-}
-
-std::string UTF16ToASCII(const string16& utf16) {
-  DCHECK(IsStringASCII(utf16)) << utf16;
-  return std::string(utf16.begin(), utf16.end());
+bool ContainsOnlyChars(const StringPiece16& input,
+                       const StringPiece16& characters) {
+  return input.find_first_not_of(characters) == StringPiece16::npos;
 }
 
 template<class STR>
@@ -371,17 +332,11 @@ static bool DoIsStringASCII(const STR& str) {
   return true;
 }
 
-#if !defined(WCHAR_T_IS_UTF16)
-bool IsStringASCII(const std::wstring& str) {
+bool IsStringASCII(const StringPiece& str) {
   return DoIsStringASCII(str);
 }
-#endif
 
 bool IsStringASCII(const string16& str) {
-  return DoIsStringASCII(str);
-}
-
-bool IsStringASCII(const base::StringPiece& str) {
   return DoIsStringASCII(str);
 }
 
@@ -393,11 +348,13 @@ bool IsStringUTF8(const std::string& str) {
   while (char_index < src_len) {
     int32 code_point;
     CBU8_NEXT(src, char_index, src_len, code_point);
-    if (!base::IsValidCharacter(code_point))
+    if (!IsValidCharacter(code_point))
       return false;
   }
   return true;
 }
+
+}  // namespace base
 
 template<typename Iter>
 static inline bool DoLowerCaseEqualsASCII(Iter a_begin,
@@ -481,17 +438,15 @@ bool StartsWith(const string16& str, const string16& search,
 
 template <typename STR>
 bool EndsWithT(const STR& str, const STR& search, bool case_sensitive) {
-  typename STR::size_type str_length = str.length();
-  typename STR::size_type search_length = search.length();
+  size_t str_length = str.length();
+  size_t search_length = search.length();
   if (search_length > str_length)
     return false;
-  if (case_sensitive) {
+  if (case_sensitive)
     return str.compare(str_length - search_length, search_length, search) == 0;
-  } else {
-    return std::equal(search.begin(), search.end(),
-                      str.begin() + (str_length - search_length),
-                      base::CaseInsensitiveCompare<typename STR::value_type>());
-  }
+  return std::equal(search.begin(), search.end(),
+                    str.begin() + (str_length - search_length),
+                    base::CaseInsensitiveCompare<typename STR::value_type>());
 }
 
 bool EndsWith(const std::string& str, const std::string& search,
@@ -532,12 +487,12 @@ string16 FormatBytesUnlocalized(int64 bytes) {
                    kByteStringsUnlocalized[dimension]);
   }
 
-  return ASCIIToUTF16(buf);
+  return base::ASCIIToUTF16(buf);
 }
 
 template<class StringType>
 void DoReplaceSubstringsAfterOffset(StringType* str,
-                                    typename StringType::size_type start_offset,
+                                    size_t start_offset,
                                     const StringType& find_this,
                                     const StringType& replace_with,
                                     bool replace_all) {
@@ -545,7 +500,7 @@ void DoReplaceSubstringsAfterOffset(StringType* str,
     return;
 
   DCHECK(!find_this.empty());
-  for (typename StringType::size_type offs(str->find(find_this, start_offset));
+  for (size_t offs(str->find(find_this, start_offset));
       offs != StringType::npos; offs = str->find(find_this, offs)) {
     str->replace(offs, find_this.length(), replace_with);
     offs += replace_with.length();
@@ -556,7 +511,7 @@ void DoReplaceSubstringsAfterOffset(StringType* str,
 }
 
 void ReplaceFirstSubstringAfterOffset(string16* str,
-                                      string16::size_type start_offset,
+                                      size_t start_offset,
                                       const string16& find_this,
                                       const string16& replace_with) {
   DoReplaceSubstringsAfterOffset(str, start_offset, find_this, replace_with,
@@ -564,7 +519,7 @@ void ReplaceFirstSubstringAfterOffset(string16* str,
 }
 
 void ReplaceFirstSubstringAfterOffset(std::string* str,
-                                      std::string::size_type start_offset,
+                                      size_t start_offset,
                                       const std::string& find_this,
                                       const std::string& replace_with) {
   DoReplaceSubstringsAfterOffset(str, start_offset, find_this, replace_with,
@@ -572,7 +527,7 @@ void ReplaceFirstSubstringAfterOffset(std::string* str,
 }
 
 void ReplaceSubstringsAfterOffset(string16* str,
-                                  string16::size_type start_offset,
+                                  size_t start_offset,
                                   const string16& find_this,
                                   const string16& replace_with) {
   DoReplaceSubstringsAfterOffset(str, start_offset, find_this, replace_with,
@@ -580,7 +535,7 @@ void ReplaceSubstringsAfterOffset(string16* str,
 }
 
 void ReplaceSubstringsAfterOffset(std::string* str,
-                                  std::string::size_type start_offset,
+                                  size_t start_offset,
                                   const std::string& find_this,
                                   const std::string& replace_with) {
   DoReplaceSubstringsAfterOffset(str, start_offset, find_this, replace_with,
@@ -594,9 +549,9 @@ static size_t TokenizeT(const STR& str,
                         std::vector<STR>* tokens) {
   tokens->clear();
 
-  typename STR::size_type start = str.find_first_not_of(delimiters);
+  size_t start = str.find_first_not_of(delimiters);
   while (start != STR::npos) {
-    typename STR::size_type end = str.find_first_of(delimiters, start + 1);
+    size_t end = str.find_first_of(delimiters, start + 1);
     if (end == STR::npos) {
       tokens->push_back(str.substr(start));
       break;

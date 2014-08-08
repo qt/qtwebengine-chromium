@@ -12,8 +12,6 @@
 
 #if defined(OS_WIN)
 #include <objidl.h>
-#elif defined(TOOLKIT_GTK)
-#include <gtk/gtk.h>
 #endif
 
 #include "base/basictypes.h"
@@ -21,7 +19,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "ui/base/clipboard/clipboard.h"
 #include "ui/base/dragdrop/download_file_interface.h"
-#include "ui/base/ui_export.h"
+#include "ui/base/ui_base_export.h"
 
 class GURL;
 class Pickle;
@@ -32,6 +30,8 @@ class Vector2d;
 }
 
 namespace ui {
+
+struct FileInfo;
 
 ///////////////////////////////////////////////////////////////////////////////
 //
@@ -47,7 +47,7 @@ namespace ui {
 // TabContentsViewGtk uses a different class to handle drag support that does
 // not use OSExchangeData. As such, file contents and html support is only
 // compiled on windows.
-class UI_EXPORT OSExchangeData {
+class UI_BASE_EXPORT OSExchangeData {
  public:
   // CustomFormats are used for non-standard data types. For example, bookmark
   // nodes are written using a CustomFormat.
@@ -63,7 +63,7 @@ class UI_EXPORT OSExchangeData {
 #if defined(OS_WIN)
     FILE_CONTENTS  = 1 << 4,
 #endif
-#if defined(OS_WIN) || defined(USE_AURA)
+#if defined(USE_AURA)
     HTML           = 1 << 5,
 #endif
   };
@@ -73,7 +73,7 @@ class UI_EXPORT OSExchangeData {
   enum FilenameToURLPolicy { CONVERT_FILENAMES, DO_NOT_CONVERT_FILENAMES, };
 
   // Encapsulates the info about a file to be downloaded.
-  struct UI_EXPORT DownloadFileInfo {
+  struct UI_BASE_EXPORT DownloadFileInfo {
     DownloadFileInfo(const base::FilePath& filename,
                      DownloadFileProvider* downloader);
     ~DownloadFileInfo();
@@ -82,25 +82,17 @@ class UI_EXPORT OSExchangeData {
     scoped_refptr<DownloadFileProvider> downloader;
   };
 
-  // Encapsulates the info about a file.
-  struct UI_EXPORT FileInfo {
-    FileInfo(const base::FilePath& path, const base::FilePath& display_name);
-    ~FileInfo();
-
-    // The path of the file.
-    base::FilePath path;
-    // The display name of the file. This field is optional.
-    base::FilePath display_name;
-  };
-
   // Provider defines the platform specific part of OSExchangeData that
   // interacts with the native system.
-  class UI_EXPORT Provider {
+  class UI_BASE_EXPORT Provider {
    public:
     Provider() {}
     virtual ~Provider() {}
 
     virtual Provider* Clone() const = 0;
+
+    virtual void MarkOriginatedFromRenderer() = 0;
+    virtual bool DidOriginateFromRenderer() const = 0;
 
     virtual void SetString(const base::string16& data) = 0;
     virtual void SetURL(const GURL& url, const base::string16& title) = 0;
@@ -121,21 +113,22 @@ class UI_EXPORT OSExchangeData {
                                 Pickle* data) const = 0;
 
     virtual bool HasString() const = 0;
-    virtual bool HasURL() const = 0;
+    virtual bool HasURL(FilenameToURLPolicy policy) const = 0;
     virtual bool HasFile() const = 0;
     virtual bool HasCustomFormat(const CustomFormat& format) const = 0;
 
-#if defined(OS_WIN)
+#if (!defined(OS_CHROMEOS) && defined(USE_X11)) || defined(OS_WIN)
     virtual void SetFileContents(const base::FilePath& filename,
                                  const std::string& file_contents) = 0;
+#endif
+#if defined(OS_WIN)
     virtual bool GetFileContents(base::FilePath* filename,
                                  std::string* file_contents) const = 0;
     virtual bool HasFileContents() const = 0;
     virtual void SetDownloadFileInfo(const DownloadFileInfo& download) = 0;
-    virtual void SetInDragLoop(bool in_drag_loop) = 0;
 #endif
 
-#if defined(OS_WIN) || defined(USE_AURA)
+#if defined(USE_AURA)
     virtual void SetHtml(const base::string16& html, const GURL& base_url) = 0;
     virtual bool GetHtml(base::string16* html, GURL* base_url) const = 0;
     virtual bool HasHtml() const = 0;
@@ -162,6 +155,12 @@ class UI_EXPORT OSExchangeData {
   // Returns the Provider, which actually stores and manages the data.
   const Provider& provider() const { return *provider_; }
   Provider& provider() { return *provider_; }
+
+  // Marks drag data as tainted if it originates from the renderer. This is used
+  // to avoid granting privileges to a renderer when dragging in tainted data,
+  // since it could allow potential escalation of privileges.
+  void MarkOriginatedFromRenderer();
+  bool DidOriginateFromRenderer() const;
 
   // These functions add data to the OSExchangeData object of various Chrome
   // types. The OSExchangeData object takes care of translating the data into
@@ -201,14 +200,9 @@ class UI_EXPORT OSExchangeData {
   // Test whether or not data of certain types is present, without actually
   // returning anything.
   bool HasString() const;
-  bool HasURL() const;
+  bool HasURL(FilenameToURLPolicy policy) const;
   bool HasFile() const;
   bool HasCustomFormat(const CustomFormat& format) const;
-
-  // Returns true if this OSExchangeData has data for ALL the formats in
-  // |formats| and ALL the custom formats in |custom_formats|.
-  bool HasAllFormats(int formats,
-                     const std::set<CustomFormat>& custom_formats) const;
 
   // Returns true if this OSExchangeData has data in any of the formats in
   // |formats| or any custom format in |custom_formats|.
@@ -216,7 +210,8 @@ class UI_EXPORT OSExchangeData {
                      const std::set<CustomFormat>& custom_formats) const;
 
 #if defined(OS_WIN)
-  // Adds the bytes of a file (CFSTR_FILECONTENTS and CFSTR_FILEDESCRIPTOR).
+  // Adds the bytes of a file (CFSTR_FILECONTENTS and CFSTR_FILEDESCRIPTOR on
+  // Windows).
   void SetFileContents(const base::FilePath& filename,
                        const std::string& file_contents);
   bool GetFileContents(base::FilePath* filename,
@@ -224,11 +219,9 @@ class UI_EXPORT OSExchangeData {
 
   // Adds a download file with full path (CF_HDROP).
   void SetDownloadFileInfo(const DownloadFileInfo& download);
-
-  void SetInDragLoop(bool in_drag_loop);
 #endif
 
-#if defined(OS_WIN) || defined(USE_AURA)
+#if defined(USE_AURA)
   // Adds a snippet of HTML.  |html| is just raw html but this sets both
   // text/html and CF_HTML.
   void SetHtml(const base::string16& html, const GURL& base_url);

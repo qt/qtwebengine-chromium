@@ -13,8 +13,10 @@
 #import "ui/base/cocoa/menu_controller.h"
 #include "ui/base/models/simple_menu_model.h"
 #include "ui/base/resource/resource_bundle.h"
-#import "ui/base/test/ui_cocoa_test_helper.h"
 #include "ui/gfx/image/image.h"
+#import "ui/gfx/test/ui_cocoa_test_helper.h"
+
+using base::ASCIIToUTF16;
 
 namespace ui {
 
@@ -87,7 +89,7 @@ class DynamicDelegate : public Delegate {
   virtual bool IsItemForCommandIdDynamic(int command_id) const OVERRIDE {
     return true;
   }
-  virtual string16 GetLabelForCommandId(int command_id) const OVERRIDE {
+  virtual base::string16 GetLabelForCommandId(int command_id) const OVERRIDE {
     return label_;
   }
   virtual bool GetIconForCommandId(
@@ -100,30 +102,31 @@ class DynamicDelegate : public Delegate {
       return true;
     }
   }
-  void SetDynamicLabel(string16 label) { label_ = label; }
+  void SetDynamicLabel(base::string16 label) { label_ = label; }
   void SetDynamicIcon(const gfx::Image& icon) { icon_ = icon; }
 
  private:
-  string16 label_;
+  base::string16 label_;
   gfx::Image icon_;
 };
 
-// Menu model that returns a gfx::Font object for one of the items in the menu.
-class FontMenuModel : public SimpleMenuModel {
+// Menu model that returns a gfx::FontList object for one of the items in the
+// menu.
+class FontListMenuModel : public SimpleMenuModel {
  public:
-  FontMenuModel(SimpleMenuModel::Delegate* delegate,
-                const gfx::Font* font, int index)
+  FontListMenuModel(SimpleMenuModel::Delegate* delegate,
+                    const gfx::FontList* font_list, int index)
       : SimpleMenuModel(delegate),
-        font_(font),
+        font_list_(font_list),
         index_(index) {
   }
-  virtual ~FontMenuModel() {}
-  virtual const gfx::Font* GetLabelFontAt(int index) const OVERRIDE {
-    return (index == index_) ? font_ : NULL;
+  virtual ~FontListMenuModel() {}
+  virtual const gfx::FontList* GetLabelFontListAt(int index) const OVERRIDE {
+    return (index == index_) ? font_list_ : NULL;
   }
 
  private:
-  const gfx::Font* font_;
+  const gfx::FontList* font_list_;
   const int index_;
 };
 
@@ -222,7 +225,7 @@ TEST_F(MenuControllerTest, PopUpButton) {
       [[MenuController alloc] initWithModel:&model useWithPopUpButtonCell:YES]);
   EXPECT_EQ([[menu menu] numberOfItems], 4);
   EXPECT_EQ(base::SysNSStringToUTF16([[[menu menu] itemAtIndex:0] title]),
-            string16());
+            base::string16());
 
   // Make sure the tags are still correct (the index no longer matches the tag).
   NSMenuItem* itemTwo = [[menu menu] itemAtIndex:2];
@@ -270,10 +273,11 @@ TEST_F(MenuControllerTest, Validate) {
 }
 
 // Tests that items which have a font set actually use that font.
-TEST_F(MenuControllerTest, LabelFont) {
+TEST_F(MenuControllerTest, LabelFontList) {
   Delegate delegate;
-  gfx::Font bold = (gfx::Font()).DeriveFont(0, gfx::Font::BOLD);
-  FontMenuModel model(&delegate, &bold, 0);
+  const gfx::FontList& bold = ResourceBundle::GetSharedInstance().GetFontList(
+      ResourceBundle::BoldFont);
+  FontListMenuModel model(&delegate, &bold, 0);
   model.AddItem(1, ASCIIToUTF16("one"));
   model.AddItem(2, ASCIIToUTF16("two"));
 
@@ -313,7 +317,7 @@ TEST_F(MenuControllerTest, Dynamic) {
 
   // Create a menu containing a single item whose label is "initial" and who has
   // no icon.
-  string16 initial = ASCIIToUTF16("initial");
+  base::string16 initial = ASCIIToUTF16("initial");
   delegate.SetDynamicLabel(initial);
   SimpleMenuModel model(&delegate);
   model.AddItem(1, ASCIIToUTF16("foo"));
@@ -329,7 +333,7 @@ TEST_F(MenuControllerTest, Dynamic) {
   EXPECT_EQ(nil, [item image]);
 
   // Now update the item to have a label of "second" and an icon.
-  string16 second = ASCIIToUTF16("second");
+  base::string16 second = ASCIIToUTF16("second");
   delegate.SetDynamicLabel(second);
   const gfx::Image& icon =
       ResourceBundle::GetSharedInstance().GetNativeImageNamed(IDR_THROBBER);
@@ -349,7 +353,7 @@ TEST_F(MenuControllerTest, Dynamic) {
 TEST_F(MenuControllerTest, OpenClose) {
   // SimpleMenuModel posts a task that calls Delegate::MenuClosed. Create
   // a MessageLoop for that purpose.
-  base::MessageLoop message_loop(base::MessageLoop::TYPE_UI);
+  base::MessageLoopForUI message_loop;
 
   // Create the model.
   Delegate delegate;

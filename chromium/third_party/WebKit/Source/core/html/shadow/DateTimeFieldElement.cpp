@@ -27,7 +27,8 @@
 #if ENABLE(INPUT_MULTIPLE_FIELDS_UI)
 #include "core/html/shadow/DateTimeFieldElement.h"
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
+#include "core/dom/Document.h"
 #include "core/dom/Text.h"
 #include "core/events/KeyboardEvent.h"
 #include "platform/text/PlatformLocale.h"
@@ -52,22 +53,27 @@ DateTimeFieldElement::DateTimeFieldElement(Document& document, FieldOwner& field
 {
 }
 
+void DateTimeFieldElement::trace(Visitor* visitor)
+{
+    visitor->trace(m_fieldOwner);
+    HTMLSpanElement::trace(visitor);
+}
+
 void DateTimeFieldElement::defaultEventHandler(Event* event)
 {
-    if (event->type() == EventTypeNames::blur)
-        didBlur();
-
-    if (event->type() == EventTypeNames::focus)
-        didFocus();
-
     if (event->isKeyboardEvent()) {
         KeyboardEvent* keyboardEvent = toKeyboardEvent(event);
         if (!isDisabled() && !isFieldOwnerDisabled() && !isFieldOwnerReadOnly()) {
             handleKeyboardEvent(keyboardEvent);
-            if (keyboardEvent->defaultHandled())
+            if (keyboardEvent->defaultHandled()) {
+                if (m_fieldOwner)
+                    m_fieldOwner->fieldDidChangeValueByKeyboard();
                 return;
+            }
         }
         defaultKeyboardEventHandler(keyboardEvent);
+        if (m_fieldOwner)
+            m_fieldOwner->fieldDidChangeValueByKeyboard();
         if (keyboardEvent->defaultHandled())
             return;
     }
@@ -129,16 +135,11 @@ void DateTimeFieldElement::defaultKeyboardEventHandler(KeyboardEvent* keyboardEv
     }
 }
 
-void DateTimeFieldElement::didBlur()
+void DateTimeFieldElement::setFocus(bool value)
 {
     if (m_fieldOwner)
-        m_fieldOwner->didBlurFromField();
-}
-
-void DateTimeFieldElement::didFocus()
-{
-    if (m_fieldOwner)
-        m_fieldOwner->didFocusOnField();
+        value ? m_fieldOwner->didFocusOnField() : m_fieldOwner->didBlurFromField();
+    ContainerNode::setFocus(value);
 }
 
 void DateTimeFieldElement::focusOnNextField()
@@ -152,12 +153,12 @@ void DateTimeFieldElement::initialize(const AtomicString& pseudo, const String& 
 {
     // On accessibility, DateTimeFieldElement acts like spin button.
     setAttribute(roleAttr, AtomicString("spinbutton", AtomicString::ConstructFromLiteral));
-    setAttribute(aria_valuetextAttr, emptyValueAXText());
-    setAttribute(aria_valueminAttr, String::number(axMinimum));
-    setAttribute(aria_valuemaxAttr, String::number(axMaximum));
+    setAttribute(aria_valuetextAttr, AtomicString(emptyValueAXText()));
+    setAttribute(aria_valueminAttr, AtomicString::number(axMinimum));
+    setAttribute(aria_valuemaxAttr, AtomicString::number(axMaximum));
 
-    setAttribute(aria_helpAttr, axHelpText);
-    setPseudo(pseudo);
+    setAttribute(aria_helpAttr, AtomicString(axHelpText));
+    setShadowPseudoId(pseudo);
     appendChild(Text::create(document(), visibleValue()));
 }
 
@@ -201,7 +202,7 @@ void DateTimeFieldElement::setDisabled()
 {
     // Set HTML attribute disabled to change apperance.
     setBooleanAttribute(disabledAttr, true);
-    setNeedsStyleRecalc();
+    setNeedsStyleRecalc(SubtreeStyleChange);
 }
 
 bool DateTimeFieldElement::supportsFocus() const
@@ -220,10 +221,10 @@ void DateTimeFieldElement::updateVisibleValue(EventBehavior eventBehavior)
 
     textNode->replaceWholeText(newVisibleValue);
     if (hasValue()) {
-        setAttribute(aria_valuetextAttr, newVisibleValue);
-        setAttribute(aria_valuenowAttr, String::number(valueForARIAValueNow()));
+        setAttribute(aria_valuetextAttr, AtomicString(newVisibleValue));
+        setAttribute(aria_valuenowAttr, AtomicString::number(valueForARIAValueNow()));
     } else {
-        setAttribute(aria_valuetextAttr, emptyValueAXText());
+        setAttribute(aria_valuetextAttr, AtomicString(emptyValueAXText()));
         removeAttribute(aria_valuenowAttr);
     }
 

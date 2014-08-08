@@ -25,7 +25,7 @@
 #include "config.h"
 #include "core/html/HTMLOptGroupElement.h"
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 #include "core/dom/Document.h"
 #include "core/dom/NodeRenderStyle.h"
 #include "core/html/HTMLSelectElement.h"
@@ -42,10 +42,7 @@ inline HTMLOptGroupElement::HTMLOptGroupElement(Document& document)
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLOptGroupElement> HTMLOptGroupElement::create(Document& document)
-{
-    return adoptRef(new HTMLOptGroupElement(document));
-}
+DEFINE_NODE_FACTORY(HTMLOptGroupElement)
 
 bool HTMLOptGroupElement::isDisabledFormControl() const
 {
@@ -56,12 +53,6 @@ bool HTMLOptGroupElement::rendererIsFocusable() const
 {
     // Optgroup elements do not have a renderer so we check the renderStyle instead.
     return renderStyle() && renderStyle()->display() != NONE;
-}
-
-const AtomicString& HTMLOptGroupElement::formControlType() const
-{
-    DEFINE_STATIC_LOCAL(const AtomicString, optgroup, ("optgroup", AtomicString::ConstructFromLiteral));
-    return optgroup;
 }
 
 void HTMLOptGroupElement::childrenChanged(bool changedByParser, Node* beforeChange, Node* afterChange, int childCountDelta)
@@ -81,21 +72,17 @@ void HTMLOptGroupElement::parseAttribute(const QualifiedName& name, const Atomic
 
 void HTMLOptGroupElement::recalcSelectOptions()
 {
-    ContainerNode* select = parentNode();
-    while (select && !select->hasTagName(selectTag))
-        select = select->parentNode();
-    if (select)
-        toHTMLSelectElement(select)->setRecalcListItems();
+    if (HTMLSelectElement* select = Traversal<HTMLSelectElement>::firstAncestor(*this))
+        select->setRecalcListItems();
 }
 
 void HTMLOptGroupElement::attach(const AttachContext& context)
 {
+    if (context.resolvedStyle) {
+        ASSERT(!m_style || m_style == context.resolvedStyle);
+        m_style = context.resolvedStyle;
+    }
     HTMLElement::attach(context);
-    // If after attaching nothing called styleForRenderer() on this node we
-    // manually cache the value. This happens if our parent doesn't have a
-    // renderer like <optgroup> or if it doesn't allow children like <select>.
-    if (!m_style && parentNode()->renderStyle())
-        updateNonRenderStyle();
 }
 
 void HTMLOptGroupElement::detach(const AttachContext& context)
@@ -106,7 +93,12 @@ void HTMLOptGroupElement::detach(const AttachContext& context)
 
 void HTMLOptGroupElement::updateNonRenderStyle()
 {
+    bool oldDisplayNoneStatus = isDisplayNone();
     m_style = originalStyleForRenderer();
+    if (oldDisplayNoneStatus != isDisplayNone()) {
+        if (HTMLSelectElement* select = ownerSelectElement())
+            select->updateListOnRenderer();
+    }
 }
 
 RenderStyle* HTMLOptGroupElement::nonRendererStyle() const
@@ -116,8 +108,6 @@ RenderStyle* HTMLOptGroupElement::nonRendererStyle() const
 
 PassRefPtr<RenderStyle> HTMLOptGroupElement::customStyleForRenderer()
 {
-    // styleForRenderer is called whenever a new style should be associated
-    // with an Element so now is a good time to update our cached style.
     updateNonRenderStyle();
     return m_style;
 }
@@ -136,14 +126,7 @@ String HTMLOptGroupElement::groupLabelText() const
 
 HTMLSelectElement* HTMLOptGroupElement::ownerSelectElement() const
 {
-    ContainerNode* select = parentNode();
-    while (select && !select->hasTagName(selectTag))
-        select = select->parentNode();
-
-    if (!select)
-       return 0;
-
-    return toHTMLSelectElement(select);
+    return Traversal<HTMLSelectElement>::firstAncestor(*this);
 }
 
 void HTMLOptGroupElement::accessKeyAction(bool)
@@ -152,6 +135,12 @@ void HTMLOptGroupElement::accessKeyAction(bool)
     // send to the parent to bring focus to the list box
     if (select && !select->focused())
         select->accessKeyAction(false);
+}
+
+bool HTMLOptGroupElement::isDisplayNone() const
+{
+    RenderStyle* style = nonRendererStyle();
+    return style && style->display() == NONE;
 }
 
 } // namespace

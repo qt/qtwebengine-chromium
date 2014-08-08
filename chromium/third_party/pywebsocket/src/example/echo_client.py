@@ -50,14 +50,6 @@ or
 
 # run echo client to test IETF HyBi 00 protocol
  run with --protocol-version=hybi00
-
-or
-
-# server setup to test Hixie 75 protocol
- run with --allow-draft75
-
-# run echo client to test Hixie 75 protocol
- run with --protocol-version=hixie75
 """
 
 
@@ -74,6 +66,9 @@ import sys
 
 from mod_pywebsocket import common
 from mod_pywebsocket.extensions import DeflateFrameExtensionProcessor
+from mod_pywebsocket.extensions import PerMessageDeflateExtensionProcessor
+from mod_pywebsocket.extensions import _PerMessageDeflateFramer
+from mod_pywebsocket.extensions import _parse_window_bits
 from mod_pywebsocket.stream import Stream
 from mod_pywebsocket.stream import StreamHixie75
 from mod_pywebsocket.stream import StreamOptions
@@ -94,6 +89,15 @@ _PROTOCOL_VERSION_HYBI13 = 'hybi13'
 _PROTOCOL_VERSION_HYBI08 = 'hybi08'
 _PROTOCOL_VERSION_HYBI00 = 'hybi00'
 _PROTOCOL_VERSION_HIXIE75 = 'hixie75'
+
+# Constants for the --tls_module flag.
+_TLS_BY_STANDARD_MODULE = 'ssl'
+_TLS_BY_PYOPENSSL = 'pyopenssl'
+
+# Values used by the --tls-version flag.
+_TLS_VERSION_SSL23 = 'ssl23'
+_TLS_VERSION_SSL3 = 'ssl3'
+_TLS_VERSION_TLS1 = 'tls1'
 
 
 class ClientHandshakeError(Exception):
@@ -183,18 +187,71 @@ def _validate_mandatory_header(fields, name,
 class _TLSSocket(object):
     """Wrapper for a TLS connection."""
 
-    def __init__(self, raw_socket):
-        self._ssl = socket.ssl(raw_socket)
+    def __init__(self,
+                 raw_socket, tls_module, tls_version, disable_tls_compression):
+        self._logger = util.get_class_logger(self)
 
-    def send(self, bytes):
-        return self._ssl.write(bytes)
+        if tls_module == _TLS_BY_STANDARD_MODULE:
+            if tls_version == _TLS_VERSION_SSL23:
+                version = ssl.PROTOCOL_SSLv23
+            elif tls_version == _TLS_VERSION_SSL3:
+                version = ssl.PROTOCOL_SSLv3
+            elif tls_version == _TLS_VERSION_TLS1:
+                version = ssl.PROTOCOL_TLSv1
+            else:
+                raise ValueError(
+                    'Invalid --tls-version flag: %r' % tls_version)
+
+            if disable_tls_compression:
+                raise ValueError(
+                    '--disable-tls-compression is not available for ssl '
+                    'module')
+
+            self._tls_socket = ssl.wrap_socket(raw_socket, ssl_version=version)
+
+            # Print cipher in use. Handshake is done on wrap_socket call.
+            self._logger.info("Cipher: %s", self._tls_socket.cipher())
+        elif tls_module == _TLS_BY_PYOPENSSL:
+            if tls_version == _TLS_VERSION_SSL23:
+                version = OpenSSL.SSL.SSLv23_METHOD
+            elif tls_version == _TLS_VERSION_SSL3:
+                version = OpenSSL.SSL.SSLv3_METHOD
+            elif tls_version == _TLS_VERSION_TLS1:
+                version = OpenSSL.SSL.TLSv1_METHOD
+            else:
+                raise ValueError(
+                    'Invalid --tls-version flag: %r' % tls_version)
+
+            context = OpenSSL.SSL.Context(version)
+
+            if disable_tls_compression:
+                # OP_NO_COMPRESSION is not defined in OpenSSL module.
+                context.set_options(0x00020000)
+
+            self._tls_socket = OpenSSL.SSL.Connection(context, raw_socket)
+            # Client mode.
+            self._tls_socket.set_connect_state()
+            self._tls_socket.setblocking(True)
+
+            # Do handshake now (not necessary).
+            self._tls_socket.do_handshake()
+        else:
+            raise ValueError('No TLS support module is available')
+
+    def send(self, data):
+        return self._tls_socket.write(data)
+
+    def sendall(self, data):
+        return self._tls_socket.sendall(data)
 
     def recv(self, size=-1):
-        return self._ssl.read(size)
+        return self._tls_socket.read(size)
 
     def close(self):
-        # Nothing to do.
-        pass
+        return self._tls_socket.close()
+
+    def getpeername(self):
+        return self._tls_socket.getpeername()
 
 
 class ClientHandshakeBase(object):
@@ -279,6 +336,54 @@ class ClientHandshakeBase(object):
             ch = _receive_bytes(self._socket, 1)
 
 
+def _get_permessage_deflate_framer(extension_response):
+    """Validate the response and return a framer object using the parameters in
+    the response. This method doesn't accept the server_.* parameters.
+    """
+
+    client_max_window_bits = None
+    client_no_context_takeover = None
+
+    client_max_window_bits_name = (
+            PerMessageDeflateExtensionProcessor.
+                    _CLIENT_MAX_WINDOW_BITS_PARAM)
+    client_no_context_takeover_name = (
+            PerMessageDeflateExtensionProcessor.
+                    _CLIENT_NO_CONTEXT_TAKEOVER_PARAM)
+
+    # We didn't send any server_.* parameter.
+    # Handle those parameters as invalid if found in the response.
+
+    for param_name, param_value in extension_response.get_parameters():
+        if param_name == client_max_window_bits_name:
+            if client_max_window_bits is not None:
+                raise ClientHandshakeError(
+                        'Multiple %s found' % client_max_window_bits_name)
+
+            parsed_value = _parse_window_bits(param_value)
+            if parsed_value is None:
+                raise ClientHandshakeError(
+                        'Bad %s: %r' %
+                        (client_max_window_bits_name, param_value))
+            client_max_window_bits = parsed_value
+        elif param_name == client_no_context_takeover_name:
+            if client_no_context_takeover is not None:
+                raise ClientHandshakeError(
+                        'Multiple %s found' % client_no_context_takeover_name)
+
+            if param_value is not None:
+                raise ClientHandshakeError(
+                        'Bad %s: Has value %r' %
+                        (client_no_context_takeover_name, param_value))
+            client_no_context_takeover = True
+
+    if client_no_context_takeover is None:
+        client_no_context_takeover = False
+
+    return _PerMessageDeflateFramer(client_max_window_bits,
+                                    client_no_context_takeover)
+
+
 class ClientHandshakeProcessor(ClientHandshakeBase):
     """WebSocket opening handshake processor for
     draft-ietf-hybi-thewebsocketprotocol-06 and later.
@@ -342,14 +447,19 @@ class ClientHandshakeProcessor(ClientHandshakeBase):
 
         extensions_to_request = []
 
-        if self._options.deflate_stream:
-            extensions_to_request.append(
-                common.ExtensionParameter(
-                    common.DEFLATE_STREAM_EXTENSION))
-
         if self._options.deflate_frame:
             extensions_to_request.append(
                 common.ExtensionParameter(common.DEFLATE_FRAME_EXTENSION))
+
+        if self._options.use_permessage_deflate:
+            extension = common.ExtensionParameter(
+                    common.PERMESSAGE_DEFLATE_EXTENSION)
+            # Accept the client_max_window_bits extension parameter by default.
+            extension.add_parameter(
+                    PerMessageDeflateExtensionProcessor.
+                            _CLIENT_MAX_WINDOW_BITS_PARAM,
+                    None)
+            extensions_to_request.append(extension)
 
         if len(extensions_to_request) != 0:
             fields.append(
@@ -443,23 +553,18 @@ class ClientHandshakeProcessor(ClientHandshakeBase):
                 'Invalid %s header: %r (expected: %s)' %
                 (common.SEC_WEBSOCKET_ACCEPT_HEADER, accept, expected_accept))
 
-        deflate_stream_accepted = False
         deflate_frame_accepted = False
+        permessage_deflate_accepted = False
 
         extensions_header = fields.get(
             common.SEC_WEBSOCKET_EXTENSIONS_HEADER.lower())
         accepted_extensions = []
         if extensions_header is not None and len(extensions_header) != 0:
             accepted_extensions = common.parse_extensions(extensions_header[0])
+
         # TODO(bashi): Support the new style perframe compression extension.
         for extension in accepted_extensions:
             extension_name = extension.name()
-            if (extension_name == common.DEFLATE_STREAM_EXTENSION and
-                len(extension.get_parameter_names()) == 0 and
-                self._options.deflate_stream):
-                deflate_stream_accepted = True
-                continue
-
             if (extension_name == common.DEFLATE_FRAME_EXTENSION and
                 self._options.deflate_frame):
                 deflate_frame_accepted = True
@@ -467,19 +572,28 @@ class ClientHandshakeProcessor(ClientHandshakeBase):
                 unused_extension_response = processor.get_extension_response()
                 self._options.deflate_frame = processor
                 continue
+            elif (extension_name == common.PERMESSAGE_DEFLATE_EXTENSION and
+                  self._options.use_permessage_deflate):
+                permessage_deflate_accepted = True
+
+                framer = _get_permessage_deflate_framer(extension)
+                framer.set_compress_outgoing_enabled(True)
+                self._options.use_permessage_deflate = framer
+                continue
 
             raise ClientHandshakeError(
                 'Unexpected extension %r' % extension_name)
-
-        if (self._options.deflate_stream and not deflate_stream_accepted):
-            raise ClientHandshakeError(
-                'Requested %s, but the server rejected it' %
-                common.DEFLATE_STREAM_EXTENSION)
 
         if (self._options.deflate_frame and not deflate_frame_accepted):
             raise ClientHandshakeError(
                 'Requested %s, but the server rejected it' %
                 common.DEFLATE_FRAME_EXTENSION)
+
+        if (self._options.use_permessage_deflate and
+            not permessage_deflate_accepted):
+            raise ClientHandshakeError(
+                    'Requested %s, but the server rejected it' %
+                    common.PERMESSAGE_DEFLATE_EXTENSION)
 
         # TODO(tyoshino): Handle Sec-WebSocket-Protocol
         # TODO(tyoshino): Handle Cookie, etc.
@@ -499,12 +613,18 @@ class ClientHandshakeProcessorHybi00(ClientHandshakeBase):
 
         self._logger = util.get_class_logger(self)
 
+        if (self._options.deflate_frame or
+            self._options.use_permessage_deflate):
+            logging.critical('HyBi 00 doesn\'t support extensions.')
+            sys.exit(1)
+
     def handshake(self):
         """Performs opening handshake on the specified socket.
 
         Raises:
             ClientHandshakeError: handshake failed.
         """
+
         # 4.1 5. send request line.
         self._socket.sendall(_build_method_line(self._options.resource))
         # 4.1 6. Let /fields/ be an empty list of strings.
@@ -697,66 +817,6 @@ class ClientHandshakeProcessorHybi00(ClientHandshakeBase):
         return ''.join([chr(random.randint(0, 255)) for _ in xrange(8)])
 
 
-class ClientHandshakeProcessorHixie75(object):
-    """WebSocket opening handshake processor for
-    draft-hixie-thewebsocketprotocol-75.
-    """
-
-    _EXPECTED_RESPONSE = (
-        'HTTP/1.1 101 Web Socket Protocol Handshake\r\n' +
-        _UPGRADE_HEADER_HIXIE75 +
-        _CONNECTION_HEADER)
-
-    def __init__(self, socket, options):
-        self._socket = socket
-        self._options = options
-
-        self._logger = util.get_class_logger(self)
-
-    def _skip_headers(self):
-        terminator = '\r\n\r\n'
-        pos = 0
-        while pos < len(terminator):
-            received = _receive_bytes(self._socket, 1)
-            if received == terminator[pos]:
-                pos += 1
-            elif received == terminator[0]:
-                pos = 1
-            else:
-                pos = 0
-
-    def handshake(self):
-        """Performs opening handshake on the specified socket.
-
-        Raises:
-            ClientHandshakeError: handshake failed.
-        """
-
-        self._socket.sendall(_build_method_line(self._options.resource))
-        self._socket.sendall(_UPGRADE_HEADER_HIXIE75)
-        self._socket.sendall(_CONNECTION_HEADER)
-        self._socket.sendall(_format_host_header(
-            self._options.server_host,
-            self._options.server_port,
-            self._options.use_tls))
-        if not self._options.origin:
-            raise ClientHandshakeError(
-                'Specify the origin of the connection by --origin flag')
-        self._socket.sendall(_origin_header(common.ORIGIN_HEADER,
-                                            self._options.origin))
-        self._socket.sendall('\r\n')
-
-        self._logger.info('Sent handshake')
-
-        for expected_char in (
-            ClientHandshakeProcessorHixie75._EXPECTED_RESPONSE):
-            received = _receive_bytes(self._socket, 1)
-            if expected_char != received:
-                raise ClientHandshakeError('Handshake failure')
-        # We cut corners and skip other headers.
-        self._skip_headers()
-
-
 class ClientConnection(object):
     """A wrapper for socket object to provide the mp_conn interface.
     mod_pywebsocket library is designed to be working on Apache mod_python's
@@ -788,14 +848,23 @@ class ClientRequest(object):
         self._socket = socket
         self.connection = ClientConnection(socket)
 
-    def _drain_received_data(self):
-        """Drains unread data in the receive buffer."""
 
-        drained_data = util.drain_received_data(self._socket)
+def _import_ssl():
+    global ssl
+    try:
+        import ssl
+        return True
+    except ImportError:
+        return False
 
-        if drained_data:
-            self._logger.debug(
-                'Drained data following close frame: %r', drained_data)
+
+def _import_pyopenssl():
+    global OpenSSL
+    try:
+        import OpenSSL.SSL
+        return True
+    except ImportError:
+        return False
 
 
 class EchoClient(object):
@@ -819,7 +888,11 @@ class EchoClient(object):
             self._socket.connect((self._options.server_host,
                                   self._options.server_port))
             if self._options.use_tls:
-                self._socket = _TLSSocket(self._socket)
+                self._socket = _TLSSocket(
+                    self._socket,
+                    self._options.tls_module,
+                    self._options.tls_version,
+                    self._options.disable_tls_compression)
 
             version = self._options.protocol_version
 
@@ -829,9 +902,6 @@ class EchoClient(object):
                     self._socket, self._options)
             elif version == _PROTOCOL_VERSION_HYBI00:
                 self._handshake = ClientHandshakeProcessorHybi00(
-                    self._socket, self._options)
-            elif version == _PROTOCOL_VERSION_HIXIE75:
-                self._handshake = ClientHandshakeProcessorHixie75(
                     self._socket, self._options)
             else:
                 raise ValueError(
@@ -846,8 +916,7 @@ class EchoClient(object):
             version_map = {
                 _PROTOCOL_VERSION_HYBI08: common.VERSION_HYBI08,
                 _PROTOCOL_VERSION_HYBI13: common.VERSION_HYBI13,
-                _PROTOCOL_VERSION_HYBI00: common.VERSION_HYBI00,
-                _PROTOCOL_VERSION_HIXIE75: common.VERSION_HIXIE75}
+                _PROTOCOL_VERSION_HYBI00: common.VERSION_HYBI00}
             request.ws_version = version_map[version]
 
             if (version == _PROTOCOL_VERSION_HYBI08 or
@@ -856,18 +925,17 @@ class EchoClient(object):
                 stream_option.mask_send = True
                 stream_option.unmask_receive = False
 
-                if self._options.deflate_stream:
-                    stream_option.deflate_stream = True
-
                 if self._options.deflate_frame is not False:
                     processor = self._options.deflate_frame
                     processor.setup_stream_options(stream_option)
 
+                if self._options.use_permessage_deflate is not False:
+                    framer = self._options.use_permessage_deflate
+                    framer.setup_stream_options(stream_option)
+
                 self._stream = Stream(request, stream_option)
             elif version == _PROTOCOL_VERSION_HYBI00:
                 self._stream = StreamHixie75(request, True)
-            elif version == _PROTOCOL_VERSION_HIXIE75:
-                self._stream = StreamHixie75(request)
 
             for line in self._options.message.split(','):
                 self._stream.send_message(line)
@@ -883,8 +951,7 @@ class EchoClient(object):
                         print 'Error: %s' % e
                     raise
 
-            if version != _PROTOCOL_VERSION_HIXIE75:
-                self._do_closing_handshake()
+            self._do_closing_handshake()
         finally:
             self._socket.close()
 
@@ -932,38 +999,53 @@ def main():
     parser.add_option('-q', '--quiet', dest='verbose', action='store_false',
                       default=True, help='suppress messages')
     parser.add_option('-t', '--tls', dest='use_tls', action='store_true',
-                      default=False, help='use TLS (wss://)')
+                      default=False, help='use TLS (wss://). By default, '
+                      'it looks for ssl and pyOpenSSL module and uses found '
+                      'one. Use --tls-module option to specify which module '
+                      'to use')
+    parser.add_option('--tls-module', '--tls_module', dest='tls_module',
+                      type='choice',
+                      choices=[_TLS_BY_STANDARD_MODULE, _TLS_BY_PYOPENSSL],
+                      help='Use ssl module if "%s" is specified. '
+                      'Use pyOpenSSL module if "%s" is specified' %
+                      (_TLS_BY_STANDARD_MODULE, _TLS_BY_PYOPENSSL))
+    parser.add_option('--tls-version', '--tls_version',
+                      dest='tls_version',
+                      type='string', default=_TLS_VERSION_SSL23,
+                      help='TLS/SSL version to use. One of \'' +
+                      _TLS_VERSION_SSL23 + '\' (SSL version 2 or 3), \'' +
+                      _TLS_VERSION_SSL3 + '\' (SSL version 3), \'' +
+                      _TLS_VERSION_TLS1 + '\' (TLS version 1)')
+    parser.add_option('--disable-tls-compression', '--disable_tls_compression',
+                      dest='disable_tls_compression',
+                      action='store_true', default=False,
+                      help='Disable TLS compression. Available only when '
+                      'pyOpenSSL module is used.')
     parser.add_option('-k', '--socket-timeout', '--socket_timeout',
                       dest='socket_timeout', type='int', default=_TIMEOUT_SEC,
                       help='Timeout(sec) for sockets')
     parser.add_option('--draft75', dest='draft75',
-                       action='store_true', default=False,
-                      help='use the Hixie 75 protocol. This overrides '
-                      'protocol-version flag')
+                      action='store_true', default=False,
+                      help='Obsolete option. Don\'t use this.')
     parser.add_option('--protocol-version', '--protocol_version',
                       dest='protocol_version',
                       type='string', default=_PROTOCOL_VERSION_HYBI13,
                       help='WebSocket protocol version to use. One of \'' +
                       _PROTOCOL_VERSION_HYBI13 + '\', \'' +
                       _PROTOCOL_VERSION_HYBI08 + '\', \'' +
-                      _PROTOCOL_VERSION_HYBI00 + '\', \'' +
-                      _PROTOCOL_VERSION_HIXIE75 + '\'')
+                      _PROTOCOL_VERSION_HYBI00 + '\'')
     parser.add_option('--version-header', '--version_header',
                       dest='version_header',
                       type='int', default=-1,
-                      help='specify Sec-WebSocket-Version header value')
-    parser.add_option('--deflate-stream', '--deflate_stream',
-                      dest='deflate_stream',
-                      action='store_true', default=False,
-                      help='use deflate-stream extension. This value will be '
-                      'ignored if used with protocol version that doesn\'t '
-                      'support deflate-stream.')
+                      help='Specify Sec-WebSocket-Version header value')
     parser.add_option('--deflate-frame', '--deflate_frame',
                       dest='deflate_frame',
                       action='store_true', default=False,
-                      help='use deflate-frame extension. This value will be '
-                      'ignored if used with protocol version that doesn\'t '
-                      'support deflate-frame.')
+                      help='Use the deflate-frame extension.')
+    parser.add_option('--use-permessage-deflate', '--use_permessage_deflate',
+                      dest='use_permessage_deflate',
+                      action='store_true', default=False,
+                      help='Use the permessage-deflate extension.')
     parser.add_option('--log-level', '--log_level', type='choice',
                       dest='log_level', default='warn',
                       choices=['debug', 'info', 'warn', 'error', 'critical'],
@@ -974,7 +1056,55 @@ def main():
     logging.basicConfig(level=logging.getLevelName(options.log_level.upper()))
 
     if options.draft75:
-        options.protocol_version = _PROTOCOL_VERSION_HIXIE75
+        logging.critical('--draft75 option is obsolete.')
+        sys.exit(1)
+
+    if options.protocol_version == _PROTOCOL_VERSION_HIXIE75:
+        logging.critical(
+            'Value %s is obsolete for --protocol_version options' %
+            _PROTOCOL_VERSION_HIXIE75)
+        sys.exit(1)
+
+    if options.use_tls:
+        if options.tls_module is None:
+            if _import_ssl():
+                options.tls_module = _TLS_BY_STANDARD_MODULE
+                logging.debug('Using ssl module')
+            elif _import_pyopenssl():
+                options.tls_module = _TLS_BY_PYOPENSSL
+                logging.debug('Using pyOpenSSL module')
+            else:
+                logging.critical(
+                        'TLS support requires ssl or pyOpenSSL module.')
+                sys.exit(1)
+        elif options.tls_module == _TLS_BY_STANDARD_MODULE:
+            if not _import_ssl():
+                logging.critical('ssl module is not available')
+                sys.exit(1)
+        elif options.tls_module == _TLS_BY_PYOPENSSL:
+            if not _import_pyopenssl():
+                logging.critical('pyOpenSSL module is not available')
+                sys.exit(1)
+        else:
+            logging.critical('Invalid --tls-module option: %r',
+                             options.tls_module)
+            sys.exit(1)
+
+        if (options.disable_tls_compression and
+            options.tls_module != _TLS_BY_PYOPENSSL):
+            logging.critical('You can disable TLS compression only when '
+                             'pyOpenSSL module is used.')
+            sys.exit(1)
+    else:
+        if options.tls_module is not None:
+            logging.critical('Use --tls-module option only together with '
+                             '--use-tls option.')
+            sys.exit(1)
+
+        if options.disable_tls_compression:
+            logging.critical('Use --disable-tls-compression only together '
+                             'with --use-tls option.')
+            sys.exit(1)
 
     # Default port number depends on whether TLS is used.
     if options.server_port == _UNDEFINED_PORT:

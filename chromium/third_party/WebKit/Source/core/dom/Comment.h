@@ -31,15 +31,14 @@ class ExecutionContext;
 
 class Comment FINAL : public CharacterData {
 public:
-    static PassRefPtr<Comment> create(Document&, const String&);
+    static PassRefPtrWillBeRawPtr<Comment> create(Document&, const String&);
 
 private:
     Comment(Document&, const String&);
 
-    virtual String nodeName() const;
-    virtual NodeType nodeType() const;
-    virtual PassRefPtr<Node> cloneNode(bool deep = true);
-    virtual bool childTypeAllowed(NodeType) const;
+    virtual String nodeName() const OVERRIDE;
+    virtual NodeType nodeType() const OVERRIDE;
+    virtual PassRefPtrWillBeRawPtr<Node> cloneNode(bool deep = true) OVERRIDE;
 };
 
 DEFINE_NODE_TYPE_CASTS(Comment, nodeType() == Node::COMMENT_NODE);

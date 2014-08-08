@@ -23,9 +23,9 @@
 #include "config.h"
 #include "core/html/HTMLParagraphElement.h"
 
-#include "CSSPropertyNames.h"
-#include "CSSValueKeywords.h"
-#include "HTMLNames.h"
+#include "core/CSSPropertyNames.h"
+#include "core/CSSValueKeywords.h"
+#include "core/HTMLNames.h"
 
 namespace WebCore {
 
@@ -37,17 +37,7 @@ inline HTMLParagraphElement::HTMLParagraphElement(Document& document)
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLParagraphElement> HTMLParagraphElement::create(Document& document)
-{
-    return adoptRef(new HTMLParagraphElement(document));
-}
-
-bool HTMLParagraphElement::isPresentationAttribute(const QualifiedName& name) const
-{
-    if (name == alignAttr)
-        return true;
-    return HTMLElement::isPresentationAttribute(name);
-}
+DEFINE_NODE_FACTORY(HTMLParagraphElement)
 
 void HTMLParagraphElement::collectStyleForPresentationAttribute(const QualifiedName& name, const AtomicString& value, MutableStylePropertySet* style)
 {

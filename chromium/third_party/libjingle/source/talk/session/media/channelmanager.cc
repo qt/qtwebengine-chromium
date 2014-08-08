@@ -217,7 +217,11 @@ bool ChannelManager::Init() {
   }
 
   ASSERT(worker_thread_ != NULL);
-  if (worker_thread_ && worker_thread_->started()) {
+  ASSERT(worker_thread_->RunningForChannelManager());
+  // TODO(fischman): remove the if below (and
+  // Thread::RunningForChannelManager()) once the ASSERT above has stuck for a
+  // month (2014/06/22).
+  if (worker_thread_ && worker_thread_->RunningForChannelManager()) {
     if (media_engine_->Init(worker_thread_)) {
       initialized_ = true;
 
@@ -572,6 +576,29 @@ bool ChannelManager::SetAudioOptions_w(
   }
 
   return ret;
+}
+
+// Sets Engine-specific audio options according to enabled experiments.
+bool ChannelManager::SetEngineAudioOptions(const AudioOptions& options) {
+  // If we're initialized, pass the settings to the media engine.
+  bool ret = false;
+  if (initialized_) {
+    ret = worker_thread_->Invoke<bool>(
+        Bind(&ChannelManager::SetEngineAudioOptions_w, this, options));
+  }
+
+  // If all worked well, save the audio options.
+  if (ret) {
+    audio_options_ = options;
+  }
+  return ret;
+}
+
+bool ChannelManager::SetEngineAudioOptions_w(const AudioOptions& options) {
+  ASSERT(worker_thread_ == talk_base::Thread::Current());
+  ASSERT(initialized_);
+
+  return media_engine_->SetAudioOptions(options);
 }
 
 bool ChannelManager::GetOutputVolume(int* level) {
@@ -939,12 +966,9 @@ VideoFormat ChannelManager::GetStartCaptureFormat() {
       Bind(&MediaEngineInterface::GetStartCaptureFormat, media_engine_.get()));
 }
 
-bool ChannelManager::SetAudioOptions(const AudioOptions& options) {
-  if (!media_engine_->SetAudioOptions(options)) {
-    return false;
-  }
-  audio_options_ = options;
-  return true;
+bool ChannelManager::StartAecDump(talk_base::PlatformFile file) {
+  return worker_thread_->Invoke<bool>(
+      Bind(&MediaEngineInterface::StartAecDump, media_engine_.get(), file));
 }
 
 }  // namespace cricket

@@ -10,6 +10,7 @@
 #include "GrEffect.h"
 #include "GrGLEffect.h"
 #include "SkRTConf.h"
+#include "GrGLNameAllocator.h"
 #include "SkTSearch.h"
 
 #ifdef PROGRAM_CACHE_STATS
@@ -202,6 +203,7 @@ void GrGpuGL::abandonResources(){
     INHERITED::abandonResources();
     fProgramCache->abandon();
     fHWProgramID = 0;
+    fPathNameAllocator.reset(NULL);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -233,7 +235,7 @@ bool GrGpuGL::flushGraphicsState(DrawType type, const GrDeviceCoordTexture* dstC
         SkSTArray<8, const GrEffectStage*, true> coverageStages;
         GrGLProgramDesc desc;
         GrGLProgramDesc::Build(this->getDrawState(),
-                               kDrawPoints_DrawType == type,
+                               type,
                                blendOpts,
                                srcCoeff,
                                dstCoeff,
@@ -251,7 +253,8 @@ bool GrGpuGL::flushGraphicsState(DrawType type, const GrDeviceCoordTexture* dstC
             return false;
         }
 
-        SkASSERT(kDrawPath_DrawType != type || !fCurrentProgram->hasVertexShader());
+        SkASSERT((kDrawPath_DrawType != type && kDrawPaths_DrawType != type)
+                 || !fCurrentProgram->hasVertexShader());
 
         fCurrentProgram.get()->ref();
 
@@ -308,11 +311,11 @@ void GrGpuGL::setupGeometry(const DrawInfo& info, size_t* indexOffsetInBytes) {
             break;
         default:
             vbuf = NULL; // suppress warning
-            GrCrash("Unknown geometry src type!");
+            SkFAIL("Unknown geometry src type!");
     }
 
     SkASSERT(NULL != vbuf);
-    SkASSERT(!vbuf->isLocked());
+    SkASSERT(!vbuf->isMapped());
     vertexOffsetInBytes += vbuf->baseOffset();
 
     GrGLIndexBuffer* ibuf = NULL;
@@ -332,34 +335,21 @@ void GrGpuGL::setupGeometry(const DrawInfo& info, size_t* indexOffsetInBytes) {
             break;
         default:
             ibuf = NULL; // suppress warning
-            GrCrash("Unknown geometry src type!");
+            SkFAIL("Unknown geometry src type!");
         }
 
         SkASSERT(NULL != ibuf);
-        SkASSERT(!ibuf->isLocked());
+        SkASSERT(!ibuf->isMapped());
         *indexOffsetInBytes += ibuf->baseOffset();
     }
     GrGLAttribArrayState* attribState =
         fHWGeometryState.bindArrayAndBuffersToDraw(this, vbuf, ibuf);
 
-    if (!fCurrentProgram->hasVertexShader()) {
-        int posIdx = this->getDrawState().positionAttributeIndex();
-        const GrVertexAttrib* vertexArray = this->getDrawState().getVertexAttribs() + posIdx;
-        GrVertexAttribType vertexArrayType = vertexArray->fType;
-        SkASSERT(!GrGLAttribTypeToLayout(vertexArrayType).fNormalized);
-        SkASSERT(GrGLAttribTypeToLayout(vertexArrayType).fCount == 2);
-        attribState->setFixedFunctionVertexArray(this,
-                                                 vbuf,
-                                                 2,
-                                                 GrGLAttribTypeToLayout(vertexArrayType).fType,
-                                                 stride,
-                                                 reinterpret_cast<GrGLvoid*>(
-                                                 vertexOffsetInBytes + vertexArray->fOffset));
-        attribState->disableUnusedArrays(this, 0, true);
-    } else {
+    if (fCurrentProgram->hasVertexShader()) {
+        int vertexAttribCount = this->getDrawState().getVertexAttribCount();
         uint32_t usedAttribArraysMask = 0;
         const GrVertexAttrib* vertexAttrib = this->getDrawState().getVertexAttribs();
-        int vertexAttribCount = this->getDrawState().getVertexAttribCount();
+
         for (int vertexAttribIndex = 0; vertexAttribIndex < vertexAttribCount;
              ++vertexAttribIndex, ++vertexAttrib) {
 
@@ -373,9 +363,8 @@ void GrGpuGL::setupGeometry(const DrawInfo& info, size_t* indexOffsetInBytes) {
                              GrGLAttribTypeToLayout(attribType).fNormalized,
                              stride,
                              reinterpret_cast<GrGLvoid*>(
-                             vertexOffsetInBytes + vertexAttrib->fOffset));
+                                 vertexOffsetInBytes + vertexAttrib->fOffset));
         }
-
-        attribState->disableUnusedArrays(this, usedAttribArraysMask, false);
+        attribState->disableUnusedArrays(this, usedAttribArraysMask);
     }
 }

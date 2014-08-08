@@ -7,8 +7,8 @@
  *  in the file PATENTS.  All contributing project authors may
  *  be found in the AUTHORS file in the root of the source tree.
  */
-#ifndef WEBRTC_VIDEO_ENGINE_NEW_INCLUDE_CALL_H_
-#define WEBRTC_VIDEO_ENGINE_NEW_INCLUDE_CALL_H_
+#ifndef WEBRTC_CALL_H_
+#define WEBRTC_CALL_H_
 
 #include <string>
 #include <vector>
@@ -25,10 +25,30 @@ const char* Version();
 
 class PacketReceiver {
  public:
-  virtual bool DeliverPacket(const uint8_t* packet, size_t length) = 0;
+  enum DeliveryStatus {
+    DELIVERY_OK,
+    DELIVERY_UNKNOWN_SSRC,
+    DELIVERY_PACKET_ERROR,
+  };
+
+  virtual DeliveryStatus DeliverPacket(const uint8_t* packet,
+                                       size_t length) = 0;
 
  protected:
   virtual ~PacketReceiver() {}
+};
+
+// Callback interface for reporting when a system overuse is detected.
+// The detection is based on the jitter of incoming captured frames.
+class OveruseCallback {
+ public:
+  // Called as soon as an overuse is detected.
+  virtual void OnOveruse() = 0;
+  // Called periodically when the system is not overused any longer.
+  virtual void OnNormalUse() = 0;
+
+ protected:
+  virtual ~OveruseCallback() {}
 };
 
 // A Call instance can contain several send and/or receive streams. All streams
@@ -40,21 +60,25 @@ class Call {
     explicit Config(newapi::Transport* send_transport)
         : webrtc_config(NULL),
           send_transport(send_transport),
-          overuse_detection(false),
           voice_engine(NULL),
-          trace_callback(NULL),
-          trace_filter(kTraceDefault) {}
+          overuse_callback(NULL),
+          start_bitrate_bps(-1) {}
 
     webrtc::Config* webrtc_config;
 
     newapi::Transport* send_transport;
-    bool overuse_detection;
 
     // VoiceEngine used for audio/video synchronization for this Call.
     VoiceEngine* voice_engine;
 
-    TraceCallback* trace_callback;
-    uint32_t trace_filter;
+    // Callback for overuse and normal usage based on the jitter of incoming
+    // captured frames. 'NULL' disables the callback.
+    OveruseCallback* overuse_callback;
+
+    // Start bitrate used before a valid bitrate estimate is calculated. '-1'
+    // lets the call decide start bitrate.
+    // Note: This currently only affects video.
+    int start_bitrate_bps;
   };
 
   static Call* Create(const Call::Config& config);
@@ -62,16 +86,13 @@ class Call {
   static Call* Create(const Call::Config& config,
                       const webrtc::Config& webrtc_config);
 
-  virtual std::vector<VideoCodec> GetVideoCodecs() = 0;
-
   virtual VideoSendStream::Config GetDefaultSendConfig() = 0;
 
   virtual VideoSendStream* CreateVideoSendStream(
-      const VideoSendStream::Config& config) = 0;
+      const VideoSendStream::Config& config,
+      const std::vector<VideoStream>& video_streams,
+      const void* encoder_settings) = 0;
 
-  // Returns the internal state of the send stream, for resume sending with a
-  // new stream with different settings.
-  // Note: Only the last returned send-stream state is valid.
   virtual void DestroyVideoSendStream(VideoSendStream* send_stream) = 0;
 
   virtual VideoReceiveStream::Config GetDefaultReceiveConfig() = 0;
@@ -98,4 +119,4 @@ class Call {
 };
 }  // namespace webrtc
 
-#endif  // WEBRTC_VIDEO_ENGINE_NEW_INCLUDE_CALL_H_
+#endif  // WEBRTC_CALL_H_

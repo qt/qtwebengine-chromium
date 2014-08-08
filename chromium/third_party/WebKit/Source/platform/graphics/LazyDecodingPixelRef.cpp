@@ -50,7 +50,7 @@ SkData* LazyDecodingPixelRef::onRefEncodedData()
 {
     // If the image has been clipped or scaled, do not return the original encoded data, since
     // on playback it will not be known how the clipping/scaling was done.
-    RefPtr<SharedBuffer> buffer = 0;
+    RefPtr<SharedBuffer> buffer = nullptr;
     bool allDataReceived = false;
     m_frameGenerator->copyData(&buffer, &allDataReceived);
     if (buffer && allDataReceived) {
@@ -60,9 +60,9 @@ SkData* LazyDecodingPixelRef::onRefEncodedData()
     return 0;
 }
 
-void* LazyDecodingPixelRef::onLockPixels(SkColorTable**)
+bool LazyDecodingPixelRef::onNewLockPixels(LockRec* rec)
 {
-    TRACE_EVENT_ASYNC_BEGIN0("webkit", "LazyDecodingPixelRef::lockPixels", this);
+    TRACE_EVENT_ASYNC_BEGIN0("webkit", "LazyDecodingPixelRef::onNewLockPixels", this);
 
     ASSERT(!m_lockedImageResource);
 
@@ -75,14 +75,17 @@ void* LazyDecodingPixelRef::onLockPixels(SkColorTable**)
     if (!m_lockedImageResource) {
         PlatformInstrumentation::willDecodeLazyPixelRef(getGenerationID());
         m_lockedImageResource = m_frameGenerator->decodeAndScale(size, m_frameIndex);
-        PlatformInstrumentation::didDecodeLazyPixelRef(getGenerationID());
+        PlatformInstrumentation::didDecodeLazyPixelRef();
     }
     if (!m_lockedImageResource)
-        return 0;
+        return false;
 
     ASSERT(!m_lockedImageResource->bitmap().isNull());
     ASSERT(m_lockedImageResource->scaledSize() == size);
-    return m_lockedImageResource->bitmap().getAddr(0, 0);
+    rec->fPixels = m_lockedImageResource->bitmap().getAddr(0, 0);
+    rec->fColorTable = 0;
+    rec->fRowBytes = m_lockedImageResource->bitmap().rowBytes();
+    return true;
 }
 
 void LazyDecodingPixelRef::onUnlockPixels()

@@ -31,10 +31,8 @@
 #include "core/dom/Text.h"
 #include "core/editing/FrameSelection.h"
 #include "core/events/MutationEvent.h"
-#include "core/events/ThreadLocalEventNames.h"
 #include "core/inspector/InspectorInstrumentation.h"
-
-using namespace std;
+#include "wtf/CheckedArithmetic.h"
 
 namespace WebCore {
 
@@ -49,7 +47,7 @@ void CharacterData::setData(const String& data)
     if (m_data == nonNullData)
         return;
 
-    RefPtr<CharacterData> protect = this;
+    RefPtrWillBeRawPtr<CharacterData> protect(this);
 
     unsigned oldLength = length();
 
@@ -70,7 +68,7 @@ String CharacterData::substringData(unsigned offset, unsigned count, ExceptionSt
 void CharacterData::parserAppendData(const String& string)
 {
     unsigned oldLength = m_data.length();
-    m_data.append(string);
+    m_data = m_data + string;
 
     ASSERT(!renderer() || isTextNode());
     if (isTextNode())
@@ -106,45 +104,49 @@ void CharacterData::insertData(unsigned offset, const String& data, ExceptionSta
     document().didInsertText(this, offset, data.length());
 }
 
-void CharacterData::deleteData(unsigned offset, unsigned count, ExceptionState& exceptionState, RecalcStyleBehavior recalcStyleBehavior)
+static bool validateOffsetCount(unsigned offset, unsigned count, unsigned length, unsigned& realCount, ExceptionState& exceptionState)
 {
-    if (offset > length()) {
-        exceptionState.throwDOMException(IndexSizeError, "The offset " + String::number(offset) + " is greater than the node's length (" + String::number(length()) + ").");
-        return;
+    if (offset > length) {
+        exceptionState.throwDOMException(IndexSizeError, "The offset " + String::number(offset) + " is greater than the node's length (" + String::number(length) + ").");
+        return false;
     }
 
-    unsigned realCount;
-    if (offset + count > length())
-        realCount = length() - offset;
+    Checked<unsigned, RecordOverflow> offsetCount = offset;
+    offsetCount += count;
+
+    if (offsetCount.hasOverflowed() || offset + count > length)
+        realCount = length - offset;
     else
         realCount = count;
+
+    return true;
+}
+
+void CharacterData::deleteData(unsigned offset, unsigned count, ExceptionState& exceptionState, RecalcStyleBehavior recalcStyleBehavior)
+{
+    unsigned realCount = 0;
+    if (!validateOffsetCount(offset, count, length(), realCount, exceptionState))
+        return;
 
     String newStr = m_data;
     newStr.remove(offset, realCount);
 
-    setDataAndUpdate(newStr, offset, count, 0, recalcStyleBehavior);
+    setDataAndUpdate(newStr, offset, realCount, 0, recalcStyleBehavior);
 
     document().didRemoveText(this, offset, realCount);
 }
 
 void CharacterData::replaceData(unsigned offset, unsigned count, const String& data, ExceptionState& exceptionState)
 {
-    if (offset > length()) {
-        exceptionState.throwDOMException(IndexSizeError, "The offset " + String::number(offset) + " is greater than the node's length (" + String::number(length()) + ").");
+    unsigned realCount = 0;
+    if (!validateOffsetCount(offset, count, length(), realCount, exceptionState))
         return;
-    }
-
-    unsigned realCount;
-    if (offset + count > length())
-        realCount = length() - offset;
-    else
-        realCount = count;
 
     String newStr = m_data;
     newStr.remove(offset, realCount);
     newStr.insert(data, offset);
 
-    setDataAndUpdate(newStr, offset, count, data.length());
+    setDataAndUpdate(newStr, offset, realCount, data.length());
 
     // update the markers for spell checking and grammar checking
     document().didRemoveText(this, offset, realCount);
@@ -176,7 +178,7 @@ void CharacterData::setDataAndUpdate(const String& newData, unsigned offsetOfRep
         toText(this)->updateTextRenderer(offsetOfReplacedData, oldLength, recalcStyleBehavior);
 
     if (nodeType() == PROCESSING_INSTRUCTION_NODE)
-        toProcessingInstruction(this)->checkStyleSheet();
+        toProcessingInstruction(this)->didAttributeChanged();
 
     if (document().frame())
         document().frame()->selection().didUpdateCharacterData(this, offsetOfReplacedData, oldLength, newLength);
@@ -187,7 +189,7 @@ void CharacterData::setDataAndUpdate(const String& newData, unsigned offsetOfRep
 
 void CharacterData::didModifyData(const String& oldData)
 {
-    if (OwnPtr<MutationObserverInterestGroup> mutationRecipients = MutationObserverInterestGroup::createForCharacterDataMutation(*this))
+    if (OwnPtrWillBeRawPtr<MutationObserverInterestGroup> mutationRecipients = MutationObserverInterestGroup::createForCharacterDataMutation(*this))
         mutationRecipients->enqueueMutationRecord(MutationRecord::createCharacterData(this, oldData));
 
     if (parentNode())
@@ -195,7 +197,7 @@ void CharacterData::didModifyData(const String& oldData)
 
     if (!isInShadowTree()) {
         if (document().hasListenerType(Document::DOMCHARACTERDATAMODIFIED_LISTENER))
-            dispatchScopedEvent(MutationEvent::create(EventTypeNames::DOMCharacterDataModified, true, 0, oldData, m_data));
+            dispatchScopedEvent(MutationEvent::create(EventTypeNames::DOMCharacterDataModified, true, nullptr, oldData, m_data));
         dispatchSubtreeModifiedEvent();
     }
     InspectorInstrumentation::characterDataModified(this);

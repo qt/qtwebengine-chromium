@@ -32,11 +32,12 @@ public:
 
     static const AtomicString& effectName();
 
-    virtual void determineAbsolutePaintRect();
+    virtual FloatRect determineAbsolutePaintRect(const FloatRect& requestedRect) OVERRIDE;
 
-    virtual FilterEffectType filterEffectType() const { return FilterEffectTypeSourceInput; }
+    virtual FilterEffectType filterEffectType() const OVERRIDE { return FilterEffectTypeSourceInput; }
 
-    virtual TextStream& externalRepresentation(TextStream&, int indention) const;
+    virtual TextStream& externalRepresentation(TextStream&, int indention) const OVERRIDE;
+    virtual PassRefPtr<SkImageFilter> createImageFilter(SkiaImageFilterBuilder*) OVERRIDE;
 
 private:
     SourceAlpha(Filter* filter)

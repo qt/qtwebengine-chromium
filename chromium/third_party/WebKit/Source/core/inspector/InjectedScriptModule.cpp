@@ -32,8 +32,7 @@
 #include "core/inspector/InjectedScriptModule.h"
 
 #include "bindings/v8/ScriptFunctionCall.h"
-#include "bindings/v8/ScriptObject.h"
-#include "bindings/v8/ScriptScope.h"
+#include "bindings/v8/ScriptValue.h"
 #include "core/inspector/InjectedScript.h"
 #include "core/inspector/InjectedScriptManager.h"
 
@@ -47,8 +46,8 @@ InjectedScriptModule::InjectedScriptModule(const String& name)
 void InjectedScriptModule::ensureInjected(InjectedScriptManager* injectedScriptManager, ScriptState* scriptState)
 {
     InjectedScript injectedScript = injectedScriptManager->injectedScriptFor(scriptState);
-    ASSERT(!injectedScript.hasNoValue());
-    if (injectedScript.hasNoValue())
+    ASSERT(!injectedScript.isEmpty());
+    if (injectedScript.isEmpty())
         return;
 
     // FIXME: Make the InjectedScript a module itself.
@@ -57,20 +56,19 @@ void InjectedScriptModule::ensureInjected(InjectedScriptManager* injectedScriptM
     bool hadException = false;
     ScriptValue resultValue = injectedScript.callFunctionWithEvalEnabled(function, hadException);
     ASSERT(!hadException);
-    ScriptScope scope(scriptState);
-    if (hadException || resultValue.hasNoValue() || !resultValue.isObject()) {
+    ScriptState::Scope scope(scriptState);
+    if (hadException || resultValue.isEmpty() || !resultValue.isObject()) {
         ScriptFunctionCall function(injectedScript.injectedScriptObject(), "injectModule");
         function.appendArgument(name());
         function.appendArgument(source());
         resultValue = injectedScript.callFunctionWithEvalEnabled(function, hadException);
-        if (hadException || resultValue.hasNoValue() || !resultValue.isObject()) {
+        if (hadException || resultValue.isEmpty() || !resultValue.isObject()) {
             ASSERT_NOT_REACHED();
             return;
         }
     }
 
-    ScriptObject moduleObject(scriptState, resultValue);
-    initialize(moduleObject, injectedScriptManager->inspectedStateAccessCheck());
+    initialize(resultValue, injectedScriptManager->inspectedStateAccessCheck());
 }
 
 } // namespace WebCore

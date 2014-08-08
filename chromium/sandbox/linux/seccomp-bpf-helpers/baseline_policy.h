@@ -7,6 +7,7 @@
 
 #include "sandbox/linux/seccomp-bpf/errorcode.h"
 #include "sandbox/linux/seccomp-bpf/sandbox_bpf_policy.h"
+#include "sandbox/sandbox_export.h"
 
 namespace sandbox {
 
@@ -17,12 +18,14 @@ class SandboxBPFPolicy;
 // that reduces the Linux kernel's attack surface. Given its nature, it doesn't
 // have a clear semantics and is mostly "implementation-defined".
 //
-// This returns an object that implements the SandboxBPFPolicy interface with
-// a "baseline" policy within Chromium.
+// This class implements the SandboxBPFPolicy interface with a "baseline"
+// policy for us within Chromium.
 // The "baseline" policy is somewhat arbitrary. All Chromium policies are an
 // alteration of it, and it represents a reasonable common ground to run most
 // code in a sandboxed environment.
-class BaselinePolicy : public SandboxBPFPolicy {
+// A baseline policy is only valid for the process for which this object was
+// instantiated (so do not fork() and use it in a child).
+class SANDBOX_EXPORT BaselinePolicy : public SandboxBPFPolicy {
  public:
   BaselinePolicy();
   // |fs_denied_errno| is the errno returned when a filesystem access system
@@ -35,6 +38,7 @@ class BaselinePolicy : public SandboxBPFPolicy {
 
  private:
   int fs_denied_errno_;
+  pid_t current_pid_;
   DISALLOW_COPY_AND_ASSIGN(BaselinePolicy);
 };
 

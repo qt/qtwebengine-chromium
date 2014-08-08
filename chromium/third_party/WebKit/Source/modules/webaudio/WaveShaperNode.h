@@ -34,11 +34,11 @@ namespace WebCore {
 
 class ExceptionState;
 
-class WaveShaperNode : public AudioBasicProcessorNode {
+class WaveShaperNode FINAL : public AudioBasicProcessorNode {
 public:
-    static PassRefPtr<WaveShaperNode> create(AudioContext* context)
+    static PassRefPtrWillBeRawPtr<WaveShaperNode> create(AudioContext* context)
     {
-        return adoptRef(new WaveShaperNode(context));
+        return adoptRefWillBeNoop(new WaveShaperNode(context));
     }
 
     // setCurve() is called on the main thread.
@@ -47,8 +47,6 @@ public:
 
     void setOversample(const String& , ExceptionState&);
     String oversample() const;
-
-    double latency() const { return latencyTime(); }
 
 private:
     explicit WaveShaperNode(AudioContext*);

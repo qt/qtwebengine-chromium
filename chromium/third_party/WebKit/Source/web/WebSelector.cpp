@@ -29,11 +29,11 @@
  */
 
 #include "config.h"
-#include "WebSelector.h"
+#include "public/web/WebSelector.h"
 
-#include "../platform/WebString.h"
-#include "core/css/CSSParser.h"
 #include "core/css/CSSSelectorList.h"
+#include "core/css/parser/BisonCSSParser.h"
+#include "public/platform/WebString.h"
 
 using namespace WebCore;
 
@@ -41,13 +41,12 @@ namespace blink {
 
 WebString canonicalizeSelector(WebString webSelector, WebSelectorType restriction)
 {
-    CSSParserContext context(HTMLStandardMode);
-    CSSParser parser(context);
+    BisonCSSParser parser(strictCSSParserContext());
     CSSSelectorList selectorList;
     parser.parseSelector(webSelector, selectorList);
 
     if (restriction == WebSelectorTypeCompound) {
-        for (const CSSSelector* selector = selectorList.first(); selector; selector = selectorList.next(selector)) {
+        for (const CSSSelector* selector = selectorList.first(); selector; selector = selectorList.next(*selector)) {
             if (!selector->isCompound())
                 return WebString();
         }

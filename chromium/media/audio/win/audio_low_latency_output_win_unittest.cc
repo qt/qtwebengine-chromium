@@ -16,6 +16,7 @@
 #include "base/win/scoped_com_initializer.h"
 #include "media/audio/audio_io.h"
 #include "media/audio/audio_manager.h"
+#include "media/audio/mock_audio_source_callback.h"
 #include "media/audio/win/audio_low_latency_output_win.h"
 #include "media/audio/win/core_audio_util_win.h"
 #include "media/base/decoder_buffer.h"
@@ -59,16 +60,6 @@ MATCHER_P(HasValidDelay, value, "") {
 ACTION_P(QuitLoop, loop) {
   loop->PostTask(FROM_HERE, base::MessageLoop::QuitClosure());
 }
-
-class MockAudioSourceCallback : public AudioOutputStream::AudioSourceCallback {
- public:
-  MOCK_METHOD2(OnMoreData, int(AudioBus* audio_bus,
-                               AudioBuffersState buffers_state));
-  MOCK_METHOD3(OnMoreIOData, int(AudioBus* source,
-                                 AudioBus* dest,
-                                 AudioBuffersState buffers_state));
-  MOCK_METHOD1(OnError, void(AudioOutputStream* stream));
-};
 
 // This audio source implementation should be used for manual tests only since
 // it takes about 20 seconds to play out a file.
@@ -137,13 +128,6 @@ class ReadFromFileAudioSource : public AudioOutputStream::AudioSourceCallback {
       pos_ += max_size;
     }
     return frames;
-  }
-
-  virtual int OnMoreIOData(AudioBus* source,
-                           AudioBus* dest,
-                           AudioBuffersState buffers_state) OVERRIDE {
-    NOTREACHED();
-    return 0;
   }
 
   virtual void OnError(AudioOutputStream* stream) {}
@@ -233,7 +217,7 @@ class AudioOutputStreamWrapper {
     AudioOutputStream* aos = audio_man_->MakeAudioOutputStream(
         AudioParameters(format_, channel_layout_, sample_rate_,
                         bits_per_sample_, samples_per_packet_),
-        std::string(), std::string());
+        std::string());
     EXPECT_TRUE(aos);
     return aos;
   }
@@ -429,27 +413,6 @@ TEST(WASAPIAudioOutputStreamTest, ValidPacketSize) {
                        TestTimeouts::action_timeout());
   loop.Run();
   aos->Stop();
-  aos->Close();
-}
-
-// Use a non-preferred packet size and verify that Open() fails.
-TEST(WASAPIAudioOutputStreamTest, InvalidPacketSize) {
-  scoped_ptr<AudioManager> audio_manager(AudioManager::CreateForTesting());
-  if (!CanRunAudioTests(audio_manager.get()))
-    return;
-
-  if (ExclusiveModeIsEnabled())
-    return;
-
-  AudioParameters preferred_params;
-  EXPECT_TRUE(SUCCEEDED(CoreAudioUtil::GetPreferredAudioParameters(
-      eRender, eConsole, &preferred_params)));
-  int too_large_packet_size = 2 * preferred_params.frames_per_buffer();
-
-  AudioOutputStreamWrapper aosw(audio_manager.get());
-  AudioOutputStream* aos = aosw.Create(too_large_packet_size);
-  EXPECT_FALSE(aos->Open());
-
   aos->Close();
 }
 

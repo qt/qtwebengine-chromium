@@ -22,7 +22,9 @@
 #include "config.h"
 #include "core/rendering/style/StyleRareInheritedData.h"
 
-#include "core/rendering/style/CursorList.h"
+#include "core/rendering/style/AppliedTextDecoration.h"
+#include "core/rendering/style/CursorData.h"
+#include "core/rendering/style/DataEquivalency.h"
 #include "core/rendering/style/QuotesData.h"
 #include "core/rendering/style/RenderStyle.h"
 #include "core/rendering/style/RenderStyleConstants.h"
@@ -37,8 +39,8 @@ struct SameSizeAsStyleRareInheritedData : public RefCounted<SameSizeAsStyleRareI
     float firstFloat;
     Color colors[5];
     void* ownPtrs[1];
-    AtomicString atomicStrings[5];
-    void* refPtrs[2];
+    AtomicString atomicStrings[4];
+    void* refPtrs[3];
     Length lengths[1];
     float secondFloat;
     unsigned m_bitfields[2];
@@ -47,8 +49,6 @@ struct SameSizeAsStyleRareInheritedData : public RefCounted<SameSizeAsStyleRareI
     short hyphenationShorts[3];
 
     Color touchColors;
-
-    void* variableDataRefs[1];
 };
 
 COMPILE_ASSERT(sizeof(StyleRareInheritedData) == sizeof(SameSizeAsStyleRareInheritedData), StyleRareInheritedData_should_bit_pack);
@@ -62,6 +62,12 @@ StyleRareInheritedData::StyleRareInheritedData()
     , orphans(RenderStyle::initialOrphans())
     , m_hasAutoWidows(true)
     , m_hasAutoOrphans(true)
+    , m_textStrokeColorIsCurrentColor(true)
+    , m_textFillColorIsCurrentColor(true)
+    , m_textEmphasisColorIsCurrentColor(true)
+    , m_visitedLinkTextStrokeColorIsCurrentColor(true)
+    , m_visitedLinkTextFillColorIsCurrentColor(true)
+    , m_visitedLinkTextEmphasisColorIsCurrentColor(true)
     , textSecurity(RenderStyle::initialTextSecurity())
     , userModify(READ_ONLY)
     , wordBreak(RenderStyle::initialWordBreak())
@@ -78,33 +84,31 @@ StyleRareInheritedData::StyleRareInheritedData()
     , m_textJustify(RenderStyle::initialTextJustify())
     , m_textOrientation(TextOrientationVerticalRight)
     , m_textIndentLine(RenderStyle::initialTextIndentLine())
+    , m_textIndentType(RenderStyle::initialTextIndentLine())
     , m_lineBoxContain(RenderStyle::initialLineBoxContain())
     , m_imageRendering(RenderStyle::initialImageRendering())
-    , m_lineSnap(RenderStyle::initialLineSnap())
-    , m_lineAlign(RenderStyle::initialLineAlign())
     , m_textUnderlinePosition(RenderStyle::initialTextUnderlinePosition())
     , m_rubyPosition(RenderStyle::initialRubyPosition())
     , m_touchActionDelay(RenderStyle::initialTouchActionDelay())
+    , m_subtreeWillChangeContents(false)
     , hyphenationLimitBefore(-1)
     , hyphenationLimitAfter(-1)
     , hyphenationLimitLines(-1)
-    , m_lineGrid(RenderStyle::initialLineGrid())
     , m_tabSize(RenderStyle::initialTabSize())
     , tapHighlightColor(RenderStyle::initialTapHighlightColor())
 {
-    m_variables.init();
 }
 
 StyleRareInheritedData::StyleRareInheritedData(const StyleRareInheritedData& o)
     : RefCounted<StyleRareInheritedData>()
     , listStyleImage(o.listStyleImage)
-    , textStrokeColor(o.textStrokeColor)
+    , m_textStrokeColor(o.m_textStrokeColor)
     , textStrokeWidth(o.textStrokeWidth)
-    , textFillColor(o.textFillColor)
-    , textEmphasisColor(o.textEmphasisColor)
-    , visitedLinkTextStrokeColor(o.visitedLinkTextStrokeColor)
-    , visitedLinkTextFillColor(o.visitedLinkTextFillColor)
-    , visitedLinkTextEmphasisColor(o.visitedLinkTextEmphasisColor)
+    , m_textFillColor(o.m_textFillColor)
+    , m_textEmphasisColor(o.m_textEmphasisColor)
+    , m_visitedLinkTextStrokeColor(o.m_visitedLinkTextStrokeColor)
+    , m_visitedLinkTextFillColor(o.m_visitedLinkTextFillColor)
+    , m_visitedLinkTextEmphasisColor(o.m_visitedLinkTextEmphasisColor)
     , textShadow(o.textShadow)
     , highlight(o.highlight)
     , cursorData(o.cursorData)
@@ -114,6 +118,12 @@ StyleRareInheritedData::StyleRareInheritedData(const StyleRareInheritedData& o)
     , orphans(o.orphans)
     , m_hasAutoWidows(o.m_hasAutoWidows)
     , m_hasAutoOrphans(o.m_hasAutoOrphans)
+    , m_textStrokeColorIsCurrentColor(o.m_textStrokeColorIsCurrentColor)
+    , m_textFillColorIsCurrentColor(o.m_textFillColorIsCurrentColor)
+    , m_textEmphasisColorIsCurrentColor(o.m_textEmphasisColorIsCurrentColor)
+    , m_visitedLinkTextStrokeColorIsCurrentColor(o.m_visitedLinkTextStrokeColorIsCurrentColor)
+    , m_visitedLinkTextFillColorIsCurrentColor(o.m_visitedLinkTextFillColorIsCurrentColor)
+    , m_visitedLinkTextEmphasisColorIsCurrentColor(o.m_visitedLinkTextEmphasisColorIsCurrentColor)
     , textSecurity(o.textSecurity)
     , userModify(o.userModify)
     , wordBreak(o.wordBreak)
@@ -130,23 +140,22 @@ StyleRareInheritedData::StyleRareInheritedData(const StyleRareInheritedData& o)
     , m_textJustify(o.m_textJustify)
     , m_textOrientation(o.m_textOrientation)
     , m_textIndentLine(o.m_textIndentLine)
+    , m_textIndentType(o.m_textIndentType)
     , m_lineBoxContain(o.m_lineBoxContain)
     , m_imageRendering(o.m_imageRendering)
-    , m_lineSnap(o.m_lineSnap)
-    , m_lineAlign(o.m_lineAlign)
     , m_textUnderlinePosition(o.m_textUnderlinePosition)
     , m_rubyPosition(o.m_rubyPosition)
     , m_touchActionDelay(o.m_touchActionDelay)
+    , m_subtreeWillChangeContents(o.m_subtreeWillChangeContents)
     , hyphenationString(o.hyphenationString)
     , hyphenationLimitBefore(o.hyphenationLimitBefore)
     , hyphenationLimitAfter(o.hyphenationLimitAfter)
     , hyphenationLimitLines(o.hyphenationLimitLines)
     , locale(o.locale)
     , textEmphasisCustomMark(o.textEmphasisCustomMark)
-    , m_lineGrid(o.m_lineGrid)
     , m_tabSize(o.m_tabSize)
     , tapHighlightColor(o.tapHighlightColor)
-    , m_variables(o.m_variables)
+    , appliedTextDecorations(o.appliedTextDecorations)
 {
 }
 
@@ -154,34 +163,31 @@ StyleRareInheritedData::~StyleRareInheritedData()
 {
 }
 
-static bool cursorDataEquivalent(const CursorList* c1, const CursorList* c2)
-{
-    if (c1 == c2)
-        return true;
-    if ((!c1 && c2) || (c1 && !c2))
-        return false;
-    return (*c1 == *c2);
-}
-
 bool StyleRareInheritedData::operator==(const StyleRareInheritedData& o) const
 {
-    return textStrokeColor == o.textStrokeColor
+    return m_textStrokeColor == o.m_textStrokeColor
         && textStrokeWidth == o.textStrokeWidth
-        && textFillColor == o.textFillColor
-        && textEmphasisColor == o.textEmphasisColor
-        && visitedLinkTextStrokeColor == o.visitedLinkTextStrokeColor
-        && visitedLinkTextFillColor == o.visitedLinkTextFillColor
-        && visitedLinkTextEmphasisColor == o.visitedLinkTextEmphasisColor
+        && m_textFillColor == o.m_textFillColor
+        && m_textEmphasisColor == o.m_textEmphasisColor
+        && m_visitedLinkTextStrokeColor == o.m_visitedLinkTextStrokeColor
+        && m_visitedLinkTextFillColor == o.m_visitedLinkTextFillColor
+        && m_visitedLinkTextEmphasisColor == o.m_visitedLinkTextEmphasisColor
         && tapHighlightColor == o.tapHighlightColor
         && shadowDataEquivalent(o)
         && highlight == o.highlight
-        && cursorDataEquivalent(cursorData.get(), o.cursorData.get())
+        && dataEquivalent(cursorData.get(), o.cursorData.get())
         && indent == o.indent
         && m_effectiveZoom == o.m_effectiveZoom
         && widows == o.widows
         && orphans == o.orphans
         && m_hasAutoWidows == o.m_hasAutoWidows
         && m_hasAutoOrphans == o.m_hasAutoOrphans
+        && m_textStrokeColorIsCurrentColor == o.m_textStrokeColorIsCurrentColor
+        && m_textFillColorIsCurrentColor == o.m_textFillColorIsCurrentColor
+        && m_textEmphasisColorIsCurrentColor == o.m_textEmphasisColorIsCurrentColor
+        && m_visitedLinkTextStrokeColorIsCurrentColor == o.m_visitedLinkTextStrokeColorIsCurrentColor
+        && m_visitedLinkTextFillColorIsCurrentColor == o.m_visitedLinkTextFillColorIsCurrentColor
+        && m_visitedLinkTextEmphasisColorIsCurrentColor == o.m_visitedLinkTextEmphasisColorIsCurrentColor
         && textSecurity == o.textSecurity
         && userModify == o.userModify
         && wordBreak == o.wordBreak
@@ -202,29 +208,29 @@ bool StyleRareInheritedData::operator==(const StyleRareInheritedData& o) const
         && m_textJustify == o.m_textJustify
         && m_textOrientation == o.m_textOrientation
         && m_textIndentLine == o.m_textIndentLine
+        && m_textIndentType == o.m_textIndentType
         && m_lineBoxContain == o.m_lineBoxContain
+        && m_subtreeWillChangeContents == o.m_subtreeWillChangeContents
         && hyphenationString == o.hyphenationString
         && locale == o.locale
         && textEmphasisCustomMark == o.textEmphasisCustomMark
-        && QuotesData::equals(quotes.get(), o.quotes.get())
+        && quotesDataEquivalent(o)
         && m_tabSize == o.m_tabSize
-        && m_lineGrid == o.m_lineGrid
         && m_imageRendering == o.m_imageRendering
         && m_textUnderlinePosition == o.m_textUnderlinePosition
         && m_rubyPosition == o.m_rubyPosition
-        && m_lineSnap == o.m_lineSnap
-        && m_variables == o.m_variables
-        && m_lineAlign == o.m_lineAlign
-        && StyleImage::imagesEquivalent(listStyleImage.get(), o.listStyleImage.get());
+        && dataEquivalent(listStyleImage.get(), o.listStyleImage.get())
+        && dataEquivalent(appliedTextDecorations, o.appliedTextDecorations);
 }
 
 bool StyleRareInheritedData::shadowDataEquivalent(const StyleRareInheritedData& o) const
 {
-    if ((!textShadow && o.textShadow) || (textShadow && !o.textShadow))
-        return false;
-    if (textShadow && o.textShadow && (*textShadow != *o.textShadow))
-        return false;
-    return true;
+    return dataEquivalent(textShadow.get(), o.textShadow.get());
+}
+
+bool StyleRareInheritedData::quotesDataEquivalent(const StyleRareInheritedData& o) const
+{
+    return dataEquivalent(quotes, o.quotes);
 }
 
 } // namespace WebCore

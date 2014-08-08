@@ -39,19 +39,20 @@
 #include "modules/filesystem/Entry.h"
 #include "modules/filesystem/FileEntry.h"
 #include "platform/FileMetadata.h"
+#include "platform/heap/Handle.h"
 
 namespace WebCore {
 
 // static
-EntryVector HTMLInputElementFileSystem::webkitEntries(ExecutionContext* executionContext, HTMLInputElement* input)
+EntryHeapVector HTMLInputElementFileSystem::webkitEntries(ExecutionContext* executionContext, HTMLInputElement& input)
 {
-    EntryVector entries;
-    FileList* files = input->files();
+    EntryHeapVector entries;
+    FileList* files = input.files();
 
     if (!files)
         return entries;
 
-    RefPtr<DOMFileSystem> filesystem = DOMFileSystem::createIsolatedFileSystem(executionContext, input->droppedFileSystemId());
+    DOMFileSystem* filesystem = DOMFileSystem::createIsolatedFileSystem(executionContext, input.droppedFileSystemId());
     if (!filesystem) {
         // Drag-drop isolated filesystem is not available.
         return entries;

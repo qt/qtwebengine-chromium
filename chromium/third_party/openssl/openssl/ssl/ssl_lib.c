@@ -3305,10 +3305,37 @@ int SSL_cutthrough_complete(const SSL *s)
 		s->version >= SSL3_VERSION &&
 		s->s3->in_read_app_data == 0 &&   /* cutthrough only applies to write() */
 		(SSL_get_mode((SSL*)s) & SSL_MODE_HANDSHAKE_CUTTHROUGH) &&  /* cutthrough enabled */
-		SSL_get_cipher_bits(s, NULL) >= 128 &&                      /* strong cipher choosen */
+		ssl3_can_cutthrough(s) &&                                   /* cutthrough allowed */
 		s->s3->previous_server_finished_len == 0 &&                 /* not a renegotiation handshake */
 		(s->state == SSL3_ST_CR_SESSION_TICKET_A ||                 /* ready to write app-data*/
 			s->state == SSL3_ST_CR_FINISHED_A));
+	}
+
+int ssl3_can_cutthrough(const SSL *s)
+	{
+	const SSL_CIPHER *c;
+
+	/* require a strong enough cipher */
+	if (SSL_get_cipher_bits(s, NULL) < 128)
+		return 0;
+
+	/* require NPN extension */
+#ifndef OPENSSL_NO_NEXTPROTONEG
+	if (!s->s3->next_proto_neg_seen)
+		return 0;
+#else
+	return 0;
+#endif
+
+	/* require a forward-secret cipher */
+	c = SSL_get_current_cipher(s);
+	if (!c || (c->algorithm_mkey != SSL_kEDH &&
+			c->algorithm_mkey != SSL_kEECDH))
+		{
+		return 0;
+		}
+
+	return 1;
 	}
 
 /* Allocates new EVP_MD_CTX and sets pointer to it into given pointer

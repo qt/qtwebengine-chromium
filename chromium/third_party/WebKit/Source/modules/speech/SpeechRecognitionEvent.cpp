@@ -34,30 +34,30 @@ SpeechRecognitionEventInit::SpeechRecognitionEventInit()
 {
 }
 
-PassRefPtr<SpeechRecognitionEvent> SpeechRecognitionEvent::create()
+PassRefPtrWillBeRawPtr<SpeechRecognitionEvent> SpeechRecognitionEvent::create()
 {
-    return adoptRef(new SpeechRecognitionEvent());
+    return adoptRefWillBeNoop(new SpeechRecognitionEvent);
 }
 
-PassRefPtr<SpeechRecognitionEvent> SpeechRecognitionEvent::create(const AtomicString& eventName, const SpeechRecognitionEventInit& initializer)
+PassRefPtrWillBeRawPtr<SpeechRecognitionEvent> SpeechRecognitionEvent::create(const AtomicString& eventName, const SpeechRecognitionEventInit& initializer)
 {
-    return adoptRef(new SpeechRecognitionEvent(eventName, initializer));
+    return adoptRefWillBeNoop(new SpeechRecognitionEvent(eventName, initializer));
 }
 
-PassRefPtr<SpeechRecognitionEvent> SpeechRecognitionEvent::createResult(unsigned long resultIndex, const Vector<RefPtr<SpeechRecognitionResult> >& results)
+PassRefPtrWillBeRawPtr<SpeechRecognitionEvent> SpeechRecognitionEvent::createResult(unsigned long resultIndex, const HeapVector<Member<SpeechRecognitionResult> >& results)
 {
-    return adoptRef(new SpeechRecognitionEvent(EventTypeNames::result, resultIndex, SpeechRecognitionResultList::create(results)));
+    return adoptRefWillBeNoop(new SpeechRecognitionEvent(EventTypeNames::result, resultIndex, SpeechRecognitionResultList::create(results)));
 }
 
-PassRefPtr<SpeechRecognitionEvent> SpeechRecognitionEvent::createNoMatch(PassRefPtr<SpeechRecognitionResult> result)
+PassRefPtrWillBeRawPtr<SpeechRecognitionEvent> SpeechRecognitionEvent::createNoMatch(SpeechRecognitionResult* result)
 {
     if (result) {
-        Vector<RefPtr<SpeechRecognitionResult> > results;
+        HeapVector<Member<SpeechRecognitionResult> > results;
         results.append(result);
-        return adoptRef(new SpeechRecognitionEvent(EventTypeNames::nomatch, 0, SpeechRecognitionResultList::create(results)));
+        return adoptRefWillBeNoop(new SpeechRecognitionEvent(EventTypeNames::nomatch, 0, SpeechRecognitionResultList::create(results)));
     }
 
-    return adoptRef(new SpeechRecognitionEvent(EventTypeNames::nomatch, 0, 0));
+    return adoptRefWillBeNoop(new SpeechRecognitionEvent(EventTypeNames::nomatch, 0, nullptr));
 }
 
 const AtomicString& SpeechRecognitionEvent::interfaceName() const
@@ -79,7 +79,7 @@ SpeechRecognitionEvent::SpeechRecognitionEvent(const AtomicString& eventName, co
     ScriptWrappable::init(this);
 }
 
-SpeechRecognitionEvent::SpeechRecognitionEvent(const AtomicString& eventName, unsigned long resultIndex, PassRefPtr<SpeechRecognitionResultList> results)
+SpeechRecognitionEvent::SpeechRecognitionEvent(const AtomicString& eventName, unsigned long resultIndex, SpeechRecognitionResultList* results)
     : Event(eventName, /*canBubble=*/false, /*cancelable=*/false)
     , m_resultIndex(resultIndex)
     , m_results(results)
@@ -89,7 +89,12 @@ SpeechRecognitionEvent::SpeechRecognitionEvent(const AtomicString& eventName, un
 
 SpeechRecognitionEvent::~SpeechRecognitionEvent()
 {
-    ScriptWrappable::init(this);
+}
+
+void SpeechRecognitionEvent::trace(Visitor* visitor)
+{
+    visitor->trace(m_results);
+    Event::trace(visitor);
 }
 
 } // namespace WebCore

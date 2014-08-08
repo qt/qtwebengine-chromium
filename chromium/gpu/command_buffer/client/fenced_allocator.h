@@ -7,10 +7,13 @@
 #ifndef GPU_COMMAND_BUFFER_CLIENT_FENCED_ALLOCATOR_H_
 #define GPU_COMMAND_BUFFER_CLIENT_FENCED_ALLOCATOR_H_
 
+#include <stdint.h>
+
 #include <vector>
 
+#include "base/bind.h"
 #include "base/logging.h"
-#include "gpu/command_buffer/common/types.h"
+#include "base/macros.h"
 #include "gpu/gpu_export.h"
 
 namespace gpu {
@@ -35,7 +38,8 @@ class GPU_EXPORT FencedAllocator {
   // Creates a FencedAllocator. Note that the size of the buffer is passed, but
   // not its base address: everything is handled as offsets into the buffer.
   FencedAllocator(unsigned int size,
-                  CommandBufferHelper *helper);
+                  CommandBufferHelper *helper,
+                  const base::Closure& poll_callback);
 
   ~FencedAllocator();
 
@@ -99,7 +103,7 @@ class GPU_EXPORT FencedAllocator {
     State state;
     Offset offset;
     unsigned int size;
-    int32 token;  // token to wait for in the FREE_PENDING_TOKEN case.
+    int32_t token;  // token to wait for in the FREE_PENDING_TOKEN case.
   };
 
   // Comparison functor for memory block sorting.
@@ -113,7 +117,7 @@ class GPU_EXPORT FencedAllocator {
   typedef std::vector<Block> Container;
   typedef unsigned int BlockIndex;
 
-  static const int32 kUnusedToken = 0;
+  static const int32_t kUnusedToken = 0;
 
   // Gets the index of a memory block, given its offset.
   BlockIndex GetBlockByOffset(Offset offset);
@@ -136,6 +140,7 @@ class GPU_EXPORT FencedAllocator {
   Offset AllocInBlock(BlockIndex index, unsigned int size);
 
   CommandBufferHelper *helper_;
+  base::Closure poll_callback_;
   Container blocks_;
   size_t bytes_in_use_;
 
@@ -148,8 +153,9 @@ class FencedAllocatorWrapper {
  public:
   FencedAllocatorWrapper(unsigned int size,
                          CommandBufferHelper* helper,
+                         const base::Closure& poll_callback,
                          void* base)
-      : allocator_(size, helper),
+      : allocator_(size, helper, poll_callback),
         base_(base) { }
 
   // Allocates a block of memory. If the buffer is out of directly available

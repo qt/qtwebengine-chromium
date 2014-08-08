@@ -19,7 +19,6 @@
 
 namespace base {
 class FilePath;
-struct PlatformFileInfo;
 }
 
 namespace fileapi {
@@ -36,11 +35,11 @@ namespace content {
 // per child process.  Messages are dispatched on the main child thread.
 class FileSystemDispatcher : public IPC::Listener {
  public:
-  typedef base::Callback<void(base::PlatformFileError error)> StatusCallback;
+  typedef base::Callback<void(base::File::Error error)> StatusCallback;
   typedef base::Callback<void(
-      const base::PlatformFileInfo& file_info)> MetadataCallback;
+      const base::File::Info& file_info)> MetadataCallback;
   typedef base::Callback<void(
-      const base::PlatformFileInfo& file_info,
+      const base::File::Info& file_info,
       const base::FilePath& platform_path,
       int request_id)> CreateSnapshotFileCallback;
   typedef base::Callback<void(
@@ -106,13 +105,6 @@ class FileSystemDispatcher : public IPC::Listener {
                 int64 offset,
                 int* request_id_out,
                 const StatusCallback& callback);
-  void WriteDeprecated(
-      const GURL& path,
-      const GURL& blob_url,
-      int64 offset,
-      int* request_id_out,
-      const WriteCallback& success_callback,
-      const StatusCallback& error_callback);
   void Write(const GURL& path,
              const std::string& blob_id,
              int64 offset,
@@ -146,14 +138,14 @@ class FileSystemDispatcher : public IPC::Listener {
                        bool is_directory);
   void OnDidSucceed(int request_id);
   void OnDidReadMetadata(int request_id,
-                         const base::PlatformFileInfo& file_info);
+                         const base::File::Info& file_info);
   void OnDidCreateSnapshotFile(int request_id,
-                               const base::PlatformFileInfo& file_info,
+                               const base::File::Info& file_info,
                                const base::FilePath& platform_path);
   void OnDidReadDirectory(int request_id,
                           const std::vector<fileapi::DirectoryEntry>& entries,
                           bool has_more);
-  void OnDidFail(int request_id, base::PlatformFileError error_code);
+  void OnDidFail(int request_id, base::File::Error error_code);
   void OnDidWrite(int request_id, int64 bytes, bool complete);
   void OnDidOpenFile(
       int request_id,

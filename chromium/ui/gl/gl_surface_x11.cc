@@ -9,6 +9,8 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "third_party/mesa/src/include/GL/osmesa.h"
+#include "ui/gfx/native_widget_types.h"
+#include "ui/gfx/x/x11_types.h"
 #include "ui/gl/gl_bindings.h"
 #include "ui/gl/gl_implementation.h"
 #include "ui/gl/gl_surface_egl.h"
@@ -17,10 +19,6 @@
 #include "ui/gl/gl_surface_stub.h"
 
 namespace gfx {
-
-namespace {
-Display* g_osmesa_display;
-}  // namespace
 
 // This OSMesa GL surface can use XLib to swap the contents of the buffer to a
 // view.
@@ -36,13 +34,14 @@ class NativeViewGLSurfaceOSMesa : public GLSurfaceOSMesa {
   virtual bool Resize(const gfx::Size& new_size) OVERRIDE;
   virtual bool IsOffscreen() OVERRIDE;
   virtual bool SwapBuffers() OVERRIDE;
-  virtual std::string GetExtensions() OVERRIDE;
+  virtual bool SupportsPostSubBuffer() OVERRIDE;
   virtual bool PostSubBuffer(int x, int y, int width, int height) OVERRIDE;
 
  protected:
   virtual ~NativeViewGLSurfaceOSMesa();
 
  private:
+  Display* xdisplay_;
   GC window_graphics_context_;
   gfx::AcceleratedWidget window_;
   GC pixmap_graphics_context_;
@@ -80,21 +79,23 @@ bool GLSurface::InitializeOneOffInternal() {
 
 NativeViewGLSurfaceOSMesa::NativeViewGLSurfaceOSMesa(
     gfx::AcceleratedWidget window)
-  : GLSurfaceOSMesa(OSMESA_BGRA, gfx::Size(1, 1)),
-    window_graphics_context_(0),
-    window_(window),
-    pixmap_graphics_context_(0),
-    pixmap_(0) {
-  DCHECK(window);
+    : GLSurfaceOSMesa(OSMESA_BGRA, gfx::Size(1, 1)),
+      xdisplay_(gfx::GetXDisplay()),
+      window_graphics_context_(0),
+      window_(window),
+      pixmap_graphics_context_(0),
+      pixmap_(0) {
+  DCHECK(xdisplay_);
+  DCHECK(window_);
 }
 
+// static
 bool NativeViewGLSurfaceOSMesa::InitializeOneOff() {
   static bool initialized = false;
   if (initialized)
     return true;
 
-  g_osmesa_display = base::MessagePumpForUI::GetDefaultXDisplay();
-  if (!g_osmesa_display) {
+  if (!gfx::GetXDisplay()) {
     LOG(ERROR) << "XOpenDisplay failed.";
     return false;
   }
@@ -107,10 +108,7 @@ bool NativeViewGLSurfaceOSMesa::Initialize() {
   if (!GLSurfaceOSMesa::Initialize())
     return false;
 
-  window_graphics_context_ = XCreateGC(g_osmesa_display,
-                                       window_,
-                                       0,
-                                       NULL);
+  window_graphics_context_ = XCreateGC(xdisplay_, window_, 0, NULL);
   if (!window_graphics_context_) {
     LOG(ERROR) << "XCreateGC failed.";
     Destroy();
@@ -122,21 +120,21 @@ bool NativeViewGLSurfaceOSMesa::Initialize() {
 
 void NativeViewGLSurfaceOSMesa::Destroy() {
   if (pixmap_graphics_context_) {
-    XFreeGC(g_osmesa_display, pixmap_graphics_context_);
+    XFreeGC(xdisplay_, pixmap_graphics_context_);
     pixmap_graphics_context_ = NULL;
   }
 
   if (pixmap_) {
-    XFreePixmap(g_osmesa_display, pixmap_);
+    XFreePixmap(xdisplay_, pixmap_);
     pixmap_ = 0;
   }
 
   if (window_graphics_context_) {
-    XFreeGC(g_osmesa_display, window_graphics_context_);
+    XFreeGC(xdisplay_, window_graphics_context_);
     window_graphics_context_ = NULL;
   }
 
-  XSync(g_osmesa_display, False);
+  XSync(xdisplay_, False);
 }
 
 bool NativeViewGLSurfaceOSMesa::Resize(const gfx::Size& new_size) {
@@ -144,23 +142,23 @@ bool NativeViewGLSurfaceOSMesa::Resize(const gfx::Size& new_size) {
     return false;
 
   XWindowAttributes attributes;
-  if (!XGetWindowAttributes(g_osmesa_display, window_, &attributes)) {
+  if (!XGetWindowAttributes(xdisplay_, window_, &attributes)) {
     LOG(ERROR) << "XGetWindowAttributes failed for window " << window_ << ".";
     return false;
   }
 
   // Destroy the previous pixmap and graphics context.
   if (pixmap_graphics_context_) {
-    XFreeGC(g_osmesa_display, pixmap_graphics_context_);
+    XFreeGC(xdisplay_, pixmap_graphics_context_);
     pixmap_graphics_context_ = NULL;
   }
   if (pixmap_) {
-    XFreePixmap(g_osmesa_display, pixmap_);
+    XFreePixmap(xdisplay_, pixmap_);
     pixmap_ = 0;
   }
 
   // Recreate a pixmap to hold the frame.
-  pixmap_ = XCreatePixmap(g_osmesa_display,
+  pixmap_ = XCreatePixmap(xdisplay_,
                           window_,
                           new_size.width(),
                           new_size.height(),
@@ -171,7 +169,7 @@ bool NativeViewGLSurfaceOSMesa::Resize(const gfx::Size& new_size) {
   }
 
   // Recreate a graphics context for the pixmap.
-  pixmap_graphics_context_ = XCreateGC(g_osmesa_display, pixmap_, 0, NULL);
+  pixmap_graphics_context_ = XCreateGC(xdisplay_, pixmap_, 0, NULL);
   if (!pixmap_graphics_context_) {
     LOG(ERROR) << "XCreateGC failed";
     return false;
@@ -185,16 +183,20 @@ bool NativeViewGLSurfaceOSMesa::IsOffscreen() {
 }
 
 bool NativeViewGLSurfaceOSMesa::SwapBuffers() {
+  TRACE_EVENT2("gpu", "NativeViewGLSurfaceOSMesa:RealSwapBuffers",
+      "width", GetSize().width(),
+      "height", GetSize().height());
+
   gfx::Size size = GetSize();
 
   XWindowAttributes attributes;
-  if (!XGetWindowAttributes(g_osmesa_display, window_, &attributes)) {
+  if (!XGetWindowAttributes(xdisplay_, window_, &attributes)) {
     LOG(ERROR) << "XGetWindowAttributes failed for window " << window_ << ".";
     return false;
   }
 
   // Copy the frame into the pixmap.
-  gfx::PutARGBImage(g_osmesa_display,
+  gfx::PutARGBImage(xdisplay_,
                     attributes.visual,
                     attributes.depth,
                     pixmap_,
@@ -204,22 +206,22 @@ bool NativeViewGLSurfaceOSMesa::SwapBuffers() {
                     size.height());
 
   // Copy the pixmap to the window.
-  XCopyArea(g_osmesa_display,
+  XCopyArea(xdisplay_,
             pixmap_,
             window_,
             window_graphics_context_,
-            0, 0,
-            size.width(), size.height(),
-            0, 0);
+            0,
+            0,
+            size.width(),
+            size.height(),
+            0,
+            0);
 
   return true;
 }
 
-std::string NativeViewGLSurfaceOSMesa::GetExtensions() {
-  std::string extensions = gfx::GLSurfaceOSMesa::GetExtensions();
-  extensions += extensions.empty() ? "" : " ";
-  extensions += "GL_CHROMIUM_post_sub_buffer";
-  return extensions;
+bool NativeViewGLSurfaceOSMesa::SupportsPostSubBuffer() {
+  return true;
 }
 
 bool NativeViewGLSurfaceOSMesa::PostSubBuffer(
@@ -230,13 +232,13 @@ bool NativeViewGLSurfaceOSMesa::PostSubBuffer(
   y = size.height() - y - height;
 
   XWindowAttributes attributes;
-  if (!XGetWindowAttributes(g_osmesa_display, window_, &attributes)) {
+  if (!XGetWindowAttributes(xdisplay_, window_, &attributes)) {
     LOG(ERROR) << "XGetWindowAttributes failed for window " << window_ << ".";
     return false;
   }
 
   // Copy the frame into the pixmap.
-  gfx::PutARGBImage(g_osmesa_display,
+  gfx::PutARGBImage(xdisplay_,
                     attributes.visual,
                     attributes.depth,
                     pixmap_,
@@ -244,19 +246,24 @@ bool NativeViewGLSurfaceOSMesa::PostSubBuffer(
                     static_cast<const uint8*>(GetHandle()),
                     size.width(),
                     size.height(),
-                    x, y,
-                    x, y,
+                    x,
+                    y,
+                    x,
+                    y,
                     width,
                     height);
 
   // Copy the pixmap to the window.
-  XCopyArea(g_osmesa_display,
+  XCopyArea(xdisplay_,
             pixmap_,
             window_,
             window_graphics_context_,
-            x, y,
-            width, height,
-            x, y);
+            x,
+            y,
+            width,
+            height,
+            x,
+            y);
 
   return true;
 }
@@ -285,6 +292,7 @@ scoped_refptr<GLSurface> GLSurface::CreateViewGLSurface(
       return surface;
     }
     case kGLImplementationEGLGLES2: {
+      DCHECK(window != gfx::kNullAcceleratedWidget);
       scoped_refptr<GLSurface> surface(new NativeViewGLSurfaceEGL(window));
       if (!surface->Initialize())
         return NULL;
@@ -331,6 +339,10 @@ scoped_refptr<GLSurface> GLSurface::CreateOffscreenGLSurface(
       NOTREACHED();
       return NULL;
   }
+}
+
+EGLNativeDisplayType GetPlatformDefaultEGLNativeDisplay() {
+  return gfx::GetXDisplay();
 }
 
 }  // namespace gfx

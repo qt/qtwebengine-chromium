@@ -7,9 +7,12 @@
 #include <limits>
 
 #include "base/command_line.h"
+#include "base/cpu.h"
 #include "base/debug/crash_logging.h"
+#include "base/file_util.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
+#include "base/metrics/sparse_histogram.h"
 #include "base/rand_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
@@ -51,7 +54,43 @@
 #endif
 
 #if defined(OS_WIN)
+const char kWidevineCdmAdapterFileName[] = "widevinecdmadapter.dll";
+
 extern sandbox::TargetServices* g_target_services;
+
+// Used by EnumSystemLocales for warming up.
+static BOOL CALLBACK EnumLocalesProc(LPTSTR lpLocaleString) {
+  return TRUE;
+}
+
+static BOOL CALLBACK EnumLocalesProcEx(
+    LPWSTR lpLocaleString,
+    DWORD dwFlags,
+    LPARAM lParam) {
+  return TRUE;
+}
+
+// Warm up language subsystems before the sandbox is turned on.
+static void WarmupWindowsLocales(const ppapi::PpapiPermissions& permissions) {
+  ::GetUserDefaultLangID();
+  ::GetUserDefaultLCID();
+
+  if (permissions.HasPermission(ppapi::PERMISSION_FLASH)) {
+    if (base::win::GetVersion() >= base::win::VERSION_VISTA) {
+      typedef BOOL (WINAPI *PfnEnumSystemLocalesEx)
+          (LOCALE_ENUMPROCEX, DWORD, LPARAM, LPVOID);
+
+      HMODULE handle_kern32 = GetModuleHandleW(L"Kernel32.dll");
+      PfnEnumSystemLocalesEx enum_sys_locales_ex =
+          reinterpret_cast<PfnEnumSystemLocalesEx>
+              (GetProcAddress(handle_kern32, "EnumSystemLocalesEx"));
+
+      enum_sys_locales_ex(EnumLocalesProcEx, LOCALE_WINDOWS, 0, 0);
+    } else {
+      EnumSystemLocalesW(EnumLocalesProc, LCID_INSTALLED);
+    }
+  }
+}
 #else
 extern void* g_target_services;
 #endif
@@ -206,8 +245,7 @@ void PpapiThread::Unregister(uint32 plugin_dispatcher_id) {
 }
 
 void PpapiThread::OnLoadPlugin(const base::FilePath& path,
-                               const ppapi::PpapiPermissions& permissions,
-                               bool supports_dev_channel) {
+                               const ppapi::PpapiPermissions& permissions) {
   // In case of crashes, the crash dump doesn't indicate which plugin
   // it came from.
   base::debug::SetCrashKeyValue("ppapi_path", path.MaybeAsASCII());
@@ -217,7 +255,6 @@ void PpapiThread::OnLoadPlugin(const base::FilePath& path,
   // This must be set before calling into the plugin so it can get the
   // interfaces it has permission for.
   ppapi::proxy::InterfaceList::SetProcessGlobalPermissions(permissions);
-  ppapi::proxy::InterfaceList::SetSupportsDevChannel(supports_dev_channel);
   permissions_ = permissions;
 
   // Trusted Pepper plugins may be "internal", i.e. built-in to the browser
@@ -236,12 +273,18 @@ void PpapiThread::OnLoadPlugin(const base::FilePath& path,
   base::ScopedNativeLibrary library;
   if (plugin_entry_points_.initialize_module == NULL) {
     // Load the plugin from the specified library.
-    std::string error;
+    base::NativeLibraryLoadError error;
     library.Reset(base::LoadNativeLibrary(path, &error));
     if (!library.is_valid()) {
-      LOG(ERROR) << "Failed to load Pepper module from "
-        << path.value() << " (error: " << error << ")";
+      LOG(ERROR) << "Failed to load Pepper module from " << path.value()
+                 << " (error: " << error.ToString() << ")";
+      if (!base::PathExists(path)) {
+        ReportLoadResult(path, FILE_MISSING);
+        return;
+      }
       ReportLoadResult(path, LOAD_FAILED);
+      // Report detailed reason for load failure.
+      ReportLoadErrorCode(path, error);
       return;
     }
 
@@ -285,19 +328,35 @@ void PpapiThread::OnLoadPlugin(const base::FilePath& path,
   // can be loaded. TODO(cpu): consider changing to the loading style of
   // regular plugins.
   if (g_target_services) {
-    // Let Flash load DRM before lockdown on Vista+.
-    if (permissions.HasPermission(ppapi::PERMISSION_FLASH) &&
-        base::win::OSInfo::GetInstance()->version() >=
-        base::win::VERSION_VISTA ) {
-      LoadLibrary(L"dxva2.dll");
+    // Let Flash and Widevine CDM adapter load DXVA before lockdown on Vista+.
+    if (permissions.HasPermission(ppapi::PERMISSION_FLASH) ||
+        path.BaseName().MaybeAsASCII() == kWidevineCdmAdapterFileName) {
+      if (base::win::OSInfo::GetInstance()->version() >=
+          base::win::VERSION_VISTA) {
+        LoadLibraryA("dxva2.dll");
+      }
+    }
+
+    if (permissions.HasPermission(ppapi::PERMISSION_FLASH)) {
+      if (base::win::OSInfo::GetInstance()->version() >=
+          base::win::VERSION_WIN7) {
+        base::CPU cpu;
+        if (cpu.vendor_name() == "AuthenticAMD") {
+          // The AMD crypto acceleration is only AMD Bulldozer and above.
+#if defined(_WIN64)
+          LoadLibraryA("amdhcp64.dll");
+#else
+          LoadLibraryA("amdhcp32.dll");
+#endif
+        }
+      }
     }
 
     // Cause advapi32 to load before the sandbox is turned on.
     unsigned int dummy_rand;
     rand_s(&dummy_rand);
-    // Warm up language subsystems before the sandbox is turned on.
-    ::GetUserDefaultLangID();
-    ::GetUserDefaultLCID();
+
+    WarmupWindowsLocales(permissions);
 
     g_target_services->LowerToken();
   }
@@ -456,21 +515,36 @@ void PpapiThread::SavePluginName(const base::FilePath& path) {
 void PpapiThread::ReportLoadResult(const base::FilePath& path,
                                    LoadResult result) {
   DCHECK_LT(result, LOAD_RESULT_MAX);
-
-  std::ostringstream histogram_name;
-  histogram_name << "Plugin.Ppapi" << (is_broker_ ? "Broker" : "Plugin")
-                 << "LoadResult_" << path.BaseName().MaybeAsASCII();
+  std::string histogram_name = std::string("Plugin.Ppapi") +
+                               (is_broker_ ? "Broker" : "Plugin") +
+                               "LoadResult_" + path.BaseName().MaybeAsASCII();
 
   // Note: This leaks memory, which is expected behavior.
   base::HistogramBase* histogram =
       base::LinearHistogram::FactoryGet(
-          histogram_name.str(),
+          histogram_name,
           1,
           LOAD_RESULT_MAX,
           LOAD_RESULT_MAX + 1,
           base::HistogramBase::kUmaTargetedHistogramFlag);
 
   histogram->Add(result);
+}
+
+void PpapiThread::ReportLoadErrorCode(
+    const base::FilePath& path,
+    const base::NativeLibraryLoadError& error) {
+#if defined(OS_WIN)
+  // Only report load error code on Windows because that's the only platform
+  // that has a numerical error value.
+  std::string histogram_name =
+      std::string("Plugin.Ppapi") + (is_broker_ ? "Broker" : "Plugin") +
+      "LoadErrorCode_" + path.BaseName().MaybeAsASCII();
+
+  // For sparse histograms, we can use the macro, as it does not incorporate a
+  // static.
+  UMA_HISTOGRAM_SPARSE_SLOWLY(histogram_name, error.code);
+#endif
 }
 
 }  // namespace content

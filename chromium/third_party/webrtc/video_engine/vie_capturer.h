@@ -20,7 +20,9 @@
 #include "webrtc/modules/video_coding/main/interface/video_coding.h"
 #include "webrtc/modules/video_processing/main/interface/video_processing.h"
 #include "webrtc/system_wrappers/interface/scoped_ptr.h"
+#include "webrtc/system_wrappers/interface/thread_annotations.h"
 #include "webrtc/typedefs.h"
+#include "webrtc/video_engine/include/vie_base.h"
 #include "webrtc/video_engine/include/vie_capture.h"
 #include "webrtc/video_engine/vie_defines.h"
 #include "webrtc/video_engine/vie_frame_provider_base.h"
@@ -105,11 +107,8 @@ class ViECapturer
   const char* CurrentDeviceName() const;
 
   void RegisterCpuOveruseObserver(CpuOveruseObserver* observer);
-
-  void CpuOveruseMeasures(int* capture_jitter_ms,
-                          int* avg_encode_time_ms,
-                          int* encode_usage_percent,
-                          int* capture_queue_delay_ms_per_s) const;
+  void SetCpuOveruseOptions(const CpuOveruseOptions& options);
+  void GetCpuOveruseMetrics(CpuOveruseMetrics* metrics) const;
 
  protected:
   ViECapturer(int capture_id,
@@ -170,8 +169,8 @@ class ViECapturer
   EventWrapper& capture_event_;
   EventWrapper& deliver_event_;
 
-  I420VideoFrame captured_frame_;
-  I420VideoFrame deliver_frame_;
+  scoped_ptr<I420VideoFrame> captured_frame_;
+  scoped_ptr<I420VideoFrame> deliver_frame_;
 
   // Image processing.
   ViEEffectFilter* effect_filter_;
@@ -185,7 +184,7 @@ class ViECapturer
 
   // Statistics observer.
   scoped_ptr<CriticalSectionWrapper> observer_cs_;
-  ViECaptureObserver* observer_;
+  ViECaptureObserver* observer_ GUARDED_BY(observer_cs_.get());
 
   CaptureCapability requested_capability_;
 

@@ -467,6 +467,7 @@ cr.define('options', function() {
       var keystroke = keystrokeToString(event);
       shortcutNode.textContent = keystroke;
       event.target.classList.add('contains-chars');
+      this.currentKeyEvent_ = event;
 
       if (validChar(event.keyCode)) {
         var node = event.target;
@@ -475,12 +476,13 @@ cr.define('options', function() {
 
         this.oldValue_ = keystroke;  // Forget what the old value was.
         var parsed = this.parseElementId_('command', node.id);
+
+        // Ending the capture must occur before calling
+        // setExtensionCommandShortcut to ensure the shortcut is set.
+        this.endCapture_(event);
         chrome.send('setExtensionCommandShortcut',
                     [parsed.extensionId, parsed.commandName, keystroke]);
-        this.endCapture_(event);
       }
-
-      this.currentKeyEvent_ = event;
     },
 
     /**

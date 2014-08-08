@@ -35,28 +35,29 @@ class PLATFORM_EXPORT TranslateTransformOperation : public TransformOperation {
 public:
     static PassRefPtr<TranslateTransformOperation> create(const Length& tx, const Length& ty, OperationType type)
     {
-        return adoptRef(new TranslateTransformOperation(tx, ty, Length(0, Fixed), type));
+        return adoptRef(new TranslateTransformOperation(tx, ty, 0, type));
     }
 
-    static PassRefPtr<TranslateTransformOperation> create(const Length& tx, const Length& ty, const Length& tz, OperationType type)
+    static PassRefPtr<TranslateTransformOperation> create(const Length& tx, const Length& ty, double tz, OperationType type)
     {
         return adoptRef(new TranslateTransformOperation(tx, ty, tz, type));
     }
 
+    virtual bool canBlendWith(const TransformOperation& other) const;
+
     double x(const FloatSize& borderBoxSize) const { return floatValueForLength(m_x, borderBoxSize.width()); }
     double y(const FloatSize& borderBoxSize) const { return floatValueForLength(m_y, borderBoxSize.height()); }
-    double z(const FloatSize&) const { return floatValueForLength(m_z, 1); }
 
     Length x() const { return m_x; }
     Length y() const { return m_y; }
-    Length z() const { return m_z; }
+    double z() const { return m_z; }
 
 private:
-    virtual bool isIdentity() const { return !floatValueForLength(m_x, 1) && !floatValueForLength(m_y, 1) && !floatValueForLength(m_z, 1); }
+    virtual bool isIdentity() const OVERRIDE { return !floatValueForLength(m_x, 1) && !floatValueForLength(m_y, 1) && !m_z; }
 
     virtual OperationType type() const OVERRIDE { return m_type; }
 
-    virtual bool operator==(const TransformOperation& o) const
+    virtual bool operator==(const TransformOperation& o) const OVERRIDE
     {
         if (!isSameType(o))
             return false;
@@ -64,19 +65,19 @@ private:
         return m_x == t->m_x && m_y == t->m_y && m_z == t->m_z;
     }
 
-    virtual void apply(TransformationMatrix& transform, const FloatSize& borderBoxSize) const
+    virtual void apply(TransformationMatrix& transform, const FloatSize& borderBoxSize) const OVERRIDE
     {
-        transform.translate3d(x(borderBoxSize), y(borderBoxSize), z(borderBoxSize));
+        transform.translate3d(x(borderBoxSize), y(borderBoxSize), z());
     }
 
-    virtual PassRefPtr<TransformOperation> blend(const TransformOperation* from, double progress, bool blendToIdentity = false);
+    virtual PassRefPtr<TransformOperation> blend(const TransformOperation* from, double progress, bool blendToIdentity = false) OVERRIDE;
 
     virtual bool dependsOnBoxSize() const OVERRIDE
     {
         return m_x.isPercent() || m_y.isPercent();
     }
 
-    TranslateTransformOperation(const Length& tx, const Length& ty, const Length& tz, OperationType type)
+    TranslateTransformOperation(const Length& tx, const Length& ty, double tz, OperationType type)
         : m_x(tx)
         , m_y(ty)
         , m_z(tz)
@@ -87,7 +88,7 @@ private:
 
     Length m_x;
     Length m_y;
-    Length m_z;
+    double m_z;
     OperationType m_type;
 };
 

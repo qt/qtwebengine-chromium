@@ -41,7 +41,8 @@ void CalculateWindowStylesFromInitParams(
     *style |= WS_MINIMIZE;
   if (!params.accept_events)
     *ex_style |= WS_EX_TRANSPARENT;
-  if (!params.can_activate)
+  DCHECK_NE(Widget::InitParams::ACTIVATABLE_DEFAULT, params.activatable);
+  if (params.activatable == Widget::InitParams::ACTIVATABLE_NO)
     *ex_style |= WS_EX_NOACTIVATE;
   if (params.keep_on_top)
     *ex_style |= WS_EX_TOPMOST;
@@ -62,14 +63,10 @@ void CalculateWindowStylesFromInitParams(
   // 5- When the window is created but before it is presented, call
   //    DwmExtendFrameIntoClientArea passing -1 as the margins.
   if (params.opacity == Widget::InitParams::TRANSLUCENT_WINDOW) {
-#if defined(USE_AURA)
     if (ui::win::IsAeroGlassEnabled())
       *ex_style |= WS_EX_COMPOSITED;
-#else
-    *ex_style |= WS_EX_LAYERED;
-#endif
   }
-  if (params.has_dropshadow) {
+  if (params.shadow_type == Widget::InitParams::SHADOW_TYPE_DROP) {
     *class_style |= (base::win::GetVersion() < base::win::VERSION_XP) ?
         0 : CS_DROPSHADOW;
   }
@@ -122,10 +119,13 @@ void CalculateWindowStylesFromInitParams(
     case Widget::InitParams::TYPE_BUBBLE:
       *style |= WS_POPUP;
       *style |= WS_CLIPCHILDREN;
+      if (!params.force_show_in_taskbar)
+        *ex_style |= WS_EX_TOOLWINDOW;
       break;
     case Widget::InitParams::TYPE_POPUP:
       *style |= WS_POPUP;
-      *ex_style |= WS_EX_TOOLWINDOW;
+      if (!params.force_show_in_taskbar)
+        *ex_style |= WS_EX_TOOLWINDOW;
       break;
     case Widget::InitParams::TYPE_MENU:
       *style |= WS_POPUP;

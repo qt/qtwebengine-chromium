@@ -73,31 +73,6 @@ bool HeaderEqual(const ServerMessageHeader& expected,
 // A mock of the ProtocolListener interface.
 class MockProtocolListener : public ProtocolListener {
  public:
-  MOCK_METHOD1(HandleIncomingHeader, void(const ServerMessageHeader&));
-
-  MOCK_METHOD2(HandleTokenChanged,
-               void(const ServerMessageHeader&, const string&));
-
-  MOCK_METHOD2(
-      HandleInvalidations,
-      void(const ServerMessageHeader&, const RepeatedPtrField<InvalidationP>&));
-
-  MOCK_METHOD2(
-      HandleRegistrationStatus,
-      void(const ServerMessageHeader&,
-           const RepeatedPtrField<RegistrationStatus>&));
-
-  MOCK_METHOD1(HandleRegistrationSyncRequest, void(const ServerMessageHeader&));
-
-  MOCK_METHOD2(HandleInfoMessage,
-               void(const ServerMessageHeader&,
-                    const RepeatedField<InfoRequestMessage_InfoType>&));
-
-  MOCK_METHOD3(
-      HandleErrorMessage,
-      void(const ServerMessageHeader&, ErrorMessage::Code,
-           const string&));
-
   MOCK_METHOD0(HandleMessageSent, void());
 
   MOCK_METHOD1(HandleNetworkStatusChange, void(bool));  // NOLINT

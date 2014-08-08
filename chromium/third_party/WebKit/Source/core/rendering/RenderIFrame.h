@@ -30,18 +30,11 @@
 
 namespace WebCore {
 
-class RenderView;
-
 class RenderIFrame FINAL : public RenderPart {
 public:
     explicit RenderIFrame(Element*);
 
-    bool isSeamless() const;
-
 private:
-    virtual LayoutUnit minPreferredLogicalWidth() const OVERRIDE;
-    virtual LayoutUnit maxPreferredLogicalWidth() const OVERRIDE;
-
     virtual bool shouldComputeSizeAsReplaced() const OVERRIDE;
     virtual bool isInlineBlockOrInlineTable() const OVERRIDE;
 
@@ -51,11 +44,7 @@ private:
 
     virtual const char* renderName() const OVERRIDE { return "RenderPartObject"; } // Lying for now to avoid breaking tests
 
-    virtual bool requiresLayer() const OVERRIDE;
-
-    void layoutSeamlessly();
-
-    RenderView* contentRootRenderer() const;
+    virtual LayerType layerTypeRequired() const OVERRIDE;
 };
 
 DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderIFrame, isRenderIFrame());

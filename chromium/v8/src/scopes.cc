@@ -1,39 +1,16 @@
 // Copyright 2012 the V8 project authors. All rights reserved.
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-//       copyright notice, this list of conditions and the following
-//       disclaimer in the documentation and/or other materials provided
-//       with the distribution.
-//     * Neither the name of Google Inc. nor the names of its
-//       contributors may be used to endorse or promote products derived
-//       from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
-#include "v8.h"
+#include "src/v8.h"
 
-#include "scopes.h"
+#include "src/scopes.h"
 
-#include "accessors.h"
-#include "bootstrapper.h"
-#include "compiler.h"
-#include "messages.h"
-#include "scopeinfo.h"
+#include "src/accessors.h"
+#include "src/bootstrapper.h"
+#include "src/compiler.h"
+#include "src/messages.h"
+#include "src/scopeinfo.h"
 
 namespace v8 {
 namespace internal {
@@ -190,9 +167,8 @@ void Scope::SetDefaults(ScopeType scope_type,
   scope_contains_with_ = false;
   scope_calls_eval_ = false;
   // Inherit the strict mode from the parent scope.
-  language_mode_ = (outer_scope != NULL)
-      ? outer_scope->language_mode_ : CLASSIC_MODE;
-  outer_scope_calls_non_strict_eval_ = false;
+  strict_mode_ = outer_scope != NULL ? outer_scope->strict_mode_ : SLOPPY;
+  outer_scope_calls_sloppy_eval_ = false;
   inner_scope_calls_eval_ = false;
   force_eager_compilation_ = false;
   force_context_allocation_ = (outer_scope != NULL && !is_function_scope())
@@ -207,7 +183,7 @@ void Scope::SetDefaults(ScopeType scope_type,
   end_position_ = RelocInfo::kNoPosition;
   if (!scope_info.is_null()) {
     scope_calls_eval_ = scope_info->CallsEval();
-    language_mode_ = scope_info->language_mode();
+    strict_mode_ = scope_info->strict_mode();
   }
 }
 
@@ -290,8 +266,7 @@ bool Scope::Analyze(CompilationInfo* info) {
 
   // Allocate the variables.
   {
-    AstNodeFactory<AstNullVisitor> ast_node_factory(info->isolate(),
-                                                    info->zone());
+    AstNodeFactory<AstNullVisitor> ast_node_factory(info->zone());
     if (!top->AllocateVariables(info, &ast_node_factory)) return false;
   }
 
@@ -308,7 +283,7 @@ bool Scope::Analyze(CompilationInfo* info) {
   }
 #endif
 
-  info->SetScope(scope);
+  info->PrepareForCompilation(scope);
   return true;
 }
 
@@ -391,7 +366,7 @@ Scope* Scope::FinalizeBlockScope() {
 }
 
 
-Variable* Scope::LocalLookup(Handle<String> name) {
+Variable* Scope::LookupLocal(Handle<String> name) {
   Variable* result = variables_.Lookup(name);
   if (result != NULL || scope_info_.is_null()) {
     return result;
@@ -404,7 +379,7 @@ Variable* Scope::LocalLookup(Handle<String> name) {
   VariableMode mode;
   Variable::Location location = Variable::CONTEXT;
   InitializationFlag init_flag;
-  int index = scope_info_->ContextSlotIndex(*name, &mode, &init_flag);
+  int index = ScopeInfo::ContextSlotIndex(scope_info_, name, &mode, &init_flag);
   if (index < 0) {
     // Check parameters.
     index = scope_info_->ParameterIndex(*name);
@@ -450,7 +425,7 @@ Variable* Scope::Lookup(Handle<String> name) {
   for (Scope* scope = this;
        scope != NULL;
        scope = scope->outer_scope()) {
-    Variable* var = scope->LocalLookup(name);
+    Variable* var = scope->LookupLocal(name);
     if (var != NULL) return var;
   }
   return NULL;
@@ -471,7 +446,7 @@ Variable* Scope::DeclareLocal(Handle<String> name,
                               InitializationFlag init_flag,
                               Interface* interface) {
   ASSERT(!already_resolved());
-  // This function handles VAR and CONST modes.  DYNAMIC variables are
+  // This function handles VAR, LET, and CONST modes.  DYNAMIC variables are
   // introduces during variable allocation, INTERNAL variables are allocated
   // explicitly, and TEMPORARY variables are allocated via NewTemporary().
   ASSERT(IsDeclaredVariableMode(mode));
@@ -644,13 +619,13 @@ void Scope::CollectStackAndContextLocals(ZoneList<Variable*>* stack_locals,
 bool Scope::AllocateVariables(CompilationInfo* info,
                               AstNodeFactory<AstNullVisitor>* factory) {
   // 1) Propagate scope information.
-  bool outer_scope_calls_non_strict_eval = false;
+  bool outer_scope_calls_sloppy_eval = false;
   if (outer_scope_ != NULL) {
-    outer_scope_calls_non_strict_eval =
-        outer_scope_->outer_scope_calls_non_strict_eval() |
-        outer_scope_->calls_non_strict_eval();
+    outer_scope_calls_sloppy_eval =
+        outer_scope_->outer_scope_calls_sloppy_eval() |
+        outer_scope_->calls_sloppy_eval();
   }
-  PropagateScopeInfo(outer_scope_calls_non_strict_eval);
+  PropagateScopeInfo(outer_scope_calls_sloppy_eval);
 
   // 2) Allocate module instances.
   if (FLAG_harmony_modules && (is_global_scope() || is_module_scope())) {
@@ -800,7 +775,7 @@ static void Indent(int n, const char* str) {
 
 static void PrintName(Handle<String> name) {
   SmartArrayPointer<char> s = name->ToCString(DISALLOW_NULLS);
-  PrintF("%s", *s);
+  PrintF("%s", s.get());
 }
 
 
@@ -882,21 +857,14 @@ void Scope::Print(int n) {
   if (HasTrivialOuterContext()) {
     Indent(n1, "// scope has trivial outer context\n");
   }
-  switch (language_mode()) {
-    case CLASSIC_MODE:
-      break;
-    case STRICT_MODE:
-      Indent(n1, "// strict mode scope\n");
-      break;
-    case EXTENDED_MODE:
-      Indent(n1, "// extended mode scope\n");
-      break;
+  if (strict_mode() == STRICT) {
+    Indent(n1, "// strict mode scope\n");
   }
   if (scope_inside_with_) Indent(n1, "// scope inside 'with'\n");
   if (scope_contains_with_) Indent(n1, "// scope contains 'with'\n");
   if (scope_calls_eval_) Indent(n1, "// scope calls 'eval'\n");
-  if (outer_scope_calls_non_strict_eval_) {
-    Indent(n1, "// outer scope calls 'eval' in non-strict context\n");
+  if (outer_scope_calls_sloppy_eval_) {
+    Indent(n1, "// outer scope calls 'eval' in sloppy context\n");
   }
   if (inner_scope_calls_eval_) Indent(n1, "// inner scope calls 'eval'\n");
   if (num_stack_slots_ > 0) { Indent(n1, "// ");
@@ -982,7 +950,7 @@ Variable* Scope::LookupRecursive(Handle<String> name,
   }
 
   // Try to find the variable in this scope.
-  Variable* var = LocalLookup(name);
+  Variable* var = LookupLocal(name);
 
   // We found a variable and we are done. (Even if there is an 'eval' in
   // this scope which introduces the same variable again, the resulting
@@ -1018,9 +986,9 @@ Variable* Scope::LookupRecursive(Handle<String> name,
     // object).
     *binding_kind = DYNAMIC_LOOKUP;
     return NULL;
-  } else if (calls_non_strict_eval()) {
+  } else if (calls_sloppy_eval()) {
     // A variable binding may have been found in an outer scope, but the current
-    // scope makes a non-strict 'eval' call, so the found variable may not be
+    // scope makes a sloppy 'eval' call, so the found variable may not be
     // the correct one (the 'eval' may introduce a binding with the same name).
     // In that case, change the lookup result to reflect this situation.
     if (*binding_kind == BOUND) {
@@ -1072,8 +1040,7 @@ bool Scope::ResolveVariable(CompilationInfo* info,
       break;
 
     case UNBOUND_EVAL_SHADOWED:
-      // No binding has been found. But some scope makes a
-      // non-strict 'eval' call.
+      // No binding has been found. But some scope makes a sloppy 'eval' call.
       var = NonLocal(proxy->name(), DYNAMIC_GLOBAL);
       break;
 
@@ -1085,7 +1052,7 @@ bool Scope::ResolveVariable(CompilationInfo* info,
 
   ASSERT(var != NULL);
 
-  if (FLAG_harmony_scoping && is_extended_mode() &&
+  if (FLAG_harmony_scoping && strict_mode() == STRICT &&
       var->is_const_mode() && proxy->IsLValue()) {
     // Assignment to const. Throw a syntax error.
     MessageLocation location(
@@ -1124,7 +1091,7 @@ bool Scope::ResolveVariable(CompilationInfo* info,
       Isolate* isolate = info->isolate();
       Factory* factory = isolate->factory();
       Handle<JSArray> array = factory->NewJSArray(1);
-      USE(JSObject::SetElement(array, 0, var->name(), NONE, kStrictMode));
+      JSObject::SetElement(array, 0, var->name(), NONE, STRICT).Assert();
       Handle<Object> result =
           factory->NewSyntaxError("module_type_error", array);
       isolate->Throw(*result, &location);
@@ -1158,16 +1125,16 @@ bool Scope::ResolveVariablesRecursively(
 }
 
 
-bool Scope::PropagateScopeInfo(bool outer_scope_calls_non_strict_eval ) {
-  if (outer_scope_calls_non_strict_eval) {
-    outer_scope_calls_non_strict_eval_ = true;
+bool Scope::PropagateScopeInfo(bool outer_scope_calls_sloppy_eval ) {
+  if (outer_scope_calls_sloppy_eval) {
+    outer_scope_calls_sloppy_eval_ = true;
   }
 
-  bool calls_non_strict_eval =
-      this->calls_non_strict_eval() || outer_scope_calls_non_strict_eval_;
+  bool calls_sloppy_eval =
+      this->calls_sloppy_eval() || outer_scope_calls_sloppy_eval_;
   for (int i = 0; i < inner_scopes_.length(); i++) {
     Scope* inner_scope = inner_scopes_[i];
-    if (inner_scope->PropagateScopeInfo(calls_non_strict_eval)) {
+    if (inner_scope->PropagateScopeInfo(calls_sloppy_eval)) {
       inner_scope_calls_eval_ = true;
     }
     if (inner_scope->force_eager_compilation_) {
@@ -1244,10 +1211,10 @@ void Scope::AllocateHeapSlot(Variable* var) {
 
 void Scope::AllocateParameterLocals() {
   ASSERT(is_function_scope());
-  Variable* arguments = LocalLookup(isolate_->factory()->arguments_string());
+  Variable* arguments = LookupLocal(isolate_->factory()->arguments_string());
   ASSERT(arguments != NULL);  // functions have 'arguments' declared implicitly
 
-  bool uses_nonstrict_arguments = false;
+  bool uses_sloppy_arguments = false;
 
   if (MustAllocate(arguments) && !HasArgumentsParameter()) {
     // 'arguments' is used. Unless there is also a parameter called
@@ -1266,7 +1233,7 @@ void Scope::AllocateParameterLocals() {
     // In strict mode 'arguments' does not alias formal parameters.
     // Therefore in strict mode we allocate parameters as if 'arguments'
     // were not used.
-    uses_nonstrict_arguments = is_classic_mode();
+    uses_sloppy_arguments = strict_mode() == SLOPPY;
   }
 
   // The same parameter may occur multiple times in the parameters_ list.
@@ -1276,7 +1243,7 @@ void Scope::AllocateParameterLocals() {
   for (int i = params_.length() - 1; i >= 0; --i) {
     Variable* var = params_[i];
     ASSERT(var->scope() == this);
-    if (uses_nonstrict_arguments) {
+    if (uses_sloppy_arguments || has_forced_context_allocation()) {
       // Force context allocation of the parameter.
       var->ForceContextAllocation();
     }

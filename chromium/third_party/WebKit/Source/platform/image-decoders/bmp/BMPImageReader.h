@@ -68,7 +68,7 @@ public:
     // |startOffset| points to the start of the BMP within the file.
     // |buffer| points at an empty ImageFrame that we'll initialize and
     // fill with decoded data.
-    BMPImageReader(ImageDecoder* parent, size_t decodedAndHeaderOffset, size_t imgDataOffset, bool usesAndMask);
+    BMPImageReader(ImageDecoder* parent, size_t decodedAndHeaderOffset, size_t imgDataOffset, bool isInICO);
 
     void setBuffer(ImageFrame* buffer) { m_buffer = buffer; }
     void setData(SharedBuffer* data) { m_data = data; }
@@ -93,11 +93,6 @@ private:
         // OS/2 2.x-only
         HUFFMAN1D,  // Stored in file as 3
         RLE24,      // Stored in file as 4
-    };
-    enum AndMaskState {
-        None,
-        NotYetDecoded,
-        Decoding,
     };
     enum ProcessingResult {
         Success,
@@ -226,7 +221,8 @@ private:
     // in the given pixel data.
     inline unsigned getComponent(uint32_t pixel, int component) const
     {
-        return ((pixel & m_bitMasks[component]) >> m_bitShiftsRight[component]) << m_bitShiftsLeft[component];
+        uint8_t value = (pixel & m_bitMasks[component]) >> m_bitShiftsRight[component];
+        return m_lookupTableAddresses[component] ? m_lookupTableAddresses[component][value] : value;
     }
 
     inline unsigned getAlpha(uint32_t pixel) const
@@ -316,23 +312,21 @@ private:
     bool m_needToProcessBitmasks;
     bool m_needToProcessColorTable;
 
-    // Masks/offsets for the color values for non-palette formats.  These
-    // are bitwise, with array entries 0, 1, 2, 3 corresponding to R, G, B,
-    // A.
-    //
-    // The right/left shift values are meant to be applied after the masks.
-    // We need to right shift to compensate for the bitfields' offsets into
-    // the 32 bits of pixel data, and left shift to scale the color values
-    // up for fields with less than 8 bits of precision.  Sadly, we can't
-    // just combine these into one shift value because the net shift amount
-    // could go either direction.  (If only "<< -x" were equivalent to
-    // ">> x"...)
+    // Masks/offsets for the color values for non-palette formats. These are
+    // bitwise, with array entries 0, 1, 2, 3 corresponding to R, G, B, A.
     uint32_t m_bitMasks[4];
+
+    // Right shift values, meant to be applied after the masks. We need to shift
+    // the bitfield values down from their offsets into the 32 bits of pixel
+    // data, as well as truncate the least significant bits of > 8-bit fields.
     int m_bitShiftsRight[4];
-    int m_bitShiftsLeft[4];
+
+    // We use a lookup table to convert < 8-bit values into 8-bit values. The
+    // values in the table are "round(val * 255.0 / ((1 << n) - 1))" for an
+    // n-bit source value. These elements are set to 0 for 8-bit sources.
+    const uint8_t* m_lookupTableAddresses[4];
 
     // The color palette, for paletted formats.
-    size_t m_tableSizeInBytes;
     Vector<RGBTriple> m_colorTable;
 
     // The coordinate to which we've decoded the image.
@@ -344,11 +338,15 @@ private:
     bool m_seenNonZeroAlphaPixel;
     bool m_seenZeroAlphaPixel;
 
+    // BMPs-in-ICOs have a few differences from standalone BMPs, so we need to
+    // know if we're in an ICO container.
+    bool m_isInICO;
+
     // ICOs store a 1bpp "mask" immediately after the main bitmap image data
     // (and, confusingly, add its height to the biHeight value in the info
-    // header, thus doubling it).  This variable tracks whether we have such
-    // a mask and if we've started decoding it yet.
-    AndMaskState m_andMaskState;
+    // header, thus doubling it). If |m_isInICO| is true, this variable tracks
+    // whether we've begun decoding this mask yet.
+    bool m_decodingAndMask;
 };
 
 } // namespace WebCore

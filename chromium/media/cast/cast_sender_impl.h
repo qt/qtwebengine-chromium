@@ -8,47 +8,64 @@
 #include "base/memory/scoped_ptr.h"
 #include "media/cast/audio_sender/audio_sender.h"
 #include "media/cast/cast_config.h"
+#include "media/cast/cast_defines.h"
 #include "media/cast/cast_environment.h"
 #include "media/cast/cast_sender.h"
-#include "media/cast/net/pacing/paced_sender.h"
 #include "media/cast/video_sender/video_sender.h"
 
 namespace media {
-  class VideoFrame;
-}
+class VideoFrame;
 
-namespace media {
 namespace cast {
-
 class AudioSender;
-class PacedSender;
 class VideoSender;
 
-// This calls is a pure owner class that group all required sending objects
-// together such as pacer, packet receiver, frame input, audio and video sender.
+// This class combines all required sending objects such as the audio and video
+// senders, pacer, packet receiver and frame input.
 class CastSenderImpl : public CastSender {
  public:
   CastSenderImpl(scoped_refptr<CastEnvironment> cast_environment,
-                 const AudioSenderConfig& audio_config,
-                 const VideoSenderConfig& video_config,
-                 VideoEncoderController* const video_encoder_controller,
-                 PacketSender* const packet_sender);
+                 transport::CastTransportSender* const transport_sender);
+
+  virtual void InitializeAudio(
+      const AudioSenderConfig& audio_config,
+      const CastInitializationCallback& cast_initialization_cb) OVERRIDE;
+  virtual void InitializeVideo(
+      const VideoSenderConfig& video_config,
+      const CastInitializationCallback& cast_initialization_cb,
+      const CreateVideoEncodeAcceleratorCallback& create_vea_cb,
+      const CreateVideoEncodeMemoryCallback& create_video_encode_mem_cb)
+      OVERRIDE;
 
   virtual ~CastSenderImpl();
 
-  virtual scoped_refptr<FrameInput> frame_input() OVERRIDE;
-  virtual scoped_refptr<PacketReceiver> packet_receiver() OVERRIDE;
+  virtual scoped_refptr<AudioFrameInput> audio_frame_input() OVERRIDE;
+  virtual scoped_refptr<VideoFrameInput> video_frame_input() OVERRIDE;
+
+  virtual transport::PacketReceiverCallback packet_receiver() OVERRIDE;
 
  private:
-  PacedSender pacer_;
-  AudioSender audio_sender_;
-  VideoSender video_sender_;
-  scoped_refptr<FrameInput> frame_input_;
-  scoped_refptr<PacketReceiver> packet_receiver_;
+  void ReceivedPacket(scoped_ptr<Packet> packet);
+
+  CastInitializationCallback initialization_callback_;
+  scoped_ptr<AudioSender> audio_sender_;
+  scoped_ptr<VideoSender> video_sender_;
+  scoped_refptr<AudioFrameInput> audio_frame_input_;
+  scoped_refptr<VideoFrameInput> video_frame_input_;
+  scoped_refptr<CastEnvironment> cast_environment_;
+  // The transport sender is owned by the owner of the CastSender, and should be
+  // valid throughout the lifetime of the CastSender.
+  transport::CastTransportSender* const transport_sender_;
+  uint32 ssrc_of_audio_sender_;
+  uint32 ssrc_of_video_sender_;
+
+  // NOTE: Weak pointers must be invalidated before all other member variables.
+  base::WeakPtrFactory<CastSenderImpl> weak_factory_;
+
+  DISALLOW_COPY_AND_ASSIGN(CastSenderImpl);
 };
 
 }  // namespace cast
 }  // namespace media
 
 #endif  // MEDIA_CAST_CAST_SENDER_IMPL_H_
-

@@ -30,7 +30,8 @@ class MessageCenterButtonBar : public views::View,
   MessageCenterButtonBar(MessageCenterView* message_center_view,
                          MessageCenter* message_center,
                          NotifierSettingsProvider* notifier_settings_provider,
-                         bool settings_initially_visible);
+                         bool settings_initially_visible,
+                         const base::string16& title);
   virtual ~MessageCenterButtonBar();
 
   // Enables or disables all of the buttons in the center.  This is used to
@@ -62,6 +63,15 @@ class MessageCenterButtonBar : public views::View,
 
   MessageCenterView* message_center_view_;  // Weak reference.
   MessageCenter* message_center_;           // Weak reference.
+
+  // |close_bubble_button_| closes the message center bubble. This is required
+  // for desktop Linux because the status icon doesn't toggle the bubble, and
+  // close-on-deactivation is off. This is a tentative solution. Once pkotwicz
+  // Fixes the problem of focus-follow-mouse, close-on-deactivation will be
+  // back and this field will be removed. See crbug.com/319516.
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
+  views::ImageButton* close_bubble_button_;
+#endif
 
   // Sub-views of the button bar.
   NotificationCenterButton* title_arrow_;

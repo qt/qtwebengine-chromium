@@ -4,6 +4,7 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "media/filters/h264_to_annex_b_bitstream_converter.h"
+#include "media/formats/mp4/box_definitions.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace media {
@@ -13,6 +14,9 @@ class H264ToAnnexBBitstreamConverterTest : public testing::Test {
   H264ToAnnexBBitstreamConverterTest() {}
 
   virtual ~H264ToAnnexBBitstreamConverterTest() {}
+
+ protected:
+  mp4::AVCDecoderConfigurationRecord avc_config_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(H264ToAnnexBBitstreamConverterTest);
@@ -269,65 +273,38 @@ TEST_F(H264ToAnnexBBitstreamConverterTest, Success) {
   H264ToAnnexBBitstreamConverter converter;
 
   // Parse the headers.
-  uint32 config_size = converter.ParseConfigurationAndCalculateSize(
+  EXPECT_TRUE(converter.ParseConfiguration(
       kHeaderDataOkWithFieldLen4,
-      sizeof(kHeaderDataOkWithFieldLen4));
+      sizeof(kHeaderDataOkWithFieldLen4),
+      &avc_config_));
+  uint32 config_size = converter.GetConfigSize(avc_config_);
   EXPECT_GT(config_size, 0U);
 
   // Go on with converting the headers.
   output.reset(new uint8[config_size]);
   EXPECT_TRUE(output.get() != NULL);
   EXPECT_TRUE(converter.ConvertAVCDecoderConfigToByteStream(
-                  kHeaderDataOkWithFieldLen4,
-                  sizeof(kHeaderDataOkWithFieldLen4),
-                  output.get(),
-                  &config_size));
+      avc_config_,
+      output.get(),
+      &config_size));
 
   // Calculate buffer size for actual NAL unit.
   uint32 output_size = converter.CalculateNeededOutputBufferSize(
       kPacketDataOkWithFieldLen4,
-      sizeof(kPacketDataOkWithFieldLen4));
+      sizeof(kPacketDataOkWithFieldLen4),
+      &avc_config_);
   EXPECT_GT(output_size, 0U);
-  output_size += config_size;
   output.reset(new uint8[output_size]);
   EXPECT_TRUE(output.get() != NULL);
 
-  uint32 output_size_left_for_nal_unit = output_size - config_size;
+  uint32 output_size_left_for_nal_unit = output_size;
   // Do the conversion for actual NAL unit.
   EXPECT_TRUE(converter.ConvertNalUnitStreamToByteStream(
                   kPacketDataOkWithFieldLen4,
                   sizeof(kPacketDataOkWithFieldLen4),
-                  output.get() + config_size,
+                  &avc_config_,
+                  output.get(),
                   &output_size_left_for_nal_unit));
-
-  // Classes allocated in stack are automatically destroyed.
-}
-
-TEST_F(H264ToAnnexBBitstreamConverterTest, FailureNullData) {
-  // Initialize converter.
-  H264ToAnnexBBitstreamConverter converter;
-
-  // Simulate situation where there is no header data.
-  uint32 config_size = converter.ParseConfigurationAndCalculateSize(NULL, 0);
-  EXPECT_EQ(config_size, 0U);
-
-  // Go on with converting the headers with NULL parameters.
-  EXPECT_FALSE(converter.ConvertAVCDecoderConfigToByteStream(NULL,
-                                                             0,
-                                                             NULL,
-                                                             &config_size));
-
-  // Simulate NULL parameters for buffer calculation.
-  uint32 output_size = converter.CalculateNeededOutputBufferSize(NULL, 0);
-  EXPECT_EQ(output_size, 0U);
-
-  // Do the conversion for actual NAL unit with NULL paramaters.
-  EXPECT_FALSE(converter.ConvertNalUnitStreamToByteStream(NULL,
-                                                          0,
-                                                          NULL,
-                                                          &output_size));
-
-  // Classes allocated in stack are automatically destroyed.
 }
 
 TEST_F(H264ToAnnexBBitstreamConverterTest, FailureHeaderBufferOverflow) {
@@ -343,12 +320,10 @@ TEST_F(H264ToAnnexBBitstreamConverterTest, FailureHeaderBufferOverflow) {
   corrupted_header[5] = corrupted_header[5] | 0xA;
 
   // Parse the headers
-  uint32 config_size = converter.ParseConfigurationAndCalculateSize(
+  EXPECT_FALSE(converter.ParseConfiguration(
       corrupted_header,
-      sizeof(corrupted_header));
-  EXPECT_EQ(config_size, 0U);  // Failure as a result of buffer overflows.
-
-  // Classes allocated in stack are automatically destroyed.
+      sizeof(corrupted_header),
+      &avc_config_));
 }
 
 TEST_F(H264ToAnnexBBitstreamConverterTest, FailureNalUnitBreakage) {
@@ -357,19 +332,20 @@ TEST_F(H264ToAnnexBBitstreamConverterTest, FailureNalUnitBreakage) {
   H264ToAnnexBBitstreamConverter converter;
 
   // Parse the headers.
-  uint32 config_size = converter.ParseConfigurationAndCalculateSize(
+  EXPECT_TRUE(converter.ParseConfiguration(
       kHeaderDataOkWithFieldLen4,
-      sizeof(kHeaderDataOkWithFieldLen4));
+      sizeof(kHeaderDataOkWithFieldLen4),
+      &avc_config_));
+  uint32 config_size = converter.GetConfigSize(avc_config_);
   EXPECT_GT(config_size, 0U);
 
   // Go on with converting the headers.
   output.reset(new uint8[config_size]);
   EXPECT_TRUE(output.get() != NULL);
   EXPECT_TRUE(converter.ConvertAVCDecoderConfigToByteStream(
-                  kHeaderDataOkWithFieldLen4,
-                  sizeof(kHeaderDataOkWithFieldLen4),
-                  output.get(),
-                  &config_size));
+      avc_config_,
+      output.get(),
+      &config_size));
 
   // Simulate NAL unit broken in middle by writing only some of the data.
   uint8 corrupted_nal_unit[sizeof(kPacketDataOkWithFieldLen4) - 100];
@@ -380,24 +356,24 @@ TEST_F(H264ToAnnexBBitstreamConverterTest, FailureNalUnitBreakage) {
   // incomplete input buffer.
   uint32 output_size = converter.CalculateNeededOutputBufferSize(
       corrupted_nal_unit,
-      sizeof(corrupted_nal_unit));
+      sizeof(corrupted_nal_unit),
+      &avc_config_);
   EXPECT_EQ(output_size, 0U);
 
   // Ignore the error and try to go on with conversion simulating wrong usage.
-  output_size = sizeof(kPacketDataOkWithFieldLen4) + config_size;
+  output_size = sizeof(kPacketDataOkWithFieldLen4);
   output.reset(new uint8[output_size]);
   EXPECT_TRUE(output.get() != NULL);
 
-  uint32 output_size_left_for_nal_unit = output_size - config_size;
+  uint32 output_size_left_for_nal_unit = output_size;
   // Do the conversion for actual NAL unit, expecting failure.
   EXPECT_FALSE(converter.ConvertNalUnitStreamToByteStream(
                    corrupted_nal_unit,
                    sizeof(corrupted_nal_unit),
-                   output.get() + config_size,
+                   &avc_config_,
+                   output.get(),
                    &output_size_left_for_nal_unit));
   EXPECT_EQ(output_size_left_for_nal_unit, 0U);
-
-  // Classes allocated in stack are automatically destroyed.
 }
 
 TEST_F(H264ToAnnexBBitstreamConverterTest, FailureTooSmallOutputBuffer) {
@@ -406,9 +382,11 @@ TEST_F(H264ToAnnexBBitstreamConverterTest, FailureTooSmallOutputBuffer) {
   H264ToAnnexBBitstreamConverter converter;
 
   // Parse the headers.
-  uint32 config_size = converter.ParseConfigurationAndCalculateSize(
+  EXPECT_TRUE(converter.ParseConfiguration(
       kHeaderDataOkWithFieldLen4,
-      sizeof(kHeaderDataOkWithFieldLen4));
+      sizeof(kHeaderDataOkWithFieldLen4),
+      &avc_config_));
+  uint32 config_size = converter.GetConfigSize(avc_config_);
   EXPECT_GT(config_size, 0U);
   uint32 real_config_size = config_size;
 
@@ -417,10 +395,9 @@ TEST_F(H264ToAnnexBBitstreamConverterTest, FailureTooSmallOutputBuffer) {
   output.reset(new uint8[config_size]);
   EXPECT_TRUE(output.get() != NULL);
   EXPECT_FALSE(converter.ConvertAVCDecoderConfigToByteStream(
-                   kHeaderDataOkWithFieldLen4,
-                   sizeof(kHeaderDataOkWithFieldLen4),
-                   output.get(),
-                   &config_size));
+      avc_config_,
+      output.get(),
+      &config_size));
   EXPECT_EQ(config_size, 0U);
 
   // Still too small (but only 1 byte short).
@@ -428,10 +405,9 @@ TEST_F(H264ToAnnexBBitstreamConverterTest, FailureTooSmallOutputBuffer) {
   output.reset(new uint8[config_size]);
   EXPECT_TRUE(output.get() != NULL);
   EXPECT_FALSE(converter.ConvertAVCDecoderConfigToByteStream(
-                   kHeaderDataOkWithFieldLen4,
-                   sizeof(kHeaderDataOkWithFieldLen4),
-                   output.get(),
-                   &config_size));
+      avc_config_,
+      output.get(),
+      &config_size));
   EXPECT_EQ(config_size, 0U);
 
   // Finally, retry with valid buffer.
@@ -439,32 +415,30 @@ TEST_F(H264ToAnnexBBitstreamConverterTest, FailureTooSmallOutputBuffer) {
   output.reset(new uint8[config_size]);
   EXPECT_TRUE(output.get() != NULL);
   EXPECT_TRUE(converter.ConvertAVCDecoderConfigToByteStream(
-                  kHeaderDataOkWithFieldLen4,
-                  sizeof(kHeaderDataOkWithFieldLen4),
-                  output.get(),
-                  &config_size));
+      avc_config_,
+      output.get(),
+      &config_size));
 
   // Calculate buffer size for actual NAL unit.
   uint32 output_size = converter.CalculateNeededOutputBufferSize(
       kPacketDataOkWithFieldLen4,
-      sizeof(kPacketDataOkWithFieldLen4));
+      sizeof(kPacketDataOkWithFieldLen4),
+      &avc_config_);
   EXPECT_GT(output_size, 0U);
-  output_size += config_size;
   // Simulate too small output buffer.
   output_size -= 1;
   output.reset(new uint8[output_size]);
   EXPECT_TRUE(output.get() != NULL);
 
-  uint32 output_size_left_for_nal_unit = output_size - config_size;
+  uint32 output_size_left_for_nal_unit = output_size;
   // Do the conversion for actual NAL unit (expect failure).
   EXPECT_FALSE(converter.ConvertNalUnitStreamToByteStream(
                    kPacketDataOkWithFieldLen4,
                    sizeof(kPacketDataOkWithFieldLen4),
-                   output.get() + config_size,
+                   &avc_config_,
+                   output.get(),
                    &output_size_left_for_nal_unit));
   EXPECT_EQ(output_size_left_for_nal_unit, 0U);
-
-  // Classes allocated in stack are automatically destroyed.
 }
 
 // Generated from crash dump in http://crbug.com/234449 using xxd -i [file].
@@ -487,23 +461,25 @@ TEST_F(H264ToAnnexBBitstreamConverterTest, CorruptedPacket) {
   H264ToAnnexBBitstreamConverter converter;
 
   // Parse the headers.
-  uint32 config_size = converter.ParseConfigurationAndCalculateSize(
+  EXPECT_TRUE(converter.ParseConfiguration(
       kCorruptedPacketConfiguration,
-      sizeof(kCorruptedPacketConfiguration));
+      sizeof(kCorruptedPacketConfiguration),
+      &avc_config_));
+  uint32 config_size = converter.GetConfigSize(avc_config_);
   EXPECT_GT(config_size, 0U);
 
   // Go on with converting the headers.
   output.reset(new uint8[config_size]);
   EXPECT_TRUE(converter.ConvertAVCDecoderConfigToByteStream(
-      kCorruptedPacketConfiguration,
-      sizeof(kCorruptedPacketConfiguration),
+      avc_config_,
       output.get(),
       &config_size));
 
   // Expect an error here.
   uint32 output_size = converter.CalculateNeededOutputBufferSize(
       kCorruptedPacketData,
-      sizeof(kCorruptedPacketData));
+      sizeof(kCorruptedPacketData),
+      &avc_config_);
   EXPECT_EQ(output_size, 0U);
 }
 

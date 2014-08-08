@@ -21,15 +21,19 @@ enum { kFrames = 16 };
 // Test all possible layout conversions can be constructed and mixed.
 TEST(ChannelMixerTest, ConstructAllPossibleLayouts) {
   for (ChannelLayout input_layout = CHANNEL_LAYOUT_MONO;
-       input_layout < CHANNEL_LAYOUT_MAX;
+       input_layout <= CHANNEL_LAYOUT_MAX;
        input_layout = static_cast<ChannelLayout>(input_layout + 1)) {
     for (ChannelLayout output_layout = CHANNEL_LAYOUT_MONO;
          output_layout < CHANNEL_LAYOUT_STEREO_DOWNMIX;
          output_layout = static_cast<ChannelLayout>(output_layout + 1)) {
       // DISCRETE can't be tested here based on the current approach.
+      // CHANNEL_LAYOUT_STEREO_AND_KEYBOARD_MIC is not mixable.
       if (input_layout == CHANNEL_LAYOUT_DISCRETE ||
-          output_layout == CHANNEL_LAYOUT_DISCRETE)
+          input_layout == CHANNEL_LAYOUT_STEREO_AND_KEYBOARD_MIC ||
+          output_layout == CHANNEL_LAYOUT_DISCRETE ||
+          output_layout == CHANNEL_LAYOUT_STEREO_AND_KEYBOARD_MIC) {
         continue;
+      }
 
       SCOPED_TRACE(base::StringPrintf(
           "Input Layout: %d, Output Layout: %d", input_layout, output_layout));

@@ -2,12 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#if defined _MSC_VER && _MSC_VER == 1800
-// TODO(scottmg): Internal errors on VS2013 RC in LTCG. This should be removed
-// after RTM. http://crbug.com/288948
-#pragma optimize("", off)
-#endif
-
 #include "base/files/important_file_writer.h"
 
 #include <stdio.h>
@@ -17,11 +11,13 @@
 #include "base/bind.h"
 #include "base/critical_closure.h"
 #include "base/file_util.h"
+#include "base/files/file.h"
 #include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/task_runner.h"
+#include "base/task_runner_util.h"
 #include "base/threading/thread.h"
 #include "base/time/time.h"
 
@@ -63,25 +59,18 @@ bool ImportantFileWriter::WriteFileAtomically(const FilePath& path,
     return false;
   }
 
-  int flags = PLATFORM_FILE_OPEN | PLATFORM_FILE_WRITE;
-  PlatformFile tmp_file =
-      CreatePlatformFile(tmp_file_path, flags, NULL, NULL);
-  if (tmp_file == kInvalidPlatformFileValue) {
+  File tmp_file(tmp_file_path, File::FLAG_OPEN | File::FLAG_WRITE);
+  if (!tmp_file.IsValid()) {
     LogFailure(path, FAILED_OPENING, "could not open temporary file");
     return false;
   }
 
   // If this happens in the wild something really bad is going on.
   CHECK_LE(data.length(), static_cast<size_t>(kint32max));
-  int bytes_written = WritePlatformFile(
-      tmp_file, 0, data.data(), static_cast<int>(data.length()));
-  FlushPlatformFile(tmp_file);  // Ignore return value.
-
-  if (!ClosePlatformFile(tmp_file)) {
-    LogFailure(path, FAILED_CLOSING, "failed to close temporary file");
-    base::DeleteFile(tmp_file_path, false);
-    return false;
-  }
+  int bytes_written = tmp_file.Write(0, data.data(),
+                                     static_cast<int>(data.length()));
+  tmp_file.Flush();  // Ignore return value.
+  tmp_file.Close();
 
   if (bytes_written < static_cast<int>(data.length())) {
     LogFailure(path, FAILED_WRITING, "error writing, bytes_written=" +
@@ -99,13 +88,13 @@ bool ImportantFileWriter::WriteFileAtomically(const FilePath& path,
   return true;
 }
 
-ImportantFileWriter::ImportantFileWriter(
-    const FilePath& path, base::SequencedTaskRunner* task_runner)
-        : path_(path),
-          task_runner_(task_runner),
-          serializer_(NULL),
-          commit_interval_(TimeDelta::FromMilliseconds(
-              kDefaultCommitIntervalMs)) {
+ImportantFileWriter::ImportantFileWriter(const FilePath& path,
+                                         base::SequencedTaskRunner* task_runner)
+    : path_(path),
+      task_runner_(task_runner),
+      serializer_(NULL),
+      commit_interval_(TimeDelta::FromMilliseconds(kDefaultCommitIntervalMs)),
+      weak_factory_(this) {
   DCHECK(CalledOnValidThread());
   DCHECK(task_runner_.get());
 }
@@ -132,11 +121,7 @@ void ImportantFileWriter::WriteNow(const std::string& data) {
   if (HasPendingWrite())
     timer_.Stop();
 
-  if (!task_runner_->PostTask(
-          FROM_HERE,
-          MakeCriticalClosure(
-              Bind(IgnoreResult(&ImportantFileWriter::WriteFileAtomically),
-                   path_, data)))) {
+  if (!PostWriteTask(data)) {
     // Posting the task to background message loop is not expected
     // to fail, but if it does, avoid losing data and just hit the disk
     // on the current thread.
@@ -168,6 +153,42 @@ void ImportantFileWriter::DoScheduledWrite() {
                   << path_.value().c_str();
   }
   serializer_ = NULL;
+}
+
+void ImportantFileWriter::RegisterOnNextSuccessfulWriteCallback(
+    const base::Closure& on_next_successful_write) {
+  DCHECK(on_next_successful_write_.is_null());
+  on_next_successful_write_ = on_next_successful_write;
+}
+
+bool ImportantFileWriter::PostWriteTask(const std::string& data) {
+  // TODO(gab): This code could always use PostTaskAndReplyWithResult and let
+  // ForwardSuccessfulWrite() no-op if |on_next_successful_write_| is null, but
+  // PostTaskAndReply causes memory leaks in tests (crbug.com/371974) and
+  // suppressing all of those is unrealistic hence we avoid most of them by
+  // using PostTask() in the typical scenario below.
+  if (!on_next_successful_write_.is_null()) {
+    return base::PostTaskAndReplyWithResult(
+        task_runner_,
+        FROM_HERE,
+        MakeCriticalClosure(
+            Bind(&ImportantFileWriter::WriteFileAtomically, path_, data)),
+        Bind(&ImportantFileWriter::ForwardSuccessfulWrite,
+             weak_factory_.GetWeakPtr()));
+  }
+  return task_runner_->PostTask(
+      FROM_HERE,
+      MakeCriticalClosure(
+          Bind(IgnoreResult(&ImportantFileWriter::WriteFileAtomically),
+               path_, data)));
+}
+
+void ImportantFileWriter::ForwardSuccessfulWrite(bool result) {
+  DCHECK(CalledOnValidThread());
+  if (result && !on_next_successful_write_.is_null()) {
+    on_next_successful_write_.Run();
+    on_next_successful_write_.Reset();
+  }
 }
 
 }  // namespace base

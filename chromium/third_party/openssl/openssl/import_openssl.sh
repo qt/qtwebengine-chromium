@@ -118,6 +118,13 @@ function default_asm_file () {
   fi
 }
 
+function default_asm_mac_ia32_file () {
+  if [ "$2" ]; then
+    echo "$2"
+  else
+    echo "${1%%.pl}-mac.S"
+  fi
+}
 # Generate an ARM assembly file.
 # $1: generator (perl script)
 # $2: [optional] output file name
@@ -148,6 +155,11 @@ function gen_asm_x86_64 () {
   perl "$1" elf "$OUT" > "$OUT"
 }
 
+function gen_asm_mac_ia32 () {
+  local OUT
+  OUT=$(default_asm_mac_ia32_file "$@")
+  perl "$1" macosx "$OUT" > "$OUT"
+}
 
 # Filter all items in a list that match a given pattern.
 # $1: space-separated list
@@ -414,6 +426,24 @@ function import() {
   gen_asm_x86_64 crypto/bn/asm/x86_64-mont5.pl
   gen_asm_x86_64 crypto/rc4/asm/rc4-x86_64.pl
   gen_asm_x86_64 crypto/rc4/asm/rc4-md5-x86_64.pl
+
+  # Generate mac_ia32 asm
+  gen_asm_mac_ia32 crypto/x86cpuid.pl
+  gen_asm_mac_ia32 crypto/aes/asm/aes-586.pl
+  gen_asm_mac_ia32 crypto/aes/asm/vpaes-x86.pl
+  gen_asm_mac_ia32 crypto/aes/asm/aesni-x86.pl
+  gen_asm_mac_ia32 crypto/bn/asm/bn-586.pl
+  gen_asm_mac_ia32 crypto/bn/asm/co-586.pl
+  gen_asm_mac_ia32 crypto/bn/asm/x86-mont.pl
+  gen_asm_mac_ia32 crypto/bn/asm/x86-gf2m.pl
+  gen_asm_mac_ia32 crypto/modes/asm/ghash-x86.pl
+  gen_asm_mac_ia32 crypto/sha/asm/sha1-586.pl
+  gen_asm_mac_ia32 crypto/sha/asm/sha256-586.pl
+  gen_asm_mac_ia32 crypto/sha/asm/sha512-586.pl
+  gen_asm_mac_ia32 crypto/md5/asm/md5-586.pl
+  gen_asm_mac_ia32 crypto/des/asm/des-586.pl
+  gen_asm_mac_ia32 crypto/des/asm/crypt586.pl
+  gen_asm_mac_ia32 crypto/bf/asm/bf-586.pl
 
   # Setup android.testssl directory
   mkdir android.testssl

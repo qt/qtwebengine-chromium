@@ -47,10 +47,11 @@ public:
     static void majorGCPrologue(bool constructRetainedObjectInfos, v8::Isolate*);
     static void majorGCEpilogue(v8::Isolate*);
 
-    static void hintForCollectGarbage();
     static void collectGarbage(v8::Isolate*);
 
     static Node* opaqueRootForGC(Node*, v8::Isolate*);
+
+    static void reportDOMMemoryUsageToV8(v8::Isolate*);
 };
 
 }

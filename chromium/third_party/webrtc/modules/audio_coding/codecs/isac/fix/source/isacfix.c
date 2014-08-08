@@ -179,7 +179,7 @@ int16_t WebRtcIsacfix_FreeInternal(ISACFIX_MainStruct *ISAC_main_inst)
 }
 
 /****************************************************************************
- * WebRtcAecm_InitNeon(...)
+ * WebRtcIsacfix_InitNeon(...)
  *
  * This function initializes function pointers for ARM Neon platform.
  */
@@ -196,6 +196,23 @@ static void WebRtcIsacfix_InitNeon(void) {
       WebRtcIsacfix_AllpassFilter2FixDec16Neon;
   WebRtcIsacfix_MatrixProduct1 = WebRtcIsacfix_MatrixProduct1Neon;
   WebRtcIsacfix_MatrixProduct2 = WebRtcIsacfix_MatrixProduct2Neon;
+}
+#endif
+
+/****************************************************************************
+ * WebRtcIsacfix_InitMIPS(...)
+ *
+ * This function initializes function pointers for MIPS platform.
+ */
+
+#if defined(MIPS32_LE)
+static void WebRtcIsacfix_InitMIPS(void) {
+  WebRtcIsacfix_AutocorrFix = WebRtcIsacfix_AutocorrMIPS;
+  WebRtcIsacfix_FilterMaLoopFix = WebRtcIsacfix_FilterMaLoopMIPS;
+#if defined(MIPS_DSP_R1_LE)
+  WebRtcIsacfix_AllpassFilter2FixDec16 =
+      WebRtcIsacfix_AllpassFilter2FixDec16MIPS;
+#endif
 }
 #endif
 
@@ -294,6 +311,10 @@ int16_t WebRtcIsacfix_EncoderInit(ISACFIX_MainStruct *ISAC_main_inst,
   }
 #elif defined(WEBRTC_ARCH_ARM_NEON)
   WebRtcIsacfix_InitNeon();
+#endif
+
+#if defined(MIPS32_LE)
+  WebRtcIsacfix_InitMIPS();
 #endif
 
   return statusInit;
@@ -587,14 +608,10 @@ int16_t WebRtcIsacfix_UpdateBwEstimate1(ISACFIX_MainStruct *ISAC_main_inst,
 {
   ISACFIX_SubStruct *ISAC_inst;
   Bitstr_dec streamdata;
-  uint16_t partOfStream[5];
 #ifndef WEBRTC_ARCH_BIG_ENDIAN
   int k;
 #endif
   int16_t err;
-
-  /* Set stream pointer to point at partOfStream */
-  streamdata.stream = (uint16_t *)partOfStream;
 
   /* typecast pointer to real structure */
   ISAC_inst = (ISACFIX_SubStruct *)ISAC_main_inst;
@@ -675,14 +692,10 @@ int16_t WebRtcIsacfix_UpdateBwEstimate(ISACFIX_MainStruct *ISAC_main_inst,
 {
   ISACFIX_SubStruct *ISAC_inst;
   Bitstr_dec streamdata;
-  uint16_t partOfStream[5];
 #ifndef WEBRTC_ARCH_BIG_ENDIAN
   int k;
 #endif
   int16_t err;
-
-  /* Set stream pointer to point at partOfStream */
-  streamdata.stream = (uint16_t *)partOfStream;
 
   /* typecast pointer to real structure */
   ISAC_inst = (ISACFIX_SubStruct *)ISAC_main_inst;
@@ -790,7 +803,7 @@ int16_t WebRtcIsacfix_Decode(ISACFIX_MainStruct *ISAC_main_inst,
     return -1;
   }
 
-  (ISAC_inst->ISACdec_obj.bitstr_obj).stream = (uint16_t *)encoded;
+  ISAC_inst->ISACdec_obj.bitstr_obj.stream_size = (len + 1) >> 1;
 
   /* convert bitstream from int16_t to bytes */
 #ifndef WEBRTC_ARCH_BIG_ENDIAN
@@ -891,7 +904,7 @@ int16_t WebRtcIsacfix_DecodeNb(ISACFIX_MainStruct *ISAC_main_inst,
     return -1;
   }
 
-  (ISAC_inst->ISACdec_obj.bitstr_obj).stream = (uint16_t *)encoded;
+  ISAC_inst->ISACdec_obj.bitstr_obj.stream_size = (len + 1) >> 1;
 
   /* convert bitstream from int16_t to bytes */
 #ifndef WEBRTC_ARCH_BIG_ENDIAN
@@ -1266,14 +1279,10 @@ int16_t WebRtcIsacfix_ReadFrameLen(const int16_t* encoded,
                                    int16_t* frameLength)
 {
   Bitstr_dec streamdata;
-  uint16_t partOfStream[5];
 #ifndef WEBRTC_ARCH_BIG_ENDIAN
   int k;
 #endif
   int16_t err;
-
-  /* Set stream pointer to point at partOfStream */
-  streamdata.stream = (uint16_t *)partOfStream;
 
   streamdata.W_upper = 0xFFFFFFFF;
   streamdata.streamval = 0;
@@ -1315,14 +1324,10 @@ int16_t WebRtcIsacfix_ReadBwIndex(const int16_t* encoded,
                                   int16_t* rateIndex)
 {
   Bitstr_dec streamdata;
-  uint16_t partOfStream[5];
 #ifndef WEBRTC_ARCH_BIG_ENDIAN
   int k;
 #endif
   int16_t err;
-
-  /* Set stream pointer to point at partOfStream */
-  streamdata.stream = (uint16_t *)partOfStream;
 
   streamdata.W_upper = 0xFFFFFFFF;
   streamdata.streamval = 0;

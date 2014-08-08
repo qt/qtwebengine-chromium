@@ -41,12 +41,15 @@
  * Once initialized, the instance is manged using other functions from
  * the vpx_codec_* family.
  */
-#ifndef VPX_CODEC_INTERNAL_H
-#define VPX_CODEC_INTERNAL_H
+#ifndef VPX_INTERNAL_VPX_CODEC_INTERNAL_H_
+#define VPX_INTERNAL_VPX_CODEC_INTERNAL_H_
 #include "../vpx_decoder.h"
 #include "../vpx_encoder.h"
 #include <stdarg.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /*!\brief Current ABI version number
  *
@@ -56,7 +59,7 @@
  * types, removing or reassigning enums, adding/removing/rearranging
  * fields to structures
  */
-#define VPX_CODEC_INTERNAL_ABI_VERSION (4) /**<\hideinitializer*/
+#define VPX_CODEC_INTERNAL_ABI_VERSION (5) /**<\hideinitializer*/
 
 typedef struct vpx_codec_alg_priv  vpx_codec_alg_priv_t;
 typedef struct vpx_codec_priv_enc_mr_cfg vpx_codec_priv_enc_mr_cfg_t;
@@ -215,6 +218,36 @@ typedef vpx_codec_err_t (*vpx_codec_decode_fn_t)(vpx_codec_alg_priv_t  *ctx,
 typedef vpx_image_t *(*vpx_codec_get_frame_fn_t)(vpx_codec_alg_priv_t *ctx,
                                                  vpx_codec_iter_t     *iter);
 
+/*!\brief Pass in external frame buffers for the decoder to use.
+ *
+ * Registers functions to be called when libvpx needs a frame buffer
+ * to decode the current frame and a function to be called when libvpx does
+ * not internally reference the frame buffer. This set function must
+ * be called before the first call to decode or libvpx will assume the
+ * default behavior of allocating frame buffers internally.
+ *
+ * \param[in] ctx          Pointer to this instance's context
+ * \param[in] cb_get       Pointer to the get callback function
+ * \param[in] cb_release   Pointer to the release callback function
+ * \param[in] cb_priv      Callback's private data
+ *
+ * \retval #VPX_CODEC_OK
+ *     External frame buffers will be used by libvpx.
+ * \retval #VPX_CODEC_INVALID_PARAM
+ *     One or more of the callbacks were NULL.
+ * \retval #VPX_CODEC_ERROR
+ *     Decoder context not initialized, or algorithm not capable of
+ *     using external frame buffers.
+ *
+ * \note
+ * When decoding VP9, the application may be required to pass in at least
+ * #VP9_MAXIMUM_REF_BUFFERS + #VPX_MAXIMUM_WORK_BUFFERS external frame
+ * buffers.
+ */
+typedef vpx_codec_err_t (*vpx_codec_set_fb_fn_t)(
+    vpx_codec_alg_priv_t *ctx,
+    vpx_get_frame_buffer_cb_fn_t cb_get,
+    vpx_release_frame_buffer_cb_fn_t cb_release, void *cb_priv);
 
 /*\brief eXternal Memory Allocation memory map get iterator
  *
@@ -305,6 +338,7 @@ struct vpx_codec_iface {
     vpx_codec_get_si_fn_t     get_si;      /**< \copydoc ::vpx_codec_get_si_fn_t */
     vpx_codec_decode_fn_t     decode;      /**< \copydoc ::vpx_codec_decode_fn_t */
     vpx_codec_get_frame_fn_t  get_frame;   /**< \copydoc ::vpx_codec_get_frame_fn_t */
+    vpx_codec_set_fb_fn_t     set_fb_fn;   /**< \copydoc ::vpx_codec_set_fb_fn_t */
   } dec;
   struct vpx_codec_enc_iface {
     vpx_codec_enc_cfg_map_t           *cfg_maps;      /**< \copydoc ::vpx_codec_enc_cfg_map_t */
@@ -444,6 +478,7 @@ vpx_codec_pkt_list_get(struct vpx_codec_pkt_list *list,
 
 #include <stdio.h>
 #include <setjmp.h>
+
 struct vpx_internal_error_info {
   vpx_codec_err_t  error_code;
   int              has_detail;
@@ -500,4 +535,8 @@ vpx_codec_err_t vpx_validate_mmaps(const vpx_codec_stream_info_t *si,
                                    const vpx_codec_mmap_t *mmaps,
                                    const mem_req_t *mem_reqs, int nreqs,
                                    vpx_codec_flags_t init_flags);
+#ifdef __cplusplus
+}  // extern "C"
 #endif
+
+#endif  // VPX_INTERNAL_VPX_CODEC_INTERNAL_H_

@@ -8,14 +8,58 @@
 #include <map>
 #include <string>
 #include "base/basictypes.h"
+#include "base/containers/mru_cache.h"
 #include "base/memory/weak_ptr.h"
+#include "base/time/time.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/net_export.h"
-#include "net/http/http_pipelined_host_capability.h"
 #include "net/socket/next_proto.h"
 #include "net/spdy/spdy_framer.h"  // TODO(willchan): Reconsider this.
 
 namespace net {
+
+enum AlternateProtocolExperiment {
+  // 200 alternate_protocol servers are loaded (persisted 200 MRU servers).
+  ALTERNATE_PROTOCOL_NOT_PART_OF_EXPERIMENT = 0,
+  // 200 alternate_protocol servers are loaded (persisted 1000 MRU servers).
+  ALTERNATE_PROTOCOL_TRUNCATED_200_SERVERS,
+  // 1000 alternate_protocol servers are loaded (persisted 1000 MRU servers).
+  ALTERNATE_PROTOCOL_TRUNCATED_1000_SERVERS,
+};
+
+enum AlternateProtocolUsage {
+  // Alternate Protocol was used without racing a normal connection.
+  ALTERNATE_PROTOCOL_USAGE_NO_RACE = 0,
+  // Alternate Protocol was used by winning a race with a normal connection.
+  ALTERNATE_PROTOCOL_USAGE_WON_RACE = 1,
+  // Alternate Protocol was not used by losing a race with a normal connection.
+  ALTERNATE_PROTOCOL_USAGE_LOST_RACE = 2,
+  // Alternate Protocol was not used because no Alternate-Protocol information
+  // was available when the request was issued, but an Alternate-Protocol header
+  // was present in the response.
+  ALTERNATE_PROTOCOL_USAGE_MAPPING_MISSING = 3,
+  // Alternate Protocol was not used because it was marked broken.
+  ALTERNATE_PROTOCOL_USAGE_BROKEN = 4,
+  // Maximum value for the enum.
+  ALTERNATE_PROTOCOL_USAGE_MAX,
+};
+
+// Log a histogram to reflect |usage| and |alternate_protocol_experiment|.
+NET_EXPORT void HistogramAlternateProtocolUsage(
+    AlternateProtocolUsage usage,
+    AlternateProtocolExperiment alternate_protocol_experiment);
+
+enum BrokenAlternateProtocolLocation {
+  BROKEN_ALTERNATE_PROTOCOL_LOCATION_HTTP_STREAM_FACTORY_IMPL_JOB = 0,
+  BROKEN_ALTERNATE_PROTOCOL_LOCATION_QUIC_STREAM_FACTORY = 1,
+  BROKEN_ALTERNATE_PROTOCOL_LOCATION_HTTP_STREAM_FACTORY_IMPL_JOB_ALT = 2,
+  BROKEN_ALTERNATE_PROTOCOL_LOCATION_HTTP_STREAM_FACTORY_IMPL_JOB_MAIN = 3,
+  BROKEN_ALTERNATE_PROTOCOL_LOCATION_MAX,
+};
+
+// Log a histogram to reflect |location|.
+NET_EXPORT void HistogramBrokenAlternateProtocolLocation(
+    BrokenAlternateProtocolLocation location);
 
 enum AlternateProtocol {
   DEPRECATED_NPN_SPDY_2 = 0,
@@ -23,10 +67,8 @@ enum AlternateProtocol {
   NPN_SPDY_MINIMUM_VERSION = DEPRECATED_NPN_SPDY_2,
   NPN_SPDY_3,
   NPN_SPDY_3_1,
-  NPN_SPDY_4A2,
-  // We lump in HTTP/2 with the SPDY protocols for now.
-  NPN_HTTP2_DRAFT_04,
-  NPN_SPDY_MAXIMUM_VERSION = NPN_HTTP2_DRAFT_04,
+  NPN_SPDY_4,  // SPDY4 is HTTP/2.
+  NPN_SPDY_MAXIMUM_VERSION = NPN_SPDY_4,
   QUIC,
   ALTERNATE_PROTOCOL_MAXIMUM_VALID_VERSION = QUIC,
   ALTERNATE_PROTOCOL_BROKEN,  // The alternate protocol is known to be broken.
@@ -61,10 +103,9 @@ struct NET_EXPORT PortAlternateProtocolPair {
   AlternateProtocol protocol;
 };
 
-typedef std::map<HostPortPair, PortAlternateProtocolPair> AlternateProtocolMap;
-typedef std::map<HostPortPair, SettingsMap> SpdySettingsMap;
-typedef std::map<HostPortPair,
-        HttpPipelinedHostCapability> PipelineCapabilityMap;
+typedef base::MRUCache<
+    HostPortPair, PortAlternateProtocolPair> AlternateProtocolMap;
+typedef base::MRUCache<HostPortPair, SettingsMap> SpdySettingsMap;
 
 extern const char kAlternateProtocolHeader[];
 
@@ -75,6 +116,11 @@ extern const char kAlternateProtocolHeader[];
 // * Spdy Settings (like CWND ID field)
 class NET_EXPORT HttpServerProperties {
  public:
+  struct NetworkStats {
+    base::TimeDelta srtt;
+    uint64 bandwidth_estimate;
+  };
+
   HttpServerProperties() {}
   virtual ~HttpServerProperties() {}
 
@@ -85,7 +131,7 @@ class NET_EXPORT HttpServerProperties {
   virtual void Clear() = 0;
 
   // Returns true if |server| supports SPDY.
-  virtual bool SupportsSpdy(const HostPortPair& server) const = 0;
+  virtual bool SupportsSpdy(const HostPortPair& server) = 0;
 
   // Add |server| into the persistent store. Should only be called from IO
   // thread.
@@ -93,12 +139,12 @@ class NET_EXPORT HttpServerProperties {
                                bool support_spdy) = 0;
 
   // Returns true if |server| has an Alternate-Protocol header.
-  virtual bool HasAlternateProtocol(const HostPortPair& server) const = 0;
+  virtual bool HasAlternateProtocol(const HostPortPair& server) = 0;
 
   // Returns the Alternate-Protocol and port for |server|.
   // HasAlternateProtocol(server) must be true.
   virtual PortAlternateProtocolPair GetAlternateProtocol(
-      const HostPortPair& server) const = 0;
+      const HostPortPair& server) = 0;
 
   // Sets the Alternate-Protocol for |server|.
   virtual void SetAlternateProtocol(const HostPortPair& server,
@@ -108,13 +154,29 @@ class NET_EXPORT HttpServerProperties {
   // Sets the Alternate-Protocol for |server| to be BROKEN.
   virtual void SetBrokenAlternateProtocol(const HostPortPair& server) = 0;
 
+  // Returns true if Alternate-Protocol for |server| was recently BROKEN.
+  virtual bool WasAlternateProtocolRecentlyBroken(
+      const HostPortPair& server) = 0;
+
+  // Confirms that Alternate-Protocol for |server| is working.
+  virtual void ConfirmAlternateProtocol(const HostPortPair& server) = 0;
+
+  // Clears the Alternate-Protocol for |server|.
+  virtual void ClearAlternateProtocol(const HostPortPair& server) = 0;
+
   // Returns all Alternate-Protocol mappings.
   virtual const AlternateProtocolMap& alternate_protocol_map() const = 0;
+
+  virtual void SetAlternateProtocolExperiment(
+      AlternateProtocolExperiment experiment) = 0;
+
+  virtual AlternateProtocolExperiment GetAlternateProtocolExperiment()
+      const = 0;
 
   // Gets a reference to the SettingsMap stored for a host.
   // If no settings are stored, returns an empty SettingsMap.
   virtual const SettingsMap& GetSpdySettings(
-      const HostPortPair& host_port_pair) const = 0;
+      const HostPortPair& host_port_pair) = 0;
 
   // Saves an individual SPDY setting for a host. Returns true if SPDY setting
   // is to be persisted.
@@ -132,16 +194,11 @@ class NET_EXPORT HttpServerProperties {
   // Returns all persistent SPDY settings.
   virtual const SpdySettingsMap& spdy_settings_map() const = 0;
 
-  virtual HttpPipelinedHostCapability GetPipelineCapability(
-      const HostPortPair& origin) = 0;
+  virtual void SetServerNetworkStats(const HostPortPair& host_port_pair,
+                                     NetworkStats stats) = 0;
 
-  virtual void SetPipelineCapability(
-      const HostPortPair& origin,
-      HttpPipelinedHostCapability capability) = 0;
-
-  virtual void ClearPipelineCapabilities() = 0;
-
-  virtual PipelineCapabilityMap GetPipelineCapabilityMap() const = 0;
+  virtual const NetworkStats* GetServerNetworkStats(
+      const HostPortPair& host_port_pair) const = 0;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(HttpServerProperties);

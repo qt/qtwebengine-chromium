@@ -22,6 +22,8 @@ class SingleThreadTaskRunner;
 
 namespace IPC {
 
+class MessageFilter;
+class MessageFilterRouter;
 class SendCallbackHelper;
 
 //-----------------------------------------------------------------------------
@@ -54,47 +56,6 @@ class SendCallbackHelper;
 //
 class IPC_EXPORT ChannelProxy : public Sender, public base::NonThreadSafe {
  public:
-
-  // A class that receives messages on the thread where the IPC channel is
-  // running.  It can choose to prevent the default action for an IPC message.
-  class IPC_EXPORT MessageFilter
-      : public base::RefCountedThreadSafe<MessageFilter> {
-   public:
-    MessageFilter();
-
-    // Called on the background thread to provide the filter with access to the
-    // channel.  Called when the IPC channel is initialized or when AddFilter
-    // is called if the channel is already initialized.
-    virtual void OnFilterAdded(Channel* channel);
-
-    // Called on the background thread when the filter has been removed from
-    // the ChannelProxy and when the Channel is closing.  After a filter is
-    // removed, it will not be called again.
-    virtual void OnFilterRemoved();
-
-    // Called to inform the filter that the IPC channel is connected and we
-    // have received the internal Hello message from the peer.
-    virtual void OnChannelConnected(int32 peer_pid);
-
-    // Called when there is an error on the channel, typically that the channel
-    // has been closed.
-    virtual void OnChannelError();
-
-    // Called to inform the filter that the IPC channel will be destroyed.
-    // OnFilterRemoved is called immediately after this.
-    virtual void OnChannelClosing();
-
-    // Return true to indicate that the message was handled, or false to let
-    // the message be handled in the default way.
-    virtual bool OnMessageReceived(const Message& message);
-
-   protected:
-    virtual ~MessageFilter();
-
-   private:
-    friend class base::RefCountedThreadSafe<MessageFilter>;
-  };
-
   // Initializes a channel proxy.  The channel_handle and mode parameters are
   // passed directly to the underlying IPC::Channel.  The listener is called on
   // the thread that creates the ChannelProxy.  The filter's OnMessageReceived
@@ -103,10 +64,11 @@ class IPC_EXPORT ChannelProxy : public Sender, public base::NonThreadSafe {
   // on the background thread.  Any message not handled by the filter will be
   // dispatched to the listener.  The given task runner correspond to a thread
   // on which IPC::Channel is created and used (e.g. IO thread).
-  ChannelProxy(const IPC::ChannelHandle& channel_handle,
-               Channel::Mode mode,
-               Listener* listener,
-               base::SingleThreadTaskRunner* ipc_task_runner);
+  static scoped_ptr<ChannelProxy> Create(
+      const IPC::ChannelHandle& channel_handle,
+      Channel::Mode mode,
+      Listener* listener,
+      base::SingleThreadTaskRunner* ipc_task_runner);
 
   virtual ~ChannelProxy();
 
@@ -121,7 +83,7 @@ class IPC_EXPORT ChannelProxy : public Sender, public base::NonThreadSafe {
   // background thread processes the command to close the channel.  It is ok to
   // call this method multiple times.  Redundant calls are ignored.
   //
-  // WARNING: The MessageFilter object held by the ChannelProxy is also
+  // WARNING: MessageFilter objects held by the ChannelProxy is also
   // released asynchronously, and it may in fact have its final reference
   // released on the background thread.  The caller should be careful to deal
   // with / allow for this possibility.
@@ -148,13 +110,12 @@ class IPC_EXPORT ChannelProxy : public Sender, public base::NonThreadSafe {
 
   // Get the process ID for the connected peer.
   // Returns base::kNullProcessId if the peer is not connected yet.
-  base::ProcessId peer_pid() const { return context_->peer_pid_; }
+  base::ProcessId GetPeerPID() const { return context_->peer_pid_; }
 
 #if defined(OS_POSIX) && !defined(OS_NACL)
   // Calls through to the underlying channel's methods.
   int GetClientFileDescriptor();
   int TakeClientFileDescriptor();
-  bool GetPeerEuid(uid_t* peer_euid) const;
 #endif  // defined(OS_POSIX)
 
  protected:
@@ -162,6 +123,9 @@ class IPC_EXPORT ChannelProxy : public Sender, public base::NonThreadSafe {
   // A subclass uses this constructor if it needs to add more information
   // to the internal state.
   ChannelProxy(Context* context);
+
+  ChannelProxy(Listener* listener,
+               base::SingleThreadTaskRunner* ipc_task_runner);
 
   // Used internally to hold state that is referenced on the IPC thread.
   class Context : public base::RefCountedThreadSafe<Context>,
@@ -219,6 +183,7 @@ class IPC_EXPORT ChannelProxy : public Sender, public base::NonThreadSafe {
     void AddFilter(MessageFilter* filter);
     void OnDispatchConnected();
     void OnDispatchError();
+    void OnDispatchBadMessage(const Message& message);
 
     scoped_refptr<base::SingleThreadTaskRunner> listener_task_runner_;
     Listener* listener_;
@@ -226,9 +191,17 @@ class IPC_EXPORT ChannelProxy : public Sender, public base::NonThreadSafe {
     // List of filters.  This is only accessed on the IPC thread.
     std::vector<scoped_refptr<MessageFilter> > filters_;
     scoped_refptr<base::SingleThreadTaskRunner> ipc_task_runner_;
+
+    // Note, channel_ may be set on the Listener thread or the IPC thread.
+    // But once it has been set, it must only be read or cleared on the IPC
+    // thread.
     scoped_ptr<Channel> channel_;
     std::string channel_id_;
     bool channel_connected_called_;
+
+    // Routes a given message to a proper subset of |filters_|, depending
+    // on which message classes a filter might support.
+    scoped_ptr<MessageFilterRouter> message_filter_router_;
 
     // Holds filters between the AddFilter call on the listerner thread and the
     // IPC thread when they're added to filters_.

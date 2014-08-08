@@ -34,6 +34,7 @@
 #include "core/dom/Document.h"
 #include "core/dom/MutationObserver.h"
 #include "core/dom/Node.h"
+#include "platform/heap/Handle.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/RefCounted.h"
@@ -43,58 +44,85 @@ namespace WebCore {
 class MutationObserverInterestGroup;
 
 // ChildListMutationAccumulator is not meant to be used directly; ChildListMutationScope is the public interface.
-class ChildListMutationAccumulator : public RefCounted<ChildListMutationAccumulator> {
+//
+// One ChildListMutationAccumulator for a given Node is shared between all the
+// active ChildListMutationScopes for that Node. Once the last ChildListMutationScope
+// is destructed the accumulator enqueues a mutation record for the recorded
+// mutations and the accumulator can be garbage collected.
+class ChildListMutationAccumulator FINAL : public RefCountedWillBeGarbageCollected<ChildListMutationAccumulator> {
+    DECLARE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(ChildListMutationAccumulator);
 public:
-    static PassRefPtr<ChildListMutationAccumulator> getOrCreate(Node&);
-    ~ChildListMutationAccumulator();
+    static PassRefPtrWillBeRawPtr<ChildListMutationAccumulator> getOrCreate(Node&);
 
-    void childAdded(PassRefPtr<Node>);
-    void willRemoveChild(PassRefPtr<Node>);
+    void childAdded(PassRefPtrWillBeRawPtr<Node>);
+    void willRemoveChild(PassRefPtrWillBeRawPtr<Node>);
 
     bool hasObservers() const { return m_observers; }
 
+    // Register and unregister mutation scopes that are using this mutation
+    // accumulator.
+    void enterMutationScope() { m_mutationScopes++; }
+    void leaveMutationScope();
+
+    void trace(Visitor*);
+
 private:
-    ChildListMutationAccumulator(PassRefPtr<Node>, PassOwnPtr<MutationObserverInterestGroup>);
+    ChildListMutationAccumulator(PassRefPtrWillBeRawPtr<Node>, PassOwnPtrWillBeRawPtr<MutationObserverInterestGroup>);
 
     void enqueueMutationRecord();
     bool isEmpty();
     bool isAddedNodeInOrder(Node*);
     bool isRemovedNodeInOrder(Node*);
 
-    RefPtr<Node> m_target;
+    RefPtrWillBeMember<Node> m_target;
 
-    Vector<RefPtr<Node> > m_removedNodes;
-    Vector<RefPtr<Node> > m_addedNodes;
-    RefPtr<Node> m_previousSibling;
-    RefPtr<Node> m_nextSibling;
-    Node* m_lastAdded;
+    WillBeHeapVector<RefPtrWillBeMember<Node> > m_removedNodes;
+    WillBeHeapVector<RefPtrWillBeMember<Node> > m_addedNodes;
+    RefPtrWillBeMember<Node> m_previousSibling;
+    RefPtrWillBeMember<Node> m_nextSibling;
+    RawPtrWillBeMember<Node> m_lastAdded;
 
-    OwnPtr<MutationObserverInterestGroup> m_observers;
+    OwnPtrWillBeMember<MutationObserverInterestGroup> m_observers;
+
+    unsigned m_mutationScopes;
 };
 
-class ChildListMutationScope {
+class ChildListMutationScope FINAL {
     WTF_MAKE_NONCOPYABLE(ChildListMutationScope);
+    STACK_ALLOCATED();
 public:
     explicit ChildListMutationScope(Node& target)
     {
-        if (target.document().hasMutationObserversOfType(MutationObserver::ChildList))
+        if (target.document().hasMutationObserversOfType(MutationObserver::ChildList)) {
             m_accumulator = ChildListMutationAccumulator::getOrCreate(target);
+            // Register another user of the accumulator.
+            m_accumulator->enterMutationScope();
+        }
+    }
+
+    ~ChildListMutationScope()
+    {
+        if (m_accumulator) {
+            // Unregister a user of the accumulator. If this is the last user
+            // the accumulator will enqueue a mutation record for the mutations.
+            m_accumulator->leaveMutationScope();
+        }
     }
 
     void childAdded(Node& child)
     {
         if (m_accumulator && m_accumulator->hasObservers())
-            m_accumulator->childAdded(PassRefPtr<Node>(child));
+            m_accumulator->childAdded(&child);
     }
 
     void willRemoveChild(Node& child)
     {
         if (m_accumulator && m_accumulator->hasObservers())
-            m_accumulator->willRemoveChild(PassRefPtr<Node>(child));
+            m_accumulator->willRemoveChild(&child);
     }
 
 private:
-    RefPtr<ChildListMutationAccumulator> m_accumulator;
+    RefPtrWillBeMember<ChildListMutationAccumulator> m_accumulator;
 };
 
 } // namespace WebCore

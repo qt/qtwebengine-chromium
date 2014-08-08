@@ -52,6 +52,8 @@
           'nacl_desc_effector.h',
           'nacl_desc_effector_trusted_mem.c',
           'nacl_desc_effector_trusted_mem.h',
+          'nacl_desc_file_info.c',
+          'nacl_desc_file_info.h',
           'nacl_desc_imc.c',
           'nacl_desc_imc.h',
           'nacl_desc_imc_shm.c',
@@ -95,17 +97,12 @@
           ]
         },
         'conditions': [
-          ['OS=="linux"', {
+          ['os_posix==1', {
             'sources': [
-              'linux/nacl_desc_sysv_shm.c',
-              'linux/nacl_desc_sysv_shm.h',
               'posix/nacl_desc.c',
             ],
           }],
           ['OS=="mac"', {
-            'sources': [
-              'posix/nacl_desc.c',
-            ],
             # Turning -pedantic off is a hack.  Without it, clang
             # complains that macro arguments are empty, which is
             # only permitted in c99 and c++0x modes.  This is true

@@ -29,7 +29,7 @@
  */
 
 #include "config.h"
-#include "WebDOMError.h"
+#include "public/web/WebDOMError.h"
 
 #include "V8DOMError.h"
 #include "bindings/v8/V8Binding.h"
@@ -69,27 +69,22 @@ WebString WebDOMError::message() const
     return m_private->message();
 }
 
-v8::Handle<v8::Value>  WebDOMError::toV8Value()
+v8::Handle<v8::Value>  WebDOMError::toV8Value(v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)
 {
     if (!m_private.get())
         return v8::Handle<v8::Value>();
-    return toV8(m_private.get(), v8::Handle<v8::Object>(), v8::Isolate::GetCurrent());
+    return toV8(m_private.get(), creationContext, isolate);
 }
 
-WebDOMError::WebDOMError(const WTF::PassRefPtr<WebCore::DOMError>& error)
+WebDOMError::WebDOMError(const PassRefPtrWillBeRawPtr<WebCore::DOMError>& error)
     : m_private(error)
 {
 }
 
-WebDOMError& WebDOMError::operator=(const WTF::PassRefPtr<WebCore::DOMError>& error)
+WebDOMError& WebDOMError::operator=(const PassRefPtrWillBeRawPtr<WebCore::DOMError>& error)
 {
     m_private = error;
     return *this;
-}
-
-WebDOMError::operator WTF::PassRefPtr<WebCore::DOMError>() const
-{
-    return m_private.get();
 }
 
 } // namespace blink

@@ -27,14 +27,13 @@
 #include "config.h"
 #include "core/html/shadow/SpinButtonElement.h"
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 #include "core/events/MouseEvent.h"
-#include "core/events/ThreadLocalEventNames.h"
 #include "core/events/WheelEvent.h"
+#include "core/frame/LocalFrame.h"
 #include "core/html/shadow/ShadowElementNames.h"
 #include "core/page/Chrome.h"
 #include "core/page/EventHandler.h"
-#include "core/frame/Frame.h"
 #include "core/page/Page.h"
 #include "core/rendering/RenderBox.h"
 #include "platform/scroll/ScrollbarTheme.h"
@@ -53,17 +52,17 @@ inline SpinButtonElement::SpinButtonElement(Document& document, SpinButtonOwner&
 {
 }
 
-PassRefPtr<SpinButtonElement> SpinButtonElement::create(Document& document, SpinButtonOwner& spinButtonOwner)
+PassRefPtrWillBeRawPtr<SpinButtonElement> SpinButtonElement::create(Document& document, SpinButtonOwner& spinButtonOwner)
 {
-    RefPtr<SpinButtonElement> element = adoptRef(new SpinButtonElement(document, spinButtonOwner));
-    element->setPseudo(AtomicString("-webkit-inner-spin-button", AtomicString::ConstructFromLiteral));
+    RefPtrWillBeRawPtr<SpinButtonElement> element = adoptRefWillBeNoop(new SpinButtonElement(document, spinButtonOwner));
+    element->setShadowPseudoId(AtomicString("-webkit-inner-spin-button", AtomicString::ConstructFromLiteral));
     element->setAttribute(idAttr, ShadowElementNames::spinButton());
     return element.release();
 }
 
 void SpinButtonElement::detach(const AttachContext& context)
 {
-    releaseCapture();
+    releaseCapture(EventDispatchDisallowed);
     HTMLDivElement::detach(context);
 }
 
@@ -95,7 +94,7 @@ void SpinButtonElement::defaultEventHandler(Event* event)
             // The following functions of HTMLInputElement may run JavaScript
             // code which detaches this shadow node. We need to take a reference
             // and check renderer() after such function calls.
-            RefPtr<Node> protector(this);
+            RefPtrWillBeRawPtr<Node> protector(this);
             if (m_spinButtonOwner)
                 m_spinButtonOwner->focusAndSelectSpinButtonOwner();
             if (renderer()) {
@@ -111,12 +110,12 @@ void SpinButtonElement::defaultEventHandler(Event* event)
             }
             event->setDefaultHandled();
         }
-    } else if (mouseEvent->type() == EventTypeNames::mouseup && mouseEvent->button() == LeftButton)
-        stopRepeatingTimer();
-    else if (event->type() == EventTypeNames::mousemove) {
+    } else if (mouseEvent->type() == EventTypeNames::mouseup && mouseEvent->button() == LeftButton) {
+        releaseCapture();
+    } else if (event->type() == EventTypeNames::mousemove) {
         if (box->pixelSnappedBorderBoxRect().contains(local)) {
             if (!m_capturing) {
-                if (Frame* frame = document().frame()) {
+                if (LocalFrame* frame = document().frame()) {
                     frame->eventHandler().setCapturingMouseEventsNode(this);
                     m_capturing = true;
                     if (Page* page = document().page())
@@ -126,7 +125,7 @@ void SpinButtonElement::defaultEventHandler(Event* event)
             UpDownState oldUpDownState = m_upDownState;
             m_upDownState = (local.y() < box->height() / 2) ? Up : Down;
             if (m_upDownState != oldUpDownState)
-                renderer()->repaint();
+                renderer()->paintInvalidationForWholeRenderer();
         } else {
             releaseCapture();
             m_upDownState = Indeterminate;
@@ -188,17 +187,20 @@ void SpinButtonElement::doStepAction(int amount)
         m_spinButtonOwner->spinButtonStepDown();
 }
 
-void SpinButtonElement::releaseCapture()
+void SpinButtonElement::releaseCapture(EventDispatch eventDispatch)
 {
     stopRepeatingTimer();
     if (m_capturing) {
-        if (Frame* frame = document().frame()) {
-            frame->eventHandler().setCapturingMouseEventsNode(0);
+        if (LocalFrame* frame = document().frame()) {
+            frame->eventHandler().setCapturingMouseEventsNode(nullptr);
             m_capturing = false;
             if (Page* page = document().page())
                 page->chrome().unregisterPopupOpeningObserver(this);
         }
     }
+    if (m_spinButtonOwner)
+        m_spinButtonOwner->spinButtonDidReleaseMouseCapture(eventDispatch);
+
 }
 
 bool SpinButtonElement::matchesReadOnlyPseudoClass() const
@@ -215,7 +217,7 @@ void SpinButtonElement::startRepeatingTimer()
 {
     m_pressStartingState = m_upDownState;
     ScrollbarTheme* theme = ScrollbarTheme::theme();
-    m_repeatingTimer.start(theme->initialAutoscrollTimerDelay(), theme->autoscrollTimerDelay());
+    m_repeatingTimer.start(theme->initialAutoscrollTimerDelay(), theme->autoscrollTimerDelay(), FROM_HERE);
 }
 
 void SpinButtonElement::stopRepeatingTimer()
@@ -253,6 +255,12 @@ void SpinButtonElement::setHovered(bool flag)
 bool SpinButtonElement::shouldRespondToMouseEvents()
 {
     return !m_spinButtonOwner || m_spinButtonOwner->shouldSpinButtonRespondToMouseEvents();
+}
+
+void SpinButtonElement::trace(Visitor* visitor)
+{
+    visitor->trace(m_spinButtonOwner);
+    HTMLDivElement::trace(visitor);
 }
 
 }

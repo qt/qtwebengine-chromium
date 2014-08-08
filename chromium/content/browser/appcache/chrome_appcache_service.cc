@@ -17,7 +17,7 @@ namespace content {
 
 ChromeAppCacheService::ChromeAppCacheService(
     quota::QuotaManagerProxy* quota_manager_proxy)
-    : AppCacheService(quota_manager_proxy),
+    : AppCacheServiceImpl(quota_manager_proxy),
       resource_context_(NULL) {
 }
 
@@ -68,12 +68,15 @@ bool ChromeAppCacheService::CanCreateAppCache(
 ChromeAppCacheService::~ChromeAppCacheService() {}
 
 void ChromeAppCacheService::DeleteOnCorrectThread() const {
-  if (BrowserThread::IsMessageLoopValid(BrowserThread::IO) &&
-      !BrowserThread::CurrentlyOn(BrowserThread::IO)) {
+  if (BrowserThread::CurrentlyOn(BrowserThread::IO)) {
+    delete this;
+    return;
+  }
+  if (BrowserThread::IsMessageLoopValid(BrowserThread::IO)) {
     BrowserThread::DeleteSoon(BrowserThread::IO, FROM_HERE, this);
     return;
   }
-  delete this;
+  // Better to leak than crash on shutdown.
 }
 
 }  // namespace content

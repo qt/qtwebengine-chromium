@@ -6,6 +6,7 @@
 
 #include <limits>
 
+#include "base/basictypes.h"
 #include "base/logging.h"
 
 using base::StringPiece;
@@ -22,12 +23,13 @@ QuicFecGroup::QuicFecGroup()
     : min_protected_packet_(kNoSequenceNumber),
       max_protected_packet_(kNoSequenceNumber),
       payload_parity_len_(0),
-      entropy_parity_(false) {
+      effective_encryption_level_(NUM_ENCRYPTION_LEVELS) {
 }
 
 QuicFecGroup::~QuicFecGroup() {}
 
-bool QuicFecGroup::Update(const QuicPacketHeader& header,
+bool QuicFecGroup::Update(EncryptionLevel encryption_level,
+                          const QuicPacketHeader& header,
                           StringPiece decrypted_payload) {
   if (received_packets_.count(header.packet_sequence_number) != 0) {
     return false;
@@ -40,34 +42,39 @@ bool QuicFecGroup::Update(const QuicPacketHeader& header,
                 << header.packet_sequence_number;
     return false;
   }
-  if (!UpdateParity(decrypted_payload, header.entropy_flag)) {
+  if (!UpdateParity(decrypted_payload)) {
     return false;
   }
   received_packets_.insert(header.packet_sequence_number);
+  if (encryption_level < effective_encryption_level_) {
+    effective_encryption_level_ = encryption_level;
+  }
   return true;
 }
 
 bool QuicFecGroup::UpdateFec(
+    EncryptionLevel encryption_level,
     QuicPacketSequenceNumber fec_packet_sequence_number,
-    bool fec_packet_entropy,
     const QuicFecData& fec) {
   if (min_protected_packet_ != kNoSequenceNumber) {
     return false;
   }
   SequenceNumberSet::const_iterator it = received_packets_.begin();
   while (it != received_packets_.end()) {
-    if ((*it < fec.fec_group) ||
-        (*it >= fec_packet_sequence_number)) {
+    if ((*it < fec.fec_group) || (*it >= fec_packet_sequence_number)) {
       DLOG(ERROR) << "FEC group does not cover received packet: " << *it;
       return false;
     }
     ++it;
   }
-  if (!UpdateParity(fec.redundancy, fec_packet_entropy)) {
+  if (!UpdateParity(fec.redundancy)) {
     return false;
   }
   min_protected_packet_ = fec.fec_group;
   max_protected_packet_ = fec_packet_sequence_number - 1;
+  if (encryption_level < effective_encryption_level_) {
+    effective_encryption_level_ = encryption_level;
+  }
   return true;
 }
 
@@ -109,7 +116,7 @@ size_t QuicFecGroup::Revive(QuicPacketHeader* header,
   }
 
   header->packet_sequence_number = missing;
-  header->entropy_flag = entropy_parity_;
+  header->entropy_flag = false;  // Unknown entropy.
 
   received_packets_.insert(missing);
   return payload_parity_len_;
@@ -119,12 +126,12 @@ bool QuicFecGroup::ProtectsPacketsBefore(QuicPacketSequenceNumber num) const {
   if (max_protected_packet_ != kNoSequenceNumber) {
     return max_protected_packet_ < num;
   }
-  // Since we might not yet have recevied the FEC packet, we must check
+  // Since we might not yet have received the FEC packet, we must check
   // the packets we have received.
   return *received_packets_.begin() < num;
 }
 
-bool QuicFecGroup::UpdateParity(StringPiece payload, bool entropy) {
+bool QuicFecGroup::UpdateParity(StringPiece payload) {
   DCHECK_LE(payload.size(), kMaxPacketSize);
   if (payload.size() > kMaxPacketSize) {
     DLOG(ERROR) << "Illegal payload size: " << payload.size();
@@ -143,7 +150,6 @@ bool QuicFecGroup::UpdateParity(StringPiece payload, bool entropy) {
       memset(payload_parity_ + payload.size(), 0,
              kMaxPacketSize - payload.size());
     }
-    entropy_parity_ = entropy;
     return true;
   }
   // Update the parity by XORing in the data (padding with 0s if necessary).
@@ -151,8 +157,6 @@ bool QuicFecGroup::UpdateParity(StringPiece payload, bool entropy) {
     uint8 byte = i < payload.size() ? payload[i] : 0x00;
     payload_parity_[i] ^= byte;
   }
-  // xor of boolean values.
-  entropy_parity_ = (entropy_parity_ != entropy);
   return true;
 }
 

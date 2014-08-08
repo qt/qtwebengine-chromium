@@ -10,6 +10,7 @@
 #include "net/quic/crypto/crypto_handshake.h"
 #include "net/quic/quic_connection.h"
 #include "net/quic/quic_session.h"
+#include "net/quic/quic_utils.h"
 
 using std::string;
 using base::StringPiece;
@@ -21,6 +22,7 @@ QuicCryptoStream::QuicCryptoStream(QuicSession* session)
       encryption_established_(false),
       handshake_confirmed_(false) {
   crypto_framer_.set_visitor(this);
+  DisableFlowControl();
 }
 
 void QuicCryptoStream::OnError(CryptoFramer* framer) {
@@ -55,12 +57,8 @@ void QuicCryptoStream::SendHandshakeMessage(
     const CryptoHandshakeMessage& message) {
   session()->OnCryptoHandshakeMessageSent(message);
   const QuicData& data = message.GetSerialized();
-  // To make reasoning about crypto frames easier, we don't combine them with
-  // any other frames in a single packet.
-  session()->connection()->Flush();
   // TODO(wtc): check the return value.
-  WriteOrBufferData(string(data.data(), data.length()), false);
-  session()->connection()->Flush();
+  WriteOrBufferData(string(data.data(), data.length()), false, NULL);
 }
 
 const QuicCryptoNegotiatedParameters&

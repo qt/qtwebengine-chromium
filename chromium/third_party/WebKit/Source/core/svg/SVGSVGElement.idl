@@ -20,15 +20,18 @@
  * Boston, MA 02110-1301, USA.
  */
 
+// http://www.w3.org/TR/SVG2/struct.html#InterfaceSVGSVGElement
+
 // TODO: no css::ViewCSS available!
 // TODO: no events::DocumentEvent available!
-interface SVGSVGElement : SVGGraphicsElement {
+[
+    TypeChecking=Interface|Nullable,
+] interface SVGSVGElement : SVGGraphicsElement {
+
     readonly attribute SVGAnimatedLength x;
     readonly attribute SVGAnimatedLength y;
     readonly attribute SVGAnimatedLength width;
     readonly attribute SVGAnimatedLength height;
-             attribute DOMString contentScriptType;
-             attribute DOMString contentStyleType;
     readonly attribute SVGRect viewport;
     readonly attribute float pixelUnitToMillimeterX;
     readonly attribute float pixelUnitToMillimeterY;
@@ -37,25 +40,21 @@ interface SVGSVGElement : SVGGraphicsElement {
     readonly attribute boolean useCurrentView;
     readonly attribute SVGViewSpec currentView;
              attribute float currentScale;
-    readonly attribute SVGPoint currentTranslate;
+    [ImplementedAs=currentTranslateFromJavascript] readonly attribute SVGPoint currentTranslate;
 
-    unsigned long suspendRedraw([Default=Undefined] optional unsigned long maxWaitMilliseconds);
-    void unsuspendRedraw([Default=Undefined] optional unsigned long suspendHandleId);
+    unsigned long suspendRedraw(unsigned long maxWaitMilliseconds);
+    void unsuspendRedraw(unsigned long suspendHandleId);
     void unsuspendRedrawAll();
     void forceRedraw();
     void pauseAnimations();
     void unpauseAnimations();
     boolean animationsPaused();
     float getCurrentTime();
-    void setCurrentTime([Default=Undefined] optional float seconds);
-    NodeList getIntersectionList([Default=Undefined] optional SVGRect rect,
-                                 [Default=Undefined] optional SVGElement referenceElement);
-    NodeList getEnclosureList([Default=Undefined] optional SVGRect rect,
-                              [Default=Undefined] optional SVGElement referenceElement);
-    boolean checkIntersection([Default=Undefined] optional SVGElement element,
-                              [Default=Undefined] optional SVGRect rect);
-    boolean checkEnclosure([Default=Undefined] optional SVGElement element,
-                           [Default=Undefined] optional SVGRect rect);
+    void setCurrentTime(float seconds);
+    NodeList getIntersectionList(SVGRect rect, SVGElement? referenceElement);
+    NodeList getEnclosureList(SVGRect rect, SVGElement? referenceElement);
+    boolean checkIntersection(SVGElement element, SVGRect rect);
+    boolean checkEnclosure(SVGElement element, SVGRect rect);
     void deselectAll();
 
     SVGNumber createSVGNumber();
@@ -65,11 +64,9 @@ interface SVGSVGElement : SVGGraphicsElement {
     SVGMatrix createSVGMatrix();
     SVGRect createSVGRect();
     SVGTransform createSVGTransform();
-    SVGTransform createSVGTransformFromMatrix([Default=Undefined] optional SVGMatrix matrix);
-    Element getElementById([Default=Undefined] optional DOMString elementId);
+    SVGTransform createSVGTransformFromMatrix(SVGMatrix matrix);
+    Element getElementById(DOMString elementId);
 };
 
-SVGSVGElement implements SVGExternalResourcesRequired;
 SVGSVGElement implements SVGFitToViewBox;
 SVGSVGElement implements SVGZoomAndPan;
-

@@ -31,12 +31,11 @@
 #include "config.h"
 #include "bindings/v8/ScriptProfiler.h"
 
-#include "V8Node.h"
-#include "V8Window.h"
+#include "bindings/core/v8/V8Node.h"
+#include "bindings/core/v8/V8Window.h"
 #include "bindings/v8/RetainedDOMInfo.h"
-#include "bindings/v8/ScriptObject.h"
+#include "bindings/v8/ScriptValue.h"
 #include "bindings/v8/V8Binding.h"
-#include "bindings/v8/V8DOMWrapper.h"
 #include "bindings/v8/WrapperTypeInfo.h"
 #include "core/dom/Document.h"
 #include "core/inspector/BindingVisitors.h"
@@ -70,19 +69,19 @@ void ScriptProfiler::start(const String& title)
     if (!profiler)
         return;
     v8::HandleScope handleScope(isolate);
-    profiler->StartCpuProfiling(v8String(isolate, title), true);
+    profiler->StartProfiling(v8String(isolate, title), true);
 }
 
-PassRefPtr<ScriptProfile> ScriptProfiler::stop(const String& title)
+PassRefPtrWillBeRawPtr<ScriptProfile> ScriptProfiler::stop(const String& title)
 {
     v8::Isolate* isolate = v8::Isolate::GetCurrent();
     v8::CpuProfiler* profiler = isolate->GetCpuProfiler();
     if (!profiler)
-        return 0;
+        return nullptr;
     v8::HandleScope handleScope(isolate);
-    const v8::CpuProfile* profile = profiler->StopCpuProfiling(v8String(isolate, title));
+    v8::CpuProfile* profile = profiler->StopProfiling(v8String(isolate, title));
     if (!profile)
-        return 0;
+        return nullptr;
 
     String profileTitle = toCoreString(profile->GetTitle());
     double idleTime = 0.0;
@@ -101,28 +100,14 @@ void ScriptProfiler::collectGarbage()
     v8::V8::LowMemoryNotification();
 }
 
-ScriptObject ScriptProfiler::objectByHeapObjectId(unsigned id)
+ScriptValue ScriptProfiler::objectByHeapObjectId(unsigned id)
 {
     v8::Isolate* isolate = v8::Isolate::GetCurrent();
     v8::HeapProfiler* profiler = isolate->GetHeapProfiler();
-    if (!profiler)
-        return ScriptObject();
-    // As ids are unique, it doesn't matter which HeapSnapshot owns HeapGraphNode.
-    // We need to find first HeapSnapshot containing a node with the specified id.
-    const v8::HeapGraphNode* node = 0;
-    for (int i = 0, l = profiler->GetSnapshotCount(); i < l; ++i) {
-        const v8::HeapSnapshot* snapshot = profiler->GetHeapSnapshot(i);
-        node = snapshot->GetNodeById(id);
-        if (node)
-            break;
-    }
-    if (!node)
-        return ScriptObject();
-
     v8::HandleScope handleScope(isolate);
-    v8::Handle<v8::Value> value = node->GetHeapValue();
-    if (!value->IsObject())
-        return ScriptObject();
+    v8::Handle<v8::Value> value = profiler->FindObjectById(id);
+    if (value.IsEmpty() || !value->IsObject())
+        return ScriptValue();
 
     v8::Handle<v8::Object> object = value.As<v8::Object>();
 
@@ -131,11 +116,11 @@ ScriptObject ScriptProfiler::objectByHeapObjectId(unsigned id)
         // Skip wrapper boilerplates which are like regular wrappers but don't have
         // native object.
         if (!wrapper.IsEmpty() && wrapper->IsUndefined())
-            return ScriptObject();
+            return ScriptValue();
     }
 
-    ScriptState* scriptState = ScriptState::forContext(object->CreationContext());
-    return ScriptObject(scriptState, object);
+    ScriptState* scriptState = ScriptState::from(object->CreationContext());
+    return ScriptValue(scriptState, object);
 }
 
 unsigned ScriptProfiler::getHeapObjectId(const ScriptValue& value)
@@ -146,13 +131,20 @@ unsigned ScriptProfiler::getHeapObjectId(const ScriptValue& value)
     return id;
 }
 
+void ScriptProfiler::clearHeapObjectIds()
+{
+    v8::Isolate* isolate = v8::Isolate::GetCurrent();
+    v8::HeapProfiler* profiler = isolate->GetHeapProfiler();
+    profiler->ClearObjectIds();
+}
+
 namespace {
 
-class ActivityControlAdapter : public v8::ActivityControl {
+class ActivityControlAdapter FINAL : public v8::ActivityControl {
 public:
     ActivityControlAdapter(ScriptProfiler::HeapSnapshotProgress* progress)
             : m_progress(progress), m_firstReport(true) { }
-    ControlOption ReportProgressValue(int done, int total)
+    virtual ControlOption ReportProgressValue(int done, int total) OVERRIDE
     {
         ControlOption result = m_progress->isCanceled() ? kAbort : kContinue;
         if (m_firstReport) {
@@ -169,19 +161,16 @@ private:
     bool m_firstReport;
 };
 
-class GlobalObjectNameResolver : public v8::HeapProfiler::ObjectNameResolver {
+class GlobalObjectNameResolver FINAL : public v8::HeapProfiler::ObjectNameResolver {
 public:
-    virtual const char* GetName(v8::Handle<v8::Object> object)
+    virtual const char* GetName(v8::Handle<v8::Object> object) OVERRIDE
     {
-        if (V8DOMWrapper::isWrapperOfType(object, &V8Window::wrapperTypeInfo)) {
-            DOMWindow* window = V8Window::toNative(object);
-            if (window) {
-                CString url = window->document()->url().string().utf8();
-                m_strings.append(url);
-                return url.data();
-            }
-        }
-        return 0;
+        LocalDOMWindow* window = toDOMWindow(object, v8::Isolate::GetCurrent());
+        if (!window)
+            return 0;
+        CString url = window->document()->url().string().utf8();
+        m_strings.append(url);
+        return url.data();
     }
 
 private:
@@ -190,9 +179,9 @@ private:
 
 } // namespace
 
-void ScriptProfiler::startTrackingHeapObjects()
+void ScriptProfiler::startTrackingHeapObjects(bool trackAllocations)
 {
-    v8::Isolate::GetCurrent()->GetHeapProfiler()->StartTrackingHeapObjects();
+    v8::Isolate::GetCurrent()->GetHeapProfiler()->StartTrackingHeapObjects(trackAllocations);
 }
 
 namespace {
@@ -244,13 +233,13 @@ PassRefPtr<ScriptHeapSnapshot> ScriptProfiler::takeHeapSnapshot(const String& ti
     v8::Isolate* isolate = v8::Isolate::GetCurrent();
     v8::HeapProfiler* profiler = isolate->GetHeapProfiler();
     if (!profiler)
-        return 0;
+        return nullptr;
     v8::HandleScope handleScope(isolate);
     ASSERT(control);
     ActivityControlAdapter adapter(control);
     GlobalObjectNameResolver resolver;
     const v8::HeapSnapshot* snapshot = profiler->TakeHeapSnapshot(v8String(isolate, title), &adapter, &resolver);
-    return snapshot ? ScriptHeapSnapshot::create(snapshot) : 0;
+    return snapshot ? ScriptHeapSnapshot::create(snapshot) : nullptr;
 }
 
 static v8::RetainedObjectInfo* retainedDOMInfo(uint16_t classId, v8::Handle<v8::Value> wrapper)
@@ -292,7 +281,7 @@ void ScriptProfiler::visitNodeWrappers(WrappedNodeVisitor* visitor)
             // Casting to Handle is safe here, since the Persistent cannot get
             // GCd during visiting.
             v8::Handle<v8::Object>* wrapper = reinterpret_cast<v8::Handle<v8::Object>*>(value);
-            ASSERT_UNUSED(m_isolate, V8Node::hasInstanceInAnyWorld(*wrapper, m_isolate));
+            ASSERT_UNUSED(m_isolate, V8Node::hasInstance(*wrapper, m_isolate));
             ASSERT((*wrapper)->IsObject());
             m_visitor->visitNode(V8Node::toNative(*wrapper));
         }

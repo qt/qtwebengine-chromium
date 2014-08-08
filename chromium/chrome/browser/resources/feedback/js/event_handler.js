@@ -11,7 +11,7 @@ var FEEDBACK_WIDTH = 500;
  * @type {number}
  * @const
  */
-var FEEDBACK_HEIGHT = 625;
+var FEEDBACK_HEIGHT = 585;
 
 var initialFeedbackInfo = null;
 
@@ -27,7 +27,18 @@ var whitelistedExtensionIds = [
   'eemlkeanncmjljgehlbplemhmdmalhdc', // Connectivity Diagnostics
   'kodldpbjkkmmnilagfdheibampofhaom', // Connectivity Diagnostics
   'kkebgepbbgbcmghedmmdfcbdcodlkngh', // Chrome OS Recovery Tool
-  'jndclpdbaamdhonoechobihbbiimdgai'  // Chrome OS Recovery Tool
+  'jndclpdbaamdhonoechobihbbiimdgai', // Chrome OS Recovery Tool
+  'ljoammodoonkhnehlncldjelhidljdpi', // GetHelp app.
+  'ljacajndfccfgnfohlgkdphmbnpkjflk', // Chrome Remote Desktop Dev
+  'gbchcmhmhahfdphkhkmpfmihenigjmpp', // Chrome Remote Desktop Stable
+  'odkaodonbgfohohmklejpjiejmcipmib', // Chrome Remote Desktop QA
+  'dokpleeekgeeiehdhmdkeimnkmoifgdd', // Chrome Remote Desktop QA backup
+  'ajoainacpilcemgiakehflpbkbfipojk', // Chrome Remote Desktop Apps V2
+  'llohocloplkbhgcfnplnoficdkiechcn', // Play Movies Dev
+  'icljpnebmoleodmchaaajbkpoipfoahp', // Play Movies Nightly
+  'mjekoljodoiapgkggnlmbecndfpbbcch', // Play Movies Beta
+  'gdijeikdkaembjbdobgfkoidjkpbmlkd', // Play Movies Stable
+  'knipolnnllmklapflnccelgolnpehhpl', // Hangouts Extension
 ];
 
 /**

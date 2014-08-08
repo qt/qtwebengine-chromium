@@ -29,30 +29,34 @@
  */
 
 #include "config.h"
-#include "WebNode.h"
+#include "public/web/WebNode.h"
 
-#include "EventListenerWrapper.h"
-#include "FrameLoaderClientImpl.h"
-#include "WebDOMEvent.h"
-#include "WebDOMEventListener.h"
-#include "WebDocument.h"
-#include "WebElement.h"
-#include "WebFrameImpl.h"
-#include "WebNodeList.h"
-#include "WebPluginContainer.h"
-#include "WebPluginContainerImpl.h"
 #include "bindings/v8/ExceptionState.h"
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
-#include "core/events/Event.h"
 #include "core/dom/Node.h"
 #include "core/dom/NodeList.h"
+#include "core/dom/TagCollection.h"
 #include "core/editing/markup.h"
+#include "core/events/Event.h"
+#include "core/html/HTMLCollection.h"
+#include "core/html/HTMLElement.h"
 #include "core/rendering/RenderObject.h"
 #include "core/rendering/RenderWidget.h"
 #include "platform/Widget.h"
 #include "public/platform/WebString.h"
 #include "public/platform/WebVector.h"
+#include "public/web/WebDOMEvent.h"
+#include "public/web/WebDOMEventListener.h"
+#include "public/web/WebDocument.h"
+#include "public/web/WebElement.h"
+#include "public/web/WebElementCollection.h"
+#include "public/web/WebNodeList.h"
+#include "public/web/WebPluginContainer.h"
+#include "web/EventListenerWrapper.h"
+#include "web/FrameLoaderClientImpl.h"
+#include "web/WebLocalFrameImpl.h"
+#include "web/WebPluginContainerImpl.h"
 
 using namespace WebCore;
 
@@ -125,7 +129,7 @@ WebNode WebNode::nextSibling() const
 
 bool WebNode::hasChildNodes() const
 {
-    return m_private->hasChildNodes();
+    return m_private->hasChildren();
 }
 
 WebNodeList WebNode::childNodes()
@@ -190,15 +194,23 @@ void WebNode::simulateClick()
     m_private->dispatchSimulatedClick(0);
 }
 
-WebNodeList WebNode::getElementsByTagName(const WebString& tag) const
+WebElementCollection WebNode::getElementsByTagName(const WebString& tag) const
 {
-    return WebNodeList(m_private->getElementsByTagName(tag));
+    if (m_private->isContainerNode()) {
+        // FIXME: Calling getElementsByTagNameNS here is inconsistent with the
+        // function name. This is a temporary fix for a serious bug, and should
+        // be reverted soon.
+        return WebElementCollection(toContainerNode(m_private.get())->getElementsByTagNameNS(HTMLNames::xhtmlNamespaceURI, tag));
+    }
+    return WebElementCollection();
 }
 
 WebElement WebNode::querySelector(const WebString& tag, WebExceptionCode& ec) const
 {
     TrackExceptionState exceptionState;
-    WebElement element(m_private->querySelector(tag, exceptionState));
+    WebElement element;
+    if (m_private->isContainerNode())
+        element = toContainerNode(m_private.get())->querySelector(tag, exceptionState);
     ec = exceptionState.code();
     return element;
 }
@@ -230,13 +242,13 @@ WebPluginContainer* WebNode::pluginContainer() const
 {
     if (isNull())
         return 0;
-    const Node* coreNode = constUnwrap<Node>();
-    if (coreNode->hasTagName(HTMLNames::objectTag) || coreNode->hasTagName(HTMLNames::embedTag)) {
-        RenderObject* object = coreNode->renderer();
+    const Node& coreNode = *constUnwrap<Node>();
+    if (isHTMLObjectElement(coreNode) || isHTMLEmbedElement(coreNode)) {
+        RenderObject* object = coreNode.renderer();
         if (object && object->isWidget()) {
             Widget* widget = WebCore::toRenderWidget(object)->widget();
             if (widget && widget->isPluginContainer())
-                return toPluginContainerImpl(widget);
+                return toWebPluginContainerImpl(widget);
         }
     }
     return 0;
@@ -250,18 +262,18 @@ WebElement WebNode::shadowHost() const
     return WebElement(coreNode->shadowHost());
 }
 
-WebNode::WebNode(const PassRefPtr<Node>& node)
+WebNode::WebNode(const PassRefPtrWillBeRawPtr<Node>& node)
     : m_private(node)
 {
 }
 
-WebNode& WebNode::operator=(const PassRefPtr<Node>& node)
+WebNode& WebNode::operator=(const PassRefPtrWillBeRawPtr<Node>& node)
 {
     m_private = node;
     return *this;
 }
 
-WebNode::operator PassRefPtr<Node>() const
+WebNode::operator PassRefPtrWillBeRawPtr<Node>() const
 {
     return m_private.get();
 }

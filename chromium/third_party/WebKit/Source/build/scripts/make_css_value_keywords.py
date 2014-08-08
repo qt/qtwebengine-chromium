@@ -86,13 +86,9 @@ const char* getValueName(unsigned short id)
 
 bool isValueAllowedInMode(unsigned short id, CSSParserMode mode)
 {
-    // FIXME: Investigate whether we can deprecate the former
-    // two as only QuirksOrUASheet is used in CSSValueKeyword.in
     switch (id) {
         %(ua_sheet_mode_values_keywords)s
             return isUASheetBehavior(mode);
-        %(quirks_mode_values_keywords)s
-            return isQuirksModeBehavior(mode);
         %(quirks_mode_or_ua_sheet_mode_values_keywords)s
             return isUASheetBehavior(mode) || isQuirksModeBehavior(mode);
         default:
@@ -164,12 +160,13 @@ class CSSValueKeywordsWriter(in_generator.Writer):
             'value_keyword_offsets': '\n'.join(map(lambda offset: '  %d,' % offset, keyword_offsets)),
             'value_keyword_to_enum_map': '\n'.join(map(lambda property: '%(name)s, %(enum_name)s' % property, self._value_keywords)),
             'ua_sheet_mode_values_keywords': '\n        '.join(map(self._case_value_keyword, self._value_keywords_with_mode('UASheet'))),
-            'quirks_mode_values_keywords': '\n        '.join(map(self._case_value_keyword, self._value_keywords_with_mode('Quirks'))),
             'quirks_mode_or_ua_sheet_mode_values_keywords': '\n    '.join(map(self._case_value_keyword, self._value_keywords_with_mode('QuirksOrUASheet'))),
         }
         # FIXME: If we could depend on Python 2.7, we would use subprocess.check_output
-        gperf_args = ['gperf', '--key-positions=*', '-D', '-n', '-s', '2']
-        gperf = subprocess.Popen(gperf_args, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+        gperf_args = [self.gperf_path, '--key-positions=*', '-P', '-n']
+        gperf_args.extend(['-m', '50'])  # Pick best of 50 attempts.
+        gperf_args.append('-D')  # Allow duplicate hashes -> More compact code.
+        gperf = subprocess.Popen(gperf_args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, universal_newlines=True)
         return gperf.communicate(gperf_input)[0]
 
 

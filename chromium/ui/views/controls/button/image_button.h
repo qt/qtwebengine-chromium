@@ -51,10 +51,6 @@ class VIEWS_EXPORT ImageButton : public CustomButton {
                      const gfx::ImageSkia* image,
                      const gfx::ImageSkia* mask);
 
-  // Set an |image| to draw on top of the normal / hot / pushed image.
-  // Pass NULL for no image.
-  void SetOverlayImage(const gfx::ImageSkia* image);
-
   // Sets how the image is laid out within the button's bounds.
   void SetImageAlignment(HorizontalAlignment h_align,
                          VerticalAlignment v_align);
@@ -73,7 +69,7 @@ class VIEWS_EXPORT ImageButton : public CustomButton {
   }
 
   // Overridden from View:
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
   virtual const char* GetClassName() const OVERRIDE;
   virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
 
@@ -95,9 +91,6 @@ class VIEWS_EXPORT ImageButton : public CustomButton {
   gfx::ImageSkia images_[STATE_COUNT];
 
   gfx::ImageSkia background_image_;
-
-  // Image to draw on top of normal / hot / pushed image.  Usually empty.
-  gfx::ImageSkia overlay_image_;
 
  private:
   FRIEND_TEST_ALL_PREFIXES(ImageButtonTest, Basics);
@@ -145,7 +138,7 @@ class VIEWS_EXPORT ToggleImageButton : public ImageButton {
   void SetToggledImage(ButtonState state, const gfx::ImageSkia* image);
 
   // Set the tooltip text displayed when the button is toggled.
-  void SetToggledTooltipText(const string16& tooltip);
+  void SetToggledTooltipText(const base::string16& tooltip);
 
   // Overridden from ImageButton:
   virtual const gfx::ImageSkia& GetImage(ButtonState state) const OVERRIDE;
@@ -154,8 +147,8 @@ class VIEWS_EXPORT ToggleImageButton : public ImageButton {
 
   // Overridden from View:
   virtual bool GetTooltipText(const gfx::Point& p,
-                              string16* tooltip) const OVERRIDE;
-  virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
+                              base::string16* tooltip) const OVERRIDE;
+  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
 
  private:
   // The parent class's images_ member is used for the current images,
@@ -168,7 +161,7 @@ class VIEWS_EXPORT ToggleImageButton : public ImageButton {
 
   // The parent class's tooltip_text_ is displayed when not toggled, and
   // this one is shown when toggled.
-  string16 toggled_tooltip_text_;
+  base::string16 toggled_tooltip_text_;
 
   DISALLOW_COPY_AND_ASSIGN(ToggleImageButton);
 };

@@ -26,8 +26,10 @@
 #ifndef CSSSegmentedFontFace_h
 #define CSSSegmentedFontFace_h
 
-#include "platform/fonts/FontTraitsMask.h"
+#include "platform/fonts/FontTraits.h"
+#include "platform/heap/Handle.h"
 #include "wtf/HashMap.h"
+#include "wtf/ListHashSet.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/Vector.h"
@@ -42,47 +44,48 @@ class FontDescription;
 class FontFace;
 class SegmentedFontData;
 
-class CSSSegmentedFontFace : public RefCounted<CSSSegmentedFontFace> {
+class CSSSegmentedFontFace FINAL : public RefCountedWillBeGarbageCollectedFinalized<CSSSegmentedFontFace> {
 public:
-    static PassRefPtr<CSSSegmentedFontFace> create(CSSFontSelector* selector, FontTraitsMask traitsMask) { return adoptRef(new CSSSegmentedFontFace(selector, traitsMask)); }
+    static PassRefPtrWillBeRawPtr<CSSSegmentedFontFace> create(CSSFontSelector* selector, FontTraits traits)
+    {
+        return adoptRefWillBeNoop(new CSSSegmentedFontFace(selector, traits));
+    }
     ~CSSSegmentedFontFace();
 
     CSSFontSelector* fontSelector() const { return m_fontSelector; }
-    FontTraitsMask traitsMask() const { return m_traitsMask; }
+    FontTraits traits() const { return m_traits; }
 
     void fontLoaded(CSSFontFace*);
+    void fontLoadWaitLimitExceeded(CSSFontFace*);
 
-    void appendFontFace(PassRefPtr<CSSFontFace>);
-    void removeFontFace(PassRefPtr<CSSFontFace>);
+    void addFontFace(PassRefPtrWillBeRawPtr<FontFace>, bool cssConnected);
+    void removeFontFace(PassRefPtrWillBeRawPtr<FontFace>);
     bool isEmpty() const { return m_fontFaces.isEmpty(); }
 
     PassRefPtr<FontData> getFontData(const FontDescription&);
 
-    class LoadFontCallback : public RefCounted<LoadFontCallback> {
-    public:
-        virtual ~LoadFontCallback() { }
-        virtual void notifyLoaded(CSSSegmentedFontFace*) = 0;
-        virtual void notifyError(CSSSegmentedFontFace*) = 0;
-    };
-
     bool checkFont(const String&) const;
-    void loadFont(const FontDescription&, const String&, PassRefPtr<LoadFontCallback>);
-    Vector<RefPtr<FontFace> > fontFaces(const String& text) const;
-    void willUseFontData(const FontDescription&);
+    void match(const String&, WillBeHeapVector<RefPtrWillBeMember<FontFace> >&) const;
+    void willUseFontData(const FontDescription&, UChar32);
+
+    void trace(Visitor*);
 
 private:
-    CSSSegmentedFontFace(CSSFontSelector*, FontTraitsMask);
+    CSSSegmentedFontFace(CSSFontSelector*, FontTraits);
 
     void pruneTable();
     bool isValid() const;
     bool isLoading() const;
     bool isLoaded() const;
 
-    CSSFontSelector* m_fontSelector;
-    FontTraitsMask m_traitsMask;
+    typedef WillBeHeapListHashSet<RefPtrWillBeMember<FontFace> > FontFaceList;
+
+    RawPtrWillBeMember<CSSFontSelector> m_fontSelector;
+    FontTraits m_traits;
     HashMap<unsigned, RefPtr<SegmentedFontData> > m_fontDataTable;
-    Vector<RefPtr<CSSFontFace>, 1> m_fontFaces;
-    Vector<RefPtr<LoadFontCallback> > m_callbacks;
+    // All non-CSS-connected FontFaces are stored after the CSS-connected ones.
+    FontFaceList m_fontFaces;
+    FontFaceList::iterator m_firstNonCssConnectedFace;
 };
 
 } // namespace WebCore

@@ -32,6 +32,25 @@ input[type="text"]:focus {
     outline: auto 5px -webkit-focus-ring-color;
 }
 
+input[type="checkbox"] {
+    height: 12px;
+    width: 12px;
+    margin: auto 3px;
+    flex-shrink: 0;
+}
+
+label:hover {
+    cursor: pointer;
+}
+
+label:hover input {
+    box-shadow: 0 0 3px highlight;
+}
+
+fieldset[disabled] label:hover input {
+    box-shadow: none;
+}
+
 .fill {
     position: absolute;
     top: 0;
@@ -40,14 +59,25 @@ input[type="text"]:focus {
     bottom: 0;
 }
 
+.view {
+    position: relative;
+    flex: auto;
+}
+
 .hbox {
-    display: flex !important;
-    flex-direction: row;
+    display: flex;
+    flex-direction: row !important;
+    position: relative;
 }
 
 .vbox {
-    display: flex !important;
-    flex-direction: column;
+    display: flex;
+    flex-direction: column !important;
+    position: relative;
+}
+
+.flex-auto {
+    flex: auto;
 }
 
 .inline-block {
@@ -58,6 +88,14 @@ input[type="text"]:focus {
     display: none !important;
 }
 
+.white-background {
+    background-color: white;
+}
+
+.overflow-hidden {
+    overflow: hidden;
+}
+
 .nowrap,
 .nowrap-below,
 .nowrap-below div,
@@ -66,15 +104,15 @@ input[type="text"]:focus {
 }
 
 .toolbar-background {
-    background-image: -webkit-gradient(linear, left top, left bottom, from(rgb(191, 191, 191)), to(rgb(151, 151, 151)));
-    padding: 1px 0 0 1px;
-    border-bottom: 1px solid rgb(80, 80, 80);
+    background-image: linear-gradient(to bottom, rgb(191, 191, 191), rgb(151, 151, 151));
+    padding-left: 1px;
+    border-bottom: 1px solid rgb(64%, 64%, 64%);
     background-origin: padding-box;
     background-clip: padding-box;
 }
 
 .toolbar {
-    flex: 0 0 25px;
+    flex: 0 0 24px;
     display: flex;
     flex-direction: row;
     position: relative;
@@ -112,32 +150,18 @@ select {
 }
 
 body.inactive .toolbar-background {
-    background-image: -webkit-gradient(linear, left top, left bottom, from(rgb(233, 233, 233)), to(rgb(207, 207, 207)));
-    border-bottom: 1px solid rgb(64%, 64%, 64%);
+    background-image: linear-gradient(to bottom, rgb(233, 233, 233), rgb(207, 207, 207));
 }
 
 body.dock-to-bottom .toolbar-background {
     padding-top: 0;
 }
 
-body.dock-to-bottom.platform-mac:not(.overlay-contents) .toolbar-background {
-    border-top-color: white;
-}
-
-body.dock-to-bottom:not(.overlay-contents) .toolbar-background {
-    border-top: 1px solid rgb(100, 100, 100);
-    cursor: default;
-}
-
-body.dock-to-bottom.inactive:not(.overlay-contents) .toolbar-background {
-    border-top: 1px solid rgb(64%, 64%, 64%);
-}
-
-body.dock-to-bottom.overlay-contents .toolbar-background .tabbed-pane-header {
+body.dock-to-bottom .toolbar-background .tabbed-pane-header {
     cursor: ns-resize;
 }
 
-body.dock-to-bottom.overlay-contents .toolbar-background .tabbed-pane-header .tabbed-pane-header-tabs {
+body.dock-to-bottom .toolbar-background .tabbed-pane-header .tabbed-pane-header-tabs {
     cursor: default;
 }
 
@@ -147,32 +171,32 @@ body.platform-windows.inactive .toolbar-background {
 }
 
 body.undocked.platform-mac-leopard .toolbar-background {
-    background-image: -webkit-gradient(linear, left top, left bottom, from(rgb(175, 175, 175)), to(rgb(151, 151, 151))) !important;
+    background-image: linear-gradient(to bottom, rgb(175, 175, 175), rgb(151, 151, 151)) !important;
     color: #333 !important;
 }
 
 body.undocked.platform-mac-leopard.inactive .toolbar-background {
-    background-image: -webkit-gradient(linear, left top, left bottom, from(rgb(221, 221, 221)), to(rgb(207, 207, 207))) !important;
+    background-image: linear-gradient(to bottom, rgb(221, 221, 221), rgb(207, 207, 207)) !important;
     color: #555 !important;
 }
 
 body.undocked.platform-mac-snowleopard .toolbar-background {
-    background-image: -webkit-gradient(linear, left top, left bottom, from(rgb(189, 189, 189)), to(rgb(167, 167, 167))) !important;
+    background-image: linear-gradient(to bottom, rgb(189, 189, 189), rgb(167, 167, 167)) !important;
     color: #333 !important;
 }
 
 body.undocked.platform-mac-snowleopard.inactive .toolbar-background {
-    background-image: -webkit-gradient(linear, left top, left bottom, from(rgb(228, 228, 228)), to(rgb(216, 216, 216))) !important;
+    background-image: linear-gradient(to bottom, rgb(228, 228, 228), rgb(216, 216, 216)) !important;
     color: #555 !important;
 }
 
-body.undocked.platform-mac-mountain-lion .toolbar-background {
-    background-image: -webkit-gradient(linear, left top, left bottom, from(rgb(208, 208, 208)), to(rgb(200, 200, 200))) !important;
+body.undocked.platform-mac .toolbar-background {
+    background-image: linear-gradient(to bottom, rgb(208, 208, 208), rgb(200, 200, 200)) !important;
     color: #333 !important;
 }
 
-body.undocked.platform-mac-mountain-lion.inactive .toolbar-background {
-    background-image: -webkit-gradient(linear, left top, left bottom, from(rgb(238, 238, 238)), to(rgb(224, 224, 224))) !important;
+body.undocked.platform-mac.inactive .toolbar-background {
+    background-image: linear-gradient(to bottom, rgb(238, 238, 238), rgb(224, 224, 224)) !important;
     color: #555 !important;
 }
 
@@ -192,6 +216,7 @@ body.undocked.platform-mac-mountain-lion.inactive .toolbar-background {
     padding-top: 1px;
 }
 
+.toolbar-controls-right #remote-device-count,
 .toolbar-controls-right #error-warning-count,
 .toolbar-controls-right .console-status-bar-item,
 .toolbar-controls-right .settings-status-bar-item,
@@ -219,31 +244,35 @@ body.undocked.platform-mac-mountain-lion.inactive .toolbar-background {
 }
 
 .scrollable-content::-webkit-scrollbar-thumb:vertical {
-    background: -webkit-gradient(linear, left top, right top, from(rgb(192, 192, 192)), to(rgb(192, 192, 192)), color-stop(40%, rgb(214, 214, 214)));
+    background: linear-gradient(to right, rgb(192, 192, 192), rgb(214, 214, 214) 40%, rgb(192, 192, 192));
     border-radius: 5px;
     min-height: 20px;
 }
 
 .scrollable-content::-webkit-scrollbar-thumb:vertical:hover,
 .scrollable-content::-webkit-scrollbar-thumb:vertical:active {
-    background: -webkit-gradient(linear, left top, right top, from(rgb(230, 230, 230)), to(rgb(230, 230, 230)), color-stop(40%, rgb(252, 252, 252)));
+    background: linear-gradient(to right, rgb(230, 230, 230), rgb(252, 252, 252) 40%, rgb(230, 230, 230));
 }
 
 .scrollable-content::-webkit-scrollbar-track:vertical {
-    background: -webkit-gradient(linear, left top, right top, from(rgb(128, 128, 128)), to(rgb(164, 164, 164)), color-stop(25%, rgb(164, 164, 164)));
+    background: linear-gradient(to right, rgb(128, 128, 128), rgb(164, 164, 164) 25%, rgb(164, 164, 164));
     border-radius: 5px;
 }
 
 .search-replace {
     -webkit-appearance: none;
     border: 0;
-    padding: 0 2px;
+    padding: 0 3px;
     margin: 0;
-    -webkit-flex: 1;
+    flex: 1;
 }
 
 .search-replace:focus {
     outline: none;
+}
+
+#search-input-field {
+    height: 18px;
 }
 
 .toolbar-search {
@@ -254,9 +283,13 @@ body.undocked.platform-mac-mountain-lion.inactive .toolbar-background {
     padding: 0 5px 0 0;
 }
 
+.toolbar-search td > span {
+    display: flex;
+}
+
 .toolbar-search-navigation-controls {
     vertical-align: top;
-    background-image: -webkit-linear-gradient(rgb(228, 228, 228), rgb(206, 206, 206));
+    background-image: linear-gradient(rgb(228, 228, 228), rgb(206, 206, 206));
 }
 
 .toolbar-search-navigation {
@@ -274,27 +307,20 @@ body.undocked.platform-mac-mountain-lion.inactive .toolbar-background {
 }
 
 .toolbar-search label {
-    vertical-align: bottom;
-}
-
-.toolbar-search input[type="checkbox"] {
-    position: relative;
-    margin-top: -1px;
-    margin-left: 15px;
-    top: 2px;
+    margin: auto 0;
 }
 
 .toolbar-search button {
     border: 1px solid rgb(163, 163, 163);
     border-radius: 8px;
     margin: 0;
-    background-image: -webkit-linear-gradient(rgb(241, 241, 241), rgb(220, 220, 220));
+    background-image: linear-gradient(rgb(241, 241, 241), rgb(220, 220, 220));
     width: 100%;
     height: 20px;
 }
 
 .toolbar-search button:active {
-    background-image: -webkit-linear-gradient(rgb(185, 185, 185), rgb(156, 156, 156));
+    background-image: linear-gradient(rgb(185, 185, 185), rgb(156, 156, 156));
 }
 
 .toolbar-search-control {
@@ -305,6 +331,7 @@ body.undocked.platform-mac-mountain-lion.inactive .toolbar-background {
     border: 1px solid rgb(163, 163, 163);
     height: 20px;
     border-radius: 2px;
+    margin-left: 1px;
 }
 
 .toolbar-replace-control {
@@ -312,6 +339,7 @@ body.undocked.platform-mac-mountain-lion.inactive .toolbar-background {
     height: 20px;
     border-radius: 2px;
     width: 100%;
+    margin: auto 0;
 }
 
 .toolbar-search-navigation.enabled:active {
@@ -324,7 +352,7 @@ body.undocked.platform-mac-mountain-lion.inactive .toolbar-background {
 }
 
 .toolbar-search-navigation.toolbar-search-navigation-prev.enabled:active {
-    background-image: url(Images/searchPrev.png), -webkit-linear-gradient(rgb(168, 168, 168), rgb(116, 116, 116));
+    background-image: url(Images/searchPrev.png), linear-gradient(rgb(168, 168, 168), rgb(116, 116, 116));
 }
 
 .toolbar-search-navigation.toolbar-search-navigation-next {
@@ -333,7 +361,7 @@ body.undocked.platform-mac-mountain-lion.inactive .toolbar-background {
 }
 
 .toolbar-search-navigation.toolbar-search-navigation-next.enabled:active {
-    background-image: url(Images/searchNext.png), -webkit-linear-gradient(rgb(168, 168, 168), rgb(116, 116, 116));
+    background-image: url(Images/searchNext.png), linear-gradient(rgb(168, 168, 168), rgb(116, 116, 116));
 }
 
 .search-results-matches {
@@ -348,43 +376,43 @@ body.undocked.platform-mac-mountain-lion.inactive .toolbar-background {
 .close-button,
 .close-button-gray {
     background-image: url(Images/statusbarButtonGlyphs.png);
-    background-size: 320px 120px;
+    background-size: 320px 144px;
     display: inline-block;
 }
 
 .close-button {
     width: 14px;
     height: 14px;
-    background-position: -128px -216px;
+    background-position: -128px -96px;
 }
 
 .close-button-gray {
     width: 13px;
     height: 13px;
-    background-position: -175px -216px;
+    background-position: -175px -96px;
 }
 
 @media (-webkit-min-device-pixel-ratio: 1.5) {
 .close-button,
 .close-button-gray {
-    background-image: url(Images/statusbarButtonGlyphs2x.png);
+    background-image: url(Images/statusbarButtonGlyphs_2x.png);
 }
 } /* media */
 
 .close-button:hover {
-    background-position: -96px -216px;
+    background-position: -96px -96px;
 }
 
 .close-button:active {
-    background-position: -111px -216px;
+    background-position: -111px -96px;
 }
 
 .close-button-gray:hover {
-    background-position: -143px -216px;
+    background-position: -143px -96px;
 }
 
 .close-button-gray:active {
-    background-position: -160px -216px;
+    background-position: -160px -96px;
 }
 
 body.undocked .toolbar-item .close-button {
@@ -403,14 +431,16 @@ body.remote .toolbar-item .close-button {
     position: relative;
 }
 
-.panel-status-bar label {
-    margin: 2px 20px 0 0;
+.panel-status-bar > div {
+    margin: auto 0;
 }
 
-.panel-status-bar label > input {
-    height: 13px;
-    width: 13px;
-    vertical-align: -2px;
+.panel-status-bar label {
+    margin: auto 0;
+    margin-right: 20px;
+    display: flex;
+    white-space: nowrap;
+    overflow: hidden;
 }
 
 .status-bar {
@@ -425,14 +455,12 @@ body.remote .toolbar-item .close-button {
 }
 
 .status-bar > div {
-    display: inline-block;
-    vertical-align: top;
+    display: inline-flex;
     overflow: visible;
 }
 
 .status-bar-item {
     display: inline-block;
-    cursor: default;
     height: 22px;
     padding: 0;
     margin-left: -1px;
@@ -446,7 +474,10 @@ body.remote .toolbar-item .close-button {
 .status-bar-text {
     padding-left: 5px;
     padding-right: 15px;
-    padding-top: 3px;
+    height: auto;
+    margin: auto 0;
+    white-space: nowrap;
+    overflow: hidden;
 }
 
 #drawer-view-anchor {
@@ -479,13 +510,13 @@ body.remote .toolbar-item .close-button {
     background-color: rgba(0, 0, 0, 0.75);
     -webkit-mask-image: url(Images/statusbarButtonGlyphs.png);
     -webkit-mask-position: -288px -48px;
-    -webkit-mask-size: 320px 120px;
+    -webkit-mask-size: 320px 144px;
     z-index: 1;
 }
 
 @media (-webkit-min-device-pixel-ratio: 1.5) {
 .long-click-glyph {
-    -webkit-mask-image: url(Images/statusbarButtonGlyphs2x.png);
+    -webkit-mask-image: url(Images/statusbarButtonGlyphs_2x.png);
 }
 } /* media */
 
@@ -516,6 +547,10 @@ button.status-bar-item:hover .glyph {
     opacity: 1;
 }
 
+button.status-bar-item:active .glyph {
+    opacity: 0.8;
+}
+
 button.status-bar-item:disabled {
     background-position: 0 0 !important;
 }
@@ -529,28 +564,41 @@ button.status-bar-item.extension {
 }
 
 .status-bar-select-container {
-    display: inline-block;
+    display: inline-flex;
+    flex-shrink: 0;
 }
 
 .status-bar-select-arrow {
     background-image: url(Images/statusbarButtonGlyphs.png);
-    background-size: 320px 120px;
+    background-size: 320px 144px;
     opacity: 0.7;
-    width: 10px;
-    height: 10px;
-    background-position: -20px -96px;
+    width: 12px;
+    height: 12px;
+    background-position: -18px -96px;
     display: inline-block;
     pointer-events: none;
-    position: relative;
-    top: 3px;
-    left: -3px;
+    margin: auto 0;
 }
 
 @media (-webkit-min-device-pixel-ratio: 1.5) {
 .status-bar-select-arrow {
-    background-image: url(Images/statusbarButtonGlyphs2x.png);
+    background-image: url(Images/statusbarButtonGlyphs_2x.png);
 }
 } /* media */
+
+input.status-bar-item {
+    width: 200px;
+    height: 20px;
+    padding: 3px;
+    margin: 1px 3px;
+    background-color: white;
+    border: solid 1px rgb(236, 236, 236);
+}
+
+input.status-bar-item:focus,
+input.status-bar-item:hover {
+    border: solid 1px rgb(202, 202, 202);
+}
 
 select.status-bar-item {
     min-width: 48px;
@@ -562,16 +610,18 @@ select.status-bar-item {
     padding: 0 15px 0 5px;
     margin-right: -10px;
     position: relative;
-    line-height: 20px;
+    line-height: 22px;
 }
 
 .status-bar-item.checkbox {
-    margin: 2px 0 0 0;
+    margin: auto 6px auto 0;
+    height: auto;
+    display: flex;
 }
 
 .status-bar-item > .glyph {
     -webkit-mask-image: url(Images/statusbarButtonGlyphs.png);
-    -webkit-mask-size: 320px 120px;
+    -webkit-mask-size: 320px 144px;
     opacity: 0.8;
 }
 
@@ -581,11 +631,11 @@ select.status-bar-item {
 
 @media (-webkit-min-device-pixel-ratio: 1.5) {
 .status-bar-item > .glyph {
-    -webkit-mask-image: url(Images/statusbarButtonGlyphs2x.png);
+    -webkit-mask-image: url(Images/statusbarButtonGlyphs_2x.png);
 }
 } /* media */
 
-button.status-bar-item.dock-status-bar-item.toggled-undock .glyph {
+button.status-bar-item.dock-status-bar-item.toggled-undocked .glyph {
     -webkit-mask-position: 0 -48px;
 }
 
@@ -595,6 +645,10 @@ button.status-bar-item.dock-status-bar-item.toggled-bottom .glyph {
 
 button.status-bar-item.dock-status-bar-item.toggled-right .glyph {
     -webkit-mask-position: -256px -48px;
+}
+
+button.status-bar-item.dock-status-bar-item.toggled-left .glyph {
+    -webkit-mask-position: -32px -120px;
 }
 
 body.undocked .alternate-status-bar-buttons-bar {
@@ -624,43 +678,6 @@ button.status-bar-item.settings-status-bar-item:active {
     border-right: 0 transparent none;
 }
 
-button.status-bar-item.left-sidebar-show-hide-button,
-button.status-bar-item.right-sidebar-show-hide-button {
-    position: absolute;
-    top: 0;
-    background-image: none;
-    height: 16px;
-    width: 16px;
-    margin: 4px 2px 2px 2px;
-    border: none;
-    z-index: 10;
-}
-
-button.status-bar-item.left-sidebar-show-hide-button:active,
-button.status-bar-item.right-sidebar-show-hide-button:active {
-    margin: 5px 1px 1px 3px;
-}
-
-button.status-bar-item.left-sidebar-show-hide-button.toggled-left > .glyph {
-    -webkit-mask-position: -199px -76px;
-}
-
-button.status-bar-item.left-sidebar-show-hide-button.toggled-right > .glyph {
-    -webkit-mask-position: -168px -76px;
-}
-
-button.status-bar-item.right-sidebar-show-hide-button.toggled-left > .glyph {
-    -webkit-mask-position: -296px -76px;
-}
-
-button.status-bar-item.right-sidebar-show-hide-button.toggled-right > .glyph {
-    -webkit-mask-position: -264px -76px;
-}
-
-button.status-bar-item.left-sidebar-show-hide-button.toggled-overlay > .glyph {
-    -webkit-mask-position: -231px -76px;
-}
-
 div.resizer-widget {
     position: absolute;
     top: 0;
@@ -671,6 +688,14 @@ div.resizer-widget {
     background-repeat: no-repeat;
     background-position: center;
     z-index: 13;
+}
+
+.ns-resizer-widget {
+    cursor: ns-resize;
+}
+
+.ew-resizer-widget {
+    cursor: ew-resize;
 }
 
 .settings-status-bar-item .glyph {
@@ -685,8 +710,16 @@ body.remote .dock-status-bar-item {
     -webkit-mask-position: -64px -24px;
 }
 
-.screencast-status-bar-item .glyph {
+.screencast-status-bar-item.toggled-left .glyph {
     -webkit-mask-position: -256px -96px;
+}
+
+.screencast-status-bar-item.toggled-top .glyph {
+    -webkit-mask-position: -288px -96px;
+}
+
+.screencast-status-bar-item.toggled-disabled .glyph {
+    -webkit-mask-position: 0px -120px;
 }
 
 .clear-status-bar-item .glyph {
@@ -695,11 +728,12 @@ body.remote .dock-status-bar-item {
 
 .error-icon-small,
 .warning-icon-small,
+.device-icon-small,
 .red-ball,
 .green-ball,
 .orange-ball {
     background-image: url(Images/statusbarButtonGlyphs.png);
-    background-size: 320px 120px;
+    background-size: 320px 144px;
     width: 10px;
     height: 10px;
     display: inline-block;
@@ -708,10 +742,11 @@ body.remote .dock-status-bar-item {
 @media (-webkit-min-device-pixel-ratio: 1.5) {
 .error-icon-small,
 .warning-icon-small,
+.device-icon-small,
 .red-ball,
 .green-ball,
 .orange-ball {
-    background-image: url(Images/statusbarButtonGlyphs2x.png);
+    background-image: url(Images/statusbarButtonGlyphs_2x.png);
 }
 } /* media */
 
@@ -721,6 +756,10 @@ body.remote .dock-status-bar-item {
 
 .warning-icon-small {
     background-position: -202px -107px;
+}
+
+.device-icon-small {
+    background-position: -224px -107px;
 }
 
 .red-ball {
@@ -735,7 +774,7 @@ body.remote .dock-status-bar-item {
     background-position: -246px -96px;
 }
 
-#error-warning-count {
+#error-warning-count, #remote-device-count {
     display: inline-block;
     padding: 4px 6px 6px 0;
     font-size: 11px;
@@ -744,12 +783,13 @@ body.remote .dock-status-bar-item {
     line-height: 14px;
 }
 
-#error-warning-count:hover {
+#error-warning-count:hover, #remote-device-count:hover {
     border-bottom: 1px solid rgb(96, 96, 96);
 }
 
 #error-warning-count .error-icon-small,
-#error-warning-count .warning-icon-small {
+#error-warning-count .warning-icon-small,
+#remote-device-count .device-icon-small{
     vertical-align: -1px;
     margin-right: 2px;
 }
@@ -758,58 +798,12 @@ body.remote .dock-status-bar-item {
     margin-left: 6px;
 }
 
-.drawer {
-    display: none;
-    flex: 0 0 200px;
-    position: relative;
-    background-color: white;
-    z-index: 1;
-}
-
-#drawer-contents {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    display: flex;
-}
-
-#drawer-contents > .tabbed-pane > .tabbed-pane-header {
+#drawer-tabbed-pane > .tabbed-pane-header {
     background-color: rgb(236, 236, 236);
-    border-top: 1px solid rgb(124, 124, 124);
-    border-bottom: 1px solid rgb(203, 203, 203);
-}
-
-body.inactive #drawer-contents .tabbed-pane-header {
-    border-top: 1px solid rgb(64%, 64%, 64%);
 }
 
 #drawer-contents .tabbed-pane-header .tabbed-pane-header-tab {
     cursor: default;
-}
-
-.drawer-resizer {
-    position: absolute;
-    right: 0;
-    top: 8px;
-    content: url(Images/statusbarResizerVertical.png);
-    height: 8px;
-    pointer-events: none;
-}
-
-#drawer-footer {
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    font-size: 11px;
-    height: 23px;
-    background-color: rgb(236, 236, 236);
-}
-
-body.drawer-visible .drawer {
-    display: block;
 }
 
 body.platform-mac .monospace,
@@ -838,15 +832,21 @@ body.platform-linux .source-code {
 
 .console-view {
     background-color: white;
+    overflow: hidden;
 }
 
 .console-view-wrapper {
     background-color: rgb(236, 236, 236);
 }
 
-.console-status-bar {
+.console-status-bar,
+.console-filters-header {
     flex: 0 0 23px;
     overflow: hidden;
+}
+
+.console-status-bar {
+    display: flex;
 }
 
 #console-messages {
@@ -856,6 +856,7 @@ body.platform-linux .source-code {
     word-wrap: break-word;
     -webkit-user-select: text;
     border-top: 1px solid rgb(230, 230, 230);
+    -webkit-transform: translateZ(0);
 }
 
 #console-prompt {
@@ -898,6 +899,12 @@ body.platform-linux .source-code {
     background-image: none;
 }
 
+.console-timestamp {
+    color: gray;
+    margin-right: 10px;
+    -webkit-user-select: none;
+}
+
 .console-message::before,
 .console-user-command::before,
 #console-prompt::before,
@@ -912,7 +919,7 @@ body.platform-linux .source-code {
     margin-top: -6px;
     -webkit-user-select: none;
     background-image: url(Images/statusbarButtonGlyphs.png);
-    background-size: 320px 120px;
+    background-size: 320px 144px;
 }
 
 @media (-webkit-min-device-pixel-ratio: 1.5) {
@@ -920,7 +927,7 @@ body.platform-linux .source-code {
 .console-user-command::before,
 #console-prompt::before,
 .console-group-title::before {
-    background-image: url(Images/statusbarButtonGlyphs2x.png);
+    background-image: url(Images/statusbarButtonGlyphs_2x.png);
 }
 } /* media */
 
@@ -983,7 +990,7 @@ body.platform-linux .source-code {
 .console-group-title::before {
     -webkit-user-select: none;
     -webkit-mask-image: url(Images/statusbarButtonGlyphs.png);
-    -webkit-mask-size: 320px 120px;
+    -webkit-mask-size: 320px 144px;
     float: left;
     width: 8px;
     content: "a";
@@ -995,7 +1002,7 @@ body.platform-linux .source-code {
 
 @media (-webkit-min-device-pixel-ratio: 1.5) {
 .console-group-title::before {
-    -webkit-mask-image: url(Images/statusbarButtonGlyphs2x.png);
+    -webkit-mask-image: url(Images/statusbarButtonGlyphs_2x.png);
 }
 } /* media */
 
@@ -1004,31 +1011,48 @@ body.platform-linux .source-code {
     background-color: rgb(110, 110, 110);
 }
 
-.console-group.collapsed .console-group-title::before {
+.console-message-wrapper.collapsed .console-group-title::before {
     -webkit-mask-position: -4px -96px;
-}
-
-.console-group.collapsed > .console-group-messages {
-    display: none;
 }
 
 .console-group {
     position: relative;
 }
 
-.console-group-bracket {
-    position:absolute;
-    top: 15px;
-    left: 13px;
-    bottom: 5px;
-    width: 3px;
-    border-style: solid;
-    border-color: #A3A3A3;
-    border-width: 0 0 1px 1px;
+.console-message-wrapper {
+    display: flex;
 }
 
-.console-group.collapsed > .console-group-bracket {
-    display: none;
+.console-message-wrapper .nesting-level-marker {
+    width: 14px;
+    flex: 0 0 auto;
+    border-right: 1px solid #A3A3A3;
+    position: relative;
+}
+
+.console-message-wrapper:last-child .nesting-level-marker,
+.console-message-wrapper .nesting-level-marker.group-closed {
+    margin-bottom: 4px;
+}
+
+.console-message-wrapper:last-child .nesting-level-marker::before,
+.console-message-wrapper .nesting-level-marker.group-closed::before
+{
+    content: "";
+}
+
+.console-message-wrapper .nesting-level-marker::before {
+    border-bottom: 1px solid #A3A3A3;
+    position: absolute;
+    top: 0;
+    left: 0;
+    margin-left: 100%;
+    width: 3px;
+    height: 100%;
+}
+
+.console-message {
+    flex: 1 1 auto;
 }
 
 .console-error-level .console-message-text,
@@ -1045,7 +1069,7 @@ body.platform-linux .source-code {
 .console-debug-level::before,
 .console-info-level::before {
     background-image: url(Images/statusbarButtonGlyphs.png);
-    background-size: 320px 120px;
+    background-size: 320px 144px;
     width: 10px;
     height: 10px;
 }
@@ -1055,7 +1079,7 @@ body.platform-linux .source-code {
 .console-warning-level::before,
 .console-debug-level::before,
 .console-info-level::before {
-    background-image: url(Images/statusbarButtonGlyphs2x.png);
+    background-image: url(Images/statusbarButtonGlyphs_2x.png);
 }
 } /* media */
 
@@ -1085,11 +1109,17 @@ body.platform-linux .source-code {
     color: rgb(0, 128, 255);
 }
 
+#console-messages .link {
+    text-decoration: underline;
+}
+
+#console-messages .link,
 #console-messages a {
     color: rgb(33%, 33%, 33%);
     cursor: pointer;
 }
 
+#console-messages .link:hover,
 #console-messages a:hover {
     color: rgb(15%, 15%, 15%);
 }
@@ -1165,7 +1195,7 @@ ol.watch-expressions > li.hovered {
     position: relative;
     display: inline-block;
     vertical-align: top;
-    color: #222;
+    color: inherit;
 }
 
 .console-formatted-node:hover {
@@ -1187,14 +1217,17 @@ ol.watch-expressions > li.hovered {
     padding-left: 0 !important;
 }
 
-.console-formatted-number {
+.console-formatted-number,
+.console-formatted-boolean {
     color: rgb(28, 0, 207);
 }
 
 .console-formatted-string,
-.console-formatted-regexp {
+.console-formatted-regexp,
+.console-formatted-symbol {
     color: rgb(196, 26, 22);
     white-space: pre;
+    unicode-bidi: -webkit-isolate;
 }
 
 .console-formatted-null,
@@ -1212,7 +1245,7 @@ ol.watch-expressions > li.hovered {
 }
 
 .object-info-state-note {
-    display: none;
+    display: inline-block;
     width: 11px;
     height: 11px;
     background-color: rgb(179, 203, 247);
@@ -1228,8 +1261,8 @@ ol.watch-expressions > li.hovered {
     content: "i";
 }
 
-.section.expanded .object-info-state-note {
-    display: inline-block;
+.section:not(.expanded) .object-info-state-note {
+    display: none;
 }
 
 .error-message {
@@ -1375,14 +1408,14 @@ iframe.panel.extension {
 
 .outline-disclosure li.parent::before {
     float: left;
-    width: 8px;
+    width: 10px;
     padding-right: 2px;
 }
 
 .outline-disclosure li.parent::before {
     -webkit-user-select: none;
     -webkit-mask-image: url(Images/statusbarButtonGlyphs.png);
-    -webkit-mask-size: 320px 120px;
+    -webkit-mask-size: 320px 144px;
     content: "a";
     color: transparent;
     text-shadow: none;
@@ -1394,7 +1427,7 @@ iframe.panel.extension {
 
 @media (-webkit-min-device-pixel-ratio: 1.5) {
 .outline-disclosure li.parent::before {
-    -webkit-mask-image: url(Images/statusbarButtonGlyphs2x.png);
+    -webkit-mask-image: url(Images/statusbarButtonGlyphs_2x.png);
 }
 } /* media */
 
@@ -1423,24 +1456,20 @@ iframe.panel.extension {
     white-space: nowrap;
 }
 
-.placard.grouped {
-    padding-left: 36px;
-}
-
 .placard:nth-of-type(2n) {
     background-color: rgb(234, 243, 255);
 }
 
 .placard.selected {
     border-top: 1px solid rgb(172, 172, 172);
-    background-image: -webkit-gradient(linear, left top, left bottom, from(rgb(182, 182, 182)), to(rgb(162, 162, 162)));
+    background-image: linear-gradient(to bottom, rgb(182, 182, 182), rgb(162, 162, 162));
     background-origin: padding-box;
     background-clip: padding-box;
 }
 
 :focus .placard.selected {
     border-top: 1px solid rgb(70, 103, 215);
-    background-image: -webkit-gradient(linear, left top, left bottom, from(rgb(92, 147, 213)), to(rgb(56, 121, 217)));
+    background-image: linear-gradient(to bottom, rgb(92, 147, 213), rgb(56, 121, 217));
 }
 
 .placard .title {
@@ -1471,6 +1500,17 @@ iframe.panel.extension {
     color: inherit;
 }
 
+.placard-label {
+    text-align: center;
+}
+
+.placard-label .title,
+.placard-label .subtitle {
+    font-style: italic;
+    font-weight: bold;
+    color: #999;
+}
+
 .section {
     position: relative;
     margin-top: 1px;
@@ -1484,7 +1524,7 @@ iframe.panel.extension {
 }
 
 .section > .header {
-    padding: 0 8px 0 5px;
+    padding: 0px 8px 0 5px;
     min-height: 18px;
     white-space: nowrap;
     background-origin: padding-box;
@@ -1494,7 +1534,7 @@ iframe.panel.extension {
 .section > .header::before {
     -webkit-user-select: none;
     background-image: url(Images/statusbarButtonGlyphs.png);
-    background-size: 320px 120px;
+    background-size: 320px 144px;
     opacity: 0.5;
     content: "a";
     color: transparent;
@@ -1507,7 +1547,7 @@ iframe.panel.extension {
 
 @media (-webkit-min-device-pixel-ratio: 1.5) {
 .section > .header::before {
-    background-image: url(Images/statusbarButtonGlyphs2x.png);
+    background-image: url(Images/statusbarButtonGlyphs_2x.png);
 }
 } /* media */
 
@@ -1602,7 +1642,7 @@ iframe.panel.extension {
 .properties-tree li.parent::before {
     -webkit-user-select: none;
     background-image: url(Images/statusbarButtonGlyphs.png);
-    background-size: 320px 120px;
+    background-size: 320px 144px;
     opacity: 0.5;
     content: "a";
     width: 8px;
@@ -1622,7 +1662,7 @@ iframe.panel.extension {
 
 @media (-webkit-min-device-pixel-ratio: 1.5) {
 .properties-tree li.parent::before {
-    background-image: url(Images/statusbarButtonGlyphs2x.png);
+    background-image: url(Images/statusbarButtonGlyphs_2x.png);
 }
 } /* media */
 
@@ -1721,6 +1761,7 @@ li.editing-sub-part .delete-button {
 .watch-expressions > li.editing-sub-part .text-prompt {
     display: block;
     width: 100%;
+    overflow: hidden;
 }
 
 .watch-expressions > li.editing-sub-part .value,
@@ -1730,7 +1771,7 @@ li.editing-sub-part .delete-button {
 
 .section .properties li.editing-sub-part {
     padding: 3px 6px 8px 18px;
-    margin: -3px -6px -8px -6px;
+    margin: -1px -6px -8px -6px;
     text-overflow: clip;
 }
 
@@ -1783,8 +1824,8 @@ li.editing-sub-part .delete-button {
 .swatch {
     margin-left: 1px;
     margin-right: 2px;
-    width: 1em;
-    height: 1em;
+    width: 10px;
+    height: 10px;
     position: relative;
     top: 1px;
     display: inline-block;
@@ -1805,10 +1846,6 @@ li.editing-sub-part .delete-button {
 
 .sidebar {
     overflow-x: hidden;
-    background-color: rgb(214, 221, 229);
-}
-
-body.inactive .sidebar {
     background-color: rgb(232, 232, 232);
 }
 
@@ -1817,14 +1854,14 @@ body.inactive .sidebar {
     background-color: transparent;
     border: 1px solid rgb(165, 165, 165);
     background-color: rgb(237, 237, 237);
-    background-image: -webkit-gradient(linear, left top, left bottom, from(rgb(252, 252, 252)), to(rgb(223, 223, 223)));
+    background-image: linear-gradient(to bottom, rgb(252, 252, 252), rgb(223, 223, 223));
     border-radius: 12px;
     -webkit-appearance: none;
 }
 
 .pane-title-button:active {
     background-color: rgb(215, 215, 215);
-    background-image: -webkit-gradient(linear, left top, left bottom, from(rgb(194, 194, 194)), to(rgb(239, 239, 239)));
+    background-image: linear-gradient(to bottom, rgb(194, 194, 194), rgb(239, 239, 239));
 }
 
 button.show-all-nodes {
@@ -1836,7 +1873,7 @@ button.show-all-nodes {
     background-color: transparent;
     border: 1px solid rgb(165, 165, 165);
     background-color: rgb(237, 237, 237);
-    background-image: -webkit-gradient(linear, left top, left bottom, from(rgb(252, 252, 252)), to(rgb(223, 223, 223)));
+    background-image: linear-gradient(to bottom, rgb(252, 252, 252), rgb(223, 223, 223));
     border-radius: 12px;
     -webkit-appearance: none;
 }
@@ -1845,20 +1882,12 @@ body.inactive button.show-all-nodes {
     color: rgb(130, 130, 130);
     border-color: rgb(212, 212, 212);
     background-color: rgb(239, 239, 239);
-    background-image: -webkit-gradient(linear, left top, left bottom, from(rgb(250, 250, 250)), to(rgb(235, 235, 235)));
+    background-image: linear-gradient(to bottom, rgb(250, 250, 250), rgb(235, 235, 235));
 }
 
 button.show-all-nodes:active {
     background-color: rgb(215, 215, 215);
-    background-image: -webkit-gradient(linear, left top, left bottom, from(rgb(194, 194, 194)), to(rgb(239, 239, 239)));
-}
-
-button.enable-toggle-status-bar-item .glyph {
-    -webkit-mask-position: -192px 0;
-}
-
-button.enable-toggle-status-bar-item.toggled-on .glyph {
-    -webkit-mask-position: -96px -24px;
+    background-image: linear-gradient(to bottom, rgb(194, 194, 194), rgb(239, 239, 239));
 }
 
 #console-messages.console-filter-top {
@@ -2011,7 +2040,7 @@ button.enable-toggle-status-bar-item.toggled-on .glyph {
     height: 10px;
     border: 0;
     -webkit-mask-image: url(Images/statusbarButtonGlyphs.png);
-    -webkit-mask-size: 320px 120px;
+    -webkit-mask-size: 320px 144px;
     -webkit-appearance: none;
     background-color: rgba(0, 0, 0, 0.75);
     position: relative;
@@ -2020,7 +2049,7 @@ button.enable-toggle-status-bar-item.toggled-on .glyph {
 
 @media (-webkit-min-device-pixel-ratio: 1.5) {
 .sidebar-tree-item .disclosure-button {
-    -webkit-mask-image: url(Images/statusbarButtonGlyphs2x.png);
+    -webkit-mask-image: url(Images/statusbarButtonGlyphs_2x.png);
 }
 } /* media */
 
@@ -2052,6 +2081,42 @@ button.enable-toggle-status-bar-item.toggled-on .glyph {
     height: 32px;
     margin-top: 1px;
     margin-right: 3px;
+}
+
+.sidebar-tree-item.wait .icon {
+    content: none;
+}
+
+.spinner-icon::before,
+.sidebar-tree-item.wait .icon::before {
+    display: block;
+    width: 24px;
+    height: 24px;
+    margin: 4px;
+    border: 3px solid grey;
+    border-radius: 12px;
+    clip: rect(0px, 15px, 15px, 0px);
+    content: "";
+    position: absolute;
+    -webkit-animation: spinner-animation 1s linear infinite;
+}
+
+.spinner-icon.small::before,
+.sidebar-tree-item.wait.small .icon::before {
+    width: 14px;
+    height: 14px;
+    margin: 1px;
+    clip: rect(0px, 9px, 9px, 0px);
+    border-width: 2px;
+}
+
+.sidebar-tree-item.wait.selected .icon::before {
+    border-color: white;
+}
+
+@-webkit-keyframes spinner-animation {
+    from { -webkit-transform: rotate(0); }
+    to { -webkit-transform: rotate(360deg); }
 }
 
 li .status {
@@ -2138,6 +2203,8 @@ body.inactive .sidebar-tree-item.selected {
 }
 
 .sidebar-tree-item .titles {
+    display: flex;
+    flex-direction: column;
     position: relative;
     top: 5px;
     line-height: 12px;
@@ -2145,6 +2212,10 @@ body.inactive .sidebar-tree-item.selected {
     text-overflow: ellipsis;
     overflow: hidden;
     white-space: nowrap;
+}
+
+.titles > .title-container {
+    display: flex;
 }
 
 .sidebar-tree-item .titles.no-subtitle {
@@ -2224,6 +2295,10 @@ body.inactive .sidebar-tree-item.selected {
     -webkit-mask-position: -224px -24px;
 }
 
+.emulation-status-bar-item .glyph {
+    -webkit-mask-position: -164px 0px;
+}
+
 .delete-storage-status-bar-item .glyph {
     -webkit-mask-position: -128px 0;
 }
@@ -2292,17 +2367,6 @@ body.inactive .sidebar-tree-item.selected {
 .source-frame-eval-expression {
     outline: 1px solid rgb(163, 41, 34);
     background-color: rgb(255, 255, 194);
-}
-
-.source-frame-stepin-mark {
-    cursor: pointer;
-    text-decoration: underline;
-}
-
-.source-frame-stepin-mark-highlighted {
-    font-weight: 800;
-    cursor: pointer;
-    text-decoration: underline;
 }
 
 .workers-list {
@@ -2409,7 +2473,7 @@ body.inactive .sidebar-tree-item.selected {
 body.platform-mac .soft-context-menu-item-mouse-over {
     border-top: 1px solid rgb(90, 131, 236);
     border-bottom: 1px solid rgb(18, 88, 233);
-    background-image: -webkit-gradient(linear, left top, left bottom, from(rgb(100, 140, 243)), to(rgb(36, 101, 243)));
+    background-image: linear-gradient(to bottom, rgb(100, 140, 243), rgb(36, 101, 243));
 }
 
 .soft-context-menu-item-checkmark {
@@ -2438,11 +2502,12 @@ body.platform-mac .soft-context-menu-item-mouse-over {
 .search-drawer-header {
     flex: none;
     padding: 4px;
+    display: flex;
 }
 
 .search-drawer-header input[type="text"].search-config-search {
     -webkit-appearance: none;
-    padding: 0 2px;
+    padding: 0 3px;
     margin: 0;
     border: 1px solid rgb(163, 163, 163);
     height: 20px;
@@ -2460,20 +2525,10 @@ body.platform-mac .search-drawer-header input[type="search"].search-config-searc
 }
 
 .search-drawer-header label.search-config-label {
+    margin: auto 0;
     margin-left: 8px;
     color: #303030;
-}
-
-.search-drawer-header input[type="checkbox"].search-config-checkbox {
-    vertical-align: bottom;
-}
-
-body:not(.platform-mac) .search-drawer-header input[type="checkbox"].search-config-checkbox {
-    margin-bottom: 5px;
-}
-
-body.platform-mac .search-drawer-header input[type="checkbox"].search-config-checkbox {
-    margin-bottom: 4px;
+    display: flex;
 }
 
 #bottom-status-bar-container {
@@ -2529,18 +2584,19 @@ body.platform-mac .search-drawer-header input[type="checkbox"].search-config-che
 #search-results-pane-file-based li.parent::before {
     -webkit-user-select: none;
     background-image: url(Images/statusbarButtonGlyphs.png);
-    background-size: 320px 120px;
+    background-size: 320px 144px;
     opacity: 0.5;
-    width: 8px;
+    width: 12px;
     content: "a";
     color: transparent;
     margin-left: -5px;
     padding-right: 4px;
+    display: inline-block;
 }
 
 @media (-webkit-min-device-pixel-ratio: 1.5) {
 #search-results-pane-file-based li.parent::before {
-    background-image: url(Images/statusbarButtonGlyphs2x.png);
+    background-image: url(Images/statusbarButtonGlyphs_2x.png);
 }
 } /* media */
 
@@ -2651,21 +2707,6 @@ button.record-profile-status-bar-item.toggled-on .glyph:not(.shadow) {
     font-weight: bold;
     padding: 10px;
     white-space: pre-wrap;
-}
-
-/* Generic suggest box style */
-
-.suggest-box.generic-suggest {
-    margin-left: -1px;
-    border-color: rgb(66%, 66%, 66%);
-}
-
-.suggest-box.generic-suggest.above-anchor {
-   border-radius: 5px 5px 5px 0;
-}
-
-.suggest-box.generic-suggest.under-anchor {
-   border-radius: 0 5px 5px 5px;
 }
 
 /* Custom popup scrollers */
@@ -2785,14 +2826,20 @@ button.record-profile-status-bar-item.toggled-on .glyph:not(.shadow) {
     max-width: 200px;
 }
 
-.inspector-view {
+.root-view {
     overflow: hidden;
+    position: absolute !important;
+    left: 0;
+    top: 0;
 }
 
-.inspector-footer.status-bar {
-    flex: 0 0 auto;
+.search-bar {
+    flex: 0 0 23px;
     background-color: rgb(236, 236, 236);
-    height: auto;
+}
+
+.search-bar.replaceable {
+    flex: 0 0 44px;
 }
 
 .progress-bar-container {
@@ -2845,6 +2892,15 @@ body.undocked .toolbar-close-button-item {
     display: none;
 }
 
-body.dock-to-bottom.overlay-contents #inspector-split-view .split-view-resizer {
-    display: none;
+.root-view > .split-view > .split-view-sidebar {
+    position: relative;
+}
+
+select.drop-down-menu {
+    border: none;
+    -webkit-appearance: none;
+}
+
+.viewport-control-gap-element {
+    color: transparent;
 }

@@ -14,7 +14,11 @@
         '../../../base/base.gyp:base',
         '../../../chrome/chrome.gyp:common',
         '../../../ipc/ipc.gyp:ipc',
+        '../../../media/cast/cast.gyp:cast_transport',
         '../../../skia/skia.gyp:skia',
+        '../../../third_party/libjingle/libjingle.gyp:libjingle',
+        '../../../third_party/WebKit/public/blink.gyp:blink',
+        '../../../ui/accessibility/accessibility.gyp:ax_gen',
       ],
       'sources': [
         'all_messages.h',
@@ -27,7 +31,10 @@
         'message_names.h',
       ],
       'include_dirs': [
-        '../..',
+        '../../..',
+      ],
+      'defines': [
+        'USE_CUPS',
       ],
     },
   ],

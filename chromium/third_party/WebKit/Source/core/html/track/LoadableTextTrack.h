@@ -28,6 +28,7 @@
 
 #include "core/html/track/TextTrack.h"
 #include "core/loader/TextTrackLoader.h"
+#include "platform/heap/Handle.h"
 #include "wtf/PassRefPtr.h"
 
 namespace WebCore {
@@ -35,24 +36,29 @@ namespace WebCore {
 class HTMLTrackElement;
 class LoadableTextTrack;
 
-class LoadableTextTrack : public TextTrack, private TextTrackLoaderClient {
+class LoadableTextTrack FINAL : public TextTrack, private TextTrackLoaderClient {
 public:
-    static PassRefPtr<LoadableTextTrack> create(HTMLTrackElement* track)
+    static PassRefPtrWillBeRawPtr<LoadableTextTrack> create(HTMLTrackElement* track)
     {
-        return adoptRef(new LoadableTextTrack(track));
+        return adoptRefWillBeRefCountedGarbageCollected(new LoadableTextTrack(track));
     }
     virtual ~LoadableTextTrack();
 
     void scheduleLoad(const KURL&);
 
-    // This shadows TextTrack::clearClient, but need not be virtual.
-    void clearClient();
+    // TextTrack method.
+    virtual void setMode(const AtomicString&) OVERRIDE;
 
     size_t trackElementIndex();
     HTMLTrackElement* trackElement() { return m_trackElement; }
+#if !ENABLE(OILPAN)
+    void clearTrackElement();
+#endif
 
     virtual bool isDefault() const OVERRIDE { return m_isDefault; }
     virtual void setIsDefault(bool isDefault) OVERRIDE  { m_isDefault = isDefault; }
+
+    virtual void trace(Visitor*) OVERRIDE;
 
 private:
     // TextTrackLoaderClient
@@ -64,9 +70,11 @@ private:
 
     void loadTimerFired(Timer<LoadableTextTrack>*);
 
-    HTMLTrackElement* m_trackElement;
+    // FIXME: Oilpan: This should be a strong pointer once Member pointers
+    // into the Node hierarchy can be used.
+    RawPtrWillBeWeakMember<HTMLTrackElement> m_trackElement;
     Timer<LoadableTextTrack> m_loadTimer;
-    OwnPtr<TextTrackLoader> m_loader;
+    OwnPtrWillBeMember<TextTrackLoader> m_loader;
     KURL m_url;
     bool m_isDefault;
 };

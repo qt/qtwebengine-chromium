@@ -23,60 +23,84 @@
 #include "config.h"
 #include "core/html/HTMLImageElement.h"
 
-#include "CSSPropertyNames.h"
-#include "HTMLNames.h"
-#include "RuntimeEnabledFeatures.h"
 #include "bindings/v8/ScriptEventListener.h"
+#include "core/CSSPropertyNames.h"
+#include "core/HTMLNames.h"
+#include "core/MediaTypeNames.h"
+#include "core/css/MediaQueryMatcher.h"
+#include "core/css/MediaValuesCached.h"
+#include "core/css/parser/SizesAttributeParser.h"
 #include "core/dom/Attribute.h"
-#include "core/events/ThreadLocalEventNames.h"
 #include "core/fetch/ImageResource.h"
 #include "core/html/HTMLAnchorElement.h"
+#include "core/html/HTMLCanvasElement.h"
 #include "core/html/HTMLFormElement.h"
+#include "core/html/HTMLSourceElement.h"
+#include "core/html/canvas/CanvasRenderingContext.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/html/parser/HTMLSrcsetParser.h"
 #include "core/rendering/RenderImage.h"
-
-using namespace std;
+#include "platform/MIMETypeRegistry.h"
+#include "platform/RuntimeEnabledFeatures.h"
 
 namespace WebCore {
 
 using namespace HTMLNames;
 
-HTMLImageElement::HTMLImageElement(Document& document, HTMLFormElement* form)
+HTMLImageElement::HTMLImageElement(Document& document, HTMLFormElement* form, bool createdByParser)
     : HTMLElement(imgTag, document)
-    , m_imageLoader(this)
-    , m_form(form)
+    , m_imageLoader(HTMLImageLoader::create(this))
     , m_compositeOperator(CompositeSourceOver)
     , m_imageDevicePixelRatio(1.0f)
+    , m_formWasSetByParser(false)
+    , m_elementCreatedByParser(createdByParser)
 {
     ScriptWrappable::init(this);
-    if (form)
-        form->registerImgElement(this);
+    if (form && form->inDocument()) {
+#if ENABLE(OILPAN)
+        m_form = form;
+#else
+        m_form = form->createWeakPtr();
+#endif
+        m_formWasSetByParser = true;
+        m_form->associate(*this);
+        m_form->didAssociateByParser();
+    }
 }
 
-PassRefPtr<HTMLImageElement> HTMLImageElement::create(Document& document)
+PassRefPtrWillBeRawPtr<HTMLImageElement> HTMLImageElement::create(Document& document)
 {
-    return adoptRef(new HTMLImageElement(document));
+    return adoptRefWillBeNoop(new HTMLImageElement(document));
 }
 
-PassRefPtr<HTMLImageElement> HTMLImageElement::create(Document& document, HTMLFormElement* form)
+PassRefPtrWillBeRawPtr<HTMLImageElement> HTMLImageElement::create(Document& document, HTMLFormElement* form, bool createdByParser)
 {
-    return adoptRef(new HTMLImageElement(document, form));
+    return adoptRefWillBeNoop(new HTMLImageElement(document, form, createdByParser));
 }
 
 HTMLImageElement::~HTMLImageElement()
 {
+#if !ENABLE(OILPAN)
     if (m_form)
-        m_form->removeImgElement(this);
+        m_form->disassociate(*this);
+#endif
 }
 
-PassRefPtr<HTMLImageElement> HTMLImageElement::createForJSConstructor(Document& document, int width, int height)
+void HTMLImageElement::trace(Visitor* visitor)
 {
-    RefPtr<HTMLImageElement> image = adoptRef(new HTMLImageElement(document));
+    visitor->trace(m_imageLoader);
+    visitor->trace(m_form);
+    HTMLElement::trace(visitor);
+}
+
+PassRefPtrWillBeRawPtr<HTMLImageElement> HTMLImageElement::createForJSConstructor(Document& document, int width, int height)
+{
+    RefPtrWillBeRawPtr<HTMLImageElement> image = adoptRefWillBeNoop(new HTMLImageElement(document));
     if (width)
         image->setWidth(width);
     if (height)
         image->setHeight(height);
+    image->m_elementCreatedByParser = false;
     return image.release();
 }
 
@@ -116,7 +140,49 @@ const AtomicString HTMLImageElement::imageSourceURL() const
 
 HTMLFormElement* HTMLImageElement::formOwner() const
 {
-    return findFormAncestor();
+    return m_form.get();
+}
+
+void HTMLImageElement::formRemovedFromTree(const Node& formRoot)
+{
+    ASSERT(m_form);
+    if (highestAncestorOrSelf() != formRoot)
+        resetFormOwner();
+}
+
+void HTMLImageElement::resetFormOwner()
+{
+    m_formWasSetByParser = false;
+    HTMLFormElement* nearestForm = findFormAncestor();
+    if (m_form) {
+        if (nearestForm == m_form.get())
+            return;
+        m_form->disassociate(*this);
+    }
+    if (nearestForm) {
+#if ENABLE(OILPAN)
+        m_form = nearestForm;
+#else
+        m_form = nearestForm->createWeakPtr();
+#endif
+        m_form->associate(*this);
+    } else {
+#if ENABLE(OILPAN)
+        m_form = nullptr;
+#else
+        m_form = WeakPtr<HTMLFormElement>();
+#endif
+    }
+}
+
+void HTMLImageElement::setBestFitURLAndDPRFromImageCandidate(const ImageCandidate& candidate)
+{
+    m_bestFitImageURL = candidate.url();
+    float candidateDensity = candidate.density();
+    if (candidateDensity >= 0)
+        m_imageDevicePixelRatio = 1.0 / candidateDensity;
+    if (renderer() && renderer()->isImage())
+        toRenderImage(renderer())->setImageDevicePixelRatio(m_imageDevicePixelRatio);
 }
 
 void HTMLImageElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
@@ -124,29 +190,18 @@ void HTMLImageElement::parseAttribute(const QualifiedName& name, const AtomicStr
     if (name == altAttr) {
         if (renderer() && renderer()->isImage())
             toRenderImage(renderer())->updateAltText();
-    } else if (name == srcAttr || name == srcsetAttr) {
-        if (RuntimeEnabledFeatures::srcsetEnabled()) {
-            ImageCandidate candidate = bestFitSourceForImageAttributes(document().devicePixelRatio(), fastGetAttribute(srcAttr), fastGetAttribute(srcsetAttr));
-            m_bestFitImageURL = candidate.toString();
-            float candidateScaleFactor = candidate.scaleFactor();
-            if (candidateScaleFactor > 0)
-                m_imageDevicePixelRatio = 1 / candidateScaleFactor;
-            if (renderer() && renderer()->isImage())
-                toRenderImage(renderer())->setImageDevicePixelRatio(m_imageDevicePixelRatio);
-        }
-        m_imageLoader.updateFromElementIgnoringPreviousError();
-    }
-    else if (name == usemapAttr)
+    } else if (name == srcAttr || name == srcsetAttr || name == sizesAttr) {
+        selectSourceURL(UpdateIgnorePreviousError);
+    } else if (name == usemapAttr) {
         setIsLink(!value.isNull());
-    else if (name == onbeforeloadAttr)
-        setAttributeEventListener(EventTypeNames::beforeload, createAttributeEventListener(this, name, value));
-    else if (name == compositeAttr) {
+    } else if (name == compositeAttr) {
         // FIXME: images don't support blend modes in their compositing attribute.
         blink::WebBlendMode blendOp = blink::WebBlendModeNormal;
         if (!parseCompositeAndBlendOperator(value, m_compositeOperator, blendOp))
             m_compositeOperator = CompositeSourceOver;
-    } else
+    } else {
         HTMLElement::parseAttribute(name, value);
+    }
 }
 
 const AtomicString& HTMLImageElement::altText() const
@@ -154,10 +209,54 @@ const AtomicString& HTMLImageElement::altText() const
     // lets figure out the alt text.. magic stuff
     // http://www.w3.org/TR/1998/REC-html40-19980424/appendix/notes.html#altgen
     // also heavily discussed by Hixie on bugzilla
-    if (!getAttribute(altAttr).isNull())
-        return getAttribute(altAttr);
+    const AtomicString& alt = fastGetAttribute(altAttr);
+    if (!alt.isNull())
+        return alt;
     // fall back to title attribute
-    return getAttribute(titleAttr);
+    return fastGetAttribute(titleAttr);
+}
+
+static bool supportedImageType(const String& type)
+{
+    return MIMETypeRegistry::isSupportedImageResourceMIMEType(type);
+}
+
+// http://picture.responsiveimages.org/#update-source-set
+ImageCandidate HTMLImageElement::findBestFitImageFromPictureParent()
+{
+    ASSERT(isMainThread());
+    Node* parent = parentNode();
+    if (!parent || !isHTMLPictureElement(*parent))
+        return ImageCandidate();
+    for (Node* child = parent->firstChild(); child; child = child->nextSibling()) {
+        if (child == this)
+            return ImageCandidate();
+
+        if (!isHTMLSourceElement(*child))
+            continue;
+
+        HTMLSourceElement* source = toHTMLSourceElement(child);
+        String srcset = source->fastGetAttribute(srcsetAttr);
+        if (srcset.isEmpty())
+            continue;
+        String type = source->fastGetAttribute(typeAttr);
+        if (!type.isEmpty() && !supportedImageType(type))
+            continue;
+
+        String media = source->fastGetAttribute(mediaAttr);
+        if (!media.isEmpty()) {
+            RefPtrWillBeRawPtr<MediaQuerySet> mediaQueries = MediaQuerySet::create(media);
+            if (!document().mediaQueryMatcher().evaluate(mediaQueries.get()))
+                continue;
+        }
+
+        unsigned effectiveSize = SizesAttributeParser::findEffectiveSize(source->fastGetAttribute(sizesAttr), MediaValuesCached::create(document()));
+        ImageCandidate candidate = bestFitSourceForSrcsetAttribute(document().devicePixelRatio(), effectiveSize, source->fastGetAttribute(srcsetAttr));
+        if (candidate.isEmpty())
+            continue;
+        return candidate;
+    }
+    return ImageCandidate();
 }
 
 RenderObject* HTMLImageElement::createRenderer(RenderStyle* style)
@@ -183,7 +282,7 @@ void HTMLImageElement::attach(const AttachContext& context)
 {
     HTMLElement::attach(context);
 
-    if (renderer() && renderer()->isImage() && !m_imageLoader.hasPendingBeforeLoadEvent()) {
+    if (renderer() && renderer()->isImage()) {
         RenderImage* renderImage = toRenderImage(renderer());
         RenderImageResource* renderImageResource = renderImage->imageResource();
         if (renderImageResource->hasImage())
@@ -191,41 +290,40 @@ void HTMLImageElement::attach(const AttachContext& context)
 
         // If we have no image at all because we have no src attribute, set
         // image height and width for the alt text instead.
-        if (!m_imageLoader.image() && !renderImageResource->cachedImage())
+        if (!imageLoader().image() && !renderImageResource->cachedImage())
             renderImage->setImageSizeForAltText();
         else
-            renderImageResource->setImageResource(m_imageLoader.image());
+            renderImageResource->setImageResource(imageLoader().image());
 
     }
 }
 
 Node::InsertionNotificationRequest HTMLImageElement::insertedInto(ContainerNode* insertionPoint)
 {
-    // m_form can be non-null if it was set in constructor.
-    if (m_form && insertionPoint->highestAncestor() != m_form->highestAncestor()) {
-        m_form->removeImgElement(this);
-        m_form = 0;
-    }
+    if (!m_formWasSetByParser || insertionPoint->highestAncestorOrSelf() != m_form->highestAncestorOrSelf())
+        resetFormOwner();
 
-    if (!m_form) {
-        m_form = findFormAncestor();
-        if (m_form)
-            m_form->registerImgElement(this);
+    bool imageWasModified = false;
+    if (RuntimeEnabledFeatures::pictureEnabled()) {
+        ImageCandidate candidate = findBestFitImageFromPictureParent();
+        if (!candidate.isEmpty()) {
+            setBestFitURLAndDPRFromImageCandidate(candidate);
+            imageWasModified = true;
+        }
     }
 
     // If we have been inserted from a renderer-less document,
     // our loader may have not fetched the image, so do it now.
-    if (insertionPoint->inDocument() && !m_imageLoader.image())
-        m_imageLoader.updateFromElement();
+    if ((insertionPoint->inDocument() && !imageLoader().image()) || imageWasModified)
+        imageLoader().updateFromElement(m_elementCreatedByParser ? ImageLoader::ForceLoadImmediately : ImageLoader::LoadNormally);
 
     return HTMLElement::insertedInto(insertionPoint);
 }
 
 void HTMLImageElement::removedFrom(ContainerNode* insertionPoint)
 {
-    if (m_form)
-        m_form->removeImgElement(this);
-    m_form = 0;
+    if (!m_form || m_form->highestAncestorOrSelf() != highestAncestorOrSelf())
+        resetFormOwner();
     HTMLElement::removedFrom(insertionPoint);
 }
 
@@ -239,8 +337,8 @@ int HTMLImageElement::width(bool ignorePendingStylesheets)
             return width;
 
         // if the image is available, use its width
-        if (m_imageLoader.image())
-            return m_imageLoader.image()->imageSizeForRenderer(renderer(), 1.0f).width();
+        if (imageLoader().image())
+            return imageLoader().image()->imageSizeForRenderer(renderer(), 1.0f).width();
     }
 
     if (ignorePendingStylesheets)
@@ -262,8 +360,8 @@ int HTMLImageElement::height(bool ignorePendingStylesheets)
             return height;
 
         // if the image is available, use its height
-        if (m_imageLoader.image())
-            return m_imageLoader.image()->imageSizeForRenderer(renderer(), 1.0f).height();
+        if (imageLoader().image())
+            return imageLoader().image()->imageSizeForRenderer(renderer(), 1.0f).height();
     }
 
     if (ignorePendingStylesheets)
@@ -277,18 +375,30 @@ int HTMLImageElement::height(bool ignorePendingStylesheets)
 
 int HTMLImageElement::naturalWidth() const
 {
-    if (!m_imageLoader.image())
+    if (!imageLoader().image())
         return 0;
 
-    return m_imageLoader.image()->imageSizeForRenderer(renderer(), 1.0f).width();
+    return imageLoader().image()->imageSizeForRenderer(renderer(), 1.0f).width();
 }
 
 int HTMLImageElement::naturalHeight() const
 {
-    if (!m_imageLoader.image())
+    if (!imageLoader().image())
         return 0;
 
-    return m_imageLoader.image()->imageSizeForRenderer(renderer(), 1.0f).height();
+    return imageLoader().image()->imageSizeForRenderer(renderer(), 1.0f).height();
+}
+
+const String& HTMLImageElement::currentSrc() const
+{
+    // http://www.whatwg.org/specs/web-apps/current-work/multipage/edits.html#dom-img-currentsrc
+    // The currentSrc IDL attribute must return the img element's current request's current URL.
+    // Initially, the pending request turns into current request when it is either available or broken.
+    // We use the image's dimensions as a proxy to it being in any of these states.
+    if (!imageLoader().image() || !imageLoader().image()->image() || !imageLoader().image()->image()->width())
+        return emptyAtom;
+
+    return imageLoader().image()->url().string();
 }
 
 bool HTMLImageElement::isURLAttribute(const Attribute& attribute) const
@@ -300,9 +410,19 @@ bool HTMLImageElement::isURLAttribute(const Attribute& attribute) const
         || HTMLElement::isURLAttribute(attribute);
 }
 
+bool HTMLImageElement::hasLegalLinkAttribute(const QualifiedName& name) const
+{
+    return name == srcAttr || HTMLElement::hasLegalLinkAttribute(name);
+}
+
+const QualifiedName& HTMLImageElement::subResourceAttributeName() const
+{
+    return srcAttr;
+}
+
 const AtomicString& HTMLImageElement::alt() const
 {
-    return getAttribute(altAttr);
+    return fastGetAttribute(altAttr);
 }
 
 bool HTMLImageElement::draggable() const
@@ -355,21 +475,12 @@ int HTMLImageElement::y() const
 
 bool HTMLImageElement::complete() const
 {
-    return m_imageLoader.imageComplete();
-}
-
-void HTMLImageElement::addSubresourceAttributeURLs(ListHashSet<KURL>& urls) const
-{
-    HTMLElement::addSubresourceAttributeURLs(urls);
-
-    addSubresourceURL(urls, src());
-    // FIXME: What about when the usemap attribute begins with "#"?
-    addSubresourceURL(urls, document().completeURL(getAttribute(usemapAttr)));
+    return imageLoader().imageComplete();
 }
 
 void HTMLImageElement::didMoveToNewDocument(Document& oldDocument)
 {
-    m_imageLoader.elementDidMoveToNewDocument();
+    imageLoader().elementDidMoveToNewDocument();
     HTMLElement::didMoveToNewDocument(oldDocument);
 }
 
@@ -389,15 +500,97 @@ bool HTMLImageElement::isServerMap() const
 
 Image* HTMLImageElement::imageContents()
 {
-    if (!m_imageLoader.imageComplete())
+    if (!imageLoader().imageComplete())
         return 0;
 
-    return m_imageLoader.image()->image();
+    return imageLoader().image()->image();
 }
 
 bool HTMLImageElement::isInteractiveContent() const
 {
     return fastHasAttribute(usemapAttr);
+}
+
+PassRefPtr<Image> HTMLImageElement::getSourceImageForCanvas(SourceImageMode, SourceImageStatus* status) const
+{
+    if (!complete() || !cachedImage()) {
+        *status = IncompleteSourceImageStatus;
+        return nullptr;
+    }
+
+    if (cachedImage()->errorOccurred()) {
+        *status = UndecodableSourceImageStatus;
+        return nullptr;
+    }
+
+    RefPtr<Image> sourceImage = cachedImage()->imageForRenderer(renderer());
+
+    // We need to synthesize a container size if a renderer is not available to provide one.
+    if (!renderer() && sourceImage->usesContainerSize())
+        sourceImage->setContainerSize(sourceImage->size());
+
+    *status = NormalSourceImageStatus;
+    return sourceImage.release();
+}
+
+bool HTMLImageElement::wouldTaintOrigin(SecurityOrigin* destinationSecurityOrigin) const
+{
+    ImageResource* image = cachedImage();
+    if (!image)
+        return false;
+    return !image->isAccessAllowed(destinationSecurityOrigin);
+}
+
+FloatSize HTMLImageElement::sourceSize() const
+{
+    ImageResource* image = cachedImage();
+    if (!image)
+        return FloatSize();
+    LayoutSize size;
+    size = image->imageSizeForRenderer(renderer(), 1.0f); // FIXME: Not sure about this.
+
+    return size;
+}
+
+FloatSize HTMLImageElement::defaultDestinationSize() const
+{
+    ImageResource* image = cachedImage();
+    if (!image)
+        return FloatSize();
+    LayoutSize size;
+    size = image->imageSizeForRenderer(renderer(), 1.0f); // FIXME: Not sure about this.
+    if (renderer() && renderer()->isRenderImage() && image->image() && !image->image()->hasRelativeWidth())
+        size.scale(toRenderImage(renderer())->imageDevicePixelRatio());
+    return size;
+}
+
+void HTMLImageElement::selectSourceURL(UpdateFromElementBehavior behavior)
+{
+    bool foundURL = false;
+    if (RuntimeEnabledFeatures::pictureEnabled()) {
+        ImageCandidate candidate = findBestFitImageFromPictureParent();
+        if (!candidate.isEmpty()) {
+            setBestFitURLAndDPRFromImageCandidate(candidate);
+            foundURL = true;
+        }
+    }
+
+    if (!foundURL) {
+        unsigned effectiveSize = 0;
+        if (RuntimeEnabledFeatures::pictureSizesEnabled())
+            effectiveSize = SizesAttributeParser::findEffectiveSize(fastGetAttribute(sizesAttr), MediaValuesCached::create(document()));
+        ImageCandidate candidate = bestFitSourceForImageAttributes(document().devicePixelRatio(), effectiveSize, fastGetAttribute(srcAttr), fastGetAttribute(srcsetAttr));
+        setBestFitURLAndDPRFromImageCandidate(candidate);
+    }
+    if (behavior == UpdateIgnorePreviousError)
+        imageLoader().updateFromElementIgnoringPreviousError();
+    else
+        imageLoader().updateFromElement();
+}
+
+const KURL& HTMLImageElement::sourceURL() const
+{
+    return cachedImage()->response().url();
 }
 
 }

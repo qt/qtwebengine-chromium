@@ -43,6 +43,7 @@ typedef pthread_mutex_t* MutexHandle;
 #include <ctime>
 #include <iomanip>
 #include <ostream>
+#include <string>
 
 #include "base/base_switches.h"
 #include "base/command_line.h"
@@ -51,6 +52,8 @@ typedef pthread_mutex_t* MutexHandle;
 #include "base/debug/stack_trace.h"
 #include "base/posix/eintr_wrapper.h"
 #include "base/strings/string_piece.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/synchronization/lock_impl.h"
 #include "base/threading/platform_thread.h"
@@ -65,23 +68,20 @@ typedef pthread_mutex_t* MutexHandle;
 
 namespace logging {
 
-DcheckState g_dcheck_state = DISABLE_DCHECK_FOR_NON_OFFICIAL_RELEASE_BUILDS;
-
-DcheckState get_dcheck_state() {
-  return g_dcheck_state;
-}
-
-void set_dcheck_state(DcheckState state) {
-  g_dcheck_state = state;
-}
-
 namespace {
 
 VlogInfo* g_vlog_info = NULL;
 VlogInfo* g_vlog_info_prev = NULL;
 
 const char* const log_severity_names[LOG_NUM_SEVERITIES] = {
-  "INFO", "WARNING", "ERROR", "ERROR_REPORT", "FATAL" };
+  "INFO", "WARNING", "ERROR", "FATAL" };
+
+const char* log_severity_name(int severity)
+{
+  if (severity >= 0 && severity < LOG_NUM_SEVERITIES)
+    return log_severity_names[severity];
+  return "UNKNOWN";
+}
 
 int min_log_level = 0;
 
@@ -115,9 +115,6 @@ bool show_error_dialogs = false;
 // An assert handler override specified by the client to be called instead of
 // the debug message dialog and process termination.
 LogAssertHandlerFunction log_assert_handler = NULL;
-// An report handler override specified by the client to be called instead of
-// the debug message dialog.
-LogReportHandlerFunction log_report_handler = NULL;
 // A log message handler that gets notified of every log message we process.
 LogMessageHandlerFunction log_message_handler = NULL;
 
@@ -355,15 +352,13 @@ LoggingSettings::LoggingSettings()
     : logging_dest(LOG_DEFAULT),
       log_file(NULL),
       lock_log(LOCK_LOG_FILE),
-      delete_old(APPEND_TO_OLD_LOG_FILE),
-      dcheck_state(DISABLE_DCHECK_FOR_NON_OFFICIAL_RELEASE_BUILDS) {}
+      delete_old(APPEND_TO_OLD_LOG_FILE) {}
 
 bool BaseInitLoggingImpl(const LoggingSettings& settings) {
 #if defined(OS_NACL)
   // Can log only to the system debug log.
   CHECK_EQ(settings.logging_dest & ~LOG_TO_SYSTEM_DEBUG_LOG, 0);
 #endif
-  g_dcheck_state = settings.dcheck_state;
   CommandLine* command_line = CommandLine::ForCurrentProcess();
   // Don't bother initializing g_vlog_info unless we use one of the
   // vlog switches.
@@ -404,7 +399,7 @@ bool BaseInitLoggingImpl(const LoggingSettings& settings) {
 }
 
 void SetMinLogLevel(int level) {
-  min_log_level = std::min(LOG_ERROR_REPORT, level);
+  min_log_level = std::min(LOG_FATAL, level);
 }
 
 int GetMinLogLevel() {
@@ -441,10 +436,6 @@ void SetLogAssertHandler(LogAssertHandlerFunction handler) {
   log_assert_handler = handler;
 }
 
-void SetLogReportHandler(LogReportHandlerFunction handler) {
-  log_report_handler = handler;
-}
-
 void SetLogMessageHandler(LogMessageHandlerFunction handler) {
   log_message_handler = handler;
 }
@@ -468,6 +459,7 @@ template std::string* MakeCheckOpString<std::string, std::string>(
     const std::string&, const std::string&, const char* name);
 #endif
 
+#if !defined(NDEBUG)
 // Displays a message box to the user with the error message in it.
 // Used for fatal messages, where we close the app simultaneously.
 // This is for developers only; we don't use this in circumstances
@@ -494,7 +486,7 @@ void DisplayDebugMessageInDialog(const std::string& str) {
     backslash[1] = 0;
   wcscat_s(prog_name, MAX_PATH, L"debug_message.exe");
 
-  std::wstring cmdline = UTF8ToWide(str);
+  std::wstring cmdline = base::UTF8ToWide(str);
   if (cmdline.empty())
     return;
 
@@ -518,6 +510,7 @@ void DisplayDebugMessageInDialog(const std::string& str) {
   // You can just look at stderr.
 #endif
 }
+#endif  // !defined(NDEBUG)
 
 #if defined(OS_WIN)
 LogMessage::SaveLastError::SaveLastError() : last_error_(::GetLastError()) {
@@ -527,17 +520,6 @@ LogMessage::SaveLastError::~SaveLastError() {
   ::SetLastError(last_error_);
 }
 #endif  // defined(OS_WIN)
-
-LogMessage::LogMessage(const char* file, int line, LogSeverity severity,
-                       int ctr)
-    : severity_(severity), file_(file), line_(line) {
-  Init(file, line);
-}
-
-LogMessage::LogMessage(const char* file, int line)
-    : severity_(LOG_INFO), file_(file), line_(line) {
-  Init(file, line);
-}
 
 LogMessage::LogMessage(const char* file, int line, LogSeverity severity)
     : severity_(severity), file_(file), line_(line) {
@@ -560,7 +542,7 @@ LogMessage::LogMessage(const char* file, int line, LogSeverity severity,
 }
 
 LogMessage::~LogMessage() {
-#if !defined(NDEBUG) && !defined(OS_NACL)
+#if !defined(NDEBUG) && !defined(OS_NACL) && !defined(__UCLIBC__)
   if (severity_ == LOG_FATAL) {
     // Include a stack trace on a fatal.
     base::debug::StackTrace trace;
@@ -593,7 +575,6 @@ LogMessage::~LogMessage() {
         priority = ANDROID_LOG_WARN;
         break;
       case LOG_ERROR:
-      case LOG_ERROR_REPORT:
         priority = ANDROID_LOG_ERROR;
         break;
       case LOG_FATAL:
@@ -602,13 +583,13 @@ LogMessage::~LogMessage() {
     }
     __android_log_write(priority, "chromium", str_newline.c_str());
 #endif
-    fprintf(stderr, "%s", str_newline.c_str());
+    ignore_result(fwrite(str_newline.data(), str_newline.size(), 1, stderr));
     fflush(stderr);
   } else if (severity_ >= kAlwaysPrintErrorLevel) {
     // When we're only outputting to a log file, above a certain log level, we
     // should still output to stderr so that we can better detect and diagnose
     // problems with unit tests, especially on the buildbots.
-    fprintf(stderr, "%s", str_newline.c_str());
+    ignore_result(fwrite(str_newline.data(), str_newline.size(), 1, stderr));
     fflush(stderr);
   }
 
@@ -633,7 +614,8 @@ LogMessage::~LogMessage() {
                 &num_written,
                 NULL);
 #else
-      fprintf(log_file, "%s", str_newline.c_str());
+      ignore_result(fwrite(
+          str_newline.data(), str_newline.size(), 1, log_file));
       fflush(log_file);
 #endif
     }
@@ -646,32 +628,20 @@ LogMessage::~LogMessage() {
     str_newline.copy(str_stack, arraysize(str_stack));
     base::debug::Alias(str_stack);
 
-    // display a message or break into the debugger on a fatal error
-    if (base::debug::BeingDebugged()) {
-      base::debug::BreakDebugger();
+    if (log_assert_handler) {
+      // Make a copy of the string for the handler out of paranoia.
+      log_assert_handler(std::string(stream_.str()));
     } else {
-      if (log_assert_handler) {
-        // make a copy of the string for the handler out of paranoia
-        log_assert_handler(std::string(stream_.str()));
-      } else {
-        // Don't use the string with the newline, get a fresh version to send to
-        // the debug message process. We also don't display assertions to the
-        // user in release mode. The enduser can't do anything with this
-        // information, and displaying message boxes when the application is
-        // hosed can cause additional problems.
+      // Don't use the string with the newline, get a fresh version to send to
+      // the debug message process. We also don't display assertions to the
+      // user in release mode. The enduser can't do anything with this
+      // information, and displaying message boxes when the application is
+      // hosed can cause additional problems.
 #ifndef NDEBUG
-        DisplayDebugMessageInDialog(stream_.str());
-#endif
-        // Crash the process to generate a dump.
-        base::debug::BreakDebugger();
-      }
-    }
-  } else if (severity_ == LOG_ERROR_REPORT) {
-    // We are here only if the user runs with --enable-dcheck in release mode.
-    if (log_report_handler) {
-      log_report_handler(std::string(stream_.str()));
-    } else {
       DisplayDebugMessageInDialog(stream_.str());
+#endif
+      // Crash the process to generate a dump.
+      base::debug::BreakDebugger();
     }
   }
 }
@@ -711,7 +681,7 @@ void LogMessage::Init(const char* file, int line) {
   if (log_tickcount)
     stream_ << TickCount() << ':';
   if (severity_ >= 0)
-    stream_ << log_severity_names[severity_];
+    stream_ << log_severity_name(severity_);
   else
     stream_ << "VERBOSE" << -severity_;
 
@@ -738,61 +708,40 @@ SystemErrorCode GetLastSystemErrorCode() {
 }
 
 #if defined(OS_WIN)
-Win32ErrorLogMessage::Win32ErrorLogMessage(const char* file,
-                                           int line,
-                                           LogSeverity severity,
-                                           SystemErrorCode err,
-                                           const char* module)
-    : err_(err),
-      module_(module),
-      log_message_(file, line, severity) {
+BASE_EXPORT std::string SystemErrorCodeToString(SystemErrorCode error_code) {
+  const int error_message_buffer_size = 256;
+  char msgbuf[error_message_buffer_size];
+  DWORD flags = FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS;
+  DWORD len = FormatMessageA(flags, NULL, error_code, 0, msgbuf,
+                             arraysize(msgbuf), NULL);
+  if (len) {
+    // Messages returned by system end with line breaks.
+    return base::CollapseWhitespaceASCII(msgbuf, true) +
+        base::StringPrintf(" (0x%X)", error_code);
+  }
+  return base::StringPrintf("Error (0x%X) while retrieving error. (0x%X)",
+                            GetLastError(), error_code);
 }
+#elif defined(OS_POSIX)
+BASE_EXPORT std::string SystemErrorCodeToString(SystemErrorCode error_code) {
+  return safe_strerror(error_code);
+}
+#else
+#error Not implemented
+#endif
 
+
+#if defined(OS_WIN)
 Win32ErrorLogMessage::Win32ErrorLogMessage(const char* file,
                                            int line,
                                            LogSeverity severity,
                                            SystemErrorCode err)
     : err_(err),
-      module_(NULL),
       log_message_(file, line, severity) {
 }
 
 Win32ErrorLogMessage::~Win32ErrorLogMessage() {
-  const int error_message_buffer_size = 256;
-  char msgbuf[error_message_buffer_size];
-  DWORD flags = FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS;
-  HMODULE hmod;
-  if (module_) {
-    hmod = GetModuleHandleA(module_);
-    if (hmod) {
-      flags |= FORMAT_MESSAGE_FROM_HMODULE;
-    } else {
-      // This makes a nested Win32ErrorLogMessage. It will have module_ of NULL
-      // so it will not call GetModuleHandle, so recursive errors are
-      // impossible.
-      DPLOG(WARNING) << "Couldn't open module " << module_
-          << " for error message query";
-    }
-  } else {
-    hmod = NULL;
-  }
-  DWORD len = FormatMessageA(flags,
-                             hmod,
-                             err_,
-                             0,
-                             msgbuf,
-                             sizeof(msgbuf) / sizeof(msgbuf[0]),
-                             NULL);
-  if (len) {
-    while ((len > 0) &&
-           isspace(static_cast<unsigned char>(msgbuf[len - 1]))) {
-      msgbuf[--len] = 0;
-    }
-    stream() << ": " << msgbuf;
-  } else {
-    stream() << ": Error " << GetLastError() << " while retrieving error "
-        << err_;
-  }
+  stream() << ": " << SystemErrorCodeToString(err_);
   // We're about to crash (CHECK). Put |err_| on the stack (by placing it in a
   // field) and use Alias in hopes that it makes it into crash dumps.
   DWORD last_error = err_;
@@ -808,7 +757,7 @@ ErrnoLogMessage::ErrnoLogMessage(const char* file,
 }
 
 ErrnoLogMessage::~ErrnoLogMessage() {
-  stream() << ": " << safe_strerror(err_);
+  stream() << ": " << SystemErrorCodeToString(err_);
 }
 #endif  // OS_WIN
 
@@ -862,5 +811,5 @@ std::wstring GetLogFileFullPath() {
 }  // namespace logging
 
 std::ostream& operator<<(std::ostream& out, const wchar_t* wstr) {
-  return out << WideToUTF8(std::wstring(wstr));
+  return out << base::WideToUTF8(std::wstring(wstr));
 }

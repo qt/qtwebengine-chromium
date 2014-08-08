@@ -28,6 +28,14 @@ cr.define('options', function() {
 
       $('languages-and-input-settings').onclick = function(e) {
         OptionsPage.navigateToPage('languages');
+        chrome.send('coreOptionsUserMetricsAction',
+                    ['Options_KeyboardShowLanguageSettings']);
+      };
+
+      $('keyboard-shortcuts').onclick = function(e) {
+        chrome.send('showKeyboardShortcuts');
+        chrome.send('coreOptionsUserMetricsAction',
+                    ['Options_KeyboardShowKeyboardShortcuts']);
       };
     },
 

@@ -28,6 +28,7 @@
 #ifndef FullscreenElementStack_h
 #define FullscreenElementStack_h
 
+#include "core/dom/Document.h"
 #include "core/dom/DocumentLifecycleObserver.h"
 #include "core/dom/Element.h"
 #include "platform/Supplementable.h"
@@ -39,24 +40,22 @@
 
 namespace WebCore {
 
-class Document;
-class Element;
-class Node;
 class RenderFullScreen;
 class RenderStyle;
-class ExecutionContext;
 
-class FullscreenElementStack
-    : public DocumentSupplement
+class FullscreenElementStack FINAL
+    : public NoBaseWillBeGarbageCollectedFinalized<FullscreenElementStack>
+    , public DocumentSupplement
     , public DocumentLifecycleObserver {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(FullscreenElementStack);
 public:
     virtual ~FullscreenElementStack();
     static const char* supplementName();
-    static FullscreenElementStack* from(Document*);
-    static FullscreenElementStack* fromIfExists(Document*);
-    static Element* fullscreenElementFrom(Document*);
-    static Element* currentFullScreenElementFrom(Document*);
-    static bool isFullScreen(Document*);
+    static FullscreenElementStack& from(Document&);
+    static FullscreenElementStack* fromIfExists(Document&);
+    static Element* fullscreenElementFrom(Document&);
+    static Element* currentFullScreenElementFrom(Document&);
+    static bool isFullScreen(Document&);
     static bool isActiveFullScreenElement(const Element*);
 
     enum FullScreenCheckType {
@@ -86,7 +85,7 @@ public:
     void removeFullScreenElementOfSubtree(Node*, bool amongChildrenOnly = false);
 
     // W3C API
-    static bool webkitFullscreenEnabled(Document*);
+    static bool webkitFullscreenEnabled(Document&);
     Element* webkitFullscreenElement() const { return !m_fullScreenElementStack.isEmpty() ? m_fullScreenElementStack.last().get() : 0; }
     void webkitExitFullscreen();
 
@@ -95,38 +94,42 @@ public:
     Element* webkitCurrentFullScreenElement() const { return m_fullScreenElement.get(); }
 
     virtual void documentWasDetached() OVERRIDE;
+#if !ENABLE(OILPAN)
     virtual void documentWasDisposed() OVERRIDE;
+#endif
+
+    virtual void trace(Visitor*) OVERRIDE;
 
 private:
-    static FullscreenElementStack* fromIfExistsSlow(Document*);
+    static FullscreenElementStack* fromIfExistsSlow(Document&);
 
-    explicit FullscreenElementStack(Document*);
+    explicit FullscreenElementStack(Document&);
 
     Document* document();
     void fullScreenChangeDelayTimerFired(Timer<FullscreenElementStack>*);
 
     bool m_areKeysEnabledInFullScreen;
-    RefPtr<Element> m_fullScreenElement;
-    Vector<RefPtr<Element> > m_fullScreenElementStack;
+    RefPtrWillBeMember<Element> m_fullScreenElement;
+    WillBeHeapVector<RefPtrWillBeMember<Element> > m_fullScreenElementStack;
     RenderFullScreen* m_fullScreenRenderer;
     Timer<FullscreenElementStack> m_fullScreenChangeDelayTimer;
-    Deque<RefPtr<Node> > m_fullScreenChangeEventTargetQueue;
-    Deque<RefPtr<Node> > m_fullScreenErrorEventTargetQueue;
+    WillBeHeapDeque<RefPtrWillBeMember<Node> > m_fullScreenChangeEventTargetQueue;
+    WillBeHeapDeque<RefPtrWillBeMember<Node> > m_fullScreenErrorEventTargetQueue;
     LayoutRect m_savedPlaceholderFrameRect;
     RefPtr<RenderStyle> m_savedPlaceholderRenderStyle;
 };
 
 inline bool FullscreenElementStack::isActiveFullScreenElement(const Element* element)
 {
-    FullscreenElementStack* controller = fromIfExists(&element->document());
+    FullscreenElementStack* controller = fromIfExists(element->document());
     if (!controller)
         return false;
     return controller->webkitIsFullScreen() && controller->webkitCurrentFullScreenElement() == element;
 }
 
-inline FullscreenElementStack* FullscreenElementStack::fromIfExists(Document* document)
+inline FullscreenElementStack* FullscreenElementStack::fromIfExists(Document& document)
 {
-    if (!document->hasFullscreenElementStack())
+    if (!document.hasFullscreenElementStack())
         return 0;
     return fromIfExistsSlow(document);
 }

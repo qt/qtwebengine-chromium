@@ -35,13 +35,11 @@ class Document;
 
 class HTMLAudioElement FINAL : public HTMLMediaElement {
 public:
-    static PassRefPtr<HTMLAudioElement> create(Document&, bool);
-    static PassRefPtr<HTMLAudioElement> createForJSConstructor(Document&, const AtomicString& src);
+    static PassRefPtrWillBeRawPtr<HTMLAudioElement> create(Document&);
+    static PassRefPtrWillBeRawPtr<HTMLAudioElement> createForJSConstructor(Document&, const AtomicString& src);
 
 private:
-    HTMLAudioElement(Document&, bool);
-
-    virtual bool isVideo() const OVERRIDE { return false; }
+    HTMLAudioElement(Document&);
 };
 
 } //namespace

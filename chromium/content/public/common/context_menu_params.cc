@@ -19,10 +19,8 @@ ContextMenuParams::ContextMenuParams()
       x(0),
       y(0),
       has_image_contents(true),
-      frame_id(0),
       media_flags(0),
       misspelling_hash(0),
-      speech_input_enabled(false),
       spellcheck_enabled(false),
       is_editable(false),
       writing_direction_default(
@@ -32,7 +30,8 @@ ContextMenuParams::ContextMenuParams()
       writing_direction_right_to_left(
           blink::WebContextMenuData::CheckableMenuItemEnabled),
       edit_flags(0),
-      referrer_policy(blink::WebReferrerPolicyDefault) {
+      referrer_policy(blink::WebReferrerPolicyDefault),
+      source_type(ui::MENU_SOURCE_NONE) {
 }
 
 ContextMenuParams::~ContextMenuParams() {

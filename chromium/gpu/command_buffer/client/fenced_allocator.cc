@@ -34,8 +34,10 @@ const FencedAllocator::Offset FencedAllocator::kInvalidOffset;
 #endif
 
 FencedAllocator::FencedAllocator(unsigned int size,
-                                 CommandBufferHelper *helper)
+                                 CommandBufferHelper* helper,
+                                 const base::Closure& poll_callback)
     : helper_(helper),
+      poll_callback_(poll_callback),
       bytes_in_use_(0) {
   Block block = { FREE, 0, RoundDown(size), kUnusedToken };
   blocks_.push_back(block);
@@ -48,9 +50,9 @@ FencedAllocator::~FencedAllocator() {
       i = WaitForTokenAndFreeBlock(i);
     }
   }
-  // These checks are not valid if the service has crashed or lost the context.
-  // DCHECK_EQ(blocks_.size(), 1u);
-  // DCHECK_EQ(blocks_[0].state, FREE);
+
+  DCHECK_EQ(blocks_.size(), 1u);
+  DCHECK_EQ(blocks_[0].state, FREE);
 }
 
 // Looks for a non-allocated block that is big enough. Search in the FREE
@@ -203,10 +205,13 @@ FencedAllocator::BlockIndex FencedAllocator::WaitForTokenAndFreeBlock(
 
 // Frees any blocks pending a token for which the token has been read.
 void FencedAllocator::FreeUnused() {
-  int32 last_token_read = helper_->last_token_read();
+  // Free any potential blocks that has its lifetime handled outside.
+  poll_callback_.Run();
+
   for (unsigned int i = 0; i < blocks_.size();) {
     Block& block = blocks_[i];
-    if (block.state == FREE_PENDING_TOKEN && block.token <= last_token_read) {
+    if (block.state == FREE_PENDING_TOKEN &&
+        helper_->HasTokenPassed(block.token)) {
       block.state = FREE;
       i = CollapseFreeBlock(i);
     } else {

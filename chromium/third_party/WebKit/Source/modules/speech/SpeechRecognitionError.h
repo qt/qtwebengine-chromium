@@ -26,8 +26,7 @@
 #ifndef SpeechRecognitionError_h
 #define SpeechRecognitionError_h
 
-#include "core/events/Event.h"
-#include "wtf/RefCounted.h"
+#include "modules/EventModules.h"
 #include "wtf/text/WTFString.h"
 
 namespace WebCore {
@@ -39,7 +38,7 @@ struct SpeechRecognitionErrorInit : public EventInit {
     String message;
 };
 
-class SpeechRecognitionError : public Event {
+class SpeechRecognitionError FINAL : public Event {
 public:
     enum ErrorCode {
         // FIXME: This is an unspecified error and Chromium should stop using it.
@@ -55,14 +54,19 @@ public:
         ErrorCodeLanguageNotSupported = 8
     };
 
-    static PassRefPtr<SpeechRecognitionError> create(ErrorCode, const String&);
-    static PassRefPtr<SpeechRecognitionError> create();
-    static PassRefPtr<SpeechRecognitionError> create(const AtomicString&, const SpeechRecognitionErrorInit&);
+    static PassRefPtrWillBeRawPtr<SpeechRecognitionError> create(ErrorCode, const String&);
+    static PassRefPtrWillBeRawPtr<SpeechRecognitionError> create();
+    static PassRefPtrWillBeRawPtr<SpeechRecognitionError> create(const AtomicString&, const SpeechRecognitionErrorInit&);
 
     const String& error() { return m_error; }
     const String& message() { return m_message; }
 
     virtual const AtomicString& interfaceName() const OVERRIDE;
+
+    virtual void trace(Visitor* visitor) OVERRIDE
+    {
+        Event::trace(visitor);
+    }
 
 private:
     SpeechRecognitionError(const String&, const String&);

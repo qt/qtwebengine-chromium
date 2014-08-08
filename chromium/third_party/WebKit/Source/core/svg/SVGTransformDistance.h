@@ -29,20 +29,19 @@ class AffineTransform;
 class SVGTransformDistance {
 public:
     SVGTransformDistance();
-    SVGTransformDistance(const SVGTransform& fromTransform, const SVGTransform& toTransform);
+    SVGTransformDistance(PassRefPtr<SVGTransform> fromTransform, PassRefPtr<SVGTransform> toTransform);
 
     SVGTransformDistance scaledDistance(float scaleFactor) const;
-    SVGTransform addToSVGTransform(const SVGTransform&) const;
+    PassRefPtr<SVGTransform> addToSVGTransform(PassRefPtr<SVGTransform>) const;
 
-    static SVGTransform addSVGTransforms(const SVGTransform&, const SVGTransform&, unsigned repeatCount = 1);
-
-    bool isZero() const;
+    static PassRefPtr<SVGTransform> addSVGTransforms(PassRefPtr<SVGTransform>, PassRefPtr<SVGTransform>, unsigned repeatCount = 1);
 
     float distance() const;
-private:
-    SVGTransformDistance(SVGTransform::SVGTransformType, float angle, float cx, float cy, const AffineTransform&);
 
-    SVGTransform::SVGTransformType m_type;
+private:
+    SVGTransformDistance(SVGTransformType, float angle, float cx, float cy, const AffineTransform&);
+
+    SVGTransformType m_transformType;
     float m_angle;
     float m_cx;
     float m_cy;

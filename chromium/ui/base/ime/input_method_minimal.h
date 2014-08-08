@@ -11,7 +11,7 @@ namespace ui {
 
 // A minimal implementation of ui::InputMethod, which supports only the direct
 // input without any compositions or conversions.
-class UI_EXPORT InputMethodMinimal : public InputMethodBase {
+class UI_BASE_EXPORT InputMethodMinimal : public InputMethodBase {
  public:
   explicit InputMethodMinimal(internal::InputMethodDelegate* delegate);
   virtual ~InputMethodMinimal();
@@ -24,7 +24,6 @@ class UI_EXPORT InputMethodMinimal : public InputMethodBase {
   virtual void CancelComposition(const TextInputClient* client) OVERRIDE;
   virtual void OnInputLocaleChanged() OVERRIDE;
   virtual std::string GetInputLocale() OVERRIDE;
-  virtual base::i18n::TextDirection GetInputTextDirection() OVERRIDE;
   virtual bool IsActive() OVERRIDE;
   virtual bool IsCandidatePopupOpen() const OVERRIDE;
 

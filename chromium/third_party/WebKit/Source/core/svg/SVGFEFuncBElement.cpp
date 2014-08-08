@@ -30,9 +30,6 @@ inline SVGFEFuncBElement::SVGFEFuncBElement(Document& document)
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<SVGFEFuncBElement> SVGFEFuncBElement::create(Document& document)
-{
-    return adoptRef(new SVGFEFuncBElement(document));
-}
+DEFINE_NODE_FACTORY(SVGFEFuncBElement)
 
 }

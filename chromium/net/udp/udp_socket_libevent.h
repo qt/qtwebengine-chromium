@@ -94,10 +94,10 @@ class NET_EXPORT UDPSocketLibevent : public base::NonThreadSafe {
              const CompletionCallback& callback);
 
   // Set the receive buffer size (in bytes) for the socket.
-  bool SetReceiveBufferSize(int32 size);
+  int SetReceiveBufferSize(int32 size);
 
   // Set the send buffer size (in bytes) for the socket.
-  bool SetSendBufferSize(int32 size);
+  int SetSendBufferSize(int32 size);
 
   // Returns true if the socket is already connected or bound.
   bool is_connected() const { return socket_ != kInvalidSocket; }
@@ -162,6 +162,9 @@ class NET_EXPORT UDPSocketLibevent : public base::NonThreadSafe {
   // do anything on some platforms.
   // Return a network error code.
   int SetDiffServCodePoint(DiffServCodePoint dscp);
+
+  // Resets the thread to be used for thread-safety checks.
+  void DetachFromThread();
 
  private:
   enum SocketOptions {

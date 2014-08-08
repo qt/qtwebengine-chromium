@@ -34,7 +34,7 @@
 
 #include "platform/graphics/GraphicsLayer.h"
 #include "platform/geometry/FloatPoint.h"
-#include "platform/scroll//ScrollbarTheme.h"
+#include "platform/scroll/ScrollbarTheme.h"
 #include "wtf/PassOwnPtr.h"
 
 #include "platform/TraceEvent.h"
@@ -46,6 +46,8 @@ namespace WebCore {
 
 struct SameSizeAsScrollableArea {
     virtual ~SameSizeAsScrollableArea();
+    unsigned damageBits : 2;
+    IntRect scrollbarDamage[2];
     void* pointer;
     unsigned bitfields : 16;
     IntPoint origin;
@@ -70,7 +72,9 @@ int ScrollableArea::maxOverlapBetweenPages()
 }
 
 ScrollableArea::ScrollableArea()
-    : m_constrainsScrollingToContentEdge(true)
+    : m_hasHorizontalBarDamage(false)
+    , m_hasVerticalBarDamage(false)
+    , m_constrainsScrollingToContentEdge(true)
     , m_inLiveResize(false)
     , m_verticalScrollElasticity(ScrollElasticityNone)
     , m_horizontalScrollElasticity(ScrollElasticityNone)
@@ -99,7 +103,12 @@ void ScrollableArea::setScrollOrigin(const IntPoint& origin)
     }
 }
 
-bool ScrollableArea::scroll(ScrollDirection direction, ScrollGranularity granularity, float multiplier)
+GraphicsLayer* ScrollableArea::layerForContainer() const
+{
+    return layerForScrolling() ? layerForScrolling()->parent() : 0;
+}
+
+bool ScrollableArea::scroll(ScrollDirection direction, ScrollGranularity granularity, float delta)
 {
     ScrollbarOrientation orientation;
 
@@ -129,9 +138,9 @@ bool ScrollableArea::scroll(ScrollDirection direction, ScrollGranularity granula
     }
 
     if (direction == ScrollUp || direction == ScrollLeft)
-        multiplier = -multiplier;
+        delta = -delta;
 
-    return scrollAnimator()->scroll(orientation, granularity, step, multiplier);
+    return scrollAnimator()->scroll(orientation, granularity, step, delta);
 }
 
 void ScrollableArea::scrollToOffsetWithoutAnimation(const FloatPoint& offset)
@@ -188,8 +197,26 @@ void ScrollableArea::scrollPositionChanged(const IntPoint& position)
         scrollAnimator()->notifyContentAreaScrolled(scrollPosition() - oldPosition);
 }
 
+bool ScrollableArea::scrollBehaviorFromString(const String& behaviorString, ScrollBehavior& behavior)
+{
+    if (behaviorString == "auto")
+        behavior = ScrollBehaviorAuto;
+    else if (behaviorString == "instant")
+        behavior = ScrollBehaviorInstant;
+    else if (behaviorString == "smooth")
+        behavior = ScrollBehaviorSmooth;
+    else
+        return false;
+
+    return true;
+}
+
 bool ScrollableArea::handleWheelEvent(const PlatformWheelEvent& wheelEvent)
 {
+    // ctrl+wheel events are used to trigger zooming, not scrolling.
+    if (wheelEvent.modifiers() & PlatformEvent::CtrlKey)
+        return false;
+
     return scrollAnimator()->handleWheelEvent(wheelEvent);
 }
 
@@ -301,22 +328,25 @@ void ScrollableArea::contentsResized()
 
 bool ScrollableArea::hasOverlayScrollbars() const
 {
-    return (verticalScrollbar() && verticalScrollbar()->isOverlayScrollbar())
-        || (horizontalScrollbar() && horizontalScrollbar()->isOverlayScrollbar());
+    Scrollbar* vScrollbar = verticalScrollbar();
+    if (vScrollbar && vScrollbar->isOverlayScrollbar())
+        return true;
+    Scrollbar* hScrollbar = horizontalScrollbar();
+    return hScrollbar && hScrollbar->isOverlayScrollbar();
 }
 
 void ScrollableArea::setScrollbarOverlayStyle(ScrollbarOverlayStyle overlayStyle)
 {
     m_scrollbarOverlayStyle = overlayStyle;
 
-    if (horizontalScrollbar()) {
-        ScrollbarTheme::theme()->updateScrollbarOverlayStyle(horizontalScrollbar());
-        horizontalScrollbar()->invalidate();
+    if (Scrollbar* scrollbar = horizontalScrollbar()) {
+        ScrollbarTheme::theme()->updateScrollbarOverlayStyle(scrollbar);
+        scrollbar->invalidate();
     }
 
-    if (verticalScrollbar()) {
-        ScrollbarTheme::theme()->updateScrollbarOverlayStyle(verticalScrollbar());
-        verticalScrollbar()->invalidate();
+    if (Scrollbar* scrollbar = verticalScrollbar()) {
+        ScrollbarTheme::theme()->updateScrollbarOverlayStyle(scrollbar);
+        scrollbar->invalidate();
     }
 }
 
@@ -394,6 +424,15 @@ IntPoint ScrollableArea::clampScrollPosition(const IntPoint& scrollPosition) con
 int ScrollableArea::lineStep(ScrollbarOrientation) const
 {
     return pixelsPerLineStep();
+}
+
+int ScrollableArea::pageStep(ScrollbarOrientation orientation) const
+{
+    int length = (orientation == HorizontalScrollbar) ? visibleWidth() : visibleHeight();
+    int minPageStep = static_cast<float>(length) * minFractionToStepWhenPaging();
+    int pageStep = std::max(minPageStep, length - maxOverlapBetweenPages());
+
+    return std::max(pageStep, 1);
 }
 
 int ScrollableArea::documentStep(ScrollbarOrientation orientation) const

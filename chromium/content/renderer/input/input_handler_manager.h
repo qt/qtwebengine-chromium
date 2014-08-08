@@ -8,7 +8,7 @@
 #include "base/containers/scoped_ptr_hash_map.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
-#include "content/port/common/input_event_ack_state.h"
+#include "content/common/input/input_event_ack_state.h"
 #include "content/renderer/render_view_impl.h"
 
 namespace base {
@@ -17,7 +17,6 @@ class MessageLoopProxy;
 
 namespace cc {
 class InputHandler;
-struct DidOverscrollParams;
 }
 
 namespace blink {
@@ -28,6 +27,7 @@ namespace content {
 
 class InputHandlerWrapper;
 class InputHandlerManagerClient;
+struct DidOverscrollParams;
 
 // InputHandlerManager class manages InputHandlerProxy instances for
 // the WebViews in this renderer.
@@ -55,7 +55,10 @@ class InputHandlerManager {
                                       ui::LatencyInfo* latency_info);
 
   // Called from the compositor's thread.
-  void DidOverscroll(int routing_id, const cc::DidOverscrollParams& params);
+  void DidOverscroll(int routing_id, const DidOverscrollParams& params);
+
+  // Called from the compositor's thread.
+  void DidStopFlinging(int routing_id);
 
  private:
   // Called from the compositor's thread.

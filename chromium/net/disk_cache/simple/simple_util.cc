@@ -28,16 +28,18 @@ bool GetNanoSecsFromStat(const struct stat& st,
 #if defined(OS_ANDROID)
   *out_sec = st.st_mtime;
   *out_nsec = st.st_mtime_nsec;
+  return true;
 #elif defined(OS_LINUX)
   *out_sec = st.st_mtim.tv_sec;
   *out_nsec = st.st_mtim.tv_nsec;
+  return true;
 #elif defined(OS_MACOSX) || defined(OS_IOS) || defined(OS_BSD)
   *out_sec = st.st_mtimespec.tv_sec;
   *out_nsec = st.st_mtimespec.tv_nsec;
+  return true;
 #else
   return false;
 #endif
-  return true;
 }
 
 }  // namespace
@@ -125,7 +127,7 @@ bool GetMTime(const base::FilePath& path, base::Time* out_mtime) {
     return true;
   }
 #endif
-  base::PlatformFileInfo file_info;
+  base::File::Info file_info;
   if (!base::GetFileInfo(path, &file_info))
     return false;
   *out_mtime = file_info.last_modified;

@@ -146,7 +146,9 @@ class Dictionary(object):
     result = {'id': self.node.GetName(),
               'properties': properties,
               'type': 'object'}
-    if self.node.GetProperty('inline_doc'):
+    if self.node.GetProperty('nodoc'):
+      result['nodoc'] = True
+    elif self.node.GetProperty('inline_doc'):
       result['inline_doc'] = True
     elif self.node.GetProperty('noinline_doc'):
       result['noinline_doc'] = True
@@ -166,6 +168,8 @@ class Member(object):
   def process(self, callbacks):
     properties = OrderedDict()
     name = self.node.GetName()
+    if self.node.GetProperty('deprecated'):
+      properties['deprecated'] = self.node.GetProperty('deprecated')
     for property_name in ('OPTIONAL', 'nodoc', 'nocompile', 'nodart'):
       if self.node.GetProperty(property_name):
         properties[property_name.lower()] = True
@@ -214,7 +218,7 @@ class Typeref(object):
   function parameter, converts into a Python dictionary that the JSON schema
   compiler expects to see.
   '''
-  def __init__(self, typeref, parent, additional_properties=OrderedDict()):
+  def __init__(self, typeref, parent, additional_properties):
     self.typeref = typeref
     self.parent = parent
     self.additional_properties = additional_properties
@@ -223,7 +227,7 @@ class Typeref(object):
     properties = self.additional_properties
     result = properties
 
-    if self.parent.GetProperty('OPTIONAL'):
+    if self.parent.GetPropertyLocal('OPTIONAL'):
       properties['optional'] = True
 
     # The IDL parser denotes array types by adding a child 'Array' node onto
@@ -262,6 +266,13 @@ class Typeref(object):
       if 'additionalProperties' not in properties:
         properties['additionalProperties'] = OrderedDict()
       properties['additionalProperties']['type'] = 'any'
+    elif self.parent.GetPropertyLocal('Union'):
+      choices = []
+      properties['choices'] = [Typeref(node.GetProperty('TYPEREF'),
+                                       node,
+                                       OrderedDict()).process(callbacks)
+                               for node in self.parent.GetChildren()
+                               if node.cls == 'Option']
     elif self.typeref is None:
       properties['type'] = 'function'
     else:
@@ -307,9 +318,12 @@ class Enum(object):
               'description': self.description,
               'type': 'string',
               'enum': enum}
-    for property_name in ('inline_doc', 'noinline_doc', 'nodoc'):
+    for property_name in (
+        'inline_doc', 'noinline_doc', 'nodoc', 'cpp_enum_prefix_override',):
       if self.node.GetProperty(property_name):
-        result[property_name] = True
+        result[property_name] = self.node.GetProperty(property_name)
+    if self.node.GetProperty('deprecated'):
+        result[deprecated] = self.node.GetProperty('deprecated')
     return result
 
 
@@ -325,7 +339,8 @@ class Namespace(object):
                nodoc=False,
                internal=False,
                platforms=None,
-               compiler_options=None):
+               compiler_options=None,
+               deprecated=None):
     self.namespace = namespace_node
     self.nodoc = nodoc
     self.internal = internal
@@ -336,6 +351,7 @@ class Namespace(object):
     self.types = []
     self.callbacks = OrderedDict()
     self.description = description
+    self.deprecated = deprecated
 
   def process(self):
     for node in self.namespace.GetChildren():
@@ -364,7 +380,8 @@ class Namespace(object):
             'internal': self.internal,
             'events': self.events,
             'platforms': self.platforms,
-            'compiler_options': compiler_options}
+            'compiler_options': compiler_options,
+            'deprecated': self.deprecated}
 
   def process_interface(self, node):
     members = []
@@ -390,7 +407,8 @@ class IDLSchema(object):
     internal = False
     description = None
     platforms = None
-    compiler_options = None
+    compiler_options = {}
+    deprecated = None
     for node in self.idl:
       if node.cls == 'Namespace':
         if not description:
@@ -400,7 +418,8 @@ class IDLSchema(object):
           description = ''
         namespace = Namespace(node, description, nodoc, internal,
                               platforms=platforms,
-                              compiler_options=compiler_options)
+                              compiler_options=compiler_options or None,
+                              deprecated=deprecated)
         namespaces.append(namespace.process())
         nodoc = False
         internal = False
@@ -418,7 +437,11 @@ class IDLSchema(object):
         elif node.name == 'platforms':
           platforms = list(node.value)
         elif node.name == 'implemented_in':
-          compiler_options = {'implemented_in': node.value}
+          compiler_options['implemented_in'] = node.value
+        elif node.name == 'camel_case_enum_to_string':
+          compiler_options['camel_case_enum_to_string'] = node.value
+        elif node.name == 'deprecated':
+          deprecated = str(node.value)
         else:
           continue
       else:
@@ -446,8 +469,14 @@ def Main():
   Dump a json serialization of parse result for the IDL files whose names
   were passed in on the command line.
   '''
-  for filename in sys.argv[1:]:
-    schema = Load(filename)
+  if len(sys.argv) > 1:
+    for filename in sys.argv[1:]:
+      schema = Load(filename)
+      print json.dumps(schema, indent=2)
+  else:
+    contents = sys.stdin.read()
+    idl = idl_parser.IDLParser().ParseData(contents, '<stdin>')
+    schema = IDLSchema(idl).process()
     print json.dumps(schema, indent=2)
 
 

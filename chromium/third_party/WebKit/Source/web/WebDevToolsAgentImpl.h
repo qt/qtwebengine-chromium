@@ -34,21 +34,23 @@
 #include "core/inspector/InspectorClient.h"
 #include "core/inspector/InspectorFrontendChannel.h"
 
-#include "WebDevToolsAgentPrivate.h"
-#include "WebPageOverlay.h"
 #include "public/platform/WebSize.h"
 #include "public/platform/WebThread.h"
+#include "public/web/WebPageOverlay.h"
+#include "web/WebDevToolsAgentPrivate.h"
 #include "wtf/Forward.h"
 #include "wtf/OwnPtr.h"
+#include "wtf/Vector.h"
 
 namespace WebCore {
 class Document;
-class Frame;
+class LocalFrame;
 class FrameView;
 class GraphicsContext;
 class InspectorClient;
 class InspectorController;
 class Node;
+class Page;
 class PlatformKeyboardEvent;
 }
 
@@ -56,7 +58,7 @@ namespace blink {
 
 class WebDevToolsAgentClient;
 class WebFrame;
-class WebFrameImpl;
+class WebLocalFrameImpl;
 class WebString;
 class WebURLRequest;
 class WebURLResponse;
@@ -65,81 +67,103 @@ struct WebMemoryUsageInfo;
 struct WebURLError;
 struct WebDevToolsMessageData;
 
-class WebDevToolsAgentImpl : public WebDevToolsAgentPrivate,
-                             public WebCore::InspectorClient,
-                             public WebCore::InspectorFrontendChannel,
-                             public WebPageOverlay,
-                             private WebThread::TaskObserver {
+class WebDevToolsAgentImpl FINAL :
+    public WebDevToolsAgentPrivate,
+    public WebCore::InspectorClient,
+    public WebCore::InspectorFrontendChannel,
+    public WebPageOverlay,
+    private WebThread::TaskObserver {
 public:
     WebDevToolsAgentImpl(WebViewImpl* webViewImpl, WebDevToolsAgentClient* client);
     virtual ~WebDevToolsAgentImpl();
 
+    WebDevToolsAgentClient* client() { return m_client; }
+
     // WebDevToolsAgentPrivate implementation.
-    virtual void didCreateScriptContext(WebFrameImpl*, int worldId);
-    virtual void webViewResized(const WebSize&);
-    virtual bool handleInputEvent(WebCore::Page*, const WebInputEvent&);
+    virtual void didCreateScriptContext(WebLocalFrameImpl*, int worldId) OVERRIDE;
+    virtual bool handleInputEvent(WebCore::Page*, const WebInputEvent&) OVERRIDE;
 
     // WebDevToolsAgent implementation.
-    virtual void attach();
-    virtual void reattach(const WebString& savedState);
-    virtual void detach();
-    virtual void didNavigate();
-    virtual void didBeginFrame(int frameId);
-    virtual void didCancelFrame();
-    virtual void willComposite();
-    virtual void didComposite();
-    virtual void dispatchOnInspectorBackend(const WebString& message);
-    virtual void inspectElementAt(const WebPoint& point);
-    virtual void evaluateInWebInspector(long callId, const WebString& script);
-    virtual void setProcessId(long);
-    virtual void setLayerTreeId(int);
-    // FIXME: remove it once the client side stops firing these.
-    virtual void processGPUEvent(double timestamp, int phase, bool foreign) OVERRIDE;
+    virtual void attach() OVERRIDE;
+    virtual void reattach(const WebString& savedState) OVERRIDE;
+    virtual void attach(const WebString& hostId) OVERRIDE;
+    virtual void reattach(const WebString& hostId, const WebString& savedState) OVERRIDE;
+    virtual void detach() OVERRIDE;
+    virtual void didNavigate() OVERRIDE;
+    virtual void didBeginFrame(int frameId) OVERRIDE;
+    virtual void didCancelFrame() OVERRIDE;
+    virtual void willComposite() OVERRIDE;
+    virtual void didComposite() OVERRIDE;
+    virtual void dispatchOnInspectorBackend(const WebString& message) OVERRIDE;
+    virtual void inspectElementAt(const WebPoint&) OVERRIDE;
+    virtual void evaluateInWebInspector(long callId, const WebString& script) OVERRIDE;
+    virtual void setProcessId(long) OVERRIDE;
+    virtual void setLayerTreeId(int) OVERRIDE;
     virtual void processGPUEvent(const GPUEvent&) OVERRIDE;
 
     // InspectorClient implementation.
-    virtual void highlight();
-    virtual void hideHighlight();
-    virtual void updateInspectorStateCookie(const WTF::String&);
-    virtual bool sendMessageToFrontend(const WTF::String&);
+    virtual void highlight() OVERRIDE;
+    virtual void hideHighlight() OVERRIDE;
+    virtual void updateInspectorStateCookie(const WTF::String&) OVERRIDE;
+    virtual void sendMessageToFrontend(PassRefPtr<WebCore::JSONObject> message) OVERRIDE;
+    virtual void flush() OVERRIDE;
 
-    virtual void clearBrowserCache();
-    virtual void clearBrowserCookies();
+    virtual void setDeviceMetricsOverride(int width, int height, float deviceScaleFactor, bool emulateViewport, bool fitWindow) OVERRIDE;
+    virtual void clearDeviceMetricsOverride() OVERRIDE;
+    virtual void setTouchEventEmulationEnabled(bool) OVERRIDE;
 
-    virtual void overrideDeviceMetrics(int width, int height, float deviceScaleFactor, bool emulateViewport, bool fitWindow);
+    virtual void getAllocatedObjects(HashSet<const void*>&) OVERRIDE;
+    virtual void dumpUncountedAllocatedObjects(const HashMap<const void*, size_t>&) OVERRIDE;
+    virtual void setTraceEventCallback(const WTF::String& categoryFilter, TraceEventCallback) OVERRIDE;
+    virtual void resetTraceEventCallback() OVERRIDE;
+    virtual void enableTracing(const WTF::String& categoryFilter) OVERRIDE;
+    virtual void disableTracing() OVERRIDE;
 
-    virtual void getAllocatedObjects(HashSet<const void*>&);
-    virtual void dumpUncountedAllocatedObjects(const HashMap<const void*, size_t>&);
-    virtual void setTraceEventCallback(TraceEventCallback);
     virtual void startGPUEventsRecording() OVERRIDE;
     virtual void stopGPUEventsRecording() OVERRIDE;
 
-    virtual void dispatchKeyEvent(const WebCore::PlatformKeyboardEvent&);
-    virtual void dispatchMouseEvent(const WebCore::PlatformMouseEvent&);
+    virtual void dispatchKeyEvent(const WebCore::PlatformKeyboardEvent&) OVERRIDE;
+    virtual void dispatchMouseEvent(const WebCore::PlatformMouseEvent&) OVERRIDE;
 
     // WebPageOverlay
-    virtual void paintPageOverlay(WebCanvas*);
+    virtual void paintPageOverlay(WebCanvas*) OVERRIDE;
+
+    void flushPendingFrontendMessages();
 
 private:
     // WebThread::TaskObserver
-    virtual void willProcessTask();
-    virtual void didProcessTask();
+    virtual void willProcessTask() OVERRIDE;
+    virtual void didProcessTask() OVERRIDE;
 
     void enableViewportEmulation();
     void disableViewportEmulation();
+    void updatePageScaleFactorLimits();
 
     WebCore::InspectorController* inspectorController();
-    WebCore::Frame* mainFrame();
+    WebCore::LocalFrame* mainFrame();
 
-    int m_hostId;
+    int m_debuggerId;
+    int m_layerTreeId;
     WebDevToolsAgentClient* m_client;
     WebViewImpl* m_webViewImpl;
     bool m_attached;
     bool m_generatingEvent;
+
     bool m_deviceMetricsEnabled;
     bool m_emulateViewportEnabled;
     bool m_originalViewportEnabled;
     bool m_isOverlayScrollbarsEnabled;
+
+    float m_originalMinimumPageScaleFactor;
+    float m_originalMaximumPageScaleFactor;
+    bool m_pageScaleLimitsOverriden;
+
+    bool m_touchEventEmulationEnabled;
+    OwnPtr<WebCore::IntPoint> m_lastPinchAnchorCss;
+    OwnPtr<WebCore::IntPoint> m_lastPinchAnchorDip;
+
+    typedef Vector<RefPtr<WebCore::JSONObject> > FrontendMessageQueue;
+    FrontendMessageQueue m_frontendMessageQueue;
 };
 
 } // namespace blink

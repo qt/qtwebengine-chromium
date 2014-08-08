@@ -14,7 +14,7 @@
 #include "content/renderer/pepper/npobject_var.h"
 #include "content/renderer/pepper/pepper_plugin_instance_impl.h"
 #include "content/renderer/pepper/plugin_module.h"
-#include "content/renderer/render_view_impl.h"
+#include "content/renderer/render_frame_impl.h"
 #include "ppapi/shared_impl/ppapi_globals.h"
 #include "ppapi/shared_impl/var_tracker.h"
 #include "third_party/WebKit/public/platform/WebPoint.h"
@@ -48,25 +48,21 @@ namespace content {
 
 struct PepperWebPluginImpl::InitData {
   scoped_refptr<PluginModule> module;
-  base::WeakPtr<RenderViewImpl> render_view;
-  RenderFrame* render_frame;
+  RenderFrameImpl* render_frame;
   std::vector<std::string> arg_names;
   std::vector<std::string> arg_values;
   GURL url;
 };
 
-PepperWebPluginImpl::PepperWebPluginImpl(
-    PluginModule* plugin_module,
-    const WebPluginParams& params,
-    const base::WeakPtr<RenderViewImpl>& render_view,
-    RenderFrame* render_frame)
+PepperWebPluginImpl::PepperWebPluginImpl(PluginModule* plugin_module,
+                                         const WebPluginParams& params,
+                                         RenderFrameImpl* render_frame)
     : init_data_(new InitData()),
       full_frame_(params.loadManually),
       instance_object_(PP_MakeUndefined()),
       container_(NULL) {
   DCHECK(plugin_module);
   init_data_->module = plugin_module;
-  init_data_->render_view = render_view;
   init_data_->render_frame = render_frame;
   for (size_t i = 0; i < params.attributeNames.size(); ++i) {
     init_data_->arg_names.push_back(params.attributeNames[i].utf8());
@@ -78,8 +74,7 @@ PepperWebPluginImpl::PepperWebPluginImpl(
   base::debug::SetCrashKeyValue("subresource_url", init_data_->url.spec());
 }
 
-PepperWebPluginImpl::~PepperWebPluginImpl() {
-}
+PepperWebPluginImpl::~PepperWebPluginImpl() {}
 
 blink::WebPluginContainer* PepperWebPluginImpl::container() const {
   return container_;
@@ -88,16 +83,15 @@ blink::WebPluginContainer* PepperWebPluginImpl::container() const {
 bool PepperWebPluginImpl::initialize(WebPluginContainer* container) {
   // The plugin delegate may have gone away.
   instance_ = init_data_->module->CreateInstance(
-      init_data_->render_view->main_render_frame(), container, init_data_->url);
+      init_data_->render_frame, container, init_data_->url);
   if (!instance_.get())
     return false;
 
   // Enable script objects for this plugin.
   container->allowScriptObjects();
 
-  bool success = instance_->Initialize(init_data_->arg_names,
-                                       init_data_->arg_values,
-                                       full_frame_);
+  bool success = instance_->Initialize(
+      init_data_->arg_names, init_data_->arg_values, full_frame_);
   if (!success) {
     instance_->Delete();
     instance_ = NULL;
@@ -154,13 +148,9 @@ NPObject* PepperWebPluginImpl::scriptableObject() {
   return message_channel_np_object;
 }
 
-NPP PepperWebPluginImpl::pluginNPP() {
-  return instance_->instanceNPP();
-}
+NPP PepperWebPluginImpl::pluginNPP() { return instance_->instanceNPP(); }
 
-bool PepperWebPluginImpl::getFormValue(WebString& value) {
-  return false;
-}
+bool PepperWebPluginImpl::getFormValue(WebString& value) { return false; }
 
 void PepperWebPluginImpl::paint(WebCanvas* canvas, const WebRect& rect) {
   if (!instance_->FlashIsFullscreenOrPending())
@@ -185,12 +175,9 @@ void PepperWebPluginImpl::updateFocus(bool focused) {
   instance_->SetWebKitFocus(focused);
 }
 
-void PepperWebPluginImpl::updateVisibility(bool visible) {
-}
+void PepperWebPluginImpl::updateVisibility(bool visible) {}
 
-bool PepperWebPluginImpl::acceptsInputEvents() {
-  return true;
-}
+bool PepperWebPluginImpl::acceptsInputEvents() { return true; }
 
 bool PepperWebPluginImpl::handleInputEvent(const blink::WebInputEvent& event,
                                            blink::WebCursorInfo& cursor_info) {
@@ -214,7 +201,8 @@ void PepperWebPluginImpl::didReceiveData(const char* data, int data_length) {
 void PepperWebPluginImpl::didFinishLoading() {
   blink::WebURLLoaderClient* document_loader = instance_->document_loader();
   if (document_loader)
-    document_loader->didFinishLoading(NULL, 0.0);
+    document_loader->didFinishLoading(
+        NULL, 0.0, blink::WebURLLoaderClient::kUnknownEncodedDataLength);
 }
 
 void PepperWebPluginImpl::didFailLoading(const blink::WebURLError& error) {
@@ -223,16 +211,13 @@ void PepperWebPluginImpl::didFailLoading(const blink::WebURLError& error) {
     document_loader->didFail(NULL, error);
 }
 
-void PepperWebPluginImpl::didFinishLoadingFrameRequest(
-    const blink::WebURL& url,
-    void* notify_data) {
-}
+void PepperWebPluginImpl::didFinishLoadingFrameRequest(const blink::WebURL& url,
+                                                       void* notify_data) {}
 
 void PepperWebPluginImpl::didFailLoadingFrameRequest(
     const blink::WebURL& url,
     void* notify_data,
-    const blink::WebURLError& error) {
-}
+    const blink::WebURLError& error) {}
 
 bool PepperWebPluginImpl::hasSelection() const {
   return !selectionAsText().isEmpty();
@@ -264,9 +249,7 @@ void PepperWebPluginImpl::selectFindResult(bool forward) {
   instance_->SelectFindResult(forward);
 }
 
-void PepperWebPluginImpl::stopFind() {
-  instance_->StopFind();
-}
+void PepperWebPluginImpl::stopFind() { instance_->StopFind(); }
 
 bool PepperWebPluginImpl::supportsPaginatedPrint() {
   return instance_->SupportsPrintInterface();
@@ -280,25 +263,18 @@ int PepperWebPluginImpl::printBegin(const WebPrintParams& print_params) {
   return instance_->PrintBegin(print_params);
 }
 
-bool PepperWebPluginImpl::printPage(int page_number,
-                                    blink::WebCanvas* canvas) {
+bool PepperWebPluginImpl::printPage(int page_number, blink::WebCanvas* canvas) {
   return instance_->PrintPage(page_number, canvas);
 }
 
-void PepperWebPluginImpl::printEnd() {
-  return instance_->PrintEnd();
-}
+void PepperWebPluginImpl::printEnd() { return instance_->PrintEnd(); }
 
-bool PepperWebPluginImpl::canRotateView() {
-  return instance_->CanRotateView();
-}
+bool PepperWebPluginImpl::canRotateView() { return instance_->CanRotateView(); }
 
 void PepperWebPluginImpl::rotateView(RotationType type) {
   instance_->RotateView(type);
 }
 
-bool PepperWebPluginImpl::isPlaceholder() {
-  return false;
-}
+bool PepperWebPluginImpl::isPlaceholder() { return false; }
 
 }  // namespace content

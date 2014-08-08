@@ -36,10 +36,12 @@
 #include "bindings/v8/ExceptionState.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
+#include "core/dom/Microtask.h"
 #include "core/dom/MutationCallback.h"
 #include "core/dom/MutationObserverRegistration.h"
 #include "core/dom/MutationRecord.h"
 #include "core/dom/Node.h"
+#include "core/inspector/InspectorInstrumentation.h"
 #include "wtf/MainThread.h"
 
 namespace WebCore {
@@ -47,16 +49,16 @@ namespace WebCore {
 static unsigned s_observerPriority = 0;
 
 struct MutationObserver::ObserverLessThan {
-    bool operator()(const RefPtr<MutationObserver>& lhs, const RefPtr<MutationObserver>& rhs)
+    bool operator()(const RefPtrWillBeMember<MutationObserver>& lhs, const RefPtrWillBeMember<MutationObserver>& rhs)
     {
         return lhs->m_priority < rhs->m_priority;
     }
 };
 
-PassRefPtr<MutationObserver> MutationObserver::create(PassOwnPtr<MutationCallback> callback)
+PassRefPtrWillBeRawPtr<MutationObserver> MutationObserver::create(PassOwnPtr<MutationCallback> callback)
 {
     ASSERT(isMainThread());
-    return adoptRef(new MutationObserver(callback));
+    return adoptRefWillBeNoop(new MutationObserver(callback));
 }
 
 MutationObserver::MutationObserver(PassOwnPtr<MutationCallback> callback)
@@ -68,7 +70,11 @@ MutationObserver::MutationObserver(PassOwnPtr<MutationCallback> callback)
 
 MutationObserver::~MutationObserver()
 {
+#if !ENABLE(OILPAN)
     ASSERT(m_registrations.isEmpty());
+#endif
+    if (!m_records.isEmpty())
+        InspectorInstrumentation::didClearAllMutationRecords(m_callback->executionContext(), this);
 }
 
 void MutationObserver::observe(Node* node, const Dictionary& optionsDictionary, ExceptionState& exceptionState)
@@ -115,40 +121,43 @@ void MutationObserver::observe(Node* node, const Dictionary& optionsDictionary, 
 
     if (!(options & Attributes)) {
         if (options & AttributeOldValue) {
-            exceptionState.throwDOMException(TypeError, "The options object may only set 'attributeOldValue' to true when 'attributes' is true or not present.");
+            exceptionState.throwTypeError("The options object may only set 'attributeOldValue' to true when 'attributes' is true or not present.");
             return;
         }
         if (options & AttributeFilter) {
-            exceptionState.throwDOMException(TypeError, "The options object may only set 'attributeFilter' when 'attributes' is true or not present.");
+            exceptionState.throwTypeError("The options object may only set 'attributeFilter' when 'attributes' is true or not present.");
             return;
         }
     }
     if (!((options & CharacterData) || !(options & CharacterDataOldValue))) {
-        exceptionState.throwDOMException(TypeError, "The options object may only set 'characterDataOldValue' to true when 'characterData' is true or not present.");
+        exceptionState.throwTypeError("The options object may only set 'characterDataOldValue' to true when 'characterData' is true or not present.");
         return;
     }
 
     if (!(options & (Attributes | CharacterData | ChildList))) {
-        exceptionState.throwDOMException(TypeError, "The options object must set at least one of 'attributes', 'characterData', or 'childList' to true.");
+        exceptionState.throwTypeError("The options object must set at least one of 'attributes', 'characterData', or 'childList' to true.");
         return;
     }
 
-    node->registerMutationObserver(this, options, attributeFilter);
+    node->registerMutationObserver(*this, options, attributeFilter);
 }
 
-Vector<RefPtr<MutationRecord> > MutationObserver::takeRecords()
+MutationRecordVector MutationObserver::takeRecords()
 {
-    Vector<RefPtr<MutationRecord> > records;
+    MutationRecordVector records;
     records.swap(m_records);
+    InspectorInstrumentation::didClearAllMutationRecords(m_callback->executionContext(), this);
     return records;
 }
 
 void MutationObserver::disconnect()
 {
     m_records.clear();
-    HashSet<MutationObserverRegistration*> registrations(m_registrations);
-    for (HashSet<MutationObserverRegistration*>::iterator iter = registrations.begin(); iter != registrations.end(); ++iter)
+    InspectorInstrumentation::didClearAllMutationRecords(m_callback->executionContext(), this);
+    MutationObserverRegistrationSet registrations(m_registrations);
+    for (MutationObserverRegistrationSet::iterator iter = registrations.begin(); iter != registrations.end(); ++iter)
         (*iter)->unregister();
+    ASSERT(m_registrations.isEmpty());
 }
 
 void MutationObserver::observationStarted(MutationObserverRegistration* registration)
@@ -163,37 +172,54 @@ void MutationObserver::observationEnded(MutationObserverRegistration* registrati
     m_registrations.remove(registration);
 }
 
-typedef HashSet<RefPtr<MutationObserver> > MutationObserverSet;
-
 static MutationObserverSet& activeMutationObservers()
 {
+#if ENABLE(OILPAN)
+    DEFINE_STATIC_LOCAL(Persistent<MutationObserverSet>, activeObservers, (new MutationObserverSet()));
+    return *activeObservers;
+#else
     DEFINE_STATIC_LOCAL(MutationObserverSet, activeObservers, ());
     return activeObservers;
+#endif
 }
 
 static MutationObserverSet& suspendedMutationObservers()
 {
+#if ENABLE(OILPAN)
+    DEFINE_STATIC_LOCAL(Persistent<MutationObserverSet>, suspendedObservers, (new MutationObserverSet()));
+    return *suspendedObservers;
+#else
     DEFINE_STATIC_LOCAL(MutationObserverSet, suspendedObservers, ());
     return suspendedObservers;
+#endif
 }
 
-void MutationObserver::enqueueMutationRecord(PassRefPtr<MutationRecord> mutation)
+static void activateObserver(PassRefPtrWillBeRawPtr<MutationObserver> observer)
+{
+    if (activeMutationObservers().isEmpty())
+        Microtask::enqueueMicrotask(WTF::bind(&MutationObserver::deliverMutations));
+
+    activeMutationObservers().add(observer);
+}
+
+void MutationObserver::enqueueMutationRecord(PassRefPtrWillBeRawPtr<MutationRecord> mutation)
 {
     ASSERT(isMainThread());
     m_records.append(mutation);
-    activeMutationObservers().add(this);
+    activateObserver(this);
+    InspectorInstrumentation::didEnqueueMutationRecord(m_callback->executionContext(), this);
 }
 
 void MutationObserver::setHasTransientRegistration()
 {
     ASSERT(isMainThread());
-    activeMutationObservers().add(this);
+    activateObserver(this);
 }
 
 HashSet<Node*> MutationObserver::getObservedNodes() const
 {
     HashSet<Node*> observedNodes;
-    for (HashSet<MutationObserverRegistration*>::const_iterator iter = m_registrations.begin(); iter != m_registrations.end(); ++iter)
+    for (MutationObserverRegistrationSet::const_iterator iter = m_registrations.begin(); iter != m_registrations.end(); ++iter)
         (*iter)->addRegistrationNodesToSet(observedNodes);
     return observedNodes;
 }
@@ -209,8 +235,8 @@ void MutationObserver::deliver()
 
     // Calling clearTransientRegistrations() can modify m_registrations, so it's necessary
     // to make a copy of the transient registrations before operating on them.
-    Vector<MutationObserverRegistration*, 1> transientRegistrations;
-    for (HashSet<MutationObserverRegistration*>::iterator iter = m_registrations.begin(); iter != m_registrations.end(); ++iter) {
+    WillBeHeapVector<RawPtrWillBeMember<MutationObserverRegistration>, 1> transientRegistrations;
+    for (MutationObserverRegistrationSet::iterator iter = m_registrations.begin(); iter != m_registrations.end(); ++iter) {
         if ((*iter)->hasTransientRegistrations())
             transientRegistrations.append(*iter);
     }
@@ -220,46 +246,49 @@ void MutationObserver::deliver()
     if (m_records.isEmpty())
         return;
 
-    Vector<RefPtr<MutationRecord> > records;
+    MutationRecordVector records;
     records.swap(m_records);
 
+    InspectorInstrumentation::willDeliverMutationRecords(m_callback->executionContext(), this);
     m_callback->call(records, this);
+    InspectorInstrumentation::didDeliverMutationRecords(m_callback->executionContext());
 }
 
-void MutationObserver::deliverAllMutations()
+void MutationObserver::resumeSuspendedObservers()
 {
     ASSERT(isMainThread());
-    static bool deliveryInProgress = false;
-    if (deliveryInProgress)
+    if (suspendedMutationObservers().isEmpty())
         return;
-    deliveryInProgress = true;
 
-    if (!suspendedMutationObservers().isEmpty()) {
-        Vector<RefPtr<MutationObserver> > suspended;
-        copyToVector(suspendedMutationObservers(), suspended);
-        for (size_t i = 0; i < suspended.size(); ++i) {
-            if (!suspended[i]->canDeliver())
-                continue;
-
+    MutationObserverVector suspended;
+    copyToVector(suspendedMutationObservers(), suspended);
+    for (size_t i = 0; i < suspended.size(); ++i) {
+        if (suspended[i]->canDeliver()) {
             suspendedMutationObservers().remove(suspended[i]);
-            activeMutationObservers().add(suspended[i]);
+            activateObserver(suspended[i]);
         }
     }
+}
 
-    while (!activeMutationObservers().isEmpty()) {
-        Vector<RefPtr<MutationObserver> > observers;
-        copyToVector(activeMutationObservers(), observers);
-        activeMutationObservers().clear();
-        std::sort(observers.begin(), observers.end(), ObserverLessThan());
-        for (size_t i = 0; i < observers.size(); ++i) {
-            if (observers[i]->canDeliver())
-                observers[i]->deliver();
-            else
-                suspendedMutationObservers().add(observers[i]);
-        }
+void MutationObserver::deliverMutations()
+{
+    ASSERT(isMainThread());
+    MutationObserverVector observers;
+    copyToVector(activeMutationObservers(), observers);
+    activeMutationObservers().clear();
+    std::sort(observers.begin(), observers.end(), ObserverLessThan());
+    for (size_t i = 0; i < observers.size(); ++i) {
+        if (observers[i]->canDeliver())
+            observers[i]->deliver();
+        else
+            suspendedMutationObservers().add(observers[i]);
     }
+}
 
-    deliveryInProgress = false;
+void MutationObserver::trace(Visitor* visitor)
+{
+    visitor->trace(m_records);
+    visitor->trace(m_registrations);
 }
 
 } // namespace WebCore

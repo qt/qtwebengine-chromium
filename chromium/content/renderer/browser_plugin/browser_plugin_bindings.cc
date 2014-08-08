@@ -51,18 +51,6 @@ std::string StringFromNPVariant(const NPVariant& variant) {
   return std::string(np_string.UTF8Characters, np_string.UTF8Length);
 }
 
-bool StringToNPVariant(const std::string &in, NPVariant *variant) {
-  size_t length = in.size();
-  NPUTF8 *chars = static_cast<NPUTF8 *>(malloc(length));
-  if (!chars) {
-    VOID_TO_NPVARIANT(*variant);
-    return false;
-  }
-  memcpy(chars, in.c_str(), length);
-  STRINGN_TO_NPVARIANT(chars, length, *variant);
-  return true;
-}
-
 // Depending on where the attribute comes from it could be a string, int32,
 // or a double. Javascript tends to produce an int32 or a string, but setting
 // the value from the developer tools console may also produce a double.
@@ -231,57 +219,42 @@ class BrowserPluginMethodBinding {
 class BrowserPluginBindingAttach: public BrowserPluginMethodBinding {
  public:
   BrowserPluginBindingAttach()
-      : BrowserPluginMethodBinding(
-          browser_plugin::kMethodInternalAttach, 1) {
-  }
+      : BrowserPluginMethodBinding(browser_plugin::kMethodInternalAttach, 2) {}
 
   virtual bool Invoke(BrowserPluginBindings* bindings,
                       const NPVariant* args,
                       NPVariant* result) OVERRIDE {
+    bool attached = InvokeHelper(bindings, args);
+    BOOLEAN_TO_NPVARIANT(attached, *result);
+    return true;
+  }
+
+ private:
+  bool InvokeHelper(BrowserPluginBindings* bindings, const NPVariant* args) {
     if (!bindings->instance()->render_view())
       return false;
 
+    int instance_id = IntFromNPVariant(args[0]);
+    if (!instance_id)
+      return false;
+
     scoped_ptr<V8ValueConverter> converter(V8ValueConverter::create());
-    v8::Handle<v8::Value> obj(blink::WebBindings::toV8Value(&args[0]));
+    v8::Handle<v8::Value> obj(blink::WebBindings::toV8Value(&args[1]));
     scoped_ptr<base::Value> value(
         converter->FromV8Value(obj, bindings->instance()->render_view()->
             GetWebView()->mainFrame()->mainWorldScriptContext()));
     if (!value)
       return false;
 
-    if (!value->IsType(Value::TYPE_DICTIONARY))
+    if (!value->IsType(base::Value::TYPE_DICTIONARY))
       return false;
 
     scoped_ptr<base::DictionaryValue> extra_params(
         static_cast<base::DictionaryValue*>(value.release()));
-    bindings->instance()->Attach(extra_params.Pass());
+    bindings->instance()->Attach(instance_id, extra_params.Pass());
     return true;
   }
-
- private:
   DISALLOW_COPY_AND_ASSIGN(BrowserPluginBindingAttach);
-};
-
-class BrowserPluginBindingAttachWindowTo : public BrowserPluginMethodBinding {
- public:
-  BrowserPluginBindingAttachWindowTo()
-      : BrowserPluginMethodBinding(
-          browser_plugin::kMethodInternalAttachWindowTo, 2) {
-  }
-
-  virtual bool Invoke(BrowserPluginBindings* bindings,
-                      const NPVariant* args,
-                      NPVariant* result) OVERRIDE {
-    blink::WebNode node;
-    WebBindings::getNode(NPVARIANT_TO_OBJECT(args[0]), &node);
-    int window_id = IntFromNPVariant(args[1]);
-    BOOLEAN_TO_NPVARIANT(BrowserPlugin::AttachWindowTo(node, window_id),
-                         *result);
-    return true;
-  }
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(BrowserPluginBindingAttachWindowTo);
 };
 
 // BrowserPluginPropertyBinding ------------------------------------------------
@@ -530,127 +503,6 @@ class BrowserPluginPropertyBindingMinWidth
   DISALLOW_COPY_AND_ASSIGN(BrowserPluginPropertyBindingMinWidth);
 };
 
-class BrowserPluginPropertyBindingName
-    : public BrowserPluginPropertyBinding {
- public:
-  BrowserPluginPropertyBindingName()
-      : BrowserPluginPropertyBinding(browser_plugin::kAttributeName) {
-  }
-  virtual bool GetProperty(BrowserPluginBindings* bindings,
-                           NPVariant* result) OVERRIDE {
-    std::string name = bindings->instance()->GetNameAttribute();
-    return StringToNPVariant(name, result);
-  }
-  virtual bool SetProperty(BrowserPluginBindings* bindings,
-                           NPObject* np_obj,
-                           const NPVariant* variant) OVERRIDE {
-    std::string new_value = StringFromNPVariant(*variant);
-    if (bindings->instance()->GetNameAttribute() != new_value) {
-      UpdateDOMAttribute(bindings, new_value);
-      bindings->instance()->ParseNameAttribute();
-    }
-    return true;
-  }
-  virtual void RemoveProperty(BrowserPluginBindings* bindings,
-                              NPObject* np_obj) OVERRIDE {
-    bindings->instance()->RemoveDOMAttribute(name());
-    bindings->instance()->ParseNameAttribute();
-  }
- private:
-  DISALLOW_COPY_AND_ASSIGN(BrowserPluginPropertyBindingName);
-};
-
-class BrowserPluginPropertyBindingPartition
-    : public BrowserPluginPropertyBinding {
- public:
-  BrowserPluginPropertyBindingPartition()
-      : BrowserPluginPropertyBinding(browser_plugin::kAttributePartition) {
-  }
-  virtual bool GetProperty(BrowserPluginBindings* bindings,
-                           NPVariant* result) OVERRIDE {
-    std::string partition_id = bindings->instance()->GetPartitionAttribute();
-    return StringToNPVariant(partition_id, result);
-  }
-  virtual bool SetProperty(BrowserPluginBindings* bindings,
-                           NPObject* np_obj,
-                           const NPVariant* variant) OVERRIDE {
-    std::string new_value = StringFromNPVariant(*variant);
-    std::string old_value = bindings->instance()->GetPartitionAttribute();
-    if (old_value != new_value) {
-      UpdateDOMAttribute(bindings, new_value);
-      std::string error_message;
-      if (!bindings->instance()->ParsePartitionAttribute(&error_message)) {
-        // Reset to old value on error.
-        UpdateDOMAttribute(bindings, old_value);
-        // Exceptions must be set as the last operation before returning to
-        // script.
-        WebBindings::setException(
-            np_obj, static_cast<const NPUTF8 *>(error_message.c_str()));
-        return false;
-      }
-    }
-    return true;
-  }
-  virtual void RemoveProperty(BrowserPluginBindings* bindings,
-                              NPObject* np_obj) OVERRIDE {
-    std::string error_message;
-    if (bindings->instance()->CanRemovePartitionAttribute(&error_message)) {
-      bindings->instance()->RemoveDOMAttribute(name());
-    } else {
-      WebBindings::setException(
-          np_obj, static_cast<const NPUTF8 *>(error_message.c_str()));
-    }
-  }
- private:
-  DISALLOW_COPY_AND_ASSIGN(BrowserPluginPropertyBindingPartition);
-};
-
-class BrowserPluginPropertyBindingSrc : public BrowserPluginPropertyBinding {
- public:
-  BrowserPluginPropertyBindingSrc()
-      : BrowserPluginPropertyBinding(browser_plugin::kAttributeSrc) {
-  }
-  virtual bool GetProperty(BrowserPluginBindings* bindings,
-                           NPVariant* result) OVERRIDE {
-    std::string src = bindings->instance()->GetSrcAttribute();
-    return StringToNPVariant(src, result);
-  }
-  virtual bool SetProperty(BrowserPluginBindings* bindings,
-                           NPObject* np_obj,
-                           const NPVariant* variant) OVERRIDE {
-    std::string new_value = StringFromNPVariant(*variant);
-    // We should not be issuing navigation IPCs if we attempt to set the
-    // src property to the empty string. Instead, we want to simply restore
-    // the src attribute back to its old value.
-    if (new_value.empty()) {
-      return true;
-    }
-    std::string old_value = bindings->instance()->GetSrcAttribute();
-    // If the new value was empty then we're effectively resetting the
-    // attribute to the old value here. This will be picked up by <webview>'s
-    // mutation observer and will restore the src attribute after it has been
-    // removed.
-    UpdateDOMAttribute(bindings, new_value);
-    std::string error_message;
-    if (!bindings->instance()->ParseSrcAttribute(&error_message)) {
-      // Reset to old value on error.
-      UpdateDOMAttribute(bindings, old_value);
-      // Exceptions must be set as the last operation before returning to
-      // script.
-      WebBindings::setException(
-          np_obj, static_cast<const NPUTF8 *>(error_message.c_str()));
-      return false;
-    }
-    return true;
-  }
-  virtual void RemoveProperty(BrowserPluginBindings* bindings,
-                              NPObject* np_obj) OVERRIDE {
-    bindings->instance()->RemoveDOMAttribute(name());
-  }
- private:
-  DISALLOW_COPY_AND_ASSIGN(BrowserPluginPropertyBindingSrc);
-};
-
 
 // BrowserPluginBindings ------------------------------------------------------
 
@@ -671,7 +523,6 @@ BrowserPluginBindings::BrowserPluginBindings(BrowserPlugin* instance)
   np_object_->message_channel = weak_ptr_factory_.GetWeakPtr();
 
   method_bindings_.push_back(new BrowserPluginBindingAttach);
-  method_bindings_.push_back(new BrowserPluginBindingAttachWindowTo);
 
   property_bindings_.push_back(
       new BrowserPluginPropertyBindingAllowTransparency);
@@ -681,9 +532,6 @@ BrowserPluginBindings::BrowserPluginBindings(BrowserPlugin* instance)
   property_bindings_.push_back(new BrowserPluginPropertyBindingMaxWidth);
   property_bindings_.push_back(new BrowserPluginPropertyBindingMinHeight);
   property_bindings_.push_back(new BrowserPluginPropertyBindingMinWidth);
-  property_bindings_.push_back(new BrowserPluginPropertyBindingName);
-  property_bindings_.push_back(new BrowserPluginPropertyBindingPartition);
-  property_bindings_.push_back(new BrowserPluginPropertyBindingSrc);
 }
 
 BrowserPluginBindings::~BrowserPluginBindings() {

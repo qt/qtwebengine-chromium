@@ -28,32 +28,34 @@
 
 #include "core/fetch/ResourceClient.h"
 #include "core/fetch/ResourcePtr.h"
+#include "platform/Timer.h"
 #include "platform/fonts/FontOrientation.h"
 #include "platform/fonts/FontWidthVariant.h"
 #include "wtf/OwnPtr.h"
 
 namespace WebCore {
 
+class Document;
 class ResourceFetcher;
 class FontPlatformData;
-class SVGDocument;
 class SVGFontElement;
 class FontCustomPlatformData;
 
-class FontResource : public Resource {
+class FontResource FINAL : public Resource {
 public:
     typedef ResourceClient ClientType;
 
     FontResource(const ResourceRequest&);
     virtual ~FontResource();
 
-    virtual void load(ResourceFetcher*, const ResourceLoaderOptions&);
+    virtual void load(ResourceFetcher*, const ResourceLoaderOptions&) OVERRIDE;
 
-    virtual void didAddClient(ResourceClient*);
+    virtual void didAddClient(ResourceClient*) OVERRIDE;
 
-    virtual void allClientsRemoved();
+    virtual void allClientsRemoved() OVERRIDE;
     void beginLoadIfNeeded(ResourceFetcher* dl);
-    bool stillNeedsLoad() const { return !m_loadInitiated; }
+    virtual bool stillNeedsLoad() const OVERRIDE { return !m_loadInitiated; }
+    bool exceedsFontLoadWaitLimit() const { return m_exceedsFontLoadWaitLimit; }
 
     bool ensureCustomFontData();
     FontPlatformData platformDataFromCustomData(float size, bool bold, bool italic, FontOrientation = Horizontal, FontWidthVariant = RegularWidth);
@@ -63,13 +65,20 @@ public:
     SVGFontElement* getSVGFontById(const String&) const;
 #endif
 
+protected:
+    virtual bool isSafeToUnlock() const OVERRIDE;
+
 private:
-    virtual void checkNotify();
+    virtual void checkNotify() OVERRIDE;
+    void fontLoadWaitLimitCallback(Timer<FontResource>*);
+
     OwnPtr<FontCustomPlatformData> m_fontData;
     bool m_loadInitiated;
+    bool m_exceedsFontLoadWaitLimit;
+    Timer<FontResource> m_fontLoadWaitLimitTimer;
 
 #if ENABLE(SVG_FONTS)
-    RefPtr<WebCore::SVGDocument> m_externalSVGDocument;
+    RefPtrWillBePersistent<Document> m_externalSVGDocument;
 #endif
 
     friend class MemoryCache;
@@ -81,9 +90,10 @@ class FontResourceClient : public ResourceClient {
 public:
     virtual ~FontResourceClient() { }
     static ResourceClientType expectedType() { return FontType; }
-    virtual ResourceClientType resourceClientType() const { return expectedType(); }
+    virtual ResourceClientType resourceClientType() const OVERRIDE FINAL { return expectedType(); }
     virtual void fontLoaded(FontResource*) { }
     virtual void didStartFontLoad(FontResource*) { }
+    virtual void fontLoadWaitLimitExceeded(FontResource*) { }
 };
 
 }

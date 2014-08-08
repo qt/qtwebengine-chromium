@@ -99,13 +99,12 @@ model.takeExpectationUpdateQueue = function()
 
 var g_commitIndex = {};
 
-model.updateRecentCommits = function(callback)
+model.updateRecentCommits = function()
 {
-    trac.recentCommitData('trunk', kCommitLogLength, function(commitDataList) {
+    return trac.recentCommitData('trunk', kCommitLogLength).then(function(commitDataList) {
         model.state.recentCommits = commitDataList;
         updateCommitIndex();
         findAndMarkRevertedRevisions(model.state.recentCommits);
-        callback();
     });
 };
 
@@ -141,7 +140,7 @@ model.buildersInFlightForRevision = function(revision)
 model.latestRevision = function()
 {
     return model.state.recentCommits[0].revision;
-}
+};
 
 model.latestRevisionWithNoBuildersInFlight = function()
 {
@@ -165,16 +164,15 @@ model.latestRevisionByBuilder = function()
     return revision;
 }
 
-model.updateResultsByBuilder = function(callback)
+model.updateResultsByBuilder = function()
 {
-    var platformBuilders = config.currentBuilders();
-    results.fetchResultsByBuilder(Object.keys(platformBuilders), function(resultsByBuilder) {
+    return results.fetchResultsByBuilder(Object.keys(config.builders)).then(function(resultsByBuilder) {
         model.state.resultsByBuilder = resultsByBuilder;
-        callback();
     });
 };
 
-model.analyzeUnexpectedFailures = function(callback, completionCallback)
+// failureCallback is called multiple times: once for each failure
+model.analyzeUnexpectedFailures = function(failureCallback)
 {
     var unexpectedFailures = results.unexpectedFailuresByTest(model.state.resultsByBuilder);
 
@@ -183,10 +181,12 @@ model.analyzeUnexpectedFailures = function(callback, completionCallback)
             delete model.state.failureAnalysisByTest[testName];
     });
 
-    var tracker = new base.RequestTracker(Object.keys(unexpectedFailures).length, completionCallback);
+    var failurePromises = [];
     $.each(unexpectedFailures, function(testName, resultNodesByBuilder) {
         var builderNameList = Object.keys(resultNodesByBuilder);
-        results.unifyRegressionRanges(builderNameList, testName, function(oldestFailingRevision, newestPassingRevision) {
+        failurePromises.push(results.unifyRegressionRanges(builderNameList, testName).then(function(result) {
+            var oldestFailingRevision = result[0];
+            var newestPassingRevision = result[1];
             var failureAnalysis = {
                 'testName': testName,
                 'resultNodesByBuilder': resultNodesByBuilder,
@@ -205,11 +205,11 @@ model.analyzeUnexpectedFailures = function(callback, completionCallback)
             }
 
             model.state.failureAnalysisByTest[testName] = failureAnalysis;
-            
-            callback(failureAnalysis);
-            tracker.requestComplete();
-        });
+
+            failureCallback(failureAnalysis, failurePromises.length);
+        }));
     });
+    return Promise.all(failurePromises);
 };
 
 model.unexpectedFailureInfoForTestName = function(testName)
@@ -221,7 +221,8 @@ model.unexpectedFailureInfoForTestName = function(testName)
     });
 };
 
-model.analyzeexpectedFailures = function(callback)
+// failureCallback is called multiple times: once for each failure
+model.analyzeexpectedFailures = function(failureCallback)
 {
     var expectedFailures = results.expectedFailuresByTest(model.state.resultsByBuilder);
     $.each(expectedFailures, function(testName, resultNodesByBuilder) {
@@ -233,7 +234,7 @@ model.analyzeexpectedFailures = function(callback)
         // FIXME: Consider looking at the history to see how long this test
         // has been failing.
 
-        callback(failureAnalysis);
+        failureCallback(failureAnalysis);
     });
 };
 

@@ -8,11 +8,11 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_VIDEO_ENGINE_NEW_INCLUDE_VIDEO_SEND_STREAM_H_
-#define WEBRTC_VIDEO_ENGINE_NEW_INCLUDE_VIDEO_SEND_STREAM_H_
+#ifndef WEBRTC_VIDEO_SEND_STREAM_H_
+#define WEBRTC_VIDEO_SEND_STREAM_H_
 
+#include <map>
 #include <string>
-#include <vector>
 
 #include "webrtc/common_types.h"
 #include "webrtc/config.h"
@@ -29,7 +29,6 @@ class VideoSendStreamInput {
   // These methods do not lock internally and must be called sequentially.
   // If your application switches input sources synchronization must be done
   // externally to make sure that any old frames are not delivered concurrently.
-  virtual void PutFrame(const I420VideoFrame& video_frame) = 0;
   virtual void SwapFrame(I420VideoFrame* video_frame) = 0;
 
  protected:
@@ -41,32 +40,18 @@ class VideoSendStream {
   struct Stats {
     Stats()
         : input_frame_rate(0),
-          encode_frame(0),
-          key_frames(0),
-          delta_frames(0),
-          video_packets(0),
-          retransmitted_packets(0),
-          fec_packets(0),
-          padding_packets(0),
-          send_bitrate_bps(0),
-          delay_ms(0) {}
-    RtpStatistics rtp;
-    int input_frame_rate;
-    int encode_frame;
-    uint32_t key_frames;
-    uint32_t delta_frames;
-    uint32_t video_packets;
-    uint32_t retransmitted_packets;
-    uint32_t fec_packets;
-    uint32_t padding_packets;
-    int32_t send_bitrate_bps;
-    int delay_ms;
-  };
+          encode_frame_rate(0),
+          avg_delay_ms(0),
+          max_delay_ms(0),
+          suspended(false) {}
 
-  class StatsCallback {
-   public:
-    virtual ~StatsCallback() {}
-    virtual void ReceiveStats(const std::vector<Stats>& stats) = 0;
+    int input_frame_rate;
+    int encode_frame_rate;
+    int avg_delay_ms;
+    int max_delay_ms;
+    bool suspended;
+    std::string c_name;
+    std::map<uint32_t, StreamStats> substreams;
   };
 
   struct Config {
@@ -75,22 +60,38 @@ class VideoSendStream {
           post_encode_callback(NULL),
           local_renderer(NULL),
           render_delay_ms(0),
-          encoder(NULL),
-          internal_source(false),
           target_delay_ms(0),
-          pacing(false),
-          stats_callback(NULL),
           suspend_below_min_bitrate(false) {}
-    VideoCodec codec;
+    std::string ToString() const;
+
+    struct EncoderSettings {
+      EncoderSettings() : payload_type(-1), encoder(NULL) {}
+      std::string ToString() const;
+
+      std::string payload_name;
+      int payload_type;
+
+      // Uninitialized VideoEncoder instance to be used for encoding. Will be
+      // initialized from inside the VideoSendStream.
+      webrtc::VideoEncoder* encoder;
+    } encoder_settings;
 
     static const size_t kDefaultMaxPacketSize = 1500 - 40;  // TCP over IPv4.
     struct Rtp {
-      Rtp() : max_packet_size(kDefaultMaxPacketSize) {}
+      Rtp()
+          : max_packet_size(kDefaultMaxPacketSize),
+            min_transmit_bitrate_bps(0) {}
+      std::string ToString() const;
 
       std::vector<uint32_t> ssrcs;
 
       // Max RTP packet size delivered to send transport from VideoEngine.
       size_t max_packet_size;
+
+      // Padding will be used up to this bitrate regardless of the bitrate
+      // produced by the encoder. Padding above what's actually produced by the
+      // encoder helps maintaining a higher bitrate estimate.
+      int min_transmit_bitrate_bps;
 
       // RTP header extensions to use for this send stream.
       std::vector<RtpExtension> extensions;
@@ -101,8 +102,21 @@ class VideoSendStream {
       // See FecConfig for description.
       FecConfig fec;
 
-      // See RtxConfig for description.
-      RtxConfig rtx;
+      // Settings for RTP retransmission payload format, see RFC 4588 for
+      // details.
+      struct Rtx {
+        Rtx() : payload_type(-1), pad_with_redundant_payloads(false) {}
+        std::string ToString() const;
+        // SSRCs to use for the RTX streams.
+        std::vector<uint32_t> ssrcs;
+
+        // Payload type to use for the RTX stream.
+        int payload_type;
+        // Use redundant payloads to pad the bitrate. Instead of padding with
+        // randomized packets, we will preemptively retransmit media packets on
+        // the RTX stream.
+        bool pad_with_redundant_payloads;
+      } rtx;
 
       // RTCP CNAME, see RFC 3550.
       std::string c_name;
@@ -122,32 +136,16 @@ class VideoSendStream {
 
     // Expected delay needed by the renderer, i.e. the frame will be delivered
     // this many milliseconds, if possible, earlier than expected render time.
-    // Only valid if |renderer| is set.
+    // Only valid if |local_renderer| is set.
     int render_delay_ms;
-
-    // TODO(mflodman) Move VideoEncoder to common_types.h and redefine.
-    // External encoding. 'encoder' is the external encoder instance and
-    // 'internal_source' is set to true if the encoder also captures the video
-    // frames.
-    VideoEncoder* encoder;
-    bool internal_source;
 
     // Target delay in milliseconds. A positive value indicates this stream is
     // used for streaming instead of a real-time call.
     int target_delay_ms;
 
-    // True if network a send-side packet buffer should be used to pace out
-    // packets onto the network.
-    bool pacing;
-
-    // Callback for periodically receiving send stats.
-    StatsCallback* stats_callback;
-
     // True if the stream should be suspended when the available bitrate fall
     // below the minimum configured bitrate. If this variable is false, the
     // stream may send at a rate higher than the estimated available bitrate.
-    // Enabling suspend_below_min_bitrate will also enable pacing and padding,
-    // otherwise, the video will be unable to recover from suspension.
     bool suspend_below_min_bitrate;
   };
 
@@ -155,11 +153,16 @@ class VideoSendStream {
   // VideoSendStream is valid.
   virtual VideoSendStreamInput* Input() = 0;
 
-  virtual void StartSending() = 0;
-  virtual void StopSending() = 0;
+  virtual void Start() = 0;
+  virtual void Stop() = 0;
 
-  virtual bool SetCodec(const VideoCodec& codec) = 0;
-  virtual VideoCodec GetCodec() = 0;
+  // Set which streams to send. Must have at least as many SSRCs as configured
+  // in the config. Encoder settings are passed on to the encoder instance along
+  // with the VideoStream settings.
+  virtual bool ReconfigureVideoEncoder(const std::vector<VideoStream>& streams,
+                                       const void* encoder_settings) = 0;
+
+  virtual Stats GetStats() const = 0;
 
  protected:
   virtual ~VideoSendStream() {}
@@ -167,4 +170,4 @@ class VideoSendStream {
 
 }  // namespace webrtc
 
-#endif  // WEBRTC_VIDEO_ENGINE_NEW_INCLUDE_VIDEO_SEND_STREAM_H_
+#endif  // WEBRTC_VIDEO_SEND_STREAM_H_

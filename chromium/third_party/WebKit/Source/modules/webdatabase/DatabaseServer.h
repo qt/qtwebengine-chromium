@@ -27,26 +27,27 @@
 #define DatabaseServer_h
 
 #include "modules/webdatabase/AbstractDatabaseServer.h"
+#include "platform/heap/Handle.h"
 
 namespace WebCore {
 
-class DatabaseServer: public AbstractDatabaseServer {
+class DatabaseServer FINAL : public AbstractDatabaseServer {
 public:
-    DatabaseServer() { };
+    DatabaseServer() { }
     virtual ~DatabaseServer() { }
 
-    virtual String fullPathForDatabase(SecurityOrigin*, const String& name, bool createIfDoesNotExist);
+    virtual String fullPathForDatabase(SecurityOrigin*, const String& name, bool createIfDoesNotExist) OVERRIDE;
 
-    virtual PassRefPtr<DatabaseBackendBase> openDatabase(RefPtr<DatabaseContext>&, DatabaseType,
+    virtual PassRefPtrWillBeRawPtr<DatabaseBackendBase> openDatabase(DatabaseContext*, DatabaseType,
         const String& name, const String& expectedVersion, const String& displayName, unsigned long estimatedSize,
-        bool setVersionInNewDatabase, DatabaseError&, String& errorMessage);
+        bool setVersionInNewDatabase, DatabaseError&, String& errorMessage) OVERRIDE;
 
-    virtual void closeDatabasesImmediately(const String& originIdentifier, const String& name);
+    virtual void closeDatabasesImmediately(const String& originIdentifier, const String& name) OVERRIDE;
 
-    virtual void interruptAllDatabasesForContext(const DatabaseContext*);
+    virtual void interruptAllDatabasesForContext(const DatabaseContext*) OVERRIDE;
 
 protected:
-    virtual PassRefPtr<DatabaseBackendBase> createDatabase(RefPtr<DatabaseContext>&, DatabaseType,
+    PassRefPtrWillBeRawPtr<DatabaseBackendBase> createDatabase(DatabaseContext*, DatabaseType,
         const String& name, const String& expectedVersion, const String& displayName, unsigned long estimatedSize,
         bool setVersionInNewDatabase, DatabaseError&, String& errorMessage);
 };

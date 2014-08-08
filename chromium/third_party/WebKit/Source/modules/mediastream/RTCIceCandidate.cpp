@@ -33,18 +33,19 @@
 #include "modules/mediastream/RTCIceCandidate.h"
 
 #include "bindings/v8/Dictionary.h"
+#include "bindings/v8/ExceptionMessages.h"
 #include "bindings/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 
 namespace WebCore {
 
-PassRefPtr<RTCIceCandidate> RTCIceCandidate::create(const Dictionary& dictionary, ExceptionState& exceptionState)
+PassRefPtrWillBeRawPtr<RTCIceCandidate> RTCIceCandidate::create(const Dictionary& dictionary, ExceptionState& exceptionState)
 {
     String candidate;
     bool ok = dictionary.get("candidate", candidate);
     if (!ok || !candidate.length()) {
-        exceptionState.throwUninformativeAndGenericDOMException(TypeMismatchError);
-        return 0;
+        exceptionState.throwDOMException(TypeMismatchError, ExceptionMessages::incorrectPropertyType("candidate", "is not a string, or is empty."));
+        return nullptr;
     }
 
     String sdpMid;
@@ -53,12 +54,12 @@ PassRefPtr<RTCIceCandidate> RTCIceCandidate::create(const Dictionary& dictionary
     unsigned short sdpMLineIndex = 0;
     dictionary.get("sdpMLineIndex", sdpMLineIndex);
 
-    return adoptRef(new RTCIceCandidate(blink::WebRTCICECandidate(candidate, sdpMid, sdpMLineIndex)));
+    return adoptRefWillBeNoop(new RTCIceCandidate(blink::WebRTCICECandidate(candidate, sdpMid, sdpMLineIndex)));
 }
 
-PassRefPtr<RTCIceCandidate> RTCIceCandidate::create(blink::WebRTCICECandidate webCandidate)
+PassRefPtrWillBeRawPtr<RTCIceCandidate> RTCIceCandidate::create(blink::WebRTCICECandidate webCandidate)
 {
-    return adoptRef(new RTCIceCandidate(webCandidate));
+    return adoptRefWillBeNoop(new RTCIceCandidate(webCandidate));
 }
 
 RTCIceCandidate::RTCIceCandidate(blink::WebRTCICECandidate webCandidate)
@@ -82,9 +83,24 @@ unsigned short RTCIceCandidate::sdpMLineIndex() const
     return m_webCandidate.sdpMLineIndex();
 }
 
-blink::WebRTCICECandidate RTCIceCandidate::webCandidate()
+blink::WebRTCICECandidate RTCIceCandidate::webCandidate() const
 {
     return m_webCandidate;
+}
+
+void RTCIceCandidate::setCandidate(String candidate)
+{
+    m_webCandidate.setCandidate(candidate);
+}
+
+void RTCIceCandidate::setSdpMid(String sdpMid)
+{
+    m_webCandidate.setSdpMid(sdpMid);
+}
+
+void RTCIceCandidate::setSdpMLineIndex(unsigned short sdpMLineIndex)
+{
+    m_webCandidate.setSdpMLineIndex(sdpMLineIndex);
 }
 
 } // namespace WebCore

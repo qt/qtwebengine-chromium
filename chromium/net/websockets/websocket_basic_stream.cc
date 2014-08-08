@@ -12,7 +12,7 @@
 #include "base/basictypes.h"
 #include "base/bind.h"
 #include "base/logging.h"
-#include "base/safe_numerics.h"
+#include "base/numerics/safe_conversions.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
 #include "net/socket/client_socket_handle.h"
@@ -157,13 +157,15 @@ int WebSocketBasicStream::WriteFrames(ScopedVector<WebSocketFrame>* frames,
     dest += result;
     remaining_size -= result;
 
-    const char* const frame_data = frame->data->data();
     const int frame_size = frame->header.payload_length;
-    CHECK_GE(remaining_size, frame_size);
-    std::copy(frame_data, frame_data + frame_size, dest);
-    MaskWebSocketFramePayload(mask, 0, dest, frame_size);
-    dest += frame_size;
-    remaining_size -= frame_size;
+    if (frame_size > 0) {
+      CHECK_GE(remaining_size, frame_size);
+      const char* const frame_data = frame->data->data();
+      std::copy(frame_data, frame_data + frame_size, dest);
+      MaskWebSocketFramePayload(mask, 0, dest, frame_size);
+      dest += frame_size;
+      remaining_size -= frame_size;
+    }
   }
   DCHECK_EQ(0, remaining_size) << "Buffer size calculation was wrong; "
                                << remaining_size << " bytes left over.";
@@ -347,10 +349,10 @@ int WebSocketBasicStream::ConvertChunkToFrame(
   // header. A check for exact equality can only be used when the whole frame
   // arrives in one chunk.
   DCHECK_GE(current_frame_header_->payload_length,
-            base::checked_numeric_cast<uint64>(chunk_size));
+            base::checked_cast<uint64>(chunk_size));
   DCHECK(!is_first_chunk || !is_final_chunk ||
          current_frame_header_->payload_length ==
-             base::checked_numeric_cast<uint64>(chunk_size));
+             base::checked_cast<uint64>(chunk_size));
 
   // Convert the chunk to a complete frame.
   *frame = CreateFrame(is_final_chunk, data_buffer);
@@ -376,9 +378,16 @@ scoped_ptr<WebSocketFrame> WebSocketBasicStream::CreateFrame(
     result_frame->header.payload_length = data_size;
     result_frame->data = data;
     // Ensure that opcodes Text and Binary are only used for the first frame in
-    // the message.
-    if (WebSocketFrameHeader::IsKnownDataOpCode(opcode))
+    // the message. Also clear the reserved bits.
+    // TODO(ricea): If a future extension requires the reserved bits to be
+    // retained on continuation frames, make this behaviour conditional on a
+    // flag set at construction time.
+    if (!is_final_chunk && WebSocketFrameHeader::IsKnownDataOpCode(opcode)) {
       current_frame_header_->opcode = WebSocketFrameHeader::kOpCodeContinuation;
+      current_frame_header_->reserved1 = false;
+      current_frame_header_->reserved2 = false;
+      current_frame_header_->reserved3 = false;
+    }
   }
   // Make sure that a frame header is not applied to any chunks that do not
   // belong to it.

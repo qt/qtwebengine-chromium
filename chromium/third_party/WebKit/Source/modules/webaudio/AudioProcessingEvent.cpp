@@ -28,18 +28,16 @@
 
 #include "modules/webaudio/AudioProcessingEvent.h"
 
-#include "core/events/ThreadLocalEventNames.h"
-
 namespace WebCore {
 
-PassRefPtr<AudioProcessingEvent> AudioProcessingEvent::create()
+PassRefPtrWillBeRawPtr<AudioProcessingEvent> AudioProcessingEvent::create()
 {
-    return adoptRef(new AudioProcessingEvent);
+    return adoptRefWillBeNoop(new AudioProcessingEvent);
 }
 
-PassRefPtr<AudioProcessingEvent> AudioProcessingEvent::create(PassRefPtr<AudioBuffer> inputBuffer, PassRefPtr<AudioBuffer> outputBuffer)
+PassRefPtrWillBeRawPtr<AudioProcessingEvent> AudioProcessingEvent::create(PassRefPtrWillBeRawPtr<AudioBuffer> inputBuffer, PassRefPtrWillBeRawPtr<AudioBuffer> outputBuffer, double playbackTime)
 {
-    return adoptRef(new AudioProcessingEvent(inputBuffer, outputBuffer));
+    return adoptRefWillBeNoop(new AudioProcessingEvent(inputBuffer, outputBuffer, playbackTime));
 }
 
 AudioProcessingEvent::AudioProcessingEvent()
@@ -47,10 +45,11 @@ AudioProcessingEvent::AudioProcessingEvent()
     ScriptWrappable::init(this);
 }
 
-AudioProcessingEvent::AudioProcessingEvent(PassRefPtr<AudioBuffer> inputBuffer, PassRefPtr<AudioBuffer> outputBuffer)
+AudioProcessingEvent::AudioProcessingEvent(PassRefPtrWillBeRawPtr<AudioBuffer> inputBuffer, PassRefPtrWillBeRawPtr<AudioBuffer> outputBuffer, double playbackTime)
     : Event(EventTypeNames::audioprocess, true, false)
     , m_inputBuffer(inputBuffer)
     , m_outputBuffer(outputBuffer)
+    , m_playbackTime(playbackTime)
 {
     ScriptWrappable::init(this);
 }
@@ -62,6 +61,13 @@ AudioProcessingEvent::~AudioProcessingEvent()
 const AtomicString& AudioProcessingEvent::interfaceName() const
 {
     return EventNames::AudioProcessingEvent;
+}
+
+void AudioProcessingEvent::trace(Visitor* visitor)
+{
+    visitor->trace(m_inputBuffer);
+    visitor->trace(m_outputBuffer);
+    Event::trace(visitor);
 }
 
 } // namespace WebCore

@@ -17,28 +17,34 @@ namespace {
 
 class LayerTreeHostMasksPixelTest : public LayerTreePixelTest {};
 
-class MaskContentLayerClient : public cc::ContentLayerClient {
+class MaskContentLayerClient : public ContentLayerClient {
  public:
   MaskContentLayerClient() {}
   virtual ~MaskContentLayerClient() {}
 
   virtual void DidChangeLayerCanUseLCDText() OVERRIDE {}
 
-  virtual void PaintContents(SkCanvas* canvas,
-                             gfx::Rect rect,
-                             gfx::RectF* opaque_rect) OVERRIDE {
+  virtual bool FillsBoundsCompletely() const OVERRIDE { return false; }
+
+  virtual void PaintContents(
+      SkCanvas* canvas,
+      const gfx::Rect& rect,
+      gfx::RectF* opaque_rect,
+      ContentLayerClient::GraphicsContextStatus gc_status) OVERRIDE {
     SkPaint paint;
     paint.setStyle(SkPaint::kStroke_Style);
     paint.setStrokeWidth(SkIntToScalar(2));
     paint.setColor(SK_ColorWHITE);
 
     canvas->clear(SK_ColorTRANSPARENT);
-    while (!rect.IsEmpty()) {
-      rect.Inset(3, 3, 2, 2);
+    gfx::Rect inset_rect(rect);
+    while (!inset_rect.IsEmpty()) {
+      inset_rect.Inset(3, 3, 2, 2);
       canvas->drawRect(
-          SkRect::MakeXYWH(rect.x(), rect.y(), rect.width(), rect.height()),
+          SkRect::MakeXYWH(inset_rect.x(), inset_rect.y(),
+                           inset_rect.width(), inset_rect.height()),
           paint);
-      rect.Inset(3, 3, 2, 2);
+      inset_rect.Inset(3, 3, 2, 2);
     }
   }
 };
@@ -74,14 +80,14 @@ TEST_F(LayerTreeHostMasksPixelTest, ImageMaskOfLayer) {
   mask->SetBounds(gfx::Size(100, 100));
 
   SkBitmap bitmap;
-  bitmap.setConfig(SkBitmap::kARGB_8888_Config, 400, 400);
-  bitmap.allocPixels();
+  bitmap.allocN32Pixels(400, 400);
   SkCanvas canvas(bitmap);
   canvas.scale(SkIntToScalar(4), SkIntToScalar(4));
   MaskContentLayerClient client;
   client.PaintContents(&canvas,
                        gfx::Rect(100, 100),
-                       NULL);
+                       NULL,
+                       ContentLayerClient::GRAPHICS_CONTEXT_ENABLED);
   mask->SetBitmap(bitmap);
 
   scoped_refptr<SolidColorLayer> green = CreateSolidColorLayerWithBorder(
@@ -101,7 +107,6 @@ TEST_F(LayerTreeHostMasksPixelTest, MaskOfClippedLayer) {
 
   // Clip to the top half of the green layer.
   scoped_refptr<Layer> clip = Layer::Create();
-  clip->SetAnchorPoint(gfx::PointF(0.f, 0.f));
   clip->SetPosition(gfx::Point(0, 0));
   clip->SetBounds(gfx::Size(200, 100));
   clip->SetMasksToBounds(true);
@@ -143,7 +148,7 @@ TEST_F(LayerTreeHostMasksPixelTest, MaskWithReplica) {
   replica_transform.Rotate(-90.0);
 
   scoped_refptr<Layer> replica = Layer::Create();
-  replica->SetAnchorPoint(gfx::PointF(0.5f, 0.5f));
+  replica->SetTransformOrigin(gfx::Point3F(50.f, 50.f, 0.f));
   replica->SetPosition(gfx::Point(100, 100));
   replica->SetTransform(replica_transform);
   green->SetReplicaLayer(replica.get());
@@ -167,7 +172,6 @@ TEST_F(LayerTreeHostMasksPixelTest, MaskWithReplicaOfClippedLayer) {
   // Clip to the bottom half of the green layer, and the left half of the
   // replica.
   scoped_refptr<Layer> clip = Layer::Create();
-  clip->SetAnchorPoint(gfx::PointF(0.f, 0.f));
   clip->SetPosition(gfx::Point(0, 50));
   clip->SetBounds(gfx::Size(150, 150));
   clip->SetMasksToBounds(true);
@@ -182,7 +186,7 @@ TEST_F(LayerTreeHostMasksPixelTest, MaskWithReplicaOfClippedLayer) {
   replica_transform.Rotate(-90.0);
 
   scoped_refptr<Layer> replica = Layer::Create();
-  replica->SetAnchorPoint(gfx::PointF(0.5f, 0.5f));
+  replica->SetTransformOrigin(gfx::Point3F(50.f, 50.f, 0.f));
   replica->SetPosition(gfx::Point(100, 100));
   replica->SetTransform(replica_transform);
   green->SetReplicaLayer(replica.get());
@@ -217,7 +221,7 @@ TEST_F(LayerTreeHostMasksPixelTest, MaskOfReplica) {
   replica_transform.Translate(100.0, 0.0);
 
   scoped_refptr<Layer> replica = Layer::Create();
-  replica->SetAnchorPoint(gfx::PointF(1.f, 1.f));
+  replica->SetTransformOrigin(gfx::Point3F(100.f, 100.f, 0.f));
   replica->SetPosition(gfx::Point());
   replica->SetTransform(replica_transform);
   replica->SetMaskLayer(mask.get());
@@ -241,7 +245,6 @@ TEST_F(LayerTreeHostMasksPixelTest, MaskOfReplicaOfClippedLayer) {
 
   // Clip to the bottom 3/4 of the green layer, and the top 3/4 of the replica.
   scoped_refptr<Layer> clip = Layer::Create();
-  clip->SetAnchorPoint(gfx::PointF(0.f, 0.f));
   clip->SetPosition(gfx::Point(0, 25));
   clip->SetBounds(gfx::Size(200, 150));
   clip->SetMasksToBounds(true);
@@ -260,7 +263,7 @@ TEST_F(LayerTreeHostMasksPixelTest, MaskOfReplicaOfClippedLayer) {
   replica_transform.Translate(100.0, 0.0);
 
   scoped_refptr<Layer> replica = Layer::Create();
-  replica->SetAnchorPoint(gfx::PointF(1.f, 1.f));
+  replica->SetTransformOrigin(gfx::Point3F(100.f, 100.f, 0.f));
   replica->SetPosition(gfx::Point());
   replica->SetTransform(replica_transform);
   replica->SetMaskLayer(mask.get());

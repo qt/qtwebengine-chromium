@@ -16,7 +16,8 @@ namespace content {
 WebRTCIdentityServiceHost::WebRTCIdentityServiceHost(
     int renderer_process_id,
     scoped_refptr<WebRTCIdentityStore> identity_store)
-    : renderer_process_id_(renderer_process_id),
+    : BrowserMessageFilter(WebRTCIdentityMsgStart),
+      renderer_process_id_(renderer_process_id),
       identity_store_(identity_store),
       weak_factory_(this) {}
 
@@ -25,14 +26,13 @@ WebRTCIdentityServiceHost::~WebRTCIdentityServiceHost() {
     cancel_callback_.Run();
 }
 
-bool WebRTCIdentityServiceHost::OnMessageReceived(const IPC::Message& message,
-                                                bool* message_was_ok) {
+bool WebRTCIdentityServiceHost::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
-  IPC_BEGIN_MESSAGE_MAP_EX(WebRTCIdentityServiceHost, message, *message_was_ok)
+  IPC_BEGIN_MESSAGE_MAP(WebRTCIdentityServiceHost, message)
     IPC_MESSAGE_HANDLER(WebRTCIdentityMsg_RequestIdentity, OnRequestIdentity)
     IPC_MESSAGE_HANDLER(WebRTCIdentityMsg_CancelRequest, OnCancelRequest)
     IPC_MESSAGE_UNHANDLED(handled = false)
-  IPC_END_MESSAGE_MAP_EX()
+  IPC_END_MESSAGE_MAP()
   return handled;
 }
 

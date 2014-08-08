@@ -368,7 +368,7 @@ int BGRAToARGB(const uint8* src_bgra, int src_stride_bgra,
                int width, int height) {
   return ARGBShuffle(src_bgra, src_stride_bgra,
                      dst_argb, dst_stride_argb,
-                     reinterpret_cast<const uint8*>(&kShuffleMaskBGRAToARGB),
+                     (const uint8*)(&kShuffleMaskBGRAToARGB),
                      width, height);
 }
 
@@ -379,7 +379,7 @@ int ABGRToARGB(const uint8* src_abgr, int src_stride_abgr,
                int width, int height) {
   return ARGBShuffle(src_abgr, src_stride_abgr,
                      dst_argb, dst_stride_argb,
-                     reinterpret_cast<const uint8*>(&kShuffleMaskABGRToARGB),
+                     (const uint8*)(&kShuffleMaskABGRToARGB),
                      width, height);
 }
 
@@ -390,7 +390,7 @@ int RGBAToARGB(const uint8* src_rgba, int src_stride_rgba,
                int width, int height) {
   return ARGBShuffle(src_rgba, src_stride_rgba,
                      dst_argb, dst_stride_argb,
-                     reinterpret_cast<const uint8*>(&kShuffleMaskRGBAToARGB),
+                     (const uint8*)(&kShuffleMaskRGBAToARGB),
                      width, height);
 }
 
@@ -807,8 +807,7 @@ int YUY2ToARGB(const uint8* src_yuy2, int src_stride_yuy2,
     src_stride_yuy2 = -src_stride_yuy2;
   }
   // Coalesce rows.
-  if (width * height <= kMaxStride &&
-      src_stride_yuy2 == width * 2 &&
+  if (src_stride_yuy2 == width * 2 &&
       dst_stride_argb == width * 4) {
     width *= height;
     height = 1;
@@ -818,7 +817,7 @@ int YUY2ToARGB(const uint8* src_yuy2, int src_stride_yuy2,
       YUY2ToARGBRow_C;
 #if defined(HAS_YUY2TOARGBROW_SSSE3)
   // Posix is 16, Windows is 8.
-  if (TestCpuFlag(kCpuHasSSSE3) && width >= 16 && width <= kMaxStride) {
+  if (TestCpuFlag(kCpuHasSSSE3) && width >= 16) {
     YUY2ToARGBRow = YUY2ToARGBRow_Any_SSSE3;
     if (IS_ALIGNED(width, 16)) {
       YUY2ToARGBRow = YUY2ToARGBRow_Unaligned_SSSE3;
@@ -860,8 +859,7 @@ int UYVYToARGB(const uint8* src_uyvy, int src_stride_uyvy,
     src_stride_uyvy = -src_stride_uyvy;
   }
   // Coalesce rows.
-  if (width * height <= kMaxStride &&
-      src_stride_uyvy == width * 2 &&
+  if (src_stride_uyvy == width * 2 &&
       dst_stride_argb == width * 4) {
     width *= height;
     height = 1;
@@ -871,7 +869,7 @@ int UYVYToARGB(const uint8* src_uyvy, int src_stride_uyvy,
       UYVYToARGBRow_C;
 #if defined(HAS_UYVYTOARGBROW_SSSE3)
   // Posix is 16, Windows is 8.
-  if (TestCpuFlag(kCpuHasSSSE3) && width >= 16 && width <= kMaxStride) {
+  if (TestCpuFlag(kCpuHasSSSE3) && width >= 16) {
     UYVYToARGBRow = UYVYToARGBRow_Any_SSSE3;
     if (IS_ALIGNED(width, 16)) {
       UYVYToARGBRow = UYVYToARGBRow_Unaligned_SSSE3;

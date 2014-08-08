@@ -13,6 +13,7 @@
 #include "base/threading/thread_checker.h"
 #include "base/time/default_tick_clock.h"
 #include "media/base/audio_renderer.h"
+#include "media/base/buffering_state.h"
 #include "media/base/demuxer.h"
 #include "media/base/media_export.h"
 #include "media/base/pipeline_status.h"
@@ -21,7 +22,7 @@
 #include "ui/gfx/size.h"
 
 namespace base {
-class MessageLoopProxy;
+class SingleThreadTaskRunner;
 class TimeDelta;
 }
 
@@ -34,8 +35,20 @@ class TextRenderer;
 class TextTrackConfig;
 class VideoRenderer;
 
+// Metadata describing a pipeline once it has been initialized.
+struct PipelineMetadata {
+  PipelineMetadata() : has_audio(false), has_video(false) {}
+
+  bool has_audio;
+  bool has_video;
+  gfx::Size natural_size;
+  base::Time timeline_offset;
+};
+
+typedef base::Callback<void(PipelineMetadata)> PipelineMetadataCB;
+
 // Pipeline runs the media pipeline.  Filters are created and called on the
-// message loop injected into this object. Pipeline works like a state
+// task runner injected into this object. Pipeline works like a state
 // machine to perform asynchronous initialization, pausing, seeking and playing.
 //
 // Here's a state diagram that describes the lifetime of this object.
@@ -46,14 +59,13 @@ class VideoRenderer;
 //   [ InitXXX (for each filter) ]      [ Stopping ]
 //         |                                 |
 //         V                                 V
-//   [ InitPreroll ]                    [ Stopped ]
+//   [ InitPrerolling ]                 [ Stopped ]
 //         |
 //         V
-//   [ Starting ] <-- [ Seeking ]
+//   [ Playing ] <-- [ Seeking ]
 //         |               ^
-//         V               |
-//   [ Started ] ----------'
-//                 Seek()
+//         `---------------'
+//              Seek()
 //
 // Initialization is a series of state transitions from "Created" through each
 // filter initialization state.  When all filter initialization states have
@@ -67,23 +79,8 @@ class VideoRenderer;
 // "Stopped" state.
 class MEDIA_EXPORT Pipeline : public DemuxerHost {
  public:
-  // Buffering states the pipeline transitions between during playback.
-  // kHaveMetadata:
-  //   Indicates that the following things are known:
-  //   content duration, natural size, start time, and whether the content has
-  //   audio and/or video in supported formats.
-  // kPrerollCompleted:
-  //   All renderers have buffered enough data to satisfy preroll and are ready
-  //   to start playback.
-  enum BufferingState {
-    kHaveMetadata,
-    kPrerollCompleted,
-  };
-
-  typedef base::Callback<void(BufferingState)> BufferingStateCB;
-
-  // Constructs a media pipeline that will execute on |message_loop|.
-  Pipeline(const scoped_refptr<base::MessageLoopProxy>& message_loop,
+  // Constructs a media pipeline that will execute on |task_runner|.
+  Pipeline(const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
            MediaLog* media_log);
   virtual ~Pipeline();
 
@@ -97,18 +94,23 @@ class MEDIA_EXPORT Pipeline : public DemuxerHost {
   // The following permanent callbacks will be executed as follows up until
   // Stop() has completed:
   //   |ended_cb| will be executed whenever the media reaches the end.
-  //   |error_cb| will be executed whenever an error occurs but hasn't
-  //              been reported already through another callback.
-  //   |buffering_state_cb| Optional callback that will be executed whenever the
-  //                    pipeline's buffering state changes.
-  //   |duration_change_cb| Optional callback that will be executed whenever the
+  //   |error_cb| will be executed whenever an error occurs but hasn't been
+  //              reported already through another callback.
+  //   |metadata_cb| will be executed when the content duration, container video
+  //                 size, start time, and whether the content has audio and/or
+  //                 video in supported formats are known.
+  //   |preroll_completed_cb| will be executed when all renderers have buffered
+  //                          enough data to satisfy preroll and are ready to
+  //                          start playback.
+  //   |duration_change_cb| optional callback that will be executed whenever the
   //                        presentation duration changes.
   // It is an error to call this method after the pipeline has already started.
   void Start(scoped_ptr<FilterCollection> filter_collection,
              const base::Closure& ended_cb,
              const PipelineStatusCB& error_cb,
              const PipelineStatusCB& seek_cb,
-             const BufferingStateCB& buffering_state_cb,
+             const PipelineMetadataCB& metadata_cb,
+             const base::Closure& preroll_completed_cb,
              const base::Closure& duration_change_cb);
 
   // Asynchronously stops the pipeline, executing |stop_cb| when the pipeline
@@ -133,12 +135,6 @@ class MEDIA_EXPORT Pipeline : public DemuxerHost {
   // returns true, it is expected that Stop() will be called before destroying
   // the pipeline.
   bool IsRunning() const;
-
-  // Returns true if the media has audio.
-  bool HasAudio() const;
-
-  // Returns true if the media has video.
-  bool HasVideo() const;
 
   // Gets the current playback rate of the pipeline.  When the pipeline is
   // started, the playback rate will be 0.0f.  A rate of 1.0f indicates
@@ -168,24 +164,15 @@ class MEDIA_EXPORT Pipeline : public DemuxerHost {
   base::TimeDelta GetMediaTime() const;
 
   // Get approximate time ranges of buffered media.
-  Ranges<base::TimeDelta> GetBufferedTimeRanges();
+  Ranges<base::TimeDelta> GetBufferedTimeRanges() const;
 
   // Get the duration of the media in microseconds.  If the duration has not
   // been determined yet, then returns 0.
   base::TimeDelta GetMediaDuration() const;
 
-  // Get the total size of the media file.  If the size has not yet been
-  // determined or can not be determined, this value is 0.
-  int64 GetTotalBytes() const;
-
-  // Gets the natural size of the video output in pixel units.  If there is no
-  // video or the video has not been rendered yet, the width and height will
-  // be 0.
-  void GetNaturalVideoSize(gfx::Size* out_size) const;
-
   // Return true if loading progress has been made since the last time this
   // method was called.
-  bool DidLoadingProgress() const;
+  bool DidLoadingProgress();
 
   // Gets the current pipeline statistics.
   PipelineStatistics GetStatistics() const;
@@ -195,8 +182,6 @@ class MEDIA_EXPORT Pipeline : public DemuxerHost {
 
  private:
   FRIEND_TEST_ALL_PREFIXES(PipelineTest, GetBufferedTimeRanges);
-  FRIEND_TEST_ALL_PREFIXES(PipelineTest, DisableAudioRenderer);
-  FRIEND_TEST_ALL_PREFIXES(PipelineTest, DisableAudioRendererDuringInit);
   FRIEND_TEST_ALL_PREFIXES(PipelineTest, EndedCallback);
   FRIEND_TEST_ALL_PREFIXES(PipelineTest, AudioStreamShorterThanVideo);
   friend class MediaLog;
@@ -209,8 +194,7 @@ class MEDIA_EXPORT Pipeline : public DemuxerHost {
     kInitVideoRenderer,
     kInitPrerolling,
     kSeeking,
-    kStarting,
-    kStarted,
+    kPlaying,
     kStopping,
     kStopped,
   };
@@ -225,13 +209,9 @@ class MEDIA_EXPORT Pipeline : public DemuxerHost {
   // and |seek_pending_|.
   void FinishSeek();
 
-  // DataSourceHost (by way of DemuxerHost) implementation.
-  virtual void SetTotalBytes(int64 total_bytes) OVERRIDE;
-  virtual void AddBufferedByteRange(int64 start, int64 end) OVERRIDE;
+  // DemuxerHost implementaion.
   virtual void AddBufferedTimeRange(base::TimeDelta start,
                                     base::TimeDelta end) OVERRIDE;
-
-  // DemuxerHost implementaion.
   virtual void SetDuration(base::TimeDelta duration) OVERRIDE;
   virtual void OnDemuxerError(PipelineStatus error) OVERRIDE;
   virtual void AddTextStream(DemuxerStream* text_stream,
@@ -243,9 +223,6 @@ class MEDIA_EXPORT Pipeline : public DemuxerHost {
   // Safe to call from any thread.
   void SetError(PipelineStatus error);
 
-  // Callback executed when the natural size of the video has changed.
-  void OnNaturalVideoSizeChanged(const gfx::Size& size);
-
   // Callbacks executed when a renderer has ended.
   void OnAudioRendererEnded();
   void OnVideoRendererEnded();
@@ -254,9 +231,6 @@ class MEDIA_EXPORT Pipeline : public DemuxerHost {
   // Callback executed by filters to update statistics.
   void OnUpdateStatistics(const PipelineStatistics& stats);
 
-  // Callback executed by audio renderer when it has been disabled.
-  void OnAudioDisabled();
-
   // Callback executed by audio renderer to update clock time.
   void OnAudioTimeUpdate(base::TimeDelta time, base::TimeDelta max_time);
 
@@ -264,14 +238,9 @@ class MEDIA_EXPORT Pipeline : public DemuxerHost {
   void OnVideoTimeUpdate(base::TimeDelta max_time);
 
   // The following "task" methods correspond to the public methods, but these
-  // methods are run as the result of posting a task to the PipelineInternal's
-  // message loop.
-  void StartTask(scoped_ptr<FilterCollection> filter_collection,
-                 const base::Closure& ended_cb,
-                 const PipelineStatusCB& error_cb,
-                 const PipelineStatusCB& seek_cb,
-                 const BufferingStateCB& buffering_state_cb,
-                 const base::Closure& duration_change_cb);
+  // methods are run as the result of posting a task to the Pipeline's
+  // task runner.
+  void StartTask();
 
   // Stops and destroys all filters, placing the pipeline in the kStopped state.
   void StopTask(const base::Closure& stop_cb);
@@ -294,9 +263,6 @@ class MEDIA_EXPORT Pipeline : public DemuxerHost {
   void DoVideoRendererEnded();
   void DoTextRendererEnded();
   void RunEndedCallbackIfNeeded();
-
-  // Carries out disabling the audio renderer.
-  void AudioDisabledTask();
 
   // Carries out adding a new text stream to the text renderer.
   void AddTextStreamTask(DemuxerStream* text_stream,
@@ -338,10 +304,6 @@ class MEDIA_EXPORT Pipeline : public DemuxerHost {
   // indepentent from seeking.
   void DoSeek(base::TimeDelta seek_timestamp, const PipelineStatusCB& done_cb);
 
-  // Updates playback rate and volume and initiates an asynchronous play call
-  // sequence executing |done_cb| with the final status when completed.
-  void DoPlay(const PipelineStatusCB& done_cb);
-
   // Initiates an asynchronous pause-flush-stop call sequence executing
   // |done_cb| when completed.
   void DoStop(const PipelineStatusCB& done_cb);
@@ -349,10 +311,26 @@ class MEDIA_EXPORT Pipeline : public DemuxerHost {
 
   void OnAudioUnderflow();
 
+  // Collection of callback methods and helpers for tracking changes in
+  // buffering state and transition from paused/underflow states and playing
+  // states.
+  //
+  // While in the kPlaying state:
+  //   - A waiting to non-waiting transition indicates preroll has completed
+  //     and StartPlayback() should be called
+  //   - A non-waiting to waiting transition indicates underflow has occurred
+  //     and StartWaitingForEnoughData() should be called
+  void BufferingStateChanged(BufferingState* buffering_state,
+                             BufferingState new_buffering_state);
+  bool WaitingForEnoughData() const;
+  void StartWaitingForEnoughData();
+  void StartPlayback();
+
+  void PauseClockAndStopRendering_Locked();
   void StartClockIfWaitingForTimeUpdate_Locked();
 
-  // Message loop used to execute pipeline tasks.
-  scoped_refptr<base::MessageLoopProxy> message_loop_;
+  // Task runner used to execute pipeline tasks.
+  scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
 
   // MediaLog to which to log events.
   scoped_refptr<MediaLog> media_log_;
@@ -363,27 +341,20 @@ class MEDIA_EXPORT Pipeline : public DemuxerHost {
   // Whether or not the pipeline is running.
   bool running_;
 
-  // Amount of available buffered data.  Set by filters.
-  Ranges<int64> buffered_byte_ranges_;
+  // Amount of available buffered data as reported by |demuxer_|.
   Ranges<base::TimeDelta> buffered_time_ranges_;
 
-  // True when AddBufferedByteRange() has been called more recently than
+  // True when AddBufferedTimeRange() has been called more recently than
   // DidLoadingProgress().
-  mutable bool did_loading_progress_;
-
-  // Total size of the media.  Set by filters.
-  int64 total_bytes_;
-
-  // Video's natural width and height.  Set by filters.
-  gfx::Size natural_size_;
+  bool did_loading_progress_;
 
   // Current volume level (from 0.0f to 1.0f).  This value is set immediately
-  // via SetVolume() and a task is dispatched on the message loop to notify the
+  // via SetVolume() and a task is dispatched on the task runner to notify the
   // filters.
   float volume_;
 
   // Current playback rate (>= 0.0f).  This value is set immediately via
-  // SetPlaybackRate() and a task is dispatched on the message loop to notify
+  // SetPlaybackRate() and a task is dispatched on the task runner to notify
   // the filters.
   float playback_rate_;
 
@@ -395,10 +366,18 @@ class MEDIA_EXPORT Pipeline : public DemuxerHost {
   // by filters.
   scoped_ptr<Clock> clock_;
 
-  // If this value is set to true, then |clock_| is paused and we are waiting
-  // for an update of the clock greater than or equal to the elapsed time to
-  // start the clock.
-  bool waiting_for_clock_update_;
+  enum ClockState {
+    // Audio (if present) is not rendering. Clock isn't playing.
+    CLOCK_PAUSED,
+
+    // Audio (if present) is rendering. Clock isn't playing.
+    CLOCK_WAITING_FOR_AUDIO_TIME_UPDATE,
+
+    // Audio (if present) is rendering. Clock is playing.
+    CLOCK_PLAYING,
+  };
+
+  ClockState clock_state_;
 
   // Status of the pipeline.  Initialized to PIPELINE_OK which indicates that
   // the pipeline is operating correctly. Any other value indicates that the
@@ -406,15 +385,8 @@ class MEDIA_EXPORT Pipeline : public DemuxerHost {
   // reset the pipeline state, and restore this to PIPELINE_OK.
   PipelineStatus status_;
 
-  // Whether the media contains rendered audio or video streams.
-  // TODO(fischman,scherkus): replace these with checks for
-  // {audio,video}_decoder_ once extraction of {Audio,Video}Decoder from the
-  // Filter heirarchy is done.
-  bool has_audio_;
-  bool has_video_;
-
   // The following data members are only accessed by tasks posted to
-  // |message_loop_|.
+  // |task_runner_|.
 
   // Member that tracks the current state.
   State state_;
@@ -424,8 +396,8 @@ class MEDIA_EXPORT Pipeline : public DemuxerHost {
   bool video_ended_;
   bool text_ended_;
 
-  // Set to true in DisableAudioRendererTask().
-  bool audio_disabled_;
+  BufferingState audio_buffering_state_;
+  BufferingState video_buffering_state_;
 
   // Temporary callback used for Start() and Seek().
   PipelineStatusCB seek_cb_;
@@ -436,7 +408,8 @@ class MEDIA_EXPORT Pipeline : public DemuxerHost {
   // Permanent callbacks passed in via Start().
   base::Closure ended_cb_;
   PipelineStatusCB error_cb_;
-  BufferingStateCB buffering_state_cb_;
+  PipelineMetadataCB metadata_cb_;
+  base::Closure preroll_completed_cb_;
   base::Closure duration_change_cb_;
 
   // Contains the demuxer and renderers to use when initializing.

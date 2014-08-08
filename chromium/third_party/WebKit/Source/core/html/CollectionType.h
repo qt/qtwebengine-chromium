@@ -36,10 +36,6 @@ enum CollectionType {
     DocScripts,   // all <script> elements
     DocAll,       // "all" elements (IE)
 
-    // Named collection types cached in the document.
-    WindowNamedItems,
-    DocumentNamedItems,
-
     // Unnamed HTMLCollection types cached in elements.
     NodeChildren, // first-level children (ParentNode DOM interface)
     TableTBodies, // all <tbody> elements in this table
@@ -52,21 +48,38 @@ enum CollectionType {
     MapAreas,
     FormControls,
 
+    // Named HTMLCollection types cached in the document.
+    WindowNamedItems,
+    DocumentNamedItems,
+
+    // Named HTMLCollection types cached in elements.
+    ClassCollectionType,
+    TagCollectionType,
+    HTMLTagCollectionType,
+
     // Live NodeList.
-    ChildNodeListType,
-    ClassNodeListType,
     NameNodeListType,
-    TagNodeListType,
-    HTMLTagNodeListType,
     RadioNodeListType,
+    RadioImgNodeListType,
     LabelsNodeListType,
 };
 
-static const CollectionType FirstNodeListType = ChildNodeListType;
+static const CollectionType FirstNamedCollectionType = WindowNamedItems;
+static const CollectionType FirstLiveNodeListType = NameNodeListType;
 
-inline bool isNodeList(CollectionType type)
+inline bool isUnnamedHTMLCollectionType(CollectionType type)
 {
-    return type >= FirstNodeListType;
+    return type < FirstNamedCollectionType;
+}
+
+inline bool isHTMLCollectionType(CollectionType type)
+{
+    return type < FirstLiveNodeListType;
+}
+
+inline bool isLiveNodeListType(CollectionType type)
+{
+    return type >= FirstLiveNodeListType;
 }
 
 } // namespace

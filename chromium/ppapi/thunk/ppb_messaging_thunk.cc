@@ -2,15 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// From ppb_messaging.idl modified Tue Apr 16 11:25:44 2013.
+// From ppb_messaging.idl modified Thu May 29 15:54:46 2014.
 
 #include "ppapi/c/pp_errors.h"
 #include "ppapi/c/ppb_messaging.h"
 #include "ppapi/shared_impl/tracked_callback.h"
 #include "ppapi/thunk/enter.h"
-#include "ppapi/thunk/ppb_instance_api.h"
-#include "ppapi/thunk/resource_creation_api.h"
-#include "ppapi/thunk/thunk.h"
+#include "ppapi/thunk/ppapi_thunk_export.h"
 
 namespace ppapi {
 namespace thunk {
@@ -25,14 +23,46 @@ void PostMessage(PP_Instance instance, struct PP_Var message) {
   enter.functions()->PostMessage(instance, message);
 }
 
+int32_t RegisterMessageHandler(PP_Instance instance,
+                               void* user_data,
+                               const struct PPP_MessageHandler_0_1* handler,
+                               PP_Resource message_loop) {
+  VLOG(4) << "PPB_Messaging::RegisterMessageHandler()";
+  EnterInstance enter(instance);
+  if (enter.failed())
+    return enter.retval();
+  return enter.functions()->RegisterMessageHandler(instance,
+                                                   user_data,
+                                                   handler,
+                                                   message_loop);
+}
+
+void UnregisterMessageHandler(PP_Instance instance) {
+  VLOG(4) << "PPB_Messaging::UnregisterMessageHandler()";
+  EnterInstance enter(instance);
+  if (enter.failed())
+    return;
+  enter.functions()->UnregisterMessageHandler(instance);
+}
+
 const PPB_Messaging_1_0 g_ppb_messaging_thunk_1_0 = {
   &PostMessage
 };
 
+const PPB_Messaging_1_1 g_ppb_messaging_thunk_1_1 = {
+  &PostMessage,
+  &RegisterMessageHandler,
+  &UnregisterMessageHandler
+};
+
 }  // namespace
 
-const PPB_Messaging_1_0* GetPPB_Messaging_1_0_Thunk() {
+PPAPI_THUNK_EXPORT const PPB_Messaging_1_0* GetPPB_Messaging_1_0_Thunk() {
   return &g_ppb_messaging_thunk_1_0;
+}
+
+PPAPI_THUNK_EXPORT const PPB_Messaging_1_1* GetPPB_Messaging_1_1_Thunk() {
+  return &g_ppb_messaging_thunk_1_1;
 }
 
 }  // namespace thunk

@@ -26,45 +26,32 @@
 
 namespace WTF {
 
-    // These functions crash safely if an allocation fails.
-    WTF_EXPORT void* fastMalloc(size_t);
-    WTF_EXPORT void* fastZeroedMalloc(size_t);
-    WTF_EXPORT void* fastCalloc(size_t numElements, size_t elementSize);
-    WTF_EXPORT void* fastRealloc(void*, size_t);
-    WTF_EXPORT char* fastStrDup(const char*);
+// Initialization is implicit on first use.
+WTF_EXPORT void fastMallocShutdown();
 
-    WTF_EXPORT void fastFree(void*);
+// These functions crash safely if an allocation fails.
+WTF_EXPORT void* fastMalloc(size_t);
+WTF_EXPORT void* fastZeroedMalloc(size_t);
+WTF_EXPORT void* fastRealloc(void*, size_t);
+WTF_EXPORT char* fastStrDup(const char*);
 
-#ifndef NDEBUG
-    WTF_EXPORT void fastMallocForbid();
-    WTF_EXPORT void fastMallocAllow();
-#endif
+WTF_EXPORT void fastFree(void*);
 
-    WTF_EXPORT void releaseFastMallocFreeMemory();
+WTF_EXPORT void releaseFastMallocFreeMemory();
 
-    struct FastMallocStatistics {
-        size_t reservedVMBytes;
-        size_t committedVMBytes;
-        size_t freeListBytes;
-    };
-    WTF_EXPORT FastMallocStatistics fastMallocStatistics();
-
-    // This defines a type which holds an unsigned integer and is the same
-    // size as the minimally aligned memory allocation.
-    typedef unsigned long long AllocAlignmentInteger;
+struct FastMallocStatistics {
+    size_t reservedVMBytes;
+    size_t committedVMBytes;
+    size_t freeListBytes;
+};
+WTF_EXPORT FastMallocStatistics fastMallocStatistics();
 
 } // namespace WTF
 
-using WTF::fastCalloc;
 using WTF::fastFree;
 using WTF::fastMalloc;
 using WTF::fastRealloc;
 using WTF::fastStrDup;
 using WTF::fastZeroedMalloc;
-
-#ifndef NDEBUG
-using WTF::fastMallocForbid;
-using WTF::fastMallocAllow;
-#endif
 
 #endif /* WTF_FastMalloc_h */

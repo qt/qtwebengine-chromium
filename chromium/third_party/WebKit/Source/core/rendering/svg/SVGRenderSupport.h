@@ -24,23 +24,22 @@
 #ifndef SVGRenderSupport_h
 #define SVGRenderSupport_h
 
-#include "core/rendering/PaintInfo.h"
-
 namespace WebCore {
 
+class AffineTransform;
 class FloatPoint;
 class FloatRect;
-class ImageBuffer;
+class GraphicsContext;
 class LayoutRect;
-class RenderBoxModelObject;
+struct PaintInfo;
 class RenderGeometryMap;
 class RenderLayerModelObject;
 class RenderObject;
 class RenderStyle;
 class RenderSVGRoot;
+class StrokeData;
 class TransformState;
 
-// SVGRendererSupport is a helper class sharing code between all SVG renderers.
 class SVGRenderSupport {
 public:
     // Shares child layouting code between RenderSVGRoot/RenderSVG(Hidden)Container
@@ -62,7 +61,10 @@ public:
     static bool pointInClippingArea(RenderObject*, const FloatPoint&);
 
     static void computeContainerBoundingBoxes(const RenderObject* container, FloatRect& objectBoundingBox, bool& objectBoundingBoxValid, FloatRect& strokeBoundingBox, FloatRect& repaintBoundingBox);
+
     static bool paintInfoIntersectsRepaintRect(const FloatRect& localRepaintRect, const AffineTransform& localTransform, const PaintInfo&);
+
+    static bool parentTransformDidChange(RenderObject*);
 
     // Important functions used by nearly all SVG renderers centralizing coordinate transformations / repaint rect calculations
     static LayoutRect clippedOverflowRectForRepaint(const RenderObject*, const RenderLayerModelObject* repaintContainer);
@@ -81,13 +83,14 @@ public:
     // FIXME: These methods do not belong here.
     static const RenderSVGRoot* findTreeRootObject(const RenderObject*);
 
-    // Helper method for determining whether an RenderSVGInlineText object has zero length text.
-    static bool isEmptySVGInlineText(const RenderObject*);
+    // Helper method for determining if a RenderObject marked as text (isText()== true)
+    // can/will be rendered as part of a <text>.
+    static bool isRenderableTextNode(const RenderObject*);
 
 private:
-    // This class is not constructable.
-    SVGRenderSupport();
-    ~SVGRenderSupport();
+    static void updateObjectBoundingBox(FloatRect& objectBoundingBox, bool& objectBoundingBoxValid, RenderObject* other, FloatRect otherBoundingBox);
+    static void invalidateResourcesOfChildren(RenderObject* start);
+    static bool layoutSizeOfNearestViewportChanged(const RenderObject* start);
 };
 
 } // namespace WebCore

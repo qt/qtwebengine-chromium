@@ -9,10 +9,11 @@
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/logging.h"
+#include "base/numerics/safe_conversions.h"
 #include "base/sequenced_task_runner.h"
 #include "webkit/browser/fileapi/file_system_usage_cache.h"
 #include "webkit/browser/quota/quota_client.h"
-#include "webkit/browser/quota/quota_manager.h"
+#include "webkit/browser/quota/quota_manager_proxy.h"
 #include "webkit/common/fileapi/file_system_util.h"
 
 namespace fileapi {
@@ -39,7 +40,7 @@ void QuotaBackendImpl::ReserveQuota(const GURL& origin,
   DCHECK(file_task_runner_->RunsTasksOnCurrentThread());
   DCHECK(origin.is_valid());
   if (!delta) {
-    callback.Run(base::PLATFORM_FILE_OK);
+    callback.Run(base::File::FILE_OK, 0);
     return;
   }
   DCHECK(quota_manager_proxy_);
@@ -70,7 +71,7 @@ void QuotaBackendImpl::CommitQuotaUsage(const GURL& origin,
     return;
   ReserveQuotaInternal(QuotaReservationInfo(origin, type, delta));
   base::FilePath path;
-  if (GetUsageCachePath(origin, type, &path) != base::PLATFORM_FILE_OK)
+  if (GetUsageCachePath(origin, type, &path) != base::File::FILE_OK)
     return;
   bool result = file_system_usage_cache_->AtomicUpdateUsageByDelta(path, delta);
   DCHECK(result);
@@ -81,7 +82,7 @@ void QuotaBackendImpl::IncrementDirtyCount(const GURL& origin,
   DCHECK(file_task_runner_->RunsTasksOnCurrentThread());
   DCHECK(origin.is_valid());
   base::FilePath path;
-  if (GetUsageCachePath(origin, type, &path) != base::PLATFORM_FILE_OK)
+  if (GetUsageCachePath(origin, type, &path) != base::File::FILE_OK)
     return;
   DCHECK(file_system_usage_cache_);
   file_system_usage_cache_->IncrementDirty(path);
@@ -92,7 +93,7 @@ void QuotaBackendImpl::DecrementDirtyCount(const GURL& origin,
   DCHECK(file_task_runner_->RunsTasksOnCurrentThread());
   DCHECK(origin.is_valid());
   base::FilePath path;
-  if (GetUsageCachePath(origin, type, &path) != base::PLATFORM_FILE_OK)
+  if (GetUsageCachePath(origin, type, &path) != base::File::FILE_OK)
     return;
   DCHECK(file_system_usage_cache_);
   file_system_usage_cache_->DecrementDirty(path);
@@ -104,22 +105,30 @@ void QuotaBackendImpl::DidGetUsageAndQuotaForReserveQuota(
     quota::QuotaStatusCode status, int64 usage, int64 quota) {
   DCHECK(file_task_runner_->RunsTasksOnCurrentThread());
   DCHECK(info.origin.is_valid());
+  DCHECK_LE(0, usage);
+  DCHECK_LE(0, quota);
   if (status != quota::kQuotaStatusOk) {
-    callback.Run(base::PLATFORM_FILE_ERROR_FAILED);
+    callback.Run(base::File::FILE_ERROR_FAILED, 0);
     return;
   }
 
-  if (quota < usage + info.delta) {
-    callback.Run(base::PLATFORM_FILE_ERROR_NO_SPACE);
-    return;
+  QuotaReservationInfo normalized_info = info;
+  if (info.delta > 0) {
+    int64 new_usage =
+        base::saturated_cast<int64>(usage + static_cast<uint64>(info.delta));
+    if (quota < new_usage)
+      new_usage = quota;
+    normalized_info.delta = std::max(static_cast<int64>(0), new_usage - usage);
   }
 
-  ReserveQuotaInternal(info);
-  if (callback.Run(base::PLATFORM_FILE_OK))
+  ReserveQuotaInternal(normalized_info);
+  if (callback.Run(base::File::FILE_OK, normalized_info.delta))
     return;
   // The requester could not accept the reserved quota. Revert it.
   ReserveQuotaInternal(
-      QuotaReservationInfo(info.origin, info.type, -info.delta));
+      QuotaReservationInfo(normalized_info.origin,
+                           normalized_info.type,
+                           -normalized_info.delta));
 }
 
 void QuotaBackendImpl::ReserveQuotaInternal(const QuotaReservationInfo& info) {
@@ -131,14 +140,14 @@ void QuotaBackendImpl::ReserveQuotaInternal(const QuotaReservationInfo& info) {
       FileSystemTypeToQuotaStorageType(info.type), info.delta);
 }
 
-base::PlatformFileError QuotaBackendImpl::GetUsageCachePath(
+base::File::Error QuotaBackendImpl::GetUsageCachePath(
     const GURL& origin,
     FileSystemType type,
     base::FilePath* usage_file_path) {
   DCHECK(file_task_runner_->RunsTasksOnCurrentThread());
   DCHECK(origin.is_valid());
   DCHECK(usage_file_path);
-  base::PlatformFileError error = base::PLATFORM_FILE_OK;
+  base::File::Error error = base::File::FILE_OK;
   *usage_file_path =
       SandboxFileSystemBackendDelegate::GetUsageCachePathForOriginAndType(
           obfuscated_file_util_, origin, type, &error);

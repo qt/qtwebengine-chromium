@@ -43,8 +43,8 @@
 #include "wtf/Deque.h"
 #include "wtf/FastAllocBase.h"
 #include "wtf/OwnPtr.h"
+#include "wtf/PassOwnPtr.h"
 #include "wtf/PassRefPtr.h"
-#include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
 #include "wtf/Vector.h"
 #include "wtf/text/CString.h"
@@ -60,57 +60,59 @@ class WebSocketHandshakeResponseInfo;
 namespace WebCore {
 
 class Document;
+class WebSocketHandshakeRequest;
 
 // This class may replace MainThreadWebSocketChannel.
-class NewWebSocketChannelImpl : public WebSocketChannel, public RefCounted<NewWebSocketChannelImpl>, public blink::WebSocketHandleClient, public ContextLifecycleObserver {
-    WTF_MAKE_FAST_ALLOCATED;
+class NewWebSocketChannelImpl FINAL : public WebSocketChannel, public blink::WebSocketHandleClient, public ContextLifecycleObserver {
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
 public:
     // You can specify the source file and the line number information
     // explicitly by passing the last parameter.
     // In the usual case, they are set automatically and you don't have to
     // pass it.
-    static PassRefPtr<NewWebSocketChannelImpl> create(ExecutionContext* context, WebSocketChannelClient* client, const String& sourceURL = String(), unsigned lineNumber = 0)
+    static PassRefPtrWillBeRawPtr<NewWebSocketChannelImpl> create(ExecutionContext* context, WebSocketChannelClient* client, const String& sourceURL = String(), unsigned lineNumber = 0)
     {
-        return adoptRef(new NewWebSocketChannelImpl(context, client, sourceURL, lineNumber));
+        return adoptRefWillBeRefCountedGarbageCollected(new NewWebSocketChannelImpl(context, client, sourceURL, lineNumber));
     }
     virtual ~NewWebSocketChannelImpl();
 
     // WebSocketChannel functions.
-    virtual void connect(const KURL&, const String& protocol) OVERRIDE;
-    virtual String subprotocol() OVERRIDE;
-    virtual String extensions() OVERRIDE;
+    virtual bool connect(const KURL&, const String& protocol) OVERRIDE;
     virtual WebSocketChannel::SendResult send(const String& message) OVERRIDE;
     virtual WebSocketChannel::SendResult send(const ArrayBuffer&, unsigned byteOffset, unsigned byteLength) OVERRIDE;
     virtual WebSocketChannel::SendResult send(PassRefPtr<BlobDataHandle>) OVERRIDE;
-    virtual unsigned long bufferedAmount() const OVERRIDE;
+    virtual WebSocketChannel::SendResult send(PassOwnPtr<Vector<char> > data) OVERRIDE;
     // Start closing handshake. Use the CloseEventCodeNotSpecified for the code
     // argument to omit payload.
     virtual void close(int code, const String& reason) OVERRIDE;
     virtual void fail(const String& reason, MessageLevel, const String&, unsigned lineNumber) OVERRIDE;
-    using WebSocketChannel::fail;
     virtual void disconnect() OVERRIDE;
-
-    using RefCounted<NewWebSocketChannelImpl>::ref;
-    using RefCounted<NewWebSocketChannelImpl>::deref;
 
     virtual void suspend() OVERRIDE;
     virtual void resume() OVERRIDE;
+
+    virtual void trace(Visitor*) OVERRIDE;
 
 private:
     enum MessageType {
         MessageTypeText,
         MessageTypeBlob,
         MessageTypeArrayBuffer,
+        MessageTypeVector,
     };
 
     struct Message {
         explicit Message(const String&);
         explicit Message(PassRefPtr<BlobDataHandle>);
         explicit Message(PassRefPtr<ArrayBuffer>);
+        explicit Message(PassOwnPtr<Vector<char> >);
+
         MessageType type;
+
         CString text;
         RefPtr<BlobDataHandle> blobDataHandle;
         RefPtr<ArrayBuffer> arrayBuffer;
+        OwnPtr<Vector<char> > vectorData;
     };
 
     struct ReceivedMessage {
@@ -136,14 +138,11 @@ private:
     virtual void didReceiveData(blink::WebSocketHandle*, bool fin, blink::WebSocketHandle::MessageType, const char* data, size_t /* size */) OVERRIDE;
     virtual void didClose(blink::WebSocketHandle*, bool wasClean, unsigned short code, const blink::WebString& reason) OVERRIDE;
     virtual void didReceiveFlowControl(blink::WebSocketHandle*, int64_t quota) OVERRIDE;
+    virtual void didStartClosingHandshake(blink::WebSocketHandle*) OVERRIDE;
 
     // Methods for BlobLoader.
     void didFinishLoadingBlob(PassRefPtr<ArrayBuffer>);
     void didFailLoadingBlob(FileError::ErrorCode);
-
-    // WebSocketChannel functions.
-    virtual void refWebSocketChannel() OVERRIDE { ref(); }
-    virtual void derefWebSocketChannel() OVERRIDE { deref(); }
 
     // LifecycleObserver functions.
     // This object must be destroyed before the context.
@@ -159,20 +158,18 @@ private:
     KURL m_url;
     // m_identifier > 0 means calling scriptContextExecution() returns a Document.
     unsigned long m_identifier;
-    OwnPtr<BlobLoader> m_blobLoader;
-    Deque<Message> m_messages;
+    OwnPtrWillBeMember<BlobLoader> m_blobLoader;
+    Deque<OwnPtr<Message> > m_messages;
     Vector<char> m_receivingMessageData;
 
     bool m_receivingMessageTypeIsText;
     int64_t m_sendingQuota;
     int64_t m_receivedDataSizeForFlowControl;
-    unsigned long m_bufferedAmount;
     size_t m_sentSizeOfTopMessage;
-    String m_subprotocol;
-    String m_extensions;
 
     String m_sourceURLAtConstruction;
     unsigned m_lineNumberAtConstruction;
+    RefPtr<WebSocketHandshakeRequest> m_handshakeRequest;
 
     static const int64_t receivedDataSizeForFlowControlHighWaterMark = 1 << 15;
 };

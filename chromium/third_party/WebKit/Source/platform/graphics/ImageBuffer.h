@@ -33,7 +33,6 @@
 #include "platform/geometry/IntSize.h"
 #include "platform/graphics/Canvas2DLayerBridge.h"
 #include "platform/graphics/ColorSpace.h"
-#include "platform/graphics/GraphicsContext.h"
 #include "platform/graphics/GraphicsTypes.h"
 #include "platform/graphics/GraphicsTypes3D.h"
 #include "platform/graphics/ImageBufferSurface.h"
@@ -47,11 +46,16 @@
 
 class SkCanvas;
 
+namespace blink {
+class WebGraphicsContext3D;
+}
+
 namespace WebCore {
 
 class DrawingBuffer;
-class GraphicsContext3D;
+class GraphicsContext;
 class Image;
+class ImageBufferClient;
 class IntPoint;
 class IntRect;
 
@@ -78,8 +82,14 @@ public:
 
     ~ImageBuffer();
 
+    void setClient(ImageBufferClient* client) { m_client = client; }
+
     const IntSize& size() const { return m_surface->size(); }
     bool isAccelerated() const { return m_surface->isAccelerated(); }
+    bool isSurfaceValid() const;
+    bool restoreSurface() const;
+
+    void setIsHidden(bool hidden) { m_surface->setIsHidden(hidden); }
 
     GraphicsContext* context() const;
 
@@ -103,18 +113,21 @@ public:
     // FIXME: current implementations of this method have the restriction that they only work
     // with textures that are RGB or RGBA format, UNSIGNED_BYTE type and level 0, as specified in
     // Extensions3D::canUseCopyTextureCHROMIUM().
-    bool copyToPlatformTexture(GraphicsContext3D&, Platform3DObject, GC3Denum, GC3Denum, GC3Dint, bool, bool);
+    // Destroys the TEXTURE_2D binding for the active texture unit of the passed context
+    bool copyToPlatformTexture(blink::WebGraphicsContext3D*, Platform3DObject, GLenum, GLenum, GLint, bool, bool);
 
     Platform3DObject getBackingTexture();
-    bool copyRenderingResultsFromDrawingBuffer(DrawingBuffer*);
+
+    bool copyRenderingResultsFromDrawingBuffer(DrawingBuffer*, bool fromFrontBuffer = false);
 
     void flush();
 
+    void notifySurfaceInvalid();
+
 private:
     ImageBuffer(PassOwnPtr<ImageBufferSurface>);
-    bool isValid() const;
 
-    void draw(GraphicsContext*, const FloatRect&, const FloatRect& = FloatRect(0, 0, -1, -1), CompositeOperator = CompositeSourceOver, blink::WebBlendMode = blink::WebBlendModeNormal, bool useLowQualityScale = false);
+    void draw(GraphicsContext*, const FloatRect&, const FloatRect* = 0, CompositeOperator = CompositeSourceOver);
     void drawPattern(GraphicsContext*, const FloatRect&, const FloatSize&, const FloatPoint&, CompositeOperator, const FloatRect&, blink::WebBlendMode, const IntSize& repeatSpacing = IntSize());
     static PassRefPtr<SkColorFilter> createColorSpaceFilter(ColorSpace srcColorSpace, ColorSpace dstColorSpace);
 
@@ -126,6 +139,7 @@ private:
 
     OwnPtr<ImageBufferSurface> m_surface;
     OwnPtr<GraphicsContext> m_context;
+    ImageBufferClient* m_client;
 };
 
 struct ImageDataBuffer {

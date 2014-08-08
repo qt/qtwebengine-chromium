@@ -52,7 +52,10 @@ public:
         @param style how to transform path at each point (based on the current
                      position and tangent)
     */
-    SkPath1DPathEffect(const SkPath& path, SkScalar advance, SkScalar phase, Style);
+    static SkPath1DPathEffect* Create(const SkPath& path, SkScalar advance, SkScalar phase,
+                                      Style style) {
+        return SkNEW_ARGS(SkPath1DPathEffect, (path, advance, phase, style));
+    }
 
     virtual bool filterPath(SkPath*, const SkPath&,
                             SkStrokeRec*, const SkRect*) const SK_OVERRIDE;
@@ -60,8 +63,9 @@ public:
     SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(SkPath1DPathEffect)
 
 protected:
-    SkPath1DPathEffect(SkFlattenableReadBuffer& buffer);
-    virtual void flatten(SkFlattenableWriteBuffer&) const SK_OVERRIDE;
+    SkPath1DPathEffect(const SkPath& path, SkScalar advance, SkScalar phase, Style);
+    explicit SkPath1DPathEffect(SkReadBuffer& buffer);
+    virtual void flatten(SkWriteBuffer&) const SK_OVERRIDE;
 
     // overrides from Sk1DPathEffect
     virtual SkScalar begin(SkScalar contourLength) const SK_OVERRIDE;

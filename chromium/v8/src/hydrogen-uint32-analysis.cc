@@ -1,34 +1,35 @@
 // Copyright 2013 the V8 project authors. All rights reserved.
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-//       copyright notice, this list of conditions and the following
-//       disclaimer in the documentation and/or other materials provided
-//       with the distribution.
-//     * Neither the name of Google Inc. nor the names of its
-//       contributors may be used to endorse or promote products derived
-//       from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
-#include "hydrogen-uint32-analysis.h"
+#include "src/hydrogen-uint32-analysis.h"
 
 namespace v8 {
 namespace internal {
+
+
+static bool IsUnsignedLoad(HLoadKeyed* instr) {
+  switch (instr->elements_kind()) {
+    case EXTERNAL_UINT8_ELEMENTS:
+    case EXTERNAL_UINT16_ELEMENTS:
+    case EXTERNAL_UINT32_ELEMENTS:
+    case EXTERNAL_UINT8_CLAMPED_ELEMENTS:
+    case UINT8_ELEMENTS:
+    case UINT16_ELEMENTS:
+    case UINT32_ELEMENTS:
+    case UINT8_CLAMPED_ELEMENTS:
+      return true;
+    default:
+      return false;
+  }
+}
+
+
+static bool IsUint32Operation(HValue* instr) {
+  return instr->IsShr() ||
+      (instr->IsLoadKeyed() && IsUnsignedLoad(HLoadKeyed::cast(instr))) ||
+      (instr->IsInteger32Constant() && instr->GetInteger32Constant() >= 0);
+}
 
 
 bool HUint32AnalysisPhase::IsSafeUint32Use(HValue* val, HValue* use) {
@@ -54,12 +55,15 @@ bool HUint32AnalysisPhase::IsSafeUint32Use(HValue* val, HValue* use) {
       // operation.
       if (store->value() == val) {
         // Clamping or a conversion to double should have beed inserted.
-        ASSERT(store->elements_kind() != EXTERNAL_PIXEL_ELEMENTS);
-        ASSERT(store->elements_kind() != EXTERNAL_FLOAT_ELEMENTS);
-        ASSERT(store->elements_kind() != EXTERNAL_DOUBLE_ELEMENTS);
+        ASSERT(store->elements_kind() != EXTERNAL_UINT8_CLAMPED_ELEMENTS);
+        ASSERT(store->elements_kind() != EXTERNAL_FLOAT32_ELEMENTS);
+        ASSERT(store->elements_kind() != EXTERNAL_FLOAT64_ELEMENTS);
         return true;
       }
     }
+  } else if (use->IsCompareNumericAndBranch()) {
+    HCompareNumericAndBranch* c = HCompareNumericAndBranch::cast(use);
+    return IsUint32Operation(c->left()) && IsUint32Operation(c->right());
   }
 
   return false;

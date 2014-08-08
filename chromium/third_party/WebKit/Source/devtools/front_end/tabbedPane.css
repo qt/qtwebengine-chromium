@@ -30,6 +30,7 @@
  
 .tabbed-pane {
     flex: auto;
+    overflow: hidden;
 }
 
 .tabbed-pane-content {
@@ -37,10 +38,18 @@
     overflow: auto;
     flex: auto;
     display: flex;
+    flex-direction: column;
 }
 
 .tabbed-pane-content.has-no-tabs {
     background-color: lightgray;
+}
+
+.tabbed-pane-placeholder {
+    font-size: 14px;
+    text-align: center;
+    margin-top: 20px;
+    text-shadow: rgba(255, 255, 255, 0.75) 0 1px 0;
 }
 
 .tabbed-pane-header {
@@ -66,7 +75,6 @@
     border: 1px solid transparent;
     border-bottom: none;
     line-height: 15px;
-    
     white-space: nowrap;
     text-overflow: ellipsis;
     overflow: hidden;
@@ -101,6 +109,15 @@
     visibility: visible;
 }
 
+.tabbed-pane-header-tab-icon {
+    width: 11px;
+    height: 10px;
+    margin-top: 3px;
+    float: left;
+    display: block;
+    margin-right: 1px;
+}
+
 .tabbed-pane-header-tabs-drop-down-container {
     float: left;
     position: relative;
@@ -129,16 +146,13 @@
     opacity: 0.8;
 }
 
-select.tabbed-pane-header-tabs-drop-down-select {
+.tabbed-pane-header-tabs-drop-down > select.drop-down-menu {
     position: absolute;
     top: 0;
     right: 0;
     bottom: 0;
     left: 0;
     opacity: 0;
-    border: none;
-    margin: 0;
     font-size: 75%;
-    -webkit-appearance: none;
     width: 20px;
 }

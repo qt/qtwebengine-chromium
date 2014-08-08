@@ -11,12 +11,16 @@
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "ui/base/models/tree_node_model.h"
-#include "ui/gfx/font.h"
+#include "ui/gfx/font_list.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/views/controls/prefix_delegate.h"
 #include "ui/views/controls/textfield/textfield_controller.h"
 #include "ui/views/focus/focus_manager.h"
 #include "ui/views/view.h"
+
+namespace gfx {
+class Rect;
+}  // namespace gfx
 
 namespace views {
 
@@ -117,14 +121,14 @@ class VIEWS_EXPORT TreeView : public ui::TreeModelObserver,
 
   // View overrides:
   virtual void Layout() OVERRIDE;
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
   virtual bool AcceleratorPressed(const ui::Accelerator& accelerator) OVERRIDE;
   virtual bool OnMousePressed(const ui::MouseEvent& event) OVERRIDE;
   virtual ui::TextInputClient* GetTextInputClient() OVERRIDE;
   virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
   virtual void ShowContextMenu(const gfx::Point& p,
                                ui::MenuSourceType source_type) OVERRIDE;
-  virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
+  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
   virtual const char* GetClassName() const OVERRIDE;
 
   // TreeModelObserver overrides:
@@ -141,7 +145,7 @@ class VIEWS_EXPORT TreeView : public ui::TreeModelObserver,
 
   // TextfieldController overrides:
   virtual void ContentsChanged(Textfield* sender,
-                               const string16& new_contents) OVERRIDE;
+                               const base::string16& new_contents) OVERRIDE;
   virtual bool HandleKeyEvent(Textfield* sender,
                               const ui::KeyEvent& key_event) OVERRIDE;
 
@@ -155,7 +159,7 @@ class VIEWS_EXPORT TreeView : public ui::TreeModelObserver,
   virtual int GetRowCount() OVERRIDE;
   virtual int GetSelectedRow() OVERRIDE;
   virtual void SetSelectedRow(int row) OVERRIDE;
-  virtual string16 GetTextForRow(int row) OVERRIDE;
+  virtual base::string16 GetTextForRow(int row) OVERRIDE;
 
  protected:
   // View overrides:
@@ -370,14 +374,11 @@ class VIEWS_EXPORT TreeView : public ui::TreeModelObserver,
   // Whether or not the root is shown in the tree.
   bool root_shown_;
 
-  // Did the model return a non-empty set of icons from GetIcons?
-  bool has_custom_icons_;
-
   // Cached preferred size.
   gfx::Size preferred_size_;
 
-  // Font used to display text.
-  gfx::Font font_;
+  // Font list used to display text.
+  gfx::FontList font_list_;
 
   // Height of each row. Based on font and some padding.
   int row_height_;

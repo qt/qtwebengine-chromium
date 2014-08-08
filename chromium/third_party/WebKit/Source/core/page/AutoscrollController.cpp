@@ -29,13 +29,14 @@
 #include "config.h"
 #include "core/page/AutoscrollController.h"
 
-#include "core/page/EventHandler.h"
-#include "core/frame/Frame.h"
 #include "core/frame/FrameView.h"
+#include "core/frame/LocalFrame.h"
 #include "core/page/Chrome.h"
+#include "core/page/EventHandler.h"
 #include "core/page/Page.h"
 #include "core/rendering/HitTestResult.h"
 #include "core/rendering/RenderBox.h"
+#include "core/rendering/RenderListBox.h"
 #include "wtf/CurrentTime.h"
 
 namespace WebCore {
@@ -72,6 +73,8 @@ void AutoscrollController::startAutoscrollForSelection(RenderObject* renderer)
     if (m_autoscrollType != NoAutoscroll)
         return;
     RenderBox* scrollable = RenderBox::findAutoscrollable(renderer);
+    if (!scrollable)
+        scrollable = renderer->isListBox() ? toRenderListBox(renderer) : 0;
     if (!scrollable)
         return;
     m_autoscrollType = AutoscrollForSelection;
@@ -169,7 +172,7 @@ void AutoscrollController::updateDragAndDrop(Node* dropTargetNode, const IntPoin
 }
 
 #if OS(WIN)
-void AutoscrollController::handleMouseReleaseForPanScrolling(Frame* frame, const PlatformMouseEvent& mouseEvent)
+void AutoscrollController::handleMouseReleaseForPanScrolling(LocalFrame* frame, const PlatformMouseEvent& mouseEvent)
 {
     if (!frame->isMainFrame())
         return;

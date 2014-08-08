@@ -8,12 +8,9 @@
 #include <string>
 
 #include "base/memory/scoped_ptr.h"
-#include "base/observer_list.h"
-#include "ui/gfx/native_widget_types.h"
 #include "ui/message_center/message_center_export.h"
 #include "ui/message_center/message_center_types.h"
 #include "ui/message_center/notification_list.h"
-#include "ui/message_center/notification_types.h"
 
 namespace base {
 class DictionaryValue;
@@ -23,6 +20,16 @@ class DictionaryValue;
 // [Add|Remove|Update]Notification to create and update notifications in the
 // list. It also sends those changes to its observers when a notification
 // is shown, closed, or clicked on.
+//
+// MessageCenter is agnostic of profiles; it uses the string returned by
+// message_center::Notification::id() to uniquely identify a notification. It is
+// the caller's responsibility to formulate the id so that 2 different
+// notification should have different ids. For example, if the caller supports
+// multiple profiles, then caller should encode both profile characteristics and
+// notification front end's notification id into a new id and set it into the
+// notification instance before passing that in. Consequently the id passed to
+// observers will be this unique id, which can be used with MessageCenter
+// interface but probably not higher level interfaces.
 
 namespace message_center {
 
@@ -32,8 +39,6 @@ class MessagePopupCollectionTest;
 
 class MessageCenterObserver;
 class NotificationBlocker;
-class NotificationList;
-class NotifierSettingsDelegate;
 class NotifierSettingsProvider;
 
 class MESSAGE_CENTER_EXPORT MessageCenter {
@@ -56,9 +61,13 @@ class MESSAGE_CENTER_EXPORT MessageCenter {
   virtual size_t NotificationCount() const = 0;
   virtual size_t UnreadNotificationCount() const = 0;
   virtual bool HasPopupNotifications() const = 0;
-  virtual bool HasNotification(const std::string& id) = 0;
   virtual bool IsQuietMode() const = 0;
   virtual bool HasClickedListener(const std::string& id) = 0;
+
+  // Find the notification with the corresponding id. Returns NULL if not found.
+  // The returned instance is owned by the message center.
+  virtual message_center::Notification* FindVisibleNotificationById(
+      const std::string& id) = 0;
 
   // Gets all notifications to be shown to the user in the message center.  Note
   // that queued changes due to the message center being open are not reflected
@@ -70,7 +79,7 @@ class MESSAGE_CENTER_EXPORT MessageCenter {
   // VISIBILITY_TRANSIENT or VISIBILITY_SETTINGS.
   virtual NotificationList::PopupNotifications GetPopupNotifications() = 0;
 
-  // Management of NotificaitonBlockers.
+  // Management of NotificationBlockers.
   virtual void AddNotificationBlocker(NotificationBlocker* blocker) = 0;
   virtual void RemoveNotificationBlocker(NotificationBlocker* blocker) = 0;
 
@@ -103,15 +112,11 @@ class MESSAGE_CENTER_EXPORT MessageCenter {
                                          int button_index,
                                          const gfx::Image& image) = 0;
 
-  // Operations happening especially from GUIs: click, expand, disable,
-  // and settings.
+  // Operations happening especially from GUIs: click, disable, and settings.
   // Searches through the notifications and disables any that match the
   // extension id given.
   virtual void DisableNotificationsByNotifier(
       const NotifierId& notifier_id) = 0;
-
-  // Reformat a notification to show its entire text content.
-  virtual void ExpandNotification(const std::string& id) = 0;
 
   // This should be called by UI classes when a notification is clicked to
   // trigger the notification's delegate callback and also update the message
@@ -134,7 +139,9 @@ class MESSAGE_CENTER_EXPORT MessageCenter {
   // This should be called by UI classes when a notification is first displayed
   // to the user, in order to decrement the unread_count for the tray, and to
   // notify observers that the notification is visible.
-  virtual void DisplayedNotification(const std::string& id) = 0;
+  virtual void DisplayedNotification(
+      const std::string& id,
+      const DisplaySource source) = 0;
 
   // Setter/getter of notifier settings provider. This will be a weak reference.
   // This should be set at the initialization process. The getter may return

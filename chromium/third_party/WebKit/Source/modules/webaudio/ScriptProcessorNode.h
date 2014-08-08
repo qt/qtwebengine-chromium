@@ -44,26 +44,26 @@ class AudioProcessingEvent;
 // The "onaudioprocess" attribute is an event listener which will get called periodically with an AudioProcessingEvent which has
 // AudioBuffers for each input and output.
 
-class ScriptProcessorNode : public AudioNode {
+class ScriptProcessorNode FINAL : public AudioNode {
 public:
     // bufferSize must be one of the following values: 256, 512, 1024, 2048, 4096, 8192, 16384.
     // This value controls how frequently the onaudioprocess event handler is called and how many sample-frames need to be processed each call.
     // Lower numbers for bufferSize will result in a lower (better) latency. Higher numbers will be necessary to avoid audio breakup and glitches.
     // The value chosen must carefully balance between latency and audio quality.
-    static PassRefPtr<ScriptProcessorNode> create(AudioContext*, float sampleRate, size_t bufferSize, unsigned numberOfInputChannels, unsigned numberOfOutputChannels);
+    static PassRefPtrWillBeRawPtr<ScriptProcessorNode> create(AudioContext*, float sampleRate, size_t bufferSize, unsigned numberOfInputChannels, unsigned numberOfOutputChannels);
 
     virtual ~ScriptProcessorNode();
 
     // AudioNode
-    virtual void process(size_t framesToProcess);
-    virtual void reset();
-    virtual void initialize();
-    virtual void uninitialize();
+    virtual void process(size_t framesToProcess) OVERRIDE;
+    virtual void initialize() OVERRIDE;
+    virtual void uninitialize() OVERRIDE;
 
     size_t bufferSize() const { return m_bufferSize; }
 
     DEFINE_ATTRIBUTE_EVENT_LISTENER(audioprocess);
 
+    void trace(Visitor*);
 
 private:
     virtual double tailTime() const OVERRIDE;
@@ -79,17 +79,19 @@ private:
     void swapBuffers() { m_doubleBufferIndex = 1 - m_doubleBufferIndex; }
     unsigned m_doubleBufferIndex;
     unsigned m_doubleBufferIndexForEvent;
-    Vector<RefPtr<AudioBuffer> > m_inputBuffers;
-    Vector<RefPtr<AudioBuffer> > m_outputBuffers;
+    WillBeHeapVector<RefPtrWillBeMember<AudioBuffer> > m_inputBuffers;
+    WillBeHeapVector<RefPtrWillBeMember<AudioBuffer> > m_outputBuffers;
 
     size_t m_bufferSize;
     unsigned m_bufferReadWriteIndex;
-    volatile bool m_isRequestOutstanding;
 
     unsigned m_numberOfInputChannels;
     unsigned m_numberOfOutputChannels;
 
     RefPtr<AudioBus> m_internalInputBus;
+
+    // Synchronize process() with fireProcessEvent().
+    mutable Mutex m_processEventLock;
 };
 
 } // namespace WebCore

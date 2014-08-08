@@ -10,6 +10,7 @@
 #include "base/memory/aligned_memory.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/stringprintf.h"
+#include "gpu/command_buffer/common/mailbox_holder.h"
 #include "media/base/buffers.h"
 #include "media/base/yuv_convert.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -87,8 +88,7 @@ void ExpectFrameColor(media::VideoFrame* yv12_frame, uint32 expect_rgb_color) {
 // Fill each plane to its reported extents and verify accessors report non
 // zero values.  Additionally, for the first plane verify the rows and
 // row_bytes values are correct.
-void ExpectFrameExtents(VideoFrame::Format format, int planes,
-                        int bytes_per_pixel, const char* expected_hash) {
+void ExpectFrameExtents(VideoFrame::Format format, const char* expected_hash) {
   const unsigned char kFillByte = 0x80;
   const int kWidth = 61;
   const int kHeight = 31;
@@ -99,17 +99,13 @@ void ExpectFrameExtents(VideoFrame::Format format, int planes,
       format, size, gfx::Rect(size), size, kTimestamp);
   ASSERT_TRUE(frame.get());
 
-  for(int plane = 0; plane < planes; plane++) {
+  int planes = VideoFrame::NumPlanes(format);
+  for (int plane = 0; plane < planes; plane++) {
     SCOPED_TRACE(base::StringPrintf("Checking plane %d", plane));
     EXPECT_TRUE(frame->data(plane));
     EXPECT_TRUE(frame->stride(plane));
     EXPECT_TRUE(frame->rows(plane));
     EXPECT_TRUE(frame->row_bytes(plane));
-
-    if (plane == 0) {
-      EXPECT_EQ(frame->rows(plane), kHeight);
-      EXPECT_EQ(frame->row_bytes(plane), kWidth * bytes_per_pixel);
-    }
 
     memset(frame->data(plane), kFillByte,
            frame->stride(plane) * frame->rows(plane));
@@ -174,7 +170,7 @@ TEST(VideoFrame, CreateBlackFrame) {
   ASSERT_TRUE(frame.get());
 
   // Test basic properties.
-  EXPECT_EQ(0, frame->GetTimestamp().InMicroseconds());
+  EXPECT_EQ(0, frame->timestamp().InMicroseconds());
   EXPECT_FALSE(frame->end_of_stream());
 
   // Test |frame| properties.
@@ -199,82 +195,117 @@ TEST(VideoFrame, CreateBlackFrame) {
   }
 }
 
+static void FrameNoLongerNeededCallback(
+    const scoped_refptr<media::VideoFrame>& frame,
+    bool* triggered) {
+  *triggered = true;
+}
+
+TEST(VideoFrame, WrapVideoFrame) {
+  const int kWidth = 4;
+  const int kHeight = 4;
+  scoped_refptr<media::VideoFrame> frame;
+  bool no_longer_needed_triggered = false;
+  {
+    scoped_refptr<media::VideoFrame> wrapped_frame =
+        VideoFrame::CreateBlackFrame(gfx::Size(kWidth, kHeight));
+    ASSERT_TRUE(wrapped_frame.get());
+
+    gfx::Rect visible_rect(1, 1, 1, 1);
+    gfx::Size natural_size = visible_rect.size();
+    frame = media::VideoFrame::WrapVideoFrame(
+        wrapped_frame, visible_rect, natural_size,
+        base::Bind(&FrameNoLongerNeededCallback, wrapped_frame,
+                   &no_longer_needed_triggered));
+    EXPECT_EQ(wrapped_frame->coded_size(), frame->coded_size());
+    EXPECT_EQ(wrapped_frame->data(media::VideoFrame::kYPlane),
+              frame->data(media::VideoFrame::kYPlane));
+    EXPECT_NE(wrapped_frame->visible_rect(), frame->visible_rect());
+    EXPECT_EQ(visible_rect, frame->visible_rect());
+    EXPECT_NE(wrapped_frame->natural_size(), frame->natural_size());
+    EXPECT_EQ(natural_size, frame->natural_size());
+  }
+
+  EXPECT_FALSE(no_longer_needed_triggered);
+  frame = NULL;
+  EXPECT_TRUE(no_longer_needed_triggered);
+}
+
 // Ensure each frame is properly sized and allocated.  Will trigger OOB reads
 // and writes as well as incorrect frame hashes otherwise.
 TEST(VideoFrame, CheckFrameExtents) {
-  // Each call consists of a VideoFrame::Format, # of planes, bytes per pixel,
-  // and the expected hash of all planes if filled with kFillByte (defined in
-  // ExpectFrameExtents).
-  ExpectFrameExtents(
-      VideoFrame::YV12,   3, 1, "71113bdfd4c0de6cf62f48fb74f7a0b1");
-  ExpectFrameExtents(
-      VideoFrame::YV16,   3, 1, "9bb99ac3ff350644ebff4d28dc01b461");
+  // Each call consists of a VideoFrame::Format and the expected hash of all
+  // planes if filled with kFillByte (defined in ExpectFrameExtents).
+  ExpectFrameExtents(VideoFrame::YV12, "8e5d54cb23cd0edca111dd35ffb6ff05");
+  ExpectFrameExtents(VideoFrame::YV16, "cce408a044b212db42a10dfec304b3ef");
 }
 
-static void TextureCallback(uint32* called_sync_point, uint32 sync_point) {
-  *called_sync_point = sync_point;
+static void TextureCallback(std::vector<uint32>* called_sync_point,
+                            const std::vector<uint32>& release_sync_points) {
+  called_sync_point->assign(release_sync_points.begin(),
+                            release_sync_points.end());
 }
 
-// Verify the TextureNoLongerNeededCallback is called when VideoFrame is
-// destroyed with the original sync point.
+// Verify the gpu::MailboxHolder::ReleaseCallback is called when VideoFrame is
+// destroyed with the default release sync points.
 TEST(VideoFrame, TextureNoLongerNeededCallbackIsCalled) {
-  uint32 sync_point = 7;
-  uint32 called_sync_point = 0;
+  std::vector<uint32> called_sync_points;
+  called_sync_points.push_back(1);
 
   {
     scoped_refptr<VideoFrame> frame = VideoFrame::WrapNativeTexture(
-        make_scoped_ptr(new VideoFrame::MailboxHolder(
-            gpu::Mailbox(),
-            sync_point,
-            base::Bind(&TextureCallback, &called_sync_point))),
-        5,                                        // texture_target
-        gfx::Size(10, 10),                        // coded_size
-        gfx::Rect(10, 10),                        // visible_rect
-        gfx::Size(10, 10),                        // natural_size
-        base::TimeDelta(),                        // timestamp
-        base::Callback<void(const SkBitmap&)>(),  // read_pixels_cb
-        base::Closure());                         // no_longer_needed_cb
+        make_scoped_ptr(
+            new gpu::MailboxHolder(gpu::Mailbox(), 5, 0 /* sync_point */)),
+        base::Bind(&TextureCallback, &called_sync_points),
+        gfx::Size(10, 10),            // coded_size
+        gfx::Rect(10, 10),            // visible_rect
+        gfx::Size(10, 10),            // natural_size
+        base::TimeDelta(),            // timestamp
+        VideoFrame::ReadPixelsCB());  // read_pixels_cb
 
-    EXPECT_EQ(0u, called_sync_point);
+    EXPECT_EQ(1u, called_sync_points.size());
   }
-  EXPECT_EQ(sync_point, called_sync_point);
+  EXPECT_TRUE(called_sync_points.empty());
 }
 
-// Verify the TextureNoLongerNeededCallback is called when VideoFrame is
-// destroyed with the new sync point, when the mailbox is accessed by a caller.
+// Verify the gpu::MailboxHolder::ReleaseCallback is called when VideoFrame is
+// destroyed with the release sync points, which was updated by clients.
+// (i.e. the compositor, webgl).
 TEST(VideoFrame, TextureNoLongerNeededCallbackAfterTakingAndReleasingMailbox) {
-  uint32 called_sync_point = 0;
+  std::vector<uint32> called_sync_points;
 
   gpu::Mailbox mailbox;
   mailbox.name[0] = 50;
   uint32 sync_point = 7;
   uint32 target = 9;
+  std::vector<uint32> release_sync_points;
+  release_sync_points.push_back(1);
+  release_sync_points.push_back(2);
+  release_sync_points.push_back(3);
 
   {
     scoped_refptr<VideoFrame> frame = VideoFrame::WrapNativeTexture(
-        make_scoped_ptr(new VideoFrame::MailboxHolder(
-            mailbox,
-            sync_point,
-            base::Bind(&TextureCallback, &called_sync_point))),
-        target,
-        gfx::Size(10, 10),                        // coded_size
-        gfx::Rect(10, 10),                        // visible_rect
-        gfx::Size(10, 10),                        // natural_size
-        base::TimeDelta(),                        // timestamp
-        base::Callback<void(const SkBitmap&)>(),  // read_pixels_cb
-        base::Closure());                         // no_longer_needed_cb
+        make_scoped_ptr(new gpu::MailboxHolder(mailbox, target, sync_point)),
+        base::Bind(&TextureCallback, &called_sync_points),
+        gfx::Size(10, 10),            // coded_size
+        gfx::Rect(10, 10),            // visible_rect
+        gfx::Size(10, 10),            // natural_size
+        base::TimeDelta(),            // timestamp
+        VideoFrame::ReadPixelsCB());  // read_pixels_cb
+    EXPECT_TRUE(called_sync_points.empty());
 
-    VideoFrame::MailboxHolder* mailbox_holder = frame->texture_mailbox();
+    const gpu::MailboxHolder* mailbox_holder = frame->mailbox_holder();
 
-    EXPECT_EQ(mailbox.name[0], mailbox_holder->mailbox().name[0]);
-    EXPECT_EQ(sync_point, mailbox_holder->sync_point());
-    EXPECT_EQ(target, frame->texture_target());
+    EXPECT_EQ(mailbox.name[0], mailbox_holder->mailbox.name[0]);
+    EXPECT_EQ(target, mailbox_holder->texture_target);
+    EXPECT_EQ(sync_point, mailbox_holder->sync_point);
 
-    // Finish using the mailbox_holder and drop our reference.
-    sync_point = 10;
-    mailbox_holder->Resync(sync_point);
+    frame->AppendReleaseSyncPoint(release_sync_points[0]);
+    frame->AppendReleaseSyncPoint(release_sync_points[1]);
+    frame->AppendReleaseSyncPoint(release_sync_points[2]);
+    EXPECT_EQ(sync_point, mailbox_holder->sync_point);
   }
-  EXPECT_EQ(sync_point, called_sync_point);
+  EXPECT_EQ(release_sync_points, called_sync_points);
 }
 
 }  // namespace media

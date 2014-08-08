@@ -45,14 +45,18 @@ static const TextEncoding& UTF7Encoding()
 
 TextEncoding::TextEncoding(const char* name)
     : m_name(atomicCanonicalTextEncodingName(name))
-    , m_backslashAsCurrencySymbol(backslashAsCurrencySymbol())
 {
+    // Aliases are valid, but not "replacement" itself.
+    if (m_name && isReplacementEncoding(name))
+        m_name = 0;
 }
 
 TextEncoding::TextEncoding(const String& name)
     : m_name(atomicCanonicalTextEncodingName(name))
-    , m_backslashAsCurrencySymbol(backslashAsCurrencySymbol())
 {
+    // Aliases are valid, but not "replacement" itself.
+    if (m_name && isReplacementEncoding(name))
+        m_name = 0;
 }
 
 String TextEncoding::decode(const char* data, size_t length, bool stopOnError, bool& sawError) const
@@ -60,7 +64,7 @@ String TextEncoding::decode(const char* data, size_t length, bool stopOnError, b
     if (!m_name)
         return String();
 
-    return newTextCodec(*this)->decode(data, length, true, stopOnError, sawError);
+    return newTextCodec(*this)->decode(data, length, DataEOF, stopOnError, sawError);
 }
 
 CString TextEncoding::encode(const String& string, UnencodableHandling handling) const
@@ -126,11 +130,6 @@ bool TextEncoding::usesVisualOrdering() const
 
     static const char* const a = atomicCanonicalTextEncodingName("ISO-8859-8");
     return m_name == a;
-}
-
-UChar TextEncoding::backslashAsCurrencySymbol() const
-{
-    return shouldShowBackslashAsCurrencySymbolIn(m_name) ? 0x00A5 : '\\';
 }
 
 bool TextEncoding::isNonByteBasedEncoding() const

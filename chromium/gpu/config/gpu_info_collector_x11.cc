@@ -20,6 +20,7 @@
 #include "library_loaders/libpci.h"
 #include "third_party/libXNVCtrl/NVCtrl.h"
 #include "third_party/libXNVCtrl/NVCtrlLib.h"
+#include "ui/gfx/x/x11_types.h"
 #include "ui/gl/gl_bindings.h"
 #include "ui/gl/gl_context.h"
 #include "ui/gl/gl_implementation.h"
@@ -70,7 +71,7 @@ std::string CollectDriverVersionATI() {
 // Use NVCtrl extention to query NV driver version.
 // Return empty string on failing.
 std::string CollectDriverVersionNVidia() {
-  Display* display = base::MessagePumpForUI::GetDefaultXDisplay();
+  Display* display = gfx::GetXDisplay();
   if (!display) {
     LOG(ERROR) << "XOpenDisplay failed.";
     return std::string();
@@ -124,8 +125,18 @@ bool CollectPCIVideoCardInfo(GPUInfo* gpu_info) {
        device != NULL; device = device->next) {
     // Fill the IDs and class fields.
     (libpci_loader.pci_fill_info)(device, 33);
-    // TODO(zmo): there might be other classes that qualify as display devices.
-    if (device->device_class != 0x0300)  // Device class is DISPLAY_VGA.
+    bool is_gpu = false;
+    switch (device->device_class) {
+      case PCI_CLASS_DISPLAY_VGA:
+      case PCI_CLASS_DISPLAY_XGA:
+      case PCI_CLASS_DISPLAY_3D:
+        is_gpu = true;
+        break;
+      case PCI_CLASS_DISPLAY_OTHER:
+      default:
+        break;
+    }
+    if (!is_gpu)
       continue;
 
     GPUInfo::GPUDevice gpu;
@@ -162,29 +173,9 @@ bool CollectPCIVideoCardInfo(GPUInfo* gpu_info) {
   return (primary_gpu_identified);
 }
 
-// Find the first GPU in |secondary_gpus| list that matches |active_vendor|
-// and switch it to primary gpu.
-// Return false if we cannot find a match.
-bool FindAndSetActiveGPU(GPUInfo* gpu_info, uint32 active_vendor) {
-  DCHECK(gpu_info);
-  GPUInfo::GPUDevice* device = NULL;
-  for (size_t ii = 0; ii < gpu_info->secondary_gpus.size(); ++ii) {
-    if (gpu_info->secondary_gpus[ii].vendor_id == active_vendor) {
-      device = &(gpu_info->secondary_gpus[ii]);
-      break;
-    }
-  }
-  if (device == NULL)
-    return false;
-  GPUInfo::GPUDevice temp = gpu_info->gpu;
-  gpu_info->gpu = *device;
-  *device = temp;
-  return true;
-}
-
 }  // namespace anonymous
 
-bool CollectContextGraphicsInfo(GPUInfo* gpu_info) {
+CollectInfoResult CollectContextGraphicsInfo(GPUInfo* gpu_info) {
   DCHECK(gpu_info);
 
   TRACE_EVENT0("gpu", "gpu_info_collector::CollectGraphicsInfo");
@@ -203,10 +194,9 @@ bool CollectContextGraphicsInfo(GPUInfo* gpu_info) {
 #endif
   }
 
+  CollectInfoResult result = CollectGraphicsInfoGL(gpu_info);
   gpu_info->finalized = true;
-  bool rt = CollectGraphicsInfoGL(gpu_info);
-
-  return rt;
+  return result;
 }
 
 GpuIDResult CollectGpuID(uint32* vendor_id, uint32* device_id) {
@@ -218,12 +208,13 @@ GpuIDResult CollectGpuID(uint32* vendor_id, uint32* device_id) {
   if (CollectPCIVideoCardInfo(&gpu_info)) {
     *vendor_id = gpu_info.gpu.vendor_id;
     *device_id = gpu_info.gpu.device_id;
-    return kGpuIDSuccess;
+    if (*vendor_id != 0 && *device_id != 0)
+      return kGpuIDSuccess;
   }
   return kGpuIDFailure;
 }
 
-bool CollectBasicGraphicsInfo(GPUInfo* gpu_info) {
+CollectInfoResult CollectBasicGraphicsInfo(GPUInfo* gpu_info) {
   DCHECK(gpu_info);
 
   bool rt = CollectPCIVideoCardInfo(gpu_info);
@@ -247,77 +238,53 @@ bool CollectBasicGraphicsInfo(GPUInfo* gpu_info) {
     case kVendorIDIntel:
       // In dual-GPU cases, sometimes PCI scan only gives us the
       // integrated GPU (i.e., the Intel one).
-      driver_version = CollectDriverVersionNVidia();
-      if (!driver_version.empty()) {
-        gpu_info->driver_vendor = "NVIDIA";
-        gpu_info->driver_version = driver_version;
-        // Machines with more than two GPUs are not handled.
-        if (gpu_info->secondary_gpus.size() <= 1)
+      if (gpu_info->secondary_gpus.size() == 0) {
+        driver_version = CollectDriverVersionNVidia();
+        if (!driver_version.empty()) {
+          gpu_info->driver_vendor = "NVIDIA";
+          gpu_info->driver_version = driver_version;
           gpu_info->optimus = true;
+          // Put Intel to the secondary GPU list.
+          gpu_info->secondary_gpus.push_back(gpu_info->gpu);
+          // Put NVIDIA as the primary GPU.
+          gpu_info->gpu.vendor_id = kVendorIDNVidia;
+          gpu_info->gpu.device_id = 0;  // Unknown Device.
+        }
       }
       break;
   }
 
-  return rt;
+  return rt ? kCollectInfoSuccess : kCollectInfoNonFatalFailure;
 }
 
-bool CollectDriverInfoGL(GPUInfo* gpu_info) {
+CollectInfoResult CollectDriverInfoGL(GPUInfo* gpu_info) {
   DCHECK(gpu_info);
 
-  std::string gl_version_string = gpu_info->gl_version_string;
-  if (StartsWithASCII(gl_version_string, "OpenGL ES", true))
-    gl_version_string = gl_version_string.substr(10);
+  std::string gl_version = gpu_info->gl_version;
+  if (StartsWithASCII(gl_version, "OpenGL ES", true))
+    gl_version = gl_version.substr(10);
   std::vector<std::string> pieces;
-  base::SplitStringAlongWhitespace(gl_version_string, &pieces);
+  base::SplitStringAlongWhitespace(gl_version, &pieces);
   // In linux, the gl version string might be in the format of
   //   GLVersion DriverVendor DriverVersion
   if (pieces.size() < 3)
-    return false;
+    return kCollectInfoNonFatalFailure;
 
   std::string driver_version = pieces[2];
   size_t pos = driver_version.find_first_not_of("0123456789.");
   if (pos == 0)
-    return false;
+    return kCollectInfoNonFatalFailure;
   if (pos != std::string::npos)
     driver_version = driver_version.substr(0, pos);
 
   gpu_info->driver_vendor = pieces[1];
   gpu_info->driver_version = driver_version;
-  return true;
+  return kCollectInfoSuccess;
 }
 
 void MergeGPUInfo(GPUInfo* basic_gpu_info,
                   const GPUInfo& context_gpu_info) {
   MergeGPUInfoGL(basic_gpu_info, context_gpu_info);
-}
-
-bool DetermineActiveGPU(GPUInfo* gpu_info) {
-  DCHECK(gpu_info);
-  if (gpu_info->secondary_gpus.size() == 0)
-    return true;
-  if (gpu_info->gl_vendor.empty())
-    return false;
-  uint32 active_vendor = 0;
-  // For now we only handle Intel/NVIDIA/AMD.
-  if (gpu_info->gl_vendor.find("Intel") != std::string::npos) {
-    if (gpu_info->gpu.vendor_id == kVendorIDIntel)
-      return true;
-    active_vendor = kVendorIDIntel;
-  }
-  if (gpu_info->gl_vendor.find("NVIDIA") != std::string::npos) {
-    if (gpu_info->gpu.vendor_id == kVendorIDNVidia)
-      return true;
-    active_vendor = kVendorIDNVidia;
-  }
-  if (gpu_info->gl_vendor.find("ATI") != std::string::npos ||
-      gpu_info->gl_vendor.find("AMD") != std::string::npos) {
-    if (gpu_info->gpu.vendor_id == kVendorIDAMD)
-      return true;
-    active_vendor = kVendorIDAMD;
-  }
-  if (active_vendor == 0)
-    return false;
-  return FindAndSetActiveGPU(gpu_info, active_vendor);
 }
 
 }  // namespace gpu

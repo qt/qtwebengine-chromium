@@ -65,7 +65,7 @@ var global = {
 // Utility functions
 
 /**
- * @return {!bool}
+ * @return {!boolean}
  */
 function hasInaccuratePointingDevice() {
     return matchMedia("(pointer: coarse)").matches;
@@ -919,7 +919,7 @@ AnimationManager.prototype._startAnimation = function() {
     if (this._isRunning)
         return;
     this._isRunning = true;
-    window.webkitRequestAnimationFrame(this._animationFrameCallbackBound);
+    window.requestAnimationFrame(this._animationFrameCallbackBound);
 };
 
 AnimationManager.prototype._stopAnimation = function() {
@@ -960,7 +960,7 @@ AnimationManager.prototype._animationFrameCallback = function(now) {
     }
     this.dispatchEvent(AnimationManager.EventTypeAnimationFrameWillFinish);
     if (this._isRunning)
-        window.webkitRequestAnimationFrame(this._animationFrameCallbackBound);
+        window.requestAnimationFrame(this._animationFrameCallbackBound);
 };
 
 /**
@@ -1044,7 +1044,7 @@ Animator.prototype.isRunning = function() {
 };
 
 Animator.prototype.start = function() {
-    this._lastStepTime = Date.now();
+    this._lastStepTime = performance.now();
     this._isRunning = true;
     AnimationManager.shared.add(this);
 };
@@ -1208,7 +1208,7 @@ FlingGestureAnimator.prototype._timeAtVelocity = function(v) {
 };
 
 FlingGestureAnimator.prototype.start = function() {
-    this._lastStepTime = Date.now();
+    this._lastStepTime = performance.now();
     Animator.prototype.start.call(this);
 };
 
@@ -1522,16 +1522,29 @@ ScrollView.prototype.setContentOffset = function(value) {
     value = Math.min(this.maximumContentOffset - this._height, Math.max(this.minimumContentOffset, Math.floor(value)));
     if (this._contentOffset === value)
         return;
-    var newPartitionNumber = Math.floor(value / ScrollView.PartitionHeight);    
+    this._contentOffset = value;
+    this._updateScrollContent();
+    if (this.delegate)
+        this.delegate.scrollViewDidChangeContentOffset(this);
+};
+
+ScrollView.prototype._updateScrollContent = function() {
+    var newPartitionNumber = Math.floor(this._contentOffset / ScrollView.PartitionHeight);
     var partitionChanged = this._partitionNumber !== newPartitionNumber;
     this._partitionNumber = newPartitionNumber;
-    this._contentOffset = value;
     this.contentElement.style.webkitTransform = "translate(0, " + (-this.contentPositionForContentOffset(this._contentOffset)) + "px)";
-    if (this.delegate) {
-        this.delegate.scrollViewDidChangeContentOffset(this);
-        if (partitionChanged)
-            this.delegate.scrollViewDidChangePartition(this);
-    }
+    if (this.delegate && partitionChanged)
+        this.delegate.scrollViewDidChangePartition(this);
+};
+
+/**
+ * @param {!View|Node} parent
+ * @param {?View|Node=} before
+ * @override
+ */
+ScrollView.prototype.attachTo = function(parent, before) {
+    View.prototype.attachTo.call(this, parent, before);
+    this._updateScrollContent();
 };
 
 /**
@@ -4025,7 +4038,7 @@ CalendarPicker.prototype.onBodyKeyDown = function(event) {
         event.stopPropagation();
         event.preventDefault();
     }
-}
+};
 
 if (window.dialogArguments) {
     initialize(dialogArguments);

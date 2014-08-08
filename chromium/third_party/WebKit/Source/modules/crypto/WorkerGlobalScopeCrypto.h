@@ -31,25 +31,30 @@
 #ifndef WorkerGlobalScopeCrypto_h
 #define WorkerGlobalScopeCrypto_h
 
-#include "core/workers/WorkerSupplementable.h"
+#include "core/workers/WorkerGlobalScope.h"
+#include "platform/Supplementable.h"
+#include "platform/heap/Handle.h"
 
 namespace WebCore {
 
-class WorkerCrypto;
+class Crypto;
 class ExecutionContext;
+class WorkerGlobalScope;
 
-class WorkerGlobalScopeCrypto : public WorkerSupplement {
+class WorkerGlobalScopeCrypto FINAL : public NoBaseWillBeGarbageCollected<WorkerGlobalScopeCrypto>, public WillBeHeapSupplement<WorkerGlobalScope> {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(WorkerGlobalScopeCrypto);
 public:
-    virtual ~WorkerGlobalScopeCrypto();
-    static WorkerGlobalScopeCrypto* from(WorkerSupplementable*);
-    static WorkerCrypto* crypto(WorkerSupplementable*);
-    WorkerCrypto* crypto() const;
+    static WorkerGlobalScopeCrypto& from(WillBeHeapSupplementable<WorkerGlobalScope>&);
+    static Crypto* crypto(WillBeHeapSupplementable<WorkerGlobalScope>&);
+    Crypto* crypto() const;
+
+    virtual void trace(Visitor*);
 
 private:
     WorkerGlobalScopeCrypto();
     static const char* supplementName();
 
-    mutable RefPtr<WorkerCrypto> m_crypto;
+    mutable PersistentWillBeMember<Crypto> m_crypto;
 };
 
 } // namespace WebCore

@@ -31,10 +31,10 @@
 #ifndef WebEmbeddedWorkerImpl_h
 #define WebEmbeddedWorkerImpl_h
 
-#include "WebContentSecurityPolicy.h"
-#include "WebEmbeddedWorker.h"
-#include "WebEmbeddedWorkerStartData.h"
-#include "WebFrameClient.h"
+#include "public/web/WebContentSecurityPolicy.h"
+#include "public/web/WebEmbeddedWorker.h"
+#include "public/web/WebEmbeddedWorkerStartData.h"
+#include "public/web/WebFrameClient.h"
 
 namespace WebCore {
 class WorkerScriptLoader;
@@ -44,9 +44,10 @@ class WorkerThread;
 namespace blink {
 
 class ServiceWorkerGlobalScopeProxy;
+class WebServiceWorkerNetworkProvider;
 class WebView;
 
-class WebEmbeddedWorkerImpl :
+class WebEmbeddedWorkerImpl FINAL :
     public WebEmbeddedWorker,
     public WebFrameClient {
     WTF_MAKE_NONCOPYABLE(WebEmbeddedWorkerImpl);
@@ -58,24 +59,41 @@ public:
 
     // WebEmbeddedWorker overrides.
     virtual void startWorkerContext(const WebEmbeddedWorkerStartData&) OVERRIDE;
+    virtual void resumeAfterDownload() OVERRIDE;
     virtual void terminateWorkerContext() OVERRIDE;
+    virtual void resumeWorkerContext() OVERRIDE;
+    virtual void attachDevTools() OVERRIDE;
+    virtual void reattachDevTools(const WebString& savedState) OVERRIDE;
+    virtual void detachDevTools() OVERRIDE;
+    virtual void dispatchDevToolsMessage(const WebString&) OVERRIDE;
+
 
 private:
     class Loader;
     class LoaderProxy;
 
     void prepareShadowPageForLoader();
-    void onScriptLoaderFinished();
 
-    // WebFrameClient overrides, for 'shadow page' loading.
-    virtual void didCreateDataSource(WebFrame*, WebDataSource*) OVERRIDE;
+    // WebFrameClient overrides.
+    virtual void willSendRequest(
+        WebLocalFrame*, unsigned identifier, WebURLRequest&,
+        const WebURLResponse& redirectResponse) OVERRIDE;
+    virtual void didFinishDocumentLoad(WebLocalFrame*) OVERRIDE;
+
+    void onScriptLoaderFinished();
+    void startWorkerThread();
 
     WebEmbeddedWorkerStartData m_workerStartData;
 
-    // These are kept until startWorkerContext is called, and then passed on
-    // to WorkerContext.
     OwnPtr<WebServiceWorkerContextClient> m_workerContextClient;
+
+    // This is kept until startWorkerContext is called, and then passed on
+    // to WorkerContext.
     OwnPtr<WebWorkerPermissionClientProxy> m_permissionClient;
+
+    // We retain ownership of this one which is for use on the
+    // main thread only.
+    OwnPtr<WebServiceWorkerNetworkProvider> m_networkProvider;
 
     // Kept around only while main script loading is ongoing.
     OwnPtr<Loader> m_mainScriptLoader;
@@ -90,9 +108,14 @@ private:
     // are guaranteed to exist while this object is around.
     WebView* m_webView;
     WebFrame* m_mainFrame;
-    RefPtr<WebCore::ExecutionContext> m_loadingContext;
 
     bool m_askedToTerminate;
+
+    enum {
+        DontPauseAfterDownload,
+        DoPauseAfterDownload,
+        IsPausedAfterDownload
+    } m_pauseAfterDownloadState;
 };
 
 } // namespace blink

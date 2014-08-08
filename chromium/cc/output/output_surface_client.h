@@ -27,18 +27,20 @@ class CC_EXPORT OutputSurfaceClient {
   // Called to synchronously re-initialize using the Context3D. Upon returning
   // the compositor should be able to draw using GL what was previously
   // committed.
-  virtual bool DeferredInitialize(
-      scoped_refptr<ContextProvider> offscreen_context_provider) = 0;
+  virtual void DeferredInitialize() = 0;
+  // Must call OutputSurface::ReleaseContextProvider inside this call.
   virtual void ReleaseGL() = 0;
-  virtual void SetNeedsRedrawRect(gfx::Rect damage_rect) = 0;
-  virtual void BeginImplFrame(const BeginFrameArgs& args) = 0;
+  virtual void CommitVSyncParameters(base::TimeTicks timebase,
+                                     base::TimeDelta interval) = 0;
+  virtual void SetNeedsRedrawRect(const gfx::Rect& damage_rect) = 0;
+  virtual void BeginFrame(const BeginFrameArgs& args) = 0;
   virtual void DidSwapBuffers() = 0;
-  virtual void OnSwapBuffersComplete() = 0;
+  virtual void DidSwapBuffersComplete() = 0;
   virtual void ReclaimResources(const CompositorFrameAck* ack) = 0;
   virtual void DidLoseOutputSurface() = 0;
   virtual void SetExternalDrawConstraints(const gfx::Transform& transform,
-                                          gfx::Rect viewport,
-                                          gfx::Rect clip,
+                                          const gfx::Rect& viewport,
+                                          const gfx::Rect& clip,
                                           bool valid_for_tile_management) = 0;
   virtual void SetMemoryPolicy(const ManagedMemoryPolicy& policy) = 0;
   // If set, |callback| will be called subsequent to each new tree activation,

@@ -11,7 +11,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/string16.h"
 #include "third_party/skia/include/core/SkColor.h"
-#include "ui/gfx/font.h"
+#include "ui/gfx/font_list.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/views/border.h"
 #include "ui/views/controls/button/custom_button.h"
@@ -35,10 +35,6 @@ class VIEWS_EXPORT TextButtonBorder : public Border {
   virtual gfx::Size GetMinimumSize() const OVERRIDE;
 
  private:
-  // Border:
-  virtual TextButtonBorder* AsTextButtonBorder() OVERRIDE;
-  virtual const TextButtonBorder* AsTextButtonBorder() const OVERRIDE;
-
   gfx::Insets insets_;
 
   DISALLOW_COPY_AND_ASSIGN(TextButtonBorder);
@@ -112,8 +108,8 @@ class VIEWS_EXPORT TextButtonBase : public CustomButton,
   // Call SetText once per string in your set of possible values at button
   // creation time, so that it can contain the largest of them and avoid
   // resizing the button when the text changes.
-  virtual void SetText(const string16& text);
-  const string16& text() const { return text_; }
+  virtual void SetText(const base::string16& text);
+  const base::string16& text() const { return text_; }
 
   enum TextAlignment {
     ALIGN_LEFT,
@@ -143,23 +139,13 @@ class VIEWS_EXPORT TextButtonBase : public CustomButton,
   void set_min_width(int min_width) { min_width_ = min_width; }
   void set_min_height(int min_height) { min_height_ = min_height; }
   void set_max_width(int max_width) { max_width_ = max_width; }
-  void SetFont(const gfx::Font& font);
-  // Return the font used by this button.
-  gfx::Font font() const { return font_; }
+  const gfx::FontList& font_list() const { return font_list_; }
+  void SetFontList(const gfx::FontList& font_list);
 
   void SetEnabledColor(SkColor color);
   void SetDisabledColor(SkColor color);
   void SetHighlightColor(SkColor color);
   void SetHoverColor(SkColor color);
-
-  // Enables a drop shadow underneath the text.
-  void SetTextShadowColors(SkColor active_color, SkColor inactive_color);
-
-  // Sets the drop shadow's offset from the text.
-  void SetTextShadowOffset(int x, int y);
-
-  // Disables shadows.
-  void ClearEmbellishing();
 
   // Sets whether or not to show the hot and pushed states for the button icon
   // (if present) in addition to the normal state.  Defaults to true.
@@ -175,9 +161,9 @@ class VIEWS_EXPORT TextButtonBase : public CustomButton,
   virtual void PaintButton(gfx::Canvas* canvas, PaintButtonMode mode);
 
   // Overridden from View:
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
-  virtual gfx::Size GetMinimumSize() OVERRIDE;
-  virtual int GetHeightForWidth(int w) OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
+  virtual gfx::Size GetMinimumSize() const OVERRIDE;
+  virtual int GetHeightForWidth(int w) const OVERRIDE;
   virtual void OnEnabledChanged() OVERRIDE;
   virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
   virtual void OnBoundsChanged(const gfx::Rect& previous_bounds) OVERRIDE;
@@ -185,18 +171,23 @@ class VIEWS_EXPORT TextButtonBase : public CustomButton,
   virtual void OnNativeThemeChanged(const ui::NativeTheme* theme) OVERRIDE;
 
  protected:
-  TextButtonBase(ButtonListener* listener, const string16& text);
+  TextButtonBase(ButtonListener* listener, const base::string16& text);
 
   // Called when enabled or disabled state changes, or the colors for those
   // states change.
   virtual void UpdateColor();
 
   // Updates text_size_ and max_text_size_ from the current text/font. This is
-  // invoked when the font or text changes.
+  // invoked when the font list or text changes.
   void UpdateTextSize();
 
   // Calculate the size of the text size without setting any of the members.
-  void CalculateTextSize(gfx::Size* text_size, int max_width);
+  void CalculateTextSize(gfx::Size* text_size, int max_width) const;
+
+  // Paint the button's text into the specified canvas. If |mode| is
+  // |PB_FOR_DRAG|, the function paints a drag image representation. Derived
+  // can override this function to change only the text rendering.
+  virtual void OnPaintText(gfx::Canvas* canvas, PaintButtonMode mode);
 
   void set_color_enabled(SkColor color) { color_enabled_ = color; }
   void set_color_disabled(SkColor color) { color_disabled_ = color; }
@@ -239,10 +230,10 @@ class VIEWS_EXPORT TextButtonBase : public CustomButton,
   gfx::Rect GetContentBounds(int extra_width) const;
 
   // The text string that is displayed in the button.
-  string16 text_;
+  base::string16 text_;
 
   // The size of the text string.
-  gfx::Size text_size_;
+  mutable gfx::Size text_size_;
 
   // Track the size of the largest text string seen so far, so that
   // changing text_ will not resize the button boundary.
@@ -251,16 +242,8 @@ class VIEWS_EXPORT TextButtonBase : public CustomButton,
   // The alignment of the text string within the button.
   TextAlignment alignment_;
 
-  // The font used to paint the text.
-  gfx::Font font_;
-
-  // Flag indicating if a shadow should be drawn behind the text.
-  bool has_text_shadow_;
-  // Optional shadow text colors for active and inactive widget states.
-  SkColor active_text_shadow_color_;
-  SkColor inactive_text_shadow_color_;
-  // Space between the text and its shadow. Defaults to (1,1).
-  gfx::Point text_shadow_offset_;
+  // The font list used to paint the text.
+  gfx::FontList font_list_;
 
   // The dimensions of the button will be at least these values.
   int min_width_;
@@ -310,7 +293,7 @@ class VIEWS_EXPORT TextButton : public TextButtonBase {
   // The button's class name.
   static const char kViewClassName[];
 
-  TextButton(ButtonListener* listener, const string16& text);
+  TextButton(ButtonListener* listener, const base::string16& text);
   virtual ~TextButton();
 
   void set_icon_text_spacing(int icon_text_spacing) {
@@ -340,14 +323,21 @@ class VIEWS_EXPORT TextButton : public TextButtonBase {
 
   void set_ignore_minimum_size(bool ignore_minimum_size);
 
+  void set_full_justification(bool full_justification);
+
   // Overridden from View:
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
   virtual const char* GetClassName() const OVERRIDE;
 
   // Overridden from TextButtonBase:
   virtual void PaintButton(gfx::Canvas* canvas, PaintButtonMode mode) OVERRIDE;
 
  protected:
+  // Paint the button's icon into the specified canvas. If |mode| is
+  // |PB_FOR_DRAG|, the function paints a drag image representation. Derived
+  // can override this function to change only the icon rendering.
+  virtual void OnPaintIcon(gfx::Canvas* canvas, PaintButtonMode mode);
+
   gfx::ImageSkia icon() const { return icon_; }
 
   virtual const gfx::ImageSkia& GetImageToPaint() const;
@@ -381,6 +371,10 @@ class VIEWS_EXPORT TextButton : public TextButtonBase {
   // True if the button should ignore the minimum size for the platform. Default
   // is true. Set to false to prevent narrower buttons.
   bool ignore_minimum_size_;
+
+  // True if the icon and the text are aligned along both the left and right
+  // margins of the button.
+  bool full_justification_;
 
   DISALLOW_COPY_AND_ASSIGN(TextButton);
 };

@@ -38,40 +38,25 @@ namespace WebCore {
 
 class MediaControlPanelElement FINAL : public MediaControlDivElement {
 public:
-    static PassRefPtr<MediaControlPanelElement> create(Document&);
+    static PassRefPtrWillBeRawPtr<MediaControlPanelElement> create(MediaControls&);
 
-    void setCanBeDragged(bool);
     void setIsDisplayed(bool);
 
-    void resetPosition();
     void makeOpaque();
     void makeTransparent();
 
-    virtual bool willRespondToMouseMoveEvents() OVERRIDE { return true; }
-    virtual bool willRespondToMouseClickEvents() OVERRIDE { return true; }
-
 private:
-    explicit MediaControlPanelElement(Document&);
+    explicit MediaControlPanelElement(MediaControls&);
 
-    virtual const AtomicString& pseudo() const OVERRIDE;
+    virtual const AtomicString& shadowPseudoId() const OVERRIDE;
     virtual void defaultEventHandler(Event*) OVERRIDE;
-
-    void startDrag(const LayoutPoint& eventLocation);
-    void continueDrag(const LayoutPoint& eventLocation);
-    void endDrag();
 
     void startTimer();
     void stopTimer();
     void transitionTimerFired(Timer<MediaControlPanelElement>*);
 
-    void setPosition(const LayoutPoint&);
-
-    bool m_canBeDragged;
-    bool m_isBeingDragged;
     bool m_isDisplayed;
     bool m_opaque;
-    LayoutPoint m_lastDragEventLocation;
-    LayoutPoint m_cumulativeDragOffset;
 
     Timer<MediaControlPanelElement> m_transitionTimer;
 };
@@ -80,66 +65,53 @@ private:
 
 class MediaControlPanelEnclosureElement FINAL : public MediaControlDivElement {
 public:
-    static PassRefPtr<MediaControlPanelEnclosureElement> create(Document&);
+    static PassRefPtrWillBeRawPtr<MediaControlPanelEnclosureElement> create(MediaControls&);
 
 private:
-    explicit MediaControlPanelEnclosureElement(Document&);
-    virtual const AtomicString& pseudo() const OVERRIDE;
+    explicit MediaControlPanelEnclosureElement(MediaControls&);
+    virtual const AtomicString& shadowPseudoId() const OVERRIDE;
 };
 
 // ----------------------------
 
 class MediaControlOverlayEnclosureElement FINAL : public MediaControlDivElement {
 public:
-    static PassRefPtr<MediaControlOverlayEnclosureElement> create(Document&);
+    static PassRefPtrWillBeRawPtr<MediaControlOverlayEnclosureElement> create(MediaControls&);
 
 private:
-    explicit MediaControlOverlayEnclosureElement(Document&);
-    virtual const AtomicString& pseudo() const OVERRIDE;
+    explicit MediaControlOverlayEnclosureElement(MediaControls&);
+    virtual const AtomicString& shadowPseudoId() const OVERRIDE;
 };
 
 // ----------------------------
 
-class MediaControlPanelMuteButtonElement FINAL : public MediaControlMuteButtonElement {
+class MediaControlMuteButtonElement FINAL : public MediaControlInputElement {
 public:
-    static PassRefPtr<MediaControlPanelMuteButtonElement> create(Document&, MediaControls*);
-
-    virtual bool willRespondToMouseMoveEvents() OVERRIDE { return true; }
-
-private:
-    explicit MediaControlPanelMuteButtonElement(Document&, MediaControls*);
-
-    virtual const AtomicString& pseudo() const OVERRIDE;
-    virtual void defaultEventHandler(Event*) OVERRIDE;
-
-    MediaControls* m_controls;
-};
-
-// ----------------------------
-
-class MediaControlVolumeSliderMuteButtonElement FINAL : public MediaControlMuteButtonElement {
-public:
-    static PassRefPtr<MediaControlVolumeSliderMuteButtonElement> create(Document&);
-
-private:
-    explicit MediaControlVolumeSliderMuteButtonElement(Document&);
-    virtual const AtomicString& pseudo() const OVERRIDE;
-};
-
-
-// ----------------------------
-
-class MediaControlPlayButtonElement FINAL : public MediaControlInputElement {
-public:
-    static PassRefPtr<MediaControlPlayButtonElement> create(Document&);
+    static PassRefPtrWillBeRawPtr<MediaControlMuteButtonElement> create(MediaControls&);
 
     virtual bool willRespondToMouseClickEvents() OVERRIDE { return true; }
     virtual void updateDisplayType() OVERRIDE;
 
 private:
-    explicit MediaControlPlayButtonElement(Document&);
+    explicit MediaControlMuteButtonElement(MediaControls&);
 
-    virtual const AtomicString& pseudo() const OVERRIDE;
+    virtual const AtomicString& shadowPseudoId() const OVERRIDE;
+    virtual void defaultEventHandler(Event*) OVERRIDE;
+};
+
+// ----------------------------
+
+class MediaControlPlayButtonElement FINAL : public MediaControlInputElement {
+public:
+    static PassRefPtrWillBeRawPtr<MediaControlPlayButtonElement> create(MediaControls&);
+
+    virtual bool willRespondToMouseClickEvents() OVERRIDE { return true; }
+    virtual void updateDisplayType() OVERRIDE;
+
+private:
+    explicit MediaControlPlayButtonElement(MediaControls&);
+
+    virtual const AtomicString& shadowPseudoId() const OVERRIDE;
     virtual void defaultEventHandler(Event*) OVERRIDE;
 };
 
@@ -147,14 +119,14 @@ private:
 
 class MediaControlOverlayPlayButtonElement FINAL : public MediaControlInputElement {
 public:
-    static PassRefPtr<MediaControlOverlayPlayButtonElement> create(Document&);
+    static PassRefPtrWillBeRawPtr<MediaControlOverlayPlayButtonElement> create(MediaControls&);
 
     virtual void updateDisplayType() OVERRIDE;
 
 private:
-    explicit MediaControlOverlayPlayButtonElement(Document&);
+    explicit MediaControlOverlayPlayButtonElement(MediaControls&);
 
-    virtual const AtomicString& pseudo() const OVERRIDE;
+    virtual const AtomicString& shadowPseudoId() const OVERRIDE;
     virtual void defaultEventHandler(Event*) OVERRIDE;
 };
 
@@ -162,16 +134,16 @@ private:
 
 class MediaControlToggleClosedCaptionsButtonElement FINAL : public MediaControlInputElement {
 public:
-    static PassRefPtr<MediaControlToggleClosedCaptionsButtonElement> create(Document&, MediaControls*);
+    static PassRefPtrWillBeRawPtr<MediaControlToggleClosedCaptionsButtonElement> create(MediaControls&);
 
     virtual bool willRespondToMouseClickEvents() OVERRIDE { return true; }
 
     virtual void updateDisplayType() OVERRIDE;
 
 private:
-    explicit MediaControlToggleClosedCaptionsButtonElement(Document&, MediaControls*);
+    explicit MediaControlToggleClosedCaptionsButtonElement(MediaControls&);
 
-    virtual const AtomicString& pseudo() const OVERRIDE;
+    virtual const AtomicString& shadowPseudoId() const OVERRIDE;
     virtual void defaultEventHandler(Event*) OVERRIDE;
 };
 
@@ -179,87 +151,93 @@ private:
 
 class MediaControlTimelineElement FINAL : public MediaControlInputElement {
 public:
-    static PassRefPtr<MediaControlTimelineElement> create(Document&, MediaControls*);
+    static PassRefPtrWillBeRawPtr<MediaControlTimelineElement> create(MediaControls&);
 
     virtual bool willRespondToMouseClickEvents() OVERRIDE;
 
+    // FIXME: An "earliest possible position" will be needed once that concept
+    // is supported by HTMLMediaElement, see https://crbug.com/137275
     void setPosition(double);
     void setDuration(double);
 
 private:
-    explicit MediaControlTimelineElement(Document&, MediaControls*);
+    explicit MediaControlTimelineElement(MediaControls&);
 
-    virtual const AtomicString& pseudo() const OVERRIDE;
+    virtual const AtomicString& shadowPseudoId() const OVERRIDE;
     virtual void defaultEventHandler(Event*) OVERRIDE;
-
-    MediaControls* m_controls;
 };
 
 // ----------------------------
 
 class MediaControlFullscreenButtonElement FINAL : public MediaControlInputElement {
 public:
-    static PassRefPtr<MediaControlFullscreenButtonElement> create(Document&);
+    static PassRefPtrWillBeRawPtr<MediaControlFullscreenButtonElement> create(MediaControls&);
 
     virtual bool willRespondToMouseClickEvents() OVERRIDE { return true; }
 
-    virtual void setIsFullscreen(bool);
+    void setIsFullscreen(bool);
 
 private:
-    explicit MediaControlFullscreenButtonElement(Document&);
+    explicit MediaControlFullscreenButtonElement(MediaControls&);
 
-    virtual const AtomicString& pseudo() const OVERRIDE;
+    virtual const AtomicString& shadowPseudoId() const OVERRIDE;
     virtual void defaultEventHandler(Event*) OVERRIDE;
 };
 
 // ----------------------------
 
-class MediaControlPanelVolumeSliderElement FINAL : public MediaControlVolumeSliderElement {
+class MediaControlVolumeSliderElement FINAL : public MediaControlInputElement {
 public:
-    static PassRefPtr<MediaControlPanelVolumeSliderElement> create(Document&);
+    static PassRefPtrWillBeRawPtr<MediaControlVolumeSliderElement> create(MediaControls&);
+
+    virtual bool willRespondToMouseMoveEvents() OVERRIDE;
+    virtual bool willRespondToMouseClickEvents() OVERRIDE;
+    void setVolume(double);
 
 private:
-    explicit MediaControlPanelVolumeSliderElement(Document&);
-    virtual const AtomicString& pseudo() const OVERRIDE;
+    explicit MediaControlVolumeSliderElement(MediaControls&);
+
+    virtual const AtomicString& shadowPseudoId() const OVERRIDE;
+    virtual void defaultEventHandler(Event*) OVERRIDE;
 };
 
 // ----------------------------
 
 class MediaControlTimeRemainingDisplayElement FINAL : public MediaControlTimeDisplayElement {
 public:
-    static PassRefPtr<MediaControlTimeRemainingDisplayElement> create(Document&);
+    static PassRefPtrWillBeRawPtr<MediaControlTimeRemainingDisplayElement> create(MediaControls&);
 
 private:
-    explicit MediaControlTimeRemainingDisplayElement(Document&);
-    virtual const AtomicString& pseudo() const OVERRIDE;
+    explicit MediaControlTimeRemainingDisplayElement(MediaControls&);
+    virtual const AtomicString& shadowPseudoId() const OVERRIDE;
 };
 
 // ----------------------------
 
 class MediaControlCurrentTimeDisplayElement FINAL : public MediaControlTimeDisplayElement {
 public:
-    static PassRefPtr<MediaControlCurrentTimeDisplayElement> create(Document&);
+    static PassRefPtrWillBeRawPtr<MediaControlCurrentTimeDisplayElement> create(MediaControls&);
 
 private:
-    explicit MediaControlCurrentTimeDisplayElement(Document&);
-    virtual const AtomicString& pseudo() const OVERRIDE;
+    explicit MediaControlCurrentTimeDisplayElement(MediaControls&);
+    virtual const AtomicString& shadowPseudoId() const OVERRIDE;
 };
 
 // ----------------------------
 
 class MediaControlTextTrackContainerElement FINAL : public MediaControlDivElement {
 public:
-    static PassRefPtr<MediaControlTextTrackContainerElement> create(Document&);
+    static PassRefPtrWillBeRawPtr<MediaControlTextTrackContainerElement> create(MediaControls&);
 
     void updateDisplay();
-    void updateSizes(bool forceUpdate = false);
+    void updateSizes();
     static const AtomicString& textTrackContainerElementShadowPseudoId();
 
 private:
-    explicit MediaControlTextTrackContainerElement(Document&);
-    virtual const AtomicString& pseudo() const OVERRIDE;
+    explicit MediaControlTextTrackContainerElement(MediaControls&);
+    virtual const AtomicString& shadowPseudoId() const OVERRIDE;
 
-    virtual RenderObject* createRenderer(RenderStyle*);
+    virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
 
     IntRect m_videoDisplaySize;
     float m_fontSize;

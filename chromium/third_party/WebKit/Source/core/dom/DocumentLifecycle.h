@@ -31,6 +31,7 @@
 #ifndef DocumentLifecycle_h
 #define DocumentLifecycle_h
 
+#include "wtf/Assertions.h"
 #include "wtf/Noncopyable.h"
 
 namespace WebCore {
@@ -41,22 +42,129 @@ public:
     enum State {
         Uninitialized,
         Inactive,
-        Active,
+
+        // When the document is active, it traverses these states.
+
+        VisualUpdatePending,
+
+        InStyleRecalc,
+        StyleClean,
+
+        InPreLayout,
+        InPerformLayout,
+        AfterPerformLayout,
+        LayoutClean,
+
+        InCompositingUpdate,
+        CompositingClean,
+
+        // Once the document starts shuting down, we cannot return
+        // to the style/layout/rendering states.
         Stopping,
         Stopped,
         Disposed,
     };
 
+    class Scope {
+        WTF_MAKE_NONCOPYABLE(Scope);
+    public:
+        Scope(DocumentLifecycle&, State finalState);
+        ~Scope();
+
+        void setFinalState(State finalState) { m_finalState = finalState; }
+
+    private:
+        DocumentLifecycle& m_lifecycle;
+        State m_finalState;
+    };
+
+    class DeprecatedTransition {
+        WTF_MAKE_NONCOPYABLE(DeprecatedTransition);
+    public:
+        DeprecatedTransition(State from, State to);
+        ~DeprecatedTransition();
+
+        State from() const { return m_from; }
+        State to() const { return m_to; }
+
+    private:
+        DeprecatedTransition* m_previous;
+        State m_from;
+        State m_to;
+    };
+
+    class DetachScope {
+        WTF_MAKE_NONCOPYABLE(DetachScope);
+    public:
+        explicit DetachScope(DocumentLifecycle& documentLifecycle)
+            : m_documentLifecycle(documentLifecycle)
+        {
+            m_documentLifecycle.incrementDetachCount();
+        }
+
+        ~DetachScope()
+        {
+            m_documentLifecycle.decrementDetachCount();
+        }
+
+    private:
+        DocumentLifecycle& m_documentLifecycle;
+    };
+
     DocumentLifecycle();
     ~DocumentLifecycle();
 
+    bool isActive() const { return m_state > Inactive && m_state < Stopping; }
     State state() const { return m_state; }
 
+    bool stateAllowsTreeMutations() const;
+    bool stateAllowsRenderTreeMutations() const;
+    bool stateAllowsDetach() const;
+
     void advanceTo(State);
+    void ensureStateAtMost(State);
+
+    void incrementDetachCount() { m_detachCount++; }
+    void decrementDetachCount()
+    {
+        ASSERT(m_detachCount > 0);
+        m_detachCount--;
+    }
 
 private:
+#if ASSERT_ENABLED
+    bool canAdvanceTo(State) const;
+    bool canRewindTo(State) const;
+#endif
+
     State m_state;
+    int m_detachCount;
 };
+
+inline bool DocumentLifecycle::stateAllowsTreeMutations() const
+{
+    // FIXME: We should not allow mutations in InPreLayout or AfterPerformLayout either,
+    // but we need to fix MediaList listeners and plugins first.
+    return m_state != InStyleRecalc
+        && m_state != InPerformLayout
+        && m_state != InCompositingUpdate;
+}
+
+inline bool DocumentLifecycle::stateAllowsRenderTreeMutations() const
+{
+    return m_detachCount || m_state == InStyleRecalc;
+}
+
+inline bool DocumentLifecycle::stateAllowsDetach() const
+{
+    return m_state == VisualUpdatePending
+        || m_state == InStyleRecalc
+        || m_state == StyleClean
+        || m_state == InPreLayout
+        || m_state == LayoutClean
+        || m_state == CompositingClean
+        || m_state == Stopping;
+}
 
 }
 

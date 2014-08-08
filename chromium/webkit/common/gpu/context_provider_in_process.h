@@ -9,7 +9,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/synchronization/lock.h"
 #include "base/threading/thread_checker.h"
-#include "cc/output/context_provider.h"
+#include "webkit/common/gpu/context_provider_web_context.h"
 #include "webkit/common/gpu/webgraphicscontext3d_in_process_command_buffer_impl.h"
 #include "webkit/common/gpu/webkit_gpu_export.h"
 
@@ -20,25 +20,26 @@ namespace gpu {
 class GrContextForWebGraphicsContext3D;
 
 class WEBKIT_GPU_EXPORT ContextProviderInProcess
-    : NON_EXPORTED_BASE(public cc::ContextProvider) {
+    : NON_EXPORTED_BASE(public ContextProviderWebContext) {
  public:
   static scoped_refptr<ContextProviderInProcess> Create(
       scoped_ptr<WebGraphicsContext3DInProcessCommandBufferImpl> context3d,
       const std::string& debug_name);
 
-  // Calls Create() with a default factory method for creating an offscreen
-  // context.
-  static scoped_refptr<ContextProviderInProcess> CreateOffscreen();
+  // Uses default attributes for creating an offscreen context.
+  static scoped_refptr<ContextProviderInProcess> CreateOffscreen(
+      bool lose_context_when_out_of_memory);
+
+  virtual blink::WebGraphicsContext3D* WebContext3D() OVERRIDE;
 
   virtual bool BindToCurrentThread() OVERRIDE;
   virtual Capabilities ContextCapabilities() OVERRIDE;
-  virtual blink::WebGraphicsContext3D* Context3d() OVERRIDE;
   virtual ::gpu::gles2::GLES2Interface* ContextGL() OVERRIDE;
   virtual ::gpu::ContextSupport* ContextSupport() OVERRIDE;
   virtual class GrContext* GrContext() OVERRIDE;
-  virtual void MakeGrContextCurrent() OVERRIDE;
   virtual bool IsContextLost() OVERRIDE;
   virtual void VerifyContexts() OVERRIDE;
+  virtual void DeleteCachedResources() OVERRIDE;
   virtual bool DestroyedOnMainThread() OVERRIDE;
   virtual void SetLostContextCallback(
       const LostContextCallback& lost_context_callback) OVERRIDE;

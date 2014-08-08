@@ -36,7 +36,7 @@
 #include "bindings/v8/V8NPObject.h"
 #include "bindings/v8/npruntime_impl.h"
 #include "bindings/v8/npruntime_priv.h"
-#include "core/frame/DOMWindow.h"
+#include "core/frame/LocalDOMWindow.h"
 #include "wtf/text/WTFString.h"
 
 #include <stdlib.h>
@@ -69,7 +69,7 @@ void convertV8ObjectToNPVariant(v8::Local<v8::Value> object, NPObject* owner, NP
         str->WriteUtf8(utf8Chars, length, 0, v8::String::HINT_MANY_WRITES_EXPECTED);
         STRINGN_TO_NPVARIANT(utf8Chars, length-1, *result);
     } else if (object->IsObject()) {
-        DOMWindow* window = toDOMWindow(isolate->GetCurrentContext());
+        LocalDOMWindow* window = currentDOMWindow(isolate);
         NPObject* npobject = npCreateV8ScriptObject(0, v8::Handle<v8::Object>::Cast(object), window, isolate);
         if (npobject)
             _NPN_RegisterObject(npobject, owner);
@@ -83,7 +83,7 @@ v8::Handle<v8::Value> convertNPVariantToV8Object(const NPVariant* variant, NPObj
 
     switch (type) {
     case NPVariantType_Int32:
-        return v8::Integer::New(NPVARIANT_TO_INT32(*variant), isolate);
+        return v8::Integer::New(isolate, NPVARIANT_TO_INT32(*variant));
     case NPVariantType_Double:
         return v8::Number::New(isolate, NPVARIANT_TO_DOUBLE(*variant));
     case NPVariantType_Bool:

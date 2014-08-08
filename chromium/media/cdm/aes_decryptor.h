@@ -27,22 +27,24 @@ namespace media {
 // encryption must be CTR with a key size of 128bits.
 class MEDIA_EXPORT AesDecryptor : public MediaKeys, public Decryptor {
  public:
-  AesDecryptor(const SessionCreatedCB& session_created_cb,
-               const SessionMessageCB& session_message_cb,
-               const SessionReadyCB& session_ready_cb,
-               const SessionClosedCB& session_closed_cb,
-               const SessionErrorCB& session_error_cb);
+  AesDecryptor(const SessionMessageCB& session_message_cb,
+               const SessionClosedCB& session_closed_cb);
   virtual ~AesDecryptor();
 
   // MediaKeys implementation.
-  virtual bool CreateSession(uint32 session_id,
-                             const std::string& type,
+  virtual void CreateSession(const std::string& init_data_type,
                              const uint8* init_data,
-                             int init_data_length) OVERRIDE;
-  virtual void UpdateSession(uint32 session_id,
+                             int init_data_length,
+                             SessionType session_type,
+                             scoped_ptr<NewSessionCdmPromise> promise) OVERRIDE;
+  virtual void LoadSession(const std::string& web_session_id,
+                           scoped_ptr<NewSessionCdmPromise> promise) OVERRIDE;
+  virtual void UpdateSession(const std::string& web_session_id,
                              const uint8* response,
-                             int response_length) OVERRIDE;
-  virtual void ReleaseSession(uint32 session_id) OVERRIDE;
+                             int response_length,
+                             scoped_ptr<SimpleCdmPromise> promise) OVERRIDE;
+  virtual void ReleaseSession(const std::string& web_session_id,
+                              scoped_ptr<SimpleCdmPromise> promise) OVERRIDE;
   virtual Decryptor* GetDecryptor() OVERRIDE;
 
   // Decryptor implementation.
@@ -101,7 +103,7 @@ class MEDIA_EXPORT AesDecryptor : public MediaKeys, public Decryptor {
 
   // Creates a DecryptionKey using |key_string| and associates it with |key_id|.
   // Returns true if successful.
-  bool AddDecryptionKey(const uint32 session_id,
+  bool AddDecryptionKey(const std::string& web_session_id,
                         const std::string& key_id,
                         const std::string& key_string);
 
@@ -109,15 +111,12 @@ class MEDIA_EXPORT AesDecryptor : public MediaKeys, public Decryptor {
   // the key. Returns NULL if no key is associated with |key_id|.
   DecryptionKey* GetKey(const std::string& key_id) const;
 
-  // Deletes all keys associated with |session_id|.
-  void DeleteKeysForSession(const uint32 session_id);
+  // Deletes all keys associated with |web_session_id|.
+  void DeleteKeysForSession(const std::string& web_session_id);
 
   // Callbacks for firing session events.
-  SessionCreatedCB session_created_cb_;
   SessionMessageCB session_message_cb_;
-  SessionReadyCB session_ready_cb_;
   SessionClosedCB session_closed_cb_;
-  SessionErrorCB session_error_cb_;
 
   // Since only Decrypt() is called off the renderer thread, we only need to
   // protect |key_map_|, the only member variable that is shared between
@@ -125,8 +124,8 @@ class MEDIA_EXPORT AesDecryptor : public MediaKeys, public Decryptor {
   KeyIdToSessionKeysMap key_map_;  // Protected by |key_map_lock_|.
   mutable base::Lock key_map_lock_;  // Protects the |key_map_|.
 
-  // Keeps track of current valid session IDs.
-  std::set<uint32> valid_sessions_;
+  // Keeps track of current valid sessions.
+  std::set<std::string> valid_sessions_;
 
   // Make web session ID unique per renderer by making it static. Web session
   // IDs seen by the app will be "1", "2", etc.
@@ -134,6 +133,10 @@ class MEDIA_EXPORT AesDecryptor : public MediaKeys, public Decryptor {
 
   NewKeyCB new_audio_key_cb_;
   NewKeyCB new_video_key_cb_;
+
+  // Protect |new_audio_key_cb_| and |new_video_key_cb_| as they are set on the
+  // main thread but called on the media thread.
+  mutable base::Lock new_key_cb_lock_;
 
   DISALLOW_COPY_AND_ASSIGN(AesDecryptor);
 };

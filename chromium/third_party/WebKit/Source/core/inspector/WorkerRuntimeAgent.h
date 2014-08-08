@@ -38,24 +38,28 @@ namespace WebCore {
 
 class WorkerGlobalScope;
 
-class WorkerRuntimeAgent : public InspectorRuntimeAgent {
+class WorkerRuntimeAgent FINAL : public InspectorRuntimeAgent {
 public:
-    static PassOwnPtr<WorkerRuntimeAgent> create(InstrumentingAgents* instrumentingAgents, InspectorCompositeState* state, InjectedScriptManager* injectedScriptManager, ScriptDebugServer* scriptDebugServer, WorkerGlobalScope* context)
+    static PassOwnPtr<WorkerRuntimeAgent> create(InjectedScriptManager* injectedScriptManager, ScriptDebugServer* scriptDebugServer, WorkerGlobalScope* context)
     {
-        return adoptPtr(new WorkerRuntimeAgent(instrumentingAgents, state, injectedScriptManager, scriptDebugServer, context));
+        return adoptPtr(new WorkerRuntimeAgent(injectedScriptManager, scriptDebugServer, context));
     }
     virtual ~WorkerRuntimeAgent();
 
+    virtual void init() OVERRIDE;
+    virtual void enable(ErrorString*) OVERRIDE;
+
     // Protocol commands.
-    virtual void run(ErrorString*);
+    virtual void run(ErrorString*) OVERRIDE;
+    virtual void isRunRequired(ErrorString*, bool* out_result) OVERRIDE;
 
     void willEvaluateWorkerScript(WorkerGlobalScope*, int workerThreadStartMode);
 
 private:
-    WorkerRuntimeAgent(InstrumentingAgents*, InspectorCompositeState*, InjectedScriptManager*, ScriptDebugServer*, WorkerGlobalScope*);
-    virtual InjectedScript injectedScriptForEval(ErrorString*, const int* executionContextId);
-    virtual void muteConsole();
-    virtual void unmuteConsole();
+    WorkerRuntimeAgent(InjectedScriptManager*, ScriptDebugServer*, WorkerGlobalScope*);
+    virtual InjectedScript injectedScriptForEval(ErrorString*, const int* executionContextId) OVERRIDE;
+    virtual void muteConsole() OVERRIDE;
+    virtual void unmuteConsole() OVERRIDE;
     WorkerGlobalScope* m_workerGlobalScope;
     bool m_paused;
 };

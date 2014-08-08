@@ -66,6 +66,10 @@ class CONTENT_EXPORT MediaInfoLoader : private blink::WebURLLoaderClient {
   // Only valid to call after the loader becomes ready.
   bool DidPassCORSAccessCheck() const;
 
+  void set_single_origin(bool single_origin) {
+    single_origin_ = single_origin;
+  }
+
  private:
   friend class MediaInfoLoaderTest;
 
@@ -95,7 +99,8 @@ class CONTENT_EXPORT MediaInfoLoader : private blink::WebURLLoaderClient {
       const char* data, int dataLength);
   virtual void didFinishLoading(
       blink::WebURLLoader* loader,
-      double finishTime);
+      double finishTime,
+      int64_t total_encoded_data_length);
   virtual void didFail(
       blink::WebURLLoader* loader,
       const blink::WebURLError&);

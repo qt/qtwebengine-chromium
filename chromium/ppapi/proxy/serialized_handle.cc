@@ -4,9 +4,9 @@
 
 #include "ppapi/proxy/serialized_handle.h"
 
+#include "base/files/file.h"
 #include "base/memory/shared_memory.h"
 #include "base/pickle.h"
-#include "base/platform_file.h"
 #include "build/build_config.h"
 #include "ipc/ipc_platform_file.h"
 
@@ -21,14 +21,18 @@ SerializedHandle::SerializedHandle()
     : type_(INVALID),
       shm_handle_(base::SharedMemory::NULLHandle()),
       size_(0),
-      descriptor_(IPC::InvalidPlatformFileForTransit()) {
+      descriptor_(IPC::InvalidPlatformFileForTransit()),
+      open_flags_(0),
+      file_io_(0) {
 }
 
 SerializedHandle::SerializedHandle(Type type_param)
     : type_(type_param),
       shm_handle_(base::SharedMemory::NULLHandle()),
       size_(0),
-      descriptor_(IPC::InvalidPlatformFileForTransit()) {
+      descriptor_(IPC::InvalidPlatformFileForTransit()),
+      open_flags_(0),
+      file_io_(0) {
 }
 
 SerializedHandle::SerializedHandle(const base::SharedMemoryHandle& handle,
@@ -36,7 +40,9 @@ SerializedHandle::SerializedHandle(const base::SharedMemoryHandle& handle,
     : type_(SHARED_MEMORY),
       shm_handle_(handle),
       size_(size),
-      descriptor_(IPC::InvalidPlatformFileForTransit()) {
+      descriptor_(IPC::InvalidPlatformFileForTransit()),
+      open_flags_(0),
+      file_io_(0) {
 }
 
 SerializedHandle::SerializedHandle(
@@ -45,7 +51,9 @@ SerializedHandle::SerializedHandle(
     : type_(type),
       shm_handle_(base::SharedMemory::NULLHandle()),
       size_(0),
-      descriptor_(socket_descriptor) {
+      descriptor_(socket_descriptor),
+      open_flags_(0),
+      file_io_(0) {
 }
 
 bool SerializedHandle::IsHandleValid() const {
@@ -53,7 +61,6 @@ bool SerializedHandle::IsHandleValid() const {
     case SHARED_MEMORY:
       return base::SharedMemory::IsHandleValid(shm_handle_);
     case SOCKET:
-    case CHANNEL_HANDLE:
     case FILE:
       return !(IPC::InvalidPlatformFileForTransit() == descriptor_);
     case INVALID:
@@ -73,15 +80,8 @@ void SerializedHandle::Close() {
         base::SharedMemory::CloseHandle(shm_handle_);
         break;
       case SOCKET:
-      case CHANNEL_HANDLE:
       case FILE:
-        base::PlatformFile file =
-            IPC::PlatformFileForTransitToPlatformFile(descriptor_);
-#if !defined(OS_NACL)
-        base::ClosePlatformFile(file);
-#else
-        close(file);
-#endif
+        base::File file_closer = IPC::PlatformFileForTransitToFile(descriptor_);
         break;
       // No default so the compiler will warn us if a new type is added.
     }
@@ -98,7 +98,7 @@ bool SerializedHandle::WriteHeader(const Header& hdr, Pickle* pickle) {
       return false;
   }
   if (hdr.type == FILE) {
-    if (!pickle->WriteInt(hdr.open_flag))
+    if (!pickle->WriteInt(hdr.open_flags) || !pickle->WriteInt(hdr.file_io))
       return false;
   }
   return true;
@@ -106,7 +106,7 @@ bool SerializedHandle::WriteHeader(const Header& hdr, Pickle* pickle) {
 
 // static
 bool SerializedHandle::ReadHeader(PickleIterator* iter, Header* hdr) {
-  *hdr = Header(INVALID, 0, 0);
+  *hdr = Header(INVALID, 0, 0, 0);
   int type = 0;
   if (!iter->ReadInt(&type))
     return false;
@@ -121,14 +121,15 @@ bool SerializedHandle::ReadHeader(PickleIterator* iter, Header* hdr) {
       break;
     }
     case FILE: {
-      int open_flag = 0;
-      if (!iter->ReadInt(&open_flag))
+      int open_flags = 0;
+      PP_Resource file_io = 0;
+      if (!iter->ReadInt(&open_flags) || !iter->ReadInt(&file_io))
         return false;
-      hdr->open_flag = open_flag;
+      hdr->open_flags = open_flags;
+      hdr->file_io = file_io;
       valid_type = true;
     }
     case SOCKET:
-    case CHANNEL_HANDLE:
     case INVALID:
       valid_type = true;
       break;

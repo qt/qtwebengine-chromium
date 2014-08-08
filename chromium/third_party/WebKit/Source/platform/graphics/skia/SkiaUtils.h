@@ -34,6 +34,7 @@
 #define SkiaUtils_h
 
 #include "SkMatrix.h"
+#include "SkPaint.h"
 #include "SkPath.h"
 #include "SkXfermode.h"
 #include "platform/PlatformExport.h"
@@ -56,6 +57,13 @@ PassRefPtr<SkXfermode> WebCoreCompositeToSkiaComposite(CompositeOperator, blink:
 // move this guy into SkColor.h
 SkColor SkPMColorToColor(SkPMColor);
 
+inline SkPaint::FilterLevel WebCoreInterpolationQualityToSkFilterLevel(InterpolationQuality quality)
+{
+    // FIXME: this reflects existing client mappings, but should probably
+    // be expanded to map higher level interpolations more accurately.
+    return quality != InterpolationNone ? SkPaint::kLow_FilterLevel : SkPaint::kNone_FilterLevel;
+}
+
 // Skia has problems when passed infinite, etc floats, filter them to 0.
 inline SkScalar WebCoreFloatToSkScalar(float f)
 {
@@ -77,13 +85,6 @@ inline bool WebCoreFloatNearlyEqual(float a, float b)
 {
     return SkScalarNearlyEqual(WebCoreFloatToSkScalar(a), WebCoreFloatToSkScalar(b));
 }
-
-// Computes the smallest rectangle that, which when drawn to the given canvas,
-// will cover the same area as the source rectangle. It will clip to the canvas'
-// clip, doing the necessary coordinate transforms.
-//
-// srcRect and destRect can be the same.
-void ClipRectToCanvas(const GraphicsContext*, const SkRect& srcRect, SkRect* destRect);
 
 // Determine if a given WebKit point is contained in a path
 bool PLATFORM_EXPORT SkPathContainsPoint(const SkPath&, const FloatPoint&, SkPath::FillType);

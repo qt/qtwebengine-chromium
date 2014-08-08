@@ -5,10 +5,11 @@
 #include "ui/views/controls/tabbed_pane/tabbed_pane.h"
 
 #include "base/logging.h"
-#include "ui/base/accessibility/accessible_view_state.h"
+#include "ui/accessibility/ax_view_state.h"
+#include "ui/base/resource/resource_bundle.h"
 #include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/gfx/canvas.h"
-#include "ui/gfx/font.h"
+#include "ui/gfx/font_list.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/controls/tabbed_pane/tabbed_pane_listener.h"
 #include "ui/views/layout/layout_manager.h"
@@ -33,7 +34,7 @@ const char TabbedPane::kViewClassName[] = "TabbedPane";
 // The tab view shown in the tab strip.
 class Tab : public View {
  public:
-  Tab(TabbedPane* tabbed_pane, const string16& title, View* contents);
+  Tab(TabbedPane* tabbed_pane, const base::string16& title, View* contents);
   virtual ~Tab();
 
   View* contents() const { return contents_; }
@@ -46,7 +47,7 @@ class Tab : public View {
   virtual void OnMouseEntered(const ui::MouseEvent& event) OVERRIDE;
   virtual void OnMouseExited(const ui::MouseEvent& event) OVERRIDE;
   virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
   virtual void Layout() OVERRIDE;
 
  private:
@@ -75,7 +76,7 @@ class TabStrip : public View {
   virtual ~TabStrip();
 
   // Overridden from View:
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
   virtual void Layout() OVERRIDE;
   virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
 
@@ -85,12 +86,14 @@ class TabStrip : public View {
   DISALLOW_COPY_AND_ASSIGN(TabStrip);
 };
 
-Tab::Tab(TabbedPane* tabbed_pane, const string16& title, View* contents)
+Tab::Tab(TabbedPane* tabbed_pane, const base::string16& title, View* contents)
     : tabbed_pane_(tabbed_pane),
-      title_(new Label(title, gfx::Font().DeriveFont(0, gfx::Font::BOLD))),
+      title_(new Label(title,
+                       ui::ResourceBundle::GetSharedInstance().GetFontList(
+                           ui::ResourceBundle::BoldFont))),
       tab_state_(TAB_ACTIVE),
       contents_(contents) {
-  // Calculate this now while the font is guaranteed to be bold.
+  // Calculate this now while the font list is guaranteed to be bold.
   preferred_title_size_ = title_->GetPreferredSize();
 
   SetState(TAB_INACTIVE);
@@ -136,7 +139,7 @@ void Tab::OnGestureEvent(ui::GestureEvent* event) {
   event->SetHandled();
 }
 
-gfx::Size Tab::GetPreferredSize() {
+gfx::Size Tab::GetPreferredSize() const {
   gfx::Size size(preferred_title_size_);
   size.Enlarge(21, 9);
   const int kTabMinWidth = 54;
@@ -157,18 +160,19 @@ void Tab::SetState(TabState tab_state) {
     return;
   tab_state_ = tab_state;
 
+  ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
   switch (tab_state) {
     case TAB_INACTIVE:
       title_->SetEnabledColor(kTabTitleColor_Inactive);
-      title_->SetFont(gfx::Font());
+      title_->SetFontList(rb.GetFontList(ui::ResourceBundle::BaseFont));
       break;
     case TAB_ACTIVE:
       title_->SetEnabledColor(kTabTitleColor_Active);
-      title_->SetFont(gfx::Font().DeriveFont(0, gfx::Font::BOLD));
+      title_->SetFontList(rb.GetFontList(ui::ResourceBundle::BoldFont));
       break;
     case TAB_HOVERED:
       title_->SetEnabledColor(kTabTitleColor_Hovered);
-      title_->SetFont(gfx::Font());
+      title_->SetFontList(rb.GetFontList(ui::ResourceBundle::BaseFont));
       break;
   }
   SchedulePaint();
@@ -178,7 +182,7 @@ TabStrip::TabStrip(TabbedPane* tabbed_pane) : tabbed_pane_(tabbed_pane) {}
 
 TabStrip::~TabStrip() {}
 
-gfx::Size TabStrip::GetPreferredSize() {
+gfx::Size TabStrip::GetPreferredSize() const {
   gfx::Size size;
   for (int i = 0; i < child_count(); ++i) {
     const gfx::Size child_size = child_at(i)->GetPreferredSize();
@@ -255,12 +259,12 @@ View* TabbedPane::GetSelectedTab() {
       NULL : GetTabAt(selected_tab_index())->contents();
 }
 
-void TabbedPane::AddTab(const string16& title, View* contents) {
+void TabbedPane::AddTab(const base::string16& title, View* contents) {
   AddTabAtIndex(tab_strip_->child_count(), title, contents);
 }
 
 void TabbedPane::AddTabAtIndex(int index,
-                               const string16& title,
+                               const base::string16& title,
                                View* contents) {
   DCHECK(index >= 0 && index <= GetTabCount());
   contents->SetVisible(false);
@@ -304,7 +308,7 @@ void TabbedPane::SelectTab(Tab* tab) {
     SelectTabAt(index);
 }
 
-gfx::Size TabbedPane::GetPreferredSize() {
+gfx::Size TabbedPane::GetPreferredSize() const {
   gfx::Size size;
   for (int i = 0; i < contents_->child_count(); ++i)
     size.SetToMax(contents_->child_at(i)->GetPreferredSize());
@@ -360,12 +364,12 @@ void TabbedPane::OnFocus() {
   View* selected_tab = GetSelectedTab();
   if (selected_tab) {
     selected_tab->NotifyAccessibilityEvent(
-        ui::AccessibilityTypes::EVENT_FOCUS, true);
+        ui::AX_EVENT_FOCUS, true);
   }
 }
 
-void TabbedPane::GetAccessibleState(ui::AccessibleViewState* state) {
-  state->role = ui::AccessibilityTypes::ROLE_PAGETABLIST;
+void TabbedPane::GetAccessibleState(ui::AXViewState* state) {
+  state->role = ui::AX_ROLE_TAB_LIST;
 }
 
 }  // namespace views

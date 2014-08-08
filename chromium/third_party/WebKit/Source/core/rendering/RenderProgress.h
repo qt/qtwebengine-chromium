@@ -37,14 +37,13 @@ public:
     double animationStartTime() const { return m_animationStartTime; }
 
     bool isDeterminate() const;
-    virtual void updateFromElement();
+    virtual void updateFromElement() OVERRIDE;
 
     HTMLProgressElement* progressElement() const;
 
 private:
-    virtual const char* renderName() const { return "RenderProgress"; }
-    virtual bool isProgress() const { return true; }
-    virtual bool supportsPartialLayout() const OVERRIDE { return false; }
+    virtual const char* renderName() const OVERRIDE { return "RenderProgress"; }
+    virtual bool isProgress() const OVERRIDE { return true; }
 
     void animationTimerFired(Timer<RenderProgress>*);
     void updateAnimationState();

@@ -8,6 +8,7 @@ namespace content {
 
 RenderViewImplParams::RenderViewImplParams(
     int32 opener_id,
+    bool window_was_created_with_opener,
     const RendererPreferences& renderer_prefs,
     const WebPreferences& webkit_prefs,
     int32 routing_id,
@@ -17,12 +18,14 @@ RenderViewImplParams::RenderViewImplParams(
     const base::string16& frame_name,
     bool is_renderer_created,
     bool swapped_out,
+    int32 proxy_routing_id,
     bool hidden,
+    bool never_visible,
     int32 next_page_id,
     const blink::WebScreenInfo& screen_info,
-    AccessibilityMode accessibility_mode,
-    bool allow_partial_swap)
+    AccessibilityMode accessibility_mode)
     : opener_id(opener_id),
+      window_was_created_with_opener(window_was_created_with_opener),
       renderer_prefs(renderer_prefs),
       webkit_prefs(webkit_prefs),
       routing_id(routing_id),
@@ -32,12 +35,12 @@ RenderViewImplParams::RenderViewImplParams(
       frame_name(frame_name),
       is_renderer_created(is_renderer_created),
       swapped_out(swapped_out),
+      proxy_routing_id(proxy_routing_id),
       hidden(hidden),
+      never_visible(never_visible),
       next_page_id(next_page_id),
       screen_info(screen_info),
-      accessibility_mode(accessibility_mode),
-      allow_partial_swap(allow_partial_swap){
-}
+      accessibility_mode(accessibility_mode) {}
 
 RenderViewImplParams::~RenderViewImplParams() {}
 

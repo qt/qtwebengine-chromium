@@ -7,7 +7,6 @@
 #include "base/strings/utf_string_conversions.h"
 #include "content/browser/accessibility/browser_accessibility_manager_android.h"
 #include "content/common/accessibility_messages.h"
-#include "content/common/accessibility_node_data.h"
 
 namespace {
 
@@ -57,13 +56,13 @@ bool BrowserAccessibilityAndroid::IsNative() const {
 }
 
 bool BrowserAccessibilityAndroid::PlatformIsLeaf() const {
-  if (child_count() == 0)
+  if (InternalChildCount() == 0)
     return true;
 
   // Iframes are always allowed to contain children.
   if (IsIframe() ||
-      role() == blink::WebAXRoleRootWebArea ||
-      role() == blink::WebAXRoleWebArea) {
+      GetRole() == ui::AX_ROLE_ROOT_WEB_AREA ||
+      GetRole() == ui::AX_ROLE_WEB_AREA) {
     return false;
   }
 
@@ -73,11 +72,11 @@ bool BrowserAccessibilityAndroid::PlatformIsLeaf() const {
 
   // Headings with text can drop their children.
   base::string16 name = GetText();
-  if (role() == blink::WebAXRoleHeading && !name.empty())
+  if (GetRole() == ui::AX_ROLE_HEADING && !name.empty())
     return true;
 
   // Focusable nodes with text can drop their children.
-  if (HasState(blink::WebAXStateFocusable) && !name.empty())
+  if (HasState(ui::AX_STATE_FOCUSABLE) && !name.empty())
     return true;
 
   // Nodes with only static text as children can drop their children.
@@ -92,18 +91,18 @@ bool BrowserAccessibilityAndroid::IsCheckable() const {
   bool is_aria_pressed_defined;
   bool is_mixed;
   GetAriaTristate("aria-pressed", &is_aria_pressed_defined, &is_mixed);
-  if (role() == blink::WebAXRoleCheckBox ||
-      role() == blink::WebAXRoleRadioButton ||
+  if (GetRole() == ui::AX_ROLE_CHECK_BOX ||
+      GetRole() == ui::AX_ROLE_RADIO_BUTTON ||
       is_aria_pressed_defined) {
     checkable = true;
   }
-  if (HasState(blink::WebAXStateChecked))
+  if (HasState(ui::AX_STATE_CHECKED))
     checkable = true;
   return checkable;
 }
 
 bool BrowserAccessibilityAndroid::IsChecked() const {
-  return HasState(blink::WebAXStateChecked);
+  return HasState(ui::AX_STATE_CHECKED);
 }
 
 bool BrowserAccessibilityAndroid::IsClickable() const {
@@ -111,21 +110,21 @@ bool BrowserAccessibilityAndroid::IsClickable() const {
 }
 
 bool BrowserAccessibilityAndroid::IsCollection() const {
-  return (role() == blink::WebAXRoleGrid ||
-          role() == blink::WebAXRoleList ||
-          role() == blink::WebAXRoleListBox ||
-          role() == blink::WebAXRoleTable ||
-          role() == blink::WebAXRoleTree);
+  return (GetRole() == ui::AX_ROLE_GRID ||
+          GetRole() == ui::AX_ROLE_LIST ||
+          GetRole() == ui::AX_ROLE_LIST_BOX ||
+          GetRole() == ui::AX_ROLE_TABLE ||
+          GetRole() == ui::AX_ROLE_TREE);
 }
 
 bool BrowserAccessibilityAndroid::IsCollectionItem() const {
-  return (role() == blink::WebAXRoleCell ||
-          role() == blink::WebAXRoleColumnHeader ||
-          role() == blink::WebAXRoleDescriptionListTerm ||
-          role() == blink::WebAXRoleListBoxOption ||
-          role() == blink::WebAXRoleListItem ||
-          role() == blink::WebAXRoleRowHeader ||
-          role() == blink::WebAXRoleTreeItem);
+  return (GetRole() == ui::AX_ROLE_CELL ||
+          GetRole() == ui::AX_ROLE_COLUMN_HEADER ||
+          GetRole() == ui::AX_ROLE_DESCRIPTION_LIST_TERM ||
+          GetRole() == ui::AX_ROLE_LIST_BOX_OPTION ||
+          GetRole() == ui::AX_ROLE_LIST_ITEM ||
+          GetRole() == ui::AX_ROLE_ROW_HEADER ||
+          GetRole() == ui::AX_ROLE_TREE_ITEM);
 }
 
 bool BrowserAccessibilityAndroid::IsContentInvalid() const {
@@ -138,13 +137,13 @@ bool BrowserAccessibilityAndroid::IsDismissable() const {
 }
 
 bool BrowserAccessibilityAndroid::IsEnabled() const {
-  return HasState(blink::WebAXStateEnabled);
+  return HasState(ui::AX_STATE_ENABLED);
 }
 
 bool BrowserAccessibilityAndroid::IsFocusable() const {
-  bool focusable = HasState(blink::WebAXStateFocusable);
+  bool focusable = HasState(ui::AX_STATE_FOCUSABLE);
   if (IsIframe() ||
-      role() == blink::WebAXRoleWebArea) {
+      GetRole() == ui::AX_ROLE_WEB_AREA) {
     focusable = false;
   }
   return focusable;
@@ -155,97 +154,105 @@ bool BrowserAccessibilityAndroid::IsFocused() const {
 }
 
 bool BrowserAccessibilityAndroid::IsHeading() const {
-  return (role() == blink::WebAXRoleColumnHeader ||
-          role() == blink::WebAXRoleHeading ||
-          role() == blink::WebAXRoleRowHeader);
+  return (GetRole() == ui::AX_ROLE_COLUMN_HEADER ||
+          GetRole() == ui::AX_ROLE_HEADING ||
+          GetRole() == ui::AX_ROLE_ROW_HEADER);
 }
 
 bool BrowserAccessibilityAndroid::IsHierarchical() const {
-  return (role() == blink::WebAXRoleList ||
-          role() == blink::WebAXRoleTree);
+  return (GetRole() == ui::AX_ROLE_LIST ||
+          GetRole() == ui::AX_ROLE_TREE);
+}
+
+bool BrowserAccessibilityAndroid::IsLink() const {
+  return GetRole() == ui::AX_ROLE_LINK ||
+         GetRole() == ui::AX_ROLE_IMAGE_MAP_LINK;
 }
 
 bool BrowserAccessibilityAndroid::IsMultiLine() const {
-  return role() == blink::WebAXRoleTextArea;
+  return GetRole() == ui::AX_ROLE_TEXT_AREA;
 }
 
 bool BrowserAccessibilityAndroid::IsPassword() const {
-  return HasState(blink::WebAXStateProtected);
+  return HasState(ui::AX_STATE_PROTECTED);
 }
 
 bool BrowserAccessibilityAndroid::IsRangeType() const {
-  return (role() == blink::WebAXRoleProgressIndicator ||
-          role() == blink::WebAXRoleScrollBar ||
-          role() == blink::WebAXRoleSlider);
+  return (GetRole() == ui::AX_ROLE_PROGRESS_INDICATOR ||
+          GetRole() == ui::AX_ROLE_SCROLL_BAR ||
+          GetRole() == ui::AX_ROLE_SLIDER);
 }
 
 bool BrowserAccessibilityAndroid::IsScrollable() const {
   int dummy;
-  return GetIntAttribute(AccessibilityNodeData::ATTR_SCROLL_X_MAX, &dummy);
+  return GetIntAttribute(ui::AX_ATTR_SCROLL_X_MAX, &dummy);
 }
 
 bool BrowserAccessibilityAndroid::IsSelected() const {
-  return HasState(blink::WebAXStateSelected);
+  return HasState(ui::AX_STATE_SELECTED);
 }
 
 bool BrowserAccessibilityAndroid::IsVisibleToUser() const {
-  return !HasState(blink::WebAXStateInvisible);
+  return !HasState(ui::AX_STATE_INVISIBLE);
 }
 
 bool BrowserAccessibilityAndroid::CanOpenPopup() const {
-  return HasState(blink::WebAXStateHaspopup);
+  return HasState(ui::AX_STATE_HASPOPUP);
 }
 
 const char* BrowserAccessibilityAndroid::GetClassName() const {
   const char* class_name = NULL;
 
-  switch(role()) {
-    case blink::WebAXRoleEditableText:
-    case blink::WebAXRoleSpinButton:
-    case blink::WebAXRoleTextArea:
-    case blink::WebAXRoleTextField:
+  switch(GetRole()) {
+    case ui::AX_ROLE_EDITABLE_TEXT:
+    case ui::AX_ROLE_SPIN_BUTTON:
+    case ui::AX_ROLE_TEXT_AREA:
+    case ui::AX_ROLE_TEXT_FIELD:
       class_name = "android.widget.EditText";
       break;
-    case blink::WebAXRoleSlider:
+    case ui::AX_ROLE_SLIDER:
       class_name = "android.widget.SeekBar";
       break;
-    case blink::WebAXRoleComboBox:
+    case ui::AX_ROLE_COMBO_BOX:
       class_name = "android.widget.Spinner";
       break;
-    case blink::WebAXRoleButton:
-    case blink::WebAXRoleMenuButton:
-    case blink::WebAXRolePopUpButton:
+    case ui::AX_ROLE_BUTTON:
+    case ui::AX_ROLE_MENU_BUTTON:
+    case ui::AX_ROLE_POP_UP_BUTTON:
       class_name = "android.widget.Button";
       break;
-    case blink::WebAXRoleCheckBox:
+    case ui::AX_ROLE_CHECK_BOX:
       class_name = "android.widget.CheckBox";
       break;
-    case blink::WebAXRoleRadioButton:
+    case ui::AX_ROLE_RADIO_BUTTON:
       class_name = "android.widget.RadioButton";
       break;
-    case blink::WebAXRoleToggleButton:
+    case ui::AX_ROLE_TOGGLE_BUTTON:
       class_name = "android.widget.ToggleButton";
       break;
-    case blink::WebAXRoleCanvas:
-    case blink::WebAXRoleImage:
+    case ui::AX_ROLE_CANVAS:
+    case ui::AX_ROLE_IMAGE:
       class_name = "android.widget.Image";
       break;
-    case blink::WebAXRoleProgressIndicator:
+    case ui::AX_ROLE_PROGRESS_INDICATOR:
       class_name = "android.widget.ProgressBar";
       break;
-    case blink::WebAXRoleTabList:
+    case ui::AX_ROLE_TAB_LIST:
       class_name = "android.widget.TabWidget";
       break;
-    case blink::WebAXRoleGrid:
-    case blink::WebAXRoleTable:
+    case ui::AX_ROLE_GRID:
+    case ui::AX_ROLE_TABLE:
       class_name = "android.widget.GridView";
       break;
-    case blink::WebAXRoleList:
-    case blink::WebAXRoleListBox:
+    case ui::AX_ROLE_LIST:
+    case ui::AX_ROLE_LIST_BOX:
       class_name = "android.widget.ListView";
       break;
-    case blink::WebAXRoleDialog:
+    case ui::AX_ROLE_DIALOG:
       class_name = "android.app.Dialog";
+      break;
+    case ui::AX_ROLE_ROOT_WEB_AREA:
+      class_name = "android.webkit.WebView";
       break;
     default:
       class_name = "android.view.View";
@@ -257,41 +264,71 @@ const char* BrowserAccessibilityAndroid::GetClassName() const {
 
 base::string16 BrowserAccessibilityAndroid::GetText() const {
   if (IsIframe() ||
-      role() == blink::WebAXRoleWebArea) {
+      GetRole() == ui::AX_ROLE_WEB_AREA) {
     return base::string16();
   }
 
-  base::string16 description = GetString16Attribute(
-      AccessibilityNodeData::ATTR_DESCRIPTION);
+  // See comment in browser_accessibility_win.cc for details.
+  // The difference here is that we can only expose one accessible
+  // name on Android, not 2 or 3 like on Windows or Mac.
+  //
+  // The basic rule is: prefer description (aria-labelledby or aria-label),
+  // then help (title), then name (inner text), then value (control value).
+  // However, if title_elem_id is set, that means there's a label element
+  // supplying the name and then name takes precedence over help.
+  // TODO(dmazzoni): clean this up by providing more granular labels in
+  // Blink, making the platform-specific mapping to accessible text simpler.
+  base::string16 description = GetString16Attribute(ui::AX_ATTR_DESCRIPTION);
+  base::string16 help = GetString16Attribute(ui::AX_ATTR_HELP);
+  int title_elem_id = GetIntAttribute(
+      ui::AX_ATTR_TITLE_UI_ELEMENT);
   base::string16 text;
-  if (!name().empty())
-    text = base::UTF8ToUTF16(name());
-  else if (!description.empty())
+  if (!description.empty())
     text = description;
+  else if (title_elem_id && !name().empty())
+    text = base::UTF8ToUTF16(name());
+  else if (!help.empty())
+    text = help;
+  else if (!name().empty())
+    text = base::UTF8ToUTF16(name());
   else if (!value().empty())
     text = base::UTF8ToUTF16(value());
 
   // This is called from PlatformIsLeaf, so don't call PlatformChildCount
   // from within this!
   if (text.empty() && HasOnlyStaticTextChildren()) {
-    for (uint32 i = 0; i < child_count(); i++) {
-      BrowserAccessibility* child = children()[i];
+    for (uint32 i = 0; i < InternalChildCount(); i++) {
+      BrowserAccessibility* child = InternalGetChild(i);
       text += static_cast<BrowserAccessibilityAndroid*>(child)->GetText();
     }
   }
 
-  switch(role()) {
-    case blink::WebAXRoleImageMapLink:
-    case blink::WebAXRoleLink:
-      if (!text.empty())
-        text += ASCIIToUTF16(" ");
-      text += ASCIIToUTF16("Link");
-      break;
-    case blink::WebAXRoleHeading:
+  switch(GetRole()) {
+    case ui::AX_ROLE_HEADING:
       // Only append "heading" if this node already has text.
       if (!text.empty())
-        text += ASCIIToUTF16(" Heading");
+        text += base::ASCIIToUTF16(" Heading");
       break;
+  }
+
+  if (text.empty() && IsLink()) {
+    base::string16 url = GetString16Attribute(ui::AX_ATTR_URL);
+    // Given a url like http://foo.com/bar/baz.png, just return the
+    // base name, e.g., "baz".
+    int trailing_slashes = 0;
+    while (url.size() - trailing_slashes > 0 &&
+           url[url.size() - trailing_slashes - 1] == '/') {
+      trailing_slashes++;
+    }
+    if (trailing_slashes)
+      url = url.substr(0, url.size() - trailing_slashes);
+    size_t slash_index = url.rfind('/');
+    if (slash_index != std::string::npos)
+      url = url.substr(slash_index + 1);
+    size_t dot_index = url.rfind('.');
+    if (dot_index != std::string::npos)
+      url = url.substr(0, dot_index);
+    text = url;
   }
 
   return text;
@@ -299,17 +336,17 @@ base::string16 BrowserAccessibilityAndroid::GetText() const {
 
 int BrowserAccessibilityAndroid::GetItemIndex() const {
   int index = 0;
-  switch(role()) {
-    case blink::WebAXRoleListItem:
-    case blink::WebAXRoleListBoxOption:
-    case blink::WebAXRoleTreeItem:
-      index = index_in_parent();
+  switch(GetRole()) {
+    case ui::AX_ROLE_LIST_ITEM:
+    case ui::AX_ROLE_LIST_BOX_OPTION:
+    case ui::AX_ROLE_TREE_ITEM:
+      index = GetIndexInParent();
       break;
-    case blink::WebAXRoleSlider:
-    case blink::WebAXRoleProgressIndicator: {
+    case ui::AX_ROLE_SLIDER:
+    case ui::AX_ROLE_PROGRESS_INDICATOR: {
       float value_for_range;
       if (GetFloatAttribute(
-              AccessibilityNodeData::ATTR_VALUE_FOR_RANGE, &value_for_range)) {
+              ui::AX_ATTR_VALUE_FOR_RANGE, &value_for_range)) {
         index = static_cast<int>(value_for_range);
       }
       break;
@@ -320,15 +357,15 @@ int BrowserAccessibilityAndroid::GetItemIndex() const {
 
 int BrowserAccessibilityAndroid::GetItemCount() const {
   int count = 0;
-  switch(role()) {
-    case blink::WebAXRoleList:
-    case blink::WebAXRoleListBox:
+  switch(GetRole()) {
+    case ui::AX_ROLE_LIST:
+    case ui::AX_ROLE_LIST_BOX:
       count = PlatformChildCount();
       break;
-    case blink::WebAXRoleSlider:
-    case blink::WebAXRoleProgressIndicator: {
+    case ui::AX_ROLE_SLIDER:
+    case ui::AX_ROLE_PROGRESS_INDICATOR: {
       float max_value_for_range;
-      if (GetFloatAttribute(AccessibilityNodeData::ATTR_MAX_VALUE_FOR_RANGE,
+      if (GetFloatAttribute(ui::AX_ATTR_MAX_VALUE_FOR_RANGE,
                             &max_value_for_range)) {
         count = static_cast<int>(max_value_for_range);
       }
@@ -340,25 +377,25 @@ int BrowserAccessibilityAndroid::GetItemCount() const {
 
 int BrowserAccessibilityAndroid::GetScrollX() const {
   int value = 0;
-  GetIntAttribute(AccessibilityNodeData::ATTR_SCROLL_X, &value);
+  GetIntAttribute(ui::AX_ATTR_SCROLL_X, &value);
   return value;
 }
 
 int BrowserAccessibilityAndroid::GetScrollY() const {
   int value = 0;
-  GetIntAttribute(AccessibilityNodeData::ATTR_SCROLL_Y, &value);
+  GetIntAttribute(ui::AX_ATTR_SCROLL_Y, &value);
   return value;
 }
 
 int BrowserAccessibilityAndroid::GetMaxScrollX() const {
   int value = 0;
-  GetIntAttribute(AccessibilityNodeData::ATTR_SCROLL_X_MAX, &value);
+  GetIntAttribute(ui::AX_ATTR_SCROLL_X_MAX, &value);
   return value;
 }
 
 int BrowserAccessibilityAndroid::GetMaxScrollY() const {
   int value = 0;
-  GetIntAttribute(AccessibilityNodeData::ATTR_SCROLL_Y_MAX, &value);
+  GetIntAttribute(ui::AX_ATTR_SCROLL_Y_MAX, &value);
   return value;
 }
 
@@ -414,13 +451,13 @@ base::string16 BrowserAccessibilityAndroid::GetTextChangeBeforeText() const {
 
 int BrowserAccessibilityAndroid::GetSelectionStart() const {
   int sel_start = 0;
-  GetIntAttribute(AccessibilityNodeData::ATTR_TEXT_SEL_START, &sel_start);
+  GetIntAttribute(ui::AX_ATTR_TEXT_SEL_START, &sel_start);
   return sel_start;
 }
 
 int BrowserAccessibilityAndroid::GetSelectionEnd() const {
   int sel_end = 0;
-  GetIntAttribute(AccessibilityNodeData::ATTR_TEXT_SEL_END, &sel_end);
+  GetIntAttribute(ui::AX_ATTR_TEXT_SEL_END, &sel_end);
   return sel_end;
 }
 
@@ -430,7 +467,7 @@ int BrowserAccessibilityAndroid::GetEditableTextLength() const {
 
 int BrowserAccessibilityAndroid::AndroidInputType() const {
   std::string html_tag = GetStringAttribute(
-      AccessibilityNodeData::ATTR_HTML_TAG);
+      ui::AX_ATTR_HTML_TAG);
   if (html_tag != "input")
     return ANDROID_TEXT_INPUTTYPE_TYPE_NULL;
 
@@ -466,7 +503,7 @@ int BrowserAccessibilityAndroid::AndroidInputType() const {
 
 int BrowserAccessibilityAndroid::AndroidLiveRegionType() const {
   std::string live = GetStringAttribute(
-      AccessibilityNodeData::ATTR_LIVE_STATUS);
+      ui::AX_ATTR_LIVE_STATUS);
   if (live == "polite")
     return ANDROID_VIEW_VIEW_ACCESSIBILITY_LIVE_REGION_POLITE;
   else if (live == "assertive")
@@ -479,14 +516,14 @@ int BrowserAccessibilityAndroid::AndroidRangeType() const {
 }
 
 int BrowserAccessibilityAndroid::RowCount() const {
-  if (role() == blink::WebAXRoleGrid ||
-      role() == blink::WebAXRoleTable) {
-    return CountChildrenWithRole(blink::WebAXRoleRow);
+  if (GetRole() == ui::AX_ROLE_GRID ||
+      GetRole() == ui::AX_ROLE_TABLE) {
+    return CountChildrenWithRole(ui::AX_ROLE_ROW);
   }
 
-  if (role() == blink::WebAXRoleList ||
-      role() == blink::WebAXRoleListBox ||
-      role() == blink::WebAXRoleTree) {
+  if (GetRole() == ui::AX_ROLE_LIST ||
+      GetRole() == ui::AX_ROLE_LIST_BOX ||
+      GetRole() == ui::AX_ROLE_TREE) {
     return PlatformChildCount();
   }
 
@@ -494,53 +531,53 @@ int BrowserAccessibilityAndroid::RowCount() const {
 }
 
 int BrowserAccessibilityAndroid::ColumnCount() const {
-  if (role() == blink::WebAXRoleGrid ||
-      role() == blink::WebAXRoleTable) {
-    return CountChildrenWithRole(blink::WebAXRoleColumn);
+  if (GetRole() == ui::AX_ROLE_GRID ||
+      GetRole() == ui::AX_ROLE_TABLE) {
+    return CountChildrenWithRole(ui::AX_ROLE_COLUMN);
   }
   return 0;
 }
 
 int BrowserAccessibilityAndroid::RowIndex() const {
-  if (role() == blink::WebAXRoleListItem ||
-      role() == blink::WebAXRoleListBoxOption ||
-      role() == blink::WebAXRoleTreeItem) {
-    return index_in_parent();
+  if (GetRole() == ui::AX_ROLE_LIST_ITEM ||
+      GetRole() == ui::AX_ROLE_LIST_BOX_OPTION ||
+      GetRole() == ui::AX_ROLE_TREE_ITEM) {
+    return GetIndexInParent();
   }
 
-  return GetIntAttribute(AccessibilityNodeData::ATTR_TABLE_CELL_ROW_INDEX);
+  return GetIntAttribute(ui::AX_ATTR_TABLE_CELL_ROW_INDEX);
 }
 
 int BrowserAccessibilityAndroid::RowSpan() const {
-  return GetIntAttribute(AccessibilityNodeData::ATTR_TABLE_CELL_ROW_SPAN);
+  return GetIntAttribute(ui::AX_ATTR_TABLE_CELL_ROW_SPAN);
 }
 
 int BrowserAccessibilityAndroid::ColumnIndex() const {
-  return GetIntAttribute(AccessibilityNodeData::ATTR_TABLE_CELL_COLUMN_INDEX);
+  return GetIntAttribute(ui::AX_ATTR_TABLE_CELL_COLUMN_INDEX);
 }
 
 int BrowserAccessibilityAndroid::ColumnSpan() const {
-  return GetIntAttribute(AccessibilityNodeData::ATTR_TABLE_CELL_COLUMN_SPAN);
+  return GetIntAttribute(ui::AX_ATTR_TABLE_CELL_COLUMN_SPAN);
 }
 
 float BrowserAccessibilityAndroid::RangeMin() const {
-  return GetFloatAttribute(AccessibilityNodeData::ATTR_MIN_VALUE_FOR_RANGE);
+  return GetFloatAttribute(ui::AX_ATTR_MIN_VALUE_FOR_RANGE);
 }
 
 float BrowserAccessibilityAndroid::RangeMax() const {
-  return GetFloatAttribute(AccessibilityNodeData::ATTR_MAX_VALUE_FOR_RANGE);
+  return GetFloatAttribute(ui::AX_ATTR_MAX_VALUE_FOR_RANGE);
 }
 
 float BrowserAccessibilityAndroid::RangeCurrentValue() const {
-  return GetFloatAttribute(AccessibilityNodeData::ATTR_VALUE_FOR_RANGE);
+  return GetFloatAttribute(ui::AX_ATTR_VALUE_FOR_RANGE);
 }
 
 bool BrowserAccessibilityAndroid::HasFocusableChild() const {
   // This is called from PlatformIsLeaf, so don't call PlatformChildCount
   // from within this!
-  for (uint32 i = 0; i < child_count(); i++) {
-    BrowserAccessibility* child = children()[i];
-    if (child->HasState(blink::WebAXStateFocusable))
+  for (uint32 i = 0; i < InternalChildCount(); i++) {
+    BrowserAccessibility* child = InternalGetChild(i);
+    if (child->HasState(ui::AX_STATE_FOCUSABLE))
       return true;
     if (static_cast<BrowserAccessibilityAndroid*>(child)->HasFocusableChild())
       return true;
@@ -551,9 +588,9 @@ bool BrowserAccessibilityAndroid::HasFocusableChild() const {
 bool BrowserAccessibilityAndroid::HasOnlyStaticTextChildren() const {
   // This is called from PlatformIsLeaf, so don't call PlatformChildCount
   // from within this!
-  for (uint32 i = 0; i < child_count(); i++) {
-    BrowserAccessibility* child = children()[i];
-    if (child->role() != blink::WebAXRoleStaticText)
+  for (uint32 i = 0; i < InternalChildCount(); i++) {
+    BrowserAccessibility* child = InternalGetChild(i);
+    if (child->GetRole() != ui::AX_ROLE_STATIC_TEXT)
       return false;
   }
   return true;
@@ -561,12 +598,12 @@ bool BrowserAccessibilityAndroid::HasOnlyStaticTextChildren() const {
 
 bool BrowserAccessibilityAndroid::IsIframe() const {
   base::string16 html_tag = GetString16Attribute(
-      AccessibilityNodeData::ATTR_HTML_TAG);
-  return html_tag == ASCIIToUTF16("iframe");
+      ui::AX_ATTR_HTML_TAG);
+  return html_tag == base::ASCIIToUTF16("iframe");
 }
 
-void BrowserAccessibilityAndroid::PostInitialize() {
-  BrowserAccessibility::PostInitialize();
+void BrowserAccessibilityAndroid::OnDataChanged() {
+  BrowserAccessibility::OnDataChanged();
 
   if (IsEditableText()) {
     if (base::UTF8ToUTF16(value()) != new_value_) {
@@ -575,12 +612,12 @@ void BrowserAccessibilityAndroid::PostInitialize() {
     }
   }
 
-  if (role() == blink::WebAXRoleAlert && first_time_)
-    manager()->NotifyAccessibilityEvent(blink::WebAXEventAlert, this);
+  if (GetRole() == ui::AX_ROLE_ALERT && first_time_)
+    manager()->NotifyAccessibilityEvent(ui::AX_EVENT_ALERT, this);
 
   base::string16 live;
   if (GetString16Attribute(
-      AccessibilityNodeData::ATTR_CONTAINER_LIVE_STATUS, &live)) {
+      ui::AX_ATTR_CONTAINER_LIVE_STATUS, &live)) {
     NotifyLiveRegionUpdate(live);
   }
 
@@ -596,18 +633,17 @@ void BrowserAccessibilityAndroid::NotifyLiveRegionUpdate(
   base::string16 text = GetText();
   if (cached_text_ != text) {
     if (!text.empty()) {
-      manager()->NotifyAccessibilityEvent(blink::WebAXEventShow,
+      manager()->NotifyAccessibilityEvent(ui::AX_EVENT_SHOW,
                                          this);
     }
     cached_text_ = text;
   }
 }
 
-int BrowserAccessibilityAndroid::CountChildrenWithRole(
-    blink::WebAXRole role) const {
+int BrowserAccessibilityAndroid::CountChildrenWithRole(ui::AXRole role) const {
   int count = 0;
   for (uint32 i = 0; i < PlatformChildCount(); i++) {
-    if (PlatformGetChild(i)->role() == role)
+    if (PlatformGetChild(i)->GetRole() == role)
       count++;
   }
   return count;

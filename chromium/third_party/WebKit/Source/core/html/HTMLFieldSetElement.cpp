@@ -25,9 +25,10 @@
 #include "config.h"
 #include "core/html/HTMLFieldSetElement.h"
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 #include "core/dom/ElementTraversal.h"
 #include "core/html/HTMLCollection.h"
+#include "core/html/HTMLFormControlsCollection.h"
 #include "core/html/HTMLLegendElement.h"
 #include "core/html/HTMLObjectElement.h"
 #include "core/rendering/RenderFieldset.h"
@@ -44,9 +45,17 @@ inline HTMLFieldSetElement::HTMLFieldSetElement(Document& document, HTMLFormElem
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLFieldSetElement> HTMLFieldSetElement::create(Document& document, HTMLFormElement* form)
+PassRefPtrWillBeRawPtr<HTMLFieldSetElement> HTMLFieldSetElement::create(Document& document, HTMLFormElement* form)
 {
-    return adoptRef(new HTMLFieldSetElement(document, form));
+    return adoptRefWillBeNoop(new HTMLFieldSetElement(document, form));
+}
+
+void HTMLFieldSetElement::trace(Visitor* visitor)
+{
+#if ENABLE(OILPAN)
+    visitor->trace(m_associatedElements);
+#endif
+    HTMLFormControlElement::trace(visitor);
 }
 
 void HTMLFieldSetElement::invalidateDisabledStateUnder(Element& base)
@@ -67,10 +76,8 @@ void HTMLFieldSetElement::disabledAttributeChanged()
 void HTMLFieldSetElement::childrenChanged(bool changedByParser, Node* beforeChange, Node* afterChange, int childCountDelta)
 {
     HTMLFormControlElement::childrenChanged(changedByParser, beforeChange, afterChange, childCountDelta);
-    for (Element* element = ElementTraversal::firstWithin(*this); element; element = ElementTraversal::nextSkippingChildren(*element, this)) {
-        if (element->hasTagName(legendTag))
-            invalidateDisabledStateUnder(*element);
-    }
+    for (HTMLLegendElement* legend = Traversal<HTMLLegendElement>::firstChild(*this); legend; legend = Traversal<HTMLLegendElement>::nextSibling(*legend))
+        invalidateDisabledStateUnder(*legend);
 }
 
 bool HTMLFieldSetElement::supportsFocus() const
@@ -91,16 +98,12 @@ RenderObject* HTMLFieldSetElement::createRenderer(RenderStyle*)
 
 HTMLLegendElement* HTMLFieldSetElement::legend() const
 {
-    for (Element* child = ElementTraversal::firstWithin(*this); child; child = ElementTraversal::nextSkippingChildren(*child, this)) {
-        if (child->hasTagName(legendTag))
-            return toHTMLLegendElement(child);
-    }
-    return 0;
+    return Traversal<HTMLLegendElement>::firstChild(*this);
 }
 
-PassRefPtr<HTMLCollection> HTMLFieldSetElement::elements()
+PassRefPtrWillBeRawPtr<HTMLFormControlsCollection> HTMLFieldSetElement::elements()
 {
-    return ensureCachedHTMLCollection(FormControls);
+    return toHTMLFormControlsCollection(ensureCachedHTMLCollection(FormControls).get());
 }
 
 void HTMLFieldSetElement::refreshElementsIfNeeded() const
@@ -113,8 +116,8 @@ void HTMLFieldSetElement::refreshElementsIfNeeded() const
 
     m_associatedElements.clear();
 
-    for (Element* element = ElementTraversal::firstWithin(*this); element; element = ElementTraversal::next(*element, this)) {
-        if (element->hasTagName(objectTag)) {
+    for (HTMLElement* element = Traversal<HTMLElement>::firstWithin(*this); element; element = Traversal<HTMLElement>::next(*element, this)) {
+        if (isHTMLObjectElement(*element)) {
             m_associatedElements.append(toHTMLObjectElement(element));
             continue;
         }
@@ -126,20 +129,10 @@ void HTMLFieldSetElement::refreshElementsIfNeeded() const
     }
 }
 
-const Vector<FormAssociatedElement*>& HTMLFieldSetElement::associatedElements() const
+const FormAssociatedElement::List& HTMLFieldSetElement::associatedElements() const
 {
     refreshElementsIfNeeded();
     return m_associatedElements;
-}
-
-unsigned HTMLFieldSetElement::length() const
-{
-    refreshElementsIfNeeded();
-    unsigned len = 0;
-    for (unsigned i = 0; i < m_associatedElements.size(); ++i)
-        if (m_associatedElements[i]->isEnumeratable())
-            ++len;
-    return len;
 }
 
 } // namespace

@@ -31,7 +31,8 @@
 
 #include "bindings/v8/V8Binding.h"
 #include "bindings/v8/V8PerIsolateData.h"
-#include "bindings/v8/V8RecursionScope.h"
+#include "bindings/v8/V8ScriptRunner.h"
+#include "core/dom/ScriptForbiddenScope.h"
 
 namespace WebCore {
 
@@ -39,8 +40,8 @@ ScriptRegexp::ScriptRegexp(const String& pattern, TextCaseSensitivity caseSensit
 {
     v8::Isolate* isolate = v8::Isolate::GetCurrent();
     v8::HandleScope handleScope(isolate);
-    v8::Local<v8::Context> context = V8PerIsolateData::from(isolate)->ensureRegexContext();
-    v8::Context::Scope scope(context);
+    v8::Context::Scope contextScope(V8PerIsolateData::from(isolate)->ensureScriptRegexpContext());
+    v8::TryCatch tryCatch;
 
     unsigned flags = v8::RegExp::kNone;
     if (caseSensitivity == TextCaseInsensitive)
@@ -48,8 +49,7 @@ ScriptRegexp::ScriptRegexp(const String& pattern, TextCaseSensitivity caseSensit
     if (multilineMode == MultilineEnabled)
         flags |= v8::RegExp::kMultiline;
 
-    v8::TryCatch tryCatch;
-    v8::Local<v8::RegExp> regex = v8::RegExp::New(v8String(context->GetIsolate(), pattern), static_cast<v8::RegExp::Flags>(flags));
+    v8::Local<v8::RegExp> regex = v8::RegExp::New(v8String(isolate, pattern), static_cast<v8::RegExp::Flags>(flags));
 
     // If the regex failed to compile we'll get an empty handle.
     if (!regex.IsEmpty())
@@ -68,19 +68,20 @@ int ScriptRegexp::match(const String& string, int startFrom, int* matchLength) c
     if (string.length() > INT_MAX)
         return -1;
 
+    ScriptForbiddenScope::AllowUserAgentScript allowScript;
+
     v8::Isolate* isolate = v8::Isolate::GetCurrent();
     v8::HandleScope handleScope(isolate);
-    v8::Local<v8::Context> context = V8PerIsolateData::current()->ensureRegexContext();
-    v8::Context::Scope scope(context);
+    v8::Context::Scope contextScope(V8PerIsolateData::from(isolate)->ensureScriptRegexpContext());
     v8::TryCatch tryCatch;
-
-    V8RecursionScope::MicrotaskSuppression microtaskScope;
 
     v8::Local<v8::RegExp> regex = m_regex.newLocal(isolate);
     v8::Local<v8::Function> exec = regex->Get(v8AtomicString(isolate, "exec")).As<v8::Function>();
+    v8::Handle<v8::Value> argv[] = { v8String(isolate, string.substring(startFrom)) };
+    v8::Local<v8::Value> returnValue = V8ScriptRunner::callInternalFunction(exec, regex, WTF_ARRAY_LENGTH(argv), argv, isolate);
 
-    v8::Handle<v8::Value> argv[] = { v8String(context->GetIsolate(), string.substring(startFrom)) };
-    v8::Local<v8::Value> returnValue = exec->Call(regex, 1, argv);
+    if (tryCatch.HasCaught())
+        return -1;
 
     // RegExp#exec returns null if there's no match, otherwise it returns an
     // Array of strings with the first being the whole match string and others
@@ -89,12 +90,12 @@ int ScriptRegexp::match(const String& string, int startFrom, int* matchLength) c
     //
     // https://developer.mozilla.org/en-US/docs/JavaScript/Reference/Global_Objects/RegExp/exec
 
+    ASSERT(!returnValue.IsEmpty());
     if (!returnValue->IsArray())
         return -1;
 
     v8::Local<v8::Array> result = returnValue.As<v8::Array>();
     int matchOffset = result->Get(v8AtomicString(isolate, "index"))->ToInt32()->Value();
-
     if (matchLength) {
         v8::Local<v8::String> match = result->Get(0).As<v8::String>();
         *matchLength = match->Length();

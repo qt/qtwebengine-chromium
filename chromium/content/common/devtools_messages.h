@@ -62,11 +62,13 @@ IPC_MESSAGE_ROUTED1(DevToolsClientMsg_DispatchOnInspectorFrontend,
 // These are messages sent from DevToolsClient to DevToolsAgent through the
 // browser.
 // Tells agent that there is a client host connected to it.
-IPC_MESSAGE_ROUTED0(DevToolsAgentMsg_Attach)
+IPC_MESSAGE_ROUTED1(DevToolsAgentMsg_Attach,
+                    std::string /* host_id */)
 
 // Tells agent that a client host was disconnected from another agent and
 // connected to this one.
-IPC_MESSAGE_ROUTED1(DevToolsAgentMsg_Reattach,
+IPC_MESSAGE_ROUTED2(DevToolsAgentMsg_Reattach,
+                    std::string /* host_id */,
                     std::string /* agent_state */)
 
 // Tells agent that there is no longer a client host connected to it.
@@ -77,7 +79,8 @@ IPC_MESSAGE_ROUTED1(DevToolsAgentMsg_DispatchOnInspectorBackend,
                     std::string /* message */)
 
 // Inspect element with the given coordinates.
-IPC_MESSAGE_ROUTED2(DevToolsAgentMsg_InspectElement,
+IPC_MESSAGE_ROUTED3(DevToolsAgentMsg_InspectElement,
+                    std::string /* host_id */,
                     int /* x */,
                     int /* y */)
 
@@ -85,11 +88,6 @@ IPC_MESSAGE_ROUTED2(DevToolsAgentMsg_InspectElement,
 IPC_MESSAGE_ROUTED2(DevToolsAgentMsg_AddMessageToConsole,
                     content::ConsoleMessageLevel /* level */,
                     std::string /* message */)
-
-// Notifies worker devtools agent that it should pause worker context
-// when it starts and wait until either DevTools client is attached or
-// explicit resume notification is received.
-IPC_MESSAGE_ROUTED0(DevToolsAgentMsg_PauseWorkerContextOnStart)
 
 // Worker DevTools agent should resume worker execution.
 IPC_MESSAGE_ROUTED0(DevToolsAgentMsg_ResumeWorkerContext)
@@ -116,12 +114,6 @@ IPC_MESSAGE_ROUTED1(DevToolsHostMsg_DispatchOnEmbedder,
 IPC_MESSAGE_ROUTED1(DevToolsHostMsg_SaveAgentRuntimeState,
                     std::string /* state */)
 
-// Clears browser cache.
-IPC_MESSAGE_ROUTED0(DevToolsHostMsg_ClearBrowserCache)
-
-// Clears browser cookies.
-IPC_MESSAGE_ROUTED0(DevToolsHostMsg_ClearBrowserCookies)
-
 //-----------------------------------------------------------------------------
 // These are messages sent from the GPU process to the inspected renderer.
 
@@ -129,7 +121,8 @@ IPC_STRUCT_BEGIN(GpuTaskInfo)
   IPC_STRUCT_MEMBER(double, timestamp)
   IPC_STRUCT_MEMBER(int, phase)
   IPC_STRUCT_MEMBER(bool, foreign)
-  IPC_STRUCT_MEMBER(uint64, used_gpu_memory_bytes)
+  IPC_STRUCT_MEMBER(uint64, gpu_memory_used_bytes)
+  IPC_STRUCT_MEMBER(uint64, gpu_memory_limit_bytes)
 IPC_STRUCT_END()
 
 // Recorded events are passed in chunks to the renderer process.

@@ -17,7 +17,7 @@
 <link rel="stylesheet" href="autofill_edit_overlay.css">
 <link rel="stylesheet" href="autofill_options.css">
 <link rel="stylesheet" href="browser_options.css">
-<if expr="pp_ifdef('chromeos')">
+<if expr="chromeos">
   <link rel="stylesheet" href="chromeos/browser_options.css">
 </if>
 <link rel="stylesheet" href="clear_browser_data_overlay.css">
@@ -28,6 +28,8 @@
 <link rel="stylesheet" href="font_settings.css">
 <link rel="stylesheet" href="handler_options.css">
 <link rel="stylesheet" href="home_page_overlay.css">
+<link rel="stylesheet" href="hotword_confirm_overlay.css">
+<link rel="stylesheet" href="hotword_search_setting_indicator.css">
 <link rel="stylesheet" href="import_data_overlay.css">
 <if expr="not is_macosx">
 <link rel="stylesheet" href="language_dictionary_overlay.css">
@@ -39,15 +41,16 @@
 <link rel="stylesheet" href="managed_user_learn_more.css">
 <link rel="stylesheet" href="password_manager.css">
 <link rel="stylesheet" href="password_manager_list.css">
-<link rel="stylesheet" href="reset_profile_settings_banner.css">
 <link rel="stylesheet" href="reset_profile_settings_overlay.css">
 <link rel="stylesheet" href="search_engine_manager.css">
 <link rel="stylesheet" href="search_page.css">
+<link rel="stylesheet" href="settings_banner.css">
 <link rel="stylesheet" href="spelling_confirm_overlay.css">
 <link rel="stylesheet" href="subpages_tab_controls.css">
 <link rel="stylesheet" href="startup_overlay.css">
 <link rel="stylesheet" href="../sync_setup_overlay.css">
-<if expr="pp_ifdef('chromeos')">
+<if expr="chromeos">
+<link rel="stylesheet" href="chromeos/third_party_ime_confirm_overlay.css">
 <link rel="stylesheet" href="chromeos/accounts_options_page.css">
 <link rel="stylesheet" href="chromeos/bluetooth.css">
 <link rel="stylesheet" href="chromeos/change_picture_options.css">
@@ -58,11 +61,11 @@
 <link rel="stylesheet" href="chromeos/pointer_overlay.css">
 <link rel="stylesheet" href="factory_reset_overlay.css">
 </if>
-<if expr="pp_ifdef('use_nss')">
+<if expr="use_nss">
 <link rel="stylesheet" href="certificate_manager.css">
 <link rel="stylesheet" href="certificate_tree.css">
 </if>
-<if expr="pp_ifdef('enable_settings_app')">
+<if expr="enable_settings_app">
 <link rel="stylesheet" href="options_settings_app.css">
 </if>
 <script src="chrome://resources/css/tree.css.js"></script>
@@ -91,6 +94,7 @@
 <script src="chrome://resources/js/cr/ui/repeating_button.js"></script>
 <script src="chrome://resources/js/cr/ui/tree.js"></script>
 <script src="chrome://resources/js/load_time_data.js"></script>
+<script src="chrome://resources/js/parse_html_subset.js"></script>
 <script src="chrome://resources/js/util.js"></script>
 
 <script src="chrome://settings-frame/strings.js"></script>
@@ -103,22 +107,21 @@
   <include src="autofill_options.html">
   <include src="clear_browser_data_overlay.html">
   <include src="content_settings.html">
-  <include src="content_settings2.html">
   <include src="do_not_track_confirm_overlay.html">
   <include src="font_settings.html">
   <include src="home_page_overlay.html">
+  <include src="hotword_confirm_overlay.html">
   <include src="import_data_overlay.html">
   <include src="language_options.html">
   <include src="manage_profile_overlay.html">
   <include src="managed_user_create_confirm.html">
-  <include src="managed_user_import.html">
   <include src="password_manager.html">
   <include src="reset_profile_settings_overlay.html">
   <include src="search_engine_manager.html">
   <include src="spelling_confirm_overlay.html">
   <include src="startup_overlay.html">
   <include src="../sync_setup_overlay.html">
-<if expr="pp_ifdef('chromeos')">
+<if expr="chromeos">
   <include src="chromeos/accounts_options.html">
   <include src="chromeos/bluetooth_add_device_overlay.html">
   <include src="chromeos/bluetooth_pair_device_overlay.html">
@@ -128,7 +131,7 @@
   <include src="chromeos/pointer_overlay.html">
   <include src="factory_reset_overlay.html">
 </if>
-<if expr="pp_ifdef('use_nss')">
+<if expr="use_nss">
   <include src="certificate_manager.html">
 </if>
 </div>
@@ -140,15 +143,16 @@
   <include src="cookies_view.html">
   <include src="handler_options.html">
   <include src="language_add_language_overlay.html">
+  <include src="managed_user_import.html">
   <include src="managed_user_learn_more.html">
 <if expr="not is_macosx">
   <include src="language_dictionary_overlay.html">
 </if>
-  <include src="media_galleries_manager_overlay.html">
-<if expr="pp_ifdef('chromeos')">
+<if expr="chromeos">
   <include src="chromeos/display_overscan.html">
   <include src="chromeos/internet_detail.html">
   <include src="chromeos/preferred_networks.html">
+  <include src="chromeos/third_party_ime_confirm_overlay.html">
 </if>
 <if expr="not is_win and not is_macosx">
   <include src="certificate_restore_overlay.html">
@@ -164,11 +168,17 @@
     <div class="controlled-setting-bubble-extension-name"></div>
   </div>
   <div class="controlled-setting-bubble-content-row">
-    <div class="controlled-setting-bubble-extension-manage-link link-button"
-        i18n-content="controlledSettingManageExtensions"></div>
+    <button class="controlled-setting-bubble-extension-manage-link link-button"
+        i18n-content="controlledSettingManageExtension"></button>
     <button class='controlled-setting-bubble-extension-disable-button'
         i18n-content="controlledSettingDisableExtension"></button>
   </div>
+</div>
+
+<div id="extension-controlled-warning-template"
+     class="extension-controlled-warning-box" hidden>
+  <div class="extension-controlled-warning"></div>
+  <button i18n-content="extensionDisable"></button>
 </div>
 
 <div id="main-content">

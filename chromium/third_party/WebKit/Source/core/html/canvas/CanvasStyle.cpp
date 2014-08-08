@@ -29,8 +29,8 @@
 #include "config.h"
 #include "core/html/canvas/CanvasStyle.h"
 
-#include "CSSPropertyNames.h"
-#include "core/css/CSSParser.h"
+#include "core/CSSPropertyNames.h"
+#include "core/css/parser/BisonCSSParser.h"
 #include "core/css/StylePropertySet.h"
 #include "core/html/HTMLCanvasElement.h"
 #include "core/html/canvas/CanvasGradient.h"
@@ -42,13 +42,14 @@ namespace WebCore {
 
 enum ColorParseResult { ParsedRGBA, ParsedCurrentColor, ParsedSystemColor, ParseFailed };
 
-static ColorParseResult parseColor(RGBA32& parsedColor, const String& colorString, Document* document = 0)
+static ColorParseResult parseColor(RGBA32& parsedColor, const String& colorString)
 {
     if (equalIgnoringCase(colorString, "currentcolor"))
         return ParsedCurrentColor;
-    if (CSSParser::parseColor(parsedColor, colorString))
+    const bool useStrictParsing = true;
+    if (BisonCSSParser::parseColor(parsedColor, colorString, useStrictParsing))
         return ParsedRGBA;
-    if (CSSParser::parseSystemColor(parsedColor, colorString, document))
+    if (BisonCSSParser::parseSystemColor(parsedColor, colorString))
         return ParsedSystemColor;
     return ParseFailed;
 }
@@ -58,13 +59,13 @@ RGBA32 currentColor(HTMLCanvasElement* canvas)
     if (!canvas || !canvas->inDocument() || !canvas->inlineStyle())
         return Color::black;
     RGBA32 rgba = Color::black;
-    CSSParser::parseColor(rgba, canvas->inlineStyle()->getPropertyValue(CSSPropertyColor));
+    BisonCSSParser::parseColor(rgba, canvas->inlineStyle()->getPropertyValue(CSSPropertyColor));
     return rgba;
 }
 
 bool parseColorOrCurrentColor(RGBA32& parsedColor, const String& colorString, HTMLCanvasElement* canvas)
 {
-    ColorParseResult parseResult = parseColor(parsedColor, colorString, canvas ? &canvas->document() : 0);
+    ColorParseResult parseResult = parseColor(parsedColor, colorString);
     switch (parseResult) {
     case ParsedRGBA:
     case ParsedSystemColor:
@@ -123,10 +124,10 @@ CanvasStyle::CanvasStyle(PassRefPtr<CanvasPattern> pattern)
 {
 }
 
-PassRefPtr<CanvasStyle> CanvasStyle::createFromString(const String& color, Document* document)
+PassRefPtr<CanvasStyle> CanvasStyle::createFromString(const String& color)
 {
     RGBA32 rgba;
-    ColorParseResult parseResult = parseColor(rgba, color, document);
+    ColorParseResult parseResult = parseColor(rgba, color);
     switch (parseResult) {
     case ParsedRGBA:
     case ParsedSystemColor:
@@ -134,10 +135,10 @@ PassRefPtr<CanvasStyle> CanvasStyle::createFromString(const String& color, Docum
     case ParsedCurrentColor:
         return adoptRef(new CanvasStyle(CurrentColor));
     case ParseFailed:
-        return 0;
+        return nullptr;
     default:
         ASSERT_NOT_REACHED();
-        return 0;
+        return nullptr;
     }
 }
 
@@ -151,23 +152,24 @@ PassRefPtr<CanvasStyle> CanvasStyle::createFromStringWithOverrideAlpha(const Str
     case ParsedCurrentColor:
         return adoptRef(new CanvasStyle(CurrentColorWithOverrideAlpha, alpha));
     case ParseFailed:
-        return 0;
+        return nullptr;
     default:
         ASSERT_NOT_REACHED();
-        return 0;
+        return nullptr;
     }
 }
 
 PassRefPtr<CanvasStyle> CanvasStyle::createFromGradient(PassRefPtr<CanvasGradient> gradient)
 {
     if (!gradient)
-        return 0;
+        return nullptr;
     return adoptRef(new CanvasStyle(gradient));
 }
+
 PassRefPtr<CanvasStyle> CanvasStyle::createFromPattern(PassRefPtr<CanvasPattern> pattern)
 {
     if (!pattern)
-        return 0;
+        return nullptr;
     return adoptRef(new CanvasStyle(pattern));
 }
 

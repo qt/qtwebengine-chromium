@@ -26,9 +26,10 @@
 
 #include "core/rendering/svg/SVGRenderingContext.h"
 
-#include "core/frame/Frame.h"
+#include "core/frame/FrameHost.h"
 #include "core/frame/FrameView.h"
-#include "core/page/Page.h"
+#include "core/frame/LocalFrame.h"
+#include "core/frame/Settings.h"
 #include "core/rendering/RenderLayer.h"
 #include "core/rendering/svg/RenderSVGImage.h"
 #include "core/rendering/svg/RenderSVGResource.h"
@@ -113,23 +114,28 @@ void SVGRenderingContext::prepareToRenderSVGContent(RenderObject* object, PaintI
 
     // Setup transparency layers before setting up SVG resources!
     bool isRenderingMask = isRenderingMaskImage(m_object);
-    float opacity = isRenderingMask ? 1 : style->opacity();
-    blink::WebBlendMode blendMode = isRenderingMask ? blink::WebBlendModeNormal : style->blendMode();
-    if (opacity < 1 || blendMode != blink::WebBlendModeNormal) {
-        FloatRect repaintRect = m_object->repaintRectInLocalCoordinates();
+    // RenderLayer takes care of root opacity.
+    float opacity = (object->isSVGRoot() || isRenderingMask) ? 1 : style->opacity();
+    bool hasBlendMode = style->hasBlendMode() && !isRenderingMask;
 
-        if (opacity < 1 || blendMode != blink::WebBlendModeNormal) {
-            m_paintInfo->context->clip(repaintRect);
-            if (blendMode != blink::WebBlendModeNormal) {
-                if (!(m_renderingFlags & RestoreGraphicsContext)) {
-                    m_paintInfo->context->save();
-                    m_renderingFlags |= RestoreGraphicsContext;
-                }
-                m_paintInfo->context->setCompositeOperation(CompositeSourceOver, blendMode);
+    if (opacity < 1 || hasBlendMode || style->hasIsolation()) {
+        FloatRect repaintRect = m_object->paintInvalidationRectInLocalCoordinates();
+        m_paintInfo->context->clip(repaintRect);
+
+        if (hasBlendMode) {
+            if (!(m_renderingFlags & RestoreGraphicsContext)) {
+                m_paintInfo->context->save();
+                m_renderingFlags |= RestoreGraphicsContext;
             }
-            m_paintInfo->context->beginTransparencyLayer(opacity);
-            m_renderingFlags |= EndOpacityLayer;
+            m_paintInfo->context->setCompositeOperation(CompositeSourceOver, style->blendMode());
         }
+
+        m_paintInfo->context->beginTransparencyLayer(opacity);
+
+        if (hasBlendMode)
+            m_paintInfo->context->setCompositeOperation(CompositeSourceOver, blink::WebBlendModeNormal);
+
+        m_renderingFlags |= EndOpacityLayer;
     }
 
     ClipPathOperation* clipPathOperation = style->clipPath();
@@ -197,20 +203,23 @@ float SVGRenderingContext::calculateScreenFontSizeScalingFactor(const RenderObje
     ASSERT(renderer);
 
     AffineTransform ctm;
-    calculateTransformationToOutermostCoordinateSystem(renderer, ctm);
+    // FIXME: calculateDeviceSpaceTransformation() queries layer compositing state - which is not
+    // supported during layout. Hence, the result may not include all CSS transforms.
+    calculateDeviceSpaceTransformation(renderer, ctm);
     return narrowPrecisionToFloat(sqrt((pow(ctm.xScale(), 2) + pow(ctm.yScale(), 2)) / 2));
 }
 
-void SVGRenderingContext::calculateTransformationToOutermostCoordinateSystem(const RenderObject* renderer, AffineTransform& absoluteTransform)
+void SVGRenderingContext::calculateDeviceSpaceTransformation(const RenderObject* renderer, AffineTransform& absoluteTransform)
 {
-    ASSERT(renderer);
-    absoluteTransform = currentContentTransformation();
+    // FIXME: trying to compute a device space transform at record time is wrong. All clients
+    // should be updated to avoid relying on this information, and the method should be removed.
 
-    float deviceScaleFactor = 1;
-    if (Page* page = renderer->document().page())
-        deviceScaleFactor = page->deviceScaleFactor();
+    ASSERT(renderer);
+    // We're about to possibly clear renderer, so save the deviceScaleFactor now.
+    float deviceScaleFactor = renderer->document().frameHost()->deviceScaleFactor();
 
     // Walk up the render tree, accumulating SVG transforms.
+    absoluteTransform = currentContentTransformation();
     while (renderer) {
         absoluteTransform = renderer->localToParentTransform() * absoluteTransform;
         if (renderer->isSVGRoot())
@@ -220,23 +229,22 @@ void SVGRenderingContext::calculateTransformationToOutermostCoordinateSystem(con
 
     // Continue walking up the layer tree, accumulating CSS transforms.
     RenderLayer* layer = renderer ? renderer->enclosingLayer() : 0;
-    while (layer) {
-        if (TransformationMatrix* layerTransform = layer->transform())
-            absoluteTransform = layerTransform->toAffineTransform() * absoluteTransform;
-
+    while (layer && layer->isAllowedToQueryCompositingState()) {
         // We can stop at compositing layers, to match the backing resolution.
         // FIXME: should we be computing the transform to the nearest composited layer,
         // or the nearest composited layer that does not paint into its ancestor?
         // I think this is the nearest composited ancestor since we will inherit its
         // transforms in the composited layer tree.
-        if (layer->hasCompositedLayerMapping())
+        if (layer->compositingState() != NotComposited)
             break;
+
+        if (TransformationMatrix* layerTransform = layer->transform())
+            absoluteTransform = layerTransform->toAffineTransform() * absoluteTransform;
 
         layer = layer->parent();
     }
 
-    if (deviceScaleFactor != 1)
-        absoluteTransform.scale(deviceScaleFactor);
+    absoluteTransform.scale(deviceScaleFactor);
 }
 
 void SVGRenderingContext::renderSubtree(GraphicsContext* context, RenderObject* item, const AffineTransform& subtreeContentTransformation)
@@ -278,7 +286,7 @@ bool SVGRenderingContext::bufferForeground(OwnPtr<ImageBuffer>& imageBuffer)
 
     // Invalidate an existing buffer if the scale is not correct.
     if (imageBuffer) {
-        AffineTransform transform = m_paintInfo->context->getCTM(GraphicsContext::DefinitelyIncludeDeviceScale);
+        AffineTransform transform = m_paintInfo->context->getCTM();
         IntSize expandedBoundingBox = expandedIntSize(boundingBox.size());
         IntSize bufferSize(static_cast<int>(ceil(expandedBoundingBox.width() * transform.xScale())), static_cast<int>(ceil(expandedBoundingBox.height() * transform.yScale())));
         if (bufferSize != imageBuffer->size())

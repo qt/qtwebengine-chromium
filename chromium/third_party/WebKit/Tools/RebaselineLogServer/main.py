@@ -32,6 +32,7 @@ import webapp2
 
 from google.appengine.ext import ndb
 from google.appengine.ext.webapp import template
+from google.appengine.ext.db import BadRequestError
 
 # A simple log server for rebaseline-o-matic.
 #
@@ -46,6 +47,8 @@ from google.appengine.ext.webapp import template
 
 LOG_PARAM = "log"
 NEW_ENTRY_PARAM = "newentry"
+# FIXME: no_needs_rebaseline is never used anymore. Remove support for it.
+# Instead, add UI to logs.html to collapse short entries.
 NO_NEEDS_REBASELINE_PARAM = "noneedsrebaseline"
 NUM_LOGS_PARAM = "numlogs"
 BEFORE_PARAM = "before"
@@ -73,6 +76,7 @@ class UpdateLog(webapp2.RequestHandler):
         # avoid cluttering the log with useless empty posts. It just updates the
         # date of the entry so that users can see that rebaseline-o-matic is still
         # running.
+        # FIXME: no_needs_rebaseline is never used anymore. Remove support for it.
         no_needs_rebaseline = self.request.POST.get(NO_NEEDS_REBASELINE_PARAM) == "on"
 
         out = "Wrote new log entry."
@@ -100,7 +104,12 @@ class UpdateLog(webapp2.RequestHandler):
         if new_entry or not log_entries:
             log_entry = LogEntry(content=new_log_data, is_no_needs_rebaseline=no_needs_rebaseline)
 
-        log_entry.put()
+        try:
+            log_entry.put()
+        except BadRequestError:
+            out = "Created new log entry because the previous one exceeded the max length."
+            LogEntry(content=new_log_data, is_no_needs_rebaseline=no_needs_rebaseline).put()
+
         self.response.out.write(out)
 
 

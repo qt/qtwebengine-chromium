@@ -32,19 +32,33 @@ public:
 
     virtual LayoutRect visualOverflowRect() const OVERRIDE FINAL;
 
+    virtual LayoutRect clippedOverflowRectForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer) const OVERRIDE FINAL;
+    virtual void computeFloatRectForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer, FloatRect&, bool fixed = false) const OVERRIDE FINAL;
+
+    virtual void mapLocalToContainer(const RenderLayerModelObject* repaintContainer, TransformState&, MapCoordinatesFlags = ApplyContainerFlip, bool* wasFixed = 0) const OVERRIDE FINAL;
+    virtual const RenderObject* pushMappingToContainer(const RenderLayerModelObject* ancestorToStopAt, RenderGeometryMap&) const OVERRIDE FINAL;
+
+    virtual AffineTransform localTransform() const OVERRIDE FINAL { return m_localTransform; }
+
+    virtual LayerType layerTypeRequired() const OVERRIDE FINAL { return NoLayer; }
+
+    virtual void invalidateTreeAfterLayout(const RenderLayerModelObject&) OVERRIDE;
+
 protected:
     virtual void willBeDestroyed() OVERRIDE;
+
+    AffineTransform m_localTransform;
 
 private:
     virtual void updateFromStyle() OVERRIDE FINAL;
 
-    virtual bool isRenderSVGBlock() const OVERRIDE FINAL { return true; };
-
-    virtual bool supportsPartialLayout() const OVERRIDE { return false; }
+    virtual bool isSVG() const OVERRIDE FINAL { return true; }
 
     virtual void absoluteRects(Vector<IntRect>&, const LayoutPoint& accumulatedOffset) const OVERRIDE FINAL;
 
     virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle) OVERRIDE FINAL;
+
+    virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction) OVERRIDE;
 };
 
 }

@@ -6,12 +6,12 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "gpu/command_buffer/service/gles2_cmd_decoder_mock.h"
+#include "gpu/command_buffer/service/gpu_service_test.h"
 #include "gpu/command_buffer/service/test_helper.h"
 #include "gpu/command_buffer/service/texture_manager.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/gl/gl_mock.h"
 
-using ::gfx::MockGLInterface;
 using ::testing::_;
 using ::testing::DoAll;
 using ::testing::HasSubstr;
@@ -23,31 +23,24 @@ using ::testing::Return;
 using ::testing::SetArrayArgument;
 using ::testing::SetArgumentPointee;
 using ::testing::StrEq;
-using ::testing::StrictMock;
 
 namespace gpu {
 namespace gles2 {
 
-class ContextGroupTest : public testing::Test {
+class ContextGroupTest : public GpuServiceTest {
  public:
-  ContextGroupTest() {
-  }
+  static const bool kBindGeneratesResource = false;
+
+  ContextGroupTest() {}
 
  protected:
   virtual void SetUp() {
-    gl_.reset(new ::testing::StrictMock< ::gfx::MockGLInterface>());
-    ::gfx::GLInterface::SetGLInterface(gl_.get());
+    GpuServiceTest::SetUp();
     decoder_.reset(new MockGLES2Decoder());
     group_ = scoped_refptr<ContextGroup>(
-        new ContextGroup(NULL, NULL, NULL, NULL, NULL, true));
+        new ContextGroup(NULL, NULL, NULL, NULL, NULL, kBindGeneratesResource));
   }
 
-  virtual void TearDown() {
-    ::gfx::GLInterface::SetGLInterface(NULL);
-    gl_.reset();
-  }
-
-  scoped_ptr< ::testing::StrictMock< ::gfx::MockGLInterface> > gl_;
   scoped_ptr<MockGLES2Decoder> decoder_;
   scoped_refptr<ContextGroup> group_;
 };
@@ -70,8 +63,8 @@ TEST_F(ContextGroupTest, Basic) {
 }
 
 TEST_F(ContextGroupTest, InitializeNoExtensions) {
-  TestHelper::SetupContextGroupInitExpectations(gl_.get(),
-      DisallowedFeatures(), "");
+  TestHelper::SetupContextGroupInitExpectations(
+      gl_.get(), DisallowedFeatures(), "", "", kBindGeneratesResource);
   group_->Initialize(decoder_.get(), DisallowedFeatures());
   EXPECT_EQ(static_cast<uint32>(TestHelper::kNumVertexAttribs),
             group_->max_vertex_attribs());
@@ -105,8 +98,8 @@ TEST_F(ContextGroupTest, InitializeNoExtensions) {
 
 TEST_F(ContextGroupTest, MultipleContexts) {
   scoped_ptr<MockGLES2Decoder> decoder2_(new MockGLES2Decoder());
-  TestHelper::SetupContextGroupInitExpectations(gl_.get(),
-      DisallowedFeatures(), "");
+  TestHelper::SetupContextGroupInitExpectations(
+      gl_.get(), DisallowedFeatures(), "", "", kBindGeneratesResource);
   group_->Initialize(decoder_.get(), DisallowedFeatures());
   group_->Initialize(decoder2_.get(), DisallowedFeatures());
 

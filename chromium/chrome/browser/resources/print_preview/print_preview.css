@@ -59,7 +59,7 @@ header {
 .right-column {
   -webkit-padding-end: 20px;
   display: table-cell;
-  width: auto;
+  width: 99%;
 }
 
 .right-column .checkbox,
@@ -113,7 +113,7 @@ h1 {
 
 #print-preview .navbar-link {
   -webkit-margin-start: 20px;
-  height: 32px;
+  min-height: 32px;
   outline: 0;
   padding: 0;
   text-align: start;
@@ -268,7 +268,7 @@ span.jumping-dots > span:nth-child(3) {
 
 /* TODO(estade): unfork this code. */
 #print-header .button-strip {
-<if expr="not pp_ifdef('toolkit_views')">
+<if expr="not chromeos and not is_win">
   -webkit-box-direction: reverse;
 </if>
   -webkit-box-orient: horizontal;

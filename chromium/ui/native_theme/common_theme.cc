@@ -8,6 +8,7 @@
 #include "grit/ui_resources.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/gfx/canvas.h"
 #include "ui/gfx/color_utils.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/rect.h"
@@ -32,6 +33,12 @@ const SkColor kEnabledMenuItemForegroundColor = SK_ColorBLACK;
 const SkColor kDisabledMenuItemForegroundColor = SkColorSetRGB(161, 161, 146);
 const SkColor kHoverMenuItemBackgroundColor =
     SkColorSetARGB(204, 255, 255, 255);
+// Button:
+const SkColor kButtonHoverBackgroundColor = SkColorSetRGB(0xEA, 0xEA, 0xEA);
+const SkColor kBlueButtonEnabledColor = SK_ColorWHITE;
+const SkColor kBlueButtonDisabledColor = SK_ColorWHITE;
+const SkColor kBlueButtonHighlightColor = SK_ColorWHITE;
+const SkColor kBlueButtonHoverColor = SK_ColorWHITE;
 
 }  // namespace
 
@@ -70,11 +77,30 @@ bool CommonThemeGetSystemColor(NativeTheme::ColorId color_id, SkColor* color) {
     case NativeTheme::kColorId_DisabledMenuItemForegroundColor:
       *color = kDisabledMenuItemForegroundColor;
       break;
+    case NativeTheme::kColorId_DisabledEmphasizedMenuItemForegroundColor:
+      *color = SK_ColorBLACK;
+      break;
     case NativeTheme::kColorId_SelectedMenuItemForegroundColor:
       *color = SK_ColorWHITE;
       break;
     case NativeTheme::kColorId_ButtonDisabledColor:
       *color = kDisabledMenuItemForegroundColor;
+      break;
+    // Button
+    case NativeTheme::kColorId_ButtonHoverBackgroundColor:
+      *color = kButtonHoverBackgroundColor;
+      break;
+    case NativeTheme::kColorId_BlueButtonEnabledColor:
+      *color = kBlueButtonEnabledColor;
+      break;
+    case NativeTheme::kColorId_BlueButtonDisabledColor:
+      *color = kBlueButtonDisabledColor;
+      break;
+    case NativeTheme::kColorId_BlueButtonHighlightColor:
+      *color = kBlueButtonHighlightColor;
+      break;
+    case NativeTheme::kColorId_BlueButtonHoverColor:
+      *color = kBlueButtonHoverColor;
       break;
     default:
       return false;
@@ -97,6 +123,10 @@ gfx::Size CommonThemeGetPartSize(NativeTheme::Part part,
                                  const NativeTheme::ExtraParams& extra) {
   gfx::Size size;
   switch (part) {
+    case NativeTheme::kComboboxArrow:
+      return ui::ResourceBundle::GetSharedInstance().GetImageNamed(
+          IDR_MENU_DROPARROW).Size();
+
     case NativeTheme::kMenuCheck: {
       const gfx::ImageSkia* check =
           ui::ResourceBundle::GetSharedInstance().GetImageNamed(
@@ -109,6 +139,12 @@ gfx::Size CommonThemeGetPartSize(NativeTheme::Part part,
   }
 
   return size;
+}
+
+void CommonThemePaintComboboxArrow(SkCanvas* canvas, const gfx::Rect& rect) {
+  gfx::ImageSkia* arrow = ui::ResourceBundle::GetSharedInstance().
+      GetImageSkiaNamed(IDR_MENU_DROPARROW);
+  CommonThemeCreateCanvas(canvas)->DrawImageInt(*arrow, rect.x(), rect.y());
 }
 
 void CommonThemePaintMenuSeparator(
@@ -162,6 +198,16 @@ void CommonThemePaintMenuItemBackground(SkCanvas* canvas,
       break;
   }
   canvas->drawRect(gfx::RectToSkRect(rect), paint);
+}
+
+// static
+scoped_ptr<gfx::Canvas> CommonThemeCreateCanvas(SkCanvas* sk_canvas) {
+  // TODO(pkotwicz): Do something better and don't infer device
+  // scale factor from canvas scale.
+  SkMatrix m = sk_canvas->getTotalMatrix();
+  float device_scale = static_cast<float>(SkScalarAbs(m.getScaleX()));
+  return scoped_ptr<gfx::Canvas>(
+      gfx::Canvas::CreateCanvasWithoutScaling(sk_canvas, device_scale));
 }
 
 }  // namespace ui

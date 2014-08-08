@@ -31,20 +31,21 @@
 #include "config.h"
 #include "bindings/v8/ScriptPromiseResolver.h"
 
-#include "bindings/v8/ScriptState.h"
 #include "bindings/v8/ScriptValue.h"
 #include "bindings/v8/V8Binding.h"
 #include "bindings/v8/V8DOMWrapper.h"
-#include "bindings/v8/custom/V8PromiseCustom.h"
 
 #include <v8.h>
 
 namespace WebCore {
 
-ScriptPromiseResolver::ScriptPromiseResolver(ScriptPromise promise)
-    : m_isolate(promise.isolate())
-    , m_promise(promise)
+ScriptPromiseResolver::ScriptPromiseResolver(ScriptState* scriptState)
+    : m_scriptState(scriptState)
 {
+    v8::Isolate* isolate = m_scriptState->isolate();
+    ASSERT(!m_scriptState->contextIsEmpty());
+    ASSERT(isolate->InContext());
+    m_resolver = ScriptValue(scriptState, v8::Promise::Resolver::New(isolate));
 }
 
 ScriptPromiseResolver::~ScriptPromiseResolver()
@@ -52,61 +53,42 @@ ScriptPromiseResolver::~ScriptPromiseResolver()
     // We don't call "reject" here because it requires a caller
     // to be in a v8 context.
 
-    m_promise.clear();
+    m_resolver.clear();
 }
 
-PassRefPtr<ScriptPromiseResolver> ScriptPromiseResolver::create(ScriptPromise promise, ExecutionContext* context)
+ScriptPromise ScriptPromiseResolver::promise()
 {
-    ASSERT(promise.isolate()->InContext());
-    ASSERT(context);
-    return adoptRef(new ScriptPromiseResolver(promise));
+    ASSERT(!m_scriptState->contextIsEmpty());
+    ASSERT(m_scriptState->isolate()->InContext());
+    if (!m_resolver.isEmpty()) {
+        v8::Local<v8::Promise::Resolver> v8Resolver = m_resolver.v8Value().As<v8::Promise::Resolver>();
+        return ScriptPromise(m_scriptState.get(), v8Resolver->GetPromise());
+    }
+    return ScriptPromise();
 }
 
-PassRefPtr<ScriptPromiseResolver> ScriptPromiseResolver::create(ScriptPromise promise)
+PassRefPtr<ScriptPromiseResolver> ScriptPromiseResolver::create(ScriptState* scriptState)
 {
-    ASSERT(promise.isolate()->InContext());
-    return adoptRef(new ScriptPromiseResolver(promise));
-}
-
-bool ScriptPromiseResolver::isPending() const
-{
-    ASSERT(m_isolate->InContext());
-    if (m_promise.hasNoValue())
-        return false;
-    v8::Local<v8::Object> promise = m_promise.v8Value().As<v8::Object>();
-    v8::Local<v8::Object> internal = V8PromiseCustom::getInternal(promise);
-    V8PromiseCustom::PromiseState state = V8PromiseCustom::getState(internal);
-    return state == V8PromiseCustom::Pending;
+    ASSERT(scriptState->isolate()->InContext());
+    return adoptRef(new ScriptPromiseResolver(scriptState));
 }
 
 void ScriptPromiseResolver::resolve(v8::Handle<v8::Value> value)
 {
-    ASSERT(m_isolate->InContext());
-    if (!isPending())
-        return;
-    V8PromiseCustom::resolve(m_promise.v8Value().As<v8::Object>(), value, m_isolate);
-    m_promise.clear();
+    ASSERT(m_scriptState->isolate()->InContext());
+    if (!m_resolver.isEmpty()) {
+        m_resolver.v8Value().As<v8::Promise::Resolver>()->Resolve(value);
+    }
+    m_resolver.clear();
 }
 
 void ScriptPromiseResolver::reject(v8::Handle<v8::Value> value)
 {
-    ASSERT(m_isolate->InContext());
-    if (!isPending())
-        return;
-    V8PromiseCustom::reject(m_promise.v8Value().As<v8::Object>(), value, m_isolate);
-    m_promise.clear();
-}
-
-void ScriptPromiseResolver::resolve(ScriptValue value)
-{
-    ASSERT(m_isolate->InContext());
-    resolve(value.v8Value());
-}
-
-void ScriptPromiseResolver::reject(ScriptValue value)
-{
-    ASSERT(m_isolate->InContext());
-    reject(value.v8Value());
+    ASSERT(m_scriptState->isolate()->InContext());
+    if (!m_resolver.isEmpty()) {
+        m_resolver.v8Value().As<v8::Promise::Resolver>()->Reject(value);
+    }
+    m_resolver.clear();
 }
 
 } // namespace WebCore

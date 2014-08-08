@@ -30,7 +30,7 @@ cr.define('cr.ui.Oobe', function() {
       login.TermsOfServiceScreen.register();
       login.AppLaunchSplashScreen.register();
       login.ConfirmPasswordScreen.register();
-      login.MessageBoxScreen.register();
+      login.FatalErrorScreen.register();
 
       cr.ui.Bubble.decorate($('bubble'));
       login.HeaderBar.decorate($('login-header-bar'));
@@ -40,7 +40,7 @@ cr.define('cr.ui.Oobe', function() {
 
     // Dummy Oobe functions not present with stripped login UI.
     initializeA11yMenu: function(e) {},
-    handleAccessbilityLinkClick: function(e) {},
+    handleAccessibilityLinkClick: function(e) {},
     handleSpokenFeedbackClick: function(e) {},
     handleHighContrastClick: function(e) {},
     handleScreenMagnifierClick: function(e) {},

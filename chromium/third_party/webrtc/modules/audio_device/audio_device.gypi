@@ -20,7 +20,7 @@
         '.',
         '../interface',
         'include',
-        'dummy', # dummy audio device
+        'dummy',  # Contains dummy audio device implementations.
       ],
       'direct_dependent_settings': {
         'include_dirs': [
@@ -45,6 +45,8 @@
         'dummy/audio_device_dummy.h',
         'dummy/audio_device_utility_dummy.cc',
         'dummy/audio_device_utility_dummy.h',
+        'dummy/file_audio_device.cc',
+        'dummy/file_audio_device.h',
       ],
       'conditions': [
         ['OS=="linux"', {
@@ -75,6 +77,13 @@
         ['include_internal_audio_device==0', {
           'defines': [
             'WEBRTC_DUMMY_AUDIO_BUILD',
+          ],
+        }],
+        ['build_with_chromium==0', {
+          'sources': [
+            # Don't link these into Chrome since they contain static data.
+            'dummy/file_audio_device_factory.cc',
+            'dummy/file_audio_device_factory.h',
           ],
         }],
         ['include_internal_audio_device==1', {
@@ -246,66 +255,6 @@
             },
           ],
         }],
-        ['OS=="android"', {
-          'targets': [
-            {
-              'target_name': 'libopensl-demo-jni',
-              'type': 'loadable_module',
-              'dependencies': [
-                'audio_device',
-              ],
-              'sources': [
-                'android/test/jni/opensl_runner.cc',
-                'android/test/fake_audio_device_buffer.cc',
-              ],
-              'link_settings': {
-                'libraries': [
-                  '-llog',
-                  '-lOpenSLES',
-                ],
-              },
-            },
-            {
-              'target_name': 'OpenSlDemo',
-              'type': 'none',
-              'dependencies': [
-                'libopensl-demo-jni',
-                '<(modules_java_gyp_path):*',
-              ],
-              'actions': [
-                {
-                  # TODO(henrik): Convert building of the demo to a proper GYP
-                  # target so this action is not needed once chromium's
-                  # apk-building machinery can be used. (crbug.com/225101)
-                  'action_name': 'build_opensldemo_apk',
-                  'variables': {
-                    'android_opensl_demo_root': '<(webrtc_root)/modules/audio_device/android/test',
-                  },
-                  'inputs' : [
-                    '<(PRODUCT_DIR)/lib.java/audio_device_module_java.jar',
-                    '<(PRODUCT_DIR)/libopensl-demo-jni.so',
-                    '<!@(find <(android_opensl_demo_root)/src -name "*.java")',
-                    '<!@(find <(android_opensl_demo_root)/res -name "*.xml")',
-                    '<!@(find <(android_opensl_demo_root)/res -name "*.png")',
-                    '<(android_opensl_demo_root)/AndroidManifest.xml',
-                    '<(android_opensl_demo_root)/build.xml',
-                    '<(android_opensl_demo_root)/project.properties',
-                  ],
-                  'outputs': ['<(PRODUCT_DIR)/OpenSlDemo-debug.apk'],
-                  'action': ['bash', '-ec',
-                             'rm -f <(_outputs) && '
-                             'mkdir -p <(android_opensl_demo_root)/libs/<(android_app_abi) && '
-                             '<(android_strip) -o <(android_opensl_demo_root)/libs/<(android_app_abi)/libopensl-demo-jni.so <(PRODUCT_DIR)/libopensl-demo-jni.so && '
-                             'cp <(PRODUCT_DIR)/lib.java/audio_device_module_java.jar <(android_opensl_demo_root)/libs/ &&'
-                             'cd <(android_opensl_demo_root) && '
-                             'ant debug && '
-                             'cd - && '
-                             'cp <(android_opensl_demo_root)/bin/OpenSlDemo-debug.apk <(_outputs)'
-                           ],
-                },
-              ],
-            }],
-          }],
         ['OS=="android" and enable_android_opensl==1', {
           'targets': [
             {

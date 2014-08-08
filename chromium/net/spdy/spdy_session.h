@@ -61,59 +61,83 @@ const int kMaxReadBytesWithoutYielding = 32 * 1024;
 // The initial receive window size for both streams and sessions.
 const int32 kDefaultInitialRecvWindowSize = 10 * 1024 * 1024;  // 10MB
 
+// First and last valid stream IDs. As we always act as the client,
+// start at 1 for the first stream id.
+const SpdyStreamId kFirstStreamId = 1;
+const SpdyStreamId kLastStreamId = 0x7fffffff;
+
 class BoundNetLog;
 struct LoadTimingInfo;
 class SpdyStream;
 class SSLInfo;
 
 // NOTE: There's an enum of the same name (also with numeric suffixes)
-// in histograms.xml.
-//
-// WARNING: DO NOT INSERT ENUMS INTO THIS LIST! Add only to the end.
+// in histograms.xml. Be sure to add new values there also.
 enum SpdyProtocolErrorDetails {
-  // SpdyFramer::SpdyErrors
-  SPDY_ERROR_NO_ERROR,
-  SPDY_ERROR_INVALID_CONTROL_FRAME,
-  SPDY_ERROR_CONTROL_PAYLOAD_TOO_LARGE,
-  SPDY_ERROR_ZLIB_INIT_FAILURE,
-  SPDY_ERROR_UNSUPPORTED_VERSION,
-  SPDY_ERROR_DECOMPRESS_FAILURE,
-  SPDY_ERROR_COMPRESS_FAILURE,
-  SPDY_ERROR_CREDENTIAL_FRAME_CORRUPT,
-  SPDY_ERROR_INVALID_DATA_FRAME_FLAGS,
-  SPDY_ERROR_INVALID_CONTROL_FRAME_FLAGS,
-  // SpdyRstStreamStatus
-  STATUS_CODE_INVALID,
-  STATUS_CODE_PROTOCOL_ERROR,
-  STATUS_CODE_INVALID_STREAM,
-  STATUS_CODE_REFUSED_STREAM,
-  STATUS_CODE_UNSUPPORTED_VERSION,
-  STATUS_CODE_CANCEL,
-  STATUS_CODE_INTERNAL_ERROR,
-  STATUS_CODE_FLOW_CONTROL_ERROR,
-  STATUS_CODE_STREAM_IN_USE,
-  STATUS_CODE_STREAM_ALREADY_CLOSED,
-  STATUS_CODE_INVALID_CREDENTIALS,
-  STATUS_CODE_FRAME_TOO_LARGE,
+  // SpdyFramer::SpdyError mappings.
+  SPDY_ERROR_NO_ERROR = 0,
+  SPDY_ERROR_INVALID_CONTROL_FRAME = 1,
+  SPDY_ERROR_CONTROL_PAYLOAD_TOO_LARGE = 2,
+  SPDY_ERROR_ZLIB_INIT_FAILURE = 3,
+  SPDY_ERROR_UNSUPPORTED_VERSION = 4,
+  SPDY_ERROR_DECOMPRESS_FAILURE = 5,
+  SPDY_ERROR_COMPRESS_FAILURE = 6,
+  // SPDY_ERROR_CREDENTIAL_FRAME_CORRUPT = 7, (removed).
+  SPDY_ERROR_GOAWAY_FRAME_CORRUPT = 29,
+  SPDY_ERROR_RST_STREAM_FRAME_CORRUPT = 30,
+  SPDY_ERROR_INVALID_DATA_FRAME_FLAGS = 8,
+  SPDY_ERROR_INVALID_CONTROL_FRAME_FLAGS = 9,
+  SPDY_ERROR_UNEXPECTED_FRAME = 31,
+  // SpdyRstStreamStatus mappings.
+  // RST_STREAM_INVALID not mapped.
+  STATUS_CODE_PROTOCOL_ERROR = 11,
+  STATUS_CODE_INVALID_STREAM = 12,
+  STATUS_CODE_REFUSED_STREAM = 13,
+  STATUS_CODE_UNSUPPORTED_VERSION = 14,
+  STATUS_CODE_CANCEL = 15,
+  STATUS_CODE_INTERNAL_ERROR = 16,
+  STATUS_CODE_FLOW_CONTROL_ERROR = 17,
+  STATUS_CODE_STREAM_IN_USE = 18,
+  STATUS_CODE_STREAM_ALREADY_CLOSED = 19,
+  STATUS_CODE_INVALID_CREDENTIALS = 20,
+  STATUS_CODE_FRAME_SIZE_ERROR = 21,
+  STATUS_CODE_SETTINGS_TIMEOUT = 32,
+  STATUS_CODE_CONNECT_ERROR = 33,
+  STATUS_CODE_ENHANCE_YOUR_CALM = 34,
+
   // SpdySession errors
-  PROTOCOL_ERROR_UNEXPECTED_PING,
-  PROTOCOL_ERROR_RST_STREAM_FOR_NON_ACTIVE_STREAM,
-  PROTOCOL_ERROR_SPDY_COMPRESSION_FAILURE,
-  PROTOCOL_ERROR_REQUEST_FOR_SECURE_CONTENT_OVER_INSECURE_SESSION,
-  PROTOCOL_ERROR_SYN_REPLY_NOT_RECEIVED,
-  PROTOCOL_ERROR_INVALID_WINDOW_UPDATE_SIZE,
-  PROTOCOL_ERROR_RECEIVE_WINDOW_VIOLATION,
-  NUM_SPDY_PROTOCOL_ERROR_DETAILS
+  PROTOCOL_ERROR_UNEXPECTED_PING = 22,
+  PROTOCOL_ERROR_RST_STREAM_FOR_NON_ACTIVE_STREAM = 23,
+  PROTOCOL_ERROR_SPDY_COMPRESSION_FAILURE = 24,
+  PROTOCOL_ERROR_REQUEST_FOR_SECURE_CONTENT_OVER_INSECURE_SESSION = 25,
+  PROTOCOL_ERROR_SYN_REPLY_NOT_RECEIVED = 26,
+  PROTOCOL_ERROR_INVALID_WINDOW_UPDATE_SIZE = 27,
+  PROTOCOL_ERROR_RECEIVE_WINDOW_VIOLATION = 28,
+
+  // Next free value.
+  NUM_SPDY_PROTOCOL_ERROR_DETAILS = 35,
 };
+SpdyProtocolErrorDetails NET_EXPORT_PRIVATE
+    MapFramerErrorToProtocolError(SpdyFramer::SpdyError error);
+Error NET_EXPORT_PRIVATE MapFramerErrorToNetError(SpdyFramer::SpdyError error);
+SpdyProtocolErrorDetails NET_EXPORT_PRIVATE
+    MapRstStreamStatusToProtocolError(SpdyRstStreamStatus status);
+SpdyGoAwayStatus NET_EXPORT_PRIVATE MapNetErrorToGoAwayStatus(Error err);
 
-COMPILE_ASSERT(STATUS_CODE_INVALID ==
-               static_cast<SpdyProtocolErrorDetails>(SpdyFramer::LAST_ERROR),
+// If these compile asserts fail then SpdyProtocolErrorDetails needs
+// to be updated with new values, as do the mapping functions above.
+COMPILE_ASSERT(12 == SpdyFramer::LAST_ERROR,
                SpdyProtocolErrorDetails_SpdyErrors_mismatch);
+COMPILE_ASSERT(15 == RST_STREAM_NUM_STATUS_CODES,
+               SpdyProtocolErrorDetails_RstStreamStatus_mismatch);
 
-COMPILE_ASSERT(PROTOCOL_ERROR_UNEXPECTED_PING ==
-               static_cast<SpdyProtocolErrorDetails>(
-                   RST_STREAM_NUM_STATUS_CODES + STATUS_CODE_INVALID),
-               SpdyProtocolErrorDetails_SpdyErrors_mismatch);
+// Splits pushed |headers| into request and response parts. Request headers are
+// the headers specifying resource URL.
+void NET_EXPORT_PRIVATE
+    SplitPushedHeadersToRequestAndResponse(const SpdyHeaderBlock& headers,
+                                           SpdyMajorVersion protocol_version,
+                                           SpdyHeaderBlock* request_headers,
+                                           SpdyHeaderBlock* response_headers);
 
 // A helper class used to manage a request to create a stream.
 class NET_EXPORT_PRIVATE SpdyStreamRequest {
@@ -171,7 +195,6 @@ class NET_EXPORT_PRIVATE SpdyStreamRequest {
 
   void Reset();
 
-  base::WeakPtrFactory<SpdyStreamRequest> weak_ptr_factory_;
   SpdyStreamType type_;
   base::WeakPtr<SpdySession> session_;
   base::WeakPtr<SpdyStream> stream_;
@@ -179,6 +202,8 @@ class NET_EXPORT_PRIVATE SpdyStreamRequest {
   RequestPriority priority_;
   BoundNetLog net_log_;
   CompletionCallback callback_;
+
+  base::WeakPtrFactory<SpdyStreamRequest> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(SpdyStreamRequest);
 };
@@ -251,13 +276,13 @@ class NET_EXPORT SpdySession : public BufferedSpdyFramerVisitorInterface,
   // |certificate_error_code| must either be OK or less than
   // ERR_IO_PENDING.
   //
-  // Returns OK on success, or an error on failure. Never returns
-  // ERR_IO_PENDING. If an error is returned, the session must be
-  // destroyed immediately.
-  Error InitializeWithSocket(scoped_ptr<ClientSocketHandle> connection,
-                             SpdySessionPool* pool,
-                             bool is_secure,
-                             int certificate_error_code);
+  // The session begins reading from |connection| on a subsequent event loop
+  // iteration, so the SpdySession may close immediately afterwards if the first
+  // read of |connection| fails.
+  void InitializeWithSocket(scoped_ptr<ClientSocketHandle> connection,
+                            SpdySessionPool* pool,
+                            bool is_secure,
+                            int certificate_error_code);
 
   // Returns the protocol used by this session. Always between
   // kProtoSPDYMinimumVersion and kProtoSPDYMaximumVersion.
@@ -286,7 +311,6 @@ class NET_EXPORT SpdySession : public BufferedSpdyFramerVisitorInterface,
   scoped_ptr<SpdyFrame> CreateSynStream(
       SpdyStreamId stream_id,
       RequestPriority priority,
-      uint8 credential_slot,
       SpdyControlFlags flags,
       const SpdyHeaderBlock& headers);
 
@@ -335,12 +359,10 @@ class NET_EXPORT SpdySession : public BufferedSpdyFramerVisitorInterface,
   void SendStreamWindowUpdate(SpdyStreamId stream_id,
                               uint32 delta_window_size);
 
-  // Whether the stream is closed, i.e. it has stopped processing data
-  // and is about to be destroyed.
-  //
-  // TODO(akalin): This is only used in tests. Remove this function
-  // and have tests test the WeakPtr instead.
-  bool IsClosed() const { return availability_state_ == STATE_CLOSED; }
+  // Accessors for the session's availability state.
+  bool IsAvailable() const { return availability_state_ == STATE_AVAILABLE; }
+  bool IsGoingAway() const { return availability_state_ == STATE_GOING_AWAY; }
+  bool IsDraining() const { return availability_state_ == STATE_DRAINING; }
 
   // Closes this session. This will close all active streams and mark
   // the session as permanently closed. Callers must assume that the
@@ -353,12 +375,30 @@ class NET_EXPORT SpdySession : public BufferedSpdyFramerVisitorInterface,
   // |description| indicates the reason for the error.
   void CloseSessionOnError(Error err, const std::string& description);
 
+  // Mark this session as unavailable, meaning that it will not be used to
+  // service new streams. Unlike when a GOAWAY frame is received, this function
+  // will not close any streams.
+  void MakeUnavailable();
+
+  // Closes all active streams with stream id's greater than
+  // |last_good_stream_id|, as well as any created or pending
+  // streams. Must be called only when |availability_state_| >=
+  // STATE_GOING_AWAY. After this function, DcheckGoingAway() will
+  // pass. May be called multiple times.
+  void StartGoingAway(SpdyStreamId last_good_stream_id, Error status);
+
+  // Must be called only when going away (i.e., DcheckGoingAway()
+  // passes). If there are no more active streams and the session
+  // isn't closed yet, close it.
+  void MaybeFinishGoingAway();
+
   // Retrieves information on the current state of the SPDY session as a
   // Value.  Caller takes possession of the returned value.
   base::Value* GetInfoAsValue() const;
 
   // Indicates whether the session is being reused after having successfully
-  // used to send/receive data in the past.
+  // used to send/receive data in the past or if the underlying socket was idle
+  // before being used for a SPDY session.
   bool IsReused() const;
 
   // Returns true if the underlying transport socket ever had any reads or
@@ -455,6 +495,10 @@ class NET_EXPORT SpdySession : public BufferedSpdyFramerVisitorInterface,
     return buffered_spdy_framer_->GetDataFrameMaximumPayload();
   }
 
+  // https://http2.github.io/http2-spec/#TLSUsage mandates minimum security
+  // standards for TLS.
+  bool HasAcceptableTransportSecurity() const;
+
   // Must be used only by |pool_|.
   base::WeakPtr<SpdySession> GetWeakPtr();
 
@@ -479,6 +523,9 @@ class NET_EXPORT SpdySession : public BufferedSpdyFramerVisitorInterface,
   FRIEND_TEST_ALL_PREFIXES(SpdySessionTest, SessionFlowControlNoReceiveLeaks);
   FRIEND_TEST_ALL_PREFIXES(SpdySessionTest, SessionFlowControlNoSendLeaks);
   FRIEND_TEST_ALL_PREFIXES(SpdySessionTest, SessionFlowControlEndToEnd);
+  FRIEND_TEST_ALL_PREFIXES(SpdySessionTest, StreamIdSpaceExhausted);
+  FRIEND_TEST_ALL_PREFIXES(SpdySessionTest, UnstallRacesWithStreamCreation);
+  FRIEND_TEST_ALL_PREFIXES(SpdySessionTest, GoAwayOnSessionFlowControlError);
 
   typedef std::deque<base::WeakPtr<SpdyStreamRequest> >
       PendingStreamRequestQueue;
@@ -512,9 +559,11 @@ class NET_EXPORT SpdySession : public BufferedSpdyFramerVisitorInterface,
     // The session can process data on existing streams but will
     // refuse to create new ones.
     STATE_GOING_AWAY,
-    // The session has been closed, is waiting to be deleted, and will
-    // refuse to process any more data.
-    STATE_CLOSED
+    // The session is draining its write queue in preparation of closing.
+    // Further writes will not be queued, and further reads will not be issued
+    // (though the remainder of a current read may be processed). The session
+    // will be destroyed by its write loop once the write queue is drained.
+    STATE_DRAINING,
   };
 
   enum ReadState {
@@ -527,18 +576,6 @@ class NET_EXPORT SpdySession : public BufferedSpdyFramerVisitorInterface,
     WRITE_STATE_IDLE,
     WRITE_STATE_DO_WRITE,
     WRITE_STATE_DO_WRITE_COMPLETE,
-  };
-
-  // The return value of DoCloseSession() describing what was done.
-  enum CloseSessionResult {
-    // The session was already closed so nothing was done.
-    SESSION_ALREADY_CLOSED,
-    // The session was moved into the closed state but was not removed
-    // from |pool_| (because we're in an IO loop).
-    SESSION_CLOSED_BUT_NOT_REMOVED,
-    // The session was moved into the closed state and removed from
-    // |pool_|.
-    SESSION_CLOSED_AND_REMOVED,
   };
 
   // Checks whether a stream for the given |url| can be created or
@@ -574,6 +611,11 @@ class NET_EXPORT SpdySession : public BufferedSpdyFramerVisitorInterface,
   // possible.
   void ProcessPendingStreamRequests();
 
+  bool TryCreatePushStream(SpdyStreamId stream_id,
+                           SpdyStreamId associated_stream_id,
+                           SpdyPriority priority,
+                           const SpdyHeaderBlock& headers);
+
   // Close the stream pointed to by the given iterator. Note that that
   // stream may hold the last reference to the session.
   void CloseActiveStreamIterator(ActiveStreamMap::iterator it, int status);
@@ -598,29 +640,30 @@ class NET_EXPORT SpdySession : public BufferedSpdyFramerVisitorInterface,
                                SpdyRstStreamStatus status,
                                const std::string& description);
 
-  // Calls DoReadLoop and then if |availability_state_| is
-  // STATE_CLOSED, calls RemoveFromPool().
-  //
-  // Use this function instead of DoReadLoop when posting a task to
-  // pump the read loop.
+  // Calls DoReadLoop. Use this function instead of DoReadLoop when
+  // posting a task to pump the read loop.
   void PumpReadLoop(ReadState expected_read_state, int result);
 
   // Advance the ReadState state machine. |expected_read_state| is the
   // expected starting read state.
   //
-  // This function must always be called via PumpReadLoop() except for
-  // from InitializeWithSocket().
+  // This function must always be called via PumpReadLoop().
   int DoReadLoop(ReadState expected_read_state, int result);
   // The implementations of the states of the ReadState state machine.
   int DoRead();
   int DoReadComplete(int result);
 
-  // Calls DoWriteLoop and then if |availability_state_| is
-  // STATE_CLOSED, calls RemoveFromPool().
+  // Calls DoWriteLoop. If |availability_state_| is STATE_DRAINING and no
+  // writes remain, the session is removed from the session pool and
+  // destroyed.
   //
   // Use this function instead of DoWriteLoop when posting a task to
   // pump the write loop.
   void PumpWriteLoop(WriteState expected_write_state, int result);
+
+  // Iff the write loop is not currently active, posts a callback into
+  // PumpWriteLoop().
+  void MaybePostWriteLoop();
 
   // Advance the WriteState state machine. |expected_write_state| is
   // the expected starting write state.
@@ -660,7 +703,7 @@ class NET_EXPORT SpdySession : public BufferedSpdyFramerVisitorInterface,
                              RequestPriority priority);
 
   // Send the PING frame.
-  void WritePingFrame(uint32 unique_id);
+  void WritePingFrame(uint32 unique_id, bool is_ack);
 
   // Post a CheckPingStatus call after delay. Don't post if there is already
   // CheckPingStatus running.
@@ -671,7 +714,7 @@ class NET_EXPORT SpdySession : public BufferedSpdyFramerVisitorInterface,
   void CheckPingStatus(base::TimeTicks last_check_time);
 
   // Get a new stream id.
-  int GetNewStreamId();
+  SpdyStreamId GetNewStreamId();
 
   // Pushes the given frame with the given priority into the write
   // queue for the session.
@@ -724,36 +767,13 @@ class NET_EXPORT SpdySession : public BufferedSpdyFramerVisitorInterface,
   void DcheckGoingAway() const;
 
   // Calls DcheckGoingAway(), then DCHECKs that |availability_state_|
-  // == STATE_CLOSED, |error_on_close_| has a valid value, that there
-  // are no active streams or unclaimed pushed streams, and that the
-  // write queue is empty.
-  void DcheckClosed() const;
+  // == STATE_DRAINING, |error_on_close_| has a valid value, and that there
+  // are no active streams or unclaimed pushed streams.
+  void DcheckDraining() const;
 
-  // Closes all active streams with stream id's greater than
-  // |last_good_stream_id|, as well as any created or pending
-  // streams. Must be called only when |availability_state_| >=
-  // STATE_GOING_AWAY. After this function, DcheckGoingAway() will
-  // pass. May be called multiple times.
-  void StartGoingAway(SpdyStreamId last_good_stream_id, Error status);
-
-  // Must be called only when going away (i.e., DcheckGoingAway()
-  // passes). If there are no more active streams and the session
-  // isn't closed yet, close it.
-  void MaybeFinishGoingAway();
-
-  // If the stream is already closed, does nothing. Otherwise, moves
-  // the session to a closed state. Then, if we're in an IO loop,
-  // returns (as the IO loop will do the pool removal itself when its
-  // done). Otherwise, also removes |this| from |pool_|. The returned
-  // result describes what was done.
-  CloseSessionResult DoCloseSession(Error err, const std::string& description);
-
-  // Remove this session from its pool, which must exist. Must be
-  // called only when the session is closed.
-  //
-  // Must be called only via Pump{Read,Write}Loop() or
-  // DoCloseSession().
-  void RemoveFromPool();
+  // If the session is already draining, does nothing. Otherwise, moves
+  // the session to the draining state.
+  void DoDrainSession(Error err, const std::string& description);
 
   // Called right before closing a (possibly-inactive) stream for a
   // reason other than being requested to by the stream.
@@ -776,7 +796,7 @@ class NET_EXPORT SpdySession : public BufferedSpdyFramerVisitorInterface,
   virtual void OnError(SpdyFramer::SpdyError error_code) OVERRIDE;
   virtual void OnStreamError(SpdyStreamId stream_id,
                              const std::string& description) OVERRIDE;
-  virtual void OnPing(uint32 unique_id) OVERRIDE;
+  virtual void OnPing(SpdyPingId unique_id, bool is_ack) OVERRIDE;
   virtual void OnRstStream(SpdyStreamId stream_id,
                            SpdyRstStreamStatus status) OVERRIDE;
   virtual void OnGoAway(SpdyStreamId last_accepted_stream_id,
@@ -794,11 +814,11 @@ class NET_EXPORT SpdySession : public BufferedSpdyFramerVisitorInterface,
   virtual void OnWindowUpdate(SpdyStreamId stream_id,
                               uint32 delta_window_size) OVERRIDE;
   virtual void OnPushPromise(SpdyStreamId stream_id,
-                             SpdyStreamId promised_stream_id) OVERRIDE;
+                             SpdyStreamId promised_stream_id,
+                             const SpdyHeaderBlock& headers) OVERRIDE;
   virtual void OnSynStream(SpdyStreamId stream_id,
                            SpdyStreamId associated_stream_id,
                            SpdyPriority priority,
-                           uint8 credential_slot,
                            bool fin,
                            bool unidirectional,
                            const SpdyHeaderBlock& headers) OVERRIDE;
@@ -913,12 +933,6 @@ class NET_EXPORT SpdySession : public BufferedSpdyFramerVisitorInterface,
   // or NULL, if the transport is not SSL.
   SSLClientSocket* GetSSLClientSocket() const;
 
-  // Used for posting asynchronous IO tasks.  We use this even though
-  // SpdySession is refcounted because we don't need to keep the SpdySession
-  // alive if the last reference is within a RunnableMethod.  Just revoke the
-  // method.
-  base::WeakPtrFactory<SpdySession> weak_factory_;
-
   // Whether Do{Read,Write}Loop() is in the call stack. Useful for
   // making sure we don't destroy ourselves prematurely in that case.
   bool in_io_loop_;
@@ -941,7 +955,7 @@ class NET_EXPORT SpdySession : public BufferedSpdyFramerVisitorInterface,
   // The read buffer used to read data from the socket.
   scoped_refptr<IOBuffer> read_buffer_;
 
-  int stream_hi_water_mark_;  // The next stream id to use.
+  SpdyStreamId stream_hi_water_mark_;  // The next stream id to use.
 
   // Queue, for each priority, of pending stream requests that have
   // not yet been satisfied.
@@ -999,10 +1013,10 @@ class NET_EXPORT SpdySession : public BufferedSpdyFramerVisitorInterface,
   ReadState read_state_;
   WriteState write_state_;
 
-  // If the session was closed (i.e., |availability_state_| is
-  // STATE_CLOSED), then |error_on_close_| holds the error with which
-  // it was closed, which is < ERR_IO_PENDING. Otherwise, it is set to
-  // OK.
+  // If the session is closing (i.e., |availability_state_| is STATE_DRAINING),
+  // then |error_on_close_| holds the error with which it was closed, which
+  // may be OK (upon a polite GOAWAY) or an error < ERR_IO_PENDING otherwise.
+  // Initialized to OK.
   Error error_on_close_;
 
   // Limits
@@ -1114,6 +1128,12 @@ class NET_EXPORT SpdySession : public BufferedSpdyFramerVisitorInterface,
   HostPortPair trusted_spdy_proxy_;
 
   TimeFunc time_func_;
+
+  // Used for posting asynchronous IO tasks.  We use this even though
+  // SpdySession is refcounted because we don't need to keep the SpdySession
+  // alive if the last reference is within a RunnableMethod.  Just revoke the
+  // method.
+  base::WeakPtrFactory<SpdySession> weak_factory_;
 };
 
 }  // namespace net

@@ -21,37 +21,50 @@
 #ifndef WTF_HashSet_h
 #define WTF_HashSet_h
 
-#include "wtf/FastAllocBase.h"
+#include "wtf/DefaultAllocator.h"
 #include "wtf/HashTable.h"
 
 namespace WTF {
 
     struct IdentityExtractor;
 
-    template<typename Value, typename HashFunctions, typename Traits> class HashSet;
-    template<typename Value, typename HashFunctions, typename Traits>
-    void deleteAllValues(const HashSet<Value, HashFunctions, Traits>&);
-
-    template<typename ValueArg, typename HashArg = typename DefaultHash<ValueArg>::Hash,
-        typename TraitsArg = HashTraits<ValueArg> > class HashSet {
-        WTF_MAKE_FAST_ALLOCATED;
+    // Note: empty or deleted values are not allowed, using them may lead to undefined behavior.
+    // For pointer valuess this means that null pointers are not allowed unless you supply custom traits.
+    template<
+        typename ValueArg,
+        typename HashArg = typename DefaultHash<ValueArg>::Hash,
+        typename TraitsArg = HashTraits<ValueArg>,
+        typename Allocator = DefaultAllocator> class HashSet {
+        WTF_USE_ALLOCATOR(HashSet, Allocator);
     private:
         typedef HashArg HashFunctions;
         typedef TraitsArg ValueTraits;
+        typedef typename ValueTraits::PeekInType ValuePeekInType;
+        typedef typename ValueTraits::PassInType ValuePassInType;
+        typedef typename ValueTraits::PassOutType ValuePassOutType;
 
     public:
         typedef typename ValueTraits::TraitType ValueType;
 
     private:
         typedef HashTable<ValueType, ValueType, IdentityExtractor,
-            HashFunctions, ValueTraits, ValueTraits> HashTableType;
+            HashFunctions, ValueTraits, ValueTraits, Allocator> HashTableType;
 
     public:
-        typedef HashTableConstIteratorAdapter<HashTableType, ValueType> iterator;
-        typedef HashTableConstIteratorAdapter<HashTableType, ValueType> const_iterator;
+        typedef HashTableConstIteratorAdapter<HashTableType, ValueTraits> iterator;
+        typedef HashTableConstIteratorAdapter<HashTableType, ValueTraits> const_iterator;
         typedef typename HashTableType::AddResult AddResult;
 
-        void swap(HashSet&);
+        void swap(HashSet& ref)
+        {
+            m_impl.swap(ref.m_impl);
+        }
+
+        void swap(typename Allocator::template OtherType<HashSet>::Type other)
+        {
+            HashSet& ref = Allocator::getOther(other);
+            m_impl.swap(ref.m_impl);
+        }
 
         unsigned size() const;
         unsigned capacity() const;
@@ -60,8 +73,8 @@ namespace WTF {
         iterator begin() const;
         iterator end() const;
 
-        iterator find(const ValueType&) const;
-        bool contains(const ValueType&) const;
+        iterator find(ValuePeekInType) const;
+        bool contains(ValuePeekInType) const;
 
         // An alternate version of find() that finds the object by hashing and comparing
         // with some other type, to avoid the cost of type conversion. HashTranslator
@@ -71,9 +84,9 @@ namespace WTF {
         template<typename HashTranslator, typename T> iterator find(const T&) const;
         template<typename HashTranslator, typename T> bool contains(const T&) const;
 
-        // The return value is a pair of an interator to the new value's location,
+        // The return value is a pair of an iterator to the new value's location,
         // and a bool that is true if an new entry was added.
-        AddResult add(const ValueType&);
+        AddResult add(ValuePassInType);
 
         // An alternate version of add() that finds the object by hashing and comparing
         // with some other type, to avoid the cost of type conversion if the object is already
@@ -83,20 +96,27 @@ namespace WTF {
         //   static translate(ValueType&, const T&, unsigned hashCode);
         template<typename HashTranslator, typename T> AddResult add(const T&);
 
-        void remove(const ValueType&);
+        void remove(ValuePeekInType);
         void remove(iterator);
         void clear();
+        template<typename Collection>
+        void removeAll(const Collection& toBeRemoved) { WTF::removeAll(*this, toBeRemoved); }
 
-        static bool isValidValue(const ValueType&);
+        static bool isValidValue(ValuePeekInType);
+
+        ValuePassOutType take(iterator);
+        ValuePassOutType take(ValuePeekInType);
+        ValuePassOutType takeAny();
+
+        void trace(typename Allocator::Visitor* visitor) { m_impl.trace(visitor); }
 
     private:
-        friend void deleteAllValues<>(const HashSet&);
-
         HashTableType m_impl;
     };
 
     struct IdentityExtractor {
-        template<typename T> static const T& extract(const T& t) { return t; }
+        template<typename T>
+        static const T& extract(const T& t) { return t; }
     };
 
     template<typename Translator>
@@ -109,103 +129,97 @@ namespace WTF {
         }
     };
 
-    template<typename T, typename U, typename V>
-    inline void HashSet<T, U, V>::swap(HashSet& other)
-    {
-        m_impl.swap(other.m_impl);
-    }
-
-    template<typename T, typename U, typename V>
-    inline unsigned HashSet<T, U, V>::size() const
+    template<typename T, typename U, typename V, typename W>
+    inline unsigned HashSet<T, U, V, W>::size() const
     {
         return m_impl.size();
     }
 
-    template<typename T, typename U, typename V>
-    inline unsigned HashSet<T, U, V>::capacity() const
+    template<typename T, typename U, typename V, typename W>
+    inline unsigned HashSet<T, U, V, W>::capacity() const
     {
         return m_impl.capacity();
     }
 
-    template<typename T, typename U, typename V>
-    inline bool HashSet<T, U, V>::isEmpty() const
+    template<typename T, typename U, typename V, typename W>
+    inline bool HashSet<T, U, V, W>::isEmpty() const
     {
         return m_impl.isEmpty();
     }
 
-    template<typename T, typename U, typename V>
-    inline typename HashSet<T, U, V>::iterator HashSet<T, U, V>::begin() const
+    template<typename T, typename U, typename V, typename W>
+    inline typename HashSet<T, U, V, W>::iterator HashSet<T, U, V, W>::begin() const
     {
         return m_impl.begin();
     }
 
-    template<typename T, typename U, typename V>
-    inline typename HashSet<T, U, V>::iterator HashSet<T, U, V>::end() const
+    template<typename T, typename U, typename V, typename W>
+    inline typename HashSet<T, U, V, W>::iterator HashSet<T, U, V, W>::end() const
     {
         return m_impl.end();
     }
 
-    template<typename T, typename U, typename V>
-    inline typename HashSet<T, U, V>::iterator HashSet<T, U, V>::find(const ValueType& value) const
+    template<typename T, typename U, typename V, typename W>
+    inline typename HashSet<T, U, V, W>::iterator HashSet<T, U, V, W>::find(ValuePeekInType value) const
     {
         return m_impl.find(value);
     }
 
-    template<typename T, typename U, typename V>
-    inline bool HashSet<T, U, V>::contains(const ValueType& value) const
+    template<typename Value, typename HashFunctions, typename Traits, typename Allocator>
+    inline bool HashSet<Value, HashFunctions, Traits, Allocator>::contains(ValuePeekInType value) const
     {
         return m_impl.contains(value);
     }
 
-    template<typename Value, typename HashFunctions, typename Traits>
+    template<typename Value, typename HashFunctions, typename Traits, typename Allocator>
     template<typename HashTranslator, typename T>
-    typename HashSet<Value, HashFunctions, Traits>::iterator
-    inline HashSet<Value, HashFunctions, Traits>::find(const T& value) const
+    typename HashSet<Value, HashFunctions, Traits, Allocator>::iterator
+    inline HashSet<Value, HashFunctions, Traits, Allocator>::find(const T& value) const
     {
         return m_impl.template find<HashSetTranslatorAdapter<HashTranslator> >(value);
     }
 
-    template<typename Value, typename HashFunctions, typename Traits>
+    template<typename Value, typename HashFunctions, typename Traits, typename Allocator>
     template<typename HashTranslator, typename T>
-    inline bool HashSet<Value, HashFunctions, Traits>::contains(const T& value) const
+    inline bool HashSet<Value, HashFunctions, Traits, Allocator>::contains(const T& value) const
     {
         return m_impl.template contains<HashSetTranslatorAdapter<HashTranslator> >(value);
     }
 
-    template<typename T, typename U, typename V>
-    inline typename HashSet<T, U, V>::AddResult HashSet<T, U, V>::add(const ValueType& value)
+    template<typename T, typename U, typename V, typename W>
+    inline typename HashSet<T, U, V, W>::AddResult HashSet<T, U, V, W>::add(ValuePassInType value)
     {
         return m_impl.add(value);
     }
 
-    template<typename Value, typename HashFunctions, typename Traits>
+    template<typename Value, typename HashFunctions, typename Traits, typename Allocator>
     template<typename HashTranslator, typename T>
-    inline typename HashSet<Value, HashFunctions, Traits>::AddResult
-    HashSet<Value, HashFunctions, Traits>::add(const T& value)
+    inline typename HashSet<Value, HashFunctions, Traits, Allocator>::AddResult
+    HashSet<Value, HashFunctions, Traits, Allocator>::add(const T& value)
     {
         return m_impl.template addPassingHashCode<HashSetTranslatorAdapter<HashTranslator> >(value, value);
     }
 
-    template<typename T, typename U, typename V>
-    inline void HashSet<T, U, V>::remove(iterator it)
+    template<typename T, typename U, typename V, typename W>
+    inline void HashSet<T, U, V, W>::remove(iterator it)
     {
         m_impl.remove(it.m_impl);
     }
 
-    template<typename T, typename U, typename V>
-    inline void HashSet<T, U, V>::remove(const ValueType& value)
+    template<typename T, typename U, typename V, typename W>
+    inline void HashSet<T, U, V, W>::remove(ValuePeekInType value)
     {
         remove(find(value));
     }
 
-    template<typename T, typename U, typename V>
-    inline void HashSet<T, U, V>::clear()
+    template<typename T, typename U, typename V, typename W>
+    inline void HashSet<T, U, V, W>::clear()
     {
         m_impl.clear();
     }
 
-    template<typename T, typename U, typename V>
-    inline bool HashSet<T, U, V>::isValidValue(const ValueType& value)
+    template<typename T, typename U, typename V, typename W>
+    inline bool HashSet<T, U, V, W>::isValidValue(ValuePeekInType value)
     {
         if (ValueTraits::isDeletedValue(value))
             return false;
@@ -221,19 +235,28 @@ namespace WTF {
         return true;
     }
 
-    template<typename ValueType, typename HashTableType>
-    void deleteAllValues(HashTableType& collection)
+    template<typename T, typename U, typename V, typename W>
+    inline typename HashSet<T, U, V, W>::ValuePassOutType HashSet<T, U, V, W>::take(iterator it)
     {
-        typedef typename HashTableType::const_iterator iterator;
-        iterator end = collection.end();
-        for (iterator it = collection.begin(); it != end; ++it)
-            delete *it;
+        if (it == end())
+            return ValueTraits::emptyValue();
+
+        ValuePassOutType result = ValueTraits::passOut(const_cast<ValueType&>(*it));
+        remove(it);
+
+        return result;
     }
 
-    template<typename T, typename U, typename V>
-    inline void deleteAllValues(const HashSet<T, U, V>& collection)
+    template<typename T, typename U, typename V, typename W>
+    inline typename HashSet<T, U, V, W>::ValuePassOutType HashSet<T, U, V, W>::take(ValuePeekInType value)
     {
-        deleteAllValues<typename HashSet<T, U, V>::ValueType>(collection.m_impl);
+        return take(find(value));
+    }
+
+    template<typename T, typename U, typename V, typename W>
+    inline typename HashSet<T, U, V, W>::ValuePassOutType HashSet<T, U, V, W>::takeAny()
+    {
+        return take(begin());
     }
 
     template<typename C, typename W>

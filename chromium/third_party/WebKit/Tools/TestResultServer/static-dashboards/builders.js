@@ -31,20 +31,28 @@ function LOAD_BUILDBOT_DATA(builderData)
     builders.masters = {};
     var groups = {};
     var testTypes = {};
+    var testTypesThatDoNotUpload = {};
+    builders.noUploadTestTypes = builderData['no_upload_test_types']
     builderData['masters'].forEach(function(master) {
-        builders.masters[master.name] = new builders.BuilderMaster(master.name, master.url, master.tests, master.groups);
+        builders.masters[master.name] = new builders.BuilderMaster(master);
 
         master.groups.forEach(function(group) { groups[group] = true; });
 
         Object.keys(master.tests).forEach(function(testType) {
             if (builders.testTypeUploadsToFlakinessDashboardServer(testType))
                 testTypes[testType] = true;
+            else
+                testTypesThatDoNotUpload[testType] = true;
         });
     });
     builders.groups = Object.keys(groups);
     builders.groups.sort();
     builders.testTypes = Object.keys(testTypes);
     builders.testTypes.sort();
+    // FIXME: Expose this in the flakiness dashboard UI and give a clear error message
+    // pointing to a bug about getting the test type in question uploading results.
+    builders.testTypesThatDoNotUpload = Object.keys(testTypesThatDoNotUpload);
+    builders.testTypesThatDoNotUpload.sort();
 }
 
 var builders = builders || {};
@@ -53,11 +61,11 @@ var builders = builders || {};
 
 builders.testTypeUploadsToFlakinessDashboardServer = function(testType)
 {
-    // FIXME: Encode whether the test uploads to the server in the buildbot json so
-    // we can include that data in buildbot.jsonp and not need to do ugly heuristics
-    // based off the name of the test suite. This code both has some false positives
-    // and some false negatives.
-    return !testType.match(/_only|_ignore|_perf$/) && !testType.match(/^memory test:|install_/) && testType != 'Run tests';
+    for (var i = 0; i < builders.noUploadTestTypes.length; i++) {
+        if (string.contains(testType, builders.noUploadTestTypes[i]))
+            return false;
+    }
+    return true;
 }
 
 var currentBuilderGroup = {};
@@ -73,8 +81,7 @@ builders.getBuilderGroup = function(groupName, testType)
 
 function isChromiumWebkitTipOfTreeTestRunner(builder)
 {
-    return builder.indexOf('ASAN') == -1 &&
-        !isChromiumWebkitDepsTestRunner(builder);
+    return !isChromiumWebkitDepsTestRunner(builder);
 }
 
 function isChromiumWebkitDepsTestRunner(builder)
@@ -99,27 +106,11 @@ builders._builderFilter = function(groupName, masterName, testType)
     return null;
 }
 
-var builderToMaster = {};
-
+// FIXME: When we change to show multiple groups at once, this will need to
+// change to key off groupName and builderName.
 builders.master = function(builderName)
 {
-    return builderToMaster[builderName];
-}
-
-function populateBuilderToMaster()
-{
-    var allMasterNames = Object.keys(builders.masters);
-
-    allMasterNames.forEach(function(masterName) {
-        var master = builders.masters[masterName];
-        var testTypes = Object.keys(master.tests);
-        testTypes.forEach(function (testType) {
-            var builderList = master.tests[testType].builders;
-            builderList.forEach(function (builderName) {
-                builderToMaster[builderName] = master;
-            });
-        });
-    });
+    return builders.builderToMaster[builderName];
 }
 
 builders.loadBuildersList = function(groupName, testType)
@@ -129,6 +120,7 @@ builders.loadBuildersList = function(groupName, testType)
         return new builders.BuilderGroup(false);
     }
     var builderGroup = new builders.BuilderGroup(groupName == '@ToT Blink');
+    builders.builderToMaster = {};
 
     for (masterName in builders.masters) {
         if (!builders.masters[masterName])
@@ -144,10 +136,12 @@ builders.loadBuildersList = function(groupName, testType)
             if (builderFilter)
                 builderList = builderList.filter(builderFilter);
             builderGroup.append(builderList);
+
+            builderList.forEach(function (builderName) {
+                builders.builderToMaster[builderName] = master;
+            });
         }
     }
-
-    populateBuilderToMaster();
 
     currentBuilderGroup = builderGroup;
     return currentBuilderGroup;
@@ -158,18 +152,22 @@ builders.getAllGroupNames = function()
     return builders.groups;
 }
 
-builders.BuilderMaster = function(name, basePath, tests, groups)
+builders.BuilderMaster = function(master_data)
 {
-    this.name = name;
-    this.basePath = basePath;
-    this.tests = tests;
-    this.groups = groups;
+    this.name = master_data.name;
+    this.basePath = 'http://build.chromium.org/p/' + master_data.url_name;
+    this.tests = master_data.tests;
+    this.groups = master_data.groups;
 }
 
 builders.BuilderMaster.prototype = {
     logPath: function(builder, buildNumber)
     {
-        return this.basePath + '/builders/' + builder + '/builds/' + buildNumber;
+        return this.builderPath(builder) + '/builds/' + buildNumber;
+    },
+    builderPath: function(builder)
+    {
+        return this.basePath + '/builders/' + builder;
     },
     builderJsonPath: function()
     {

@@ -34,6 +34,8 @@
 #include "core/inspector/ConsoleAPITypes.h"
 #include "core/frame/ConsoleBase.h"
 #include "core/frame/ConsoleTypes.h"
+#include "core/workers/WorkerGlobalScope.h"
+#include "platform/heap/Handle.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
@@ -43,25 +45,24 @@ namespace WebCore {
 
 class ScriptArguments;
 
-class WorkerConsole : public RefCounted<WorkerConsole>, public ConsoleBase, public ScriptWrappable {
+class WorkerConsole FINAL : public ConsoleBase, public ScriptWrappable {
 public:
-    using RefCounted<WorkerConsole>::ref;
-    using RefCounted<WorkerConsole>::deref;
-
-    static PassRefPtr<WorkerConsole> create(WorkerGlobalScope* scope) { return adoptRef(new WorkerConsole(scope)); }
+    static PassRefPtrWillBeRawPtr<WorkerConsole> create(WorkerGlobalScope* scope)
+    {
+        return adoptRefWillBeNoop(new WorkerConsole(scope));
+    }
     virtual ~WorkerConsole();
 
+    virtual void trace(Visitor*) OVERRIDE;
+
 protected:
-    virtual ExecutionContext* context();
-    virtual void reportMessageToClient(MessageLevel, const String& message, PassRefPtr<ScriptCallStack>) OVERRIDE;
+    virtual ExecutionContext* context() OVERRIDE;
+    virtual void reportMessageToClient(MessageLevel, const String& message, PassRefPtrWillBeRawPtr<ScriptCallStack>) OVERRIDE;
 
 private:
     explicit WorkerConsole(WorkerGlobalScope*);
 
-    virtual void refConsole() { ref(); }
-    virtual void derefConsole() { deref(); }
-
-    WorkerGlobalScope* m_scope;
+    RawPtrWillBeMember<WorkerGlobalScope> m_scope;
 };
 
 } // namespace WebCore

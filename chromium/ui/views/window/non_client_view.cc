@@ -4,7 +4,7 @@
 
 #include "ui/views/window/non_client_view.h"
 
-#include "ui/base/accessibility/accessible_view_state.h"
+#include "ui/accessibility/ax_view_state.h"
 #include "ui/base/hit_test.h"
 #include "ui/gfx/rect_conversions.h"
 #include "ui/views/rect_based_targeting_utils.h"
@@ -127,14 +127,14 @@ void NonClientView::LayoutFrameView() {
   frame_view_->Layout();
 }
 
-void NonClientView::SetAccessibleName(const string16& name) {
+void NonClientView::SetAccessibleName(const base::string16& name) {
   accessible_name_ = name;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 // NonClientView, View overrides:
 
-gfx::Size NonClientView::GetPreferredSize() {
+gfx::Size NonClientView::GetPreferredSize() const {
   // TODO(pkasting): This should probably be made to look similar to
   // GetMinimumSize() below.  This will require implementing GetPreferredSize()
   // better in the various frame views.
@@ -142,11 +142,11 @@ gfx::Size NonClientView::GetPreferredSize() {
   return GetWindowBoundsForClientBounds(client_bounds).size();
 }
 
-gfx::Size NonClientView::GetMinimumSize() {
+gfx::Size NonClientView::GetMinimumSize() const {
   return frame_view_->GetMinimumSize();
 }
 
-gfx::Size NonClientView::GetMaximumSize() {
+gfx::Size NonClientView::GetMaximumSize() const {
   return frame_view_->GetMaximumSize();
 }
 
@@ -177,8 +177,8 @@ void NonClientView::ViewHierarchyChanged(
   }
 }
 
-void NonClientView::GetAccessibleState(ui::AccessibleViewState* state) {
-  state->role = ui::AccessibilityTypes::ROLE_CLIENT;
+void NonClientView::GetAccessibleState(ui::AXViewState* state) {
+  state->role = ui::AX_ROLE_CLIENT;
   state->name = accessible_name_;
 }
 
@@ -186,8 +186,8 @@ const char* NonClientView::GetClassName() const {
   return kViewClassName;
 }
 
-views::View* NonClientView::GetEventHandlerForRect(const gfx::Rect& rect) {
-  if (!views::UsePointBasedTargeting(rect))
+View* NonClientView::GetEventHandlerForRect(const gfx::Rect& rect) {
+  if (!UsePointBasedTargeting(rect))
     return View::GetEventHandlerForRect(rect);
 
   // Because of the z-ordering of our child views (the client view is positioned
@@ -212,7 +212,7 @@ views::View* NonClientView::GetEventHandlerForRect(const gfx::Rect& rect) {
   return View::GetEventHandlerForRect(rect);
 }
 
-views::View* NonClientView::GetTooltipHandlerForPoint(const gfx::Point& point) {
+View* NonClientView::GetTooltipHandlerForPoint(const gfx::Point& point) {
   // The same logic as for |GetEventHandlerForRect()| applies here.
   if (frame_view_->parent() == this) {
     // During the reset of the frame_view_ it's possible to be in this code
@@ -220,7 +220,7 @@ views::View* NonClientView::GetTooltipHandlerForPoint(const gfx::Point& point) {
     // removed from the NonClientView.
     gfx::Point point_in_child_coords(point);
     View::ConvertPointToTarget(this, frame_view_.get(), &point_in_child_coords);
-    views::View* handler =
+    View* handler =
         frame_view_->GetTooltipHandlerForPoint(point_in_child_coords);
     if (handler)
       return handler;
@@ -232,12 +232,23 @@ views::View* NonClientView::GetTooltipHandlerForPoint(const gfx::Point& point) {
 ////////////////////////////////////////////////////////////////////////////////
 // NonClientFrameView, public:
 
+NonClientFrameView::~NonClientFrameView() {
+}
+
 void NonClientFrameView::SetInactiveRenderingDisabled(bool disable) {
-  if (paint_as_active_ == disable)
+  if (inactive_rendering_disabled_ == disable)
     return;
 
-  paint_as_active_ = disable;
-  ShouldPaintAsActiveChanged();
+  bool should_paint_as_active_old = ShouldPaintAsActive();
+  inactive_rendering_disabled_ = disable;
+
+  // The widget schedules a paint when the activation changes.
+  if (should_paint_as_active_old != ShouldPaintAsActive())
+    SchedulePaint();
+}
+
+bool NonClientFrameView::ShouldPaintAsActive() const {
+  return inactive_rendering_disabled_ || GetWidget()->IsActive();
 }
 
 int NonClientFrameView::GetHTComponentForFrame(const gfx::Point& point,
@@ -301,16 +312,8 @@ bool NonClientFrameView::HitTestRect(const gfx::Rect& rect) const {
 ////////////////////////////////////////////////////////////////////////////////
 // NonClientFrameView, protected:
 
-bool NonClientFrameView::ShouldPaintAsActive() const {
-  return GetWidget()->IsActive() || paint_as_active_;
-}
-
-void NonClientFrameView::ShouldPaintAsActiveChanged() {
-  SchedulePaint();
-}
-
-void NonClientFrameView::GetAccessibleState(ui::AccessibleViewState* state) {
-  state->role = ui::AccessibilityTypes::ROLE_CLIENT;
+void NonClientFrameView::GetAccessibleState(ui::AXViewState* state) {
+  state->role = ui::AX_ROLE_CLIENT;
 }
 
 const char* NonClientFrameView::GetClassName() const {
@@ -320,6 +323,9 @@ const char* NonClientFrameView::GetClassName() const {
 void NonClientFrameView::OnBoundsChanged(const gfx::Rect& previous_bounds) {
   // Overridden to do nothing. The NonClientView manually calls Layout on the
   // FrameView when it is itself laid out, see comment in NonClientView::Layout.
+}
+
+NonClientFrameView::NonClientFrameView() : inactive_rendering_disabled_(false) {
 }
 
 }  // namespace views

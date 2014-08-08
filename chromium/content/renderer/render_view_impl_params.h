@@ -24,6 +24,7 @@ struct RendererPreferences;
 // Container for all parameters passed to RenderViewImpl's constructor.
 struct CONTENT_EXPORT RenderViewImplParams {
   RenderViewImplParams(int32 opener_id,
+                       bool window_was_created_with_opener,
                        const RendererPreferences& renderer_prefs,
                        const WebPreferences& webkit_prefs,
                        int32 routing_id,
@@ -33,14 +34,16 @@ struct CONTENT_EXPORT RenderViewImplParams {
                        const base::string16& frame_name,
                        bool is_renderer_created,
                        bool swapped_out,
+                       int32 proxy_routing_id,
                        bool hidden,
+                       bool never_visible,
                        int32 next_page_id,
                        const blink::WebScreenInfo& screen_info,
-                       AccessibilityMode accessibility_mode,
-                       bool allow_partial_swap);
+                       AccessibilityMode accessibility_mode);
   ~RenderViewImplParams();
 
   int32 opener_id;
+  bool window_was_created_with_opener;
   const RendererPreferences& renderer_prefs;
   const WebPreferences& webkit_prefs;
   int32 routing_id;
@@ -50,11 +53,12 @@ struct CONTENT_EXPORT RenderViewImplParams {
   const base::string16& frame_name;
   bool is_renderer_created;
   bool swapped_out;
+  int32 proxy_routing_id;
   bool hidden;
+  bool never_visible;
   int32 next_page_id;
   const blink::WebScreenInfo& screen_info;
   AccessibilityMode accessibility_mode;
-  bool allow_partial_swap;
 };
 
 }  // namespace content

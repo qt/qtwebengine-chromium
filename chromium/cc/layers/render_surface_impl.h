@@ -25,6 +25,8 @@ class DelegatedRendererLayerImpl;
 class QuadSink;
 class RenderPassSink;
 class LayerImpl;
+template <typename LayerType>
+class LayerIterator;
 
 struct AppendQuadsData;
 
@@ -32,8 +34,6 @@ class CC_EXPORT RenderSurfaceImpl {
  public:
   explicit RenderSurfaceImpl(LayerImpl* owning_layer);
   virtual ~RenderSurfaceImpl();
-
-  std::string Name() const;
 
   gfx::PointF ContentRectCenter() const {
     return gfx::RectF(content_rect_).CenterPoint();
@@ -101,7 +101,7 @@ class CC_EXPORT RenderSurfaceImpl {
   void SetIsClipped(bool is_clipped) { is_clipped_ = is_clipped; }
   bool is_clipped() const { return is_clipped_; }
 
-  void SetClipRect(gfx::Rect clip_rect);
+  void SetClipRect(const gfx::Rect& clip_rect);
   gfx::Rect clip_rect() const { return clip_rect_; }
 
   // When false, the RenderSurface does not contribute to another target
@@ -117,7 +117,7 @@ class CC_EXPORT RenderSurfaceImpl {
 
   bool ContentsChanged() const;
 
-  void SetContentRect(gfx::Rect content_rect);
+  void SetContentRect(const gfx::Rect& content_rect);
   gfx::Rect content_rect() const { return content_rect_; }
 
   LayerImplList& layer_list() { return layer_list_; }
@@ -176,7 +176,7 @@ class CC_EXPORT RenderSurfaceImpl {
   int target_render_surface_layer_index_history_;
   int current_layer_index_history_;
 
-  friend struct LayerIteratorActions;
+  friend class LayerIterator<LayerImpl>;
 
   DISALLOW_COPY_AND_ASSIGN(RenderSurfaceImpl);
 };

@@ -32,7 +32,9 @@
 #define MutationObserver_h
 
 #include "bindings/v8/ScriptWrappable.h"
+#include "platform/heap/Handle.h"
 #include "wtf/HashSet.h"
+#include "wtf/PassOwnPtr.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
@@ -43,6 +45,7 @@ namespace WebCore {
 class Dictionary;
 class ExceptionState;
 class MutationCallback;
+class MutationObserver;
 class MutationObserverRegistration;
 class MutationRecord;
 class Node;
@@ -50,7 +53,12 @@ class Node;
 typedef unsigned char MutationObserverOptions;
 typedef unsigned char MutationRecordDeliveryOptions;
 
-class MutationObserver : public RefCounted<MutationObserver>, public ScriptWrappable {
+typedef WillBeHeapHashSet<RefPtrWillBeMember<MutationObserver> > MutationObserverSet;
+typedef WillBeHeapHashSet<RawPtrWillBeWeakMember<MutationObserverRegistration> > MutationObserverRegistrationSet;
+typedef WillBeHeapVector<RefPtrWillBeMember<MutationObserver> > MutationObserverVector;
+typedef WillBeHeapVector<RefPtrWillBeMember<MutationRecord> > MutationRecordVector;
+
+class MutationObserver FINAL : public RefCountedWillBeGarbageCollectedFinalized<MutationObserver>, public ScriptWrappable {
 public:
     enum MutationType {
         ChildList = 1 << 0,
@@ -70,21 +78,24 @@ public:
         CharacterDataOldValue = 1 << 6,
     };
 
-    static PassRefPtr<MutationObserver> create(PassOwnPtr<MutationCallback>);
-    static void deliverAllMutations();
+    static PassRefPtrWillBeRawPtr<MutationObserver> create(PassOwnPtr<MutationCallback>);
+    static void resumeSuspendedObservers();
+    static void deliverMutations();
 
     ~MutationObserver();
 
     void observe(Node*, const Dictionary&, ExceptionState&);
-    Vector<RefPtr<MutationRecord> > takeRecords();
+    WillBeHeapVector<RefPtrWillBeMember<MutationRecord> > takeRecords();
     void disconnect();
     void observationStarted(MutationObserverRegistration*);
     void observationEnded(MutationObserverRegistration*);
-    void enqueueMutationRecord(PassRefPtr<MutationRecord>);
+    void enqueueMutationRecord(PassRefPtrWillBeRawPtr<MutationRecord>);
     void setHasTransientRegistration();
     bool canDeliver();
 
     HashSet<Node*> getObservedNodes() const;
+
+    void trace(Visitor*);
 
 private:
     struct ObserverLessThan;
@@ -93,8 +104,8 @@ private:
     void deliver();
 
     OwnPtr<MutationCallback> m_callback;
-    Vector<RefPtr<MutationRecord> > m_records;
-    HashSet<MutationObserverRegistration*> m_registrations;
+    MutationRecordVector m_records;
+    MutationObserverRegistrationSet m_registrations;
     unsigned m_priority;
 };
 

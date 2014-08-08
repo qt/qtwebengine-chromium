@@ -11,7 +11,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "content/common/gpu/gpu_command_buffer_stub.h"
 #include "content/common/gpu/image_transport_surface.h"
-#include "gpu/command_buffer/service/mailbox_manager.h"
+#include "gpu/command_buffer/common/mailbox.h"
 #include "gpu/command_buffer/service/texture_manager.h"
 #include "ui/gl/gl_context.h"
 #include "ui/gl/gl_surface.h"
@@ -37,7 +37,7 @@ class TextureImageTransportSurface
   virtual gfx::Size GetSize() OVERRIDE;
   virtual void* GetHandle() OVERRIDE;
   virtual unsigned GetFormat() OVERRIDE;
-  virtual std::string GetExtensions() OVERRIDE;
+  virtual bool SupportsPostSubBuffer() OVERRIDE;
   virtual unsigned int GetBackingFrameBufferObject() OVERRIDE;
   virtual bool PostSubBuffer(int x, int y, int width, int height) OVERRIDE;
   virtual bool SetBackbufferAllocation(bool allocated) OVERRIDE;
@@ -50,10 +50,9 @@ class TextureImageTransportSurface
   // ImageTransportSurface implementation.
   virtual void OnBufferPresented(
       const AcceleratedSurfaceMsg_BufferPresented_Params& params) OVERRIDE;
-  virtual void OnResizeViewACK() OVERRIDE;
   virtual void OnResize(gfx::Size size, float scale_factor) OVERRIDE;
   virtual void SetLatencyInfo(
-      const ui::LatencyInfo& latency_info) OVERRIDE;
+      const std::vector<ui::LatencyInfo>& latency_info) OVERRIDE;
   virtual void WakeUpGpu() OVERRIDE;
 
   // GpuCommandBufferStub::DestructionObserver implementation.
@@ -74,7 +73,7 @@ class TextureImageTransportSurface
   void AttachBackTextureToFBO();
   void ReleaseBackTexture();
   void ReleaseFrontTexture();
-  void BufferPresentedImpl(const std::string& mailbox_name);
+  void BufferPresentedImpl(const gpu::Mailbox& mailbox_name);
 
   // The framebuffer that represents this surface (service id). Allocated lazily
   // in OnMakeCurrent.
@@ -86,8 +85,8 @@ class TextureImageTransportSurface
 
   // The mailbox name for the current backbuffer texture. Needs to be unique per
   // GL texture and is invalid while service_id is zero.
-  gpu::gles2::MailboxName back_mailbox_name_;
-  gpu::gles2::MailboxName front_mailbox_name_;
+  gpu::Mailbox back_mailbox_;
+  gpu::Mailbox front_mailbox_;
 
   // The current size of the GLSurface. Used to disambiguate from the current
   // texture size which might be outdated (since we use two buffers).
@@ -116,7 +115,7 @@ class TextureImageTransportSurface
   // Holds a reference to the mailbox manager for cleanup.
   scoped_refptr<gpu::gles2::MailboxManager> mailbox_manager_;
 
-  ui::LatencyInfo latency_info_;
+  std::vector<ui::LatencyInfo> latency_info_;
   DISALLOW_COPY_AND_ASSIGN(TextureImageTransportSurface);
 };
 

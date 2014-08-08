@@ -13,6 +13,8 @@
 #include "net/http/http_auth_handler.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
+using base::ASCIIToUTF16;
+
 namespace net {
 
 namespace {
@@ -31,12 +33,12 @@ class MockAuthHandler : public HttpAuthHandler {
   }
 
   virtual HttpAuth::AuthorizationResult HandleAnotherChallenge(
-      HttpAuth::ChallengeTokenizer* challenge) OVERRIDE {
+      HttpAuthChallengeTokenizer* challenge) OVERRIDE {
     return HttpAuth::AUTHORIZATION_RESULT_REJECT;
   }
 
  protected:
-  virtual bool Init(HttpAuth::ChallengeTokenizer* challenge) OVERRIDE {
+  virtual bool Init(HttpAuthChallengeTokenizer* challenge) OVERRIDE {
     return false;  // Unused.
   }
 

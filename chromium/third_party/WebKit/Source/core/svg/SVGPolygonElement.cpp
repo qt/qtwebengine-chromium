@@ -30,9 +30,6 @@ inline SVGPolygonElement::SVGPolygonElement(Document& document)
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<SVGPolygonElement> SVGPolygonElement::create(Document& document)
-{
-    return adoptRef(new SVGPolygonElement(document));
-}
+DEFINE_NODE_FACTORY(SVGPolygonElement)
 
 }

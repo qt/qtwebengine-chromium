@@ -43,9 +43,10 @@ PicturePileBase::PicturePileBase()
       background_color_(SkColorSetARGBInline(0, 0, 0, 0)),
       slow_down_raster_scale_factor_for_debug_(0),
       contents_opaque_(false),
+      contents_fill_bounds_completely_(false),
       show_debug_picture_borders_(false),
       clear_canvas_with_debug_color_(kDefaultClearCanvasSetting),
-      num_raster_threads_(0) {
+      has_any_recordings_(false) {
   tiling_.SetMaxTextureSize(gfx::Size(kBasePictureSize, kBasePictureSize));
   tile_grid_info_.fTileInterval.setEmpty();
   tile_grid_info_.fMargin.setEmpty();
@@ -55,31 +56,32 @@ PicturePileBase::PicturePileBase()
 PicturePileBase::PicturePileBase(const PicturePileBase* other)
     : picture_map_(other->picture_map_),
       tiling_(other->tiling_),
-      recorded_region_(other->recorded_region_),
+      recorded_viewport_(other->recorded_viewport_),
       min_contents_scale_(other->min_contents_scale_),
       tile_grid_info_(other->tile_grid_info_),
       background_color_(other->background_color_),
       slow_down_raster_scale_factor_for_debug_(
           other->slow_down_raster_scale_factor_for_debug_),
       contents_opaque_(other->contents_opaque_),
+      contents_fill_bounds_completely_(other->contents_fill_bounds_completely_),
       show_debug_picture_borders_(other->show_debug_picture_borders_),
       clear_canvas_with_debug_color_(other->clear_canvas_with_debug_color_),
-      num_raster_threads_(other->num_raster_threads_) {
-}
+      has_any_recordings_(other->has_any_recordings_) {}
 
-PicturePileBase::PicturePileBase(
-    const PicturePileBase* other, unsigned thread_index)
+PicturePileBase::PicturePileBase(const PicturePileBase* other,
+                                 unsigned thread_index)
     : tiling_(other->tiling_),
-      recorded_region_(other->recorded_region_),
+      recorded_viewport_(other->recorded_viewport_),
       min_contents_scale_(other->min_contents_scale_),
       tile_grid_info_(other->tile_grid_info_),
       background_color_(other->background_color_),
       slow_down_raster_scale_factor_for_debug_(
           other->slow_down_raster_scale_factor_for_debug_),
       contents_opaque_(other->contents_opaque_),
+      contents_fill_bounds_completely_(other->contents_fill_bounds_completely_),
       show_debug_picture_borders_(other->show_debug_picture_borders_),
       clear_canvas_with_debug_color_(other->clear_canvas_with_debug_color_),
-      num_raster_threads_(other->num_raster_threads_) {
+      has_any_recordings_(other->has_any_recordings_) {
   for (PictureMap::const_iterator it = other->picture_map_.begin();
        it != other->picture_map_.end();
        ++it) {
@@ -90,25 +92,37 @@ PicturePileBase::PicturePileBase(
 PicturePileBase::~PicturePileBase() {
 }
 
-void PicturePileBase::Resize(gfx::Size new_size) {
-  if (size() == new_size)
+void PicturePileBase::SetTilingRect(const gfx::Rect& new_tiling_rect) {
+  if (tiling_rect() == new_tiling_rect)
     return;
 
-  gfx::Size old_size = size();
-  tiling_.SetTotalSize(new_size);
+  gfx::Rect old_tiling_rect = tiling_rect();
+  tiling_.SetTilingRect(new_tiling_rect);
 
-  // Find all tiles that contain any pixels outside the new size.
+  has_any_recordings_ = false;
+
+  // Don't waste time in Resize figuring out what these hints should be.
+  recorded_viewport_ = gfx::Rect();
+
+  if (new_tiling_rect.origin() != old_tiling_rect.origin()) {
+    picture_map_.clear();
+    return;
+  }
+
+  // Find all tiles that contain any pixels outside the new rect.
   std::vector<PictureMapKey> to_erase;
   int min_toss_x = tiling_.FirstBorderTileXIndexFromSrcCoord(
-      std::min(old_size.width(), new_size.width()));
+      std::min(old_tiling_rect.right(), new_tiling_rect.right()));
   int min_toss_y = tiling_.FirstBorderTileYIndexFromSrcCoord(
-      std::min(old_size.height(), new_size.height()));
+      std::min(old_tiling_rect.bottom(), new_tiling_rect.bottom()));
   for (PictureMap::const_iterator it = picture_map_.begin();
        it != picture_map_.end();
        ++it) {
     const PictureMapKey& key = it->first;
-    if (key.first < min_toss_x && key.second < min_toss_y)
+    if (key.first < min_toss_x && key.second < min_toss_y) {
+      has_any_recordings_ |= !!it->second.GetPicture();
       continue;
+    }
     to_erase.push_back(key);
   }
 
@@ -139,8 +153,8 @@ void PicturePileBase::SetMinContentsScale(float min_contents_scale) {
 
 // static
 void PicturePileBase::ComputeTileGridInfo(
-    gfx::Size tile_grid_size,
-    SkTileGridPicture::TileGridInfo* info) {
+    const gfx::Size& tile_grid_size,
+    SkTileGridFactory::TileGridInfo* info) {
   DCHECK(info);
   info->fTileInterval.set(tile_grid_size.width() - 2 * kTileGridBorderPixels,
                           tile_grid_size.height() - 2 * kTileGridBorderPixels);
@@ -153,7 +167,7 @@ void PicturePileBase::ComputeTileGridInfo(
   info->fOffset.set(-kTileGridBorderPixels, -kTileGridBorderPixels);
 }
 
-void PicturePileBase::SetTileGridSize(gfx::Size tile_grid_size) {
+void PicturePileBase::SetTileGridSize(const gfx::Size& tile_grid_size) {
   ComputeTileGridInfo(tile_grid_size, &tile_grid_info_);
 }
 
@@ -167,18 +181,7 @@ void PicturePileBase::SetBufferPixels(int new_buffer_pixels) {
 
 void PicturePileBase::Clear() {
   picture_map_.clear();
-}
-
-void PicturePileBase::UpdateRecordedRegion() {
-  recorded_region_.Clear();
-  for (PictureMap::const_iterator it = picture_map_.begin();
-       it != picture_map_.end();
-       ++it) {
-    if (it->second.GetPicture()) {
-      const PictureMapKey& key = it->first;
-      recorded_region_.Union(tile_bounds(key.first, key.second));
-    }
-  }
+  recorded_viewport_ = gfx::Rect();
 }
 
 bool PicturePileBase::HasRecordingAt(int x, int y) {
@@ -188,13 +191,37 @@ bool PicturePileBase::HasRecordingAt(int x, int y) {
   return !!found->second.GetPicture();
 }
 
-bool PicturePileBase::CanRaster(float contents_scale, gfx::Rect content_rect) {
-  if (tiling_.total_size().IsEmpty())
+bool PicturePileBase::CanRaster(float contents_scale,
+                                const gfx::Rect& content_rect) {
+  if (tiling_.tiling_rect().IsEmpty())
     return false;
   gfx::Rect layer_rect = gfx::ScaleToEnclosingRect(
       content_rect, 1.f / contents_scale);
-  layer_rect.Intersect(gfx::Rect(tiling_.total_size()));
-  return recorded_region_.Contains(layer_rect);
+  layer_rect.Intersect(tiling_.tiling_rect());
+
+  // Common case inside of viewport to avoid the slower map lookups.
+  if (recorded_viewport_.Contains(layer_rect)) {
+    // Sanity check that there are no false positives in recorded_viewport_.
+    DCHECK(CanRasterSlowTileCheck(layer_rect));
+    return true;
+  }
+
+  return CanRasterSlowTileCheck(layer_rect);
+}
+
+bool PicturePileBase::CanRasterSlowTileCheck(
+    const gfx::Rect& layer_rect) const {
+  bool include_borders = false;
+  for (TilingData::Iterator tile_iter(&tiling_, layer_rect, include_borders);
+       tile_iter;
+       ++tile_iter) {
+    PictureMap::const_iterator map_iter = picture_map_.find(tile_iter.index());
+    if (map_iter == picture_map_.end())
+      return false;
+    if (!map_iter->second.GetPicture())
+      return false;
+  }
+  return true;
 }
 
 gfx::Rect PicturePileBase::PaddedRect(const PictureMapKey& key) {
@@ -202,7 +229,7 @@ gfx::Rect PicturePileBase::PaddedRect(const PictureMapKey& key) {
   return PadRect(tile);
 }
 
-gfx::Rect PicturePileBase::PadRect(gfx::Rect rect) {
+gfx::Rect PicturePileBase::PadRect(const gfx::Rect& rect) {
   gfx::Rect padded_rect = rect;
   padded_rect.Inset(
       -buffer_pixels(), -buffer_pixels(), -buffer_pixels(), -buffer_pixels());
@@ -211,10 +238,12 @@ gfx::Rect PicturePileBase::PadRect(gfx::Rect rect) {
 
 scoped_ptr<base::Value> PicturePileBase::AsValue() const {
   scoped_ptr<base::ListValue> pictures(new base::ListValue());
-  gfx::Rect layer_rect(tiling_.total_size());
+  gfx::Rect tiling_rect(tiling_.tiling_rect());
   std::set<void*> appended_pictures;
-  for (TilingData::Iterator tile_iter(&tiling_, layer_rect);
-       tile_iter; ++tile_iter) {
+  bool include_borders = true;
+  for (TilingData::Iterator tile_iter(&tiling_, tiling_rect, include_borders);
+       tile_iter;
+       ++tile_iter) {
     PictureMap::const_iterator map_iter = picture_map_.find(tile_iter.index());
     if (map_iter == picture_map_.end())
       continue;

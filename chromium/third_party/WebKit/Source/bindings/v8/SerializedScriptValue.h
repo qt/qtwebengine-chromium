@@ -32,10 +32,15 @@
 #define SerializedScriptValue_h
 
 #include "bindings/v8/ScriptValue.h"
-
 #include "wtf/HashMap.h"
 #include "wtf/ThreadSafeRefCounted.h"
 #include <v8.h>
+
+namespace blink {
+
+class WebBlobInfo;
+
+}
 
 namespace WTF {
 
@@ -47,11 +52,13 @@ class ArrayBufferContents;
 namespace WebCore {
 
 class BlobDataHandle;
+class ExceptionState;
 class MessagePort;
 
 typedef Vector<RefPtr<MessagePort>, 1> MessagePortArray;
 typedef Vector<RefPtr<WTF::ArrayBuffer>, 1> ArrayBufferArray;
 typedef HashMap<String, RefPtr<BlobDataHandle> > BlobDataHandleMap;
+typedef Vector<blink::WebBlobInfo> WebBlobInfoArray;
 
 class SerializedScriptValue FINAL : public ThreadSafeRefCounted<SerializedScriptValue> {
 public:
@@ -59,7 +66,9 @@ public:
     // Version 2: Added StringUCharTag for UChar v8 strings.
     // Version 3: Switched to using uuids as blob data identifiers.
     // Version 4: Extended File serialization to be complete.
-    static const uint32_t wireFormatVersion = 4;
+    // Version 5: Added CryptoKeyTag for Key objects.
+    // Version 6: Added indexed serialization for File, Blob, and FileList.
+    static const uint32_t wireFormatVersion = 6;
 
     ~SerializedScriptValue();
 
@@ -68,20 +77,18 @@ public:
     // be thrown using v8::ThrowException(), and sets |didThrow|. In this case
     // the caller must not invoke any V8 operations until control returns to
     // V8. When serialization is successful, |didThrow| is false.
-    static PassRefPtr<SerializedScriptValue> create(v8::Handle<v8::Value>, MessagePortArray*, ArrayBufferArray*, bool& didThrow, v8::Isolate*);
+    static PassRefPtr<SerializedScriptValue> create(v8::Handle<v8::Value>, MessagePortArray*, ArrayBufferArray*, ExceptionState&, v8::Isolate*);
     static PassRefPtr<SerializedScriptValue> createFromWire(const String&);
     static PassRefPtr<SerializedScriptValue> createFromWireBytes(const Vector<uint8_t>&);
     static PassRefPtr<SerializedScriptValue> create(const String&);
     static PassRefPtr<SerializedScriptValue> create(const String&, v8::Isolate*);
     static PassRefPtr<SerializedScriptValue> create();
-
-    static PassRefPtr<SerializedScriptValue> create(const ScriptValue&, bool& didThrow, ScriptState*);
+    static PassRefPtr<SerializedScriptValue> create(const ScriptValue&, WebBlobInfoArray*, ExceptionState&, v8::Isolate*);
 
     // Never throws exceptions.
     static PassRefPtr<SerializedScriptValue> createAndSwallowExceptions(v8::Handle<v8::Value>, v8::Isolate*);
 
     static PassRefPtr<SerializedScriptValue> nullValue();
-    static PassRefPtr<SerializedScriptValue> nullValue(v8::Isolate*);
 
     String toWireString() const { return m_data; }
     void toWireBytes(Vector<char>&) const;
@@ -89,11 +96,13 @@ public:
     // Deserializes the value (in the current context). Returns a null value in
     // case of failure.
     v8::Handle<v8::Value> deserialize(MessagePortArray* = 0);
-    v8::Handle<v8::Value> deserialize(v8::Isolate*, MessagePortArray* = 0);
+    v8::Handle<v8::Value> deserialize(v8::Isolate*, MessagePortArray* = 0, const WebBlobInfoArray* = 0);
 
-    // Only reflects the truth if the SSV was created by walking a v8 value, not reliable
-    // if the SSV was created createdFromWire(data).
-    bool containsBlobs() const { return !m_blobDataHandles.isEmpty(); }
+    // Helper function which pulls the values out of a JS sequence and into a MessagePortArray.
+    // Also validates the elements per sections 4.1.13 and 4.1.15 of the WebIDL spec and section 8.3.3
+    // of the HTML5 spec and generates exceptions as appropriate.
+    // Returns true if the array was filled, or false if the passed value was not of an appropriate type.
+    static bool extractTransferables(v8::Local<v8::Value>, int, MessagePortArray&, ArrayBufferArray&, ExceptionState&, v8::Isolate*);
 
     // Informs the V8 about external memory allocated and owned by this object. Large values should contribute
     // to GC counters to eventually trigger a GC, otherwise flood of postMessage() can cause OOM.
@@ -106,17 +115,13 @@ private:
         StringValue,
         WireData
     };
-    enum ExceptionPolicy {
-        ThrowExceptions,
-        DoNotThrowExceptions
-    };
     typedef Vector<WTF::ArrayBufferContents, 1> ArrayBufferContentsArray;
 
     SerializedScriptValue();
-    SerializedScriptValue(v8::Handle<v8::Value>, MessagePortArray*, ArrayBufferArray*, bool& didThrow, v8::Isolate*, ExceptionPolicy = ThrowExceptions);
+    SerializedScriptValue(v8::Handle<v8::Value>, MessagePortArray*, ArrayBufferArray*, WebBlobInfoArray*, ExceptionState&, v8::Isolate*);
     explicit SerializedScriptValue(const String& wireData);
 
-    static PassOwnPtr<ArrayBufferContentsArray> transferArrayBuffers(ArrayBufferArray&, bool& didThrow, v8::Isolate*);
+    static PassOwnPtr<ArrayBufferContentsArray> transferArrayBuffers(ArrayBufferArray&, ExceptionState&, v8::Isolate*);
 
     String m_data;
     OwnPtr<ArrayBufferContentsArray> m_arrayBufferContentsArray;

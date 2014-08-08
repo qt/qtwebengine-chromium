@@ -39,8 +39,7 @@ void* DummyGetDataBuffer(void* user_data, uint32_t count, uint32_t size) {
 }
 
 // File thread task to close the file handle.
-void DoClose(base::PlatformFile file) {
-  base::ClosePlatformFile(file);
+void DoClose(base::File auto_close_file) {
 }
 
 }  // namespace
@@ -48,26 +47,25 @@ void DoClose(base::PlatformFile file) {
 namespace ppapi {
 namespace proxy {
 
-FileIOResource::QueryOp::QueryOp(scoped_refptr<FileHandleHolder> file_handle)
-    : file_handle_(file_handle) {
-  DCHECK(file_handle_);
+FileIOResource::QueryOp::QueryOp(scoped_refptr<FileHolder> file_holder)
+    : file_holder_(file_holder) {
+  DCHECK(file_holder_);
 }
 
 FileIOResource::QueryOp::~QueryOp() {
 }
 
 int32_t FileIOResource::QueryOp::DoWork() {
-  return base::GetPlatformFileInfo(file_handle_->raw_handle(), &file_info_) ?
-      PP_OK : PP_ERROR_FAILED;
+  return file_holder_->file()->GetInfo(&file_info_) ? PP_OK : PP_ERROR_FAILED;
 }
 
-FileIOResource::ReadOp::ReadOp(scoped_refptr<FileHandleHolder> file_handle,
+FileIOResource::ReadOp::ReadOp(scoped_refptr<FileHolder> file_holder,
                                int64_t offset,
                                int32_t bytes_to_read)
-  : file_handle_(file_handle),
+  : file_holder_(file_holder),
     offset_(offset),
     bytes_to_read_(bytes_to_read) {
-  DCHECK(file_handle_);
+  DCHECK(file_holder_);
 }
 
 FileIOResource::ReadOp::~ReadOp() {
@@ -76,13 +74,42 @@ FileIOResource::ReadOp::~ReadOp() {
 int32_t FileIOResource::ReadOp::DoWork() {
   DCHECK(!buffer_.get());
   buffer_.reset(new char[bytes_to_read_]);
-  return base::ReadPlatformFile(
-      file_handle_->raw_handle(), offset_, buffer_.get(), bytes_to_read_);
+  return file_holder_->file()->Read(offset_, buffer_.get(), bytes_to_read_);
+}
+
+FileIOResource::WriteOp::WriteOp(scoped_refptr<FileHolder> file_holder,
+                                 int64_t offset,
+                                 scoped_ptr<char[]> buffer,
+                                 int32_t bytes_to_write,
+                                 bool append)
+    : file_holder_(file_holder),
+      offset_(offset),
+      buffer_(buffer.Pass()),
+      bytes_to_write_(bytes_to_write),
+      append_(append) {
+}
+
+FileIOResource::WriteOp::~WriteOp() {
+}
+
+int32_t FileIOResource::WriteOp::DoWork() {
+  // In append mode, we can't call Write, since NaCl doesn't implement fcntl,
+  // causing the function to call pwrite, which is incorrect.
+  if (append_) {
+    return file_holder_->file()->WriteAtCurrentPos(buffer_.get(),
+                                                   bytes_to_write_);
+  } else {
+    return file_holder_->file()->Write(offset_, buffer_.get(), bytes_to_write_);
+  }
 }
 
 FileIOResource::FileIOResource(Connection connection, PP_Instance instance)
     : PluginResource(connection, instance),
       file_system_type_(PP_FILESYSTEMTYPE_INVALID),
+      open_flags_(0),
+      max_written_offset_(0),
+      append_mode_write_amount_(0),
+      check_quota_(false),
       called_close_(false) {
   SendCreate(BROWSER, PpapiHostMsg_FileIO_Create());
 }
@@ -113,6 +140,7 @@ int32_t FileIOResource::Open(PP_Resource file_ref,
   if (rv != PP_OK)
     return rv;
 
+  open_flags_ = open_flags;
   file_system_type_ = create_info.file_system_type;
 
   if (create_info.file_system_plugin_resource) {
@@ -148,7 +176,7 @@ int32_t FileIOResource::Query(PP_FileInfo* info,
     return rv;
   if (!info)
     return PP_ERROR_BADARGUMENT;
-  if (!FileHandleHolder::IsValid(file_handle_))
+  if (!FileHolder::IsValid(file_holder_))
     return PP_ERROR_FAILED;
 
   state_manager_.SetPendingOperation(FileIOStateManager::OPERATION_EXCLUSIVE);
@@ -156,21 +184,21 @@ int32_t FileIOResource::Query(PP_FileInfo* info,
   // If the callback is blocking, perform the task on the calling thread.
   if (callback->is_blocking()) {
     int32_t result = PP_ERROR_FAILED;
-    base::PlatformFileInfo file_info;
+    base::File::Info file_info;
     // The plugin could release its reference to this instance when we release
     // the proxy lock below.
     scoped_refptr<FileIOResource> protect(this);
     {
       // Release the proxy lock while making a potentially slow file call.
       ProxyAutoUnlock unlock;
-      if (base::GetPlatformFileInfo(file_handle_->raw_handle(), &file_info))
+      if (file_holder_->file()->GetInfo(&file_info))
         result = PP_OK;
     }
     if (result == PP_OK) {
       // This writes the file info into the plugin's PP_FileInfo struct.
-      ppapi::PlatformFileInfoToPepperFileInfo(file_info,
-                                              file_system_type_,
-                                              info);
+      ppapi::FileInfoToPepperFileInfo(file_info,
+                                      file_system_type_,
+                                      info);
     }
     state_manager_.SetOperationFinished();
     return result;
@@ -178,7 +206,7 @@ int32_t FileIOResource::Query(PP_FileInfo* info,
 
   // For the non-blocking case, post a task to the file thread and add a
   // completion task to write the result.
-  scoped_refptr<QueryOp> query_op(new QueryOp(file_handle_));
+  scoped_refptr<QueryOp> query_op(new QueryOp(file_holder_));
   base::PostTaskAndReplyWithResult(
       PpapiGlobals::Get()->GetFileTaskRunner(),
       FROM_HERE,
@@ -239,22 +267,58 @@ int32_t FileIOResource::Write(int64_t offset,
                               const char* buffer,
                               int32_t bytes_to_write,
                               scoped_refptr<TrackedCallback> callback) {
+  if (!buffer)
+    return PP_ERROR_FAILED;
+  if (offset < 0 || bytes_to_write < 0)
+    return PP_ERROR_FAILED;
+  if (!FileHolder::IsValid(file_holder_))
+    return PP_ERROR_FAILED;
+
   int32_t rv = state_manager_.CheckOperationState(
       FileIOStateManager::OPERATION_WRITE, true);
   if (rv != PP_OK)
     return rv;
 
-  // TODO(brettw) it would be nice to use a shared memory buffer for large
-  // writes rather than having to copy to a string (which will involve a number
-  // of extra copies to serialize over IPC).
-  bytes_to_write = std::min(bytes_to_write, kMaxReadWriteSize);
-  Call<PpapiPluginMsg_FileIO_GeneralReply>(BROWSER,
-      PpapiHostMsg_FileIO_Write(offset, std::string(buffer, bytes_to_write)),
-      base::Bind(&FileIOResource::OnPluginMsgGeneralComplete, this,
-                 callback));
-
   state_manager_.SetPendingOperation(FileIOStateManager::OPERATION_WRITE);
-  return PP_OK_COMPLETIONPENDING;
+
+  if (check_quota_) {
+    int64_t increase = 0;
+    uint64_t max_offset = 0;
+    bool append = (open_flags_ & PP_FILEOPENFLAG_APPEND) != 0;
+    if (append) {
+      increase = bytes_to_write;
+    } else {
+      uint64_t max_offset = offset + bytes_to_write;
+      if (max_offset > static_cast<uint64_t>(kint64max))
+        return PP_ERROR_FAILED;  // amount calculation would overflow.
+      increase = static_cast<int64_t>(max_offset) - max_written_offset_;
+    }
+
+    if (increase > 0) {
+      // Request a quota reservation. This makes the Write asynchronous, so we
+      // must copy the plugin's buffer.
+      scoped_ptr<char[]> copy(new char[bytes_to_write]);
+      memcpy(copy.get(), buffer, bytes_to_write);
+      int64_t result =
+          file_system_resource_->AsPPB_FileSystem_API()->RequestQuota(
+              increase,
+              base::Bind(&FileIOResource::OnRequestWriteQuotaComplete,
+                         this,
+                         offset,
+                         base::Passed(&copy),
+                         bytes_to_write,
+                         callback));
+      if (result == PP_OK_COMPLETIONPENDING)
+        return PP_OK_COMPLETIONPENDING;
+      DCHECK(result == increase);
+
+      if (append)
+        append_mode_write_amount_ += bytes_to_write;
+      else
+        max_written_offset_ = max_offset;
+    }
+  }
+  return WriteValidated(offset, buffer, bytes_to_write, callback);
 }
 
 int32_t FileIOResource::SetLength(int64_t length,
@@ -263,13 +327,30 @@ int32_t FileIOResource::SetLength(int64_t length,
       FileIOStateManager::OPERATION_EXCLUSIVE, true);
   if (rv != PP_OK)
     return rv;
+  if (length < 0)
+    return PP_ERROR_FAILED;
 
-  Call<PpapiPluginMsg_FileIO_GeneralReply>(BROWSER,
-      PpapiHostMsg_FileIO_SetLength(length),
-      base::Bind(&FileIOResource::OnPluginMsgGeneralComplete, this,
-                 callback));
+  if (check_quota_) {
+    int64_t increase = length - max_written_offset_;
+    if (increase > 0) {
+      int32_t result =
+          file_system_resource_->AsPPB_FileSystem_API()->RequestQuota(
+              increase,
+              base::Bind(&FileIOResource::OnRequestSetLengthQuotaComplete,
+                         this,
+                         length, callback));
+      if (result == PP_OK_COMPLETIONPENDING) {
+        state_manager_.SetPendingOperation(
+            FileIOStateManager::OPERATION_EXCLUSIVE);
+        return PP_OK_COMPLETIONPENDING;
+      }
+      DCHECK(result == increase);
+      max_written_offset_ = length;
+    }
+  }
 
   state_manager_.SetPendingOperation(FileIOStateManager::OPERATION_EXCLUSIVE);
+  SetLengthValidated(length, callback);
   return PP_OK_COMPLETIONPENDING;
 }
 
@@ -288,15 +369,39 @@ int32_t FileIOResource::Flush(scoped_refptr<TrackedCallback> callback) {
   return PP_OK_COMPLETIONPENDING;
 }
 
+int64_t FileIOResource::GetMaxWrittenOffset() const {
+  return max_written_offset_;
+}
+
+int64_t FileIOResource::GetAppendModeWriteAmount() const {
+  return append_mode_write_amount_;
+}
+
+void FileIOResource::SetMaxWrittenOffset(int64_t max_written_offset) {
+  max_written_offset_ = max_written_offset;
+}
+
+void FileIOResource::SetAppendModeWriteAmount(
+    int64_t append_mode_write_amount) {
+  append_mode_write_amount_ = append_mode_write_amount;
+}
+
 void FileIOResource::Close() {
   if (called_close_)
     return;
 
   called_close_ = true;
-  if (file_handle_)
-    file_handle_ = NULL;
+  if (check_quota_) {
+    check_quota_ = false;
+    file_system_resource_->AsPPB_FileSystem_API()->CloseQuotaFile(
+        pp_resource());
+  }
 
-  Post(BROWSER, PpapiHostMsg_FileIO_Close());
+  if (file_holder_)
+    file_holder_ = NULL;
+
+  Post(BROWSER, PpapiHostMsg_FileIO_Close(
+      FileGrowth(max_written_offset_, append_mode_write_amount_)));
 }
 
 int32_t FileIOResource::RequestOSFileHandle(
@@ -316,22 +421,22 @@ int32_t FileIOResource::RequestOSFileHandle(
   return PP_OK_COMPLETIONPENDING;
 }
 
-FileIOResource::FileHandleHolder::FileHandleHolder(PP_FileHandle file_handle)
-    : raw_handle_(file_handle) {
+FileIOResource::FileHolder::FileHolder(PP_FileHandle file_handle)
+    : file_(file_handle) {
 }
 
 // static
-bool FileIOResource::FileHandleHolder::IsValid(
-    const scoped_refptr<FileIOResource::FileHandleHolder>& handle) {
-  return handle && (handle->raw_handle() != base::kInvalidPlatformFileValue);
+bool FileIOResource::FileHolder::IsValid(
+    const scoped_refptr<FileIOResource::FileHolder>& handle) {
+  return handle && handle->file_.IsValid();
 }
 
-FileIOResource::FileHandleHolder::~FileHandleHolder() {
-  if (raw_handle_ != base::kInvalidPlatformFileValue) {
+FileIOResource::FileHolder::~FileHolder() {
+  if (file_.IsValid()) {
     base::TaskRunner* file_task_runner =
         PpapiGlobals::Get()->GetFileTaskRunner();
     file_task_runner->PostTask(FROM_HERE,
-                               base::Bind(&DoClose, raw_handle_));
+                               base::Bind(&DoClose, Passed(&file_)));
   }
 }
 
@@ -341,7 +446,7 @@ int32_t FileIOResource::ReadValidated(int64_t offset,
                                       scoped_refptr<TrackedCallback> callback) {
   if (bytes_to_read < 0)
     return PP_ERROR_FAILED;
-  if (!FileHandleHolder::IsValid(file_handle_))
+  if (!FileHolder::IsValid(file_holder_))
     return PP_ERROR_FAILED;
 
   state_manager_.SetPendingOperation(FileIOStateManager::OPERATION_READ);
@@ -357,8 +462,7 @@ int32_t FileIOResource::ReadValidated(int64_t offset,
     if (buffer) {
       // Release the proxy lock while making a potentially slow file call.
       ProxyAutoUnlock unlock;
-      result = base::ReadPlatformFile(
-          file_handle_->raw_handle(), offset, buffer, bytes_to_read);
+      result = file_holder_->file()->Read(offset, buffer, bytes_to_read);
       if (result < 0)
         result = PP_ERROR_FAILED;
     }
@@ -368,7 +472,7 @@ int32_t FileIOResource::ReadValidated(int64_t offset,
 
   // For the non-blocking case, post a task to the file thread.
   scoped_refptr<ReadOp> read_op(
-      new ReadOp(file_handle_, offset, bytes_to_read));
+      new ReadOp(file_holder_, offset, bytes_to_read));
   base::PostTaskAndReplyWithResult(
       PpapiGlobals::Get()->GetFileTaskRunner(),
       FROM_HERE,
@@ -380,6 +484,62 @@ int32_t FileIOResource::ReadValidated(int64_t offset,
   return PP_OK_COMPLETIONPENDING;
 }
 
+int32_t FileIOResource::WriteValidated(
+    int64_t offset,
+    const char* buffer,
+    int32_t bytes_to_write,
+    scoped_refptr<TrackedCallback> callback) {
+  bool append = (open_flags_ & PP_FILEOPENFLAG_APPEND) != 0;
+  if (callback->is_blocking()) {
+    int32_t result;
+    {
+      // Release the proxy lock while making a potentially slow file call.
+      ProxyAutoUnlock unlock;
+      if (append) {
+        result = file_holder_->file()->WriteAtCurrentPos(buffer,
+                                                         bytes_to_write);
+      } else {
+        result = file_holder_->file()->Write(offset, buffer, bytes_to_write);
+      }
+    }
+    if (result < 0)
+      result = PP_ERROR_FAILED;
+
+    state_manager_.SetOperationFinished();
+    return result;
+  }
+
+  // For the non-blocking case, post a task to the file thread. We must copy the
+  // plugin's buffer at this point.
+  scoped_ptr<char[]> copy(new char[bytes_to_write]);
+  memcpy(copy.get(), buffer, bytes_to_write);
+  scoped_refptr<WriteOp> write_op(
+      new WriteOp(file_holder_, offset, copy.Pass(), bytes_to_write, append));
+  base::PostTaskAndReplyWithResult(
+      PpapiGlobals::Get()->GetFileTaskRunner(),
+      FROM_HERE,
+      Bind(&FileIOResource::WriteOp::DoWork, write_op),
+      RunWhileLocked(Bind(&TrackedCallback::Run, callback)));
+  callback->set_completion_task(Bind(&FileIOResource::OnWriteComplete, this));
+
+  return PP_OK_COMPLETIONPENDING;
+}
+
+void FileIOResource::SetLengthValidated(
+    int64_t length,
+    scoped_refptr<TrackedCallback> callback) {
+  Call<PpapiPluginMsg_FileIO_GeneralReply>(BROWSER,
+      PpapiHostMsg_FileIO_SetLength(length),
+      base::Bind(&FileIOResource::OnPluginMsgGeneralComplete, this,
+                 callback));
+
+  // On the browser side we grow |max_written_offset_| monotonically, due to the
+  // unpredictable ordering of plugin side Write and SetLength calls. Match that
+  // behavior here.
+  if (max_written_offset_ < length)
+    max_written_offset_ = length;
+}
+
 int32_t FileIOResource::OnQueryComplete(scoped_refptr<QueryOp> query_op,
                                         PP_FileInfo* info,
                                         int32_t result) {
@@ -388,9 +548,9 @@ int32_t FileIOResource::OnQueryComplete(scoped_refptr<QueryOp> query_op,
 
   if (result == PP_OK) {
     // This writes the file info into the plugin's PP_FileInfo struct.
-    ppapi::PlatformFileInfoToPepperFileInfo(query_op->file_info(),
-                                            file_system_type_,
-                                            info);
+    ppapi::FileInfoToPepperFileInfo(query_op->file_info(),
+                                    file_system_type_,
+                                    info);
   }
   state_manager_.SetOperationFinished();
   return result;
@@ -416,6 +576,73 @@ int32_t FileIOResource::OnReadComplete(scoped_refptr<ReadOp> read_op,
   return result;
 }
 
+void FileIOResource::OnRequestWriteQuotaComplete(
+    int64_t offset,
+    scoped_ptr<char[]> buffer,
+    int32_t bytes_to_write,
+    scoped_refptr<TrackedCallback> callback,
+    int64_t granted) {
+  DCHECK(granted >= 0);
+  if (granted == 0) {
+    callback->Run(PP_ERROR_NOQUOTA);
+    return;
+  }
+  if (open_flags_ & PP_FILEOPENFLAG_APPEND) {
+    DCHECK_LE(bytes_to_write, granted);
+    append_mode_write_amount_ += bytes_to_write;
+  } else {
+    DCHECK_LE(offset + bytes_to_write - max_written_offset_, granted);
+
+    int64_t max_offset = offset + bytes_to_write;
+    if (max_written_offset_ < max_offset)
+      max_written_offset_ = max_offset;
+  }
+
+  if (callback->is_blocking()) {
+    int32_t result =
+        WriteValidated(offset, buffer.get(), bytes_to_write, callback);
+    DCHECK(result != PP_OK_COMPLETIONPENDING);
+    callback->Run(result);
+  } else {
+    bool append = (open_flags_ & PP_FILEOPENFLAG_APPEND) != 0;
+    scoped_refptr<WriteOp> write_op(new WriteOp(
+        file_holder_, offset, buffer.Pass(), bytes_to_write, append));
+    base::PostTaskAndReplyWithResult(
+        PpapiGlobals::Get()->GetFileTaskRunner(),
+        FROM_HERE,
+        Bind(&FileIOResource::WriteOp::DoWork, write_op),
+        RunWhileLocked(Bind(&TrackedCallback::Run, callback)));
+    callback->set_completion_task(Bind(&FileIOResource::OnWriteComplete, this));
+  }
+}
+
+void FileIOResource::OnRequestSetLengthQuotaComplete(
+    int64_t length,
+    scoped_refptr<TrackedCallback> callback,
+    int64_t granted) {
+  DCHECK(granted >= 0);
+  if (granted == 0) {
+    callback->Run(PP_ERROR_NOQUOTA);
+    return;
+  }
+
+  DCHECK_LE(length - max_written_offset_, granted);
+  if (max_written_offset_ < length)
+    max_written_offset_ = length;
+  SetLengthValidated(length, callback);
+}
+
+int32_t FileIOResource::OnWriteComplete(int32_t result) {
+  DCHECK(state_manager_.get_pending_operation() ==
+         FileIOStateManager::OPERATION_WRITE);
+  // |result| is the return value of WritePlatformFile; -1 indicates failure.
+  if (result < 0)
+    result = PP_ERROR_FAILED;
+
+  state_manager_.SetOperationFinished();
+  return result;
+}
+
 void FileIOResource::OnPluginMsgGeneralComplete(
     scoped_refptr<TrackedCallback> callback,
     const ResourceMessageReplyParams& params) {
@@ -431,20 +658,31 @@ void FileIOResource::OnPluginMsgGeneralComplete(
 
 void FileIOResource::OnPluginMsgOpenFileComplete(
     scoped_refptr<TrackedCallback> callback,
-    const ResourceMessageReplyParams& params) {
+    const ResourceMessageReplyParams& params,
+    PP_Resource quota_file_system,
+    int64_t max_written_offset) {
   DCHECK(state_manager_.get_pending_operation() ==
          FileIOStateManager::OPERATION_EXCLUSIVE);
 
   // Release the FileRef resource.
   file_ref_ = NULL;
-  if (params.result() == PP_OK)
+  int32_t result = params.result();
+  if (result == PP_OK) {
     state_manager_.SetOpenSucceed();
 
-  int32_t result = params.result();
-  IPC::PlatformFileForTransit transit_file;
-  if ((result == PP_OK) && params.TakeFileHandleAtIndex(0, &transit_file)) {
-    file_handle_ = new FileHandleHolder(
-        IPC::PlatformFileForTransitToPlatformFile(transit_file));
+    if (quota_file_system) {
+      DCHECK(quota_file_system == file_system_resource_->pp_resource());
+      check_quota_ = true;
+      max_written_offset_ = max_written_offset;
+      file_system_resource_->AsPPB_FileSystem_API()->OpenQuotaFile(
+          pp_resource());
+    }
+
+    IPC::PlatformFileForTransit transit_file;
+    if (params.TakeFileHandleAtIndex(0, &transit_file)) {
+      file_holder_ = new FileHolder(
+          IPC::PlatformFileForTransitToPlatformFile(transit_file));
+    }
   }
   // End this operation now, so the user's callback can execute another FileIO
   // operation, assuming there are no other pending operations.

@@ -10,7 +10,7 @@
 #include "base/memory/shared_memory.h"
 #include "base/sync_socket.h"
 #include "content/common/content_export.h"
-#include "ipc/ipc_channel_proxy.h"
+#include "ipc/message_filter.h"
 #include "media/audio/audio_input_ipc.h"
 
 namespace base {
@@ -23,8 +23,7 @@ namespace content {
 // audio capturers. Created on render thread, AudioMessageFilter is operated on
 // IO thread (secondary thread of render process), it intercepts audio messages
 // and process them on IO thread since these messages are time critical.
-class CONTENT_EXPORT AudioInputMessageFilter
-    : public IPC::ChannelProxy::MessageFilter {
+class CONTENT_EXPORT AudioInputMessageFilter : public IPC::MessageFilter {
  public:
   explicit AudioInputMessageFilter(
       const scoped_refptr<base::MessageLoopProxy>& io_message_loop);
@@ -53,9 +52,9 @@ class CONTENT_EXPORT AudioInputMessageFilter
   // Sends an IPC message using |channel_|.
   void Send(IPC::Message* message);
 
-  // IPC::ChannelProxy::MessageFilter override. Called on |io_message_loop_|.
+  // IPC::MessageFilter override. Called on |io_message_loop_|.
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
-  virtual void OnFilterAdded(IPC::Channel* channel) OVERRIDE;
+  virtual void OnFilterAdded(IPC::Sender* sender) OVERRIDE;
   virtual void OnFilterRemoved() OVERRIDE;
   virtual void OnChannelClosing() OVERRIDE;
 
@@ -81,8 +80,8 @@ class CONTENT_EXPORT AudioInputMessageFilter
   // A map of stream ids to delegates.
   IDMap<media::AudioInputIPCDelegate> delegates_;
 
-  // IPC channel for Send(), must only be accesed on |io_message_loop_|.
-  IPC::Channel* channel_;
+  // IPC sender for Send(), must only be accesed on |io_message_loop_|.
+  IPC::Sender* sender_;
 
   // Message loop on which IPC calls are driven.
   const scoped_refptr<base::MessageLoopProxy> io_message_loop_;

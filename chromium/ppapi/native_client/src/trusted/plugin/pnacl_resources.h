@@ -15,99 +15,54 @@
 #include "ppapi/c/private/pp_file_handle.h"
 #include "ppapi/cpp/completion_callback.h"
 
-#include "ppapi/native_client/src/trusted/plugin/nexe_arch.h"
 #include "ppapi/native_client/src/trusted/plugin/plugin_error.h"
 
 namespace plugin {
 
-class Manifest;
 class Plugin;
-class PnaclCoordinator;
-
-// Constants for loading LLC and LD.
-class PnaclUrls {
- public:
-  // Get the base URL prefix for Pnacl resources (without platform prefix).
-  static nacl::string GetBaseUrl();
-
-  // Return {platform_prefix}/url
-  static nacl::string PrependPlatformPrefix(const nacl::string& url);
-
-  static bool IsPnaclComponent(const nacl::string& full_url);
-  static nacl::string PnaclComponentURLToFilename(
-      const nacl::string& full_url);
-
-  // Get the URL for the resource info JSON file that contains information
-  // about loadable resources.
-  static const nacl::string GetResourceInfoUrl() {
-    return nacl::string(kResourceInfoUrl);
-  }
- private:
-  static const char kResourceInfoUrl[];
-};
 
 // Loads a list of resources, providing a way to get file descriptors for
 // these resources.  URLs for resources are resolved by the manifest
 // and point to pnacl component filesystem resources.
 class PnaclResources {
  public:
-  PnaclResources(Plugin* plugin,
-                 PnaclCoordinator* coordinator,
-                 const Manifest* manifest)
+  explicit PnaclResources(Plugin* plugin)
       : plugin_(plugin),
-        coordinator_(coordinator),
-        manifest_(manifest) {
+        llc_file_handle_(PP_kInvalidFileHandle),
+        ld_file_handle_(PP_kInvalidFileHandle) {
   }
   virtual ~PnaclResources();
 
   // Read the resource info JSON file.  This is the first step after
   // construction; it has to be completed before StartLoad is called.
   virtual void ReadResourceInfo(
-      const nacl::string& resource_info_url,
       const pp::CompletionCallback& resource_info_read_cb);
 
   // Start loading the resources.
   virtual void StartLoad(
       const pp::CompletionCallback& all_loaded_callback);
 
-  const nacl::string& GetLlcUrl() {
-    return llc_tool_name;
-  }
+  const nacl::string& GetLlcUrl() { return llc_tool_name_; }
+  const nacl::string& GetLdUrl() { return ld_tool_name_; }
 
-  const nacl::string& GetLdUrl() {
-    return ld_tool_name;
-  }
-
-  // Get file descs by name. Only valid after StartLoad's completion callback
-  // fired.
-  nacl::DescWrapper* WrapperForUrl(const nacl::string& url);
-
-  static int32_t GetPnaclFD(Plugin* plugin, const char* filename);
+  PP_FileHandle TakeLlcFileHandle();
+  PP_FileHandle TakeLdFileHandle();
 
  private:
   NACL_DISALLOW_COPY_AND_ASSIGN(PnaclResources);
 
   // The plugin requesting the resource loading.
   Plugin* plugin_;
-  // The coordinator responsible for reporting errors, etc.
-  PnaclCoordinator* coordinator_;
-  // The manifest for looking up resource URLs.
-  const Manifest* manifest_;
-  // The descriptor wrappers for the downloaded URLs.  Only valid
-  // once all_loaded_callback_ has been invoked.
-  std::map<nacl::string, nacl::DescWrapper*> resource_wrappers_;
 
   // Tool names for llc and ld; read from the resource info file.
-  nacl::string llc_tool_name;
-  nacl::string ld_tool_name;
+  nacl::string llc_tool_name_;
+  nacl::string ld_tool_name_;
 
-  // Parses resource info json data in |buf|.  Returns true if successful.
-  // Otherwise returns false and places an error message in |errmsg|.
-  bool ParseResourceInfo(const nacl::string& buf, nacl::string& errmsg);
-
-  // Convenience function for reporting an error while reading the resource
-  // info file.
-  void ReadResourceInfoError(const nacl::string& msg);
+  // File handles for llc and ld executables, after they've been opened.
+  // Only valid after the callback for StartLoad() has been called, and until
+  // TakeLlcFileHandle()/TakeLdFileHandle() is called.
+  PP_FileHandle llc_file_handle_;
+  PP_FileHandle ld_file_handle_;
 };
 
 }  // namespace plugin;

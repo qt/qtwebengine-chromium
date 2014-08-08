@@ -303,7 +303,10 @@ class PortTest(unittest.TestCase):
         "!= test-2.html test-notref.html # more comments",
         "== test-3.html test-ref.html",
         "== test-3.html test-ref2.html",
-        "!= test-3.html test-notref.html"])
+        "!= test-3.html test-notref.html",
+        "fuzzy(80,500) == test-3 test-ref.html"])
+
+        # Note that we don't support the syntax in the last line; the code should ignore it, rather than crashing.
 
         reftest_list = Port._parse_reftest_list(port.host.filesystem, 'bar')
         self.assertEqual(reftest_list, {'bar/test.html': [('==', 'bar/test-ref.html')],
@@ -329,7 +332,7 @@ class PortTest(unittest.TestCase):
 
     def test_check_httpd_success(self):
         port = self.make_port(executive=MockExecutive2())
-        port._path_to_apache = lambda: '/usr/sbin/httpd'
+        port.path_to_apache = lambda: '/usr/sbin/httpd'
         capture = OutputCapture()
         capture.capture_output()
         self.assertTrue(port.check_httpd())
@@ -338,7 +341,7 @@ class PortTest(unittest.TestCase):
 
     def test_httpd_returns_error_code(self):
         port = self.make_port(executive=MockExecutive2(exit_code=1))
-        port._path_to_apache = lambda: '/usr/sbin/httpd'
+        port.path_to_apache = lambda: '/usr/sbin/httpd'
         capture = OutputCapture()
         capture.capture_output()
         self.assertFalse(port.check_httpd())

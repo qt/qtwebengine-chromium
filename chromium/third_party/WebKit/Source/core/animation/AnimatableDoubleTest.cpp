@@ -31,8 +31,6 @@
 #include "config.h"
 #include "core/animation/AnimatableDouble.h"
 
-#include "core/css/CSSPrimitiveValue.h"
-
 #include <gtest/gtest.h>
 
 using namespace WebCore;
@@ -51,14 +49,6 @@ TEST(AnimationAnimatableDoubleTest, Equal)
     EXPECT_FALSE(AnimatableDouble::create(5)->equals(AnimatableDouble::create(10).get()));
 }
 
-TEST(AnimationAnimatableDoubleTest, ToCSSValue)
-{
-    RefPtr<CSSValue> cssValue5 = CSSPrimitiveValue::create(5, CSSPrimitiveValue::CSS_NUMBER);
-    RefPtr<CSSValue> cssValue10 = CSSPrimitiveValue::create(10, CSSPrimitiveValue::CSS_NUMBER);
-    EXPECT_TRUE(AnimatableDouble::create(5)->toCSSValue()->equals(*cssValue5.get()));
-    EXPECT_FALSE(AnimatableDouble::create(5)->toCSSValue()->equals(*cssValue10.get()));
-}
-
 TEST(AnimationAnimatableDoubleTest, ToDouble)
 {
     EXPECT_EQ(5.9, AnimatableDouble::create(5.9)->toDouble());
@@ -68,8 +58,8 @@ TEST(AnimationAnimatableDoubleTest, ToDouble)
 
 TEST(AnimationAnimatableDoubleTest, Interpolate)
 {
-    RefPtr<AnimatableDouble> from10 = AnimatableDouble::create(10);
-    RefPtr<AnimatableDouble> to20 = AnimatableDouble::create(20);
+    RefPtrWillBeRawPtr<AnimatableDouble> from10 = AnimatableDouble::create(10);
+    RefPtrWillBeRawPtr<AnimatableDouble> to20 = AnimatableDouble::create(20);
     EXPECT_EQ(5, toAnimatableDouble(AnimatableValue::interpolate(from10.get(), to20.get(), -0.5).get())->toDouble());
     EXPECT_EQ(10, toAnimatableDouble(AnimatableValue::interpolate(from10.get(), to20.get(), 0).get())->toDouble());
     EXPECT_EQ(14, toAnimatableDouble(AnimatableValue::interpolate(from10.get(), to20.get(), 0.4).get())->toDouble());
@@ -79,13 +69,15 @@ TEST(AnimationAnimatableDoubleTest, Interpolate)
     EXPECT_EQ(25, toAnimatableDouble(AnimatableValue::interpolate(from10.get(), to20.get(), 1.5).get())->toDouble());
 }
 
-TEST(AnimationAnimatableDoubleTest, Add)
+TEST(AnimationAnimatableDoubleTest, Distance)
 {
-    EXPECT_EQ(-10, toAnimatableDouble(AnimatableValue::add(AnimatableDouble::create(-2).get(), AnimatableDouble::create(-8).get()).get())->toDouble());
-    EXPECT_EQ(0, toAnimatableDouble(AnimatableValue::add(AnimatableDouble::create(50).get(), AnimatableDouble::create(-50).get()).get())->toDouble());
-    EXPECT_EQ(10, toAnimatableDouble(AnimatableValue::add(AnimatableDouble::create(4).get(), AnimatableDouble::create(6).get()).get())->toDouble());
-    EXPECT_EQ(20, toAnimatableDouble(AnimatableValue::add(AnimatableDouble::create(0).get(), AnimatableDouble::create(20).get()).get())->toDouble());
-    EXPECT_EQ(30, toAnimatableDouble(AnimatableValue::add(AnimatableDouble::create(30).get(), AnimatableDouble::create(0).get()).get())->toDouble());
+    RefPtrWillBeRawPtr<AnimatableDouble> first = AnimatableDouble::create(-1.5);
+    RefPtrWillBeRawPtr<AnimatableDouble> second = AnimatableDouble::create(2.25);
+    RefPtrWillBeRawPtr<AnimatableDouble> third = AnimatableDouble::create(3);
+
+    EXPECT_DOUBLE_EQ(3.75, AnimatableValue::distance(first.get(), second.get()));
+    EXPECT_DOUBLE_EQ(0.75, AnimatableValue::distance(second.get(), third.get()));
+    EXPECT_DOUBLE_EQ(4.5, AnimatableValue::distance(third.get(), first.get()));
 }
 
 }

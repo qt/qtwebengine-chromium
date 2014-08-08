@@ -9,19 +9,24 @@
 
 #include "base/files/scoped_temp_dir.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/platform_file.h"
 #include "base/run_loop.h"
+#include "content/public/test/async_file_test_helper.h"
 #include "content/public/test/test_file_system_context.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
 #include "net/base/test_completion_callback.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "webkit/browser/fileapi/async_file_test_helper.h"
 #include "webkit/browser/fileapi/external_mount_points.h"
 #include "webkit/browser/fileapi/file_system_context.h"
 #include "webkit/browser/fileapi/file_system_file_util.h"
 
-namespace fileapi {
+using content::AsyncFileTestHelper;
+using fileapi::FileSystemContext;
+using fileapi::FileSystemFileStreamReader;
+using fileapi::FileSystemType;
+using fileapi::FileSystemURL;
+
+namespace content {
 
 namespace {
 
@@ -30,7 +35,7 @@ const char kTestFileName[] = "test.dat";
 const char kTestData[] = "0123456789";
 const int kTestDataSize = arraysize(kTestData) - 1;
 
-void ReadFromReader(FileSystemFileStreamReader* reader,
+void ReadFromReader(fileapi::FileSystemFileStreamReader* reader,
                     std::string* data,
                     size_t size,
                     int* result) {
@@ -69,8 +74,8 @@ class FileSystemFileStreamReaderTest : public testing::Test {
         NULL, temp_dir_.path());
 
     file_system_context_->OpenFileSystem(
-        GURL(kURLOrigin), kFileSystemTypeTemporary,
-        OPEN_FILE_SYSTEM_CREATE_IF_NONEXISTENT,
+        GURL(kURLOrigin), fileapi::kFileSystemTypeTemporary,
+        fileapi::OPEN_FILE_SYSTEM_CREATE_IF_NONEXISTENT,
         base::Bind(&OnOpenFileSystem));
     base::RunLoop().RunUntilIdle();
 
@@ -83,7 +88,7 @@ class FileSystemFileStreamReaderTest : public testing::Test {
   }
 
  protected:
-  FileSystemFileStreamReader* CreateFileReader(
+  fileapi::FileSystemFileStreamReader* CreateFileReader(
       const std::string& file_name,
       int64 initial_offset,
       const base::Time& expected_modification_time) {
@@ -103,12 +108,12 @@ class FileSystemFileStreamReaderTest : public testing::Test {
                  base::Time* modification_time) {
     FileSystemURL url = GetFileSystemURL(file_name);
 
-    ASSERT_EQ(base::PLATFORM_FILE_OK,
-              fileapi::AsyncFileTestHelper::CreateFileWithData(
+    ASSERT_EQ(base::File::FILE_OK,
+              content::AsyncFileTestHelper::CreateFileWithData(
                   file_system_context_, url, buf, buf_size));
 
-    base::PlatformFileInfo file_info;
-    ASSERT_EQ(base::PLATFORM_FILE_OK,
+    base::File::Info file_info;
+    ASSERT_EQ(base::File::FILE_OK,
               AsyncFileTestHelper::GetMetadata(
                   file_system_context_, url, &file_info));
     if (modification_time)
@@ -118,14 +123,14 @@ class FileSystemFileStreamReaderTest : public testing::Test {
  private:
   static void OnOpenFileSystem(const GURL& root_url,
                                const std::string& name,
-                               base::PlatformFileError result) {
-    ASSERT_EQ(base::PLATFORM_FILE_OK, result);
+                               base::File::Error result) {
+    ASSERT_EQ(base::File::FILE_OK, result);
   }
 
   FileSystemURL GetFileSystemURL(const std::string& file_name) {
     return file_system_context_->CreateCrackedFileSystemURL(
         GURL(kURLOrigin),
-        kFileSystemTypeTemporary,
+        fileapi::kFileSystemTypeTemporary,
         base::FilePath().AppendASCII(file_name));
   }
 
@@ -263,4 +268,4 @@ TEST_F(FileSystemFileStreamReaderTest, DeleteWithUnfinishedRead) {
   reader.reset();
 }
 
-}  // namespace fileapi
+}  // namespace content

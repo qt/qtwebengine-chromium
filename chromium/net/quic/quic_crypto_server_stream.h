@@ -29,6 +29,10 @@ class NET_EXPORT_PRIVATE QuicCryptoServerStream : public QuicCryptoStream {
   explicit QuicCryptoServerStream(QuicSession* session);
   virtual ~QuicCryptoServerStream();
 
+  // Cancel any outstanding callbacks, such as asynchronous validation of client
+  // hello.
+  void CancelOutstandingCallbacks();
+
   // CryptoFramerVisitorInterface implementation
   virtual void OnHandshakeMessage(
       const CryptoHandshakeMessage& message) OVERRIDE;
@@ -38,12 +42,18 @@ class NET_EXPORT_PRIVATE QuicCryptoServerStream : public QuicCryptoStream {
   // presented a ChannelID. Otherwise it returns false.
   bool GetBase64SHA256ClientChannelID(std::string* output) const;
 
+  uint8 num_handshake_messages() const { return num_handshake_messages_; }
+
  protected:
   virtual QuicErrorCode ProcessClientHello(
       const CryptoHandshakeMessage& message,
       const ValidateClientHelloResultCallback::Result& result,
       CryptoHandshakeMessage* reply,
       std::string* error_details);
+
+  // Hook that allows the server to set QuicConfig defaults just
+  // before going through the parameter negotiation step.
+  virtual void OverrideQuicConfigDefaults(QuicConfig* config);
 
  private:
   friend class test::CryptoTestUtils;
@@ -79,6 +89,10 @@ class NET_EXPORT_PRIVATE QuicCryptoServerStream : public QuicCryptoStream {
   // FinishProcessingHandshakeMessage for processing.  NULL if no
   // handshake message is being validated.
   ValidateCallback* validate_client_hello_cb_;
+
+  uint8 num_handshake_messages_;
+
+  DISALLOW_COPY_AND_ASSIGN(QuicCryptoServerStream);
 };
 
 }  // namespace net

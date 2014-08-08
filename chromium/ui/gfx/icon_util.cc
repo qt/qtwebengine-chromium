@@ -77,7 +77,7 @@ bool BuildResizedImageFamily(const gfx::ImageFamily& image_family,
       SkBitmap best_bitmap = best->AsBitmap();
       // Only kARGB_8888 images are supported.
       // This will also filter out images with no pixels.
-      if (best_bitmap.config() != SkBitmap::kARGB_8888_Config)
+      if (best_bitmap.colorType() != kPMColor_SkColorType)
         return false;
       SkBitmap resized_bitmap = skia::ImageOperations::Resize(
           best_bitmap, skia::ImageOperations::RESIZE_LANCZOS3,
@@ -119,7 +119,7 @@ bool ConvertImageFamilyToBitmaps(
     // Only 32 bit ARGB bitmaps are supported. We also make sure the bitmap has
     // been properly initialized.
     SkAutoLockPixels bitmap_lock(bitmap);
-    if ((bitmap.config() != SkBitmap::kARGB_8888_Config) ||
+    if ((bitmap.colorType() != kPMColor_SkColorType) ||
         (bitmap.getPixels() == NULL)) {
       return false;
     }
@@ -166,7 +166,7 @@ HICON IconUtil::CreateHICONFromSkBitmap(const SkBitmap& bitmap) {
   // Only 32 bit ARGB bitmaps are supported. We also try to perform as many
   // validations as we can on the bitmap.
   SkAutoLockPixels bitmap_lock(bitmap);
-  if ((bitmap.config() != SkBitmap::kARGB_8888_Config) ||
+  if ((bitmap.colorType() != kPMColor_SkColorType) ||
       (bitmap.width() <= 0) || (bitmap.height() <= 0) ||
       (bitmap.getPixels() == NULL))
     return NULL;
@@ -177,13 +177,18 @@ HICON IconUtil::CreateHICONFromSkBitmap(const SkBitmap& bitmap) {
   // alpha mask for the DIB.
   BITMAPV5HEADER bitmap_header;
   InitializeBitmapHeader(&bitmap_header, bitmap.width(), bitmap.height());
-  void* bits;
-  HDC hdc = ::GetDC(NULL);
+
+  void* bits = NULL;
   HBITMAP dib;
-  dib = ::CreateDIBSection(hdc, reinterpret_cast<BITMAPINFO*>(&bitmap_header),
-                           DIB_RGB_COLORS, &bits, NULL, 0);
-  DCHECK(dib);
-  ::ReleaseDC(NULL, hdc);
+
+  {
+    base::win::ScopedGetDC hdc(NULL);
+    dib = ::CreateDIBSection(hdc, reinterpret_cast<BITMAPINFO*>(&bitmap_header),
+                             DIB_RGB_COLORS, &bits, NULL, 0);
+  }
+  if (!dib || !bits)
+    return NULL;
+
   memcpy(bits, bitmap.getPixels(), bitmap.width() * bitmap.height() * 4);
 
   // Icons are generally created using an AND and XOR masks where the AND
@@ -290,9 +295,8 @@ scoped_ptr<SkBitmap> IconUtil::CreateSkBitmapFromIconResource(HMODULE module,
   DCHECK(png_data);
   DCHECK_EQ(png_size, large_icon_entry->dwBytesInRes);
 
-  const unsigned char* png_bytes =
-      reinterpret_cast<const unsigned char*>(png_data);
-  gfx::Image image = gfx::Image::CreateFrom1xPNGBytes(png_bytes, png_size);
+  gfx::Image image = gfx::Image::CreateFrom1xPNGBytes(
+      new base::RefCountedStaticMemory(png_data, png_size));
   return scoped_ptr<SkBitmap>(new SkBitmap(image.AsBitmap()));
 }
 
@@ -372,8 +376,7 @@ SkBitmap IconUtil::CreateSkBitmapFromHICONHelper(HICON icon,
   // Allocating memory for the SkBitmap object. We are going to create an ARGB
   // bitmap so we should set the configuration appropriately.
   SkBitmap bitmap;
-  bitmap.setConfig(SkBitmap::kARGB_8888_Config, s.width(), s.height());
-  bitmap.allocPixels();
+  bitmap.allocN32Pixels(s.width(), s.height());
   bitmap.eraseARGB(0, 0, 0, 0);
   SkAutoLockPixels bitmap_lock(bitmap);
 

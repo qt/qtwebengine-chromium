@@ -41,7 +41,7 @@ class ImageDecodingStoreTest : public ::testing::Test, public MockImageDecoderCl
 public:
     virtual void SetUp()
     {
-        ImageDecodingStore::initializeOnce();
+        ImageDecodingStore::instance()->setCacheLimitInBytes(1024 * 1024);
         ImageDecodingStore::instance()->setImageCachingEnabled(true);
         m_data = SharedBuffer::create();
         m_generator = ImageFrameGenerator::create(SkISize::Make(100, 100), m_data, true);
@@ -50,7 +50,7 @@ public:
 
     virtual void TearDown()
     {
-        ImageDecodingStore::shutdown();
+        ImageDecodingStore::instance()->clear();
     }
 
     virtual void decoderBeingDestroyed()
@@ -77,22 +77,26 @@ protected:
     PassOwnPtr<ScaledImageFragment> createCompleteImage(const SkISize& size, bool discardable = false, size_t index = 0)
     {
         SkBitmap bitmap;
-        bitmap.setConfig(SkBitmap::kARGB_8888_Config, size.width(), size.height());
-        if (!discardable)
+        bitmap.setInfo(SkImageInfo::MakeN32Premul(size));
+        if (!discardable) {
             bitmap.allocPixels();
-        else
-            bitmap.setPixelRef(new MockDiscardablePixelRef())->unref();
+        } else {
+            MockDiscardablePixelRef::Allocator mockDiscardableAllocator;
+            bitmap.allocPixels(&mockDiscardableAllocator, 0);
+        }
         return ScaledImageFragment::createComplete(size, index, bitmap);
     }
 
     PassOwnPtr<ScaledImageFragment> createIncompleteImage(const SkISize& size, bool discardable = false, size_t generation = 0)
     {
         SkBitmap bitmap;
-        bitmap.setConfig(SkBitmap::kARGB_8888_Config, size.width(), size.height());
-        if (!discardable)
+        bitmap.setInfo(SkImageInfo::MakeN32Premul(size));
+        if (!discardable) {
             bitmap.allocPixels();
-        else
-            bitmap.setPixelRef(new MockDiscardablePixelRef())->unref();
+        } else {
+            MockDiscardablePixelRef::Allocator mockDiscardableAllocator;
+            bitmap.allocPixels(&mockDiscardableAllocator, 0);
+        }
         return ScaledImageFragment::createPartial(size, 0, generation, bitmap);
     }
 

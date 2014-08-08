@@ -31,136 +31,236 @@
 #include "config.h"
 #include "core/animation/Animation.h"
 
+#include "bindings/v8/Dictionary.h"
+#include "bindings/v8/ExceptionState.h"
 #include "core/animation/ActiveAnimations.h"
+#include "core/animation/AnimationHelpers.h"
+#include "core/animation/AnimationPlayer.h"
+#include "core/animation/AnimationTimeline.h"
 #include "core/animation/CompositorAnimations.h"
-#include "core/animation/KeyframeAnimationEffect.h"
-#include "core/animation/Player.h"
+#include "core/animation/KeyframeEffectModel.h"
+#include "core/animation/interpolation/Interpolation.h"
 #include "core/dom/Element.h"
+#include "core/frame/UseCounter.h"
+#include "core/rendering/RenderLayer.h"
 
 namespace WebCore {
 
-PassRefPtr<Animation> Animation::create(PassRefPtr<Element> target, PassRefPtr<AnimationEffect> effect, const Timing& timing, Priority priority, PassOwnPtr<EventDelegate> eventDelegate)
+PassRefPtrWillBeRawPtr<Animation> Animation::create(Element* target, PassRefPtrWillBeRawPtr<AnimationEffect> effect, const Timing& timing, Priority priority, PassOwnPtr<EventDelegate> eventDelegate)
 {
-    return adoptRef(new Animation(target, effect, timing, priority, eventDelegate));
+    return adoptRefWillBeNoop(new Animation(target, effect, timing, priority, eventDelegate));
 }
 
-Animation::Animation(PassRefPtr<Element> target, PassRefPtr<AnimationEffect> effect, const Timing& timing, Priority priority, PassOwnPtr<EventDelegate> eventDelegate)
-    : TimedItem(timing, eventDelegate)
+PassRefPtrWillBeRawPtr<Animation> Animation::create(Element* element, PassRefPtrWillBeRawPtr<AnimationEffect> effect, const Dictionary& timingInputDictionary)
+{
+    ASSERT(RuntimeEnabledFeatures::webAnimationsAPIEnabled());
+    return create(element, effect, TimingInput::convert(timingInputDictionary));
+}
+PassRefPtrWillBeRawPtr<Animation> Animation::create(Element* element, PassRefPtrWillBeRawPtr<AnimationEffect> effect, double duration)
+{
+    ASSERT(RuntimeEnabledFeatures::webAnimationsAPIEnabled());
+    return create(element, effect, TimingInput::convert(duration));
+}
+PassRefPtrWillBeRawPtr<Animation> Animation::create(Element* element, PassRefPtrWillBeRawPtr<AnimationEffect> effect)
+{
+    ASSERT(RuntimeEnabledFeatures::webAnimationsAPIEnabled());
+    return create(element, effect, Timing());
+}
+PassRefPtrWillBeRawPtr<Animation> Animation::create(Element* element, const Vector<Dictionary>& keyframeDictionaryVector, const Dictionary& timingInputDictionary, ExceptionState& exceptionState)
+{
+    ASSERT(RuntimeEnabledFeatures::webAnimationsAPIEnabled());
+    if (element)
+        UseCounter::count(element->document(), UseCounter::AnimationConstructorKeyframeListEffectObjectTiming);
+    return create(element, EffectInput::convert(element, keyframeDictionaryVector, exceptionState), TimingInput::convert(timingInputDictionary));
+}
+PassRefPtrWillBeRawPtr<Animation> Animation::create(Element* element, const Vector<Dictionary>& keyframeDictionaryVector, double duration, ExceptionState& exceptionState)
+{
+    ASSERT(RuntimeEnabledFeatures::webAnimationsAPIEnabled());
+    if (element)
+        UseCounter::count(element->document(), UseCounter::AnimationConstructorKeyframeListEffectDoubleTiming);
+    return create(element, EffectInput::convert(element, keyframeDictionaryVector, exceptionState), TimingInput::convert(duration));
+}
+PassRefPtrWillBeRawPtr<Animation> Animation::create(Element* element, const Vector<Dictionary>& keyframeDictionaryVector, ExceptionState& exceptionState)
+{
+    ASSERT(RuntimeEnabledFeatures::webAnimationsAPIEnabled());
+    if (element)
+        UseCounter::count(element->document(), UseCounter::AnimationConstructorKeyframeListEffectNoTiming);
+    return create(element, EffectInput::convert(element, keyframeDictionaryVector, exceptionState), Timing());
+}
+
+Animation::Animation(Element* target, PassRefPtrWillBeRawPtr<AnimationEffect> effect, const Timing& timing, Priority priority, PassOwnPtr<EventDelegate> eventDelegate)
+    : AnimationNode(timing, eventDelegate)
     , m_target(target)
     , m_effect(effect)
-    , m_activeInAnimationStack(false)
+    , m_sampledEffect(nullptr)
     , m_priority(priority)
 {
+#if !ENABLE(OILPAN)
+    if (m_target)
+        m_target->ensureActiveAnimations().addAnimation(this);
+#endif
 }
 
-void Animation::didAttach()
+Animation::~Animation()
 {
+#if !ENABLE(OILPAN)
     if (m_target)
-        m_target->ensureActiveAnimations()->players().add(player());
+        m_target->activeAnimations()->notifyAnimationDestroyed(this);
+#endif
 }
 
-void Animation::willDetach()
+void Animation::attach(AnimationPlayer* player)
+{
+    if (m_target) {
+        m_target->ensureActiveAnimations().addPlayer(player);
+        m_target->setNeedsAnimationStyleRecalc();
+    }
+    AnimationNode::attach(player);
+}
+
+void Animation::detach()
 {
     if (m_target)
-        m_target->activeAnimations()->players().remove(player());
-    if (m_activeInAnimationStack)
+        m_target->activeAnimations()->removePlayer(player());
+    if (m_sampledEffect)
         clearEffects();
+    AnimationNode::detach();
+}
+
+void Animation::specifiedTimingChanged()
+{
+    cancelAnimationOnCompositor();
+    if (player()) {
+        // FIXME: Needs to consider groups when added.
+        ASSERT(player()->source() == this);
+        player()->schedulePendingAnimationOnCompositor();
+    }
 }
 
 static AnimationStack& ensureAnimationStack(Element* element)
 {
-    return element->ensureActiveAnimations()->defaultStack();
+    return element->ensureActiveAnimations().defaultStack();
 }
 
-bool Animation::applyEffects(bool previouslyInEffect)
+void Animation::applyEffects()
 {
     ASSERT(isInEffect());
+    ASSERT(player());
     if (!m_target || !m_effect)
-        return false;
-
-    if (player() && !previouslyInEffect) {
-        ensureAnimationStack(m_target.get()).add(this);
-        m_activeInAnimationStack = true;
-    }
+        return;
 
     double iteration = currentIteration();
     ASSERT(iteration >= 0);
     // FIXME: Handle iteration values which overflow int.
-    m_compositableValues = m_effect->sample(static_cast<int>(iteration), timeFraction());
-    if (player()) {
-        m_target->setNeedsAnimationStyleRecalc();
-        return true;
+    OwnPtrWillBeRawPtr<WillBeHeapVector<RefPtrWillBeMember<Interpolation> > > interpolations = m_effect->sample(static_cast<int>(iteration), timeFraction(), iterationDuration());
+    if (m_sampledEffect) {
+        m_sampledEffect->setInterpolations(interpolations.release());
+    } else if (!interpolations->isEmpty()) {
+        OwnPtrWillBeRawPtr<SampledEffect> sampledEffect = SampledEffect::create(this, interpolations.release());
+        m_sampledEffect = sampledEffect.get();
+        ensureAnimationStack(m_target).add(sampledEffect.release());
+    } else {
+        return;
     }
-    return false;
+
+    m_target->setNeedsAnimationStyleRecalc();
 }
 
 void Animation::clearEffects()
 {
     ASSERT(player());
-    ASSERT(m_activeInAnimationStack);
-    ensureAnimationStack(m_target.get()).remove(this);
+    ASSERT(m_sampledEffect);
+
+    m_sampledEffect->clear();
+    m_sampledEffect = nullptr;
     cancelAnimationOnCompositor();
-    m_activeInAnimationStack = false;
-    m_compositableValues.clear();
     m_target->setNeedsAnimationStyleRecalc();
     invalidate();
 }
 
-bool Animation::updateChildrenAndEffects() const
+void Animation::updateChildrenAndEffects() const
 {
     if (!m_effect)
-        return false;
-
+        return;
     if (isInEffect())
-        return const_cast<Animation*>(this)->applyEffects(m_activeInAnimationStack);
-
-    if (m_activeInAnimationStack) {
+        const_cast<Animation*>(this)->applyEffects();
+    else if (m_sampledEffect)
         const_cast<Animation*>(this)->clearEffects();
-        return true;
-    }
-    return false;
 }
 
-double Animation::calculateTimeToEffectChange(double localTime, double timeToNextIteration) const
+double Animation::calculateTimeToEffectChange(bool forwards, double localTime, double timeToNextIteration) const
 {
-    const double activeStartTime = startTime() + specified().startDelay;
+    const double start = startTimeInternal() + specifiedTiming().startDelay;
+    const double end = start + activeDurationInternal();
+
     switch (phase()) {
     case PhaseBefore:
-        return activeStartTime - localTime;
+        ASSERT(start >= localTime);
+        return forwards
+            ? start - localTime
+            : std::numeric_limits<double>::infinity();
     case PhaseActive:
-        if (hasActiveAnimationsOnCompositor()) {
+        if (forwards && hasActiveAnimationsOnCompositor()) {
+            ASSERT(specifiedTiming().playbackRate == 1);
             // Need service to apply fill / fire events.
-            const double activeEndTime = activeStartTime + activeDuration();
-            return std::min(activeEndTime - localTime, timeToNextIteration);
+            const double timeToEnd = end - localTime;
+            if (hasEvents()) {
+                return std::min(timeToEnd, timeToNextIteration);
+            } else {
+                return timeToEnd;
+            }
         }
         return 0;
     case PhaseAfter:
+        ASSERT(localTime >= end);
         // If this Animation is still in effect then it will need to update
         // when its parent goes out of effect. We have no way of knowing when
         // that will be, however, so the parent will need to supply it.
-        return std::numeric_limits<double>::infinity();
-    case PhaseNone:
+        return forwards
+            ? std::numeric_limits<double>::infinity()
+            : localTime - end;
     default:
         ASSERT_NOT_REACHED();
-        return 0;
+        return std::numeric_limits<double>::infinity();
     }
 }
+
+void Animation::notifySampledEffectRemovedFromAnimationStack()
+{
+    ASSERT(m_sampledEffect);
+    m_sampledEffect = nullptr;
+}
+
+#if !ENABLE(OILPAN)
+void Animation::notifyElementDestroyed()
+{
+    // If our player is kept alive just by the sampledEffect, we might get our
+    // destructor called when we call SampledEffect::clear(), so we need to
+    // clear m_sampledEffect first.
+    m_target = nullptr;
+    clearEventDelegate();
+    SampledEffect* sampledEffect = m_sampledEffect;
+    m_sampledEffect = nullptr;
+    if (sampledEffect)
+        sampledEffect->clear();
+}
+#endif
 
 bool Animation::isCandidateForAnimationOnCompositor() const
 {
     if (!effect() || !m_target)
         return false;
-    return CompositorAnimations::instance()->isCandidateForAnimationOnCompositor(specified(), *effect());
+    return CompositorAnimations::instance()->isCandidateForAnimationOnCompositor(specifiedTiming(), *effect());
 }
 
-bool Animation::maybeStartAnimationOnCompositor()
+bool Animation::maybeStartAnimationOnCompositor(double startTime)
 {
     ASSERT(!hasActiveAnimationsOnCompositor());
     if (!isCandidateForAnimationOnCompositor())
         return false;
-    if (!CompositorAnimations::instance()->canStartAnimationOnCompositor(*m_target.get()))
+    if (!CompositorAnimations::instance()->canStartAnimationOnCompositor(*m_target))
         return false;
-    if (!CompositorAnimations::instance()->startAnimationOnCompositor(*m_target.get(), specified(), *effect(), m_compositorAnimationIds))
+    if (!CompositorAnimations::instance()->startAnimationOnCompositor(*m_target, startTime, specifiedTiming(), *effect(), m_compositorAnimationIds))
         return false;
     ASSERT(!m_compositorAnimationIds.isEmpty());
     return true;
@@ -183,12 +283,16 @@ bool Animation::affects(CSSPropertyID property) const
 
 void Animation::cancelAnimationOnCompositor()
 {
+    // FIXME: cancelAnimationOnCompositor is called from withins style recalc.
+    // This queries compositingState, which is not necessarily up to date.
+    // https://code.google.com/p/chromium/issues/detail?id=339847
+    DisableCompositingQueryAsserts disabler;
     if (!hasActiveAnimationsOnCompositor())
         return;
     if (!m_target || !m_target->renderer())
         return;
     for (size_t i = 0; i < m_compositorAnimationIds.size(); ++i)
-        CompositorAnimations::instance()->cancelAnimationOnCompositor(*m_target.get(), m_compositorAnimationIds[i]);
+        CompositorAnimations::instance()->cancelAnimationOnCompositor(*m_target, m_compositorAnimationIds[i]);
     m_compositorAnimationIds.clear();
 }
 
@@ -198,7 +302,15 @@ void Animation::pauseAnimationForTestingOnCompositor(double pauseTime)
     if (!m_target || !m_target->renderer())
         return;
     for (size_t i = 0; i < m_compositorAnimationIds.size(); ++i)
-        CompositorAnimations::instance()->pauseAnimationForTestingOnCompositor(*m_target.get(), m_compositorAnimationIds[i], pauseTime);
+        CompositorAnimations::instance()->pauseAnimationForTestingOnCompositor(*m_target, m_compositorAnimationIds[i], pauseTime);
+}
+
+void Animation::trace(Visitor* visitor)
+{
+    visitor->trace(m_target);
+    visitor->trace(m_effect);
+    visitor->trace(m_sampledEffect);
+    AnimationNode::trace(visitor);
 }
 
 } // namespace WebCore

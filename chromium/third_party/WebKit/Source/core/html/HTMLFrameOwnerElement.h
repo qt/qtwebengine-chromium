@@ -21,23 +21,25 @@
 #ifndef HTMLFrameOwnerElement_h
 #define HTMLFrameOwnerElement_h
 
+#include "core/dom/Document.h"
+#include "core/frame/FrameOwner.h"
 #include "core/html/HTMLElement.h"
 #include "wtf/HashCountedSet.h"
 
 namespace WebCore {
 
-class DOMWindow;
+class LocalDOMWindow;
 class ExceptionState;
 class Frame;
 class RenderPart;
-class SVGDocument;
+class Widget;
 
-class HTMLFrameOwnerElement : public HTMLElement {
+class HTMLFrameOwnerElement : public HTMLElement, public FrameOwner {
 public:
     virtual ~HTMLFrameOwnerElement();
 
     Frame* contentFrame() const { return m_contentFrame; }
-    DOMWindow* contentWindow() const;
+    LocalDOMWindow* contentWindow() const;
     Document* contentDocument() const;
 
     void setContentFrame(Frame&);
@@ -50,11 +52,9 @@ public:
     // RenderObject when using fallback content.
     RenderPart* renderPart() const;
 
-    SVGDocument* getSVGDocument(ExceptionState&) const;
+    Document* getSVGDocument(ExceptionState&) const;
 
     virtual ScrollbarMode scrollingMode() const { return ScrollbarAuto; }
-
-    SandboxFlags sandboxFlags() const { return m_sandboxFlags; }
 
     virtual bool loadedNonEmptyDocument() const { return false; }
     virtual void didLoadNonEmptyDocument() { }
@@ -62,6 +62,17 @@ public:
     virtual void renderFallbackContent() { }
 
     virtual bool isObjectElement() const { return false; }
+    void setWidget(PassRefPtr<Widget>);
+    Widget* ownedWidget() const;
+
+    class UpdateSuspendScope {
+    public:
+        UpdateSuspendScope();
+        ~UpdateSuspendScope();
+
+    private:
+        void performDeferredWidgetTreeOperations();
+    };
 
 protected:
     HTMLFrameOwnerElement(const QualifiedName& tagName, Document&);
@@ -71,13 +82,19 @@ protected:
 
 private:
     virtual bool isKeyboardFocusable() const OVERRIDE;
-    virtual bool isFrameOwnerElement() const OVERRIDE { return true; }
+    virtual bool isFrameOwnerElement() const OVERRIDE FINAL { return true; }
+
+    // FrameOwner overrides:
+    virtual bool isLocal() const { return true; }
+    virtual SandboxFlags sandboxFlags() const OVERRIDE { return m_sandboxFlags; }
+    virtual void dispatchLoad() OVERRIDE;
 
     Frame* m_contentFrame;
+    RefPtr<Widget> m_widget;
     SandboxFlags m_sandboxFlags;
 };
 
-DEFINE_NODE_TYPE_CASTS(HTMLFrameOwnerElement, isFrameOwnerElement());
+DEFINE_ELEMENT_TYPE_CASTS(HTMLFrameOwnerElement, isFrameOwnerElement());
 
 class SubframeLoadingDisabler {
 public:
@@ -94,6 +111,8 @@ public:
 
     static bool canLoadFrame(HTMLFrameOwnerElement& owner)
     {
+        if (owner.document().unloadStarted())
+            return false;
         for (Node* node = &owner; node; node = node->parentOrShadowHostNode()) {
             if (disabledSubtreeRoots().contains(node))
                 return false;
@@ -110,6 +129,8 @@ private:
 
     Node& m_root;
 };
+
+DEFINE_TYPE_CASTS(HTMLFrameOwnerElement, FrameOwner, owner, owner->isLocal(), owner.isLocal());
 
 } // namespace WebCore
 

@@ -1,36 +1,13 @@
 // Copyright 2012 the V8 project authors. All rights reserved.
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-//       copyright notice, this list of conditions and the following
-//       disclaimer in the documentation and/or other materials provided
-//       with the distribution.
-//     * Neither the name of Google Inc. nor the names of its
-//       contributors may be used to endorse or promote products derived
-//       from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
 #ifndef V8_PROPERTY_DETAILS_H_
 #define V8_PROPERTY_DETAILS_H_
 
-#include "../include/v8.h"
-#include "allocation.h"
-#include "utils.h"
+#include "include/v8.h"
+#include "src/allocation.h"
+#include "src/utils.h"
 
 // Ecma-262 3rd 8.6.1
 enum PropertyAttributes {
@@ -42,9 +19,12 @@ enum PropertyAttributes {
   SEALED            = DONT_DELETE,
   FROZEN            = SEALED | READ_ONLY,
 
-  SYMBOLIC          = 8,  // Used to filter symbol names
-  DONT_SHOW         = DONT_ENUM | SYMBOLIC,
-  ABSENT            = 16  // Used in runtime to indicate a property is absent.
+  STRING            = 8,  // Used to filter symbols and string names
+  SYMBOLIC          = 16,
+  PRIVATE_SYMBOL    = 32,
+
+  DONT_SHOW         = DONT_ENUM | SYMBOLIC | PRIVATE_SYMBOL,
+  ABSENT            = 64  // Used in runtime to indicate a property is absent.
   // ABSENT can never be stored in or returned from a descriptor's attributes
   // bitfield.  It is only used as a return value meaning the attributes of
   // a non-existent property.
@@ -55,7 +35,9 @@ namespace v8 {
 namespace internal {
 
 class Smi;
-class Type;
+template<class> class TypeImpl;
+struct ZoneTypeConfig;
+typedef TypeImpl<ZoneTypeConfig> Type;
 class TypeInfo;
 
 // Type of properties.
@@ -72,9 +54,8 @@ enum PropertyType {
   // Only in lookup results, not in descriptors.
   HANDLER                   = 4,
   INTERCEPTOR               = 5,
-  TRANSITION                = 6,
   // Only used as a marker in LookupResult.
-  NONEXISTENT               = 7
+  NONEXISTENT               = 6
 };
 
 
@@ -102,9 +83,7 @@ class Representation {
   static Representation Integer8() { return Representation(kInteger8); }
   static Representation UInteger8() { return Representation(kUInteger8); }
   static Representation Integer16() { return Representation(kInteger16); }
-  static Representation UInteger16() {
-    return Representation(kUInteger16);
-  }
+  static Representation UInteger16() { return Representation(kUInteger16); }
   static Representation Smi() { return Representation(kSmi); }
   static Representation Integer32() { return Representation(kInteger32); }
   static Representation Double() { return Representation(kDouble); }
@@ -113,9 +92,7 @@ class Representation {
 
   static Representation FromKind(Kind kind) { return Representation(kind); }
 
-  // TODO(rossberg): this should die eventually.
-  static Representation FromType(TypeInfo info);
-  static Representation FromType(Handle<Type> type);
+  static Representation FromType(Type* type);
 
   bool Equals(const Representation& other) const {
     return kind_ == other.kind_;
@@ -146,6 +123,8 @@ class Representation {
   bool fits_into(const Representation& other) const {
     return other.is_more_general_than(*this) || other.Equals(*this);
   }
+
+  bool CanContainDouble(double value);
 
   Representation generalize(Representation other) {
     if (other.fits_into(*this)) return *this;
@@ -232,11 +211,11 @@ class PropertyDetails BASE_EMBEDDED {
         | FieldIndexField::encode(field_index);
   }
 
-  int pointer() { return DescriptorPointer::decode(value_); }
+  int pointer() const { return DescriptorPointer::decode(value_); }
 
   PropertyDetails set_pointer(int i) { return PropertyDetails(value_, i); }
 
-  PropertyDetails CopyWithRepresentation(Representation representation) {
+  PropertyDetails CopyWithRepresentation(Representation representation) const {
     return PropertyDetails(value_, representation);
   }
   PropertyDetails CopyAddAttributes(PropertyAttributes new_attributes) {
@@ -247,7 +226,7 @@ class PropertyDetails BASE_EMBEDDED {
 
   // Conversion for storing details as Object*.
   explicit inline PropertyDetails(Smi* smi);
-  inline Smi* AsSmi();
+  inline Smi* AsSmi() const;
 
   static uint8_t EncodeRepresentation(Representation representation) {
     return representation.kind();
@@ -257,26 +236,26 @@ class PropertyDetails BASE_EMBEDDED {
     return Representation::FromKind(static_cast<Representation::Kind>(bits));
   }
 
-  PropertyType type() { return TypeField::decode(value_); }
+  PropertyType type() const { return TypeField::decode(value_); }
 
   PropertyAttributes attributes() const {
     return AttributesField::decode(value_);
   }
 
-  int dictionary_index() {
+  int dictionary_index() const {
     return DictionaryStorageField::decode(value_);
   }
 
-  Representation representation() {
+  Representation representation() const {
     ASSERT(type() != NORMAL);
     return DecodeRepresentation(RepresentationField::decode(value_));
   }
 
-  int  field_index() {
+  int field_index() const {
     return FieldIndexField::decode(value_);
   }
 
-  inline PropertyDetails AsDeleted();
+  inline PropertyDetails AsDeleted() const;
 
   static bool IsValidIndex(int index) {
     return DictionaryStorageField::is_valid(index);

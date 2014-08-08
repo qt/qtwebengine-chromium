@@ -15,9 +15,13 @@
 #include "ipc/ipc_message.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
+#include "url/origin.h"
 
 namespace content {
 namespace {
+
+// This number is unlikely to occur by chance.
+static const int kMagicRenderProcessId = 506116062;
 
 // A mock of WebsocketHost which records received messages.
 class MockWebSocketHost : public WebSocketHost {
@@ -30,8 +34,7 @@ class MockWebSocketHost : public WebSocketHost {
 
   virtual ~MockWebSocketHost() {}
 
-  virtual bool OnMessageReceived(const IPC::Message& message,
-                                 bool* message_was_ok) OVERRIDE{
+  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE{
     received_messages_.push_back(message);
     return true;
   }
@@ -42,12 +45,12 @@ class MockWebSocketHost : public WebSocketHost {
 class WebSocketDispatcherHostTest : public ::testing::Test {
  public:
   WebSocketDispatcherHostTest() {
-    dispatcher_host_ =
-        new WebSocketDispatcherHost(
-            base::Bind(&WebSocketDispatcherHostTest::OnGetRequestContext,
-                       base::Unretained(this)),
-            base::Bind(&WebSocketDispatcherHostTest::CreateWebSocketHost,
-                       base::Unretained(this)));
+    dispatcher_host_ = new WebSocketDispatcherHost(
+        kMagicRenderProcessId,
+        base::Bind(&WebSocketDispatcherHostTest::OnGetRequestContext,
+                   base::Unretained(this)),
+        base::Bind(&WebSocketDispatcherHostTest::CreateWebSocketHost,
+                   base::Unretained(this)));
   }
 
   virtual ~WebSocketDispatcherHostTest() {}
@@ -77,9 +80,12 @@ TEST_F(WebSocketDispatcherHostTest, Construct) {
 }
 
 TEST_F(WebSocketDispatcherHostTest, UnrelatedMessage) {
-  bool message_was_ok = false;
   IPC::Message message;
-  EXPECT_FALSE(dispatcher_host_->OnMessageReceived(message, &message_was_ok));
+  EXPECT_FALSE(dispatcher_host_->OnMessageReceived(message));
+}
+
+TEST_F(WebSocketDispatcherHostTest, RenderProcessIdGetter) {
+  EXPECT_EQ(kMagicRenderProcessId, dispatcher_host_->render_process_id());
 }
 
 TEST_F(WebSocketDispatcherHostTest, AddChannelRequest) {
@@ -87,12 +93,12 @@ TEST_F(WebSocketDispatcherHostTest, AddChannelRequest) {
   GURL socket_url("ws://example.com/test");
   std::vector<std::string> requested_protocols;
   requested_protocols.push_back("hello");
-  GURL origin("http://example.com/test");
+  url::Origin origin("http://example.com/test");
+  int render_frame_id = -2;
   WebSocketHostMsg_AddChannelRequest message(
-      routing_id, socket_url, requested_protocols, origin);
+      routing_id, socket_url, requested_protocols, origin, render_frame_id);
 
-  bool message_was_ok = false;
-  ASSERT_TRUE(dispatcher_host_->OnMessageReceived(message, &message_was_ok));
+  ASSERT_TRUE(dispatcher_host_->OnMessageReceived(message));
 
   ASSERT_EQ(1U, mock_hosts_.size());
   MockWebSocketHost* host = mock_hosts_[0];
@@ -109,9 +115,8 @@ TEST_F(WebSocketDispatcherHostTest, SendFrameButNoHostYet) {
   WebSocketMsg_SendFrame message(
       routing_id, true, WEB_SOCKET_MESSAGE_TYPE_TEXT, data);
 
-  bool message_was_ok = false;
   // Expected to be ignored.
-  EXPECT_TRUE(dispatcher_host_->OnMessageReceived(message, &message_was_ok));
+  EXPECT_TRUE(dispatcher_host_->OnMessageReceived(message));
 
   EXPECT_EQ(0U, mock_hosts_.size());
 }
@@ -122,21 +127,18 @@ TEST_F(WebSocketDispatcherHostTest, SendFrame) {
   GURL socket_url("ws://example.com/test");
   std::vector<std::string> requested_protocols;
   requested_protocols.push_back("hello");
-  GURL origin("http://example.com/test");
+  url::Origin origin("http://example.com/test");
+  int render_frame_id = -2;
   WebSocketHostMsg_AddChannelRequest add_channel_message(
-      routing_id, socket_url, requested_protocols, origin);
+      routing_id, socket_url, requested_protocols, origin, render_frame_id);
 
-  bool message_was_ok = false;
-
-  ASSERT_TRUE(dispatcher_host_->OnMessageReceived(
-      add_channel_message, &message_was_ok));
+  ASSERT_TRUE(dispatcher_host_->OnMessageReceived(add_channel_message));
 
   std::vector<char> data;
   WebSocketMsg_SendFrame send_frame_message(
       routing_id, true, WEB_SOCKET_MESSAGE_TYPE_TEXT, data);
 
-  EXPECT_TRUE(dispatcher_host_->OnMessageReceived(
-      send_frame_message, &message_was_ok));
+  EXPECT_TRUE(dispatcher_host_->OnMessageReceived(send_frame_message));
 
   ASSERT_EQ(1U, mock_hosts_.size());
   MockWebSocketHost* host = mock_hosts_[0];

@@ -57,6 +57,7 @@ TEST(VideoCommonTest, TestVideoFormatFps) {
   EXPECT_EQ(VideoFormat::kMinimumInterval, VideoFormat::FpsToInterval(0));
   EXPECT_EQ(talk_base::kNumNanosecsPerSec / 20, VideoFormat::FpsToInterval(20));
   EXPECT_EQ(20, VideoFormat::IntervalToFps(talk_base::kNumNanosecsPerSec / 20));
+  EXPECT_EQ(0, VideoFormat::IntervalToFps(0));
 }
 
 // Test IsSize0x0
@@ -70,7 +71,7 @@ TEST(VideoCommonTest, TestVideoFormatIsSize0x0) {
 // Test ToString: print fourcc when it is printable.
 TEST(VideoCommonTest, TestVideoFormatToString) {
   VideoFormat format;
-  EXPECT_EQ("0x0x10000", format.ToString());
+  EXPECT_EQ("0x0x0", format.ToString());
 
   format.fourcc = FOURCC_I420;
   format.width = 640;

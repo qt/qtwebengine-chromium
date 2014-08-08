@@ -1,35 +1,12 @@
 // Copyright 2013 the V8 project authors. All rights reserved.
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-//       copyright notice, this list of conditions and the following
-//       disclaimer in the documentation and/or other materials provided
-//       with the distribution.
-//     * Neither the name of Google Inc. nor the names of its
-//       contributors may be used to endorse or promote products derived
-//       from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
 #ifndef V8_HYDROGEN_CHECK_ELIMINATION_H_
 #define V8_HYDROGEN_CHECK_ELIMINATION_H_
 
-#include "hydrogen.h"
-#include "hydrogen-alias-analysis.h"
+#include "src/hydrogen.h"
+#include "src/hydrogen-alias-analysis.h"
 
 namespace v8 {
 namespace internal {
@@ -39,11 +16,20 @@ namespace internal {
 class HCheckEliminationPhase : public HPhase {
  public:
   explicit HCheckEliminationPhase(HGraph* graph)
-      : HPhase("H_Check Elimination", graph), aliasing_() {
+      : HPhase("H_Check Elimination", graph), aliasing_(),
+        string_maps_(kStringMapsSize, zone()) {
+    // Compute the set of string maps.
+    #define ADD_STRING_MAP(type, size, name, Name)                  \
+      string_maps_.Add(Unique<Map>::CreateImmovable(                \
+              graph->isolate()->factory()->name##_map()), zone());
+    STRING_TYPE_LIST(ADD_STRING_MAP)
+    #undef ADD_STRING_MAP
+    ASSERT_EQ(kStringMapsSize, string_maps_.size());
 #ifdef DEBUG
     redundant_ = 0;
     removed_ = 0;
     removed_cho_ = 0;
+    removed_cit_ = 0;
     narrowed_ = 0;
     loads_ = 0;
     empty_ = 0;
@@ -58,13 +44,20 @@ class HCheckEliminationPhase : public HPhase {
   friend class HCheckTable;
 
  private:
+  const UniqueSet<Map>* string_maps() const { return &string_maps_; }
+
   void PrintStats();
 
   HAliasAnalyzer* aliasing_;
+  #define COUNT(type, size, name, Name) + 1
+  static const int kStringMapsSize = 0 STRING_TYPE_LIST(COUNT);
+  #undef COUNT
+  UniqueSet<Map> string_maps_;
 #ifdef DEBUG
   int redundant_;
   int removed_;
   int removed_cho_;
+  int removed_cit_;
   int narrowed_;
   int loads_;
   int empty_;

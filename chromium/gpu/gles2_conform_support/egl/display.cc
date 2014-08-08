@@ -11,7 +11,6 @@
 #include "gpu/command_buffer/client/gles2_lib.h"
 #include "gpu/command_buffer/client/transfer_buffer.h"
 #include "gpu/command_buffer/service/context_group.h"
-#include "gpu/command_buffer/service/gpu_control_service.h"
 #include "gpu/command_buffer/service/transfer_buffer_manager.h"
 #include "gpu/gles2_conform_support/egl/config.h"
 #include "gpu/gles2_conform_support/egl/surface.h"
@@ -113,8 +112,8 @@ EGLSurface Display::CreateWindowSurface(EGLConfig config,
   if (!command_buffer->Initialize())
     return NULL;
 
-  scoped_refptr<gpu::gles2::ContextGroup> group(
-      new gpu::gles2::ContextGroup(NULL, NULL, NULL, NULL, NULL, true));
+  scoped_refptr<gpu::gles2::ContextGroup> group(new gpu::gles2::ContextGroup(
+      NULL, NULL, NULL, new gpu::gles2::ShaderTranslatorCache, NULL, true));
 
   decoder_.reset(gpu::gles2::GLES2Decoder::Create(group.get()));
   if (!decoder_.get())
@@ -170,8 +169,7 @@ EGLSurface Display::CreateWindowSurface(EGLConfig config,
     return EGL_NO_SURFACE;
   }
 
-  gpu_control_.reset(new gpu::GpuControlService(
-      NULL, NULL, group->mailbox_manager(), NULL, decoder_->GetCapabilities()));
+  gpu_control_service_.reset(new gpu::GpuControlService(NULL, NULL));
 
   command_buffer->SetPutOffsetChangeCallback(
       base::Bind(&gpu::GpuScheduler::PutChanged,
@@ -229,15 +227,15 @@ EGLContext Display::CreateContext(EGLConfig config,
   DCHECK(transfer_buffer_.get());
 
   bool bind_generates_resources = true;
-  bool free_everything_when_invisible = false;
+  bool lose_context_when_out_of_memory = false;
 
-  context_.reset(new gpu::gles2::GLES2Implementation(
-      gles2_cmd_helper_.get(),
-      NULL,
-      transfer_buffer_.get(),
-      bind_generates_resources,
-      free_everything_when_invisible,
-      gpu_control_.get()));
+  context_.reset(
+      new gpu::gles2::GLES2Implementation(gles2_cmd_helper_.get(),
+                                          NULL,
+                                          transfer_buffer_.get(),
+                                          bind_generates_resources,
+                                          lose_context_when_out_of_memory,
+                                          this));
 
   if (!context_->Initialize(
       kTransferBufferSize,
@@ -269,6 +267,51 @@ bool Display::MakeCurrent(EGLSurface draw, EGLSurface read, EGLContext ctx) {
     gles2::SetGLContext(context_.get());
   }
   return true;
+}
+
+gpu::Capabilities Display::GetCapabilities() {
+  return decoder_->GetCapabilities();
+}
+
+gfx::GpuMemoryBuffer* Display::CreateGpuMemoryBuffer(
+    size_t width,
+    size_t height,
+    unsigned internalformat,
+    unsigned usage,
+    int32* id) {
+  NOTIMPLEMENTED();
+  return NULL;
+}
+
+void Display::DestroyGpuMemoryBuffer(int32 id) {
+  NOTIMPLEMENTED();
+}
+
+uint32 Display::InsertSyncPoint() {
+  NOTIMPLEMENTED();
+  return 0u;
+}
+
+void Display::SignalSyncPoint(uint32 sync_point,
+                             const base::Closure& callback) {
+  NOTIMPLEMENTED();
+}
+
+void Display::SignalQuery(uint32 query, const base::Closure& callback) {
+  NOTIMPLEMENTED();
+}
+
+void Display::SetSurfaceVisible(bool visible) {
+  NOTIMPLEMENTED();
+}
+
+void Display::Echo(const base::Closure& callback) {
+  NOTIMPLEMENTED();
+}
+
+uint32 Display::CreateStreamTexture(uint32 texture_id) {
+  NOTIMPLEMENTED();
+  return 0;
 }
 
 }  // namespace egl

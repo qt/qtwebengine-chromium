@@ -15,10 +15,10 @@
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/browser_test_utils.h"
+#include "content/public/test/content_browser_test.h"
+#include "content/public/test/content_browser_test_utils.h"
 #include "content/public/test/test_utils.h"
 #include "content/shell/browser/shell.h"
-#include "content/test/content_browser_test.h"
-#include "content/test/content_browser_test_utils.h"
 #include "content/test/mock_google_streaming_server.h"
 #include "media/audio/mock_audio_manager.h"
 #include "media/audio/test_audio_input_controller_factory.h"
@@ -133,6 +133,7 @@ class SpeechRecognitionBrowserTest :
       size_t buffer_size,
       bool fill_with_noise) {
     DCHECK(controller.get());
+    const media::AudioParameters& audio_params = controller->audio_parameters();
     scoped_ptr<uint8[]> audio_buffer(new uint8[buffer_size]);
     if (fill_with_noise) {
       for (size_t i = 0; i < buffer_size; ++i)
@@ -141,9 +142,13 @@ class SpeechRecognitionBrowserTest :
     } else {
       memset(audio_buffer.get(), 0, buffer_size);
     }
-    controller->event_handler()->OnData(controller,
-                                        audio_buffer.get(),
-                                        buffer_size);
+
+    scoped_ptr<media::AudioBus> audio_bus =
+        media::AudioBus::Create(audio_params);
+    audio_bus->FromInterleaved(&audio_buffer.get()[0],
+                               audio_bus->frames(),
+                               audio_params.bits_per_sample() / 8);
+    controller->event_handler()->OnData(controller, audio_bus.get());
   }
 
   void FeedAudioController(int duration_ms, bool feed_with_noise) {
@@ -172,7 +177,7 @@ class SpeechRecognitionBrowserTest :
   SpeechRecognitionResult GetGoodSpeechResult() {
     SpeechRecognitionResult result;
     result.hypotheses.push_back(SpeechRecognitionHypothesis(
-        UTF8ToUTF16("Pictures of the moon"), 1.0F));
+        base::UTF8ToUTF16("Pictures of the moon"), 1.0F));
     return result;
   }
 

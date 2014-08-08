@@ -38,10 +38,10 @@ namespace blink {
 
 class WebPluginScrollbarImpl;
 
-class ScrollbarGroup : public WebCore::ScrollableArea {
+class ScrollbarGroup FINAL : public WebCore::ScrollableArea {
 public:
     ScrollbarGroup(WebCore::FrameView*, const WebCore::IntRect& frameRect);
-    ~ScrollbarGroup();
+    virtual ~ScrollbarGroup();
 
     void scrollbarCreated(WebPluginScrollbarImpl*);
     void scrollbarDestroyed(WebPluginScrollbarImpl*);
@@ -54,7 +54,6 @@ public:
     virtual void invalidateScrollbarRect(WebCore::Scrollbar*, const WebCore::IntRect&) OVERRIDE;
     virtual void invalidateScrollCornerRect(const WebCore::IntRect&) OVERRIDE;
     virtual bool isActive() const OVERRIDE;
-    virtual ScrollableArea* enclosingScrollableArea() const OVERRIDE;
     virtual WebCore::IntRect scrollCornerRect() const OVERRIDE { return WebCore::IntRect(); }
     virtual bool isScrollCornerVisible() const OVERRIDE;
     virtual void getTickmarks(Vector<WebCore::IntRect>&) const OVERRIDE;
@@ -70,7 +69,7 @@ public:
     virtual WebCore::IntSize overhangAmount() const OVERRIDE;
     virtual WebCore::IntPoint lastKnownMousePosition() const OVERRIDE;
     virtual bool shouldSuspendScrollAnimations() const OVERRIDE;
-    virtual void scrollbarStyleChanged(int newStyle, bool forceUpdate) OVERRIDE;
+    virtual void scrollbarStyleChanged() OVERRIDE;
     virtual bool scrollbarsCanBeActive() const OVERRIDE;
     virtual WebCore::IntRect scrollableAreaBoundingBox() const OVERRIDE;
     virtual bool userInputScrollable(WebCore::ScrollbarOrientation) const OVERRIDE;

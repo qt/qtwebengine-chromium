@@ -9,6 +9,11 @@
 
 namespace switches {
 
+bool IsTextInputFocusManagerEnabled() {
+  return CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kEnableTextInputFocusManager);
+}
+
 bool IsTouchDragDropEnabled() {
 #if defined(OS_CHROMEOS)
   return !CommandLine::ForCurrentProcess()->HasSwitch(
@@ -20,7 +25,7 @@ bool IsTouchDragDropEnabled() {
 }
 
 bool IsTouchEditingEnabled() {
-#if defined(OS_CHROMEOS)
+#if defined(USE_AURA)
   return !CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kDisableTouchEditing);
 #else

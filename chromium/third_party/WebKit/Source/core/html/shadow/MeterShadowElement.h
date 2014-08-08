@@ -41,39 +41,39 @@ class RenderMeter;
 
 class MeterShadowElement : public HTMLDivElement {
 protected:
-    MeterShadowElement(Document&);
+    explicit MeterShadowElement(Document&);
     HTMLMeterElement* meterElement() const;
 
 private:
-    virtual bool rendererIsNeeded(const RenderStyle&);
+    virtual bool rendererIsNeeded(const RenderStyle&) OVERRIDE;
 };
 
 class MeterInnerElement FINAL : public MeterShadowElement {
 public:
-    static PassRefPtr<MeterInnerElement> create(Document&);
+    static PassRefPtrWillBeRawPtr<MeterInnerElement> create(Document&);
 
 private:
-    MeterInnerElement(Document&);
+    explicit MeterInnerElement(Document&);
     virtual bool rendererIsNeeded(const RenderStyle&) OVERRIDE;
     virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
 };
 
 class MeterBarElement FINAL : public MeterShadowElement {
 private:
-    MeterBarElement(Document&);
+    explicit MeterBarElement(Document&);
 
 public:
-    static PassRefPtr<MeterBarElement> create(Document&);
+    static PassRefPtrWillBeRawPtr<MeterBarElement> create(Document&);
 };
 
 class MeterValueElement FINAL : public MeterShadowElement {
 public:
-    static PassRefPtr<MeterValueElement> create(Document&);
+    static PassRefPtrWillBeRawPtr<MeterValueElement> create(Document&);
     void setWidthPercentage(double);
-    void updatePseudo() { setPseudo(valuePseudoId()); }
+    void updatePseudo() { setShadowPseudoId(valuePseudoId()); }
 
 private:
-    MeterValueElement(Document&);
+    explicit MeterValueElement(Document&);
     const AtomicString& valuePseudoId() const;
 };
 

@@ -30,28 +30,27 @@
 
 #include "config.h"
 
-#include "WebUserMediaRequest.h"
+#include "public/web/WebUserMediaRequest.h"
 
+#include "core/dom/Document.h"
+#include "modules/mediastream/UserMediaRequest.h"
+#include "platform/mediastream/MediaStreamDescriptor.h"
+#include "platform/mediastream/MediaStreamSource.h"
+#include "platform/weborigin/SecurityOrigin.h"
 #include "public/platform/WebMediaConstraints.h"
 #include "public/platform/WebMediaStream.h"
 #include "public/platform/WebMediaStreamSource.h"
 #include "public/platform/WebString.h"
 #include "public/platform/WebVector.h"
+#include "public/web/WebDocument.h"
+#include "public/web/WebSecurityOrigin.h"
 #include "wtf/Vector.h"
-#include "WebDocument.h"
-#include "WebSecurityOrigin.h"
-#include "core/dom/Document.h"
-#include "core/platform/mediastream/MediaStreamDescriptor.h"
-#include "modules/mediastream/UserMediaRequest.h"
-#include "platform/mediastream/MediaConstraints.h"
-#include "platform/mediastream/MediaStreamSource.h"
-#include "platform/weborigin/SecurityOrigin.h"
 
 using namespace WebCore;
 
 namespace blink {
 
-WebUserMediaRequest::WebUserMediaRequest(const PassRefPtr<UserMediaRequest>& request)
+WebUserMediaRequest::WebUserMediaRequest(const PassRefPtrWillBeRawPtr<UserMediaRequest>& request)
     : m_private(request)
 {
 }
@@ -108,16 +107,22 @@ void WebUserMediaRequest::requestSucceeded(const WebMediaStream& streamDescripto
     m_private->succeed(streamDescriptor);
 }
 
-void WebUserMediaRequest::requestFailed(const WebString& description)
+void WebUserMediaRequest::requestDenied(const WebString& description)
 {
     ASSERT(!isNull());
-    m_private->fail(description);
+    m_private->failPermissionDenied(description);
 }
 
 void WebUserMediaRequest::requestFailedConstraint(const WebString& constraintName, const WebString& description)
 {
     ASSERT(!isNull());
     m_private->failConstraint(constraintName, description);
+}
+
+void WebUserMediaRequest::requestFailedUASpecific(const WebString& name, const WebString& constraintName, const WebString& description)
+{
+    ASSERT(!isNull());
+    m_private->failUASpecific(name, constraintName, description);
 }
 
 bool WebUserMediaRequest::equals(const WebUserMediaRequest& other) const

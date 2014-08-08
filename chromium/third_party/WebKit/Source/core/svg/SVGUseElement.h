@@ -21,112 +21,90 @@
 #ifndef SVGUseElement_h
 #define SVGUseElement_h
 
-#include "SVGNames.h"
+#include "core/SVGNames.h"
 #include "core/fetch/DocumentResource.h"
 #include "core/svg/SVGAnimatedBoolean.h"
 #include "core/svg/SVGAnimatedLength.h"
-#include "core/svg/SVGExternalResourcesRequired.h"
 #include "core/svg/SVGGraphicsElement.h"
 #include "core/svg/SVGURIReference.h"
 
 namespace WebCore {
 
 class DocumentResource;
-class SVGElementInstance;
 
 class SVGUseElement FINAL : public SVGGraphicsElement,
-                            public SVGExternalResourcesRequired,
                             public SVGURIReference,
                             public DocumentResourceClient {
 public:
-    static PassRefPtr<SVGUseElement> create(Document&, bool wasInsertedByParser);
+    static PassRefPtrWillBeRawPtr<SVGUseElement> create(Document&);
     virtual ~SVGUseElement();
 
-    SVGElementInstance* instanceRoot();
-    SVGElementInstance* animatedInstanceRoot() const;
-    SVGElementInstance* instanceForShadowTreeElement(Node*) const;
     void invalidateShadowTree();
-    void invalidateDependentShadowTrees();
 
     RenderObject* rendererClipChild() const;
 
-private:
-    SVGUseElement(Document&, bool wasInsertedByParser);
+    SVGAnimatedLength* x() const { return m_x.get(); }
+    SVGAnimatedLength* y() const { return m_y.get(); }
+    SVGAnimatedLength* width() const { return m_width.get(); }
+    SVGAnimatedLength* height() const { return m_height.get(); }
 
-    virtual bool isValid() const { return SVGTests::isValid(); }
-    virtual bool supportsFocus() const OVERRIDE { return hasFocusEventListeners(); }
+    virtual void buildPendingResource() OVERRIDE;
+
+    virtual void trace(Visitor*) OVERRIDE;
+
+private:
+    explicit SVGUseElement(Document&);
+
+    virtual bool isStructurallyExternal() const OVERRIDE { return !hrefString().isNull() && isExternalURIReference(hrefString(), document()); }
 
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
     virtual void removedFrom(ContainerNode*) OVERRIDE;
-    virtual void buildPendingResource();
 
     bool isSupportedAttribute(const QualifiedName&);
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual void svgAttributeChanged(const QualifiedName&);
+    virtual void svgAttributeChanged(const QualifiedName&) OVERRIDE;
 
-    virtual void attach(const AttachContext& = AttachContext()) OVERRIDE;
-    virtual void willRecalcStyle(StyleRecalcChange) OVERRIDE;
-
-    virtual RenderObject* createRenderer(RenderStyle*);
-    virtual void toClipPath(Path&);
+    virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
+    virtual void toClipPath(Path&) OVERRIDE;
 
     void clearResourceReferences();
     void buildShadowAndInstanceTree(SVGElement* target);
-    void detachInstance();
 
-    virtual bool haveLoadedRequiredResources() { return SVGExternalResourcesRequired::haveLoadedRequiredResources(); }
+    void scheduleShadowTreeRecreation();
+    virtual bool haveLoadedRequiredResources() OVERRIDE { return !isStructurallyExternal() || m_haveFiredLoadEvent; }
 
-    virtual void finishParsingChildren();
-    virtual bool selfHasRelativeLengths() const;
+    virtual bool selfHasRelativeLengths() const OVERRIDE;
 
     // Instance tree handling
-    void buildInstanceTree(SVGElement* target, SVGElementInstance* targetInstance, bool& foundCycle, bool foundUse);
-    bool hasCycleUseReferencing(SVGUseElement*, SVGElementInstance* targetInstance, SVGElement*& newTarget);
-
-    // Shadow tree handling
-    void buildShadowTree(SVGElement* target, SVGElementInstance* targetInstance);
-
-    void expandUseElementsInShadowTree(Node* element);
-    void expandSymbolElementsInShadowTree(Node* element);
-
-    // "Tree connector"
-    void associateInstancesWithShadowTreeElements(Node* target, SVGElementInstance* targetInstance);
-    SVGElementInstance* instanceForShadowTreeElement(Node* element, SVGElementInstance* instance) const;
+    bool buildShadowTree(SVGElement* target, SVGElement* targetInstance, bool foundUse);
+    bool hasCycleUseReferencing(SVGUseElement*, ContainerNode* targetInstance, SVGElement*& newTarget);
+    bool expandUseElementsInShadowTree(SVGElement*);
+    void expandSymbolElementsInShadowTree(SVGElement*);
 
     void transferUseAttributesToReplacedElement(SVGElement* from, SVGElement* to) const;
-    void transferEventListenersToShadowTree(SVGElementInstance* target);
 
-    BEGIN_DECLARE_ANIMATED_PROPERTIES(SVGUseElement)
-        DECLARE_ANIMATED_LENGTH(X, x)
-        DECLARE_ANIMATED_LENGTH(Y, y)
-        DECLARE_ANIMATED_LENGTH(Width, width)
-        DECLARE_ANIMATED_LENGTH(Height, height)
-        DECLARE_ANIMATED_STRING(Href, href)
-        DECLARE_ANIMATED_BOOLEAN(ExternalResourcesRequired, externalResourcesRequired)
-    END_DECLARE_ANIMATED_PROPERTIES
+    void invalidateDependentShadowTrees();
 
     bool resourceIsStillLoading();
     Document* externalDocument() const;
-    bool instanceTreeIsLoading(SVGElementInstance*);
-    virtual void notifyFinished(Resource*);
-    Document* referencedDocument() const;
+    bool instanceTreeIsLoading(SVGElement*);
+    virtual void notifyFinished(Resource*) OVERRIDE;
+    TreeScope* referencedScope() const;
     void setDocumentResource(ResourcePtr<DocumentResource>);
 
-    // SVGExternalResourcesRequired
-    virtual void setHaveFiredLoadEvent(bool haveFiredLoadEvent) { m_haveFiredLoadEvent = haveFiredLoadEvent; }
-    virtual bool isParserInserted() const { return m_wasInsertedByParser; }
-    virtual bool haveFiredLoadEvent() const { return m_haveFiredLoadEvent; }
     virtual Timer<SVGElement>* svgLoadEventTimer() OVERRIDE { return &m_svgLoadEventTimer; }
 
-    bool m_wasInsertedByParser;
+    RefPtr<SVGAnimatedLength> m_x;
+    RefPtr<SVGAnimatedLength> m_y;
+    RefPtr<SVGAnimatedLength> m_width;
+    RefPtr<SVGAnimatedLength> m_height;
+
     bool m_haveFiredLoadEvent;
     bool m_needsShadowTreeRecreation;
-    RefPtr<SVGElementInstance> m_targetElementInstance;
+    RefPtrWillBeMember<SVGElement> m_targetElementInstance;
     ResourcePtr<DocumentResource> m_resource;
     Timer<SVGElement> m_svgLoadEventTimer;
 };
-
-DEFINE_NODE_TYPE_CASTS(SVGUseElement, hasTagName(SVGNames::useTag));
 
 }
 

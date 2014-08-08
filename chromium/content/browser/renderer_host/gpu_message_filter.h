@@ -13,6 +13,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/sequenced_task_runner_helpers.h"
 #include "content/common/gpu/gpu_process_launch_causes.h"
+#include "content/common/gpu/gpu_result_codes.h"
 #include "content/public/browser/browser_message_filter.h"
 #include "ui/gfx/native_widget_types.h"
 
@@ -36,12 +37,7 @@ class GpuMessageFilter : public BrowserMessageFilter {
                    RenderWidgetHelper* render_widget_helper);
 
   // BrowserMessageFilter methods:
-  virtual bool OnMessageReceived(const IPC::Message& message,
-                                 bool* message_was_ok) OVERRIDE;
-
-  // Signals that the handle for a surface id was updated, and it may be time to
-  // unblock existing CreateViewCommandBuffer requests using that surface.
-  void SurfaceUpdated(int32 surface_id);
+  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 
   // This set of API is used to subscribe to frame presentation events.
   // See RenderWidgetHostViewFrameSubscriber for more details.
@@ -64,13 +60,14 @@ class GpuMessageFilter : public BrowserMessageFilter {
   void OnCreateViewCommandBuffer(
       int32 surface_id,
       const GPUCreateCommandBufferConfig& init_params,
+      int32 route_id,
       IPC::Message* reply);
   // Helper callbacks for the message handlers.
   void EstablishChannelCallback(scoped_ptr<IPC::Message> reply,
                                 const IPC::ChannelHandle& channel,
                                 const gpu::GPUInfo& gpu_info);
   void CreateCommandBufferCallback(scoped_ptr<IPC::Message> reply,
-                                   int32 route_id);
+                                   CreateCommandBufferResult result);
 
   void BeginAllFrameSubscriptions();
   void EndAllFrameSubscriptions();
@@ -81,10 +78,8 @@ class GpuMessageFilter : public BrowserMessageFilter {
 
   int gpu_process_id_;
   int render_process_id_;
-  bool share_contexts_;
 
   scoped_refptr<RenderWidgetHelper> render_widget_helper_;
-  std::vector<linked_ptr<CreateViewCommandBufferRequest> > pending_requests_;
 
   base::WeakPtrFactory<GpuMessageFilter> weak_ptr_factory_;
 

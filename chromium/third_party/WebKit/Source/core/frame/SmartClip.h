@@ -32,18 +32,19 @@
 #define SmartClip_h
 
 #include "core/dom/Node.h"
-#include "core/frame/Frame.h"
+#include "core/frame/LocalFrame.h"
 
 namespace WebCore {
 
 class SmartClipData {
 public:
     SmartClipData()
+        : m_isEmpty(true)
     {
     }
 
     SmartClipData(Node* node, IntRect rect, String string)
-        : m_node(node)
+        : m_isEmpty(!node)
         , m_rect(rect)
         , m_string(string)
     {
@@ -52,7 +53,7 @@ public:
     String toString();
 
 private:
-    RefPtr<Node> m_node;
+    bool m_isEmpty;
     IntRect m_rect;
     String m_string;
 };
@@ -64,7 +65,7 @@ private:
 // selection followed by a copy operation.
 class SmartClip {
 public:
-    explicit SmartClip(PassRefPtr<Frame>);
+    explicit SmartClip(PassRefPtr<LocalFrame>);
 
     SmartClipData dataForRect(const IntRect&);
 
@@ -74,11 +75,11 @@ private:
     Node* minNodeContainsNodes(Node* minNode, Node* newNode);
     Node* findBestOverlappingNode(Node*, const IntRect& cropRect);
     bool shouldSkipBackgroundImage(Node*);
-    void collectOverlappingChildNodes(Node* parentNode, const IntRect& cropRect, Vector<Node*>& overlappingNodeInfoTable);
+    void collectOverlappingChildNodes(Node* parentNode, const IntRect& cropRect, WillBeHeapVector<RawPtrWillBeMember<Node> >& overlappingNodeInfoTable);
     IntRect convertRectToWindow(const IntRect& nodeRect);
     String extractTextFromNode(Node*);
 
-    RefPtr<Frame> m_frame;
+    RefPtr<LocalFrame> m_frame;
 };
 
 } // namespace WebCore

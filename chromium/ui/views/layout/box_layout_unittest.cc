@@ -55,6 +55,27 @@ TEST_F(BoxLayoutTest, AlignmentVertical) {
   EXPECT_EQ(gfx::Rect(0, 10, 20, 10), v2->bounds());
 }
 
+TEST_F(BoxLayoutTest, SetInsideBorderInsets) {
+  layout_.reset(new BoxLayout(BoxLayout::kHorizontal, 10, 20, 0));
+  View* v1 = new StaticSizedView(gfx::Size(10, 20));
+  host_->AddChildView(v1);
+  View* v2 = new StaticSizedView(gfx::Size(10, 10));
+  host_->AddChildView(v2);
+  EXPECT_EQ(gfx::Size(40, 60), layout_->GetPreferredSize(host_.get()));
+  host_->SetBounds(0, 0, 40, 60);
+  layout_->Layout(host_.get());
+  EXPECT_EQ(gfx::Rect(10, 20, 10, 20), v1->bounds());
+  EXPECT_EQ(gfx::Rect(20, 20, 10, 20), v2->bounds());
+
+  layout_->set_inside_border_insets(
+      gfx::Insets(5, 10, 15, 20));
+  EXPECT_EQ(gfx::Size(50, 40), layout_->GetPreferredSize(host_.get()));
+  host_->SetBounds(0, 0, 50, 40);
+  layout_->Layout(host_.get());
+  EXPECT_EQ(gfx::Rect(10, 5, 10, 20), v1->bounds());
+  EXPECT_EQ(gfx::Rect(20, 5, 10, 20), v2->bounds());
+}
+
 TEST_F(BoxLayoutTest, Spacing) {
   layout_.reset(new BoxLayout(BoxLayout::kHorizontal, 7, 7, 8));
   View* v1 = new StaticSizedView(gfx::Size(10, 20));
@@ -75,6 +96,25 @@ TEST_F(BoxLayoutTest, Overflow) {
   View* v2 = new StaticSizedView(gfx::Size(10, 20));
   host_->AddChildView(v2);
   host_->SetBounds(0, 0, 10, 10);
+
+  // Overflows by positioning views at the start and truncating anything that
+  // doesn't fit.
+  layout_->Layout(host_.get());
+  EXPECT_EQ(gfx::Rect(0, 0, 10, 10), v1->bounds());
+  EXPECT_EQ(gfx::Rect(0, 0, 0, 0), v2->bounds());
+
+  // All values of main axis alignment should overflow in the same manner.
+  layout_->set_main_axis_alignment(BoxLayout::MAIN_AXIS_ALIGNMENT_START);
+  layout_->Layout(host_.get());
+  EXPECT_EQ(gfx::Rect(0, 0, 10, 10), v1->bounds());
+  EXPECT_EQ(gfx::Rect(0, 0, 0, 0), v2->bounds());
+
+  layout_->set_main_axis_alignment(BoxLayout::MAIN_AXIS_ALIGNMENT_CENTER);
+  layout_->Layout(host_.get());
+  EXPECT_EQ(gfx::Rect(0, 0, 10, 10), v1->bounds());
+  EXPECT_EQ(gfx::Rect(0, 0, 0, 0), v2->bounds());
+
+  layout_->set_main_axis_alignment(BoxLayout::MAIN_AXIS_ALIGNMENT_END);
   layout_->Layout(host_.get());
   EXPECT_EQ(gfx::Rect(0, 0, 10, 10), v1->bounds());
   EXPECT_EQ(gfx::Rect(0, 0, 0, 0), v2->bounds());
@@ -102,9 +142,9 @@ TEST_F(BoxLayoutTest, InvisibleChild) {
   EXPECT_EQ(gfx::Rect(10, 10, 10, 10), v2->bounds());
 }
 
-TEST_F(BoxLayoutTest, DistributeEmptySpace) {
+TEST_F(BoxLayoutTest, MainAxisAlignmentFill) {
   layout_.reset(new BoxLayout(BoxLayout::kHorizontal, 10, 10, 10));
-  layout_->set_spread_blank_space(true);
+  layout_->set_main_axis_alignment(BoxLayout::MAIN_AXIS_ALIGNMENT_FILL);
 
   View* v1 = new StaticSizedView(gfx::Size(20, 20));
   host_->AddChildView(v1);
@@ -154,6 +194,76 @@ TEST_F(BoxLayoutTest, EmptyPreferredSize) {
     EXPECT_EQ(v2->GetPreferredSize().width(), v2->bounds().width()) << i;
     EXPECT_EQ(v2->GetPreferredSize().height(), v2->bounds().height()) << i;
   }
+}
+
+TEST_F(BoxLayoutTest, MainAxisAlignmentHorizontal) {
+  layout_.reset(new BoxLayout(BoxLayout::kHorizontal, 10, 10, 10));
+
+  View* v1 = new StaticSizedView(gfx::Size(20, 20));
+  host_->AddChildView(v1);
+  View* v2 = new StaticSizedView(gfx::Size(10, 10));
+  host_->AddChildView(v2);
+
+  host_->SetBounds(0, 0, 100, 40);
+
+  // Align children to the horizontal start by default.
+  layout_->Layout(host_.get());
+  EXPECT_EQ(gfx::Rect(10, 10, 20, 20).ToString(), v1->bounds().ToString());
+  EXPECT_EQ(gfx::Rect(40, 10, 10, 20).ToString(), v2->bounds().ToString());
+
+  // Ensure same results for MAIN_AXIS_ALIGNMENT_START.
+  layout_->set_main_axis_alignment(BoxLayout::MAIN_AXIS_ALIGNMENT_START);
+  layout_->Layout(host_.get());
+  EXPECT_EQ(gfx::Rect(10, 10, 20, 20).ToString(), v1->bounds().ToString());
+  EXPECT_EQ(gfx::Rect(40, 10, 10, 20).ToString(), v2->bounds().ToString());
+
+  // Aligns children to the center horizontally.
+  layout_->set_main_axis_alignment(BoxLayout::MAIN_AXIS_ALIGNMENT_CENTER);
+  layout_->Layout(host_.get());
+  EXPECT_EQ(gfx::Rect(30, 10, 20, 20).ToString(), v1->bounds().ToString());
+  EXPECT_EQ(gfx::Rect(60, 10, 10, 20).ToString(), v2->bounds().ToString());
+
+  // Aligns children to the end of the host horizontally, accounting for the
+  // inside border spacing.
+  layout_->set_main_axis_alignment(BoxLayout::MAIN_AXIS_ALIGNMENT_END);
+  layout_->Layout(host_.get());
+  EXPECT_EQ(gfx::Rect(50, 10, 20, 20).ToString(), v1->bounds().ToString());
+  EXPECT_EQ(gfx::Rect(80, 10, 10, 20).ToString(), v2->bounds().ToString());
+}
+
+TEST_F(BoxLayoutTest, MainAxisAlignmentVertical) {
+  layout_.reset(new BoxLayout(BoxLayout::kVertical, 10, 10, 10));
+
+  View* v1 = new StaticSizedView(gfx::Size(20, 20));
+  host_->AddChildView(v1);
+  View* v2 = new StaticSizedView(gfx::Size(10, 10));
+  host_->AddChildView(v2);
+
+  host_->SetBounds(0, 0, 40, 100);
+
+  // Align children to the vertical start by default.
+  layout_->Layout(host_.get());
+  EXPECT_EQ(gfx::Rect(10, 10, 20, 20).ToString(), v1->bounds().ToString());
+  EXPECT_EQ(gfx::Rect(10, 40, 20, 10).ToString(), v2->bounds().ToString());
+
+  // Ensure same results for MAIN_AXIS_ALIGNMENT_START.
+  layout_->set_main_axis_alignment(BoxLayout::MAIN_AXIS_ALIGNMENT_START);
+  layout_->Layout(host_.get());
+  EXPECT_EQ(gfx::Rect(10, 10, 20, 20).ToString(), v1->bounds().ToString());
+  EXPECT_EQ(gfx::Rect(10, 40, 20, 10).ToString(), v2->bounds().ToString());
+
+  // Aligns children to the center vertically.
+  layout_->set_main_axis_alignment(BoxLayout::MAIN_AXIS_ALIGNMENT_CENTER);
+  layout_->Layout(host_.get());
+  EXPECT_EQ(gfx::Rect(10, 30, 20, 20).ToString(), v1->bounds().ToString());
+  EXPECT_EQ(gfx::Rect(10, 60, 20, 10).ToString(), v2->bounds().ToString());
+
+  // Aligns children to the end of the host vertically, accounting for the
+  // inside border spacing.
+  layout_->set_main_axis_alignment(BoxLayout::MAIN_AXIS_ALIGNMENT_END);
+  layout_->Layout(host_.get());
+  EXPECT_EQ(gfx::Rect(10, 50, 20, 20).ToString(), v1->bounds().ToString());
+  EXPECT_EQ(gfx::Rect(10, 80, 20, 10).ToString(), v2->bounds().ToString());
 }
 
 }  // namespace views

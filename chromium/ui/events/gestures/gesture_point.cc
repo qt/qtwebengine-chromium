@@ -11,7 +11,6 @@
 #include "ui/events/event_constants.h"
 #include "ui/events/gestures/gesture_configuration.h"
 #include "ui/events/gestures/gesture_types.h"
-#include "ui/events/gestures/gesture_util.h"
 
 namespace ui {
 
@@ -24,7 +23,14 @@ GesturePoint::GesturePoint()
       velocity_calculator_(
           GestureConfiguration::points_buffered_for_velocity()),
       point_id_(-1),
-      touch_id_(-1) {
+      touch_id_(-1),
+      source_device_id_(-1) {
+  max_touch_move_in_pixels_for_click_squared_ =
+      GestureConfiguration::max_touch_move_in_pixels_for_click() *
+      GestureConfiguration::max_touch_move_in_pixels_for_click();
+  max_distance_between_taps_for_double_tap_squared_ =
+      GestureConfiguration::max_distance_between_taps_for_double_tap() *
+      GestureConfiguration::max_distance_between_taps_for_double_tap();
 }
 
 GesturePoint::~GesturePoint() {}
@@ -34,14 +40,14 @@ void GesturePoint::Reset() {
   ResetVelocity();
   point_id_ = -1;
   clear_enclosing_rectangle();
+  source_device_id_ = -1;
 }
 
 void GesturePoint::ResetVelocity() {
   velocity_calculator_.ClearHistory();
-  same_direction_count_ = gfx::Vector2d();
 }
 
-gfx::Vector2d GesturePoint::ScrollDelta() {
+gfx::Vector2dF GesturePoint::ScrollDelta() const {
   return last_touch_position_ - second_last_touch_position_;
 }
 
@@ -54,11 +60,10 @@ void GesturePoint::UpdateValues(const TouchEvent& event) {
                                    event_timestamp_microseconds);
     gfx::Vector2d sd(ScrollVelocityDirection(velocity_calculator_.XVelocity()),
                      ScrollVelocityDirection(velocity_calculator_.YVelocity()));
-    same_direction_count_ = same_direction_count_ + sd;
   }
 
   last_touch_time_ = event.time_stamp().InSecondsF();
-  last_touch_position_ = event.location();
+  last_touch_position_ = event.location_f();
 
   if (event.type() == ui::ET_TOUCH_PRESSED) {
     ResetVelocity();
@@ -86,31 +91,30 @@ void GesturePoint::UpdateForTap() {
 void GesturePoint::UpdateForScroll() {
   second_last_touch_position_ = last_touch_position_;
   second_last_touch_time_ = last_touch_time_;
-  same_direction_count_ = gfx::Vector2d();
 }
 
 bool GesturePoint::IsInClickWindow(const TouchEvent& event) const {
-  return IsInClickTimeWindow() && IsInsideManhattanSquare(event);
+  return IsInClickTimeWindow() && IsInsideTouchSlopRegion(event);
 }
 
 bool GesturePoint::IsInDoubleClickWindow(const TouchEvent& event) const {
   return IsInClickAggregateTimeWindow(last_tap_time_, last_touch_time_) &&
-         IsPointInsideManhattanSquare(event.location(), last_tap_position_);
+         IsPointInsideDoubleTapTouchSlopRegion(
+             event.location(), last_tap_position_);
 }
 
 bool GesturePoint::IsInTripleClickWindow(const TouchEvent& event) const {
   return IsInClickAggregateTimeWindow(last_tap_time_, last_touch_time_) &&
          IsInClickAggregateTimeWindow(second_last_tap_time_, last_tap_time_) &&
-         IsPointInsideManhattanSquare(event.location(), last_tap_position_) &&
-         IsPointInsideManhattanSquare(last_tap_position_,
+         IsPointInsideDoubleTapTouchSlopRegion(
+             event.location(), last_tap_position_) &&
+         IsPointInsideDoubleTapTouchSlopRegion(last_tap_position_,
                                       second_last_tap_position_);
 }
 
 bool GesturePoint::IsInScrollWindow(const TouchEvent& event) const {
-  if (IsConsistentScrollingActionUnderway())
-    return true;
   return event.type() == ui::ET_TOUCH_MOVED &&
-         !IsInsideManhattanSquare(event);
+         !IsInsideTouchSlopRegion(event);
 }
 
 bool GesturePoint::IsInFlickWindow(const TouchEvent& event) {
@@ -128,28 +132,20 @@ int GesturePoint::ScrollVelocityDirection(float v) {
 }
 
 bool GesturePoint::DidScroll(const TouchEvent& event, int dist) const {
-  gfx::Vector2d d = last_touch_position_ - second_last_touch_position_;
-  return abs(d.x()) > dist || abs(d.y()) > dist;
-}
-
-bool GesturePoint::IsConsistentScrollingActionUnderway() const {
-  int me = GestureConfiguration::min_scroll_successive_velocity_events();
-  if (abs(same_direction_count_.x()) >= me ||
-      abs(same_direction_count_.y()) >= me)
-    return true;
-  return false;
+  gfx::Vector2dF d = last_touch_position_ - second_last_touch_position_;
+  return fabs(d.x()) > dist || fabs(d.y()) > dist;
 }
 
 bool GesturePoint::IsInHorizontalRailWindow() const {
-  gfx::Vector2d d = last_touch_position_ - second_last_touch_position_;
-  return abs(d.x()) >
-      GestureConfiguration::rail_start_proportion() * abs(d.y());
+  gfx::Vector2dF d = last_touch_position_ - second_last_touch_position_;
+  return std::abs(d.x()) >
+      GestureConfiguration::rail_start_proportion() * std::abs(d.y());
 }
 
 bool GesturePoint::IsInVerticalRailWindow() const {
-  gfx::Vector2d d = last_touch_position_ - second_last_touch_position_;
-  return abs(d.y()) >
-      GestureConfiguration::rail_start_proportion() * abs(d.x());
+  gfx::Vector2dF d = last_touch_position_ - second_last_touch_position_;
+  return std::abs(d.y()) >
+      GestureConfiguration::rail_start_proportion() * std::abs(d.x());
 }
 
 bool GesturePoint::BreaksHorizontalRail() {
@@ -180,16 +176,21 @@ bool GesturePoint::IsInClickAggregateTimeWindow(double before,
   return duration < GestureConfiguration::max_seconds_between_double_click();
 }
 
-bool GesturePoint::IsInsideManhattanSquare(const TouchEvent& event) const {
-  return ui::gestures::IsInsideManhattanSquare(event.location(),
-                                               first_touch_position_);
+bool GesturePoint::IsInsideTouchSlopRegion(const TouchEvent& event) const {
+  const gfx::PointF& p1 = event.location();
+  const gfx::PointF& p2 = first_touch_position_;
+  float dx = p1.x() - p2.x();
+  float dy = p1.y() - p2.y();
+  float distance = dx * dx + dy * dy;
+  return distance < max_touch_move_in_pixels_for_click_squared_;
 }
 
-bool GesturePoint::IsPointInsideManhattanSquare(gfx::Point p1,
-                                                gfx::Point p2) const {
- int manhattan_distance = abs(p1.x() - p2.x()) + abs(p1.y() - p2.y());
-  return manhattan_distance <
-      GestureConfiguration::max_distance_between_taps_for_double_tap();
+bool GesturePoint::IsPointInsideDoubleTapTouchSlopRegion(gfx::PointF p1,
+                                                         gfx::PointF p2) const {
+  float dx = p1.x() - p2.x();
+  float dy = p1.y() - p2.y();
+  float distance = dx * dx + dy * dy;
+  return distance < max_distance_between_taps_for_double_tap_squared_;
 }
 
 bool GesturePoint::IsOverMinFlickSpeed() {
@@ -217,10 +218,10 @@ void GesturePoint::UpdateEnclosingRectangle(const TouchEvent& event) {
   else
     radius = GestureConfiguration::default_radius();
 
-  gfx::Rect rect(event.location().x() - radius,
-                 event.location().y() - radius,
-                 radius * 2,
-                 radius * 2);
+  gfx::RectF rect(event.location_f().x() - radius,
+                  event.location_f().y() - radius,
+                  radius * 2,
+                  radius * 2);
   if (IsInClickWindow(event))
     enclosing_rect_.Union(rect);
   else

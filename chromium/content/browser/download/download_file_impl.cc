@@ -18,7 +18,6 @@
 #include "content/browser/download/download_stats.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/download_destination_observer.h"
-#include "content/public/browser/power_save_blocker.h"
 #include "net/base/io_buffer.h"
 
 namespace content {
@@ -36,7 +35,6 @@ DownloadFileImpl::DownloadFileImpl(
     bool calculate_hash,
     scoped_ptr<ByteStreamReader> stream,
     const net::BoundNetLog& bound_net_log,
-    scoped_ptr<PowerSaveBlocker> power_save_blocker,
     base::WeakPtr<DownloadDestinationObserver> observer)
         : file_(save_info->file_path,
                 url,
@@ -44,15 +42,14 @@ DownloadFileImpl::DownloadFileImpl(
                 save_info->offset,
                 calculate_hash,
                 save_info->hash_state,
-                save_info->file_stream.Pass(),
+                save_info->file.Pass(),
                 bound_net_log),
           default_download_directory_(default_download_directory),
           stream_reader_(stream.Pass()),
           bytes_seen_(0),
           bound_net_log_(bound_net_log),
           observer_(observer),
-          weak_factory_(this),
-          power_save_blocker_(power_save_blocker.Pass()) {
+          weak_factory_(this) {
 }
 
 DownloadFileImpl::~DownloadFileImpl() {
@@ -110,7 +107,7 @@ void DownloadFileImpl::RenameAndUniquify(
 
   base::FilePath new_path(full_path);
 
-  int uniquifier = file_util::GetUniquePathNumber(
+  int uniquifier = base::GetUniquePathNumber(
       new_path, base::FilePath::StringType());
   if (uniquifier > 0) {
     new_path = new_path.InsertBeforeExtensionASCII(
@@ -297,7 +294,7 @@ void DownloadFileImpl::StreamActive() {
             &DownloadDestinationObserver::DestinationCompleted,
             observer_, hash));
   }
-  if (bound_net_log_.IsLoggingAllEvents()) {
+  if (bound_net_log_.IsLogging()) {
     bound_net_log_.AddEvent(
         net::NetLog::TYPE_DOWNLOAD_STREAM_DRAINED,
         base::Bind(&FileStreamDrainedNetLogCallback, total_incoming_data_size,

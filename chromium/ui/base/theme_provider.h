@@ -8,7 +8,7 @@
 #include "base/basictypes.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/base/layout.h"
-#include "ui/base/ui_export.h"
+#include "ui/base/ui_base_export.h"
 
 #if defined(OS_MACOSX)
 #ifdef __OBJC__
@@ -20,9 +20,6 @@ class NSColor;
 class NSGradient;
 class NSImage;
 #endif  // __OBJC__
-#elif !defined(OS_WIN)
-typedef struct _GdkColor GdkColor;
-typedef struct _GdkPixbuf GdkPixbuf;
 #endif  // OS_*
 
 class SkBitmap;
@@ -46,9 +43,13 @@ namespace ui {
 //
 ////////////////////////////////////////////////////////////////////////////////
 
-class UI_EXPORT ThemeProvider {
+class UI_BASE_EXPORT ThemeProvider {
  public:
   virtual ~ThemeProvider();
+
+  // Whether we're using the system theme (which may or may not be the
+  // same as the default theme).
+  virtual bool UsingSystemTheme() const = 0;
 
   // Get the image specified by |id|. An implementation of ThemeProvider should
   // have its own source of ids (e.g. an enum, or external resource bundle).
@@ -92,18 +93,6 @@ class UI_EXPORT ThemeProvider {
 
   // Gets the NSGradient with the specified |id|.
   virtual NSGradient* GetNSGradient(int id) const = 0;
-#elif defined(OS_POSIX) && !defined(TOOLKIT_VIEWS) && !defined(OS_ANDROID)
-  // Gets the GdkPixbuf with the specified |id|.  Returns a pointer to a shared
-  // instance of the GdkPixbuf.  This shared GdkPixbuf is owned by the theme
-  // provider and should not be freed.
-  //
-  // The bitmap is assumed to exist. This function will log in release, and
-  // assert in debug mode if it does not. On failure, this will return a
-  // pointer to a shared empty placeholder bitmap so it will be visible what
-  // is missing.
-
-  // As above, but flips it in RTL locales.
-  virtual GdkPixbuf* GetRTLEnabledPixbufNamed(int id) const = 0;
 #endif
 };
 

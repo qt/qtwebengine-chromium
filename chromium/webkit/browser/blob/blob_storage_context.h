@@ -22,6 +22,10 @@ class FilePath;
 class Time;
 }
 
+namespace content {
+class BlobStorageHost;
+}
+
 namespace webkit_blob {
 
 class BlobDataHandle;
@@ -48,8 +52,8 @@ class WEBKIT_STORAGE_BROWSER_EXPORT BlobStorageContext
   void RevokePublicBlobURL(const GURL& url);
 
  private:
-  friend class BlobDataHandle;
-  friend class BlobStorageHost;
+  friend class content::BlobStorageHost;
+  friend class BlobDataHandle::BlobDataHandleShared;
   friend class ViewBlobInternalsJob;
 
   enum EntryFlags {
@@ -101,7 +105,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT BlobStorageContext
   BlobMap blob_map_;
   BlobURLMap public_blob_urls_;
 
-  // Used to keep track of how much memory is being utitlized for blob data,
+  // Used to keep track of how much memory is being utilized for blob data,
   // we count only the items of TYPE_DATA which are held in memory and not
   // items of TYPE_FILE.
   int64 memory_usage_;

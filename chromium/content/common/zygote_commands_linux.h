@@ -10,9 +10,17 @@
 
 namespace content {
 
+// Contents of the initial message sent from the zygote to the browser right
+// after it starts.
+static const char kZygoteBootMessage[] = "ZYGOTE_BOOT";
+
 // Contents of the initial message sent from the zygote to the browser when it
 // is ready to go.
 static const char kZygoteHelloMessage[] = "ZYGOTE_OK";
+
+// Message sent by zygote children to the browser so the browser can discover
+// the sending child's process ID.
+static const char kZygoteChildPingMessage[] = "CHILD_PING";
 
 // Maximum allowable length for messages sent to the zygote.
 const size_t kZygoteMaxMessageLength = 8192;
@@ -20,14 +28,6 @@ const size_t kZygoteMaxMessageLength = 8192;
 // File descriptors initialized by the Zygote Host
 const int kZygoteSocketPairFd =
     kPrimaryIPCChannel + base::GlobalDescriptors::kBaseDescriptor;
-// This file descriptor is special. It is passed to the Zygote and a setuid
-// helper will be called to locate the process of the Zygote on the system.
-// This mechanism is used when multiple PID namespaces exist because of the
-// setuid sandbox.
-// It is very important that this file descriptor does not exist in multiple
-// processes.
-// This number must be kept in sync in sandbox/linux/suid/sandbox.c
-const int kZygoteIdFd = 7;
 
 // These are the command codes used on the wire between the browser and the
 // zygote.
@@ -42,7 +42,11 @@ enum {
   kZygoteCommandGetTerminationStatus = 2,
 
   // Read a bitmask of kSandboxLinux*
-  kZygoteCommandGetSandboxStatus = 3
+  kZygoteCommandGetSandboxStatus = 3,
+
+  // Not a real zygote command, but a subcommand used during the zygote fork
+  // protocol.  Sends the child's PID as seen from the browser process.
+  kZygoteCommandForkRealPID = 4
 };
 
 }  // namespace content

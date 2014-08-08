@@ -12,6 +12,7 @@
       'include_dirs' : [
         '../src/core',
         '../src/effects', #needed for BlurMask.h
+        '../src/gpu', # needed by SkLua.cpp
         '../src/images',
         '../src/lazy',
         '../gm',       # needed to pull gm.h
@@ -23,16 +24,6 @@
         'gmslides.gypi',
       ],
       'sources': [
-        '../src/utils/debugger/SkDrawCommand.h',
-        '../src/utils/debugger/SkDrawCommand.cpp',
-        '../src/utils/debugger/SkDebugCanvas.h',
-        '../src/utils/debugger/SkDebugCanvas.cpp',
-        '../src/utils/debugger/SkObjectParser.h',
-        '../src/utils/debugger/SkObjectParser.cpp',
-
-        '../gm/gm.cpp',
-        '../gm/gm.h',
-
         '../samplecode/GMSampleView.h',
         '../samplecode/ClockFaceView.cpp',
         '../samplecode/OverView.cpp',
@@ -90,7 +81,6 @@
         '../samplecode/SampleMipMap.cpp',
         '../samplecode/SampleMovie.cpp',
         '../samplecode/SampleOvalTest.cpp',
-        '../samplecode/SampleOverflow.cpp',
         '../samplecode/SamplePatch.cpp',
         '../samplecode/SamplePath.cpp',
         '../samplecode/SamplePathClip.cpp',
@@ -100,6 +90,7 @@
         '../samplecode/SamplePictFile.cpp',
         '../samplecode/SamplePoints.cpp',
         '../samplecode/SamplePolyToPoly.cpp',
+        '../samplecode/SampleRectanizer.cpp',
         '../samplecode/SampleRegion.cpp',
         '../samplecode/SampleRepeatTile.cpp',
         '../samplecode/SampleRotateCircles.cpp',
@@ -109,7 +100,7 @@
         '../samplecode/SampleSlides.cpp',
         '../samplecode/SampleStringArt.cpp',
         '../samplecode/SampleStrokePath.cpp',
-        '../samplecode/SampleTests.cpp',
+        '../samplecode/SampleSubpixelTranslate.cpp',
         '../samplecode/SampleText.cpp',
         '../samplecode/SampleTextAlpha.cpp',
         '../samplecode/SampleTextBox.cpp',
@@ -117,7 +108,6 @@
         '../samplecode/SampleTextureDomain.cpp',
         '../samplecode/SampleTiling.cpp',
         '../samplecode/SampleTinyBitmap.cpp',
-        '../samplecode/SampleUnitMapper.cpp',
         '../samplecode/SampleUnpremul.cpp',
         '../samplecode/SampleVertices.cpp',
         '../samplecode/SampleXfermodesBlur.cpp',
@@ -144,22 +134,27 @@
         # Lua
         '../src/utils/SkLuaCanvas.cpp',
         '../src/utils/SkLua.cpp',
+
+        # tools
+        '../tools/sk_tool_utils.cpp',
       ],
       'sources!': [
         '../samplecode/SampleSkLayer.cpp', #relies on SkMatrix44 which doesn't compile
-        '../samplecode/SampleTests.cpp',   #includes unknown file SkShaderExtras.h
         '../samplecode/SampleWarp.cpp',
         '../samplecode/SampleFontCache.cpp',
       ],
       'dependencies': [
+        'animator.gyp:animator',
+        'etc1.gyp:libetc1',
+        'experimental.gyp:experimental',
+        'flags.gyp:flags',
+        'lua.gyp:lua',
+        'pdf.gyp:pdf',
+        'resources.gyp:resources',
         'skia_lib.gyp:skia_lib',
         'views.gyp:views',
-        'animator.gyp:animator',
-        'xml.gyp:xml',
-        'experimental.gyp:experimental',
-        'pdf.gyp:pdf',
         'views_animated.gyp:views_animated',
-        'lua.gyp:lua',
+        'xml.gyp:xml',
       ],
      'conditions' : [
        [ 'sample_pdf_file_viewer == 1', {
@@ -220,46 +215,35 @@
             '../samplecode/SampleDecode.cpp',
           ],
           'sources': [
-            '../src/views/mac/SkEventNotifier.h',
             '../src/views/mac/SkEventNotifier.mm',
-            '../experimental/iOSSampleApp/SkSampleUIView.h',
             '../experimental/iOSSampleApp/SkSampleUIView.mm',
             '../experimental/iOSSampleApp/SkiOSSampleApp-Base.xcconfig',
             '../experimental/iOSSampleApp/SkiOSSampleApp-Debug.xcconfig',
             '../experimental/iOSSampleApp/SkiOSSampleApp-Release.xcconfig',
             '../experimental/iOSSampleApp/iOSSampleApp-Info.plist',
-            '../experimental/iOSSampleApp/Shared/SkOptionListController.h',
             '../experimental/iOSSampleApp/Shared/SkOptionListController.mm',
-            '../experimental/iOSSampleApp/Shared/SkUIRootViewController.h',
             '../experimental/iOSSampleApp/Shared/SkUIRootViewController.mm',
-            '../experimental/iOSSampleApp/Shared/SkOptionsTableViewController.h',
             '../experimental/iOSSampleApp/Shared/SkOptionsTableViewController.mm',
-            '../experimental/iOSSampleApp/Shared/SkUIView.h',
             '../experimental/iOSSampleApp/Shared/SkUIView.mm',
-            '../experimental/iOSSampleApp/Shared/SkUIDetailViewController.h',
             '../experimental/iOSSampleApp/Shared/SkUIDetailViewController.mm',
             '../experimental/iOSSampleApp/Shared/skia_ios.mm',
 
             # iPad
-            '../experimental/iOSSampleApp/iPad/AppDelegate_iPad.h',
             '../experimental/iOSSampleApp/iPad/AppDelegate_iPad.mm',
-            '../experimental/iOSSampleApp/iPad/SkUISplitViewController.h',
             '../experimental/iOSSampleApp/iPad/SkUISplitViewController.mm',
             '../experimental/iOSSampleApp/iPad/MainWindow_iPad.xib',
 
             # iPhone
-            '../experimental/iOSSampleApp/iPhone/AppDelegate_iPhone.h',
             '../experimental/iOSSampleApp/iPhone/AppDelegate_iPhone.mm',
-            '../experimental/iOSSampleApp/iPhone/SkUINavigationController.h',
             '../experimental/iOSSampleApp/iPhone/SkUINavigationController.mm',
             '../experimental/iOSSampleApp/iPhone/MainWindow_iPhone.xib',
 
             '../src/views/ios/SkOSWindow_iOS.mm',
             '../src/utils/ios/SkImageDecoder_iOS.mm',
             '../src/utils/ios/SkStream_NSData.mm',
-            '../src/utils/ios/SkOSFile_iOS.mm',
+            # Not fully implemented yet
+            # '../src/utils/ios/SkOSFile_iOS.mm',
 
-            '../include/utils/mac/SkCGUtils.h',
             '../src/utils/mac/SkCreateCGImageRef.cpp',
             '../experimental/iOSSampleApp/SkiOSSampleApp-Debug.xcconfig',
             '../experimental/iOSSampleApp/SkiOSSampleApp-Release.xcconfig',
@@ -281,7 +265,9 @@
             '../experimental/iOSSampleApp',
             '../experimental/iOSSampleApp/iPad',
             '../experimental/iOSSampleApp/iPhone',
+            '../experimental/iOSSampleApp/Shared',
             '../include/utils/ios',
+            '../src/views/mac',
           ],
           'xcode_settings' : {
             'INFOPLIST_FILE' : '../experimental/iOSSampleApp/iOSSampleApp-Info.plist',
@@ -295,7 +281,6 @@
         [ 'skia_os == "android"', {
           'sources!': [
             '../samplecode/SampleAnimator.cpp',
-            '../samplecode/SampleUnitMapper.cpp',
           ],
           'dependencies!': [
             'animator.gyp:animator',

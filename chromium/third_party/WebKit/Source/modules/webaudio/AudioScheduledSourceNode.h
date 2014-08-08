@@ -40,7 +40,7 @@ public:
     // These are the possible states an AudioScheduledSourceNode can be in:
     //
     // UNSCHEDULED_STATE - Initial playback state. Created, but not yet scheduled.
-    // SCHEDULED_STATE - Scheduled to play (via noteOn() or noteGrainOn()), but not yet playing.
+    // SCHEDULED_STATE - Scheduled to play (via start()), but not yet playing.
     // PLAYING_STATE - Generating sound.
     // FINISHED_STATE - Finished generating sound.
     //
@@ -77,8 +77,8 @@ public:
     bool isPlayingOrScheduled() const { return m_playbackState == PLAYING_STATE || m_playbackState == SCHEDULED_STATE; }
     bool hasFinished() const { return m_playbackState == FINISHED_STATE; }
 
-    EventListener* onended(DOMWrapperWorld* isolatedWorld) { return getAttributeEventListener(EventTypeNames::ended, isolatedWorld); }
-    void setOnended(PassRefPtr<EventListener>, DOMWrapperWorld* isolatedWorld = 0);
+    EventListener* onended() { return getAttributeEventListener(EventTypeNames::ended); }
+    void setOnended(PassRefPtr<EventListener>);
 
 protected:
     // Get frame information for the current time quantum.
@@ -109,7 +109,6 @@ protected:
     double m_endTime; // in seconds
 
     bool m_hasEndedListener;
-    bool m_stopCalled;
 
     static const double UnknownTime;
 };

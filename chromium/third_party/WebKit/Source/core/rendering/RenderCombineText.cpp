@@ -55,28 +55,31 @@ void RenderCombineText::setTextInternal(PassRefPtr<StringImpl> text)
     m_needsFontUpdate = true;
 }
 
-float RenderCombineText::width(unsigned from, unsigned length, const Font& font, float xPosition, HashSet<const SimpleFontData*>* fallbackFonts, GlyphOverflow* glyphOverflow) const
+float RenderCombineText::width(unsigned from, unsigned length, const Font& font, float xPosition, TextDirection direction, HashSet<const SimpleFontData*>* fallbackFonts, GlyphOverflow* glyphOverflow) const
 {
+    if (!length)
+        return 0;
+
     if (hasEmptyText())
         return 0;
 
     if (m_isCombined)
-        return font.size();
+        return font.fontDescription().computedSize();
 
-    return RenderText::width(from, length, font, xPosition, fallbackFonts, glyphOverflow);
+    return RenderText::width(from, length, font, xPosition, direction, fallbackFonts, glyphOverflow);
 }
 
 void RenderCombineText::adjustTextOrigin(FloatPoint& textOrigin, const FloatRect& boxRect) const
 {
     if (m_isCombined)
-        textOrigin.move(boxRect.height() / 2 - ceilf(m_combinedTextWidth) / 2, style()->font().pixelSize());
+        textOrigin.move(boxRect.height() / 2 - ceilf(m_combinedTextWidth) / 2, style()->font().fontDescription().computedPixelSize());
 }
 
 void RenderCombineText::getStringToRender(int start, StringView& string, int& length) const
 {
     ASSERT(start >= 0);
     if (m_isCombined) {
-        string = StringView(originalText());
+        string = StringView(m_renderingText.impl());
         length = string.length();
         return;
     }
@@ -96,7 +99,7 @@ void RenderCombineText::combineText()
     if (style()->isHorizontalWritingMode())
         return;
 
-    TextRun run = RenderBlockFlow::constructTextRun(this, originalFont(), this, style());
+    TextRun run = RenderBlockFlow::constructTextRun(this, originalFont(), this, style(), style()->direction());
     FontDescription description = originalFont().fontDescription();
     float emWidth = description.computedSize() * textCombineMargin;
     bool shouldUpdateFont = false;
@@ -114,7 +117,7 @@ void RenderCombineText::combineText()
         static const FontWidthVariant widthVariants[] = { HalfWidth, ThirdWidth, QuarterWidth };
         for (size_t i = 0 ; i < WTF_ARRAY_LENGTH(widthVariants) ; ++i) {
             description.setWidthVariant(widthVariants[i]);
-            Font compressedFont = Font(description, style()->font().letterSpacing(), style()->font().wordSpacing());
+            Font compressedFont = Font(description);
             compressedFont.update(fontSelector);
             float runWidth = compressedFont.width(run);
             if (runWidth <= emWidth) {
@@ -136,6 +139,7 @@ void RenderCombineText::combineText()
 
     if (m_isCombined) {
         DEFINE_STATIC_LOCAL(String, objectReplacementCharacterString, (&objectReplacementCharacter, 1));
+        m_renderingText = text();
         RenderText::setTextInternal(objectReplacementCharacterString.impl());
     }
 }

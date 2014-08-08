@@ -166,6 +166,7 @@
 #include "platform/EventTracer.h"
 
 #include "wtf/DynamicAnnotations.h"
+#include "wtf/PassRefPtr.h"
 #include "wtf/text/CString.h"
 
 // By default, const char* argument values are assumed to have long-lived scope
@@ -176,12 +177,12 @@
 // By default, uint64 ID argument values are not mangled with the Process ID in
 // TRACE_EVENT_ASYNC macros. Use this macro to force Process ID mangling.
 #define TRACE_ID_MANGLE(id) \
-    TraceID::ForceMangle(id)
+    WebCore::TraceEvent::TraceID::ForceMangle(id)
 
 // By default, pointers are mangled with the Process ID in TRACE_EVENT_ASYNC
 // macros. Use this macro to prevent Process ID mangling.
 #define TRACE_ID_DONT_MANGLE(id) \
-    TraceID::DontMangle(id)
+    WebCore::TraceEvent::TraceID::DontMangle(id)
 
 // Records a pair of begin and end events called "name" for the current
 // scope, with 0, 1 or 2 associated arguments. If the category is not
@@ -504,7 +505,7 @@
 #define TRACE_EVENT_CATEGORY_GROUP_ENABLED(categoryGroup, ret) \
     do { \
         INTERNAL_TRACE_EVENT_GET_CATEGORY_INFO(categoryGroup);  \
-        if (*INTERNALTRACEEVENTUID(categoryGroupEnabled)) {     \
+        if (INTERNAL_TRACE_EVENT_CATEGORY_GROUP_ENABLED_FOR_RECORDING_MODE()) { \
             *ret = true;                                        \
         } else {                                                \
             *ret = false;                                       \
@@ -541,6 +542,7 @@
 //                    const char** arg_names,
 //                    const unsigned char* arg_types,
 //                    const unsigned long long* arg_values,
+//                    const RefPtr<ConvertableToTraceFormat>* convertableValues
 //                    unsigned char flags)
 #define TRACE_EVENT_API_ADD_TRACE_EVENT \
     WebCore::EventTracer::addTraceEvent
@@ -580,7 +582,7 @@
 #define INTERNAL_TRACE_EVENT_ADD(phase, category, name, flags, ...) \
     do { \
         INTERNAL_TRACE_EVENT_GET_CATEGORY_INFO(category); \
-        if (*INTERNALTRACEEVENTUID(categoryGroupEnabled)) { \
+        if (INTERNAL_TRACE_EVENT_CATEGORY_GROUP_ENABLED_FOR_RECORDING_MODE()) { \
             WebCore::TraceEvent::addTraceEvent( \
                 phase, INTERNALTRACEEVENTUID(categoryGroupEnabled), name, \
                 WebCore::TraceEvent::noEventId, flags, ##__VA_ARGS__); \
@@ -593,7 +595,7 @@
 #define INTERNAL_TRACE_EVENT_ADD_SCOPED(category, name, ...) \
     INTERNAL_TRACE_EVENT_GET_CATEGORY_INFO(category); \
     WebCore::TraceEvent::ScopedTracer INTERNALTRACEEVENTUID(scopedTracer); \
-    if (*INTERNALTRACEEVENTUID(categoryGroupEnabled)) { \
+    if (INTERNAL_TRACE_EVENT_CATEGORY_GROUP_ENABLED_FOR_RECORDING_MODE()) { \
         WebCore::TraceEvent::TraceEventHandle h = \
             WebCore::TraceEvent::addTraceEvent( \
                 TRACE_EVENT_PHASE_COMPLETE, \
@@ -610,7 +612,7 @@
                                          ...) \
     do { \
         INTERNAL_TRACE_EVENT_GET_CATEGORY_INFO(category); \
-        if (*INTERNALTRACEEVENTUID(categoryGroupEnabled)) { \
+        if (INTERNAL_TRACE_EVENT_CATEGORY_GROUP_ENABLED_FOR_RECORDING_MODE()) { \
             unsigned char traceEventFlags = flags | TRACE_EVENT_FLAG_HAS_ID; \
             WebCore::TraceEvent::TraceID traceEventTraceID( \
                 id, &traceEventFlags); \
@@ -657,7 +659,14 @@
 #define TRACE_VALUE_TYPE_POINTER      (static_cast<unsigned char>(5))
 #define TRACE_VALUE_TYPE_STRING       (static_cast<unsigned char>(6))
 #define TRACE_VALUE_TYPE_COPY_STRING  (static_cast<unsigned char>(7))
+#define TRACE_VALUE_TYPE_CONVERTABLE  (static_cast<unsigned char>(8))
 
+// These values must be in sync with base::debug::TraceLog::CategoryGroupEnabledFlags.
+#define ENABLED_FOR_RECORDING (1 << 0)
+#define ENABLED_FOR_EVENT_CALLBACK (1 << 2)
+
+#define INTERNAL_TRACE_EVENT_CATEGORY_GROUP_ENABLED_FOR_RECORDING_MODE() \
+    (*INTERNALTRACEEVENTUID(categoryGroupEnabled) & (ENABLED_FOR_RECORDING | ENABLED_FOR_EVENT_CALLBACK))
 
 namespace WebCore {
 
@@ -729,7 +738,7 @@ union TraceValueUnion {
 class TraceStringWithCopy {
 public:
     explicit TraceStringWithCopy(const char* str) : m_str(str) { }
-    operator const char* () const { return m_str; }
+    const char* str() const { return m_str; }
 private:
     const char* m_str;
 };
@@ -737,43 +746,35 @@ private:
 // Define setTraceValue for each allowed type. It stores the type and
 // value in the return arguments. This allows this API to avoid declaring any
 // structures so that it is portable to third_party libraries.
-#define INTERNAL_DECLARE_SET_TRACE_VALUE(actual_type, \
-                                         union_member, \
-                                         value_type_id) \
-    static inline void setTraceValue(actual_type arg, \
-                                     unsigned char* type, \
-                                     unsigned long long* value) { \
+#define INTERNAL_DECLARE_SET_TRACE_VALUE(actualType, argExpression, unionMember, valueTypeId) \
+    static inline void setTraceValue(actualType arg, unsigned char* type, unsigned long long* value) { \
         TraceValueUnion typeValue; \
-        typeValue.union_member = arg; \
-        *type = value_type_id; \
+        typeValue.unionMember = argExpression; \
+        *type = valueTypeId; \
         *value = typeValue.m_uint; \
     }
 // Simpler form for int types that can be safely casted.
-#define INTERNAL_DECLARE_SET_TRACE_VALUE_INT(actual_type, \
-                                             value_type_id) \
-    static inline void setTraceValue(actual_type arg, \
+#define INTERNAL_DECLARE_SET_TRACE_VALUE_INT(actualType, valueTypeId) \
+    static inline void setTraceValue(actualType arg, \
                                      unsigned char* type, \
                                      unsigned long long* value) { \
-        *type = value_type_id; \
+        *type = valueTypeId; \
         *value = static_cast<unsigned long long>(arg); \
     }
 
 INTERNAL_DECLARE_SET_TRACE_VALUE_INT(unsigned long long, TRACE_VALUE_TYPE_UINT)
-INTERNAL_DECLARE_SET_TRACE_VALUE_INT(unsigned int, TRACE_VALUE_TYPE_UINT)
+INTERNAL_DECLARE_SET_TRACE_VALUE_INT(unsigned, TRACE_VALUE_TYPE_UINT)
 INTERNAL_DECLARE_SET_TRACE_VALUE_INT(unsigned short, TRACE_VALUE_TYPE_UINT)
 INTERNAL_DECLARE_SET_TRACE_VALUE_INT(unsigned char, TRACE_VALUE_TYPE_UINT)
 INTERNAL_DECLARE_SET_TRACE_VALUE_INT(long long, TRACE_VALUE_TYPE_INT)
 INTERNAL_DECLARE_SET_TRACE_VALUE_INT(int, TRACE_VALUE_TYPE_INT)
 INTERNAL_DECLARE_SET_TRACE_VALUE_INT(short, TRACE_VALUE_TYPE_INT)
 INTERNAL_DECLARE_SET_TRACE_VALUE_INT(signed char, TRACE_VALUE_TYPE_INT)
-INTERNAL_DECLARE_SET_TRACE_VALUE(bool, m_bool, TRACE_VALUE_TYPE_BOOL)
-INTERNAL_DECLARE_SET_TRACE_VALUE(double, m_double, TRACE_VALUE_TYPE_DOUBLE)
-INTERNAL_DECLARE_SET_TRACE_VALUE(const void*, m_pointer,
-                                 TRACE_VALUE_TYPE_POINTER)
-INTERNAL_DECLARE_SET_TRACE_VALUE(const char*, m_string,
-                                 TRACE_VALUE_TYPE_STRING)
-INTERNAL_DECLARE_SET_TRACE_VALUE(const TraceStringWithCopy&, m_string,
-                                 TRACE_VALUE_TYPE_COPY_STRING)
+INTERNAL_DECLARE_SET_TRACE_VALUE(bool, arg, m_bool, TRACE_VALUE_TYPE_BOOL)
+INTERNAL_DECLARE_SET_TRACE_VALUE(double, arg, m_double, TRACE_VALUE_TYPE_DOUBLE)
+INTERNAL_DECLARE_SET_TRACE_VALUE(const void*, arg, m_pointer, TRACE_VALUE_TYPE_POINTER)
+INTERNAL_DECLARE_SET_TRACE_VALUE(const char*, arg, m_string, TRACE_VALUE_TYPE_STRING)
+INTERNAL_DECLARE_SET_TRACE_VALUE(const TraceStringWithCopy&, arg.str(), m_string, TRACE_VALUE_TYPE_COPY_STRING)
 
 #undef INTERNAL_DECLARE_SET_TRACE_VALUE
 #undef INTERNAL_DECLARE_SET_TRACE_VALUE_INT
@@ -785,6 +786,54 @@ static inline void setTraceValue(const WTF::CString& arg, unsigned char* type, u
     typeValue.m_string = arg.data();
     *type = TRACE_VALUE_TYPE_COPY_STRING;
     *value = typeValue.m_uint;
+}
+
+static inline void setTraceValue(ConvertableToTraceFormat*, unsigned char* type, unsigned long long*)
+{
+    *type = TRACE_VALUE_TYPE_CONVERTABLE;
+}
+
+template<typename T> static inline void setTraceValue(const PassRefPtr<T>& ptr, unsigned char* type, unsigned long long* value)
+{
+    setTraceValue(ptr.get(), type, value);
+}
+
+template<typename T> struct ConvertableToTraceFormatTraits {
+    static const bool isConvertable = false;
+    static void assignIfConvertable(ConvertableToTraceFormat*& left, const T&)
+    {
+        left = 0;
+    }
+};
+
+template<typename T> struct ConvertableToTraceFormatTraits<T*> {
+    static const bool isConvertable = WTF::IsSubclass<T, TraceEvent::ConvertableToTraceFormat>::value;
+    static void assignIfConvertable(ConvertableToTraceFormat*& left, ...)
+    {
+        left = 0;
+    }
+    static void assignIfConvertable(ConvertableToTraceFormat*& left, ConvertableToTraceFormat* const& right)
+    {
+        left = right;
+    }
+};
+
+template<typename T> struct ConvertableToTraceFormatTraits<PassRefPtr<T> > {
+    static const bool isConvertable = WTF::IsSubclass<T, TraceEvent::ConvertableToTraceFormat>::value;
+    static void assignIfConvertable(ConvertableToTraceFormat*& left, const PassRefPtr<T>& right)
+    {
+        ConvertableToTraceFormatTraits<T*>::assignIfConvertable(left, right.get());
+    }
+};
+
+template<typename T> bool isConvertableToTraceFormat(const T&)
+{
+    return ConvertableToTraceFormatTraits<T>::isConvertable;
+}
+
+template<typename T> void assignIfConvertableToTraceFormat(ConvertableToTraceFormat*& left, const T& right)
+{
+    ConvertableToTraceFormatTraits<T>::assignIfConvertable(left, right);
 }
 
 // These addTraceEvent template functions are defined here instead of in the
@@ -805,7 +854,7 @@ static inline TraceEventHandle addTraceEvent(
         flags);
 }
 
-template<class ARG1_TYPE>
+template<typename ARG1_TYPE>
 static inline TraceEventHandle addTraceEvent(
     char phase,
     const unsigned char* categoryEnabled,
@@ -819,13 +868,22 @@ static inline TraceEventHandle addTraceEvent(
     unsigned char argTypes[1];
     unsigned long long argValues[1];
     setTraceValue(arg1Val, &argTypes[0], &argValues[0]);
+    if (isConvertableToTraceFormat(arg1Val)) {
+        ConvertableToTraceFormat* convertableValues[1];
+        assignIfConvertableToTraceFormat(convertableValues[0], arg1Val);
+        return TRACE_EVENT_API_ADD_TRACE_EVENT(
+            phase, categoryEnabled, name, id,
+            numArgs, &arg1Name, argTypes, argValues,
+            convertableValues,
+            flags);
+    }
     return TRACE_EVENT_API_ADD_TRACE_EVENT(
         phase, categoryEnabled, name, id,
         numArgs, &arg1Name, argTypes, argValues,
         flags);
 }
 
-template<class ARG1_TYPE, class ARG2_TYPE>
+template<typename ARG1_TYPE, typename ARG2_TYPE>
 static inline TraceEventHandle addTraceEvent(
     char phase,
     const unsigned char* categoryEnabled,
@@ -843,6 +901,16 @@ static inline TraceEventHandle addTraceEvent(
     unsigned long long argValues[2];
     setTraceValue(arg1Val, &argTypes[0], &argValues[0]);
     setTraceValue(arg2Val, &argTypes[1], &argValues[1]);
+    if (isConvertableToTraceFormat(arg1Val) || isConvertableToTraceFormat(arg2Val)) {
+        ConvertableToTraceFormat* convertableValues[2];
+        assignIfConvertableToTraceFormat(convertableValues[0], arg1Val);
+        assignIfConvertableToTraceFormat(convertableValues[1], arg2Val);
+        return TRACE_EVENT_API_ADD_TRACE_EVENT(
+            phase, categoryEnabled, name, id,
+            numArgs, argNames, argTypes, argValues,
+            convertableValues,
+            flags);
+    }
     return TRACE_EVENT_API_ADD_TRACE_EVENT(
         phase, categoryEnabled, name, id,
         numArgs, argNames, argTypes, argValues,

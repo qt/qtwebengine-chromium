@@ -6,21 +6,27 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "content/child/child_thread.h"
-#include "content/child/npapi/webplugin.h"
 #include "content/child/npapi/plugin_host.h"
 #include "content/child/npapi/plugin_instance.h"
 #include "content/child/npapi/plugin_stream_url.h"
+#include "content/child/npapi/webplugin.h"
 #include "content/child/npapi/webplugin_resource_client.h"
 #include "content/child/plugin_messages.h"
+#include "content/child/request_extra_data.h"
+#include "content/child/request_info.h"
 #include "content/child/resource_dispatcher.h"
+#include "content/child/web_url_loader_impl.h"
+#include "content/common/resource_request_body.h"
+#include "content/common/service_worker/service_worker_types.h"
+#include "content/public/common/resource_response_info.h"
 #include "net/base/load_flags.h"
 #include "net/base/net_errors.h"
 #include "net/http/http_response_headers.h"
+#include "net/url_request/url_request.h"
 #include "third_party/WebKit/public/platform/WebURLLoaderClient.h"
 #include "third_party/WebKit/public/platform/WebURLResponse.h"
 #include "webkit/child/multipart_response_delegate.h"
-#include "webkit/child/weburlloader_impl.h"
-#include "webkit/common/resource_request_body.h"
+#include "webkit/child/resource_loader_bridge.h"
 
 namespace content {
 namespace {
@@ -77,9 +83,11 @@ PluginURLFetcher::PluginURLFetcher(PluginStreamUrl* plugin_stream,
                                    const char* buf,
                                    unsigned int len,
                                    const GURL& referrer,
+                                   const std::string& range,
                                    bool notify_redirects,
                                    bool is_plugin_src_load,
                                    int origin_pid,
+                                   int render_frame_id,
                                    int render_view_id,
                                    unsigned long resource_id,
                                    bool copy_stream_data)
@@ -90,11 +98,14 @@ PluginURLFetcher::PluginURLFetcher(PluginStreamUrl* plugin_stream,
       referrer_(referrer),
       notify_redirects_(notify_redirects),
       is_plugin_src_load_(is_plugin_src_load),
+      origin_pid_(origin_pid),
+      render_frame_id_(render_frame_id),
+      render_view_id_(render_view_id),
       resource_id_(resource_id),
       copy_stream_data_(copy_stream_data),
       data_offset_(0),
       pending_failure_notification_(false) {
-  webkit_glue::ResourceLoaderBridge::RequestInfo request_info;
+  RequestInfo request_info;
   request_info.method = method;
   request_info.url = url;
   request_info.first_party_for_cookies = first_party_for_cookies;
@@ -103,6 +114,11 @@ PluginURLFetcher::PluginURLFetcher(PluginStreamUrl* plugin_stream,
   request_info.requestor_pid = origin_pid;
   request_info.request_type = ResourceType::OBJECT;
   request_info.routing_id = render_view_id;
+
+  RequestExtraData extra_data;
+  extra_data.set_render_frame_id(render_frame_id);
+  extra_data.set_is_main_frame(false);
+  request_info.extra_data = &extra_data;
 
   std::vector<char> body;
   if (method == "POST") {
@@ -123,13 +139,16 @@ PluginURLFetcher::PluginURLFetcher(PluginStreamUrl* plugin_stream,
         request_info.headers += "\r\n";
       request_info.headers += "Content-Type: application/x-www-form-urlencoded";
     }
+  } else {
+    if (!range.empty())
+      request_info.headers = std::string("Range: ") + range;
   }
 
   bridge_.reset(ChildThread::current()->resource_dispatcher()->CreateBridge(
       request_info));
   if (!body.empty()) {
-    scoped_refptr<webkit_glue::ResourceRequestBody> request_body =
-        new webkit_glue::ResourceRequestBody;
+    scoped_refptr<ResourceRequestBody> request_body =
+        new ResourceRequestBody;
     request_body->AppendBytes(&body[0], body.size());
     bridge_->SetRequestBody(request_body.get());
   }
@@ -144,9 +163,21 @@ PluginURLFetcher::~PluginURLFetcher() {
 
 void PluginURLFetcher::Cancel() {
   bridge_->Cancel();
+
+  // Due to races and nested event loops, PluginURLFetcher may still receive
+  // events from the bridge before being destroyed. Do not forward additional
+  // events back to the plugin, via either |plugin_stream_| or
+  // |multipart_delegate_| which has its own pointer via
+  // MultiPartResponseClient.
+  if (multipart_delegate_)
+    multipart_delegate_->Cancel();
+  plugin_stream_ = NULL;
 }
 
 void PluginURLFetcher::URLRedirectResponse(bool allow) {
+  if (!plugin_stream_)
+    return;
+
   if (allow) {
     bridge_->SetDefersLoading(false);
   } else {
@@ -160,9 +191,11 @@ void PluginURLFetcher::OnUploadProgress(uint64 position, uint64 size) {
 
 bool PluginURLFetcher::OnReceivedRedirect(
     const GURL& new_url,
-    const webkit_glue::ResourceResponseInfo& info,
-    bool* has_new_first_party_for_cookies,
-    GURL* new_first_party_for_cookies) {
+    const GURL& new_first_party_for_cookies,
+    const ResourceResponseInfo& info) {
+  if (!plugin_stream_)
+    return false;
+
   // TODO(jam): THIS LOGIC IS COPIED FROM WebPluginImpl::willSendRequest until
   // kDirectNPAPIRequests is the default and we can remove the old path there.
 
@@ -181,12 +214,10 @@ bool PluginURLFetcher::OnReceivedRedirect(
   // in url_request.cc, but weburlloader_impl.cc and this file have to duplicate
   // it instead of passing that information.
   int response_code = info.headers->response_code();
-  if (response_code != 307)
-    method_ = "GET";
+  method_ = net::URLRequest::ComputeMethodForRedirect(method_, response_code);
   GURL old_url = url_;
   url_ = new_url;
-  *has_new_first_party_for_cookies = true;
-  *new_first_party_for_cookies = first_party_for_cookies_;
+  first_party_for_cookies_ = new_first_party_for_cookies;
 
   // If the plugin does not participate in url redirect notifications then just
   // block cross origin 307 POST redirects.
@@ -205,8 +236,10 @@ bool PluginURLFetcher::OnReceivedRedirect(
   return true;
 }
 
-void PluginURLFetcher::OnReceivedResponse(
-    const webkit_glue::ResourceResponseInfo& info) {
+void PluginURLFetcher::OnReceivedResponse(const ResourceResponseInfo& info) {
+  if (!plugin_stream_)
+    return;
+
   // TODO(jam): THIS LOGIC IS COPIED FROM WebPluginImpl::didReceiveResponse
   // GetAllHeaders, and GetResponseInfo until kDirectNPAPIRequests is the
   // default and we can remove the old path there.
@@ -218,7 +251,7 @@ void PluginURLFetcher::OnReceivedResponse(
     if (response_code == 206) {
       blink::WebURLResponse response;
       response.initialize();
-      webkit_glue::WebURLLoaderImpl::PopulateURLResponse(url_, info, &response);
+      WebURLLoaderImpl::PopulateURLResponse(url_, info, &response);
 
       std::string multipart_boundary;
       if (webkit_glue::MultipartResponseDelegate::ReadMultipartBoundary(
@@ -299,6 +332,9 @@ void PluginURLFetcher::OnDownloadedData(int len,
 void PluginURLFetcher::OnReceivedData(const char* data,
                                       int data_length,
                                       int encoded_data_length) {
+  if (!plugin_stream_)
+    return;
+
   if (multipart_delegate_) {
     multipart_delegate_->OnReceivedData(data, data_length, encoded_data_length);
   } else {
@@ -322,8 +358,13 @@ void PluginURLFetcher::OnReceivedData(const char* data,
 void PluginURLFetcher::OnCompletedRequest(
     int error_code,
     bool was_ignored_by_handler,
+    bool stale_copy_in_cache,
     const std::string& security_info,
-    const base::TimeTicks& completion_time) {
+    const base::TimeTicks& completion_time,
+    int64 total_transfer_size) {
+  if (!plugin_stream_)
+    return;
+
   if (multipart_delegate_) {
     multipart_delegate_->OnCompletedRequest();
     multipart_delegate_.reset();

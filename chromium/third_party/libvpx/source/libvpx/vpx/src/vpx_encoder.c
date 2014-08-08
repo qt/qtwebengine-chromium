@@ -70,7 +70,7 @@ vpx_codec_err_t vpx_codec_enc_init_multi_ver(vpx_codec_ctx_t      *ctx,
                                              vpx_codec_flags_t     flags,
                                              vpx_rational_t       *dsf,
                                              int                   ver) {
-  vpx_codec_err_t res = 0;
+  vpx_codec_err_t res = VPX_CODEC_OK;
 
   if (ver != VPX_ENCODER_ABI_VERSION)
     res = VPX_CODEC_ABI_MISMATCH;
@@ -149,6 +149,7 @@ vpx_codec_err_t vpx_codec_enc_init_multi_ver(vpx_codec_ctx_t      *ctx,
         cfg++;
         dsf++;
       }
+      ctx--;
     }
   }
 
@@ -206,7 +207,7 @@ vpx_codec_err_t  vpx_codec_encode(vpx_codec_ctx_t            *ctx,
                                   unsigned long               duration,
                                   vpx_enc_frame_flags_t       flags,
                                   unsigned long               deadline) {
-  vpx_codec_err_t res = 0;
+  vpx_codec_err_t res = VPX_CODEC_OK;
 
   if (!ctx || (img && !duration))
     res = VPX_CODEC_INVALID_PARAM;
@@ -254,8 +255,8 @@ vpx_codec_err_t  vpx_codec_encode(vpx_codec_ctx_t            *ctx,
 }
 
 
-const vpx_codec_cx_pkt_t *vpx_codec_get_cx_data(vpx_codec_ctx_t   *ctx,
-                                                vpx_codec_iter_t  *iter) {
+const vpx_codec_cx_pkt_t *vpx_codec_get_cx_data(vpx_codec_ctx_t *ctx,
+                                                vpx_codec_iter_t *iter) {
   const vpx_codec_cx_pkt_t *pkt = NULL;
 
   if (ctx) {
@@ -270,32 +271,30 @@ const vpx_codec_cx_pkt_t *vpx_codec_get_cx_data(vpx_codec_ctx_t   *ctx,
   }
 
   if (pkt && pkt->kind == VPX_CODEC_CX_FRAME_PKT) {
-    /* If the application has specified a destination area for the
-     * compressed data, and the codec has not placed the data there,
-     * and it fits, copy it.
-     */
-    char *dst_buf = ctx->priv->enc.cx_data_dst_buf.buf;
+    // If the application has specified a destination area for the
+    // compressed data, and the codec has not placed the data there,
+    // and it fits, copy it.
+    vpx_codec_priv_t *const priv = ctx->priv;
+    char *const dst_buf = (char *)priv->enc.cx_data_dst_buf.buf;
 
-    if (dst_buf
-        && pkt->data.raw.buf != dst_buf
-        && pkt->data.raw.sz
-        + ctx->priv->enc.cx_data_pad_before
-        + ctx->priv->enc.cx_data_pad_after
-        <= ctx->priv->enc.cx_data_dst_buf.sz) {
-      vpx_codec_cx_pkt_t *modified_pkt = &ctx->priv->enc.cx_data_pkt;
+    if (dst_buf &&
+        pkt->data.raw.buf != dst_buf &&
+        pkt->data.raw.sz + priv->enc.cx_data_pad_before +
+            priv->enc.cx_data_pad_after <= priv->enc.cx_data_dst_buf.sz) {
+      vpx_codec_cx_pkt_t *modified_pkt = &priv->enc.cx_data_pkt;
 
-      memcpy(dst_buf + ctx->priv->enc.cx_data_pad_before,
-             pkt->data.raw.buf, pkt->data.raw.sz);
+      memcpy(dst_buf + priv->enc.cx_data_pad_before, pkt->data.raw.buf,
+             pkt->data.raw.sz);
       *modified_pkt = *pkt;
       modified_pkt->data.raw.buf = dst_buf;
-      modified_pkt->data.raw.sz += ctx->priv->enc.cx_data_pad_before
-                                   + ctx->priv->enc.cx_data_pad_after;
+      modified_pkt->data.raw.sz += priv->enc.cx_data_pad_before +
+                                       priv->enc.cx_data_pad_after;
       pkt = modified_pkt;
     }
 
     if (dst_buf == pkt->data.raw.buf) {
-      ctx->priv->enc.cx_data_dst_buf.buf = dst_buf + pkt->data.raw.sz;
-      ctx->priv->enc.cx_data_dst_buf.sz -= pkt->data.raw.sz;
+      priv->enc.cx_data_dst_buf.buf = dst_buf + pkt->data.raw.sz;
+      priv->enc.cx_data_dst_buf.sz -= pkt->data.raw.sz;
     }
   }
 
@@ -395,7 +394,7 @@ const vpx_codec_cx_pkt_t *vpx_codec_pkt_list_get(struct vpx_codec_pkt_list *list
     *iter = list->pkts;
   }
 
-  pkt = (const void *) * iter;
+  pkt = (const vpx_codec_cx_pkt_t *)*iter;
 
   if ((size_t)(pkt - list->pkts) < list->cnt)
     *iter = pkt + 1;

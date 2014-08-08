@@ -31,11 +31,11 @@
 #include "config.h"
 #include "modules/filesystem/DataTransferItemFileSystem.h"
 
-#include "core/dom/Clipboard.h"
-#include "core/dom/DataTransferItem.h"
+#include "core/clipboard/Clipboard.h"
+#include "core/clipboard/DataObject.h"
+#include "core/clipboard/DataTransferItem.h"
 #include "core/dom/ExecutionContext.h"
 #include "core/fileapi/File.h"
-#include "core/platform/chromium/ChromiumDataObject.h"
 #include "modules/filesystem/DOMFilePath.h"
 #include "modules/filesystem/DOMFileSystem.h"
 #include "modules/filesystem/DirectoryEntry.h"
@@ -48,26 +48,23 @@
 namespace WebCore {
 
 // static
-PassRefPtr<Entry> DataTransferItemFileSystem::webkitGetAsEntry(ExecutionContext* executionContext, DataTransferItem* item)
+Entry* DataTransferItemFileSystem::webkitGetAsEntry(ExecutionContext* executionContext, DataTransferItem& item)
 {
-    if (!item->dataObjectItem()->isFilename())
+    if (!item.dataObjectItem()->isFilename())
         return 0;
 
     // For dragged files getAsFile must be pretty lightweight.
-    Blob* file = item->getAsFile().get();
+    Blob* file = item.getAsFile().get();
     // The clipboard may not be in a readable state.
     if (!file)
         return 0;
     ASSERT(file->isFile());
 
-    DraggedIsolatedFileSystem* filesystem = DraggedIsolatedFileSystem::from(item->clipboard()->dataObject().get());
-    DOMFileSystem* domFileSystem = filesystem ? filesystem->getDOMFileSystem(executionContext) : 0;
-    if (!filesystem) {
+    DOMFileSystem* domFileSystem = DraggedIsolatedFileSystem::getDOMFileSystem(item.clipboard()->dataObject().get(), executionContext);
+    if (!domFileSystem) {
         // IsolatedFileSystem may not be enabled.
         return 0;
     }
-
-    ASSERT(domFileSystem);
 
     // The dropped entries are mapped as top-level entries in the isolated filesystem.
     String virtualPath = DOMFilePath::append("/", toFile(file)->name());

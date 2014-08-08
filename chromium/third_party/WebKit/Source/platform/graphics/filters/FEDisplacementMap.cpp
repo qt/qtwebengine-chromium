@@ -49,6 +49,14 @@ PassRefPtr<FEDisplacementMap> FEDisplacementMap::create(Filter* filter, ChannelS
     return adoptRef(new FEDisplacementMap(filter, xChannelSelector, yChannelSelector, scale));
 }
 
+FloatRect FEDisplacementMap::mapPaintRect(const FloatRect& rect, bool)
+{
+    FloatRect result = rect;
+    result.inflateX(filter()->applyHorizontalScale(m_scale / 2));
+    result.inflateY(filter()->applyVerticalScale(m_scale / 2));
+    return result;
+}
+
 ChannelSelectorType FEDisplacementMap::xChannelSelector() const
 {
     return m_xChannelSelector;
@@ -168,48 +176,6 @@ static SkDisplacementMapEffect::ChannelSelectorType toSkiaMode(ChannelSelectorTy
     }
 }
 
-bool FEDisplacementMap::applySkia()
-{
-    // For now, only use the skia implementation for accelerated rendering.
-    if (!filter()->isAccelerated())
-        return false;
-
-    FilterEffect* in = inputEffect(0);
-    FilterEffect* in2 = inputEffect(1);
-
-    if (!in || !in2)
-        return false;
-
-    ImageBuffer* resultImage = createImageBufferResult();
-    if (!resultImage)
-        return false;
-
-    RefPtr<Image> color = in->asImageBuffer()->copyImage(DontCopyBackingStore);
-    RefPtr<Image> displ = in2->asImageBuffer()->copyImage(DontCopyBackingStore);
-
-    RefPtr<NativeImageSkia> colorNativeImage = color->nativeImageForCurrentFrame();
-    RefPtr<NativeImageSkia> displNativeImage = displ->nativeImageForCurrentFrame();
-
-    if (!colorNativeImage || !displNativeImage)
-        return false;
-
-    SkBitmap colorBitmap = colorNativeImage->bitmap();
-    SkBitmap displBitmap = displNativeImage->bitmap();
-
-    SkAutoTUnref<SkImageFilter> colorSource(new SkBitmapSource(colorBitmap));
-    SkAutoTUnref<SkImageFilter> displSource(new SkBitmapSource(displBitmap));
-    SkDisplacementMapEffect::ChannelSelectorType typeX = toSkiaMode(m_xChannelSelector);
-    SkDisplacementMapEffect::ChannelSelectorType typeY = toSkiaMode(m_yChannelSelector);
-    // FIXME : Only applyHorizontalScale is used and applyVerticalScale is ignored
-    // This can be fixed by adding a 2nd scale parameter to SkDisplacementMapEffect
-    SkAutoTUnref<SkImageFilter> displEffect(new SkDisplacementMapEffect(
-        typeX, typeY, SkFloatToScalar(filter()->applyHorizontalScale(m_scale)), displSource, colorSource));
-    SkPaint paint;
-    paint.setImageFilter(displEffect);
-    resultImage->context()->drawBitmap(colorBitmap, 0, 0, &paint);
-    return true;
-}
-
 PassRefPtr<SkImageFilter> FEDisplacementMap::createImageFilter(SkiaImageFilterBuilder* builder)
 {
     RefPtr<SkImageFilter> color = builder->build(inputEffect(0), operatingColorSpace());
@@ -219,7 +185,7 @@ PassRefPtr<SkImageFilter> FEDisplacementMap::createImageFilter(SkiaImageFilterBu
     SkImageFilter::CropRect cropRect = getCropRect(builder->cropOffset());
     // FIXME : Only applyHorizontalScale is used and applyVerticalScale is ignored
     // This can be fixed by adding a 2nd scale parameter to SkDisplacementMapEffect
-    return adoptRef(new SkDisplacementMapEffect(typeX, typeY, SkFloatToScalar(filter()->applyHorizontalScale(m_scale)), displ.get(), color.get(), &cropRect));
+    return adoptRef(SkDisplacementMapEffect::Create(typeX, typeY, SkFloatToScalar(filter()->applyHorizontalScale(m_scale)), displ.get(), color.get(), &cropRect));
 }
 
 static TextStream& operator<<(TextStream& ts, const ChannelSelectorType& type)

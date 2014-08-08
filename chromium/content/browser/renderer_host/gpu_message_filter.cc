@@ -11,11 +11,12 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "content/browser/gpu/browser_gpu_channel_host_factory.h"
+#include "content/browser/gpu/gpu_data_manager_impl_private.h"
 #include "content/browser/gpu/gpu_process_host.h"
 #include "content/browser/gpu/gpu_surface_tracker.h"
 #include "content/browser/renderer_host/render_widget_helper.h"
 #include "content/common/gpu/gpu_messages.h"
-#include "content/port/browser/render_widget_host_view_frame_subscriber.h"
+#include "content/public/browser/render_widget_host_view_frame_subscriber.h"
 #include "content/public/common/content_switches.h"
 #include "gpu/command_buffer/service/gpu_switches.h"
 
@@ -53,76 +54,42 @@ struct GpuMessageFilter::FrameSubscription {
 
 GpuMessageFilter::GpuMessageFilter(int render_process_id,
                                    RenderWidgetHelper* render_widget_helper)
-    : gpu_process_id_(0),
+    : BrowserMessageFilter(GpuMsgStart),
+      gpu_process_id_(0),
       render_process_id_(render_process_id),
-      share_contexts_(false),
       render_widget_helper_(render_widget_helper),
       weak_ptr_factory_(this) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-
-#if defined(USE_AURA) || defined(OS_ANDROID)
-  // We use the GPU process for UI on Aura, and we need to share renderer GL
-  // contexts with the compositor context.
-  share_contexts_ = true;
-#else
-  // Share contexts when compositing webview plugin or using share groups
-  // for asynchronous texture uploads.
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kDisableBrowserPluginCompositing) ||
-      CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnableShareGroupAsyncTextureUpload))
-    share_contexts_ = true;
-#endif
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 }
 
 GpuMessageFilter::~GpuMessageFilter() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   EndAllFrameSubscriptions();
 }
 
-bool GpuMessageFilter::OnMessageReceived(
-    const IPC::Message& message,
-    bool* message_was_ok) {
+bool GpuMessageFilter::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
-  IPC_BEGIN_MESSAGE_MAP_EX(GpuMessageFilter, message, *message_was_ok)
+  IPC_BEGIN_MESSAGE_MAP(GpuMessageFilter, message)
     IPC_MESSAGE_HANDLER_DELAY_REPLY(GpuHostMsg_EstablishGpuChannel,
                                     OnEstablishGpuChannel)
     IPC_MESSAGE_HANDLER_DELAY_REPLY(GpuHostMsg_CreateViewCommandBuffer,
                                     OnCreateViewCommandBuffer)
     IPC_MESSAGE_UNHANDLED(handled = false)
-  IPC_END_MESSAGE_MAP_EX()
+  IPC_END_MESSAGE_MAP()
   return handled;
-}
-
-void GpuMessageFilter::SurfaceUpdated(int32 surface_id) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  typedef std::vector<linked_ptr<CreateViewCommandBufferRequest> > RequestList;
-  RequestList retry_requests;
-  retry_requests.swap(pending_requests_);
-  for (RequestList::iterator it = retry_requests.begin();
-      it != retry_requests.end(); ++it) {
-    if ((*it)->surface_id != surface_id) {
-      pending_requests_.push_back(*it);
-    } else {
-      linked_ptr<CreateViewCommandBufferRequest> request = *it;
-      OnCreateViewCommandBuffer(request->surface_id,
-                                request->init_params,
-                                request->reply.release());
-    }
-  }
 }
 
 void GpuMessageFilter::BeginFrameSubscription(
     int route_id,
     scoped_ptr<RenderWidgetHostViewFrameSubscriber> subscriber) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   linked_ptr<FrameSubscription> subscription(
       new FrameSubscription(route_id, subscriber.Pass()));
   BeginFrameSubscriptionInternal(subscription);
 }
 
 void GpuMessageFilter::EndFrameSubscription(int route_id) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   FrameSubscriptionList frame_subscription_list;
   frame_subscription_list.swap(frame_subscription_list_);
   for (FrameSubscriptionList::iterator it = frame_subscription_list.begin();
@@ -137,7 +104,7 @@ void GpuMessageFilter::EndFrameSubscription(int route_id) {
 void GpuMessageFilter::OnEstablishGpuChannel(
     CauseForGpuLaunch cause_for_gpu_launch,
     IPC::Message* reply_ptr) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   scoped_ptr<IPC::Message> reply(reply_ptr);
 
   // TODO(apatrick): Eventually, this will return the route ID of a
@@ -163,9 +130,10 @@ void GpuMessageFilter::OnEstablishGpuChannel(
     BeginAllFrameSubscriptions();
   }
 
+  bool share_contexts = true;
   host->EstablishGpuChannel(
       render_process_id_,
-      share_contexts_,
+      share_contexts,
       base::Bind(&GpuMessageFilter::EstablishChannelCallback,
                  weak_ptr_factory_.GetWeakPtr(),
                  base::Passed(&reply)));
@@ -174,8 +142,9 @@ void GpuMessageFilter::OnEstablishGpuChannel(
 void GpuMessageFilter::OnCreateViewCommandBuffer(
     int32 surface_id,
     const GPUCreateCommandBufferConfig& init_params,
+    int32 route_id,
     IPC::Message* reply_ptr) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   scoped_ptr<IPC::Message> reply(reply_ptr);
 
   GpuSurfaceTracker* surface_tracker = GpuSurfaceTracker::Get();
@@ -192,16 +161,10 @@ void GpuMessageFilter::OnCreateViewCommandBuffer(
                 << " tried to access a surface for renderer " << renderer_id;
   }
 
-  if (compositing_surface.parent_gpu_process_id &&
-      compositing_surface.parent_gpu_process_id != gpu_process_id_) {
-    // If the current handle for the surface is using a different (older) gpu
-    // host, it means the GPU process died and we need to wait until the UI
-    // re-allocates the surface in the new process.
-    linked_ptr<CreateViewCommandBufferRequest> request(
-        new CreateViewCommandBufferRequest(
-            surface_id, init_params, reply.Pass()));
-    pending_requests_.push_back(request);
-    return;
+  if (compositing_surface.parent_client_id &&
+      !GpuDataManagerImpl::GetInstance()->CanUseGpuBrowserCompositor()) {
+    // For the renderer to fall back to software also.
+    compositing_surface = gfx::GLSurfaceHandle();
   }
 
   GpuProcessHost* host = GpuProcessHost::FromID(gpu_process_id_);
@@ -219,6 +182,7 @@ void GpuMessageFilter::OnCreateViewCommandBuffer(
       surface_id,
       render_process_id_,
       init_params,
+      route_id,
       base::Bind(&GpuMessageFilter::CreateCommandBufferCallback,
                  weak_ptr_factory_.GetWeakPtr(),
                  base::Passed(&reply)));
@@ -228,7 +192,7 @@ void GpuMessageFilter::EstablishChannelCallback(
     scoped_ptr<IPC::Message> reply,
     const IPC::ChannelHandle& channel,
     const gpu::GPUInfo& gpu_info) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   GpuHostMsg_EstablishGpuChannel::WriteReplyParams(
       reply.get(), render_process_id_, channel, gpu_info);
@@ -236,9 +200,9 @@ void GpuMessageFilter::EstablishChannelCallback(
 }
 
 void GpuMessageFilter::CreateCommandBufferCallback(
-    scoped_ptr<IPC::Message> reply, int32 route_id) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  GpuHostMsg_CreateViewCommandBuffer::WriteReplyParams(reply.get(), route_id);
+    scoped_ptr<IPC::Message> reply, CreateCommandBufferResult result) {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  GpuHostMsg_CreateViewCommandBuffer::WriteReplyParams(reply.get(), result);
   Send(reply.release());
 }
 

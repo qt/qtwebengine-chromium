@@ -29,41 +29,39 @@
 #ifndef Console_h
 #define Console_h
 
-#include "bindings/v8/ScriptState.h"
 #include "bindings/v8/ScriptWrappable.h"
 #include "core/frame/ConsoleBase.h"
 #include "core/frame/DOMWindowProperty.h"
+#include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 
 namespace WebCore {
 
-class Frame;
+class LocalFrame;
 class MemoryInfo;
 class Page;
 class ScriptArguments;
 
-class Console : public RefCounted<Console>, public ConsoleBase, public ScriptWrappable, public DOMWindowProperty {
+class Console FINAL : public ConsoleBase, public ScriptWrappable, public DOMWindowProperty {
 public:
-    using RefCounted<Console>::ref;
-    using RefCounted<Console>::deref;
-
-    static PassRefPtr<Console> create(Frame* frame) { return adoptRef(new Console(frame)); }
+    static PassRefPtrWillBeRawPtr<Console> create(LocalFrame* frame)
+    {
+        return adoptRefWillBeNoop(new Console(frame));
+    }
     virtual ~Console();
 
-    PassRefPtr<MemoryInfo> memory() const;
+    PassRefPtrWillBeRawPtr<MemoryInfo> memory() const;
+
+    virtual void trace(Visitor* visitor) OVERRIDE { ConsoleBase::trace(visitor); }
 
 protected:
-    virtual ExecutionContext* context();
-    virtual void reportMessageToClient(MessageLevel, const String& message, PassRefPtr<ScriptCallStack>) OVERRIDE;
+    virtual ExecutionContext* context() OVERRIDE;
+    virtual void reportMessageToClient(MessageLevel, const String& message, PassRefPtrWillBeRawPtr<ScriptCallStack>) OVERRIDE;
 
 private:
-    explicit Console(Frame*);
-    inline Page* page() const;
-
-    virtual void refConsole() { ref(); }
-    virtual void derefConsole() { deref(); }
+    explicit Console(LocalFrame*);
 };
 
 } // namespace WebCore

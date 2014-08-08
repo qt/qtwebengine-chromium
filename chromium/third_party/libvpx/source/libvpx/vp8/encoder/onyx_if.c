@@ -19,7 +19,7 @@
 #include "vp8/common/alloccommon.h"
 #include "mcomp.h"
 #include "firstpass.h"
-#include "psnr.h"
+#include "vpx/internal/vpx_psnr.h"
 #include "vpx_scale/vpx_scale.h"
 #include "vp8/common/extend.h"
 #include "ratectrl.h"
@@ -1401,6 +1401,7 @@ static void update_layer_contexts (VP8_COMP *cpi)
         unsigned int i;
         double prev_layer_framerate=0;
 
+        assert(oxcf->number_of_layers <= VPX_TS_MAX_LAYERS);
         for (i=0; i<oxcf->number_of_layers; i++)
         {
             LAYER_CONTEXT *lc = &cpi->layer_context[i];
@@ -1623,6 +1624,12 @@ void vp8_change_config(VP8_COMP *cpi, VP8_CONFIG *oxcf)
         cpi->oxcf.maximum_buffer_size =
             rescale((int)cpi->oxcf.maximum_buffer_size,
                     cpi->oxcf.target_bandwidth, 1000);
+    // Under a configuration change, where maximum_buffer_size may change,
+    // keep buffer level clipped to the maximum allowed buffer size.
+    if (cpi->bits_off_target > cpi->oxcf.maximum_buffer_size) {
+      cpi->bits_off_target = cpi->oxcf.maximum_buffer_size;
+      cpi->buffer_level = cpi->bits_off_target;
+    }
 
     /* Set up frame rate and related parameters rate control values. */
     vp8_new_framerate(cpi, cpi->framerate);
@@ -1754,8 +1761,11 @@ void vp8_change_config(VP8_COMP *cpi, VP8_CONFIG *oxcf)
 
 }
 
+#ifndef M_LOG2_E
 #define M_LOG2_E 0.693147180559945309417
+#endif
 #define log2f(x) (log (x) / (float) M_LOG2_E)
+
 static void cal_mvsadcosts(int *mvsadcost[2])
 {
     int i = 1;
@@ -2164,10 +2174,12 @@ void vp8_remove_compressor(VP8_COMP **ptr)
                                               8.0 / 1000.0  / time_encoded;
                         double samples = 3.0 / 2 * cpi->frames_in_layer[i] *
                                          lst_yv12->y_width * lst_yv12->y_height;
-                        double total_psnr = vp8_mse2psnr(samples, 255.0,
-                                                  cpi->total_error2[i]);
-                        double total_psnr2 = vp8_mse2psnr(samples, 255.0,
-                                                  cpi->total_error2_p[i]);
+                        double total_psnr =
+                            vpx_sse_to_psnr(samples, 255.0,
+                                            cpi->total_error2[i]);
+                        double total_psnr2 =
+                            vpx_sse_to_psnr(samples, 255.0,
+                                            cpi->total_error2_p[i]);
                         double total_ssim = 100 * pow(cpi->sum_ssim[i] /
                                                       cpi->sum_weights[i], 8.0);
 
@@ -2184,9 +2196,9 @@ void vp8_remove_compressor(VP8_COMP **ptr)
                 {
                     double samples = 3.0 / 2 * cpi->count *
                                         lst_yv12->y_width * lst_yv12->y_height;
-                    double total_psnr = vp8_mse2psnr(samples, 255.0,
-                                                         cpi->total_sq_error);
-                    double total_psnr2 = vp8_mse2psnr(samples, 255.0,
+                    double total_psnr = vpx_sse_to_psnr(samples, 255.0,
+                                                        cpi->total_sq_error);
+                    double total_psnr2 = vpx_sse_to_psnr(samples, 255.0,
                                                          cpi->total_sq_error2);
                     double total_ssim = 100 * pow(cpi->summed_quality /
                                                       cpi->summed_weights, 8.0);
@@ -2516,8 +2528,8 @@ static void generate_psnr_packet(VP8_COMP *cpi)
     pkt.data.psnr.samples[3] = width * height;
 
     for (i = 0; i < 4; i++)
-        pkt.data.psnr.psnr[i] = vp8_mse2psnr(pkt.data.psnr.samples[i], 255.0,
-                                             (double)(pkt.data.psnr.sse[i]));
+        pkt.data.psnr.psnr[i] = vpx_sse_to_psnr(pkt.data.psnr.samples[i], 255.0,
+                                                (double)(pkt.data.psnr.sse[i]));
 
     vpx_codec_pkt_list_add(cpi->output_pkt_list, &pkt);
 }
@@ -2675,8 +2687,8 @@ static int resize_key_frame(VP8_COMP *cpi)
     VP8_COMMON *cm = &cpi->common;
 
     /* Do we need to apply resampling for one pass cbr.
-     * In one pass this is more limited than in two pass cbr
-     * The test and any change is only made one per key frame sequence
+     * In one pass this is more limited than in two pass cbr.
+     * The test and any change is only made once per key frame sequence.
      */
     if (cpi->oxcf.allow_spatial_resampling && (cpi->oxcf.end_usage == USAGE_STREAM_FROM_SERVER))
     {
@@ -2699,7 +2711,7 @@ static int resize_key_frame(VP8_COMP *cpi)
             cm->vert_scale = (cm->vert_scale > NORMAL) ? cm->vert_scale - 1 : NORMAL;
         }
 
-        /* Get the new hieght and width */
+        /* Get the new height and width */
         Scale2Ratio(cm->horiz_scale, &hr, &hs);
         Scale2Ratio(cm->vert_scale, &vr, &vs);
         new_width = ((hs - 1) + (cpi->oxcf.Width * hr)) / hs;
@@ -3574,7 +3586,8 @@ static void encode_frame_to_data_rate
                 for (i=cpi->current_layer+1; i<cpi->oxcf.number_of_layers; i++)
                 {
                     LAYER_CONTEXT *lc = &cpi->layer_context[i];
-                    lc->bits_off_target += cpi->av_per_frame_bandwidth;
+                    lc->bits_off_target += (int)(lc->target_bandwidth /
+                                                 lc->framerate);
                     if (lc->bits_off_target > lc->maximum_buffer_size)
                         lc->bits_off_target = lc->maximum_buffer_size;
                     lc->buffer_level = lc->bits_off_target;
@@ -3807,7 +3820,7 @@ static void encode_frame_to_data_rate
 
     /* Setup background Q adjustment for error resilient mode.
      * For multi-layer encodes only enable this for the base layer.
-     */
+    */
     if (cpi->cyclic_refresh_mode_enabled)
     {
       if (cpi->current_layer==0)
@@ -4620,45 +4633,43 @@ static void encode_frame_to_data_rate
         vp8_clear_system_state();
 
         if (cpi->twopass.total_left_stats.coded_error != 0.0)
-            fprintf(f, "%10d %10d %10d %10d %10d %10d %10d %10d %10d %6d %6d"
-                       "%6d %6d %6d %5d %5d %5d %8d %8.2f %10d %10.3f"
-                       "%10.3f %8d\n",
+            fprintf(f, "%10d %10d %10d %10d %10d %10"PRId64" %10"PRId64
+                       "%10"PRId64" %10d %6d %6d %6d %6d %5d %5d %5d %8d "
+                       "%8.2lf %"PRId64" %10.3lf %10"PRId64" %8d\n",
                        cpi->common.current_video_frame, cpi->this_frame_target,
                        cpi->projected_frame_size,
                        (cpi->projected_frame_size - cpi->this_frame_target),
-                       (int)cpi->total_target_vs_actual,
+                       cpi->total_target_vs_actual,
                        cpi->buffer_level,
                        (cpi->oxcf.starting_buffer_level-cpi->bits_off_target),
-                       (int)cpi->total_actual_bits, cm->base_qindex,
+                       cpi->total_actual_bits, cm->base_qindex,
                        cpi->active_best_quality, cpi->active_worst_quality,
                        cpi->ni_av_qi, cpi->cq_target_quality,
-                       cpi->zbin_over_quant,
                        cm->refresh_golden_frame, cm->refresh_alt_ref_frame,
                        cm->frame_type, cpi->gfu_boost,
                        cpi->twopass.est_max_qcorrection_factor,
-                       (int)cpi->twopass.bits_left,
+                       cpi->twopass.bits_left,
                        cpi->twopass.total_left_stats.coded_error,
                        (double)cpi->twopass.bits_left /
                            cpi->twopass.total_left_stats.coded_error,
                        cpi->tot_recode_hits);
         else
-            fprintf(f, "%10d %10d %10d %10d %10d %10d %10d %10d %10d %6d %6d"
-                       "%6d %6d %6d %5d %5d %5d %8d %8.2f %10d %10.3f"
-                       "%8d\n",
-                       cpi->common.current_video_frame,
-                       cpi->this_frame_target, cpi->projected_frame_size,
+            fprintf(f, "%10d %10d %10d %10d %10d %10"PRId64" %10"PRId64
+                       "%10"PRId64" %10d %6d %6d %6d %6d %5d %5d %5d %8d "
+                       "%8.2lf %"PRId64" %10.3lf %8d\n",
+                       cpi->common.current_video_frame, cpi->this_frame_target,
+                       cpi->projected_frame_size,
                        (cpi->projected_frame_size - cpi->this_frame_target),
-                       (int)cpi->total_target_vs_actual,
+                       cpi->total_target_vs_actual,
                        cpi->buffer_level,
                        (cpi->oxcf.starting_buffer_level-cpi->bits_off_target),
-                       (int)cpi->total_actual_bits, cm->base_qindex,
+                       cpi->total_actual_bits, cm->base_qindex,
                        cpi->active_best_quality, cpi->active_worst_quality,
                        cpi->ni_av_qi, cpi->cq_target_quality,
-                       cpi->zbin_over_quant,
                        cm->refresh_golden_frame, cm->refresh_alt_ref_frame,
                        cm->frame_type, cpi->gfu_boost,
                        cpi->twopass.est_max_qcorrection_factor,
-                       (int)cpi->twopass.bits_left,
+                       cpi->twopass.bits_left,
                        cpi->twopass.total_left_stats.coded_error,
                        cpi->tot_recode_hits);
 
@@ -4666,7 +4677,6 @@ static void encode_frame_to_data_rate
 
         {
             FILE *fmodes = fopen("Modes.stt", "a");
-            int i;
 
             fprintf(fmodes, "%6d:%1d:%1d:%1d ",
                         cpi->common.current_video_frame,
@@ -4810,32 +4820,10 @@ static void Pass2Encode(VP8_COMP *cpi, unsigned long *size, unsigned char *dest,
 }
 #endif
 
-/* For ARM NEON, d8-d15 are callee-saved registers, and need to be saved. */
-#if HAVE_NEON
-extern void vp8_push_neon(int64_t *store);
-extern void vp8_pop_neon(int64_t *store);
-#endif
-
-
 int vp8_receive_raw_frame(VP8_COMP *cpi, unsigned int frame_flags, YV12_BUFFER_CONFIG *sd, int64_t time_stamp, int64_t end_time)
 {
-#if HAVE_NEON
-    int64_t store_reg[8];
-#if CONFIG_RUNTIME_CPU_DETECT
-    VP8_COMMON            *cm = &cpi->common;
-#endif
-#endif
     struct vpx_usec_timer  timer;
     int                    res = 0;
-
-#if HAVE_NEON
-#if CONFIG_RUNTIME_CPU_DETECT
-    if (cm->cpu_caps & HAS_NEON)
-#endif
-    {
-        vp8_push_neon(store_reg);
-    }
-#endif
 
     vpx_usec_timer_start(&timer);
 
@@ -4852,15 +4840,6 @@ int vp8_receive_raw_frame(VP8_COMP *cpi, unsigned int frame_flags, YV12_BUFFER_C
         res = -1;
     vpx_usec_timer_mark(&timer);
     cpi->time_receive_data += vpx_usec_timer_elapsed(&timer);
-
-#if HAVE_NEON
-#if CONFIG_RUNTIME_CPU_DETECT
-    if (cm->cpu_caps & HAS_NEON)
-#endif
-    {
-        vp8_pop_neon(store_reg);
-    }
-#endif
 
     return res;
 }
@@ -4882,9 +4861,6 @@ static int frame_is_reference(const VP8_COMP *cpi)
 
 int vp8_get_compressed_data(VP8_COMP *cpi, unsigned int *frame_flags, unsigned long *size, unsigned char *dest, unsigned char *dest_end, int64_t *time_stamp, int64_t *time_end, int flush)
 {
-#if HAVE_NEON
-    int64_t store_reg[8];
-#endif
     VP8_COMMON *cm;
     struct vpx_usec_timer  tsctimer;
     struct vpx_usec_timer  ticktimer;
@@ -4903,15 +4879,6 @@ int vp8_get_compressed_data(VP8_COMP *cpi, unsigned int *frame_flags, unsigned l
     }
 
     cpi->common.error.setjmp = 1;
-
-#if HAVE_NEON
-#if CONFIG_RUNTIME_CPU_DETECT
-    if (cm->cpu_caps & HAS_NEON)
-#endif
-    {
-        vp8_push_neon(store_reg);
-    }
-#endif
 
     vpx_usec_timer_start(&cmptimer);
 
@@ -4995,14 +4962,6 @@ int vp8_get_compressed_data(VP8_COMP *cpi, unsigned int *frame_flags, unsigned l
 
 #endif
 
-#if HAVE_NEON
-#if CONFIG_RUNTIME_CPU_DETECT
-        if (cm->cpu_caps & HAS_NEON)
-#endif
-        {
-            vp8_pop_neon(store_reg);
-        }
-#endif
         return -1;
     }
 
@@ -5065,6 +5024,7 @@ int vp8_get_compressed_data(VP8_COMP *cpi, unsigned int *frame_flags, unsigned l
                 unsigned int i;
 
                 /* Update frame rates for each layer */
+                assert(cpi->oxcf.number_of_layers <= VPX_TS_MAX_LAYERS);
                 for (i=0; i<cpi->oxcf.number_of_layers; i++)
                 {
                     LAYER_CONTEXT *lc = &cpi->layer_context[i];
@@ -5267,7 +5227,7 @@ int vp8_get_compressed_data(VP8_COMP *cpi, unsigned int *frame_flags, unsigned l
                 int y_samples = orig->y_height * orig->y_width ;
                 int uv_samples = orig->uv_height * orig->uv_width ;
                 int t_samples = y_samples + 2 * uv_samples;
-                double sq_error, sq_error2;
+                double sq_error;
 
                 ye = calc_plane_error(orig->y_buffer, orig->y_stride,
                   recon->y_buffer, recon->y_stride, orig->y_width, orig->y_height);
@@ -5280,16 +5240,17 @@ int vp8_get_compressed_data(VP8_COMP *cpi, unsigned int *frame_flags, unsigned l
 
                 sq_error = (double)(ye + ue + ve);
 
-                frame_psnr = vp8_mse2psnr(t_samples, 255.0, sq_error);
+                frame_psnr = vpx_sse_to_psnr(t_samples, 255.0, sq_error);
 
-                cpi->total_y += vp8_mse2psnr(y_samples, 255.0, (double)ye);
-                cpi->total_u += vp8_mse2psnr(uv_samples, 255.0, (double)ue);
-                cpi->total_v += vp8_mse2psnr(uv_samples, 255.0, (double)ve);
+                cpi->total_y += vpx_sse_to_psnr(y_samples, 255.0, (double)ye);
+                cpi->total_u += vpx_sse_to_psnr(uv_samples, 255.0, (double)ue);
+                cpi->total_v += vpx_sse_to_psnr(uv_samples, 255.0, (double)ve);
                 cpi->total_sq_error += sq_error;
                 cpi->total  += frame_psnr;
 #if CONFIG_POSTPROC
                 {
                     YV12_BUFFER_CONFIG      *pp = &cm->post_proc_buffer;
+                    double sq_error2;
                     double frame_psnr2, frame_ssim2 = 0;
                     double weight = 0;
 
@@ -5307,14 +5268,14 @@ int vp8_get_compressed_data(VP8_COMP *cpi, unsigned int *frame_flags, unsigned l
 
                     sq_error2 = (double)(ye + ue + ve);
 
-                    frame_psnr2 = vp8_mse2psnr(t_samples, 255.0, sq_error2);
+                    frame_psnr2 = vpx_sse_to_psnr(t_samples, 255.0, sq_error2);
 
-                    cpi->totalp_y += vp8_mse2psnr(y_samples,
-                                                  255.0, (double)ye);
-                    cpi->totalp_u += vp8_mse2psnr(uv_samples,
-                                                  255.0, (double)ue);
-                    cpi->totalp_v += vp8_mse2psnr(uv_samples,
-                                                  255.0, (double)ve);
+                    cpi->totalp_y += vpx_sse_to_psnr(y_samples,
+                                                     255.0, (double)ye);
+                    cpi->totalp_u += vpx_sse_to_psnr(uv_samples,
+                                                     255.0, (double)ue);
+                    cpi->totalp_v += vpx_sse_to_psnr(uv_samples,
+                                                     255.0, (double)ve);
                     cpi->total_sq_error2 += sq_error2;
                     cpi->totalp  += frame_psnr2;
 
@@ -5403,15 +5364,6 @@ int vp8_get_compressed_data(VP8_COMP *cpi, unsigned int *frame_flags, unsigned l
     }
 
 #endif
-#endif
-
-#if HAVE_NEON
-#if CONFIG_RUNTIME_CPU_DETECT
-    if (cm->cpu_caps & HAS_NEON)
-#endif
-    {
-        vp8_pop_neon(store_reg);
-    }
 #endif
 
     cpi->common.error.setjmp = 0;

@@ -1,5 +1,5 @@
 /*
- * crypto.h - public data structures and prototypes for the crypto library
+ * secdig.h - public prototypes for digest-info functions
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -40,7 +40,7 @@ SEC_ASN1_CHOOSER_DECLARE(sgn_DigestInfoTemplate)
 ** I think that is all anybody ever wants to do anyway.
 */
 extern SGNDigestInfo *SGN_CreateDigestInfo(SECOidTag algorithm,
-					   unsigned char *sig,
+					   const unsigned char *sig,
 					   unsigned int sigLen);
 
 /*

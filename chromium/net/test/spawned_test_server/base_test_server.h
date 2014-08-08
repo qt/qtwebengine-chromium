@@ -13,6 +13,7 @@
 #include "base/files/file_path.h"
 #include "base/memory/scoped_ptr.h"
 #include "net/base/host_port_pair.h"
+#include "net/ssl/ssl_client_cert_type.h"
 
 class GURL;
 
@@ -70,6 +71,18 @@ class BaseTestServer {
       OCSP_INVALID,
       OCSP_UNAUTHORIZED,
       OCSP_UNKNOWN,
+    };
+
+    // Bitmask of key exchange algorithms that the test server supports and that
+    // can be selectively enabled or disabled.
+    enum KeyExchange {
+      // Special value used to indicate that any algorithm the server supports
+      // is acceptable. Preferred over explicitly OR-ing all key exchange
+      // algorithms.
+      KEY_EXCHANGE_ANY     = 0,
+
+      KEY_EXCHANGE_RSA     = (1 << 0),
+      KEY_EXCHANGE_DHE_RSA = (1 << 1),
     };
 
     // Bitmask of bulk encryption algorithms that the test server supports
@@ -134,6 +147,16 @@ class BaseTestServer {
     // field of the CertificateRequest.
     std::vector<base::FilePath> client_authorities;
 
+    // If |request_client_certificate| is true, an optional list of
+    // SSLClientCertType values to populate the certificate_types field of the
+    // CertificateRequest.
+    std::vector<SSLClientCertType> client_cert_types;
+
+    // A bitwise-OR of KeyExchnage that should be used by the
+    // HTTPS server, or KEY_EXCHANGE_ANY to indicate that all implemented
+    // key exchange algorithms are acceptable.
+    int key_exchanges;
+
     // A bitwise-OR of BulkCipher that should be used by the
     // HTTPS server, or BULK_CIPHER_ANY to indicate that all implemented
     // ciphers are acceptable.
@@ -165,6 +188,9 @@ class BaseTestServer {
 
     // Whether to staple the OCSP response.
     bool staple_ocsp_response;
+
+    // Whether to enable NPN support.
+    bool enable_npn;
   };
 
   // Pass as the 'host' parameter during construction to server on 127.0.0.1

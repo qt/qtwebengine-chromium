@@ -108,10 +108,7 @@ cr.define('login', function() {
 
       // Toggle 'animation' class for the duration of WebKit transition.
       $('flip-photo').addEventListener(
-          'click', function(e) {
-            previewElement.classList.add('animation');
-            imageGrid.flipPhoto = !imageGrid.flipPhoto;
-          });
+          'click', this.handleFlipPhoto_.bind(this));
       $('user-image-stream-crop').addEventListener(
           'webkitTransitionEnd', function(e) {
             previewElement.classList.remove('animation');
@@ -169,6 +166,8 @@ cr.define('login', function() {
       this.profileImageLoading_ = value;
       $('user-image-screen-main').classList[
           value ? 'add' : 'remove']('profile-image-loading');
+      if (value)
+        announceAccessibleMessage(loadTimeData.getString('syncingPreferences'));
       this.updateProfileImageCaption_();
     },
 
@@ -198,7 +197,7 @@ cr.define('login', function() {
 
       // Camera selection
       if (imageGrid.selectionType == 'camera') {
-        $('flip-photo').tabIndex = 0;
+        $('flip-photo').tabIndex = 1;
         // No current image selected.
         if (imageGrid.cameraLive) {
           imageGrid.previewElement.classList.remove('phototaken');
@@ -242,10 +241,23 @@ cr.define('login', function() {
     },
 
     /**
+     * Handle camera-photo flip.
+     */
+    handleFlipPhoto_: function() {
+      var imageGrid = $('user-image-grid');
+      imageGrid.previewElement.classList.add('animation');
+      imageGrid.flipPhoto = !imageGrid.flipPhoto;
+      var flipMessageId = imageGrid.flipPhoto ?
+         'photoFlippedAccessibleText' : 'photoFlippedBackAccessibleText';
+      announceAccessibleMessage(loadTimeData.getString(flipMessageId));
+    },
+
+    /**
      * Handle photo capture from the live camera stream.
      */
     handleTakePhoto_: function(e) {
       $('user-image-grid').takePhoto();
+      chrome.send('takePhoto');
     },
 
     /**
@@ -254,7 +266,7 @@ cr.define('login', function() {
      */
     handlePhotoTaken_: function(e) {
       chrome.send('photoTaken', [e.dataURL]);
-      this.announceAccessibleMessage_(
+      announceAccessibleMessage(
           loadTimeData.getString('photoCaptureAccessibleText'));
     },
 
@@ -272,26 +284,9 @@ cr.define('login', function() {
     handleDiscardPhoto_: function(e) {
       var imageGrid = $('user-image-grid');
       imageGrid.discardPhoto();
-      this.announceAccessibleMessage_(
+      chrome.send('discardPhoto');
+      announceAccessibleMessage(
           loadTimeData.getString('photoDiscardAccessibleText'));
-    },
-
-    /**
-     * Add an accessible message to the page that will be announced to
-     * users who have spoken feedback on, but will be invisible to all
-     * other users. It's removed right away so it doesn't clutter the DOM.
-     */
-    announceAccessibleMessage_: function(msg) {
-      var element = document.createElement('div');
-      element.setAttribute('aria-live', 'polite');
-      element.style.position = 'relative';
-      element.style.left = '-9999px';
-      element.style.height = '0px';
-      element.innerText = msg;
-      document.body.appendChild(element);
-      window.setTimeout(function() {
-        document.body.removeChild(element);
-      }, 0);
     },
 
     /**

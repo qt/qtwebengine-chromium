@@ -57,6 +57,11 @@ void URLFetcherImpl::SetReferrer(const std::string& referrer) {
   core_->SetReferrer(referrer);
 }
 
+void URLFetcherImpl::SetReferrerPolicy(
+    URLRequest::ReferrerPolicy referrer_policy) {
+  core_->SetReferrerPolicy(referrer_policy);
+}
+
 void URLFetcherImpl::SetLoadFlags(int load_flags) {
   core_->SetLoadFlags(load_flags);
 }
@@ -72,11 +77,6 @@ void URLFetcherImpl::SetExtraRequestHeaders(
 
 void URLFetcherImpl::AddExtraRequestHeader(const std::string& header_line) {
   core_->AddExtraRequestHeader(header_line);
-}
-
-void URLFetcherImpl::GetExtraRequestHeaders(
-    HttpRequestHeaders* headers) const {
-  GetExtraRequestHeaders(headers);
 }
 
 void URLFetcherImpl::SetRequestContext(

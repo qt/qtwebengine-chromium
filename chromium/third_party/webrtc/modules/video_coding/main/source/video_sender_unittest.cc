@@ -52,7 +52,7 @@ struct Vp8StreamInfo {
 MATCHER_P(MatchesVp8StreamInfo, expected, "") {
   bool res = true;
   for (int tl = 0; tl < kMaxNumberOfTemporalLayers; ++tl) {
-    if (abs(expected.framerate_fps[tl] - arg.framerate_fps[tl]) > 0.5) {
+    if (fabs(expected.framerate_fps[tl] - arg.framerate_fps[tl]) > 0.5) {
       *result_listener << " framerate_fps[" << tl
                        << "] = " << arg.framerate_fps[tl] << " (expected "
                        << expected.framerate_fps[tl] << ") ";
@@ -173,7 +173,7 @@ class TestVideoSender : public ::testing::Test {
   TestVideoSender() : clock_(1000), packetization_callback_(&clock_) {}
 
   virtual void SetUp() {
-    sender_.reset(new VideoSender(0, &clock_));
+    sender_.reset(new VideoSender(&clock_, &post_encode_callback_));
     EXPECT_EQ(0, sender_->InitializeSender());
     EXPECT_EQ(0, sender_->RegisterTransportCallback(&packetization_callback_));
   }
@@ -185,6 +185,7 @@ class TestVideoSender : public ::testing::Test {
 
   SimulatedClock clock_;
   PacketizationCallback packetization_callback_;
+  MockEncodedImageCallback post_encode_callback_;
   scoped_ptr<VideoSender> sender_;
   scoped_ptr<FrameGenerator> generator_;
 };
@@ -344,6 +345,8 @@ class TestVideoSenderWithVp8 : public TestVideoSender {
   void InsertFrames(float framerate, float seconds) {
     for (int i = 0; i < seconds * framerate; ++i) {
       clock_.AdvanceTimeMilliseconds(1000.0f / framerate);
+      EXPECT_CALL(post_encode_callback_, Encoded(_, NULL, NULL))
+          .WillOnce(Return(0));
       AddFrame();
 
       // SetChannelParameters needs to be called frequently to propagate

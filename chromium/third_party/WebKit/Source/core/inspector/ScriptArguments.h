@@ -41,24 +41,24 @@ namespace WebCore {
 
 class ScriptValue;
 
-class ScriptArguments : public RefCounted<ScriptArguments> {
+class ScriptArguments : public RefCountedWillBeGarbageCollectedFinalized<ScriptArguments> {
+    DECLARE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(ScriptArguments);
 public:
-    static PassRefPtr<ScriptArguments> create(ScriptState*, Vector<ScriptValue>& arguments);
-
-    ~ScriptArguments();
+    static PassRefPtrWillBeRawPtr<ScriptArguments> create(ScriptState*, Vector<ScriptValue>& arguments);
 
     const ScriptValue& argumentAt(size_t) const;
     size_t argumentCount() const { return m_arguments.size(); }
 
-    ScriptState* globalState() const;
+    ScriptState* scriptState() const { return m_scriptState.get(); }
 
     bool getFirstArgumentAsString(WTF::String& result, bool checkForNullOrUndefined = false);
-    bool isEqual(ScriptArguments*) const;
+
+    void trace(Visitor*) { }
 
 private:
     ScriptArguments(ScriptState*, Vector<ScriptValue>& arguments);
 
-    ScriptStateProtectedPtr m_scriptState;
+    ScriptStateProtectingContext m_scriptState;
     Vector<ScriptValue> m_arguments;
 };
 

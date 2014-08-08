@@ -39,7 +39,7 @@
 
 namespace WebCore {
 
-class RectangleShape : public Shape {
+class RectangleShape FINAL : public Shape {
 public:
     RectangleShape(const FloatRect& bounds, const FloatSize& radii)
         : Shape()
@@ -49,15 +49,12 @@ public:
     }
 
     virtual LayoutRect shapeMarginLogicalBoundingBox() const OVERRIDE { return static_cast<LayoutRect>(shapeMarginBounds()); }
-    virtual LayoutRect shapePaddingLogicalBoundingBox() const OVERRIDE { return static_cast<LayoutRect>(shapePaddingBounds()); }
     virtual bool isEmpty() const OVERRIDE { return m_bounds.isEmpty(); }
     virtual void getExcludedIntervals(LayoutUnit logicalTop, LayoutUnit logicalHeight, SegmentList&) const OVERRIDE;
-    virtual void getIncludedIntervals(LayoutUnit logicalTop, LayoutUnit logicalHeight, SegmentList&) const OVERRIDE;
-    virtual bool firstIncludedIntervalLogicalTop(LayoutUnit minLogicalIntervalTop, const LayoutSize& minLogicalIntervalSize, LayoutUnit&) const OVERRIDE;
+    virtual void buildDisplayPaths(DisplayPaths&) const OVERRIDE;
 
 private:
     FloatRect shapeMarginBounds() const;
-    FloatRect shapePaddingBounds() const;
 
     float rx() const { return m_radii.width(); }
     float ry() const { return m_radii.height(); }

@@ -32,16 +32,28 @@
 #include "config.h"
 #include "core/loader/LinkLoader.h"
 
-#include "FetchInitiatorTypeNames.h"
+#include "core/FetchInitiatorTypeNames.h"
 #include "core/dom/Document.h"
 #include "core/fetch/FetchRequest.h"
 #include "core/fetch/ResourceFetcher.h"
+#include "core/frame/Settings.h"
 #include "core/html/LinkRelAttribute.h"
 #include "core/loader/PrerenderHandle.h"
-#include "core/frame/Settings.h"
+#include "platform/Prerender.h"
 #include "platform/network/DNS.h"
 
 namespace WebCore {
+
+static unsigned prerenderRelTypesFromRelAttribute(const LinkRelAttribute& relAttribute)
+{
+    unsigned result = 0;
+    if (relAttribute.isLinkPrerender())
+        result |= PrerenderRelTypePrerender;
+    if (relAttribute.isLinkNext())
+        result |= PrerenderRelTypeNext;
+
+    return result;
+}
 
 LinkLoader::LinkLoader(LinkLoaderClient* client)
     : m_client(client)
@@ -71,9 +83,9 @@ void LinkLoader::notifyFinished(Resource* resource)
     ASSERT(this->resource() == resource);
 
     if (resource->errorOccurred())
-        m_linkLoadingErrorTimer.startOneShot(0);
+        m_linkLoadingErrorTimer.startOneShot(0, FROM_HERE);
     else
-        m_linkLoadTimer.startOneShot(0);
+        m_linkLoadTimer.startOneShot(0, FROM_HERE);
 
     clearResource();
 }
@@ -98,7 +110,7 @@ void LinkLoader::didSendDOMContentLoadedForPrerender()
     m_client->didSendDOMContentLoadedForLinkPrerender();
 }
 
-bool LinkLoader::loadLink(const LinkRelAttribute& relAttribute, const String& type, const KURL& href, Document& document)
+bool LinkLoader::loadLink(const LinkRelAttribute& relAttribute, const AtomicString& crossOriginMode, const String& type, const KURL& href, Document& document)
 {
     if (relAttribute.isDNSPrefetch()) {
         Settings* settings = document.settings();
@@ -109,21 +121,24 @@ bool LinkLoader::loadLink(const LinkRelAttribute& relAttribute, const String& ty
     }
 
     // FIXME(crbug.com/323096): Should take care of import.
-    if ((relAttribute.isLinkPrefetch() || relAttribute.isLinkSubresource()) && href.isValid() && document.frame()) {
+    if ((relAttribute.isLinkPrefetch() || relAttribute.isLinkSubresource() || relAttribute.isTransitionExitingStylesheet()) && href.isValid() && document.frame()) {
         if (!m_client->shouldLoadLink())
             return false;
         Resource::Type type = relAttribute.isLinkSubresource() ?  Resource::LinkSubresource : Resource::LinkPrefetch;
         FetchRequest linkRequest(ResourceRequest(document.completeURL(href)), FetchInitiatorTypeNames::link);
+        if (!crossOriginMode.isNull())
+            linkRequest.setCrossOriginAccessControl(document.securityOrigin(), crossOriginMode);
         setResource(document.fetcher()->fetchLinkResource(type, linkRequest));
     }
 
-    if (relAttribute.isLinkPrerender()) {
+    if (const unsigned prerenderRelTypes = prerenderRelTypesFromRelAttribute(relAttribute)) {
         if (!m_prerender) {
-            m_prerender = PrerenderHandle::create(document, this, href);
+            m_prerender = PrerenderHandle::create(document, this, href, prerenderRelTypes);
         } else if (m_prerender->url() != href) {
             m_prerender->cancel();
-            m_prerender = PrerenderHandle::create(document, this, href);
+            m_prerender = PrerenderHandle::create(document, this, href, prerenderRelTypes);
         }
+        // TODO(gavinp): Handle changes to rel types of existing prerenders.
     } else if (m_prerender) {
         m_prerender->cancel();
         m_prerender.clear();

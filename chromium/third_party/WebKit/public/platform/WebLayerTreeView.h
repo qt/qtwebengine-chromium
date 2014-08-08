@@ -36,6 +36,7 @@
 class SkBitmap;
 
 namespace blink {
+class WebCompositeAndReadbackAsyncCallback;
 class WebGraphicsContext3D;
 class WebLayer;
 struct WebPoint;
@@ -60,12 +61,8 @@ public:
 
     // View properties ---------------------------------------------------
 
-    virtual void setViewportSize(const WebSize& layoutViewportSize, const WebSize& deviceViewportSize) = 0;
-    // Gives the viewport size in layer space.
-    virtual WebSize layoutViewportSize() const = 0;
-    // Gives the viewport size in physical device pixels (may be different
-    // from the above if there exists page scale, device scale or fixed layout
-    // mode).
+    virtual void setViewportSize(const WebSize& deviceViewportSize) = 0;
+    // Gives the viewport size in physical device pixels.
     virtual WebSize deviceViewportSize() const = 0;
 
     virtual void setDeviceScaleFactor(float) = 0;
@@ -92,6 +89,8 @@ public:
     // If useAnchor is false, destination is the final top-left scroll position.
     virtual void startPageScaleAnimation(const WebPoint& destination, bool useAnchor, float newPageScale, double durationSec) = 0;
 
+    virtual void heuristicsForGpuRasterizationUpdated(bool) { }
+
 
     // Flow control and scheduling ---------------------------------------
 
@@ -104,13 +103,9 @@ public:
     // Relays the end of a fling animation.
     virtual void didStopFlinging() { }
 
-    // Composites and attempts to read back the result into the provided
-    // buffer. If it wasn't possible, e.g. due to context lost, will return
-    // false. Pixel format is 32bit (RGBA), and the provided buffer must be
-    // large enough contain viewportSize().width() * viewportSize().height()
-    // pixels. The WebLayerTreeView does not assume ownership of the buffer.
-    // The buffer is not modified if the false is returned.
-    virtual bool compositeAndReadback(void *pixels, const WebRect&) = 0;
+    // The caller is responsible for keeping the WebCompositeAndReadbackAsyncCallback
+    // object alive until it is called.
+    virtual void compositeAndReadbackAsync(WebCompositeAndReadbackAsyncCallback*) { }
 
     // Blocks until the most recently composited frame has finished rendering on the GPU.
     // This can have a significant performance impact and should be used with care.

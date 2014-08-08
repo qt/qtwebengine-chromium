@@ -1,46 +1,29 @@
 // Copyright 2013 the V8 project authors. All rights reserved.
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-//       copyright notice, this list of conditions and the following
-//       disclaimer in the documentation and/or other materials provided
-//       with the distribution.
-//     * Neither the name of Google Inc. nor the names of its
-//       contributors may be used to endorse or promote products derived
-//       from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
-#include "v8.h"
+#include "src/v8.h"
 
-#include "lithium-codegen.h"
+#include "src/lithium-codegen.h"
 
 #if V8_TARGET_ARCH_IA32
-#include "ia32/lithium-ia32.h"
-#include "ia32/lithium-codegen-ia32.h"
+#include "src/ia32/lithium-ia32.h"
+#include "src/ia32/lithium-codegen-ia32.h"
 #elif V8_TARGET_ARCH_X64
-#include "x64/lithium-x64.h"
-#include "x64/lithium-codegen-x64.h"
+#include "src/x64/lithium-x64.h"
+#include "src/x64/lithium-codegen-x64.h"
 #elif V8_TARGET_ARCH_ARM
-#include "arm/lithium-arm.h"
-#include "arm/lithium-codegen-arm.h"
+#include "src/arm/lithium-arm.h"
+#include "src/arm/lithium-codegen-arm.h"
+#elif V8_TARGET_ARCH_ARM64
+#include "src/arm64/lithium-arm64.h"
+#include "src/arm64/lithium-codegen-arm64.h"
 #elif V8_TARGET_ARCH_MIPS
-#include "mips/lithium-mips.h"
-#include "mips/lithium-codegen-mips.h"
+#include "src/mips/lithium-mips.h"
+#include "src/mips/lithium-codegen-mips.h"
+#elif V8_TARGET_ARCH_X87
+#include "src/x87/lithium-x87.h"
+#include "src/x87/lithium-codegen-x87.h"
 #else
 #error Unsupported target architecture.
 #endif
@@ -104,11 +87,9 @@ bool LCodeGenBase::GenerateBody() {
     GenerateBodyInstructionPre(instr);
 
     HValue* value = instr->hydrogen_value();
-    if (value->position() != RelocInfo::kNoPosition) {
-      ASSERT(!graph()->info()->IsOptimizing() ||
-             !FLAG_emit_opt_code_positions ||
-             value->position() != RelocInfo::kNoPosition);
-      RecordAndWritePosition(value->position());
+    if (!value->position().IsUnknown()) {
+      RecordAndWritePosition(
+        chunk()->graph()->SourcePositionToScriptPosition(value->position()));
     }
 
     instr->CompileToNative(codegen);
@@ -118,6 +99,30 @@ bool LCodeGenBase::GenerateBody() {
   EnsureSpaceForLazyDeopt(Deoptimizer::patch_size());
   last_lazy_deopt_pc_ = masm()->pc_offset();
   return !is_aborted();
+}
+
+
+void LCodeGenBase::CheckEnvironmentUsage() {
+#ifdef DEBUG
+  bool dead_block = false;
+  for (int i = 0; i < instructions_->length(); i++) {
+    LInstruction* instr = instructions_->at(i);
+    HValue* hval = instr->hydrogen_value();
+    if (instr->IsLabel()) dead_block = LLabel::cast(instr)->HasReplacement();
+    if (dead_block || !hval->block()->IsReachable()) continue;
+
+    HInstruction* hinstr = HInstruction::cast(hval);
+    if (!hinstr->CanDeoptimize() && instr->HasEnvironment()) {
+      V8_Fatal(__FILE__, __LINE__, "CanDeoptimize is wrong for %s (%s)\n",
+               hinstr->Mnemonic(), instr->Mnemonic());
+    }
+
+    if (instr->HasEnvironment() && !instr->environment()->has_been_used()) {
+      V8_Fatal(__FILE__, __LINE__, "unused environment for %s (%s)\n",
+               hinstr->Mnemonic(), instr->Mnemonic());
+    }
+  }
+#endif
 }
 
 
@@ -134,17 +139,95 @@ void LCodeGenBase::Comment(const char* format, ...) {
   // issues when the stack allocated buffer goes out of scope.
   size_t length = builder.position();
   Vector<char> copy = Vector<char>::New(static_cast<int>(length) + 1);
-  OS::MemCopy(copy.start(), builder.Finalize(), copy.length());
+  MemCopy(copy.start(), builder.Finalize(), copy.length());
   masm()->RecordComment(copy.start());
 }
 
 
 int LCodeGenBase::GetNextEmittedBlock() const {
   for (int i = current_block_ + 1; i < graph()->blocks()->length(); ++i) {
+    if (!graph()->blocks()->at(i)->IsReachable()) continue;
     if (!chunk_->GetLabel(i)->HasReplacement()) return i;
   }
   return -1;
 }
 
+
+static void AddWeakObjectToCodeDependency(Isolate* isolate,
+                                          Handle<Object> object,
+                                          Handle<Code> code) {
+  Heap* heap = isolate->heap();
+  heap->EnsureWeakObjectToCodeTable();
+  Handle<DependentCode> dep(heap->LookupWeakObjectToCodeDependency(object));
+  dep = DependentCode::Insert(dep, DependentCode::kWeakCodeGroup, code);
+  heap->AddWeakObjectToCodeDependency(object, dep);
+}
+
+
+void LCodeGenBase::RegisterWeakObjectsInOptimizedCode(Handle<Code> code) {
+  ASSERT(code->is_optimized_code());
+  ZoneList<Handle<Map> > maps(1, zone());
+  ZoneList<Handle<JSObject> > objects(1, zone());
+  ZoneList<Handle<Cell> > cells(1, zone());
+  int mode_mask = RelocInfo::ModeMask(RelocInfo::EMBEDDED_OBJECT) |
+                  RelocInfo::ModeMask(RelocInfo::CELL);
+  for (RelocIterator it(*code, mode_mask); !it.done(); it.next()) {
+    RelocInfo::Mode mode = it.rinfo()->rmode();
+    if (mode == RelocInfo::CELL &&
+        code->IsWeakObjectInOptimizedCode(it.rinfo()->target_cell())) {
+      Handle<Cell> cell(it.rinfo()->target_cell());
+      cells.Add(cell, zone());
+    } else if (mode == RelocInfo::EMBEDDED_OBJECT &&
+               code->IsWeakObjectInOptimizedCode(it.rinfo()->target_object())) {
+      if (it.rinfo()->target_object()->IsMap()) {
+        Handle<Map> map(Map::cast(it.rinfo()->target_object()));
+        maps.Add(map, zone());
+      } else if (it.rinfo()->target_object()->IsJSObject()) {
+        Handle<JSObject> object(JSObject::cast(it.rinfo()->target_object()));
+        objects.Add(object, zone());
+      } else if (it.rinfo()->target_object()->IsCell()) {
+        Handle<Cell> cell(Cell::cast(it.rinfo()->target_object()));
+        cells.Add(cell, zone());
+      }
+    }
+  }
+  if (FLAG_enable_ool_constant_pool) {
+    code->constant_pool()->set_weak_object_state(
+        ConstantPoolArray::WEAK_OBJECTS_IN_OPTIMIZED_CODE);
+  }
+#ifdef VERIFY_HEAP
+  // This disables verification of weak embedded objects after full GC.
+  // AddDependentCode can cause a GC, which would observe the state where
+  // this code is not yet in the depended code lists of the embedded maps.
+  NoWeakObjectVerificationScope disable_verification_of_embedded_objects;
+#endif
+  for (int i = 0; i < maps.length(); i++) {
+    Map::AddDependentCode(maps.at(i), DependentCode::kWeakCodeGroup, code);
+  }
+  for (int i = 0; i < objects.length(); i++) {
+    AddWeakObjectToCodeDependency(isolate(), objects.at(i), code);
+  }
+  for (int i = 0; i < cells.length(); i++) {
+    AddWeakObjectToCodeDependency(isolate(), cells.at(i), code);
+  }
+}
+
+
+void LCodeGenBase::Abort(BailoutReason reason) {
+  info()->set_bailout_reason(reason);
+  status_ = ABORTED;
+}
+
+
+void LCodeGenBase::AddDeprecationDependency(Handle<Map> map) {
+  if (map->is_deprecated()) return Abort(kMapBecameDeprecated);
+  chunk_->AddDeprecationDependency(map);
+}
+
+
+void LCodeGenBase::AddStabilityDependency(Handle<Map> map) {
+  if (!map->is_stable()) return Abort(kMapBecameUnstable);
+  chunk_->AddStabilityDependency(map);
+}
 
 } }  // namespace v8::internal

@@ -8,7 +8,8 @@
 #include "base/callback.h"
 #include "base/callback_helpers.h"
 #include "base/debug/trace_event.h"
-#include "base/message_loop/message_loop.h"
+#include "base/location.h"
+#include "base/single_thread_task_runner.h"
 #include "base/threading/platform_thread.h"
 #include "media/base/buffers.h"
 #include "media/base/limits.h"
@@ -17,22 +18,17 @@
 
 namespace media {
 
-base::TimeDelta VideoRendererImpl::kMaxLastFrameDuration() {
-  return base::TimeDelta::FromMilliseconds(250);
-}
-
 VideoRendererImpl::VideoRendererImpl(
-    const scoped_refptr<base::MessageLoopProxy>& message_loop,
+    const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
     ScopedVector<VideoDecoder> decoders,
     const SetDecryptorReadyCB& set_decryptor_ready_cb,
     const PaintCB& paint_cb,
-    const SetOpaqueCB& set_opaque_cb,
     bool drop_frames)
-    : message_loop_(message_loop),
-      weak_factory_(this),
-      video_frame_stream_(
-          message_loop, decoders.Pass(), set_decryptor_ready_cb),
+    : task_runner_(task_runner),
+      video_frame_stream_(task_runner, decoders.Pass(), set_decryptor_ready_cb),
+      low_delay_(false),
       received_end_of_stream_(false),
+      rendered_end_of_stream_(false),
       frame_available_(&lock_),
       state_(kUninitialized),
       thread_(),
@@ -40,10 +36,10 @@ VideoRendererImpl::VideoRendererImpl(
       drop_frames_(drop_frames),
       playback_rate_(0),
       paint_cb_(paint_cb),
-      set_opaque_cb_(set_opaque_cb),
       last_timestamp_(kNoTimestamp()),
       frames_decoded_(0),
-      frames_dropped_(0) {
+      frames_dropped_(0),
+      weak_factory_(this) {
   DCHECK(!paint_cb_.is_null());
 }
 
@@ -54,25 +50,17 @@ VideoRendererImpl::~VideoRendererImpl() {
 }
 
 void VideoRendererImpl::Play(const base::Closure& callback) {
-  DCHECK(message_loop_->BelongsToCurrentThread());
+  DCHECK(task_runner_->BelongsToCurrentThread());
   base::AutoLock auto_lock(lock_);
   DCHECK_EQ(kPrerolled, state_);
   state_ = kPlaying;
   callback.Run();
 }
 
-void VideoRendererImpl::Pause(const base::Closure& callback) {
-  DCHECK(message_loop_->BelongsToCurrentThread());
-  base::AutoLock auto_lock(lock_);
-  DCHECK(state_ != kUninitialized || state_ == kError);
-  state_ = kPaused;
-  callback.Run();
-}
-
 void VideoRendererImpl::Flush(const base::Closure& callback) {
-  DCHECK(message_loop_->BelongsToCurrentThread());
+  DCHECK(task_runner_->BelongsToCurrentThread());
   base::AutoLock auto_lock(lock_);
-  DCHECK_EQ(state_, kPaused);
+  DCHECK_NE(state_, kUninitialized);
   flush_cb_ = callback;
   state_ = kFlushing;
 
@@ -80,12 +68,14 @@ void VideoRendererImpl::Flush(const base::Closure& callback) {
   // stream and needs to drain it before flushing it.
   ready_frames_.clear();
   received_end_of_stream_ = false;
-  video_frame_stream_.Reset(base::Bind(
-      &VideoRendererImpl::OnVideoFrameStreamResetDone, weak_this_));
+  rendered_end_of_stream_ = false;
+  video_frame_stream_.Reset(
+      base::Bind(&VideoRendererImpl::OnVideoFrameStreamResetDone,
+                 weak_factory_.GetWeakPtr()));
 }
 
 void VideoRendererImpl::Stop(const base::Closure& callback) {
-  DCHECK(message_loop_->BelongsToCurrentThread());
+  DCHECK(task_runner_->BelongsToCurrentThread());
   base::AutoLock auto_lock(lock_);
   if (state_ == kUninitialized || state_ == kStopped) {
     callback.Run();
@@ -119,18 +109,18 @@ void VideoRendererImpl::Stop(const base::Closure& callback) {
 }
 
 void VideoRendererImpl::SetPlaybackRate(float playback_rate) {
-  DCHECK(message_loop_->BelongsToCurrentThread());
+  DCHECK(task_runner_->BelongsToCurrentThread());
   base::AutoLock auto_lock(lock_);
   playback_rate_ = playback_rate;
 }
 
 void VideoRendererImpl::Preroll(base::TimeDelta time,
                                 const PipelineStatusCB& cb) {
-  DCHECK(message_loop_->BelongsToCurrentThread());
+  DCHECK(task_runner_->BelongsToCurrentThread());
   base::AutoLock auto_lock(lock_);
   DCHECK(!cb.is_null());
   DCHECK(preroll_cb_.is_null());
-  DCHECK(state_ == kFlushed || state_== kPaused) << "state_ " << state_;
+  DCHECK(state_ == kFlushed || state_ == kPlaying) << "state_ " << state_;
 
   if (state_ == kFlushed) {
     DCHECK(time != kNoTimestamp());
@@ -153,32 +143,31 @@ void VideoRendererImpl::Preroll(base::TimeDelta time,
 }
 
 void VideoRendererImpl::Initialize(DemuxerStream* stream,
+                                   bool low_delay,
                                    const PipelineStatusCB& init_cb,
                                    const StatisticsCB& statistics_cb,
                                    const TimeCB& max_time_cb,
-                                   const NaturalSizeChangedCB& size_changed_cb,
                                    const base::Closure& ended_cb,
                                    const PipelineStatusCB& error_cb,
                                    const TimeDeltaCB& get_time_cb,
                                    const TimeDeltaCB& get_duration_cb) {
-  DCHECK(message_loop_->BelongsToCurrentThread());
+  DCHECK(task_runner_->BelongsToCurrentThread());
   base::AutoLock auto_lock(lock_);
   DCHECK(stream);
   DCHECK_EQ(stream->type(), DemuxerStream::VIDEO);
   DCHECK(!init_cb.is_null());
   DCHECK(!statistics_cb.is_null());
   DCHECK(!max_time_cb.is_null());
-  DCHECK(!size_changed_cb.is_null());
   DCHECK(!ended_cb.is_null());
   DCHECK(!get_time_cb.is_null());
   DCHECK(!get_duration_cb.is_null());
   DCHECK_EQ(kUninitialized, state_);
 
-  weak_this_ = weak_factory_.GetWeakPtr();
+  low_delay_ = low_delay;
+
   init_cb_ = init_cb;
   statistics_cb_ = statistics_cb;
   max_time_cb_ = max_time_cb;
-  size_changed_cb_ = size_changed_cb;
   ended_cb_ = ended_cb;
   error_cb_ = error_cb;
   get_time_cb_ = get_time_cb;
@@ -187,14 +176,14 @@ void VideoRendererImpl::Initialize(DemuxerStream* stream,
 
   video_frame_stream_.Initialize(
       stream,
+      low_delay,
       statistics_cb,
       base::Bind(&VideoRendererImpl::OnVideoFrameStreamInitialized,
-                 weak_this_));
+                 weak_factory_.GetWeakPtr()));
 }
 
-void VideoRendererImpl::OnVideoFrameStreamInitialized(bool success,
-                                                      bool has_alpha) {
-  DCHECK(message_loop_->BelongsToCurrentThread());
+void VideoRendererImpl::OnVideoFrameStreamInitialized(bool success) {
+  DCHECK(task_runner_->BelongsToCurrentThread());
   base::AutoLock auto_lock(lock_);
 
   if (state_ == kStopped)
@@ -214,16 +203,8 @@ void VideoRendererImpl::OnVideoFrameStreamInitialized(bool success,
   // have not populated any buffers yet.
   state_ = kFlushed;
 
-  set_opaque_cb_.Run(!has_alpha);
-  set_opaque_cb_.Reset();
-
   // Create our video thread.
-  if (!base::PlatformThread::Create(0, this, &thread_)) {
-    NOTREACHED() << "Video thread creation failed";
-    state_ = kError;
-    base::ResetAndReturn(&init_cb_).Run(PIPELINE_ERROR_INITIALIZATION_FAILED);
-    return;
-  }
+  CHECK(base::PlatformThread::Create(0, this, &thread_));
 
 #if defined(OS_WIN)
   // Bump up our priority so our sleeping is more accurate.
@@ -261,12 +242,9 @@ void VideoRendererImpl::ThreadMain() {
 
     // Remain idle until we have the next frame ready for rendering.
     if (ready_frames_.empty()) {
-      if (received_end_of_stream_) {
-        state_ = kEnded;
+      if (received_end_of_stream_ && !rendered_end_of_stream_) {
+        rendered_end_of_stream_ = true;
         ended_cb_.Run();
-
-        // No need to sleep here as we idle when |state_ != kPlaying|.
-        continue;
       }
 
       UpdateStatsAndWait_Locked(kIdleTimeDelta);
@@ -297,8 +275,8 @@ void VideoRendererImpl::ThreadMain() {
     // the accuracy of our frame timing code. http://crbug.com/149829
     if (drop_frames_ && last_timestamp_ != kNoTimestamp()) {
       base::TimeDelta now = get_time_cb_.Run();
-      base::TimeDelta deadline = ready_frames_.front()->GetTimestamp() +
-          (ready_frames_.front()->GetTimestamp() - last_timestamp_) / 2;
+      base::TimeDelta deadline = ready_frames_.front()->timestamp() +
+          (ready_frames_.front()->timestamp() - last_timestamp_) / 2;
 
       if (now > deadline) {
         DropNextReadyFrame_Locked();
@@ -321,18 +299,13 @@ void VideoRendererImpl::PaintNextReadyFrame_Locked() {
   ready_frames_.pop_front();
   frames_decoded_++;
 
-  last_timestamp_ = next_frame->GetTimestamp();
-
-  const gfx::Size& natural_size = next_frame->natural_size();
-  if (natural_size != last_natural_size_) {
-    last_natural_size_ = natural_size;
-    size_changed_cb_.Run(natural_size);
-  }
+  last_timestamp_ = next_frame->timestamp();
 
   paint_cb_.Run(next_frame);
 
-  message_loop_->PostTask(FROM_HERE, base::Bind(
-      &VideoRendererImpl::AttemptRead, weak_this_));
+  task_runner_->PostTask(
+      FROM_HERE,
+      base::Bind(&VideoRendererImpl::AttemptRead, weak_factory_.GetWeakPtr()));
 }
 
 void VideoRendererImpl::DropNextReadyFrame_Locked() {
@@ -340,13 +313,14 @@ void VideoRendererImpl::DropNextReadyFrame_Locked() {
 
   lock_.AssertAcquired();
 
-  last_timestamp_ = ready_frames_.front()->GetTimestamp();
+  last_timestamp_ = ready_frames_.front()->timestamp();
   ready_frames_.pop_front();
   frames_decoded_++;
   frames_dropped_++;
 
-  message_loop_->PostTask(FROM_HERE, base::Bind(
-      &VideoRendererImpl::AttemptRead, weak_this_));
+  task_runner_->PostTask(
+      FROM_HERE,
+      base::Bind(&VideoRendererImpl::AttemptRead, weak_factory_.GetWeakPtr()));
 }
 
 void VideoRendererImpl::FrameReady(VideoFrameStream::Status status,
@@ -376,7 +350,7 @@ void VideoRendererImpl::FrameReady(VideoFrameStream::Status status,
 
   // Already-queued VideoFrameStream ReadCB's can fire after various state
   // transitions have happened; in that case just drop those frames immediately.
-  if (state_ == kStopped || state_ == kError || state_ == kFlushing)
+  if (state_ == kStopped || state_ == kFlushing)
     return;
 
   if (!frame.get()) {
@@ -403,7 +377,7 @@ void VideoRendererImpl::FrameReady(VideoFrameStream::Status status,
   // Maintain the latest frame decoded so the correct frame is displayed after
   // prerolling has completed.
   if (state_ == kPrerolling && preroll_timestamp_ != kNoTimestamp() &&
-      frame->GetTimestamp() <= preroll_timestamp_) {
+      frame->timestamp() <= preroll_timestamp_) {
     ready_frames_.clear();
   }
 
@@ -422,7 +396,8 @@ void VideoRendererImpl::FrameReady(VideoFrameStream::Status status,
 bool VideoRendererImpl::ShouldTransitionToPrerolled_Locked() {
   return state_ == kPrerolling &&
       (!video_frame_stream_.CanReadWithoutStalling() ||
-       ready_frames_.size() >= static_cast<size_t>(limits::kMaxVideoFrames));
+       ready_frames_.size() >= static_cast<size_t>(limits::kMaxVideoFrames) ||
+       (low_delay_ && ready_frames_.size() > 0));
 }
 
 void VideoRendererImpl::AddReadyFrame_Locked(
@@ -436,15 +411,15 @@ void VideoRendererImpl::AddReadyFrame_Locked(
   // frame rate.  Another way for this to happen is for the container to state
   // a smaller duration than the largest packet timestamp.
   base::TimeDelta duration = get_duration_cb_.Run();
-  if (frame->GetTimestamp() > duration) {
-    frame->SetTimestamp(duration);
+  if (frame->timestamp() > duration) {
+    frame->set_timestamp(duration);
   }
 
   ready_frames_.push_back(frame);
   DCHECK_LE(ready_frames_.size(),
             static_cast<size_t>(limits::kMaxVideoFrames));
 
-  max_time_cb_.Run(frame->GetTimestamp());
+  max_time_cb_.Run(frame->timestamp());
 
   // Avoid needlessly waking up |thread_| unless playing.
   if (state_ == kPlaying)
@@ -457,7 +432,7 @@ void VideoRendererImpl::AttemptRead() {
 }
 
 void VideoRendererImpl::AttemptRead_Locked() {
-  DCHECK(message_loop_->BelongsToCurrentThread());
+  DCHECK(task_runner_->BelongsToCurrentThread());
   lock_.AssertAcquired();
 
   if (pending_read_ || received_end_of_stream_ ||
@@ -466,22 +441,19 @@ void VideoRendererImpl::AttemptRead_Locked() {
   }
 
   switch (state_) {
-    case kPaused:
     case kPrerolling:
+    case kPrerolled:
     case kPlaying:
       pending_read_ = true;
       video_frame_stream_.Read(base::Bind(&VideoRendererImpl::FrameReady,
-                                          weak_this_));
+                                          weak_factory_.GetWeakPtr()));
       return;
 
     case kUninitialized:
     case kInitializing:
-    case kPrerolled:
     case kFlushing:
     case kFlushed:
-    case kEnded:
     case kStopped:
-    case kError:
       return;
   }
 }
@@ -495,6 +467,7 @@ void VideoRendererImpl::OnVideoFrameStreamResetDone() {
   DCHECK(!pending_read_);
   DCHECK(ready_frames_.empty());
   DCHECK(!received_end_of_stream_);
+  DCHECK(!rendered_end_of_stream_);
 
   state_ = kFlushed;
   last_timestamp_ = kNoTimestamp();
@@ -506,7 +479,7 @@ base::TimeDelta VideoRendererImpl::CalculateSleepDuration(
     float playback_rate) {
   // Determine the current and next presentation timestamps.
   base::TimeDelta now = get_time_cb_.Run();
-  base::TimeDelta next_pts = next_frame->GetTimestamp();
+  base::TimeDelta next_pts = next_frame->timestamp();
 
   // Scale our sleep based on the playback rate.
   base::TimeDelta sleep = next_pts - now;

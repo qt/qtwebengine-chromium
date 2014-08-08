@@ -25,14 +25,14 @@
 #include "config.h"
 #include "core/html/parser/TextDocumentParser.h"
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 #include "core/html/parser/HTMLTreeBuilder.h"
 
 namespace WebCore {
 
 using namespace HTMLNames;
 
-TextDocumentParser::TextDocumentParser(HTMLDocument* document)
+TextDocumentParser::TextDocumentParser(HTMLDocument& document)
     : HTMLDocumentParser(document, false)
     , m_haveInsertedFakePreElement(false)
 {
@@ -42,11 +42,11 @@ TextDocumentParser::~TextDocumentParser()
 {
 }
 
-void TextDocumentParser::append(PassRefPtr<StringImpl> text)
+void TextDocumentParser::appendBytes(const char* data, size_t length)
 {
     if (!m_haveInsertedFakePreElement)
         insertFakePreElement();
-    HTMLDocumentParser::append(text);
+    HTMLDocumentParser::appendBytes(data, length);
 }
 
 void TextDocumentParser::insertFakePreElement()

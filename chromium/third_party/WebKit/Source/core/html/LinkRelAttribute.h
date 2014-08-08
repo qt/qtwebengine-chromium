@@ -33,17 +33,13 @@
 #define LinkRelAttribute_h
 
 #include "core/dom/IconURL.h"
-
-namespace WTF {
-class String;
-}
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
 class LinkRelAttribute {
 public:
-    LinkRelAttribute();
-    explicit LinkRelAttribute(const String&);
+    explicit LinkRelAttribute(const String& = "");
 
     bool isStyleSheet() const { return m_isStyleSheet; }
     IconType iconType() const { return m_iconType; }
@@ -52,7 +48,10 @@ public:
     bool isLinkPrefetch() const { return m_isLinkPrefetch; }
     bool isLinkSubresource() const { return m_isLinkSubresource; }
     bool isLinkPrerender() const { return m_isLinkPrerender; }
+    bool isLinkNext() const { return m_isLinkNext; }
     bool isImport() const { return m_isImport; }
+    bool isManifest() const { return m_isManifest; }
+    bool isTransitionExitingStylesheet() const { return m_isTransitionExitingStylesheet; }
 
 private:
     IconType m_iconType;
@@ -62,7 +61,10 @@ private:
     bool m_isLinkPrefetch : 1;
     bool m_isLinkSubresource : 1;
     bool m_isLinkPrerender : 1;
+    bool m_isLinkNext : 1;
     bool m_isImport : 1;
+    bool m_isManifest : 1;
+    bool m_isTransitionExitingStylesheet : 1;
 };
 
 }

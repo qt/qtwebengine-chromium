@@ -6,7 +6,7 @@
 
 #include <algorithm>
 
-#include "base/safe_numerics.h"
+#include "base/numerics/safe_conversions.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "content/browser/renderer_host/pepper/pepper_truetype_font_list.h"
 #include "content/common/font_list.h"
@@ -44,11 +44,9 @@ class FontMessageFilter : public ppapi::host::ResourceMessageFilter {
   DISALLOW_COPY_AND_ASSIGN(FontMessageFilter);
 };
 
-FontMessageFilter::FontMessageFilter() {
-}
+FontMessageFilter::FontMessageFilter() {}
 
-FontMessageFilter::~FontMessageFilter() {
-}
+FontMessageFilter::~FontMessageFilter() {}
 
 scoped_refptr<base::TaskRunner> FontMessageFilter::OverrideTaskRunnerForMessage(
     const IPC::Message& msg) {
@@ -63,14 +61,14 @@ scoped_refptr<base::TaskRunner> FontMessageFilter::OverrideTaskRunnerForMessage(
 int32_t FontMessageFilter::OnResourceMessageReceived(
     const IPC::Message& msg,
     ppapi::host::HostMessageContext* context) {
-  IPC_BEGIN_MESSAGE_MAP(FontMessageFilter, msg)
+  PPAPI_BEGIN_MESSAGE_MAP(FontMessageFilter, msg)
     PPAPI_DISPATCH_HOST_RESOURCE_CALL_0(
         PpapiHostMsg_TrueTypeFontSingleton_GetFontFamilies,
         OnHostMsgGetFontFamilies)
     PPAPI_DISPATCH_HOST_RESOURCE_CALL(
         PpapiHostMsg_TrueTypeFontSingleton_GetFontsInFamily,
         OnHostMsgGetFontsInFamily)
-  IPC_END_MESSAGE_MAP()
+  PPAPI_END_MESSAGE_MAP()
   return PP_ERROR_FAILED;
 }
 
@@ -84,7 +82,7 @@ int32_t FontMessageFilter::OnHostMsgGetFontFamilies(
 
   context->reply_msg =
       PpapiPluginMsg_TrueTypeFontSingleton_GetFontFamiliesReply(font_families);
-  return base::checked_numeric_cast<int32_t>(font_families.size());
+  return base::checked_cast<int32_t>(font_families.size());
 }
 
 int32_t FontMessageFilter::OnHostMsgGetFontsInFamily(
@@ -97,21 +95,19 @@ int32_t FontMessageFilter::OnHostMsgGetFontsInFamily(
   context->reply_msg =
       PpapiPluginMsg_TrueTypeFontSingleton_GetFontsInFamilyReply(
           fonts_in_family);
-  return base::checked_numeric_cast<int32_t>(fonts_in_family.size());
+  return base::checked_cast<int32_t>(fonts_in_family.size());
 }
 
 }  // namespace
 
-PepperTrueTypeFontListHost::PepperTrueTypeFontListHost(
-    BrowserPpapiHost* host,
-    PP_Instance instance,
-    PP_Resource resource)
+PepperTrueTypeFontListHost::PepperTrueTypeFontListHost(BrowserPpapiHost* host,
+                                                       PP_Instance instance,
+                                                       PP_Resource resource)
     : ResourceHost(host->GetPpapiHost(), instance, resource) {
   AddFilter(scoped_refptr<ppapi::host::ResourceMessageFilter>(
       new FontMessageFilter()));
 }
 
-PepperTrueTypeFontListHost::~PepperTrueTypeFontListHost() {
-}
+PepperTrueTypeFontListHost::~PepperTrueTypeFontListHost() {}
 
 }  // namespace content

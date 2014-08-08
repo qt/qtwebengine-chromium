@@ -6,6 +6,7 @@
 
 #include "base/bind.h"
 #include "base/message_loop/message_loop.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "content/child/thread_safe_sender.h"
 #include "content/common/media/media_player_messages_android.h"
 #include "content/renderer/media/android/media_source_delegate.h"
@@ -42,7 +43,6 @@ bool RendererDemuxerAndroid::OnMessageReceived(const IPC::Message& message) {
   switch (message.type()) {
     case MediaPlayerMsg_DemuxerSeekRequest::ID:
     case MediaPlayerMsg_ReadFromDemuxer::ID:
-    case MediaPlayerMsg_MediaConfigRequest::ID:
       media_message_loop_->PostTask(FROM_HERE, base::Bind(
           &RendererDemuxerAndroid::DispatchMessage, this, message));
       return true;
@@ -81,7 +81,6 @@ void RendererDemuxerAndroid::DispatchMessage(const IPC::Message& message) {
   IPC_BEGIN_MESSAGE_MAP(RendererDemuxerAndroid, message)
     IPC_MESSAGE_HANDLER(MediaPlayerMsg_DemuxerSeekRequest, OnDemuxerSeekRequest)
     IPC_MESSAGE_HANDLER(MediaPlayerMsg_ReadFromDemuxer, OnReadFromDemuxer)
-    IPC_MESSAGE_HANDLER(MediaPlayerMsg_MediaConfigRequest, OnMediaConfigRequest)
   IPC_END_MESSAGE_MAP()
 }
 
@@ -100,12 +99,6 @@ void RendererDemuxerAndroid::OnDemuxerSeekRequest(
   MediaSourceDelegate* delegate = delegates_.Lookup(demuxer_client_id);
   if (delegate)
     delegate->Seek(time_to_seek, is_browser_seek);
-}
-
-void RendererDemuxerAndroid::OnMediaConfigRequest(int demuxer_client_id) {
-  MediaSourceDelegate* delegate = delegates_.Lookup(demuxer_client_id);
-  if (delegate)
-    delegate->OnMediaConfigRequest();
 }
 
 }  // namespace content

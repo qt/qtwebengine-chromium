@@ -42,7 +42,7 @@ namespace WebCore {
 typedef unsigned MainThreadScrollingReasons;
 
 class Document;
-class Frame;
+class LocalFrame;
 class FrameView;
 class GraphicsLayer;
 class Page;
@@ -50,12 +50,13 @@ class Region;
 class ScrollableArea;
 class ViewportConstraints;
 
-class ScrollingCoordinator : public RefCounted<ScrollingCoordinator> {
+class ScrollingCoordinator {
 public:
-    static PassRefPtr<ScrollingCoordinator> create(Page*);
     ~ScrollingCoordinator();
 
-    void pageDestroyed();
+    static PassOwnPtr<ScrollingCoordinator> create(Page*);
+
+    void willBeDestroyed();
 
     // Return whether this scrolling coordinator handles scrolling for the given frame view.
     bool coordinatesScrollingForFrameView(FrameView*) const;
@@ -63,14 +64,10 @@ public:
     // Called when any frame has done its layout.
     void notifyLayoutUpdated();
 
-    // Should be called after compositing has been updated.
-    void updateAfterCompositingChange();
+    void updateAfterCompositingChangeIfNeeded();
 
-    bool needsToUpdateAfterCompositingChange() const { return m_scrollGestureRegionIsDirty || m_touchEventTargetRectsAreDirty || frameViewIsScrollableIsDirty(); }
-
-    // Should be called whenever a wheel event handler is added or removed in the
-    // frame view's underlying document.
-    void frameViewWheelEventHandlerCountChanged(FrameView*);
+    void updateHaveWheelEventHandlers();
+    void updateHaveScrollEventHandlers();
 
     // Should be called whenever the slow repaint objects counter changes between zero and one.
     void frameViewHasSlowRepaintObjectsDidChange(FrameView*);
@@ -95,7 +92,7 @@ public:
     MainThreadScrollingReasons mainThreadScrollingReasons() const;
     bool shouldUpdateScrollLayerPositionOnMainThread() const { return mainThreadScrollingReasons() != 0; }
 
-    PassOwnPtr<blink::WebScrollbarLayer> createSolidColorScrollbarLayer(ScrollbarOrientation, int thumbThickness, bool isLeftSideVerticalScrollbar);
+    PassOwnPtr<blink::WebScrollbarLayer> createSolidColorScrollbarLayer(ScrollbarOrientation, int thumbThickness, int trackStart, bool isLeftSideVerticalScrollbar);
 
     void willDestroyScrollableArea(ScrollableArea*);
     // Returns true if the coordinator handled this change.
@@ -103,7 +100,7 @@ public:
     void scrollableAreaScrollbarLayerDidChange(ScrollableArea*, ScrollbarOrientation);
     void setLayerIsContainerForFixedPositionLayers(GraphicsLayer*, bool);
     void updateLayerPositionConstraint(RenderLayer*);
-    void touchEventTargetRectsDidChange(const Document*);
+    void touchEventTargetRectsDidChange();
     void willDestroyRenderLayer(RenderLayer*);
 
     void updateScrollParentForGraphicsLayer(GraphicsLayer* child, RenderLayer* parent);
@@ -111,7 +108,7 @@ public:
 
     static String mainThreadScrollingReasonsAsText(MainThreadScrollingReasons);
     String mainThreadScrollingReasonsAsText() const;
-    Region computeShouldHandleScrollGestureOnMainThreadRegion(const Frame*, const IntPoint& frameLocation) const;
+    Region computeShouldHandleScrollGestureOnMainThreadRegion(const LocalFrame*, const IntPoint& frameLocation) const;
 
     void updateTouchEventTargetRectsIfNeeded();
 
@@ -122,41 +119,32 @@ public:
 protected:
     explicit ScrollingCoordinator(Page*);
 
-    static GraphicsLayer* scrollLayerForScrollableArea(ScrollableArea*);
-    static GraphicsLayer* horizontalScrollbarLayerForScrollableArea(ScrollableArea*);
-    static GraphicsLayer* verticalScrollbarLayerForScrollableArea(ScrollableArea*);
     bool isForMainFrame(ScrollableArea*) const;
-
-    unsigned computeCurrentWheelEventHandlerCount();
-    GraphicsLayer* scrollLayerForFrameView(FrameView*);
-    GraphicsLayer* counterScrollingLayerForFrameView(FrameView*);
 
     Page* m_page;
 
     // Dirty flags used to idenfity what really needs to be computed after compositing is updated.
     bool m_scrollGestureRegionIsDirty;
     bool m_touchEventTargetRectsAreDirty;
+    bool m_shouldScrollOnMainThreadDirty;
 
 private:
-    void recomputeWheelEventHandlerCountForFrameView(FrameView*);
+    bool shouldUpdateAfterCompositingChange() const { return m_scrollGestureRegionIsDirty || m_touchEventTargetRectsAreDirty || frameViewIsDirty(); }
+
     void setShouldUpdateScrollLayerPositionOnMainThread(MainThreadScrollingReasons);
 
     bool hasVisibleSlowRepaintViewportConstrainedObjects(FrameView*) const;
-    void updateShouldUpdateScrollLayerPositionOnMainThread();
-
-    static blink::WebLayer* scrollingWebLayerForScrollableArea(ScrollableArea*);
 
     bool touchHitTestingEnabled() const;
     void setShouldHandleScrollGestureOnMainThreadRegion(const Region&);
-    void setTouchEventTargetRects(const LayerHitTestRects&);
+    void setTouchEventTargetRects(LayerHitTestRects&);
     void computeTouchEventTargetRects(LayerHitTestRects&);
-    void setWheelEventHandlerCount(unsigned);
 
     blink::WebScrollbarLayer* addWebScrollbarLayer(ScrollableArea*, ScrollbarOrientation, PassOwnPtr<blink::WebScrollbarLayer>);
     blink::WebScrollbarLayer* getWebScrollbarLayer(ScrollableArea*, ScrollbarOrientation);
     void removeWebScrollbarLayer(ScrollableArea*, ScrollbarOrientation);
 
-    bool frameViewIsScrollableIsDirty() const;
+    bool frameViewIsDirty() const;
 
     typedef HashMap<ScrollableArea*, OwnPtr<blink::WebScrollbarLayer> > ScrollbarMap;
     ScrollbarMap m_horizontalScrollbars;

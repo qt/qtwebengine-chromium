@@ -4,6 +4,8 @@
 
 #include "content/browser/devtools/devtools_tracing_handler.h"
 
+#include <cmath>
+
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/file_util.h"
@@ -13,6 +15,8 @@
 #include "base/memory/ref_counted_memory.h"
 #include "base/strings/string_split.h"
 #include "base/strings/stringprintf.h"
+#include "base/time/time.h"
+#include "base/timer/timer.h"
 #include "base/values.h"
 #include "content/browser/devtools/devtools_http_handler_impl.h"
 #include "content/browser/devtools/devtools_protocol_constants.h"
@@ -42,13 +46,17 @@ void ReadFile(
 
 }  // namespace
 
-DevToolsTracingHandler::DevToolsTracingHandler()
-    : weak_factory_(this) {
+DevToolsTracingHandler::DevToolsTracingHandler(
+    DevToolsTracingHandler::Target target)
+    : weak_factory_(this), target_(target) {
   RegisterCommandHandler(devtools::Tracing::start::kName,
                          base::Bind(&DevToolsTracingHandler::OnStart,
                                     base::Unretained(this)));
   RegisterCommandHandler(devtools::Tracing::end::kName,
                          base::Bind(&DevToolsTracingHandler::OnEnd,
+                                    base::Unretained(this)));
+  RegisterCommandHandler(devtools::Tracing::getCategories::kName,
+                         base::Bind(&DevToolsTracingHandler::OnGetCategories,
                                     base::Unretained(this)));
 }
 
@@ -69,10 +77,10 @@ void DevToolsTracingHandler::ReadRecordingResult(
   if (trace_data->data().size()) {
     scoped_ptr<base::Value> trace_value(base::JSONReader::Read(
         trace_data->data()));
-    DictionaryValue* dictionary = NULL;
+    base::DictionaryValue* dictionary = NULL;
     bool ok = trace_value->GetAsDictionary(&dictionary);
     DCHECK(ok);
-    ListValue* list = NULL;
+    base::ListValue* list = NULL;
     ok = dictionary->GetList("traceEvents", &list);
     DCHECK(ok);
     std::string buffer;
@@ -142,20 +150,99 @@ DevToolsTracingHandler::OnStart(
     options = TraceOptionsFromString(options_param);
   }
 
+  if (params && params->HasKey(
+      devtools::Tracing::start::kParamBufferUsageReportingInterval)) {
+    double usage_reporting_interval = 0.0;
+    params->GetDouble(
+        devtools::Tracing::start::kParamBufferUsageReportingInterval,
+        &usage_reporting_interval);
+    if (usage_reporting_interval > 0) {
+      base::TimeDelta interval = base::TimeDelta::FromMilliseconds(
+          std::ceil(usage_reporting_interval));
+      buffer_usage_poll_timer_.reset(new base::Timer(
+          FROM_HERE,
+          interval,
+          base::Bind(
+              base::IgnoreResult(&TracingController::GetTraceBufferPercentFull),
+              base::Unretained(TracingController::GetInstance()),
+              base::Bind(&DevToolsTracingHandler::OnBufferUsage,
+                         weak_factory_.GetWeakPtr())),
+          true));
+      buffer_usage_poll_timer_->Reset();
+    }
+  }
+
+  // If inspected target is a render process Tracing.start will be handled by
+  // tracing agent in the renderer.
+  if (target_ == Renderer) {
+    TracingController::GetInstance()->EnableRecording(
+        categories, options, TracingController::EnableRecordingDoneCallback());
+    return NULL;
+  }
+
   TracingController::GetInstance()->EnableRecording(
       categories, options,
-      TracingController::EnableRecordingDoneCallback());
-  return command->SuccessResponse(NULL);
+      base::Bind(&DevToolsTracingHandler::OnTracingStarted,
+                 weak_factory_.GetWeakPtr(),
+                 command));
+
+  return command->AsyncResponsePromise();
+}
+
+void DevToolsTracingHandler::OnTracingStarted(
+    scoped_refptr<DevToolsProtocol::Command> command) {
+  SendAsyncResponse(command->SuccessResponse(NULL));
+}
+
+void DevToolsTracingHandler::OnBufferUsage(float usage) {
+  base::DictionaryValue* params = new base::DictionaryValue();
+  params->SetDouble(devtools::Tracing::bufferUsage::kParamValue, usage);
+  SendNotification(devtools::Tracing::bufferUsage::kName, params);
 }
 
 scoped_refptr<DevToolsProtocol::Response>
 DevToolsTracingHandler::OnEnd(
     scoped_refptr<DevToolsProtocol::Command> command) {
-  TracingController::GetInstance()->DisableRecording(
-      base::FilePath(),
+  DisableRecording(
       base::Bind(&DevToolsTracingHandler::BeginReadingRecordingResult,
                  weak_factory_.GetWeakPtr()));
   return command->SuccessResponse(NULL);
+}
+
+void DevToolsTracingHandler::DisableRecording(
+    const TracingController::TracingFileResultCallback& callback) {
+  buffer_usage_poll_timer_.reset();
+  TracingController::GetInstance()->DisableRecording(base::FilePath(),
+                                                     callback);
+}
+
+void DevToolsTracingHandler::OnClientDetached() {
+    DisableRecording();
+}
+
+scoped_refptr<DevToolsProtocol::Response>
+DevToolsTracingHandler::OnGetCategories(
+    scoped_refptr<DevToolsProtocol::Command> command) {
+  TracingController::GetInstance()->GetCategories(
+      base::Bind(&DevToolsTracingHandler::OnCategoriesReceived,
+                 weak_factory_.GetWeakPtr(),
+                 command));
+  return command->AsyncResponsePromise();
+}
+
+void DevToolsTracingHandler::OnCategoriesReceived(
+    scoped_refptr<DevToolsProtocol::Command> command,
+    const std::set<std::string>& category_set) {
+  base::DictionaryValue* response = new base::DictionaryValue;
+  base::ListValue* category_list = new base::ListValue;
+  for (std::set<std::string>::const_iterator it = category_set.begin();
+       it != category_set.end(); ++it) {
+    category_list->AppendString(*it);
+  }
+
+  response->Set(devtools::Tracing::getCategories::kResponseCategories,
+                category_list);
+  SendAsyncResponse(command->SuccessResponse(response));
 }
 
 }  // namespace content

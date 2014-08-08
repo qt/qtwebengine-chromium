@@ -26,6 +26,17 @@ enum {
 };
 static const int kNormalNumPartitions = 12;
 
+// Delay estimator constants, used for logging.
+enum {
+  kMaxDelayBlocks = 60
+};
+enum {
+  kLookaheadBlocks = 15
+};
+enum {
+  kHistorySizeBlocks = kMaxDelayBlocks + kLookaheadBlocks
+};
+
 // Extended filter adaptation parameters.
 // TODO(ajm): No narrowband tuning yet.
 static const float kExtendedMu = 0.4f;
@@ -122,6 +133,7 @@ struct AecCore {
   void* delay_estimator_farend;
   void* delay_estimator;
 
+  int reported_delay_enabled;  // 0 = disabled, otherwise enabled.
   // 1 = extended filter mode enabled, 0 = disabled.
   int extended_filter_enabled;
   // Runtime selection of number of filter partitions.
@@ -150,5 +162,12 @@ typedef void (*WebRtcAec_OverdriveAndSuppress_t)(AecCore* aec,
                                                  const float hNlFb,
                                                  float efw[2][PART_LEN1]);
 extern WebRtcAec_OverdriveAndSuppress_t WebRtcAec_OverdriveAndSuppress;
+
+typedef void (*WebRtcAec_ComfortNoise_t)(AecCore* aec,
+                                         float efw[2][PART_LEN1],
+                                         complex_t* comfortNoiseHband,
+                                         const float* noisePow,
+                                         const float* lambda);
+extern WebRtcAec_ComfortNoise_t WebRtcAec_ComfortNoise;
 
 #endif  // WEBRTC_MODULES_AUDIO_PROCESSING_AEC_AEC_CORE_INTERNAL_H_

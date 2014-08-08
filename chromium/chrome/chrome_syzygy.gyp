@@ -2,10 +2,12 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 {
+  'variables': {
+    'dest_dir': '<(PRODUCT_DIR)/syzygy',
+  },
   'conditions': [
-    ['OS=="win" and asan==1', {
+    ['syzyasan==1', {
       'variables': {
-        'dest_dir': '<(PRODUCT_DIR)/syzygy',
         'syzygy_exe_dir': '<(DEPTH)/third_party/syzygy/binaries/exe',
       },
       # Copy the SyzyASan runtime and logger to the syzygy directory.
@@ -32,62 +34,84 @@
       ],
     }],
     ['OS=="win" and fastbuild==0', {
-      'variables': {
-        'dll_name': 'chrome',
-      },
-      'targets': [
-        {
-          'target_name': 'chrome_dll_syzygy',
-          'type': 'none',
-          'sources' : [],
-          'includes': [
-            'chrome_syzygy.gypi',
-          ],
-        },
-      ],
-    }],
-    # Note, not else.
-    ['OS=="win" and fastbuild==0 and chrome_multiple_dll==1 and '
-        '(asan!=1 or buildtype!="Official")', {
-      'variables': {
-        'dll_name': 'chrome_child',
-      },
-      'targets': [
-        {
-          'target_name': 'chrome_child_dll_syzygy',
-          'type': 'none',
-          'sources' : [],
-          'includes': [
-            'chrome_syzygy.gypi',
-          ],
-        },
-      ],
-    }, {
       'conditions': [
-        ['OS=="win" and fastbuild==0 and chrome_multiple_dll==1 and '
-            'asan==1 and buildtype=="Official"', {
+        ['syzygy_optimize==1 or syzyasan==1', {
+          'variables': {
+            'dll_name': 'chrome',
+          },
           'targets': [
-          {
-            'target_name': 'chrome_child_dll_syzygy',
-            'type': 'none',
-            'inputs': [
-              '<(PRODUCT_DIR)/chrome_child.dll',
-              '<(PRODUCT_DIR)/chrome_child.dll.pdb',
-            ],
-            'outputs': [
-              '<(PRODUCT_DIR)/syzygy/chrome_child.dll',
-              '<(PRODUCT_DIR)/syzygy/chrome_child.dll.pdb',
-            ],
-            'copies': [
+            {
+              'target_name': 'chrome_dll_syzygy',
+              'type': 'none',
+              'sources' : [],
+              'includes': [
+                'chrome_syzygy.gypi',
+              ],
+            },
+          ],
+        }],
+        ['chrome_multiple_dll==1', {
+          'conditions': [
+            ['syzyasan==1 or syzygy_optimize==1', {
+              'variables': {
+                'dll_name': 'chrome_child',
+              },
+              'targets': [
+                {
+                  'target_name': 'chrome_child_dll_syzygy',
+                  'type': 'none',
+                  # For the official SyzyASan builds just copy chrome_child.dll
+                  # to the Syzygy directory.
+                  'conditions': [
+                    ['syzyasan==1 and buildtype=="Official"', {
+                      'dependencies': [
+                        'chrome_child_dll_syzygy_copy'
+                      ],
+                    }],
+                  ],
+                  # For the official SyzyASan builds also put an instrumented
+                  # version of chrome_child.dll into syzygy/instrumented.
+                  'variables': {
+                    'conditions': [
+                      ['syzyasan==1 and buildtype=="Official"', {
+                        'dest_dir': '<(PRODUCT_DIR)/syzygy/instrumented',
+                      }],
+                    ],
+                  },
+                  'sources' : [],
+                  'includes': [
+                    'chrome_syzygy.gypi',
+                  ],
+                },
+              ],
+            }],
+            # For the official SyzyASan builds just copy chrome_child.dll to the
+            # Syzygy directory.
+            ['syzyasan==1 and buildtype=="Official"', {
+              'targets': [
               {
-                'destination': '<(PRODUCT_DIR)/syzygy',
-                'files': [
+                'target_name': 'chrome_child_dll_syzygy_copy',
+                'type': 'none',
+                'inputs': [
                   '<(PRODUCT_DIR)/chrome_child.dll',
                   '<(PRODUCT_DIR)/chrome_child.dll.pdb',
                 ],
-              },
-            ],
-          }],
+                'outputs': [
+                  '<(dest_dir)/chrome_child.dll',
+                  '<(dest_dir)/chrome_child.dll.pdb',
+                ],
+                'copies': [
+                  {
+                    'destination': '<(dest_dir)',
+                    'files': [
+                      '<(PRODUCT_DIR)/chrome_child.dll',
+                      '<(PRODUCT_DIR)/chrome_child.dll.pdb',
+                    ],
+                  },
+                ],
+              }],
+            }],
+          ],
         }],
       ],
     }],

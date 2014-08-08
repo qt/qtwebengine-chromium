@@ -21,10 +21,11 @@ BitmapContentLayerUpdater::Resource::Resource(
 
 BitmapContentLayerUpdater::Resource::~Resource() {}
 
-void BitmapContentLayerUpdater::Resource::Update(ResourceUpdateQueue* queue,
-                                                 gfx::Rect source_rect,
-                                                 gfx::Vector2d dest_offset,
-                                                 bool partial_update) {
+void BitmapContentLayerUpdater::Resource::Update(
+    ResourceUpdateQueue* queue,
+    const gfx::Rect& source_rect,
+    const gfx::Vector2d& dest_offset,
+    bool partial_update) {
   updater_->UpdateTexture(
       queue, texture(), source_rect, dest_offset, partial_update);
 }
@@ -54,8 +55,8 @@ scoped_ptr<LayerUpdater::Resource> BitmapContentLayerUpdater::CreateResource(
 }
 
 void BitmapContentLayerUpdater::PrepareToUpdate(
-    gfx::Rect content_rect,
-    gfx::Size tile_size,
+    const gfx::Rect& content_rect,
+    const gfx::Size& tile_size,
     float contents_width_scale,
     float contents_height_scale,
     gfx::Rect* resulting_opaque_rect) {
@@ -63,18 +64,19 @@ void BitmapContentLayerUpdater::PrepareToUpdate(
     devtools_instrumentation::ScopedLayerTask paint_setup(
         devtools_instrumentation::kPaintSetup, layer_id_);
     canvas_size_ = content_rect.size();
-    bitmap_backing_.setConfig(
-        SkBitmap::kARGB_8888_Config,
-        canvas_size_.width(), canvas_size_.height(),
-        0, layer_is_opaque_ ? kOpaque_SkAlphaType : kPremul_SkAlphaType);
-    bitmap_backing_.allocPixels();
+    bool alloc = bitmap_backing_.allocN32Pixels(
+        canvas_size_.width(), canvas_size_.height(), layer_is_opaque_);
+    // TODO(danak): Remove when skia does the check for us: crbug.com/360384
+    CHECK(alloc);
     canvas_ = skia::AdoptRef(new SkCanvas(bitmap_backing_));
+    DCHECK_EQ(content_rect.width(), canvas_->getBaseLayerSize().width());
+    DCHECK_EQ(content_rect.height(), canvas_->getBaseLayerSize().height());
   }
 
   base::TimeTicks start_time =
       rendering_stats_instrumentation_->StartRecording();
   PaintContents(canvas_.get(),
-                content_rect.origin(),
+                content_rect,
                 contents_width_scale,
                 contents_height_scale,
                 resulting_opaque_rect);
@@ -87,16 +89,15 @@ void BitmapContentLayerUpdater::PrepareToUpdate(
 
 void BitmapContentLayerUpdater::UpdateTexture(ResourceUpdateQueue* queue,
                                               PrioritizedResource* texture,
-                                              gfx::Rect source_rect,
-                                              gfx::Vector2d dest_offset,
+                                              const gfx::Rect& source_rect,
+                                              const gfx::Vector2d& dest_offset,
                                               bool partial_update) {
   CHECK(canvas_);
-  ResourceUpdate upload =
-      ResourceUpdate::CreateFromCanvas(texture,
-                                       canvas_,
-                                       content_rect(),
-                                       source_rect,
-                                       dest_offset);
+  ResourceUpdate upload = ResourceUpdate::Create(texture,
+                                                 &bitmap_backing_,
+                                                 content_rect(),
+                                                 source_rect,
+                                                 dest_offset);
   if (partial_update)
     queue->AppendPartialUpload(upload);
   else

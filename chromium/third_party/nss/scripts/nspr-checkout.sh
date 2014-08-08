@@ -10,7 +10,7 @@
 set -ex
 
 rm -rf nspr
-hg clone -u NSPR_4_10_2_RTM https://hg.mozilla.org/projects/nspr
+hg clone -u NSPR_4_10_4_RTM https://hg.mozilla.org/projects/nspr
 
 rm -r nspr/admin
 rm -r nspr/build

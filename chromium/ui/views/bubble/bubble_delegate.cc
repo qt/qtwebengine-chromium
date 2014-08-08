@@ -4,8 +4,8 @@
 
 #include "ui/views/bubble/bubble_delegate.h"
 
-#include "ui/base/accessibility/accessible_view_state.h"
-#include "ui/gfx/animation/slide_animation.h"
+#include "ui/accessibility/ax_view_state.h"
+#include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/color_utils.h"
 #include "ui/gfx/rect.h"
 #include "ui/native_theme/native_theme.h"
@@ -17,9 +17,6 @@
 #if defined(OS_WIN)
 #include "ui/base/win/shell.h"
 #endif
-
-// The duration of the fade animation in milliseconds.
-static const int kHideFadeDurationMS = 200;
 
 // The defaut margin between the content and the inside border, in pixels.
 static const int kDefaultMargin = 6;
@@ -39,7 +36,8 @@ Widget* CreateBubbleWidget(BubbleDelegateView* bubble) {
     bubble_params.parent = bubble->parent_window();
   else if (bubble->anchor_widget())
     bubble_params.parent = bubble->anchor_widget()->GetNativeView();
-  bubble_params.can_activate = bubble->CanActivate();
+  bubble_params.activatable = bubble->CanActivate() ?
+      Widget::InitParams::ACTIVATABLE_YES : Widget::InitParams::ACTIVATABLE_NO;
   bubble->OnBeforeBubbleWidgetInit(&bubble_params, bubble_widget);
   bubble_widget->Init(bubble_params);
   return bubble_widget;
@@ -52,12 +50,10 @@ BubbleDelegateView::BubbleDelegateView()
       close_on_deactivate_(true),
       anchor_view_storage_id_(ViewStorage::GetInstance()->CreateStorageID()),
       anchor_widget_(NULL),
-      move_with_anchor_(false),
       arrow_(BubbleBorder::TOP_LEFT),
       shadow_(BubbleBorder::SMALL_SHADOW),
       color_explicitly_set_(false),
       margins_(kDefaultMargin, kDefaultMargin, kDefaultMargin, kDefaultMargin),
-      original_opacity_(255),
       use_focusless_(false),
       accept_events_(true),
       border_accepts_events_(true),
@@ -74,12 +70,10 @@ BubbleDelegateView::BubbleDelegateView(
       close_on_deactivate_(true),
       anchor_view_storage_id_(ViewStorage::GetInstance()->CreateStorageID()),
       anchor_widget_(NULL),
-      move_with_anchor_(false),
       arrow_(arrow),
       shadow_(BubbleBorder::SMALL_SHADOW),
       color_explicitly_set_(false),
       margins_(kDefaultMargin, kDefaultMargin, kDefaultMargin, kDefaultMargin),
-      original_opacity_(255),
       use_focusless_(false),
       accept_events_(true),
       border_accepts_events_(true),
@@ -91,6 +85,8 @@ BubbleDelegateView::BubbleDelegateView(
 }
 
 BubbleDelegateView::~BubbleDelegateView() {
+  if (GetWidget())
+    GetWidget()->RemoveObserver(this);
   SetLayoutManager(NULL);
   SetAnchorView(NULL);
 }
@@ -102,11 +98,14 @@ Widget* BubbleDelegateView::CreateBubble(BubbleDelegateView* bubble_delegate) {
   bubble_delegate->SetAnchorView(bubble_delegate->GetAnchorView());
   Widget* bubble_widget = CreateBubbleWidget(bubble_delegate);
 
-#if defined(OS_WIN) && defined(USE_AURA)
+#if defined(OS_WIN)
   // If glass is enabled, the bubble is allowed to extend outside the bounds of
   // the parent frame and let DWM handle compositing.  If not, then we don't
   // want to allow the bubble to extend the frame because it will be clipped.
   bubble_delegate->set_adjust_if_offscreen(ui::win::IsAeroGlassEnabled());
+#elif defined(OS_LINUX) && !defined(OS_CHROMEOS)
+  // Linux clips bubble windows that extend outside their parent window bounds.
+  bubble_delegate->set_adjust_if_offscreen(false);
 #endif
 
   bubble_delegate->SizeToContents();
@@ -133,15 +132,19 @@ View* BubbleDelegateView::GetContentsView() {
 NonClientFrameView* BubbleDelegateView::CreateNonClientFrameView(
     Widget* widget) {
   BubbleFrameView* frame = new BubbleFrameView(margins());
+  // Note: In CreateBubble, the call to SizeToContents() will cause
+  // the relayout that this call requires.
+  frame->SetTitleFontList(GetTitleFontList());
   BubbleBorder::Arrow adjusted_arrow = arrow();
   if (base::i18n::IsRTL())
     adjusted_arrow = BubbleBorder::horizontal_mirror(adjusted_arrow);
-  frame->SetBubbleBorder(new BubbleBorder(adjusted_arrow, shadow(), color()));
+  frame->SetBubbleBorder(scoped_ptr<BubbleBorder>(
+      new BubbleBorder(adjusted_arrow, shadow(), color())));
   return frame;
 }
 
-void BubbleDelegateView::GetAccessibleState(ui::AccessibleViewState* state) {
-  state->role = ui::AccessibilityTypes::ROLE_DIALOG;
+void BubbleDelegateView::GetAccessibleState(ui::AXViewState* state) {
+  state->role = ui::AX_ROLE_DIALOG;
 }
 
 void BubbleDelegateView::OnWidgetDestroying(Widget* widget) {
@@ -174,19 +177,15 @@ void BubbleDelegateView::OnWidgetActivationChanged(Widget* widget,
 
 void BubbleDelegateView::OnWidgetBoundsChanged(Widget* widget,
                                                const gfx::Rect& new_bounds) {
-  if (anchor_widget() == widget) {
-    if (move_with_anchor())
-      SizeToContents();
-    else
-      GetWidget()->Close();
-  }
+  if (anchor_widget() == widget)
+    SizeToContents();
 }
 
 View* BubbleDelegateView::GetAnchorView() const {
   return ViewStorage::GetInstance()->RetrieveView(anchor_view_storage_id_);
 }
 
-gfx::Rect BubbleDelegateView::GetAnchorRect() {
+gfx::Rect BubbleDelegateView::GetAnchorRect() const {
   if (!GetAnchorView())
     return anchor_rect_;
 
@@ -197,36 +196,6 @@ gfx::Rect BubbleDelegateView::GetAnchorRect() {
 
 void BubbleDelegateView::OnBeforeBubbleWidgetInit(Widget::InitParams* params,
                                                   Widget* widget) const {
-}
-
-void BubbleDelegateView::StartFade(bool fade_in) {
-#if defined(USE_AURA)
-  // Use AURA's window layer animation instead of fading. This ensures that
-  // hosts which rely on the layer animation callbacks to close the window
-  // work correctly.
-  if (fade_in)
-    GetWidget()->Show();
-  else
-    GetWidget()->Close();
-#else
-  fade_animation_.reset(new gfx::SlideAnimation(this));
-  fade_animation_->SetSlideDuration(GetFadeDuration());
-  fade_animation_->Reset(fade_in ? 0.0 : 1.0);
-  if (fade_in) {
-    original_opacity_ = 0;
-    GetWidget()->SetOpacity(original_opacity_);
-    GetWidget()->Show();
-    fade_animation_->Show();
-  } else {
-    original_opacity_ = 255;
-    fade_animation_->Hide();
-  }
-#endif
-}
-
-void BubbleDelegateView::ResetFade() {
-  fade_animation_.reset();
-  GetWidget()->SetOpacity(original_opacity_);
 }
 
 void BubbleDelegateView::SetAlignment(BubbleBorder::BubbleAlignment alignment) {
@@ -248,30 +217,12 @@ bool BubbleDelegateView::AcceleratorPressed(
     const ui::Accelerator& accelerator) {
   if (!close_on_esc() || accelerator.key_code() != ui::VKEY_ESCAPE)
     return false;
-  if (fade_animation_.get())
-    fade_animation_->Reset();
   GetWidget()->Close();
   return true;
 }
 
 void BubbleDelegateView::OnNativeThemeChanged(const ui::NativeTheme* theme) {
   UpdateColorsFromTheme(theme);
-}
-
-void BubbleDelegateView::AnimationEnded(const gfx::Animation* animation) {
-  if (animation != fade_animation_.get())
-    return;
-  bool closed = fade_animation_->GetCurrentValue() == 0;
-  fade_animation_->Reset();
-  if (closed)
-    GetWidget()->Close();
-}
-
-void BubbleDelegateView::AnimationProgressed(const gfx::Animation* animation) {
-  if (animation != fade_animation_.get())
-    return;
-  DCHECK(fade_animation_->is_animating());
-  GetWidget()->SetOpacity(fade_animation_->GetCurrentValue() * 255);
 }
 
 void BubbleDelegateView::Init() {}
@@ -298,7 +249,11 @@ void BubbleDelegateView::SetAnchorView(View* anchor_view) {
   if (anchor_view)
     view_storage->StoreView(anchor_view_storage_id_, anchor_view);
 
-  if (GetWidget())
+  // Do not update anchoring for NULL views; this could indicate that our
+  // NativeWindow is being destroyed, so it would be dangerous for us to update
+  // our anchor bounds at that point. (It's safe to skip this, since if we were
+  // to update the bounds when |anchor_view| is NULL, the bubble won't move.)
+  if (anchor_view && GetWidget())
     OnAnchorBoundsChanged();
 }
 
@@ -321,19 +276,20 @@ BubbleFrameView* BubbleDelegateView::GetBubbleFrameView() const {
 gfx::Rect BubbleDelegateView::GetBubbleBounds() {
   // The argument rect has its origin at the bubble's arrow anchor point;
   // its size is the preferred size of the bubble's client view (this view).
+  bool anchor_minimized = anchor_widget() && anchor_widget()->IsMinimized();
   return GetBubbleFrameView()->GetUpdatedWindowBounds(GetAnchorRect(),
-      GetPreferredSize(), adjust_if_offscreen_);
+      GetPreferredSize(), adjust_if_offscreen_ && !anchor_minimized);
 }
 
-int BubbleDelegateView::GetFadeDuration() {
-  return kHideFadeDurationMS;
+const gfx::FontList& BubbleDelegateView::GetTitleFontList() const {
+  ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
+  return rb.GetFontList(ui::ResourceBundle::MediumFont);
 }
+
 
 void BubbleDelegateView::UpdateColorsFromTheme(const ui::NativeTheme* theme) {
-  if (!color_explicitly_set_) {
-    color_ = GetNativeTheme()->GetSystemColor(
-        ui::NativeTheme::kColorId_WindowBackground);
-  }
+  if (!color_explicitly_set_)
+    color_ = theme->GetSystemColor(ui::NativeTheme::kColorId_DialogBackground);
   set_background(Background::CreateSolidBackground(color()));
   BubbleFrameView* frame_view = GetBubbleFrameView();
   if (frame_view)
@@ -341,9 +297,12 @@ void BubbleDelegateView::UpdateColorsFromTheme(const ui::NativeTheme* theme) {
 }
 
 void BubbleDelegateView::HandleVisibilityChanged(Widget* widget, bool visible) {
-  if (widget == GetWidget() && visible && anchor_widget() &&
+  if (widget == GetWidget() && anchor_widget() &&
       anchor_widget()->GetTopLevelWidget()) {
-    anchor_widget()->GetTopLevelWidget()->DisableInactiveRendering();
+    if (visible)
+      anchor_widget()->GetTopLevelWidget()->DisableInactiveRendering();
+    else
+      anchor_widget()->GetTopLevelWidget()->EnableInactiveRendering();
   }
 }
 

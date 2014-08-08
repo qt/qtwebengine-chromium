@@ -29,10 +29,11 @@
  */
 
 [
-    NoInterfaceObject,
+    GarbageCollected,
+    NoInterfaceObject
 ] interface Key {
     readonly attribute DOMString type;
     readonly attribute boolean extractable;
-    readonly attribute Algorithm algorithm;
+    readonly attribute KeyAlgorithm algorithm;
     readonly attribute DOMString[] usages;
 };

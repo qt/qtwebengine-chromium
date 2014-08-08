@@ -8,7 +8,9 @@
 #include "net/quic/crypto/aes_128_gcm_12_encrypter.h"
 #include "net/quic/crypto/quic_decrypter.h"
 #include "net/quic/crypto/quic_encrypter.h"
+#include "net/quic/quic_flags.h"
 #include "net/quic/quic_protocol.h"
+#include "net/quic/quic_server_id.h"
 #include "net/quic/test_tools/crypto_test_utils.h"
 #include "net/quic/test_tools/quic_test_utils.h"
 #include "net/quic/test_tools/simple_quic_framer.h"
@@ -20,15 +22,18 @@ namespace test {
 namespace {
 
 const char kServerHostname[] = "example.com";
+const uint16 kServerPort = 80;
 
 class QuicCryptoClientStreamTest : public ::testing::Test {
  public:
   QuicCryptoClientStreamTest()
       : connection_(new PacketSavingConnection(false)),
-        session_(new TestSession(connection_, DefaultQuicConfig())),
-        stream_(new QuicCryptoClientStream(kServerHostname, session_.get(),
-                                           &crypto_config_)) {
+        session_(new TestClientSession(connection_, DefaultQuicConfig())),
+        server_id_(kServerHostname, kServerPort, false, PRIVACY_MODE_DISABLED),
+        stream_(new QuicCryptoClientStream(
+            server_id_, session_.get(), NULL, &crypto_config_)) {
     session_->SetCryptoStream(stream_.get());
+    session_->config()->SetDefaults();
     crypto_config_.SetDefaults();
   }
 
@@ -43,7 +48,8 @@ class QuicCryptoClientStreamTest : public ::testing::Test {
   }
 
   PacketSavingConnection* connection_;
-  scoped_ptr<TestSession> session_;
+  scoped_ptr<TestClientSession> session_;
+  QuicServerId server_id_;
   scoped_ptr<QuicCryptoClientStream> stream_;
   CryptoHandshakeMessage message_;
   scoped_ptr<QuicData> message_data_;
@@ -87,7 +93,7 @@ TEST_F(QuicCryptoClientStreamTest, NegotiatedParameters) {
 
   const QuicConfig* config = session_->config();
   EXPECT_EQ(FLAGS_enable_quic_pacing ? kPACE : kQBIC,
-            config->congestion_control());
+            config->congestion_feedback());
   EXPECT_EQ(kDefaultTimeoutSecs,
             config->idle_connection_state_lifetime().ToSeconds());
   EXPECT_EQ(kDefaultMaxStreamsPerConnection,
@@ -96,12 +102,13 @@ TEST_F(QuicCryptoClientStreamTest, NegotiatedParameters) {
 
   const QuicCryptoNegotiatedParameters& crypto_params(
       stream_->crypto_negotiated_params());
-  EXPECT_EQ(kAESG, crypto_params.aead);
-  EXPECT_EQ(kC255, crypto_params.key_exchange);
+  EXPECT_EQ(crypto_config_.aead[0], crypto_params.aead);
+  EXPECT_EQ(crypto_config_.kexs[0], crypto_params.key_exchange);
 }
 
 TEST_F(QuicCryptoClientStreamTest, InvalidHostname) {
-  stream_.reset(new QuicCryptoClientStream("invalid", session_.get(),
+  QuicServerId server_id("invalid", 80, false, PRIVACY_MODE_DISABLED);
+  stream_.reset(new QuicCryptoClientStream(server_id, session_.get(), NULL,
                                            &crypto_config_));
   session_->SetCryptoStream(stream_.get());
 
@@ -115,8 +122,8 @@ TEST_F(QuicCryptoClientStreamTest, ExpiredServerConfig) {
   CompleteCryptoHandshake();
 
   connection_ = new PacketSavingConnection(true);
-  session_.reset(new TestSession(connection_, DefaultQuicConfig()));
-  stream_.reset(new QuicCryptoClientStream(kServerHostname, session_.get(),
+  session_.reset(new TestClientSession(connection_, DefaultQuicConfig()));
+  stream_.reset(new QuicCryptoClientStream(server_id_, session_.get(), NULL,
                                            &crypto_config_));
 
   session_->SetCryptoStream(stream_.get());

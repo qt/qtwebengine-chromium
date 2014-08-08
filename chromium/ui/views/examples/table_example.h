@@ -7,8 +7,7 @@
 
 #include <string>
 
-#include "base/basictypes.h"
-#include "base/compiler_specific.h"
+#include "base/macros.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/models/table_model.h"
 #include "ui/views/controls/button/button.h"
@@ -27,11 +26,11 @@ class TableView;
 
 namespace examples {
 
-class TableExample : public ExampleBase,
-                     public ui::TableModel,
-                     public TableGrouper,
-                     public TableViewObserver,
-                     public ButtonListener {
+class VIEWS_EXAMPLES_EXPORT TableExample : public ExampleBase,
+                                           public ui::TableModel,
+                                           public TableGrouper,
+                                           public TableViewObserver,
+                                           public ButtonListener {
  public:
   TableExample();
   virtual ~TableExample();
@@ -41,7 +40,7 @@ class TableExample : public ExampleBase,
 
   // ui::TableModel:
   virtual int RowCount() OVERRIDE;
-  virtual string16 GetText(int row, int column_id) OVERRIDE;
+  virtual base::string16 GetText(int row, int column_id) OVERRIDE;
   virtual gfx::ImageSkia GetIcon(int row) OVERRIDE;
   virtual void SetObserver(ui::TableModelObserver* observer) OVERRIDE;
 

@@ -14,9 +14,9 @@
 #include "base/basictypes.h"
 #include "base/strings/string16.h"
 #include "content/common/content_export.h"
+#include "content/common/content_param_traits.h"
 #include "ipc/ipc_message_macros.h"
 #include "ipc/ipc_message_utils.h"
-#include "third_party/WebKit/public/web/WebContentSecurityPolicy.h"
 #include "url/gurl.h"
 
 #undef IPC_MESSAGE_EXPORT
@@ -40,12 +40,11 @@ IPC_STRUCT_END()
 IPC_STRUCT_BEGIN(WorkerProcessMsg_CreateWorker_Params)
   IPC_STRUCT_MEMBER(GURL, url)
   IPC_STRUCT_MEMBER(base::string16, name)
+  IPC_STRUCT_MEMBER(base::string16, content_security_policy)
+  IPC_STRUCT_MEMBER(blink::WebContentSecurityPolicyType, security_policy_type)
+  IPC_STRUCT_MEMBER(bool, pause_on_start)
   IPC_STRUCT_MEMBER(int, route_id)
-  IPC_STRUCT_MEMBER(int, creator_process_id)
-  IPC_STRUCT_MEMBER(int64, shared_worker_appcache_id)
 IPC_STRUCT_END()
-
-IPC_ENUM_TRAITS(blink::WebContentSecurityPolicyType)
 
 //-----------------------------------------------------------------------------
 // WorkerProcess messages
@@ -68,7 +67,7 @@ IPC_SYNC_MESSAGE_CONTROL5_1(WorkerProcessHostMsg_AllowDatabase,
                             bool /* result */)
 
 // Sent by the worker process to check whether access to file system is allowed.
-IPC_SYNC_MESSAGE_CONTROL2_1(WorkerProcessHostMsg_AllowFileSystem,
+IPC_SYNC_MESSAGE_CONTROL2_1(WorkerProcessHostMsg_RequestFileSystemAccessSync,
                             int /* worker_route_id */,
                             GURL /* origin url */,
                             bool /* result */)
@@ -87,13 +86,6 @@ IPC_SYNC_MESSAGE_CONTROL0_0(WorkerProcessHostMsg_ForceKillWorker)
 //-----------------------------------------------------------------------------
 // Worker messages
 // These are messages sent from the renderer process to the worker process.
-IPC_MESSAGE_ROUTED5(WorkerMsg_StartWorkerContext,
-                    GURL /* url */,
-                    base::string16  /* user_agent */,
-                    base::string16  /* source_code */,
-                    base::string16  /* content_security_policy */,
-                    blink::WebContentSecurityPolicyType)
-
 IPC_MESSAGE_ROUTED0(WorkerMsg_TerminateWorkerContext)
 
 IPC_MESSAGE_ROUTED2(WorkerMsg_Connect,
@@ -109,4 +101,16 @@ IPC_MESSAGE_ROUTED0(WorkerMsg_WorkerObjectDestroyed)
 // WorkerMsg_PostMessage is also sent here.
 IPC_MESSAGE_CONTROL1(WorkerHostMsg_WorkerContextClosed,
                      int /* worker_route_id */)
-IPC_MESSAGE_ROUTED0(WorkerHostMsg_WorkerContextDestroyed)
+
+IPC_MESSAGE_CONTROL1(WorkerHostMsg_WorkerContextDestroyed,
+                     int /* worker_route_id */)
+
+IPC_MESSAGE_CONTROL1(WorkerHostMsg_WorkerScriptLoaded,
+                     int /* worker_route_id */)
+
+IPC_MESSAGE_CONTROL1(WorkerHostMsg_WorkerScriptLoadFailed,
+                     int /* worker_route_id */)
+
+IPC_MESSAGE_CONTROL2(WorkerHostMsg_WorkerConnected,
+                     int /* message_port_id */,
+                     int /* worker_route_id */)

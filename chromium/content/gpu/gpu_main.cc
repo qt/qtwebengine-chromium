@@ -29,10 +29,10 @@
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/main_function_params.h"
-#include "crypto/hmac.h"
 #include "gpu/command_buffer/service/gpu_switches.h"
 #include "gpu/config/gpu_info_collector.h"
 #include "gpu/config/gpu_util.h"
+#include "ui/events/platform/platform_event_source.h"
 #include "ui/gl/gl_implementation.h"
 #include "ui/gl/gl_surface.h"
 #include "ui/gl/gl_switches.h"
@@ -52,14 +52,32 @@
 #include "content/public/common/sandbox_init.h"
 #endif
 
+#if defined(OS_MACOSX)
+#include "base/message_loop/message_pump_mac.h"
+#endif
+
+#if defined(ADDRESS_SANITIZER)
+#include <sanitizer/asan_interface.h>
+#endif
+
 const int kGpuTimeout = 10000;
 
 namespace content {
 
 namespace {
 
+void GetGpuInfoFromCommandLine(gpu::GPUInfo& gpu_info,
+                               const CommandLine& command_line);
 bool WarmUpSandbox(const CommandLine& command_line);
+
+#if !defined(OS_MACOSX)
+bool CollectGraphicsInfo(gpu::GPUInfo& gpu_info);
+#endif
+
 #if defined(OS_LINUX)
+#if !defined(OS_CHROMEOS)
+bool CanAccessNvidiaDeviceFile();
+#endif
 bool StartSandboxLinux(const gpu::GPUInfo&, GpuWatchdogThread*, bool);
 #elif defined(OS_WIN)
 bool StartSandboxWindows(const sandbox::SandboxInterfaceInfo*);
@@ -130,8 +148,8 @@ int GpuMain(const MainFunctionParams& parameters) {
   // GpuMsg_Initialize message from the browser.
   bool dead_on_arrival = false;
 
-  base::MessageLoop::Type message_loop_type = base::MessageLoop::TYPE_IO;
 #if defined(OS_WIN)
+  base::MessageLoop::Type message_loop_type = base::MessageLoop::TYPE_IO;
   // Unless we're running on desktop GL, we don't need a UI message
   // loop, so avoid its use to work around apparent problems with some
   // third-party software.
@@ -140,13 +158,24 @@ int GpuMain(const MainFunctionParams& parameters) {
           gfx::kGLImplementationDesktopName) {
     message_loop_type = base::MessageLoop::TYPE_UI;
   }
-#elif defined(TOOLKIT_GTK)
-  message_loop_type = base::MessageLoop::TYPE_GPU;
+  base::MessageLoop main_message_loop(message_loop_type);
+#elif defined(OS_LINUX) && defined(USE_X11)
+  // We need a UI loop so that we can grab the Expose events. See GLSurfaceGLX
+  // and https://crbug.com/326995.
+  base::MessageLoop main_message_loop(base::MessageLoop::TYPE_UI);
+  scoped_ptr<ui::PlatformEventSource> event_source =
+      ui::PlatformEventSource::CreateDefault();
 #elif defined(OS_LINUX)
-  message_loop_type = base::MessageLoop::TYPE_DEFAULT;
+  base::MessageLoop main_message_loop(base::MessageLoop::TYPE_DEFAULT);
+#elif defined(OS_MACOSX)
+  // This is necessary for CoreAnimation layers hosted in the GPU process to be
+  // drawn. See http://crbug.com/312462.
+  scoped_ptr<base::MessagePump> pump(new base::MessagePumpCFRunLoop());
+  base::MessageLoop main_message_loop(pump.Pass());
+#else
+  base::MessageLoop main_message_loop(base::MessageLoop::TYPE_IO);
 #endif
 
-  base::MessageLoop main_message_loop(message_loop_type);
   base::PlatformThread::SetName("CrGpuMain");
 
   // In addition to disabling the watchdog if the command line switch is
@@ -182,22 +211,7 @@ int GpuMain(const MainFunctionParams& parameters) {
   gpu::GPUInfo gpu_info;
   // Get vendor_id, device_id, driver_version from browser process through
   // commandline switches.
-  DCHECK(command_line.HasSwitch(switches::kGpuVendorID) &&
-         command_line.HasSwitch(switches::kGpuDeviceID) &&
-         command_line.HasSwitch(switches::kGpuDriverVersion));
-  bool success = base::HexStringToUInt(
-      command_line.GetSwitchValueASCII(switches::kGpuVendorID),
-      &gpu_info.gpu.vendor_id);
-  DCHECK(success);
-  success = base::HexStringToUInt(
-      command_line.GetSwitchValueASCII(switches::kGpuDeviceID),
-      &gpu_info.gpu.device_id);
-  DCHECK(success);
-  gpu_info.driver_vendor =
-      command_line.GetSwitchValueASCII(switches::kGpuDriverVendor);
-  gpu_info.driver_version =
-      command_line.GetSwitchValueASCII(switches::kGpuDriverVersion);
-  GetContentClient()->SetGpuInfo(gpu_info);
+  GetGpuInfoFromCommandLine(gpu_info, command_line);
 
   base::TimeDelta collect_context_time;
   base::TimeDelta initialize_one_off_time;
@@ -209,18 +223,40 @@ int GpuMain(const MainFunctionParams& parameters) {
     bool initialized_gl_context = false;
     bool should_initialize_gl_context = false;
 #if defined(OS_CHROMEOS) && defined(ARCH_CPU_ARMEL)
-    // On Chrome OS ARM, GPU driver userspace creates threads when initializing
-    // a GL context, so start the sandbox early.
-    gpu_info.sandboxed = StartSandboxLinux(gpu_info, watchdog_thread.get(),
-                                           should_initialize_gl_context);
-    initialized_sandbox = true;
+    // On Chrome OS ARM Mali, GPU driver userspace creates threads when
+    // initializing a GL context, so start the sandbox early.
+    if (!command_line.HasSwitch(
+             switches::kGpuSandboxStartAfterInitialization)) {
+      gpu_info.sandboxed = StartSandboxLinux(gpu_info, watchdog_thread.get(),
+                                             should_initialize_gl_context);
+      initialized_sandbox = true;
+    }
 #endif
 #endif  // defined(OS_LINUX)
 
     base::TimeTicks before_initialize_one_off = base::TimeTicks::Now();
 
+    // Determine if we need to initialize GL here or it has already been done.
+    bool gl_already_initialized = false;
+#if defined(OS_MACOSX)
+    if (!command_line.HasSwitch(switches::kNoSandbox)) {
+      // On Mac, if the sandbox is enabled, then GLSurface::InitializeOneOff()
+      // is called from the sandbox warmup code before getting here.
+      gl_already_initialized = true;
+    }
+#endif
+    if (command_line.HasSwitch(switches::kInProcessGPU)) {
+      // With in-process GPU, GLSurface::InitializeOneOff() is called from
+      // GpuChildThread before getting here.
+      gl_already_initialized = true;
+    }
+
     // Load and initialize the GL implementation and locate the GL entry points.
-    if (gfx::GLSurface::InitializeOneOff()) {
+    bool gl_initialized =
+        gl_already_initialized
+            ? gfx::GetGLImplementation() != gfx::kGLImplementationNone
+            : gfx::GLSurface::InitializeOneOff();
+    if (gl_initialized) {
       // We need to collect GL strings (VENDOR, RENDERER) for blacklisting
       // purposes. However, on Mac we don't actually use them. As documented in
       // crbug.com/222934, due to some driver issues, glGetString could take
@@ -232,9 +268,8 @@ int GpuMain(const MainFunctionParams& parameters) {
       base::TimeTicks before_collect_context_graphics_info =
           base::TimeTicks::Now();
 #if !defined(OS_MACOSX)
-      if (!gpu::CollectContextGraphicsInfo(&gpu_info))
-        VLOG(1) << "gpu::CollectGraphicsInfo failed";
-      GetContentClient()->SetGpuInfo(gpu_info);
+      if (!CollectGraphicsInfo(gpu_info))
+        dead_on_arrival = true;
 
 #if defined(OS_CHROMEOS) || defined(OS_ANDROID)
       // Recompute gpu driver bug workarounds - this is specifically useful
@@ -249,19 +284,15 @@ int GpuMain(const MainFunctionParams& parameters) {
       initialized_gl_context = true;
 #if !defined(OS_CHROMEOS)
       if (gpu_info.gpu.vendor_id == 0x10de &&  // NVIDIA
-          gpu_info.driver_vendor == "NVIDIA") {
-        base::ThreadRestrictions::AssertIOAllowed();
-        if (access("/dev/nvidiactl", R_OK) != 0) {
-          VLOG(1) << "NVIDIA device file /dev/nvidiactl access denied";
-          dead_on_arrival = true;
-        }
-      }
+          gpu_info.driver_vendor == "NVIDIA" &&
+          !CanAccessNvidiaDeviceFile())
+        dead_on_arrival = true;
 #endif  // !defined(OS_CHROMEOS)
 #endif  // defined(OS_LINUX)
 #endif  // !defined(OS_MACOSX)
       collect_context_time =
           base::TimeTicks::Now() - before_collect_context_graphics_info;
-    } else {
+    } else {  // gl_initialized
       VLOG(1) << "gfx::GLSurface::InitializeOneOff failed";
       dead_on_arrival = true;
     }
@@ -332,10 +363,72 @@ int GpuMain(const MainFunctionParams& parameters) {
 
 namespace {
 
+void GetGpuInfoFromCommandLine(gpu::GPUInfo& gpu_info,
+                               const CommandLine& command_line) {
+  DCHECK(command_line.HasSwitch(switches::kGpuVendorID) &&
+         command_line.HasSwitch(switches::kGpuDeviceID) &&
+         command_line.HasSwitch(switches::kGpuDriverVersion));
+  bool success = base::HexStringToUInt(
+      command_line.GetSwitchValueASCII(switches::kGpuVendorID),
+      &gpu_info.gpu.vendor_id);
+  DCHECK(success);
+  success = base::HexStringToUInt(
+      command_line.GetSwitchValueASCII(switches::kGpuDeviceID),
+      &gpu_info.gpu.device_id);
+  DCHECK(success);
+  gpu_info.driver_vendor =
+      command_line.GetSwitchValueASCII(switches::kGpuDriverVendor);
+  gpu_info.driver_version =
+      command_line.GetSwitchValueASCII(switches::kGpuDriverVersion);
+  GetContentClient()->SetGpuInfo(gpu_info);
+}
+
+bool WarmUpSandbox(const CommandLine& command_line) {
+  {
+    TRACE_EVENT0("gpu", "Warm up rand");
+    // Warm up the random subsystem, which needs to be done pre-sandbox on all
+    // platforms.
+    (void) base::RandUint64();
+  }
+  return true;
+}
+
+#if !defined(OS_MACOSX)
+bool CollectGraphicsInfo(gpu::GPUInfo& gpu_info) {
+  bool res = true;
+  gpu::CollectInfoResult result = gpu::CollectContextGraphicsInfo(&gpu_info);
+  switch (result) {
+    case gpu::kCollectInfoFatalFailure:
+      LOG(ERROR) << "gpu::CollectGraphicsInfo failed (fatal).";
+      res = false;
+      break;
+    case gpu::kCollectInfoNonFatalFailure:
+      VLOG(1) << "gpu::CollectGraphicsInfo failed (non-fatal).";
+      break;
+    case gpu::kCollectInfoSuccess:
+      break;
+  }
+  GetContentClient()->SetGpuInfo(gpu_info);
+  return res;
+}
+#endif
+
 #if defined(OS_LINUX)
+#if !defined(OS_CHROMEOS)
+bool CanAccessNvidiaDeviceFile() {
+  bool res = true;
+  base::ThreadRestrictions::AssertIOAllowed();
+  if (access("/dev/nvidiactl", R_OK) != 0) {
+    VLOG(1) << "NVIDIA device file /dev/nvidiactl access denied";
+    res = false;
+  }
+  return res;
+}
+#endif
+
 void CreateDummyGlContext() {
   scoped_refptr<gfx::GLSurface> surface(
-      gfx::GLSurface::CreateOffscreenGLSurface(gfx::Size(1, 1)));
+      gfx::GLSurface::CreateOffscreenGLSurface(gfx::Size()));
   if (!surface.get()) {
     VLOG(1) << "gfx::GLSurface::CreateOffscreenGLSurface failed";
     return;
@@ -357,31 +450,7 @@ void CreateDummyGlContext() {
     VLOG(1)  << "gfx::GLContext::MakeCurrent failed";
   }
 }
-#endif
 
-bool WarmUpSandbox(const CommandLine& command_line) {
-  {
-    TRACE_EVENT0("gpu", "Warm up rand");
-    // Warm up the random subsystem, which needs to be done pre-sandbox on all
-    // platforms.
-    (void) base::RandUint64();
-  }
-  {
-    TRACE_EVENT0("gpu", "Warm up HMAC");
-    // Warm up the crypto subsystem, which needs to done pre-sandbox on all
-    // platforms.
-    crypto::HMAC hmac(crypto::HMAC::SHA256);
-    unsigned char key = '\0';
-    if (!hmac.Init(&key, sizeof(key))) {
-      LOG(ERROR) << "WarmUpSandbox() failed with crypto::HMAC::Init()";
-      return false;
-    }
-  }
-
-  return true;
-}
-
-#if defined(OS_LINUX)
 void WarmUpSandboxNvidia(const gpu::GPUInfo& gpu_info,
                          bool should_initialize_gl_context) {
   // We special case Optimus since the vendor_id we see may not be Nvidia.
@@ -408,6 +477,17 @@ bool StartSandboxLinux(const gpu::GPUInfo& gpu_info,
     // has really been stopped.
     LinuxSandbox::StopThread(watchdog_thread);
   }
+
+#if defined(ADDRESS_SANITIZER)
+  const std::string sancov_file_name =
+      "gpu." + base::Uint64ToString(base::RandUint64());
+  LinuxSandbox* linux_sandbox = LinuxSandbox::GetInstance();
+  linux_sandbox->sanitizer_args()->coverage_sandboxed = 1;
+  linux_sandbox->sanitizer_args()->coverage_fd =
+      __sanitizer_maybe_open_cov_file(sancov_file_name.c_str());
+  linux_sandbox->sanitizer_args()->coverage_max_block_size = 0;
+#endif
+
   // LinuxSandbox::InitializeSandbox() must always be called
   // with only one thread.
   res = LinuxSandbox::InitializeSandbox();

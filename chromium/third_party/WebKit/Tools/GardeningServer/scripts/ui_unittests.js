@@ -59,6 +59,7 @@ test("ui.onebar", 3, function() {
             '<li class="ui-state-default ui-corner-top"><a href="#expected">Expected Failures</a></li>' +
             '<li class="ui-state-default ui-corner-top ui-state-disabled"><a href="#results">Results</a></li>' +
         '</ul>' +
+        '<div id="link-handling"><input type="checkbox" id="new-window-for-links"><label for="new-window-for-links">Open links in new window</label></div>' +
         '<div id="unexpected" class="ui-tabs-panel ui-widget-content ui-corner-bottom"></div>' +
         '<div id="expected" class="ui-tabs-panel ui-widget-content ui-corner-bottom ui-tabs-hide"></div>' +
         '<div id="results" class="ui-tabs-panel ui-widget-content ui-corner-bottom ui-tabs-hide"></div>');
@@ -71,6 +72,7 @@ test("ui.onebar", 3, function() {
     $(onebar).detach();
 });
 
+// FIXME: These three results.* tests should be moved ot ui/results_unittests.js.
 test("results.ResultsGrid", 1, function() {
     var grid = new ui.results.ResultsGrid()
     grid.addResults([
@@ -80,38 +82,42 @@ test("results.ResultsGrid", 1, function() {
         'http://example.com/layout-test-results/foo-bar-diff.png',
     ]);
     equal(grid.innerHTML,
-        '<table class="comparison">' +
-            '<thead>' +
-                '<tr>' +
-                    '<th>Expected</th>' +
-                    '<th>Actual</th>' +
-                    '<th>Diff</th>' +
-                '</tr>' +
-            '</thead>' +
-            '<tbody>' +
-                '<tr>' +
-                    '<td class="expected result-container"><img class="image-result" src="http://example.com/layout-test-results/foo-bar-expected.png"></td>' +
-                    '<td class="actual result-container"><img class="image-result" src="http://example.com/layout-test-results/foo-bar-actual.png"></td>' +
-                    '<td class="diff result-container"><img class="image-result" src="http://example.com/layout-test-results/foo-bar-diff.png"></td>' +
-                '</tr>' +
-            '</tbody>' +
-        '</table>' +
-        '<table class="comparison">' +
-            '<thead>' +
-                '<tr>' +
-                    '<th>Expected</th>' +
-                    '<th>Actual</th>' +
-                    '<th>Diff</th>' +
-                '</tr>' +
-            '</thead>' +
-            '<tbody>' +
-                '<tr>' +
-                    '<td class="expected result-container"></td>' +
-                    '<td class="actual result-container"></td>' +
-                    '<td class="diff result-container"><iframe class="text-result" src="http://example.com/layout-test-results/foo-bar-diff.txt"></iframe></td>' +
-                '</tr>' +
-            '</tbody>' +
-        '</table>');
+        '<div class="comparison">' +
+            '<div>' +
+                '<h2>Expected</h2>' +
+                '<div class="results-container expected">' +
+                    '<img class="image-result" src="http://example.com/layout-test-results/foo-bar-expected.png">' +
+                '</div>' +
+            '</div>' +
+            '<div>' +
+                '<h2>Actual</h2>' +
+                '<div class="results-container actual">' +
+                    '<img class="image-result" src="http://example.com/layout-test-results/foo-bar-actual.png">' +
+                '</div>' +
+            '</div>' +
+            '<div>' +
+                '<h2>Diff</h2>' +
+                '<div class="results-container diff">' +
+                    '<img class="image-result" src="http://example.com/layout-test-results/foo-bar-diff.png">' +
+                '</div>' +
+            '</div>' +
+        '</div>' +
+        '<div class="comparison">' +
+            '<div>' +
+                '<h2>Expected</h2>' +
+                '<div class="results-container expected"></div>' +
+            '</div>' +
+            '<div>' +
+                '<h2>Actual</h2>' +
+                '<div class="results-container actual"></div>' +
+            '</div>' +
+            '<div>' +
+                '<h2>Diff</h2>' +
+                '<div class="results-container diff">' +
+                    '<iframe class="text-result" src="http://example.com/layout-test-results/foo-bar-diff.txt"></iframe>' +
+                '</div>' +
+            '</div>' +
+        '</div>');
 });
 
 test("results.ResultsGrid (crashlog)", 1, function() {
@@ -126,24 +132,6 @@ test("results.ResultsGrid (empty)", 1, function() {
     equal(grid.innerHTML, 'No results to display.');
 });
 
-test("time", 6, function() {
-    var time = new ui.RelativeTime();
-    equal(time.tagName, 'TIME');
-    equal(time.className, 'relative');
-    deepEqual(Object.getOwnPropertyNames(time.__proto__).sort(), [
-        'date',
-        'init',
-        'setDate',
-        'update',
-    ]);
-    equal(time.outerHTML, '<time class="relative"></time>');
-    var tenMinutesAgo = new Date();
-    tenMinutesAgo.setMinutes(tenMinutesAgo.getMinutes() - 10);
-    time.setDate(tenMinutesAgo);
-    equal(time.outerHTML, '<time class="relative">10 minutes ago</time>');
-    equal(time.date().getTime(), tenMinutesAgo.getTime());
-});
-
 test("StatusArea", 3, function() {
     var statusArea = new ui.StatusArea();
     var id = statusArea.newId();
@@ -151,12 +139,15 @@ test("StatusArea", 3, function() {
     statusArea.addMessage(id, 'Second Message');
     equal(statusArea.outerHTML,
         '<div class="status processing" style="visibility: visible;">' +
+            '<div class="dragger"></div>' +
+            '<div class="contents">' +
+                '<div id="status-content-1" class="status-content">' +
+                    '<div class="message">First Message</div>' +
+                    '<div class="message">Second Message</div>' +
+                '</div>' +
+            '</div>' +
             '<ul class="actions"><li><button class="action">Close</button></li></ul>' +
             '<progress class="process-text">Processing...</progress>' +
-            '<div id="status-content-1" class="status-content">' +
-                '<div class="message">First Message</div>' +
-                '<div class="message">Second Message</div>' +
-            '</div>' +
         '</div>');
 
     var secondStatusArea = new ui.StatusArea();
@@ -165,15 +156,18 @@ test("StatusArea", 3, function() {
 
     equal(statusArea.outerHTML,
         '<div class="status processing" style="visibility: visible;">' +
+            '<div class="dragger"></div>' +
+            '<div class="contents">' +
+                '<div id="status-content-1" class="status-content">' +
+                    '<div class="message">First Message</div>' +
+                    '<div class="message">Second Message</div>' +
+                '</div>' +
+                '<div id="status-content-2" class="status-content">' +
+                    '<div class="message">First Message second id</div>' +
+                '</div>' +
+            '</div>' +
             '<ul class="actions"><li><button class="action">Close</button></li></ul>' +
             '<progress class="process-text">Processing...</progress>' +
-            '<div id="status-content-1" class="status-content">' +
-                '<div class="message">First Message</div>' +
-                '<div class="message">Second Message</div>' +
-            '</div>' +
-            '<div id="status-content-2" class="status-content">' +
-                '<div class="message">First Message second id</div>' +
-            '</div>' +
         '</div>');
 
     statusArea.addFinalMessage(id, 'Final Message 1');
@@ -181,17 +175,20 @@ test("StatusArea", 3, function() {
 
     equal(statusArea.outerHTML,
         '<div class="status" style="visibility: visible;">' +
+            '<div class="dragger"></div>' +
+            '<div class="contents">' +
+                '<div id="status-content-1" class="status-content">' +
+                    '<div class="message">First Message</div>' +
+                    '<div class="message">Second Message</div>' +
+                    '<div class="message">Final Message 1</div>' +
+                '</div>' +
+                '<div id="status-content-2" class="status-content">' +
+                    '<div class="message">First Message second id</div>' +
+                    '<div class="message">Final Message 2</div>' +
+                '</div>' +
+            '</div>' +
             '<ul class="actions"><li><button class="action">Close</button></li></ul>' +
             '<progress class="process-text">Processing...</progress>' +
-            '<div id="status-content-1" class="status-content">' +
-                '<div class="message">First Message</div>' +
-                '<div class="message">Second Message</div>' +
-                '<div class="message">Final Message 1</div>' +
-            '</div>' +
-            '<div id="status-content-2" class="status-content">' +
-                '<div class="message">First Message second id</div>' +
-                '<div class="message">Final Message 2</div>' +
-            '</div>' +
         '</div>');
 
     statusArea.close();
@@ -205,22 +202,201 @@ var openTreeJson = {
     "general_state": "open"
 };
 
-test("TreeStatus", 2, function() {
+asyncTest("TreeStatus", 2, function() {
     var simulator = new NetworkSimulator();
 
-    simulator.get = function(url, callback)
+    simulator.json = function(url)
     {
-        simulator.scheduleCallback(function() {
-            callback(openTreeJson);
-        });
+        return Promise.resolve(openTreeJson);
     };
 
     var treestatus;
     simulator.runTest(function() {
         treeStatus = new ui.TreeStatus();
+    }).then(function() {
+        equal(treeStatus.innerHTML, '<div> blink status: <span>OPEN</span></div><div> chromium status: <span>OPEN</span></div>');
+        start();
     });
-    equal(treeStatus.innerHTML, '<div> blink status: <span>OPEN</span></div><div> chromium status: <span>OPEN</span></div>');
 });
 
+function generateRoll(fromRevision, toRevision)
+{
+    return {
+        "results": [
+            {"messages":[], "base_url":"svn://svn.chromium.org/chrome/trunk/src", "subject":"Blink roll " + fromRevision + ":" + toRevision, "closed":false, "issue":1000}
+        ]
+    };
+}
+
+asyncTest("RevisionDetailsSmallRoll", 2, function() {
+    var rollFromRevision = 540;
+    var rollToRevision = 550;
+    var simulator = new NetworkSimulator();
+    simulator.json = function(url)
+    {
+        return Promise.resolve(generateRoll(rollFromRevision, rollToRevision));
+    }
+
+    simulator.get = function (url)
+    {
+        return Promise.resolve(rollFromRevision);
+    }
+
+    model.state.resultsByBuilder = {
+        "Linux": {
+            "blink_revision": "554",
+        }
+    };
+    model.state.recentCommits = [
+    {
+        "revision": "555",
+    }];
+
+    var revisionDetails;
+    simulator.runTest(function() {
+        revisionDetails = ui.revisionDetails();
+    }).then(function() {
+        equal(revisionDetails.innerHTML,
+            'Latest revision processed by every bot: ' +
+                '<details>' +
+                    '<summary>' +
+                        '<a href="http://src.chromium.org/viewvc/blink?view=rev&amp;revision=554">554' +
+                            '<span id="revisionPopUp">' +
+                                '<table>' +
+                                    '<tr>' +
+                                        '<td><a href="http://build.chromium.org/p/chromium.webkit/waterfall?builder=Linux">Linux</a></td>' +
+                                        '<td>554</td>' +
+                                    '</tr>' +
+                                '</table>' +
+                            '</span>' +
+                        '</a>' +
+                    '</summary>' +
+                    '<table>' +
+                        '<tr>' +
+                            '<td><a href="http://build.chromium.org/p/chromium.webkit/waterfall?builder=Linux">Linux</a></td>' +
+                            '<td>554</td>' +
+                        '</tr>' +
+                    '</table>' +
+                '</details>' +
+                ', trunk is at <a href="http://src.chromium.org/viewvc/blink?view=rev&amp;revision=555">555</a>' +
+                '<br>' +
+                'Last roll is to <a href="http://src.chromium.org/viewvc/blink?view=rev&amp;revision=540">540</a>, current autoroll <a href="https://codereview.chromium.org/1000">540:550</a>');
+        start();
+    });
+});
+
+asyncTest("RevisionDetailsMediumRoll", 2, function() {
+    var rollFromRevision = 500;
+    var rollToRevision = 550;
+    var simulator = new NetworkSimulator();
+    simulator.json = function(url)
+    {
+        return Promise.resolve(generateRoll(rollFromRevision, rollToRevision));
+    }
+
+    simulator.get = function (url)
+    {
+        return Promise.resolve(rollFromRevision);
+    }
+
+    model.state.resultsByBuilder = {
+        "Linux": {
+            "blink_revision": "554",
+        }
+    };
+    model.state.recentCommits = [
+    {
+        "revision": "555",
+    }];
+
+    var revisionDetails;
+    simulator.runTest(function() {
+        revisionDetails = ui.revisionDetails();
+    }).then(function() {
+        equal(revisionDetails.innerHTML,
+            'Latest revision processed by every bot: ' +
+                '<details>' +
+                    '<summary>' +
+                        '<a href="http://src.chromium.org/viewvc/blink?view=rev&amp;revision=554">554' +
+                            '<span id="revisionPopUp">' +
+                                '<table>' +
+                                    '<tr>' +
+                                        '<td><a href="http://build.chromium.org/p/chromium.webkit/waterfall?builder=Linux">Linux</a></td>' +
+                                        '<td>554</td>' +
+                                    '</tr>' +
+                                '</table>' +
+                            '</span>' +
+                        '</a>' +
+                    '</summary>' +
+                    '<table>' +
+                        '<tr>' +
+                            '<td><a href="http://build.chromium.org/p/chromium.webkit/waterfall?builder=Linux">Linux</a></td>' +
+                            '<td>554</td>' +
+                        '</tr>' +
+                    '</table>' +
+                '</details>' +
+                ', trunk is at <a href="http://src.chromium.org/viewvc/blink?view=rev&amp;revision=555">555</a>' +
+                '<br>' +
+                'Last roll is to <a href="http://src.chromium.org/viewvc/blink?view=rev&amp;revision=500">500</a><span class="warning">(55 revisions behind)</span>, current autoroll <a href="https://codereview.chromium.org/1000">500:550</a>');
+        start();
+    });
+});
+
+asyncTest("RevisionDetailsBigRoll", 2, function() {
+    var rollFromRevision = 440;
+    var rollToRevision = 550;
+    var simulator = new NetworkSimulator();
+    simulator.json = function(url)
+    {
+        return Promise.resolve(generateRoll(rollFromRevision, rollToRevision));
+    }
+
+    simulator.get = function (url)
+    {
+        return Promise.resolve(rollFromRevision);
+    }
+
+    model.state.resultsByBuilder = {
+        "Linux": {
+            "blink_revision": "554",
+        }
+    };
+    model.state.recentCommits = [
+    {
+        "revision": "555",
+    }];
+
+    var revisionDetails;
+    simulator.runTest(function() {
+        revisionDetails = ui.revisionDetails();
+    }).then(function() {
+        equal(revisionDetails.innerHTML,
+            'Latest revision processed by every bot: ' +
+                '<details>' +
+                    '<summary>' +
+                        '<a href="http://src.chromium.org/viewvc/blink?view=rev&amp;revision=554">554' +
+                            '<span id="revisionPopUp">' +
+                                '<table>' +
+                                    '<tr>' +
+                                        '<td><a href="http://build.chromium.org/p/chromium.webkit/waterfall?builder=Linux">Linux</a></td>' +
+                                        '<td>554</td>' +
+                                    '</tr>' +
+                                '</table>' +
+                            '</span>' +
+                        '</a>' +
+                    '</summary>' +
+                    '<table>' +
+                        '<tr>' +
+                            '<td><a href="http://build.chromium.org/p/chromium.webkit/waterfall?builder=Linux">Linux</a></td>' +
+                            '<td>554</td>' +
+                        '</tr>' +
+                    '</table>' +
+                '</details>' +
+                ', trunk is at <a href="http://src.chromium.org/viewvc/blink?view=rev&amp;revision=555">555</a>' +
+                '<br>' +
+                'Last roll is to <a href="http://src.chromium.org/viewvc/blink?view=rev&amp;revision=440">440</a><span class="critical">(115 revisions behind)</span>, current autoroll <a href="https://codereview.chromium.org/1000">440:550</a>');
+        start();
+    });
+});
 
 })();

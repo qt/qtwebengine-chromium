@@ -1,7 +1,5 @@
 include_rules = [
-  "+content/port/browser",
   "+content/public/browser",
-  "+content/child/webkitplatformsupport_impl.h",  # For in-process webkit
   "+media/audio",  # For audio input for speech input feature.
   "+media/base",  # For Android JNI registration.
   "+media/midi",  # For Web MIDI API
@@ -19,6 +17,7 @@ include_rules = [
   "+third_party/iaccessible2",
   "+third_party/isimpledom",
   "+third_party/khronos",   # For enum definitions only
+  "+third_party/power_gadget",
   "+third_party/speex",
   "+third_party/re2",
 
@@ -32,19 +31,27 @@ include_rules = [
   # No inclusion of WebKit from the browser, other than strictly enum/POD,
   # header-only types, and some selected common code.
   "-third_party/WebKit",
+  "+third_party/WebKit/public/platform/WebBatteryStatus.h",
   "+third_party/WebKit/public/platform/WebCursorInfo.h",
+  "+third_party/WebKit/public/platform/WebGamepad.h",
   "+third_party/WebKit/public/platform/WebGamepads.h",
   "+third_party/WebKit/public/platform/WebGraphicsContext3D.h",
   "+third_party/WebKit/public/platform/WebIDBDatabaseException.h",
   "+third_party/WebKit/public/platform/WebIDBTypes.h",
   "+third_party/WebKit/public/platform/WebReferrerPolicy.h",
+  "+third_party/WebKit/public/platform/WebScreenOrientationLockType.h",
+  "+third_party/WebKit/public/platform/WebScreenOrientationType.h",
   "+third_party/WebKit/public/platform/WebScreenInfo.h",
   "+third_party/WebKit/public/platform/WebServiceWorkerError.h",
+  "+third_party/WebKit/public/platform/WebServiceWorkerEventResult.h",
+  "+third_party/WebKit/public/platform/WebServiceWorkerState.h",
   "+third_party/WebKit/public/platform/WebString.h",
   "+third_party/WebKit/public/platform/WebVibration.h",
+  "+third_party/WebKit/public/web/mac/WebScrollbarTheme.h",
   "+third_party/WebKit/public/web/WebAXEnums.h",
   "+third_party/WebKit/public/web/WebCompositionUnderline.h",
   "+third_party/WebKit/public/web/WebConsoleMessage.h",
+  "+third_party/WebKit/public/web/WebContentSecurityPolicy.h",
   "+third_party/WebKit/public/web/WebDragOperation.h",
   "+third_party/WebKit/public/web/WebDragStatus.h",
   "+third_party/WebKit/public/web/WebFindOptions.h",
@@ -60,6 +67,7 @@ include_rules = [
   # These should be burned down. http://crbug.com/237267
   "!third_party/WebKit/public/web/mac/WebInputEventFactory.h",
 
+  "+ui/ozone/ozone_platform.h",
   "+ui/ozone/ozone_switches.h",
 
   # DO NOT ADD ANY CHROME OR COMPONENTS INCLUDES HERE!!!

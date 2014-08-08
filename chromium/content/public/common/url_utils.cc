@@ -24,9 +24,9 @@ const char* const* GetSavableSchemes() {
 bool HasWebUIScheme(const GURL& url) {
   return
 #if !defined(OS_IOS)
-         url.SchemeIs(chrome::kChromeDevToolsScheme) ||
+         url.SchemeIs(kChromeDevToolsScheme) ||
 #endif
-         url.SchemeIs(chrome::kChromeUIScheme);
+         url.SchemeIs(kChromeUIScheme);
 }
 
 bool IsSavableURL(const GURL& url) {

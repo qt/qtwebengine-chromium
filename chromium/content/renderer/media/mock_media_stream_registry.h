@@ -7,23 +7,23 @@
 
 #include <string>
 
+#include "base/compiler_specific.h"
 #include "content/renderer/media/media_stream_registry_interface.h"
-#include "content/renderer/media/mock_media_stream_dependency_factory.h"
 
 namespace content {
 
 class MockMediaStreamRegistry : public MediaStreamRegistryInterface {
  public:
-  explicit MockMediaStreamRegistry(MockMediaStreamDependencyFactory* factory);
+  MockMediaStreamRegistry();
 
   void Init(const std::string& stream_label);
-  bool AddVideoTrack(const std::string& track_id);
-  virtual blink::WebMediaStream GetMediaStream(const std::string& url)
-      OVERRIDE;
+  void AddVideoTrack(const std::string& track_id);
+  virtual blink::WebMediaStream GetMediaStream(
+      const std::string& url) OVERRIDE;
+
   const blink::WebMediaStream test_stream() const;
 
  private:
-  MockMediaStreamDependencyFactory* factory_;
   blink::WebMediaStream test_stream_;
   std::string stream_url_;
 };

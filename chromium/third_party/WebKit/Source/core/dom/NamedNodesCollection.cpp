@@ -34,21 +34,17 @@
 
 namespace WebCore {
 
-Node* NamedNodesCollection::item(unsigned index) const
+Element* NamedNodesCollection::item(unsigned index) const
 {
     if (index < m_nodes.size())
         return m_nodes[index].get();
     return 0;
 }
 
-Node* NamedNodesCollection::namedItem(const AtomicString& id) const
+void NamedNodesCollection::trace(Visitor* visitor)
 {
-    for (unsigned i = 0; i < m_nodes.size(); ++i) {
-        Node* node = m_nodes[i].get();
-        if (node->hasID() && toElement(node)->getIdAttribute() == id)
-            return node;
-    }
-    return 0;
+    visitor->trace(m_nodes);
+    NodeList::trace(visitor);
 }
 
 } // namespace WebCore

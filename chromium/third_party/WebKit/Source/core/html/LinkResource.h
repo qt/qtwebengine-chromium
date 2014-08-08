@@ -32,6 +32,7 @@
 #define LinkResource_h
 
 #include "core/fetch/FetchRequest.h"
+#include "platform/heap/Handle.h"
 #include "platform/weborigin/KURL.h"
 #include "wtf/text/WTFString.h"
 
@@ -39,30 +40,35 @@ namespace WebCore {
 
 class HTMLLinkElement;
 
-class LinkResource {
-    WTF_MAKE_NONCOPYABLE(LinkResource); WTF_MAKE_FAST_ALLOCATED;
+class LinkResource : public NoBaseWillBeGarbageCollectedFinalized<LinkResource>  {
+    WTF_MAKE_NONCOPYABLE(LinkResource); WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
 public:
     enum Type {
         Style,
-        Import
+        Import,
+        Manifest
     };
 
     explicit LinkResource(HTMLLinkElement*);
     virtual ~LinkResource();
 
     bool shouldLoadResource() const;
-    Frame* loadingFrame() const;
+    LocalFrame* loadingFrame() const;
 
     virtual Type type() const = 0;
     virtual void process() = 0;
-    virtual void ownerRemoved() = 0;
+    virtual void ownerRemoved() { }
+    virtual void ownerInserted() { }
     virtual bool hasLoaded() const = 0;
 
+    virtual void trace(Visitor*);
+
 protected:
-    HTMLLinkElement* m_owner;
+    RawPtrWillBeMember<HTMLLinkElement> m_owner;
 };
 
 class LinkRequestBuilder {
+    STACK_ALLOCATED();
 public:
     explicit LinkRequestBuilder(HTMLLinkElement* owner);
 
@@ -72,7 +78,7 @@ public:
     FetchRequest build(bool blocking) const;
 
 private:
-    HTMLLinkElement* m_owner;
+    RawPtrWillBeMember<HTMLLinkElement> m_owner;
     KURL m_url;
     AtomicString m_charset;
 };

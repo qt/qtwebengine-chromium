@@ -7,6 +7,7 @@
 #include "base/command_line.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/string_number_conversions.h"
+#include "gpu/command_buffer/service/gpu_service_test.h"
 #include "gpu/command_buffer/service/gpu_switches.h"
 #include "gpu/command_buffer/service/test_helper.h"
 #include "gpu/command_buffer/service/texture_manager.h"
@@ -15,7 +16,6 @@
 #include "ui/gl/gl_implementation.h"
 #include "ui/gl/gl_mock.h"
 
-using ::gfx::MockGLInterface;
 using ::testing::_;
 using ::testing::DoAll;
 using ::testing::HasSubstr;
@@ -27,7 +27,6 @@ using ::testing::Return;
 using ::testing::SetArrayArgument;
 using ::testing::SetArgumentPointee;
 using ::testing::StrEq;
-using ::testing::StrictMock;
 
 namespace gpu {
 namespace gles2 {
@@ -36,7 +35,7 @@ namespace {
 const char kGLRendererStringANGLE[] = "ANGLE (some renderer)";
 }  // anonymous namespace
 
-class FeatureInfoTest : public testing::Test {
+class FeatureInfoTest : public GpuServiceTest {
  public:
   FeatureInfoTest() {
   }
@@ -70,18 +69,11 @@ class FeatureInfoTest : public testing::Test {
   }
 
  protected:
-  virtual void SetUp() {
-    gl_.reset(new ::testing::StrictMock< ::gfx::MockGLInterface>());
-    ::gfx::GLInterface::SetGLInterface(gl_.get());
-  }
-
   virtual void TearDown() {
     info_ = NULL;
-    ::gfx::GLInterface::SetGLInterface(NULL);
-    gl_.reset();
+    GpuServiceTest::TearDown();
   }
 
-  scoped_ptr< ::testing::StrictMock< ::gfx::MockGLInterface> > gl_;
   scoped_refptr<FeatureInfo> info_;
 };
 
@@ -110,7 +102,6 @@ TEST_F(FeatureInfoTest, Basic) {
   EXPECT_FALSE(info_->feature_flags().oes_egl_image_external);
   EXPECT_FALSE(info_->feature_flags().oes_depth24);
   EXPECT_FALSE(info_->feature_flags().packed_depth24_stencil8);
-  EXPECT_FALSE(info_->feature_flags().chromium_stream_texture);
   EXPECT_FALSE(info_->feature_flags().angle_translated_shader_source);
   EXPECT_FALSE(info_->feature_flags().angle_pack_reverse_row_order);
   EXPECT_FALSE(info_->feature_flags().arb_texture_rectangle);
@@ -247,6 +238,10 @@ TEST_F(FeatureInfoTest, InitializeNoExtensions) {
               Not(HasSubstr("GL_EXT_texture_storage")));
   EXPECT_THAT(info_->extensions(),
               Not(HasSubstr("GL_OES_compressed_ETC1_RGB8_texture")));
+  EXPECT_THAT(info_->extensions(),
+              Not(HasSubstr("GL_AMD_compressed_ATC_texture")));
+  EXPECT_THAT(info_->extensions(),
+              Not(HasSubstr("GL_IMG_texture_compression_pvrtc")));
   EXPECT_FALSE(info_->feature_flags().npot_ok);
   EXPECT_FALSE(info_->validators()->compressed_texture_format.IsValid(
       GL_COMPRESSED_RGB_S3TC_DXT1_EXT));
@@ -258,6 +253,20 @@ TEST_F(FeatureInfoTest, InitializeNoExtensions) {
       GL_COMPRESSED_RGBA_S3TC_DXT5_EXT));
   EXPECT_FALSE(info_->validators()->compressed_texture_format.IsValid(
       GL_ETC1_RGB8_OES));
+  EXPECT_FALSE(info_->validators()->compressed_texture_format.IsValid(
+      GL_ATC_RGB_AMD));
+  EXPECT_FALSE(info_->validators()->compressed_texture_format.IsValid(
+      GL_ATC_RGBA_EXPLICIT_ALPHA_AMD));
+  EXPECT_FALSE(info_->validators()->compressed_texture_format.IsValid(
+      GL_ATC_RGBA_INTERPOLATED_ALPHA_AMD));
+  EXPECT_FALSE(info_->validators()->compressed_texture_format.IsValid(
+      GL_COMPRESSED_RGB_PVRTC_4BPPV1_IMG));
+  EXPECT_FALSE(info_->validators()->compressed_texture_format.IsValid(
+      GL_COMPRESSED_RGB_PVRTC_2BPPV1_IMG));
+  EXPECT_FALSE(info_->validators()->compressed_texture_format.IsValid(
+      GL_COMPRESSED_RGBA_PVRTC_4BPPV1_IMG));
+  EXPECT_FALSE(info_->validators()->compressed_texture_format.IsValid(
+      GL_COMPRESSED_RGBA_PVRTC_2BPPV1_IMG));
   EXPECT_FALSE(info_->validators()->read_pixel_format.IsValid(
       GL_BGRA_EXT));
   EXPECT_FALSE(info_->validators()->texture_parameter.IsValid(
@@ -281,6 +290,10 @@ TEST_F(FeatureInfoTest, InitializeNoExtensions) {
       GL_DEPTH24_STENCIL8));
   EXPECT_FALSE(info_->validators()->texture_internal_format.IsValid(
       GL_DEPTH_STENCIL));
+  EXPECT_FALSE(info_->validators()->texture_internal_format.IsValid(
+      GL_RGBA32F));
+  EXPECT_FALSE(info_->validators()->texture_internal_format.IsValid(
+      GL_RGB32F));
   EXPECT_FALSE(info_->validators()->texture_format.IsValid(
       GL_DEPTH_STENCIL));
   EXPECT_FALSE(info_->validators()->pixel_type.IsValid(
@@ -295,6 +308,8 @@ TEST_F(FeatureInfoTest, InitializeNoExtensions) {
       GL_DEPTH_COMPONENT32_OES));
   EXPECT_FALSE(info_->validators()->texture_internal_format_storage.IsValid(
       GL_DEPTH24_STENCIL8_OES));
+  EXPECT_FALSE(info_->validators()->equation.IsValid(GL_MIN_EXT));
+  EXPECT_FALSE(info_->validators()->equation.IsValid(GL_MAX_EXT));
 }
 
 TEST_F(FeatureInfoTest, InitializeWithANGLE) {
@@ -406,6 +421,19 @@ TEST_F(FeatureInfoTest, InitializeEXT_read_format_bgra) {
       GL_BGRA_EXT));
   EXPECT_FALSE(info_->validators()->render_buffer_format.IsValid(
       GL_BGRA8_EXT));
+}
+
+TEST_F(FeatureInfoTest, InitializeARB_texture_float) {
+  SetupInitExpectations("GL_ARB_texture_float");
+  EXPECT_TRUE(info_->feature_flags().chromium_color_buffer_float_rgba);
+  EXPECT_TRUE(info_->feature_flags().chromium_color_buffer_float_rgb);
+  std::string extensions = info_->extensions() + " ";
+  EXPECT_THAT(extensions, HasSubstr("GL_CHROMIUM_color_buffer_float_rgb "));
+  EXPECT_THAT(extensions, HasSubstr("GL_CHROMIUM_color_buffer_float_rgba"));
+  EXPECT_TRUE(info_->validators()->texture_internal_format.IsValid(
+      GL_RGBA32F));
+  EXPECT_TRUE(info_->validators()->texture_internal_format.IsValid(
+      GL_RGB32F));
 }
 
 TEST_F(FeatureInfoTest, InitializeOES_texture_floatGLES2) {
@@ -618,7 +646,7 @@ TEST_F(FeatureInfoTest, InitializeEXT_multisampled_render_to_texture) {
 TEST_F(FeatureInfoTest, InitializeIMG_multisampled_render_to_texture) {
   SetupInitExpectations("GL_IMG_multisampled_render_to_texture");
   EXPECT_TRUE(info_->feature_flags(
-      ).use_img_for_multisampled_render_to_texture);
+      ).multisampled_render_to_texture);
   EXPECT_TRUE(info_->feature_flags(
       ).use_img_for_multisampled_render_to_texture);
   EXPECT_THAT(info_->extensions(),
@@ -810,11 +838,30 @@ TEST_F(FeatureInfoTest, InitializeOES_compressed_ETC1_RGB8_texture) {
       GL_ETC1_RGB8_OES));
 }
 
-TEST_F(FeatureInfoTest, InitializeCHROMIUM_stream_texture) {
-  SetupInitExpectations("GL_CHROMIUM_stream_texture");
+TEST_F(FeatureInfoTest, InitializeAMD_compressed_ATC_texture) {
+  SetupInitExpectations("GL_AMD_compressed_ATC_texture");
   EXPECT_THAT(info_->extensions(),
-              HasSubstr("GL_CHROMIUM_stream_texture"));
-  EXPECT_TRUE(info_->feature_flags().chromium_stream_texture);
+              HasSubstr("GL_AMD_compressed_ATC_texture"));
+  EXPECT_TRUE(info_->validators()->compressed_texture_format.IsValid(
+      GL_ATC_RGB_AMD));
+  EXPECT_TRUE(info_->validators()->compressed_texture_format.IsValid(
+      GL_ATC_RGBA_EXPLICIT_ALPHA_AMD));
+  EXPECT_TRUE(info_->validators()->compressed_texture_format.IsValid(
+      GL_ATC_RGBA_INTERPOLATED_ALPHA_AMD));
+}
+
+TEST_F(FeatureInfoTest, InitializeIMG_texture_compression_pvrtc) {
+  SetupInitExpectations("GL_IMG_texture_compression_pvrtc");
+  EXPECT_THAT(info_->extensions(),
+              HasSubstr("GL_IMG_texture_compression_pvrtc"));
+  EXPECT_TRUE(info_->validators()->compressed_texture_format.IsValid(
+      GL_COMPRESSED_RGB_PVRTC_4BPPV1_IMG));
+  EXPECT_TRUE(info_->validators()->compressed_texture_format.IsValid(
+      GL_COMPRESSED_RGB_PVRTC_2BPPV1_IMG));
+  EXPECT_TRUE(info_->validators()->compressed_texture_format.IsValid(
+      GL_COMPRESSED_RGBA_PVRTC_4BPPV1_IMG));
+  EXPECT_TRUE(info_->validators()->compressed_texture_format.IsValid(
+      GL_COMPRESSED_RGBA_PVRTC_2BPPV1_IMG));
 }
 
 TEST_F(FeatureInfoTest, InitializeEXT_occlusion_query_boolean) {
@@ -899,10 +946,23 @@ TEST_F(FeatureInfoTest, InitializeVAOsWithClientSideArrays) {
   EXPECT_FALSE(info_->feature_flags().native_vertex_array_object);
 }
 
+TEST_F(FeatureInfoTest, InitializeEXT_blend_minmax) {
+  SetupInitExpectations("GL_EXT_blend_minmax");
+  EXPECT_THAT(info_->extensions(), HasSubstr("GL_EXT_blend_minmax"));
+  EXPECT_TRUE(info_->validators()->equation.IsValid(GL_MIN_EXT));
+  EXPECT_TRUE(info_->validators()->equation.IsValid(GL_MAX_EXT));
+}
+
 TEST_F(FeatureInfoTest, InitializeEXT_frag_depth) {
   SetupInitExpectations("GL_EXT_frag_depth");
   EXPECT_TRUE(info_->feature_flags().ext_frag_depth);
   EXPECT_THAT(info_->extensions(), HasSubstr("GL_EXT_frag_depth"));
+}
+
+TEST_F(FeatureInfoTest, InitializeEXT_shader_texture_lod) {
+  SetupInitExpectations("GL_EXT_shader_texture_lod");
+  EXPECT_TRUE(info_->feature_flags().ext_shader_texture_lod);
+  EXPECT_THAT(info_->extensions(), HasSubstr("GL_EXT_shader_texture_lod"));
 }
 
 TEST_F(FeatureInfoTest, InitializeEXT_discard_framebuffer) {
@@ -927,7 +987,7 @@ TEST_F(FeatureInfoTest, InitializeWithES3) {
   EXPECT_TRUE(info_->feature_flags().use_core_framebuffer_multisample);
   EXPECT_THAT(info_->extensions(),
               HasSubstr("GL_CHROMIUM_framebuffer_multisample"));
-  EXPECT_FALSE(info_->feature_flags().use_async_readpixels);
+  EXPECT_TRUE(info_->feature_flags().use_async_readpixels);
   EXPECT_TRUE(info_->feature_flags().oes_depth24);
   EXPECT_THAT(info_->extensions(), HasSubstr("GL_GOOGLE_depth_texture"));
   EXPECT_THAT(info_->extensions(), HasSubstr("GL_CHROMIUM_depth_texture"));

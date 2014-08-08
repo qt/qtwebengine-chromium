@@ -19,7 +19,7 @@ BoxLayout::BoxLayout(BoxLayout::Orientation orientation,
                             inside_border_vertical_spacing,
                             inside_border_horizontal_spacing),
       between_child_spacing_(between_child_spacing),
-      spread_blank_space_(false) {
+      main_axis_alignment_(MAIN_AXIS_ALIGNMENT_START) {
 }
 
 BoxLayout::~BoxLayout() {
@@ -29,38 +29,55 @@ void BoxLayout::Layout(View* host) {
   gfx::Rect child_area(host->GetLocalBounds());
   child_area.Inset(host->GetInsets());
   child_area.Inset(inside_border_insets_);
-  int x = child_area.x();
-  int y = child_area.y();
 
   int padding = 0;
-  if (spread_blank_space_) {
-    int total = 0;
-    int visible = 0;
+  if (main_axis_alignment_ != MAIN_AXIS_ALIGNMENT_START) {
+    int total_main_axis_size = 0;
+    int num_visible = 0;
     for (int i = 0; i < host->child_count(); ++i) {
       View* child = host->child_at(i);
       if (!child->visible())
         continue;
       if (orientation_ == kHorizontal) {
-        total += child->GetPreferredSize().width() + between_child_spacing_;
+        total_main_axis_size +=
+            child->GetPreferredSize().width() + between_child_spacing_;
       } else {
-        total += child->GetHeightForWidth(child_area.width()) +
-            between_child_spacing_;
+        total_main_axis_size += child->GetHeightForWidth(child_area.width()) +
+                                between_child_spacing_;
       }
-      ++visible;
+      ++num_visible;
     }
 
-    if (visible) {
-      total -= between_child_spacing_;
-      if (orientation_ == kHorizontal)
-        padding = (child_area.width() - total) / visible;
-      else
-        padding = (child_area.height() - total) / visible;
-
-      if (padding < 0)
-        padding = 0;
+    if (num_visible) {
+      total_main_axis_size -= between_child_spacing_;
+      int free_space = MainAxisSize(child_area) - total_main_axis_size;
+      int position = MainAxisPosition(child_area);
+      int size = MainAxisSize(child_area);
+      switch (main_axis_alignment_) {
+        case MAIN_AXIS_ALIGNMENT_FILL:
+          padding = std::max(free_space / num_visible, 0);
+          break;
+        case MAIN_AXIS_ALIGNMENT_CENTER:
+          position += free_space / 2;
+          size = total_main_axis_size;
+          break;
+        case MAIN_AXIS_ALIGNMENT_END:
+          position += free_space;
+          size = total_main_axis_size;
+          break;
+        default:
+          NOTREACHED();
+          break;
+      }
+      gfx::Rect new_child_area(child_area);
+      SetMainAxisPosition(position, &new_child_area);
+      SetMainAxisSize(size, &new_child_area);
+      child_area.Intersect(new_child_area);
     }
   }
 
+  int x = child_area.x();
+  int y = child_area.y();
   for (int i = 0; i < host->child_count(); ++i) {
     View* child = host->child_at(i);
     if (child->visible()) {
@@ -81,12 +98,12 @@ void BoxLayout::Layout(View* host) {
   }
 }
 
-gfx::Size BoxLayout::GetPreferredSize(View* host) {
+gfx::Size BoxLayout::GetPreferredSize(const View* host) const {
   // Calculate the child views' preferred width.
   int width = 0;
   if (orientation_ == kVertical) {
     for (int i = 0; i < host->child_count(); ++i) {
-      View* child = host->child_at(i);
+      const View* child = host->child_at(i);
       if (!child->visible())
         continue;
 
@@ -97,13 +114,35 @@ gfx::Size BoxLayout::GetPreferredSize(View* host) {
   return GetPreferredSizeForChildWidth(host, width);
 }
 
-int BoxLayout::GetPreferredHeightForWidth(View* host, int width) {
+int BoxLayout::GetPreferredHeightForWidth(const View* host, int width) const {
   int child_width = width - NonChildSize(host).width();
   return GetPreferredSizeForChildWidth(host, child_width).height();
 }
 
-gfx::Size BoxLayout::GetPreferredSizeForChildWidth(View* host,
-                                                   int child_area_width) {
+int BoxLayout::MainAxisSize(const gfx::Rect& child_area) const {
+  return orientation_ == kHorizontal ? child_area.width() : child_area.height();
+}
+
+int BoxLayout::MainAxisPosition(const gfx::Rect& child_area) const {
+  return orientation_ == kHorizontal ? child_area.x() : child_area.y();
+}
+
+void BoxLayout::SetMainAxisSize(int size, gfx::Rect* child_area) const {
+  if (orientation_ == kHorizontal)
+    child_area->set_width(size);
+  else
+    child_area->set_height(size);
+}
+
+void BoxLayout::SetMainAxisPosition(int position, gfx::Rect* child_area) const {
+  if (orientation_ == kHorizontal)
+    child_area->set_x(position);
+  else
+    child_area->set_y(position);
+}
+
+gfx::Size BoxLayout::GetPreferredSizeForChildWidth(const View* host,
+                                                   int child_area_width) const {
   gfx::Rect child_area_bounds;
 
   if (orientation_ == kHorizontal) {
@@ -112,7 +151,7 @@ gfx::Size BoxLayout::GetPreferredSizeForChildWidth(View* host,
     // TODO(estade): fix this if it ever becomes a problem.
     int position = 0;
     for (int i = 0; i < host->child_count(); ++i) {
-      View* child = host->child_at(i);
+      const View* child = host->child_at(i);
       if (!child->visible())
         continue;
 
@@ -127,7 +166,7 @@ gfx::Size BoxLayout::GetPreferredSizeForChildWidth(View* host,
   } else {
     int height = 0;
     for (int i = 0; i < host->child_count(); ++i) {
-      View* child = host->child_at(i);
+      const View* child = host->child_at(i);
       if (!child->visible())
         continue;
 
@@ -147,7 +186,7 @@ gfx::Size BoxLayout::GetPreferredSizeForChildWidth(View* host,
                    child_area_bounds.height() + non_child_size.height());
 }
 
-gfx::Size BoxLayout::NonChildSize(View* host) {
+gfx::Size BoxLayout::NonChildSize(const View* host) const {
   gfx::Insets insets(host->GetInsets());
   return gfx::Size(insets.width() + inside_border_insets_.width(),
                    insets.height() + inside_border_insets_.height());

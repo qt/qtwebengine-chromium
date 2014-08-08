@@ -38,24 +38,25 @@ void TreeScopeAdopter::moveTreeToNewScope(Node& root) const
 {
     ASSERT(needsScopeChange());
 
+#if !ENABLE(OILPAN)
     m_oldScope.guardRef();
+#endif
 
     // If an element is moved from a document and then eventually back again the collection cache for
     // that element may contain stale data as changes made to it will have updated the DOMTreeVersion
     // of the document it was moved to. By increasing the DOMTreeVersion of the donating document here
     // we ensure that the collection cache will be invalidated as needed when the element is moved back.
-    Document* oldDocument = m_oldScope.documentScope();
-    ASSERT(oldDocument);
-    Document* newDocument = m_newScope.documentScope();
+    Document& oldDocument = m_oldScope.document();
+    Document& newDocument = m_newScope.document();
     bool willMoveToNewDocument = oldDocument != newDocument;
     if (willMoveToNewDocument)
-        oldDocument->incDOMTreeVersion();
+        oldDocument.incDOMTreeVersion();
 
     for (Node* node = &root; node; node = NodeTraversal::next(*node, &root)) {
         updateTreeScope(*node);
 
         if (willMoveToNewDocument)
-            moveNodeToNewDocument(*node, *oldDocument, newDocument);
+            moveNodeToNewDocument(*node, oldDocument, newDocument);
         else if (node->hasRareData()) {
             NodeRareData* rareData = node->rareData();
             if (rareData->nodeLists())
@@ -66,23 +67,26 @@ void TreeScopeAdopter::moveTreeToNewScope(Node& root) const
             continue;
 
         if (node->hasSyntheticAttrChildNodes()) {
-            const Vector<RefPtr<Attr> >& attrs = toElement(node)->attrNodeList();
+            WillBeHeapVector<RefPtrWillBeMember<Attr> >& attrs = *toElement(node)->attrNodeList();
             for (unsigned i = 0; i < attrs.size(); ++i)
                 moveTreeToNewScope(*attrs[i]);
         }
 
         for (ShadowRoot* shadow = node->youngestShadowRoot(); shadow; shadow = shadow->olderShadowRoot()) {
-            shadow->setParentTreeScope(&m_newScope);
+            shadow->setParentTreeScope(m_newScope);
             if (willMoveToNewDocument)
-                moveTreeToNewDocument(*shadow, *oldDocument, newDocument);
+                moveTreeToNewDocument(*shadow, oldDocument, newDocument);
         }
     }
 
+#if !ENABLE(OILPAN)
     m_oldScope.guardDeref();
+#endif
 }
 
-void TreeScopeAdopter::moveTreeToNewDocument(Node& root, Document& oldDocument, Document* newDocument) const
+void TreeScopeAdopter::moveTreeToNewDocument(Node& root, Document& oldDocument, Document& newDocument) const
 {
+    ASSERT(oldDocument != newDocument);
     for (Node* node = &root; node; node = NodeTraversal::next(*node, &root)) {
         moveNodeToNewDocument(*node, oldDocument, newDocument);
         for (ShadowRoot* shadow = node->youngestShadowRoot(); shadow; shadow = shadow->olderShadowRoot())
@@ -106,25 +110,27 @@ inline void TreeScopeAdopter::updateTreeScope(Node& node) const
 {
     ASSERT(!node.isTreeScope());
     ASSERT(node.treeScope() == m_oldScope);
+#if !ENABLE(OILPAN)
     m_newScope.guardRef();
     m_oldScope.guardDeref();
+#endif
     node.setTreeScope(&m_newScope);
 }
 
-inline void TreeScopeAdopter::moveNodeToNewDocument(Node& node, Document& oldDocument, Document* newDocument) const
+inline void TreeScopeAdopter::moveNodeToNewDocument(Node& node, Document& oldDocument, Document& newDocument) const
 {
-    ASSERT(!node.inDocument() || oldDocument != newDocument);
+    ASSERT(oldDocument != newDocument);
 
     if (node.hasRareData()) {
         NodeRareData* rareData = node.rareData();
         if (rareData->nodeLists())
-            rareData->nodeLists()->adoptDocument(&oldDocument, newDocument);
+            rareData->nodeLists()->adoptDocument(oldDocument, newDocument);
     }
 
-    oldDocument.moveNodeIteratorsToNewDocument(&node, newDocument);
+    oldDocument.moveNodeIteratorsToNewDocument(node, newDocument);
 
     if (node.isShadowRoot())
-        toShadowRoot(node).setDocumentScope(newDocument);
+        toShadowRoot(node).setDocument(newDocument);
 
 #ifndef NDEBUG
     didMoveToNewDocumentWasCalled = false;

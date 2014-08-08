@@ -17,6 +17,7 @@
 #include "base/process/process_metrics.h"
 #include "base/threading/platform_thread.h"
 #include "base/threading/thread.h"
+#include "build/build_config.h"
 #include "sandbox/linux/tests/unit_tests.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -50,16 +51,31 @@ class ScopedProcSelfTask {
   DISALLOW_COPY_AND_ASSIGN(ScopedProcSelfTask);
 };
 
-TEST(ThreadHelpers, IsSingleThreadedBasic) {
+#if defined(THREAD_SANITIZER)
+// These tests fail under ThreadSanitizer, see http://crbug.com/342305
+#define MAYBE_IsSingleThreadedBasic DISABLED_IsSingleThreadedBasic
+#define MAYBE_IsSingleThreadedIterated DISABLED_IsSingleThreadedIterated
+#define MAYBE_IsSingleThreadedStartAndStop DISABLED_IsSingleThreadedStartAndStop
+#else
+#define MAYBE_IsSingleThreadedBasic IsSingleThreadedBasic
+#define MAYBE_IsSingleThreadedIterated IsSingleThreadedIterated
+#define MAYBE_IsSingleThreadedStartAndStop IsSingleThreadedStartAndStop
+#endif
+
+TEST(ThreadHelpers, MAYBE_IsSingleThreadedBasic) {
   ScopedProcSelfTask task;
   ASSERT_TRUE(ThreadHelpers::IsSingleThreaded(task.fd()));
+  ASSERT_TRUE(ThreadHelpers::IsSingleThreaded(-1));
 
   base::Thread thread("sandbox_tests");
   ASSERT_TRUE(thread.Start());
   ASSERT_FALSE(ThreadHelpers::IsSingleThreaded(task.fd()));
+  ASSERT_FALSE(ThreadHelpers::IsSingleThreaded(-1));
+  // Explicitly stop the thread here to not pollute the next test.
+  ASSERT_TRUE(ThreadHelpers::StopThreadAndWatchProcFS(task.fd(), &thread));
 }
 
-TEST(ThreadHelpers, IsSingleThreadedIterated) {
+TEST(ThreadHelpers, MAYBE_IsSingleThreadedIterated) {
   ScopedProcSelfTask task;
   ASSERT_TRUE(ThreadHelpers::IsSingleThreaded(task.fd()));
 
@@ -68,10 +84,12 @@ TEST(ThreadHelpers, IsSingleThreadedIterated) {
     base::Thread thread("sandbox_tests");
     ASSERT_TRUE(thread.Start());
     ASSERT_FALSE(ThreadHelpers::IsSingleThreaded(task.fd()));
+    // Explicitly stop the thread here to not pollute the next test.
+    ASSERT_TRUE(ThreadHelpers::StopThreadAndWatchProcFS(task.fd(), &thread));
   }
 }
 
-TEST(ThreadHelpers, IsSingleThreadedStartAndStop) {
+TEST(ThreadHelpers, MAYBE_IsSingleThreadedStartAndStop) {
   ScopedProcSelfTask task;
   ASSERT_TRUE(ThreadHelpers::IsSingleThreaded(task.fd()));
 

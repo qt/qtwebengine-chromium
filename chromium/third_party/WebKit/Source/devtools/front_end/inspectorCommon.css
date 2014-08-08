@@ -4,11 +4,9 @@ html {
 
 body {
     cursor: default;
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    left: 0;
-    right: 0;
+    position: relative;
+    height: 100%;
+    width: 100%;
     overflow: hidden;
     font-family: Lucida Grande, sans-serif;
     font-size: 12px;
@@ -28,19 +26,11 @@ body.platform-mac {
   font-family: 'Lucida Grande', sans-serif;
 }
 
-body.dock-to-right:not(.undocked):not(.overlay-contents) {
-    border-left: 1px solid rgb(80, 80, 80);
-}
-
-body.dock-to-right.inactive:not(.undocked):not(.overlay-contents) {
-    border-left: 1px solid rgb(64%, 64%, 64%);
-}
-
 body.platform-windows {
   font-family: 'Segoe UI', Tahoma, sans-serif;
 }
 
-* {
+*, *::before, *::after {
     box-sizing: border-box;
 }
 
@@ -204,6 +194,12 @@ iframe.view {
     padding: 0;
 }
 
+.network-timing-table td.caution {
+    font-weight: bold;
+    color: rgb(255, 128, 0);
+    padding: 2px 0;
+}
+
 .network-timing-row {
     position: relative;
     height: 16px;
@@ -247,3 +243,15 @@ iframe.view {
     font-size: 11px;
 }
 
+.pie-chart {
+    position: relative;
+}
+
+.pie-chart-foreground {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    text-align: center;
+    z-index: 10;
+    top: 0;
+}

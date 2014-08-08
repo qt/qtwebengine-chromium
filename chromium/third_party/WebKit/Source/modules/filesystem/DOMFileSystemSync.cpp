@@ -50,9 +50,9 @@ namespace WebCore {
 
 class FileWriterBase;
 
-PassRefPtr<DOMFileSystemSync> DOMFileSystemSync::create(DOMFileSystemBase* fileSystem)
+DOMFileSystemSync* DOMFileSystemSync::create(DOMFileSystemBase* fileSystem)
 {
-    return adoptRef(new DOMFileSystemSync(fileSystem->m_context, fileSystem->name(), fileSystem->type(), fileSystem->rootURL()));
+    return new DOMFileSystemSync(fileSystem->m_context, fileSystem->name(), fileSystem->type(), fileSystem->rootURL());
 }
 
 DOMFileSystemSync::DOMFileSystemSync(ExecutionContext* context, const String& name, FileSystemType type, const KURL& rootURL)
@@ -65,30 +65,35 @@ DOMFileSystemSync::~DOMFileSystemSync()
 {
 }
 
-void DOMFileSystemSync::reportError(PassOwnPtr<ErrorCallback> errorCallback, PassRefPtr<FileError> fileError)
+void DOMFileSystemSync::reportError(PassOwnPtr<ErrorCallback> errorCallback, PassRefPtrWillBeRawPtr<FileError> fileError)
 {
     errorCallback->handleEvent(fileError.get());
 }
 
-PassRefPtr<DirectoryEntrySync> DOMFileSystemSync::root()
+DirectoryEntrySync* DOMFileSystemSync::root()
 {
     return DirectoryEntrySync::create(this, DOMFilePath::root);
 }
 
 namespace {
 
-class CreateFileHelper : public AsyncFileSystemCallbacks {
+class CreateFileHelper FINAL : public AsyncFileSystemCallbacks {
 public:
-    class CreateFileResult : public RefCounted<CreateFileResult> {
+    class CreateFileResult : public RefCountedWillBeGarbageCollected<CreateFileResult> {
       public:
-        static PassRefPtr<CreateFileResult> create()
+        static PassRefPtrWillBeRawPtr<CreateFileResult> create()
         {
-            return adoptRef(new CreateFileResult());
+            return adoptRefWillBeNoop(new CreateFileResult());
         }
 
         bool m_failed;
         int m_code;
-        RefPtr<File> m_file;
+        RefPtrWillBeMember<File> m_file;
+
+        void trace(Visitor* visitor)
+        {
+            visitor->trace(m_file);
+        }
 
       private:
         CreateFileResult()
@@ -97,18 +102,21 @@ public:
         {
         }
 
+#if !ENABLE(OILPAN)
         ~CreateFileResult()
         {
         }
-        friend class WTF::RefCounted<CreateFileResult>;
+#endif
+
+        friend class RefCountedWillBeGarbageCollected<CreateFileResult>;
     };
 
-    static PassOwnPtr<AsyncFileSystemCallbacks> create(PassRefPtr<CreateFileResult> result, const String& name, const KURL& url, FileSystemType type)
+    static PassOwnPtr<AsyncFileSystemCallbacks> create(PassRefPtrWillBeRawPtr<CreateFileResult> result, const String& name, const KURL& url, FileSystemType type)
     {
         return adoptPtr(static_cast<AsyncFileSystemCallbacks*>(new CreateFileHelper(result, name, url, type)));
     }
 
-    virtual void didFail(int code)
+    virtual void didFail(int code) OVERRIDE
     {
         m_result->m_failed = true;
         m_result->m_code = code;
@@ -118,7 +126,7 @@ public:
     {
     }
 
-    virtual void didCreateSnapshotFile(const FileMetadata& metadata, PassRefPtr<BlobDataHandle> snapshot)
+    virtual void didCreateSnapshotFile(const FileMetadata& metadata, PassRefPtr<BlobDataHandle> snapshot) OVERRIDE
     {
         // We can't directly use the snapshot blob data handle because the content type on it hasn't been set.
         // The |snapshot| param is here to provide a a chain of custody thru thread bridging that is held onto until
@@ -147,7 +155,7 @@ public:
     }
 
 private:
-    CreateFileHelper(PassRefPtr<CreateFileResult> result, const String& name, const KURL& url, FileSystemType type)
+    CreateFileHelper(PassRefPtrWillBeRawPtr<CreateFileResult> result, const String& name, const KURL& url, FileSystemType type)
         : m_result(result)
         , m_name(name)
         , m_url(url)
@@ -155,7 +163,7 @@ private:
     {
     }
 
-    RefPtr<CreateFileResult> m_result;
+    RefPtrWillBePersistent<CreateFileResult> m_result;
     String m_name;
     KURL m_url;
     FileSystemType m_type;
@@ -163,28 +171,28 @@ private:
 
 } // namespace
 
-PassRefPtr<File> DOMFileSystemSync::createFile(const FileEntrySync* fileEntry, ExceptionState& exceptionState)
+PassRefPtrWillBeRawPtr<File> DOMFileSystemSync::createFile(const FileEntrySync* fileEntry, ExceptionState& exceptionState)
 {
     KURL fileSystemURL = createFileSystemURL(fileEntry);
-    RefPtr<CreateFileHelper::CreateFileResult> result(CreateFileHelper::CreateFileResult::create());
+    RefPtrWillBeRawPtr<CreateFileHelper::CreateFileResult> result(CreateFileHelper::CreateFileResult::create());
     fileSystem()->createSnapshotFileAndReadMetadata(fileSystemURL, CreateFileHelper::create(result, fileEntry->name(), fileSystemURL, type()));
     if (result->m_failed) {
-        exceptionState.throwUninformativeAndGenericDOMException(result->m_code);
-        return 0;
+        exceptionState.throwDOMException(result->m_code, "Could not create '" + fileEntry->name() + "'.");
+        return nullptr;
     }
-    return result->m_file;
+    return result->m_file.get();
 }
 
 namespace {
 
-class ReceiveFileWriterCallback : public FileWriterBaseCallback {
+class ReceiveFileWriterCallback FINAL : public FileWriterBaseCallback {
 public:
     static PassOwnPtr<ReceiveFileWriterCallback> create()
     {
         return adoptPtr(new ReceiveFileWriterCallback());
     }
 
-    void handleEvent(FileWriterBase*)
+    virtual void handleEvent(FileWriterBase*) OVERRIDE
     {
     }
 
@@ -194,14 +202,14 @@ private:
     }
 };
 
-class LocalErrorCallback : public ErrorCallback {
+class LocalErrorCallback FINAL : public ErrorCallback {
 public:
     static PassOwnPtr<LocalErrorCallback> create(FileError::ErrorCode& errorCode)
     {
         return adoptPtr(new LocalErrorCallback(errorCode));
     }
 
-    void handleEvent(FileError* error)
+    virtual void handleEvent(FileError* error) OVERRIDE
     {
         ASSERT(error->code() != FileError::OK);
         m_errorCode = error->code();
@@ -218,24 +226,24 @@ private:
 
 }
 
-PassRefPtr<FileWriterSync> DOMFileSystemSync::createWriter(const FileEntrySync* fileEntry, ExceptionState& exceptionState)
+FileWriterSync* DOMFileSystemSync::createWriter(const FileEntrySync* fileEntry, ExceptionState& exceptionState)
 {
     ASSERT(fileEntry);
 
-    RefPtr<FileWriterSync> fileWriter = FileWriterSync::create();
+    FileWriterSync* fileWriter = FileWriterSync::create();
     OwnPtr<ReceiveFileWriterCallback> successCallback = ReceiveFileWriterCallback::create();
     FileError::ErrorCode errorCode = FileError::OK;
     OwnPtr<LocalErrorCallback> errorCallback = LocalErrorCallback::create(errorCode);
 
-    OwnPtr<AsyncFileSystemCallbacks> callbacks = FileWriterBaseCallbacks::create(fileWriter, successCallback.release(), errorCallback.release());
+    OwnPtr<AsyncFileSystemCallbacks> callbacks = FileWriterBaseCallbacks::create(fileWriter, successCallback.release(), errorCallback.release(), m_context);
     callbacks->setShouldBlockUntilCompletion(true);
 
-    fileSystem()->createFileWriter(createFileSystemURL(fileEntry), fileWriter.get(), callbacks.release());
+    fileSystem()->createFileWriter(createFileSystemURL(fileEntry), fileWriter, callbacks.release());
     if (errorCode != FileError::OK) {
         FileError::throwDOMException(exceptionState, errorCode);
         return 0;
     }
-    return fileWriter.release();
+    return fileWriter;
 }
 
 }

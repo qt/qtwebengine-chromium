@@ -5,6 +5,7 @@
 #ifndef UI_NATIVE_THEME_NATIVE_THEME_H_
 #define UI_NATIVE_THEME_NATIVE_THEME_H_
 
+#include "base/observer_list.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/native_theme/native_theme_export.h"
@@ -17,6 +18,8 @@ class Size;
 }
 
 namespace ui {
+
+class NativeThemeObserver;
 
 // This class supports drawing UI controls (like buttons, text fields, lists,
 // comboboxes, etc) that look like the native UI controls of the underlying
@@ -39,6 +42,7 @@ class NATIVE_THEME_EXPORT NativeTheme {
  public:
   // The part to be painted / sized.
   enum Part {
+    kComboboxArrow,
     kCheckbox,
     kInnerSpinButton,
     kMenuList,
@@ -66,6 +70,9 @@ class NATIVE_THEME_EXPORT NativeTheme {
     kScrollbarVerticalTrack,
     kScrollbarHorizontalGripper,
     kScrollbarVerticalGripper,
+    // The corner is drawn when there is both a horizontal and vertical
+    // scrollbar.
+    kScrollbarCorner,
     kSliderTrack,
     kSliderThumb,
     kTabPanelBackground,
@@ -78,11 +85,12 @@ class NATIVE_THEME_EXPORT NativeTheme {
 
   // The state of the part.
   enum State {
-    kDisabled,
-    kHovered,
-    kNormal,
-    kPressed,
-    kMaxState,
+    // IDs defined as specific values for use in arrays.
+    kDisabled = 0,
+    kHovered  = 1,
+    kNormal   = 2,
+    kPressed  = 3,
+    kMaxState = 4,
   };
 
   // Each structure below holds extra information needed when painting a given
@@ -216,6 +224,15 @@ class NATIVE_THEME_EXPORT NativeTheme {
                      const gfx::Rect& rect,
                      const ExtraParams& extra) const = 0;
 
+  // Paint part during state transition, used for overlay scrollbar state
+  // transition animation.
+  virtual void PaintStateTransition(SkCanvas* canvas,
+                                    Part part,
+                                    State startState,
+                                    State endState,
+                                    double progress,
+                                    const gfx::Rect& rect) const { }
+
   // Supports theme specific colors.
   void SetScrollbarColors(unsigned inactive_color,
                           unsigned active_color,
@@ -236,9 +253,15 @@ class NATIVE_THEME_EXPORT NativeTheme {
     kColorId_ButtonDisabledColor,
     kColorId_ButtonHighlightColor,
     kColorId_ButtonHoverColor,
+    kColorId_ButtonHoverBackgroundColor,
+    kColorId_BlueButtonEnabledColor,
+    kColorId_BlueButtonDisabledColor,
+    kColorId_BlueButtonHighlightColor,
+    kColorId_BlueButtonHoverColor,
     // MenuItem
     kColorId_EnabledMenuItemForegroundColor,
     kColorId_DisabledMenuItemForegroundColor,
+    kColorId_DisabledEmphasizedMenuItemForegroundColor,
     kColorId_SelectedMenuItemForegroundColor,
     kColorId_FocusedMenuItemBackgroundColor,
     kColorId_HoverMenuItemBackgroundColor,
@@ -260,6 +283,9 @@ class NATIVE_THEME_EXPORT NativeTheme {
     kColorId_TextfieldReadOnlyBackground,
     kColorId_TextfieldSelectionColor,
     kColorId_TextfieldSelectionBackgroundFocused,
+    // Tooltip
+    kColorId_TooltipBackground,
+    kColorId_TooltipText,
     // Tree
     kColorId_TreeBackground,
     kColorId_TreeText,
@@ -276,6 +302,22 @@ class NATIVE_THEME_EXPORT NativeTheme {
     kColorId_TableSelectionBackgroundFocused,
     kColorId_TableSelectionBackgroundUnfocused,
     kColorId_TableGroupingIndicatorColor,
+    // Results Tables, such as the chrome omnibox.
+    kColorId_ResultsTableNormalBackground,
+    kColorId_ResultsTableHoveredBackground,
+    kColorId_ResultsTableSelectedBackground,
+    kColorId_ResultsTableNormalText,
+    kColorId_ResultsTableHoveredText,
+    kColorId_ResultsTableSelectedText,
+    kColorId_ResultsTableNormalDimmedText,
+    kColorId_ResultsTableHoveredDimmedText,
+    kColorId_ResultsTableSelectedDimmedText,
+    kColorId_ResultsTableNormalUrl,
+    kColorId_ResultsTableHoveredUrl,
+    kColorId_ResultsTableSelectedUrl,
+    kColorId_ResultsTableNormalDivider,
+    kColorId_ResultsTableHoveredDivider,
+    kColorId_ResultsTableSelectedDivider,
     // TODO(benrg): move other hardcoded colors here.
   };
 
@@ -289,6 +331,13 @@ class NATIVE_THEME_EXPORT NativeTheme {
   // function, returning the port's subclass.
   static NativeTheme* instance();
 
+  // Add or remove observers to be notified when the native theme changes.
+  void AddObserver(NativeThemeObserver* observer);
+  void RemoveObserver(NativeThemeObserver* observer);
+
+  // Notify observers of native theme changes.
+  void NotifyObservers();
+
  protected:
   NativeTheme();
   virtual ~NativeTheme();
@@ -296,6 +345,10 @@ class NATIVE_THEME_EXPORT NativeTheme {
   unsigned int thumb_inactive_color_;
   unsigned int thumb_active_color_;
   unsigned int track_color_;
+
+ private:
+  // Observers to notify when the native theme changes.
+  ObserverList<NativeThemeObserver> native_theme_observers_;
 
   DISALLOW_COPY_AND_ASSIGN(NativeTheme);
 };

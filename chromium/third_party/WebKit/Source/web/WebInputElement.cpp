@@ -29,18 +29,18 @@
  */
 
 #include "config.h"
-#include "WebInputElement.h"
+#include "public/web/WebInputElement.h"
 
-#include "HTMLNames.h"
-#include "RuntimeEnabledFeatures.h"
-#include "WebNodeCollection.h"
+#include "core/HTMLNames.h"
 #include "core/dom/shadow/ElementShadow.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/html/HTMLDataListElement.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/shadow/ShadowElementNames.h"
 #include "core/html/shadow/TextControlInnerElements.h"
+#include "platform/RuntimeEnabledFeatures.h"
 #include "public/platform/WebString.h"
+#include "public/web/WebElementCollection.h"
 #include "wtf/PassRefPtr.h"
 
 using namespace WebCore;
@@ -77,19 +77,9 @@ bool WebInputElement::isCheckbox() const
     return constUnwrap<HTMLInputElement>()->isCheckbox();
 }
 
-bool WebInputElement::autoComplete() const
-{
-    return constUnwrap<HTMLInputElement>()->shouldAutocomplete();
-}
-
 int WebInputElement::maxLength() const
 {
     return constUnwrap<HTMLInputElement>()->maxLength();
-}
-
-bool WebInputElement::isActivatedSubmit() const
-{
-    return constUnwrap<HTMLInputElement>()->isActivatedSubmit();
 }
 
 void WebInputElement::setActivatedSubmit(bool activated)
@@ -102,49 +92,9 @@ int WebInputElement::size() const
     return constUnwrap<HTMLInputElement>()->size();
 }
 
-void WebInputElement::setValue(const WebString& value, bool sendChangeEvent)
-{
-    unwrap<HTMLInputElement>()->setValue(value, sendChangeEvent ? DispatchChangeEvent : DispatchNoEvent);
-}
-
-WebString WebInputElement::value() const
-{
-    return constUnwrap<HTMLInputElement>()->value();
-}
-
-WebString WebInputElement::editingValue() const
-{
-    return constUnwrap<HTMLInputElement>()->innerTextValue();
-}
-
 void WebInputElement::setEditingValue(const WebString& value)
 {
     unwrap<HTMLInputElement>()->setEditingValue(value);
-}
-
-void WebInputElement::setSuggestedValue(const WebString& value)
-{
-    unwrap<HTMLInputElement>()->setSuggestedValue(value);
-}
-
-WebString WebInputElement::suggestedValue() const
-{
-    return constUnwrap<HTMLInputElement>()->suggestedValue();
-}
-
-void WebInputElement::setSelectionRange(int start, int end)
-{
-    unwrap<HTMLInputElement>()->setSelectionRange(start, end);
-}
-
-int WebInputElement::selectionStart() const
-{
-    return constUnwrap<HTMLInputElement>()->selectionStart();
-}
-
-int WebInputElement::selectionEnd() const
-{
-    return constUnwrap<HTMLInputElement>()->selectionEnd();
 }
 
 bool WebInputElement::isValidValue(const WebString& value) const
@@ -152,9 +102,9 @@ bool WebInputElement::isValidValue(const WebString& value) const
     return constUnwrap<HTMLInputElement>()->isValidValue(value);
 }
 
-void WebInputElement::setChecked(bool nowChecked, bool sendChangeEvent)
+void WebInputElement::setChecked(bool nowChecked, bool sendEvents)
 {
-    unwrap<HTMLInputElement>()->setChecked(nowChecked, sendChangeEvent ? DispatchChangeEvent : DispatchNoEvent);
+    unwrap<HTMLInputElement>()->setChecked(nowChecked, sendEvents ? DispatchInputAndChangeEvent : DispatchNoEvent);
 }
 
 bool WebInputElement::isChecked() const
@@ -167,13 +117,11 @@ bool WebInputElement::isMultiple() const
     return constUnwrap<HTMLInputElement>()->multiple();
 }
 
-WebNodeCollection WebInputElement::dataListOptions() const
+WebElementCollection WebInputElement::dataListOptions() const
 {
-    if (RuntimeEnabledFeatures::dataListElementEnabled()) {
-        if (HTMLDataListElement* dataList = toHTMLDataListElement(constUnwrap<HTMLInputElement>()->list()))
-            return WebNodeCollection(dataList->options());
-    }
-    return WebNodeCollection();
+    if (HTMLDataListElement* dataList = toHTMLDataListElement(constUnwrap<HTMLInputElement>()->list()))
+        return WebElementCollection(dataList->options());
+    return WebElementCollection();
 }
 
 WebString WebInputElement::localizeValue(const WebString& proposedValue) const
@@ -181,88 +129,35 @@ WebString WebInputElement::localizeValue(const WebString& proposedValue) const
     return constUnwrap<HTMLInputElement>()->localizeValue(proposedValue);
 }
 
-bool WebInputElement::isSpeechInputEnabled() const
-{
-#if ENABLE(INPUT_SPEECH)
-    return constUnwrap<HTMLInputElement>()->isSpeechEnabled();
-#else
-    return false;
-#endif
-}
-
-#if ENABLE(INPUT_SPEECH)
-static inline InputFieldSpeechButtonElement* speechButtonElement(const WebInputElement* webInput)
-{
-    return toInputFieldSpeechButtonElement(webInput->constUnwrap<HTMLInputElement>()->userAgentShadowRoot()->getElementById(ShadowElementNames::speechButton()));
-}
-#endif
-
-WebInputElement::SpeechInputState WebInputElement::getSpeechInputState() const
-{
-#if ENABLE(INPUT_SPEECH)
-    if (InputFieldSpeechButtonElement* speechButton = speechButtonElement(this))
-        return static_cast<WebInputElement::SpeechInputState>(speechButton->state());
-#endif
-
-    return Idle;
-}
-
-void WebInputElement::startSpeechInput()
-{
-#if ENABLE(INPUT_SPEECH)
-    if (InputFieldSpeechButtonElement* speechButton = speechButtonElement(this))
-        speechButton->startSpeechInput();
-#endif
-}
-
-void WebInputElement::stopSpeechInput()
-{
-#if ENABLE(INPUT_SPEECH)
-    if (InputFieldSpeechButtonElement* speechButton = speechButtonElement(this))
-        speechButton->stopSpeechInput();
-#endif
-}
-
 int WebInputElement::defaultMaxLength()
 {
     return HTMLInputElement::maximumLength;
 }
 
-WebString WebInputElement::directionForFormData() const
+void WebInputElement::setShouldRevealPassword(bool value)
 {
-    return constUnwrap<HTMLInputElement>()->directionForFormData();
+    unwrap<HTMLInputElement>()->setShouldRevealPassword(value);
 }
 
-// FIXME: Remove this once password_generation_manager.h stops using it.
-WebElement WebInputElement::decorationElementFor(void*)
-{
-    return passwordGeneratorButtonElement();
-}
-
-WebElement WebInputElement::passwordGeneratorButtonElement() const
-{
-    return WebElement(constUnwrap<HTMLInputElement>()->passwordGeneratorButtonElement());
-}
-
-WebInputElement::WebInputElement(const PassRefPtr<HTMLInputElement>& elem)
+WebInputElement::WebInputElement(const PassRefPtrWillBeRawPtr<HTMLInputElement>& elem)
     : WebFormControlElement(elem)
 {
 }
 
-WebInputElement& WebInputElement::operator=(const PassRefPtr<HTMLInputElement>& elem)
+WebInputElement& WebInputElement::operator=(const PassRefPtrWillBeRawPtr<HTMLInputElement>& elem)
 {
     m_private = elem;
     return *this;
 }
 
-WebInputElement::operator PassRefPtr<HTMLInputElement>() const
+WebInputElement::operator PassRefPtrWillBeRawPtr<HTMLInputElement>() const
 {
     return toHTMLInputElement(m_private.get());
 }
 
 WebInputElement* toWebInputElement(WebElement* webElement)
 {
-    if (!webElement->unwrap<Element>()->hasTagName(HTMLNames::inputTag))
+    if (!isHTMLInputElement(*webElement->unwrap<Element>()))
         return 0;
 
     return static_cast<WebInputElement*>(webElement);

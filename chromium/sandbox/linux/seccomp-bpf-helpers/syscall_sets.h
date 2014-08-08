@@ -7,6 +7,7 @@
 
 #include "base/basictypes.h"
 #include "build/build_config.h"
+#include "sandbox/sandbox_export.h"
 
 // These are helpers to build seccomp-bpf policies, i.e. policies for a
 // sandbox that reduces the Linux kernel's attack surface. Given their
@@ -15,7 +16,7 @@
 
 namespace sandbox {
 
-class SyscallSets {
+class SANDBOX_EXPORT SyscallSets {
  public:
   static bool IsKill(int sysno);
   static bool IsAllowedGettime(int sysno);
@@ -36,7 +37,7 @@ class SyscallSets {
   // This should be thought through in conjunction with IsFutex().
   static bool IsAllowedProcessStartOrDeath(int sysno);
   // It's difficult to restrict those, but there is attack surface here.
-  static bool IsFutex(int sysno);
+  static bool IsAllowedFutex(int sysno);
   static bool IsAllowedEpoll(int sysno);
   static bool IsAllowedGetOrModifySocket(int sysno);
   static bool IsDeniedGetOrModifySocket(int sysno);
@@ -52,7 +53,7 @@ class SyscallSets {
 
   static bool IsAllowedAddressSpaceAccess(int sysno);
   static bool IsAllowedGeneralIo(int sysno);
-  static bool IsAllowedPrctl(int sysno);
+  static bool IsPrctl(int sysno);
   static bool IsAllowedBasicScheduler(int sysno);
   static bool IsAdminOperation(int sysno);
   static bool IsKernelModule(int sysno);

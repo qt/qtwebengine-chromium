@@ -6,8 +6,8 @@
     'chromium_code': 1,
   },
   'includes': [
+    '../../build/util/version.gypi',
     '../../build/win_precompile.gypi',
-    '../../chrome/version.gypi',
   ],
   'targets': [
     {
@@ -44,9 +44,9 @@
         '../../chrome/chrome.gyp:installer_util',
         '../../content/content.gyp:content_common',
         '../../google_update/google_update.gyp:google_update',
+        '../../ui/base/ui_base.gyp:ui_base',
         '../../ui/gfx/gfx.gyp:gfx',
-        '../../ui/ui.gyp:ui',
-        '../../win8/win8.gyp:check_sdk_patch',
+        '../../ui/gfx/gfx.gyp:gfx_geometry',
         'delegate_execute_version_resources',
       ],
       'sources': [

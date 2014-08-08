@@ -12,7 +12,7 @@
 #include "base/time/time.h"
 #include "base/timer/timer.h"
 #include "media/base/audio_buffer.h"
-#include "media/base/bind_to_loop.h"
+#include "media/base/bind_to_current_loop.h"
 #include "media/base/decoder_buffer.h"
 #include "ui/gfx/rect.h"
 
@@ -62,14 +62,14 @@ WaitableMessageLoopEvent::~WaitableMessageLoopEvent() {}
 
 base::Closure WaitableMessageLoopEvent::GetClosure() {
   DCHECK_EQ(message_loop_, base::MessageLoop::current());
-  return BindToLoop(message_loop_->message_loop_proxy(), base::Bind(
+  return BindToCurrentLoop(base::Bind(
       &WaitableMessageLoopEvent::OnCallback, base::Unretained(this),
       PIPELINE_OK));
 }
 
 PipelineStatusCB WaitableMessageLoopEvent::GetPipelineStatusCB() {
   DCHECK_EQ(message_loop_, base::MessageLoop::current());
-  return BindToLoop(message_loop_->message_loop_proxy(), base::Bind(
+  return BindToCurrentLoop(base::Bind(
       &WaitableMessageLoopEvent::OnCallback, base::Unretained(this)));
 }
 
@@ -149,100 +149,62 @@ gfx::Size TestVideoConfig::LargeCodedSize() {
 }
 
 template <class T>
-scoped_refptr<AudioBuffer> MakeInterleavedAudioBuffer(
-    SampleFormat format,
-    int channels,
-    T start,
-    T increment,
-    int frames,
-    base::TimeDelta start_time,
-    base::TimeDelta duration) {
-  DCHECK(format == kSampleFormatU8 || format == kSampleFormatS16 ||
-         format == kSampleFormatS32 || format == kSampleFormatF32);
+scoped_refptr<AudioBuffer> MakeAudioBuffer(SampleFormat format,
+                                           ChannelLayout channel_layout,
+                                           size_t channel_count,
+                                           int sample_rate,
+                                           T start,
+                                           T increment,
+                                           size_t frames,
+                                           base::TimeDelta timestamp) {
+  const size_t channels = ChannelLayoutToChannelCount(channel_layout);
+  scoped_refptr<AudioBuffer> output =
+      AudioBuffer::CreateBuffer(format,
+                                channel_layout,
+                                static_cast<int>(channel_count),
+                                sample_rate,
+                                static_cast<int>(frames));
+  output->set_timestamp(timestamp);
 
-  // Create a block of memory with values:
-  //   start
-  //   start + increment
-  //   start + 2 * increment, ...
-  // Since this is interleaved data, channel 0 data will be:
-  //   start
-  //   start + channels * increment
-  //   start + 2 * channels * increment, ...
-  int buffer_size = frames * channels * sizeof(T);
-  scoped_ptr<uint8[]> memory(new uint8[buffer_size]);
-  uint8* data[] = { memory.get() };
-  T* buffer = reinterpret_cast<T*>(memory.get());
-  for (int i = 0; i < frames * channels; ++i) {
-    buffer[i] = start;
-    start += increment;
-  }
-  return AudioBuffer::CopyFrom(
-      format, channels, frames, data, start_time, duration);
-}
+  const bool is_planar =
+      format == kSampleFormatPlanarS16 || format == kSampleFormatPlanarF32;
 
-template <class T>
-scoped_refptr<AudioBuffer> MakePlanarAudioBuffer(
-    SampleFormat format,
-    int channels,
-    T start,
-    T increment,
-    int frames,
-    base::TimeDelta start_time,
-    base::TimeDelta duration) {
-  DCHECK(format == kSampleFormatPlanarF32 || format == kSampleFormatPlanarS16);
-
-  // Create multiple blocks of data, one for each channel.
   // Values in channel 0 will be:
   //   start
   //   start + increment
   //   start + 2 * increment, ...
-  // Values in channel 1 will be:
+  // While, values in channel 1 will be:
   //   start + frames * increment
   //   start + (frames + 1) * increment
   //   start + (frames + 2) * increment, ...
-  int buffer_size = frames * sizeof(T);
-  scoped_ptr<uint8*[]> data(new uint8*[channels]);
-  scoped_ptr<uint8[]> memory(new uint8[channels * buffer_size]);
-  for (int i = 0; i < channels; ++i) {
-    data.get()[i] = memory.get() + i * buffer_size;
-    T* buffer = reinterpret_cast<T*>(data.get()[i]);
-    for (int j = 0; j < frames; ++j) {
-      buffer[j] = start;
-      start += increment;
+  for (size_t ch = 0; ch < channels; ++ch) {
+    T* buffer =
+        reinterpret_cast<T*>(output->channel_data()[is_planar ? ch : 0]);
+    const T v = static_cast<T>(start + ch * frames * increment);
+    for (size_t i = 0; i < frames; ++i) {
+      buffer[is_planar ? i : ch + i * channels] =
+          static_cast<T>(v + i * increment);
     }
   }
-  return AudioBuffer::CopyFrom(
-      format, channels, frames, data.get(), start_time, duration);
+  return output;
 }
 
-// Instantiate all the types of MakeInterleavedAudioBuffer() and
-// MakePlanarAudioBuffer() needed.
-
-#define DEFINE_INTERLEAVED_INSTANCE(type)                               \
-  template scoped_refptr<AudioBuffer> MakeInterleavedAudioBuffer<type>( \
-      SampleFormat format,                                              \
-      int channels,                                                     \
-      type start,                                                       \
-      type increment,                                                   \
-      int frames,                                                       \
-      base::TimeDelta start_time,                                       \
-      base::TimeDelta duration)
-DEFINE_INTERLEAVED_INSTANCE(uint8);
-DEFINE_INTERLEAVED_INSTANCE(int16);
-DEFINE_INTERLEAVED_INSTANCE(int32);
-DEFINE_INTERLEAVED_INSTANCE(float);
-
-#define DEFINE_PLANAR_INSTANCE(type)                               \
-  template scoped_refptr<AudioBuffer> MakePlanarAudioBuffer<type>( \
-      SampleFormat format,                                         \
-      int channels,                                                \
-      type start,                                                  \
-      type increment,                                              \
-      int frames,                                                  \
-      base::TimeDelta start_time,                                  \
-      base::TimeDelta duration);
-DEFINE_PLANAR_INSTANCE(int16);
-DEFINE_PLANAR_INSTANCE(float);
+// Instantiate all the types of MakeAudioBuffer() and
+// MakeAudioBuffer() needed.
+#define DEFINE_MAKE_AUDIO_BUFFER_INSTANCE(type)              \
+  template scoped_refptr<AudioBuffer> MakeAudioBuffer<type>( \
+      SampleFormat format,                                   \
+      ChannelLayout channel_layout,                          \
+      size_t channel_count,                                  \
+      int sample_rate,                                       \
+      type start,                                            \
+      type increment,                                        \
+      size_t frames,                                         \
+      base::TimeDelta start_time)
+DEFINE_MAKE_AUDIO_BUFFER_INSTANCE(uint8);
+DEFINE_MAKE_AUDIO_BUFFER_INSTANCE(int16);
+DEFINE_MAKE_AUDIO_BUFFER_INSTANCE(int32);
+DEFINE_MAKE_AUDIO_BUFFER_INSTANCE(float);
 
 static const char kFakeVideoBufferHeader[] = "FakeVideoBufferForTest";
 

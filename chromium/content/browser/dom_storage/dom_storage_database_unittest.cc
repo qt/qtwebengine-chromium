@@ -14,6 +14,8 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/sqlite/sqlite3.h"
 
+using base::ASCIIToUTF16;
+
 namespace content {
 
 void CreateV1Table(sql::Connection* db) {
@@ -344,7 +346,7 @@ TEST(DOMStorageDatabaseTest, TestCanOpenFileThatIsNotADatabase) {
       temp_dir.path().AppendASCII("TestDOMStorageDatabase.db");
 
   const char kData[] = "I am not a database.";
-  file_util::WriteFile(file_name, kData, strlen(kData));
+  base::WriteFile(file_name, kData, strlen(kData));
 
   {
     sql::ScopedErrorIgnorer ignore_errors;

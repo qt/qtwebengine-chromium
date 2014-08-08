@@ -33,12 +33,12 @@
 
 namespace WebCore {
 
-PassRefPtr<Storage> Storage::create(Frame* frame, PassOwnPtr<StorageArea> storageArea)
+PassRefPtrWillBeRawPtr<Storage> Storage::create(LocalFrame* frame, PassOwnPtrWillBeRawPtr<StorageArea> storageArea)
 {
-    return adoptRef(new Storage(frame, storageArea));
+    return adoptRefWillBeNoop(new Storage(frame, storageArea));
 }
 
-Storage::Storage(Frame* frame, PassOwnPtr<StorageArea> storageArea)
+Storage::Storage(LocalFrame* frame, PassOwnPtrWillBeRawPtr<StorageArea> storageArea)
     : DOMWindowProperty(frame)
     , m_storageArea(storageArea)
 {
@@ -78,20 +78,23 @@ bool Storage::anonymousIndexedSetter(unsigned index, const AtomicString& value, 
     return anonymousNamedSetter(AtomicString::number(index), value, exceptionState);
 }
 
-bool Storage::anonymousNamedDeleter(const AtomicString& name, ExceptionState& exceptionState)
+DeleteResult Storage::anonymousNamedDeleter(const AtomicString& name, ExceptionState& exceptionState)
 {
     bool found = contains(name, exceptionState);
-    if (!found || exceptionState.hadException())
-        return false;
+    if (!found)
+        return DeleteUnknownProperty;
+    if (exceptionState.hadException())
+        return DeleteReject;
     removeItem(name, exceptionState);
     if (exceptionState.hadException())
-        return false;
-    return true;
+        return DeleteReject;
+    return DeleteSuccess;
 }
 
-bool Storage::anonymousIndexedDeleter(unsigned index, ExceptionState& exceptionState)
+DeleteResult Storage::anonymousIndexedDeleter(unsigned index, ExceptionState& exceptionState)
 {
-    return anonymousNamedDeleter(AtomicString::number(index), exceptionState);
+    DeleteResult result = anonymousNamedDeleter(AtomicString::number(index), exceptionState);
+    return result == DeleteUnknownProperty ? DeleteSuccess : result;
 }
 
 void Storage::namedPropertyEnumerator(Vector<String>& names, ExceptionState& exceptionState)
@@ -120,6 +123,11 @@ bool Storage::namedPropertyQuery(const AtomicString& name, ExceptionState& excep
     if (exceptionState.hadException() || !found)
         return false;
     return true;
+}
+
+void Storage::trace(Visitor* visitor)
+{
+    visitor->trace(m_storageArea);
 }
 
 }

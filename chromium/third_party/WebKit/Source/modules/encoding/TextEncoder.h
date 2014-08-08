@@ -31,6 +31,7 @@
 #ifndef TextEncoder_h
 #define TextEncoder_h
 
+#include "platform/heap/Handle.h"
 #include "wtf/ArrayBufferView.h"
 #include "wtf/RefCounted.h"
 #include "wtf/Uint8Array.h"
@@ -43,20 +44,19 @@ namespace WebCore {
 class Dictionary;
 class ExceptionState;
 
-class TextEncoder : public RefCounted<TextEncoder> {
+class TextEncoder FINAL : public GarbageCollectedFinalized<TextEncoder> {
 public:
-    static PassRefPtr<TextEncoder> create(const String& utfLabel, ExceptionState&);
-    virtual ~TextEncoder();
+    static TextEncoder* create(const String& utfLabel, ExceptionState&);
+    ~TextEncoder();
 
     // Implement the IDL
     String encoding() const;
     PassRefPtr<Uint8Array> encode(const String&, const Dictionary&);
 
-    using RefCounted<TextEncoder>::ref;
-    using RefCounted<TextEncoder>::deref;
+    void trace(Visitor*) { }
 
 private:
-    TextEncoder(const String& encoding);
+    TextEncoder(const WTF::TextEncoding&);
 
     WTF::TextEncoding m_encoding;
     OwnPtr<WTF::TextCodec> m_codec;

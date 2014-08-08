@@ -18,6 +18,7 @@
 #include "gpu/command_buffer/common/command_buffer.h"
 #include "ipc/ipc_message_macros.h"
 #include "ipc/ipc_message_utils.h"
+#include "ipc/message_filter.h"
 #include "media/base/limits.h"
 #include "ui/gl/gl_context.h"
 #include "ui/gl/gl_surface_egl.h"
@@ -25,11 +26,17 @@
 #if defined(OS_WIN)
 #include "base/win/windows_version.h"
 #include "content/common/gpu/media/dxva_video_decode_accelerator.h"
+#elif defined(OS_MACOSX)
+#include "content/common/gpu/media/vt_video_decode_accelerator.h"
 #elif defined(OS_CHROMEOS) && defined(ARCH_CPU_ARMEL) && defined(USE_X11)
-#include "content/common/gpu/media/exynos_video_decode_accelerator.h"
+#include "content/common/gpu/media/v4l2_video_decode_accelerator.h"
+#include "content/common/gpu/media/v4l2_video_device.h"
 #elif defined(OS_CHROMEOS) && defined(ARCH_CPU_X86_FAMILY) && defined(USE_X11)
-#include "ui/gl/gl_context_glx.h"
 #include "content/common/gpu/media/vaapi_video_decode_accelerator.h"
+#include "ui/gl/gl_context_glx.h"
+#include "ui/gl/gl_implementation.h"
+#elif defined(USE_OZONE)
+#include "media/ozone/media_ozone_platform.h"
 #elif defined(OS_ANDROID)
 #include "content/common/gpu/media/android_video_decode_accelerator.h"
 #endif
@@ -40,7 +47,7 @@ namespace content {
 
 static bool MakeDecoderContextCurrent(
     const base::WeakPtr<GpuCommandBufferStub> stub) {
-  if (!stub.get()) {
+  if (!stub) {
     DLOG(ERROR) << "Stub is gone; won't MakeCurrent().";
     return false;
   }
@@ -53,39 +60,28 @@ static bool MakeDecoderContextCurrent(
   return true;
 }
 
-// A helper class that works like AutoLock but only acquires the lock when
+// DebugAutoLock works like AutoLock but only acquires the lock when
 // DCHECK is on.
+#if DCHECK_IS_ON
+typedef base::AutoLock DebugAutoLock;
+#else
 class DebugAutoLock {
  public:
-  explicit DebugAutoLock(base::Lock& lock) : lock_(lock) {
-    if (DCHECK_IS_ON())
-      lock_.Acquire();
-  }
-
-  ~DebugAutoLock() {
-    if (DCHECK_IS_ON()) {
-      lock_.AssertAcquired();
-      lock_.Release();
-    }
-  }
-
- private:
-  base::Lock& lock_;
-  DISALLOW_COPY_AND_ASSIGN(DebugAutoLock);
+  explicit DebugAutoLock(base::Lock&) {}
 };
+#endif
 
-class GpuVideoDecodeAccelerator::MessageFilter
-    : public IPC::ChannelProxy::MessageFilter {
+class GpuVideoDecodeAccelerator::MessageFilter : public IPC::MessageFilter {
  public:
   MessageFilter(GpuVideoDecodeAccelerator* owner, int32 host_route_id)
       : owner_(owner), host_route_id_(host_route_id) {}
 
-  virtual void OnChannelError() OVERRIDE { channel_ = NULL; }
+  virtual void OnChannelError() OVERRIDE { sender_ = NULL; }
 
-  virtual void OnChannelClosing() OVERRIDE { channel_ = NULL; }
+  virtual void OnChannelClosing() OVERRIDE { sender_ = NULL; }
 
-  virtual void OnFilterAdded(IPC::Channel* channel) OVERRIDE {
-    channel_ = channel;
+  virtual void OnFilterAdded(IPC::Sender* sender) OVERRIDE {
+    sender_ = sender;
   }
 
   virtual void OnFilterRemoved() OVERRIDE {
@@ -107,11 +103,11 @@ class GpuVideoDecodeAccelerator::MessageFilter
 
   bool SendOnIOThread(IPC::Message* message) {
     DCHECK(!message->is_sync());
-    if (!channel_) {
+    if (!sender_) {
       delete message;
       return false;
     }
-    return channel_->Send(message);
+    return sender_->Send(message);
   }
 
  protected:
@@ -120,16 +116,15 @@ class GpuVideoDecodeAccelerator::MessageFilter
  private:
   GpuVideoDecodeAccelerator* owner_;
   int32 host_route_id_;
-  // The channel to which this filter was added.
-  IPC::Channel* channel_;
+  // The sender to which this filter was added.
+  IPC::Sender* sender_;
 };
 
 GpuVideoDecodeAccelerator::GpuVideoDecodeAccelerator(
     int32 host_route_id,
     GpuCommandBufferStub* stub,
     const scoped_refptr<base::MessageLoopProxy>& io_message_loop)
-    : init_done_msg_(NULL),
-      host_route_id_(host_route_id),
+    : host_route_id_(host_route_id),
       stub_(stub),
       texture_target_(0),
       filter_removed_(true, false),
@@ -137,7 +132,6 @@ GpuVideoDecodeAccelerator::GpuVideoDecodeAccelerator(
       weak_factory_for_io_(this) {
   DCHECK(stub_);
   stub_->AddDestructionObserver(this);
-  stub_->channel()->AddRoute(host_route_id_, this);
   child_message_loop_ = base::MessageLoopProxy::current();
   make_context_current_ =
       base::Bind(&MakeDecoderContextCurrent, stub_->AsWeakPtr());
@@ -146,7 +140,7 @@ GpuVideoDecodeAccelerator::GpuVideoDecodeAccelerator(
 GpuVideoDecodeAccelerator::~GpuVideoDecodeAccelerator() {
   // This class can only be self-deleted from OnWillDestroyStub(), which means
   // the VDA has already been destroyed in there.
-  CHECK(!video_decode_accelerator_.get());
+  DCHECK(!video_decode_accelerator_);
 }
 
 bool GpuVideoDecodeAccelerator::OnMessageReceived(const IPC::Message& msg) {
@@ -211,10 +205,8 @@ void GpuVideoDecodeAccelerator::PictureReady(
     SetTextureCleared(picture);
   } else {
     DCHECK(io_message_loop_->BelongsToCurrentThread());
-    if (DCHECK_IS_ON()) {
-      DebugAutoLock auto_lock(debug_uncleared_textures_lock_);
-      DCHECK_EQ(0u, uncleared_textures_.count(picture.picture_buffer_id()));
-    }
+    DebugAutoLock auto_lock(debug_uncleared_textures_lock_);
+    DCHECK_EQ(0u, uncleared_textures_.count(picture.picture_buffer_id()));
   }
 
   if (!Send(new AcceleratedVideoDecoderHostMsg_PictureReady(
@@ -227,16 +219,6 @@ void GpuVideoDecodeAccelerator::PictureReady(
 
 void GpuVideoDecodeAccelerator::NotifyError(
     media::VideoDecodeAccelerator::Error error) {
-  if (init_done_msg_) {
-    // If we get an error while we're initializing, NotifyInitializeDone won't
-    // be called, so we need to send the reply (with an error) here.
-    GpuCommandBufferMsg_CreateVideoDecoder::WriteReplyParams(
-        init_done_msg_, -1);
-    if (!Send(init_done_msg_))
-      DLOG(ERROR) << "Send(init_done_msg_) failed";
-    init_done_msg_ = NULL;
-    return;
-  }
   if (!Send(new AcceleratedVideoDecoderHostMsg_ErrorNotification(
           host_route_id_, error))) {
     DLOG(ERROR) << "Send(AcceleratedVideoDecoderHostMsg_ErrorNotification) "
@@ -248,15 +230,18 @@ void GpuVideoDecodeAccelerator::Initialize(
     const media::VideoCodecProfile profile,
     IPC::Message* init_done_msg) {
   DCHECK(!video_decode_accelerator_.get());
-  DCHECK(!init_done_msg_);
-  DCHECK(init_done_msg);
-  init_done_msg_ = init_done_msg;
+
+  if (!stub_->channel()->AddRoute(host_route_id_, this)) {
+    DLOG(ERROR) << "GpuVideoDecodeAccelerator::Initialize(): "
+                   "failed to add route";
+    SendCreateDecoderReply(init_done_msg, false);
+  }
 
 #if !defined(OS_WIN)
   // Ensure we will be able to get a GL context at all before initializing
   // non-Windows VDAs.
   if (!make_context_current_.Run()) {
-    NotifyError(media::VideoDecodeAccelerator::PLATFORM_FAILURE);
+    SendCreateDecoderReply(init_done_msg, false);
     return;
   }
 #endif
@@ -264,36 +249,56 @@ void GpuVideoDecodeAccelerator::Initialize(
 #if defined(OS_WIN)
   if (base::win::GetVersion() < base::win::VERSION_WIN7) {
     NOTIMPLEMENTED() << "HW video decode acceleration not available.";
-    NotifyError(media::VideoDecodeAccelerator::PLATFORM_FAILURE);
+    SendCreateDecoderReply(init_done_msg, false);
     return;
   }
   DVLOG(0) << "Initializing DXVA HW decoder for windows.";
-  video_decode_accelerator_.reset(new DXVAVideoDecodeAccelerator(
-      this, make_context_current_));
+  video_decode_accelerator_.reset(
+      new DXVAVideoDecodeAccelerator(make_context_current_));
+#elif defined(OS_MACOSX)
+  video_decode_accelerator_.reset(new VTVideoDecodeAccelerator(
+      static_cast<CGLContextObj>(
+          stub_->decoder()->GetGLContext()->GetHandle())));
 #elif defined(OS_CHROMEOS) && defined(ARCH_CPU_ARMEL) && defined(USE_X11)
-  video_decode_accelerator_.reset(new ExynosVideoDecodeAccelerator(
+  scoped_ptr<V4L2Device> device = V4L2Device::Create(V4L2Device::kDecoder);
+  if (!device.get()) {
+    SendCreateDecoderReply(init_done_msg, false);
+    return;
+  }
+  video_decode_accelerator_.reset(new V4L2VideoDecodeAccelerator(
       gfx::GLSurfaceEGL::GetHardwareDisplay(),
       stub_->decoder()->GetGLContext()->GetHandle(),
-      this,
       weak_factory_for_io_.GetWeakPtr(),
       make_context_current_,
+      device.Pass(),
       io_message_loop_));
 #elif defined(OS_CHROMEOS) && defined(ARCH_CPU_X86_FAMILY) && defined(USE_X11)
+  if (gfx::GetGLImplementation() != gfx::kGLImplementationDesktopGL) {
+    VLOG(1) << "HW video decode acceleration not available without "
+               "DesktopGL (GLX).";
+    SendCreateDecoderReply(init_done_msg, false);
+    return;
+  }
   gfx::GLContextGLX* glx_context =
       static_cast<gfx::GLContextGLX*>(stub_->decoder()->GetGLContext());
-  GLXContext glx_context_handle =
-      static_cast<GLXContext>(glx_context->GetHandle());
   video_decode_accelerator_.reset(new VaapiVideoDecodeAccelerator(
-      glx_context->display(), glx_context_handle, this,
+      glx_context->display(), make_context_current_));
+#elif defined(USE_OZONE)
+  media::MediaOzonePlatform* platform =
+      media::MediaOzonePlatform::GetInstance();
+  video_decode_accelerator_.reset(platform->CreateVideoDecodeAccelerator(
       make_context_current_));
+  if (!video_decode_accelerator_) {
+    SendCreateDecoderReply(init_done_msg, false);
+    return;
+  }
 #elif defined(OS_ANDROID)
   video_decode_accelerator_.reset(new AndroidVideoDecodeAccelerator(
-      this,
       stub_->decoder()->AsWeakPtr(),
       make_context_current_));
 #else
   NOTIMPLEMENTED() << "HW video decode acceleration not available.";
-  NotifyError(media::VideoDecodeAccelerator::PLATFORM_FAILURE);
+  SendCreateDecoderReply(init_done_msg, false);
   return;
 #endif
 
@@ -302,8 +307,12 @@ void GpuVideoDecodeAccelerator::Initialize(
     stub_->channel()->AddFilter(filter_.get());
   }
 
-  if (!video_decode_accelerator_->Initialize(profile))
-    NotifyError(media::VideoDecodeAccelerator::PLATFORM_FAILURE);
+  if (!video_decode_accelerator_->Initialize(profile, this)) {
+    SendCreateDecoderReply(init_done_msg, false);
+    return;
+  }
+
+  SendCreateDecoderReply(init_done_msg, true);
 }
 
 // Runs on IO thread if video_decode_accelerator_->CanDecodeOnIOThread() is
@@ -440,14 +449,6 @@ void GpuVideoDecodeAccelerator::NotifyEndOfBitstreamBuffer(
   }
 }
 
-void GpuVideoDecodeAccelerator::NotifyInitializeDone() {
-  GpuCommandBufferMsg_CreateVideoDecoder::WriteReplyParams(
-      init_done_msg_, host_route_id_);
-  if (!Send(init_done_msg_))
-    DLOG(ERROR) << "Send(init_done_msg_) failed";
-  init_done_msg_ = NULL;
-}
-
 void GpuVideoDecodeAccelerator::NotifyFlushDone() {
   if (!Send(new AcceleratedVideoDecoderHostMsg_FlushDone(host_route_id_)))
     DLOG(ERROR) << "Send(AcceleratedVideoDecoderHostMsg_FlushDone) failed";
@@ -475,17 +476,8 @@ void GpuVideoDecodeAccelerator::OnWillDestroyStub() {
   stub_->channel()->RemoveRoute(host_route_id_);
   stub_->RemoveDestructionObserver(this);
 
-  if (video_decode_accelerator_)
-    video_decode_accelerator_.release()->Destroy();
-
+  video_decode_accelerator_.reset();
   delete this;
-}
-
-bool GpuVideoDecodeAccelerator::Send(IPC::Message* message) {
-  if (filter_.get() && io_message_loop_->BelongsToCurrentThread())
-    return filter_->SendOnIOThread(message);
-  DCHECK(child_message_loop_->BelongsToCurrentThread());
-  return stub_->channel()->Send(message);
 }
 
 void GpuVideoDecodeAccelerator::SetTextureCleared(
@@ -504,6 +496,19 @@ void GpuVideoDecodeAccelerator::SetTextureCleared(
   DCHECK(!texture_ref->texture()->IsLevelCleared(target, 0));
   texture_manager->SetLevelCleared(texture_ref, target, 0, true);
   uncleared_textures_.erase(it);
+}
+
+bool GpuVideoDecodeAccelerator::Send(IPC::Message* message) {
+  if (filter_.get() && io_message_loop_->BelongsToCurrentThread())
+    return filter_->SendOnIOThread(message);
+  DCHECK(child_message_loop_->BelongsToCurrentThread());
+  return stub_->channel()->Send(message);
+}
+
+void GpuVideoDecodeAccelerator::SendCreateDecoderReply(IPC::Message* message,
+                                                       bool succeeded) {
+  GpuCommandBufferMsg_CreateVideoDecoder::WriteReplyParams(message, succeeded);
+  Send(message);
 }
 
 }  // namespace content

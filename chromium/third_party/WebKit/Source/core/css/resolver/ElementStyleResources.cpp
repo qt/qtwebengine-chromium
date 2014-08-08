@@ -33,15 +33,14 @@
 namespace WebCore {
 
 ElementStyleResources::ElementStyleResources()
-    : m_hasNewCustomFilterProgram(false)
-    , m_deviceScaleFactor(1)
+    : m_deviceScaleFactor(1)
 {
 }
 
-PassRefPtr<StyleImage> ElementStyleResources::styleImage(const TextLinkColors& textLinkColors, Color currentColor, CSSPropertyID property, CSSValue* value)
+PassRefPtr<StyleImage> ElementStyleResources::styleImage(Document& document, const TextLinkColors& textLinkColors, Color currentColor, CSSPropertyID property, CSSValue* value)
 {
     if (value->isImageValue())
-        return cachedOrPendingFromValue(property, toCSSImageValue(value));
+        return cachedOrPendingFromValue(document, property, toCSSImageValue(value));
 
     if (value->isImageGeneratorValue()) {
         if (value->isGradientValue())
@@ -55,7 +54,7 @@ PassRefPtr<StyleImage> ElementStyleResources::styleImage(const TextLinkColors& t
     if (value->isCursorImageValue())
         return cursorOrPendingFromValue(property, toCSSCursorImageValue(value));
 
-    return 0;
+    return nullptr;
 }
 
 PassRefPtr<StyleImage> ElementStyleResources::generatedOrPendingFromValue(CSSPropertyID property, CSSImageGeneratorValue* value)
@@ -75,11 +74,15 @@ PassRefPtr<StyleImage> ElementStyleResources::setOrPendingFromValue(CSSPropertyI
     return image.release();
 }
 
-PassRefPtr<StyleImage> ElementStyleResources::cachedOrPendingFromValue(CSSPropertyID property, CSSImageValue* value)
+PassRefPtr<StyleImage> ElementStyleResources::cachedOrPendingFromValue(Document& document, CSSPropertyID property, CSSImageValue* value)
 {
     RefPtr<StyleImage> image = value->cachedOrPendingImage();
-    if (image && image->isPendingImage())
-        m_pendingImageProperties.set(property, value);
+    if (image) {
+        if (image->isPendingImage())
+            m_pendingImageProperties.set(property, value);
+        else
+            value->restoreCachedResourceIfNeeded(document);
+    }
     return image.release();
 }
 
@@ -89,6 +92,16 @@ PassRefPtr<StyleImage> ElementStyleResources::cursorOrPendingFromValue(CSSProper
     if (image && image->isPendingImage())
         m_pendingImageProperties.set(property, value);
     return image.release();
+}
+
+void ElementStyleResources::clearPendingImageProperties()
+{
+    m_pendingImageProperties.clear();
+}
+
+void ElementStyleResources::clearPendingSVGDocuments()
+{
+    m_pendingSVGDocuments.clear();
 }
 
 void ElementStyleResources::addPendingSVGDocument(FilterOperation* filterOperation, CSSSVGDocumentValue* cssSVGDocumentValue)

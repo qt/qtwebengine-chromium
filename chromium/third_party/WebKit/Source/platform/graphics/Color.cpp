@@ -26,17 +26,19 @@
 #include "config.h"
 #include "platform/graphics/Color.h"
 
+#include "platform/Decimal.h"
 #include "wtf/Assertions.h"
-#include "wtf/DecimalNumber.h"
 #include "wtf/HexNumber.h"
 #include "wtf/MathExtras.h"
+#include "wtf/dtoa.h"
 #include "wtf/text/StringBuilder.h"
 
 using namespace std;
 
 namespace WebCore {
 
-#if !COMPILER(MSVC)
+#if !COMPILER(MSVC) || COMPILER(CLANG)
+// FIXME: Use C++11 strong enums to avoid static data member with initializer definition problems.
 const RGBA32 Color::black;
 const RGBA32 Color::white;
 const RGBA32 Color::darkGray;
@@ -177,27 +179,42 @@ int differenceSquared(const Color& c1, const Color& c2)
     return dR * dR + dG * dG + dB * dB;
 }
 
-Color::Color(const String& name)
+bool Color::setFromString(const String& name)
 {
-    if (name[0] == '#') {
-        if (name.is8Bit())
-            m_valid = parseHexColor(name.characters8() + 1, name.length() - 1, m_color);
-        else
-            m_valid = parseHexColor(name.characters16() + 1, name.length() - 1, m_color);
-    } else {
-        setNamedColor(name);
-    }
+    if (name[0] != '#')
+        return setNamedColor(name);
+    if (name.is8Bit())
+        return parseHexColor(name.characters8() + 1, name.length() - 1, m_color);
+    return parseHexColor(name.characters16() + 1, name.length() - 1, m_color);
 }
 
-Color::Color(const char* name)
+String Color::serializedAsCSSComponentValue() const
 {
-    if (name[0] == '#') {
-        m_valid = parseHexColor(&name[1], m_color);
-    } else {
-        const NamedColor* foundColor = findColor(name, strlen(name));
-        m_color = foundColor ? foundColor->ARGBValue : 0;
-        m_valid = foundColor;
+    StringBuilder result;
+    result.reserveCapacity(32);
+    bool colorHasAlpha = hasAlpha();
+    if (colorHasAlpha)
+        result.append("rgba(", 5);
+    else
+        result.append("rgb(", 4);
+
+    result.appendNumber(static_cast<unsigned char>(red()));
+    result.append(", ", 2);
+
+    result.appendNumber(static_cast<unsigned char>(green()));
+    result.append(", ", 2);
+
+    result.appendNumber(static_cast<unsigned char>(blue()));
+    if (colorHasAlpha) {
+        result.append(", ", 2);
+
+        NumberToStringBuffer buffer;
+        const char* alphaString = numberToFixedPrecisionString(alpha() / 255.0f, 6, buffer, true);
+        result.append(alphaString, strlen(alphaString));
     }
+
+    result.append(')');
+    return result.toString();
 }
 
 String Color::serialized() const
@@ -228,9 +245,7 @@ String Color::serialized() const
     if (!alpha())
         result.append('0');
     else {
-        NumberToLStringBuffer buffer;
-        unsigned length = DecimalNumber(alpha() / 255.0).toStringDecimal(buffer, WTF::NumberToStringBufferLength);
-        result.append(buffer, length);
+        result.append(Decimal::fromDouble(alpha() / 255.0).toString());
     }
 
     result.append(')');
@@ -260,11 +275,11 @@ static inline const NamedColor* findNamedColor(const String& name)
     return findColor(buffer, length);
 }
 
-void Color::setNamedColor(const String& name)
+bool Color::setNamedColor(const String& name)
 {
     const NamedColor* foundColor = findNamedColor(name);
     m_color = foundColor ? foundColor->ARGBValue : 0;
-    m_valid = foundColor;
+    return foundColor;
 }
 
 Color Color::light() const
@@ -310,6 +325,11 @@ Color Color::dark() const
                  static_cast<int>(multiplier * g * scaleFactor),
                  static_cast<int>(multiplier * b * scaleFactor),
                  alpha());
+}
+
+Color Color::combineWithAlpha(float otherAlpha) const
+{
+    return colorWithOverrideAlpha(rgb(), (alpha() / 255.f) * otherAlpha);
 }
 
 static int blendComponent(int c, int a)

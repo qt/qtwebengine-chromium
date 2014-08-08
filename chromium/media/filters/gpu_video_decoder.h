@@ -19,8 +19,8 @@
 template <class T> class scoped_refptr;
 
 namespace base {
-class MessageLoopProxy;
 class SharedMemory;
+class SingleThreadTaskRunner;
 }
 
 namespace media {
@@ -30,29 +30,31 @@ class GpuVideoAcceleratorFactories;
 class MediaLog;
 
 // GPU-accelerated video decoder implementation.  Relies on
-// AcceleratedVideoDecoderMsg_Decode and friends.
+// AcceleratedVideoDecoderMsg_Decode and friends.  Can be created on any thread
+// but must be accessed and destroyed on GpuVideoAcceleratorFactories's
+// GetMessageLoop().
 class MEDIA_EXPORT GpuVideoDecoder
     : public VideoDecoder,
       public VideoDecodeAccelerator::Client {
  public:
-  // The message loop of |factories| will be saved to |gvd_loop_proxy_|.
   explicit GpuVideoDecoder(
       const scoped_refptr<GpuVideoAcceleratorFactories>& factories,
       const scoped_refptr<MediaLog>& media_log);
 
   // VideoDecoder implementation.
   virtual void Initialize(const VideoDecoderConfig& config,
-                          const PipelineStatusCB& status_cb) OVERRIDE;
+                          bool low_delay,
+                          const PipelineStatusCB& status_cb,
+                          const OutputCB& output_cb) OVERRIDE;
   virtual void Decode(const scoped_refptr<DecoderBuffer>& buffer,
                       const DecodeCB& decode_cb) OVERRIDE;
   virtual void Reset(const base::Closure& closure) OVERRIDE;
-  virtual void Stop(const base::Closure& closure) OVERRIDE;
-  virtual bool HasAlpha() const OVERRIDE;
+  virtual void Stop() OVERRIDE;
   virtual bool NeedsBitstreamConversion() const OVERRIDE;
   virtual bool CanReadWithoutStalling() const OVERRIDE;
+  virtual int GetMaxDecodeRequests() const OVERRIDE;
 
   // VideoDecodeAccelerator::Client implementation.
-  virtual void NotifyInitializeDone() OVERRIDE;
   virtual void ProvidePictureBuffers(uint32 count,
                                      const gfx::Size& size,
                                      uint32 texture_target) OVERRIDE;
@@ -83,28 +85,29 @@ class MEDIA_EXPORT GpuVideoDecoder
   };
 
   // A SHMBuffer and the DecoderBuffer its data came from.
-  struct BufferPair {
-    BufferPair(SHMBuffer* s, const scoped_refptr<DecoderBuffer>& b);
-    ~BufferPair();
+  struct PendingDecoderBuffer {
+    PendingDecoderBuffer(SHMBuffer* s,
+                        const scoped_refptr<DecoderBuffer>& b,
+                        const DecodeCB& done_cb);
+    ~PendingDecoderBuffer();
     SHMBuffer* shm_buffer;
     scoped_refptr<DecoderBuffer> buffer;
+    DecodeCB done_cb;
   };
 
   typedef std::map<int32, PictureBuffer> PictureBufferMap;
 
-  // Return true if more decode work can be piled on to the VDA.
-  bool CanMoreDecodeWorkBeDone();
+  void DeliverFrame(const scoped_refptr<VideoFrame>& frame);
 
-  // Enqueue a frame for later delivery (or drop it on the floor if a
-  // vda->Reset() is in progress) and trigger out-of-line delivery of the oldest
-  // ready frame to the client if there is a pending read.  A NULL |frame|
-  // merely triggers delivery, and requires the ready_video_frames_ queue not be
-  // empty.
-  void EnqueueFrameAndTriggerFrameDelivery(
-      const scoped_refptr<VideoFrame>& frame);
-
+  // Static method is to allow it to run even after GVD is deleted.
+  static void ReleaseMailbox(
+      base::WeakPtr<GpuVideoDecoder> decoder,
+      const scoped_refptr<media::GpuVideoAcceleratorFactories>& factories,
+      int64 picture_buffer_id,
+      uint32 texture_id,
+      const std::vector<uint32>& release_sync_points);
   // Indicate the picture buffer can be reused by the decoder.
-  void ReusePictureBuffer(int64 picture_buffer_id, uint32 sync_point);
+  void ReusePictureBuffer(int64 picture_buffer_id);
 
   void RecordBufferData(
       const BitstreamBuffer& bitstream_buffer, const DecoderBuffer& buffer);
@@ -123,12 +126,10 @@ class MEDIA_EXPORT GpuVideoDecoder
   // Destroy all PictureBuffers in |buffers|, and delete their textures.
   void DestroyPictureBuffers(PictureBufferMap* buffers);
 
-  bool needs_bitstream_conversion_;
+  // Assert the contract that this class is operated on the right thread.
+  void DCheckGpuVideoAcceleratorFactoriesTaskRunnerIsCurrent() const;
 
-  // Message loop which this class and |factories_| run on.
-  scoped_refptr<base::MessageLoopProxy> gvd_loop_proxy_;
-  base::WeakPtrFactory<GpuVideoDecoder> weak_factory_;
-  base::WeakPtr<GpuVideoDecoder> weak_this_;
+  bool needs_bitstream_conversion_;
 
   scoped_refptr<GpuVideoAcceleratorFactories> factories_;
 
@@ -136,9 +137,11 @@ class MEDIA_EXPORT GpuVideoDecoder
   // occurs.
   scoped_ptr<VideoDecodeAccelerator> vda_;
 
-  // Callbacks that are !is_null() only during their respective operation being
-  // asynchronously executed.
-  DecodeCB pending_decode_cb_;
+  OutputCB output_cb_;
+
+  DecodeCB eos_decode_cb_;
+
+  // Not null only during reset.
   base::Closure pending_reset_cb_;
 
   State state_;
@@ -152,13 +155,14 @@ class MEDIA_EXPORT GpuVideoDecoder
 
   scoped_refptr<MediaLog> media_log_;
 
-  std::map<int32, BufferPair> bitstream_buffers_in_decoder_;
+  std::map<int32, PendingDecoderBuffer> bitstream_buffers_in_decoder_;
   PictureBufferMap assigned_picture_buffers_;
-  PictureBufferMap dismissed_picture_buffers_;
   // PictureBuffers given to us by VDA via PictureReady, which we sent forward
   // as VideoFrames to be rendered via decode_cb_, and which will be returned
   // to us via ReusePictureBuffer.
-  std::set<int32> picture_buffers_at_display_;
+  typedef std::map<int32 /* picture_buffer_id */, uint32 /* texture_id */>
+      PictureBufferTextureMap;
+  PictureBufferTextureMap picture_buffers_at_display_;
 
   // The texture target used for decoded pictures.
   uint32 decoder_texture_target_;
@@ -176,13 +180,16 @@ class MEDIA_EXPORT GpuVideoDecoder
 
   // picture_buffer_id and the frame wrapping the corresponding Picture, for
   // frames that have been decoded but haven't been requested by a Decode() yet.
-  std::list<scoped_refptr<VideoFrame> > ready_video_frames_;
   int32 next_picture_buffer_id_;
   int32 next_bitstream_buffer_id_;
 
   // Set during ProvidePictureBuffers(), used for checking and implementing
   // HasAvailableOutputFrames().
   int available_pictures_;
+
+  // Bound to factories_->GetMessageLoop().
+  // NOTE: Weak pointers must be invalidated before all other member variables.
+  base::WeakPtrFactory<GpuVideoDecoder> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(GpuVideoDecoder);
 };

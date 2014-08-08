@@ -31,19 +31,25 @@
 #include "config.h"
 #include "core/dom/custom/CustomElementRegistrationContext.h"
 
-#include "HTMLNames.h"
-#include "SVGNames.h"
 #include "bindings/v8/ExceptionState.h"
+#include "core/HTMLNames.h"
+#include "core/SVGNames.h"
+#include "core/dom/Document.h"
 #include "core/dom/Element.h"
 #include "core/dom/custom/CustomElement.h"
-#include "core/dom/custom/CustomElementCallbackScheduler.h"
 #include "core/dom/custom/CustomElementDefinition.h"
+#include "core/dom/custom/CustomElementScheduler.h"
 #include "core/html/HTMLElement.h"
 #include "core/html/HTMLUnknownElement.h"
 #include "core/svg/SVGUnknownElement.h"
 #include "wtf/RefPtr.h"
 
 namespace WebCore {
+
+CustomElementRegistrationContext::CustomElementRegistrationContext()
+    : m_candidates(CustomElementUpgradeCandidateMap::create())
+{
+}
 
 void CustomElementRegistrationContext::registerElement(Document* document, CustomElementConstructorBuilder* constructorBuilder, const AtomicString& type, CustomElement::NameSet validNames, ExceptionState& exceptionState)
 {
@@ -53,16 +59,20 @@ void CustomElementRegistrationContext::registerElement(Document* document, Custo
         return;
 
     // Upgrade elements that were waiting for this definition.
-    const CustomElementUpgradeCandidateMap::ElementSet& upgradeCandidates = m_candidates.takeUpgradeCandidatesFor(definition->descriptor());
-    for (CustomElementUpgradeCandidateMap::ElementSet::const_iterator it = upgradeCandidates.begin(); it != upgradeCandidates.end(); ++it)
-        didResolveElement(definition, *it);
+    OwnPtrWillBeRawPtr<CustomElementUpgradeCandidateMap::ElementSet> upgradeCandidates = m_candidates->takeUpgradeCandidatesFor(definition->descriptor());
+
+    if (!upgradeCandidates)
+        return;
+
+    for (CustomElementUpgradeCandidateMap::ElementSet::const_iterator it = upgradeCandidates->begin(); it != upgradeCandidates->end(); ++it)
+        CustomElement::define(*it, definition);
 }
 
-PassRefPtr<Element> CustomElementRegistrationContext::createCustomTagElement(Document& document, const QualifiedName& tagName)
+PassRefPtrWillBeRawPtr<Element> CustomElementRegistrationContext::createCustomTagElement(Document& document, const QualifiedName& tagName)
 {
     ASSERT(CustomElement::isValidName(tagName.localName()));
 
-    RefPtr<Element> element;
+    RefPtrWillBeRawPtr<Element> element;
 
     if (HTMLNames::xhtmlNamespaceURI == tagName.namespaceURI()) {
         element = HTMLElement::create(tagName, document);
@@ -74,16 +84,16 @@ PassRefPtr<Element> CustomElementRegistrationContext::createCustomTagElement(Doc
     }
 
     element->setCustomElementState(Element::WaitingForUpgrade);
-    resolve(element.get(), nullAtom);
+    resolveOrScheduleResolution(element.get(), nullAtom);
     return element.release();
 }
 
 void CustomElementRegistrationContext::didGiveTypeExtension(Element* element, const AtomicString& type)
 {
-    resolve(element, type);
+    resolveOrScheduleResolution(element, type);
 }
 
-void CustomElementRegistrationContext::resolve(Element* element, const AtomicString& typeExtension)
+void CustomElementRegistrationContext::resolveOrScheduleResolution(Element* element, const AtomicString& typeExtension)
 {
     // If an element has a custom tag name it takes precedence over
     // the "is" attribute (if any).
@@ -93,27 +103,20 @@ void CustomElementRegistrationContext::resolve(Element* element, const AtomicStr
     ASSERT(!type.isNull());
 
     CustomElementDescriptor descriptor(type, element->namespaceURI(), element->localName());
-    CustomElementDefinition* definition = m_registry.find(descriptor);
-    if (definition)
-        didResolveElement(definition, element);
-    else
-        didCreateUnresolvedElement(descriptor, element);
-}
-
-void CustomElementRegistrationContext::didResolveElement(CustomElementDefinition* definition, Element* element)
-{
-    CustomElement::define(element, definition);
-}
-
-void CustomElementRegistrationContext::didCreateUnresolvedElement(const CustomElementDescriptor& descriptor, Element* element)
-{
     ASSERT(element->customElementState() == Element::WaitingForUpgrade);
-    m_candidates.add(descriptor, element);
+
+    CustomElementScheduler::resolveOrScheduleResolution(this, element, descriptor);
 }
 
-PassRefPtr<CustomElementRegistrationContext> CustomElementRegistrationContext::create()
+void CustomElementRegistrationContext::resolve(Element* element, const CustomElementDescriptor& descriptor)
 {
-    return adoptRef(new CustomElementRegistrationContext());
+    CustomElementDefinition* definition = m_registry.find(descriptor);
+    if (definition) {
+        CustomElement::define(element, definition);
+    } else {
+        ASSERT(element->customElementState() == Element::WaitingForUpgrade);
+        m_candidates->add(descriptor, element);
+    }
 }
 
 void CustomElementRegistrationContext::setIsAttributeAndTypeExtension(Element* element, const AtomicString& type)
@@ -129,6 +132,10 @@ void CustomElementRegistrationContext::setTypeExtension(Element* element, const 
     if (!element->isHTMLElement() && !element->isSVGElement())
         return;
 
+    CustomElementRegistrationContext* context = element->document().registrationContext();
+    if (!context)
+        return;
+
     if (element->isCustomElement()) {
         // This can happen if:
         // 1. The element has a custom tag, which takes precedence over
@@ -141,10 +148,16 @@ void CustomElementRegistrationContext::setTypeExtension(Element* element, const 
     // Custom tags take precedence over type extensions
     ASSERT(!CustomElement::isValidName(element->localName()));
 
-    element->setCustomElementState(Element::WaitingForUpgrade);
+    if (!CustomElement::isValidName(type))
+        return;
 
-    if (CustomElementRegistrationContext* context = element->document().registrationContext())
-        context->didGiveTypeExtension(element, type);
+    element->setCustomElementState(Element::WaitingForUpgrade);
+    context->didGiveTypeExtension(element, type);
+}
+
+void CustomElementRegistrationContext::trace(Visitor* visitor)
+{
+    visitor->trace(m_candidates);
 }
 
 } // namespace WebCore

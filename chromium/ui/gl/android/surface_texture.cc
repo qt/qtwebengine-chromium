@@ -26,10 +26,23 @@ bool GlContextMethodsAvailable() {
 
 namespace gfx {
 
-SurfaceTexture::SurfaceTexture(int texture_id) {
+scoped_refptr<SurfaceTexture> SurfaceTexture::Create(int texture_id) {
   JNIEnv* env = base::android::AttachCurrentThread();
-  j_surface_texture_.Reset(
+  return new SurfaceTexture(
       Java_SurfaceTexturePlatformWrapper_create(env, texture_id));
+}
+
+scoped_refptr<SurfaceTexture> SurfaceTexture::CreateSingleBuffered(
+    int texture_id) {
+  DCHECK(IsSingleBufferModeSupported());
+  JNIEnv* env = base::android::AttachCurrentThread();
+  return new SurfaceTexture(
+      Java_SurfaceTexturePlatformWrapper_createSingleBuffered(env, texture_id));
+}
+
+SurfaceTexture::SurfaceTexture(
+    const base::android::ScopedJavaLocalRef<jobject>& j_surface_texture) {
+  j_surface_texture_.Reset(j_surface_texture);
 }
 
 SurfaceTexture::~SurfaceTexture() {
@@ -50,6 +63,13 @@ void SurfaceTexture::UpdateTexImage() {
   JNIEnv* env = base::android::AttachCurrentThread();
   Java_SurfaceTexturePlatformWrapper_updateTexImage(env,
                                                     j_surface_texture_.obj());
+}
+
+void SurfaceTexture::ReleaseTexImage() {
+  DCHECK(IsSingleBufferModeSupported());
+  JNIEnv* env = base::android::AttachCurrentThread();
+  Java_SurfaceTexturePlatformWrapper_releaseTexImage(env,
+                                                     j_surface_texture_.obj());
 }
 
 void SurfaceTexture::GetTransformMatrix(float mtx[16]) {
@@ -103,12 +123,20 @@ void SurfaceTexture::DetachFromGLContext() {
 ANativeWindow* SurfaceTexture::CreateSurface() {
   JNIEnv* env = base::android::AttachCurrentThread();
   ScopedJavaSurface surface(this);
+  // Note: This ensures that any local references used by
+  // ANativeWindow_fromSurface are released immediately. This is needed as a
+  // workaround for https://code.google.com/p/android/issues/detail?id=68174
+  base::android::ScopedJavaLocalFrame scoped_local_reference_frame(env);
   ANativeWindow* native_window = ANativeWindow_fromSurface(
       env, surface.j_surface().obj());
   return native_window;
 }
 
 // static
+bool SurfaceTexture::IsSingleBufferModeSupported() {
+  return base::android::BuildInfo::GetInstance()->sdk_int() >= 19;
+}
+
 bool SurfaceTexture::RegisterSurfaceTexture(JNIEnv* env) {
   return RegisterNativesImpl(env);
 }

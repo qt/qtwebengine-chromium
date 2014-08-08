@@ -23,6 +23,7 @@ class FakeTextTrackStream : public DemuxerStream {
   MOCK_METHOD0(video_decoder_config, VideoDecoderConfig());
   virtual Type type() OVERRIDE;
   MOCK_METHOD0(EnableBitstreamConverter, void());
+  virtual bool SupportsConfigChanges();
 
   void SatisfyPendingRead(const base::TimeDelta& start,
                           const base::TimeDelta& duration,
@@ -37,7 +38,7 @@ class FakeTextTrackStream : public DemuxerStream {
   MOCK_METHOD0(OnRead, void());
 
  private:
-  scoped_refptr<base::MessageLoopProxy> message_loop_;
+  scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
   ReadCB read_cb_;
   bool stopping_;
 

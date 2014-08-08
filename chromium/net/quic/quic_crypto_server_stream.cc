@@ -20,11 +20,16 @@ QuicCryptoServerStream::QuicCryptoServerStream(
     QuicSession* session)
     : QuicCryptoStream(session),
       crypto_config_(crypto_config),
-      validate_client_hello_cb_(NULL) {
+      validate_client_hello_cb_(NULL),
+      num_handshake_messages_(0) {
 }
 
 QuicCryptoServerStream::~QuicCryptoServerStream() {
-  // Detach from the validation callback.
+  CancelOutstandingCallbacks();
+}
+
+void QuicCryptoServerStream::CancelOutstandingCallbacks() {
+  // Detach from the validation callback.  Calling this multiple times is safe.
   if (validate_client_hello_cb_ != NULL) {
     validate_client_hello_cb_->Cancel();
   }
@@ -33,6 +38,7 @@ QuicCryptoServerStream::~QuicCryptoServerStream() {
 void QuicCryptoServerStream::OnHandshakeMessage(
     const CryptoHandshakeMessage& message) {
   QuicCryptoStream::OnHandshakeMessage(message);
+  ++num_handshake_messages_;
 
   // Do not process handshake messages after the handshake is confirmed.
   if (handshake_confirmed_) {
@@ -85,7 +91,8 @@ void QuicCryptoServerStream::FinishProcessingHandshakeMessage(
 
   // If we are returning a SHLO then we accepted the handshake.
   QuicConfig* config = session()->config();
-  error = config->ProcessClientHello(message, &error_details);
+  OverrideQuicConfigDefaults(config);
+  error = config->ProcessPeerHello(message, CLIENT, &error_details);
   if (error != QUIC_NO_ERROR) {
     CloseConnectionWithDetails(error, error_details);
     return;
@@ -107,7 +114,8 @@ void QuicCryptoServerStream::FinishProcessingHandshakeMessage(
   // Set the decrypter immediately so that we no longer accept unencrypted
   // packets.
   session()->connection()->SetDecrypter(
-      crypto_negotiated_params_.initial_crypters.decrypter.release());
+      crypto_negotiated_params_.initial_crypters.decrypter.release(),
+      ENCRYPTION_INITIAL);
   SendHandshakeMessage(reply);
 
   session()->connection()->SetEncrypter(
@@ -117,7 +125,7 @@ void QuicCryptoServerStream::FinishProcessingHandshakeMessage(
       ENCRYPTION_FORWARD_SECURE);
   session()->connection()->SetAlternativeDecrypter(
       crypto_negotiated_params_.forward_secure_crypters.decrypter.release(),
-      false /* don't latch */);
+      ENCRYPTION_FORWARD_SECURE, false /* don't latch */);
 
   encryption_established_ = true;
   handshake_confirmed_ = true;
@@ -161,13 +169,16 @@ QuicErrorCode QuicCryptoServerStream::ProcessClientHello(
     string* error_details) {
   return crypto_config_.ProcessClientHello(
       result,
-      session()->connection()->guid(),
+      session()->connection()->connection_id(),
       session()->connection()->peer_address(),
       session()->connection()->version(),
       session()->connection()->supported_versions(),
       session()->connection()->clock(),
       session()->connection()->random_generator(),
       &crypto_negotiated_params_, reply, error_details);
+}
+
+void QuicCryptoServerStream::OverrideQuicConfigDefaults(QuicConfig* config) {
 }
 
 QuicCryptoServerStream::ValidateCallback::ValidateCallback(

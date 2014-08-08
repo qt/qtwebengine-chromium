@@ -32,23 +32,19 @@
 
 #include "core/html/HTMLDivElement.h"
 #include "core/html/HTMLInputElement.h"
-#include "core/html/HTMLMediaElement.h"
-#include "core/html/MediaControllerInterface.h"
 #include "core/rendering/RenderBlock.h"
 
 namespace WebCore {
 
-// Must match WebKitSystemInterface.h
+class HTMLMediaElement;
+class MediaControls;
+
 enum MediaControlElementType {
     MediaEnterFullscreenButton = 0,
     MediaMuteButton,
     MediaPlayButton,
-    MediaSeekBackButton,
-    MediaSeekForwardButton,
     MediaSlider,
     MediaSliderThumb,
-    MediaRewindButton,
-    MediaReturnToRealtimeButton,
     MediaShowClosedCaptionsButton,
     MediaHideClosedCaptionsButton,
     MediaUnMuteButton,
@@ -63,7 +59,6 @@ enum MediaControlElementType {
     MediaVolumeSliderThumb,
     MediaFullScreenVolumeSlider,
     MediaFullScreenVolumeSliderThumb,
-    MediaVolumeSliderMuteButton,
     MediaTextTrackDisplayContainer,
     MediaTextTrackDisplay,
     MediaExitFullscreenButton,
@@ -77,27 +72,23 @@ MediaControlElementType mediaControlElementType(Node*);
 
 // ----------------------------
 
-class MediaControlElement {
+class MediaControlElement : public WillBeGarbageCollectedMixin {
 public:
-    virtual void hide();
-    virtual void show();
-    virtual bool isShowing() const;
+    void hide();
+    void show();
 
-    virtual MediaControlElementType displayType() { return m_displayType; }
-    virtual const AtomicString& pseudo() const = 0;
-
-    virtual void setMediaController(MediaControllerInterface* controller) { m_mediaController = controller; }
-    virtual MediaControllerInterface* mediaController() const { return m_mediaController; }
+    MediaControlElementType displayType() { return m_displayType; }
 
 protected:
-    explicit MediaControlElement(MediaControlElementType, HTMLElement*);
-    ~MediaControlElement() { }
+    MediaControlElement(MediaControls&, MediaControlElementType, HTMLElement*);
 
-    virtual void setDisplayType(MediaControlElementType);
-    virtual bool isMediaControlElement() const { return true; }
+    MediaControls& mediaControls() const { return m_mediaControls; }
+    HTMLMediaElement& mediaElement() const;
+
+    void setDisplayType(MediaControlElementType);
 
 private:
-    MediaControllerInterface* m_mediaController;
+    MediaControls& m_mediaControls;
     MediaControlElementType m_displayType;
     HTMLElement* m_element;
 };
@@ -105,17 +96,21 @@ private:
 // ----------------------------
 
 class MediaControlDivElement : public HTMLDivElement, public MediaControlElement {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(MediaControlDivElement);
+
 protected:
-    virtual bool isMediaControlElement() const OVERRIDE { return MediaControlElement::isMediaControlElement(); }
-    explicit MediaControlDivElement(Document&, MediaControlElementType);
+    virtual bool isMediaControlElement() const OVERRIDE FINAL { return true; }
+    MediaControlDivElement(MediaControls&, MediaControlElementType);
 };
 
 // ----------------------------
 
 class MediaControlInputElement : public HTMLInputElement, public MediaControlElement {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(MediaControlInputElement);
+
 protected:
-    virtual bool isMediaControlElement() const OVERRIDE { return MediaControlElement::isMediaControlElement(); }
-    explicit MediaControlInputElement(Document&, MediaControlElementType);
+    virtual bool isMediaControlElement() const OVERRIDE FINAL { return true; }
+    MediaControlInputElement(MediaControls&, MediaControlElementType);
 
 private:
     virtual void updateDisplayType() { }
@@ -130,45 +125,10 @@ public:
     double currentValue() const { return m_currentValue; }
 
 protected:
-    explicit MediaControlTimeDisplayElement(Document&, MediaControlElementType);
+    MediaControlTimeDisplayElement(MediaControls&, MediaControlElementType);
 
 private:
     double m_currentValue;
-};
-
-// ----------------------------
-
-class MediaControlMuteButtonElement : public MediaControlInputElement {
-public:
-    void changedMute();
-
-    virtual bool willRespondToMouseClickEvents() OVERRIDE { return true; }
-
-protected:
-    explicit MediaControlMuteButtonElement(Document&, MediaControlElementType);
-
-    virtual void defaultEventHandler(Event*) OVERRIDE;
-
-private:
-    virtual void updateDisplayType() OVERRIDE;
-};
-
-// ----------------------------
-
-class MediaControlVolumeSliderElement : public MediaControlInputElement {
-public:
-    virtual bool willRespondToMouseMoveEvents() OVERRIDE;
-    virtual bool willRespondToMouseClickEvents() OVERRIDE;
-    void setVolume(double);
-    void setClearMutedOnUserInteraction(bool);
-
-protected:
-    explicit MediaControlVolumeSliderElement(Document&);
-
-    virtual void defaultEventHandler(Event*) OVERRIDE;
-
-private:
-    bool m_clearMutedOnUserInteraction;
 };
 
 } // namespace WebCore

@@ -5,6 +5,7 @@
 #ifndef CONTENT_BROWSER_WEB_CONTENTS_AURA_IMAGE_WINDOW_DELEGATE_H_
 #define CONTENT_BROWSER_WEB_CONTENTS_AURA_IMAGE_WINDOW_DELEGATE_H_
 
+#include "content/common/content_export.h"
 #include "ui/aura/window_delegate.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/size.h"
@@ -13,7 +14,7 @@ namespace content {
 
 // An ImageWindowDelegate paints an image for a Window. The delegate destroys
 // itself when the Window is destroyed. The delegate does not consume any event.
-class ImageWindowDelegate : public aura::WindowDelegate {
+class CONTENT_EXPORT ImageWindowDelegate : public aura::WindowDelegate {
  public:
   ImageWindowDelegate();
 
@@ -37,13 +38,11 @@ class ImageWindowDelegate : public aura::WindowDelegate {
   virtual void OnCaptureLost() OVERRIDE;
   virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
   virtual void OnDeviceScaleFactorChanged(float device_scale_factor) OVERRIDE;
-  virtual void OnWindowDestroying() OVERRIDE;
-  virtual void OnWindowDestroyed() OVERRIDE;
+  virtual void OnWindowDestroying(aura::Window* window) OVERRIDE;
+  virtual void OnWindowDestroyed(aura::Window* window) OVERRIDE;
   virtual void OnWindowTargetVisibilityChanged(bool visible) OVERRIDE;
   virtual bool HasHitTestMask() const OVERRIDE;
   virtual void GetHitTestMask(gfx::Path* mask) const OVERRIDE;
-  virtual void DidRecreateLayer(ui::Layer* old_layer,
-                                ui::Layer* new_layer) OVERRIDE;
 
  protected:
   gfx::Image image_;

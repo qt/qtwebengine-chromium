@@ -29,6 +29,7 @@
 #include "core/dom/QualifiedName.h"
 #include "core/svg/animation/SMILTime.h"
 #include "platform/Timer.h"
+#include "platform/heap/Handle.h"
 #include "wtf/HashMap.h"
 #include "wtf/HashSet.h"
 #include "wtf/PassRefPtr.h"
@@ -38,13 +39,14 @@
 
 namespace WebCore {
 
+class Document;
 class SVGElement;
 class SVGSMILElement;
 class SVGSVGElement;
 
-class SMILTimeContainer : public RefCounted<SMILTimeContainer>  {
+class SMILTimeContainer : public RefCountedWillBeGarbageCollectedFinalized<SMILTimeContainer>  {
 public:
-    static PassRefPtr<SMILTimeContainer> create(SVGSVGElement* owner) { return adoptRef(new SMILTimeContainer(owner)); }
+    static PassRefPtrWillBeRawPtr<SMILTimeContainer> create(SVGSVGElement& owner) { return adoptRefWillBeNoop(new SMILTimeContainer(owner)); }
     ~SMILTimeContainer();
 
     void schedule(SVGSMILElement*, SVGElement*, const QualifiedName&);
@@ -53,7 +55,6 @@ public:
 
     SMILTime elapsed() const;
 
-    bool isActive() const;
     bool isPaused() const;
     bool isStarted() const;
 
@@ -62,18 +63,42 @@ public:
     void resume();
     void setElapsed(SMILTime);
 
+    void serviceAnimations(double monotonicAnimationStartTime);
+    bool hasAnimations() const;
+
     void setDocumentOrderIndexesDirty() { m_documentOrderIndexesDirty = true; }
 
-private:
-    SMILTimeContainer(SVGSVGElement* owner);
+    void trace(Visitor*);
 
-    void timerFired(Timer<SMILTimeContainer>*);
-    void startTimer(SMILTime fireTime, SMILTime minimumDelay = 0);
-    void updateAnimations(SMILTime elapsed, bool seekToTime = false);
+private:
+    explicit SMILTimeContainer(SVGSVGElement& owner);
+
+    enum FrameSchedulingState {
+        // No frame scheduled.
+        Idle,
+        // Scheduled a wakeup to update the animation values.
+        SynchronizeAnimations,
+        // Scheduled a wakeup to trigger an animation frame.
+        FutureAnimationFrame,
+        // Scheduled a animation frame for continuous update.
+        AnimationFrame
+    };
+
+    bool isTimelineRunning() const;
+    void scheduleAnimationFrame(SMILTime fireTime);
+    void cancelAnimationFrame();
+    void wakeupTimerFired(Timer<SMILTimeContainer>*);
+    void updateAnimationsAndScheduleFrameIfNeeded(SMILTime elapsed, bool seekToTime = false);
+    SMILTime updateAnimations(SMILTime elapsed, bool seekToTime = false);
+    void serviceOnNextFrame();
+    void scheduleWakeUp(double delayTime, FrameSchedulingState);
+    bool hasPendingSynchronization() const;
 
     void updateDocumentOrderIndexes();
-    void sortByPriority(Vector<SVGSMILElement*>& smilElements, SMILTime elapsed);
     double lastResumeTime() const { return m_resumeTime ? m_resumeTime : m_beginTime; }
+
+    Document& document() const;
+    double currentTime() const;
 
     double m_beginTime;
     double m_pauseTime;
@@ -81,16 +106,17 @@ private:
     double m_accumulatedActiveTime;
     double m_presetStartTime;
 
+    FrameSchedulingState m_frameSchedulingState;
     bool m_documentOrderIndexesDirty;
 
-    Timer<SMILTimeContainer> m_timer;
+    Timer<SMILTimeContainer> m_wakeupTimer;
 
-    typedef pair<SVGElement*, QualifiedName> ElementAttributePair;
-    typedef Vector<SVGSMILElement*> AnimationsVector;
-    typedef HashMap<ElementAttributePair, OwnPtr<AnimationsVector> > GroupedAnimationsMap;
+    typedef pair<RawPtrWillBeWeakMember<SVGElement>, QualifiedName> ElementAttributePair;
+    typedef WillBeHeapLinkedHashSet<RawPtrWillBeWeakMember<SVGSMILElement> > AnimationsLinkedHashSet;
+    typedef WillBeHeapHashMap<ElementAttributePair, OwnPtrWillBeMember<AnimationsLinkedHashSet> > GroupedAnimationsMap;
     GroupedAnimationsMap m_scheduledAnimations;
 
-    SVGSVGElement* m_ownerSVGElement;
+    SVGSVGElement& m_ownerSVGElement;
 
 #ifndef NDEBUG
     bool m_preventScheduledAnimationsChanges;

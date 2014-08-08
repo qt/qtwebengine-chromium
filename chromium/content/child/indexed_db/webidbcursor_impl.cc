@@ -18,8 +18,10 @@ using blink::WebIDBKey;
 namespace content {
 
 WebIDBCursorImpl::WebIDBCursorImpl(int32 ipc_cursor_id,
+                                   int64 transaction_id,
                                    ThreadSafeSender* thread_safe_sender)
     : ipc_cursor_id_(ipc_cursor_id),
+      transaction_id_(transaction_id),
       continue_count_(0),
       used_prefetches_(0),
       pending_onsuccess_callbacks_(0),
@@ -47,9 +49,13 @@ void WebIDBCursorImpl::advance(unsigned long count,
   IndexedDBDispatcher* dispatcher =
       IndexedDBDispatcher::ThreadSpecificInstance(thread_safe_sender_.get());
   scoped_ptr<WebIDBCallbacks> callbacks(callbacks_ptr);
+  if (count <= prefetch_keys_.size()) {
+    CachedAdvance(count, callbacks.get());
+    return;
+  }
   ResetPrefetchCache();
   dispatcher->RequestIDBCursorAdvance(
-      count, callbacks.release(), ipc_cursor_id_);
+      count, callbacks.release(), ipc_cursor_id_, transaction_id_);
 }
 
 void WebIDBCursorImpl::continueFunction(const WebIDBKey& key,
@@ -96,17 +102,18 @@ void WebIDBCursorImpl::continueFunction(const WebIDBKey& key,
   dispatcher->RequestIDBCursorContinue(IndexedDBKeyBuilder::Build(key),
                                        IndexedDBKeyBuilder::Build(primary_key),
                                        callbacks.release(),
-                                       ipc_cursor_id_);
+                                       ipc_cursor_id_,
+                                       transaction_id_);
 }
 
 void WebIDBCursorImpl::postSuccessHandlerCallback() {
   pending_onsuccess_callbacks_--;
 
-  // If the onsuccess callback called continue() on the cursor again,
-  // and that continue was served by the prefetch cache, then
-  // pending_onsuccess_callbacks_ would be incremented.
-  // If not, it means the callback did something else, or nothing at all,
-  // in which case we need to reset the cache.
+  // If the onsuccess callback called continue()/advance() on the cursor
+  // again, and that request was served by the prefetch cache, then
+  // pending_onsuccess_callbacks_ would be incremented. If not, it means the
+  // callback did something else, or nothing at all, in which case we need to
+  // reset the cache.
 
   if (pending_onsuccess_callbacks_ == 0)
     ResetPrefetchCache();
@@ -115,35 +122,67 @@ void WebIDBCursorImpl::postSuccessHandlerCallback() {
 void WebIDBCursorImpl::SetPrefetchData(
     const std::vector<IndexedDBKey>& keys,
     const std::vector<IndexedDBKey>& primary_keys,
-    const std::vector<WebData>& values) {
+    const std::vector<WebData>& values,
+    const std::vector<blink::WebVector<blink::WebBlobInfo> >& blob_info) {
   prefetch_keys_.assign(keys.begin(), keys.end());
   prefetch_primary_keys_.assign(primary_keys.begin(), primary_keys.end());
   prefetch_values_.assign(values.begin(), values.end());
+  prefetch_blob_info_.assign(blob_info.begin(), blob_info.end());
 
   used_prefetches_ = 0;
   pending_onsuccess_callbacks_ = 0;
 }
 
+void WebIDBCursorImpl::CachedAdvance(unsigned long count,
+                                     WebIDBCallbacks* callbacks) {
+  DCHECK_GE(prefetch_keys_.size(), count);
+  DCHECK_EQ(prefetch_primary_keys_.size(), prefetch_keys_.size());
+  DCHECK_EQ(prefetch_values_.size(), prefetch_keys_.size());
+  DCHECK_EQ(prefetch_blob_info_.size(), prefetch_keys_.size());
+
+  while (count > 1) {
+    prefetch_keys_.pop_front();
+    prefetch_primary_keys_.pop_front();
+    prefetch_values_.pop_front();
+    prefetch_blob_info_.pop_front();
+    ++used_prefetches_;
+    --count;
+  }
+
+  CachedContinue(callbacks);
+}
+
 void WebIDBCursorImpl::CachedContinue(WebIDBCallbacks* callbacks) {
   DCHECK_GT(prefetch_keys_.size(), 0ul);
-  DCHECK(prefetch_primary_keys_.size() == prefetch_keys_.size());
-  DCHECK(prefetch_values_.size() == prefetch_keys_.size());
+  DCHECK_EQ(prefetch_primary_keys_.size(), prefetch_keys_.size());
+  DCHECK_EQ(prefetch_values_.size(), prefetch_keys_.size());
+  DCHECK_EQ(prefetch_blob_info_.size(), prefetch_keys_.size());
 
   IndexedDBKey key = prefetch_keys_.front();
   IndexedDBKey primary_key = prefetch_primary_keys_.front();
-  // this could be a real problem.. we need 2 CachedContinues
   WebData value = prefetch_values_.front();
+  blink::WebVector<blink::WebBlobInfo> blob_info = prefetch_blob_info_.front();
 
   prefetch_keys_.pop_front();
   prefetch_primary_keys_.pop_front();
   prefetch_values_.pop_front();
-  used_prefetches_++;
+  prefetch_blob_info_.pop_front();
+  ++used_prefetches_;
 
-  pending_onsuccess_callbacks_++;
+  ++pending_onsuccess_callbacks_;
+
+  if (!continue_count_) {
+    // The cache was invalidated by a call to ResetPrefetchCache()
+    // after the RequestIDBCursorPrefetch() was made. Now that the
+    // initiating continue() call has been satisfied, discard
+    // the rest of the cache.
+    ResetPrefetchCache();
+  }
 
   callbacks->onSuccess(WebIDBKeyBuilder::Build(key),
                        WebIDBKeyBuilder::Build(primary_key),
-                       value);
+                       value,
+                       blob_info);
 }
 
 void WebIDBCursorImpl::ResetPrefetchCache() {
@@ -162,6 +201,7 @@ void WebIDBCursorImpl::ResetPrefetchCache() {
   prefetch_keys_.clear();
   prefetch_primary_keys_.clear();
   prefetch_values_.clear();
+  prefetch_blob_info_.clear();
 
   pending_onsuccess_callbacks_ = 0;
 }

@@ -39,28 +39,28 @@
 
 namespace WebCore {
 
-PassRefPtr<TextEncoder> TextEncoder::create(const String& utfLabel, ExceptionState& exceptionState)
+TextEncoder* TextEncoder::create(const String& utfLabel, ExceptionState& exceptionState)
 {
     const String& encodingLabel = utfLabel.isNull() ? String("utf-8") : utfLabel;
 
     WTF::TextEncoding encoding(encodingLabel);
     if (!encoding.isValid()) {
-        exceptionState.throwUninformativeAndGenericTypeError();
+        exceptionState.throwTypeError("The encoding label provided ('" + encodingLabel + "') is invalid.");
         return 0;
     }
 
     String name(encoding.name());
     if (name != "UTF-8" && name != "UTF-16LE" && name != "UTF-16BE") {
-        exceptionState.throwUninformativeAndGenericTypeError();
+        exceptionState.throwTypeError("The encoding provided ('" + encodingLabel + "') is not one of 'utf-8', 'utf-16', or 'utf-16be'.");
         return 0;
     }
 
-    return adoptRef(new TextEncoder(encoding.name()));
+    return new TextEncoder(encoding);
 }
 
-TextEncoder::TextEncoder(const String& encoding)
+TextEncoder::TextEncoder(const WTF::TextEncoding& encoding)
     : m_encoding(encoding)
-    , m_codec(newTextCodec(m_encoding))
+    , m_codec(newTextCodec(encoding))
 {
 }
 
@@ -84,10 +84,12 @@ PassRefPtr<Uint8Array> TextEncoder::encode(const String& input, const Dictionary
     // handle split surrogates here.
 
     CString result;
-    if (input.is8Bit())
-        result = m_codec->encode(input.characters8(), input.length(), WTF::QuestionMarksForUnencodables);
-    else
-        result = m_codec->encode(input.characters16(), input.length(), WTF::QuestionMarksForUnencodables);
+    if (!input.isNull()) {
+        if (input.is8Bit())
+            result = m_codec->encode(input.characters8(), input.length(), WTF::QuestionMarksForUnencodables);
+        else
+            result = m_codec->encode(input.characters16(), input.length(), WTF::QuestionMarksForUnencodables);
+    }
 
     const char* buffer = result.data();
     const unsigned char* unsignedBuffer = reinterpret_cast<const unsigned char*>(buffer);

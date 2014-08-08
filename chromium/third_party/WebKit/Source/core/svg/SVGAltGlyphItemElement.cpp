@@ -22,7 +22,7 @@
 #if ENABLE(SVG_FONTS)
 #include "core/svg/SVGAltGlyphItemElement.h"
 
-#include "SVGNames.h"
+#include "core/dom/ElementTraversal.h"
 #include "core/svg/SVGGlyphRefElement.h"
 
 namespace WebCore {
@@ -33,12 +33,9 @@ inline SVGAltGlyphItemElement::SVGAltGlyphItemElement(Document& document)
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<SVGAltGlyphItemElement> SVGAltGlyphItemElement::create(Document& document)
-{
-    return adoptRef(new SVGAltGlyphItemElement(document));
-}
+DEFINE_NODE_FACTORY(SVGAltGlyphItemElement)
 
-bool SVGAltGlyphItemElement::hasValidGlyphElements(Vector<String>& glyphNames) const
+bool SVGAltGlyphItemElement::hasValidGlyphElements(Vector<AtomicString>& glyphNames) const
 {
     // Spec: http://www.w3.org/TR/SVG/text.html#AltGlyphItemElement
     // The ‘altGlyphItem’ element defines a candidate set of possible glyph substitutions.
@@ -48,15 +45,13 @@ bool SVGAltGlyphItemElement::hasValidGlyphElements(Vector<String>& glyphNames) c
     //
     // Here we fill glyphNames and return true only if all referenced glyphs are valid and
     // there is at least one glyph.
-    for (Node* child = firstChild(); child; child = child->nextSibling()) {
-        if (child->hasTagName(SVGNames::glyphRefTag)) {
-            String referredGlyphName;
-            if (toSVGGlyphRefElement(child)->hasValidGlyphElement(referredGlyphName))
-                glyphNames.append(referredGlyphName);
-            else {
-                glyphNames.clear();
-                return false;
-            }
+    for (SVGGlyphRefElement* glyph = Traversal<SVGGlyphRefElement>::firstChild(*this); glyph; glyph = Traversal<SVGGlyphRefElement>::nextSibling(*glyph)) {
+        AtomicString referredGlyphName;
+        if (glyph->hasValidGlyphElement(referredGlyphName)) {
+            glyphNames.append(referredGlyphName);
+        } else {
+            glyphNames.clear();
+            return false;
         }
     }
     return !glyphNames.isEmpty();

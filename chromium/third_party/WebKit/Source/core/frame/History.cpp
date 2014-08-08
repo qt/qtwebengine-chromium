@@ -29,11 +29,11 @@
 #include "bindings/v8/ExceptionState.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
-#include "core/history/HistoryItem.h"
+#include "core/frame/LocalFrame.h"
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderClient.h"
-#include "core/frame/Frame.h"
+#include "core/loader/HistoryItem.h"
 #include "core/page/BackForwardClient.h"
 #include "core/page/Page.h"
 #include "platform/weborigin/KURL.h"
@@ -42,9 +42,9 @@
 
 namespace WebCore {
 
-History::History(Frame* frame)
+History::History(LocalFrame* frame)
     : DOMWindowProperty(frame)
-    , m_lastStateObjectRequested(0)
+    , m_lastStateObjectRequested(nullptr)
 {
     ScriptWrappable::init(this);
 }
@@ -105,7 +105,7 @@ void History::go(ExecutionContext* context, int distance)
     if (!activeDocument)
         return;
 
-    if (!activeDocument->canNavigate(m_frame))
+    if (!activeDocument->canNavigate(*m_frame))
         return;
 
     m_frame->navigationScheduler().scheduleHistoryNavigation(distance);
@@ -123,9 +123,9 @@ KURL History::urlForState(const String& urlString)
     return KURL(document->baseURL(), urlString);
 }
 
-void History::stateObjectAdded(PassRefPtr<SerializedScriptValue> data, const String& /* title */, const String& urlString, SameDocumentNavigationSource sameDocumentNavigationSource, ExceptionState& exceptionState)
+void History::stateObjectAdded(PassRefPtr<SerializedScriptValue> data, const String& /* title */, const String& urlString, FrameLoadType type, ExceptionState& exceptionState)
 {
-    if (!m_frame || !m_frame->page())
+    if (!m_frame || !m_frame->page() || !m_frame->loader().documentLoader())
         return;
 
     KURL fullURL = urlForState(urlString);
@@ -134,7 +134,7 @@ void History::stateObjectAdded(PassRefPtr<SerializedScriptValue> data, const Str
         exceptionState.throwSecurityError("A history state object with URL '" + fullURL.elidedString() + "' cannot be created in a document with origin '" + m_frame->document()->securityOrigin()->toString() + "'.");
         return;
     }
-    m_frame->loader().updateForSameDocumentNavigation(fullURL, sameDocumentNavigationSource, data, FrameLoader::DoNotUpdateBackForwardList);
+    m_frame->loader().updateForSameDocumentNavigation(fullURL, SameDocumentNavigationHistoryApi, data, type);
 }
 
 } // namespace WebCore

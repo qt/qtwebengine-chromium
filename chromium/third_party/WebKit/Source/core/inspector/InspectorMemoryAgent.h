@@ -31,7 +31,7 @@
 #ifndef InspectorMemoryAgent_h
 #define InspectorMemoryAgent_h
 
-#include "InspectorFrontend.h"
+#include "core/InspectorFrontend.h"
 #include "core/inspector/InspectorBaseAgent.h"
 #include "wtf/PassOwnPtr.h"
 
@@ -41,22 +41,22 @@ class InstrumentingAgents;
 
 typedef String ErrorString;
 
-class InspectorMemoryAgent : public InspectorBaseAgent<InspectorMemoryAgent>, public InspectorBackendDispatcher::MemoryCommandHandler {
+class InspectorMemoryAgent FINAL : public InspectorBaseAgent<InspectorMemoryAgent>, public InspectorBackendDispatcher::MemoryCommandHandler {
     WTF_MAKE_NONCOPYABLE(InspectorMemoryAgent);
 public:
-    static PassOwnPtr<InspectorMemoryAgent> create(InstrumentingAgents* instrumentingAgents, InspectorCompositeState* state)
+    static PassOwnPtr<InspectorMemoryAgent> create()
     {
-        return adoptPtr(new InspectorMemoryAgent(instrumentingAgents, state));
+        return adoptPtr(new InspectorMemoryAgent());
     }
     virtual ~InspectorMemoryAgent();
 
-    virtual void getDOMCounters(ErrorString*, int* documents, int* nodes, int* jsEventListeners);
+    virtual void getDOMCounters(ErrorString*, int* documents, int* nodes, int* jsEventListeners) OVERRIDE;
 
-    virtual void setFrontend(InspectorFrontend*);
-    virtual void clearFrontend();
+    virtual void setFrontend(InspectorFrontend*) OVERRIDE;
+    virtual void clearFrontend() OVERRIDE;
 
 private:
-    InspectorMemoryAgent(InstrumentingAgents*, InspectorCompositeState*);
+    InspectorMemoryAgent();
 
     InspectorFrontend::Memory* m_frontend;
 };

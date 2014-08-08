@@ -34,15 +34,21 @@
 #include "wtf/StdLibExtras.h"
 #include <algorithm>
 
+namespace {
+
+const double defaultDistance = 1;
+
+} // namespace
+
 namespace WebCore {
 
 const AnimatableValue* AnimatableValue::neutralValue()
 {
-    DEFINE_STATIC_REF(AnimatableNeutral, neutralSentinelValue, (AnimatableNeutral::create()));
+    DEFINE_STATIC_REF_WILL_BE_PERSISTENT(AnimatableNeutral, neutralSentinelValue, (AnimatableNeutral::create()));
     return neutralSentinelValue;
 }
 
-PassRefPtr<AnimatableValue> AnimatableValue::interpolate(const AnimatableValue* left, const AnimatableValue* right, double fraction)
+PassRefPtrWillBeRawPtr<AnimatableValue> AnimatableValue::interpolate(const AnimatableValue* left, const AnimatableValue* right, double fraction)
 {
     ASSERT(left);
     ASSERT(right);
@@ -55,25 +61,20 @@ PassRefPtr<AnimatableValue> AnimatableValue::interpolate(const AnimatableValue* 
     return defaultInterpolateTo(left, right, fraction);
 }
 
-PassRefPtr<AnimatableValue> AnimatableValue::add(const AnimatableValue* left, const AnimatableValue* right)
+double AnimatableValue::distance(const AnimatableValue* left, const AnimatableValue* right)
 {
     ASSERT(left);
     ASSERT(right);
 
-    if (left->isNeutral())
-        return takeConstRef(right);
-    if (right->isNeutral())
-        return takeConstRef(left);
-
     if (left->isSameType(right))
-        return left->addWith(right);
+        return left->distanceTo(right);
 
-    return defaultAddWith(left, right);
+    return defaultDistance;
 }
 
-PassRefPtr<AnimatableValue> AnimatableValue::addWith(const AnimatableValue* value) const
+double AnimatableValue::distanceTo(const AnimatableValue*) const
 {
-    return defaultAddWith(this, value);
+    return defaultDistance;
 }
 
 } // namespace WebCore

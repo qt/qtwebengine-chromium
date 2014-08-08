@@ -19,11 +19,16 @@ class QuicFramerPeer {
       QuicFramer* framer,
       QuicSequenceNumberLength sequence_number_length,
       QuicPacketSequenceNumber packet_sequence_number);
-  static void SetLastSerializedGuid(QuicFramer* framer, QuicGuid guid);
+  static void SetLastSerializedConnectionId(QuicFramer* framer,
+                                            QuicConnectionId connection_id);
   static void SetLastSequenceNumber(
       QuicFramer* framer,
       QuicPacketSequenceNumber packet_sequence_number);
   static void SetIsServer(QuicFramer* framer, bool is_server);
+
+  // SwapCrypters exchanges the state of the crypters of |framer1| with
+  // |framer2|.
+  static void SwapCrypters(QuicFramer* framer1, QuicFramer* framer2);
 
  private:
   DISALLOW_COPY_AND_ASSIGN(QuicFramerPeer);

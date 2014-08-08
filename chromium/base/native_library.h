@@ -8,7 +8,11 @@
 // This file defines a cross-platform "NativeLibrary" type which represents
 // a loadable module.
 
+#include <string>
+
 #include "base/base_export.h"
+#include "base/compiler_specific.h"
+#include "base/strings/string16.h"
 #include "build/build_config.h"
 
 #if defined(OS_WIN)
@@ -16,15 +20,6 @@
 #elif defined(OS_MACOSX)
 #import <CoreFoundation/CoreFoundation.h>
 #endif  // OS_*
-
-#include "base/strings/string16.h"
-
-// Macro useful for writing cross-platform function pointers.
-#if defined(OS_WIN) && !defined(CDECL)
-#define CDECL __cdecl
-#else
-#define CDECL
-#endif
 
 namespace base {
 
@@ -56,12 +51,26 @@ typedef NativeLibraryStruct* NativeLibrary;
 typedef void* NativeLibrary;
 #endif  // OS_*
 
+struct BASE_EXPORT NativeLibraryLoadError {
+#if defined(OS_WIN)
+  NativeLibraryLoadError() : code(0) {}
+#endif  // OS_WIN
+
+  // Returns a string representation of the load error.
+  std::string ToString() const;
+
+#if defined(OS_WIN)
+  DWORD code;
+#else
+  std::string message;
+#endif  // OS_WIN
+};
+
 // Loads a native library from disk.  Release it with UnloadNativeLibrary when
 // you're done.  Returns NULL on failure.
-// If |err| is not NULL, it may be filled in with an error message on
-// error.
+// If |error| is not NULL, it may be filled in on load error.
 BASE_EXPORT NativeLibrary LoadNativeLibrary(const FilePath& library_path,
-                                            std::string* error);
+                                            NativeLibraryLoadError* error);
 
 #if defined(OS_WIN)
 // Loads a native library from disk.  Release it with UnloadNativeLibrary when

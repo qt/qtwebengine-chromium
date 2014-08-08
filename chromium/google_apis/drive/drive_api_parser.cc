@@ -38,6 +38,28 @@ bool GetGURLFromString(const base::StringPiece& url_string, GURL* result) {
   return true;
 }
 
+// Converts |value| to |result|.
+bool GetParentsFromValue(const base::Value* value,
+                         std::vector<ParentReference>* result) {
+  DCHECK(value);
+  DCHECK(result);
+
+  const base::ListValue* list_value = NULL;
+  if (!value->GetAsList(&list_value))
+    return false;
+
+  base::JSONValueConverter<ParentReference> converter;
+  result->resize(list_value->GetSize());
+  for (size_t i = 0; i < list_value->GetSize(); ++i) {
+    const base::Value* parent_value = NULL;
+    if (!list_value->Get(i, &parent_value) ||
+        !converter.Convert(*parent_value, &(*result)[i]))
+      return false;
+  }
+
+  return true;
+}
+
 // Converts |value| to |result|. The key of |value| is app_id, and its value
 // is URL to open the resource on the web app.
 bool GetOpenWithLinksFromDictionaryValue(
@@ -75,7 +97,6 @@ bool GetOpenWithLinksFromDictionaryValue(
 const char kKind[] = "kind";
 const char kId[] = "id";
 const char kETag[] = "etag";
-const char kSelfLink[] = "selfLink";
 const char kItems[] = "items";
 const char kLargestChangeId[] = "largestChangeId";
 
@@ -97,16 +118,15 @@ const char kIconUrl[] = "iconUrl";
 const char kAppKind[] = "drive#app";
 const char kName[] = "name";
 const char kObjectType[] = "objectType";
+const char kProductId[] = "productId";
 const char kSupportsCreate[] = "supportsCreate";
-const char kSupportsImport[] = "supportsImport";
-const char kInstalled[] = "installed";
-const char kAuthorized[] = "authorized";
-const char kProductUrl[] = "productUrl";
+const char kRemovable[] = "removable";
 const char kPrimaryMimeTypes[] = "primaryMimeTypes";
 const char kSecondaryMimeTypes[] = "secondaryMimeTypes";
 const char kPrimaryFileExtensions[] = "primaryFileExtensions";
 const char kSecondaryFileExtensions[] = "secondaryFileExtensions";
 const char kIcons[] = "icons";
+const char kCreateUrl[] = "createUrl";
 
 // Apps List
 // https://developers.google.com/drive/v2/reference/apps/list
@@ -116,7 +136,6 @@ const char kAppListKind[] = "drive#appList";
 // https://developers.google.com/drive/v2/reference/parents
 const char kParentReferenceKind[] = "drive#parentReference";
 const char kParentLink[] = "parentLink";
-const char kIsRoot[] = "isRoot";
 
 // File Resource
 // https://developers.google.com/drive/v2/reference/files
@@ -124,29 +143,20 @@ const char kFileKind[] = "drive#file";
 const char kTitle[] = "title";
 const char kMimeType[] = "mimeType";
 const char kCreatedDate[] = "createdDate";
+const char kModificationDate[] = "modificationDate";
 const char kModifiedDate[] = "modifiedDate";
-const char kModifiedByMeDate[] = "modifiedByMeDate";
 const char kLastViewedByMeDate[] = "lastViewedByMeDate";
 const char kSharedWithMeDate[] = "sharedWithMeDate";
-const char kDownloadUrl[] = "downloadUrl";
-const char kFileExtension[] = "fileExtension";
 const char kMd5Checksum[] = "md5Checksum";
 const char kFileSize[] = "fileSize";
 const char kAlternateLink[] = "alternateLink";
-const char kEmbedLink[] = "embedLink";
 const char kParents[] = "parents";
-const char kThumbnailLink[] = "thumbnailLink";
-const char kWebContentLink[] = "webContentLink";
 const char kOpenWithLinks[] = "openWithLinks";
 const char kLabels[] = "labels";
 const char kImageMediaMetadata[] = "imageMediaMetadata";
 const char kShared[] = "shared";
 // These 5 flags are defined under |labels|.
-const char kLabelStarred[] = "starred";
-const char kLabelHidden[] = "hidden";
 const char kLabelTrashed[] = "trashed";
-const char kLabelRestricted[] = "restricted";
-const char kLabelViewed[] = "viewed";
 // These 3 flags are defined under |imageMediaMetadata|.
 const char kImageMediaMetadataWidth[] = "width";
 const char kImageMediaMetadataHeight[] = "height";
@@ -157,7 +167,6 @@ const char kDriveFolderMimeType[] = "application/vnd.google-apps.folder";
 // Files List
 // https://developers.google.com/drive/v2/reference/files/list
 const char kFileListKind[] = "drive#fileList";
-const char kNextPageToken[] = "nextPageToken";
 const char kNextLink[] = "nextLink";
 
 // Change Resource
@@ -299,9 +308,7 @@ bool DriveAppIcon::GetIconCategory(const base::StringPiece& category,
 
 AppResource::AppResource()
     : supports_create_(false),
-      supports_import_(false),
-      installed_(false),
-      authorized_(false) {
+      removable_(false) {
 }
 
 AppResource::~AppResource() {}
@@ -312,13 +319,9 @@ void AppResource::RegisterJSONConverter(
   converter->RegisterStringField(kId, &AppResource::application_id_);
   converter->RegisterStringField(kName, &AppResource::name_);
   converter->RegisterStringField(kObjectType, &AppResource::object_type_);
+  converter->RegisterStringField(kProductId, &AppResource::product_id_);
   converter->RegisterBoolField(kSupportsCreate, &AppResource::supports_create_);
-  converter->RegisterBoolField(kSupportsImport, &AppResource::supports_import_);
-  converter->RegisterBoolField(kInstalled, &AppResource::installed_);
-  converter->RegisterBoolField(kAuthorized, &AppResource::authorized_);
-  converter->RegisterCustomField<GURL>(kProductUrl,
-                                       &AppResource::product_url_,
-                                       GetGURLFromString);
+  converter->RegisterBoolField(kRemovable, &AppResource::removable_);
   converter->RegisterRepeatedString(kPrimaryMimeTypes,
                                     &AppResource::primary_mimetypes_);
   converter->RegisterRepeatedString(kSecondaryMimeTypes,
@@ -328,6 +331,9 @@ void AppResource::RegisterJSONConverter(
   converter->RegisterRepeatedString(kSecondaryFileExtensions,
                                     &AppResource::secondary_file_extensions_);
   converter->RegisterRepeatedMessage(kIcons, &AppResource::icons_);
+  converter->RegisterCustomField<GURL>(kCreateUrl,
+                                       &AppResource::create_url_,
+                                       GetGURLFromString);
 }
 
 // static
@@ -386,7 +392,7 @@ bool AppList::Parse(const base::Value& value) {
 ////////////////////////////////////////////////////////////////////////////////
 // ParentReference implementation
 
-ParentReference::ParentReference() : is_root_(false) {}
+ParentReference::ParentReference() {}
 
 ParentReference::~ParentReference() {}
 
@@ -397,7 +403,6 @@ void ParentReference::RegisterJSONConverter(
   converter->RegisterCustomField<GURL>(kParentLink,
                                        &ParentReference::parent_link_,
                                        GetGURLFromString);
-  converter->RegisterBoolField(kIsRoot, &ParentReference::is_root_);
 }
 
 // static
@@ -433,9 +438,6 @@ void FileResource::RegisterJSONConverter(
     base::JSONValueConverter<FileResource>* converter) {
   converter->RegisterStringField(kId, &FileResource::file_id_);
   converter->RegisterStringField(kETag, &FileResource::etag_);
-  converter->RegisterCustomField<GURL>(kSelfLink,
-                                       &FileResource::self_link_,
-                                       GetGURLFromString);
   converter->RegisterStringField(kTitle, &FileResource::title_);
   converter->RegisterStringField(kMimeType, &FileResource::mime_type_);
   converter->RegisterNestedField(kLabels, &FileResource::labels_);
@@ -450,10 +452,6 @@ void FileResource::RegisterJSONConverter(
       &FileResource::modified_date_,
       &util::GetTimeFromString);
   converter->RegisterCustomField<base::Time>(
-      kModifiedByMeDate,
-      &FileResource::modified_by_me_date_,
-      &util::GetTimeFromString);
-  converter->RegisterCustomField<base::Time>(
       kLastViewedByMeDate,
       &FileResource::last_viewed_by_me_date_,
       &util::GetTimeFromString);
@@ -462,11 +460,6 @@ void FileResource::RegisterJSONConverter(
       &FileResource::shared_with_me_date_,
       &util::GetTimeFromString);
   converter->RegisterBoolField(kShared, &FileResource::shared_);
-  converter->RegisterCustomField<GURL>(kDownloadUrl,
-                                       &FileResource::download_url_,
-                                       GetGURLFromString);
-  converter->RegisterStringField(kFileExtension,
-                                 &FileResource::file_extension_);
   converter->RegisterStringField(kMd5Checksum, &FileResource::md5_checksum_);
   converter->RegisterCustomField<int64>(kFileSize,
                                         &FileResource::file_size_,
@@ -474,17 +467,10 @@ void FileResource::RegisterJSONConverter(
   converter->RegisterCustomField<GURL>(kAlternateLink,
                                        &FileResource::alternate_link_,
                                        GetGURLFromString);
-  converter->RegisterCustomField<GURL>(kEmbedLink,
-                                       &FileResource::embed_link_,
-                                       GetGURLFromString);
-  converter->RegisterRepeatedMessage<ParentReference>(kParents,
-                                                      &FileResource::parents_);
-  converter->RegisterCustomField<GURL>(kThumbnailLink,
-                                       &FileResource::thumbnail_link_,
-                                       GetGURLFromString);
-  converter->RegisterCustomField<GURL>(kWebContentLink,
-                                       &FileResource::web_content_link_,
-                                       GetGURLFromString);
+  converter->RegisterCustomValueField<std::vector<ParentReference> >(
+      kParents,
+      &FileResource::parents_,
+      GetParentsFromValue);
   converter->RegisterCustomValueField<std::vector<OpenWithLink> >(
       kOpenWithLinks,
       &FileResource::open_with_links_,
@@ -524,8 +510,6 @@ FileList::~FileList() {}
 // static
 void FileList::RegisterJSONConverter(
     base::JSONValueConverter<FileList>* converter) {
-  converter->RegisterStringField(kETag, &FileList::etag_);
-  converter->RegisterStringField(kNextPageToken, &FileList::next_page_token_);
   converter->RegisterCustomField<GURL>(kNextLink,
                                        &FileList::next_link_,
                                        GetGURLFromString);
@@ -574,6 +558,9 @@ void ChangeResource::RegisterJSONConverter(
   converter->RegisterBoolField(kDeleted, &ChangeResource::deleted_);
   converter->RegisterCustomValueField(kFile, &ChangeResource::file_,
                                       &CreateFileResourceFromValue);
+  converter->RegisterCustomField<base::Time>(
+      kModificationDate, &ChangeResource::modification_date_,
+      &util::GetTimeFromString);
 }
 
 // static
@@ -606,8 +593,6 @@ ChangeList::~ChangeList() {}
 // static
 void ChangeList::RegisterJSONConverter(
     base::JSONValueConverter<ChangeList>* converter) {
-  converter->RegisterStringField(kETag, &ChangeList::etag_);
-  converter->RegisterStringField(kNextPageToken, &ChangeList::next_page_token_);
   converter->RegisterCustomField<GURL>(kNextLink,
                                        &ChangeList::next_link_,
                                        GetGURLFromString);
@@ -646,23 +631,14 @@ bool ChangeList::Parse(const base::Value& value) {
 ////////////////////////////////////////////////////////////////////////////////
 // FileLabels implementation
 
-FileLabels::FileLabels()
-    : starred_(false),
-      hidden_(false),
-      trashed_(false),
-      restricted_(false),
-      viewed_(false) {}
+FileLabels::FileLabels() : trashed_(false) {}
 
 FileLabels::~FileLabels() {}
 
 // static
 void FileLabels::RegisterJSONConverter(
     base::JSONValueConverter<FileLabels>* converter) {
-  converter->RegisterBoolField(kLabelStarred, &FileLabels::starred_);
-  converter->RegisterBoolField(kLabelHidden, &FileLabels::hidden_);
   converter->RegisterBoolField(kLabelTrashed, &FileLabels::trashed_);
-  converter->RegisterBoolField(kLabelRestricted, &FileLabels::restricted_);
-  converter->RegisterBoolField(kLabelViewed, &FileLabels::viewed_);
 }
 
 // static
@@ -717,7 +693,6 @@ scoped_ptr<ImageMediaMetadata> ImageMediaMetadata::CreateFrom(
 }
 
 bool ImageMediaMetadata::Parse(const base::Value& value) {
-  return true;
   base::JSONValueConverter<ImageMediaMetadata> converter;
   if (!converter.Convert(value, this)) {
     LOG(ERROR) << "Unable to parse: Invalid ImageMediaMetadata.";

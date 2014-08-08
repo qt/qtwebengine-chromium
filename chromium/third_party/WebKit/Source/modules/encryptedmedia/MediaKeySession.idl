@@ -21,10 +21,13 @@
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-     */
+ */
 
 [
-    RuntimeEnabled=EncryptedMedia
+    ActiveDOMObject,
+    RuntimeEnabled=EncryptedMedia,
+    GarbageCollected,
+    TypeChecking=Interface|Nullable
 ] interface MediaKeySession : EventTarget {
     // error state
     readonly attribute MediaKeyError error;
@@ -34,11 +37,6 @@
     readonly attribute DOMString sessionId;
 
     // session operations
-    [RaisesException] void update(Uint8Array key);
-    void close();
-
-    // EventHandlers
-    [RuntimeEnabled=EncryptedMedia] attribute EventHandler onwebkitkeyadded;
-    [RuntimeEnabled=EncryptedMedia] attribute EventHandler onwebkitkeyerror;
-    [RuntimeEnabled=EncryptedMedia] attribute EventHandler onwebkitkeymessage;
+    [RaisesException] void update(Uint8Array response);
+    [RaisesException] void release();
 };

@@ -94,9 +94,9 @@ extern "C" {
   struct mallinfo mallinfo(void) __THROW          ALIAS(tc_mallinfo);
 #endif
   size_t malloc_size(void* p) __THROW             ALIAS(tc_malloc_size);
-#if defined(__ANDROID__) && defined(ANDROID_NON_SDK_BUILD)
-  // In Android tree this function is defined differently than in the NDK.
-  size_t malloc_usable_size(const void* p) __THROW      ALIAS(tc_malloc_size);
+#if defined(__ANDROID__)
+  size_t malloc_usable_size(const void* p) __THROW
+         ALIAS(tc_malloc_size);
 #else
   size_t malloc_usable_size(void* p) __THROW      ALIAS(tc_malloc_size);
 #endif

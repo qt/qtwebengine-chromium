@@ -102,14 +102,14 @@ bool isTabSpanNode(const Node*);
 bool isTabSpanTextNode(const Node*);
 bool isMailBlockquote(const Node*);
 bool isRenderedTable(const Node*);
-bool isTableElement(const Node*);
+bool isRenderedTableElement(const Node*);
 bool isTableCell(const Node*);
 bool isEmptyTableCell(const Node*);
 bool isTableStructureNode(const Node*);
 bool isListElement(Node*);
 bool isListItem(const Node*);
 bool isNodeRendered(const Node*);
-bool isNodeVisiblyContainedWithin(Node*, const Range*);
+bool isNodeVisiblyContainedWithin(Node&, const Range&);
 bool isRenderedAsNonInlineTableImageOrHR(const Node*);
 bool areIdenticalElements(const Node*, const Node*);
 bool isNonTableCellHTMLBlockElement(const Node*);
@@ -127,7 +127,6 @@ Position previousCandidate(const Position&);
 Position nextVisuallyDistinctCandidate(const Position&);
 Position previousVisuallyDistinctCandidate(const Position&);
 
-Position positionOutsideTabSpan(const Position&);
 Position positionBeforeContainingSpecialElement(const Position&, Node** containingSpecialElement = 0);
 Position positionAfterContainingSpecialElement(const Position&, Node** containingSpecialElement = 0);
 
@@ -145,6 +144,8 @@ inline Position lastPositionInOrAfterNode(Node* node)
     return editingIgnoresContent(node) ? positionAfterNode(node) : lastPositionInNode(node);
 }
 
+Position lastEditablePositionBeforePositionInRoot(const Position&, Node*);
+
 // comparision functions on Position
 
 int comparePositions(const Position&, const Position&);
@@ -153,6 +154,10 @@ int comparePositions(const PositionWithAffinity&, const PositionWithAffinity&);
 // boolean functions on Position
 
 enum EUpdateStyle { UpdateStyle, DoNotUpdateStyle };
+// FIXME: Both isEditablePosition and isRichlyEditablePosition rely on up-to-date
+// style to give proper results. They shouldn't update style by default, but
+// should make it clear that that is the contract.
+// FIXME: isRichlyEditablePosition should also take EUpdateStyle.
 bool isEditablePosition(const Position&, EditableType = ContentIsEditable, EUpdateStyle = UpdateStyle);
 bool isRichlyEditablePosition(const Position&, EditableType = ContentIsEditable);
 bool lineBreakExistsAtPosition(const Position&);
@@ -162,7 +167,7 @@ bool isAtUnsplittableElement(const Position&);
 // miscellaneous functions on Position
 
 unsigned numEnclosingMailBlockquotes(const Position&);
-void updatePositionForNodeRemoval(Position&, Node*);
+void updatePositionForNodeRemoval(Position&, Node&);
 
 // -------------------------------------------------------------------------
 // VisiblePosition
@@ -170,16 +175,16 @@ void updatePositionForNodeRemoval(Position&, Node*);
 
 // Functions returning VisiblePosition
 
-VisiblePosition firstEditablePositionAfterPositionInRoot(const Position&, Node*);
-VisiblePosition lastEditablePositionBeforePositionInRoot(const Position&, Node*);
-VisiblePosition visiblePositionBeforeNode(Node*);
-VisiblePosition visiblePositionAfterNode(Node*);
+VisiblePosition firstEditableVisiblePositionAfterPositionInRoot(const Position&, Node*);
+VisiblePosition lastEditableVisiblePositionBeforePositionInRoot(const Position&, Node*);
+VisiblePosition visiblePositionBeforeNode(Node&);
+VisiblePosition visiblePositionAfterNode(Node&);
 
 bool lineBreakExistsAtVisiblePosition(const VisiblePosition&);
 
 int comparePositions(const VisiblePosition&, const VisiblePosition&);
 
-int indexForVisiblePosition(const VisiblePosition&, RefPtr<ContainerNode>& scope);
+int indexForVisiblePosition(const VisiblePosition&, RefPtrWillBeRawPtr<ContainerNode>& scope);
 VisiblePosition visiblePositionForIndex(int index, ContainerNode* scope);
 
 // -------------------------------------------------------------------------
@@ -188,7 +193,7 @@ VisiblePosition visiblePositionForIndex(int index, ContainerNode* scope);
 
 // Functions returning Range
 
-PassRefPtr<Range> createRange(Document&, const VisiblePosition& start, const VisiblePosition& end, ExceptionState&);
+PassRefPtrWillBeRawPtr<Range> createRange(Document&, const VisiblePosition& start, const VisiblePosition& end, ExceptionState&);
 
 // -------------------------------------------------------------------------
 // HTMLElement
@@ -196,13 +201,13 @@ PassRefPtr<Range> createRange(Document&, const VisiblePosition& start, const Vis
 
 // Functions returning HTMLElement
 
-PassRefPtr<HTMLElement> createDefaultParagraphElement(Document&);
-PassRefPtr<HTMLElement> createBreakElement(Document&);
-PassRefPtr<HTMLElement> createOrderedListElement(Document&);
-PassRefPtr<HTMLElement> createUnorderedListElement(Document&);
-PassRefPtr<HTMLElement> createListItemElement(Document&);
-PassRefPtr<HTMLElement> createHTMLElement(Document&, const QualifiedName&);
-PassRefPtr<HTMLElement> createHTMLElement(Document&, const AtomicString&);
+PassRefPtrWillBeRawPtr<HTMLElement> createDefaultParagraphElement(Document&);
+PassRefPtrWillBeRawPtr<HTMLElement> createBreakElement(Document&);
+PassRefPtrWillBeRawPtr<HTMLElement> createOrderedListElement(Document&);
+PassRefPtrWillBeRawPtr<HTMLElement> createUnorderedListElement(Document&);
+PassRefPtrWillBeRawPtr<HTMLElement> createListItemElement(Document&);
+PassRefPtrWillBeRawPtr<HTMLElement> createHTMLElement(Document&, const QualifiedName&);
+PassRefPtrWillBeRawPtr<HTMLElement> createHTMLElement(Document&, const AtomicString&);
 
 HTMLElement* enclosingList(Node*);
 HTMLElement* outermostEnclosingList(Node*, Node* rootList = 0);
@@ -214,10 +219,10 @@ Node* enclosingListChild(Node*);
 
 // Functions returning Element
 
-PassRefPtr<Element> createTabSpanElement(Document&);
-PassRefPtr<Element> createTabSpanElement(Document&, PassRefPtr<Node> tabTextNode);
-PassRefPtr<Element> createTabSpanElement(Document&, const String& tabText);
-PassRefPtr<Element> createBlockPlaceholderElement(Document&);
+PassRefPtrWillBeRawPtr<Element> createTabSpanElement(Document&);
+PassRefPtrWillBeRawPtr<Element> createTabSpanElement(Document&, PassRefPtrWillBeRawPtr<Node> tabTextNode);
+PassRefPtrWillBeRawPtr<Element> createTabSpanElement(Document&, const String& tabText);
+PassRefPtrWillBeRawPtr<Element> createBlockPlaceholderElement(Document&);
 
 Element* editableRootForPosition(const Position&, EditableType = ContentIsEditable);
 Element* unsplittableElementForPosition(const Position&);
@@ -240,6 +245,12 @@ Position adjustedSelectionStartForStyleComputation(const VisibleSelection&);
 inline bool isWhitespace(UChar c)
 {
     return c == noBreakSpace || c == ' ' || c == '\n' || c == '\t';
+}
+
+// FIXME: Can't really answer this question correctly without knowing the white-space mode.
+inline bool isCollapsibleWhitespace(UChar c)
+{
+    return c == ' ' || c == '\n';
 }
 
 inline bool isAmbiguousBoundaryCharacter(UChar character)

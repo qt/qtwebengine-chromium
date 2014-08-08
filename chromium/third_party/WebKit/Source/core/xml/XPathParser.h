@@ -38,7 +38,9 @@ class XPathNSResolver;
 namespace XPath {
 
 class Expression;
+class LocationPath;
 class ParseNode;
+class Parser;
 class Predicate;
 
 struct Token {
@@ -57,6 +59,7 @@ struct Token {
 
 class Parser {
     WTF_MAKE_NONCOPYABLE(Parser);
+    STACK_ALLOCATED();
 public:
     Parser();
     ~Parser();
@@ -64,23 +67,23 @@ public:
     XPathNSResolver* resolver() const { return m_resolver.get(); }
     bool expandQName(const String& qName, AtomicString& localName, AtomicString& namespaceURI);
 
-    Expression* parseStatement(const String& statement, PassRefPtr<XPathNSResolver>, ExceptionState&);
+    PassOwnPtrWillBeRawPtr<Expression> parseStatement(const String& statement, PassRefPtrWillBeRawPtr<XPathNSResolver>, ExceptionState&);
 
     static Parser* current() { return currentParser; }
 
     int lex(void* yylval);
 
-    Expression* m_topExpr;
+    RawPtrWillBeMember<Expression> m_topExpr;
     bool m_gotNamespaceError;
 
     void registerParseNode(ParseNode*);
     void unregisterParseNode(ParseNode*);
 
-    void registerPredicateVector(Vector<OwnPtr<Predicate> >*);
-    void deletePredicateVector(Vector<OwnPtr<Predicate> >*);
+    void registerPredicateVector(WillBeHeapVector<OwnPtrWillBeMember<Predicate> >*);
+    void deletePredicateVector(WillBeHeapVector<OwnPtrWillBeMember<Predicate> >*);
 
-    void registerExpressionVector(Vector<OwnPtr<Expression> >*);
-    void deleteExpressionVector(Vector<OwnPtr<Expression> >*);
+    void registerExpressionVector(WillBeHeapVector<OwnPtrWillBeMember<Expression> >*);
+    void deleteExpressionVector(WillBeHeapVector<OwnPtrWillBeMember<Expression> >*);
 
     void registerString(String*);
     void deleteString(String*);
@@ -113,17 +116,20 @@ private:
     unsigned m_nextPos;
     String m_data;
     int m_lastTokenType;
-    RefPtr<XPathNSResolver> m_resolver;
+    RefPtrWillBeMember<XPathNSResolver> m_resolver;
 
+#if !ENABLE(OILPAN)
     HashSet<ParseNode*> m_parseNodes;
     HashSet<Vector<OwnPtr<Predicate> >*> m_predicateVectors;
     HashSet<Vector<OwnPtr<Expression> >*> m_expressionVectors;
-    HashSet<String*> m_strings;
-    HashSet<Step::NodeTest*> m_nodeTests;
+    HashSet<OwnPtr<Step::NodeTest> > m_nodeTests;
+#endif
+    HashSet<OwnPtr<String> > m_strings;
 };
 
-} // XPath
+} // namespace XPath
 
-} // WebCore
+} // namespace WebCore
 
+int xpathyyparse(WebCore::XPath::Parser*);
 #endif

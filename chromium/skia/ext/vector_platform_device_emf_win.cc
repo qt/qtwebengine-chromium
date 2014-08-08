@@ -73,7 +73,7 @@ SkBaseDevice* VectorPlatformDeviceEmf::create(HDC dc, int width, int height) {
   HGDIOBJ selected_bitmap = GetCurrentObject(dc, OBJ_BITMAP);
   bool succeeded = false;
   if (selected_bitmap != NULL) {
-    BITMAP bitmap_data;
+    BITMAP bitmap_data = {0};
     if (GetObject(selected_bitmap, sizeof(BITMAP), &bitmap_data) ==
         sizeof(BITMAP)) {
       // The context has a bitmap attached. Attach our SkBitmap to it.
@@ -81,20 +81,16 @@ SkBaseDevice* VectorPlatformDeviceEmf::create(HDC dc, int width, int height) {
       // VectorPlatformDeviceEmf has no way to detect this, so the HBITMAP
       // could be released while SkBitmap still has a reference to it. Be
       // cautious.
-      if (width == bitmap_data.bmWidth &&
-          height == bitmap_data.bmHeight) {
-        bitmap.setConfig(SkBitmap::kARGB_8888_Config,
-                         bitmap_data.bmWidth,
-                         bitmap_data.bmHeight,
-                         bitmap_data.bmWidthBytes);
-        bitmap.setPixels(bitmap_data.bmBits);
-        succeeded = true;
+      if (width == bitmap_data.bmWidth && height == bitmap_data.bmHeight) {
+        SkImageInfo info = SkImageInfo::MakeN32Premul(width, height);
+        succeeded = bitmap.installPixels(info, bitmap_data.bmBits,
+                                         bitmap_data.bmWidthBytes);
       }
     }
   }
 
   if (!succeeded)
-    bitmap.setConfig(SkBitmap::kARGB_8888_Config, width, height);
+    bitmap.setInfo(SkImageInfo::MakeUnknown(width, height));
 
   return new VectorPlatformDeviceEmf(dc, bitmap);
 }
@@ -115,10 +111,6 @@ VectorPlatformDeviceEmf::~VectorPlatformDeviceEmf() {
 
 HDC VectorPlatformDeviceEmf::BeginPlatformPaint() {
   return hdc_;
-}
-
-uint32_t VectorPlatformDeviceEmf::getDeviceCapabilities() {
-  return SkBitmapDevice::getDeviceCapabilities() | kVector_Capability;
 }
 
 void VectorPlatformDeviceEmf::drawPaint(const SkDraw& draw,
@@ -201,10 +193,10 @@ void VectorPlatformDeviceEmf::drawRect(const SkDraw& draw,
     return;
   }
   HDC dc = BeginPlatformPaint();
-  if (!Rectangle(dc, SkScalarRound(rect.fLeft),
-                 SkScalarRound(rect.fTop),
-                 SkScalarRound(rect.fRight),
-                 SkScalarRound(rect.fBottom))) {
+  if (!Rectangle(dc, SkScalarRoundToInt(rect.fLeft),
+                 SkScalarRoundToInt(rect.fTop),
+                 SkScalarRoundToInt(rect.fRight),
+                 SkScalarRoundToInt(rect.fBottom))) {
     SkASSERT(false);
   }
   EndPlatformPaint();
@@ -398,9 +390,9 @@ bool SkGDIFontSetup::useGDI(HDC hdc, const SkPaint& paint) {
     fSavedTextColor = GetTextColor(hdc);
     SetTextColor(hdc, skia::SkColorToCOLORREF(paint.getColor()));
 
-    LOGFONT lf;
+    LOGFONT lf = {0};
     SkLOGFONTFromTypeface(paint.getTypeface(), &lf);
-    lf.lfHeight = -SkScalarRound(paint.getTextSize());
+    lf.lfHeight = -SkScalarRoundToInt(paint.getTextSize());
     fNewFont = CreateFontIndirect(&lf);
     fSavedFont = (HFONT)::SelectObject(hdc, fNewFont);
     fHDC = hdc;
@@ -445,7 +437,7 @@ SK_API void SetSkiaEnsureTypefaceCharactersAccessible(
 
 void EnsureTypefaceCharactersAccessible(
     const SkTypeface& typeface, const wchar_t* text, unsigned int text_length) {
-  LOGFONT lf;
+  LOGFONT lf = {0};
   SkLOGFONTFromTypeface(&typeface, &lf);
   g_skia_ensure_typeface_characters_accessible(lf, text, text_length);
 }
@@ -461,15 +453,15 @@ bool EnsureExtTextOut(HDC hdc, int x, int y, UINT options, const RECT * lprect,
                                          characters);
       success = ExtTextOut(hdc, x, y, options, lprect, text, characters, lpDx);
       if (!success) {
-        LOGFONT lf;
+        LOGFONT lf = {0};
         SkLOGFONTFromTypeface(typeface, &lf);
         VLOG(1) << "SkFontHost::EnsureTypefaceCharactersAccessible FAILED for "
                 << " FaceName = " << lf.lfFaceName
-                << " and characters: " << string16(text, characters);
+                << " and characters: " << base::string16(text, characters);
       }
     } else {
       VLOG(1) << "ExtTextOut FAILED for default FaceName "
-              << " and characters: " << string16(text, characters);
+              << " and characters: " << base::string16(text, characters);
     }
   }
   return success;
@@ -488,8 +480,8 @@ void VectorPlatformDeviceEmf::drawText(const SkDraw& draw,
       && setup.useGDI(hdc_, paint)) {
     UINT options = getTextOutOptions(paint);
     UINT count = byteLength >> 1;
-    useDrawPath = !EnsureExtTextOut(hdc_, SkScalarRound(x),
-        SkScalarRound(y + getAscent(paint)), options, 0,
+    useDrawPath = !EnsureExtTextOut(hdc_, SkScalarRoundToInt(x),
+        SkScalarRoundToInt(y + getAscent(paint)), options, 0,
         reinterpret_cast<const wchar_t*>(text), count, NULL,
         paint.getTypeface());
   }
@@ -524,18 +516,19 @@ void VectorPlatformDeviceEmf::drawPosText(const SkDraw& draw,
   SkGDIFontSetup setup;
   bool useDrawText = true;
 
-  if (2 == scalarsPerPos
-      && SkPaint::kUTF8_TextEncoding != paint.getTextEncoding()
-      && setup.useGDI(hdc_, paint)) {
-    int startX = SkScalarRound(pos[0]);
-    int startY = SkScalarRound(pos[1] + getAscent(paint));
+  if (scalarsPerPos == 2 && len >= 2 &&
+      SkPaint::kUTF8_TextEncoding != paint.getTextEncoding() &&
+      setup.useGDI(hdc_, paint)) {
+    int startX = SkScalarRoundToInt(pos[0]);
+    int startY = SkScalarRoundToInt(pos[1] + getAscent(paint));
     const int count = len >> 1;
     SkAutoSTMalloc<64, INT> storage(count);
     INT* advances = storage.get();
     for (int i = 0; i < count - 1; ++i) {
-      advances[i] = SkScalarRound(pos[2] - pos[0]);
+      advances[i] = SkScalarRoundToInt(pos[2] - pos[0]);
       pos += 2;
     }
+    advances[count - 1] = 0;
     useDrawText = !EnsureExtTextOut(hdc_, startX, startY,
         getTextOutOptions(paint), 0, reinterpret_cast<const wchar_t*>(text),
         count, advances, paint.getTypeface());
@@ -700,11 +693,20 @@ void VectorPlatformDeviceEmf::LoadClipRegion() {
   LoadClippingRegionToDC(hdc_, clip_region_, t);
 }
 
+#ifdef SK_SUPPORT_LEGACY_COMPATIBLEDEVICE_CONFIG
 SkBaseDevice* VectorPlatformDeviceEmf::onCreateCompatibleDevice(
     SkBitmap::Config config, int width, int height, bool isOpaque,
     Usage /*usage*/) {
   SkASSERT(config == SkBitmap::kARGB_8888_Config);
   return VectorPlatformDeviceEmf::CreateDevice(width, height, isOpaque, NULL);
+}
+#endif
+
+SkBaseDevice* VectorPlatformDeviceEmf::onCreateDevice(const SkImageInfo& info,
+                                                      Usage /*usage*/) {
+  SkASSERT(info.colorType() == kPMColor_SkColorType);
+  return VectorPlatformDeviceEmf::CreateDevice(
+      info.width(), info.height(), info.isOpaque(), NULL);
 }
 
 bool VectorPlatformDeviceEmf::CreateBrush(bool use_brush, COLORREF color) {
@@ -760,7 +762,7 @@ bool VectorPlatformDeviceEmf::CreatePen(bool use_pen,
   }
 
   // Load a custom pen.
-  LOGBRUSH brush;
+  LOGBRUSH brush = {0};
   brush.lbStyle = BS_SOLID;
   brush.lbColor = color;
   brush.lbHatch = 0;
@@ -860,7 +862,7 @@ bool VectorPlatformDeviceEmf::CreatePen(bool use_pen, const SkPaint& paint) {
 
   return CreatePen(use_pen,
                    SkColorToCOLORREF(paint.getColor()),
-                   SkScalarRound(paint.getStrokeWidth()),
+                   SkScalarRoundToInt(paint.getStrokeWidth()),
                    paint.getStrokeMiter(),
                    pen_style);
 }
@@ -892,8 +894,7 @@ void VectorPlatformDeviceEmf::InternalDrawBitmap(const SkBitmap& bitmap,
 
   // Create a BMP v4 header that we can serialize. We use the shared "V3"
   // fillter to fill the stardard items, then add in the "V4" stuff we want.
-  BITMAPV4HEADER bitmap_header;
-  memset(&bitmap_header, 0, sizeof(BITMAPV4HEADER));
+  BITMAPV4HEADER bitmap_header = {0};
   FillBitmapInfoHeader(src_size_x, src_size_y,
                        reinterpret_cast<BITMAPINFOHEADER*>(&bitmap_header));
   bitmap_header.bV4Size = sizeof(BITMAPV4HEADER);
@@ -925,7 +926,7 @@ void VectorPlatformDeviceEmf::InternalDrawBitmap(const SkBitmap& bitmap,
   }
 
   HDC dc = BeginPlatformPaint();
-  BITMAPINFOHEADER hdr;
+  BITMAPINFOHEADER hdr = {0};
   FillBitmapInfoHeader(src_size_x, src_size_y, &hdr);
   if (is_translucent) {
     // The image must be loaded as a bitmap inside a device context.

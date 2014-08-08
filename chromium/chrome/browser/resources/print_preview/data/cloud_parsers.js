@@ -14,12 +14,13 @@ cr.define('cloudprint', function() {
    * @private
    */
   CloudDestinationParser.Field_ = {
-    LAST_ACCESS: 'accessTime',
     CAPABILITIES: 'capabilities',
     CONNECTION_STATUS: 'connectionStatus',
+    DESCRIPTION: 'description',
     DISPLAY_NAME: 'displayName',
     ID: 'id',
     IS_TOS_ACCEPTED: 'isTosAccepted',
+    LAST_ACCESS: 'accessTime',
     TAGS: 'tags',
     TYPE: 'type'
   };
@@ -58,9 +59,11 @@ cr.define('cloudprint', function() {
    *     printer response.
    * @param {!print_preview.Destination.Origin} origin The origin of the
    *     response.
+   * @param {string} account The account this destination is registered for or
+   *     empty string, if origin != COOKIES.
    * @return {!print_preview.Destination} Parsed destination.
    */
-  CloudDestinationParser.parse = function(json, origin) {
+  CloudDestinationParser.parse = function(json, origin, account) {
     if (!json.hasOwnProperty(CloudDestinationParser.Field_.ID) ||
         !json.hasOwnProperty(CloudDestinationParser.Field_.TYPE) ||
         !json.hasOwnProperty(CloudDestinationParser.Field_.DISPLAY_NAME)) {
@@ -72,13 +75,15 @@ cr.define('cloudprint', function() {
         json[CloudDestinationParser.Field_.CONNECTION_STATUS] ||
         print_preview.Destination.ConnectionStatus.UNKNOWN;
     var optionalParams = {
+      account: account,
       tags: tags,
       isOwned: arrayContains(tags, CloudDestinationParser.OWNED_TAG_),
       lastAccessTime: parseInt(
           json[CloudDestinationParser.Field_.LAST_ACCESS], 10) || Date.now(),
       isTosAccepted: (id == print_preview.Destination.GooglePromotedId.FEDEX) ?
           json[CloudDestinationParser.Field_.IS_TOS_ACCEPTED] : null,
-      cloudID: id
+      cloudID: id,
+      description: json[CloudDestinationParser.Field_.DESCRIPTION]
     };
     var cloudDest = new print_preview.Destination(
         id,

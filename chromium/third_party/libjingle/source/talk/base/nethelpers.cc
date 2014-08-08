@@ -34,12 +34,18 @@
 #endif
 
 #include "talk/base/byteorder.h"
+#include "talk/base/logging.h"
 #include "talk/base/signalthread.h"
 
 namespace talk_base {
 
 int ResolveHostname(const std::string& hostname, int family,
                     std::vector<IPAddress>* addresses) {
+#ifdef __native_client__
+  ASSERT(false);
+  LOG(LS_WARNING) << "ResolveHostname() is not implemented for NaCl";
+  return -1;
+#else  // __native_client__
   if (!addresses) {
     return -1;
   }
@@ -64,6 +70,7 @@ int ResolveHostname(const std::string& hostname, int family,
   }
   freeaddrinfo(result);
   return 0;
+#endif  // !__native_client__
 }
 
 // AsyncResolver
@@ -83,7 +90,7 @@ bool AsyncResolver::GetResolvedAddress(int family, SocketAddress* addr) const {
   *addr = addr_;
   for (size_t i = 0; i < addresses_.size(); ++i) {
     if (family == addresses_[i].family()) {
-      addr->SetIP(addresses_[i]);
+      addr->SetResolvedIP(addresses_[i]);
       return true;
     }
   }

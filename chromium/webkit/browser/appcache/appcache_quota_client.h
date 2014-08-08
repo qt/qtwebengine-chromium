@@ -19,9 +19,13 @@
 #include "webkit/browser/webkit_storage_browser_export.h"
 #include "webkit/common/quota/quota_types.h"
 
+namespace content {
+class AppCacheQuotaClientTest;
+}
+
 namespace appcache {
 
-class AppCacheService;
+class AppCacheServiceImpl;
 class AppCacheStorageImpl;
 class AppCacheQuotaClientTest;
 
@@ -53,12 +57,12 @@ class AppCacheQuotaClient : public quota::QuotaClient {
   virtual bool DoesSupport(quota::StorageType type) const OVERRIDE;
 
  private:
-  friend class AppCacheService;  // for NotifyAppCacheIsDestroyed
+  friend class content::AppCacheQuotaClientTest;
+  friend class AppCacheServiceImpl;  // for NotifyAppCacheIsDestroyed
   friend class AppCacheStorageImpl;  // for NotifyAppCacheIsReady
-  friend class AppCacheQuotaClientTest;
 
   WEBKIT_STORAGE_BROWSER_EXPORT
-      explicit AppCacheQuotaClient(AppCacheService* service);
+      explicit AppCacheQuotaClient(AppCacheServiceImpl* service);
 
   void DidDeleteAppCachesForOrigin(int rv);
   void GetOriginsHelper(quota::StorageType type,
@@ -83,7 +87,7 @@ class AppCacheQuotaClient : public quota::QuotaClient {
   DeletionCallback current_delete_request_callback_;
   scoped_ptr<net::CancelableCompletionCallback> service_delete_callback_;
 
-  AppCacheService* service_;
+  AppCacheServiceImpl* service_;
   bool appcache_is_ready_;
   bool quota_manager_is_destroyed_;
 

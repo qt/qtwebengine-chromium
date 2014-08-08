@@ -21,8 +21,8 @@
 
 #include "core/rendering/svg/SVGTextLayoutEngineSpacing.h"
 
-#include "core/rendering/style/SVGRenderStyle.h"
 #include "core/svg/SVGLengthContext.h"
+#include "platform/fonts/Character.h"
 #include "platform/fonts/Font.h"
 
 #if ENABLE(SVG_FONTS)
@@ -33,18 +33,23 @@
 
 namespace WebCore {
 
-SVGTextLayoutEngineSpacing::SVGTextLayoutEngineSpacing(const Font& font)
+SVGTextLayoutEngineSpacing::SVGTextLayoutEngineSpacing(const Font& font, float effectiveZoom)
     : m_font(font)
     , m_lastCharacter(0)
+    , m_effectiveZoom(effectiveZoom)
+#if ENABLE(SVG_FONTS)
+    , m_lastGlyph(0)
+#endif
 {
+    ASSERT(m_effectiveZoom);
 }
 
-float SVGTextLayoutEngineSpacing::calculateSVGKerning(bool isVerticalText, const SVGTextMetrics::Glyph& currentGlyph)
+float SVGTextLayoutEngineSpacing::calculateSVGKerning(bool isVerticalText, Glyph currentGlyph)
 {
 #if ENABLE(SVG_FONTS)
     const SimpleFontData* fontData = m_font.primaryFont();
     if (!fontData->isSVGFont()) {
-        m_lastGlyph.isValid = false;
+        m_lastGlyph = 0;
         return 0;
     }
 
@@ -58,49 +63,43 @@ float SVGTextLayoutEngineSpacing::calculateSVGKerning(bool isVerticalText, const
 
     SVGFontElement* svgFont = svgFontFace->associatedFontElement();
     if (!svgFont) {
-        m_lastGlyph.isValid = false;
+        m_lastGlyph = 0;
         return 0;
     }
 
     float kerning = 0;
-    if (m_lastGlyph.isValid) {
+    if (m_lastGlyph) {
         if (isVerticalText)
-            kerning = svgFont->verticalKerningForPairOfStringsAndGlyphs(m_lastGlyph.unicodeString, m_lastGlyph.name, currentGlyph.unicodeString, currentGlyph.name);
+            kerning = svgFont->verticalKerningForPairOfGlyphs(m_lastGlyph, currentGlyph);
         else
-            kerning = svgFont->horizontalKerningForPairOfStringsAndGlyphs(m_lastGlyph.unicodeString, m_lastGlyph.name, currentGlyph.unicodeString, currentGlyph.name);
+            kerning = svgFont->horizontalKerningForPairOfGlyphs(m_lastGlyph, currentGlyph);
+
+        kerning *= m_font.fontDescription().computedSize() / m_font.fontMetrics().unitsPerEm();
     }
 
     m_lastGlyph = currentGlyph;
-    m_lastGlyph.isValid = true;
-    kerning *= m_font.size() / m_font.fontMetrics().unitsPerEm();
     return kerning;
 #else
-    return false;
+    return 0;
 #endif
 }
 
-float SVGTextLayoutEngineSpacing::calculateCSSKerningAndSpacing(const SVGRenderStyle* style, SVGElement* contextElement, UChar currentCharacter)
+float SVGTextLayoutEngineSpacing::calculateCSSSpacing(UChar currentCharacter)
 {
-    float kerning = 0;
-    SVGLength kerningLength = style->kerning();
-    if (kerningLength.unitType() == LengthTypePercentage)
-        kerning = kerningLength.valueAsPercentage() * m_font.pixelSize();
-    else {
-        SVGLengthContext lengthContext(contextElement);
-        kerning = kerningLength.value(lengthContext);
-    }
-
     UChar lastCharacter = m_lastCharacter;
     m_lastCharacter = currentCharacter;
 
-    if (!kerning && !m_font.letterSpacing() && !m_font.wordSpacing())
+    if (!m_font.fontDescription().letterSpacing() && !m_font.fontDescription().wordSpacing())
         return 0;
 
-    float spacing = m_font.letterSpacing() + kerning;
-    if (currentCharacter && lastCharacter && m_font.wordSpacing()) {
-        if (Font::treatAsSpace(currentCharacter) && !Font::treatAsSpace(lastCharacter))
-            spacing += m_font.wordSpacing();
+    float spacing = m_font.fontDescription().letterSpacing();
+    if (currentCharacter && lastCharacter && m_font.fontDescription().wordSpacing()) {
+        if (Character::treatAsSpace(currentCharacter) && !Character::treatAsSpace(lastCharacter))
+            spacing += m_font.fontDescription().wordSpacing();
     }
+
+    if (m_effectiveZoom != 1)
+        spacing = spacing / m_effectiveZoom;
 
     return spacing;
 }

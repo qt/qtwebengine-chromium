@@ -59,18 +59,19 @@ public:
         Matrix3DTransformOperation
     };
 
-    static PassRefPtr<CSSTransformValue> create(TransformOperationType type)
+    static PassRefPtrWillBeRawPtr<CSSTransformValue> create(TransformOperationType type)
     {
-        return adoptRef(new CSSTransformValue(type));
+        return adoptRefWillBeNoop(new CSSTransformValue(type));
     }
 
     String customCSSText() const;
     bool equals(const CSSTransformValue& other) const { return m_type == other.m_type && CSSValueList::equals(other); }
-    String customSerializeResolvingVariables(const HashMap<AtomicString, String>&) const;
 
     TransformOperationType operationType() const { return m_type; }
 
-    PassRefPtr<CSSTransformValue> cloneForCSSOM() const;
+    PassRefPtrWillBeRawPtr<CSSTransformValue> cloneForCSSOM() const;
+
+    void traceAfterDispatch(Visitor* visitor) { CSSValueList::traceAfterDispatch(visitor); }
 
 private:
     CSSTransformValue(TransformOperationType);

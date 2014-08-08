@@ -917,7 +917,11 @@ def check_for_copyright(lines, error):
               'You should have a line: "Copyright [year] <Copyright Owner>"')
 
 
-def get_header_guard_cpp_variable(filename):
+# TODO(jww) After the transition of Blink into the Chromium repo, this function
+# should be removed. This will strictly enforce Chromium-style header guards,
+# rather than allowing traditional WebKit header guards and Chromium-style
+# simultaneously.
+def get_legacy_header_guard_cpp_variable(filename):
     """Returns the CPP variable that should be used as a header guard.
 
     Args:
@@ -943,6 +947,31 @@ def get_header_guard_cpp_variable(filename):
     return (special_name, standard_name)
 
 
+def get_header_guard_cpp_variable(filename):
+    """Returns the CPP variable that should be used as a header guard in Chromium-style.
+
+    Args:
+      filename: The name of a C++ header file.
+
+    Returns:
+      The CPP variable that should be used as a header guard in the
+      named file in Chromium-style.
+
+    """
+
+    # Restores original filename in case that style checker is invoked from Emacs's
+    # flymake.
+    filename = re.sub(r'_flymake\.h$', '.h', filename)
+
+    # If it's a full path and starts with Source/, replace Source with blink
+    # since that will be the new style directory.
+    filename = sub(r'^Source\/', 'blink/', filename)
+
+    standard_name = sub(r'[-.\s\/]', '_', filename).upper() + '_'
+
+    return standard_name
+
+
 def check_for_header_guard(filename, lines, error):
     """Checks that the file contains a header guard.
 
@@ -955,7 +984,8 @@ def check_for_header_guard(filename, lines, error):
       error: The function to call with any errors found.
     """
 
-    cppvar = get_header_guard_cpp_variable(filename)
+    legacy_cpp_var = get_legacy_header_guard_cpp_variable(filename)
+    cpp_var = get_header_guard_cpp_variable(filename)
 
     ifndef = None
     ifndef_line_number = 0
@@ -976,13 +1006,13 @@ def check_for_header_guard(filename, lines, error):
     if not ifndef or not define or ifndef != define:
         error(0, 'build/header_guard', 5,
               'No #ifndef header guard found, suggested CPP variable is: %s' %
-              cppvar[0])
+              legacy_cpp_var[0])
         return
 
-    # The guard should be File_h.
-    if ifndef not in cppvar:
+    # The guard should be File_h or, for Chromium style, BLINK_PATH_TO_FILE_H_.
+    if ifndef not in legacy_cpp_var and ifndef != cpp_var:
         error(ifndef_line_number, 'build/header_guard', 5,
-              '#ifndef header guard has wrong style, please use: %s' % cppvar[0])
+              '#ifndef header guard has wrong style, please use: %s' % legacy_cpp_var[0])
 
 
 def check_for_unicode_replacement_characters(lines, error):
@@ -2219,6 +2249,9 @@ def check_using_std(clean_lines, line_number, file_state, error):
         return
 
     method_name = using_std_match.group('method_name')
+    # Exception for the established idiom for swapping objects in generic code.
+    if method_name == 'swap':
+        return
     error(line_number, 'build/using_std', 4,
           "Use 'using namespace std;' instead of 'using std::%s;'." % method_name)
 
@@ -2567,15 +2600,16 @@ def check_check(clean_lines, line_number, error):
             break
 
 
-def check_for_comparisons_to_zero(clean_lines, line_number, error):
+def check_for_comparisons_to_boolean(clean_lines, line_number, error):
     # Get the line without comments and strings.
     line = clean_lines.elided[line_number]
 
-    # Include NULL here so that users don't have to convert NULL to 0 first and then get this error.
-    if search(r'[=!]=\s*(NULL|0|true|false)[^\w.]', line) or search(r'[^\w.](NULL|0|true|false)\s*[=!]=', line):
+    # Must include NULL here, as otherwise users will convert NULL to 0 and
+    # then we can't catch it, since it looks like a valid integer comparison.
+    if search(r'[=!]=\s*(NULL|nullptr|true|false)[^\w.]', line) or search(r'[^\w.](NULL|nullptr|true|false)\s*[=!]=', line):
         if not search('LIKELY', line) and not search('UNLIKELY', line):
-            error(line_number, 'readability/comparison_to_zero', 5,
-                  'Tests for true/false, null/non-null, and zero/non-zero should all be done without equality comparisons.')
+            error(line_number, 'readability/comparison_to_boolean', 5,
+                  'Tests for true/false and null/non-null should be done without equality comparisons.')
 
 
 def check_for_null(clean_lines, line_number, file_state, error):
@@ -2826,7 +2860,7 @@ def check_style(clean_lines, line_number, file_extension, class_state, file_stat
     check_exit_statement_simplifications(clean_lines, line_number, error)
     check_spacing(file_extension, clean_lines, line_number, error)
     check_check(clean_lines, line_number, error)
-    check_for_comparisons_to_zero(clean_lines, line_number, error)
+    check_for_comparisons_to_boolean(clean_lines, line_number, error)
     check_for_null(clean_lines, line_number, file_state, error)
     check_indentation_amount(clean_lines, line_number, error)
     check_enum_casing(clean_lines, line_number, enum_state, error)
@@ -3338,10 +3372,11 @@ def check_identifier_name_in_declaration(filename, line_number, line, file_state
 
     # Detect variable and functions.
     type_regexp = r'\w([\w]|\s*[*&]\s*|::)+'
-    identifier_regexp = r'(?P<identifier>[\w:]+)'
+    attribute_regexp = r'ALLOW_UNUSED'
+    identifier_regexp = r'(?!' + attribute_regexp + r')(?P<identifier>[\w:]+)'
     maybe_bitfield_regexp = r'(:\s*\d+\s*)?'
     character_after_identifier_regexp = r'(?P<character_after_identifier>[[;()=,])(?!=)'
-    declaration_without_type_regexp = r'\s*' + identifier_regexp + r'\s*' + maybe_bitfield_regexp + character_after_identifier_regexp
+    declaration_without_type_regexp = r'\s*' + identifier_regexp + r'\s*(' + attribute_regexp + r')?\s*' + maybe_bitfield_regexp + character_after_identifier_regexp
     declaration_with_type_regexp = r'\s*' + type_regexp + r'\s' + declaration_without_type_regexp
     is_function_arguments = False
     number_of_identifiers = 0
@@ -3947,7 +3982,7 @@ class CppChecker(object):
         'readability/braces',
         'readability/casting',
         'readability/check',
-        'readability/comparison_to_zero',
+        'readability/comparison_to_boolean',
         'readability/constructors',
         'readability/control_flow',
         'readability/enum_casing',

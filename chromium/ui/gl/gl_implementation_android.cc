@@ -9,9 +9,11 @@
 #include "base/native_library.h"
 #include "base/path_service.h"
 #include "ui/gl/gl_bindings.h"
+#include "ui/gl/gl_context_stub_with_extensions.h"
 #include "ui/gl/gl_egl_api_implementation.h"
 #include "ui/gl/gl_gl_api_implementation.h"
 #include "ui/gl/gl_implementation.h"
+#include "ui/gl/gl_implementation_osmesa.h"
 #include "ui/gl/gl_osmesa_api_implementation.h"
 
 namespace gfx {
@@ -27,39 +29,26 @@ void GL_BINDING_CALL MarshalDepthRangeToDepthRangef(GLclampd z_near,
   glDepthRangef(static_cast<GLclampf>(z_near), static_cast<GLclampf>(z_far));
 }
 
-base::NativeLibrary LoadLibrary(const base::FilePath& filename) {
-  std::string error;
-  base::NativeLibrary library = base::LoadNativeLibrary(filename, &error);
-  if (!library) {
-    DVLOG(1) << "Failed to load " << filename.MaybeAsASCII() << ": " << error;
-    return NULL;
-  }
-  return library;
-}
-
-base::NativeLibrary LoadLibrary(const char* filename) {
-  return LoadLibrary(base::FilePath(filename));
-}
-
 }  // namespace
 
 void GetAllowedGLImplementations(std::vector<GLImplementation>* impls) {
   impls->push_back(kGLImplementationEGLGLES2);
+  impls->push_back(kGLImplementationOSMesaGL);
 }
 
-bool InitializeGLBindings(GLImplementation implementation) {
+bool InitializeStaticGLBindings(GLImplementation implementation) {
   // Prevent reinitialization with a different implementation. Once the gpu
   // unit tests have initialized with kGLImplementationMock, we don't want to
   // later switch to another GL implementation.
-  if (GetGLImplementation() != kGLImplementationNone)
-    return true;
+  DCHECK_EQ(kGLImplementationNone, GetGLImplementation());
 
   switch (implementation) {
     case kGLImplementationEGLGLES2: {
-      base::NativeLibrary gles_library = LoadLibrary("libGLESv2.so");
+      base::NativeLibrary gles_library =
+          LoadLibraryAndPrintError("libGLESv2.so");
       if (!gles_library)
         return false;
-      base::NativeLibrary egl_library = LoadLibrary("libEGL.so");
+      base::NativeLibrary egl_library = LoadLibraryAndPrintError("libEGL.so");
       if (!egl_library) {
         base::UnloadNativeLibrary(gles_library);
         return false;
@@ -81,8 +70,8 @@ bool InitializeGLBindings(GLImplementation implementation) {
       AddGLNativeLibrary(gles_library);
       SetGLImplementation(kGLImplementationEGLGLES2);
 
-      InitializeGLBindingsGL();
-      InitializeGLBindingsEGL();
+      InitializeStaticGLBindingsGL();
+      InitializeStaticGLBindingsEGL();
 
       // These two functions take single precision float rather than double
       // precision float parameters in GLES.
@@ -90,31 +79,44 @@ bool InitializeGLBindings(GLImplementation implementation) {
       ::gfx::g_driver_gl.fn.glDepthRangeFn = MarshalDepthRangeToDepthRangef;
       break;
     }
+    case kGLImplementationOSMesaGL:
+      InitializeStaticGLBindingsOSMesaGL();
+      break;
     case kGLImplementationMockGL: {
-      SetGLGetProcAddressProc(GetMockGLProcAddress);
       SetGLImplementation(kGLImplementationMockGL);
-      InitializeGLBindingsGL();
+      InitializeStaticGLBindingsGL();
       break;
     }
     default:
-      NOTIMPLEMENTED() << "InitializeGLBindings on Android";
+      NOTIMPLEMENTED() << "InitializeStaticGLBindings on Android";
       return false;
   }
 
   return true;
 }
 
-bool InitializeGLExtensionBindings(GLImplementation implementation,
-                                   GLContext* context) {
+bool InitializeDynamicGLBindings(GLImplementation implementation,
+                                 GLContext* context) {
   switch (implementation) {
     case kGLImplementationEGLGLES2:
-      InitializeGLExtensionBindingsGL(context);
-      InitializeGLExtensionBindingsEGL(context);
+      InitializeDynamicGLBindingsGL(context);
+      InitializeDynamicGLBindingsEGL(context);
+      break;
+    case kGLImplementationOSMesaGL:
+      InitializeDynamicGLBindingsGL(context);
+      InitializeDynamicGLBindingsOSMESA(context);
       break;
     case kGLImplementationMockGL:
-      InitializeGLExtensionBindingsGL(context);
+      if (!context) {
+        scoped_refptr<GLContextStubWithExtensions> mock_context(
+            new GLContextStubWithExtensions());
+        mock_context->SetGLVersionString("opengl es 3.0");
+        InitializeDynamicGLBindingsGL(mock_context.get());
+      } else
+        InitializeDynamicGLBindingsGL(context);
       break;
     default:
+      NOTREACHED() << "InitializeDynamicGLBindings on Android";
       return false;
   }
 
@@ -122,11 +124,15 @@ bool InitializeGLExtensionBindings(GLImplementation implementation,
 }
 
 void InitializeDebugGLBindings() {
+  InitializeDebugGLBindingsEGL();
+  InitializeDebugGLBindingsGL();
+  InitializeDebugGLBindingsOSMESA();
 }
 
 void ClearGLBindings() {
   ClearGLBindingsEGL();
   ClearGLBindingsGL();
+  ClearGLBindingsOSMESA();
   SetGLImplementation(kGLImplementationNone);
 
   UnloadGLNativeLibraries();

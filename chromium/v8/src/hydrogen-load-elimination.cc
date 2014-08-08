@@ -1,34 +1,11 @@
 // Copyright 2013 the V8 project authors. All rights reserved.
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-//       copyright notice, this list of conditions and the following
-//       disclaimer in the documentation and/or other materials provided
-//       with the distribution.
-//     * Neither the name of Google Inc. nor the names of its
-//       contributors may be used to endorse or promote products derived
-//       from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
-#include "hydrogen-alias-analysis.h"
-#include "hydrogen-load-elimination.h"
-#include "hydrogen-instructions.h"
-#include "hydrogen-flow-engine.h"
+#include "src/hydrogen-alias-analysis.h"
+#include "src/hydrogen-load-elimination.h"
+#include "src/hydrogen-instructions.h"
+#include "src/hydrogen-flow-engine.h"
 
 namespace v8 {
 namespace internal {
@@ -43,18 +20,15 @@ static const int kMaxTrackedObjects = 5;
 class HFieldApproximation : public ZoneObject {
  public:  // Just a data blob.
   HValue* object_;
-  HLoadNamedField* last_load_;
   HValue* last_value_;
   HFieldApproximation* next_;
 
   // Recursively copy the entire linked list of field approximations.
   HFieldApproximation* Copy(Zone* zone) {
-    if (this == NULL) return NULL;
     HFieldApproximation* copy = new(zone) HFieldApproximation();
     copy->object_ = this->object_;
-    copy->last_load_ = this->last_load_;
     copy->last_value_ = this->last_value_;
-    copy->next_ = this->next_->Copy(zone);
+    copy->next_ = this->next_ == NULL ? NULL : this->next_->Copy(zone);
     return copy;
   }
 };
@@ -78,7 +52,7 @@ class HLoadEliminationTable : public ZoneObject {
                FieldOf(l->access()),
                l->object()->ActualValue()->id()));
         HValue* result = load(l);
-        if (result != instr) {
+        if (result != instr && l->CanBeReplacedWith(result)) {
           // The load can be replaced with a previous load or a value.
           TRACE(("  replace L%d -> v%d\n", instr->id(), result->id()));
           instr->DeleteAndReplaceWith(result);
@@ -100,26 +74,33 @@ class HLoadEliminationTable : public ZoneObject {
         }
         break;
       }
+      case HValue::kTransitionElementsKind: {
+        HTransitionElementsKind* t = HTransitionElementsKind::cast(instr);
+        HValue* object = t->object()->ActualValue();
+        KillFieldInternal(object, FieldOf(JSArray::kElementsOffset), NULL);
+        KillFieldInternal(object, FieldOf(JSObject::kMapOffset), NULL);
+        break;
+      }
       default: {
-        if (instr->CheckGVNFlag(kChangesInobjectFields)) {
+        if (instr->CheckChangesFlag(kInobjectFields)) {
           TRACE((" kill-all i%d\n", instr->id()));
           Kill();
           break;
         }
-        if (instr->CheckGVNFlag(kChangesMaps)) {
+        if (instr->CheckChangesFlag(kMaps)) {
           TRACE((" kill-maps i%d\n", instr->id()));
           KillOffset(JSObject::kMapOffset);
         }
-        if (instr->CheckGVNFlag(kChangesElementsKind)) {
+        if (instr->CheckChangesFlag(kElementsKind)) {
           TRACE((" kill-elements-kind i%d\n", instr->id()));
           KillOffset(JSObject::kMapOffset);
           KillOffset(JSObject::kElementsOffset);
         }
-        if (instr->CheckGVNFlag(kChangesElementsPointer)) {
+        if (instr->CheckChangesFlag(kElementsPointer)) {
           TRACE((" kill-elements i%d\n", instr->id()));
           KillOffset(JSObject::kElementsOffset);
         }
-        if (instr->CheckGVNFlag(kChangesOsrEntries)) {
+        if (instr->CheckChangesFlag(kOsrEntries)) {
           TRACE((" kill-osr i%d\n", instr->id()));
           Kill();
         }
@@ -134,13 +115,39 @@ class HLoadEliminationTable : public ZoneObject {
     return this;
   }
 
-  // Support for global analysis with HFlowEngine: Copy state to sucessor block.
-  HLoadEliminationTable* Copy(HBasicBlock* succ, Zone* zone) {
+  // Support for global analysis with HFlowEngine: Merge given state with
+  // the other incoming state.
+  static HLoadEliminationTable* Merge(HLoadEliminationTable* succ_state,
+                                      HBasicBlock* succ_block,
+                                      HLoadEliminationTable* pred_state,
+                                      HBasicBlock* pred_block,
+                                      Zone* zone) {
+    ASSERT(pred_state != NULL);
+    if (succ_state == NULL) {
+      return pred_state->Copy(succ_block, pred_block, zone);
+    } else {
+      return succ_state->Merge(succ_block, pred_state, pred_block, zone);
+    }
+  }
+
+  // Support for global analysis with HFlowEngine: Given state merged with all
+  // the other incoming states, prepare it for use.
+  static HLoadEliminationTable* Finish(HLoadEliminationTable* state,
+                                       HBasicBlock* block,
+                                       Zone* zone) {
+    ASSERT(state != NULL);
+    return state;
+  }
+
+ private:
+  // Copy state to successor block.
+  HLoadEliminationTable* Copy(HBasicBlock* succ, HBasicBlock* from_block,
+                              Zone* zone) {
     HLoadEliminationTable* copy =
         new(zone) HLoadEliminationTable(zone, aliasing_);
     copy->EnsureFields(fields_.length());
     for (int i = 0; i < fields_.length(); i++) {
-      copy->fields_[i] = fields_[i]->Copy(zone);
+      copy->fields_[i] = fields_[i] == NULL ? NULL : fields_[i]->Copy(zone);
     }
     if (FLAG_trace_load_elimination) {
       TRACE((" copy-to B%d\n", succ->block_id()));
@@ -149,10 +156,9 @@ class HLoadEliminationTable : public ZoneObject {
     return copy;
   }
 
-  // Support for global analysis with HFlowEngine: Merge this state with
-  // the other incoming state.
-  HLoadEliminationTable* Merge(HBasicBlock* succ,
-      HLoadEliminationTable* that, Zone* zone) {
+  // Merge this state with the other incoming state.
+  HLoadEliminationTable* Merge(HBasicBlock* succ, HLoadEliminationTable* that,
+                               HBasicBlock* that_block, Zone* zone) {
     if (that->fields_.length() < fields_.length()) {
       // Drop fields not in the other table.
       fields_.Rewind(that->fields_.length());
@@ -178,6 +184,10 @@ class HLoadEliminationTable : public ZoneObject {
         approx = approx->next_;
       }
     }
+    if (FLAG_trace_load_elimination) {
+      TRACE((" merge-to B%d\n", succ->block_id()));
+      Print();
+    }
     return this;
   }
 
@@ -189,6 +199,10 @@ class HLoadEliminationTable : public ZoneObject {
   // load or store for this object and field exists, return the new value with
   // which the load should be replaced. Otherwise, return {instr}.
   HValue* load(HLoadNamedField* instr) {
+    // There must be no loads from non observable in-object properties.
+    ASSERT(!instr->access().IsInobject() ||
+           instr->access().existing_inobject_property());
+
     int field = FieldOf(instr->access());
     if (field < 0) return instr;
 
@@ -197,12 +211,14 @@ class HLoadEliminationTable : public ZoneObject {
 
     if (approx->last_value_ == NULL) {
       // Load is not redundant. Fill out a new entry.
-      approx->last_load_ = instr;
       approx->last_value_ = instr;
       return instr;
-    } else {
+    } else if (approx->last_value_->block()->EqualToOrDominates(
+        instr->block())) {
       // Eliminate the load. Reuse previously stored value or load instruction.
       return approx->last_value_;
+    } else {
+      return instr;
     }
   }
 
@@ -211,18 +227,26 @@ class HLoadEliminationTable : public ZoneObject {
   // the stored values are the same), return NULL indicating that this store
   // instruction is redundant. Otherwise, return {instr}.
   HValue* store(HStoreNamedField* instr) {
+    if (instr->access().IsInobject() &&
+        !instr->access().existing_inobject_property()) {
+      TRACE(("  skipping non existing property initialization store\n"));
+      return instr;
+    }
+
     int field = FieldOf(instr->access());
     if (field < 0) return KillIfMisaligned(instr);
 
     HValue* object = instr->object()->ActualValue();
     HValue* value = instr->value();
 
-    // Kill non-equivalent may-alias entries.
-    KillFieldInternal(object, field, value);
     if (instr->has_transition()) {
-      // A transition store alters the map of the object.
-      // TODO(titzer): remember the new map (a constant) for the object.
+      // A transition introduces a new field and alters the map of the object.
+      // Since the field in the object is new, it cannot alias existing entries.
+      // TODO(titzer): introduce a constant for the new map and remember it.
       KillFieldInternal(object, FieldOf(JSObject::kMapOffset), NULL);
+    } else {
+      // Kill non-equivalent may-alias entries.
+      KillFieldInternal(object, field, value);
     }
     HFieldApproximation* approx = FindOrCreate(object, field);
 
@@ -231,7 +255,6 @@ class HLoadEliminationTable : public ZoneObject {
       return NULL;
     } else {
       // The store is not redundant. Update the entry.
-      approx->last_load_ = NULL;
       approx->last_value_ = value;
       return instr;
     }
@@ -314,7 +337,6 @@ class HLoadEliminationTable : public ZoneObject {
 
     // Insert the entry at the head of the list.
     approx->object_ = object;
-    approx->last_load_ = NULL;
     approx->last_value_ = NULL;
     approx->next_ = fields_[field];
     fields_[field] = approx;
@@ -397,7 +419,6 @@ class HLoadEliminationTable : public ZoneObject {
       PrintF("  field %d: ", i);
       for (HFieldApproximation* a = fields_[i]; a != NULL; a = a->next_) {
         PrintF("[o%d =", a->object_->id());
-        if (a->last_load_ != NULL) PrintF(" L%d", a->last_load_->id());
         if (a->last_value_ != NULL) PrintF(" v%d", a->last_value_->id());
         PrintF("] ");
       }
@@ -415,11 +436,7 @@ class HLoadEliminationTable : public ZoneObject {
 class HLoadEliminationEffects : public ZoneObject {
  public:
   explicit HLoadEliminationEffects(Zone* zone)
-    : zone_(zone),
-      maps_stored_(false),
-      fields_stored_(false),
-      elements_stored_(false),
-      stores_(5, zone) { }
+    : zone_(zone), stores_(5, zone) { }
 
   inline bool Disabled() {
     return false;  // Effects are _not_ disabled.
@@ -427,37 +444,25 @@ class HLoadEliminationEffects : public ZoneObject {
 
   // Process a possibly side-effecting instruction.
   void Process(HInstruction* instr, Zone* zone) {
-    switch (instr->opcode()) {
-      case HValue::kStoreNamedField: {
-        stores_.Add(HStoreNamedField::cast(instr), zone_);
-        break;
-      }
-      case HValue::kOsrEntry: {
-        // Kill everything. Loads must not be hoisted past the OSR entry.
-        maps_stored_ = true;
-        fields_stored_ = true;
-        elements_stored_ = true;
-      }
-      default: {
-        fields_stored_ |= instr->CheckGVNFlag(kChangesInobjectFields);
-        maps_stored_ |= instr->CheckGVNFlag(kChangesMaps);
-        maps_stored_ |= instr->CheckGVNFlag(kChangesElementsKind);
-        elements_stored_ |= instr->CheckGVNFlag(kChangesElementsKind);
-        elements_stored_ |= instr->CheckGVNFlag(kChangesElementsPointer);
-      }
+    if (instr->IsStoreNamedField()) {
+      stores_.Add(HStoreNamedField::cast(instr), zone_);
+    } else {
+      flags_.Add(instr->ChangesFlags());
     }
   }
 
   // Apply these effects to the given load elimination table.
   void Apply(HLoadEliminationTable* table) {
-    if (fields_stored_) {
+    // Loads must not be hoisted past the OSR entry, therefore we kill
+    // everything if we see an OSR entry.
+    if (flags_.Contains(kInobjectFields) || flags_.Contains(kOsrEntries)) {
       table->Kill();
       return;
     }
-    if (maps_stored_) {
+    if (flags_.Contains(kElementsKind) || flags_.Contains(kMaps)) {
       table->KillOffset(JSObject::kMapOffset);
     }
-    if (elements_stored_) {
+    if (flags_.Contains(kElementsKind) || flags_.Contains(kElementsPointer)) {
       table->KillOffset(JSObject::kElementsOffset);
     }
 
@@ -469,9 +474,7 @@ class HLoadEliminationEffects : public ZoneObject {
 
   // Union these effects with the other effects.
   void Union(HLoadEliminationEffects* that, Zone* zone) {
-    maps_stored_ |= that->maps_stored_;
-    fields_stored_ |= that->fields_stored_;
-    elements_stored_ |= that->elements_stored_;
+    flags_.Add(that->flags_);
     for (int i = 0; i < that->stores_.length(); i++) {
       stores_.Add(that->stores_[i], zone);
     }
@@ -479,9 +482,7 @@ class HLoadEliminationEffects : public ZoneObject {
 
  private:
   Zone* zone_;
-  bool maps_stored_ : 1;
-  bool fields_stored_ : 1;
-  bool elements_stored_ : 1;
+  GVNFlagSet flags_;
   ZoneList<HStoreNamedField*> stores_;
 };
 

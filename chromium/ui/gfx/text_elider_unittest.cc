@@ -15,7 +15,12 @@
 #include "ui/gfx/font.h"
 #include "ui/gfx/font_list.h"
 #include "ui/gfx/text_utils.h"
-#include "url/gurl.h"
+
+using base::ASCIIToUTF16;
+using base::UTF16ToUTF8;
+using base::UTF16ToWide;
+using base::UTF8ToUTF16;
+using base::WideToUTF16;
 
 namespace gfx {
 
@@ -32,8 +37,8 @@ struct FileTestcase {
 };
 
 struct UTF16Testcase {
-  const string16 input;
-  const string16 output;
+  const base::string16 input;
+  const base::string16 output;
 };
 
 struct TestData {
@@ -42,24 +47,12 @@ struct TestData {
   const int compare_result;
 };
 
-void RunUrlTest(Testcase* testcases, size_t num_testcases) {
-  static const FontList font_list;
-  for (size_t i = 0; i < num_testcases; ++i) {
-    const GURL url(testcases[i].input);
-    // Should we test with non-empty language list?
-    // That's kinda redundant with net_util_unittests.
-    const float available_width =
-        GetStringWidthF(UTF8ToUTF16(testcases[i].output), font_list);
-    EXPECT_EQ(UTF8ToUTF16(testcases[i].output),
-              ElideUrl(url, font_list, available_width, std::string()));
-  }
-}
-
 }  // namespace
 
 // TODO(ios): This test fails on iOS because iOS version of GetStringWidthF
 // that calls [NSString sizeWithFont] returns the rounded string width.
-#if defined(OS_IOS)
+// TODO(338784): Enable this on android.
+#if defined(OS_IOS) || defined(OS_ANDROID)
 #define MAYBE_ElideEmail DISABLED_ElideEmail
 #else
 #define MAYBE_ElideEmail ElideEmail
@@ -111,16 +104,21 @@ TEST(TextEliderTest, MAYBE_ElideEmail) {
 
   const FontList font_list;
   for (size_t i = 0; i < arraysize(testcases); ++i) {
-    const string16 expected_output = UTF8ToUTF16(testcases[i].output);
+    const base::string16 expected_output = UTF8ToUTF16(testcases[i].output);
     EXPECT_EQ(expected_output,
-              ElideEmail(
-                  UTF8ToUTF16(testcases[i].input),
-                  font_list,
-                  GetStringWidthF(expected_output, font_list)));
+              ElideText(UTF8ToUTF16(testcases[i].input), font_list,
+                        GetStringWidthF(expected_output, font_list),
+                        ELIDE_EMAIL));
   }
 }
 
-TEST(TextEliderTest, ElideEmailMoreSpace) {
+// TODO(338784): Enable this on android.
+#if defined(OS_ANDROID)
+#define MAYBE_ElideEmailMoreSpace DISABLED_ElideEmailMoreSpace
+#else
+#define MAYBE_ElideEmailMoreSpace ElideEmailMoreSpace
+#endif
+TEST(TextEliderTest, MAYBE_ElideEmailMoreSpace) {
   const int test_width_factors[] = {
       100,
       10000,
@@ -139,141 +137,17 @@ TEST(TextEliderTest, ElideEmailMoreSpace) {
         font_list.GetExpectedTextWidth(test_width_factors[i]);
     for (size_t j = 0; j < arraysize(test_emails); ++j) {
       // Extra space is available: the email should not be elided.
-      const string16 test_email = UTF8ToUTF16(test_emails[j]);
-      EXPECT_EQ(test_email, ElideEmail(test_email, font_list, test_width));
+      const base::string16 test_email = UTF8ToUTF16(test_emails[j]);
+      EXPECT_EQ(test_email,
+                ElideText(test_email, font_list, test_width, ELIDE_EMAIL));
     }
   }
 }
 
-// Test eliding of commonplace URLs.
-TEST(TextEliderTest, TestGeneralEliding) {
-  const std::string kEllipsisStr(kEllipsis);
-  Testcase testcases[] = {
-    {"http://www.google.com/intl/en/ads/",
-     "www.google.com/intl/en/ads/"},
-    {"http://www.google.com/intl/en/ads/", "www.google.com/intl/en/ads/"},
-    {"http://www.google.com/intl/en/ads/",
-     "google.com/intl/" + kEllipsisStr + "/ads/"},
-    {"http://www.google.com/intl/en/ads/",
-     "google.com/" + kEllipsisStr + "/ads/"},
-    {"http://www.google.com/intl/en/ads/", "google.com/" + kEllipsisStr},
-    {"http://www.google.com/intl/en/ads/", "goog" + kEllipsisStr},
-    {"https://subdomain.foo.com/bar/filename.html",
-     "subdomain.foo.com/bar/filename.html"},
-    {"https://subdomain.foo.com/bar/filename.html",
-     "subdomain.foo.com/" + kEllipsisStr + "/filename.html"},
-    {"http://subdomain.foo.com/bar/filename.html",
-     kEllipsisStr + "foo.com/" + kEllipsisStr + "/filename.html"},
-    {"http://www.google.com/intl/en/ads/?aLongQueryWhichIsNotRequired",
-     "www.google.com/intl/en/ads/?aLongQ" + kEllipsisStr},
-  };
-
-  RunUrlTest(testcases, arraysize(testcases));
-}
-
-// When there is very little space available, the elision code will shorten
-// both path AND file name to an ellipsis - ".../...". To avoid this result,
-// there is a hack in place that simply treats them as one string in this
-// case.
-TEST(TextEliderTest, TestTrailingEllipsisSlashEllipsisHack) {
-  const std::string kEllipsisStr(kEllipsis);
-
-  // Very little space, would cause double ellipsis.
-  FontList font_list;
-  GURL url("http://battersbox.com/directory/foo/peter_paul_and_mary.html");
-  float available_width = GetStringWidthF(
-      UTF8ToUTF16("battersbox.com/" + kEllipsisStr + "/" + kEllipsisStr),
-      font_list);
-
-  // Create the expected string, after elision. Depending on font size, the
-  // directory might become /dir... or /di... or/d... - it never should be
-  // shorter than that. (If it is, the font considers d... to be longer
-  // than .../... -  that should never happen).
-  ASSERT_GT(GetStringWidthF(UTF8ToUTF16(kEllipsisStr + "/" + kEllipsisStr),
-                            font_list),
-            GetStringWidthF(UTF8ToUTF16("d" + kEllipsisStr), font_list));
-  GURL long_url("http://battersbox.com/directorynameisreallylongtoforcetrunc");
-  string16 expected =
-      ElideUrl(long_url, font_list, available_width, std::string());
-  // Ensure that the expected result still contains part of the directory name.
-  ASSERT_GT(expected.length(), std::string("battersbox.com/d").length());
-  EXPECT_EQ(expected,
-             ElideUrl(url, font_list, available_width, std::string()));
-
-  // More space available - elide directories, partially elide filename.
-  Testcase testcases[] = {
-    {"http://battersbox.com/directory/foo/peter_paul_and_mary.html",
-     "battersbox.com/" + kEllipsisStr + "/peter" + kEllipsisStr},
-  };
-  RunUrlTest(testcases, arraysize(testcases));
-}
-
-// Test eliding of empty strings, URLs with ports, passwords, queries, etc.
-TEST(TextEliderTest, TestMoreEliding) {
-  const std::string kEllipsisStr(kEllipsis);
-  Testcase testcases[] = {
-    {"http://www.google.com/foo?bar", "www.google.com/foo?bar"},
-    {"http://xyz.google.com/foo?bar", "xyz.google.com/foo?" + kEllipsisStr},
-    {"http://xyz.google.com/foo?bar", "xyz.google.com/foo" + kEllipsisStr},
-    {"http://xyz.google.com/foo?bar", "xyz.google.com/fo" + kEllipsisStr},
-    {"http://a.b.com/pathname/c?d", "a.b.com/" + kEllipsisStr + "/c?d"},
-    {"", ""},
-    {"http://foo.bar..example.com...hello/test/filename.html",
-     "foo.bar..example.com...hello/" + kEllipsisStr + "/filename.html"},
-    {"http://foo.bar../", "foo.bar.."},
-    {"http://xn--1lq90i.cn/foo", "\xe5\x8c\x97\xe4\xba\xac.cn/foo"},
-    {"http://me:mypass@secrethost.com:99/foo?bar#baz",
-     "secrethost.com:99/foo?bar#baz"},
-    {"http://me:mypass@ss%xxfdsf.com/foo", "ss%25xxfdsf.com/foo"},
-    {"mailto:elgoato@elgoato.com", "mailto:elgoato@elgoato.com"},
-    {"javascript:click(0)", "javascript:click(0)"},
-    {"https://chess.eecs.berkeley.edu:4430/login/arbitfilename",
-     "chess.eecs.berkeley.edu:4430/login/arbitfilename"},
-    {"https://chess.eecs.berkeley.edu:4430/login/arbitfilename",
-     kEllipsisStr + "berkeley.edu:4430/" + kEllipsisStr + "/arbitfilename"},
-
-    // Unescaping.
-    {"http://www/%E4%BD%A0%E5%A5%BD?q=%E4%BD%A0%E5%A5%BD#\xe4\xbd\xa0",
-     "www/\xe4\xbd\xa0\xe5\xa5\xbd?q=\xe4\xbd\xa0\xe5\xa5\xbd#\xe4\xbd\xa0"},
-
-    // Invalid unescaping for path. The ref will always be valid UTF-8. We don't
-    // bother to do too many edge cases, since these are handled by the escaper
-    // unittest.
-    {"http://www/%E4%A0%E5%A5%BD?q=%E4%BD%A0%E5%A5%BD#\xe4\xbd\xa0",
-     "www/%E4%A0%E5%A5%BD?q=\xe4\xbd\xa0\xe5\xa5\xbd#\xe4\xbd\xa0"},
-  };
-
-  RunUrlTest(testcases, arraysize(testcases));
-}
-
-// Test eliding of file: URLs.
-TEST(TextEliderTest, TestFileURLEliding) {
-  const std::string kEllipsisStr(kEllipsis);
-  Testcase testcases[] = {
-    {"file:///C:/path1/path2/path3/filename",
-     "file:///C:/path1/path2/path3/filename"},
-    {"file:///C:/path1/path2/path3/filename",
-     "C:/path1/path2/path3/filename"},
-// GURL parses "file:///C:path" differently on windows than it does on posix.
-#if defined(OS_WIN)
-    {"file:///C:path1/path2/path3/filename",
-     "C:/path1/path2/" + kEllipsisStr + "/filename"},
-    {"file:///C:path1/path2/path3/filename",
-     "C:/path1/" + kEllipsisStr + "/filename"},
-    {"file:///C:path1/path2/path3/filename",
-     "C:/" + kEllipsisStr + "/filename"},
-#endif
-    {"file://filer/foo/bar/file", "filer/foo/bar/file"},
-    {"file://filer/foo/bar/file", "filer/foo/" + kEllipsisStr + "/file"},
-    {"file://filer/foo/bar/file", "filer/" + kEllipsisStr + "/file"},
-  };
-
-  RunUrlTest(testcases, arraysize(testcases));
-}
-
 // TODO(ios): This test fails on iOS because iOS version of GetStringWidthF
 // that calls [NSString sizeWithFont] returns the rounded string width.
-#if defined(OS_IOS)
+// TODO(338784): Enable this on android.
+#if defined(OS_IOS) || defined(OS_ANDROID)
 #define MAYBE_TestFilenameEliding DISABLED_TestFilenameEliding
 #else
 #define MAYBE_TestFilenameEliding TestFilenameEliding
@@ -320,14 +194,20 @@ TEST(TextEliderTest, MAYBE_TestFilenameEliding) {
   static const FontList font_list;
   for (size_t i = 0; i < arraysize(testcases); ++i) {
     base::FilePath filepath(testcases[i].input);
-    string16 expected = UTF8ToUTF16(testcases[i].output);
+    base::string16 expected = UTF8ToUTF16(testcases[i].output);
     expected = base::i18n::GetDisplayStringInLTRDirectionality(expected);
     EXPECT_EQ(expected, ElideFilename(filepath, font_list,
         GetStringWidthF(UTF8ToUTF16(testcases[i].output), font_list)));
   }
 }
 
-TEST(TextEliderTest, ElideTextTruncate) {
+// TODO(338784): Enable this on android.
+#if defined(OS_ANDROID)
+#define MAYBE_ElideTextTruncate DISABLED_ElideTextTruncate
+#else
+#define MAYBE_ElideTextTruncate ElideTextTruncate
+#endif
+TEST(TextEliderTest, MAYBE_ElideTextTruncate) {
   const FontList font_list;
   const float kTestWidth = GetStringWidthF(ASCIIToUTF16("Test"), font_list);
   struct TestData {
@@ -344,13 +224,19 @@ TEST(TextEliderTest, ElideTextTruncate) {
   };
 
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(cases); ++i) {
-    string16 result = ElideText(UTF8ToUTF16(cases[i].input), font_list,
-                                cases[i].width, TRUNCATE_AT_END);
+    base::string16 result = ElideText(UTF8ToUTF16(cases[i].input), font_list,
+                                      cases[i].width, TRUNCATE);
     EXPECT_EQ(cases[i].output, UTF16ToUTF8(result));
   }
 }
 
-TEST(TextEliderTest, ElideTextEllipsis) {
+// TODO(338784): Enable this on android.
+#if defined(OS_ANDROID)
+#define MAYBE_ElideTextEllipsis DISABLED_ElideTextEllipsis
+#else
+#define MAYBE_ElideTextEllipsis ElideTextEllipsis
+#endif
+TEST(TextEliderTest, MAYBE_ElideTextEllipsis) {
   const FontList font_list;
   const float kTestWidth = GetStringWidthF(ASCIIToUTF16("Test"), font_list);
   const char* kEllipsis = "\xE2\x80\xA6";
@@ -370,79 +256,132 @@ TEST(TextEliderTest, ElideTextEllipsis) {
   };
 
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(cases); ++i) {
-    string16 result = ElideText(UTF8ToUTF16(cases[i].input), font_list,
-                                cases[i].width, ELIDE_AT_END);
+    base::string16 result = ElideText(UTF8ToUTF16(cases[i].input), font_list,
+                                      cases[i].width, ELIDE_TAIL);
     EXPECT_EQ(cases[i].output, UTF16ToUTF8(result));
+  }
+}
+
+// TODO(338784): Enable this on android.
+#if defined(OS_ANDROID)
+#define MAYBE_ElideTextEllipsisFront DISABLED_ElideTextEllipsisFront
+#else
+#define MAYBE_ElideTextEllipsisFront ElideTextEllipsisFront
+#endif
+TEST(TextEliderTest, MAYBE_ElideTextEllipsisFront) {
+  const FontList font_list;
+  const float kTestWidth = GetStringWidthF(ASCIIToUTF16("Test"), font_list);
+  const std::string kEllipsisStr(kEllipsis);
+  const float kEllipsisWidth =
+      GetStringWidthF(UTF8ToUTF16(kEllipsis), font_list);
+  const float kEllipsis23Width =
+      GetStringWidthF(UTF8ToUTF16(kEllipsisStr + "23"), font_list);
+  struct TestData {
+    const char* input;
+    float width;
+    const base::string16 output;
+  } cases[] = {
+    { "",        0,                base::string16() },
+    { "Test",    0,                base::string16() },
+    { "Test",    kEllipsisWidth,   UTF8ToUTF16(kEllipsisStr) },
+    { "",        kTestWidth,       base::string16() },
+    { "Tes",     kTestWidth,       ASCIIToUTF16("Tes") },
+    { "Test",    kTestWidth,       ASCIIToUTF16("Test") },
+    { "Test123", kEllipsis23Width, UTF8ToUTF16(kEllipsisStr + "23") },
+  };
+
+  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(cases); ++i) {
+    base::string16 result = ElideText(UTF8ToUTF16(cases[i].input), font_list,
+                                      cases[i].width, ELIDE_HEAD);
+    EXPECT_EQ(cases[i].output, result);
   }
 }
 
 // Checks that all occurrences of |first_char| are followed by |second_char| and
 // all occurrences of |second_char| are preceded by |first_char| in |text|.
-static void CheckSurrogatePairs(const string16& text,
-                                char16 first_char,
-                                char16 second_char) {
+static void CheckSurrogatePairs(const base::string16& text,
+                                base::char16 first_char,
+                                base::char16 second_char) {
   size_t index = text.find_first_of(first_char);
-  while (index != string16::npos) {
+  while (index != base::string16::npos) {
     EXPECT_LT(index, text.length() - 1);
     EXPECT_EQ(second_char, text[index + 1]);
     index = text.find_first_of(first_char, index + 1);
   }
   index = text.find_first_of(second_char);
-  while (index != string16::npos) {
+  while (index != base::string16::npos) {
     EXPECT_GT(index, 0U);
     EXPECT_EQ(first_char, text[index - 1]);
     index = text.find_first_of(second_char, index + 1);
   }
 }
 
-TEST(TextEliderTest, ElideTextSurrogatePairs) {
+// TODO(338784): Enable this on android.
+#if defined(OS_ANDROID)
+#define MAYBE_ElideTextSurrogatePairs DISABLED_ElideTextSurrogatePairs
+#else
+#define MAYBE_ElideTextSurrogatePairs ElideTextSurrogatePairs
+#endif
+TEST(TextEliderTest, MAYBE_ElideTextSurrogatePairs) {
   const FontList font_list;
   // The below is 'MUSICAL SYMBOL G CLEF', which is represented in UTF-16 as
   // two characters forming a surrogate pair 0x0001D11E.
   const std::string kSurrogate = "\xF0\x9D\x84\x9E";
-  const string16 kTestString =
+  const base::string16 kTestString =
       UTF8ToUTF16(kSurrogate + "ab" + kSurrogate + kSurrogate + "cd");
   const float kTestStringWidth = GetStringWidthF(kTestString, font_list);
-  const char16 kSurrogateFirstChar = kTestString[0];
-  const char16 kSurrogateSecondChar = kTestString[1];
-  string16 result;
+  const base::char16 kSurrogateFirstChar = kTestString[0];
+  const base::char16 kSurrogateSecondChar = kTestString[1];
+  base::string16 result;
 
   // Elide |kTextString| to all possible widths and check that no instance of
   // |kSurrogate| was split in two.
   for (float width = 0; width <= kTestStringWidth; width++) {
-    result = ElideText(kTestString, font_list, width, TRUNCATE_AT_END);
+    result = ElideText(kTestString, font_list, width, TRUNCATE);
     CheckSurrogatePairs(result, kSurrogateFirstChar, kSurrogateSecondChar);
 
-    result = ElideText(kTestString, font_list, width, ELIDE_AT_END);
+    result = ElideText(kTestString, font_list, width, ELIDE_TAIL);
     CheckSurrogatePairs(result, kSurrogateFirstChar, kSurrogateSecondChar);
 
-    result = ElideText(kTestString, font_list, width, ELIDE_IN_MIDDLE);
+    result = ElideText(kTestString, font_list, width, ELIDE_MIDDLE);
+    CheckSurrogatePairs(result, kSurrogateFirstChar, kSurrogateSecondChar);
+
+    result = ElideText(kTestString, font_list, width, ELIDE_HEAD);
     CheckSurrogatePairs(result, kSurrogateFirstChar, kSurrogateSecondChar);
   }
 }
 
-TEST(TextEliderTest, ElideTextLongStrings) {
-  const string16 kEllipsisStr = UTF8ToUTF16(kEllipsis);
-  string16 data_scheme(UTF8ToUTF16("data:text/plain,"));
+// TODO(338784): Enable this on android.
+#if defined(OS_ANDROID)
+#define MAYBE_ElideTextLongStrings DISABLED_ElideTextLongStrings
+#else
+#define MAYBE_ElideTextLongStrings ElideTextLongStrings
+#endif
+TEST(TextEliderTest, MAYBE_ElideTextLongStrings) {
+  const base::string16 kEllipsisStr = UTF8ToUTF16(kEllipsis);
+  base::string16 data_scheme(UTF8ToUTF16("data:text/plain,"));
   size_t data_scheme_length = data_scheme.length();
 
-  string16 ten_a(10, 'a');
-  string16 hundred_a(100, 'a');
-  string16 thousand_a(1000, 'a');
-  string16 ten_thousand_a(10000, 'a');
-  string16 hundred_thousand_a(100000, 'a');
-  string16 million_a(1000000, 'a');
+  base::string16 ten_a(10, 'a');
+  base::string16 hundred_a(100, 'a');
+  base::string16 thousand_a(1000, 'a');
+  base::string16 ten_thousand_a(10000, 'a');
+  base::string16 hundred_thousand_a(100000, 'a');
+  base::string16 million_a(1000000, 'a');
+
+  // TODO(gbillock): Improve these tests by adding more string diversity and
+  // doing string compares instead of length compares. See bug 338836.
 
   size_t number_of_as = 156;
-  string16 long_string_end(
-      data_scheme + string16(number_of_as, 'a') + kEllipsisStr);
+  base::string16 long_string_end(
+      data_scheme + base::string16(number_of_as, 'a') + kEllipsisStr);
   UTF16Testcase testcases_end[] = {
-     {data_scheme + ten_a,              data_scheme + ten_a},
-     {data_scheme + hundred_a,          data_scheme + hundred_a},
-     {data_scheme + thousand_a,         long_string_end},
-     {data_scheme + ten_thousand_a,     long_string_end},
-     {data_scheme + hundred_thousand_a, long_string_end},
-     {data_scheme + million_a,          long_string_end},
+     { data_scheme + ten_a,              data_scheme + ten_a },
+     { data_scheme + hundred_a,          data_scheme + hundred_a },
+     { data_scheme + thousand_a,         long_string_end },
+     { data_scheme + ten_thousand_a,     long_string_end },
+     { data_scheme + hundred_thousand_a, long_string_end },
+     { data_scheme + million_a,          long_string_end },
   };
 
   const FontList font_list;
@@ -451,85 +390,58 @@ TEST(TextEliderTest, ElideTextLongStrings) {
     // Compare sizes rather than actual contents because if the test fails,
     // output is rather long.
     EXPECT_EQ(testcases_end[i].output.size(),
-              ElideText(
-                  testcases_end[i].input,
-                  font_list,
-                  GetStringWidthF(testcases_end[i].output, font_list),
-                  ELIDE_AT_END).size());
+              ElideText(testcases_end[i].input, font_list,
+                        GetStringWidthF(testcases_end[i].output, font_list),
+                        ELIDE_TAIL).size());
     EXPECT_EQ(kEllipsisStr,
               ElideText(testcases_end[i].input, font_list, ellipsis_width,
-                        ELIDE_AT_END));
+                        ELIDE_TAIL));
   }
 
   size_t number_of_trailing_as = (data_scheme_length + number_of_as) / 2;
-  string16 long_string_middle(data_scheme +
-      string16(number_of_as - number_of_trailing_as, 'a') + kEllipsisStr +
-      string16(number_of_trailing_as, 'a'));
+  base::string16 long_string_middle(data_scheme +
+      base::string16(number_of_as - number_of_trailing_as, 'a') + kEllipsisStr +
+      base::string16(number_of_trailing_as, 'a'));
   UTF16Testcase testcases_middle[] = {
-     {data_scheme + ten_a,              data_scheme + ten_a},
-     {data_scheme + hundred_a,          data_scheme + hundred_a},
-     {data_scheme + thousand_a,         long_string_middle},
-     {data_scheme + ten_thousand_a,     long_string_middle},
-     {data_scheme + hundred_thousand_a, long_string_middle},
-     {data_scheme + million_a,          long_string_middle},
+     { data_scheme + ten_a,              data_scheme + ten_a },
+     { data_scheme + hundred_a,          data_scheme + hundred_a },
+     { data_scheme + thousand_a,         long_string_middle },
+     { data_scheme + ten_thousand_a,     long_string_middle },
+     { data_scheme + hundred_thousand_a, long_string_middle },
+     { data_scheme + million_a,          long_string_middle },
   };
 
   for (size_t i = 0; i < arraysize(testcases_middle); ++i) {
     // Compare sizes rather than actual contents because if the test fails,
     // output is rather long.
     EXPECT_EQ(testcases_middle[i].output.size(),
-              ElideText(
-                  testcases_middle[i].input,
-                  font_list,
-                  GetStringWidthF(testcases_middle[i].output, font_list),
-                  ELIDE_AT_END).size());
+              ElideText(testcases_middle[i].input, font_list,
+                        GetStringWidthF(testcases_middle[i].output, font_list),
+                        ELIDE_MIDDLE).size());
     EXPECT_EQ(kEllipsisStr,
               ElideText(testcases_middle[i].input, font_list, ellipsis_width,
-                        ELIDE_AT_END));
+                        ELIDE_MIDDLE));
   }
-}
 
-// Verifies display_url is set correctly.
-TEST(TextEliderTest, SortedDisplayURL) {
-  SortedDisplayURL d_url(GURL("http://www.google.com"), std::string());
-  EXPECT_EQ("www.google.com", UTF16ToASCII(d_url.display_url()));
-}
-
-// Verifies DisplayURL::Compare works correctly.
-TEST(TextEliderTest, SortedDisplayURLCompare) {
-  UErrorCode create_status = U_ZERO_ERROR;
-  scoped_ptr<icu::Collator> collator(
-      icu::Collator::createInstance(create_status));
-  if (!U_SUCCESS(create_status))
-    return;
-
-  TestData tests[] = {
-    // IDN comparison. Hosts equal, so compares on path.
-    { "http://xn--1lq90i.cn/a", "http://xn--1lq90i.cn/b", -1},
-
-    // Because the host and after host match, this compares the full url.
-    { "http://www.x/b", "http://x/b", -1 },
-
-    // Because the host and after host match, this compares the full url.
-    { "http://www.a:1/b", "http://a:1/b", 1 },
-
-    // The hosts match, so these end up comparing on the after host portion.
-    { "http://www.x:0/b", "http://x:1/b", -1 },
-    { "http://www.x/a", "http://x/b", -1 },
-    { "http://x/b", "http://www.x/a", 1 },
-
-    // Trivial Equality.
-    { "http://a/", "http://a/", 0 },
-
-    // Compares just hosts.
-    { "http://www.a/", "http://b/", -1 },
+  base::string16 long_string_beginning(
+      kEllipsisStr + base::string16(number_of_as, 'a'));
+  UTF16Testcase testcases_beginning[] = {
+     { data_scheme + ten_a,              data_scheme + ten_a },
+     { data_scheme + hundred_a,          data_scheme + hundred_a },
+     { data_scheme + thousand_a,         long_string_beginning },
+     { data_scheme + ten_thousand_a,     long_string_beginning },
+     { data_scheme + hundred_thousand_a, long_string_beginning },
+     { data_scheme + million_a,          long_string_beginning },
   };
-
-  for (size_t i = 0; i < arraysize(tests); ++i) {
-    SortedDisplayURL url1(GURL(tests[i].a), std::string());
-    SortedDisplayURL url2(GURL(tests[i].b), std::string());
-    EXPECT_EQ(tests[i].compare_result, url1.Compare(url2, collator.get()));
-    EXPECT_EQ(-tests[i].compare_result, url2.Compare(url1, collator.get()));
+  for (size_t i = 0; i < arraysize(testcases_beginning); ++i) {
+    EXPECT_EQ(testcases_beginning[i].output.size(),
+              ElideText(
+                  testcases_beginning[i].input, font_list,
+                  GetStringWidthF(testcases_beginning[i].output, font_list),
+                  ELIDE_HEAD).size());
+    EXPECT_EQ(kEllipsisStr,
+              ElideText(testcases_beginning[i].input, font_list, ellipsis_width,
+                        ELIDE_HEAD));
   }
 }
 
@@ -553,7 +465,7 @@ TEST(TextEliderTest, ElideString) {
     { "Hello, my name is Tom", 100, false, "Hello, my name is Tom" }
   };
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(cases); ++i) {
-    string16 output;
+    base::string16 output;
     EXPECT_EQ(cases[i].result,
               ElideString(UTF8ToUTF16(cases[i].input),
                           cases[i].max_len, &output));
@@ -561,7 +473,13 @@ TEST(TextEliderTest, ElideString) {
   }
 }
 
-TEST(TextEliderTest, ElideRectangleText) {
+// TODO(338784): Enable this on android.
+#if defined(OS_ANDROID)
+#define MAYBE_ElideRectangleText DISABLED_ElideRectangleText
+#else
+#define MAYBE_ElideRectangleText ElideRectangleText
+#endif
+TEST(TextEliderTest, MAYBE_ElideRectangleText) {
   const FontList font_list;
   const int line_height = font_list.GetHeight();
   const float test_width = GetStringWidthF(ASCIIToUTF16("Test"), font_list);
@@ -601,7 +519,7 @@ TEST(TextEliderTest, ElideRectangleText) {
   };
 
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(cases); ++i) {
-    std::vector<string16> lines;
+    std::vector<base::string16> lines;
     EXPECT_EQ(cases[i].truncated_y ? INSUFFICIENT_SPACE_VERTICAL : 0,
               ElideRectangleText(UTF8ToUTF16(cases[i].input),
                                  font_list,
@@ -618,7 +536,14 @@ TEST(TextEliderTest, ElideRectangleText) {
   }
 }
 
-TEST(TextEliderTest, ElideRectangleTextPunctuation) {
+// TODO(338784): Enable this on android.
+#if defined(OS_ANDROID)
+#define MAYBE_ElideRectangleTextPunctuation \
+    DISABLED_ElideRectangleTextPunctuation
+#else
+#define MAYBE_ElideRectangleTextPunctuation ElideRectangleTextPunctuation
+#endif
+TEST(TextEliderTest, MAYBE_ElideRectangleTextPunctuation) {
   const FontList font_list;
   const int line_height = font_list.GetHeight();
   const float test_width = GetStringWidthF(ASCIIToUTF16("Test"), font_list);
@@ -639,7 +564,7 @@ TEST(TextEliderTest, ElideRectangleTextPunctuation) {
   };
 
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(cases); ++i) {
-    std::vector<string16> lines;
+    std::vector<base::string16> lines;
     const WordWrapBehavior wrap_behavior =
         (cases[i].wrap_words ? WRAP_LONG_WORDS : TRUNCATE_LONG_WORDS);
     EXPECT_EQ(cases[i].truncated_x ? INSUFFICIENT_SPACE_HORIZONTAL : 0,
@@ -658,10 +583,17 @@ TEST(TextEliderTest, ElideRectangleTextPunctuation) {
   }
 }
 
-TEST(TextEliderTest, ElideRectangleTextLongWords) {
+// TODO(338784): Enable this on android.
+#if defined(OS_ANDROID)
+#define MAYBE_ElideRectangleTextLongWords DISABLED_ElideRectangleTextLongWords
+#else
+#define MAYBE_ElideRectangleTextLongWords ElideRectangleTextLongWords
+#endif
+TEST(TextEliderTest, MAYBE_ElideRectangleTextLongWords) {
   const FontList font_list;
   const int kAvailableHeight = 1000;
-  const string16 kElidedTesting = UTF8ToUTF16(std::string("Tes") + kEllipsis);
+  const base::string16 kElidedTesting =
+      UTF8ToUTF16(std::string("Tes") + kEllipsis);
   const float elided_width = GetStringWidthF(kElidedTesting, font_list);
   const float test_width = GetStringWidthF(ASCIIToUTF16("Test"), font_list);
 
@@ -702,7 +634,7 @@ TEST(TextEliderTest, ElideRectangleTextLongWords) {
   };
 
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(cases); ++i) {
-    std::vector<string16> lines;
+    std::vector<base::string16> lines;
     EXPECT_EQ(cases[i].truncated_x ? INSUFFICIENT_SPACE_HORIZONTAL : 0,
               ElideRectangleText(UTF8ToUTF16(cases[i].input),
                                  font_list,
@@ -722,7 +654,14 @@ TEST(TextEliderTest, ElideRectangleTextLongWords) {
 // fail because the truncated integer width is returned for the string
 // and the accumulation of the truncated values causes the elide function
 // to wrap incorrectly.
-TEST(TextEliderTest, ElideRectangleTextCheckLineWidth) {
+// TODO(338784): Enable this on android.
+#if defined(OS_ANDROID)
+#define MAYBE_ElideRectangleTextCheckLineWidth \
+    DISABLED_ElideRectangleTextCheckLineWidth
+#else
+#define MAYBE_ElideRectangleTextCheckLineWidth ElideRectangleTextCheckLineWidth
+#endif
+TEST(TextEliderTest, MAYBE_ElideRectangleTextCheckLineWidth) {
   FontList font_list;
 #if defined(OS_MACOSX) && !defined(OS_IOS)
   // Use a specific font to expose the line width exceeding problem.
@@ -731,7 +670,7 @@ TEST(TextEliderTest, ElideRectangleTextCheckLineWidth) {
   const float kAvailableWidth = 235;
   const int kAvailableHeight = 1000;
   const char text[] = "that Russian place we used to go to after fencing";
-  std::vector<string16> lines;
+  std::vector<base::string16> lines;
   EXPECT_EQ(0, ElideRectangleText(UTF8ToUTF16(text),
                                   font_list,
                                   kAvailableWidth,
@@ -816,7 +755,7 @@ TEST(TextEliderTest, ElideRectangleString) {
     { "Hi, my name is\nTom", 2, 20, false, "Hi, my name is\nTom" },
     { "Hi, my name is Tom",  1, 40, false, "Hi, my name is Tom" },
   };
-  string16 output;
+  base::string16 output;
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(cases); ++i) {
     EXPECT_EQ(cases[i].result,
               ElideRectangleString(UTF8ToUTF16(cases[i].input),
@@ -898,7 +837,7 @@ TEST(TextEliderTest, ElideRectangleStringNotStrict) {
     { "Hi, my name_is\nDick", 2, 20, false, "Hi, my name_is\nDick" },
     { "Hi, my name_is Dick",  1, 40, false, "Hi, my name_is Dick" },
   };
-  string16 output;
+  base::string16 output;
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(cases); ++i) {
     EXPECT_EQ(cases[i].result,
               ElideRectangleString(UTF8ToUTF16(cases[i].input),
@@ -910,17 +849,17 @@ TEST(TextEliderTest, ElideRectangleStringNotStrict) {
 
 TEST(TextEliderTest, ElideRectangleWide16) {
   // Two greek words separated by space.
-  const string16 str(WideToUTF16(
+  const base::string16 str(WideToUTF16(
       L"\x03a0\x03b1\x03b3\x03ba\x03cc\x03c3\x03bc\x03b9"
       L"\x03bf\x03c2\x0020\x0399\x03c3\x03c4\x03cc\x03c2"));
-  const string16 out1(WideToUTF16(
+  const base::string16 out1(WideToUTF16(
       L"\x03a0\x03b1\x03b3\x03ba\n"
       L"\x03cc\x03c3\x03bc\x03b9\n"
       L"..."));
-  const string16 out2(WideToUTF16(
+  const base::string16 out2(WideToUTF16(
       L"\x03a0\x03b1\x03b3\x03ba\x03cc\x03c3\x03bc\x03b9\x03bf\x03c2\x0020\n"
       L"\x0399\x03c3\x03c4\x03cc\x03c2"));
-  string16 output;
+  base::string16 output;
   EXPECT_TRUE(ElideRectangleString(str, 2, 4, true, &output));
   EXPECT_EQ(out1, output);
   EXPECT_FALSE(ElideRectangleString(str, 2, 12, true, &output));
@@ -929,19 +868,19 @@ TEST(TextEliderTest, ElideRectangleWide16) {
 
 TEST(TextEliderTest, ElideRectangleWide32) {
   // Four U+1D49C MATHEMATICAL SCRIPT CAPITAL A followed by space "aaaaa".
-  const string16 str(UTF8ToUTF16(
+  const base::string16 str(UTF8ToUTF16(
       "\xF0\x9D\x92\x9C\xF0\x9D\x92\x9C\xF0\x9D\x92\x9C\xF0\x9D\x92\x9C"
       " aaaaa"));
-  const string16 out(UTF8ToUTF16(
+  const base::string16 out(UTF8ToUTF16(
       "\xF0\x9D\x92\x9C\xF0\x9D\x92\x9C\xF0\x9D\x92\x9C\n"
       "\xF0\x9D\x92\x9C \naaa\n..."));
-  string16 output;
+  base::string16 output;
   EXPECT_TRUE(ElideRectangleString(str, 3, 3, true, &output));
   EXPECT_EQ(out, output);
 }
 
 TEST(TextEliderTest, TruncateString) {
-  string16 string = ASCIIToUTF16("foooooey    bxxxar baz");
+  base::string16 string = ASCIIToUTF16("foooooey    bxxxar baz");
 
   // Make sure it doesn't modify the string if length > string length.
   EXPECT_EQ(string, TruncateString(string, 100));

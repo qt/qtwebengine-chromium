@@ -34,10 +34,11 @@
 #include "core/dom/ContainerNode.h"
 #include "core/dom/Document.h"
 #include "core/dom/NodeTraversal.h"
-#include "core/frame/DOMWindow.h"
+#include "core/frame/LocalDOMWindow.h"
 #include "core/frame/FrameView.h"
 #include "core/html/HTMLFrameOwnerElement.h"
 #include "core/page/Page.h"
+#include "core/rendering/RenderObject.h"
 #include "wtf/text/StringBuilder.h"
 
 namespace WebCore {
@@ -69,7 +70,7 @@ static Node* nodeInsideFrame(Node* node)
 // read/write code in one place!
 String SmartClipData::toString()
 {
-    if (!m_node)
+    if (m_isEmpty)
         return emptyString();
 
     const UChar fieldSeparator = 0xFFFE;
@@ -89,7 +90,7 @@ String SmartClipData::toString()
     return result.toString();
 }
 
-SmartClip::SmartClip(PassRefPtr<Frame> frame)
+SmartClip::SmartClip(PassRefPtr<LocalFrame> frame)
     : m_frame(frame)
 {
 }
@@ -108,10 +109,10 @@ SmartClipData SmartClip::dataForRect(const IntRect& cropRect)
             bestNode = bestNodeInFrame;
     }
 
-    Vector<Node*> hitNodes;
+    WillBeHeapVector<RawPtrWillBeMember<Node> > hitNodes;
     collectOverlappingChildNodes(bestNode, resizedCropRect, hitNodes);
 
-    if (hitNodes.isEmpty() || hitNodes.size() == bestNode->childNodeCount()) {
+    if (hitNodes.isEmpty() || hitNodes.size() == bestNode->countChildren()) {
         hitNodes.clear();
         hitNodes.append(bestNode);
     }
@@ -220,8 +221,9 @@ Node* SmartClip::findBestOverlappingNode(Node* rootNode, const IntRect& cropRect
 // CSS background images but to skip actual backgrounds.
 bool SmartClip::shouldSkipBackgroundImage(Node* node)
 {
+    ASSERT(node);
     // Apparently we're only interested in background images on spans and divs.
-    if (!node->hasTagName(HTMLNames::spanTag) && !node->hasTagName(HTMLNames::divTag))
+    if (!isHTMLSpanElement(*node) && !isHTMLDivElement(*node))
         return true;
 
     // This check actually makes a bit of sense. If you're going to sprite an
@@ -235,7 +237,7 @@ bool SmartClip::shouldSkipBackgroundImage(Node* node)
     return false;
 }
 
-void SmartClip::collectOverlappingChildNodes(Node* parentNode, const IntRect& cropRect, Vector<Node*>& hitNodes)
+void SmartClip::collectOverlappingChildNodes(Node* parentNode, const IntRect& cropRect, WillBeHeapVector<RawPtrWillBeMember<Node> >& hitNodes)
 {
     if (!parentNode)
         return;

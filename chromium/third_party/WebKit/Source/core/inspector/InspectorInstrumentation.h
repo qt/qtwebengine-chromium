@@ -38,14 +38,13 @@
 #include "core/dom/CharacterData.h"
 #include "core/dom/Element.h"
 #include "core/dom/ExecutionContext.h"
-#include "core/events/EventContext.h"
-#include "core/frame/Frame.h"
+#include "core/events/NodeEventContext.h"
+#include "core/frame/LocalFrame.h"
 #include "core/inspector/ConsoleAPITypes.h"
 #include "core/page/Page.h"
 #include "core/rendering/HitTestResult.h"
 #include "core/rendering/RenderImage.h"
 #include "core/storage/StorageArea.h"
-#include "modules/websockets/WebSocketFrame.h"
 #include "platform/network/FormData.h"
 #include "platform/network/WebSocketHandshakeRequest.h"
 #include "platform/network/WebSocketHandshakeResponse.h"
@@ -56,14 +55,13 @@ namespace WebCore {
 struct CSSParserString;
 class Document;
 class Element;
-class DeviceOrientationData;
-class GeolocationPosition;
+class EventTarget;
+class ExecutionContext;
 class GraphicsContext;
 class GraphicsLayer;
 class InspectorTimelineAgent;
 class InstrumentingAgents;
 class RenderLayer;
-class ExecutionContext;
 class ThreadableLoaderClient;
 class WorkerGlobalScope;
 class WorkerGlobalScopeProxy;
@@ -97,8 +95,8 @@ private:
     static int s_frontendCounter;
 };
 
-inline void frontendCreated() { FrontendCounter::s_frontendCounter += 1; }
-inline void frontendDeleted() { FrontendCounter::s_frontendCounter -= 1; }
+inline void frontendCreated() { atomicIncrement(&FrontendCounter::s_frontendCounter); }
+inline void frontendDeleted() { atomicDecrement(&FrontendCounter::s_frontendCounter); }
 inline bool hasFrontends() { return FrontendCounter::s_frontendCounter; }
 
 void registerInstrumentingAgents(InstrumentingAgents*);
@@ -108,7 +106,8 @@ InspectorTimelineAgent* retrieveTimelineAgent(const InspectorInstrumentationCook
 
 // Called from generated instrumentation code.
 InstrumentingAgents* instrumentingAgentsFor(Page*);
-InstrumentingAgents* instrumentingAgentsFor(Frame*);
+InstrumentingAgents* instrumentingAgentsFor(LocalFrame*);
+InstrumentingAgents* instrumentingAgentsFor(EventTarget*);
 InstrumentingAgents* instrumentingAgentsFor(ExecutionContext*);
 InstrumentingAgents* instrumentingAgentsFor(Document&);
 InstrumentingAgents* instrumentingAgentsFor(Document*);
@@ -126,8 +125,11 @@ extern const char PaintSetup[];
 extern const char RasterTask[];
 extern const char Paint[];
 extern const char Layer[];
+extern const char RequestMainThreadFrame[];
 extern const char BeginFrame[];
+extern const char DrawFrame[];
 extern const char ActivateLayerTree[];
+extern const char EmbedderCallback[];
 };
 
 namespace InstrumentationEventArguments {
@@ -135,6 +137,7 @@ extern const char FrameId[];
 extern const char LayerId[];
 extern const char LayerTreeId[];
 extern const char PageId[];
+extern const char CallbackName[];
 };
 
 namespace InspectorInstrumentation {
@@ -146,7 +149,7 @@ inline InstrumentingAgents* instrumentingAgentsFor(ExecutionContext* context)
     return context->isDocument() ? instrumentingAgentsFor(*toDocument(context)) : instrumentingAgentsForNonDocumentContext(context);
 }
 
-inline InstrumentingAgents* instrumentingAgentsFor(Frame* frame)
+inline InstrumentingAgents* instrumentingAgentsFor(LocalFrame* frame)
 {
     return frame ? instrumentingAgentsFor(frame->page()) : 0;
 }
@@ -187,11 +190,10 @@ InstrumentingAgents* instrumentationForWorkerGlobalScope(WorkerGlobalScope*);
 
 } // namespace WebCore
 
-// This file will soon be generated
-#include "InspectorInstrumentationInl.h"
+#include "core/InspectorInstrumentationInl.h"
 
-#include "InspectorInstrumentationCustomInl.h"
+#include "core/inspector/InspectorInstrumentationCustomInl.h"
 
-#include "InspectorOverridesInl.h"
+#include "core/InspectorOverridesInl.h"
 
 #endif // !defined(InspectorInstrumentation_h)

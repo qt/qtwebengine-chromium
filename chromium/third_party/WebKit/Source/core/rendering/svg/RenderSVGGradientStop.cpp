@@ -21,14 +21,11 @@
 
 #include "core/rendering/svg/RenderSVGGradientStop.h"
 
-#include "SVGNames.h"
 #include "core/rendering/svg/RenderSVGResourceContainer.h"
 #include "core/svg/SVGGradientElement.h"
 #include "core/svg/SVGStopElement.h"
 
 namespace WebCore {
-
-using namespace SVGNames;
 
 RenderSVGGradientStop::RenderSVGGradientStop(SVGStopElement* element)
     : RenderObject(element)
@@ -42,7 +39,7 @@ RenderSVGGradientStop::~RenderSVGGradientStop()
 void RenderSVGGradientStop::styleDidChange(StyleDifference diff, const RenderStyle* oldStyle)
 {
     RenderObject::styleDidChange(diff, oldStyle);
-    if (diff == StyleDifferenceEqual)
+    if (diff.hasNoChange())
         return;
 
     // <stop> elements should only be allowed to make renderers under gradient elements
@@ -67,9 +64,8 @@ void RenderSVGGradientStop::layout()
 SVGGradientElement* RenderSVGGradientStop::gradientElement() const
 {
     ContainerNode* parentNode = node()->parentNode();
-    if (parentNode->hasTagName(linearGradientTag) || parentNode->hasTagName(radialGradientTag))
-        return toSVGGradientElement(parentNode);
-    return 0;
+    ASSERT(parentNode);
+    return isSVGGradientElement(*parentNode) ? toSVGGradientElement(parentNode) : 0;
 }
 
 }

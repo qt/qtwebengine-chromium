@@ -78,10 +78,21 @@ class CONTENT_EXPORT ResourceScheduler : public base::NonThreadSafe {
   // resource loads won't interfere with first paint.
   void OnWillInsertBody(int child_id, int route_id);
 
+  // Signals from the IO thread
+
+  // Called when we received a response to a http request that was served
+  // from a proxy using SPDY.
+  void OnReceivedSpdyProxiedHttpResponse(int child_id, int route_id);
+
  private:
   class RequestQueue;
   class ScheduledResourceRequest;
-  struct Client;
+  struct RequestPriorityParams;
+  struct ScheduledResourceSorter {
+    bool operator()(const ScheduledResourceRequest* a,
+                    const ScheduledResourceRequest* b) const;
+  };
+  class Client;
 
   typedef int64 ClientId;
   typedef std::map<ClientId, Client*> ClientMap;
@@ -90,9 +101,6 @@ class CONTENT_EXPORT ResourceScheduler : public base::NonThreadSafe {
   // Called when a ScheduledResourceRequest is destroyed.
   void RemoveRequest(ScheduledResourceRequest* request);
 
-  // Unthrottles the |request| and adds it to |client|.
-  void StartRequest(ScheduledResourceRequest* request, Client* client);
-
   // Update the queue position for |request|, possibly causing it to start
   // loading.
   //
@@ -100,30 +108,8 @@ class CONTENT_EXPORT ResourceScheduler : public base::NonThreadSafe {
   // reprioritized, it will move to the end of the queue for that priority
   // level.
   void ReprioritizeRequest(ScheduledResourceRequest* request,
-                           net::RequestPriority new_priority);
-
-  // Attempts to load any pending requests in |client|, based on the
-  // results of ShouldStartRequest().
-  void LoadAnyStartablePendingRequests(Client* client);
-
-  // Returns the number of requests with priority < LOW that are currently in
-  // flight.
-  void GetNumDelayableRequestsInFlight(
-      Client* client,
-      const net::HostPortPair& active_request_host,
-      size_t* total_delayable,
-      size_t* total_for_active_host) const;
-
-  enum ShouldStartReqResult {
-    DO_NOT_START_REQUEST_AND_STOP_SEARCHING = -2,
-    DO_NOT_START_REQUEST_AND_KEEP_SEARCHING = -1,
-    START_REQUEST = 1,
-  };
-
-  // Returns true if the request should start. This is the core scheduling
-  // algorithm.
-  ShouldStartReqResult ShouldStartRequest(ScheduledResourceRequest* request,
-                                          Client* client) const;
+                           net::RequestPriority new_priority,
+                           int intra_priority_value);
 
   // Returns the client ID for the given |child_id| and |route_id| combo.
   ClientId MakeClientId(int child_id, int route_id);

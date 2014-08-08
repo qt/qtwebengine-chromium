@@ -22,26 +22,28 @@ union sum_union {
     signed char e[16];
 };
 
-int vp8_denoiser_filter_sse2(YV12_BUFFER_CONFIG *mc_running_avg,
-                             YV12_BUFFER_CONFIG *running_avg,
-                             MACROBLOCK *signal, unsigned int motion_magnitude,
-                             int y_offset, int uv_offset)
+int vp8_denoiser_filter_sse2(unsigned char *mc_running_avg_y,
+                             int mc_avg_y_stride,
+                             unsigned char *running_avg_y, int avg_y_stride,
+                             unsigned char *sig, int sig_stride,
+                             unsigned int motion_magnitude,
+                             int increase_denoising)
 {
-    unsigned char *sig = signal->thismb;
-    int sig_stride = 16;
-    unsigned char *mc_running_avg_y = mc_running_avg->y_buffer + y_offset;
-    int mc_avg_y_stride = mc_running_avg->y_stride;
-    unsigned char *running_avg_y = running_avg->y_buffer + y_offset;
-    int avg_y_stride = running_avg->y_stride;
+    unsigned char *running_avg_y_start = running_avg_y;
+    unsigned char *sig_start = sig;
+    int sum_diff_thresh;
     int r;
+    int shift_inc  = (increase_denoising &&
+        motion_magnitude <= MOTION_MAGNITUDE_THRESHOLD) ? 1 : 0;
     __m128i acc_diff = _mm_setzero_si128();
     const __m128i k_0 = _mm_setzero_si128();
-    const __m128i k_4 = _mm_set1_epi8(4);
+    const __m128i k_4 = _mm_set1_epi8(4 + shift_inc);
     const __m128i k_8 = _mm_set1_epi8(8);
     const __m128i k_16 = _mm_set1_epi8(16);
     /* Modify each level's adjustment according to motion_magnitude. */
     const __m128i l3 = _mm_set1_epi8(
-                      (motion_magnitude <= MOTION_MAGNITUDE_THRESHOLD) ? 7 : 6);
+                       (motion_magnitude <= MOTION_MAGNITUDE_THRESHOLD) ?
+                        7 + shift_inc : 6);
     /* Difference between level 3 and level 2 is 2. */
     const __m128i l32 = _mm_set1_epi8(2);
     /* Difference between level 2 and level 1 is 1. */
@@ -108,13 +110,14 @@ int vp8_denoiser_filter_sse2(YV12_BUFFER_CONFIG *mc_running_avg,
                  + s.e[6] + s.e[7] + s.e[8] + s.e[9] + s.e[10] + s.e[11]
                  + s.e[12] + s.e[13] + s.e[14] + s.e[15];
 
-        if (abs(sum_diff) > SUM_DIFF_THRESHOLD)
+        sum_diff_thresh = SUM_DIFF_THRESHOLD;
+        if (increase_denoising) sum_diff_thresh = SUM_DIFF_THRESHOLD_HIGH;
+        if (abs(sum_diff) > sum_diff_thresh)
         {
             return COPY_BLOCK;
         }
     }
 
-    vp8_copy_mem16x16(running_avg->y_buffer + y_offset, avg_y_stride,
-                      signal->thismb, sig_stride);
+    vp8_copy_mem16x16(running_avg_y_start, avg_y_stride, sig_start, sig_stride);
     return FILTER_BLOCK;
 }

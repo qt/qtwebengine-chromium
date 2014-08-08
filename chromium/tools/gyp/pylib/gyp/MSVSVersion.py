@@ -96,9 +96,11 @@ class VisualStudioVersion(object):
       else:
         assert target_arch == 'x64'
         arg = 'x86_amd64'
-        if (os.environ.get('PROCESSOR_ARCHITECTURE') == 'AMD64' or
+        # Use the 64-on-64 compiler if we're not using an express
+        # edition and we're running on a 64bit OS.
+        if self.short_name[-1] != 'e' and (
+            os.environ.get('PROCESSOR_ARCHITECTURE') == 'AMD64' or
             os.environ.get('PROCESSOR_ARCHITEW6432') == 'AMD64'):
-          # Use the 64-on-64 compiler if we can.
           arg = 'amd64'
         return [os.path.normpath(
             os.path.join(self.path, 'VC/vcvarsall.bat')), arg]
@@ -377,7 +379,7 @@ def SelectVisualStudioVersion(version='auto'):
   if version == 'auto':
     version = os.environ.get('GYP_MSVS_VERSION', 'auto')
   version_map = {
-    'auto': ('10.0', '12.0', '9.0', '8.0', '11.0'),
+    'auto': ('12.0', '10.0', '9.0', '8.0', '11.0'),
     '2005': ('8.0',),
     '2005e': ('8.0',),
     '2008': ('9.0',),

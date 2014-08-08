@@ -39,14 +39,14 @@ class CSSKeyframeRule;
 
 class StyleRuleKeyframes FINAL : public StyleRuleBase {
 public:
-    static PassRefPtr<StyleRuleKeyframes> create() { return adoptRef(new StyleRuleKeyframes()); }
+    static PassRefPtrWillBeRawPtr<StyleRuleKeyframes> create() { return adoptRefWillBeNoop(new StyleRuleKeyframes()); }
 
     ~StyleRuleKeyframes();
 
-    const Vector<RefPtr<StyleKeyframe> >& keyframes() const { return m_keyframes; }
+    const WillBeHeapVector<RefPtrWillBeMember<StyleKeyframe> >& keyframes() const { return m_keyframes; }
 
-    void parserAppendKeyframe(PassRefPtr<StyleKeyframe>);
-    void wrapperAppendKeyframe(PassRefPtr<StyleKeyframe>);
+    void parserAppendKeyframe(PassRefPtrWillBeRawPtr<StyleKeyframe>);
+    void wrapperAppendKeyframe(PassRefPtrWillBeRawPtr<StyleKeyframe>);
     void wrapperRemoveKeyframe(unsigned);
 
     String name() const { return m_name; }
@@ -57,13 +57,15 @@ public:
 
     int findKeyframeIndex(const String& key) const;
 
-    PassRefPtr<StyleRuleKeyframes> copy() const { return adoptRef(new StyleRuleKeyframes(*this)); }
+    PassRefPtrWillBeRawPtr<StyleRuleKeyframes> copy() const { return adoptRefWillBeNoop(new StyleRuleKeyframes(*this)); }
+
+    void traceAfterDispatch(Visitor*);
 
 private:
     StyleRuleKeyframes();
     explicit StyleRuleKeyframes(const StyleRuleKeyframes&);
 
-    Vector<RefPtr<StyleKeyframe> > m_keyframes;
+    WillBeHeapVector<RefPtrWillBeMember<StyleKeyframe> > m_keyframes;
     AtomicString m_name;
     bool m_isPrefixed;
 };
@@ -72,7 +74,10 @@ DEFINE_STYLE_RULE_TYPE_CASTS(Keyframes);
 
 class CSSKeyframesRule FINAL : public CSSRule {
 public:
-    static PassRefPtr<CSSKeyframesRule> create(StyleRuleKeyframes* rule, CSSStyleSheet* sheet) { return adoptRef(new CSSKeyframesRule(rule, sheet)); }
+    static PassRefPtrWillBeRawPtr<CSSKeyframesRule> create(StyleRuleKeyframes* rule, CSSStyleSheet* sheet)
+    {
+        return adoptRefWillBeNoop(new CSSKeyframesRule(rule, sheet));
+    }
 
     virtual ~CSSKeyframesRule();
 
@@ -96,12 +101,14 @@ public:
     bool isVendorPrefixed() const { return m_isPrefixed; }
     void setVendorPrefixed(bool isPrefixed) { m_isPrefixed = isPrefixed; }
 
+    virtual void trace(Visitor*) OVERRIDE;
+
 private:
     CSSKeyframesRule(StyleRuleKeyframes*, CSSStyleSheet* parent);
 
-    RefPtr<StyleRuleKeyframes> m_keyframesRule;
-    mutable Vector<RefPtr<CSSKeyframeRule> > m_childRuleCSSOMWrappers;
-    mutable OwnPtr<CSSRuleList> m_ruleListCSSOMWrapper;
+    RefPtrWillBeMember<StyleRuleKeyframes> m_keyframesRule;
+    mutable WillBeHeapVector<RefPtrWillBeMember<CSSKeyframeRule> > m_childRuleCSSOMWrappers;
+    mutable OwnPtrWillBeMember<CSSRuleList> m_ruleListCSSOMWrapper;
     bool m_isPrefixed;
 };
 

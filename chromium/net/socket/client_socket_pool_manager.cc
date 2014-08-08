@@ -132,8 +132,7 @@ int InitSocketPoolHelper(const GURL& request_url,
     // should be the same for all connections, whereas version_max may
     // change for version fallbacks.
     std::string prefix = "ssl/";
-    if (ssl_config_for_origin.version_max !=
-        SSLConfigService::default_version_max()) {
+    if (ssl_config_for_origin.version_max != net::kDefaultSSLVersionMax) {
       switch (ssl_config_for_origin.version_max) {
         case SSL_PROTOCOL_VERSION_TLS1_2:
           prefix = "ssl(max:3.3)/";
@@ -182,7 +181,7 @@ int InitSocketPoolHelper(const GURL& request_url,
                                          NULL,
                                          *proxy_host_port.get(),
                                          ssl_config_for_proxy,
-                                         kPrivacyModeDisabled,
+                                         PRIVACY_MODE_DISABLED,
                                          load_flags,
                                          force_spdy_over_ssl,
                                          want_spdy_over_npn);
@@ -216,7 +215,7 @@ int InitSocketPoolHelper(const GURL& request_url,
   }
 
   // Change group name if privacy mode is enabled.
-  if (privacy_mode == kPrivacyModeEnabled)
+  if (privacy_mode == PRIVACY_MODE_ENABLED)
     connection_group = "pm/" + connection_group;
 
   // Deal with SSL - which layers on top of any given proxy.

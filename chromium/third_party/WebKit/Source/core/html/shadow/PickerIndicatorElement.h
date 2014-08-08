@@ -42,10 +42,11 @@ class HTMLInputElement;
 class PagePopup;
 
 class PickerIndicatorElement FINAL : public HTMLDivElement, public DateTimeChooserClient {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(PickerIndicatorElement);
 public:
     // PickerIndicatorOwner implementer must call removePickerIndicatorOwner when
     // it doesn't handle event, e.g. at destruction.
-    class PickerIndicatorOwner {
+    class PickerIndicatorOwner : public WillBeGarbageCollectedMixin {
     public:
         virtual ~PickerIndicatorOwner() { }
         virtual bool isPickerIndicatorOwnerDisabledOrReadOnly() const = 0;
@@ -55,12 +56,14 @@ public:
         virtual bool setupDateTimeChooserParameters(DateTimeChooserParameters&) = 0;
     };
 
-    static PassRefPtr<PickerIndicatorElement> create(Document&, PickerIndicatorOwner&);
+    static PassRefPtrWillBeRawPtr<PickerIndicatorElement> create(Document&, PickerIndicatorOwner&);
     virtual ~PickerIndicatorElement();
+    virtual void trace(Visitor*) OVERRIDE;
+
     void openPopup();
     void closePopup();
     virtual bool willRespondToMouseClickEvents() OVERRIDE;
-    void removePickerIndicatorOwner() { m_pickerIndicatorOwner = 0; }
+    void removePickerIndicatorOwner() { m_pickerIndicatorOwner = nullptr; }
 
     // DateTimeChooserClient implementation.
     virtual void didChooseValue(const String&) OVERRIDE;
@@ -76,8 +79,9 @@ private:
 
     HTMLInputElement* hostInput();
 
-    PickerIndicatorOwner* m_pickerIndicatorOwner;
-    RefPtr<DateTimeChooser> m_chooser;
+    RawPtrWillBeMember<PickerIndicatorOwner> m_pickerIndicatorOwner;
+    RefPtrWillBeMember<DateTimeChooser> m_chooser;
+    bool m_isInOpenPopup;
 };
 
 DEFINE_TYPE_CASTS(PickerIndicatorElement, Element, element, element->isPickerIndicatorElement(), element.isPickerIndicatorElement());

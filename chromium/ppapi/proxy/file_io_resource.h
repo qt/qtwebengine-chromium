@@ -7,6 +7,7 @@
 
 #include <string>
 
+#include "base/files/file.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "ppapi/c/private/pp_file_handle.h"
@@ -57,15 +58,19 @@ class PPAPI_PROXY_EXPORT FileIOResource
                         scoped_refptr<TrackedCallback> callback) OVERRIDE;
   virtual int32_t SetLength(int64_t length,
                             scoped_refptr<TrackedCallback> callback) OVERRIDE;
+  virtual int64_t GetMaxWrittenOffset() const OVERRIDE;
+  virtual int64_t GetAppendModeWriteAmount() const OVERRIDE;
+  virtual void SetMaxWrittenOffset(int64_t max_written_offset) OVERRIDE;
+  virtual void SetAppendModeWriteAmount(
+      int64_t append_mode_write_amount) OVERRIDE;
   virtual int32_t Flush(scoped_refptr<TrackedCallback> callback) OVERRIDE;
   virtual void Close() OVERRIDE;
   virtual int32_t RequestOSFileHandle(
       PP_FileHandle* handle,
       scoped_refptr<TrackedCallback> callback) OVERRIDE;
 
- private:
-  // FileHandleHolder is used to guarantee that file operations will have a
-  // valid FD to operate on, even if they're in a different thread.
+  // FileHolder is used to guarantee that file operations will have a valid FD
+  // to operate on, even if they're in a different thread.
   // If instead we just passed the raw FD, the FD could be closed before the
   // file operation has a chance to run. It could interact with an invalid FD,
   // or worse, the FD value could be reused if another file is opened quickly
@@ -75,51 +80,56 @@ class PPAPI_PROXY_EXPORT FileIOResource
   //
   // Operations that run on a background thread should hold one of these to
   // ensure they have a valid file descriptor. The file handle is only closed
-  // when the last reference to the FileHandleHolder is removed, so we are
-  // guaranteed to operate on the correct file descriptor. It *is* still
-  // possible that the FileIOResource will be destroyed and "Abort" callbacks
-  // just before the operation does its task (e.g., Reading). In that case, we
-  // might for example Read from a file even though the FileIO has been
-  // destroyed and the plugin's callback got a PP_ERROR_ABORTED result. In the
-  // case of a write, we could write some data to the file despite the plugin
-  // receiving a PP_ERROR_ABORTED instead of a successful result.
-  class FileHandleHolder : public base::RefCountedThreadSafe<FileHandleHolder> {
+  // when the last reference to the FileHolder is removed, so we are guaranteed
+  // to operate on the correct file descriptor. It *is* still possible that the
+  // FileIOResource will be destroyed and "Abort" callbacks just before the
+  // operation does its task (e.g., Reading). In that case, we might for example
+  // Read from a file even though the FileIO has been destroyed and the plugin's
+  // callback got a PP_ERROR_ABORTED result. In the case of a write, we could
+  // write some data to the file despite the plugin receiving a
+  // PP_ERROR_ABORTED instead of a successful result.
+  class FileHolder : public base::RefCountedThreadSafe<FileHolder> {
    public:
-    explicit FileHandleHolder(PP_FileHandle file_handle_);
-    PP_FileHandle raw_handle() {
-      return raw_handle_;
+    explicit FileHolder(PP_FileHandle file_handle);
+    base::File* file() {
+      return &file_;
     }
     static bool IsValid(
-        const scoped_refptr<FileIOResource::FileHandleHolder>& handle);
+        const scoped_refptr<FileIOResource::FileHolder>& handle);
    private:
-    friend class base::RefCountedThreadSafe<FileHandleHolder>;
-    ~FileHandleHolder();
-    PP_FileHandle raw_handle_;
+    friend class base::RefCountedThreadSafe<FileHolder>;
+    ~FileHolder();
+    base::File file_;
   };
 
+  scoped_refptr<FileHolder> file_holder() {
+    return file_holder_;
+  }
+
+ private:
   // Class to perform file query operations across multiple threads.
   class QueryOp : public base::RefCountedThreadSafe<QueryOp> {
    public:
-    explicit QueryOp(scoped_refptr<FileHandleHolder> file_handle);
+    explicit QueryOp(scoped_refptr<FileHolder> file_holder);
 
     // Queries the file. Called on the file thread (non-blocking) or the plugin
     // thread (blocking). This should not be called when we hold the proxy lock.
     int32_t DoWork();
 
-    const base::PlatformFileInfo& file_info() const { return file_info_; }
+    const base::File::Info& file_info() const { return file_info_; }
 
    private:
     friend class base::RefCountedThreadSafe<QueryOp>;
     ~QueryOp();
 
-    scoped_refptr<FileHandleHolder> file_handle_;
-    base::PlatformFileInfo file_info_;
+    scoped_refptr<FileHolder> file_holder_;
+    base::File::Info file_info_;
   };
 
   // Class to perform file read operations across multiple threads.
   class ReadOp : public base::RefCountedThreadSafe<ReadOp> {
    public:
-    ReadOp(scoped_refptr<FileHandleHolder> file_handle,
+    ReadOp(scoped_refptr<FileHolder> file_holder,
            int64_t offset,
            int32_t bytes_to_read);
 
@@ -133,16 +143,55 @@ class PPAPI_PROXY_EXPORT FileIOResource
     friend class base::RefCountedThreadSafe<ReadOp>;
     ~ReadOp();
 
-    scoped_refptr<FileHandleHolder> file_handle_;
+    scoped_refptr<FileHolder> file_holder_;
     int64_t offset_;
     int32_t bytes_to_read_;
     scoped_ptr<char[]> buffer_;
   };
 
+  // Class to perform file write operations across multiple threads.
+  class WriteOp : public base::RefCountedThreadSafe<WriteOp> {
+   public:
+    WriteOp(scoped_refptr<FileHolder> file_holder,
+            int64_t offset,
+            scoped_ptr<char[]> buffer,
+            int32_t bytes_to_write,
+            bool append);
+
+    // Writes the file. Called on the file thread (non-blocking) or the plugin
+    // thread (blocking). This should not be called when we hold the proxy lock.
+    int32_t DoWork();
+
+   private:
+    friend class base::RefCountedThreadSafe<WriteOp>;
+    ~WriteOp();
+
+    scoped_refptr<FileHolder> file_holder_;
+    int64_t offset_;
+    scoped_ptr<char[]> buffer_;
+    int32_t bytes_to_write_;
+    bool append_;
+  };
+
+  void OnRequestWriteQuotaComplete(int64_t offset,
+                                   scoped_ptr<char[]> buffer,
+                                   int32_t bytes_to_write,
+                                   scoped_refptr<TrackedCallback> callback,
+                                   int64_t granted);
+  void OnRequestSetLengthQuotaComplete(int64_t length,
+                                       scoped_refptr<TrackedCallback> callback,
+                                       int64_t granted);
+
   int32_t ReadValidated(int64_t offset,
                         int32_t bytes_to_read,
                         const PP_ArrayOutput& array_output,
                         scoped_refptr<TrackedCallback> callback);
+  int32_t WriteValidated(int64_t offset,
+                         const char* buffer,
+                         int32_t bytes_to_write,
+                         scoped_refptr<TrackedCallback> callback);
+  void SetLengthValidated(int64_t length,
+                          scoped_refptr<TrackedCallback> callback);
 
   // Completion tasks for file operations that are done in the plugin.
   int32_t OnQueryComplete(scoped_refptr<QueryOp> query_op,
@@ -151,24 +200,32 @@ class PPAPI_PROXY_EXPORT FileIOResource
   int32_t OnReadComplete(scoped_refptr<ReadOp> read_op,
                          PP_ArrayOutput array_output,
                          int32_t result);
+  int32_t OnWriteComplete(int32_t result);
 
   // Reply message handlers for operations that are done in the host.
   void OnPluginMsgGeneralComplete(scoped_refptr<TrackedCallback> callback,
                                   const ResourceMessageReplyParams& params);
   void OnPluginMsgOpenFileComplete(scoped_refptr<TrackedCallback> callback,
-                                   const ResourceMessageReplyParams& params);
+                                   const ResourceMessageReplyParams& params,
+                                   PP_Resource quota_file_system,
+                                   int64_t max_written_offset);
   void OnPluginMsgRequestOSFileHandleComplete(
       scoped_refptr<TrackedCallback> callback,
       PP_FileHandle* output_handle,
       const ResourceMessageReplyParams& params);
 
-  scoped_refptr<FileHandleHolder> file_handle_;
+  scoped_refptr<FileHolder> file_holder_;
   PP_FileSystemType file_system_type_;
   scoped_refptr<Resource> file_system_resource_;
-  bool called_close_;
   FileIOStateManager state_manager_;
 
   scoped_refptr<Resource> file_ref_;
+
+  int32_t open_flags_;
+  int64_t max_written_offset_;
+  int64_t append_mode_write_amount_;
+  bool check_quota_;
+  bool called_close_;
 
   DISALLOW_COPY_AND_ASSIGN(FileIOResource);
 };

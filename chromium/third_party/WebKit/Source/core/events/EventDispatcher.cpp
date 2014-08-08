@@ -27,21 +27,24 @@
 #include "core/events/EventDispatcher.h"
 
 #include "core/dom/ContainerNode.h"
+#include "core/dom/NoEventDispatchAssertion.h"
 #include "core/events/EventDispatchMediator.h"
-#include "core/events/EventRetargeter.h"
 #include "core/events/MouseEvent.h"
 #include "core/events/ScopedEventQueue.h"
 #include "core/events/WindowEventContext.h"
-#include "core/inspector/InspectorInstrumentation.h"
 #include "core/frame/FrameView.h"
+#include "core/inspector/InspectorInstrumentation.h"
+#include "core/inspector/InspectorTraceEvents.h"
+#include "platform/TraceEvent.h"
 #include "wtf/RefPtr.h"
 
 namespace WebCore {
 
 static HashSet<Node*>* gNodesDispatchingSimulatedClicks = 0;
 
-bool EventDispatcher::dispatchEvent(Node* node, PassRefPtr<EventDispatchMediator> mediator)
+bool EventDispatcher::dispatchEvent(Node* node, PassRefPtrWillBeRawPtr<EventDispatchMediator> mediator)
 {
+    TRACE_EVENT0("webkit", "EventDispatcher::dispatchEvent");
     ASSERT(!NoEventDispatchAssertion::isEventDispatchForbidden());
     if (!mediator->event())
         return true;
@@ -49,7 +52,7 @@ bool EventDispatcher::dispatchEvent(Node* node, PassRefPtr<EventDispatchMediator
     return mediator->dispatchEvent(&dispatcher);
 }
 
-EventDispatcher::EventDispatcher(Node* node, PassRefPtr<Event> event)
+EventDispatcher::EventDispatcher(Node* node, PassRefPtrWillBeRawPtr<Event> event)
     : m_node(node)
     , m_event(event)
 #ifndef NDEBUG
@@ -60,10 +63,10 @@ EventDispatcher::EventDispatcher(Node* node, PassRefPtr<Event> event)
     ASSERT(m_event.get());
     ASSERT(!m_event->type().isNull()); // JavaScript code can create an event with an empty name, but not null.
     m_view = node->document().view();
-    m_event->eventPath().resetWith(m_node.get());
+    m_event->ensureEventPath().resetWith(m_node.get());
 }
 
-void EventDispatcher::dispatchScopedEvent(Node* node, PassRefPtr<EventDispatchMediator> mediator)
+void EventDispatcher::dispatchScopedEvent(Node* node, PassRefPtrWillBeRawPtr<EventDispatchMediator> mediator)
 {
     // We need to set the target here because it can go away by the time we actually fire the event.
     mediator->event()->setTarget(EventPath::eventTargetRespectingTargetRules(node));
@@ -85,11 +88,13 @@ void EventDispatcher::dispatchSimulatedClick(Node* node, Event* underlyingEvent,
     if (mouseEventOptions == SendMouseOverUpDownEvents)
         EventDispatcher(node, SimulatedMouseEvent::create(EventTypeNames::mouseover, node->document().domWindow(), underlyingEvent)).dispatch();
 
-    if (mouseEventOptions != SendNoEvents)
+    if (mouseEventOptions != SendNoEvents) {
         EventDispatcher(node, SimulatedMouseEvent::create(EventTypeNames::mousedown, node->document().domWindow(), underlyingEvent)).dispatch();
-    node->setActive(true);
-    if (mouseEventOptions != SendNoEvents)
+        node->setActive(true);
         EventDispatcher(node, SimulatedMouseEvent::create(EventTypeNames::mouseup, node->document().domWindow(), underlyingEvent)).dispatch();
+    }
+    // Some elements (e.g. the color picker) may set active state to true before
+    // calling this method and expect the state to be reset during the call.
     node->setActive(false);
 
     // always send click
@@ -100,16 +105,19 @@ void EventDispatcher::dispatchSimulatedClick(Node* node, Event* underlyingEvent,
 
 bool EventDispatcher::dispatch()
 {
+    TRACE_EVENT0("webkit", "EventDispatcher::dispatch");
+
 #ifndef NDEBUG
     ASSERT(!m_eventDispatched);
     m_eventDispatched = true;
 #endif
-    ChildNodesLazySnapshot::takeChildNodesLazySnapshot();
 
     m_event->setTarget(EventPath::eventTargetRespectingTargetRules(m_node.get()));
     ASSERT(!NoEventDispatchAssertion::isEventDispatchForbidden());
     ASSERT(m_event->target());
-    WindowEventContext windowEventContext(m_event.get(), m_node.get(), topEventContext());
+    WindowEventContext windowEventContext(m_event.get(), m_node.get(), topNodeEventContext());
+    TRACE_EVENT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "EventDispatch", "type", m_event->type().ascii());
+    // FIXME(361045): remove InspectorInstrumentation calls once DevTools Timeline migrates to tracing.
     InspectorInstrumentationCookie cookie = InspectorInstrumentation::willDispatchEvent(&m_node->document(), *m_event, windowEventContext.window(), m_node.get(), m_event->eventPath());
 
     void* preDispatchEventHandlerResult;
@@ -124,6 +132,7 @@ bool EventDispatcher::dispatch()
     m_event->setTarget(windowEventContext.target());
     m_event->setCurrentTarget(0);
     InspectorInstrumentation::didDispatchEvent(cookie);
+    TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "UpdateCounters", "data", InspectorUpdateCountersEvent::data());
 
     return !m_event->defaultPrevented();
 }
@@ -144,7 +153,7 @@ inline EventDispatchContinuation EventDispatcher::dispatchEventAtCapturing(Windo
         return DoneDispatching;
 
     for (size_t i = m_event->eventPath().size() - 1; i > 0; --i) {
-        const EventContext& eventContext = m_event->eventPath()[i];
+        const NodeEventContext& eventContext = m_event->eventPath()[i];
         if (eventContext.currentTargetSameAsTarget())
             continue;
         eventContext.handleLocalEvents(m_event.get());
@@ -167,7 +176,7 @@ inline void EventDispatcher::dispatchEventAtBubbling(WindowEventContext& windowC
     // Trigger bubbling event handlers, starting at the bottom and working our way up.
     size_t size = m_event->eventPath().size();
     for (size_t i = 1; i < size; ++i) {
-        const EventContext& eventContext = m_event->eventPath()[i];
+        const NodeEventContext& eventContext = m_event->eventPath()[i];
         if (eventContext.currentTargetSameAsTarget())
             m_event->setEventPhase(Event::AT_TARGET);
         else if (m_event->bubbles() && !m_event->cancelBubble())
@@ -218,7 +227,7 @@ inline void EventDispatcher::dispatchEventPostProcess(void* preDispatchEventHand
     }
 }
 
-const EventContext* EventDispatcher::topEventContext()
+const NodeEventContext* EventDispatcher::topNodeEventContext()
 {
     return m_event->eventPath().isEmpty() ? 0 : &m_event->eventPath().last();
 }

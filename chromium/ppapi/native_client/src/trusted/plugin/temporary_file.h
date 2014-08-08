@@ -6,11 +6,9 @@
 #define NATIVE_CLIENT_SRC_TRUSTED_PLUGIN_TEMPORARY_FILE_H_
 
 #include "native_client/src/include/nacl_macros.h"
-#include "native_client/src/include/nacl_string.h"
 #include "native_client/src/trusted/desc/nacl_desc_wrapper.h"
 
 #include "ppapi/c/private/pp_file_handle.h"
-#include "ppapi/cpp/completion_callback.h"
 
 namespace plugin {
 
@@ -44,7 +42,7 @@ class TempFile {
   // Opens a temporary file object and descriptor wrapper referring to the file.
   // If |writeable| is true, the descriptor will be opened for writing, and
   // write_wrapper will return a valid pointer, otherwise it will return NULL.
-  void Open(const pp::CompletionCallback& cb, bool writeable);
+  int32_t Open(bool writeable);
   // Resets file position of the handle, for reuse.
   bool Reset();
 
@@ -52,16 +50,13 @@ class TempFile {
   // The nacl::DescWrapper* for the writeable version of the file.
   nacl::DescWrapper* write_wrapper() { return write_wrapper_.get(); }
   nacl::DescWrapper* read_wrapper() { return read_wrapper_.get(); }
-  nacl::DescWrapper* release_read_wrapper() {
-    return read_wrapper_.release();
-  }
 
-  PP_FileHandle* existing_handle() { return &existing_handle_; }
+  // Returns the handle to the file repesented and resets the internal handle
+  // and all wrappers.
+  PP_FileHandle TakeFileHandle();
 
-  // For quota management.
-  const nacl::string identifier() const {
-    return nacl::string(reinterpret_cast<const char*>(identifier_));
-  }
+  // Used by GetNexeFd() to set the underlying internal handle.
+  PP_FileHandle* internal_handle() { return &internal_handle_; }
 
  private:
   NACL_DISALLOW_COPY_AND_ASSIGN(TempFile);
@@ -69,15 +64,7 @@ class TempFile {
   Plugin* plugin_;
   nacl::scoped_ptr<nacl::DescWrapper> read_wrapper_;
   nacl::scoped_ptr<nacl::DescWrapper> write_wrapper_;
-  PP_FileHandle existing_handle_;
-
-  // An identifier string used for quota request processing.  The quota
-  // interface needs a string that is unique per sel_ldr instance only, so
-  // the identifiers can be reused between runs of the translator, start-ups of
-  // the browser, etc.
-  uint8_t identifier_[16];
-  // A counter to dole out unique identifiers.
-  static uint32_t next_identifier;
+  PP_FileHandle internal_handle_;
 };
 
 }  // namespace plugin

@@ -5,16 +5,18 @@
 #ifndef UI_BASE_MODELS_COMBOBOX_MODEL_OBSERVER_H_
 #define UI_BASE_MODELS_COMBOBOX_MODEL_OBSERVER_H_
 
-#include "ui/base/ui_export.h"
+#include "ui/base/ui_base_export.h"
 
 namespace ui {
 
+class ComboboxModel;
+
 // Observer for the ComboboxModel.
-class UI_EXPORT ComboboxModelObserver {
+class UI_BASE_EXPORT ComboboxModelObserver {
  public:
-  // Invoked when the model has changed in some way. The observer should assume
+  // Invoked when |model| has changed in some way. The observer should assume
   // everything changed.
-  virtual void OnModelChanged() = 0;
+  virtual void OnComboboxModelChanged(ComboboxModel* model) = 0;
 
  protected:
   virtual ~ComboboxModelObserver() {}

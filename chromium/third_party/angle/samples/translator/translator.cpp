@@ -27,7 +27,7 @@ static void usage();
 static ShShaderType FindShaderType(const char* fileName);
 static bool CompileFile(char* fileName, ShHandle compiler, int compileOptions);
 static void LogMsg(const char* msg, const char* name, const int num, const char* logName);
-static void PrintActiveVariables(ShHandle compiler, ShShaderInfo varType, bool mapLongVariableNames);
+static void PrintActiveVariables(ShHandle compiler, ShShaderInfo varType);
 
 // If NUM_SOURCE_STRINGS is set to a value > 1, the input file data is
 // broken into that many chunks.
@@ -66,7 +66,6 @@ int main(int argc, char* argv[])
     ShHandle fragmentCompiler = 0;
     char* buffer = 0;
     size_t bufferLen = 0;
-    int numAttribs = 0, numUniforms = 0;
     ShShaderSpec spec = SH_GLES2_SPEC;
     ShShaderOutput output = SH_ESSL_OUTPUT;
 
@@ -81,7 +80,6 @@ int main(int argc, char* argv[])
         if (argv[0][0] == '-') {
             switch (argv[0][1]) {
             case 'i': compileOptions |= SH_INTERMEDIATE_TREE; break;
-            case 'm': compileOptions |= SH_MAP_LONG_VARIABLE_NAMES; break;
             case 'o': compileOptions |= SH_OBJECT_CODE; break;
             case 'u': compileOptions |= SH_VARIABLES; break;
             case 'l': compileOptions |= SH_UNROLL_FOR_LOOP_WITH_INTEGER_INDEX; break;
@@ -127,6 +125,7 @@ int main(int argc, char* argv[])
                     case 'i': resources.OES_EGL_image_external = 1; break;
                     case 'd': resources.OES_standard_derivatives = 1; break;
                     case 'r': resources.ARB_texture_rectangle = 1; break;
+                    case 'l': resources.EXT_shader_texture_lod = 1; break;
                     default: failCode = EFailUsage;
                     }
                 } else {
@@ -174,12 +173,12 @@ int main(int argc, char* argv[])
               }
               if (compiled && (compileOptions & SH_VARIABLES)) {
                   LogMsg("BEGIN", "COMPILER", numCompiles, "ACTIVE ATTRIBS");
-                  PrintActiveVariables(compiler, SH_ACTIVE_ATTRIBUTES, (compileOptions & SH_MAP_LONG_VARIABLE_NAMES) != 0);
+                  PrintActiveVariables(compiler, SH_ACTIVE_ATTRIBUTES);
                   LogMsg("END", "COMPILER", numCompiles, "ACTIVE ATTRIBS");
                   printf("\n\n");
 
                   LogMsg("BEGIN", "COMPILER", numCompiles, "ACTIVE UNIFORMS");
-                  PrintActiveVariables(compiler, SH_ACTIVE_UNIFORMS, (compileOptions & SH_MAP_LONG_VARIABLE_NAMES) != 0);
+                  PrintActiveVariables(compiler, SH_ACTIVE_UNIFORMS);
                   LogMsg("END", "COMPILER", numCompiles, "ACTIVE UNIFORMS");
                   printf("\n\n");
               }
@@ -232,7 +231,8 @@ void usage()
         "       -b=h11   : output HLSL11 code\n"
         "       -x=i     : enable GL_OES_EGL_image_external\n"
         "       -x=d     : enable GL_OES_EGL_standard_derivatives\n"
-        "       -x=r     : enable ARB_texture_rectangle\n");
+        "       -x=r     : enable ARB_texture_rectangle\n"
+        "       -x=l     : enable EXT_shader_texture_lod\n");
 }
 
 //
@@ -280,7 +280,7 @@ void LogMsg(const char* msg, const char* name, const int num, const char* logNam
     printf("#### %s %s %d %s ####\n", msg, name, num, logName);
 }
 
-void PrintActiveVariables(ShHandle compiler, ShShaderInfo varType, bool mapLongVariableNames)
+void PrintActiveVariables(ShHandle compiler, ShShaderInfo varType)
 {
     size_t nameSize = 0;
     switch (varType) {
@@ -295,13 +295,6 @@ void PrintActiveVariables(ShHandle compiler, ShShaderInfo varType, bool mapLongV
     if (nameSize <= 1) return;
     char* name = new char[nameSize];
 
-    char* mappedName = NULL;
-    if (mapLongVariableNames) {
-        size_t mappedNameSize = 0;
-        ShGetInfo(compiler, SH_MAPPED_NAME_MAX_LENGTH, &mappedNameSize);
-        mappedName = new char[mappedNameSize];
-    }
-
     size_t activeVars = 0;
     int size = 0;
     ShDataType type = SH_NONE;
@@ -312,10 +305,10 @@ void PrintActiveVariables(ShHandle compiler, ShShaderInfo varType, bool mapLongV
     for (size_t i = 0; i < activeVars; ++i) {
         switch (varType) {
             case SH_ACTIVE_ATTRIBUTES:
-                ShGetVariableInfo(compiler, SH_ACTIVE_ATTRIBUTES, static_cast<int>(i), NULL, &size, &type, &precision, &staticUse, name, mappedName);
+                ShGetVariableInfo(compiler, SH_ACTIVE_ATTRIBUTES, static_cast<int>(i), NULL, &size, &type, &precision, &staticUse, name, NULL);
                 break;
             case SH_ACTIVE_UNIFORMS:
-                ShGetVariableInfo(compiler, SH_ACTIVE_UNIFORMS, static_cast<int>(i), NULL, &size, &type, &precision, &staticUse, name, mappedName);
+                ShGetVariableInfo(compiler, SH_ACTIVE_UNIFORMS, static_cast<int>(i), NULL, &size, &type, &precision, &staticUse, name, NULL);
                 break;
             default: assert(0);
         }
@@ -328,6 +321,10 @@ void PrintActiveVariables(ShHandle compiler, ShShaderInfo varType, bool mapLongV
             case SH_INT_VEC2: typeName = "GL_INT_VEC2"; break;
             case SH_INT_VEC3: typeName = "GL_INT_VEC3"; break;
             case SH_INT_VEC4: typeName = "GL_INT_VEC4"; break;
+            case SH_UNSIGNED_INT: typeName = "GL_UNSIGNED_INT"; break;
+            case SH_UNSIGNED_INT_VEC2: typeName = "GL_UNSIGNED_INT_VEC2"; break;
+            case SH_UNSIGNED_INT_VEC3: typeName = "GL_UNSIGNED_INT_VEC3"; break;
+            case SH_UNSIGNED_INT_VEC4: typeName = "GL_UNSIGNED_INT_VEC4"; break;
             case SH_BOOL: typeName = "GL_BOOL"; break;
             case SH_BOOL_VEC2: typeName = "GL_BOOL_VEC2"; break;
             case SH_BOOL_VEC3: typeName = "GL_BOOL_VEC3"; break;
@@ -335,19 +332,20 @@ void PrintActiveVariables(ShHandle compiler, ShShaderInfo varType, bool mapLongV
             case SH_FLOAT_MAT2: typeName = "GL_FLOAT_MAT2"; break;
             case SH_FLOAT_MAT3: typeName = "GL_FLOAT_MAT3"; break;
             case SH_FLOAT_MAT4: typeName = "GL_FLOAT_MAT4"; break;
+            case SH_FLOAT_MAT2x3: typeName = "GL_FLOAT_MAT2x3"; break;
+            case SH_FLOAT_MAT3x2: typeName = "GL_FLOAT_MAT3x2"; break;
+            case SH_FLOAT_MAT4x2: typeName = "GL_FLOAT_MAT4x2"; break;
+            case SH_FLOAT_MAT2x4: typeName = "GL_FLOAT_MAT2x4"; break;
+            case SH_FLOAT_MAT3x4: typeName = "GL_FLOAT_MAT3x4"; break;
+            case SH_FLOAT_MAT4x3: typeName = "GL_FLOAT_MAT4x3"; break;
             case SH_SAMPLER_2D: typeName = "GL_SAMPLER_2D"; break;
             case SH_SAMPLER_CUBE: typeName = "GL_SAMPLER_CUBE"; break;
             case SH_SAMPLER_EXTERNAL_OES: typeName = "GL_SAMPLER_EXTERNAL_OES"; break;
             default: assert(0);
         }
-        printf("%u: name:%s type:%s size:%d", i, name, typeName, size);
-        if (mapLongVariableNames)
-            printf(" mapped name:%s", mappedName);
-        printf("\n");
+        printf("%lu: name:%s type:%s size:%d\n", i, name, typeName, size);
     }
     delete [] name;
-    if (mappedName)
-        delete [] mappedName;
 }
 
 static bool ReadShaderSource(const char* fileName, ShaderSource& source) {
@@ -359,7 +357,7 @@ static bool ReadShaderSource(const char* fileName, ShaderSource& source) {
 
     // Obtain file size.
     fseek(in, 0, SEEK_END);
-    int count = ftell(in);
+    size_t count = ftell(in);
     rewind(in);
 
     int len = (int)ceil((float)count / (float)NUM_SOURCE_STRINGS);
@@ -369,7 +367,7 @@ static bool ReadShaderSource(const char* fileName, ShaderSource& source) {
     // string is added to vector.
     do {
         char* data = new char[len + 1];
-        int nread = fread(data, 1, len, in);
+        size_t nread = fread(data, 1, len, in);
         data[nread] = '\0';
         source.push_back(data);
 

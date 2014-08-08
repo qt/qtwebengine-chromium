@@ -53,7 +53,11 @@ class XMLFormattedWriter(template_writer.TemplateWriter):
     attribute.value = value
     parent.setAttributeNode(attribute)
 
-  def ToPrettyXml(self, doc):
+  def AddComment(self, parent, comment):
+    '''Adds a comment node.'''
+    parent.appendChild(parent.ownerDocument.createComment(comment))
+
+  def ToPrettyXml(self, doc, **kwargs):
     # return doc.toprettyxml(indent='  ')
     # The above pretty-printer does not print the doctype and adds spaces
     # around texts, e.g.:
@@ -66,7 +70,7 @@ class XMLFormattedWriter(template_writer.TemplateWriter):
     # So we use the poor man's pretty printer here. It assumes that there are
     # no mixed-content nodes.
     # Get all the XML content in a one-line string.
-    xml = doc.toxml()
+    xml = doc.toxml(**kwargs)
     # Determine where the line breaks will be. (They will only be between tags.)
     lines = xml[1:len(xml) - 1].split('><')
     indent = ''

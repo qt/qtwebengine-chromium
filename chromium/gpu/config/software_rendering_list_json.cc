@@ -18,7 +18,7 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
 {
   "name": "software rendering list",
   // Please update the version number whenever you change this file.
-  "version": "6.21",
+  "version": "8.8",
   "entries": [
     {
       "id": 1,
@@ -68,8 +68,8 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
     },
     {
       "id": 5,
-      "description": "ATI/AMD cards with older or third-party drivers in Linux are crash-prone",
-      "cr_bugs": [71381, 76428, 73910, 101225, 136240],
+      "description": "ATI/AMD cards with older drivers in Linux are crash-prone",
+      "cr_bugs": [71381, 76428, 73910, 101225, 136240, 357314],
       "os": {
         "type": "linux"
       },
@@ -84,6 +84,16 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
             "op": ">=",
             "style": "lexical",
             "value": "8.98"
+          }
+        },
+        {
+          "driver_vendor": {
+            "op": "=",
+            "value": "Mesa"
+          },
+          "driver_version": {
+            "op": ">=",
+            "value": "10.0.4"
           }
         }
       ],
@@ -151,29 +161,21 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
       ]
     },
     {
-      "id": 16,
-      "description": "Multisampling is buggy in ATI cards on older MacOSX",
-      "cr_bugs": [67752, 83153],
-      "os": {
-        "type": "macosx",
-        "version": {
-          "op": "<",
-          "value": "10.7.2"
-        }
-      },
-      "vendor_id": "0x1002",
-      "features": [
-        "multisampling"
-      ]
-    },
-    {
       "id": 17,
-      "description": "Intel mesa drivers are crash-prone",
-      "cr_bugs": [76703, 164555, 225200],
+      "description": "Older Intel mesa drivers are crash-prone",
+      "cr_bugs": [76703, 164555, 225200, 340886],
       "os": {
         "type": "linux"
       },
       "vendor_id": "0x8086",
+      "driver_vendor": {
+        "op": "=",
+        "value": "Mesa"
+      },
+      "driver_version": {
+        "op": "<",
+        "value": "10.1"
+      },
       "exceptions": [
         {
           "device_id": ["0x0102", "0x0106", "0x0112", "0x0116", "0x0122", "0x0126", "0x010a", "0x0152", "0x0156", "0x015a", "0x0162", "0x0166"],
@@ -201,6 +203,13 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
           "driver_version": {
             "op": ">=",
             "value": "9.1"
+          }
+        },
+        {
+          "device_id": ["0x0a16", "0x0a26"],
+          "driver_version": {
+            "op": ">=",
+            "value": "10.0.1"
           }
         }
       ],
@@ -260,7 +269,7 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
     {
       "id": 27,
       "description": "ATI/AMD cards with older drivers in Linux are crash-prone",
-      "cr_bugs": [95934, 94973, 136240],
+      "cr_bugs": [95934, 94973, 136240, 357314],
       "os": {
         "type": "linux"
       },
@@ -279,6 +288,16 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
             "style": "lexical",
             "value": "8.98"
           }
+        },
+        {
+          "driver_vendor": {
+            "op": "=",
+            "value": "Mesa"
+          },
+          "driver_version": {
+            "op": ">=",
+            "value": "10.0.4"
+          }
         }
       ],
       "features": [
@@ -288,7 +307,7 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
     {
       "id": 28,
       "description": "ATI/AMD cards with third-party drivers in Linux are crash-prone",
-      "cr_bugs": [95934, 94973],
+      "cr_bugs": [95934, 94973, 357314],
       "os": {
         "type": "linux"
       },
@@ -300,6 +319,18 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
         "op": "contains",
         "value": "AMD"
       },
+      "exceptions": [
+        {
+          "driver_vendor": {
+            "op": "=",
+            "value": "Mesa"
+          },
+          "driver_version": {
+            "op": ">=",
+            "value": "10.0.4"
+          }
+        }
+      ],
       "features": [
         "all"
       ]
@@ -307,7 +338,7 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
     {
       "id": 29,
       "description": "ATI/AMD cards with third-party drivers in Linux are crash-prone",
-      "cr_bugs": [95934, 94973],
+      "cr_bugs": [95934, 94973, 357314],
       "os": {
         "type": "linux"
       },
@@ -319,6 +350,18 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
         "op": "contains",
         "value": "ATI"
       },
+      "exceptions": [
+        {
+          "driver_vendor": {
+            "op": "=",
+            "value": "Mesa"
+          },
+          "driver_version": {
+            "op": ">=",
+            "value": "10.0.4"
+          }
+        }
+      ],
       "features": [
         "all"
       ]
@@ -369,19 +412,6 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
       ]
     },
     {
-      "id": 33,
-      "description": "Multisampling is buggy in Intel IvyBridge",
-      "cr_bugs": [116370],
-      "os": {
-        "type": "linux"
-      },
-      "vendor_id": "0x8086",
-      "device_id": ["0x0152", "0x0156", "0x015a", "0x0162", "0x0166"],
-      "features": [
-          "multisampling"
-      ]
-    },
-    {
       "id": 34,
       "description": "S3 Trio (used in Virtual PC) is not compatible",
       "cr_bugs": [119948],
@@ -407,12 +437,28 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
     },
     {
       "id": 37,
-      "description": "Drivers are unreliable for Optimus on Linux",
-      "cr_bugs": [131308],
+      "description": "Older drivers are unreliable for Optimus on Linux",
+      "cr_bugs": [131308, 363418],
       "os": {
         "type": "linux"
       },
       "multi_gpu_style": "optimus",
+      "exceptions": [
+        {
+          "driver_vendor": {
+            "op": "=",
+            "value": "Mesa"
+          },
+          "driver_version": {
+            "op": ">=",
+            "value": "10.1"
+          },
+          "gl_vendor": {
+            "op": "beginwith",
+            "value": "Intel"
+          }
+        }
+      ],
       "features": [
         "all"
       ]
@@ -566,8 +612,8 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
     },
     {
       "id": 50,
-      "description": "Disable VMware software renderer",
-      "cr_bugs": [145531],
+      "description": "Disable VMware software renderer on older Mesa",
+      "cr_bugs": [145531, 332596],
       "os": {
         "type": "linux"
       },
@@ -575,6 +621,22 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
         "op": "beginwith",
         "value": "VMware"
       },
+      "exceptions": [
+        {
+          "driver_vendor": {
+            "op": "=",
+            "value": "Mesa"
+          },
+          "driver_version": {
+            "op": ">=",
+            "value": "9.2.1"
+          },
+          "gl_renderer": {
+            "op": "contains",
+            "value": "SVGA3D"
+          }
+        }
+      ],
       "features": [
         "all"
       ]
@@ -633,7 +695,6 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
         "value": "NVIDIA"
       },
       "features": [
-        "accelerated_video",
         "accelerated_video_decode",
         "flash_3d",
         "flash_stage3d"
@@ -676,38 +737,6 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
       ]
     },
     {
-      "id": 60,
-      "description": "Multisampling is buggy on Mac with NVIDIA gpu prior to 10.8.3",
-      "cr_bugs": [137303],
-      "os": {
-        "type": "macosx",
-        "version": {
-          "op": "<",
-          "value": "10.8.3"
-        }
-      },
-      "vendor_id": "0x10de",
-      "features": [
-        "multisampling"
-      ]
-    },
-    {
-      "id": 61,
-      "description": "Multisampling is buggy on Mac with Intel gpu prior to 10.8.3",
-      "cr_bugs": [137303],
-      "os": {
-        "type": "macosx",
-        "version": {
-          "op": "<",
-          "value": "10.8.3"
-        }
-      },
-      "vendor_id": "0x8086",
-      "features": [
-        "multisampling"
-      ]
-    },
-    {
       "id": 62,
       "description": "Accelerated 2D canvas buggy on old Qualcomm Adreno",
       "cr_bugs": [161575],
@@ -724,22 +753,6 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
       },
       "features": [
         "accelerated_2d_canvas"
-      ]
-    },
-    {
-      "id": 63,
-      "description": "Multisampling is buggy on Mac with AMD gpu prior to 10.8.3",
-      "cr_bugs": [162466],
-      "os": {
-        "type": "macosx",
-        "version": {
-          "op": "<",
-          "value": "10.8.3"
-        }
-      },
-      "vendor_id": "0x1002",
-      "features": [
-        "multisampling"
       ]
     },
     {
@@ -918,27 +931,8 @@ LONG_STRING_CONST(
           "value": "6.0"
         }
       },
-      "exceptions": [
-        {
-          "driver_vendor": {
-            "op": "=",
-            "value": "osmesa"
-          }
-        }
-      ],
       "features": [
         "all"
-      ]
-    },
-    {
-      "id": 80,
-      "description": "Texture sharing should be disabled on all Windows machines",
-      "cr_bugs": [304369, 315215],
-      "os": {
-        "type": "win"
-      },
-      "features": [
-        "texture_sharing"
       ]
     },
     {
@@ -978,30 +972,9 @@ LONG_STRING_CONST(
           "value": "4.1.2"
         }
       },
-      "machine_model": {
-        "name": {
-          "op": "=",
-          "value": "GT-N7100"
-        }
-      },
+      "machine_model_name": ["GT-N7100"],
       "features": [
         "accelerated_video_decode"
-      ]
-    },
-    {
-      "id": 84,
-      "description": "Incorrect rendering in pink with NVIDIA driver 9.18.13.3165 on Windows",
-      "cr_bugs": [319115],
-      "os": {
-        "type": "win"
-      },
-      "vendor_id": "0x10de",
-      "driver_version": {
-        "op": "=",
-        "value": "9.18.13.3165"
-      },
-      "features": [
-        "all"
       ]
     },
     {
@@ -1011,11 +984,102 @@ LONG_STRING_CONST(
       "os": {
         "type": "android"
       },
-      "machine_model": {
-        "name": {
-          "op": "=",
-          "value": "SCH-I545"
-        }
+      "machine_model_name": ["SCH-I545"],
+      "features": [
+        "accelerated_video_decode"
+      ]
+    },
+    {
+      "id": 86,
+      "description": "Intel Graphics Media Accelerator 3150 causes the GPU process to hang running WebGL",
+      "cr_bugs": [305431],
+      "os": {
+        "type": "win"
+      },
+      "vendor_id": "0x8086",
+      "device_id": ["0xa011"],
+      "features": [
+        "webgl"
+      ]
+    },
+    {
+      "id": 87,
+      "description": "Accelerated video decode on Intel driver 10.18.10.3308 is incompatible with the GPU sandbox",
+      "cr_bugs": [298968],
+      "os": {
+        "type": "win"
+      },
+      "vendor_id": "0x8086",
+      "driver_version": {
+        "op": "=",
+        "value": "10.18.10.3308"
+      },
+      "features": [
+        "accelerated_video_decode"
+      ]
+    },
+    {
+      "id": 88,
+      "description": "Accelerated video decode on AMD driver 13.152.1.8000 is incompatible with the GPU sandbox",
+      "cr_bugs": [298968],
+      "os": {
+        "type": "win"
+      },
+      "vendor_id": "0x1002",
+      "driver_version": {
+        "op": "=",
+        "value": "13.152.1.8000"
+      },
+      "features": [
+        "accelerated_video_decode"
+      ]
+    },
+    {
+      "id": 89,
+      "description": "Accelerated video decode interferes with GPU sandbox on certain AMD drivers",
+      "cr_bugs": [298968],
+      "os": {
+        "type": "win"
+      },
+      "vendor_id": "0x1002",
+      "driver_version": {
+        "op": "between",
+        "value": "8.810.4.5000",
+        "value2": "8.970.100.1100"
+      },
+      "features": [
+        "accelerated_video_decode"
+      ]
+    },
+    {
+      "id": 90,
+      "description": "Accelerated video decode interferes with GPU sandbox on certain NVIDIA drivers",
+      "cr_bugs": [298968],
+      "os": {
+        "type": "win"
+      },
+      "vendor_id": "0x10de",
+      "driver_version": {
+        "op": "between",
+        "value": "8.17.12.5729",
+        "value2": "8.17.12.8026"
+      },
+      "features": [
+        "accelerated_video_decode"
+      ]
+    },
+    {
+      "id": 91,
+      "description": "Accelerated video decode interferes with GPU sandbox on certain NVIDIA drivers",
+      "cr_bugs": [298968],
+      "os": {
+        "type": "win"
+      },
+      "vendor_id": "0x10de",
+      "driver_version": {
+        "op": "between",
+        "value": "9.18.13.783",
+        "value2": "9.18.13.1090"
       },
       "features": [
         "accelerated_video_decode"
@@ -1028,12 +1092,108 @@ LONG_STRING_CONST(
       "os": {
         "type": "win"
       },
-      "multi_gpu_style": "amd_switchable",
+      "multi_gpu_style": "amd_switchable_discrete",
       "features": [
         "accelerated_video_decode"
       ]
+    },
+    {
+      "id": 93,
+      "description": "GLX indirect rendering (X remoting) is not supported",
+      "cr_bugs": [72373],
+      "os": {
+        "type": "linux"
+      },
+      "direct_rendering": false,
+      "features": [
+        "all"
+      ]
+    },
+    {
+      "id": 94,
+      "description": "Intel driver version 8.15.10.1749 causes GPU process hangs.",
+      "cr_bugs": [350566],
+      "os": {
+        "type": "win"
+      },
+      "vendor_id": "0x8086",
+      "driver_version": {
+        "op": "=",
+        "value": "8.15.10.1749"
+      },
+      "features": [
+        "all"
+      ]
+    },
+    {
+      "id": 95,
+      "description": "AMD driver version 13.101 is unstable on linux.",
+      "cr_bugs": [363378],
+      "os": {
+        "type": "linux"
+      },
+      "vendor_id": "0x1002",
+      "driver_vendor": {
+        "op": "contains",
+        "value": "AMD"
+      },
+      "driver_version": {
+        "op": "=",
+        "value": "13.101"
+      },
+      "features": [
+        "all"
+      ]
+    },
+    {
+      "id": 96,
+      "description": "GPU rasterization is whitelisted on N4, N5, N7 and Moto X",
+      "cr_bugs": [362779],
+      "exceptions": [
+        {
+          "os": {
+            "type": "android"
+          },
+          "machine_model_name": ["Nexus 4", "Nexus 5", "Nexus 7",
+                                 "XT1049", "XT1050", "XT1052", "XT1053",
+                                 "XT1055", "XT1056", "XT1058", "XT1060"]
+        },
+        {
+          "os": {
+            "type": "android",
+            "version": {
+              "op": ">=",
+              "value": "4.4.99"
+            }
+          }
+        }
+      ],
+      "features": [
+        "gpu_rasterization"
+      ]
+    },
+    {
+      "id": 97,
+      "description": "Additional GPU rasterization whitelist for field trial",
+      "cr_bugs": [380694],
+      "exceptions": [
+        {
+          "os": {
+            "type": "android"
+          },
+          "machine_model_name": ["HTC One",
+                                 "C5303", "C6603", "C6903",
+                                 "GT-I8262", "GT-I8552", "GT-I9195", "GT-I9300",
+                                 "GT-I9500", "GT-I9505", "GT-N7100",
+                                 "SAMSUNG-SCH-I337", "SCH-I545", "SGH-M919",
+                                 "SM-N900", "SM-N9005", "SPH-L720",
+                                 "XT907", "XT1032", "XT1033", "XT1080"]
+        }
+      ],
+      "features": [
+        "gpu_rasterization_field_trial"
+      ]
     }
-
   ]
 }
 

@@ -26,11 +26,6 @@ class BrowserDemuxerAndroid::Internal : public media::DemuxerAndroid {
     demuxer_->AddDemuxerClient(demuxer_client_id_, client);
   }
 
-  virtual void RequestDemuxerConfigs() OVERRIDE {
-    DCHECK(ClientIDExists()) << demuxer_client_id_;
-    demuxer_->Send(new MediaPlayerMsg_MediaConfigRequest(demuxer_client_id_));
-  }
-
   virtual void RequestDemuxerData(media::DemuxerStream::Type type) OVERRIDE {
     DCHECK(ClientIDExists()) << demuxer_client_id_;
     demuxer_->Send(new MediaPlayerMsg_ReadFromDemuxer(
@@ -57,7 +52,8 @@ class BrowserDemuxerAndroid::Internal : public media::DemuxerAndroid {
   DISALLOW_COPY_AND_ASSIGN(Internal);
 };
 
-BrowserDemuxerAndroid::BrowserDemuxerAndroid() {}
+BrowserDemuxerAndroid::BrowserDemuxerAndroid()
+    : BrowserMessageFilter(MediaPlayerMsgStart) {}
 
 BrowserDemuxerAndroid::~BrowserDemuxerAndroid() {}
 
@@ -74,10 +70,9 @@ void BrowserDemuxerAndroid::OverrideThreadForMessage(
   }
 }
 
-bool BrowserDemuxerAndroid::OnMessageReceived(const IPC::Message& message,
-                                              bool* message_was_ok) {
+bool BrowserDemuxerAndroid::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
-  IPC_BEGIN_MESSAGE_MAP_EX(BrowserDemuxerAndroid, message, *message_was_ok)
+  IPC_BEGIN_MESSAGE_MAP(BrowserDemuxerAndroid, message)
     IPC_MESSAGE_HANDLER(MediaPlayerHostMsg_DemuxerReady, OnDemuxerReady)
     IPC_MESSAGE_HANDLER(MediaPlayerHostMsg_ReadFromDemuxerAck,
                         OnReadFromDemuxerAck)

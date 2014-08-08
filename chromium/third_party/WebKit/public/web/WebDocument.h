@@ -35,6 +35,7 @@
 #include "../platform/WebVector.h"
 #include "WebDraggableRegion.h"
 #include "WebExceptionCode.h"
+#include "WebFrame.h"
 #include "WebNode.h"
 #include "WebSecurityOrigin.h"
 
@@ -56,8 +57,7 @@ class WebAXObject;
 class WebDocumentType;
 class WebElement;
 class WebFormElement;
-class WebFrame;
-class WebNodeCollection;
+class WebElementCollection;
 class WebNodeList;
 class WebString;
 class WebURL;
@@ -65,11 +65,6 @@ class WebURL;
 // Provides readonly access to some properties of a DOM document.
 class WebDocument : public WebNode {
 public:
-    // FIXME: Stop using this from Chromium code and get rid of this enum.
-    enum UserStyleLevel {
-        UserStyleAuthorLevel
-    };
-
     WebDocument() { }
     WebDocument(const WebDocument& e) : WebNode(e) { }
 
@@ -87,12 +82,14 @@ public:
     BLINK_EXPORT WebString encoding() const;
     BLINK_EXPORT WebString contentLanguage() const;
     BLINK_EXPORT WebString referrer() const;
-
+    BLINK_EXPORT WebColor themeColor() const;
+    // TODO: Remove when chromium is changed to themeColor().
+    BLINK_EXPORT WebColor brandColor() const { return 0; }
     // The url of the OpenSearch Desription Document (if any).
     BLINK_EXPORT WebURL openSearchDescriptionURL() const;
 
     // Returns the frame the document belongs to or 0 if the document is frameless.
-    BLINK_EXPORT WebFrame* frame() const;
+    BLINK_EXPORT WebLocalFrame* frame() const;
     BLINK_EXPORT bool isHTMLDocument() const;
     BLINK_EXPORT bool isXHTMLDocument() const;
     BLINK_EXPORT bool isPluginDocument() const;
@@ -107,12 +104,12 @@ public:
     BLINK_EXPORT WebElement body() const;
     BLINK_EXPORT WebElement head();
     BLINK_EXPORT WebString title() const;
-    BLINK_EXPORT WebNodeCollection all();
+    BLINK_EXPORT WebElementCollection all();
     BLINK_EXPORT void forms(WebVector<WebFormElement>&) const;
     BLINK_EXPORT void images(WebVector<WebElement>&);
     BLINK_EXPORT WebURL completeURL(const WebString&) const;
     BLINK_EXPORT WebElement getElementById(const WebString&) const;
-    BLINK_EXPORT WebNode focusedNode() const;
+    BLINK_EXPORT WebElement focusedElement() const;
     BLINK_EXPORT WebDocumentType doctype() const;
     BLINK_EXPORT void cancelFullScreen();
     BLINK_EXPORT WebElement fullScreenElement() const;
@@ -130,8 +127,6 @@ public:
     // Gets the accessibility object for an object on this page by ID.
     BLINK_EXPORT WebAXObject accessibilityObjectFromID(int axID) const;
     // Inserts the given CSS source code as a stylesheet in the document.
-    // FIXME: Delete insertUserStyleSheet once Chromium code stops calling it.
-    BLINK_EXPORT void insertUserStyleSheet(const WebString& sourceCode, UserStyleLevel);
     BLINK_EXPORT void insertStyleSheet(const WebString& sourceCode);
 
     // Arranges to call WebFrameClient::didMatchCSS(frame(), ...) when one of
@@ -144,9 +139,9 @@ public:
     BLINK_EXPORT v8::Handle<v8::Value> registerEmbedderCustomElement(const WebString& name, v8::Handle<v8::Value> options, WebExceptionCode&);
 
 #if BLINK_IMPLEMENTATION
-    WebDocument(const WTF::PassRefPtr<WebCore::Document>&);
-    WebDocument& operator=(const WTF::PassRefPtr<WebCore::Document>&);
-    operator WTF::PassRefPtr<WebCore::Document>() const;
+    WebDocument(const PassRefPtrWillBeRawPtr<WebCore::Document>&);
+    WebDocument& operator=(const PassRefPtrWillBeRawPtr<WebCore::Document>&);
+    operator PassRefPtrWillBeRawPtr<WebCore::Document>() const;
 #endif
 };
 

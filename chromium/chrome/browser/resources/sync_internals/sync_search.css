@@ -3,11 +3,17 @@
  * found in the LICENSE file. */
 
 #sync-search-query {
-  width: 20em;
+  width: 16em;
 }
 
 #sync-search-query[error] {
   background-color: rgb(255,170,170);
+}
+
+.sync-search-quicklink {
+  background-color: rgb(239,243,255);
+  padding-left: 10px;
+  padding-right: 10px;
 }
 
 #sync-search-status {

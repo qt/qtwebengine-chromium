@@ -1,23 +1,31 @@
-{% from "macros.tmpl" import wrap_with_condition, license -%}
-{{ license() }}
+{% from 'macros.tmpl' import license %}
+{{license()}}
 
 #include "config.h"
+{% if suffix == 'Modules' %}
+#include "modules/{{namespace}}{{suffix}}Factory.h"
+{% else %}
 #include "core/events/{{namespace}}Factory.h"
+{% endif %}
 
-#include "{{namespace}}Headers.h"
-#include "RuntimeEnabledFeatures.h"
+#include "{{namespace}}{{suffix}}Headers.h"
+#include "platform/RuntimeEnabledFeatures.h"
 
 namespace WebCore {
 
-PassRefPtr<{{namespace}}> {{namespace}}Factory::create(const String& type)
+PassRefPtrWillBeRawPtr<{{namespace}}> {{namespace}}{{suffix}}Factory::create(const String& type)
 {
-{%- for event in events %}
-{%- call wrap_with_condition(event.Conditional) %}
+    {% for event in events %}
+    {% filter enable_conditional(event.Conditional) %}
+    {% if event|script_name|case_insensitive_matching %}
+    if (equalIgnoringCase(type, "{{event|script_name}}"){% if event.RuntimeEnabled %} && RuntimeEnabledFeatures::{{event.RuntimeEnabled|lower_first}}(){% endif %})
+    {% else %}
     if (type == "{{event|script_name}}"{% if event.RuntimeEnabled %} && RuntimeEnabledFeatures::{{event.RuntimeEnabled|lower_first}}(){% endif %})
+    {% endif %}
         return {{event|cpp_name}}::create();
-{%- endcall %}
-{%- endfor %}
-    return 0;
+    {% endfilter %}
+    {% endfor %}
+    return nullptr;
 }
 
 } // namespace WebCore

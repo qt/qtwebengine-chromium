@@ -8,6 +8,7 @@
 #include <deque>
 #include <map>
 #include <string>
+#include <vector>
 
 #include "base/callback_forward.h"
 #include "base/memory/ref_counted.h"
@@ -27,18 +28,48 @@ class VideoDecoderConfig;
 class MEDIA_EXPORT StreamParser {
  public:
   typedef std::deque<scoped_refptr<StreamParserBuffer> > BufferQueue;
-  typedef std::map<int, TextTrackConfig> TextTrackConfigMap;
 
-  StreamParser();
-  virtual ~StreamParser();
+  // Range of |TrackId| is dependent upon stream parsers. It is currently
+  // the key for the buffer's text track config in the applicable
+  // TextTrackConfigMap (which is passed in StreamParser::NewConfigCB), or
+  // 0 for other media types that currently allow at most one track.
+  // WebMTracksParser uses -1 as an invalid text track number.
+  // TODO(wolenetz/acolwell): Change to size_type while fixing stream parsers to
+  // emit validated track configuration and buffer vectors rather than max 1
+  // audio, max 1 video, and N text tracks in a map keyed by
+  // bytestream-specific-ranged track numbers. See http://crbug.com/341581.
+  typedef int TrackId;
+
+  // Map of text track ID to the track configuration.
+  typedef std::map<TrackId, TextTrackConfig> TextTrackConfigMap;
+
+  // Map of text track ID to decode-timestamp-ordered buffers for the track.
+  typedef std::map<TrackId, const BufferQueue> TextBufferQueueMap;
+
+  // Stream parameters passed in InitCB.
+  struct InitParameters {
+    InitParameters(base::TimeDelta duration);
+
+    // Stream duration.
+    base::TimeDelta duration;
+
+    // Indicates the source time associated with presentation timestamp 0. A
+    // null Time is returned if no mapping to Time exists.
+    base::Time timeline_offset;
+
+    // Indicates that timestampOffset should be updated based on the earliest
+    // end timestamp (audio or video) provided during each NewBuffersCB.
+    bool auto_update_timestamp_offset;
+
+    // Indicates live stream.
+    Demuxer::Liveness liveness;
+  };
 
   // Indicates completion of parser initialization.
-  // First parameter - Indicates initialization success. Set to true if
-  //                   initialization was successful. False if an error
-  //                   occurred.
-  // Second parameter -  Indicates the stream duration. Only contains a valid
-  //                     value if the first parameter is true.
-  typedef base::Callback<void(bool, base::TimeDelta)> InitCB;
+  //   success - True if initialization was successful.
+  //   params - Stream parameters, in case of successful initialization.
+  typedef base::Callback<void(bool success,
+                              const InitParameters& params)> InitCB;
 
   // Indicates when new stream configurations have been parsed.
   // First parameter - The new audio configuration. If the config is not valid
@@ -57,20 +88,16 @@ class MEDIA_EXPORT StreamParser {
   // New stream buffers have been parsed.
   // First parameter - A queue of newly parsed audio buffers.
   // Second parameter - A queue of newly parsed video buffers.
+  // Third parameter - A map of text track ids to queues of newly parsed inband
+  //                   text buffers. If the map is not empty, it must contain
+  //                   at least one track with a non-empty queue of text
+  //                   buffers.
   // Return value - True indicates that the buffers are accepted.
   //                False if something was wrong with the buffers and a parsing
   //                error should be signalled.
   typedef base::Callback<bool(const BufferQueue&,
-                              const BufferQueue&)> NewBuffersCB;
-
-  // New stream buffers of inband text have been parsed.
-  // First parameter - The id of the text track to which these cues will
-  //                   be added.
-  // Second parameter - A queue of newly parsed buffers.
-  // Return value - True indicates that the buffers are accepted.
-  //                False if something was wrong with the buffers and a parsing
-  //                error should be signalled.
-  typedef base::Callback<bool(int, const BufferQueue&)> NewTextBuffersCB;
+                              const BufferQueue&,
+                              const TextBufferQueueMap&)> NewBuffersCB;
 
   // Signals the beginning of a new media segment.
   typedef base::Callback<void()> NewMediaSegmentCB;
@@ -82,14 +109,18 @@ class MEDIA_EXPORT StreamParser {
   typedef base::Callback<void(const std::string&,
                               const std::vector<uint8>&)> NeedKeyCB;
 
-  // Initialize the parser with necessary callbacks. Must be called before any
+  StreamParser();
+  virtual ~StreamParser();
+
+  // Initializes the parser with necessary callbacks. Must be called before any
   // data is passed to Parse(). |init_cb| will be called once enough data has
   // been parsed to determine the initial stream configurations, presentation
-  // start time, and duration.
+  // start time, and duration. If |ignore_text_track| is true, then no text
+  // buffers should be passed later by the parser to |new_buffers_cb|.
   virtual void Init(const InitCB& init_cb,
                     const NewConfigCB& config_cb,
                     const NewBuffersCB& new_buffers_cb,
-                    const NewTextBuffersCB& text_cb,
+                    bool ignore_text_track,
                     const NeedKeyCB& need_key_cb,
                     const NewMediaSegmentCB& new_segment_cb,
                     const base::Closure& end_of_segment_cb,
@@ -108,6 +139,23 @@ class MEDIA_EXPORT StreamParser {
  private:
   DISALLOW_COPY_AND_ASSIGN(StreamParser);
 };
+
+// Appends to |merged_buffers| the provided buffers in decode-timestamp order.
+// Any previous contents of |merged_buffers| is assumed to have lower
+// decode timestamps versus the provided buffers. All provided buffer queues
+// are assumed to already be in decode-timestamp order.
+// Returns false if any of the provided audio/video/text buffers are found
+// to not be in decode timestamp order, or have a decode timestamp less than
+// the last buffer, if any, in |merged_buffers|. Partial results may exist
+// in |merged_buffers| in this case. Returns true on success.
+// No validation of media type within the various buffer queues is done here.
+// TODO(wolenetz/acolwell): Merge incrementally in parsers to eliminate
+// subtle issues with tie-breaking. See http://crbug.com/338484.
+MEDIA_EXPORT bool MergeBufferQueues(
+    const StreamParser::BufferQueue& audio_buffers,
+    const StreamParser::BufferQueue& video_buffers,
+    const StreamParser::TextBufferQueueMap& text_buffers,
+    StreamParser::BufferQueue* merged_buffers);
 
 }  // namespace media
 

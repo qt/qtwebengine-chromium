@@ -12,6 +12,7 @@
 #include "ui/views/controls/menu/menu_controller.h"
 #include "ui/views/controls/menu/menu_controller_delegate.h"
 #include "ui/views/controls/menu/menu_delegate.h"
+#include "ui/views/controls/menu/menu_item_view.h"
 #include "ui/views/controls/menu/menu_model_adapter.h"
 #include "ui/views/controls/menu/menu_runner_handler.h"
 #include "ui/views/widget/widget.h"
@@ -43,7 +44,7 @@ class MenuRunnerImpl : public internal::MenuControllerDelegate {
   MenuRunner::RunResult RunMenuAt(Widget* parent,
                                   MenuButton* button,
                                   const gfx::Rect& bounds,
-                                  MenuItemView::AnchorPosition anchor,
+                                  MenuAnchorPosition anchor,
                                   int32 types) WARN_UNUSED_RESULT;
 
   void Cancel();
@@ -140,12 +141,11 @@ void MenuRunnerImpl::Release() {
   }
 }
 
-MenuRunner::RunResult MenuRunnerImpl::RunMenuAt(
-    Widget* parent,
-    MenuButton* button,
-    const gfx::Rect& bounds,
-    MenuItemView::AnchorPosition anchor,
-    int32 types) {
+MenuRunner::RunResult MenuRunnerImpl::RunMenuAt(Widget* parent,
+                                                MenuButton* button,
+                                                const gfx::Rect& bounds,
+                                                MenuAnchorPosition anchor,
+                                                int32 types) {
   closing_event_time_ = base::TimeDelta();
   if (running_) {
     // Ignore requests to show the menu while it's already showing. MenuItemView
@@ -186,7 +186,7 @@ MenuRunner::RunResult MenuRunnerImpl::RunMenuAt(
     controller = new MenuController(theme, !for_drop_, this);
     owns_controller_ = true;
   }
-  controller->set_accept_on_f4((types & MenuRunner::COMBOBOX) != 0);
+  controller->set_is_combobox((types & MenuRunner::COMBOBOX) != 0);
   controller_ = controller;
   menu_->set_controller(controller_);
   menu_->PrepareForRun(owns_controller_,
@@ -278,16 +278,6 @@ bool MenuRunnerImpl::ShouldShowMnemonics(MenuButton* button) {
   return show_mnemonics;
 }
 
-// In theory we could implement this every where, but for now we're only
-// implementing it on aura.
-#if !defined(USE_AURA)
-// static
-DisplayChangeListener* DisplayChangeListener::Create(Widget* widget,
-                                                     MenuRunner* runner) {
-  return NULL;
-}
-#endif
-
 }  // namespace internal
 
 MenuRunner::MenuRunner(ui::MenuModel* menu_model)
@@ -310,7 +300,7 @@ MenuItemView* MenuRunner::GetMenu() {
 MenuRunner::RunResult MenuRunner::RunMenuAt(Widget* parent,
                                             MenuButton* button,
                                             const gfx::Rect& bounds,
-                                            MenuItemView::AnchorPosition anchor,
+                                            MenuAnchorPosition anchor,
                                             ui::MenuSourceType source_type,
                                             int32 types) {
   if (runner_handler_.get()) {
@@ -331,11 +321,11 @@ MenuRunner::RunResult MenuRunner::RunMenuAt(Widget* parent,
       case ui::MENU_SOURCE_NONE:
       case ui::MENU_SOURCE_KEYBOARD:
       case ui::MENU_SOURCE_MOUSE:
-        anchor = MenuItemView::TOPLEFT;
+        anchor = MENU_ANCHOR_TOPLEFT;
         break;
       case ui::MENU_SOURCE_TOUCH:
       case ui::MENU_SOURCE_TOUCH_EDIT_MENU:
-        anchor = MenuItemView::BOTTOMCENTER;
+        anchor = MENU_ANCHOR_BOTTOMCENTER;
         break;
       default:
         break;

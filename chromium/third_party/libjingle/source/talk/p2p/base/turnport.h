@@ -52,6 +52,18 @@ class TurnPort : public Port {
   static TurnPort* Create(talk_base::Thread* thread,
                           talk_base::PacketSocketFactory* factory,
                           talk_base::Network* network,
+                          talk_base::AsyncPacketSocket* socket,
+                          const std::string& username,  // ice username.
+                          const std::string& password,  // ice password.
+                          const ProtocolAddress& server_address,
+                          const RelayCredentials& credentials) {
+    return new TurnPort(thread, factory, network, socket,
+                    username, password, server_address, credentials);
+  }
+
+  static TurnPort* Create(talk_base::Thread* thread,
+                          talk_base::PacketSocketFactory* factory,
+                          talk_base::Network* network,
                           const talk_base::IPAddress& ip,
                           int min_port, int max_port,
                           const std::string& username,  // ice username.
@@ -74,15 +86,24 @@ class TurnPort : public Port {
       const Candidate& c, PortInterface::CandidateOrigin origin);
   virtual int SendTo(const void* data, size_t size,
                      const talk_base::SocketAddress& addr,
-                     talk_base::DiffServCodePoint dscp,
+                     const talk_base::PacketOptions& options,
                      bool payload);
   virtual int SetOption(talk_base::Socket::Option opt, int value);
   virtual int GetOption(talk_base::Socket::Option opt, int* value);
   virtual int GetError();
-  virtual void OnReadPacket(
+
+  virtual bool HandleIncomingPacket(
       talk_base::AsyncPacketSocket* socket, const char* data, size_t size,
       const talk_base::SocketAddress& remote_addr,
-      const talk_base::PacketTime& packet_time);
+      const talk_base::PacketTime& packet_time) {
+    OnReadPacket(socket, data, size, remote_addr, packet_time);
+    return true;
+  }
+  virtual void OnReadPacket(talk_base::AsyncPacketSocket* socket,
+                            const char* data, size_t size,
+                            const talk_base::SocketAddress& remote_addr,
+                            const talk_base::PacketTime& packet_time);
+
   virtual void OnReadyToSend(talk_base::AsyncPacketSocket* socket);
 
   void OnSocketConnect(talk_base::AsyncPacketSocket* socket);
@@ -92,11 +113,27 @@ class TurnPort : public Port {
   const std::string& hash() const { return hash_; }
   const std::string& nonce() const { return nonce_; }
 
+  // Signal with resolved server address.
+  // Parameters are port, server address and resolved server address.
+  // This signal will be sent only if server address is resolved successfully.
+  sigslot::signal3<TurnPort*,
+                   const talk_base::SocketAddress&,
+                   const talk_base::SocketAddress&> SignalResolvedServerAddress;
+
   // This signal is only for testing purpose.
   sigslot::signal3<TurnPort*, const talk_base::SocketAddress&, int>
       SignalCreatePermissionResult;
 
  protected:
+  TurnPort(talk_base::Thread* thread,
+           talk_base::PacketSocketFactory* factory,
+           talk_base::Network* network,
+           talk_base::AsyncPacketSocket* socket,
+           const std::string& username,
+           const std::string& password,
+           const ProtocolAddress& server_address,
+           const RelayCredentials& credentials);
+
   TurnPort(talk_base::Thread* thread,
            talk_base::PacketSocketFactory* factory,
            talk_base::Network* network,
@@ -131,7 +168,8 @@ class TurnPort : public Port {
   // Stun address from allocate success response.
   // Currently used only for testing.
   void OnStunAddress(const talk_base::SocketAddress& address);
-  void OnAllocateSuccess(const talk_base::SocketAddress& address);
+  void OnAllocateSuccess(const talk_base::SocketAddress& address,
+                         const talk_base::SocketAddress& stun_address);
   void OnAllocateError();
   void OnAllocateRequestTimeout();
 
@@ -145,7 +183,8 @@ class TurnPort : public Port {
 
   bool ScheduleRefresh(int lifetime);
   void SendRequest(StunRequest* request, int delay);
-  int Send(const void* data, size_t size, talk_base::DiffServCodePoint dscp);
+  int Send(const void* data, size_t size,
+           const talk_base::PacketOptions& options);
   void UpdateHash();
   bool UpdateNonce(StunMessage* response);
 
@@ -159,7 +198,7 @@ class TurnPort : public Port {
   ProtocolAddress server_address_;
   RelayCredentials credentials_;
 
-  talk_base::scoped_ptr<talk_base::AsyncPacketSocket> socket_;
+  talk_base::AsyncPacketSocket* socket_;
   SocketOptionsMap socket_options_;
   talk_base::AsyncResolverInterface* resolver_;
   int error_;

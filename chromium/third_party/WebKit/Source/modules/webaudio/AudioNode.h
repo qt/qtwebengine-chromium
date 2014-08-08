@@ -26,7 +26,7 @@
 #define AudioNode_h
 
 #include "bindings/v8/ScriptWrappable.h"
-#include "core/events/EventTarget.h"
+#include "modules/EventTargetModules.h"
 #include "platform/audio/AudioBus.h"
 #include "wtf/Forward.h"
 #include "wtf/OwnPtr.h"
@@ -50,7 +50,9 @@ class ExceptionState;
 // An AudioDestinationNode has one input and no outputs and represents the final destination to the audio hardware.
 // Most processing nodes such as filters will have one input and one output, although multiple inputs and outputs are possible.
 
-class AudioNode : public ScriptWrappable, public EventTargetWithInlineData {
+// AudioNode has its own ref-counting mechanism that use RefTypes so we cannot use RefCountedGarbageCollected.
+class AudioNode : public NoBaseWillBeGarbageCollectedFinalized<AudioNode>, public ScriptWrappable, public EventTargetWithInlineData {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(AudioNode);
 public:
     enum { ProcessingSizeInFrames = 128 };
 
@@ -109,17 +111,12 @@ public:
     // Called from context's audio thread.
     virtual void process(size_t framesToProcess) = 0;
 
-    // Resets DSP processing state (clears delay lines, filter memory, etc.)
-    // Called from context's audio thread.
-    virtual void reset() = 0;
-
     // No significant resources should be allocated until initialize() is called.
     // Processing may not occur until a node is initialized.
     virtual void initialize();
     virtual void uninitialize();
 
     bool isInitialized() const { return m_isInitialized; }
-    void lazyInitialize();
 
     unsigned numberOfInputs() const { return m_inputs.size(); }
     unsigned numberOfOutputs() const { return m_outputs.size(); }
@@ -181,8 +178,14 @@ public:
     AudioBus::ChannelInterpretation internalChannelInterpretation() const { return m_channelInterpretation; }
 
     // EventTarget
-    virtual const AtomicString& interfaceName() const OVERRIDE;
-    virtual ExecutionContext* executionContext() const OVERRIDE;
+    virtual const AtomicString& interfaceName() const OVERRIDE FINAL;
+    virtual ExecutionContext* executionContext() const OVERRIDE FINAL;
+
+    virtual void trace(Visitor*) OVERRIDE;
+
+#if ENABLE(OILPAN)
+    void clearKeepAlive();
+#endif
 
 protected:
     // Inputs and outputs must be created before the AudioNode is initialized.
@@ -200,10 +203,22 @@ protected:
 private:
     volatile bool m_isInitialized;
     NodeType m_nodeType;
-    RefPtr<AudioContext> m_context;
+    RefPtrWillBeMember<AudioContext> m_context;
     float m_sampleRate;
     Vector<OwnPtr<AudioNodeInput> > m_inputs;
     Vector<OwnPtr<AudioNodeOutput> > m_outputs;
+
+#if ENABLE(OILPAN)
+    // AudioNodes are in the oilpan heap but they are still reference counted at
+    // the same time. This is because we are not allowed to stop the audio
+    // thread and thus the audio thread cannot allocate objects in the oilpan
+    // heap.
+    // The m_keepAlive handle is used to keep a persistent reference to this
+    // AudioNode while someone has a reference to this AudioNode through a
+    // RefPtr.
+    GC_PLUGIN_IGNORE("http://crbug.com/353083")
+    OwnPtr<Persistent<AudioNode> > m_keepAlive;
+#endif
 
     double m_lastProcessingTime;
     double m_lastNonSilentTime;
@@ -220,8 +235,10 @@ private:
     static int s_nodeCount[NodeTypeEnd];
 #endif
 
-    virtual void refEventTarget() OVERRIDE { ref(); }
-    virtual void derefEventTarget() OVERRIDE { deref(); }
+#if !ENABLE(OILPAN)
+    virtual void refEventTarget() OVERRIDE FINAL { ref(); }
+    virtual void derefEventTarget() OVERRIDE FINAL { deref(); }
+#endif
 
 protected:
     unsigned m_channelCount;

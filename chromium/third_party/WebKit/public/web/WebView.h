@@ -35,6 +35,8 @@
 #include "../platform/WebString.h"
 #include "../platform/WebVector.h"
 #include "WebDragOperation.h"
+#include "WebHistoryCommitType.h"
+#include "WebHistoryItem.h"
 #include "WebPageVisibilityState.h"
 #include "WebWidget.h"
 
@@ -51,20 +53,17 @@ class WebGraphicsContext3D;
 class WebHitTestResult;
 class WebNode;
 class WebPageOverlay;
-class WebPermissionClient;
 class WebPrerendererClient;
 class WebRange;
 class WebSettings;
 class WebSpellCheckClient;
 class WebString;
-class WebPasswordGeneratorClient;
-class WebSharedWorkerRepositoryClient;
-class WebValidationMessageClient;
 class WebViewClient;
 struct WebActiveWheelFlingParameters;
 struct WebMediaPlayerAction;
 struct WebPluginAction;
 struct WebPoint;
+struct WebFloatPoint;
 struct WebWindowFeatures;
 
 class WebView : public WebWidget {
@@ -93,19 +92,12 @@ public:
     // This WebFrame will receive events for the main frame and must not
     // be null.
     virtual void setMainFrame(WebFrame*) = 0;
-    // FIXME: Remove initializeMainFrame() after clients have migrated to
-    // setMainFrame().
-    virtual void initializeMainFrame(WebFrameClient*) = 0;
 
     // Initializes the various client interfaces.
     virtual void setAutofillClient(WebAutofillClient*) = 0;
     virtual void setDevToolsAgentClient(WebDevToolsAgentClient*) = 0;
-    virtual void setPermissionClient(WebPermissionClient*) = 0;
     virtual void setPrerendererClient(WebPrerendererClient*) = 0;
     virtual void setSpellCheckClient(WebSpellCheckClient*) = 0;
-    virtual void setValidationMessageClient(WebValidationMessageClient*) = 0;
-    virtual void setPasswordGeneratorClient(WebPasswordGeneratorClient*) = 0;
-    virtual void setSharedWorkerRepositoryClient(WebSharedWorkerRepositoryClient*) = 0;
 
     // Options -------------------------------------------------------------
 
@@ -154,15 +146,9 @@ public:
     // WebWindowFeatures are ignored.
     virtual void setWindowFeatures(const WebWindowFeatures&) = 0;
 
-
-    // Closing -------------------------------------------------------------
-
-    // Runs beforeunload handlers for the current page, returning false if
-    // any handler suppressed unloading.
-    virtual bool dispatchBeforeUnloadEvent() = 0;
-
-    // Runs unload handlers for the current page.
-    virtual void dispatchUnloadEvent() = 0;
+    // Marks the WebView as being opened by a DOM call. This is relevant
+    // for whether window.close() may be called.
+    virtual void setOpenedByDOM() = 0;
 
 
     // Frames --------------------------------------------------------------
@@ -187,13 +173,10 @@ public:
     // Focus the first (last if reverse is true) focusable node.
     virtual void setInitialFocus(bool reverse) = 0;
 
-    // Clears the focused node (and selection if a text field is focused)
+    // Clears the focused element (and selection if a text field is focused)
     // to ensure that a text field on the page is not eating keystrokes we
     // send it.
-    virtual void clearFocusedNode() = 0;
-
-    // Scrolls the node currently in focus into view.
-    virtual void scrollFocusedNodeIntoView() = 0;
+    virtual void clearFocusedElement() = 0;
 
     // Scrolls the node currently in focus into |rect|, where |rect| is in
     // window space.
@@ -251,14 +234,30 @@ public:
     // is scaled up, < 1.0 is scaled down.
     virtual float pageScaleFactor() const = 0;
 
-    // Scales the page and the scroll offset by a given factor, while ensuring
-    // that the new scroll position does not go beyond the edge of the page.
-    virtual void setPageScaleFactorPreservingScrollOffset(float) = 0;
-
+    // TODO: Obsolete, the origin parameter is ambiguous with two viewports. Remove
+    // once Chromium side users are removed.
     // Scales a page by a factor of scaleFactor and then sets a scroll position to (x, y).
     // setPageScaleFactor() magnifies and shrinks a page without affecting layout.
     // On the other hand, zooming affects layout of the page.
     virtual void setPageScaleFactor(float scaleFactor, const WebPoint& origin) = 0;
+
+    // TODO: Reevaluate if this is needed once all users are converted to using the
+    // virtual viewport pinch model.
+    // Temporary to keep old style pinch viewport working while we gradually bring up
+    // virtual viewport pinch.
+    virtual void setMainFrameScrollOffset(const WebPoint& origin) = 0;
+
+    // Scales the page without affecting layout by using the pinch-to-zoom viewport.
+    virtual void setPageScaleFactor(float) = 0;
+
+    // Sets the offset of the pinch-to-zoom viewport within the main frame, in
+    // partial CSS pixels. The offset will be clamped so the pinch viewport
+    // stays within the frame's bounds.
+    virtual void setPinchViewportOffset(const WebFloatPoint&) = 0;
+
+    // Gets the pinch viewport's current offset within the page's main frame,
+    // in partial CSS pixels.
+    virtual WebFloatPoint pinchViewportOffset() const = 0;
 
     // PageScaleFactor will be force-clamped between minPageScale and maxPageScale
     // (and these values will persist until setPageScaleFactorLimits is called
@@ -267,14 +266,6 @@ public:
 
     virtual float minimumPageScaleFactor() const = 0;
     virtual float maximumPageScaleFactor() const = 0;
-
-    // Save the WebView's current scroll and scale state. Each call to this function
-    // overwrites the previously saved scroll and scale state.
-    virtual void saveScrollAndScaleState() = 0;
-
-    // Restore the previously saved scroll and scale state. After restoring the
-    // state, this function deletes any saved scroll and scale state.
-    virtual void restoreScrollAndScaleState() = 0;
 
     // Reset any saved values for the scroll and scale state.
     virtual void resetScrollAndScaleState() = 0;
@@ -334,13 +325,12 @@ public:
     // WebView (if there is such an image)
     virtual void copyImageAt(const WebPoint&) = 0;
 
+    // Save as the image located at a particular point in the
+    // WebView (if there is such an image)
+    virtual void saveImageAt(const WebPoint&) = 0;
+
     // Notifies the WebView that a drag has terminated.
     virtual void dragSourceEndedAt(
-        const WebPoint& clientPoint, const WebPoint& screenPoint,
-        WebDragOperation operation) = 0;
-
-    // Notifies the WebView that a drag is going on.
-    virtual void dragSourceMovedTo(
         const WebPoint& clientPoint, const WebPoint& screenPoint,
         WebDragOperation operation) = 0;
 
@@ -409,26 +399,6 @@ public:
     virtual WebAXObject accessibilityObject() = 0;
 
 
-    // Autofill  -----------------------------------------------------------
-
-    // Notifies the WebView that Autofill suggestions are available for a node.
-    // |itemIDs| is a vector of IDs for the menu items. A positive itemID is a
-    // unique ID for the Autofill entries. Other MenuItemIDs are defined in
-    // WebAutofillClient.h
-    virtual void applyAutofillSuggestions(
-        const WebNode&,
-        const WebVector<WebString>& names,
-        const WebVector<WebString>& labels,
-        const WebVector<WebString>& icons,
-        const WebVector<int>& itemIDs,
-        int separatorIndex = -1) = 0;
-
-    // Hides any popup (suggestions, selects...) that might be showing.
-    virtual void hidePopups() = 0;
-
-    virtual void selectAutofillSuggestionAtIndex(unsigned listIndex) = 0;
-
-
     // Context menu --------------------------------------------------------
 
     virtual void performCustomContextMenuAction(unsigned action) = 0;
@@ -446,6 +416,9 @@ public:
 
     // Sets whether select popup menus should be rendered by the browser.
     BLINK_EXPORT static void setUseExternalPopupMenus(bool);
+
+    // Hides any popup (suggestions, selects...) that might be showing.
+    virtual void hidePopups() = 0;
 
 
     // Visited link state --------------------------------------------------
@@ -487,16 +460,15 @@ public:
     // Cancels an active fling, returning true if a fling was active.
     virtual bool endActiveFlingAnimation() = 0;
 
-    virtual bool setEditableSelectionOffsets(int start, int end) = 0;
-    virtual bool setCompositionFromExistingText(int compositionStart, int compositionEnd, const WebVector<WebCompositionUnderline>& underlines) = 0;
-    virtual void extendSelectionAndDelete(int before, int after) = 0;
-
-    virtual bool isSelectionEditable() const = 0;
-
     virtual void setShowPaintRects(bool) = 0;
     virtual void setShowFPSCounter(bool) = 0;
     virtual void setContinuousPaintingEnabled(bool) = 0;
     virtual void setShowScrollBottleneckRects(bool) = 0;
+
+    // Compute the bounds of the root element of the current selection and fills
+    // the out-parameter on success. |bounds| coordinates will be relative to
+    // the contents window and will take into account the current scale level.
+    virtual void getSelectionRootBounds(WebRect& bounds) const = 0;
 
     // Visibility -----------------------------------------------------------
 
@@ -516,6 +488,14 @@ public:
     // the same z-order number, the later added one will be on top.
     virtual void addPageOverlay(WebPageOverlay*, int /*z-order*/) = 0;
     virtual void removePageOverlay(WebPageOverlay*) = 0;
+
+
+    // i18n -----------------------------------------------------------------
+
+    // Inform the WebView that the accept languages have changed.
+    // If the WebView wants to get the accept languages value, it will have
+    // to call the WebViewClient::acceptLanguages().
+    virtual void acceptLanguagesChanged() = 0;
 
     // Testing functionality for TestRunner ---------------------------------
 

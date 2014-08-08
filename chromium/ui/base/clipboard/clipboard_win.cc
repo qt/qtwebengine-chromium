@@ -7,8 +7,8 @@
 
 #include "ui/base/clipboard/clipboard.h"
 
-#include <shlobj.h>
 #include <shellapi.h>
+#include <shlobj.h>
 
 #include "base/basictypes.h"
 #include "base/bind.h"
@@ -16,7 +16,7 @@
 #include "base/logging.h"
 #include "base/memory/shared_memory.h"
 #include "base/message_loop/message_loop.h"
-#include "base/safe_numerics.h"
+#include "base/numerics/safe_conversions.h"
 #include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
@@ -208,7 +208,7 @@ bool Clipboard::FormatType::Equals(const FormatType& other) const {
 }
 
 Clipboard::Clipboard() {
-  if (base::MessageLoop::current()->type() == base::MessageLoop::TYPE_UI)
+  if (base::MessageLoopForUI::IsCurrent())
     clipboard_owner_.reset(new base::win::MessageWindow());
 }
 
@@ -231,8 +231,8 @@ void Clipboard::WriteObjects(ClipboardType type, const ObjectMap& objects) {
 }
 
 void Clipboard::WriteText(const char* text_data, size_t text_len) {
-  string16 text;
-  UTF8ToUTF16(text_data, text_len, &text);
+  base::string16 text;
+  base::UTF8ToUTF16(text_data, text_len, &text);
   HGLOBAL glob = CreateGlobalData(text);
 
   WriteToClipboard(CF_UNICODETEXT, glob);
@@ -266,7 +266,7 @@ void Clipboard::WriteBookmark(const char* title_data,
   bookmark.append(1, L'\n');
   bookmark.append(url_data, url_len);
 
-  string16 wide_bookmark = UTF8ToWide(bookmark);
+  base::string16 wide_bookmark = base::UTF8ToWide(bookmark);
   HGLOBAL glob = CreateGlobalData(wide_bookmark);
 
   WriteToClipboard(GetUrlWFormatType().ToUINT(), glob);
@@ -399,7 +399,7 @@ void Clipboard::Clear(ClipboardType type) {
 }
 
 void Clipboard::ReadAvailableTypes(ClipboardType type,
-                                   std::vector<string16>* types,
+                                   std::vector<base::string16>* types,
                                    bool* contains_filenames) const {
   if (!types || !contains_filenames) {
     NOTREACHED();
@@ -408,13 +408,13 @@ void Clipboard::ReadAvailableTypes(ClipboardType type,
 
   types->clear();
   if (::IsClipboardFormatAvailable(GetPlainTextFormatType().ToUINT()))
-    types->push_back(UTF8ToUTF16(kMimeTypeText));
+    types->push_back(base::UTF8ToUTF16(kMimeTypeText));
   if (::IsClipboardFormatAvailable(GetHtmlFormatType().ToUINT()))
-    types->push_back(UTF8ToUTF16(kMimeTypeHTML));
+    types->push_back(base::UTF8ToUTF16(kMimeTypeHTML));
   if (::IsClipboardFormatAvailable(GetRtfFormatType().ToUINT()))
-    types->push_back(UTF8ToUTF16(kMimeTypeRTF));
+    types->push_back(base::UTF8ToUTF16(kMimeTypeRTF));
   if (::IsClipboardFormatAvailable(CF_DIB))
-    types->push_back(UTF8ToUTF16(kMimeTypePNG));
+    types->push_back(base::UTF8ToUTF16(kMimeTypePNG));
   *contains_filenames = false;
 
   // Acquire the clipboard.
@@ -430,7 +430,7 @@ void Clipboard::ReadAvailableTypes(ClipboardType type,
   ::GlobalUnlock(hdata);
 }
 
-void Clipboard::ReadText(ClipboardType type, string16* result) const {
+void Clipboard::ReadText(ClipboardType type, base::string16* result) const {
   DCHECK_EQ(type, CLIPBOARD_TYPE_COPY_PASTE);
   if (!result) {
     NOTREACHED();
@@ -448,7 +448,7 @@ void Clipboard::ReadText(ClipboardType type, string16* result) const {
   if (!data)
     return;
 
-  result->assign(static_cast<const char16*>(::GlobalLock(data)));
+  result->assign(static_cast<const base::char16*>(::GlobalLock(data)));
   ::GlobalUnlock(data);
 }
 
@@ -475,7 +475,7 @@ void Clipboard::ReadAsciiText(ClipboardType type, std::string* result) const {
 }
 
 void Clipboard::ReadHTML(ClipboardType type,
-                         string16* markup,
+                         base::string16* markup,
                          std::string* src_url,
                          uint32* fragment_start,
                          uint32* fragment_end) const {
@@ -522,8 +522,8 @@ void Clipboard::ReadHTML(ClipboardType type,
   offsets.push_back(end_index - html_start);
   markup->assign(base::UTF8ToUTF16AndAdjustOffsets(cf_html.data() + html_start,
                                                    &offsets));
-  *fragment_start = base::checked_numeric_cast<uint32>(offsets[0]);
-  *fragment_end = base::checked_numeric_cast<uint32>(offsets[1]);
+  *fragment_start = base::checked_cast<uint32>(offsets[0]);
+  *fragment_end = base::checked_cast<uint32>(offsets[1]);
 }
 
 void Clipboard::ReadRTF(ClipboardType type, std::string* result) const {
@@ -603,8 +603,8 @@ SkBitmap Clipboard::ReadImage(ClipboardType type) const {
 }
 
 void Clipboard::ReadCustomData(ClipboardType clipboard_type,
-                               const string16& type,
-                               string16* result) const {
+                               const base::string16& type,
+                               base::string16* result) const {
   DCHECK_EQ(clipboard_type, CLIPBOARD_TYPE_COPY_PASTE);
 
   // Acquire the clipboard.
@@ -620,7 +620,7 @@ void Clipboard::ReadCustomData(ClipboardType clipboard_type,
   ::GlobalUnlock(hdata);
 }
 
-void Clipboard::ReadBookmark(string16* title, std::string* url) const {
+void Clipboard::ReadBookmark(base::string16* title, std::string* url) const {
   if (title)
     title->clear();
 
@@ -636,7 +636,7 @@ void Clipboard::ReadBookmark(string16* title, std::string* url) const {
   if (!data)
     return;
 
-  string16 bookmark(static_cast<const char16*>(::GlobalLock(data)));
+  base::string16 bookmark(static_cast<const base::char16*>(::GlobalLock(data)));
   ::GlobalUnlock(data);
 
   ParseBookmarkClipboardFormat(bookmark, title, url);
@@ -662,10 +662,10 @@ void Clipboard::ReadData(const FormatType& format, std::string* result) const {
 }
 
 // static
-void Clipboard::ParseBookmarkClipboardFormat(const string16& bookmark,
-                                             string16* title,
+void Clipboard::ParseBookmarkClipboardFormat(const base::string16& bookmark,
+                                             base::string16* title,
                                              std::string* url) {
-  const string16 kDelim = ASCIIToUTF16("\r\n");
+  const base::string16 kDelim = base::ASCIIToUTF16("\r\n");
 
   const size_t title_end = bookmark.find_first_of(kDelim);
   if (title)
@@ -673,8 +673,10 @@ void Clipboard::ParseBookmarkClipboardFormat(const string16& bookmark,
 
   if (url) {
     const size_t url_start = bookmark.find_first_not_of(kDelim, title_end);
-    if (url_start != string16::npos)
-      *url = UTF16ToUTF8(bookmark.substr(url_start, string16::npos));
+    if (url_start != base::string16::npos) {
+      *url = base::UTF16ToUTF8(
+          bookmark.substr(url_start, base::string16::npos));
+    }
   }
 }
 
@@ -682,7 +684,7 @@ void Clipboard::ParseBookmarkClipboardFormat(const string16& bookmark,
 Clipboard::FormatType Clipboard::GetFormatType(
     const std::string& format_string) {
   return FormatType(
-      ::RegisterClipboardFormat(ASCIIToWide(format_string).c_str()));
+      ::RegisterClipboardFormat(base::ASCIIToWide(format_string).c_str()));
 }
 
 // static

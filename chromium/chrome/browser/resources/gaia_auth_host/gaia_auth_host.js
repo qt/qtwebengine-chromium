@@ -35,12 +35,6 @@ cr.define('cr.login', function() {
   var OFFLINE_AUTH_URL = AUTH_URL_BASE + '/offline.html';
 
   /**
-   * Auth URL to use for inline flow.
-   * @const
-   */
-  var INLINE_AUTH_URL = AUTH_URL_BASE + '/inline_main.html';
-
-  /**
    * Origin of the gaia sign in page.
    * @const
    */
@@ -59,7 +53,6 @@ cr.define('cr.login', function() {
     'email',         // Pre-fill the email field in Gaia UI;
     'service',       // Name of Gaia service;
     'continueUrl',   // Continue url to use;
-    'partitionId',   // Partition ID for the embedded Gaia webview;
     'frameUrl',      // Initial frame URL to use. If empty defaults to gaiaUrl.
     'constrained'    // Whether the extension is loaded in a constrained window;
   ];
@@ -87,7 +80,16 @@ cr.define('cr.login', function() {
   var AuthMode = {
     DEFAULT: 0,
     OFFLINE: 1,
-    INLINE: 2
+    DESKTOP: 2
+  };
+
+  /**
+   * Enum for the auth flow.
+   * @enum {number}
+   */
+  var AuthFlow = {
+    GAIA: 0,
+    SAML: 1
   };
 
   /**
@@ -102,8 +104,6 @@ cr.define('cr.login', function() {
     assert(this.frame_);
     window.addEventListener('message',
                             this.onMessage_.bind(this), false);
-    window.addEventListener('popstate',
-                            this.onPopState_.bind(this), false);
   }
 
   GaiaAuthHost.prototype = {
@@ -117,6 +117,12 @@ cr.define('cr.login', function() {
     reloadUrl_: null,
 
     /**
+     * The domain name of the current auth page.
+     * @type {string}
+     */
+    authDomain: '',
+
+    /**
      * Invoked when authentication is completed successfully with credential
      * data. A credential data object looks like this:
      * <pre>
@@ -125,7 +131,7 @@ cr.define('cr.login', function() {
      *   email: 'xx@gmail.com',
      *   password: 'xxxx',  // May not present
      *   authCode: 'x/xx',  // May not present
-     *   authMode: 'x',     // Authorization mode, default/inline/offline.
+     *   authMode: 'x',     // Authorization mode, default/offline/desktop.
      * }
      * }
      * </pre>
@@ -133,6 +139,18 @@ cr.define('cr.login', function() {
      * @private
      */
     successCallback_: null,
+
+    /**
+     * Invoked when GAIA indicates login success and SAML was used. At this
+     * point, GAIA cookies are present but the identity of the authenticated
+     * user is not known. The embedder of GaiaAuthHost should extract the GAIA
+     * cookies from the cookie jar, query GAIA for the authenticated user's
+     * e-mail address and invoke GaiaAuthHost.setAuthenticatedUserEmail with the
+     * result. The argument is an opaque token that should be passed back to
+     * GaiaAuthHost.setAuthenticatedUserEmail.
+     * @type {function(number)}
+     */
+    retrieveAuthenticatedUserEmailCallback_: null,
 
     /**
      * Invoked when the auth flow needs a user to confirm his/her passwords.
@@ -155,12 +173,9 @@ cr.define('cr.login', function() {
     noPasswordCallback_: null,
 
     /**
-     * Invoked when the auth page hosted inside the extension is loaded.
-     * Param {@code saml} is true when the auth page is a SAML page (out of
-     * Gaia domain.
-     * @type {function{boolean)}
-     */
-    authPageLoadedCallback_: null,
+     * Invoked when the authentication flow had to be aborted because content
+     * served over an unencrypted connection was detected.
+    insecureContentBlockedCallback_: null,
 
     /**
      * The iframe container.
@@ -168,6 +183,14 @@ cr.define('cr.login', function() {
      */
     get frame() {
       return this.frame_;
+    },
+
+    /**
+     * Sets retrieveAuthenticatedUserEmailCallback_.
+     * @type {function()}
+     */
+    set retrieveAuthenticatedUserEmailCallback(callback) {
+      this.retrieveAuthenticatedUserEmailCallback_ = callback;
     },
 
     /**
@@ -187,11 +210,11 @@ cr.define('cr.login', function() {
     },
 
     /**
-     * Sets authPageLoadedCallback_.
-     * @type {function(boolean)}
+     * Sets insecureContentBlockedCallback_.
+     * @type {function(string)}
      */
-    set authPageLoadedCallback(callback) {
-      this.authPageLoadedCallback_ = callback;
+    set insecureContentBlockedCallback(callback) {
+      this.insecureContentBlockedCallback_ = callback;
     },
 
     /**
@@ -226,9 +249,9 @@ cr.define('cr.login', function() {
         case AuthMode.OFFLINE:
           url = OFFLINE_AUTH_URL;
           break;
-        case AuthMode.INLINE:
-          url = INLINE_AUTH_URL;
-          params.push('inlineMode=1');
+        case AuthMode.DESKTOP:
+          url = AUTH_URL;
+          params.push('desktopMode=1');
           break;
         default:
           url = AUTH_URL;
@@ -238,6 +261,7 @@ cr.define('cr.login', function() {
       this.frame_.src = url;
       this.reloadUrl_ = url;
       this.successCallback_ = successCallback;
+      this.authFlow = AuthFlow.GAIA;
     },
 
     /**
@@ -245,6 +269,7 @@ cr.define('cr.login', function() {
      */
     reload: function() {
       this.frame_.src = this.reloadUrl_;
+      this.authFlow = AuthFlow.GAIA;
     },
 
     /**
@@ -256,6 +281,21 @@ cr.define('cr.login', function() {
       var msg = {
         method: 'verifyConfirmedPassword',
         password: password
+      };
+      this.frame_.contentWindow.postMessage(msg, AUTH_URL_BASE);
+    },
+
+    /**
+     * Sends the authenticated user's e-mail address to the auth extension.
+     * @param {number} attemptToken The opaque token provided to the
+     *     retrieveAuthenticatedUserEmailCallback_.
+     * @param {string} email The authenticated user's e-mail address.
+     */
+    setAuthenticatedUserEmail: function(attemptToken, email) {
+      var msg = {
+        method: 'setAuthenticatedUserEmail',
+        attemptToken: attemptToken,
+        email: email
       };
       this.frame_.contentWindow.postMessage(msg, AUTH_URL_BASE);
     },
@@ -290,17 +330,6 @@ cr.define('cr.login', function() {
     onMessage_: function(e) {
       var msg = e.data;
 
-      // In the inline sign in flow, the embedded gaia webview posts credential
-      // directly to the inline sign in page, because its parent JavaScript
-      // reference points to the top frame of the embedder instead of the sub
-      // frame of the gaia auth extension.
-      if (e.origin == GAIA_ORIGIN && msg.method == 'attemptLogin') {
-        this.email_ = msg.email;
-        this.password_ = msg.password;
-        this.chooseWhatToSync_ = msg.chooseWhatToSync;
-        return;
-      }
-
       if (!this.isAuthExtMessage_(e))
         return;
 
@@ -310,17 +339,35 @@ cr.define('cr.login', function() {
       }
 
       if (/^complete(Login|Authentication)$|^offlineLogin$/.test(msg.method)) {
-        this.onAuthSuccess_({email: msg.email || this.email_,
-                             password: msg.password || this.password_,
-                             authCode: msg.authCode,
+        if (!msg.email && !this.email_ && !msg.skipForNow) {
+          var msg = {method: 'redirectToSignin'};
+          this.frame_.contentWindow.postMessage(msg, AUTH_URL_BASE);
+          return;
+        }
+        this.onAuthSuccess_({email: msg.email,
+                             password: msg.password,
                              useOffline: msg.method == 'offlineLogin',
-                             chooseWhatToSync: this.chooseWhatToSync_});
+                             usingSAML: msg.usingSAML || false,
+                             chooseWhatToSync: msg.chooseWhatToSync,
+                             skipForNow: msg.skipForNow || false,
+                             sessionIndex: msg.sessionIndex || ''});
+        return;
+      }
+
+      if (msg.method == 'retrieveAuthenticatedUserEmail') {
+        if (this.retrieveAuthenticatedUserEmailCallback_) {
+          this.retrieveAuthenticatedUserEmailCallback_(msg.attemptToken,
+                                                       msg.apiUsed);
+        } else {
+          console.error(
+              'GaiaAuthHost: Invalid retrieveAuthenticatedUserEmailCallback_.');
+        }
         return;
       }
 
       if (msg.method == 'confirmPassword') {
         if (this.confirmPasswordCallback_)
-          this.confirmPasswordCallback_();
+          this.confirmPasswordCallback_(msg.passwordCount);
         else
           console.error('GaiaAuthHost: Invalid confirmPasswordCallback_.');
         return;
@@ -335,19 +382,17 @@ cr.define('cr.login', function() {
       }
 
       if (msg.method == 'authPageLoaded') {
-        if (this.authPageLoadedCallback_)
-          this.authPageLoadedCallback_(msg.isSAML);
+        this.authDomain = msg.domain;
+        this.authFlow = msg.isSAML ? AuthFlow.SAML : AuthFlow.GAIA;
         return;
       }
 
-      if (msg.method == 'reportState') {
-        var newUrl = setQueryParam(location, 'frameUrl', msg.src);
-        if (history.state) {
-          if (history.state.src != msg.src) {
-            history.pushState({src: msg.src}, '', newUrl);
-          }
+      if (msg.method == 'insecureContentBlocked') {
+        if (this.insecureContentBlockedCallback_) {
+          this.insecureContentBlockedCallback_(msg.url);
         } else {
-          history.replaceState({src: msg.src}, '', newUrl);
+          console.error(
+              'GaiaAuthHost: Invalid insecureContentBlockedCallback_.');
         }
         return;
       }
@@ -358,27 +403,19 @@ cr.define('cr.login', function() {
       }
 
       console.error('Unknown message method=' + msg.method);
-    },
-
-    /**
-     * Event handler that is invoked when the history state is changed.
-     * @param {object} e The popstate event being triggered.
-     */
-    onPopState_: function(e) {
-      var state = e.state;
-      if (state) {
-        var msg = {
-          method: 'navigate',
-          src: state.src
-        };
-        this.frame_.contentWindow.postMessage(msg, AUTH_URL_BASE);
-      }
     }
   };
+
+  /**
+   * The current auth flow of the hosted gaia_auth extension.
+   * @type {AuthFlow}
+   */
+  cr.defineProperty(GaiaAuthHost, 'authFlow');
 
   GaiaAuthHost.SUPPORTED_PARAMS = SUPPORTED_PARAMS;
   GaiaAuthHost.LOCALIZED_STRING_PARAMS = LOCALIZED_STRING_PARAMS;
   GaiaAuthHost.AuthMode = AuthMode;
+  GaiaAuthHost.AuthFlow = AuthFlow;
 
   return {
     GaiaAuthHost: GaiaAuthHost

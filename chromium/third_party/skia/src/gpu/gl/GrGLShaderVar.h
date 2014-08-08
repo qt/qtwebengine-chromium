@@ -267,7 +267,7 @@ public:
                                           ctxInfo.glslGeneration()));
            out->append(" ");
         }
-        out->append(PrecisionString(fPrecision, ctxInfo.binding()));
+        out->append(PrecisionString(fPrecision, ctxInfo.standard()));
         GrSLType effectiveType = this->getType();
         if (this->isArray()) {
             if (this->isUnsizedArray()) {
@@ -302,9 +302,9 @@ public:
                      fUseUniformFloatArrays ? "" : ".x");
     }
 
-    static const char* PrecisionString(Precision p, GrGLBinding binding) {
+    static const char* PrecisionString(Precision p, GrGLStandard standard) {
         // Desktop GLSL has added precision qualifiers but they don't do anything.
-        if (kES_GrGLBinding == binding) {
+        if (kGLES_GrGLStandard == standard) {
             switch (p) {
                 case kLow_Precision:
                     return "lowp ";
@@ -315,7 +315,7 @@ public:
                 case kDefault_Precision:
                     return "";
                 default:
-                    GrCrash("Unexpected precision type.");
+                    SkFAIL("Unexpected precision type.");
             }
         }
         return "";
@@ -341,7 +341,7 @@ private:
             case kVaryingOut_TypeModifier:
                 return k110_GrGLSLGeneration == gen ? "varying" : "out";
             default:
-                GrCrash("Unknown shader variable type modifier.");
+                SkFAIL("Unknown shader variable type modifier.");
                 return ""; // suppress warning
         }
     }

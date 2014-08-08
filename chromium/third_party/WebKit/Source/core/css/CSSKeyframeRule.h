@@ -37,12 +37,12 @@ class MutableStylePropertySet;
 class StylePropertySet;
 class StyleRuleCSSStyleDeclaration;
 
-class StyleKeyframe FINAL : public RefCounted<StyleKeyframe> {
-    WTF_MAKE_FAST_ALLOCATED;
+class StyleKeyframe FINAL : public RefCountedWillBeGarbageCollectedFinalized<StyleKeyframe> {
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
 public:
-    static PassRefPtr<StyleKeyframe> create()
+    static PassRefPtrWillBeRawPtr<StyleKeyframe> create()
     {
-        return adoptRef(new StyleKeyframe());
+        return adoptRefWillBeNoop(new StyleKeyframe());
     }
     ~StyleKeyframe();
 
@@ -52,14 +52,16 @@ public:
 
     // Used by StyleResolver.
     const Vector<double>& keys() const;
-    // Used by CSSParser when constructing a new StyleKeyframe.
+    // Used by BisonCSSParser when constructing a new StyleKeyframe.
     void setKeys(PassOwnPtr<Vector<double> >);
 
-    const StylePropertySet* properties() const { return m_properties.get(); }
-    MutableStylePropertySet* mutableProperties();
+    const StylePropertySet& properties() const { return *m_properties; }
+    MutableStylePropertySet& mutableProperties();
     void setProperties(PassRefPtr<StylePropertySet>);
 
     String cssText() const;
+
+    void trace(Visitor*) { }
 
     static PassOwnPtr<Vector<double> > createKeyList(CSSParserValueList*);
 
@@ -85,11 +87,13 @@ public:
 
     CSSStyleDeclaration* style() const;
 
+    virtual void trace(Visitor*) OVERRIDE;
+
 private:
     CSSKeyframeRule(StyleKeyframe*, CSSKeyframesRule* parent);
 
-    RefPtr<StyleKeyframe> m_keyframe;
-    mutable RefPtr<StyleRuleCSSStyleDeclaration> m_propertiesCSSOMWrapper;
+    RefPtrWillBeMember<StyleKeyframe> m_keyframe;
+    mutable RefPtrWillBeMember<StyleRuleCSSStyleDeclaration> m_propertiesCSSOMWrapper;
 
     friend class CSSKeyframesRule;
 };

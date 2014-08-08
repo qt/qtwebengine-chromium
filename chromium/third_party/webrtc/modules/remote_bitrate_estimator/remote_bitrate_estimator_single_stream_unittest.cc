@@ -10,8 +10,8 @@
 
 #include "testing/gtest/include/gtest/gtest.h"
 
+#include "webrtc/base/constructormagic.h"
 #include "webrtc/modules/remote_bitrate_estimator/remote_bitrate_estimator_unittest_helper.h"
-#include "webrtc/system_wrappers/interface/constructor_magic.h"
 
 namespace webrtc {
 
@@ -24,6 +24,7 @@ class RemoteBitrateEstimatorSingleTest : public RemoteBitrateEstimatorTest {
     bitrate_estimator_.reset(RemoteBitrateEstimatorFactory().Create(
         bitrate_observer_.get(),
         &clock_,
+        kMimdControl,
         kRemoteBitrateEstimatorMinBitrateBps));
   }
  protected:
@@ -35,7 +36,7 @@ TEST_F(RemoteBitrateEstimatorSingleTest, InitialBehavior) {
 }
 
 TEST_F(RemoteBitrateEstimatorSingleTest, RateIncreaseReordering) {
-  RateIncreaseReorderingTestHelper();
+  RateIncreaseReorderingTestHelper(498136);
 }
 
 TEST_F(RemoteBitrateEstimatorSingleTest, RateIncreaseRtpTimestamps) {

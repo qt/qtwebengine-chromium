@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright (c) 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -20,6 +20,7 @@ class RefCountedString;
 namespace content {
 
 class TraceMessageFilter;
+class TracingUI;
 
 class TracingControllerImpl : public TracingController {
  public:
@@ -54,8 +55,11 @@ class TracingControllerImpl : public TracingController {
                              const WatchEventCallback& callback) OVERRIDE;
   virtual bool CancelWatchEvent() OVERRIDE;
 
+  void RegisterTracingUI(TracingUI* tracing_ui);
+  void UnregisterTracingUI(TracingUI* tracing_ui);
+
  private:
-  typedef std::set<scoped_refptr<TraceMessageFilter> > TraceMessageFilterMap;
+  typedef std::set<scoped_refptr<TraceMessageFilter> > TraceMessageFilterSet;
   class ResultFile;
 
   friend struct base::DefaultLazyInstanceTraits<TracingControllerImpl>;
@@ -107,27 +111,62 @@ class TracingControllerImpl : public TracingController {
       bool has_more_events);
 
   void OnDisableRecordingAcked(
+      TraceMessageFilter* trace_message_filter,
       const std::vector<std::string>& known_category_groups);
+  void OnDisableRecordingComplete();
   void OnResultFileClosed();
 
-  void OnCaptureMonitoringSnapshotAcked();
+#if defined(OS_CHROMEOS) || defined(OS_WIN)
+  void OnEndSystemTracingAcked(
+      const scoped_refptr<base::RefCountedString>& events_str_ptr);
+#endif
+
+  void OnCaptureMonitoringSnapshotAcked(
+      TraceMessageFilter* trace_message_filter);
   void OnMonitoringSnapshotFileClosed();
 
-  void OnTraceBufferPercentFullReply(float percent_full);
+  void OnTraceBufferPercentFullReply(
+      TraceMessageFilter* trace_message_filter,
+      float percent_full);
 
   void OnWatchEventMatched();
 
-  TraceMessageFilterMap trace_message_filters_;
+  void SetEnabledOnFileThread(const std::string& category_filter,
+                              int mode,
+                              int options,
+                              const base::Closure& callback);
+  void SetDisabledOnFileThread(const base::Closure& callback);
+  void OnEnableRecordingDone(const std::string& category_filter,
+                             int trace_options,
+                             const EnableRecordingDoneCallback& callback);
+  void OnDisableRecordingDone(const base::FilePath& result_file_path,
+                              const TracingFileResultCallback& callback);
+  void OnEnableMonitoringDone(const std::string& category_filter,
+                              int trace_options,
+                              const EnableMonitoringDoneCallback& callback);
+  void OnDisableMonitoringDone(const DisableMonitoringDoneCallback& callback);
+
+  void OnMonitoringStateChanged(bool is_monitoring);
+
+  TraceMessageFilterSet trace_message_filters_;
+
   // Pending acks for DisableRecording.
   int pending_disable_recording_ack_count_;
+  TraceMessageFilterSet pending_disable_recording_filters_;
   // Pending acks for CaptureMonitoringSnapshot.
   int pending_capture_monitoring_snapshot_ack_count_;
+  TraceMessageFilterSet pending_capture_monitoring_filters_;
   // Pending acks for GetTraceBufferPercentFull.
   int pending_trace_buffer_percent_full_ack_count_;
+  TraceMessageFilterSet pending_trace_buffer_percent_full_filters_;
   float maximum_trace_buffer_percent_full_;
 
+#if defined(OS_CHROMEOS) || defined(OS_WIN)
+  bool is_system_tracing_;
+#endif
   bool is_recording_;
   bool is_monitoring_;
+  TracingController::Options options_;
 
   GetCategoriesDoneCallback pending_get_categories_done_callback_;
   TracingFileResultCallback pending_disable_recording_done_callback_;
@@ -139,6 +178,7 @@ class TracingControllerImpl : public TracingController {
   WatchEventCallback watch_event_callback_;
 
   std::set<std::string> known_category_groups_;
+  std::set<TracingUI*> tracing_uis_;
   scoped_ptr<ResultFile> result_file_;
   scoped_ptr<ResultFile> monitoring_snapshot_file_;
   DISALLOW_COPY_AND_ASSIGN(TracingControllerImpl);

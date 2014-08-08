@@ -40,13 +40,9 @@
 
 namespace WebCore {
 
-struct FELightingPaintingDataForNeon;
-
 class PLATFORM_EXPORT FELighting : public FilterEffect {
 public:
     virtual PassRefPtr<SkImageFilter> createImageFilter(SkiaImageFilterBuilder*) OVERRIDE;
-
-    virtual void determineAbsolutePaintRect() { setAbsolutePaintRect(enclosingIntRect(maxEffectRect())); }
 
 protected:
     static const int s_minimalRectDimension = 100 * 100; // Empirical data limit for parallel jobs
@@ -63,6 +59,7 @@ protected:
         int widthMultipliedByPixelSize;
         int widthDecreasedByOne;
         int heightDecreasedByOne;
+        const LightSource* lightSource;
 
         inline void topLeft(int offset, IntPoint& normalVector);
         inline void topRow(int offset, IntPoint& normalVector);
@@ -86,8 +83,10 @@ protected:
         int yEnd;
     };
 
+    virtual FloatRect mapPaintRect(const FloatRect&, bool forward = true) OVERRIDE FINAL;
+    virtual bool affectsTransparentPixels() OVERRIDE { return true; }
+
     static void platformApplyGenericWorker(PlatformApplyGenericParameters*);
-    static void platformApplyNeonWorker(FELightingPaintingDataForNeon*);
 
     FELighting(Filter*, LightingType, const Color&, float, float, float, float, float, float, PassRefPtr<LightSource>);
 
@@ -104,9 +103,6 @@ protected:
     inline void platformApplyGenericPaint(LightingData&, LightSource::PaintingData&, int startX, int startY);
     inline void platformApplyGeneric(LightingData&, LightSource::PaintingData&);
 
-    static int getPowerCoefficients(float exponent);
-    inline void platformApplyNeon(LightingData&, LightSource::PaintingData&);
-
     LightingType m_lightingType;
     RefPtr<LightSource> m_lightSource;
 
@@ -120,7 +116,8 @@ protected:
 
 private:
     virtual void applySoftware() OVERRIDE;
-    virtual bool applySkia() OVERRIDE;
+
+    void getTransform(FloatPoint3D* scale, FloatSize* offset) const;
 };
 
 } // namespace WebCore

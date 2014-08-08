@@ -26,6 +26,9 @@ enum { kLookahead = 10 };
 // Length of binary spectrum sequence.
 enum { kSequenceLength = 400 };
 
+const int kEnable[] = { 0, 1 };
+const size_t kSizeEnable = sizeof(kEnable) / sizeof(*kEnable);
+
 class DelayEstimatorTest : public ::testing::Test {
  protected:
   DelayEstimatorTest();
@@ -38,7 +41,8 @@ class DelayEstimatorTest : public ::testing::Test {
   void RunBinarySpectra(BinaryDelayEstimator* binary1,
                         BinaryDelayEstimator* binary2,
                         int near_offset, int lookahead_offset, int far_offset);
-  void RunBinarySpectraTest(int near_offset, int lookahead_offset);
+  void RunBinarySpectraTest(int near_offset, int lookahead_offset,
+                            int ref_robust_validation, int robust_validation);
 
   void* handle_;
   DelayEstimator* self_;
@@ -113,7 +117,7 @@ void DelayEstimatorTest::Init() {
   EXPECT_EQ(0, farend_self_->far_spectrum_initialized);
   EXPECT_EQ(0, self_->near_spectrum_initialized);
   EXPECT_EQ(-2, WebRtc_last_delay(handle_));  // Delay in initial state.
-  EXPECT_EQ(0, WebRtc_last_delay_quality(handle_));  // Zero quality.
+  EXPECT_FLOAT_EQ(0, WebRtc_last_delay_quality(handle_));  // Zero quality.
 }
 
 void DelayEstimatorTest::InitBinary() {
@@ -143,6 +147,8 @@ void DelayEstimatorTest::RunBinarySpectra(BinaryDelayEstimator* binary1,
                                           int near_offset,
                                           int lookahead_offset,
                                           int far_offset) {
+  int different_validations = binary1->robust_validation_enabled ^
+      binary2->robust_validation_enabled;
   WebRtc_InitBinaryDelayEstimatorFarend(binary_farend_);
   WebRtc_InitBinaryDelayEstimator(binary1);
   WebRtc_InitBinaryDelayEstimator(binary2);
@@ -167,19 +173,32 @@ void DelayEstimatorTest::RunBinarySpectra(BinaryDelayEstimator* binary1,
     if ((delay_1 != -2) && (delay_2 != -2)) {
       EXPECT_EQ(delay_1, delay_2 - lookahead_offset - near_offset);
     }
+    // For the case of identical signals |delay_1| and |delay_2| should match
+    // all the time, unless one of them has robust validation turned on.  In
+    // that case the robust validation leaves the initial state faster.
     if ((near_offset == 0) && (lookahead_offset == 0)) {
-      EXPECT_EQ(delay_1, delay_2);
+      if  (!different_validations) {
+        EXPECT_EQ(delay_1, delay_2);
+      } else {
+        if (binary1->robust_validation_enabled) {
+          EXPECT_GE(delay_1, delay_2);
+        } else {
+          EXPECT_GE(delay_2, delay_1);
+        }
+      }
     }
   }
   // Verify that we have left the initialized state.
   EXPECT_NE(-2, WebRtc_binary_last_delay(binary1));
-  EXPECT_NE(0, WebRtc_binary_last_delay_quality(binary1));
+  EXPECT_LT(0, WebRtc_binary_last_delay_quality(binary1));
   EXPECT_NE(-2, WebRtc_binary_last_delay(binary2));
-  EXPECT_NE(0, WebRtc_binary_last_delay_quality(binary2));
+  EXPECT_LT(0, WebRtc_binary_last_delay_quality(binary2));
 }
 
 void DelayEstimatorTest::RunBinarySpectraTest(int near_offset,
-                                              int lookahead_offset) {
+                                              int lookahead_offset,
+                                              int ref_robust_validation,
+                                              int robust_validation) {
   BinaryDelayEstimator* binary2 =
       WebRtc_CreateBinaryDelayEstimator(binary_farend_,
                                         kLookahead + lookahead_offset);
@@ -187,6 +206,8 @@ void DelayEstimatorTest::RunBinarySpectraTest(int near_offset,
   // the delay is equivalent with a positive |offset| of the far-end sequence.
   // For non-causal systems the delay is equivalent with a negative |offset| of
   // the far-end sequence.
+  binary_->robust_validation_enabled = ref_robust_validation;
+  binary2->robust_validation_enabled = robust_validation;
   for (int offset = -kLookahead;
       offset < kMaxDelay - lookahead_offset - near_offset;
       offset++) {
@@ -194,6 +215,7 @@ void DelayEstimatorTest::RunBinarySpectraTest(int near_offset,
   }
   WebRtc_FreeBinaryDelayEstimator(binary2);
   binary2 = NULL;
+  binary_->robust_validation_enabled = 0;  // Reset reference.
 }
 
 TEST_F(DelayEstimatorTest, CorrectErrorReturnsOfWrapper) {
@@ -206,14 +228,12 @@ TEST_F(DelayEstimatorTest, CorrectErrorReturnsOfWrapper) {
   void* handle = farend_handle_;
   handle = WebRtc_CreateDelayEstimatorFarend(33, kMaxDelay + kLookahead);
   EXPECT_TRUE(handle == NULL);
-  handle = farend_handle_;
   handle = WebRtc_CreateDelayEstimatorFarend(kSpectrumSize, 1);
   EXPECT_TRUE(handle == NULL);
 
   handle = handle_;
   handle = WebRtc_CreateDelayEstimator(NULL, kLookahead);
   EXPECT_TRUE(handle == NULL);
-  handle = handle_;
   handle = WebRtc_CreateDelayEstimator(farend_handle_, -1);
   EXPECT_TRUE(handle == NULL);
 
@@ -246,10 +266,18 @@ TEST_F(DelayEstimatorTest, CorrectErrorReturnsOfWrapper) {
   EXPECT_EQ(-1, WebRtc_AddFarSpectrumFix(farend_handle_, far_u16_,
                                          spectrum_size_, 16));
 
+  // WebRtc_set_allowed_offset() should return -1 if we have:
+  // 1) NULL pointer as |handle|.
+  // 2) |allowed_offset| < 0.
+  EXPECT_EQ(-1, WebRtc_set_allowed_offset(NULL, 0));
+  EXPECT_EQ(-1, WebRtc_set_allowed_offset(handle_, -1));
+
+  EXPECT_EQ(-1, WebRtc_get_allowed_offset(NULL));
+
   // WebRtc_enable_robust_validation() should return -1 if we have:
   // 1) NULL pointer as |handle|.
   // 2) Incorrect |enable| value (not 0 or 1).
-  EXPECT_EQ(-1, WebRtc_enable_robust_validation(NULL, 0));
+  EXPECT_EQ(-1, WebRtc_enable_robust_validation(NULL, kEnable[0]));
   EXPECT_EQ(-1, WebRtc_enable_robust_validation(handle_, -1));
   EXPECT_EQ(-1, WebRtc_enable_robust_validation(handle_, 2));
 
@@ -286,21 +314,31 @@ TEST_F(DelayEstimatorTest, CorrectErrorReturnsOfWrapper) {
   // WebRtc_last_delay() should return -1 if we have a NULL pointer as |handle|.
   EXPECT_EQ(-1, WebRtc_last_delay(NULL));
 
-  // WebRtc_last_delay_quality() should return -1 if we have a NULL pointer as
-  // |handle|.
-  EXPECT_EQ(-1, WebRtc_last_delay_quality(NULL));
-
   // Free any local memory if needed.
   WebRtc_FreeDelayEstimator(handle);
 }
 
+TEST_F(DelayEstimatorTest, VerifyAllowedOffset) {
+  // Is set to zero by default.
+  EXPECT_EQ(0, WebRtc_get_allowed_offset(handle_));
+  for (int i = 1; i >= 0; i--) {
+    EXPECT_EQ(0, WebRtc_set_allowed_offset(handle_, i));
+    EXPECT_EQ(i, WebRtc_get_allowed_offset(handle_));
+    Init();
+    // Unaffected over a reset.
+    EXPECT_EQ(i, WebRtc_get_allowed_offset(handle_));
+  }
+}
+
 TEST_F(DelayEstimatorTest, VerifyEnableRobustValidation) {
-  Init();
   // Disabled by default.
   EXPECT_EQ(0, WebRtc_is_robust_validation_enabled(handle_));
-  for (int i = 1; i >= 0; i--) {
-    EXPECT_EQ(0, WebRtc_enable_robust_validation(handle_, i));
-    EXPECT_EQ(i, WebRtc_is_robust_validation_enabled(handle_));
+  for (size_t i = 0; i < kSizeEnable; ++i) {
+    EXPECT_EQ(0, WebRtc_enable_robust_validation(handle_, kEnable[i]));
+    EXPECT_EQ(kEnable[i], WebRtc_is_robust_validation_enabled(handle_));
+    Init();
+    // Unaffected over a reset.
+    EXPECT_EQ(kEnable[i], WebRtc_is_robust_validation_enabled(handle_));
   }
 }
 
@@ -335,6 +373,7 @@ TEST_F(DelayEstimatorTest, CorrectLastDelay) {
   // (|last_delay| = -2). Then we compare the Process() output with the
   // last_delay() call.
 
+  // TODO(bjornv): Update quality values for robust validation.
   int last_delay = 0;
   // Floating point operations.
   Init();
@@ -345,13 +384,16 @@ TEST_F(DelayEstimatorTest, CorrectLastDelay) {
                                                    spectrum_size_);
     if (last_delay != -2) {
       EXPECT_EQ(last_delay, WebRtc_last_delay(handle_));
-      EXPECT_EQ(7203, WebRtc_last_delay_quality(handle_));
+      if (!WebRtc_is_robust_validation_enabled(handle_)) {
+        EXPECT_FLOAT_EQ(7203.f / kMaxBitCountsQ9,
+                        WebRtc_last_delay_quality(handle_));
+      }
       break;
     }
   }
   // Verify that we have left the initialized state.
   EXPECT_NE(-2, WebRtc_last_delay(handle_));
-  EXPECT_NE(0, WebRtc_last_delay_quality(handle_));
+  EXPECT_LT(0, WebRtc_last_delay_quality(handle_));
 
   // Fixed point operations.
   Init();
@@ -362,13 +404,16 @@ TEST_F(DelayEstimatorTest, CorrectLastDelay) {
                                                  spectrum_size_, 0);
     if (last_delay != -2) {
       EXPECT_EQ(last_delay, WebRtc_last_delay(handle_));
-      EXPECT_EQ(7203, WebRtc_last_delay_quality(handle_));
+      if (!WebRtc_is_robust_validation_enabled(handle_)) {
+        EXPECT_FLOAT_EQ(7203.f / kMaxBitCountsQ9,
+                        WebRtc_last_delay_quality(handle_));
+      }
       break;
     }
   }
   // Verify that we have left the initialized state.
   EXPECT_NE(-2, WebRtc_last_delay(handle_));
-  EXPECT_NE(0, WebRtc_last_delay_quality(handle_));
+  EXPECT_LT(0, WebRtc_last_delay_quality(handle_));
 }
 
 TEST_F(DelayEstimatorTest, CorrectErrorReturnsOfBinaryEstimatorFarend) {
@@ -391,17 +436,13 @@ TEST_F(DelayEstimatorTest, CorrectErrorReturnsOfBinaryEstimator) {
 
   BinaryDelayEstimator* binary_handle = binary_;
   // WebRtc_CreateBinaryDelayEstimator() should return -1 if we have a NULL
-  // pointer as |binary_handle| or invalid input values. Upon failure, the
+  // pointer as |binary_farend| or invalid input values. Upon failure, the
   // |binary_handle| should be NULL.
   // Make sure we have a non-NULL value at start, so we can detect NULL after
   // create failure.
   binary_handle = WebRtc_CreateBinaryDelayEstimator(NULL, kLookahead);
   EXPECT_TRUE(binary_handle == NULL);
-  binary_handle = binary_;
   binary_handle = WebRtc_CreateBinaryDelayEstimator(binary_farend_, -1);
-  EXPECT_TRUE(binary_handle == NULL);
-  binary_handle = binary_;
-  binary_handle = WebRtc_CreateBinaryDelayEstimator(0, 0);
   EXPECT_TRUE(binary_handle == NULL);
 }
 
@@ -431,26 +472,70 @@ TEST_F(DelayEstimatorTest, ExactDelayEstimateMultipleNearSameSpectrum) {
   // the signal accordingly. We create two Binary Delay Estimators and feed them
   // with the same signals, so they should output the same results.
   // We verify both causal and non-causal delays.
+  // For these noise free signals, the robust validation should not have an
+  // impact, hence we turn robust validation on/off for both reference and
+  // delayed near end.
 
-  RunBinarySpectraTest(0, 0);
+  for (size_t i = 0; i < kSizeEnable; ++i) {
+    for (size_t j = 0; j < kSizeEnable; ++j) {
+      RunBinarySpectraTest(0, 0, kEnable[i], kEnable[j]);
+    }
+  }
 }
 
 TEST_F(DelayEstimatorTest, ExactDelayEstimateMultipleNearDifferentSpectrum) {
   // In this test we use the same setup as above, but we now feed the two Binary
   // Delay Estimators with different signals, so they should output different
   // results.
+  // For these noise free signals, the robust validation should not have an
+  // impact, hence we turn robust validation on/off for both reference and
+  // delayed near end.
 
   const int kNearOffset = 1;
-  RunBinarySpectraTest(kNearOffset, 0);
+  for (size_t i = 0; i < kSizeEnable; ++i) {
+    for (size_t j = 0; j < kSizeEnable; ++j) {
+      RunBinarySpectraTest(kNearOffset, 0, kEnable[i], kEnable[j]);
+    }
+  }
 }
 
 TEST_F(DelayEstimatorTest, ExactDelayEstimateMultipleNearDifferentLookahead) {
   // In this test we use the same setup as above, feeding the two Binary
   // Delay Estimators with the same signals. The difference is that we create
   // them with different lookahead.
+  // For these noise free signals, the robust validation should not have an
+  // impact, hence we turn robust validation on/off for both reference and
+  // delayed near end.
 
   const int kLookaheadOffset = 1;
-  RunBinarySpectraTest(0, kLookaheadOffset);
+  for (size_t i = 0; i < kSizeEnable; ++i) {
+    for (size_t j = 0; j < kSizeEnable; ++j) {
+      RunBinarySpectraTest(0, kLookaheadOffset, kEnable[i], kEnable[j]);
+    }
+  }
 }
+
+TEST_F(DelayEstimatorTest, AllowedOffsetNoImpactWhenRobustValidationDisabled) {
+  // The same setup as in ExactDelayEstimateMultipleNearSameSpectrum with the
+  // difference that |allowed_offset| is set for the reference binary delay
+  // estimator.
+
+  binary_->allowed_offset = 10;
+  RunBinarySpectraTest(0, 0, 0, 0);
+  binary_->allowed_offset = 0;  // Reset reference.
+}
+
+TEST_F(DelayEstimatorTest, VerifyLookaheadAtCreate) {
+  void* farend_handle = WebRtc_CreateDelayEstimatorFarend(kSpectrumSize,
+                                                          kMaxDelay);
+  ASSERT_TRUE(farend_handle != NULL);
+  void* handle = WebRtc_CreateDelayEstimator(farend_handle, kLookahead);
+  ASSERT_TRUE(handle != NULL);
+  EXPECT_EQ(kLookahead, WebRtc_lookahead(handle));
+  WebRtc_FreeDelayEstimator(handle);
+  WebRtc_FreeDelayEstimatorFarend(farend_handle);
+}
+
+// TODO(bjornv): Add tests for SoftReset...(...).
 
 }  // namespace

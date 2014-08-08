@@ -30,13 +30,12 @@
  */
 
 #include "config.h"
-#include "V8HTMLCanvasElement.h"
+#include "bindings/core/v8/V8HTMLCanvasElement.h"
 
-#include "V8CanvasRenderingContext2D.h"
-#include "V8Node.h"
-#include "V8WebGLRenderingContext.h"
+#include "bindings/core/v8/V8CanvasRenderingContext2D.h"
+#include "bindings/core/v8/V8Node.h"
+#include "bindings/core/v8/V8WebGLRenderingContext.h"
 #include "bindings/v8/ExceptionState.h"
-#include "bindings/v8/ScriptState.h"
 #include "bindings/v8/V8Binding.h"
 #include "core/html/HTMLCanvasElement.h"
 #include "core/html/canvas/Canvas2DContextAttributes.h"
@@ -52,34 +51,34 @@ void V8HTMLCanvasElement::getContextMethodCustom(const v8::FunctionCallbackInfo<
 {
     v8::Handle<v8::Object> holder = info.Holder();
     v8::Isolate* isolate = info.GetIsolate();
-    HTMLCanvasElement* imp = V8HTMLCanvasElement::toNative(holder);
-    V8TRYCATCH_FOR_V8STRINGRESOURCE_VOID(V8StringResource<>, contextIdResource, info[0]);
+    HTMLCanvasElement* impl = V8HTMLCanvasElement::toNative(holder);
+    TOSTRING_VOID(V8StringResource<>, contextIdResource, info[0]);
     String contextId = contextIdResource;
     RefPtr<CanvasContextAttributes> attributes;
-    if (contextId == "webgl" || contextId == "experimental-webgl" || contextId == "webkit-3d") {
+    if (contextId == "webgl" || contextId == "experimental-webgl") {
         RefPtr<WebGLContextAttributes> webGLAttributes = WebGLContextAttributes::create();
         if (info.Length() > 1 && info[1]->IsObject()) {
             v8::Handle<v8::Object> jsAttributes = info[1]->ToObject();
             v8::Handle<v8::String> alpha = v8AtomicString(isolate, "alpha");
-            if (jsAttributes->Has(alpha))
+            if (jsAttributes->Has(alpha) && !isUndefinedOrNull(jsAttributes->Get(alpha)))
                 webGLAttributes->setAlpha(jsAttributes->Get(alpha)->BooleanValue());
             v8::Handle<v8::String> depth = v8AtomicString(isolate, "depth");
-            if (jsAttributes->Has(depth))
+            if (jsAttributes->Has(depth) && !isUndefinedOrNull(jsAttributes->Get(depth)))
                 webGLAttributes->setDepth(jsAttributes->Get(depth)->BooleanValue());
             v8::Handle<v8::String> stencil = v8AtomicString(isolate, "stencil");
-            if (jsAttributes->Has(stencil))
+            if (jsAttributes->Has(stencil) && !isUndefinedOrNull(jsAttributes->Get(stencil)))
                 webGLAttributes->setStencil(jsAttributes->Get(stencil)->BooleanValue());
             v8::Handle<v8::String> antialias = v8AtomicString(isolate, "antialias");
-            if (jsAttributes->Has(antialias))
+            if (jsAttributes->Has(antialias) && !isUndefinedOrNull(jsAttributes->Get(antialias)))
                 webGLAttributes->setAntialias(jsAttributes->Get(antialias)->BooleanValue());
             v8::Handle<v8::String> premultipliedAlpha = v8AtomicString(isolate, "premultipliedAlpha");
-            if (jsAttributes->Has(premultipliedAlpha))
+            if (jsAttributes->Has(premultipliedAlpha) && !isUndefinedOrNull(jsAttributes->Get(premultipliedAlpha)))
                 webGLAttributes->setPremultipliedAlpha(jsAttributes->Get(premultipliedAlpha)->BooleanValue());
             v8::Handle<v8::String> preserveDrawingBuffer = v8AtomicString(isolate, "preserveDrawingBuffer");
-            if (jsAttributes->Has(preserveDrawingBuffer))
+            if (jsAttributes->Has(preserveDrawingBuffer) && !isUndefinedOrNull(jsAttributes->Get(preserveDrawingBuffer)))
                 webGLAttributes->setPreserveDrawingBuffer(jsAttributes->Get(preserveDrawingBuffer)->BooleanValue());
             v8::Handle<v8::String> failIfMajorPerformanceCaveat = v8AtomicString(isolate, "failIfMajorPerformanceCaveat");
-            if (jsAttributes->Has(failIfMajorPerformanceCaveat))
+            if (jsAttributes->Has(failIfMajorPerformanceCaveat) && !isUndefinedOrNull(jsAttributes->Get(failIfMajorPerformanceCaveat)))
                 webGLAttributes->setFailIfMajorPerformanceCaveat(jsAttributes->Get(failIfMajorPerformanceCaveat)->BooleanValue());
         }
         attributes = webGLAttributes;
@@ -88,23 +87,23 @@ void V8HTMLCanvasElement::getContextMethodCustom(const v8::FunctionCallbackInfo<
         if (info.Length() > 1 && info[1]->IsObject()) {
             v8::Handle<v8::Object> jsAttributes = info[1]->ToObject();
             v8::Handle<v8::String> alpha = v8AtomicString(isolate, "alpha");
-            if (jsAttributes->Has(alpha))
+            if (jsAttributes->Has(alpha) && !isUndefinedOrNull(jsAttributes->Get(alpha)))
                 canvas2DAttributes->setAlpha(jsAttributes->Get(alpha)->BooleanValue());
         }
         attributes = canvas2DAttributes;
     }
-    CanvasRenderingContext* result = imp->getContext(contextId, attributes.get());
+    CanvasRenderingContext* result = impl->getContext(contextId, attributes.get());
     if (!result) {
         v8SetReturnValueNull(info);
         return;
     }
     if (result->is2d()) {
         v8::Handle<v8::Value> v8Result = toV8(toCanvasRenderingContext2D(result), info.Holder(), info.GetIsolate());
-        if (InspectorInstrumentation::canvasAgentEnabled(&imp->document())) {
-            ScriptState* scriptState = ScriptState::forContext(isolate->GetCurrentContext());
-            ScriptObject context(scriptState, v8::Handle<v8::Object>::Cast(v8Result));
-            ScriptObject wrapped = InspectorInstrumentation::wrapCanvas2DRenderingContextForInstrumentation(&imp->document(), context);
-            if (!wrapped.hasNoValue()) {
+        if (InspectorInstrumentation::canvasAgentEnabled(&impl->document())) {
+            ScriptState* scriptState = ScriptState::current(isolate);
+            ScriptValue context(scriptState, v8Result);
+            ScriptValue wrapped = InspectorInstrumentation::wrapCanvas2DRenderingContextForInstrumentation(&impl->document(), context);
+            if (!wrapped.isEmpty()) {
                 v8SetReturnValue(info, wrapped.v8Value());
                 return;
             }
@@ -114,11 +113,11 @@ void V8HTMLCanvasElement::getContextMethodCustom(const v8::FunctionCallbackInfo<
     }
     if (result->is3d()) {
         v8::Handle<v8::Value> v8Result = toV8(toWebGLRenderingContext(result), info.Holder(), info.GetIsolate());
-        if (InspectorInstrumentation::canvasAgentEnabled(&imp->document())) {
-            ScriptState* scriptState = ScriptState::forContext(isolate->GetCurrentContext());
-            ScriptObject glContext(scriptState, v8::Handle<v8::Object>::Cast(v8Result));
-            ScriptObject wrapped = InspectorInstrumentation::wrapWebGLRenderingContextForInstrumentation(&imp->document(), glContext);
-            if (!wrapped.hasNoValue()) {
+        if (InspectorInstrumentation::canvasAgentEnabled(&impl->document())) {
+            ScriptState* scriptState = ScriptState::current(isolate);
+            ScriptValue glContext(scriptState, v8Result);
+            ScriptValue wrapped = InspectorInstrumentation::wrapWebGLRenderingContextForInstrumentation(&impl->document(), glContext);
+            if (!wrapped.isEmpty()) {
                 v8SetReturnValue(info, wrapped.v8Value());
                 return;
             }
@@ -136,7 +135,7 @@ void V8HTMLCanvasElement::toDataURLMethodCustom(const v8::FunctionCallbackInfo<v
     HTMLCanvasElement* canvas = V8HTMLCanvasElement::toNative(holder);
     ExceptionState exceptionState(ExceptionState::ExecutionContext, "toDataURL", "HTMLCanvasElement", info.Holder(), info.GetIsolate());
 
-    V8TRYCATCH_FOR_V8STRINGRESOURCE_VOID(V8StringResource<>, type, info[0]);
+    TOSTRING_VOID(V8StringResource<>, type, info[0]);
     double quality;
     double* qualityPtr = 0;
     if (info.Length() > 1 && info[1]->IsNumber()) {

@@ -15,22 +15,22 @@
 #include "content/public/common/content_switches.h"
 #include "gpu/command_buffer/service/context_group.h"
 #include "gpu/command_buffer/service/gpu_scheduler.h"
+#include "gpu/command_buffer/service/mailbox_manager.h"
 #include "ui/gl/scoped_binders.h"
 
 using gpu::gles2::ContextGroup;
 using gpu::gles2::GLES2Decoder;
 using gpu::gles2::MailboxManager;
-using gpu::gles2::MailboxName;
 using gpu::gles2::Texture;
 using gpu::gles2::TextureManager;
 using gpu::gles2::TextureRef;
+using gpu::Mailbox;
 
 namespace content {
 namespace {
 
 bool IsContextValid(ImageTransportHelper* helper) {
-  return helper->stub()->decoder()->GetGLContext()->IsCurrent(NULL) ||
-      helper->stub()->decoder()->WasContextLost();
+  return helper->stub()->decoder()->GetGLContext()->IsCurrent(NULL);
 }
 
 }  // namespace
@@ -174,26 +174,34 @@ void TextureImageTransportSurface::OnResize(gfx::Size size,
 }
 
 void TextureImageTransportSurface::OnWillDestroyStub() {
-  DCHECK(IsContextValid(helper_.get()));
+  bool have_context = IsContextValid(helper_.get());
   helper_->stub()->RemoveDestructionObserver(this);
 
   // We are losing the stub owning us, this is our last chance to clean up the
   // resources we allocated in the stub's context.
-  ReleaseBackTexture();
-  ReleaseFrontTexture();
+  if (have_context) {
+    ReleaseBackTexture();
+    ReleaseFrontTexture();
+  } else {
+    backbuffer_ = NULL;
+    back_mailbox_ = Mailbox();
+    frontbuffer_ = NULL;
+    front_mailbox_ = Mailbox();
+  }
 
-  if (fbo_id_) {
+  if (fbo_id_ && have_context) {
     glDeleteFramebuffersEXT(1, &fbo_id_);
     CHECK_GL_ERROR();
-    fbo_id_ = 0;
   }
+  fbo_id_ = 0;
 
   stub_destroyed_ = true;
 }
 
 void TextureImageTransportSurface::SetLatencyInfo(
-    const ui::LatencyInfo& latency_info) {
-  latency_info_ = latency_info;
+    const std::vector<ui::LatencyInfo>& latency_info) {
+  for (size_t i = 0; i < latency_info.size(); i++)
+    latency_info_.push_back(latency_info[i]);
 }
 
 void TextureImageTransportSurface::WakeUpGpu() {
@@ -216,13 +224,11 @@ bool TextureImageTransportSurface::SwapBuffers() {
   GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params params;
   params.size = backbuffer_size();
   params.scale_factor = scale_factor_;
-  params.mailbox_name.assign(
-      reinterpret_cast<const char*>(&back_mailbox_name_),
-      sizeof(back_mailbox_name_));
+  params.mailbox = back_mailbox_;
 
   glFlush();
 
-  params.latency_info = latency_info_;
+  params.latency_info.swap(latency_info_);
   helper_->SendAcceleratedSurfaceBuffersSwapped(params);
 
   DCHECK(!is_swap_buffers_pending_);
@@ -256,13 +262,11 @@ bool TextureImageTransportSurface::PostSubBuffer(
   params.y = y;
   params.width = width;
   params.height = height;
-  params.mailbox_name.assign(
-      reinterpret_cast<const char*>(&back_mailbox_name_),
-      sizeof(back_mailbox_name_));
+  params.mailbox = back_mailbox_;
 
   glFlush();
 
-  params.latency_info = latency_info_;
+  params.latency_info.swap(latency_info_);
   helper_->SendAcceleratedSurfacePostSubBuffer(params);
 
   DCHECK(!is_swap_buffers_pending_);
@@ -270,12 +274,8 @@ bool TextureImageTransportSurface::PostSubBuffer(
   return true;
 }
 
-std::string TextureImageTransportSurface::GetExtensions() {
-  std::string extensions = gfx::GLSurface::GetExtensions();
-  extensions += extensions.empty() ? "" : " ";
-  extensions += "GL_CHROMIUM_front_buffer_cached ";
-  extensions += "GL_CHROMIUM_post_sub_buffer";
-  return extensions;
+bool TextureImageTransportSurface::SupportsPostSubBuffer() {
+  return true;
 }
 
 gfx::Size TextureImageTransportSurface::GetSize() {
@@ -293,18 +293,17 @@ unsigned TextureImageTransportSurface::GetFormat() {
 void TextureImageTransportSurface::OnBufferPresented(
     const AcceleratedSurfaceMsg_BufferPresented_Params& params) {
   if (params.sync_point == 0) {
-    BufferPresentedImpl(params.mailbox_name);
+    BufferPresentedImpl(params.mailbox);
   } else {
     helper_->manager()->sync_point_manager()->AddSyncPointCallback(
         params.sync_point,
         base::Bind(&TextureImageTransportSurface::BufferPresentedImpl,
                    this,
-                   params.mailbox_name));
+                   params.mailbox));
   }
 }
 
-void TextureImageTransportSurface::BufferPresentedImpl(
-    const std::string& mailbox_name) {
+void TextureImageTransportSurface::BufferPresentedImpl(const Mailbox& mailbox) {
   DCHECK(is_swap_buffers_pending_);
   is_swap_buffers_pending_ = false;
 
@@ -320,11 +319,8 @@ void TextureImageTransportSurface::BufferPresentedImpl(
   DCHECK(backbuffer_.get());
 
   bool swap = true;
-  if (!mailbox_name.empty()) {
-    DCHECK(mailbox_name.length() == GL_MAILBOX_SIZE_CHROMIUM);
-    if (!memcmp(mailbox_name.data(),
-                &back_mailbox_name_,
-                mailbox_name.length())) {
+  if (!mailbox.IsZero()) {
+    if (mailbox == back_mailbox_) {
       // The browser has skipped the frame to unblock the GPU process, waiting
       // for one of the right size, and returned the back buffer, so don't swap.
       swap = false;
@@ -332,7 +328,7 @@ void TextureImageTransportSurface::BufferPresentedImpl(
   }
   if (swap) {
     std::swap(backbuffer_, frontbuffer_);
-    std::swap(back_mailbox_name_, front_mailbox_name_);
+    std::swap(back_mailbox_, front_mailbox_);
   }
 
   // We're relying on the fact that the parent context is
@@ -355,14 +351,10 @@ void TextureImageTransportSurface::BufferPresentedImpl(
   }
 }
 
-void TextureImageTransportSurface::OnResizeViewACK() {
-  NOTREACHED();
-}
-
 void TextureImageTransportSurface::ReleaseBackTexture() {
   DCHECK(IsContextValid(helper_.get()));
   backbuffer_ = NULL;
-  back_mailbox_name_ = MailboxName();
+  back_mailbox_ = Mailbox();
   glFlush();
   CHECK_GL_ERROR();
 }
@@ -370,7 +362,7 @@ void TextureImageTransportSurface::ReleaseBackTexture() {
 void TextureImageTransportSurface::ReleaseFrontTexture() {
   DCHECK(IsContextValid(helper_.get()));
   frontbuffer_ = NULL;
-  front_mailbox_name_ = MailboxName();
+  front_mailbox_ = Mailbox();
   glFlush();
   CHECK_GL_ERROR();
   helper_->SendAcceleratedSurfaceRelease();
@@ -391,15 +383,13 @@ void TextureImageTransportSurface::CreateBackTexture() {
   TextureManager* texture_manager =
       decoder->GetContextGroup()->texture_manager();
   if (!backbuffer_.get()) {
-    mailbox_manager_->GenerateMailboxName(&back_mailbox_name_);
+    back_mailbox_ = gpu::Mailbox::Generate();
     GLuint service_id;
     glGenTextures(1, &service_id);
     backbuffer_ = TextureRef::Create(texture_manager, 0, service_id);
     texture_manager->SetTarget(backbuffer_.get(), GL_TEXTURE_2D);
     Texture* texture = texture_manager->Produce(backbuffer_.get());
-    bool success = mailbox_manager_->ProduceTexture(
-        GL_TEXTURE_2D, back_mailbox_name_, texture);
-    DCHECK(success);
+    mailbox_manager_->ProduceTexture(GL_TEXTURE_2D, back_mailbox_, texture);
   }
 
   {
@@ -409,26 +399,26 @@ void TextureImageTransportSurface::CreateBackTexture() {
         current_size_.width(), current_size_.height(), 0,
         GL_RGBA, GL_UNSIGNED_BYTE, NULL);
     gpu::gles2::ErrorState* error_state = decoder->GetErrorState();
-    texture_manager->SetParameter("Backbuffer",
-                                  error_state,
-                                  backbuffer_.get(),
-                                  GL_TEXTURE_MIN_FILTER,
-                                  GL_LINEAR);
-    texture_manager->SetParameter("Backbuffer",
-                                  error_state,
-                                  backbuffer_.get(),
-                                  GL_TEXTURE_MAG_FILTER,
-                                  GL_LINEAR);
-    texture_manager->SetParameter("Backbuffer",
-                                  error_state,
-                                  backbuffer_.get(),
-                                  GL_TEXTURE_WRAP_S,
-                                  GL_CLAMP_TO_EDGE);
-    texture_manager->SetParameter("Backbuffer",
-                                  error_state,
-                                  backbuffer_.get(),
-                                  GL_TEXTURE_WRAP_T,
-                                  GL_CLAMP_TO_EDGE);
+    texture_manager->SetParameteri("Backbuffer",
+                                   error_state,
+                                   backbuffer_.get(),
+                                   GL_TEXTURE_MIN_FILTER,
+                                   GL_LINEAR);
+    texture_manager->SetParameteri("Backbuffer",
+                                   error_state,
+                                   backbuffer_.get(),
+                                   GL_TEXTURE_MAG_FILTER,
+                                   GL_LINEAR);
+    texture_manager->SetParameteri("Backbuffer",
+                                   error_state,
+                                   backbuffer_.get(),
+                                   GL_TEXTURE_WRAP_S,
+                                   GL_CLAMP_TO_EDGE);
+    texture_manager->SetParameteri("Backbuffer",
+                                   error_state,
+                                   backbuffer_.get(),
+                                   GL_TEXTURE_WRAP_T,
+                                   GL_CLAMP_TO_EDGE);
     texture_manager->SetLevelInfo(backbuffer_.get(),
                                   GL_TEXTURE_2D,
                                   0,

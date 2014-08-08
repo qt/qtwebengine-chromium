@@ -34,23 +34,27 @@ namespace WebCore {
 class Element;
 class ExceptionState;
 
-class DatasetDOMStringMap : public DOMStringMap {
+class DatasetDOMStringMap FINAL : public DOMStringMap {
 public:
-    static PassOwnPtr<DatasetDOMStringMap> create(Element* element)
+    static PassOwnPtrWillBeRawPtr<DatasetDOMStringMap> create(Element* element)
     {
-        return adoptPtr(new DatasetDOMStringMap(element));
+        return adoptPtrWillBeNoop(new DatasetDOMStringMap(element));
     }
 
-    virtual void ref();
-    virtual void deref();
+#if !ENABLE(OILPAN)
+    virtual void ref() OVERRIDE;
+    virtual void deref() OVERRIDE;
+#endif
 
-    virtual void getNames(Vector<String>&);
-    virtual String item(const String& name);
-    virtual bool contains(const String& name);
-    virtual void setItem(const String& name, const String& value, ExceptionState&);
-    virtual void deleteItem(const String& name, ExceptionState&);
+    virtual void getNames(Vector<String>&) OVERRIDE;
+    virtual String item(const String& name) OVERRIDE;
+    virtual bool contains(const String& name) OVERRIDE;
+    virtual void setItem(const String& name, const String& value, ExceptionState&) OVERRIDE;
+    virtual bool deleteItem(const String& name) OVERRIDE;
 
-    virtual Element* element() { return m_element; }
+    virtual Element* element() OVERRIDE { return m_element; }
+
+    virtual void trace(Visitor*) OVERRIDE;
 
 private:
     explicit DatasetDOMStringMap(Element* element)
@@ -58,7 +62,7 @@ private:
     {
     }
 
-    Element* m_element;
+    RawPtrWillBeMember<Element> m_element;
 };
 
 } // namespace WebCore

@@ -9,6 +9,7 @@
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "base/threading/non_thread_safe.h"
 #include "base/threading/platform_thread.h"
 #include "base/time/time.h"
@@ -28,6 +29,8 @@ class Message;
 namespace cc {
 class CompositorFrame;
 class CompositorFrameAck;
+class GLFrameData;
+class SoftwareFrameData;
 }
 
 namespace content {
@@ -54,7 +57,7 @@ class CompositorOutputSurface
   virtual bool BindToClient(cc::OutputSurfaceClient* client) OVERRIDE;
   virtual void SwapBuffers(cc::CompositorFrame* frame) OVERRIDE;
 #if defined(OS_ANDROID)
-  virtual void SetNeedsBeginImplFrame(bool enable) OVERRIDE;
+  virtual void SetNeedsBeginFrame(bool enable) OVERRIDE;
 #endif
 
   // TODO(epenner): This seems out of place here and would be a better fit
@@ -62,6 +65,9 @@ class CompositorOutputSurface
   virtual void UpdateSmoothnessTakesPriority(bool prefer_smoothness) OVERRIDE;
 
  protected:
+  void ShortcutSwapAck(uint32 output_surface_id,
+                       scoped_ptr<cc::GLFrameData> gl_frame_data,
+                       scoped_ptr<cc::SoftwareFrameData> software_frame_data);
   virtual void OnSwapAck(uint32 output_surface_id,
                          const cc::CompositorFrameAck& ack);
   virtual void OnReclaimResources(uint32 output_surface_id,
@@ -90,10 +96,10 @@ class CompositorOutputSurface
   };
 
   void OnMessageReceived(const IPC::Message& message);
-  void OnUpdateVSyncParameters(
-      base::TimeTicks timebase, base::TimeDelta interval);
+  void OnUpdateVSyncParametersFromBrowser(base::TimeTicks timebase,
+                                          base::TimeDelta interval);
 #if defined(OS_ANDROID)
-  void OnBeginImplFrame(const cc::BeginFrameArgs& args);
+  void OnBeginFrame(const cc::BeginFrameArgs& args);
 #endif
   bool Send(IPC::Message* message);
 
@@ -105,6 +111,11 @@ class CompositorOutputSurface
   int routing_id_;
   bool prefers_smoothness_;
   base::PlatformThreadHandle main_thread_handle_;
+
+  // TODO(danakj): Remove this when crbug.com/311404
+  bool layout_test_mode_;
+  scoped_ptr<cc::CompositorFrameAck> layout_test_previous_frame_ack_;
+  base::WeakPtrFactory<CompositorOutputSurface> weak_ptrs_;
 };
 
 }  // namespace content

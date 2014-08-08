@@ -36,26 +36,28 @@ struct PageTransitionEventInit : public EventInit {
     bool persisted;
 };
 
-class PageTransitionEvent : public Event {
+class PageTransitionEvent FINAL : public Event {
 public:
-    static PassRefPtr<PageTransitionEvent> create()
+    static PassRefPtrWillBeRawPtr<PageTransitionEvent> create()
     {
-        return adoptRef(new PageTransitionEvent);
+        return adoptRefWillBeNoop(new PageTransitionEvent);
     }
-    static PassRefPtr<PageTransitionEvent> create(const AtomicString& type, bool persisted)
+    static PassRefPtrWillBeRawPtr<PageTransitionEvent> create(const AtomicString& type, bool persisted)
     {
-        return adoptRef(new PageTransitionEvent(type, persisted));
+        return adoptRefWillBeNoop(new PageTransitionEvent(type, persisted));
     }
-    static PassRefPtr<PageTransitionEvent> create(const AtomicString& type, const PageTransitionEventInit& initializer)
+    static PassRefPtrWillBeRawPtr<PageTransitionEvent> create(const AtomicString& type, const PageTransitionEventInit& initializer)
     {
-        return adoptRef(new PageTransitionEvent(type, initializer));
+        return adoptRefWillBeNoop(new PageTransitionEvent(type, initializer));
     }
 
     virtual ~PageTransitionEvent();
 
-    virtual const AtomicString& interfaceName() const;
+    virtual const AtomicString& interfaceName() const OVERRIDE;
 
     bool persisted() const { return m_persisted; }
+
+    virtual void trace(Visitor*) OVERRIDE;
 
 private:
     PageTransitionEvent();

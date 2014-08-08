@@ -26,7 +26,6 @@ bool PathProvider(int key, base::FilePath* result) {
 
       *result = cur;
       return true;
-      break;
     }
     case DIR_MEDIA_LIBS: {
 #if defined(OS_MACOSX)
@@ -40,8 +39,6 @@ bool PathProvider(int key, base::FilePath* result) {
     default:
       return false;
   }
-
-  return false;
 }
 
 // This cannot be done as a static initializer sadly since Visual Studio will

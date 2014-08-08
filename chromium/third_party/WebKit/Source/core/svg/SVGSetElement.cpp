@@ -19,8 +19,9 @@
  */
 
 #include "config.h"
-#include "SVGNames.h"
 #include "core/svg/SVGSetElement.h"
+
+#include "core/SVGNames.h"
 
 namespace WebCore {
 
@@ -31,10 +32,7 @@ inline SVGSetElement::SVGSetElement(Document& document)
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<SVGSetElement> SVGSetElement::create(Document& document)
-{
-    return adoptRef(new SVGSetElement(document));
-}
+DEFINE_NODE_FACTORY(SVGSetElement)
 
 void SVGSetElement::updateAnimationMode()
 {

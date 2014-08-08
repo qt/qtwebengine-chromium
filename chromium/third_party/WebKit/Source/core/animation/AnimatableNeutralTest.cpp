@@ -45,13 +45,4 @@ TEST(AnimationAnimatableNeutralTest, Create)
     EXPECT_TRUE(AnimatableValue::neutralValue());
 }
 
-TEST(AnimationAnimatableNeutralTest, Add)
-{
-    RefPtr<CSSValue> cssValue = CSSArrayFunctionValue::create();
-    RefPtr<AnimatableValue> animatableUnknown = AnimatableUnknown::create(cssValue);
-
-    EXPECT_EQ(cssValue, toAnimatableUnknown(AnimatableValue::add(animatableUnknown.get(), AnimatableValue::neutralValue()).get())->toCSSValue());
-    EXPECT_EQ(cssValue, toAnimatableUnknown(AnimatableValue::add(AnimatableValue::neutralValue(), animatableUnknown.get()).get())->toCSSValue());
-}
-
 }

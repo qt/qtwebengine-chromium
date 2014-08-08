@@ -34,7 +34,7 @@ class Widget;
 // designed to be bound to top-level Widgets.
 class VIEWS_EXPORT InputMethod {
  public:
-  // TODO(yukawa): Move these typedef into ime_constants.h or somewhere.
+
 #if defined(OS_WIN)
   typedef LRESULT NativeEventResult;
 #else
@@ -94,10 +94,6 @@ class VIEWS_EXPORT InputMethod {
   // tag, or an empty string if the input method cannot provide it.
   virtual std::string GetInputLocale() = 0;
 
-  // Returns the text direction of current keyboard layout or input method, or
-  // base::i18n::UNKNOWN_DIRECTION if the input method cannot provide it.
-  virtual base::i18n::TextDirection GetInputTextDirection() = 0;
-
   // Returns true if the input method is ready to process keyboard events and
   // generate composition or text results. It is not necessary to notify
   // inactive input methods of caret bounds or text input type changes.
@@ -117,6 +113,9 @@ class VIEWS_EXPORT InputMethod {
   // etc.) is open.  Returns false if no popup window is open or the detection
   // of IME popups is not supported.
   virtual bool IsCandidatePopupOpen() const = 0;
+
+  // Displays an on screen keyboard if enabled.
+  virtual void ShowImeIfNeeded() = 0;
 
   // Returns true if the input method is a mock instance used for testing.
   virtual bool IsMock() const = 0;

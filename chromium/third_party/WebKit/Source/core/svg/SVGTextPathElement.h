@@ -20,7 +20,7 @@
 #ifndef SVGTextPathElement_h
 #define SVGTextPathElement_h
 
-#include "SVGNames.h"
+#include "core/SVGNames.h"
 #include "core/svg/SVGTextContentElement.h"
 #include "core/svg/SVGURIReference.h"
 
@@ -38,63 +38,8 @@ enum SVGTextPathSpacingType {
     SVGTextPathSpacingExact
 };
 
-template<>
-struct SVGPropertyTraits<SVGTextPathMethodType> {
-    static unsigned highestEnumValue() { return SVGTextPathMethodStretch; }
-
-    static String toString(SVGTextPathMethodType type)
-    {
-        switch (type) {
-        case SVGTextPathMethodUnknown:
-            return emptyString();
-        case SVGTextPathMethodAlign:
-            return "align";
-        case SVGTextPathMethodStretch:
-            return "stretch";
-        }
-
-        ASSERT_NOT_REACHED();
-        return emptyString();
-    }
-
-    static SVGTextPathMethodType fromString(const String& value)
-    {
-        if (value == "align")
-            return SVGTextPathMethodAlign;
-        if (value == "stretch")
-            return SVGTextPathMethodStretch;
-        return SVGTextPathMethodUnknown;
-    }
-};
-
-template<>
-struct SVGPropertyTraits<SVGTextPathSpacingType> {
-    static unsigned highestEnumValue() { return SVGTextPathSpacingExact; }
-
-    static String toString(SVGTextPathSpacingType type)
-    {
-        switch (type) {
-        case SVGTextPathSpacingUnknown:
-            return emptyString();
-        case SVGTextPathSpacingAuto:
-            return "auto";
-        case SVGTextPathSpacingExact:
-            return "exact";
-        }
-
-        ASSERT_NOT_REACHED();
-        return emptyString();
-    }
-
-    static SVGTextPathSpacingType fromString(const String& value)
-    {
-        if (value == "auto")
-            return SVGTextPathSpacingAuto;
-        if (value == "exact")
-            return SVGTextPathSpacingExact;
-        return SVGTextPathSpacingUnknown;
-    }
-};
+template<> const SVGEnumerationStringEntries& getStaticStringEntries<SVGTextPathMethodType>();
+template<> const SVGEnumerationStringEntries& getStaticStringEntries<SVGTextPathSpacingType>();
 
 class SVGTextPathElement FINAL : public SVGTextContentElement,
                                  public SVGURIReference {
@@ -109,7 +54,11 @@ public:
         TEXTPATH_SPACINGTYPE_EXACT = SVGTextPathSpacingExact
     };
 
-    static PassRefPtr<SVGTextPathElement> create(Document&);
+    DECLARE_NODE_FACTORY(SVGTextPathElement);
+
+    SVGAnimatedLength* startOffset() const { return m_startOffset.get(); }
+    SVGAnimatedEnumeration<SVGTextPathMethodType>* method() { return m_method.get(); }
+    SVGAnimatedEnumeration<SVGTextPathSpacingType>* spacing() { return m_spacing.get(); }
 
 private:
     explicit SVGTextPathElement(Document&);
@@ -118,29 +67,23 @@ private:
 
     void clearResourceReferences();
 
-    virtual void buildPendingResource();
+    virtual void buildPendingResource() OVERRIDE;
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
     virtual void removedFrom(ContainerNode*) OVERRIDE;
 
     bool isSupportedAttribute(const QualifiedName&);
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual void svgAttributeChanged(const QualifiedName&);
+    virtual void svgAttributeChanged(const QualifiedName&) OVERRIDE;
 
-    virtual RenderObject* createRenderer(RenderStyle*);
-    virtual bool childShouldCreateRenderer(const Node& child) const;
-    virtual bool rendererIsNeeded(const RenderStyle&);
+    virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
+    virtual bool rendererIsNeeded(const RenderStyle&) OVERRIDE;
 
-    virtual bool selfHasRelativeLengths() const;
+    virtual bool selfHasRelativeLengths() const OVERRIDE;
 
-    BEGIN_DECLARE_ANIMATED_PROPERTIES(SVGTextPathElement)
-        DECLARE_ANIMATED_LENGTH(StartOffset, startOffset)
-        DECLARE_ANIMATED_ENUMERATION(Method, method, SVGTextPathMethodType)
-        DECLARE_ANIMATED_ENUMERATION(Spacing, spacing, SVGTextPathSpacingType)
-        DECLARE_ANIMATED_STRING(Href, href)
-    END_DECLARE_ANIMATED_PROPERTIES
+    RefPtr<SVGAnimatedLength> m_startOffset;
+    RefPtr<SVGAnimatedEnumeration<SVGTextPathMethodType> > m_method;
+    RefPtr<SVGAnimatedEnumeration<SVGTextPathSpacingType> > m_spacing;
 };
-
-DEFINE_NODE_TYPE_CASTS(SVGTextPathElement, hasTagName(SVGNames::textPathTag));
 
 } // namespace WebCore
 

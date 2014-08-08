@@ -34,8 +34,16 @@ class CONTENT_EXPORT ResourceConverter {
  public:
   virtual ~ResourceConverter();
 
-  // Flush() must be called before any vars created by the ResourceConverter
-  // are valid. It handles creating any resource hosts that need to be created.
+  // Reset the state of the resource converter.
+  virtual void Reset() = 0;
+
+  // Returns true if Flush() needs to be called before using any vars created
+  // by the resource converter.
+  virtual bool NeedsFlush() = 0;
+
+  // If NeedsFlush() is true then Flush() must be called before any vars created
+  // by the ResourceConverter are valid. It handles creating any resource hosts
+  // that need to be created. |callback| will always be called asynchronously.
   virtual void Flush(const base::Callback<void(bool)>& callback) = 0;
 
   // Attempts to convert a V8 object to a PP_Var with type PP_VARTYPE_RESOURCE.
@@ -46,6 +54,13 @@ class CONTENT_EXPORT ResourceConverter {
                            v8::Handle<v8::Context> context,
                            PP_Var* result,
                            bool* was_resource) = 0;
+
+  // Attempts to convert a PP_Var to a V8 object. |var| must have type
+  // PP_VARTYPE_RESOURCE. On success, writes the resulting value to |result| and
+  // returns true. If an error occurs, returns false.
+  virtual bool ToV8Value(const PP_Var& var,
+                         v8::Handle<v8::Context> context,
+                         v8::Handle<v8::Value>* result) = 0;
 };
 
 class ResourceConverterImpl : public ResourceConverter {
@@ -54,11 +69,16 @@ class ResourceConverterImpl : public ResourceConverter {
   virtual ~ResourceConverterImpl();
 
   // ResourceConverter overrides.
+  virtual void Reset() OVERRIDE;
+  virtual bool NeedsFlush() OVERRIDE;
   virtual void Flush(const base::Callback<void(bool)>& callback) OVERRIDE;
   virtual bool FromV8Value(v8::Handle<v8::Object> val,
                            v8::Handle<v8::Context> context,
                            PP_Var* result,
                            bool* was_resource) OVERRIDE;
+  virtual bool ToV8Value(const PP_Var& var,
+                         v8::Handle<v8::Context> context,
+                         v8::Handle<v8::Value>* result) OVERRIDE;
 
  private:
   // Creates a resource var with the given |pending_renderer_id| and
@@ -85,7 +105,7 @@ class ResourceConverterImpl : public ResourceConverter {
   // conveniently passed to |CreateBrowserResourceHosts|.
   std::vector<IPC::Message> browser_host_create_messages_;
   // A list of the resource vars associated with browser hosts.
-  std::vector<scoped_refptr<HostResourceVar> > browser_vars;
+  std::vector<scoped_refptr<HostResourceVar> > browser_vars_;
 
   DISALLOW_COPY_AND_ASSIGN(ResourceConverterImpl);
 };

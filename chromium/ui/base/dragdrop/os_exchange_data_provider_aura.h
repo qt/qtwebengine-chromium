@@ -19,7 +19,7 @@ namespace ui {
 class Clipboard;
 
 // OSExchangeData::Provider implementation for aura on linux.
-class UI_EXPORT OSExchangeDataProviderAura
+class UI_BASE_EXPORT OSExchangeDataProviderAura
     : public OSExchangeData::Provider {
  public:
   OSExchangeDataProviderAura();
@@ -27,11 +27,12 @@ class UI_EXPORT OSExchangeDataProviderAura
 
   // Overridden from OSExchangeData::Provider:
   virtual Provider* Clone() const OVERRIDE;
+  virtual void MarkOriginatedFromRenderer() OVERRIDE;
+  virtual bool DidOriginateFromRenderer() const OVERRIDE;
   virtual void SetString(const base::string16& data) OVERRIDE;
   virtual void SetURL(const GURL& url, const base::string16& title) OVERRIDE;
   virtual void SetFilename(const base::FilePath& path) OVERRIDE;
-  virtual void SetFilenames(
-      const std::vector<OSExchangeData::FileInfo>& filenames) OVERRIDE;
+  virtual void SetFilenames(const std::vector<FileInfo>& filenames) OVERRIDE;
   virtual void SetPickledData(const OSExchangeData::CustomFormat& format,
                               const Pickle& data) OVERRIDE;
   virtual bool GetString(base::string16* data) const OVERRIDE;
@@ -39,12 +40,12 @@ class UI_EXPORT OSExchangeDataProviderAura
                               GURL* url,
                               base::string16* title) const OVERRIDE;
   virtual bool GetFilename(base::FilePath* path) const OVERRIDE;
-  virtual bool GetFilenames(
-      std::vector<OSExchangeData::FileInfo>* filenames) const OVERRIDE;
+  virtual bool GetFilenames(std::vector<FileInfo>* filenames) const OVERRIDE;
   virtual bool GetPickledData(const OSExchangeData::CustomFormat& format,
                               Pickle* data) const OVERRIDE;
   virtual bool HasString() const OVERRIDE;
-  virtual bool HasURL() const OVERRIDE;
+  virtual bool HasURL(OSExchangeData::FilenameToURLPolicy policy) const
+      OVERRIDE;
   virtual bool HasFile() const OVERRIDE;
   virtual bool HasCustomFormat(const OSExchangeData::CustomFormat& format) const
       OVERRIDE;
@@ -77,7 +78,7 @@ class UI_EXPORT OSExchangeDataProviderAura
   base::string16 title_;
 
   // File name.
-  std::vector<OSExchangeData::FileInfo> filenames_;
+  std::vector<FileInfo> filenames_;
 
   // PICKLED_DATA contents.
   PickleData pickle_data_;

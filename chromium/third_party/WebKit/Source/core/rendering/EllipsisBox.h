@@ -29,7 +29,7 @@ class HitTestResult;
 
 class EllipsisBox FINAL : public InlineBox {
 public:
-    EllipsisBox(RenderObject* obj, const AtomicString& ellipsisStr, InlineFlowBox* parent,
+    EllipsisBox(RenderObject& obj, const AtomicString& ellipsisStr, InlineFlowBox* parent,
         int width, int height, int x, int y, bool firstLine, bool isVertical, InlineBox* markupBox)
         : InlineBox(obj, FloatPoint(x, y), width, firstLine, true, false, false, isVertical, 0, 0, parent)
         , m_shouldPaintMarkupBox(markupBox)
@@ -40,7 +40,7 @@ public:
         setHasVirtualLogicalHeight();
     }
 
-    virtual void paint(PaintInfo&, const LayoutPoint&, LayoutUnit lineTop, LayoutUnit lineBottom);
+    virtual void paint(PaintInfo&, const LayoutPoint&, LayoutUnit lineTop, LayoutUnit lineBottom) OVERRIDE;
     virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, LayoutUnit lineTop, LayoutUnit lineBottom) OVERRIDE;
     void setSelectionState(RenderObject::SelectionState s) { m_selectionState = s; }
     IntRect selectionRect();
@@ -48,8 +48,8 @@ public:
     virtual float virtualLogicalHeight() const OVERRIDE { return m_height; }
 private:
     void paintMarkupBox(PaintInfo&, const LayoutPoint& paintOffset, LayoutUnit lineTop, LayoutUnit lineBottom, RenderStyle*);
-    virtual int height() const { return m_height; }
-    virtual RenderObject::SelectionState selectionState() { return m_selectionState; }
+    int height() const { return m_height; }
+    virtual RenderObject::SelectionState selectionState() OVERRIDE { return m_selectionState; }
     void paintSelection(GraphicsContext*, const FloatPoint&, RenderStyle*, const Font&);
     InlineBox* markupBox() const;
 

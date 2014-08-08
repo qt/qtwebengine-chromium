@@ -27,7 +27,9 @@
  */
 
 
-interface Screen {
+[
+    WillBeGarbageCollected,
+] interface Screen {
     readonly attribute unsigned long height;
     readonly attribute unsigned long width;
     readonly attribute unsigned long colorDepth;

@@ -12,12 +12,16 @@
 .show-with-ui-state-locally-managed,
 .show-with-ui-state-kiosk-mode,
 .show-with-ui-state-local-state-error,
+.show-with-ui-state-auto-enrollment-error,
+.show-with-ui-state-rollback-error,
 .show-with-error-state-portal,
 .show-with-error-state-offline,
 .show-with-error-state-proxy,
 .show-with-error-state-auth-ext-timeout,
+.show-with-error-state-kiosk-online,
 .guest-signin,
-.offline-login {
+.offline-login,
+.connecting-indicator {
   display: none;
 }
 
@@ -26,12 +30,16 @@
 .ui-state-locally-managed .show-with-ui-state-locally-managed,
 .ui-state-kiosk-mode .show-with-ui-state-kiosk-mode,
 .ui-state-local-state-error .show-with-ui-state-local-state-error,
+.ui-state-auto-enrollment-error .show-with-ui-state-auto-enrollment-error,
+.ui-state-rollback-error .show-with-ui-state-rollback-error,
 .error-state-portal .show-with-error-state-portal,
 .error-state-offline .show-with-error-state-offline,
 .error-state-proxy .show-with-error-state-proxy,
 .error-state-auth-ext-timeout .show-with-error-state-auth-ext-timeout,
+.error-state-kiosk-online .show-with-error-state-kiosk-online,
 .allow-guest-signin .guest-signin,
-.allow-offline-login .offline-login {
+.allow-offline-login .offline-login,
+.show-connecting-indicator .connecting-indicator {
   display: block;
 }
 
@@ -43,15 +51,15 @@
   /* A hack used to prevent aliasing on High-DPI displays. */
   -webkit-transform: scale3d(1,1,1);
   background-clip: padding-box;
-  background-image: -webkit-linear-gradient(rgba(255,255,255,0.99),
-                                            rgba(255,255,255,0.97));
-  border-bottom: 1px solid rgba(238,238,238,0.97);
+  background-color: white;
+  border-bottom: 1px solid rgb(238,238,238);
   padding: 71px 20px 50px;
   text-align: center;
 }
 
 .error-icon {
   -webkit-margin-after: 40px;
+  height: 64px;
 }
 
 .error-title {
@@ -60,14 +68,12 @@
 }
 
 .error-body {
-  background-image: -webkit-linear-gradient(rgba(249,249,249,0.97),
-                                            rgba(249,249,249,0.95));
+  background-color: rgb(249,249,249);
   padding: 20px 20px 20px;
 }
 
 .error-controls {
-  background-image: -webkit-linear-gradient(rgba(249,249,249,0.95),
-                                            rgba(249,249,249,0.93));
+  background-color: rgb(249,249,249);
   padding: 20px 20px 20px;
 }
 
@@ -96,4 +102,40 @@
 
 .button-spacer {
   -webkit-box-flex: 1;
+}
+
+.ui-state-auto-enrollment-error .error-guest-signin {
+  display: none;
+}
+
+.ui-state-auto-enrollment-error.allow-guest-signin
+    .error-guest-signin-fix-network {
+  display: block;
+}
+
+@-webkit-keyframes connecting-indicator-ellipsis {
+  0% {
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  50% {
+    opacity: .8;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+#connecting-indicator-ellipsis-1 {
+  -webkit-animation: connecting-indicator-ellipsis 3s 0 infinite;
+}
+
+#connecting-indicator-ellipsis-2 {
+  -webkit-animation: connecting-indicator-ellipsis 3s 500ms infinite;
+}
+
+#connecting-indicator-ellipsis-3 {
+  -webkit-animation: connecting-indicator-ellipsis 3s 1s infinite;
 }

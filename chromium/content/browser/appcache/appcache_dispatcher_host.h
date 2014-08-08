@@ -28,8 +28,7 @@ class AppCacheDispatcherHost : public BrowserMessageFilter {
 
   // BrowserIOMessageFilter implementation
   virtual void OnChannelConnected(int32 peer_pid) OVERRIDE;
-  virtual bool OnMessageReceived(const IPC::Message& message,
-                                 bool* message_was_ok) OVERRIDE;
+  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 
  protected:
   virtual ~AppCacheDispatcherHost();
@@ -56,7 +55,7 @@ class AppCacheDispatcherHost : public BrowserMessageFilter {
   void OnGetResourceList(
       int host_id,
       std::vector<appcache::AppCacheResourceInfo>* resource_infos);
-  void GetStatusCallback(appcache::Status status, void* param);
+  void GetStatusCallback(appcache::AppCacheStatus status, void* param);
   void StartUpdateCallback(bool result, void* param);
   void SwapCacheCallback(bool result, void* param);
 

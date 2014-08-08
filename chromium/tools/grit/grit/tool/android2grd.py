@@ -194,15 +194,15 @@ OPTIONS may be any of the following:
       '''<?xml version="1.0" encoding="UTF-8"?>
          <grit base_dir="." latest_public_release="0"
              current_release="1" source_lang_id="en">
+           <outputs />
+           <translations />
            <release allow_pseudo="false" seq="1">
              <messages fallback_to_english="true" />
            </release>
-           <translations />
-           <outputs />
          </grit>'''), dir='.')
-    messages = root.children[0].children[0]
+    outputs = root.children[0]
     translations = root.children[1]
-    outputs = root.children[2]
+    messages = root.children[2].children[0]
     assert (isinstance(messages, grit.node.empty.MessagesNode) and
             isinstance(translations, grit.node.empty.TranslationsNode) and
             isinstance(outputs, grit.node.empty.OutputsNode))

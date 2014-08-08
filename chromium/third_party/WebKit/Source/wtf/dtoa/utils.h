@@ -45,7 +45,7 @@
 // disabled.)
 // On Linux,x86 89255e-22 != Div_double(89255.0/1e22)
 #if defined(_M_X64) || defined(__x86_64__) || \
-defined(__ARMEL__) || \
+defined(__ARMEL__) || defined(__aarch64__) || \
 defined(__MIPSEL__)
 #define DOUBLE_CONVERSION_CORRECT_DOUBLE_OPERATIONS 1
 #elif defined(_M_IX86) || defined(__i386__)
@@ -288,7 +288,7 @@ namespace double_conversion {
     inline Dest BitCast(const Source& source) {
         // Compile time assertion: sizeof(Dest) == sizeof(Source)
         // A compile error here means your Dest and Source have different sizes.
-        typedef char VerifySizesAreEqual[sizeof(Dest) == sizeof(Source) ? 1 : -1];
+        COMPILE_ASSERT(sizeof(Dest) == sizeof(Source), VerifySizesAreEqual);
 
         Dest dest;
         memcpy(&dest, &source, sizeof(dest));

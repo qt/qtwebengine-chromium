@@ -5,10 +5,13 @@
 #ifndef CONTENT_ZYGOTE_ZYGOTE_H_
 #define CONTENT_ZYGOTE_ZYGOTE_H_
 
+#include <stddef.h>
+
 #include <string>
-#include <vector>
 
 #include "base/containers/small_map.h"
+#include "base/files/scoped_file.h"
+#include "base/memory/scoped_vector.h"
 #include "base/posix/global_descriptors.h"
 #include "base/process/kill.h"
 #include "base/process/process.h"
@@ -25,8 +28,9 @@ class ZygoteForkDelegate;
 // runs it.
 class Zygote {
  public:
-  Zygote(int sandbox_flags,
-         ZygoteForkDelegate* helper);
+  Zygote(int sandbox_flags, ScopedVector<ZygoteForkDelegate> helpers,
+         const std::vector<base::ProcessHandle>& extra_children,
+         const std::vector<int>& extra_fds);
   ~Zygote();
 
   bool ProcessRequests();
@@ -35,9 +39,8 @@ class Zygote {
   struct ZygoteProcessInfo {
     // Pid from inside the Zygote's PID namespace.
     base::ProcessHandle internal_pid;
-    // Keeps track of whether or not a process was started from a fork
-    // delegate helper.
-    bool started_from_helper;
+    // Keeps track of which fork delegate helper the process was started from.
+    ZygoteForkDelegate* started_from_helper;
   };
   typedef base::SmallMap< std::map<base::ProcessHandle, ZygoteProcessInfo> >
       ZygoteProcessMap;
@@ -74,12 +77,16 @@ class Zygote {
 
   // This is equivalent to fork(), except that, when using the SUID sandbox, it
   // returns the real PID of the child process as it appears outside the
-  // sandbox, rather than returning the PID inside the sandbox. Optionally, it
-  // fills in uma_name et al with a report the helper wants to make via
-  // UMA_HISTOGRAM_ENUMERATION.
+  // sandbox, rather than returning the PID inside the sandbox.  The child's
+  // real PID is determined by having it call content::SendZygoteChildPing(int)
+  // using the |pid_oracle| descriptor.
+  // Finally, when using a ZygoteForkDelegate helper, |uma_name|, |uma_sample|,
+  // and |uma_boundary_value| may be set if the helper wants to make a UMA
+  // report via UMA_HISTOGRAM_ENUMERATION.
   int ForkWithRealPid(const std::string& process_type,
                       const base::GlobalDescriptors::Mapping& fd_mapping,
-                      const std::string& channel_switch,
+                      const std::string& channel_id,
+                      base::ScopedFD pid_oracle,
                       std::string* uma_name,
                       int* uma_sample,
                       int* uma_boundary_value);
@@ -89,7 +96,7 @@ class Zygote {
   // process and the child process ID to the parent process, like fork().
   base::ProcessId ReadArgsAndFork(const Pickle& pickle,
                                   PickleIterator iter,
-                                  std::vector<int>& fds,
+                                  ScopedVector<base::ScopedFD> fds,
                                   std::string* uma_name,
                                   int* uma_sample,
                                   int* uma_boundary_value);
@@ -101,7 +108,7 @@ class Zygote {
   bool HandleForkRequest(int fd,
                          const Pickle& pickle,
                          PickleIterator iter,
-                         std::vector<int>& fds);
+                         ScopedVector<base::ScopedFD> fds);
 
   bool HandleGetSandboxStatus(int fd,
                               const Pickle& pickle,
@@ -114,13 +121,21 @@ class Zygote {
   ZygoteProcessMap process_info_map_;
 
   const int sandbox_flags_;
-  ZygoteForkDelegate* helper_;
+  ScopedVector<ZygoteForkDelegate> helpers_;
 
-  // These might be set by helper_->InitialUMA. They supply a UMA enumeration
-  // sample we should report on the first fork.
-  std::string initial_uma_name_;
-  int initial_uma_sample_;
-  int initial_uma_boundary_value_;
+  // Count of how many fork delegates for which we've invoked InitialUMA().
+  size_t initial_uma_index_;
+
+  // This vector contains the PIDs of any child processes which have been
+  // created prior to the construction of the Zygote object, and must be reaped
+  // before the Zygote exits. The Zygote will perform a blocking wait on these
+  // children, so they must be guaranteed to be exiting by the time the Zygote
+  // exits.
+  std::vector<base::ProcessHandle> extra_children_;
+
+  // This vector contains the FDs that must be closed before reaping the extra
+  // children.
+  std::vector<int> extra_fds_;
 };
 
 }  // namespace content

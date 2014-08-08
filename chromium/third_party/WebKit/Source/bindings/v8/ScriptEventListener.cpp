@@ -32,7 +32,6 @@
 #include "bindings/v8/ScriptEventListener.h"
 
 #include "bindings/v8/ScriptController.h"
-#include "bindings/v8/ScriptScope.h"
 #include "bindings/v8/ScriptState.h"
 #include "bindings/v8/V8AbstractEventListener.h"
 #include "bindings/v8/V8Binding.h"
@@ -40,58 +39,70 @@
 #include "core/dom/Document.h"
 #include "core/dom/DocumentParser.h"
 #include "core/events/EventListener.h"
-#include "core/frame/Frame.h"
+#include "core/frame/LocalFrame.h"
+#include <v8.h>
 
 namespace WebCore {
 
-static const AtomicString& eventParameterName(bool isSVGEvent)
-{
-    DEFINE_STATIC_LOCAL(const AtomicString, eventString, ("event"));
-    DEFINE_STATIC_LOCAL(const AtomicString, evtString, ("evt"));
-    return isSVGEvent ? evtString : eventString;
-}
-
-PassRefPtr<V8LazyEventListener> createAttributeEventListener(Node* node, const QualifiedName& name, const AtomicString& value)
+PassRefPtr<V8LazyEventListener> createAttributeEventListener(Node* node, const QualifiedName& name, const AtomicString& value, const AtomicString& eventParameterName)
 {
     ASSERT(node);
     if (value.isNull())
-        return 0;
+        return nullptr;
 
     // FIXME: Very strange: we initialize zero-based number with '1'.
     TextPosition position(OrdinalNumber::fromZeroBasedInt(1), OrdinalNumber::first());
     String sourceURL;
 
     v8::Isolate* isolate;
-    if (Frame* frame = node->document().frame()) {
+    if (LocalFrame* frame = node->document().frame()) {
         isolate = toIsolate(frame);
         ScriptController& scriptController = frame->script();
         if (!scriptController.canExecuteScripts(AboutToExecuteScript))
-            return 0;
+            return nullptr;
         position = scriptController.eventHandlerPosition();
         sourceURL = node->document().url().string();
     } else {
         isolate = v8::Isolate::GetCurrent();
     }
 
-    return V8LazyEventListener::create(name.localName(), eventParameterName(node->isSVGElement()), value, sourceURL, position, node, isolate);
+    return V8LazyEventListener::create(name.localName(), eventParameterName, value, sourceURL, position, node, isolate);
 }
 
-PassRefPtr<V8LazyEventListener> createAttributeEventListener(Frame* frame, const QualifiedName& name, const AtomicString& value)
+PassRefPtr<V8LazyEventListener> createAttributeEventListener(LocalFrame* frame, const QualifiedName& name, const AtomicString& value, const AtomicString& eventParameterName)
 {
     if (!frame)
-        return 0;
+        return nullptr;
 
     if (value.isNull())
-        return 0;
+        return nullptr;
 
     ScriptController& scriptController = frame->script();
     if (!scriptController.canExecuteScripts(AboutToExecuteScript))
-        return 0;
+        return nullptr;
 
     TextPosition position = scriptController.eventHandlerPosition();
     String sourceURL = frame->document()->url().string();
 
-    return V8LazyEventListener::create(name.localName(), eventParameterName(frame->document()->isSVGDocument()), value, sourceURL, position, 0, toIsolate(frame));
+    return V8LazyEventListener::create(name.localName(), eventParameterName, value, sourceURL, position, 0, toIsolate(frame));
+}
+
+static v8::Handle<v8::Function> eventListenerEffectiveFunction(v8::Isolate* isolate, v8::Handle<v8::Object> listenerObject)
+{
+    v8::Handle<v8::Function> function;
+    if (listenerObject->IsFunction()) {
+        function = v8::Handle<v8::Function>::Cast(listenerObject);
+    } else if (listenerObject->IsObject()) {
+        // Try the "handleEvent" method (EventListener interface).
+        v8::Handle<v8::Value> property = listenerObject->Get(v8AtomicString(isolate, "handleEvent"));
+        if (property.IsEmpty() || !property->IsFunction()) {
+            // Fall back to the "constructor" property.
+            property = listenerObject->Get(v8AtomicString(isolate, "constructor"));
+        }
+        if (!property.IsEmpty() && property->IsFunction())
+            function = v8::Handle<v8::Function>::Cast(property);
+    }
+    return function;
 }
 
 String eventListenerHandlerBody(Document* document, EventListener* listener)
@@ -103,11 +114,14 @@ String eventListenerHandlerBody(Document* document, EventListener* listener)
     V8AbstractEventListener* v8Listener = static_cast<V8AbstractEventListener*>(listener);
     v8::Handle<v8::Context> context = toV8Context(document, v8Listener->world());
     v8::Context::Scope contextScope(context);
-    v8::Handle<v8::Value> function = v8Listener->getListenerObject(document);
+    v8::Handle<v8::Object> object = v8Listener->getListenerObject(document);
+    if (object.IsEmpty())
+        return "";
+    v8::Handle<v8::Function> function = eventListenerEffectiveFunction(scope.GetIsolate(), object);
     if (function.IsEmpty())
         return "";
 
-    V8TRYCATCH_FOR_V8STRINGRESOURCE_RETURN(V8StringResource<WithNullCheck>, functionString, function, "");
+    TOSTRING_DEFAULT(V8StringResource<WithNullCheck>, functionString, function, "");
     return functionString;
 }
 
@@ -124,17 +138,17 @@ ScriptValue eventListenerHandler(Document* document, EventListener* listener)
     v8::Handle<v8::Object> function = v8Listener->getListenerObject(document);
     if (function.IsEmpty())
         return ScriptValue();
-    return ScriptValue(function, isolate);
+    return ScriptValue(ScriptState::from(context), function);
 }
 
-ScriptState* eventListenerHandlerScriptState(Frame* frame, EventListener* listener)
+ScriptState* eventListenerHandlerScriptState(LocalFrame* frame, EventListener* listener)
 {
     if (listener->type() != EventListener::JSEventListenerType)
         return 0;
     V8AbstractEventListener* v8Listener = static_cast<V8AbstractEventListener*>(listener);
     v8::HandleScope scope(toIsolate(frame));
     v8::Handle<v8::Context> v8Context = frame->script().windowShell(v8Listener->world())->context();
-    return ScriptState::forContext(v8Context);
+    return ScriptState::from(v8Context);
 }
 
 bool eventListenerHandlerLocation(Document* document, EventListener* listener, String& sourceName, String& scriptId, int& lineNumber)
@@ -146,19 +160,21 @@ bool eventListenerHandlerLocation(Document* document, EventListener* listener, S
     V8AbstractEventListener* v8Listener = static_cast<V8AbstractEventListener*>(listener);
     v8::Handle<v8::Context> context = toV8Context(document, v8Listener->world());
     v8::Context::Scope contextScope(context);
-    v8::Handle<v8::Object> object = v8Listener->getListenerObject(document);
-    if (object.IsEmpty() || !object->IsFunction())
+    v8::Local<v8::Object> object = v8Listener->getListenerObject(document);
+    if (object.IsEmpty())
         return false;
-
-    v8::Handle<v8::Function> function = v8::Handle<v8::Function>::Cast(object);
-    int scriptIdValue = function->ScriptId();
+    v8::Handle<v8::Function> function = eventListenerEffectiveFunction(scope.GetIsolate(), object);
+    if (function.IsEmpty())
+        return false;
+    v8::Handle<v8::Function> originalFunction = getBoundFunction(function);
+    int scriptIdValue = originalFunction->ScriptId();
     scriptId = String::number(scriptIdValue);
-    v8::ScriptOrigin origin = function->GetScriptOrigin();
+    v8::ScriptOrigin origin = originalFunction->GetScriptOrigin();
     if (!origin.ResourceName().IsEmpty() && origin.ResourceName()->IsString())
         sourceName = toCoreString(origin.ResourceName().As<v8::String>());
     else
         sourceName = "";
-    lineNumber = function->GetScriptLineNumber();
+    lineNumber = originalFunction->GetScriptLineNumber();
     return true;
 }
 

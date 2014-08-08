@@ -8,8 +8,7 @@
    the result can then be packed into a multi-CRX zip file.
 
    This script depends on and pulls in the translator nexes and libraries
-   from the toolchain directory (so that must be downloaded first) and
-   it depends on the pnacl_irt_shim.
+   from the PNaCl translator. It also depends on the pnacl_irt_shim.
 """
 
 import json
@@ -19,6 +18,7 @@ import os
 import platform
 import re
 import shutil
+import subprocess
 import sys
 
 J = os.path.join
@@ -38,6 +38,8 @@ def CanonicalArch(arch):
   # TODO(jvoung): be more specific about the arm architecture version?
   if arch in ('arm', 'armv7'):
     return 'arm'
+  if arch in ('mipsel'):
+    return 'mips32'
   if re.match('^i.86$', arch) or arch in ('x86_32', 'x86-32', 'ia32', 'x86'):
     return 'x86-32'
   return None
@@ -47,7 +49,7 @@ def GetBuildArch():
   return CanonicalArch(arch)
 
 BUILD_ARCH = GetBuildArch()
-ARCHES = ['x86-32', 'x86-64', 'arm']
+ARCHES = ['x86-32', 'x86-64', 'arm', 'mips32']
 
 def IsValidArch(arch):
   return arch in ARCHES
@@ -56,35 +58,8 @@ def IsValidArch(arch):
 def StandardArch(arch):
   return {'x86-32': 'i686',
           'x86-64': 'x86_64',
-          'arm'   : 'armv7'}[arch]
-
-
-######################################################################
-
-def GetNaClRoot():
-  """ Find the native_client path, relative to this script.
-      This script is in ppapi/... and native_client is a sibling of ppapi.
-  """
-  script_file = os.path.abspath(__file__)
-  def SearchForNaCl(cur_dir):
-    if cur_dir.endswith('ppapi'):
-      parent = os.path.dirname(cur_dir)
-      sibling = os.path.join(parent, 'native_client')
-      if not os.path.isdir(sibling):
-        raise Exception('Could not find native_client relative to %s' %
-                        script_file)
-      return sibling
-    # Detect when we've the root (linux is /, but windows is not...)
-    next_dir = os.path.dirname(cur_dir)
-    if cur_dir == next_dir:
-      raise Exception('Could not find native_client relative to %s' %
-                      script_file)
-    return SearchForNaCl(next_dir)
-
-  return SearchForNaCl(script_file)
-
-
-NACL_ROOT = GetNaClRoot()
+          'arm'   : 'armv7',
+          'mips32': 'mips'}[arch]
 
 
 ######################################################################
@@ -128,7 +103,8 @@ class PnaclPackaging(object):
 
   # File paths that are set from the command line.
   pnacl_template = None
-  tool_revisions = None
+  package_version_path = None
+  pnacl_package = 'pnacl_newlib'
 
   # Agreed-upon name for pnacl-specific info.
   pnacl_json = 'pnacl.json'
@@ -138,25 +114,29 @@ class PnaclPackaging(object):
     PnaclPackaging.pnacl_template = path
 
   @staticmethod
-  def SetToolsRevisionPath(path):
-    PnaclPackaging.tool_revisions = path
+  def SetPackageVersionPath(path):
+    PnaclPackaging.package_version_path = path
+
+  @staticmethod
+  def SetPnaclPackageName(name):
+    PnaclPackaging.pnacl_package = name
 
   @staticmethod
   def PnaclToolsRevision():
-    with open(PnaclPackaging.tool_revisions, 'r') as f:
-      for line in f.read().splitlines():
-        if line.startswith('PNACL_VERSION'):
-          _, version = line.split('=')
-          # CWS happens to use version quads, so make it a quad too.
-          # However, each component of the quad is limited to 64K max.
-          # Try to handle a bit more.
-          max_version = 2 ** 16
-          version = int(version)
-          version_more = version / max_version
-          version = version % max_version
-          return '0.1.%d.%d' % (version_more, version)
-    raise Exception('Cannot find PNACL_VERSION in TOOL_REVISIONS file: %s' %
-                    PnaclPackaging.tool_revisions)
+    pkg_ver_cmd = [sys.executable, PnaclPackaging.package_version_path,
+                   'getrevision',
+                   '--revision-package', PnaclPackaging.pnacl_package]
+
+    version = subprocess.check_output(pkg_ver_cmd).strip()
+
+    # CWS happens to use version quads, so make it a quad too.
+    # However, each component of the quad is limited to 64K max.
+    # Try to handle a bit more.
+    max_version = 2 ** 16
+    version = int(version)
+    version_more = version / max_version
+    version = version % max_version
+    return '0.1.%d.%d' % (version_more, version)
 
   @staticmethod
   def GeneratePnaclInfo(target_dir, abi_version, arch):
@@ -177,12 +157,16 @@ class PnaclPackaging(object):
 ######################################################################
 
 class PnaclDirs(object):
-  toolchain_dir = J(NACL_ROOT, 'toolchain')
-  output_dir = J(toolchain_dir, 'pnacl-package')
+  translator_dir = None
+  output_dir = None
+
+  @staticmethod
+  def SetTranslatorRoot(d):
+    PnaclDirs.translator_dir = d
 
   @staticmethod
   def TranslatorRoot():
-    return J(PnaclDirs.toolchain_dir, 'pnacl_translator')
+    return PnaclDirs.translator_dir
 
   @staticmethod
   def LibDir(target_arch):
@@ -190,8 +174,7 @@ class PnaclDirs(object):
 
   @staticmethod
   def SandboxedCompilerDir(target_arch):
-    return J(PnaclDirs.toolchain_dir,
-             'pnacl_translator', StandardArch(target_arch), 'bin')
+    return J(PnaclDirs.TranslatorRoot(), StandardArch(target_arch), 'bin')
 
   @staticmethod
   def SetOutputDir(d):
@@ -253,6 +236,9 @@ def CopyFlattenDirsAndPrefix(src_dir, arch, dest_dir):
   When copying, also rename the files such that they match the white-listing
   pattern in chrome/browser/nacl_host/nacl_file_host.cc.
   """
+  if not os.path.isdir(src_dir):
+    raise Exception('Copy dir failed, directory does not exist: %s' % src_dir)
+
   for (root, dirs, files) in os.walk(src_dir, followlinks=True):
     for f in files:
       # Assume a flat directory.
@@ -326,8 +312,12 @@ def Main():
   parser.add_option('--info_template_path',
                     dest='info_template_path', default=None,
                     help='Path of the info template file')
-  parser.add_option('--tool_revisions_path', dest='tool_revisions_path',
-                    default=None, help='Location of NaCl TOOL_REVISIONS file.')
+  parser.add_option('--package_version_path', dest='package_version_path',
+                    default=None, help='Path to package_version.py script.')
+  parser.add_option('--pnacl_package_name', dest='pnacl_package_name',
+                    default=None, help='Name of PNaCl package.')
+  parser.add_option('--pnacl_translator_path', dest='pnacl_translator_path',
+                    default=None, help='Location of PNaCl translator.')
   parser.add_option('-v', '--verbose', dest='verbose', default=False,
                     action='store_true',
                     help='Print verbose debug messages.')
@@ -341,17 +331,27 @@ def Main():
                % (options, args))
 
   # Set destination directory before doing any cleaning, etc.
-  if options.dest:
-    PnaclDirs.SetOutputDir(options.dest)
+  if options.dest is None:
+    raise Exception('Destination path must be set.')
+  PnaclDirs.SetOutputDir(options.dest)
 
   if options.clean:
     Clean()
 
+  if options.pnacl_translator_path is None:
+    raise Exception('PNaCl translator path must be set.')
+  PnaclDirs.SetTranslatorRoot(options.pnacl_translator_path)
+
   if options.info_template_path:
     PnaclPackaging.SetPnaclInfoTemplatePath(options.info_template_path)
 
-  if options.tool_revisions_path:
-    PnaclPackaging.SetToolsRevisionPath(options.tool_revisions_path)
+  if options.package_version_path:
+    PnaclPackaging.SetPackageVersionPath(options.package_version_path)
+  else:
+    raise Exception('Package verison script must be specified.')
+
+  if options.pnacl_package_name:
+    PnaclPackaging.SetPnaclPackageName(options.pnacl_package_name)
 
   lib_overrides = {}
   for o in options.lib_overrides:

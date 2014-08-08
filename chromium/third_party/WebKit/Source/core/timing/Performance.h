@@ -39,6 +39,7 @@
 #include "core/timing/PerformanceEntry.h"
 #include "core/timing/PerformanceNavigation.h"
 #include "core/timing/PerformanceTiming.h"
+#include "platform/heap/Handle.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
@@ -53,26 +54,32 @@ class ResourceResponse;
 class ResourceTimingInfo;
 class UserTiming;
 
-class Performance : public ScriptWrappable, public RefCounted<Performance>, public DOMWindowProperty, public EventTargetWithInlineData {
+typedef WillBeHeapVector<RefPtrWillBeMember<PerformanceEntry> > PerformanceEntryVector;
+
+class Performance FINAL : public RefCountedWillBeRefCountedGarbageCollected<Performance>, public ScriptWrappable, public DOMWindowProperty, public EventTargetWithInlineData {
     REFCOUNTED_EVENT_TARGET(Performance);
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(Performance);
 public:
-    static PassRefPtr<Performance> create(Frame* frame) { return adoptRef(new Performance(frame)); }
-    ~Performance();
+    static PassRefPtrWillBeRawPtr<Performance> create(LocalFrame* frame)
+    {
+        return adoptRefWillBeRefCountedGarbageCollected(new Performance(frame));
+    }
+    virtual ~Performance();
 
     virtual const AtomicString& interfaceName() const OVERRIDE;
     virtual ExecutionContext* executionContext() const OVERRIDE;
 
-    PassRefPtr<MemoryInfo> memory() const;
+    PassRefPtrWillBeRawPtr<MemoryInfo> memory() const;
     PerformanceNavigation* navigation() const;
     PerformanceTiming* timing() const;
     double now() const;
 
-    Vector<RefPtr<PerformanceEntry> > getEntries() const;
-    Vector<RefPtr<PerformanceEntry> > getEntriesByType(const String& entryType);
-    Vector<RefPtr<PerformanceEntry> > getEntriesByName(const String& name, const String& entryType);
+    PerformanceEntryVector getEntries() const;
+    PerformanceEntryVector getEntriesByType(const String& entryType);
+    PerformanceEntryVector getEntriesByName(const String& name, const String& entryType);
 
     void webkitClearResourceTimings();
-    void webkitSetResourceTimingBufferSize(unsigned int);
+    void webkitSetResourceTimingBufferSize(unsigned);
 
     DEFINE_ATTRIBUTE_EVENT_LISTENER(webkitresourcetimingbufferfull);
 
@@ -84,20 +91,22 @@ public:
     void measure(const String& measureName, const String& startMark, const String& endMark, ExceptionState&);
     void clearMeasures(const String& measureName);
 
+    virtual void trace(Visitor*) OVERRIDE;
+
 private:
-    explicit Performance(Frame*);
+    explicit Performance(LocalFrame*);
 
     bool isResourceTimingBufferFull();
-    void addResourceTimingBuffer(PassRefPtr<PerformanceEntry>);
+    void addResourceTimingBuffer(PassRefPtrWillBeRawPtr<PerformanceEntry>);
 
-    mutable RefPtr<PerformanceNavigation> m_navigation;
-    mutable RefPtr<PerformanceTiming> m_timing;
+    mutable RefPtrWillBeMember<PerformanceNavigation> m_navigation;
+    mutable RefPtrWillBeMember<PerformanceTiming> m_timing;
 
-    Vector<RefPtr<PerformanceEntry> > m_resourceTimingBuffer;
+    PerformanceEntryVector m_resourceTimingBuffer;
     unsigned m_resourceTimingBufferSize;
     double m_referenceTime;
 
-    RefPtr<UserTiming> m_userTiming;
+    RefPtrWillBeMember<UserTiming> m_userTiming;
 };
 
 }

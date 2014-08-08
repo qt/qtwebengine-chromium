@@ -26,26 +26,29 @@
 #ifndef PerspectiveTransformOperation_h
 #define PerspectiveTransformOperation_h
 
-#include "platform/Length.h"
-#include "platform/LengthFunctions.h"
 #include "platform/transforms/TransformOperation.h"
 
 namespace WebCore {
 
 class PLATFORM_EXPORT PerspectiveTransformOperation : public TransformOperation {
 public:
-    static PassRefPtr<PerspectiveTransformOperation> create(const Length& p)
+    static PassRefPtr<PerspectiveTransformOperation> create(double p)
     {
         return adoptRef(new PerspectiveTransformOperation(p));
     }
 
-    Length perspective() const { return m_p; }
+    double perspective() const { return m_p; }
+
+    virtual bool canBlendWith(const TransformOperation& other) const
+    {
+        return isSameType(other);
+    }
 
 private:
-    virtual bool isIdentity() const { return !floatValueForLength(m_p, 1); }
+    virtual bool isIdentity() const OVERRIDE { return !m_p; }
     virtual OperationType type() const OVERRIDE { return Perspective; }
 
-    virtual bool operator==(const TransformOperation& o) const
+    virtual bool operator==(const TransformOperation& o) const OVERRIDE
     {
         if (!isSameType(o))
             return false;
@@ -53,20 +56,19 @@ private:
         return m_p == p->m_p;
     }
 
-    virtual void apply(TransformationMatrix& transform, const FloatSize&) const
+    virtual void apply(TransformationMatrix& transform, const FloatSize&) const OVERRIDE
     {
-        transform.applyPerspective(floatValueForLength(m_p, 1));
+        transform.applyPerspective(m_p);
     }
 
-    virtual PassRefPtr<TransformOperation> blend(const TransformOperation* from, double progress, bool blendToIdentity = false);
+    virtual PassRefPtr<TransformOperation> blend(const TransformOperation* from, double progress, bool blendToIdentity = false) OVERRIDE;
 
-    PerspectiveTransformOperation(const Length& p)
+    PerspectiveTransformOperation(double p)
         : m_p(p)
     {
-        ASSERT(p.isFixed());
     }
 
-    Length m_p;
+    double m_p;
 };
 
 } // namespace WebCore

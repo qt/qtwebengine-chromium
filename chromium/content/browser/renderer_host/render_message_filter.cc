@@ -34,7 +34,7 @@
 #include "content/common/cookie_data.h"
 #include "content/common/desktop_notification_messages.h"
 #include "content/common/frame_messages.h"
-#include "content/common/gpu/client/gpu_memory_buffer_impl.h"
+#include "content/common/host_shared_bitmap_manager.h"
 #include "content/common/media/media_param_traits.h"
 #include "content/common/view_messages.h"
 #include "content/public/browser/browser_child_process_host.h"
@@ -61,7 +61,7 @@
 #include "net/base/mime_util.h"
 #include "net/base/request_priority.h"
 #include "net/cookies/canonical_cookie.h"
-#include "net/cookies/cookie_monster.h"
+#include "net/cookies/cookie_store.h"
 #include "net/http/http_cache.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
@@ -70,9 +70,7 @@
 #include "ui/gfx/color_profile.h"
 
 #if defined(OS_MACOSX)
-#include "content/common/gpu/client/gpu_memory_buffer_impl_io_surface.h"
 #include "content/common/mac/font_descriptor.h"
-#include "ui/gl/io_surface_support_mac.h"
 #else
 #include "gpu/GLES2/gl2extchromium.h"
 #include "third_party/khronos/GLES2/gl2.h"
@@ -82,8 +80,8 @@
 #include "base/file_descriptor_posix.h"
 #endif
 #if defined(OS_WIN)
-#include "content/browser/renderer_host/backing_store_win.h"
 #include "content/common/font_cache_dispatcher_win.h"
+#include "content/common/sandbox_win.h"
 #endif
 #if defined(OS_ANDROID)
 #include "media/base/android/webaudio_media_codec_bridge.h"
@@ -101,6 +99,13 @@ const int kPluginsRefreshThresholdInSeconds = 3;
 // When two CPU usage queries arrive within this interval, we sample the CPU
 // usage only once and send it as a response for both queries.
 static const int64 kCPUUsageSampleIntervalMs = 900;
+
+const uint32 kFilteredMessageClasses[] = {
+  ChildProcessMsgStart,
+  DesktopNotificationMsgStart,
+  FrameMsgStart,
+  ViewMsgStart,
+};
 
 #if defined(OS_WIN)
 // On Windows, |g_color_profile| can run on an arbitrary background thread.
@@ -210,23 +215,6 @@ class OpenChannelToPpapiBrokerCallback
   int routing_id_;
 };
 
-#if defined(OS_MACOSX)
-void AddBooleanValue(CFMutableDictionaryRef dictionary,
-                     const CFStringRef key,
-                     bool value) {
-  CFDictionaryAddValue(
-      dictionary, key, value ? kCFBooleanTrue : kCFBooleanFalse);
-}
-
-void AddIntegerValue(CFMutableDictionaryRef dictionary,
-                     const CFStringRef key,
-                     int32 value) {
-  base::ScopedCFTypeRef<CFNumberRef> number(
-      CFNumberCreate(NULL, kCFNumberSInt32Type, &value));
-  CFDictionaryAddValue(dictionary, key, number.get());
-}
-#endif
-
 }  // namespace
 
 class RenderMessageFilter::OpenChannelToNpapiPluginCallback
@@ -313,7 +301,6 @@ class RenderMessageFilter::OpenChannelToNpapiPluginCallback
 
 RenderMessageFilter::RenderMessageFilter(
     int render_process_id,
-    bool is_guest,
     PluginServiceImpl* plugin_service,
     BrowserContext* browser_context,
     net::URLRequestContextGetter* request_context,
@@ -321,7 +308,9 @@ RenderMessageFilter::RenderMessageFilter(
     media::AudioManager* audio_manager,
     MediaInternals* media_internals,
     DOMStorageContextWrapper* dom_storage_context)
-    : resource_dispatcher_host_(ResourceDispatcherHostImpl::Get()),
+    : BrowserMessageFilter(
+          kFilteredMessageClasses, arraysize(kFilteredMessageClasses)),
+      resource_dispatcher_host_(ResourceDispatcherHostImpl::Get()),
       plugin_service_(plugin_service),
       profile_data_directory_(browser_context->GetPath()),
       request_context_(request_context),
@@ -330,7 +319,6 @@ RenderMessageFilter::RenderMessageFilter(
       incognito_(browser_context->IsOffTheRecord()),
       dom_storage_context_(dom_storage_context),
       render_process_id_(render_process_id),
-      is_guest_(is_guest),
       cpu_usage_(0),
       audio_manager_(audio_manager),
       media_internals_(media_internals) {
@@ -341,8 +329,9 @@ RenderMessageFilter::RenderMessageFilter(
 
 RenderMessageFilter::~RenderMessageFilter() {
   // This function should be called on the IO thread.
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DCHECK(plugin_host_clients_.empty());
+  HostSharedBitmapManager::current()->ProcessRemoved(PeerHandle());
 }
 
 void RenderMessageFilter::OnChannelClosing() {
@@ -377,10 +366,9 @@ void RenderMessageFilter::OnChannelConnected(int32 peer_id) {
   cpu_usage_sample_time_ = base::TimeTicks::Now();
 }
 
-bool RenderMessageFilter::OnMessageReceived(const IPC::Message& message,
-                                            bool* message_was_ok) {
+bool RenderMessageFilter::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
-  IPC_BEGIN_MESSAGE_MAP_EX(RenderMessageFilter, message, *message_was_ok)
+  IPC_BEGIN_MESSAGE_MAP(RenderMessageFilter, message)
 #if defined(OS_WIN)
     IPC_MESSAGE_HANDLER(ViewHostMsg_PreCacheFontCharacters,
                         OnPreCacheFontCharacters)
@@ -415,16 +403,21 @@ bool RenderMessageFilter::OnMessageReceived(const IPC::Message& message,
     IPC_MESSAGE_HANDLER(ViewHostMsg_OpenChannelToPpapiBroker,
                         OnOpenChannelToPpapiBroker)
 #endif
+    IPC_MESSAGE_HANDLER_GENERIC(ViewHostMsg_SwapCompositorFrame,
+        render_widget_helper_->DidReceiveBackingStoreMsg(message))
     IPC_MESSAGE_HANDLER_GENERIC(ViewHostMsg_UpdateRect,
         render_widget_helper_->DidReceiveBackingStoreMsg(message))
-    IPC_MESSAGE_HANDLER(ViewHostMsg_UpdateIsDelayed, OnUpdateIsDelayed)
     IPC_MESSAGE_HANDLER(DesktopNotificationHostMsg_CheckPermission,
                         OnCheckNotificationPermission)
     IPC_MESSAGE_HANDLER(ChildProcessHostMsg_SyncAllocateSharedMemory,
                         OnAllocateSharedMemory)
-    IPC_MESSAGE_HANDLER(ChildProcessHostMsg_SyncAllocateGpuMemoryBuffer,
-                        OnAllocateGpuMemoryBuffer)
-#if defined(OS_POSIX) && !defined(TOOLKIT_GTK) && !defined(OS_ANDROID)
+    IPC_MESSAGE_HANDLER_DELAY_REPLY(
+        ChildProcessHostMsg_SyncAllocateSharedBitmap, OnAllocateSharedBitmap)
+    IPC_MESSAGE_HANDLER(ChildProcessHostMsg_AllocatedSharedBitmap,
+                        OnAllocatedSharedBitmap)
+    IPC_MESSAGE_HANDLER(ChildProcessHostMsg_DeletedSharedBitmap,
+                        OnDeletedSharedBitmap)
+#if defined(OS_POSIX) && !defined(OS_ANDROID)
     IPC_MESSAGE_HANDLER(ViewHostMsg_AllocTransportDIB, OnAllocTransportDIB)
     IPC_MESSAGE_HANDLER(ViewHostMsg_FreeTransportDIB, OnFreeTransportDIB)
 #endif
@@ -445,7 +438,7 @@ bool RenderMessageFilter::OnMessageReceived(const IPC::Message& message,
     IPC_MESSAGE_HANDLER(ViewHostMsg_RunWebAudioMediaCodec, OnWebAudioMediaCodec)
 #endif
     IPC_MESSAGE_UNHANDLED(handled = false)
-  IPC_END_MESSAGE_MAP_EX()
+  IPC_END_MESSAGE_MAP()
 
   return handled;
 }
@@ -461,11 +454,9 @@ base::TaskRunner* RenderMessageFilter::OverrideTaskRunnerForMessage(
   if (message.type() == ViewHostMsg_GetMonitorColorProfile::ID)
     return BrowserThread::GetBlockingPool();
 #endif
-#if defined(OS_MACOSX)
-  // OSX CoreAudio calls must all happen on the main thread.
+  // Always query audio device parameters on the audio thread.
   if (message.type() == ViewHostMsg_GetAudioHardwareConfig::ID)
-    return audio_manager_->GetMessageLoop().get();
-#endif
+    return audio_manager_->GetTaskRunner().get();
   return NULL;
 }
 
@@ -506,7 +497,6 @@ void RenderMessageFilter::OnCreateWindow(
           params.opener_suppressed,
           resource_context_,
           render_process_id_,
-          is_guest_,
           params.opener_id,
           &no_javascript_access);
 
@@ -549,7 +539,7 @@ void RenderMessageFilter::OnCreateFullscreenWidget(int opener_id,
 
 void RenderMessageFilter::OnGetProcessMemorySizes(size_t* private_bytes,
                                                   size_t* shared_bytes) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   using base::ProcessMetrics;
 #if !defined(OS_MACOSX) || defined(OS_IOS)
   scoped_ptr<ProcessMetrics> metrics(ProcessMetrics::CreateProcessMetrics(
@@ -564,7 +554,7 @@ void RenderMessageFilter::OnGetProcessMemorySizes(size_t* private_bytes,
   }
 }
 
-void RenderMessageFilter::OnSetCookie(const IPC::Message& message,
+void RenderMessageFilter::OnSetCookie(int render_frame_id,
                                       const GURL& url,
                                       const GURL& first_party_for_cookies,
                                       const std::string& cookie) {
@@ -575,17 +565,17 @@ void RenderMessageFilter::OnSetCookie(const IPC::Message& message,
 
   net::CookieOptions options;
   if (GetContentClient()->browser()->AllowSetCookie(
-          url, first_party_for_cookies, cookie,
-          resource_context_, render_process_id_, message.routing_id(),
-          &options)) {
-    net::URLRequestContext* context = GetRequestContextForURL(url);
+          url, first_party_for_cookies, cookie, resource_context_,
+          render_process_id_, render_frame_id, &options)) {
+    net::CookieStore* cookie_store = GetCookieStoreForURL(url);
     // Pass a null callback since we don't care about when the 'set' completes.
-    context->cookie_store()->SetCookieWithOptionsAsync(
-        url, cookie, options, net::CookieMonster::SetCookiesCallback());
+    cookie_store->SetCookieWithOptionsAsync(
+        url, cookie, options, net::CookieStore::SetCookiesCallback());
   }
 }
 
-void RenderMessageFilter::OnGetCookies(const GURL& url,
+void RenderMessageFilter::OnGetCookies(int render_frame_id,
+                                       const GURL& url,
                                        const GURL& first_party_for_cookies,
                                        IPC::Message* reply_msg) {
   ChildProcessSecurityPolicyImpl* policy =
@@ -601,12 +591,11 @@ void RenderMessageFilter::OnGetCookies(const GURL& url,
   base::strlcpy(url_buf, url.spec().c_str(), arraysize(url_buf));
   base::debug::Alias(url_buf);
 
-  net::URLRequestContext* context = GetRequestContextForURL(url);
-  net::CookieMonster* cookie_monster =
-      context->cookie_store()->GetCookieMonster();
-  cookie_monster->GetAllCookiesForURLAsync(
-      url, base::Bind(&RenderMessageFilter::CheckPolicyForCookies, this, url,
-                      first_party_for_cookies, reply_msg));
+  net::CookieStore* cookie_store = GetCookieStoreForURL(url);
+  cookie_store->GetAllCookiesForURLAsync(
+      url, base::Bind(&RenderMessageFilter::CheckPolicyForCookies, this,
+                      render_frame_id, url, first_party_for_cookies,
+                      reply_msg));
 }
 
 void RenderMessageFilter::OnGetRawCookies(
@@ -628,10 +617,8 @@ void RenderMessageFilter::OnGetRawCookies(
   // We check policy here to avoid sending back cookies that would not normally
   // be applied to outbound requests for the given URL.  Since this cookie info
   // is visible in the developer tools, it is helpful to make it match reality.
-  net::URLRequestContext* context = GetRequestContextForURL(url);
-  net::CookieMonster* cookie_monster =
-      context->cookie_store()->GetCookieMonster();
-  cookie_monster->GetAllCookiesForURLAsync(
+  net::CookieStore* cookie_store = GetCookieStoreForURL(url);
+  cookie_store->GetAllCookiesForURLAsync(
       url, base::Bind(&RenderMessageFilter::SendGetRawCookiesResponse,
                       this, reply_msg));
 }
@@ -643,11 +630,12 @@ void RenderMessageFilter::OnDeleteCookie(const GURL& url,
   if (!policy->CanAccessCookiesForOrigin(render_process_id_, url))
     return;
 
-  net::URLRequestContext* context = GetRequestContextForURL(url);
-  context->cookie_store()->DeleteCookieAsync(url, cookie_name, base::Closure());
+  net::CookieStore* cookie_store = GetCookieStoreForURL(url);
+  cookie_store->DeleteCookieAsync(url, cookie_name, base::Closure());
 }
 
 void RenderMessageFilter::OnCookiesEnabled(
+    int render_frame_id,
     const GURL& url,
     const GURL& first_party_for_cookies,
     bool* cookies_enabled) {
@@ -656,7 +644,7 @@ void RenderMessageFilter::OnCookiesEnabled(
   // host.
   *cookies_enabled = GetContentClient()->browser()->AllowGetCookie(
       url, first_party_for_cookies, net::CookieList(), resource_context_,
-      render_process_id_, MSG_ROUTING_CONTROL);
+      render_process_id_, render_frame_id);
 }
 
 #if defined(OS_MACOSX)
@@ -859,21 +847,29 @@ void RenderMessageFilter::OnGetAudioHardwareConfig(
 #if defined(OS_WIN)
 void RenderMessageFilter::OnGetMonitorColorProfile(std::vector<char>* profile) {
   DCHECK(!BrowserThread::CurrentlyOn(BrowserThread::IO));
-  if (BackingStoreWin::ColorManagementEnabled())
-    return;
   *profile = g_color_profile.Get().profile();
 }
 #endif
 
-void RenderMessageFilter::OnDownloadUrl(const IPC::Message& message,
+void RenderMessageFilter::OnDownloadUrl(int render_view_id,
                                         const GURL& url,
                                         const Referrer& referrer,
-                                        const base::string16& suggested_name) {
+                                        const base::string16& suggested_name,
+                                        const bool use_prompt) {
   scoped_ptr<DownloadSaveInfo> save_info(new DownloadSaveInfo());
   save_info->suggested_name = suggested_name;
+  save_info->prompt_for_save_location = use_prompt;
+
+  // There may be a special cookie store that we could use for this download,
+  // rather than the default one. Since this feature is generally only used for
+  // proper render views, and not downloads, we do not need to retrieve the
+  // special cookie store here, but just initialize the request to use the
+  // default cookie store.
+  // TODO(tburkard): retrieve the appropriate special cookie store, if this
+  // is ever to be used for downloads as well.
   scoped_ptr<net::URLRequest> request(
       resource_context_->GetRequestContext()->CreateRequest(
-          url, net::DEFAULT_PRIORITY, NULL));
+          url, net::DEFAULT_PRIORITY, NULL, NULL));
   RecordDownloadSource(INITIATED_BY_RENDERER);
   resource_dispatcher_host_->BeginDownload(
       request.Pass(),
@@ -881,7 +877,7 @@ void RenderMessageFilter::OnDownloadUrl(const IPC::Message& message,
       true,  // is_content_initiated
       resource_context_,
       render_process_id_,
-      message.routing_id(),
+      render_view_id,
       false,
       save_info.Pass(),
       content::DownloadItem::kInvalidId,
@@ -906,20 +902,70 @@ void RenderMessageFilter::OnAllocateSharedMemory(
       buffer_size, PeerHandle(), handle);
 }
 
-net::URLRequestContext* RenderMessageFilter::GetRequestContextForURL(
+void RenderMessageFilter::AllocateSharedBitmapOnFileThread(
+    uint32 buffer_size,
+    const cc::SharedBitmapId& id,
+    IPC::Message* reply_msg) {
+  base::SharedMemoryHandle handle;
+  HostSharedBitmapManager::current()->AllocateSharedBitmapForChild(
+      PeerHandle(), buffer_size, id, &handle);
+  ChildProcessHostMsg_SyncAllocateSharedBitmap::WriteReplyParams(reply_msg,
+                                                                 handle);
+  Send(reply_msg);
+}
+
+void RenderMessageFilter::OnAllocateSharedBitmap(uint32 buffer_size,
+                                                 const cc::SharedBitmapId& id,
+                                                 IPC::Message* reply_msg) {
+  BrowserThread::PostTask(
+      BrowserThread::FILE_USER_BLOCKING,
+      FROM_HERE,
+      base::Bind(&RenderMessageFilter::AllocateSharedBitmapOnFileThread,
+                 this,
+                 buffer_size,
+                 id,
+                 reply_msg));
+}
+
+void RenderMessageFilter::OnAllocatedSharedBitmap(
+    size_t buffer_size,
+    const base::SharedMemoryHandle& handle,
+    const cc::SharedBitmapId& id) {
+  HostSharedBitmapManager::current()->ChildAllocatedSharedBitmap(
+      buffer_size, handle, PeerHandle(), id);
+}
+
+void RenderMessageFilter::OnDeletedSharedBitmap(const cc::SharedBitmapId& id) {
+  HostSharedBitmapManager::current()->ChildDeletedSharedBitmap(id);
+}
+
+net::CookieStore* RenderMessageFilter::GetCookieStoreForURL(
     const GURL& url) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   net::URLRequestContext* context =
       GetContentClient()->browser()->OverrideRequestContextForURL(
           url, resource_context_);
-  if (!context)
-    context = request_context_->GetURLRequestContext();
 
-  return context;
+  // If we should use a special URLRequestContext rather than the default one,
+  // return the cookie store of that special URLRequestContext.
+  if (context)
+    return context->cookie_store();
+
+  // Otherwise, if there is a special cookie store to be used for this process,
+  // return that cookie store.
+  net::CookieStore* cookie_store =
+      GetContentClient()->browser()->OverrideCookieStoreForRenderProcess(
+          render_process_id_);
+  if (cookie_store)
+    return cookie_store;
+
+  // Otherwise, return the cookie store of the default request context used
+  // for this renderer.
+  return request_context_->GetURLRequestContext()->cookie_store();
 }
 
-#if defined(OS_POSIX) && !defined(TOOLKIT_GTK) && !defined(OS_ANDROID)
+#if defined(OS_POSIX) && !defined(OS_ANDROID)
 void RenderMessageFilter::OnAllocTransportDIB(
     uint32 size, bool cache_in_browser, TransportDIB::Handle* handle) {
   render_widget_helper_->AllocTransportDIB(size, cache_in_browser, handle);
@@ -1034,18 +1080,19 @@ void RenderMessageFilter::OnMediaLogEvents(
 }
 
 void RenderMessageFilter::CheckPolicyForCookies(
+    int render_frame_id,
     const GURL& url,
     const GURL& first_party_for_cookies,
     IPC::Message* reply_msg,
     const net::CookieList& cookie_list) {
-  net::URLRequestContext* context = GetRequestContextForURL(url);
+  net::CookieStore* cookie_store = GetCookieStoreForURL(url);
   // Check the policy for get cookies, and pass cookie_list to the
   // TabSpecificContentSetting for logging purpose.
   if (GetContentClient()->browser()->AllowGetCookie(
           url, first_party_for_cookies, cookie_list, resource_context_,
-          render_process_id_, reply_msg->routing_id())) {
+          render_process_id_, render_frame_id)) {
     // Gets the cookies from cookie store if allowed.
-    context->cookie_store()->GetCookiesWithOptionsAsync(
+    cookie_store->GetCookiesWithOptionsAsync(
         url, net::CookieOptions(),
         base::Bind(&RenderMessageFilter::SendGetCookiesResponse,
                    this, reply_msg));
@@ -1072,22 +1119,9 @@ void RenderMessageFilter::SendGetRawCookiesResponse(
 
 void RenderMessageFilter::OnCompletedOpenChannelToNpapiPlugin(
     OpenChannelToNpapiPluginCallback* client) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DCHECK(ContainsKey(plugin_host_clients_, client));
   plugin_host_clients_.erase(client);
-}
-
-void RenderMessageFilter::OnUpdateIsDelayed(const IPC::Message& msg) {
-  // When not in accelerated compositing mode, in certain cases (e.g. waiting
-  // for a resize or if no backing store) the RenderWidgetHost is blocking the
-  // UI thread for some time, waiting for an UpdateRect from the renderer. If we
-  // are going to switch to accelerated compositing, the GPU process may need
-  // round-trips to the UI thread before finishing the frame, causing deadlocks
-  // if we delay the UpdateRect until we receive the OnSwapBuffersComplete. So
-  // the renderer sent us this message, so that we can unblock the UI thread.
-  // We will simply re-use the UpdateRect unblock mechanism, just with a
-  // different message.
-  render_widget_helper_->DidReceiveBackingStoreMsg(msg);
 }
 
 void RenderMessageFilter::OnAre3DAPIsBlocked(int render_view_id,
@@ -1139,6 +1173,11 @@ void RenderMessageFilter::OnDidLose3DContext(
 #if defined(OS_WIN)
 void RenderMessageFilter::OnPreCacheFontCharacters(const LOGFONT& font,
                                                    const base::string16& str) {
+  // TODO(scottmg): pdf/ppapi still require the renderer to be able to precache
+  // GDI fonts (http://crbug.com/383227), even when using DirectWrite.
+  // Eventually this shouldn't be added and should be moved to
+  // FontCacheDispatcher too. http://crbug.com/356346.
+
   // First, comments from FontCacheDispatcher::OnPreCacheFont do apply here too.
   // Except that for True Type fonts,
   // GetTextMetrics will not load the font in memory.
@@ -1180,80 +1219,5 @@ void RenderMessageFilter::OnWebAudioMediaCodec(
       true);
 }
 #endif
-
-void RenderMessageFilter::OnAllocateGpuMemoryBuffer(
-    uint32 width,
-    uint32 height,
-    uint32 internalformat,
-    gfx::GpuMemoryBufferHandle* handle) {
-  if (!GpuMemoryBufferImpl::IsFormatValid(internalformat)) {
-    handle->type = gfx::EMPTY_BUFFER;
-    return;
-  }
-
-#if defined(OS_MACOSX)
-  if (GpuMemoryBufferImplIOSurface::IsFormatSupported(internalformat)) {
-    IOSurfaceSupport* io_surface_support = IOSurfaceSupport::Initialize();
-    if (io_surface_support) {
-      base::ScopedCFTypeRef<CFMutableDictionaryRef> properties;
-      properties.reset(
-          CFDictionaryCreateMutable(kCFAllocatorDefault,
-                                    0,
-                                    &kCFTypeDictionaryKeyCallBacks,
-                                    &kCFTypeDictionaryValueCallBacks));
-      AddIntegerValue(properties,
-                      io_surface_support->GetKIOSurfaceWidth(),
-                      width);
-      AddIntegerValue(properties,
-                      io_surface_support->GetKIOSurfaceHeight(),
-                      height);
-      AddIntegerValue(properties,
-                      io_surface_support->GetKIOSurfaceBytesPerElement(),
-                      GpuMemoryBufferImpl::BytesPerPixel(internalformat));
-      AddIntegerValue(properties,
-                      io_surface_support->GetKIOSurfacePixelFormat(),
-                      GpuMemoryBufferImplIOSurface::PixelFormat(
-                          internalformat));
-      // TODO(reveman): Remove this when using a mach_port_t to transfer
-      // IOSurface to renderer process. crbug.com/323304
-      AddBooleanValue(properties,
-                      io_surface_support->GetKIOSurfaceIsGlobal(),
-                      true);
-
-      base::ScopedCFTypeRef<CFTypeRef> io_surface(
-          io_surface_support->IOSurfaceCreate(properties));
-      if (io_surface) {
-        handle->type = gfx::IO_SURFACE_BUFFER;
-        handle->io_surface_id = io_surface_support->IOSurfaceGetID(io_surface);
-
-        // TODO(reveman): This makes the assumption that the renderer will
-        // grab a reference to the surface before sending another message.
-        // crbug.com/325045
-        last_io_surface_ = io_surface;
-        return;
-      }
-    }
-  }
-#endif
-
-  uint64 stride = static_cast<uint64>(width) *
-      GpuMemoryBufferImpl::BytesPerPixel(internalformat);
-  if (stride > std::numeric_limits<uint32>::max()) {
-    handle->type = gfx::EMPTY_BUFFER;
-    return;
-  }
-
-  uint64 buffer_size = stride * static_cast<uint64>(height);
-  if (buffer_size > std::numeric_limits<size_t>::max()) {
-    handle->type = gfx::EMPTY_BUFFER;
-    return;
-  }
-
-  // Fallback to fake GpuMemoryBuffer that is backed by shared memory and
-  // requires an upload before it can be used as a texture.
-  handle->type = gfx::SHARED_MEMORY_BUFFER;
-  ChildProcessHostImpl::AllocateSharedMemory(
-      static_cast<size_t>(buffer_size), PeerHandle(), &handle->handle);
-}
 
 }  // namespace content

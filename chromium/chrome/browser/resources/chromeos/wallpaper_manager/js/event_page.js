@@ -113,7 +113,7 @@ SurpriseWallpaper.prototype.updateSurpriseWallpaper = function(opt_rss) {
  */
 SurpriseWallpaper.prototype.updateRandomWallpaper_ = function() {
   var self = this;
-  Constants.WallpaperLocalStorage.get(
+  Constants.WallpaperSyncStorage.get(
       Constants.AccessLastSurpriseWallpaperChangedDate, function(items) {
     var dateString = new Date().toDateString();
     // At most one random wallpaper per day.
@@ -149,7 +149,7 @@ SurpriseWallpaper.prototype.setRandomWallpaper_ = function(dateString) {
         WallpaperUtil.saveToStorage(
             Constants.AccessLastSurpriseWallpaperChangedDate,
             dateString,
-            false);
+            true);
       }
       WallpaperUtil.setOnlineWallpaper(wallpaperURL, wallpaper.default_layout,
           onSuccess, self.retryLater_.bind(self));
@@ -190,7 +190,7 @@ SurpriseWallpaper.prototype.disable = function() {
   chrome.alarms.clearAll();
   // Makes last changed date invalid.
   WallpaperUtil.saveToStorage(Constants.AccessLastSurpriseWallpaperChangedDate,
-                              '', false);
+                              '', true);
 };
 
 /**
@@ -224,10 +224,7 @@ chrome.app.runtime.onLaunched.addListener(function() {
     frame: 'none',
     width: WALLPAPER_PICKER_WIDTH,
     height: WALLPAPER_PICKER_HEIGHT,
-    minWidth: WALLPAPER_PICKER_WIDTH,
-    maxWidth: WALLPAPER_PICKER_WIDTH,
-    minHeight: WALLPAPER_PICKER_HEIGHT,
-    maxHeight: WALLPAPER_PICKER_HEIGHT,
+    resizable: false,
     transparentBackground: true
   }, function(w) {
     wallpaperPickerWindow = w;
@@ -274,6 +271,3 @@ chrome.storage.onChanged.addListener(function(changes, namespace) {
   }
 });
 
-chrome.alarms.onAlarm.addListener(function() {
-  SurpriseWallpaper.getInstance().next();
-});

@@ -66,9 +66,6 @@ cr.define('options', function() {
       imageGrid.addEventListener('photoupdated',
                                  this.handlePhotoTaken_.bind(this));
 
-      // Set the title for "Take Photo" button.
-      imageGrid.cameraTitle = loadTimeData.getString('takePhoto');
-
       // Add the "Choose file" button.
       imageGrid.addItem(ButtonImages.CHOOSE_FILE,
                         loadTimeData.getString('chooseFile'),
@@ -80,17 +77,19 @@ cr.define('options', function() {
           loadTimeData.getString('profilePhotoLoading'));
       this.profileImage_.type = 'profile';
 
+      // Set the title for camera item in the grid.
+      imageGrid.setCameraTitles(
+          loadTimeData.getString('takePhoto'),
+          loadTimeData.getString('photoFromCamera'));
+
       $('take-photo').addEventListener(
           'click', this.handleTakePhoto_.bind(this));
       $('discard-photo').addEventListener(
-          'click', imageGrid.discardPhoto.bind(imageGrid));
+          'click', this.handleDiscardPhoto_.bind(this));
 
       // Toggle 'animation' class for the duration of WebKit transition.
       $('flip-photo').addEventListener(
-          'click', function(e) {
-            previewElement.classList.add('animation');
-            imageGrid.flipPhoto = !imageGrid.flipPhoto;
-          });
+          'click', this.handleFlipPhoto_.bind(this));
       $('user-image-stream-crop').addEventListener(
           'webkitTransitionEnd', function(e) {
             previewElement.classList.remove('animation');
@@ -131,6 +130,7 @@ cr.define('options', function() {
         imageGrid.removeItem(this.oldImage_);
         this.oldImage_ = null;
       }
+      chrome.send('onChangePicturePageHidden');
     },
 
     /**
@@ -152,11 +152,24 @@ cr.define('options', function() {
     },
 
     /**
+     * Handle camera-photo flip.
+     */
+    handleFlipPhoto_: function() {
+      var imageGrid = $('user-image-grid');
+      imageGrid.previewElement.classList.add('animation');
+      imageGrid.flipPhoto = !imageGrid.flipPhoto;
+      var flipMessageId = imageGrid.flipPhoto ?
+         'photoFlippedAccessibleText' : 'photoFlippedBackAccessibleText';
+      announceAccessibleMessage(loadTimeData.getString(flipMessageId));
+    },
+
+    /**
      * Handles "Take photo" button click.
      * @private
      */
     handleTakePhoto_: function() {
       $('user-image-grid').takePhoto();
+      chrome.send('takePhoto');
     },
 
     /**
@@ -165,6 +178,19 @@ cr.define('options', function() {
      */
     handlePhotoTaken_: function(e) {
       chrome.send('photoTaken', [e.dataURL]);
+      announceAccessibleMessage(
+          loadTimeData.getString('photoCaptureAccessibleText'));
+    },
+
+    /**
+     * Handles "Discard photo" button click.
+     * @private
+     */
+    handleDiscardPhoto_: function() {
+      $('user-image-grid').discardPhoto();
+      chrome.send('discardPhoto');
+      announceAccessibleMessage(
+          loadTimeData.getString('photoDiscardAccessibleText'));
     },
 
     /**
@@ -184,6 +210,10 @@ cr.define('options', function() {
     handleImageSelected_: function(e) {
       var imageGrid = $('user-image-grid');
       var url = imageGrid.selectedItemUrl;
+
+      // Flip button available only for camera picture.
+      imageGrid.flipPhotoElement.tabIndex =
+          imageGrid.selectionType == 'camera' ? 1 : -1;
       // Ignore selection change caused by program itself and selection of one
       // of the action buttons.
       if (!imageGrid.inProgramSelection &&
@@ -289,7 +319,7 @@ cr.define('options', function() {
     setDefaultImages_: function(imagesData) {
       var imageGrid = $('user-image-grid');
       for (var i = 0, data; data = imagesData[i]; i++) {
-        var item = imageGrid.addItem(data.url);
+        var item = imageGrid.addItem(data.url, data.title);
         item.type = 'default';
         item.author = data.author || '';
         item.website = data.website || '';

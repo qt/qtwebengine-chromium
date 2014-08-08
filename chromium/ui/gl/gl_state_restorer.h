@@ -18,8 +18,9 @@ class GL_EXPORT GLStateRestorer {
   virtual ~GLStateRestorer();
 
   virtual bool IsInitialized() = 0;
-  virtual void RestoreState() = 0;
+  virtual void RestoreState(const GLStateRestorer* prev_state) = 0;
   virtual void RestoreAllTextureUnitBindings() = 0;
+  virtual void RestoreActiveTextureUnitBinding(unsigned int target) = 0;
   virtual void RestoreFramebufferBindings() = 0;
 
   DISALLOW_COPY_AND_ASSIGN(GLStateRestorer);

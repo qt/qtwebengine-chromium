@@ -31,23 +31,30 @@
 #include "config.h"
 #include "core/inspector/InspectorRuntimeAgent.h"
 
+#include "bindings/v8/ScriptDebugServer.h"
+#include "bindings/v8/ScriptState.h"
 #include "core/inspector/InjectedScript.h"
 #include "core/inspector/InjectedScriptManager.h"
+#include "core/inspector/InspectorState.h"
 #include "platform/JSONValues.h"
 
-
-#include "bindings/v8/ScriptDebugServer.h"
+using WebCore::TypeBuilder::Runtime::ExecutionContextDescription;
 
 namespace WebCore {
+
+namespace InspectorRuntimeAgentState {
+static const char runtimeEnabled[] = "runtimeEnabled";
+};
 
 static bool asBool(const bool* const b)
 {
     return b ? *b : false;
 }
 
-InspectorRuntimeAgent::InspectorRuntimeAgent(InstrumentingAgents* instrumentingAgents, InspectorCompositeState* state, InjectedScriptManager* injectedScriptManager, ScriptDebugServer* scriptDebugServer)
-    : InspectorBaseAgent<InspectorRuntimeAgent>("Runtime", instrumentingAgents, state)
+InspectorRuntimeAgent::InspectorRuntimeAgent(InjectedScriptManager* injectedScriptManager, ScriptDebugServer* scriptDebugServer)
+    : InspectorBaseAgent<InspectorRuntimeAgent>("Runtime")
     , m_enabled(false)
+    , m_frontend(0)
     , m_injectedScriptManager(injectedScriptManager)
     , m_scriptDebugServer(scriptDebugServer)
 {
@@ -69,7 +76,7 @@ static ScriptDebugServer::PauseOnExceptionsState setPauseOnExceptionsState(Scrip
 void InspectorRuntimeAgent::evaluate(ErrorString* errorString, const String& expression, const String* const objectGroup, const bool* const includeCommandLineAPI, const bool* const doNotPauseOnExceptionsAndMuteConsole, const int* executionContextId, const bool* const returnByValue, const bool* generatePreview, RefPtr<TypeBuilder::Runtime::RemoteObject>& result, TypeBuilder::OptOutput<bool>* wasThrown)
 {
     InjectedScript injectedScript = injectedScriptForEval(errorString, executionContextId);
-    if (injectedScript.hasNoValue())
+    if (injectedScript.isEmpty())
         return;
     ScriptDebugServer::PauseOnExceptionsState previousPauseOnExceptionsState = ScriptDebugServer::DontPauseOnExceptions;
     if (asBool(doNotPauseOnExceptionsAndMuteConsole))
@@ -88,7 +95,7 @@ void InspectorRuntimeAgent::evaluate(ErrorString* errorString, const String& exp
 void InspectorRuntimeAgent::callFunctionOn(ErrorString* errorString, const String& objectId, const String& expression, const RefPtr<JSONArray>* const optionalArguments, const bool* const doNotPauseOnExceptionsAndMuteConsole, const bool* const returnByValue, const bool* generatePreview, RefPtr<TypeBuilder::Runtime::RemoteObject>& result, TypeBuilder::OptOutput<bool>* wasThrown)
 {
     InjectedScript injectedScript = m_injectedScriptManager->injectedScriptForObjectId(objectId);
-    if (injectedScript.hasNoValue()) {
+    if (injectedScript.isEmpty()) {
         *errorString = "Inspected frame has gone";
         return;
     }
@@ -113,7 +120,7 @@ void InspectorRuntimeAgent::callFunctionOn(ErrorString* errorString, const Strin
 void InspectorRuntimeAgent::getProperties(ErrorString* errorString, const String& objectId, const bool* ownProperties, const bool* accessorPropertiesOnly, RefPtr<TypeBuilder::Array<TypeBuilder::Runtime::PropertyDescriptor> >& result, RefPtr<TypeBuilder::Array<TypeBuilder::Runtime::InternalPropertyDescriptor> >& internalProperties)
 {
     InjectedScript injectedScript = m_injectedScriptManager->injectedScriptForObjectId(objectId);
-    if (injectedScript.hasNoValue()) {
+    if (injectedScript.isEmpty()) {
         *errorString = "Inspected frame has gone";
         return;
     }
@@ -134,7 +141,7 @@ void InspectorRuntimeAgent::getProperties(ErrorString* errorString, const String
 void InspectorRuntimeAgent::releaseObject(ErrorString*, const String& objectId)
 {
     InjectedScript injectedScript = m_injectedScriptManager->injectedScriptForObjectId(objectId);
-    if (!injectedScript.hasNoValue())
+    if (!injectedScript.isEmpty())
         injectedScript.releaseObject(objectId);
 }
 
@@ -145,6 +152,64 @@ void InspectorRuntimeAgent::releaseObjectGroup(ErrorString*, const String& objec
 
 void InspectorRuntimeAgent::run(ErrorString*)
 {
+}
+
+void InspectorRuntimeAgent::isRunRequired(ErrorString*, bool* out_result)
+{
+    *out_result = false;
+}
+
+void InspectorRuntimeAgent::setFrontend(InspectorFrontend* frontend)
+{
+    m_frontend = frontend->runtime();
+}
+
+void InspectorRuntimeAgent::clearFrontend()
+{
+    m_frontend = 0;
+    String errorString;
+    disable(&errorString);
+}
+
+void InspectorRuntimeAgent::restore()
+{
+    if (m_state->getBoolean(InspectorRuntimeAgentState::runtimeEnabled)) {
+        m_scriptStateToId.clear();
+        m_frontend->executionContextsCleared();
+        String error;
+        enable(&error);
+    }
+}
+
+void InspectorRuntimeAgent::enable(ErrorString* errorString)
+{
+    if (m_enabled)
+        return;
+
+    m_enabled = true;
+    m_state->setBoolean(InspectorRuntimeAgentState::runtimeEnabled, true);
+}
+
+void InspectorRuntimeAgent::disable(ErrorString* errorString)
+{
+    if (!m_enabled)
+        return;
+
+    m_scriptStateToId.clear();
+    m_enabled = false;
+    m_state->setBoolean(InspectorRuntimeAgentState::runtimeEnabled, false);
+}
+
+void InspectorRuntimeAgent::addExecutionContextToFrontend(ScriptState* scriptState, bool isPageContext, const String& name, const String& frameId)
+{
+    int executionContextId = injectedScriptManager()->injectedScriptIdFor(scriptState);
+    m_scriptStateToId.set(scriptState, executionContextId);
+    m_frontend->executionContextCreated(ExecutionContextDescription::create()
+        .setId(executionContextId)
+        .setIsPageContext(isPageContext)
+        .setName(name)
+        .setFrameId(frameId)
+        .release());
 }
 
 } // namespace WebCore

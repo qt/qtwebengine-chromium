@@ -28,15 +28,15 @@
 #include "config.h"
 #include "core/editing/Editor.h"
 
-#include "CSSPropertyNames.h"
-#include "CSSValueKeywords.h"
-#include "HTMLNames.h"
 #include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "core/CSSPropertyNames.h"
+#include "core/CSSValueKeywords.h"
+#include "core/HTMLNames.h"
+#include "core/clipboard/Pasteboard.h"
 #include "core/css/CSSValueList.h"
 #include "core/css/StylePropertySet.h"
 #include "core/dom/DocumentFragment.h"
-#include "core/events/Event.h"
 #include "core/editing/CreateLinkCommand.h"
 #include "core/editing/FormatBlockCommand.h"
 #include "core/editing/IndentOutdentCommand.h"
@@ -46,20 +46,21 @@
 #include "core/editing/TypingCommand.h"
 #include "core/editing/UnlinkCommand.h"
 #include "core/editing/markup.h"
+#include "core/events/Event.h"
+#include "core/frame/FrameHost.h"
+#include "core/frame/FrameView.h"
+#include "core/frame/LocalFrame.h"
+#include "core/frame/Settings.h"
 #include "core/html/HTMLFontElement.h"
 #include "core/html/HTMLHRElement.h"
 #include "core/html/HTMLImageElement.h"
 #include "core/page/Chrome.h"
 #include "core/page/EditorClient.h"
 #include "core/page/EventHandler.h"
-#include "core/frame/Frame.h"
-#include "core/frame/FrameView.h"
-#include "core/page/Page.h"
-#include "core/frame/Settings.h"
-#include "core/platform/Pasteboard.h"
 #include "core/rendering/RenderBox.h"
 #include "platform/KillRing.h"
 #include "platform/scroll/Scrollbar.h"
+#include "public/platform/Platform.h"
 #include "wtf/text/AtomicString.h"
 
 namespace WebCore {
@@ -68,11 +69,12 @@ using namespace HTMLNames;
 
 class EditorInternalCommand {
 public:
-    bool (*execute)(Frame&, Event*, EditorCommandSource, const String&);
-    bool (*isSupportedFromDOM)(Frame*);
-    bool (*isEnabled)(Frame&, Event*, EditorCommandSource);
-    TriState (*state)(Frame&, Event*);
-    String (*value)(Frame&, Event*);
+    int idForUserMetrics;
+    bool (*execute)(LocalFrame&, Event*, EditorCommandSource, const String&);
+    bool (*isSupportedFromDOM)(LocalFrame*);
+    bool (*isEnabled)(LocalFrame&, Event*, EditorCommandSource);
+    TriState (*state)(LocalFrame&, Event*);
+    String (*value)(LocalFrame&, Event*);
     bool isTextInsertion;
     bool allowExecutionWhenDisabled;
 };
@@ -88,7 +90,7 @@ static const bool doNotAllowExecutionWhenDisabled = false;
 // Related to Editor::selectionForCommand.
 // Certain operations continue to use the target control's selection even if the event handler
 // already moved the selection outside of the text control.
-static Frame* targetFrame(Frame& frame, Event* event)
+static LocalFrame* targetFrame(LocalFrame& frame, Event* event)
 {
     if (!event)
         return &frame;
@@ -98,7 +100,7 @@ static Frame* targetFrame(Frame& frame, Event* event)
     return node->document().frame();
 }
 
-static bool applyCommandToFrame(Frame& frame, EditorCommandSource source, EditAction action, StylePropertySet* style)
+static bool applyCommandToFrame(LocalFrame& frame, EditorCommandSource source, EditAction action, StylePropertySet* style)
 {
     // FIXME: We don't call shouldApplyStyle when the source is DOM; is there a good reason for that?
     switch (source) {
@@ -114,16 +116,16 @@ static bool applyCommandToFrame(Frame& frame, EditorCommandSource source, EditAc
     return false;
 }
 
-static bool executeApplyStyle(Frame& frame, EditorCommandSource source, EditAction action, CSSPropertyID propertyID, const String& propertyValue)
+static bool executeApplyStyle(LocalFrame& frame, EditorCommandSource source, EditAction action, CSSPropertyID propertyID, const String& propertyValue)
 {
-    RefPtr<MutableStylePropertySet> style = MutableStylePropertySet::create();
+    RefPtrWillBeRawPtr<MutableStylePropertySet> style = MutableStylePropertySet::create();
     style->setProperty(propertyID, propertyValue);
     return applyCommandToFrame(frame, source, action, style.get());
 }
 
-static bool executeApplyStyle(Frame& frame, EditorCommandSource source, EditAction action, CSSPropertyID propertyID, CSSValueID propertyValue)
+static bool executeApplyStyle(LocalFrame& frame, EditorCommandSource source, EditAction action, CSSPropertyID propertyID, CSSValueID propertyValue)
 {
-    RefPtr<MutableStylePropertySet> style = MutableStylePropertySet::create();
+    RefPtrWillBeRawPtr<MutableStylePropertySet> style = MutableStylePropertySet::create();
     style->setProperty(propertyID, propertyValue);
     return applyCommandToFrame(frame, source, action, style.get());
 }
@@ -131,16 +133,16 @@ static bool executeApplyStyle(Frame& frame, EditorCommandSource source, EditActi
 // FIXME: executeToggleStyleInList does not handle complicated cases such as <b><u>hello</u>world</b> properly.
 //        This function must use Editor::selectionHasStyle to determine the current style but we cannot fix this
 //        until https://bugs.webkit.org/show_bug.cgi?id=27818 is resolved.
-static bool executeToggleStyleInList(Frame& frame, EditorCommandSource source, EditAction action, CSSPropertyID propertyID, CSSValue* value)
+static bool executeToggleStyleInList(LocalFrame& frame, EditorCommandSource source, EditAction action, CSSPropertyID propertyID, CSSValue* value)
 {
-    RefPtr<EditingStyle> selectionStyle = EditingStyle::styleAtSelectionStart(frame.selection().selection());
+    RefPtrWillBeRawPtr<EditingStyle> selectionStyle = EditingStyle::styleAtSelectionStart(frame.selection().selection());
     if (!selectionStyle || !selectionStyle->style())
         return false;
 
-    RefPtr<CSSValue> selectedCSSValue = selectionStyle->style()->getPropertyCSSValue(propertyID);
+    RefPtrWillBeRawPtr<CSSValue> selectedCSSValue = selectionStyle->style()->getPropertyCSSValue(propertyID);
     String newStyle("none");
     if (selectedCSSValue->isValueList()) {
-        RefPtr<CSSValueList> selectedCSSValueList = toCSSValueList(selectedCSSValue.get());
+        RefPtrWillBeRawPtr<CSSValueList> selectedCSSValueList = toCSSValueList(selectedCSSValue.get());
         if (!selectedCSSValueList->removeAll(value))
             selectedCSSValueList->append(value);
         if (selectedCSSValueList->length())
@@ -150,12 +152,12 @@ static bool executeToggleStyleInList(Frame& frame, EditorCommandSource source, E
         newStyle = value->cssText();
 
     // FIXME: We shouldn't be having to convert new style into text.  We should have setPropertyCSSValue.
-    RefPtr<MutableStylePropertySet> newMutableStyle = MutableStylePropertySet::create();
+    RefPtrWillBeRawPtr<MutableStylePropertySet> newMutableStyle = MutableStylePropertySet::create();
     newMutableStyle->setProperty(propertyID, newStyle);
     return applyCommandToFrame(frame, source, action, newMutableStyle.get());
 }
 
-static bool executeToggleStyle(Frame& frame, EditorCommandSource source, EditAction action, CSSPropertyID propertyID, const char* offValue, const char* onValue)
+static bool executeToggleStyle(LocalFrame& frame, EditorCommandSource source, EditAction action, CSSPropertyID propertyID, const char* offValue, const char* onValue)
 {
     // Style is considered present when
     // Mac: present at the beginning of selection
@@ -167,13 +169,13 @@ static bool executeToggleStyle(Frame& frame, EditorCommandSource source, EditAct
     else
         styleIsPresent = frame.editor().selectionHasStyle(propertyID, onValue) == TrueTriState;
 
-    RefPtr<EditingStyle> style = EditingStyle::create(propertyID, styleIsPresent ? offValue : onValue);
+    RefPtrWillBeRawPtr<EditingStyle> style = EditingStyle::create(propertyID, styleIsPresent ? offValue : onValue);
     return applyCommandToFrame(frame, source, action, style->style());
 }
 
-static bool executeApplyParagraphStyle(Frame& frame, EditorCommandSource source, EditAction action, CSSPropertyID propertyID, const String& propertyValue)
+static bool executeApplyParagraphStyle(LocalFrame& frame, EditorCommandSource source, EditAction action, CSSPropertyID propertyID, const String& propertyValue)
 {
-    RefPtr<MutableStylePropertySet> style = MutableStylePropertySet::create();
+    RefPtrWillBeRawPtr<MutableStylePropertySet> style = MutableStylePropertySet::create();
     style->setProperty(propertyID, propertyValue);
     // FIXME: We don't call shouldApplyStyle when the source is DOM; is there a good reason for that?
     switch (source) {
@@ -189,17 +191,17 @@ static bool executeApplyParagraphStyle(Frame& frame, EditorCommandSource source,
     return false;
 }
 
-static bool executeInsertFragment(Frame& frame, PassRefPtr<DocumentFragment> fragment)
+static bool executeInsertFragment(LocalFrame& frame, PassRefPtrWillBeRawPtr<DocumentFragment> fragment)
 {
     ASSERT(frame.document());
     ReplaceSelectionCommand::create(*frame.document(), fragment, ReplaceSelectionCommand::PreventNesting, EditActionUnspecified)->apply();
     return true;
 }
 
-static bool executeInsertNode(Frame& frame, PassRefPtr<Node> content)
+static bool executeInsertNode(LocalFrame& frame, PassRefPtrWillBeRawPtr<Node> content)
 {
     ASSERT(frame.document());
-    RefPtr<DocumentFragment> fragment = DocumentFragment::create(*frame.document());
+    RefPtrWillBeRawPtr<DocumentFragment> fragment = DocumentFragment::create(*frame.document());
     TrackExceptionState exceptionState;
     fragment->appendChild(content, exceptionState);
     if (exceptionState.hadException())
@@ -207,36 +209,35 @@ static bool executeInsertNode(Frame& frame, PassRefPtr<Node> content)
     return executeInsertFragment(frame, fragment.release());
 }
 
-static bool expandSelectionToGranularity(Frame& frame, TextGranularity granularity)
+static bool expandSelectionToGranularity(LocalFrame& frame, TextGranularity granularity)
 {
     VisibleSelection selection = frame.selection().selection();
     selection.expandUsingGranularity(granularity);
-    RefPtr<Range> newRange = selection.toNormalizedRange();
+    RefPtrWillBeRawPtr<Range> newRange = selection.toNormalizedRange();
     if (!newRange)
         return false;
-    if (newRange->collapsed(IGNORE_EXCEPTION))
+    if (newRange->collapsed())
         return false;
-    RefPtr<Range> oldRange = frame.selection().selection().toNormalizedRange();
     EAffinity affinity = frame.selection().affinity();
-    frame.selection().setSelectedRange(newRange.get(), affinity, true);
+    frame.selection().setSelectedRange(newRange.get(), affinity, FrameSelection::NonDirectional, FrameSelection::CloseTyping);
     return true;
 }
 
-static TriState stateStyle(Frame& frame, CSSPropertyID propertyID, const char* desiredValue)
+static TriState stateStyle(LocalFrame& frame, CSSPropertyID propertyID, const char* desiredValue)
 {
     if (frame.editor().behavior().shouldToggleStyleBasedOnStartOfSelection())
         return frame.editor().selectionStartHasStyle(propertyID, desiredValue) ? TrueTriState : FalseTriState;
     return frame.editor().selectionHasStyle(propertyID, desiredValue);
 }
 
-static String valueStyle(Frame& frame, CSSPropertyID propertyID)
+static String valueStyle(LocalFrame& frame, CSSPropertyID propertyID)
 {
     // FIXME: Rather than retrieving the style at the start of the current selection,
     // we should retrieve the style present throughout the selection for non-Mac platforms.
     return frame.editor().selectionStartCSSPropertyValue(propertyID);
 }
 
-static TriState stateTextWritingDirection(Frame& frame, WritingDirection direction)
+static TriState stateTextWritingDirection(LocalFrame& frame, WritingDirection direction)
 {
     bool hasNestedOrMultipleEmbeddings;
     WritingDirection selectionDirection = EditingStyle::textDirectionForSelection(frame.selection().selection(),
@@ -245,7 +246,7 @@ static TriState stateTextWritingDirection(Frame& frame, WritingDirection directi
     return (selectionDirection == direction && !hasNestedOrMultipleEmbeddings) ? TrueTriState : FalseTriState;
 }
 
-static unsigned verticalScrollDistance(Frame& frame)
+static unsigned verticalScrollDistance(LocalFrame& frame)
 {
     Element* focusedElement = frame.document()->focusedElement();
     if (!focusedElement)
@@ -262,7 +263,7 @@ static unsigned verticalScrollDistance(Frame& frame)
     return static_cast<unsigned>(max(max<int>(height * ScrollableArea::minFractionToStepWhenPaging(), height - ScrollableArea::maxOverlapBetweenPages()), 1));
 }
 
-static RefPtr<Range> unionDOMRanges(Range* a, Range* b)
+static PassRefPtrWillBeRawPtr<Range> unionDOMRanges(Range* a, Range* b)
 {
     Range* start = a->compareBoundaryPoints(Range::START_TO_START, b, ASSERT_NO_EXCEPTION) <= 0 ? a : b;
     Range* end = a->compareBoundaryPoints(Range::END_TO_END, b, ASSERT_NO_EXCEPTION) <= 0 ? b : a;
@@ -272,18 +273,18 @@ static RefPtr<Range> unionDOMRanges(Range* a, Range* b)
 
 // Execute command functions
 
-static bool executeBackColor(Frame& frame, Event*, EditorCommandSource source, const String& value)
+static bool executeBackColor(LocalFrame& frame, Event*, EditorCommandSource source, const String& value)
 {
     return executeApplyStyle(frame, source, EditActionSetBackgroundColor, CSSPropertyBackgroundColor, value);
 }
 
-static bool executeCopy(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeCopy(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     frame.editor().copy();
     return true;
 }
 
-static bool executeCreateLink(Frame& frame, Event*, EditorCommandSource, const String& value)
+static bool executeCreateLink(LocalFrame& frame, Event*, EditorCommandSource, const String& value)
 {
     // FIXME: If userInterface is true, we should display a dialog box to let the user enter a URL.
     if (value.isEmpty())
@@ -293,13 +294,13 @@ static bool executeCreateLink(Frame& frame, Event*, EditorCommandSource, const S
     return true;
 }
 
-static bool executeCut(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeCut(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     frame.editor().cut();
     return true;
 }
 
-static bool executeDefaultParagraphSeparator(Frame& frame, Event*, EditorCommandSource, const String& value)
+static bool executeDefaultParagraphSeparator(LocalFrame& frame, Event*, EditorCommandSource, const String& value)
 {
     if (equalIgnoringCase(value, "div"))
         frame.editor().setDefaultParagraphSeparator(EditorParagraphSeparatorIsDiv);
@@ -309,7 +310,7 @@ static bool executeDefaultParagraphSeparator(Frame& frame, Event*, EditorCommand
     return true;
 }
 
-static bool executeDelete(Frame& frame, Event*, EditorCommandSource source, const String&)
+static bool executeDelete(LocalFrame& frame, Event*, EditorCommandSource source, const String&)
 {
     switch (source) {
     case CommandFromMenuOrKeyBinding: {
@@ -329,38 +330,38 @@ static bool executeDelete(Frame& frame, Event*, EditorCommandSource source, cons
     return false;
 }
 
-static bool executeDeleteBackward(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeDeleteBackward(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     frame.editor().deleteWithDirection(DirectionBackward, CharacterGranularity, false, true);
     return true;
 }
 
-static bool executeDeleteBackwardByDecomposingPreviousCharacter(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeDeleteBackwardByDecomposingPreviousCharacter(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     WTF_LOG_ERROR("DeleteBackwardByDecomposingPreviousCharacter is not implemented, doing DeleteBackward instead");
     frame.editor().deleteWithDirection(DirectionBackward, CharacterGranularity, false, true);
     return true;
 }
 
-static bool executeDeleteForward(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeDeleteForward(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     frame.editor().deleteWithDirection(DirectionForward, CharacterGranularity, false, true);
     return true;
 }
 
-static bool executeDeleteToBeginningOfLine(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeDeleteToBeginningOfLine(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     frame.editor().deleteWithDirection(DirectionBackward, LineBoundary, true, false);
     return true;
 }
 
-static bool executeDeleteToBeginningOfParagraph(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeDeleteToBeginningOfParagraph(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     frame.editor().deleteWithDirection(DirectionBackward, ParagraphBoundary, true, false);
     return true;
 }
 
-static bool executeDeleteToEndOfLine(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeDeleteToEndOfLine(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     // Despite its name, this command should delete the newline at the end of
     // a paragraph if you are at the end of a paragraph (like DeleteToEndOfParagraph).
@@ -368,7 +369,7 @@ static bool executeDeleteToEndOfLine(Frame& frame, Event*, EditorCommandSource, 
     return true;
 }
 
-static bool executeDeleteToEndOfParagraph(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeDeleteToEndOfParagraph(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     // Despite its name, this command should delete the newline at the end of
     // a paragraph if you are at the end of a paragraph.
@@ -376,11 +377,11 @@ static bool executeDeleteToEndOfParagraph(Frame& frame, Event*, EditorCommandSou
     return true;
 }
 
-static bool executeDeleteToMark(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeDeleteToMark(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
-    RefPtr<Range> mark = frame.editor().mark().toNormalizedRange();
+    RefPtrWillBeRawPtr<Range> mark = frame.editor().mark().toNormalizedRange();
     if (mark) {
-        bool selected = frame.selection().setSelectedRange(unionDOMRanges(mark.get(), frame.editor().selectedRange().get()).get(), DOWNSTREAM, true);
+        bool selected = frame.selection().setSelectedRange(unionDOMRanges(mark.get(), frame.editor().selectedRange().get()).get(), DOWNSTREAM, FrameSelection::NonDirectional, FrameSelection::CloseTyping);
         ASSERT(selected);
         if (!selected)
             return false;
@@ -390,29 +391,29 @@ static bool executeDeleteToMark(Frame& frame, Event*, EditorCommandSource, const
     return true;
 }
 
-static bool executeDeleteWordBackward(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeDeleteWordBackward(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     frame.editor().deleteWithDirection(DirectionBackward, WordGranularity, true, false);
     return true;
 }
 
-static bool executeDeleteWordForward(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeDeleteWordForward(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     frame.editor().deleteWithDirection(DirectionForward, WordGranularity, true, false);
     return true;
 }
 
-static bool executeFindString(Frame& frame, Event*, EditorCommandSource, const String& value)
+static bool executeFindString(LocalFrame& frame, Event*, EditorCommandSource, const String& value)
 {
     return frame.editor().findString(value, true, false, true, false);
 }
 
-static bool executeFontName(Frame& frame, Event*, EditorCommandSource source, const String& value)
+static bool executeFontName(LocalFrame& frame, Event*, EditorCommandSource source, const String& value)
 {
     return executeApplyStyle(frame, source, EditActionSetFont, CSSPropertyFontFamily, value);
 }
 
-static bool executeFontSize(Frame& frame, Event*, EditorCommandSource source, const String& value)
+static bool executeFontSize(LocalFrame& frame, Event*, EditorCommandSource source, const String& value)
 {
     CSSValueID size;
     if (!HTMLFontElement::cssValueFromFontSizeNumber(value, size))
@@ -420,17 +421,17 @@ static bool executeFontSize(Frame& frame, Event*, EditorCommandSource source, co
     return executeApplyStyle(frame, source, EditActionChangeAttributes, CSSPropertyFontSize, size);
 }
 
-static bool executeFontSizeDelta(Frame& frame, Event*, EditorCommandSource source, const String& value)
+static bool executeFontSizeDelta(LocalFrame& frame, Event*, EditorCommandSource source, const String& value)
 {
     return executeApplyStyle(frame, source, EditActionChangeAttributes, CSSPropertyWebkitFontSizeDelta, value);
 }
 
-static bool executeForeColor(Frame& frame, Event*, EditorCommandSource source, const String& value)
+static bool executeForeColor(LocalFrame& frame, Event*, EditorCommandSource source, const String& value)
 {
     return executeApplyStyle(frame, source, EditActionSetColor, CSSPropertyColor, value);
 }
 
-static bool executeFormatBlock(Frame& frame, Event*, EditorCommandSource, const String& value)
+static bool executeFormatBlock(LocalFrame& frame, Event*, EditorCommandSource, const String& value)
 {
     String tagName = value.lower();
     if (tagName[0] == '<' && tagName[tagName.length() - 1] == '>')
@@ -442,12 +443,12 @@ static bool executeFormatBlock(Frame& frame, Event*, EditorCommandSource, const 
     QualifiedName qualifiedTagName(prefix, localName, xhtmlNamespaceURI);
 
     ASSERT(frame.document());
-    RefPtr<FormatBlockCommand> command = FormatBlockCommand::create(*frame.document(), qualifiedTagName);
+    RefPtrWillBeRawPtr<FormatBlockCommand> command = FormatBlockCommand::create(*frame.document(), qualifiedTagName);
     command->apply();
     return command->didApply();
 }
 
-static bool executeForwardDelete(Frame& frame, Event*, EditorCommandSource source, const String&)
+static bool executeForwardDelete(LocalFrame& frame, Event*, EditorCommandSource source, const String&)
 {
     switch (source) {
     case CommandFromMenuOrKeyBinding:
@@ -466,49 +467,49 @@ static bool executeForwardDelete(Frame& frame, Event*, EditorCommandSource sourc
     return false;
 }
 
-static bool executeIgnoreSpelling(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeIgnoreSpelling(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     frame.spellChecker().ignoreSpelling();
     return true;
 }
 
-static bool executeIndent(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeIndent(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     ASSERT(frame.document());
     IndentOutdentCommand::create(*frame.document(), IndentOutdentCommand::Indent)->apply();
     return true;
 }
 
-static bool executeInsertBacktab(Frame& frame, Event* event, EditorCommandSource, const String&)
+static bool executeInsertBacktab(LocalFrame& frame, Event* event, EditorCommandSource, const String&)
 {
     return targetFrame(frame, event)->eventHandler().handleTextInputEvent("\t", event, TextEventInputBackTab);
 }
 
-static bool executeInsertHorizontalRule(Frame& frame, Event*, EditorCommandSource, const String& value)
+static bool executeInsertHorizontalRule(LocalFrame& frame, Event*, EditorCommandSource, const String& value)
 {
     ASSERT(frame.document());
-    RefPtr<HTMLHRElement> rule = HTMLHRElement::create(*frame.document());
+    RefPtrWillBeRawPtr<HTMLHRElement> rule = HTMLHRElement::create(*frame.document());
     if (!value.isEmpty())
         rule->setIdAttribute(AtomicString(value));
     return executeInsertNode(frame, rule.release());
 }
 
-static bool executeInsertHTML(Frame& frame, Event*, EditorCommandSource, const String& value)
+static bool executeInsertHTML(LocalFrame& frame, Event*, EditorCommandSource, const String& value)
 {
     ASSERT(frame.document());
     return executeInsertFragment(frame, createFragmentFromMarkup(*frame.document(), value, ""));
 }
 
-static bool executeInsertImage(Frame& frame, Event*, EditorCommandSource, const String& value)
+static bool executeInsertImage(LocalFrame& frame, Event*, EditorCommandSource, const String& value)
 {
     // FIXME: If userInterface is true, we should display a dialog box and let the user choose a local image.
     ASSERT(frame.document());
-    RefPtr<HTMLImageElement> image = HTMLImageElement::create(*frame.document());
+    RefPtrWillBeRawPtr<HTMLImageElement> image = HTMLImageElement::create(*frame.document());
     image->setSrc(value);
     return executeInsertNode(frame, image.release());
 }
 
-static bool executeInsertLineBreak(Frame& frame, Event* event, EditorCommandSource source, const String&)
+static bool executeInsertLineBreak(LocalFrame& frame, Event* event, EditorCommandSource source, const String&)
 {
     switch (source) {
     case CommandFromMenuOrKeyBinding:
@@ -526,145 +527,145 @@ static bool executeInsertLineBreak(Frame& frame, Event* event, EditorCommandSour
     return false;
 }
 
-static bool executeInsertNewline(Frame& frame, Event* event, EditorCommandSource, const String&)
+static bool executeInsertNewline(LocalFrame& frame, Event* event, EditorCommandSource, const String&)
 {
-    Frame* targetFrame = WebCore::targetFrame(frame, event);
+    LocalFrame* targetFrame = WebCore::targetFrame(frame, event);
     return targetFrame->eventHandler().handleTextInputEvent("\n", event, targetFrame->editor().canEditRichly() ? TextEventInputKeyboard : TextEventInputLineBreak);
 }
 
-static bool executeInsertNewlineInQuotedContent(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeInsertNewlineInQuotedContent(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     ASSERT(frame.document());
     TypingCommand::insertParagraphSeparatorInQuotedContent(*frame.document());
     return true;
 }
 
-static bool executeInsertOrderedList(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeInsertOrderedList(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     ASSERT(frame.document());
     InsertListCommand::create(*frame.document(), InsertListCommand::OrderedList)->apply();
     return true;
 }
 
-static bool executeInsertParagraph(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeInsertParagraph(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     ASSERT(frame.document());
     TypingCommand::insertParagraphSeparator(*frame.document(), 0);
     return true;
 }
 
-static bool executeInsertTab(Frame& frame, Event* event, EditorCommandSource, const String&)
+static bool executeInsertTab(LocalFrame& frame, Event* event, EditorCommandSource, const String&)
 {
     return targetFrame(frame, event)->eventHandler().handleTextInputEvent("\t", event);
 }
 
-static bool executeInsertText(Frame& frame, Event*, EditorCommandSource, const String& value)
+static bool executeInsertText(LocalFrame& frame, Event*, EditorCommandSource, const String& value)
 {
     ASSERT(frame.document());
     TypingCommand::insertText(*frame.document(), value, 0);
     return true;
 }
 
-static bool executeInsertUnorderedList(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeInsertUnorderedList(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     ASSERT(frame.document());
     InsertListCommand::create(*frame.document(), InsertListCommand::UnorderedList)->apply();
     return true;
 }
 
-static bool executeJustifyCenter(Frame& frame, Event*, EditorCommandSource source, const String&)
+static bool executeJustifyCenter(LocalFrame& frame, Event*, EditorCommandSource source, const String&)
 {
     return executeApplyParagraphStyle(frame, source, EditActionCenter, CSSPropertyTextAlign, "center");
 }
 
-static bool executeJustifyFull(Frame& frame, Event*, EditorCommandSource source, const String&)
+static bool executeJustifyFull(LocalFrame& frame, Event*, EditorCommandSource source, const String&)
 {
     return executeApplyParagraphStyle(frame, source, EditActionJustify, CSSPropertyTextAlign, "justify");
 }
 
-static bool executeJustifyLeft(Frame& frame, Event*, EditorCommandSource source, const String&)
+static bool executeJustifyLeft(LocalFrame& frame, Event*, EditorCommandSource source, const String&)
 {
     return executeApplyParagraphStyle(frame, source, EditActionAlignLeft, CSSPropertyTextAlign, "left");
 }
 
-static bool executeJustifyRight(Frame& frame, Event*, EditorCommandSource source, const String&)
+static bool executeJustifyRight(LocalFrame& frame, Event*, EditorCommandSource source, const String&)
 {
     return executeApplyParagraphStyle(frame, source, EditActionAlignRight, CSSPropertyTextAlign, "right");
 }
 
-static bool executeMakeTextWritingDirectionLeftToRight(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeMakeTextWritingDirectionLeftToRight(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
-    RefPtr<MutableStylePropertySet> style = MutableStylePropertySet::create();
+    RefPtrWillBeRawPtr<MutableStylePropertySet> style = MutableStylePropertySet::create();
     style->setProperty(CSSPropertyUnicodeBidi, CSSValueEmbed);
     style->setProperty(CSSPropertyDirection, CSSValueLtr);
     frame.editor().applyStyle(style.get(), EditActionSetWritingDirection);
     return true;
 }
 
-static bool executeMakeTextWritingDirectionNatural(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeMakeTextWritingDirectionNatural(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
-    RefPtr<MutableStylePropertySet> style = MutableStylePropertySet::create();
+    RefPtrWillBeRawPtr<MutableStylePropertySet> style = MutableStylePropertySet::create();
     style->setProperty(CSSPropertyUnicodeBidi, CSSValueNormal);
     frame.editor().applyStyle(style.get(), EditActionSetWritingDirection);
     return true;
 }
 
-static bool executeMakeTextWritingDirectionRightToLeft(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeMakeTextWritingDirectionRightToLeft(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
-    RefPtr<MutableStylePropertySet> style = MutableStylePropertySet::create();
+    RefPtrWillBeRawPtr<MutableStylePropertySet> style = MutableStylePropertySet::create();
     style->setProperty(CSSPropertyUnicodeBidi, CSSValueEmbed);
     style->setProperty(CSSPropertyDirection, CSSValueRtl);
     frame.editor().applyStyle(style.get(), EditActionSetWritingDirection);
     return true;
 }
 
-static bool executeMoveBackward(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeMoveBackward(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     frame.selection().modify(FrameSelection::AlterationMove, DirectionBackward, CharacterGranularity, UserTriggered);
     return true;
 }
 
-static bool executeMoveBackwardAndModifySelection(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeMoveBackwardAndModifySelection(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     frame.selection().modify(FrameSelection::AlterationExtend, DirectionBackward, CharacterGranularity, UserTriggered);
     return true;
 }
 
-static bool executeMoveDown(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeMoveDown(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     return frame.selection().modify(FrameSelection::AlterationMove, DirectionForward, LineGranularity, UserTriggered);
 }
 
-static bool executeMoveDownAndModifySelection(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeMoveDownAndModifySelection(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     frame.selection().modify(FrameSelection::AlterationExtend, DirectionForward, LineGranularity, UserTriggered);
     return true;
 }
 
-static bool executeMoveForward(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeMoveForward(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     frame.selection().modify(FrameSelection::AlterationMove, DirectionForward, CharacterGranularity, UserTriggered);
     return true;
 }
 
-static bool executeMoveForwardAndModifySelection(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeMoveForwardAndModifySelection(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     frame.selection().modify(FrameSelection::AlterationExtend, DirectionForward, CharacterGranularity, UserTriggered);
     return true;
 }
 
-static bool executeMoveLeft(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeMoveLeft(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     return frame.selection().modify(FrameSelection::AlterationMove, DirectionLeft, CharacterGranularity, UserTriggered);
 }
 
-static bool executeMoveLeftAndModifySelection(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeMoveLeftAndModifySelection(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     frame.selection().modify(FrameSelection::AlterationExtend, DirectionLeft, CharacterGranularity, UserTriggered);
     return true;
 }
 
-static bool executeMovePageDown(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeMovePageDown(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     unsigned distance = verticalScrollDistance(frame);
     if (!distance)
@@ -673,7 +674,7 @@ static bool executeMovePageDown(Frame& frame, Event*, EditorCommandSource, const
         UserTriggered, FrameSelection::AlignCursorOnScrollAlways);
 }
 
-static bool executeMovePageDownAndModifySelection(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeMovePageDownAndModifySelection(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     unsigned distance = verticalScrollDistance(frame);
     if (!distance)
@@ -682,7 +683,7 @@ static bool executeMovePageDownAndModifySelection(Frame& frame, Event*, EditorCo
         UserTriggered, FrameSelection::AlignCursorOnScrollAlways);
 }
 
-static bool executeMovePageUp(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeMovePageUp(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     unsigned distance = verticalScrollDistance(frame);
     if (!distance)
@@ -691,7 +692,7 @@ static bool executeMovePageUp(Frame& frame, Event*, EditorCommandSource, const S
         UserTriggered, FrameSelection::AlignCursorOnScrollAlways);
 }
 
-static bool executeMovePageUpAndModifySelection(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeMovePageUpAndModifySelection(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     unsigned distance = verticalScrollDistance(frame);
     if (!distance)
@@ -700,240 +701,240 @@ static bool executeMovePageUpAndModifySelection(Frame& frame, Event*, EditorComm
         UserTriggered, FrameSelection::AlignCursorOnScrollAlways);
 }
 
-static bool executeMoveRight(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeMoveRight(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     return frame.selection().modify(FrameSelection::AlterationMove, DirectionRight, CharacterGranularity, UserTriggered);
 }
 
-static bool executeMoveRightAndModifySelection(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeMoveRightAndModifySelection(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     frame.selection().modify(FrameSelection::AlterationExtend, DirectionRight, CharacterGranularity, UserTriggered);
     return true;
 }
 
-static bool executeMoveToBeginningOfDocument(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeMoveToBeginningOfDocument(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     frame.selection().modify(FrameSelection::AlterationMove, DirectionBackward, DocumentBoundary, UserTriggered);
     return true;
 }
 
-static bool executeMoveToBeginningOfDocumentAndModifySelection(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeMoveToBeginningOfDocumentAndModifySelection(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     frame.selection().modify(FrameSelection::AlterationExtend, DirectionBackward, DocumentBoundary, UserTriggered);
     return true;
 }
 
-static bool executeMoveToBeginningOfLine(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeMoveToBeginningOfLine(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     frame.selection().modify(FrameSelection::AlterationMove, DirectionBackward, LineBoundary, UserTriggered);
     return true;
 }
 
-static bool executeMoveToBeginningOfLineAndModifySelection(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeMoveToBeginningOfLineAndModifySelection(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     frame.selection().modify(FrameSelection::AlterationExtend, DirectionBackward, LineBoundary, UserTriggered);
     return true;
 }
 
-static bool executeMoveToBeginningOfParagraph(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeMoveToBeginningOfParagraph(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     frame.selection().modify(FrameSelection::AlterationMove, DirectionBackward, ParagraphBoundary, UserTriggered);
     return true;
 }
 
-static bool executeMoveToBeginningOfParagraphAndModifySelection(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeMoveToBeginningOfParagraphAndModifySelection(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     frame.selection().modify(FrameSelection::AlterationExtend, DirectionBackward, ParagraphBoundary, UserTriggered);
     return true;
 }
 
-static bool executeMoveToBeginningOfSentence(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeMoveToBeginningOfSentence(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     frame.selection().modify(FrameSelection::AlterationMove, DirectionBackward, SentenceBoundary, UserTriggered);
     return true;
 }
 
-static bool executeMoveToBeginningOfSentenceAndModifySelection(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeMoveToBeginningOfSentenceAndModifySelection(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     frame.selection().modify(FrameSelection::AlterationExtend, DirectionBackward, SentenceBoundary, UserTriggered);
     return true;
 }
 
-static bool executeMoveToEndOfDocument(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeMoveToEndOfDocument(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     frame.selection().modify(FrameSelection::AlterationMove, DirectionForward, DocumentBoundary, UserTriggered);
     return true;
 }
 
-static bool executeMoveToEndOfDocumentAndModifySelection(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeMoveToEndOfDocumentAndModifySelection(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     frame.selection().modify(FrameSelection::AlterationExtend, DirectionForward, DocumentBoundary, UserTriggered);
     return true;
 }
 
-static bool executeMoveToEndOfSentence(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeMoveToEndOfSentence(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     frame.selection().modify(FrameSelection::AlterationMove, DirectionForward, SentenceBoundary, UserTriggered);
     return true;
 }
 
-static bool executeMoveToEndOfSentenceAndModifySelection(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeMoveToEndOfSentenceAndModifySelection(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     frame.selection().modify(FrameSelection::AlterationExtend, DirectionForward, SentenceBoundary, UserTriggered);
     return true;
 }
 
-static bool executeMoveToEndOfLine(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeMoveToEndOfLine(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     frame.selection().modify(FrameSelection::AlterationMove, DirectionForward, LineBoundary, UserTriggered);
     return true;
 }
 
-static bool executeMoveToEndOfLineAndModifySelection(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeMoveToEndOfLineAndModifySelection(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     frame.selection().modify(FrameSelection::AlterationExtend, DirectionForward, LineBoundary, UserTriggered);
     return true;
 }
 
-static bool executeMoveToEndOfParagraph(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeMoveToEndOfParagraph(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     frame.selection().modify(FrameSelection::AlterationMove, DirectionForward, ParagraphBoundary, UserTriggered);
     return true;
 }
 
-static bool executeMoveToEndOfParagraphAndModifySelection(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeMoveToEndOfParagraphAndModifySelection(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     frame.selection().modify(FrameSelection::AlterationExtend, DirectionForward, ParagraphBoundary, UserTriggered);
     return true;
 }
 
-static bool executeMoveParagraphBackward(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeMoveParagraphBackward(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     frame.selection().modify(FrameSelection::AlterationMove, DirectionBackward, ParagraphGranularity, UserTriggered);
     return true;
 }
 
-static bool executeMoveParagraphBackwardAndModifySelection(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeMoveParagraphBackwardAndModifySelection(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     frame.selection().modify(FrameSelection::AlterationExtend, DirectionBackward, ParagraphGranularity, UserTriggered);
     return true;
 }
 
-static bool executeMoveParagraphForward(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeMoveParagraphForward(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     frame.selection().modify(FrameSelection::AlterationMove, DirectionForward, ParagraphGranularity, UserTriggered);
     return true;
 }
 
-static bool executeMoveParagraphForwardAndModifySelection(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeMoveParagraphForwardAndModifySelection(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     frame.selection().modify(FrameSelection::AlterationExtend, DirectionForward, ParagraphGranularity, UserTriggered);
     return true;
 }
 
-static bool executeMoveUp(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeMoveUp(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     return frame.selection().modify(FrameSelection::AlterationMove, DirectionBackward, LineGranularity, UserTriggered);
 }
 
-static bool executeMoveUpAndModifySelection(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeMoveUpAndModifySelection(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     frame.selection().modify(FrameSelection::AlterationExtend, DirectionBackward, LineGranularity, UserTriggered);
     return true;
 }
 
-static bool executeMoveWordBackward(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeMoveWordBackward(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     frame.selection().modify(FrameSelection::AlterationMove, DirectionBackward, WordGranularity, UserTriggered);
     return true;
 }
 
-static bool executeMoveWordBackwardAndModifySelection(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeMoveWordBackwardAndModifySelection(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     frame.selection().modify(FrameSelection::AlterationExtend, DirectionBackward, WordGranularity, UserTriggered);
     return true;
 }
 
-static bool executeMoveWordForward(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeMoveWordForward(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     frame.selection().modify(FrameSelection::AlterationMove, DirectionForward, WordGranularity, UserTriggered);
     return true;
 }
 
-static bool executeMoveWordForwardAndModifySelection(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeMoveWordForwardAndModifySelection(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     frame.selection().modify(FrameSelection::AlterationExtend, DirectionForward, WordGranularity, UserTriggered);
     return true;
 }
 
-static bool executeMoveWordLeft(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeMoveWordLeft(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     frame.selection().modify(FrameSelection::AlterationMove, DirectionLeft, WordGranularity, UserTriggered);
     return true;
 }
 
-static bool executeMoveWordLeftAndModifySelection(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeMoveWordLeftAndModifySelection(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     frame.selection().modify(FrameSelection::AlterationExtend, DirectionLeft, WordGranularity, UserTriggered);
     return true;
 }
 
-static bool executeMoveWordRight(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeMoveWordRight(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     frame.selection().modify(FrameSelection::AlterationMove, DirectionRight, WordGranularity, UserTriggered);
     return true;
 }
 
-static bool executeMoveWordRightAndModifySelection(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeMoveWordRightAndModifySelection(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     frame.selection().modify(FrameSelection::AlterationExtend, DirectionRight, WordGranularity, UserTriggered);
     return true;
 }
 
-static bool executeMoveToLeftEndOfLine(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeMoveToLeftEndOfLine(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     frame.selection().modify(FrameSelection::AlterationMove, DirectionLeft, LineBoundary, UserTriggered);
     return true;
 }
 
-static bool executeMoveToLeftEndOfLineAndModifySelection(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeMoveToLeftEndOfLineAndModifySelection(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     frame.selection().modify(FrameSelection::AlterationExtend, DirectionLeft, LineBoundary, UserTriggered);
     return true;
 }
 
-static bool executeMoveToRightEndOfLine(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeMoveToRightEndOfLine(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     frame.selection().modify(FrameSelection::AlterationMove, DirectionRight, LineBoundary, UserTriggered);
     return true;
 }
 
-static bool executeMoveToRightEndOfLineAndModifySelection(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeMoveToRightEndOfLineAndModifySelection(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     frame.selection().modify(FrameSelection::AlterationExtend, DirectionRight, LineBoundary, UserTriggered);
     return true;
 }
 
-static bool executeOutdent(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeOutdent(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     ASSERT(frame.document());
     IndentOutdentCommand::create(*frame.document(), IndentOutdentCommand::Outdent)->apply();
     return true;
 }
 
-static bool executeToggleOverwrite(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeToggleOverwrite(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     frame.editor().toggleOverwriteModeEnabled();
     return true;
 }
 
-static bool executePaste(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executePaste(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     frame.editor().paste();
     return true;
 }
 
-static bool executePasteGlobalSelection(Frame& frame, Event*, EditorCommandSource source, const String&)
+static bool executePasteGlobalSelection(LocalFrame& frame, Event*, EditorCommandSource source, const String&)
 {
     if (!frame.editor().behavior().supportsGlobalSelection())
         return false;
@@ -946,134 +947,134 @@ static bool executePasteGlobalSelection(Frame& frame, Event*, EditorCommandSourc
     return true;
 }
 
-static bool executePasteAndMatchStyle(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executePasteAndMatchStyle(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     frame.editor().pasteAsPlainText();
     return true;
 }
 
-static bool executePrint(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executePrint(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
-    Page* page = frame.page();
-    if (!page)
+    FrameHost* host = frame.host();
+    if (!host)
         return false;
-    page->chrome().print(&frame);
+    host->chrome().print(&frame);
     return true;
 }
 
-static bool executeRedo(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeRedo(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     frame.editor().redo();
     return true;
 }
 
-static bool executeRemoveFormat(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeRemoveFormat(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     frame.editor().removeFormattingAndStyle();
     return true;
 }
 
-static bool executeScrollPageBackward(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeScrollPageBackward(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
-    return frame.eventHandler().scrollRecursively(ScrollBlockDirectionBackward, ScrollByPage);
+    return frame.eventHandler().bubblingScroll(ScrollBlockDirectionBackward, ScrollByPage);
 }
 
-static bool executeScrollPageForward(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeScrollPageForward(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
-    return frame.eventHandler().scrollRecursively(ScrollBlockDirectionForward, ScrollByPage);
+    return frame.eventHandler().bubblingScroll(ScrollBlockDirectionForward, ScrollByPage);
 }
 
-static bool executeScrollLineUp(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeScrollLineUp(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
-    return frame.eventHandler().scrollRecursively(ScrollUp, ScrollByLine);
+    return frame.eventHandler().bubblingScroll(ScrollUp, ScrollByLine);
 }
 
-static bool executeScrollLineDown(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeScrollLineDown(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
-    return frame.eventHandler().scrollRecursively(ScrollDown, ScrollByLine);
+    return frame.eventHandler().bubblingScroll(ScrollDown, ScrollByLine);
 }
 
-static bool executeScrollToBeginningOfDocument(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeScrollToBeginningOfDocument(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
-    return frame.eventHandler().scrollRecursively(ScrollBlockDirectionBackward, ScrollByDocument);
+    return frame.eventHandler().bubblingScroll(ScrollBlockDirectionBackward, ScrollByDocument);
 }
 
-static bool executeScrollToEndOfDocument(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeScrollToEndOfDocument(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
-    return frame.eventHandler().scrollRecursively(ScrollBlockDirectionForward, ScrollByDocument);
+    return frame.eventHandler().bubblingScroll(ScrollBlockDirectionForward, ScrollByDocument);
 }
 
-static bool executeSelectAll(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeSelectAll(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     frame.selection().selectAll();
     return true;
 }
 
-static bool executeSelectLine(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeSelectLine(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     return expandSelectionToGranularity(frame, LineGranularity);
 }
 
-static bool executeSelectParagraph(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeSelectParagraph(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     return expandSelectionToGranularity(frame, ParagraphGranularity);
 }
 
-static bool executeSelectSentence(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeSelectSentence(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     return expandSelectionToGranularity(frame, SentenceGranularity);
 }
 
-static bool executeSelectToMark(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeSelectToMark(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
-    RefPtr<Range> mark = frame.editor().mark().toNormalizedRange();
-    RefPtr<Range> selection = frame.editor().selectedRange();
+    RefPtrWillBeRawPtr<Range> mark = frame.editor().mark().toNormalizedRange();
+    RefPtrWillBeRawPtr<Range> selection = frame.editor().selectedRange();
     if (!mark || !selection)
         return false;
-    frame.selection().setSelectedRange(unionDOMRanges(mark.get(), selection.get()).get(), DOWNSTREAM, true);
+    frame.selection().setSelectedRange(unionDOMRanges(mark.get(), selection.get()).get(), DOWNSTREAM, FrameSelection::NonDirectional, FrameSelection::CloseTyping);
     return true;
 }
 
-static bool executeSelectWord(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeSelectWord(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     return expandSelectionToGranularity(frame, WordGranularity);
 }
 
-static bool executeSetMark(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeSetMark(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     frame.editor().setMark(frame.selection().selection());
     return true;
 }
 
-static bool executeStrikethrough(Frame& frame, Event*, EditorCommandSource source, const String&)
+static bool executeStrikethrough(LocalFrame& frame, Event*, EditorCommandSource source, const String&)
 {
-    RefPtr<CSSPrimitiveValue> lineThrough = CSSPrimitiveValue::createIdentifier(CSSValueLineThrough);
+    RefPtrWillBeRawPtr<CSSPrimitiveValue> lineThrough = CSSPrimitiveValue::createIdentifier(CSSValueLineThrough);
     return executeToggleStyleInList(frame, source, EditActionUnderline, CSSPropertyWebkitTextDecorationsInEffect, lineThrough.get());
 }
 
-static bool executeStyleWithCSS(Frame& frame, Event*, EditorCommandSource, const String& value)
+static bool executeStyleWithCSS(LocalFrame& frame, Event*, EditorCommandSource, const String& value)
 {
     frame.editor().setShouldStyleWithCSS(!equalIgnoringCase(value, "false"));
     return true;
 }
 
-static bool executeUseCSS(Frame& frame, Event*, EditorCommandSource, const String& value)
+static bool executeUseCSS(LocalFrame& frame, Event*, EditorCommandSource, const String& value)
 {
     frame.editor().setShouldStyleWithCSS(equalIgnoringCase(value, "false"));
     return true;
 }
 
-static bool executeSubscript(Frame& frame, Event*, EditorCommandSource source, const String&)
+static bool executeSubscript(LocalFrame& frame, Event*, EditorCommandSource source, const String&)
 {
     return executeToggleStyle(frame, source, EditActionSubscript, CSSPropertyVerticalAlign, "baseline", "sub");
 }
 
-static bool executeSuperscript(Frame& frame, Event*, EditorCommandSource source, const String&)
+static bool executeSuperscript(LocalFrame& frame, Event*, EditorCommandSource source, const String&)
 {
     return executeToggleStyle(frame, source, EditActionSuperscript, CSSPropertyVerticalAlign, "baseline", "super");
 }
 
-static bool executeSwapWithMark(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeSwapWithMark(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     const VisibleSelection& mark = frame.editor().mark();
     const VisibleSelection& selection = frame.selection().selection();
@@ -1084,60 +1085,60 @@ static bool executeSwapWithMark(Frame& frame, Event*, EditorCommandSource, const
     return true;
 }
 
-static bool executeToggleBold(Frame& frame, Event*, EditorCommandSource source, const String&)
+static bool executeToggleBold(LocalFrame& frame, Event*, EditorCommandSource source, const String&)
 {
     return executeToggleStyle(frame, source, EditActionBold, CSSPropertyFontWeight, "normal", "bold");
 }
 
-static bool executeToggleItalic(Frame& frame, Event*, EditorCommandSource source, const String&)
+static bool executeToggleItalic(LocalFrame& frame, Event*, EditorCommandSource source, const String&)
 {
     return executeToggleStyle(frame, source, EditActionItalics, CSSPropertyFontStyle, "normal", "italic");
 }
 
-static bool executeTranspose(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeTranspose(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     frame.editor().transpose();
     return true;
 }
 
-static bool executeUnderline(Frame& frame, Event*, EditorCommandSource source, const String&)
+static bool executeUnderline(LocalFrame& frame, Event*, EditorCommandSource source, const String&)
 {
-    RefPtr<CSSPrimitiveValue> underline = CSSPrimitiveValue::createIdentifier(CSSValueUnderline);
+    RefPtrWillBeRawPtr<CSSPrimitiveValue> underline = CSSPrimitiveValue::createIdentifier(CSSValueUnderline);
     return executeToggleStyleInList(frame, source, EditActionUnderline, CSSPropertyWebkitTextDecorationsInEffect, underline.get());
 }
 
-static bool executeUndo(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeUndo(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     frame.editor().undo();
     return true;
 }
 
-static bool executeUnlink(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeUnlink(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     ASSERT(frame.document());
     UnlinkCommand::create(*frame.document())->apply();
     return true;
 }
 
-static bool executeUnscript(Frame& frame, Event*, EditorCommandSource source, const String&)
+static bool executeUnscript(LocalFrame& frame, Event*, EditorCommandSource source, const String&)
 {
     return executeApplyStyle(frame, source, EditActionUnscript, CSSPropertyVerticalAlign, "baseline");
 }
 
-static bool executeUnselect(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeUnselect(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     frame.selection().clear();
     return true;
 }
 
-static bool executeYank(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeYank(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     frame.editor().insertTextWithoutSendingTextEvent(frame.editor().killRing().yank(), false, 0);
     frame.editor().killRing().setToYankedState();
     return true;
 }
 
-static bool executeYankAndSelect(Frame& frame, Event*, EditorCommandSource, const String&)
+static bool executeYankAndSelect(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
     frame.editor().insertTextWithoutSendingTextEvent(frame.editor().killRing().yank(), true, 0);
     frame.editor().killRing().setToYankedState();
@@ -1146,17 +1147,17 @@ static bool executeYankAndSelect(Frame& frame, Event*, EditorCommandSource, cons
 
 // Supported functions
 
-static bool supported(Frame*)
+static bool supported(LocalFrame*)
 {
     return true;
 }
 
-static bool supportedFromMenuOrKeyBinding(Frame*)
+static bool supportedFromMenuOrKeyBinding(LocalFrame*)
 {
     return false;
 }
 
-static bool supportedCopyCut(Frame* frame)
+static bool supportedCopyCut(LocalFrame* frame)
 {
     if (!frame)
         return false;
@@ -1166,7 +1167,7 @@ static bool supportedCopyCut(Frame* frame)
     return frame->editor().client().canCopyCut(frame, defaultValue);
 }
 
-static bool supportedPaste(Frame* frame)
+static bool supportedPaste(LocalFrame* frame)
 {
     if (!frame)
         return false;
@@ -1178,60 +1179,60 @@ static bool supportedPaste(Frame* frame)
 
 // Enabled functions
 
-static bool enabled(Frame&, Event*, EditorCommandSource)
+static bool enabled(LocalFrame&, Event*, EditorCommandSource)
 {
     return true;
 }
 
-static bool enabledVisibleSelection(Frame& frame, Event* event, EditorCommandSource)
+static bool enabledVisibleSelection(LocalFrame& frame, Event* event, EditorCommandSource)
 {
     // The term "visible" here includes a caret in editable text or a range in any text.
     const VisibleSelection& selection = frame.editor().selectionForCommand(event);
     return (selection.isCaret() && selection.isContentEditable()) || selection.isRange();
 }
 
-static bool caretBrowsingEnabled(Frame& frame)
+static bool caretBrowsingEnabled(LocalFrame& frame)
 {
     return frame.settings() && frame.settings()->caretBrowsingEnabled();
 }
 
 static EditorCommandSource dummyEditorCommandSource = static_cast<EditorCommandSource>(0);
 
-static bool enabledVisibleSelectionOrCaretBrowsing(Frame& frame, Event* event, EditorCommandSource)
+static bool enabledVisibleSelectionOrCaretBrowsing(LocalFrame& frame, Event* event, EditorCommandSource)
 {
     // The EditorCommandSource parameter is unused in enabledVisibleSelection, so just pass a dummy variable
     return caretBrowsingEnabled(frame) || enabledVisibleSelection(frame, event, dummyEditorCommandSource);
 }
 
-static bool enabledVisibleSelectionAndMark(Frame& frame, Event* event, EditorCommandSource)
+static bool enabledVisibleSelectionAndMark(LocalFrame& frame, Event* event, EditorCommandSource)
 {
     const VisibleSelection& selection = frame.editor().selectionForCommand(event);
     return ((selection.isCaret() && selection.isContentEditable()) || selection.isRange())
         && frame.editor().mark().isCaretOrRange();
 }
 
-static bool enableCaretInEditableText(Frame& frame, Event* event, EditorCommandSource)
+static bool enableCaretInEditableText(LocalFrame& frame, Event* event, EditorCommandSource)
 {
     const VisibleSelection& selection = frame.editor().selectionForCommand(event);
     return selection.isCaret() && selection.isContentEditable();
 }
 
-static bool enabledCopy(Frame& frame, Event*, EditorCommandSource)
+static bool enabledCopy(LocalFrame& frame, Event*, EditorCommandSource)
 {
     return frame.editor().canDHTMLCopy() || frame.editor().canCopy();
 }
 
-static bool enabledCut(Frame& frame, Event*, EditorCommandSource)
+static bool enabledCut(LocalFrame& frame, Event*, EditorCommandSource)
 {
     return frame.editor().canDHTMLCut() || frame.editor().canCut();
 }
 
-static bool enabledInEditableText(Frame& frame, Event* event, EditorCommandSource)
+static bool enabledInEditableText(LocalFrame& frame, Event* event, EditorCommandSource)
 {
     return frame.editor().selectionForCommand(event).rootEditableElement();
 }
 
-static bool enabledDelete(Frame& frame, Event* event, EditorCommandSource source)
+static bool enabledDelete(LocalFrame& frame, Event* event, EditorCommandSource source)
 {
     switch (source) {
     case CommandFromMenuOrKeyBinding:
@@ -1246,142 +1247,142 @@ static bool enabledDelete(Frame& frame, Event* event, EditorCommandSource source
     return false;
 }
 
-static bool enabledInEditableTextOrCaretBrowsing(Frame& frame, Event* event, EditorCommandSource)
+static bool enabledInEditableTextOrCaretBrowsing(LocalFrame& frame, Event* event, EditorCommandSource)
 {
     // The EditorCommandSource parameter is unused in enabledInEditableText, so just pass a dummy variable
     return caretBrowsingEnabled(frame) || enabledInEditableText(frame, event, dummyEditorCommandSource);
 }
 
-static bool enabledInRichlyEditableText(Frame& frame, Event*, EditorCommandSource)
+static bool enabledInRichlyEditableText(LocalFrame& frame, Event*, EditorCommandSource)
 {
     return frame.selection().isCaretOrRange() && frame.selection().isContentRichlyEditable() && frame.selection().rootEditableElement();
 }
 
-static bool enabledPaste(Frame& frame, Event*, EditorCommandSource)
+static bool enabledPaste(LocalFrame& frame, Event*, EditorCommandSource)
 {
     return frame.editor().canPaste();
 }
 
-static bool enabledRangeInEditableText(Frame& frame, Event*, EditorCommandSource)
+static bool enabledRangeInEditableText(LocalFrame& frame, Event*, EditorCommandSource)
 {
     return frame.selection().isRange() && frame.selection().isContentEditable();
 }
 
-static bool enabledRangeInRichlyEditableText(Frame& frame, Event*, EditorCommandSource)
+static bool enabledRangeInRichlyEditableText(LocalFrame& frame, Event*, EditorCommandSource)
 {
     return frame.selection().isRange() && frame.selection().isContentRichlyEditable();
 }
 
-static bool enabledRedo(Frame& frame, Event*, EditorCommandSource)
+static bool enabledRedo(LocalFrame& frame, Event*, EditorCommandSource)
 {
     return frame.editor().canRedo();
 }
 
-static bool enabledUndo(Frame& frame, Event*, EditorCommandSource)
+static bool enabledUndo(LocalFrame& frame, Event*, EditorCommandSource)
 {
     return frame.editor().canUndo();
 }
 
 // State functions
 
-static TriState stateNone(Frame&, Event*)
+static TriState stateNone(LocalFrame&, Event*)
 {
     return FalseTriState;
 }
 
-static TriState stateBold(Frame& frame, Event*)
+static TriState stateBold(LocalFrame& frame, Event*)
 {
     return stateStyle(frame, CSSPropertyFontWeight, "bold");
 }
 
-static TriState stateItalic(Frame& frame, Event*)
+static TriState stateItalic(LocalFrame& frame, Event*)
 {
     return stateStyle(frame, CSSPropertyFontStyle, "italic");
 }
 
-static TriState stateOrderedList(Frame& frame, Event*)
+static TriState stateOrderedList(LocalFrame& frame, Event*)
 {
     return frame.editor().selectionOrderedListState();
 }
 
-static TriState stateStrikethrough(Frame& frame, Event*)
+static TriState stateStrikethrough(LocalFrame& frame, Event*)
 {
     return stateStyle(frame, CSSPropertyWebkitTextDecorationsInEffect, "line-through");
 }
 
-static TriState stateStyleWithCSS(Frame& frame, Event*)
+static TriState stateStyleWithCSS(LocalFrame& frame, Event*)
 {
     return frame.editor().shouldStyleWithCSS() ? TrueTriState : FalseTriState;
 }
 
-static TriState stateSubscript(Frame& frame, Event*)
+static TriState stateSubscript(LocalFrame& frame, Event*)
 {
     return stateStyle(frame, CSSPropertyVerticalAlign, "sub");
 }
 
-static TriState stateSuperscript(Frame& frame, Event*)
+static TriState stateSuperscript(LocalFrame& frame, Event*)
 {
     return stateStyle(frame, CSSPropertyVerticalAlign, "super");
 }
 
-static TriState stateTextWritingDirectionLeftToRight(Frame& frame, Event*)
+static TriState stateTextWritingDirectionLeftToRight(LocalFrame& frame, Event*)
 {
     return stateTextWritingDirection(frame, LeftToRightWritingDirection);
 }
 
-static TriState stateTextWritingDirectionNatural(Frame& frame, Event*)
+static TriState stateTextWritingDirectionNatural(LocalFrame& frame, Event*)
 {
     return stateTextWritingDirection(frame, NaturalWritingDirection);
 }
 
-static TriState stateTextWritingDirectionRightToLeft(Frame& frame, Event*)
+static TriState stateTextWritingDirectionRightToLeft(LocalFrame& frame, Event*)
 {
     return stateTextWritingDirection(frame, RightToLeftWritingDirection);
 }
 
-static TriState stateUnderline(Frame& frame, Event*)
+static TriState stateUnderline(LocalFrame& frame, Event*)
 {
     return stateStyle(frame, CSSPropertyWebkitTextDecorationsInEffect, "underline");
 }
 
-static TriState stateUnorderedList(Frame& frame, Event*)
+static TriState stateUnorderedList(LocalFrame& frame, Event*)
 {
     return frame.editor().selectionUnorderedListState();
 }
 
-static TriState stateJustifyCenter(Frame& frame, Event*)
+static TriState stateJustifyCenter(LocalFrame& frame, Event*)
 {
     return stateStyle(frame, CSSPropertyTextAlign, "center");
 }
 
-static TriState stateJustifyFull(Frame& frame, Event*)
+static TriState stateJustifyFull(LocalFrame& frame, Event*)
 {
     return stateStyle(frame, CSSPropertyTextAlign, "justify");
 }
 
-static TriState stateJustifyLeft(Frame& frame, Event*)
+static TriState stateJustifyLeft(LocalFrame& frame, Event*)
 {
     return stateStyle(frame, CSSPropertyTextAlign, "left");
 }
 
-static TriState stateJustifyRight(Frame& frame, Event*)
+static TriState stateJustifyRight(LocalFrame& frame, Event*)
 {
     return stateStyle(frame, CSSPropertyTextAlign, "right");
 }
 
 // Value functions
 
-static String valueNull(Frame&, Event*)
+static String valueNull(LocalFrame&, Event*)
 {
     return String();
 }
 
-static String valueBackColor(Frame& frame, Event*)
+static String valueBackColor(LocalFrame& frame, Event*)
 {
     return valueStyle(frame, CSSPropertyBackgroundColor);
 }
 
-static String valueDefaultParagraphSeparator(Frame& frame, Event*)
+static String valueDefaultParagraphSeparator(LocalFrame& frame, Event*)
 {
     switch (frame.editor().defaultParagraphSeparator()) {
     case EditorParagraphSeparatorIsDiv:
@@ -1394,27 +1395,27 @@ static String valueDefaultParagraphSeparator(Frame& frame, Event*)
     return String();
 }
 
-static String valueFontName(Frame& frame, Event*)
+static String valueFontName(LocalFrame& frame, Event*)
 {
     return valueStyle(frame, CSSPropertyFontFamily);
 }
 
-static String valueFontSize(Frame& frame, Event*)
+static String valueFontSize(LocalFrame& frame, Event*)
 {
     return valueStyle(frame, CSSPropertyFontSize);
 }
 
-static String valueFontSizeDelta(Frame& frame, Event*)
+static String valueFontSizeDelta(LocalFrame& frame, Event*)
 {
     return valueStyle(frame, CSSPropertyWebkitFontSizeDelta);
 }
 
-static String valueForeColor(Frame& frame, Event*)
+static String valueForeColor(LocalFrame& frame, Event*)
 {
     return valueStyle(frame, CSSPropertyColor);
 }
 
-static String valueFormatBlock(Frame& frame, Event*)
+static String valueFormatBlock(LocalFrame& frame, Event*)
 {
     const VisibleSelection& selection = frame.selection().selection();
     if (!selection.isNonOrphanedCaretOrRange() || !selection.isContentEditable())
@@ -1434,146 +1435,148 @@ struct CommandEntry {
 
 static const CommandMap& createCommandMap()
 {
+    // If you add new commands, you should assign new Id to each idForUserMetrics and update MappedEditingCommands
+    // in chrome/trunk/src/tools/metrics/histograms/histograms.xml.
     static const CommandEntry commands[] = {
-        { "AlignCenter", { executeJustifyCenter, supportedFromMenuOrKeyBinding, enabledInRichlyEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "AlignJustified", { executeJustifyFull, supportedFromMenuOrKeyBinding, enabledInRichlyEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "AlignLeft", { executeJustifyLeft, supportedFromMenuOrKeyBinding, enabledInRichlyEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "AlignRight", { executeJustifyRight, supportedFromMenuOrKeyBinding, enabledInRichlyEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "BackColor", { executeBackColor, supported, enabledInRichlyEditableText, stateNone, valueBackColor, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "BackwardDelete", { executeDeleteBackward, supportedFromMenuOrKeyBinding, enabledInEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } }, // FIXME: remove BackwardDelete when Safari for Windows stops using it.
-        { "Bold", { executeToggleBold, supported, enabledInRichlyEditableText, stateBold, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "Copy", { executeCopy, supportedCopyCut, enabledCopy, stateNone, valueNull, notTextInsertion, allowExecutionWhenDisabled } },
-        { "CreateLink", { executeCreateLink, supported, enabledInRichlyEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "Cut", { executeCut, supportedCopyCut, enabledCut, stateNone, valueNull, notTextInsertion, allowExecutionWhenDisabled } },
-        { "DefaultParagraphSeparator", { executeDefaultParagraphSeparator, supported, enabled, stateNone, valueDefaultParagraphSeparator, notTextInsertion, doNotAllowExecutionWhenDisabled} },
-        { "Delete", { executeDelete, supported, enabledDelete, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "DeleteBackward", { executeDeleteBackward, supportedFromMenuOrKeyBinding, enabledInEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "DeleteBackwardByDecomposingPreviousCharacter", { executeDeleteBackwardByDecomposingPreviousCharacter, supportedFromMenuOrKeyBinding, enabledInEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "DeleteForward", { executeDeleteForward, supportedFromMenuOrKeyBinding, enabledInEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "DeleteToBeginningOfLine", { executeDeleteToBeginningOfLine, supportedFromMenuOrKeyBinding, enabledInEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "DeleteToBeginningOfParagraph", { executeDeleteToBeginningOfParagraph, supportedFromMenuOrKeyBinding, enabledInEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "DeleteToEndOfLine", { executeDeleteToEndOfLine, supportedFromMenuOrKeyBinding, enabledInEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "DeleteToEndOfParagraph", { executeDeleteToEndOfParagraph, supportedFromMenuOrKeyBinding, enabledInEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "DeleteToMark", { executeDeleteToMark, supportedFromMenuOrKeyBinding, enabledInEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "DeleteWordBackward", { executeDeleteWordBackward, supportedFromMenuOrKeyBinding, enabledInEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "DeleteWordForward", { executeDeleteWordForward, supportedFromMenuOrKeyBinding, enabledInEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "FindString", { executeFindString, supported, enabled, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "FontName", { executeFontName, supported, enabledInEditableText, stateNone, valueFontName, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "FontSize", { executeFontSize, supported, enabledInEditableText, stateNone, valueFontSize, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "FontSizeDelta", { executeFontSizeDelta, supported, enabledInEditableText, stateNone, valueFontSizeDelta, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "ForeColor", { executeForeColor, supported, enabledInRichlyEditableText, stateNone, valueForeColor, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "FormatBlock", { executeFormatBlock, supported, enabledInRichlyEditableText, stateNone, valueFormatBlock, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "ForwardDelete", { executeForwardDelete, supported, enabledInEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "HiliteColor", { executeBackColor, supported, enabledInRichlyEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "IgnoreSpelling", { executeIgnoreSpelling, supportedFromMenuOrKeyBinding, enabledInEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "Indent", { executeIndent, supported, enabledInRichlyEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "InsertBacktab", { executeInsertBacktab, supportedFromMenuOrKeyBinding, enabledInEditableText, stateNone, valueNull, isTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "InsertHTML", { executeInsertHTML, supported, enabledInEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "InsertHorizontalRule", { executeInsertHorizontalRule, supported, enabledInRichlyEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "InsertImage", { executeInsertImage, supported, enabledInRichlyEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "InsertLineBreak", { executeInsertLineBreak, supported, enabledInEditableText, stateNone, valueNull, isTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "InsertNewline", { executeInsertNewline, supportedFromMenuOrKeyBinding, enabledInEditableText, stateNone, valueNull, isTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "InsertNewlineInQuotedContent", { executeInsertNewlineInQuotedContent, supported, enabledInRichlyEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "InsertOrderedList", { executeInsertOrderedList, supported, enabledInRichlyEditableText, stateOrderedList, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "InsertParagraph", { executeInsertParagraph, supported, enabledInEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "InsertTab", { executeInsertTab, supportedFromMenuOrKeyBinding, enabledInEditableText, stateNone, valueNull, isTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "InsertText", { executeInsertText, supported, enabledInEditableText, stateNone, valueNull, isTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "InsertUnorderedList", { executeInsertUnorderedList, supported, enabledInRichlyEditableText, stateUnorderedList, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "Italic", { executeToggleItalic, supported, enabledInRichlyEditableText, stateItalic, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "JustifyCenter", { executeJustifyCenter, supported, enabledInRichlyEditableText, stateJustifyCenter, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "JustifyFull", { executeJustifyFull, supported, enabledInRichlyEditableText, stateJustifyFull, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "JustifyLeft", { executeJustifyLeft, supported, enabledInRichlyEditableText, stateJustifyLeft, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "JustifyNone", { executeJustifyLeft, supported, enabledInRichlyEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "JustifyRight", { executeJustifyRight, supported, enabledInRichlyEditableText, stateJustifyRight, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "MakeTextWritingDirectionLeftToRight", { executeMakeTextWritingDirectionLeftToRight, supportedFromMenuOrKeyBinding, enabledInRichlyEditableText, stateTextWritingDirectionLeftToRight, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "MakeTextWritingDirectionNatural", { executeMakeTextWritingDirectionNatural, supportedFromMenuOrKeyBinding, enabledInRichlyEditableText, stateTextWritingDirectionNatural, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "MakeTextWritingDirectionRightToLeft", { executeMakeTextWritingDirectionRightToLeft, supportedFromMenuOrKeyBinding, enabledInRichlyEditableText, stateTextWritingDirectionRightToLeft, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "MoveBackward", { executeMoveBackward, supportedFromMenuOrKeyBinding, enabledInEditableTextOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "MoveBackwardAndModifySelection", { executeMoveBackwardAndModifySelection, supportedFromMenuOrKeyBinding, enabledVisibleSelectionOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "MoveDown", { executeMoveDown, supportedFromMenuOrKeyBinding, enabledInEditableTextOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "MoveDownAndModifySelection", { executeMoveDownAndModifySelection, supportedFromMenuOrKeyBinding, enabledVisibleSelectionOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "MoveForward", { executeMoveForward, supportedFromMenuOrKeyBinding, enabledInEditableTextOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "MoveForwardAndModifySelection", { executeMoveForwardAndModifySelection, supportedFromMenuOrKeyBinding, enabledVisibleSelectionOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "MoveLeft", { executeMoveLeft, supportedFromMenuOrKeyBinding, enabledInEditableTextOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "MoveLeftAndModifySelection", { executeMoveLeftAndModifySelection, supportedFromMenuOrKeyBinding, enabledVisibleSelectionOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "MovePageDown", { executeMovePageDown, supportedFromMenuOrKeyBinding, enabledInEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "MovePageDownAndModifySelection", { executeMovePageDownAndModifySelection, supportedFromMenuOrKeyBinding, enabledVisibleSelection, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "MovePageUp", { executeMovePageUp, supportedFromMenuOrKeyBinding, enabledInEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "MovePageUpAndModifySelection", { executeMovePageUpAndModifySelection, supportedFromMenuOrKeyBinding, enabledVisibleSelection, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "MoveParagraphBackward", { executeMoveParagraphBackward, supportedFromMenuOrKeyBinding, enabledInEditableTextOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "MoveParagraphBackwardAndModifySelection", { executeMoveParagraphBackwardAndModifySelection, supportedFromMenuOrKeyBinding, enabledVisibleSelectionOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "MoveParagraphForward", { executeMoveParagraphForward, supportedFromMenuOrKeyBinding, enabledInEditableTextOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "MoveParagraphForwardAndModifySelection", { executeMoveParagraphForwardAndModifySelection, supportedFromMenuOrKeyBinding, enabledVisibleSelectionOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "MoveRight", { executeMoveRight, supportedFromMenuOrKeyBinding, enabledInEditableTextOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "MoveRightAndModifySelection", { executeMoveRightAndModifySelection, supportedFromMenuOrKeyBinding, enabledVisibleSelectionOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "MoveToBeginningOfDocument", { executeMoveToBeginningOfDocument, supportedFromMenuOrKeyBinding, enabledInEditableTextOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "MoveToBeginningOfDocumentAndModifySelection", { executeMoveToBeginningOfDocumentAndModifySelection, supportedFromMenuOrKeyBinding, enabledVisibleSelectionOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "MoveToBeginningOfLine", { executeMoveToBeginningOfLine, supportedFromMenuOrKeyBinding, enabledInEditableTextOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "MoveToBeginningOfLineAndModifySelection", { executeMoveToBeginningOfLineAndModifySelection, supportedFromMenuOrKeyBinding, enabledVisibleSelectionOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "MoveToBeginningOfParagraph", { executeMoveToBeginningOfParagraph, supportedFromMenuOrKeyBinding, enabledInEditableTextOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "MoveToBeginningOfParagraphAndModifySelection", { executeMoveToBeginningOfParagraphAndModifySelection, supportedFromMenuOrKeyBinding, enabledVisibleSelectionOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "MoveToBeginningOfSentence", { executeMoveToBeginningOfSentence, supportedFromMenuOrKeyBinding, enabledInEditableTextOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "MoveToBeginningOfSentenceAndModifySelection", { executeMoveToBeginningOfSentenceAndModifySelection, supportedFromMenuOrKeyBinding, enabledVisibleSelectionOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "MoveToEndOfDocument", { executeMoveToEndOfDocument, supportedFromMenuOrKeyBinding, enabledInEditableTextOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "MoveToEndOfDocumentAndModifySelection", { executeMoveToEndOfDocumentAndModifySelection, supportedFromMenuOrKeyBinding, enabledVisibleSelectionOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "MoveToEndOfLine", { executeMoveToEndOfLine, supportedFromMenuOrKeyBinding, enabledInEditableTextOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "MoveToEndOfLineAndModifySelection", { executeMoveToEndOfLineAndModifySelection, supportedFromMenuOrKeyBinding, enabledVisibleSelectionOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "MoveToEndOfParagraph", { executeMoveToEndOfParagraph, supportedFromMenuOrKeyBinding, enabledInEditableTextOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "MoveToEndOfParagraphAndModifySelection", { executeMoveToEndOfParagraphAndModifySelection, supportedFromMenuOrKeyBinding, enabledVisibleSelectionOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "MoveToEndOfSentence", { executeMoveToEndOfSentence, supportedFromMenuOrKeyBinding, enabledInEditableTextOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "MoveToEndOfSentenceAndModifySelection", { executeMoveToEndOfSentenceAndModifySelection, supportedFromMenuOrKeyBinding, enabledVisibleSelectionOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "MoveToLeftEndOfLine", { executeMoveToLeftEndOfLine, supportedFromMenuOrKeyBinding, enabledInEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "MoveToLeftEndOfLineAndModifySelection", { executeMoveToLeftEndOfLineAndModifySelection, supportedFromMenuOrKeyBinding, enabledInEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "MoveToRightEndOfLine", { executeMoveToRightEndOfLine, supportedFromMenuOrKeyBinding, enabledInEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "MoveToRightEndOfLineAndModifySelection", { executeMoveToRightEndOfLineAndModifySelection, supportedFromMenuOrKeyBinding, enabledInEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "MoveUp", { executeMoveUp, supportedFromMenuOrKeyBinding, enabledInEditableTextOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "MoveUpAndModifySelection", { executeMoveUpAndModifySelection, supportedFromMenuOrKeyBinding, enabledVisibleSelectionOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "MoveWordBackward", { executeMoveWordBackward, supportedFromMenuOrKeyBinding, enabledInEditableTextOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "MoveWordBackwardAndModifySelection", { executeMoveWordBackwardAndModifySelection, supportedFromMenuOrKeyBinding, enabledVisibleSelectionOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "MoveWordForward", { executeMoveWordForward, supportedFromMenuOrKeyBinding, enabledInEditableTextOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "MoveWordForwardAndModifySelection", { executeMoveWordForwardAndModifySelection, supportedFromMenuOrKeyBinding, enabledVisibleSelectionOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "MoveWordLeft", { executeMoveWordLeft, supportedFromMenuOrKeyBinding, enabledInEditableTextOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "MoveWordLeftAndModifySelection", { executeMoveWordLeftAndModifySelection, supportedFromMenuOrKeyBinding, enabledVisibleSelectionOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "MoveWordRight", { executeMoveWordRight, supportedFromMenuOrKeyBinding, enabledInEditableTextOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "MoveWordRightAndModifySelection", { executeMoveWordRightAndModifySelection, supportedFromMenuOrKeyBinding, enabledVisibleSelectionOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "Outdent", { executeOutdent, supported, enabledInRichlyEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "OverWrite", { executeToggleOverwrite, supportedFromMenuOrKeyBinding, enabledInRichlyEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "Paste", { executePaste, supportedPaste, enabledPaste, stateNone, valueNull, notTextInsertion, allowExecutionWhenDisabled } },
-        { "PasteAndMatchStyle", { executePasteAndMatchStyle, supportedPaste, enabledPaste, stateNone, valueNull, notTextInsertion, allowExecutionWhenDisabled } },
-        { "PasteGlobalSelection", { executePasteGlobalSelection, supportedFromMenuOrKeyBinding, enabledPaste, stateNone, valueNull, notTextInsertion, allowExecutionWhenDisabled } },
-        { "Print", { executePrint, supported, enabled, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "Redo", { executeRedo, supported, enabledRedo, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "RemoveFormat", { executeRemoveFormat, supported, enabledRangeInEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "ScrollPageBackward", { executeScrollPageBackward, supportedFromMenuOrKeyBinding, enabled, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "ScrollPageForward", { executeScrollPageForward, supportedFromMenuOrKeyBinding, enabled, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "ScrollLineUp", { executeScrollLineUp, supportedFromMenuOrKeyBinding, enabled, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "ScrollLineDown", { executeScrollLineDown, supportedFromMenuOrKeyBinding, enabled, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "ScrollToBeginningOfDocument", { executeScrollToBeginningOfDocument, supportedFromMenuOrKeyBinding, enabled, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "ScrollToEndOfDocument", { executeScrollToEndOfDocument, supportedFromMenuOrKeyBinding, enabled, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "SelectAll", { executeSelectAll, supported, enabled, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "SelectLine", { executeSelectLine, supportedFromMenuOrKeyBinding, enabledVisibleSelection, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "SelectParagraph", { executeSelectParagraph, supportedFromMenuOrKeyBinding, enabledVisibleSelection, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "SelectSentence", { executeSelectSentence, supportedFromMenuOrKeyBinding, enabledVisibleSelection, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "SelectToMark", { executeSelectToMark, supportedFromMenuOrKeyBinding, enabledVisibleSelectionAndMark, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "SelectWord", { executeSelectWord, supportedFromMenuOrKeyBinding, enabledVisibleSelection, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "SetMark", { executeSetMark, supportedFromMenuOrKeyBinding, enabledVisibleSelection, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "Strikethrough", { executeStrikethrough, supported, enabledInRichlyEditableText, stateStrikethrough, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "StyleWithCSS", { executeStyleWithCSS, supported, enabled, stateStyleWithCSS, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "Subscript", { executeSubscript, supported, enabledInRichlyEditableText, stateSubscript, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "Superscript", { executeSuperscript, supported, enabledInRichlyEditableText, stateSuperscript, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "SwapWithMark", { executeSwapWithMark, supportedFromMenuOrKeyBinding, enabledVisibleSelectionAndMark, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "ToggleBold", { executeToggleBold, supportedFromMenuOrKeyBinding, enabledInRichlyEditableText, stateBold, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "ToggleItalic", { executeToggleItalic, supportedFromMenuOrKeyBinding, enabledInRichlyEditableText, stateItalic, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "ToggleUnderline", { executeUnderline, supportedFromMenuOrKeyBinding, enabledInRichlyEditableText, stateUnderline, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "Transpose", { executeTranspose, supported, enableCaretInEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "Underline", { executeUnderline, supported, enabledInRichlyEditableText, stateUnderline, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "Undo", { executeUndo, supported, enabledUndo, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "Unlink", { executeUnlink, supported, enabledRangeInRichlyEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "Unscript", { executeUnscript, supportedFromMenuOrKeyBinding, enabledInRichlyEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "Unselect", { executeUnselect, supported, enabledVisibleSelection, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "UseCSS", { executeUseCSS, supported, enabled, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "Yank", { executeYank, supportedFromMenuOrKeyBinding, enabledInEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
-        { "YankAndSelect", { executeYankAndSelect, supportedFromMenuOrKeyBinding, enabledInEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "AlignCenter", {139, executeJustifyCenter, supportedFromMenuOrKeyBinding, enabledInRichlyEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "AlignJustified", {1, executeJustifyFull, supportedFromMenuOrKeyBinding, enabledInRichlyEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "AlignLeft", {2, executeJustifyLeft, supportedFromMenuOrKeyBinding, enabledInRichlyEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "AlignRight", {3, executeJustifyRight, supportedFromMenuOrKeyBinding, enabledInRichlyEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "BackColor", {4, executeBackColor, supported, enabledInRichlyEditableText, stateNone, valueBackColor, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "BackwardDelete", {5, executeDeleteBackward, supportedFromMenuOrKeyBinding, enabledInEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } }, // FIXME: remove BackwardDelete when Safari for Windows stops using it.
+        { "Bold", {6, executeToggleBold, supported, enabledInRichlyEditableText, stateBold, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "Copy", {7, executeCopy, supportedCopyCut, enabledCopy, stateNone, valueNull, notTextInsertion, allowExecutionWhenDisabled } },
+        { "CreateLink", {8, executeCreateLink, supported, enabledInRichlyEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "Cut", {9, executeCut, supportedCopyCut, enabledCut, stateNone, valueNull, notTextInsertion, allowExecutionWhenDisabled } },
+        { "DefaultParagraphSeparator", {10, executeDefaultParagraphSeparator, supported, enabled, stateNone, valueDefaultParagraphSeparator, notTextInsertion, doNotAllowExecutionWhenDisabled} },
+        { "Delete", {11, executeDelete, supported, enabledDelete, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "DeleteBackward", {12, executeDeleteBackward, supportedFromMenuOrKeyBinding, enabledInEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "DeleteBackwardByDecomposingPreviousCharacter", {13, executeDeleteBackwardByDecomposingPreviousCharacter, supportedFromMenuOrKeyBinding, enabledInEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "DeleteForward", {14, executeDeleteForward, supportedFromMenuOrKeyBinding, enabledInEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "DeleteToBeginningOfLine", {15, executeDeleteToBeginningOfLine, supportedFromMenuOrKeyBinding, enabledInEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "DeleteToBeginningOfParagraph", {16, executeDeleteToBeginningOfParagraph, supportedFromMenuOrKeyBinding, enabledInEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "DeleteToEndOfLine", {17, executeDeleteToEndOfLine, supportedFromMenuOrKeyBinding, enabledInEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "DeleteToEndOfParagraph", {18, executeDeleteToEndOfParagraph, supportedFromMenuOrKeyBinding, enabledInEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "DeleteToMark", {19, executeDeleteToMark, supportedFromMenuOrKeyBinding, enabledInEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "DeleteWordBackward", {20, executeDeleteWordBackward, supportedFromMenuOrKeyBinding, enabledInEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "DeleteWordForward", {21, executeDeleteWordForward, supportedFromMenuOrKeyBinding, enabledInEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "FindString", {22, executeFindString, supported, enabled, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "FontName", {23, executeFontName, supported, enabledInEditableText, stateNone, valueFontName, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "FontSize", {24, executeFontSize, supported, enabledInEditableText, stateNone, valueFontSize, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "FontSizeDelta", {25, executeFontSizeDelta, supported, enabledInEditableText, stateNone, valueFontSizeDelta, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "ForeColor", {26, executeForeColor, supported, enabledInRichlyEditableText, stateNone, valueForeColor, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "FormatBlock", {27, executeFormatBlock, supported, enabledInRichlyEditableText, stateNone, valueFormatBlock, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "ForwardDelete", {28, executeForwardDelete, supported, enabledInEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "HiliteColor", {29, executeBackColor, supported, enabledInRichlyEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "IgnoreSpelling", {30, executeIgnoreSpelling, supportedFromMenuOrKeyBinding, enabledInEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "Indent", {31, executeIndent, supported, enabledInRichlyEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "InsertBacktab", {32, executeInsertBacktab, supportedFromMenuOrKeyBinding, enabledInEditableText, stateNone, valueNull, isTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "InsertHTML", {33, executeInsertHTML, supported, enabledInEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "InsertHorizontalRule", {34, executeInsertHorizontalRule, supported, enabledInRichlyEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "InsertImage", {35, executeInsertImage, supported, enabledInRichlyEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "InsertLineBreak", {36, executeInsertLineBreak, supported, enabledInEditableText, stateNone, valueNull, isTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "InsertNewline", {37, executeInsertNewline, supportedFromMenuOrKeyBinding, enabledInEditableText, stateNone, valueNull, isTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "InsertNewlineInQuotedContent", {38, executeInsertNewlineInQuotedContent, supported, enabledInRichlyEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "InsertOrderedList", {39, executeInsertOrderedList, supported, enabledInRichlyEditableText, stateOrderedList, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "InsertParagraph", {40, executeInsertParagraph, supported, enabledInEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "InsertTab", {41, executeInsertTab, supportedFromMenuOrKeyBinding, enabledInEditableText, stateNone, valueNull, isTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "InsertText", {42, executeInsertText, supported, enabledInEditableText, stateNone, valueNull, isTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "InsertUnorderedList", {43, executeInsertUnorderedList, supported, enabledInRichlyEditableText, stateUnorderedList, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "Italic", {44, executeToggleItalic, supported, enabledInRichlyEditableText, stateItalic, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "JustifyCenter", {45, executeJustifyCenter, supported, enabledInRichlyEditableText, stateJustifyCenter, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "JustifyFull", {46, executeJustifyFull, supported, enabledInRichlyEditableText, stateJustifyFull, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "JustifyLeft", {47, executeJustifyLeft, supported, enabledInRichlyEditableText, stateJustifyLeft, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "JustifyNone", {48, executeJustifyLeft, supported, enabledInRichlyEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "JustifyRight", {49, executeJustifyRight, supported, enabledInRichlyEditableText, stateJustifyRight, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "MakeTextWritingDirectionLeftToRight", {50, executeMakeTextWritingDirectionLeftToRight, supportedFromMenuOrKeyBinding, enabledInRichlyEditableText, stateTextWritingDirectionLeftToRight, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "MakeTextWritingDirectionNatural", {51, executeMakeTextWritingDirectionNatural, supportedFromMenuOrKeyBinding, enabledInRichlyEditableText, stateTextWritingDirectionNatural, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "MakeTextWritingDirectionRightToLeft", {52, executeMakeTextWritingDirectionRightToLeft, supportedFromMenuOrKeyBinding, enabledInRichlyEditableText, stateTextWritingDirectionRightToLeft, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "MoveBackward", {53, executeMoveBackward, supportedFromMenuOrKeyBinding, enabledInEditableTextOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "MoveBackwardAndModifySelection", {54, executeMoveBackwardAndModifySelection, supportedFromMenuOrKeyBinding, enabledVisibleSelectionOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "MoveDown", {55, executeMoveDown, supportedFromMenuOrKeyBinding, enabledInEditableTextOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "MoveDownAndModifySelection", {56, executeMoveDownAndModifySelection, supportedFromMenuOrKeyBinding, enabledVisibleSelectionOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "MoveForward", {57, executeMoveForward, supportedFromMenuOrKeyBinding, enabledInEditableTextOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "MoveForwardAndModifySelection", {58, executeMoveForwardAndModifySelection, supportedFromMenuOrKeyBinding, enabledVisibleSelectionOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "MoveLeft", {59, executeMoveLeft, supportedFromMenuOrKeyBinding, enabledInEditableTextOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "MoveLeftAndModifySelection", {60, executeMoveLeftAndModifySelection, supportedFromMenuOrKeyBinding, enabledVisibleSelectionOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "MovePageDown", {61, executeMovePageDown, supportedFromMenuOrKeyBinding, enabledInEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "MovePageDownAndModifySelection", {62, executeMovePageDownAndModifySelection, supportedFromMenuOrKeyBinding, enabledVisibleSelection, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "MovePageUp", {63, executeMovePageUp, supportedFromMenuOrKeyBinding, enabledInEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "MovePageUpAndModifySelection", {64, executeMovePageUpAndModifySelection, supportedFromMenuOrKeyBinding, enabledVisibleSelection, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "MoveParagraphBackward", {65, executeMoveParagraphBackward, supportedFromMenuOrKeyBinding, enabledInEditableTextOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "MoveParagraphBackwardAndModifySelection", {66, executeMoveParagraphBackwardAndModifySelection, supportedFromMenuOrKeyBinding, enabledVisibleSelectionOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "MoveParagraphForward", {67, executeMoveParagraphForward, supportedFromMenuOrKeyBinding, enabledInEditableTextOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "MoveParagraphForwardAndModifySelection", {68, executeMoveParagraphForwardAndModifySelection, supportedFromMenuOrKeyBinding, enabledVisibleSelectionOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "MoveRight", {69, executeMoveRight, supportedFromMenuOrKeyBinding, enabledInEditableTextOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "MoveRightAndModifySelection", {70, executeMoveRightAndModifySelection, supportedFromMenuOrKeyBinding, enabledVisibleSelectionOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "MoveToBeginningOfDocument", {71, executeMoveToBeginningOfDocument, supportedFromMenuOrKeyBinding, enabledInEditableTextOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "MoveToBeginningOfDocumentAndModifySelection", {72, executeMoveToBeginningOfDocumentAndModifySelection, supportedFromMenuOrKeyBinding, enabledVisibleSelectionOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "MoveToBeginningOfLine", {73, executeMoveToBeginningOfLine, supportedFromMenuOrKeyBinding, enabledInEditableTextOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "MoveToBeginningOfLineAndModifySelection", {74, executeMoveToBeginningOfLineAndModifySelection, supportedFromMenuOrKeyBinding, enabledVisibleSelectionOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "MoveToBeginningOfParagraph", {75, executeMoveToBeginningOfParagraph, supportedFromMenuOrKeyBinding, enabledInEditableTextOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "MoveToBeginningOfParagraphAndModifySelection", {76, executeMoveToBeginningOfParagraphAndModifySelection, supportedFromMenuOrKeyBinding, enabledVisibleSelectionOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "MoveToBeginningOfSentence", {77, executeMoveToBeginningOfSentence, supportedFromMenuOrKeyBinding, enabledInEditableTextOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "MoveToBeginningOfSentenceAndModifySelection", {78, executeMoveToBeginningOfSentenceAndModifySelection, supportedFromMenuOrKeyBinding, enabledVisibleSelectionOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "MoveToEndOfDocument", {79, executeMoveToEndOfDocument, supportedFromMenuOrKeyBinding, enabledInEditableTextOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "MoveToEndOfDocumentAndModifySelection", {80, executeMoveToEndOfDocumentAndModifySelection, supportedFromMenuOrKeyBinding, enabledVisibleSelectionOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "MoveToEndOfLine", {81, executeMoveToEndOfLine, supportedFromMenuOrKeyBinding, enabledInEditableTextOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "MoveToEndOfLineAndModifySelection", {82, executeMoveToEndOfLineAndModifySelection, supportedFromMenuOrKeyBinding, enabledVisibleSelectionOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "MoveToEndOfParagraph", {83, executeMoveToEndOfParagraph, supportedFromMenuOrKeyBinding, enabledInEditableTextOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "MoveToEndOfParagraphAndModifySelection", {84, executeMoveToEndOfParagraphAndModifySelection, supportedFromMenuOrKeyBinding, enabledVisibleSelectionOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "MoveToEndOfSentence", {85, executeMoveToEndOfSentence, supportedFromMenuOrKeyBinding, enabledInEditableTextOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "MoveToEndOfSentenceAndModifySelection", {86, executeMoveToEndOfSentenceAndModifySelection, supportedFromMenuOrKeyBinding, enabledVisibleSelectionOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "MoveToLeftEndOfLine", {87, executeMoveToLeftEndOfLine, supportedFromMenuOrKeyBinding, enabledInEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "MoveToLeftEndOfLineAndModifySelection", {88, executeMoveToLeftEndOfLineAndModifySelection, supportedFromMenuOrKeyBinding, enabledInEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "MoveToRightEndOfLine", {89, executeMoveToRightEndOfLine, supportedFromMenuOrKeyBinding, enabledInEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "MoveToRightEndOfLineAndModifySelection", {90, executeMoveToRightEndOfLineAndModifySelection, supportedFromMenuOrKeyBinding, enabledInEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "MoveUp", {91, executeMoveUp, supportedFromMenuOrKeyBinding, enabledInEditableTextOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "MoveUpAndModifySelection", {92, executeMoveUpAndModifySelection, supportedFromMenuOrKeyBinding, enabledVisibleSelectionOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "MoveWordBackward", {93, executeMoveWordBackward, supportedFromMenuOrKeyBinding, enabledInEditableTextOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "MoveWordBackwardAndModifySelection", {94, executeMoveWordBackwardAndModifySelection, supportedFromMenuOrKeyBinding, enabledVisibleSelectionOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "MoveWordForward", {95, executeMoveWordForward, supportedFromMenuOrKeyBinding, enabledInEditableTextOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "MoveWordForwardAndModifySelection", {96, executeMoveWordForwardAndModifySelection, supportedFromMenuOrKeyBinding, enabledVisibleSelectionOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "MoveWordLeft", {97, executeMoveWordLeft, supportedFromMenuOrKeyBinding, enabledInEditableTextOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "MoveWordLeftAndModifySelection", {98, executeMoveWordLeftAndModifySelection, supportedFromMenuOrKeyBinding, enabledVisibleSelectionOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "MoveWordRight", {99, executeMoveWordRight, supportedFromMenuOrKeyBinding, enabledInEditableTextOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "MoveWordRightAndModifySelection", {100, executeMoveWordRightAndModifySelection, supportedFromMenuOrKeyBinding, enabledVisibleSelectionOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "Outdent", {101, executeOutdent, supported, enabledInRichlyEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "OverWrite", {102, executeToggleOverwrite, supportedFromMenuOrKeyBinding, enabledInRichlyEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "Paste", {103, executePaste, supportedPaste, enabledPaste, stateNone, valueNull, notTextInsertion, allowExecutionWhenDisabled } },
+        { "PasteAndMatchStyle", {104, executePasteAndMatchStyle, supportedPaste, enabledPaste, stateNone, valueNull, notTextInsertion, allowExecutionWhenDisabled } },
+        { "PasteGlobalSelection", {105, executePasteGlobalSelection, supportedFromMenuOrKeyBinding, enabledPaste, stateNone, valueNull, notTextInsertion, allowExecutionWhenDisabled } },
+        { "Print", {106, executePrint, supported, enabled, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "Redo", {107, executeRedo, supported, enabledRedo, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "RemoveFormat", {108, executeRemoveFormat, supported, enabledRangeInEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "ScrollPageBackward", {109, executeScrollPageBackward, supportedFromMenuOrKeyBinding, enabled, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "ScrollPageForward", {110, executeScrollPageForward, supportedFromMenuOrKeyBinding, enabled, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "ScrollLineUp", {111, executeScrollLineUp, supportedFromMenuOrKeyBinding, enabled, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "ScrollLineDown", {112, executeScrollLineDown, supportedFromMenuOrKeyBinding, enabled, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "ScrollToBeginningOfDocument", {113, executeScrollToBeginningOfDocument, supportedFromMenuOrKeyBinding, enabled, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "ScrollToEndOfDocument", {114, executeScrollToEndOfDocument, supportedFromMenuOrKeyBinding, enabled, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "SelectAll", {115, executeSelectAll, supported, enabled, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "SelectLine", {116, executeSelectLine, supportedFromMenuOrKeyBinding, enabledVisibleSelection, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "SelectParagraph", {117, executeSelectParagraph, supportedFromMenuOrKeyBinding, enabledVisibleSelection, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "SelectSentence", {118, executeSelectSentence, supportedFromMenuOrKeyBinding, enabledVisibleSelection, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "SelectToMark", {119, executeSelectToMark, supportedFromMenuOrKeyBinding, enabledVisibleSelectionAndMark, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "SelectWord", {120, executeSelectWord, supportedFromMenuOrKeyBinding, enabledVisibleSelection, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "SetMark", {121, executeSetMark, supportedFromMenuOrKeyBinding, enabledVisibleSelection, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "Strikethrough", {122, executeStrikethrough, supported, enabledInRichlyEditableText, stateStrikethrough, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "StyleWithCSS", {123, executeStyleWithCSS, supported, enabled, stateStyleWithCSS, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "Subscript", {124, executeSubscript, supported, enabledInRichlyEditableText, stateSubscript, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "Superscript", {125, executeSuperscript, supported, enabledInRichlyEditableText, stateSuperscript, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "SwapWithMark", {126, executeSwapWithMark, supportedFromMenuOrKeyBinding, enabledVisibleSelectionAndMark, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "ToggleBold", {127, executeToggleBold, supportedFromMenuOrKeyBinding, enabledInRichlyEditableText, stateBold, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "ToggleItalic", {128, executeToggleItalic, supportedFromMenuOrKeyBinding, enabledInRichlyEditableText, stateItalic, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "ToggleUnderline", {129, executeUnderline, supportedFromMenuOrKeyBinding, enabledInRichlyEditableText, stateUnderline, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "Transpose", {130, executeTranspose, supported, enableCaretInEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "Underline", {131, executeUnderline, supported, enabledInRichlyEditableText, stateUnderline, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "Undo", {132, executeUndo, supported, enabledUndo, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "Unlink", {133, executeUnlink, supported, enabledRangeInRichlyEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "Unscript", {134, executeUnscript, supportedFromMenuOrKeyBinding, enabledInRichlyEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "Unselect", {135, executeUnselect, supported, enabledVisibleSelection, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "UseCSS", {136, executeUseCSS, supported, enabled, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "Yank", {137, executeYank, supportedFromMenuOrKeyBinding, enabledInEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "YankAndSelect", {138, executeYankAndSelect, supportedFromMenuOrKeyBinding, enabledInEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
     };
 
     // These unsupported commands are listed here since they appear in the Microsoft
@@ -1623,10 +1626,17 @@ static const CommandMap& createCommandMap()
     // Unbookmark (not supported)
 
     CommandMap& commandMap = *new CommandMap;
-
+#if ASSERT_ENABLED
+    HashSet<int> idSet;
+#endif
     for (size_t i = 0; i < WTF_ARRAY_LENGTH(commands); ++i) {
-        ASSERT(!commandMap.get(commands[i].name));
-        commandMap.set(commands[i].name, &commands[i].command);
+        const CommandEntry& command = commands[i];
+        ASSERT(!commandMap.get(command.name));
+        commandMap.set(command.name, &command.command);
+#if ASSERT_ENABLED
+        ASSERT(!idSet.contains(command.command.idForUserMetrics));
+        idSet.add(command.command.idForUserMetrics);
+#endif
     }
 
     return commandMap;
@@ -1648,20 +1658,15 @@ Editor::Command Editor::command(const String& commandName, EditorCommandSource s
     return Command(internalCommand(commandName), source, &m_frame);
 }
 
-bool Editor::commandIsSupportedFromMenuOrKeyBinding(const String& commandName)
-{
-    return internalCommand(commandName);
-}
-
 Editor::Command::Command()
     : m_command(0)
 {
 }
 
-Editor::Command::Command(const EditorInternalCommand* command, EditorCommandSource source, PassRefPtr<Frame> frame)
+Editor::Command::Command(const EditorInternalCommand* command, EditorCommandSource source, PassRefPtr<LocalFrame> frame)
     : m_command(command)
     , m_source(source)
-    , m_frame(command ? frame : 0)
+    , m_frame(command ? frame : nullptr)
 {
     // Use separate assertions so we can tell which bad thing happened.
     if (!command)
@@ -1678,6 +1683,7 @@ bool Editor::Command::execute(const String& parameter, Event* triggeringEvent) c
             return false;
     }
     m_frame->document()->updateLayoutIgnorePendingStylesheets();
+    blink::Platform::current()->histogramSparse("WebCore.Editing.Commands", m_command->idForUserMetrics);
     return m_command->execute(*m_frame, triggeringEvent, m_source, parameter);
 }
 
@@ -1727,6 +1733,11 @@ String Editor::Command::value(Event* triggeringEvent) const
 bool Editor::Command::isTextInsertion() const
 {
     return m_command && m_command->isTextInsertion;
+}
+
+int Editor::Command::idForHistogram() const
+{
+    return isSupported() ? m_command->idForUserMetrics : 0;
 }
 
 } // namespace WebCore

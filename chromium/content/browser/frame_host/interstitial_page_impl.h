@@ -13,6 +13,7 @@
 #include "content/browser/frame_host/render_frame_host_delegate.h"
 #include "content/browser/renderer_host/render_view_host_delegate.h"
 #include "content/browser/renderer_host/render_widget_host_delegate.h"
+#include "content/public/browser/dom_operation_notification_details.h"
 #include "content/public/browser/interstitial_page.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
@@ -26,7 +27,6 @@ class NavigationControllerImpl;
 class RenderViewHostImpl;
 class RenderWidgetHostView;
 class WebContentsView;
-class WebContentsImpl;
 
 enum ResourceRequestAction {
   BLOCK,
@@ -91,6 +91,12 @@ class CONTENT_EXPORT InterstitialPageImpl
   RenderViewHost* GetRenderViewHost() const;
 #endif
 
+  // TODO(nasko): This should move to InterstitialPageNavigatorImpl, but in
+  // the meantime make it public, so it can be called directly.
+  void DidNavigate(
+      RenderViewHost* render_view_host,
+      const FrameHostMsg_DidCommitProvisionalLoad_Params& params);
+
  protected:
   // NotificationObserver method:
   virtual void Observe(int type,
@@ -98,25 +104,30 @@ class CONTENT_EXPORT InterstitialPageImpl
                        const NotificationDetails& details) OVERRIDE;
 
   // WebContentsObserver implementation:
-  virtual void WebContentsDestroyed(WebContents* web_contents) OVERRIDE;
+  virtual bool OnMessageReceived(const IPC::Message& message,
+                                 RenderFrameHost* render_frame_host) OVERRIDE;
+  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
+  virtual void WebContentsDestroyed() OVERRIDE;
   virtual void NavigationEntryCommitted(
       const LoadCommittedDetails& load_details) OVERRIDE;
 
   // RenderFrameHostDelegate implementation:
-
-  // RenderViewHostDelegate implementation:
-  virtual RenderViewHostDelegateView* GetDelegateView() OVERRIDE;
-  virtual const GURL& GetURL() const OVERRIDE;
-  virtual void RenderViewTerminated(RenderViewHost* render_view_host,
-                                    base::TerminationStatus status,
-                                    int error_code) OVERRIDE;
-  virtual void DidNavigate(
-      RenderViewHost* render_view_host,
-      const ViewHostMsg_FrameNavigate_Params& params) OVERRIDE;
-  virtual void UpdateTitle(RenderViewHost* render_view_host,
+  virtual bool OnMessageReceived(RenderFrameHost* render_frame_host,
+                                 const IPC::Message& message) OVERRIDE;
+  virtual void RenderFrameCreated(RenderFrameHost* render_frame_host) OVERRIDE;
+  virtual void UpdateTitle(RenderFrameHost* render_frame_host,
                            int32 page_id,
                            const base::string16& title,
                            base::i18n::TextDirection title_direction) OVERRIDE;
+
+  // RenderViewHostDelegate implementation:
+  virtual RenderViewHostDelegateView* GetDelegateView() OVERRIDE;
+  virtual bool OnMessageReceived(RenderViewHost* render_view_host,
+                                 const IPC::Message& message) OVERRIDE;
+  virtual const GURL& GetMainFrameLastCommittedURL() const OVERRIDE;
+  virtual void RenderViewTerminated(RenderViewHost* render_view_host,
+                                    base::TerminationStatus status,
+                                    int error_code) OVERRIDE;
   virtual RendererPreferences GetRendererPrefs(
       BrowserContext* browser_context) const OVERRIDE;
   virtual WebPreferences GetWebkitPrefs() OVERRIDE;
@@ -153,7 +164,7 @@ class CONTENT_EXPORT InterstitialPageImpl
       bool* is_keyboard_shortcut) OVERRIDE;
   virtual void HandleKeyboardEvent(
       const NativeWebKeyboardEvent& event) OVERRIDE;
-#if defined(OS_WIN) && defined(USE_AURA)
+#if defined(OS_WIN)
   virtual gfx::NativeViewAccessible GetParentNativeViewAccessible() OVERRIDE;
 #endif
 
@@ -180,8 +191,8 @@ class CONTENT_EXPORT InterstitialPageImpl
   // - any command sent by the RenderViewHost will be ignored.
   void Disable();
 
-  // Shutdown the RVH.  We will be deleted by the time this method returns.
-  void Shutdown(RenderViewHostImpl* render_view_host);
+  // Delete ourselves, causing Shutdown on the RVH to be called.
+  void Shutdown();
 
   void OnNavigatingAwayOrTabClosing();
 
@@ -189,6 +200,10 @@ class CONTENT_EXPORT InterstitialPageImpl
   // Used to block/resume/cancel requests for the RenderViewHost hidden by this
   // interstitial.
   void TakeActionOnResourceDispatcher(ResourceRequestAction action);
+
+  // IPC message handlers.
+  void OnDomOperationResponse(const std::string& json_string,
+                              int automation_id);
 
   // The contents in which we are displayed.  This is valid until Hide is
   // called, at which point it will be set to NULL because the WebContents
@@ -229,6 +244,8 @@ class CONTENT_EXPORT InterstitialPageImpl
   // The RenderViewHost displaying the interstitial contents.  This is valid
   // until Hide is called, at which point it will be set to NULL, signifying
   // that shutdown has started.
+  // TODO(creis): This is now owned by the FrameTree.  We should route things
+  // through the tree's root RenderFrameHost instead.
   RenderViewHostImpl* render_view_host_;
 
   // The frame tree structure of the current page.

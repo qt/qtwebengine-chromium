@@ -4,6 +4,8 @@
 # found in the LICENSE file.
 
 
+import json
+
 from grit.format.policy_templates.writers import template_writer
 
 
@@ -64,9 +66,10 @@ class RegWriter(template_writer.TemplateWriter):
         i = i + 1
     else:
       self._StartBlock(key, None, list)
-      if policy['type'] in ('string', 'dict'):
-        escaped_str = self._EscapeRegString(str(example_value))
-        example_value_str = '"' + escaped_str + '"'
+      if policy['type'] in ('string', 'string-enum', 'dict'):
+        example_value_str = json.dumps(example_value, sort_keys=True)
+        if policy['type'] == 'dict':
+          example_value_str = '"%s"' % example_value_str
       elif policy['type'] == 'main':
         if example_value == True:
           example_value_str = 'dword:00000001'
@@ -74,8 +77,6 @@ class RegWriter(template_writer.TemplateWriter):
           example_value_str = 'dword:00000000'
       elif policy['type'] in ('int', 'int-enum'):
         example_value_str = 'dword:%08x' % example_value
-      elif policy['type'] == 'string-enum':
-        example_value_str = '"%s"' % example_value
       else:
         raise Exception('unknown policy type %s:' % policy['type'])
 

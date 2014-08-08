@@ -77,17 +77,19 @@ class MockRtpRtcp : public RtpRtcp {
   MOCK_CONST_METHOD0(SSRC,
       uint32_t());
   MOCK_METHOD1(SetSSRC,
-      int32_t(const uint32_t ssrc));
+      void(const uint32_t ssrc));
   MOCK_CONST_METHOD1(CSRCs,
       int32_t(uint32_t arrOfCSRC[kRtpCsrcSize]));
   MOCK_METHOD2(SetCSRCs,
       int32_t(const uint32_t arrOfCSRC[kRtpCsrcSize], const uint8_t arrLength));
   MOCK_METHOD1(SetCSRCStatus,
       int32_t(const bool include));
-  MOCK_METHOD3(SetRTXSendStatus,
-      int32_t(int modes, bool setSSRC, uint32_t ssrc));
+  MOCK_METHOD1(SetRTXSendStatus,
+      void(int modes));
   MOCK_CONST_METHOD3(RTXSendStatus,
-      int32_t(int* modes, uint32_t* ssrc, int* payload_type));
+      void(int* modes, uint32_t* ssrc, int* payload_type));
+  MOCK_METHOD1(SetRtxSsrc,
+      void(uint32_t));
   MOCK_METHOD1(SetRtxSendPayloadType,
       void(int));
   MOCK_METHOD1(SetSendingStatus,
@@ -168,6 +170,8 @@ class MockRtpRtcp : public RtpRtcp {
       int32_t(const uint32_t SSRC, const RTCPReportBlock* receiveBlock));
   MOCK_METHOD1(RemoveRTCPReportBlock,
       int32_t(const uint32_t SSRC));
+  MOCK_CONST_METHOD2(GetRtcpPacketTypeCounters,
+      void(RtcpPacketTypeCounter*, RtcpPacketTypeCounter*));
   MOCK_METHOD4(SetRTCPApplicationSpecificData,
       int32_t(const uint8_t subType, const uint32_t name, const uint8_t* data, const uint16_t length));
   MOCK_METHOD1(SetRTCPVoIPMetrics,

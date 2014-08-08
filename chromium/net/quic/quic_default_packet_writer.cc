@@ -17,7 +17,8 @@ QuicDefaultPacketWriter::QuicDefaultPacketWriter() : weak_factory_(this) {
 
 QuicDefaultPacketWriter::QuicDefaultPacketWriter(DatagramClientSocket* socket)
     : weak_factory_(this),
-      socket_(socket) {
+      socket_(socket),
+      write_blocked_(false) {
 }
 
 QuicDefaultPacketWriter::~QuicDefaultPacketWriter() {}
@@ -25,10 +26,10 @@ QuicDefaultPacketWriter::~QuicDefaultPacketWriter() {}
 WriteResult QuicDefaultPacketWriter::WritePacket(
     const char* buffer, size_t buf_len,
     const net::IPAddressNumber& self_address,
-    const net::IPEndPoint& peer_address,
-    QuicBlockedWriterInterface* blocked_writer) {
+    const net::IPEndPoint& peer_address) {
   scoped_refptr<StringIOBuffer> buf(
       new StringIOBuffer(std::string(buffer, buf_len)));
+  DCHECK(!IsWriteBlocked());
   int rv = socket_->Write(buf.get(),
                           buf_len,
                           base::Bind(&QuicDefaultPacketWriter::OnWriteComplete,
@@ -40,6 +41,7 @@ WriteResult QuicDefaultPacketWriter::WritePacket(
       status = WRITE_STATUS_ERROR;
     } else {
       status = WRITE_STATUS_BLOCKED;
+      write_blocked_ = true;
     }
   }
 
@@ -52,8 +54,17 @@ bool QuicDefaultPacketWriter::IsWriteBlockedDataBuffered() const {
   return true;
 }
 
+bool QuicDefaultPacketWriter::IsWriteBlocked() const {
+  return write_blocked_;
+}
+
+void QuicDefaultPacketWriter::SetWritable() {
+  write_blocked_ = false;
+}
+
 void QuicDefaultPacketWriter::OnWriteComplete(int rv) {
   DCHECK_NE(rv, ERR_IO_PENDING);
+  write_blocked_ = false;
   WriteResult result(rv < 0 ? WRITE_STATUS_ERROR : WRITE_STATUS_OK, rv);
   connection_->OnPacketSent(result);
   connection_->OnCanWrite();

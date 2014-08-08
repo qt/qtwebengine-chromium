@@ -7,7 +7,6 @@
 #include "base/logging.h"
 #include "content/browser/android/content_view_core_impl.h"
 #include "content/browser/frame_host/interstitial_page_impl.h"
-#include "content/browser/media/android/browser_media_player_manager.h"
 #include "content/browser/renderer_host/render_widget_host_view_android.h"
 #include "content/browser/renderer_host/render_view_host_factory.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
@@ -15,7 +14,7 @@
 #include "content/public/browser/web_contents_delegate.h"
 
 namespace content {
-WebContentsViewPort* CreateWebContentsView(
+WebContentsView* CreateWebContentsView(
     WebContentsImpl* web_contents,
     WebContentsViewDelegate* delegate,
     RenderViewHostDelegateView** render_view_host_delegate_view) {
@@ -54,14 +53,6 @@ void WebContentsViewAndroid::SetContentViewCore(
   }
 }
 
-#if defined(VIDEO_HOLE)
-void WebContentsViewAndroid::NotifyExternalSurface(
-    int player_id, bool is_request, const gfx::RectF& rect) {
-  if (content_view_core_)
-    content_view_core_->NotifyExternalSurface(player_id, is_request, rect);
-}
-#endif  // defined(VIDEO_HOLE)
-
 gfx::NativeView WebContentsViewAndroid::GetNativeView() const {
   return content_view_core_ ? content_view_core_->GetViewAndroid() : NULL;
 }
@@ -75,24 +66,13 @@ gfx::NativeWindow WebContentsViewAndroid::GetTopLevelNativeWindow() const {
 }
 
 void WebContentsViewAndroid::GetContainerBounds(gfx::Rect* out) const {
-  RenderWidgetHostView* rwhv = web_contents_->GetRenderWidgetHostView();
-  if (rwhv)
-    *out = rwhv->GetViewBounds();
+  *out = content_view_core_ ? gfx::Rect(content_view_core_->GetViewSize())
+                            : gfx::Rect();
 }
 
 void WebContentsViewAndroid::SetPageTitle(const base::string16& title) {
   if (content_view_core_)
     content_view_core_->SetTitle(title);
-}
-
-void WebContentsViewAndroid::OnTabCrashed(base::TerminationStatus status,
-                                          int error_code) {
-  RenderViewHostImpl* rvh = static_cast<RenderViewHostImpl*>(
-      web_contents_->GetRenderViewHost());
-  if (rvh->media_player_manager())
-    rvh->media_player_manager()->DestroyAllMediaPlayers();
-  if (content_view_core_)
-    content_view_core_->OnTabCrashed();
 }
 
 void WebContentsViewAndroid::SizeContents(const gfx::Size& size) {
@@ -130,18 +110,17 @@ DropData* WebContentsViewAndroid::GetDropData() const {
 }
 
 gfx::Rect WebContentsViewAndroid::GetViewBounds() const {
-  RenderWidgetHostView* rwhv = web_contents_->GetRenderWidgetHostView();
-  if (rwhv)
-    return rwhv->GetViewBounds();
-  else
-    return gfx::Rect();
+  if (content_view_core_)
+    return gfx::Rect(content_view_core_->GetViewSize());
+
+  return gfx::Rect();
 }
 
 void WebContentsViewAndroid::CreateView(
     const gfx::Size& initial_size, gfx::NativeView context) {
 }
 
-RenderWidgetHostView* WebContentsViewAndroid::CreateViewForWidget(
+RenderWidgetHostViewBase* WebContentsViewAndroid::CreateViewForWidget(
     RenderWidgetHost* render_widget_host) {
   if (render_widget_host->GetView()) {
     // During testing, the view will already be set up in most cases to the
@@ -150,7 +129,8 @@ RenderWidgetHostView* WebContentsViewAndroid::CreateViewForWidget(
     // view twice), we check for the RVH Factory, which will be set when we're
     // making special ones (which go along with the special views).
     DCHECK(RenderViewHostFactory::has_factory());
-    return render_widget_host->GetView();
+    return static_cast<RenderWidgetHostViewBase*>(
+        render_widget_host->GetView());
   }
   // Note that while this instructs the render widget host to reference
   // |native_view_|, this has no effect without also instructing the
@@ -158,14 +138,13 @@ RenderWidgetHostView* WebContentsViewAndroid::CreateViewForWidget(
   // order to paint it. See ContentView::GetRenderWidgetHostViewAndroid for an
   // example of how this is achieved for InterstitialPages.
   RenderWidgetHostImpl* rwhi = RenderWidgetHostImpl::From(render_widget_host);
-  RenderWidgetHostView* view = new RenderWidgetHostViewAndroid(
-      rwhi, content_view_core_);
-  return view;
+  return new RenderWidgetHostViewAndroid(rwhi, content_view_core_);
 }
 
-RenderWidgetHostView* WebContentsViewAndroid::CreateViewForPopupWidget(
+RenderWidgetHostViewBase* WebContentsViewAndroid::CreateViewForPopupWidget(
     RenderWidgetHost* render_widget_host) {
-  return RenderWidgetHostViewPort::CreateViewForWidget(render_widget_host);
+  RenderWidgetHostImpl* rwhi = RenderWidgetHostImpl::From(render_widget_host);
+  return new RenderWidgetHostViewAndroid(rwhi, NULL);
 }
 
 void WebContentsViewAndroid::RenderViewCreated(RenderViewHost* host) {
@@ -178,9 +157,9 @@ void WebContentsViewAndroid::SetOverscrollControllerEnabled(bool enabled) {
 }
 
 void WebContentsViewAndroid::ShowContextMenu(
-    const ContextMenuParams& params) {
+    RenderFrameHost* render_frame_host, const ContextMenuParams& params) {
   if (delegate_)
-    delegate_->ShowContextMenu(params);
+    delegate_->ShowContextMenu(render_frame_host, params);
 }
 
 void WebContentsViewAndroid::ShowPopupMenu(
@@ -193,8 +172,13 @@ void WebContentsViewAndroid::ShowPopupMenu(
     bool allow_multiple_selection) {
   if (content_view_core_) {
     content_view_core_->ShowSelectPopupMenu(
-        items, selected_item, allow_multiple_selection);
+        bounds, items, selected_item, allow_multiple_selection);
   }
+}
+
+void WebContentsViewAndroid::HidePopupMenu() {
+  if (content_view_core_)
+    content_view_core_->HideSelectPopupMenu();
 }
 
 void WebContentsViewAndroid::StartDragging(

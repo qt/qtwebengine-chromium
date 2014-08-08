@@ -41,6 +41,7 @@ class OpenSlesInput {
   static int32_t SetAndroidAudioDeviceObjects(void* javaVM,
                                               void* env,
                                               void* context);
+  static void ClearAndroidAudioDeviceObjects();
 
   // Main initializaton and termination
   int32_t Init();
@@ -76,7 +77,6 @@ class OpenSlesInput {
   bool AGC() const { return agc_enabled_; }
 
   // Audio mixer initialization
-  int32_t MicrophoneIsAvailable(bool& available);  // NOLINT
   int32_t InitMicrophone();
   bool MicrophoneIsInitialized() const { return mic_initialized_; }
 
@@ -205,7 +205,7 @@ class OpenSlesInput {
   // Audio buffers
   AudioDeviceBuffer* audio_buffer_;
   // Holds all allocated memory such that it is deallocated properly.
-  scoped_array<scoped_array<int8_t> > rec_buf_;
+  scoped_ptr<scoped_ptr<int8_t[]>[]> rec_buf_;
   // Index in |rec_buf_| pointing to the audio buffer that will be ready the
   // next time RecorderSimpleBufferQueueCallbackHandler is invoked.
   // Ready means buffer contains audio data from the device.

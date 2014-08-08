@@ -1,3 +1,4 @@
+# The GN build definitions for these variables are in scripts.gni.
 {
     'variables': {
         'scripts_for_in_files': [
@@ -38,6 +39,11 @@
             'templates/ElementFactory.h.tmpl',
             'templates/ElementWrapperFactory.cpp.tmpl',
             'templates/ElementWrapperFactory.h.tmpl',
+        ],
+        'make_element_type_helpers_files': [
+            '<@(make_qualified_names_files)',
+            'make_element_type_helpers.py',
+            'templates/ElementTypeHelpers.h.tmpl',
         ],
         'conditions': [
             ['OS=="win"', {

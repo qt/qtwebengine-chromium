@@ -6,7 +6,7 @@
 #define CONTENT_WORKER_WORKER_WEBKITPLATFORMSUPPORT_IMPL_H_
 
 #include "base/memory/scoped_ptr.h"
-#include "content/child/webkitplatformsupport_impl.h"
+#include "content/child/blink_platform_impl.h"
 #include "third_party/WebKit/public/platform/WebIDBFactory.h"
 #include "third_party/WebKit/public/platform/WebMimeRegistry.h"
 
@@ -28,7 +28,7 @@ class ThreadSafeSender;
 class WebDatabaseObserverImpl;
 class WebFileSystemImpl;
 
-class WorkerWebKitPlatformSupportImpl : public WebKitPlatformSupportImpl,
+class WorkerWebKitPlatformSupportImpl : public BlinkPlatformImpl,
                                         public blink::WebMimeRegistry {
  public:
   WorkerWebKitPlatformSupportImpl(
@@ -47,7 +47,8 @@ class WorkerWebKitPlatformSupportImpl : public WebKitPlatformSupportImpl,
   virtual unsigned long long visitedLinkHash(const char* canonicalURL,
                                              size_t length);
   virtual bool isLinkVisited(unsigned long long linkHash);
-  virtual blink::WebMessagePortChannel* createMessagePortChannel();
+  virtual void createMessageChannel(blink::WebMessagePortChannel** channel1,
+                                    blink::WebMessagePortChannel** channel2);
   virtual void setCookies(const blink::WebURL& url,
                           const blink::WebURL& first_party_for_cookies,
                           const blink::WebString& value);
@@ -89,6 +90,9 @@ class WorkerWebKitPlatformSupportImpl : public WebKitPlatformSupportImpl,
   virtual bool supportsMediaSourceMIMEType(
       const blink::WebString&,
       const blink::WebString&);
+  virtual bool supportsEncryptedMediaMIMEType(const blink::WebString&,
+                                              const blink::WebString&,
+                                              const blink::WebString&);
   virtual blink::WebMimeRegistry::SupportsType supportsNonImageMIMEType(
       const blink::WebString&);
   virtual blink::WebString mimeTypeForExtension(const blink::WebString&);
@@ -98,7 +102,7 @@ class WorkerWebKitPlatformSupportImpl : public WebKitPlatformSupportImpl,
   virtual void queryStorageUsageAndQuota(
       const blink::WebURL& storage_partition,
       blink::WebStorageQuotaType,
-      blink::WebStorageQuotaCallbacks*) OVERRIDE;
+      blink::WebStorageQuotaCallbacks) OVERRIDE;
 
   WebDatabaseObserverImpl* web_database_observer_impl() {
     return web_database_observer_impl_.get();
@@ -115,6 +119,8 @@ class WorkerWebKitPlatformSupportImpl : public WebKitPlatformSupportImpl,
   scoped_refptr<IPC::SyncMessageFilter> sync_message_filter_;
   scoped_refptr<QuotaMessageFilter> quota_message_filter_;
   scoped_ptr<WebDatabaseObserverImpl> web_database_observer_impl_;
+
+  DISALLOW_COPY_AND_ASSIGN(WorkerWebKitPlatformSupportImpl);
 };
 
 }  // namespace content

@@ -20,7 +20,7 @@
 #include "config.h"
 #include "core/rendering/svg/SVGResourcesCache.h"
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 #include "core/rendering/svg/RenderSVGResourceContainer.h"
 #include "core/rendering/svg/SVGResources.h"
 #include "core/rendering/svg/SVGResourcesCycleSolver.h"
@@ -51,7 +51,7 @@ void SVGResourcesCache::addResourcesFromRenderObject(RenderObject* object, const
         return;
 
     // Put object in cache.
-    SVGResources* resources = m_cache.set(object, newResources.release()).iterator->value.get();
+    SVGResources* resources = m_cache.set(object, newResources.release()).storedValue->value.get();
 
     // Run cycle-detection _afterwards_, so self-references can be caught as well.
     SVGResourcesCycleSolver solver(object, resources);
@@ -85,10 +85,8 @@ static inline SVGResourcesCache* resourcesCacheFromRenderObject(const RenderObje
 {
     Document& document = renderer->document();
 
-    SVGDocumentExtensions* extensions = document.accessSVGExtensions();
-    ASSERT(extensions);
-
-    SVGResourcesCache* cache = extensions->resourcesCache();
+    SVGDocumentExtensions& extensions = document.accessSVGExtensions();
+    SVGResourcesCache* cache = extensions.resourcesCache();
     ASSERT(cache);
 
     return cache;
@@ -124,11 +122,11 @@ void SVGResourcesCache::clientStyleChanged(RenderObject* renderer, StyleDifferen
     ASSERT(renderer->node());
     ASSERT(renderer->node()->isSVGElement());
 
-    if (diff == StyleDifferenceEqual || !renderer->parent())
+    if (diff.hasNoChange() || !renderer->parent())
         return;
 
     // In this case the proper SVGFE*Element will decide whether the modified CSS properties require a relayout or repaint.
-    if (renderer->isSVGResourceFilterPrimitive() && (diff == StyleDifferenceRepaint || diff == StyleDifferenceRepaintIfTextOrColorChange))
+    if (renderer->isSVGResourceFilterPrimitive() && !diff.needsLayout())
         return;
 
     // Dynamic changes of CSS properties like 'clip-path' may require us to recompute the associated resources for a renderer.
@@ -194,9 +192,9 @@ void SVGResourcesCache::resourceDestroyed(RenderSVGResourceContainer* resource)
         // Mark users of destroyed resources as pending resolution based on the id of the old resource.
         Element* resourceElement = resource->element();
         Element* clientElement = toElement(it->key->node());
-        SVGDocumentExtensions* extensions = clientElement->document().accessSVGExtensions();
+        SVGDocumentExtensions& extensions = clientElement->document().accessSVGExtensions();
 
-        extensions->addPendingResource(resourceElement->fastGetAttribute(HTMLNames::idAttr), clientElement);
+        extensions.addPendingResource(resourceElement->fastGetAttribute(HTMLNames::idAttr), clientElement);
     }
 }
 

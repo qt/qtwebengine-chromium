@@ -25,6 +25,7 @@
 #include "config.h"
 #include "platform/fonts/Font.h"
 
+#include "platform/fonts/Character.h"
 #include "platform/fonts/FontFallbackList.h"
 #include "platform/fonts/GlyphBuffer.h"
 #include "platform/fonts/SimpleFontData.h"
@@ -68,23 +69,23 @@ FloatRect Font::selectionRectForComplexText(const TextRun& run, const FloatPoint
     return FloatRect(floorf(point.x() + beforeWidth), point.y(), roundf(point.x() + afterWidth) - floorf(point.x() + beforeWidth), h);
 }
 
-float Font::getGlyphsAndAdvancesForComplexText(const TextRun& run, int from, int to, GlyphBuffer& glyphBuffer, ForTextEmphasisOrNot forTextEmphasis) const
+float Font::getGlyphsAndAdvancesForComplexText(const TextRunPaintInfo& runInfo, GlyphBuffer& glyphBuffer, ForTextEmphasisOrNot forTextEmphasis) const
 {
     float initialAdvance;
 
-    ComplexTextController controller(this, run, false, 0, forTextEmphasis);
-    controller.advance(from);
+    ComplexTextController controller(this, runInfo.run, false, 0, forTextEmphasis);
+    controller.advance(runInfo.from);
     float beforeWidth = controller.runWidthSoFar();
-    controller.advance(to, &glyphBuffer);
+    controller.advance(runInfo.to, &glyphBuffer);
 
     if (glyphBuffer.isEmpty())
         return 0;
 
     float afterWidth = controller.runWidthSoFar();
 
-    if (run.rtl()) {
+    if (runInfo.run.rtl()) {
         initialAdvance = controller.totalWidth() + controller.finalRoundingWidth() - afterWidth;
-        glyphBuffer.reverse(0, glyphBuffer.size());
+        glyphBuffer.reverse();
     } else
         initialAdvance = beforeWidth;
 
@@ -105,7 +106,7 @@ void Font::drawComplexText(GraphicsContext* context, const TextRunPaintInfo& run
     // This glyph buffer holds our glyphs + advances + font data for each glyph.
     GlyphBuffer glyphBuffer;
 
-    float startX = point.x() + getGlyphsAndAdvancesForComplexText(runInfo.run, runInfo.from, runInfo.to, glyphBuffer);
+    float startX = point.x() + getGlyphsAndAdvancesForComplexText(runInfo, glyphBuffer);
 
     // We couldn't generate any glyphs for the run.  Give up.
     if (glyphBuffer.isEmpty())
@@ -119,7 +120,7 @@ void Font::drawComplexText(GraphicsContext* context, const TextRunPaintInfo& run
 void Font::drawEmphasisMarksForComplexText(GraphicsContext* context, const TextRunPaintInfo& runInfo, const AtomicString& mark, const FloatPoint& point) const
 {
     GlyphBuffer glyphBuffer;
-    float initialAdvance = getGlyphsAndAdvancesForComplexText(runInfo.run, runInfo.from, runInfo.to, glyphBuffer, ForTextEmphasis);
+    float initialAdvance = getGlyphsAndAdvancesForComplexText(runInfo, glyphBuffer, ForTextEmphasis);
 
     if (glyphBuffer.isEmpty())
         return;
@@ -127,7 +128,7 @@ void Font::drawEmphasisMarksForComplexText(GraphicsContext* context, const TextR
     drawEmphasisMarks(context, runInfo, glyphBuffer, mark, FloatPoint(point.x() + initialAdvance, point.y()));
 }
 
-float Font::floatWidthForComplexText(const TextRun& run, HashSet<const SimpleFontData*>* fallbackFonts, GlyphOverflow* glyphOverflow) const
+float Font::floatWidthForComplexText(const TextRun& run, HashSet<const SimpleFontData*>* fallbackFonts, IntRectExtent* glyphBounds) const
 {
     if (preferHarfBuzz(this)) {
         HarfBuzzShaper shaper(this, run);
@@ -135,12 +136,11 @@ float Font::floatWidthForComplexText(const TextRun& run, HashSet<const SimpleFon
             return shaper.totalWidth();
     }
     ComplexTextController controller(this, run, true, fallbackFonts);
-    if (glyphOverflow) {
-        glyphOverflow->top = max<int>(glyphOverflow->top, ceilf(-controller.minGlyphBoundingBoxY()) - (glyphOverflow->computeBounds ? 0 : fontMetrics().ascent()));
-        glyphOverflow->bottom = max<int>(glyphOverflow->bottom, ceilf(controller.maxGlyphBoundingBoxY()) - (glyphOverflow->computeBounds ? 0 : fontMetrics().descent()));
-        glyphOverflow->left = max<int>(0, ceilf(-controller.minGlyphBoundingBoxX()));
-        glyphOverflow->right = max<int>(0, ceilf(controller.maxGlyphBoundingBoxX() - controller.totalWidth()));
-    }
+    glyphBounds->setTop(floorf(-controller.minGlyphBoundingBoxY()));
+    glyphBounds->setBottom(ceilf(controller.maxGlyphBoundingBoxY()));
+    glyphBounds->setLeft(max<int>(0, floorf(-controller.minGlyphBoundingBoxX())));
+    glyphBounds->setRight(max<int>(0, ceilf(controller.maxGlyphBoundingBoxX() - controller.totalWidth())));
+
     return controller.totalWidth();
 }
 
@@ -176,7 +176,7 @@ const SimpleFontData* Font::fontDataForCombiningCharacterSequence(const UChar* c
         const SimpleFontData* simpleFontData = fontData->fontDataForCharacter(baseCharacter);
         if (variant == NormalVariant) {
             if (simpleFontData->platformData().orientation() == Vertical) {
-                if (isCJKIdeographOrSymbol(baseCharacter) && !simpleFontData->hasVerticalGlyphs()) {
+                if (Character::isCJKIdeographOrSymbol(baseCharacter) && !simpleFontData->hasVerticalGlyphs()) {
                     variant = BrokenIdeographVariant;
                     simpleFontData = simpleFontData->brokenIdeographFontData().get();
                 } else if (m_fontDescription.nonCJKGlyphOrientation() == NonCJKGlyphOrientationVerticalRight) {

@@ -23,6 +23,21 @@
  * THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+.comparison {
+    display: flex;
+    flex-wrap: wrap;
+    width: 100%;
+}
+
+.comparison > div {
+    flex: 1;
+    min-width: 300px;
+}
+
+.results-container {
+    border: 1px solid gray;
+}
+
 .non-action-button, .results-view ul.actions, .ui-dialog ul.actions {
     float: right;
     margin: 0;
@@ -154,6 +169,11 @@ html, body, #onebar, .results-view, .test-selector {
 }
 
 /*** status console ***/
+body.status-resizing {
+    cursor: ns-resize;
+    -webkit-user-select: none;
+}
+
 .status {
     position: fixed;
     bottom: 0;
@@ -163,6 +183,25 @@ html, body, #onebar, .results-view, .test-selector {
     background-color: white;
     border-top: 1px solid gray;
     -webkit-box-shadow: 0px -2px 10px gray;
+    overflow: visible;
+}
+
+.status > .dragger {
+    position: absolute;
+    top: -6px;
+    height: 6px;
+    left: 0;
+    right: 0;
+    background: transparent;
+    cursor: ns-resize;
+}
+
+.status > .contents {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    right: 0;
     overflow: auto;
     white-space: nowrap;
     padding: 4px;

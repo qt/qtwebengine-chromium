@@ -4,6 +4,7 @@
  */
 
 .bubble-button {
+  -webkit-margin-start: 4px;
   display: inline-block;
   height: 0;
   line-height: 1;
@@ -15,6 +16,6 @@
   background-size: 16px;
   height: 16px;
   position: relative;
-  top: -8px;
+  top: -9px;
   width: 16px;
 }

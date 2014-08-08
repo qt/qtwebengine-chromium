@@ -39,9 +39,8 @@ public:
         setDocumentForAnonymous(&owner->document());
     }
 private:
-    virtual bool isRenderFullScreenPlaceholder() const { return true; }
-    virtual bool supportsPartialLayout() const OVERRIDE { return false; }
-    virtual void willBeDestroyed();
+    virtual bool isRenderFullScreenPlaceholder() const OVERRIDE { return true; }
+    virtual void willBeDestroyed() OVERRIDE;
     RenderFullScreen* m_owner;
 };
 
@@ -76,9 +75,9 @@ void RenderFullScreen::willBeDestroyed()
 
     // RenderObjects are unretained, so notify the document (which holds a pointer to a RenderFullScreen)
     // if it's RenderFullScreen is destroyed.
-    FullscreenElementStack* controller = FullscreenElementStack::from(&document());
-    if (controller->fullScreenRenderer() == this)
-        controller->fullScreenRendererDestroyed();
+    FullscreenElementStack& controller = FullscreenElementStack::from(document());
+    if (controller.fullScreenRenderer() == this)
+        controller.fullScreenRendererDestroyed();
 
     RenderFlexibleBox::willBeDestroyed();
 }
@@ -91,11 +90,11 @@ static PassRefPtr<RenderStyle> createFullScreenStyle()
     fullscreenStyle->setZIndex(INT_MAX);
 
     fullscreenStyle->setFontDescription(FontDescription());
-    fullscreenStyle->font().update(0);
+    fullscreenStyle->font().update(nullptr);
 
     fullscreenStyle->setDisplay(FLEX);
     fullscreenStyle->setJustifyContent(JustifyCenter);
-    fullscreenStyle->setAlignItems(AlignCenter);
+    fullscreenStyle->setAlignItems(ItemPositionCenter);
     fullscreenStyle->setFlexDirection(FlowColumn);
 
     fullscreenStyle->setPosition(FixedPosition);
@@ -104,13 +103,17 @@ static PassRefPtr<RenderStyle> createFullScreenStyle()
     fullscreenStyle->setLeft(Length(0, WebCore::Fixed));
     fullscreenStyle->setTop(Length(0, WebCore::Fixed));
 
-    fullscreenStyle->setBackgroundColor(Color::black);
+    fullscreenStyle->setBackgroundColor(StyleColor(Color::black));
 
     return fullscreenStyle.release();
 }
 
 RenderObject* RenderFullScreen::wrapRenderer(RenderObject* object, RenderObject* parent, Document* document)
 {
+    // FIXME: We should not modify the structure of the render tree during
+    // layout. crbug.com/370459
+    DeprecatedDisableModifyRenderTreeStructureAsserts disabler;
+
     RenderFullScreen* fullscreenRenderer = RenderFullScreen::createAnonymous(document);
     fullscreenRenderer->setStyle(createFullScreenStyle());
     if (parent && !parent->isChildAllowed(fullscreenRenderer, fullscreenRenderer->style())) {
@@ -133,19 +136,24 @@ RenderObject* RenderFullScreen::wrapRenderer(RenderObject* object, RenderObject*
             // Always just do a full layout to ensure that line boxes get deleted properly.
             // Because objects moved from |parent| to |fullscreenRenderer|, we want to
             // make new line boxes instead of leaving the old ones around.
-            parent->setNeedsLayoutAndPrefWidthsRecalc();
-            containingBlock->setNeedsLayoutAndPrefWidthsRecalc();
+            parent->setNeedsLayoutAndPrefWidthsRecalcAndFullPaintInvalidation();
+            containingBlock->setNeedsLayoutAndPrefWidthsRecalcAndFullPaintInvalidation();
         }
         fullscreenRenderer->addChild(object);
-        fullscreenRenderer->setNeedsLayoutAndPrefWidthsRecalc();
+        fullscreenRenderer->setNeedsLayoutAndPrefWidthsRecalcAndFullPaintInvalidation();
     }
 
-    FullscreenElementStack::from(document)->setFullScreenRenderer(fullscreenRenderer);
+    ASSERT(document);
+    FullscreenElementStack::from(*document).setFullScreenRenderer(fullscreenRenderer);
     return fullscreenRenderer;
 }
 
 void RenderFullScreen::unwrapRenderer()
 {
+    // FIXME: We should not modify the structure of the render tree during
+    // layout. crbug.com/370459
+    DeprecatedDisableModifyRenderTreeStructureAsserts disabler;
+
     if (parent()) {
         RenderObject* child;
         while ((child = firstChild())) {
@@ -156,13 +164,13 @@ void RenderFullScreen::unwrapRenderer()
                 toRenderBox(child)->clearOverrideSize();
             child->remove();
             parent()->addChild(child, this);
-            parent()->setNeedsLayoutAndPrefWidthsRecalc();
+            parent()->setNeedsLayoutAndPrefWidthsRecalcAndFullPaintInvalidation();
         }
     }
     if (placeholder())
         placeholder()->remove();
     remove();
-    FullscreenElementStack::from(&document())->setFullScreenRenderer(0);
+    FullscreenElementStack::from(document()).setFullScreenRenderer(0);
 }
 
 void RenderFullScreen::setPlaceholder(RenderBlock* placeholder)
@@ -182,7 +190,7 @@ void RenderFullScreen::createPlaceholder(PassRefPtr<RenderStyle> style, const La
         m_placeholder->setStyle(style);
         if (parent()) {
             parent()->addChild(m_placeholder, this);
-            parent()->setNeedsLayoutAndPrefWidthsRecalc();
+            parent()->setNeedsLayoutAndPrefWidthsRecalcAndFullPaintInvalidation();
         }
     } else
         m_placeholder->setStyle(style);

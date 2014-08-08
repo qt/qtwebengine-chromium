@@ -35,19 +35,30 @@
 
 namespace WebCore {
 
+// FIXME: This enum makes it hard to tell in general what values may be
+// appropriate for any given Length.
 enum LengthType {
     Auto, Percent, Fixed,
     Intrinsic, MinIntrinsic,
     MinContent, MaxContent, FillAvailable, FitContent,
     Calculated,
-    ViewportPercentageWidth, ViewportPercentageHeight, ViewportPercentageMin, ViewportPercentageMax,
-    ExtendToZoom,
+    ExtendToZoom, DeviceWidth, DeviceHeight,
     Undefined
 };
 
 enum ValueRange {
     ValueRangeAll,
     ValueRangeNonNegative
+};
+
+struct PixelsAndPercent {
+    PixelsAndPercent(float pixels, float percent)
+        : pixels(pixels)
+        , percent(percent)
+    {
+    }
+    float pixels;
+    float percent;
 };
 
 class CalculationValue;
@@ -94,14 +105,50 @@ public:
 
     Length(const Length& length)
     {
-        initFromLength(length);
+        memcpy(this, &length, sizeof(Length));
+        if (isCalculated())
+            incrementCalculatedRef();
     }
 
     Length& operator=(const Length& length)
     {
-        initFromLength(length);
+        if (length.isCalculated())
+            length.incrementCalculatedRef();
+        if (isCalculated())
+            decrementCalculatedRef();
+        memcpy(this, &length, sizeof(Length));
         return *this;
     }
+
+#if COMPILER_SUPPORTS(CXX_RVALUE_REFERENCES)
+    Length(Length&& length)
+    {
+        memcpy(this, &length, sizeof(Length));
+
+        // Reset |length|'s type to Auto to make sure its destructor
+        // won't call decrementCalculatedRef() as we don't call
+        // incrementCalculatedRef() here.
+        length.m_type = Auto;
+    }
+
+    Length& operator=(Length&& length)
+    {
+        if (this == &length)
+            return *this;
+
+        if (isCalculated())
+            decrementCalculatedRef();
+
+        memcpy(this, &length, sizeof(Length));
+
+        // Reset |length|'s type to Auto to make sure its destructor
+        // won't call decrementCalculatedRef() as we don't call
+        // incrementCalculatedRef() here.
+        length.m_type = Auto;
+
+        return *this;
+    }
+#endif
 
     ~Length()
     {
@@ -146,8 +193,9 @@ public:
         ASSERT(type() == Percent);
         return getFloatValue();
     }
+    PixelsAndPercent pixelsAndPercent() const;
 
-    CalculationValue* calculationValue() const;
+    CalculationValue& calculationValue() const;
 
     LengthType type() const { return static_cast<LengthType>(m_type); }
     bool quirk() const { return m_quirk; }
@@ -183,7 +231,7 @@ public:
     void setValue(LengthType t, LayoutUnit value)
     {
         m_type = t;
-        m_floatValue = value;
+        m_floatValue = value.toFloat();
         m_isFloat = true;
     }
 
@@ -229,7 +277,7 @@ public:
     bool isIntrinsicOrAuto() const { return type() == Auto || isLegacyIntrinsic() || isIntrinsic(); }
     bool isLegacyIntrinsic() const { return type() == Intrinsic || type() == MinIntrinsic; }
     bool isIntrinsic() const { return type() == MinContent || type() == MaxContent || type() == FillAvailable || type() == FitContent; }
-    bool isSpecified() const { return type() == Fixed || type() == Percent || type() == Calculated || isViewportPercentage(); }
+    bool isSpecified() const { return type() == Fixed || type() == Percent || type() == Calculated; }
     bool isSpecifiedOrIntrinsic() const { return isSpecified() || isIntrinsic(); }
     bool isCalculated() const { return type() == Calculated; }
     bool isCalculatedEqual(const Length&) const;
@@ -240,10 +288,7 @@ public:
 
     Length blend(const Length& from, double progress, ValueRange range) const
     {
-        // FIXME: These should step at 50%, but transitions currently blend values that should
-        // never be transitioned in the first place.
-        if (isUndefined() || from.isUndefined() || isIntrinsicOrAuto() || from.isIntrinsicOrAuto())
-            return *this;
+        ASSERT(isSpecified() && from.isSpecified());
 
         if (progress == 0.0)
             return from;
@@ -277,28 +322,13 @@ public:
     }
     float nonNanCalculatedValue(int maxValue) const;
 
-    bool isViewportPercentage() const
-    {
-        LengthType lengthType = type();
-        return lengthType >= ViewportPercentageWidth && lengthType <= ViewportPercentageMax;
-    }
-    float viewportPercentageLength() const
-    {
-        ASSERT(isViewportPercentage());
-        return getFloatValue();
-    }
+    Length subtractFromOneHundredPercent() const;
+
 private:
     int getIntValue() const
     {
         ASSERT(!isUndefined());
         return m_isFloat ? static_cast<int>(m_floatValue) : m_intValue;
-    }
-    void initFromLength(const Length& length)
-    {
-        memcpy(this, &length, sizeof(Length));
-
-        if (isCalculated())
-            incrementCalculatedRef();
     }
 
     Length blendMixedTypes(const Length& from, double progress, ValueRange) const;

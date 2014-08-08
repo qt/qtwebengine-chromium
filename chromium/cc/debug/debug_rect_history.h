@@ -10,7 +10,6 @@
 #include "base/memory/scoped_ptr.h"
 #include "cc/layers/layer_lists.h"
 #include "ui/gfx/rect.h"
-#include "ui/gfx/rect_f.h"
 
 namespace cc {
 
@@ -52,16 +51,17 @@ enum DebugRectType {
   NONOCCLUDING_RECT_TYPE,
   TOUCH_EVENT_HANDLER_RECT_TYPE,
   WHEEL_EVENT_HANDLER_RECT_TYPE,
+  SCROLL_EVENT_HANDLER_RECT_TYPE,
   NON_FAST_SCROLLABLE_RECT_TYPE,
   ANIMATION_BOUNDS_RECT_TYPE,
 };
 
 struct DebugRect {
-  DebugRect(DebugRectType new_type, gfx::RectF new_rect)
+  DebugRect(DebugRectType new_type, const gfx::Rect& new_rect)
       : type(new_type), rect(new_rect) {}
 
   DebugRectType type;
-  gfx::RectF rect;
+  gfx::Rect rect;
 };
 
 // This class maintains a history of rects of various types that can be used
@@ -77,6 +77,7 @@ class DebugRectHistory {
   // reset.
   void SaveDebugRectsForCurrentFrame(
       LayerImpl* root_layer,
+      LayerImpl* hud_layer,
       const LayerImplList& render_surface_layer_list,
       const std::vector<gfx::Rect>& occluding_screen_space_rects,
       const std::vector<gfx::Rect>& non_occluding_screen_space_rects,
@@ -88,8 +89,8 @@ class DebugRectHistory {
   DebugRectHistory();
 
   void SavePaintRects(LayerImpl* layer);
-  void SavePropertyChangedRects(
-      const LayerImplList& render_surface_layer_list);
+  void SavePropertyChangedRects(const LayerImplList& render_surface_layer_list,
+                                LayerImpl* hud_layer);
   void SaveSurfaceDamageRects(
       const LayerImplList& render_surface_layer_list);
   void SaveScreenSpaceRects(
@@ -102,6 +103,8 @@ class DebugRectHistory {
   void SaveTouchEventHandlerRectsCallback(LayerImpl* layer);
   void SaveWheelEventHandlerRects(LayerImpl* layer);
   void SaveWheelEventHandlerRectsCallback(LayerImpl* layer);
+  void SaveScrollEventHandlerRects(LayerImpl* layer);
+  void SaveScrollEventHandlerRectsCallback(LayerImpl* layer);
   void SaveNonFastScrollableRects(LayerImpl* layer);
   void SaveNonFastScrollableRectsCallback(LayerImpl* layer);
   void SaveLayerAnimationBoundsRects(

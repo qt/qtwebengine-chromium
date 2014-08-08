@@ -4,13 +4,18 @@
 
 #include "google_apis/gcm/engine/mcs_client.h"
 
+#include <set>
+
 #include "base/basictypes.h"
 #include "base/message_loop/message_loop.h"
+#include "base/metrics/histogram.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/time/clock.h"
+#include "base/time/time.h"
 #include "google_apis/gcm/base/mcs_util.h"
 #include "google_apis/gcm/base/socket_stream.h"
 #include "google_apis/gcm/engine/connection_factory.h"
-#include "google_apis/gcm/engine/rmq_store.h"
+#include "google_apis/gcm/monitoring/gcm_stats_recorder.h"
 
 using namespace google::protobuf::io;
 
@@ -20,9 +25,6 @@ namespace {
 
 typedef scoped_ptr<google::protobuf::MessageLite> MCSProto;
 
-// TODO(zea): get these values from MCS settings.
-const int64 kHeartbeatDefaultSeconds = 60 * 15;  // 15 minutes.
-
 // The category of messages intended for the GCM client itself from MCS.
 const char kMCSCategory[] = "com.google.android.gsf.gtalkservice";
 
@@ -30,8 +32,8 @@ const char kMCSCategory[] = "com.google.android.gsf.gtalkservice";
 const char kGCMFromField[] = "gcm@android.com";
 
 // MCS status message types.
+// TODO(zea): handle these at the GCMClient layer.
 const char kIdleNotification[] = "IdleNotification";
-// TODO(zea): consume the following message types:
 // const char kAlwaysShowOnIdle[] = "ShowAwayOnIdle";
 // const char kPowerNotification[] = "PowerNotification";
 // const char kDataActiveNotification[] = "DataActiveNotification";
@@ -64,6 +66,47 @@ bool BuildPersistentIdListFromProto(const google::protobuf::string& bytes,
 
 }  // namespace
 
+class CollapseKey {
+ public:
+  explicit CollapseKey(const mcs_proto::DataMessageStanza& message);
+  ~CollapseKey();
+
+  // Comparison operator for use in maps.
+  bool operator<(const CollapseKey& right) const;
+
+  // Whether the message had a valid collapse key.
+  bool IsValid() const;
+
+  std::string token() const { return token_; }
+  std::string app_id() const { return app_id_; }
+  int64 device_user_id() const { return device_user_id_; }
+
+ private:
+  const std::string token_;
+  const std::string app_id_;
+  const int64 device_user_id_;
+};
+
+CollapseKey::CollapseKey(const mcs_proto::DataMessageStanza& message)
+    : token_(message.token()),
+      app_id_(message.category()),
+      device_user_id_(message.device_user_id()) {}
+
+CollapseKey::~CollapseKey() {}
+
+bool CollapseKey::IsValid() const {
+  // Device user id is optional, but the application id and token are not.
+  return !token_.empty() && !app_id_.empty();
+}
+
+bool CollapseKey::operator<(const CollapseKey& right) const {
+  if (device_user_id_ != right.device_user_id())
+    return device_user_id_ < right.device_user_id();
+  if (app_id_ != right.app_id())
+    return app_id_ < right.app_id();
+  return token_ < right.token();
+}
+
 struct ReliablePacketInfo {
   ReliablePacketInfo();
   ~ReliablePacketInfo();
@@ -86,11 +129,38 @@ ReliablePacketInfo::ReliablePacketInfo()
 }
 ReliablePacketInfo::~ReliablePacketInfo() {}
 
-MCSClient::MCSClient(
-    const base::FilePath& rmq_path,
-    ConnectionFactory* connection_factory,
-    scoped_refptr<base::SequencedTaskRunner> blocking_task_runner)
-    : state_(UNINITIALIZED),
+int MCSClient::GetSendQueueSize() const {
+  return to_send_.size();
+}
+
+int MCSClient::GetResendQueueSize() const {
+  return to_resend_.size();
+}
+
+std::string MCSClient::GetStateString() const {
+  switch(state_) {
+    case UNINITIALIZED:
+      return "UNINITIALIZED";
+    case LOADED:
+      return "LOADED";
+    case CONNECTING:
+      return "CONNECTING";
+    case CONNECTED:
+      return "CONNECTED";
+    default:
+      NOTREACHED();
+      return std::string();
+  }
+}
+
+MCSClient::MCSClient(const std::string& version_string,
+                     base::Clock* clock,
+                     ConnectionFactory* connection_factory,
+                     GCMStore* gcm_store,
+                     GCMStatsRecorder* recorder)
+    : version_string_(version_string),
+      clock_(clock),
+      state_(UNINITIALIZED),
       android_id_(0),
       security_token_(0),
       connection_factory_(connection_factory),
@@ -99,11 +169,8 @@ MCSClient::MCSClient(
       last_server_to_device_stream_id_received_(0),
       stream_id_out_(0),
       stream_id_in_(0),
-      rmq_store_(rmq_path, blocking_task_runner),
-      heartbeat_interval_(
-          base::TimeDelta::FromSeconds(kHeartbeatDefaultSeconds)),
-      heartbeat_timer_(true, true),
-      blocking_task_runner_(blocking_task_runner),
+      gcm_store_(gcm_store),
+      recorder_(recorder),
       weak_ptr_factory_(this) {
 }
 
@@ -111,17 +178,16 @@ MCSClient::~MCSClient() {
 }
 
 void MCSClient::Initialize(
-    const InitializationCompleteCallback& initialization_callback,
+    const ErrorCallback& error_callback,
     const OnMessageReceivedCallback& message_received_callback,
-    const OnMessageSentCallback& message_sent_callback) {
+    const OnMessageSentCallback& message_sent_callback,
+    scoped_ptr<GCMStore::LoadResult> load_result) {
   DCHECK_EQ(state_, UNINITIALIZED);
-  initialization_callback_ = initialization_callback;
+
+  state_ = LOADED;
+  mcs_error_callback_ = error_callback;
   message_received_callback_ = message_received_callback;
   message_sent_callback_ = message_sent_callback;
-
-  state_ = LOADING;
-  rmq_store_.Load(base::Bind(&MCSClient::OnRMQLoadFinished,
-                             weak_ptr_factory_.GetWeakPtr()));
 
   connection_factory_->Initialize(
       base::Bind(&MCSClient::ResetStateAndBuildLoginRequest,
@@ -131,71 +197,171 @@ void MCSClient::Initialize(
       base::Bind(&MCSClient::MaybeSendMessage,
                  weak_ptr_factory_.GetWeakPtr()));
   connection_handler_ = connection_factory_->GetConnectionHandler();
+
+  stream_id_out_ = 1;  // Login request is hardcoded to id 1.
+
+  android_id_ = load_result->device_android_id;
+  security_token_ = load_result->device_security_token;
+
+  if (android_id_ == 0) {
+    DVLOG(1) << "No device credentials found, assuming new client.";
+    // No need to try and load RMQ data in that case.
+    return;
+  }
+
+  // |android_id_| is non-zero, so should |security_token_|.
+  DCHECK_NE(0u, security_token_) << "Security token invalid, while android id"
+                                 << " is non-zero.";
+
+  DVLOG(1) << "RMQ Load finished with " << load_result->incoming_messages.size()
+           << " incoming acks pending and "
+           << load_result->outgoing_messages.size()
+           << " outgoing messages pending.";
+
+  restored_unackeds_server_ids_ = load_result->incoming_messages;
+
+  // First go through and order the outgoing messages by recency.
+  std::map<uint64, google::protobuf::MessageLite*> ordered_messages;
+  std::vector<PersistentId> expired_ttl_ids;
+  for (GCMStore::OutgoingMessageMap::iterator iter =
+           load_result->outgoing_messages.begin();
+       iter != load_result->outgoing_messages.end(); ++iter) {
+    uint64 timestamp = 0;
+    if (!base::StringToUint64(iter->first, &timestamp)) {
+      LOG(ERROR) << "Invalid restored message.";
+      // TODO(fgorski): Error: data unreadable
+      mcs_error_callback_.Run();
+      return;
+    }
+
+    // Check if the TTL has expired for this message.
+    if (HasTTLExpired(*iter->second, clock_)) {
+      expired_ttl_ids.push_back(iter->first);
+      NotifyMessageSendStatus(*iter->second, TTL_EXCEEDED);
+      continue;
+    }
+
+    ordered_messages[timestamp] = iter->second.release();
+  }
+
+  if (!expired_ttl_ids.empty()) {
+    gcm_store_->RemoveOutgoingMessages(
+        expired_ttl_ids,
+        base::Bind(&MCSClient::OnGCMUpdateFinished,
+                   weak_ptr_factory_.GetWeakPtr()));
+  }
+
+  // Now go through and add the outgoing messages to the send queue in their
+  // appropriate order (oldest at front, most recent at back).
+  for (std::map<uint64, google::protobuf::MessageLite*>::iterator
+           iter = ordered_messages.begin();
+       iter != ordered_messages.end(); ++iter) {
+    ReliablePacketInfo* packet_info = new ReliablePacketInfo();
+    packet_info->protobuf.reset(iter->second);
+    packet_info->tag = GetMCSProtoTag(*iter->second);
+    packet_info->persistent_id = base::Uint64ToString(iter->first);
+    to_send_.push_back(make_linked_ptr(packet_info));
+
+    if (packet_info->tag == kDataMessageStanzaTag) {
+      mcs_proto::DataMessageStanza* data_message =
+          reinterpret_cast<mcs_proto::DataMessageStanza*>(
+              packet_info->protobuf.get());
+      CollapseKey collapse_key(*data_message);
+      if (collapse_key.IsValid())
+        collapse_key_map_[collapse_key] = packet_info;
+    }
+  }
 }
 
 void MCSClient::Login(uint64 android_id, uint64 security_token) {
   DCHECK_EQ(state_, LOADED);
+  DCHECK(android_id_ == 0 || android_id_ == android_id);
+  DCHECK(security_token_ == 0 || security_token_ == security_token);
+
   if (android_id != android_id_ && security_token != security_token_) {
     DCHECK(android_id);
     DCHECK(security_token);
-    DCHECK(restored_unackeds_server_ids_.empty());
     android_id_ = android_id;
     security_token_ = security_token;
-    rmq_store_.SetDeviceCredentials(android_id_,
-                                    security_token_,
-                                    base::Bind(&MCSClient::OnRMQUpdateFinished,
-                                               weak_ptr_factory_.GetWeakPtr()));
   }
+
+  DCHECK(android_id_ != 0 || restored_unackeds_server_ids_.empty());
 
   state_ = CONNECTING;
   connection_factory_->Connect();
 }
 
-void MCSClient::SendMessage(const MCSMessage& message, bool use_rmq) {
-  DCHECK_EQ(state_, CONNECTED);
+void MCSClient::SendMessage(const MCSMessage& message) {
+  int ttl = GetTTL(message.GetProtobuf());
+  DCHECK_GE(ttl, 0);
   if (to_send_.size() > kMaxSendQueueSize) {
-    base::MessageLoop::current()->PostTask(
-        FROM_HERE,
-        base::Bind(message_sent_callback_, "Message queue full."));
+    NotifyMessageSendStatus(message.GetProtobuf(), QUEUE_SIZE_LIMIT_REACHED);
     return;
   }
   if (message.size() > kMaxMessageBytes) {
-    base::MessageLoop::current()->PostTask(
-        FROM_HERE,
-        base::Bind(message_sent_callback_, "Message too large."));
+    NotifyMessageSendStatus(message.GetProtobuf(), MESSAGE_TOO_LARGE);
     return;
   }
 
-  ReliablePacketInfo* packet_info = new ReliablePacketInfo();
+  scoped_ptr<ReliablePacketInfo> packet_info(new ReliablePacketInfo());
+  packet_info->tag = message.tag();
   packet_info->protobuf = message.CloneProtobuf();
 
-  if (use_rmq) {
-    PersistentId persistent_id = GetNextPersistentId();
-    DVLOG(1) << "Setting persistent id to " << persistent_id;
-    packet_info->persistent_id = persistent_id;
-    SetPersistentId(persistent_id,
-                    packet_info->protobuf.get());
-    rmq_store_.AddOutgoingMessage(persistent_id,
-                                  MCSMessage(message.tag(),
-                                             *(packet_info->protobuf)),
-                                  base::Bind(&MCSClient::OnRMQUpdateFinished,
-                                             weak_ptr_factory_.GetWeakPtr()));
-  } else {
-    // Check that there is an active connection to the endpoint.
-    if (!connection_handler_->CanSendMessage()) {
-      base::MessageLoop::current()->PostTask(
-          FROM_HERE,
-          base::Bind(message_sent_callback_, "Unable to reach endpoint"));
-      return;
-    }
-  }
-  to_send_.push_back(make_linked_ptr(packet_info));
-  MaybeSendMessage();
-}
+  if (ttl > 0) {
+    DCHECK_EQ(message.tag(), kDataMessageStanzaTag);
 
-void MCSClient::Destroy() {
-  rmq_store_.Destroy(base::Bind(&MCSClient::OnRMQUpdateFinished,
-                                weak_ptr_factory_.GetWeakPtr()));
+    // First check if this message should replace a pending message with the
+    // same collapse key.
+    mcs_proto::DataMessageStanza* data_message =
+        reinterpret_cast<mcs_proto::DataMessageStanza*>(
+            packet_info->protobuf.get());
+    CollapseKey collapse_key(*data_message);
+    if (collapse_key.IsValid() && collapse_key_map_.count(collapse_key) > 0) {
+      ReliablePacketInfo* original_packet = collapse_key_map_[collapse_key];
+      DVLOG(1) << "Found matching collapse key, Reusing persistent id of "
+               << original_packet->persistent_id;
+      original_packet->protobuf = packet_info->protobuf.Pass();
+      SetPersistentId(original_packet->persistent_id,
+                      original_packet->protobuf.get());
+      gcm_store_->OverwriteOutgoingMessage(
+          original_packet->persistent_id,
+          message,
+          base::Bind(&MCSClient::OnGCMUpdateFinished,
+                     weak_ptr_factory_.GetWeakPtr()));
+
+      // The message is already queued, return.
+      return;
+    } else {
+      PersistentId persistent_id = GetNextPersistentId();
+      DVLOG(1) << "Setting persistent id to " << persistent_id;
+      packet_info->persistent_id = persistent_id;
+      SetPersistentId(persistent_id, packet_info->protobuf.get());
+      if (!gcm_store_->AddOutgoingMessage(
+               persistent_id,
+               MCSMessage(message.tag(), *(packet_info->protobuf)),
+               base::Bind(&MCSClient::OnGCMUpdateFinished,
+                          weak_ptr_factory_.GetWeakPtr()))) {
+        NotifyMessageSendStatus(message.GetProtobuf(),
+                                APP_QUEUE_SIZE_LIMIT_REACHED);
+        return;
+      }
+    }
+
+    if (collapse_key.IsValid())
+      collapse_key_map_[collapse_key] = packet_info.get();
+  } else if (!connection_factory_->IsEndpointReachable()) {
+    DVLOG(1) << "No active connection, dropping message.";
+    NotifyMessageSendStatus(message.GetProtobuf(), NO_CONNECTION_ON_ZERO_TTL);
+    return;
+  }
+
+  to_send_.push_back(make_linked_ptr(packet_info.release()));
+
+  // Notify that the messages has been succsfully queued for sending.
+  // TODO(jianli): We should report QUEUED after writing to GCM store succeeds.
+  NotifyMessageSendStatus(message.GetProtobuf(), QUEUED);
+
+  MaybeSendMessage();
 }
 
 void MCSClient::ResetStateAndBuildLoginRequest(
@@ -207,7 +373,7 @@ void MCSClient::ResetStateAndBuildLoginRequest(
   last_device_to_server_stream_id_received_ = 0;
   last_server_to_device_stream_id_received_ = 0;
 
-  // TODO(zea): expire all messages older than their TTL.
+  heartbeat_manager_.Stop();
 
   // Add any pending acknowledgments to the list of ids.
   for (StreamIdToPersistentIdMap::const_iterator iter =
@@ -229,7 +395,9 @@ void MCSClient::ResetStateAndBuildLoginRequest(
   acked_server_ids_.clear();
 
   // Then build the request, consuming all pending acknowledgments.
-  request->Swap(BuildLoginRequest(android_id_, security_token_).get());
+  request->Swap(BuildLoginRequest(android_id_,
+                                  security_token_,
+                                  version_string_).get());
   for (PersistentIdList::const_iterator iter =
            restored_unackeds_server_ids_.begin();
        iter != restored_unackeds_server_ids_.end(); ++iter) {
@@ -245,74 +413,49 @@ void MCSClient::ResetStateAndBuildLoginRequest(
     to_send_.push_front(to_resend_.back());
     to_resend_.pop_back();
   }
+
+  // Drop all TTL == 0 or expired TTL messages from the queue.
+  std::deque<MCSPacketInternal> new_to_send;
+  std::vector<PersistentId> expired_ttl_ids;
+  while (!to_send_.empty()) {
+    MCSPacketInternal packet = PopMessageForSend();
+    if (GetTTL(*packet->protobuf) > 0 &&
+        !HasTTLExpired(*packet->protobuf, clock_)) {
+      new_to_send.push_back(packet);
+    } else {
+      // If the TTL was 0 there is no persistent id, so no need to remove the
+      // message from the persistent store.
+      if (!packet->persistent_id.empty())
+        expired_ttl_ids.push_back(packet->persistent_id);
+      NotifyMessageSendStatus(*packet->protobuf, TTL_EXCEEDED);
+    }
+  }
+
+  if (!expired_ttl_ids.empty()) {
+    DVLOG(1) << "Connection reset, " << expired_ttl_ids.size()
+             << " messages expired.";
+    gcm_store_->RemoveOutgoingMessages(
+        expired_ttl_ids,
+        base::Bind(&MCSClient::OnGCMUpdateFinished,
+                   weak_ptr_factory_.GetWeakPtr()));
+  }
+
+  to_send_.swap(new_to_send);
+
   DVLOG(1) << "Resetting state, with " << request->received_persistent_id_size()
            << " incoming acks pending, and " << to_send_.size()
            << " pending outgoing messages.";
-
-  heartbeat_timer_.Stop();
 
   state_ = CONNECTING;
 }
 
 void MCSClient::SendHeartbeat() {
-  SendMessage(MCSMessage(kHeartbeatPingTag, mcs_proto::HeartbeatPing()),
-              false);
+  SendMessage(MCSMessage(kHeartbeatPingTag, mcs_proto::HeartbeatPing()));
 }
 
-void MCSClient::OnRMQLoadFinished(const RMQStore::LoadResult& result) {
-  if (!result.success) {
-    state_ = UNINITIALIZED;
-    LOG(ERROR) << "Failed to load/create RMQ state. Not connecting.";
-    initialization_callback_.Run(false, 0, 0);
-    return;
-  }
-  state_ = LOADED;
-  stream_id_out_ = 1;  // Login request is hardcoded to id 1.
-
-  if (result.device_android_id == 0 || result.device_security_token == 0) {
-    DVLOG(1) << "No device credentials found, assuming new client.";
-    initialization_callback_.Run(true, 0, 0);
-    return;
-  }
-
-  android_id_ = result.device_android_id;
-  security_token_ = result.device_security_token;
-
-  DVLOG(1) << "RMQ Load finished with " << result.incoming_messages.size()
-           << " incoming acks pending and " << result.outgoing_messages.size()
-           << " outgoing messages pending.";
-
-  restored_unackeds_server_ids_ = result.incoming_messages;
-
-  // First go through and order the outgoing messages by recency.
-  std::map<uint64, google::protobuf::MessageLite*> ordered_messages;
-  for (std::map<PersistentId, google::protobuf::MessageLite*>::const_iterator
-           iter = result.outgoing_messages.begin();
-       iter != result.outgoing_messages.end(); ++iter) {
-    uint64 timestamp = 0;
-    if (!base::StringToUint64(iter->first, &timestamp)) {
-      LOG(ERROR) << "Invalid restored message.";
-      return;
-    }
-    ordered_messages[timestamp] = iter->second;
-  }
-
-  // Now go through and add the outgoing messages to the send queue in their
-  // appropriate order (oldest at front, most recent at back).
-  for (std::map<uint64, google::protobuf::MessageLite*>::const_iterator
-           iter = ordered_messages.begin();
-       iter != ordered_messages.end(); ++iter) {
-    ReliablePacketInfo* packet_info = new ReliablePacketInfo();
-    packet_info->protobuf.reset(iter->second);
-    packet_info->persistent_id = base::Uint64ToString(iter->first);
-    to_send_.push_back(make_linked_ptr(packet_info));
-  }
-
-  initialization_callback_.Run(true, android_id_, security_token_);
-}
-
-void MCSClient::OnRMQUpdateFinished(bool success) {
-  LOG_IF(ERROR, !success) << "RMQ Update failed!";
+void MCSClient::OnGCMUpdateFinished(bool success) {
+  LOG_IF(ERROR, !success) << "GCM Update failed!";
+  UMA_HISTOGRAM_BOOLEAN("GCM.StoreUpdateSucceeded", success);
   // TODO(zea): Rebuild the store from scratch in case of persistence failure?
 }
 
@@ -320,24 +463,55 @@ void MCSClient::MaybeSendMessage() {
   if (to_send_.empty())
     return;
 
-  if (!connection_handler_->CanSendMessage())
+  // If the connection has been reset, do nothing. On reconnection
+  // MaybeSendMessage will be automatically invoked again.
+  // TODO(zea): consider doing TTL expiration at connection reset time, rather
+  // than reconnect time.
+  if (!connection_factory_->IsEndpointReachable())
     return;
 
-  // TODO(zea): drop messages older than their TTL.
-
+  MCSPacketInternal packet = PopMessageForSend();
+  if (HasTTLExpired(*packet->protobuf, clock_)) {
+    DCHECK(!packet->persistent_id.empty());
+    DVLOG(1) << "Dropping expired message " << packet->persistent_id << ".";
+    NotifyMessageSendStatus(*packet->protobuf, TTL_EXCEEDED);
+    gcm_store_->RemoveOutgoingMessage(
+        packet->persistent_id,
+        base::Bind(&MCSClient::OnGCMUpdateFinished,
+                   weak_ptr_factory_.GetWeakPtr()));
+    base::MessageLoop::current()->PostTask(
+            FROM_HERE,
+            base::Bind(&MCSClient::MaybeSendMessage,
+                       weak_ptr_factory_.GetWeakPtr()));
+    return;
+  }
   DVLOG(1) << "Pending output message found, sending.";
-  MCSPacketInternal packet = to_send_.front();
-  to_send_.pop_front();
   if (!packet->persistent_id.empty())
     to_resend_.push_back(packet);
   SendPacketToWire(packet.get());
 }
 
 void MCSClient::SendPacketToWire(ReliablePacketInfo* packet_info) {
-  // Reset the heartbeat interval.
-  heartbeat_timer_.Reset();
   packet_info->stream_id = ++stream_id_out_;
   DVLOG(1) << "Sending packet of type " << packet_info->protobuf->GetTypeName();
+
+  // Set the queued time as necessary.
+  if (packet_info->tag == kDataMessageStanzaTag) {
+    mcs_proto::DataMessageStanza* data_message =
+        reinterpret_cast<mcs_proto::DataMessageStanza*>(
+            packet_info->protobuf.get());
+    uint64 sent = data_message->sent();
+    DCHECK_GT(sent, 0U);
+    int queued = (clock_->Now().ToInternalValue() /
+        base::Time::kMicrosecondsPerSecond) - sent;
+    DVLOG(1) << "Message was queued for " << queued << " seconds.";
+    data_message->set_queued(queued);
+    recorder_->RecordDataSentToWire(
+        data_message->category(),
+        data_message->to(),
+        data_message->id(),
+        queued);
+  }
 
   // Set the proper last received stream id to acknowledge received server
   // packets.
@@ -373,6 +547,9 @@ void MCSClient::HandleMCSDataMesssage(
   scoped_ptr<mcs_proto::DataMessageStanza> response(
       new mcs_proto::DataMessageStanza());
   response->set_from(kGCMFromField);
+  response->set_sent(clock_->Now().ToInternalValue() /
+                         base::Time::kMicrosecondsPerSecond);
+  response->set_ttl(0);
   bool send = false;
   for (int i = 0; i < data_message->app_data_size(); ++i) {
     const mcs_proto::AppData& app_data = data_message->app_data(i);
@@ -390,8 +567,7 @@ void MCSClient::HandleMCSDataMesssage(
   if (send) {
     SendMessage(
         MCSMessage(kDataMessageStanzaTag,
-                   response.PassAs<const google::protobuf::MessageLite>()),
-        false);
+                   response.PassAs<const google::protobuf::MessageLite>()));
   }
 }
 
@@ -430,9 +606,9 @@ void MCSClient::HandlePacketFromWire(
   ++stream_id_in_;
   if (!persistent_id.empty()) {
     unacked_server_ids_[stream_id_in_] = persistent_id;
-    rmq_store_.AddIncomingMessage(persistent_id,
-                                  base::Bind(&MCSClient::OnRMQUpdateFinished,
-                                             weak_ptr_factory_.GetWeakPtr()));
+    gcm_store_->AddIncomingMessage(persistent_id,
+                                   base::Bind(&MCSClient::OnGCMUpdateFinished,
+                                              weak_ptr_factory_.GetWeakPtr()));
   }
 
   DVLOG(1) << "Received message of type " << protobuf->GetTypeName()
@@ -445,23 +621,34 @@ void MCSClient::HandlePacketFromWire(
       unacked_server_ids_.size() % kUnackedMessageBeforeStreamAck == 0) {
     SendMessage(MCSMessage(kIqStanzaTag,
                            BuildStreamAck().
-                               PassAs<const google::protobuf::MessageLite>()),
-                false);
+                               PassAs<const google::protobuf::MessageLite>()));
   }
+
+  // The connection is alive, treat this message as a heartbeat ack.
+  heartbeat_manager_.OnHeartbeatAcked();
 
   switch (tag) {
     case kLoginResponseTag: {
+      DCHECK_EQ(CONNECTING, state_);
       mcs_proto::LoginResponse* login_response =
           reinterpret_cast<mcs_proto::LoginResponse*>(protobuf.get());
       DVLOG(1) << "Received login response:";
       DVLOG(1) << "  Id: " << login_response->id();
       DVLOG(1) << "  Timestamp: " << login_response->server_timestamp();
-      if (login_response->has_error()) {
+      if (login_response->has_error() && login_response->error().code() != 0) {
         state_ = UNINITIALIZED;
         DVLOG(1) << "  Error code: " << login_response->error().code();
         DVLOG(1) << "  Error message: " << login_response->error().message();
-        initialization_callback_.Run(false, 0, 0);
+        LOG(ERROR) << "Failed to log in to GCM, resetting connection.";
+        connection_factory_->SignalConnectionReset(
+            ConnectionFactory::LOGIN_FAILURE);
+        mcs_error_callback_.Run();
         return;
+      }
+
+      if (login_response->has_heartbeat_config()) {
+        heartbeat_manager_.UpdateHeartbeatConfig(
+            login_response->heartbeat_config());
       }
 
       state_ = CONNECTED;
@@ -484,29 +671,29 @@ void MCSClient::HandlePacketFromWire(
                        weak_ptr_factory_.GetWeakPtr()));
       }
 
-      heartbeat_timer_.Start(FROM_HERE,
-                             heartbeat_interval_,
-                             base::Bind(&MCSClient::SendHeartbeat,
-                                        weak_ptr_factory_.GetWeakPtr()));
+      heartbeat_manager_.Start(
+          base::Bind(&MCSClient::SendHeartbeat,
+                     weak_ptr_factory_.GetWeakPtr()),
+          base::Bind(&MCSClient::OnConnectionResetByHeartbeat,
+                     weak_ptr_factory_.GetWeakPtr()));
       return;
     }
     case kHeartbeatPingTag:
       DCHECK_GE(stream_id_in_, 1U);
       DVLOG(1) << "Received heartbeat ping, sending ack.";
       SendMessage(
-          MCSMessage(kHeartbeatAckTag, mcs_proto::HeartbeatAck()), false);
+          MCSMessage(kHeartbeatAckTag, mcs_proto::HeartbeatAck()));
       return;
     case kHeartbeatAckTag:
       DCHECK_GE(stream_id_in_, 1U);
       DVLOG(1) << "Received heartbeat ack.";
-      // TODO(zea): add logic to reconnect if no ack received within a certain
-      // timeout (with backoff).
+      // Do nothing else, all messages act as heartbeat acks.
       return;
     case kCloseTag:
-      LOG(ERROR) << "Received close command, closing connection.";
-      state_ = UNINITIALIZED;
-      initialization_callback_.Run(false, 0, 0);
-      // TODO(zea): should this happen in non-error cases? Reconnect?
+      LOG(ERROR) << "Received close command, resetting connection.";
+      state_ = LOADED;
+      connection_factory_->SignalConnectionReset(
+          ConnectionFactory::CLOSE_COMMAND);
       return;
     case kIqStanzaTag: {
       DCHECK_GE(stream_id_in_, 1U);
@@ -565,58 +752,85 @@ void MCSClient::HandleStreamAck(StreamId last_stream_id_received) {
     const MCSPacketInternal& outgoing_packet = to_resend_.front();
     acked_outgoing_persistent_ids.push_back(outgoing_packet->persistent_id);
     acked_outgoing_stream_ids.push_back(outgoing_packet->stream_id);
+    NotifyMessageSendStatus(*outgoing_packet->protobuf, SENT);
     to_resend_.pop_front();
   }
 
   DVLOG(1) << "Server acked " << acked_outgoing_persistent_ids.size()
            << " outgoing messages, " << to_resend_.size()
            << " remaining unacked";
-  rmq_store_.RemoveOutgoingMessages(acked_outgoing_persistent_ids,
-                                    base::Bind(&MCSClient::OnRMQUpdateFinished,
-                                               weak_ptr_factory_.GetWeakPtr()));
+  gcm_store_->RemoveOutgoingMessages(
+      acked_outgoing_persistent_ids,
+      base::Bind(&MCSClient::OnGCMUpdateFinished,
+                 weak_ptr_factory_.GetWeakPtr()));
 
   HandleServerConfirmedReceipt(last_stream_id_received);
 }
 
 void MCSClient::HandleSelectiveAck(const PersistentIdList& id_list) {
-  // First check the to_resend_ queue. Acknowledgments should always happen
-  // in the order they were sent, so if messages are present they should match
-  // the acknowledge list.
-  PersistentIdList::const_iterator iter = id_list.begin();
-  for (; iter != id_list.end() && !to_resend_.empty(); ++iter) {
+  std::set<PersistentId> remaining_ids(id_list.begin(), id_list.end());
+
+  StreamId last_stream_id_received = -1;
+
+  // First check the to_resend_ queue. Acknowledgments are always contiguous,
+  // so if there's a pending message that hasn't been acked, all newer messages
+  // must also be unacked.
+  while(!to_resend_.empty() && !remaining_ids.empty()) {
     const MCSPacketInternal& outgoing_packet = to_resend_.front();
-    DCHECK_EQ(outgoing_packet->persistent_id, *iter);
+    if (remaining_ids.count(outgoing_packet->persistent_id) == 0)
+      break;  // Newer message must be unacked too.
+    remaining_ids.erase(outgoing_packet->persistent_id);
+    NotifyMessageSendStatus(*outgoing_packet->protobuf, SENT);
 
     // No need to re-acknowledge any server messages this message already
     // acknowledged.
     StreamId device_stream_id = outgoing_packet->stream_id;
-    HandleServerConfirmedReceipt(device_stream_id);
-
+    if (device_stream_id > last_stream_id_received)
+      last_stream_id_received = device_stream_id;
     to_resend_.pop_front();
   }
 
   // If the acknowledged ids aren't all there, they might be in the to_send_
-  // queue (typically when a StreamAck confirms messages as part of a login
+  // queue (typically when a SelectiveAck confirms messages as part of a login
   // response).
-  for (; iter != id_list.end() && !to_send_.empty(); ++iter) {
+  while (!to_send_.empty() && !remaining_ids.empty()) {
     const MCSPacketInternal& outgoing_packet = to_send_.front();
-    DCHECK_EQ(outgoing_packet->persistent_id, *iter);
+    if (remaining_ids.count(outgoing_packet->persistent_id) == 0)
+      break;  // Newer messages must be unacked too.
+    remaining_ids.erase(outgoing_packet->persistent_id);
+    NotifyMessageSendStatus(*outgoing_packet->protobuf, SENT);
 
     // No need to re-acknowledge any server messages this message already
     // acknowledged.
     StreamId device_stream_id = outgoing_packet->stream_id;
-    HandleServerConfirmedReceipt(device_stream_id);
-
-    to_send_.pop_front();
+    if (device_stream_id > last_stream_id_received)
+      last_stream_id_received = device_stream_id;
+    PopMessageForSend();
   }
 
-  DCHECK(iter == id_list.end());
+  // Only handle the largest stream id value. All other stream ids are
+  // implicitly handled.
+  if (last_stream_id_received > 0)
+    HandleServerConfirmedReceipt(last_stream_id_received);
 
-  DVLOG(1) << "Server acked " << id_list.size()
+  // At this point, all remaining acked ids are redundant.
+  PersistentIdList acked_ids;
+  if (remaining_ids.size() > 0) {
+    for (size_t i = 0; i < id_list.size(); ++i) {
+      if (remaining_ids.count(id_list[i]) > 0)
+        continue;
+      acked_ids.push_back(id_list[i]);
+    }
+  } else {
+    acked_ids = id_list;
+  }
+
+  DVLOG(1) << "Server acked " << acked_ids.size()
            << " messages, " << to_resend_.size() << " remaining unacked.";
-  rmq_store_.RemoveOutgoingMessages(id_list,
-                                    base::Bind(&MCSClient::OnRMQUpdateFinished,
-                                               weak_ptr_factory_.GetWeakPtr()));
+  gcm_store_->RemoveOutgoingMessages(
+      acked_ids,
+      base::Bind(&MCSClient::OnGCMUpdateFinished,
+                 weak_ptr_factory_.GetWeakPtr()));
 
   // Resend any remaining outgoing messages, as they were not received by the
   // server.
@@ -628,12 +842,6 @@ void MCSClient::HandleSelectiveAck(const PersistentIdList& id_list) {
 }
 
 void MCSClient::HandleServerConfirmedReceipt(StreamId device_stream_id) {
-  // TODO(zea): use a message id the sender understands.
-  base::MessageLoop::current()->PostTask(
-      FROM_HERE,
-      base::Bind(message_sent_callback_,
-                 "Message " + base::UintToString(device_stream_id) + " sent."));
-
   PersistentIdList acked_incoming_ids;
   for (std::map<StreamId, PersistentIdList>::iterator iter =
            acked_server_ids_.begin();
@@ -647,13 +855,56 @@ void MCSClient::HandleServerConfirmedReceipt(StreamId device_stream_id) {
 
   DVLOG(1) << "Server confirmed receipt of " << acked_incoming_ids.size()
            << " acknowledged server messages.";
-  rmq_store_.RemoveIncomingMessages(acked_incoming_ids,
-                                    base::Bind(&MCSClient::OnRMQUpdateFinished,
-                                               weak_ptr_factory_.GetWeakPtr()));
+  gcm_store_->RemoveIncomingMessages(
+      acked_incoming_ids,
+      base::Bind(&MCSClient::OnGCMUpdateFinished,
+                 weak_ptr_factory_.GetWeakPtr()));
 }
 
 MCSClient::PersistentId MCSClient::GetNextPersistentId() {
   return base::Uint64ToString(base::TimeTicks::Now().ToInternalValue());
+}
+
+void MCSClient::OnConnectionResetByHeartbeat() {
+  connection_factory_->SignalConnectionReset(
+      ConnectionFactory::HEARTBEAT_FAILURE);
+}
+
+void MCSClient::NotifyMessageSendStatus(
+    const google::protobuf::MessageLite& protobuf,
+    MessageSendStatus status) {
+  if (GetMCSProtoTag(protobuf) != kDataMessageStanzaTag)
+    return;
+
+  const mcs_proto::DataMessageStanza* data_message_stanza =
+      reinterpret_cast<const mcs_proto::DataMessageStanza*>(&protobuf);
+  recorder_->RecordNotifySendStatus(
+      data_message_stanza->category(),
+      data_message_stanza->to(),
+      data_message_stanza->id(),
+      status,
+      protobuf.ByteSize(),
+      data_message_stanza->ttl());
+  message_sent_callback_.Run(
+      data_message_stanza->device_user_id(),
+      data_message_stanza->category(),
+      data_message_stanza->id(),
+      status);
+}
+
+MCSClient::MCSPacketInternal MCSClient::PopMessageForSend() {
+  MCSPacketInternal packet = to_send_.front();
+  to_send_.pop_front();
+
+  if (packet->tag == kDataMessageStanzaTag) {
+    mcs_proto::DataMessageStanza* data_message =
+        reinterpret_cast<mcs_proto::DataMessageStanza*>(packet->protobuf.get());
+    CollapseKey collapse_key(*data_message);
+    if (collapse_key.IsValid())
+      collapse_key_map_.erase(collapse_key);
+  }
+
+  return packet;
 }
 
 } // namespace gcm

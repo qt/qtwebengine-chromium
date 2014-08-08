@@ -30,11 +30,14 @@ void DisableOSCrashDumps() {
   // bsd/uxkern/ux_exception.c and machine_exception() in xnu's
   // bsd/dev/*/unix_signal.c.
   const int signals_to_intercept[] = {
+    // Hardware faults
     SIGILL,   // EXC_BAD_INSTRUCTION
     SIGTRAP,  // EXC_BREAKPOINT
     SIGFPE,   // EXC_ARITHMETIC
     SIGBUS,   // EXC_BAD_ACCESS
-    SIGSEGV   // EXC_BAD_ACCESS
+    SIGSEGV,  // EXC_BAD_ACCESS
+    // Not a hardware fault
+    SIGABRT
   };
 
   // For all these signals, just wire things up so we exit immediately.
@@ -47,9 +50,9 @@ void DisableOSCrashDumps() {
     act.sa_flags = SA_ONSTACK;
 
     if (sigemptyset(&act.sa_mask) != 0)
-      DLOG_ERRNO(FATAL) << "sigemptyset() failed";
+      DPLOG(FATAL) << "sigemptyset() failed";
     if (sigaction(signals_to_intercept[i], &act, NULL) != 0)
-      DLOG_ERRNO(FATAL) << "sigaction() failed";
+      DPLOG(FATAL) << "sigaction() failed";
   }
 }
 

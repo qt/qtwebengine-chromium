@@ -32,6 +32,7 @@
 #define WebFontInfo_h
 
 #include "../WebCString.h"
+#include "WebFallbackFont.h"
 #include "WebFontFamily.h"
 #include "WebFontRenderStyle.h"
 
@@ -55,7 +56,7 @@ public:
     //
     // Returns: the font family or an empty string if the request could not be satisfied.
     // Returns: the font family instance. The instance has an empty font name if the request could not be satisfied.
-    BLINK_EXPORT static void familyForChar(const WebUChar32 character, const char* preferredLocale, WebFontFamily*);
+    BLINK_EXPORT static void fallbackFontForChar(const WebUChar32 character, const char* preferredLocale, WebFallbackFont*);
 
     // Fill out the given WebFontRenderStyle with the user's preferences for
     // rendering the given font at the given size (in pixels).

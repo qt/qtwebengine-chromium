@@ -9,10 +9,10 @@
 namespace media {
 
 VideoCaptureFormat::VideoCaptureFormat()
-    : frame_rate(0), pixel_format(PIXEL_FORMAT_UNKNOWN) {}
+    : frame_rate(0.0f), pixel_format(PIXEL_FORMAT_UNKNOWN) {}
 
 VideoCaptureFormat::VideoCaptureFormat(const gfx::Size& frame_size,
-                                       int frame_rate,
+                                       float frame_rate,
                                        VideoPixelFormat pixel_format)
     : frame_size(frame_size),
       frame_rate(frame_rate),
@@ -21,9 +21,9 @@ VideoCaptureFormat::VideoCaptureFormat(const gfx::Size& frame_size,
 bool VideoCaptureFormat::IsValid() const {
   return (frame_size.width() < media::limits::kMaxDimension) &&
          (frame_size.height() < media::limits::kMaxDimension) &&
-         (frame_size.GetArea() > 0) &&
+         (frame_size.GetArea() >= 0) &&
          (frame_size.GetArea() < media::limits::kMaxCanvas) &&
-         (frame_rate > 0) &&
+         (frame_rate >= 0.0f) &&
          (frame_rate < media::limits::kMaxFramesPerSecond) &&
          (pixel_format >= PIXEL_FORMAT_UNKNOWN) &&
          (pixel_format < PIXEL_FORMAT_MAX);

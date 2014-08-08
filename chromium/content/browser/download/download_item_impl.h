@@ -19,8 +19,8 @@
 #include "content/browser/download/download_request_handle.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/download_destination_observer.h"
+#include "content/public/browser/download_interrupt_reasons.h"
 #include "content/public/browser/download_item.h"
-#include "net/base/net_errors.h"
 #include "net/base/net_log.h"
 #include "url/gurl.h"
 
@@ -56,6 +56,8 @@ class CONTENT_EXPORT DownloadItemImpl
                    const base::FilePath& target_path,
                    const std::vector<GURL>& url_chain,
                    const GURL& referrer_url,
+                   const std::string& mime_type,
+                   const std::string& original_mime_type,
                    const base::Time& start_time,
                    const base::Time& end_time,
                    const std::string& etag,
@@ -111,6 +113,8 @@ class CONTENT_EXPORT DownloadItemImpl
   virtual const std::vector<GURL>& GetUrlChain() const OVERRIDE;
   virtual const GURL& GetOriginalUrl() const OVERRIDE;
   virtual const GURL& GetReferrerUrl() const OVERRIDE;
+  virtual const GURL& GetTabUrl() const OVERRIDE;
+  virtual const GURL& GetTabReferrerUrl() const OVERRIDE;
   virtual std::string GetSuggestedFilename() const OVERRIDE;
   virtual std::string GetContentDisposition() const OVERRIDE;
   virtual std::string GetMimeType() const OVERRIDE;
@@ -129,7 +133,7 @@ class CONTENT_EXPORT DownloadItemImpl
   virtual const std::string& GetHash() const OVERRIDE;
   virtual const std::string& GetHashState() const OVERRIDE;
   virtual bool GetFileExternallyRemoved() const OVERRIDE;
-  virtual void DeleteFile() OVERRIDE;
+  virtual void DeleteFile(const base::Callback<void(bool)>& callback) OVERRIDE;
   virtual bool IsDangerous() const OVERRIDE;
   virtual DownloadDangerType GetDangerType() const OVERRIDE;
   virtual bool TimeRemaining(base::TimeDelta* remaining) const OVERRIDE;
@@ -340,7 +344,8 @@ class CONTENT_EXPORT DownloadItemImpl
   void Completed();
 
   // Callback invoked when the URLRequest for a download resumption has started.
-  void OnResumeRequestStarted(DownloadItem* item, net::Error error);
+  void OnResumeRequestStarted(DownloadItem* item,
+                              DownloadInterruptReason interrupt_reason);
 
   // Helper routines -----------------------------------------------------------
 
@@ -415,6 +420,12 @@ class CONTENT_EXPORT DownloadItemImpl
 
   // The URL of the page that initiated the download.
   GURL referrer_url_;
+
+  // The URL of the tab that initiated the download.
+  GURL tab_url_;
+
+  // The URL of the referrer of the tab that initiated the download.
+  GURL tab_referrer_url_;
 
   // Filename suggestion from DownloadSaveInfo. It could, among others, be the
   // suggested filename in 'download' attribute of an anchor. Details:

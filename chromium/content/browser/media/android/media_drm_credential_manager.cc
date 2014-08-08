@@ -8,9 +8,13 @@
 #include "base/android/scoped_java_ref.h"
 #include "base/bind.h"
 #include "base/callback_helpers.h"
+#include "base/location.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "jni/MediaDrmCredentialManager_jni.h"
 #include "media/base/android/media_drm_bridge.h"
 #include "url/gurl.h"
+
+#include "widevine_cdm_version.h"  // In SHARED_INTERMEDIATE_DIR.
 
 using base::android::ScopedJavaGlobalRef;
 
@@ -28,11 +32,6 @@ void MediaDrmCredentialManagerCallback(
 
 namespace content {
 
-// TODO(qinmin): Move the UUID definition to some common places.
-static const uint8 kWidevineUuid[16] = {
-    0xED, 0xEF, 0x8B, 0xA9, 0x79, 0xD6, 0x4A, 0xCE,
-    0xA3, 0xC8, 0x27, 0xDC, 0xD5, 0x1D, 0x21, 0xED };
-
 MediaDrmCredentialManager::MediaDrmCredentialManager() {};
 
 MediaDrmCredentialManager::~MediaDrmCredentialManager() {};
@@ -43,15 +42,15 @@ MediaDrmCredentialManager* MediaDrmCredentialManager::GetInstance() {
 }
 
 void MediaDrmCredentialManager::ResetCredentials(
-    const ResetCredentialsCB& callback) {
+    const ResetCredentialsCB& reset_credentials_cb) {
   // Ignore reset request if one is already in progress.
   if (!reset_credentials_cb_.is_null())
     return;
 
-  reset_credentials_cb_ = callback;
+  reset_credentials_cb_ = reset_credentials_cb;
 
   // First reset the L3 credential.
-  if (!ResetCredentialsInternal("L3")) {
+  if (!ResetCredentialsInternal(media::MediaDrmBridge::SECURITY_LEVEL_3)) {
     // TODO(qinmin): We should post a task instead.
     base::ResetAndReturn(&reset_credentials_cb_).Run(false);
   }
@@ -77,9 +76,9 @@ void ResetCredentials(
 }
 
 void MediaDrmCredentialManager::OnResetCredentialsCompleted(
-    const std::string& security_level, bool success) {
-  if (security_level == "L3" && success) {
-    if (ResetCredentialsInternal("L1"))
+    SecurityLevel security_level, bool success) {
+  if (security_level == media::MediaDrmBridge::SECURITY_LEVEL_3 && success) {
+    if (ResetCredentialsInternal(media::MediaDrmBridge::SECURITY_LEVEL_1))
       return;
     success = false;
   }
@@ -89,15 +88,24 @@ void MediaDrmCredentialManager::OnResetCredentialsCompleted(
 }
 
 bool MediaDrmCredentialManager::ResetCredentialsInternal(
-    const std::string& security_level) {
-  std::vector<uint8> uuid(kWidevineUuid, kWidevineUuid + 16);
-  media_drm_bridge_ = media::MediaDrmBridge::Create(
-      0, uuid, GURL(), security_level, NULL);
+    SecurityLevel security_level) {
+  media_drm_bridge_ =
+      media::MediaDrmBridge::CreateSessionless(kWidevineKeySystem);
   if (!media_drm_bridge_)
     return false;
-  media_drm_bridge_->ResetDeviceCredentials(
+
+  ResetCredentialsCB reset_credentials_cb =
       base::Bind(&MediaDrmCredentialManager::OnResetCredentialsCompleted,
-                 base::Unretained(this), security_level));
+                 base::Unretained(this), security_level);
+
+  if (!media_drm_bridge_->SetSecurityLevel(security_level)) {
+    // No need to reset credentials for unsupported |security_level|.
+    base::MessageLoopProxy::current()->PostTask(
+        FROM_HERE, base::Bind(reset_credentials_cb, true));
+    return true;
+  }
+
+  media_drm_bridge_->ResetDeviceCredentials(reset_credentials_cb);
   return true;
 }
 

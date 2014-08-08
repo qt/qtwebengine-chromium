@@ -29,21 +29,22 @@ namespace WebCore {
 
 class SVGFEOffsetElement FINAL : public SVGFilterPrimitiveStandardAttributes {
 public:
-    static PassRefPtr<SVGFEOffsetElement> create(Document&);
+    DECLARE_NODE_FACTORY(SVGFEOffsetElement);
 
+    SVGAnimatedNumber* dx() { return m_dx.get(); }
+    SVGAnimatedNumber* dy() { return m_dy.get(); }
+    SVGAnimatedString* in1() { return m_in1.get(); }
 private:
     explicit SVGFEOffsetElement(Document&);
 
     bool isSupportedAttribute(const QualifiedName&);
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual void svgAttributeChanged(const QualifiedName&);
-    virtual PassRefPtr<FilterEffect> build(SVGFilterBuilder*, Filter*);
+    virtual void svgAttributeChanged(const QualifiedName&) OVERRIDE;
+    virtual PassRefPtr<FilterEffect> build(SVGFilterBuilder*, Filter*) OVERRIDE;
 
-    BEGIN_DECLARE_ANIMATED_PROPERTIES(SVGFEOffsetElement)
-        DECLARE_ANIMATED_STRING(In1, in1)
-        DECLARE_ANIMATED_NUMBER(Dx, dx)
-        DECLARE_ANIMATED_NUMBER(Dy, dy)
-    END_DECLARE_ANIMATED_PROPERTIES
+    RefPtr<SVGAnimatedNumber> m_dx;
+    RefPtr<SVGAnimatedNumber> m_dy;
+    RefPtr<SVGAnimatedString> m_in1;
 };
 
 } // namespace WebCore

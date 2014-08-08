@@ -28,6 +28,7 @@
 
 #include "core/dom/Position.h"
 #include "core/editing/EditingBoundary.h"
+#include "platform/heap/Handle.h"
 #include "platform/text/TextDirection.h"
 
 namespace WebCore {
@@ -48,12 +49,13 @@ namespace WebCore {
 class InlineBox;
 class Node;
 
-class VisiblePosition {
+class VisiblePosition FINAL {
+    DISALLOW_ALLOCATION();
 public:
     // NOTE: UPSTREAM affinity will be used only if pos is at end of a wrapped line,
     // otherwise it will be converted to DOWNSTREAM
     VisiblePosition() : m_affinity(VP_DEFAULT_AFFINITY) { }
-    VisiblePosition(const Position&, EAffinity = VP_DEFAULT_AFFINITY);
+    explicit VisiblePosition(const Position&, EAffinity = VP_DEFAULT_AFFINITY);
     explicit VisiblePosition(const PositionWithAffinity&);
 
     void clear() { m_deepPosition.clear(); }
@@ -90,11 +92,6 @@ public:
         m_deepPosition.getInlineBoxAndOffset(m_affinity, inlineBox, caretOffset);
     }
 
-    void getInlineBoxAndOffset(TextDirection primaryDirection, InlineBox*& inlineBox, int& caretOffset) const
-    {
-        m_deepPosition.getInlineBoxAndOffset(m_affinity, primaryDirection, inlineBox, caretOffset);
-    }
-
     // Rect is local to the returned renderer
     LayoutRect localCaretRect(RenderObject*&) const;
     // Bounds of (possibly transformed) caret in absolute coords
@@ -102,6 +99,8 @@ public:
     // Abs x/y position of the caret ignoring transforms.
     // FIXME: navigation with transforms should be smarter.
     int lineDirectionPointForBlockDirectionNavigation() const;
+
+    void trace(Visitor*);
 
 #ifndef NDEBUG
     void debugPosition(const char* msg = "") const;
@@ -131,11 +130,10 @@ inline bool operator!=(const VisiblePosition& a, const VisiblePosition& b)
     return !(a == b);
 }
 
-PassRefPtr<Range> makeRange(const VisiblePosition&, const VisiblePosition&);
+PassRefPtrWillBeRawPtr<Range> makeRange(const VisiblePosition&, const VisiblePosition&);
 bool setStart(Range*, const VisiblePosition&);
 bool setEnd(Range*, const VisiblePosition&);
 VisiblePosition startVisiblePosition(const Range*, EAffinity);
-VisiblePosition endVisiblePosition(const Range*, EAffinity);
 
 Element* enclosingBlockFlowElement(const VisiblePosition&);
 

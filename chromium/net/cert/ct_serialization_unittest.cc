@@ -94,7 +94,7 @@ TEST_F(CtSerializationTest, EncodesV1SCTSignedData) {
   base::Time timestamp = base::Time::UnixEpoch() +
       base::TimeDelta::FromMilliseconds(1348589665525);
   std::string dummy_entry("abc");
-  std::string empty_extensions("");
+  std::string empty_extensions;
   // For now, no known failure cases.
   std::string encoded;
   ASSERT_TRUE(ct::EncodeV1SCTSignedData(
@@ -145,7 +145,7 @@ TEST_F(CtSerializationTest, DecodesSignedCertificateTimestamp) {
   // Subtracting 4 bytes for signature data (hash & sig algs),
   // actual signature data should be 71 bytes.
   EXPECT_EQ((size_t) 71, sct->signature.signature_data.size());
-  EXPECT_EQ(std::string(""), sct->extensions);
+  EXPECT_TRUE(sct->extensions.empty());
 }
 
 TEST_F(CtSerializationTest, FailsDecodingInvalidSignedCertificateTimestamp) {
@@ -162,5 +162,23 @@ TEST_F(CtSerializationTest, FailsDecodingInvalidSignedCertificateTimestamp) {
       ct::DecodeSignedCertificateTimestamp(&invalid_length_sct, &sct));
 }
 
-} // namespace net
+TEST_F(CtSerializationTest, EncodesValidSignedTreeHead) {
+  ct::SignedTreeHead signed_tree_head;
+  GetSignedTreeHead(&signed_tree_head);
+
+  std::string encoded;
+  ct::EncodeTreeHeadSignature(signed_tree_head, &encoded);
+  // Expected size is 50 bytes:
+  // Byte 0 is version, byte 1 is signature type
+  // Bytes 2-9 are timestamp
+  // Bytes 10-17 are tree size
+  // Bytes 18-49 are sha256 root hash
+  ASSERT_EQ(50u, encoded.length());
+  std::string expected_buffer(
+      "\x0\x1\x0\x0\x1\x45\x3c\x5f\xb8\x35\x0\x0\x0\x0\x0\x0\x0\x15", 18);
+  expected_buffer.append(ct::GetSampleSTHSHA256RootHash());
+  ASSERT_EQ(expected_buffer, encoded);
+}
+
+}  // namespace net
 

@@ -23,15 +23,14 @@
 #include "config.h"
 #include "core/html/HTMLScriptElement.h"
 
-#include "HTMLNames.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "bindings/v8/ScriptEventListener.h"
+#include "core/HTMLNames.h"
 #include "core/dom/Attribute.h"
 #include "core/dom/Document.h"
 #include "core/dom/ScriptLoader.h"
 #include "core/dom/Text.h"
 #include "core/events/Event.h"
-#include "core/events/ThreadLocalEventNames.h"
 
 namespace WebCore {
 
@@ -44,14 +43,24 @@ inline HTMLScriptElement::HTMLScriptElement(Document& document, bool wasInserted
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLScriptElement> HTMLScriptElement::create(Document& document, bool wasInsertedByParser, bool alreadyStarted)
+PassRefPtrWillBeRawPtr<HTMLScriptElement> HTMLScriptElement::create(Document& document, bool wasInsertedByParser, bool alreadyStarted)
 {
-    return adoptRef(new HTMLScriptElement(document, wasInsertedByParser, alreadyStarted));
+    return adoptRefWillBeNoop(new HTMLScriptElement(document, wasInsertedByParser, alreadyStarted));
 }
 
 bool HTMLScriptElement::isURLAttribute(const Attribute& attribute) const
 {
     return attribute.name() == srcAttr || HTMLElement::isURLAttribute(attribute);
+}
+
+bool HTMLScriptElement::hasLegalLinkAttribute(const QualifiedName& name) const
+{
+    return name == srcAttr || HTMLElement::hasLegalLinkAttribute(name);
+}
+
+const QualifiedName& HTMLScriptElement::subResourceAttributeName() const
+{
+    return srcAttr;
 }
 
 void HTMLScriptElement::childrenChanged(bool changedByParser, Node* beforeChange, Node* afterChange, int childCountDelta)
@@ -66,8 +75,6 @@ void HTMLScriptElement::parseAttribute(const QualifiedName& name, const AtomicSt
         m_loader->handleSourceAttribute(value);
     else if (name == asyncAttr)
         m_loader->handleAsyncAttribute();
-    else if (name == onbeforeloadAttr)
-        setAttributeEventListener(EventTypeNames::beforeload, createAttributeEventListener(this, name, value));
     else
         HTMLElement::parseAttribute(name, value);
 }
@@ -85,7 +92,7 @@ void HTMLScriptElement::didNotifySubtreeInsertionsToDocument()
 
 void HTMLScriptElement::setText(const String &value)
 {
-    RefPtr<Node> protectFromMutationEvents(this);
+    RefPtrWillBeRawPtr<Node> protectFromMutationEvents(this);
 
     if (hasOneTextChild()) {
         toText(firstChild())->setData(value);
@@ -110,13 +117,6 @@ bool HTMLScriptElement::async() const
 KURL HTMLScriptElement::src() const
 {
     return document().completeURL(sourceAttributeValue());
-}
-
-void HTMLScriptElement::addSubresourceAttributeURLs(ListHashSet<KURL>& urls) const
-{
-    HTMLElement::addSubresourceAttributeURLs(urls);
-
-    addSubresourceURL(urls, src());
 }
 
 String HTMLScriptElement::sourceAttributeValue() const
@@ -170,9 +170,9 @@ void HTMLScriptElement::dispatchLoadEvent()
     dispatchEvent(Event::create(EventTypeNames::load));
 }
 
-PassRefPtr<Element> HTMLScriptElement::cloneElementWithoutAttributesAndChildren()
+PassRefPtrWillBeRawPtr<Element> HTMLScriptElement::cloneElementWithoutAttributesAndChildren()
 {
-    return adoptRef(new HTMLScriptElement(document(), false, m_loader->alreadyStarted()));
+    return adoptRefWillBeNoop(new HTMLScriptElement(document(), false, m_loader->alreadyStarted()));
 }
 
 }

@@ -33,14 +33,9 @@
 
 #include "wtf/RefCounted.h"
 #include "wtf/text/WTFString.h"
-
-namespace v8 {
-class HeapSnapshot;
-}
+#include <v8-profiler.h>
 
 namespace WebCore {
-
-typedef uint32_t SnapshotObjectId;
 
 class ScriptHeapSnapshot FINAL : public RefCounted<ScriptHeapSnapshot> {
 public:
@@ -58,9 +53,7 @@ public:
     ~ScriptHeapSnapshot();
 
     String title() const;
-    unsigned int uid() const;
     void writeJSON(OutputStream* stream);
-    SnapshotObjectId maxSnapshotJSObjectId() const;
 
 private:
     ScriptHeapSnapshot(const v8::HeapSnapshot* snapshot)

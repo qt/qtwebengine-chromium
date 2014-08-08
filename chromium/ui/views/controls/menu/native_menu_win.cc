@@ -18,10 +18,11 @@
 #include "ui/base/models/menu_model.h"
 #include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/gfx/canvas.h"
-#include "ui/gfx/font.h"
+#include "ui/gfx/font_list.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/image/image_skia.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/text_utils.h"
 #include "ui/gfx/win/hwnd_util.h"
 #include "ui/native_theme/native_theme.h"
 #include "ui/native_theme/native_theme_win.h"
@@ -51,7 +52,7 @@ struct NativeMenuWin::ItemData {
   // The Windows API requires that whoever creates the menus must own the
   // strings used for labels, and keep them around for the lifetime of the
   // created menu. So be it.
-  string16 label;
+  base::string16 label;
 
   // Someone needs to own submenus, it may as well be us.
   scoped_ptr<Menu2> submenu;
@@ -171,17 +172,18 @@ class NativeMenuWin::MenuHostWindow {
   void OnMeasureItem(WPARAM w_param, MEASUREITEMSTRUCT* measure_item_struct) {
     NativeMenuWin::ItemData* data = GetItemData(measure_item_struct->itemData);
     if (data) {
-      gfx::Font font;
-      measure_item_struct->itemWidth = font.GetStringWidth(data->label) +
+      gfx::FontList font_list;
+      measure_item_struct->itemWidth =
+          gfx::GetStringWidth(data->label, font_list) +
           kIconWidth + kItemLeftMargin + views::kItemLabelSpacing -
           GetSystemMetrics(SM_CXMENUCHECK);
       if (data->submenu.get())
         measure_item_struct->itemWidth += kArrowWidth;
       // If the label contains an accelerator, make room for tab.
-      if (data->label.find(L'\t') != string16::npos)
-        measure_item_struct->itemWidth += font.GetStringWidth(L" ");
+      if (data->label.find(L'\t') != base::string16::npos)
+        measure_item_struct->itemWidth += gfx::GetStringWidth(L" ", font_list);
       measure_item_struct->itemHeight =
-          font.GetHeight() + kItemBottomMargin + kItemTopMargin;
+          font_list.GetHeight() + kItemBottomMargin + kItemTopMargin;
     } else {
       // Measure separator size.
       measure_item_struct->itemHeight = GetSystemMetrics(SM_CYMENU) / 2;
@@ -225,19 +227,19 @@ class NativeMenuWin::MenuHostWindow {
       SystemParametersInfo(SPI_GETKEYBOARDCUES, 0, &underline_mnemonics, 0);
       if (!underline_mnemonics)
         format |= DT_HIDEPREFIX;
-      gfx::Font font;
-      HGDIOBJ old_font =
-          static_cast<HFONT>(SelectObject(dc, font.GetNativeFont()));
+      gfx::FontList font_list;
+      HGDIOBJ old_font = static_cast<HFONT>(
+          SelectObject(dc, font_list.GetPrimaryFont().GetNativeFont()));
 
       // If an accelerator is specified (with a tab delimiting the rest of the
       // label from the accelerator), we have to justify the fist part on the
       // left and the accelerator on the right.
       // TODO(jungshik): This will break in RTL UI. Currently, he/ar use the
       //                 window system UI font and will not hit here.
-      string16 label = data->label;
-      string16 accel;
-      string16::size_type tab_pos = label.find(L'\t');
-      if (tab_pos != string16::npos) {
+      base::string16 label = data->label;
+      base::string16 accel;
+      base::string16::size_type tab_pos = label.find(L'\t');
+      if (tab_pos != base::string16::npos) {
         accel = label.substr(tab_pos);
         label = label.substr(0, tab_pos);
       }
@@ -626,7 +628,7 @@ void NativeMenuWin::AddMenuItemAt(int menu_index, int model_index) {
     mii.fType = MFT_OWNERDRAW;
 
   ItemData* item_data = new ItemData;
-  item_data->label = string16();
+  item_data->label = base::string16();
   ui::MenuModel::ItemType type = model_->GetTypeAt(model_index);
   if (type == ui::MenuModel::TYPE_SUBMENU) {
     item_data->submenu.reset(new Menu2(model_->GetSubmenuModelAt(model_index)));
@@ -678,7 +680,7 @@ void NativeMenuWin::SetMenuItemState(int menu_index, bool enabled, bool checked,
 
 void NativeMenuWin::SetMenuItemLabel(int menu_index,
                                      int model_index,
-                                     const string16& label) {
+                                     const base::string16& label) {
   if (IsSeparatorItemAt(menu_index))
     return;
 
@@ -690,8 +692,8 @@ void NativeMenuWin::SetMenuItemLabel(int menu_index,
 
 void NativeMenuWin::UpdateMenuItemInfoForString(MENUITEMINFO* mii,
                                                 int model_index,
-                                                const string16& label) {
-  string16 formatted = label;
+                                                const base::string16& label) {
+  base::string16 formatted = label;
   ui::MenuModel::ItemType type = model_->GetTypeAt(model_index);
   // Strip out any tabs, otherwise they get interpreted as accelerators and can
   // lead to weird behavior.

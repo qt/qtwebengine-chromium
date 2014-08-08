@@ -5,7 +5,7 @@
 [
   {
     "namespace": "declarativeWebRequest",
-    "description": "Use the <code>chrome.declarativeWebRequest</code> API to intercept, block, or modify requests in-flight. It is significantly faster than the <a href='webRequest.html'><code>chrome.webRequest</code> API</a> because you can register rules that are evaluated in the browser rather than the JavaScript engine with reduces roundtrip latencies and allows higher efficiency.",
+    "description": "<em><strong>Note:</strong> this API is currently on hold, without concrete plans to move to stable.</em> Use the <code>chrome.declarativeWebRequest</code> API to intercept, block, or modify requests in-flight. It is significantly faster than the <a href='webRequest'><code>chrome.webRequest</code> API</a> because you can register rules that are evaluated in the browser rather than the JavaScript engine with reduces roundtrip latencies and allows higher efficiency.",
     "types": [
       {
         "id": "HeaderFilter",
@@ -297,7 +297,7 @@
       },
       {
         "id": "declarativeWebRequest.SendMessageToExtension",
-        "description": "Triggers the $ref:declarativeWebRequest.onMessage event.",
+        "description": "Triggers the $(ref:declarativeWebRequest.onMessage) event.",
         "type": "object",
         "properties": {
           "instanceType": {
@@ -570,7 +570,7 @@
       {
         "name": "onMessage",
         "type": "function",
-        "description": "Fired when a message is sent via $ref:declarativeWebRequest.SendMessageToExtension from an action of the declarative web request API.",
+        "description": "Fired when a message is sent via $(ref:declarativeWebRequest.SendMessageToExtension) from an action of the declarative web request API.",
         "parameters": [
           {
             "type": "object",

@@ -36,25 +36,34 @@
 
 namespace WebCore {
 
-    // APIs used by workers to report console activity.
-    class WorkerReportingProxy {
-    public:
-        virtual ~WorkerReportingProxy() {}
+class WorkerGlobalScope;
 
-        virtual void reportException(const String& errorMessage, int lineNumber, int columnNumber, const String& sourceURL) = 0;
-        virtual void reportConsoleMessage(MessageSource, MessageLevel, const String& message, int lineNumber, const String& sourceURL) = 0;
-        virtual void postMessageToPageInspector(const String&) = 0;
-        virtual void updateInspectorStateCookie(const String&) = 0;
+// APIs used by workers to report console activity.
+class WorkerReportingProxy {
+public:
+    virtual ~WorkerReportingProxy() { }
 
-        // Invoked when the new WorkerGlobalScope is started.
-        virtual void workerGlobalScopeStarted() = 0;
+    virtual void reportException(const String& errorMessage, int lineNumber, int columnNumber, const String& sourceURL) = 0;
+    virtual void reportConsoleMessage(MessageSource, MessageLevel, const String& message, int lineNumber, const String& sourceURL) = 0;
+    virtual void postMessageToPageInspector(const String&) = 0;
+    virtual void updateInspectorStateCookie(const String&) = 0;
 
-        // Invoked when close() is invoked on the worker context.
-        virtual void workerGlobalScopeClosed() = 0;
+    // Invoked when the new WorkerGlobalScope is started.
+    virtual void workerGlobalScopeStarted(WorkerGlobalScope*) = 0;
 
-        // Invoked when the thread has stopped.
-        virtual void workerGlobalScopeDestroyed() = 0;
-    };
+    // Invoked when close() is invoked on the worker context.
+    virtual void workerGlobalScopeClosed() = 0;
+
+    // Invoked when the thread is stopped and WorkerGlobalScope is being
+    // destructed. (This is be the last method that is called on this
+    // interface)
+    virtual void workerGlobalScopeDestroyed() = 0;
+
+    // Invoked when the thread is about to be stopped and WorkerGlobalScope
+    // is to be destructed. (When this is called it is guaranteed that
+    // WorkerGlobalScope is still alive)
+    virtual void willDestroyWorkerGlobalScope() = 0;
+};
 
 } // namespace WebCore
 

@@ -87,6 +87,10 @@ const kMaxYear  = 1000000;
 const kMinMonth = -10000000;
 const kMaxMonth = 10000000;
 
+# Strict mode flags for passing to %SetProperty
+const kSloppyMode = 0;
+const kStrictMode = 1;
+
 # Native cache ids.
 const STRING_TO_REGEXP_CACHE_ID = 0;
 
@@ -97,7 +101,7 @@ const STRING_TO_REGEXP_CACHE_ID = 0;
 #       values of 'bar'.
 macro IS_NULL(arg)              = (arg === null);
 macro IS_NULL_OR_UNDEFINED(arg) = (arg == null);
-macro IS_UNDEFINED(arg)         = (typeof(arg) === 'undefined');
+macro IS_UNDEFINED(arg)         = (arg === (void 0));
 macro IS_NUMBER(arg)            = (typeof(arg) === 'number');
 macro IS_STRING(arg)            = (typeof(arg) === 'string');
 macro IS_BOOLEAN(arg)           = (typeof(arg) === 'boolean');
@@ -122,6 +126,8 @@ macro IS_GLOBAL(arg)            = (%_ClassOf(arg) === 'global');
 macro IS_ARRAYBUFFER(arg)       = (%_ClassOf(arg) === 'ArrayBuffer');
 macro IS_DATAVIEW(arg)          = (%_ClassOf(arg) === 'DataView');
 macro IS_GENERATOR(arg)         = (%_ClassOf(arg) === 'Generator');
+macro IS_SET_ITERATOR(arg)      = (%_ClassOf(arg) === 'Set Iterator');
+macro IS_MAP_ITERATOR(arg)      = (%_ClassOf(arg) === 'Map Iterator');
 macro IS_UNDETECTABLE(arg)      = (%_IsUndetectableObject(arg));
 macro FLOOR(arg)                = $floor(arg);
 
@@ -138,6 +144,10 @@ macro IS_SPEC_OBJECT(arg)   = (%_IsSpecObject(arg));
 # proxy. That ignores host objects with [[Call]] methods, but in most situations
 # we cannot handle those anyway.
 macro IS_SPEC_FUNCTION(arg) = (%_ClassOf(arg) === 'Function');
+
+# Macro for ES6 CheckObjectCoercible
+# Will throw a TypeError of the form "[functionName] called on null or undefined".
+macro CHECK_OBJECT_COERCIBLE(arg, functionName) = if (IS_NULL_OR_UNDEFINED(arg) && !IS_UNDETECTABLE(arg)) throw MakeTypeError('called_on_null_or_undefined', [functionName]);
 
 # Indices in bound function info retrieved by %BoundFunctionGetBindings(...).
 const kBoundFunctionIndex = 0;
@@ -158,8 +168,12 @@ macro TO_OBJECT_INLINE(arg) = (IS_SPEC_OBJECT(%IS_VAR(arg)) ? arg : ToObject(arg
 macro JSON_NUMBER_TO_STRING(arg) = ((%_IsSmi(%IS_VAR(arg)) || arg - arg == 0) ? %_NumberToString(arg) : "null");
 
 # Private names.
+# GET_PRIVATE should only be used if the property is known to exists on obj
+# itself (it should really use %GetOwnProperty, but that would be way slower).
+macro GLOBAL_PRIVATE(name) = (%CreateGlobalPrivateSymbol(name));
 macro NEW_PRIVATE(name) = (%CreatePrivateSymbol(name));
-macro HAS_PRIVATE(obj, sym) = (sym in obj);
+macro IS_PRIVATE(sym) = (%SymbolIsPrivate(sym));
+macro HAS_PRIVATE(obj, sym) = (%HasOwnProperty(obj, sym));
 macro GET_PRIVATE(obj, sym) = (obj[sym]);
 macro SET_PRIVATE(obj, sym, val) = (obj[sym] = val);
 macro DELETE_PRIVATE(obj, sym) = (delete obj[sym]);
@@ -260,3 +274,14 @@ const COMPILATION_TYPE_JSON = 2;
 
 # Matches Messages::kNoLineNumberInfo from v8.h
 const kNoLineNumberInfo = 0;
+
+# Matches PropertyAttributes from property-details.h
+const PROPERTY_ATTRIBUTES_NONE = 0;
+const PROPERTY_ATTRIBUTES_STRING = 8;
+const PROPERTY_ATTRIBUTES_SYMBOLIC = 16;
+const PROPERTY_ATTRIBUTES_PRIVATE_SYMBOL = 32;
+
+# Use for keys, values and entries iterators.
+const ITERATOR_KIND_KEYS = 1;
+const ITERATOR_KIND_VALUES = 2;
+const ITERATOR_KIND_ENTRIES = 3;

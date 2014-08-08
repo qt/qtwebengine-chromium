@@ -16,15 +16,14 @@
             '../content/content.gyp:content_common',
             '../net/net.gyp:net',
             '../skia/skia.gyp:skia',
+            '../ui/base/ui_base.gyp:ui_base',
             '../ui/gfx/gfx.gyp:gfx',
-            '../ui/ui.gyp:ui',
-            '../webkit/glue/webkit_glue.gyp:glue',
+            '../ui/gfx/gfx.gyp:gfx_geometry',
             'web_contents_delegate_android_jni_headers',
           ],
           'include_dirs': [
             '..',
             '../skia/config',
-            '<(SHARED_INTERMEDIATE_DIR)/web_contents_delegate_android',
           ],
           'sources': [
             'web_contents_delegate_android/color_chooser_android.cc',

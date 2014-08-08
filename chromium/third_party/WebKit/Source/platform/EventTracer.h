@@ -32,6 +32,10 @@
 #define EventTracer_h
 
 #include "platform/PlatformExport.h"
+#include "wtf/RefCounted.h"
+#include "wtf/RefPtr.h"
+#include "wtf/text/WTFString.h"
+
 #include <stdint.h>
 
 // This will mark the trace event as disabled by default. The user will need
@@ -42,6 +46,13 @@ namespace WebCore {
 
 namespace TraceEvent {
 typedef uint64_t TraceEventHandle;
+
+class PLATFORM_EXPORT ConvertableToTraceFormat : public RefCounted<ConvertableToTraceFormat> {
+public:
+    virtual String asTraceFormat() const = 0;
+    virtual ~ConvertableToTraceFormat() { }
+};
+
 }
 
 // FIXME: Make these global variables thread-safe. Make a value update atomic.
@@ -56,9 +67,19 @@ public:
         const char* name,
         unsigned long long id,
         int numArgs,
-        const char** argNames,
-        const unsigned char* argTypes,
-        const unsigned long long* argValues,
+        const char* argNames[],
+        const unsigned char argTypes[],
+        const unsigned long long argValues[],
+        WebCore::TraceEvent::ConvertableToTraceFormat*[],
+        unsigned char flags);
+    static TraceEvent::TraceEventHandle addTraceEvent(char phase,
+        const unsigned char* categoryEnabledFlag,
+        const char* name,
+        unsigned long long id,
+        int numArgs,
+        const char* argNames[],
+        const unsigned char argTypes[],
+        const unsigned long long argValues[],
         unsigned char flags);
     static void updateTraceEventDuration(const unsigned char* categoryEnabledFlag, const char* name, TraceEvent::TraceEventHandle);
 };

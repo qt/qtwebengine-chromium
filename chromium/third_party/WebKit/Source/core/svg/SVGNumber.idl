@@ -20,7 +20,11 @@
  * Boston, MA 02110-1301, USA.
  */
 
-interface SVGNumber {
-    [StrictTypeChecking] attribute float value;
+[
+    ImplementedAs=SVGNumberTearOff,
+    SetWrapperReferenceTo(SVGElement contextElement),
+    TypeChecking=Interface|Nullable,
+] interface SVGNumber {
+    [RaisesException=Setter] attribute float value;
 };
 

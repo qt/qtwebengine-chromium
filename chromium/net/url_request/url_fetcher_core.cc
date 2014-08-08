@@ -82,6 +82,8 @@ URLFetcherCore::URLFetcherCore(URLFetcher* fetcher,
       upload_content_set_(false),
       upload_range_offset_(0),
       upload_range_length_(0),
+      referrer_policy_(
+          URLRequest::CLEAR_REFERRER_ON_TRANSITION_FROM_SECURE_TO_INSECURE),
       is_chunked_upload_(false),
       was_cancelled_(false),
       stop_on_redirect_(false),
@@ -204,6 +206,11 @@ void URLFetcherCore::SetReferrer(const std::string& referrer) {
   referrer_ = referrer;
 }
 
+void URLFetcherCore::SetReferrerPolicy(
+    URLRequest::ReferrerPolicy referrer_policy) {
+  referrer_policy_ = referrer_policy;
+}
+
 void URLFetcherCore::SetExtraRequestHeaders(
     const std::string& extra_request_headers) {
   extra_request_headers_.Clear();
@@ -212,11 +219,6 @@ void URLFetcherCore::SetExtraRequestHeaders(
 
 void URLFetcherCore::AddExtraRequestHeader(const std::string& header_line) {
   extra_request_headers_.AddHeaderFromString(header_line);
-}
-
-void URLFetcherCore::GetExtraRequestHeaders(
-    HttpRequestHeaders* headers) const {
-  headers->CopyFrom(extra_request_headers_);
 }
 
 void URLFetcherCore::SetRequestContext(
@@ -505,7 +507,7 @@ void URLFetcherCore::StartURLRequest() {
   g_registry.Get().AddURLFetcherCore(this);
   current_response_bytes_ = 0;
   request_ = request_context_getter_->GetURLRequestContext()->CreateRequest(
-      original_url_, DEFAULT_PRIORITY, this);
+      original_url_, DEFAULT_PRIORITY, this, NULL);
   request_->set_stack_trace(stack_trace_);
   int flags = request_->load_flags() | load_flags_;
   if (!g_interception_enabled)
@@ -515,6 +517,7 @@ void URLFetcherCore::StartURLRequest() {
     request_->EnableChunkedUpload();
   request_->SetLoadFlags(flags);
   request_->SetReferrer(referrer_);
+  request_->set_referrer_policy(referrer_policy_);
   request_->set_first_party_for_cookies(first_party_for_cookies_.is_empty() ?
       original_url_ : first_party_for_cookies_);
   if (url_request_data_key_ && !url_request_create_data_callback_.is_null()) {

@@ -30,6 +30,7 @@
 #include "modules/webdatabase/AbstractSQLStatement.h"
 #include "modules/webdatabase/SQLError.h"
 #include "modules/webdatabase/SQLTransactionState.h"
+#include "platform/heap/Handle.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/ThreadSafeRefCounted.h"
 #include "wtf/Vector.h"
@@ -37,17 +38,18 @@
 
 namespace WebCore {
 
-class AbstractSQLTransactionBackend : public ThreadSafeRefCounted<AbstractSQLTransactionBackend> {
+class AbstractSQLTransactionBackend : public ThreadSafeRefCountedWillBeGarbageCollectedFinalized<AbstractSQLTransactionBackend> {
 public:
     virtual ~AbstractSQLTransactionBackend() { }
+    virtual void trace(Visitor*) { }
 
     virtual void requestTransitToState(SQLTransactionState) = 0;
 
-    virtual PassRefPtr<SQLError> transactionError() = 0;
+    virtual SQLErrorData* transactionError() = 0;
     virtual AbstractSQLStatement* currentStatement() = 0;
     virtual void setShouldRetryCurrentStatement(bool) = 0;
 
-    virtual void executeSQL(PassOwnPtr<AbstractSQLStatement>, const String& statement,
+    virtual void executeSQL(PassOwnPtrWillBeRawPtr<AbstractSQLStatement>, const String& statement,
         const Vector<SQLValue>& arguments, int permissions) = 0;
 
 };

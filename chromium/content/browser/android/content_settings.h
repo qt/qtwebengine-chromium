@@ -7,7 +7,7 @@
 
 #include <jni.h>
 
-#include "base/android/jni_helper.h"
+#include "base/android/jni_weak_ref.h"
 #include "content/public/browser/web_contents_observer.h"
 
 namespace content {
@@ -26,7 +26,7 @@ class ContentSettings : public WebContentsObserver {
   virtual ~ContentSettings();
 
   // WebContentsObserver overrides:
-  virtual void WebContentsDestroyed(WebContents* web_contents) OVERRIDE;
+  virtual void WebContentsDestroyed() OVERRIDE;
 
   // The Java counterpart to this class.
   JavaObjectWeakGlobalRef content_settings_;

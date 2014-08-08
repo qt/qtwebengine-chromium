@@ -16,6 +16,7 @@
 #include "net/url_request/url_request_context_getter.h"
 
 namespace media {
+class AudioBus;
 class AudioManager;
 }
 
@@ -41,7 +42,8 @@ class CONTENT_EXPORT SpeechRecognizerImpl
 
   SpeechRecognizerImpl(SpeechRecognitionEventListener* listener,
                        int session_id,
-                       bool is_single_shot,
+                       bool continuous,
+                       bool provisional_results,
                        SpeechRecognitionEngine* engine);
 
   virtual void StartRecognition(const std::string& device_id) OVERRIDE;
@@ -128,9 +130,12 @@ class CONTENT_EXPORT SpeechRecognizerImpl
   // AudioInputController::EventHandler methods.
   virtual void OnCreated(media::AudioInputController* controller) OVERRIDE {}
   virtual void OnRecording(media::AudioInputController* controller) OVERRIDE {}
-  virtual void OnError(media::AudioInputController* controller) OVERRIDE;
+  virtual void OnError(media::AudioInputController* controller,
+      media::AudioInputController::ErrorCode error_code) OVERRIDE;
   virtual void OnData(media::AudioInputController* controller,
-                      const uint8* data, uint32 size) OVERRIDE;
+                      const media::AudioBus* data) OVERRIDE;
+  virtual void OnLog(media::AudioInputController* controller,
+                     const std::string& message) OVERRIDE {}
 
   // SpeechRecognitionEngineDelegate methods.
   virtual void OnSpeechRecognitionEngineResults(
@@ -146,7 +151,7 @@ class CONTENT_EXPORT SpeechRecognizerImpl
   int num_samples_recorded_;
   float audio_level_;
   bool is_dispatching_event_;
-  bool is_single_shot_;
+  bool provisional_results_;
   FSMState state_;
   std::string device_id_;
 

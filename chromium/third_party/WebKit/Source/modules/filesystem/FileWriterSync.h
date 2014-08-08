@@ -34,19 +34,19 @@
 #include "bindings/v8/ScriptWrappable.h"
 #include "core/fileapi/FileError.h"
 #include "modules/filesystem/FileWriterBase.h"
+#include "platform/heap/Handle.h"
 #include "public/platform/WebFileWriterClient.h"
-#include "wtf/PassRefPtr.h"
 
 namespace WebCore {
 
 class Blob;
 class ExceptionState;
 
-class FileWriterSync : public ScriptWrappable, public FileWriterBase, public blink::WebFileWriterClient {
+class FileWriterSync FINAL : public FileWriterBase, public ScriptWrappable, public blink::WebFileWriterClient {
 public:
-    static PassRefPtr<FileWriterSync> create()
+    static FileWriterSync* create()
     {
-        return adoptRef(new FileWriterSync());
+        return adoptRefCountedGarbageCollected(new FileWriterSync());
     }
     virtual ~FileWriterSync();
 

@@ -29,7 +29,7 @@
 
 namespace WebCore {
 
-    class MutationEvent : public Event {
+    class MutationEvent FINAL : public Event {
     public:
         virtual ~MutationEvent();
 
@@ -39,18 +39,19 @@ namespace WebCore {
             REMOVAL         = 3
         };
 
-        static PassRefPtr<MutationEvent> create()
+        static PassRefPtrWillBeRawPtr<MutationEvent> create()
         {
-            return adoptRef(new MutationEvent);
+            return adoptRefWillBeNoop(new MutationEvent);
         }
 
-        static PassRefPtr<MutationEvent> create(const AtomicString& type, bool canBubble, PassRefPtr<Node> relatedNode = 0,
+        static PassRefPtrWillBeRawPtr<MutationEvent> create(
+            const AtomicString& type, bool canBubble, PassRefPtrWillBeRawPtr<Node> relatedNode = nullptr,
             const String& prevValue = String(), const String& newValue = String(), const String& attrName = String(), unsigned short attrChange = 0)
         {
-            return adoptRef(new MutationEvent(type, canBubble, false, relatedNode, prevValue, newValue, attrName, attrChange));
+            return adoptRefWillBeNoop(new MutationEvent(type, canBubble, false, relatedNode, prevValue, newValue, attrName, attrChange));
         }
 
-        void initMutationEvent(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtr<Node> relatedNode,
+        void initMutationEvent(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtrWillBeRawPtr<Node> relatedNode,
                                const String& prevValue, const String& newValue,
                                const String& attrName, unsigned short attrChange);
 
@@ -60,15 +61,17 @@ namespace WebCore {
         String attrName() const { return m_attrName; }
         unsigned short attrChange() const { return m_attrChange; }
 
-        virtual const AtomicString& interfaceName() const;
+        virtual const AtomicString& interfaceName() const OVERRIDE;
+
+        virtual void trace(Visitor*) OVERRIDE;
 
     private:
         MutationEvent();
-        MutationEvent(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtr<Node> relatedNode,
+        MutationEvent(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtrWillBeRawPtr<Node> relatedNode,
                       const String& prevValue, const String& newValue,
                       const String& attrName, unsigned short attrChange);
 
-        RefPtr<Node> m_relatedNode;
+        RefPtrWillBeMember<Node> m_relatedNode;
         String m_prevValue;
         String m_newValue;
         String m_attrName;

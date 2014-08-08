@@ -40,27 +40,33 @@ public:
     RenderObject* firstChild() const { ASSERT(children() == virtualChildren()); return children()->firstChild(); }
     RenderObject* lastChild() const { ASSERT(children() == virtualChildren()); return children()->lastChild(); }
 
+    // If you have a RenderMedia, use firstChild or lastChild instead.
+    void slowFirstChild() const WTF_DELETED_FUNCTION;
+    void slowLastChild() const WTF_DELETED_FUNCTION;
+
     const RenderObjectChildList* children() const { return &m_children; }
     RenderObjectChildList* children() { return &m_children; }
 
     HTMLMediaElement* mediaElement() const;
 
 protected:
-    virtual void layout();
+    virtual void layout() OVERRIDE;
 
 private:
     virtual RenderObjectChildList* virtualChildren() OVERRIDE FINAL { return children(); }
     virtual const RenderObjectChildList* virtualChildren() const OVERRIDE FINAL { return children(); }
+
+    virtual LayerType layerTypeRequired() const OVERRIDE { return NormalLayer; }
 
     // FIXME: RenderMedia::layout makes assumptions about what children are allowed
     // so we can't support generated content.
     virtual bool canHaveGeneratedChildren() const OVERRIDE FINAL { return false; }
     virtual bool canHaveChildren() const OVERRIDE FINAL { return true; }
 
-    virtual const char* renderName() const { return "RenderMedia"; }
+    virtual const char* renderName() const OVERRIDE { return "RenderMedia"; }
     virtual bool isMedia() const OVERRIDE FINAL { return true; }
     virtual bool isImage() const OVERRIDE FINAL { return false; }
-    virtual void paintReplaced(PaintInfo&, const LayoutPoint&);
+    virtual void paintReplaced(PaintInfo&, const LayoutPoint&) OVERRIDE;
 
     RenderObjectChildList m_children;
 };

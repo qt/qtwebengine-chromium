@@ -39,7 +39,7 @@ select.exception-setting {
   -webkit-box-flex: 1;
 }
 
-#exception-behavior-column {
+.exception-value-column-header {
   width: 145px;
 }
 
@@ -66,15 +66,6 @@ div[role='listitem'][controlled-by] {
   color: #666;
   font-style: italic;
   position: relative;
-}
-
-.section-header {
-  -webkit-margin-start: -18px;
-  margin-bottom: 0.8em;
-}
-
-.section-header > h3 {
-  display: inline;
 }
 
 .settings-list div[role='listitem'][controlled-by='policy'],

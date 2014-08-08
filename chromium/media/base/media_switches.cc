@@ -9,20 +9,13 @@ namespace switches {
 // Allow users to specify a custom buffer size for debugging purpose.
 const char kAudioBufferSize[] = "audio-buffer-size";
 
-// Enable EAC3 playback in MSE.
-const char kEnableEac3Playback[] = "enable-eac3-playback";
-
-// Disables Opus playback in media elements.
-const char kDisableOpusPlayback[] = "disable-opus-playback";
-
-// Disables VP8 Alpha playback in media elements.
-const char kDisableVp8AlphaPlayback[] = "disable-vp8-alpha-playback";
-
 // Set number of threads to use for video decoding.
 const char kVideoThreads[] = "video-threads";
 
-// Enables MP3 stream parser for Media Source Extensions.
-const char kEnableMP3StreamParser[] = "enable-mp3-stream-parser";
+// Bypass autodetection of the upper limit on resolution of streams that can
+// be hardware decoded.
+const char kIgnoreResolutionLimitsForAcceleratedVideoDecode[] =
+    "ignore-resolution-limits-for-accelerated-video-decode";
 
 #if defined(OS_ANDROID)
 // Disables the infobar popup for accessing protected media identifier.
@@ -34,15 +27,6 @@ const char kDisableInfobarForProtectedMediaIdentifier[] =
 const char kMediaDrmEnableNonCompositing[] = "mediadrm-enable-non-compositing";
 #endif
 
-#if defined(GOOGLE_TV)
-// Use external video surface for video with more than or equal pixels to
-// specified value. For example, value of 0 will enable external video surface
-// for all videos, and value of 921600 (=1280*720) will enable external video
-// surface for 720p video and larger.
-const char kUseExternalVideoSurfaceThresholdInPixels[] =
-    "use-external-video-surface-threshold-in-pixels";
-#endif
-
 #if defined(OS_LINUX) || defined(OS_FREEBSD) || defined(OS_SOLARIS)
 // The Alsa device to use when opening an audio input stream.
 const char kAlsaInputDevice[] = "alsa-input-device";
@@ -51,18 +35,19 @@ const char kAlsaOutputDevice[] = "alsa-output-device";
 #endif
 
 #if defined(OS_MACOSX)
-// Unlike other platforms, OSX requires CoreAudio calls to happen on the main
-// thread of the process.  Provide a way to disable this until support is well
-// tested.  See http://crbug.com/158170.
-// TODO(dalecurtis): Remove this once we're sure nothing has exploded.
-const char kDisableMainThreadAudio[] = "disable-main-thread-audio";
 // AVFoundation is available in versions 10.7 and onwards, and is to be used
 // http://crbug.com/288562 for both audio and video device monitoring and for
 // video capture. Being a dynamically loaded NSBundle and library, it hits the
 // Chrome startup time (http://crbug.com/311325 and http://crbug.com/311437);
-// until development is finished and the library load time issue is solved, the
-// usage of this library is hidden behind this flag.
+// for experimentation purposes, in particular library load time issue, the
+// usage of this library can be enabled by using this flag.
 const char kEnableAVFoundation[] = "enable-avfoundation";
+
+// QTKit is the media capture API predecessor to AVFoundation, available up and
+// until Mac OS X 10.9 (despite being deprecated in this last one). This flag
+// is used for troubleshooting and testing, and forces QTKit in builds and
+// configurations where AVFoundation would be used otherwise.
+const char kForceQTKit[] = "force-qtkit";
 #endif
 
 #if defined(OS_WIN)
@@ -78,6 +63,11 @@ const char kEnableExclusiveAudio[] = "enable-exclusive-audio";
 // but specifying this switch will force use of DirectShow always.
 // See bug: http://crbug.com/268412
 const char kForceDirectShowVideoCapture[] = "force-directshow";
+
+// Force the use of MediaFoundation for video capture. This is only supported in
+// Windows 7 and above. Used, like |kForceDirectShowVideoCapture|, to
+// troubleshoot problems in Windows platforms.
+const char kForceMediaFoundationVideoCapture[] = "force-mediafoundation";
 
 // Use Windows WaveOut/In audio API even if Core Audio is supported.
 const char kForceWaveAudio[] = "force-wave-audio";
@@ -98,8 +88,8 @@ const char kWaveOutBuffers[] = "waveout-buffers";
 const char kUseCras[] = "use-cras";
 #endif
 
-// Disables system sounds manager.
-const char kDisableSystemSoundsManager[] = "disable-system-sounds-manager";
+// Use fake device for Media Stream to replace actual camera and microphone.
+const char kUseFakeDeviceForMediaStream[] = "use-fake-device-for-media-stream";
 
 // Use a raw video file as fake video capture device.
 const char kUseFileForFakeVideoCapture[] = "use-file-for-fake-video-capture";

@@ -82,6 +82,11 @@
   -webkit-margin-start: 32px;
 }
 
+#eula .credits {
+  clear: both;
+  font-size: small;
+}
+
 #cros-eula-loading {
   -webkit-align-items: center;
   -webkit-flex-direction: column;

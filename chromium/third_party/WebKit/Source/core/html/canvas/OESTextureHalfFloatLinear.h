@@ -32,17 +32,17 @@
 
 namespace WebCore {
 
-class OESTextureHalfFloatLinear : public WebGLExtension, public ScriptWrappable {
+class OESTextureHalfFloatLinear FINAL : public WebGLExtension, public ScriptWrappable {
 public:
-    static PassRefPtr<OESTextureHalfFloatLinear> create(WebGLRenderingContext*);
-    static bool supported(WebGLRenderingContext*);
+    static PassRefPtr<OESTextureHalfFloatLinear> create(WebGLRenderingContextBase*);
+    static bool supported(WebGLRenderingContextBase*);
     static const char* extensionName();
 
     virtual ~OESTextureHalfFloatLinear();
-    virtual ExtensionName name() const;
+    virtual WebGLExtensionName name() const OVERRIDE;
 
 private:
-    OESTextureHalfFloatLinear(WebGLRenderingContext*);
+    OESTextureHalfFloatLinear(WebGLRenderingContextBase*);
 };
 
 } // namespace WebCore

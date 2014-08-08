@@ -22,7 +22,7 @@
 
 #include "core/svg/SVGFEMergeElement.h"
 
-#include "SVGNames.h"
+#include "core/SVGNames.h"
 #include "platform/graphics/filters/FilterEffect.h"
 #include "core/svg/SVGFEMergeNodeElement.h"
 #include "core/svg/graphics/filters/SVGFilterBuilder.h"
@@ -35,26 +35,21 @@ inline SVGFEMergeElement::SVGFEMergeElement(Document& document)
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<SVGFEMergeElement> SVGFEMergeElement::create(Document& document)
-{
-    return adoptRef(new SVGFEMergeElement(document));
-}
+DEFINE_NODE_FACTORY(SVGFEMergeElement)
 
 PassRefPtr<FilterEffect> SVGFEMergeElement::build(SVGFilterBuilder* filterBuilder, Filter* filter)
 {
     RefPtr<FilterEffect> effect = FEMerge::create(filter);
     FilterEffectVector& mergeInputs = effect->inputEffects();
-    for (Node* node = firstChild(); node; node = node->nextSibling()) {
-        if (node->hasTagName(SVGNames::feMergeNodeTag)) {
-            FilterEffect* mergeEffect = filterBuilder->getEffectById(toSVGFEMergeNodeElement(node)->in1CurrentValue());
-            if (!mergeEffect)
-                return 0;
-            mergeInputs.append(mergeEffect);
-        }
+    for (SVGFEMergeNodeElement* element = Traversal<SVGFEMergeNodeElement>::firstChild(*this); element; element = Traversal<SVGFEMergeNodeElement>::nextSibling(*element)) {
+        FilterEffect* mergeEffect = filterBuilder->getEffectById(AtomicString(element->in1()->currentValue()->value()));
+        if (!mergeEffect)
+            return nullptr;
+        mergeInputs.append(mergeEffect);
     }
 
     if (mergeInputs.isEmpty())
-        return 0;
+        return nullptr;
 
     return effect.release();
 }

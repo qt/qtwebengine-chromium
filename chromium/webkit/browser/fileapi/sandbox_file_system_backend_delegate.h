@@ -26,6 +26,11 @@ namespace base {
 class SequencedTaskRunner;
 }
 
+namespace content {
+class SandboxFileSystemBackendDelegateTest;
+class SandboxFileSystemTestHelper;
+}
+
 namespace quota {
 class QuotaManagerProxy;
 class SpecialStoragePolicy;
@@ -46,7 +51,6 @@ class FileSystemUsageCache;
 class ObfuscatedFileUtil;
 class QuotaReservationManager;
 class SandboxFileSystemBackend;
-class SandboxFileSystemTestHelper;
 class SandboxQuotaObserver;
 
 // Delegate implementation of the some methods in Sandbox/SyncFileSystemBackend.
@@ -109,7 +113,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT SandboxFileSystemBackendDelegate
   scoped_ptr<FileSystemOperationContext> CreateFileSystemOperationContext(
       const FileSystemURL& url,
       FileSystemContext* context,
-      base::PlatformFileError* error_code) const;
+      base::File::Error* error_code) const;
   scoped_ptr<webkit_blob::FileStreamReader> CreateFileStreamReader(
       const FileSystemURL& url,
       int64 offset,
@@ -122,19 +126,19 @@ class WEBKIT_STORAGE_BROWSER_EXPORT SandboxFileSystemBackendDelegate
       FileSystemType type) const;
 
   // FileSystemQuotaUtil overrides.
-  virtual base::PlatformFileError DeleteOriginDataOnFileThread(
+  virtual base::File::Error DeleteOriginDataOnFileTaskRunner(
       FileSystemContext* context,
       quota::QuotaManagerProxy* proxy,
       const GURL& origin_url,
       FileSystemType type) OVERRIDE;
-  virtual void GetOriginsForTypeOnFileThread(
+  virtual void GetOriginsForTypeOnFileTaskRunner(
       FileSystemType type,
       std::set<GURL>* origins) OVERRIDE;
-  virtual void GetOriginsForHostOnFileThread(
+  virtual void GetOriginsForHostOnFileTaskRunner(
       FileSystemType type,
       const std::string& host,
       std::set<GURL>* origins) OVERRIDE;
-  virtual int64 GetOriginUsageOnFileThread(
+  virtual int64 GetOriginUsageOnFileTaskRunner(
       FileSystemContext* context,
       const GURL& origin_url,
       FileSystemType type) OVERRIDE;
@@ -169,7 +173,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT SandboxFileSystemBackendDelegate
   void StickyInvalidateUsageCache(const GURL& origin_url,
                                   FileSystemType type);
 
-  void CollectOpenFileSystemMetrics(base::PlatformFileError error_code);
+  void CollectOpenFileSystemMetrics(base::File::Error error_code);
 
   base::SequencedTaskRunner* file_task_runner() {
     return file_task_runner_.get();
@@ -190,10 +194,10 @@ class WEBKIT_STORAGE_BROWSER_EXPORT SandboxFileSystemBackendDelegate
   FileSystemFileUtil* sync_file_util();
 
  private:
-  friend class SandboxQuotaObserver;
-  friend class SandboxFileSystemTestHelper;
   friend class QuotaBackendImpl;
-  FRIEND_TEST_ALL_PREFIXES(SandboxFileSystemBackendDelegateTest, IsAccessValid);
+  friend class SandboxQuotaObserver;
+  friend class content::SandboxFileSystemBackendDelegateTest;
+  friend class content::SandboxFileSystemTestHelper;
 
   // Performs API-specific validity checks on the given path |url|.
   // Returns true if access to |url| is valid in this filesystem.
@@ -213,7 +217,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT SandboxFileSystemBackendDelegate
       ObfuscatedFileUtil* sandbox_file_util,
       const GURL& origin_url,
       FileSystemType type,
-      base::PlatformFileError* error_out);
+      base::File::Error* error_out);
 
   int64 RecalculateUsage(FileSystemContext* context,
                          const GURL& origin,

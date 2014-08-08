@@ -9,7 +9,9 @@
 #include "base/logging.h"
 #include "third_party/webrtc/system_wrappers/interface/event_tracer.h"
 
+namespace base {
 class CommandLine;
+}
 
 namespace cricket {
 class MediaEngineInterface;
@@ -20,6 +22,8 @@ class WebRtcVideoEncoderFactory;
 namespace webrtc {
 class AudioDeviceModule;
 }  // namespace webrtc
+
+typedef std::string (*FieldTrialFindFullName)(const std::string& trial_name);
 
 typedef cricket::MediaEngineInterface* (*CreateWebRtcMediaEngineFunction)(
     webrtc::AudioDeviceModule* adm,
@@ -39,11 +43,12 @@ typedef void (*InitDiagnosticLoggingDelegateFunctionFunction)(
 // The reason we get pointers to these functions this way is to avoid having
 // to go through GetProcAddress et al and rely on specific name mangling.
 typedef bool (*InitializeModuleFunction)(
-    const CommandLine& command_line,
+    const base::CommandLine& command_line,
 #if !defined(OS_MACOSX) && !defined(OS_ANDROID)
     AllocateFunction alloc,
     DellocateFunction dealloc,
 #endif
+    FieldTrialFindFullName field_trial_find,
     logging::LogMessageHandlerFunction log_handler,
     webrtc::GetCategoryEnabledPtr trace_get_category_enabled,
     webrtc::AddTraceEventPtr trace_add_trace_event,

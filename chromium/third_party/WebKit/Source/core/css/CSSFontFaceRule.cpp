@@ -37,8 +37,10 @@ CSSFontFaceRule::CSSFontFaceRule(StyleRuleFontFace* fontFaceRule, CSSStyleSheet*
 
 CSSFontFaceRule::~CSSFontFaceRule()
 {
+#if !ENABLE(OILPAN)
     if (m_propertiesCSSOMWrapper)
         m_propertiesCSSOMWrapper->clearParentRule();
+#endif
 }
 
 CSSStyleDeclaration* CSSFontFaceRule::style() const
@@ -52,7 +54,7 @@ String CSSFontFaceRule::cssText() const
 {
     StringBuilder result;
     result.appendLiteral("@font-face { ");
-    String descs = m_fontFaceRule->properties()->asText();
+    String descs = m_fontFaceRule->properties().asText();
     result.append(descs);
     if (!descs.isEmpty())
         result.append(' ');
@@ -66,6 +68,13 @@ void CSSFontFaceRule::reattach(StyleRuleBase* rule)
     m_fontFaceRule = toStyleRuleFontFace(rule);
     if (m_propertiesCSSOMWrapper)
         m_propertiesCSSOMWrapper->reattach(m_fontFaceRule->mutableProperties());
+}
+
+void CSSFontFaceRule::trace(Visitor* visitor)
+{
+    visitor->trace(m_fontFaceRule);
+    visitor->trace(m_propertiesCSSOMWrapper);
+    CSSRule::trace(visitor);
 }
 
 } // namespace WebCore

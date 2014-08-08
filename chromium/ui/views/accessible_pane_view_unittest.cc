@@ -57,7 +57,7 @@ void TestBarView::ButtonPressed(Button* sender, const ui::Event& event) {
 
 void TestBarView::Init() {
   SetLayoutManager(new FillLayout());
-  string16 label;
+  base::string16 label;
   child_button_.reset(new LabelButton(this, label));
   AddChildView(child_button_.get());
   second_child_button_.reset(new LabelButton(this, label));
@@ -101,7 +101,6 @@ TEST_F(AccessiblePaneViewTest, SimpleSetPaneFocus) {
 
 // This test will not work properly in Windows because it uses ::GetNextWindow
 // on deactivate which is rather unpredictable where the focus will land.
-#if !defined(OS_WIN)||defined(USE_AURA)
 TEST_F(AccessiblePaneViewTest, SetPaneFocusAndRestore) {
   View* test_view_main = new View();
   scoped_ptr<Widget> widget_main(new Widget());
@@ -145,7 +144,6 @@ TEST_F(AccessiblePaneViewTest, SetPaneFocusAndRestore) {
   widget_main->CloseNow();
   widget_main.reset();
 }
-#endif  // !defined(OS_WIN)||defined(USE_AURA)
 
 TEST_F(AccessiblePaneViewTest, TwoSetPaneFocus) {
   TestBarView* test_view = new TestBarView();

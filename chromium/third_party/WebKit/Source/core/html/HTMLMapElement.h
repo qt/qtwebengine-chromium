@@ -32,7 +32,7 @@ class HTMLImageElement;
 
 class HTMLMapElement FINAL : public HTMLElement {
 public:
-    static PassRefPtr<HTMLMapElement> create(Document&);
+    DECLARE_NODE_FACTORY(HTMLMapElement);
     virtual ~HTMLMapElement();
 
     const AtomicString& getName() const { return m_name; }
@@ -40,7 +40,7 @@ public:
     bool mapMouseEvent(LayoutPoint location, const LayoutSize&, HitTestResult&);
 
     HTMLImageElement* imageElement();
-    PassRefPtr<HTMLCollection> areas();
+    PassRefPtrWillBeRawPtr<HTMLCollection> areas();
 
 private:
     explicit HTMLMapElement(Document&);
@@ -52,8 +52,6 @@ private:
 
     AtomicString m_name;
 };
-
-DEFINE_NODE_TYPE_CASTS(HTMLMapElement, hasTagName(HTMLNames::mapTag));
 
 } //namespace
 

@@ -231,13 +231,19 @@ Visit.prototype.getResultDOM = function(propertyBag) {
     dropDown.value = 'Open action menu';
     dropDown.title = loadTimeData.getString('actionMenuDescription');
     dropDown.setAttribute('menu', '#action-menu');
+    dropDown.setAttribute('aria-haspopup', 'true');
     cr.ui.decorate(dropDown, MenuButton);
 
     dropDown.addEventListener('mousedown', setActiveVisit);
     dropDown.addEventListener('focus', setActiveVisit);
 
-    // Prevent clicks on the drop down from affecting the checkbox.
-    dropDown.addEventListener('click', function(e) { e.preventDefault(); });
+    // Prevent clicks on the drop down from affecting the checkbox.  We need to
+    // call blur() explicitly because preventDefault() cancels any focus
+    // handling.
+    dropDown.addEventListener('click', function(e) {
+      e.preventDefault();
+      document.activeElement.blur();
+    });
     entryBox.appendChild(dropDown);
   }
 
@@ -391,6 +397,7 @@ Visit.prototype.addFaviconToElement_ = function(el) {
 Visit.prototype.showMoreFromSite_ = function() {
   recordUmaAction('HistoryPage_EntryMenuShowMoreFromSite');
   historyView.setSearch(this.domain_);
+  $('search-field').focus();
 };
 
 // Visit, private, static: ----------------------------------------------------
@@ -989,6 +996,10 @@ HistoryView.prototype.positionNotificationBar = function() {
  * @private
  */
 HistoryView.prototype.clear_ = function() {
+  var alertOverlay = $('alertOverlay');
+  if (alertOverlay && alertOverlay.classList.contains('showing'))
+    hideConfirmationOverlay();
+
   this.resultDiv_.textContent = '';
 
   this.currentVisits_.forEach(function(visit) {
@@ -1564,8 +1575,7 @@ function load() {
     $('filter-controls').hidden = false;
   }
 
-  var title = loadTimeData.getString('title');
-  uber.invokeMethodOnParent('setTitle', {title: title});
+  uber.setTitle(loadTimeData.getString('title'));
 
   // Adjust the position of the notification bar when the window size changes.
   window.addEventListener('resize',

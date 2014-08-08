@@ -47,12 +47,12 @@ void PrefixSelector::ConfirmCompositionText() {
 void PrefixSelector::ClearCompositionText() {
 }
 
-void PrefixSelector::InsertText(const string16& text) {
+void PrefixSelector::InsertText(const base::string16& text) {
   OnTextInput(text);
 }
 
-void PrefixSelector::InsertChar(char16 ch, int flags) {
-  OnTextInput(string16(1, ch));
+void PrefixSelector::InsertChar(base::char16 ch, int flags) {
+  OnTextInput(base::string16(1, ch));
 }
 
 gfx::NativeWindow PrefixSelector::GetAttachedWindow() const {
@@ -115,7 +115,7 @@ bool PrefixSelector::DeleteRange(const gfx::Range& range) {
 }
 
 bool PrefixSelector::GetTextFromRange(const gfx::Range& range,
-                                        string16* text) const {
+                                        base::string16* text) const {
   return false;
 }
 
@@ -143,7 +143,14 @@ void PrefixSelector::OnCandidateWindowUpdated() {
 void PrefixSelector::OnCandidateWindowHidden() {
 }
 
-void PrefixSelector::OnTextInput(const string16& text) {
+bool PrefixSelector::IsEditingCommandEnabled(int command_id) {
+  return false;
+}
+
+void PrefixSelector::ExecuteEditingCommand(int command_id) {
+}
+
+void PrefixSelector::OnTextInput(const base::string16& text) {
   // Small hack to filter out 'tab' and 'enter' input, as the expectation is
   // that they are control characters and will not affect the currently-active
   // prefix.
@@ -171,9 +178,9 @@ void PrefixSelector::OnTextInput(const string16& text) {
   time_of_last_key_ = now;
 
   const int start_row = row;
-  const string16 lower_text(base::i18n::ToLower(current_text_));
+  const base::string16 lower_text(base::i18n::ToLower(current_text_));
   do {
-    if (TextAtRowMatchesText(row, current_text_)) {
+    if (TextAtRowMatchesText(row, lower_text)) {
       prefix_delegate_->SetSelectedRow(row);
       return;
     }
@@ -182,8 +189,8 @@ void PrefixSelector::OnTextInput(const string16& text) {
 }
 
 bool PrefixSelector::TextAtRowMatchesText(int row,
-                                          const string16& lower_text) {
-  const string16 model_text(
+                                          const base::string16& lower_text) {
+  const base::string16 model_text(
       base::i18n::ToLower(prefix_delegate_->GetTextForRow(row)));
   return (model_text.size() >= lower_text.size()) &&
       (model_text.compare(0, lower_text.size(), lower_text) == 0);

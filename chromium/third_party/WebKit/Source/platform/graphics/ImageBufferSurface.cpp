@@ -32,10 +32,18 @@
 
 #include "platform/graphics/ImageBufferSurface.h"
 
+#include "platform/graphics/ImageBuffer.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkDevice.h"
 
 namespace WebCore {
+
+ImageBufferSurface::ImageBufferSurface(const IntSize& size, OpacityMode opacityMode)
+    : m_opacityMode(opacityMode)
+    , m_size(size)
+{
+    setIsHidden(false);
+}
 
 void ImageBufferSurface::clear()
 {
@@ -56,5 +64,10 @@ const SkBitmap& ImageBufferSurface::bitmap() const
     return canvas()->getTopDevice()->accessBitmap(false);
 }
 
+const SkBitmap& ImageBufferSurface::cachedBitmap() const
+{
+    DEFINE_STATIC_LOCAL(SkBitmap, nullBitmap, ());
+    return nullBitmap;
+}
 
 } // namespace WebCore

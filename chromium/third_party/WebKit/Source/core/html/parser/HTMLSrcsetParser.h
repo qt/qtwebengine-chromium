@@ -1,4 +1,5 @@
 /*
+ * Copyright (C) 2013 Apple Inc. All rights reserved.
  * Copyright (C) 2013 Google Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -35,27 +36,85 @@
 
 namespace WebCore {
 
-class ImageCandidate {
+enum { UninitializedDescriptor = -1 };
+
+class DescriptorParsingResult {
 public:
-    ImageCandidate()
-        : m_scaleFactor(1.0)
+    DescriptorParsingResult()
+        : m_density(UninitializedDescriptor)
+        , m_resourceWidth(UninitializedDescriptor)
+        , m_resourceHeight(UninitializedDescriptor)
     {
     }
 
-    ImageCandidate(const String& source, unsigned start, unsigned length, float scaleFactor)
+    bool hasDensity() const { return m_density >= 0; }
+    bool hasWidth() const { return m_resourceWidth >= 0; }
+    bool hasHeight() const { return m_resourceHeight >= 0; }
+
+    float density() const { ASSERT(hasDensity()); return m_density; }
+    unsigned resourceWidth() const { ASSERT(hasWidth()); return m_resourceWidth; }
+    unsigned resourceHeight() const { ASSERT(hasHeight()); return m_resourceHeight; }
+
+    void setResourceWidth(int width) { ASSERT(width >= 0); m_resourceWidth = (unsigned)width; }
+    void setResourceHeight(int height) { ASSERT(height >= 0); m_resourceHeight = (unsigned)height; }
+    void setDensity(float densityToSet) { ASSERT(densityToSet >= 0); m_density = densityToSet; }
+
+private:
+    float m_density;
+    int m_resourceWidth;
+    int m_resourceHeight;
+};
+
+class ImageCandidate {
+public:
+    enum OriginAttribute {
+        SrcsetOrigin,
+        SrcOrigin
+    };
+
+    ImageCandidate()
+        : m_density(1.0)
+        , m_resourceWidth(UninitializedDescriptor)
+        , m_originAttribute(SrcsetOrigin)
+    {
+    }
+
+    ImageCandidate(const String& source, unsigned start, unsigned length, const DescriptorParsingResult& result, OriginAttribute originAttribute)
         : m_string(source.createView(start, length))
-        , m_scaleFactor(scaleFactor)
+        , m_density(result.hasDensity()?result.density():UninitializedDescriptor)
+        , m_resourceWidth(result.hasWidth()?result.resourceWidth():UninitializedDescriptor)
+        , m_originAttribute(originAttribute)
     {
     }
 
     String toString() const
     {
-        return m_string.toString();
+        return String(m_string.toString());
     }
 
-    inline float scaleFactor() const
+    AtomicString url() const
     {
-        return m_scaleFactor;
+        return AtomicString(m_string.toString());
+    }
+
+    void setDensity(float factor)
+    {
+        m_density = factor;
+    }
+
+    float density() const
+    {
+        return m_density;
+    }
+
+    int resourceWidth() const
+    {
+        return m_resourceWidth;
+    }
+
+    bool srcOrigin() const
+    {
+        return (m_originAttribute == SrcOrigin);
     }
 
     inline bool isEmpty() const
@@ -65,14 +124,16 @@ public:
 
 private:
     StringView m_string;
-    float m_scaleFactor;
+    float m_density;
+    int m_resourceWidth;
+    OriginAttribute m_originAttribute;
 };
 
-ImageCandidate bestFitSourceForSrcsetAttribute(float deviceScaleFactor, const String& srcsetAttribute);
+ImageCandidate bestFitSourceForSrcsetAttribute(float deviceScaleFactor, unsigned sourceSize, const String& srcsetAttribute);
 
-ImageCandidate bestFitSourceForImageAttributes(float deviceScaleFactor, const String& srcAttribute, const String& srcsetAttribute);
+ImageCandidate bestFitSourceForImageAttributes(float deviceScaleFactor, unsigned sourceSize, const String& srcAttribute, const String& srcsetAttribute);
 
-String bestFitSourceForImageAttributes(float deviceScaleFactor, const String& srcAttribute, ImageCandidate& srcsetImageCandidate);
+String bestFitSourceForImageAttributes(float deviceScaleFactor, unsigned sourceSize, const String& srcAttribute, ImageCandidate& srcsetImageCandidate);
 
 }
 

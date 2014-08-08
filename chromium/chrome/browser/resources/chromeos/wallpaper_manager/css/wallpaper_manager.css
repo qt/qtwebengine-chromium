@@ -22,16 +22,20 @@ body {
  */
 .dialog-topbar #navstrip,
 .dialog-topbar #window-close-button,
-.image-picker,
 .overlay-container .page,
 #author-website,
+/* TODO(bshe): Once http://crbug.com/369651 fixed, use .image-picker instead of
+ * #category-container.
+ */
+#category-container,
 #surprise-me {
   -webkit-app-region: no-drag;
 }
 
 .dialog-container {
-  -webkit-box-orient: vertical;
-  display: -webkit-box;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
   overflow: hidden;
 }
 
@@ -66,7 +70,7 @@ body {
   height: 50px;
 }
 
-#categories-list > li:hover {
+#categories-list:not([disabled]) > li:hover {
   border-top-color: rgba(255, 255, 255, 0.4);
   cursor: pointer;
 }
@@ -113,27 +117,70 @@ body {
 }
 
 .dialog-main {
-  -webkit-box-align: stretch;
-  -webkit-box-flex: 1;
-  display: -webkit-box;
+  display: flex;
+  flex: 1;
 }
 
 #category-container {
-  -webkit-box-flex: 1;
-  -webkit-box-orient: vertical;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  position: relative;
+}
+
+#spinner-container {
+  -webkit-box-align: center;
+  -webkit-box-pack: center;
   display: -webkit-box;
+  height: 287px;
+  padding-bottom: 15px;
+  padding-top: 5px;
+  position: absolute;
+  top: 0;
+  width: 100%;
+}
+
+@-webkit-keyframes spin {
+  from {
+    -webkit-transform: rotate(0);
+  }
+  to {
+    -webkit-transform: rotate(360deg);
+  }
+}
+
+#spinner-container #spinner {
+  -webkit-animation-duration: 1s;
+  -webkit-animation-iteration-count: infinite;
+  -webkit-animation-name: spin;
+  -webkit-animation-timing-function: linear;
+  background-image: url('../images/ui/spinner.png');
+  background-position: center;
+  background-repeat: no-repeat;
+  height: 16px;
+  width: 16px;
+}
+
+#wallpaper-set-by-message {
+  -webkit-padding-end: 5px;
+  -webkit-padding-start: 15px;
+  height: 17px;
+}
+
+#wallpaper-set-by-message:empty {
+  display: none;
 }
 
 .image-picker {
   -webkit-padding-end: 5px;
   -webkit-padding-start: 15px;
   display: block;
+  flex: 1;
   /* Set font size to 0 to remove the extra vertical margin between two rows of
    * thumbnails.
    * TODO(bshe): Find the root cause of the margin.
    */
   font-size: 0;
-  height: 287px;
   outline: none;
   overflow-y: auto;
   padding-bottom: 15px;
@@ -159,7 +206,7 @@ body {
   width: 108px;
 }
 
-.image-picker [role=listitem]:hover {
+.image-picker:not([disabled]) [role=listitem]:hover {
   outline: 3px solid #f1f1f1;
   z-index: 1;
 }
@@ -171,7 +218,7 @@ body {
   position: absolute;
   top: 18px;
   width: 32px;
-  z-index: 3;
+  z-index: 2;
 }
 
 ::-webkit-scrollbar {
@@ -194,6 +241,11 @@ body {
 .image-picker img {
   height: 68px;
   width: 108px;
+}
+
+.image-picker[disabled]~.bottom-bar #online-wallpaper-attribute,
+.image-picker[disabled] .check {
+  visibility: hidden;
 }
 
 .image-picker[disabled],
@@ -302,7 +354,7 @@ body:not([custom]) [visibleif~='custom'] {
   content: url('../images/ui/add-wallpaper-thumbnail.png');
 }
 
-#add-new:hover img {
+.image-picker:not([disabled]) #add-new:hover img {
   content: url('../images/ui/add-wallpaper-thumbnail-hover.png');
 }
 

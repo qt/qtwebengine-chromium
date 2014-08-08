@@ -39,10 +39,12 @@ public:
     static PassOwnPtr<DocumentLifecycleNotifier> create(Document*);
 
     void notifyDocumentWasDetached();
+#if !ENABLE(OILPAN)
     void notifyDocumentWasDisposed();
+#endif
 
-    virtual void addObserver(Observer*) OVERRIDE;
-    virtual void removeObserver(Observer*) OVERRIDE;
+    virtual void addObserver(Observer*) OVERRIDE FINAL;
+    virtual void removeObserver(Observer*) OVERRIDE FINAL;
 
 private:
     explicit DocumentLifecycleNotifier(Document*);
@@ -63,12 +65,14 @@ inline void DocumentLifecycleNotifier::notifyDocumentWasDetached()
         (*i)->documentWasDetached();
 }
 
+#if !ENABLE(OILPAN)
 inline void DocumentLifecycleNotifier::notifyDocumentWasDisposed()
 {
     TemporaryChange<IterationType> scope(this->m_iterating, IteratingOverDocumentObservers);
     for (DocumentObserverSet::iterator i = m_documentObservers.begin(); i != m_documentObservers.end(); ++i)
         (*i)->documentWasDisposed();
 }
+#endif
 
 } // namespace WebCore
 

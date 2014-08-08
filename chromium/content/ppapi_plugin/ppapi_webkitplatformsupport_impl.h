@@ -7,11 +7,11 @@
 
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
-#include "content/child/webkitplatformsupport_impl.h"
+#include "content/child/blink_platform_impl.h"
 
 namespace content {
 
-class PpapiWebKitPlatformSupportImpl : public WebKitPlatformSupportImpl {
+class PpapiWebKitPlatformSupportImpl : public BlinkPlatformImpl {
  public:
   PpapiWebKitPlatformSupportImpl();
   virtual ~PpapiWebKitPlatformSupportImpl();
@@ -28,7 +28,8 @@ class PpapiWebKitPlatformSupportImpl : public WebKitPlatformSupportImpl {
   virtual unsigned long long visitedLinkHash(const char* canonicalURL,
                                              size_t length);
   virtual bool isLinkVisited(unsigned long long linkHash);
-  virtual blink::WebMessagePortChannel* createMessagePortChannel();
+  virtual void createMessageChannel(blink::WebMessagePortChannel** channel1,
+                                    blink::WebMessagePortChannel** channel2);
   virtual void setCookies(const blink::WebURL& url,
                           const blink::WebURL& first_party_for_cookies,
                           const blink::WebString& value);

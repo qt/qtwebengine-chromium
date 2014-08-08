@@ -23,17 +23,20 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-interface SVGViewSpec {
-      readonly attribute SVGTransformList transform;
+// http://www.w3.org/TR/SVG2/types.html#InterfaceSVGViewSpec
+
+[
+    DependentLifetime,
+    WillBeGarbageCollected,
+    SetWrapperReferenceTo(SVGElement contextElement),
+] interface SVGViewSpec {
+      [ImplementedAs=transformFromJavascript] readonly attribute SVGTransformList transform;
       readonly attribute SVGElement viewTarget;
       readonly attribute DOMString viewBoxString;
       readonly attribute DOMString preserveAspectRatioString;
       readonly attribute DOMString transformString;
       readonly attribute DOMString viewTargetString;
-
-      // SVGZoomAndPan
-      [RaisesException=Setter] attribute unsigned short zoomAndPan;
 };
 
 SVGViewSpec implements SVGFitToViewBox;
-
+SVGViewSpec implements SVGZoomAndPan;

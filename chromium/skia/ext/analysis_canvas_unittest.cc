@@ -4,8 +4,10 @@
 
 #include "base/compiler_specific.h"
 #include "skia/ext/analysis_canvas.h"
+#include "skia/ext/refptr.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/skia/include/core/SkShader.h"
+#include "third_party/skia/include/effects/SkOffsetImageFilter.h"
 
 namespace {
 
@@ -21,10 +23,7 @@ void TransparentFill(skia::AnalysisCanvas& canvas) {
 namespace skia {
 
 TEST(AnalysisCanvasTest, EmptyCanvas) {
-  SkBitmap emptyBitmap;
-  emptyBitmap.setConfig(SkBitmap::kNo_Config, 255, 255);
-  skia::AnalysisDevice device(emptyBitmap);
-  skia::AnalysisCanvas canvas(&device);
+  skia::AnalysisCanvas canvas(255, 255);
 
   SkColor color;
   EXPECT_TRUE(canvas.GetColorIfSolid(&color));
@@ -32,10 +31,7 @@ TEST(AnalysisCanvasTest, EmptyCanvas) {
 }
 
 TEST(AnalysisCanvasTest, ClearCanvas) {
-  SkBitmap emptyBitmap;
-  emptyBitmap.setConfig(SkBitmap::kNo_Config, 255, 255);
-  skia::AnalysisDevice device(emptyBitmap);
-  skia::AnalysisCanvas canvas(&device);
+  skia::AnalysisCanvas canvas(255, 255);
 
   // Transparent color
   SkColor color = SkColorSetARGB(0, 12, 34, 56);
@@ -70,10 +66,7 @@ TEST(AnalysisCanvasTest, ClearCanvas) {
 }
 
 TEST(AnalysisCanvasTest, ComplexActions) {
-  SkBitmap emptyBitmap;
-  emptyBitmap.setConfig(SkBitmap::kNo_Config, 255, 255);
-  skia::AnalysisDevice device(emptyBitmap);
-  skia::AnalysisCanvas canvas(&device);
+  skia::AnalysisCanvas canvas(255, 255);
 
   // Draw paint test.
   SkColor color = SkColorSetARGB(255, 11, 22, 33);
@@ -108,17 +101,14 @@ TEST(AnalysisCanvasTest, ComplexActions) {
   // Draw bitmap test.
   SolidColorFill(canvas);
   SkBitmap secondBitmap;
-  secondBitmap.setConfig(SkBitmap::kNo_Config, 255, 255);
+  secondBitmap.allocN32Pixels(255, 255);
   canvas.drawBitmap(secondBitmap, 0, 0);
 
   EXPECT_FALSE(canvas.GetColorIfSolid(&outputColor));
 }
 
 TEST(AnalysisCanvasTest, SimpleDrawRect) {
-  SkBitmap emptyBitmap;
-  emptyBitmap.setConfig(SkBitmap::kNo_Config, 255, 255);
-  skia::AnalysisDevice device(emptyBitmap);
-  skia::AnalysisCanvas canvas(&device);
+  skia::AnalysisCanvas canvas(255, 255);
 
   SkColor color = SkColorSetARGB(255, 11, 22, 33);
   SkPaint paint;
@@ -150,6 +140,8 @@ TEST(AnalysisCanvasTest, SimpleDrawRect) {
   paint.setColor(color);
   canvas.drawRect(SkRect::MakeWH(383, 383), paint);
 
+  // This test relies on canvas treating a paint with 0-color as a no-op
+  // thus not changing its "is_solid" status.
   EXPECT_TRUE(canvas.GetColorIfSolid(&outputColor));
   EXPECT_NE(static_cast<SkColor>(SK_ColorTRANSPARENT), outputColor);
   EXPECT_EQ(outputColor, SkColorSetARGB(255, 33, 44, 55));
@@ -186,14 +178,27 @@ TEST(AnalysisCanvasTest, SimpleDrawRect) {
   EXPECT_FALSE(canvas.GetColorIfSolid(&outputColor));
 }
 
-TEST(AnalysisCanvasTest, ClipPath) {
-  SkBitmap emptyBitmap;
-  emptyBitmap.setConfig(SkBitmap::kNo_Config, 255, 255);
-  skia::AnalysisDevice device(emptyBitmap);
-  skia::AnalysisCanvas canvas(&device);
+TEST(AnalysisCanvasTest, FilterPaint) {
+  skia::AnalysisCanvas canvas(255, 255);
+  SkPaint paint;
 
+  skia::RefPtr<SkImageFilter> filter = skia::AdoptRef(SkOffsetImageFilter::Create(10, 10));
+  paint.setImageFilter(filter.get());
+  canvas.drawRect(SkRect::MakeWH(255, 255), paint);
+
+  SkColor outputColor;
+  EXPECT_FALSE(canvas.GetColorIfSolid(&outputColor));
+}
+
+TEST(AnalysisCanvasTest, ClipPath) {
+  skia::AnalysisCanvas canvas(255, 255);
+
+  // Skia will look for paths that are actually rects and treat
+  // them as such. We add a divot to the following path to prevent
+  // this optimization and truly test clipPath's behavior.
   SkPath path;
   path.moveTo(0, 0);
+  path.lineTo(128, 50); 
   path.lineTo(255, 0);
   path.lineTo(255, 255);
   path.lineTo(0, 255);
@@ -217,10 +222,7 @@ TEST(AnalysisCanvasTest, ClipPath) {
 }
 
 TEST(AnalysisCanvasTest, SaveLayerRestore) {
-  SkBitmap emptyBitmap;
-  emptyBitmap.setConfig(SkBitmap::kNo_Config, 255, 255);
-  skia::AnalysisDevice device(emptyBitmap);
-  skia::AnalysisCanvas canvas(&device);
+  skia::AnalysisCanvas canvas(255, 255);
 
   SkColor outputColor;
   SolidColorFill(canvas);
@@ -232,7 +234,7 @@ TEST(AnalysisCanvasTest, SaveLayerRestore) {
   paint.setXfermodeMode(SkXfermode::kSrcOver_Mode);
 
   // This should force non-transparency
-  canvas.saveLayer(&bounds, &paint, SkCanvas::kMatrix_SaveFlag);
+  canvas.saveLayer(&bounds, &paint);
   EXPECT_TRUE(canvas.GetColorIfSolid(&outputColor));
   EXPECT_NE(static_cast<SkColor>(SK_ColorTRANSPARENT), outputColor);
 
@@ -246,7 +248,7 @@ TEST(AnalysisCanvasTest, SaveLayerRestore) {
   paint.setXfermodeMode(SkXfermode::kDst_Mode);
 
   // This should force non-solid color
-  canvas.saveLayer(&bounds, &paint, SkCanvas::kMatrix_SaveFlag);
+  canvas.saveLayer(&bounds, &paint);
   EXPECT_FALSE(canvas.GetColorIfSolid(&outputColor));
 
   TransparentFill(canvas);
@@ -282,9 +284,6 @@ TEST(AnalysisCanvasTest, HasText) {
   int width = 200;
   int height = 100;
 
-  SkBitmap bitmap;
-  bitmap.setConfig(SkBitmap::kNo_Config, width, height);
-
   const char* text = "A";
   size_t byteLength = 1;
 
@@ -298,8 +297,7 @@ TEST(AnalysisCanvasTest, HasText) {
   paint.setTextSize(SkIntToScalar(10));
 
   {
-    skia::AnalysisDevice device(bitmap);
-    skia::AnalysisCanvas canvas(&device);
+    skia::AnalysisCanvas canvas(width, height);
     // Test after initialization.
     EXPECT_FALSE(canvas.HasText());
     // Test drawing anything other than text.
@@ -308,43 +306,37 @@ TEST(AnalysisCanvasTest, HasText) {
   }
   {
     // Test SkCanvas::drawText.
-    skia::AnalysisDevice device(bitmap);
-    skia::AnalysisCanvas canvas(&device);
+    skia::AnalysisCanvas canvas(width, height);
     canvas.drawText(text, byteLength, point.fX, point.fY, paint);
     EXPECT_TRUE(canvas.HasText());
   }
   {
     // Test SkCanvas::drawPosText.
-    skia::AnalysisDevice device(bitmap);
-    skia::AnalysisCanvas canvas(&device);
+    skia::AnalysisCanvas canvas(width, height);
     canvas.drawPosText(text, byteLength, &point, paint);
     EXPECT_TRUE(canvas.HasText());
   }
   {
     // Test SkCanvas::drawPosTextH.
-    skia::AnalysisDevice device(bitmap);
-    skia::AnalysisCanvas canvas(&device);
+    skia::AnalysisCanvas canvas(width, height);
     canvas.drawPosTextH(text, byteLength, &point.fX, point.fY, paint);
     EXPECT_TRUE(canvas.HasText());
   }
   {
     // Test SkCanvas::drawTextOnPathHV.
-    skia::AnalysisDevice device(bitmap);
-    skia::AnalysisCanvas canvas(&device);
+    skia::AnalysisCanvas canvas(width, height);
     canvas.drawTextOnPathHV(text, byteLength, path, point.fX, point.fY, paint);
     EXPECT_TRUE(canvas.HasText());
   }
   {
     // Test SkCanvas::drawTextOnPath.
-    skia::AnalysisDevice device(bitmap);
-    skia::AnalysisCanvas canvas(&device);
+    skia::AnalysisCanvas canvas(width, height);
     canvas.drawTextOnPath(text, byteLength, path, NULL, paint);
     EXPECT_TRUE(canvas.HasText());
   }
   {
     // Text under opaque rect.
-    skia::AnalysisDevice device(bitmap);
-    skia::AnalysisCanvas canvas(&device);
+    skia::AnalysisCanvas canvas(width, height);
     canvas.drawText(text, byteLength, point.fX, point.fY, paint);
     EXPECT_TRUE(canvas.HasText());
     canvas.drawRect(SkRect::MakeWH(width, height), paint);
@@ -352,8 +344,7 @@ TEST(AnalysisCanvasTest, HasText) {
   }
   {
     // Text under translucent rect.
-    skia::AnalysisDevice device(bitmap);
-    skia::AnalysisCanvas canvas(&device);
+    skia::AnalysisCanvas canvas(width, height);
     canvas.drawText(text, byteLength, point.fX, point.fY, paint);
     EXPECT_TRUE(canvas.HasText());
     SkPaint translucentPaint;
@@ -363,8 +354,7 @@ TEST(AnalysisCanvasTest, HasText) {
   }
   {
     // Text under rect in clear mode.
-    skia::AnalysisDevice device(bitmap);
-    skia::AnalysisCanvas canvas(&device);
+    skia::AnalysisCanvas canvas(width, height);
     canvas.drawText(text, byteLength, point.fX, point.fY, paint);
     EXPECT_TRUE(canvas.HasText());
     SkPaint clearModePaint;
@@ -374,8 +364,7 @@ TEST(AnalysisCanvasTest, HasText) {
   }
   {
     // Clear.
-    skia::AnalysisDevice device(bitmap);
-    skia::AnalysisCanvas canvas(&device);
+    skia::AnalysisCanvas canvas(width, height);
     canvas.drawText(text, byteLength, point.fX, point.fY, paint);
     EXPECT_TRUE(canvas.HasText());
     canvas.clear(SK_ColorGRAY);
@@ -383,16 +372,14 @@ TEST(AnalysisCanvasTest, HasText) {
   }
   {
     // Text inside clip region.
-    skia::AnalysisDevice device(bitmap);
-    skia::AnalysisCanvas canvas(&device);
+    skia::AnalysisCanvas canvas(width, height);
     canvas.clipRect(SkRect::MakeWH(100, 100));
     canvas.drawText(text, byteLength, point.fX, point.fY, paint);
     EXPECT_TRUE(canvas.HasText());
   }
   {
     // Text outside clip region.
-    skia::AnalysisDevice device(bitmap);
-    skia::AnalysisCanvas canvas(&device);
+    skia::AnalysisCanvas canvas(width, height);
     canvas.clipRect(SkRect::MakeXYWH(100, 0, 100, 100));
     canvas.drawText(text, byteLength, point.fX, point.fY, paint);
     // Analysis device does not do any clipping.

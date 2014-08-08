@@ -98,9 +98,13 @@ public:
 
     // Animation begins whenever someone draws the image, so startAnimation() is not normally called.
     // It will automatically pause once all observers no longer want to render the image anywhere.
-    virtual void startAnimation(bool /*catchUpIfNecessary*/ = true) { }
+    enum CatchUpAnimation { DoNotCatchUp, CatchUp };
+    virtual void startAnimation(CatchUpAnimation = CatchUp) { }
     virtual void stopAnimation() {}
     virtual void resetAnimation() {}
+
+    // True if this image can potentially animate.
+    virtual bool maybeAnimated() { return false; }
 
     // Typically the ImageResource that owns us.
     ImageObserver* imageObserver() const { return m_imageObserver; }
@@ -108,13 +112,13 @@ public:
 
     enum TileRule { StretchTile, RoundTile, SpaceTile, RepeatTile };
 
-    virtual PassRefPtr<NativeImageSkia> nativeImageForCurrentFrame() { return 0; }
+    virtual PassRefPtr<NativeImageSkia> nativeImageForCurrentFrame() { return nullptr; }
 
     virtual void drawPattern(GraphicsContext*, const FloatRect&,
         const FloatSize&, const FloatPoint& phase, CompositeOperator,
         const FloatRect&, blink::WebBlendMode = blink::WebBlendModeNormal, const IntSize& repeatSpacing = IntSize());
 
-#if !ASSERT_DISABLED
+#if ASSERT_ENABLED
     virtual bool notSolidColor() { return true; }
 #endif
 

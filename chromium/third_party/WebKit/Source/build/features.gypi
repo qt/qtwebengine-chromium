@@ -34,8 +34,6 @@
     'feature_defines': [
       'ENABLE_CUSTOM_SCHEME_HANDLER=0',
       'ENABLE_SVG_FONTS=1',
-      'ENABLE_GDI_FONTS_ON_WINDOWS=0',
-      'ENABLE_HARFBUZZ_ON_WINDOWS=1',
       # WTF_USE_DYNAMIC_ANNOTATIONS=1 may be defined in build/common.gypi
       # We can't define it here because it should be present only
       # in Debug or release_valgrind_build=1 builds.
@@ -45,7 +43,7 @@
     'variables': {
       # Enables the Oilpan garbage-collection infrastructure.
       'enable_oilpan%': 0,
-      'enable_touch_icon_loading%' : 0,
+      'gc_tracing%': 0
     },
     'conditions': [
       ['use_concatenated_impulse_responses==1', {
@@ -54,23 +52,13 @@
       }],
       ['OS=="android"', {
         'feature_defines': [
-          'ENABLE_FAST_MOBILE_SCROLLING=1',
-          'ENABLE_INPUT_SPEECH=0',
-          'ENABLE_LEGACY_NOTIFICATIONS=0',
-          'ENABLE_MEDIA_CAPTURE=1',
-          'ENABLE_ORIENTATION_EVENTS=1',
-          'ENABLE_TOUCH_ICON_LOADING=1',
-          'ENABLE_NAVIGATOR_CONTENT_UTILS=0',
+          'ENABLE_MEDIA_CAPTURE=1'
         ],
       }, { # OS!="android"
         'feature_defines': [
-          'ENABLE_INPUT_SPEECH=1',
           'ENABLE_INPUT_MULTIPLE_FIELDS_UI=1',
-          'ENABLE_LEGACY_NOTIFICATIONS=1',
           'ENABLE_MEDIA_CAPTURE=0',
-          'ENABLE_NAVIGATOR_CONTENT_UTILS=1',
-          'ENABLE_ORIENTATION_EVENTS=0',
-          'ENABLE_WEB_AUDIO=1',
+          'ENABLE_WEB_AUDIO=1'
         ],
       }],
       # Mac OS X uses Accelerate.framework FFT by default instead of FFmpeg.
@@ -87,7 +75,8 @@
           'ENABLE_WEB_AUDIO=1',
         ],
       }],
-      ['OS=="win" or OS=="android" or OS=="linux"', {
+      # Mac OS X has not implemented support for ENABLE(OPENTYPE_VERTICAL) yet
+      ['OS!="mac"', {
         'feature_defines': [
           'ENABLE_OPENTYPE_VERTICAL=1',
         ],
@@ -100,6 +89,11 @@
       ['enable_oilpan==1', {
         'feature_defines': [
           'ENABLE_OILPAN=1',
+        ],
+      }],
+      ['gc_tracing==1', {
+        'feature_defines': [
+          'ENABLE_GC_TRACING=1',
         ],
       }],
     ],

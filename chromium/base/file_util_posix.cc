@@ -33,6 +33,7 @@
 #include "base/basictypes.h"
 #include "base/files/file_enumerator.h"
 #include "base/files/file_path.h"
+#include "base/files/scoped_file.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/singleton.h"
@@ -60,8 +61,7 @@ namespace base {
 
 namespace {
 
-#if defined(OS_BSD) || defined(OS_MACOSX)
-typedef struct stat stat_wrapper_t;
+#if defined(OS_BSD) || defined(OS_MACOSX) || defined(OS_NACL)
 static int CallStat(const char *path, stat_wrapper_t *sb) {
   ThreadRestrictions::AssertIOAllowed();
   return stat(path, sb);
@@ -70,8 +70,7 @@ static int CallLstat(const char *path, stat_wrapper_t *sb) {
   ThreadRestrictions::AssertIOAllowed();
   return lstat(path, sb);
 }
-#else
-typedef struct stat64 stat_wrapper_t;
+#else  //  defined(OS_BSD) || defined(OS_MACOSX) || defined(OS_NACL)
 static int CallStat(const char *path, stat_wrapper_t *sb) {
   ThreadRestrictions::AssertIOAllowed();
   return stat64(path, sb);
@@ -80,13 +79,7 @@ static int CallLstat(const char *path, stat_wrapper_t *sb) {
   ThreadRestrictions::AssertIOAllowed();
   return lstat64(path, sb);
 }
-#if defined(OS_ANDROID)
-static int CallFstat(int fd, stat_wrapper_t *sb) {
-  ThreadRestrictions::AssertIOAllowed();
-  return fstat64(fd, sb);
-}
-#endif
-#endif
+#endif  // !(defined(OS_BSD) || defined(OS_MACOSX) || defined(OS_NACL))
 
 // Helper for NormalizeFilePath(), defined below.
 bool RealPath(const FilePath& path, FilePath* real_path) {
@@ -172,15 +165,15 @@ int CreateAndOpenFdForTemporaryFile(FilePath directory, FilePath* path) {
 bool DetermineDevShmExecutable() {
   bool result = false;
   FilePath path;
-  int fd = CreateAndOpenFdForTemporaryFile(FilePath("/dev/shm"), &path);
-  if (fd >= 0) {
-    file_util::ScopedFD shm_fd_closer(&fd);
+
+  ScopedFD fd(CreateAndOpenFdForTemporaryFile(FilePath("/dev/shm"), &path));
+  if (fd.is_valid()) {
     DeleteFile(path, false);
     long sysconf_result = sysconf(_SC_PAGESIZE);
     CHECK_GE(sysconf_result, 0);
     size_t pagesize = static_cast<size_t>(sysconf_result);
     CHECK_GE(sizeof(pagesize), sizeof(sysconf_result));
-    void *mapping = mmap(NULL, pagesize, PROT_READ, MAP_SHARED, fd, 0);
+    void* mapping = mmap(NULL, pagesize, PROT_READ, MAP_SHARED, fd.get(), 0);
     if (mapping != MAP_FAILED) {
       if (mprotect(mapping, pagesize, PROT_READ | PROT_EXEC) == 0)
         result = true;
@@ -244,12 +237,12 @@ bool DeleteFile(const FilePath& path, bool recursive) {
 
 bool ReplaceFile(const FilePath& from_path,
                  const FilePath& to_path,
-                 PlatformFileError* error) {
+                 File::Error* error) {
   ThreadRestrictions::AssertIOAllowed();
   if (rename(from_path.value().c_str(), to_path.value().c_str()) == 0)
     return true;
   if (error)
-    *error = ErrnoToPlatformFileError(errno);
+    *error = File::OSErrorToFileError(errno);
   return false;
 }
 
@@ -260,13 +253,10 @@ bool CopyDirectory(const FilePath& from_path,
   // Some old callers of CopyDirectory want it to support wildcards.
   // After some discussion, we decided to fix those callers.
   // Break loudly here if anyone tries to do this.
-  // TODO(evanm): remove this once we're sure it's ok.
   DCHECK(to_path.value().find('*') == std::string::npos);
   DCHECK(from_path.value().find('*') == std::string::npos);
 
-  char top_dir[PATH_MAX];
-  if (strlcpy(top_dir, from_path.value().c_str(),
-              arraysize(top_dir)) >= arraysize(top_dir)) {
+  if (from_path.value().size() >= PATH_MAX) {
     return false;
   }
 
@@ -286,10 +276,10 @@ bool CopyDirectory(const FilePath& from_path,
     return false;
   if (real_to_path.value().size() >= real_from_path.value().size() &&
       real_to_path.value().compare(0, real_from_path.value().size(),
-      real_from_path.value()) == 0)
+                                   real_from_path.value()) == 0) {
     return false;
+  }
 
-  bool success = true;
   int traverse_type = FileEnumerator::FILES | FileEnumerator::SHOW_SYM_LINKS;
   if (recursive)
     traverse_type |= FileEnumerator::DIRECTORIES;
@@ -302,7 +292,7 @@ bool CopyDirectory(const FilePath& from_path,
   if (stat(from_path.value().c_str(), &from_stat) < 0) {
     DLOG(ERROR) << "CopyDirectory() couldn't stat source directory: "
                 << from_path.value() << " errno = " << errno;
-    success = false;
+    return false;
   }
   struct stat to_path_stat;
   FilePath from_path_base = from_path;
@@ -315,8 +305,10 @@ bool CopyDirectory(const FilePath& from_path,
 
   // The Windows version of this function assumes that non-recursive calls
   // will always have a directory for from_path.
+  // TODO(maruel): This is not necessary anymore.
   DCHECK(recursive || S_ISDIR(from_stat.st_mode));
 
+  bool success = true;
   while (success && !current.empty()) {
     // current is the source path, including from_path, so append
     // the suffix after from_path to to_path to create the target_path.
@@ -463,30 +455,14 @@ bool GetTempDir(FilePath* path) {
 }
 #endif  // !defined(OS_MACOSX)
 
-#if !defined(OS_MACOSX) && !defined(OS_ANDROID)
-// This is implemented in file_util_mac.mm and file_util_android.cc for those
-// platforms.
-bool GetShmemTempDir(bool executable, FilePath* path) {
-#if defined(OS_LINUX)
-  bool use_dev_shm = true;
-  if (executable) {
-    static const bool s_dev_shm_executable = DetermineDevShmExecutable();
-    use_dev_shm = s_dev_shm_executable;
-  }
-  if (use_dev_shm) {
-    *path = FilePath("/dev/shm");
-    return true;
-  }
-#endif
-  return GetTempDir(path);
-}
-#endif  // !defined(OS_MACOSX) && !defined(OS_ANDROID)
-
-#if !defined(OS_MACOSX)
+#if !defined(OS_MACOSX)  // Mac implementation is in file_util_mac.mm.
 FilePath GetHomeDir() {
 #if defined(OS_CHROMEOS)
-  if (SysInfo::IsRunningOnChromeOS())
-    return FilePath("/home/chronos/user");
+  if (SysInfo::IsRunningOnChromeOS()) {
+    // On Chrome OS chrome::DIR_USER_DATA is overridden with a primary user
+    // homedir once it becomes available. Return / as the safe option.
+    return FilePath("/");
+  }
 #endif
 
   const char* home_dir = getenv("HOME");
@@ -496,9 +472,12 @@ FilePath GetHomeDir() {
 #if defined(OS_ANDROID)
   DLOG(WARNING) << "OS_ANDROID: Home directory lookup not yet implemented.";
 #elif defined(USE_GLIB) && !defined(OS_CHROMEOS)
-  // g_get_home_dir calls getpwent, which can fall through to LDAP calls.
-  ThreadRestrictions::AssertIOAllowed();
-
+  // g_get_home_dir calls getpwent, which can fall through to LDAP calls so
+  // this may do I/O. However, it should be rare that $HOME is not defined and
+  // this is typically called from the path service which has no threading
+  // restrictions. The path service will cache the result which limits the
+  // badness of blocking on I/O. As a result, we don't have a thread
+  // restriction here.
   home_dir = g_get_home_dir();
   if (home_dir && home_dir[0])
     return FilePath(home_dir);
@@ -523,14 +502,6 @@ bool CreateTemporaryFile(FilePath* path) {
     return false;
   close(fd);
   return true;
-}
-
-FILE* CreateAndOpenTemporaryShmemFile(FilePath* path, bool executable) {
-  FilePath directory;
-  if (!GetShmemTempDir(executable, &directory))
-    return NULL;
-
-  return CreateAndOpenTemporaryFileInDir(directory, path);
 }
 
 FILE* CreateAndOpenTemporaryFileInDir(const FilePath& dir, FilePath* path) {
@@ -589,7 +560,7 @@ bool CreateNewTempDirectory(const FilePath::StringType& prefix,
 }
 
 bool CreateDirectoryAndGetError(const FilePath& full_path,
-                                PlatformFileError* error) {
+                                File::Error* error) {
   ThreadRestrictions::AssertIOAllowed();  // For call to mkdir().
   std::vector<FilePath> subpaths;
 
@@ -616,7 +587,7 @@ bool CreateDirectoryAndGetError(const FilePath& full_path,
     int saved_errno = errno;
     if (!DirectoryExists(*i)) {
       if (error)
-        *error = ErrnoToPlatformFileError(saved_errno);
+        *error = File::OSErrorToFileError(saved_errno);
       return false;
     }
   }
@@ -654,16 +625,14 @@ bool IsLink(const FilePath& file_path) {
     return false;
 }
 
-bool GetFileInfo(const FilePath& file_path, PlatformFileInfo* results) {
+bool GetFileInfo(const FilePath& file_path, File::Info* results) {
   stat_wrapper_t file_info;
 #if defined(OS_ANDROID)
   if (file_path.IsContentUri()) {
-    int fd = OpenContentUriForRead(file_path);
-    if (fd < 0)
+    File file = OpenContentUriForRead(file_path);
+    if (!file.IsValid())
       return false;
-    file_util::ScopedFD scoped_fd(&fd);
-    if (CallFstat(fd, &file_info) != 0)
-      return false;
+    return file.GetInfo(results);
   } else {
 #endif  // defined(OS_ANDROID)
     if (CallStat(file_path.value().c_str(), &file_info) != 0)
@@ -671,21 +640,8 @@ bool GetFileInfo(const FilePath& file_path, PlatformFileInfo* results) {
 #if defined(OS_ANDROID)
   }
 #endif  // defined(OS_ANDROID)
-  results->is_directory = S_ISDIR(file_info.st_mode);
-  results->size = file_info.st_size;
-#if defined(OS_MACOSX)
-  results->last_modified = Time::FromTimeSpec(file_info.st_mtimespec);
-  results->last_accessed = Time::FromTimeSpec(file_info.st_atimespec);
-  results->creation_time = Time::FromTimeSpec(file_info.st_ctimespec);
-#elif defined(OS_ANDROID)
-  results->last_modified = Time::FromTimeT(file_info.st_mtime);
-  results->last_accessed = Time::FromTimeT(file_info.st_atime);
-  results->creation_time = Time::FromTimeT(file_info.st_ctime);
-#else
-  results->last_modified = Time::FromTimeSpec(file_info.st_mtim);
-  results->last_accessed = Time::FromTimeSpec(file_info.st_atim);
-  results->creation_time = Time::FromTimeSpec(file_info.st_ctim);
-#endif
+
+  results->FromStat(file_info);
   return true;
 }
 
@@ -698,65 +654,37 @@ FILE* OpenFile(const FilePath& filename, const char* mode) {
   return result;
 }
 
-int ReadFile(const FilePath& filename, char* data, int size) {
+// NaCl doesn't implement system calls to open files directly.
+#if !defined(OS_NACL)
+FILE* FileToFILE(File file, const char* mode) {
+  FILE* stream = fdopen(file.GetPlatformFile(), mode);
+  if (stream)
+    file.TakePlatformFile();
+  return stream;
+}
+#endif  // !defined(OS_NACL)
+
+int ReadFile(const FilePath& filename, char* data, int max_size) {
   ThreadRestrictions::AssertIOAllowed();
   int fd = HANDLE_EINTR(open(filename.value().c_str(), O_RDONLY));
   if (fd < 0)
     return -1;
 
-  ssize_t bytes_read = HANDLE_EINTR(read(fd, data, size));
-  if (int ret = IGNORE_EINTR(close(fd)) < 0)
-    return ret;
+  ssize_t bytes_read = HANDLE_EINTR(read(fd, data, max_size));
+  if (IGNORE_EINTR(close(fd)) < 0)
+    return -1;
   return bytes_read;
 }
 
-}  // namespace base
-
-// -----------------------------------------------------------------------------
-
-namespace file_util {
-
-using base::stat_wrapper_t;
-using base::CallStat;
-using base::CallLstat;
-using base::CreateAndOpenFdForTemporaryFile;
-using base::DirectoryExists;
-using base::FileEnumerator;
-using base::FilePath;
-using base::MakeAbsoluteFilePath;
-using base::VerifySpecificPathControlledByUser;
-
-base::FilePath MakeUniqueDirectory(const base::FilePath& path) {
-  const int kMaxAttempts = 20;
-  for (int attempts = 0; attempts < kMaxAttempts; attempts++) {
-    int uniquifier =
-        GetUniquePathNumber(path, base::FilePath::StringType());
-    if (uniquifier < 0)
-      break;
-    base::FilePath test_path = (uniquifier == 0) ? path :
-        path.InsertBeforeExtensionASCII(
-            base::StringPrintf(" (%d)", uniquifier));
-    if (mkdir(test_path.value().c_str(), 0777) == 0)
-      return test_path;
-    else if (errno != EEXIST)
-      break;
-  }
-  return base::FilePath();
-}
-
-FILE* OpenFile(const std::string& filename, const char* mode) {
-  return OpenFile(FilePath(filename), mode);
-}
-
 int WriteFile(const FilePath& filename, const char* data, int size) {
-  base::ThreadRestrictions::AssertIOAllowed();
-  int fd = HANDLE_EINTR(creat(filename.value().c_str(), 0666));
+  ThreadRestrictions::AssertIOAllowed();
+  int fd = HANDLE_EINTR(creat(filename.value().c_str(), 0640));
   if (fd < 0)
     return -1;
 
   int bytes_written = WriteFileDescriptor(fd, data, size);
-  if (int ret = IGNORE_EINTR(close(fd)) < 0)
-    return ret;
+  if (IGNORE_EINTR(close(fd)) < 0)
+    return -1;
   return bytes_written;
 }
 
@@ -776,21 +704,21 @@ int WriteFileDescriptor(const int fd, const char* data, int size) {
 }
 
 int AppendToFile(const FilePath& filename, const char* data, int size) {
-  base::ThreadRestrictions::AssertIOAllowed();
+  ThreadRestrictions::AssertIOAllowed();
   int fd = HANDLE_EINTR(open(filename.value().c_str(), O_WRONLY | O_APPEND));
   if (fd < 0)
     return -1;
 
   int bytes_written = WriteFileDescriptor(fd, data, size);
-  if (int ret = IGNORE_EINTR(close(fd)) < 0)
-    return ret;
+  if (IGNORE_EINTR(close(fd)) < 0)
+    return -1;
   return bytes_written;
 }
 
 // Gets the current working directory for the process.
 bool GetCurrentDirectory(FilePath* dir) {
   // getcwd can return ENOENT, which implies it checks against the disk.
-  base::ThreadRestrictions::AssertIOAllowed();
+  ThreadRestrictions::AssertIOAllowed();
 
   char system_buffer[PATH_MAX] = "";
   if (!getcwd(system_buffer, sizeof(system_buffer))) {
@@ -803,7 +731,7 @@ bool GetCurrentDirectory(FilePath* dir) {
 
 // Sets the current working directory for the process.
 bool SetCurrentDirectory(const FilePath& path) {
-  base::ThreadRestrictions::AssertIOAllowed();
+  ThreadRestrictions::AssertIOAllowed();
   int ret = chdir(path.value().c_str());
   return !ret;
 }
@@ -859,7 +787,7 @@ bool VerifyPathControlledByAdmin(const FilePath& path) {
   };
 
   // Reading the groups database may touch the file system.
-  base::ThreadRestrictions::AssertIOAllowed();
+  ThreadRestrictions::AssertIOAllowed();
 
   std::set<gid_t> allowed_group_ids;
   for (int i = 0, ie = arraysize(kAdminGroupNames); i < ie; ++i) {
@@ -879,13 +807,30 @@ bool VerifyPathControlledByAdmin(const FilePath& path) {
 #endif  // defined(OS_MACOSX) && !defined(OS_IOS)
 
 int GetMaximumPathComponentLength(const FilePath& path) {
-  base::ThreadRestrictions::AssertIOAllowed();
+  ThreadRestrictions::AssertIOAllowed();
   return pathconf(path.value().c_str(), _PC_NAME_MAX);
 }
 
-}  // namespace file_util
+#if !defined(OS_ANDROID)
+// This is implemented in file_util_android.cc for that platform.
+bool GetShmemTempDir(bool executable, FilePath* path) {
+#if defined(OS_LINUX)
+  bool use_dev_shm = true;
+  if (executable) {
+    static const bool s_dev_shm_executable = DetermineDevShmExecutable();
+    use_dev_shm = s_dev_shm_executable;
+  }
+  if (use_dev_shm) {
+    *path = FilePath("/dev/shm");
+    return true;
+  }
+#endif
+  return GetTempDir(path);
+}
+#endif  // !defined(OS_ANDROID)
 
-namespace base {
+// -----------------------------------------------------------------------------
+
 namespace internal {
 
 bool MoveUnsafe(const FilePath& from_path, const FilePath& to_path) {

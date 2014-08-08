@@ -32,16 +32,18 @@ EventTarget* EventTargeter::FindTargetForLocatedEvent(EventTarget* root,
     EventTarget* target = root;
     EventTarget* child = NULL;
     while ((child = iter->GetNextTarget())) {
-      if (!SubtreeShouldBeExploredForEvent(child, *event))
+      EventTargeter* targeter = child->GetEventTargeter();
+      if (!targeter)
+        targeter = this;
+      if (!targeter->SubtreeShouldBeExploredForEvent(child, *event))
         continue;
       target->ConvertEventToTarget(child, event);
-      EventTargeter* targeter = child->GetEventTargeter();
+      target = child;
       EventTarget* child_target = targeter ?
           targeter->FindTargetForLocatedEvent(child, event) :
           FindTargetForLocatedEvent(child, event);
       if (child_target)
         return child_target;
-      target = child;
     }
     target->ConvertEventToTarget(root, event);
   }
@@ -50,6 +52,22 @@ EventTarget* EventTargeter::FindTargetForLocatedEvent(EventTarget* root,
 
 bool EventTargeter::SubtreeShouldBeExploredForEvent(EventTarget* target,
                                                     const LocatedEvent& event) {
+  return SubtreeCanAcceptEvent(target, event) &&
+         EventLocationInsideBounds(target, event);
+}
+
+EventTarget* EventTargeter::FindNextBestTarget(EventTarget* previous_target,
+                                               Event* event) {
+  return NULL;
+}
+
+bool EventTargeter::SubtreeCanAcceptEvent(EventTarget* target,
+                                          const LocatedEvent& event) const {
+  return true;
+}
+
+bool EventTargeter::EventLocationInsideBounds(EventTarget* target,
+                                              const LocatedEvent& event) const {
   return true;
 }
 

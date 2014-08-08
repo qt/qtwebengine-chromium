@@ -2,14 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// http://code.google.com/p/chromium/wiki/LinuxSandboxIPC
-
 #ifndef CONTENT_BROWSER_RENDERER_HOST_RENDER_SANDBOX_HOST_LINUX_H_
 #define CONTENT_BROWSER_RENDERER_HOST_RENDER_SANDBOX_HOST_LINUX_H_
 
 #include <string>
 
 #include "base/logging.h"
+#include "base/memory/scoped_ptr.h"
+#include "base/threading/simple_thread.h"
+#include "content/browser/renderer_host/sandbox_ipc_linux.h"
 #include "content/common/content_export.h"
 
 template <typename T> struct DefaultSingletonTraits;
@@ -29,11 +30,7 @@ class CONTENT_EXPORT RenderSandboxHostLinux {
     DCHECK(initialized_);
     return renderer_socket_;
   }
-  pid_t pid() const {
-    DCHECK(initialized_);
-    return pid_;
-  }
-  void Init(const std::string& sandbox_path);
+  void Init();
 
  private:
   friend struct DefaultSingletonTraits<RenderSandboxHostLinux>;
@@ -41,12 +38,16 @@ class CONTENT_EXPORT RenderSandboxHostLinux {
   RenderSandboxHostLinux();
   ~RenderSandboxHostLinux();
 
+  bool ShutdownIPCChannel();
+
   // Whether Init() has been called yet.
   bool initialized_;
 
   int renderer_socket_;
   int childs_lifeline_fd_;
-  pid_t pid_;
+
+  scoped_ptr<SandboxIPCHandler> ipc_handler_;
+  scoped_ptr<base::DelegateSimpleThread> ipc_thread_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderSandboxHostLinux);
 };

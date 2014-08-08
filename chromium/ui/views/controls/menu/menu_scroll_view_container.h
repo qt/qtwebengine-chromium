@@ -7,7 +7,7 @@
 
 #include "ui/views/view.h"
 #include "ui/views/bubble/bubble_border.h"
-#include "ui/views/controls/menu/menu_item_view.h"
+#include "ui/views/controls/menu/menu_types.h"
 
 namespace views {
 
@@ -33,8 +33,8 @@ class MenuScrollViewContainer : public View {
   // View overrides.
   virtual void OnPaintBackground(gfx::Canvas* canvas) OVERRIDE;
   virtual void Layout() OVERRIDE;
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
-  virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
+  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
 
  protected:
   // View override.
@@ -47,8 +47,7 @@ class MenuScrollViewContainer : public View {
   // Create the bubble border.
   void CreateBubbleBorder();
 
-  BubbleBorder::Arrow BubbleBorderTypeFromAnchor(
-      MenuItemView::AnchorPosition anchor);
+  BubbleBorder::Arrow BubbleBorderTypeFromAnchor(MenuAnchorPosition anchor);
 
   class MenuScrollView;
 
@@ -65,7 +64,7 @@ class MenuScrollViewContainer : public View {
   // If set the currently set border is a bubble border.
   BubbleBorder::Arrow arrow_;
 
-  // The currently set border.
+  // Weak reference to the currently set border.
   BubbleBorder* bubble_border_;
 
   DISALLOW_COPY_AND_ASSIGN(MenuScrollViewContainer);

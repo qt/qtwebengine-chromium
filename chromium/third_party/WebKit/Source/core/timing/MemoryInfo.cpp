@@ -31,15 +31,15 @@
 #include "config.h"
 #include "core/timing/MemoryInfo.h"
 
-#include <limits>
-#include "core/frame/Frame.h"
+#include "core/frame/LocalFrame.h"
 #include "core/frame/Settings.h"
+#include "platform/RuntimeEnabledFeatures.h"
 #include "wtf/CurrentTime.h"
 #include "wtf/MainThread.h"
 #include "wtf/MathExtras.h"
+#include <limits>
 
 namespace WebCore {
-
 
 class HeapSizeCache {
     WTF_MAKE_NONCOPYABLE(HeapSizeCache); WTF_MAKE_FAST_ALLOCATED;
@@ -91,7 +91,6 @@ size_t quantizeMemorySize(size_t size)
     const int numberOfBuckets = 100;
     DEFINE_STATIC_LOCAL(Vector<size_t>, bucketSizeList, ());
 
-    ASSERT(isMainThread());
     if (bucketSizeList.isEmpty()) {
         bucketSizeList.resize(numberOfBuckets);
 
@@ -131,14 +130,11 @@ size_t quantizeMemorySize(size_t size)
     return bucketSizeList[numberOfBuckets - 1];
 }
 
-
-MemoryInfo::MemoryInfo(Frame* frame)
+MemoryInfo::MemoryInfo()
 {
     ScriptWrappable::init(this);
-    if (!frame || !frame->settings())
-        return;
 
-    if (frame->settings()->memoryInfoEnabled()) {
+    if (RuntimeEnabledFeatures::preciseMemoryInfoEnabled()) {
         ScriptGCEvent::getHeapSize(m_info);
     } else {
         DEFINE_STATIC_LOCAL(HeapSizeCache, heapSizeCache, ());

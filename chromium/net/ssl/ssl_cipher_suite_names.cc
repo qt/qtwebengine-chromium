@@ -323,6 +323,9 @@ void SSLVersionToString(const char** name, int ssl_version) {
     case SSL_CONNECTION_VERSION_TLS1_2:
       *name = "TLS 1.2";
       break;
+    case SSL_CONNECTION_VERSION_QUIC:
+      *name = "QUIC";
+      break;
     default:
       NOTREACHED() << ssl_version;
       *name = "???";
@@ -340,6 +343,51 @@ bool ParseSSLCipherString(const std::string& cipher_string,
     return true;
   }
   return false;
+}
+
+bool IsSecureTLSCipherSuite(uint16 cipher_suite) {
+  CipherSuite desired = {0};
+  desired.cipher_suite = cipher_suite;
+
+  void* r = bsearch(&desired,
+                    kCipherSuites,
+                    arraysize(kCipherSuites),
+                    sizeof(kCipherSuites[0]),
+                    CipherSuiteCmp);
+
+  if (!r)
+    return false;
+
+  const CipherSuite* cs = static_cast<const CipherSuite*>(r);
+
+  const int key_exchange = cs->encoded >> 8;
+  const int cipher = (cs->encoded >> 3) & 0x1f;
+  const int mac = cs->encoded & 0x7;
+
+  // Only allow forward secure key exchanges.
+  switch (key_exchange) {
+    case 10:  // DHE_RSA
+    case 14:  // ECDHE_ECDSA
+    case 16:  // ECDHE_RSA
+      break;
+    default:
+      return false;
+  }
+
+  switch (cipher) {
+    case 13:  // AES_128_GCM
+    case 14:  // AES_256_GCM
+    case 17:  // CHACHA20_POLY1305
+      break;
+    default:
+      return false;
+  }
+
+  // Only AEADs allowed.
+  if (mac != kAEADMACValue)
+    return false;
+
+  return true;
 }
 
 }  // namespace net

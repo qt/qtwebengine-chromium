@@ -12,50 +12,18 @@
 #include "cc/output/output_surface_client.h"
 #include "cc/output/software_output_device.h"
 #include "content/browser/android/in_process/synchronous_compositor_impl.h"
+#include "content/browser/gpu/compositor_util.h"
 #include "content/public/browser/browser_thread.h"
-#include "gpu/command_buffer/client/gl_in_process_context.h"
+#include "gpu/command_buffer/client/gles2_interface.h"
 #include "gpu/command_buffer/common/gpu_memory_allocation.h"
-#include "third_party/skia/include/core/SkBitmapDevice.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "ui/gfx/rect_conversions.h"
 #include "ui/gfx/skia_util.h"
 #include "ui/gfx/transform.h"
-#include "ui/gl/gl_surface.h"
-#include "webkit/common/gpu/context_provider_in_process.h"
-#include "webkit/common/gpu/webgraphicscontext3d_in_process_command_buffer_impl.h"
 
 namespace content {
 
 namespace {
-
-scoped_ptr<webkit::gpu::WebGraphicsContext3DInProcessCommandBufferImpl>
-CreateWebGraphicsContext3D(scoped_refptr<gfx::GLSurface> surface) {
-  using webkit::gpu::WebGraphicsContext3DInProcessCommandBufferImpl;
-  if (!gfx::GLSurface::InitializeOneOff())
-    return scoped_ptr<WebGraphicsContext3DInProcessCommandBufferImpl>();
-
-  const gfx::GpuPreference gpu_preference = gfx::PreferDiscreteGpu;
-
-  blink::WebGraphicsContext3D::Attributes attributes;
-  attributes.antialias = false;
-  attributes.shareResources = true;
-  attributes.noAutomaticFlushes = true;
-
-  gpu::GLInProcessContextAttribs in_process_attribs;
-  WebGraphicsContext3DInProcessCommandBufferImpl::ConvertAttributes(
-      attributes, &in_process_attribs);
-  scoped_ptr<gpu::GLInProcessContext> context(
-      gpu::GLInProcessContext::CreateWithSurface(surface,
-                                                 attributes.shareResources,
-                                                 in_process_attribs,
-                                                 gpu_preference));
-
-  if (!context.get())
-    return scoped_ptr<WebGraphicsContext3DInProcessCommandBufferImpl>();
-
-  return WebGraphicsContext3DInProcessCommandBufferImpl::WrapContext(
-      context.Pass(), attributes).Pass();
-}
 
 void DidActivatePendingTree(int routing_id) {
   SynchronousCompositorOutputSurfaceDelegate* delegate =
@@ -70,31 +38,29 @@ class SynchronousCompositorOutputSurface::SoftwareDevice
   : public cc::SoftwareOutputDevice {
  public:
   SoftwareDevice(SynchronousCompositorOutputSurface* surface)
-    : surface_(surface),
-      null_device_(SkBitmap::kARGB_8888_Config, 1, 1),
-      null_canvas_(&null_device_) {
+    : surface_(surface) {
   }
-  virtual void Resize(gfx::Size size) OVERRIDE {
+  virtual void Resize(const gfx::Size& pixel_size,
+                      float scale_factor) OVERRIDE {
     // Intentional no-op: canvas size is controlled by the embedder.
   }
-  virtual SkCanvas* BeginPaint(gfx::Rect damage_rect) OVERRIDE {
+  virtual SkCanvas* BeginPaint(const gfx::Rect& damage_rect) OVERRIDE {
     if (!surface_->current_sw_canvas_) {
       NOTREACHED() << "BeginPaint with no canvas set";
       return &null_canvas_;
     }
-    LOG_IF(WARNING, surface_->did_swap_buffer_)
+    LOG_IF(WARNING, surface_->frame_holder_.get())
         << "Mutliple calls to BeginPaint per frame";
     return surface_->current_sw_canvas_;
   }
   virtual void EndPaint(cc::SoftwareFrameData* frame_data) OVERRIDE {
   }
-  virtual void CopyToBitmap(gfx::Rect rect, SkBitmap* output) OVERRIDE {
+  virtual void CopyToPixels(const gfx::Rect& rect, void* pixels) OVERRIDE {
     NOTIMPLEMENTED();
   }
 
  private:
   SynchronousCompositorOutputSurface* surface_;
-  SkBitmapDevice null_device_;
   SkCanvas null_canvas_;
 
   DISALLOW_COPY_AND_ASSIGN(SoftwareDevice);
@@ -105,15 +71,16 @@ SynchronousCompositorOutputSurface::SynchronousCompositorOutputSurface(
     : cc::OutputSurface(
           scoped_ptr<cc::SoftwareOutputDevice>(new SoftwareDevice(this))),
       routing_id_(routing_id),
-      needs_begin_impl_frame_(false),
+      needs_begin_frame_(false),
       invoking_composite_(false),
-      did_swap_buffer_(false),
       current_sw_canvas_(NULL),
       memory_policy_(0),
       output_surface_client_(NULL) {
   capabilities_.deferred_gl_initialization = true;
   capabilities_.draw_and_swap_full_viewport_every_frame = true;
   capabilities_.adjust_deadline_for_parent = false;
+  capabilities_.delegated_rendering = true;
+  capabilities_.max_frames_pending = 1;
   // Cannot call out to GetDelegate() here as the output surface is not
   // constructed on the correct thread.
 
@@ -155,33 +122,26 @@ bool SynchronousCompositorOutputSurface::BindToClient(
 }
 
 void SynchronousCompositorOutputSurface::Reshape(
-    gfx::Size size, float scale_factor) {
+    const gfx::Size& size, float scale_factor) {
   // Intentional no-op: surface size is controlled by the embedder.
 }
 
-void SynchronousCompositorOutputSurface::SetNeedsBeginImplFrame(
-    bool enable) {
+void SynchronousCompositorOutputSurface::SetNeedsBeginFrame(bool enable) {
   DCHECK(CalledOnValidThread());
-  cc::OutputSurface::SetNeedsBeginImplFrame(enable);
-  needs_begin_impl_frame_ = enable;
+  needs_begin_frame_ = enable;
   SynchronousCompositorOutputSurfaceDelegate* delegate = GetDelegate();
-  if (delegate)
-    delegate->SetContinuousInvalidate(needs_begin_impl_frame_);
+  if (delegate && !invoking_composite_)
+    delegate->SetContinuousInvalidate(needs_begin_frame_);
 }
 
 void SynchronousCompositorOutputSurface::SwapBuffers(
     cc::CompositorFrame* frame) {
   DCHECK(CalledOnValidThread());
-  if (!ForcedDrawToSoftwareDevice()) {
-    DCHECK(context_provider_);
-    context_provider_->Context3d()->shallowFlushCHROMIUM();
-  }
-  SynchronousCompositorOutputSurfaceDelegate* delegate = GetDelegate();
-  if (delegate)
-    delegate->UpdateFrameMetaData(frame->metadata);
 
-  did_swap_buffer_ = true;
-  DidSwapBuffers();
+  frame_holder_.reset(new cc::CompositorFrame);
+  frame->AssignTo(frame_holder_.get());
+
+  client_->DidSwapBuffers();
 }
 
 namespace {
@@ -192,18 +152,12 @@ void AdjustTransform(gfx::Transform* transform, gfx::Rect viewport) {
 } // namespace
 
 bool SynchronousCompositorOutputSurface::InitializeHwDraw(
-    scoped_refptr<gfx::GLSurface> surface,
-    scoped_refptr<cc::ContextProvider> offscreen_context_provider) {
+    scoped_refptr<cc::ContextProvider> onscreen_context_provider) {
   DCHECK(CalledOnValidThread());
   DCHECK(HasClient());
   DCHECK(!context_provider_);
-  DCHECK(surface);
 
-  scoped_refptr<cc::ContextProvider> onscreen_context_provider =
-      webkit::gpu::ContextProviderInProcess::Create(
-          CreateWebGraphicsContext3D(surface), "SynchronousCompositor");
-  return InitializeAndSetContext3d(onscreen_context_provider,
-                                   offscreen_context_provider);
+  return InitializeAndSetContext3d(onscreen_context_provider);
 }
 
 void SynchronousCompositorOutputSurface::ReleaseHwDraw() {
@@ -211,24 +165,24 @@ void SynchronousCompositorOutputSurface::ReleaseHwDraw() {
   cc::OutputSurface::ReleaseGL();
 }
 
-bool SynchronousCompositorOutputSurface::DemandDrawHw(
+scoped_ptr<cc::CompositorFrame>
+SynchronousCompositorOutputSurface::DemandDrawHw(
     gfx::Size surface_size,
     const gfx::Transform& transform,
     gfx::Rect viewport,
-    gfx::Rect clip,
-    bool stencil_enabled) {
+    gfx::Rect clip) {
   DCHECK(CalledOnValidThread());
   DCHECK(HasClient());
   DCHECK(context_provider_);
 
   surface_size_ = surface_size;
-  SetExternalStencilTest(stencil_enabled);
   InvokeComposite(transform, viewport, clip, true);
 
-  return did_swap_buffer_;
+  return frame_holder_.Pass();
 }
 
-bool SynchronousCompositorOutputSurface::DemandDrawSw(SkCanvas* canvas) {
+scoped_ptr<cc::CompositorFrame>
+SynchronousCompositorOutputSurface::DemandDrawSw(SkCanvas* canvas) {
   DCHECK(CalledOnValidThread());
   DCHECK(canvas);
   DCHECK(!current_sw_canvas_);
@@ -243,11 +197,10 @@ bool SynchronousCompositorOutputSurface::DemandDrawSw(SkCanvas* canvas) {
 
   surface_size_ = gfx::Size(canvas->getDeviceSize().width(),
                             canvas->getDeviceSize().height());
-  SetExternalStencilTest(false);
 
   InvokeComposite(transform, clip, clip, false);
 
-  return did_swap_buffer_;
+  return frame_holder_.Pass();
 }
 
 void SynchronousCompositorOutputSurface::InvokeComposite(
@@ -256,17 +209,15 @@ void SynchronousCompositorOutputSurface::InvokeComposite(
     gfx::Rect clip,
     bool valid_for_tile_management) {
   DCHECK(!invoking_composite_);
+  DCHECK(!frame_holder_.get());
   base::AutoReset<bool> invoking_composite_resetter(&invoking_composite_, true);
-  did_swap_buffer_ = false;
 
   gfx::Transform adjusted_transform = transform;
   AdjustTransform(&adjusted_transform, viewport);
   SetExternalDrawConstraints(
       adjusted_transform, viewport, clip, valid_for_tile_management);
   SetNeedsRedrawRect(gfx::Rect(viewport.size()));
-
-  if (needs_begin_impl_frame_)
-    BeginImplFrame(cc::BeginFrameArgs::CreateForSynchronousCompositor());
+  client_->BeginFrame(cc::BeginFrameArgs::CreateForSynchronousCompositor());
 
   // After software draws (which might move the viewport arbitrarily), restore
   // the previous hardware viewport to allow CC's tile manager to prioritize
@@ -280,14 +231,17 @@ void SynchronousCompositorOutputSurface::InvokeComposite(
         cached_hw_transform_, cached_hw_viewport_, cached_hw_clip_, true);
   }
 
-  if (did_swap_buffer_)
-    OnSwapBuffersComplete();
+  if (frame_holder_.get())
+    client_->DidSwapBuffersComplete();
+
+  SynchronousCompositorOutputSurfaceDelegate* delegate = GetDelegate();
+  if (delegate)
+    delegate->SetContinuousInvalidate(needs_begin_frame_);
 }
 
-void
-SynchronousCompositorOutputSurface::PostCheckForRetroactiveBeginImplFrame() {
-  // Synchronous compositor cannot perform retroactive BeginImplFrames, so
-  // intentionally no-op here.
+void SynchronousCompositorOutputSurface::ReturnResources(
+    const cc::CompositorFrameAck& frame_ack) {
+  ReclaimResources(&frame_ack);
 }
 
 void SynchronousCompositorOutputSurface::SetMemoryPolicy(

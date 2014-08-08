@@ -22,6 +22,14 @@ namespace net {
 class IOBuffer;
 }
 
+namespace content {
+FORWARD_DECLARE_TEST(AppCacheTest, InitializeWithManifest);
+FORWARD_DECLARE_TEST(AppCacheTest, ToFromDatabaseRecords);
+class AppCacheTest;
+class AppCacheStorageImplTest;
+class AppCacheUpdateJobTest;
+}
+
 namespace appcache {
 
 class AppCacheExecutableHandler;
@@ -142,8 +150,9 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AppCache
  private:
   friend class AppCacheGroup;
   friend class AppCacheHost;
-  friend class AppCacheStorageImplTest;
-  friend class AppCacheUpdateJobTest;
+  friend class content::AppCacheTest;
+  friend class content::AppCacheStorageImplTest;
+  friend class content::AppCacheUpdateJobTest;
   friend class base::RefCounted<AppCache>;
 
   ~AppCache();
@@ -195,8 +204,8 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AppCache
   // to notify storage when cache is deleted
   AppCacheStorage* storage_;
 
-  FRIEND_TEST_ALL_PREFIXES(AppCacheTest, InitializeWithManifest);
-  FRIEND_TEST_ALL_PREFIXES(AppCacheTest, ToFromDatabaseRecords);
+  FRIEND_TEST_ALL_PREFIXES(content::AppCacheTest, InitializeWithManifest);
+  FRIEND_TEST_ALL_PREFIXES(content::AppCacheTest, ToFromDatabaseRecords);
   DISALLOW_COPY_AND_ASSIGN(AppCache);
 };
 

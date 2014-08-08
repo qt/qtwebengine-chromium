@@ -5,30 +5,83 @@
 #ifndef CONTENT_BROWSER_GEOLOCATION_GEOLOCATION_DISPATCHER_HOST_H_
 #define CONTENT_BROWSER_GEOLOCATION_GEOLOCATION_DISPATCHER_HOST_H_
 
-#include "content/public/browser/browser_message_filter.h"
+#include <map>
+#include <vector>
+
+#include "base/callback_forward.h"
+#include "base/memory/weak_ptr.h"
+#include "content/browser/geolocation/geolocation_provider_impl.h"
+#include "content/public/browser/web_contents_observer.h"
+
+class GURL;
 
 namespace content {
 
-class GeolocationPermissionContext;
-
-// GeolocationDispatcherHost is a browser filter for Geolocation messages.
+// GeolocationDispatcherHost is an observer for Geolocation messages.
 // It's the complement of GeolocationDispatcher (owned by RenderView).
-class GeolocationDispatcherHost : public BrowserMessageFilter {
+class GeolocationDispatcherHost : public WebContentsObserver {
  public:
-  static GeolocationDispatcherHost* New(
-      int render_process_id,
-      GeolocationPermissionContext* geolocation_permission_context);
-
-  // Pause or resumes geolocation for the given |render_view_id|. Should
-  // be called on the IO thread. Resuming when nothing is paused is a no-op.
-  // If a renderer is paused while not currently using geolocation but
-  // then goes on to do so before being resumed, then that renderer will
-  // not get geolocation updates until it is resumed.
-  virtual void PauseOrResume(int render_view_id, bool should_pause) = 0;
-
- protected:
-  GeolocationDispatcherHost();
+  explicit GeolocationDispatcherHost(WebContents* web_contents);
   virtual ~GeolocationDispatcherHost();
+
+  // Pause or resumes geolocation. Resuming when nothing is paused is a no-op.
+  // If the web contents is paused while not currently using geolocation but
+  // then goes on to do so before being resumed, then it will not get
+  // geolocation updates until it is resumed.
+  void PauseOrResume(bool should_pause);
+
+ private:
+  // WebContentsObserver
+  virtual void RenderFrameDeleted(RenderFrameHost* render_frame_host) OVERRIDE;
+  virtual void RenderViewHostChanged(RenderViewHost* old_host,
+                                     RenderViewHost* new_host) OVERRIDE;
+  virtual bool OnMessageReceived(
+      const IPC::Message& msg, RenderFrameHost* render_frame_host) OVERRIDE;
+
+  // Message handlers:
+  void OnRequestPermission(RenderFrameHost* render_frame_host,
+                           int bridge_id,
+                           const GURL& requesting_frame,
+                           bool user_gesture);
+  void OnCancelPermissionRequest(RenderFrameHost* render_frame_host,
+                                 int bridge_id,
+                                 const GURL& requesting_frame);
+  void OnStartUpdating(RenderFrameHost* render_frame_host,
+                       const GURL& requesting_frame,
+                       bool enable_high_accuracy);
+  void OnStopUpdating(RenderFrameHost* render_frame_host);
+
+  // Updates the geolocation provider with the currently required update
+  // options.
+  void RefreshGeolocationOptions();
+
+  void OnLocationUpdate(const Geoposition& position);
+
+  void SendGeolocationPermissionResponse(int render_process_id,
+                                         int render_frame_id,
+                                         int bridge_id,
+                                         bool allowed);
+
+  // A map from the RenderFrameHosts that have requested geolocation updates to
+  // the type of accuracy they requested (true = high accuracy).
+  std::map<RenderFrameHost*, bool> updating_frames_;
+  bool paused_;
+
+  struct PendingPermission {
+    PendingPermission(int render_frame_id,
+                      int render_process_id,
+                      int bridge_id);
+    ~PendingPermission();
+    int render_frame_id;
+    int render_process_id;
+    int bridge_id;
+    base::Closure cancel;
+  };
+  std::vector<PendingPermission> pending_permissions_;
+
+  scoped_ptr<GeolocationProvider::Subscription> geolocation_subscription_;
+
+  base::WeakPtrFactory<GeolocationDispatcherHost> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(GeolocationDispatcherHost);
 };

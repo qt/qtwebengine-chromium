@@ -38,10 +38,10 @@ public:
     virtual ~SuspendableTimer();
 
     // ActiveDOMObject
-    virtual bool hasPendingActivity() const;
-    virtual void stop();
-    virtual void suspend();
-    virtual void resume();
+    virtual bool hasPendingActivity() const OVERRIDE FINAL;
+    virtual void stop() OVERRIDE;
+    virtual void suspend() OVERRIDE FINAL;
+    virtual void resume() OVERRIDE FINAL;
 
 private:
     virtual void fired() = 0;
@@ -49,7 +49,7 @@ private:
     double m_nextFireInterval;
     double m_repeatInterval;
     bool m_active;
-#if !ASSERT_DISABLED
+#if ASSERT_ENABLED
     bool m_suspended;
 #endif
 };

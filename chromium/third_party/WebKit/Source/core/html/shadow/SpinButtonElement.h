@@ -40,13 +40,17 @@ public:
         Down,
         Up,
     };
-
-    class SpinButtonOwner {
+    enum EventDispatch {
+        EventDispatchAllowed,
+        EventDispatchDisallowed,
+    };
+    class SpinButtonOwner : public WillBeGarbageCollectedMixin {
     public:
         virtual ~SpinButtonOwner() { }
         virtual void focusAndSelectSpinButtonOwner() = 0;
         virtual bool shouldSpinButtonRespondToMouseEvents() = 0;
         virtual bool shouldSpinButtonRespondToWheelEvents() = 0;
+        virtual void spinButtonDidReleaseMouseCapture(EventDispatch) = 0;
         virtual void spinButtonStepDown() = 0;
         virtual void spinButtonStepUp() = 0;
     };
@@ -54,10 +58,10 @@ public:
     // The owner of SpinButtonElement must call removeSpinButtonOwner
     // because SpinButtonElement can be outlive SpinButtonOwner
     // implementation, e.g. during event handling.
-    static PassRefPtr<SpinButtonElement> create(Document&, SpinButtonOwner&);
+    static PassRefPtrWillBeRawPtr<SpinButtonElement> create(Document&, SpinButtonOwner&);
     UpDownState upDownState() const { return m_upDownState; }
-    virtual void releaseCapture();
-    void removeSpinButtonOwner() { m_spinButtonOwner = 0; }
+    void releaseCapture(EventDispatch = EventDispatchAllowed);
+    void removeSpinButtonOwner() { m_spinButtonOwner = nullptr; }
 
     void step(int amount);
 
@@ -66,25 +70,27 @@ public:
 
     void forwardEvent(Event*);
 
+    virtual void trace(Visitor*) OVERRIDE;
+
 private:
     SpinButtonElement(Document&, SpinButtonOwner&);
 
-    virtual void detach(const AttachContext& = AttachContext()) OVERRIDE;
-    virtual bool isSpinButtonElement() const { return true; }
+    virtual void detach(const AttachContext&) OVERRIDE;
+    virtual bool isSpinButtonElement() const OVERRIDE { return true; }
     virtual bool isDisabledFormControl() const OVERRIDE { return shadowHost() && shadowHost()->isDisabledFormControl(); }
     virtual bool matchesReadOnlyPseudoClass() const OVERRIDE;
     virtual bool matchesReadWritePseudoClass() const OVERRIDE;
-    virtual void defaultEventHandler(Event*);
+    virtual void defaultEventHandler(Event*) OVERRIDE;
     virtual void willOpenPopup() OVERRIDE;
     void doStepAction(int);
     void startRepeatingTimer();
     void stopRepeatingTimer();
     void repeatingTimerFired(Timer<SpinButtonElement>*);
-    virtual void setHovered(bool = true);
+    virtual void setHovered(bool = true) OVERRIDE;
     bool shouldRespondToMouseEvents();
-    virtual bool isMouseFocusable() const { return false; }
+    virtual bool isMouseFocusable() const OVERRIDE { return false; }
 
-    SpinButtonOwner* m_spinButtonOwner;
+    RawPtrWillBeMember<SpinButtonOwner> m_spinButtonOwner;
     bool m_capturing;
     UpDownState m_upDownState;
     UpDownState m_pressStartingState;

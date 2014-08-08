@@ -30,35 +30,27 @@
 #define SVGImageChromeClient_h
 
 #include "core/loader/EmptyClients.h"
-#include "platform/graphics/ImageObserver.h"
+#include "platform/Timer.h"
 
 namespace WebCore {
 
-class SVGImageChromeClient : public EmptyChromeClient {
+class SVGImageChromeClient FINAL : public EmptyChromeClient {
     WTF_MAKE_NONCOPYABLE(SVGImageChromeClient); WTF_MAKE_FAST_ALLOCATED;
 public:
-    SVGImageChromeClient(SVGImage* image)
-        : m_image(image)
-    {
-    }
+    explicit SVGImageChromeClient(SVGImage*);
+    virtual bool isSVGImageChromeClient() const OVERRIDE;
 
-    virtual bool isSVGImageChromeClient() const { return true; }
     SVGImage* image() const { return m_image; }
 
 private:
-    virtual void chromeDestroyed()
-    {
-        m_image = 0;
-    }
+    virtual void chromeDestroyed() OVERRIDE;
+    virtual void invalidateContentsAndRootView(const IntRect&) OVERRIDE;
+    virtual void scheduleAnimation() OVERRIDE;
 
-    virtual void invalidateContentsAndRootView(const IntRect& r)
-    {
-        // If m_image->m_page is null, we're being destructed, don't fire changedInRect() in that case.
-        if (m_image && m_image->imageObserver() && m_image->m_page)
-            m_image->imageObserver()->changedInRect(m_image, r);
-    }
+    void animationTimerFired(Timer<SVGImageChromeClient>*);
 
     SVGImage* m_image;
+    Timer<SVGImageChromeClient> m_animationTimer;
 };
 
 DEFINE_TYPE_CASTS(SVGImageChromeClient, ChromeClient, client, client->isSVGImageChromeClient(), client.isSVGImageChromeClient());

@@ -1,29 +1,6 @@
 // Copyright 2012 the V8 project authors. All rights reserved.
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-//       copyright notice, this list of conditions and the following
-//       disclaimer in the documentation and/or other materials provided
-//       with the distribution.
-//     * Neither the name of Google Inc. nor the names of its
-//       contributors may be used to endorse or promote products derived
-//       from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
 // Default number of frames to include in the response to backtrace request.
 var kDefaultBacktraceLength = 10;
@@ -1093,15 +1070,16 @@ BreakEvent.prototype.toJSONProtocol = function() {
 };
 
 
-function MakeExceptionEvent(exec_state, exception, uncaught) {
-  return new ExceptionEvent(exec_state, exception, uncaught);
+function MakeExceptionEvent(exec_state, exception, uncaught, promise) {
+  return new ExceptionEvent(exec_state, exception, uncaught, promise);
 }
 
 
-function ExceptionEvent(exec_state, exception, uncaught) {
+function ExceptionEvent(exec_state, exception, uncaught, promise) {
   this.exec_state_ = exec_state;
   this.exception_ = exception;
   this.uncaught_ = uncaught;
+  this.promise_ = promise;
 }
 
 
@@ -1122,6 +1100,11 @@ ExceptionEvent.prototype.exception = function() {
 
 ExceptionEvent.prototype.uncaught = function() {
   return this.uncaught_;
+};
+
+
+ExceptionEvent.prototype.promise = function() {
+  return this.promise_;
 };
 
 
@@ -1214,31 +1197,6 @@ CompileEvent.prototype.toJSONProtocol = function() {
   o.body.script = this.script_;
 
   return o.toJSONProtocol();
-};
-
-
-function MakeNewFunctionEvent(func) {
-  return new NewFunctionEvent(func);
-}
-
-
-function NewFunctionEvent(func) {
-  this.func = func;
-}
-
-
-NewFunctionEvent.prototype.eventType = function() {
-  return Debug.DebugEvent.NewFunction;
-};
-
-
-NewFunctionEvent.prototype.name = function() {
-  return this.func.name;
-};
-
-
-NewFunctionEvent.prototype.setBreakPoint = function(p) {
-  Debug.setBreakPoint(this.func, p || 0);
 };
 
 
@@ -1430,63 +1388,10 @@ DebugCommandProcessor.prototype.processDebugJSONRequest = function(
         }
       }
 
-      if (request.command == 'continue') {
-        this.continueRequest_(request, response);
-      } else if (request.command == 'break') {
-        this.breakRequest_(request, response);
-      } else if (request.command == 'setbreakpoint') {
-        this.setBreakPointRequest_(request, response);
-      } else if (request.command == 'changebreakpoint') {
-        this.changeBreakPointRequest_(request, response);
-      } else if (request.command == 'clearbreakpoint') {
-        this.clearBreakPointRequest_(request, response);
-      } else if (request.command == 'clearbreakpointgroup') {
-        this.clearBreakPointGroupRequest_(request, response);
-      } else if (request.command == 'disconnect') {
-        this.disconnectRequest_(request, response);
-      } else if (request.command == 'setexceptionbreak') {
-        this.setExceptionBreakRequest_(request, response);
-      } else if (request.command == 'listbreakpoints') {
-        this.listBreakpointsRequest_(request, response);
-      } else if (request.command == 'backtrace') {
-        this.backtraceRequest_(request, response);
-      } else if (request.command == 'frame') {
-        this.frameRequest_(request, response);
-      } else if (request.command == 'scopes') {
-        this.scopesRequest_(request, response);
-      } else if (request.command == 'scope') {
-        this.scopeRequest_(request, response);
-      } else if (request.command == 'setVariableValue') {
-        this.setVariableValueRequest_(request, response);
-      } else if (request.command == 'evaluate') {
-        this.evaluateRequest_(request, response);
-      } else if (request.command == 'lookup') {
-        this.lookupRequest_(request, response);
-      } else if (request.command == 'references') {
-        this.referencesRequest_(request, response);
-      } else if (request.command == 'source') {
-        this.sourceRequest_(request, response);
-      } else if (request.command == 'scripts') {
-        this.scriptsRequest_(request, response);
-      } else if (request.command == 'threads') {
-        this.threadsRequest_(request, response);
-      } else if (request.command == 'suspend') {
-        this.suspendRequest_(request, response);
-      } else if (request.command == 'version') {
-        this.versionRequest_(request, response);
-      } else if (request.command == 'changelive') {
-        this.changeLiveRequest_(request, response);
-      } else if (request.command == 'restartframe') {
-        this.restartFrameRequest_(request, response);
-      } else if (request.command == 'flags') {
-        this.debuggerFlagsRequest_(request, response);
-      } else if (request.command == 'v8flags') {
-        this.v8FlagsRequest_(request, response);
-
-      // GC tools:
-      } else if (request.command == 'gc') {
-        this.gcRequest_(request, response);
-
+      var key = request.command.toLowerCase();
+      var handler = DebugCommandProcessor.prototype.dispatch_[key];
+      if (IS_FUNCTION(handler)) {
+        %_CallFunction(this, request, response, handler);
       } else {
         throw new Error('Unknown command "' + request.command + '" in request');
       }
@@ -2534,6 +2439,40 @@ DebugCommandProcessor.prototype.gcRequest_ = function(request, response) {
 };
 
 
+DebugCommandProcessor.prototype.dispatch_ = (function() {
+  var proto = DebugCommandProcessor.prototype;
+  return {
+    "continue":             proto.continueRequest_,
+    "break"   :             proto.breakRequest_,
+    "setbreakpoint" :       proto.setBreakPointRequest_,
+    "changebreakpoint":     proto.changeBreakPointRequest_,
+    "clearbreakpoint":      proto.clearBreakPointRequest_,
+    "clearbreakpointgroup": proto.clearBreakPointGroupRequest_,
+    "disconnect":           proto.disconnectRequest_,
+    "setexceptionbreak":    proto.setExceptionBreakRequest_,
+    "listbreakpoints":      proto.listBreakpointsRequest_,
+    "backtrace":            proto.backtraceRequest_,
+    "frame":                proto.frameRequest_,
+    "scopes":               proto.scopesRequest_,
+    "scope":                proto.scopeRequest_,
+    "setvariablevalue":     proto.setVariableValueRequest_,
+    "evaluate":             proto.evaluateRequest_,
+    "lookup":               proto.lookupRequest_,
+    "references":           proto.referencesRequest_,
+    "source":               proto.sourceRequest_,
+    "scripts":              proto.scriptsRequest_,
+    "threads":              proto.threadsRequest_,
+    "suspend":              proto.suspendRequest_,
+    "version":              proto.versionRequest_,
+    "changelive":           proto.changeLiveRequest_,
+    "restartframe":         proto.restartFrameRequest_,
+    "flags":                proto.debuggerFlagsRequest_,
+    "v8flag":               proto.v8FlagsRequest_,
+    "gc":                   proto.gcRequest_,
+  };
+})();
+
+
 // Check whether the previously processed command caused the VM to become
 // running.
 DebugCommandProcessor.prototype.isRunning = function() {
@@ -2544,17 +2483,6 @@ DebugCommandProcessor.prototype.isRunning = function() {
 DebugCommandProcessor.prototype.systemBreak = function(cmd, args) {
   return %SystemBreak();
 };
-
-
-function NumberToHex8Str(n) {
-  var r = "";
-  for (var i = 0; i < 8; ++i) {
-    var c = hexCharArray[n & 0x0F];  // hexCharArray is defined in uri.js
-    r = c + r;
-    n = n >>> 4;
-  }
-  return r;
-}
 
 
 /**

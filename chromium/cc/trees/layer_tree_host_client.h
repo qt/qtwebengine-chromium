@@ -7,6 +7,7 @@
 
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/time/time.h"
 
 namespace gfx {
 class Vector2d;
@@ -23,23 +24,18 @@ class LayerTreeHostClient {
   // Marks finishing compositing-related tasks on the main thread. In threaded
   // mode, this corresponds to DidCommit().
   virtual void DidBeginMainFrame() = 0;
-  virtual void Animate(double frame_begin_time) = 0;
+  virtual void Animate(base::TimeTicks frame_begin_time) = 0;
   virtual void Layout() = 0;
-  virtual void ApplyScrollAndScale(gfx::Vector2d scroll_delta,
+  virtual void ApplyScrollAndScale(const gfx::Vector2d& scroll_delta,
                                    float page_scale) = 0;
   // Creates an OutputSurface. If fallback is true, it should attempt to
   // create an OutputSurface that is guaranteed to initialize correctly.
   virtual scoped_ptr<OutputSurface> CreateOutputSurface(bool fallback) = 0;
-  virtual void DidInitializeOutputSurface(bool success) = 0;
+  virtual void DidInitializeOutputSurface() = 0;
   virtual void WillCommit() = 0;
   virtual void DidCommit() = 0;
   virtual void DidCommitAndDrawFrame() = 0;
   virtual void DidCompleteSwapBuffers() = 0;
-
-  // If the client provides an OutputSurface bound to a 3d context for direct
-  // rendering, this must return a provider that provides contexts usable from
-  // the same thread as the OutputSurface's context.
-  virtual scoped_refptr<ContextProvider> OffscreenContextProvider() = 0;
 
   // Requests that the client insert a rate limiting token in the shared main
   // thread context's command stream that will block if the context gets too far

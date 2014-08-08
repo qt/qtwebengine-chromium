@@ -31,8 +31,8 @@
 #ifndef V8Callback_h
 #define V8Callback_h
 
+#include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/V8Binding.h"
-#include "bindings/v8/V8Utilities.h"
 #include "core/dom/ExceptionCode.h"
 #include <v8.h>
 
@@ -41,9 +41,10 @@ namespace WebCore {
 class ExecutionContext;
 
 // Returns false if the callback threw an exception, true otherwise.
-bool invokeCallback(v8::Local<v8::Function> callback, int argc, v8::Handle<v8::Value> argv[], ExecutionContext*, v8::Isolate*);
-bool invokeCallback(v8::Local<v8::Function> callback, v8::Handle<v8::Object> thisObject, int argc, v8::Handle<v8::Value> argv[], ExecutionContext*, v8::Isolate*);
+bool invokeCallback(ScriptState*, v8::Local<v8::Function> callback, int argc, v8::Handle<v8::Value> argv[]);
+bool invokeCallback(ScriptState*, v8::Local<v8::Function> callback, v8::Handle<v8::Value> thisValue, int argc, v8::Handle<v8::Value> argv[]);
 
+// FIXME: This file is used only by V8GeolocationCustom.cpp. Remove the custom binding and this file.
 enum CallbackAllowedValueFlag {
     CallbackAllowUndefined = 1,
     CallbackAllowNull = 1 << 1
@@ -53,7 +54,7 @@ typedef unsigned CallbackAllowedValueFlags;
 
 // 'FunctionOnly' is assumed for the created callback.
 template <typename V8CallbackType>
-PassOwnPtr<V8CallbackType> createFunctionOnlyCallback(v8::Local<v8::Value> value, bool& succeeded, v8::Isolate* isolate, CallbackAllowedValueFlags acceptedValues = 0)
+PassOwnPtr<V8CallbackType> createFunctionOnlyCallback(v8::Local<v8::Value> value, unsigned index, bool& succeeded, v8::Isolate* isolate, ExceptionState& exceptionState, CallbackAllowedValueFlags acceptedValues = 0)
 {
     succeeded = true;
 
@@ -65,11 +66,12 @@ PassOwnPtr<V8CallbackType> createFunctionOnlyCallback(v8::Local<v8::Value> value
 
     if (!value->IsFunction()) {
         succeeded = false;
-        setDOMException(TypeMismatchError, isolate);
+        exceptionState.throwDOMException(TypeMismatchError, ExceptionMessages::argumentNullOrIncorrectType(index, "Function"));
+        exceptionState.throwIfNeeded();
         return nullptr;
     }
 
-    return V8CallbackType::create(v8::Handle<v8::Function>::Cast(value), getExecutionContext());
+    return V8CallbackType::create(v8::Handle<v8::Function>::Cast(value), ScriptState::current(isolate));
 }
 
 } // namespace WebCore

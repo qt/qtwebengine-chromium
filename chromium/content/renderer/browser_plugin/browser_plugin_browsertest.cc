@@ -4,11 +4,13 @@
 
 #include "content/renderer/browser_plugin/browser_plugin_browsertest.h"
 
+#include "base/debug/leak_annotations.h"
 #include "base/files/file_path.h"
 #include "base/memory/singleton.h"
 #include "base/path_service.h"
 #include "base/pickle.h"
 #include "content/public/common/content_constants.h"
+#include "content/public/renderer/content_renderer_client.h"
 #include "content/renderer/browser_plugin/browser_plugin.h"
 #include "content/renderer/browser_plugin/browser_plugin_manager_factory.h"
 #include "content/renderer/browser_plugin/mock_browser_plugin.h"
@@ -18,7 +20,10 @@
 #include "skia/ext/platform_canvas.h"
 #include "third_party/WebKit/public/platform/WebCursorInfo.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
+#include "third_party/WebKit/public/web/WebLocalFrame.h"
 #include "third_party/WebKit/public/web/WebScriptSource.h"
+
+namespace content {
 
 namespace {
 const char kHTMLForBrowserPluginObject[] =
@@ -34,39 +39,12 @@ const char kHTMLForBrowserPluginWithAllAttributes[] =
 const char kHTMLForSourcelessPluginObject[] =
     "<object id='browserplugin' width='640px' height='480px' type='%s'>";
 
-const char kHTMLForPartitionedPluginObject[] =
-    "<object id='browserplugin' width='640px' height='480px'"
-    "  src='foo' type='%s' partition='someid'>";
-
-const char kHTMLForInvalidPartitionedPluginObject[] =
-    "<object id='browserplugin' width='640px' height='480px'"
-    "  type='%s' partition='persist:'>";
-
-const char kHTMLForPartitionedPersistedPluginObject[] =
-    "<object id='browserplugin' width='640px' height='480px'"
-    "  src='foo' type='%s' partition='persist:someid'>";
-
 std::string GetHTMLForBrowserPluginObject() {
   return base::StringPrintf(kHTMLForBrowserPluginObject,
-                            content::kBrowserPluginMimeType);
+                            kBrowserPluginMimeType);
 }
 
 }  // namespace
-
-namespace content {
-
-class TestContentRendererClient : public ContentRendererClient {
- public:
-  TestContentRendererClient() : ContentRendererClient() {
-  }
-  virtual ~TestContentRendererClient() {
-  }
-  virtual bool AllowBrowserPlugin(
-      blink::WebPluginContainer* container) OVERRIDE {
-    // Allow BrowserPlugin for tests.
-    return true;
-  }
-};
 
 // Test factory for creating test instances of BrowserPluginManager.
 class TestBrowserPluginManagerFactory : public BrowserPluginManagerFactory {
@@ -97,8 +75,6 @@ BrowserPluginTest::BrowserPluginTest() {}
 BrowserPluginTest::~BrowserPluginTest() {}
 
 void BrowserPluginTest::SetUp() {
-  test_content_renderer_client_.reset(new TestContentRendererClient);
-  SetRendererClientForTesting(test_content_renderer_client_.get());
   BrowserPluginManager::set_factory_for_testing(
       TestBrowserPluginManagerFactory::GetInstance());
   content::RenderViewTest::SetUp();
@@ -107,8 +83,12 @@ void BrowserPluginTest::SetUp() {
 void BrowserPluginTest::TearDown() {
   BrowserPluginManager::set_factory_for_testing(
       TestBrowserPluginManagerFactory::GetInstance());
-  content::RenderViewTest::TearDown();
-  test_content_renderer_client_.reset();
+#if defined(LEAK_SANITIZER)
+  // Do this before shutting down V8 in RenderViewTest::TearDown().
+  // http://crbug.com/328552
+  __lsan_do_leak_check();
+#endif
+  RenderViewTest::TearDown();
 }
 
 std::string BrowserPluginTest::ExecuteScriptAndReturnString(
@@ -158,6 +138,12 @@ MockBrowserPlugin* BrowserPluginTest::GetCurrentPlugin() {
 
 MockBrowserPlugin* BrowserPluginTest::GetCurrentPluginWithAttachParams(
     BrowserPluginHostMsg_Attach_Params* params) {
+  MockBrowserPlugin* browser_plugin = static_cast<MockBrowserPluginManager*>(
+      browser_plugin_manager())->last_plugin();
+  if (!browser_plugin)
+    return NULL;
+  browser_plugin_manager()->AllocateInstanceID(browser_plugin);
+
   int instance_id = 0;
   const IPC::Message* msg =
       browser_plugin_manager()->sink().GetUniqueMessageMatching(
@@ -170,49 +156,25 @@ MockBrowserPlugin* BrowserPluginTest::GetCurrentPluginWithAttachParams(
     return NULL;
 
   if (!IPC::ParamTraits<BrowserPluginHostMsg_Attach_Params>::Read(
-      msg, &iter, params))
+      msg, &iter, params)) {
     return NULL;
+  }
 
-  MockBrowserPlugin* browser_plugin = static_cast<MockBrowserPlugin*>(
-      browser_plugin_manager()->GetBrowserPlugin(instance_id));
-
-  BrowserPluginMsg_Attach_ACK_Params attach_ack_params;
-  browser_plugin->OnAttachACK(instance_id, attach_ack_params);
-
+  browser_plugin->OnAttachACK(instance_id);
   return browser_plugin;
 }
 
 // This test verifies that an initial resize occurs when we instantiate the
-// browser plugin. This test also verifies that the browser plugin is waiting
-// for a BrowserPluginMsg_UpdateRect in response. We issue an UpdateRect, and
-// we observe an UpdateRect_ACK, with the |pending_damage_buffer_| reset,
-// indiciating that the BrowserPlugin is not waiting for any more UpdateRects to
-// satisfy its resize request.
+// browser plugin.
 TEST_F(BrowserPluginTest, InitialResize) {
   LoadHTML(GetHTMLForBrowserPluginObject().c_str());
   // Verify that the information in Attach is correct.
   BrowserPluginHostMsg_Attach_Params params;
   MockBrowserPlugin* browser_plugin = GetCurrentPluginWithAttachParams(&params);
 
-  EXPECT_EQ(640, params.resize_guest_params.view_rect.width());
-  EXPECT_EQ(480, params.resize_guest_params.view_rect.height());
+  EXPECT_EQ(640, params.resize_guest_params.view_size.width());
+  EXPECT_EQ(480, params.resize_guest_params.view_size.height());
   ASSERT_TRUE(browser_plugin);
-  // Now the browser plugin is expecting a UpdateRect resize.
-  int instance_id = browser_plugin->guest_instance_id();
-  EXPECT_TRUE(browser_plugin->pending_damage_buffer_.get());
-
-  // Send the BrowserPlugin an UpdateRect equal to its container size with
-  // the same damage buffer. That should clear |pending_damage_buffer_|.
-  BrowserPluginMsg_UpdateRect_Params update_rect_params;
-  update_rect_params.damage_buffer_sequence_id =
-      browser_plugin->damage_buffer_sequence_id_;
-  update_rect_params.view_size = gfx::Size(640, 480);
-  update_rect_params.scale_factor = 1.0f;
-  update_rect_params.is_resize_ack = true;
-  update_rect_params.needs_ack = true;
-  BrowserPluginMsg_UpdateRect msg(instance_id, update_rect_params);
-  browser_plugin->OnMessageReceived(msg);
-  EXPECT_FALSE(browser_plugin->pending_damage_buffer_.get());
 }
 
 // This test verifies that all attributes (present at the time of writing) are
@@ -220,7 +182,7 @@ TEST_F(BrowserPluginTest, InitialResize) {
 // correct behavior.
 TEST_F(BrowserPluginTest, ParseAllAttributes) {
   std::string html = base::StringPrintf(kHTMLForBrowserPluginWithAllAttributes,
-                                        content::kBrowserPluginMimeType);
+                                        kBrowserPluginMimeType);
   LoadHTML(html.c_str());
   bool result;
   bool has_value = ExecuteScriptAndReturnBool(
@@ -239,56 +201,6 @@ TEST_F(BrowserPluginTest, ParseAllAttributes) {
   int minWidth = ExecuteScriptAndReturnInt(
       "document.getElementById('browserplugin').minwidth");
   EXPECT_EQ(320, minWidth);
-  std::string name = ExecuteScriptAndReturnString(
-      "document.getElementById('browserplugin').name");
-  EXPECT_STREQ("Jim", name.c_str());
-  std::string partition = ExecuteScriptAndReturnString(
-      "document.getElementById('browserplugin').partition");
-  EXPECT_STREQ("someid", partition.c_str());
-  std::string src = ExecuteScriptAndReturnString(
-      "document.getElementById('browserplugin').src");
-  EXPECT_STREQ("foo", src.c_str());
-}
-
-// Verify that the src attribute on the browser plugin works as expected.
-TEST_F(BrowserPluginTest, SrcAttribute) {
-  LoadHTML(GetHTMLForBrowserPluginObject().c_str());
-  // Verify that we're reporting the correct URL to navigate to based on the
-  // src attribute.
-  {
-    BrowserPluginHostMsg_Attach_Params params;
-    MockBrowserPlugin* browser_plugin =
-        GetCurrentPluginWithAttachParams(&params);
-    ASSERT_TRUE(browser_plugin);
-    EXPECT_EQ("foo", params.src);
-  }
-
-  browser_plugin_manager()->sink().ClearMessages();
-  // Navigate to bar and observe the associated
-  // BrowserPluginHostMsg_NavigateGuest message.
-  // Verify that the src attribute is updated as well.
-  ExecuteJavaScript("document.getElementById('browserplugin').src = 'bar'");
-  {
-    // Verify that we do not get a Attach on subsequent navigations.
-    const IPC::Message* create_msg =
-        browser_plugin_manager()->sink().GetUniqueMessageMatching(
-            BrowserPluginHostMsg_Attach::ID);
-    ASSERT_FALSE(create_msg);
-
-    const IPC::Message* msg =
-        browser_plugin_manager()->sink().GetUniqueMessageMatching(
-            BrowserPluginHostMsg_NavigateGuest::ID);
-    ASSERT_TRUE(msg);
-
-    int instance_id = 0;
-    std::string src;
-    BrowserPluginHostMsg_NavigateGuest::Read(msg, &instance_id, &src);
-    EXPECT_EQ("bar", src);
-    std::string src_value =
-        ExecuteScriptAndReturnString(
-            "document.getElementById('browserplugin').src");
-    EXPECT_EQ("bar", src_value);
-  }
 }
 
 TEST_F(BrowserPluginTest, ResizeFlowControl) {
@@ -296,34 +208,32 @@ TEST_F(BrowserPluginTest, ResizeFlowControl) {
   MockBrowserPlugin* browser_plugin = GetCurrentPlugin();
   ASSERT_TRUE(browser_plugin);
   int instance_id = browser_plugin->guest_instance_id();
-  EXPECT_TRUE(browser_plugin->pending_damage_buffer_.get());
-  // Send an UpdateRect to the BrowserPlugin to make it use the pending damage
-  // buffer.
+  // Send an UpdateRect to the BrowserPlugin to make sure the browser sees a
+  // resize related (SetAutoSize) message.
   {
     // We send a stale UpdateRect to the BrowserPlugin.
     BrowserPluginMsg_UpdateRect_Params update_rect_params;
     update_rect_params.view_size = gfx::Size(640, 480);
     update_rect_params.scale_factor = 1.0f;
     update_rect_params.is_resize_ack = true;
-    update_rect_params.needs_ack = true;
-    // By sending |damage_buffer_sequence_id| back to BrowserPlugin on
-    // UpdateRect, then the BrowserPlugin knows that the browser process has
-    // received and has begun to use the |pending_damage_buffer_|.
-    update_rect_params.damage_buffer_sequence_id =
-        browser_plugin->damage_buffer_sequence_id_;
     BrowserPluginMsg_UpdateRect msg(instance_id, update_rect_params);
     browser_plugin->OnMessageReceived(msg);
-    EXPECT_EQ(NULL, browser_plugin->pending_damage_buffer_.get());
   }
 
   browser_plugin_manager()->sink().ClearMessages();
 
   // Resize the browser plugin three times.
+
   ExecuteJavaScript("document.getElementById('browserplugin').width = '641px'");
+  GetMainFrame()->view()->layout();
   ProcessPendingMessages();
+
   ExecuteJavaScript("document.getElementById('browserplugin').width = '642px'");
+  GetMainFrame()->view()->layout();
   ProcessPendingMessages();
+
   ExecuteJavaScript("document.getElementById('browserplugin').width = '643px'");
+  GetMainFrame()->view()->layout();
   ProcessPendingMessages();
 
   // Expect to see one resize messsage in the sink. BrowserPlugin will not issue
@@ -341,13 +251,12 @@ TEST_F(BrowserPluginTest, ResizeFlowControl) {
       browser_plugin_manager()->sink().GetUniqueMessageMatching(
           BrowserPluginHostMsg_ResizeGuest::ID);
   ASSERT_TRUE(msg);
-  BrowserPluginHostMsg_ResizeGuest_Params params;
-  BrowserPluginHostMsg_ResizeGuest::Read(msg, &instance_id, &params);
-  EXPECT_EQ(641, params.view_rect.width());
-  EXPECT_EQ(480, params.view_rect.height());
-  // This indicates that the BrowserPlugin has sent out a previous resize
-  // request but has not yet received an UpdateRect for that request.
-  EXPECT_TRUE(browser_plugin->pending_damage_buffer_.get());
+  BrowserPluginHostMsg_ResizeGuest::Param param;
+  BrowserPluginHostMsg_ResizeGuest::Read(msg, &param);
+  instance_id = param.a;
+  BrowserPluginHostMsg_ResizeGuest_Params params = param.b;
+  EXPECT_EQ(641, params.view_size.width());
+  EXPECT_EQ(480, params.view_size.height());
 
   {
     // We send a stale UpdateRect to the BrowserPlugin.
@@ -355,14 +264,8 @@ TEST_F(BrowserPluginTest, ResizeFlowControl) {
     update_rect_params.view_size = gfx::Size(641, 480);
     update_rect_params.scale_factor = 1.0f;
     update_rect_params.is_resize_ack = true;
-    update_rect_params.needs_ack = true;
-    update_rect_params.damage_buffer_sequence_id =
-        browser_plugin->damage_buffer_sequence_id_;
     BrowserPluginMsg_UpdateRect msg(instance_id, update_rect_params);
     browser_plugin->OnMessageReceived(msg);
-    // This tells us that the BrowserPlugin is still expecting another
-    // UpdateRect with the most recent size.
-    EXPECT_TRUE(browser_plugin->pending_damage_buffer_.get());
   }
   // Send the BrowserPlugin another UpdateRect, but this time with a size
   // that matches the size of the container.
@@ -371,19 +274,16 @@ TEST_F(BrowserPluginTest, ResizeFlowControl) {
     update_rect_params.view_size = gfx::Size(643, 480);
     update_rect_params.scale_factor = 1.0f;
     update_rect_params.is_resize_ack = true;
-    update_rect_params.needs_ack = true;
-    update_rect_params.damage_buffer_sequence_id =
-        browser_plugin->damage_buffer_sequence_id_;
     BrowserPluginMsg_UpdateRect msg(instance_id, update_rect_params);
     browser_plugin->OnMessageReceived(msg);
-    // The BrowserPlugin has finally received an UpdateRect that satisifes
-    // its current size, and so it is happy.
-    EXPECT_FALSE(browser_plugin->pending_damage_buffer_.get());
   }
 }
 
 TEST_F(BrowserPluginTest, RemovePlugin) {
   LoadHTML(GetHTMLForBrowserPluginObject().c_str());
+  MockBrowserPlugin* browser_plugin = GetCurrentPlugin();
+  ASSERT_TRUE(browser_plugin);
+
   EXPECT_FALSE(browser_plugin_manager()->sink().GetUniqueMessageMatching(
       BrowserPluginHostMsg_PluginDestroyed::ID));
   ExecuteJavaScript("x = document.getElementById('browserplugin'); "
@@ -397,7 +297,7 @@ TEST_F(BrowserPluginTest, RemovePlugin) {
 // BrowserPlugin that has never navigated.
 TEST_F(BrowserPluginTest, RemovePluginBeforeNavigation) {
   std::string html = base::StringPrintf(kHTMLForSourcelessPluginObject,
-                                        content::kBrowserPluginMimeType);
+                                        kBrowserPluginMimeType);
   LoadHTML(html.c_str());
   EXPECT_FALSE(browser_plugin_manager()->sink().GetUniqueMessageMatching(
       BrowserPluginHostMsg_PluginDestroyed::ID));
@@ -410,145 +310,9 @@ TEST_F(BrowserPluginTest, RemovePluginBeforeNavigation) {
 
 // Verify that the 'partition' attribute on the browser plugin is parsed
 // correctly.
-TEST_F(BrowserPluginTest, PartitionAttribute) {
-  std::string html = base::StringPrintf(kHTMLForPartitionedPluginObject,
-                                        content::kBrowserPluginMimeType);
-  LoadHTML(html.c_str());
-  std::string partition_value = ExecuteScriptAndReturnString(
-      "document.getElementById('browserplugin').partition");
-  EXPECT_STREQ("someid", partition_value.c_str());
-
-  html = base::StringPrintf(kHTMLForPartitionedPersistedPluginObject,
-                            content::kBrowserPluginMimeType);
-  LoadHTML(html.c_str());
-  partition_value = ExecuteScriptAndReturnString(
-      "document.getElementById('browserplugin').partition");
-  EXPECT_STREQ("persist:someid", partition_value.c_str());
-
-  // Verify that once HTML has defined a source and partition, we cannot change
-  // the partition anymore.
-  ExecuteJavaScript(
-      "try {"
-      "  document.getElementById('browserplugin').partition = 'foo';"
-      "  document.title = 'success';"
-      "} catch (e) { document.title = e.message; }");
-  std::string title = ExecuteScriptAndReturnString("document.title");
-  EXPECT_STREQ(
-      "The object has already navigated, so its partition cannot be changed.",
-      title.c_str());
-
-  // Load a browser tag without 'src' defined.
-  html = base::StringPrintf(kHTMLForSourcelessPluginObject,
-                            content::kBrowserPluginMimeType);
-  LoadHTML(html.c_str());
-
-  // Ensure we don't parse just "persist:" string and return exception.
-  ExecuteJavaScript(
-      "try {"
-      "  document.getElementById('browserplugin').partition = 'persist:';"
-      "  document.title = 'success';"
-      "} catch (e) { document.title = e.message; }");
-  title = ExecuteScriptAndReturnString("document.title");
-  EXPECT_STREQ("Invalid partition attribute.", title.c_str());
-}
-
-// This test verifies that BrowserPlugin enters an error state when the
-// partition attribute is invalid.
-TEST_F(BrowserPluginTest, InvalidPartition) {
-  std::string html = base::StringPrintf(kHTMLForInvalidPartitionedPluginObject,
-                                        content::kBrowserPluginMimeType);
-  LoadHTML(html.c_str());
-  // Attempt to navigate with an invalid partition.
-  {
-    ExecuteJavaScript(
-        "try {"
-        "  document.getElementById('browserplugin').src = 'bar';"
-        "  document.title = 'success';"
-        "} catch (e) { document.title = e.message; }");
-    std::string title = ExecuteScriptAndReturnString("document.title");
-    EXPECT_STREQ("Invalid partition attribute.", title.c_str());
-    // Verify that the 'src' attribute has not been updated.
-    EXPECT_EQ("", ExecuteScriptAndReturnString(
-        "document.getElementById('browserplugin').src"));
-  }
-
-  // Verify that the BrowserPlugin accepts changes to its src attribue after
-  // setting the partition to a valid value.
-  ExecuteJavaScript(
-      "document.getElementById('browserplugin').partition = 'persist:foo'");
-  ExecuteJavaScript("document.getElementById('browserplugin').src = 'bar'");
-  EXPECT_EQ("bar", ExecuteScriptAndReturnString(
-      "document.getElementById('browserplugin').src"));
-  ProcessPendingMessages();
-  // Verify that the BrowserPlugin does not 'deadlock': it can recover from
-  // the partition ID error state.
-  {
-    ExecuteJavaScript(
-        "try {"
-        "  document.getElementById('browserplugin').partition = 'persist:1337';"
-        "  document.title = 'success';"
-        "} catch (e) { document.title = e.message; }");
-    std::string title = ExecuteScriptAndReturnString("document.title");
-    EXPECT_STREQ(
-        "The object has already navigated, so its partition cannot be changed.",
-        title.c_str());
-    ExecuteJavaScript("document.getElementById('browserplugin').src = '42'");
-    EXPECT_EQ("42", ExecuteScriptAndReturnString(
-        "document.getElementById('browserplugin').src"));
-  }
-}
-
-// Test to verify that after the first navigation, the partition attribute
-// cannot be modified.
-TEST_F(BrowserPluginTest, ImmutableAttributesAfterNavigation) {
-  std::string html = base::StringPrintf(kHTMLForSourcelessPluginObject,
-                                        content::kBrowserPluginMimeType);
-  LoadHTML(html.c_str());
-
-  ExecuteJavaScript(
-      "document.getElementById('browserplugin').partition = 'storage'");
-  std::string partition_value = ExecuteScriptAndReturnString(
-      "document.getElementById('browserplugin').partition");
-  EXPECT_STREQ("storage", partition_value.c_str());
-
-  std::string src_value = ExecuteScriptAndReturnString(
-      "document.getElementById('browserplugin').src");
-  EXPECT_STREQ("", src_value.c_str());
-
-  ExecuteJavaScript("document.getElementById('browserplugin').src = 'bar'");
-  ProcessPendingMessages();
-  {
-    BrowserPluginHostMsg_Attach_Params params;
-    MockBrowserPlugin* browser_plugin =
-        GetCurrentPluginWithAttachParams(&params);
-    ASSERT_TRUE(browser_plugin);
-
-    EXPECT_STREQ("storage", params.storage_partition_id.c_str());
-    EXPECT_FALSE(params.persist_storage);
-    EXPECT_STREQ("bar", params.src.c_str());
-  }
-
-  // Setting the partition should throw an exception and the value should not
-  // change.
-  ExecuteJavaScript(
-      "try {"
-      "  document.getElementById('browserplugin').partition = 'someid';"
-      "  document.title = 'success';"
-      "} catch (e) { document.title = e.message; }");
-
-  std::string title = ExecuteScriptAndReturnString("document.title");
-  EXPECT_STREQ(
-      "The object has already navigated, so its partition cannot be changed.",
-      title.c_str());
-
-  partition_value = ExecuteScriptAndReturnString(
-      "document.getElementById('browserplugin').partition");
-  EXPECT_STREQ("storage", partition_value.c_str());
-}
-
 TEST_F(BrowserPluginTest, AutoSizeAttributes) {
   std::string html = base::StringPrintf(kHTMLForSourcelessPluginObject,
-                                        content::kBrowserPluginMimeType);
+                                        kBrowserPluginMimeType);
   LoadHTML(html.c_str());
   const char* kSetAutoSizeParametersAndNavigate =
     "var browserplugin = document.getElementById('browserplugin');"
@@ -569,8 +333,7 @@ TEST_F(BrowserPluginTest, AutoSizeAttributes) {
   ProcessPendingMessages();
 
   BrowserPluginHostMsg_Attach_Params params;
-  MockBrowserPlugin* browser_plugin =
-      GetCurrentPluginWithAttachParams(&params);
+  MockBrowserPlugin* browser_plugin = GetCurrentPluginWithAttachParams(&params);
   ASSERT_TRUE(browser_plugin);
 
   EXPECT_TRUE(params.auto_size_params.enable);
@@ -579,9 +342,6 @@ TEST_F(BrowserPluginTest, AutoSizeAttributes) {
   EXPECT_EQ(1337, params.auto_size_params.max_size.width());
   EXPECT_EQ(1338, params.auto_size_params.max_size.height());
 
-  // Verify that we are waiting for the browser process to grab the new
-  // damage buffer.
-  EXPECT_TRUE(browser_plugin->pending_damage_buffer_.get());
   // Disable autosize. AutoSize state will not be sent to the guest until
   // the guest has responded to the last resize request.
   ExecuteJavaScript(kDisableAutoSize);
@@ -592,34 +352,25 @@ TEST_F(BrowserPluginTest, AutoSizeAttributes) {
       BrowserPluginHostMsg_SetAutoSize::ID);
   EXPECT_FALSE(auto_size_msg);
 
-  // Send the BrowserPlugin an UpdateRect equal to its |max_size| with
-  // the same damage buffer.
+  // Send the BrowserPlugin an UpdateRect equal to its |max_size|.
   BrowserPluginMsg_UpdateRect_Params update_rect_params;
-  update_rect_params.damage_buffer_sequence_id =
-      browser_plugin->damage_buffer_sequence_id_;
   update_rect_params.view_size = gfx::Size(1337, 1338);
   update_rect_params.scale_factor = 1.0f;
   update_rect_params.is_resize_ack = true;
-  update_rect_params.needs_ack = true;
   BrowserPluginMsg_UpdateRect msg(instance_id, update_rect_params);
   browser_plugin->OnMessageReceived(msg);
 
   // Verify that the autosize state has been updated.
   {
     const IPC::Message* auto_size_msg =
-    browser_plugin_manager()->sink().GetUniqueMessageMatching(
-        BrowserPluginHostMsg_UpdateRect_ACK::ID);
+        browser_plugin_manager()->sink().GetUniqueMessageMatching(
+            BrowserPluginHostMsg_SetAutoSize::ID);
     ASSERT_TRUE(auto_size_msg);
 
-    int instance_id = 0;
-    bool needs_ack = false;
-    BrowserPluginHostMsg_AutoSize_Params auto_size_params;
-    BrowserPluginHostMsg_ResizeGuest_Params resize_params;
-    BrowserPluginHostMsg_UpdateRect_ACK::Read(auto_size_msg,
-                                              &instance_id,
-                                              &needs_ack,
-                                              &auto_size_params,
-                                              &resize_params);
+    BrowserPluginHostMsg_SetAutoSize::Param param;
+    BrowserPluginHostMsg_SetAutoSize::Read(auto_size_msg, &param);
+    BrowserPluginHostMsg_AutoSize_Params auto_size_params = param.b;
+    BrowserPluginHostMsg_ResizeGuest_Params resize_params = param.c;
     EXPECT_FALSE(auto_size_params.enable);
     // These value are not populated (as an optimization) if autosize is
     // disabled.

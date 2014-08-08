@@ -13,6 +13,7 @@
 #include "cc/test/fake_output_surface_client.h"
 #include "cc/test/fake_picture_layer_tiling_client.h"
 #include "cc/test/fake_tile_manager_client.h"
+#include "cc/test/test_shared_bitmap_manager.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/gfx/size_conversions.h"
 
@@ -65,8 +66,10 @@ class PictureLayerTilingSetTestWithResources : public testing::Test {
         FakeOutputSurface::Create3d();
     CHECK(output_surface->BindToClient(&output_surface_client));
 
-    scoped_ptr<ResourceProvider> resource_provider =
-        ResourceProvider::Create(output_surface.get(), NULL, 0, false, 1);
+    scoped_ptr<SharedBitmapManager> shared_bitmap_manager(
+        new TestSharedBitmapManager());
+    scoped_ptr<ResourceProvider> resource_provider = ResourceProvider::Create(
+        output_surface.get(), shared_bitmap_manager.get(), 0, false, 1, false);
 
     FakePictureLayerTilingClient client(resource_provider.get());
     client.SetTileSize(gfx::Size(256, 256));
@@ -78,8 +81,7 @@ class PictureLayerTilingSetTestWithResources : public testing::Test {
       PictureLayerTiling* tiling = set.AddTiling(scale);
       tiling->CreateAllTilesForTesting();
       std::vector<Tile*> tiles = tiling->AllTilesForTesting();
-      client.tile_manager()->InitializeTilesWithResourcesForTesting(
-          tiles, resource_provider.get());
+      client.tile_manager()->InitializeTilesWithResourcesForTesting(tiles);
     }
 
     float max_contents_scale = scale;
@@ -157,7 +159,7 @@ class PictureLayerTilingSetSyncTest : public testing::Test {
   }
 
   // Sync from source to target.
-  void SyncTilings(gfx::Size new_bounds,
+  void SyncTilings(const gfx::Size& new_bounds,
                    const Region& invalidation,
                    float minimum_scale) {
     for (size_t i = 0; i < source_->num_tilings(); ++i)
@@ -168,19 +170,19 @@ class PictureLayerTilingSetSyncTest : public testing::Test {
     target_->SyncTilings(
         *source_.get(), new_bounds, invalidation, minimum_scale);
   }
-  void SyncTilings(gfx::Size new_bounds) {
+  void SyncTilings(const gfx::Size& new_bounds) {
     Region invalidation;
     SyncTilings(new_bounds, invalidation, 0.f);
   }
-  void SyncTilings(gfx::Size new_bounds, const Region& invalidation) {
+  void SyncTilings(const gfx::Size& new_bounds, const Region& invalidation) {
     SyncTilings(new_bounds, invalidation, 0.f);
   }
-  void SyncTilings(gfx::Size new_bounds, float minimum_scale) {
+  void SyncTilings(const gfx::Size& new_bounds, float minimum_scale) {
     Region invalidation;
     SyncTilings(new_bounds, invalidation, minimum_scale);
   }
 
-  void VerifyTargetEqualsSource(gfx::Size new_bounds) const {
+  void VerifyTargetEqualsSource(const gfx::Size& new_bounds) const {
     ASSERT_FALSE(new_bounds.IsEmpty());
     EXPECT_EQ(target_->num_tilings(), source_->num_tilings());
     EXPECT_EQ(target_->layer_bounds().ToString(), new_bounds.ToString());
@@ -217,10 +219,10 @@ class PictureLayerTilingSetSyncTest : public testing::Test {
 
   void ValidateTiling(const PictureLayerTiling* tiling,
                       const PicturePileImpl* pile) const {
-    if (tiling->ContentRect().IsEmpty())
+    if (tiling->TilingRect().IsEmpty())
       EXPECT_TRUE(tiling->live_tiles_rect().IsEmpty());
     else if (!tiling->live_tiles_rect().IsEmpty())
-      EXPECT_TRUE(tiling->ContentRect().Contains(tiling->live_tiles_rect()));
+      EXPECT_TRUE(tiling->TilingRect().Contains(tiling->live_tiles_rect()));
 
     std::vector<Tile*> tiles = tiling->AllTilesForTesting();
     for (size_t i = 0; i < tiles.size(); ++i) {

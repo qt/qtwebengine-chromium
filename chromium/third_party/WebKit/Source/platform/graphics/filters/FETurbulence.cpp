@@ -364,8 +364,6 @@ void FETurbulence::applySoftware()
 
     PaintingData paintingData(m_seed, roundedIntSize(filterPrimitiveSubregion().size()));
     initPaint(paintingData);
-    float baseFrequencyX = 1.0f / filter()->applyHorizontalScale(1.0f / m_baseFrequencyX);
-    float baseFrequencyY = 1.0f / filter()->applyVerticalScale(1.0f / m_baseFrequencyY);
 
     int optimalThreadNumber = (absolutePaintRect().width() * absolutePaintRect().height()) / s_minimalRectDimension;
     if (optimalThreadNumber > 1) {
@@ -389,8 +387,8 @@ void FETurbulence::applySoftware()
                 params.startY = startY;
                 startY += i < jobsWithExtra ? stepY + 1 : stepY;
                 params.endY = startY;
-                params.baseFrequencyX = baseFrequencyX;
-                params.baseFrequencyY = baseFrequencyY;
+                params.baseFrequencyX = m_baseFrequencyX;
+                params.baseFrequencyY = m_baseFrequencyY;
             }
 
             // Execute parallel jobs
@@ -400,44 +398,32 @@ void FETurbulence::applySoftware()
     }
 
     // Fallback to single threaded mode if there is no room for a new thread or the paint area is too small.
-    fillRegion(pixelArray, paintingData, 0, absolutePaintRect().height(), baseFrequencyX, baseFrequencyY);
+    fillRegion(pixelArray, paintingData, 0, absolutePaintRect().height(), m_baseFrequencyX, m_baseFrequencyY);
 }
 
-SkShader* FETurbulence::createShader(const IntRect& filterRegion)
+SkShader* FETurbulence::createShader()
 {
-    const SkISize size = SkISize::Make(filterRegion.width(), filterRegion.height());
-    float baseFrequencyX = 1.0f / filter()->applyHorizontalScale(1.0f / m_baseFrequencyX);
-    const float baseFrequencyY = 1.0f / filter()->applyVerticalScale(1.0f / m_baseFrequencyY);
+    const SkISize size = SkISize::Make(effectBoundaries().width(), effectBoundaries().height());
+    // Frequency should be scaled by page zoom, but not by primitiveUnits.
+    // So we apply only the transform scale (as Filter::apply*Scale() do)
+    // and not the target bounding box scale (as SVGFilter::apply*Scale()
+    // would do). Note also that we divide by the scale since this is
+    // a frequency, not a period.
+    const AffineTransform& absoluteTransform = filter()->absoluteTransform();
+    float baseFrequencyX = m_baseFrequencyX / absoluteTransform.a();
+    float baseFrequencyY = m_baseFrequencyY / absoluteTransform.d();
     return (type() == FETURBULENCE_TYPE_FRACTALNOISE) ?
         SkPerlinNoiseShader::CreateFractalNoise(SkFloatToScalar(baseFrequencyX),
             SkFloatToScalar(baseFrequencyY), numOctaves(), SkFloatToScalar(seed()),
             stitchTiles() ? &size : 0) :
-        SkPerlinNoiseShader::CreateTubulence(SkFloatToScalar(baseFrequencyX),
+        SkPerlinNoiseShader::CreateTurbulence(SkFloatToScalar(baseFrequencyX),
             SkFloatToScalar(baseFrequencyY), numOctaves(), SkFloatToScalar(seed()),
             stitchTiles() ? &size : 0);
 }
 
-bool FETurbulence::applySkia()
-{
-    // For now, only use the skia implementation for accelerated rendering.
-    if (!filter()->isAccelerated())
-        return false;
-
-    ImageBuffer* resultImage = createImageBufferResult();
-    if (!resultImage)
-        return false;
-
-    const IntRect filterRegion(IntPoint::zero(), absolutePaintRect().size());
-
-    SkPaint paint;
-    paint.setShader(createShader(filterRegion))->unref();
-    resultImage->context()->drawRect((SkRect)filterRegion, paint);
-    return true;
-}
-
 PassRefPtr<SkImageFilter> FETurbulence::createImageFilter(SkiaImageFilterBuilder* builder)
 {
-    SkAutoTUnref<SkShader> shader(createShader(IntRect()));
+    SkAutoTUnref<SkShader> shader(createShader());
     SkImageFilter::CropRect rect = getCropRect(builder->cropOffset());
     return adoptRef(SkRectShaderImageFilter::Create(shader, &rect));
 }

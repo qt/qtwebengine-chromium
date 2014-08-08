@@ -5,11 +5,10 @@
 #include "webkit/browser/fileapi/sandbox_prioritized_origin_database.h"
 
 #include "base/file_util.h"
+#include "base/files/file.h"
 #include "base/files/file_path.h"
-#include "base/files/scoped_platform_file_closer.h"
 #include "base/logging.h"
 #include "base/pickle.h"
-#include "base/platform_file.h"
 #include "webkit/browser/fileapi/sandbox_isolated_origin_database.h"
 #include "webkit/browser/fileapi/sandbox_origin_database.h"
 
@@ -24,23 +23,15 @@ const base::FilePath::CharType kPrimaryOriginFile[] =
 
 bool WritePrimaryOriginFile(const base::FilePath& path,
                             const std::string& origin) {
-  base::PlatformFileError error = base::PLATFORM_FILE_ERROR_FAILED;
-  bool created;
-  base::PlatformFile file = base::CreatePlatformFile(
-      path,
-      base::PLATFORM_FILE_OPEN_ALWAYS |
-      base::PLATFORM_FILE_WRITE,
-      &created, &error);
-  base::ScopedPlatformFileCloser closer(&file);
-  if (error != base::PLATFORM_FILE_OK ||
-      file == base::kInvalidPlatformFileValue)
+  base::File file(path, base::File::FLAG_OPEN_ALWAYS | base::File::FLAG_WRITE);
+  if (!file.IsValid())
     return false;
-  base::TruncatePlatformFile(file, 0);
+  if (!file.created())
+    file.SetLength(0);
   Pickle pickle;
   pickle.WriteString(origin);
-  base::WritePlatformFile(file, 0, static_cast<const char*>(pickle.data()),
-                          pickle.size());
-  base::FlushPlatformFile(file);
+  file.Write(0, static_cast<const char*>(pickle.data()), pickle.size());
+  file.Flush();
   return true;
 }
 
@@ -57,8 +48,10 @@ bool ReadPrimaryOriginFile(const base::FilePath& path,
 }  // namespace
 
 SandboxPrioritizedOriginDatabase::SandboxPrioritizedOriginDatabase(
-    const base::FilePath& file_system_directory)
+    const base::FilePath& file_system_directory,
+    leveldb::Env* env_override)
     : file_system_directory_(file_system_directory),
+      env_override_(env_override),
       primary_origin_file_(
           file_system_directory_.Append(kPrimaryOriginFile)) {
 }
@@ -213,7 +206,8 @@ void SandboxPrioritizedOriginDatabase::MaybeInitializeNonPrimaryDatabase(
   if (origin_database_)
     return;
 
-  origin_database_.reset(new SandboxOriginDatabase(file_system_directory_));
+  origin_database_.reset(new SandboxOriginDatabase(file_system_directory_,
+                                                   env_override_));
   if (!create && !base::DirectoryExists(origin_database_->GetDatabasePath())) {
     origin_database_.reset();
     return;

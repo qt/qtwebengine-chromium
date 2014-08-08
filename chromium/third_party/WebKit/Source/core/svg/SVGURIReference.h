@@ -22,22 +22,21 @@
 #define SVGURIReference_h
 
 #include "core/dom/Document.h"
+#include "core/svg/SVGAnimatedString.h"
 
 namespace WebCore {
 
-class Attribute;
 class Element;
 
 class SVGURIReference {
 public:
     virtual ~SVGURIReference() { }
 
-    bool parseAttribute(const QualifiedName&, const AtomicString&);
     bool isKnownAttribute(const QualifiedName&);
     void addSupportedAttributes(HashSet<QualifiedName>&);
 
-    static String fragmentIdentifierFromIRIString(const String&, const Document&);
-    static Element* targetElementFromIRIString(const String&, const Document&, String* = 0, Document* = 0);
+    static AtomicString fragmentIdentifierFromIRIString(const String&, const TreeScope&);
+    static Element* targetElementFromIRIString(const String&, const TreeScope&, AtomicString* = 0, Document* = 0);
 
     static inline bool isExternalURIReference(const String& uri, const Document& document)
     {
@@ -50,8 +49,17 @@ public:
         return !equalIgnoringFragmentIdentifier(url, document.url());
     }
 
+    const String& hrefString() const { return m_href->currentValue()->value(); }
+    bool parseAttribute(const QualifiedName&, const AtomicString& value, SVGParsingError&);
+
+    // JS API
+    SVGAnimatedString* href() const { return m_href.get(); }
+
 protected:
-    virtual void setHrefBaseValue(const String&) = 0;
+    explicit SVGURIReference(SVGElement*);
+
+private:
+    RefPtr<SVGAnimatedString> m_href;
 };
 
 } // namespace WebCore

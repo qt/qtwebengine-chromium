@@ -29,7 +29,7 @@
 #include "HTMLNames.h"
 #include "core/css/CSSKeyframeRule.h"
 #include "core/css/CSSKeyframesRule.h"
-#include "core/css/CSSParser.h"
+#include "core/css/parser/BisonCSSParser.h"
 #include "core/css/CSSParserMode.h"
 #include "core/css/CSSPrimitiveValue.h"
 #include "core/css/CSSSelector.h"
@@ -60,10 +60,10 @@ using namespace HTMLNames;
 
 %}
 
-%pure_parser
+%pure-parser
 
-%parse-param { CSSParser* parser }
-%lex-param { CSSParser* parser }
+%parse-param { BisonCSSParser* parser }
+%lex-param { BisonCSSParser* parser }
 
 %union {
     bool boolean;
@@ -73,7 +73,12 @@ using namespace HTMLNames;
     CSSParserString string;
 
     StyleRuleBase* rule;
-    Vector<RefPtr<StyleRuleBase> >* ruleList;
+    // The content of the three below HeapVectors are guaranteed to be kept alive by
+    // the corresponding m_parsedRules, m_floatingMediaQueryExpList, and m_parsedKeyFrames
+    // lists in BisonCSSParser.h.
+    WillBeHeapVector<RefPtrWillBeMember<StyleRuleBase> >* ruleList;
+    WillBeHeapVector<OwnPtrWillBeMember<MediaQueryExp> >* mediaQueryExpList;
+    WillBeHeapVector<RefPtrWillBeMember<StyleKeyframe> >* keyframeRuleList;
     CSSParserSelector* selector;
     Vector<OwnPtr<CSSParserSelector> >* selectorList;
     CSSSelector::MarginBoxType marginBox;
@@ -84,9 +89,7 @@ using namespace HTMLNames;
     MediaQueryExp* mediaQueryExp;
     CSSParserValue value;
     CSSParserValueList* valueList;
-    Vector<OwnPtr<MediaQueryExp> >* mediaQueryExpList;
     StyleKeyframe* keyframe;
-    Vector<RefPtr<StyleKeyframe> >* keyframeRuleList;
     float val;
     CSSPropertyID id;
     CSSParserLocation location;
@@ -114,12 +117,9 @@ static inline bool isCSSTokenAString(int yytype)
     case FUNCTION:
     case ANYFUNCTION:
     case HOSTFUNCTION:
+    case HOSTCONTEXTFUNCTION:
     case NOTFUNCTION:
     case CALCFUNCTION:
-    case MINFUNCTION:
-    case MAXFUNCTION:
-    case VARFUNCTION:
-    case VAR_DEFINITION:
     case UNICODERANGE:
         return true;
     default:
@@ -132,6 +132,7 @@ inline static CSSParserValue makeOperatorValue(int value)
 {
     CSSParserValue v;
     v.id = CSSValueInvalid;
+    v.isInt = false;
     v.unit = CSSParserValue::Operator;
     v.iValue = value;
     return v;
@@ -141,6 +142,7 @@ inline static CSSParserValue makeIdentValue(CSSParserString string)
 {
     CSSParserValue v;
     v.id = cssValueKeywordID(string);
+    v.isInt = false;
     v.unit = CSSPrimitiveValue::CSS_IDENT;
     v.string = string;
     return v;
@@ -194,8 +196,6 @@ inline static CSSParserValue makeIdentValue(CSSParserString string)
 %token INTERNAL_SUPPORTS_CONDITION_SYM
 %token KEYFRAMES_SYM
 %token WEBKIT_KEYFRAMES_SYM
-%token WEBKIT_REGION_RULE_SYM
-%token WEBKIT_FILTER_RULE_SYM
 %token <marginBox> TOPLEFTCORNER_SYM
 %token <marginBox> TOPLEFT_SYM
 %token <marginBox> TOPCENTER_SYM
@@ -265,11 +265,8 @@ inline static CSSParserValue makeIdentValue(CSSParserString string)
 %token <string> NOTFUNCTION
 %token <string> DISTRIBUTEDFUNCTION
 %token <string> CALCFUNCTION
-%token <string> MINFUNCTION
-%token <string> MAXFUNCTION
-%token <string> VARFUNCTION
-%token <string> VAR_DEFINITION
 %token <string> HOSTFUNCTION
+%token <string> HOSTCONTEXTFUNCTION
 
 %token <string> UNICODERANGE
 
@@ -287,16 +284,10 @@ inline static CSSParserValue makeIdentValue(CSSParserString string)
 %type <rule> valid_rule
 %type <ruleList> block_rule_body
 %type <ruleList> block_rule_list
-%type <ruleList> region_block_rule_body
-%type <ruleList> region_block_rule_list
 %type <rule> block_rule
 %type <rule> block_valid_rule
-%type <rule> region_block_rule
-%type <rule> region_block_valid_rule
-%type <rule> region
 %type <rule> supports
 %type <rule> viewport
-%type <rule> filter
 %type <boolean> keyframes_rule_start
 
 %type <string> maybe_ns_prefix
@@ -339,10 +330,8 @@ inline static CSSParserValue makeIdentValue(CSSParserString string)
 %type <selector> specifier_list
 %type <selector> simple_selector
 %type <selector> selector
-%type <selector> relative_selector
 %type <selectorList> selector_list
 %type <selectorList> simple_selector_list
-%type <selectorList> region_selector
 %type <selector> class
 %type <selector> attrib
 %type <selector> pseudo
@@ -368,11 +357,8 @@ inline static CSSParserValue makeIdentValue(CSSParserString string)
 %type <value> calc_func_term
 %type <character> calc_func_operator
 %type <valueList> calc_func_expr
-%type <valueList> calc_func_expr_list
 %type <valueList> calc_func_paren_expr
 %type <value> calc_function
-%type <string> min_or_max
-%type <value> min_or_max_function
 
 %type <string> element_name
 %type <string> attr_name
@@ -511,10 +497,8 @@ valid_rule:
   | keyframes
   | namespace
   | import
-  | region
   | supports
   | viewport
-  | filter
   ;
 
 before_rule:
@@ -547,44 +531,10 @@ block_rule_list:
     }
     ;
 
-region_block_rule_body:
-    region_block_rule_list
-  | region_block_rule_list block_rule_recovery
-    ;
-
-region_block_rule_list:
-    /* empty */ { $$ = 0; }
-  | region_block_rule_list region_block_rule maybe_sgml {
-        $$ = parser->appendRule($1, $2);
-    }
-  ;
-
-region_block_rule:
-    before_rule region_block_valid_rule {
-        $$ = $2;
-        parser->endRule(!!$$);
-    }
-  | before_rule invalid_rule {
-        $$ = 0;
-        parser->endRule(false);
-    }
-  ;
-
 block_rule_recovery:
     before_rule invalid_rule_header {
         parser->endRule(false);
     }
-  ;
-
-region_block_valid_rule:
-    ruleset
-  | page
-  | font_face
-  | media
-  | keyframes
-  | supports
-  | viewport
-  | filter
   ;
 
 block_valid_rule:
@@ -595,9 +545,7 @@ block_valid_rule:
   | keyframes
   | supports
   | viewport
-  | filter
   | namespace
-  | region
   ;
 
 block_rule:
@@ -716,11 +664,11 @@ valid_media_query:
 media_query:
     valid_media_query
     | valid_media_query error error_location rule_error_recovery {
-        parser->reportError(parser->lastLocationLabel(), CSSParser::InvalidMediaQueryError);
+        parser->reportError(parser->lastLocationLabel(), InvalidMediaQueryCSSError);
         $$ = parser->createFloatingNotAllQuery();
     }
     | error error_location rule_error_recovery {
-        parser->reportError(parser->lastLocationLabel(), CSSParser::InvalidMediaQueryError);
+        parser->reportError(parser->lastLocationLabel(), InvalidMediaQueryCSSError);
         $$ = parser->createFloatingNotAllQuery();
     }
     ;
@@ -846,7 +794,7 @@ supports_condition_in_parens:
     }
     | supports_declaration_condition
     | '(' error error_location error_recovery closing_parenthesis maybe_space {
-        parser->reportError($3, CSSParser::InvalidSupportsConditionError);
+        parser->reportError($3, InvalidSupportsConditionCSSError);
         $$ = false;
     }
     ;
@@ -868,7 +816,7 @@ supports_declaration_condition:
     }
     | '(' maybe_space IDENT maybe_space ':' maybe_space error error_recovery closing_parenthesis maybe_space {
         $$ = false;
-        parser->endProperty(false, false, CSSParser::GeneralError);
+        parser->endProperty(false, false, GeneralCSSError);
     }
     ;
 
@@ -953,7 +901,7 @@ key:
 
 keyframes_error_recovery:
     error rule_error_recovery {
-        parser->reportError(parser->lastLocationLabel(), CSSParser::InvalidKeyframeSelectorError);
+        parser->reportError(parser->lastLocationLabel(), InvalidKeyframeSelectorCSSError);
     }
     ;
 
@@ -1089,53 +1037,15 @@ viewport:
     }
 ;
 
-region_selector:
-    selector_list {
-        parser->setReusableRegionSelectorVector($1);
-        $$ = parser->reusableRegionSelectorVector();
-    }
-;
-
-before_region_rule:
-    /* empty */ {
-        parser->startRuleHeader(CSSRuleSourceData::REGION_RULE);
-    }
-    ;
-
-region:
-    before_region_rule WEBKIT_REGION_RULE_SYM maybe_space region_selector at_rule_header_end '{' at_rule_body_start maybe_space region_block_rule_body closing_brace {
-        $$ = parser->createRegionRule($4, $9);
-    }
-;
-
-before_filter_rule:
-    /* empty */ {
-        parser->startRuleHeader(CSSRuleSourceData::FILTER_RULE);
-        parser->m_inFilterRule = true;
-    }
-    ;
-
-filter:
-    before_filter_rule WEBKIT_FILTER_RULE_SYM maybe_space IDENT at_rule_header_end_maybe_space
-    '{' at_rule_body_start maybe_space_before_declaration declaration_list closing_brace {
-        parser->m_inFilterRule = false;
-        $$ = parser->createFilterRule($4);
-    }
-    ;
-
 combinator:
     '+' maybe_space { $$ = CSSSelector::DirectAdjacent; }
     | '~' maybe_space { $$ = CSSSelector::IndirectAdjacent; }
     | '>' maybe_space { $$ = CSSSelector::Child; }
-    | '^' maybe_space {
-        if (!RuntimeEnabledFeatures::shadowDOMEnabled())
+    | '/' IDENT '/' maybe_space {
+        if ($2.equalIgnoringCase("deep"))
+            $$ = CSSSelector::ShadowDeep;
+        else
             YYERROR;
-        $$ = CSSSelector::ChildTree;
-    }
-    | '^' '^' maybe_space {
-        if (!RuntimeEnabledFeatures::shadowDOMEnabled())
-            YYERROR;
-        $$ = CSSSelector::DescendantTree;
     }
     ;
 
@@ -1196,17 +1106,6 @@ selector_list:
         $$->append(parser->sinkFloatingSelector($6));
     }
    ;
-
-relative_selector:
-    combinator selector {
-        $$ = $2;
-        CSSParserSelector* end = $$;
-        while (end->tagHistory())
-            end = end->tagHistory();
-        end->setRelation($1);
-    }
-    | selector
-    ;
 
 selector:
     simple_selector
@@ -1420,7 +1319,7 @@ pseudo:
         $$->setValue($3);
         CSSSelector::PseudoType type = $$->pseudoType();
         if (type == CSSSelector::PseudoUnknown) {
-            parser->reportError($2, CSSParser::InvalidSelectorPseudoError);
+            parser->reportError($2, InvalidSelectorPseudoCSSError);
             YYERROR;
         }
     }
@@ -1434,7 +1333,7 @@ pseudo:
         // FIXME: This call is needed to force selector to compute the pseudoType early enough.
         CSSSelector::PseudoType type = $$->pseudoType();
         if (type == CSSSelector::PseudoUnknown) {
-            parser->reportError($3, CSSParser::InvalidSelectorPseudoError);
+            parser->reportError($3, InvalidSelectorPseudoCSSError);
             YYERROR;
         }
     }
@@ -1449,16 +1348,6 @@ pseudo:
             YYERROR;
     }
     | ':' ':' CUEFUNCTION selector_recovery closing_parenthesis {
-        YYERROR;
-    }
-    | ':' ':' DISTRIBUTEDFUNCTION maybe_space relative_selector closing_parenthesis {
-        $$ = parser->createFloatingSelector();
-        $$->setMatch(CSSSelector::PseudoElement);
-        $$->setFunctionArgumentSelector($5);
-        parser->tokenToLowerCase($3);
-        $$->setValue($3);
-    }
-    | ':' ':' DISTRIBUTEDFUNCTION selector_recovery closing_parenthesis {
         YYERROR;
     }
     // use by :-webkit-any.
@@ -1549,17 +1438,21 @@ pseudo:
         if (type != CSSSelector::PseudoHost)
             YYERROR;
     }
-    //  used by :host()
-    | ':' HOSTFUNCTION maybe_space closing_parenthesis {
+    | ':' HOSTFUNCTION selector_recovery closing_parenthesis {
+        YYERROR;
+    }
+    //  used by :host-context()
+    | ':' HOSTCONTEXTFUNCTION maybe_space simple_selector_list maybe_space closing_parenthesis {
         $$ = parser->createFloatingSelector();
         $$->setMatch(CSSSelector::PseudoClass);
+        $$->adoptSelectorVector(*parser->sinkFloatingSelectorVector($4));
         parser->tokenToLowerCase($2);
-        $$->setValue($2.atomicSubstring(0, $2.length() - 1));
+        $$->setValue($2);
         CSSSelector::PseudoType type = $$->pseudoType();
-        if (type != CSSSelector::PseudoHost)
+        if (type != CSSSelector::PseudoHostContext)
             YYERROR;
     }
-    | ':' HOSTFUNCTION selector_recovery closing_parenthesis {
+    | ':' HOSTCONTEXTFUNCTION selector_recovery closing_parenthesis {
         YYERROR;
     }
   ;
@@ -1588,12 +1481,6 @@ decl_list:
     ;
 
 declaration:
-    VAR_DEFINITION maybe_space ':' maybe_space expr prio {
-        parser->storeVariableDeclaration($1, parser->sinkFloatingValueList($5), $6);
-        $$ = true;
-        parser->endProperty($6, true);
-    }
-    |
     property ':' maybe_space error_location expr prio {
         $$ = false;
         bool isPropertyParsed = false;
@@ -1603,7 +1490,7 @@ declaration:
             $$ = parser->parseValue($1, $6);
             if (!$$) {
                 parser->rollbackLastProperties(parser->m_parsedProperties.size() - oldParsedProperties);
-                parser->reportError($4, CSSParser::InvalidPropertyValueError);
+                parser->reportError($4, InvalidPropertyValueCSSError);
             } else
                 isPropertyParsed = true;
             parser->m_valueList = nullptr;
@@ -1613,25 +1500,25 @@ declaration:
     |
     property ':' maybe_space error_location expr prio error error_recovery {
         /* When we encounter something like p {color: red !important fail;} we should drop the declaration */
-        parser->reportError($4, CSSParser::InvalidPropertyValueError);
+        parser->reportError($4, InvalidPropertyValueCSSError);
         parser->endProperty(false, false);
         $$ = false;
     }
     |
     property ':' maybe_space error_location error error_recovery {
-        parser->reportError($4, CSSParser::InvalidPropertyValueError);
+        parser->reportError($4, InvalidPropertyValueCSSError);
         parser->endProperty(false, false);
         $$ = false;
     }
     |
     property error error_location error_recovery {
-        parser->reportError($3, CSSParser::PropertyDeclarationError);
-        parser->endProperty(false, false, CSSParser::GeneralError);
+        parser->reportError($3, PropertyDeclarationCSSError);
+        parser->endProperty(false, false, GeneralCSSError);
         $$ = false;
     }
     |
     error error_location error_recovery {
-        parser->reportError($2, CSSParser::PropertyDeclarationError);
+        parser->reportError($2, PropertyDeclarationCSSError);
         $$ = false;
     }
   ;
@@ -1641,7 +1528,7 @@ property:
         $$ = cssPropertyID($2);
         parser->setCurrentProperty($$);
         if ($$ == CSSPropertyInvalid)
-            parser->reportError($1, CSSParser::InvalidPropertyError);
+            parser->reportError($1, InvalidPropertyCSSError);
     }
   ;
 
@@ -1691,7 +1578,7 @@ expr:
 
 expr_recovery:
     error error_location error_recovery {
-        parser->reportError($2, CSSParser::PropertyDeclarationError);
+        parser->reportError($2, PropertyDeclarationCSSError);
     }
   ;
 
@@ -1707,29 +1594,20 @@ operator:
 term:
   unary_term maybe_space
   | unary_operator unary_term maybe_space { $$ = $2; $$.fValue *= $1; }
-  | STRING maybe_space { $$.id = CSSValueInvalid; $$.string = $1; $$.unit = CSSPrimitiveValue::CSS_STRING; }
+  | STRING maybe_space { $$.id = CSSValueInvalid; $$.isInt = false; $$.string = $1; $$.unit = CSSPrimitiveValue::CSS_STRING; }
   | IDENT maybe_space { $$ = makeIdentValue($1); }
   /* We might need to actually parse the number from a dimension, but we can't just put something that uses $$.string into unary_term. */
-  | DIMEN maybe_space { $$.id = CSSValueInvalid; $$.string = $1; $$.unit = CSSPrimitiveValue::CSS_DIMENSION; }
-  | unary_operator DIMEN maybe_space { $$.id = CSSValueInvalid; $$.string = $2; $$.unit = CSSPrimitiveValue::CSS_DIMENSION; }
-  | URI maybe_space { $$.id = CSSValueInvalid; $$.string = $1; $$.unit = CSSPrimitiveValue::CSS_URI; }
-  | UNICODERANGE maybe_space { $$.id = CSSValueInvalid; $$.string = $1; $$.unit = CSSPrimitiveValue::CSS_UNICODE_RANGE; }
-  | HEX maybe_space { $$.id = CSSValueInvalid; $$.string = $1; $$.unit = CSSPrimitiveValue::CSS_PARSER_HEXCOLOR; }
-  | '#' maybe_space { $$.id = CSSValueInvalid; $$.string = CSSParserString(); $$.unit = CSSPrimitiveValue::CSS_PARSER_HEXCOLOR; } /* Handle error case: "color: #;" */
-  | VARFUNCTION maybe_space IDENT closing_parenthesis maybe_space {
-      $$.id = CSSValueInvalid;
-      $$.string = $3;
-      $$.unit = CSSPrimitiveValue::CSS_VARIABLE_NAME;
-  }
-  | VARFUNCTION maybe_space expr_recovery closing_parenthesis {
-      YYERROR;
-  }
+  | DIMEN maybe_space { $$.id = CSSValueInvalid; $$.string = $1; $$.isInt = false; $$.unit = CSSPrimitiveValue::CSS_DIMENSION; }
+  | unary_operator DIMEN maybe_space { $$.id = CSSValueInvalid; $$.string = $2; $$.isInt = false; $$.unit = CSSPrimitiveValue::CSS_DIMENSION; }
+  | URI maybe_space { $$.id = CSSValueInvalid; $$.string = $1; $$.isInt = false; $$.unit = CSSPrimitiveValue::CSS_URI; }
+  | UNICODERANGE maybe_space { $$.id = CSSValueInvalid; $$.string = $1; $$.isInt = false; $$.unit = CSSPrimitiveValue::CSS_UNICODE_RANGE; }
+  | HEX maybe_space { $$.id = CSSValueInvalid; $$.string = $1; $$.isInt = false; $$.unit = CSSPrimitiveValue::CSS_PARSER_HEXCOLOR; }
+  | '#' maybe_space { $$.id = CSSValueInvalid; $$.string = CSSParserString(); $$.isInt = false; $$.unit = CSSPrimitiveValue::CSS_PARSER_HEXCOLOR; } /* Handle error case: "color: #;" */
   /* FIXME: according to the specs a function can have a unary_operator in front. I know no case where this makes sense */
   | function maybe_space
   | calc_function maybe_space
-  | min_or_max_function maybe_space
   | '%' maybe_space { /* Handle width: %; */
-      $$.id = CSSValueInvalid; $$.unit = 0;
+      $$.id = CSSValueInvalid; $$.isInt = false; $$.unit = 0;
   }
   | track_names_list maybe_space
   ;
@@ -1785,11 +1663,6 @@ function:
 
 calc_func_term:
   unary_term
-  | VARFUNCTION maybe_space IDENT closing_parenthesis {
-      $$.id = CSSValueInvalid;
-      $$.string = $3;
-      $$.unit = CSSPrimitiveValue::CSS_VARIABLE_NAME;
-  }
   | unary_operator unary_term { $$ = $2; $$.fValue *= $1; }
   ;
 
@@ -1837,18 +1710,9 @@ calc_func_expr:
     | calc_func_expr calc_func_operator calc_func_paren_expr {
         $$ = $1;
         $$->addValue(makeOperatorValue($2));
-        $$->extend(*($3));
+        $$->stealValues(*($3));
     }
     | calc_func_paren_expr
-  ;
-
-calc_func_expr_list:
-    calc_func_expr calc_maybe_space
-    | calc_func_expr_list ',' maybe_space calc_func_expr calc_maybe_space {
-        $$ = $1;
-        $$->addValue(makeOperatorValue(','));
-        $$->extend(*($4));
-    }
   ;
 
 calc_function:
@@ -1861,20 +1725,6 @@ calc_function:
     ;
 
 
-min_or_max:
-    MINFUNCTION
-    | MAXFUNCTION
-    ;
-
-min_or_max_function:
-    min_or_max maybe_space calc_func_expr_list closing_parenthesis {
-        $$.setFromFunction(parser->createFloatingFunction($1, parser->sinkFloatingValueList($3)));
-    }
-    | min_or_max maybe_space expr_recovery closing_parenthesis {
-        YYERROR;
-    }
-    ;
-
 invalid_at:
     ATKEYWORD
   | margin_sym
@@ -1886,7 +1736,7 @@ at_rule_recovery:
 
 at_rule_header_recovery:
     error error_location rule_error_recovery {
-        parser->reportError($2, CSSParser::InvalidRuleError);
+        parser->reportError($2, InvalidRuleCSSError);
     }
     ;
 
@@ -1900,25 +1750,23 @@ regular_invalid_at_rule_header:
   | before_page_rule PAGE_SYM at_rule_header_recovery
   | before_font_face_rule FONT_FACE_SYM at_rule_header_recovery
   | before_supports_rule SUPPORTS_SYM error error_location rule_error_recovery {
-        parser->reportError($4, CSSParser::InvalidSupportsConditionError);
+        parser->reportError($4, InvalidSupportsConditionCSSError);
         parser->popSupportsRuleData();
     }
   | before_viewport_rule VIEWPORT_RULE_SYM at_rule_header_recovery {
         parser->markViewportRuleBodyEnd();
     }
-  | before_filter_rule WEBKIT_FILTER_RULE_SYM at_rule_header_recovery
   | import_rule_start at_rule_header_recovery
   | NAMESPACE_SYM at_rule_header_recovery
-  | before_region_rule WEBKIT_REGION_RULE_SYM at_rule_header_recovery
   | error_location invalid_at at_rule_header_recovery {
         parser->resumeErrorLogging();
-        parser->reportError($1, CSSParser::InvalidRuleError);
+        parser->reportError($1, InvalidRuleCSSError);
     }
   ;
 
 invalid_rule:
     error error_location rule_error_recovery at_invalid_rule_header_end invalid_block {
-        parser->reportError($2, CSSParser::InvalidRuleError);
+        parser->reportError($2, InvalidRuleCSSError);
     }
   | regular_invalid_at_rule_header at_invalid_rule_header_end ';'
   | regular_invalid_at_rule_header at_invalid_rule_header_end invalid_block
@@ -1927,7 +1775,7 @@ invalid_rule:
 
 invalid_rule_header:
     error error_location rule_error_recovery at_invalid_rule_header_end {
-        parser->reportError($2, CSSParser::InvalidRuleError);
+        parser->reportError($2, InvalidRuleCSSError);
     }
   | regular_invalid_at_rule_header at_invalid_rule_header_end
   | media_rule_start maybe_media_list
@@ -1953,7 +1801,7 @@ invalid_parentheses_block:
     opening_parenthesis error_recovery closing_parenthesis;
 
 opening_parenthesis:
-    '(' | FUNCTION | CALCFUNCTION | VARFUNCTION | MINFUNCTION | MAXFUNCTION | ANYFUNCTION | NOTFUNCTION | CUEFUNCTION | DISTRIBUTEDFUNCTION | HOSTFUNCTION
+    '(' | FUNCTION | CALCFUNCTION | ANYFUNCTION | NOTFUNCTION | CUEFUNCTION | DISTRIBUTEDFUNCTION | HOSTFUNCTION
     ;
 
 error_location: {
@@ -1982,4 +1830,3 @@ rule_error_recovery:
     ;
 
 %%
-

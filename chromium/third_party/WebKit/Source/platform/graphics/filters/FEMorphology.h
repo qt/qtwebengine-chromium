@@ -48,10 +48,9 @@ public:
 
     virtual PassRefPtr<SkImageFilter> createImageFilter(SkiaImageFilterBuilder*) OVERRIDE;
 
-    virtual void determineAbsolutePaintRect();
     virtual FloatRect mapRect(const FloatRect&, bool forward = true) OVERRIDE FINAL;
 
-    virtual TextStream& externalRepresentation(TextStream&, int indention) const;
+    virtual TextStream& externalRepresentation(TextStream&, int indention) const OVERRIDE;
 
     struct PaintingData {
         Uint8ClampedArray* srcPixelArray;
@@ -71,15 +70,10 @@ public:
         PaintingData* paintingData;
     };
 
-    static void platformApplyWorker(PlatformApplyParameters*);
-
-    inline void platformApply(PaintingData*);
-    inline void platformApplyGeneric(PaintingData*, const int yStart, const int yEnd);
 private:
     FEMorphology(Filter*, MorphologyOperatorType, float radiusX, float radiusY);
 
     virtual void applySoftware() OVERRIDE;
-    virtual bool applySkia() OVERRIDE;
 
     MorphologyOperatorType m_type;
     float m_radiusX;

@@ -31,8 +31,8 @@
 #include "config.h"
 #include "core/editing/ReplaceNodeWithSpanCommand.h"
 
-#include "HTMLNames.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "core/HTMLNames.h"
 #include "core/editing/htmlediting.h"
 #include "core/html/HTMLElement.h"
 #include "wtf/Assertions.h"
@@ -41,7 +41,7 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-ReplaceNodeWithSpanCommand::ReplaceNodeWithSpanCommand(PassRefPtr<HTMLElement> element)
+ReplaceNodeWithSpanCommand::ReplaceNodeWithSpanCommand(PassRefPtrWillBeRawPtr<HTMLElement> element)
     : SimpleEditCommand(element->document())
     , m_elementToReplace(element)
 {
@@ -51,7 +51,7 @@ ReplaceNodeWithSpanCommand::ReplaceNodeWithSpanCommand(PassRefPtr<HTMLElement> e
 static void swapInNodePreservingAttributesAndChildren(HTMLElement* newNode, HTMLElement& nodeToReplace)
 {
     ASSERT(nodeToReplace.inDocument());
-    RefPtr<ContainerNode> parentNode = nodeToReplace.parentNode();
+    RefPtrWillBeRawPtr<ContainerNode> parentNode = nodeToReplace.parentNode();
     parentNode->insertBefore(newNode, &nodeToReplace);
 
     NodeVector children;
@@ -79,6 +79,13 @@ void ReplaceNodeWithSpanCommand::doUnapply()
     if (!m_spanElement->inDocument())
         return;
     swapInNodePreservingAttributesAndChildren(m_elementToReplace.get(), *m_spanElement);
+}
+
+void ReplaceNodeWithSpanCommand::trace(Visitor* visitor)
+{
+    visitor->trace(m_elementToReplace);
+    visitor->trace(m_spanElement);
+    SimpleEditCommand::trace(visitor);
 }
 
 } // namespace WebCore

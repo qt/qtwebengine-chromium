@@ -31,56 +31,44 @@
 #ifndef ScriptFunctionCall_h
 #define ScriptFunctionCall_h
 
-#include "bindings/v8/ScriptObject.h"
+#include "bindings/v8/ScriptValue.h"
 
 #include "wtf/Vector.h"
 #include "wtf/text/WTFString.h"
 
 namespace WebCore {
     class ScriptValue;
-    class ScriptState;
 
     class ScriptCallArgumentHandler {
     public:
         ScriptCallArgumentHandler(ScriptState* scriptState) : m_scriptState(scriptState) { }
 
-        void appendArgument(const ScriptObject&);
         void appendArgument(const ScriptValue&);
         void appendArgument(const String&);
         void appendArgument(const char*);
         void appendArgument(long);
         void appendArgument(long long);
-        void appendArgument(unsigned int);
+        void appendArgument(unsigned);
         void appendArgument(unsigned long);
         void appendArgument(int);
         void appendArgument(bool);
+        void appendArgument(const Vector<ScriptValue>&);
 
     protected:
-        ScriptState* m_scriptState;
+        RefPtr<ScriptState> m_scriptState;
         Vector<ScriptValue> m_arguments;
     };
 
     class ScriptFunctionCall : public ScriptCallArgumentHandler {
     public:
-        ScriptFunctionCall(const ScriptObject& thisObject, const String& name);
+        ScriptFunctionCall(const ScriptValue& thisObject, const String& name);
         ScriptValue call(bool& hadException, bool reportExceptions = true);
         ScriptValue call();
-        ScriptObject construct(bool& hadException, bool reportExceptions = true);
+        ScriptValue construct(bool& hadException, bool reportExceptions = true);
 
     protected:
-        ScriptObject m_thisObject;
+        ScriptValue m_thisObject;
         String m_name;
-    };
-
-    class ScriptCallback : public ScriptCallArgumentHandler {
-    public:
-        ScriptCallback(ScriptState*, const ScriptValue&);
-
-        ScriptValue call();
-
-    private:
-        ScriptState* m_scriptState;
-        ScriptValue m_function;
     };
 
 } // namespace WebCore

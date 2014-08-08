@@ -27,17 +27,18 @@
 
 namespace WebCore {
 
-class RectBase {
+class RectBase : public RefCountedWillBeGarbageCollected<RectBase> {
+    DECLARE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(RectBase);
 public:
     CSSPrimitiveValue* top() const { return m_top.get(); }
     CSSPrimitiveValue* right() const { return m_right.get(); }
     CSSPrimitiveValue* bottom() const { return m_bottom.get(); }
     CSSPrimitiveValue* left() const { return m_left.get(); }
 
-    void setTop(PassRefPtr<CSSPrimitiveValue> top) { m_top = top; }
-    void setRight(PassRefPtr<CSSPrimitiveValue> right) { m_right = right; }
-    void setBottom(PassRefPtr<CSSPrimitiveValue> bottom) { m_bottom = bottom; }
-    void setLeft(PassRefPtr<CSSPrimitiveValue> left) { m_left = left; }
+    void setTop(PassRefPtrWillBeRawPtr<CSSPrimitiveValue> top) { m_top = top; }
+    void setRight(PassRefPtrWillBeRawPtr<CSSPrimitiveValue> right) { m_right = right; }
+    void setBottom(PassRefPtrWillBeRawPtr<CSSPrimitiveValue> bottom) { m_bottom = bottom; }
+    void setLeft(PassRefPtrWillBeRawPtr<CSSPrimitiveValue> left) { m_left = left; }
 
     bool equals(const RectBase& other) const
     {
@@ -47,83 +48,63 @@ public:
             && compareCSSValuePtr(m_bottom, other.m_bottom);
     }
 
-    bool hasVariableReference() const
-    {
-        return m_top->hasVariableReference()
-            || m_right->hasVariableReference()
-            || m_bottom->hasVariableReference()
-            || m_left->hasVariableReference();
-    }
+    void trace(Visitor*);
 
 protected:
     RectBase() { }
     RectBase(const RectBase& cloneFrom)
-        : m_top(cloneFrom.m_top ? cloneFrom.m_top->cloneForCSSOM() : 0)
-        , m_right(cloneFrom.m_right ? cloneFrom.m_right->cloneForCSSOM() : 0)
-        , m_bottom(cloneFrom.m_bottom ? cloneFrom.m_bottom->cloneForCSSOM() : 0)
-        , m_left(cloneFrom.m_left ? cloneFrom.m_left->cloneForCSSOM() : 0)
+        : m_top(cloneFrom.m_top ? cloneFrom.m_top->cloneForCSSOM() : nullptr)
+        , m_right(cloneFrom.m_right ? cloneFrom.m_right->cloneForCSSOM() : nullptr)
+        , m_bottom(cloneFrom.m_bottom ? cloneFrom.m_bottom->cloneForCSSOM() : nullptr)
+        , m_left(cloneFrom.m_left ? cloneFrom.m_left->cloneForCSSOM() : nullptr)
     {
     }
 
-    ~RectBase() { }
-
 private:
-    RefPtr<CSSPrimitiveValue> m_top;
-    RefPtr<CSSPrimitiveValue> m_right;
-    RefPtr<CSSPrimitiveValue> m_bottom;
-    RefPtr<CSSPrimitiveValue> m_left;
+    RefPtrWillBeMember<CSSPrimitiveValue> m_top;
+    RefPtrWillBeMember<CSSPrimitiveValue> m_right;
+    RefPtrWillBeMember<CSSPrimitiveValue> m_bottom;
+    RefPtrWillBeMember<CSSPrimitiveValue> m_left;
 };
 
-class Rect : public RectBase, public RefCounted<Rect> {
+class Rect : public RectBase {
 public:
-    static PassRefPtr<Rect> create() { return adoptRef(new Rect); }
+    static PassRefPtrWillBeRawPtr<Rect> create() { return adoptRefWillBeNoop(new Rect); }
 
-    PassRefPtr<Rect> cloneForCSSOM() const { return adoptRef(new Rect(*this)); }
+    PassRefPtrWillBeRawPtr<Rect> cloneForCSSOM() const { return adoptRefWillBeNoop(new Rect(*this)); }
 
     String cssText() const
     {
         return generateCSSString(top()->cssText(), right()->cssText(), bottom()->cssText(), left()->cssText());
-    }
-
-    String serializeResolvingVariables(const HashMap<AtomicString, String>& variables) const
-    {
-        return generateCSSString(top()->customSerializeResolvingVariables(variables),
-            right()->customSerializeResolvingVariables(variables),
-            bottom()->customSerializeResolvingVariables(variables),
-            left()->customSerializeResolvingVariables(variables));
     }
 
 private:
     Rect() { }
-    Rect(const Rect& cloneFrom) : RectBase(cloneFrom), RefCounted<Rect>() { }
+    Rect(const Rect& cloneFrom) : RectBase(cloneFrom) { }
     static String generateCSSString(const String& top, const String& right, const String& bottom, const String& left)
     {
         return "rect(" + top + ' ' + right + ' ' + bottom + ' ' + left + ')';
     }
+
+    // NOTE: If adding fields to this class please make the RectBase trace
+    // method virtual and add a trace method in this subclass tracing the new
+    // fields.
 };
 
-class Quad : public RectBase, public RefCounted<Quad> {
+class Quad : public RectBase {
 public:
-    static PassRefPtr<Quad> create() { return adoptRef(new Quad); }
+    static PassRefPtrWillBeRawPtr<Quad> create() { return adoptRefWillBeNoop(new Quad); }
 
-    PassRefPtr<Quad> cloneForCSSOM() const { return adoptRef(new Quad(*this)); }
+    PassRefPtrWillBeRawPtr<Quad> cloneForCSSOM() const { return adoptRefWillBeNoop(new Quad(*this)); }
 
     String cssText() const
     {
         return generateCSSString(top()->cssText(), right()->cssText(), bottom()->cssText(), left()->cssText());
     }
 
-    String serializeResolvingVariables(const HashMap<AtomicString, String>& variables) const
-    {
-        return generateCSSString(top()->customSerializeResolvingVariables(variables),
-            right()->customSerializeResolvingVariables(variables),
-            bottom()->customSerializeResolvingVariables(variables),
-            left()->customSerializeResolvingVariables(variables));
-    }
-
 private:
     Quad() { }
-    Quad(const Quad& cloneFrom) : RectBase(cloneFrom), RefCounted<Quad>() { }
+    Quad(const Quad& cloneFrom) : RectBase(cloneFrom) { }
     static String generateCSSString(const String& top, const String& right, const String& bottom, const String& left)
     {
         StringBuilder result;
@@ -144,6 +125,10 @@ private:
         }
         return result.toString();
     }
+
+    // NOTE: If adding fields to this class please make the RectBase trace
+    // method virtual and add a trace method in this subclass tracing the new
+    // fields.
 };
 
 } // namespace WebCore

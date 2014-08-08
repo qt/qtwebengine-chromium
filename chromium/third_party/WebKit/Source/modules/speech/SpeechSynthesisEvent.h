@@ -26,21 +26,25 @@
 #ifndef SpeechSynthesisEvent_h
 #define SpeechSynthesisEvent_h
 
-#include "core/events/Event.h"
-#include "wtf/PassRefPtr.h"
+#include "modules/EventModules.h"
 
 namespace WebCore {
 
-class SpeechSynthesisEvent : public Event {
+class SpeechSynthesisEvent FINAL : public Event {
 public:
-    static PassRefPtr<SpeechSynthesisEvent> create();
-    static PassRefPtr<SpeechSynthesisEvent> create(const AtomicString& type, unsigned long charIndex, float elapsedTime, const String& name);
+    static PassRefPtrWillBeRawPtr<SpeechSynthesisEvent> create();
+    static PassRefPtrWillBeRawPtr<SpeechSynthesisEvent> create(const AtomicString& type, unsigned long charIndex, float elapsedTime, const String& name);
 
     unsigned long charIndex() const { return m_charIndex; }
     float elapsedTime() const { return m_elapsedTime; }
     const String& name() const { return m_name; }
 
-    virtual const AtomicString& interfaceName() const { return EventNames::SpeechSynthesisEvent; }
+    virtual const AtomicString& interfaceName() const OVERRIDE { return EventNames::SpeechSynthesisEvent; }
+
+    virtual void trace(Visitor* visitor) OVERRIDE
+    {
+        Event::trace(visitor);
+    }
 
 private:
     SpeechSynthesisEvent();

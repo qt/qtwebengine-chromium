@@ -6,10 +6,10 @@
 
 #include "base/command_line.h"
 #include "base/strings/string_util.h"
+#include "cc/base/switches.h"
 #include "content/browser/frame_host/debug_urls.h"
 #include "content/browser/webui/web_ui_impl.h"
 #include "content/public/browser/content_browser_client.h"
-#include "content/public/common/content_switches.h"
 #include "content/public/common/url_constants.h"
 #include "url/gurl.h"
 
@@ -23,22 +23,34 @@ static bool HandleViewSource(GURL* url, BrowserContext* browser_context) {
 
     // Bug 26129: limit view-source to view the content and not any
     // other kind of 'active' url scheme like 'javascript' or 'data'.
-    static const char* const allowed_sub_schemes[] = {
-      kHttpScheme, kHttpsScheme, kFtpScheme,
-      chrome::kChromeDevToolsScheme, chrome::kChromeUIScheme,
-      chrome::kFileScheme, chrome::kFileSystemScheme
+    static const char* const default_allowed_sub_schemes[] = {
+        url::kHttpScheme,
+        url::kHttpsScheme,
+        url::kFtpScheme,
+        kChromeDevToolsScheme,
+        kChromeUIScheme,
+        url::kFileScheme,
+        url::kFileSystemScheme
     };
 
+    // Merge all the schemes for which view-source is allowed by default, with
+    // the WebUI schemes defined by the ContentBrowserClient.
+    std::vector<std::string> all_allowed_sub_schemes;
+    for (size_t i = 0; i < arraysize(default_allowed_sub_schemes); ++i)
+      all_allowed_sub_schemes.push_back(default_allowed_sub_schemes[i]);
+    GetContentClient()->browser()->GetAdditionalWebUISchemes(
+        &all_allowed_sub_schemes);
+
     bool is_sub_scheme_allowed = false;
-    for (size_t i = 0; i < arraysize(allowed_sub_schemes); i++) {
-      if (url->SchemeIs(allowed_sub_schemes[i])) {
+    for (size_t i = 0; i < all_allowed_sub_schemes.size(); ++i) {
+      if (url->SchemeIs(all_allowed_sub_schemes[i].c_str())) {
         is_sub_scheme_allowed = true;
         break;
       }
     }
 
     if (!is_sub_scheme_allowed) {
-      *url = GURL(kAboutBlankURL);
+      *url = GURL(url::kAboutBlankURL);
       return false;
     }
 
@@ -53,11 +65,10 @@ static bool ReverseViewSource(GURL* url, BrowserContext* browser_context) {
   if (url->SchemeIs(kViewSourceScheme))
     return false;
 
-  url_canon::Replacements<char> repl;
+  url::Replacements<char> repl;
   repl.SetScheme(kViewSourceScheme,
-                 url_parse::Component(0, strlen(kViewSourceScheme)));
-  repl.SetPath(url->spec().c_str(),
-      url_parse::Component(0, url->spec().size()));
+                 url::Component(0, strlen(kViewSourceScheme)));
+  repl.SetPath(url->spec().c_str(), url::Component(0, url->spec().size()));
   *url = url->ReplaceComponents(repl);
   return true;
 }
@@ -68,17 +79,14 @@ static bool DebugURLHandler(GURL* url, BrowserContext* browser_context) {
   // chrome:// scheme, since the about: scheme won't be rewritten in
   // this code path.
   if (CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnableGpuBenchmarking)) {
+          cc::switches::kEnableGpuBenchmarking)) {
     if (HandleDebugURL(*url, PAGE_TRANSITION_FROM_ADDRESS_BAR)) {
       return true;
     }
   }
 
   // Circumvent processing URLs that the renderer process will handle.
-  return *url == GURL(kChromeUICrashURL) ||
-         *url == GURL(kChromeUIHangURL) ||
-         *url == GURL(kChromeUIKillURL) ||
-         *url == GURL(kChromeUIShorthangURL);
+  return IsRendererDebugURL(*url);
 }
 
 // static

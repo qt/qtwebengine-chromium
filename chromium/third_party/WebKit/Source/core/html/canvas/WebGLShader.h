@@ -29,28 +29,29 @@
 #include "bindings/v8/ScriptWrappable.h"
 #include "core/html/canvas/WebGLSharedObject.h"
 #include "wtf/PassRefPtr.h"
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
-class WebGLShader : public WebGLSharedObject, public ScriptWrappable {
+class WebGLShader FINAL : public WebGLSharedObject, public ScriptWrappable {
 public:
     virtual ~WebGLShader();
 
-    static PassRefPtr<WebGLShader> create(WebGLRenderingContext*, GC3Denum);
+    static PassRefPtr<WebGLShader> create(WebGLRenderingContextBase*, GLenum);
 
-    GC3Denum type() const { return m_type; }
+    GLenum type() const { return m_type; }
     const String& source() const { return m_source; }
 
     void setSource(const String& source) { m_source = source; }
 
 private:
-    WebGLShader(WebGLRenderingContext*, GC3Denum);
+    WebGLShader(WebGLRenderingContextBase*, GLenum);
 
-    virtual void deleteObjectImpl(GraphicsContext3D*, Platform3DObject);
+    virtual void deleteObjectImpl(blink::WebGraphicsContext3D*, Platform3DObject) OVERRIDE;
 
-    virtual bool isShader() const { return true; }
+    virtual bool isShader() const OVERRIDE { return true; }
 
-    GC3Denum m_type;
+    GLenum m_type;
     String m_source;
 };
 

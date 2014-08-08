@@ -23,7 +23,7 @@ std::string GetNameForExternalFilePath(const base::FilePath& path) {
   size_t pos = file_path.rfind(base::FilePath::kSeparators[0]);
   CHECK(pos != base::FilePath::StringType::npos);
 #if defined(OS_WIN)
-  return WideToUTF8(file_path.substr(pos + 1));
+  return base::WideToUTF8(file_path.substr(pos + 1));
 #elif defined(OS_POSIX)
   return file_path.substr(pos + 1);
 #else
@@ -36,7 +36,7 @@ bool IsValidInternalPath(const std::string& path) {
   //   The path starts with '/'
   //   The path must contain valid UTF-8 characters.
   //   It must not FilePath::ReferencesParent().
-  if (path.empty() || !IsStringUTF8(path) || path[0] != '/')
+  if (path.empty() || !base::IsStringUTF8(path) || path[0] != '/')
     return false;
   base::FilePath file_path = base::FilePath::FromUTF8Unsafe(path);
   if (file_path.ReferencesParent())

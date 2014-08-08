@@ -9,7 +9,6 @@
 #include "base/test/test_suite.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "ui/gl/gl_implementation.h"
 
 namespace {
 
@@ -34,7 +33,6 @@ int main(int argc, char** argv) {
   base::AtExitManager exit_manager;
 #endif
   CommandLine::Init(argc, argv);
-  gfx::InitializeGLBindings(gfx::kGLImplementationMockGL);
   testing::InitGoogleMock(&argc, argv);
   return base::LaunchUnitTests(argc,
                                argv,

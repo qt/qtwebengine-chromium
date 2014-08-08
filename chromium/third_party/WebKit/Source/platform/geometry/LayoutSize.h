@@ -61,7 +61,7 @@ public:
     bool isEmpty() const { return m_width.rawValue() <= 0 || m_height.rawValue() <= 0; }
     bool isZero() const { return !m_width && !m_height; }
 
-    float aspectRatio() const { return static_cast<float>(m_width) / static_cast<float>(m_height); }
+    float aspectRatio() const { return m_width.toFloat() / m_height.toFloat(); }
 
     void expand(LayoutUnit width, LayoutUnit height)
     {
@@ -124,6 +124,11 @@ public:
         if ((widthScale > heightScale) != (fit == AspectRatioFitGrow))
             return LayoutSize(height() * aspectRatio.width() / aspectRatio.height(), height());
         return LayoutSize(width(), width() * aspectRatio.height() / aspectRatio.width());
+    }
+
+    LayoutSize fraction() const
+    {
+        return LayoutSize(m_width.fraction(), m_height.fraction());
     }
 
 private:

@@ -21,135 +21,29 @@
 #include "base/strings/string_util.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
-#include "net/base/escape.h"
-#include "net/base/net_util.h"
-#include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "third_party/icu/source/common/unicode/rbbi.h"
 #include "third_party/icu/source/common/unicode/uloc.h"
 #include "ui/gfx/font_list.h"
 #include "ui/gfx/text_utils.h"
-#include "url/gurl.h"
+
+using base::ASCIIToUTF16;
+using base::UTF8ToUTF16;
+using base::WideToUTF16;
 
 namespace gfx {
 
-// U+2026 in utf8
-const char kEllipsis[] = "\xE2\x80\xA6";
-const base::char16 kEllipsisUTF16[] = { 0x2026, 0 };
-const base::char16 kForwardSlash = '/';
-
 namespace {
 
-// Helper class to split + elide text, while respecting UTF16 surrogate pairs.
-class StringSlicer {
- public:
-  StringSlicer(const base::string16& text,
-               const base::string16& ellipsis,
-               bool elide_in_middle)
-      : text_(text),
-        ellipsis_(ellipsis),
-        elide_in_middle_(elide_in_middle) {
-  }
-
-  // Cuts |text_| to be |length| characters long. If |elide_in_middle_| is true,
-  // the middle of the string is removed to leave equal-length pieces from the
-  // beginning and end of the string; otherwise, the end of the string is
-  // removed and only the beginning remains. If |insert_ellipsis| is true,
-  // then an ellipsis character will be inserted at the cut point.
-  base::string16 CutString(size_t length, bool insert_ellipsis) {
-    const base::string16 ellipsis_text = insert_ellipsis ? ellipsis_
-                                                         : base::string16();
-
-    if (!elide_in_middle_)
-      return text_.substr(0, FindValidBoundaryBefore(length)) + ellipsis_text;
-
-    // We put the extra character, if any, before the cut.
-    const size_t half_length = length / 2;
-    const size_t prefix_length = FindValidBoundaryBefore(length - half_length);
-    const size_t suffix_start_guess = text_.length() - half_length;
-    const size_t suffix_start = FindValidBoundaryAfter(suffix_start_guess);
-    const size_t suffix_length =
-        half_length - (suffix_start_guess - suffix_start);
-    return text_.substr(0, prefix_length) + ellipsis_text +
-           text_.substr(suffix_start, suffix_length);
-  }
-
- private:
-  // Returns a valid cut boundary at or before |index|.
-  size_t FindValidBoundaryBefore(size_t index) const {
-    DCHECK_LE(index, text_.length());
-    if (index != text_.length())
-      U16_SET_CP_START(text_.data(), 0, index);
-    return index;
-  }
-
-  // Returns a valid cut boundary at or after |index|.
-  size_t FindValidBoundaryAfter(size_t index) const {
-    DCHECK_LE(index, text_.length());
-    if (index != text_.length())
-      U16_SET_CP_LIMIT(text_.data(), 0, index, text_.length());
-    return index;
-  }
-
-  // The text to be sliced.
-  const base::string16& text_;
-
-  // Ellipsis string to use.
-  const base::string16& ellipsis_;
-
-  // If true, the middle of the string will be elided.
-  bool elide_in_middle_;
-
-  DISALLOW_COPY_AND_ASSIGN(StringSlicer);
-};
-
-// Build a path from the first |num_components| elements in |path_elements|.
-// Prepends |path_prefix|, appends |filename|, inserts ellipsis if appropriate.
-base::string16 BuildPathFromComponents(
-    const base::string16& path_prefix,
-    const std::vector<base::string16>& path_elements,
-    const base::string16& filename,
-    size_t num_components) {
-  // Add the initial elements of the path.
-  base::string16 path = path_prefix;
-
-  // Build path from first |num_components| elements.
-  for (size_t j = 0; j < num_components; ++j)
-    path += path_elements[j] + kForwardSlash;
-
-  // Add |filename|, ellipsis if necessary.
-  if (num_components != (path_elements.size() - 1))
-    path += base::string16(kEllipsisUTF16) + kForwardSlash;
-  path += filename;
-
-  return path;
-}
-
-// Takes a prefix (Domain, or Domain+subdomain) and a collection of path
-// components and elides if possible. Returns a string containing the longest
-// possible elided path, or an empty string if elision is not possible.
-base::string16 ElideComponentizedPath(
-    const base::string16& url_path_prefix,
-    const std::vector<base::string16>& url_path_elements,
-    const base::string16& url_filename,
-    const base::string16& url_query,
-    const FontList& font_list,
-    float available_pixel_width) {
-  const size_t url_path_number_of_elements = url_path_elements.size();
-
-  CHECK(url_path_number_of_elements);
-  for (size_t i = url_path_number_of_elements - 1; i > 0; --i) {
-    base::string16 elided_path = BuildPathFromComponents(url_path_prefix,
-        url_path_elements, url_filename, i);
-    if (available_pixel_width >= GetStringWidthF(elided_path, font_list))
-      return ElideText(elided_path + url_query, font_list,
-                       available_pixel_width, ELIDE_AT_END);
-  }
-
-  return base::string16();
-}
-
-}  // namespace
-
+// Elides a well-formed email address (e.g. username@domain.com) to fit into
+// |available_pixel_width| using the specified |font_list|.
+// This function guarantees that the string returned will contain at least one
+// character, other than the ellipses, on either side of the '@'. If it is
+// impossible to achieve these requirements: only an ellipsis will be returned.
+// If possible: this elides only the username portion of the |email|. Otherwise,
+// the domain is elided in the middle so that it splits the available width
+// equally with the elided username (should the username be short enough that it
+// doesn't need half the available width: the elided domain will occupy that
+// extra width).
 base::string16 ElideEmail(const base::string16& email,
                           const FontList& font_list,
                           float available_pixel_width) {
@@ -191,8 +85,7 @@ base::string16 ElideEmail(const base::string16& email,
         std::min(available_domain_width,
                  std::max(available_pixel_width - full_username_width,
                           available_pixel_width / 2));
-    domain = ElideText(domain, font_list, desired_domain_width,
-                       ELIDE_IN_MIDDLE);
+    domain = ElideText(domain, font_list, desired_domain_width, ELIDE_MIDDLE);
     // Failing to elide the domain such that at least one character remains
     // (other than the ellipsis itself) remains: return a single ellipsis.
     if (domain.length() <= 1U)
@@ -203,206 +96,61 @@ base::string16 ElideEmail(const base::string16& email,
   // is guaranteed to fit with at least one character remaining given all the
   // precautions taken earlier).
   available_pixel_width -= GetStringWidthF(domain, font_list);
-  username = ElideText(username, font_list, available_pixel_width,
-                       ELIDE_AT_END);
-
+  username = ElideText(username, font_list, available_pixel_width, ELIDE_TAIL);
   return username + kAtSignUTF16 + domain;
 }
 
-// TODO(pkasting): http://crbug.com/77883 This whole function gets
-// kerning/ligatures/etc. issues potentially wrong by assuming that the width of
-// a rendered string is always the sum of the widths of its substrings.  Also I
-// suspect it could be made simpler.
-base::string16 ElideUrl(const GURL& url,
-                        const FontList& font_list,
-                        float available_pixel_width,
-                        const std::string& languages) {
-  // Get a formatted string and corresponding parsing of the url.
-  url_parse::Parsed parsed;
-  const base::string16 url_string =
-      net::FormatUrl(url, languages, net::kFormatUrlOmitAll,
-                     net::UnescapeRule::SPACES, &parsed, NULL, NULL);
-  if (available_pixel_width <= 0)
-    return url_string;
+}  // namespace
 
-  // If non-standard, return plain eliding.
-  if (!url.IsStandard())
-    return ElideText(url_string, font_list, available_pixel_width,
-                     ELIDE_AT_END);
+// U+2026 in utf8
+const char kEllipsis[] = "\xE2\x80\xA6";
+const base::char16 kEllipsisUTF16[] = { 0x2026, 0 };
+const base::char16 kForwardSlash = '/';
 
-  // Now start eliding url_string to fit within available pixel width.
-  // Fist pass - check to see whether entire url_string fits.
-  const float pixel_width_url_string = GetStringWidthF(url_string, font_list);
-  if (available_pixel_width >= pixel_width_url_string)
-    return url_string;
+StringSlicer::StringSlicer(const base::string16& text,
+                           const base::string16& ellipsis,
+                           bool elide_in_middle,
+                           bool elide_at_beginning)
+    : text_(text),
+      ellipsis_(ellipsis),
+      elide_in_middle_(elide_in_middle),
+      elide_at_beginning_(elide_at_beginning) {
+}
 
-  // Get the path substring, including query and reference.
-  const size_t path_start_index = parsed.path.begin;
-  const size_t path_len = parsed.path.len;
-  base::string16 url_path_query_etc = url_string.substr(path_start_index);
-  base::string16 url_path = url_string.substr(path_start_index, path_len);
+base::string16 StringSlicer::CutString(size_t length, bool insert_ellipsis) {
+  const base::string16 ellipsis_text = insert_ellipsis ? ellipsis_
+                                                       : base::string16();
 
-  // Return general elided text if url minus the query fits.
-  const base::string16 url_minus_query =
-      url_string.substr(0, path_start_index + path_len);
-  if (available_pixel_width >= GetStringWidthF(url_minus_query, font_list))
-    return ElideText(url_string, font_list, available_pixel_width,
-                     ELIDE_AT_END);
+  if (elide_at_beginning_)
+    return ellipsis_text +
+           text_.substr(FindValidBoundaryBefore(text_.length() - length));
 
-  // Get Host.
-  base::string16 url_host = UTF8ToUTF16(url.host());
+  if (!elide_in_middle_)
+    return text_.substr(0, FindValidBoundaryBefore(length)) + ellipsis_text;
 
-  // Get domain and registry information from the URL.
-  base::string16 url_domain = UTF8ToUTF16(
-      net::registry_controlled_domains::GetDomainAndRegistry(
-          url, net::registry_controlled_domains::EXCLUDE_PRIVATE_REGISTRIES));
-  if (url_domain.empty())
-    url_domain = url_host;
+  // We put the extra character, if any, before the cut.
+  const size_t half_length = length / 2;
+  const size_t prefix_length = FindValidBoundaryBefore(length - half_length);
+  const size_t suffix_start_guess = text_.length() - half_length;
+  const size_t suffix_start = FindValidBoundaryAfter(suffix_start_guess);
+  const size_t suffix_length =
+      half_length - (suffix_start_guess - suffix_start);
+  return text_.substr(0, prefix_length) + ellipsis_text +
+         text_.substr(suffix_start, suffix_length);
+}
 
-  // Add port if required.
-  if (!url.port().empty()) {
-    url_host += UTF8ToUTF16(":" + url.port());
-    url_domain += UTF8ToUTF16(":" + url.port());
-  }
+size_t StringSlicer::FindValidBoundaryBefore(size_t index) const {
+  DCHECK_LE(index, text_.length());
+  if (index != text_.length())
+    U16_SET_CP_START(text_.data(), 0, index);
+  return index;
+}
 
-  // Get sub domain.
-  base::string16 url_subdomain;
-  const size_t domain_start_index = url_host.find(url_domain);
-  if (domain_start_index != base::string16::npos)
-    url_subdomain = url_host.substr(0, domain_start_index);
-  const base::string16 kWwwPrefix = UTF8ToUTF16("www.");
-  if ((url_subdomain == kWwwPrefix || url_subdomain.empty() ||
-      url.SchemeIsFile())) {
-    url_subdomain.clear();
-  }
-
-  // If this is a file type, the path is now defined as everything after ":".
-  // For example, "C:/aa/aa/bb", the path is "/aa/bb/cc". Interesting, the
-  // domain is now C: - this is a nice hack for eliding to work pleasantly.
-  if (url.SchemeIsFile()) {
-    // Split the path string using ":"
-    std::vector<base::string16> file_path_split;
-    base::SplitString(url_path, ':', &file_path_split);
-    if (file_path_split.size() > 1) {  // File is of type "file:///C:/.."
-      url_host.clear();
-      url_domain.clear();
-      url_subdomain.clear();
-
-      const base::string16 kColon = UTF8ToUTF16(":");
-      url_host = url_domain = file_path_split.at(0).substr(1) + kColon;
-      url_path_query_etc = url_path = file_path_split.at(1);
-    }
-  }
-
-  // Second Pass - remove scheme - the rest fits.
-  const float pixel_width_url_host = GetStringWidthF(url_host, font_list);
-  const float pixel_width_url_path = GetStringWidthF(url_path_query_etc,
-                                                     font_list);
-  if (available_pixel_width >=
-      pixel_width_url_host + pixel_width_url_path)
-    return url_host + url_path_query_etc;
-
-  // Third Pass: Subdomain, domain and entire path fits.
-  const float pixel_width_url_domain = GetStringWidthF(url_domain, font_list);
-  const float pixel_width_url_subdomain =
-      GetStringWidthF(url_subdomain, font_list);
-  if (available_pixel_width >=
-      pixel_width_url_subdomain + pixel_width_url_domain +
-      pixel_width_url_path)
-    return url_subdomain + url_domain + url_path_query_etc;
-
-  // Query element.
-  base::string16 url_query;
-  const float kPixelWidthDotsTrailer = GetStringWidthF(
-      base::string16(kEllipsisUTF16), font_list);
-  if (parsed.query.is_nonempty()) {
-    url_query = UTF8ToUTF16("?") + url_string.substr(parsed.query.begin);
-    if (available_pixel_width >=
-        (pixel_width_url_subdomain + pixel_width_url_domain +
-         pixel_width_url_path - GetStringWidthF(url_query, font_list))) {
-      return ElideText(url_subdomain + url_domain + url_path_query_etc,
-                       font_list, available_pixel_width, ELIDE_AT_END);
-    }
-  }
-
-  // Parse url_path using '/'.
-  std::vector<base::string16> url_path_elements;
-  base::SplitString(url_path, kForwardSlash, &url_path_elements);
-
-  // Get filename - note that for a path ending with /
-  // such as www.google.com/intl/ads/, the file name is ads/.
-  size_t url_path_number_of_elements = url_path_elements.size();
-  DCHECK(url_path_number_of_elements != 0);
-  base::string16 url_filename;
-  if ((url_path_elements.at(url_path_number_of_elements - 1)).length() > 0) {
-    url_filename = *(url_path_elements.end() - 1);
-  } else if (url_path_number_of_elements > 1) {  // Path ends with a '/'.
-    url_filename = url_path_elements.at(url_path_number_of_elements - 2) +
-        kForwardSlash;
-    url_path_number_of_elements--;
-  }
-  DCHECK(url_path_number_of_elements != 0);
-
-  const size_t kMaxNumberOfUrlPathElementsAllowed = 1024;
-  if (url_path_number_of_elements <= 1 ||
-      url_path_number_of_elements > kMaxNumberOfUrlPathElementsAllowed) {
-    // No path to elide, or too long of a path (could overflow in loop below)
-    // Just elide this as a text string.
-    return ElideText(url_subdomain + url_domain + url_path_query_etc, font_list,
-                     available_pixel_width, ELIDE_AT_END);
-  }
-
-  // Start eliding the path and replacing elements by ".../".
-  const base::string16 kEllipsisAndSlash =
-      base::string16(kEllipsisUTF16) + kForwardSlash;
-  const float pixel_width_ellipsis_slash =
-      GetStringWidthF(kEllipsisAndSlash, font_list);
-
-  // Check with both subdomain and domain.
-  base::string16 elided_path =
-      ElideComponentizedPath(url_subdomain + url_domain, url_path_elements,
-                             url_filename, url_query, font_list,
-                             available_pixel_width);
-  if (!elided_path.empty())
-    return elided_path;
-
-  // Check with only domain.
-  // If a subdomain is present, add an ellipsis before domain.
-  // This is added only if the subdomain pixel width is larger than
-  // the pixel width of kEllipsis. Otherwise, subdomain remains,
-  // which means that this case has been resolved earlier.
-  base::string16 url_elided_domain = url_subdomain + url_domain;
-  if (pixel_width_url_subdomain > kPixelWidthDotsTrailer) {
-    if (!url_subdomain.empty())
-      url_elided_domain = kEllipsisAndSlash[0] + url_domain;
-    else
-      url_elided_domain = url_domain;
-
-    elided_path = ElideComponentizedPath(url_elided_domain, url_path_elements,
-                                         url_filename, url_query, font_list,
-                                         available_pixel_width);
-
-    if (!elided_path.empty())
-      return elided_path;
-  }
-
-  // Return elided domain/.../filename anyway.
-  base::string16 final_elided_url_string(url_elided_domain);
-  const float url_elided_domain_width = GetStringWidthF(url_elided_domain,
-                                                        font_list);
-
-  // A hack to prevent trailing ".../...".
-  if ((available_pixel_width - url_elided_domain_width) >
-      pixel_width_ellipsis_slash + kPixelWidthDotsTrailer +
-      GetStringWidthF(ASCIIToUTF16("UV"), font_list)) {
-    final_elided_url_string += BuildPathFromComponents(base::string16(),
-        url_path_elements, url_filename, 1);
-  } else {
-    final_elided_url_string += url_path;
-  }
-
-  return ElideText(final_elided_url_string, font_list, available_pixel_width,
-                   ELIDE_AT_END);
+size_t StringSlicer::FindValidBoundaryAfter(size_t index) const {
+  DCHECK_LE(index, text_.length());
+  if (index != text_.length())
+    U16_SET_CP_LIMIT(text_.data(), 0, index, text_.length());
+  return index;
 }
 
 base::string16 ElideFilename(const base::FilePath& filename,
@@ -426,8 +174,8 @@ base::string16 ElideFilename(const base::FilePath& filename,
     return base::i18n::GetDisplayStringInLTRDirectionality(filename_utf16);
 
   if (rootname.empty() || extension.empty()) {
-    const base::string16 elided_name = ElideText(filename_utf16, font_list,
-                                           available_pixel_width, ELIDE_AT_END);
+    const base::string16 elided_name =
+        ElideText(filename_utf16, font_list, available_pixel_width, ELIDE_TAIL);
     return base::i18n::GetDisplayStringInLTRDirectionality(elided_name);
   }
 
@@ -442,14 +190,13 @@ base::string16 ElideFilename(const base::FilePath& filename,
 
   if (ext_width >= available_pixel_width) {
     const base::string16 elided_name = ElideText(
-        rootname + extension, font_list, available_pixel_width,
-        ELIDE_IN_MIDDLE);
+        rootname + extension, font_list, available_pixel_width, ELIDE_MIDDLE);
     return base::i18n::GetDisplayStringInLTRDirectionality(elided_name);
   }
 
   float available_root_width = available_pixel_width - ext_width;
   base::string16 elided_name =
-      ElideText(rootname, font_list, available_root_width, ELIDE_AT_END);
+      ElideText(rootname, font_list, available_root_width, ELIDE_TAIL);
   elided_name += extension;
   return base::i18n::GetDisplayStringInLTRDirectionality(elided_name);
 }
@@ -457,16 +204,19 @@ base::string16 ElideFilename(const base::FilePath& filename,
 base::string16 ElideText(const base::string16& text,
                          const FontList& font_list,
                          float available_pixel_width,
-                         ElideBehavior elide_behavior) {
-  if (text.empty())
+                         ElideBehavior behavior) {
+  DCHECK_NE(behavior, FADE_TAIL);
+  if (text.empty() || behavior == FADE_TAIL)
     return text;
+  if (behavior == ELIDE_EMAIL)
+    return ElideEmail(text, font_list, available_pixel_width);
 
   const float current_text_pixel_width = GetStringWidthF(text, font_list);
-  const bool elide_in_middle = (elide_behavior == ELIDE_IN_MIDDLE);
-  const bool insert_ellipsis = (elide_behavior != TRUNCATE_AT_END);
-
+  const bool elide_in_middle = (behavior == ELIDE_MIDDLE);
+  const bool elide_at_beginning = (behavior == ELIDE_HEAD);
+  const bool insert_ellipsis = (behavior != TRUNCATE);
   const base::string16 ellipsis = base::string16(kEllipsisUTF16);
-  StringSlicer slicer(text, ellipsis, elide_in_middle);
+  StringSlicer slicer(text, ellipsis, elide_in_middle, elide_at_beginning);
 
   // Pango will return 0 width for absurdly long strings. Cut the string in
   // half and try again.
@@ -476,9 +226,10 @@ base::string16 ElideText(const base::string16& text,
   // return positive numbers again. Detecting that is probably not worth it
   // (eliding way too much from a ridiculous string is probably still
   // ridiculous), but we should check other widths for bogus values as well.
-  if (current_text_pixel_width <= 0 && !text.empty()) {
-    const base::string16 cut = slicer.CutString(text.length() / 2, false);
-    return ElideText(cut, font_list, available_pixel_width, elide_behavior);
+  if (current_text_pixel_width <= 0) {
+    const base::string16 cut =
+      slicer.CutString(text.length() / 2, insert_ellipsis);
+    return ElideText(cut, font_list, available_pixel_width, behavior);
   }
 
   if (current_text_pixel_width <= available_pixel_width)
@@ -493,103 +244,30 @@ base::string16 ElideText(const base::string16& text,
   size_t hi = text.length() - 1;
   size_t guess;
   for (guess = (lo + hi) / 2; lo <= hi; guess = (lo + hi) / 2) {
-    // We check the length of the whole desired string at once to ensure we
+    // We check the width of the whole desired string at once to ensure we
     // handle kerning/ligatures/etc. correctly.
+    // TODO(skanuj) : Handle directionality of ellipsis based on adjacent
+    // characters.  See crbug.com/327963.
     const base::string16 cut = slicer.CutString(guess, insert_ellipsis);
-    const float guess_length = GetStringWidthF(cut, font_list);
-    // Check again that we didn't hit a Pango width overflow. If so, cut the
-    // current string in half and start over.
-    if (guess_length <= 0) {
-      return ElideText(slicer.CutString(guess / 2, false),
-                       font_list, available_pixel_width, elide_behavior);
-    }
-    if (guess_length > available_pixel_width)
+    const float guess_width = GetStringWidthF(cut, font_list);
+    if (guess_width == available_pixel_width)
+      break;
+    if (guess_width > available_pixel_width) {
       hi = guess - 1;
-    else
+      // Move back if we are on loop terminating condition, and guess is wider
+      // than available.
+      if (hi < lo)
+        lo = hi;
+    } else {
       lo = guess + 1;
+    }
   }
 
   return slicer.CutString(guess, insert_ellipsis);
 }
 
-base::string16 ElideText(const base::string16& text,
-                         const Font& font,
-                         float available_pixel_width,
-                         ElideBehavior elide_behavior) {
-  return ElideText(text, FontList(font), available_pixel_width, elide_behavior);
-}
-
-SortedDisplayURL::SortedDisplayURL(const GURL& url,
-                                   const std::string& languages) {
-  net::AppendFormattedHost(url, languages, &sort_host_);
-  base::string16 host_minus_www = net::StripWWW(sort_host_);
-  url_parse::Parsed parsed;
-  display_url_ =
-      net::FormatUrl(url, languages, net::kFormatUrlOmitAll,
-                     net::UnescapeRule::SPACES, &parsed, &prefix_end_, NULL);
-  if (sort_host_.length() > host_minus_www.length()) {
-    prefix_end_ += sort_host_.length() - host_minus_www.length();
-    sort_host_.swap(host_minus_www);
-  }
-}
-
-SortedDisplayURL::SortedDisplayURL() : prefix_end_(0) {
-}
-
-SortedDisplayURL::~SortedDisplayURL() {
-}
-
-int SortedDisplayURL::Compare(const SortedDisplayURL& other,
-                              icu::Collator* collator) const {
-  // Compare on hosts first. The host won't contain 'www.'.
-  UErrorCode compare_status = U_ZERO_ERROR;
-  UCollationResult host_compare_result = collator->compare(
-      static_cast<const UChar*>(sort_host_.c_str()),
-      static_cast<int>(sort_host_.length()),
-      static_cast<const UChar*>(other.sort_host_.c_str()),
-      static_cast<int>(other.sort_host_.length()),
-      compare_status);
-  DCHECK(U_SUCCESS(compare_status));
-  if (host_compare_result != 0)
-    return host_compare_result;
-
-  // Hosts match, compare on the portion of the url after the host.
-  base::string16 path = this->AfterHost();
-  base::string16 o_path = other.AfterHost();
-  compare_status = U_ZERO_ERROR;
-  UCollationResult path_compare_result = collator->compare(
-      static_cast<const UChar*>(path.c_str()),
-      static_cast<int>(path.length()),
-      static_cast<const UChar*>(o_path.c_str()),
-      static_cast<int>(o_path.length()),
-      compare_status);
-  DCHECK(U_SUCCESS(compare_status));
-  if (path_compare_result != 0)
-    return path_compare_result;
-
-  // Hosts and paths match, compare on the complete url. This'll push the www.
-  // ones to the end.
-  compare_status = U_ZERO_ERROR;
-  UCollationResult display_url_compare_result = collator->compare(
-      static_cast<const UChar*>(display_url_.c_str()),
-      static_cast<int>(display_url_.length()),
-      static_cast<const UChar*>(other.display_url_.c_str()),
-      static_cast<int>(other.display_url_.length()),
-      compare_status);
-  DCHECK(U_SUCCESS(compare_status));
-  return display_url_compare_result;
-}
-
-base::string16 SortedDisplayURL::AfterHost() const {
-  const size_t slash_index = display_url_.find(sort_host_, prefix_end_);
-  if (slash_index == base::string16::npos) {
-    NOTREACHED();
-    return base::string16();
-  }
-  return display_url_.substr(slash_index + sort_host_.length());
-}
-
-bool ElideString(const base::string16& input, int max_len,
+bool ElideString(const base::string16& input,
+                 int max_len,
                  base::string16* output) {
   DCHECK_GE(max_len, 0);
   if (static_cast<int>(input.length()) <= max_len) {
@@ -915,7 +593,7 @@ int RectangleText::Finalize() {
   // Remove trailing whitespace from the last line or remove the last line
   // completely, if it's just whitespace.
   if (!insufficient_height_ && !lines_->empty()) {
-    TrimWhitespace(lines_->back(), TRIM_TRAILING, &lines_->back());
+    base::TrimWhitespace(lines_->back(), base::TRIM_TRAILING, &lines_->back());
     if (lines_->back().empty() && !last_line_ended_in_lf_)
       lines_->pop_back();
   }
@@ -943,9 +621,10 @@ void RectangleText::AddLine(const base::string16& line) {
           if (truncate) {
             // Trim trailing whitespace from the line that was added.
             const int line = lines_->size() - lines_added;
-            TrimWhitespace(lines_->at(line), TRIM_TRAILING, &lines_->at(line));
+            base::TrimWhitespace(lines_->at(line), base::TRIM_TRAILING,
+                                 &lines_->at(line));
           }
-          if (ContainsOnlyWhitespace(word)) {
+          if (base::ContainsOnlyChars(word, base::kWhitespaceUTF16)) {
             // Skip the first space if the previous line was carried over.
             current_width_ = 0;
             current_line_.clear();
@@ -967,11 +646,10 @@ int RectangleText::WrapWord(const base::string16& word) {
   bool first_fragment = true;
   while (!insufficient_height_ && !text.empty()) {
     base::string16 fragment =
-        ElideText(text, font_list_, available_pixel_width_,
-                  TRUNCATE_AT_END);
+        ElideText(text, font_list_, available_pixel_width_, TRUNCATE);
     // At least one character has to be added at every line, even if the
     // available space is too small.
-    if(fragment.empty())
+    if (fragment.empty())
       fragment = text.substr(0, 1);
     if (!first_fragment && NewLine())
       lines_added++;
@@ -999,7 +677,7 @@ int RectangleText::AddWordOverflow(const base::string16& word) {
     lines_added += WrapWord(word);
   } else {
     const ElideBehavior elide_behavior =
-        (wrap_behavior_ == ELIDE_LONG_WORDS ? ELIDE_AT_END : TRUNCATE_AT_END);
+        (wrap_behavior_ == ELIDE_LONG_WORDS ? ELIDE_TAIL : TRUNCATE);
     const base::string16 elided_word =
         ElideText(word, font_list_, available_pixel_width_, elide_behavior);
     AddToCurrentLine(elided_word);
@@ -1012,7 +690,7 @@ int RectangleText::AddWordOverflow(const base::string16& word) {
 int RectangleText::AddWord(const base::string16& word) {
   int lines_added = 0;
   base::string16 trimmed;
-  TrimWhitespace(word, TRIM_TRAILING, &trimmed);
+  base::TrimWhitespace(word, base::TRIM_TRAILING, &trimmed);
   const float trimmed_width = GetStringWidthF(trimmed, font_list_);
   if (trimmed_width <= available_pixel_width_) {
     // Word can be made to fit, no need to fragment it.

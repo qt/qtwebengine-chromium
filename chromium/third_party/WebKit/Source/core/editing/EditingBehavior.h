@@ -24,6 +24,7 @@
 #include "core/editing/EditingBehaviorTypes.h"
 
 namespace WebCore {
+class KeyboardEvent;
 
 class EditingBehavior {
 
@@ -37,11 +38,11 @@ public:
     // Create a new function for any platform difference so we can control it here.
 
     // When extending a selection beyond the top or bottom boundary of an editable area,
-    // maintain the horizontal position on Windows but extend it to the boundary of the editable
-    // content on Mac.
+    // maintain the horizontal position on Windows and Android but extend it to the boundary of
+    // the editable content on Mac and Linux.
     bool shouldMoveCaretToHorizontalBoundaryWhenPastTopOrBottom() const
     {
-        return m_type != EditingWindowsBehavior && m_type != EditingAndroidBehavior && m_type != EditingUnixBehavior;
+        return m_type != EditingWindowsBehavior && m_type != EditingAndroidBehavior;
     }
 
     // On Windows, selections should always be considered as directional, regardless if it is
@@ -90,6 +91,11 @@ public:
         return m_type != EditingWindowsBehavior && m_type != EditingMacBehavior;
     }
 
+    // Convert a KeyboardEvent to a command name like "Copy", "Undo" and so on.
+    // If nothing, return empty string.
+    const char* interpretKeyEvent(const KeyboardEvent&) const;
+
+    bool shouldInsertCharacter(const KeyboardEvent&) const;
 private:
     EditingBehaviorType m_type;
 };

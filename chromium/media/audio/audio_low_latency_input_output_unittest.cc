@@ -6,7 +6,6 @@
 #include "base/environment.h"
 #include "base/file_util.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop/message_loop.h"
 #include "base/path_service.h"
 #include "base/synchronization/lock.h"
 #include "base/test/test_timeouts.h"
@@ -88,7 +87,7 @@ class MockAudioManager : public AudioManagerAnyPlatform {
   MockAudioManager() : AudioManagerAnyPlatform(&fake_audio_log_factory_) {}
   virtual ~MockAudioManager() {}
 
-  virtual scoped_refptr<base::MessageLoopProxy> GetMessageLoop() OVERRIDE {
+  virtual scoped_refptr<base::SingleThreadTaskRunner> GetTaskRunner() OVERRIDE {
     return base::MessageLoop::current()->message_loop_proxy();
   }
 
@@ -185,7 +184,7 @@ class FullDuplexAudioSinkSource
 
   // AudioInputStream::AudioInputCallback.
   virtual void OnData(AudioInputStream* stream,
-                      const uint8* src, uint32 size,
+                      const AudioBus* src,
                       uint32 hardware_delay_bytes,
                       double volume) OVERRIDE {
     base::AutoLock lock(lock_);
@@ -204,17 +203,17 @@ class FullDuplexAudioSinkSource
       ++input_elements_to_write_;
     }
 
+    // TODO(henrika): fix this and use AudioFifo instead.
     // Store the captured audio packet in a seekable media buffer.
-    if (!buffer_->Append(src, size)) {
-      // An attempt to write outside the buffer limits has been made.
-      // Double the buffer capacity to ensure that we have a buffer large
-      // enough to handle the current sample test scenario.
-      buffer_->set_forward_capacity(2 * buffer_->forward_capacity());
-      buffer_->Clear();
-    }
+    // if (!buffer_->Append(src, size)) {
+    // An attempt to write outside the buffer limits has been made.
+    // Double the buffer capacity to ensure that we have a buffer large
+    // enough to handle the current sample test scenario.
+    //   buffer_->set_forward_capacity(2 * buffer_->forward_capacity());
+    //   buffer_->Clear();
+    // }
   }
 
-  virtual void OnClose(AudioInputStream* stream) OVERRIDE {}
   virtual void OnError(AudioInputStream* stream) OVERRIDE {}
 
   // AudioOutputStream::AudioSourceCallback.
@@ -253,13 +252,6 @@ class FullDuplexAudioSinkSource
       return size / frame_size_;
     }
 
-    return 0;
-  }
-
-  virtual int OnMoreIOData(AudioBus* source,
-                           AudioBus* dest,
-                           AudioBuffersState buffers_state) OVERRIDE {
-    NOTREACHED();
     return 0;
   }
 
@@ -314,8 +306,7 @@ class AudioOutputStreamTraits {
 
   static StreamType* CreateStream(AudioManager* audio_manager,
       const AudioParameters& params) {
-    return audio_manager->MakeAudioOutputStream(params, std::string(),
-        std::string());
+    return audio_manager->MakeAudioOutputStream(params, std::string());
   }
 };
 

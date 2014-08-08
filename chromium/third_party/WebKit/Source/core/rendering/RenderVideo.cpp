@@ -27,13 +27,11 @@
 
 #include "core/rendering/RenderVideo.h"
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 #include "core/dom/Document.h"
-#include "core/html/HTMLVideoElement.h"
-#include "core/frame/Frame.h"
 #include "core/frame/FrameView.h"
-#include "core/page/Page.h"
-#include "core/rendering/LayoutRectRecorder.h"
+#include "core/frame/LocalFrame.h"
+#include "core/html/HTMLVideoElement.h"
 #include "core/rendering/PaintInfo.h"
 #include "core/rendering/RenderFullScreen.h"
 #include "platform/graphics/media/MediaPlayer.h"
@@ -83,7 +81,7 @@ void RenderVideo::updateIntrinsicSize()
 
     setIntrinsicSize(size);
     setPreferredLogicalWidthsDirty();
-    setNeedsLayout();
+    setNeedsLayoutAndFullPaintInvalidation();
 }
 
 LayoutSize RenderVideo::calculateIntrinsicSize()
@@ -99,9 +97,9 @@ LayoutSize RenderVideo::calculateIntrinsicSize()
     // The intrinsic height of a video element's playback area is the intrinsic height
     // of the video resource, if that is available; otherwise it is the intrinsic
     // height of the poster frame, if that is available; otherwise it is 150 CSS pixels.
-    MediaPlayer* player = mediaElement()->player();
-    if (player && video->readyState() >= HTMLVideoElement::HAVE_METADATA) {
-        LayoutSize size = player->naturalSize();
+    blink::WebMediaPlayer* webMediaPlayer = mediaElement()->webMediaPlayer();
+    if (webMediaPlayer && video->readyState() >= HTMLVideoElement::HAVE_METADATA) {
+        IntSize size = webMediaPlayer->naturalSize();
         if (!size.isEmpty())
             return size;
     }
@@ -186,14 +184,12 @@ bool RenderVideo::acceleratedRenderingInUse()
 
 void RenderVideo::layout()
 {
-    LayoutRectRecorder recorder(*this);
     updatePlayer();
     RenderMedia::layout();
 }
 
 HTMLVideoElement* RenderVideo::videoElement() const
 {
-    ASSERT(isHTMLVideoElement(node()));
     return toHTMLVideoElement(node());
 }
 
@@ -214,7 +210,7 @@ void RenderVideo::updatePlayer()
     if (!videoElement()->isActive())
         return;
 
-    contentChanged(VideoChanged);
+    videoElement()->setNeedsCompositingUpdate();
 }
 
 LayoutUnit RenderVideo::computeReplacedLogicalWidth(ShouldComputePreferred shouldComputePreferred) const
@@ -276,6 +272,20 @@ LayoutUnit RenderVideo::offsetHeight() const
     if (const RenderBlock* block = rendererPlaceholder(this))
         return block->offsetHeight();
     return RenderMedia::offsetHeight();
+}
+
+CompositingReasons RenderVideo::additionalCompositingReasons(CompositingTriggerFlags triggers) const
+{
+    if (RuntimeEnabledFeatures::overlayFullscreenVideoEnabled()) {
+        HTMLMediaElement* media = toHTMLMediaElement(node());
+        if (media->isFullscreen())
+            return CompositingReasonVideo;
+    }
+
+    if ((triggers & VideoTrigger) && shouldDisplayVideo() && supportsAcceleratedRendering())
+        return CompositingReasonVideo;
+
+    return CompositingReasonNone;
 }
 
 } // namespace WebCore

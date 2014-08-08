@@ -13,10 +13,13 @@
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "base/platform_file.h"
 #include "base/task_runner.h"
 #include "webkit/browser/fileapi/file_stream_writer.h"
 #include "webkit/browser/webkit_storage_browser_export.h"
+
+namespace content {
+class LocalFileStreamWriterTest;
+}
 
 namespace net {
 class FileStream;
@@ -37,11 +40,12 @@ class WEBKIT_STORAGE_BROWSER_EXPORT LocalFileStreamWriter
   virtual int Flush(const net::CompletionCallback& callback) OVERRIDE;
 
  private:
+  friend class content::LocalFileStreamWriterTest;
   friend class FileStreamWriter;
-  friend class LocalFileStreamWriterTest;
   LocalFileStreamWriter(base::TaskRunner* task_runner,
                         const base::FilePath& file_path,
-                        int64 initial_offset);
+                        int64 initial_offset,
+                        OpenOrCreate open_or_create);
 
   // Opens |file_path_| and if it succeeds, proceeds to InitiateSeek().
   // If failed, the error code is returned by calling |error_callback|.
@@ -78,6 +82,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT LocalFileStreamWriter
 
   // Initialization parameters.
   const base::FilePath file_path_;
+  OpenOrCreate open_or_create_;
   const int64 initial_offset_;
   scoped_refptr<base::TaskRunner> task_runner_;
 

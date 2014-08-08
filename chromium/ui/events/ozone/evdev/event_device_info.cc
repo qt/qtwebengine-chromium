@@ -14,8 +14,6 @@ namespace ui {
 namespace {
 
 bool GetEventBits(int fd, unsigned int type, void* buf, unsigned int size) {
-  base::ThreadRestrictions::AssertIOAllowed();
-
   if (ioctl(fd, EVIOCGBIT(type, size), buf) < 0) {
     DLOG(ERROR) << "failed EVIOCGBIT(" << type << ", " << size << ") on fd "
                 << fd;
@@ -26,8 +24,6 @@ bool GetEventBits(int fd, unsigned int type, void* buf, unsigned int size) {
 }
 
 bool GetPropBits(int fd, void* buf, unsigned int size) {
-  base::ThreadRestrictions::AssertIOAllowed();
-
   if (ioctl(fd, EVIOCGPROP(size), buf) < 0) {
     DLOG(ERROR) << "failed EVIOCGPROP(" << size << ") on fd " << fd;
     return false;
@@ -38,6 +34,14 @@ bool GetPropBits(int fd, void* buf, unsigned int size) {
 
 bool BitIsSet(const unsigned long* bits, unsigned int bit) {
   return (bits[bit / EVDEV_LONG_BITS] & (1UL << (bit % EVDEV_LONG_BITS)));
+}
+
+bool GetAbsInfo(int fd, int code, struct input_absinfo* absinfo) {
+  if (ioctl(fd, EVIOCGABS(code), absinfo)) {
+    DLOG(ERROR) << "failed EVIOCGABS(" << code << ") on fd " << fd;
+    return false;
+  }
+  return true;
 }
 
 }  // namespace
@@ -51,6 +55,7 @@ EventDeviceInfo::EventDeviceInfo() {
   memset(sw_bits_, 0, sizeof(sw_bits_));
   memset(led_bits_, 0, sizeof(led_bits_));
   memset(prop_bits_, 0, sizeof(prop_bits_));
+  memset(abs_info_, 0, sizeof(abs_info_));
 }
 
 EventDeviceInfo::~EventDeviceInfo() {}
@@ -79,6 +84,11 @@ bool EventDeviceInfo::Initialize(int fd) {
 
   if (!GetPropBits(fd, prop_bits_, sizeof(prop_bits_)))
     return false;
+
+  for (unsigned int i = 0; i < ABS_CNT; ++i)
+    if (HasAbsEvent(i))
+      if (!GetAbsInfo(fd, i, &abs_info_[i]))
+        return false;
 
   return true;
 }
@@ -129,6 +139,51 @@ bool EventDeviceInfo::HasProp(unsigned int code) const {
   if (code > INPUT_PROP_MAX)
     return false;
   return BitIsSet(prop_bits_, code);
+}
+
+int32 EventDeviceInfo::GetAbsMinimum(unsigned int code) const {
+  return abs_info_[code].minimum;
+}
+
+int32 EventDeviceInfo::GetAbsMaximum(unsigned int code) const {
+  return abs_info_[code].maximum;
+}
+
+bool EventDeviceInfo::HasAbsXY() const {
+  if (HasAbsEvent(ABS_X) && HasAbsEvent(ABS_Y))
+    return true;
+
+  if (HasAbsEvent(ABS_MT_POSITION_X) && HasAbsEvent(ABS_MT_POSITION_Y))
+    return true;
+
+  return false;
+}
+
+bool EventDeviceInfo::HasRelXY() const {
+  return HasRelEvent(REL_X) && HasRelEvent(REL_Y);
+}
+
+bool EventDeviceInfo::IsMappedToScreen() const {
+  // Device position is mapped directly to the screen.
+  if (HasProp(INPUT_PROP_DIRECT))
+    return true;
+
+  // Device position moves the cursor.
+  if (HasProp(INPUT_PROP_POINTER))
+    return false;
+
+  // Tablets are mapped to the screen.
+  if (HasKeyEvent(BTN_TOOL_PEN) || HasKeyEvent(BTN_STYLUS) ||
+      HasKeyEvent(BTN_STYLUS2))
+    return true;
+
+  // Touchpads are not mapped to the screen.
+  if (HasKeyEvent(BTN_LEFT) || HasKeyEvent(BTN_MIDDLE) ||
+      HasKeyEvent(BTN_RIGHT) || HasKeyEvent(BTN_TOOL_FINGER))
+    return false;
+
+  // Touchscreens are mapped to the screen.
+  return true;
 }
 
 }  // namespace ui

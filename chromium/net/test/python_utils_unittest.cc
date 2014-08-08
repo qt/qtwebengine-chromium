@@ -45,7 +45,7 @@ TEST(PythonUtils, Append) {
 }
 
 TEST(PythonUtils, PythonRunTime) {
-  CommandLine cmd_line(CommandLine::NO_PROGRAM);
+  base::CommandLine cmd_line(base::CommandLine::NO_PROGRAM);
   EXPECT_TRUE(GetPythonCommand(&cmd_line));
 
   // Run a python command to print a string and make sure the output is what
@@ -56,6 +56,6 @@ TEST(PythonUtils, PythonRunTime) {
   cmd_line.AppendArg(python_cmd);
   std::string output;
   EXPECT_TRUE(base::GetAppOutput(cmd_line, &output));
-  TrimWhitespace(output, TRIM_TRAILING, &output);
+  base::TrimWhitespace(output, base::TRIM_TRAILING, &output);
   EXPECT_EQ(input, output);
 }

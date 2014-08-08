@@ -33,7 +33,7 @@
 
 namespace WebCore {
 
-class WebGLVertexArrayObjectOES : public WebGLContextObject, public ScriptWrappable {
+class WebGLVertexArrayObjectOES FINAL : public WebGLContextObject, public ScriptWrappable {
 public:
     enum VaoType {
         VaoTypeDefault,
@@ -42,7 +42,7 @@ public:
 
     virtual ~WebGLVertexArrayObjectOES();
 
-    static PassRefPtr<WebGLVertexArrayObjectOES> create(WebGLRenderingContext*, VaoType);
+    static PassRefPtr<WebGLVertexArrayObjectOES> create(WebGLRenderingContextBase*, VaoType);
 
     // Cached values for vertex attrib range checks
     struct VertexAttribState {
@@ -61,14 +61,14 @@ public:
 
         bool enabled;
         RefPtr<WebGLBuffer> bufferBinding;
-        GC3Dsizei bytesPerElement;
-        GC3Dint size;
-        GC3Denum type;
+        GLsizei bytesPerElement;
+        GLint size;
+        GLenum type;
         bool normalized;
-        GC3Dsizei stride;
-        GC3Dsizei originalStride;
-        GC3Dintptr offset;
-        GC3Duint divisor;
+        GLsizei stride;
+        GLsizei originalStride;
+        GLintptr offset;
+        GLuint divisor;
     };
 
     bool isDefaultObject() const { return m_type == VaoTypeDefault; }
@@ -80,16 +80,14 @@ public:
     void setElementArrayBuffer(PassRefPtr<WebGLBuffer>);
 
     VertexAttribState& getVertexAttribState(int index) { return m_vertexAttribState[index]; }
-    void setVertexAttribState(GC3Duint, GC3Dsizei, GC3Dint, GC3Denum, GC3Dboolean, GC3Dsizei, GC3Dintptr, PassRefPtr<WebGLBuffer>);
+    void setVertexAttribState(GLuint, GLsizei, GLint, GLenum, GLboolean, GLsizei, GLintptr, PassRefPtr<WebGLBuffer>);
     void unbindBuffer(PassRefPtr<WebGLBuffer>);
-    void setVertexAttribDivisor(GC3Duint index, GC3Duint divisor);
+    void setVertexAttribDivisor(GLuint index, GLuint divisor);
 
 private:
-    WebGLVertexArrayObjectOES(WebGLRenderingContext*, VaoType);
+    WebGLVertexArrayObjectOES(WebGLRenderingContextBase*, VaoType);
 
-    virtual void deleteObjectImpl(GraphicsContext3D*, Platform3DObject);
-
-    virtual bool isVertexArray() const { return true; }
+    virtual void deleteObjectImpl(blink::WebGraphicsContext3D*, Platform3DObject) OVERRIDE;
 
     VaoType m_type;
     bool m_hasEverBeenBound;

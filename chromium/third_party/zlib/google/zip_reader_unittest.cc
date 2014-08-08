@@ -7,12 +7,15 @@
 #include <set>
 #include <string>
 
+#include "base/bind.h"
 #include "base/file_util.h"
+#include "base/files/file.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/logging.h"
 #include "base/md5.h"
 #include "base/path_service.h"
-#include "base/platform_file.h"
+#include "base/run_loop.h"
+#include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -21,44 +24,73 @@
 
 namespace {
 
-// Wrap PlatformFiles in a class so that we don't leak them in tests.
-class PlatformFileWrapper {
+const static std::string kQuuxExpectedMD5 = "d1ae4ac8a17a0e09317113ab284b57a6";
+
+class FileWrapper {
  public:
   typedef enum {
     READ_ONLY,
     READ_WRITE
   } AccessMode;
 
-  PlatformFileWrapper(const base::FilePath& file, AccessMode mode)
-      : file_(base::kInvalidPlatformFileValue) {
-    switch (mode) {
-      case READ_ONLY:
-        file_ = base::CreatePlatformFile(file,
-                                         base::PLATFORM_FILE_OPEN |
-                                         base::PLATFORM_FILE_READ,
-                                         NULL, NULL);
-        break;
-      case READ_WRITE:
-        file_ = base::CreatePlatformFile(file,
-                                         base::PLATFORM_FILE_CREATE_ALWAYS |
-                                         base::PLATFORM_FILE_READ |
-                                         base::PLATFORM_FILE_WRITE,
-                                         NULL, NULL);
-        break;
-      default:
-        NOTREACHED();
-    }
-    return;
+  FileWrapper(const base::FilePath& path, AccessMode mode) {
+    int flags = base::File::FLAG_READ;
+    if (mode == READ_ONLY)
+      flags |= base::File::FLAG_OPEN;
+    else
+      flags |= base::File::FLAG_WRITE | base::File::FLAG_CREATE_ALWAYS;
+
+    file_.Initialize(path, flags);
   }
 
-  ~PlatformFileWrapper() {
-    base::ClosePlatformFile(file_);
-  }
+  ~FileWrapper() {}
 
-  base::PlatformFile platform_file() { return file_; }
+  base::PlatformFile platform_file() { return file_.GetPlatformFile(); }
 
  private:
-  base::PlatformFile file_;
+  base::File file_;
+};
+
+// A mock that provides methods that can be used as callbacks in asynchronous
+// unzip functions.  Tracks the number of calls and number of bytes reported.
+// Assumes that progress callbacks will be executed in-order.
+class MockUnzipListener : public base::SupportsWeakPtr<MockUnzipListener> {
+ public:
+  MockUnzipListener()
+      : success_calls_(0),
+        failure_calls_(0),
+        progress_calls_(0),
+        current_progress_(0) {
+  }
+
+  // Success callback for async functions.
+  void OnUnzipSuccess() {
+    success_calls_++;
+  }
+
+  // Failure callback for async functions.
+  void OnUnzipFailure() {
+    failure_calls_++;
+  }
+
+  // Progress callback for async functions.
+  void OnUnzipProgress(int64 progress) {
+    DCHECK(progress > current_progress_);
+    progress_calls_++;
+    current_progress_ = progress;
+  }
+
+  int success_calls() { return success_calls_; }
+  int failure_calls() { return failure_calls_; }
+  int progress_calls() { return progress_calls_; }
+  int current_progress() { return current_progress_; }
+
+ private:
+  int success_calls_;
+  int failure_calls_;
+  int progress_calls_;
+
+  int64 current_progress_;
 };
 
 }   // namespace
@@ -113,6 +145,16 @@ class ZipReaderTest : public PlatformTest {
     return true;
   }
 
+  bool CompareFileAndMD5(const base::FilePath& path,
+                         const std::string expected_md5) {
+    // Read the output file and compute the MD5.
+    std::string output;
+    if (!base::ReadFileToString(path, &output))
+      return false;
+    const std::string md5 = base::MD5String(output);
+    return expected_md5 == md5;
+  }
+
   // The path to temporary directory used to contain the test operations.
   base::FilePath test_dir_;
   // The path to the test data directory where test.zip etc. are located.
@@ -128,6 +170,8 @@ class ZipReaderTest : public PlatformTest {
   std::set<base::FilePath> test_zip_contents_;
 
   base::ScopedTempDir temp_dir_;
+
+  base::MessageLoop message_loop_;
 };
 
 TEST_F(ZipReaderTest, Open_ValidZipFile) {
@@ -137,8 +181,7 @@ TEST_F(ZipReaderTest, Open_ValidZipFile) {
 
 TEST_F(ZipReaderTest, Open_ValidZipPlatformFile) {
   ZipReader reader;
-  PlatformFileWrapper zip_fd_wrapper(test_zip_file_,
-                                     PlatformFileWrapper::READ_ONLY);
+  FileWrapper zip_fd_wrapper(test_zip_file_, FileWrapper::READ_ONLY);
   ASSERT_TRUE(reader.OpenFromPlatformFile(zip_fd_wrapper.platform_file()));
 }
 
@@ -175,8 +218,7 @@ TEST_F(ZipReaderTest, Iteration) {
 TEST_F(ZipReaderTest, PlatformFileIteration) {
   std::set<base::FilePath> actual_contents;
   ZipReader reader;
-  PlatformFileWrapper zip_fd_wrapper(test_zip_file_,
-                                     PlatformFileWrapper::READ_ONLY);
+  FileWrapper zip_fd_wrapper(test_zip_file_, FileWrapper::READ_ONLY);
   ASSERT_TRUE(reader.OpenFromPlatformFile(zip_fd_wrapper.platform_file()));
   while (reader.HasMore()) {
     ASSERT_TRUE(reader.OpenCurrentEntryInZip());
@@ -220,8 +262,7 @@ TEST_F(ZipReaderTest, ExtractCurrentEntryToFilePath_RegularFile) {
   ASSERT_TRUE(base::ReadFileToString(test_dir_.AppendASCII("quux.txt"),
                                      &output));
   const std::string md5 = base::MD5String(output);
-  const std::string kExpectedMD5 = "d1ae4ac8a17a0e09317113ab284b57a6";
-  EXPECT_EQ(kExpectedMD5, md5);
+  EXPECT_EQ(kQuuxExpectedMD5, md5);
   // quux.txt should be larger than kZipBufSize so that we can exercise
   // the loop in ExtractCurrentEntry().
   EXPECT_LT(static_cast<size_t>(internal::kZipBufSize), output.size());
@@ -229,8 +270,7 @@ TEST_F(ZipReaderTest, ExtractCurrentEntryToFilePath_RegularFile) {
 
 TEST_F(ZipReaderTest, PlatformFileExtractCurrentEntryToFilePath_RegularFile) {
   ZipReader reader;
-  PlatformFileWrapper zip_fd_wrapper(test_zip_file_,
-                                     PlatformFileWrapper::READ_ONLY);
+  FileWrapper zip_fd_wrapper(test_zip_file_, FileWrapper::READ_ONLY);
   ASSERT_TRUE(reader.OpenFromPlatformFile(zip_fd_wrapper.platform_file()));
   base::FilePath target_path(FILE_PATH_LITERAL("foo/bar/quux.txt"));
   ASSERT_TRUE(reader.LocateAndOpenEntry(target_path));
@@ -241,8 +281,7 @@ TEST_F(ZipReaderTest, PlatformFileExtractCurrentEntryToFilePath_RegularFile) {
   ASSERT_TRUE(base::ReadFileToString(test_dir_.AppendASCII("quux.txt"),
                                      &output));
   const std::string md5 = base::MD5String(output);
-  const std::string kExpectedMD5 = "d1ae4ac8a17a0e09317113ab284b57a6";
-  EXPECT_EQ(kExpectedMD5, md5);
+  EXPECT_EQ(kQuuxExpectedMD5, md5);
   // quux.txt should be larger than kZipBufSize so that we can exercise
   // the loop in ExtractCurrentEntry().
   EXPECT_LT(static_cast<size_t>(internal::kZipBufSize), output.size());
@@ -251,12 +290,11 @@ TEST_F(ZipReaderTest, PlatformFileExtractCurrentEntryToFilePath_RegularFile) {
 #if defined(OS_POSIX)
 TEST_F(ZipReaderTest, PlatformFileExtractCurrentEntryToFd_RegularFile) {
   ZipReader reader;
-  PlatformFileWrapper zip_fd_wrapper(test_zip_file_,
-                                     PlatformFileWrapper::READ_ONLY);
+  FileWrapper zip_fd_wrapper(test_zip_file_, FileWrapper::READ_ONLY);
   ASSERT_TRUE(reader.OpenFromPlatformFile(zip_fd_wrapper.platform_file()));
   base::FilePath target_path(FILE_PATH_LITERAL("foo/bar/quux.txt"));
   base::FilePath out_path = test_dir_.AppendASCII("quux.txt");
-  PlatformFileWrapper out_fd_w(out_path, PlatformFileWrapper::READ_WRITE);
+  FileWrapper out_fd_w(out_path, FileWrapper::READ_WRITE);
   ASSERT_TRUE(reader.LocateAndOpenEntry(target_path));
   ASSERT_TRUE(reader.ExtractCurrentEntryToFd(out_fd_w.platform_file()));
   // Read the output file and compute the MD5.
@@ -264,8 +302,7 @@ TEST_F(ZipReaderTest, PlatformFileExtractCurrentEntryToFd_RegularFile) {
   ASSERT_TRUE(base::ReadFileToString(test_dir_.AppendASCII("quux.txt"),
                                      &output));
   const std::string md5 = base::MD5String(output);
-  const std::string kExpectedMD5 = "d1ae4ac8a17a0e09317113ab284b57a6";
-  EXPECT_EQ(kExpectedMD5, md5);
+  EXPECT_EQ(kQuuxExpectedMD5, md5);
   // quux.txt should be larger than kZipBufSize so that we can exercise
   // the loop in ExtractCurrentEntry().
   EXPECT_LT(static_cast<size_t>(internal::kZipBufSize), output.size());
@@ -296,8 +333,7 @@ TEST_F(ZipReaderTest, ExtractCurrentEntryIntoDirectory_RegularFile) {
   ASSERT_TRUE(base::ReadFileToString(
       test_dir_.AppendASCII("foo/bar/quux.txt"), &output));
   const std::string md5 = base::MD5String(output);
-  const std::string kExpectedMD5 = "d1ae4ac8a17a0e09317113ab284b57a6";
-  EXPECT_EQ(kExpectedMD5, md5);
+  EXPECT_EQ(kQuuxExpectedMD5, md5);
 }
 
 TEST_F(ZipReaderTest, current_entry_info_RegularFile) {
@@ -426,6 +462,115 @@ TEST_F(ZipReaderTest, OpenFromString) {
   ASSERT_TRUE(base::ReadFileToString(
       test_dir_.AppendASCII("test.txt"), &actual));
   EXPECT_EQ(std::string("This is a test.\n"), actual);
+}
+
+// Verifies that the asynchronous extraction to a file works.
+TEST_F(ZipReaderTest, ExtractToFileAsync_RegularFile) {
+  MockUnzipListener listener;
+
+  ZipReader reader;
+  base::FilePath target_file = test_dir_.AppendASCII("quux.txt");
+  base::FilePath target_path(FILE_PATH_LITERAL("foo/bar/quux.txt"));
+  ASSERT_TRUE(reader.Open(test_zip_file_));
+  ASSERT_TRUE(reader.LocateAndOpenEntry(target_path));
+  reader.ExtractCurrentEntryToFilePathAsync(
+      target_file,
+      base::Bind(&MockUnzipListener::OnUnzipSuccess,
+                 listener.AsWeakPtr()),
+      base::Bind(&MockUnzipListener::OnUnzipFailure,
+                 listener.AsWeakPtr()),
+      base::Bind(&MockUnzipListener::OnUnzipProgress,
+                 listener.AsWeakPtr()));
+
+  EXPECT_EQ(0, listener.success_calls());
+  EXPECT_EQ(0, listener.failure_calls());
+  EXPECT_EQ(0, listener.progress_calls());
+
+  base::RunLoop().RunUntilIdle();
+
+  EXPECT_EQ(1, listener.success_calls());
+  EXPECT_EQ(0, listener.failure_calls());
+  EXPECT_LE(1, listener.progress_calls());
+
+  std::string output;
+  ASSERT_TRUE(base::ReadFileToString(test_dir_.AppendASCII("quux.txt"),
+                                     &output));
+  const std::string md5 = base::MD5String(output);
+  EXPECT_EQ(kQuuxExpectedMD5, md5);
+
+  int64 file_size = 0;
+  ASSERT_TRUE(base::GetFileSize(target_file, &file_size));
+
+  EXPECT_EQ(file_size, listener.current_progress());
+}
+
+// Verifies that the asynchronous extraction to a file works.
+TEST_F(ZipReaderTest, ExtractToFileAsync_Directory) {
+  MockUnzipListener listener;
+
+  ZipReader reader;
+  base::FilePath target_file = test_dir_.AppendASCII("foo");
+  base::FilePath target_path(FILE_PATH_LITERAL("foo/"));
+  ASSERT_TRUE(reader.Open(test_zip_file_));
+  ASSERT_TRUE(reader.LocateAndOpenEntry(target_path));
+  reader.ExtractCurrentEntryToFilePathAsync(
+      target_file,
+      base::Bind(&MockUnzipListener::OnUnzipSuccess,
+                 listener.AsWeakPtr()),
+      base::Bind(&MockUnzipListener::OnUnzipFailure,
+                 listener.AsWeakPtr()),
+      base::Bind(&MockUnzipListener::OnUnzipProgress,
+                 listener.AsWeakPtr()));
+
+  EXPECT_EQ(0, listener.success_calls());
+  EXPECT_EQ(0, listener.failure_calls());
+  EXPECT_EQ(0, listener.progress_calls());
+
+  base::RunLoop().RunUntilIdle();
+
+  EXPECT_EQ(1, listener.success_calls());
+  EXPECT_EQ(0, listener.failure_calls());
+  EXPECT_GE(0, listener.progress_calls());
+
+  ASSERT_TRUE(base::DirectoryExists(target_file));
+}
+
+TEST_F(ZipReaderTest, ExtractCurrentEntryToString) {
+  // test_mismatch_size.zip contains files with names from 0.txt to 7.txt with
+  // sizes from 0 to 7 bytes respectively, being the contents of each file a
+  // substring of "0123456" starting at '0'.
+  base::FilePath test_zip_file =
+      test_data_dir_.AppendASCII("test_mismatch_size.zip");
+
+  ZipReader reader;
+  std::string contents;
+  ASSERT_TRUE(reader.Open(test_zip_file));
+
+  for (size_t i = 0; i < 8; i++) {
+    SCOPED_TRACE(base::StringPrintf("Processing %d.txt", static_cast<int>(i)));
+
+    base::FilePath file_name = base::FilePath::FromUTF8Unsafe(
+        base::StringPrintf("%d.txt", static_cast<int>(i)));
+    ASSERT_TRUE(reader.LocateAndOpenEntry(file_name));
+
+    if (i > 1) {
+      // Off by one byte read limit: must fail.
+      EXPECT_FALSE(reader.ExtractCurrentEntryToString(i - 1, &contents));
+    }
+
+    if (i > 0) {
+      // Exact byte read limit: must pass.
+      EXPECT_TRUE(reader.ExtractCurrentEntryToString(i, &contents));
+      EXPECT_EQ(i, contents.size());
+      EXPECT_EQ(0, memcmp(contents.c_str(), "0123456", i));
+    }
+
+    // More than necessary byte read limit: must pass.
+    EXPECT_TRUE(reader.ExtractCurrentEntryToString(16, &contents));
+    EXPECT_EQ(i, contents.size());
+    EXPECT_EQ(0, memcmp(contents.c_str(), "0123456", i));
+  }
+  reader.Close();
 }
 
 }  // namespace zip

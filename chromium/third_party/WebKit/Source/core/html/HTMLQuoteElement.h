@@ -31,12 +31,14 @@ namespace WebCore {
 
 class HTMLQuoteElement FINAL : public HTMLElement {
 public:
-    static PassRefPtr<HTMLQuoteElement> create(const QualifiedName&, Document&);
+    DECLARE_ELEMENT_FACTORY_WITH_TAGNAME(HTMLQuoteElement);
 
 private:
     HTMLQuoteElement(const QualifiedName&, Document&);
 
     virtual bool isURLAttribute(const Attribute&) const OVERRIDE;
+    virtual bool hasLegalLinkAttribute(const QualifiedName&) const OVERRIDE;
+    virtual const QualifiedName& subResourceAttributeName() const OVERRIDE;
 };
 
 } //namespace

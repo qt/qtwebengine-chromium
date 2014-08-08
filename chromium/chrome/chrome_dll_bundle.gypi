@@ -76,6 +76,7 @@
     # Bring in pdfsqueeze and run it on all pdfs
     '../build/temp_gyp/pdfsqueeze.gyp:pdfsqueeze',
     '../crypto/crypto.gyp:crypto',
+    '../pdf/pdf.gyp:pdf',
     # On Mac, Flash gets put into the framework, so we need this
     # dependency here. flash_player.gyp will copy the Flash bundle
     # into PRODUCT_DIR.
@@ -108,7 +109,6 @@
       }],
     ],
     'libpeer_target_type%': 'static_library',
-    'repack_path': '../tools/grit/grit/format/repack.py',
   },
   'postbuilds': [
     {
@@ -139,21 +139,18 @@
   ],
   'copies': [
     {
-      # Copy FFmpeg binaries for audio/video support.
       'destination': '<(PRODUCT_DIR)/$(CONTENTS_FOLDER_PATH)/Libraries',
       'files': [
+        '<(PRODUCT_DIR)/exif.so',
         '<(PRODUCT_DIR)/ffmpegsumo.so',
       ],
     },
     {
       'destination': '<(PRODUCT_DIR)/$(CONTENTS_FOLDER_PATH)/Internet Plug-Ins',
-      'files': [],
+      'files': [
+        '<(PRODUCT_DIR)/PDF.plugin',
+      ],
       'conditions': [
-        ['internal_pdf', {
-          'files': [
-            '<(PRODUCT_DIR)/PDF.plugin',
-          ],
-        }],
         ['disable_nacl!=1', {
           'files': [
             '<(PRODUCT_DIR)/ppGoogleNaClPluginChrome.plugin',
@@ -279,11 +276,6 @@
         },
       ],
     }],  # mac_keystone
-    ['internal_pdf', {
-      'dependencies': [
-        '../pdf/pdf.gyp:pdf',
-      ],
-    }],
     ['debug_devtools==1', {
       'postbuilds': [{
         'postbuild_name': 'Copy inspector files',
@@ -307,6 +299,11 @@
           '<(PRODUCT_DIR)/libpeerconnection.so',
         ],
       }],
+    }],
+    ['icu_use_data_file_flag==1', {
+      'mac_bundle_resources': [
+        '<(PRODUCT_DIR)/icudtl.dat',
+      ],
     }],
   ],  # conditions
 }

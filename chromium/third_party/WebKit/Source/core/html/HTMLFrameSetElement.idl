@@ -18,18 +18,21 @@
  * Boston, MA 02110-1301, USA.
  */
 
-interface HTMLFrameSetElement : HTMLElement {
-    [ImplementedAs=anonymousNamedGetter, OverrideBuiltins, NotEnumerable] getter Window (DOMString name);
+[
+    OverrideBuiltins,
+] interface HTMLFrameSetElement : HTMLElement {
+    [NotEnumerable] getter Window (DOMString name);
     [Reflect] attribute DOMString cols;
     [Reflect] attribute DOMString rows;
 
-    [Conditional=ORIENTATION_EVENTS] attribute EventHandler onorientationchange;
+    [RuntimeEnabled=OrientationEvent] attribute EventHandler onorientationchange;
 
     // Overrides of GlobalEventHandler attributes
     attribute EventHandler onblur;
     attribute EventHandler onerror;
     attribute EventHandler onfocus;
     attribute EventHandler onload;
+    attribute EventHandler onresize;
     attribute EventHandler onscroll;
 };
 

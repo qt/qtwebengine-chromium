@@ -11,7 +11,6 @@
 #include "base/files/file_path.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
-#include "base/platform_file.h"
 #include "url/gurl.h"
 #include "webkit/browser/webkit_storage_browser_export.h"
 #include "webkit/common/fileapi/file_system_types.h"
@@ -29,15 +28,17 @@ class OpenFileHandleContext : public base::RefCounted<OpenFileHandleContext> {
   OpenFileHandleContext(const base::FilePath& platform_path,
                         QuotaReservationBuffer* reservation_buffer);
 
-  void UpdateMaxWrittenOffset(int64 offset,
-                              int64* new_file_size,
-                              int64* growth);
+  // Updates the max written offset and returns the amount of growth.
+  int64 UpdateMaxWrittenOffset(int64 offset);
+
+  void AddAppendModeWriteAmount(int64 amount);
 
   const base::FilePath& platform_path() const {
     return platform_path_;
   }
 
-  int64 base_file_size() const { return maximum_written_offset_; }
+  int64 GetEstimatedFileSize() const;
+  int64 GetMaxWrittenOffset() const;
 
  private:
   friend class base::RefCounted<OpenFileHandleContext>;
@@ -45,6 +46,7 @@ class OpenFileHandleContext : public base::RefCounted<OpenFileHandleContext> {
 
   int64 initial_file_size_;
   int64 maximum_written_offset_;
+  int64 append_mode_write_amount_;
   base::FilePath platform_path_;
 
   scoped_refptr<QuotaReservationBuffer> reservation_buffer_;

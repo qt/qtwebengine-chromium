@@ -31,16 +31,38 @@
 #ifndef V8DOMActivityLogger_h
 #define V8DOMActivityLogger_h
 
-#include <v8.h>
+#include "wtf/PassOwnPtr.h"
 #include "wtf/text/WTFString.h"
+#include <v8.h>
 
 namespace WebCore {
+
+class KURL;
 
 class V8DOMActivityLogger {
 public:
     virtual ~V8DOMActivityLogger() { }
 
-    virtual void log(const String& apiName, int argc, const v8::Handle<v8::Value>* argv, const String& extraInfo) { }
+    virtual void logGetter(const String& apiName) { }
+    virtual void logSetter(const String& apiName, const v8::Handle<v8::Value>& newValue) { }
+    virtual void logSetter(const String& apiName, const v8::Handle<v8::Value>& newValue, const v8::Handle<v8::Value>& oldValue) { }
+    virtual void logMethod(const String& apiName, int argc, const v8::Handle<v8::Value>* argv) { }
+
+    // Associates a logger with the world identified by worldId (worlId may be 0
+    // identifying the main world) and extension ID. Extension ID is used to
+    // identify a logger for main world only (worldId == 0). If the world is not
+    // a main world, an extension ID is ignored.
+    //
+    // A renderer process may host multiple extensions when the browser hits the
+    // renderer process limit. In such case, we assign multiple extensions to
+    // the same main world of a renderer process. In order to distinguish the
+    // extensions and their activity loggers in the main world, we require an
+    // extension ID. Otherwise, extension activities may be logged under
+    // a wrong extension ID.
+    static void setActivityLogger(int worldId, const String&, PassOwnPtr<V8DOMActivityLogger>);
+    static V8DOMActivityLogger* activityLogger(int worldId, const String& extensionId);
+    static V8DOMActivityLogger* activityLogger(int worldId, const KURL&);
+
 };
 
 } // namespace WebCore

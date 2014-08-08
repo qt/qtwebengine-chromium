@@ -30,7 +30,7 @@
 
 
 .overrides-view .tabbed-pane {
-    flex-direction: row;
+    flex-direction: row !important;
 }
 
 .overrides-view .tabbed-pane-header {
@@ -66,7 +66,7 @@
     height: 22px;
     padding-left: 0;
     padding-left: 10px;
-    border-left: 4px solid transparent;
+    border-left: 8px solid transparent;
 }
 
 .overrides-view .tabbed-pane-header-tab:not(.selected) {
@@ -76,7 +76,7 @@
 .overrides-view .tabbed-pane-header-tab.selected {
     color: inherit;
     border: none transparent;
-    border-left: 4px solid #666;
+    border-left: 8px solid #666;
 }
 
 .overrides-view fieldset {
@@ -84,8 +84,56 @@
     padding: 0 0 5px 15px;
 }
 
-.overrides-user-agent fieldset {
+.overrides-view fieldset p {
+    display: inline-block;
+    padding: 0;
+    margin: 0;
+    border: 0;
+}
+
+.overrides-view fieldset p label {
+    display: inline-block;
+}
+
+.overrides-view .field-error-message {
+    display: none;
+}
+
+.overrides-view input[type='text']:focus::-webkit-input-placeholder {
+    color: transparent !important;
+}
+
+/* Network tab */
+
+.overrides-network fieldset {
     padding-top: 5px;
+}
+
+.overrides-network fieldset p {
+    width: 100%;
+    margin-left: 2px;
+}
+
+.overrides-network fieldset select {
+    margin-bottom: 5px;
+}
+
+.overrides-network fieldset p label {
+    cursor: default;
+    margin-right: 5px;
+}
+
+.overrides-network fieldset input[type='text'] {
+    width: 100%;
+    max-width: 400px;
+    min-width: 120px;
+    margin-left: 2px;
+}
+
+/* Device tab */
+
+.overrides-device {
+    width: 100%;
 }
 
 .overrides-device > select {
@@ -94,8 +142,12 @@
     max-width: 90%;
 }
 
-.overrides-device button {
-    margin-right: 10px;
+.overrides-device input {
+    text-align: right;
+}
+
+.overrides-device input[type=range] {
+    width: 100%;
 }
 
 .overrides-device > label {
@@ -113,56 +165,58 @@
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
-    padding-top: 3px;
-}
-
-.overrides-viewport {
-    width: 100%;
-}
-
-.overrides-viewport input {
-    text-align: right;
-}
-
-.overrides-viewport input[type=range] {
-    width: 100%;
+    margin-top: 10px;
 }
 
 button.overrides-swap {
     height: 20px;
 }
 
-.overrides-viewport label {
-    display: block;
+.overrides-device label {
+    margin-bottom: 10px;
+}
+
+.overrides-device table {
     margin-bottom: 5px;
 }
 
-.overrides-viewport table {
-    margin-bottom: 5px;
+.overrides-device > label {
+    margin-bottom: 4px;
 }
 
-.overrides-viewport > label {
-    margin-bottom: 8px;
-}
-
-.overrides-viewport .help-footnote {
+.overrides-device .help-footnote {
     border-top: 1px solid #EEEEEE;
     margin: 0;
     padding: 12px;
 }
 
-.overrides-user-agent input[type=text] {
-    width: 400px;
-    max-width: 90%;
+.overrides-view label {
+    display: flex;
+    height: auto;
 }
 
-.overrides-user-agent select {
-    margin: 7px 0;
+#metrics-override-section > span {
+    padding: 0 10px 0 3px;
 }
+
+#metrics-override-section > select {
+    width: 244px;
+}
+
+/* Media tab */
+
+.overrides-media > label {
+    margin-bottom: 4px;
+}
+
+/* Sensors tab */
 
 .overrides-sensors > label {
-    display: block;
     margin-bottom: 10px;
+}
+
+.overrides-device, .overrides-media, .overrides-network, .overrides-sensors {
+    flex: none !important;
 }
 
 .overrides-sensors input {
@@ -170,16 +224,24 @@ button.overrides-swap {
 }
 
 .overrides-activate-device #tab-device,
-.overrides-activate-viewport #tab-viewport,
-.overrides-activate-user-agent #tab-user-agent,
+.overrides-activate-media #tab-media,
+.overrides-activate-network #tab-network,
 .overrides-activate-sensors #tab-sensors {
-    color: rgb(25, 100, 228);
     opacity: 0.8;
 }
 
+.overrides-activate-device #tab-device .tabbed-pane-header-tab-title::after,
+.overrides-activate-media #tab-media .tabbed-pane-header-tab-title::after,
+.overrides-activate-network #tab-network .tabbed-pane-header-tab-title::after,
+.overrides-activate-sensors #tab-sensors .tabbed-pane-header-tab-title::after {
+    padding-left: 3px;
+    content: "\2713";
+    color: rgb(25, 100, 228);
+}
+
 .overrides-activate-device #tab-device.selected,
-.overrides-activate-viewport #tab-viewport.selected,
-.overrides-activate-user-agent #tab-user-agent.selected,
+.overrides-activate-media #tab-media.selected,
+.overrides-activate-network #tab-network.selected,
 .overrides-activate-sensors #tab-sensors.selected {
     opacity: 1;
 }
@@ -207,6 +269,10 @@ button.overrides-swap {
     padding: 3px;
 }
 
+.overrides-view input[readonly] {
+    background-color: rgb(235, 235, 228);
+}
+
 .overrides-view .overrides-footer {
     flex: none;
     padding: 0 0 1px 3px;
@@ -216,7 +282,7 @@ button.overrides-swap {
 
 .overrides-view .overrides-footer::before {
     background-image: url(Images/statusbarButtonGlyphs.png);
-    background-size: 320px 120px;
+    background-size: 320px 144px;
     width: 10px;
     height: 10px;
     content: "";
@@ -227,6 +293,25 @@ button.overrides-swap {
     margin-right: 4px;
 }
 
+@media (-webkit-min-device-pixel-ratio: 1.5) {
+.overrides-view .overrides-footer::before {
+    background-image: url(Images/statusbarButtonGlyphs_2x.png);
+}
+} /* media */
+
 .overrides-view .overrides-footer .warning-icon-small {
     margin-right: 3px;
+}
+
+.overrides-splash-screen {
+    display: block;
+    padding: 10px 10px;
+}
+
+.overrides-splash-screen > button {
+    margin: -4px 0;
+}
+
+.overrides-reset-button {
+    margin: 9px 0 0 17px;
 }

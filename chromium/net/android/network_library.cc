@@ -12,7 +12,6 @@
 #include "jni/AndroidNetworkLibrary_jni.h"
 
 using base::android::AttachCurrentThread;
-using base::android::ClearException;
 using base::android::ConvertJavaStringToUTF8;
 using base::android::ConvertUTF8ToJavaString;
 using base::android::GetApplicationContext;
@@ -23,9 +22,12 @@ using base::android::ToJavaByteArray;
 namespace net {
 namespace android {
 
-CertVerifyResultAndroid VerifyX509CertChain(
-    const std::vector<std::string>& cert_chain,
-    const std::string& auth_type) {
+void VerifyX509CertChain(const std::vector<std::string>& cert_chain,
+                         const std::string& auth_type,
+                         const std::string& host,
+                         CertVerifyStatusAndroid* status,
+                         bool* is_issued_by_known_root,
+                         std::vector<std::string>* verified_chain) {
   JNIEnv* env = AttachCurrentThread();
 
   ScopedJavaLocalRef<jobjectArray> chain_byte_array =
@@ -36,10 +38,16 @@ CertVerifyResultAndroid VerifyX509CertChain(
       ConvertUTF8ToJavaString(env, auth_type);
   DCHECK(!auth_string.is_null());
 
-  jint result = Java_AndroidNetworkLibrary_verifyServerCertificates(
-      env, chain_byte_array.obj(), auth_string.obj());
+  ScopedJavaLocalRef<jstring> host_string =
+      ConvertUTF8ToJavaString(env, host);
+  DCHECK(!host_string.is_null());
 
-  return static_cast<CertVerifyResultAndroid>(result);
+  ScopedJavaLocalRef<jobject> result =
+      Java_AndroidNetworkLibrary_verifyServerCertificates(
+          env, chain_byte_array.obj(), auth_string.obj(), host_string.obj());
+
+  ExtractCertVerifyResult(result.obj(),
+                          status, is_issued_by_known_root, verified_chain);
 }
 
 void AddTestRootCertificate(const uint8* cert, size_t len) {
@@ -112,6 +120,20 @@ bool GetMimeTypeFromExtension(const std::string& extension,
     return false;
   *result = ConvertJavaStringToUTF8(ret);
   return true;
+}
+
+std::string GetTelephonyNetworkCountryIso() {
+  return base::android::ConvertJavaStringToUTF8(
+      Java_AndroidNetworkLibrary_getNetworkCountryIso(
+          base::android::AttachCurrentThread(),
+          base::android::GetApplicationContext()));
+}
+
+std::string GetTelephonyNetworkOperator() {
+  return base::android::ConvertJavaStringToUTF8(
+      Java_AndroidNetworkLibrary_getNetworkOperator(
+          base::android::AttachCurrentThread(),
+          base::android::GetApplicationContext()));
 }
 
 bool RegisterNetworkLibrary(JNIEnv* env) {

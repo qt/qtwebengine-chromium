@@ -8,10 +8,10 @@
 #include "base/strings/sys_string_conversions.h"
 #include "ui/base/accelerators/accelerator.h"
 #include "ui/base/accelerators/platform_accelerator_cocoa.h"
-#import "ui/base/cocoa/cocoa_event_utils.h"
 #include "ui/base/l10n/l10n_util_mac.h"
 #include "ui/base/models/simple_menu_model.h"
-#include "ui/gfx/font.h"
+#import "ui/events/event_utils.h"
+#include "ui/gfx/font_list.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/text_elider.h"
 
@@ -25,12 +25,11 @@
 @synthesize model = model_;
 @synthesize useWithPopUpButtonCell = useWithPopUpButtonCell_;
 
-+ (string16)elideMenuTitle:(const string16&)title
-                   toWidth:(int)width {
++ (base::string16)elideMenuTitle:(const base::string16&)title
+                         toWidth:(int)width {
   NSFont* nsfont = [NSFont menuBarFontOfSize:0];  // 0 means "default"
-  gfx::Font font(base::SysNSStringToUTF8([nsfont fontName]),
-                 static_cast<int>([nsfont pointSize]));
-  return gfx::ElideText(title, font, width, gfx::ELIDE_AT_END);
+  return gfx::ElideText(title, gfx::FontList(gfx::Font(nsfont)), width,
+                        gfx::ELIDE_TAIL);
 }
 
 - (id)init {
@@ -102,7 +101,7 @@
 - (void)addItemToMenu:(NSMenu*)menu
               atIndex:(NSInteger)index
             fromModel:(ui::MenuModel*)model {
-  string16 label16 = model->GetLabelAt(index);
+  base::string16 label16 = model->GetLabelAt(index);
   int maxWidth = [self maxWidthForMenuModel:model modelIndex:index];
   if (maxWidth != -1)
     label16 = [MenuController elideMenuTitle:label16 toWidth:maxWidth];
@@ -180,10 +179,11 @@
       model->GetIconAt(modelIndex, &icon);
       [(id)item setImage:icon.IsEmpty() ? nil : icon.ToNSImage()];
     }
-    const gfx::Font* font = model->GetLabelFontAt(modelIndex);
-    if (font) {
+    const gfx::FontList* font_list = model->GetLabelFontListAt(modelIndex);
+    if (font_list) {
       NSDictionary *attributes =
-          [NSDictionary dictionaryWithObject:font->GetNativeFont()
+          [NSDictionary dictionaryWithObject:font_list->GetPrimaryFont().
+                                             GetNativeFont()
                                       forKey:NSFontAttributeName];
       base::scoped_nsobject<NSAttributedString> title(
           [[NSAttributedString alloc] initWithString:[(id)item title]
@@ -204,7 +204,7 @@
           [[sender representedObject] pointerValue]);
   DCHECK(model);
   if (model) {
-    int event_flags = ui::EventFlagsFromNSEvent([NSApp currentEvent]);
+    int event_flags = ui::EventFlagsFromNative([NSApp currentEvent]);
     model->ActivatedAt(modelIndex, event_flags);
   }
 }

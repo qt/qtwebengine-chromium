@@ -11,11 +11,12 @@
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
 #include "base/threading/non_thread_safe.h"
+#include "content/child/worker_task_runner.h"
 #include "third_party/WebKit/public/platform/WebFileSystem.h"
-#include "webkit/child/worker_task_runner.h"
 
 namespace base {
 class MessageLoopProxy;
+class WaitableEvent;
 }
 
 namespace blink {
@@ -26,11 +27,12 @@ class WebFileWriterClient;
 
 namespace content {
 
-class WebFileSystemImpl
-    : public blink::WebFileSystem,
-      public webkit_glue::WorkerTaskRunner::Observer,
-      public base::NonThreadSafe {
+class WebFileSystemImpl : public blink::WebFileSystem,
+                          public WorkerTaskRunner::Observer,
+                          public base::NonThreadSafe {
  public:
+  class WaitableCallbackResults;
+
   // Returns thread-specific instance.  If non-null |main_thread_loop|
   // is given and no thread-specific instance has been created it may
   // create a new instance.
@@ -45,7 +47,7 @@ class WebFileSystemImpl
   explicit WebFileSystemImpl(base::MessageLoopProxy* main_thread_loop);
   virtual ~WebFileSystemImpl();
 
-  // webkit_glue::WorkerTaskRunner::Observer implementation.
+  // WorkerTaskRunner::Observer implementation.
   virtual void OnWorkerRunLoopStopped() OVERRIDE;
 
   // WebFileSystem implementation.
@@ -91,7 +93,7 @@ class WebFileSystemImpl
   virtual void directoryExists(
       const blink::WebURL& path,
       blink::WebFileSystemCallbacks) OVERRIDE;
-  virtual void readDirectory(
+  virtual int readDirectory(
       const blink::WebURL& path,
       blink::WebFileSystemCallbacks) OVERRIDE;
   virtual void createFileWriter(
@@ -101,18 +103,25 @@ class WebFileSystemImpl
   virtual void createSnapshotFileAndReadMetadata(
       const blink::WebURL& path,
       blink::WebFileSystemCallbacks);
+  virtual bool waitForAdditionalResult(int callbacksId);
 
   int RegisterCallbacks(const blink::WebFileSystemCallbacks& callbacks);
-  blink::WebFileSystemCallbacks GetAndUnregisterCallbacks(
-      int callbacks_id);
+  blink::WebFileSystemCallbacks GetCallbacks(int callbacks_id);
+  void UnregisterCallbacks(int callbacks_id);
 
  private:
   typedef std::map<int, blink::WebFileSystemCallbacks> CallbacksMap;
+  typedef std::map<int, scoped_refptr<WaitableCallbackResults> >
+      WaitableCallbackResultsMap;
+
+  WaitableCallbackResults* MaybeCreateWaitableResults(
+      const blink::WebFileSystemCallbacks& callbacks, int callbacks_id);
 
   scoped_refptr<base::MessageLoopProxy> main_thread_loop_;
 
   CallbacksMap callbacks_;
   int next_callbacks_id_;
+  WaitableCallbackResultsMap waitable_results_;
 
   DISALLOW_COPY_AND_ASSIGN(WebFileSystemImpl);
 };

@@ -30,18 +30,23 @@
 
 namespace WebCore {
 
-PassRefPtr<IDBDatabaseCallbacks> IDBDatabaseCallbacks::create()
+IDBDatabaseCallbacks* IDBDatabaseCallbacks::create()
 {
-    return adoptRef(new IDBDatabaseCallbacks());
+    return new IDBDatabaseCallbacks();
 }
 
 IDBDatabaseCallbacks::IDBDatabaseCallbacks()
-    : m_database(0)
+    : m_database(nullptr)
 {
 }
 
 IDBDatabaseCallbacks::~IDBDatabaseCallbacks()
 {
+}
+
+void IDBDatabaseCallbacks::trace(Visitor* visitor)
+{
+    visitor->trace(m_database);
 }
 
 void IDBDatabaseCallbacks::onForcedClose()
@@ -63,7 +68,7 @@ void IDBDatabaseCallbacks::connect(IDBDatabase* database)
     m_database = database;
 }
 
-void IDBDatabaseCallbacks::onAbort(int64_t transactionId, PassRefPtr<DOMError> error)
+void IDBDatabaseCallbacks::onAbort(int64_t transactionId, PassRefPtrWillBeRawPtr<DOMError> error)
 {
     if (m_database)
         m_database->onAbort(transactionId, error);

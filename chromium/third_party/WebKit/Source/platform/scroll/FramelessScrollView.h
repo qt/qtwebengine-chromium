@@ -44,7 +44,7 @@ class PlatformTouchEvent;
 class PlatformWheelEvent;
 
 // A FramelessScrollView is a ScrollView that can be used to render custom
-// content, which does not have an associated Frame.
+// content, which does not have an associated LocalFrame.
 //
 // NOTE: It may be better to just develop a custom subclass of Widget that
 // can have scroll bars for this instead of trying to reuse ScrollView.
@@ -52,7 +52,7 @@ class PlatformWheelEvent;
 class PLATFORM_EXPORT FramelessScrollView : public ScrollView {
 public:
     FramelessScrollView() : m_client(0) { }
-    ~FramelessScrollView();
+    virtual ~FramelessScrollView();
 
     FramelessScrollViewClient* client() const { return m_client; }
     void setClient(FramelessScrollViewClient* client) { m_client = client; }
@@ -69,22 +69,21 @@ public:
     // ScrollableArea public methods:
     virtual void invalidateScrollbarRect(Scrollbar*, const IntRect&) OVERRIDE;
     virtual bool isActive() const OVERRIDE;
-    virtual ScrollableArea* enclosingScrollableArea() const OVERRIDE;
     virtual bool scrollbarsCanBeActive() const OVERRIDE;
     virtual IntRect scrollableAreaBoundingBox() const OVERRIDE;
 
     // Widget public methods:
-    virtual void invalidateRect(const IntRect&);
+    virtual void invalidateRect(const IntRect&) OVERRIDE;
 
     // ScrollView public methods:
-    virtual HostWindow* hostWindow() const;
-    virtual IntRect windowClipRect(bool clipToContents = true) const;
+    virtual HostWindow* hostWindow() const OVERRIDE;
+    virtual IntRect windowClipRect(IncludeScrollbarsInRect = ExcludeScrollbars) const OVERRIDE;
 
 protected:
     // ScrollView protected methods:
-    virtual void paintContents(GraphicsContext*, const IntRect&);
-    virtual void contentsResized();
-    virtual void scrollbarExistenceDidChange();
+    virtual void paintContents(GraphicsContext*, const IntRect&) OVERRIDE;
+    virtual void contentsResized() OVERRIDE;
+    virtual void scrollbarExistenceDidChange() OVERRIDE;
 
 private:
     FramelessScrollViewClient* m_client;

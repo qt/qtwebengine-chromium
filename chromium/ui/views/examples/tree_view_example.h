@@ -5,8 +5,7 @@
 #ifndef UI_VIEWS_EXAMPLES_TREE_VIEW_EXAMPLE_H_
 #define UI_VIEWS_EXAMPLES_TREE_VIEW_EXAMPLE_H_
 
-#include "base/basictypes.h"
-#include "base/compiler_specific.h"
+#include "base/macros.h"
 #include "ui/base/models/simple_menu_model.h"
 #include "ui/base/models/tree_node_model.h"
 #include "ui/views/context_menu_controller.h"
@@ -21,11 +20,12 @@ class TreeView;
 
 namespace examples {
 
-class TreeViewExample : public ExampleBase,
-                        public ButtonListener,
-                        public TreeViewController,
-                        public ContextMenuController,
-                        public ui::SimpleMenuModel::Delegate {
+class VIEWS_EXAMPLES_EXPORT TreeViewExample
+    : public ExampleBase,
+      public ButtonListener,
+      public TreeViewController,
+      public ContextMenuController,
+      public ui::SimpleMenuModel::Delegate {
  public:
   TreeViewExample();
   virtual ~TreeViewExample();

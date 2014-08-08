@@ -35,7 +35,7 @@
         ['exclude', '(^|/)linux/'],
       ],
     }],
-    ['OS!="android" or _toolset=="host"', {
+    ['OS!="android" or _toolset=="host" or >(nacl_untrusted_build)==1', {
       'sources/': [
         ['exclude', '_android(_unittest)?\\.cc$'],
         ['exclude', '(^|/)android/'],
@@ -71,15 +71,8 @@
         ['exclude', '(^|/)x/'],
       ],
     }],
-    ['<(toolkit_uses_gtk)!=1 or >(nacl_untrusted_build)==1', {
-      'sources/': [
-        ['exclude', '_gtk(_browsertest|_unittest)?\\.(h|cc)$'],
-        ['exclude', '(^|/)gtk/'],
-        ['exclude', '(^|/)gtk_[^/]*\\.(h|cc)$'],
-      ],
-    }],
     ['<(toolkit_views)==0 or >(nacl_untrusted_build)==1', {
-      'sources/': [ ['exclude', '_views\\.(h|cc)$'] ]
+      'sources/': [ ['exclude', '_views(_browsertest|_unittest)?\\.(h|cc)$'] ]
     }],
     ['<(use_aura)==0 or >(nacl_untrusted_build)==1', {
       'sources/': [ ['exclude', '_aura(_browsertest|_unittest)?\\.(h|cc)$'],

@@ -21,22 +21,24 @@ scoped_ptr<PictureDrawQuad> PictureDrawQuad::Create() {
 }
 
 void PictureDrawQuad::SetNew(const SharedQuadState* shared_quad_state,
-                             gfx::Rect rect,
-                             gfx::Rect opaque_rect,
+                             const gfx::Rect& rect,
+                             const gfx::Rect& opaque_rect,
+                             const gfx::Rect& visible_rect,
                              const gfx::RectF& tex_coord_rect,
-                             gfx::Size texture_size,
+                             const gfx::Size& texture_size,
                              ResourceFormat texture_format,
-                             gfx::Rect content_rect,
+                             const gfx::Rect& content_rect,
                              float contents_scale,
                              scoped_refptr<PicturePileImpl> picture_pile) {
-  ContentDrawQuadBase::SetNew(shared_quad_state,
-                              DrawQuad::PICTURE_CONTENT,
-                              rect,
-                              opaque_rect,
-                              tex_coord_rect,
-                              texture_size,
-                              !PlatformColor::SameComponentOrder(
-                                  texture_format));
+  ContentDrawQuadBase::SetNew(
+      shared_quad_state,
+      DrawQuad::PICTURE_CONTENT,
+      rect,
+      opaque_rect,
+      visible_rect,
+      tex_coord_rect,
+      texture_size,
+      !PlatformColor::SameComponentOrder(texture_format));
   this->content_rect = content_rect;
   this->contents_scale = contents_scale;
   this->picture_pile = picture_pile;
@@ -44,14 +46,14 @@ void PictureDrawQuad::SetNew(const SharedQuadState* shared_quad_state,
 }
 
 void PictureDrawQuad::SetAll(const SharedQuadState* shared_quad_state,
-                             gfx::Rect rect,
-                             gfx::Rect opaque_rect,
-                             gfx::Rect visible_rect,
+                             const gfx::Rect& rect,
+                             const gfx::Rect& opaque_rect,
+                             const gfx::Rect& visible_rect,
                              bool needs_blending,
                              const gfx::RectF& tex_coord_rect,
-                             gfx::Size texture_size,
+                             const gfx::Size& texture_size,
                              ResourceFormat texture_format,
-                             gfx::Rect content_rect,
+                             const gfx::Rect& content_rect,
                              float contents_scale,
                              scoped_refptr<PicturePileImpl> picture_pile) {
   ContentDrawQuadBase::SetAll(shared_quad_state,

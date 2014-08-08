@@ -42,27 +42,31 @@
 
 namespace WebCore {
 
-PassRefPtr<JSONObject> TimelineRecordFactory::createGenericRecord(double startTime, int maxCallStackDepth, const String& type)
-{
-    RefPtr<JSONObject> record = JSONObject::create();
-    record->setNumber("startTime", startTime);
+using TypeBuilder::Timeline::TimelineEvent;
 
+PassRefPtr<TimelineEvent> TimelineRecordFactory::createGenericRecord(double startTime, int maxCallStackDepth, const String& type, PassRefPtr<JSONObject> data)
+{
+    ASSERT(data.get());
+    RefPtr<TimelineEvent> record = TimelineEvent::create()
+        .setType(type)
+        .setData(data)
+        .setStartTime(startTime);
     if (maxCallStackDepth) {
-        RefPtr<ScriptCallStack> stackTrace = createScriptCallStack(maxCallStackDepth, true);
+        RefPtrWillBeRawPtr<ScriptCallStack> stackTrace = createScriptCallStack(maxCallStackDepth, true);
         if (stackTrace && stackTrace->size())
-            record->setValue("stackTrace", stackTrace->buildInspectorArray());
+            record->setStackTrace(stackTrace->buildInspectorArray());
     }
-    record->setString("type", type);
     return record.release();
 }
 
-PassRefPtr<JSONObject> TimelineRecordFactory::createBackgroundRecord(double startTime, const String& threadName, const String& type, PassRefPtr<JSONObject> data)
+PassRefPtr<TimelineEvent> TimelineRecordFactory::createBackgroundRecord(double startTime, const String& threadName, const String& type, PassRefPtr<JSONObject> data)
 {
-    RefPtr<JSONObject> record = JSONObject::create();
-    record->setNumber("startTime", startTime);
-    record->setString("thread", threadName);
-    record->setString("type", type);
-    record->setObject("data", data ? data : JSONObject::create());
+    ASSERT(data.get());
+    RefPtr<TimelineEvent> record = TimelineEvent::create()
+        .setType(type)
+        .setData(data)
+        .setStartTime(startTime);
+    record->setThread(threadName);
     return record.release();
 }
 
@@ -73,9 +77,10 @@ PassRefPtr<JSONObject> TimelineRecordFactory::createGCEventData(size_t usedHeapS
     return data.release();
 }
 
-PassRefPtr<JSONObject> TimelineRecordFactory::createFunctionCallData(const String& scriptName, int scriptLine)
+PassRefPtr<JSONObject> TimelineRecordFactory::createFunctionCallData(int scriptId, const String& scriptName, int scriptLine)
 {
     RefPtr<JSONObject> data = JSONObject::create();
+    data->setString("scriptId", String::number(scriptId));
     data->setString("scriptName", scriptName);
     data->setNumber("scriptLine", scriptLine);
     return data.release();
@@ -127,17 +132,17 @@ PassRefPtr<JSONObject> TimelineRecordFactory::createEvaluateScriptData(const Str
     return data.release();
 }
 
-PassRefPtr<JSONObject> TimelineRecordFactory::createTimeStampData(const String& message)
+PassRefPtr<JSONObject> TimelineRecordFactory::createConsoleTimeData(const String& message)
 {
     RefPtr<JSONObject> data = JSONObject::create();
     data->setString("message", message);
     return data.release();
 }
 
-PassRefPtr<JSONObject> TimelineRecordFactory::createScheduleResourceRequestData(const String& url)
+PassRefPtr<JSONObject> TimelineRecordFactory::createTimeStampData(const String& message)
 {
     RefPtr<JSONObject> data = JSONObject::create();
-    data->setString("url", url);
+    data->setString("message", message);
     return data.release();
 }
 
@@ -221,12 +226,10 @@ PassRefPtr<JSONObject> TimelineRecordFactory::createAnimationFrameData(int callb
     return data.release();
 }
 
-PassRefPtr<JSONObject> TimelineRecordFactory::createGPUTaskData(bool foreign, size_t usedGPUMemoryBytes)
+PassRefPtr<JSONObject> TimelineRecordFactory::createGPUTaskData(bool foreign)
 {
     RefPtr<JSONObject> data = JSONObject::create();
     data->setBoolean("foreign", foreign);
-    if (!foreign)
-        data->setNumber("usedGPUMemoryBytes", usedGPUMemoryBytes);
     return data.release();
 }
 
@@ -247,8 +250,7 @@ static PassRefPtr<JSONArray> createQuad(const FloatQuad& quad)
 PassRefPtr<JSONObject> TimelineRecordFactory::createNodeData(long long nodeId)
 {
     RefPtr<JSONObject> data = JSONObject::create();
-    if (nodeId)
-        data->setNumber("rootNode", nodeId);
+    setNodeData(data.get(), nodeId);
     return data.release();
 }
 
@@ -257,12 +259,27 @@ PassRefPtr<JSONObject> TimelineRecordFactory::createLayerData(long long rootNode
     return createNodeData(rootNodeId);
 }
 
-PassRefPtr<JSONObject> TimelineRecordFactory::createPaintData(const FloatQuad& quad, long long layerRootNodeId, int graphicsLayerId)
+void TimelineRecordFactory::setLayerTreeData(JSONObject* data, PassRefPtr<JSONValue> layerTree)
 {
-    RefPtr<JSONObject> data = TimelineRecordFactory::createLayerData(layerRootNodeId);
+    data->setValue("layerTree", layerTree);
+}
+
+void TimelineRecordFactory::setNodeData(JSONObject* data, long long nodeId)
+{
+    if (nodeId)
+        data->setNumber("backendNodeId", nodeId);
+}
+
+void TimelineRecordFactory::setLayerData(JSONObject* data, long long rootNodeId)
+{
+    setNodeData(data, rootNodeId);
+}
+
+void TimelineRecordFactory::setPaintData(JSONObject* data, const FloatQuad& quad, long long layerRootNodeId, int graphicsLayerId)
+{
+    setLayerData(data, layerRootNodeId);
     data->setArray("clip", createQuad(quad));
     data->setNumber("layerId", graphicsLayerId);
-    return data.release();
 }
 
 PassRefPtr<JSONObject> TimelineRecordFactory::createFrameData(int frameId)
@@ -272,24 +289,38 @@ PassRefPtr<JSONObject> TimelineRecordFactory::createFrameData(int frameId)
     return data.release();
 }
 
-void TimelineRecordFactory::appendLayoutRoot(JSONObject* data, const FloatQuad& quad, long long rootNodeId)
+void TimelineRecordFactory::setLayoutRoot(JSONObject* data, const FloatQuad& quad, long long rootNodeId)
 {
     data->setArray("root", createQuad(quad));
     if (rootNodeId)
-        data->setNumber("rootNode", rootNodeId);
+        data->setNumber("backendNodeId", rootNodeId);
 }
 
-void TimelineRecordFactory::appendStyleRecalcDetails(JSONObject* data, unsigned elementCount)
+void TimelineRecordFactory::setStyleRecalcDetails(JSONObject* data, unsigned elementCount)
 {
     data->setNumber("elementCount", elementCount);
 }
 
-void TimelineRecordFactory::appendImageDetails(JSONObject* data, long long imageElementId, const String& url)
+void TimelineRecordFactory::setImageDetails(JSONObject* data, long long imageElementId, const String& url)
 {
     if (imageElementId)
-        data->setNumber("elementId", imageElementId);
+        data->setNumber("backendNodeId", imageElementId);
     if (!url.isEmpty())
         data->setString("url", url);
+}
+
+PassRefPtr<JSONObject> TimelineRecordFactory::createEmbedderCallbackData(const String& callbackName)
+{
+    RefPtr<JSONObject> data = JSONObject::create();
+    data->setString("callbackName", callbackName);
+    return data.release();
+}
+
+String TimelineRecordFactory::type(TypeBuilder::Timeline::TimelineEvent* event)
+{
+    String type;
+    event->type(&type);
+    return type;
 }
 
 } // namespace WebCore

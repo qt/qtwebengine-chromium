@@ -63,7 +63,7 @@ void RenderButton::removeChild(RenderObject* oldChild)
         m_inner->removeChild(oldChild);
 }
 
-void RenderButton::styleWillChange(StyleDifference diff, const RenderStyle* newStyle)
+void RenderButton::styleWillChange(StyleDifference diff, const RenderStyle& newStyle)
 {
     if (m_inner) {
         // RenderBlock::setStyle is going to apply a new style to the inner block, which
@@ -71,9 +71,9 @@ void RenderButton::styleWillChange(StyleDifference diff, const RenderStyle* newS
         // it right below. Here we change it back to 0 to avoid getting a spurious layout hint
         // because of the difference. Same goes for the other properties.
         // FIXME: Make this hack unnecessary.
-        m_inner->style()->setFlexGrow(newStyle->initialFlexGrow());
-        m_inner->style()->setMarginTop(newStyle->initialMargin());
-        m_inner->style()->setMarginBottom(newStyle->initialMargin());
+        m_inner->style()->setFlexGrow(newStyle.initialFlexGrow());
+        m_inner->style()->setMarginTop(newStyle.initialMargin());
+        m_inner->style()->setMarginBottom(newStyle.initialMargin());
     }
     RenderBlock::styleWillChange(diff, newStyle);
 }
@@ -97,6 +97,10 @@ void RenderButton::setupInnerStyle(RenderStyle* innerStyle)
     innerStyle->setMarginTop(Length());
     innerStyle->setMarginBottom(Length());
     innerStyle->setFlexDirection(style()->flexDirection());
+    innerStyle->setJustifyContent(style()->justifyContent());
+    innerStyle->setFlexWrap(style()->flexWrap());
+    innerStyle->setAlignItems(style()->alignItems());
+    innerStyle->setAlignContent(style()->alignContent());
 }
 
 bool RenderButton::canHaveGeneratedChildren() const
@@ -104,7 +108,7 @@ bool RenderButton::canHaveGeneratedChildren() const
     // Input elements can't have generated children, but button elements can. We'll
     // write the code assuming any other button types that might emerge in the future
     // can also have children.
-    return !node()->hasTagName(inputTag);
+    return !isHTMLInputElement(*node());
 }
 
 LayoutRect RenderButton::controlClipRect(const LayoutPoint& additionalOffset) const

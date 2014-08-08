@@ -61,7 +61,7 @@ std::string GetLocaleString(LCID Locale_id, LCTYPE locale_type) {
   if (chars_written <= 1 || arraysize(buffer) < chars_written)
     return std::string();
   std::string result;
-  WideToUTF8(buffer, chars_written - 1, &result);
+  base::WideToUTF8(buffer, chars_written - 1, &result);
   return result;
 }
 
@@ -85,19 +85,24 @@ std::vector<gfx::Rect> GetCompositionCharacterBounds(
   if (!client)
     return std::vector<gfx::Rect>();
 
-  if (!client->HasCompositionText()) {
-    std::vector<gfx::Rect> caret;
-    caret.push_back(client->GetCaretBounds());
-    return caret;
+  std::vector<gfx::Rect> bounds;
+  if (client->HasCompositionText()) {
+    gfx::Range range;
+    if (client->GetCompositionTextRange(&range)) {
+      for (uint32 i = 0; i < range.length(); ++i) {
+        gfx::Rect rect;
+        if (!client->GetCompositionCharacterBounds(i, &rect))
+          break;
+        bounds.push_back(rect);
+      }
+    }
   }
 
-  std::vector<gfx::Rect> bounds;
-  for (uint32 i = 0;; ++i) {
-    gfx::Rect rect;
-    if (!client->GetCompositionCharacterBounds(i, &rect))
-      break;
-    bounds.push_back(rect);
-  }
+  // Use the caret bounds as a fallback if no composition character bounds is
+  // available. One typical use case is PPAPI Flash, which does not support
+  // GetCompositionCharacterBounds at all. crbug.com/133472
+  if (bounds.empty())
+    bounds.push_back(client->GetCaretBounds());
   return bounds;
 }
 
@@ -185,7 +190,7 @@ class RemoteInputMethodWin : public InputMethod,
       if (!text_input_client_)
         return false;
       text_input_client_->InsertChar(
-          static_cast<char16>(native_key_event.wParam),
+          static_cast<base::char16>(native_key_event.wParam),
           ui::GetModifiersFromKeyState());
       return true;
     }
@@ -199,9 +204,7 @@ class RemoteInputMethodWin : public InputMethod,
     }
     if (!delegate_)
       return false;
-    return delegate_->DispatchFabricatedKeyEventPostIME(event.type(),
-                                                        event.key_code(),
-                                                        event.flags());
+    return delegate_->DispatchKeyEventPostIME(event);
   }
 
   virtual void OnTextInputTypeChanged(const TextInputClient* client) OVERRIDE {
@@ -250,20 +253,6 @@ class RemoteInputMethodWin : public InputMethod,
     return language.append(1, '-').append(region);
   }
 
-  virtual base::i18n::TextDirection GetInputTextDirection() OVERRIDE {
-    switch (PRIMARYLANGID(langid_)) {
-      case LANG_ARABIC:
-      case LANG_HEBREW:
-      case LANG_PERSIAN:
-      case LANG_SYRIAC:
-      case LANG_UIGHUR:
-      case LANG_URDU:
-        return base::i18n::RIGHT_TO_LEFT;
-      default:
-        return base::i18n::LEFT_TO_RIGHT;
-    }
-  }
-
   virtual bool IsActive() OVERRIDE {
     return true;  // always turned on
   }
@@ -284,6 +273,9 @@ class RemoteInputMethodWin : public InputMethod,
 
   virtual bool IsCandidatePopupOpen() const OVERRIDE {
     return is_candidate_popup_open_;
+  }
+
+  virtual void ShowImeIfNeeded() OVERRIDE {
   }
 
   virtual void AddObserver(InputMethodObserver* observer) OVERRIDE {
@@ -308,6 +300,14 @@ class RemoteInputMethodWin : public InputMethod,
 
   virtual void OnCandidatePopupChanged(bool visible) OVERRIDE {
     is_candidate_popup_open_ = visible;
+    if (!text_input_client_)
+      return;
+    // TODO(kochi): Support 'update' case, in addition to show/hide.
+    // http://crbug.com/238585
+    if (visible)
+      text_input_client_->OnCandidateWindowShown();
+    else
+      text_input_client_->OnCandidateWindowHidden();
   }
 
   virtual void OnInputSourceChanged(LANGID langid, bool /*is_ime*/) OVERRIDE {

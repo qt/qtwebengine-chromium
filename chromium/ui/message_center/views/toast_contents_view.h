@@ -39,7 +39,7 @@ class ToastContentsView : public views::WidgetDelegateView,
                           public gfx::AnimationDelegate {
  public:
   // Computes the size of a toast assuming it will host the given view.
-  static gfx::Size GetToastSizeForView(views::View* view);
+  static gfx::Size GetToastSizeForView(const views::View* view);
 
   ToastContentsView(const std::string& notification_id,
                     base::WeakPtr<MessagePopupCollection> collection);
@@ -49,6 +49,9 @@ class ToastContentsView : public views::WidgetDelegateView,
   // |a11y_feedback_for_updates| causes the view to notify that the
   // accessibility message should be read after this update.
   void SetContents(MessageView* view, bool a11y_feedback_for_updates);
+
+  void UpdateContents(const Notification& notification,
+                      bool a11y_feedback_for_updates);
 
   // Shows the new toast for the first time, animated.
   // |origin| is the right-bottom corner of the toast.
@@ -71,25 +74,20 @@ class ToastContentsView : public views::WidgetDelegateView,
   virtual void OnMouseEntered(const ui::MouseEvent& event) OVERRIDE;
   virtual void OnMouseExited(const ui::MouseEvent& event) OVERRIDE;
   virtual void Layout() OVERRIDE;
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
-  virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
+  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
 
  private:
   // Overridden from MessageCenterController:
   virtual void ClickOnNotification(const std::string& notification_id) OVERRIDE;
   virtual void RemoveNotification(const std::string& notification_id,
                                   bool by_user) OVERRIDE;
-  virtual void DisableNotificationsFromThisSource(
-      const NotifierId& notifier_id) OVERRIDE;
-  virtual void ShowNotifierSettingsBubble() OVERRIDE;
+  virtual scoped_ptr<ui::MenuModel> CreateMenuModel(
+      const NotifierId& notifier_id,
+      const base::string16& display_source) OVERRIDE;
   virtual bool HasClickedListener(const std::string& notification_id) OVERRIDE;
   virtual void ClickOnNotificationButton(const std::string& notification_id,
                                          int button_index) OVERRIDE;
-  virtual void ExpandNotification(const std::string& notification_id) OVERRIDE;
-  virtual void GroupBodyClicked(const std::string& last_notification_id)
-      OVERRIDE;
-  virtual void ExpandGroup(const NotifierId& notifier_id) OVERRIDE;
-  virtual void RemoveGroup(const NotifierId& notifier_id) OVERRIDE;
 
   // Overridden from gfx::AnimationDelegate:
   virtual void AnimationProgressed(const gfx::Animation* animation) OVERRIDE;
@@ -99,7 +97,6 @@ class ToastContentsView : public views::WidgetDelegateView,
   // Overridden from views::WidgetDelegate:
   virtual views::View* GetContentsView() OVERRIDE;
   virtual void WindowClosing() OVERRIDE;
-  virtual bool CanActivate() const OVERRIDE;
   virtual void OnDisplayChanged() OVERRIDE;
   virtual void OnWorkAreaChanged() OVERRIDE;
 

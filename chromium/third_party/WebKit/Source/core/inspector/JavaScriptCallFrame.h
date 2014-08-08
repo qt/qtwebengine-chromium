@@ -33,22 +33,24 @@
 
 
 #include "bindings/v8/ScopedPersistent.h"
+#include "bindings/v8/ScriptState.h"
 #include "bindings/v8/ScriptWrappable.h"
-#include <v8-debug.h>
 #include "wtf/RefCounted.h"
 #include "wtf/text/WTFString.h"
+#include <v8.h>
 
 namespace WebCore {
 
 class ScriptValue;
 
-class JavaScriptCallFrame : public RefCounted<JavaScriptCallFrame>, public ScriptWrappable {
+class JavaScriptCallFrame : public RefCountedWillBeGarbageCollectedFinalized<JavaScriptCallFrame>, public ScriptWrappable {
 public:
-    static PassRefPtr<JavaScriptCallFrame> create(v8::Handle<v8::Context> debuggerContext, v8::Handle<v8::Object> callFrame)
+    static PassRefPtrWillBeRawPtr<JavaScriptCallFrame> create(v8::Handle<v8::Context> debuggerContext, v8::Handle<v8::Object> callFrame)
     {
-        return adoptRef(new JavaScriptCallFrame(debuggerContext, callFrame));
+        return adoptRefWillBeNoop(new JavaScriptCallFrame(debuggerContext, callFrame));
     }
     ~JavaScriptCallFrame();
+    void trace(Visitor*);
 
     JavaScriptCallFrame* caller();
 
@@ -66,14 +68,16 @@ public:
 
     v8::Handle<v8::Value> evaluate(const String& expression);
     v8::Handle<v8::Value> restart();
-    ScriptValue setVariableValue(int scopeNumber, const String& variableName, const ScriptValue& newValue);
-    v8::Handle<v8::Object> innerCallFrame();
+    ScriptValue setVariableValue(ScriptState*, int scopeNumber, const String& variableName, const ScriptValue& newValue);
 
 private:
     JavaScriptCallFrame(v8::Handle<v8::Context> debuggerContext, v8::Handle<v8::Object> callFrame);
 
+    int callV8FunctionReturnInt(const char* name) const;
+    String callV8FunctionReturnString(const char* name) const;
+
     v8::Isolate* m_isolate;
-    RefPtr<JavaScriptCallFrame> m_caller;
+    RefPtrWillBeMember<JavaScriptCallFrame> m_caller;
     ScopedPersistent<v8::Context> m_debuggerContext;
     ScopedPersistent<v8::Object> m_callFrame;
 };

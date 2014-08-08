@@ -37,10 +37,15 @@ static bool isWindowFeaturesSeparator(UChar c)
 }
 
 WindowFeatures::WindowFeatures(const String& features)
-    : xSet(false)
+    : x(0)
+    , xSet(false)
+    , y(0)
     , ySet(false)
+    , width(0)
     , widthSet(false)
+    , height(0)
     , heightSet(false)
+    , resizable(true)
     , fullscreen(false)
     , dialog(false)
 {
@@ -53,13 +58,12 @@ WindowFeatures::WindowFeatures(const String& features)
      We always allow a window to be resized, which is consistent with Firefox.
      */
 
-    if (features.length() == 0) {
+    if (features.isEmpty()) {
         menuBarVisible = true;
         statusBarVisible = true;
         toolBarVisible = true;
         locationBarVisible = true;
         scrollbarsVisible = true;
-        resizable = true;
         return;
     }
 
@@ -68,46 +72,47 @@ WindowFeatures::WindowFeatures(const String& features)
     toolBarVisible = false;
     locationBarVisible = false;
     scrollbarsVisible = false;
-    resizable = true;
 
     // Tread lightly in this code -- it was specifically designed to mimic Win IE's parsing behavior.
-    int keyBegin, keyEnd;
-    int valueBegin, valueEnd;
+    unsigned keyBegin, keyEnd;
+    unsigned valueBegin, valueEnd;
 
-    int i = 0;
-    int length = features.length();
     String buffer = features.lower();
-    while (i < length) {
+    unsigned length = buffer.length();
+    for (unsigned i = 0; i < length; ) {
         // skip to first non-separator, but don't skip past the end of the string
-        while (isWindowFeaturesSeparator(buffer[i])) {
-            if (i >= length)
-                break;
+        while (i < length && isWindowFeaturesSeparator(buffer[i]))
             i++;
-        }
         keyBegin = i;
 
         // skip to first separator
-        while (!isWindowFeaturesSeparator(buffer[i]))
+        while (i < length && !isWindowFeaturesSeparator(buffer[i]))
             i++;
         keyEnd = i;
 
+        ASSERT_WITH_SECURITY_IMPLICATION(i <= length);
+
         // skip to first '=', but don't skip past a ',' or the end of the string
-        while (buffer[i] != '=') {
-            if (buffer[i] == ',' || i >= length)
+        while (i < length && buffer[i] != '=') {
+            if (buffer[i] == ',')
                 break;
             i++;
         }
 
+        ASSERT_WITH_SECURITY_IMPLICATION(i <= length);
+
         // skip to first non-separator, but don't skip past a ',' or the end of the string
-        while (isWindowFeaturesSeparator(buffer[i])) {
-            if (buffer[i] == ',' || i >= length)
+        while (i < length && isWindowFeaturesSeparator(buffer[i])) {
+            if (buffer[i] == ',')
                 break;
             i++;
         }
         valueBegin = i;
 
+        ASSERT_WITH_SECURITY_IMPLICATION(i <= length);
+
         // skip to first separator
-        while (!isWindowFeaturesSeparator(buffer[i]))
+        while (i < length && !isWindowFeaturesSeparator(buffer[i]))
             i++;
         valueEnd = i;
 

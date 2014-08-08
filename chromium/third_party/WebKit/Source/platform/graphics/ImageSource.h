@@ -42,8 +42,8 @@ class IntSize;
 class NativeImageSkia;
 class SharedBuffer;
 
-// Right now GIFs are the only recognized image format that supports animation.
-// The animation system and the constants below are designed with this in mind.
+// GIF and WebP support animation. The explanation below is in terms of GIF,
+// but the same constants are used for WebP, too.
 // GIFs have an optional 16-bit unsigned loop count that describes how an
 // animated GIF should be cycled.  If the loop count is absent, the animation
 // cycles once; if it is 0, the animation cycles infinitely; otherwise the
@@ -98,15 +98,19 @@ public:
 
     bool initialized() const;
 
-    void setData(SharedBuffer* data, bool allDataReceived);
+    void setData(SharedBuffer& data, bool allDataReceived);
     String filenameExtension() const;
 
     bool isSizeAvailable();
+    bool hasColorProfile() const;
     IntSize size(RespectImageOrientationEnum = DoNotRespectImageOrientation) const;
     IntSize frameSizeAtIndex(size_t, RespectImageOrientationEnum = DoNotRespectImageOrientation) const;
 
     bool getHotSpot(IntPoint&) const;
 
+    // Returns one of the cAnimationXXX constants at the top of the file, or
+    // a loop count. In the latter case, the actual number of times the animation
+    // cycles is one more than the loop count. See comment atop the file.
     int repetitionCount();
 
     size_t frameCount() const;

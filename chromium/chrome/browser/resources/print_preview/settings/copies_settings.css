@@ -59,3 +59,7 @@ html[dir='rtl'] #copies-settings button.decrement {
   border-top-left-radius: 3px;
   border-top-right-radius: 0;
 }
+
+#copies-settings .collate-container label {
+  padding-top: 6px;
+}

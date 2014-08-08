@@ -31,12 +31,12 @@
 
 #include "core/dom/Document.h"
 #include "core/dom/ScriptableDocumentParser.h"
-#include "core/fetch/TextResourceDecoder.h"
+#include "core/html/parser/TextResourceDecoder.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderStateMachine.h"
-#include "core/frame/DOMWindow.h"
-#include "core/frame/Frame.h"
+#include "core/frame/LocalDOMWindow.h"
 #include "core/frame/FrameView.h"
+#include "core/frame/LocalFrame.h"
 #include "core/frame/Settings.h"
 #include "platform/weborigin/KURL.h"
 #include "platform/weborigin/SecurityOrigin.h"
@@ -44,9 +44,9 @@
 
 namespace WebCore {
 
-PassRefPtr<DocumentWriter> DocumentWriter::create(Document* document, const AtomicString& mimeType, const AtomicString& encoding, bool encodingUserChoosen)
+PassRefPtrWillBeRawPtr<DocumentWriter> DocumentWriter::create(Document* document, const AtomicString& mimeType, const AtomicString& encoding, bool encodingUserChoosen)
 {
-    return adoptRef(new DocumentWriter(document, mimeType, encoding, encodingUserChoosen));
+    return adoptRefWillBeNoop(new DocumentWriter(document, mimeType, encoding, encodingUserChoosen));
 }
 
 DocumentWriter::DocumentWriter(Document* document, const AtomicString& mimeType, const AtomicString& encoding, bool encodingUserChoosen)
@@ -67,6 +67,12 @@ DocumentWriter::~DocumentWriter()
 {
 }
 
+void DocumentWriter::trace(Visitor* visitor)
+{
+    visitor->trace(m_document);
+    visitor->trace(m_parser);
+}
+
 void DocumentWriter::appendReplacingData(const String& source)
 {
     m_document->setCompatibilityMode(Document::NoQuirksMode);
@@ -78,7 +84,6 @@ void DocumentWriter::appendReplacingData(const String& source)
         // Because we're pinned to the main thread we don't need to worry about
         // passing ownership of the source string.
         parser->append(source.impl());
-        parser->setHasAppendedData();
     }
 }
 
@@ -90,7 +95,7 @@ void DocumentWriter::addData(const char* bytes, size_t length)
         m_parser->setDecoder(decoder.release());
     }
     // appendBytes() can result replacing DocumentLoader::m_writer.
-    RefPtr<DocumentWriter> protectingThis(this);
+    RefPtrWillBeRawPtr<DocumentWriter> protectingThis(this);
     m_parser->appendBytes(bytes, length);
 }
 
@@ -101,7 +106,7 @@ void DocumentWriter::end()
     // http://bugs.webkit.org/show_bug.cgi?id=10854
     // The frame's last ref may be removed and it can be deleted by checkCompleted(),
     // so we'll add a protective refcount
-    RefPtr<Frame> protector(m_document->frame());
+    RefPtr<LocalFrame> protector(m_document->frame());
 
     if (!m_parser)
         return;
@@ -111,15 +116,15 @@ void DocumentWriter::end()
         m_parser->setDecoder(decoder.release());
     }
     // flush() can result replacing DocumentLoader::m_writer.
-    RefPtr<DocumentWriter> protectingThis(this);
+    RefPtrWillBeRawPtr<DocumentWriter> protectingThis(this);
     m_parser->flush();
 
     if (!m_parser)
         return;
 
     m_parser->finish();
-    m_parser = 0;
-    m_document = 0;
+    m_parser = nullptr;
+    m_document = nullptr;
 }
 
 void DocumentWriter::setUserChosenEncoding(const String& charset)

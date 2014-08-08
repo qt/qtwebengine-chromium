@@ -25,6 +25,8 @@
 #include "platform/graphics/GraphicsContext.h"
 #include "platform/graphics/filters/Filter.h"
 #include "platform/text/TextStream.h"
+#include "third_party/skia/include/effects/SkColorFilterImageFilter.h"
+#include "third_party/skia/include/effects/SkColorMatrixFilter.h"
 #include "wtf/StdLibExtras.h"
 #include "wtf/text/WTFString.h"
 
@@ -41,12 +43,12 @@ const AtomicString& SourceAlpha::effectName()
     return s_effectName;
 }
 
-void SourceAlpha::determineAbsolutePaintRect()
+FloatRect SourceAlpha::determineAbsolutePaintRect(const FloatRect& requestedRect)
 {
-    Filter* filter = this->filter();
-    FloatRect paintRect = filter->sourceImageRect();
-    paintRect.scale(filter->filterResolution().width(), filter->filterResolution().height());
-    setAbsolutePaintRect(enclosingIntRect(paintRect));
+    FloatRect srcRect = filter()->sourceImageRect();
+    srcRect.intersect(requestedRect);
+    addAbsolutePaintRect(srcRect);
+    return srcRect;
 }
 
 void SourceAlpha::applySoftware()
@@ -61,7 +63,25 @@ void SourceAlpha::applySoftware()
     FloatRect imageRect(FloatPoint(), absolutePaintRect().size());
     GraphicsContext* filterContext = resultImage->context();
     filterContext->fillRect(imageRect, Color::black);
-    filterContext->drawImageBuffer(filter->sourceImage(), IntPoint(), CompositeDestinationIn);
+
+    IntRect srcRect = filter->sourceImageRect();
+    if (ImageBuffer* sourceImageBuffer = filter->sourceImage()) {
+        filterContext->drawImageBuffer(sourceImageBuffer,
+            FloatRect(IntPoint(srcRect.location() - absolutePaintRect().location()), sourceImageBuffer->size()),
+            0, CompositeDestinationIn);
+    }
+}
+
+PassRefPtr<SkImageFilter> SourceAlpha::createImageFilter(SkiaImageFilterBuilder* builder)
+{
+    SkScalar matrix[20] = {
+        0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0,
+        0, 0, 0, SK_Scalar1, 0
+    };
+    RefPtr<SkColorFilter> colorFilter(adoptRef(SkColorMatrixFilter::Create(matrix)));
+    return adoptRef(SkColorFilterImageFilter::Create(colorFilter.get()));
 }
 
 TextStream& SourceAlpha::externalRepresentation(TextStream& ts, int indent) const

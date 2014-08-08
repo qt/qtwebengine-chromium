@@ -23,25 +23,23 @@
 #include "config.h"
 #include "core/html/HTMLLIElement.h"
 
-#include "CSSPropertyNames.h"
-#include "CSSValueKeywords.h"
-#include "HTMLNames.h"
+#include "core/CSSPropertyNames.h"
+#include "core/CSSValueKeywords.h"
+#include "core/HTMLNames.h"
+#include "core/dom/NodeRenderingTraversal.h"
 #include "core/rendering/RenderListItem.h"
 
 namespace WebCore {
 
 using namespace HTMLNames;
 
-HTMLLIElement::HTMLLIElement(Document& document)
+inline HTMLLIElement::HTMLLIElement(Document& document)
     : HTMLElement(liTag, document)
 {
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLLIElement> HTMLLIElement::create(Document& document)
-{
-    return adoptRef(new HTMLLIElement(document));
-}
+DEFINE_NODE_FACTORY(HTMLLIElement)
 
 bool HTMLLIElement::isPresentationAttribute(const QualifiedName& name) const
 {
@@ -85,23 +83,23 @@ void HTMLLIElement::attach(const AttachContext& context)
     if (renderer() && renderer()->isListItem()) {
         RenderListItem* listItemRenderer = toRenderListItem(renderer());
 
+        ASSERT(!document().childNeedsDistributionRecalc());
+
         // Find the enclosing list node.
         Element* listNode = 0;
         Element* current = this;
         while (!listNode) {
-            current = current->parentElement();
+            current = NodeRenderingTraversal::parentElement(current);
             if (!current)
                 break;
-            if (current->hasTagName(ulTag) || current->hasTagName(olTag))
+            if (isHTMLUListElement(*current) || isHTMLOListElement(*current))
                 listNode = current;
         }
 
         // If we are not in a list, tell the renderer so it can position us inside.
         // We don't want to change our style to say "inside" since that would affect nested nodes.
-        if (!listNode) {
+        if (!listNode)
             listItemRenderer->setNotInList(true);
-            listItemRenderer->updateMarkerLocation();
-        }
 
         parseValue(fastGetAttribute(valueAttr));
     }

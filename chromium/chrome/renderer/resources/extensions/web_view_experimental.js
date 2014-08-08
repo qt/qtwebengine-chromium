@@ -2,188 +2,290 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Shim extension to provide permission request API (and possibly other future
-// experimental APIs) for <webview> tag.
+// This module implements experimental API for <webview>.
 // See web_view.js for details.
 //
-// We want to control the permission API feature in <webview> separately from
-// the <webview> feature itself. <webview> is available in stable channel, but
-// permission API would only be available for channels CHANNEL_DEV and
-// CHANNEL_CANARY.
+// <webview> Experimental API is only available on canary and dev channels of
+// Chrome.
 
-var CreateEvent = require('webView').CreateEvent;
+var ContextMenusSchema =
+    requireNative('schema_registry').GetSchema('contextMenus');
+var CreateEvent = require('webViewEvents').CreateEvent;
+var EventBindings = require('event_bindings');
 var MessagingNatives = requireNative('messaging_natives');
-var WebViewInternal = require('webView').WebViewInternal;
 var WebView = require('webView').WebView;
+var WebViewInternal = require('webView').WebViewInternal;
+var WebViewSchema = requireNative('schema_registry').GetSchema('webview');
+var idGeneratorNatives = requireNative('id_generator');
+var utils = require('utils');
 
+// WEB_VIEW_EXPERIMENTAL_EVENTS is a map of experimental <webview> DOM event
+//     names to their associated extension event descriptor objects.
+// An event listener will be attached to the extension event |evt| specified in
+//     the descriptor.
+// |fields| specifies the public-facing fields in the DOM event that are
+//     accessible to <webview> developers.
+// |customHandler| allows a handler function to be called each time an extension
+//     event is caught by its event listener. The DOM event should be dispatched
+//     within this handler function. With no handler function, the DOM event
+//     will be dispatched by default each time the extension event is caught.
+// |cancelable| (default: false) specifies whether the event's default
+//     behavior can be canceled. If the default action associated with the event
+//     is prevented, then its dispatch function will return false in its event
+//     handler. The event must have a custom handler for this to be meaningful.
 var WEB_VIEW_EXPERIMENTAL_EVENTS = {
-  'dialog': {
-    cancelable: true,
-    customHandler: function(webViewInternal, event, webViewEvent) {
-      webViewInternal.handleDialogEvent_(event, webViewEvent);
-    },
-    evt: CreateEvent('webview.onDialog'),
-    fields: ['defaultPromptText', 'messageText', 'messageType', 'url']
+  'findupdate': {
+    evt: CreateEvent('webview.onFindReply'),
+    fields: [
+      'searchText',
+      'numberOfMatches',
+      'activeMatchOrdinal',
+      'selectionRect',
+      'canceled',
+      'finalUpdate'
+    ]
+  },
+  'zoomchange': {
+    evt: CreateEvent('webview.onZoomChange'),
+    fields: ['oldZoomFactor', 'newZoomFactor']
   }
 };
 
+function GetUniqueSubEventName(eventName) {
+  return eventName + "/" + idGeneratorNatives.GetNextId();
+}
+
+// This is the only "webview.onClicked" named event for this renderer.
+//
+// Since we need an event per <webview>, we define events with suffix
+// (subEventName) in each of the <webview>. Behind the scenes, this event is
+// registered as a ContextMenusEvent, with filter set to the webview's
+// |viewInstanceId|. Any time a ContextMenusEvent is dispatched, we re-dispatch
+// it to the subEvent's listeners. This way
+// <webview>.contextMenus.onClicked behave as a regular chrome Event type.
+var ContextMenusEvent = CreateEvent('webview.onClicked');
+
 /**
- * @private
+ * This event is exposed as <webview>.contextMenus.onClicked.
+ *
+ * @constructor
  */
-WebViewInternal.prototype.maybeAttachWebRequestEventToObject_ =
-    function(obj, eventName, webRequestEvent) {
-  Object.defineProperty(
-      obj,
-      eventName,
-      {
-        get: webRequestEvent,
-        enumerable: true
-      }
-  );
+function ContextMenusOnClickedEvent(opt_eventName,
+                                    opt_argSchemas,
+                                    opt_eventOptions,
+                                    opt_webViewInstanceId) {
+  var subEventName = GetUniqueSubEventName(opt_eventName);
+  EventBindings.Event.call(this, subEventName, opt_argSchemas, opt_eventOptions,
+      opt_webViewInstanceId);
+
+  var self = this;
+  // TODO(lazyboy): When do we dispose this listener?
+  ContextMenusEvent.addListener(function() {
+    // Re-dispatch to subEvent's listeners.
+    $Function.apply(self.dispatch, self, $Array.slice(arguments));
+  }, {instanceId: opt_webViewInstanceId || 0});
+}
+
+ContextMenusOnClickedEvent.prototype = {
+  __proto__: EventBindings.Event.prototype
 };
 
 /**
- * @private
+ * An instance of this class is exposed as <webview>.contextMenus.
+ * @constructor
  */
-WebViewInternal.prototype.handleDialogEvent_ =
-    function(event, webViewEvent) {
-  var showWarningMessage = function(dialogType) {
-    var VOWELS = ['a', 'e', 'i', 'o', 'u'];
-    var WARNING_MSG_DIALOG_BLOCKED = '<webview>: %1 %2 dialog was blocked.';
-    var article = (VOWELS.indexOf(dialogType.charAt(0)) >= 0) ? 'An' : 'A';
-    var output = WARNING_MSG_DIALOG_BLOCKED.replace('%1', article);
-    output = output.replace('%2', dialogType);
-    window.console.warn(output);
-  };
+function WebViewContextMenusImpl(viewInstanceId) {
+  this.viewInstanceId_ = viewInstanceId;
+};
 
+WebViewContextMenusImpl.prototype.create = function() {
+  var args = $Array.concat([this.viewInstanceId_], $Array.slice(arguments));
+  return $Function.apply(WebView.contextMenusCreate, null, args);
+};
+
+WebViewContextMenusImpl.prototype.remove = function() {
+  var args = $Array.concat([this.viewInstanceId_], $Array.slice(arguments));
+  return $Function.apply(WebView.contextMenusRemove, null, args);
+};
+
+WebViewContextMenusImpl.prototype.removeAll = function() {
+  var args = $Array.concat([this.viewInstanceId_], $Array.slice(arguments));
+  return $Function.apply(WebView.contextMenusRemoveAll, null, args);
+};
+
+WebViewContextMenusImpl.prototype.update = function() {
+  var args = $Array.concat([this.viewInstanceId_], $Array.slice(arguments));
+  return $Function.apply(WebView.contextMenusUpdate, null, args);
+};
+
+var WebViewContextMenus = utils.expose(
+    'WebViewContextMenus', WebViewContextMenusImpl,
+    { functions: ['create', 'remove', 'removeAll', 'update'] });
+
+/** @private */
+WebViewInternal.prototype.maybeHandleContextMenu = function(e, webViewEvent) {
+  var requestId = e.requestId;
   var self = this;
-  var browserPluginNode = this.browserPluginNode_;
-  var webviewNode = this.webviewNode_;
-
-  var requestId = event.requestId;
+  // Construct the event.menu object.
   var actionTaken = false;
-
   var validateCall = function() {
-    var ERROR_MSG_DIALOG_ACTION_ALREADY_TAKEN = '<webview>: ' +
-        'An action has already been taken for this "dialog" event.';
+    var ERROR_MSG_CONTEXT_MENU_ACTION_ALREADY_TAKEN = '<webview>: ' +
+        'An action has already been taken for this "contextmenu" event.';
 
     if (actionTaken) {
-      throw new Error(ERROR_MSG_DIALOG_ACTION_ALREADY_TAKEN);
+      throw new Error(ERROR_MSG_CONTEXT_MENU_ACTION_ALREADY_TAKEN);
     }
     actionTaken = true;
   };
-
-  var dialog = {
-    ok: function(user_input) {
+  var menu = {
+    show: function(items) {
       validateCall();
-      user_input = user_input || '';
-      WebView.setPermission(self.instanceId_, requestId, 'allow', user_input);
-    },
-    cancel: function() {
-      validateCall();
-      WebView.setPermission(self.instanceId_, requestId, 'deny');
+      // TODO(lazyboy): WebViewShowContextFunction doesn't do anything useful
+      // with |items|, implement.
+      WebView.showContextMenu(self.instanceId, requestId, items);
     }
   };
-  webViewEvent.dialog = dialog;
-
+  webViewEvent.menu = menu;
+  var webviewNode = this.webviewNode;
   var defaultPrevented = !webviewNode.dispatchEvent(webViewEvent);
   if (actionTaken) {
     return;
   }
-
-  if (defaultPrevented) {
-    // Tell the JavaScript garbage collector to track lifetime of |dialog| and
-    // call back when the dialog object has been collected.
-    MessagingNatives.BindToGC(dialog, function() {
-      // Avoid showing a warning message if the decision has already been made.
-      if (actionTaken) {
-        return;
-      }
-      WebView.setPermission(
-          self.instanceId_, requestId, 'default', '', function(allowed) {
-        if (allowed) {
-          return;
-        }
-        showWarningMessage(event.messageType);
-      });
-    });
-  } else {
+  if (!defaultPrevented) {
     actionTaken = true;
-    // The default action is equivalent to canceling the dialog.
-    WebView.setPermission(
-        self.instanceId_, requestId, 'default', '', function(allowed) {
-      if (allowed) {
-        return;
-      }
-      showWarningMessage(event.messageType);
-    });
-  }
+    // The default action is equivalent to just showing the context menu as is.
+    WebView.showContextMenu(self.instanceId, requestId, undefined);
+
+    // TODO(lazyboy): Figure out a way to show warning message only when
+    // listeners are registered for this event.
+  } //  else we will ignore showing the context menu completely.
 };
 
-/** @private */
-WebViewInternal.prototype.maybeGetExperimentalEvents_ = function() {
+/**
+ * @private
+ */
+WebViewInternal.prototype.setZoom = function(zoomFactor) {
+  if (!this.instanceId) {
+    return;
+  }
+  WebView.setZoom(this.instanceId, zoomFactor);
+};
+
+WebViewInternal.prototype.maybeGetExperimentalEvents = function() {
   return WEB_VIEW_EXPERIMENTAL_EVENTS;
 };
 
-WebViewInternal.prototype.maybeGetExperimentalPermissions_ = function() {
+/** @private */
+WebViewInternal.prototype.maybeGetExperimentalPermissions = function() {
   return [];
 };
 
 /** @private */
-WebViewInternal.prototype.clearData_ = function(var_args) {
-  if (!this.instanceId_) {
+WebViewInternal.prototype.maybeSetCurrentZoomFactor =
+    function(zoomFactor) {
+  this.currentZoomFactor = zoomFactor;
+};
+
+/** @private */
+WebViewInternal.prototype.setZoom = function(zoomFactor, callback) {
+  if (!this.instanceId) {
     return;
   }
-  var args = $Array.concat([this.instanceId_], $Array.slice(arguments));
-  $Function.apply(WebView.clearData, null, args);
+  WebView.setZoom(this.instanceId, zoomFactor, callback);
 };
 
-/** @private */
-WebViewInternal.prototype.getUserAgent_ = function() {
-  return this.userAgentOverride_ || navigator.userAgent;
-};
-
-/** @private */
-WebViewInternal.prototype.isUserAgentOverridden_ = function() {
-  return !!this.userAgentOverride_ &&
-      this.userAgentOverride_ != navigator.userAgent;
-};
-
-/** @private */
-WebViewInternal.prototype.setUserAgentOverride_ = function(userAgentOverride) {
-  this.userAgentOverride_ = userAgentOverride;
-  if (!this.instanceId_) {
-    // If we are not attached yet, then we will pick up the user agent on
-    // attachment.
+WebViewInternal.prototype.getZoom = function(callback) {
+  if (!this.instanceId) {
     return;
   }
-  WebView.overrideUserAgent(this.instanceId_, userAgentOverride);
+  WebView.getZoom(this.instanceId, callback);
 };
 
 /** @private */
-WebViewInternal.prototype.captureVisibleRegion_ = function(spec, callback) {
-  WebView.captureVisibleRegion(this.instanceId_, spec, callback);
+WebViewInternal.prototype.captureVisibleRegion = function(spec, callback) {
+  WebView.captureVisibleRegion(this.instanceId, spec, callback);
 };
 
-WebViewInternal.maybeRegisterExperimentalAPIs = function(proto, secret) {
-  proto.clearData = function(var_args) {
-    var internal = this.internal_(secret);
-    $Function.apply(internal.clearData_, internal, arguments);
+/** @private */
+WebViewInternal.prototype.find = function(search_text, options, callback) {
+  if (!this.instanceId) {
+    return;
+  }
+  WebView.find(this.instanceId, search_text, options, callback);
+};
+
+/** @private */
+WebViewInternal.prototype.stopFinding = function(action) {
+  if (!this.instanceId) {
+    return;
+  }
+  WebView.stopFinding(this.instanceId, action);
+};
+
+WebViewInternal.maybeRegisterExperimentalAPIs = function(proto) {
+  proto.setZoom = function(zoomFactor, callback) {
+    privates(this).internal.setZoom(zoomFactor, callback);
   };
 
-  proto.getUserAgent = function() {
-    return this.internal_(secret).getUserAgent_();
-  };
-
-  proto.isUserAgentOverridden = function() {
-    return this.internal_(secret).isUserAgentOverridden_();
-  };
-
-  proto.setUserAgentOverride = function(userAgentOverride) {
-    this.internal_(secret).setUserAgentOverride_(userAgentOverride);
+  proto.getZoom = function(callback) {
+    return privates(this).internal.getZoom(callback);
   };
 
   proto.captureVisibleRegion = function(spec, callback) {
-    this.internal_(secret).captureVisibleRegion_(spec, callback);
+    privates(this).internal.captureVisibleRegion(spec, callback);
   };
+
+  proto.find = function(search_text, options, callback) {
+    privates(this).internal.find(search_text, options, callback);
+  };
+
+  proto.stopFinding = function(action) {
+    privates(this).internal.stopFinding(action);
+  };
+};
+
+/** @private */
+WebViewInternal.prototype.setupExperimentalContextMenus = function() {
+  var self = this;
+  var createContextMenus = function() {
+    return function() {
+      if (self.contextMenus_) {
+        return self.contextMenus_;
+      }
+
+      self.contextMenus_ = new WebViewContextMenus(self.viewInstanceId);
+
+      // Define 'onClicked' event property on |self.contextMenus_|.
+      var getOnClickedEvent = function() {
+        return function() {
+          if (!self.contextMenusOnClickedEvent_) {
+            var eventName = 'webview.onClicked';
+            // TODO(lazyboy): Find event by name instead of events[0].
+            var eventSchema = WebViewSchema.events[0];
+            var eventOptions = {supportsListeners: true};
+            var onClickedEvent = new ContextMenusOnClickedEvent(
+                eventName, eventSchema, eventOptions, self.viewInstanceId);
+            self.contextMenusOnClickedEvent_ = onClickedEvent;
+            return onClickedEvent;
+          }
+          return self.contextMenusOnClickedEvent_;
+        }
+      };
+      Object.defineProperty(
+          self.contextMenus_,
+          'onClicked',
+          {get: getOnClickedEvent(), enumerable: true});
+
+      return self.contextMenus_;
+    };
+  };
+
+  // Expose <webview>.contextMenus object.
+  Object.defineProperty(
+      this.webviewNode,
+      'contextMenus',
+      {
+        get: createContextMenus(),
+        enumerable: true
+      });
 };

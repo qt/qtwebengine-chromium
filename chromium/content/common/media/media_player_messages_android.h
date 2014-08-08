@@ -5,9 +5,6 @@
 // IPC messages for android media player.
 // Multiply-included message file, hence no include guard.
 
-#include <string>
-#include <vector>
-
 #include "base/basictypes.h"
 #include "base/time/time.h"
 #include "content/common/content_export.h"
@@ -15,7 +12,6 @@
 #include "ipc/ipc_message_macros.h"
 #include "media/base/android/media_player_android.h"
 #include "media/base/android/demuxer_stream_player_params.h"
-#include "media/base/media_keys.h"
 #include "ui/gfx/rect_f.h"
 #include "url/gurl.h"
 
@@ -26,7 +22,6 @@
 IPC_ENUM_TRAITS(media::AudioCodec)
 IPC_ENUM_TRAITS(media::DemuxerStream::Status)
 IPC_ENUM_TRAITS(media::DemuxerStream::Type)
-IPC_ENUM_TRAITS(media::MediaKeys::KeyError)
 IPC_ENUM_TRAITS(media::VideoCodec)
 
 IPC_STRUCT_TRAITS_BEGIN(media::DemuxerConfigs)
@@ -41,15 +36,13 @@ IPC_STRUCT_TRAITS_BEGIN(media::DemuxerConfigs)
   IPC_STRUCT_TRAITS_MEMBER(is_video_encrypted)
   IPC_STRUCT_TRAITS_MEMBER(video_extra_data)
 
-  IPC_STRUCT_TRAITS_MEMBER(duration_ms)
-#if defined(GOOGLE_TV)
-  IPC_STRUCT_TRAITS_MEMBER(key_system)
-#endif  // defined(GOOGLE_TV)
+  IPC_STRUCT_TRAITS_MEMBER(duration)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(media::DemuxerData)
   IPC_STRUCT_TRAITS_MEMBER(type)
   IPC_STRUCT_TRAITS_MEMBER(access_units)
+  IPC_STRUCT_TRAITS_MEMBER(demuxer_configs)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(media::AccessUnit)
@@ -68,6 +61,17 @@ IPC_STRUCT_TRAITS_BEGIN(media::SubsampleEntry)
 IPC_STRUCT_TRAITS_END()
 
 IPC_ENUM_TRAITS(MediaPlayerHostMsg_Initialize_Type)
+
+// Parameters to describe a media player
+IPC_STRUCT_BEGIN(MediaPlayerHostMsg_Initialize_Params)
+  IPC_STRUCT_MEMBER(MediaPlayerHostMsg_Initialize_Type, type)
+  IPC_STRUCT_MEMBER(base::SharedMemoryHandle, metafile_data_handle)
+  IPC_STRUCT_MEMBER(int, player_id)
+  IPC_STRUCT_MEMBER(int, demuxer_client_id)
+  IPC_STRUCT_MEMBER(GURL, url)
+  IPC_STRUCT_MEMBER(GURL, first_party_for_cookies)
+  IPC_STRUCT_MEMBER(GURL, frame_url)
+IPC_STRUCT_END()
 
 // Chrome for Android seek message sequence is:
 // 1. Renderer->Browser MediaPlayerHostMsg_Seek
@@ -183,13 +187,12 @@ IPC_MESSAGE_CONTROL2(MediaPlayerMsg_ReadFromDemuxer,
                      int /* demuxer_client_id */,
                      media::DemuxerStream::Type /* type */)
 
-// The player needs new config data
-IPC_MESSAGE_CONTROL1(MediaPlayerMsg_MediaConfigRequest,
-                     int /* demuxer_client_id */)
+// Clank has connected to the remote device.
+IPC_MESSAGE_ROUTED2(MediaPlayerMsg_ConnectedToRemoteDevice,
+                    int /* player_id */,
+                    std::string /* remote_playback_message */)
 
-IPC_MESSAGE_ROUTED1(MediaPlayerMsg_ConnectedToRemoteDevice,
-                    int /* player_id */)
-
+// Clank has disconnected from the remote device.
 IPC_MESSAGE_ROUTED1(MediaPlayerMsg_DisconnectedFromRemoteDevice,
                     int /* player_id */)
 
@@ -197,31 +200,19 @@ IPC_MESSAGE_ROUTED1(MediaPlayerMsg_DisconnectedFromRemoteDevice,
 IPC_MESSAGE_ROUTED1(MediaPlayerMsg_RequestFullscreen,
                     int /*player_id */)
 
+// Pauses all video playback.
+IPC_MESSAGE_ROUTED0(MediaPlayerMsg_PauseVideo)
+
 // Messages for controlling the media playback in browser process ----------
 
 // Destroy the media player object.
 IPC_MESSAGE_ROUTED1(MediaPlayerHostMsg_DestroyMediaPlayer,
                     int /* player_id */)
 
-// Destroy all the players.
-IPC_MESSAGE_ROUTED0(MediaPlayerHostMsg_DestroyAllMediaPlayers)
-
-// Initialize a media player object with the given type and player_id. The other
-// parameters are used depending on the type of player.
-//
-// url: the URL to load when initializing a URL player.
-//
-// first_party_for_cookies: the cookie store to use when loading a URL.
-//
-// demuxer_client_id: the demuxer associated with this player when initializing
-// a media source player.
-IPC_MESSAGE_ROUTED5(
+// Initialize a media player object.
+IPC_MESSAGE_ROUTED1(
     MediaPlayerHostMsg_Initialize,
-    MediaPlayerHostMsg_Initialize_Type /* type */,
-    int /* player_id */,
-    GURL /* url */,
-    GURL /* first_party_for_cookies */,
-    int /* demuxer_client_id */)
+    MediaPlayerHostMsg_Initialize_Params);
 
 // Pause the player.
 IPC_MESSAGE_ROUTED2(MediaPlayerHostMsg_Pause,
@@ -239,16 +230,26 @@ IPC_MESSAGE_ROUTED2(MediaPlayerHostMsg_Seek,
 // Start the player for playback.
 IPC_MESSAGE_ROUTED1(MediaPlayerHostMsg_Start, int /* player_id */)
 
-// Start the player for playback.
+// Set the volume.
 IPC_MESSAGE_ROUTED2(MediaPlayerHostMsg_SetVolume,
                     int /* player_id */,
                     double /* volume */)
+
+// Set the poster image.
+IPC_MESSAGE_ROUTED2(MediaPlayerHostMsg_SetPoster,
+                    int /* player_id */,
+                    GURL /* poster url */)
 
 // Requests the player to enter fullscreen.
 IPC_MESSAGE_ROUTED1(MediaPlayerHostMsg_EnterFullscreen, int /* player_id */)
 
 // Requests the player to exit fullscreen.
 IPC_MESSAGE_ROUTED1(MediaPlayerHostMsg_ExitFullscreen, int /* player_id */)
+
+// Requests the player with |player_id| to use the CDM with |cdm_id|.
+IPC_MESSAGE_ROUTED2(MediaPlayerHostMsg_SetCdm,
+                    int /* player_id */,
+                    int /* cdm_id */);
 
 // Sent after the renderer demuxer has seeked.
 IPC_MESSAGE_CONTROL2(MediaPlayerHostMsg_DemuxerSeekDone,
@@ -272,58 +273,10 @@ IPC_MESSAGE_CONTROL2(MediaPlayerHostMsg_DurationChanged,
 
 #if defined(VIDEO_HOLE)
 // Notify the player about the external surface, requesting it if necessary.
+// |is_request| true if the player is requesting the external surface.
+// |rect| the boundary rectangle of the video element.
 IPC_MESSAGE_ROUTED3(MediaPlayerHostMsg_NotifyExternalSurface,
                     int /* player_id */,
                     bool /* is_request */,
                     gfx::RectF /* rect */)
 #endif  // defined(VIDEO_HOLE)
-
-// Messages for encrypted media extensions API ------------------------------
-// TODO(xhwang): Move the following messages to a separate file.
-
-IPC_MESSAGE_ROUTED3(MediaKeysHostMsg_InitializeCDM,
-                    int /* media_keys_id */,
-                    std::vector<uint8> /* uuid */,
-                    GURL /* frame url */)
-
-IPC_MESSAGE_ROUTED4(MediaKeysHostMsg_CreateSession,
-                    int /* media_keys_id */,
-                    uint32_t /* session_id */,
-                    std::string /* type */,
-                    std::vector<uint8> /* init_data */)
-// TODO(jrummell): Use enum for type (http://crbug.com/327449)
-
-IPC_MESSAGE_ROUTED3(MediaKeysHostMsg_UpdateSession,
-                    int /* media_keys_id */,
-                    uint32_t /* session_id */,
-                    std::vector<uint8> /* response */)
-
-IPC_MESSAGE_ROUTED2(MediaKeysHostMsg_ReleaseSession,
-                    int /* media_keys_id */,
-                    uint32_t /* session_id */)
-
-IPC_MESSAGE_ROUTED3(MediaKeysMsg_SessionCreated,
-                    int /* media_keys_id */,
-                    uint32_t /* session_id */,
-                    std::string /* web_session_id */)
-
-IPC_MESSAGE_ROUTED4(MediaKeysMsg_SessionMessage,
-                    int /* media_keys_id */,
-                    uint32_t /* session_id */,
-                    std::vector<uint8> /* message */,
-                    std::string /* destination_url */)
-// TODO(jrummell): Use GURL for destination_url (http://crbug.com/326663)
-
-IPC_MESSAGE_ROUTED2(MediaKeysMsg_SessionReady,
-                    int /* media_keys_id */,
-                    uint32_t /* session_id */)
-
-IPC_MESSAGE_ROUTED2(MediaKeysMsg_SessionClosed,
-                    int /* media_keys_id */,
-                    uint32_t /* session_id */)
-
-IPC_MESSAGE_ROUTED4(MediaKeysMsg_SessionError,
-                    int /* media_keys_id */,
-                    uint32_t /* session_id */,
-                    media::MediaKeys::KeyError /* error_code */,
-                    int /* system_code */)

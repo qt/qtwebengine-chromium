@@ -2,72 +2,52 @@
 <!-- Bookmarks specific strings (included from generated_resources.grd). -->
 <grit-part>
   <!-- Begin of Bookmarks Bar strings-->
-  <if expr="not is_android and not is_ios and not pp_ifdef('use_titlecase')">
-    <message name="IDS_BOOKMARK_BAR_FOLDER_NAME" desc="Name shown in the tree for the Bookmarks Bar folder.">
-      Bookmarks bar
+  <if expr="not is_android">
+    <!-- The following two strings are shown when the user has no bookmarks yet. -->
+    <message name="IDS_BOOKMARKS_NO_ITEMS" desc="Text shown when the user has no bookmarks">
+      For quick access, place your bookmarks here on the bookmarks bar.
     </message>
-  </if>
-  <if expr="not is_android and not is_ios and pp_ifdef('use_titlecase')">
-    <message name="IDS_BOOKMARK_BAR_FOLDER_NAME" desc="In Title Case: Name shown in the tree for the Bookmarks Bar folder.">
-      Bookmarks Bar
+    <message name="IDS_BOOKMARK_BAR_IMPORT_LINK" desc="text shown for importing ">
+      Import bookmarks now...
     </message>
-  </if>
-  <if expr="is_android">
-    <message name="IDS_BOOKMARK_BAR_FOLDER_NAME" desc="Mobile: Name shown in the tree for the desktop bookmarks folder">
-      Desktop bookmarks
+
+    <!-- The special folders created when importing from other other browsers. -->
+    <if expr="is_win">
+      <message name="IDS_BOOKMARK_GROUP_FROM_IE" desc="The group name of bookmarks from Internet Explorer">
+        Imported From IE
+      </message>
+    </if>
+    <message name="IDS_BOOKMARK_GROUP_FROM_FIREFOX" desc="The group name of bookmarks from Firefox">
+      Imported From Firefox
     </message>
-  </if>
-  <if expr="is_ios">
-    <message name="IDS_BOOKMARK_BAR_FOLDER_NAME" desc="Mobile: Name shown in the tree for the desktop bookmarks folder">
-      Desktop Bookmarks
+    <message name="IDS_BOOKMARK_GROUP_FROM_SAFARI" desc="The group name of bookmarks from Safari">
+      Imported From Safari
+    </message>
+    <message name="IDS_BOOKMARK_GROUP" desc="The group name of bookmarks imported from a file">
+      Imported
     </message>
   </if>
 
-  <!-- The following two strings are shown when the user has no bookmarks yet. -->
-  <message name="IDS_BOOKMARKS_NO_ITEMS" desc="Text shown when the user has no bookmarks">
-    For quick access, place your bookmarks here on the bookmarks bar.
-  </message>
-  <message name="IDS_BOOKMARK_BAR_IMPORT_LINK" desc="text shown for importing ">
-    Import bookmarks now...
-  </message>
-
-  <!-- The special folders created when importing from other other browsers. -->
-  <message name="IDS_BOOKMARK_GROUP_FROM_IE" desc="The group name of bookmarks from Internet Explorer">
-    Imported From IE
-  </message>
-  <message name="IDS_BOOKMARK_GROUP_FROM_FIREFOX" desc="The group name of bookmarks from Firefox">
-    Imported From Firefox
-  </message>
-  <message name="IDS_BOOKMARK_GROUP_FROM_SAFARI" desc="The group name of bookmarks from Safari">
-    Imported From Safari
-  </message>
-  <message name="IDS_BOOKMARK_GROUP_FROM_GOOGLE_TOOLBAR" desc="The group name of bookmarks from Google Toolbar">
-    Imported From Google Toolbar
-  </message>
-  <message name="IDS_BOOKMARK_GROUP" desc="The group name of bookmarks imported from a file">
-    Imported
-  </message>
-
-  <if expr="not pp_ifdef('use_titlecase')">
-    <message name="IDS_BOOKMARK_BAR_MOBILE_FOLDER_NAME" desc="Name shown in the tree for the mobile bookmarks folder">
-      Mobile bookmarks
-    </message>
-    <message name="IDS_BOOKMARK_BAR_OTHER_FOLDER_NAME" desc="Name shown in the tree for the other bookmarks folder">
-      Other bookmarks
-    </message>
-    <message name="IDS_BOOKMARK_BAR_SHOW_APPS_SHORTCUT" desc="Name shown in the context menu to hide/show the apps shortcut in the bookmakr bar">
+  <if expr="not use_titlecase">
+    <message name="IDS_BOOKMARK_BAR_SHOW_APPS_SHORTCUT" desc="Name shown in the context menu to hide/show the apps shortcut in the bookmark bar">
       Show apps shortcut
     </message>
+    <message name="IDS_BOOKMARK_BAR_SHOW_MANAGED_BOOKMARKS_DEFAULT_NAME" desc="Name shown in the context menu to hide/show the managed bookmarks in the bookmark bar">
+      Show managed bookmarks
+    </message>
+    <message name="IDS_BOOKMARK_BAR_SHOW_MANAGED_BOOKMARKS" desc="Name shown in the context menu to hide/show the managed bookmarks in the bookmark bar">
+      Show <ph name="FOLDER_NAME">$1<ex>managed bookmarks</ex></ph>
+    </message>
   </if>
-  <if expr="pp_ifdef('use_titlecase')">
-    <message name="IDS_BOOKMARK_BAR_MOBILE_FOLDER_NAME" desc="In Title Case: Name shown in the tree for the mobile bookmarks folder">
-      Mobile Bookmarks
-    </message>
-    <message name="IDS_BOOKMARK_BAR_OTHER_FOLDER_NAME" desc="In Title Case: Name shown in the tree for the other bookmarks folder">
-      Other Bookmarks
-    </message>
-    <message name="IDS_BOOKMARK_BAR_SHOW_APPS_SHORTCUT" desc="In Title Case: Name shown in the context menu to hide/show the apps shortcut in the bookmakr bar">
+  <if expr="use_titlecase">
+    <message name="IDS_BOOKMARK_BAR_SHOW_APPS_SHORTCUT" desc="In Title Case: Name shown in the context menu to hide/show the apps shortcut in the bookmark bar">
       Show Apps Shortcut
+    </message>
+    <message name="IDS_BOOKMARK_BAR_SHOW_MANAGED_BOOKMARKS_DEFAULT_NAME" desc="In Title Case: Name shown in the context menu to hide/show the managed bookmarks in the bookmark bar">
+      Show Managed Bookmarks
+    </message>
+    <message name="IDS_BOOKMARK_BAR_SHOW_MANAGED_BOOKMARKS" desc="In Title Case: Name shown in the context menu to hide/show the managed bookmarks in the bookmark bar">
+      Show <ph name="FOLDER_NAME">$1<ex>Managed Bookmarks</ex></ph>
     </message>
   </if>
   <message name="IDS_BOOKMARK_BAR_APPS_SHORTCUT_NAME" desc="Name shown in the bookmark bar for the apps page shortcut">
@@ -79,7 +59,7 @@
   <!-- End of Bookmarks Bar strings. -->
 
   <!-- Begin of Bookmarks Bar Context Menu strings. -->
-  <if expr="not pp_ifdef('use_titlecase')">
+  <if expr="not use_titlecase">
     <message name="IDS_BOOKMARK_BAR_OPEN_ALL" desc="Menu title for opening all urls in a bookmark folder">
       &amp;Open all bookmarks
     </message>
@@ -110,6 +90,36 @@
     <message name="IDS_BOOKMARK_BAR_REDO" desc="Menu title for redoing a bookmark operation">
       &amp;Redo
     </message>
+    <message name="IDS_BOOKMARK_BAR_UNDO_ADD" desc="Menu title for undoing adding a bookmark">
+      &amp;Undo add
+    </message>
+    <message name="IDS_BOOKMARK_BAR_REDO_ADD" desc="Menu title for redoing adding a bookmark">
+      &amp;Redo add
+    </message>
+    <message name="IDS_BOOKMARK_BAR_UNDO_DELETE" desc="Menu title for undoing deletion of a bookmark">
+      &amp;Undo delete
+    </message>
+    <message name="IDS_BOOKMARK_BAR_REDO_DELETE" desc="Menu title for redoing deletion of a bookmark">
+      &amp;Redo delete
+    </message>
+    <message name="IDS_BOOKMARK_BAR_UNDO_EDIT" desc="Menu title for undoing a bookmark edit">
+      &amp;Undo edit
+    </message>
+    <message name="IDS_BOOKMARK_BAR_REDO_EDIT" desc="Menu title for redoing a bookmark edit">
+      &amp;Redo edit
+    </message>
+    <message name="IDS_BOOKMARK_BAR_UNDO_MOVE" desc="Menu title for undoing moving a bookmark">
+      &amp;Undo move
+    </message>
+    <message name="IDS_BOOKMARK_BAR_REDO_MOVE" desc="Menu title for redoing moving a bookmark">
+      &amp;Redo move
+    </message>
+    <message name="IDS_BOOKMARK_BAR_UNDO_REORDER" desc="Menu title for undoing reordering bookmarks">
+      &amp;Undo reorder
+    </message>
+    <message name="IDS_BOOKMARK_BAR_REDO_REORDER" desc="Menu title for redoing reordering bookmarks">
+      &amp;Redo reorder
+    </message>
     <message name="IDS_BOOKMARK_BAR_REMOVE" desc="Menu title for removing/unstarring a bookmark">
       &amp;Delete
     </message>
@@ -125,7 +135,7 @@
       </message>
     </if>
   </if>
-  <if expr="pp_ifdef('use_titlecase')">
+  <if expr="use_titlecase">
     <message name="IDS_BOOKMARK_BAR_OPEN_ALL" desc="In Title Case: Menu title for opening all urls in a bookmark folder">
       &amp;Open All Bookmarks
     </message>
@@ -150,11 +160,41 @@
     <message name="IDS_BOOKMARK_BAR_RENAME_FOLDER" desc="In Title Case: Title of the bookmark context menu item that brings up a dialog to rename a folder">
       &amp;Rename...
     </message>
-    <message name="IDS_BOOKMARK_BAR_UNDO" desc="Menu title for undoing a bookmark operation">
+    <message name="IDS_BOOKMARK_BAR_UNDO" desc="In Title Case: Menu title for undoing a bookmark operation">
        &amp;Undo
     </message>
-    <message name="IDS_BOOKMARK_BAR_REDO" desc="Menu title for redoing a bookmark operation">
+    <message name="IDS_BOOKMARK_BAR_REDO" desc="In Title Case: Menu title for redoing a bookmark operation">
        &amp;Redo
+    </message>
+    <message name="IDS_BOOKMARK_BAR_UNDO_ADD" desc="In Title Case: Menu title for undoing adding a bookmark">
+      &amp;Undo Add
+    </message>
+    <message name="IDS_BOOKMARK_BAR_REDO_ADD" desc="In Title Case: Menu title for redoing adding a bookmark">
+      &amp;Redo Add
+    </message>
+    <message name="IDS_BOOKMARK_BAR_UNDO_DELETE" desc="In Title Case: Menu title for undoing deletion of a bookmark">
+      &amp;Undo Delete
+    </message>
+    <message name="IDS_BOOKMARK_BAR_REDO_DELETE" desc="In Title Case: Menu title for redoing deletion of a bookmark">
+      &amp;Redo Delete
+    </message>
+    <message name="IDS_BOOKMARK_BAR_UNDO_EDIT" desc="In Title Case: Menu title for undoing a bookmark edit">
+      &amp;Undo Edit
+    </message>
+    <message name="IDS_BOOKMARK_BAR_REDO_EDIT" desc="In Title Case: Menu title for redoing a bookmark edit">
+      &amp;Redo Edit
+    </message>
+    <message name="IDS_BOOKMARK_BAR_UNDO_MOVE" desc="In Title Case: Menu title for undoing moving a bookmark">
+      &amp;Undo Move
+    </message>
+    <message name="IDS_BOOKMARK_BAR_REDO_MOVE" desc="In Title Case: Menu title for redoing moving a bookmark">
+      &amp;Redo Move
+    </message>
+    <message name="IDS_BOOKMARK_BAR_UNDO_REORDER" desc="In Title Case: Menu title for undoing reordering bookmarks">
+      &amp;Undo Reorder
+    </message>
+    <message name="IDS_BOOKMARK_BAR_REDO_REORDER" desc="In Title Case: Menu title for redoing reordering bookmarks">
+      &amp;Redo Reorder
     </message>
     <message name="IDS_BOOKMARK_BAR_REMOVE" desc="In Title Case: Menu title for removing/unstarring a bookmark">
       &amp;Delete
@@ -174,20 +214,15 @@
   <message name="IDS_BOOKMARK_BAR_SHOULD_OPEN_ALL" desc="Message in the message box shown if user asks to open a lot of bookmarks in a folder">
     Are you sure you want to open <ph name="TAB_COUNT">$1<ex>20</ex></ph> tabs?
   </message>
-  <if expr="is_android">
-    <message name="IDS_SHOW_BOOKMARK_BAR" desc="Mobile: The toggle to show the bookmark bar">
-      &amp;Always show bookmarks bar
-    </message>
-  </if>
   <!-- End of Bookmarks Bar Context Menu strings. -->
 
   <!-- Begin of Bookmarks Bubble strings. -->
-  <if expr="not pp_ifdef('use_titlecase')">
+  <if expr="not use_titlecase">
     <message name="IDS_BOOKMARK_BUBBLE_PAGE_BOOKMARKED" desc="Title of the bubble after bookmarking a page.">
       Bookmark added!
     </message>
   </if>
-  <if expr="pp_ifdef('use_titlecase')">
+  <if expr="use_titlecase">
     <message name="IDS_BOOKMARK_BUBBLE_PAGE_BOOKMARKED" desc="In Title Case: Title of the bubble after bookmarking a page.">
       Bookmark Added!
     </message>
@@ -216,12 +251,12 @@
   <message name="IDS_BOOKMARK_BUBBLE_OPTIONS" desc="Title of the button the user can click to edit details of the bookmark">
     Edit...
   </message>
-  <if expr="not pp_ifdef('use_titlecase')">
+  <if expr="not use_titlecase">
     <message name="IDS_BOOKMARK_BUBBLE_CHOOSER_ANOTHER_FOLDER" desc="Text in the combobox allowing the user to choose another folder (by bringing up th editor).">
       Choose another folder...
     </message>
   </if>
-  <if expr="pp_ifdef('use_titlecase')">
+  <if expr="use_titlecase">
     <message name="IDS_BOOKMARK_BUBBLE_CHOOSER_ANOTHER_FOLDER" desc="In Title Case: Text in the combobox allowing the user to choose another folder (by bringing up th editor).">
       Choose Another Folder...
     </message>
@@ -244,9 +279,11 @@
   <message name="IDS_BOOKMARK_AX_EDITOR_NAME_LABEL" desc="Spoken text for bookmark name text field in edit folder dialog">
     Bookmark name
   </message>
-  <message name="IDS_BOOKMARK_BAR_EDIT_FOLDER_LABEL" desc="Title of label before text field in edit folder dialog">
-    Name:
-  </message>
+  <if expr="is_macosx">
+    <message name="IDS_BOOKMARK_BAR_EDIT_FOLDER_LABEL" desc="Title of label before text field in edit folder dialog">
+      Name:
+    </message>
+  </if>
   <message name="IDS_BOOKMARK_AX_EDITOR_URL_LABEL" desc="Spoken text for bookmark URL text field in edit folder dialog.">
     Bookmark URL
   </message>
@@ -288,26 +325,17 @@
       Edit Folder
     </message>
   </if>
-  <if expr="not pp_ifdef('use_titlecase')">
+  <if expr="not use_titlecase">
     <message name="IDS_BOOKMARK_ALL_TABS_DIALOG_TITLE" desc="The title of the Bookmark All Tabs dialog.">
       Bookmark all tabs
     </message>
   </if>
-  <if expr="pp_ifdef('use_titlecase')">
+  <if expr="use_titlecase">
     <message name="IDS_BOOKMARK_ALL_TABS_DIALOG_TITLE" desc="In Title Case: The title of the Bookmark All Tabs dialog.">
       Bookmark All Tabs
     </message>
   </if>
   <!-- End of Bookmarks Editor strings. -->
-
-  <!-- Begin of Bookmarks Prompt strings. -->
-  <message name="IDS_BOOKMARK_PROMPT_MESSAGE" desc="Message of bookmark prompt">
-    Like this site? Click here to bookmark it!
-  </message>
-  <message name="IDS_BOOKMARK_PROMPT_DISMISS" desc="Link for dismissing bookmark prompt">
-    Dismiss
-  </message>
-  <!-- End of Bookmarks Prompt strings. -->
 
   <!-- Begin of Bookmarks Manager strings. -->
   <message name="IDS_BOOKMARK_MANAGER_TITLE" desc="Title of the bookmark manager window.">
@@ -316,7 +344,7 @@
   <message name="IDS_BOOKMARK_MANAGER_SEARCH_BUTTON" desc="Title of the button in the bookmark manager that triggers a search">
     Search bookmarks
   </message>
-  <if expr="not pp_ifdef('use_titlecase')">
+  <if expr="not use_titlecase">
     <message name="IDS_BOOKMARK_MANAGER" desc="The label of the menu item that shows the bookmark manager">
       &amp;Bookmark manager
     </message>
@@ -351,7 +379,7 @@
       Search
     </message>
   </if>
-  <if expr="pp_ifdef('use_titlecase')">
+  <if expr="use_titlecase">
     <message name="IDS_BOOKMARK_MANAGER" desc="In Title Case: The label of the menu item that shows the bookmark manager">
       &amp;Bookmark Manager
     </message>
@@ -406,22 +434,22 @@
   <message name="IDS_BOOKMARKS_MENU" desc="The title of the Bookmarks menu in the Main menu and in the Mac menu bar.">
     &amp;Bookmarks
   </message>
-  <if expr="not pp_ifdef('use_titlecase')">
+  <if expr="not use_titlecase">
     <message name="IDS_BOOKMARK_THIS_PAGE" desc="Title of the menu item that bookmarks the current page.">
       Bookmark this page...
     </message>
   </if>
-  <if expr="pp_ifdef('use_titlecase')">
+  <if expr="use_titlecase">
     <message name="IDS_BOOKMARK_THIS_PAGE" desc="In Title Case: Title of the menu item that bookmarks the current page.">
       Bookmark This Page...
     </message>
   </if>
-  <if expr="not pp_ifdef('use_titlecase')">
+  <if expr="not use_titlecase">
     <message name="IDS_BOOKMARK_OPEN_PAGES" desc="Title of the menu item that bookmarks all the pages opened in this window.">
       Bookmark open pages...
     </message>
   </if>
-  <if expr="pp_ifdef('use_titlecase')">
+  <if expr="use_titlecase">
     <message name="IDS_BOOKMARK_OPEN_PAGES" desc="In Title Case: Title of the menu item that bookmarks all the pages opened in this window.">
       Bookmark Open Pages...
     </message>
@@ -436,14 +464,5 @@
     Edit bookmark for this page
   </message>
   <!-- End of Bookmark Star button strings. -->
-
-  <if expr="is_android">
-    <message name="IDS_BOOKMARK_EDIT_FOLDER" desc="Context menu item for editing a bookmark folder">
-      Edit folder
-    </message>
-    <message name="IDS_BOOKMARK_REMOVE_FOLDER" desc="Context menu item for removing a bookmark folder">
-      Remove folder
-    </message>
-  </if>
 
 </grit-part>

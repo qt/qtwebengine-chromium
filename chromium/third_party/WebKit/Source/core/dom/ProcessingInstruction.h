@@ -34,42 +34,41 @@ class CSSStyleSheet;
 
 class ProcessingInstruction FINAL : public CharacterData, private ResourceOwner<StyleSheetResource> {
 public:
-    static PassRefPtr<ProcessingInstruction> create(Document&, const String& target, const String& data);
+    static PassRefPtrWillBeRawPtr<ProcessingInstruction> create(Document&, const String& target, const String& data);
     virtual ~ProcessingInstruction();
+    virtual void trace(Visitor*) OVERRIDE;
 
     const String& target() const { return m_target; }
 
     void setCreatedByParser(bool createdByParser) { m_createdByParser = createdByParser; }
 
-    virtual void finishParsingChildren();
-
     const String& localHref() const { return m_localHref; }
     StyleSheet* sheet() const { return m_sheet.get(); }
-    void setCSSStyleSheet(PassRefPtr<CSSStyleSheet>);
+    void setCSSStyleSheet(PassRefPtrWillBeRawPtr<CSSStyleSheet>);
 
     bool isCSS() const { return m_isCSS; }
     bool isXSL() const { return m_isXSL; }
 
+    void didAttributeChanged();
     bool isLoading() const;
 
 private:
-    friend class CharacterData;
     ProcessingInstruction(Document&, const String& target, const String& data);
 
-    virtual String nodeName() const;
-    virtual NodeType nodeType() const;
-    virtual PassRefPtr<Node> cloneNode(bool deep = true);
+    virtual String nodeName() const OVERRIDE;
+    virtual NodeType nodeType() const OVERRIDE;
+    virtual PassRefPtrWillBeRawPtr<Node> cloneNode(bool deep = true) OVERRIDE;
 
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
     virtual void removedFrom(ContainerNode*) OVERRIDE;
 
-    void checkStyleSheet();
-    virtual void setCSSStyleSheet(const String& href, const KURL& baseURL, const String& charset, const CSSStyleSheetResource*);
-    virtual void setXSLStyleSheet(const String& href, const KURL& baseURL, const String& sheet);
+    bool checkStyleSheet(String& href, String& charset);
+    void process(const String& href, const String& charset);
 
-    virtual bool sheetLoaded();
+    virtual void setCSSStyleSheet(const String& href, const KURL& baseURL, const String& charset, const CSSStyleSheetResource*) OVERRIDE;
+    virtual void setXSLStyleSheet(const String& href, const KURL& baseURL, const String& sheet) OVERRIDE;
 
-    virtual void addSubresourceAttributeURLs(ListHashSet<KURL>&) const;
+    virtual bool sheetLoaded() OVERRIDE;
 
     void parseStyleSheet(const String& sheet);
 
@@ -77,7 +76,7 @@ private:
     String m_localHref;
     String m_title;
     String m_media;
-    RefPtr<StyleSheet> m_sheet;
+    RefPtrWillBeMember<StyleSheet> m_sheet;
     bool m_loading;
     bool m_alternate;
     bool m_createdByParser;
@@ -86,6 +85,11 @@ private:
 };
 
 DEFINE_NODE_TYPE_CASTS(ProcessingInstruction, nodeType() == Node::PROCESSING_INSTRUCTION_NODE);
+
+inline bool isXSLStyleSheet(const Node& node)
+{
+    return node.nodeType() == Node::PROCESSING_INSTRUCTION_NODE && toProcessingInstruction(node).isXSL();
+}
 
 } // namespace WebCore
 

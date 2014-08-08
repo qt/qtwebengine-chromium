@@ -9,6 +9,8 @@
 #include "ui/views/controls/tabbed_pane/tabbed_pane.h"
 #include "ui/views/test/views_test_base.h"
 
+using base::ASCIIToUTF16;
+
 namespace views {
 
 namespace {
@@ -20,7 +22,7 @@ class FixedSizeView : public View {
     : size_(size) {}
 
   // Overridden from View:
-  virtual gfx::Size GetPreferredSize() OVERRIDE {
+  virtual gfx::Size GetPreferredSize() const OVERRIDE {
     return size_;
   }
 

@@ -51,10 +51,10 @@ protected:
     virtual void SetUp() OVERRIDE;
 
     Document& document() const { return *m_document; }
-    DocumentMarkerController& markerController() const { return *m_document->markers(); }
+    DocumentMarkerController& markerController() const { return m_document->markers(); }
 
-    PassRefPtr<Text> createTextNode(const char*);
-    void markNodeContents(PassRefPtr<Node>);
+    PassRefPtrWillBeRawPtr<Text> createTextNode(const char*);
+    void markNodeContents(PassRefPtrWillBeRawPtr<Node>);
     void setBodyInnerHTML(const char*);
 
 private:
@@ -69,17 +69,17 @@ void DocumentMarkerControllerTest::SetUp()
     ASSERT(m_document);
 }
 
-PassRefPtr<Text> DocumentMarkerControllerTest::createTextNode(const char* textContents)
+PassRefPtrWillBeRawPtr<Text> DocumentMarkerControllerTest::createTextNode(const char* textContents)
 {
     return document().createTextNode(String::fromUTF8(textContents));
 }
 
-void DocumentMarkerControllerTest::markNodeContents(PassRefPtr<Node> node)
+void DocumentMarkerControllerTest::markNodeContents(PassRefPtrWillBeRawPtr<Node> node)
 {
     // Force renderers to be created; TextIterator, which is used in
     // DocumentMarkerControllerTest::addMarker(), needs them.
     document().updateLayout();
-    RefPtr<Range> range = rangeOfContents(node.get());
+    RefPtrWillBeRawPtr<Range> range = rangeOfContents(node.get());
     markerController().addMarker(range.get(), DocumentMarker::Spelling);
 }
 
@@ -88,28 +88,45 @@ void DocumentMarkerControllerTest::setBodyInnerHTML(const char* bodyContent)
     document().body()->setInnerHTML(String::fromUTF8(bodyContent), ASSERT_NO_EXCEPTION);
 }
 
+TEST_F(DocumentMarkerControllerTest, DidMoveToNewDocument)
+{
+    setBodyInnerHTML("<b><i>foo</i></b>");
+    RefPtrWillBeRawPtr<Element> parent = toElement(document().body()->firstChild()->firstChild());
+    markNodeContents(parent.get());
+    EXPECT_EQ(1u, markerController().markers().size());
+    RefPtrWillBePersistent<Document> anotherDocument = Document::create();
+    anotherDocument->adoptNode(parent.get(), ASSERT_NO_EXCEPTION);
+
+    // No more reference to marked node.
+    Heap::collectAllGarbage();
+    EXPECT_EQ(0u, markerController().markers().size());
+    EXPECT_EQ(0u, anotherDocument->markers().markers().size());
+}
+
 TEST_F(DocumentMarkerControllerTest, NodeWillBeRemovedMarkedByNormalize)
 {
     setBodyInnerHTML("<b><i>foo</i></b>");
     {
-        RefPtr<Element> parent = toElement(document().body()->firstChild()->firstChild());
+        RefPtrWillBeRawPtr<Element> parent = toElement(document().body()->firstChild()->firstChild());
         parent->appendChild(createTextNode("bar").get());
         markNodeContents(parent.get());
         EXPECT_EQ(2u, markerController().markers().size());
         parent->normalize();
     }
     // No more reference to marked node.
+    Heap::collectAllGarbage();
     EXPECT_EQ(1u, markerController().markers().size());
 }
 
 TEST_F(DocumentMarkerControllerTest, NodeWillBeRemovedMarkedByRemoveChildren)
 {
     setBodyInnerHTML("<b><i>foo</i></b>");
-    RefPtr<Element> parent = toElement(document().body()->firstChild()->firstChild());
+    RefPtrWillBeRawPtr<Element> parent = toElement(document().body()->firstChild()->firstChild());
     markNodeContents(parent.get());
     EXPECT_EQ(1u, markerController().markers().size());
     parent->removeChildren();
     // No more reference to marked node.
+    Heap::collectAllGarbage();
     EXPECT_EQ(0u, markerController().markers().size());
 }
 
@@ -117,12 +134,13 @@ TEST_F(DocumentMarkerControllerTest, NodeWillBeRemovedByRemoveMarked)
 {
     setBodyInnerHTML("<b><i>foo</i></b>");
     {
-        RefPtr<Element> parent = toElement(document().body()->firstChild()->firstChild());
+        RefPtrWillBeRawPtr<Element> parent = toElement(document().body()->firstChild()->firstChild());
         markNodeContents(parent);
         EXPECT_EQ(1u, markerController().markers().size());
         parent->removeChild(parent->firstChild());
     }
     // No more reference to marked node.
+    Heap::collectAllGarbage();
     EXPECT_EQ(0u, markerController().markers().size());
 }
 
@@ -130,12 +148,13 @@ TEST_F(DocumentMarkerControllerTest, NodeWillBeRemovedMarkedByRemoveAncestor)
 {
     setBodyInnerHTML("<b><i>foo</i></b>");
     {
-        RefPtr<Element> parent = toElement(document().body()->firstChild()->firstChild());
+        RefPtrWillBeRawPtr<Element> parent = toElement(document().body()->firstChild()->firstChild());
         markNodeContents(parent);
         EXPECT_EQ(1u, markerController().markers().size());
         parent->parentNode()->parentNode()->removeChild(parent->parentNode());
     }
     // No more reference to marked node.
+    Heap::collectAllGarbage();
     EXPECT_EQ(0u, markerController().markers().size());
 }
 
@@ -143,12 +162,13 @@ TEST_F(DocumentMarkerControllerTest, NodeWillBeRemovedMarkedByRemoveParent)
 {
     setBodyInnerHTML("<b><i>foo</i></b>");
     {
-        RefPtr<Element> parent = toElement(document().body()->firstChild()->firstChild());
+        RefPtrWillBeRawPtr<Element> parent = toElement(document().body()->firstChild()->firstChild());
         markNodeContents(parent);
         EXPECT_EQ(1u, markerController().markers().size());
         parent->parentNode()->removeChild(parent.get());
     }
     // No more reference to marked node.
+    Heap::collectAllGarbage();
     EXPECT_EQ(0u, markerController().markers().size());
 }
 
@@ -156,12 +176,13 @@ TEST_F(DocumentMarkerControllerTest, NodeWillBeRemovedMarkedByReplaceChild)
 {
     setBodyInnerHTML("<b><i>foo</i></b>");
     {
-        RefPtr<Element> parent = toElement(document().body()->firstChild()->firstChild());
+        RefPtrWillBeRawPtr<Element> parent = toElement(document().body()->firstChild()->firstChild());
         markNodeContents(parent.get());
         EXPECT_EQ(1u, markerController().markers().size());
         parent->replaceChild(createTextNode("bar").get(), parent->firstChild());
     }
     // No more reference to marked node.
+    Heap::collectAllGarbage();
     EXPECT_EQ(0u, markerController().markers().size());
 }
 
@@ -169,12 +190,13 @@ TEST_F(DocumentMarkerControllerTest, NodeWillBeRemovedBySetInnerHTML)
 {
     setBodyInnerHTML("<b><i>foo</i></b>");
     {
-        RefPtr<Element> parent = toElement(document().body()->firstChild()->firstChild());
+        RefPtrWillBeRawPtr<Element> parent = toElement(document().body()->firstChild()->firstChild());
         markNodeContents(parent);
         EXPECT_EQ(1u, markerController().markers().size());
         setBodyInnerHTML("");
     }
     // No more reference to marked node.
+    Heap::collectAllGarbage();
     EXPECT_EQ(0u, markerController().markers().size());
 }
 

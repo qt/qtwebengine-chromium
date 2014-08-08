@@ -29,17 +29,17 @@
  */
 
 #include "config.h"
-#include "WebDOMMessageEvent.h"
+#include "public/web/WebDOMMessageEvent.h"
 
-#include "WebFrame.h"
-#include "WebFrameImpl.h"
-#include "WebSerializedScriptValue.h"
 #include "bindings/v8/SerializedScriptValue.h"
 #include "core/dom/Document.h"
-#include "core/events/MessageEvent.h"
 #include "core/dom/MessagePort.h"
-#include "core/frame/DOMWindow.h"
+#include "core/events/MessageEvent.h"
+#include "core/frame/LocalDOMWindow.h"
 #include "public/platform/WebString.h"
+#include "public/web/WebFrame.h"
+#include "public/web/WebSerializedScriptValue.h"
+#include "web/WebLocalFrameImpl.h"
 
 using namespace WebCore;
 
@@ -49,16 +49,12 @@ void WebDOMMessageEvent::initMessageEvent(const WebString& type, bool canBubble,
 {
     ASSERT(m_private.get());
     ASSERT(isMessageEvent());
-    DOMWindow* window = 0;
+    LocalDOMWindow* window = 0;
     if (sourceFrame)
-        window = toWebFrameImpl(sourceFrame)->frame()->domWindow();
+        window = toWebLocalFrameImpl(sourceFrame)->frame()->domWindow();
     OwnPtr<MessagePortArray> ports;
-    if (!webChannels.isEmpty() && sourceFrame) {
-        OwnPtr<MessagePortChannelArray> channels = adoptPtr(new MessagePortChannelArray(webChannels.size()));
-        for (size_t i = 0; i < webChannels.size(); ++i)
-            (*channels)[i] = adoptPtr(webChannels[i]);
-        ports = MessagePort::entanglePorts(*window->document(), channels.release());
-    }
+    if (sourceFrame)
+        ports = MessagePort::toMessagePortArray(window->document(), webChannels);
     unwrap<MessageEvent>()->initMessageEvent(type, canBubble, cancelable, messageData, origin, lastEventId, window, ports.release());
 }
 

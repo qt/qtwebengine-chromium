@@ -22,7 +22,7 @@ namespace {
 
 scoped_refptr<gfx::GLSurface> InitializeGLSurface() {
   scoped_refptr<gfx::GLSurface> surface(
-      gfx::GLSurface::CreateOffscreenGLSurface(gfx::Size(1, 1)));
+      gfx::GLSurface::CreateOffscreenGLSurface(gfx::Size()));
   if (!surface.get()) {
     LOG(ERROR) << "gfx::GLContext::CreateOffscreenGLSurface failed";
     return NULL;
@@ -80,25 +80,26 @@ std::string GetVersionFromString(const std::string& version_string) {
 
 namespace gpu {
 
-bool CollectGraphicsInfoGL(GPUInfo* gpu_info) {
+CollectInfoResult CollectGraphicsInfoGL(GPUInfo* gpu_info) {
   TRACE_EVENT0("startup", "gpu_info_collector::CollectGraphicsInfoGL");
-  if (!gfx::GLSurface::InitializeOneOff()) {
-    LOG(ERROR) << "gfx::GLSurface::InitializeOneOff() failed";
-    return false;
-  }
+  DCHECK_NE(gfx::GetGLImplementation(), gfx::kGLImplementationNone);
 
   scoped_refptr<gfx::GLSurface> surface(InitializeGLSurface());
-  if (!surface.get())
-    return false;
+  if (!surface.get()) {
+    LOG(ERROR) << "Could not create surface for info collection.";
+    return kCollectInfoFatalFailure;
+  }
 
   scoped_refptr<gfx::GLContext> context(InitializeGLContext(surface.get()));
-  if (!context.get())
-    return false;
+  if (!context.get()) {
+    LOG(ERROR) << "Could not create context for info collection.";
+    return kCollectInfoFatalFailure;
+  }
 
   gpu_info->gl_renderer = GetGLString(GL_RENDERER);
   gpu_info->gl_vendor = GetGLString(GL_VENDOR);
   gpu_info->gl_extensions = GetGLString(GL_EXTENSIONS);
-  gpu_info->gl_version_string = GetGLString(GL_VERSION);
+  gpu_info->gl_version = GetGLString(GL_VERSION);
   std::string glsl_version_string = GetGLString(GL_SHADING_LANGUAGE_VERSION);
 
   gfx::GLWindowSystemBindingInfo window_system_binding_info;
@@ -106,6 +107,7 @@ bool CollectGraphicsInfoGL(GPUInfo* gpu_info) {
     gpu_info->gl_ws_vendor = window_system_binding_info.vendor;
     gpu_info->gl_ws_version = window_system_binding_info.version;
     gpu_info->gl_ws_extensions = window_system_binding_info.extensions;
+    gpu_info->direct_rendering = window_system_binding_info.direct_rendering;
   }
 
   bool supports_robustness =
@@ -120,7 +122,6 @@ bool CollectGraphicsInfoGL(GPUInfo* gpu_info) {
   // clears the current context.
   context->ReleaseCurrent(surface.get());
 
-  gpu_info->gl_version = GetVersionFromString(gpu_info->gl_version_string);
   std::string glsl_version = GetVersionFromString(glsl_version_string);
   gpu_info->pixel_shader_version = glsl_version;
   gpu_info->vertex_shader_version = glsl_version;
@@ -133,9 +134,8 @@ void MergeGPUInfoGL(GPUInfo* basic_gpu_info,
   DCHECK(basic_gpu_info);
   basic_gpu_info->gl_renderer = context_gpu_info.gl_renderer;
   basic_gpu_info->gl_vendor = context_gpu_info.gl_vendor;
-  basic_gpu_info->gl_version_string = context_gpu_info.gl_version_string;
-  basic_gpu_info->gl_extensions = context_gpu_info.gl_extensions;
   basic_gpu_info->gl_version = context_gpu_info.gl_version;
+  basic_gpu_info->gl_extensions = context_gpu_info.gl_extensions;
   basic_gpu_info->pixel_shader_version =
       context_gpu_info.pixel_shader_version;
   basic_gpu_info->vertex_shader_version =
@@ -153,6 +153,7 @@ void MergeGPUInfoGL(GPUInfo* basic_gpu_info,
 
   basic_gpu_info->can_lose_context = context_gpu_info.can_lose_context;
   basic_gpu_info->sandboxed = context_gpu_info.sandboxed;
+  basic_gpu_info->direct_rendering = context_gpu_info.direct_rendering;
   basic_gpu_info->finalized = context_gpu_info.finalized;
   basic_gpu_info->initialization_time = context_gpu_info.initialization_time;
 }

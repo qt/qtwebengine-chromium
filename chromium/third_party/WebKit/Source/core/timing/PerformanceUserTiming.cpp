@@ -74,16 +74,16 @@ UserTiming::UserTiming(Performance* performance)
 {
 }
 
-static void insertPerformanceEntry(PerformanceEntryMap& performanceEntryMap, PassRefPtr<PerformanceEntry> performanceEntry)
+static void insertPerformanceEntry(PerformanceEntryMap& performanceEntryMap, PassRefPtrWillBeRawPtr<PerformanceEntry> performanceEntry)
 {
-    RefPtr<PerformanceEntry> entry = performanceEntry;
+    RefPtrWillBeRawPtr<PerformanceEntry> entry = performanceEntry;
     PerformanceEntryMap::iterator it = performanceEntryMap.find(entry->name());
     if (it != performanceEntryMap.end())
         it->value.append(entry);
     else {
-        Vector<RefPtr<PerformanceEntry> > v(1);
-        v[0] = entry;
-        performanceEntryMap.set(entry->name(), v);
+        PerformanceEntryVector vector(1);
+        vector[0] = entry;
+        performanceEntryMap.set(entry->name(), vector);
     }
 }
 
@@ -164,45 +164,52 @@ void UserTiming::clearMeasures(const String& measureName)
     clearPeformanceEntries(m_measuresMap, measureName);
 }
 
-static Vector<RefPtr<PerformanceEntry> > convertToEntrySequence(const PerformanceEntryMap& performanceEntryMap)
+static PerformanceEntryVector convertToEntrySequence(const PerformanceEntryMap& performanceEntryMap)
 {
-    Vector<RefPtr<PerformanceEntry> > entries;
+    PerformanceEntryVector entries;
 
     for (PerformanceEntryMap::const_iterator it = performanceEntryMap.begin(); it != performanceEntryMap.end(); ++it)
-        entries.append(it->value);
+        entries.appendVector(it->value);
 
     return entries;
 }
 
-static Vector<RefPtr<PerformanceEntry> > getEntrySequenceByName(const PerformanceEntryMap& performanceEntryMap, const String& name)
+static PerformanceEntryVector getEntrySequenceByName(const PerformanceEntryMap& performanceEntryMap, const String& name)
 {
-    Vector<RefPtr<PerformanceEntry> > entries;
+    PerformanceEntryVector entries;
 
     PerformanceEntryMap::const_iterator it = performanceEntryMap.find(name);
     if (it != performanceEntryMap.end())
-        entries.append(it->value);
+        entries.appendVector(it->value);
 
     return entries;
 }
 
-Vector<RefPtr<PerformanceEntry> > UserTiming::getMarks() const
+PerformanceEntryVector UserTiming::getMarks() const
 {
     return convertToEntrySequence(m_marksMap);
 }
 
-Vector<RefPtr<PerformanceEntry> > UserTiming::getMarks(const String& name) const
+PerformanceEntryVector UserTiming::getMarks(const String& name) const
 {
     return getEntrySequenceByName(m_marksMap, name);
 }
 
-Vector<RefPtr<PerformanceEntry> > UserTiming::getMeasures() const
+PerformanceEntryVector UserTiming::getMeasures() const
 {
     return convertToEntrySequence(m_measuresMap);
 }
 
-Vector<RefPtr<PerformanceEntry> > UserTiming::getMeasures(const String& name) const
+PerformanceEntryVector UserTiming::getMeasures(const String& name) const
 {
     return getEntrySequenceByName(m_measuresMap, name);
+}
+
+void UserTiming::trace(Visitor* visitor)
+{
+    visitor->trace(m_performance);
+    visitor->trace(m_marksMap);
+    visitor->trace(m_measuresMap);
 }
 
 } // namespace WebCore

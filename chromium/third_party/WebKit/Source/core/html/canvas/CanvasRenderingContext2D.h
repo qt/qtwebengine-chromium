@@ -26,10 +26,12 @@
 #ifndef CanvasRenderingContext2D_h
 #define CanvasRenderingContext2D_h
 
+#include "bindings/v8/ScriptWrappable.h"
+#include "core/css/CSSFontSelectorClient.h"
 #include "core/html/canvas/Canvas2DContextAttributes.h"
 #include "core/html/canvas/CanvasPathMethods.h"
 #include "core/html/canvas/CanvasRenderingContext.h"
-#include "core/svg/SVGMatrix.h"
+#include "core/svg/SVGMatrixTearOff.h"
 #include "platform/fonts/Font.h"
 #include "platform/graphics/Color.h"
 #include "platform/geometry/FloatSize.h"
@@ -45,10 +47,11 @@ namespace blink { class WebLayer; }
 
 namespace WebCore {
 
+class CanvasImageSource;
 class CanvasGradient;
 class CanvasPattern;
 class CanvasStyle;
-class DOMPath;
+class Path2D;
 class Element;
 class ExceptionState;
 class FloatRect;
@@ -60,13 +63,13 @@ class ImageBitmap;
 class ImageData;
 class TextMetrics;
 
-typedef HashMap<String, RefPtr<MutableStylePropertySet> > MutableStylePropertyMap;
+typedef WillBeHeapHashMap<String, RefPtrWillBeMember<MutableStylePropertySet> > MutableStylePropertyMap;
 
-class CanvasRenderingContext2D : public CanvasRenderingContext, public CanvasPathMethods {
+class CanvasRenderingContext2D FINAL: public CanvasRenderingContext, public ScriptWrappable, public CanvasPathMethods {
 public:
-    static PassOwnPtr<CanvasRenderingContext2D> create(HTMLCanvasElement* canvas, const Canvas2DContextAttributes* attrs, bool usesCSSCompatibilityParseMode)
+    static PassOwnPtrWillBeRawPtr<CanvasRenderingContext2D> create(HTMLCanvasElement* canvas, const Canvas2DContextAttributes* attrs, bool usesCSSCompatibilityParseMode)
     {
-        return adoptPtr(new CanvasRenderingContext2D(canvas, attrs, usesCSSCompatibilityParseMode));
+        return adoptPtrWillBeNoop(new CanvasRenderingContext2D(canvas, attrs, usesCSSCompatibilityParseMode));
     }
     virtual ~CanvasRenderingContext2D();
 
@@ -90,12 +93,9 @@ public:
 
     const Vector<float>& getLineDash() const;
     void setLineDash(const Vector<float>&);
-    void setWebkitLineDash(const Vector<float>&);
 
     float lineDashOffset() const;
     void setLineDashOffset(float);
-    float webkitLineDashOffset() const;
-    void setWebkitLineDashOffset(float);
 
     float shadowOffsetX() const;
     void setShadowOffsetX(float);
@@ -112,17 +112,19 @@ public:
     float globalAlpha() const;
     void setGlobalAlpha(float);
 
+    bool isContextLost() const;
+
     String globalCompositeOperation() const;
     void setGlobalCompositeOperation(const String&);
 
-    void save() { ++m_unrealizedSaveCount; }
+    void save() { ++m_stateStack.last()->m_unrealizedSaveCount; }
     void restore();
 
-    SVGMatrix currentTransform() const
+    PassRefPtr<SVGMatrixTearOff> currentTransform() const
     {
-        return SVGMatrix(state().m_transform);
+        return SVGMatrixTearOff::create(state().m_transform);
     }
-    void setCurrentTransform(const SVGMatrix&);
+    void setCurrentTransform(PassRefPtr<SVGMatrixTearOff>);
 
     void scale(float sx, float sy);
     void rotate(float angleInRadians);
@@ -147,14 +149,20 @@ public:
 
     void beginPath();
 
-    PassRefPtr<DOMPath> currentPath();
-    void setCurrentPath(DOMPath*);
     void fill(const String& winding = "nonzero");
+    void fill(Path2D*, const String& winding = "nonzero");
     void stroke();
+    void stroke(Path2D*);
     void clip(const String& winding = "nonzero");
+    void clip(Path2D*, const String& winding = "nonzero");
 
     bool isPointInPath(const float x, const float y, const String& winding = "nonzero");
+    bool isPointInPath(Path2D*, const float x, const float y, const String& winding = "nonzero");
     bool isPointInStroke(const float x, const float y);
+    bool isPointInStroke(Path2D*, const float x, const float y);
+
+    void scrollPathIntoView();
+    void scrollPathIntoView(Path2D*);
 
     void clearRect(float x, float y, float width, float height);
     void fillRect(float x, float y, float width, float height);
@@ -170,22 +178,9 @@ public:
 
     void clearShadow();
 
-    void drawImage(ImageBitmap*, float x, float y, ExceptionState&);
-    void drawImage(ImageBitmap*, float x, float y, float width, float height, ExceptionState&);
-    void drawImage(ImageBitmap*, float sx, float sy, float sw, float sh, float dx, float dy, float dw, float dh, ExceptionState&);
-    void drawImage(HTMLImageElement*, float x, float y, ExceptionState&);
-    void drawImage(HTMLImageElement*, float x, float y, float width, float height, ExceptionState&);
-    void drawImage(HTMLImageElement*, float sx, float sy, float sw, float sh, float dx, float dy, float dw, float dh, ExceptionState&);
-    void drawImage(HTMLImageElement*, const FloatRect& srcRect, const FloatRect& dstRect, ExceptionState&);
-    void drawImage(HTMLImageElement*, const FloatRect& srcRect, const FloatRect& dstRect, const CompositeOperator&, const blink::WebBlendMode&, ExceptionState&);
-    void drawImage(HTMLCanvasElement*, float x, float y, ExceptionState&);
-    void drawImage(HTMLCanvasElement*, float x, float y, float width, float height, ExceptionState&);
-    void drawImage(HTMLCanvasElement*, float sx, float sy, float sw, float sh, float dx, float dy, float dw, float dh, ExceptionState&);
-    void drawImage(HTMLCanvasElement*, const FloatRect& srcRect, const FloatRect& dstRect, ExceptionState&);
-    void drawImage(HTMLVideoElement*, float x, float y, ExceptionState&);
-    void drawImage(HTMLVideoElement*, float x, float y, float width, float height, ExceptionState&);
-    void drawImage(HTMLVideoElement*, float sx, float sy, float sw, float sh, float dx, float dy, float dw, float dh, ExceptionState&);
-    void drawImage(HTMLVideoElement*, const FloatRect& srcRect, const FloatRect& dstRect, ExceptionState&);
+    void drawImage(CanvasImageSource*, float x, float y, ExceptionState&);
+    void drawImage(CanvasImageSource*, float x, float y, float width, float height, ExceptionState&);
+    void drawImage(CanvasImageSource*, float sx, float sy, float sw, float sh, float dx, float dy, float dw, float dh, ExceptionState&);
 
     void drawImageFromRect(HTMLImageElement*, float sx = 0, float sy = 0, float sw = 0, float sh = 0,
                            float dx = 0, float dy = 0, float dw = 0, float dh = 0, const String& compositeOperation = emptyString());
@@ -194,22 +189,15 @@ public:
 
     void setCompositeOperation(const String&);
 
-    PassRefPtr<CanvasGradient> createLinearGradient(float x0, float y0, float x1, float y1, ExceptionState&);
+    PassRefPtr<CanvasGradient> createLinearGradient(float x0, float y0, float x1, float y1);
     PassRefPtr<CanvasGradient> createRadialGradient(float x0, float y0, float r0, float x1, float y1, float r1, ExceptionState&);
-    PassRefPtr<CanvasPattern> createPattern(HTMLImageElement*, const String& repetitionType, ExceptionState&);
-    PassRefPtr<CanvasPattern> createPattern(HTMLCanvasElement*, const String& repetitionType, ExceptionState&);
+    PassRefPtr<CanvasPattern> createPattern(CanvasImageSource*, const String& repetitionType, ExceptionState&);
 
-    PassRefPtr<ImageData> createImageData(PassRefPtr<ImageData>, ExceptionState&) const;
-    PassRefPtr<ImageData> createImageData(float width, float height, ExceptionState&) const;
-    PassRefPtr<ImageData> getImageData(float sx, float sy, float sw, float sh, ExceptionState&) const;
-    void putImageData(ImageData*, float dx, float dy, ExceptionState&);
-    void putImageData(ImageData*, float dx, float dy, float dirtyX, float dirtyY, float dirtyWidth, float dirtyHeight, ExceptionState&);
-
-    // Slated for deprecation:
-    void webkitPutImageDataHD(ImageData* image, float dx, float dy, ExceptionState& e) { putImageData(image, dx, dy, e); }
-    void webkitPutImageDataHD(ImageData* image, float dx, float dy, float dirtyX, float dirtyY, float dirtyWidth, float dirtyHeight, ExceptionState& e) { putImageData(image, dx, dy, dirtyX, dirtyY, dirtyWidth, dirtyHeight, e); }
-    PassRefPtr<ImageData> webkitGetImageDataHD(float sx, float sy, float sw, float sh, ExceptionState&) const;
-    float webkitBackingStorePixelRatio() const { return 1; }
+    PassRefPtrWillBeRawPtr<ImageData> createImageData(PassRefPtrWillBeRawPtr<ImageData>) const;
+    PassRefPtrWillBeRawPtr<ImageData> createImageData(float width, float height, ExceptionState&) const;
+    PassRefPtrWillBeRawPtr<ImageData> getImageData(float sx, float sy, float sw, float sh, ExceptionState&) const;
+    void putImageData(ImageData*, float dx, float dy);
+    void putImageData(ImageData*, float dx, float dy, float dirtyX, float dirtyY, float dirtyWidth, float dirtyHeight);
 
     void reset();
 
@@ -236,18 +224,29 @@ public:
 
     PassRefPtr<Canvas2DContextAttributes> getContextAttributes() const;
 
-    void drawSystemFocusRing(Element*);
-    bool drawCustomFocusRing(Element*);
+    void drawFocusIfNeeded(Element*);
+    void drawFocusIfNeeded(Path2D*, Element*);
+
+    void loseContext();
+    void restoreContext();
+
+    virtual void trace(Visitor*) OVERRIDE;
 
 private:
-    struct State : FontSelectorClient {
+    class State FINAL : public CSSFontSelectorClient {
+    public:
         State();
         virtual ~State();
 
         State(const State&);
         State& operator=(const State&);
 
-        virtual void fontsNeedUpdate(FontSelector*) OVERRIDE;
+        // CSSFontSelectorClient implementation
+        virtual void fontsNeedUpdate(CSSFontSelector*) OVERRIDE;
+
+        virtual void trace(Visitor* visitor) OVERRIDE { CSSFontSelectorClient::trace(visitor); }
+
+        unsigned m_unrealizedSaveCount;
 
         String m_unparsedStrokeColor;
         String m_unparsedFillColor;
@@ -280,15 +279,18 @@ private:
 
     CanvasRenderingContext2D(HTMLCanvasElement*, const Canvas2DContextAttributes* attrs, bool usesCSSCompatibilityParseMode);
 
-    State& modifiableState() { ASSERT(!m_unrealizedSaveCount); return m_stateStack.last(); }
-    const State& state() const { return m_stateStack.last(); }
+    State& modifiableState() { ASSERT(!state().m_unrealizedSaveCount); return *m_stateStack.last(); }
+    const State& state() const { return *m_stateStack.last(); }
 
     void applyLineDash() const;
     void setShadow(const FloatSize& offset, float blur, RGBA32 color);
     void applyShadow();
     bool shouldDrawShadows() const;
 
-    void drawImageInternal(Image*, const FloatRect&, const FloatRect&, const CompositeOperator&, const blink::WebBlendMode&);
+    void dispatchContextLostEvent(Timer<CanvasRenderingContext2D>*);
+    void dispatchContextRestoredEvent(Timer<CanvasRenderingContext2D>*);
+    void tryRestoreContextEvent(Timer<CanvasRenderingContext2D>*);
+
     bool computeDirtyRect(const FloatRect& localBounds, FloatRect*);
     bool computeDirtyRect(const FloatRect& localBounds, const FloatRect& transformedClipBounds, FloatRect*);
     void didDraw(const FloatRect&);
@@ -296,19 +298,27 @@ private:
     GraphicsContext* drawingContext() const;
 
     void unwindStateStack();
-    void realizeSaves()
-    {
-        if (m_unrealizedSaveCount)
-            realizeSavesLoop();
-    }
-    void realizeSavesLoop();
+    void realizeSaves();
 
     void applyStrokePattern();
     void applyFillPattern();
 
+    void drawImageInternal(CanvasImageSource*, float sx, float sy, float sw, float sh, float dx, float dy, float dw, float dh, ExceptionState&, CompositeOperator, blink::WebBlendMode);
+    void drawVideo(HTMLVideoElement*, FloatRect srcRect, FloatRect dstRect);
+
+    void fillInternal(const Path&, const String& windingRuleString);
+    void strokeInternal(const Path&);
+    void clipInternal(const Path&, const String& windingRuleString);
+
+    bool isPointInPathInternal(const Path&, const float x, const float y, const String& windingRuleString);
+    bool isPointInStrokeInternal(const Path&, const float x, const float y);
+
+    void scrollPathIntoViewInternal(const Path&);
+
     void drawTextInternal(const String& text, float x, float y, bool fill, float maxWidth = 0, bool useMaxWidth = false);
 
     const Font& accessFont();
+    int getFontBaseline(const FontMetrics&) const;
 
     void clearCanvas();
     bool rectContainsTransformedRect(const FloatRect&, const FloatRect&) const;
@@ -316,25 +326,34 @@ private:
     void inflateStrokeRect(FloatRect&) const;
 
     template<class T> void fullCanvasCompositedFill(const T&);
+    template<class T> void fullCanvasCompositedStroke(const T&);
     template<class T> void fullCanvasCompositedDrawImage(T*, const FloatRect&, const FloatRect&, CompositeOperator);
 
+    void drawFocusIfNeededInternal(const Path&, Element*);
     bool focusRingCallIsValid(const Path&, Element*);
-    void updateFocusRingAccessibility(const Path&, Element*);
     void drawFocusRing(const Path&);
+
+    void validateStateStack();
 
     virtual bool is2d() const OVERRIDE { return true; }
     virtual bool isAccelerated() const OVERRIDE;
     virtual bool hasAlpha() const OVERRIDE { return m_hasAlpha; }
 
-    virtual bool isTransformInvertible() const { return state().m_invertibleCTM; }
+    virtual bool isTransformInvertible() const OVERRIDE { return state().m_invertibleCTM; }
 
     virtual blink::WebLayer* platformLayer() const OVERRIDE;
 
-    Vector<State, 1> m_stateStack;
-    unsigned m_unrealizedSaveCount;
+    WillBeHeapVector<OwnPtrWillBeMember<State> > m_stateStack;
     bool m_usesCSSCompatibilityParseMode;
     bool m_hasAlpha;
+    bool m_isContextLost;
+    bool m_contextRestorable;
+    Canvas2DContextStorage m_storageMode;
     MutableStylePropertyMap m_fetchedFonts;
+    unsigned m_tryRestoreContextAttemptCount;
+    Timer<CanvasRenderingContext2D> m_dispatchContextLostEventTimer;
+    Timer<CanvasRenderingContext2D> m_dispatchContextRestoredEventTimer;
+    Timer<CanvasRenderingContext2D> m_tryRestoreContextEventTimer;
 };
 
 DEFINE_TYPE_CASTS(CanvasRenderingContext2D, CanvasRenderingContext, context, context->is2d(), context.is2d());

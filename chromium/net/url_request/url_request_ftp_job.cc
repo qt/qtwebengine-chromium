@@ -34,9 +34,9 @@ URLRequestFtpJob::URLRequestFtpJob(
       pac_request_(NULL),
       http_response_info_(NULL),
       read_in_progress_(false),
-      weak_factory_(this),
       ftp_transaction_factory_(ftp_transaction_factory),
-      ftp_auth_cache_(ftp_auth_cache) {
+      ftp_auth_cache_(ftp_auth_cache),
+      weak_factory_(this) {
   DCHECK(proxy_service_);
   DCHECK(ftp_transaction_factory);
   DCHECK(ftp_auth_cache);
@@ -188,12 +188,12 @@ void URLRequestFtpJob::StartHttpTransaction() {
   http_request_info_.load_flags = request_->load_flags();
 
   int rv = request_->context()->http_transaction_factory()->CreateTransaction(
-      priority_, &http_transaction_, NULL);
+      priority_, &http_transaction_);
   if (rv == OK) {
     rv = http_transaction_->Start(
         &http_request_info_,
         base::Bind(&URLRequestFtpJob::OnStartCompleted,
-                   base::Unretained(this)),
+                  base::Unretained(this)),
         request_->net_log());
     if (rv == ERR_IO_PENDING)
       return;
@@ -218,6 +218,7 @@ void URLRequestFtpJob::OnStartCompleted(int result) {
   if (result == OK) {
     if (http_transaction_) {
       http_response_info_ = http_transaction_->GetResponseInfo();
+      SetProxyServer(http_response_info_->proxy_server);
 
       if (http_response_info_->headers->response_code() == 401 ||
           http_response_info_->headers->response_code() == 407) {

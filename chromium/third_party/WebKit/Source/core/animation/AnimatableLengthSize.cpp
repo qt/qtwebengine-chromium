@@ -33,7 +33,7 @@
 
 namespace WebCore {
 
-PassRefPtr<AnimatableValue> AnimatableLengthSize::interpolateTo(const AnimatableValue* value, double fraction) const
+PassRefPtrWillBeRawPtr<AnimatableValue> AnimatableLengthSize::interpolateTo(const AnimatableValue* value, double fraction) const
 {
     const AnimatableLengthSize* lengthSize = toAnimatableLengthSize(value);
     return AnimatableLengthSize::create(
@@ -41,18 +41,17 @@ PassRefPtr<AnimatableValue> AnimatableLengthSize::interpolateTo(const Animatable
         AnimatableValue::interpolate(this->height(), lengthSize->height(), fraction));
 }
 
-PassRefPtr<AnimatableValue> AnimatableLengthSize::addWith(const AnimatableValue* value) const
-{
-    const AnimatableLengthSize* lengthSize = toAnimatableLengthSize(value);
-    return AnimatableLengthSize::create(
-        AnimatableValue::add(this->width(), lengthSize->width()),
-        AnimatableValue::add(this->height(), lengthSize->height()));
-}
-
 bool AnimatableLengthSize::equalTo(const AnimatableValue* value) const
 {
     const AnimatableLengthSize* lengthSize = toAnimatableLengthSize(value);
     return width()->equals(lengthSize->width()) && height()->equals(lengthSize->height());
+}
+
+void AnimatableLengthSize::trace(Visitor* visitor)
+{
+    visitor->trace(m_width);
+    visitor->trace(m_height);
+    AnimatableValue::trace(visitor);
 }
 
 }

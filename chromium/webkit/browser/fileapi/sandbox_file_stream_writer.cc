@@ -5,7 +5,6 @@
 #include "webkit/browser/fileapi/sandbox_file_stream_writer.h"
 
 #include "base/files/file_util_proxy.h"
-#include "base/platform_file.h"
 #include "base/sequenced_task_runner.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
@@ -14,7 +13,7 @@
 #include "webkit/browser/fileapi/file_stream_writer.h"
 #include "webkit/browser/fileapi/file_system_context.h"
 #include "webkit/browser/fileapi/file_system_operation_runner.h"
-#include "webkit/browser/quota/quota_manager.h"
+#include "webkit/browser/quota/quota_manager_proxy.h"
 #include "webkit/common/fileapi/file_system_util.h"
 
 namespace fileapi {
@@ -112,16 +111,16 @@ int SandboxFileStreamWriter::WriteInternal(
 
 void SandboxFileStreamWriter::DidCreateSnapshotFile(
     const net::CompletionCallback& callback,
-    base::PlatformFileError file_error,
-    const base::PlatformFileInfo& file_info,
+    base::File::Error file_error,
+    const base::File::Info& file_info,
     const base::FilePath& platform_path,
     const scoped_refptr<webkit_blob::ShareableFileReference>& file_ref) {
   DCHECK(!file_ref.get());
 
   if (CancelIfRequested())
     return;
-  if (file_error != base::PLATFORM_FILE_OK) {
-    callback.Run(net::PlatformFileErrorToNetError(file_error));
+  if (file_error != base::File::FILE_OK) {
+    callback.Run(net::FileErrorToNetError(file_error));
     return;
   }
   if (file_info.is_directory) {
@@ -138,8 +137,10 @@ void SandboxFileStreamWriter::DidCreateSnapshotFile(
   }
   DCHECK(!local_file_writer_.get());
   local_file_writer_.reset(FileStreamWriter::CreateForLocalFile(
-      file_system_context_->default_file_task_runner(), platform_path,
-      initial_offset_));
+      file_system_context_->default_file_task_runner(),
+      platform_path,
+      initial_offset_,
+      FileStreamWriter::OPEN_EXISTING_FILE));
 
   quota::QuotaManagerProxy* quota_manager_proxy =
       file_system_context_->quota_manager_proxy();

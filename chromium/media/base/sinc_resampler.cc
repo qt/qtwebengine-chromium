@@ -81,11 +81,16 @@
 #include <cmath>
 #include <limits>
 
-#include "base/cpu.h"
 #include "base/logging.h"
 
-#if defined(ARCH_CPU_ARM_FAMILY) && defined(USE_NEON)
+#if defined(ARCH_CPU_X86_FAMILY)
+#include <xmmintrin.h>
+#define CONVOLVE_FUNC Convolve_SSE
+#elif defined(ARCH_CPU_ARM_FAMILY) && defined(USE_NEON)
 #include <arm_neon.h>
+#define CONVOLVE_FUNC Convolve_NEON
+#else
+#define CONVOLVE_FUNC Convolve_C
 #endif
 
 namespace media {
@@ -106,36 +111,6 @@ static double SincScaleFactor(double io_ratio) {
   return sinc_scale_factor;
 }
 
-// If we know the minimum architecture at compile time, avoid CPU detection.
-// Force NaCl code to use C routines since (at present) nothing there uses these
-// methods and plumbing the -msse built library is non-trivial.
-#if defined(ARCH_CPU_X86_FAMILY) && !defined(OS_NACL)
-#if defined(__SSE__)
-#define CONVOLVE_FUNC Convolve_SSE
-void SincResampler::InitializeCPUSpecificFeatures() {}
-#else
-// X86 CPU detection required.  Functions will be set by
-// InitializeCPUSpecificFeatures().
-// TODO(dalecurtis): Once Chrome moves to an SSE baseline this can be removed.
-#define CONVOLVE_FUNC g_convolve_proc_
-
-typedef float (*ConvolveProc)(const float*, const float*, const float*, double);
-static ConvolveProc g_convolve_proc_ = NULL;
-
-void SincResampler::InitializeCPUSpecificFeatures() {
-  CHECK(!g_convolve_proc_);
-  g_convolve_proc_ = base::CPU().has_sse() ? Convolve_SSE : Convolve_C;
-}
-#endif
-#elif defined(ARCH_CPU_ARM_FAMILY) && defined(USE_NEON)
-#define CONVOLVE_FUNC Convolve_NEON
-void SincResampler::InitializeCPUSpecificFeatures() {}
-#else
-// Unknown architecture.
-#define CONVOLVE_FUNC Convolve_C
-void SincResampler::InitializeCPUSpecificFeatures() {}
-#endif
-
 SincResampler::SincResampler(double io_sample_rate_ratio,
                              int request_frames,
                              const ReadCB& read_cb)
@@ -153,8 +128,7 @@ SincResampler::SincResampler(double io_sample_rate_ratio,
       input_buffer_(static_cast<float*>(
           base::AlignedAlloc(sizeof(float) * input_buffer_size_, 16))),
       r1_(input_buffer_.get()),
-      r2_(input_buffer_.get() + kKernelSize / 2),
-      currently_resampling_(0) {
+      r2_(input_buffer_.get() + kKernelSize / 2) {
   CHECK_GT(request_frames_, 0);
   Flush();
   CHECK_GT(block_size_, kKernelSize)
@@ -170,10 +144,7 @@ SincResampler::SincResampler(double io_sample_rate_ratio,
   InitializeKernel();
 }
 
-SincResampler::~SincResampler() {
-  // TODO(dalecurtis): Remove debugging for http://crbug.com/295278
-  CHECK(base::AtomicRefCountIsZero(&currently_resampling_));
-}
+SincResampler::~SincResampler() {}
 
 void SincResampler::UpdateRegions(bool second_load) {
   // Setup various region pointers in the buffer (see diagram above).  If we're
@@ -212,8 +183,8 @@ void SincResampler::InitializeKernel() {
 
       // Compute Blackman window, matching the offset of the sinc().
       const float x = (i - subsample_offset) / kKernelSize;
-      const float window = kA0 - kA1 * cos(2.0 * M_PI * x) + kA2
-          * cos(4.0 * M_PI * x);
+      const float window =
+          kA0 - kA1 * cos(2.0 * M_PI * x) + kA2 * cos(4.0 * M_PI * x);
       kernel_window_storage_[idx] = window;
 
       // Compute the sinc with offset, then window the sinc() function and store
@@ -256,8 +227,6 @@ void SincResampler::SetRatio(double io_sample_rate_ratio) {
 }
 
 void SincResampler::Resample(int frames, float* destination) {
-  base::AtomicRefCountInc(&currently_resampling_);
-
   int remaining_frames = frames;
 
   // Step (1) -- Prime the input buffer at the start of the input stream.
@@ -271,18 +240,12 @@ void SincResampler::Resample(int frames, float* destination) {
   const double current_io_ratio = io_sample_rate_ratio_;
   const float* const kernel_ptr = kernel_storage_.get();
   while (remaining_frames) {
-    // |i| may be negative if the last Resample() call ended on an iteration
-    // that put |virtual_source_idx_| over the limit.
-    //
     // Note: The loop construct here can severely impact performance on ARM
     // or when built with clang.  See https://codereview.chromium.org/18566009/
-    for (int i = ceil((block_size_ - virtual_source_idx_) / current_io_ratio);
-         i > 0; --i) {
-      DCHECK_LT(virtual_source_idx_, block_size_);
-
+    int source_idx = virtual_source_idx_;
+    while (source_idx < block_size_) {
       // |virtual_source_idx_| lies in between two kernel offsets so figure out
       // what they are.
-      const int source_idx = virtual_source_idx_;
       const double subsample_remainder = virtual_source_idx_ - source_idx;
 
       const double virtual_offset_idx =
@@ -310,14 +273,14 @@ void SincResampler::Resample(int frames, float* destination) {
 
       // Advance the virtual index.
       virtual_source_idx_ += current_io_ratio;
+      source_idx = virtual_source_idx_;
 
-      if (!--remaining_frames) {
-        CHECK(!base::AtomicRefCountDec(&currently_resampling_));
+      if (!--remaining_frames)
         return;
-      }
     }
 
     // Wrap back around to the start.
+    DCHECK_GE(virtual_source_idx_, block_size_);
     virtual_source_idx_ -= block_size_;
 
     // Step (3) -- Copy r3_, r4_ to r1_, r2_.
@@ -331,18 +294,13 @@ void SincResampler::Resample(int frames, float* destination) {
     // Step (5) -- Refresh the buffer with more input.
     read_cb_.Run(request_frames_, r0_);
   }
-
-  CHECK(!base::AtomicRefCountDec(&currently_resampling_));
 }
-
-#undef CONVOLVE_FUNC
 
 int SincResampler::ChunkSize() const {
   return block_size_ / io_sample_rate_ratio_;
 }
 
 void SincResampler::Flush() {
-  CHECK(base::AtomicRefCountIsZero(&currently_resampling_));
   virtual_source_idx_ = 0;
   buffer_primed_ = false;
   memset(input_buffer_.get(), 0,
@@ -369,7 +327,44 @@ float SincResampler::Convolve_C(const float* input_ptr, const float* k1,
       + kernel_interpolation_factor * sum2;
 }
 
-#if defined(ARCH_CPU_ARM_FAMILY) && defined(USE_NEON)
+#if defined(ARCH_CPU_X86_FAMILY)
+float SincResampler::Convolve_SSE(const float* input_ptr, const float* k1,
+                                  const float* k2,
+                                  double kernel_interpolation_factor) {
+  __m128 m_input;
+  __m128 m_sums1 = _mm_setzero_ps();
+  __m128 m_sums2 = _mm_setzero_ps();
+
+  // Based on |input_ptr| alignment, we need to use loadu or load.  Unrolling
+  // these loops hurt performance in local testing.
+  if (reinterpret_cast<uintptr_t>(input_ptr) & 0x0F) {
+    for (int i = 0; i < kKernelSize; i += 4) {
+      m_input = _mm_loadu_ps(input_ptr + i);
+      m_sums1 = _mm_add_ps(m_sums1, _mm_mul_ps(m_input, _mm_load_ps(k1 + i)));
+      m_sums2 = _mm_add_ps(m_sums2, _mm_mul_ps(m_input, _mm_load_ps(k2 + i)));
+    }
+  } else {
+    for (int i = 0; i < kKernelSize; i += 4) {
+      m_input = _mm_load_ps(input_ptr + i);
+      m_sums1 = _mm_add_ps(m_sums1, _mm_mul_ps(m_input, _mm_load_ps(k1 + i)));
+      m_sums2 = _mm_add_ps(m_sums2, _mm_mul_ps(m_input, _mm_load_ps(k2 + i)));
+    }
+  }
+
+  // Linearly interpolate the two "convolutions".
+  m_sums1 = _mm_mul_ps(m_sums1, _mm_set_ps1(1.0 - kernel_interpolation_factor));
+  m_sums2 = _mm_mul_ps(m_sums2, _mm_set_ps1(kernel_interpolation_factor));
+  m_sums1 = _mm_add_ps(m_sums1, m_sums2);
+
+  // Sum components together.
+  float result;
+  m_sums2 = _mm_add_ps(_mm_movehl_ps(m_sums1, m_sums1), m_sums1);
+  _mm_store_ss(&result, _mm_add_ss(m_sums2, _mm_shuffle_ps(
+      m_sums2, m_sums2, 1)));
+
+  return result;
+}
+#elif defined(ARCH_CPU_ARM_FAMILY) && defined(USE_NEON)
 float SincResampler::Convolve_NEON(const float* input_ptr, const float* k1,
                                    const float* k2,
                                    double kernel_interpolation_factor) {

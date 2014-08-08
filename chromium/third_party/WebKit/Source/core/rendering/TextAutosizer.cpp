@@ -24,9 +24,11 @@
 #include <algorithm>
 
 #include "core/dom/Document.h"
-#include "core/html/HTMLElement.h"
-#include "core/inspector/InspectorInstrumentation.h"
+#include "core/frame/LocalFrame.h"
 #include "core/frame/Settings.h"
+#include "core/frame/UseCounter.h"
+#include "core/html/HTMLElement.h"
+#include "core/page/Page.h"
 #include "core/rendering/RenderListItem.h"
 #include "core/rendering/RenderObject.h"
 #include "core/rendering/RenderText.h"
@@ -36,9 +38,10 @@
 #include "platform/TraceEvent.h"
 #include "platform/geometry/IntSize.h"
 #include "wtf/StdLibExtras.h"
-#include "wtf/Vector.h"
 
 namespace WebCore {
+
+#define AUTOSIZING_CLUSTER_HASH
 
 using namespace HTMLNames;
 
@@ -47,26 +50,25 @@ struct TextAutosizingWindowInfo {
     IntSize minLayoutSize;
 };
 
-// Represents cluster related data. Instances should not persist between calls to processSubtree.
-struct TextAutosizingClusterInfo {
-    explicit TextAutosizingClusterInfo(RenderBlock* root)
-        : root(root)
-        , blockContainingAllText(0)
-        , maxAllowedDifferenceFromTextWidth(150)
+// Represents a POD of a selection of fields for hashing. The fields are selected to detect similar
+// nodes in the Render Tree from the viewpoint of text autosizing.
+struct RenderObjectPodForHash {
+    RenderObjectPodForHash()
+        : qualifiedNameHash(0)
+        , packedStyleProperties(0)
+        , width(0)
     {
     }
+    ~RenderObjectPodForHash() { }
 
-    RenderBlock* root;
-    const RenderBlock* blockContainingAllText;
+    unsigned qualifiedNameHash;
 
-    // Upper limit on the difference between the width of the cluster's block containing all
-    // text and that of a narrow child before the child becomes a separate cluster.
-    float maxAllowedDifferenceFromTextWidth;
-
-    // Descendants of the cluster that are narrower than the block containing all text and must be
-    // processed together.
-    Vector<TextAutosizingClusterInfo> narrowDescendants;
+    // Style specific selection of signals
+    unsigned packedStyleProperties;
+    float width;
 };
+// To allow for efficient hashing using StringHasher.
+COMPILE_ASSERT(!(sizeof(RenderObjectPodForHash) % sizeof(UChar)), RenderObjectPodForHashMultipleOfUchar);
 
 #ifdef AUTOSIZING_DOM_DEBUG_INFO
 static void writeDebugInfo(RenderObject* renderObject, const AtomicString& output)
@@ -104,48 +106,115 @@ static RenderObject* getAncestorList(const RenderObject* renderer)
     // see http://www.whatwg.org/specs/web-apps/current-work/multipage/grouping-content.html#the-li-element
     for (RenderObject* ancestor = renderer->parent(); ancestor; ancestor = ancestor->parent()) {
         Node* parentNode = ancestor->generatingNode();
-        if (parentNode && (parentNode->hasTagName(olTag) || parentNode->hasTagName(ulTag)))
+        if (parentNode && (isHTMLOListElement(*parentNode) || isHTMLUListElement(*parentNode)))
             return ancestor;
     }
     return 0;
 }
 
+static Node* getGeneratingElementNode(const RenderObject* renderer)
+{
+    Node* node = renderer->generatingNode();
+    return (node && node->isElementNode()) ? node : 0;
+}
+
+static unsigned hashMemory(const void* data, size_t length)
+{
+    return StringHasher::computeHash<UChar>(static_cast<const UChar*>(data), length / sizeof(UChar));
+}
+
+static unsigned computeLocalHash(const RenderObject* renderer)
+{
+    Node* generatingElementNode = getGeneratingElementNode(renderer);
+    ASSERT(generatingElementNode);
+
+    RenderObjectPodForHash podForHash;
+    podForHash.qualifiedNameHash = QualifiedNameHash::hash(toElement(generatingElementNode)->tagQName());
+
+    if (RenderStyle* style = renderer->style()) {
+        podForHash.packedStyleProperties = style->direction();
+        podForHash.packedStyleProperties |= (style->position() << 1);
+        podForHash.packedStyleProperties |= (style->floating() << 4);
+        podForHash.packedStyleProperties |= (style->display() << 6);
+        podForHash.packedStyleProperties |= (style->width().type() << 11);
+        // packedStyleProperties effectively using 15 bits now.
+
+        // consider for adding: writing mode, padding.
+
+        podForHash.width = style->width().getFloatValue();
+    }
+
+    return hashMemory(&podForHash, sizeof(podForHash));
+}
+
 TextAutosizer::TextAutosizer(Document* document)
     : m_document(document)
+    , m_previouslyAutosized(false)
 {
+}
+
+unsigned TextAutosizer::getCachedHash(const RenderObject* renderer, bool putInCacheIfAbsent)
+{
+    HashMap<const RenderObject*, unsigned>::const_iterator it = m_hashCache.find(renderer);
+    if (it != m_hashCache.end())
+        return it->value;
+
+    RenderObject* rendererParent = renderer->parent();
+    while (rendererParent && !getGeneratingElementNode(rendererParent))
+        rendererParent = rendererParent->parent();
+
+    const unsigned parentHashValue = rendererParent ? getCachedHash(rendererParent, true) : 0;
+    const unsigned hashes[2] = { parentHashValue, computeLocalHash(renderer) };
+    const unsigned combinedHashValue = hashMemory(hashes, sizeof(hashes));
+    if (putInCacheIfAbsent)
+        m_hashCache.add(renderer, combinedHashValue);
+    return combinedHashValue;
+}
+
+bool TextAutosizer::isApplicable() const
+{
+    return m_document->settings()
+        && m_document->settings()->textAutosizingEnabled()
+        && m_document->page()
+        && m_document->page()->mainFrame()
+        && m_document->page()->deprecatedLocalMainFrame()->loader().stateMachine()->committedFirstRealDocumentLoad();
 }
 
 void TextAutosizer::recalculateMultipliers()
 {
-    RenderObject* renderer = m_document->renderer();
+    if (!isApplicable() && !m_previouslyAutosized)
+        return;
+
+    RenderObject* renderer = m_document->renderView();
     while (renderer) {
         if (renderer->style() && renderer->style()->textAutosizingMultiplier() != 1)
             setMultiplier(renderer, 1);
         renderer = renderer->nextInPreOrder();
     }
+    m_previouslyAutosized = false;
 }
 
 bool TextAutosizer::processSubtree(RenderObject* layoutRoot)
 {
-    TRACE_EVENT0("webkit", "TextAutosizer::processSubtree");
+    TRACE_EVENT0("webkit", "TextAutosizer: check if needed");
 
-    if (!m_document->settings() || !m_document->settings()->textAutosizingEnabled() || layoutRoot->view()->document().printing() || !m_document->page())
+    if (!isApplicable() || layoutRoot->view()->document().printing())
         return false;
 
-    Frame* mainFrame = m_document->page()->mainFrame();
-
+    LocalFrame* mainFrame = m_document->page()->deprecatedLocalMainFrame();
     TextAutosizingWindowInfo windowInfo;
 
     // Window area, in logical (density-independent) pixels.
     windowInfo.windowSize = m_document->settings()->textAutosizingWindowSizeOverride();
     if (windowInfo.windowSize.isEmpty())
-        windowInfo.windowSize = mainFrame->view()->unscaledVisibleContentSize(ScrollableArea::IncludeScrollbars);
+        windowInfo.windowSize = mainFrame->view()->unscaledVisibleContentSize(IncludeScrollbars);
 
     // Largest area of block that can be visible at once (assuming the main
     // frame doesn't get scaled to less than overview scale), in CSS pixels.
     windowInfo.minLayoutSize = mainFrame->view()->layoutSize();
-    for (Frame* frame = m_document->frame(); frame; frame = frame->tree().parent())
-        windowInfo.minLayoutSize = windowInfo.minLayoutSize.shrunkTo(frame->view()->layoutSize());
+    for (Frame* frame = m_document->frame(); frame; frame = frame->tree().parent()) {
+        windowInfo.minLayoutSize = windowInfo.minLayoutSize.shrunkTo(toLocalFrame(frame)->view()->layoutSize());
+    }
 
     // The layoutRoot could be neither a container nor a cluster, so walk up the tree till we find each of these.
     RenderBlock* container = layoutRoot->isRenderBlock() ? toRenderBlock(layoutRoot) : layoutRoot->containingBlock();
@@ -163,9 +232,21 @@ bool TextAutosizer::processSubtree(RenderObject* layoutRoot)
         std::numeric_limits<float>::infinity()) == 1.0f)
         return false;
 
+    TRACE_EVENT0("webkit", "TextAutosizer: process root cluster");
+    UseCounter::count(*m_document, UseCounter::TextAutosizing);
+
     TextAutosizingClusterInfo clusterInfo(cluster);
     processCluster(clusterInfo, container, layoutRoot, windowInfo);
-    InspectorInstrumentation::didAutosizeText(layoutRoot);
+
+#ifdef AUTOSIZING_CLUSTER_HASH
+    // Second pass to autosize stale non-autosized clusters for consistency.
+    secondPassProcessStaleNonAutosizedClusters();
+    m_hashCache.clear();
+    m_hashToMultiplier.clear();
+    m_hashesToAutosizeSecondPass.clear();
+    m_nonAutosizedClusters.clear();
+#endif
+    m_previouslyAutosized = true;
     return true;
 }
 
@@ -180,9 +261,10 @@ float TextAutosizer::clusterMultiplier(WritingMode writingMode, const TextAutosi
     multiplier *= m_document->settings()->accessibilityFontScaleFactor();
 
     // If the page has a meta viewport or @viewport, don't apply the device scale adjustment.
-    const ViewportDescription& viewportDescription = m_document->page()->mainFrame()->document()->viewportDescription();
+    const ViewportDescription& viewportDescription = m_document->page()->deprecatedLocalMainFrame()->document()->viewportDescription();
     if (!viewportDescription.isSpecifiedByAuthor()) {
-        multiplier *= m_document->settings()->deviceScaleAdjustment();
+        float deviceScaleAdjustment = m_document->settings()->deviceScaleAdjustment();
+        multiplier *= deviceScaleAdjustment;
     }
     return std::max(1.0f, multiplier);
 }
@@ -191,13 +273,65 @@ void TextAutosizer::processClusterInternal(TextAutosizingClusterInfo& clusterInf
 {
     processContainer(multiplier, container, clusterInfo, subtreeRoot, windowInfo);
 #ifdef AUTOSIZING_DOM_DEBUG_INFO
-    writeDebugInfo(clusterInfo.root, String::format("cluster:%f", multiplier));
+    writeDebugInfo(clusterInfo.root, AtomicString(String::format("cluster:%f", multiplier)));
 #endif
 
     Vector<Vector<TextAutosizingClusterInfo> > narrowDescendantsGroups;
     getNarrowDescendantsGroupedByWidth(clusterInfo, narrowDescendantsGroups);
     for (size_t i = 0; i < narrowDescendantsGroups.size(); ++i)
         processCompositeCluster(narrowDescendantsGroups[i], windowInfo);
+}
+
+unsigned TextAutosizer::computeCompositeClusterHash(Vector<TextAutosizingClusterInfo>& clusterInfos)
+{
+    if (clusterInfos.size() == 1 && getGeneratingElementNode(clusterInfos[0].root))
+        return getCachedHash(clusterInfos[0].root, false);
+
+    // FIXME: consider hashing clusters for which clusterInfos.size() > 1
+    return 0;
+}
+
+void TextAutosizer::addNonAutosizedCluster(unsigned key, TextAutosizingClusterInfo& value)
+{
+    HashMap<unsigned, OwnPtr<Vector<TextAutosizingClusterInfo> > >::const_iterator it = m_nonAutosizedClusters.find(key);
+    if (it == m_nonAutosizedClusters.end()) {
+        m_nonAutosizedClusters.add(key, adoptPtr(new Vector<TextAutosizingClusterInfo>(1, value)));
+        return;
+    }
+    it->value->append(value);
+}
+
+float TextAutosizer::computeMultiplier(Vector<TextAutosizingClusterInfo>& clusterInfos, const TextAutosizingWindowInfo& windowInfo, float textWidth)
+{
+#ifdef AUTOSIZING_CLUSTER_HASH
+    // When hashing is enabled this function returns a multiplier based on previously seen clusters.
+    // It will return a non-unit multiplier if a cluster with the same hash value has been previously
+    // autosized.
+    unsigned clusterHash = computeCompositeClusterHash(clusterInfos);
+#else
+    unsigned clusterHash = 0;
+#endif
+
+    if (clusterHash) {
+        HashMap<unsigned, float>::iterator it = m_hashToMultiplier.find(clusterHash);
+        if (it != m_hashToMultiplier.end())
+            return it->value;
+    }
+
+    if (compositeClusterShouldBeAutosized(clusterInfos, textWidth)) {
+        float multiplier = clusterMultiplier(clusterInfos[0].root->style()->writingMode(), windowInfo, textWidth);
+        if (clusterHash) {
+            if (multiplier > 1 && m_nonAutosizedClusters.contains(clusterHash))
+                m_hashesToAutosizeSecondPass.append(clusterHash);
+            m_hashToMultiplier.add(clusterHash, multiplier);
+        }
+        return multiplier;
+    }
+
+    if (clusterHash)
+        addNonAutosizedCluster(clusterHash, clusterInfos[0]);
+
+    return 1.0f;
 }
 
 void TextAutosizer::processCluster(TextAutosizingClusterInfo& clusterInfo, RenderBlock* container, RenderObject* subtreeRoot, const TextAutosizingWindowInfo& windowInfo)
@@ -207,10 +341,11 @@ void TextAutosizer::processCluster(TextAutosizingClusterInfo& clusterInfo, Rende
     // descendant text node of the cluster (i.e. the deepest wrapper block that contains all the
     // text), and use its width instead.
     clusterInfo.blockContainingAllText = findDeepestBlockContainingAllText(clusterInfo.root);
-    float textWidth = clusterInfo.blockContainingAllText->contentLogicalWidth();
-    float multiplier =  1.0;
-    if (clusterShouldBeAutosized(clusterInfo, textWidth))
-        multiplier = clusterMultiplier(clusterInfo.root->style()->writingMode(), windowInfo, textWidth);
+    float textWidth = clusterInfo.blockContainingAllText->contentLogicalWidth().toFloat();
+
+    Vector<TextAutosizingClusterInfo> clusterInfos(1, clusterInfo);
+    float multiplier = computeMultiplier(clusterInfos, windowInfo, textWidth);
+
     processClusterInternal(clusterInfo, container, subtreeRoot, windowInfo, multiplier);
 }
 
@@ -223,15 +358,49 @@ void TextAutosizer::processCompositeCluster(Vector<TextAutosizingClusterInfo>& c
     for (size_t i = 0; i < clusterInfos.size(); ++i) {
         TextAutosizingClusterInfo& clusterInfo = clusterInfos[i];
         clusterInfo.blockContainingAllText = findDeepestBlockContainingAllText(clusterInfo.root);
-        maxTextWidth = max<float>(maxTextWidth, clusterInfo.blockContainingAllText->contentLogicalWidth());
+        maxTextWidth = max<float>(maxTextWidth, clusterInfo.blockContainingAllText->contentLogicalWidth().toFloat());
     }
 
-    float multiplier = 1.0;
-    if (compositeClusterShouldBeAutosized(clusterInfos, maxTextWidth))
-        multiplier = clusterMultiplier(clusterInfos[0].root->style()->writingMode(), windowInfo, maxTextWidth);
+    float multiplier =  computeMultiplier(clusterInfos, windowInfo, maxTextWidth);
     for (size_t i = 0; i < clusterInfos.size(); ++i) {
         ASSERT(clusterInfos[i].root->style()->writingMode() == clusterInfos[0].root->style()->writingMode());
         processClusterInternal(clusterInfos[i], clusterInfos[i].root, clusterInfos[i].root, windowInfo, multiplier);
+    }
+}
+
+void TextAutosizer::secondPassProcessStaleNonAutosizedClusters()
+{
+    for (size_t i = 0; i < m_hashesToAutosizeSecondPass.size(); ++i) {
+        unsigned hash = m_hashesToAutosizeSecondPass[i];
+        float multiplier = m_hashToMultiplier.get(hash);
+        Vector<TextAutosizingClusterInfo>* val = m_nonAutosizedClusters.get(hash);
+        for (Vector<TextAutosizingClusterInfo>::iterator it2 = val->begin(); it2 != val->end(); ++it2)
+            processStaleContainer(multiplier, (*it2).root, *it2);
+    }
+}
+
+void TextAutosizer::processStaleContainer(float multiplier, RenderBlock* cluster, TextAutosizingClusterInfo& clusterInfo)
+{
+    ASSERT(isAutosizingContainer(cluster));
+
+    // This method is different from processContainer() mainly in that it does not recurse into sub-clusters.
+    // Multiplier updates are restricted to the specified cluster only. Also the multiplier > 1 by construction
+    // of m_hashesToAutosizeSecondPass, so we don't need to check it explicitly.
+    float localMultiplier = containerShouldBeAutosized(cluster) ? multiplier : 1;
+
+    RenderObject* descendant = nextInPreOrderSkippingDescendantsOfContainers(cluster, cluster);
+    while (descendant) {
+        if (descendant->isText()) {
+            if (localMultiplier != 1 && descendant->style()->textAutosizingMultiplier() == 1) {
+                setMultiplier(descendant, localMultiplier);
+                setMultiplier(descendant->parent(), localMultiplier); // Parent does line spacing.
+            }
+        } else if (isAutosizingContainer(descendant)) {
+            RenderBlock* descendantBlock = toRenderBlock(descendant);
+            if (!isAutosizingCluster(descendantBlock, clusterInfo))
+                processStaleContainer(multiplier, descendantBlock, clusterInfo);
+        }
+        descendant = nextInPreOrderSkippingDescendantsOfContainers(descendant, cluster);
     }
 }
 
@@ -242,7 +411,7 @@ void TextAutosizer::processContainer(float multiplier, RenderBlock* container, T
     writeDebugInfo(container, "container");
 #endif
 
-    float localMultiplier = containerShouldBeAutosized(container) ? multiplier: 1;
+    float localMultiplier = (multiplier > 1 && containerShouldBeAutosized(container)) ? multiplier: 1;
 
     RenderObject* descendant = nextInPreOrderSkippingDescendantsOfContainers(subtreeRoot, subtreeRoot);
     while (descendant) {
@@ -287,12 +456,12 @@ void TextAutosizer::setMultiplierForList(RenderObject* renderer, float multiplie
 #ifndef NDEBUG
     Node* parentNode = renderer->generatingNode();
     ASSERT(parentNode);
-    ASSERT(parentNode->hasTagName(olTag) || parentNode->hasTagName(ulTag));
+    ASSERT(isHTMLOListElement(parentNode) || isHTMLUListElement(parentNode));
 #endif
     setMultiplier(renderer, multiplier);
 
     // Make sure all list items are autosized consistently.
-    for (RenderObject* child = renderer->firstChild(); child; child = child->nextSibling()) {
+    for (RenderObject* child = renderer->slowFirstChild(); child; child = child->nextSibling()) {
         if (child->isListItem() && child->style()->textAutosizingMultiplier() == 1)
             setMultiplier(child, multiplier);
     }
@@ -337,7 +506,7 @@ bool TextAutosizer::isAutosizingContainer(const RenderObject* renderer)
     // - Must not be normal list items, as items in the same list should look
     //   consistent, unless they are floating or position:absolute/fixed.
     Node* node = renderer->generatingNode();
-    if ((node && !node->hasChildNodes())
+    if ((node && !node->hasChildren())
         || !renderer->isRenderBlock()
         || (renderer->isInline() && !renderer->style()->isDisplayReplacedType()))
         return false;
@@ -367,14 +536,14 @@ bool TextAutosizer::isNarrowDescendant(const RenderBlock* renderer, TextAutosizi
     // the enclosing cluster. This 150px limit is adjusted whenever a descendant container is
     // less than 50px narrower than the current limit.
     const float differenceFromMaxWidthDifference = 50;
-    float contentWidth = renderer->contentLogicalWidth();
-    float clusterTextWidth = parentClusterInfo.blockContainingAllText->contentLogicalWidth();
-    float widthDifference = clusterTextWidth - contentWidth;
+    LayoutUnit contentWidth = renderer->contentLogicalWidth();
+    LayoutUnit clusterTextWidth = parentClusterInfo.blockContainingAllText->contentLogicalWidth();
+    LayoutUnit widthDifference = clusterTextWidth - contentWidth;
 
     if (widthDifference - parentClusterInfo.maxAllowedDifferenceFromTextWidth > differenceFromMaxWidthDifference)
         return true;
 
-    parentClusterInfo.maxAllowedDifferenceFromTextWidth = std::max(widthDifference, parentClusterInfo.maxAllowedDifferenceFromTextWidth);
+    parentClusterInfo.maxAllowedDifferenceFromTextWidth = std::max(widthDifference.toFloat(), parentClusterInfo.maxAllowedDifferenceFromTextWidth);
     return false;
 }
 
@@ -384,8 +553,8 @@ bool TextAutosizer::isWiderDescendant(const RenderBlock* renderer, const TextAut
 
     // Autosizing containers that are wider than the |blockContainingAllText| of their enclosing
     // cluster are treated the same way as autosizing clusters to be autosized separately.
-    float contentWidth = renderer->contentLogicalWidth();
-    float clusterTextWidth = parentClusterInfo.blockContainingAllText->contentLogicalWidth();
+    LayoutUnit contentWidth = renderer->contentLogicalWidth();
+    LayoutUnit clusterTextWidth = parentClusterInfo.blockContainingAllText->contentLogicalWidth();
     return contentWidth > clusterTextWidth;
 }
 
@@ -412,6 +581,7 @@ bool TextAutosizer::isIndependentDescendant(const RenderBlock* renderer)
     // from the box's parent (we want to avoid having significantly different
     // width blocks within a cluster, since the narrower blocks would end up
     // larger than would otherwise be necessary).
+    RenderBlock* containingBlock = renderer->containingBlock();
     return renderer->isRenderView()
         || renderer->isFloating()
         || renderer->isOutOfFlowPositioned()
@@ -419,7 +589,7 @@ bool TextAutosizer::isIndependentDescendant(const RenderBlock* renderer)
         || renderer->isTableCaption()
         || renderer->isFlexibleBoxIncludingDeprecated()
         || renderer->hasColumns()
-        || renderer->containingBlock()->isHorizontalWritingMode() != renderer->isHorizontalWritingMode()
+        || (containingBlock && containingBlock->isHorizontalWritingMode() != renderer->isHorizontalWritingMode())
         || renderer->style()->isDisplayReplacedType()
         || renderer->isTextArea()
         || renderer->style()->userModify() != READ_ONLY;
@@ -520,18 +690,12 @@ bool TextAutosizer::contentHeightIsConstrained(const RenderBlock* container)
         if (style->height().isSpecified() || style->maxHeight().isSpecified() || container->isOutOfFlowPositioned()) {
             // Some sites (e.g. wikipedia) set their html and/or body elements to height:100%,
             // without intending to constrain the height of the content within them.
-            return !container->isRoot() && !container->isBody();
+            return !container->isDocumentElement() && !container->isBody();
         }
         if (container->isFloating())
             return false;
     }
     return false;
-}
-
-bool TextAutosizer::clusterShouldBeAutosized(TextAutosizingClusterInfo& clusterInfo, float blockWidth)
-{
-    Vector<TextAutosizingClusterInfo> clusterInfos(1, clusterInfo);
-    return compositeClusterShouldBeAutosized(clusterInfos, blockWidth);
 }
 
 bool TextAutosizer::compositeClusterShouldBeAutosized(Vector<TextAutosizingClusterInfo>& clusterInfos, float blockWidth)
@@ -634,11 +798,11 @@ const RenderBlock* TextAutosizer::findDeepestBlockContainingAllText(const Render
 
 const RenderObject* TextAutosizer::findFirstTextLeafNotInCluster(const RenderObject* parent, size_t& depth, TraversalDirection direction)
 {
-    if (parent->isEmpty())
-        return parent->isText() ? parent : 0;
+    if (parent->isText())
+        return parent;
 
     ++depth;
-    const RenderObject* child = (direction == FirstToLast) ? parent->firstChild() : parent->lastChild();
+    const RenderObject* child = (direction == FirstToLast) ? parent->slowFirstChild() : parent->slowLastChild();
     while (child) {
         if (!isAutosizingContainer(child) || !isIndependentDescendant(toRenderBlock(child))) {
             const RenderObject* leaf = findFirstTextLeafNotInCluster(child, depth, direction);
@@ -681,8 +845,8 @@ void TextAutosizer::getNarrowDescendantsGroupedByWidth(const TextAutosizingClust
         groups.last().append(clusterInfos[i]);
 
         if (i + 1 < clusterInfos.size()) {
-            float currentWidth = clusterInfos[i].root->contentLogicalWidth();
-            float nextWidth = clusterInfos[i + 1].root->contentLogicalWidth();
+            LayoutUnit currentWidth = clusterInfos[i].root->contentLogicalWidth();
+            LayoutUnit nextWidth = clusterInfos[i + 1].root->contentLogicalWidth();
             if (currentWidth - nextWidth > maxWidthDifferenceWithinGroup)
                 groups.grow(groups.size() + 1);
         }

@@ -42,7 +42,7 @@ namespace WebCore {
 class AXObject;
 class AXObjectCache;
 class Element;
-class Frame;
+class LocalFrame;
 class FrameView;
 class HTMLAnchorElement;
 class HTMLAreaElement;
@@ -86,6 +86,7 @@ enum AccessibilityRole {
     DocumentRole,
     DrawerRole,
     EditableTextRole,
+    EmbeddedObjectRole,
     FooterRole,
     FormRole,
     GridRole,
@@ -94,6 +95,7 @@ enum AccessibilityRole {
     HeadingRole,
     HelpTagRole,
     HorizontalRuleRole,
+    IframeRole,
     IgnoredRole,
     ImageMapLinkRole,
     ImageMapRole,
@@ -291,9 +293,6 @@ public:
     AXObjectCache* axObjectCache() const;
     AXID axObjectID() const { return m_id; }
 
-    // Lays out the page so that the accessibility tree is based on up-to-date information.
-    void updateBackingStore();
-
     // Determine subclass type.
     virtual bool isAXNodeObject() const { return false; }
     virtual bool isAXRenderObject() const { return false; }
@@ -316,12 +315,14 @@ public:
     bool isComboBox() const { return roleValue() == ComboBoxRole; }
     virtual bool isControl() const { return false; }
     virtual bool isDataTable() const { return false; }
+    virtual bool isEmbeddedObject() const { return false; }
     virtual bool isFieldset() const { return false; }
     virtual bool isFileUploadButton() const { return false; }
     virtual bool isHeading() const { return false; }
     virtual bool isImage() const { return false; }
     virtual bool isImageMapLink() const { return false; }
     virtual bool isInputImage() const { return false; }
+    bool isLandmarkRelated() const;
     virtual bool isLink() const { return false; }
     virtual bool isList() const { return false; }
     bool isListItem() const { return roleValue() == ListItemRole; }
@@ -340,7 +341,6 @@ public:
     virtual bool isProgressIndicator() const { return false; }
     bool isRadioButton() const { return roleValue() == RadioButtonRole; }
     bool isScrollbar() const { return roleValue() == ScrollBarRole; }
-    bool isSeamlessWebArea() const { return roleValue() == SeamlessWebAreaRole; }
     virtual bool isSlider() const { return false; }
     virtual bool isSpinButton() const { return roleValue() == SpinButtonRole; }
     virtual bool isSpinButtonPart() const { return false; }
@@ -378,7 +378,6 @@ public:
     virtual bool canSetFocusAttribute() const { return false; }
     virtual bool canSetValueAttribute() const { return false; }
     virtual bool canSetSelectedAttribute() const { return false; }
-    virtual bool canSetSelectedChildrenAttribute() const { return false; }
 
     // Whether objects are ignored, i.e. not included in the tree.
     bool accessibilityIsIgnored() const;
@@ -397,7 +396,6 @@ public:
     // 1-based, to match the aria-level spec.
     virtual unsigned hierarchicalLevel() const { return 0; }
     virtual AccessibilityOrientation orientation() const;
-    virtual int tableLevel() const { return 0; }
     virtual String text() const { return String(); }
     virtual int textLength() const { return 0; }
     virtual AXObject* titleUIElement() const { return 0; }
@@ -418,21 +416,22 @@ public:
     virtual float valueForRange() const { return 0.0f; }
     virtual float maxValueForRange() const { return 0.0f; }
     virtual float minValueForRange() const { return 0.0f; }
-    const AtomicString& placeholderValue() const;
-    virtual void selectedChildren(AccessibilityChildrenVector&) { }
     virtual String stringValue() const { return String(); }
 
     // ARIA attributes.
     virtual AXObject* activeDescendant() const { return 0; }
     virtual String ariaDescribedByAttribute() const { return String(); }
     virtual void ariaFlowToElements(AccessibilityChildrenVector&) const { }
+    virtual void ariaControlsElements(AccessibilityChildrenVector&) const { }
+    virtual void ariaDescribedbyElements(AccessibilityChildrenVector& describedby) const { };
+    virtual void ariaLabelledbyElements(AccessibilityChildrenVector& labelledby) const { };
+    virtual void ariaOwnsElements(AccessibilityChildrenVector& owns) const { };
     virtual bool ariaHasPopup() const { return false; }
     bool ariaIsMultiline() const;
     virtual String ariaLabeledByAttribute() const { return String(); }
     bool ariaPressedIsPresent() const;
     virtual AccessibilityRole ariaRoleAttribute() const { return UnknownRole; }
     virtual bool ariaRoleHasPresentationalChildren() const { return false; }
-    const AtomicString& invalidStatus() const;
     virtual bool isARIAGrabbed() { return false; }
     virtual bool isPresentationalChildOfAriaRole() const { return false; }
     virtual bool shouldFocusActiveDescendant() const { return false; }
@@ -455,7 +454,6 @@ public:
     virtual bool ariaLiveRegionBusy() const { return false; }
 
     // Accessibility Text.
-    virtual void accessibilityText(Vector<AccessibilityText>&) { };
     virtual String textUnderElement() const { return String(); }
 
     // Accessibility Text - (To be deprecated).
@@ -489,6 +487,7 @@ public:
     virtual bool canHaveChildren() const { return true; }
     bool hasChildren() const { return m_haveChildren; }
     virtual void updateChildrenIfNecessary();
+    virtual bool needsToUpdateChildren() const { return false; }
     virtual void setNeedsToUpdateChildren() { }
     virtual void clearChildren();
     virtual void detachFromParent() { }
@@ -513,7 +512,6 @@ public:
 
     // Selected text.
     virtual PlainTextRange selectedTextRange() const { return PlainTextRange(); }
-    virtual String selectedText() const { return String(); }
 
     // Modify or take an action on an object.
     virtual void increment() { }

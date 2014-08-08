@@ -41,7 +41,12 @@
 
 namespace WebCore {
 
+class Event;
+class EventListener;
+class EventTarget;
 class ExecutionContext;
+class MutationObserver;
+class XMLHttpRequest;
 
 class AsyncCallStackTracker {
     WTF_MAKE_NONCOPYABLE(AsyncCallStackTracker);
@@ -83,21 +88,36 @@ public:
     void didCancelAnimationFrame(ExecutionContext*, int callbackId);
     void willFireAnimationFrame(ExecutionContext*, int callbackId);
 
+    void didEnqueueEvent(EventTarget*, Event*, const ScriptValue& callFrames);
+    void didRemoveEvent(EventTarget*, Event*);
+    void willHandleEvent(EventTarget*, Event*, EventListener*, bool useCapture);
+    void willLoadXHR(XMLHttpRequest*, const ScriptValue& callFrames);
+
+    void didEnqueueMutationRecord(ExecutionContext*, MutationObserver*, const ScriptValue& callFrames);
+    bool hasEnqueuedMutationRecord(ExecutionContext*, MutationObserver*);
+    void didClearAllMutationRecords(ExecutionContext*, MutationObserver*);
+    void willDeliverMutationRecords(ExecutionContext*, MutationObserver*);
+
     void didFireAsyncCall();
     void clear();
 
 private:
+    void willHandleXHREvent(XMLHttpRequest*, EventTarget*, Event*);
+
     PassRefPtr<AsyncCallChain> createAsyncCallChain(const String& description, const ScriptValue& callFrames);
+    void setCurrentAsyncCallChain(PassRefPtr<AsyncCallChain>);
+    void clearCurrentAsyncCallChain();
     static void ensureMaxAsyncCallChainDepth(AsyncCallChain*, unsigned);
     static bool validateCallFrames(const ScriptValue& callFrames);
 
     class ExecutionContextData;
-    void contextDestroyed(ExecutionContext*);
     ExecutionContextData* createContextDataIfNeeded(ExecutionContext*);
 
     unsigned m_maxAsyncCallStackDepth;
     RefPtr<AsyncCallChain> m_currentAsyncCallChain;
-    HashMap<ExecutionContext*, ExecutionContextData*> m_executionContextDataMap;
+    unsigned m_nestedAsyncCallCount;
+    typedef HashMap<ExecutionContext*, ExecutionContextData*> ExecutionContextDataMap;
+    ExecutionContextDataMap m_executionContextDataMap;
 };
 
 } // namespace WebCore

@@ -7,8 +7,10 @@
 #ifndef GPU_COMMAND_BUFFER_SERVICE_ERROR_STATE_H_
 #define GPU_COMMAND_BUFFER_SERVICE_ERROR_STATE_H_
 
+#include <stdint.h>
+
 #include "base/compiler_specific.h"
-#include "gpu/command_buffer/common/types.h"
+#include "base/macros.h"
 #include "gpu/gpu_export.h"
 
 namespace gpu {
@@ -31,10 +33,17 @@ class Logger;
         __FILE__, __LINE__, function_name, value, label)
 
 // Use to synthesize a GL error on the error_state for an invalid enum based
-// parameter. Will attempt to expand the parameter to a string.
-#define ERRORSTATE_SET_GL_ERROR_INVALID_PARAM( \
+// integer parameter. Will attempt to expand the parameter to a string.
+#define ERRORSTATE_SET_GL_ERROR_INVALID_PARAMI( \
     error_state, error, function_name, pname, param) \
-    error_state->SetGLErrorInvalidParam( \
+    error_state->SetGLErrorInvalidParami( \
+        __FILE__, __LINE__, error, function_name, pname, param)
+
+// Use to synthesize a GL error on the error_state for an invalid enum based
+// float parameter. Will attempt to expand the parameter to a string.
+#define ERRORSTATE_SET_GL_ERROR_INVALID_PARAMF( \
+    error_state, error, function_name, pname, param) \
+    error_state->SetGLErrorInvalidParamf( \
         __FILE__, __LINE__, error, function_name, pname, param)
 
 // Use to move all pending error to the wrapper so on your next GL call
@@ -48,14 +57,19 @@ class Logger;
 #define ERRORSTATE_CLEAR_REAL_GL_ERRORS(error_state, function_name) \
     error_state->ClearRealGLErrors(__FILE__, __LINE__, function_name)
 
+class GPU_EXPORT ErrorStateClient {
+ public:
+  // GL_OUT_OF_MEMORY can cause side effects such as losing the context.
+  virtual void OnOutOfMemoryError() = 0;
+};
 
 class GPU_EXPORT ErrorState {
  public:
   virtual ~ErrorState();
 
-  static ErrorState* Create(Logger* logger);
+  static ErrorState* Create(ErrorStateClient* client, Logger* logger);
 
-  virtual uint32 GetGLError() = 0;
+  virtual uint32_t GetGLError() = 0;
 
   virtual void SetGLError(
       const char* filename,
@@ -69,13 +83,20 @@ class GPU_EXPORT ErrorState {
       const char* function_name,
       unsigned int value,
       const char* label) = 0;
-  virtual void SetGLErrorInvalidParam(
+  virtual void SetGLErrorInvalidParami(
       const char* filename,
       int line,
       unsigned int error,
       const char* function_name,
       unsigned int pname,
       int param) = 0;
+  virtual void SetGLErrorInvalidParamf(
+      const char* filename,
+      int line,
+      unsigned int error,
+      const char* function_name,
+      unsigned int pname,
+      float param) = 0;
 
   // Gets the GLError and stores it in our wrapper. Effectively
   // this lets us peek at the error without losing it.

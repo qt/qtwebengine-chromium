@@ -9,6 +9,7 @@
 
 #include "base/command_line.h"
 #include "base/metrics/histogram.h"
+#include "base/strings/utf_string_conversions.h"
 #include "ppapi/c/pp_errors.h"
 #include "ppapi/c/private/ppb_pdf.h"
 #include "ppapi/proxy/ppapi_messages.h"
@@ -62,8 +63,10 @@ void PDFResource::SearchString(const unsigned short* input_string,
                                PP_PrivateFindResult** results, int* count) {
   if (locale_.empty())
     locale_ = GetLocale();
-  const char16* string = reinterpret_cast<const char16*>(input_string);
-  const char16* term = reinterpret_cast<const char16*>(input_term);
+  const base::char16* string =
+      reinterpret_cast<const base::char16*>(input_string);
+  const base::char16* term =
+      reinterpret_cast<const base::char16*>(input_term);
 
   UErrorCode status = U_ZERO_ERROR;
   UStringSearch* searcher = usearch_open(term, -1, string, -1, locale_.c_str(),
@@ -190,6 +193,15 @@ PP_Resource PDFResource::GetResourceImage(PP_ResourceImage image_id) {
 
 PP_Bool PDFResource::IsOutOfProcess() {
   return PP_TRUE;
+}
+
+void PDFResource::SetSelectedText(const char* selected_text) {
+  Post(RENDERER,
+       PpapiHostMsg_PDF_SetSelectedText(base::UTF8ToUTF16(selected_text)));
+}
+
+void PDFResource::SetLinkUnderCursor(const char* url) {
+  Post(RENDERER, PpapiHostMsg_PDF_SetLinkUnderCursor(url));
 }
 
 }  // namespace proxy

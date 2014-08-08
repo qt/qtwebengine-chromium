@@ -29,9 +29,9 @@ namespace WebCore {
 
 class HTMLHRElement FINAL : public HTMLElement {
 public:
-    static PassRefPtr<HTMLHRElement> create(Document&);
+    DECLARE_NODE_FACTORY(HTMLHRElement);
 
-    virtual bool canContainRangeEndPoint() const { return hasChildNodes(); }
+    virtual bool canContainRangeEndPoint() const OVERRIDE { return hasChildren(); }
 
 private:
     explicit HTMLHRElement(Document&);

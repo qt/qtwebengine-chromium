@@ -12,9 +12,10 @@
 #include <UIAutomationCore.h>
 
 #include <set>
+#include <vector>
 
 #include "third_party/iaccessible2/ia2_api_all.h"
-#include "ui/base/accessibility/accessible_view_state.h"
+#include "ui/accessibility/ax_view_state.h"
 #include "ui/views/accessibility/native_view_accessibility.h"
 #include "ui/views/controls/native/native_view_host.h"
 #include "ui/views/view.h"
@@ -38,7 +39,7 @@ namespace views {
 class __declspec(uuid("26f5641a-246d-457b-a96d-07f3fae6acf2"))
 NativeViewAccessibilityWin
   : public CComObjectRootEx<CComMultiThreadModel>,
-    public IDispatchImpl<IAccessible2, &IID_IAccessible2,
+    public IDispatchImpl<IAccessible2_2, &IID_IAccessible2_2,
                            &LIBID_IAccessible2Lib>,
     public IAccessibleText,
     public IServiceProvider,
@@ -47,20 +48,21 @@ NativeViewAccessibilityWin
     public NativeViewAccessibility {
  public:
   BEGIN_COM_MAP(NativeViewAccessibilityWin)
-    COM_INTERFACE_ENTRY2(IDispatch, IAccessible2)
-    COM_INTERFACE_ENTRY2(IAccessible, IAccessible2)
+    COM_INTERFACE_ENTRY2(IDispatch, IAccessible2_2)
+    COM_INTERFACE_ENTRY(IAccessible)
     COM_INTERFACE_ENTRY(IAccessible2)
-    COM_INTERFACE_ENTRY(IAccessibleText)
-    COM_INTERFACE_ENTRY(IServiceProvider)
+    COM_INTERFACE_ENTRY(IAccessible2_2)
     COM_INTERFACE_ENTRY(IAccessibleEx)
+    COM_INTERFACE_ENTRY(IAccessibleText)
     COM_INTERFACE_ENTRY(IRawElementProviderSimple)
+    COM_INTERFACE_ENTRY(IServiceProvider)
   END_COM_MAP()
 
   virtual ~NativeViewAccessibilityWin();
 
   // NativeViewAccessibility.
   virtual void NotifyAccessibilityEvent(
-      ui::AccessibilityTypes::Event event_type) OVERRIDE;
+      ui::AXEvent event_type) OVERRIDE;
   virtual gfx::NativeViewAccessible GetNativeObject() OVERRIDE;
   virtual void Destroy() OVERRIDE;
 
@@ -145,11 +147,19 @@ NativeViewAccessibilityWin
 
   STDMETHODIMP get_windowHandle(HWND* window_handle);
 
+  STDMETHODIMP get_relationTargetsOfType(BSTR type,
+                                         long max_targets,
+                                         IUnknown ***targets,
+                                         long *n_targets);
+
   //
   // IAccessible2 methods not implemented.
   //
 
   STDMETHODIMP get_attributes(BSTR* attributes) {
+    return E_NOTIMPL;
+  }
+  STDMETHODIMP get_attribute(BSTR name, VARIANT* attribute) {
     return E_NOTIMPL;
   }
   STDMETHODIMP get_indexInParent(LONG* index_in_parent) {
@@ -203,6 +213,10 @@ NativeViewAccessibilityWin
     return E_NOTIMPL;
   }
   STDMETHODIMP get_locale(IA2Locale* locale) {
+    return E_NOTIMPL;
+  }
+  STDMETHODIMP get_accessibleWithCaret(IUnknown** accessible,
+                                       long* caret_offset) {
     return E_NOTIMPL;
   }
 
@@ -337,17 +351,17 @@ NativeViewAccessibilityWin
 
   // Static methods
 
-  // Returns a conversion from the event (as defined in accessibility_types.h)
+  // Returns a conversion from the event (as defined in ax_enums.idl)
   // to an MSAA event.
-  static int32 MSAAEvent(ui::AccessibilityTypes::Event event);
+  static int32 MSAAEvent(ui::AXEvent event);
 
-  // Returns a conversion from the Role (as defined in accessibility_types.h)
+  // Returns a conversion from the Role (as defined in ax_enums.idl)
   // to an MSAA role.
-  static int32 MSAARole(ui::AccessibilityTypes::Role role);
+  static int32 MSAARole(ui::AXRole role);
 
-  // Returns a conversion from the State (as defined in accessibility_types.h)
+  // Returns a conversion from the State (as defined in ax_enums.idl)
   // to MSAA states set.
-  static int32 MSAAState(ui::AccessibilityTypes::State state);
+  static int32 MSAAState(const ui::AXViewState& state);
 
  protected:
   NativeViewAccessibilityWin();
@@ -374,11 +388,11 @@ NativeViewAccessibilityWin
   void SetState(VARIANT* msaa_state, View* view);
 
   // Return the text to use for IAccessibleText.
-  string16 TextForIAccessibleText();
+  base::string16 TextForIAccessibleText();
 
   // If offset is a member of IA2TextSpecialOffsets this function updates the
   // value of offset and returns, otherwise offset remains unchanged.
-  void HandleSpecialTextOffset(const string16& text, LONG* offset);
+  void HandleSpecialTextOffset(const base::string16& text, LONG* offset);
 
   // Convert from a IA2TextBoundaryType to a ui::TextBoundaryType.
   ui::TextBoundaryType IA2TextBoundaryToTextBoundary(IA2TextBoundaryType type);
@@ -386,7 +400,7 @@ NativeViewAccessibilityWin
   // Search forwards (direction == 1) or backwards (direction == -1)
   // from the given offset until the given boundary is found, and
   // return the offset of that boundary.
-  LONG FindBoundary(const string16& text,
+  LONG FindBoundary(const base::string16& text,
                     IA2TextBoundaryType ia2_boundary,
                     LONG start_offset,
                     ui::TextBoundaryDirection direction);
@@ -395,6 +409,12 @@ NativeViewAccessibilityWin
   // or are owned by this view's widget, and who are not contained in a
   // NativeViewHost.
   void PopulateChildWidgetVector(std::vector<Widget*>* child_widgets);
+
+  // Adds this view to alert_target_view_storage_ids_.
+  void AddAlertTarget();
+
+  // Removes this view from alert_target_view_storage_ids_.
+  void RemoveAlertTarget();
 
   // Give CComObject access to the class constructor.
   template <class Base> friend class CComObject;
@@ -417,6 +437,11 @@ NativeViewAccessibilityWin
 
   // Next index into |view_storage_ids_| to use.
   static int next_view_storage_id_index_;
+
+  // A vector of view storage ids of views that have been the target of
+  // an alert event, in order to provide an api to quickly identify all
+  // open alerts.
+  static std::vector<int> alert_target_view_storage_ids_;
 
   DISALLOW_COPY_AND_ASSIGN(NativeViewAccessibilityWin);
 };

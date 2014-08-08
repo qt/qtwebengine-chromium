@@ -25,7 +25,7 @@
 #ifndef AudioProcessingEvent_h
 #define AudioProcessingEvent_h
 
-#include "core/events/Event.h"
+#include "modules/EventModules.h"
 #include "modules/webaudio/AudioBuffer.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
@@ -34,24 +34,28 @@ namespace WebCore {
 
 class AudioBuffer;
 
-class AudioProcessingEvent : public Event {
+class AudioProcessingEvent FINAL : public Event {
 public:
-    static PassRefPtr<AudioProcessingEvent> create();
-    static PassRefPtr<AudioProcessingEvent> create(PassRefPtr<AudioBuffer> inputBuffer, PassRefPtr<AudioBuffer> outputBuffer);
+    static PassRefPtrWillBeRawPtr<AudioProcessingEvent> create();
+    static PassRefPtrWillBeRawPtr<AudioProcessingEvent> create(PassRefPtrWillBeRawPtr<AudioBuffer> inputBuffer, PassRefPtrWillBeRawPtr<AudioBuffer> outputBuffer, double playbackTime);
 
     virtual ~AudioProcessingEvent();
 
     AudioBuffer* inputBuffer() { return m_inputBuffer.get(); }
     AudioBuffer* outputBuffer() { return m_outputBuffer.get(); }
+    double playbackTime() const { return m_playbackTime; }
 
-    virtual const AtomicString& interfaceName() const;
+    virtual const AtomicString& interfaceName() const OVERRIDE;
+
+    virtual void trace(Visitor*) OVERRIDE;
 
 private:
     AudioProcessingEvent();
-    AudioProcessingEvent(PassRefPtr<AudioBuffer> inputBuffer, PassRefPtr<AudioBuffer> outputBuffer);
+    AudioProcessingEvent(PassRefPtrWillBeRawPtr<AudioBuffer> inputBuffer, PassRefPtrWillBeRawPtr<AudioBuffer> outputBuffer, double playbackTime);
 
-    RefPtr<AudioBuffer> m_inputBuffer;
-    RefPtr<AudioBuffer> m_outputBuffer;
+    RefPtrWillBeMember<AudioBuffer> m_inputBuffer;
+    RefPtrWillBeMember<AudioBuffer> m_outputBuffer;
+    double m_playbackTime;
 };
 
 } // namespace WebCore

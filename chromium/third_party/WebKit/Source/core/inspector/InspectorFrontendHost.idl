@@ -33,8 +33,9 @@
 [
     NoInterfaceObject
 ] interface InspectorFrontendHost {
+    // FIXME: setZoomFactor is here only for old frontends. Remove in M38.
     void setZoomFactor(float zoom);
-    void inspectedURLChanged(DOMString newURL);
+    float zoomFactor();
 
     void setInjectedScriptForOrigin(DOMString origin, DOMString script);
 
@@ -48,13 +49,9 @@
 
     [Custom] void recordActionTaken(unsigned long actionCode);
     [Custom] void recordPanelShown(unsigned long panelCode);
-    [Custom] void recordSettingChanged(unsigned long settingChanged);
 
     DOMString getSelectionBackgroundColor();
     DOMString getSelectionForegroundColor();
-
-    DOMFileSystem isolatedFileSystem(DOMString fileSystemId, DOMString registeredName);
-    void upgradeDraggedFileSystemPermissions(DOMFileSystem domFileSystem);
 
     boolean isUnderTest();
 };

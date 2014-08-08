@@ -35,6 +35,7 @@
 #include "modules/webdatabase/DatabaseBackendSync.h"
 #include "modules/webdatabase/DatabaseBase.h"
 #include "modules/webdatabase/DatabaseBasicTypes.h"
+#include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
 #include "wtf/text/WTFString.h"
 
@@ -51,35 +52,50 @@ class SQLTransactionSyncCallback;
 class SecurityOrigin;
 
 // Instances of this class should be created and used only on the worker's context thread.
-class DatabaseSync : public DatabaseBase, public DatabaseBackendSync, public ScriptWrappable {
+class DatabaseSync FINAL : public DatabaseBackendSync, public DatabaseBase, public ScriptWrappable {
 public:
     virtual ~DatabaseSync();
+    virtual void trace(Visitor*) OVERRIDE;
 
     void changeVersion(const String& oldVersion, const String& newVersion, PassOwnPtr<SQLTransactionSyncCallback>, ExceptionState&);
     void transaction(PassOwnPtr<SQLTransactionSyncCallback>, ExceptionState&);
     void readTransaction(PassOwnPtr<SQLTransactionSyncCallback>, ExceptionState&);
 
-    virtual void closeImmediately();
+    virtual void closeImmediately() OVERRIDE;
+    void observeTransaction(SQLTransactionSync&);
 
     const String& lastErrorMessage() const { return m_lastErrorMessage; }
     void setLastErrorMessage(const String& message) { m_lastErrorMessage = message; }
-    void setLastErrorMessage(const char* message, int sqliteCode)
-    {
-        setLastErrorMessage(String::format("%s (%d)", message, sqliteCode));
-    }
     void setLastErrorMessage(const char* message, int sqliteCode, const char* sqliteMessage)
     {
         setLastErrorMessage(String::format("%s (%d, %s)", message, sqliteCode, sqliteMessage));
     }
 
 private:
-    DatabaseSync(PassRefPtr<DatabaseContext>, const String& name,
+    DatabaseSync(DatabaseContext*, const String& name,
         const String& expectedVersion, const String& displayName, unsigned long estimatedSize);
-    PassRefPtr<DatabaseBackendSync> backend();
-    static PassRefPtr<DatabaseSync> create(ExecutionContext*, PassRefPtr<DatabaseBackendBase>);
+    static PassRefPtrWillBeRawPtr<DatabaseSync> create(ExecutionContext*, PassRefPtrWillBeRawPtr<DatabaseBackendBase>);
 
     void runTransaction(PassOwnPtr<SQLTransactionSyncCallback>, bool readOnly, ExceptionState&);
-    void rollbackTransaction(PassRefPtr<SQLTransactionSync>);
+    void rollbackTransaction(SQLTransactionSync&);
+#if ENABLE(OILPAN)
+    class TransactionObserver {
+    public:
+        explicit TransactionObserver(SQLTransactionSync& transaction) : m_transaction(transaction) { }
+        ~TransactionObserver();
+
+    private:
+        SQLTransactionSync& m_transaction;
+    };
+
+    // Need a Persistent field because a HeapHashMap entry should be removed
+    // just after a SQLTransactionSync becomes untraceable. If this field was a
+    // Member<>, we could not assume the destruction order of DatabaseSync,
+    // SQLTransactionSync, and the field. We can not make the field static
+    // because multiple worker threads create SQLTransactionSync.
+    GC_PLUGIN_IGNORE("http://crbug.com/353083")
+    PersistentHeapHashMap<WeakMember<SQLTransactionSync>, OwnPtr<TransactionObserver> > m_observers;
+#endif
 
     String m_lastErrorMessage;
 

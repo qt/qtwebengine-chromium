@@ -7,6 +7,7 @@
 
 #include <string>
 
+#include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
 #include "ui/base/models/combobox_model_observer.h"
 #include "ui/gfx/animation/animation_delegate.h"
@@ -16,7 +17,7 @@
 #include "ui/views/controls/prefix_delegate.h"
 
 namespace gfx {
-class Font;
+class FontList;
 class SlideAnimation;
 }
 
@@ -36,10 +37,14 @@ class Painter;
 class PrefixSelector;
 
 // A non-editable combobox (aka a drop-down list or selector).
-// Combobox has two distinct parts, the drop down arrow and the text. When the
-// user clicks on the text the drop down is either shown
-// (STYLE_SHOW_DROP_DOWN_ON_CLICK) or the listener is notified
-// (STYLE_NOTIFY_ON_CLICK).
+// Combobox has two distinct parts, the drop down arrow and the text. Combobox
+// offers two distinct behaviors:
+// * STYLE_NORMAL: typical combobox, clicking on the text and/or button shows
+// the drop down, arrow keys change selection, selected index can be changed by
+// the user to something other than the first item.
+// * STYLE_ACTION: clicking on the text notifies the listener. The menu can be
+// shown only by clicking on the arrow. The selected index is always reverted to
+// 0 after the listener is notified.
 class VIEWS_EXPORT Combobox : public MenuDelegate,
                               public PrefixDelegate,
                               public ui::ComboboxModelObserver,
@@ -47,8 +52,8 @@ class VIEWS_EXPORT Combobox : public MenuDelegate,
  public:
   // The style of the combobox.
   enum Style {
-    STYLE_SHOW_DROP_DOWN_ON_CLICK,
-    STYLE_NOTIFY_ON_CLICK,
+    STYLE_NORMAL,
+    STYLE_ACTION,
   };
 
   // The combobox's class name.
@@ -58,7 +63,7 @@ class VIEWS_EXPORT Combobox : public MenuDelegate,
   explicit Combobox(ui::ComboboxModel* model);
   virtual ~Combobox();
 
-  static const gfx::Font& GetFont();
+  static const gfx::FontList& GetFontList();
 
   // Sets the listener which will be called when a selection has been made.
   void set_listener(ComboboxListener* listener) { listener_ = listener; }
@@ -79,7 +84,7 @@ class VIEWS_EXPORT Combobox : public MenuDelegate,
   ui::ComboboxModel* model() const { return model_; }
 
   // Set the accessible name of the combobox.
-  void SetAccessibleName(const string16& name);
+  void SetAccessibleName(const base::string16& name);
 
   // Visually marks the combobox as having an invalid value selected.
   // When invalid, it paints with white text on a red background.
@@ -88,7 +93,7 @@ class VIEWS_EXPORT Combobox : public MenuDelegate,
   bool invalid() const { return invalid_; }
 
   // Overridden from View:
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
   virtual const char* GetClassName() const OVERRIDE;
   virtual bool SkipDefaultKeyEventProcessing(const ui::KeyEvent& e) OVERRIDE;
   virtual bool OnKeyPressed(const ui::KeyEvent& e) OVERRIDE;
@@ -96,7 +101,7 @@ class VIEWS_EXPORT Combobox : public MenuDelegate,
   virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
   virtual void OnFocus() OVERRIDE;
   virtual void OnBlur() OVERRIDE;
-  virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
+  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
   virtual ui::TextInputClient* GetTextInputClient() OVERRIDE;
   virtual void Layout() OVERRIDE;
 
@@ -104,23 +109,26 @@ class VIEWS_EXPORT Combobox : public MenuDelegate,
   virtual bool IsItemChecked(int id) const OVERRIDE;
   virtual bool IsCommandEnabled(int id) const OVERRIDE;
   virtual void ExecuteCommand(int id) OVERRIDE;
-  virtual bool GetAccelerator(int id, ui::Accelerator* accelerator) OVERRIDE;
+  virtual bool GetAccelerator(int id,
+                              ui::Accelerator* accelerator) const OVERRIDE;
 
   // Overridden from PrefixDelegate:
   virtual int GetRowCount() OVERRIDE;
   virtual int GetSelectedRow() OVERRIDE;
   virtual void SetSelectedRow(int row) OVERRIDE;
-  virtual string16 GetTextForRow(int row) OVERRIDE;
+  virtual base::string16 GetTextForRow(int row) OVERRIDE;
 
   // Overriden from ComboboxModelObserver:
-  virtual void OnModelChanged() OVERRIDE;
+  virtual void OnComboboxModelChanged(ui::ComboboxModel* model) OVERRIDE;
 
   // Overriden from ButtonListener:
   virtual void ButtonPressed(Button* sender, const ui::Event& event) OVERRIDE;
 
  private:
   FRIEND_TEST_ALL_PREFIXES(ComboboxTest, Click);
+  FRIEND_TEST_ALL_PREFIXES(ComboboxTest, ClickButDisabled);
   FRIEND_TEST_ALL_PREFIXES(ComboboxTest, NotifyOnClickWithMouse);
+  FRIEND_TEST_ALL_PREFIXES(ComboboxTest, ContentWidth);
 
   // Updates the combobox's content from its model.
   void UpdateFromModel();
@@ -141,13 +149,18 @@ class VIEWS_EXPORT Combobox : public MenuDelegate,
   void ShowDropDownMenu(ui::MenuSourceType source_type);
 
   // Called when the selection is changed by the user.
-  void OnSelectionChanged();
+  void OnPerformAction();
+  void NotifyPerformAction();
+  void AfterPerformAction();
 
   // Converts a menu command ID to a menu item index.
   int MenuCommandToIndex(int menu_command_id) const;
 
   int GetDisclosureArrowLeftPadding() const;
   int GetDisclosureArrowRightPadding() const;
+
+  // Returns the size of the disclosure arrow.
+  gfx::Size ArrowSize() const;
 
   // Handles the clicking event.
   void HandleClickEvent();
@@ -168,13 +181,10 @@ class VIEWS_EXPORT Combobox : public MenuDelegate,
   bool invalid_;
 
   // The accessible name of this combobox.
-  string16 accessible_name_;
+  base::string16 accessible_name_;
 
   // A helper used to select entries by keyboard input.
   scoped_ptr<PrefixSelector> selector_;
-
-  // The disclosure arrow next to the currently selected item from the list.
-  const gfx::ImageSkia* disclosure_arrow_;
 
   // Responsible for showing the context menu.
   scoped_ptr<MenuRunner> dropdown_list_menu_runner_;
@@ -191,7 +201,7 @@ class VIEWS_EXPORT Combobox : public MenuDelegate,
   base::Time closed_time_;
 
   // The maximum dimensions of the content in the dropdown
-  gfx::Size content_size_;
+  mutable gfx::Size content_size_;
 
   // The painters or images that are used when |style_| is STYLE_BUTTONS. The
   // first index means the state of unfocused or focused.
@@ -208,6 +218,9 @@ class VIEWS_EXPORT Combobox : public MenuDelegate,
   // The base View takes the ownerships of these as child views.
   CustomButton* text_button_;
   CustomButton* arrow_button_;
+
+  // Used for making calbacks.
+  base::WeakPtrFactory<Combobox> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(Combobox);
 };

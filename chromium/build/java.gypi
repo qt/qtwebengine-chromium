@@ -39,8 +39,6 @@
 #  R_package - The java package in which the R class (which maps resources to
 #    integer IDs) should be generated, e.g. org.chromium.content.
 #  R_package_relpath - Same as R_package, but replace each '.' with '/'.
-#  java_strings_grd - The name of the grd file from which to generate localized
-#    strings.xml files, if any.
 #  res_extra_dirs - A list of extra directories containing Android resources.
 #    These directories may be generated at build time.
 #  res_extra_files - A list of the files in res_extra_dirs.
@@ -66,7 +64,6 @@
     'generated_src_dirs': ['>@(generated_R_dirs)'],
     'generated_R_dirs': [],
     'has_java_resources%': 0,
-    'java_strings_grd%': '',
     'res_extra_dirs': [],
     'res_extra_files': [],
     'res_v14_verify_only%': 0,
@@ -113,65 +110,35 @@
     ['has_java_resources == 1', {
       'variables': {
         'res_dir': '<(java_in_dir)/res',
-        'res_crunched_dir': '<(intermediate_dir)/res_crunched',
-        'res_v14_compatibility_stamp': '<(intermediate_dir)/res_v14_compatibility.stamp',
-        'res_v14_compatibility_dir': '<(intermediate_dir)/res_v14_compatibility',
         'res_input_dirs': ['<(res_dir)', '<@(res_extra_dirs)'],
         'resource_input_paths': ['<!@(find <(res_dir) -type f)'],
+
         'R_dir': '<(intermediate_dir)/java_R',
         'R_text_file': '<(R_dir)/R.txt',
-        'R_stamp': '<(intermediate_dir)/resources.stamp',
+
         'generated_src_dirs': ['<(R_dir)'],
-        'additional_input_paths': ['<(R_stamp)',
-                                   '<(res_v14_compatibility_stamp)',],
-        'additional_res_dirs': [],
-        'dependencies_res_input_dirs': [],
-        'dependencies_res_files': [],
+        'additional_input_paths': ['<(resource_zip_path)', ],
+
+        'dependencies_res_zip_paths': [],
+        'resource_zip_path': '<(PRODUCT_DIR)/res.java/<(_target_name).zip',
       },
       'all_dependent_settings': {
         'variables': {
-          # Dependent jars include this target's R.java file via
-          # generated_R_dirs and include its resources via
-          # dependencies_res_files.
+          # Dependent libraries include this target's R.java file via
+          # generated_R_dirs.
           'generated_R_dirs': ['<(R_dir)'],
-          'additional_input_paths': ['<(R_stamp)',
-                                     '<(res_v14_compatibility_stamp)',],
-          'dependencies_res_files': ['<@(resource_input_paths)'],
 
-          'dependencies_res_input_dirs': ['<@(res_input_dirs)'],
+          # Dependent libraries and apks include this target's resources via
+          # dependencies_res_zip_paths.
+          'additional_input_paths': ['<(resource_zip_path)'],
+          'dependencies_res_zip_paths': ['<(resource_zip_path)'],
 
-          # Dependent APKs include this target's resources via
-          # additional_res_dirs, additional_res_packages, and
-          # additional_R_text_files.
-          'additional_res_dirs': ['<(res_crunched_dir)',
-                                  '<(res_v14_compatibility_dir)',
-                                  '<@(res_input_dirs)'],
+          # additional_res_packages and additional_R_text_files are used to
+          # create this packages R.java files when building the APK.
           'additional_res_packages': ['<(R_package)'],
           'additional_R_text_files': ['<(R_text_file)'],
         },
       },
-      'conditions': [
-        ['java_strings_grd != ""', {
-          'variables': {
-            'res_grit_dir': '<(intermediate_dir)/res_grit',
-            'res_input_dirs': ['<(res_grit_dir)'],
-            'grit_grd_file': '<(java_in_dir)/strings/<(java_strings_grd)',
-            'resource_input_paths': ['<!@pymod_do_main(grit_info <@(grit_defines) --outputs "<(res_grit_dir)" <(grit_grd_file))'],
-          },
-          'actions': [
-            {
-              'action_name': 'generate_localized_strings_xml',
-              'variables': {
-                'grit_additional_defines': ['-E', 'ANDROID_JAVA_TAGGED_ONLY=false'],
-                'grit_out_dir': '<(res_grit_dir)',
-                # resource_ids is unneeded since we don't generate .h headers.
-                'grit_resource_ids': '',
-              },
-              'includes': ['../build/grit_action.gypi'],
-            },
-          ],
-        }],
-      ],
       'actions': [
         # Generate R.java and crunch image resources.
         {
@@ -179,72 +146,44 @@
           'message': 'processing resources for <(_target_name)',
           'variables': {
             'android_manifest': '<(DEPTH)/build/android/AndroidManifest.xml',
-            # Include the dependencies' res dirs so that references to
-            # resources in dependencies can be resolved.
-            'all_res_dirs': ['<@(res_input_dirs)',
-                             '>@(dependencies_res_input_dirs)',],
-            # Write the inputs list to a file, so that the action command
-            # line won't exceed the OS limits when calculating the checksum
-            # of the list.
-            'inputs_list_file': '>|(inputs_list.<(_target_name).gypcmd >@(_inputs))'
+            # Write the inputs list to a file, so that its mtime is updated when
+            # the list of inputs changes.
+            'inputs_list_file': '>|(java_resources.<(_target_name).gypcmd >@(resource_input_paths))',
+            'process_resources_options': [],
+            'conditions': [
+              ['res_v14_verify_only == 1', {
+                'process_resources_options': ['--v14-verify-only']
+              }],
+            ],
           },
           'inputs': [
             '<(DEPTH)/build/android/gyp/util/build_utils.py',
             '<(DEPTH)/build/android/gyp/process_resources.py',
+            '<(DEPTH)/build/android/gyp/generate_v14_compatible_resources.py',
             '>@(resource_input_paths)',
-            '>@(dependencies_res_files)',
+            '>@(dependencies_res_zip_paths)',
+            '>(inputs_list_file)',
           ],
           'outputs': [
-            '<(R_stamp)',
+            '<(resource_zip_path)',
           ],
           'action': [
             'python', '<(DEPTH)/build/android/gyp/process_resources.py',
             '--android-sdk', '<(android_sdk)',
             '--android-sdk-tools', '<(android_sdk_tools)',
-            '--R-dir', '<(R_dir)',
-            '--res-dirs', '>(all_res_dirs)',
-            '--crunch-input-dir', '>(res_dir)',
-            '--crunch-output-dir', '<(res_crunched_dir)',
-            '--android-manifest', '<(android_manifest)',
             '--non-constant-id',
-            '--custom-package', '<(R_package)',
-            '--stamp', '<(R_stamp)',
 
-            # Add hash of inputs to the command line, so if inputs change
-            # (e.g. if a resource if removed), the command will be re-run.
-            # TODO(newt): remove this once crbug.com/177552 is fixed in ninja.
-            '--ignore=>!(md5sum >(inputs_list_file))',
+            '--android-manifest', '<(android_manifest)',
+            '--custom-package', '<(R_package)',
+
+            '--dependencies-res-zips', '>(dependencies_res_zip_paths)',
+            '--resource-dirs', '<(res_input_dirs)',
+
+            '--R-dir', '<(R_dir)',
+            '--resource-zip-out', '<(resource_zip_path)',
+
+            '<@(process_resources_options)',
           ],
-        },
-        # Generate API 14 resources.
-        {
-          'action_name': 'generate_api_14_resources_<(_target_name)',
-          'message': 'Generating Android API 14 resources <(_target_name)',
-          'variables' : {
-            'res_v14_additional_options': [],
-          },
-          'conditions': [
-            ['res_v14_verify_only == 1', {
-              'variables': {
-                'res_v14_additional_options': ['--verify-only']
-              },
-            }],
-          ],
-          'inputs': [
-            '<(DEPTH)/build/android/gyp/util/build_utils.py',
-            '<(DEPTH)/build/android/gyp/generate_v14_compatible_resources.py',
-            '>@(resource_input_paths)',
-          ],
-          'outputs': [
-            '<(res_v14_compatibility_stamp)',
-          ],
-          'action': [
-            'python', '<(DEPTH)/build/android/gyp/generate_v14_compatible_resources.py',
-            '--res-dir=<(res_dir)',
-            '--res-v14-compatibility-dir=<(res_v14_compatibility_dir)',
-            '--stamp', '<(res_v14_compatibility_stamp)',
-            '<@(res_v14_additional_options)',
-          ]
         },
       ],
     }],
@@ -254,7 +193,7 @@
           'action_name': 'proguard_<(_target_name)',
           'message': 'Proguard preprocessing <(_target_name) jar',
           'inputs': [
-            '<(android_sdk_root)/tools/proguard/bin/proguard.sh',
+            '<(android_sdk_root)/tools/proguard/lib/proguard.jar',
             '<(DEPTH)/build/android/gyp/util/build_utils.py',
             '<(DEPTH)/build/android/gyp/proguard.py',
             '<(javac_jar_path)',
@@ -265,14 +204,11 @@
           ],
           'action': [
             'python', '<(DEPTH)/build/android/gyp/proguard.py',
-            '--proguard-path=<(android_sdk_root)/tools/proguard/bin/proguard.sh',
+            '--proguard-path=<(android_sdk_root)/tools/proguard/lib/proguard.jar',
             '--input-path=<(javac_jar_path)',
             '--output-path=<(jar_path)',
             '--proguard-config=<(proguard_config)',
             '--classpath=<(android_sdk_jar) >(input_jars_paths)',
-
-            # TODO(newt): remove this once http://crbug.com/177552 is fixed in ninja.
-            '--ignore=>!(echo \'>(_inputs)\' | md5sum)',
           ]
         },
       ],
@@ -283,16 +219,12 @@
       'action_name': 'javac_<(_target_name)',
       'message': 'Compiling <(_target_name) java sources',
       'variables': {
-        'all_src_dirs': [
-          '>(java_in_dir)/src',
-          '>@(additional_src_dirs)',
-          '>@(generated_src_dirs)',
-        ],
+        'java_sources': ['>!@(find >(java_in_dir)/src >(additional_src_dirs) -name "*.java")'],
       },
       'inputs': [
         '<(DEPTH)/build/android/gyp/util/build_utils.py',
         '<(DEPTH)/build/android/gyp/javac.py',
-        '>!@(find >(java_in_dir)/src >(additional_src_dirs) -name "*.java")',
+        '>@(java_sources)',
         '>@(input_jars_paths)',
         '>@(additional_input_paths)',
       ],
@@ -303,13 +235,11 @@
         'python', '<(DEPTH)/build/android/gyp/javac.py',
         '--output-dir=<(classes_dir)',
         '--classpath=>(input_jars_paths)',
-        '--src-dirs=>(all_src_dirs)',
+        '--src-gendirs=>(generated_src_dirs)',
         '--javac-includes=<(javac_includes)',
         '--chromium-code=<(chromium_code)',
         '--stamp=<(compile_stamp)',
-
-        # TODO(newt): remove this once http://crbug.com/177552 is fixed in ninja.
-        '--ignore=>!(echo \'>(_inputs)\' | md5sum)',
+        '>@(java_sources)',
       ]
     },
     {
@@ -347,9 +277,6 @@
         '--classes-dir=<(classes_dir)',
         '--jar-path=<(javac_jar_path)',
         '--excluded-classes=<(jar_excluded_classes)',
-
-        # TODO(newt): remove this once http://crbug.com/177552 is fixed in ninja.
-        '--ignore=>!(echo \'>(_inputs)\' | md5sum)',
       ]
     },
     {
@@ -385,9 +312,6 @@
         'python', '<(DEPTH)/build/android/gyp/jar_toc.py',
         '--jar-path=<(jar_final_path)',
         '--toc-path=<(jar_final_path).TOC',
-
-        # TODO(newt): remove this once http://crbug.com/177552 is fixed in ninja.
-        '--ignore=>!(echo \'>(_inputs)\' | md5sum)',
       ]
     },
     {

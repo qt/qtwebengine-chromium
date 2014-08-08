@@ -9,9 +9,11 @@
 #include "base/process/process_handle.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/navigation_controller.h"
+#include "content/public/common/frame_navigate_params.h"
 #include "content/public/common/page_transition_types.h"
 #include "ipc/ipc_listener.h"
 #include "ipc/ipc_sender.h"
+#include "third_party/skia/include/core/SkColor.h"
 #include "ui/base/window_open_disposition.h"
 
 namespace content {
@@ -21,6 +23,7 @@ class RenderFrameHost;
 class RenderViewHost;
 class WebContents;
 class WebContentsImpl;
+struct AXEventNotificationDetails;
 struct FaviconURL;
 struct FrameNavigateParams;
 struct LoadCommittedDetails;
@@ -52,11 +55,13 @@ class CONTENT_EXPORT WebContentsObserver : public IPC::Listener,
   // deleted.
   virtual void RenderFrameDeleted(RenderFrameHost* render_frame_host) {}
 
-  // Only one of the two methods below will be called when a RVH is created for
-  // a WebContents, depending on whether it's for an interstitial or not.
+  // This is called when a RVH is created for a WebContents, but not if it's an
+  // interstitial.
   virtual void RenderViewCreated(RenderViewHost* render_view_host) {}
-  virtual void RenderViewForInterstitialPageCreated(
-      RenderViewHost* render_view_host) {}
+
+  // Called for every RenderFrameHost that's created for an interstitial.
+  virtual void RenderFrameForInterstitialPageCreated(
+      RenderFrameHost* render_frame_host) {}
 
   // This method is invoked when the RenderView of the current RenderViewHost
   // is ready, e.g. because we recreated it after a crash.
@@ -70,9 +75,11 @@ class CONTENT_EXPORT WebContentsObserver : public IPC::Listener,
 
   // This method is invoked when the process for the current RenderView crashes.
   // The WebContents continues to use the RenderViewHost, e.g. when the user
-  // reloads the current page.
-  // When the RenderViewHost is deleted, the RenderViewDeleted method will be
-  // invoked.
+  // reloads the current page. When the RenderViewHost itself is deleted, the
+  // RenderViewDeleted method will be invoked.
+  //
+  // Note that this is equivalent to
+  // RenderProcessHostObserver::RenderProcessExited().
   virtual void RenderProcessGone(base::TerminationStatus status) {}
 
   // This method is invoked when a WebContents swaps its render view host with
@@ -123,7 +130,7 @@ class CONTENT_EXPORT WebContentsObserver : public IPC::Listener,
   // WebContentsObserver::DidGetRedirectForResourceRequest instead.
   virtual void ProvisionalChangeToMainFrameUrl(
       const GURL& url,
-      RenderViewHost* render_view_host) {}
+      RenderFrameHost* render_frame_host) {}
 
   // This method is invoked when the provisional load was successfully
   // committed. The |render_view_host| is now the current RenderViewHost of the
@@ -167,7 +174,7 @@ class CONTENT_EXPORT WebContentsObserver : public IPC::Listener,
 
   // This method is invoked once the onload handler of the main frame has
   // completed.
-  virtual void DocumentOnLoadCompletedInMainFrame(int32 page_id) {}
+  virtual void DocumentOnLoadCompletedInMainFrame() {}
 
   // This method is invoked when the document in the given frame finished
   // loading. At this point, scripts marked as defer were executed, and
@@ -207,6 +214,7 @@ class CONTENT_EXPORT WebContentsObserver : public IPC::Listener,
   // This method is invoked when a redirect was received while requesting a
   // resource.
   virtual void DidGetRedirectForResourceRequest(
+      RenderViewHost* render_view_host,
       const ResourceRedirectDetails& details) {}
 
   // This method is invoked when a new non-pending navigation entry is created.
@@ -232,7 +240,7 @@ class CONTENT_EXPORT WebContentsObserver : public IPC::Listener,
 
   // This method is invoked when the renderer has completed its first paint
   // after a non-empty layout.
-  virtual void DidFirstVisuallyNonEmptyPaint(int32 page_id) {}
+  virtual void DidFirstVisuallyNonEmptyPaint() {}
 
   // These two methods correspond to the points in time when the spinner of the
   // tab starts and stops spinning.
@@ -286,24 +294,23 @@ class CONTENT_EXPORT WebContentsObserver : public IPC::Listener,
                                         WebContents* new_web_contents) {}
 
   // Invoked when the WebContents is being destroyed. Gives subclasses a chance
-  // to cleanup. At the time this is invoked |web_contents()| returns NULL.
-  // It is safe to delete 'this' from here.
-  virtual void WebContentsDestroyed(WebContents* web_contents) {}
+  // to cleanup. After the whole loop over all WebContentsObservers has been
+  // finished, web_contents() returns NULL.
+  virtual void WebContentsDestroyed() {}
 
   // Called when the user agent override for a WebContents has been changed.
   virtual void UserAgentOverrideSet(const std::string& user_agent) {}
 
   // Invoked when new FaviconURL candidates are received from the renderer.
-  virtual void DidUpdateFaviconURL(int32 page_id,
-                                   const std::vector<FaviconURL>& candidates) {}
+  virtual void DidUpdateFaviconURL(const std::vector<FaviconURL>& candidates) {}
 
   // Invoked when a pepper plugin creates and shows or destroys a fullscreen
   // render widget.
   virtual void DidShowFullscreenWidget(int routing_id) {}
   virtual void DidDestroyFullscreenWidget(int routing_id) {}
 
-  // Invoked when visible SSL state (as defined by SSLStatus) changes.
-  virtual void DidChangeVisibleSSLState() {}
+  // Invoked when the renderer has toggled the tab into/out of fullscreen mode.
+  virtual void DidToggleFullscreenModeForTab(bool entered_fullscreen) {}
 
   // Invoked when an interstitial page is attached or detached.
   virtual void DidAttachInterstitialPage() {}
@@ -317,6 +324,17 @@ class CONTENT_EXPORT WebContentsObserver : public IPC::Listener,
 
   // Invoked when a user cancels a before unload dialog.
   virtual void BeforeUnloadDialogCancelled() {}
+
+  // Invoked when an accessibility event is received from the renderer.
+  virtual void AccessibilityEventReceived(
+      const std::vector<AXEventNotificationDetails>& details) {}
+
+  // Invoked when theme color is changed to |theme_color|.
+  virtual void DidChangeThemeColor(SkColor theme_color) {}
+
+  // Invoked if an IPC message is coming from a specific RenderFrameHost.
+  virtual bool OnMessageReceived(const IPC::Message& message,
+                                 RenderFrameHost* render_frame_host);
 
   // IPC::Listener implementation.
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
@@ -345,9 +363,7 @@ class CONTENT_EXPORT WebContentsObserver : public IPC::Listener,
  private:
   friend class WebContentsImpl;
 
-  // Invoked from WebContentsImpl. Invokes WebContentsDestroyed and NULL out
-  // |web_contents_|.
-  void WebContentsImplDestroyed();
+  void ResetWebContents();
 
   WebContentsImpl* web_contents_;
 

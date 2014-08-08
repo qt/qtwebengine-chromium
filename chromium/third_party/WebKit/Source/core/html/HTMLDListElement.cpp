@@ -23,7 +23,7 @@
 #include "config.h"
 #include "core/html/HTMLDListElement.h"
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 
 namespace WebCore {
 
@@ -35,9 +35,6 @@ inline HTMLDListElement::HTMLDListElement(Document& document)
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLDListElement> HTMLDListElement::create(Document& document)
-{
-    return adoptRef(new HTMLDListElement(document));
-}
+DEFINE_NODE_FACTORY(HTMLDListElement)
 
 }

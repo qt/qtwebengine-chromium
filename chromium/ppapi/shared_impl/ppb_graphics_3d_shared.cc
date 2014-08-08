@@ -13,12 +13,10 @@
 namespace ppapi {
 
 PPB_Graphics3D_Shared::PPB_Graphics3D_Shared(PP_Instance instance)
-    : Resource(OBJECT_IS_IMPL, instance) {
-}
+    : Resource(OBJECT_IS_IMPL, instance) {}
 
 PPB_Graphics3D_Shared::PPB_Graphics3D_Shared(const HostResource& host_resource)
-    : Resource(OBJECT_IS_PROXY, host_resource) {
-}
+    : Resource(OBJECT_IS_PROXY, host_resource) {}
 
 PPB_Graphics3D_Shared::~PPB_Graphics3D_Shared() {
   // Make sure that GLES2 implementation has already been destroyed.
@@ -58,8 +56,9 @@ int32_t PPB_Graphics3D_Shared::ResizeBuffers(int32_t width, int32_t height) {
 int32_t PPB_Graphics3D_Shared::SwapBuffers(
     scoped_refptr<TrackedCallback> callback) {
   if (HasPendingSwap()) {
-    Log(PP_LOGLEVEL_ERROR, "PPB_Graphics3D.SwapBuffers: Plugin attempted swap "
-                           "with previous swap still pending.");
+    Log(PP_LOGLEVEL_ERROR,
+        "PPB_Graphics3D.SwapBuffers: Plugin attempted swap "
+        "with previous swap still pending.");
     // Already a pending SwapBuffers that hasn't returned yet.
     return PP_ERROR_INPROGRESS;
   }
@@ -119,7 +118,7 @@ bool PPB_Graphics3D_Shared::CreateGLES2Impl(
   transfer_buffer_.reset(new gpu::TransferBuffer(gles2_helper_.get()));
 
   const bool bind_creates_resources = true;
-  const bool free_everything_when_invisible = false;
+  const bool lose_context_when_out_of_memory = false;
 
   // Create the object exposing the OpenGL API.
   gles2_impl_.reset(new gpu::gles2::GLES2Implementation(
@@ -127,14 +126,14 @@ bool PPB_Graphics3D_Shared::CreateGLES2Impl(
       share_gles2 ? share_gles2->share_group() : NULL,
       transfer_buffer_.get(),
       bind_creates_resources,
-      free_everything_when_invisible,
+      lose_context_when_out_of_memory,
       GetGpuControl()));
 
   if (!gles2_impl_->Initialize(
-      transfer_buffer_size,
-      kMinTransferBufferSize,
-      std::max(kMaxTransferBufferSize, transfer_buffer_size),
-      gpu::gles2::GLES2Implementation::kNoLimit)) {
+           transfer_buffer_size,
+           kMinTransferBufferSize,
+           std::max(kMaxTransferBufferSize, transfer_buffer_size),
+           gpu::gles2::GLES2Implementation::kNoLimit)) {
     return false;
   }
 
@@ -150,4 +149,3 @@ void PPB_Graphics3D_Shared::DestroyGLES2Impl() {
 }
 
 }  // namespace ppapi
-

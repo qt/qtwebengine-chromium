@@ -1,11 +1,15 @@
-// Copyright (c) 2009 The Chromium Authors. All rights reserved.
+// Copyright (c) 2014 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef GPU_COMMAND_BUFFER_COMMON_BUFFER_H_
 #define GPU_COMMAND_BUFFER_COMMON_BUFFER_H_
 
-#include "gpu/command_buffer/common/types.h"
+#include "base/macros.h"
+#include "base/memory/ref_counted.h"
+#include "base/memory/scoped_ptr.h"
+#include "base/memory/shared_memory.h"
+#include "gpu/gpu_export.h"
 
 namespace base {
   class SharedMemory;
@@ -13,18 +17,63 @@ namespace base {
 
 namespace gpu {
 
-// Address and size of a buffer and optionally a shared memory object. This
-// type has value semantics.
-struct Buffer {
-  Buffer() : ptr(NULL), size(0), shared_memory(NULL) {
-  }
-
-  void* ptr;
-  size_t size;
-
-  // Null if the buffer is not shared memory or if it is not exposed as such.
-  base::SharedMemory* shared_memory;
+class GPU_EXPORT BufferBacking {
+ public:
+  virtual ~BufferBacking() {}
+  virtual void* GetMemory() const = 0;
+  virtual size_t GetSize() const = 0;
 };
+
+class GPU_EXPORT SharedMemoryBufferBacking : public BufferBacking {
+ public:
+  SharedMemoryBufferBacking(scoped_ptr<base::SharedMemory> shared_memory,
+                            size_t size);
+  virtual ~SharedMemoryBufferBacking();
+  virtual void* GetMemory() const OVERRIDE;
+  virtual size_t GetSize() const OVERRIDE;
+  base::SharedMemory* shared_memory() { return shared_memory_.get(); }
+
+ private:
+  scoped_ptr<base::SharedMemory> shared_memory_;
+  size_t size_;
+  DISALLOW_COPY_AND_ASSIGN(SharedMemoryBufferBacking);
+};
+
+// Buffer owns a piece of shared-memory of a certain size.
+class GPU_EXPORT Buffer : public base::RefCountedThreadSafe<Buffer> {
+ public:
+  explicit Buffer(scoped_ptr<BufferBacking> backing);
+
+  BufferBacking* backing() const { return backing_.get(); }
+  void* memory() const { return memory_; }
+  size_t size() const { return size_; }
+
+  // Returns NULL if the address overflows the memory.
+  void* GetDataAddress(uint32 data_offset, uint32 data_size) const;
+
+ private:
+  friend class base::RefCountedThreadSafe<Buffer>;
+  ~Buffer();
+
+  scoped_ptr<BufferBacking> backing_;
+  void* memory_;
+  size_t size_;
+
+  DISALLOW_COPY_AND_ASSIGN(Buffer);
+};
+
+static inline scoped_ptr<BufferBacking> MakeBackingFromSharedMemory(
+    scoped_ptr<base::SharedMemory> shared_memory,
+    size_t size) {
+  return scoped_ptr<BufferBacking>(
+      new SharedMemoryBufferBacking(shared_memory.Pass(), size));
+}
+
+static inline scoped_refptr<Buffer> MakeBufferFromSharedMemory(
+    scoped_ptr<base::SharedMemory> shared_memory,
+    size_t size) {
+  return new Buffer(MakeBackingFromSharedMemory(shared_memory.Pass(), size));
+}
 
 }  // namespace gpu
 

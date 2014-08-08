@@ -35,6 +35,7 @@
 #include "core/html/track/TextTrack.h"
 #include "platform/Timer.h"
 #include "platform/geometry/FloatPoint.h"
+#include "platform/heap/Handle.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/RefCounted.h"
 
@@ -43,12 +44,13 @@ namespace WebCore {
 class ExceptionState;
 class HTMLDivElement;
 class VTTCueBox;
+class VTTScanner;
 
-class VTTRegion : public RefCounted<VTTRegion> {
+class VTTRegion FINAL : public RefCountedWillBeGarbageCollectedFinalized<VTTRegion> {
 public:
-    static PassRefPtr<VTTRegion> create()
+    static PassRefPtrWillBeRawPtr<VTTRegion> create()
     {
-        return adoptRef(new VTTRegion());
+        return adoptRefWillBeNoop(new VTTRegion());
     }
 
     virtual ~VTTRegion();
@@ -87,11 +89,13 @@ public:
 
     bool isScrollingRegion() { return m_scroll; }
 
-    PassRefPtr<HTMLDivElement> getDisplayTree(Document&);
+    PassRefPtrWillBeRawPtr<HTMLDivElement> getDisplayTree(Document&);
 
-    void appendVTTCueBox(PassRefPtr<VTTCueBox>);
+    void appendVTTCueBox(PassRefPtrWillBeRawPtr<VTTCueBox>);
     void displayLastVTTCueBox();
     void willRemoveVTTCueBox(VTTCueBox*);
+
+    void trace(Visitor*);
 
 private:
     VTTRegion();
@@ -112,9 +116,8 @@ private:
         ViewportAnchor,
         Scroll
     };
-    RegionSetting getSettingFromString(const String&);
-    void parseSettingValue(RegionSetting, const String&);
-    void parseSetting(const String&, unsigned*);
+    RegionSetting scanSettingName(VTTScanner&);
+    void parseSettingValue(RegionSetting, VTTScanner&);
 
     static const AtomicString& textTrackCueContainerShadowPseudoId();
     static const AtomicString& textTrackCueContainerScrollingClass();
@@ -130,14 +133,14 @@ private:
 
     // The cue container is the container that is scrolled up to obtain the
     // effect of scrolling cues when this is enabled for the regions.
-    RefPtr<HTMLDivElement> m_cueContainer;
-    RefPtr<HTMLDivElement> m_regionDisplayTree;
+    RefPtrWillBeMember<HTMLDivElement> m_cueContainer;
+    RefPtrWillBeMember<HTMLDivElement> m_regionDisplayTree;
 
     // The member variable track can be a raw pointer as it will never
     // reference a destroyed TextTrack, as this member variable
     // is cleared in the TextTrack destructor and it is generally
     // set/reset within the addRegion and removeRegion methods.
-    TextTrack* m_track;
+    RawPtrWillBeMember<TextTrack> m_track;
 
     // Keep track of the current numeric value of the css "top" property.
     double m_currentTop;

@@ -28,9 +28,9 @@
 
 #include "bindings/v8/ScriptWrappable.h"
 #include "core/events/EventTarget.h"
-#include "core/events/ThreadLocalEventNames.h"
 #include "core/loader/appcache/ApplicationCacheHost.h"
 #include "core/frame/DOMWindowProperty.h"
+#include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
@@ -38,14 +38,18 @@
 namespace WebCore {
 
 class ExceptionState;
-class Frame;
+class LocalFrame;
 class KURL;
 
-class ApplicationCache : public ScriptWrappable, public RefCounted<ApplicationCache>, public EventTargetWithInlineData, public DOMWindowProperty {
+class ApplicationCache FINAL : public RefCountedWillBeRefCountedGarbageCollected<ApplicationCache>, public ScriptWrappable, public EventTargetWithInlineData, public DOMWindowProperty {
     REFCOUNTED_EVENT_TARGET(ApplicationCache);
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(ApplicationCache);
 public:
-    static PassRefPtr<ApplicationCache> create(Frame* frame) { return adoptRef(new ApplicationCache(frame)); }
-    ~ApplicationCache() { ASSERT(!m_frame); }
+    static PassRefPtrWillBeRawPtr<ApplicationCache> create(LocalFrame* frame)
+    {
+        return adoptRefWillBeRefCountedGarbageCollected(new ApplicationCache(frame));
+    }
+    virtual ~ApplicationCache() { ASSERT(!m_frame); }
 
     virtual void willDestroyGlobalObjectInFrame() OVERRIDE;
 
@@ -71,7 +75,7 @@ public:
     static const AtomicString& toEventType(ApplicationCacheHost::EventID);
 
 private:
-    explicit ApplicationCache(Frame*);
+    explicit ApplicationCache(LocalFrame*);
 
     ApplicationCacheHost* applicationCacheHost() const;
 };

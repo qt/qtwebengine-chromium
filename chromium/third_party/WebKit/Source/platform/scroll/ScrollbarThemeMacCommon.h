@@ -26,9 +26,12 @@
 #ifndef ScrollbarThemeMacCommon_h
 #define ScrollbarThemeMacCommon_h
 
+#include "platform/mac/NSScrollerImpDetails.h"
 #include "platform/scroll/ScrollbarTheme.h"
 
 namespace WebCore {
+
+class Pattern;
 
 class PLATFORM_EXPORT ScrollbarThemeMacCommon : public ScrollbarTheme {
 public:
@@ -36,7 +39,7 @@ public:
 
     virtual void registerScrollbar(ScrollbarThemeClient*) OVERRIDE;
     virtual void unregisterScrollbar(ScrollbarThemeClient*) OVERRIDE;
-    void preferencesChanged(float initialButtonDelay, float autoscrollButtonDelay, bool jumpOnTrackClick, bool redraw);
+    void preferencesChanged(float initialButtonDelay, float autoscrollButtonDelay, NSScrollerStyle preferredScrollerStyle, bool redraw);
 
     virtual bool supportsControlTints() const OVERRIDE { return true; }
 
@@ -47,10 +50,13 @@ public:
     virtual void paintOverhangShadows(GraphicsContext*, const IntSize& scrollOffset, const IntRect& horizontalOverhangArea, const IntRect& verticalOverhangArea, const IntRect& dirtyRect) OVERRIDE;
     virtual void paintTickmarks(GraphicsContext*, ScrollbarThemeClient*, const IntRect&) OVERRIDE;
 
+    static NSScrollerStyle recommendedScrollerStyle();
+
+    static bool isOverlayAPIAvailable();
+
 protected:
     virtual int maxOverlapBetweenPages() OVERRIDE { return 40; }
 
-    virtual bool shouldCenterOnThumb(ScrollbarThemeClient*, const PlatformMouseEvent&) OVERRIDE;
     virtual bool shouldDragDocumentInsteadOfThumb(ScrollbarThemeClient*, const PlatformMouseEvent&) OVERRIDE;
     int scrollbarPartToHIPressedState(ScrollbarPart);
 

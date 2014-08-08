@@ -11,6 +11,7 @@ void EnumerateGPUDevice(gpu::GPUInfo::Enumerator* enumerator,
   enumerator->BeginGPUDevice();
   enumerator->AddInt("vendorId", device.vendor_id);
   enumerator->AddInt("deviceId", device.device_id);
+  enumerator->AddBool("active", device.active);
   enumerator->AddString("vendorString", device.vendor_string);
   enumerator->AddString("deviceString", device.device_string);
   enumerator->EndGPUDevice();
@@ -22,7 +23,8 @@ namespace gpu {
 
 GPUInfo::GPUDevice::GPUDevice()
     : vendor_id(0),
-      device_id(0) {
+      device_id(0),
+      active(false) {
 }
 
 GPUInfo::GPUDevice::~GPUDevice() { }
@@ -36,6 +38,7 @@ GPUInfo::GPUInfo()
       gl_reset_notification_strategy(0),
       can_lose_context(false),
       software_rendering(false),
+      direct_rendering(true),
       sandboxed(false) {
 }
 
@@ -57,8 +60,8 @@ void GPUInfo::EnumerateFields(Enumerator* enumerator) const {
     std::string driver_date;
     std::string pixel_shader_version;
     std::string vertex_shader_version;
-    std::string machine_model;
-    std::string gl_version;
+    std::string machine_model_name;
+    std::string machine_model_version;
     std::string gl_version_string;
     std::string gl_vendor;
     std::string gl_renderer;
@@ -70,6 +73,7 @@ void GPUInfo::EnumerateFields(Enumerator* enumerator) const {
     bool can_lose_context;
     GpuPerformanceStats performance_stats;
     bool software_rendering;
+    bool direct_rendering;
     bool sandboxed;
 #if defined(OS_WIN)
     DxDiagNode dx_diagnostics;
@@ -84,7 +88,8 @@ void GPUInfo::EnumerateFields(Enumerator* enumerator) const {
       Fields_Have_Changed_In_GPUInfo_So_Update_Below);
 
   // Required fields (according to DevTools protocol) first.
-  enumerator->AddString("machineModel", machine_model);
+  enumerator->AddString("machineModelName", machine_model_name);
+  enumerator->AddString("machineModelVersion", machine_model_version);
   EnumerateGPUDevice(enumerator, gpu);
   for (size_t ii = 0; ii < secondary_gpus.size(); ++ii) {
     EnumerateGPUDevice(enumerator, secondary_gpus[ii]);
@@ -108,7 +113,6 @@ void GPUInfo::EnumerateFields(Enumerator* enumerator) const {
   enumerator->AddString("pixelShaderVersion", pixel_shader_version);
   enumerator->AddString("vertexShaderVersion", vertex_shader_version);
   enumerator->AddString("glVersion", gl_version);
-  enumerator->AddString("glVersionString", gl_version_string);
   enumerator->AddString("glVendor", gl_vendor);
   enumerator->AddString("glRenderer", gl_renderer);
   enumerator->AddString("glExtensions", gl_extensions);
@@ -121,6 +125,7 @@ void GPUInfo::EnumerateFields(Enumerator* enumerator) const {
   enumerator->AddBool("can_lose_context", can_lose_context);
   // TODO(kbr): add performance_stats.
   enumerator->AddBool("softwareRendering", software_rendering);
+  enumerator->AddBool("directRendering", direct_rendering);
   enumerator->AddBool("sandboxed", sandboxed);
   // TODO(kbr): add dx_diagnostics on Windows.
   enumerator->EndAuxAttributes();

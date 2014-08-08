@@ -20,11 +20,12 @@
 #include <shellapi.h>
 #endif
 
-using base::FilePath;
+namespace base {
 
 CommandLine* CommandLine::current_process_commandline_ = NULL;
 
 namespace {
+
 const CommandLine::CharType kSwitchTerminator[] = FILE_PATH_LITERAL("--");
 const CommandLine::CharType kSwitchValueSeparator[] = FILE_PATH_LITERAL("=");
 
@@ -81,7 +82,8 @@ void AppendSwitchesAndArguments(CommandLine& command_line,
     parse_switches &= (arg != kSwitchTerminator);
     if (parse_switches && IsSwitch(arg, &switch_string, &switch_value)) {
 #if defined(OS_WIN)
-      command_line.AppendSwitchNative(WideToASCII(switch_string), switch_value);
+      command_line.AppendSwitchNative(UTF16ToASCII(switch_string),
+                                      switch_value);
 #elif defined(OS_POSIX)
       command_line.AppendSwitchNative(switch_string, switch_value);
 #endif
@@ -308,7 +310,7 @@ std::string CommandLine::GetSwitchValueASCII(
     return std::string();
   }
 #if defined(OS_WIN)
-  return WideToASCII(value);
+  return UTF16ToASCII(value);
 #else
   return value;
 #endif
@@ -413,7 +415,7 @@ void CommandLine::PrependWrapper(const CommandLine::StringType& wrapper) {
   // The wrapper may have embedded arguments (like "gdb --args"). In this case,
   // we don't pretend to do anything fancy, we just split on spaces.
   StringVector wrapper_argv;
-  base::SplitString(wrapper, FILE_PATH_LITERAL(' '), &wrapper_argv);
+  SplitString(wrapper, FILE_PATH_LITERAL(' '), &wrapper_argv);
   // Prepend the wrapper and update the switches/arguments |begin_args_|.
   argv_.insert(argv_.begin(), wrapper_argv.begin(), wrapper_argv.end());
   begin_args_ += wrapper_argv.size();
@@ -431,8 +433,10 @@ void CommandLine::ParseFromString(const std::wstring& command_line) {
   args = ::CommandLineToArgvW(command_line_string.c_str(), &num_args);
 
   DPLOG_IF(FATAL, !args) << "CommandLineToArgvW failed on command line: "
-                         << command_line;
+                         << UTF16ToUTF8(command_line);
   InitFromArgv(num_args, args);
   LocalFree(args);
 }
 #endif
+
+}  // namespace base

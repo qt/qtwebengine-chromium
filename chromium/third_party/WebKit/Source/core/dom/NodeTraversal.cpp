@@ -28,9 +28,8 @@
 #include "core/dom/ContainerNode.h"
 
 namespace WebCore {
-namespace NodeTraversal {
 
-Node* previousIncludingPseudo(const Node& current, const Node* stayWithin)
+Node* NodeTraversal::previousIncludingPseudo(const Node& current, const Node* stayWithin)
 {
     if (current == stayWithin)
         return 0;
@@ -42,7 +41,7 @@ Node* previousIncludingPseudo(const Node& current, const Node* stayWithin)
     return current.parentNode();
 }
 
-Node* nextIncludingPseudo(const Node& current, const Node* stayWithin)
+Node* NodeTraversal::nextIncludingPseudo(const Node& current, const Node* stayWithin)
 {
     if (Node* next = current.pseudoAwareFirstChild())
         return next;
@@ -59,7 +58,7 @@ Node* nextIncludingPseudo(const Node& current, const Node* stayWithin)
     return 0;
 }
 
-Node* nextIncludingPseudoSkippingChildren(const Node& current, const Node* stayWithin)
+Node* NodeTraversal::nextIncludingPseudoSkippingChildren(const Node& current, const Node* stayWithin)
 {
     if (current == stayWithin)
         return 0;
@@ -74,7 +73,7 @@ Node* nextIncludingPseudoSkippingChildren(const Node& current, const Node* stayW
     return 0;
 }
 
-Node* nextAncestorSibling(const Node& current)
+Node* NodeTraversal::nextAncestorSibling(const Node& current)
 {
     ASSERT(!current.nextSibling());
     for (Node* parent = current.parentNode(); parent; parent = parent->parentNode()) {
@@ -84,7 +83,7 @@ Node* nextAncestorSibling(const Node& current)
     return 0;
 }
 
-Node* nextAncestorSibling(const Node& current, const Node* stayWithin)
+Node* NodeTraversal::nextAncestorSibling(const Node& current, const Node* stayWithin)
 {
     ASSERT(!current.nextSibling());
     ASSERT(current != stayWithin);
@@ -97,20 +96,28 @@ Node* nextAncestorSibling(const Node& current, const Node* stayWithin)
     return 0;
 }
 
-Node* previous(const Node& current, const Node* stayWithin)
+Node* NodeTraversal::lastWithin(const ContainerNode& current)
+{
+    Node* descendant = current.lastChild();
+    for (Node* child = descendant; child; child = child->lastChild())
+        descendant = child;
+    return descendant;
+}
+
+Node* NodeTraversal::previous(const Node& current, const Node* stayWithin)
 {
     if (current == stayWithin)
         return 0;
     if (current.previousSibling()) {
         Node* previous = current.previousSibling();
-        while (previous->lastChild())
-            previous = previous->lastChild();
+        while (Node* child = previous->lastChild())
+            previous = child;
         return previous;
     }
     return current.parentNode();
 }
 
-Node* previousSkippingChildren(const Node& current, const Node* stayWithin)
+Node* NodeTraversal::previousSkippingChildren(const Node& current, const Node* stayWithin)
 {
     if (current == stayWithin)
         return 0;
@@ -125,15 +132,15 @@ Node* previousSkippingChildren(const Node& current, const Node* stayWithin)
     return 0;
 }
 
-Node* nextPostOrder(const Node& current, const Node* stayWithin)
+Node* NodeTraversal::nextPostOrder(const Node& current, const Node* stayWithin)
 {
     if (current == stayWithin)
         return 0;
     if (!current.nextSibling())
         return current.parentNode();
     Node* next = current.nextSibling();
-    while (next->firstChild())
-        next = next->firstChild();
+    while (Node* child = next->firstChild())
+        next = child;
     return next;
 }
 
@@ -149,10 +156,10 @@ static Node* previousAncestorSiblingPostOrder(const Node& current, const Node* s
     return 0;
 }
 
-Node* previousPostOrder(const Node& current, const Node* stayWithin)
+Node* NodeTraversal::previousPostOrder(const Node& current, const Node* stayWithin)
 {
-    if (current.lastChild())
-        return current.lastChild();
+    if (Node* lastChild = current.lastChild())
+        return lastChild;
     if (current == stayWithin)
         return 0;
     if (current.previousSibling())
@@ -160,14 +167,4 @@ Node* previousPostOrder(const Node& current, const Node* stayWithin)
     return previousAncestorSiblingPostOrder(current, stayWithin);
 }
 
-Node* previousSkippingChildrenPostOrder(const Node& current, const Node* stayWithin)
-{
-    if (current == stayWithin)
-        return 0;
-    if (current.previousSibling())
-        return current.previousSibling();
-    return previousAncestorSiblingPostOrder(current, stayWithin);
-}
-
-}
-}
+} // namespace WebCore

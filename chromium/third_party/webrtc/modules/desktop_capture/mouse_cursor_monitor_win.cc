@@ -10,9 +10,12 @@
 
 #include "webrtc/modules/desktop_capture/mouse_cursor_monitor.h"
 
+#include <assert.h>
+
 #include "webrtc/modules/desktop_capture/desktop_frame.h"
 #include "webrtc/modules/desktop_capture/mouse_cursor.h"
 #include "webrtc/modules/desktop_capture/win/cursor.h"
+#include "webrtc/modules/desktop_capture/win/window_capture_utils.h"
 #include "webrtc/system_wrappers/interface/logging.h"
 
 namespace webrtc {
@@ -20,13 +23,20 @@ namespace webrtc {
 class MouseCursorMonitorWin : public MouseCursorMonitor {
  public:
   explicit MouseCursorMonitorWin(HWND window);
+  explicit MouseCursorMonitorWin(ScreenId screen);
   virtual ~MouseCursorMonitorWin();
 
   virtual void Init(Callback* callback, Mode mode) OVERRIDE;
   virtual void Capture() OVERRIDE;
 
  private:
+  // Get the rect of the currently selected screen, relative to the primary
+  // display's top-left. If the screen is disabled or disconnected, or any error
+  // happens, an empty rect is returned.
+  DesktopRect GetScreenRect();
+
   HWND window_;
+  ScreenId screen_;
 
   Callback* callback_;
   Mode mode_;
@@ -38,10 +48,21 @@ class MouseCursorMonitorWin : public MouseCursorMonitor {
 
 MouseCursorMonitorWin::MouseCursorMonitorWin(HWND window)
     : window_(window),
+      screen_(kInvalidScreenId),
       callback_(NULL),
       mode_(SHAPE_AND_POSITION),
       desktop_dc_(NULL),
       last_cursor_(NULL) {
+}
+
+MouseCursorMonitorWin::MouseCursorMonitorWin(ScreenId screen)
+    : window_(NULL),
+      screen_(screen),
+      callback_(NULL),
+      mode_(SHAPE_AND_POSITION),
+      desktop_dc_(NULL),
+      last_cursor_(NULL) {
+  assert(screen >= kFullDesktopScreenId);
 }
 
 MouseCursorMonitorWin::~MouseCursorMonitorWin() {
@@ -85,18 +106,57 @@ void MouseCursorMonitorWin::Capture() {
   bool inside = cursor_info.flags == CURSOR_SHOWING;
 
   if (window_) {
-    RECT rect;
-    if (!GetWindowRect(window_, &rect)) {
+    DesktopRect original_rect;
+    DesktopRect cropped_rect;
+    if (!GetCroppedWindowRect(window_, &cropped_rect, &original_rect)) {
       position.set(0, 0);
       inside = false;
     } else {
-      position = position.subtract(DesktopVector(rect.left, rect.top));
-      if (inside)
-        inside = (window_ == WindowFromPoint(cursor_info.ptScreenPos));
+      if (inside) {
+        HWND windowUnderCursor = WindowFromPoint(cursor_info.ptScreenPos);
+        inside = windowUnderCursor ?
+            (window_ == GetAncestor(windowUnderCursor, GA_ROOT)) : false;
+      }
+      position = position.subtract(cropped_rect.top_left());
     }
+  } else {
+    assert(screen_ != kInvalidScreenId);
+    DesktopRect rect = GetScreenRect();
+    if (inside)
+      inside = rect.Contains(position);
+    position = position.subtract(rect.top_left());
   }
 
   callback_->OnMouseCursorPosition(inside ? INSIDE : OUTSIDE, position);
+}
+
+DesktopRect MouseCursorMonitorWin::GetScreenRect() {
+  assert(screen_ != kInvalidScreenId);
+  if (screen_ == kFullDesktopScreenId) {
+    return DesktopRect::MakeXYWH(
+        GetSystemMetrics(SM_XVIRTUALSCREEN),
+        GetSystemMetrics(SM_YVIRTUALSCREEN),
+        GetSystemMetrics(SM_CXVIRTUALSCREEN),
+        GetSystemMetrics(SM_CYVIRTUALSCREEN));
+  }
+  DISPLAY_DEVICE device;
+  device.cb = sizeof(device);
+  BOOL result = EnumDisplayDevices(NULL, screen_, &device, 0);
+  if (!result)
+    return DesktopRect();
+
+  DEVMODE device_mode;
+  device_mode.dmSize = sizeof(device_mode);
+  device_mode.dmDriverExtra = 0;
+  result = EnumDisplaySettingsEx(
+      device.DeviceName, ENUM_CURRENT_SETTINGS, &device_mode, 0);
+  if (!result)
+    return DesktopRect();
+
+  return DesktopRect::MakeXYWH(device_mode.dmPosition.x,
+                               device_mode.dmPosition.y,
+                               device_mode.dmPelsWidth,
+                               device_mode.dmPelsHeight);
 }
 
 MouseCursorMonitor* MouseCursorMonitor::CreateForWindow(
@@ -105,8 +165,9 @@ MouseCursorMonitor* MouseCursorMonitor::CreateForWindow(
 }
 
 MouseCursorMonitor* MouseCursorMonitor::CreateForScreen(
-    const DesktopCaptureOptions& options) {
-  return new MouseCursorMonitorWin(NULL);
+    const DesktopCaptureOptions& options,
+    ScreenId screen) {
+  return new MouseCursorMonitorWin(screen);
 }
 
 }  // namespace webrtc

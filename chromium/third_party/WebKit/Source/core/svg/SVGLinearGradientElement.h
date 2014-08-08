@@ -21,7 +21,7 @@
 #ifndef SVGLinearGradientElement_h
 #define SVGLinearGradientElement_h
 
-#include "SVGNames.h"
+#include "core/SVGNames.h"
 #include "core/svg/SVGAnimatedLength.h"
 #include "core/svg/SVGGradientElement.h"
 
@@ -31,30 +31,31 @@ struct LinearGradientAttributes;
 
 class SVGLinearGradientElement FINAL : public SVGGradientElement {
 public:
-    static PassRefPtr<SVGLinearGradientElement> create(Document&);
+    DECLARE_NODE_FACTORY(SVGLinearGradientElement);
 
     bool collectGradientAttributes(LinearGradientAttributes&);
+
+    SVGAnimatedLength* x1() const { return m_x1.get(); }
+    SVGAnimatedLength* y1() const { return m_y1.get(); }
+    SVGAnimatedLength* x2() const { return m_x2.get(); }
+    SVGAnimatedLength* y2() const { return m_y2.get(); }
 
 private:
     explicit SVGLinearGradientElement(Document&);
 
     bool isSupportedAttribute(const QualifiedName&);
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual void svgAttributeChanged(const QualifiedName&);
+    virtual void svgAttributeChanged(const QualifiedName&) OVERRIDE;
 
-    virtual RenderObject* createRenderer(RenderStyle*);
+    virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
 
-    virtual bool selfHasRelativeLengths() const;
+    virtual bool selfHasRelativeLengths() const OVERRIDE;
 
-    BEGIN_DECLARE_ANIMATED_PROPERTIES(SVGLinearGradientElement)
-        DECLARE_ANIMATED_LENGTH(X1, x1)
-        DECLARE_ANIMATED_LENGTH(Y1, y1)
-        DECLARE_ANIMATED_LENGTH(X2, x2)
-        DECLARE_ANIMATED_LENGTH(Y2, y2)
-    END_DECLARE_ANIMATED_PROPERTIES
+    RefPtr<SVGAnimatedLength> m_x1;
+    RefPtr<SVGAnimatedLength> m_y1;
+    RefPtr<SVGAnimatedLength> m_x2;
+    RefPtr<SVGAnimatedLength> m_y2;
 };
-
-DEFINE_NODE_TYPE_CASTS(SVGLinearGradientElement, hasTagName(SVGNames::linearGradientTag));
 
 } // namespace WebCore
 

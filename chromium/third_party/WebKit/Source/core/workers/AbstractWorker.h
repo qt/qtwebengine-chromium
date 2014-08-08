@@ -35,7 +35,7 @@
 #include "core/dom/ActiveDOMObject.h"
 #include "core/events/EventListener.h"
 #include "core/events/EventTarget.h"
-#include "core/events/ThreadLocalEventNames.h"
+#include "platform/heap/Handle.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
@@ -47,13 +47,14 @@ class ExceptionState;
 class KURL;
 class ExecutionContext;
 
-class AbstractWorker : public RefCounted<AbstractWorker>, public EventTargetWithInlineData, public ActiveDOMObject {
+class AbstractWorker : public RefCountedWillBeRefCountedGarbageCollected<AbstractWorker>, public EventTargetWithInlineData, public ActiveDOMObject {
     REFCOUNTED_EVENT_TARGET(AbstractWorker);
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(AbstractWorker);
 public:
     // EventTarget APIs
-    virtual ExecutionContext* executionContext() const OVERRIDE { return ActiveDOMObject::executionContext(); }
+    virtual ExecutionContext* executionContext() const OVERRIDE FINAL { return ActiveDOMObject::executionContext(); }
 
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(error);
+    DEFINE_STATIC_ATTRIBUTE_EVENT_LISTENER(error);
 
     AbstractWorker(ExecutionContext*);
     virtual ~AbstractWorker();

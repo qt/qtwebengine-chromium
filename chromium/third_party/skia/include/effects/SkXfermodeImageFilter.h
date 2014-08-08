@@ -21,27 +21,32 @@ class SK_API SkXfermodeImageFilter : public SkImageFilter {
       */
 
 public:
-    SkXfermodeImageFilter(SkXfermode* mode, SkImageFilter* background,
-                          SkImageFilter* foreground = NULL, const CropRect* cropRect = NULL);
-
     virtual ~SkXfermodeImageFilter();
+
+    static SkXfermodeImageFilter* Create(SkXfermode* mode, SkImageFilter* background,
+                                         SkImageFilter* foreground = NULL,
+                                         const CropRect* cropRect = NULL) {
+        return SkNEW_ARGS(SkXfermodeImageFilter, (mode, background, foreground, cropRect));
+    }
 
     SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(SkXfermodeImageFilter)
 
     virtual bool onFilterImage(Proxy* proxy,
                                const SkBitmap& src,
-                               const SkMatrix& ctm,
+                               const Context& ctx,
                                SkBitmap* dst,
-                               SkIPoint* offset) SK_OVERRIDE;
+                               SkIPoint* offset) const SK_OVERRIDE;
 #if SK_SUPPORT_GPU
-    virtual bool canFilterImageGPU() const SK_OVERRIDE { return !cropRectIsSet(); }
-    virtual bool filterImageGPU(Proxy* proxy, const SkBitmap& src, const SkMatrix& ctm,
-                                SkBitmap* result, SkIPoint* offset) SK_OVERRIDE;
+    virtual bool canFilterImageGPU() const SK_OVERRIDE;
+    virtual bool filterImageGPU(Proxy* proxy, const SkBitmap& src, const Context& ctx,
+                                SkBitmap* result, SkIPoint* offset) const SK_OVERRIDE;
 #endif
 
 protected:
-    explicit SkXfermodeImageFilter(SkFlattenableReadBuffer& buffer);
-    virtual void flatten(SkFlattenableWriteBuffer&) const SK_OVERRIDE;
+    SkXfermodeImageFilter(SkXfermode* mode, SkImageFilter* background,
+                          SkImageFilter* foreground, const CropRect* cropRect);
+    explicit SkXfermodeImageFilter(SkReadBuffer& buffer);
+    virtual void flatten(SkWriteBuffer&) const SK_OVERRIDE;
 
 private:
     SkXfermode* fMode;

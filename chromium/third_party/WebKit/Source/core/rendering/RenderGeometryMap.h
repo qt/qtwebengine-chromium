@@ -38,7 +38,6 @@ namespace WebCore {
 
 class RenderLayer;
 class RenderLayerModelObject;
-class RenderView;
 class TransformState;
 
 // Stores data about how to map from one renderer to its container.
@@ -121,10 +120,10 @@ private:
     bool hasFixedPositionStep() const { return m_fixedStepsCount; }
 
 #ifndef NDEBUG
-    void dumpSteps();
+    void dumpSteps() const;
 #endif
 
-#if !ASSERT_DISABLED
+#if ASSERT_ENABLED
     bool isTopmostRenderView(const RenderObject* renderer) const;
 #endif
 
@@ -141,10 +140,6 @@ private:
 
 } // namespace WebCore
 
-namespace WTF {
-// This is required for a struct with OwnPtr. We know RenderGeometryMapStep is simple enough that
-// initializing to 0 and moving with memcpy (and then not destructing the original) will work.
-template<> struct VectorTraits<WebCore::RenderGeometryMapStep> : SimpleClassVectorTraits { };
-}
+WTF_ALLOW_MOVE_INIT_AND_COMPARE_WITH_MEM_FUNCTIONS(WebCore::RenderGeometryMapStep);
 
 #endif // RenderGeometryMap_h

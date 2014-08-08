@@ -35,14 +35,14 @@
 #ifndef V8_ASSEMBLER_H_
 #define V8_ASSEMBLER_H_
 
-#include "v8.h"
+#include "src/v8.h"
 
-#include "allocation.h"
-#include "builtins.h"
-#include "gdb-jit.h"
-#include "isolate.h"
-#include "runtime.h"
-#include "token.h"
+#include "src/allocation.h"
+#include "src/builtins.h"
+#include "src/gdb-jit.h"
+#include "src/isolate.h"
+#include "src/runtime.h"
+#include "src/token.h"
 
 namespace v8 {
 
@@ -65,6 +65,8 @@ class AssemblerBase: public Malloced {
   bool emit_debug_code() const { return emit_debug_code_; }
   void set_emit_debug_code(bool value) { emit_debug_code_ = value; }
 
+  bool serializer_enabled() const { return serializer_enabled_; }
+
   bool predictable_code_size() const { return predictable_code_size_; }
   void set_predictable_code_size(bool value) { predictable_code_size_ = value; }
 
@@ -81,6 +83,10 @@ class AssemblerBase: public Malloced {
   static void QuietNaN(HeapObject* nan) { }
 
   int pc_offset() const { return static_cast<int>(pc_ - buffer_); }
+
+  // This function is called when code generation is aborted, so that
+  // the assembler could clean up internal data structures.
+  virtual void AbortedCodeGeneration() { }
 
   static const int kMinimalBufferSize = 4*KB;
 
@@ -100,6 +106,23 @@ class AssemblerBase: public Malloced {
   uint64_t enabled_cpu_features_;
   bool emit_debug_code_;
   bool predictable_code_size_;
+  bool serializer_enabled_;
+};
+
+
+// Avoids emitting debug code during the lifetime of this scope object.
+class DontEmitDebugCodeScope BASE_EMBEDDED {
+ public:
+  explicit DontEmitDebugCodeScope(AssemblerBase* assembler)
+      : assembler_(assembler), old_value_(assembler->emit_debug_code()) {
+    assembler_->set_emit_debug_code(false);
+  }
+  ~DontEmitDebugCodeScope() {
+    assembler_->set_emit_debug_code(old_value_);
+  }
+ private:
+  AssemblerBase* assembler_;
+  bool old_value_;
 };
 
 
@@ -134,15 +157,47 @@ class CpuFeatureScope BASE_EMBEDDED {
 };
 
 
-// Enable a unsupported feature within a scope for cross-compiling for a
-// different CPU.
-class PlatformFeatureScope BASE_EMBEDDED {
+// CpuFeatures keeps track of which features are supported by the target CPU.
+// Supported features must be enabled by a CpuFeatureScope before use.
+// Example:
+//   if (assembler->IsSupported(SSE3)) {
+//     CpuFeatureScope fscope(assembler, SSE3);
+//     // Generate code containing SSE3 instructions.
+//   } else {
+//     // Generate alternative code.
+//   }
+class CpuFeatures : public AllStatic {
  public:
-  explicit PlatformFeatureScope(CpuFeature f);
-  ~PlatformFeatureScope();
+  static void Probe(bool cross_compile) {
+    STATIC_ASSERT(NUMBER_OF_CPU_FEATURES <= kBitsPerInt);
+    if (initialized_) return;
+    initialized_ = true;
+    ProbeImpl(cross_compile);
+  }
+
+  static bool IsSupported(CpuFeature f) {
+    return (supported_ & (1u << f)) != 0;
+  }
+
+  static inline bool SupportsCrankshaft();
+
+  static inline unsigned cache_line_size() {
+    ASSERT(cache_line_size_ != 0);
+    return cache_line_size_;
+  }
+
+  static void PrintTarget();
+  static void PrintFeatures();
 
  private:
-  uint64_t old_cross_compile_;
+  // Platform-dependent implementation.
+  static void ProbeImpl(bool cross_compile);
+
+  static unsigned supported_;
+  static unsigned cache_line_size_;
+  static bool initialized_;
+  friend class ExternalReference;
+  DISALLOW_COPY_AND_ASSIGN(CpuFeatures);
 };
 
 
@@ -210,11 +265,23 @@ class Label BASE_EMBEDDED {
   friend class Assembler;
   friend class Displacement;
   friend class RegExpMacroAssemblerIrregexp;
+
+#if V8_TARGET_ARCH_ARM64
+  // On ARM64, the Assembler keeps track of pointers to Labels to resolve
+  // branches to distant targets. Copying labels would confuse the Assembler.
+  DISALLOW_COPY_AND_ASSIGN(Label);  // NOLINT
+#endif
 };
 
 
 enum SaveFPRegsMode { kDontSaveFPRegs, kSaveFPRegs };
 
+// Specifies whether to perform icache flush operations on RelocInfo updates.
+// If FLUSH_ICACHE_IF_NEEDED, the icache will always be flushed if an
+// instruction was modified. If SKIP_ICACHE_FLUSH the flush will always be
+// skipped (only use this if you will flush the icache manually before it is
+// executed).
+enum ICacheFlushMode { FLUSH_ICACHE_IF_NEEDED, SKIP_ICACHE_FLUSH };
 
 // -----------------------------------------------------------------------------
 // Relocation information
@@ -227,7 +294,7 @@ enum SaveFPRegsMode { kDontSaveFPRegs, kSaveFPRegs };
 // describe a property of the datum. Such rmodes are useful for GC
 // and nice disassembly output.
 
-class RelocInfo BASE_EMBEDDED {
+class RelocInfo {
  public:
   // The constant kNoPosition is used with the collecting of source positions
   // in the relocation information. Two types of source positions are collected
@@ -262,7 +329,6 @@ class RelocInfo BASE_EMBEDDED {
     CODE_TARGET,  // Code target which is not any of the above.
     CODE_TARGET_WITH_ID,
     CONSTRUCT_CALL,  // code target that is a call to a JavaScript constructor.
-    CODE_TARGET_CONTEXT,  // Code target used for contextual loads and stores.
     DEBUG_BREAK,  // Code target for the debugger statement.
     EMBEDDED_OBJECT,
     CELL,
@@ -277,9 +343,10 @@ class RelocInfo BASE_EMBEDDED {
     EXTERNAL_REFERENCE,  // The address of an external C++ function.
     INTERNAL_REFERENCE,  // An address inside the same function.
 
-    // Marks a constant pool. Only used on ARM.
-    // It uses a custom noncompact encoding.
+    // Marks constant and veneer pools. Only used on ARM and ARM64.
+    // They use a custom noncompact encoding.
     CONST_POOL,
+    VENEER_POOL,
 
     // add more as needed
     // Pseudo-types
@@ -289,7 +356,7 @@ class RelocInfo BASE_EMBEDDED {
     CODE_AGE_SEQUENCE,  // Not stored in RelocInfo array, used explictly by
                         // code aging.
     FIRST_REAL_RELOC_MODE = CODE_TARGET,
-    LAST_REAL_RELOC_MODE = CONST_POOL,
+    LAST_REAL_RELOC_MODE = VENEER_POOL,
     FIRST_PSEUDO_RELOC_MODE = CODE_AGE_SEQUENCE,
     LAST_PSEUDO_RELOC_MODE = CODE_AGE_SEQUENCE,
     LAST_CODE_ENUM = DEBUG_BREAK,
@@ -298,7 +365,6 @@ class RelocInfo BASE_EMBEDDED {
     LAST_COMPACT_ENUM = CODE_TARGET_WITH_ID,
     LAST_STANDARD_NONCOMPACT_ENUM = INTERNAL_REFERENCE
   };
-
 
   RelocInfo() {}
 
@@ -343,6 +409,9 @@ class RelocInfo BASE_EMBEDDED {
   static inline bool IsConstPool(Mode mode) {
     return mode == CONST_POOL;
   }
+  static inline bool IsVeneerPool(Mode mode) {
+    return mode == VENEER_POOL;
+  }
   static inline bool IsPosition(Mode mode) {
     return mode == POSITION || mode == STATEMENT_POSITION;
   }
@@ -366,6 +435,15 @@ class RelocInfo BASE_EMBEDDED {
   }
   static inline int ModeMask(Mode mode) { return 1 << mode; }
 
+  // Returns true if the first RelocInfo has the same mode and raw data as the
+  // second one.
+  static inline bool IsEqual(RelocInfo first, RelocInfo second) {
+    return first.rmode() == second.rmode() &&
+           (first.rmode() == RelocInfo::NONE64 ?
+              first.raw_data64() == second.raw_data64() :
+              first.data() == second.data());
+  }
+
   // Accessors
   byte* pc() const { return pc_; }
   void set_pc(byte* pc) { pc_ = pc; }
@@ -376,36 +454,60 @@ class RelocInfo BASE_EMBEDDED {
     return BitCast<uint64_t>(data64_);
   }
   Code* host() const { return host_; }
+  void set_host(Code* host) { host_ = host; }
 
   // Apply a relocation by delta bytes
-  INLINE(void apply(intptr_t delta));
+  INLINE(void apply(intptr_t delta,
+                    ICacheFlushMode icache_flush_mode =
+                        FLUSH_ICACHE_IF_NEEDED));
 
   // Is the pointer this relocation info refers to coded like a plain pointer
   // or is it strange in some way (e.g. relative or patched into a series of
   // instructions).
   bool IsCodedSpecially();
 
+  // If true, the pointer this relocation info refers to is an entry in the
+  // constant pool, otherwise the pointer is embedded in the instruction stream.
+  bool IsInConstantPool();
+
   // Read/modify the code target in the branch/call instruction
   // this relocation applies to;
   // can only be called if IsCodeTarget(rmode_) || IsRuntimeEntry(rmode_)
   INLINE(Address target_address());
   INLINE(void set_target_address(Address target,
-                                 WriteBarrierMode mode = UPDATE_WRITE_BARRIER));
+                                 WriteBarrierMode write_barrier_mode =
+                                     UPDATE_WRITE_BARRIER,
+                                 ICacheFlushMode icache_flush_mode =
+                                     FLUSH_ICACHE_IF_NEEDED));
   INLINE(Object* target_object());
   INLINE(Handle<Object> target_object_handle(Assembler* origin));
   INLINE(void set_target_object(Object* target,
-                                WriteBarrierMode mode = UPDATE_WRITE_BARRIER));
+                                WriteBarrierMode write_barrier_mode =
+                                    UPDATE_WRITE_BARRIER,
+                                ICacheFlushMode icache_flush_mode =
+                                    FLUSH_ICACHE_IF_NEEDED));
   INLINE(Address target_runtime_entry(Assembler* origin));
   INLINE(void set_target_runtime_entry(Address target,
-                                       WriteBarrierMode mode =
-                                           UPDATE_WRITE_BARRIER));
+                                       WriteBarrierMode write_barrier_mode =
+                                           UPDATE_WRITE_BARRIER,
+                                       ICacheFlushMode icache_flush_mode =
+                                           FLUSH_ICACHE_IF_NEEDED));
   INLINE(Cell* target_cell());
   INLINE(Handle<Cell> target_cell_handle());
   INLINE(void set_target_cell(Cell* cell,
-                              WriteBarrierMode mode = UPDATE_WRITE_BARRIER));
+                              WriteBarrierMode write_barrier_mode =
+                                  UPDATE_WRITE_BARRIER,
+                              ICacheFlushMode icache_flush_mode =
+                                  FLUSH_ICACHE_IF_NEEDED));
   INLINE(Handle<Object> code_age_stub_handle(Assembler* origin));
   INLINE(Code* code_age_stub());
-  INLINE(void set_code_age_stub(Code* stub));
+  INLINE(void set_code_age_stub(Code* stub,
+                                ICacheFlushMode icache_flush_mode =
+                                    FLUSH_ICACHE_IF_NEEDED));
+
+  // Returns the address of the constant pool entry where the target address
+  // is held.  This should only be called if IsInConstantPool returns true.
+  INLINE(Address constant_pool_entry_address());
 
   // Read the address of the word containing the target_address in an
   // instruction stream.  What this means exactly is architecture-independent.
@@ -414,6 +516,7 @@ class RelocInfo BASE_EMBEDDED {
   // output before the next target.  Architecture-independent code shouldn't
   // dereference the pointer it gets back from this.
   INLINE(Address target_address_address());
+
   // This indicates how much space a target takes up when deserializing a code
   // stream.  For most architectures this is just the size of a pointer.  For
   // an instruction like movw/movt where the target bits are mixed into the
@@ -471,7 +574,7 @@ class RelocInfo BASE_EMBEDDED {
   void Print(Isolate* isolate, FILE* out);
 #endif  // ENABLE_DISASSEMBLER
 #ifdef VERIFY_HEAP
-  void Verify();
+  void Verify(Isolate* isolate);
 #endif
 
   static const int kCodeTargetMask = (1 << (LAST_CODE_ENUM + 1)) - 1;
@@ -538,7 +641,7 @@ class RelocInfoWriter BASE_EMBEDDED {
   inline void WriteTaggedPC(uint32_t pc_delta, int tag);
   inline void WriteExtraTaggedPC(uint32_t pc_delta, int extra_tag);
   inline void WriteExtraTaggedIntData(int data_delta, int top_tag);
-  inline void WriteExtraTaggedConstPoolData(int data);
+  inline void WriteExtraTaggedPoolData(int data, int pool_type);
   inline void WriteExtraTaggedData(intptr_t data_delta, int top_tag);
   inline void WriteTaggedData(intptr_t data_delta, int tag);
   inline void WriteExtraTag(int extra_tag, int top_tag);
@@ -589,7 +692,7 @@ class RelocIterator: public Malloced {
   void ReadTaggedPC();
   void AdvanceReadPC();
   void AdvanceReadId();
-  void AdvanceReadConstPoolData();
+  void AdvanceReadPoolData();
   void AdvanceReadPosition();
   void AdvanceReadData();
   void AdvanceReadVariableLengthPCJump();
@@ -621,9 +724,7 @@ class RelocIterator: public Malloced {
 //----------------------------------------------------------------------------
 class IC_Utility;
 class SCTableReference;
-#ifdef ENABLE_DEBUGGER_SUPPORT
 class Debug_Address;
-#endif
 
 
 // An ExternalReference represents a C++ address used in the generated
@@ -636,7 +737,7 @@ class ExternalReference BASE_EMBEDDED {
   // Used in the simulator to support different native api calls.
   enum Type {
     // Builtin call.
-    // MaybeObject* f(v8::internal::Arguments).
+    // Object* f(v8::internal::Arguments).
     BUILTIN_CALL,  // default
 
     // Builtin that takes float arguments and returns an int.
@@ -693,10 +794,6 @@ class ExternalReference BASE_EMBEDDED {
 
   ExternalReference(const IC_Utility& ic_utility, Isolate* isolate);
 
-#ifdef ENABLE_DEBUGGER_SUPPORT
-  ExternalReference(const Debug_Address& debug_address, Isolate* isolate);
-#endif
-
   explicit ExternalReference(StatsCounter* counter);
 
   ExternalReference(Isolate::AddressId id, Isolate* isolate);
@@ -712,13 +809,9 @@ class ExternalReference BASE_EMBEDDED {
 
   static ExternalReference incremental_marking_record_write_function(
       Isolate* isolate);
-  static ExternalReference incremental_evacuation_record_write_function(
-      Isolate* isolate);
   static ExternalReference store_buffer_overflow_function(
       Isolate* isolate);
   static ExternalReference flush_icache_function(Isolate* isolate);
-  static ExternalReference perform_gc_function(Isolate* isolate);
-  static ExternalReference transcendental_cache_array_address(Isolate* isolate);
   static ExternalReference delete_handle_scope_extensions(Isolate* isolate);
 
   static ExternalReference get_date_field_function(Isolate* isolate);
@@ -781,12 +874,8 @@ class ExternalReference BASE_EMBEDDED {
       Isolate* isolate);
   static ExternalReference old_data_space_allocation_limit_address(
       Isolate* isolate);
-  static ExternalReference new_space_high_promotion_mode_active_address(
-      Isolate* isolate);
 
-  static ExternalReference double_fp_operation(Token::Value operation,
-                                               Isolate* isolate);
-  static ExternalReference compare_doubles(Isolate* isolate);
+  static ExternalReference mod_two_doubles_operation(Isolate* isolate);
   static ExternalReference power_double_double_function(Isolate* isolate);
   static ExternalReference power_double_int_function(Isolate* isolate);
 
@@ -811,9 +900,6 @@ class ExternalReference BASE_EMBEDDED {
   static ExternalReference address_of_the_hole_nan();
   static ExternalReference address_of_uint32_bias();
 
-  static ExternalReference math_sin_double_function(Isolate* isolate);
-  static ExternalReference math_cos_double_function(Isolate* isolate);
-  static ExternalReference math_tan_double_function(Isolate* isolate);
   static ExternalReference math_log_double_function(Isolate* isolate);
 
   static ExternalReference math_exp_constants(int constant_index);
@@ -825,15 +911,21 @@ class ExternalReference BASE_EMBEDDED {
 
   static ExternalReference cpu_features();
 
+  static ExternalReference debug_after_break_target_address(Isolate* isolate);
+  static ExternalReference debug_restarter_frame_function_pointer_address(
+      Isolate* isolate);
+
+  static ExternalReference is_profiling_address(Isolate* isolate);
+  static ExternalReference invoke_function_callback(Isolate* isolate);
+  static ExternalReference invoke_accessor_getter_callback(Isolate* isolate);
+
   Address address() const { return reinterpret_cast<Address>(address_); }
 
-#ifdef ENABLE_DEBUGGER_SUPPORT
   // Function Debug::Break()
   static ExternalReference debug_break(Isolate* isolate);
 
   // Used to check if single stepping is enabled in generated code.
   static ExternalReference debug_step_in_fp_address(Isolate* isolate);
-#endif
 
 #ifndef V8_INTERPRETED_REGEXP
   // C functions called from RegExp generated code.
@@ -1009,32 +1101,6 @@ class PreservePositionScope BASE_EMBEDDED {
 // -----------------------------------------------------------------------------
 // Utility functions
 
-inline bool is_intn(int x, int n)  {
-  return -(1 << (n-1)) <= x && x < (1 << (n-1));
-}
-
-inline bool is_int8(int x)  { return is_intn(x, 8); }
-inline bool is_int16(int x)  { return is_intn(x, 16); }
-inline bool is_int18(int x)  { return is_intn(x, 18); }
-inline bool is_int24(int x)  { return is_intn(x, 24); }
-
-inline bool is_uintn(int x, int n) {
-  return (x & -(1 << n)) == 0;
-}
-
-inline bool is_uint2(int x)  { return is_uintn(x, 2); }
-inline bool is_uint3(int x)  { return is_uintn(x, 3); }
-inline bool is_uint4(int x)  { return is_uintn(x, 4); }
-inline bool is_uint5(int x)  { return is_uintn(x, 5); }
-inline bool is_uint6(int x)  { return is_uintn(x, 6); }
-inline bool is_uint8(int x)  { return is_uintn(x, 8); }
-inline bool is_uint10(int x)  { return is_uintn(x, 10); }
-inline bool is_uint12(int x)  { return is_uintn(x, 12); }
-inline bool is_uint16(int x)  { return is_uintn(x, 16); }
-inline bool is_uint24(int x)  { return is_uintn(x, 24); }
-inline bool is_uint26(int x)  { return is_uintn(x, 26); }
-inline bool is_uint28(int x)  { return is_uintn(x, 28); }
-
 inline int NumberOfBitsSet(uint32_t x) {
   unsigned int num_bits_set;
   for (num_bits_set = 0; x; x >>= 1) {
@@ -1071,6 +1137,21 @@ class NullCallWrapper : public CallWrapper {
   virtual void BeforeCall(int call_size) const { }
   virtual void AfterCall() const { }
 };
+
+
+// The multiplier and shift for signed division via multiplication, see Warren's
+// "Hacker's Delight", chapter 10.
+class MultiplierAndShift {
+ public:
+  explicit MultiplierAndShift(int32_t d);
+  int32_t multiplier() const { return multiplier_; }
+  int32_t shift() const { return shift_; }
+
+ private:
+  int32_t multiplier_;
+  int32_t shift_;
+};
+
 
 } }  // namespace v8::internal
 

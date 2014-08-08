@@ -61,20 +61,17 @@ CommonDecoder::CommonDecoder() : engine_(NULL) {}
 CommonDecoder::~CommonDecoder() {}
 
 void* CommonDecoder::GetAddressAndCheckSize(unsigned int shm_id,
-                                            unsigned int offset,
-                                            unsigned int size) {
+                                            unsigned int data_offset,
+                                            unsigned int data_size) {
   CHECK(engine_);
-  Buffer buffer = engine_->GetSharedMemoryBuffer(shm_id);
-  if (!buffer.ptr)
+  scoped_refptr<gpu::Buffer> buffer = engine_->GetSharedMemoryBuffer(shm_id);
+  if (!buffer)
     return NULL;
-  unsigned int end = offset + size;
-  if (end > buffer.size || end < offset) {
-    return NULL;
-  }
-  return static_cast<int8*>(buffer.ptr) + offset;
+  return buffer->GetDataAddress(data_offset, data_size);
 }
 
-Buffer CommonDecoder::GetSharedMemoryBuffer(unsigned int shm_id) {
+scoped_refptr<gpu::Buffer> CommonDecoder::GetSharedMemoryBuffer(
+    unsigned int shm_id) {
   return engine_->GetSharedMemoryBuffer(shm_id);
 }
 
@@ -111,17 +108,23 @@ RETURN_TYPE GetImmediateDataAs(const COMMAND_TYPE& pod) {
   return static_cast<RETURN_TYPE>(const_cast<void*>(AddressAfterStruct(pod)));
 }
 
+// TODO(vmiura): Looks like this g_command_info is duplicated in
+// common_decoder.cc
+// and gles2_cmd_decoder.cc.  Fix it!
+
 // A struct to hold info about each command.
 struct CommandInfo {
-  int arg_flags;  // How to handle the arguments for this command
-  int arg_count;  // How many arguments are expected for this command.
+  uint8 arg_flags;   // How to handle the arguments for this command
+  uint8 cmd_flags;   // How to handle this command
+  uint16 arg_count;  // How many arguments are expected for this command.
 };
 
 // A table of CommandInfo for all the commands.
 const CommandInfo g_command_info[] = {
   #define COMMON_COMMAND_BUFFER_CMD_OP(name) {                           \
     cmd::name::kArgFlags,                                                \
-    sizeof(cmd::name) / sizeof(CommandBufferEntry) - 1, },  /* NOLINT */ \
+    cmd::name::cmd_flags,                                                \
+    sizeof(cmd::name) / sizeof(CommandBufferEntry) - 1, },  /* NOLINT */
 
   COMMON_COMMAND_BUFFER_CMDS(COMMON_COMMAND_BUFFER_CMD_OP)
 

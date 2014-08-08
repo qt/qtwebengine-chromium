@@ -29,8 +29,8 @@
 #include "config.h"
 #include "core/xml/XMLErrors.h"
 
-#include "HTMLNames.h"
-#include "SVGNames.h"
+#include "core/HTMLNames.h"
+#include "core/SVGNames.h"
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
 #include "core/dom/Text.h"
@@ -49,6 +49,11 @@ XMLErrors::XMLErrors(Document* document)
 {
 }
 
+void XMLErrors::trace(Visitor* visitor)
+{
+    visitor->trace(m_document);
+}
+
 void XMLErrors::handleError(ErrorType type, const char* message, int lineNumber, int columnNumber)
 {
     handleError(type, message, TextPosition(OrdinalNumber::fromOneBasedInt(lineNumber), OrdinalNumber::fromOneBasedInt(columnNumber)));
@@ -56,13 +61,13 @@ void XMLErrors::handleError(ErrorType type, const char* message, int lineNumber,
 
 void XMLErrors::handleError(ErrorType type, const char* message, TextPosition position)
 {
-    if (type == fatal || (m_errorCount < maxErrors && m_lastErrorPosition.m_line != position.m_line && m_lastErrorPosition.m_column != position.m_column)) {
+    if (type == ErrorTypeFatal || (m_errorCount < maxErrors && m_lastErrorPosition.m_line != position.m_line && m_lastErrorPosition.m_column != position.m_column)) {
         switch (type) {
-        case warning:
+        case ErrorTypeWarning:
             appendErrorMessage("warning", position, message);
             break;
-        case fatal:
-        case nonFatal:
+        case ErrorTypeFatal:
+        case ErrorTypeNonFatal:
             appendErrorMessage("error", position, message);
         }
 
@@ -83,19 +88,19 @@ void XMLErrors::appendErrorMessage(const String& typeString, TextPosition positi
     m_errorMessages.append(message);
 }
 
-static inline PassRefPtr<Element> createXHTMLParserErrorHeader(Document* doc, const String& errorMessages)
+static inline PassRefPtrWillBeRawPtr<Element> createXHTMLParserErrorHeader(Document* doc, const String& errorMessages)
 {
-    RefPtr<Element> reportElement = doc->createElement(QualifiedName(nullAtom, "parsererror", xhtmlNamespaceURI), true);
+    RefPtrWillBeRawPtr<Element> reportElement = doc->createElement(QualifiedName(nullAtom, "parsererror", xhtmlNamespaceURI), true);
 
     Vector<Attribute> reportAttributes;
     reportAttributes.append(Attribute(styleAttr, "display: block; white-space: pre; border: 2px solid #c77; padding: 0 1em 0 1em; margin: 1em; background-color: #fdd; color: black"));
     reportElement->parserSetAttributes(reportAttributes);
 
-    RefPtr<Element> h3 = doc->createElement(h3Tag, true);
+    RefPtrWillBeRawPtr<Element> h3 = doc->createElement(h3Tag, true);
     reportElement->parserAppendChild(h3.get());
     h3->parserAppendChild(doc->createTextNode("This page contains the following errors:"));
 
-    RefPtr<Element> fixed = doc->createElement(divTag, true);
+    RefPtrWillBeRawPtr<Element> fixed = doc->createElement(divTag, true);
     Vector<Attribute> fixedAttributes;
     fixedAttributes.append(Attribute(styleAttr, "font-family:monospace;font-size:12px"));
     fixed->parserSetAttributes(fixedAttributes);
@@ -117,16 +122,22 @@ void XMLErrors::insertErrorMessageBlock()
     // where the errors are located)
 
     // Create elements for display
-    RefPtr<Element> documentElement = m_document->documentElement();
+    RefPtrWillBeRawPtr<Element> documentElement = m_document->documentElement();
     if (!documentElement) {
-        RefPtr<Element> rootElement = m_document->createElement(htmlTag, true);
-        RefPtr<Element> body = m_document->createElement(bodyTag, true);
+        RefPtrWillBeRawPtr<Element> rootElement = m_document->createElement(htmlTag, true);
+        RefPtrWillBeRawPtr<Element> body = m_document->createElement(bodyTag, true);
         rootElement->parserAppendChild(body);
         m_document->parserAppendChild(rootElement);
         documentElement = body.get();
     } else if (documentElement->namespaceURI() == SVGNames::svgNamespaceURI) {
-        RefPtr<Element> rootElement = m_document->createElement(htmlTag, true);
-        RefPtr<Element> body = m_document->createElement(bodyTag, true);
+        RefPtrWillBeRawPtr<Element> rootElement = m_document->createElement(htmlTag, true);
+        RefPtrWillBeRawPtr<Element> head = m_document->createElement(headTag, true);
+        RefPtrWillBeRawPtr<Element> style = m_document->createElement(styleTag, true);
+        head->parserAppendChild(style);
+        style->parserAppendChild(m_document->createTextNode("html, body { height: 100% } parsererror + svg { width: 100%; height: 100% }"));
+        style->finishParsingChildren();
+        rootElement->parserAppendChild(head);
+        RefPtrWillBeRawPtr<Element> body = m_document->createElement(bodyTag, true);
         rootElement->parserAppendChild(body);
 
         m_document->parserRemoveChild(*documentElement);
@@ -138,12 +149,12 @@ void XMLErrors::insertErrorMessageBlock()
     }
 
     String errorMessages = m_errorMessages.toString();
-    RefPtr<Element> reportElement = createXHTMLParserErrorHeader(m_document, errorMessages);
+    RefPtrWillBeRawPtr<Element> reportElement = createXHTMLParserErrorHeader(m_document, errorMessages);
 
     if (m_document->transformSourceDocument()) {
         Vector<Attribute> attributes;
         attributes.append(Attribute(styleAttr, "white-space: normal"));
-        RefPtr<Element> paragraph = m_document->createElement(pTag, true);
+        RefPtrWillBeRawPtr<Element> paragraph = m_document->createElement(pTag, true);
         paragraph->parserSetAttributes(attributes);
         paragraph->parserAppendChild(m_document->createTextNode("This document was created as the result of an XSL transformation. The line and column numbers given are from the transformed result."));
         reportElement->parserAppendChild(paragraph.release());
@@ -156,7 +167,7 @@ void XMLErrors::insertErrorMessageBlock()
         documentElement->parserAppendChild(reportElement);
 
     // FIXME: Why do we need to call this manually?
-    m_document->updateStyleIfNeeded();
+    m_document->updateRenderTreeIfNeeded();
 }
 
 } // namespace WebCore

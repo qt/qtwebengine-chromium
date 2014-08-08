@@ -49,13 +49,12 @@ PepperTCPServerSocketMessageFilter::PepperTCPServerSocketMessageFilter(
       external_plugin_(host->external_plugin()),
       private_api_(private_api),
       render_process_id_(0),
-      render_view_id_(0) {
+      render_frame_id_(0) {
   ++g_num_instances;
   DCHECK(factory_);
   DCHECK(ppapi_host_);
-  if (!host->GetRenderViewIDsForInstance(instance,
-                                         &render_process_id_,
-                                         &render_view_id_)) {
+  if (!host->GetRenderFrameIDsForInstance(
+          instance, &render_process_id_, &render_frame_id_)) {
     NOTREACHED();
   }
 }
@@ -85,14 +84,14 @@ PepperTCPServerSocketMessageFilter::OverrideTaskRunnerForMessage(
 int32_t PepperTCPServerSocketMessageFilter::OnResourceMessageReceived(
     const IPC::Message& msg,
     ppapi::host::HostMessageContext* context) {
-  IPC_BEGIN_MESSAGE_MAP(PepperTCPServerSocketMessageFilter, msg)
-    PPAPI_DISPATCH_HOST_RESOURCE_CALL(
-        PpapiHostMsg_TCPServerSocket_Listen, OnMsgListen)
-    PPAPI_DISPATCH_HOST_RESOURCE_CALL_0(
-        PpapiHostMsg_TCPServerSocket_Accept, OnMsgAccept)
+  PPAPI_BEGIN_MESSAGE_MAP(PepperTCPServerSocketMessageFilter, msg)
+    PPAPI_DISPATCH_HOST_RESOURCE_CALL(PpapiHostMsg_TCPServerSocket_Listen,
+                                      OnMsgListen)
+    PPAPI_DISPATCH_HOST_RESOURCE_CALL_0(PpapiHostMsg_TCPServerSocket_Accept,
+                                        OnMsgAccept)
     PPAPI_DISPATCH_HOST_RESOURCE_CALL_0(
         PpapiHostMsg_TCPServerSocket_StopListening, OnMsgStopListening)
-  IPC_END_MESSAGE_MAP()
+  PPAPI_END_MESSAGE_MAP()
   return PP_ERROR_FAILED;
 }
 
@@ -100,7 +99,7 @@ int32_t PepperTCPServerSocketMessageFilter::OnMsgListen(
     const ppapi::host::HostMessageContext* context,
     const PP_NetAddress_Private& addr,
     int32_t backlog) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK(context);
 
   SocketPermissionRequest request =
@@ -110,20 +109,24 @@ int32_t PepperTCPServerSocketMessageFilter::OnMsgListen(
                                              private_api_,
                                              &request,
                                              render_process_id_,
-                                             render_view_id_)) {
+                                             render_frame_id_)) {
     return PP_ERROR_NOACCESS;
   }
 
   BrowserThread::PostTask(
-      BrowserThread::IO, FROM_HERE,
-      base::Bind(&PepperTCPServerSocketMessageFilter::DoListen, this,
-                 context->MakeReplyMessageContext(), addr, backlog));
+      BrowserThread::IO,
+      FROM_HERE,
+      base::Bind(&PepperTCPServerSocketMessageFilter::DoListen,
+                 this,
+                 context->MakeReplyMessageContext(),
+                 addr,
+                 backlog));
   return PP_OK_COMPLETIONPENDING;
 }
 
 int32_t PepperTCPServerSocketMessageFilter::OnMsgAccept(
     const ppapi::host::HostMessageContext* context) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DCHECK(context);
 
   if (state_ != STATE_LISTENING)
@@ -136,7 +139,8 @@ int32_t PepperTCPServerSocketMessageFilter::OnMsgAccept(
       &accepted_socket_,
       &accepted_address_,
       base::Bind(&PepperTCPServerSocketMessageFilter::OnAcceptCompleted,
-                 base::Unretained(this), reply_context));
+                 base::Unretained(this),
+                 reply_context));
   if (net_result != net::ERR_IO_PENDING)
     OnAcceptCompleted(reply_context, net_result);
   return PP_OK_COMPLETIONPENDING;
@@ -144,7 +148,7 @@ int32_t PepperTCPServerSocketMessageFilter::OnMsgAccept(
 
 int32_t PepperTCPServerSocketMessageFilter::OnMsgStopListening(
     const ppapi::host::HostMessageContext* context) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DCHECK(context);
 
   state_ = STATE_CLOSED;
@@ -156,7 +160,7 @@ void PepperTCPServerSocketMessageFilter::DoListen(
     const ppapi::host::ReplyMessageContext& context,
     const PP_NetAddress_Private& addr,
     int32_t backlog) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   net::IPAddressNumber address;
   int port;
@@ -215,9 +219,8 @@ void PepperTCPServerSocketMessageFilter::OnListenCompleted(
     state_ = STATE_BEFORE_LISTENING;
     return;
   }
-  if (!NetAddressPrivateImpl::IPEndPointToNetAddress(end_point.address(),
-                                                     end_point.port(),
-                                                     &addr)) {
+  if (!NetAddressPrivateImpl::IPEndPointToNetAddress(
+          end_point.address(), end_point.port(), &addr)) {
     SendListenError(context, PP_ERROR_FAILED);
     state_ = STATE_BEFORE_LISTENING;
     return;
@@ -249,9 +252,8 @@ void PepperTCPServerSocketMessageFilter::OnAcceptCompleted(
   PP_NetAddress_Private local_addr = NetAddressPrivateImpl::kInvalidNetAddress;
   PP_NetAddress_Private remote_addr = NetAddressPrivateImpl::kInvalidNetAddress;
 
-  int32_t pp_result =
-      NetErrorToPepperError(accepted_socket_->GetLocalAddress(
-          &ip_end_point_local));
+  int32_t pp_result = NetErrorToPepperError(
+      accepted_socket_->GetLocalAddress(&ip_end_point_local));
   if (pp_result != PP_OK) {
     SendAcceptError(context, pp_result);
     return;
@@ -269,18 +271,17 @@ void PepperTCPServerSocketMessageFilter::OnAcceptCompleted(
   }
 
   scoped_ptr<ppapi::host::ResourceHost> host =
-      factory_->CreateAcceptedTCPSocket(
-          instance_, ppapi::TCP_SOCKET_VERSION_PRIVATE,
-          accepted_socket_.Pass());
+      factory_->CreateAcceptedTCPSocket(instance_,
+                                        ppapi::TCP_SOCKET_VERSION_PRIVATE,
+                                        accepted_socket_.Pass());
   if (!host) {
     SendAcceptError(context, PP_ERROR_NOSPACE);
     return;
   }
   int pending_resource_id = ppapi_host_->AddPendingResourceHost(host.Pass());
   if (pending_resource_id) {
-    SendAcceptReply(context, PP_OK, pending_resource_id,
-                    local_addr,
-                    remote_addr);
+    SendAcceptReply(
+        context, PP_OK, pending_resource_id, local_addr, remote_addr);
   } else {
     SendAcceptError(context, PP_ERROR_NOSPACE);
   }
@@ -299,8 +300,8 @@ void PepperTCPServerSocketMessageFilter::SendListenReply(
 void PepperTCPServerSocketMessageFilter::SendListenError(
     const ppapi::host::ReplyMessageContext& context,
     int32_t pp_result) {
-  SendListenReply(context, pp_result,
-                  NetAddressPrivateImpl::kInvalidNetAddress);
+  SendListenReply(
+      context, pp_result, NetAddressPrivateImpl::kInvalidNetAddress);
 }
 
 void PepperTCPServerSocketMessageFilter::SendAcceptReply(
@@ -311,8 +312,9 @@ void PepperTCPServerSocketMessageFilter::SendAcceptReply(
     const PP_NetAddress_Private& remote_addr) {
   ppapi::host::ReplyMessageContext reply_context(context);
   reply_context.params.set_result(pp_result);
-  SendReply(reply_context, PpapiPluginMsg_TCPServerSocket_AcceptReply(
-      pending_resource_id, local_addr, remote_addr));
+  SendReply(reply_context,
+            PpapiPluginMsg_TCPServerSocket_AcceptReply(
+                pending_resource_id, local_addr, remote_addr));
 }
 
 void PepperTCPServerSocketMessageFilter::SendAcceptError(

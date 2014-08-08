@@ -27,15 +27,14 @@
 #include "modules/indexeddb/DOMWindowIndexedDatabase.h"
 
 #include "core/dom/Document.h"
-#include "core/frame/DOMWindow.h"
+#include "core/frame/LocalDOMWindow.h"
 #include "core/page/Page.h"
 #include "modules/indexeddb/IDBFactory.h"
-#include "modules/indexeddb/PageGroupIndexedDatabase.h"
 
 namespace WebCore {
 
-DOMWindowIndexedDatabase::DOMWindowIndexedDatabase(DOMWindow* window)
-    : DOMWindowProperty(window->frame())
+DOMWindowIndexedDatabase::DOMWindowIndexedDatabase(LocalDOMWindow& window)
+    : DOMWindowProperty(window.frame())
     , m_window(window)
 {
 }
@@ -44,19 +43,25 @@ DOMWindowIndexedDatabase::~DOMWindowIndexedDatabase()
 {
 }
 
+void DOMWindowIndexedDatabase::trace(Visitor* visitor)
+{
+    visitor->trace(m_idbFactory);
+    WillBeHeapSupplement<LocalDOMWindow>::trace(visitor);
+}
+
 const char* DOMWindowIndexedDatabase::supplementName()
 {
     return "DOMWindowIndexedDatabase";
 }
 
-DOMWindowIndexedDatabase* DOMWindowIndexedDatabase::from(DOMWindow* window)
+DOMWindowIndexedDatabase& DOMWindowIndexedDatabase::from(LocalDOMWindow& window)
 {
-    DOMWindowIndexedDatabase* supplement = static_cast<DOMWindowIndexedDatabase*>(Supplement<DOMWindow>::from(window, supplementName()));
+    DOMWindowIndexedDatabase* supplement = static_cast<DOMWindowIndexedDatabase*>(WillBeHeapSupplement<LocalDOMWindow>::from(window, supplementName()));
     if (!supplement) {
         supplement = new DOMWindowIndexedDatabase(window);
-        provideTo(window, supplementName(), adoptPtr(supplement));
+        provideTo(window, supplementName(), adoptPtrWillBeNoop(supplement));
     }
-    return supplement;
+    return *supplement;
 }
 
 void DOMWindowIndexedDatabase::willDestroyGlobalObjectInFrame()
@@ -71,14 +76,14 @@ void DOMWindowIndexedDatabase::willDetachGlobalObjectFromFrame()
     DOMWindowProperty::willDetachGlobalObjectFromFrame();
 }
 
-IDBFactory* DOMWindowIndexedDatabase::indexedDB(DOMWindow* window)
+IDBFactory* DOMWindowIndexedDatabase::indexedDB(LocalDOMWindow& window)
 {
-    return from(window)->indexedDB();
+    return from(window).indexedDB();
 }
 
 IDBFactory* DOMWindowIndexedDatabase::indexedDB()
 {
-    Document* document = m_window->document();
+    Document* document = m_window.document();
     if (!document)
         return 0;
 
@@ -86,11 +91,11 @@ IDBFactory* DOMWindowIndexedDatabase::indexedDB()
     if (!page)
         return 0;
 
-    if (!m_window->isCurrentlyDisplayedInFrame())
+    if (!m_window.isCurrentlyDisplayedInFrame())
         return 0;
 
     if (!m_idbFactory)
-        m_idbFactory = IDBFactory::create(PageGroupIndexedDatabase::from(page->group())->factoryBackend());
+        m_idbFactory = IDBFactory::create(IndexedDBClient::create());
     return m_idbFactory.get();
 }
 

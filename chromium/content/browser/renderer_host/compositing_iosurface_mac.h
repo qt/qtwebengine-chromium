@@ -6,26 +6,26 @@
 #define CONTENT_BROWSER_RENDERER_HOST_COMPOSITING_IOSURFACE_MAC_H_
 
 #include <deque>
+#include <list>
 #include <vector>
 
 #import <Cocoa/Cocoa.h>
-#import <QuartzCore/CVDisplayLink.h>
+#include <IOSurface/IOSurfaceAPI.h>
 #include <QuartzCore/QuartzCore.h>
 
 #include "base/callback.h"
+#include "base/lazy_instance.h"
 #include "base/mac/scoped_cftyperef.h"
+#include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/synchronization/lock.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
 #include "media/base/video_frame.h"
-#include "ui/events/latency_info.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/rect_conversions.h"
 #include "ui/gfx/size.h"
 
-class IOSurfaceSupport;
 class SkBitmap;
 
 namespace gfx {
@@ -43,19 +43,18 @@ class RenderWidgetHostViewMac;
 // This class manages an OpenGL context and IOSurface for the accelerated
 // compositing code path. The GL context is attached to
 // RenderWidgetHostViewCocoa for blitting the IOSurface.
-class CompositingIOSurfaceMac {
+class CompositingIOSurfaceMac
+    : public base::RefCounted<CompositingIOSurfaceMac> {
  public:
-  // Returns NULL if IOSurface support is missing or GL APIs fail.
-  static CompositingIOSurfaceMac* Create();
-  ~CompositingIOSurfaceMac();
+  // Returns NULL if IOSurface or GL API calls fail.
+  static scoped_refptr<CompositingIOSurfaceMac> Create();
 
   // Set IOSurface that will be drawn on the next NSView drawRect.
   bool SetIOSurfaceWithContextCurrent(
       scoped_refptr<CompositingIOSurfaceContext> current_context,
-      uint64 io_surface_handle,
+      IOSurfaceID io_surface_handle,
       const gfx::Size& size,
-      float scale_factor,
-      const ui::LatencyInfo& latency_info);
+      float scale_factor) WARN_UNUSED_RESULT;
 
   // Get the CGL renderer ID currently associated with this context.
   int GetRendererID();
@@ -67,8 +66,7 @@ class CompositingIOSurfaceMac {
   bool DrawIOSurface(
       scoped_refptr<CompositingIOSurfaceContext> drawing_context,
       const gfx::Rect& window_rect,
-      float window_scale_factor,
-      bool flush_drawable);
+      float window_scale_factor) WARN_UNUSED_RESULT;
 
   // Copy the data of the "live" OpenGL texture referring to this IOSurfaceRef
   // into |out|. The copied region is specified with |src_pixel_subrect| and
@@ -102,23 +100,20 @@ class CompositingIOSurfaceMac {
   const gfx::Size& dip_io_surface_size() const { return dip_io_surface_size_; }
   float scale_factor() const { return scale_factor_; }
 
-  // Get vsync scheduling parameters.
-  // |interval_numerator/interval_denominator| equates to fractional number of
-  // seconds between vsyncs.
-  void GetVSyncParameters(base::TimeTicks* timebase,
-                          uint32* interval_numerator,
-                          uint32* interval_denominator);
-
   // Returns true if asynchronous readback is supported on this system.
   bool IsAsynchronousReadbackSupported();
 
+  // Scan the list of started asynchronous copies and test if each one has
+  // completed. If |block_until_finished| is true, then block until all
+  // pending copies are finished.
+  void CheckIfAllCopiesAreFinished(bool block_until_finished);
+
+  // Returns true if the offscreen context used by this surface has been
+  // poisoned.
+  bool HasBeenPoisoned() const;
+
  private:
-  friend CVReturn DisplayLinkCallback(CVDisplayLinkRef,
-                                      const CVTimeStamp*,
-                                      const CVTimeStamp*,
-                                      CVOptionFlags,
-                                      CVOptionFlags*,
-                                      void*);
+  friend class base::RefCounted<CompositingIOSurfaceMac>;
 
   // Vertex structure for use in glDraw calls.
   struct SurfaceVertex {
@@ -208,10 +203,8 @@ class CompositingIOSurfaceMac {
   };
 
   CompositingIOSurfaceMac(
-      IOSurfaceSupport* io_surface_support,
       const scoped_refptr<CompositingIOSurfaceContext>& context);
-
-  void SetupCVDisplayLink();
+  ~CompositingIOSurfaceMac();
 
   // If this IOSurface has moved to a different window, use that window's
   // GL context (if multiple visible windows are using the same GL context
@@ -219,29 +212,16 @@ class CompositingIOSurfaceMac {
   void SwitchToContextOnNewWindow(NSView* view,
                                   int window_number);
 
-  bool IsVendorIntel();
-
   // Returns true if IOSurface is ready to render. False otherwise.
   bool MapIOSurfaceToTextureWithContextCurrent(
       const scoped_refptr<CompositingIOSurfaceContext>& current_context,
-      uint64 io_surface_handle);
+      const gfx::Size pixel_size,
+      float scale_factor,
+      IOSurfaceID io_surface_handle) WARN_UNUSED_RESULT;
 
   void UnrefIOSurfaceWithContextCurrent();
 
   void DrawQuad(const SurfaceQuad& quad);
-
-  // Called on display-link thread.
-  void DisplayLinkTick(CVDisplayLinkRef display_link,
-                       const CVTimeStamp* time);
-
-  void CalculateVsyncParametersLockHeld(const CVTimeStamp* time);
-
-  // Prevent from spinning on CGLFlushDrawable when it fails to throttle to
-  // VSync frequency.
-  void RateLimitDraws();
-
-  void StartOrContinueDisplayLink();
-  void StopDisplayLink();
 
   // Copy current frame to |target| video frame. This method must be called
   // within a CGL context. Returns a callback that should be called outside
@@ -278,10 +258,6 @@ class CompositingIOSurfaceMac {
       const SkBitmap* bitmap_output,
       const scoped_refptr<media::VideoFrame>& video_frame_output);
 
-  // Scan the list of started asynchronous copies and test if each one has
-  // completed. If |block_until_finished| is true, then block until all
-  // pending copies are finished.
-  void CheckIfAllCopiesAreFinished(bool block_until_finished);
   void CheckIfAllCopiesAreFinishedWithinContext(
       bool block_until_finished,
       std::vector<base::Closure>* done_callbacks);
@@ -295,17 +271,14 @@ class CompositingIOSurfaceMac {
 
   gfx::Rect IntersectWithIOSurface(const gfx::Rect& rect) const;
 
-  // Cached pointer to IOSurfaceSupport Singleton.
-  IOSurfaceSupport* io_surface_support_;
-
   // Offscreen context used for all operations other than drawing to the
   // screen. This is in the same share group as the contexts used for
   // drawing, and is the same for all IOSurfaces in all windows.
   scoped_refptr<CompositingIOSurfaceContext> offscreen_context_;
 
   // IOSurface data.
-  uint64 io_surface_handle_;
-  base::ScopedCFTypeRef<CFTypeRef> io_surface_;
+  IOSurfaceID io_surface_handle_;
+  base::ScopedCFTypeRef<IOSurfaceRef> io_surface_;
 
   // The width and height of the io surface.
   gfx::Size pixel_io_surface_size_;  // In pixels.
@@ -329,24 +302,28 @@ class CompositingIOSurfaceMac {
   // Timer for finishing a copy operation.
   base::Timer finish_copy_timer_;
 
-  // CVDisplayLink for querying Vsync timing info and throttling swaps.
-  CVDisplayLinkRef display_link_;
-
-  // Timer for stopping display link after a timeout with no swaps.
-  base::DelayTimer<CompositingIOSurfaceMac> display_link_stop_timer_;
-
-  // Lock for sharing data between UI thread and display-link thread.
-  base::Lock lock_;
-
-  // Vsync timing data.
-  base::TimeTicks vsync_timebase_;
-  uint32 vsync_interval_numerator_;
-  uint32 vsync_interval_denominator_;
-
   // Error saved by GetAndSaveGLError
   GLint gl_error_;
 
-  ui::LatencyInfo latency_info_;
+  // Aggressive IOSurface eviction logic. When using CoreAnimation, IOSurfaces
+  // are used only transiently to transfer from the GPU process to the browser
+  // process. Once the IOSurface has been drawn to its CALayer, the CALayer
+  // will not need updating again until its view is hidden and re-shown.
+  // Aggressively evict surfaces when more than 8 (the number allowed by the
+  // memory manager for fast tab switching) are allocated.
+  enum {
+    kMaximumUnevictedSurfaces = 8,
+  };
+  typedef std::list<CompositingIOSurfaceMac*> EvictionQueue;
+  void EvictionMarkUpdated();
+  void EvictionMarkEvicted();
+  EvictionQueue::iterator eviction_queue_iterator_;
+  bool eviction_has_been_drawn_since_updated_;
+
+  static void EvictionScheduleDoEvict();
+  static void EvictionDoEvict();
+  static base::LazyInstance<EvictionQueue> eviction_queue_;
+  static bool eviction_scheduled_;
 };
 
 }  // namespace content

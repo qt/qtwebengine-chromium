@@ -31,7 +31,6 @@
 #ifndef V8EventListener_h
 #define V8EventListener_h
 
-#include "bindings/v8/DOMWrapperWorld.h"
 #include "bindings/v8/V8AbstractEventListener.h"
 #include <v8.h>
 #include "wtf/PassRefPtr.h"
@@ -39,23 +38,23 @@
 namespace WebCore {
 
     class Event;
-    class Frame;
+    class LocalFrame;
 
     // V8EventListener is a wrapper of a JS object implements EventListener interface (has handleEvent(event) method), or a JS function
     // that can handle the event.
     class V8EventListener : public V8AbstractEventListener {
     public:
-        static PassRefPtr<V8EventListener> create(v8::Local<v8::Object> listener, bool isAttribute, v8::Isolate* isolate)
+        static PassRefPtr<V8EventListener> create(v8::Local<v8::Object> listener, bool isAttribute, ScriptState* scriptState)
         {
-            return adoptRef(new V8EventListener(listener, isAttribute, isolate));
+            return adoptRef(new V8EventListener(listener, isAttribute, scriptState));
         }
 
     protected:
-        V8EventListener(v8::Local<v8::Object> listener, bool isAttribute, v8::Isolate*);
+        V8EventListener(v8::Local<v8::Object> listener, bool isAttribute, ScriptState*);
 
         v8::Local<v8::Function> getListenerFunction(ExecutionContext*);
 
-        virtual v8::Local<v8::Value> callListenerFunction(ExecutionContext*, v8::Handle<v8::Value> jsEvent, Event*);
+        virtual v8::Local<v8::Value> callListenerFunction(v8::Handle<v8::Value> jsEvent, Event*) OVERRIDE;
      };
 
 } // namespace WebCore

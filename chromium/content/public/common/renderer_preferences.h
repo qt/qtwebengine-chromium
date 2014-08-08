@@ -97,9 +97,6 @@ struct CONTENT_EXPORT RendererPreferences {
   // Browser wants a look at all top-level navigation requests.
   bool browser_handles_all_top_level_requests;
 
-  // Browser wants a look at all top-level link clicks.
-  bool browser_handles_all_top_level_link_clicks;
-
   // Cursor blink rate in seconds.
   // Currently only changed from default on Linux.  Uses |gtk-cursor-blink|
   // from GtkSettings.
@@ -147,6 +144,10 @@ struct CONTENT_EXPORT RendererPreferences {
 
   // Determines whether plugins are allowed to enter fullscreen mode.
   bool plugin_fullscreen_allowed;
+
+  // Whether video-overlay (hole-punching) should be used for the embedded
+  // encrypted video.  Currently only used by Android.
+  bool use_video_overlay_for_embedded_encrypted_video;
 };
 
 }  // namespace content

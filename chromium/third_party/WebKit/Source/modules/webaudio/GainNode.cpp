@@ -79,12 +79,6 @@ void GainNode::process(size_t framesToProcess)
     }
 }
 
-void GainNode::reset()
-{
-    // Snap directly to desired gain.
-    m_lastGain = gain()->value();
-}
-
 // FIXME: this can go away when we do mixing with gain directly in summing junction of AudioNodeInput
 //
 // As soon as we know the channel count of our input, we can lazily initialize.
@@ -112,6 +106,12 @@ void GainNode::checkNumberOfChannelsForInput(AudioNodeInput* input)
     }
 
     AudioNode::checkNumberOfChannelsForInput(input);
+}
+
+void GainNode::trace(Visitor* visitor)
+{
+    visitor->trace(m_gain);
+    AudioNode::trace(visitor);
 }
 
 } // namespace WebCore

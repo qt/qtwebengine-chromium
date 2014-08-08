@@ -208,7 +208,7 @@ class PluginDataRemoverImpl::Context
     // the browser).
 #if defined(OS_WIN)
     base::FilePath plugin_data_path =
-        profile_path.Append(base::FilePath(UTF8ToUTF16(plugin_name_)));
+        profile_path.Append(base::FilePath(base::UTF8ToUTF16(plugin_name_)));
 #else
     base::FilePath plugin_data_path =
         profile_path.Append(base::FilePath(plugin_name_));
@@ -226,7 +226,7 @@ class PluginDataRemoverImpl::Context
       return;
 
     DCHECK(!channel_.get());
-    channel_.reset(new IPC::Channel(handle, IPC::Channel::MODE_CLIENT, this));
+    channel_ = IPC::Channel::CreateClient(handle, this);
     if (!channel_->Connect()) {
       NOTREACHED() << "Couldn't connect to plugin";
       SignalDone();

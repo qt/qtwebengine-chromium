@@ -33,7 +33,7 @@
 
 namespace WebCore {
 
-PassRefPtr<AnimatableValue> AnimatableLengthPoint::interpolateTo(const AnimatableValue* value, double fraction) const
+PassRefPtrWillBeRawPtr<AnimatableValue> AnimatableLengthPoint::interpolateTo(const AnimatableValue* value, double fraction) const
 {
     const AnimatableLengthPoint* lengthPoint = toAnimatableLengthPoint(value);
     return AnimatableLengthPoint::create(
@@ -41,18 +41,17 @@ PassRefPtr<AnimatableValue> AnimatableLengthPoint::interpolateTo(const Animatabl
         AnimatableValue::interpolate(this->y(), lengthPoint->y(), fraction));
 }
 
-PassRefPtr<AnimatableValue> AnimatableLengthPoint::addWith(const AnimatableValue* value) const
-{
-    const AnimatableLengthPoint* lengthPoint = toAnimatableLengthPoint(value);
-    return AnimatableLengthPoint::create(
-        AnimatableValue::add(this->x(), lengthPoint->x()),
-        AnimatableValue::add(this->y(), lengthPoint->y()));
-}
-
 bool AnimatableLengthPoint::equalTo(const AnimatableValue* value) const
 {
     const AnimatableLengthPoint* lengthPoint = toAnimatableLengthPoint(value);
     return x()->equals(lengthPoint->x()) && y()->equals(lengthPoint->y());
+}
+
+void AnimatableLengthPoint::trace(Visitor* visitor)
+{
+    visitor->trace(m_x);
+    visitor->trace(m_y);
+    AnimatableValue::trace(visitor);
 }
 
 }

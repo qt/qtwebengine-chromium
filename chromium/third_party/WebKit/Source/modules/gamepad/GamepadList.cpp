@@ -26,28 +26,34 @@
 #include "config.h"
 #include "modules/gamepad/GamepadList.h"
 
-
 namespace WebCore {
+
+GamepadList::GamepadList()
+{
+    ScriptWrappable::init(this);
+}
 
 GamepadList::~GamepadList()
 {
 }
 
-void GamepadList::set(unsigned index, PassRefPtr<Gamepad> gamepad)
+void GamepadList::set(unsigned index, Gamepad* gamepad)
 {
-    if (index >= kMaximumGamepads)
+    if (index >= blink::WebGamepads::itemsLengthCap)
         return;
     m_items[index] = gamepad;
-}
-
-unsigned GamepadList::length() const
-{
-    return kMaximumGamepads;
 }
 
 Gamepad* GamepadList::item(unsigned index)
 {
     return index < length() ? m_items[index].get() : 0;
+}
+
+void GamepadList::trace(Visitor* visitor)
+{
+    for (unsigned index = 0; index < blink::WebGamepads::itemsLengthCap; index++) {
+        visitor->trace(m_items[index]);
+    }
 }
 
 } // namespace WebCore

@@ -12,6 +12,7 @@
 #include "cc/test/fake_output_surface.h"
 #include "cc/test/fake_output_surface_client.h"
 #include "cc/test/fake_proxy.h"
+#include "cc/test/test_shared_bitmap_manager.h"
 #include "cc/test/tiled_layer_test_common.h"
 #include "cc/trees/single_thread_proxy.h"  // For DebugScopedSetImplThread
 #include "testing/gtest/include/gtest/gtest.h"
@@ -26,8 +27,10 @@ class PrioritizedResourceTest : public testing::Test {
         output_surface_(FakeOutputSurface::Create3d()) {
     DebugScopedSetImplThread impl_thread(&proxy_);
     CHECK(output_surface_->BindToClient(&output_surface_client_));
-    resource_provider_ =
-        ResourceProvider::Create(output_surface_.get(), NULL, 0, false, 1);
+    shared_bitmap_manager_.reset(new TestSharedBitmapManager());
+    resource_provider_ = ResourceProvider::Create(
+        output_surface_.get(), shared_bitmap_manager_.get(), 0, false, 1,
+        false);
   }
 
   virtual ~PrioritizedResourceTest() {
@@ -78,11 +81,9 @@ class PrioritizedResourceTest : public testing::Test {
 
   void ResourceManagerAssertInvariants(
       PrioritizedResourceManager* resource_manager) {
-#ifndef NDEBUG
     DebugScopedSetImplThreadAndMainThreadBlocked
         impl_thread_and_main_thread_blocked(&proxy_);
     resource_manager->AssertInvariants();
-#endif
   }
 
   bool TextureBackingIsAbovePriorityCutoff(PrioritizedResource* texture) {
@@ -111,6 +112,7 @@ class PrioritizedResourceTest : public testing::Test {
   const ResourceFormat texture_format_;
   FakeOutputSurfaceClient output_surface_client_;
   scoped_ptr<OutputSurface> output_surface_;
+  scoped_ptr<SharedBitmapManager> shared_bitmap_manager_;
   scoped_ptr<ResourceProvider> resource_provider_;
 };
 

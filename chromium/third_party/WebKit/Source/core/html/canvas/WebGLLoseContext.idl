@@ -24,8 +24,9 @@
  */
 
 [
-    NoInterfaceObject
+    NoInterfaceObject,
+    TypeChecking=Interface|Nullable,
 ] interface WebGLLoseContext {
-    [StrictTypeChecking] void loseContext();
-    [StrictTypeChecking] void restoreContext();
+    void loseContext();
+    void restoreContext();
 };

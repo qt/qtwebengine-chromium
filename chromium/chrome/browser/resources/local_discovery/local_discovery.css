@@ -20,9 +20,14 @@ header {
 }
 
 .device {
+  background: url(device.png) no-repeat;
   margin: 23px 0;
   max-width: 695px;
   overflow: hidden;
+}
+
+html[dir='rtl'] .device {
+    background-position: right top;
 }
 
 .device .device-info {
@@ -88,6 +93,10 @@ html[dir='rtl'] .controls {
   padding-top: 5px;
 }
 
+.inline-login-promo {
+    display: inline;
+}
+
 .inline-spinner {
   position: relative;
   top: 3px;
@@ -103,4 +112,20 @@ section {
 
 .dialog-contents {
     padding-left: 17px;
+}
+
+#back-button {
+  background: url('chrome://theme/IDR_CHEVRON_LEFT') left no-repeat;
+  margin-bottom: 25px;
+  margin-top: 6px;
+  padding-left: 23px;
+}
+
+html[dir='rtl'] #back-button {
+  transform: scaleX(-1);
+}
+
+html[dir='rtl'] #back-button span {
+  display: inline-block;
+  transform: scaleX(-1);
 }

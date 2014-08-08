@@ -17,6 +17,8 @@
 #include "net/quic/quic_framer.h"
 #include "net/quic/quic_protocol.h"
 #include "net/quic/quic_utils.h"
+#include "net/tools/epoll_server/epoll_server.h"
+#include "net/tools/quic/quic_server_session.h"
 
 using base::StringPiece;
 using std::make_pair;
@@ -26,23 +28,24 @@ namespace tools {
 
 namespace {
 
-// Time period for which the guid should live in time wait state..
+// Time period for which the connection_id should live in time wait state..
 const int kTimeWaitSeconds = 5;
 
 }  // namespace
 
 // A very simple alarm that just informs the QuicTimeWaitListManager to clean
-// up old guids. This alarm should be unregistered and deleted before the
-// QuicTimeWaitListManager is deleted.
-class GuidCleanUpAlarm : public EpollAlarm {
+// up old connection_ids. This alarm should be unregistered and deleted before
+// the QuicTimeWaitListManager is deleted.
+class ConnectionIdCleanUpAlarm : public EpollAlarm {
  public:
-  explicit GuidCleanUpAlarm(QuicTimeWaitListManager* time_wait_list_manager)
+  explicit ConnectionIdCleanUpAlarm(
+      QuicTimeWaitListManager* time_wait_list_manager)
       : time_wait_list_manager_(time_wait_list_manager) {
   }
 
   virtual int64 OnAlarm() OVERRIDE {
     EpollAlarm::OnAlarm();
-    time_wait_list_manager_->CleanUpOldGuids();
+    time_wait_list_manager_->CleanUpOldConnectionIds();
     // Let the time wait manager register the alarm at appropriate time.
     return 0;
   }
@@ -52,19 +55,9 @@ class GuidCleanUpAlarm : public EpollAlarm {
   QuicTimeWaitListManager* time_wait_list_manager_;
 };
 
-struct QuicTimeWaitListManager::GuidAddTime {
-  GuidAddTime(QuicGuid guid, const QuicTime& time)
-      : guid(guid),
-        time_added(time) {
-  }
-
-  QuicGuid guid;
-  QuicTime time_added;
-};
-
 // This class stores pending public reset packets to be sent to clients.
 // server_address - server address on which a packet what was received for
-//                  a guid in time wait state.
+//                  a connection_id in time wait state.
 // client_address - address of the client that sent that packet. Needed to send
 //                  the public reset packet back to the client.
 // packet - the pending public reset packet that is to be sent to the client.
@@ -93,174 +86,103 @@ class QuicTimeWaitListManager::QueuedPacket {
 
 QuicTimeWaitListManager::QuicTimeWaitListManager(
     QuicPacketWriter* writer,
+    QuicServerSessionVisitor* visitor,
     EpollServer* epoll_server,
     const QuicVersionVector& supported_versions)
-    : framer_(supported_versions,
-              QuicTime::Zero(),  // unused
-              true),
-      epoll_server_(epoll_server),
+    : epoll_server_(epoll_server),
       kTimeWaitPeriod_(QuicTime::Delta::FromSeconds(kTimeWaitSeconds)),
-      guid_clean_up_alarm_(new GuidCleanUpAlarm(this)),
-      clock_(epoll_server),
+      connection_id_clean_up_alarm_(new ConnectionIdCleanUpAlarm(this)),
+      clock_(epoll_server_),
       writer_(writer),
-      is_write_blocked_(false) {
-  framer_.set_visitor(this);
-  SetGuidCleanUpAlarm();
+      visitor_(visitor) {
+  SetConnectionIdCleanUpAlarm();
 }
 
 QuicTimeWaitListManager::~QuicTimeWaitListManager() {
-  guid_clean_up_alarm_->UnregisterIfRegistered();
-  STLDeleteElements(&time_ordered_guid_list_);
+  connection_id_clean_up_alarm_->UnregisterIfRegistered();
   STLDeleteElements(&pending_packets_queue_);
-  for (GuidMapIterator it = guid_map_.begin(); it != guid_map_.end(); ++it) {
+  for (ConnectionIdMap::iterator it = connection_id_map_.begin();
+       it != connection_id_map_.end();
+       ++it) {
     delete it->second.close_packet;
   }
 }
 
-void QuicTimeWaitListManager::AddGuidToTimeWait(
-    QuicGuid guid,
+void QuicTimeWaitListManager::AddConnectionIdToTimeWait(
+    QuicConnectionId connection_id,
     QuicVersion version,
     QuicEncryptedPacket* close_packet) {
-  DCHECK(!IsGuidInTimeWait(guid));
-  // Initialize the guid with 0 packets received.
-  GuidData data(0, version, close_packet);
-  guid_map_.insert(make_pair(guid, data));
-  time_ordered_guid_list_.push_back(new GuidAddTime(guid,
-                                                    clock_.ApproximateNow()));
+  DVLOG(1) << "Adding " << connection_id << " to the time wait list.";
+  int num_packets = 0;
+  ConnectionIdMap::iterator it = connection_id_map_.find(connection_id);
+  if (it != connection_id_map_.end()) {  // Replace record if it is reinserted.
+    num_packets = it->second.num_packets;
+    delete it->second.close_packet;
+    connection_id_map_.erase(it);
+  }
+  ConnectionIdData data(num_packets, version, clock_.ApproximateNow(),
+                        close_packet);
+  connection_id_map_.insert(make_pair(connection_id, data));
 }
 
-bool QuicTimeWaitListManager::IsGuidInTimeWait(QuicGuid guid) const {
-  return guid_map_.find(guid) != guid_map_.end();
+bool QuicTimeWaitListManager::IsConnectionIdInTimeWait(
+    QuicConnectionId connection_id) const {
+  return ContainsKey(connection_id_map_, connection_id);
+}
+
+QuicVersion QuicTimeWaitListManager::GetQuicVersionFromConnectionId(
+    QuicConnectionId connection_id) {
+  ConnectionIdMap::iterator it = connection_id_map_.find(connection_id);
+  DCHECK(it != connection_id_map_.end());
+  return (it->second).version;
+}
+
+void QuicTimeWaitListManager::OnCanWrite() {
+  while (!pending_packets_queue_.empty()) {
+    QueuedPacket* queued_packet = pending_packets_queue_.front();
+    if (!WriteToWire(queued_packet)) {
+      return;
+    }
+    pending_packets_queue_.pop_front();
+    delete queued_packet;
+  }
 }
 
 void QuicTimeWaitListManager::ProcessPacket(
     const IPEndPoint& server_address,
     const IPEndPoint& client_address,
-    QuicGuid guid,
-    const QuicEncryptedPacket& packet) {
-  DCHECK(IsGuidInTimeWait(guid));
-  server_address_ = server_address;
-  client_address_ = client_address;
-
-  // Set the framer to the appropriate version for this GUID, before processing.
-  QuicVersion version = GetQuicVersionFromGuid(guid);
-  framer_.set_version(version);
-
-  framer_.ProcessPacket(packet);
-}
-
-QuicVersion QuicTimeWaitListManager::GetQuicVersionFromGuid(QuicGuid guid) {
-  GuidMapIterator it = guid_map_.find(guid);
-  DCHECK(it != guid_map_.end());
-  return (it->second).version;
-}
-
-bool QuicTimeWaitListManager::OnCanWrite() {
-  is_write_blocked_ = false;
-  while (!is_write_blocked_ && !pending_packets_queue_.empty()) {
-    QueuedPacket* queued_packet = pending_packets_queue_.front();
-    WriteToWire(queued_packet);
-    if (!is_write_blocked_) {
-      pending_packets_queue_.pop_front();
-      delete queued_packet;
-    }
-  }
-
-  return !is_write_blocked_;
-}
-
-void QuicTimeWaitListManager::OnError(QuicFramer* framer) {
-  DLOG(INFO) << QuicUtils::ErrorToString(framer->error());
-}
-
-bool QuicTimeWaitListManager::OnProtocolVersionMismatch(
-    QuicVersion received_version) {
-  // Drop such packets whose version don't match.
-  return false;
-}
-
-bool QuicTimeWaitListManager::OnUnauthenticatedHeader(
-    const QuicPacketHeader& header) {
+    QuicConnectionId connection_id,
+    QuicPacketSequenceNumber sequence_number,
+    const QuicEncryptedPacket& /*packet*/) {
+  DCHECK(IsConnectionIdInTimeWait(connection_id));
+  DVLOG(1) << "Processing " << connection_id << " in time wait state.";
   // TODO(satyamshekhar): Think about handling packets from different client
   // addresses.
-  GuidMapIterator it = guid_map_.find(header.public_header.guid);
-  DCHECK(it != guid_map_.end());
+  ConnectionIdMap::iterator it = connection_id_map_.find(connection_id);
+  DCHECK(it != connection_id_map_.end());
   // Increment the received packet count.
   ++((it->second).num_packets);
   if (!ShouldSendResponse((it->second).num_packets)) {
-    return false;
+    return;
   }
   if (it->second.close_packet) {
      QueuedPacket* queued_packet =
-         new QueuedPacket(server_address_,
-                          client_address_,
+         new QueuedPacket(server_address,
+                          client_address,
                           it->second.close_packet->Clone());
      // Takes ownership of the packet.
      SendOrQueuePacket(queued_packet);
   } else {
-    // We don't need the packet anymore. Just tell the client what sequence
-    // number we rejected.
-    SendPublicReset(server_address_,
-                    client_address_,
-                    header.public_header.guid,
-                    header.packet_sequence_number);
+    SendPublicReset(server_address,
+                    client_address,
+                    connection_id,
+                    sequence_number);
   }
-  // Never process the body of the packet in time wait state.
-  return false;
 }
 
-bool QuicTimeWaitListManager::OnPacketHeader(const QuicPacketHeader& header) {
-  DCHECK(false);
-  return false;
-}
-
-void QuicTimeWaitListManager::OnRevivedPacket() {
-  DCHECK(false);
-}
-
-void QuicTimeWaitListManager::OnFecProtectedPayload(StringPiece /*payload*/) {
-  DCHECK(false);
-}
-
-bool QuicTimeWaitListManager::OnStreamFrame(const QuicStreamFrame& /*frame*/) {
-  DCHECK(false);
-  return false;
-}
-
-bool QuicTimeWaitListManager::OnAckFrame(const QuicAckFrame& /*frame*/) {
-  DCHECK(false);
-  return false;
-}
-
-bool QuicTimeWaitListManager::OnCongestionFeedbackFrame(
-    const QuicCongestionFeedbackFrame& /*frame*/) {
-  DCHECK(false);
-  return false;
-}
-
-bool QuicTimeWaitListManager::OnRstStreamFrame(
-    const QuicRstStreamFrame& /*frame*/) {
-  DCHECK(false);
-  return false;
-}
-
-bool QuicTimeWaitListManager::OnConnectionCloseFrame(
-    const QuicConnectionCloseFrame & /*frame*/) {
-  DCHECK(false);
-  return false;
-}
-
-bool QuicTimeWaitListManager::OnGoAwayFrame(const QuicGoAwayFrame& /*frame*/) {
-  DCHECK(false);
-  return false;
-}
-
-void QuicTimeWaitListManager::OnFecData(const QuicFecData& /*fec*/) {
-  DCHECK(false);
-}
-
-// Returns true if the number of packets received for this guid is a power of 2
-// to throttle the number of public reset packets we send to a client.
+// Returns true if the number of packets received for this connection_id is a
+// power of 2 to throttle the number of public reset packets we send to a
+// client.
 bool QuicTimeWaitListManager::ShouldSendResponse(int received_packet_count) {
   return (received_packet_count & (received_packet_count - 1)) == 0;
 }
@@ -268,95 +190,100 @@ bool QuicTimeWaitListManager::ShouldSendResponse(int received_packet_count) {
 void QuicTimeWaitListManager::SendPublicReset(
     const IPEndPoint& server_address,
     const IPEndPoint& client_address,
-    QuicGuid guid,
+    QuicConnectionId connection_id,
     QuicPacketSequenceNumber rejected_sequence_number) {
   QuicPublicResetPacket packet;
-  packet.public_header.guid = guid;
+  packet.public_header.connection_id = connection_id;
   packet.public_header.reset_flag = true;
   packet.public_header.version_flag = false;
   packet.rejected_sequence_number = rejected_sequence_number;
-  // TODO(satyamshekhar): generate a valid nonce for this guid.
+  // TODO(satyamshekhar): generate a valid nonce for this connection_id.
   packet.nonce_proof = 1010101;
+  packet.client_address = client_address;
   QueuedPacket* queued_packet = new QueuedPacket(
       server_address,
       client_address,
-      QuicFramer::BuildPublicResetPacket(packet));
+      BuildPublicReset(packet));
   // Takes ownership of the packet.
   SendOrQueuePacket(queued_packet);
+}
+
+QuicEncryptedPacket* QuicTimeWaitListManager::BuildPublicReset(
+    const QuicPublicResetPacket& packet) {
+  return QuicFramer::BuildPublicResetPacket(packet);
 }
 
 // Either sends the packet and deletes it or makes pending queue the
 // owner of the packet.
 void QuicTimeWaitListManager::SendOrQueuePacket(QueuedPacket* packet) {
-  if (!is_write_blocked_) {
-    // TODO(satyamshekhar): Handle packets that fail due to error other than
-    // EAGAIN or EWOULDBLOCK.
-    WriteToWire(packet);
-  }
-
-  if (is_write_blocked_) {
+  if (WriteToWire(packet)) {
+    delete packet;
+  } else {
     // pending_packets_queue takes the ownership of the queued packet.
     pending_packets_queue_.push_back(packet);
-  } else {
-    delete packet;
   }
 }
 
-void QuicTimeWaitListManager::WriteToWire(QueuedPacket* queued_packet) {
-  DCHECK(!is_write_blocked_);
+bool QuicTimeWaitListManager::WriteToWire(QueuedPacket* queued_packet) {
+  if (writer_->IsWriteBlocked()) {
+    visitor_->OnWriteBlocked(this);
+    return false;
+  }
   WriteResult result = writer_->WritePacket(
       queued_packet->packet()->data(),
       queued_packet->packet()->length(),
       queued_packet->server_address().address(),
-      queued_packet->client_address(),
-      this);
-
+      queued_packet->client_address());
   if (result.status == WRITE_STATUS_BLOCKED) {
-    is_write_blocked_ = true;
+    // If blocked and unbuffered, return false to retry sending.
+    DCHECK(writer_->IsWriteBlocked());
+    visitor_->OnWriteBlocked(this);
+    return writer_->IsWriteBlockedDataBuffered();
   } else if (result.status == WRITE_STATUS_ERROR) {
     LOG(WARNING) << "Received unknown error while sending reset packet to "
                  << queued_packet->client_address().ToString() << ": "
                  << strerror(result.error_code);
   }
+  return true;
 }
 
-void QuicTimeWaitListManager::SetGuidCleanUpAlarm() {
-  guid_clean_up_alarm_->UnregisterIfRegistered();
+void QuicTimeWaitListManager::SetConnectionIdCleanUpAlarm() {
+  connection_id_clean_up_alarm_->UnregisterIfRegistered();
   int64 next_alarm_interval;
-  if (!time_ordered_guid_list_.empty()) {
-    GuidAddTime* oldest_guid = time_ordered_guid_list_.front();
+  if (!connection_id_map_.empty()) {
+    QuicTime oldest_connection_id =
+        connection_id_map_.begin()->second.time_added;
     QuicTime now = clock_.ApproximateNow();
-    DCHECK(now.Subtract(oldest_guid->time_added) < kTimeWaitPeriod_);
-    next_alarm_interval = oldest_guid->time_added
-        .Add(kTimeWaitPeriod_)
-        .Subtract(now)
-        .ToMicroseconds();
+    if (now.Subtract(oldest_connection_id) < kTimeWaitPeriod_) {
+      next_alarm_interval = oldest_connection_id.Add(kTimeWaitPeriod_)
+                                                .Subtract(now)
+                                                .ToMicroseconds();
+    } else {
+      LOG(ERROR) << "ConnectionId lingered for longer than kTimeWaitPeriod";
+      next_alarm_interval = 0;
+    }
   } else {
-    // No guids added so none will expire before kTimeWaitPeriod_.
+    // No connection_ids added so none will expire before kTimeWaitPeriod_.
     next_alarm_interval = kTimeWaitPeriod_.ToMicroseconds();
   }
 
-  epoll_server_->RegisterAlarmApproximateDelta(next_alarm_interval,
-                                               guid_clean_up_alarm_.get());
+  epoll_server_->RegisterAlarmApproximateDelta(
+      next_alarm_interval, connection_id_clean_up_alarm_.get());
 }
 
-void QuicTimeWaitListManager::CleanUpOldGuids() {
+void QuicTimeWaitListManager::CleanUpOldConnectionIds() {
   QuicTime now = clock_.ApproximateNow();
-  while (time_ordered_guid_list_.size() > 0) {
-    DCHECK_EQ(time_ordered_guid_list_.size(), guid_map_.size());
-    GuidAddTime* oldest_guid = time_ordered_guid_list_.front();
-    if (now.Subtract(oldest_guid->time_added) < kTimeWaitPeriod_) {
+  while (!connection_id_map_.empty()) {
+    ConnectionIdMap::iterator it = connection_id_map_.begin();
+    QuicTime oldest_connection_id = it->second.time_added;
+    if (now.Subtract(oldest_connection_id) < kTimeWaitPeriod_) {
       break;
     }
-    // This guid has lived its age, retire it now.
-    GuidMapIterator it = guid_map_.find(oldest_guid->guid);
-    DCHECK(it != guid_map_.end());
+    // This connection_id has lived its age, retire it now.
     delete it->second.close_packet;
-    guid_map_.erase(oldest_guid->guid);
-    time_ordered_guid_list_.pop_front();
-    delete oldest_guid;
+    connection_id_map_.erase(it);
   }
-  SetGuidCleanUpAlarm();
+  SetConnectionIdCleanUpAlarm();
 }
 
 }  // namespace tools

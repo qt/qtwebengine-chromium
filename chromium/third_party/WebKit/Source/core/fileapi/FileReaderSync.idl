@@ -29,7 +29,8 @@
  */
 
 [
-    GlobalContext=WorkerGlobalScope,
+    WillBeGarbageCollected,
+    Exposed=Worker,
     Constructor
 ] interface FileReaderSync {
     [CallWith=ExecutionContext, RaisesException] ArrayBuffer readAsArrayBuffer(Blob blob);

@@ -6,8 +6,9 @@
 
 #include "third_party/skia/include/core/SkPaint.h"
 #include "third_party/skia/include/core/SkPath.h"
-#include "ui/base/accessibility/accessible_view_state.h"
+#include "ui/accessibility/ax_view_state.h"
 #include "ui/gfx/canvas.h"
+#include "ui/native_theme/native_theme_aura.h"
 #include "ui/views/border.h"
 #include "ui/views/bubble/bubble_border.h"
 #include "ui/views/controls/menu/menu_config.h"
@@ -15,10 +16,6 @@
 #include "ui/views/controls/menu/menu_item_view.h"
 #include "ui/views/controls/menu/submenu_view.h"
 #include "ui/views/round_rect_painter.h"
-
-#if defined(USE_AURA)
-#include "ui/native_theme/native_theme_aura.h"
-#endif
 
 using ui::NativeTheme;
 
@@ -43,7 +40,7 @@ class MenuScrollButton : public View {
         pref_height_(MenuItemView::pref_menu_height()) {
   }
 
-  virtual gfx::Size GetPreferredSize() OVERRIDE {
+  virtual gfx::Size GetPreferredSize() const OVERRIDE {
     return gfx::Size(
         host_->GetMenuItem()->GetMenuConfig().scroll_arrow_height * 2 - 1,
         pref_height_);
@@ -246,7 +243,7 @@ void MenuScrollViewContainer::Layout() {
   scroll_view_->Layout();
 }
 
-gfx::Size MenuScrollViewContainer::GetPreferredSize() {
+gfx::Size MenuScrollViewContainer::GetPreferredSize() const {
   gfx::Size prefsize = scroll_view_->GetContents()->GetPreferredSize();
   gfx::Insets insets = GetInsets();
   prefsize.Enlarge(insets.width(), insets.height());
@@ -254,15 +251,15 @@ gfx::Size MenuScrollViewContainer::GetPreferredSize() {
 }
 
 void MenuScrollViewContainer::GetAccessibleState(
-    ui::AccessibleViewState* state) {
+    ui::AXViewState* state) {
   // Get the name from the submenu view.
   content_view_->GetAccessibleState(state);
 
   // Now change the role.
-  state->role = ui::AccessibilityTypes::ROLE_MENUBAR;
+  state->role = ui::AX_ROLE_MENU_BAR;
   // Some AT (like NVDA) will not process focus events on menu item children
   // unless a parent claims to be focused.
-  state->state = ui::AccessibilityTypes::STATE_FOCUSED;
+  state->AddStateFlag(ui::AX_STATE_FOCUSED);
 }
 
 void MenuScrollViewContainer::OnBoundsChanged(
@@ -284,7 +281,7 @@ void MenuScrollViewContainer::CreateDefaultBorder() {
   int padding = menu_config.corner_radius > 0 ?
         kBorderPaddingDueToRoundedCorners : 0;
 
-#if defined(USE_AURA)
+#if defined(USE_AURA) && !(defined(OS_LINUX) && !defined(OS_CHROMEOS))
   if (menu_config.native_theme == ui::NativeThemeAura::instance()) {
     // In case of NativeThemeAura the border gets drawn with the shadow.
     // Furthermore no additional padding is wanted.
@@ -299,13 +296,14 @@ void MenuScrollViewContainer::CreateDefaultBorder() {
   int right = menu_config.menu_horizontal_border_size + padding;
 
   if (use_border) {
-    set_border(views::Border::CreateBorderPainter(
-        new views::RoundRectPainter(menu_config.native_theme->GetSystemColor(
+    SetBorder(views::Border::CreateBorderPainter(
+        new views::RoundRectPainter(
+            menu_config.native_theme->GetSystemColor(
                 ui::NativeTheme::kColorId_MenuBorderColor),
             menu_config.corner_radius),
-            gfx::Insets(top, left, bottom, right)));
+        gfx::Insets(top, left, bottom, right)));
   } else {
-    set_border(Border::CreateEmptyBorder(top, left, bottom, right));
+    SetBorder(Border::CreateEmptyBorder(top, left, bottom, right));
   }
 }
 
@@ -313,21 +311,20 @@ void MenuScrollViewContainer::CreateBubbleBorder() {
   bubble_border_ = new BubbleBorder(arrow_,
                                     BubbleBorder::SMALL_SHADOW,
                                     SK_ColorWHITE);
-  set_border(bubble_border_);
+  SetBorder(scoped_ptr<Border>(bubble_border_));
   set_background(new BubbleBackground(bubble_border_));
 }
 
-BubbleBorder::Arrow
-MenuScrollViewContainer::BubbleBorderTypeFromAnchor(
-    MenuItemView::AnchorPosition anchor) {
+BubbleBorder::Arrow MenuScrollViewContainer::BubbleBorderTypeFromAnchor(
+    MenuAnchorPosition anchor) {
   switch (anchor) {
-    case views::MenuItemView::BUBBLE_LEFT:
+    case MENU_ANCHOR_BUBBLE_LEFT:
       return BubbleBorder::RIGHT_CENTER;
-    case views::MenuItemView::BUBBLE_RIGHT:
+    case MENU_ANCHOR_BUBBLE_RIGHT:
       return BubbleBorder::LEFT_CENTER;
-    case views::MenuItemView::BUBBLE_ABOVE:
+    case MENU_ANCHOR_BUBBLE_ABOVE:
       return BubbleBorder::BOTTOM_CENTER;
-    case views::MenuItemView::BUBBLE_BELOW:
+    case MENU_ANCHOR_BUBBLE_BELOW:
       return BubbleBorder::TOP_CENTER;
     default:
       return BubbleBorder::NONE;

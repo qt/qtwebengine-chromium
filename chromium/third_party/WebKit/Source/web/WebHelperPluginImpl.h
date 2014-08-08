@@ -31,66 +31,47 @@
 #ifndef WebHelperPluginImpl_h
 #define WebHelperPluginImpl_h
 
-#include "WebHelperPlugin.h"
-#include "wtf/OwnPtr.h"
-#include "wtf/RefCounted.h"
+#include "platform/Timer.h"
+#include "public/web/WebHelperPlugin.h"
+#include "wtf/FastAllocBase.h"
+#include "wtf/Noncopyable.h"
+#include "wtf/PassOwnPtr.h"
+#include "wtf/RefPtr.h"
+#include "wtf/text/WTFString.h"
 
 namespace WebCore {
-class Page;
-}
+class HTMLObjectElement;
+} // namespace WebCore
 
 namespace blink {
 
-class HelperPluginChromeClient;
-class HelperPluginFrameClient;
-class WebDocument;
-class WebFrameImpl;
-class WebViewImpl;
-class WebWidgetClient;
+class WebLocalFrameImpl;
+class WebPluginContainerImpl;
 
-// Hosts a simple page that instantiates a plugin using an <object> tag.
-// The widget is offscreen, and the plugin will not receive painting, resize, etc. events.
-class WebHelperPluginImpl : public WebHelperPlugin,
-                            public RefCounted<WebHelperPluginImpl> {
+// Utility class to host helper plugins for media. Internally, it creates a detached
+// HTMLPluginElement to host the plugin and uses FrameLoaderClient::createPlugin() to instantiate
+// the requested plugin.
+class WebHelperPluginImpl FINAL : public WebHelperPlugin {
     WTF_MAKE_NONCOPYABLE(WebHelperPluginImpl);
     WTF_MAKE_FAST_ALLOCATED;
-
 public:
-    virtual ~WebHelperPluginImpl();
-    bool initialize(const String& pluginType, const WebDocument& hostDocument, WebViewImpl*);
-    void closeHelperPlugin();
-
     // WebHelperPlugin methods:
-    virtual void initializeFrame(WebFrameClient*) OVERRIDE;
     virtual WebPlugin* getPlugin() OVERRIDE;
+    virtual void destroy() OVERRIDE;
 
 private:
-    explicit WebHelperPluginImpl(WebWidgetClient*);
-    bool initializePage(const String& pluginType, const WebDocument& hostDocument);
-    void destroyPage();
-
-    // WebWidget methods:
-    virtual void layout() OVERRIDE;
-    virtual void setFocus(bool) OVERRIDE;
-    virtual void close() OVERRIDE;
-    virtual bool isHelperPlugin() const OVERRIDE { return true; }
-
-    WebWidgetClient* m_widgetClient;
-    WebViewImpl* m_webView;
-    WebFrameImpl* m_mainFrame;
-    OwnPtr<WebCore::Page> m_page;
-    OwnPtr<HelperPluginChromeClient> m_chromeClient;
-    OwnPtr<HelperPluginFrameClient> m_frameClient;
-
     friend class WebHelperPlugin;
-    friend class HelperPluginChromeClient;
-};
 
-inline WebHelperPluginImpl* toWebHelperPluginImpl(WebWidget* widget)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!widget || widget->isHelperPlugin());
-    return static_cast<WebHelperPluginImpl*>(widget);
-}
+    WebHelperPluginImpl();
+    virtual ~WebHelperPluginImpl();
+
+    bool initialize(const String& pluginType, WebLocalFrameImpl*);
+    void reallyDestroy(WebCore::Timer<WebHelperPluginImpl>*);
+
+    WebCore::Timer<WebHelperPluginImpl> m_destructionTimer;
+    RefPtrWillBePersistent<WebCore::HTMLObjectElement> m_objectElement;
+    RefPtr<WebPluginContainerImpl> m_pluginContainer;
+};
 
 } // namespace blink
 

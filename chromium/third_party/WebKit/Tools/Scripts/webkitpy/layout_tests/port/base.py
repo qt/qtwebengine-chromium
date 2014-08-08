@@ -62,9 +62,9 @@ from webkitpy.layout_tests.port import config as port_config
 from webkitpy.layout_tests.port import driver
 from webkitpy.layout_tests.port import server_process
 from webkitpy.layout_tests.port.factory import PortFactory
-from webkitpy.layout_tests.servers import apache_http_server
-from webkitpy.layout_tests.servers import http_server
-from webkitpy.layout_tests.servers import websocket_server
+from webkitpy.layout_tests.servers import apache_http
+from webkitpy.layout_tests.servers import lighttpd
+from webkitpy.layout_tests.servers import pywebsocket
 
 _log = logging.getLogger(__name__)
 
@@ -129,6 +129,9 @@ class Port(object):
     FALLBACK_PATHS = {}
 
     SUPPORTED_VERSIONS = []
+
+    # URL to the build requirements page.
+    BUILD_REQUIREMENTS_URL = ''
 
     @classmethod
     def latest_platform_fallback_path(cls):
@@ -348,6 +351,9 @@ class Port(object):
         if self._dump_reader:
             result = self._dump_reader.check_is_functional() and result
 
+        if needs_http:
+            result = self.check_httpd() and result
+
         return test_run_results.OK_EXIT_STATUS if result else test_run_results.UNEXPECTED_ERROR_EXIT_STATUS
 
     def _check_driver(self):
@@ -380,6 +386,10 @@ class Port(object):
             _log.error('To override, invoke with --nocheck-sys-deps')
             _log.error('')
             _log.error(output)
+            if self.BUILD_REQUIREMENTS_URL is not '':
+                _log.error('')
+                _log.error('For complete build requirements, please see:')
+                _log.error(self.BUILD_REQUIREMENTS_URL)
             return test_run_results.SYS_DEPS_EXIT_STATUS
         return test_run_results.OK_EXIT_STATUS
 
@@ -432,10 +442,10 @@ class Port(object):
         return 'wdiff is not installed; please install it to generate word-by-word diffs.'
 
     def check_httpd(self):
-        if self._uses_apache():
-            httpd_path = self._path_to_apache()
+        if self.uses_apache():
+            httpd_path = self.path_to_apache()
         else:
-            httpd_path = self._path_to_lighttpd()
+            httpd_path = self.path_to_lighttpd()
 
         try:
             server_name = self._filesystem.basename(httpd_path)
@@ -496,7 +506,7 @@ class Port(object):
             elif exit_code == 1:
                 result = self._filesystem.read_binary_file(native_diff_filename)
             else:
-                err_str = "image diff returned an exit code of %s" % exit_code
+                err_str = "Image diff returned an exit code of %s. See http://crbug.com/278596" % exit_code
         except OSError, e:
             err_str = 'error running image diff: %s' % str(e)
         finally:
@@ -685,6 +695,10 @@ class Port(object):
         for line in reftest_list_file.split('\n'):
             line = re.sub('#.+$', '', line)
             split_line = line.split()
+            if len(split_line) == 4:
+                # FIXME: Probably one of mozilla's extensions in the reftest.list format. Do we need to support this?
+                _log.warning("unsupported reftest.list line '%s' in %s" % (line, reftest_list_path))
+                continue
             if len(split_line) < 3:
                 continue
             expectation_type, test_file, ref_file = split_line
@@ -1087,16 +1101,16 @@ class Port(object):
         be the case when the tests aren't run on the host platform."""
         return False
 
-    def start_http_server(self, additional_dirs=None, number_of_servers=None):
+    def start_http_server(self, additional_dirs, number_of_drivers):
         """Start a web server. Raise an error if it can't start or is already running.
 
         Ports can stub this out if they don't need a web server to be running."""
         assert not self._http_server, 'Already running an http server.'
 
-        if self._uses_apache():
-            server = apache_http_server.LayoutTestApacheHttpd(self, self.results_directory(), additional_dirs=additional_dirs, number_of_servers=number_of_servers)
+        if self.uses_apache():
+            server = apache_http.ApacheHTTP(self, self.results_directory(), additional_dirs=additional_dirs, number_of_servers=(number_of_drivers * 4))
         else:
-            server = http_server.Lighttpd(self, self.results_directory(), additional_dirs=additional_dirs, number_of_servers=number_of_servers)
+            server = lighttpd.Lighttpd(self, self.results_directory())
 
         server.start()
         self._http_server = server
@@ -1107,14 +1121,13 @@ class Port(object):
         Ports can stub this out if they don't need a websocket server to be running."""
         assert not self._websocket_server, 'Already running a websocket server.'
 
-        server = websocket_server.PyWebSocket(self, self.results_directory())
+        server = pywebsocket.PyWebSocket(self, self.results_directory())
         server.start()
         self._websocket_server = server
 
     def http_server_supports_ipv6(self):
-        # Cygwin is the only platform to still use Apache 1.3, which only supports IPV4.
-        # Once it moves to Apache 2, we can drop this method altogether.
-        if self.host.platform.is_cygwin():
+        # Apache < 2.4 on win32 does not support IPv6, nor does cygwin apache.
+        if self.host.platform.is_cygwin() or self.get_option('use_apache') and self.host.platform.is_win():
             return False
         return True
 
@@ -1207,9 +1220,11 @@ class Port(object):
     def _port_specific_expectations_files(self):
         paths = []
         paths.append(self.path_from_chromium_base('skia', 'skia_test_expectations.txt'))
+        paths.append(self.path_from_chromium_base('webkit', 'tools', 'layout_tests', 'test_expectations_w3c.txt'))
         paths.append(self._filesystem.join(self.layout_tests_dir(), 'NeverFixTests'))
         paths.append(self._filesystem.join(self.layout_tests_dir(), 'StaleTestExpectations'))
         paths.append(self._filesystem.join(self.layout_tests_dir(), 'SlowTests'))
+        paths.append(self._filesystem.join(self.layout_tests_dir(), 'FlakyTests'))
 
         builder_name = self.get_option('builder_name', 'DUMMY_BUILDER_NAME')
         if builder_name == 'DUMMY_BUILDER_NAME' or '(deps)' in builder_name or builder_name in self.try_builder_names:
@@ -1247,6 +1262,8 @@ class Port(object):
         full_port_name = self.determine_full_port_name(self.host, self._options, self.port_name)
         builder_category = self.get_option('ignore_builder_category', 'layout')
         factory = BotTestExpectationsFactory()
+        # FIXME: This only grabs release builder's flakiness data. If we're running debug,
+        # when we should grab the debug builder's data.
         expectations = factory.expectations_for_port(full_port_name, builder_category)
 
         if not expectations:
@@ -1362,48 +1379,18 @@ class Port(object):
     def clobber_old_port_specific_results(self):
         pass
 
-    #
-    # PROTECTED ROUTINES
-    #
-    # The routines below should only be called by routines in this class
-    # or any of its subclasses.
-    #
-
-    def _uses_apache(self):
+    def uses_apache(self):
         return True
 
     # FIXME: This does not belong on the port object.
     @memoized
-    def _path_to_apache(self):
+    def path_to_apache(self):
         """Returns the full path to the apache binary.
 
         This is needed only by ports that use the apache_http_server module."""
-        raise NotImplementedError('Port._path_to_apache')
+        raise NotImplementedError('Port.path_to_apache')
 
-    # FIXME: This belongs on some platform abstraction instead of Port.
-    def _is_redhat_based(self):
-        return self._filesystem.exists('/etc/redhat-release')
-
-    def _is_debian_based(self):
-        return self._filesystem.exists('/etc/debian_version')
-
-    def _apache_version(self):
-        config = self._executive.run_command([self._path_to_apache(), '-v'])
-        return re.sub(r'(?:.|\n)*Server version: Apache/(\d+\.\d+)(?:.|\n)*', r'\1', config)
-
-    # We pass sys_platform into this method to make it easy to unit test.
-    def _apache_config_file_name_for_platform(self, sys_platform):
-        if sys_platform == 'cygwin':
-            return 'cygwin-httpd.conf'  # CYGWIN is the only platform to still use Apache 1.3.
-        if sys_platform.startswith('linux'):
-            if self._is_redhat_based():
-                return 'fedora-httpd-' + self._apache_version() + '.conf'
-            if self._is_debian_based():
-                return 'debian-httpd-' + self._apache_version() + '.conf'
-        # All platforms use apache2 except for CYGWIN (and Mac OS X Tiger and prior, which we no longer support).
-        return "apache2-httpd.conf"
-
-    def _path_to_apache_config_file(self):
+    def path_to_apache_config_file(self):
         """Returns the full path to the apache configuration file.
 
         If the WEBKIT_HTTP_SERVER_CONF_PATH environment variable is set, its
@@ -1418,6 +1405,55 @@ class Port(object):
 
         config_file_name = self._apache_config_file_name_for_platform(sys.platform)
         return self._filesystem.join(self.layout_tests_dir(), 'http', 'conf', config_file_name)
+
+    def path_to_lighttpd(self):
+        """Returns the path to the LigHTTPd binary.
+
+        This is needed only by ports that use the http_server.py module."""
+        raise NotImplementedError('Port._path_to_lighttpd')
+
+    def path_to_lighttpd_modules(self):
+        """Returns the path to the LigHTTPd modules directory.
+
+        This is needed only by ports that use the http_server.py module."""
+        raise NotImplementedError('Port._path_to_lighttpd_modules')
+
+    def path_to_lighttpd_php(self):
+        """Returns the path to the LigHTTPd PHP executable.
+
+        This is needed only by ports that use the http_server.py module."""
+        raise NotImplementedError('Port._path_to_lighttpd_php')
+
+
+    #
+    # PROTECTED ROUTINES
+    #
+    # The routines below should only be called by routines in this class
+    # or any of its subclasses.
+    #
+
+    # FIXME: This belongs on some platform abstraction instead of Port.
+    def _is_redhat_based(self):
+        return self._filesystem.exists('/etc/redhat-release')
+
+    def _is_debian_based(self):
+        return self._filesystem.exists('/etc/debian_version')
+
+    def _apache_version(self):
+        config = self._executive.run_command([self.path_to_apache(), '-v'])
+        return re.sub(r'(?:.|\n)*Server version: Apache/(\d+\.\d+)(?:.|\n)*', r'\1', config)
+
+    # We pass sys_platform into this method to make it easy to unit test.
+    def _apache_config_file_name_for_platform(self, sys_platform):
+        if sys_platform == 'cygwin':
+            return 'cygwin-httpd.conf'  # CYGWIN is the only platform to still use Apache 1.3.
+        if sys_platform.startswith('linux'):
+            if self._is_redhat_based():
+                return 'fedora-httpd-' + self._apache_version() + '.conf'
+            if self._is_debian_based():
+                return 'debian-httpd-' + self._apache_version() + '.conf'
+        # All platforms use apache2 except for CYGWIN (and Mac OS X Tiger and prior, which we no longer support).
+        return "apache2-httpd.conf"
 
     def _path_to_driver(self, configuration=None):
         """Returns the full path to the test driver."""
@@ -1440,24 +1476,6 @@ class Port(object):
 
         This is likely used only by diff_image()"""
         return self._build_path('image_diff')
-
-    def _path_to_lighttpd(self):
-        """Returns the path to the LigHTTPd binary.
-
-        This is needed only by ports that use the http_server.py module."""
-        raise NotImplementedError('Port._path_to_lighttpd')
-
-    def _path_to_lighttpd_modules(self):
-        """Returns the path to the LigHTTPd modules directory.
-
-        This is needed only by ports that use the http_server.py module."""
-        raise NotImplementedError('Port._path_to_lighttpd_modules')
-
-    def _path_to_lighttpd_php(self):
-        """Returns the path to the LigHTTPd PHP executable.
-
-        This is needed only by ports that use the http_server.py module."""
-        raise NotImplementedError('Port._path_to_lighttpd_php')
 
     @memoized
     def _path_to_wdiff(self):
@@ -1506,26 +1524,39 @@ class Port(object):
     def sample_process(self, name, pid):
         pass
 
+    def physical_test_suites(self):
+        return [
+            # For example, to turn on force-compositing-mode in the svg/ directory:
+            # PhysicalTestSuite('svg',
+            #                   ['--force-compositing-mode']),
+            ]
+
     def virtual_test_suites(self):
         return [
             VirtualTestSuite('gpu',
                              'fast/canvas',
-                             ['--enable-accelerated-2d-canvas']),
+                             ['--enable-accelerated-2d-canvas',
+                              '--force-compositing-mode']),
             VirtualTestSuite('gpu',
                              'canvas/philip',
-                             ['--enable-accelerated-2d-canvas']),
+                             ['--enable-accelerated-2d-canvas',
+                              '--force-compositing-mode']),
             VirtualTestSuite('threaded',
                              'compositing/visibility',
-                             ['--enable-threaded-compositing']),
+                             ['--enable-threaded-compositing',
+                              '--force-compositing-mode']),
             VirtualTestSuite('threaded',
                              'compositing/webgl',
-                             ['--enable-threaded-compositing']),
+                             ['--enable-threaded-compositing',
+                              '--force-compositing-mode']),
             VirtualTestSuite('gpu',
                              'fast/hidpi',
                              ['--force-compositing-mode']),
             VirtualTestSuite('softwarecompositing',
                              'compositing',
-                             ['--enable-software-compositing', '--disable-gpu-compositing'],
+                             ['--disable-gpu',
+                              '--disable-gpu-compositing',
+                              '--force-compositing-mode'],
                              use_legacy_naming=True),
             VirtualTestSuite('deferred',
                              'fast/images',
@@ -1535,47 +1566,75 @@ class Port(object):
                              ['--enable-deferred-image-decoding', '--enable-per-tile-painting', '--force-compositing-mode']),
             VirtualTestSuite('gpu/compositedscrolling/overflow',
                              'compositing/overflow',
-                             ['--enable-accelerated-overflow-scroll'],
+                             ['--enable-accelerated-overflow-scroll',
+                              '--force-compositing-mode'],
                              use_legacy_naming=True),
             VirtualTestSuite('gpu/compositedscrolling/scrollbars',
                              'scrollbars',
-                             ['--enable-accelerated-overflow-scroll'],
+                             ['--enable-accelerated-overflow-scroll',
+                              '--force-compositing-mode'],
                              use_legacy_naming=True),
             VirtualTestSuite('threaded',
                              'animations',
-                             ['--enable-threaded-compositing']),
+                             ['--enable-threaded-compositing',
+                              '--force-compositing-mode']),
             VirtualTestSuite('threaded',
                              'transitions',
-                             ['--enable-threaded-compositing']),
-            VirtualTestSuite('legacy-animations-engine',
-                             'animations',
-                             ['--disable-web-animations-css']),
-            VirtualTestSuite('legacy-animations-engine',
-                             'transitions',
-                             ['--disable-web-animations-css']),
+                             ['--enable-threaded-compositing',
+                              '--force-compositing-mode']),
             VirtualTestSuite('stable',
                              'webexposed',
-                             ['--stable-release-mode']),
+                             ['--stable-release-mode',
+                              '--force-compositing-mode']),
+            VirtualTestSuite('stable',
+                             'animations-unprefixed',
+                             ['--stable-release-mode',
+                              '--force-compositing-mode']),
             VirtualTestSuite('stable',
                              'media/stable',
-                             ['--stable-release-mode']),
+                             ['--stable-release-mode',
+                              '--force-compositing-mode']),
             VirtualTestSuite('android',
                              'fullscreen',
-                             ['--force-compositing-mode', '--allow-webui-compositing', '--enable-threaded-compositing',
+                             ['--force-compositing-mode', '--enable-threaded-compositing',
                               '--enable-fixed-position-compositing', '--enable-accelerated-overflow-scroll', '--enable-accelerated-scrollable-frames',
                               '--enable-composited-scrolling-for-frames', '--enable-gesture-tap-highlight', '--enable-pinch',
                               '--enable-overlay-fullscreen-video', '--enable-overlay-scrollbars', '--enable-overscroll-notifications',
                               '--enable-fixed-layout', '--enable-viewport', '--disable-canvas-aa',
-                              '--disable-composited-antialiasing']),
+                              '--disable-composited-antialiasing', '--enable-accelerated-fixed-root-background']),
             VirtualTestSuite('implsidepainting',
                              'inspector/timeline',
                              ['--enable-threaded-compositing', '--enable-impl-side-painting', '--force-compositing-mode']),
-            VirtualTestSuite('fasttextautosizing',
-                             'fast/text-autosizing',
-                             ['--enable-fast-text-autosizing']),
             VirtualTestSuite('serviceworker',
                              'http/tests/serviceworker',
-                             ['--enable-service-worker']),
+                             ['--enable-service-worker',
+                              '--force-compositing-mode']),
+            VirtualTestSuite('targetedstylerecalc',
+                             'fast/css/invalidation',
+                             ['--enable-targeted-style-recalc',
+                              '--force-compositing-mode']),
+            VirtualTestSuite('stable',
+                             'fast/css3-text/css3-text-decoration/stable',
+                             ['--stable-release-mode',
+                              '--force-compositing-mode']),
+            VirtualTestSuite('stable',
+                             'http/tests/websocket',
+                             ['--stable-release-mode',
+                              '--force-compositing-mode']),
+            VirtualTestSuite('stable',
+                             'web-animations-api',
+                             ['--stable-release-mode',
+                              '--force-compositing-mode']),
+            VirtualTestSuite('linux-subpixel',
+                             'platform/linux/fast/text/subpixel',
+                             ['--enable-webkit-text-subpixel-positioning',
+                              '--force-compositing-mode']),
+            VirtualTestSuite('antialiasedtext',
+                             'fast/text',
+                             ['--enable-direct-write',
+                              '--enable-font-antialiasing',
+                              '--force-compositing-mode']),
+
         ]
 
     @memoized
@@ -1622,6 +1681,12 @@ class Port(object):
 
     def lookup_virtual_test_args(self, test_name):
         for suite in self.populated_virtual_test_suites():
+            if test_name.startswith(suite.name):
+                return suite.args
+        return []
+
+    def lookup_physical_test_args(self, test_name):
+        for suite in self.physical_test_suites():
             if test_name.startswith(suite.name):
                 return suite.args
         return []
@@ -1743,3 +1808,14 @@ class VirtualTestSuite(object):
 
     def __repr__(self):
         return "VirtualTestSuite('%s', '%s', %s)" % (self.name, self.base, self.args)
+
+
+class PhysicalTestSuite(object):
+    def __init__(self, base, args):
+        self.name = base
+        self.base = base
+        self.args = args
+        self.tests = set()
+
+    def __repr__(self):
+        return "PhysicalTestSuite('%s', '%s', %s)" % (self.name, self.base, self.args)

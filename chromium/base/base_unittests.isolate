@@ -32,9 +32,7 @@
           '../testing/test_env.py',
           '<(PRODUCT_DIR)/base_unittests<(EXECUTABLE_SUFFIX)',
         ],
-        'isolate_dependency_untracked': [
-          '../tools/swarming_client/',
-        ],
+        'read_only': 1,
       },
     }],
     ['OS=="mac" or OS=="win"', {
@@ -50,9 +48,11 @@
     ['OS=="win"', {
       'variables': {
         'isolate_dependency_tracked': [
-          '<(PRODUCT_DIR)/icudt.dll',
         ],
       },
     }],
+  ],
+  'includes': [
+    'base.isolate',
   ],
 }

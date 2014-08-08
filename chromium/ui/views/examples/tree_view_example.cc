@@ -11,6 +11,8 @@
 #include "ui/views/controls/tree/tree_view.h"
 #include "ui/views/layout/grid_layout.h"
 
+using base::ASCIIToUTF16;
+
 namespace views {
 namespace examples {
 
@@ -130,10 +132,14 @@ void TreeViewExample::ShowContextMenuForView(View* source,
   context_menu_model.AddItem(ID_REMOVE, ASCIIToUTF16("Remove"));
   context_menu_model.AddItem(ID_ADD, ASCIIToUTF16("Add"));
   context_menu_runner_.reset(new MenuRunner(&context_menu_model));
-  if (context_menu_runner_->RunMenuAt(source->GetWidget(), NULL,
-      gfx::Rect(point, gfx::Size()), MenuItemView::TOPLEFT, source_type, 0) ==
-      MenuRunner::MENU_DELETED)
+  if (context_menu_runner_->RunMenuAt(source->GetWidget(),
+                                      NULL,
+                                      gfx::Rect(point, gfx::Size()),
+                                      MENU_ANCHOR_TOPLEFT,
+                                      source_type,
+                                      0) == MenuRunner::MENU_DELETED) {
     return;
+  }
 }
 
 bool TreeViewExample::IsCommandIdChecked(int command_id) const {

@@ -125,7 +125,7 @@
       ],
       'conditions': [
         # See http://crbug.com/162998#c4 for why this is needed.
-        ['OS=="linux" and linux_use_tcmalloc==1', {
+        ['OS=="linux" and use_allocator!="none"', {
           'dependencies': [
             '../base/allocator/allocator.gyp:allocator',
           ],
@@ -153,26 +153,16 @@
         '../testing/gtest.gyp:gtest',
         '../ui/surface/surface.gyp:surface',
       ],
-      # For the nacl_http_response_headers_unittest below.
-      'include_dirs': [
-        '../ppapi',
-      ],
       'sources': [
         'host/resource_message_filter_unittest.cc',
-        # Piggy back on ppapi_unittests for a simple NaCl unittest,
-        # which must not have dependencies on anything other than stdlibs.
-        # We add the source file, not just the test to ensure that the object
-        # is built.  Otherwise, we would need to depend on the NaCl trusted
-        # plugin being built to build the object.
-        # TODO(jvoung): move this to unit_tests instead of ppapi_unittests
-        # once this moves into chrome.
-        'native_client/src/trusted/plugin/nacl_http_response_headers.cc',
-        'native_client/src/trusted/plugin/nacl_http_response_headers_unittest.cc',
         'proxy/device_enumeration_resource_helper_unittest.cc',
         'proxy/file_chooser_resource_unittest.cc',
+        'proxy/file_system_resource_unittest.cc',
         'proxy/flash_resource_unittest.cc',
+        'proxy/interface_list_unittest.cc',
         'proxy/mock_resource.cc',
         'proxy/mock_resource.h',
+        'proxy/nacl_message_scanner_unittest.cc',
         'proxy/pdf_resource_unittest.cc',
         'proxy/plugin_dispatcher_unittest.cc',
         'proxy/plugin_resource_tracker_unittest.cc',
@@ -185,19 +175,22 @@
         'proxy/raw_var_data_unittest.cc',
         'proxy/serialized_var_unittest.cc',
         'proxy/talk_resource_unittest.cc',
+        'proxy/video_decoder_resource_unittest.cc',
         'proxy/websocket_resource_unittest.cc',
+        'shared_impl/media_stream_audio_track_shared_unittest.cc',
+        'shared_impl/media_stream_buffer_manager_unittest.cc',
+        'shared_impl/media_stream_video_track_shared_unittest.cc',
         'shared_impl/proxy_lock_unittest.cc',
         'shared_impl/resource_tracker_unittest.cc',
         'shared_impl/thread_aware_callback_unittest.cc',
         'shared_impl/time_conversion_unittest.cc',
         'shared_impl/tracked_callback_unittest.cc',
         'shared_impl/var_tracker_unittest.cc',
-        'shared_impl/var_value_conversions_unittest.cc',
       ],
       'conditions': [
         [ 'os_posix == 1 and OS != "mac" and OS != "android" and OS != "ios"', {
           'conditions': [
-            [ 'linux_use_tcmalloc == 1', {
+            [ 'use_allocator!="none"', {
               'dependencies': [
                 '../base/allocator/allocator.gyp:allocator',
               ],
@@ -206,7 +199,7 @@
         }],
       ],
       # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
-      'msvs_disabled_warnings': [ 4267, ],          
+      'msvs_disabled_warnings': [ 4267, ],
     },
     {
       'target_name': 'ppapi_example_skeleton',
@@ -465,6 +458,23 @@
       'msvs_disabled_warnings': [ 4267, ],
     },
     {
+      'target_name': 'ppapi_example_video_decode_dev',
+      'dependencies': [
+        'ppapi_example_skeleton',
+        'ppapi.gyp:ppapi_cpp',
+        'ppapi.gyp:ppapi_gles2',
+      ],
+      'include_dirs': [
+        'lib/gl/include',
+      ],
+      'sources': [
+        'examples/video_decode/video_decode_dev.cc',
+        'examples/video_decode/testdata.h',
+      ],
+      # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+      'msvs_disabled_warnings': [ 4267, ],
+    },
+    {
       'target_name': 'ppapi_example_vc',
       'dependencies': [
         'ppapi_example_skeleton',
@@ -519,6 +529,62 @@
       ],
       # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
       'msvs_disabled_warnings': [ 4267, ],
+    },
+    {
+      'target_name': 'ppapi_example_media_stream_audio',
+      'dependencies': [
+        'ppapi_example_skeleton',
+        'ppapi.gyp:ppapi_cpp',
+      ],
+      'sources': [
+        'examples/media_stream_audio/media_stream_audio.cc',
+      ],
+    },
+    {
+      'target_name': 'ppapi_example_media_stream_video',
+      'dependencies': [
+        'ppapi_example_skeleton',
+        'ppapi.gyp:ppapi_cpp',
+        'ppapi.gyp:ppapi_gles2',
+      ],
+      'include_dirs': [
+        'lib/gl/include',
+      ],
+      'sources': [
+        'examples/media_stream_video/media_stream_video.cc',
+      ],
+    },
+    {
+      'target_name': 'ppapi_example_gles2_spinning_cube',
+      'dependencies': [
+        'ppapi_example_skeleton',
+        'ppapi.gyp:ppapi_cpp',
+        'ppapi.gyp:ppapi_gles2',
+      ],
+      'include_dirs': [
+        'lib/gl/include',
+      ],
+      'sources': [
+        'examples/gles2_spinning_cube/gles2_spinning_cube.cc',
+        'examples/gles2_spinning_cube/spinning_cube.cc',
+        'examples/gles2_spinning_cube/spinning_cube.h',
+      ],
+    },
+    {
+      'target_name': 'ppapi_example_compositor',
+      'dependencies': [
+        'ppapi_example_skeleton',
+        'ppapi.gyp:ppapi_cpp',
+        'ppapi.gyp:ppapi_gles2',
+      ],
+      'include_dirs': [
+        'lib/gl/include',
+      ],
+      'sources': [
+        'examples/compositor/compositor.cc',
+        'examples/compositor/spinning_cube.cc',
+        'examples/compositor/spinning_cube.h',
+      ],
     },
   ],
 }

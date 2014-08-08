@@ -29,11 +29,9 @@
  */
 
 #include "config.h"
-#include "WebAXObject.h"
+#include "public/web/WebAXObject.h"
 
-#include "HTMLNames.h"
-#include "WebDocument.h"
-#include "WebNode.h"
+#include "core/HTMLNames.h"
 #include "core/accessibility/AXObject.h"
 #include "core/accessibility/AXObjectCache.h"
 #include "core/accessibility/AXTable.h"
@@ -43,14 +41,17 @@
 #include "core/css/CSSPrimitiveValueMappings.h"
 #include "core/dom/Document.h"
 #include "core/dom/Node.h"
-#include "core/page/EventHandler.h"
 #include "core/frame/FrameView.h"
+#include "core/page/EventHandler.h"
+#include "core/rendering/RenderView.h"
 #include "core/rendering/style/RenderStyle.h"
 #include "platform/PlatformKeyboardEvent.h"
 #include "public/platform/WebPoint.h"
 #include "public/platform/WebRect.h"
 #include "public/platform/WebString.h"
 #include "public/platform/WebURL.h"
+#include "public/web/WebDocument.h"
+#include "public/web/WebNode.h"
 #include "wtf/text/StringBuilder.h"
 
 using namespace WebCore;
@@ -90,16 +91,6 @@ void WebAXObject::enableInlineTextBoxAccessibility()
     AXObjectCache::setInlineTextBoxAccessibility(true);
 }
 
-void WebAXObject::startCachingComputedObjectAttributesUntilTreeMutates()
-{
-    m_private->axObjectCache()->startCachingComputedObjectAttributesUntilTreeMutates();
-}
-
-void WebAXObject::stopCachingComputedObjectAttributes()
-{
-    m_private->axObjectCache()->stopCachingComputedObjectAttributes();
-}
-
 bool WebAXObject::isDetached() const
 {
     if (m_private.isNull())
@@ -116,11 +107,22 @@ int WebAXObject::axID() const
     return m_private->axObjectID();
 }
 
+bool WebAXObject::updateLayoutAndCheckValidity()
+{
+    if (!isDetached()) {
+        Document* document = m_private->document();
+        if (!document || !document->topDocument().view())
+            return false;
+        document->topDocument().view()->updateLayoutAndStyleIfNeededRecursive();
+    }
+
+    // Doing a layout can cause this object to be invalid, so check again.
+    return !isDetached();
+}
+
 bool WebAXObject::updateBackingStoreAndCheckValidity()
 {
-    if (!isDetached())
-        m_private->updateBackingStore();
-    return !isDetached();
+    return updateLayoutAndCheckValidity();
 }
 
 WebString WebAXObject::accessibilityDescription() const
@@ -414,12 +416,84 @@ WebString WebAXObject::accessKey() const
     return WebString(m_private->accessKey());
 }
 
+WebAXObject WebAXObject::ariaActiveDescendant() const
+{
+    if (isDetached())
+        return WebAXObject();
+
+    return WebAXObject(m_private->activeDescendant());
+}
+
+bool WebAXObject::ariaControls(WebVector<WebAXObject>& controlsElements) const
+{
+    if (isDetached())
+        return false;
+
+    AXObject::AccessibilityChildrenVector controls;
+    m_private->ariaControlsElements(controls);
+
+    WebVector<WebAXObject> result(controls.size());
+    for (size_t i = 0; i < controls.size(); i++)
+        result[i] = WebAXObject(controls[i]);
+    controlsElements.swap(result);
+
+    return true;
+}
+
+bool WebAXObject::ariaDescribedby(WebVector<WebAXObject>& describedbyElements) const
+{
+    if (isDetached())
+        return false;
+
+    AXObject::AccessibilityChildrenVector describedby;
+    m_private->ariaDescribedbyElements(describedby);
+
+    WebVector<WebAXObject> result(describedby.size());
+    for (size_t i = 0; i < describedby.size(); i++)
+        result[i] = WebAXObject(describedby[i]);
+    describedbyElements.swap(result);
+
+    return true;
+}
+
 bool WebAXObject::ariaHasPopup() const
 {
     if (isDetached())
         return 0;
 
     return m_private->ariaHasPopup();
+}
+
+bool WebAXObject::ariaFlowTo(WebVector<WebAXObject>& flowToElements) const
+{
+    if (isDetached())
+        return false;
+
+    AXObject::AccessibilityChildrenVector flowTo;
+    m_private->ariaFlowToElements(flowTo);
+
+    WebVector<WebAXObject> result(flowTo.size());
+    for (size_t i = 0; i < flowTo.size(); i++)
+        result[i] = WebAXObject(flowTo[i]);
+    flowToElements.swap(result);
+
+    return true;
+}
+
+bool WebAXObject::ariaLabelledby(WebVector<WebAXObject>& labelledbyElements) const
+{
+    if (isDetached())
+        return false;
+
+    AXObject::AccessibilityChildrenVector labelledby;
+    m_private->ariaLabelledbyElements(labelledby);
+
+    WebVector<WebAXObject> result(labelledby.size());
+    for (size_t i = 0; i < labelledby.size(); i++)
+        result[i] = WebAXObject(labelledby[i]);
+    labelledbyElements.swap(result);
+
+    return true;
 }
 
 bool WebAXObject::ariaLiveRegionAtomic() const
@@ -454,10 +528,40 @@ WebString WebAXObject::ariaLiveRegionStatus() const
     return m_private->ariaLiveRegionStatus();
 }
 
+bool WebAXObject::ariaOwns(WebVector<WebAXObject>& ownsElements) const
+{
+    if (isDetached())
+        return false;
+
+    AXObject::AccessibilityChildrenVector owns;
+    m_private->ariaOwnsElements(owns);
+
+    WebVector<WebAXObject> result(owns.size());
+    for (size_t i = 0; i < owns.size(); i++)
+        result[i] = WebAXObject(owns[i]);
+    ownsElements.swap(result);
+
+    return true;
+}
+
+#if ASSERT_ENABLED
+static bool isLayoutClean(Document* document)
+{
+    if (!document || !document->view())
+        return false;
+    return document->lifecycle().state() >= DocumentLifecycle::LayoutClean
+        || (document->lifecycle().state() == DocumentLifecycle::StyleClean && !document->view()->needsLayout());
+}
+#endif
+
 WebRect WebAXObject::boundingBoxRect() const
 {
     if (isDetached())
         return WebRect();
+
+    // It's not safe to call boundingBoxRect if a layout is pending.
+    // Clients should call updateLayoutAndCheckValidity first.
+    ASSERT(isLayoutClean(m_private->document()));
 
     return pixelSnappedIntRect(m_private->elementRect());
 }
@@ -773,7 +877,7 @@ bool WebAXObject::hasComputedStyle() const
 
     Document* document = m_private->document();
     if (document)
-        document->updateStyleIfNeeded();
+        document->updateRenderTreeIfNeeded();
 
     Node* node = m_private->node();
     if (!node)
@@ -789,7 +893,7 @@ WebString WebAXObject::computedStyleDisplay() const
 
     Document* document = m_private->document();
     if (document)
-        document->updateStyleIfNeeded();
+        document->updateRenderTreeIfNeeded();
 
     Node* node = m_private->node();
     if (!node)

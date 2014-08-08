@@ -98,14 +98,7 @@ typedef struct _PangoFontDescription PangoFontDescription;
 typedef struct _cairo cairo_t;
 #endif
 
-#if defined(TOOLKIT_GTK)
-typedef struct _GdkCursor GdkCursor;
-typedef union _GdkEvent GdkEvent;
-typedef struct _GdkPixbuf GdkPixbuf;
-typedef struct _GdkRegion GdkRegion;
-typedef struct _GtkWidget GtkWidget;
-typedef struct _GtkWindow GtkWindow;
-#elif defined(OS_ANDROID)
+#if defined(OS_ANDROID)
 struct ANativeWindow;
 namespace ui {
 class WindowAndroid;
@@ -122,12 +115,6 @@ typedef aura::Window* NativeView;
 typedef aura::Window* NativeWindow;
 typedef SkRegion* NativeRegion;
 typedef ui::Event* NativeEvent;
-#elif defined(OS_WIN)
-typedef HCURSOR NativeCursor;
-typedef HWND NativeView;
-typedef HWND NativeWindow;
-typedef HRGN NativeRegion;
-typedef MSG NativeEvent;
 #elif defined(OS_IOS)
 typedef void* NativeCursor;
 typedef UIView* NativeView;
@@ -137,13 +124,8 @@ typedef UIEvent* NativeEvent;
 typedef NSCursor* NativeCursor;
 typedef NSView* NativeView;
 typedef NSWindow* NativeWindow;
+typedef void* NativeRegion;
 typedef NSEvent* NativeEvent;
-#elif defined(TOOLKIT_GTK)
-typedef GdkCursor* NativeCursor;
-typedef GtkWidget* NativeView;
-typedef GtkWindow* NativeWindow;
-typedef GdkRegion* NativeRegion;
-typedef GdkEvent* NativeEvent;
 #elif defined(OS_ANDROID)
 typedef void* NativeCursor;
 typedef ui::ViewAndroid* NativeView;
@@ -165,11 +147,6 @@ typedef CGContext* NativeDrawingContext;
 typedef NSFont* NativeFont;
 typedef NSTextField* NativeEditView;
 typedef CGContext* NativeDrawingContext;
-typedef void* NativeViewAccessible;
-#elif defined(TOOLKIT_GTK)
-typedef PangoFontDescription* NativeFont;
-typedef GtkWidget* NativeEditView;
-typedef cairo_t* NativeDrawingContext;
 typedef void* NativeViewAccessible;
 #elif defined(USE_CAIRO)
 typedef PangoFontDescription* NativeFont;
@@ -194,8 +171,6 @@ const gfx::NativeCursor kNullCursor = static_cast<gfx::NativeCursor>(NULL);
 typedef UIImage NativeImageType;
 #elif defined(OS_MACOSX)
 typedef NSImage NativeImageType;
-#elif defined(TOOLKIT_GTK)
-typedef GdkPixbuf NativeImageType;
 #else
 typedef SkBitmap NativeImageType;
 #endif
@@ -208,43 +183,14 @@ typedef NativeImageType* NativeImage;
 // See comment at the top of the file for usage.
 typedef intptr_t NativeViewId;
 
-#if defined(OS_WIN) && !defined(USE_AURA)
-// Convert a NativeViewId to a NativeView.
-//
-// On Windows, we pass an HWND into the renderer. As stated above, the renderer
-// should not be performing operations on the view.
-static inline NativeView NativeViewFromId(NativeViewId id) {
-  return reinterpret_cast<NativeView>(id);
-}
-#define NativeViewFromIdInBrowser(x) NativeViewFromId(x)
-#elif defined(OS_POSIX) || defined(USE_AURA)
-// On Mac, Linux and USE_AURA, a NativeView is a pointer to an object, and is
-// useless outside the process in which it was created. NativeViewFromId should
-// only be used inside the appropriate platform ifdef outside of the browser.
-// (NativeViewFromIdInBrowser can be used everywhere in the browser.) If your
-// cross-platform design involves a call to NativeViewFromId from outside the
-// browser it will never work on Mac or Linux and is fundamentally broken.
-
-// Please do not call this from outside the browser. It won't work; the name
-// should give you a subtle hint.
-static inline NativeView NativeViewFromIdInBrowser(NativeViewId id) {
-  return reinterpret_cast<NativeView>(id);
-}
-#endif  // defined(OS_POSIX)
-
 // PluginWindowHandle is an abstraction wrapping "the types of windows
-// used by NPAPI plugins".  On Windows it's an HWND, on X it's an X
+// used by NPAPI plugins". On Windows it's an HWND, on X it's an X
 // window id.
 #if defined(OS_WIN)
   typedef HWND PluginWindowHandle;
   const PluginWindowHandle kNullPluginWindow = NULL;
 #elif defined(USE_X11)
   typedef unsigned long PluginWindowHandle;
-  const PluginWindowHandle kNullPluginWindow = 0;
-#elif defined(USE_AURA) && defined(OS_MACOSX)
-  // Mac-Aura uses NSView-backed GLSurface.  Regular Mac does not.
-  // TODO(dhollowa): Rationalize these two definitions. http://crbug.com/104551.
-  typedef NSView* PluginWindowHandle;
   const PluginWindowHandle kNullPluginWindow = 0;
 #elif defined(OS_ANDROID)
   typedef uint64 PluginWindowHandle;
@@ -253,17 +199,9 @@ static inline NativeView NativeViewFromIdInBrowser(NativeViewId id) {
   typedef intptr_t PluginWindowHandle;
   const PluginWindowHandle kNullPluginWindow = 0;
 #else
-  // On OS X we don't have windowed plugins.
-  // We use a NULL/0 PluginWindowHandle in shared code to indicate there
-  // is no window present, so mirror that behavior here.
-  //
-  // The GPU plugin is currently an exception to this rule. As of this
-  // writing it uses some NPAPI infrastructure, and minimally we need
-  // to identify the plugin instance via this window handle. When the
-  // GPU plugin becomes a full-on GPU process, this typedef can be
-  // returned to a bool. For now we use a type large enough to hold a
-  // pointer on 64-bit architectures in case we need this capability.
-  typedef uint64 PluginWindowHandle;
+  // On Mac we don't have windowed plugins. We use a NULL/0 PluginWindowHandle
+  // in shared code to indicate there is no window present.
+  typedef bool PluginWindowHandle;
   const PluginWindowHandle kNullPluginWindow = 0;
 #endif
 
@@ -271,20 +209,19 @@ enum SurfaceType {
   EMPTY,
   NATIVE_DIRECT,
   NATIVE_TRANSPORT,
-  TEXTURE_TRANSPORT
+  TEXTURE_TRANSPORT,
+  SURFACE_TYPE_LAST = TEXTURE_TRANSPORT
 };
 
 struct GLSurfaceHandle {
   GLSurfaceHandle()
       : handle(kNullPluginWindow),
         transport_type(EMPTY),
-        parent_gpu_process_id(0),
         parent_client_id(0) {
   }
   GLSurfaceHandle(PluginWindowHandle handle_, SurfaceType transport_)
       : handle(handle_),
         transport_type(transport_),
-        parent_gpu_process_id(0),
         parent_client_id(0) {
     DCHECK(!is_null() || handle == kNullPluginWindow);
     DCHECK(transport_type != TEXTURE_TRANSPORT ||
@@ -297,7 +234,6 @@ struct GLSurfaceHandle {
   }
   PluginWindowHandle handle;
   SurfaceType transport_type;
-  int parent_gpu_process_id;
   uint32 parent_client_id;
 };
 

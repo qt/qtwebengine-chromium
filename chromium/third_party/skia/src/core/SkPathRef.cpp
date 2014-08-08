@@ -6,7 +6,7 @@
  */
 
 #include "SkBuffer.h"
-#include "SkOnce.h"
+#include "SkLazyPtr.h"
 #include "SkPath.h"
 #include "SkPathRef.h"
 
@@ -28,16 +28,16 @@ SkPathRef::Editor::Editor(SkAutoTUnref<SkPathRef>* pathRef,
 }
 
 //////////////////////////////////////////////////////////////////////////////
-void SkPathRef::CreateEmptyImpl(SkPathRef** empty) {
-    *empty = SkNEW(SkPathRef);
-    (*empty)->computeBounds();  // Preemptively avoid a race to clear fBoundsIsDirty.
+
+SkPathRef* SkPathRef::CreateEmptyImpl() {
+    SkPathRef* p = SkNEW(SkPathRef);
+    p->computeBounds();   // Preemptively avoid a race to clear fBoundsIsDirty.
+    return p;
 }
 
 SkPathRef* SkPathRef::CreateEmpty() {
-    static SkPathRef* gEmptyPathRef;
-    SK_DECLARE_STATIC_ONCE(once);
-    SkOnce(&once, SkPathRef::CreateEmptyImpl, &gEmptyPathRef);
-    return SkRef(gEmptyPathRef);
+    SK_DECLARE_STATIC_LAZY_PTR(SkPathRef, empty, CreateEmptyImpl);
+    return SkRef(empty.get());
 }
 
 void SkPathRef::CreateTransformedCopy(SkAutoTUnref<SkPathRef>* dst,
@@ -105,11 +105,7 @@ void SkPathRef::CreateTransformedCopy(SkAutoTUnref<SkPathRef>* dst,
     SkDEBUGCODE((*dst)->validate();)
 }
 
-SkPathRef* SkPathRef::CreateFromBuffer(SkRBuffer* buffer
-#ifndef DELETE_THIS_CODE_WHEN_SKPS_ARE_REBUILT_AT_V16_AND_ALL_OTHER_INSTANCES_TOO
-                                   , bool newFormat, int32_t oldPacked
-#endif
-    ) {
+SkPathRef* SkPathRef::CreateFromBuffer(SkRBuffer* buffer) {
     SkPathRef* ref = SkNEW(SkPathRef);
     bool isOval;
     uint8_t segmentMask;
@@ -121,18 +117,8 @@ SkPathRef* SkPathRef::CreateFromBuffer(SkRBuffer* buffer
     }
 
     ref->fIsFinite = (packed >> kIsFinite_SerializationShift) & 1;
-
-#ifndef DELETE_THIS_CODE_WHEN_SKPS_ARE_REBUILT_AT_V16_AND_ALL_OTHER_INSTANCES_TOO
-    if (newFormat) {
-#endif
-        segmentMask = (packed >> kSegmentMask_SerializationShift) & 0xF;
-        isOval  = (packed >> kIsOval_SerializationShift) & 1;
-#ifndef DELETE_THIS_CODE_WHEN_SKPS_ARE_REBUILT_AT_V16_AND_ALL_OTHER_INSTANCES_TOO
-    } else {
-        segmentMask = (oldPacked >> SkPath::kOldSegmentMask_SerializationShift) & 0xF;
-        isOval  = (oldPacked >> SkPath::kOldIsOval_SerializationShift) & 1;
-    }
-#endif
+    segmentMask = (packed >> kSegmentMask_SerializationShift) & 0xF;
+    isOval  = (packed >> kIsOval_SerializationShift) & 1;
 
     int32_t verbCount, pointCount, conicCount;
     if (!buffer->readU32(&(ref->fGenerationID)) ||
@@ -288,8 +274,8 @@ void SkPathRef::copy(const SkPathRef& ref,
     SkDEBUGCODE(this->validate();)
 }
 
-SkPoint* SkPathRef::growForRepeatedVerb(int /*SkPath::Verb*/ verb, 
-                                        int numVbs, 
+SkPoint* SkPathRef::growForRepeatedVerb(int /*SkPath::Verb*/ verb,
+                                        int numVbs,
                                         SkScalar** weights) {
     // This value is just made-up for now. When count is 4, calling memset was much
     // slower than just writing the loop. This seems odd, and hopefully in the

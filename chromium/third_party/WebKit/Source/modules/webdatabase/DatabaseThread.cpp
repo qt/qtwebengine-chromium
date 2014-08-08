@@ -34,14 +34,15 @@
 #include "modules/webdatabase/SQLTransactionClient.h"
 #include "modules/webdatabase/SQLTransactionCoordinator.h"
 #include "platform/Logging.h"
+#include "platform/heap/glue/MessageLoopInterruptor.h"
+#include "platform/heap/glue/PendingGCRunner.h"
 #include "public/platform/Platform.h"
-#include "wtf/AutodrainedPool.h"
 
 namespace WebCore {
 
 DatabaseThread::DatabaseThread()
     : m_transactionClient(adoptPtr(new SQLTransactionClient()))
-    , m_transactionCoordinator(adoptPtr(new SQLTransactionCoordinator()))
+    , m_transactionCoordinator(adoptPtrWillBeNoop(new SQLTransactionCoordinator()))
     , m_cleanupSync(0)
     , m_terminationRequested(false)
 {
@@ -49,9 +50,20 @@ DatabaseThread::DatabaseThread()
 
 DatabaseThread::~DatabaseThread()
 {
-    if (!m_terminationRequested)
-        requestTermination(0);
+    ASSERT(m_openDatabaseSet.isEmpty());
+    // Oilpan: The database thread must have finished its cleanup tasks before
+    // the following clear(). Otherwise, WebThread destructor blocks the caller
+    // thread, and causes a deadlock with ThreadState cleanup.
+    // DatabaseContext::stop() asks the database thread to close all of
+    // databases, and wait until GC heap cleanup of the database thread. So we
+    // can safely destruct WebThread here.
     m_thread.clear();
+}
+
+void DatabaseThread::trace(Visitor* visitor)
+{
+    visitor->trace(m_openDatabaseSet);
+    visitor->trace(m_transactionCoordinator);
 }
 
 void DatabaseThread::start()
@@ -59,10 +71,21 @@ void DatabaseThread::start()
     if (m_thread)
         return;
     m_thread = adoptPtr(blink::Platform::current()->createThread("WebCore: Database"));
+    m_thread->postTask(new Task(WTF::bind(&DatabaseThread::setupDatabaseThread, this)));
 }
 
-void DatabaseThread::requestTermination(DatabaseTaskSynchronizer *cleanupSync)
+void DatabaseThread::setupDatabaseThread()
 {
+    m_pendingGCRunner = adoptPtr(new PendingGCRunner);
+    m_messageLoopInterruptor = adoptPtr(new MessageLoopInterruptor(m_thread.get()));
+    m_thread->addTaskObserver(m_pendingGCRunner.get());
+    ThreadState::attach();
+    ThreadState::current()->addInterruptor(m_messageLoopInterruptor.get());
+}
+
+void DatabaseThread::requestTermination(TaskSynchronizer *cleanupSync)
+{
+    MutexLocker lock(m_terminationRequestedMutex);
     ASSERT(!m_terminationRequested);
     m_terminationRequested = true;
     m_cleanupSync = cleanupSync;
@@ -70,13 +93,14 @@ void DatabaseThread::requestTermination(DatabaseTaskSynchronizer *cleanupSync)
     m_thread->postTask(new Task(WTF::bind(&DatabaseThread::cleanupDatabaseThread, this)));
 }
 
-bool DatabaseThread::terminationRequested(DatabaseTaskSynchronizer* taskSynchronizer) const
+bool DatabaseThread::terminationRequested(TaskSynchronizer* taskSynchronizer) const
 {
 #ifndef NDEBUG
     if (taskSynchronizer)
         taskSynchronizer->setHasCheckedForTermination();
 #endif
 
+    MutexLocker lock(m_terminationRequestedMutex);
     return m_terminationRequested;
 }
 
@@ -91,15 +115,26 @@ void DatabaseThread::cleanupDatabaseThread()
     // inconsistent or locked state.
     if (m_openDatabaseSet.size() > 0) {
         // As the call to close will modify the original set, we must take a copy to iterate over.
-        DatabaseSet openSetCopy;
+        WillBeHeapHashSet<RefPtrWillBeMember<DatabaseBackend> > openSetCopy;
         openSetCopy.swap(m_openDatabaseSet);
-        DatabaseSet::iterator end = openSetCopy.end();
-        for (DatabaseSet::iterator it = openSetCopy.begin(); it != end; ++it)
-            (*it).get()->close();
+        WillBeHeapHashSet<RefPtrWillBeMember<DatabaseBackend> >::iterator end = openSetCopy.end();
+        for (WillBeHeapHashSet<RefPtrWillBeMember<DatabaseBackend> >::iterator it = openSetCopy.begin(); it != end; ++it)
+            (*it)->close();
     }
 
+    m_thread->postTask(new Task(WTF::bind(&DatabaseThread::cleanupDatabaseThreadCompleted, this)));
+}
+
+void DatabaseThread::cleanupDatabaseThreadCompleted()
+{
+    ThreadState::current()->removeInterruptor(m_messageLoopInterruptor.get());
+    ThreadState::detach();
+    // We need to unregister PendingGCRunner before finising this task to avoid
+    // PendingGCRunner::didProcessTask accesses dead ThreadState.
+    m_thread->removeTaskObserver(m_pendingGCRunner.get());
+
     if (m_cleanupSync) // Someone wanted to know when we were done cleaning up.
-        m_thread->postTask(new Task(WTF::bind(&DatabaseTaskSynchronizer::taskCompleted, m_cleanupSync)));
+        m_cleanupSync->taskCompleted();
 }
 
 void DatabaseThread::recordDatabaseOpen(DatabaseBackend* database)
@@ -122,6 +157,7 @@ bool DatabaseThread::isDatabaseOpen(DatabaseBackend* database)
 {
     ASSERT(isDatabaseThread());
     ASSERT(database);
+    MutexLocker lock(m_terminationRequestedMutex);
     return !m_terminationRequested && m_openDatabaseSet.contains(database);
 }
 

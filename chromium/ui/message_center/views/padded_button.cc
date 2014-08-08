@@ -50,7 +50,7 @@ void PaddedButton::SetPressedImage(int resource_id) {
                resource_id));
 }
 
-gfx::Size PaddedButton::GetPreferredSize() {
+gfx::Size PaddedButton::GetPreferredSize() const {
   return gfx::Size(message_center::kControlButtonSize,
                    message_center::kControlButtonSize);
 }
@@ -66,8 +66,6 @@ void PaddedButton::OnPaint(gfx::Canvas* canvas) {
     if (!background_image_.isNull())
       canvas->DrawImageInt(background_image_, position.x(), position.y());
     canvas->DrawImageInt(image, position.x(), position.y());
-    if (!overlay_image_.isNull())
-      canvas->DrawImageInt(overlay_image_, position.x(), position.y());
   }
   views::Painter::PaintFocusPainter(this, canvas, focus_painter());
 }

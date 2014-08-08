@@ -27,7 +27,8 @@ enum Error {
   kErrorInvalidRequest = -32600,
   kErrorNoSuchMethod = -32601,
   kErrorInvalidParams = -32602,
-  kErrorInternalError = -32603
+  kErrorInternalError = -32603,
+  kErrorServerError = -32000
 };
 
 }  // namespace
@@ -81,6 +82,11 @@ DevToolsProtocol::Command::InvalidParamResponse(const std::string& param) {
 scoped_refptr<DevToolsProtocol::Response>
 DevToolsProtocol::Command::NoSuchMethodErrorResponse() {
   return new Response(id_, kErrorNoSuchMethod, "No such method");
+}
+
+scoped_refptr<DevToolsProtocol::Response>
+DevToolsProtocol::Command::ServerErrorResponse(const std::string& message) {
+  return new Response(id_, kErrorServerError, message);
 }
 
 scoped_refptr<DevToolsProtocol::Response>
@@ -216,13 +222,20 @@ scoped_refptr<DevToolsProtocol::Command> DevToolsProtocol::ParseCommand(
     std::string* error_response) {
   scoped_ptr<base::DictionaryValue> command_dict(
       ParseMessage(json, error_response));
+  return ParseCommand(command_dict.get(), error_response);
+}
+
+// static
+scoped_refptr<DevToolsProtocol::Command> DevToolsProtocol::ParseCommand(
+    base::DictionaryValue* command_dict,
+    std::string* error_response) {
   if (!command_dict)
     return NULL;
 
   int id;
   std::string method;
   bool ok = command_dict->GetInteger(kIdParam, &id) && id >= 0;
-  ok = ok && ParseMethod(command_dict.get(), &method);
+  ok = ok && ParseMethod(command_dict, &method);
   if (!ok) {
     scoped_refptr<Response> response =
         new Response(kNoId, kErrorInvalidRequest, "No such method");
@@ -242,6 +255,28 @@ DevToolsProtocol::CreateCommand(
     const std::string& method,
     base::DictionaryValue* params) {
   return new Command(id, method, params);
+}
+
+//static
+scoped_refptr<DevToolsProtocol::Response>
+DevToolsProtocol::ParseResponse(
+    base::DictionaryValue* response_dict) {
+  int id;
+  if (!response_dict->GetInteger(kIdParam, &id))
+    id = kNoId;
+
+  const base::DictionaryValue* error_dict;
+  if (response_dict->GetDictionary(kErrorParam, &error_dict)) {
+    int error_code = kErrorInternalError;
+    response_dict->GetInteger(kErrorCodeParam, &error_code);
+    std::string error_message;
+    response_dict->GetString(kErrorMessageParam, &error_message);
+    return new Response(id, error_code, error_message);
+  }
+
+  const base::DictionaryValue* result = NULL;
+  response_dict->GetDictionary(kResultParam, &result);
+  return new Response(id, result ? result->DeepCopy() : NULL);
 }
 
 // static
@@ -275,11 +310,11 @@ base::DictionaryValue* DevToolsProtocol::ParseMessage(
     std::string* error_response) {
   int parse_error_code;
   std::string error_message;
-  scoped_ptr<Value> message(
+  scoped_ptr<base::Value> message(
       base::JSONReader::ReadAndReturnError(
           json, 0, &parse_error_code, &error_message));
 
-  if (!message || !message->IsType(Value::TYPE_DICTIONARY)) {
+  if (!message || !message->IsType(base::Value::TYPE_DICTIONARY)) {
     scoped_refptr<Response> response =
         new Response(0, kErrorParseError, error_message);
     if (error_response)

@@ -27,8 +27,9 @@
 #include "config.h"
 #include "core/fetch/FontResource.h"
 
+#include "core/dom/TagCollection.h"
 #include "core/fetch/ResourceClientWalker.h"
-#include "core/fetch/TextResourceDecoder.h"
+#include "core/html/parser/TextResourceDecoder.h"
 #include "platform/SharedBuffer.h"
 #include "platform/fonts/FontCustomPlatformData.h"
 #include "platform/fonts/FontPlatformData.h"
@@ -36,17 +37,48 @@
 #include "wtf/CurrentTime.h"
 
 #if ENABLE(SVG_FONTS)
-#include "SVGNames.h"
-#include "core/dom/NodeList.h"
-#include "core/svg/SVGDocument.h"
+#include "core/SVGNames.h"
+#include "core/dom/XMLDocument.h"
+#include "core/html/HTMLCollection.h"
 #include "core/svg/SVGFontElement.h"
 #endif
 
 namespace WebCore {
 
+static const double fontLoadWaitLimitSec = 3.0;
+
+enum FontPackageFormat {
+    PackageFormatUnknown,
+    PackageFormatSFNT,
+    PackageFormatWOFF,
+    PackageFormatWOFF2,
+    PackageFormatSVG,
+    PackageFormatEnumMax
+};
+
+static FontPackageFormat packageFormatOf(SharedBuffer* buffer)
+{
+    if (buffer->size() < 4)
+        return PackageFormatUnknown;
+
+    const char* data = buffer->data();
+    if (data[0] == 'w' && data[1] == 'O' && data[2] == 'F' && data[3] == 'F')
+        return PackageFormatWOFF;
+    if (data[0] == 'w' && data[1] == 'O' && data[2] == 'F' && data[3] == '2')
+        return PackageFormatWOFF2;
+    return PackageFormatSFNT;
+}
+
+static void recordPackageFormatHistogram(FontPackageFormat format)
+{
+    blink::Platform::current()->histogramEnumeration("WebFont.PackageFormat", format, PackageFormatEnumMax);
+}
+
 FontResource::FontResource(const ResourceRequest& resourceRequest)
     : Resource(resourceRequest, Font)
     , m_loadInitiated(false)
+    , m_exceedsFontLoadWaitLimit(false)
+    , m_fontLoadWaitLimitTimer(this, &FontResource::fontLoadWaitLimitCallback)
 {
 }
 
@@ -74,6 +106,7 @@ void FontResource::beginLoadIfNeeded(ResourceFetcher* dl)
     if (!m_loadInitiated) {
         m_loadInitiated = true;
         Resource::load(dl, m_options);
+        m_fontLoadWaitLimitTimer.startOneShot(fontLoadWaitLimitSec, FROM_HERE);
 
         ResourceClientWalker<FontResourceClient> walker(m_clients);
         while (FontResourceClient* client = walker.next())
@@ -86,8 +119,13 @@ bool FontResource::ensureCustomFontData()
     if (!m_fontData && !errorOccurred() && !isLoading()) {
         if (m_data)
             m_fontData = FontCustomPlatformData::create(m_data.get());
-        if (!m_fontData)
+
+        if (m_fontData) {
+            recordPackageFormatHistogram(packageFormatOf(m_data.get()));
+        } else {
             setStatus(DecodeError);
+            recordPackageFormatHistogram(PackageFormatUnknown);
+        }
     }
     return m_fontData;
 }
@@ -107,19 +145,23 @@ bool FontResource::ensureSVGFontData()
 {
     if (!m_externalSVGDocument && !errorOccurred() && !isLoading()) {
         if (m_data) {
-            m_externalSVGDocument = SVGDocument::create();
+            m_externalSVGDocument = XMLDocument::createSVG();
 
             OwnPtr<TextResourceDecoder> decoder = TextResourceDecoder::create("application/xml");
             String svgSource = decoder->decode(m_data->data(), m_data->size());
-            svgSource.append(decoder->flush());
+            svgSource = svgSource + decoder->flush();
 
             m_externalSVGDocument->setContent(svgSource);
 
             if (decoder->sawError())
-                m_externalSVGDocument = 0;
+                m_externalSVGDocument = nullptr;
         }
-        if (!m_externalSVGDocument)
+        if (m_externalSVGDocument) {
+            recordPackageFormatHistogram(PackageFormatSVG);
+        } else {
             setStatus(DecodeError);
+            recordPackageFormatHistogram(PackageFormatUnknown);
+        }
     }
 
     return m_externalSVGDocument;
@@ -127,26 +169,26 @@ bool FontResource::ensureSVGFontData()
 
 SVGFontElement* FontResource::getSVGFontById(const String& fontName) const
 {
-    RefPtr<NodeList> list = m_externalSVGDocument->getElementsByTagNameNS(SVGNames::fontTag.namespaceURI(), SVGNames::fontTag.localName());
-    if (!list)
+    RefPtrWillBeRawPtr<TagCollection> collection = m_externalSVGDocument->getElementsByTagNameNS(SVGNames::fontTag.namespaceURI(), SVGNames::fontTag.localName());
+    if (!collection)
         return 0;
 
-    unsigned listLength = list->length();
-    if (!listLength)
+    unsigned collectionLength = collection->length();
+    if (!collectionLength)
         return 0;
 
 #ifndef NDEBUG
-    for (unsigned i = 0; i < listLength; ++i) {
-        ASSERT(list->item(i));
-        ASSERT(list->item(i)->hasTagName(SVGNames::fontTag));
+    for (unsigned i = 0; i < collectionLength; ++i) {
+        ASSERT(collection->item(i));
+        ASSERT(isSVGFontElement(collection->item(i)));
     }
 #endif
 
     if (fontName.isEmpty())
-        return toSVGFontElement(list->item(0));
+        return toSVGFontElement(collection->item(0));
 
-    for (unsigned i = 0; i < listLength; ++i) {
-        SVGFontElement* element = toSVGFontElement(list->item(i));
+    for (unsigned i = 0; i < collectionLength; ++i) {
+        SVGFontElement* element = toSVGFontElement(collection->item(i));
         if (element->getIdAttribute() == fontName)
             return element;
     }
@@ -154,6 +196,21 @@ SVGFontElement* FontResource::getSVGFontById(const String& fontName) const
     return 0;
 }
 #endif
+
+bool FontResource::isSafeToUnlock() const
+{
+    return m_data->hasOneRef();
+}
+
+void FontResource::fontLoadWaitLimitCallback(Timer<FontResource>*)
+{
+    if (!isLoading())
+        return;
+    m_exceedsFontLoadWaitLimit = true;
+    ResourceClientWalker<FontResourceClient> walker(m_clients);
+    while (FontResourceClient* client = walker.next())
+        client->fontLoadWaitLimitExceeded(this);
+}
 
 void FontResource::allClientsRemoved()
 {
@@ -163,6 +220,7 @@ void FontResource::allClientsRemoved()
 
 void FontResource::checkNotify()
 {
+    m_fontLoadWaitLimitTimer.stop();
     ResourceClientWalker<FontResourceClient> w(m_clients);
     while (FontResourceClient* c = w.next())
         c->fontLoaded(this);

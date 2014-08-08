@@ -48,11 +48,7 @@ void GrFontCache::detachStrikeFromList(GrTextStrike* strike) {
     }
 }
 
-#if SK_DISTANCEFIELD_FONTS
 GrTextStrike* GrFontCache::getStrike(GrFontScaler* scaler, bool useDistanceField) {
-#else
-GrTextStrike* GrFontCache::getStrike(GrFontScaler* scaler) {
-#endif
     this->validate();
 
     const Key key(scaler->getKey());
@@ -61,7 +57,7 @@ GrTextStrike* GrFontCache::getStrike(GrFontScaler* scaler) {
         strike = this->generateStrike(scaler, key);
     } else if (strike->fPrev) {
         // Need to put the strike at the head of its dllist, since that is how
-        // we age the strikes for purging (we purge from the back of the list
+        // we age the strikes for purging (we purge from the back of the list)
         this->detachStrikeFromList(strike);
         // attach at the head
         fHead->fPrev = strike;
@@ -69,9 +65,7 @@ GrTextStrike* GrFontCache::getStrike(GrFontScaler* scaler) {
         strike->fPrev = NULL;
         fHead = strike;
     }
-#if SK_DISTANCEFIELD_FONTS
     strike->fUseDistanceField = useDistanceField;
-#endif
     this->validate();
     return strike;
 }

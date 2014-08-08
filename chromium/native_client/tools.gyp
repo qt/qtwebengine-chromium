@@ -18,14 +18,10 @@
     'disable_arm_untar%': 0,
     'disable_pnacl_untar%': 0,
     'conditions': [
-      ['OS=="win"', {
-        'TOOLCHAIN_OS': 'i686_w64_mingw32'
-      }],
-      ['OS=="linux"', {
-        'TOOLCHAIN_OS': 'i686_linux'
-      }],
-      ['OS=="mac"', {
-        'TOOLCHAIN_OS': 'x86_64_apple_darwin'
+      ['OS=="android"', {
+        'TOOLCHAIN_OS': 'linux',
+      }, {
+        'TOOLCHAIN_OS': '<(OS)',
       }],
     ]
   },
@@ -57,12 +53,6 @@
     {
       'target_name': 'untar_toolchains',
       'type': 'none',
-      'variables': {
-        'newlib_dir': '<(SHARED_INTERMEDIATE_DIR)/sdk/toolchain/<(OS)_x86_newlib',
-        'glibc_dir': '<(SHARED_INTERMEDIATE_DIR)/sdk/toolchain/<(OS)_x86_glibc',
-        'pnacl_dir': '<(SHARED_INTERMEDIATE_DIR)/sdk/toolchain/<(OS)_pnacl',
-        'arm_dir': '<(SHARED_INTERMEDIATE_DIR)/sdk/toolchain/<(OS)_arm_newlib',
-      },
       'conditions': [
         ['disable_newlib==0 and disable_newlib_untar==0', {
           'actions': [
@@ -71,18 +61,18 @@
               'msvs_cygwin_shell': 0,
               'description': 'Untar x86 newlib toolchain',
               'inputs': [
-                 '<(DEPTH)/native_client/build/cygtar.py',
-                 '<(DEPTH)/native_client/toolchain/.tars/naclsdk_<(OS)_x86.tgz',
+                 '<(DEPTH)/native_client/build/package_version/package_version.py',
+                 '<(DEPTH)/native_client/toolchain/.tars/<(TOOLCHAIN_OS)_x86/nacl_x86_newlib.json',
               ],
-              'outputs': ['>(newlib_dir)/stamp.untar'],
+              'outputs': ['<(SHARED_INTERMEDIATE_DIR)/sdk/<(TOOLCHAIN_OS)_x86/nacl_x86_newlib/nacl_x86_newlib.json'],
               'action': [
                 'python',
-                '<(DEPTH)/native_client/build/untar_toolchain.py',
-                '--tool', 'x86_newlib',
-                '--tmp', '<(SHARED_INTERMEDIATE_DIR)/untar',
-                '--sdk', '<(SHARED_INTERMEDIATE_DIR)/sdk',
-                '--os', '<(OS)',
-                '<(DEPTH)/native_client/toolchain/.tars/naclsdk_<(OS)_x86.tgz',
+                '<(DEPTH)/native_client/build/package_version/package_version.py',
+                '--quiet',
+                '--packages', 'nacl_x86_newlib',
+                '--tar-dir', '<(DEPTH)/native_client/toolchain/.tars',
+                '--dest-dir', '<(SHARED_INTERMEDIATE_DIR)/sdk',
+                'extract',
               ],
             },
           ]
@@ -94,18 +84,18 @@
               'msvs_cygwin_shell': 0,
               'description': 'Untar x86 glibc toolchain',
               'inputs': [
-                 '<(DEPTH)/native_client/build/cygtar.py',
-                 '<(DEPTH)/native_client/toolchain/.tars/toolchain_<(OS)_x86.tar.bz2',
+                '<(DEPTH)/native_client/build/package_version/package_version.py',
+                '<(DEPTH)/native_client/toolchain/.tars/<(TOOLCHAIN_OS)_x86/nacl_x86_glibc.json',
               ],
-              'outputs': ['>(glibc_dir)/stamp.untar'],
+              'outputs': ['<(SHARED_INTERMEDIATE_DIR)/sdk/<(TOOLCHAIN_OS)_x86/nacl_x86_glibc/nacl_x86_glibc.json'],
               'action': [
                 'python',
-                '<(DEPTH)/native_client/build/untar_toolchain.py',
-                '--tool', 'x86_glibc',
-                '--tmp', '<(SHARED_INTERMEDIATE_DIR)/untar',
-                '--sdk', '<(SHARED_INTERMEDIATE_DIR)/sdk',
-                '--os', '<(OS)',
-                '<(DEPTH)/native_client/toolchain/.tars/toolchain_<(OS)_x86.tar.bz2',
+                '<(DEPTH)/native_client/build/package_version/package_version.py',
+                '--quiet',
+                '--packages', 'nacl_x86_glibc',
+                '--tar-dir', '<(DEPTH)/native_client/toolchain/.tars',
+                '--dest-dir', '<(SHARED_INTERMEDIATE_DIR)/sdk',
+                'extract',
               ],
             },
           ]
@@ -117,18 +107,18 @@
               'msvs_cygwin_shell': 0,
               'description': 'Untar pnacl toolchain',
               'inputs': [
-                 '<(DEPTH)/native_client/build/cygtar.py',
-                 '<(DEPTH)/native_client/toolchain/.tars/naclsdk_pnacl_<(OS)_x86.tgz',
+                '<(DEPTH)/native_client/build/package_version/package_version.py',
+                '<(DEPTH)/native_client/toolchain/.tars/<(TOOLCHAIN_OS)_x86/pnacl_newlib.json',
               ],
-              'outputs': ['>(pnacl_dir)/stamp.untar'],
+              'outputs': ['<(SHARED_INTERMEDIATE_DIR)/sdk/<(TOOLCHAIN_OS)_x86/pnacl_newlib/pnacl_newlib.json'],
               'action': [
                 'python',
-                '<(DEPTH)/native_client/build/untar_toolchain.py',
-                '--tool', 'pnacl',
-                '--tmp', '<(SHARED_INTERMEDIATE_DIR)/untar',
-                '--sdk', '<(SHARED_INTERMEDIATE_DIR)/sdk',
-                '--os', '<(OS)',
-                '<(DEPTH)/native_client/toolchain/.tars/naclsdk_pnacl_<(OS)_x86.tgz',
+                '<(DEPTH)/native_client/build/package_version/package_version.py',
+                '--quiet',
+                '--packages', 'pnacl_newlib',
+                '--tar-dir', '<(DEPTH)/native_client/toolchain/.tars',
+                '--dest-dir', '<(SHARED_INTERMEDIATE_DIR)/sdk',
+                'extract',
               ],
             },
           ]
@@ -140,24 +130,18 @@
               'msvs_cygwin_shell': 0,
               'description': 'Untar arm toolchain',
               'inputs': [
-                 '<(DEPTH)/native_client/build/cygtar.py',
-                 '<(DEPTH)/native_client/toolchain/.tars/gcc_arm_<(TOOLCHAIN_OS).tgz',
-                 '<(DEPTH)/native_client/toolchain/.tars/binutils_arm_<(TOOLCHAIN_OS).tgz',
-                 '<(DEPTH)/native_client/toolchain/.tars/newlib_arm.tgz',
-                 '<(DEPTH)/native_client/toolchain/.tars/gcc_libs_arm.tgz',
+                '<(DEPTH)/native_client/build/package_version/package_version.py',
+                '<(DEPTH)/native_client/toolchain/.tars/<(TOOLCHAIN_OS)_x86/nacl_arm_newlib.json',
               ],
-              'outputs': ['>(arm_dir)/stamp.untar'],
+              'outputs': ['<(SHARED_INTERMEDIATE_DIR)/sdk/<(TOOLCHAIN_OS)_x86/nacl_arm_newlib/nacl_arm_newlib.json'],
               'action': [
                 'python',
-                '<(DEPTH)/native_client/build/untar_toolchain.py',
-                '--tool', 'arm_newlib',
-                '--tmp', '<(SHARED_INTERMEDIATE_DIR)/untar',
-                '--sdk', '<(SHARED_INTERMEDIATE_DIR)/sdk',
-                '--os', '<(OS)',
-                '<(DEPTH)/native_client/toolchain/.tars/gcc_arm_<(TOOLCHAIN_OS).tgz',
-                '<(DEPTH)/native_client/toolchain/.tars/binutils_arm_<(TOOLCHAIN_OS).tgz',
-                '<(DEPTH)/native_client/toolchain/.tars/newlib_arm.tgz',
-                '<(DEPTH)/native_client/toolchain/.tars/gcc_libs_arm.tgz',
+                '<(DEPTH)/native_client/build/package_version/package_version.py',
+                '--quiet',
+                '--packages', 'nacl_arm_newlib',
+                '--tar-dir', '<(DEPTH)/native_client/toolchain/.tars',
+                '--dest-dir', '<(SHARED_INTERMEDIATE_DIR)/sdk',
+                'extract',
               ],
             },
           ]
@@ -171,10 +155,10 @@
         'untar_toolchains',
       ],
       'variables': {
-        'newlib_dir': '<(SHARED_INTERMEDIATE_DIR)/sdk/toolchain/<(OS)_x86_newlib',
-        'glibc_dir': '<(SHARED_INTERMEDIATE_DIR)/sdk/toolchain/<(OS)_x86_glibc',
-        'arm_dir': '<(SHARED_INTERMEDIATE_DIR)/sdk/toolchain/<(OS)_arm_newlib',
-        'pnacl_dir': '<(SHARED_INTERMEDIATE_DIR)/sdk/toolchain/<(OS)_pnacl',
+        'newlib_dir': '<(SHARED_INTERMEDIATE_DIR)/sdk/<(TOOLCHAIN_OS)_x86/nacl_x86_newlib',
+        'glibc_dir': '<(SHARED_INTERMEDIATE_DIR)/sdk/<(TOOLCHAIN_OS)_x86/nacl_x86_glibc',
+        'pnacl_dir': '<(SHARED_INTERMEDIATE_DIR)/sdk/<(TOOLCHAIN_OS)_x86/pnacl_newlib',
+        'arm_dir': '<(SHARED_INTERMEDIATE_DIR)/sdk/<(TOOLCHAIN_OS)_x86/nacl_arm_newlib',
       },
       'conditions': [
         ['disable_newlib==0', {
@@ -184,7 +168,7 @@
               'msvs_cygwin_shell': 0,
               'description': 'Prep x86 newlib toolchain',
               'inputs': [
-                 '<(newlib_dir)/stamp.untar',
+                 '<(newlib_dir)/nacl_x86_newlib.json',
                  '>!@pymod_do_main(prep_nacl_sdk --inputs --tool x86_newlib)',
               ],
               'outputs': ['<(newlib_dir)/stamp.prep'],
@@ -204,7 +188,7 @@
               'msvs_cygwin_shell': 0,
               'description': 'Prep x86 glibc toolchain',
               'inputs': [
-                 '<(glibc_dir)/stamp.untar',
+                 '<(glibc_dir)/nacl_x86_glibc.json',
                  '>!@pymod_do_main(prep_nacl_sdk --inputs --tool x86_glibc)',
               ],
               'outputs': ['<(glibc_dir)/stamp.prep'],
@@ -224,7 +208,7 @@
               'msvs_cygwin_shell': 0,
               'description': 'Prep arm toolchain',
               'inputs': [
-                 '<(arm_dir)/stamp.untar',
+                 '<(arm_dir)/nacl_arm_newlib.json',
                  '>!@pymod_do_main(prep_nacl_sdk --inputs --tool arm_newlib)',
               ],
               'outputs': ['<(arm_dir)/stamp.prep'],
@@ -244,7 +228,7 @@
               'msvs_cygwin_shell': 0,
               'description': 'Prep pnacl toolchain',
               'inputs': [
-                 '<(pnacl_dir)/stamp.untar',
+                 '<(pnacl_dir)/pnacl_newlib.json',
                  '>!@pymod_do_main(prep_nacl_sdk --inputs --tool pnacl)',
               ],
               'outputs': ['<(pnacl_dir)/stamp.prep'],

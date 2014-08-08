@@ -33,8 +33,8 @@ class MockMDnsDatagramServerSocket : public DatagramServerSocket {
                                    const std::string address,
                                    const CompletionCallback& callback));
 
-  MOCK_METHOD1(SetReceiveBufferSize, bool(int32 size));
-  MOCK_METHOD1(SetSendBufferSize, bool(int32 size));
+  MOCK_METHOD1(SetReceiveBufferSize, int(int32 size));
+  MOCK_METHOD1(SetSendBufferSize, int(int32 size));
 
   MOCK_METHOD0(Close, void());
 
@@ -53,6 +53,8 @@ class MockMDnsDatagramServerSocket : public DatagramServerSocket {
   MOCK_METHOD1(SetMulticastLoopbackMode, int(bool loopback));
 
   MOCK_METHOD1(SetDiffServCodePoint, int(DiffServCodePoint dscp));
+
+  MOCK_METHOD0(DetachFromThread, void());
 
   void SetResponsePacket(std::string response_packet);
 

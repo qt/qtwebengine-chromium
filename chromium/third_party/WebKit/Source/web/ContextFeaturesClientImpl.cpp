@@ -29,19 +29,20 @@
  */
 
 #include "config.h"
-#include "ContextFeaturesClientImpl.h"
+#include "web/ContextFeaturesClientImpl.h"
 
-#include "WebDocument.h"
-#include "WebFrameImpl.h"
-#include "WebPermissionClient.h"
 #include "core/dom/Document.h"
 #include "platform/weborigin/SecurityOrigin.h"
+#include "public/web/WebDocument.h"
+#include "public/web/WebPermissionClient.h"
+#include "web/WebLocalFrameImpl.h"
 
 using namespace WebCore;
 
 namespace blink {
 
-class ContextFeaturesCache : public DocumentSupplement {
+class ContextFeaturesCache FINAL : public NoBaseWillBeGarbageCollectedFinalized<ContextFeaturesCache>, public DocumentSupplement {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(ContextFeaturesCache);
 public:
     class Entry {
     public:
@@ -79,7 +80,7 @@ public:
     };
 
     static const char* supplementName();
-    static ContextFeaturesCache* from(Document*);
+    static ContextFeaturesCache& from(Document&);
 
     Entry& entryFor(ContextFeatures::FeatureType type)
     {
@@ -100,15 +101,15 @@ const char* ContextFeaturesCache::supplementName()
     return "ContextFeaturesCache";
 }
 
-ContextFeaturesCache* ContextFeaturesCache::from(Document* document)
+ContextFeaturesCache& ContextFeaturesCache::from(Document& document)
 {
     ContextFeaturesCache* cache = static_cast<ContextFeaturesCache*>(DocumentSupplement::from(document, supplementName()));
     if (!cache) {
         cache = new ContextFeaturesCache();
-        DocumentSupplement::provideTo(document, supplementName(), adoptPtr(cache));
+        DocumentSupplement::provideTo(document, supplementName(), adoptPtrWillBeNoop(cache));
     }
 
-    return cache;
+    return *cache;
 }
 
 void ContextFeaturesCache::validateAgainst(Document* document)
@@ -123,7 +124,8 @@ void ContextFeaturesCache::validateAgainst(Document* document)
 
 bool ContextFeaturesClientImpl::isEnabled(Document* document, ContextFeatures::FeatureType type, bool defaultValue)
 {
-    ContextFeaturesCache::Entry& cache = ContextFeaturesCache::from(document)->entryFor(type);
+    ASSERT(document);
+    ContextFeaturesCache::Entry& cache = ContextFeaturesCache::from(*document).entryFor(type);
     if (cache.needsRefresh(defaultValue))
         cache.set(askIfIsEnabled(document, type, defaultValue), defaultValue);
     return cache.isEnabled();
@@ -131,49 +133,21 @@ bool ContextFeaturesClientImpl::isEnabled(Document* document, ContextFeatures::F
 
 void ContextFeaturesClientImpl::urlDidChange(Document* document)
 {
-    ContextFeaturesCache::from(document)->validateAgainst(document);
+    ASSERT(document);
+    ContextFeaturesCache::from(*document).validateAgainst(document);
 }
 
 bool ContextFeaturesClientImpl::askIfIsEnabled(Document* document, ContextFeatures::FeatureType type, bool defaultValue)
 {
-    if (!m_client)
+    WebLocalFrameImpl* frame = WebLocalFrameImpl::fromFrame(document->frame());
+    if (!frame || !frame->permissionClient())
         return defaultValue;
-
-#if defined(WEBPERMISSIONCLIENT_USES_FRAME_FOR_ALL_METHODS)
-    WebFrameImpl* frame = WebFrameImpl::fromFrame(document->frame());
-    if (!frame)
-        return defaultValue;
-
-    if (frame->permissionClient()) {
-        switch (type) {
-        case ContextFeatures::StyleScoped:
-            return frame->permissionClient()->allowWebComponents(frame, defaultValue);
-        case ContextFeatures::MutationEvents:
-            return frame->permissionClient()->allowMutationEvents(frame, defaultValue);
-        case ContextFeatures::PushState:
-            return frame->permissionClient()->allowPushState(frame);
-        default:
-            return defaultValue;
-        }
-    }
-#endif
 
     switch (type) {
-#if defined(WEBPERMISSIONCLIENT_USES_FRAME_FOR_ALL_METHODS)
-    case ContextFeatures::StyleScoped:
-        return m_client->allowWebComponents(frame, defaultValue);
     case ContextFeatures::MutationEvents:
-        return m_client->allowMutationEvents(frame, defaultValue);
+        return frame->permissionClient()->allowMutationEvents(defaultValue);
     case ContextFeatures::PushState:
-        return m_client->allowPushState(frame);
-#else
-    case ContextFeatures::StyleScoped:
-        return m_client->allowWebComponents(WebDocument(document), defaultValue);
-    case ContextFeatures::MutationEvents:
-        return m_client->allowMutationEvents(WebDocument(document), defaultValue);
-    case ContextFeatures::PushState:
-        return m_client->allowPushState(WebDocument(document));
-#endif
+        return frame->permissionClient()->allowPushState();
     default:
         return defaultValue;
     }

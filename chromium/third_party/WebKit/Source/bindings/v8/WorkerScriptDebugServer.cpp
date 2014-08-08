@@ -42,11 +42,10 @@
 
 namespace WebCore {
 
-WorkerScriptDebugServer::WorkerScriptDebugServer(WorkerGlobalScope* workerGlobalScope, const String& mode)
+WorkerScriptDebugServer::WorkerScriptDebugServer(WorkerGlobalScope* workerGlobalScope)
     : ScriptDebugServer(v8::Isolate::GetCurrent())
     , m_listener(0)
     , m_workerGlobalScope(workerGlobalScope)
-    , m_debuggerTaskMode(mode)
 {
     ASSERT(m_isolate);
 }
@@ -54,16 +53,17 @@ WorkerScriptDebugServer::WorkerScriptDebugServer(WorkerGlobalScope* workerGlobal
 void WorkerScriptDebugServer::addListener(ScriptDebugListener* listener)
 {
     v8::HandleScope scope(m_isolate);
+    ASSERT(!m_listener);
+
+    v8::Debug::SetDebugEventListener(&WorkerScriptDebugServer::v8DebugEventCallback, v8::External::New(m_isolate, this));
+    ensureDebuggerScriptCompiled();
+    m_listener = listener;
+
     v8::Local<v8::Context> debuggerContext = v8::Debug::GetDebugContext();
     v8::Context::Scope contextScope(debuggerContext);
 
-    ASSERT(!m_listener);
-    m_listener = listener;
-
-    ensureDebuggerScriptCompiled();
     v8::Local<v8::Object> debuggerScript = m_debuggerScript.newLocal(m_isolate);
     ASSERT(!debuggerScript->IsUndefined());
-    v8::Debug::SetDebugEventListener2(&WorkerScriptDebugServer::v8DebugEventCallback, v8::External::New(m_isolate, this));
 
     v8::Handle<v8::Function> getScriptsFunction = v8::Local<v8::Function>::Cast(debuggerScript->Get(v8AtomicString(m_isolate, "getWorkerScripts")));
     v8::Handle<v8::Value> value = V8ScriptRunner::callInternalFunction(getScriptsFunction, debuggerScript, 0, 0, m_isolate);
@@ -72,15 +72,16 @@ void WorkerScriptDebugServer::addListener(ScriptDebugListener* listener)
     ASSERT(!value->IsUndefined() && value->IsArray());
     v8::Handle<v8::Array> scriptsArray = v8::Handle<v8::Array>::Cast(value);
     for (unsigned i = 0; i < scriptsArray->Length(); ++i)
-        dispatchDidParseSource(listener, v8::Handle<v8::Object>::Cast(scriptsArray->Get(v8::Integer::New(i, m_isolate))));
+        dispatchDidParseSource(listener, v8::Handle<v8::Object>::Cast(scriptsArray->Get(v8::Integer::New(m_isolate, i))));
 }
 
 void WorkerScriptDebugServer::removeListener(ScriptDebugListener* listener)
 {
     ASSERT(m_listener == listener);
     continueProgram();
+    discardDebuggerScript();
     m_listener = 0;
-    v8::Debug::SetDebugEventListener2(0);
+    v8::Debug::SetDebugEventListener(0);
 }
 
 void WorkerScriptDebugServer::interruptAndRunTask(PassOwnPtr<Task> task)
@@ -98,7 +99,7 @@ void WorkerScriptDebugServer::runMessageLoopOnPause(v8::Handle<v8::Context>)
 {
     MessageQueueWaitResult result;
     do {
-        result = m_workerGlobalScope->thread()->runLoop().runInMode(m_workerGlobalScope, m_debuggerTaskMode);
+        result = m_workerGlobalScope->thread()->runLoop().runDebuggerTask();
     // Keep waiting until execution is resumed.
     } while (result == MessageQueueMessageReceived && isPaused());
 

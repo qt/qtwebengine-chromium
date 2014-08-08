@@ -31,9 +31,10 @@
 #include "modules/indexeddb/IDBKeyPath.h"
 #include "modules/indexeddb/IDBKeyRange.h"
 #include "modules/indexeddb/IDBMetadata.h"
-#include "modules/indexeddb/IDBObjectStore.h"
 #include "modules/indexeddb/IDBRequest.h"
+#include "public/platform/WebIDBCursor.h"
 #include "public/platform/WebIDBDatabase.h"
+#include "public/platform/WebIDBTypes.h"
 #include "wtf/Forward.h"
 #include "wtf/text/WTFString.h"
 
@@ -42,41 +43,44 @@ namespace WebCore {
 class ExceptionState;
 class IDBObjectStore;
 
-class IDBIndex : public ScriptWrappable, public RefCounted<IDBIndex> {
+class IDBIndex : public GarbageCollectedFinalized<IDBIndex>, public ScriptWrappable {
 public:
-    static PassRefPtr<IDBIndex> create(const IDBIndexMetadata& metadata, IDBObjectStore* objectStore, IDBTransaction* transaction)
+    static IDBIndex* create(const IDBIndexMetadata& metadata, IDBObjectStore* objectStore, IDBTransaction* transaction)
     {
-        return adoptRef(new IDBIndex(metadata, objectStore, transaction));
+        return new IDBIndex(metadata, objectStore, transaction);
     }
     ~IDBIndex();
+    void trace(Visitor*);
 
     // Implement the IDL
     const String& name() const { return m_metadata.name; }
-    PassRefPtr<IDBObjectStore> objectStore() const { return m_objectStore; }
-    ScriptValue keyPath(ExecutionContext*) const;
+    IDBObjectStore* objectStore() const { return m_objectStore.get(); }
+    ScriptValue keyPath(ScriptState*) const;
     bool unique() const { return m_metadata.unique; }
     bool multiEntry() const { return m_metadata.multiEntry; }
 
-    PassRefPtr<IDBRequest> openCursor(ExecutionContext*, const ScriptValue& key, const String& direction, ExceptionState&);
-    PassRefPtr<IDBRequest> openKeyCursor(ExecutionContext*, const ScriptValue& range, const String& direction, ExceptionState&);
-    PassRefPtr<IDBRequest> count(ExecutionContext*, const ScriptValue& range, ExceptionState&);
-    PassRefPtr<IDBRequest> get(ExecutionContext*, const ScriptValue& key, ExceptionState&);
-    PassRefPtr<IDBRequest> getKey(ExecutionContext*, const ScriptValue& key, ExceptionState&);
+    IDBRequest* openCursor(ScriptState*, const ScriptValue& key, const String& direction, ExceptionState&);
+    IDBRequest* openKeyCursor(ScriptState*, const ScriptValue& range, const String& direction, ExceptionState&);
+    IDBRequest* count(ScriptState*, const ScriptValue& range, ExceptionState&);
+    IDBRequest* get(ScriptState*, const ScriptValue& key, ExceptionState&);
+    IDBRequest* getKey(ScriptState*, const ScriptValue& key, ExceptionState&);
 
     void markDeleted() { m_deleted = true; }
     bool isDeleted() const;
 
     // Used internally and by InspectorIndexedDBAgent:
-    PassRefPtr<IDBRequest> openCursor(ExecutionContext*, PassRefPtr<IDBKeyRange>, IndexedDB::CursorDirection);
+    IDBRequest* openCursor(ScriptState*, IDBKeyRange*, blink::WebIDBCursorDirection);
 
     blink::WebIDBDatabase* backendDB() const;
 
 private:
     IDBIndex(const IDBIndexMetadata&, IDBObjectStore*, IDBTransaction*);
 
+    IDBRequest* getInternal(ScriptState*, const ScriptValue& key, ExceptionState&, bool keyOnly);
+
     IDBIndexMetadata m_metadata;
-    RefPtr<IDBObjectStore> m_objectStore;
-    RefPtr<IDBTransaction> m_transaction;
+    Member<IDBObjectStore> m_objectStore;
+    Member<IDBTransaction> m_transaction;
     bool m_deleted;
 };
 

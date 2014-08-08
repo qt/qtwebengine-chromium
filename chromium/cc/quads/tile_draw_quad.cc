@@ -22,26 +22,32 @@ scoped_ptr<TileDrawQuad> TileDrawQuad::Create() {
 }
 
 void TileDrawQuad::SetNew(const SharedQuadState* shared_quad_state,
-                          gfx::Rect rect,
-                          gfx::Rect opaque_rect,
+                          const gfx::Rect& rect,
+                          const gfx::Rect& opaque_rect,
+                          const gfx::Rect& visible_rect,
                           unsigned resource_id,
                           const gfx::RectF& tex_coord_rect,
-                          gfx::Size texture_size,
+                          const gfx::Size& texture_size,
                           bool swizzle_contents) {
-  ContentDrawQuadBase::SetNew(shared_quad_state, DrawQuad::TILED_CONTENT, rect,
-                              opaque_rect, tex_coord_rect, texture_size,
+  ContentDrawQuadBase::SetNew(shared_quad_state,
+                              DrawQuad::TILED_CONTENT,
+                              rect,
+                              opaque_rect,
+                              visible_rect,
+                              tex_coord_rect,
+                              texture_size,
                               swizzle_contents);
   this->resource_id = resource_id;
 }
 
 void TileDrawQuad::SetAll(const SharedQuadState* shared_quad_state,
-                          gfx::Rect rect,
-                          gfx::Rect opaque_rect,
-                          gfx::Rect visible_rect,
+                          const gfx::Rect& rect,
+                          const gfx::Rect& opaque_rect,
+                          const gfx::Rect& visible_rect,
                           bool needs_blending,
                           unsigned resource_id,
                           const gfx::RectF& tex_coord_rect,
-                          gfx::Size texture_size,
+                          const gfx::Size& texture_size,
                           bool swizzle_contents) {
   ContentDrawQuadBase::SetAll(shared_quad_state, DrawQuad::TILED_CONTENT, rect,
                               opaque_rect, visible_rect, needs_blending,

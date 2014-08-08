@@ -23,9 +23,13 @@ class MessageLoopProxy;
 
 }  // namespace base
 
-namespace content {
+namespace media {
 
-class RendererGpuVideoAcceleratorFactories;
+class GpuVideoAcceleratorFactories;
+
+}  // namespace media
+
+namespace content {
 
 // RTCVideoEncoder uses a media::VideoEncodeAccelerator to implement a
 // webrtc::VideoEncoder class for WebRTC.  Internally, VEA methods are
@@ -41,7 +45,7 @@ class CONTENT_EXPORT RTCVideoEncoder
   RTCVideoEncoder(
       webrtc::VideoCodecType type,
       media::VideoCodecProfile profile,
-      const scoped_refptr<RendererGpuVideoAcceleratorFactories>& gpu_factories);
+      const scoped_refptr<media::GpuVideoAcceleratorFactories>& gpu_factories);
   virtual ~RTCVideoEncoder();
 
   // webrtc::VideoEncoder implementation.  Tasks are posted to |impl_| using the
@@ -65,7 +69,8 @@ class CONTENT_EXPORT RTCVideoEncoder
 
   // Return an encoded output buffer to WebRTC.
   void ReturnEncodedImage(scoped_ptr<webrtc::EncodedImage> image,
-                          int32 bitstream_buffer_id);
+                          int32 bitstream_buffer_id,
+                          uint16 picture_id);
 
   void NotifyError(int32_t error);
 
@@ -80,7 +85,7 @@ class CONTENT_EXPORT RTCVideoEncoder
   const media::VideoCodecProfile video_codec_profile_;
 
   // Factory for creating VEAs, shared memory buffers, etc.
-  scoped_refptr<RendererGpuVideoAcceleratorFactories> gpu_factories_;
+  scoped_refptr<media::GpuVideoAcceleratorFactories> gpu_factories_;
 
   // webrtc::VideoEncoder encode complete callback.
   webrtc::EncodedImageCallback* encoded_image_callback_;
@@ -96,7 +101,8 @@ class CONTENT_EXPORT RTCVideoEncoder
 
   // Weak pointer factory for posting back VEA::Client notifications to
   // RTCVideoEncoder.
-  base::WeakPtrFactory<RTCVideoEncoder> weak_this_factory_;
+  // NOTE: Weak pointers must be invalidated before all other member variables.
+  base::WeakPtrFactory<RTCVideoEncoder> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(RTCVideoEncoder);
 };

@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// Common utilities for Quic tests
+
 #ifndef NET_TOOLS_QUIC_TEST_TOOLS_QUIC_TEST_UTILS_H_
 #define NET_TOOLS_QUIC_TEST_TOOLS_QUIC_TEST_UTILS_H_
 
@@ -11,7 +13,6 @@
 #include "net/quic/quic_connection.h"
 #include "net/quic/quic_packet_writer.h"
 #include "net/quic/quic_session.h"
-#include "net/quic/quic_spdy_decompressor.h"
 #include "net/spdy/spdy_framer.h"
 #include "net/tools/quic/quic_server_session.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -24,38 +25,31 @@ class IPEndPoint;
 namespace tools {
 namespace test {
 
-static const QuicGuid kTestGuid = 42;
+static const QuicConnectionId kTestConnectionId = 42;
 static const int kTestPort = 123;
+static const uint32 kInitialStreamFlowControlWindowForTest =
+    32 * 1024;  // 32 KB
+static const uint32 kInitialSessionFlowControlWindowForTest =
+    64 * 1024;  // 64 KB
 
-// Simple random number generator used to compute random numbers suitable
-// for pseudo-randomly dropping packets in tests.  It works by computing
-// the sha1 hash of the current seed, and using the first 64 bits as
-// the next random number, and the next seed.
-class SimpleRandom {
- public:
-  SimpleRandom() : seed_(0) {}
-
-  // Returns a random number in the range [0, kuint64max].
-  uint64 RandUint64();
-
-  void set_seed(uint64 seed) { seed_ = seed; }
-
- private:
-  uint64 seed_;
-};
+// Testing convenience method to construct a QuicAckFrame with |num_nack_ranges|
+// nack ranges of width 1 packet, starting from |least_unacked|.
+QuicAckFrame MakeAckFrameWithNackRanges(size_t num_nack_ranges,
+                                        QuicPacketSequenceNumber least_unacked);
 
 class MockConnection : public QuicConnection {
  public:
-  // Uses a MockHelper, GUID of 42, and 127.0.0.1:123.
+  // Uses a MockHelper, ConnectionId of 42, and 127.0.0.1:123.
   explicit MockConnection(bool is_server);
 
-  // Uses a MockHelper, GUID of 42.
-  MockConnection(IPEndPoint address,
-                 bool is_server);
+  // Uses a MockHelper, ConnectionId of 42.
+  MockConnection(IPEndPoint address, bool is_server);
 
   // Uses a MockHelper, and 127.0.0.1:123
-  MockConnection(QuicGuid guid,
-                 bool is_server);
+  MockConnection(QuicConnectionId connection_id, bool is_server);
+
+  // Uses a Mock helper, ConnectionId of 42, and 127.0.0.1:123.
+  MockConnection(bool is_server, const QuicVersionVector& supported_versions);
 
   virtual ~MockConnection();
 
@@ -70,12 +64,19 @@ class MockConnection : public QuicConnection {
   MOCK_METHOD2(SendConnectionCloseWithDetails, void(
       QuicErrorCode error,
       const std::string& details));
-  MOCK_METHOD2(SendRstStream, void(QuicStreamId id,
-                                   QuicRstStreamErrorCode error));
+  MOCK_METHOD2(SendConnectionClosePacket, void(QuicErrorCode error,
+                                               const std::string& details));
+  MOCK_METHOD3(SendRstStream, void(QuicStreamId id,
+                                   QuicRstStreamErrorCode error,
+                                   QuicStreamOffset bytes_written));
   MOCK_METHOD3(SendGoAway, void(QuicErrorCode error,
                                 QuicStreamId last_good_stream_id,
                                 const std::string& reason));
-  MOCK_METHOD0(OnCanWrite, bool());
+  MOCK_METHOD1(SendBlocked, void(QuicStreamId id));
+  MOCK_METHOD2(SendWindowUpdate, void(QuicStreamId id,
+                                      QuicStreamOffset byte_offset));
+  MOCK_METHOD0(OnCanWrite, void());
+  MOCK_CONST_METHOD0(HasPendingWrites, bool());
 
   void ReallyProcessUdpPacket(const IPEndPoint& self_address,
                               const IPEndPoint& peer_address,
@@ -102,10 +103,11 @@ class TestSession : public QuicSession {
 
   void SetCryptoStream(QuicCryptoStream* stream);
 
-  virtual QuicCryptoStream* GetCryptoStream();
+  virtual QuicCryptoStream* GetCryptoStream() OVERRIDE;
 
  private:
   QuicCryptoStream* crypto_stream_;
+
   DISALLOW_COPY_AND_ASSIGN(TestSession);
 };
 
@@ -114,42 +116,46 @@ class MockPacketWriter : public QuicPacketWriter {
   MockPacketWriter();
   virtual ~MockPacketWriter();
 
-  MOCK_METHOD5(WritePacket,
+  MOCK_METHOD4(WritePacket,
                WriteResult(const char* buffer,
                            size_t buf_len,
                            const IPAddressNumber& self_address,
-                           const IPEndPoint& peer_address,
-                           QuicBlockedWriterInterface* blocked_writer));
+                           const IPEndPoint& peer_address));
   MOCK_CONST_METHOD0(IsWriteBlockedDataBuffered, bool());
-};
-
-class MockQuicSessionOwner : public QuicSessionOwner {
- public:
-  MockQuicSessionOwner();
-  ~MockQuicSessionOwner();
-  MOCK_METHOD2(OnConnectionClosed, void(QuicGuid guid, QuicErrorCode error));
-};
-
-class TestDecompressorVisitor : public QuicSpdyDecompressor::Visitor {
- public:
-  virtual ~TestDecompressorVisitor() {}
-  virtual bool OnDecompressedData(base::StringPiece data) OVERRIDE;
-  virtual void OnDecompressionError() OVERRIDE;
-
-  std::string data() { return data_; }
-  bool error() { return error_; }
+  MOCK_CONST_METHOD0(IsWriteBlocked, bool());
+  MOCK_METHOD0(SetWritable, void());
 
  private:
-  std::string data_;
-  bool error_;
+  DISALLOW_COPY_AND_ASSIGN(MockPacketWriter);
+};
+
+class MockQuicServerSessionVisitor : public QuicServerSessionVisitor {
+ public:
+  MockQuicServerSessionVisitor();
+  virtual ~MockQuicServerSessionVisitor();
+  MOCK_METHOD2(OnConnectionClosed, void(QuicConnectionId connection_id,
+                                        QuicErrorCode error));
+  MOCK_METHOD1(OnWriteBlocked, void(QuicBlockedWriterInterface* writer));
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(MockQuicServerSessionVisitor);
 };
 
 class MockAckNotifierDelegate : public QuicAckNotifier::DelegateInterface {
  public:
   MockAckNotifierDelegate();
+
+  MOCK_METHOD5(OnAckNotification, void(int num_original_packets,
+                                       int num_original_bytes,
+                                       int num_retransmitted_packets,
+                                       int num_retransmitted_bytes,
+                                       QuicTime::Delta delta_largest_observed));
+
+ protected:
+  // Object is ref counted.
   virtual ~MockAckNotifierDelegate();
 
-  MOCK_METHOD0(OnAckNotification, void());
+  DISALLOW_COPY_AND_ASSIGN(MockAckNotifierDelegate);
 };
 
 }  // namespace test

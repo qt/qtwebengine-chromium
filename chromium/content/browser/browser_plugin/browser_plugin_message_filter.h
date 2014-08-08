@@ -7,23 +7,23 @@
 
 #include "content/public/browser/browser_message_filter.h"
 
+struct FrameHostMsg_BuffersSwappedACK_Params;
+
 namespace content {
 
 class BrowserContext;
-class BrowserPluginGuestManager;
 
 // This class filters out incoming IPC messages for the guest renderer process
 // on the IPC thread before other message filters handle them.
 class BrowserPluginMessageFilter : public BrowserMessageFilter {
  public:
-  BrowserPluginMessageFilter(int render_process_id, bool is_guest);
+  BrowserPluginMessageFilter(int render_process_id);
 
   // BrowserMessageFilter implementation.
   virtual void OverrideThreadForMessage(
     const IPC::Message& message,
     BrowserThread::ID* thread) OVERRIDE;
-  virtual bool OnMessageReceived(const IPC::Message& message,
-                                 bool* message_was_ok) OVERRIDE;
+  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
   virtual void OnDestruct() const OVERRIDE;
 
  private:
@@ -32,10 +32,11 @@ class BrowserPluginMessageFilter : public BrowserMessageFilter {
 
   virtual ~BrowserPluginMessageFilter();
 
-  BrowserPluginGuestManager* GetBrowserPluginGuestManager();
+  void ForwardMessageToGuest(const IPC::Message& message);
+
+  void OnSwapBuffersACK(const FrameHostMsg_BuffersSwappedACK_Params& params);
 
   int render_process_id_;
-  int is_guest_;
 
   DISALLOW_COPY_AND_ASSIGN(BrowserPluginMessageFilter);
 };

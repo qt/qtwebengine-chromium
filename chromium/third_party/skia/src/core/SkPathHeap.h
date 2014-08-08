@@ -13,15 +13,15 @@
 #include "SkTDArray.h"
 
 class SkPath;
-class SkFlattenableReadBuffer;
-class SkFlattenableWriteBuffer;
+class SkReadBuffer;
+class SkWriteBuffer;
 
 class SkPathHeap : public SkRefCnt {
 public:
     SK_DECLARE_INST_COUNT(SkPathHeap)
 
     SkPathHeap();
-    SkPathHeap(SkFlattenableReadBuffer&);
+    SkPathHeap(SkReadBuffer&);
     virtual ~SkPathHeap();
 
     /** Copy the path into the heap, and return the new total number of paths.
@@ -30,19 +30,45 @@ public:
      */
     int append(const SkPath&);
 
+    /** Add the specified path to the heap using its gen ID to de-duplicate.
+        Returns the path's index in the heap + 1.
+     */
+    int insert(const SkPath&);
+
     // called during picture-playback
     int count() const { return fPaths.count(); }
     const SkPath& operator[](int index) const {
         return *fPaths[index];
     }
 
-    void flatten(SkFlattenableWriteBuffer&) const;
+    void flatten(SkWriteBuffer&) const;
 
 private:
     // we store the paths in the heap (placement new)
     SkChunkAlloc        fHeap;
     // we just store ptrs into fHeap here
     SkTDArray<SkPath*>  fPaths;
+
+    class LookupEntry {
+    public:
+        LookupEntry(const SkPath& path);
+
+        int storageSlot() const { return fStorageSlot; }
+        void setStorageSlot(int storageSlot) { fStorageSlot = storageSlot; }
+
+        static bool Less(const LookupEntry& a, const LookupEntry& b) {
+            return a.fGenerationID < b.fGenerationID;
+        }
+
+    private:
+        uint32_t fGenerationID;     // the SkPath's generation ID
+        // the path's index in the heap + 1. It is 0 if the path is not yet in the heap.
+        int      fStorageSlot;
+    };
+
+    SkTDArray<LookupEntry> fLookupTable;
+
+    SkPathHeap::LookupEntry* addIfNotPresent(const SkPath& path);
 
     typedef SkRefCnt INHERITED;
 };

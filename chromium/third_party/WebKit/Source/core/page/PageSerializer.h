@@ -44,7 +44,7 @@ class ImageResource;
 class CSSStyleSheet;
 class CSSValue;
 class Document;
-class Frame;
+class LocalFrame;
 class Page;
 class RenderObject;
 class Resource;
@@ -66,14 +66,14 @@ public:
     // vector is the top frame serialized content.
     void serialize(Page*);
 
-    KURL urlForBlankFrame(Frame*);
+    KURL urlForBlankFrame(LocalFrame*);
 
 private:
-    void serializeFrame(Frame*);
+    void serializeFrame(LocalFrame*);
 
     // Serializes the stylesheet back to text and adds it to the resources if URL is not-empty.
     // It also adds any resources included in that stylesheet (including any imported stylesheets and their own resources).
-    void serializeCSSStyleSheet(CSSStyleSheet*, const KURL&);
+    void serializeCSSStyleSheet(CSSStyleSheet&, const KURL&);
 
     bool shouldAddURL(const KURL&);
 
@@ -81,12 +81,12 @@ private:
     void addImageToResources(ImageResource*, RenderObject*, const KURL&);
     void addFontToResources(FontResource*);
 
-    void retrieveResourcesForProperties(const StylePropertySet*, Document*);
-    void retrieveResourcesForCSSValue(CSSValue*, Document*);
+    void retrieveResourcesForProperties(const StylePropertySet*, Document&);
+    void retrieveResourcesForCSSValue(CSSValue*, Document&);
 
     Vector<SerializedResource>* m_resources;
     ListHashSet<KURL> m_resourceURLs;
-    HashMap<Frame*, KURL> m_blankFrameURLs;
+    HashMap<LocalFrame*, KURL> m_blankFrameURLs;
     unsigned m_blankFrameCounter;
 };
 

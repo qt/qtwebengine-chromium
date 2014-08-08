@@ -34,9 +34,8 @@
 #include "bindings/v8/ScriptWrappable.h"
 #include "modules/filesystem/DOMFileSystemSync.h"
 #include "modules/filesystem/EntryBase.h"
+#include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
-#include "wtf/PassRefPtr.h"
-#include "wtf/RefCounted.h"
 
 namespace WebCore {
 
@@ -44,20 +43,22 @@ class DirectoryEntrySync;
 class Metadata;
 class ExceptionState;
 
-class EntrySync : public ScriptWrappable, public EntryBase {
+class EntrySync : public EntryBase, public ScriptWrappable {
 public:
-    static PassRefPtr<EntrySync> create(EntryBase*);
+    static EntrySync* create(EntryBase*);
 
     DOMFileSystemSync* filesystem() const { return static_cast<DOMFileSystemSync*>(m_fileSystem.get()); }
 
-    PassRefPtr<Metadata> getMetadata(ExceptionState&);
-    PassRefPtr<EntrySync> moveTo(PassRefPtr<DirectoryEntrySync> parent, const String& name, ExceptionState&) const;
-    PassRefPtr<EntrySync> copyTo(PassRefPtr<DirectoryEntrySync> parent, const String& name, ExceptionState&) const;
+    Metadata* getMetadata(ExceptionState&);
+    EntrySync* moveTo(DirectoryEntrySync* parent, const String& name, ExceptionState&) const;
+    EntrySync* copyTo(DirectoryEntrySync* parent, const String& name, ExceptionState&) const;
     void remove(ExceptionState&) const;
-    PassRefPtr<EntrySync> getParent() const;
+    EntrySync* getParent() const;
+
+    virtual void trace(Visitor*) OVERRIDE;
 
 protected:
-    EntrySync(PassRefPtr<DOMFileSystemBase>, const String& fullPath);
+    EntrySync(DOMFileSystemBase*, const String& fullPath);
 };
 
 }

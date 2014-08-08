@@ -9,20 +9,33 @@
 
 namespace content {
 
-// Provides implementation of a GPU memory buffer based
-// on a shared memory handle.
+// Implementation of GPU memory buffer based on shared memory.
 class GpuMemoryBufferImplShm : public GpuMemoryBufferImpl {
  public:
-  GpuMemoryBufferImplShm(gfx::Size size, unsigned internalformat);
+  GpuMemoryBufferImplShm(const gfx::Size& size, unsigned internalformat);
   virtual ~GpuMemoryBufferImplShm();
 
-  bool Initialize(gfx::GpuMemoryBufferHandle handle);
-  bool InitializeFromSharedMemory(
-      scoped_ptr<base::SharedMemory> shared_memory);
+  // Allocates a shared memory backed GPU memory buffer with |size| and
+  // |internalformat| for use by |child_process|.
+  static void AllocateSharedMemoryForChildProcess(
+      const gfx::Size& size,
+      unsigned internalformat,
+      base::ProcessHandle child_process,
+      const AllocationCallback& callback);
+
+  static bool IsLayoutSupported(const gfx::Size& size, unsigned internalformat);
+  static bool IsUsageSupported(unsigned usage);
+  static bool IsConfigurationSupported(const gfx::Size& size,
+                                       unsigned internalformat,
+                                       unsigned usage);
+
+  bool Initialize();
+  bool InitializeFromHandle(gfx::GpuMemoryBufferHandle handle);
 
   // Overridden from gfx::GpuMemoryBuffer:
-  virtual void Map(AccessMode mode, void** vaddr) OVERRIDE;
+  virtual void* Map() OVERRIDE;
   virtual void Unmap() OVERRIDE;
+  virtual uint32 GetStride() const OVERRIDE;
   virtual gfx::GpuMemoryBufferHandle GetHandle() const OVERRIDE;
 
  private:

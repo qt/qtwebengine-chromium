@@ -26,6 +26,7 @@
 #ifndef ValidationMessageClient_h
 #define ValidationMessageClient_h
 
+#include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
 
 namespace WebCore {
@@ -33,7 +34,7 @@ namespace WebCore {
 class Document;
 class Element;
 
-class ValidationMessageClient {
+class ValidationMessageClient : public WillBeGarbageCollectedMixin {
 public:
     virtual ~ValidationMessageClient() { }
 
@@ -51,6 +52,10 @@ public:
     virtual bool isValidationMessageVisible(const Element& anchor) = 0;
 
     virtual void documentDetached(const Document&) = 0;
+
+    virtual void willBeDestroyed() = 0;
+
+    virtual void trace(Visitor*) { }
 };
 
 }

@@ -32,7 +32,7 @@
 
 #ifdef __FreeBSD__
 #include <sys/cdefs.h>
-__FBSDID("$FreeBSD: head/sys/netinet/sctp_bsd_addr.c 258221 2013-11-16 15:04:49Z tuexen $");
+__FBSDID("$FreeBSD: head/sys/netinet/sctp_bsd_addr.c 258765 2013-11-30 12:51:19Z tuexen $");
 #endif
 
 #include <netinet/sctp_os.h>
@@ -178,6 +178,9 @@ sctp_startup_iterator(void)
 		/* You only get one */
 		return;
 	}
+	/* Initialize global locks here, thus only once. */
+	SCTP_ITERATOR_LOCK_INIT();
+	SCTP_IPI_ITERATOR_WQ_INIT();
 	TAILQ_INIT(&sctp_it_ctl.iteratorhead);
 #if defined(__FreeBSD__)
 #if __FreeBSD_version <= 701000
@@ -822,12 +825,12 @@ sctp_get_mbuf_for_msg(unsigned int space_needed, int want_header,
 		return (NULL);
 	}
 	if (allonebuf == 0)
-                mbuf_threshold = SCTP_BASE_SYSCTL(sctp_mbuf_threshold_count);
+		mbuf_threshold = SCTP_BASE_SYSCTL(sctp_mbuf_threshold_count);
 	else
 		mbuf_threshold = 1;
 
 
-	if (space_needed > (((mbuf_threshold - 1) * MLEN) + MHLEN)) {
+	if ((int)space_needed > (((mbuf_threshold - 1) * MLEN) + MHLEN)) {
 		MCLGET(m, how);
 		if (m == NULL) {
 			return (NULL);

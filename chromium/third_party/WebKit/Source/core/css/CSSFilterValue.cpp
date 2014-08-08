@@ -26,66 +26,60 @@
 #include "config.h"
 #include "core/css/CSSFilterValue.h"
 
-#include "wtf/text/WTFString.h"
+#include "wtf/text/StringBuilder.h"
 
 namespace WebCore {
 
 CSSFilterValue::CSSFilterValue(FilterOperationType operationType)
-    : CSSValueList(CSSFilterClass, typeUsesSpaceSeparator(operationType) ? SpaceSeparator : CommaSeparator)
+    : CSSValueList(CSSFilterClass, CommaSeparator)
     , m_type(operationType)
 {
 }
 
-bool CSSFilterValue::typeUsesSpaceSeparator(FilterOperationType operationType)
-{
-    return operationType != CustomFilterOperation;
-}
-
 String CSSFilterValue::customCSSText() const
 {
-    String result;
+    StringBuilder result;
     switch (m_type) {
     case ReferenceFilterOperation:
-        result = "url(";
+        result.append("url(");
         break;
     case GrayscaleFilterOperation:
-        result = "grayscale(";
+        result.append("grayscale(");
         break;
     case SepiaFilterOperation:
-        result = "sepia(";
+        result.append("sepia(");
         break;
     case SaturateFilterOperation:
-        result = "saturate(";
+        result.append("saturate(");
         break;
     case HueRotateFilterOperation:
-        result = "hue-rotate(";
+        result.append("hue-rotate(");
         break;
     case InvertFilterOperation:
-        result = "invert(";
+        result.append("invert(");
         break;
     case OpacityFilterOperation:
-        result = "opacity(";
+        result.append("opacity(");
         break;
     case BrightnessFilterOperation:
-        result = "brightness(";
+        result.append("brightness(");
         break;
     case ContrastFilterOperation:
-        result = "contrast(";
+        result.append("contrast(");
         break;
     case BlurFilterOperation:
-        result = "blur(";
+        result.append("blur(");
         break;
     case DropShadowFilterOperation:
-        result = "drop-shadow(";
-        break;
-    case CustomFilterOperation:
-        result = "custom(";
+        result.append("drop-shadow(");
         break;
     default:
         break;
     }
 
-    return result + CSSValueList::customCSSText() + ")";
+    result.append(CSSValueList::customCSSText());
+    result.append(')');
+    return result.toString();
 }
 
 CSSFilterValue::CSSFilterValue(const CSSFilterValue& cloneFrom)
@@ -94,9 +88,9 @@ CSSFilterValue::CSSFilterValue(const CSSFilterValue& cloneFrom)
 {
 }
 
-PassRefPtr<CSSFilterValue> CSSFilterValue::cloneForCSSOM() const
+PassRefPtrWillBeRawPtr<CSSFilterValue> CSSFilterValue::cloneForCSSOM() const
 {
-    return adoptRef(new CSSFilterValue(*this));
+    return adoptRefWillBeNoop(new CSSFilterValue(*this));
 }
 
 bool CSSFilterValue::equals(const CSSFilterValue& other) const

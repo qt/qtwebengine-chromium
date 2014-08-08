@@ -36,11 +36,11 @@ namespace WebCore {
 class AudioBus;
 class AudioContext;
 
-class OfflineAudioDestinationNode : public AudioDestinationNode {
+class OfflineAudioDestinationNode FINAL : public AudioDestinationNode {
 public:
-    static PassRefPtr<OfflineAudioDestinationNode> create(AudioContext* context, AudioBuffer* renderTarget)
+    static PassRefPtrWillBeRawPtr<OfflineAudioDestinationNode> create(AudioContext* context, AudioBuffer* renderTarget)
     {
-        return adoptRef(new OfflineAudioDestinationNode(context, renderTarget));
+        return adoptRefWillBeNoop(new OfflineAudioDestinationNode(context, renderTarget));
     }
 
     virtual ~OfflineAudioDestinationNode();
@@ -50,10 +50,11 @@ public:
     virtual void uninitialize() OVERRIDE;
 
     // AudioDestinationNode
-    virtual void enableInput(const String&) OVERRIDE { }
     virtual void startRendering() OVERRIDE;
 
-    virtual float sampleRate()  const { return m_renderTarget->sampleRate(); }
+    virtual float sampleRate()  const OVERRIDE { return m_renderTarget->sampleRate(); }
+
+    virtual void trace(Visitor*) OVERRIDE;
 
 private:
     class OfflineRenderingTask;
@@ -62,7 +63,7 @@ private:
     OfflineAudioDestinationNode(AudioContext*, AudioBuffer* renderTarget);
 
     // This AudioNode renders into this AudioBuffer.
-    RefPtr<AudioBuffer> m_renderTarget;
+    RefPtrWillBeMember<AudioBuffer> m_renderTarget;
 
     // Temporary AudioBus for each render quantum.
     RefPtr<AudioBus> m_renderBus;

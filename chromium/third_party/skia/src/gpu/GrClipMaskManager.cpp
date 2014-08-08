@@ -18,6 +18,8 @@
 #include "GrStencilBuffer.h"
 #include "GrSWMaskHelper.h"
 #include "effects/GrTextureDomain.h"
+#include "effects/GrConvexPolyEffect.h"
+#include "effects/GrRRectEffect.h"
 #include "SkRasterClip.h"
 #include "SkStrokeRec.h"
 #include "SkTLazy.h"
@@ -93,23 +95,124 @@ bool GrClipMaskManager::useSWOnlyPath(const ElementList& elements) {
     for (ElementList::Iter iter(elements.headIter()); iter.get(); iter.next()) {
         const Element* element = iter.get();
         // rects can always be drawn directly w/o using the software path
-        // so only paths need to be checked
-        if (Element::kPath_Type == element->getType() &&
-            path_needs_SW_renderer(this->getContext(), fGpu,
-                                   element->getPath(),
-                                   stroke,
-                                   element->isAA())) {
-            return true;
+        // Skip rrects once we're drawing them directly.
+        if (Element::kRect_Type != element->getType()) {
+            SkPath path;
+            element->asPath(&path);
+            if (path_needs_SW_renderer(this->getContext(), fGpu, path, stroke, element->isAA())) {
+                return true;
+            }
         }
     }
     return false;
+}
+
+bool GrClipMaskManager::installClipEffects(const ElementList& elements,
+                                           GrDrawState::AutoRestoreEffects* are,
+                                           const SkVector& clipToRTOffset,
+                                           const SkRect* drawBounds) {
+
+    GrDrawState* drawState = fGpu->drawState();
+    SkRect boundsInClipSpace;
+    if (NULL != drawBounds) {
+        boundsInClipSpace = *drawBounds;
+        boundsInClipSpace.offset(-clipToRTOffset.fX, -clipToRTOffset.fY);
+    }
+
+    are->set(drawState);
+    GrRenderTarget* rt = drawState->getRenderTarget();
+    ElementList::Iter iter(elements);
+
+    bool setARE = false;
+    bool failed = false;
+
+    while (NULL != iter.get()) {
+        SkRegion::Op op = iter.get()->getOp();
+        bool invert;
+        bool skip = false;
+        switch (op) {
+            case SkRegion::kReplace_Op:
+                SkASSERT(iter.get() == elements.head());
+                // Fallthrough, handled same as intersect.
+            case SkRegion::kIntersect_Op:
+                invert = false;
+                if (NULL != drawBounds && iter.get()->contains(boundsInClipSpace)) {
+                    skip = true;
+                }
+                break;
+            case SkRegion::kDifference_Op:
+                invert = true;
+                // We don't currently have a cheap test for whether a rect is fully outside an
+                // element's primitive, so don't attempt to set skip.
+                break;
+            default:
+                failed = true;
+                break;
+        }
+        if (failed) {
+            break;
+        }
+
+        if (!skip) {
+            GrEffectEdgeType edgeType;
+            if (GR_AA_CLIP && iter.get()->isAA()) {
+                if (rt->isMultisampled()) {
+                    // Coverage based AA clips don't place nicely with MSAA.
+                    failed = true;
+                    break;
+                }
+                edgeType = invert ? kInverseFillAA_GrEffectEdgeType : kFillAA_GrEffectEdgeType;
+            } else {
+                edgeType = invert ? kInverseFillBW_GrEffectEdgeType : kFillBW_GrEffectEdgeType;
+            }
+            SkAutoTUnref<GrEffectRef> effect;
+            switch (iter.get()->getType()) {
+                case SkClipStack::Element::kPath_Type:
+                    effect.reset(GrConvexPolyEffect::Create(edgeType, iter.get()->getPath(),
+                        &clipToRTOffset));
+                    break;
+                case SkClipStack::Element::kRRect_Type: {
+                    SkRRect rrect = iter.get()->getRRect();
+                    rrect.offset(clipToRTOffset.fX, clipToRTOffset.fY);
+                    effect.reset(GrRRectEffect::Create(edgeType, rrect));
+                    break;
+                }
+                case SkClipStack::Element::kRect_Type: {
+                    SkRect rect = iter.get()->getRect();
+                    rect.offset(clipToRTOffset.fX, clipToRTOffset.fY);
+                    effect.reset(GrConvexPolyEffect::Create(edgeType, rect));
+                    break;
+                }
+                default:
+                    break;
+            }
+            if (effect) {
+                if (!setARE) {
+                    are->set(fGpu->drawState());
+                    setARE = true;
+                }
+                fGpu->drawState()->addCoverageEffect(effect);
+            } else {
+                failed = true;
+                break;
+            }
+        }
+        iter.next();
+    }
+
+    if (failed) {
+        are->set(NULL);
+    }
+
+    return !failed;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 // sort out what kind of clip mask needs to be created: alpha, stencil,
 // scissor, or entirely software
 bool GrClipMaskManager::setupClipping(const GrClipData* clipDataIn,
-                                      GrDrawState::AutoRestoreEffects* are) {
+                                      GrDrawState::AutoRestoreEffects* are,
+                                      const SkRect* devBounds) {
     fCurrClipMaskType = kNone_ClipMaskType;
 
     ElementList elements(16);
@@ -117,7 +220,6 @@ bool GrClipMaskManager::setupClipping(const GrClipData* clipDataIn,
     InitialState initialState;
     SkIRect clipSpaceIBounds;
     bool requiresAA;
-    bool isRect = false;
 
     GrDrawState* drawState = fGpu->drawState();
 
@@ -140,7 +242,6 @@ bool GrClipMaskManager::setupClipping(const GrClipData* clipDataIn,
         if (elements.isEmpty()) {
             if (kAllIn_InitialState == initialState) {
                 ignoreClip = clipSpaceIBounds == clipSpaceRTIBounds;
-                isRect = true;
             } else {
                 return false;
             }
@@ -153,9 +254,33 @@ bool GrClipMaskManager::setupClipping(const GrClipData* clipDataIn,
         return true;
     }
 
-#if GR_AA_CLIP
-    // TODO: catch isRect && requiresAA and use clip planes if available rather than a mask.
+    // An element count of 4 was chosen because of the common pattern in Blink of:
+    //   isect RR
+    //   diff  RR
+    //   isect convex_poly
+    //   isect convex_poly
+    // when drawing rounded div borders. This could probably be tuned based on a
+    // configuration's relative costs of switching RTs to generate a mask vs
+    // longer shaders.
+    if (elements.count() <= 4) {
+        SkVector clipToRTOffset = { SkIntToScalar(-clipDataIn->fOrigin.fX),
+                                    SkIntToScalar(-clipDataIn->fOrigin.fY) };
+        if (elements.isEmpty() ||
+            (requiresAA && this->installClipEffects(elements, are, clipToRTOffset, devBounds))) {
+            SkIRect scissorSpaceIBounds(clipSpaceIBounds);
+            scissorSpaceIBounds.offset(-clipDataIn->fOrigin);
+            if (NULL == devBounds ||
+                !SkRect::Make(scissorSpaceIBounds).contains(*devBounds)) {
+                fGpu->enableScissor(scissorSpaceIBounds);
+            } else {
+                fGpu->disableScissor();
+            }
+            this->setGpuStencil();
+            return true;
+        }
+    }
 
+#if GR_AA_CLIP
     // If MSAA is enabled we can do everything in the stencil buffer.
     if (0 == rt->numSamples() && requiresAA) {
         GrTexture* result = NULL;
@@ -195,16 +320,6 @@ bool GrClipMaskManager::setupClipping(const GrClipData* clipDataIn,
     // clears, InOrderDrawBuffer playbacks) that hit the stencil buffer path. These may be
     // "incorrectly" clearing the AA cache.
     fAACache.reset();
-
-    // If the clip is a rectangle then just set the scissor. Otherwise, create
-    // a stencil mask.
-    if (isRect) {
-        SkIRect clipRect = clipSpaceIBounds;
-        clipRect.offset(-clipDataIn->fOrigin);
-        fGpu->enableScissor(clipRect);
-        this->setGpuStencil();
-        return true;
-    }
 
     // use the stencil clip if we can't represent the clip as a rectangle.
     SkIPoint clipSpaceToStencilSpaceOffset = -clipDataIn->fOrigin;
@@ -276,7 +391,11 @@ bool GrClipMaskManager::drawElement(GrTexture* target,
 
     drawState->setRenderTarget(target->asRenderTarget());
 
+    // TODO: Draw rrects directly here.
     switch (element->getType()) {
+        case Element::kEmpty_Type:
+            SkDEBUGFAIL("Should never get here with an empty element.");
+            break;
         case Element::kRect_Type:
             // TODO: Do rects directly to the accumulator using a aa-rect GrEffect that covers the
             // entire mask bounds and writes 0 outside the rect.
@@ -291,28 +410,25 @@ bool GrClipMaskManager::drawElement(GrTexture* target,
                 fGpu->drawSimpleRect(element->getRect(), NULL);
             }
             return true;
-        case Element::kPath_Type: {
-            SkTCopyOnFirstWrite<SkPath> path(element->getPath());
-            if (path->isInverseFillType()) {
-                path.writable()->toggleInverseFillType();
+        default: {
+            SkPath path;
+            element->asPath(&path);
+            if (path.isInverseFillType()) {
+                path.toggleInverseFillType();
             }
             SkStrokeRec stroke(SkStrokeRec::kFill_InitStyle);
             if (NULL == pr) {
                 GrPathRendererChain::DrawType type;
                 type = element->isAA() ? GrPathRendererChain::kColorAntiAlias_DrawType :
                                          GrPathRendererChain::kColor_DrawType;
-                pr = this->getContext()->getPathRenderer(*path, stroke, fGpu, false, type);
+                pr = this->getContext()->getPathRenderer(path, stroke, fGpu, false, type);
             }
             if (NULL == pr) {
                 return false;
             }
-            pr->drawPath(element->getPath(), stroke, fGpu, element->isAA());
+            pr->drawPath(path, stroke, fGpu, element->isAA());
             break;
         }
-        default:
-            // something is wrong if we're trying to draw an empty element.
-            GrCrash("Unexpected element type");
-            return false;
     }
     return true;
 }
@@ -323,25 +439,22 @@ bool GrClipMaskManager::canStencilAndDrawElement(GrTexture* target,
     GrDrawState* drawState = fGpu->drawState();
     drawState->setRenderTarget(target->asRenderTarget());
 
-    switch (element->getType()) {
-        case Element::kRect_Type:
-            return true;
-        case Element::kPath_Type: {
-            SkTCopyOnFirstWrite<SkPath> path(element->getPath());
-            if (path->isInverseFillType()) {
-                path.writable()->toggleInverseFillType();
-            }
-            SkStrokeRec stroke(SkStrokeRec::kFill_InitStyle);
-            GrPathRendererChain::DrawType type = element->isAA() ?
-                GrPathRendererChain::kStencilAndColorAntiAlias_DrawType :
-                GrPathRendererChain::kStencilAndColor_DrawType;
-            *pr = this->getContext()->getPathRenderer(*path, stroke, fGpu, false, type);
-            return NULL != *pr;
+    if (Element::kRect_Type == element->getType()) {
+        return true;
+    } else {
+        // We shouldn't get here with an empty clip element.
+        SkASSERT(Element::kEmpty_Type != element->getType());
+        SkPath path;
+        element->asPath(&path);
+        if (path.isInverseFillType()) {
+            path.toggleInverseFillType();
         }
-        default:
-            // something is wrong if we're trying to draw an empty element.
-            GrCrash("Unexpected element type");
-            return false;
+        SkStrokeRec stroke(SkStrokeRec::kFill_InitStyle);
+        GrPathRendererChain::DrawType type = element->isAA() ?
+            GrPathRendererChain::kStencilAndColorAntiAlias_DrawType :
+            GrPathRendererChain::kStencilAndColor_DrawType;
+        *pr = this->getContext()->getPathRenderer(path, stroke, fGpu, false, type);
+        return NULL != *pr;
     }
 }
 
@@ -389,36 +502,39 @@ void GrClipMaskManager::getTemp(int width, int height, GrAutoScratchTexture* tem
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// Handles caching & allocation (if needed) of a clip alpha-mask texture for both the sw-upload
-// or gpu-rendered cases. Returns true if there is no more work to be done (i.e., we got a cache
-// hit)
-bool GrClipMaskManager::getMaskTexture(int32_t elementsGenID,
-                                       const SkIRect& clipSpaceIBounds,
-                                       GrTexture** result,
-                                       bool willUpload) {
+// Return the texture currently in the cache if it exists. Otherwise, return NULL
+GrTexture* GrClipMaskManager::getCachedMaskTexture(int32_t elementsGenID,
+                                                   const SkIRect& clipSpaceIBounds) {
     bool cached = fAACache.canReuse(elementsGenID, clipSpaceIBounds);
     if (!cached) {
-
-        // There isn't a suitable entry in the cache so we create a new texture to store the mask.
-        // Since we are setting up the cache we know the last lookup was a miss. Free up the
-        // currently cached mask so it can be reused.
-        fAACache.reset();
-
-        GrTextureDesc desc;
-        desc.fFlags = willUpload ? kNone_GrTextureFlags : kRenderTarget_GrTextureFlagBit;
-        desc.fWidth = clipSpaceIBounds.width();
-        desc.fHeight = clipSpaceIBounds.height();
-        desc.fConfig = kRGBA_8888_GrPixelConfig;
-        if (willUpload || this->getContext()->isConfigRenderable(kAlpha_8_GrPixelConfig, false)) {
-            // We would always like A8 but it isn't supported on all platforms
-            desc.fConfig = kAlpha_8_GrPixelConfig;
-        }
-
-        fAACache.acquireMask(elementsGenID, desc, clipSpaceIBounds);
+        return NULL;
     }
 
-    *result = fAACache.getLastMask();
-    return cached;
+    return fAACache.getLastMask();
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Allocate a texture in the texture cache. This function returns the texture
+// allocated (or NULL on error).
+GrTexture* GrClipMaskManager::allocMaskTexture(int32_t elementsGenID,
+                                               const SkIRect& clipSpaceIBounds,
+                                               bool willUpload) {
+    // Since we are setting up the cache we should free up the
+    // currently cached mask so it can be reused.
+    fAACache.reset();
+
+    GrTextureDesc desc;
+    desc.fFlags = willUpload ? kNone_GrTextureFlags : kRenderTarget_GrTextureFlagBit;
+    desc.fWidth = clipSpaceIBounds.width();
+    desc.fHeight = clipSpaceIBounds.height();
+    desc.fConfig = kRGBA_8888_GrPixelConfig;
+    if (willUpload || this->getContext()->isConfigRenderable(kAlpha_8_GrPixelConfig, false)) {
+        // We would always like A8 but it isn't supported on all platforms
+        desc.fConfig = kAlpha_8_GrPixelConfig;
+    }
+
+    fAACache.acquireMask(elementsGenID, desc, clipSpaceIBounds);
+    return fAACache.getLastMask();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -429,12 +545,15 @@ GrTexture* GrClipMaskManager::createAlphaClipMask(int32_t elementsGenID,
                                                   const SkIRect& clipSpaceIBounds) {
     SkASSERT(kNone_ClipMaskType == fCurrClipMaskType);
 
-    GrTexture* result;
-    if (this->getMaskTexture(elementsGenID, clipSpaceIBounds, &result, false)) {
+    // First, check for cached texture
+    GrTexture* result = this->getCachedMaskTexture(elementsGenID, clipSpaceIBounds);
+    if (NULL != result) {
         fCurrClipMaskType = kAlpha_ClipMaskType;
         return result;
     }
 
+    // There's no texture in the cache. Let's try to allocate it then.
+    result = this->allocMaskTexture(elementsGenID, clipSpaceIBounds, false);
     if (NULL == result) {
         fAACache.reset();
         return NULL;
@@ -644,18 +763,17 @@ bool GrClipMaskManager::createStencilClipMask(int32_t elementsGenID,
             SkRegion::Op op = element->getOp();
 
             GrPathRenderer* pr = NULL;
-            SkTCopyOnFirstWrite<SkPath> clipPath;
+            SkPath clipPath;
             if (Element::kRect_Type == element->getType()) {
                 stencilSupport = GrPathRenderer::kNoRestriction_StencilSupport;
                 fillInverted = false;
             } else {
-                SkASSERT(Element::kPath_Type == element->getType());
-                clipPath.init(element->getPath());
-                fillInverted = clipPath->isInverseFillType();
+                element->asPath(&clipPath);
+                fillInverted = clipPath.isInverseFillType();
                 if (fillInverted) {
-                    clipPath.writable()->toggleInverseFillType();
+                    clipPath.toggleInverseFillType();
                 }
-                pr = this->getContext()->getPathRenderer(*clipPath,
+                pr = this->getContext()->getPathRenderer(clipPath,
                                                          stroke,
                                                          fGpu,
                                                          false,
@@ -696,13 +814,12 @@ bool GrClipMaskManager::createStencilClipMask(int32_t elementsGenID,
                     *drawState->stencil() = gDrawToStencil;
                     fGpu->drawSimpleRect(element->getRect(), NULL);
                 } else {
-                    SkASSERT(Element::kPath_Type == element->getType());
-                    if (!clipPath->isEmpty()) {
+                    if (!clipPath.isEmpty()) {
                         if (canRenderDirectToStencil) {
                             *drawState->stencil() = gDrawToStencil;
-                            pr->drawPath(*clipPath, stroke, fGpu, false);
+                            pr->drawPath(clipPath, stroke, fGpu, false);
                         } else {
-                            pr->stencilPath(*clipPath, stroke, fGpu);
+                            pr->stencilPath(clipPath, stroke, fGpu);
                         }
                     }
                 }
@@ -718,9 +835,8 @@ bool GrClipMaskManager::createStencilClipMask(int32_t elementsGenID,
                         SET_RANDOM_COLOR
                         fGpu->drawSimpleRect(element->getRect(), NULL);
                     } else {
-                        SkASSERT(Element::kPath_Type == element->getType());
                         SET_RANDOM_COLOR
-                        pr->drawPath(*clipPath, stroke, fGpu, false);
+                        pr->drawPath(clipPath, stroke, fGpu, false);
                     }
                 } else {
                     SET_RANDOM_COLOR
@@ -890,7 +1006,7 @@ void GrClipMaskManager::adjustStencilParams(GrStencilSettings* settings,
                         funcRef = clipBit;
                         break;
                     default:
-                        GrCrash("Unknown stencil func");
+                        SkFAIL("Unknown stencil func");
                 }
             } else {
                 funcMask &= userBits;
@@ -929,14 +1045,9 @@ GrTexture* GrClipMaskManager::createSoftwareClipMask(int32_t elementsGenID,
                                                      const SkIRect& clipSpaceIBounds) {
     SkASSERT(kNone_ClipMaskType == fCurrClipMaskType);
 
-    GrTexture* result;
-    if (this->getMaskTexture(elementsGenID, clipSpaceIBounds, &result, true)) {
+    GrTexture* result = this->getCachedMaskTexture(elementsGenID, clipSpaceIBounds);
+    if (NULL != result) {
         return result;
-    }
-
-    if (NULL == result) {
-        fAACache.reset();
-        return NULL;
     }
 
     // The mask texture may be larger than necessary. We round out the clip space bounds and pin
@@ -970,24 +1081,10 @@ GrTexture* GrClipMaskManager::createSoftwareClipMask(int32_t elementsGenID,
                 helper.draw(temp, SkRegion::kXOR_Op, false, 0xFF);
             }
 
-            if (Element::kRect_Type == element->getType()) {
-                // convert the rect to a path so we can invert the fill
-                SkPath temp;
-                temp.addRect(element->getRect());
-                temp.setFillType(SkPath::kInverseEvenOdd_FillType);
-
-                helper.draw(temp, stroke, SkRegion::kReplace_Op,
-                            element->isAA(),
-                            0x00);
-            } else {
-                SkASSERT(Element::kPath_Type == element->getType());
-                SkPath clipPath = element->getPath();
-                clipPath.toggleInverseFillType();
-                helper.draw(clipPath, stroke,
-                            SkRegion::kReplace_Op,
-                            element->isAA(),
-                            0x00);
-            }
+            SkPath clipPath;
+            element->asPath(&clipPath);
+            clipPath.toggleInverseFillType();
+            helper.draw(clipPath, stroke, SkRegion::kReplace_Op, element->isAA(), 0x00);
 
             continue;
         }
@@ -997,11 +1094,18 @@ GrTexture* GrClipMaskManager::createSoftwareClipMask(int32_t elementsGenID,
         if (Element::kRect_Type == element->getType()) {
             helper.draw(element->getRect(), op, element->isAA(), 0xFF);
         } else {
-            SkASSERT(Element::kPath_Type == element->getType());
-            helper.draw(element->getPath(), stroke, op, element->isAA(), 0xFF);
+            SkPath path;
+            element->asPath(&path);
+            helper.draw(path, stroke, op, element->isAA(), 0xFF);
         }
     }
 
+    // Allocate clip mask texture
+    result = this->allocMaskTexture(elementsGenID, clipSpaceIBounds, true);
+    if (NULL == result) {
+        fAACache.reset();
+        return NULL;
+    }
     helper.toTexture(result);
 
     fCurrClipMaskType = kAlpha_ClipMaskType;

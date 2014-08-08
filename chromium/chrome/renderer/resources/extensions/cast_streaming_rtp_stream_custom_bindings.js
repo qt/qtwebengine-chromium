@@ -14,9 +14,9 @@ binding.registerCustomHook(function(bindingsAPI, extensionId) {
       function(transportId) {
         natives.DestroyCastRtpStream(transportId);
   });
-  apiFunctions.setHandleRequest('getCaps',
+  apiFunctions.setHandleRequest('getSupportedParams',
       function(transportId) {
-        return natives.GetCapsCastRtpStream(transportId);
+        return natives.GetSupportedParamsCastRtpStream(transportId);
   });
   apiFunctions.setHandleRequest('start',
       function(transportId, params) {
@@ -25,6 +25,18 @@ binding.registerCustomHook(function(bindingsAPI, extensionId) {
   apiFunctions.setHandleRequest('stop',
       function(transportId) {
         natives.StopCastRtpStream(transportId);
+  });
+  apiFunctions.setHandleRequest('toggleLogging',
+      function(transportId, enable) {
+        natives.ToggleLogging(transportId, enable);
+  });
+  apiFunctions.setHandleRequest('getRawEvents',
+      function(transportId, extraData, callback) {
+        natives.GetRawEvents(transportId, extraData, callback);
+  });
+  apiFunctions.setHandleRequest('getStats',
+      function(transportId, callback) {
+        natives.GetStats(transportId, callback);
   });
 });
 

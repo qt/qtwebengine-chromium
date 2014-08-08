@@ -11,6 +11,8 @@
 #include "base/command_line.h"
 #include "base/debug/leak_annotations.h"
 #include "base/debug/trace_event.h"
+#include "base/debug/trace_event_synthetic_delay.h"
+#include "base/float_util.h"
 #include "base/format_macros.h"
 #include "base/json/string_escape.h"
 #include "base/lazy_instance.h"
@@ -69,8 +71,12 @@ const size_t kEchoToConsoleTraceEventBufferChunks = 256;
 
 const int kThreadFlushTimeoutMs = 3000;
 
+#if !defined(OS_NACL)
 // These categories will cause deadlock when ECHO_TO_CONSOLE. crbug.com/325575.
 const char kEchoToConsoleCategoryFilter[] = "-ipc,-task";
+#endif
+
+const char kSyntheticDelayCategoryFilterPrefix[] = "DELAY(";
 
 #define MAX_CATEGORY_GROUPS 100
 
@@ -81,6 +87,7 @@ const char kEchoToConsoleCategoryFilter[] = "-ipc,-task";
 // convert internally to determine the category name from the char enabled
 // pointer.
 const char* g_category_groups[MAX_CATEGORY_GROUPS] = {
+  "toplevel",
   "tracing already shutdown",
   "tracing categories exhausted; must increase MAX_CATEGORY_GROUPS",
   "__metadata",
@@ -89,12 +96,14 @@ const char* g_category_groups[MAX_CATEGORY_GROUPS] = {
 
 // The enabled flag is char instead of bool so that the API can be used from C.
 unsigned char g_category_group_enabled[MAX_CATEGORY_GROUPS] = { 0 };
-const int g_category_already_shutdown = 0;
-const int g_category_categories_exhausted = 1;
-const int g_category_metadata = 2;
-const int g_category_trace_event_overhead = 3;
-const int g_num_builtin_categories = 4;
-int g_category_index = g_num_builtin_categories; // Skip default categories.
+// Indexes here have to match the g_category_groups array indexes above.
+const int g_category_already_shutdown = 1;
+const int g_category_categories_exhausted = 2;
+const int g_category_metadata = 3;
+const int g_category_trace_event_overhead = 4;
+const int g_num_builtin_categories = 5;
+// Skip default categories.
+base::subtle::AtomicWord g_category_index = g_num_builtin_categories;
 
 // The name of the current thread. This is used to decide if the current
 // thread name has changed. We combine all the seen thread names into the
@@ -632,24 +641,35 @@ void TraceEvent::AppendValueAsJSON(unsigned char type,
     case TRACE_VALUE_TYPE_DOUBLE: {
       // FIXME: base/json/json_writer.cc is using the same code,
       //        should be made into a common method.
-      std::string real = DoubleToString(value.as_double);
-      // Ensure that the number has a .0 if there's no decimal or 'e'.  This
-      // makes sure that when we read the JSON back, it's interpreted as a
-      // real rather than an int.
-      if (real.find('.') == std::string::npos &&
-          real.find('e') == std::string::npos &&
-          real.find('E') == std::string::npos) {
-        real.append(".0");
+      std::string real;
+      double val = value.as_double;
+      if (IsFinite(val)) {
+        real = DoubleToString(val);
+        // Ensure that the number has a .0 if there's no decimal or 'e'.  This
+        // makes sure that when we read the JSON back, it's interpreted as a
+        // real rather than an int.
+        if (real.find('.') == std::string::npos &&
+            real.find('e') == std::string::npos &&
+            real.find('E') == std::string::npos) {
+          real.append(".0");
+        }
+        // The JSON spec requires that non-integer values in the range (-1,1)
+        // have a zero before the decimal point - ".52" is not valid, "0.52" is.
+        if (real[0] == '.') {
+          real.insert(0, "0");
+        } else if (real.length() > 1 && real[0] == '-' && real[1] == '.') {
+          // "-.1" bad "-0.1" good
+          real.insert(1, "0");
+        }
+      } else if (IsNaN(val)){
+        // The JSON spec doesn't allow NaN and Infinity (since these are
+        // objects in EcmaScript).  Use strings instead.
+        real = "\"NaN\"";
+      } else if (val < 0) {
+        real = "\"-Infinity\"";
+      } else {
+        real = "\"Infinity\"";
       }
-      // The JSON spec requires that non-integer values in the range (-1,1)
-      // have a zero before the decimal point - ".52" is not valid, "0.52" is.
-      if (real[0] == '.') {
-        real.insert(0, "0");
-      } else if (real.length() > 1 && real[0] == '-' && real[1] == '.') {
-        // "-.1" bad "-0.1" good
-        real.insert(1, "0");
-      }
-
       StringAppendF(out, "%s", real.c_str());
       break;
     }
@@ -1094,7 +1114,7 @@ void TraceLog::ThreadLocalEventBuffer::FlushWhileLocked() {
 
   trace_log_->lock_.AssertAcquired();
   if (trace_log_->CheckGeneration(generation_)) {
-    // Return the chunk to the buffer only if the generation matches,
+    // Return the chunk to the buffer only if the generation matches.
     trace_log_->logged_events_->ReturnChunk(chunk_index_, chunk_.Pass());
   }
   // Otherwise this method may be called from the destructor, or TraceLog will
@@ -1107,7 +1127,7 @@ TraceLog* TraceLog::GetInstance() {
 }
 
 TraceLog::TraceLog()
-    : enabled_(false),
+    : mode_(DISABLED),
       num_traces_recorded_(0),
       event_callback_(0),
       dispatching_to_observer_list_(false),
@@ -1153,7 +1173,7 @@ TraceLog::TraceLog()
 
     LOG(ERROR) << "Start " << switches::kTraceToConsole
                << " with CategoryFilter '" << filter << "'.";
-    SetEnabled(CategoryFilter(filter), ECHO_TO_CONSOLE);
+    SetEnabled(CategoryFilter(filter), RECORDING_MODE, ECHO_TO_CONSOLE);
   }
 #endif
 
@@ -1192,8 +1212,12 @@ const char* TraceLog::GetCategoryGroupName(
 void TraceLog::UpdateCategoryGroupEnabledFlag(int category_index) {
   unsigned char enabled_flag = 0;
   const char* category_group = g_category_groups[category_index];
-  if (enabled_ && category_filter_.IsCategoryGroupEnabled(category_group))
+  if (mode_ == RECORDING_MODE &&
+      category_filter_.IsCategoryGroupEnabled(category_group))
     enabled_flag |= ENABLED_FOR_RECORDING;
+  else if (mode_ == MONITORING_MODE &&
+      category_filter_.IsCategoryGroupEnabled(category_group))
+    enabled_flag |= ENABLED_FOR_MONITORING;
   if (event_callback_ &&
       event_callback_category_filter_.IsCategoryGroupEnabled(category_group))
     enabled_flag |= ENABLED_FOR_EVENT_CALLBACK;
@@ -1201,47 +1225,88 @@ void TraceLog::UpdateCategoryGroupEnabledFlag(int category_index) {
 }
 
 void TraceLog::UpdateCategoryGroupEnabledFlags() {
-  for (int i = 0; i < g_category_index; i++)
+  int category_index = base::subtle::NoBarrier_Load(&g_category_index);
+  for (int i = 0; i < category_index; i++)
     UpdateCategoryGroupEnabledFlag(i);
+}
+
+void TraceLog::UpdateSyntheticDelaysFromCategoryFilter() {
+  ResetTraceEventSyntheticDelays();
+  const CategoryFilter::StringList& delays =
+      category_filter_.GetSyntheticDelayValues();
+  CategoryFilter::StringList::const_iterator ci;
+  for (ci = delays.begin(); ci != delays.end(); ++ci) {
+    StringTokenizer tokens(*ci, ";");
+    if (!tokens.GetNext())
+      continue;
+    TraceEventSyntheticDelay* delay =
+        TraceEventSyntheticDelay::Lookup(tokens.token());
+    while (tokens.GetNext()) {
+      std::string token = tokens.token();
+      char* duration_end;
+      double target_duration = strtod(token.c_str(), &duration_end);
+      if (duration_end != token.c_str()) {
+        delay->SetTargetDuration(
+            TimeDelta::FromMicroseconds(target_duration * 1e6));
+      } else if (token == "static") {
+        delay->SetMode(TraceEventSyntheticDelay::STATIC);
+      } else if (token == "oneshot") {
+        delay->SetMode(TraceEventSyntheticDelay::ONE_SHOT);
+      } else if (token == "alternating") {
+        delay->SetMode(TraceEventSyntheticDelay::ALTERNATING);
+      }
+    }
+  }
 }
 
 const unsigned char* TraceLog::GetCategoryGroupEnabledInternal(
     const char* category_group) {
   DCHECK(!strchr(category_group, '"')) <<
       "Category groups may not contain double quote";
-  AutoLock lock(lock_);
+  // The g_category_groups is append only, avoid using a lock for the fast path.
+  int current_category_index = base::subtle::Acquire_Load(&g_category_index);
 
-  unsigned char* category_group_enabled = NULL;
   // Search for pre-existing category group.
-  for (int i = 0; i < g_category_index; i++) {
+  for (int i = 0; i < current_category_index; ++i) {
     if (strcmp(g_category_groups[i], category_group) == 0) {
-      category_group_enabled = &g_category_group_enabled[i];
-      break;
+      return &g_category_group_enabled[i];
     }
   }
 
-  if (!category_group_enabled) {
-    // Create a new category group
-    DCHECK(g_category_index < MAX_CATEGORY_GROUPS) <<
-        "must increase MAX_CATEGORY_GROUPS";
-    if (g_category_index < MAX_CATEGORY_GROUPS) {
-      int new_index = g_category_index++;
-      // Don't hold on to the category_group pointer, so that we can create
-      // category groups with strings not known at compile time (this is
-      // required by SetWatchEvent).
-      const char* new_group = strdup(category_group);
-      ANNOTATE_LEAKING_OBJECT_PTR(new_group);
-      g_category_groups[new_index] = new_group;
-      DCHECK(!g_category_group_enabled[new_index]);
-      // Note that if both included and excluded patterns in the
-      // CategoryFilter are empty, we exclude nothing,
-      // thereby enabling this category group.
-      UpdateCategoryGroupEnabledFlag(new_index);
-      category_group_enabled = &g_category_group_enabled[new_index];
-    } else {
-      category_group_enabled =
-          &g_category_group_enabled[g_category_categories_exhausted];
+  unsigned char* category_group_enabled = NULL;
+  // This is the slow path: the lock is not held in the case above, so more
+  // than one thread could have reached here trying to add the same category.
+  // Only hold to lock when actually appending a new category, and
+  // check the categories groups again.
+  AutoLock lock(lock_);
+  int category_index = base::subtle::Acquire_Load(&g_category_index);
+  for (int i = 0; i < category_index; ++i) {
+    if (strcmp(g_category_groups[i], category_group) == 0) {
+      return &g_category_group_enabled[i];
     }
+  }
+
+  // Create a new category group.
+  DCHECK(category_index < MAX_CATEGORY_GROUPS) <<
+      "must increase MAX_CATEGORY_GROUPS";
+  if (category_index < MAX_CATEGORY_GROUPS) {
+    // Don't hold on to the category_group pointer, so that we can create
+    // category groups with strings not known at compile time (this is
+    // required by SetWatchEvent).
+    const char* new_group = strdup(category_group);
+    ANNOTATE_LEAKING_OBJECT_PTR(new_group);
+    g_category_groups[category_index] = new_group;
+    DCHECK(!g_category_group_enabled[category_index]);
+    // Note that if both included and excluded patterns in the
+    // CategoryFilter are empty, we exclude nothing,
+    // thereby enabling this category group.
+    UpdateCategoryGroupEnabledFlag(category_index);
+    category_group_enabled = &g_category_group_enabled[category_index];
+    // Update the max index now.
+    base::subtle::Release_Store(&g_category_index, category_index + 1);
+  } else {
+    category_group_enabled =
+        &g_category_group_enabled[g_category_categories_exhausted];
   }
   return category_group_enabled;
 }
@@ -1251,11 +1316,13 @@ void TraceLog::GetKnownCategoryGroups(
   AutoLock lock(lock_);
   category_groups->push_back(
       g_category_groups[g_category_trace_event_overhead]);
-  for (int i = g_num_builtin_categories; i < g_category_index; i++)
+  int category_index = base::subtle::NoBarrier_Load(&g_category_index);
+  for (int i = g_num_builtin_categories; i < category_index; i++)
     category_groups->push_back(g_category_groups[i]);
 }
 
 void TraceLog::SetEnabled(const CategoryFilter& category_filter,
+                          Mode mode,
                           Options options) {
   std::vector<EnabledStateObserver*> observer_list;
   {
@@ -1266,10 +1333,14 @@ void TraceLog::SetEnabled(const CategoryFilter& category_filter,
 
     Options old_options = trace_options();
 
-    if (enabled_) {
+    if (IsEnabled()) {
       if (options != old_options) {
-        DLOG(ERROR) << "Attemting to re-enable tracing with a different "
+        DLOG(ERROR) << "Attempting to re-enable tracing with a different "
                     << "set of options.";
+      }
+
+      if (mode != mode_) {
+        DLOG(ERROR) << "Attempting to re-enable tracing with a different mode.";
       }
 
       category_filter_.Merge(category_filter);
@@ -1283,7 +1354,7 @@ void TraceLog::SetEnabled(const CategoryFilter& category_filter,
       return;
     }
 
-    enabled_ = true;
+    mode_ = mode;
 
     if (options != old_options) {
       subtle::NoBarrier_Store(&trace_options_, options);
@@ -1294,8 +1365,9 @@ void TraceLog::SetEnabled(const CategoryFilter& category_filter,
 
     category_filter_ = CategoryFilter(category_filter);
     UpdateCategoryGroupEnabledFlags();
+    UpdateSyntheticDelaysFromCategoryFilter();
 
-    if ((options & ENABLE_SAMPLING) || (options & MONITOR_SAMPLING)) {
+    if (options & ENABLE_SAMPLING) {
       sampling_thread_.reset(new TraceSamplingThread);
       sampling_thread_->RegisterSampleBucket(
           &g_trace_state[0],
@@ -1341,7 +1413,7 @@ void TraceLog::SetDisabled() {
 void TraceLog::SetDisabledWhileLocked() {
   lock_.AssertAcquired();
 
-  if (!enabled_)
+  if (!IsEnabled())
     return;
 
   if (dispatching_to_observer_list_) {
@@ -1350,7 +1422,7 @@ void TraceLog::SetDisabledWhileLocked() {
     return;
   }
 
-  enabled_ = false;
+  mode_ = DISABLED;
 
   if (sampling_thread_.get()) {
     // Stop the sampling thread.
@@ -1384,7 +1456,7 @@ void TraceLog::SetDisabledWhileLocked() {
 
 int TraceLog::GetNumTracesRecorded() {
   AutoLock lock(lock_);
-  if (!enabled_)
+  if (!IsEnabled())
     return -1;
   return num_traces_recorded_;
 }
@@ -1425,7 +1497,7 @@ TraceBuffer* TraceLog::CreateTraceBuffer() {
   Options options = trace_options();
   if (options & RECORD_CONTINUOUSLY)
     return new TraceBufferRingBuffer(kTraceEventRingBufferChunks);
-  else if (options & MONITOR_SAMPLING)
+  else if ((options & ENABLE_SAMPLING) && mode_ == MONITORING_MODE)
     return new TraceBufferRingBuffer(kMonitorTraceEventBufferChunks);
   else if (options & ECHO_TO_CONSOLE)
     return new TraceBufferRingBuffer(kEchoToConsoleTraceEventBufferChunks);
@@ -1769,7 +1841,8 @@ TraceEventHandle TraceLog::AddTraceEventWithThreadIdAndTimestamp(
   }
 
   std::string console_message;
-  if ((*category_group_enabled & ENABLED_FOR_RECORDING)) {
+  if (*category_group_enabled &
+      (ENABLED_FOR_RECORDING | ENABLED_FOR_MONITORING)) {
     OptionalAutoLock lock(lock_);
 
     TraceEvent* trace_event = NULL;
@@ -1898,8 +1971,7 @@ void TraceLog::AddTraceEventEtw(char phase,
 void TraceLog::AddTraceEventEtw(char phase,
                                 const char* name,
                                 const void* id,
-                                const std::string& extra)
-{
+                                const std::string& extra) {
 #if defined(OS_WIN)
   TraceEventETWProvider::Trace(name, phase, id, extra);
 #endif
@@ -1976,6 +2048,14 @@ void TraceLog::CancelWatchEvent() {
 
 void TraceLog::AddMetadataEventsWhileLocked() {
   lock_.AssertAcquired();
+
+#if !defined(OS_NACL)  // NaCl shouldn't expose the process id.
+  InitializeMetadataEvent(AddEventToThreadSharedChunkWhileLocked(NULL, false),
+                          0,
+                          "num_cpus", "number",
+                          base::SysInfo::NumberOfProcessors());
+#endif
+
 
   int current_thread_id = static_cast<int>(base::PlatformThread::CurrentId());
   if (process_sort_index_ != 0) {
@@ -2166,7 +2246,8 @@ CategoryFilter::CategoryFilter(const std::string& filter_string) {
 CategoryFilter::CategoryFilter(const CategoryFilter& cf)
     : included_(cf.included_),
       disabled_(cf.disabled_),
-      excluded_(cf.excluded_) {
+      excluded_(cf.excluded_),
+      delays_(cf.delays_) {
 }
 
 CategoryFilter::~CategoryFilter() {
@@ -2179,6 +2260,7 @@ CategoryFilter& CategoryFilter::operator=(const CategoryFilter& rhs) {
   included_ = rhs.included_;
   disabled_ = rhs.disabled_;
   excluded_ = rhs.excluded_;
+  delays_ = rhs.delays_;
   return *this;
 }
 
@@ -2191,8 +2273,19 @@ void CategoryFilter::Initialize(const std::string& filter_string) {
     // Ignore empty categories.
     if (category.empty())
       continue;
-    // Excluded categories start with '-'.
-    if (category.at(0) == '-') {
+    // Synthetic delays are of the form 'DELAY(delay;option;option;...)'.
+    if (category.find(kSyntheticDelayCategoryFilterPrefix) == 0 &&
+        category.at(category.size() - 1) == ')') {
+      category = category.substr(
+          strlen(kSyntheticDelayCategoryFilterPrefix),
+          category.size() - strlen(kSyntheticDelayCategoryFilterPrefix) - 1);
+      size_t name_length = category.find(';');
+      if (name_length != std::string::npos && name_length > 0 &&
+          name_length != category.size() - 1) {
+        delays_.push_back(category);
+      }
+    } else if (category.at(0) == '-') {
+      // Excluded categories start with '-'.
       // Remove '-' from category string.
       category = category.substr(1);
       excluded_.push_back(category);
@@ -2219,11 +2312,26 @@ void CategoryFilter::WriteString(const StringList& values,
   }
 }
 
+void CategoryFilter::WriteString(const StringList& delays,
+                                 std::string* out) const {
+  bool prepend_comma = !out->empty();
+  int token_cnt = 0;
+  for (StringList::const_iterator ci = delays.begin();
+       ci != delays.end(); ++ci) {
+    if (token_cnt > 0 || prepend_comma)
+      StringAppendF(out, ",");
+    StringAppendF(out, "%s%s)", kSyntheticDelayCategoryFilterPrefix,
+                  ci->c_str());
+    ++token_cnt;
+  }
+}
+
 std::string CategoryFilter::ToString() const {
   std::string filter_string;
   WriteString(included_, &filter_string, true);
   WriteString(disabled_, &filter_string, true);
   WriteString(excluded_, &filter_string, false);
+  WriteString(delays_, &filter_string);
   return filter_string;
 }
 
@@ -2279,12 +2387,20 @@ void CategoryFilter::Merge(const CategoryFilter& nested_filter) {
   excluded_.insert(excluded_.end(),
                    nested_filter.excluded_.begin(),
                    nested_filter.excluded_.end());
+  delays_.insert(delays_.end(),
+                 nested_filter.delays_.begin(),
+                 nested_filter.delays_.end());
 }
 
 void CategoryFilter::Clear() {
   included_.clear();
   disabled_.clear();
   excluded_.clear();
+}
+
+const CategoryFilter::StringList&
+    CategoryFilter::GetSyntheticDelayValues() const {
+  return delays_;
 }
 
 }  // namespace debug

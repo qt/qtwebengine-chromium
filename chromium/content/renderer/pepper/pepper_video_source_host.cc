@@ -5,7 +5,7 @@
 #include "content/renderer/pepper/pepper_video_source_host.h"
 
 #include "base/bind.h"
-#include "base/safe_numerics.h"
+#include "base/numerics/safe_conversions.h"
 #include "content/public/renderer/renderer_ppapi_host.h"
 #include "content/renderer/pepper/ppb_image_data_impl.h"
 #include "content/renderer/render_thread_impl.h"
@@ -17,8 +17,7 @@
 #include "ppapi/shared_impl/scoped_pp_resource.h"
 #include "ppapi/thunk/enter.h"
 #include "ppapi/thunk/ppb_image_data_api.h"
-#include "third_party/libjingle/source/talk/media/base/videocommon.h"
-#include "third_party/libjingle/source/talk/media/base/videoframe.h"
+#include "third_party/libyuv/include/libyuv/convert.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 
 using ppapi::host::HostMessageContext;
@@ -29,40 +28,34 @@ namespace content {
 PepperVideoSourceHost::FrameReceiver::FrameReceiver(
     const base::WeakPtr<PepperVideoSourceHost>& host)
     : host_(host),
-      main_message_loop_proxy_(base::MessageLoopProxy::current()) {
-}
+      main_message_loop_proxy_(base::MessageLoopProxy::current()) {}
 
-PepperVideoSourceHost::FrameReceiver::~FrameReceiver() {
-}
+PepperVideoSourceHost::FrameReceiver::~FrameReceiver() {}
 
 bool PepperVideoSourceHost::FrameReceiver::GotFrame(
-    cricket::VideoFrame* frame) {
+    const scoped_refptr<media::VideoFrame>& frame) {
   // It's not safe to access the host from this thread, so post a task to our
   // main thread to transfer the new frame.
   main_message_loop_proxy_->PostTask(
-      FROM_HERE,
-      base::Bind(&FrameReceiver::OnGotFrame,
-                 this,
-                 base::Passed(scoped_ptr<cricket::VideoFrame>(frame))));
+      FROM_HERE, base::Bind(&FrameReceiver::OnGotFrame, this, frame));
 
   return true;
 }
 
 void PepperVideoSourceHost::FrameReceiver::OnGotFrame(
-    scoped_ptr<cricket::VideoFrame> frame) {
+    const scoped_refptr<media::VideoFrame>& frame) {
   if (host_.get()) {
-    // Take ownership of the new frame, and possibly delete any unsent one.
-    host_->last_frame_.swap(frame);
+    // Hold a reference to the new frame and release the previous.
+    host_->last_frame_ = frame;
 
     if (host_->get_frame_pending_)
       host_->SendGetFrameReply();
   }
 }
 
-PepperVideoSourceHost::PepperVideoSourceHost(
-    RendererPpapiHost* host,
-    PP_Instance instance,
-    PP_Resource resource)
+PepperVideoSourceHost::PepperVideoSourceHost(RendererPpapiHost* host,
+                                             PP_Instance instance,
+                                             PP_Resource resource)
     : ResourceHost(host->GetPpapiHost(), instance, resource),
       renderer_ppapi_host_(host),
       source_handler_(new VideoSourceHandler(NULL)),
@@ -71,21 +64,19 @@ PepperVideoSourceHost::PepperVideoSourceHost(
   frame_receiver_ = new FrameReceiver(weak_factory_.GetWeakPtr());
 }
 
-PepperVideoSourceHost::~PepperVideoSourceHost() {
-  Close();
-}
+PepperVideoSourceHost::~PepperVideoSourceHost() { Close(); }
 
 int32_t PepperVideoSourceHost::OnResourceMessageReceived(
     const IPC::Message& msg,
     HostMessageContext* context) {
-  IPC_BEGIN_MESSAGE_MAP(PepperVideoSourceHost, msg)
+  PPAPI_BEGIN_MESSAGE_MAP(PepperVideoSourceHost, msg)
     PPAPI_DISPATCH_HOST_RESOURCE_CALL(PpapiHostMsg_VideoSource_Open,
                                       OnHostMsgOpen)
     PPAPI_DISPATCH_HOST_RESOURCE_CALL_0(PpapiHostMsg_VideoSource_GetFrame,
                                         OnHostMsgGetFrame)
     PPAPI_DISPATCH_HOST_RESOURCE_CALL_0(PpapiHostMsg_VideoSource_Close,
                                         OnHostMsgClose)
-  IPC_END_MESSAGE_MAP()
+  PPAPI_END_MESSAGE_MAP()
   return PP_ERROR_FAILED;
 }
 
@@ -132,10 +123,12 @@ void PepperVideoSourceHost::SendGetFrameReply() {
   get_frame_pending_ = false;
 
   DCHECK(last_frame_.get());
-  scoped_ptr<cricket::VideoFrame> frame(last_frame_.release());
+  scoped_refptr<media::VideoFrame> frame(last_frame_);
+  last_frame_ = NULL;
 
-  int32_t width = base::checked_numeric_cast<int32_t>(frame->GetWidth());
-  int32_t height = base::checked_numeric_cast<int32_t>(frame->GetHeight());
+  const int dst_width = frame->visible_rect().width();
+  const int dst_height = frame->visible_rect().height();
+
   PP_ImageDataDesc image_desc;
   IPC::PlatformFileForTransit image_handle;
   uint32_t byte_count;
@@ -145,9 +138,11 @@ void PepperVideoSourceHost::SendGetFrameReply() {
           pp_instance(),
           ppapi::PPB_ImageData_Shared::SIMPLE,
           PP_IMAGEDATAFORMAT_BGRA_PREMUL,
-          PP_MakeSize(width, height),
+          PP_MakeSize(dst_width, dst_height),
           false /* init_to_zero */,
-          &image_desc, &image_handle, &byte_count));
+          &image_desc,
+          &image_handle,
+          &byte_count));
   if (!resource.get()) {
     SendGetFrameErrorReply(PP_ERROR_FAILED);
     return;
@@ -179,30 +174,48 @@ void PepperVideoSourceHost::SendGetFrameReply() {
     return;
   }
 
-  size_t bitmap_size = bitmap->getSize();
-  frame->ConvertToRgbBuffer(cricket::FOURCC_BGRA,
-                            bitmap_pixels,
-                            bitmap_size,
-                            bitmap->rowBytes());
+  // Calculate that portion of the |frame| that should be copied into
+  // |bitmap|. If |frame| has been cropped,
+  // frame->coded_size() != frame->visible_rect().
+  const int src_width = frame->coded_size().width();
+  const int src_height = frame->coded_size().height();
+  DCHECK(src_width >= dst_width && src_height >= dst_height);
+
+  const int horiz_crop = frame->visible_rect().x();
+  const int vert_crop = frame->visible_rect().y();
+
+  const uint8* src_y = frame->data(media::VideoFrame::kYPlane) +
+                       (src_width * vert_crop + horiz_crop);
+  const int center = (src_width + 1) / 2;
+  const uint8* src_u = frame->data(media::VideoFrame::kUPlane) +
+                       (center * vert_crop + horiz_crop) / 2;
+  const uint8* src_v = frame->data(media::VideoFrame::kVPlane) +
+                       (center * vert_crop + horiz_crop) / 2;
+
+  libyuv::I420ToBGRA(src_y,
+                     frame->stride(media::VideoFrame::kYPlane),
+                     src_u,
+                     frame->stride(media::VideoFrame::kUPlane),
+                     src_v,
+                     frame->stride(media::VideoFrame::kVPlane),
+                     bitmap_pixels,
+                     bitmap->rowBytes(),
+                     dst_width,
+                     dst_height);
 
   ppapi::HostResource host_resource;
   host_resource.SetHostResource(pp_instance(), resource.get());
 
-  // Convert a video timestamp (int64, in nanoseconds) to a time delta (int64,
-  // microseconds) and then to a PP_TimeTicks (a double, in seconds). All times
-  // are relative to the Unix Epoch.
-  base::TimeDelta time_delta = base::TimeDelta::FromMicroseconds(
-      frame->GetTimeStamp() / base::Time::kNanosecondsPerMicrosecond);
-  PP_TimeTicks timestamp = time_delta.InSecondsF();
+  // Convert a video timestamp to a PP_TimeTicks (a double, in seconds).
+  PP_TimeTicks timestamp = frame->timestamp().InSecondsF();
 
   ppapi::proxy::SerializedHandle serialized_handle;
   serialized_handle.set_shmem(image_handle, byte_count);
   reply_context_.params.AppendHandle(serialized_handle);
 
   host()->SendReply(reply_context_,
-                    PpapiPluginMsg_VideoSource_GetFrameReply(host_resource,
-                                                             image_desc,
-                                                             timestamp));
+                    PpapiPluginMsg_VideoSource_GetFrameReply(
+                        host_resource, image_desc, timestamp));
 
   reply_context_ = ppapi::host::ReplyMessageContext();
 
@@ -214,15 +227,14 @@ void PepperVideoSourceHost::SendGetFrameErrorReply(int32_t error) {
   reply_context_.params.set_result(error);
   host()->SendReply(
       reply_context_,
-      PpapiPluginMsg_VideoSource_GetFrameReply(ppapi::HostResource(),
-                                               PP_ImageDataDesc(),
-                                               0.0 /* timestamp */));
+      PpapiPluginMsg_VideoSource_GetFrameReply(
+          ppapi::HostResource(), PP_ImageDataDesc(), 0.0 /* timestamp */));
   reply_context_ = ppapi::host::ReplyMessageContext();
 }
 
 void PepperVideoSourceHost::Close() {
   if (source_handler_.get() && !stream_url_.empty())
-    source_handler_->Close(stream_url_, frame_receiver_.get());
+    source_handler_->Close(frame_receiver_.get());
 
   source_handler_.reset(NULL);
   stream_url_.clear();

@@ -8,11 +8,12 @@
 #include "content/browser/browser_plugin/browser_plugin_embedder.h"
 #include "content/browser/browser_plugin/browser_plugin_guest.h"
 #include "content/browser/frame_host/interstitial_page_impl.h"
+#include "content/browser/frame_host/render_widget_host_view_guest.h"
 #include "content/browser/renderer_host/render_view_host_factory.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
-#include "content/browser/renderer_host/render_widget_host_view_guest.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/common/drag_messages.h"
+#include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents_delegate.h"
 #include "content/public/common/context_menu_params.h"
 #include "content/public/common/drop_data.h"
@@ -33,7 +34,7 @@ namespace content {
 WebContentsViewGuest::WebContentsViewGuest(
     WebContentsImpl* web_contents,
     BrowserPluginGuest* guest,
-    scoped_ptr<WebContentsViewPort> platform_view,
+    scoped_ptr<WebContentsView> platform_view,
     RenderViewHostDelegateView* platform_view_delegate_view)
     : web_contents_(web_contents),
       guest_(guest),
@@ -56,23 +57,42 @@ gfx::NativeView WebContentsViewGuest::GetContentNativeView() const {
 }
 
 gfx::NativeWindow WebContentsViewGuest::GetTopLevelNativeWindow() const {
-  return guest_->embedder_web_contents()->GetView()->GetTopLevelNativeWindow();
+  return guest_->embedder_web_contents()->GetTopLevelNativeWindow();
 }
 
 void WebContentsViewGuest::OnGuestInitialized(WebContentsView* parent_view) {
-#if defined(USE_AURA) || defined(OS_WIN)
-  // In aura and windows, ScreenPositionClient doesn't work properly if we do
+#if defined(USE_AURA)
+  // In aura, ScreenPositionClient doesn't work properly if we do
   // not have the native view associated with this WebContentsViewGuest in the
   // view hierarchy. We add this view as embedder's child here.
   // This would go in WebContentsViewGuest::CreateView, but that is too early to
   // access embedder_web_contents(). Therefore, we do it here.
-#if defined(USE_AURA)
-  // This can be win aura or chromeos.
   parent_view->GetNativeView()->AddChild(platform_view_->GetNativeView());
-#elif defined(OS_WIN)
-  SetParent(platform_view_->GetNativeView(), parent_view->GetNativeView());
+#endif  // defined(USE_AURA)
+}
+
+ContextMenuParams WebContentsViewGuest::ConvertContextMenuParams(
+    const ContextMenuParams& params) const {
+#if defined(USE_AURA)
+  // Context menu uses ScreenPositionClient::ConvertPointToScreen() in aura
+  // to calculate popup position. Guest's native view
+  // (platform_view_->GetNativeView()) is part of the embedder's view hierarchy,
+  // but is placed at (0, 0) w.r.t. the embedder's position. Therefore, |offset|
+  // is added to |params|.
+  gfx::Rect embedder_bounds;
+  guest_->embedder_web_contents()->GetView()->GetContainerBounds(
+      &embedder_bounds);
+  gfx::Rect guest_bounds;
+  GetContainerBounds(&guest_bounds);
+
+  gfx::Vector2d offset = guest_bounds.origin() - embedder_bounds.origin();
+  ContextMenuParams params_in_embedder = params;
+  params_in_embedder.x += offset.x();
+  params_in_embedder.y += offset.y();
+  return params_in_embedder;
+#else
+  return params;
 #endif
-#endif  // defined(USE_AURA) || defined(OS_WIN)
 }
 
 void WebContentsViewGuest::GetContainerBounds(gfx::Rect* out) const {
@@ -123,7 +143,7 @@ void WebContentsViewGuest::CreateView(const gfx::Size& initial_size,
   size_ = initial_size;
 }
 
-RenderWidgetHostView* WebContentsViewGuest::CreateViewForWidget(
+RenderWidgetHostViewBase* WebContentsViewGuest::CreateViewForWidget(
     RenderWidgetHost* render_widget_host) {
   if (render_widget_host->GetView()) {
     // During testing, the view will already be set up in most cases to the
@@ -132,13 +152,14 @@ RenderWidgetHostView* WebContentsViewGuest::CreateViewForWidget(
     // view twice), we check for the RVH Factory, which will be set when we're
     // making special ones (which go along with the special views).
     DCHECK(RenderViewHostFactory::has_factory());
-    return render_widget_host->GetView();
+    return static_cast<RenderWidgetHostViewBase*>(
+        render_widget_host->GetView());
   }
 
-  RenderWidgetHostView* platform_widget = NULL;
-  platform_widget = platform_view_->CreateViewForWidget(render_widget_host);
+  RenderWidgetHostViewBase* platform_widget =
+      platform_view_->CreateViewForWidget(render_widget_host);
 
-  RenderWidgetHostView* view = new RenderWidgetHostViewGuest(
+  RenderWidgetHostViewBase* view = new RenderWidgetHostViewGuest(
       render_widget_host,
       guest_,
       platform_widget);
@@ -146,9 +167,9 @@ RenderWidgetHostView* WebContentsViewGuest::CreateViewForWidget(
   return view;
 }
 
-RenderWidgetHostView* WebContentsViewGuest::CreateViewForPopupWidget(
+RenderWidgetHostViewBase* WebContentsViewGuest::CreateViewForPopupWidget(
     RenderWidgetHost* render_widget_host) {
-  return RenderWidgetHostViewPort::CreateViewForWidget(render_widget_host);
+  return platform_view_->CreateViewForPopupWidget(render_widget_host);
 }
 
 void WebContentsViewGuest::SetPageTitle(const base::string16& title) {
@@ -183,10 +204,6 @@ void WebContentsViewGuest::RestoreFocus() {
   platform_view_->RestoreFocus();
 }
 
-void WebContentsViewGuest::OnTabCrashed(base::TerminationStatus status,
-                                        int error_code) {
-}
-
 void WebContentsViewGuest::Focus() {
   platform_view_->Focus();
 }
@@ -217,38 +234,10 @@ void WebContentsViewGuest::GotFocus() {
 void WebContentsViewGuest::TakeFocus(bool reverse) {
 }
 
-void WebContentsViewGuest::ShowContextMenu(const ContextMenuParams& params) {
-#if defined(USE_AURA) || defined(OS_WIN)
-  // Context menu uses ScreenPositionClient::ConvertPointToScreen() in aura and
-  // windows to calculate popup position. Guest's native view
-  // (platform_view_->GetNativeView()) is part of the embedder's view hierarchy,
-  // but is placed at (0, 0) w.r.t. the embedder's position. Therefore, |offset|
-  // is added to |params|.
-  gfx::Rect embedder_bounds;
-  guest_->embedder_web_contents()->GetView()->GetContainerBounds(
-      &embedder_bounds);
-  gfx::Rect guest_bounds;
-  GetContainerBounds(&guest_bounds);
-
-  gfx::Vector2d offset = guest_bounds.origin() - embedder_bounds.origin();
-  ContextMenuParams params_in_embedder = params;
-  params_in_embedder.x += offset.x();
-  params_in_embedder.y += offset.y();
-  platform_view_delegate_view_->ShowContextMenu(params_in_embedder);
-#else
-  platform_view_delegate_view_->ShowContextMenu(params);
-#endif  // defined(USE_AURA) || defined(OS_WIN)
-}
-
-void WebContentsViewGuest::ShowPopupMenu(const gfx::Rect& bounds,
-                                         int item_height,
-                                         double item_font_size,
-                                         int selected_item,
-                                         const std::vector<MenuItem>& items,
-                                         bool right_aligned,
-                                         bool allow_multiple_selection) {
-  // External popup menus are only used on Mac and Android.
-  NOTIMPLEMENTED();
+void WebContentsViewGuest::ShowContextMenu(RenderFrameHost* render_frame_host,
+                                           const ContextMenuParams& params) {
+  platform_view_delegate_view_->ShowContextMenu(
+      render_frame_host, ConvertContextMenuParams(params));
 }
 
 void WebContentsViewGuest::StartDragging(
@@ -265,10 +254,12 @@ void WebContentsViewGuest::StartDragging(
   CHECK(embedder_render_view_host);
   RenderViewHostDelegateView* view =
       embedder_render_view_host->GetDelegate()->GetDelegateView();
-  if (view)
+  if (view) {
+    RecordAction(base::UserMetricsAction("BrowserPlugin.Guest.StartDrag"));
     view->StartDragging(drop_data, ops, image, image_offset, event_info);
-  else
+  } else {
     embedder_web_contents->SystemDragEnded();
+  }
 }
 
 }  // namespace content

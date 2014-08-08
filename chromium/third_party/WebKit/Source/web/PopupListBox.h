@@ -37,9 +37,6 @@
 #include "wtf/text/WTFString.h"
 
 namespace WebCore {
-
-typedef unsigned long long TimeStamp;
-
 class Font;
 class GraphicsContext;
 class IntRect;
@@ -49,31 +46,11 @@ class PlatformGestureEvent;
 class PlatformTouchEvent;
 class PlatformWheelEvent;
 class PopupMenuClient;
+}
 
-struct PopupContainerSettings {
-    // Whether the PopupMenuClient should be told to change its text when a
-    // new item is selected by using the arrow keys.
-    bool setTextOnIndexChange;
+namespace blink {
 
-    // Whether the selection should be accepted when the popup menu is
-    // closed (through ESC being pressed or the focus going away).
-    // Note that when TAB is pressed, the selection is always accepted
-    // regardless of this setting.
-    bool acceptOnAbandon;
-
-    // Whether we should move the selection to the first/last item when
-    // the user presses down/up arrow keys and the last/first item is
-    // selected.
-    bool loopSelectionNavigation;
-
-    // Whether we should restrict the width of the PopupListBox or not.
-    // Autocomplete popups are restricted, combo-boxes (select tags) aren't.
-    bool restrictWidthOfListBox;
-
-    // If the device is a touch screen we increase the height of menu items
-    // to make it easier to unambiguously touch them.
-    bool deviceSupportsTouch;
-};
+typedef unsigned long long TimeStamp;
 
 class PopupContent {
 public:
@@ -102,32 +79,32 @@ struct PopupItem {
     String label;
     Type type;
     int yOffset; // y offset of this item, relative to the top of the popup.
-    TextDirection textDirection;
+    WebCore::TextDirection textDirection;
     bool hasTextDirectionOverride;
     bool enabled;
 };
 
 // This class uses WebCore code to paint and handle events for a drop-down list
 // box ("combobox" on Windows).
-class PopupListBox : public FramelessScrollView, public PopupContent {
+class PopupListBox FINAL : public WebCore::FramelessScrollView, public PopupContent {
 public:
-    static PassRefPtr<PopupListBox> create(PopupMenuClient* client, const PopupContainerSettings& settings)
+    static PassRefPtr<PopupListBox> create(WebCore::PopupMenuClient* client, bool deviceSupportsTouch)
     {
-        return adoptRef(new PopupListBox(client, settings));
+        return adoptRef(new PopupListBox(client, deviceSupportsTouch));
     }
 
     // FramelessScrollView
-    virtual void paint(GraphicsContext*, const IntRect&) OVERRIDE;
-    virtual bool handleMouseDownEvent(const PlatformMouseEvent&) OVERRIDE;
-    virtual bool handleMouseMoveEvent(const PlatformMouseEvent&) OVERRIDE;
-    virtual bool handleMouseReleaseEvent(const PlatformMouseEvent&) OVERRIDE;
-    virtual bool handleWheelEvent(const PlatformWheelEvent&) OVERRIDE;
-    virtual bool handleKeyEvent(const PlatformKeyboardEvent&) OVERRIDE;
-    virtual bool handleTouchEvent(const PlatformTouchEvent&) OVERRIDE;
-    virtual bool handleGestureEvent(const PlatformGestureEvent&) OVERRIDE;
+    virtual void paint(WebCore::GraphicsContext*, const WebCore::IntRect&) OVERRIDE;
+    virtual bool handleMouseDownEvent(const WebCore::PlatformMouseEvent&) OVERRIDE;
+    virtual bool handleMouseMoveEvent(const WebCore::PlatformMouseEvent&) OVERRIDE;
+    virtual bool handleMouseReleaseEvent(const WebCore::PlatformMouseEvent&) OVERRIDE;
+    virtual bool handleWheelEvent(const WebCore::PlatformWheelEvent&) OVERRIDE;
+    virtual bool handleKeyEvent(const WebCore::PlatformKeyboardEvent&) OVERRIDE;
+    virtual bool handleTouchEvent(const WebCore::PlatformTouchEvent&) OVERRIDE;
+    virtual bool handleGestureEvent(const WebCore::PlatformGestureEvent&) OVERRIDE;
 
     // ScrollView
-    virtual HostWindow* hostWindow() const OVERRIDE;
+    virtual WebCore::HostWindow* hostWindow() const OVERRIDE;
     virtual bool shouldPlaceVerticalScrollbarOnLeft() const OVERRIDE;
 
     // PopupListBox methods
@@ -186,7 +163,7 @@ private:
     friend class PopupContainer;
     friend class RefCounted<PopupListBox>;
 
-    PopupListBox(PopupMenuClient*, const PopupContainerSettings&);
+    PopupListBox(WebCore::PopupMenuClient*, bool deviceSupportsTouch);
 
     virtual ~PopupListBox()
     {
@@ -219,30 +196,31 @@ private:
     void invalidateRow(int index);
 
     // Get the bounds of a row.
-    IntRect getRowBounds(int index);
+    WebCore::IntRect getRowBounds(int index);
 
     // Converts a point to an index of the row the point is over
-    int pointToRowIndex(const IntPoint&);
+    int pointToRowIndex(const WebCore::IntPoint&);
 
     // Paint an individual row
-    void paintRow(GraphicsContext*, const IntRect&, int rowIndex);
+    void paintRow(WebCore::GraphicsContext*, const WebCore::IntRect&, int rowIndex);
 
     // Test if the given point is within the bounds of the popup window.
-    bool isPointInBounds(const IntPoint&);
+    bool isPointInBounds(const WebCore::IntPoint&);
 
     // Called when the user presses a text key. Does a prefix-search of the items.
-    void typeAheadFind(const PlatformKeyboardEvent&);
+    void typeAheadFind(const WebCore::PlatformKeyboardEvent&);
 
     // Returns the font to use for the given row
-    Font getRowFont(int index);
+    WebCore::Font getRowFont(int index);
 
     // Moves the selection down/up one item, taking care of looping back to the
     // first/last element if m_loopSelectionNavigation is true.
     void selectPreviousRow();
     void selectNextRow();
 
-    // The settings that specify the behavior for this Popup window.
-    PopupContainerSettings m_settings;
+    // If the device is a touch screen we increase the height of menu items
+    // to make it easier to unambiguously touch them.
+    bool m_deviceSupportsTouch;
 
     // This is the index of the item marked as "selected" - i.e. displayed in
     // the widget on the page.
@@ -274,14 +252,14 @@ private:
     Vector<PopupItem*> m_items;
 
     // The <select> PopupMenuClient that opened us.
-    PopupMenuClient* m_popupClient;
+    WebCore::PopupMenuClient* m_popupClient;
 
     // The scrollbar which has mouse capture. Mouse events go straight to this
     // if not null.
-    RefPtr<Scrollbar> m_capturingScrollbar;
+    RefPtr<WebCore::Scrollbar> m_capturingScrollbar;
 
     // The last scrollbar that the mouse was over. Used for mouseover highlights.
-    RefPtr<Scrollbar> m_lastScrollbarUnderMouse;
+    RefPtr<WebCore::Scrollbar> m_lastScrollbarUnderMouse;
 
     // The string the user has typed so far into the popup. Used for typeAheadFind.
     String m_typedString;
@@ -296,9 +274,9 @@ private:
     int m_maxWindowWidth;
 
     // To forward last mouse release event.
-    RefPtr<Element> m_focusedElement;
+    RefPtrWillBePersistent<WebCore::Element> m_focusedElement;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif

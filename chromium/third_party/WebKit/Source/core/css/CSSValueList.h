@@ -31,21 +31,21 @@ class CSSParserValueList;
 
 class CSSValueList : public CSSValue {
 public:
-    static PassRefPtr<CSSValueList> createCommaSeparated()
+    static PassRefPtrWillBeRawPtr<CSSValueList> createCommaSeparated()
     {
-        return adoptRef(new CSSValueList(CommaSeparator));
+        return adoptRefWillBeNoop(new CSSValueList(CommaSeparator));
     }
-    static PassRefPtr<CSSValueList> createSpaceSeparated()
+    static PassRefPtrWillBeRawPtr<CSSValueList> createSpaceSeparated()
     {
-        return adoptRef(new CSSValueList(SpaceSeparator));
+        return adoptRefWillBeNoop(new CSSValueList(SpaceSeparator));
     }
-    static PassRefPtr<CSSValueList> createSlashSeparated()
+    static PassRefPtrWillBeRawPtr<CSSValueList> createSlashSeparated()
     {
-        return adoptRef(new CSSValueList(SlashSeparator));
+        return adoptRefWillBeNoop(new CSSValueList(SlashSeparator));
     }
-    static PassRefPtr<CSSValueList> createFromParserValueList(CSSParserValueList* list)
+    static PassRefPtrWillBeRawPtr<CSSValueList> createFromParserValueList(CSSParserValueList* list)
     {
-        return adoptRef(new CSSValueList(list));
+        return adoptRefWillBeNoop(new CSSValueList(list));
     }
 
     size_t length() const { return m_values.size(); }
@@ -53,22 +53,21 @@ public:
     const CSSValue* item(size_t index) const { return index < m_values.size() ? m_values[index].get() : 0; }
     CSSValue* itemWithoutBoundsCheck(size_t index) { return m_values[index].get(); }
 
-    void append(PassRefPtr<CSSValue> value) { m_values.append(value); }
-    void prepend(PassRefPtr<CSSValue> value) { m_values.prepend(value); }
+    void append(PassRefPtrWillBeRawPtr<CSSValue> value) { m_values.append(value); }
+    void prepend(PassRefPtrWillBeRawPtr<CSSValue> value) { m_values.prepend(value); }
     bool removeAll(CSSValue*);
     bool hasValue(CSSValue*) const;
-    PassRefPtr<CSSValueList> copy();
+    PassRefPtrWillBeRawPtr<CSSValueList> copy();
 
     String customCSSText(CSSTextFormattingFlags = QuoteCSSStringIfNeeded) const;
     bool equals(const CSSValueList&) const;
     bool equals(const CSSValue&) const;
-    String customSerializeResolvingVariables(const HashMap<AtomicString, String>&) const;
-
-    void addSubresourceStyleURLs(ListHashSet<KURL>&, const StyleSheetContents*) const;
 
     bool hasFailedOrCanceledSubresources() const;
 
-    PassRefPtr<CSSValueList> cloneForCSSOM() const;
+    PassRefPtrWillBeRawPtr<CSSValueList> cloneForCSSOM() const;
+
+    void traceAfterDispatch(Visitor*);
 
 protected:
     CSSValueList(ClassType, ValueListSeparator);
@@ -78,7 +77,7 @@ private:
     explicit CSSValueList(ValueListSeparator);
     explicit CSSValueList(CSSParserValueList*);
 
-    Vector<RefPtr<CSSValue>, 4> m_values;
+    WillBeHeapVector<RefPtrWillBeMember<CSSValue>, 4> m_values;
 };
 
 DEFINE_CSS_VALUE_TYPE_CASTS(CSSValueList, isValueList());
@@ -86,6 +85,7 @@ DEFINE_CSS_VALUE_TYPE_CASTS(CSSValueList, isValueList());
 // Objects of this class are intended to be stack-allocated and scoped to a single function.
 // Please take care not to pass these around as they do hold onto a raw pointer.
 class CSSValueListInspector {
+    STACK_ALLOCATED();
 public:
     CSSValueListInspector(CSSValue* value) : m_list((value && value->isValueList()) ? toCSSValueList(value) : 0) { }
     CSSValue* item(size_t index) const { ASSERT_WITH_SECURITY_IMPLICATION(index < length()); return m_list->itemWithoutBoundsCheck(index); }
@@ -93,13 +93,14 @@ public:
     CSSValue* second() const { return item(1); }
     size_t length() const { return m_list ? m_list->length() : 0; }
 private:
-    CSSValueList* m_list;
+    RawPtrWillBeMember<CSSValueList> m_list;
 };
 
 // Wrapper that can be used to iterate over any CSSValue. Non-list values and 0 behave as zero-length lists.
 // Objects of this class are intended to be stack-allocated and scoped to a single function.
 // Please take care not to pass these around as they do hold onto a raw pointer.
 class CSSValueListIterator {
+    STACK_ALLOCATED();
 public:
     CSSValueListIterator(CSSValue* value) : m_inspector(value), m_position(0) { }
     bool hasMore() const { return m_position < m_inspector.length(); }

@@ -34,9 +34,10 @@
 #include "platform/network/ResourceRequest.h"
 
 namespace WebCore {
-class Frame;
+class LocalFrame;
 
 struct FrameLoadRequest {
+    STACK_ALLOCATED();
 public:
     explicit FrameLoadRequest(Document* originDocument)
         : m_originDocument(originDocument)
@@ -55,7 +56,7 @@ public:
     {
     }
 
-    FrameLoadRequest(Document* originDocument, const ResourceRequest& resourceRequest, const String& frameName)
+    FrameLoadRequest(Document* originDocument, const ResourceRequest& resourceRequest, const AtomicString& frameName)
         : m_originDocument(originDocument)
         , m_resourceRequest(resourceRequest)
         , m_frameName(frameName)
@@ -80,8 +81,8 @@ public:
     ResourceRequest& resourceRequest() { return m_resourceRequest; }
     const ResourceRequest& resourceRequest() const { return m_resourceRequest; }
 
-    const String& frameName() const { return m_frameName; }
-    void setFrameName(const String& frameName) { m_frameName = frameName; }
+    const AtomicString& frameName() const { return m_frameName; }
+    void setFrameName(const AtomicString& frameName) { m_frameName = frameName; }
 
     const SubstituteData& substituteData() const { return m_substituteData; }
 
@@ -92,23 +93,23 @@ public:
     void setClientRedirect(ClientRedirectPolicy clientRedirect) { m_clientRedirect = clientRedirect; }
 
     Event* triggeringEvent() const { return m_triggeringEvent.get(); }
-    void setTriggeringEvent(PassRefPtr<Event> triggeringEvent) { m_triggeringEvent = triggeringEvent; }
+    void setTriggeringEvent(PassRefPtrWillBeRawPtr<Event> triggeringEvent) { m_triggeringEvent = triggeringEvent; }
 
     FormState* formState() const { return m_formState.get(); }
-    void setFormState(PassRefPtr<FormState> formState) { m_formState = formState; }
+    void setFormState(PassRefPtrWillBeRawPtr<FormState> formState) { m_formState = formState; }
 
     ShouldSendReferrer shouldSendReferrer() const { return m_shouldSendReferrer; }
     void setShouldSendReferrer(ShouldSendReferrer shouldSendReferrer) { m_shouldSendReferrer = shouldSendReferrer; }
 
 private:
-    RefPtr<Document> m_originDocument;
+    RefPtrWillBeMember<Document> m_originDocument;
     ResourceRequest m_resourceRequest;
-    String m_frameName;
+    AtomicString m_frameName;
     SubstituteData m_substituteData;
     bool m_lockBackForwardList;
     ClientRedirectPolicy m_clientRedirect;
-    RefPtr<Event> m_triggeringEvent;
-    RefPtr<FormState> m_formState;
+    RefPtrWillBeMember<Event> m_triggeringEvent;
+    RefPtrWillBeMember<FormState> m_formState;
     ShouldSendReferrer m_shouldSendReferrer;
 };
 

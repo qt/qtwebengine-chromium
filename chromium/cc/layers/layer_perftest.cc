@@ -4,12 +4,12 @@
 
 #include "cc/layers/layer.h"
 
+#include "cc/debug/lap_timer.h"
 #include "cc/resources/layer_painter.h"
 #include "cc/test/fake_impl_proxy.h"
 #include "cc/test/fake_layer_tree_host.h"
 #include "cc/test/fake_layer_tree_host_client.h"
 #include "cc/test/fake_layer_tree_host_impl.h"
-#include "cc/test/lap_timer.h"
 
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/perf/perf_test.h"
@@ -24,7 +24,7 @@ static const int kTimeCheckInterval = 10;
 class MockLayerPainter : public LayerPainter {
  public:
   virtual void Paint(SkCanvas* canvas,
-                     gfx::Rect content_rect,
+                     const gfx::Rect& content_rect,
                      gfx::RectF* opaque) OVERRIDE {}
 };
 
@@ -32,7 +32,7 @@ class MockLayerPainter : public LayerPainter {
 class LayerPerfTest : public testing::Test {
  public:
   LayerPerfTest()
-      : host_impl_(&proxy_),
+      : host_impl_(&proxy_, &shared_bitmap_manager_),
         fake_client_(FakeLayerTreeHostClient::DIRECT_3D),
         timer_(kWarmupRuns,
                base::TimeDelta::FromMilliseconds(kTimeLimitMillis),
@@ -50,6 +50,7 @@ class LayerPerfTest : public testing::Test {
   }
 
   FakeImplProxy proxy_;
+  TestSharedBitmapManager shared_bitmap_manager_;
   FakeLayerTreeHostImpl host_impl_;
 
   FakeLayerTreeHostClient fake_client_;
@@ -64,7 +65,7 @@ TEST_F(LayerPerfTest, PushPropertiesTo) {
 
   layer_tree_host_->SetRootLayer(test_layer);
 
-  float anchor_point_z = 0;
+  float transform_origin_z = 0;
   bool scrollable = true;
   bool contents_opaque = true;
   bool double_sided = true;
@@ -75,15 +76,16 @@ TEST_F(LayerPerfTest, PushPropertiesTo) {
   timer_.Reset();
   do {
     test_layer->SetNeedsDisplayRect(gfx::RectF(0.f, 0.f, 5.f, 5.f));
-    test_layer->SetAnchorPointZ(anchor_point_z);
+    test_layer->SetTransformOrigin(gfx::Point3F(0.f, 0.f, transform_origin_z));
     test_layer->SetContentsOpaque(contents_opaque);
     test_layer->SetDoubleSided(double_sided);
     test_layer->SetHideLayerAndSubtree(hide_layer_and_subtree);
     test_layer->SetMasksToBounds(masks_to_bounds);
-    test_layer->SetScrollable(scrollable);
+    test_layer->SetScrollClipLayerId(scrollable ? test_layer->id()
+                                                : Layer::INVALID_ID);
     test_layer->PushPropertiesTo(impl_layer.get());
 
-    anchor_point_z += 0.01f;
+    transform_origin_z += 0.01f;
     scrollable = !scrollable;
     contents_opaque = !contents_opaque;
     double_sided = !double_sided;

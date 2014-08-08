@@ -26,24 +26,25 @@
 #ifndef IDBDatabaseCallbacks_h
 #define IDBDatabaseCallbacks_h
 
+#include "platform/heap/Handle.h"
 #include "wtf/PassRefPtr.h"
-#include "wtf/RefCounted.h"
 
 namespace WebCore {
 
 class DOMError;
 class IDBDatabase;
 
-class IDBDatabaseCallbacks : public RefCounted<IDBDatabaseCallbacks> {
+class IDBDatabaseCallbacks : public GarbageCollectedFinalized<IDBDatabaseCallbacks> {
 public:
-    static PassRefPtr<IDBDatabaseCallbacks> create();
+    static IDBDatabaseCallbacks* create();
     virtual ~IDBDatabaseCallbacks();
+    void trace(Visitor*);
 
     // IDBDatabaseCallbacks
     virtual void onForcedClose();
     virtual void onVersionChange(int64_t oldVersion, int64_t newVersion);
 
-    virtual void onAbort(int64_t transactionId, PassRefPtr<DOMError>);
+    virtual void onAbort(int64_t transactionId, PassRefPtrWillBeRawPtr<DOMError>);
     virtual void onComplete(int64_t transactionId);
 
     void connect(IDBDatabase*);
@@ -53,8 +54,14 @@ protected:
     IDBDatabaseCallbacks();
 
 private:
-    // The initial IDBOpenDBRequest or final IDBDatabase maintains a RefPtr to this
-    IDBDatabase* m_database;
+    // The initial IDBOpenDBRequest, final IDBDatabase, and/or
+    // WebIDBDatabaseCallbacks have strong references to an IDBDatabaseCallbacks
+    // object.
+    // Oilpan: We'd like to delete an IDBDatabase object by a
+    // GC. WebIDBDatabaseCallbacks can survive the GC, and IDBDatabaseCallbacks
+    // can survive too. m_database should be a weak reference to avoid that an
+    // IDBDatabase survives the GC with the IDBDatabaseCallbacks.
+    WeakMember<IDBDatabase> m_database;
 };
 
 } // namespace WebCore

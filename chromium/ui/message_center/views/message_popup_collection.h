@@ -35,6 +35,10 @@ class WebNotificationTrayTest;
 FORWARD_DECLARE_TEST(WebNotificationTrayTest, ManyPopupNotifications);
 }
 
+namespace gfx {
+class Screen;
+}
+
 namespace message_center {
 namespace test {
 class MessagePopupCollectionTest;
@@ -42,6 +46,7 @@ class MessagePopupCollectionTest;
 
 class MessageCenter;
 class MessageCenterTray;
+class MessageViewContextMenuController;
 
 enum PopupAlignment {
   POPUP_ALIGNMENT_TOP = 1 << 0,
@@ -74,17 +79,12 @@ class MESSAGE_CENTER_EXPORT MessagePopupCollection
   virtual void ClickOnNotification(const std::string& notification_id) OVERRIDE;
   virtual void RemoveNotification(const std::string& notification_id,
                                   bool by_user) OVERRIDE;
-  virtual void DisableNotificationsFromThisSource(
-      const NotifierId& notifier_id) OVERRIDE;
-  virtual void ShowNotifierSettingsBubble() OVERRIDE;
+  virtual scoped_ptr<ui::MenuModel> CreateMenuModel(
+      const NotifierId& notifier_id,
+      const base::string16& display_source) OVERRIDE;
   virtual bool HasClickedListener(const std::string& notification_id) OVERRIDE;
   virtual void ClickOnNotificationButton(const std::string& notification_id,
                                          int button_index) OVERRIDE;
-  virtual void ExpandNotification(const std::string& notification_id) OVERRIDE;
-  virtual void GroupBodyClicked(const std::string& last_notification_id)
-      OVERRIDE;
-  virtual void ExpandGroup(const NotifierId& notifier_id) OVERRIDE;
-  virtual void RemoveGroup(const NotifierId& notifier_id) OVERRIDE;
 
   void MarkAllPopupsShown();
 
@@ -111,7 +111,7 @@ class MESSAGE_CENTER_EXPORT MessagePopupCollection
 
   // Updates |work_area_| and re-calculates the alignment of notification toasts
   // rearranging them if necessary.
-  // This is separated from methods from OnDisplayBoundsChanged(), since
+  // This is separated from methods from OnDisplayMetricsChanged(), since
   // sometimes the display info has to be specified directly. One example is
   // shelf's auto-hide change. When the shelf in ChromeOS is temporarily shown
   // from auto hide status, it doesn't change the display's work area but the
@@ -120,9 +120,10 @@ class MESSAGE_CENTER_EXPORT MessagePopupCollection
                       const gfx::Rect& screen_bounds);
 
   // Overridden from gfx::DislayObserver:
-  virtual void OnDisplayBoundsChanged(const gfx::Display& display) OVERRIDE;
   virtual void OnDisplayAdded(const gfx::Display& new_display) OVERRIDE;
   virtual void OnDisplayRemoved(const gfx::Display& old_display) OVERRIDE;
+  virtual void OnDisplayMetricsChanged(const gfx::Display& display,
+                                       uint32_t metrics) OVERRIDE;
 
   // Used by ToastContentsView to locate itself.
   gfx::NativeView parent() const { return parent_; }
@@ -188,6 +189,7 @@ class MESSAGE_CENTER_EXPORT MessagePopupCollection
   Toasts toasts_;
   gfx::Rect work_area_;
   int64 display_id_;
+  gfx::Screen* screen_;
 
   // Specifies which corner of the screen popups should show up. This should
   // ideally be the same corner the notification area (systray) is at.
@@ -215,6 +217,8 @@ class MESSAGE_CENTER_EXPORT MessagePopupCollection
 
   // True if the first item should not have spacing against the tray.
   bool first_item_has_no_margin_;
+
+  scoped_ptr<MessageViewContextMenuController> context_menu_controller_;
 
   // Gives out weak pointers to toast contents views which have an unrelated
   // lifetime.  Must remain the last member variable.

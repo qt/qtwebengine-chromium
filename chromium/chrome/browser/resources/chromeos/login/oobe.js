@@ -10,24 +10,35 @@
 <include src="login_common.js"></include>
 <include src="oobe_screen_eula.js"></include>
 <include src="oobe_screen_network.js"></include>
+<include src="oobe_screen_hid_detection.js"></include>
 <include src="oobe_screen_update.js"></include>
+<include src="oobe_screen_auto_enrollment_check.js"></include>
 
 cr.define('cr.ui.Oobe', function() {
   return {
     /**
      * Setups given "select" element using the list and adds callback.
+     * Creates option groups if needed.
      * @param {!Element} select Select object to be updated.
      * @param {!Object} list List of the options to be added.
+     * Elements with optionGroupName are considered option group.
      * @param {string} callback Callback name which should be send to Chrome or
      * an empty string if the event listener shouldn't be added.
      */
     setupSelect: function(select, list, callback) {
-      select.options.length = 0;
+      select.innerHTML = '';
+      var optgroup = select;
       for (var i = 0; i < list.length; ++i) {
         var item = list[i];
-        var option =
-            new Option(item.title, item.value, item.selected, item.selected);
-        select.appendChild(option);
+        if (item.optionGroupName) {
+          optgroup = document.createElement('optgroup');
+          optgroup.label = item.optionGroupName;
+          select.appendChild(optgroup);
+        } else {
+          var option =
+              new Option(item.title, item.value, item.selected, item.selected);
+          optgroup.appendChild(option);
+        }
       }
       if (callback) {
         var sendCallback = function() {
@@ -53,10 +64,12 @@ cr.define('cr.ui.Oobe', function() {
      */
     initialize: function() {
       cr.ui.login.DisplayManager.initialize();
+      login.HIDDetectionScreen.register();
       login.WrongHWIDScreen.register();
       login.NetworkScreen.register();
       login.EulaScreen.register();
       login.UpdateScreen.register();
+      login.AutoEnrollmentCheckScreen.register();
       login.ResetScreen.register();
       login.AutolaunchScreen.register();
       login.KioskEnableScreen.register();
@@ -70,7 +83,7 @@ cr.define('cr.ui.Oobe', function() {
       login.TermsOfServiceScreen.register();
       login.AppLaunchSplashScreen.register();
       login.ConfirmPasswordScreen.register();
-      login.MessageBoxScreen.register();
+      login.FatalErrorScreen.register();
 
       cr.ui.Bubble.decorate($('bubble'));
       login.HeaderBar.decorate($('login-header-bar'));
@@ -86,11 +99,22 @@ cr.define('cr.ui.Oobe', function() {
     initializeA11yMenu: function() {
       cr.ui.Bubble.decorate($('accessibility-menu'));
       $('connect-accessibility-link').addEventListener(
-        'click', Oobe.handleAccessbilityLinkClick);
+        'click', Oobe.handleAccessibilityLinkClick);
       $('eula-accessibility-link').addEventListener(
-        'click', Oobe.handleAccessbilityLinkClick);
+        'click', Oobe.handleAccessibilityLinkClick);
       $('update-accessibility-link').addEventListener(
-        'click', Oobe.handleAccessbilityLinkClick);
+        'click', Oobe.handleAccessibilityLinkClick);
+      // Same behaviour on hitting spacebar. See crbug.com/342991.
+      function reactOnSpace(event) {
+        if (event.keyCode == 32)
+          Oobe.handleAccessibilityLinkClick(event);
+      }
+      $('connect-accessibility-link').addEventListener(
+        'keyup', reactOnSpace);
+      $('eula-accessibility-link').addEventListener(
+        'keyup', reactOnSpace);
+      $('update-accessibility-link').addEventListener(
+        'keyup', reactOnSpace);
 
       $('high-contrast').addEventListener('click',
                                           Oobe.handleHighContrastClick);
@@ -100,6 +124,8 @@ cr.define('cr.ui.Oobe', function() {
                                             Oobe.handleSpokenFeedbackClick);
       $('screen-magnifier').addEventListener('click',
                                              Oobe.handleScreenMagnifierClick);
+      $('virtual-keyboard').addEventListener('click',
+                                              Oobe.handleVirtualKeyboardClick);
 
       // A11y menu should be accessible i.e. disable autohide on any
       // keydown or click inside menu.
@@ -110,12 +136,14 @@ cr.define('cr.ui.Oobe', function() {
     /**
      * Accessibility link handler.
      */
-    handleAccessbilityLinkClick: function(e) {
+    handleAccessibilityLinkClick: function(e) {
       /** @const */ var BUBBLE_OFFSET = 5;
       /** @const */ var BUBBLE_PADDING = 10;
       $('accessibility-menu').showForElement(e.target,
                                              cr.ui.Bubble.Attachment.BOTTOM,
                                              BUBBLE_OFFSET, BUBBLE_PADDING);
+      $('accessibility-menu').firstBubbleElement = $('spoken-feedback');
+      $('accessibility-menu').lastBubbleElement = $('close-accessibility-menu');
       if (Oobe.getInstance().currentScreen &&
           Oobe.getInstance().currentScreen.defaultControl) {
         $('accessibility-menu').elementToFocusOnHide =
@@ -159,6 +187,14 @@ cr.define('cr.ui.Oobe', function() {
      */
     handleScreenMagnifierClick: function(e) {
       chrome.send('enableScreenMagnifier', [$('screen-magnifier').checked]);
+      e.stopPropagation();
+    },
+
+    /**
+     * On-screen keyboard checkbox handler.
+     */
+    handleVirtualKeyboardClick: function(e) {
+      chrome.send('enableVirtualKeyboard', [$('virtual-keyboard').checked]);
       e.stopPropagation();
     },
 
@@ -208,6 +244,7 @@ cr.define('cr.ui.Oobe', function() {
       $('spoken-feedback').checked = data.spokenFeedbackEnabled;
       $('screen-magnifier').checked = data.screenMagnifierEnabled;
       $('large-cursor').checked = data.largeCursorEnabled;
+      $('virtual-keyboard').checked = data.virtualKeyboardEnabled;
     },
 
     /**

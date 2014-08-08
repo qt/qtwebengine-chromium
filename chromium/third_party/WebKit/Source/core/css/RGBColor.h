@@ -28,22 +28,25 @@
 #define RGBColor_h
 
 #include "platform/graphics/Color.h"
+#include "platform/heap/Handle.h"
 #include "wtf/RefCounted.h"
 
 namespace WebCore {
 
     class CSSPrimitiveValue;
 
-    class RGBColor : public RefCounted<RGBColor> {
+    class RGBColor : public RefCountedWillBeGarbageCollected<RGBColor> {
     public:
-        static PassRefPtr<RGBColor> create(unsigned rgbColor);
+        static PassRefPtrWillBeRawPtr<RGBColor> create(unsigned rgbColor);
 
-        PassRefPtr<CSSPrimitiveValue> red();
-        PassRefPtr<CSSPrimitiveValue> green();
-        PassRefPtr<CSSPrimitiveValue> blue();
-        PassRefPtr<CSSPrimitiveValue> alpha();
+        PassRefPtrWillBeRawPtr<CSSPrimitiveValue> red();
+        PassRefPtrWillBeRawPtr<CSSPrimitiveValue> green();
+        PassRefPtrWillBeRawPtr<CSSPrimitiveValue> blue();
+        PassRefPtrWillBeRawPtr<CSSPrimitiveValue> alpha();
 
         Color color() const { return Color(m_rgbColor); }
+
+        void trace(Visitor*) { }
 
     private:
         RGBColor(unsigned rgbColor)

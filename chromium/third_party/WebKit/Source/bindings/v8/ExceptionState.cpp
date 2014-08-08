@@ -47,21 +47,26 @@ void ExceptionState::throwDOMException(const ExceptionCode& ec, const String& me
 {
     ASSERT(ec);
     ASSERT(m_isolate);
+    ASSERT(!m_creationContext.IsEmpty());
 
     // SecurityError is thrown via ::throwSecurityError, and _careful_ consideration must be given to the data exposed to JavaScript via the 'sanitizedMessage'.
     ASSERT(ec != SecurityError);
 
     m_code = ec;
     String processedMessage = addExceptionContext(message);
+    m_message = processedMessage;
     setException(V8ThrowException::createDOMException(ec, processedMessage, m_creationContext, m_isolate));
 }
 
 void ExceptionState::throwSecurityError(const String& sanitizedMessage, const String& unsanitizedMessage)
 {
     ASSERT(m_isolate);
+    ASSERT(!m_creationContext.IsEmpty());
     m_code = SecurityError;
     String finalSanitized = addExceptionContext(sanitizedMessage);
+    m_message = finalSanitized;
     String finalUnsanitized = addExceptionContext(unsanitizedMessage);
+
     setException(V8ThrowException::createDOMException(SecurityError, finalSanitized, finalUnsanitized, m_creationContext, m_isolate));
 }
 
@@ -76,26 +81,57 @@ void ExceptionState::setException(v8::Handle<v8::Value> exception)
     m_exception.set(m_isolate, exception);
 }
 
+void ExceptionState::throwException()
+{
+    ASSERT(!m_exception.isEmpty());
+    V8ThrowException::throwError(m_exception.newLocal(m_isolate), m_isolate);
+}
+
 void ExceptionState::throwTypeError(const String& message)
 {
     ASSERT(m_isolate);
     m_code = TypeError;
+    m_message = message;
     setException(V8ThrowException::createTypeError(addExceptionContext(message), m_isolate));
+}
+
+void NonThrowableExceptionState::throwDOMException(const ExceptionCode& ec, const String& message)
+{
+    ASSERT_NOT_REACHED();
+    m_code = ec;
+    m_message = message;
+}
+
+void NonThrowableExceptionState::throwTypeError(const String& message)
+{
+    ASSERT_NOT_REACHED();
+    m_code = TypeError;
+    m_message = message;
+}
+
+void NonThrowableExceptionState::throwSecurityError(const String& sanitizedMessage, const String&)
+{
+    ASSERT_NOT_REACHED();
+    m_code = SecurityError;
+    m_message = sanitizedMessage;
 }
 
 void TrackExceptionState::throwDOMException(const ExceptionCode& ec, const String& message)
 {
     m_code = ec;
+    m_message = message;
 }
 
-void TrackExceptionState::throwTypeError(const String&)
+void TrackExceptionState::throwTypeError(const String& message)
 {
     m_code = TypeError;
+    m_message = message;
 }
 
-void TrackExceptionState::throwSecurityError(const String&, const String&)
+void TrackExceptionState::throwSecurityError(const String& sanitizedMessage, const String&)
 {
     m_code = SecurityError;
+    m_message = sanitizedMessage;
 }
 
 String ExceptionState::addExceptionContext(const String& message) const
@@ -113,8 +149,17 @@ String ExceptionState::addExceptionContext(const String& message) const
             processedMessage = ExceptionMessages::failedToGet(propertyName(), interfaceName(), message);
         else if (m_context == SetterContext)
             processedMessage = ExceptionMessages::failedToSet(propertyName(), interfaceName(), message);
-    } else if (!propertyName() && interfaceName() && m_context == ConstructionContext) {
-        processedMessage = ExceptionMessages::failedToConstruct(interfaceName(), message);
+    } else if (!propertyName() && interfaceName()) {
+        if (m_context == ConstructionContext)
+            processedMessage = ExceptionMessages::failedToConstruct(interfaceName(), message);
+        else if (m_context == EnumerationContext)
+            processedMessage = ExceptionMessages::failedToEnumerate(interfaceName(), message);
+        else if (m_context == IndexedDeletionContext)
+            processedMessage = ExceptionMessages::failedToDeleteIndexed(interfaceName(), message);
+        else if (m_context == IndexedGetterContext)
+            processedMessage = ExceptionMessages::failedToGetIndexed(interfaceName(), message);
+        else if (m_context == IndexedSetterContext)
+            processedMessage = ExceptionMessages::failedToSetIndexed(interfaceName(), message);
     }
     return processedMessage;
 }

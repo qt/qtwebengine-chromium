@@ -12,7 +12,7 @@
 #include "media/base/video_decoder_config.h"
 
 namespace base {
-class MessageLoopProxy;
+class SingleThreadTaskRunner;
 }
 
 namespace media {
@@ -22,22 +22,24 @@ class Decryptor;
 
 // Decryptor-based VideoDecoder implementation that can decrypt and decode
 // encrypted video buffers and return decrypted and decompressed video frames.
-// All public APIs and callbacks are trampolined to the |message_loop_| so
+// All public APIs and callbacks are trampolined to the |task_runner_| so
 // that no locks are required for thread safety.
 class MEDIA_EXPORT DecryptingVideoDecoder : public VideoDecoder {
  public:
   DecryptingVideoDecoder(
-      const scoped_refptr<base::MessageLoopProxy>& message_loop,
+      const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
       const SetDecryptorReadyCB& set_decryptor_ready_cb);
   virtual ~DecryptingVideoDecoder();
 
   // VideoDecoder implementation.
   virtual void Initialize(const VideoDecoderConfig& config,
-                          const PipelineStatusCB& status_cb) OVERRIDE;
+                          bool low_delay,
+                          const PipelineStatusCB& status_cb,
+                          const OutputCB& output_cb) OVERRIDE;
   virtual void Decode(const scoped_refptr<DecoderBuffer>& buffer,
                       const DecodeCB& decode_cb) OVERRIDE;
   virtual void Reset(const base::Closure& closure) OVERRIDE;
-  virtual void Stop(const base::Closure& closure) OVERRIDE;
+  virtual void Stop() OVERRIDE;
 
  private:
   // For a detailed state diagram please see this link: http://goo.gl/8jAok
@@ -78,13 +80,12 @@ class MEDIA_EXPORT DecryptingVideoDecoder : public VideoDecoder {
   // Free decoder resources and call |stop_cb_|.
   void DoStop();
 
-  scoped_refptr<base::MessageLoopProxy> message_loop_;
-  base::WeakPtrFactory<DecryptingVideoDecoder> weak_factory_;
-  base::WeakPtr<DecryptingVideoDecoder> weak_this_;
+  scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
 
   State state_;
 
   PipelineStatusCB init_cb_;
+  OutputCB output_cb_;
   DecodeCB decode_cb_;
   base::Closure reset_cb_;
 
@@ -108,6 +109,10 @@ class MEDIA_EXPORT DecryptingVideoDecoder : public VideoDecoder {
   // A unique ID to trace Decryptor::DecryptAndDecodeVideo() call and the
   // matching DecryptCB call (in DoDeliverFrame()).
   uint32 trace_id_;
+
+  // NOTE: Weak pointers must be invalidated before all other member variables.
+  base::WeakPtrFactory<DecryptingVideoDecoder> weak_factory_;
+  base::WeakPtr<DecryptingVideoDecoder> weak_this_;
 
   DISALLOW_COPY_AND_ASSIGN(DecryptingVideoDecoder);
 };

@@ -113,6 +113,15 @@ void ParseFileResourceWithUploadRangeAndRun(
   callback.Run(response, file_resource.Pass());
 }
 
+// Creates a Parents value which can be used as a part of request body.
+scoped_ptr<base::DictionaryValue> CreateParentValue(
+    const std::string& file_id) {
+  scoped_ptr<base::DictionaryValue> parent(new base::DictionaryValue);
+  parent->SetString("kind", kParentLinkKind);
+  parent->SetString("id", file_id);
+  return parent.Pass();
+}
+
 }  // namespace
 
 namespace drive {
@@ -153,6 +162,29 @@ GURL FilesGetRequest::GetURLInternal() const {
   return url_generator_.GetFilesGetUrl(file_id_);
 }
 
+//============================ FilesAuthorizeRequest ===========================
+
+FilesAuthorizeRequest::FilesAuthorizeRequest(
+    RequestSender* sender,
+    const DriveApiUrlGenerator& url_generator,
+    const FileResourceCallback& callback)
+    : DriveApiDataRequest(
+          sender,
+          base::Bind(&ParseJsonAndRun<FileResource>, callback)),
+      url_generator_(url_generator) {
+  DCHECK(!callback.is_null());
+}
+
+FilesAuthorizeRequest::~FilesAuthorizeRequest() {}
+
+net::URLFetcher::RequestType FilesAuthorizeRequest::GetRequestType() const {
+  return net::URLFetcher::POST;
+}
+
+GURL FilesAuthorizeRequest::GetURLInternal() const {
+  return url_generator_.GetFilesAuthorizeUrl(file_id_, app_id_);
+}
+
 //============================ FilesInsertRequest ============================
 
 FilesInsertRequest::FilesInsertRequest(
@@ -178,8 +210,16 @@ bool FilesInsertRequest::GetContentData(std::string* upload_content_type,
 
   base::DictionaryValue root;
 
+  if (!last_viewed_by_me_date_.is_null()) {
+    root.SetString("lastViewedByMeDate",
+                   util::FormatTimeAsString(last_viewed_by_me_date_));
+  }
+
   if (!mime_type_.empty())
     root.SetString("mimeType", mime_type_);
+
+  if (!modified_date_.is_null())
+    root.SetString("modifiedDate", util::FormatTimeAsString(modified_date_));
 
   if (!parents_.empty()) {
     base::ListValue* parents_value = new base::ListValue;
@@ -491,18 +531,40 @@ GURL ChangesListNextPageRequest::GetURLInternal() const {
 AppsListRequest::AppsListRequest(
     RequestSender* sender,
     const DriveApiUrlGenerator& url_generator,
+    bool use_internal_endpoint,
     const AppListCallback& callback)
     : DriveApiDataRequest(
           sender,
           base::Bind(&ParseJsonAndRun<AppList>, callback)),
-      url_generator_(url_generator) {
+      url_generator_(url_generator),
+      use_internal_endpoint_(use_internal_endpoint) {
   DCHECK(!callback.is_null());
 }
 
 AppsListRequest::~AppsListRequest() {}
 
 GURL AppsListRequest::GetURLInternal() const {
-  return url_generator_.GetAppsListUrl();
+  return url_generator_.GetAppsListUrl(use_internal_endpoint_);
+}
+
+//============================== AppsDeleteRequest ===========================
+
+AppsDeleteRequest::AppsDeleteRequest(RequestSender* sender,
+                                     const DriveApiUrlGenerator& url_generator,
+                                     const EntryActionCallback& callback)
+    : EntryActionRequest(sender, callback),
+      url_generator_(url_generator) {
+  DCHECK(!callback.is_null());
+}
+
+AppsDeleteRequest::~AppsDeleteRequest() {}
+
+net::URLFetcher::RequestType AppsDeleteRequest::GetRequestType() const {
+  return net::URLFetcher::DELETE_REQUEST;
+}
+
+GURL AppsDeleteRequest::GetURL() const {
+  return url_generator_.GetAppsDeleteUrl(app_id_);
 }
 
 //========================== ChildrenInsertRequest ============================
@@ -582,7 +644,7 @@ InitiateUploadNewFileRequest::InitiateUploadNewFileRequest(
 InitiateUploadNewFileRequest::~InitiateUploadNewFileRequest() {}
 
 GURL InitiateUploadNewFileRequest::GetURL() const {
-  return url_generator_.GetInitiateUploadNewFileUrl();
+  return url_generator_.GetInitiateUploadNewFileUrl(!modified_date_.is_null());
 }
 
 net::URLFetcher::RequestType
@@ -599,15 +661,16 @@ bool InitiateUploadNewFileRequest::GetContentData(
   root.SetString("title", title_);
 
   // Fill parent link.
-  {
-    scoped_ptr<base::DictionaryValue> parent(new base::DictionaryValue);
-    parent->SetString("kind", kParentLinkKind);
-    parent->SetString("id", parent_resource_id_);
+  scoped_ptr<base::ListValue> parents(new base::ListValue);
+  parents->Append(CreateParentValue(parent_resource_id_).release());
+  root.Set("parents", parents.release());
 
-    scoped_ptr<base::ListValue> parents(new base::ListValue);
-    parents->Append(parent.release());
+  if (!modified_date_.is_null())
+    root.SetString("modifiedDate", util::FormatTimeAsString(modified_date_));
 
-    root.Set("parents", parents.release());
+  if (!last_viewed_by_me_date_.is_null()) {
+    root.SetString("lastViewedByMeDate",
+                   util::FormatTimeAsString(last_viewed_by_me_date_));
   }
 
   base::JSONWriter::Write(&root, upload_content);
@@ -639,7 +702,8 @@ InitiateUploadExistingFileRequest::InitiateUploadExistingFileRequest(
 InitiateUploadExistingFileRequest::~InitiateUploadExistingFileRequest() {}
 
 GURL InitiateUploadExistingFileRequest::GetURL() const {
-  return url_generator_.GetInitiateUploadExistingFileUrl(resource_id_);
+  return url_generator_.GetInitiateUploadExistingFileUrl(
+      resource_id_, !modified_date_.is_null());
 }
 
 net::URLFetcher::RequestType
@@ -653,6 +717,37 @@ InitiateUploadExistingFileRequest::GetExtraRequestHeaders() const {
       InitiateUploadRequestBase::GetExtraRequestHeaders());
   headers.push_back(util::GenerateIfMatchHeader(etag_));
   return headers;
+}
+
+bool InitiateUploadExistingFileRequest::GetContentData(
+    std::string* upload_content_type,
+    std::string* upload_content) {
+  base::DictionaryValue root;
+  if (!parent_resource_id_.empty()) {
+    scoped_ptr<base::ListValue> parents(new base::ListValue);
+    parents->Append(CreateParentValue(parent_resource_id_).release());
+    root.Set("parents", parents.release());
+  }
+
+  if (!title_.empty())
+    root.SetString("title", title_);
+
+  if (!modified_date_.is_null())
+    root.SetString("modifiedDate", util::FormatTimeAsString(modified_date_));
+
+  if (!last_viewed_by_me_date_.is_null()) {
+    root.SetString("lastViewedByMeDate",
+                   util::FormatTimeAsString(last_viewed_by_me_date_));
+  }
+
+  if (root.empty())
+    return false;
+
+  *upload_content_type = kContentTypeApplicationJson;
+  base::JSONWriter::Write(&root, upload_content);
+  DVLOG(1) << "InitiateUploadExistingFile data: " << *upload_content_type
+           << ", [" << *upload_content << "]";
+  return true;
 }
 
 //============================ ResumeUploadRequest ===========================
@@ -737,6 +832,73 @@ DownloadFileRequest::DownloadFileRequest(
 }
 
 DownloadFileRequest::~DownloadFileRequest() {
+}
+
+//========================== PermissionsInsertRequest ==========================
+
+PermissionsInsertRequest::PermissionsInsertRequest(
+    RequestSender* sender,
+    const DriveApiUrlGenerator& url_generator,
+    const EntryActionCallback& callback)
+    : EntryActionRequest(sender, callback),
+      url_generator_(url_generator),
+      type_(PERMISSION_TYPE_USER),
+      role_(PERMISSION_ROLE_READER) {
+}
+
+PermissionsInsertRequest::~PermissionsInsertRequest() {
+}
+
+GURL PermissionsInsertRequest::GetURL() const {
+  return url_generator_.GetPermissionsInsertUrl(id_);
+}
+
+net::URLFetcher::RequestType
+PermissionsInsertRequest::GetRequestType() const {
+  return net::URLFetcher::POST;
+}
+
+bool PermissionsInsertRequest::GetContentData(std::string* upload_content_type,
+                                              std::string* upload_content) {
+  *upload_content_type = kContentTypeApplicationJson;
+
+  base::DictionaryValue root;
+  switch (type_) {
+    case PERMISSION_TYPE_ANYONE:
+      root.SetString("type", "anyone");
+      break;
+    case PERMISSION_TYPE_DOMAIN:
+      root.SetString("type", "domain");
+      break;
+    case PERMISSION_TYPE_GROUP:
+      root.SetString("type", "group");
+      break;
+    case PERMISSION_TYPE_USER:
+      root.SetString("type", "user");
+      break;
+  }
+  switch (role_) {
+    case PERMISSION_ROLE_OWNER:
+      root.SetString("role", "owner");
+      break;
+    case PERMISSION_ROLE_READER:
+      root.SetString("role", "reader");
+      break;
+    case PERMISSION_ROLE_WRITER:
+      root.SetString("role", "writer");
+      break;
+    case PERMISSION_ROLE_COMMENTER:
+      root.SetString("role", "reader");
+      {
+        base::ListValue* list = new base::ListValue;
+        list->AppendString("commenter");
+        root.Set("additionalRoles", list);
+      }
+      break;
+  }
+  root.SetString("value", value_);
+  base::JSONWriter::Write(&root, upload_content);
+  return true;
 }
 
 }  // namespace drive

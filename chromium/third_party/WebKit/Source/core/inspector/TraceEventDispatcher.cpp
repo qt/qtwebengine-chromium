@@ -100,14 +100,17 @@ void TraceEventDispatcher::processBackgroundEvents()
 
 void TraceEventDispatcher::innerAddListener(const char* name, char phase, TraceEventTargetBase* instance, TraceEventHandlerMethod method, InspectorClient* client)
 {
+    static const char CategoryFilter[] = "-*," TRACE_DISABLED_BY_DEFAULT("devtools.timeline") "," TRACE_DISABLED_BY_DEFAULT("devtools.timeline.frame");
+
     ASSERT(isMainThread());
     MutexLocker locker(m_mutex);
     if (m_handlers.isEmpty())
-        client->setTraceEventCallback(dispatchEventOnAnyThread);
+        client->setTraceEventCallback(CategoryFilter, dispatchEventOnAnyThread);
     HandlersMap::iterator it = m_handlers.find(std::make_pair(name, phase));
     if (it == m_handlers.end())
-        it = m_handlers.add(std::make_pair(name, phase), Vector<BoundTraceEventHandler>()).iterator;
-    it->value.append(BoundTraceEventHandler(instance, method));
+        m_handlers.add(std::make_pair(name, phase), Vector<BoundTraceEventHandler>()).storedValue->value.append(BoundTraceEventHandler(instance, method));
+    else
+        it->value.append(BoundTraceEventHandler(instance, method));
 }
 
 void TraceEventDispatcher::removeAllListeners(TraceEventTargetBase* instance, InspectorClient* client)
@@ -132,7 +135,7 @@ void TraceEventDispatcher::removeAllListeners(TraceEventTargetBase* instance, In
         m_handlers.swap(remainingHandlers);
     }
     if (m_handlers.isEmpty())
-        client->setTraceEventCallback(0);
+        client->resetTraceEventCallback();
 }
 
 size_t TraceEventDispatcher::TraceEvent::findParameter(const char* name) const
@@ -148,11 +151,12 @@ const TraceEvent::TraceValueUnion& TraceEventDispatcher::TraceEvent::parameter(c
 {
     static WebCore::TraceEvent::TraceValueUnion missingValue;
     size_t index = findParameter(name);
+    ASSERT(isMainThread());
     if (index == kNotFound || m_argumentTypes[index] != expectedType) {
         ASSERT_NOT_REACHED();
         return missingValue;
     }
-    return *reinterpret_cast<const WebCore::TraceEvent::TraceValueUnion*>(m_argumentValues + index);
+    return m_argumentValues[index];
 }
 
 } // namespace WebCore

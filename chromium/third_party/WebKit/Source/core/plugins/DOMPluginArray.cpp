@@ -20,14 +20,14 @@
 #include "config.h"
 #include "core/plugins/DOMPluginArray.h"
 
-#include "core/frame/Frame.h"
+#include "core/frame/LocalFrame.h"
 #include "core/page/Page.h"
 #include "platform/plugins/PluginData.h"
 #include "wtf/text/AtomicString.h"
 
 namespace WebCore {
 
-DOMPluginArray::DOMPluginArray(Frame* frame)
+DOMPluginArray::DOMPluginArray(LocalFrame* frame)
     : DOMWindowProperty(frame)
 {
     ScriptWrappable::init(this);
@@ -45,14 +45,14 @@ unsigned DOMPluginArray::length() const
     return data->plugins().size();
 }
 
-PassRefPtr<DOMPlugin> DOMPluginArray::item(unsigned index)
+PassRefPtrWillBeRawPtr<DOMPlugin> DOMPluginArray::item(unsigned index)
 {
     PluginData* data = pluginData();
     if (!data)
-        return 0;
+        return nullptr;
     const Vector<PluginInfo>& plugins = data->plugins();
     if (index >= plugins.size())
-        return 0;
+        return nullptr;
     return DOMPlugin::create(data, m_frame, index).get();
 }
 
@@ -69,17 +69,17 @@ bool DOMPluginArray::canGetItemsForName(const AtomicString& propertyName)
     return false;
 }
 
-PassRefPtr<DOMPlugin> DOMPluginArray::namedItem(const AtomicString& propertyName)
+PassRefPtrWillBeRawPtr<DOMPlugin> DOMPluginArray::namedItem(const AtomicString& propertyName)
 {
     PluginData* data = pluginData();
     if (!data)
-        return 0;
+        return nullptr;
     const Vector<PluginInfo>& plugins = data->plugins();
     for (unsigned i = 0; i < plugins.size(); ++i) {
         if (plugins[i].name == propertyName)
             return DOMPlugin::create(data, m_frame, i).get();
     }
-    return 0;
+    return nullptr;
 }
 
 void DOMPluginArray::refresh(bool reload)

@@ -26,8 +26,8 @@
 #ifndef CanvasRenderingContext_h
 #define CanvasRenderingContext_h
 
-#include "bindings/v8/ScriptWrappable.h"
 #include "core/html/HTMLCanvasElement.h"
+#include "platform/heap/Handle.h"
 #include "wtf/HashSet.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/text/StringHash.h"
@@ -36,20 +36,22 @@ namespace blink { class WebLayer; }
 
 namespace WebCore {
 
-class CanvasPattern;
+class CanvasImageSource;
 class HTMLCanvasElement;
-class HTMLImageElement;
-class HTMLVideoElement;
 class KURL;
 class WebGLObject;
 
-class CanvasRenderingContext : public ScriptWrappable {
-    WTF_MAKE_NONCOPYABLE(CanvasRenderingContext); WTF_MAKE_FAST_ALLOCATED;
+class CanvasRenderingContext : public NoBaseWillBeGarbageCollectedFinalized<CanvasRenderingContext> {
+    WTF_MAKE_NONCOPYABLE(CanvasRenderingContext);
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
 public:
     virtual ~CanvasRenderingContext() { }
 
+#if !ENABLE(OILPAN)
     void ref() { m_canvas->ref(); }
     void deref() { m_canvas->deref(); }
+#endif
+
     HTMLCanvasElement* canvas() const { return m_canvas; }
 
     virtual bool is2d() const { return false; }
@@ -61,24 +63,17 @@ public:
 
     virtual blink::WebLayer* platformLayer() const { return 0; }
 
+    virtual void trace(Visitor* visitor) { visitor->trace(m_canvas); }
+
+    bool wouldTaintOrigin(CanvasImageSource*);
+
 protected:
     CanvasRenderingContext(HTMLCanvasElement*);
-    bool wouldTaintOrigin(const CanvasPattern*);
-    bool wouldTaintOrigin(const HTMLCanvasElement*);
-    bool wouldTaintOrigin(const HTMLImageElement*);
-    bool wouldTaintOrigin(const HTMLVideoElement*);
-    bool wouldTaintOrigin(const KURL&);
-
-    template<class T> void checkOrigin(const T* arg)
-    {
-        if (wouldTaintOrigin(arg))
-            canvas()->setOriginTainted();
-    }
-    void checkOrigin(const KURL&);
 
 private:
-    HTMLCanvasElement* m_canvas;
+    RawPtrWillBeMember<HTMLCanvasElement> m_canvas;
     HashSet<String> m_cleanURLs;
+    HashSet<String> m_dirtyURLs;
 };
 
 } // namespace WebCore

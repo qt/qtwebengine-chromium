@@ -25,7 +25,7 @@
 #ifndef OfflineAudioCompletionEvent_h
 #define OfflineAudioCompletionEvent_h
 
-#include "core/events/Event.h"
+#include "modules/EventModules.h"
 #include "modules/webaudio/AudioBuffer.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
@@ -34,22 +34,24 @@ namespace WebCore {
 
 class AudioBuffer;
 
-class OfflineAudioCompletionEvent : public Event {
+class OfflineAudioCompletionEvent FINAL : public Event {
 public:
-    static PassRefPtr<OfflineAudioCompletionEvent> create();
-    static PassRefPtr<OfflineAudioCompletionEvent> create(PassRefPtr<AudioBuffer> renderedBuffer);
+    static PassRefPtrWillBeRawPtr<OfflineAudioCompletionEvent> create();
+    static PassRefPtrWillBeRawPtr<OfflineAudioCompletionEvent> create(PassRefPtrWillBeRawPtr<AudioBuffer> renderedBuffer);
 
     virtual ~OfflineAudioCompletionEvent();
 
     AudioBuffer* renderedBuffer() { return m_renderedBuffer.get(); }
 
-    virtual const AtomicString& interfaceName() const;
+    virtual const AtomicString& interfaceName() const OVERRIDE;
+
+    virtual void trace(Visitor*) OVERRIDE;
 
 private:
     OfflineAudioCompletionEvent();
-    explicit OfflineAudioCompletionEvent(PassRefPtr<AudioBuffer> renderedBuffer);
+    explicit OfflineAudioCompletionEvent(PassRefPtrWillBeRawPtr<AudioBuffer> renderedBuffer);
 
-    RefPtr<AudioBuffer> m_renderedBuffer;
+    RefPtrWillBeMember<AudioBuffer> m_renderedBuffer;
 };
 
 } // namespace WebCore

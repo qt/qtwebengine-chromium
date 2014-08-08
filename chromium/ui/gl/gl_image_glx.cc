@@ -12,6 +12,7 @@ extern "C" {
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
+#include "ui/gfx/x/x11_types.h"
 #include "ui/gl/gl_bindings.h"
 #include "ui/gl/gl_surface_glx.h"
 
@@ -20,13 +21,10 @@ namespace gfx {
 namespace {
 
 // scoped_ptr functor for XFree(). Use as follows:
-//   scoped_ptr_malloc<XVisualInfo, ScopedPtrXFree> foo(...);
+//   scoped_ptr<XVisualInfo, ScopedPtrXFree> foo(...);
 // where "XVisualInfo" is any X type that is freed with XFree.
-class ScopedPtrXFree {
- public:
-  void operator()(void* x) const {
-    ::XFree(x);
-  }
+struct ScopedPtrXFree {
+  void operator()(void* x) const { ::XFree(x); }
 };
 
 int BindToTextureFormat(int depth) {
@@ -46,15 +44,12 @@ int TextureFormat(int depth) {
 }  // namespace anonymous
 
 GLImageGLX::GLImageGLX(gfx::PluginWindowHandle window)
-  : display_(base::MessagePumpForUI::GetDefaultXDisplay()),
-    window_(window),
-    pixmap_(0),
-    glx_pixmap_(0) {
-}
+    : display_(gfx::GetXDisplay()),
+      window_(window),
+      pixmap_(0),
+      glx_pixmap_(0) {}
 
-GLImageGLX::~GLImageGLX() {
-  Destroy();
-}
+GLImageGLX::~GLImageGLX() { Destroy(); }
 
 bool GLImageGLX::Initialize() {
   if (!GLSurfaceGLX::IsTextureFromPixmapSupported()) {
@@ -71,14 +66,11 @@ bool GLImageGLX::Initialize() {
   XVisualInfo templ;
   templ.visualid = XVisualIDFromVisual(attributes.visual);
   int num_visinfo = 0;
-  scoped_ptr_malloc<XVisualInfo, ScopedPtrXFree> visinfo(
-      XGetVisualInfo(display_,
-                     VisualIDMask,
-                     &templ,
-                     &num_visinfo));
+  scoped_ptr<XVisualInfo, ScopedPtrXFree> visinfo(
+      XGetVisualInfo(display_, VisualIDMask, &templ, &num_visinfo));
   if (!visinfo.get()) {
-    LOG(ERROR) << "XGetVisualInfo failed for visual id " <<
-        templ.visualid << ".";
+    LOG(ERROR) << "XGetVisualInfo failed for visual id " << templ.visualid
+               << ".";
     return false;
   }
   if (!num_visinfo) {
@@ -87,19 +79,14 @@ bool GLImageGLX::Initialize() {
   }
 
   int config_attribs[] = {
-    static_cast<int>(GLX_VISUAL_ID),
-    static_cast<int>(visinfo->visualid),
-    GLX_DRAWABLE_TYPE, GLX_PIXMAP_BIT,
-    GLX_BIND_TO_TEXTURE_TARGETS_EXT, GLX_TEXTURE_2D_EXT,
-    BindToTextureFormat(visinfo->depth), GL_TRUE,
-    0
-  };
+      static_cast<int>(GLX_VISUAL_ID),     static_cast<int>(visinfo->visualid),
+      GLX_DRAWABLE_TYPE,                   GLX_PIXMAP_BIT,
+      GLX_BIND_TO_TEXTURE_TARGETS_EXT,     GLX_TEXTURE_2D_EXT,
+      BindToTextureFormat(visinfo->depth), GL_TRUE,
+      0};
   int num_elements = 0;
-  scoped_ptr_malloc<GLXFBConfig, ScopedPtrXFree> config(
-      glXChooseFBConfig(display_,
-                        DefaultScreen(display_),
-                        config_attribs,
-                        &num_elements));
+  scoped_ptr<GLXFBConfig, ScopedPtrXFree> config(glXChooseFBConfig(
+      display_, DefaultScreen(display_), config_attribs, &num_elements));
   if (!config.get()) {
     LOG(ERROR) << "glXChooseFBConfig failed.";
     return false;
@@ -125,16 +112,11 @@ bool GLImageGLX::Initialize() {
     return false;
   }
 
-  int pixmap_attribs[] = {
-    GLX_TEXTURE_TARGET_EXT, GLX_TEXTURE_2D_EXT,
-    GLX_TEXTURE_FORMAT_EXT, TextureFormat(visinfo->depth),
-    0
-  };
-  glx_pixmap_ = glXCreatePixmap(
-      display_,
-      *config.get(),
-      pixmap_,
-      pixmap_attribs);
+  int pixmap_attribs[] = {GLX_TEXTURE_TARGET_EXT, GLX_TEXTURE_2D_EXT,
+                          GLX_TEXTURE_FORMAT_EXT, TextureFormat(visinfo->depth),
+                          0};
+  glx_pixmap_ =
+      glXCreatePixmap(display_, *config.get(), pixmap_, pixmap_attribs);
   if (!glx_pixmap_) {
     LOG(ERROR) << "glXCreatePixmap failed.";
     return false;
@@ -155,9 +137,7 @@ void GLImageGLX::Destroy() {
   }
 }
 
-gfx::Size GLImageGLX::GetSize() {
-  return size_;
-}
+gfx::Size GLImageGLX::GetSize() { return size_; }
 
 bool GLImageGLX::BindTexImage(unsigned target) {
   if (!glx_pixmap_)
@@ -176,12 +156,6 @@ void GLImageGLX::ReleaseTexImage(unsigned target) {
   DCHECK_EQ(static_cast<GLenum>(GL_TEXTURE_2D), target);
 
   glXReleaseTexImageEXT(display_, glx_pixmap_, GLX_FRONT_LEFT_EXT);
-}
-
-void GLImageGLX::WillUseTexImage() {
-}
-
-void GLImageGLX::DidUseTexImage() {
 }
 
 }  // namespace gfx

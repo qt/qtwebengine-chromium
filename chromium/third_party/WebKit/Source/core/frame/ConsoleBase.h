@@ -36,6 +36,7 @@
 #include "core/inspector/ScriptCallStack.h"
 #include "core/frame/ConsoleTypes.h"
 #include "core/frame/DOMWindowProperty.h"
+#include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
@@ -44,23 +45,20 @@ namespace WebCore {
 
 class ScriptArguments;
 
-class ConsoleBase {
+class ConsoleBase : public RefCountedWillBeGarbageCollectedFinalized<ConsoleBase> {
 public:
-    void ref() { refConsole(); }
-    void deref() { derefConsole(); }
-
-    void debug(ScriptState*, PassRefPtr<ScriptArguments>);
-    void error(ScriptState*, PassRefPtr<ScriptArguments>);
-    void info(ScriptState*, PassRefPtr<ScriptArguments>);
-    void log(ScriptState*, PassRefPtr<ScriptArguments>);
-    void clear(ScriptState*, PassRefPtr<ScriptArguments>);
-    void warn(ScriptState*, PassRefPtr<ScriptArguments>);
-    void dir(ScriptState*, PassRefPtr<ScriptArguments>);
-    void dirxml(ScriptState*, PassRefPtr<ScriptArguments>);
-    void table(ScriptState*, PassRefPtr<ScriptArguments>);
-    void trace(ScriptState*, PassRefPtr<ScriptArguments>);
-    void assertCondition(ScriptState*, PassRefPtr<ScriptArguments>, bool condition);
-    void count(ScriptState*, PassRefPtr<ScriptArguments>);
+    void debug(ScriptState*, PassRefPtrWillBeRawPtr<ScriptArguments>);
+    void error(ScriptState*, PassRefPtrWillBeRawPtr<ScriptArguments>);
+    void info(ScriptState*, PassRefPtrWillBeRawPtr<ScriptArguments>);
+    void log(ScriptState*, PassRefPtrWillBeRawPtr<ScriptArguments>);
+    void clear(ScriptState*, PassRefPtrWillBeRawPtr<ScriptArguments>);
+    void warn(ScriptState*, PassRefPtrWillBeRawPtr<ScriptArguments>);
+    void dir(ScriptState*, PassRefPtrWillBeRawPtr<ScriptArguments>);
+    void dirxml(ScriptState*, PassRefPtrWillBeRawPtr<ScriptArguments>);
+    void table(ScriptState*, PassRefPtrWillBeRawPtr<ScriptArguments>);
+    void trace(ScriptState*, PassRefPtrWillBeRawPtr<ScriptArguments>);
+    void assertCondition(ScriptState*, PassRefPtrWillBeRawPtr<ScriptArguments>, bool condition);
+    void count(ScriptState*, PassRefPtrWillBeRawPtr<ScriptArguments>);
     void markTimeline(const String&);
     void profile(ScriptState*, const String&);
     void profileEnd(ScriptState*, const String&);
@@ -69,20 +67,20 @@ public:
     void timeStamp(const String&);
     void timeline(ScriptState*, const String&);
     void timelineEnd(ScriptState*, const String&);
-    void group(ScriptState*, PassRefPtr<ScriptArguments>);
-    void groupCollapsed(ScriptState*, PassRefPtr<ScriptArguments>);
+    void group(ScriptState*, PassRefPtrWillBeRawPtr<ScriptArguments>);
+    void groupCollapsed(ScriptState*, PassRefPtrWillBeRawPtr<ScriptArguments>);
     void groupEnd();
 
-protected:
+    virtual void trace(Visitor*) { }
+
     virtual ~ConsoleBase();
+
+protected:
     virtual ExecutionContext* context() = 0;
-    virtual void reportMessageToClient(MessageLevel, const String& message, PassRefPtr<ScriptCallStack>) = 0;
+    virtual void reportMessageToClient(MessageLevel, const String& message, PassRefPtrWillBeRawPtr<ScriptCallStack>) = 0;
 
 private:
-    virtual void refConsole() = 0;
-    virtual void derefConsole() = 0;
-
-    void internalAddMessage(MessageType, MessageLevel, ScriptState*, PassRefPtr<ScriptArguments>, bool acceptNoArguments = false, bool printTrace = false);
+    void internalAddMessage(MessageType, MessageLevel, ScriptState*, PassRefPtrWillBeRawPtr<ScriptArguments>, bool acceptNoArguments = false, bool printTrace = false);
 };
 
 } // namespace WebCore

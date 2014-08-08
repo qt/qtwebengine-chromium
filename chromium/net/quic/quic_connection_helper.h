@@ -12,6 +12,7 @@
 
 #include <set>
 
+#include "base/basictypes.h"
 #include "base/memory/weak_ptr.h"
 #include "net/base/ip_endpoint.h"
 #include "net/quic/quic_protocol.h"
@@ -33,7 +34,6 @@ class NET_EXPORT_PRIVATE QuicConnectionHelper
   QuicConnectionHelper(base::TaskRunner* task_runner,
                        const QuicClock* clock,
                        QuicRandom* random_generator);
-
   virtual ~QuicConnectionHelper();
 
   // QuicConnectionHelperInterface

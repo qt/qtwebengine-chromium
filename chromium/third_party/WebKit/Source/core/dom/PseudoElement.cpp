@@ -70,13 +70,15 @@ PassRefPtr<RenderStyle> PseudoElement::customStyleForRenderer()
 
 void PseudoElement::dispose()
 {
+    ASSERT(parentOrShadowHostElement());
+
     InspectorInstrumentation::pseudoElementDestroyed(this);
 
     ASSERT(!nextSibling());
     ASSERT(!previousSibling());
 
     detach();
-    RefPtr<Element> parent = parentOrShadowHostElement();
+    RefPtrWillBeRawPtr<Element> parent = parentOrShadowHostElement();
     setParentOrShadowHostNode(0);
     removedFrom(parent.get());
 }
@@ -91,8 +93,6 @@ void PseudoElement::attach(const AttachContext& context)
     if (!renderer)
         return;
     RenderStyle* style = renderer->style();
-    if (style->hasFlowFrom())
-        return;
     if (style->styleType() != BEFORE && style->styleType() != AFTER)
         return;
     ASSERT(style->contentData());

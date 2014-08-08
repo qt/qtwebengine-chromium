@@ -4,7 +4,6 @@
 
 // TODO(eroman): put these methods into a namespace.
 
-var printLogEntriesAsText;
 var createLogEntryTablePrinter;
 var proxySettingsToString;
 var stripCookiesAndLoginInfo;
@@ -22,22 +21,11 @@ function canCollapseBeginWithEnd(beginEntry) {
 }
 
 /**
- * Adds a child pre element to the end of |parent|, and writes the
- * formatted contents of |logEntries| to it.
- */
-printLogEntriesAsText = function(logEntries, parent, privacyStripping,
-                                 logCreationTime) {
-  var tablePrinter = createLogEntryTablePrinter(logEntries, privacyStripping,
-                                                logCreationTime);
-
-  // Format the table for fixed-width text.
-  tablePrinter.toText(0, parent);
-}
-/**
- * Creates a TablePrinter for use by the above two functions.
+ * Creates a TablePrinter for use by the above two functions.  baseTime is
+ * the time relative to which other times are displayed.
  */
 createLogEntryTablePrinter = function(logEntries, privacyStripping,
-                                      logCreationTime) {
+                                      baseTime, logCreationTime) {
   var entries = LogGroupEntry.createArrayFrom(logEntries);
   var tablePrinter = new TablePrinter();
   var parameterOutputter = new ParameterOutputter(tablePrinter);
@@ -54,7 +42,7 @@ createLogEntryTablePrinter = function(logEntries, privacyStripping,
     // both have extra parameters.
     if (!entry.isEnd() || !canCollapseBeginWithEnd(entry.begin)) {
       var entryTime = timeutil.convertTimeTicksToTime(entry.orig.time);
-      addRowWithTime(tablePrinter, entryTime, startTime);
+      addRowWithTime(tablePrinter, entryTime - baseTime, startTime - baseTime);
 
       for (var j = entry.getDepth(); j > 0; --j)
         tablePrinter.addCell('  ');
@@ -92,8 +80,11 @@ createLogEntryTablePrinter = function(logEntries, privacyStripping,
   // If the last entry has a non-zero depth or is a begin event, the source is
   // still active.
   var isSourceActive = lastEntry.getDepth() != 0 || lastEntry.isBegin();
-  if (logCreationTime != undefined && isSourceActive)
-    addRowWithTime(tablePrinter, logCreationTime, startTime);
+  if (logCreationTime != undefined && isSourceActive) {
+    addRowWithTime(tablePrinter,
+                   logCreationTime - baseTime,
+                   startTime - baseTime);
+  }
 
   return tablePrinter;
 }
@@ -101,12 +92,12 @@ createLogEntryTablePrinter = function(logEntries, privacyStripping,
 /**
  * Adds a new row to the given TablePrinter, and adds five cells containing
  * information about the time an event occured.
- * Format is '[t=<UTC time in ms>] [st=<ms since the source started>]'.
+ * Format is '[t=<time of the event in ms>] [st=<ms since the source started>]'.
  * @param {TablePrinter} tablePrinter The table printer to add the cells to.
- * @param {number} eventTime The time the event occured, as a UTC time in
- *     milliseconds.
+ * @param {number} eventTime The time the event occured, in milliseconds,
+ *     relative to some base time.
  * @param {number} startTime The time the first event for the source occured,
- *     as a UTC time in milliseconds.
+ *     relative to the same base time as eventTime.
  */
 function addRowWithTime(tablePrinter, eventTime, startTime) {
   tablePrinter.addRow();
@@ -368,19 +359,34 @@ function defaultWriteParameter(key, value, out) {
  * For example: getLoadFlagSymbolicString(
  */
 function getLoadFlagSymbolicString(loadFlag) {
-  // Load flag of 0 means "NORMAL". Special case this, since and-ing with
-  // 0 is always going to be false.
-  if (loadFlag == 0)
-    return getKeyWithValue(LoadFlag, loadFlag);
 
-  var matchingLoadFlagNames = [];
+  return getSymbolicString(loadFlag, LoadFlag,
+                           getKeyWithValue(LoadFlag, loadFlag));
+}
 
-  for (var k in LoadFlag) {
-    if (loadFlag & LoadFlag[k])
-      matchingLoadFlagNames.push(k);
+/**
+ * Returns the set of CertStatusFlags that make up the integer |certStatusFlag|
+ */
+function getCertStatusFlagSymbolicString(certStatusFlag) {
+  return getSymbolicString(certStatusFlag, CertStatusFlag, '');
+}
+
+/**
+ * Returns a string representing the flags composing the given bitmask.
+ */
+function getSymbolicString(bitmask, valueToName, zeroName) {
+  var matchingFlagNames = [];
+
+  for (var k in valueToName) {
+    if (bitmask & valueToName[k])
+      matchingFlagNames.push(k);
   }
 
-  return matchingLoadFlagNames.join(' | ');
+  // If no flags were matched, returns a special value.
+  if (matchingFlagNames.length == 0)
+    return zeroName;
+
+  return matchingFlagNames.join(' | ');
 }
 
 /**
@@ -531,6 +537,9 @@ function stripCookieOrLoginInfo(line) {
  * unencrypted login text removed.  Otherwise, returns original |entry| object.
  * This is needed so that JSON log dumps can be made without affecting the
  * source data.  Converts headers stored in objects to arrays.
+ *
+ * Note: this logic should be kept in sync with
+ * net::ElideHeaderForNetLog in net/http/http_log_util.cc.
  */
 stripCookiesAndLoginInfo = function(entry) {
   if (!entry.params || entry.params.headers === undefined ||
@@ -574,19 +583,34 @@ function writeParamsForRequestHeaders(entry, out, consumedParams) {
  * Outputs the certificate parameters of |entry| to |out|.
  */
 function writeParamsForCertificates(entry, out, consumedParams) {
-  if (!(entry.params.certificates instanceof Array)) {
-    // Unrecognized params.
-    return;
+  if (entry.params.certificates instanceof Array) {
+    var certs = entry.params.certificates.reduce(function(previous, current) {
+      return previous.concat(current.split('\n'));
+    }, new Array());
+    out.writeArrowKey('certificates');
+    out.writeSpaceIndentedLines(8, certs);
+    consumedParams.certificates = true;
   }
 
-  var certs = entry.params.certificates.reduce(function(previous, current) {
-    return previous.concat(current.split('\n'));
-  }, new Array());
+  if (typeof(entry.params.verified_cert) == 'object') {
+    if (entry.params.verified_cert.certificates instanceof Array) {
+      var certs = entry.params.verified_cert.certificates.reduce(
+          function(previous, current) {
+        return previous.concat(current.split('\n'));
+      }, new Array());
+      out.writeArrowKey('verified_cert');
+      out.writeSpaceIndentedLines(8, certs);
+      consumedParams.verified_cert = true;
+    }
+  }
 
-  out.writeArrowKey('certificates');
-  out.writeSpaceIndentedLines(8, certs);
+  if (typeof(entry.params.cert_status) == 'number') {
+    var valueStr = entry.params.cert_status + ' (' +
+        getCertStatusFlagSymbolicString(entry.params.cert_status) + ')';
+    out.writeArrowKeyValue('cert_status', valueStr);
+    consumedParams.cert_status = true;
+  }
 
-  consumedParams.certificates = true;
 }
 
 /**

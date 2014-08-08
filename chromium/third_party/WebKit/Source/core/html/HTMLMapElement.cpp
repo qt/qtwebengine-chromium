@@ -22,7 +22,7 @@
 #include "config.h"
 #include "core/html/HTMLMapElement.h"
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 #include "core/dom/Document.h"
 #include "core/dom/ElementTraversal.h"
 #include "core/html/HTMLAreaElement.h"
@@ -30,22 +30,17 @@
 #include "core/html/HTMLImageElement.h"
 #include "core/rendering/HitTestResult.h"
 
-using namespace std;
-
 namespace WebCore {
 
 using namespace HTMLNames;
 
-HTMLMapElement::HTMLMapElement(Document& document)
+inline HTMLMapElement::HTMLMapElement(Document& document)
     : HTMLElement(mapTag, document)
 {
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLMapElement> HTMLMapElement::create(Document& document)
-{
-    return adoptRef(new HTMLMapElement(document));
-}
+DEFINE_NODE_FACTORY(HTMLMapElement)
 
 HTMLMapElement::~HTMLMapElement()
 {
@@ -54,15 +49,12 @@ HTMLMapElement::~HTMLMapElement()
 bool HTMLMapElement::mapMouseEvent(LayoutPoint location, const LayoutSize& size, HitTestResult& result)
 {
     HTMLAreaElement* defaultArea = 0;
-    Element* element = this;
-    while ((element = ElementTraversal::next(*element, this))) {
-        if (isHTMLAreaElement(element)) {
-            HTMLAreaElement* areaElt = toHTMLAreaElement(element);
-            if (areaElt->isDefault()) {
-                if (!defaultArea)
-                    defaultArea = areaElt;
-            } else if (areaElt->mapMouseEvent(location, size, result))
-                return true;
+    for (HTMLAreaElement* area = Traversal<HTMLAreaElement>::firstWithin(*this); area; area = Traversal<HTMLAreaElement>::next(*area, this)) {
+        if (area->isDefault()) {
+            if (!defaultArea)
+                defaultArea = area;
+        } else if (area->mapMouseEvent(location, size, result)) {
+            return true;
         }
     }
 
@@ -75,17 +67,16 @@ bool HTMLMapElement::mapMouseEvent(LayoutPoint location, const LayoutSize& size,
 
 HTMLImageElement* HTMLMapElement::imageElement()
 {
-    RefPtr<HTMLCollection> images = document().images();
-    for (unsigned i = 0; Node* curr = images->item(i); i++) {
-        if (!curr->hasTagName(imgTag))
-            continue;
+    RefPtrWillBeRawPtr<HTMLCollection> images = document().images();
+    for (unsigned i = 0; Element* curr = images->item(i); ++i) {
+        ASSERT(isHTMLImageElement(curr));
 
         // The HTMLImageElement's useMap() value includes the '#' symbol at the beginning,
         // which has to be stripped off.
-        HTMLImageElement* imageElement = toHTMLImageElement(curr);
-        String useMapName = imageElement->getAttribute(usemapAttr).string().substring(1);
+        HTMLImageElement& imageElement = toHTMLImageElement(*curr);
+        String useMapName = imageElement.getAttribute(usemapAttr).string().substring(1);
         if (equalIgnoringCase(useMapName, m_name))
-            return imageElement;
+            return &imageElement;
     }
 
     return 0;
@@ -108,7 +99,7 @@ void HTMLMapElement::parseAttribute(const QualifiedName& name, const AtomicStrin
         String mapName = value;
         if (mapName[0] == '#')
             mapName = mapName.substring(1);
-        m_name = document().isHTMLDocument() ? mapName.lower() : mapName;
+        m_name = AtomicString(document().isHTMLDocument() ? mapName.lower() : mapName);
         if (inDocument())
             treeScope().addImageMap(this);
 
@@ -118,7 +109,7 @@ void HTMLMapElement::parseAttribute(const QualifiedName& name, const AtomicStrin
     HTMLElement::parseAttribute(name, value);
 }
 
-PassRefPtr<HTMLCollection> HTMLMapElement::areas()
+PassRefPtrWillBeRawPtr<HTMLCollection> HTMLMapElement::areas()
 {
     return ensureCachedHTMLCollection(MapAreas);
 }

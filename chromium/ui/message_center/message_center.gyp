@@ -16,10 +16,11 @@
         '../../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
         '../../skia/skia.gyp:skia',
         '../../url/url.gyp:url_lib',
-        '../base/strings/ui_strings.gyp:ui_strings',
+        '../base/ui_base.gyp:ui_base',
         '../gfx/gfx.gyp:gfx',
+        '../gfx/gfx.gyp:gfx_geometry',
         '../resources/ui_resources.gyp:ui_resources',
-        '../ui.gyp:ui',
+        '../strings/ui_strings.gyp:ui_strings',
       ],
       'defines': [
         'MESSAGE_CENTER_IMPLEMENTATION',
@@ -27,6 +28,8 @@
       'sources': [
         'cocoa/notification_controller.h',
         'cocoa/notification_controller.mm',
+        'cocoa/opaque_views.h',
+        'cocoa/opaque_views.mm',
         'cocoa/popup_collection.h',
         'cocoa/popup_collection.mm',
         'cocoa/popup_controller.h',
@@ -52,14 +55,10 @@
         'message_center_observer.h',
         'message_center_style.cc',
         'message_center_style.h',
-        'message_center_switches.cc',
-        'message_center_switches.h',
         'message_center_tray.cc',
         'message_center_tray.h',
         'message_center_tray_delegate.h',
         'message_center_types.h',
-        'message_center_util.cc',
-        'message_center_util.h',
         'notification.cc',
         'notification.h',
         'notification_blocker.cc',
@@ -72,8 +71,6 @@
         'notifier_settings.h',
         'views/bounded_label.cc',
         'views/bounded_label.h',
-        'views/group_view.cc',
-        'views/group_view.h',
         'views/constants.h',
         'views/message_bubble_base.cc',
         'views/message_bubble_base.h',
@@ -88,6 +85,8 @@
         'views/message_popup_collection.h',
         'views/message_view.cc',
         'views/message_view.h',
+        'views/message_view_context_menu_controller.cc',
+        'views/message_view_context_menu_controller.h',
         'views/notifier_settings_view.cc',
         'views/notifier_settings_view.h',
         'views/notification_button.cc',
@@ -116,6 +115,7 @@
           'dependencies': [
             '../events/events.gyp:events',
             '../views/views.gyp:views',
+            '../compositor/compositor.gyp:compositor',
           ],
         }, {
           'sources/': [
@@ -132,20 +132,9 @@
             'views/message_popup_bubble.h',
           ],
         }],
-        ['OS=="mac"', {
-          'dependencies': [
-            '../ui.gyp:ui_cocoa_third_party_toolkits',
-          ],
-          'include_dirs': [
-            '../../third_party/GTM',
-          ],
-        }],
-        ['toolkit_views==1', {
-          'dependencies': [
-            '../compositor/compositor.gyp:compositor',
-          ],
-        }],
-        ['notifications==0', {  # Android and iOS.
+        # iOS disables notifications altogether, Android implements its own
+        # notification UI manager instead of deferring to the message center.
+        ['notifications==0 or OS=="android"', {
           'sources/': [
             # Exclude everything except dummy impl.
             ['exclude', '\\.(cc|mm)$'],
@@ -154,6 +143,14 @@
           ],
         }, {  # notifications==1
           'sources!': [ 'dummy_message_center.cc' ],
+        }],
+        # Include a minimal set of files required for notifications on Android.
+        ['OS=="android"', {
+          'sources/': [
+            ['include', '^notification\\.cc$'],
+            ['include', '^notification_delegate\\.cc$'],
+            ['include', '^notifier_settings\\.cc$'],
+          ],
         }],
       ],
     },  # target_name: message_center
@@ -164,13 +161,16 @@
         '../../base/base.gyp:base',
         '../../base/base.gyp:test_support_base',
         '../../skia/skia.gyp:skia',
+        '../base/ui_base.gyp:ui_base',
         '../gfx/gfx.gyp:gfx',
-        '../ui.gyp:ui',
+        '../gfx/gfx.gyp:gfx_geometry',
         'message_center',
       ],
       'sources': [
         'fake_message_center.h',
         'fake_message_center.cc',
+        'fake_message_center_tray_delegate.h',
+        'fake_message_center_tray_delegate.cc',
         'fake_notifier_settings_provider.h',
         'fake_notifier_settings_provider.cc',
       ],
@@ -181,15 +181,14 @@
       'dependencies': [
         '../../base/base.gyp:base',
         '../../base/base.gyp:test_support_base',
-        '../../chrome/chrome_resources.gyp:packed_resources',
         '../../skia/skia.gyp:skia',
         '../../testing/gtest.gyp:gtest',
         '../../url/url.gyp:url_lib',
-        '../../url/url.gyp:url_lib',
+        '../base/ui_base.gyp:ui_base',
         '../gfx/gfx.gyp:gfx',
+        '../gfx/gfx.gyp:gfx_geometry',
         '../resources/ui_resources.gyp:ui_resources',
-        '../ui.gyp:ui',
-        '../ui_unittests.gyp:run_ui_unittests',
+        '../resources/ui_resources.gyp:ui_test_pak',
         'message_center',
         'message_center_test_support',
       ],
@@ -203,18 +202,14 @@
         'cocoa/tray_view_controller_unittest.mm',
         'message_center_tray_unittest.cc',
         'message_center_impl_unittest.cc',
+        'notification_delegate_unittest.cc',
         'notification_list_unittest.cc',
         'test/run_all_unittests.cc',
       ],
       'conditions': [
-        ['desktop_linux == 1 or chromeos == 1 or OS=="ios"', {
-         'dependencies': [
-           '../base/strings/ui_strings.gyp:ui_unittest_strings',
-         ],
-        }],
         ['OS=="mac"', {
           'dependencies': [
-            '../ui_unittests.gyp:ui_test_support',
+            '../gfx/gfx.gyp:gfx_test_support',
           ],
         }],
         ['toolkit_views==1', {
@@ -229,6 +224,7 @@
             'views/bounded_label_unittest.cc',
             'views/message_center_view_unittest.cc',
             'views/message_popup_collection_unittest.cc',
+            'views/notification_view_unittest.cc',
             'views/notifier_settings_view_unittest.cc',
           ],
         }],
@@ -240,7 +236,7 @@
           ],
         }],
         # See http://crbug.com/162998#c4 for why this is needed.
-        ['OS=="linux" and linux_use_tcmalloc==1', {
+        ['OS=="linux" and use_allocator!="none"', {
           'dependencies': [
             '../../base/allocator/allocator.gyp:allocator',
           ],

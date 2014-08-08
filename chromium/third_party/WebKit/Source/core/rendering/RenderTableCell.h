@@ -4,7 +4,7 @@
  *           (C) 1998 Waldo Bastian (bastian@kde.org)
  *           (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
- * Copyright (C) 2003, 2004, 2005, 2006, 2007, 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2003, 2004, 2005, 2006, 2007, 2009, 2013 Apple Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -28,6 +28,7 @@
 #include "core/rendering/RenderBlockFlow.h"
 #include "core/rendering/RenderTableRow.h"
 #include "core/rendering/RenderTableSection.h"
+#include "platform/LengthFunctions.h"
 
 namespace WebCore {
 
@@ -76,6 +77,9 @@ public:
     RenderTableSection* section() const { return toRenderTableSection(parent()->parent()); }
     RenderTable* table() const { return toRenderTable(parent()->parent()->parent()); }
 
+    RenderTableCell* previousCell() const;
+    RenderTableCell* nextCell() const;
+
     unsigned rowIndex() const
     {
         // This function shouldn't be called on a detached cell.
@@ -97,7 +101,7 @@ public:
     {
         // FIXME: This function does too much work, and is very hot during table layout!
         int adjustedLogicalHeight = pixelSnappedLogicalHeight() - (intrinsicPaddingBefore() + intrinsicPaddingAfter());
-        int styleLogicalHeight = valueForLength(style()->logicalHeight(), 0, view());
+        int styleLogicalHeight = valueForLength(style()->logicalHeight(), 0);
         // In strict mode, box-sizing: content-box do the right thing and actually add in the border and padding.
         // Call computedCSSPadding* directly to avoid including implicitPadding.
         if (!document().inQuirksMode() && style()->boxSizing() != BORDER_BOX)
@@ -108,23 +112,21 @@ public:
 
     void setCellLogicalWidth(int constrainedLogicalWidth, SubtreeLayoutScope&);
 
-    virtual int borderLeft() const;
-    virtual int borderRight() const;
-    virtual int borderTop() const;
-    virtual int borderBottom() const;
-    virtual int borderStart() const;
-    virtual int borderEnd() const;
-    virtual int borderBefore() const;
-    virtual int borderAfter() const;
+    virtual int borderLeft() const OVERRIDE;
+    virtual int borderRight() const OVERRIDE;
+    virtual int borderTop() const OVERRIDE;
+    virtual int borderBottom() const OVERRIDE;
+    virtual int borderStart() const OVERRIDE;
+    virtual int borderEnd() const OVERRIDE;
+    virtual int borderBefore() const OVERRIDE;
+    virtual int borderAfter() const OVERRIDE;
 
     void collectBorderValues(RenderTable::CollapsedBorderValues&) const;
     static void sortBorderValues(RenderTable::CollapsedBorderValues&);
 
-    virtual void layout();
+    virtual void layout() OVERRIDE;
 
-    virtual bool supportsPartialLayout() const OVERRIDE { return false; }
-
-    virtual void paint(PaintInfo&, const LayoutPoint&);
+    virtual void paint(PaintInfo&, const LayoutPoint&) OVERRIDE;
 
     void paintCollapsedBorders(PaintInfo&, const LayoutPoint&);
     void paintBackgroundsBehindCell(PaintInfo&, const LayoutPoint&, RenderObject* backgroundObject);
@@ -155,7 +157,7 @@ public:
 
     void setOverrideLogicalContentHeightFromRowHeight(LayoutUnit);
 
-    virtual void scrollbarsChanged(bool horizontalScrollbarChanged, bool verticalScrollbarChanged);
+    virtual void scrollbarsChanged(bool horizontalScrollbarChanged, bool verticalScrollbarChanged) OVERRIDE;
 
     bool cellWidthChanged() const { return m_cellWidthChanged; }
     void setCellWidthChanged(bool b = true) { m_cellWidthChanged = b; }
@@ -216,28 +218,28 @@ public:
     }
 #endif
 protected:
-    virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle);
-    virtual void computePreferredLogicalWidths();
+    virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle) OVERRIDE;
+    virtual void computePreferredLogicalWidths() OVERRIDE;
 
     virtual void addLayerHitTestRects(LayerHitTestRects&, const RenderLayer* currentCompositedLayer, const LayoutPoint& layerOffset, const LayoutRect& containerRect) const OVERRIDE;
 
 private:
-    virtual const char* renderName() const { return (isAnonymous() || isPseudoElement()) ? "RenderTableCell (anonymous)" : "RenderTableCell"; }
+    virtual const char* renderName() const OVERRIDE { return (isAnonymous() || isPseudoElement()) ? "RenderTableCell (anonymous)" : "RenderTableCell"; }
 
-    virtual bool isTableCell() const { return true; }
+    virtual bool isTableCell() const OVERRIDE { return true; }
 
     virtual void willBeRemovedFromTree() OVERRIDE;
 
     virtual void updateLogicalWidth() OVERRIDE;
 
-    virtual void paintBoxDecorations(PaintInfo&, const LayoutPoint&);
-    virtual void paintMask(PaintInfo&, const LayoutPoint&);
+    virtual void paintBoxDecorations(PaintInfo&, const LayoutPoint&) OVERRIDE;
+    virtual void paintMask(PaintInfo&, const LayoutPoint&) OVERRIDE;
 
     virtual bool boxShadowShouldBeAppliedToBackground(BackgroundBleedAvoidance, InlineFlowBox*) const OVERRIDE;
 
-    virtual LayoutSize offsetFromContainer(RenderObject*, const LayoutPoint&, bool* offsetDependsOnPoint = 0) const;
-    virtual LayoutRect clippedOverflowRectForRepaint(const RenderLayerModelObject* repaintContainer) const OVERRIDE;
-    virtual void computeRectForRepaint(const RenderLayerModelObject* repaintContainer, LayoutRect&, bool fixed = false) const OVERRIDE;
+    virtual LayoutSize offsetFromContainer(const RenderObject*, const LayoutPoint&, bool* offsetDependsOnPoint = 0) const OVERRIDE;
+    virtual LayoutRect clippedOverflowRectForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer) const OVERRIDE;
+    virtual void mapRectToPaintInvalidationBacking(const RenderLayerModelObject* paintInvalidationContainer, LayoutRect&, bool fixed = false) const OVERRIDE;
 
     int borderHalfLeft(bool outer) const;
     int borderHalfRight(bool outer) const;
@@ -278,6 +280,9 @@ private:
     unsigned parseRowSpanFromDOM() const;
     unsigned parseColSpanFromDOM() const;
 
+    void nextSibling() const WTF_DELETED_FUNCTION;
+    void previousSibling() const WTF_DELETED_FUNCTION;
+
     // Note MSVC will only pack members if they have identical types, hence we use unsigned instead of bool here.
     unsigned m_column : 29;
     unsigned m_cellWidthChanged : 1;
@@ -288,6 +293,28 @@ private:
 };
 
 DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderTableCell, isTableCell());
+
+inline RenderTableCell* RenderTableCell::previousCell() const
+{
+    return toRenderTableCell(RenderObject::previousSibling());
+}
+
+inline RenderTableCell* RenderTableCell::nextCell() const
+{
+    return toRenderTableCell(RenderObject::nextSibling());
+}
+
+inline RenderTableCell* RenderTableRow::firstCell() const
+{
+    ASSERT(children() == virtualChildren());
+    return toRenderTableCell(children()->firstChild());
+}
+
+inline RenderTableCell* RenderTableRow::lastCell() const
+{
+    ASSERT(children() == virtualChildren());
+    return toRenderTableCell(children()->lastChild());
+}
 
 } // namespace WebCore
 

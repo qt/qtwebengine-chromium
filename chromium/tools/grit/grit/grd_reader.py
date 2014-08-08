@@ -24,7 +24,8 @@ class StopParsingException(Exception):
 
 
 class GrdContentHandler(xml.sax.handler.ContentHandler):
-  def __init__(self, stop_after, debug, dir, defines, tags_to_ignore):
+  def __init__(self, stop_after, debug, dir, defines, tags_to_ignore,
+               target_platform):
     # Invariant of data:
     # 'root' is the root of the parse tree being created, or None if we haven't
     # parsed out any elements.
@@ -39,6 +40,7 @@ class GrdContentHandler(xml.sax.handler.ContentHandler):
     self.defines = defines
     self.tags_to_ignore = tags_to_ignore or set()
     self.ignore_depth = 0
+    self.target_platform = target_platform
 
   def startElement(self, name, attrs):
     if self.ignore_depth or name in self.tags_to_ignore:
@@ -61,6 +63,9 @@ class GrdContentHandler(xml.sax.handler.ContentHandler):
     else:
       assert self.root is None
       self.root = node
+      if isinstance(self.root, misc.GritNode):
+        if self.target_platform:
+          self.root.SetTargetPlatform(self.target_platform)
       node.StartParsing(name, None)
       if self.defines:
         node.SetDefines(self.defines)
@@ -175,7 +180,8 @@ def Parse(filename_or_stream, dir=None, stop_after=None, first_ids_file=None,
     dir = util.dirname(filename_or_stream)
 
   handler = GrdContentHandler(stop_after=stop_after, debug=debug, dir=dir,
-                              defines=defines, tags_to_ignore=tags_to_ignore)
+                              defines=defines, tags_to_ignore=tags_to_ignore,
+                              target_platform=target_platform)
   try:
     xml.sax.parse(filename_or_stream, handler)
   except StopParsingException:
@@ -195,8 +201,6 @@ def Parse(filename_or_stream, dir=None, stop_after=None, first_ids_file=None,
     handler.root.SetOwnDir(dir)
 
   if isinstance(handler.root, misc.GritNode):
-    if target_platform:
-      handler.root.SetTargetPlatform(target_platform)
     if first_ids_file:
       # Make the path to the first_ids_file relative to the grd file,
       # unless it begins with GRIT_DIR.

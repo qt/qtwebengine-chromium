@@ -10,6 +10,7 @@
     'irt_sources': [
 # irt_support_sources
       'irt_entry.c',
+      'irt_interfaces.c',
       'irt_malloc.c',
       'irt_private_pthread.c',
       'irt_private_tls.c',
@@ -41,12 +42,10 @@
       '../valgrind/dynamic_annotations.c',
     ],
     'irt_nonbrowser': [
-      'irt_interfaces.c',
       'irt_core_resource.c',
+      'irt_entry_core.c',
     ],
     'irt_browser': [
-      'irt_interfaces_ppapi.c',
-      'irt_ppapi.c',
       'irt_manifest.c',
     ],
   },
@@ -68,18 +67,11 @@
         '-lgio',
         '-lm',
       ],
-      'conditions': [
-        # See comment in native_client/src/untrusted/irt/nacl.scons
-        # regarding -Ttext-segment.
-        ['target_arch=="arm"', {
-          'sources': ['<@(irt_sources)',
-                      'aeabi_read_tp.S'],
-        }],
-      ],
       'dependencies': [
         '<(DEPTH)/native_client/src/shared/gio/gio.gyp:gio_lib',
         '<(DEPTH)/native_client/src/shared/platform/platform.gyp:platform_lib',
         '<(DEPTH)/native_client/src/shared/srpc/srpc.gyp:srpc_lib',
+        '<(DEPTH)/native_client/src/tools/tls_edit/tls_edit.gyp:tls_edit#host',
         '<(DEPTH)/native_client/src/untrusted/nacl/nacl.gyp:imc_syscalls_lib',
         '<(DEPTH)/native_client/src/untrusted/nacl/nacl.gyp:nacl_lib_newlib',
         '<(DEPTH)/native_client/tools.gyp:prep_toolchain',
@@ -95,12 +87,6 @@
         'build_irt': 1,
       },
       'sources': ['<@(irt_sources)', '<@(irt_browser)'],
-      'include_dirs': ['../../../../ppapi'],
-      'conditions': [
-        ['target_arch=="arm"', {
-          'sources': [ 'aeabi_read_tp.S' ],
-        }],
-      ],
       'dependencies': [
         '<(DEPTH)/native_client/tools.gyp:prep_toolchain',
         '<(DEPTH)/native_client/src/untrusted/nacl/nacl.gyp:nacl_lib_newlib',

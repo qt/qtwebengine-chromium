@@ -36,11 +36,15 @@
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/ExecutionContext.h"
 #include "core/fileapi/FileError.h"
+#include "core/frame/LocalFrame.h"
 #include "core/workers/WorkerGlobalScope.h"
 #include "modules/filesystem/FileSystemClient.h"
 #include "platform/AsyncFileSystemCallbacks.h"
+#include "platform/PermissionCallbacks.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebFileSystem.h"
+#include "wtf/Functional.h"
+#include "wtf/RefCounted.h"
 
 namespace WebCore {
 
@@ -53,9 +57,25 @@ void fileSystemNotAllowed(ExecutionContext*, PassOwnPtr<AsyncFileSystemCallbacks
 
 } // namespace
 
-PassOwnPtr<LocalFileSystem> LocalFileSystem::create(PassOwnPtr<FileSystemClient> client)
+class CallbackWrapper : public RefCounted<CallbackWrapper> {
+public:
+    CallbackWrapper(PassOwnPtr<AsyncFileSystemCallbacks> c)
+        : m_callbacks(c)
+    {
+    }
+    virtual ~CallbackWrapper() { }
+    PassOwnPtr<AsyncFileSystemCallbacks> release()
+    {
+        return m_callbacks.release();
+    }
+
+private:
+    OwnPtr<AsyncFileSystemCallbacks> m_callbacks;
+};
+
+PassOwnPtrWillBeRawPtr<LocalFileSystem> LocalFileSystem::create(PassOwnPtr<FileSystemClient> client)
 {
-    return adoptPtr(new LocalFileSystem(client));
+    return adoptPtrWillBeNoop(new LocalFileSystem(client));
 }
 
 LocalFileSystem::~LocalFileSystem()
@@ -64,34 +84,80 @@ LocalFileSystem::~LocalFileSystem()
 
 void LocalFileSystem::resolveURL(ExecutionContext* context, const KURL& fileSystemURL, PassOwnPtr<AsyncFileSystemCallbacks> callbacks)
 {
-    if (!client() || !client()->allowFileSystem(context)) {
-        context->postTask(createCallbackTask(&fileSystemNotAllowed, callbacks));
-        return;
-    }
-    blink::Platform::current()->fileSystem()->resolveURL(fileSystemURL, callbacks);
+    RefPtr<CallbackWrapper> wrapper = adoptRef(new CallbackWrapper(callbacks));
+    requestFileSystemAccessInternal(context,
+        bind(&LocalFileSystem::resolveURLInternal, this, fileSystemURL, wrapper),
+        bind(&LocalFileSystem::fileSystemNotAllowedInternal, this, PassRefPtrWillBeRawPtr<ExecutionContext>(context), wrapper));
 }
 
 void LocalFileSystem::requestFileSystem(ExecutionContext* context, FileSystemType type, long long size, PassOwnPtr<AsyncFileSystemCallbacks> callbacks)
 {
-    if (!client() || !client()->allowFileSystem(context)) {
-        context->postTask(createCallbackTask(&fileSystemNotAllowed, callbacks));
-        return;
-    }
-    KURL storagePartition = KURL(KURL(), context->securityOrigin()->toString());
-    blink::Platform::current()->fileSystem()->openFileSystem(storagePartition, static_cast<blink::WebFileSystemType>(type), callbacks);
+    RefPtrWillBeRawPtr<ExecutionContext> contextPtr(context);
+    RefPtr<CallbackWrapper> wrapper = adoptRef(new CallbackWrapper(callbacks));
+    requestFileSystemAccessInternal(context,
+        bind(&LocalFileSystem::fileSystemAllowedInternal, this, contextPtr, type, wrapper),
+        bind(&LocalFileSystem::fileSystemNotAllowedInternal, this, contextPtr, wrapper));
 }
 
 void LocalFileSystem::deleteFileSystem(ExecutionContext* context, FileSystemType type, PassOwnPtr<AsyncFileSystemCallbacks> callbacks)
 {
+    RefPtrWillBeRawPtr<ExecutionContext> contextPtr(context);
     ASSERT(context);
     ASSERT_WITH_SECURITY_IMPLICATION(context->isDocument());
 
-    if (!client() || !client()->allowFileSystem(context)) {
-        context->postTask(createCallbackTask(&fileSystemNotAllowed, callbacks));
+    RefPtr<CallbackWrapper> wrapper = adoptRef(new CallbackWrapper(callbacks));
+    requestFileSystemAccessInternal(context,
+        bind(&LocalFileSystem::deleteFileSystemInternal, this, contextPtr, type, wrapper),
+        bind(&LocalFileSystem::fileSystemNotAllowedInternal, this, contextPtr, wrapper));
+}
+
+void LocalFileSystem::requestFileSystemAccessInternal(ExecutionContext* context, const Closure& allowed, const Closure& denied)
+{
+    if (!client()) {
+        denied();
         return;
     }
+    if (!context->isDocument()) {
+        if (!client()->requestFileSystemAccessSync(context)) {
+            denied();
+            return;
+        }
+        allowed();
+        return;
+    }
+    client()->requestFileSystemAccessAsync(context, PermissionCallbacks::create(allowed, denied));
+}
+
+void LocalFileSystem::fileSystemNotAllowedInternal(
+    PassRefPtrWillBeRawPtr<ExecutionContext> context,
+    PassRefPtr<CallbackWrapper> callbacks)
+{
+    context->postTask(createCallbackTask(&fileSystemNotAllowed, callbacks->release()));
+}
+
+void LocalFileSystem::fileSystemAllowedInternal(
+    PassRefPtrWillBeRawPtr<ExecutionContext> context,
+    FileSystemType type,
+    PassRefPtr<CallbackWrapper> callbacks)
+{
     KURL storagePartition = KURL(KURL(), context->securityOrigin()->toString());
-    blink::Platform::current()->fileSystem()->deleteFileSystem(storagePartition, static_cast<blink::WebFileSystemType>(type), callbacks);
+    blink::Platform::current()->fileSystem()->openFileSystem(storagePartition, static_cast<blink::WebFileSystemType>(type), callbacks->release());
+}
+
+void LocalFileSystem::resolveURLInternal(
+    const KURL& fileSystemURL,
+    PassRefPtr<CallbackWrapper> callbacks)
+{
+    blink::Platform::current()->fileSystem()->resolveURL(fileSystemURL, callbacks->release());
+}
+
+void LocalFileSystem::deleteFileSystemInternal(
+    PassRefPtrWillBeRawPtr<ExecutionContext> context,
+    FileSystemType type,
+    PassRefPtr<CallbackWrapper> callbacks)
+{
+    KURL storagePartition = KURL(KURL(), context->securityOrigin()->toString());
+    blink::Platform::current()->fileSystem()->deleteFileSystem(storagePartition, static_cast<blink::WebFileSystemType>(type), callbacks->release());
 }
 
 LocalFileSystem::LocalFileSystem(PassOwnPtr<FileSystemClient> client)
@@ -104,18 +170,18 @@ const char* LocalFileSystem::supplementName()
     return "LocalFileSystem";
 }
 
-LocalFileSystem* LocalFileSystem::from(ExecutionContext* context)
+LocalFileSystem* LocalFileSystem::from(ExecutionContext& context)
 {
-    if (context->isDocument()) {
-        return static_cast<LocalFileSystem*>(Supplement<Page>::from(toDocument(context)->page(), supplementName()));
+    if (context.isDocument()) {
+        return static_cast<LocalFileSystem*>(WillBeHeapSupplement<LocalFrame>::from(toDocument(context).frame(), supplementName()));
     }
-    ASSERT(context->isWorkerGlobalScope());
-    return static_cast<LocalFileSystem*>(Supplement<WorkerClients>::from(toWorkerGlobalScope(context)->clients(), supplementName()));
+    ASSERT(context.isWorkerGlobalScope());
+    return static_cast<LocalFileSystem*>(WillBeHeapSupplement<WorkerClients>::from(toWorkerGlobalScope(context).clients(), supplementName()));
 }
 
-void provideLocalFileSystemTo(Page* page, PassOwnPtr<FileSystemClient> client)
+void provideLocalFileSystemTo(LocalFrame& frame, PassOwnPtr<FileSystemClient> client)
 {
-    page->provideSupplement(LocalFileSystem::supplementName(), LocalFileSystem::create(client));
+    frame.provideSupplement(LocalFileSystem::supplementName(), LocalFileSystem::create(client));
 }
 
 void provideLocalFileSystemToWorker(WorkerClients* clients, PassOwnPtr<FileSystemClient> client)

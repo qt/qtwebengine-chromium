@@ -29,7 +29,7 @@
  */
 
 #include "config.h"
-#include "WebNetworkStateNotifier.h"
+#include "public/web/WebNetworkStateNotifier.h"
 
 #include "core/page/NetworkStateNotifier.h"
 
@@ -40,6 +40,11 @@ namespace blink {
 void WebNetworkStateNotifier::setOnLine(bool onLine)
 {
     networkStateNotifier().setOnLine(onLine);
+}
+
+void WebNetworkStateNotifier::setWebConnectionType(WebConnectionType type)
+{
+    networkStateNotifier().setWebConnectionType(type);
 }
 
 } // namespace blink

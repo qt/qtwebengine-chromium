@@ -32,41 +32,45 @@
 
 namespace WebCore {
 
+#if !ENABLE(OILPAN)
 template<class T, class S>
 class RefCountedSupplement : public RefCounted<S> {
 public:
     typedef RefCountedSupplement<T, S> ThisType;
 
     virtual ~RefCountedSupplement() { }
-    virtual void hostDestroyed() { }
 
-    class Wrapper : public Supplement<T> {
+    class Wrapper FINAL : public Supplement<T> {
     public:
         explicit Wrapper(PassRefPtr<ThisType> wrapped) : m_wrapped(wrapped) { }
-        virtual ~Wrapper() { m_wrapped->hostDestroyed();  }
-#if !ASSERT_DISABLED || defined(ADDRESS_SANITIZER)
+        virtual ~Wrapper() { }
+#if SECURITY_ASSERT_ENABLED
         virtual bool isRefCountedWrapper() const OVERRIDE { return true; }
 #endif
         ThisType* wrapped() const { return m_wrapped.get(); }
+
+        virtual void trace(Visitor*) OVERRIDE { }
+
     private:
 
         RefPtr<ThisType> m_wrapped;
     };
 
-    static void provideTo(Supplementable<T>* host, const char* key, PassRefPtr<ThisType> supplement)
+    static void provideTo(Supplementable<T>& host, const char* key, PassRefPtr<ThisType> supplement)
     {
-        host->provideSupplement(key, adoptPtr(new Wrapper(supplement)));
+        host.provideSupplement(key, adoptPtr(new Wrapper(supplement)));
     }
 
-    static ThisType* from(Supplementable<T>* host, const char* key)
+    static ThisType* from(Supplementable<T>& host, const char* key)
     {
-        Supplement<T>* found = host->requireSupplement(key);
+        Supplement<T>* found = static_cast<Supplement<T>*>(host.requireSupplement(key));
         if (!found)
             return 0;
         ASSERT_WITH_SECURITY_IMPLICATION(found->isRefCountedWrapper());
         return static_cast<Wrapper*>(found)->wrapped();
     }
 };
+#endif
 
 } // namespace WebCore
 

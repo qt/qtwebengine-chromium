@@ -34,6 +34,7 @@
 #include "platform/weborigin/SchemeRegistry.h"
 #include "platform/weborigin/SecurityOriginCache.h"
 #include "platform/weborigin/SecurityPolicy.h"
+#include "url/url_canon_ip.h"
 #include "wtf/HexNumber.h"
 #include "wtf/MainThread.h"
 #include "wtf/StdLibExtras.h"
@@ -375,6 +376,12 @@ bool SecurityOrigin::canDisplay(const KURL& url) const
     return true;
 }
 
+bool SecurityOrigin::canAccessFeatureRequiringSecureOrigin() const
+{
+    ASSERT(m_protocol != "data");
+    return SchemeRegistry::shouldTreatURLSchemeAsSecure(m_protocol) || isLocal() || isLocalhost();
+}
+
 SecurityOrigin::Policy SecurityOrigin::canShowNotifications() const
 {
     if (m_universalAccess)
@@ -409,6 +416,29 @@ bool SecurityOrigin::isLocal() const
     return SchemeRegistry::shouldTreatURLSchemeAsLocal(m_protocol);
 }
 
+bool SecurityOrigin::isLocalhost() const
+{
+    if (m_host == "localhost")
+        return true;
+
+    if (m_host == "[::1]")
+        return true;
+
+    // Test if m_host matches 127.0.0.1/8
+    ASSERT(m_host.containsOnlyASCII());
+    CString hostAscii = m_host.ascii();
+    Vector<uint8, 4> ipNumber;
+    ipNumber.resize(4);
+
+    int numComponents;
+    url::Component hostComponent(0, hostAscii.length());
+    url::CanonHostInfo::Family family = url::IPv4AddressToNumber(
+        hostAscii.data(), hostComponent, &(ipNumber)[0], &numComponents);
+    if (family != url::CanonHostInfo::IPV4)
+        return false;
+    return ipNumber[0] == 127;
+}
+
 String SecurityOrigin::toString() const
 {
     if (isUnique())
@@ -418,23 +448,46 @@ String SecurityOrigin::toString() const
     return toRawString();
 }
 
+AtomicString SecurityOrigin::toAtomicString() const
+{
+    if (isUnique())
+        return AtomicString("null", AtomicString::ConstructFromLiteral);
+    if (m_protocol == "file" && m_enforceFilePathSeparation)
+        return AtomicString("null", AtomicString::ConstructFromLiteral);
+    return toRawAtomicString();
+}
+
 String SecurityOrigin::toRawString() const
 {
     if (m_protocol == "file")
         return "file://";
 
     StringBuilder result;
-    result.reserveCapacity(m_protocol.length() + m_host.length() + 10);
-    result.append(m_protocol);
-    result.append("://");
-    result.append(m_host);
+    buildRawString(result);
+    return result.toString();
+}
+
+AtomicString SecurityOrigin::toRawAtomicString() const
+{
+    if (m_protocol == "file")
+        return AtomicString("file://", AtomicString::ConstructFromLiteral);
+
+    StringBuilder result;
+    buildRawString(result);
+    return result.toAtomicString();
+}
+
+inline void SecurityOrigin::buildRawString(StringBuilder& builder) const
+{
+    builder.reserveCapacity(m_protocol.length() + m_host.length() + 10);
+    builder.append(m_protocol);
+    builder.appendLiteral("://");
+    builder.append(m_host);
 
     if (m_port) {
-        result.append(':');
-        result.appendNumber(m_port);
+        builder.append(':');
+        builder.appendNumber(m_port);
     }
-
-    return result.toString();
 }
 
 PassRefPtr<SecurityOrigin> SecurityOrigin::createFromString(const String& originString)
@@ -448,23 +501,6 @@ PassRefPtr<SecurityOrigin> SecurityOrigin::create(const String& protocol, const 
         return createUnique();
     String decodedHost = decodeURLEscapeSequences(host);
     return create(KURL(KURL(), protocol + "://" + host + ":" + String::number(port) + "/"));
-}
-
-bool SecurityOrigin::equal(const SecurityOrigin* other) const
-{
-    if (other == this)
-        return true;
-
-    if (!isSameSchemeHostPort(other))
-        return false;
-
-    if (m_domainWasSetInDOM != other->m_domainWasSetInDOM)
-        return false;
-
-    if (m_domainWasSetInDOM && m_domain != other->m_domain)
-        return false;
-
-    return true;
 }
 
 bool SecurityOrigin::isSameSchemeHostPort(const SecurityOrigin* other) const

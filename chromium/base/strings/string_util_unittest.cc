@@ -319,24 +319,6 @@ TEST(StringUtilTest, CollapseWhitespaceASCII) {
   }
 }
 
-TEST(StringUtilTest, ContainsOnlyWhitespaceASCII) {
-  EXPECT_TRUE(ContainsOnlyWhitespaceASCII(std::string()));
-  EXPECT_TRUE(ContainsOnlyWhitespaceASCII(" "));
-  EXPECT_TRUE(ContainsOnlyWhitespaceASCII("\t"));
-  EXPECT_TRUE(ContainsOnlyWhitespaceASCII("\t \r \n  "));
-  EXPECT_FALSE(ContainsOnlyWhitespaceASCII("a"));
-  EXPECT_FALSE(ContainsOnlyWhitespaceASCII("\thello\r \n  "));
-}
-
-TEST(StringUtilTest, ContainsOnlyWhitespace) {
-  EXPECT_TRUE(ContainsOnlyWhitespace(string16()));
-  EXPECT_TRUE(ContainsOnlyWhitespace(ASCIIToUTF16(" ")));
-  EXPECT_TRUE(ContainsOnlyWhitespace(ASCIIToUTF16("\t")));
-  EXPECT_TRUE(ContainsOnlyWhitespace(ASCIIToUTF16("\t \r \n  ")));
-  EXPECT_FALSE(ContainsOnlyWhitespace(ASCIIToUTF16("a")));
-  EXPECT_FALSE(ContainsOnlyWhitespace(ASCIIToUTF16("\thello\r \n  ")));
-}
-
 TEST(StringUtilTest, IsStringUTF8) {
   EXPECT_TRUE(IsStringUTF8("abc"));
   EXPECT_TRUE(IsStringUTF8("\xc2\x81"));
@@ -418,20 +400,20 @@ TEST(StringUtilTest, ConvertASCII) {
 
   for (size_t i = 0; i < arraysize(char_cases); ++i) {
     EXPECT_TRUE(IsStringASCII(char_cases[i]));
-    std::wstring wide = ASCIIToWide(char_cases[i]);
-    EXPECT_EQ(wchar_cases[i], wide);
+    string16 utf16 = ASCIIToUTF16(char_cases[i]);
+    EXPECT_EQ(WideToUTF16(wchar_cases[i]), utf16);
 
-    std::string ascii = WideToASCII(wchar_cases[i]);
+    std::string ascii = UTF16ToASCII(WideToUTF16(wchar_cases[i]));
     EXPECT_EQ(char_cases[i], ascii);
   }
 
   EXPECT_FALSE(IsStringASCII("Google \x80Video"));
 
   // Convert empty strings.
-  std::wstring wempty;
+  string16 empty16;
   std::string empty;
-  EXPECT_EQ(empty, WideToASCII(wempty));
-  EXPECT_EQ(wempty, ASCIIToWide(empty));
+  EXPECT_EQ(empty, UTF16ToASCII(empty16));
+  EXPECT_EQ(empty16, ASCIIToUTF16(empty));
 
   // Convert strings with an embedded NUL character.
   const char chars_with_nul[] = "test\0string";
@@ -440,7 +422,7 @@ TEST(StringUtilTest, ConvertASCII) {
   std::wstring wide_with_nul = ASCIIToWide(string_with_nul);
   EXPECT_EQ(static_cast<std::wstring::size_type>(length_with_nul),
             wide_with_nul.length());
-  std::string narrow_with_nul = WideToASCII(wide_with_nul);
+  std::string narrow_with_nul = UTF16ToASCII(WideToUTF16(wide_with_nul));
   EXPECT_EQ(static_cast<std::string::size_type>(length_with_nul),
             narrow_with_nul.length());
   EXPECT_EQ(0, string_with_nul.compare(narrow_with_nul));
@@ -1029,13 +1011,8 @@ TEST(StringUtilTest, LcpyTest) {
     EXPECT_EQ(1, dst[0]);
     EXPECT_EQ(2, dst[1]);
     EXPECT_EQ(7U, base::wcslcpy(wdst, L"abcdefg", 0));
-#if defined(WCHAR_T_IS_UNSIGNED)
-    EXPECT_EQ(1U, wdst[0]);
-    EXPECT_EQ(2U, wdst[1]);
-#else
-    EXPECT_EQ(1, wdst[0]);
-    EXPECT_EQ(2, wdst[1]);
-#endif
+    EXPECT_EQ(static_cast<wchar_t>(1), wdst[0]);
+    EXPECT_EQ(static_cast<wchar_t>(2), wdst[1]);
   }
 
   // Test the case were we _just_ competely fit including the null.
@@ -1161,6 +1138,21 @@ TEST(StringUtilTest, ContainsOnlyChars) {
   EXPECT_TRUE(ContainsOnlyChars("1", "4321"));
   EXPECT_TRUE(ContainsOnlyChars("123", "4321"));
   EXPECT_FALSE(ContainsOnlyChars("123a", "4321"));
+
+  EXPECT_TRUE(ContainsOnlyChars(std::string(), kWhitespaceASCII));
+  EXPECT_TRUE(ContainsOnlyChars(" ", kWhitespaceASCII));
+  EXPECT_TRUE(ContainsOnlyChars("\t", kWhitespaceASCII));
+  EXPECT_TRUE(ContainsOnlyChars("\t \r \n  ", kWhitespaceASCII));
+  EXPECT_FALSE(ContainsOnlyChars("a", kWhitespaceASCII));
+  EXPECT_FALSE(ContainsOnlyChars("\thello\r \n  ", kWhitespaceASCII));
+
+  EXPECT_TRUE(ContainsOnlyChars(string16(), kWhitespaceUTF16));
+  EXPECT_TRUE(ContainsOnlyChars(ASCIIToUTF16(" "), kWhitespaceUTF16));
+  EXPECT_TRUE(ContainsOnlyChars(ASCIIToUTF16("\t"), kWhitespaceUTF16));
+  EXPECT_TRUE(ContainsOnlyChars(ASCIIToUTF16("\t \r \n  "), kWhitespaceUTF16));
+  EXPECT_FALSE(ContainsOnlyChars(ASCIIToUTF16("a"), kWhitespaceUTF16));
+  EXPECT_FALSE(ContainsOnlyChars(ASCIIToUTF16("\thello\r \n  "),
+                                  kWhitespaceUTF16));
 }
 
 class WriteIntoTest : public testing::Test {

@@ -8,6 +8,7 @@
 #include <string>
 
 #include "base/compiler_specific.h"
+#include "ui/events/platform/platform_event_dispatcher.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/size.h"
 #include "ui/gfx/vsync_provider.h"
@@ -48,7 +49,8 @@ class GL_EXPORT GLSurfaceGLX : public GLSurface {
 };
 
 // A surface used to render to a view.
-class GL_EXPORT NativeViewGLSurfaceGLX : public GLSurfaceGLX {
+class GL_EXPORT NativeViewGLSurfaceGLX : public GLSurfaceGLX,
+                                         public ui::PlatformEventDispatcher {
  public:
   explicit NativeViewGLSurfaceGLX(gfx::AcceleratedWidget window);
 
@@ -60,49 +62,27 @@ class GL_EXPORT NativeViewGLSurfaceGLX : public GLSurfaceGLX {
   virtual bool SwapBuffers() OVERRIDE;
   virtual gfx::Size GetSize() OVERRIDE;
   virtual void* GetHandle() OVERRIDE;
-  virtual std::string GetExtensions() OVERRIDE;
+  virtual bool SupportsPostSubBuffer() OVERRIDE;
   virtual void* GetConfig() OVERRIDE;
   virtual bool PostSubBuffer(int x, int y, int width, int height) OVERRIDE;
   virtual VSyncProvider* GetVSyncProvider() OVERRIDE;
 
  protected:
-  NativeViewGLSurfaceGLX();
   virtual ~NativeViewGLSurfaceGLX();
 
  private:
   // The handle for the drawable to make current or swap.
   gfx::AcceleratedWidget GetDrawableHandle() const;
 
+  // PlatformEventDispatcher implementation
+  virtual bool CanDispatchEvent(const ui::PlatformEvent& event) OVERRIDE;
+  virtual uint32_t DispatchEvent(const ui::PlatformEvent& event) OVERRIDE;
+
   // Window passed in at creation. Always valid.
   gfx::AcceleratedWidget parent_window_;
 
-#if defined(TOOLKIT_GTK)
-  // Some NVIDIA drivers don't allow deleting GLX windows separately from their
-  // parent X windows. Work around this by creating a child X window to the
-  // window passed in to the constructor, creating the GLX window against the
-  // child window, and then destroying the child window to destroy the GLX
-  // window.
-  // http://crbug.com/145600
-  void CreateChildWindow();
-  void DestroyChildWindow();
-
-  // Destroy the child window when both the front and back buffers are
-  // deallocated.
-  virtual bool SetBackbufferAllocation(bool allocated) OVERRIDE;
-  virtual void SetFrontbufferAllocation(bool allocated) OVERRIDE;
-  void AdjustBufferAllocation();
-
-  // Child window which is used with GLX, and is discarded when it is
-  // backgrounded.
-  gfx::AcceleratedWidget child_window_;
-
-  // Dummy 1x1 window which is supplied to glXMakeCurrent when making
-  // the context current while its output surface is destroyed.
-  gfx::AcceleratedWidget dummy_window_;
-
-  bool backbuffer_allocated_;
-  bool frontbuffer_allocated_;
-#endif
+  // Child window, used to control resizes so that they're in-order with GL.
+  gfx::AcceleratedWidget window_;
 
   void* config_;
   gfx::Size size_;

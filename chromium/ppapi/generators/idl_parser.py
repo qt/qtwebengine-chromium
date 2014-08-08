@@ -268,6 +268,33 @@ class IDLParser(IDLLexer):
     if self.parse_debug: DumpReduction('modifiers', p)
 
 #
+# Scoped name is a name with an optional scope.
+#
+# Used for types and namespace names. eg. foo_bar.hello_world, or
+# foo_bar.hello_world.SomeType.
+#
+  def p_scoped_name(self, p):
+    """scoped_name : SYMBOL scoped_name_rest"""
+    p[0] = ''.join(p[1:])
+    if self.parse_debug: DumpReduction('scoped_name', p)
+
+  def p_scoped_name_rest(self, p):
+    """scoped_name_rest : '.' scoped_name
+                        |"""
+    p[0] = ''.join(p[1:])
+    if self.parse_debug: DumpReduction('scoped_name_rest', p)
+
+#
+# Type reference
+#
+#
+  def p_typeref(self, p):
+    """typeref : scoped_name"""
+    p[0] = p[1]
+    if self.parse_debug: DumpReduction('typeref', p)
+
+
+#
 # Comments
 #
 # Comments are optional list of C style comment objects.  Comments are returned
@@ -296,9 +323,8 @@ class IDLParser(IDLLexer):
 
   # We allow namespace names of the form foo.bar.baz.
   def p_namespace_name(self, p):
-    """namespace_name : SYMBOL
-                      | SYMBOL '.' namespace_name"""
-    p[0] = "".join(p[1:])
+    """namespace_name : scoped_name"""
+    p[0] = p[1]
 
 
 #
@@ -534,17 +560,17 @@ class IDLParser(IDLLexer):
     if self.parse_debug: DumpReduction('expression_unop', p)
 
   def p_expression_term(self, p):
-    "expression : '(' expression ')'"
+    """expression : '(' expression ')'"""
     p[0] = "%s%s%s" % (str(p[1]), str(p[2]), str(p[3]))
     if self.parse_debug: DumpReduction('expression_term', p)
 
   def p_expression_symbol(self, p):
-    "expression : SYMBOL"
+    """expression : SYMBOL"""
     p[0] = p[1]
     if self.parse_debug: DumpReduction('expression_symbol', p)
 
   def p_expression_integer(self, p):
-    "expression : integer"
+    """expression : integer"""
     p[0] = p[1]
     if self.parse_debug: DumpReduction('expression_integer', p)
 
@@ -583,6 +609,27 @@ class IDLParser(IDLLexer):
     # them.
     p.set_lineno(0, p.lineno(1))
 
+
+#
+# Union
+#
+# A union allows multiple choices of types for a parameter or member.
+#
+
+  def p_union_option(self, p):
+    """union_option : modifiers SYMBOL arrays"""
+    typeref = self.BuildAttribute('TYPEREF', p[2])
+    children = ListFromConcat(p[1], typeref, p[3])
+    p[0] = self.BuildProduction('Option', p, 2, children)
+
+  def p_union_list(self, p):
+    """union_list : union_option OR union_list
+                  | union_option"""
+    if len(p) > 2:
+      p[0] = ListFromConcat(p[1], p[3])
+    else:
+      p[0] = p[1]
+
 #
 # Parameter List
 #
@@ -600,10 +647,17 @@ class IDLParser(IDLLexer):
     if self.parse_debug: DumpReduction('param_list', p)
 
   def p_param_item(self, p):
-    """param_item : modifiers optional SYMBOL arrays identifier"""
+    """param_item : modifiers optional typeref arrays identifier"""
     typeref = self.BuildAttribute('TYPEREF', p[3])
     children = ListFromConcat(p[1], p[2], typeref, p[4])
     p[0] = self.BuildNamed('Param', p, 5, children)
+    if self.parse_debug: DumpReduction('param_item', p)
+
+  def p_param_item_union(self, p):
+    """param_item : modifiers optional '(' union_list ')' identifier"""
+    union = self.BuildAttribute('Union', True)
+    children = ListFromConcat(p[1], p[2], p[4], union)
+    p[0] = self.BuildNamed('Param', p, 6, children)
     if self.parse_debug: DumpReduction('param_item', p)
 
   def p_optional(self, p):
@@ -732,14 +786,21 @@ class IDLParser(IDLLexer):
 # A member attribute or function of a struct or interface.
 #
   def p_member_attribute(self, p):
-    """member_attribute : modifiers SYMBOL arrays questionmark identifier"""
+    """member_attribute : modifiers typeref arrays questionmark identifier"""
     typeref = self.BuildAttribute('TYPEREF', p[2])
     children = ListFromConcat(p[1], typeref, p[3], p[4])
     p[0] = self.BuildNamed('Member', p, 5, children)
     if self.parse_debug: DumpReduction('attribute', p)
 
+  def p_member_attribute_union(self, p):
+    """member_attribute : modifiers '(' union_list ')' questionmark identifier"""
+    union = self.BuildAttribute('Union', True)
+    children = ListFromConcat(p[1], p[3], p[5], union)
+    p[0] = self.BuildNamed('Member', p, 6, children)
+    if self.parse_debug: DumpReduction('attribute', p)
+
   def p_member_function(self, p):
-    """member_function : modifiers static SYMBOL arrays SYMBOL param_list"""
+    """member_function : modifiers static typeref arrays SYMBOL param_list"""
     typeref = self.BuildAttribute('TYPEREF', p[3])
     children = ListFromConcat(p[1], p[2], typeref, p[4], p[6])
     p[0] = self.BuildNamed('Member', p, 5, children)
@@ -1178,8 +1239,7 @@ def TestVersionFiles(filter):
   return errs
 
 
-default_dirs = ['.', 'trusted', 'dev', 'private', 'extensions',
-                'extensions/dev']
+default_dirs = ['.', 'trusted', 'dev', 'private']
 def ParseFiles(filenames):
   parser = IDLParser()
   filenodes = []

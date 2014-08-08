@@ -33,7 +33,10 @@ void MainThreadRenderingStats::Add(const MainThreadRenderingStats& other) {
 
 ImplThreadRenderingStats::ImplThreadRenderingStats()
     : frame_count(0),
-      rasterized_pixel_count(0) {}
+      rasterized_pixel_count(0),
+      visible_content_area(0),
+      approximated_visible_content_area(0) {
+}
 
 scoped_refptr<base::debug::ConvertableToTraceFormat>
 ImplThreadRenderingStats::AsTraceableData() const {
@@ -41,6 +44,9 @@ ImplThreadRenderingStats::AsTraceableData() const {
   record_data->SetInteger("frame_count", frame_count);
   record_data->SetDouble("rasterize_time", rasterize_time.InSecondsF());
   record_data->SetInteger("rasterized_pixel_count", rasterized_pixel_count);
+  record_data->SetInteger("visible_content_area", visible_content_area);
+  record_data->SetInteger("approximated_visible_content_area",
+                          approximated_visible_content_area);
   return TracedValue::FromValue(record_data.release());
 }
 
@@ -49,26 +55,8 @@ void ImplThreadRenderingStats::Add(const ImplThreadRenderingStats& other) {
   rasterize_time += other.rasterize_time;
   analysis_time += other.analysis_time;
   rasterized_pixel_count += other.rasterized_pixel_count;
-}
-
-void RenderingStats::EnumerateFields(Enumerator* enumerator) const {
-  enumerator->AddInt64("frameCount",
-                       main_stats.frame_count + impl_stats.frame_count);
-  enumerator->AddDouble("paintTime",
-                        main_stats.paint_time.InSecondsF());
-  enumerator->AddInt64("paintedPixelCount",
-                       main_stats.painted_pixel_count);
-  enumerator->AddDouble("recordTime",
-                        main_stats.record_time.InSecondsF());
-  enumerator->AddInt64("recordedPixelCount",
-                       main_stats.recorded_pixel_count);
-  // Combine rasterization and analysis time as a precursor to combining
-  // them in the same step internally.
-  enumerator->AddDouble("rasterizeTime",
-                        impl_stats.rasterize_time.InSecondsF() +
-                            impl_stats.analysis_time.InSecondsF());
-  enumerator->AddInt64("rasterizedPixelCount",
-                       impl_stats.rasterized_pixel_count);
+  visible_content_area += other.visible_content_area;
+  approximated_visible_content_area += other.approximated_visible_content_area;
 }
 
 void RenderingStats::Add(const RenderingStats& other) {

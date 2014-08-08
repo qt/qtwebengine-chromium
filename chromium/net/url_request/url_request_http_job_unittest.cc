@@ -12,7 +12,7 @@
 #include "net/base/auth.h"
 #include "net/base/request_priority.h"
 #include "net/http/http_transaction_factory.h"
-#include "net/http/http_transaction_unittest.h"
+#include "net/http/http_transaction_test_util.h"
 #include "net/socket/socket_test_util.h"
 #include "net/url_request/url_request_status.h"
 #include "net/url_request/url_request_test_util.h"
@@ -211,10 +211,6 @@ class FakeWebSocketHandshakeStream : public WebSocketHandshakeStreamBase {
 
   virtual int ReadResponseHeaders(const CompletionCallback& callback) OVERRIDE {
     return ERR_IO_PENDING;
-  }
-
-  virtual const HttpResponseInfo* GetResponseInfo() const OVERRIDE {
-    return NULL;
   }
 
   virtual int ReadResponseBody(IOBuffer* buf,

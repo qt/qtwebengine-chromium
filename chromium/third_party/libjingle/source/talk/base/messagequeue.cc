@@ -32,8 +32,13 @@
 #include "talk/base/common.h"
 #include "talk/base/logging.h"
 #include "talk/base/messagequeue.h"
+#if defined(__native_client__)
+#include "talk/base/nullsocketserver.h"
+typedef talk_base::NullSocketServer DefaultSocketServer;
+#else
 #include "talk/base/physicalsocketserver.h"
-
+typedef talk_base::PhysicalSocketServer DefaultSocketServer;
+#endif
 
 namespace talk_base {
 
@@ -121,7 +126,7 @@ void MessageQueueManager::ClearInternal(MessageHandler *handler) {
 // MessageQueue
 
 MessageQueue::MessageQueue(SocketServer* ss)
-    : ss_(ss), fStop_(false), fPeekKeep_(false), active_(false),
+    : ss_(ss), fStop_(false), fPeekKeep_(false),
       dmsgq_next_num_(0) {
   if (!ss_) {
     // Currently, MessageQueue holds a socket server, and is the base class for
@@ -129,10 +134,11 @@ MessageQueue::MessageQueue(SocketServer* ss)
     // server, and provide it to the MessageQueue, since the Thread controls
     // the I/O model, and MQ is agnostic to those details.  Anyway, this causes
     // messagequeue_unittest to depend on network libraries... yuck.
-    default_ss_.reset(new PhysicalSocketServer());
+    default_ss_.reset(new DefaultSocketServer());
     ss_ = default_ss_.get();
   }
   ss_->SetMessageQueue(this);
+  MessageQueueManager::Add(this);
 }
 
 MessageQueue::~MessageQueue() {
@@ -140,10 +146,8 @@ MessageQueue::~MessageQueue() {
   // that it always gets called when the queue
   // is going away.
   SignalQueueDestroyed();
-  if (active_) {
-    MessageQueueManager::Remove(this);
-    Clear(NULL);
-  }
+  MessageQueueManager::Remove(this);
+  Clear(NULL);
   if (ss_) {
     ss_->SetMessageQueue(NULL);
   }
@@ -291,7 +295,6 @@ void MessageQueue::Post(MessageHandler *phandler, uint32 id,
   // Signal for the multiplexer to return
 
   CritScope cs(&crit_);
-  EnsureActive();
   Message msg;
   msg.phandler = phandler;
   msg.message_id = id;
@@ -313,7 +316,6 @@ void MessageQueue::DoDelayPost(int cmsDelay, uint32 tstamp,
   // Signal for the multiplexer to return.
 
   CritScope cs(&crit_);
-  EnsureActive();
   Message msg;
   msg.phandler = phandler;
   msg.message_id = id;
@@ -394,14 +396,6 @@ void MessageQueue::Clear(MessageHandler *phandler, uint32 id,
 
 void MessageQueue::Dispatch(Message *pmsg) {
   pmsg->phandler->OnMessage(pmsg);
-}
-
-void MessageQueue::EnsureActive() {
-  ASSERT(crit_.CurrentThreadIsOwner());
-  if (!active_) {
-    active_ = true;
-    MessageQueueManager::Add(this);
-  }
 }
 
 }  // namespace talk_base

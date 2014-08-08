@@ -33,29 +33,30 @@
 
 #include "core/frame/DOMWindowProperty.h"
 #include "core/workers/WorkerNavigator.h"
+#include "modules/quota/DeprecatedStorageQuota.h"
 #include "platform/Supplementable.h"
+#include "platform/heap/Handle.h"
 
 namespace WebCore {
 
-class StorageQuota;
-class WorkerNavigator;
-
-class WorkerNavigatorStorageQuota : public Supplement<WorkerNavigator> {
+class WorkerNavigatorStorageQuota FINAL : public NoBaseWillBeGarbageCollected<WorkerNavigatorStorageQuota>, public WillBeHeapSupplement<WorkerNavigator> {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(WorkerNavigatorStorageQuota);
 public:
-    virtual ~WorkerNavigatorStorageQuota();
-    static WorkerNavigatorStorageQuota* from(WorkerNavigator*);
+    static WorkerNavigatorStorageQuota& from(WorkerNavigator&);
 
-    static StorageQuota* webkitTemporaryStorage(WorkerNavigator*);
-    static StorageQuota* webkitPersistentStorage(WorkerNavigator*);
-    StorageQuota* webkitTemporaryStorage() const;
-    StorageQuota* webkitPersistentStorage() const;
+    static DeprecatedStorageQuota* webkitTemporaryStorage(WorkerNavigator&);
+    static DeprecatedStorageQuota* webkitPersistentStorage(WorkerNavigator&);
+    DeprecatedStorageQuota* webkitTemporaryStorage() const;
+    DeprecatedStorageQuota* webkitPersistentStorage() const;
+
+    virtual void trace(Visitor*);
 
 private:
     explicit WorkerNavigatorStorageQuota();
     static const char* supplementName();
 
-    mutable RefPtr<StorageQuota> m_temporaryStorage;
-    mutable RefPtr<StorageQuota> m_persistentStorage;
+    mutable PersistentWillBeMember<DeprecatedStorageQuota> m_temporaryStorage;
+    mutable PersistentWillBeMember<DeprecatedStorageQuota> m_persistentStorage;
 };
 
 } // namespace WebCore

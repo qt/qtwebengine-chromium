@@ -67,9 +67,8 @@ void CreateNetAddressListFromAddressList(
 
   PP_NetAddress_Private address;
   for (size_t i = 0; i < list.size(); ++i) {
-    if (!ppapi::NetAddressPrivateImpl::IPEndPointToNetAddress(list[i].address(),
-                                                              list[i].port(),
-                                                              &address)) {
+    if (!ppapi::NetAddressPrivateImpl::IPEndPointToNetAddress(
+            list[i].address(), list[i].port(), &address)) {
       net_address_list->clear();
       return;
     }
@@ -86,19 +85,16 @@ PepperHostResolverMessageFilter::PepperHostResolverMessageFilter(
     : external_plugin_(host->external_plugin()),
       private_api_(private_api),
       render_process_id_(0),
-      render_view_id_(0) {
+      render_frame_id_(0) {
   DCHECK(host);
 
-  if (!host->GetRenderViewIDsForInstance(
-          instance,
-          &render_process_id_,
-          &render_view_id_)) {
+  if (!host->GetRenderFrameIDsForInstance(
+          instance, &render_process_id_, &render_frame_id_)) {
     NOTREACHED();
   }
 }
 
-PepperHostResolverMessageFilter::~PepperHostResolverMessageFilter() {
-}
+PepperHostResolverMessageFilter::~PepperHostResolverMessageFilter() {}
 
 scoped_refptr<base::TaskRunner>
 PepperHostResolverMessageFilter::OverrideTaskRunnerForMessage(
@@ -111,10 +107,10 @@ PepperHostResolverMessageFilter::OverrideTaskRunnerForMessage(
 int32_t PepperHostResolverMessageFilter::OnResourceMessageReceived(
     const IPC::Message& msg,
     ppapi::host::HostMessageContext* context) {
-  IPC_BEGIN_MESSAGE_MAP(PepperHostResolverMessageFilter, msg)
-    PPAPI_DISPATCH_HOST_RESOURCE_CALL(
-        PpapiHostMsg_HostResolver_Resolve, OnMsgResolve)
-  IPC_END_MESSAGE_MAP()
+  PPAPI_BEGIN_MESSAGE_MAP(PepperHostResolverMessageFilter, msg)
+    PPAPI_DISPATCH_HOST_RESOURCE_CALL(PpapiHostMsg_HostResolver_Resolve,
+                                      OnMsgResolve)
+  PPAPI_END_MESSAGE_MAP()
   return PP_ERROR_FAILED;
 }
 
@@ -122,18 +118,16 @@ int32_t PepperHostResolverMessageFilter::OnMsgResolve(
     const ppapi::host::HostMessageContext* context,
     const ppapi::HostPortPair& host_port,
     const PP_HostResolver_Private_Hint& hint) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   // Check plugin permissions.
   SocketPermissionRequest request(
       SocketPermissionRequest::RESOLVE_HOST, host_port.host, host_port.port);
-  RenderViewHost* render_view_host =
-      RenderViewHost::FromID(render_process_id_, render_view_id_);
-  if (!render_view_host ||
-      !pepper_socket_utils::CanUseSocketAPIs(external_plugin_,
+  if (!pepper_socket_utils::CanUseSocketAPIs(external_plugin_,
                                              private_api_,
                                              &request,
-                                             render_view_host)) {
+                                             render_process_id_,
+                                             render_frame_id_)) {
     return PP_ERROR_NOACCESS;
   }
 
@@ -146,8 +140,10 @@ int32_t PepperHostResolverMessageFilter::OnMsgResolve(
     return PP_ERROR_FAILED;
 
   BrowserThread::PostTask(
-      BrowserThread::IO, FROM_HERE,
-      base::Bind(&PepperHostResolverMessageFilter::DoResolve, this,
+      BrowserThread::IO,
+      FROM_HERE,
+      base::Bind(&PepperHostResolverMessageFilter::DoResolve,
+                 this,
                  context->MakeReplyMessageContext(),
                  host_port,
                  hint,
@@ -160,7 +156,7 @@ void PepperHostResolverMessageFilter::DoResolve(
     const ppapi::HostPortPair& host_port,
     const PP_HostResolver_Private_Hint& hint,
     ResourceContext* resource_context) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   net::HostResolver* host_resolver = resource_context->GetHostResolver();
   if (!host_resolver) {
@@ -210,8 +206,8 @@ void PepperHostResolverMessageFilter::SendResolveReply(
   ReplyMessageContext reply_context = context;
   reply_context.params.set_result(result);
   SendReply(reply_context,
-            PpapiPluginMsg_HostResolver_ResolveReply(
-                canonical_name, net_address_list));
+            PpapiPluginMsg_HostResolver_ResolveReply(canonical_name,
+                                                     net_address_list));
 }
 
 void PepperHostResolverMessageFilter::SendResolveError(

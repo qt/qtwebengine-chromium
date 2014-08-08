@@ -31,14 +31,11 @@
 #include "platform/geometry/IntPoint.h"
 #include "wtf/MathExtras.h"
 
-
 #if OS(MACOSX)
 typedef struct CGSize CGSize;
 
-#ifdef NSGEOMETRY_TYPES_SAME_AS_CGGEOMETRY_TYPES
-typedef struct CGSize NSSize;
-#else
-typedef struct _NSSize NSSize;
+#ifdef __OBJC__
+#import <Foundation/Foundation.h>
 #endif
 #endif
 
@@ -51,7 +48,7 @@ class PLATFORM_EXPORT FloatSize {
 public:
     FloatSize() : m_width(0), m_height(0) { }
     FloatSize(float width, float height) : m_width(width), m_height(height) { }
-    FloatSize(const IntSize&);
+    FloatSize(const IntSize& size) : m_width(size.width()), m_height(size.height()) { }
     FloatSize(const LayoutSize&);
 
     static FloatSize narrowPrecision(double width, double height);
@@ -105,10 +102,20 @@ public:
         return FloatSize(m_height, m_width);
     }
 
+    FloatSize scaledBy(float scale) const
+    {
+        return scaledBy(scale, scale);
+    }
+
+    FloatSize scaledBy(float scaleX, float scaleY) const
+    {
+        return FloatSize(m_width * scaleX, m_height * scaleY);
+    }
+
 #if OS(MACOSX)
     explicit FloatSize(const CGSize&); // don't do this implicitly since it's lossy
     operator CGSize() const;
-#if !defined(NSGEOMETRY_TYPES_SAME_AS_CGGEOMETRY_TYPES)
+#if defined(__OBJC__) && !defined(NSGEOMETRY_TYPES_SAME_AS_CGGEOMETRY_TYPES)
     explicit FloatSize(const NSSize &); // don't do this implicitly since it's lossy
     operator NSSize() const;
 #endif

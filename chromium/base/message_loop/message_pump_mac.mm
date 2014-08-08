@@ -4,6 +4,7 @@
 
 #import "base/message_loop/message_pump_mac.h"
 
+#include <dlfcn.h>
 #import <Foundation/Foundation.h>
 
 #include <limits>
@@ -12,6 +13,7 @@
 #include "base/format_macros.h"
 #include "base/logging.h"
 #include "base/mac/scoped_cftyperef.h"
+#include "base/message_loop/timer_slack.h"
 #include "base/metrics/histogram.h"
 #include "base/run_loop.h"
 #include "base/strings/stringprintf.h"
@@ -21,7 +23,43 @@
 #import <AppKit/AppKit.h>
 #endif  // !defined(OS_IOS)
 
+namespace base {
+
 namespace {
+
+void CFRunLoopAddSourceToAllModes(CFRunLoopRef rl, CFRunLoopSourceRef source) {
+  CFRunLoopAddSource(rl, source, kCFRunLoopCommonModes);
+  CFRunLoopAddSource(rl, source, kMessageLoopExclusiveRunLoopMode);
+}
+
+void CFRunLoopRemoveSourceFromAllModes(CFRunLoopRef rl,
+                                       CFRunLoopSourceRef source) {
+  CFRunLoopRemoveSource(rl, source, kCFRunLoopCommonModes);
+  CFRunLoopRemoveSource(rl, source, kMessageLoopExclusiveRunLoopMode);
+}
+
+void CFRunLoopAddTimerToAllModes(CFRunLoopRef rl, CFRunLoopTimerRef timer) {
+  CFRunLoopAddTimer(rl, timer, kCFRunLoopCommonModes);
+  CFRunLoopAddTimer(rl, timer, kMessageLoopExclusiveRunLoopMode);
+}
+
+void CFRunLoopRemoveTimerFromAllModes(CFRunLoopRef rl,
+                                      CFRunLoopTimerRef timer) {
+  CFRunLoopRemoveTimer(rl, timer, kCFRunLoopCommonModes);
+  CFRunLoopRemoveTimer(rl, timer, kMessageLoopExclusiveRunLoopMode);
+}
+
+void CFRunLoopAddObserverToAllModes(CFRunLoopRef rl,
+                                    CFRunLoopObserverRef observer) {
+  CFRunLoopAddObserver(rl, observer, kCFRunLoopCommonModes);
+  CFRunLoopAddObserver(rl, observer, kMessageLoopExclusiveRunLoopMode);
+}
+
+void CFRunLoopRemoveObserverFromAllModes(CFRunLoopRef rl,
+                                         CFRunLoopObserverRef observer) {
+  CFRunLoopRemoveObserver(rl, observer, kCFRunLoopCommonModes);
+  CFRunLoopRemoveObserver(rl, observer, kMessageLoopExclusiveRunLoopMode);
+}
 
 void NoOp(void* info) {
 }
@@ -35,9 +73,38 @@ const CFTimeInterval kCFTimeIntervalMax =
 bool g_not_using_cr_app = false;
 #endif
 
+// Call through to CFRunLoopTimerSetTolerance(), which is only available on
+// OS X 10.9.
+void SetTimerTolerance(CFRunLoopTimerRef timer, CFTimeInterval tolerance) {
+  typedef void (*CFRunLoopTimerSetTolerancePtr)(CFRunLoopTimerRef timer,
+      CFTimeInterval tolerance);
+
+  static CFRunLoopTimerSetTolerancePtr settimertolerance_function_ptr;
+
+  static dispatch_once_t get_timer_tolerance_function_ptr_once;
+  dispatch_once(&get_timer_tolerance_function_ptr_once, ^{
+      NSBundle* bundle =[NSBundle
+        bundleWithPath:@"/System/Library/Frameworks/CoreFoundation.framework"];
+      const char* path = [[bundle executablePath] fileSystemRepresentation];
+      CHECK(path);
+      void* library_handle = dlopen(path, RTLD_LAZY | RTLD_LOCAL);
+      CHECK(library_handle) << dlerror();
+      settimertolerance_function_ptr =
+          reinterpret_cast<CFRunLoopTimerSetTolerancePtr>(
+              dlsym(library_handle, "CFRunLoopTimerSetTolerance"));
+
+      dlclose(library_handle);
+  });
+
+  if (settimertolerance_function_ptr)
+    settimertolerance_function_ptr(timer, tolerance);
+}
+
 }  // namespace
 
-namespace base {
+// static
+const CFStringRef kMessageLoopExclusiveRunLoopMode =
+    CFSTR("kMessageLoopExclusiveRunLoopMode");
 
 // A scoper for autorelease pools created from message pump run loops.
 // Avoids dirtying up the ScopedNSAutoreleasePool interface for the rare
@@ -95,9 +162,7 @@ class MessagePumpInstrumentation {
         0,  // order
         &MessagePumpInstrumentation::TimerFired,
         &timer_context));
-    CFRunLoopAddTimer(CFRunLoopGetCurrent(),
-                      timer_,
-                      kCFRunLoopCommonModes);
+    CFRunLoopAddTimerToAllModes(CFRunLoopGetCurrent(), timer_);
   }
 
   // Used to track kCFRunLoopEntry.
@@ -282,6 +347,7 @@ class MessagePumpInstrumentation {
 MessagePumpCFRunLoopBase::MessagePumpCFRunLoopBase()
     : delegate_(NULL),
       delayed_work_fire_time_(kCFTimeIntervalMax),
+      timer_slack_(base::TIMER_SLACK_NONE),
       nesting_level_(0),
       run_nesting_level_(0),
       deepest_nesting_level_(0),
@@ -302,7 +368,7 @@ MessagePumpCFRunLoopBase::MessagePumpCFRunLoopBase()
                                              0,                   // priority
                                              RunDelayedWorkTimer,
                                              &timer_context);
-  CFRunLoopAddTimer(run_loop_, delayed_work_timer_, kCFRunLoopCommonModes);
+  CFRunLoopAddTimerToAllModes(run_loop_, delayed_work_timer_);
 
   CFRunLoopSourceContext source_context = CFRunLoopSourceContext();
   source_context.info = this;
@@ -310,20 +376,19 @@ MessagePumpCFRunLoopBase::MessagePumpCFRunLoopBase()
   work_source_ = CFRunLoopSourceCreate(NULL,  // allocator
                                        1,     // priority
                                        &source_context);
-  CFRunLoopAddSource(run_loop_, work_source_, kCFRunLoopCommonModes);
+  CFRunLoopAddSourceToAllModes(run_loop_, work_source_);
 
   source_context.perform = RunIdleWorkSource;
   idle_work_source_ = CFRunLoopSourceCreate(NULL,  // allocator
                                             2,     // priority
                                             &source_context);
-  CFRunLoopAddSource(run_loop_, idle_work_source_, kCFRunLoopCommonModes);
+  CFRunLoopAddSourceToAllModes(run_loop_, idle_work_source_);
 
   source_context.perform = RunNestingDeferredWorkSource;
   nesting_deferred_work_source_ = CFRunLoopSourceCreate(NULL,  // allocator
                                                         0,     // priority
                                                         &source_context);
-  CFRunLoopAddSource(run_loop_, nesting_deferred_work_source_,
-                     kCFRunLoopCommonModes);
+  CFRunLoopAddSourceToAllModes(run_loop_, nesting_deferred_work_source_);
 
   CFRunLoopObserverContext observer_context = CFRunLoopObserverContext();
   observer_context.info = this;
@@ -334,7 +399,7 @@ MessagePumpCFRunLoopBase::MessagePumpCFRunLoopBase()
                                                0,     // priority
                                                StartOrEndWaitObserver,
                                                &observer_context);
-  CFRunLoopAddObserver(run_loop_, pre_wait_observer_, kCFRunLoopCommonModes);
+  CFRunLoopAddObserverToAllModes(run_loop_, pre_wait_observer_);
 
   pre_source_observer_ = CFRunLoopObserverCreate(NULL,  // allocator
                                                  kCFRunLoopBeforeSources,
@@ -342,7 +407,7 @@ MessagePumpCFRunLoopBase::MessagePumpCFRunLoopBase()
                                                  0,     // priority
                                                  PreSourceObserver,
                                                  &observer_context);
-  CFRunLoopAddObserver(run_loop_, pre_source_observer_, kCFRunLoopCommonModes);
+  CFRunLoopAddObserverToAllModes(run_loop_, pre_source_observer_);
 
   enter_exit_observer_ = CFRunLoopObserverCreate(NULL,  // allocator
                                                  kCFRunLoopEntry |
@@ -351,36 +416,32 @@ MessagePumpCFRunLoopBase::MessagePumpCFRunLoopBase()
                                                  0,     // priority
                                                  EnterExitObserver,
                                                  &observer_context);
-  CFRunLoopAddObserver(run_loop_, enter_exit_observer_, kCFRunLoopCommonModes);
+  CFRunLoopAddObserverToAllModes(run_loop_, enter_exit_observer_);
 }
 
 // Ideally called on the run loop thread.  If other run loops were running
 // lower on the run loop thread's stack when this object was created, the
 // same number of run loops must be running when this object is destroyed.
 MessagePumpCFRunLoopBase::~MessagePumpCFRunLoopBase() {
-  CFRunLoopRemoveObserver(run_loop_, enter_exit_observer_,
-                          kCFRunLoopCommonModes);
+  CFRunLoopRemoveObserverFromAllModes(run_loop_, enter_exit_observer_);
   CFRelease(enter_exit_observer_);
 
-  CFRunLoopRemoveObserver(run_loop_, pre_source_observer_,
-                          kCFRunLoopCommonModes);
+  CFRunLoopRemoveObserverFromAllModes(run_loop_, pre_source_observer_);
   CFRelease(pre_source_observer_);
 
-  CFRunLoopRemoveObserver(run_loop_, pre_wait_observer_,
-                          kCFRunLoopCommonModes);
+  CFRunLoopRemoveObserverFromAllModes(run_loop_, pre_wait_observer_);
   CFRelease(pre_wait_observer_);
 
-  CFRunLoopRemoveSource(run_loop_, nesting_deferred_work_source_,
-                        kCFRunLoopCommonModes);
+  CFRunLoopRemoveSourceFromAllModes(run_loop_, nesting_deferred_work_source_);
   CFRelease(nesting_deferred_work_source_);
 
-  CFRunLoopRemoveSource(run_loop_, idle_work_source_, kCFRunLoopCommonModes);
+  CFRunLoopRemoveSourceFromAllModes(run_loop_, idle_work_source_);
   CFRelease(idle_work_source_);
 
-  CFRunLoopRemoveSource(run_loop_, work_source_, kCFRunLoopCommonModes);
+  CFRunLoopRemoveSourceFromAllModes(run_loop_, work_source_);
   CFRelease(work_source_);
 
-  CFRunLoopRemoveTimer(run_loop_, delayed_work_timer_, kCFRunLoopCommonModes);
+  CFRunLoopRemoveTimerFromAllModes(run_loop_, delayed_work_timer_);
   CFRelease(delayed_work_timer_);
 
   CFRelease(run_loop_);
@@ -438,6 +499,15 @@ void MessagePumpCFRunLoopBase::ScheduleDelayedWork(
   TimeDelta delta = delayed_work_time - TimeTicks::Now();
   delayed_work_fire_time_ = CFAbsoluteTimeGetCurrent() + delta.InSecondsF();
   CFRunLoopTimerSetNextFireDate(delayed_work_timer_, delayed_work_fire_time_);
+  if (timer_slack_ == TIMER_SLACK_MAXIMUM) {
+    SetTimerTolerance(delayed_work_timer_, delta.InSecondsF() * 0.5);
+  } else {
+    SetTimerTolerance(delayed_work_timer_, 0);
+  }
+}
+
+void MessagePumpCFRunLoopBase::SetTimerSlack(TimerSlack timer_slack) {
+  timer_slack_ = timer_slack;
 }
 
 // Called from the run loop.
@@ -697,7 +767,7 @@ void MessagePumpCFRunLoopBase::EnterExitRunLoop(CFRunLoopActivity activity) {
 }
 
 // Base version returns a standard NSAutoreleasePool.
-NSAutoreleasePool* MessagePumpCFRunLoopBase::CreateAutoreleasePool() {
+AutoreleasePoolType* MessagePumpCFRunLoopBase::CreateAutoreleasePool() {
   return [[NSAutoreleasePool alloc] init];
 }
 
@@ -760,11 +830,11 @@ MessagePumpNSRunLoop::MessagePumpNSRunLoop()
   quit_source_ = CFRunLoopSourceCreate(NULL,  // allocator
                                        0,     // priority
                                        &source_context);
-  CFRunLoopAddSource(run_loop(), quit_source_, kCFRunLoopCommonModes);
+  CFRunLoopAddSourceToAllModes(run_loop(), quit_source_);
 }
 
 MessagePumpNSRunLoop::~MessagePumpNSRunLoop() {
-  CFRunLoopRemoveSource(run_loop(), quit_source_, kCFRunLoopCommonModes);
+  CFRunLoopRemoveSourceFromAllModes(run_loop(), quit_source_);
   CFRelease(quit_source_);
 }
 
@@ -909,7 +979,7 @@ MessagePumpCrApplication::~MessagePumpCrApplication() {
 // CrApplication is responsible for setting handlingSendEvent to true just
 // before it sends the event through the event handling mechanism, and
 // returning it to its previous value once the event has been sent.
-NSAutoreleasePool* MessagePumpCrApplication::CreateAutoreleasePool() {
+AutoreleasePoolType* MessagePumpCrApplication::CreateAutoreleasePool() {
   if (MessagePumpMac::IsHandlingSendEvent())
     return nil;
   return MessagePumpNSApplication::CreateAutoreleasePool();

@@ -13,6 +13,7 @@
 #include "content/renderer/p2p/network_list_observer.h"
 #include "content/renderer/p2p/socket_client_impl.h"
 #include "content/renderer/render_view_impl.h"
+#include "ipc/ipc_sender.h"
 
 namespace content {
 
@@ -22,7 +23,7 @@ P2PSocketDispatcher::P2PSocketDispatcher(
       network_notifications_started_(false),
       network_list_observers_(
           new ObserverListThreadSafe<NetworkListObserver>()),
-      channel_(NULL) {
+      sender_(NULL) {
 }
 
 P2PSocketDispatcher::~P2PSocketDispatcher() {
@@ -47,13 +48,13 @@ void P2PSocketDispatcher::RemoveNetworkListObserver(
 
 void P2PSocketDispatcher::Send(IPC::Message* message) {
   DCHECK(message_loop_->BelongsToCurrentThread());
-  if (!channel_) {
-    DLOG(WARNING) << "P2PSocketDispatcher::Send() - Channel closed.";
+  if (!sender_) {
+    DLOG(WARNING) << "P2PSocketDispatcher::Send() - Sender closed.";
     delete message;
     return;
   }
 
-  channel_->Send(message);
+  sender_->Send(message);
 }
 
 bool P2PSocketDispatcher::OnMessageReceived(const IPC::Message& message) {
@@ -71,17 +72,17 @@ bool P2PSocketDispatcher::OnMessageReceived(const IPC::Message& message) {
   return handled;
 }
 
-void P2PSocketDispatcher::OnFilterAdded(IPC::Channel* channel) {
+void P2PSocketDispatcher::OnFilterAdded(IPC::Sender* sender) {
   DVLOG(1) << "P2PSocketDispatcher::OnFilterAdded()";
-  channel_ = channel;
+  sender_ = sender;
 }
 
 void P2PSocketDispatcher::OnFilterRemoved() {
-  channel_ = NULL;
+  sender_ = NULL;
 }
 
 void P2PSocketDispatcher::OnChannelClosing() {
-  channel_ = NULL;
+  sender_ = NULL;
 }
 
 base::MessageLoopProxy* P2PSocketDispatcher::message_loop() {
@@ -109,7 +110,7 @@ void P2PSocketDispatcher::SendP2PMessage(IPC::Message* msg) {
 }
 
 int P2PSocketDispatcher::RegisterHostAddressRequest(
-    P2PHostAddressRequest* request) {
+    P2PAsyncAddressResolver* request) {
   DCHECK(message_loop_->BelongsToCurrentThread());
   return host_address_requests_.Add(request);
 }
@@ -127,14 +128,14 @@ void P2PSocketDispatcher::OnNetworkListChanged(
 
 void P2PSocketDispatcher::OnGetHostAddressResult(
     int32 request_id,
-    const net::IPAddressNumber& address) {
-  P2PHostAddressRequest* request = host_address_requests_.Lookup(request_id);
+    const net::IPAddressList& addresses) {
+  P2PAsyncAddressResolver* request = host_address_requests_.Lookup(request_id);
   if (!request) {
     VLOG(1) << "Received P2P message for socket that doesn't exist.";
     return;
   }
 
-  request->OnResponse(address);
+  request->OnResponse(addresses);
 }
 
 void P2PSocketDispatcher::OnSocketCreated(

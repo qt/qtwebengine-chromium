@@ -34,10 +34,9 @@ public:
     Orientation orientation() const;
 
 private:
-    virtual const char* renderName() const { return "RenderDetailsMarker"; }
-    virtual bool supportsPartialLayout() const OVERRIDE { return false; }
-    virtual bool isDetailsMarker() const { return true; }
-    virtual void paint(PaintInfo&, const LayoutPoint&);
+    virtual const char* renderName() const OVERRIDE { return "RenderDetailsMarker"; }
+    virtual bool isDetailsMarker() const OVERRIDE { return true; }
+    virtual void paint(PaintInfo&, const LayoutPoint&) OVERRIDE;
 
     bool isOpen() const;
     Path getCanonicalPath() const;

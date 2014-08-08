@@ -15,6 +15,7 @@
 #include "cc/quads/render_pass_draw_quad.h"
 #include "cc/quads/solid_color_draw_quad.h"
 #include "cc/quads/stream_video_draw_quad.h"
+#include "cc/quads/surface_draw_quad.h"
 #include "cc/quads/texture_draw_quad.h"
 #include "cc/quads/tile_draw_quad.h"
 #include "cc/quads/yuv_video_draw_quad.h"
@@ -36,9 +37,9 @@ DrawQuad::DrawQuad()
 
 void DrawQuad::SetAll(const SharedQuadState* shared_quad_state,
                       Material material,
-                      gfx::Rect rect,
-                      gfx::Rect opaque_rect,
-                      gfx::Rect visible_rect,
+                      const gfx::Rect& rect,
+                      const gfx::Rect& opaque_rect,
+                      const gfx::Rect& visible_rect,
                       bool needs_blending) {
   DCHECK(rect.Contains(visible_rect)) << "rect: " << rect.ToString()
                                       << " visible_rect: "
@@ -88,6 +89,9 @@ scoped_ptr<DrawQuad> DrawQuad::Copy(
       break;
     case STREAM_VIDEO_CONTENT:
       copy_quad.reset(TypedCopy<StreamVideoDrawQuad>(this));
+      break;
+    case SURFACE_CONTENT:
+      copy_quad.reset(TypedCopy<SurfaceDrawQuad>(this));
       break;
     case YUV_VIDEO_CONTENT:
       copy_quad.reset(TypedCopy<YUVVideoDrawQuad>(this));

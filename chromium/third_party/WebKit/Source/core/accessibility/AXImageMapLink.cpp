@@ -37,8 +37,8 @@ namespace WebCore {
 using namespace HTMLNames;
 
 AXImageMapLink::AXImageMapLink()
-    : m_areaElement(0)
-    , m_mapElement(0)
+    : m_areaElement(nullptr)
+    , m_mapElement(nullptr)
 {
 }
 
@@ -49,8 +49,8 @@ AXImageMapLink::~AXImageMapLink()
 void AXImageMapLink::detachFromParent()
 {
     AXMockObject::detachFromParent();
-    m_areaElement = 0;
-    m_mapElement = 0;
+    m_areaElement = nullptr;
+    m_mapElement = nullptr;
 }
 
 PassRefPtr<AXImageMapLink> AXImageMapLink::create()
@@ -97,21 +97,6 @@ KURL AXImageMapLink::url() const
         return KURL();
 
     return m_areaElement->href();
-}
-
-void AXImageMapLink::accessibilityText(Vector<AccessibilityText>& textOrder)
-{
-    String description = accessibilityDescription();
-    if (!description.isEmpty())
-        textOrder.append(AccessibilityText(description, AlternativeText));
-
-    const AtomicString& titleText = getAttribute(titleAttr);
-    if (!titleText.isEmpty())
-        textOrder.append(AccessibilityText(titleText, TitleTagText));
-
-    const AtomicString& summary = getAttribute(summaryAttr);
-    if (!summary.isEmpty())
-        textOrder.append(AccessibilityText(summary, SummaryText));
 }
 
 String AXImageMapLink::accessibilityDescription() const

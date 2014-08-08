@@ -26,7 +26,6 @@
 #define SecurityPolicyViolationEvent_h
 
 #include "core/events/Event.h"
-#include "core/events/ThreadLocalEventNames.h"
 
 namespace WebCore {
 
@@ -47,16 +46,16 @@ struct SecurityPolicyViolationEventInit : public EventInit {
     int statusCode;
 };
 
-class SecurityPolicyViolationEvent : public Event {
+class SecurityPolicyViolationEvent FINAL : public Event {
 public:
-    static PassRefPtr<SecurityPolicyViolationEvent> create()
+    static PassRefPtrWillBeRawPtr<SecurityPolicyViolationEvent> create()
     {
-        return adoptRef(new SecurityPolicyViolationEvent());
+        return adoptRefWillBeNoop(new SecurityPolicyViolationEvent());
     }
 
-    static PassRefPtr<SecurityPolicyViolationEvent> create(const AtomicString& type, const SecurityPolicyViolationEventInit& initializer)
+    static PassRefPtrWillBeRawPtr<SecurityPolicyViolationEvent> create(const AtomicString& type, const SecurityPolicyViolationEventInit& initializer)
     {
-        return adoptRef(new SecurityPolicyViolationEvent(type, initializer));
+        return adoptRefWillBeNoop(new SecurityPolicyViolationEvent(type, initializer));
     }
 
     const String& documentURI() const { return m_documentURI; }
@@ -70,7 +69,9 @@ public:
     int columnNumber() const { return m_columnNumber; }
     int statusCode() const { return m_statusCode; }
 
-    virtual const AtomicString& interfaceName() const { return EventNames::SecurityPolicyViolationEvent; }
+    virtual const AtomicString& interfaceName() const OVERRIDE { return EventNames::SecurityPolicyViolationEvent; }
+
+    virtual void trace(Visitor* visitor) OVERRIDE { Event::trace(visitor); }
 
 private:
     SecurityPolicyViolationEvent()

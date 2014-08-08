@@ -1,6 +1,6 @@
 {
   'variables': {
-    'version_py': '../../chrome/tools/build/version.py',
+    'version_py': '<(DEPTH)/build/util/version.py',
     'version_path': '../../chrome/VERSION',
     'lastchange_path': '<(DEPTH)/build/util/LASTCHANGE',
     # 'branding_dir' is set in the 'conditions' section at the bottom.
@@ -181,15 +181,6 @@
                     'enable_hidpi_flag': '',
                   },
                 }],
-                ['enable_touch_ui == 1', {
-                  'variables': {
-                    'enable_touch_ui_flag': '--enable_touch_ui=1',
-                  },
-                }, {
-                  'variables': {
-                    'enable_touch_ui_flag': '',
-                  },
-                }],
                 ['component == "shared_library"', {
                   'variables': {
                     'component_build_flag': '--component_build=1',
@@ -223,6 +214,15 @@
                     'target_arch_flag': '--target_arch=x86',
                   },
                 }],
+                ['icu_use_data_file_flag == 0', {
+                  'inputs': [
+                    '<(PRODUCT_DIR)/icudt.dll',
+                  ],
+                }, { # else icu_use_data_file_flag != 0
+                  'inputs': [
+                    '<(PRODUCT_DIR)/icudtl.dat',
+                  ],
+                }],
               ],
               'inputs': [
                 '<(create_installer_archive_py_path)',
@@ -233,7 +233,6 @@
                 '<(PRODUCT_DIR)/nacl_irt_x86_32.nexe',
                 '<(PRODUCT_DIR)/nacl_irt_x86_64.nexe',
                 '<(PRODUCT_DIR)/locales/en-US.pak',
-                '<(PRODUCT_DIR)/icudt.dll',
               ],
               'outputs': [
                 # Also note that chrome.packed.7z is defined as an output in a
@@ -251,7 +250,6 @@
                 '--input_file', '<(RULE_INPUT_PATH)',
                 '--resource_file_path', '<(INTERMEDIATE_DIR)/packed_files.rc',
                 '<(enable_hidpi_flag)',
-                '<(enable_touch_ui_flag)',
                 '<(component_build_flag)',
                 '<(target_arch_flag)',
                 # TODO(sgk):  may just use environment variables
@@ -263,7 +261,6 @@
                 #'--diff_algorithm=COURGETTE',
               ],
               'message': 'Create installer archive',
-              'msvs_cygwin_shell': 1,
             },
           ],
           # TODO(mark):  <(branding_dir) should be defined by the

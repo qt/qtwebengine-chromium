@@ -36,9 +36,10 @@ const char* const kSetCookieHeaders[] = {
 };
 
 net::SocketStreamJob* WebSocketJobFactory(
-    const GURL& url, net::SocketStream::Delegate* delegate) {
+    const GURL& url, net::SocketStream::Delegate* delegate,
+    net::URLRequestContext* context, net::CookieStore* cookie_store) {
   net::WebSocketJob* job = new net::WebSocketJob(delegate);
-  job->InitSocketStream(new net::SocketStream(url, job));
+  job->InitSocketStream(new net::SocketStream(url, job, context, cookie_store));
   return job;
 }
 
@@ -58,16 +59,9 @@ static base::LazyInstance<WebSocketJobInitSingleton> g_websocket_job_init =
 
 namespace net {
 
-bool WebSocketJob::websocket_over_spdy_enabled_ = false;
-
 // static
 void WebSocketJob::EnsureInit() {
   g_websocket_job_init.Get();
-}
-
-// static
-void WebSocketJob::set_websocket_over_spdy_enabled(bool enabled) {
-  websocket_over_spdy_enabled_ = enabled;
 }
 
 WebSocketJob::WebSocketJob(SocketStream::Delegate* delegate)
@@ -303,9 +297,10 @@ void WebSocketJob::OnSentSpdyHeaders() {
   DCHECK_NE(INITIALIZED, state_);
   if (state_ != CONNECTING)
     return;
-  if (delegate_)
-    delegate_->OnSentData(socket_.get(), handshake_request_->original_length());
+  size_t original_length = handshake_request_->original_length();
   handshake_request_.reset();
+  if (delegate_)
+    delegate_->OnSentData(socket_.get(), original_length);
 }
 
 void WebSocketJob::OnSpdyResponseHeadersUpdated(
@@ -370,11 +365,11 @@ void WebSocketJob::AddCookieHeaderAndSend() {
   if (socket_.get() && delegate_ && state_ == CONNECTING) {
     handshake_request_->RemoveHeaders(kCookieHeaders,
                                       arraysize(kCookieHeaders));
-    if (allow && socket_->context()->cookie_store()) {
+    if (allow && socket_->cookie_store()) {
       // Add cookies, including HttpOnly cookies.
       CookieOptions cookie_options;
       cookie_options.set_include_httponly();
-      socket_->context()->cookie_store()->GetCookiesWithOptionsAsync(
+      socket_->cookie_store()->GetCookiesWithOptionsAsync(
           GetURLForCookies(), cookie_options,
           base::Bind(&WebSocketJob::LoadCookieCallback,
                      weak_ptr_factory_.GetWeakPtr()));
@@ -387,7 +382,7 @@ void WebSocketJob::AddCookieHeaderAndSend() {
 void WebSocketJob::LoadCookieCallback(const std::string& cookie) {
   if (!cookie.empty())
     // TODO(tyoshino): Sending cookie means that connection doesn't need
-    // kPrivacyModeEnabled as cookies may be server-bound and channel id
+    // PRIVACY_MODE_ENABLED as cookies may be server-bound and channel id
     // wouldn't negatively affect privacy anyway. Need to restart connection
     // or refactor to determine cookie status prior to connecting.
     handshake_request_->AppendHeaderIfMissing("Cookie", cookie);
@@ -422,11 +417,12 @@ void WebSocketJob::OnSentHandshakeRequest(
   if (handshake_request_sent_ >= handshake_request_->raw_length()) {
     // handshake request has been sent.
     // notify original size of handshake request to delegate.
-    if (delegate_)
-      delegate_->OnSentData(
-          socket,
-          handshake_request_->original_length());
+    // Reset the handshake_request_ first in case this object is deleted by the
+    // delegate.
+    size_t original_length = handshake_request_->original_length();
     handshake_request_.reset();
+    if (delegate_)
+      delegate_->OnSentData(socket, original_length);
   }
 }
 
@@ -505,7 +501,7 @@ void WebSocketJob::SaveNextCookie() {
   callback_pending_ = false;
   save_next_cookie_running_ = true;
 
-  if (socket_->context()->cookie_store()) {
+  if (socket_->cookie_store()) {
     GURL url_for_cookies = GetURLForCookies();
 
     CookieOptions options;
@@ -526,7 +522,7 @@ void WebSocketJob::SaveNextCookie() {
         continue;
 
       callback_pending_ = true;
-      socket_->context()->cookie_store()->SetCookieWithOptionsAsync(
+      socket_->cookie_store()->SetCookieWithOptionsAsync(
           url_for_cookies, cookie, options,
           base::Bind(&WebSocketJob::OnCookieSaved,
                      weak_ptr_factory_.GetWeakPtr()));
@@ -563,9 +559,8 @@ void WebSocketJob::OnCookieSaved(bool cookie_status) {
 GURL WebSocketJob::GetURLForCookies() const {
   GURL url = socket_->url();
   std::string scheme = socket_->is_secure() ? "https" : "http";
-  url_canon::Replacements<char> replacements;
-  replacements.SetScheme(scheme.c_str(),
-                         url_parse::Component(0, scheme.length()));
+  url::Replacements<char> replacements;
+  replacements.SetScheme(scheme.c_str(), url::Component(0, scheme.length()));
   return url.ReplaceComponents(replacements);
 }
 
@@ -577,16 +572,13 @@ int WebSocketJob::TrySpdyStream() {
   if (!socket_.get())
     return ERR_FAILED;
 
-  if (!websocket_over_spdy_enabled_)
-    return OK;
-
   // Check if we have a SPDY session available.
   HttpTransactionFactory* factory =
       socket_->context()->http_transaction_factory();
   if (!factory)
     return OK;
   scoped_refptr<HttpNetworkSession> session = factory->GetSession();
-  if (!session.get())
+  if (!session.get() || !session->params().enable_websocket_over_spdy)
     return OK;
   SpdySessionPool* spdy_pool = session->spdy_session_pool();
   PrivacyMode privacy_mode = socket_->privacy_mode();

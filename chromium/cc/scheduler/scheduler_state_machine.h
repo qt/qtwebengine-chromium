@@ -12,6 +12,7 @@
 #include "base/time/time.h"
 #include "cc/base/cc_export.h"
 #include "cc/output/begin_frame_args.h"
+#include "cc/scheduler/draw_result.h"
 #include "cc/scheduler/scheduler_settings.h"
 
 namespace base {
@@ -59,30 +60,13 @@ class CC_EXPORT SchedulerStateMachine {
 
   enum CommitState {
     COMMIT_STATE_IDLE,
-    COMMIT_STATE_FRAME_IN_PROGRESS,
+    COMMIT_STATE_BEGIN_MAIN_FRAME_SENT,
+    COMMIT_STATE_BEGIN_MAIN_FRAME_STARTED,
     COMMIT_STATE_READY_TO_COMMIT,
+    COMMIT_STATE_WAITING_FOR_ACTIVATION,
     COMMIT_STATE_WAITING_FOR_FIRST_DRAW,
   };
   static const char* CommitStateToString(CommitState state);
-
-  enum TextureState {
-    LAYER_TEXTURE_STATE_UNLOCKED,
-    LAYER_TEXTURE_STATE_ACQUIRED_BY_MAIN_THREAD,
-    LAYER_TEXTURE_STATE_ACQUIRED_BY_IMPL_THREAD,
-  };
-  static const char* TextureStateToString(TextureState state);
-
-  enum SynchronousReadbackState {
-    READBACK_STATE_IDLE,
-    READBACK_STATE_NEEDS_BEGIN_MAIN_FRAME,
-    READBACK_STATE_WAITING_FOR_COMMIT,
-    READBACK_STATE_WAITING_FOR_ACTIVATION,
-    READBACK_STATE_WAITING_FOR_DRAW_AND_READBACK,
-    READBACK_STATE_WAITING_FOR_REPLACEMENT_COMMIT,
-    READBACK_STATE_WAITING_FOR_REPLACEMENT_ACTIVATION,
-  };
-  static const char* SynchronousReadbackStateToString(
-      SynchronousReadbackState state);
 
   enum ForcedRedrawOnTimeoutState {
     FORCED_REDRAW_STATE_IDLE,
@@ -94,15 +78,18 @@ class CC_EXPORT SchedulerStateMachine {
       ForcedRedrawOnTimeoutState state);
 
   bool CommitPending() const {
-    return commit_state_ == COMMIT_STATE_FRAME_IN_PROGRESS ||
+    return commit_state_ == COMMIT_STATE_BEGIN_MAIN_FRAME_SENT ||
+           commit_state_ == COMMIT_STATE_BEGIN_MAIN_FRAME_STARTED ||
            commit_state_ == COMMIT_STATE_READY_TO_COMMIT;
   }
+  CommitState commit_state() const { return commit_state_; }
 
   bool RedrawPending() const { return needs_redraw_; }
   bool ManageTilesPending() const { return needs_manage_tiles_; }
 
   enum Action {
     ACTION_NONE,
+    ACTION_ANIMATE,
     ACTION_SEND_BEGIN_MAIN_FRAME,
     ACTION_COMMIT,
     ACTION_UPDATE_VISIBLE_TILES,
@@ -110,9 +97,7 @@ class CC_EXPORT SchedulerStateMachine {
     ACTION_DRAW_AND_SWAP_IF_POSSIBLE,
     ACTION_DRAW_AND_SWAP_FORCED,
     ACTION_DRAW_AND_SWAP_ABORT,
-    ACTION_DRAW_AND_READBACK,
     ACTION_BEGIN_OUTPUT_SURFACE_CREATION,
-    ACTION_ACQUIRE_LAYER_TEXTURES_FOR_MAIN_THREAD,
     ACTION_MANAGE_TILES,
   };
   static const char* ActionToString(Action action);
@@ -122,11 +107,9 @@ class CC_EXPORT SchedulerStateMachine {
   Action NextAction() const;
   void UpdateState(Action action);
 
-  void CheckInvariants();
-
   // Indicates whether the impl thread needs a BeginImplFrame callback in order
   // to make progress.
-  bool BeginImplFrameNeeded() const;
+  bool BeginFrameNeeded() const;
 
   // Indicates that we need to independently poll for new state and actions
   // because we can't expect a BeginImplFrame. This is mostly used to avoid
@@ -167,63 +150,71 @@ class CC_EXPORT SchedulerStateMachine {
   void SetNeedsRedraw();
   bool needs_redraw() const { return needs_redraw_; }
 
+  void SetNeedsAnimate();
+  bool needs_animate() const { return needs_animate_; }
+
   // Indicates that manage-tiles is required. This guarantees another
   // ManageTiles will occur shortly (even if no redraw is required).
   void SetNeedsManageTiles();
+
+  // Sets how many swaps can be pending to the OutputSurface.
+  void SetMaxSwapsPending(int max);
+
+  // If the scheduler attempted to draw and swap, this provides feedback
+  // regarding whether or not the swap actually occured. We might skip the
+  // swap when there is not damage, for example.
+  void DidSwapBuffers();
 
   // Indicates whether a redraw is required because we are currently rendering
   // with a low resolution or checkerboarded tile.
   void SetSwapUsedIncompleteTile(bool used_incomplete_tile);
 
+  // Notification from the OutputSurface that a swap has been consumed.
+  void DidSwapBuffersComplete();
+
   // Indicates whether to prioritize animation smoothness over new content
   // activation.
   void SetSmoothnessTakesPriority(bool smoothness_takes_priority);
+  bool smoothness_takes_priority() const { return smoothness_takes_priority_; }
 
   // Indicates whether ACTION_DRAW_AND_SWAP_IF_POSSIBLE drew to the screen.
-  void DidDrawIfPossibleCompleted(bool success);
+  void DidDrawIfPossibleCompleted(DrawResult result);
 
   // Indicates that a new commit flow needs to be performed, either to pull
   // updates from the main thread to the impl, or to push deltas from the impl
   // thread to main.
   void SetNeedsCommit();
 
-  // As SetNeedsCommit(), but ensures the BeginMainFrame will be sent even
-  // if we are not visible.  After this call we expect to go through
-  // the forced commit flow and then return to waiting for a non-forced
-  // BeginMainFrame to finish.
-  void SetNeedsForcedCommitForReadback();
-
   // Call this only in response to receiving an ACTION_SEND_BEGIN_MAIN_FRAME
   // from NextAction.
   // Indicates that all painting is complete.
-  void FinishCommit();
+  void NotifyReadyToCommit();
 
   // Call this only in response to receiving an ACTION_SEND_BEGIN_MAIN_FRAME
   // from NextAction if the client rejects the BeginMainFrame message.
   // If did_handle is false, then another commit will be retried soon.
   void BeginMainFrameAborted(bool did_handle);
 
-  // Request exclusive access to the textures that back single buffered
-  // layers on behalf of the main thread. Upon acquisition,
-  // ACTION_DRAW_AND_SWAP_IF_POSSIBLE will not draw until the main thread
-  // releases the
-  // textures to the impl thread by committing the layers.
-  void SetMainThreadNeedsLayerTextures();
-
   // Set that we can create the first OutputSurface and start the scheduler.
   void SetCanStart() { can_start_ = true; }
 
-  void SetSkipBeginMainFrameToReduceLatency(bool skip);
+  void SetSkipNextBeginMainFrameToReduceLatency();
 
   // Indicates whether drawing would, at this time, make sense.
   // CanDraw can be used to suppress flashes or checkerboarding
   // when such behavior would be undesirable.
   void SetCanDraw(bool can);
 
+  // Indicates that scheduled BeginMainFrame is started.
+  void NotifyBeginMainFrameStarted();
+
   // Indicates that the pending tree is ready for activation.
   void NotifyReadyToActivate();
 
   bool has_pending_tree() const { return has_pending_tree_; }
+  bool active_tree_needs_first_draw() const {
+    return active_tree_needs_first_draw_;
+  }
 
   void DidManageTiles();
   void DidLoseOutputSurface();
@@ -233,35 +224,38 @@ class CC_EXPORT SchedulerStateMachine {
   // True if we need to abort draws to make forward progress.
   bool PendingDrawsShouldBeAborted() const;
 
-  bool SupportsProactiveBeginImplFrame() const;
+  bool SupportsProactiveBeginFrame() const;
 
-  bool IsCommitStateWaiting() const;
+  void SetContinuousPainting(bool continuous_painting) {
+    continuous_painting_ = continuous_painting;
+  }
 
  protected:
-  bool BeginImplFrameNeededToDraw() const;
-  bool ProactiveBeginImplFrameWanted() const;
+  bool BeginFrameNeededToAnimateOrDraw() const;
+  bool ProactiveBeginFrameWanted() const;
 
   // True if we need to force activations to make forward progress.
   bool PendingActivationsShouldBeForced() const;
 
+  bool ShouldAnimate() const;
   bool ShouldBeginOutputSurfaceCreation() const;
   bool ShouldDrawForced() const;
   bool ShouldDraw() const;
   bool ShouldActivatePendingTree() const;
-  bool ShouldAcquireLayerTexturesForMainThread() const;
   bool ShouldUpdateVisibleTiles() const;
   bool ShouldSendBeginMainFrame() const;
   bool ShouldCommit() const;
   bool ShouldManageTiles() const;
 
+  void AdvanceCurrentFrameNumber();
   bool HasSentBeginMainFrameThisFrame() const;
-  bool HasScheduledManageTilesThisFrame() const;
   bool HasUpdatedVisibleTilesThisFrame() const;
+  bool HasRequestedSwapThisFrame() const;
   bool HasSwappedThisFrame() const;
 
   void UpdateStateOnCommit(bool commit_was_aborted);
   void UpdateStateOnActivation();
-  void UpdateStateOnDraw(bool did_swap);
+  void UpdateStateOnDraw(bool did_request_swap);
   void UpdateStateOnManageTiles();
 
   const SchedulerSettings settings_;
@@ -269,25 +263,31 @@ class CC_EXPORT SchedulerStateMachine {
   OutputSurfaceState output_surface_state_;
   BeginImplFrameState begin_impl_frame_state_;
   CommitState commit_state_;
-  TextureState texture_state_;
   ForcedRedrawOnTimeoutState forced_redraw_state_;
-  SynchronousReadbackState readback_state_;
 
-  BeginFrameArgs last_begin_impl_frame_args_;
+  BeginFrameArgs begin_impl_frame_args_;
 
   int commit_count_;
   int current_frame_number_;
+  int last_frame_number_animate_performed_;
   int last_frame_number_swap_performed_;
+  int last_frame_number_swap_requested_;
   int last_frame_number_begin_main_frame_sent_;
   int last_frame_number_update_visible_tiles_was_called_;
-  int last_frame_number_manage_tiles_called_;
 
-  int consecutive_failed_draws_;
+  // manage_tiles_funnel_ is "filled" each time ManageTiles is called
+  // and "drained" on each BeginImplFrame. If the funnel gets too full,
+  // we start throttling ACTION_MANAGE_TILES such that we average one
+  // ManageTile per BeginImplFrame.
+  int manage_tiles_funnel_;
+  int consecutive_checkerboard_animations_;
+  int max_pending_swaps_;
+  int pending_swaps_;
   bool needs_redraw_;
+  bool needs_animate_;
   bool needs_manage_tiles_;
   bool swap_used_incomplete_tile_;
   bool needs_commit_;
-  bool main_thread_needs_layer_textures_;
   bool inside_poll_for_anticipated_draw_triggers_;
   bool visible_;
   bool can_start_;
@@ -295,10 +295,11 @@ class CC_EXPORT SchedulerStateMachine {
   bool has_pending_tree_;
   bool pending_tree_is_ready_for_activation_;
   bool active_tree_needs_first_draw_;
-  bool draw_if_possible_failed_;
   bool did_create_and_initialize_first_output_surface_;
   bool smoothness_takes_priority_;
+  bool skip_next_begin_main_frame_to_reduce_latency_;
   bool skip_begin_main_frame_to_reduce_latency_;
+  bool continuous_painting_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(SchedulerStateMachine);

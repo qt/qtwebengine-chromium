@@ -7,7 +7,7 @@
 
 #include "base/bind.h"
 #include "base/memory/ref_counted_memory.h"
-#include "ipc/ipc_channel_proxy.h"
+#include "ipc/message_filter.h"
 
 namespace base {
 class MessageLoopProxy;
@@ -16,12 +16,12 @@ class MessageLoopProxy;
 namespace tracing {
 
 // This class sends and receives trace messages on child processes.
-class ChildTraceMessageFilter : public IPC::ChannelProxy::MessageFilter {
+class ChildTraceMessageFilter : public IPC::MessageFilter {
  public:
   explicit ChildTraceMessageFilter(base::MessageLoopProxy* ipc_message_loop);
 
-  // IPC::ChannelProxy::MessageFilter implementation.
-  virtual void OnFilterAdded(IPC::Channel* channel) OVERRIDE;
+  // IPC::MessageFilter implementation.
+  virtual void OnFilterAdded(IPC::Sender* sender) OVERRIDE;
   virtual void OnFilterRemoved() OVERRIDE;
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 
@@ -54,7 +54,7 @@ class ChildTraceMessageFilter : public IPC::ChannelProxy::MessageFilter {
       const scoped_refptr<base::RefCountedString>& events_str_ptr,
       bool has_more_events);
 
-  IPC::Channel* channel_;
+  IPC::Sender* sender_;
   base::MessageLoopProxy* ipc_message_loop_;
 
   DISALLOW_COPY_AND_ASSIGN(ChildTraceMessageFilter);

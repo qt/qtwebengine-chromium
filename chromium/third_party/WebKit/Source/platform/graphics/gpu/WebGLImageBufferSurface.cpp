@@ -32,18 +32,28 @@
 
 #include "platform/graphics/gpu/WebGLImageBufferSurface.h"
 
-#include "platform/graphics/gpu/SharedGraphicsContext3D.h"
 #include "platform/graphics/skia/GaneshUtils.h"
+#include "public/platform/Platform.h"
+#include "public/platform/WebGraphicsContext3DProvider.h"
+#include "third_party/skia/include/core/SkPixelRef.h"
+#include "wtf/PassOwnPtr.h"
 
 namespace WebCore {
 
 WebGLImageBufferSurface::WebGLImageBufferSurface(const IntSize& size, OpacityMode opacityMode)
     : ImageBufferSurface(size, opacityMode)
 {
-    GrContext* gr = SharedGraphicsContext3D::get()->grContext();
+    m_contextProvider = adoptPtr(blink::Platform::current()->createSharedOffscreenGraphicsContext3DProvider());
+    if (!m_contextProvider)
+        return;
+    GrContext* gr = m_contextProvider->grContext();
     if (!gr)
         return;
     ensureTextureBackedSkBitmap(gr, m_bitmap, size, kDefault_GrSurfaceOrigin, kRGBA_8888_GrPixelConfig);
+}
+
+WebGLImageBufferSurface::~WebGLImageBufferSurface()
+{
 }
 
 Platform3DObject WebGLImageBufferSurface::getBackingTexture() const
@@ -52,6 +62,18 @@ Platform3DObject WebGLImageBufferSurface::getBackingTexture() const
     if (!texture)
         return 0;
     return texture->getTextureHandle();
+}
+
+void WebGLImageBufferSurface::invalidateCachedBitmap()
+{
+    m_cachedBitmap.reset();
+}
+
+void WebGLImageBufferSurface::updateCachedBitmapIfNeeded()
+{
+    if (m_cachedBitmap.isNull() && m_bitmap.pixelRef()) {
+        (m_bitmap.pixelRef())->readPixels(&m_cachedBitmap);
+    }
 }
 
 } // namespace WebCore

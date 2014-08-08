@@ -33,14 +33,17 @@
 #define SharedWorker_h
 
 #include "core/workers/AbstractWorker.h"
+#include "platform/Supplementable.h"
+#include "platform/heap/Handle.h"
 
 namespace WebCore {
 
 class ExceptionState;
 
-class SharedWorker : public AbstractWorker, public ScriptWrappable {
+class SharedWorker FINAL : public AbstractWorker, public ScriptWrappable, public WillBeHeapSupplementable<SharedWorker> {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(SharedWorker);
 public:
-    static PassRefPtr<SharedWorker> create(ExecutionContext*, const String& url, const String& name, ExceptionState&);
+    static PassRefPtrWillBeRawPtr<SharedWorker> create(ExecutionContext*, const String& url, const String& name, ExceptionState&);
     virtual ~SharedWorker();
 
     MessagePort* port() const { return m_port.get(); }
@@ -51,6 +54,8 @@ public:
     void setPreventGC();
     // Allows this SharedWorker + JS wrapper to be garbage collected.
     void unsetPreventGC();
+
+    virtual void trace(Visitor*) OVERRIDE;
 
 private:
     explicit SharedWorker(ExecutionContext*);

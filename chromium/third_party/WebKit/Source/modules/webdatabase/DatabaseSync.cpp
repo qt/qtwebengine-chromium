@@ -48,15 +48,15 @@
 
 namespace WebCore {
 
-PassRefPtr<DatabaseSync> DatabaseSync::create(ExecutionContext*, PassRefPtr<DatabaseBackendBase> backend)
+PassRefPtrWillBeRawPtr<DatabaseSync> DatabaseSync::create(ExecutionContext*, PassRefPtrWillBeRawPtr<DatabaseBackendBase> backend)
 {
     return static_cast<DatabaseSync*>(backend.get());
 }
 
-DatabaseSync::DatabaseSync(PassRefPtr<DatabaseContext> databaseContext,
+DatabaseSync::DatabaseSync(DatabaseContext* databaseContext,
     const String& name, const String& expectedVersion, const String& displayName, unsigned long estimatedSize)
-    : DatabaseBase(databaseContext->executionContext())
-    , DatabaseBackendSync(databaseContext, name, expectedVersion, displayName, estimatedSize)
+    : DatabaseBackendSync(databaseContext, name, expectedVersion, displayName, estimatedSize)
+    , DatabaseBase(databaseContext->executionContext())
 {
     ScriptWrappable::init(this);
     setFrontend(this);
@@ -64,26 +64,27 @@ DatabaseSync::DatabaseSync(PassRefPtr<DatabaseContext> databaseContext,
 
 DatabaseSync::~DatabaseSync()
 {
-    ASSERT(m_executionContext->isContextThread());
+    if (executionContext())
+        ASSERT(executionContext()->isContextThread());
 }
 
-PassRefPtr<DatabaseBackendSync> DatabaseSync::backend()
+void DatabaseSync::trace(Visitor* visitor)
 {
-    return this;
+    DatabaseBackendSync::trace(visitor);
 }
 
 void DatabaseSync::changeVersion(const String& oldVersion, const String& newVersion, PassOwnPtr<SQLTransactionSyncCallback> changeVersionCallback, ExceptionState& exceptionState)
 {
-    ASSERT(m_executionContext->isContextThread());
+    ASSERT(executionContext()->isContextThread());
 
     if (sqliteDatabase().transactionInProgress()) {
         reportChangeVersionResult(1, SQLError::DATABASE_ERR, 0);
         setLastErrorMessage("unable to changeVersion from within a transaction");
-        exceptionState.throwUninformativeAndGenericDOMException(SQLDatabaseError);
+        exceptionState.throwDOMException(SQLDatabaseError, "Unable to change version from within a transaction.");
         return;
     }
 
-    RefPtr<SQLTransactionSync> transaction = SQLTransactionSync::create(this, changeVersionCallback, false);
+    RefPtrWillBeRawPtr<SQLTransactionSync> transaction = SQLTransactionSync::create(this, changeVersionCallback, false);
     transaction->begin(exceptionState);
     if (exceptionState.hadException()) {
         ASSERT(!lastErrorMessage().isEmpty());
@@ -142,40 +143,40 @@ void DatabaseSync::readTransaction(PassOwnPtr<SQLTransactionSyncCallback> callba
     runTransaction(callback, true, exceptionState);
 }
 
-void DatabaseSync::rollbackTransaction(PassRefPtr<SQLTransactionSync> transaction)
+void DatabaseSync::rollbackTransaction(SQLTransactionSync& transaction)
 {
     ASSERT(!lastErrorMessage().isEmpty());
-    transaction->rollback();
+    transaction.rollback();
     setLastErrorMessage("");
     return;
 }
 
 void DatabaseSync::runTransaction(PassOwnPtr<SQLTransactionSyncCallback> callback, bool readOnly, ExceptionState& exceptionState)
 {
-    ASSERT(m_executionContext->isContextThread());
+    ASSERT(executionContext()->isContextThread());
 
     if (sqliteDatabase().transactionInProgress()) {
         setLastErrorMessage("unable to start a transaction from within a transaction");
-        exceptionState.throwUninformativeAndGenericDOMException(SQLDatabaseError);
+        exceptionState.throwDOMException(SQLDatabaseError, "Unable to start a transaction from within a transaction.");
         return;
     }
 
-    RefPtr<SQLTransactionSync> transaction = SQLTransactionSync::create(this, callback, readOnly);
+    RefPtrWillBeRawPtr<SQLTransactionSync> transaction = SQLTransactionSync::create(this, callback, readOnly);
     transaction->begin(exceptionState);
     if (exceptionState.hadException()) {
-        rollbackTransaction(transaction);
+        rollbackTransaction(*transaction);
         return;
     }
 
     transaction->execute(exceptionState);
     if (exceptionState.hadException()) {
-        rollbackTransaction(transaction);
+        rollbackTransaction(*transaction);
         return;
     }
 
     transaction->commit(exceptionState);
     if (exceptionState.hadException()) {
-        rollbackTransaction(transaction);
+        rollbackTransaction(*transaction);
         return;
     }
 
@@ -184,7 +185,7 @@ void DatabaseSync::runTransaction(PassOwnPtr<SQLTransactionSyncCallback> callbac
 
 void DatabaseSync::closeImmediately()
 {
-    ASSERT(m_executionContext->isContextThread());
+    ASSERT(executionContext()->isContextThread());
 
     if (!opened())
         return;
@@ -192,5 +193,19 @@ void DatabaseSync::closeImmediately()
     logErrorMessage("forcibly closing database");
     closeDatabase();
 }
+
+void DatabaseSync::observeTransaction(SQLTransactionSync& transaction)
+{
+#if ENABLE(OILPAN)
+    m_observers.add(&transaction, adoptPtr(new TransactionObserver(transaction)));
+#endif
+}
+
+#if ENABLE(OILPAN)
+DatabaseSync::TransactionObserver::~TransactionObserver()
+{
+    m_transaction.rollbackIfInProgress();
+}
+#endif
 
 } // namespace WebCore

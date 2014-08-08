@@ -51,6 +51,8 @@ enum MediaCodecDirection {
 class MEDIA_EXPORT MediaCodecBridge {
  public:
   // Returns true if MediaCodec is available on the device.
+  // All other static methods check IsAvailable() internally. There's no need
+  // to check IsAvailable() explicitly before calling them.
   static bool IsAvailable();
 
   // Returns true if MediaCodec.setParameters() is available on the device.
@@ -61,8 +63,8 @@ class MEDIA_EXPORT MediaCodecBridge {
   static bool CanDecode(const std::string& codec, bool is_secure);
 
   // Represents supported codecs on android.
-  // TODO(qinmin): Curretly the codecs string only contains one codec, do we
-  // need more specific codecs separated by comma. (e.g. "vp8" -> "vp8, vp8.0")
+  // TODO(qinmin): Currently the codecs string only contains one codec. Do we
+  // need to support codecs separated by comma. (e.g. "vp8" -> "vp8, vp8.0")?
   struct CodecsInfo {
     std::string codecs;  // E.g. "vp8" or "avc1".
     std::string name;    // E.g. "OMX.google.vp8.decoder".
@@ -220,8 +222,9 @@ class AudioCodecBridge : public MediaCodecBridge {
              bool play_audio, jobject media_crypto) WARN_UNUSED_RESULT;
 
   // Play the output buffer. This call must be called after
-  // DequeueOutputBuffer() and before ReleaseOutputBuffer.
-  void PlayOutputBuffer(int index, size_t size);
+  // DequeueOutputBuffer() and before ReleaseOutputBuffer. Returns the playback
+  // head position expressed in frames.
+  int64 PlayOutputBuffer(int index, size_t size);
 
   // Set the volume of the audio output.
   void SetVolume(double volume);
@@ -260,10 +263,26 @@ class MEDIA_EXPORT VideoCodecBridge : public MediaCodecBridge {
   void SetVideoBitrate(int bps);
   void RequestKeyFrameSoon();
 
+  // Returns whether adaptive playback is supported for this object given
+  // the new size.
+  bool IsAdaptivePlaybackSupported(int width, int height);
+
+  // Test-only method to set the return value of IsAdaptivePlaybackSupported().
+  // Without this function, the return value of that function will be device
+  // dependent. If |adaptive_playback_supported| is equal to 0, the return value
+  // will be false. If |adaptive_playback_supported| is larger than 0, the
+  // return value will be true.
+  void set_adaptive_playback_supported_for_testing(
+      int adaptive_playback_supported) {
+    adaptive_playback_supported_for_testing_ = adaptive_playback_supported;
+  }
+
  private:
   VideoCodecBridge(const std::string& mime,
                    bool is_secure,
                    MediaCodecDirection direction);
+
+  int adaptive_playback_supported_for_testing_;
 };
 
 }  // namespace media

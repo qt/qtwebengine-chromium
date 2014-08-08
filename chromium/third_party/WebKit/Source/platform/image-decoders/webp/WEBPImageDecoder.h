@@ -43,6 +43,7 @@ public:
 
     virtual String filenameExtension() const OVERRIDE { return "webp"; }
     virtual bool isSizeAvailable() OVERRIDE;
+    virtual bool hasColorProfile() const OVERRIDE { return m_hasColorProfile; }
     virtual size_t frameCount() OVERRIDE;
     virtual ImageFrame* frameBufferAtIndex(size_t) OVERRIDE;
     virtual void setData(SharedBuffer* data, bool allDataReceived) OVERRIDE;
@@ -58,6 +59,7 @@ private:
     WebPDecBuffer m_decoderBuffer;
     int m_formatFlags;
     bool m_frameBackgroundHasAlpha;
+    bool m_hasColorProfile;
 
 #if USE(QCMSLIB)
     qcms_transform* colorTransform() const { return m_transform; }
@@ -79,6 +81,9 @@ private:
     bool m_haveReadAnimationParameters;
     int m_repetitionCount;
     int m_decodedHeight;
+
+    typedef void (*AlphaBlendFunction)(ImageFrame&, ImageFrame&, int, int, int);
+    AlphaBlendFunction m_blendFunction;
 
     void clear();
     void clearDecoder();

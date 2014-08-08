@@ -34,6 +34,8 @@
 
 namespace WebCore {
 
+class StyleSheetContents;
+
 ScopedStyleResolver* ScopedStyleTree::ensureScopedStyleResolver(ContainerNode& scopingNode)
 {
     bool isNewEntry;
@@ -45,8 +47,7 @@ ScopedStyleResolver* ScopedStyleTree::ensureScopedStyleResolver(ContainerNode& s
 
 ScopedStyleResolver* ScopedStyleTree::scopedStyleResolverFor(const ContainerNode& scopingNode)
 {
-    if (!scopingNode.hasScopedHTMLStyleChild()
-        && !isShadowHost(&scopingNode)
+    if (!isShadowHost(&scopingNode)
         && !scopingNode.isDocumentNode()
         && !scopingNode.isShadowRoot())
         return 0;
@@ -58,12 +59,12 @@ ScopedStyleResolver* ScopedStyleTree::addScopedStyleResolver(ContainerNode& scop
     HashMap<const ContainerNode*, OwnPtr<ScopedStyleResolver> >::AddResult addResult = m_authorStyles.add(&scopingNode, nullptr);
 
     if (addResult.isNewEntry) {
-        addResult.iterator->value = ScopedStyleResolver::create(scopingNode);
+        addResult.storedValue->value = ScopedStyleResolver::create(scopingNode);
         if (scopingNode.isDocumentNode())
-            m_scopedResolverForDocument = addResult.iterator->value.get();
+            m_scopedResolverForDocument = addResult.storedValue->value.get();
     }
     isNewEntry = addResult.isNewEntry;
-    return addResult.iterator->value.get();
+    return addResult.storedValue->value.get();
 }
 
 void ScopedStyleTree::setupScopedStylesTree(ScopedStyleResolver* target)
@@ -123,12 +124,10 @@ void ScopedStyleTree::collectScopedResolversForHostedShadowTrees(const Element* 
 
     // Adding scoped resolver for active shadow roots for shadow host styling.
     for (ShadowRoot* shadowRoot = shadow->youngestShadowRoot(); shadowRoot; shadowRoot = shadowRoot->olderShadowRoot()) {
-        if (shadowRoot->hasScopedHTMLStyleChild()) {
+        if (shadowRoot->numberOfStyles() > 0) {
             if (ScopedStyleResolver* resolver = scopedStyleResolverFor(*shadowRoot))
                 resolvers.append(resolver);
         }
-        if (!shadowRoot->containsShadowElements())
-            break;
     }
 }
 
@@ -138,6 +137,10 @@ void ScopedStyleTree::resolveScopedKeyframesRules(const Element* element, Vector
     TreeScope& treeScope = element->treeScope();
     bool applyAuthorStyles = treeScope.applyAuthorStyles();
 
+    // Add resolvers for shadow roots hosted by the given element.
+    collectScopedResolversForHostedShadowTrees(element, resolvers);
+
+    // Add resolvers while walking up DOM tree from the given element.
     for (ScopedStyleResolver* scopedResolver = scopedResolverFor(element); scopedResolver; scopedResolver = scopedResolver->parent()) {
         if (scopedResolver->treeScope() == treeScope || (applyAuthorStyles && scopedResolver->treeScope() == document))
             resolvers.append(scopedResolver);
@@ -187,8 +190,9 @@ void ScopedStyleTree::popStyleCache(const ContainerNode& scopingNode)
 
 void ScopedStyleTree::collectFeaturesTo(RuleFeatureSet& features)
 {
+    HashSet<const StyleSheetContents*> visitedSharedStyleSheetContents;
     for (HashMap<const ContainerNode*, OwnPtr<ScopedStyleResolver> >::iterator it = m_authorStyles.begin(); it != m_authorStyles.end(); ++it)
-        it->value->collectFeaturesTo(features);
+        it->value->collectFeaturesTo(features, visitedSharedStyleSheetContents);
 }
 
 inline void ScopedStyleTree::reparentNodes(const ScopedStyleResolver* oldParent, ScopedStyleResolver* newParent)

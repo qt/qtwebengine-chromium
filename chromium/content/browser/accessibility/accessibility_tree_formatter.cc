@@ -11,7 +11,7 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "content/browser/accessibility/browser_accessibility_manager.h"
-#include "content/port/browser/render_widget_host_view_port.h"
+#include "content/browser/renderer_host/render_widget_host_view_base.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 
@@ -31,7 +31,7 @@ AccessibilityTreeFormatter::AccessibilityTreeFormatter(
 // static
 AccessibilityTreeFormatter* AccessibilityTreeFormatter::Create(
     RenderViewHost* rvh) {
-  RenderWidgetHostViewPort* host_view = static_cast<RenderWidgetHostViewPort*>(
+  RenderWidgetHostViewBase* host_view = static_cast<RenderWidgetHostViewBase*>(
       WebContents::FromRenderViewHost(rvh)->GetRenderWidgetHostView());
 
   BrowserAccessibilityManager* manager =
@@ -68,7 +68,7 @@ void AccessibilityTreeFormatter::RecursiveBuildAccessibilityTree(
   dict->Set(kChildrenDictAttr, children);
 
   for (size_t i = 0; i < node.PlatformChildCount(); ++i) {
-    BrowserAccessibility* child_node = node.children()[i];
+    BrowserAccessibility* child_node = node.InternalGetChild(i);
     base::DictionaryValue* child_dict = new base::DictionaryValue;
     children->Append(child_dict);
     RecursiveBuildAccessibilityTree(*child_node, child_dict);
@@ -79,7 +79,7 @@ void AccessibilityTreeFormatter::RecursiveFormatAccessibilityTree(
     const base::DictionaryValue& dict, base::string16* contents, int depth) {
   base::string16 line =
       ToString(dict, base::string16(depth * kIndentSpaces, ' '));
-  if (line.find(ASCIIToUTF16(kSkipString)) != base::string16::npos)
+  if (line.find(base::ASCIIToUTF16(kSkipString)) != base::string16::npos)
     return;
 
   *contents += line;
@@ -92,11 +92,10 @@ void AccessibilityTreeFormatter::RecursiveFormatAccessibilityTree(
   }
 }
 
-#if (!defined(OS_WIN) && !defined(OS_MACOSX) && !defined(OS_ANDROID) && \
-     !defined(TOOLKIT_GTK))
+#if (!defined(OS_WIN) && !defined(OS_MACOSX) && !defined(OS_ANDROID))
 void AccessibilityTreeFormatter::AddProperties(const BrowserAccessibility& node,
                                                base::DictionaryValue* dict) {
-  dict->SetInteger("id", node.renderer_id());
+  dict->SetInteger("id", node.GetId());
 }
 
 base::string16 AccessibilityTreeFormatter::ToString(
@@ -105,7 +104,7 @@ base::string16 AccessibilityTreeFormatter::ToString(
   int id_value;
   node.GetInteger("id", &id_value);
   return indent + base::IntToString16(id_value) +
-       ASCIIToUTF16("\n");
+       base::ASCIIToUTF16("\n");
 }
 
 void AccessibilityTreeFormatter::Initialize() {}
@@ -152,7 +151,7 @@ bool AccessibilityTreeFormatter::MatchesFilters(
       if (iter->type == Filter::ALLOW_EMPTY)
         allow = true;
       else if (iter->type == Filter::ALLOW)
-        allow = (!MatchPattern(text, UTF8ToUTF16("*=''")));
+        allow = (!MatchPattern(text, base::UTF8ToUTF16("*=''")));
       else
         allow = false;
     }
@@ -168,12 +167,12 @@ base::string16 AccessibilityTreeFormatter::FormatCoordinates(
   value.GetInteger(y_name, &y);
   std::string xy_str(base::StringPrintf("%s=(%d, %d)", name, x, y));
 
-  return UTF8ToUTF16(xy_str);
+  return base::UTF8ToUTF16(xy_str);
 }
 
 void AccessibilityTreeFormatter::WriteAttribute(
     bool include_by_default, const std::string& attr, base::string16* line) {
-  WriteAttribute(include_by_default, UTF8ToUTF16(attr), line);
+  WriteAttribute(include_by_default, base::UTF8ToUTF16(attr), line);
 }
 
 void AccessibilityTreeFormatter::WriteAttribute(
@@ -183,7 +182,7 @@ void AccessibilityTreeFormatter::WriteAttribute(
   if (!MatchesFilters(attr, include_by_default))
     return;
   if (!line->empty())
-    *line += ASCIIToUTF16(" ");
+    *line += base::ASCIIToUTF16(" ");
   *line += attr;
 }
 

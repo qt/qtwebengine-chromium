@@ -26,26 +26,30 @@
 
 #include "core/html/HTMLElement.h"
 #include "core/html/HTMLImageLoader.h"
+#include "core/html/canvas/CanvasImageSource.h"
 #include "platform/graphics/GraphicsTypes.h"
+#include "wtf/WeakPtr.h"
 
 namespace WebCore {
 
 class HTMLFormElement;
+class ImageCandidate;
 
-class HTMLImageElement FINAL : public HTMLElement {
-    friend class HTMLFormElement;
+class HTMLImageElement FINAL : public HTMLElement, public CanvasImageSource {
 public:
-    static PassRefPtr<HTMLImageElement> create(Document&);
-    static PassRefPtr<HTMLImageElement> create(Document&, HTMLFormElement*);
-    static PassRefPtr<HTMLImageElement> createForJSConstructor(Document&, int width, int height);
+    static PassRefPtrWillBeRawPtr<HTMLImageElement> create(Document&);
+    static PassRefPtrWillBeRawPtr<HTMLImageElement> create(Document&, HTMLFormElement*, bool createdByParser);
+    static PassRefPtrWillBeRawPtr<HTMLImageElement> createForJSConstructor(Document&, int width, int height);
 
     virtual ~HTMLImageElement();
+    virtual void trace(Visitor*) OVERRIDE;
 
     int width(bool ignorePendingStylesheets = false);
     int height(bool ignorePendingStylesheets = false);
 
     int naturalWidth() const;
     int naturalHeight() const;
+    const String& currentSrc() const;
 
     bool isServerMap() const;
 
@@ -53,10 +57,10 @@ public:
 
     CompositeOperator compositeOperator() const { return m_compositeOperator; }
 
-    ImageResource* cachedImage() const { return m_imageLoader.image(); }
-    void setImageResource(ImageResource* i) { m_imageLoader.setImage(i); };
+    ImageResource* cachedImage() const { return imageLoader().image(); }
+    void setImageResource(ImageResource* i) { imageLoader().setImage(i); };
 
-    void setLoadManually(bool loadManually) { m_imageLoader.setLoadManually(loadManually); }
+    void setLoadManually(bool loadManually) { imageLoader().setLoadManually(loadManually); }
 
     const AtomicString& alt() const;
 
@@ -72,19 +76,33 @@ public:
 
     bool complete() const;
 
-    bool hasPendingActivity() const { return m_imageLoader.hasPendingActivity(); }
+    bool hasPendingActivity() const { return imageLoader().hasPendingActivity(); }
 
-    virtual bool canContainRangeEndPoint() const { return false; }
+    virtual bool canContainRangeEndPoint() const OVERRIDE { return false; }
 
-    void addClient(ImageLoaderClient* client) { m_imageLoader.addClient(client); }
-    void removeClient(ImageLoaderClient* client) { m_imageLoader.removeClient(client); }
+    void addClient(ImageLoaderClient* client) { imageLoader().addClient(client); }
+    void removeClient(ImageLoaderClient* client) { imageLoader().removeClient(client); }
 
     virtual const AtomicString imageSourceURL() const OVERRIDE;
 
     virtual HTMLFormElement* formOwner() const OVERRIDE;
+    void formRemovedFromTree(const Node& formRoot);
 
+    // CanvasImageSourceImplementations
+    virtual PassRefPtr<Image> getSourceImageForCanvas(SourceImageMode, SourceImageStatus*) const;
+    virtual bool wouldTaintOrigin(SecurityOrigin*) const OVERRIDE;
+    virtual FloatSize sourceSize() const OVERRIDE;
+    virtual FloatSize defaultDestinationSize() const OVERRIDE;
+    virtual const KURL& sourceURL() const OVERRIDE;
+
+    enum UpdateFromElementBehavior {
+        UpdateNormal,
+        UpdateIgnorePreviousError
+    };
+    // public so that HTMLPictureElement can call this as well.
+    void selectSourceURL(UpdateFromElementBehavior);
 protected:
-    explicit HTMLImageElement(Document&, HTMLFormElement* = 0);
+    explicit HTMLImageElement(Document&, HTMLFormElement* = 0, bool createdByParser = false);
 
     virtual void didMoveToNewDocument(Document& oldDocument) OVERRIDE;
 
@@ -96,15 +114,15 @@ private:
     virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) OVERRIDE;
 
     virtual void attach(const AttachContext& = AttachContext()) OVERRIDE;
-    virtual RenderObject* createRenderer(RenderStyle*);
+    virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
 
-    virtual bool canStartSelection() const;
+    virtual bool canStartSelection() const OVERRIDE;
 
     virtual bool isURLAttribute(const Attribute&) const OVERRIDE;
+    virtual bool hasLegalLinkAttribute(const QualifiedName&) const OVERRIDE;
+    virtual const QualifiedName& subResourceAttributeName() const OVERRIDE;
 
-    virtual bool draggable() const;
-
-    virtual void addSubresourceAttributeURLs(ListHashSet<KURL>&) const;
+    virtual bool draggable() const OVERRIDE;
 
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
     virtual void removedFrom(ContainerNode*) OVERRIDE;
@@ -113,14 +131,23 @@ private:
     virtual bool isInteractiveContent() const OVERRIDE;
     virtual Image* imageContents() OVERRIDE;
 
-    HTMLImageLoader m_imageLoader;
-    HTMLFormElement* m_form;
+    void resetFormOwner();
+    ImageCandidate findBestFitImageFromPictureParent();
+    void setBestFitURLAndDPRFromImageCandidate(const ImageCandidate&);
+    HTMLImageLoader& imageLoader() const { return *m_imageLoader; }
+
+    OwnPtrWillBeMember<HTMLImageLoader> m_imageLoader;
+#if ENABLE(OILPAN)
+    Member<HTMLFormElement> m_form;
+#else
+    WeakPtr<HTMLFormElement> m_form;
+#endif
     CompositeOperator m_compositeOperator;
     AtomicString m_bestFitImageURL;
     float m_imageDevicePixelRatio;
+    bool m_formWasSetByParser;
+    bool m_elementCreatedByParser;
 };
-
-DEFINE_NODE_TYPE_CASTS(HTMLImageElement, hasTagName(HTMLNames::imgTag));
 
 } //namespace
 

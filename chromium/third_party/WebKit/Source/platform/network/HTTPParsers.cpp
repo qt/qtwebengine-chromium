@@ -34,6 +34,7 @@
 #include "platform/network/HTTPParsers.h"
 
 #include "wtf/DateMath.h"
+#include "wtf/MathExtras.h"
 #include "wtf/text/CString.h"
 #include "wtf/text/StringBuilder.h"
 #include "wtf/text/WTFString.h"
@@ -129,10 +130,9 @@ bool isValidHTTPToken(const String& characters)
 static const size_t maxInputSampleSize = 128;
 static String trimInputSample(const char* p, size_t length)
 {
-    String s = String(p, std::min<size_t>(length, maxInputSampleSize));
     if (length > maxInputSampleSize)
-        s.append(horizontalEllipsis);
-    return s;
+        return String(p, maxInputSampleSize) + horizontalEllipsis;
+    return String(p, length);
 }
 
 ContentDispositionType contentDispositionType(const String& contentDisposition)
@@ -607,74 +607,98 @@ size_t parseHTTPRequestLine(const char* data, size_t length, String& failureReas
     return end - data;
 }
 
-size_t parseHTTPHeader(const char* start, size_t length, String& failureReason, AtomicString& nameStr, AtomicString& valueStr)
+static bool parseHTTPHeaderName(const char* s, size_t start, size_t size, String& failureReason, size_t* position, AtomicString* name)
 {
-    const char* p = start;
-    const char* end = start + length;
-
-    Vector<char> name;
-    Vector<char> value;
-    nameStr = nullAtom;
-    valueStr = nullAtom;
-
-    for (; p < end; p++) {
-        switch (*p) {
+    size_t nameBegin = start;
+    for (size_t i = start; i < size; ++i) {
+        switch (s[i]) {
         case '\r':
-            if (name.isEmpty()) {
-                if (p + 1 < end && *(p + 1) == '\n')
-                    return (p + 2) - start;
-                failureReason = "CR doesn't follow LF at " + trimInputSample(p, end - p);
-                return 0;
-            }
-            failureReason = "Unexpected CR in name at " + trimInputSample(name.data(), name.size());
-            return 0;
+            failureReason = "Unexpected CR in name at " + trimInputSample(&s[nameBegin], i - nameBegin);
+            return false;
         case '\n':
-            failureReason = "Unexpected LF in name at " + trimInputSample(name.data(), name.size());
-            return 0;
+            failureReason = "Unexpected LF in name at " + trimInputSample(&s[nameBegin], i - nameBegin);
+            return false;
         case ':':
-            break;
+            if (i == nameBegin) {
+                failureReason = "Header name is missing";
+                return false;
+            }
+            *name = AtomicString::fromUTF8(&s[nameBegin], i - nameBegin);
+            if (name->isNull()) {
+                failureReason = "Invalid UTF-8 sequence in header name";
+                return false;
+            }
+            *position = i;
+            return true;
         default:
-            name.append(*p);
-            continue;
-        }
-        if (*p == ':') {
-            ++p;
             break;
         }
+    }
+    failureReason = "Unterminated header name";
+    return false;
+}
+
+static bool parseHTTPHeaderValue(const char* s, size_t start, size_t size, String& failureReason, size_t* position, AtomicString* value)
+{
+    size_t i = start;
+    for (; i < size && s[i] == ' '; ++i) {
+    }
+    size_t valueBegin = i;
+
+    for (; i < size && s[i] != '\r'; ++i) {
+        if (s[i] == '\n') {
+            failureReason = "Unexpected LF in value at " + trimInputSample(&s[valueBegin], i - valueBegin);
+            return false;
+        }
+    }
+    if (i == size) {
+        failureReason = "Unterminated header value";
+        return false;
     }
 
-    for (; p < end && *p == 0x20; p++) { }
+    ASSERT(i < size && s[i] == '\r');
+    if (i + 1 >= size || s[i + 1] != '\n') {
+        failureReason = "LF doesn't follow CR after value at " + trimInputSample(&s[i + 1], size - i - 1);
+        return false;
+    }
 
-    for (; p < end; p++) {
-        switch (*p) {
-        case '\r':
-            break;
-        case '\n':
-            failureReason = "Unexpected LF in value at " + trimInputSample(value.data(), value.size());
-            return 0;
-        default:
-            value.append(*p);
-        }
-        if (*p == '\r') {
-            ++p;
-            break;
-        }
-    }
-    if (p >= end || *p != '\n') {
-        failureReason = "CR doesn't follow LF after value at " + trimInputSample(p, end - p);
-        return 0;
-    }
-    nameStr = AtomicString::fromUTF8(name.data(), name.size());
-    valueStr = AtomicString::fromUTF8(value.data(), value.size());
-    if (nameStr.isNull()) {
-        failureReason = "Invalid UTF-8 sequence in header name";
-        return 0;
-    }
-    if (valueStr.isNull()) {
+    *value = AtomicString::fromUTF8(&s[valueBegin], i - valueBegin);
+    if (i != valueBegin && value->isNull()) {
         failureReason = "Invalid UTF-8 sequence in header value";
+        return false;
+    }
+
+    // 2 for strlen("\r\n")
+    *position = i + 2;
+    return true;
+}
+
+// Note that the header is already parsed and re-formatted in chromium side.
+// We assume that the input is more restricted than RFC2616.
+size_t parseHTTPHeader(const char* s, size_t size, String& failureReason, AtomicString& name, AtomicString& value)
+{
+    name = nullAtom;
+    value = nullAtom;
+    if (size >= 1 && s[0] == '\r') {
+        if (size >= 2 && s[1] == '\n') {
+            // Skip an empty line.
+            return 2;
+        }
+        failureReason = "LF doesn't follow CR at " + trimInputSample(0, size);
         return 0;
     }
-    return p - start;
+    size_t current = 0;
+    if (!parseHTTPHeaderName(s, current, size, failureReason, &current, &name)) {
+        return 0;
+    }
+    ASSERT(s[current] == ':');
+    ++current;
+
+    if (!parseHTTPHeaderValue(s, current, size, failureReason, &current, &value)) {
+        return 0;
+    }
+
+    return current;
 }
 
 size_t parseHTTPRequestBody(const char* data, size_t length, Vector<unsigned char>& body)
@@ -683,6 +707,148 @@ size_t parseHTTPRequestBody(const char* data, size_t length, Vector<unsigned cha
     body.append(data, length);
 
     return length;
+}
+
+static bool isCacheHeaderSeparator(UChar c)
+{
+    // See RFC 2616, Section 2.2
+    switch (c) {
+    case '(':
+    case ')':
+    case '<':
+    case '>':
+    case '@':
+    case ',':
+    case ';':
+    case ':':
+    case '\\':
+    case '"':
+    case '/':
+    case '[':
+    case ']':
+    case '?':
+    case '=':
+    case '{':
+    case '}':
+    case ' ':
+    case '\t':
+        return true;
+    default:
+        return false;
+    }
+}
+
+static bool isControlCharacter(UChar c)
+{
+    return c < ' ' || c == 127;
+}
+
+static inline String trimToNextSeparator(const String& str)
+{
+    return str.substring(0, str.find(isCacheHeaderSeparator));
+}
+
+static void parseCacheHeader(const String& header, Vector<pair<String, String> >& result)
+{
+    const String safeHeader = header.removeCharacters(isControlCharacter);
+    unsigned max = safeHeader.length();
+    for (unsigned pos = 0; pos < max; /* pos incremented in loop */) {
+        size_t nextCommaPosition = safeHeader.find(',', pos);
+        size_t nextEqualSignPosition = safeHeader.find('=', pos);
+        if (nextEqualSignPosition != kNotFound && (nextEqualSignPosition < nextCommaPosition || nextCommaPosition == kNotFound)) {
+            // Get directive name, parse right hand side of equal sign, then add to map
+            String directive = trimToNextSeparator(safeHeader.substring(pos, nextEqualSignPosition - pos).stripWhiteSpace());
+            pos += nextEqualSignPosition - pos + 1;
+
+            String value = safeHeader.substring(pos, max - pos).stripWhiteSpace();
+            if (value[0] == '"') {
+                // The value is a quoted string
+                size_t nextDoubleQuotePosition = value.find('"', 1);
+                if (nextDoubleQuotePosition != kNotFound) {
+                    // Store the value as a quoted string without quotes
+                    result.append(pair<String, String>(directive, value.substring(1, nextDoubleQuotePosition - 1).stripWhiteSpace()));
+                    pos += (safeHeader.find('"', pos) - pos) + nextDoubleQuotePosition + 1;
+                    // Move past next comma, if there is one
+                    size_t nextCommaPosition2 = safeHeader.find(',', pos);
+                    if (nextCommaPosition2 != kNotFound)
+                        pos += nextCommaPosition2 - pos + 1;
+                    else
+                        return; // Parse error if there is anything left with no comma
+                } else {
+                    // Parse error; just use the rest as the value
+                    result.append(pair<String, String>(directive, trimToNextSeparator(value.substring(1, value.length() - 1).stripWhiteSpace())));
+                    return;
+                }
+            } else {
+                // The value is a token until the next comma
+                size_t nextCommaPosition2 = value.find(',');
+                if (nextCommaPosition2 != kNotFound) {
+                    // The value is delimited by the next comma
+                    result.append(pair<String, String>(directive, trimToNextSeparator(value.substring(0, nextCommaPosition2).stripWhiteSpace())));
+                    pos += (safeHeader.find(',', pos) - pos) + 1;
+                } else {
+                    // The rest is the value; no change to value needed
+                    result.append(pair<String, String>(directive, trimToNextSeparator(value)));
+                    return;
+                }
+            }
+        } else if (nextCommaPosition != kNotFound && (nextCommaPosition < nextEqualSignPosition || nextEqualSignPosition == kNotFound)) {
+            // Add directive to map with empty string as value
+            result.append(pair<String, String>(trimToNextSeparator(safeHeader.substring(pos, nextCommaPosition - pos).stripWhiteSpace()), ""));
+            pos += nextCommaPosition - pos + 1;
+        } else {
+            // Add last directive to map with empty string as value
+            result.append(pair<String, String>(trimToNextSeparator(safeHeader.substring(pos, max - pos).stripWhiteSpace()), ""));
+            return;
+        }
+    }
+}
+
+CacheControlHeader parseCacheControlDirectives(const AtomicString& cacheControlValue, const AtomicString& pragmaValue)
+{
+    CacheControlHeader cacheControlHeader;
+    cacheControlHeader.parsed = true;
+    cacheControlHeader.maxAge = std::numeric_limits<double>::quiet_NaN();
+
+    DEFINE_STATIC_LOCAL(const AtomicString, noCacheDirective, ("no-cache", AtomicString::ConstructFromLiteral));
+    DEFINE_STATIC_LOCAL(const AtomicString, noStoreDirective, ("no-store", AtomicString::ConstructFromLiteral));
+    DEFINE_STATIC_LOCAL(const AtomicString, mustRevalidateDirective, ("must-revalidate", AtomicString::ConstructFromLiteral));
+    DEFINE_STATIC_LOCAL(const AtomicString, maxAgeDirective, ("max-age", AtomicString::ConstructFromLiteral));
+
+    if (!cacheControlValue.isEmpty()) {
+        Vector<pair<String, String> > directives;
+        parseCacheHeader(cacheControlValue, directives);
+
+        size_t directivesSize = directives.size();
+        for (size_t i = 0; i < directivesSize; ++i) {
+            // RFC2616 14.9.1: A no-cache directive with a value is only meaningful for proxy caches.
+            // It should be ignored by a browser level cache.
+            if (equalIgnoringCase(directives[i].first, noCacheDirective) && directives[i].second.isEmpty()) {
+                cacheControlHeader.containsNoCache = true;
+            } else if (equalIgnoringCase(directives[i].first, noStoreDirective)) {
+                cacheControlHeader.containsNoStore = true;
+            } else if (equalIgnoringCase(directives[i].first, mustRevalidateDirective)) {
+                cacheControlHeader.containsMustRevalidate = true;
+            } else if (equalIgnoringCase(directives[i].first, maxAgeDirective)) {
+                if (!std::isnan(cacheControlHeader.maxAge)) {
+                    // First max-age directive wins if there are multiple ones.
+                    continue;
+                }
+                bool ok;
+                double maxAge = directives[i].second.toDouble(&ok);
+                if (ok)
+                    cacheControlHeader.maxAge = maxAge;
+            }
+        }
+    }
+
+    if (!cacheControlHeader.containsNoCache) {
+        // Handle Pragma: no-cache
+        // This is deprecated and equivalent to Cache-control: no-cache
+        // Don't bother tokenizing the value, it is not important
+        cacheControlHeader.containsNoCache = pragmaValue.lower().contains(noCacheDirective);
+    }
+    return cacheControlHeader;
 }
 
 }

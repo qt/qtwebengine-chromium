@@ -31,27 +31,34 @@
 #include "config.h"
 #include "modules/performance/WorkerPerformance.h"
 
+#include "core/timing/MemoryInfo.h"
 #include "core/workers/DedicatedWorkerGlobalScope.h"
 #include "core/workers/WorkerGlobalScope.h"
 #include "wtf/CurrentTime.h"
 
 namespace WebCore {
 
-WorkerPerformance::WorkerPerformance(ExecutionContext* context)
-    : ContextLifecycleObserver(context)
+WorkerPerformance::WorkerPerformance()
 {
+    ScriptWrappable::init(this);
 }
 
 WorkerPerformance::~WorkerPerformance()
 {
 }
 
-double WorkerPerformance::now() const
+double WorkerPerformance::now(ExecutionContext* context) const
 {
-    ExecutionContext* context = executionContext();
     ASSERT(context);
+    ASSERT(context->isWorkerGlobalScope());
     WorkerGlobalScope* workerGlobalScope = toWorkerGlobalScope(context);
     return 1000.0 * (monotonicallyIncreasingTime() - workerGlobalScope->timeOrigin());
+}
+
+PassRefPtrWillBeRawPtr<MemoryInfo> WorkerPerformance::memory() const
+{
+    // FIXME: We shall not create a new object every time.
+    return MemoryInfo::create();
 }
 
 } // namespace WebCore

@@ -31,12 +31,8 @@
     -webkit-mask-position: -256px 0;
 }
 
-.scripts-pause-on-exceptions-status-bar-item.toggled-all .glyph {
+.scripts-pause-on-exceptions-status-bar-item.toggled-on .glyph {
     background-color: rgb(66, 129, 235);
-}
-
-.scripts-pause-on-exceptions-status-bar-item.toggled-uncaught .glyph {
-    background-color: purple;
 }
 
 .evaluate-snippet-status-bar-item .glyph {
@@ -47,12 +43,34 @@
     background-color: rgb(66, 129, 235);
 }
 
-#scripts-debug-toolbar {
-    position: relative;
-    margin-top: -1px;
-    height: 24px;
-    border-bottom: 1px solid rgb(202, 202, 202);
+.scripts-debug-toolbar {
+    position: absolute;
+    top: 0;
+    width: 100%;
     background-color: rgb(236, 236, 236);
+    overflow: hidden;
+    white-space: nowrap;
+}
+
+.scripts-debug-toolbar-drawer {
+    flex: 0 0 46px;
+    -webkit-transition: margin-top 0.1s ease-in-out;
+    margin-top: -23px;
+    line-height: 23px;
+    padding-top: 22px;
+    border-bottom: 1px solid rgb(202, 202, 202);
+    background-color: white;
+    overflow: hidden;
+}
+
+.scripts-debug-toolbar-drawer.expanded {
+    margin-top: 0;
+}
+
+.scripts-debug-toolbar-drawer > label {
+    display: flex;
+    padding-left: 3px;
+    border-top: 1px solid rgb(196,196,196);
 }
 
 #scripts-editor-toolbar {
@@ -97,46 +115,6 @@
     -webkit-mask-position: 0 -24px;
 }
 
-.status-bar-item.scripts-navigator-show-hide-button,
-.status-bar-item.scripts-debugger-show-hide-button {
-    opacity: 0.9;
-}
-
-.panel.sources .tabbed-pane-header {
-    background-color: rgb(236, 236, 236);
-}
-
-button.status-bar-item.scripts-navigator-show-hide-button {
-    left: 0;
-}
-
-button.status-bar-item.scripts-navigator-show-hide-button.toggled-overlay {
-    left: auto;
-    right: 15px;
-}
-
-.scripts-views-container {
-    position: absolute;
-    top: 23px;
-    right: 0;
-    bottom: 0;
-    left: 0;
-}
-
-.script-view {
-    display: none;
-    overflow: hidden;
-    position: absolute;
-    top: 0;
-    right: 0;
-    bottom: 0;
-    left: 0;
-}
-
-.script-view.visible {
-    display: block;
-}
-
 .dedicated-worker-item {
     margin: 5px 0 5px 1px;
 }
@@ -152,8 +130,39 @@ button.status-bar-item.scripts-navigator-show-hide-button.toggled-overlay {
 }
 
 .panel.sources #sources-editor-container-tabbed-pane .tabbed-pane-header-contents {
-    margin-left: 20px;
+    margin-left: 22px;
     margin-right: 36px;
+}
+
+.panel.sources .split-view button.scripts-debugger-show-hide-button.right-sidebar-show-hide-button.toggled-hide {
+    margin-right: 15px;
+}
+
+.panel.sources .split-view #scripts-debug-sidebar-resizer-widget.ns-resizer-widget {
+    -webkit-transform: rotate(90deg);
+    right: 17px;
+    bottom: 4px;
+    top: auto;
+    height: 10px;
+    width: 18px;
+}
+
+.panel.sources .split-view.hbox #scripts-debug-sidebar-resizer-widget {
+    bottom: 0;
+}
+
+.panel.sources .scripts-debugger-show-hide-button {
+    display: block;
+}
+
+.panel.sources button.status-bar-item.scripts-navigator-show-hide-button {
+    display: block;
+    top: 4px;
+    left: 4px;
+}
+
+.panel.sources .navigator-tabbed-pane .tabbed-pane-header {
+    background-color: rgb(236, 236, 236);
 }
 
 .function-location-link {
@@ -169,20 +178,6 @@ button.status-bar-item.scripts-navigator-show-hide-button.toggled-overlay {
 
 .function-popover-title .function-name {
     font-weight: bold;
-}
-
-button.status-bar-item.scripts-debugger-show-hide-button {
-    right: 15px;
-}
-
-button.status-bar-item.scripts-debugger-show-hide-button.toggled-left {
-    right: 0;
-}
-
-div.sidebar-pane-stack#scripts-debug-sidebar-contents,
-#scripts-sidebar-stack-pane {
-    top: 23px;
-    overflow: auto;
 }
 
 .workers-list > li {
@@ -203,47 +198,27 @@ a.worker-item:hover {
     color: rgb(15%, 15%, 15%);
 }
 
-.source-frame-debugger-script {
-    background-color: rgba(255, 255, 194, 0.5);
+.panel.sources .sidebar-pane-stack {
+    overflow: auto;
 }
 
-.source-frame-unsaved-committed-changes {
-    background-color: rgba(255, 225, 205, 0.40);
+.targets-toolbar {
+    padding-left: 10px;
+    margin-top: -1px;
 }
 
-.tabbed-pane-placeholder {
-    font-size: 14px;
-    text-align: center;
-    margin-top: 20px;
-    text-shadow: rgba(255, 255, 255, 0.75) 0 1px 0;
+.panel.sources .drag-mask {
+    background-color: rgba(255,255,255,0.8);
+    z-index: 1000;
 }
 
-.tabbed-pane-header-tab-icon {
-    width: 11px;
-    height: 10px;
-    margin-top: 3px;
-    float: left;
-    display: block;
-    margin-right: 1px;
-}
-
-.editor-container-unsaved-committed-changes-icon {
-    background-image: url(Images/statusbarButtonGlyphs.png);
-    background-size: 320px 120px;
-    background-position: -202px -107px;
-}
-
-.sources-status-bar div.resizer-widget {
-    width: 18px;
-    height: 16px;
-    -webkit-transform: rotate(90deg);
-    top: 2px;
-    right: 17px;
-}
-
-.sources-status-bar .scripts-debugger-show-hide-button {
-    margin-top: 1px !important;
-    height: 16px !important;
-    -webkit-transform: rotate(90deg);
-    right: 0 !important;
+.panel.sources .drag-mask-inner {
+    font-size: 30px;
+    color: #999;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin: 20px;
+    border: 4px dashed #ddd;
+    pointer-events: none;
 }

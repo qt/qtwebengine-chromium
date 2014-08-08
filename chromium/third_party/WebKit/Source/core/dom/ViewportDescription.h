@@ -34,6 +34,9 @@
 
 namespace WebCore {
 
+class KURL;
+class LocalFrame;
+
 struct ViewportDescription {
 
     enum Type {
@@ -63,14 +66,18 @@ struct ViewportDescription {
         , zoom(ValueAuto)
         , minZoom(ValueAuto)
         , maxZoom(ValueAuto)
-        , userZoom(ValueAuto)
+        , userZoom(true)
         , orientation(ValueAuto)
         , deprecatedTargetDensityDPI(ValueAuto)
+        , zoomIsExplicit(false)
+        , minZoomIsExplicit(false)
+        , maxZoomIsExplicit(false)
+        , userZoomIsExplicit(false)
     {
     }
 
     // All arguments are in CSS units.
-    PageScaleConstraints resolve(const FloatSize& initialViewportSize) const;
+    PageScaleConstraints resolve(const FloatSize& initialViewportSize, Length legacyFallbackWidth) const;
 
     Length minWidth;
     Length maxWidth;
@@ -79,9 +86,16 @@ struct ViewportDescription {
     float zoom;
     float minZoom;
     float maxZoom;
-    float userZoom;
+    bool userZoom;
     float orientation;
     float deprecatedTargetDensityDPI; // Only used for Android WebView
+
+    // Whether the computed value was explicitly specified rather than being
+    // inferred.
+    bool zoomIsExplicit;
+    bool minZoomIsExplicit;
+    bool maxZoomIsExplicit;
+    bool userZoomIsExplicit;
 
     bool operator==(const ViewportDescription& other) const
     {
@@ -96,7 +110,11 @@ struct ViewportDescription {
             && maxZoom == other.maxZoom
             && userZoom == other.userZoom
             && orientation == other.orientation
-            && deprecatedTargetDensityDPI == other.deprecatedTargetDensityDPI;
+            && deprecatedTargetDensityDPI == other.deprecatedTargetDensityDPI
+            && zoomIsExplicit == other.zoomIsExplicit
+            && minZoomIsExplicit == other.minZoomIsExplicit
+            && maxZoomIsExplicit == other.maxZoomIsExplicit
+            && userZoomIsExplicit == other.userZoomIsExplicit;
     }
 
     bool operator!=(const ViewportDescription& other) const
@@ -107,6 +125,10 @@ struct ViewportDescription {
     bool isLegacyViewportType() const { return type >= HandheldFriendlyMeta && type <= ViewportMeta; }
     bool isMetaViewportType() const { return type == ViewportMeta; }
     bool isSpecifiedByAuthor() const { return type != UserAgentStyleSheet; }
+
+    // Reports UMA stat on whether the page is considered mobile or desktop and what kind of
+    // mobile it is. Applies only to Android, must only be called once per page load.
+    void reportMobilePageStats(const LocalFrame*) const;
 
 private:
     enum Direction { Horizontal, Vertical };

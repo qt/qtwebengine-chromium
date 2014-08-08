@@ -8,7 +8,6 @@
 #include "base/memory/scoped_ptr.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/common/media_stream_request.h"
-#include "media/audio/audio_device_name.h"
 #include "media/audio/audio_input_ipc.h"
 #include "media/audio/audio_manager_base.h"
 #include "media/audio/audio_parameters.h"
@@ -30,14 +29,6 @@ AudioInputDeviceManager::AudioInputDeviceManager(
       next_capture_session_id_(kFirstSessionId),
       use_fake_device_(false),
       audio_manager_(audio_manager) {
-  // TODO(xians): Remove this fake_device after the unittests do not need it.
-  StreamDeviceInfo fake_device(MEDIA_DEVICE_AUDIO_CAPTURE,
-                               media::AudioManagerBase::kDefaultDeviceName,
-                               media::AudioManagerBase::kDefaultDeviceId,
-                               44100, media::CHANNEL_LAYOUT_STEREO,
-                               0);
-  fake_device.session_id = kFakeOpenSessionId;
-  devices_.push_back(fake_device);
 }
 
 AudioInputDeviceManager::~AudioInputDeviceManager() {
@@ -45,7 +36,7 @@ AudioInputDeviceManager::~AudioInputDeviceManager() {
 
 const StreamDeviceInfo* AudioInputDeviceManager::GetOpenedDeviceInfoById(
     int session_id) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   StreamDeviceList::iterator device = GetDevice(session_id);
   if (device == devices_.end())
     return NULL;
@@ -55,12 +46,12 @@ const StreamDeviceInfo* AudioInputDeviceManager::GetOpenedDeviceInfoById(
 
 void AudioInputDeviceManager::Register(
     MediaStreamProviderListener* listener,
-    base::MessageLoopProxy* device_thread_loop) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+    const scoped_refptr<base::SingleThreadTaskRunner>& device_task_runner) {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DCHECK(!listener_);
-  DCHECK(!device_loop_.get());
+  DCHECK(!device_task_runner_);
   listener_ = listener;
-  device_loop_ = device_thread_loop;
+  device_task_runner_ = device_task_runner;
 }
 
 void AudioInputDeviceManager::Unregister() {
@@ -69,20 +60,20 @@ void AudioInputDeviceManager::Unregister() {
 }
 
 void AudioInputDeviceManager::EnumerateDevices(MediaStreamType stream_type) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DCHECK(listener_);
 
-  device_loop_->PostTask(
+  device_task_runner_->PostTask(
       FROM_HERE,
       base::Bind(&AudioInputDeviceManager::EnumerateOnDeviceThread,
                  this, stream_type));
 }
 
 int AudioInputDeviceManager::Open(const StreamDeviceInfo& device) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   // Generate a new id for this device.
   int session_id = next_capture_session_id_++;
-  device_loop_->PostTask(
+  device_task_runner_->PostTask(
       FROM_HERE,
       base::Bind(&AudioInputDeviceManager::OpenOnDeviceThread,
                  this, session_id, device));
@@ -91,7 +82,7 @@ int AudioInputDeviceManager::Open(const StreamDeviceInfo& device) {
 }
 
 void AudioInputDeviceManager::Close(int session_id) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DCHECK(listener_);
   StreamDeviceList::iterator device = GetDevice(session_id);
   if (device == devices_.end())
@@ -109,12 +100,12 @@ void AudioInputDeviceManager::Close(int session_id) {
 }
 
 void AudioInputDeviceManager::UseFakeDevice() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   use_fake_device_ = true;
 }
 
 bool AudioInputDeviceManager::ShouldUseFakeDevice() const {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   return use_fake_device_;
 }
 
@@ -123,19 +114,17 @@ void AudioInputDeviceManager::EnumerateOnDeviceThread(
   SCOPED_UMA_HISTOGRAM_TIMER(
       "Media.AudioInputDeviceManager.EnumerateOnDeviceThreadTime");
   DCHECK(IsOnDeviceThread());
+  DCHECK_EQ(MEDIA_DEVICE_AUDIO_CAPTURE, stream_type);
 
   media::AudioDeviceNames device_names;
-
-  switch (stream_type) {
-    case MEDIA_DEVICE_AUDIO_CAPTURE:
-      // AudioManager is guaranteed to outlive MediaStreamManager in
-      // BrowserMainloop.
-      audio_manager_->GetAudioInputDeviceNames(&device_names);
-      break;
-
-    default:
-      NOTREACHED();
-      break;
+  if (use_fake_device_) {
+    // Use the fake devices.
+    GetFakeDeviceNames(&device_names);
+  } else {
+    // Enumerate the devices on the OS.
+    // AudioManager is guaranteed to outlive MediaStreamManager in
+    // BrowserMainloop.
+    audio_manager_->GetAudioInputDeviceNames(&device_names);
   }
 
   scoped_ptr<StreamDeviceInfoArray> devices(new StreamDeviceInfoArray());
@@ -144,14 +133,6 @@ void AudioInputDeviceManager::EnumerateOnDeviceThread(
     // Add device information to device vector.
     devices->push_back(StreamDeviceInfo(
         stream_type, it->device_name, it->unique_id));
-  }
-
-  // If the |use_fake_device_| flag is on, inject the fake device if there is
-  // no available device on the OS.
-  if (use_fake_device_ && devices->empty()) {
-    devices->push_back(StreamDeviceInfo(
-        stream_type, media::AudioManagerBase::kDefaultDeviceName,
-        media::AudioManagerBase::kDefaultDeviceId));
   }
 
   // Return the device list through the listener by posting a task on
@@ -215,7 +196,7 @@ void AudioInputDeviceManager::OpenOnDeviceThread(
 void AudioInputDeviceManager::DevicesEnumeratedOnIOThread(
     MediaStreamType stream_type,
     scoped_ptr<StreamDeviceInfoArray> devices) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   // Ensure that |devices| gets deleted on exit.
   if (listener_)
     listener_->DevicesEnumerated(stream_type, *devices);
@@ -223,7 +204,7 @@ void AudioInputDeviceManager::DevicesEnumeratedOnIOThread(
 
 void AudioInputDeviceManager::OpenedOnIOThread(int session_id,
                                                const StreamDeviceInfo& info) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DCHECK_EQ(session_id, info.session_id);
   DCHECK(GetDevice(session_id) == devices_.end());
 
@@ -235,13 +216,13 @@ void AudioInputDeviceManager::OpenedOnIOThread(int session_id,
 
 void AudioInputDeviceManager::ClosedOnIOThread(MediaStreamType stream_type,
                                                int session_id) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   if (listener_)
     listener_->Closed(stream_type, session_id);
 }
 
 bool AudioInputDeviceManager::IsOnDeviceThread() const {
-  return device_loop_->BelongsToCurrentThread();
+  return device_task_runner_->BelongsToCurrentThread();
 }
 
 AudioInputDeviceManager::StreamDeviceList::iterator
@@ -253,6 +234,20 @@ AudioInputDeviceManager::GetDevice(int session_id) {
   }
 
   return devices_.end();
+}
+
+void AudioInputDeviceManager::GetFakeDeviceNames(
+    media::AudioDeviceNames* device_names) {
+  static const char kFakeDeviceName1[] = "Fake Audio 1";
+  static const char kFakeDeviceId1[] = "fake_audio_1";
+  static const char kFakeDeviceName2[] = "Fake Audio 2";
+  static const char kFakeDeviceId2[] = "fake_audio_2";
+  DCHECK(device_names->empty());
+  DCHECK(use_fake_device_);
+  device_names->push_back(media::AudioDeviceName(kFakeDeviceName1,
+                                                 kFakeDeviceId1));
+  device_names->push_back(media::AudioDeviceName(kFakeDeviceName2,
+                                                 kFakeDeviceId2));
 }
 
 }  // namespace content

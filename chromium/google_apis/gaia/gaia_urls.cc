@@ -28,14 +28,9 @@ const char kOAuthGetAccessTokenUrlSuffix[] = "OAuthGetAccessToken";
 const char kOAuthWrapBridgeUrlSuffix[] = "OAuthWrapBridge";
 const char kOAuth1LoginUrlSuffix[] = "OAuthLogin";
 const char kOAuthRevokeTokenUrlSuffix[] = "AuthSubRevokeToken";
-const char kListAccountsSuffix[] = "ListAccounts";
+const char kListAccountsSuffix[] = "ListAccounts?json=standard";
 const char kEmbeddedSigninSuffix[] = "EmbeddedSignIn";
 const char kAddAccountSuffix[] = "AddSession";
-
-// OAuth scopes
-const char kOAuth1LoginScope[] = "https://www.google.com/accounts/OAuthLogin";
-const char kOAuthWrapBridgeUserInfoScope[] =
-    "https://www.googleapis.com/auth/userinfo.email";
 
 // API calls from accounts.google.com (LSO)
 const char kGetOAuthTokenUrlSuffix[] = "o/oauth/GetOAuthToken/";
@@ -127,14 +122,6 @@ GaiaUrls::GaiaUrls() {
       google_apis_origin_url_.Resolve(kOAuthUserInfoUrlSuffix);
 
   gaia_login_form_realm_ = gaia_url_;
-
-  // OAuth scopes.
-  GetSwitchValueWithDefault(switches::kOAuthWrapBridgeUserInfoScope,
-                            kOAuthWrapBridgeUserInfoScope,
-                            &oauth_wrap_bridge_user_info_scope_);
-  GetSwitchValueWithDefault(switches::kOAuth1LoginScope,
-                            kOAuth1LoginScope,
-                            &oauth1_login_scope_);
 }
 
 GaiaUrls::~GaiaUrls() {
@@ -214,14 +201,6 @@ const GURL& GaiaUrls::embedded_signin_url() const {
 
 const GURL& GaiaUrls::add_account_url() const {
   return add_account_url_;
-}
-
-const std::string& GaiaUrls::oauth1_login_scope() const {
-  return oauth1_login_scope_;
-}
-
-const std::string& GaiaUrls::oauth_wrap_bridge_user_info_scope() const {
-  return oauth_wrap_bridge_user_info_scope_;
 }
 
 const std::string& GaiaUrls::oauth2_chrome_client_id() const {

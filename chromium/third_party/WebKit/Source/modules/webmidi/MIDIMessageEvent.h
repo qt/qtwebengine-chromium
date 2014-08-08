@@ -31,7 +31,7 @@
 #ifndef MIDIMessageEvent_h
 #define MIDIMessageEvent_h
 
-#include "core/events/Event.h"
+#include "modules/EventModules.h"
 #include "wtf/Uint8Array.h"
 
 namespace WebCore {
@@ -46,27 +46,29 @@ struct MIDIMessageEventInit : public EventInit {
     RefPtr<Uint8Array> data;
 };
 
-class MIDIMessageEvent : public Event {
+class MIDIMessageEvent FINAL : public Event {
 public:
-    static PassRefPtr<MIDIMessageEvent> create()
+    static PassRefPtrWillBeRawPtr<MIDIMessageEvent> create()
     {
-        return adoptRef(new MIDIMessageEvent());
+        return adoptRefWillBeNoop(new MIDIMessageEvent());
     }
 
-    static PassRefPtr<MIDIMessageEvent> create(double receivedTime, PassRefPtr<Uint8Array> data)
+    static PassRefPtrWillBeRawPtr<MIDIMessageEvent> create(double receivedTime, PassRefPtr<Uint8Array> data)
     {
-        return adoptRef(new MIDIMessageEvent(receivedTime, data));
+        return adoptRefWillBeNoop(new MIDIMessageEvent(receivedTime, data));
     }
 
-    static PassRefPtr<MIDIMessageEvent> create(const AtomicString& type, const MIDIMessageEventInit& initializer)
+    static PassRefPtrWillBeRawPtr<MIDIMessageEvent> create(const AtomicString& type, const MIDIMessageEventInit& initializer)
     {
-        return adoptRef(new MIDIMessageEvent(type, initializer));
+        return adoptRefWillBeNoop(new MIDIMessageEvent(type, initializer));
     }
 
     double receivedTime() { return m_receivedTime; }
     PassRefPtr<Uint8Array> data() { return m_data; }
 
     virtual const AtomicString& interfaceName() const OVERRIDE { return EventNames::MIDIMessageEvent; }
+
+    virtual void trace(Visitor* visitor) OVERRIDE { Event::trace(visitor); }
 
 private:
     MIDIMessageEvent()

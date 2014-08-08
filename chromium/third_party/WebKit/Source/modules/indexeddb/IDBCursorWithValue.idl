@@ -23,6 +23,7 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-interface IDBCursorWithValue : IDBCursor {
-    [CallWith=ExecutionContext,CachedAttribute=isValueDirty] readonly attribute any value;
+[
+] interface IDBCursorWithValue : IDBCursor {
+    [CallWith=ScriptState, CachedAttribute=isValueDirty] readonly attribute any value;
 };

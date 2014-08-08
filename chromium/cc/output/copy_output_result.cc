@@ -5,7 +5,6 @@
 #include "cc/output/copy_output_result.h"
 
 #include "base/logging.h"
-#include "cc/resources/single_release_callback.h"
 #include "cc/resources/texture_mailbox.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 
@@ -20,7 +19,7 @@ CopyOutputResult::CopyOutputResult(scoped_ptr<SkBitmap> bitmap)
 }
 
 CopyOutputResult::CopyOutputResult(
-    gfx::Size size,
+    const gfx::Size& size,
     const TextureMailbox& texture_mailbox,
     scoped_ptr<SingleReleaseCallback> release_callback)
     : size_(size),

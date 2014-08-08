@@ -24,14 +24,14 @@
 #include "config.h"
 #include "core/rendering/RenderEmbeddedObject.h"
 
-#include "CSSValueKeywords.h"
-#include "HTMLNames.h"
+#include "core/CSSValueKeywords.h"
+#include "core/HTMLNames.h"
+#include "core/frame/LocalFrame.h"
 #include "core/html/HTMLIFrameElement.h"
-#include "core/frame/Frame.h"
+#include "core/html/HTMLPlugInElement.h"
 #include "core/page/Page.h"
 #include "core/frame/Settings.h"
 #include "core/plugins/PluginView.h"
-#include "core/rendering/LayoutRectRecorder.h"
 #include "core/rendering/PaintInfo.h"
 #include "core/rendering/RenderTheme.h"
 #include "core/rendering/RenderView.h"
@@ -54,7 +54,6 @@ static const float replacementTextTextOpacity = 0.55f;
 
 RenderEmbeddedObject::RenderEmbeddedObject(Element* element)
     : RenderPart(element)
-    , m_hasFallbackContent(false)
     , m_showsUnavailablePluginIndicator(false)
 {
     view()->frameView()->setIsVisuallyNonEmpty();
@@ -64,17 +63,16 @@ RenderEmbeddedObject::~RenderEmbeddedObject()
 {
 }
 
-bool RenderEmbeddedObject::requiresLayer() const
+LayerType RenderEmbeddedObject::layerTypeRequired() const
 {
-    if (RenderPart::requiresLayer())
-        return true;
-
-    return allowsAcceleratedCompositing();
-}
-
-bool RenderEmbeddedObject::allowsAcceleratedCompositing() const
-{
-    return widget() && widget()->isPluginView() && toPluginView(widget())->platformLayer();
+    // This can't just use RenderPart::layerTypeRequired, because RenderLayerCompositor
+    // doesn't loop through RenderEmbeddedObjects the way it does frames in order
+    // to update the self painting bit on their RenderLayer.
+    // Also, unlike iframes, embeds don't used the usesCompositing bit on RenderView
+    // in requiresAcceleratedCompositing.
+    if (requiresAcceleratedCompositing())
+        return NormalLayer;
+    return RenderPart::layerTypeRequired();
 }
 
 static String unavailablePluginReplacementText(Node* node, RenderEmbeddedObject::PluginUnavailabilityReason pluginUnavailabilityReason)
@@ -108,7 +106,7 @@ bool RenderEmbeddedObject::showsUnavailablePluginIndicator() const
 void RenderEmbeddedObject::paintContents(PaintInfo& paintInfo, const LayoutPoint& paintOffset)
 {
     Element* element = toElement(node());
-    if (!element || !element->isPluginElement())
+    if (!isHTMLPlugInElement(element))
         return;
 
     RenderPart::paintContents(paintInfo, paintOffset);
@@ -147,7 +145,7 @@ void RenderEmbeddedObject::paintReplaced(PaintInfo& paintInfo, const LayoutPoint
 
     GraphicsContextStateSaver stateSaver(*context);
     context->clip(contentRect);
-    context->setAlpha(replacementTextRoundedRectOpacity);
+    context->setAlphaAsFloat(replacementTextRoundedRectOpacity);
     context->setFillColor(Color::white);
     context->fillPath(path);
 
@@ -156,7 +154,7 @@ void RenderEmbeddedObject::paintReplaced(PaintInfo& paintInfo, const LayoutPoint
     float labelY = roundf(replacementTextRect.location().y() + (replacementTextRect.size().height() - fontMetrics.height()) / 2 + fontMetrics.ascent());
     TextRunPaintInfo runInfo(run);
     runInfo.bounds = replacementTextRect;
-    context->setAlpha(replacementTextTextOpacity);
+    context->setAlphaAsFloat(replacementTextTextOpacity);
     context->setFillColor(Color::black);
     context->drawBidiText(font, runInfo, FloatPoint(labelX, labelY));
 }
@@ -174,8 +172,8 @@ bool RenderEmbeddedObject::getReplacementTextGeometry(const LayoutPoint& accumul
     if (!settings)
         return false;
     fontDescription.setComputedSize(fontDescription.specifiedSize());
-    font = Font(fontDescription, 0, 0);
-    font.update(0);
+    font = Font(fontDescription);
+    font.update(nullptr);
 
     run = TextRun(m_unavailablePluginReplacementText);
     textWidth = font.width(run);
@@ -194,73 +192,18 @@ void RenderEmbeddedObject::layout()
 {
     ASSERT(needsLayout());
 
-    LayoutSize oldSize = contentBoxRect().size();
-    LayoutRectRecorder recorder(*this);
-
     updateLogicalWidth();
     updateLogicalHeight();
-
-    RenderPart::layout();
 
     m_overflow.clear();
     addVisualEffectOverflow();
 
-    updateLayerTransform();
+    updateLayerTransformAfterLayout();
 
     if (!widget() && frameView())
         frameView()->addWidgetToUpdate(*this);
 
     clearNeedsLayout();
-
-    if (!canHaveChildren())
-        return;
-
-    // This code copied from RenderMedia::layout().
-    RenderObject* child = m_children.firstChild();
-
-    if (!child)
-        return;
-
-    RenderBox* childBox = toRenderBox(child);
-
-    if (!childBox)
-        return;
-
-    LayoutSize newSize = contentBoxRect().size();
-    if (newSize == oldSize && !childBox->needsLayout())
-        return;
-
-    // When calling layout() on a child node, a parent must either push a LayoutStateMaintainter, or
-    // instantiate LayoutStateDisabler. Since using a LayoutStateMaintainer is slightly more efficient,
-    // and this method will be called many times per second during playback, use a LayoutStateMaintainer:
-    LayoutStateMaintainer statePusher(view(), this, locationOffset(), hasTransform() || hasReflection() || style()->isFlippedBlocksWritingMode());
-
-    childBox->setLocation(LayoutPoint(borderLeft(), borderTop()) + LayoutSize(paddingLeft(), paddingTop()));
-    childBox->style()->setHeight(Length(newSize.height(), Fixed));
-    childBox->style()->setWidth(Length(newSize.width(), Fixed));
-    childBox->forceLayout();
-    clearNeedsLayout();
-
-    statePusher.pop();
-}
-
-void RenderEmbeddedObject::viewCleared()
-{
-    // This is required for <object> elements whose contents are rendered by WebCore (e.g. src="foo.html").
-    if (node() && widget() && widget()->isFrameView()) {
-        FrameView* view = toFrameView(widget());
-        int marginWidth = -1;
-        int marginHeight = -1;
-        if (node()->hasTagName(iframeTag)) {
-            HTMLIFrameElement* frame = toHTMLIFrameElement(node());
-            marginWidth = frame->marginWidth();
-            marginHeight = frame->marginHeight();
-        }
-        if (marginWidth != -1)
-            view->setMarginWidth(marginWidth);
-        if (marginHeight != -1)
-            view->setMarginHeight(marginHeight);
-    }
 }
 
 bool RenderEmbeddedObject::scroll(ScrollDirection direction, ScrollGranularity granularity, float)
@@ -268,9 +211,18 @@ bool RenderEmbeddedObject::scroll(ScrollDirection direction, ScrollGranularity g
     return false;
 }
 
-bool RenderEmbeddedObject::canHaveChildren() const
+CompositingReasons RenderEmbeddedObject::additionalCompositingReasons(CompositingTriggerFlags triggers) const
 {
-    return false;
+    if (requiresAcceleratedCompositing())
+        return CompositingReasonPlugin;
+    return CompositingReasonNone;
+}
+
+RenderBox* RenderEmbeddedObject::embeddedContentBox() const
+{
+    if (!node() || !widget() || !widget()->isFrameView())
+        return 0;
+    return toFrameView(widget())->embeddedContentBox();
 }
 
 }

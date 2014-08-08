@@ -13,9 +13,10 @@
       'dependencies': [
         '../base/base.gyp:base',
         '../skia/skia.gyp:skia',
+        '../ui/base/ui_base.gyp:ui_base',
         '../ui/events/events.gyp:events',
         '../ui/gfx/gfx.gyp:gfx',
-        '../ui/ui.gyp:ui',
+        '../ui/gfx/gfx.gyp:gfx_geometry',
         '../url/url.gyp:url_lib',
       ],
       'conditions': [

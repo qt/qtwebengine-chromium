@@ -23,7 +23,9 @@
 #include "core/svg/SVGPreserveAspectRatio.h"
 
 #include "bindings/v8/ExceptionState.h"
+#include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "core/dom/ExceptionCode.h"
+#include "core/svg/SVGAnimationElement.h"
 #include "core/svg/SVGParserUtilities.h"
 #include "platform/geometry/FloatRect.h"
 #include "platform/transforms/AffineTransform.h"
@@ -32,142 +34,165 @@
 namespace WebCore {
 
 SVGPreserveAspectRatio::SVGPreserveAspectRatio()
-    : m_align(SVG_PRESERVEASPECTRATIO_XMIDYMID)
-    , m_meetOrSlice(SVG_MEETORSLICE_MEET)
+    : SVGPropertyBase(classType())
 {
+    setDefault();
 }
 
-void SVGPreserveAspectRatio::setAlign(unsigned short align, ExceptionState& exceptionState)
+void SVGPreserveAspectRatio::setDefault()
 {
-    if (align == SVG_PRESERVEASPECTRATIO_UNKNOWN || align > SVG_PRESERVEASPECTRATIO_XMAXYMAX) {
-        exceptionState.throwUninformativeAndGenericDOMException(NotSupportedError);
-        return;
-    }
-
-    m_align = static_cast<SVGPreserveAspectRatioType>(align);
+    m_align = SVG_PRESERVEASPECTRATIO_XMIDYMID;
+    m_meetOrSlice = SVG_MEETORSLICE_MEET;
 }
 
-void SVGPreserveAspectRatio::setMeetOrSlice(unsigned short meetOrSlice, ExceptionState& exceptionState)
+PassRefPtr<SVGPreserveAspectRatio> SVGPreserveAspectRatio::clone() const
 {
-    if (meetOrSlice == SVG_MEETORSLICE_UNKNOWN || meetOrSlice > SVG_MEETORSLICE_SLICE) {
-        exceptionState.throwUninformativeAndGenericDOMException(NotSupportedError);
-        return;
-    }
+    RefPtr<SVGPreserveAspectRatio> preserveAspectRatio = create();
 
-    m_meetOrSlice = static_cast<SVGMeetOrSliceType>(meetOrSlice);
+    preserveAspectRatio->m_align = m_align;
+    preserveAspectRatio->m_meetOrSlice = m_meetOrSlice;
+
+    return preserveAspectRatio.release();
+}
+
+PassRefPtr<SVGPropertyBase> SVGPreserveAspectRatio::cloneForAnimation(const String& value) const
+{
+    RefPtr<SVGPreserveAspectRatio> preserveAspectRatio = create();
+
+    preserveAspectRatio->setValueAsString(value, IGNORE_EXCEPTION);
+
+    return preserveAspectRatio.release();
 }
 
 template<typename CharType>
 bool SVGPreserveAspectRatio::parseInternal(const CharType*& ptr, const CharType* end, bool validate)
 {
-    // FIXME: Rewrite this parser, without gotos!
+    SVGPreserveAspectRatioType align = SVG_PRESERVEASPECTRATIO_XMIDYMID;
+    SVGMeetOrSliceType meetOrSlice = SVG_MEETORSLICE_MEET;
+
+    setAlign(align);
+    setMeetOrSlice(meetOrSlice);
+
     if (!skipOptionalSVGSpaces(ptr, end))
-        goto bailOut;
+        return false;
 
     if (*ptr == 'd') {
         if (!skipString(ptr, end, "defer"))
-            goto bailOut;
+            return false;
 
         // FIXME: We just ignore the "defer" here.
         if (ptr == end)
             return true;
 
         if (!skipOptionalSVGSpaces(ptr, end))
-            goto bailOut;
+            return false;
     }
 
     if (*ptr == 'n') {
         if (!skipString(ptr, end, "none"))
-            goto bailOut;
-        m_align = SVG_PRESERVEASPECTRATIO_NONE;
+            return false;
+        align = SVG_PRESERVEASPECTRATIO_NONE;
         skipOptionalSVGSpaces(ptr, end);
     } else if (*ptr == 'x') {
         if ((end - ptr) < 8)
-            goto bailOut;
+            return false;
         if (ptr[1] != 'M' || ptr[4] != 'Y' || ptr[5] != 'M')
-            goto bailOut;
+            return false;
         if (ptr[2] == 'i') {
             if (ptr[3] == 'n') {
                 if (ptr[6] == 'i') {
                     if (ptr[7] == 'n')
-                        m_align = SVG_PRESERVEASPECTRATIO_XMINYMIN;
+                        align = SVG_PRESERVEASPECTRATIO_XMINYMIN;
                     else if (ptr[7] == 'd')
-                        m_align = SVG_PRESERVEASPECTRATIO_XMINYMID;
+                        align = SVG_PRESERVEASPECTRATIO_XMINYMID;
                     else
-                        goto bailOut;
-                } else if (ptr[6] == 'a' && ptr[7] == 'x')
-                     m_align = SVG_PRESERVEASPECTRATIO_XMINYMAX;
-                else
-                     goto bailOut;
+                        return false;
+                } else if (ptr[6] == 'a' && ptr[7] == 'x') {
+                    align = SVG_PRESERVEASPECTRATIO_XMINYMAX;
+                } else {
+                    return false;
+                }
             } else if (ptr[3] == 'd') {
                 if (ptr[6] == 'i') {
                     if (ptr[7] == 'n')
-                        m_align = SVG_PRESERVEASPECTRATIO_XMIDYMIN;
+                        align = SVG_PRESERVEASPECTRATIO_XMIDYMIN;
                     else if (ptr[7] == 'd')
-                        m_align = SVG_PRESERVEASPECTRATIO_XMIDYMID;
+                        align = SVG_PRESERVEASPECTRATIO_XMIDYMID;
                     else
-                        goto bailOut;
-                } else if (ptr[6] == 'a' && ptr[7] == 'x')
-                    m_align = SVG_PRESERVEASPECTRATIO_XMIDYMAX;
-                else
-                    goto bailOut;
-            } else
-                goto bailOut;
+                        return false;
+                } else if (ptr[6] == 'a' && ptr[7] == 'x') {
+                    align = SVG_PRESERVEASPECTRATIO_XMIDYMAX;
+                } else {
+                    return false;
+                }
+            } else {
+                return false;
+            }
         } else if (ptr[2] == 'a' && ptr[3] == 'x') {
             if (ptr[6] == 'i') {
                 if (ptr[7] == 'n')
-                    m_align = SVG_PRESERVEASPECTRATIO_XMAXYMIN;
+                    align = SVG_PRESERVEASPECTRATIO_XMAXYMIN;
                 else if (ptr[7] == 'd')
-                    m_align = SVG_PRESERVEASPECTRATIO_XMAXYMID;
+                    align = SVG_PRESERVEASPECTRATIO_XMAXYMID;
                 else
-                    goto bailOut;
-            } else if (ptr[6] == 'a' && ptr[7] == 'x')
-                m_align = SVG_PRESERVEASPECTRATIO_XMAXYMAX;
-            else
-                goto bailOut;
-        } else
-            goto bailOut;
+                    return false;
+            } else if (ptr[6] == 'a' && ptr[7] == 'x') {
+                align = SVG_PRESERVEASPECTRATIO_XMAXYMAX;
+            } else {
+                return false;
+            }
+        } else {
+            return false;
+        }
         ptr += 8;
         skipOptionalSVGSpaces(ptr, end);
-    } else
-        goto bailOut;
+    } else {
+        return false;
+    }
 
     if (ptr < end) {
         if (*ptr == 'm') {
             if (!skipString(ptr, end, "meet"))
-                goto bailOut;
+                return false;
             skipOptionalSVGSpaces(ptr, end);
         } else if (*ptr == 's') {
             if (!skipString(ptr, end, "slice"))
-                goto bailOut;
+                return false;
             skipOptionalSVGSpaces(ptr, end);
-            if (m_align != SVG_PRESERVEASPECTRATIO_NONE)
-                m_meetOrSlice = SVG_MEETORSLICE_SLICE;
+            if (align != SVG_PRESERVEASPECTRATIO_NONE)
+                meetOrSlice = SVG_MEETORSLICE_SLICE;
         }
     }
 
-    if (end != ptr && validate) {
-bailOut:
-        m_align = SVG_PRESERVEASPECTRATIO_XMIDYMID;
-        m_meetOrSlice = SVG_MEETORSLICE_MEET;
+    if (end != ptr && validate)
         return false;
-    }
+
+    setAlign(align);
+    setMeetOrSlice(meetOrSlice);
+
     return true;
 }
 
-void SVGPreserveAspectRatio::parse(const String& string)
+void SVGPreserveAspectRatio::setValueAsString(const String& string, ExceptionState& exceptionState)
 {
-    if (string.isEmpty()) {
-        const LChar* ptr = 0;
-        parseInternal(ptr, ptr, true);
-    } else if (string.is8Bit()) {
+    setDefault();
+
+    if (string.isEmpty())
+        return;
+
+    bool valid = false;
+    if (string.is8Bit()) {
         const LChar* ptr = string.characters8();
         const LChar* end = ptr + string.length();
-        parseInternal(ptr, end, true);
+        valid = parseInternal(ptr, end, true);
     } else {
         const UChar* ptr = string.characters16();
         const UChar* end = ptr + string.length();
-        parseInternal(ptr, end, true);
+        valid = parseInternal(ptr, end, true);
+    }
+
+    if (!valid) {
+        exceptionState.throwDOMException(SyntaxError, "The value provided ('" + string + "') is invalid.");
     }
 }
 
@@ -370,6 +395,30 @@ String SVGPreserveAspectRatio::valueAsString() const
     case SVG_MEETORSLICE_SLICE:
         return alignType + " slice";
     }
+}
+
+void SVGPreserveAspectRatio::add(PassRefPtrWillBeRawPtr<SVGPropertyBase> other, SVGElement*)
+{
+    ASSERT_NOT_REACHED();
+}
+
+void SVGPreserveAspectRatio::calculateAnimatedValue(SVGAnimationElement* animationElement, float percentage, unsigned repeatCount, PassRefPtr<SVGPropertyBase> fromValue, PassRefPtr<SVGPropertyBase> toValue, PassRefPtr<SVGPropertyBase>, SVGElement*)
+{
+    ASSERT(animationElement);
+
+    bool useToValue;
+    animationElement->animateDiscreteType(percentage, false, true, useToValue);
+
+    RefPtr<SVGPreserveAspectRatio> preserveAspectRatioToUse = useToValue ? toSVGPreserveAspectRatio(toValue) : toSVGPreserveAspectRatio(fromValue);
+
+    m_align = preserveAspectRatioToUse->m_align;
+    m_meetOrSlice = preserveAspectRatioToUse->m_meetOrSlice;
+}
+
+float SVGPreserveAspectRatio::calculateDistance(PassRefPtr<SVGPropertyBase> toValue, SVGElement* contextElement)
+{
+    // No paced animations for SVGPreserveAspectRatio.
+    return -1;
 }
 
 }

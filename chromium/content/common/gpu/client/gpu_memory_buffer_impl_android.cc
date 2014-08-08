@@ -5,18 +5,63 @@
 #include "content/common/gpu/client/gpu_memory_buffer_impl.h"
 
 #include "content/common/gpu/client/gpu_memory_buffer_impl_shm.h"
+#include "content/common/gpu/client/gpu_memory_buffer_impl_surface_texture.h"
 
 namespace content {
 
+// static
 scoped_ptr<GpuMemoryBufferImpl> GpuMemoryBufferImpl::Create(
+    const gfx::Size& size,
+    unsigned internalformat,
+    unsigned usage) {
+  if (GpuMemoryBufferImplShm::IsConfigurationSupported(
+          size, internalformat, usage)) {
+    scoped_ptr<GpuMemoryBufferImplShm> buffer(
+        new GpuMemoryBufferImplShm(size, internalformat));
+    if (!buffer->Initialize())
+      return scoped_ptr<GpuMemoryBufferImpl>();
+
+    return buffer.PassAs<GpuMemoryBufferImpl>();
+  }
+
+  return scoped_ptr<GpuMemoryBufferImpl>();
+}
+
+// static
+void GpuMemoryBufferImpl::AllocateForChildProcess(
+    const gfx::Size& size,
+    unsigned internalformat,
+    unsigned usage,
+    base::ProcessHandle child_process,
+    const AllocationCallback& callback) {
+  if (GpuMemoryBufferImplShm::IsConfigurationSupported(
+          size, internalformat, usage)) {
+    GpuMemoryBufferImplShm::AllocateSharedMemoryForChildProcess(
+        size, internalformat, child_process, callback);
+    return;
+  }
+
+  callback.Run(gfx::GpuMemoryBufferHandle());
+}
+
+// static
+scoped_ptr<GpuMemoryBufferImpl> GpuMemoryBufferImpl::CreateFromHandle(
     gfx::GpuMemoryBufferHandle handle,
-    gfx::Size size,
+    const gfx::Size& size,
     unsigned internalformat) {
   switch (handle.type) {
     case gfx::SHARED_MEMORY_BUFFER: {
       scoped_ptr<GpuMemoryBufferImplShm> buffer(
           new GpuMemoryBufferImplShm(size, internalformat));
-      if (!buffer->Initialize(handle))
+      if (!buffer->InitializeFromHandle(handle))
+        return scoped_ptr<GpuMemoryBufferImpl>();
+
+      return buffer.PassAs<GpuMemoryBufferImpl>();
+    }
+    case gfx::SURFACE_TEXTURE_BUFFER: {
+      scoped_ptr<GpuMemoryBufferImplSurfaceTexture> buffer(
+          new GpuMemoryBufferImplSurfaceTexture(size, internalformat));
+      if (!buffer->InitializeFromHandle(handle))
         return scoped_ptr<GpuMemoryBufferImpl>();
 
       return buffer.PassAs<GpuMemoryBufferImpl>();

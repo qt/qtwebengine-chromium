@@ -29,12 +29,13 @@
  */
 
 #include "config.h"
-#include "WorkerThreadStartupData.h"
+#include "core/workers/WorkerThreadStartupData.h"
 
+#include "platform/network/ContentSecurityPolicyParsers.h"
 
 namespace WebCore {
 
-WorkerThreadStartupData::WorkerThreadStartupData(const KURL& scriptURL, const String& userAgent, const String& sourceCode, WorkerThreadStartMode startMode, const String& contentSecurityPolicy, ContentSecurityPolicy::HeaderType contentSecurityPolicyType, PassOwnPtr<WorkerClients> workerClients)
+WorkerThreadStartupData::WorkerThreadStartupData(const KURL& scriptURL, const String& userAgent, const String& sourceCode, WorkerThreadStartMode startMode, const String& contentSecurityPolicy, ContentSecurityPolicyHeaderType contentSecurityPolicyType, PassOwnPtrWillBeRawPtr<WorkerClients> workerClients)
     : m_scriptURL(scriptURL.copy())
     , m_userAgent(userAgent.isolatedCopy())
     , m_sourceCode(sourceCode.isolatedCopy())
@@ -47,6 +48,11 @@ WorkerThreadStartupData::WorkerThreadStartupData(const KURL& scriptURL, const St
 
 WorkerThreadStartupData::~WorkerThreadStartupData()
 {
+}
+
+void WorkerThreadStartupData::trace(Visitor* visitor)
+{
+    visitor->trace(m_workerClients);
 }
 
 } // namespace WebCore

@@ -19,6 +19,8 @@
 namespace cc {
 
 class Layer;
+template <typename LayerType>
+class LayerIterator;
 
 class CC_EXPORT RenderSurface {
  public:
@@ -29,7 +31,9 @@ class CC_EXPORT RenderSurface {
   // reflection.
   gfx::RectF DrawableContentRect() const;
 
-  void SetContentRect(gfx::Rect content_rect) { content_rect_ = content_rect; }
+  void SetContentRect(const gfx::Rect& content_rect) {
+      content_rect_ = content_rect;
+  }
   gfx::Rect content_rect() const { return content_rect_; }
 
   void SetDrawOpacity(float opacity) { draw_opacity_ = opacity; }
@@ -84,7 +88,7 @@ class CC_EXPORT RenderSurface {
   void SetIsClipped(bool is_clipped) { is_clipped_ = is_clipped; }
 
   gfx::Rect clip_rect() const { return clip_rect_; }
-  void SetClipRect(gfx::Rect clip_rect) { clip_rect_ = clip_rect; }
+  void SetClipRect(const gfx::Rect& clip_rect) { clip_rect_ = clip_rect; }
 
   // When false, the RenderSurface does not contribute to another target
   // RenderSurface that is being drawn for the current frame. It could still be
@@ -97,7 +101,7 @@ class CC_EXPORT RenderSurface {
     contributes_to_drawn_surface_ = contributes_to_drawn_surface;
   }
 
-  RenderSurfaceLayerList& layer_list() { return layer_list_; }
+  LayerList& layer_list() { return layer_list_; }
   // A no-op since DelegatedRendererLayers on the main thread don't have any
   // RenderPasses so they can't contribute to a surface.
   void AddContributingDelegatedRenderPassLayer(Layer* layer) {}
@@ -109,8 +113,10 @@ class CC_EXPORT RenderSurface {
     return nearest_occlusion_immune_ancestor_;
   }
 
+  void ClearLayerLists();
+
  private:
-  friend struct LayerIteratorActions;
+  friend class LayerIterator<Layer>;
 
   Layer* owning_layer_;
 
@@ -132,7 +138,7 @@ class CC_EXPORT RenderSurface {
   // Uses the space of the surface's target surface.
   gfx::Rect clip_rect_;
 
-  RenderSurfaceLayerList layer_list_;
+  LayerList layer_list_;
 
   // The nearest ancestor target surface that will contain the contents of this
   // surface, and that ignores outside occlusion. This can point to itself.

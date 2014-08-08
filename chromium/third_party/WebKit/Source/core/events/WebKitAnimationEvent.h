@@ -40,19 +40,19 @@ struct WebKitAnimationEventInit : public EventInit {
     double elapsedTime;
 };
 
-class WebKitAnimationEvent : public Event {
+class WebKitAnimationEvent FINAL : public Event {
 public:
-    static PassRefPtr<WebKitAnimationEvent> create()
+    static PassRefPtrWillBeRawPtr<WebKitAnimationEvent> create()
     {
-        return adoptRef(new WebKitAnimationEvent);
+        return adoptRefWillBeNoop(new WebKitAnimationEvent);
     }
-    static PassRefPtr<WebKitAnimationEvent> create(const AtomicString& type, const String& animationName, double elapsedTime)
+    static PassRefPtrWillBeRawPtr<WebKitAnimationEvent> create(const AtomicString& type, const String& animationName, double elapsedTime)
     {
-        return adoptRef(new WebKitAnimationEvent(type, animationName, elapsedTime));
+        return adoptRefWillBeNoop(new WebKitAnimationEvent(type, animationName, elapsedTime));
     }
-    static PassRefPtr<WebKitAnimationEvent> create(const AtomicString& type, const WebKitAnimationEventInit& initializer)
+    static PassRefPtrWillBeRawPtr<WebKitAnimationEvent> create(const AtomicString& type, const WebKitAnimationEventInit& initializer)
     {
-        return adoptRef(new WebKitAnimationEvent(type, initializer));
+        return adoptRefWillBeNoop(new WebKitAnimationEvent(type, initializer));
     }
 
     virtual ~WebKitAnimationEvent();
@@ -60,7 +60,9 @@ public:
     const String& animationName() const;
     double elapsedTime() const;
 
-    virtual const AtomicString& interfaceName() const;
+    virtual const AtomicString& interfaceName() const OVERRIDE;
+
+    virtual void trace(Visitor*) OVERRIDE;
 
 private:
     WebKitAnimationEvent();

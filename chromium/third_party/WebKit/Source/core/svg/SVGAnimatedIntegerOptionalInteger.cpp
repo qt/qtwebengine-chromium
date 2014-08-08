@@ -1,108 +1,67 @@
 /*
- * Copyright (C) Research In Motion Limited 2012. All rights reserved.
+ * Copyright (C) 2014 Google Inc. All rights reserved.
  *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Library General Public
- * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are
+ * met:
  *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Library General Public License for more details.
+ *     * Redistributions of source code must retain the above copyright
+ * notice, this list of conditions and the following disclaimer.
+ *     * Redistributions in binary form must reproduce the above
+ * copyright notice, this list of conditions and the following disclaimer
+ * in the documentation and/or other materials provided with the
+ * distribution.
+ *     * Neither the name of Google Inc. nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
  *
- * You should have received a copy of the GNU Library General Public License
- * along with this library; see the file COPYING.LIB.  If not, write to
- * the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
- * Boston, MA 02110-1301, USA.
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+ * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+ * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+ * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #include "config.h"
 
 #include "core/svg/SVGAnimatedIntegerOptionalInteger.h"
 
-#include "core/svg/SVGAnimateElement.h"
-#include "core/svg/SVGAnimatedInteger.h"
-#include "core/svg/SVGParserUtilities.h"
-
 namespace WebCore {
 
-SVGAnimatedIntegerOptionalIntegerAnimator::SVGAnimatedIntegerOptionalIntegerAnimator(SVGAnimationElement* animationElement, SVGElement* contextElement)
-    : SVGAnimatedTypeAnimator(AnimatedIntegerOptionalInteger, animationElement, contextElement)
+SVGAnimatedIntegerOptionalInteger::SVGAnimatedIntegerOptionalInteger(SVGElement* contextElement, const QualifiedName& attributeName, float initialFirstValue, float initialSecondValue)
+    : SVGAnimatedPropertyCommon<SVGIntegerOptionalInteger>(contextElement, attributeName,
+        SVGIntegerOptionalInteger::create(SVGInteger::create(initialFirstValue), SVGInteger::create(initialSecondValue)))
+    , m_firstInteger(SVGAnimatedInteger::create(contextElement, attributeName, baseValue()->firstInteger()))
+    , m_secondInteger(SVGAnimatedInteger::create(contextElement, attributeName, baseValue()->secondInteger()))
 {
+    m_firstInteger->setParentOptionalInteger(this);
+    m_secondInteger->setParentOptionalInteger(this);
 }
 
-PassOwnPtr<SVGAnimatedType> SVGAnimatedIntegerOptionalIntegerAnimator::constructFromString(const String& string)
+void SVGAnimatedIntegerOptionalInteger::setAnimatedValue(PassRefPtr<SVGPropertyBase> value)
 {
-    OwnPtr<SVGAnimatedType> animtedType = SVGAnimatedType::createIntegerOptionalInteger(new pair<int, int>);
-    pair<int, int>& animatedInteger = animtedType->integerOptionalInteger();
-    float firstNumber = 0;
-    float secondNumber = 0;
-    if (!parseNumberOptionalNumber(string, firstNumber, secondNumber)) {
-        animatedInteger.first = 0;
-        animatedInteger.second = 0;
-    } else {
-        animatedInteger.first = static_cast<int>(roundf(firstNumber));
-        animatedInteger.second = static_cast<int>(roundf(secondNumber));
-    }
-    return animtedType.release();
+    SVGAnimatedPropertyCommon<SVGIntegerOptionalInteger>::setAnimatedValue(value);
+    m_firstInteger->setAnimatedValue(currentValue()->firstInteger());
+    m_secondInteger->setAnimatedValue(currentValue()->secondInteger());
 }
 
-PassOwnPtr<SVGAnimatedType> SVGAnimatedIntegerOptionalIntegerAnimator::startAnimValAnimation(const SVGElementAnimatedPropertyList& animatedTypes)
+void SVGAnimatedIntegerOptionalInteger::animationEnded()
 {
-    return SVGAnimatedType::createIntegerOptionalInteger(constructFromBaseValues<SVGAnimatedInteger, SVGAnimatedInteger>(animatedTypes));
+    SVGAnimatedPropertyCommon<SVGIntegerOptionalInteger>::animationEnded();
+    m_firstInteger->animationEnded();
+    m_secondInteger->animationEnded();
 }
 
-void SVGAnimatedIntegerOptionalIntegerAnimator::stopAnimValAnimation(const SVGElementAnimatedPropertyList& animatedTypes)
+bool SVGAnimatedIntegerOptionalInteger::needsSynchronizeAttribute()
 {
-    stopAnimValAnimationForTypes<SVGAnimatedInteger, SVGAnimatedInteger>(animatedTypes);
-}
-
-void SVGAnimatedIntegerOptionalIntegerAnimator::resetAnimValToBaseVal(const SVGElementAnimatedPropertyList& animatedTypes, SVGAnimatedType* type)
-{
-    resetFromBaseValues<SVGAnimatedInteger, SVGAnimatedInteger>(animatedTypes, type, &SVGAnimatedType::integerOptionalInteger);
-}
-
-void SVGAnimatedIntegerOptionalIntegerAnimator::animValWillChange(const SVGElementAnimatedPropertyList& animatedTypes)
-{
-    animValWillChangeForTypes<SVGAnimatedInteger, SVGAnimatedInteger>(animatedTypes);
-}
-
-void SVGAnimatedIntegerOptionalIntegerAnimator::animValDidChange(const SVGElementAnimatedPropertyList& animatedTypes)
-{
-    animValDidChangeForTypes<SVGAnimatedInteger, SVGAnimatedInteger>(animatedTypes);
-}
-
-void SVGAnimatedIntegerOptionalIntegerAnimator::addAnimatedTypes(SVGAnimatedType* from, SVGAnimatedType* to)
-{
-    ASSERT(from->type() == AnimatedIntegerOptionalInteger);
-    ASSERT(from->type() == to->type());
-
-    const pair<int, int>& fromIntegerPair = from->integerOptionalInteger();
-    pair<int, int>& toIntegerPair = to->integerOptionalInteger();
-
-    toIntegerPair.first += fromIntegerPair.first;
-    toIntegerPair.second += fromIntegerPair.second;
-}
-
-void SVGAnimatedIntegerOptionalIntegerAnimator::calculateAnimatedValue(float percentage, unsigned repeatCount, SVGAnimatedType* from, SVGAnimatedType* to, SVGAnimatedType* toAtEndOfDuration, SVGAnimatedType* animated)
-{
-    ASSERT(m_animationElement);
-    ASSERT(m_contextElement);
-
-    const pair<int, int>& fromIntegerPair = m_animationElement->animationMode() == ToAnimation ? animated->integerOptionalInteger() : from->integerOptionalInteger();
-    const pair<int, int>& toIntegerPair = to->integerOptionalInteger();
-    const pair<int, int>& toAtEndOfDurationIntegerPair = toAtEndOfDuration->integerOptionalInteger();
-    pair<int, int>& animatedIntegerPair = animated->integerOptionalInteger();
-
-    SVGAnimatedIntegerAnimator::calculateAnimatedInteger(m_animationElement, percentage, repeatCount, fromIntegerPair.first, toIntegerPair.first, toAtEndOfDurationIntegerPair.first, animatedIntegerPair.first);
-    SVGAnimatedIntegerAnimator::calculateAnimatedInteger(m_animationElement, percentage, repeatCount, fromIntegerPair.second, toIntegerPair.second, toAtEndOfDurationIntegerPair.second, animatedIntegerPair.second);
-}
-
-float SVGAnimatedIntegerOptionalIntegerAnimator::calculateDistance(const String&, const String&)
-{
-    // FIXME: Distance calculation is not possible for SVGIntegerOptionalInteger right now. We need the distance for every single value.
-    return -1;
+    return m_firstInteger->needsSynchronizeAttribute()
+        || m_secondInteger->needsSynchronizeAttribute();
 }
 
 }

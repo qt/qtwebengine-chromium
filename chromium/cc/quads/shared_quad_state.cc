@@ -11,7 +11,11 @@
 namespace cc {
 
 SharedQuadState::SharedQuadState()
-    : is_clipped(false), opacity(0.f), blend_mode(SkXfermode::kSrcOver_Mode) {}
+    : is_clipped(false),
+      opacity(0.f),
+      blend_mode(SkXfermode::kSrcOver_Mode),
+      sorting_context_id(0) {
+}
 
 SharedQuadState::~SharedQuadState() {
   TRACE_EVENT_OBJECT_DELETED_WITH_ID(
@@ -19,21 +23,18 @@ SharedQuadState::~SharedQuadState() {
       "cc::SharedQuadState", this);
 }
 
-scoped_ptr<SharedQuadState> SharedQuadState::Create() {
-  return make_scoped_ptr(new SharedQuadState);
-}
-
-scoped_ptr<SharedQuadState> SharedQuadState::Copy() const {
-  return make_scoped_ptr(new SharedQuadState(*this));
+void SharedQuadState::CopyFrom(const SharedQuadState* other) {
+  *this = *other;
 }
 
 void SharedQuadState::SetAll(const gfx::Transform& content_to_target_transform,
-                             gfx::Size content_bounds,
-                             gfx::Rect visible_content_rect,
-                             gfx::Rect clip_rect,
+                             const gfx::Size& content_bounds,
+                             const gfx::Rect& visible_content_rect,
+                             const gfx::Rect& clip_rect,
                              bool is_clipped,
                              float opacity,
-                             SkXfermode::Mode blend_mode) {
+                             SkXfermode::Mode blend_mode,
+                             int sorting_context_id) {
   this->content_to_target_transform = content_to_target_transform;
   this->content_bounds = content_bounds;
   this->visible_content_rect = visible_content_rect;
@@ -41,6 +42,7 @@ void SharedQuadState::SetAll(const gfx::Transform& content_to_target_transform,
   this->is_clipped = is_clipped;
   this->opacity = opacity;
   this->blend_mode = blend_mode;
+  this->sorting_context_id = sorting_context_id;
 }
 
 scoped_ptr<base::Value> SharedQuadState::AsValue() const {

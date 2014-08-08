@@ -7,67 +7,66 @@
 // Generic class that handles event logging for the cast library.
 // Logging has three possible optional forms:
 // 1. Raw data and stats accessible by the application.
-// 2. UMA stats.
-// 3. Tracing of raw events.
+// 2. Tracing of raw events.
 
 #include "base/memory/ref_counted.h"
-#include "base/task_runner.h"
+#include "base/threading/thread_checker.h"
 #include "media/cast/cast_config.h"
 #include "media/cast/logging/logging_defines.h"
 #include "media/cast/logging/logging_raw.h"
-#include "media/cast/logging/logging_stats.h"
 
 namespace media {
 namespace cast {
 
-// Should only be called from the main thread.
-class LoggingImpl : public base::NonThreadSafe {
+class LoggingImpl {
  public:
-  LoggingImpl(base::TickClock* clock,
-              scoped_refptr<base::TaskRunner> main_thread_proxy,
-              const CastLoggingConfig& config);
-
+  LoggingImpl();
   ~LoggingImpl();
 
-  // TODO(pwestin): Add argument to API to send in time of event instead of
-  // grabbing now.
-  void InsertFrameEvent(CastLoggingEvent event,
-                        uint32 rtp_timestamp,
-                        uint32 frame_id);
-  void InsertFrameEventWithSize(CastLoggingEvent event,
-                                uint32 rtp_timestamp,
-                                uint32 frame_id,
-                                int frame_size);
-  void InsertFrameEventWithDelay(CastLoggingEvent event,
-                                 uint32 rtp_timestamp,
-                                 uint32 frame_id,
+  // Note: All methods below should be called from the same thread.
+
+  void InsertFrameEvent(const base::TimeTicks& time_of_event,
+                        CastLoggingEvent event, EventMediaType event_media_type,
+                        uint32 rtp_timestamp, uint32 frame_id);
+
+  void InsertEncodedFrameEvent(const base::TimeTicks& time_of_event,
+                               CastLoggingEvent event,
+                               EventMediaType event_media_type,
+                               uint32 rtp_timestamp, uint32 frame_id,
+                               int frame_size, bool key_frame,
+                               int target_bitrate);
+
+  void InsertFrameEventWithDelay(const base::TimeTicks& time_of_event,
+                                 CastLoggingEvent event,
+                                 EventMediaType event_media_type,
+                                 uint32 rtp_timestamp, uint32 frame_id,
                                  base::TimeDelta delay);
-  void InsertPacketListEvent(CastLoggingEvent event, const PacketList& packets);
 
-  void InsertPacketEvent(CastLoggingEvent event,
-                         uint32 rtp_timestamp,
-                         uint32 frame_id,
-                         uint16 packet_id,
-                         uint16 max_packet_id,
-                         size_t size);
-  void InsertGenericEvent(CastLoggingEvent event, int value);
+  void InsertSinglePacketEvent(const base::TimeTicks& time_of_event,
+                               CastLoggingEvent event,
+                               EventMediaType event_media_type,
+                               const Packet& packet);
 
-  // Get raw data.
-  FrameRawMap GetFrameRawData();
-  PacketRawMap GetPacketRawData();
-  GenericRawMap GetGenericRawData();
-  // Get stats only (computed when called). Triggers UMA stats when enabled.
-  const FrameStatsMap* GetFrameStatsData();
-  const PacketStatsMap* GetPacketStatsData();
-  const GenericStatsMap* GetGenericStatsData();
+  void InsertPacketListEvent(const base::TimeTicks& time_of_event,
+                             CastLoggingEvent event,
+                             EventMediaType event_media_type,
+                             const PacketList& packets);
 
-  void Reset();
+  void InsertPacketEvent(const base::TimeTicks& time_of_event,
+                         CastLoggingEvent event,
+                         EventMediaType event_media_type, uint32 rtp_timestamp,
+                         uint32 frame_id, uint16 packet_id,
+                         uint16 max_packet_id, size_t size);
+
+  // Delegates to |LoggingRaw::AddRawEventSubscriber()|.
+  void AddRawEventSubscriber(RawEventSubscriber* subscriber);
+
+  // Delegates to |LoggingRaw::RemoveRawEventSubscriber()|.
+  void RemoveRawEventSubscriber(RawEventSubscriber* subscriber);
 
  private:
-  scoped_refptr<base::TaskRunner> main_thread_proxy_;
-  const CastLoggingConfig config_;
+  base::ThreadChecker thread_checker_;
   LoggingRaw raw_;
-  LoggingStats stats_;
 
   DISALLOW_COPY_AND_ASSIGN(LoggingImpl);
 };

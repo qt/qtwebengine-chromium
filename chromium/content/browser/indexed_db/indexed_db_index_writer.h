@@ -56,16 +56,17 @@ class IndexWriter {
 
   const IndexedDBIndexMetadata index_metadata_;
   IndexedDBDatabase::IndexKeys index_keys_;
+
+  DISALLOW_COPY_AND_ASSIGN(IndexWriter);
 };
 
 bool MakeIndexWriters(
-    scoped_refptr<IndexedDBTransaction> transaction,
+    IndexedDBTransaction* transaction,
     IndexedDBBackingStore* store,
     int64 database_id,
     const IndexedDBObjectStoreMetadata& metadata,
     const IndexedDBKey& primary_key,
     bool key_was_generated,
-    const std::vector<int64>& index_ids,
     const std::vector<IndexedDBDatabase::IndexKeys>& index_keys,
     ScopedVector<IndexWriter>* index_writers,
     base::string16* error_message,

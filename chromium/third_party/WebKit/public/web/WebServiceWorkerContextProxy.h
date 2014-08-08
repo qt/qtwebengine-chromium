@@ -31,8 +31,11 @@
 #ifndef WebServiceWorkerContextProxy_h
 #define WebServiceWorkerContextProxy_h
 
+#include "public/platform/WebMessagePortChannel.h"
+
 namespace blink {
 
+class WebServiceWorkerRequest;
 class WebString;
 
 // A proxy interface to talk to the worker's GlobalScope implementation.
@@ -41,13 +44,18 @@ class WebServiceWorkerContextProxy {
 public:
     virtual ~WebServiceWorkerContextProxy() { }
 
-    // FIXME: Add service-worker specific methods.
+    virtual void dispatchActivateEvent(int eventID) = 0;
+    // FIXME: This needs to pass the active service worker info.
+    virtual void dispatchInstallEvent(int installEventID) = 0;
+    virtual void dispatchFetchEvent(int fetchEventID, const WebServiceWorkerRequest& webRequest) = 0;
 
-    virtual void resumeWorkerContext() { }
-    virtual void attachDevTools() { }
-    virtual void reattachDevTools(const WebString& savedState) { }
-    virtual void detachDevTools() { }
-    virtual void dispatchDevToolsMessage(const WebString&) { }
+    virtual void dispatchMessageEvent(const WebString& message, const WebMessagePortChannelArray& channels) = 0;
+
+    virtual void dispatchPushEvent(int eventID, const WebString& data) = 0;
+
+    // Once the ServiceWorker has finished handling the sync event
+    // didHandleSyncEvent is called on the context client.
+    virtual void dispatchSyncEvent(int syncEventID) = 0;
 };
 
 } // namespace blink

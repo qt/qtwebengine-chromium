@@ -32,7 +32,7 @@ namespace WebCore {
 
 class AudioParam;
 
-class BiquadFilterNode : public AudioBasicProcessorNode {
+class BiquadFilterNode FINAL : public AudioBasicProcessorNode {
 public:
     // These must be defined as in the .idl file and must match those in the BiquadProcessor class.
     enum {
@@ -46,13 +46,12 @@ public:
         ALLPASS = 7
     };
 
-    static PassRefPtr<BiquadFilterNode> create(AudioContext* context, float sampleRate)
+    static PassRefPtrWillBeRawPtr<BiquadFilterNode> create(AudioContext* context, float sampleRate)
     {
-        return adoptRef(new BiquadFilterNode(context, sampleRate));
+        return adoptRefWillBeNoop(new BiquadFilterNode(context, sampleRate));
     }
 
     String type() const;
-    bool setType(unsigned); // Returns true on success.
     void setType(const String&);
 
     AudioParam* frequency() { return biquadProcessor()->parameter1(); }
@@ -70,6 +69,7 @@ private:
     BiquadFilterNode(AudioContext*, float sampleRate);
 
     BiquadProcessor* biquadProcessor() { return static_cast<BiquadProcessor*>(processor()); }
+    bool setType(unsigned); // Returns true on success.
 };
 
 } // namespace WebCore

@@ -10,16 +10,91 @@
 #include "content/browser/frame_host/render_frame_host_factory.h"
 #include "content/browser/frame_host/render_frame_host_impl.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
+#include "content/browser/web_contents/web_contents_impl.h"
+#include "content/common/view_messages.h"
+#include "content/public/browser/web_contents_observer.h"
 #include "content/public/test/mock_render_process_host.h"
 #include "content/public/test/test_browser_context.h"
 #include "content/public/test/test_browser_thread_bundle.h"
-#include "content/public/test/test_renderer_host.h"
+#include "content/test/test_render_view_host.h"
+#include "content/test/test_web_contents.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace content {
 namespace {
 
-class FrameTreeTest : public RenderViewHostTestHarness {
+// Appends a description of the structure of the frame tree to |result|.
+void AppendTreeNodeState(FrameTreeNode* node, std::string* result) {
+  result->append(
+      base::Int64ToString(node->current_frame_host()->GetRoutingID()));
+  if (!node->frame_name().empty()) {
+    result->append(" '");
+    result->append(node->frame_name());
+    result->append("'");
+  }
+  result->append(": [");
+  const char* separator = "";
+  for (size_t i = 0; i < node->child_count(); i++) {
+    result->append(separator);
+    AppendTreeNodeState(node->child_at(i), result);
+    separator = ", ";
+  }
+  result->append("]");
+}
+
+// Logs calls to WebContentsObserver along with the state of the frame tree,
+// for later use in EXPECT_EQ().
+class TreeWalkingWebContentsLogger : public WebContentsObserver {
+ public:
+  explicit TreeWalkingWebContentsLogger(WebContents* web_contents)
+      : WebContentsObserver(web_contents) {}
+
+  virtual ~TreeWalkingWebContentsLogger() {
+    EXPECT_EQ("", log_) << "Activity logged that was not expected";
+  }
+
+  // Gets and resets the log, which is a string of what happened.
+  std::string GetLog() {
+    std::string result = log_;
+    log_.clear();
+    return result;
+  }
+
+  // content::WebContentsObserver implementation.
+  virtual void RenderFrameCreated(RenderFrameHost* render_frame_host) OVERRIDE {
+    LogWhatHappened("RenderFrameCreated", render_frame_host);
+  }
+
+  virtual void RenderFrameDeleted(RenderFrameHost* render_frame_host) OVERRIDE {
+    LogWhatHappened("RenderFrameDeleted", render_frame_host);
+  }
+
+  virtual void RenderProcessGone(base::TerminationStatus status) OVERRIDE {
+    LogWhatHappened("RenderProcessGone");
+  }
+
+ private:
+  void LogWhatHappened(const std::string& event_name) {
+    if (!log_.empty()) {
+      log_.append("\n");
+    }
+    log_.append(event_name + " -> ");
+    AppendTreeNodeState(
+        static_cast<WebContentsImpl*>(web_contents())->GetFrameTree()->root(),
+        &log_);
+  }
+
+  void LogWhatHappened(const std::string& event_name, RenderFrameHost* rfh) {
+    LogWhatHappened(
+        base::StringPrintf("%s(%d)", event_name.c_str(), rfh->GetRoutingID()));
+  }
+
+  std::string log_;
+
+  DISALLOW_COPY_AND_ASSIGN(TreeWalkingWebContentsLogger);
+};
+
+class FrameTreeTest : public RenderViewHostImplTestHarness {
  protected:
   // Prints a FrameTree, for easy assertions of the tree hierarchy.
   std::string GetTreeState(FrameTree* frame_tree) {
@@ -27,153 +102,119 @@ class FrameTreeTest : public RenderViewHostTestHarness {
     AppendTreeNodeState(frame_tree->root(), &result);
     return result;
   }
-
- private:
-  void AppendTreeNodeState(FrameTreeNode* node, std::string* result) {
-    result->append(base::Int64ToString(node->frame_id()));
-    if (!node->frame_name().empty()) {
-      result->append(" '");
-      result->append(node->frame_name());
-      result->append("'");
-    }
-    result->append(": [");
-    const char* separator = "";
-    for (size_t i = 0; i < node->child_count(); i++) {
-      result->append(separator);
-      AppendTreeNodeState(node->child_at(i), result);
-      separator = ", ";
-    }
-    result->append("]");
-  }
 };
-
-// The root node never changes during navigation even though its
-// RenderFrameHost does.
-//  - Swapping main frame doesn't change root node.
-//  - Swapping back to NULL doesn't crash (easier tear-down for interstitials).
-//  - Main frame does not own RenderFrameHost.
-TEST_F(FrameTreeTest, RootNode) {
-  FrameTree frame_tree(new NavigatorImpl(NULL, NULL), NULL, NULL, NULL, NULL);
-
-  // Initial state has empty node.
-  FrameTreeNode* root = frame_tree.root();
-  ASSERT_TRUE(root);
-  EXPECT_FALSE(frame_tree.GetMainFrame());
-
-  // Swap in main frame.
-  RenderFrameHostImpl* dummy = reinterpret_cast<RenderFrameHostImpl*>(0x1);
-  frame_tree.SwapMainFrame(dummy);
-  EXPECT_EQ(root, frame_tree.root());
-  EXPECT_EQ(dummy, frame_tree.GetMainFrame());
-
-  // Move back to NULL.
-  frame_tree.SwapMainFrame(NULL);
-  EXPECT_EQ(root, frame_tree.root());
-  EXPECT_FALSE(frame_tree.GetMainFrame());
-
-  // Move back to an invalid pointer, let the FrameTree go out of scope. Test
-  // should not crash because the main frame isn't owned.
-  frame_tree.SwapMainFrame(dummy);
-}
-
-// Test that swapping the main frame resets the renderer-assigned frame id.
-//  - On creation, frame id is unassigned.
-//  - After a swap, frame id is unassigned.
-TEST_F(FrameTreeTest, FirstNavigationAfterSwap) {
-  FrameTree frame_tree(new NavigatorImpl(NULL, NULL), NULL, NULL, NULL, NULL);
-
-  EXPECT_TRUE(frame_tree.IsFirstNavigationAfterSwap());
-  EXPECT_EQ(FrameTreeNode::kInvalidFrameId,
-            frame_tree.root()->frame_id());
-  frame_tree.OnFirstNavigationAfterSwap(1);
-  EXPECT_FALSE(frame_tree.IsFirstNavigationAfterSwap());
-  EXPECT_EQ(1, frame_tree.root()->frame_id());
-
-  frame_tree.SwapMainFrame(NULL);
-  EXPECT_TRUE(frame_tree.IsFirstNavigationAfterSwap());
-  EXPECT_EQ(FrameTreeNode::kInvalidFrameId,
-            frame_tree.root()->frame_id());
-}
 
 // Exercise tree manipulation routines.
 //  - Add a series of nodes and verify tree structure.
 //  - Remove a series of nodes and verify tree structure.
 TEST_F(FrameTreeTest, Shape) {
-  FrameTree frame_tree(new NavigatorImpl(NULL, NULL), NULL, NULL, NULL, NULL);
+  // Use the FrameTree of the WebContents so that it has all the delegates it
+  // needs.  We may want to consider a test version of this.
+  FrameTree* frame_tree = contents()->GetFrameTree();
+  FrameTreeNode* root = frame_tree->root();
 
   std::string no_children_node("no children node");
   std::string deep_subtree("node with deep subtree");
 
-  // Ensure the top-level node of the FrameTree is initialized by simulating a
-  // main frame swap here.
-  scoped_ptr<RenderFrameHostImpl> render_frame_host =
-      RenderFrameHostFactory::Create(static_cast<RenderViewHostImpl*>(rvh()),
-                                     NULL,
-                                     &frame_tree,
-                                     frame_tree.root(),
-                                     process()->GetNextRoutingID(),
-                                     false);
-  frame_tree.SwapMainFrame(render_frame_host.get());
-  frame_tree.OnFirstNavigationAfterSwap(5);
-
-  ASSERT_EQ("5: []", GetTreeState(&frame_tree));
+  ASSERT_EQ("1: []", GetTreeState(frame_tree));
 
   // Simulate attaching a series of frames to build the frame tree.
-  frame_tree.AddFrame(process()->GetNextRoutingID(), 5, 14, std::string());
-  frame_tree.AddFrame(process()->GetNextRoutingID(), 5, 15, std::string());
-  frame_tree.AddFrame(process()->GetNextRoutingID(), 5, 16, std::string());
+  frame_tree->AddFrame(root, 14, std::string());
+  frame_tree->AddFrame(root, 15, std::string());
+  frame_tree->AddFrame(root, 16, std::string());
 
-  frame_tree.AddFrame(process()->GetNextRoutingID(), 14, 244, std::string());
-  frame_tree.AddFrame(process()->GetNextRoutingID(), 15, 255, no_children_node);
-  frame_tree.AddFrame(process()->GetNextRoutingID(), 14, 245, std::string());
+  frame_tree->AddFrame(root->child_at(0), 244, std::string());
+  frame_tree->AddFrame(root->child_at(1), 255, no_children_node);
+  frame_tree->AddFrame(root->child_at(0), 245, std::string());
 
-  ASSERT_EQ("5: [14: [244: [], 245: []], "
+  ASSERT_EQ("1: [14: [244: [], 245: []], "
                 "15: [255 'no children node': []], "
                 "16: []]",
-            GetTreeState(&frame_tree));
+            GetTreeState(frame_tree));
 
-  frame_tree.AddFrame(process()->GetNextRoutingID(), 16, 264, std::string());
-  frame_tree.AddFrame(process()->GetNextRoutingID(), 16, 265, std::string());
-  frame_tree.AddFrame(process()->GetNextRoutingID(), 16, 266, std::string());
-  frame_tree.AddFrame(process()->GetNextRoutingID(), 16, 267, deep_subtree);
-  frame_tree.AddFrame(process()->GetNextRoutingID(), 16, 268, std::string());
+  FrameTreeNode* child_16 = root->child_at(2);
+  frame_tree->AddFrame(child_16, 264, std::string());
+  frame_tree->AddFrame(child_16, 265, std::string());
+  frame_tree->AddFrame(child_16, 266, std::string());
+  frame_tree->AddFrame(child_16, 267, deep_subtree);
+  frame_tree->AddFrame(child_16, 268, std::string());
 
-  frame_tree.AddFrame(process()->GetNextRoutingID(), 267, 365, std::string());
-  frame_tree.AddFrame(process()->GetNextRoutingID(), 365, 455, std::string());
-  frame_tree.AddFrame(process()->GetNextRoutingID(), 455, 555, std::string());
-  frame_tree.AddFrame(process()->GetNextRoutingID(), 555, 655, std::string());
+  FrameTreeNode* child_267 = child_16->child_at(3);
+  frame_tree->AddFrame(child_267, 365, std::string());
+  frame_tree->AddFrame(child_267->child_at(0), 455, std::string());
+  frame_tree->AddFrame(child_267->child_at(0)->child_at(0), 555, std::string());
+  frame_tree->AddFrame(child_267->child_at(0)->child_at(0)->child_at(0), 655,
+                       std::string());
 
   // Now that's it's fully built, verify the tree structure is as expected.
-  ASSERT_EQ("5: [14: [244: [], 245: []], "
+  ASSERT_EQ("1: [14: [244: [], 245: []], "
                 "15: [255 'no children node': []], "
                 "16: [264: [], 265: [], 266: [], "
                      "267 'node with deep subtree': "
                          "[365: [455: [555: [655: []]]]], 268: []]]",
-            GetTreeState(&frame_tree));
+            GetTreeState(frame_tree));
 
-  // Test removing of nodes.
-  frame_tree.RemoveFrame(NULL, 555, 655);
-  ASSERT_EQ("5: [14: [244: [], 245: []], "
+  FrameTreeNode* child_555 = child_267->child_at(0)->child_at(0)->child_at(0);
+  frame_tree->RemoveFrame(child_555);
+  ASSERT_EQ("1: [14: [244: [], 245: []], "
                 "15: [255 'no children node': []], "
                 "16: [264: [], 265: [], 266: [], "
                      "267 'node with deep subtree': "
-                         "[365: [455: [555: []]]], 268: []]]",
-            GetTreeState(&frame_tree));
+                         "[365: [455: []]], 268: []]]",
+            GetTreeState(frame_tree));
 
-  frame_tree.RemoveFrame(NULL, 16, 265);
-  ASSERT_EQ("5: [14: [244: [], 245: []], "
+  frame_tree->RemoveFrame(child_16->child_at(1));
+  ASSERT_EQ("1: [14: [244: [], 245: []], "
                 "15: [255 'no children node': []], "
                 "16: [264: [], 266: [], "
                      "267 'node with deep subtree': "
-                         "[365: [455: [555: []]]], 268: []]]",
-            GetTreeState(&frame_tree));
+                         "[365: [455: []]], 268: []]]",
+            GetTreeState(frame_tree));
 
-  frame_tree.RemoveFrame(NULL, 5, 15);
-  ASSERT_EQ("5: [14: [244: [], 245: []], "
+  frame_tree->RemoveFrame(root->child_at(1));
+  ASSERT_EQ("1: [14: [244: [], 245: []], "
                 "16: [264: [], 266: [], "
                      "267 'node with deep subtree': "
-                         "[365: [455: [555: []]]], 268: []]]",
-            GetTreeState(&frame_tree));
+                         "[365: [455: []]], 268: []]]",
+            GetTreeState(frame_tree));
+}
+
+// Do some simple manipulations of the frame tree, making sure that
+// WebContentsObservers see a consistent view of the tree as we go.
+TEST_F(FrameTreeTest, ObserverWalksTreeDuringFrameCreation) {
+  TreeWalkingWebContentsLogger activity(contents());
+  FrameTree* frame_tree = contents()->GetFrameTree();
+  FrameTreeNode* root = frame_tree->root();
+
+  // Simulate attaching a series of frames to build the frame tree.
+  main_test_rfh()->OnCreateChildFrame(14, std::string());
+  EXPECT_EQ("RenderFrameCreated(14) -> 1: [14: []]", activity.GetLog());
+  main_test_rfh()->OnCreateChildFrame(18, std::string());
+  EXPECT_EQ("RenderFrameCreated(18) -> 1: [14: [], 18: []]", activity.GetLog());
+  frame_tree->RemoveFrame(root->child_at(0));
+  EXPECT_EQ("RenderFrameDeleted(14) -> 1: [18: []]", activity.GetLog());
+  frame_tree->RemoveFrame(root->child_at(0));
+  EXPECT_EQ("RenderFrameDeleted(18) -> 1: []", activity.GetLog());
+}
+
+// Make sure that WebContentsObservers see a consistent view of the tree after
+// recovery from a render process crash.
+TEST_F(FrameTreeTest, ObserverWalksTreeAfterCrash) {
+  TreeWalkingWebContentsLogger activity(contents());
+
+  main_test_rfh()->OnCreateChildFrame(22, std::string());
+  EXPECT_EQ("RenderFrameCreated(22) -> 1: [22: []]", activity.GetLog());
+  main_test_rfh()->OnCreateChildFrame(23, std::string());
+  EXPECT_EQ("RenderFrameCreated(23) -> 1: [22: [], 23: []]", activity.GetLog());
+
+  // Crash the renderer
+  test_rvh()->OnMessageReceived(ViewHostMsg_RenderProcessGone(
+      0, base::TERMINATION_STATUS_PROCESS_CRASHED, -1));
+  EXPECT_EQ(
+      "RenderFrameDeleted(22) -> 1: []\n"
+      "RenderFrameDeleted(23) -> 1: []\n"
+      "RenderProcessGone -> 1: []",
+      activity.GetLog());
 }
 
 }  // namespace

@@ -31,8 +31,6 @@
 #include "platform/FloatConversion.h"
 #include "platform/geometry/LayoutPoint.h"
 #include "platform/geometry/LayoutSize.h"
-#include "platform/transforms/AffineTransform.h"
-#include "platform/transforms/TransformationMatrix.h"
 #include <limits>
 #include <math.h>
 
@@ -48,7 +46,9 @@ FloatPoint::FloatPoint(const IntPoint& p) : m_x(p.x()), m_y(p.y())
 {
 }
 
-FloatPoint::FloatPoint(const LayoutPoint& p) : m_x(p.x()), m_y(p.y())
+FloatPoint::FloatPoint(const LayoutPoint& p)
+    : m_x(p.x().toFloat())
+    , m_y(p.y().toFloat())
 {
 }
 
@@ -84,24 +84,10 @@ void FloatPoint::moveBy(const LayoutPoint& point)
     m_y += point.y();
 }
 
-FloatPoint::operator SkPoint() const
+SkPoint FloatPoint::data() const
 {
     SkPoint p = { WebCoreFloatToSkScalar(m_x), WebCoreFloatToSkScalar(m_y) };
     return p;
-}
-
-FloatPoint FloatPoint::matrixTransform(const AffineTransform& transform) const
-{
-    double newX, newY;
-    transform.map(static_cast<double>(m_x), static_cast<double>(m_y), newX, newY);
-    return narrowPrecision(newX, newY);
-}
-
-FloatPoint FloatPoint::matrixTransform(const TransformationMatrix& transform) const
-{
-    double newX, newY;
-    transform.map(static_cast<double>(m_x), static_cast<double>(m_y), newX, newY);
-    return narrowPrecision(newX, newY);
 }
 
 FloatPoint FloatPoint::narrowPrecision(double x, double y)

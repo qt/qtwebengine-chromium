@@ -45,7 +45,7 @@ static void setFocusForModalDialog(HTMLDialogElement* dialog)
     Element* focusableDescendant = 0;
     Node* next = 0;
     for (Node* node = dialog->firstChild(); node; node = next) {
-        if (node->hasTagName(dialogTag))
+        if (isHTMLDialogElement(*node))
             next = NodeTraversal::nextSkippingChildren(*node, dialog);
         else
             next = NodeTraversal::next(*node, dialog);
@@ -57,7 +57,6 @@ static void setFocusForModalDialog(HTMLDialogElement* dialog)
             HTMLFormControlElement* control = toHTMLFormControlElement(node);
             if (control->isAutofocusable()) {
                 control->focus();
-                control->setAutofocused();
                 return;
             }
         }
@@ -75,7 +74,7 @@ static void setFocusForModalDialog(HTMLDialogElement* dialog)
         return;
     }
 
-    dialog->document().setFocusedElement(0);
+    dialog->document().setFocusedElement(nullptr);
 }
 
 static void inertSubtreesChanged(Document& document)
@@ -84,25 +83,22 @@ static void inertSubtreesChanged(Document& document)
     // tree can change inertness which means they must be added or removed from
     // the tree. The most foolproof way is to clear the entire tree and rebuild
     // it, though a more clever way is probably possible.
-    Document* topDocument = document.topDocument();
-    topDocument->clearAXObjectCache();
-    if (AXObjectCache* cache = topDocument->axObjectCache())
-        cache->childrenChanged(cache->getOrCreate(topDocument));
+    Document& topDocument = document.topDocument();
+    topDocument.clearAXObjectCache();
+    if (AXObjectCache* cache = topDocument.axObjectCache())
+        cache->childrenChanged(cache->getOrCreate(&topDocument));
 }
 
-HTMLDialogElement::HTMLDialogElement(Document& document)
+inline HTMLDialogElement::HTMLDialogElement(Document& document)
     : HTMLElement(dialogTag, document)
-    , m_centeringMode(Uninitialized)
+    , m_centeringMode(NotCentered)
     , m_centeredPosition(0)
     , m_returnValue("")
 {
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLDialogElement> HTMLDialogElement::create(Document& document)
-{
-    return adoptRef(new HTMLDialogElement(document));
-}
+DEFINE_NODE_FACTORY(HTMLDialogElement)
 
 void HTMLDialogElement::close(const String& returnValue, ExceptionState& exceptionState)
 {
@@ -132,10 +128,10 @@ void HTMLDialogElement::closeDialog(const String& returnValue)
 
 void HTMLDialogElement::forceLayoutForCentering()
 {
-    m_centeringMode = Uninitialized;
+    m_centeringMode = NeedsCentering;
     document().updateLayoutIgnorePendingStylesheets();
-    if (m_centeringMode == Uninitialized)
-        m_centeringMode = NotCentered;
+    if (m_centeringMode == NeedsCentering)
+        setNotCentered();
 }
 
 void HTMLDialogElement::show()
@@ -143,7 +139,6 @@ void HTMLDialogElement::show()
     if (fastHasAttribute(openAttr))
         return;
     setBooleanAttribute(openAttr, true);
-    forceLayoutForCentering();
 }
 
 void HTMLDialogElement::showModal(ExceptionState& exceptionState)
@@ -168,16 +163,22 @@ void HTMLDialogElement::showModal(ExceptionState& exceptionState)
     setFocusForModalDialog(this);
 }
 
+void HTMLDialogElement::removedFrom(ContainerNode* insertionPoint)
+{
+    HTMLElement::removedFrom(insertionPoint);
+    setNotCentered();
+    // FIXME: We should call inertSubtreesChanged() here.
+}
+
 void HTMLDialogElement::setCentered(LayoutUnit centeredPosition)
 {
-    ASSERT(m_centeringMode == Uninitialized);
+    ASSERT(m_centeringMode == NeedsCentering);
     m_centeredPosition = centeredPosition;
     m_centeringMode = Centered;
 }
 
 void HTMLDialogElement::setNotCentered()
 {
-    ASSERT(m_centeringMode == Uninitialized);
     m_centeringMode = NotCentered;
 }
 
@@ -199,13 +200,6 @@ void HTMLDialogElement::defaultEventHandler(Event* event)
         return;
     }
     HTMLElement::defaultEventHandler(event);
-}
-
-bool HTMLDialogElement::shouldBeReparentedUnderRenderView(const RenderStyle* style) const
-{
-    if (style && style->position() == AbsolutePosition)
-        return true;
-    return Element::shouldBeReparentedUnderRenderView(style);
 }
 
 } // namespace WebCore

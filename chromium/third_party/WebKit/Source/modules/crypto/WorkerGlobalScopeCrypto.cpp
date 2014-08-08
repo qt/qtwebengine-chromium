@@ -32,15 +32,11 @@
 #include "modules/crypto/WorkerGlobalScopeCrypto.h"
 
 #include "core/dom/ExecutionContext.h"
-#include "modules/crypto/WorkerCrypto.h"
+#include "modules/crypto/Crypto.h"
 
 namespace WebCore {
 
 WorkerGlobalScopeCrypto::WorkerGlobalScopeCrypto()
-{
-}
-
-WorkerGlobalScopeCrypto::~WorkerGlobalScopeCrypto()
 {
 }
 
@@ -49,26 +45,32 @@ const char* WorkerGlobalScopeCrypto::supplementName()
     return "WorkerGlobalScopeCrypto";
 }
 
-WorkerGlobalScopeCrypto* WorkerGlobalScopeCrypto::from(WorkerSupplementable* context)
+WorkerGlobalScopeCrypto& WorkerGlobalScopeCrypto::from(WillBeHeapSupplementable<WorkerGlobalScope>& context)
 {
-    WorkerGlobalScopeCrypto* supplement = static_cast<WorkerGlobalScopeCrypto*>(WorkerSupplement::from(context, supplementName()));
+    WorkerGlobalScopeCrypto* supplement = static_cast<WorkerGlobalScopeCrypto*>(WillBeHeapSupplement<WorkerGlobalScope>::from(context, supplementName()));
     if (!supplement) {
         supplement = new WorkerGlobalScopeCrypto();
-        provideTo(context, supplementName(), adoptPtr(supplement));
+        provideTo(context, supplementName(), adoptPtrWillBeNoop(supplement));
     }
-    return supplement;
+    return *supplement;
 }
 
-WorkerCrypto* WorkerGlobalScopeCrypto::crypto(WorkerSupplementable* context)
+Crypto* WorkerGlobalScopeCrypto::crypto(WillBeHeapSupplementable<WorkerGlobalScope>& context)
 {
-    return WorkerGlobalScopeCrypto::from(context)->crypto();
+    return WorkerGlobalScopeCrypto::from(context).crypto();
 }
 
-WorkerCrypto* WorkerGlobalScopeCrypto::crypto() const
+Crypto* WorkerGlobalScopeCrypto::crypto() const
 {
     if (!m_crypto)
-        m_crypto = WorkerCrypto::create();
+        m_crypto = Crypto::create();
     return m_crypto.get();
+}
+
+void WorkerGlobalScopeCrypto::trace(Visitor* visitor)
+{
+    visitor->trace(m_crypto);
+    WillBeHeapSupplement<WorkerGlobalScope>::trace(visitor);
 }
 
 } // namespace WebCore

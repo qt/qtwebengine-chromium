@@ -86,91 +86,67 @@ bool AudioContext::isSampleRateRangeGood(float sampleRate)
 }
 
 // Don't allow more than this number of simultaneous AudioContexts talking to hardware.
-const unsigned MaxHardwareContexts = 4;
+const unsigned MaxHardwareContexts = 6;
 unsigned AudioContext::s_hardwareContextCount = 0;
 
-PassRefPtr<AudioContext> AudioContext::create(Document& document, ExceptionState& exceptionState)
+PassRefPtrWillBeRawPtr<AudioContext> AudioContext::create(Document& document, ExceptionState& exceptionState)
 {
     ASSERT(isMainThread());
     if (s_hardwareContextCount >= MaxHardwareContexts) {
         exceptionState.throwDOMException(
             SyntaxError,
             "number of hardware contexts reached maximum (" + String::number(MaxHardwareContexts) + ").");
-        return 0;
+        return nullptr;
     }
 
-    RefPtr<AudioContext> audioContext(adoptRef(new AudioContext(&document)));
+    RefPtrWillBeRawPtr<AudioContext> audioContext(adoptRefWillBeThreadSafeRefCountedGarbageCollected(new AudioContext(&document)));
     audioContext->suspendIfNeeded();
     return audioContext.release();
-}
-
-PassRefPtr<AudioContext> AudioContext::create(Document& document, unsigned numberOfChannels, size_t numberOfFrames, float sampleRate, ExceptionState& exceptionState)
-{
-    document.addConsoleMessage(JSMessageSource, WarningMessageLevel, "Deprecated AudioContext constructor: use OfflineAudioContext instead");
-    return OfflineAudioContext::create(&document, numberOfChannels, numberOfFrames, sampleRate, exceptionState);
 }
 
 // Constructor for rendering to the audio hardware.
 AudioContext::AudioContext(Document* document)
     : ActiveDOMObject(document)
     , m_isStopScheduled(false)
+    , m_isCleared(false)
     , m_isInitialized(false)
-    , m_isAudioThreadFinished(false)
-    , m_destinationNode(0)
+    , m_destinationNode(nullptr)
     , m_isDeletionScheduled(false)
     , m_automaticPullNodesNeedUpdating(false)
     , m_connectionCount(0)
     , m_audioThread(0)
     , m_graphOwnerThread(UndefinedThreadIdentifier)
     , m_isOfflineContext(false)
-    , m_activeSourceCount(0)
 {
-    constructCommon();
+    ScriptWrappable::init(this);
 
     m_destinationNode = DefaultAudioDestinationNode::create(this);
 
-    // This sets in motion an asynchronous loading mechanism on another thread.
-    // We can check m_hrtfDatabaseLoader->isLoaded() to find out whether or not it has been fully loaded.
-    // It's not that useful to have a callback function for this since the audio thread automatically starts rendering on the graph
-    // when this has finished (see AudioDestinationNode).
-    m_hrtfDatabaseLoader = HRTFDatabaseLoader::createAndLoadAsynchronouslyIfNecessary(sampleRate());
+    initialize();
 }
 
 // Constructor for offline (non-realtime) rendering.
 AudioContext::AudioContext(Document* document, unsigned numberOfChannels, size_t numberOfFrames, float sampleRate)
     : ActiveDOMObject(document)
     , m_isStopScheduled(false)
+    , m_isCleared(false)
     , m_isInitialized(false)
-    , m_isAudioThreadFinished(false)
-    , m_destinationNode(0)
+    , m_destinationNode(nullptr)
+    , m_isDeletionScheduled(false)
     , m_automaticPullNodesNeedUpdating(false)
     , m_connectionCount(0)
     , m_audioThread(0)
     , m_graphOwnerThread(UndefinedThreadIdentifier)
     , m_isOfflineContext(true)
-    , m_activeSourceCount(0)
 {
-    constructCommon();
-
-    m_hrtfDatabaseLoader = HRTFDatabaseLoader::createAndLoadAsynchronouslyIfNecessary(sampleRate);
+    ScriptWrappable::init(this);
 
     // Create a new destination for offline rendering.
     m_renderTarget = AudioBuffer::create(numberOfChannels, numberOfFrames, sampleRate);
-    ASSERT(m_renderTarget);
-    m_destinationNode = OfflineAudioDestinationNode::create(this, m_renderTarget.get());
-    ASSERT(m_destinationNode);
-}
+    if (m_renderTarget.get())
+        m_destinationNode = OfflineAudioDestinationNode::create(this, m_renderTarget.get());
 
-void AudioContext::constructCommon()
-{
-    ScriptWrappable::init(this);
-    // According to spec AudioContext must die only after page navigate.
-    // Lets mark it as ActiveDOMObject with pending activity and unmark it in clear method.
-    setPendingActivity(this);
-
-    FFTFrame::initialize();
-
-    m_listener = AudioListener::create();
+    initialize();
 }
 
 AudioContext::~AudioContext()
@@ -180,7 +156,6 @@ AudioContext::~AudioContext()
 #endif
     // AudioNodes keep a reference to their context, so there should be no way to be in the destructor if there are still AudioNodes around.
     ASSERT(!m_isInitialized);
-    ASSERT(m_isStopScheduled);
     ASSERT(!m_nodesToDelete.size());
     ASSERT(!m_referencedNodes.size());
     ASSERT(!m_finishedNodes.size());
@@ -190,27 +165,27 @@ AudioContext::~AudioContext()
     ASSERT(!m_renderingAutomaticPullNodes.size());
 }
 
-void AudioContext::lazyInitialize()
+void AudioContext::initialize()
 {
-    if (!m_isInitialized) {
-        // Don't allow the context to initialize a second time after it's already been explicitly uninitialized.
-        ASSERT(!m_isAudioThreadFinished);
-        if (!m_isAudioThreadFinished) {
-            if (m_destinationNode.get()) {
-                m_destinationNode->initialize();
+    if (isInitialized())
+        return;
 
-                if (!isOfflineContext()) {
-                    // This starts the audio thread. The destination node's provideInput() method will now be called repeatedly to render audio.
-                    // Each time provideInput() is called, a portion of the audio stream is rendered. Let's call this time period a "render quantum".
-                    // NOTE: for now default AudioContext does not need an explicit startRendering() call from JavaScript.
-                    // We may want to consider requiring it for symmetry with OfflineAudioContext.
-                    m_destinationNode->startRendering();
-                    ++s_hardwareContextCount;
-                }
+    FFTFrame::initialize();
+    m_listener = AudioListener::create();
 
-            }
-            m_isInitialized = true;
+    if (m_destinationNode.get()) {
+        m_destinationNode->initialize();
+
+        if (!isOfflineContext()) {
+            // This starts the audio thread. The destination node's provideInput() method will now be called repeatedly to render audio.
+            // Each time provideInput() is called, a portion of the audio stream is rendered. Let's call this time period a "render quantum".
+            // NOTE: for now default AudioContext does not need an explicit startRendering() call from JavaScript.
+            // We may want to consider requiring it for symmetry with OfflineAudioContext.
+            m_destinationNode->startRendering();
+            ++s_hardwareContextCount;
         }
+
+        m_isInitialized = true;
     }
 }
 
@@ -222,27 +197,23 @@ void AudioContext::clear()
 
     // Audio thread is dead. Nobody will schedule node deletion action. Let's do it ourselves.
     do {
-        deleteMarkedNodes();
-        m_nodesToDelete.append(m_nodesMarkedForDeletion);
+        m_nodesToDelete.appendVector(m_nodesMarkedForDeletion);
         m_nodesMarkedForDeletion.clear();
+        deleteMarkedNodes();
     } while (m_nodesToDelete.size());
 
-    // It was set in constructCommon.
-    unsetPendingActivity(this);
+    m_isCleared = true;
 }
 
 void AudioContext::uninitialize()
 {
     ASSERT(isMainThread());
 
-    if (!m_isInitialized)
+    if (!isInitialized())
         return;
 
     // This stops the audio thread and all audio rendering.
     m_destinationNode->uninitialize();
-
-    // Don't allow the context to initialize a second time after it's already been explicitly uninitialized.
-    m_isAudioThreadFinished = true;
 
     if (!isOfflineContext()) {
         ASSERT(s_hardwareContextCount);
@@ -253,20 +224,6 @@ void AudioContext::uninitialize()
     derefUnfinishedSourceNodes();
 
     m_isInitialized = false;
-}
-
-bool AudioContext::isInitialized() const
-{
-    return m_isInitialized;
-}
-
-bool AudioContext::isRunnable() const
-{
-    if (!isInitialized())
-        return false;
-
-    // Check with the HRTF spatialization system to see if it's finished loading.
-    return m_hrtfDatabaseLoader->isLoaded();
 }
 
 void AudioContext::stopDispatch(void* userData)
@@ -294,55 +251,15 @@ void AudioContext::stop()
     callOnMainThread(stopDispatch, this);
 }
 
-PassRefPtr<AudioBuffer> AudioContext::createBuffer(unsigned numberOfChannels, size_t numberOfFrames, float sampleRate, ExceptionState& exceptionState)
+bool AudioContext::hasPendingActivity() const
 {
-    RefPtr<AudioBuffer> audioBuffer = AudioBuffer::create(numberOfChannels, numberOfFrames, sampleRate);
-    if (!audioBuffer.get()) {
-        if (numberOfChannels > AudioContext::maxNumberOfChannels()) {
-            exceptionState.throwDOMException(
-                NotSupportedError,
-                "requested number of channels (" + String::number(numberOfChannels) + ") exceeds maximum (" + String::number(AudioContext::maxNumberOfChannels()) + ")");
-        } else if (sampleRate < AudioBuffer::minAllowedSampleRate() || sampleRate > AudioBuffer::maxAllowedSampleRate()) {
-            exceptionState.throwDOMException(
-                NotSupportedError,
-                "requested sample rate (" + String::number(sampleRate)
-                + ") does not lie in the allowed range of "
-                + String::number(AudioBuffer::minAllowedSampleRate())
-                + "-" + String::number(AudioBuffer::maxAllowedSampleRate()) + " Hz");
-        } else if (!numberOfFrames) {
-            exceptionState.throwDOMException(
-                NotSupportedError,
-                "number of frames must be greater than 0.");
-        } else {
-            exceptionState.throwDOMException(
-                NotSupportedError,
-                "unable to create buffer of " + String::number(numberOfChannels)
-                + " channel(s) of " + String::number(numberOfFrames)
-                + " frames each.");
-        }
-        return 0;
-    }
-
-    return audioBuffer;
+    // According to spec AudioContext must die only after page navigates.
+    return !m_isCleared;
 }
 
-PassRefPtr<AudioBuffer> AudioContext::createBuffer(ArrayBuffer* arrayBuffer, bool mixToMono, ExceptionState& exceptionState)
+PassRefPtrWillBeRawPtr<AudioBuffer> AudioContext::createBuffer(unsigned numberOfChannels, size_t numberOfFrames, float sampleRate, ExceptionState& exceptionState)
 {
-    ASSERT(arrayBuffer);
-    if (!arrayBuffer) {
-        exceptionState.throwDOMException(
-            SyntaxError,
-            "invalid ArrayBuffer.");
-        return 0;
-    }
-
-    RefPtr<AudioBuffer> audioBuffer = AudioBuffer::createFromAudioFileData(arrayBuffer->data(), arrayBuffer->byteLength(), mixToMono, sampleRate());
-    if (!audioBuffer.get()) {
-        exceptionState.throwDOMException(
-            SyntaxError,
-            "invalid audio data in ArrayBuffer.");
-        return 0;
-    }
+    RefPtrWillBeRawPtr<AudioBuffer> audioBuffer = AudioBuffer::create(numberOfChannels, numberOfFrames, sampleRate, exceptionState);
 
     return audioBuffer;
 }
@@ -358,11 +275,10 @@ void AudioContext::decodeAudioData(ArrayBuffer* audioData, PassOwnPtr<AudioBuffe
     m_audioDecoder.decodeAsync(audioData, sampleRate(), successCallback, errorCallback);
 }
 
-PassRefPtr<AudioBufferSourceNode> AudioContext::createBufferSource()
+PassRefPtrWillBeRawPtr<AudioBufferSourceNode> AudioContext::createBufferSource()
 {
     ASSERT(isMainThread());
-    lazyInitialize();
-    RefPtr<AudioBufferSourceNode> node = AudioBufferSourceNode::create(this, m_destinationNode->sampleRate());
+    RefPtrWillBeRawPtr<AudioBufferSourceNode> node = AudioBufferSourceNode::create(this, m_destinationNode->sampleRate());
 
     // Because this is an AudioScheduledSourceNode, the context keeps a reference until it has finished playing.
     // When this happens, AudioScheduledSourceNode::finish() calls AudioContext::notifyNodeFinishedProcessing().
@@ -371,27 +287,25 @@ PassRefPtr<AudioBufferSourceNode> AudioContext::createBufferSource()
     return node;
 }
 
-PassRefPtr<MediaElementAudioSourceNode> AudioContext::createMediaElementSource(HTMLMediaElement* mediaElement, ExceptionState& exceptionState)
+PassRefPtrWillBeRawPtr<MediaElementAudioSourceNode> AudioContext::createMediaElementSource(HTMLMediaElement* mediaElement, ExceptionState& exceptionState)
 {
+    ASSERT(isMainThread());
     if (!mediaElement) {
         exceptionState.throwDOMException(
             InvalidStateError,
             "invalid HTMLMedialElement.");
-        return 0;
+        return nullptr;
     }
-
-    ASSERT(isMainThread());
-    lazyInitialize();
 
     // First check if this media element already has a source node.
     if (mediaElement->audioSourceNode()) {
         exceptionState.throwDOMException(
             InvalidStateError,
             "invalid HTMLMediaElement.");
-        return 0;
+        return nullptr;
     }
 
-    RefPtr<MediaElementAudioSourceNode> node = MediaElementAudioSourceNode::create(this, mediaElement);
+    RefPtrWillBeRawPtr<MediaElementAudioSourceNode> node = MediaElementAudioSourceNode::create(this, mediaElement);
 
     mediaElement->setAudioSourceNode(node.get());
 
@@ -399,33 +313,28 @@ PassRefPtr<MediaElementAudioSourceNode> AudioContext::createMediaElementSource(H
     return node;
 }
 
-PassRefPtr<MediaStreamAudioSourceNode> AudioContext::createMediaStreamSource(MediaStream* mediaStream, ExceptionState& exceptionState)
+PassRefPtrWillBeRawPtr<MediaStreamAudioSourceNode> AudioContext::createMediaStreamSource(MediaStream* mediaStream, ExceptionState& exceptionState)
 {
+    ASSERT(isMainThread());
     if (!mediaStream) {
         exceptionState.throwDOMException(
             InvalidStateError,
             "invalid MediaStream source");
-        return 0;
+        return nullptr;
     }
-
-    ASSERT(isMainThread());
-    lazyInitialize();
-
-    AudioSourceProvider* provider = 0;
 
     MediaStreamTrackVector audioTracks = mediaStream->getAudioTracks();
-    RefPtr<MediaStreamTrack> audioTrack;
-
-    // FIXME: get a provider for non-local MediaStreams (like from a remote peer).
-    for (size_t i = 0; i < audioTracks.size(); ++i) {
-        audioTrack = audioTracks[i];
-        if (audioTrack->component()->audioSourceProvider()) {
-            provider = audioTrack->component()->audioSourceProvider();
-            break;
-        }
+    if (audioTracks.isEmpty()) {
+        exceptionState.throwDOMException(
+            InvalidStateError,
+            "MediaStream has no audio track");
+        return nullptr;
     }
 
-    RefPtr<MediaStreamAudioSourceNode> node = MediaStreamAudioSourceNode::create(this, mediaStream, audioTrack.get(), provider);
+    // Use the first audio track in the media stream.
+    RefPtrWillBeRawPtr<MediaStreamTrack> audioTrack = audioTracks[0];
+    OwnPtr<AudioSourceProvider> provider = audioTrack->createWebAudioSource();
+    RefPtrWillBeRawPtr<MediaStreamAudioSourceNode> node = MediaStreamAudioSourceNode::create(this, mediaStream, audioTrack.get(), provider.release());
 
     // FIXME: Only stereo streams are supported right now. We should be able to accept multi-channel streams.
     node->setFormat(2, sampleRate());
@@ -434,36 +343,34 @@ PassRefPtr<MediaStreamAudioSourceNode> AudioContext::createMediaStreamSource(Med
     return node;
 }
 
-PassRefPtr<MediaStreamAudioDestinationNode> AudioContext::createMediaStreamDestination()
+PassRefPtrWillBeRawPtr<MediaStreamAudioDestinationNode> AudioContext::createMediaStreamDestination()
 {
-    // FIXME: Add support for an optional argument which specifies the number of channels.
-    // FIXME: The default should probably be stereo instead of mono.
-    return MediaStreamAudioDestinationNode::create(this, 1);
+    // Set number of output channels to stereo by default.
+    return MediaStreamAudioDestinationNode::create(this, 2);
 }
 
-PassRefPtr<ScriptProcessorNode> AudioContext::createScriptProcessor(ExceptionState& exceptionState)
+PassRefPtrWillBeRawPtr<ScriptProcessorNode> AudioContext::createScriptProcessor(ExceptionState& exceptionState)
 {
     // Set number of input/output channels to stereo by default.
     return createScriptProcessor(0, 2, 2, exceptionState);
 }
 
-PassRefPtr<ScriptProcessorNode> AudioContext::createScriptProcessor(size_t bufferSize, ExceptionState& exceptionState)
+PassRefPtrWillBeRawPtr<ScriptProcessorNode> AudioContext::createScriptProcessor(size_t bufferSize, ExceptionState& exceptionState)
 {
     // Set number of input/output channels to stereo by default.
     return createScriptProcessor(bufferSize, 2, 2, exceptionState);
 }
 
-PassRefPtr<ScriptProcessorNode> AudioContext::createScriptProcessor(size_t bufferSize, size_t numberOfInputChannels, ExceptionState& exceptionState)
+PassRefPtrWillBeRawPtr<ScriptProcessorNode> AudioContext::createScriptProcessor(size_t bufferSize, size_t numberOfInputChannels, ExceptionState& exceptionState)
 {
     // Set number of output channels to stereo by default.
     return createScriptProcessor(bufferSize, numberOfInputChannels, 2, exceptionState);
 }
 
-PassRefPtr<ScriptProcessorNode> AudioContext::createScriptProcessor(size_t bufferSize, size_t numberOfInputChannels, size_t numberOfOutputChannels, ExceptionState& exceptionState)
+PassRefPtrWillBeRawPtr<ScriptProcessorNode> AudioContext::createScriptProcessor(size_t bufferSize, size_t numberOfInputChannels, size_t numberOfOutputChannels, ExceptionState& exceptionState)
 {
     ASSERT(isMainThread());
-    lazyInitialize();
-    RefPtr<ScriptProcessorNode> node = ScriptProcessorNode::create(this, m_destinationNode->sampleRate(), bufferSize, numberOfInputChannels, numberOfOutputChannels);
+    RefPtrWillBeRawPtr<ScriptProcessorNode> node = ScriptProcessorNode::create(this, m_destinationNode->sampleRate(), bufferSize, numberOfInputChannels, numberOfOutputChannels);
 
     if (!node.get()) {
         if (!numberOfInputChannels && !numberOfOutputChannels) {
@@ -488,90 +395,81 @@ PassRefPtr<ScriptProcessorNode> AudioContext::createScriptProcessor(size_t buffe
                 "buffer size (" + String::number(bufferSize)
                 + ") must be a power of two between 256 and 16384.");
         }
-        return 0;
+        return nullptr;
     }
 
     refNode(node.get()); // context keeps reference until we stop making javascript rendering callbacks
     return node;
 }
 
-PassRefPtr<BiquadFilterNode> AudioContext::createBiquadFilter()
+PassRefPtrWillBeRawPtr<BiquadFilterNode> AudioContext::createBiquadFilter()
 {
     ASSERT(isMainThread());
-    lazyInitialize();
     return BiquadFilterNode::create(this, m_destinationNode->sampleRate());
 }
 
-PassRefPtr<WaveShaperNode> AudioContext::createWaveShaper()
+PassRefPtrWillBeRawPtr<WaveShaperNode> AudioContext::createWaveShaper()
 {
     ASSERT(isMainThread());
-    lazyInitialize();
     return WaveShaperNode::create(this);
 }
 
-PassRefPtr<PannerNode> AudioContext::createPanner()
+PassRefPtrWillBeRawPtr<PannerNode> AudioContext::createPanner()
 {
     ASSERT(isMainThread());
-    lazyInitialize();
     return PannerNode::create(this, m_destinationNode->sampleRate());
 }
 
-PassRefPtr<ConvolverNode> AudioContext::createConvolver()
+PassRefPtrWillBeRawPtr<ConvolverNode> AudioContext::createConvolver()
 {
     ASSERT(isMainThread());
-    lazyInitialize();
     return ConvolverNode::create(this, m_destinationNode->sampleRate());
 }
 
-PassRefPtr<DynamicsCompressorNode> AudioContext::createDynamicsCompressor()
+PassRefPtrWillBeRawPtr<DynamicsCompressorNode> AudioContext::createDynamicsCompressor()
 {
     ASSERT(isMainThread());
-    lazyInitialize();
     return DynamicsCompressorNode::create(this, m_destinationNode->sampleRate());
 }
 
-PassRefPtr<AnalyserNode> AudioContext::createAnalyser()
+PassRefPtrWillBeRawPtr<AnalyserNode> AudioContext::createAnalyser()
 {
     ASSERT(isMainThread());
-    lazyInitialize();
     return AnalyserNode::create(this, m_destinationNode->sampleRate());
 }
 
-PassRefPtr<GainNode> AudioContext::createGain()
+PassRefPtrWillBeRawPtr<GainNode> AudioContext::createGain()
 {
     ASSERT(isMainThread());
-    lazyInitialize();
     return GainNode::create(this, m_destinationNode->sampleRate());
 }
 
-PassRefPtr<DelayNode> AudioContext::createDelay(ExceptionState& exceptionState)
+PassRefPtrWillBeRawPtr<DelayNode> AudioContext::createDelay(ExceptionState& exceptionState)
 {
     const double defaultMaxDelayTime = 1;
     return createDelay(defaultMaxDelayTime, exceptionState);
 }
 
-PassRefPtr<DelayNode> AudioContext::createDelay(double maxDelayTime, ExceptionState& exceptionState)
+PassRefPtrWillBeRawPtr<DelayNode> AudioContext::createDelay(double maxDelayTime, ExceptionState& exceptionState)
 {
     ASSERT(isMainThread());
-    lazyInitialize();
-    RefPtr<DelayNode> node = DelayNode::create(this, m_destinationNode->sampleRate(), maxDelayTime, exceptionState);
+    RefPtrWillBeRawPtr<DelayNode> node = DelayNode::create(this, m_destinationNode->sampleRate(), maxDelayTime, exceptionState);
     if (exceptionState.hadException())
-        return 0;
+        return nullptr;
     return node;
 }
 
-PassRefPtr<ChannelSplitterNode> AudioContext::createChannelSplitter(ExceptionState& exceptionState)
+PassRefPtrWillBeRawPtr<ChannelSplitterNode> AudioContext::createChannelSplitter(ExceptionState& exceptionState)
 {
     const unsigned ChannelSplitterDefaultNumberOfOutputs = 6;
     return createChannelSplitter(ChannelSplitterDefaultNumberOfOutputs, exceptionState);
 }
 
-PassRefPtr<ChannelSplitterNode> AudioContext::createChannelSplitter(size_t numberOfOutputs, ExceptionState& exceptionState)
+PassRefPtrWillBeRawPtr<ChannelSplitterNode> AudioContext::createChannelSplitter(size_t numberOfOutputs, ExceptionState& exceptionState)
 {
     ASSERT(isMainThread());
-    lazyInitialize();
 
-    RefPtr<ChannelSplitterNode> node = ChannelSplitterNode::create(this, m_destinationNode->sampleRate(), numberOfOutputs);
+    RefPtrWillBeRawPtr<ChannelSplitterNode> node = ChannelSplitterNode::create(this, m_destinationNode->sampleRate(), numberOfOutputs);
 
     if (!node.get()) {
         exceptionState.throwDOMException(
@@ -579,24 +477,23 @@ PassRefPtr<ChannelSplitterNode> AudioContext::createChannelSplitter(size_t numbe
             "number of outputs (" + String::number(numberOfOutputs)
             + ") must be between 1 and "
             + String::number(AudioContext::maxNumberOfChannels()) + ".");
-        return 0;
+        return nullptr;
     }
 
     return node;
 }
 
-PassRefPtr<ChannelMergerNode> AudioContext::createChannelMerger(ExceptionState& exceptionState)
+PassRefPtrWillBeRawPtr<ChannelMergerNode> AudioContext::createChannelMerger(ExceptionState& exceptionState)
 {
     const unsigned ChannelMergerDefaultNumberOfInputs = 6;
     return createChannelMerger(ChannelMergerDefaultNumberOfInputs, exceptionState);
 }
 
-PassRefPtr<ChannelMergerNode> AudioContext::createChannelMerger(size_t numberOfInputs, ExceptionState& exceptionState)
+PassRefPtrWillBeRawPtr<ChannelMergerNode> AudioContext::createChannelMerger(size_t numberOfInputs, ExceptionState& exceptionState)
 {
     ASSERT(isMainThread());
-    lazyInitialize();
 
-    RefPtr<ChannelMergerNode> node = ChannelMergerNode::create(this, m_destinationNode->sampleRate(), numberOfInputs);
+    RefPtrWillBeRawPtr<ChannelMergerNode> node = ChannelMergerNode::create(this, m_destinationNode->sampleRate(), numberOfInputs);
 
     if (!node.get()) {
         exceptionState.throwDOMException(
@@ -604,18 +501,17 @@ PassRefPtr<ChannelMergerNode> AudioContext::createChannelMerger(size_t numberOfI
             "number of inputs (" + String::number(numberOfInputs)
             + ") must be between 1 and "
             + String::number(AudioContext::maxNumberOfChannels()) + ".");
-        return 0;
+        return nullptr;
     }
 
     return node;
 }
 
-PassRefPtr<OscillatorNode> AudioContext::createOscillator()
+PassRefPtrWillBeRawPtr<OscillatorNode> AudioContext::createOscillator()
 {
     ASSERT(isMainThread());
-    lazyInitialize();
 
-    RefPtr<OscillatorNode> node = OscillatorNode::create(this, m_destinationNode->sampleRate());
+    RefPtrWillBeRawPtr<OscillatorNode> node = OscillatorNode::create(this, m_destinationNode->sampleRate());
 
     // Because this is an AudioScheduledSourceNode, the context keeps a reference until it has finished playing.
     // When this happens, AudioScheduledSourceNode::finish() calls AudioContext::notifyNodeFinishedProcessing().
@@ -624,7 +520,7 @@ PassRefPtr<OscillatorNode> AudioContext::createOscillator()
     return node;
 }
 
-PassRefPtr<PeriodicWave> AudioContext::createPeriodicWave(Float32Array* real, Float32Array* imag, ExceptionState& exceptionState)
+PassRefPtrWillBeRawPtr<PeriodicWave> AudioContext::createPeriodicWave(Float32Array* real, Float32Array* imag, ExceptionState& exceptionState)
 {
     ASSERT(isMainThread());
 
@@ -632,14 +528,14 @@ PassRefPtr<PeriodicWave> AudioContext::createPeriodicWave(Float32Array* real, Fl
         exceptionState.throwDOMException(
             SyntaxError,
             "invalid real array");
-        return 0;
+        return nullptr;
     }
 
     if (!imag) {
         exceptionState.throwDOMException(
             SyntaxError,
             "invalid imaginary array");
-        return 0;
+        return nullptr;
     }
 
     if (real->length() != imag->length()) {
@@ -648,7 +544,7 @@ PassRefPtr<PeriodicWave> AudioContext::createPeriodicWave(Float32Array* real, Fl
             "length of real array (" + String::number(real->length())
             + ") and length of imaginary array (" +  String::number(imag->length())
             + ") must match.");
-        return 0;
+        return nullptr;
     }
 
     if (real->length() > 4096) {
@@ -656,7 +552,7 @@ PassRefPtr<PeriodicWave> AudioContext::createPeriodicWave(Float32Array* real, Fl
             IndexSizeError,
             "length of real array (" + String::number(real->length())
             + ") exceeds allowed maximum of 4096");
-        return 0;
+        return nullptr;
     }
 
     if (imag->length() > 4096) {
@@ -664,10 +560,9 @@ PassRefPtr<PeriodicWave> AudioContext::createPeriodicWave(Float32Array* real, Fl
             IndexSizeError,
             "length of imaginary array (" + String::number(imag->length())
             + ") exceeds allowed maximum of 4096");
-        return 0;
+        return nullptr;
     }
 
-    lazyInitialize();
     return PeriodicWave::create(sampleRate(), real, imag);
 }
 
@@ -680,7 +575,7 @@ void AudioContext::notifyNodeFinishedProcessing(AudioNode* node)
 void AudioContext::derefFinishedSourceNodes()
 {
     ASSERT(isGraphOwner());
-    ASSERT(isAudioThread() || isAudioThreadFinished());
+    ASSERT(isAudioThread());
     for (unsigned i = 0; i < m_finishedNodes.size(); i++)
         derefNode(m_finishedNodes[i]);
 
@@ -712,7 +607,7 @@ void AudioContext::derefNode(AudioNode* node)
 
 void AudioContext::derefUnfinishedSourceNodes()
 {
-    ASSERT(isMainThread() && isAudioThreadFinished());
+    ASSERT(isMainThread());
     for (unsigned i = 0; i < m_referencedNodes.size(); ++i)
         m_referencedNodes[i]->deref(AudioNode::RefTypeConnection);
 
@@ -743,7 +638,7 @@ bool AudioContext::tryLock(bool& mustReleaseLock)
     bool isAudioThread = thisThread == audioThread();
 
     // Try to catch cases of using try lock on main thread - it should use regular lock.
-    ASSERT(isAudioThread || isAudioThreadFinished());
+    ASSERT(isAudioThread);
 
     if (!isAudioThread) {
         // In release build treat tryLock() as lock() (since above ASSERT(isAudioThread) never fires) - this is the best we can do.
@@ -858,7 +753,7 @@ void AudioContext::markForDeletion(AudioNode* node)
 {
     ASSERT(isGraphOwner());
 
-    if (isAudioThreadFinished())
+    if (!isInitialized())
         m_nodesToDelete.append(node);
     else
         m_nodesMarkedForDeletion.append(node);
@@ -872,14 +767,14 @@ void AudioContext::markForDeletion(AudioNode* node)
 
 void AudioContext::scheduleNodeDeletion()
 {
-    bool isGood = m_isInitialized && isGraphOwner();
+    bool isGood = isInitialized() && isGraphOwner();
     ASSERT(isGood);
     if (!isGood)
         return;
 
     // Make sure to call deleteMarkedNodes() on main thread.
     if (m_nodesMarkedForDeletion.size() && !m_isDeletionScheduled) {
-        m_nodesToDelete.append(m_nodesMarkedForDeletion);
+        m_nodesToDelete.appendVector(m_nodesMarkedForDeletion);
         m_nodesMarkedForDeletion.clear();
 
         m_isDeletionScheduled = true;
@@ -907,7 +802,7 @@ void AudioContext::deleteMarkedNodes()
     ASSERT(isMainThread());
 
     // Protect this object from being deleted before we release the mutex locked by AutoLocker.
-    RefPtr<AudioContext> protect(this);
+    RefPtrWillBeRawPtr<AudioContext> protect(this);
     {
         AutoLocker locker(this);
 
@@ -924,9 +819,14 @@ void AudioContext::deleteMarkedNodes()
             unsigned numberOfOutputs = node->numberOfOutputs();
             for (unsigned i = 0; i < numberOfOutputs; ++i)
                 m_dirtyAudioNodeOutputs.remove(node->output(i));
-
+#if ENABLE(OILPAN)
+            // Finally, clear the keep alive handle that keeps this
+            // object from being collected.
+            node->clearKeepAlive();
+#else
             // Finally, delete it.
             delete node;
+#endif
         }
         m_isDeletionScheduled = false;
     }
@@ -955,7 +855,7 @@ void AudioContext::handleDirtyAudioSummingJunctions()
 {
     ASSERT(isGraphOwner());
 
-    for (HashSet<AudioSummingJunction*>::iterator i = m_dirtySummingJunctions.begin(); i != m_dirtySummingJunctions.end(); ++i)
+    for (HashSet<AudioSummingJunction* >::iterator i = m_dirtySummingJunctions.begin(); i != m_dirtySummingJunctions.end(); ++i)
         (*i)->updateRenderingState();
 
     m_dirtySummingJunctions.clear();
@@ -1051,14 +951,13 @@ void AudioContext::fireCompletionEvent()
     }
 }
 
-void AudioContext::incrementActiveSourceCount()
+void AudioContext::trace(Visitor* visitor)
 {
-    atomicIncrement(&m_activeSourceCount);
-}
-
-void AudioContext::decrementActiveSourceCount()
-{
-    atomicDecrement(&m_activeSourceCount);
+    visitor->trace(m_renderTarget);
+    visitor->trace(m_destinationNode);
+    visitor->trace(m_listener);
+    visitor->trace(m_dirtySummingJunctions);
+    EventTargetWithInlineData::trace(visitor);
 }
 
 } // namespace WebCore

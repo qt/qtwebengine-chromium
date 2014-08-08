@@ -23,154 +23,160 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-enum CanvasWindingRule { "nonzero", "evenodd" };
+// http://www.whatwg.org/specs/web-apps/current-work/multipage/the-canvas-element.html#canvasrenderingcontext2d
 
-interface CanvasRenderingContext2D : CanvasRenderingContext {
+// FIXME: float => double throughout
+// FIXME: Use union type in drawImage and createPattern once supported:
+// http://crbug.com/372891
+typedef (HTMLImageElement or
+         HTMLVideoElement or
+         HTMLCanvasElement // or
+         // CanvasRenderingContext2D or
+         // ImageBitmap
+         ) CanvasImageSource;
 
-    void save();
-    void restore();
+enum CanvasFillRule { "nonzero", "evenodd" };
 
-    [RuntimeEnabled=ExperimentalCanvasFeatures, Immutable] attribute SVGMatrix currentTransform;
-    void scale(float sx, float sy);
-    void rotate(float angle);
-    void translate(float tx, float ty);
-    void transform(float m11, float m12, float m21, float m22, float dx, float dy);
-    void setTransform(float m11, float m12, float m21, float m22, float dx, float dy);
+[
+    TypeChecking=Interface|Nullable|Unrestricted,
+    WillBeGarbageCollected,
+] interface CanvasRenderingContext2D {
+    // back-reference to the canvas
+    readonly attribute HTMLCanvasElement canvas;
+
+    // state
+    void save(); // push state on state stack
+    void restore(); // pop state stack and restore state
+
+    // transformations (default transform is the identity matrix)
+    [RuntimeEnabled=ExperimentalCanvasFeatures] attribute SVGMatrix currentTransform;
+    void scale(unrestricted float x, unrestricted float y);
+    void rotate(unrestricted float angle);
+    void translate(unrestricted float x, unrestricted float y);
+    void transform(unrestricted float a, unrestricted float b, unrestricted float c, unrestricted float d, unrestricted float e, unrestricted float f);
+    void setTransform(unrestricted float a, unrestricted float b, unrestricted float c, unrestricted float d, unrestricted float e, unrestricted float f);
     void resetTransform();
 
-    attribute float globalAlpha;
-    [TreatNullAs=NullString] attribute DOMString globalCompositeOperation;
+    // compositing
+    attribute unrestricted float globalAlpha; // (default 1.0)
+    [TreatNullAs=NullString] attribute DOMString globalCompositeOperation; // (default source-over)
 
-    [RaisesException] CanvasGradient createLinearGradient(float x0, float y0, float x1, float y1);
+    // image smoothing
+    [ImplementedAs=imageSmoothingEnabled, MeasureAs=PrefixedImageSmoothingEnabled] attribute boolean webkitImageSmoothingEnabled;
+    [MeasureAs=UnprefixedImageSmoothingEnabled] attribute boolean imageSmoothingEnabled;
+
+    // colors and styles (see also the CanvasDrawingStyles interface)
+    // FIXME: Use union types when supported: http://crbug.com/372891
+    [Custom] attribute object strokeStyle; // (default black)
+    [Custom] attribute object fillStyle; // (default black)
+    CanvasGradient createLinearGradient(float x0, float y0, float x1, float y1);
     [RaisesException] CanvasGradient createRadialGradient(float x0, float y0, float r0, float x1, float y1, float r1);
+    [RaisesException] CanvasPattern createPattern(HTMLCanvasElement canvas, [TreatNullAs=NullString] DOMString repetitionType);
+    [RaisesException] CanvasPattern createPattern(HTMLImageElement image, [TreatNullAs=NullString] DOMString repetitionType);
+    [RaisesException] CanvasPattern createPattern(HTMLVideoElement image, [TreatNullAs=NullString] DOMString repetitionType);
 
-    attribute float lineWidth;
-    [TreatNullAs=NullString] attribute DOMString lineCap;
-    [TreatNullAs=NullString] attribute DOMString lineJoin;
-    attribute float miterLimit;
-
-    attribute float shadowOffsetX;
-    attribute float shadowOffsetY;
-    attribute float shadowBlur;
+    // shadows
+    attribute unrestricted float shadowOffsetX;
+    attribute unrestricted float shadowOffsetY;
+    attribute unrestricted float shadowBlur;
     [TreatNullAs=NullString] attribute DOMString shadowColor;
 
-    void setLineDash(sequence<float> dash);
-    sequence<float> getLineDash();
-    attribute float lineDashOffset;
+    // rects
+    void clearRect(unrestricted float x, unrestricted float y, unrestricted float width, unrestricted float height);
+    void fillRect(unrestricted float x, unrestricted float y, unrestricted float width, unrestricted float height);
+    void strokeRect(unrestricted float x, unrestricted float y, unrestricted float width, unrestricted float height);
 
-    // FIXME: These attributes should be implemented.
-    // [Custom] attribute Array webkitLineDash;
-    // attribute float webkitLineDashOffset;
-
-    void clearRect(float x, float y, float width, float height);
-    void fillRect(float x, float y, float width, float height);
-
+    // path API (see also CanvasPathMethods)
     void beginPath();
-
-    attribute Path currentPath;
-
-    // FIXME: These methods should be shared with CanvasRenderingContext2D in the CanvasPathMethods interface.
-    void closePath();
-    void moveTo(float x, float y);
-    void lineTo(float x, float y);
-    void quadraticCurveTo(float cpx, float cpy, float x, float y);
-    void bezierCurveTo(float cp1x, float cp1y, float cp2x, float cp2y, float x, float y);
-    [RaisesException] void arcTo(float x1, float y1, float x2, float y2, float radius);
-    void rect(float x, float y, float width, float height);
-    [RaisesException] void arc(float x, float y, float radius, float startAngle, float endAngle, [Default=Undefined] optional boolean anticlockwise);
-    [RaisesException] void ellipse(float x, float y, float radiusX, float radiusY, float rotation, float startAngle, float endAngle, boolean anticlockwise);
-
-    void fill(optional CanvasWindingRule winding);
+    void fill(optional CanvasFillRule winding);
+    [RuntimeEnabled=Path2D] void fill(Path2D path, optional CanvasFillRule winding);
     void stroke();
-    void clip(optional CanvasWindingRule winding);
-    boolean isPointInPath(float x, float y, optional CanvasWindingRule winding);
-    boolean isPointInStroke(float x, float y);
+    [RuntimeEnabled=Path2D] void stroke(Path2D path);
+    // Focus rings
+    void drawFocusIfNeeded(Element element);
+    [RuntimeEnabled=Path2D] void drawFocusIfNeeded(Path2D path, Element element);
 
-    // text
-    attribute DOMString font;
-    attribute DOMString textAlign;
-    attribute DOMString textBaseline;
+    [RuntimeEnabled=ExperimentalCanvasFeatures] void scrollPathIntoView(optional Path2D path);
+    void clip(optional CanvasFillRule winding);
+    [RuntimeEnabled=Path2D] void clip(Path2D path, optional CanvasFillRule winding);
+    boolean isPointInPath(unrestricted float x, unrestricted float y, optional CanvasFillRule winding);
+    [RuntimeEnabled=Path2D] boolean isPointInPath(Path2D path, unrestricted float x, unrestricted float y, optional CanvasFillRule winding);
+    boolean isPointInStroke(unrestricted float x, unrestricted float y);
+    [RuntimeEnabled=Path2D] boolean isPointInStroke(Path2D path, unrestricted float x, unrestricted float y);
 
+    // text (see also the CanvasDrawingStyles interface)
+    void fillText(DOMString text, unrestricted float x, unrestricted float y, optional unrestricted float maxWidth);
+    void strokeText(DOMString text, unrestricted float x, unrestricted float y, optional unrestricted float maxWidth);
     TextMetrics measureText(DOMString text);
 
-    // other
-
-    void setAlpha(float alpha);
-    void setCompositeOperation(DOMString compositeOperation);
-
-    void setLineWidth(float width);
-    void setLineCap(DOMString cap);
-    void setLineJoin(DOMString join);
-    void setMiterLimit(float limit);
-
-    void clearShadow();
-
-    void fillText(DOMString text, float x, float y, optional float maxWidth);
-    void strokeText(DOMString text, float x, float y, optional float maxWidth);
-
-    void setStrokeColor([StrictTypeChecking] DOMString color, optional float alpha);
-    void setStrokeColor(float grayLevel, optional float alpha);
-    void setStrokeColor(float r, float g, float b, float a);
-    void setStrokeColor(float c, float m, float y, float k, float a);
-
-    void setFillColor([StrictTypeChecking] DOMString color, optional float alpha);
-    void setFillColor(float grayLevel, optional float alpha);
-    void setFillColor(float r, float g, float b, float a);
-    void setFillColor(float c, float m, float y, float k, float a);
-
-    void strokeRect(float x, float y, float width, float height);
-
-    [RaisesException] void drawImage(HTMLImageElement? image, float x, float y);
-    [RaisesException] void drawImage(HTMLImageElement? image, float x, float y, float width, float height);
-    [RaisesException] void drawImage(HTMLImageElement? image, float sx, float sy, float sw, float sh, float dx, float dy, float dw, float dh);
-    [RaisesException] void drawImage(HTMLCanvasElement? canvas, float x, float y);
-    [RaisesException] void drawImage(HTMLCanvasElement? canvas, float x, float y, float width, float height);
-    [RaisesException] void drawImage(HTMLCanvasElement? canvas, float sx, float sy, float sw, float sh, float dx, float dy, float dw, float dh);
-    [RaisesException] void drawImage(HTMLVideoElement? video, float x, float y);
-    [RaisesException] void drawImage(HTMLVideoElement? video, float x, float y, float width, float height);
-    [RaisesException] void drawImage(HTMLVideoElement? video, float sx, float sy, float sw, float sh, float dx, float dy, float dw, float dh);
-    [RuntimeEnabled=ExperimentalCanvasFeatures, RaisesException] void drawImage(ImageBitmap? imageBitmap, float x, float y);
-    [RuntimeEnabled=ExperimentalCanvasFeatures, RaisesException] void drawImage(ImageBitmap? imageBitmap, float x, float y, float width, float height);
-    [RuntimeEnabled=ExperimentalCanvasFeatures, RaisesException] void drawImage(ImageBitmap? imageBitmap, float sx, float sy, float sw, float sh, float dx, float dy, float dw, float dh);
-
-    void drawImageFromRect(HTMLImageElement image,
-                           optional float sx, optional float sy, optional float sw, optional float sh,
-                           optional float dx, optional float dy, optional float dw, optional float dh,
-                           optional DOMString compositeOperation);
-
-    void setShadow(float width, float height, float blur, [StrictTypeChecking] optional DOMString color, optional float alpha);
-    void setShadow(float width, float height, float blur, float grayLevel, optional float alpha);
-    void setShadow(float width, float height, float blur, float r, float g, float b, float a);
-    void setShadow(float width, float height, float blur, float c, float m, float y, float k, float a);
-
-    [RaisesException] void putImageData(ImageData? imagedata, float dx, float dy);
-    [RaisesException] void putImageData(ImageData? imagedata, float dx, float dy, float dirtyX, float dirtyY, float dirtyWidth, float dirtyHeight);
-
-    [RaisesException] void webkitPutImageDataHD(ImageData? imagedata, float dx, float dy);
-    [RaisesException] void webkitPutImageDataHD(ImageData? imagedata, float dx, float dy, float dirtyX, float dirtyY, float dirtyWidth, float dirtyHeight);
-
-    [RaisesException] CanvasPattern createPattern(HTMLCanvasElement? canvas, [TreatNullAs=NullString] DOMString repetitionType);
-    [RaisesException] CanvasPattern createPattern(HTMLImageElement? image, [TreatNullAs=NullString] DOMString repetitionType);
-    [RaisesException] ImageData createImageData(ImageData? imagedata);
-    [RaisesException] ImageData createImageData(float sw, float sh);
-
-    [Custom] attribute object strokeStyle;
-    [Custom] attribute object fillStyle;
+    // drawing images
+    [RaisesException] void drawImage(HTMLImageElement image, unrestricted float x, unrestricted float y);
+    [RaisesException] void drawImage(HTMLImageElement image, unrestricted float x, unrestricted float y, unrestricted float width, unrestricted float height);
+    [RaisesException] void drawImage(HTMLImageElement image, unrestricted float sx, unrestricted float sy, unrestricted float sw, unrestricted float sh, unrestricted float dx, unrestricted float dy, unrestricted float dw, unrestricted float dh);
+    [RaisesException] void drawImage(HTMLCanvasElement canvas, unrestricted float x, unrestricted float y);
+    [RaisesException] void drawImage(HTMLCanvasElement canvas, unrestricted float x, unrestricted float y, unrestricted float width, unrestricted float height);
+    [RaisesException] void drawImage(HTMLCanvasElement canvas, unrestricted float sx, unrestricted float sy, unrestricted float sw, unrestricted float sh, unrestricted float dx, unrestricted float dy, unrestricted float dw, unrestricted float dh);
+    [RaisesException] void drawImage(HTMLVideoElement video, unrestricted float x, unrestricted float y);
+    [RaisesException] void drawImage(HTMLVideoElement video, unrestricted float x, unrestricted float y, unrestricted float width, unrestricted float height);
+    [RaisesException] void drawImage(HTMLVideoElement video, unrestricted float sx, unrestricted float sy, unrestricted float sw, unrestricted float sh, unrestricted float dx, unrestricted float dy, unrestricted float dw, unrestricted float dh);
+    [RuntimeEnabled=ExperimentalCanvasFeatures, RaisesException] void drawImage(ImageBitmap imageBitmap, unrestricted float x, unrestricted float y);
+    [RuntimeEnabled=ExperimentalCanvasFeatures, RaisesException] void drawImage(ImageBitmap imageBitmap, unrestricted float x, unrestricted float y, unrestricted float width, unrestricted float height);
+    [RuntimeEnabled=ExperimentalCanvasFeatures, RaisesException] void drawImage(ImageBitmap imageBitmap, unrestricted float sx, unrestricted float sy, unrestricted float sw, unrestricted float sh, unrestricted float dx, unrestricted float dy, unrestricted float dw, unrestricted float dh);
 
     // pixel manipulation
+    ImageData createImageData(ImageData imagedata);
+    [RaisesException] ImageData createImageData(float sw, float sh);
     [RaisesException] ImageData getImageData(float sx, float sy, float sw, float sh);
+    void putImageData(ImageData imagedata, float dx, float dy);
+    void putImageData(ImageData imagedata, float dx, float dy, float dirtyX, float dirtyY, float dirtyWidth, float dirtyHeight);
 
-    [RaisesException] ImageData webkitGetImageDataHD(float sx, float sy, float sw, float sh);
-
-    // Focus rings
-    [RuntimeEnabled=ExperimentalCanvasFeatures] void drawSystemFocusRing(Element element);
-    [RuntimeEnabled=ExperimentalCanvasFeatures] boolean drawCustomFocusRing(Element element);
-
-    readonly attribute float webkitBackingStorePixelRatio;
-
-    [ImplementedAs=imageSmoothingEnabled] attribute boolean webkitImageSmoothingEnabled;
-    attribute boolean imageSmoothingEnabled;
+    // Context state
+    // Should be merged with WebGL counterpart in CanvasRenderingContext, once no-longer experimental
+    [RuntimeEnabled=ExperimentalCanvasFeatures] boolean isContextLost();
 
     Canvas2DContextAttributes getContextAttributes();
+
+    // FIXME: factor out to CanvasDrawingStyles
+    // line caps/joins
+    attribute unrestricted float lineWidth; // (default 1)
+    [TreatNullAs=NullString] attribute DOMString lineCap; // "butt", "round", "square" (default "butt")
+    [TreatNullAs=NullString] attribute DOMString lineJoin; // "round", "bevel", "miter" (default "miter")
+    attribute unrestricted float miterLimit; // (default 10)
+
+    // dashed lines
+    void setLineDash(sequence<unrestricted float> dash);
+    sequence<unrestricted float> getLineDash();
+    attribute unrestricted float lineDashOffset;
+
+    // text
+    attribute DOMString font; // (default 10px sans-serif)
+    attribute DOMString textAlign; // "start", "end", "left", "right", "center" (default: "start")
+    attribute DOMString textBaseline; // "top", "hanging", "middle", "alphabetic", "ideographic", "bottom" (default: "alphabetic")
+
+    // Non-standard APIs. Candidates for deprecation
+    // https://developer.mozilla.org/en/docs/Web/API/CanvasRenderingContext2D
+    [MeasureAs=CanvasRenderingContext2DSetAlpha] void setAlpha(unrestricted float alpha);
+    [MeasureAs=CanvasRenderingContext2DSetCompositeOperation] void setCompositeOperation(DOMString compositeOperation);
+    [MeasureAs=CanvasRenderingContext2DSetLineWidth] void setLineWidth(unrestricted float width);
+    [MeasureAs=CanvasRenderingContext2DSetLineCap] void setLineCap(DOMString cap);
+    [MeasureAs=CanvasRenderingContext2DSetLineJoin] void setLineJoin(DOMString join);
+    [MeasureAs=CanvasRenderingContext2DSetMiterLimit] void setMiterLimit(unrestricted float limit);
+    [MeasureAs=CanvasRenderingContext2DClearShadow] void clearShadow();
+    [MeasureAs=CanvasRenderingContext2DSetStrokeColor] void setStrokeColor(DOMString color, optional unrestricted float alpha);
+    [MeasureAs=CanvasRenderingContext2DSetStrokeColor] void setStrokeColor(unrestricted float grayLevel, optional unrestricted float alpha);
+    [MeasureAs=CanvasRenderingContext2DSetStrokeColor] void setStrokeColor(unrestricted float r, unrestricted float g, unrestricted float b, unrestricted float a);
+    [MeasureAs=CanvasRenderingContext2DSetStrokeColor] void setStrokeColor(unrestricted float c, unrestricted float m, unrestricted float y, unrestricted float k, unrestricted float a);
+    [MeasureAs=CanvasRenderingContext2DSetFillColor] void setFillColor(DOMString color, optional unrestricted float alpha);
+    [MeasureAs=CanvasRenderingContext2DSetFillColor] void setFillColor(unrestricted float grayLevel, optional unrestricted float alpha);
+    [MeasureAs=CanvasRenderingContext2DSetFillColor] void setFillColor(unrestricted float r, unrestricted float g, unrestricted float b, unrestricted float a);
+    [MeasureAs=CanvasRenderingContext2DSetFillColor] void setFillColor(unrestricted float c, unrestricted float m, unrestricted float y, unrestricted float k, unrestricted float a);
+    [MeasureAs=CanvasRenderingContext2DDrawImageFromRect] void drawImageFromRect(
+        HTMLImageElement? image, optional unrestricted float sx, optional unrestricted float sy, optional unrestricted float sw, optional unrestricted float sh,
+        optional unrestricted float dx, optional unrestricted float dy, optional unrestricted float dw, optional unrestricted float dh, optional DOMString compositeOperation);
+    [MeasureAs=CanvasRenderingContext2DSetShadow] void setShadow(unrestricted float width, unrestricted float height, unrestricted float blur, optional DOMString color, optional unrestricted float alpha);
+    [MeasureAs=CanvasRenderingContext2DSetShadow] void setShadow(unrestricted float width, unrestricted float height, unrestricted float blur, unrestricted float grayLevel, optional unrestricted float alpha);
+    [MeasureAs=CanvasRenderingContext2DSetShadow] void setShadow(unrestricted float width, unrestricted float height, unrestricted float blur, unrestricted float r, unrestricted float g, unrestricted float b, unrestricted float a);
+    [MeasureAs=CanvasRenderingContext2DSetShadow] void setShadow(unrestricted float width, unrestricted float height, unrestricted float blur, unrestricted float c, unrestricted float m, unrestricted float y, unrestricted float k, unrestricted float a);
 };
 
+CanvasRenderingContext2D implements CanvasPathMethods;

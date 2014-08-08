@@ -22,12 +22,6 @@
 #  error "can't have unittests without debug"
 #endif
 
-#if defined(SK_SCALAR_IS_FIXED) && defined(SK_SCALAR_IS_FLOAT)
-#  error "cannot define both SK_SCALAR_IS_FIXED and SK_SCALAR_IS_FLOAT"
-#elif !defined(SK_SCALAR_IS_FIXED) && !defined(SK_SCALAR_IS_FLOAT)
-#  define SK_SCALAR_IS_FLOAT
-#endif
-
 /**
  * Matrix calculations may be float or double.
  * The default is double, as that is faster given our impl uses doubles
@@ -113,10 +107,14 @@
 #endif
 
 #ifndef SK_CRASH
-#  if 1   // set to 0 for infinite loop, which can help connecting gdb
-#    define SK_CRASH() do { SkNO_RETURN_HINT(); *(int *)(uintptr_t)0xbbadbeef = 0; } while (false)
+#  ifdef SK_BUILD_FOR_WIN
+#    define SK_CRASH() __debugbreak()
 #  else
-#    define SK_CRASH() do { SkNO_RETURN_HINT(); } while (true)
+#    if 1   // set to 0 for infinite loop, which can help connecting gdb
+#      define SK_CRASH() do { SkNO_RETURN_HINT(); *(int *)(uintptr_t)0xbbadbeef = 0; } while (false)
+#    else
+#      define SK_CRASH() do { SkNO_RETURN_HINT(); } while (true)
+#    endif
 #  endif
 #endif
 
@@ -126,28 +124,18 @@
  * SK_ENABLE_INST_COUNT controlls printing how many reference counted objects
  * are still held on exit.
  * Defaults to 1 in DEBUG and 0 in RELEASE.
- * FIXME: currently always 0, since it fails if multiple threads run at once
- * (see skbug.com/1219 ).
  */
 #ifndef SK_ENABLE_INST_COUNT
 #  ifdef SK_DEBUG
-#    define SK_ENABLE_INST_COUNT 0
+// Only enabled for static builds, because instance counting relies on static
+// variables in functions defined in header files.
+#    define SK_ENABLE_INST_COUNT !defined(SKIA_DLL)
 #  else
 #    define SK_ENABLE_INST_COUNT 0
 #  endif
 #endif
 
 ///////////////////////////////////////////////////////////////////////////////
-
-#if defined(SK_SOFTWARE_FLOAT) && defined(SK_SCALAR_IS_FLOAT)
-   // if this is defined, we convert floats to 2s compliment ints for compares.
-#  ifndef SK_SCALAR_SLOW_COMPARES
-#    define SK_SCALAR_SLOW_COMPARES
-#  endif
-#  ifndef SK_USE_FLOATBITS
-#    define SK_USE_FLOATBITS
-#  endif
-#endif
 
 #ifdef SK_BUILD_FOR_WIN
 #  ifndef WIN32_LEAN_AND_MEAN
@@ -170,10 +158,6 @@
 #    undef NOMINMAX
 #  endif
 #
-#  ifndef SK_DEBUGBREAK
-#    define SK_DEBUGBREAK(p) do { if (!(p)) { SkNO_RETURN_HINT(); __debugbreak(); }} while (false)
-#  endif
-#
 #  ifndef SK_A32_SHIFT
 #    define SK_A32_SHIFT 24
 #    define SK_R32_SHIFT 16
@@ -181,14 +165,18 @@
 #    define SK_B32_SHIFT 0
 #  endif
 #
-#else
+#endif
+
+#ifndef SK_ALWAYSBREAK
 #  ifdef SK_DEBUG
-#    include <stdio.h>
-#    ifndef SK_DEBUGBREAK
-#      define SK_DEBUGBREAK(cond) do { if (cond) break; \
-                SkDebugf("%s:%d: failed assertion \"%s\"\n", \
-                __FILE__, __LINE__, #cond); SK_CRASH(); } while (false)
-#    endif
+#    define SK_ALWAYSBREAK(cond) do { \
+              if (cond) break; \
+              SkNO_RETURN_HINT(); \
+              SkDebugf("%s:%d: failed assertion \"%s\"\n", __FILE__, __LINE__, #cond); \
+              SK_CRASH(); \
+        } while (false)
+#  else
+#    define SK_ALWAYSBREAK(cond) do { if (cond) break; SK_CRASH(); } while (false)
 #  endif
 #endif
 
@@ -243,13 +231,13 @@
 
 //////////////////////////////////////////////////////////////////////
 
+// TODO: rebaseline as needed so we can remove this flag entirely.
+//  - all platforms have int64_t now
+//  - we have slightly different fixed math results because of this check
+//    since we don't define this for linux/android
 #if defined(SK_BUILD_FOR_WIN32) || defined(SK_BUILD_FOR_MAC)
 #  ifndef SkLONGLONG
-#    ifdef SK_BUILD_FOR_WIN32
-#      define SkLONGLONG __int64
-#    else
-#      define SkLONGLONG long long
-#    endif
+#    define SkLONGLONG int64_t
 #  endif
 #endif
 
@@ -337,6 +325,14 @@
 #  define SK_ATTR_DEPRECATED(msg) SK_ATTRIBUTE(deprecated)
 #endif
 
+#if !defined(SK_ATTR_EXTERNALLY_DEPRECATED)
+#  if !defined(SK_INTERNAL)
+#    define SK_ATTR_EXTERNALLY_DEPRECATED(msg) SK_ATTR_DEPRECATED(msg)
+#  else
+#    define SK_ATTR_EXTERNALLY_DEPRECATED(msg)
+#  endif
+#endif
+
 /**
  * If your judgment is better than the compiler's (i.e. you've profiled it),
  * you can use SK_ALWAYS_INLINE to force inlining. E.g.
@@ -385,6 +381,45 @@
 
 #ifndef SK_ALLOW_STATIC_GLOBAL_INITIALIZERS
 #  define SK_ALLOW_STATIC_GLOBAL_INITIALIZERS 1
+#endif
+
+//////////////////////////////////////////////////////////////////////
+
+#ifndef SK_ATOMICS_PLATFORM_H
+#  if defined(_MSC_VER)
+#    define SK_ATOMICS_PLATFORM_H "../../src/ports/SkAtomics_win.h"
+#  else
+#    define SK_ATOMICS_PLATFORM_H "../../src/ports/SkAtomics_sync.h"
+#  endif
+#endif
+
+#ifndef SK_MUTEX_PLATFORM_H
+#  if defined(SK_BUILD_FOR_WIN)
+#    define SK_MUTEX_PLATFORM_H "../../src/ports/SkMutex_win.h"
+#  else
+#    define SK_MUTEX_PLATFORM_H "../../src/ports/SkMutex_pthread.h"
+#  endif
+#endif
+
+#ifndef SK_BARRIERS_PLATFORM_H
+#  if SK_HAS_COMPILER_FEATURE(thread_sanitizer)
+#    define SK_BARRIERS_PLATFORM_H "../../src/ports/SkBarriers_tsan.h"
+#  elif defined(SK_CPU_ARM32) || defined(SK_CPU_ARM64)
+#    define SK_BARRIERS_PLATFORM_H "../../src/ports/SkBarriers_arm.h"
+#  else
+#    define SK_BARRIERS_PLATFORM_H "../../src/ports/SkBarriers_x86.h"
+#  endif
+#endif
+
+
+//////////////////////////////////////////////////////////////////////
+
+#if defined(SK_GAMMA_EXPONENT) && defined(SK_GAMMA_SRGB)
+#  error "cannot define both SK_GAMMA_EXPONENT and SK_GAMMA_SRGB"
+#elif defined(SK_GAMMA_SRGB)
+#  define SK_GAMMA_EXPONENT (0.0f)
+#elif !defined(SK_GAMMA_EXPONENT)
+#  define SK_GAMMA_EXPONENT (2.2f)
 #endif
 
 #endif // SkPostConfig_DEFINED

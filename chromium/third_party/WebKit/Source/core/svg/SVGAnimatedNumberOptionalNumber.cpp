@@ -21,85 +21,36 @@
 
 #include "core/svg/SVGAnimatedNumberOptionalNumber.h"
 
-#include "core/svg/SVGAnimateElement.h"
-#include "core/svg/SVGAnimatedNumber.h"
-#include "core/svg/SVGParserUtilities.h"
-
-using namespace std;
-
 namespace WebCore {
 
-SVGAnimatedNumberOptionalNumberAnimator::SVGAnimatedNumberOptionalNumberAnimator(SVGAnimationElement* animationElement, SVGElement* contextElement)
-    : SVGAnimatedTypeAnimator(AnimatedNumberOptionalNumber, animationElement, contextElement)
+SVGAnimatedNumberOptionalNumber::SVGAnimatedNumberOptionalNumber(SVGElement* contextElement, const QualifiedName& attributeName, float initialFirstValue, float initialSecondValue)
+    : SVGAnimatedPropertyCommon<SVGNumberOptionalNumber>(contextElement, attributeName,
+        SVGNumberOptionalNumber::create(SVGNumber::create(initialFirstValue), SVGNumber::create(initialSecondValue)))
+    , m_firstNumber(SVGAnimatedNumber::create(contextElement, attributeName, baseValue()->firstNumber()))
+    , m_secondNumber(SVGAnimatedNumber::create(contextElement, attributeName, baseValue()->secondNumber()))
 {
+    m_firstNumber->setParentOptionalNumber(this);
+    m_secondNumber->setParentOptionalNumber(this);
 }
 
-PassOwnPtr<SVGAnimatedType> SVGAnimatedNumberOptionalNumberAnimator::constructFromString(const String& string)
+void SVGAnimatedNumberOptionalNumber::setAnimatedValue(PassRefPtr<SVGPropertyBase> value)
 {
-    OwnPtr<SVGAnimatedType> animtedType = SVGAnimatedType::createNumberOptionalNumber(new pair<float, float>);
-    pair<float, float>& animatedNumber = animtedType->numberOptionalNumber();
-    if (!parseNumberOptionalNumber(string, animatedNumber.first, animatedNumber.second)) {
-        animatedNumber.first = 0;
-        animatedNumber.second = 0;
-    }
-    return animtedType.release();
+    SVGAnimatedPropertyCommon<SVGNumberOptionalNumber>::setAnimatedValue(value);
+    m_firstNumber->setAnimatedValue(currentValue()->firstNumber());
+    m_secondNumber->setAnimatedValue(currentValue()->secondNumber());
 }
 
-PassOwnPtr<SVGAnimatedType> SVGAnimatedNumberOptionalNumberAnimator::startAnimValAnimation(const SVGElementAnimatedPropertyList& animatedTypes)
+void SVGAnimatedNumberOptionalNumber::animationEnded()
 {
-    return SVGAnimatedType::createNumberOptionalNumber(constructFromBaseValues<SVGAnimatedNumber, SVGAnimatedNumber>(animatedTypes));
+    SVGAnimatedPropertyCommon<SVGNumberOptionalNumber>::animationEnded();
+    m_firstNumber->animationEnded();
+    m_secondNumber->animationEnded();
 }
 
-void SVGAnimatedNumberOptionalNumberAnimator::stopAnimValAnimation(const SVGElementAnimatedPropertyList& animatedTypes)
+bool SVGAnimatedNumberOptionalNumber::needsSynchronizeAttribute()
 {
-    stopAnimValAnimationForTypes<SVGAnimatedNumber, SVGAnimatedNumber>(animatedTypes);
-}
-
-void SVGAnimatedNumberOptionalNumberAnimator::resetAnimValToBaseVal(const SVGElementAnimatedPropertyList& animatedTypes, SVGAnimatedType* type)
-{
-    resetFromBaseValues<SVGAnimatedNumber, SVGAnimatedNumber>(animatedTypes, type, &SVGAnimatedType::numberOptionalNumber);
-}
-
-void SVGAnimatedNumberOptionalNumberAnimator::animValWillChange(const SVGElementAnimatedPropertyList& animatedTypes)
-{
-    animValWillChangeForTypes<SVGAnimatedNumber, SVGAnimatedNumber>(animatedTypes);
-}
-
-void SVGAnimatedNumberOptionalNumberAnimator::animValDidChange(const SVGElementAnimatedPropertyList& animatedTypes)
-{
-    animValDidChangeForTypes<SVGAnimatedNumber, SVGAnimatedNumber>(animatedTypes);
-}
-
-void SVGAnimatedNumberOptionalNumberAnimator::addAnimatedTypes(SVGAnimatedType* from, SVGAnimatedType* to)
-{
-    ASSERT(from->type() == AnimatedNumberOptionalNumber);
-    ASSERT(from->type() == to->type());
-
-    const pair<float, float>& fromNumberPair = from->numberOptionalNumber();
-    pair<float, float>& toNumberPair = to->numberOptionalNumber();
-
-    toNumberPair.first += fromNumberPair.first;
-    toNumberPair.second += fromNumberPair.second;
-}
-
-void SVGAnimatedNumberOptionalNumberAnimator::calculateAnimatedValue(float percentage, unsigned repeatCount, SVGAnimatedType* from, SVGAnimatedType* to, SVGAnimatedType* toAtEndOfDuration, SVGAnimatedType* animated)
-{
-    ASSERT(m_animationElement);
-    ASSERT(m_contextElement);
-
-    const pair<float, float>& fromNumberPair = m_animationElement->animationMode() == ToAnimation ? animated->numberOptionalNumber() :  from->numberOptionalNumber();
-    const pair<float, float>& toNumberPair = to->numberOptionalNumber();
-    const pair<float, float>& toAtEndOfDurationNumberPair = toAtEndOfDuration->numberOptionalNumber();
-    pair<float, float>& animatedNumberPair = animated->numberOptionalNumber();
-
-    m_animationElement->animateAdditiveNumber(percentage, repeatCount, fromNumberPair.first, toNumberPair.first, toAtEndOfDurationNumberPair.first, animatedNumberPair.first);
-    m_animationElement->animateAdditiveNumber(percentage, repeatCount, fromNumberPair.second, toNumberPair.second, toAtEndOfDurationNumberPair.second, animatedNumberPair.second);
-}
-
-float SVGAnimatedNumberOptionalNumberAnimator::calculateDistance(const String&, const String&)
-{
-    // FIXME: Distance calculation is not possible for SVGNumberOptionalNumber right now. We need the distance for every single value.
-    return -1;
+    return m_firstNumber->needsSynchronizeAttribute()
+        || m_secondNumber->needsSynchronizeAttribute();
 }
 
 }

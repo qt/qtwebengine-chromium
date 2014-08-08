@@ -13,11 +13,10 @@
 #include <assert.h>
 
 #include "webrtc/common_audio/signal_processing/include/signal_processing_library.h"
+#include "webrtc/modules/audio_processing/audio_buffer.h"
 #include "webrtc/system_wrappers/interface/critical_section_wrapper.h"
 #include "webrtc/typedefs.h"
 
-#include "webrtc/modules/audio_processing/audio_buffer.h"
-#include "webrtc/modules/audio_processing/audio_processing_impl.h"
 
 namespace webrtc {
 namespace {
@@ -36,7 +35,7 @@ struct FilterState {
 int InitializeFilter(FilterState* hpf, int sample_rate_hz) {
   assert(hpf != NULL);
 
-  if (sample_rate_hz == AudioProcessingImpl::kSampleRate8kHz) {
+  if (sample_rate_hz == AudioProcessing::kSampleRate8kHz) {
     hpf->ba = kFilterCoefficients8kHz;
   } else {
     hpf->ba = kFilterCoefficients;
@@ -105,9 +104,11 @@ int Filter(FilterState* hpf, int16_t* data, int length) {
 
 typedef FilterState Handle;
 
-HighPassFilterImpl::HighPassFilterImpl(const AudioProcessingImpl* apm)
-  : ProcessingComponent(apm),
-    apm_(apm) {}
+HighPassFilterImpl::HighPassFilterImpl(const AudioProcessing* apm,
+                                       CriticalSectionWrapper* crit)
+  : ProcessingComponent(),
+    apm_(apm),
+    crit_(crit) {}
 
 HighPassFilterImpl::~HighPassFilterImpl() {}
 
@@ -135,7 +136,7 @@ int HighPassFilterImpl::ProcessCaptureAudio(AudioBuffer* audio) {
 }
 
 int HighPassFilterImpl::Enable(bool enable) {
-  CriticalSectionScoped crit_scoped(apm_->crit());
+  CriticalSectionScoped crit_scoped(crit_);
   return EnableComponent(enable);
 }
 
@@ -147,14 +148,13 @@ void* HighPassFilterImpl::CreateHandle() const {
   return new FilterState;
 }
 
-int HighPassFilterImpl::DestroyHandle(void* handle) const {
+void HighPassFilterImpl::DestroyHandle(void* handle) const {
   delete static_cast<Handle*>(handle);
-  return apm_->kNoError;
 }
 
 int HighPassFilterImpl::InitializeHandle(void* handle) const {
   return InitializeFilter(static_cast<Handle*>(handle),
-                          apm_->sample_rate_hz());
+                          apm_->proc_sample_rate_hz());
 }
 
 int HighPassFilterImpl::ConfigureHandle(void* /*handle*/) const {

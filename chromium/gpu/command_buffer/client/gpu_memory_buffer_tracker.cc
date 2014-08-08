@@ -6,7 +6,7 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "gpu/command_buffer/client/gles2_implementation.h"
-#include "gpu/command_buffer/common/gpu_control.h"
+#include "gpu/command_buffer/client/gpu_control.h"
 
 namespace gpu {
 namespace gles2 {
@@ -21,12 +21,14 @@ GpuMemoryBufferTracker::~GpuMemoryBufferTracker() {
   }
 }
 
-int32 GpuMemoryBufferTracker::CreateBuffer(
-    size_t width, size_t height, int32 internalformat) {
+int32 GpuMemoryBufferTracker::CreateBuffer(size_t width,
+                                           size_t height,
+                                           int32 internalformat,
+                                           int32 usage) {
   int32 image_id = 0;
   DCHECK(gpu_control_);
   gfx::GpuMemoryBuffer* buffer = gpu_control_->CreateGpuMemoryBuffer(
-      width, height, internalformat, &image_id);
+      width, height, internalformat, usage, &image_id);
   if (!buffer)
     return 0;
 

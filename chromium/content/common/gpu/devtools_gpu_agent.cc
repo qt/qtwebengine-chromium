@@ -19,20 +19,19 @@ DevToolsGpuAgent::DevToolsGpuAgent(GpuChannel* gpu_channel) :
 DevToolsGpuAgent::~DevToolsGpuAgent() {
 }
 
-void DevToolsGpuAgent::StartEventsRecording(int32* route_id) {
+bool DevToolsGpuAgent::StartEventsRecording(int32 route_id) {
   DCHECK(CalledOnValidThread());
   if (route_id_ != MSG_ROUTING_NONE) {
     // Events recording is already in progress, so "fail" the call by
-    // returning MSG_ROUTING_NONE as the route id.
-    *route_id = MSG_ROUTING_NONE;
-    return;
+    // returning false.
+    return false;
   }
-  route_id_ = gpu_channel_->GenerateRouteID();
-  *route_id = route_id_;
+  route_id_ = route_id;
   tasks_.reset(new GpuTaskInfoList());
   GpuEventsDispatcher* dispatcher =
       gpu_channel_->gpu_channel_manager()->gpu_devtools_events_dispatcher();
   dispatcher->AddProcessor(this);
+  return true;
 }
 
 void DevToolsGpuAgent::StopEventsRecording() {
@@ -48,7 +47,7 @@ void DevToolsGpuAgent::StopEventsRecording() {
 void DevToolsGpuAgent::ProcessEvent(
     TimeTicks timestamp,
     GpuEventsDispatcher::EventPhase phase,
-    GpuCommandBufferStub* stub) {
+    GpuChannel* channel) {
   DCHECK(CalledOnValidThread());
   if (route_id_ == MSG_ROUTING_NONE)
     return;
@@ -56,8 +55,10 @@ void DevToolsGpuAgent::ProcessEvent(
   GpuTaskInfo task;
   task.timestamp = (timestamp - TimeTicks()).InSecondsF();
   task.phase = phase;
-  task.foreign = stub->channel() != gpu_channel_;
-  task.used_gpu_memory_bytes = stub->GetMemoryUsage();
+  task.foreign = channel != gpu_channel_;
+  task.gpu_memory_used_bytes = channel->GetMemoryUsage();
+  task.gpu_memory_limit_bytes = gpu_channel_->gpu_channel_manager()->
+      gpu_memory_manager()->GetMaximumClientAllocation();
 
   const int kFlushIntervalMs = 100;
   const unsigned kMaxPendingItems = 100;

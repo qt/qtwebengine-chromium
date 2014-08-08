@@ -26,8 +26,6 @@
 #include "config.h"
 #include "core/events/BeforeTextInsertedEvent.h"
 
-#include "core/events/ThreadLocalEventNames.h"
-
 namespace WebCore {
 
 BeforeTextInsertedEvent::BeforeTextInsertedEvent(const String& text)
@@ -43,6 +41,11 @@ const AtomicString& BeforeTextInsertedEvent::interfaceName() const
 {
     // Notice that there is no BeforeTextInsertedEvent.idl.
     return EventNames::Event;
+}
+
+void BeforeTextInsertedEvent::trace(Visitor* visitor)
+{
+    Event::trace(visitor);
 }
 
 }

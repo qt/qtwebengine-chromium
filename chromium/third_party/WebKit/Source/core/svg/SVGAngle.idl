@@ -20,7 +20,11 @@
  * Boston, MA 02110-1301, USA.
  */
 
-interface SVGAngle {
+[
+    ImplementedAs=SVGAngleTearOff,
+    SetWrapperReferenceTo(SVGElement contextElement),
+    TypeChecking=Interface|Nullable,
+] interface SVGAngle {
     // Angle Unit Types
     const unsigned short SVG_ANGLETYPE_UNKNOWN = 0;
     const unsigned short SVG_ANGLETYPE_UNSPECIFIED = 1;
@@ -29,13 +33,13 @@ interface SVGAngle {
     const unsigned short SVG_ANGLETYPE_GRAD = 4;
 
     readonly attribute unsigned short unitType;
-    [StrictTypeChecking] attribute float value;
-    [StrictTypeChecking] attribute float valueInSpecifiedUnits;
+    [RaisesException=Setter] attribute float value;
+    [RaisesException=Setter] attribute float valueInSpecifiedUnits;
 
     [TreatNullAs=NullString, RaisesException=Setter] attribute DOMString valueAsString;
 
-    [StrictTypeChecking, RaisesException] void newValueSpecifiedUnits(unsigned short unitType, float valueInSpecifiedUnits);
+    [RaisesException] void newValueSpecifiedUnits(unsigned short unitType, float valueInSpecifiedUnits);
 
-    [StrictTypeChecking, RaisesException] void convertToSpecifiedUnits(unsigned short unitType);
+    [RaisesException] void convertToSpecifiedUnits(unsigned short unitType);
 };
 

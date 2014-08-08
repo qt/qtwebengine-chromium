@@ -45,7 +45,7 @@ namespace WebCore {
 
 class Event;
 class ExceptionState;
-class Frame;
+class LocalFrame;
 class MessagePort;
 class ExecutionContext;
 class SerializedScriptValue;
@@ -56,14 +56,15 @@ typedef Vector<RefPtr<MessagePort>, 1> MessagePortArray;
 // Not to be confused with blink::WebMessagePortChannelArray; this one uses Vector and OwnPtr instead of WebVector and raw pointers.
 typedef Vector<OwnPtr<blink::WebMessagePortChannel>, 1> MessagePortChannelArray;
 
-class MessagePort : public RefCounted<MessagePort>
+class MessagePort FINAL : public RefCountedWillBeRefCountedGarbageCollected<MessagePort>
     , public ActiveDOMObject
     , public EventTargetWithInlineData
     , public ScriptWrappable
     , public blink::WebMessagePortChannelClient {
     REFCOUNTED_EVENT_TARGET(MessagePort);
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(MessagePort);
 public:
-    static PassRefPtr<MessagePort> create(ExecutionContext&);
+    static PassRefPtrWillBeRawPtr<MessagePort> create(ExecutionContext&);
     virtual ~MessagePort();
 
     void postMessage(PassRefPtr<SerializedScriptValue> message, const MessagePortArray*, ExceptionState&);
@@ -73,6 +74,9 @@ public:
 
     void entangle(PassOwnPtr<blink::WebMessagePortChannel>);
     PassOwnPtr<blink::WebMessagePortChannel> disentangle();
+
+    static PassOwnPtr<blink::WebMessagePortChannelArray> toWebMessagePortChannelArray(PassOwnPtr<MessagePortChannelArray>);
+    static PassOwnPtr<MessagePortArray> toMessagePortArray(ExecutionContext*, const blink::WebMessagePortChannelArray&);
 
     // Returns 0 if there is an exception, or if the passed-in array is 0/empty.
     static PassOwnPtr<MessagePortChannelArray> disentanglePorts(const MessagePortArray*, ExceptionState&);
@@ -84,18 +88,18 @@ public:
 
     virtual const AtomicString& interfaceName() const OVERRIDE;
     virtual ExecutionContext* executionContext() const OVERRIDE { return ActiveDOMObject::executionContext(); }
-    MessagePort* toMessagePort() OVERRIDE { return this; }
+    virtual MessagePort* toMessagePort() OVERRIDE { return this; }
 
     // ActiveDOMObject implementation.
     virtual bool hasPendingActivity() const OVERRIDE;
     virtual void stop() OVERRIDE { close(); }
 
-    void setOnmessage(PassRefPtr<EventListener> listener, DOMWrapperWorld* world)
+    void setOnmessage(PassRefPtr<EventListener> listener)
     {
-        setAttributeEventListener(EventTypeNames::message, listener, world);
+        setAttributeEventListener(EventTypeNames::message, listener);
         start();
     }
-    EventListener* onmessage(DOMWrapperWorld* world) { return getAttributeEventListener(EventTypeNames::message, world); }
+    EventListener* onmessage() { return getAttributeEventListener(EventTypeNames::message); }
 
     // A port starts out its life entangled, and remains entangled until it is closed or is cloned.
     bool isEntangled() const { return !m_closed && !isNeutered(); }

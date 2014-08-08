@@ -26,7 +26,7 @@
 #ifndef Editor_h
 #define Editor_h
 
-#include "core/dom/ClipboardAccessPolicy.h"
+#include "core/clipboard/ClipboardAccessPolicy.h"
 #include "core/dom/DocumentMarker.h"
 #include "core/editing/EditAction.h"
 #include "core/editing/EditingBehavior.h"
@@ -37,6 +37,7 @@
 #include "core/editing/WritingDirection.h"
 #include "core/frame/FrameDestructionObserver.h"
 #include "platform/PasteMode.h"
+#include "platform/heap/Handle.h"
 
 namespace WebCore {
 
@@ -46,7 +47,7 @@ class EditCommand;
 class EditCommandComposition;
 class EditorClient;
 class EditorInternalCommand;
-class Frame;
+class LocalFrame;
 class HTMLElement;
 class HitTestResult;
 class KillRing;
@@ -62,15 +63,15 @@ class UndoStack;
 enum EditorCommandSource { CommandFromMenuOrKeyBinding, CommandFromDOM, CommandFromDOMWithUserInterface };
 enum EditorParagraphSeparator { EditorParagraphSeparatorIsDiv, EditorParagraphSeparatorIsP };
 
-class Editor {
+class Editor FINAL : public NoBaseWillBeGarbageCollectedFinalized<Editor> {
     WTF_MAKE_NONCOPYABLE(Editor);
 public:
-    static PassOwnPtr<Editor> create(Frame&);
+    static PassOwnPtrWillBeRawPtr<Editor> create(LocalFrame&);
     ~Editor();
 
     EditorClient& client() const;
 
-    Frame& frame() const { return m_frame; }
+    LocalFrame& frame() const { return m_frame; }
 
     CompositeEditCommand* lastEditCommand() { return m_lastEditCommand.get(); }
 
@@ -96,6 +97,7 @@ public:
     void pasteAsPlainText();
     void performDelete();
 
+    static void countEvent(ExecutionContext*, const Event*);
     void copyImage(const HitTestResult&);
 
     void indent();
@@ -112,14 +114,6 @@ public:
 
     TriState selectionUnorderedListState() const;
     TriState selectionOrderedListState() const;
-    PassRefPtr<Node> insertOrderedList();
-    PassRefPtr<Node> insertUnorderedList();
-    bool canIncreaseSelectionListLevel();
-    bool canDecreaseSelectionListLevel();
-    PassRefPtr<Node> increaseSelectionListLevel();
-    PassRefPtr<Node> increaseSelectionListLevelOrdered();
-    PassRefPtr<Node> increaseSelectionListLevelUnordered();
-    void decreaseSelectionListLevel();
 
     void removeFormattingAndStyle();
 
@@ -133,9 +127,9 @@ public:
     void applyStyleToSelection(StylePropertySet*, EditAction);
     void applyParagraphStyleToSelection(StylePropertySet*, EditAction);
 
-    void appliedEditing(PassRefPtr<CompositeEditCommand>);
-    void unappliedEditing(PassRefPtr<EditCommandComposition>);
-    void reappliedEditing(PassRefPtr<EditCommandComposition>);
+    void appliedEditing(PassRefPtrWillBeRawPtr<CompositeEditCommand>);
+    void unappliedEditing(PassRefPtrWillBeRawPtr<EditCommandComposition>);
+    void reappliedEditing(PassRefPtrWillBeRawPtr<EditCommandComposition>);
 
     void setShouldStyleWithCSS(bool flag) { m_shouldStyleWithCSS = flag; }
     bool shouldStyleWithCSS() const { return m_shouldStyleWithCSS; }
@@ -143,7 +137,7 @@ public:
     class Command {
     public:
         Command();
-        Command(const EditorInternalCommand*, EditorCommandSource, PassRefPtr<Frame>);
+        Command(const EditorInternalCommand*, EditorCommandSource, PassRefPtr<LocalFrame>);
 
         bool execute(const String& parameter = String(), Event* triggeringEvent = 0) const;
         bool execute(Event* triggeringEvent) const;
@@ -156,14 +150,15 @@ public:
 
         bool isTextInsertion() const;
 
+        // Returns 0 if this Command is not supported.
+        int idForHistogram() const;
     private:
         const EditorInternalCommand* m_command;
         EditorCommandSource m_source;
-        RefPtr<Frame> m_frame;
+        RefPtr<LocalFrame> m_frame;
     };
     Command command(const String& commandName); // Command source is CommandFromMenuOrKeyBinding.
     Command command(const String& commandName, EditorCommandSource);
-    static bool commandIsSupportedFromMenuOrKeyBinding(const String& commandName); // Works without a frame.
 
     bool insertText(const String&, Event* triggeringEvent);
     bool insertTextWithoutSendingTextEvent(const String&, bool selectInsertedText, TextEvent* triggeringEvent);
@@ -197,11 +192,11 @@ public:
 
     EditingBehavior behavior() const;
 
-    PassRefPtr<Range> selectedRange();
+    PassRefPtrWillBeRawPtr<Range> selectedRange();
 
     void addToKillRing(Range*, bool prepend);
 
-    void pasteAsFragment(PassRefPtr<DocumentFragment>, bool smartReplace, bool matchStyle);
+    void pasteAsFragment(PassRefPtrWillBeRawPtr<DocumentFragment>, bool smartReplace, bool matchStyle);
     void pasteAsPlainText(const String&, bool smartReplace);
 
     Node* findEventTargetFrom(const VisibleSelection&) const;
@@ -210,7 +205,7 @@ public:
     // FIXME: Switch callers over to the FindOptions version and retire this one.
     bool findString(const String&, bool forward, bool caseFlag, bool wrapFlag, bool startInSelection);
 
-    PassRefPtr<Range> findStringAndScrollToVisible(const String&, Range*, FindOptions);
+    PassRefPtrWillBeRawPtr<Range> findStringAndScrollToVisible(const String&, Range*, FindOptions);
 
     const VisibleSelection& mark() const; // Mark, to be used as emacs uses it.
     void setMark(const VisibleSelection&);
@@ -224,7 +219,7 @@ public:
     bool markedTextMatchesAreHighlighted() const;
     void setMarkedTextMatchesAreHighlighted(bool);
 
-    void replaceSelectionWithFragment(PassRefPtr<DocumentFragment>, bool selectReplacement, bool smartReplace, bool matchStyle);
+    void replaceSelectionWithFragment(PassRefPtrWillBeRawPtr<DocumentFragment>, bool selectReplacement, bool smartReplace, bool matchStyle);
     void replaceSelectionWithText(const String&, bool selectReplacement, bool smartReplace);
 
     EditorParagraphSeparator defaultParagraphSeparator() const { return m_defaultParagraphSeparator; }
@@ -240,12 +235,11 @@ public:
     };
     friend class RevealSelectionScope;
 
-    // Export interpretKeyEvent only for testing
-    static const char* interpretKeyEvent(const WebCore::KeyboardEvent*);
+    void trace(Visitor*);
 
 private:
-    Frame& m_frame;
-    RefPtr<CompositeEditCommand> m_lastEditCommand;
+    LocalFrame& m_frame;
+    RefPtrWillBeMember<CompositeEditCommand> m_lastEditCommand;
     int m_preventRevealSelection;
     bool m_shouldStartNewKillRingSequence;
     bool m_shouldStyleWithCSS;
@@ -255,7 +249,7 @@ private:
     EditorParagraphSeparator m_defaultParagraphSeparator;
     bool m_overwriteModeEnabled;
 
-    explicit Editor(Frame&);
+    explicit Editor(LocalFrame&);
 
     bool canDeleteRange(Range*) const;
 
@@ -277,7 +271,7 @@ private:
 
     Node* findEventTargetFromSelection() const;
 
-    PassRefPtr<Range> rangeOfString(const String&, Range*, FindOptions);
+    PassRefPtrWillBeRawPtr<Range> rangeOfString(const String&, Range*, FindOptions);
 
     SpellChecker& spellChecker() const;
 

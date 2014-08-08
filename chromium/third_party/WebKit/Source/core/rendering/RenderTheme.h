@@ -37,12 +37,9 @@
 
 namespace WebCore {
 
-class CSSStyleSheet;
 class Element;
 class FileList;
 class HTMLInputElement;
-class PopupMenu;
-class RenderMenuList;
 class RenderMeter;
 class RenderProgress;
 
@@ -65,7 +62,7 @@ public:
     // metrics and defaults given the contents of the style.  This includes sophisticated operations like
     // selection of control size based off the font, the disabling of appearance when certain other properties like
     // "border" are set, or if the appearance is not supported by the theme.
-    void adjustStyle(RenderStyle*, Element*,  const CachedUAStyle&);
+    void adjustStyle(RenderStyle*, Element*, const CachedUAStyle*);
 
     // This method is called to paint the widget as a background of the RenderObject.  A widget's foreground, e.g., the
     // text of a button, is always rendered by the engine itself.  The boolean return value indicates
@@ -97,7 +94,7 @@ public:
     virtual bool controlSupportsTints(const RenderObject*) const { return false; }
 
     // Whether or not the control has been styled enough by the author to disable the native appearance.
-    virtual bool isControlStyled(const RenderStyle*, const CachedUAStyle&) const;
+    virtual bool isControlStyled(const RenderStyle*, const CachedUAStyle*) const;
 
     // A general method asking if any control tinting is supported at all.
     virtual bool supportsControlTints() const { return false; }
@@ -114,9 +111,6 @@ public:
 
     // A method asking if the theme's controls actually care about redrawing when hovered.
     virtual bool supportsHover(const RenderStyle*) const { return false; }
-
-    // A method asking if the platform is able to show datalist suggestions for a given input type.
-    virtual bool supportsDataListUI(const AtomicString&) const;
 
 #if ENABLE(INPUT_MULTIPLE_FIELDS_UI)
     // A method asking if the platform is able to show a calendar picker for a given input type.
@@ -139,11 +133,12 @@ public:
     virtual Color platformActiveTextSearchHighlightColor() const;
     virtual Color platformInactiveTextSearchHighlightColor() const;
 
-    static Color focusRingColor();
+    Color focusRingColor() const;
     virtual Color platformFocusRingColor() const { return Color(0, 0, 0); }
-    static void setCustomFocusRingColor(const Color&);
+    void setCustomFocusRingColor(const Color&);
     static Color tapHighlightColor();
     virtual Color platformTapHighlightColor() const { return RenderTheme::defaultTapHighlightColor; }
+    virtual Color platformDefaultCompositionBackgroundColor() const { return defaultCompositionBackgroundColor; }
     virtual void platformColorsDidChange();
 
     virtual double caretBlinkInterval() const { return 0.5; }
@@ -173,9 +168,6 @@ public:
     virtual double animationDurationForProgressBar(RenderProgress*) const;
 
     // Media controls
-    virtual bool supportsClosedCaptioning() const { return false; }
-    virtual bool hasOwnDisabledStateHandlingFor(ControlPart) const { return false; }
-    virtual bool usesVerticalVolumeSlider() const { return true; }
     virtual String formatMediaControlsTime(float time) const;
     virtual String formatMediaControlsCurrentTime(float currentTime, float duration) const;
 
@@ -201,6 +193,8 @@ public:
 
     virtual bool shouldOpenPickerWithF4Key() const;
 
+    virtual bool supportsSelectionForegroundColors() const { return true; }
+
 protected:
     // The platform selection color.
     virtual Color platformActiveSelectionBackgroundColor() const;
@@ -215,8 +209,6 @@ protected:
 
     // A method asking if the theme is able to draw the focus ring.
     virtual bool supportsFocusRing(const RenderStyle*) const;
-    virtual bool supportsSelectionForegroundColors() const { return true; }
-    virtual bool supportsListBoxSelectionForegroundColors() const { return true; }
 
 #if !USE(NEW_THEME)
     // Methods for each appearance value.
@@ -249,11 +241,6 @@ protected:
 
     virtual bool paintProgressBar(RenderObject*, const PaintInfo&, const IntRect&) { return true; }
 
-#if ENABLE(INPUT_SPEECH)
-    virtual void adjustInputFieldSpeechButtonStyle(RenderStyle*, Element*) const;
-    virtual bool paintInputFieldSpeechButton(RenderObject*, const PaintInfo&, const IntRect&);
-#endif
-
     virtual bool paintSliderTrack(RenderObject*, const PaintInfo&, const IntRect&) { return true; }
 
     virtual void adjustSliderThumbStyle(RenderStyle*, Element*) const;
@@ -275,15 +262,11 @@ protected:
     virtual bool paintMediaPlayButton(RenderObject*, const PaintInfo&, const IntRect&) { return true; }
     virtual bool paintMediaOverlayPlayButton(RenderObject*, const PaintInfo&, const IntRect&) { return true; }
     virtual bool paintMediaMuteButton(RenderObject*, const PaintInfo&, const IntRect&) { return true; }
-    virtual bool paintMediaSeekBackButton(RenderObject*, const PaintInfo&, const IntRect&) { return true; }
-    virtual bool paintMediaSeekForwardButton(RenderObject*, const PaintInfo&, const IntRect&) { return true; }
     virtual bool paintMediaSliderTrack(RenderObject*, const PaintInfo&, const IntRect&) { return true; }
     virtual bool paintMediaSliderThumb(RenderObject*, const PaintInfo&, const IntRect&) { return true; }
     virtual bool paintMediaVolumeSliderContainer(RenderObject*, const PaintInfo&, const IntRect&) { return true; }
     virtual bool paintMediaVolumeSliderTrack(RenderObject*, const PaintInfo&, const IntRect&) { return true; }
     virtual bool paintMediaVolumeSliderThumb(RenderObject*, const PaintInfo&, const IntRect&) { return true; }
-    virtual bool paintMediaRewindButton(RenderObject*, const PaintInfo&, const IntRect&) { return true; }
-    virtual bool paintMediaReturnToRealtimeButton(RenderObject*, const PaintInfo&, const IntRect&) { return true; }
     virtual bool paintMediaToggleClosedCaptionsButton(RenderObject*, const PaintInfo&, const IntRect&) { return true; }
     virtual bool paintMediaControlsBackground(RenderObject*, const PaintInfo&, const IntRect&) { return true; }
     virtual bool paintMediaCurrentTime(RenderObject*, const PaintInfo&, const IntRect&) { return true; }
@@ -314,19 +297,14 @@ public:
     bool isReadOnlyControl(const RenderObject*) const;
 
 private:
-    mutable Color m_activeSelectionBackgroundColor;
-    mutable Color m_inactiveSelectionBackgroundColor;
-    mutable Color m_activeSelectionForegroundColor;
-    mutable Color m_inactiveSelectionForegroundColor;
-
-    mutable Color m_activeListBoxSelectionBackgroundColor;
-    mutable Color m_inactiveListBoxSelectionBackgroundColor;
-    mutable Color m_activeListBoxSelectionForegroundColor;
-    mutable Color m_inactiveListBoxSelectionForegroundColor;
+    Color m_customFocusRingColor;
+    bool m_hasCustomFocusRingColor;
 
     // This color is expected to be drawn on a semi-transparent overlay,
     // making it more transparent than its alpha value indicates.
     static const RGBA32 defaultTapHighlightColor = 0x66000000;
+
+    static const RGBA32 defaultCompositionBackgroundColor = 0xFFFFDD55;
 
 #if USE(NEW_THEME)
     Theme* m_platformTheme; // The platform-specific theme.

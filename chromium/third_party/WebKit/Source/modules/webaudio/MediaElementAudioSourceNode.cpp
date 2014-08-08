@@ -28,6 +28,7 @@
 
 #include "modules/webaudio/MediaElementAudioSourceNode.h"
 
+#include "core/html/HTMLMediaElement.h"
 #include "modules/webaudio/AudioContext.h"
 #include "modules/webaudio/AudioNodeOutput.h"
 #include "platform/Logging.h"
@@ -40,9 +41,9 @@ const unsigned maxSampleRate = 192000;
 
 namespace WebCore {
 
-PassRefPtr<MediaElementAudioSourceNode> MediaElementAudioSourceNode::create(AudioContext* context, HTMLMediaElement* mediaElement)
+PassRefPtrWillBeRawPtr<MediaElementAudioSourceNode> MediaElementAudioSourceNode::create(AudioContext* context, HTMLMediaElement* mediaElement)
 {
-    return adoptRef(new MediaElementAudioSourceNode(context, mediaElement));
+    return adoptRefWillBeNoop(new MediaElementAudioSourceNode(context, mediaElement));
 }
 
 MediaElementAudioSourceNode::MediaElementAudioSourceNode(AudioContext* context, HTMLMediaElement* mediaElement)
@@ -62,7 +63,9 @@ MediaElementAudioSourceNode::MediaElementAudioSourceNode(AudioContext* context, 
 
 MediaElementAudioSourceNode::~MediaElementAudioSourceNode()
 {
+#if !ENABLE(OILPAN)
     m_mediaElement->setAudioSourceNode(0);
+#endif
     uninitialize();
 }
 
@@ -135,10 +138,6 @@ void MediaElementAudioSourceNode::process(size_t numberOfFrames)
     }
 }
 
-void MediaElementAudioSourceNode::reset()
-{
-}
-
 void MediaElementAudioSourceNode::lock()
 {
     ref();
@@ -149,6 +148,13 @@ void MediaElementAudioSourceNode::unlock()
 {
     m_processLock.unlock();
     deref();
+}
+
+void MediaElementAudioSourceNode::trace(Visitor* visitor)
+{
+    visitor->trace(m_mediaElement);
+    AudioSourceNode::trace(visitor);
+    AudioSourceProviderClient::trace(visitor);
 }
 
 } // namespace WebCore

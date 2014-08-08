@@ -27,11 +27,6 @@
   padding: 0;
 }
 
-input:-webkit-any([type='text'],[type='url'],:not([type])) +
-    .controlled-setting-indicator {
-  -webkit-margin-start: 5px;
-}
-
 .controlled-setting-indicator:not([controlled-by]) {
   display: none;
 }
@@ -41,11 +36,15 @@ input:-webkit-any([type='text'],[type='url'],:not([type])) +
 }
 
 .controlled-setting-indicator[controlled-by='owner'] > div {
-  background-image: url('chrome://theme/IDR_CONTROLLED_SETTING_MANDATORY');
+  background-image: url('chrome://theme/IDR_CONTROLLED_SETTING_OWNER');
 }
 
 .controlled-setting-indicator[controlled-by='extension'] > div {
   background-image: url('chrome://theme/IDR_CONTROLLED_SETTING_EXTENSION');
+}
+
+.controlled-setting-indicator[controlled-by='shared'] > div {
+  background-image: url('chrome://theme/IDR_CONTROLLED_SETTING_SHARED');
 }
 
 .controlled-setting-indicator:-webkit-any([controlled-by='recommended'],
@@ -53,36 +52,12 @@ input:-webkit-any([type='text'],[type='url'],:not([type])) +
   background-image: url('chrome://theme/IDR_CONTROLLED_SETTING_MANDATORY');
 }
 
-.controlled-setting-bubble-content {
-  -webkit-padding-start: 30px;
-  background-repeat: no-repeat;
-  background-size: 22px;
-  min-height: 32px;
-}
-
-.controlled-setting-bubble-content[controlled-by='policy'] {
-  background-image: url('chrome://theme/IDR_CONTROLLED_SETTING_MANDATORY');
-}
-
-.controlled-setting-bubble-content[controlled-by='owner'] {
-  background-image: url('chrome://theme/IDR_CONTROLLED_SETTING_MANDATORY');
-}
-
-.controlled-setting-bubble-content[controlled-by='extension'] {
-  background-image: url('chrome://theme/IDR_CONTROLLED_SETTING_EXTENSION');
-}
-
-.controlled-setting-bubble-content:-webkit-any([controlled-by='recommended'],
-    [controlled-by='hasRecommendation']) {
-  background-image: url('chrome://theme/IDR_CONTROLLED_SETTING_MANDATORY');
-}
-
-html[dir='rtl'] .controlled-setting-bubble-content {
-  background-position: right top;
-}
-
 .controlled-setting-bubble-action {
   padding: 0 !important;
+}
+
+.controlled-setting-bubble-header {
+  margin-top: 3px;
 }
 
 .controlled-setting-bubble-content-row {
@@ -95,7 +70,7 @@ html[dir='rtl'] .controlled-setting-bubble-content {
   background-repeat: no-repeat;
   font-weight: bold;
   height: 24px;
-  margin-top: -12px;
+  margin-top: -9px;
   overflow: hidden;
   padding-top: 3px;
   position: absolute;
@@ -110,7 +85,8 @@ html[dir='rtl'] .controlled-setting-bubble-extension-name {
 }
 
 .controlled-setting-bubble-extension-manage-link {
-  margin-top: -0.5em;
+  margin-left: -0.35em;
+  margin-top: -0.30em;
   position: absolute;
   top: 50%;
 }

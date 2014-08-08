@@ -6,6 +6,7 @@
 
 #include <aclapi.h>
 #include <lm.h>
+#include <powrprof.h>
 #include <shellapi.h>
 #include <shlobj.h>
 #include <shobjidl.h>  // Must be before propkey.
@@ -221,14 +222,29 @@ void SetAbortBehaviorForCrashReporting() {
   signal(SIGABRT, ForceCrashOnSigAbort);
 }
 
-bool IsTouchEnabledDevice() {
-  if (base::win::GetVersion() < base::win::VERSION_WIN7)
+bool IsTabletDevice() {
+  if (GetSystemMetrics(SM_MAXIMUMTOUCHES) == 0)
     return false;
-  const int kMultiTouch = NID_INTEGRATED_TOUCH | NID_MULTI_INPUT | NID_READY;
-  int sm = GetSystemMetrics(SM_DIGITIZER);
-  if ((sm & kMultiTouch) == kMultiTouch) {
-    return true;
-  }
+
+  base::win::Version version = base::win::GetVersion();
+  if (version == base::win::VERSION_XP)
+    return (GetSystemMetrics(SM_TABLETPC) != 0);
+
+  // If the device is docked, the user is treating the device as a PC.
+  if (GetSystemMetrics(SM_SYSTEMDOCKED) != 0)
+    return false;
+
+  // PlatformRoleSlate was only added in Windows 8, but prior to Win8 it is
+  // still possible to check for a mobile power profile.
+  POWER_PLATFORM_ROLE role = PowerDeterminePlatformRole();
+  bool mobile_power_profile = (role == PlatformRoleMobile);
+  bool slate_power_profile = false;
+  if (version >= base::win::VERSION_WIN8)
+    slate_power_profile = (role == PlatformRoleSlate);
+
+  if (mobile_power_profile || slate_power_profile)
+    return (GetSystemMetrics(SM_CONVERTIBLESLATEMODE) == 0);
+
   return false;
 }
 
@@ -329,41 +345,29 @@ bool DismissVirtualKeyboard() {
 
 typedef HWND (*MetroRootWindow) ();
 
-// As of this writing, GetMonitorInfo function seem to return wrong values
-// for rcWork.left and rcWork.top in case of split screen situation inside
-// metro mode. In order to get required values we query for core window screen
-// coordinates.
-// TODO(shrikant): Remove detour code once GetMonitorInfo is fixed for 8.1.
-BOOL GetMonitorInfoWrapper(HMONITOR monitor, MONITORINFO* mi) {
-  BOOL ret = ::GetMonitorInfo(monitor, mi);
-#if !defined(USE_ASH)
-  if (base::win::IsMetroProcess() &&
-      base::win::GetVersion() >= base::win::VERSION_WIN8_1) {
-    static MetroRootWindow root_window = NULL;
-    if (!root_window) {
-      HMODULE metro = base::win::GetMetroModule();
-      // There are apparently instances when current process is inside metro
-      // environment but metro driver dll is not loaded.
-      if (!metro) {
-        return ret;
-      }
-      root_window = reinterpret_cast<MetroRootWindow>(
-          ::GetProcAddress(metro, "GetRootWindow"));
-    }
-    ret = ::GetWindowRect(root_window(), &(mi->rcWork));
-  }
-#endif
-  return ret;
-}
+enum DomainEnrollementState {UNKNOWN = -1, NOT_ENROLLED, ENROLLED};
+static volatile long int g_domain_state = UNKNOWN;
 
 bool IsEnrolledToDomain() {
-  LPWSTR domain;
-  NETSETUP_JOIN_STATUS join_status;
-  if(::NetGetJoinInformation(NULL, &domain, &join_status) != NERR_Success)
-    return false;
-  ::NetApiBufferFree(domain);
+  // Doesn't make any sense to retry inside a user session because joining a
+  // domain will only kick in on a restart.
+  if (g_domain_state == UNKNOWN) {
+    LPWSTR domain;
+    NETSETUP_JOIN_STATUS join_status;
+    if(::NetGetJoinInformation(NULL, &domain, &join_status) != NERR_Success)
+      return false;
+    ::NetApiBufferFree(domain);
+    ::InterlockedCompareExchange(&g_domain_state,
+                                 join_status == ::NetSetupDomainName ?
+                                     ENROLLED : NOT_ENROLLED,
+                                 UNKNOWN);
+  }
 
-  return join_status == ::NetSetupDomainName;
+  return g_domain_state == ENROLLED;
+}
+
+void SetDomainStateForTesting(bool state) {
+  g_domain_state = state ? ENROLLED : NOT_ENROLLED;
 }
 
 }  // namespace win

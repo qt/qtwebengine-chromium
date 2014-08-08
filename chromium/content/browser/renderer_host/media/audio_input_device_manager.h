@@ -22,6 +22,7 @@
 #include "content/common/content_export.h"
 #include "content/common/media/media_stream_options.h"
 #include "content/public/common/media_stream_request.h"
+#include "media/audio/audio_device_name.h"
 
 namespace media {
 class AudioManager;
@@ -45,7 +46,8 @@ class CONTENT_EXPORT AudioInputDeviceManager : public MediaStreamProvider {
 
   // MediaStreamProvider implementation, called on IO thread.
   virtual void Register(MediaStreamProviderListener* listener,
-                        base::MessageLoopProxy* device_thread_loop) OVERRIDE;
+                        const scoped_refptr<base::SingleThreadTaskRunner>&
+                            device_task_runner) OVERRIDE;
   virtual void Unregister() OVERRIDE;
   virtual void EnumerateDevices(MediaStreamType stream_type) OVERRIDE;
   virtual int Open(const StreamDeviceInfo& device) OVERRIDE;
@@ -55,6 +57,10 @@ class CONTENT_EXPORT AudioInputDeviceManager : public MediaStreamProvider {
   bool ShouldUseFakeDevice() const;
 
  private:
+  // Used by the unittests to get a list of fake devices.
+  friend class MediaStreamDispatcherHostTest;
+  void GetFakeDeviceNames(media::AudioDeviceNames* device_names);
+
   typedef std::vector<StreamDeviceInfo> StreamDeviceList;
   virtual ~AudioInputDeviceManager();
 
@@ -90,7 +96,7 @@ class CONTENT_EXPORT AudioInputDeviceManager : public MediaStreamProvider {
   media::AudioManager* const audio_manager_;  // Weak.
 
   // The message loop of media stream device thread that this object runs on.
-  scoped_refptr<base::MessageLoopProxy> device_loop_;
+  scoped_refptr<base::SingleThreadTaskRunner> device_task_runner_;
 
   DISALLOW_COPY_AND_ASSIGN(AudioInputDeviceManager);
 };

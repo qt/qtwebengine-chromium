@@ -31,13 +31,14 @@
 #include "config.h"
 #include "platform/scroll/ScrollbarThemeMacNonOverlayAPI.h"
 
-#include <Carbon/Carbon.h>
+#include "platform/graphics/GraphicsContext.h"
 #include "platform/graphics/ImageBuffer.h"
 #include "platform/scroll/ScrollbarThemeClient.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebRect.h"
-#include "public/platform/mac/WebThemeEngine.h"
+#include "public/platform/WebThemeEngine.h"
 #include "skia/ext/skia_utils_mac.h"
+#include <Carbon/Carbon.h>
 
 namespace WebCore {
 
@@ -87,6 +88,8 @@ static blink::WebThemeEngine::State scrollbarStateToThemeState(ScrollbarThemeCli
 //     - Skia specific changes
 bool ScrollbarThemeMacNonOverlayAPI::paint(ScrollbarThemeClient* scrollbar, GraphicsContext* context, const IntRect& damageRect)
 {
+    if (context->paintingDisabled())
+        return true;
     // Get the tickmarks for the frameview.
     Vector<IntRect> tickmarks;
     scrollbar->getTickmarks(tickmarks);
@@ -168,8 +171,11 @@ bool ScrollbarThemeMacNonOverlayAPI::paint(ScrollbarThemeClient* scrollbar, Grap
             scrollbarInfo);
     }
 
-    if (!canDrawDirectly)
-        context->drawImageBuffer(imageBuffer.get(), scrollbar->frameRect().location());
+    if (!canDrawDirectly) {
+        ASSERT(imageBuffer);
+        context->drawImageBuffer(imageBuffer.get(),
+            FloatRect(scrollbar->frameRect().location(), imageBuffer->size()));
+    }
 
     return true;
 }

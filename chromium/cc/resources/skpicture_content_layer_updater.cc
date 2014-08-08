@@ -10,6 +10,7 @@
 #include "cc/resources/prioritized_resource.h"
 #include "cc/resources/resource_update_queue.h"
 #include "third_party/skia/include/core/SkCanvas.h"
+#include "third_party/skia/include/core/SkPictureRecorder.h"
 
 namespace cc {
 
@@ -22,17 +23,20 @@ SkPictureContentLayerUpdater::SkPictureContentLayerUpdater(
 SkPictureContentLayerUpdater::~SkPictureContentLayerUpdater() {}
 
 void SkPictureContentLayerUpdater::PrepareToUpdate(
-    gfx::Rect content_rect,
-    gfx::Size,
+    const gfx::Rect& content_rect,
+    const gfx::Size&,
     float contents_width_scale,
     float contents_height_scale,
     gfx::Rect* resulting_opaque_rect) {
-  SkCanvas* canvas =
-      picture_.beginRecording(content_rect.width(), content_rect.height());
+  SkPictureRecorder recorder;
+  SkCanvas* canvas = recorder.beginRecording(
+      content_rect.width(), content_rect.height(), NULL, 0);
+  DCHECK_EQ(content_rect.width(), canvas->getBaseLayerSize().width());
+  DCHECK_EQ(content_rect.height(), canvas->getBaseLayerSize().height());
   base::TimeTicks start_time =
       rendering_stats_instrumentation_->StartRecording();
   PaintContents(canvas,
-                content_rect.origin(),
+                content_rect,
                 contents_width_scale,
                 contents_height_scale,
                 resulting_opaque_rect);
@@ -40,12 +44,13 @@ void SkPictureContentLayerUpdater::PrepareToUpdate(
       rendering_stats_instrumentation_->EndRecording(start_time);
   rendering_stats_instrumentation_->AddRecord(
       duration, content_rect.width() * content_rect.height());
-  picture_.endRecording();
+  picture_ = skia::AdoptRef(recorder.endRecording());
 }
 
 void SkPictureContentLayerUpdater::DrawPicture(SkCanvas* canvas) {
   TRACE_EVENT0("cc", "SkPictureContentLayerUpdater::DrawPicture");
-  canvas->drawPicture(picture_);
+  if (picture_)
+    canvas->drawPicture(picture_.get());
 }
 
 }  // namespace cc

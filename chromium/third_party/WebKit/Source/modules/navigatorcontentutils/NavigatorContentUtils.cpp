@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2011, Google Inc. All rights reserved.
- * Copyright (C) 2012, Samsung Electronics. All rights reserved.
+ * Copyright (C) 2014, Samsung Electronics. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -27,15 +27,14 @@
 #include "config.h"
 #include "modules/navigatorcontentutils/NavigatorContentUtils.h"
 
-#if ENABLE(NAVIGATOR_CONTENT_UTILS)
-
 #include "bindings/v8/ExceptionState.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
-#include "core/frame/Frame.h"
+#include "core/frame/LocalFrame.h"
 #include "core/frame/Navigator.h"
 #include "core/page/Page.h"
 #include "wtf/HashSet.h"
+#include "wtf/text/StringBuilder.h"
 
 namespace WebCore {
 
@@ -69,14 +68,14 @@ static void initProtocolHandlerWhitelist()
         protocolWhitelist->add(protocols[i]);
 }
 
-static bool verifyCustomHandlerURL(const String& baseURL, const String& url, ExceptionState& exceptionState)
+static bool verifyCustomHandlerURL(const KURL& baseURL, const String& url, ExceptionState& exceptionState)
 {
     // The specification requires that it is a SyntaxError if the "%s" token is
     // not present.
     static const char token[] = "%s";
     int index = url.find(token);
     if (-1 == index) {
-        exceptionState.throwUninformativeAndGenericDOMException(SyntaxError);
+        exceptionState.throwDOMException(SyntaxError, "The url provided ('" + url + "') does not contain '%s'.");
         return false;
     }
 
@@ -85,11 +84,10 @@ static bool verifyCustomHandlerURL(const String& baseURL, const String& url, Exc
     String newURL = url;
     newURL.remove(index, WTF_ARRAY_LENGTH(token) - 1);
 
-    KURL base(ParsedURLString, baseURL);
-    KURL kurl(base, newURL);
+    KURL kurl(baseURL, newURL);
 
     if (kurl.isEmpty() || !kurl.isValid()) {
-        exceptionState.throwUninformativeAndGenericDOMException(SyntaxError);
+        exceptionState.throwDOMException(SyntaxError, "The custom handler URL created by removing '%s' and prepending '" + baseURL.string() + "' is invalid.");
         return false;
     }
 
@@ -100,7 +98,13 @@ static bool isProtocolWhitelisted(const String& scheme)
 {
     if (!protocolWhitelist)
         initProtocolHandlerWhitelist();
-    return protocolWhitelist->contains(scheme);
+
+    StringBuilder builder;
+    unsigned length = scheme.length();
+    for (unsigned i = 0; i < length; ++i)
+        builder.append(toASCIILower(scheme[i]));
+
+    return protocolWhitelist->contains(builder.toString());
 }
 
 static bool verifyProtocolHandlerScheme(const String& scheme, const String& method, ExceptionState& exceptionState)
@@ -116,36 +120,40 @@ static bool verifyProtocolHandlerScheme(const String& scheme, const String& meth
         return false;
     }
 
+    // The specification requires that schemes don't contain colons.
+    size_t index = scheme.find(':');
+    if (index != kNotFound) {
+        exceptionState.throwDOMException(SyntaxError, "The scheme '" + scheme + "' contains colon.");
+        return false;
+    }
+
     if (isProtocolWhitelisted(scheme))
         return true;
     exceptionState.throwSecurityError("The scheme '" + scheme + "' doesn't belong to the protocol whitelist. Please prefix non-whitelisted schemes with the string 'web+'.");
     return false;
 }
 
-NavigatorContentUtils* NavigatorContentUtils::from(Page* page)
+NavigatorContentUtils* NavigatorContentUtils::from(Page& page)
 {
-    return static_cast<NavigatorContentUtils*>(RefCountedSupplement<Page, NavigatorContentUtils>::from(page, NavigatorContentUtils::supplementName()));
+    return static_cast<NavigatorContentUtils*>(WillBeHeapSupplement<Page>::from(page, supplementName()));
 }
 
 NavigatorContentUtils::~NavigatorContentUtils()
 {
 }
 
-PassRefPtr<NavigatorContentUtils> NavigatorContentUtils::create(NavigatorContentUtilsClient* client)
+PassOwnPtrWillBeRawPtr<NavigatorContentUtils> NavigatorContentUtils::create(PassOwnPtr<NavigatorContentUtilsClient> client)
 {
-    return adoptRef(new NavigatorContentUtils(client));
+    return adoptPtrWillBeNoop(new NavigatorContentUtils(client));
 }
 
-void NavigatorContentUtils::registerProtocolHandler(Navigator* navigator, const String& scheme, const String& url, const String& title, ExceptionState& exceptionState)
+void NavigatorContentUtils::registerProtocolHandler(Navigator& navigator, const String& scheme, const String& url, const String& title, ExceptionState& exceptionState)
 {
-    if (!navigator->frame())
+    if (!navigator.frame())
         return;
 
-    Document* document = navigator->frame()->document();
-    if (!document)
-        return;
-
-    String baseURL = document->baseURL().baseAsString();
+    ASSERT(navigator.frame()->document());
+    KURL baseURL = navigator.frame()->document()->baseURL();
 
     if (!verifyCustomHandlerURL(baseURL, url, exceptionState))
         return;
@@ -153,10 +161,10 @@ void NavigatorContentUtils::registerProtocolHandler(Navigator* navigator, const 
     if (!verifyProtocolHandlerScheme(scheme, "registerProtocolHandler", exceptionState))
         return;
 
-    NavigatorContentUtils::from(navigator->frame()->page())->client()->registerProtocolHandler(scheme, baseURL, url, title);
+    ASSERT(navigator.frame()->page());
+    NavigatorContentUtils::from(*navigator.frame()->page())->client()->registerProtocolHandler(scheme, baseURL, KURL(ParsedURLString, url), title);
 }
 
-#if ENABLE(CUSTOM_SCHEME_HANDLER)
 static String customHandlersStateString(const NavigatorContentUtilsClient::CustomHandlersState state)
 {
     DEFINE_STATIC_LOCAL(const String, newHandler, ("new"));
@@ -176,15 +184,19 @@ static String customHandlersStateString(const NavigatorContentUtilsClient::Custo
     return String();
 }
 
-String NavigatorContentUtils::isProtocolHandlerRegistered(Navigator* navigator, const String& scheme, const String& url, ExceptionState& exceptionState)
+String NavigatorContentUtils::isProtocolHandlerRegistered(Navigator& navigator, const String& scheme, const String& url, ExceptionState& exceptionState)
 {
     DEFINE_STATIC_LOCAL(const String, declined, ("declined"));
 
-    if (!navigator->frame())
+    if (!navigator.frame())
         return declined;
 
-    Document* document = navigator->frame()->document();
-    String baseURL = document->baseURL().baseAsString();
+    Document* document = navigator.frame()->document();
+    ASSERT(document);
+    if (document->activeDOMObjectsAreStopped())
+        return declined;
+
+    KURL baseURL = document->baseURL();
 
     if (!verifyCustomHandlerURL(baseURL, url, exceptionState))
         return declined;
@@ -192,16 +204,17 @@ String NavigatorContentUtils::isProtocolHandlerRegistered(Navigator* navigator, 
     if (!verifyProtocolHandlerScheme(scheme, "isProtocolHandlerRegistered", exceptionState))
         return declined;
 
-    return customHandlersStateString(NavigatorContentUtils::from(navigator->frame()->page())->client()->isProtocolHandlerRegistered(scheme, baseURL, url));
+    ASSERT(navigator.frame()->page());
+    return customHandlersStateString(NavigatorContentUtils::from(*navigator.frame()->page())->client()->isProtocolHandlerRegistered(scheme, baseURL, KURL(ParsedURLString, url)));
 }
 
-void NavigatorContentUtils::unregisterProtocolHandler(Navigator* navigator, const String& scheme, const String& url, ExceptionState& exceptionState)
+void NavigatorContentUtils::unregisterProtocolHandler(Navigator& navigator, const String& scheme, const String& url, ExceptionState& exceptionState)
 {
-    if (!navigator->frame())
+    if (!navigator.frame())
         return;
 
-    Document* document = navigator->frame()->document();
-    String baseURL = document->baseURL().baseAsString();
+    ASSERT(navigator.frame()->document());
+    KURL baseURL = navigator.frame()->document()->baseURL();
 
     if (!verifyCustomHandlerURL(baseURL, url, exceptionState))
         return;
@@ -209,21 +222,18 @@ void NavigatorContentUtils::unregisterProtocolHandler(Navigator* navigator, cons
     if (!verifyProtocolHandlerScheme(scheme, "unregisterProtocolHandler", exceptionState))
         return;
 
-    NavigatorContentUtils::from(navigator->frame()->page())->client()->unregisterProtocolHandler(scheme, baseURL, url);
+    ASSERT(navigator.frame()->page());
+    NavigatorContentUtils::from(*navigator.frame()->page())->client()->unregisterProtocolHandler(scheme, baseURL, KURL(ParsedURLString, url));
 }
-#endif
 
 const char* NavigatorContentUtils::supplementName()
 {
     return "NavigatorContentUtils";
 }
 
-void provideNavigatorContentUtilsTo(Page* page, NavigatorContentUtilsClient* client)
+void provideNavigatorContentUtilsTo(Page& page, PassOwnPtr<NavigatorContentUtilsClient> client)
 {
-    RefCountedSupplement<Page, NavigatorContentUtils>::provideTo(page, NavigatorContentUtils::supplementName(), NavigatorContentUtils::create(client));
+    NavigatorContentUtils::provideTo(page, NavigatorContentUtils::supplementName(), NavigatorContentUtils::create(client));
 }
 
 } // namespace WebCore
-
-#endif // ENABLE(NAVIGATOR_CONTENT_UTILS)
-

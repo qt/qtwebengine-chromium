@@ -26,7 +26,7 @@
 #include "config.h"
 #include "core/css/CSSGradientValue.h"
 
-#include "CSSValueKeywords.h"
+#include "core/CSSValueKeywords.h"
 #include "core/css/CSSCalculationValue.h"
 #include "core/css/CSSToLengthConversionData.h"
 #include "core/dom/NodeRenderStyle.h"
@@ -39,19 +39,23 @@
 #include "wtf/text/StringBuilder.h"
 #include "wtf/text/WTFString.h"
 
-using namespace std;
-
 namespace WebCore {
+
+void CSSGradientColorStop::trace(Visitor* visitor)
+{
+    visitor->trace(m_position);
+    visitor->trace(m_color);
+}
 
 PassRefPtr<Image> CSSGradientValue::image(RenderObject* renderer, const IntSize& size)
 {
     if (size.isEmpty())
-        return 0;
+        return nullptr;
 
     bool cacheable = isCacheable();
     if (cacheable) {
         if (!clients().contains(renderer))
-            return 0;
+            return nullptr;
 
         // Need to look up our size.  Create a string of width*height to use as a hash key.
         Image* result = getImage(renderer, size);
@@ -63,7 +67,7 @@ PassRefPtr<Image> CSSGradientValue::image(RenderObject* renderer, const IntSize&
     RefPtr<Gradient> gradient;
 
     RenderStyle* rootStyle = renderer->document().documentElement()->renderStyle();
-    CSSToLengthConversionData conversionData(renderer->style(), rootStyle);
+    CSSToLengthConversionData conversionData(renderer->style(), rootStyle, renderer->view());
     if (isLinearGradientValue())
         gradient = toCSSLinearGradientValue(this)->createGradient(conversionData, size);
     else
@@ -106,7 +110,7 @@ struct GradientStop {
     { }
 };
 
-PassRefPtr<CSSGradientValue> CSSGradientValue::gradientWithStylesResolved(const TextLinkColors& textLinkColors, Color currentColor)
+PassRefPtrWillBeRawPtr<CSSGradientValue> CSSGradientValue::gradientWithStylesResolved(const TextLinkColors& textLinkColors, Color currentColor)
 {
     bool derived = false;
     for (unsigned i = 0; i < m_stops.size(); i++)
@@ -116,7 +120,7 @@ PassRefPtr<CSSGradientValue> CSSGradientValue::gradientWithStylesResolved(const 
             break;
         }
 
-    RefPtr<CSSGradientValue> result;
+    RefPtrWillBeRawPtr<CSSGradientValue> result = nullptr;
     if (!derived)
         result = this;
     else if (isLinearGradientValue())
@@ -125,7 +129,7 @@ PassRefPtr<CSSGradientValue> CSSGradientValue::gradientWithStylesResolved(const 
         result = toCSSRadialGradientValue(this)->clone();
     else {
         ASSERT_NOT_REACHED();
-        return 0;
+        return nullptr;
     }
 
     for (unsigned i = 0; i < result->m_stops.size(); i++)
@@ -151,8 +155,6 @@ void CSSGradientValue::addStops(Gradient* gradient, const CSSToLengthConversionD
             gradient->addColorStop(offset, stop.m_resolvedColor);
         }
 
-        // The back end already sorted the stops.
-        gradient->setStopsSorted(true);
         return;
     }
 
@@ -262,7 +264,6 @@ void CSSGradientValue::addStops(Gradient* gradient, const CSSToLengthConversionD
             stops.first().offset = 0;
             stops.first().color = stops.last().color;
             stops.shrink(1);
-            numStops = 1;
         } else {
             float maxExtent = 1;
 
@@ -384,8 +385,6 @@ void CSSGradientValue::addStops(Gradient* gradient, const CSSToLengthConversionD
 
     for (unsigned i = 0; i < numStops; i++)
         gradient->addColorStop(stops[i].offset, stops[i].color);
-
-    gradient->setStopsSorted(true);
 }
 
 static float positionFromValue(CSSPrimitiveValue* value, const CSSToLengthConversionData& conversionData, const IntSize& size, bool isHorizontal)
@@ -458,6 +457,16 @@ bool CSSGradientValue::knownToBeOpaque(const RenderObject*) const
             return false;
     }
     return true;
+}
+
+void CSSGradientValue::traceAfterDispatch(Visitor* visitor)
+{
+    visitor->trace(m_firstX);
+    visitor->trace(m_firstY);
+    visitor->trace(m_secondX);
+    visitor->trace(m_secondY);
+    visitor->trace(m_stops);
+    CSSImageGeneratorValue::traceAfterDispatch(visitor);
 }
 
 String CSSLinearGradientValue::customCSSText() const
@@ -731,6 +740,12 @@ bool CSSLinearGradientValue::equals(const CSSLinearGradientValue& other) const
         equalXandY = !other.m_firstX && !other.m_firstY;
 
     return equalXandY && m_stops == other.m_stops;
+}
+
+void CSSLinearGradientValue::traceAfterDispatch(Visitor* visitor)
+{
+    visitor->trace(m_angle);
+    CSSGradientValue::traceAfterDispatch(visitor);
 }
 
 String CSSRadialGradientValue::customCSSText() const
@@ -1039,10 +1054,10 @@ PassRefPtr<Gradient> CSSRadialGradientValue::createGradient(const CSSToLengthCon
         // Horizontal
         switch (fill) {
         case ClosestSide: {
-            float xDist = min(secondPoint.x(), size.width() - secondPoint.x());
-            float yDist = min(secondPoint.y(), size.height() - secondPoint.y());
+            float xDist = std::min(secondPoint.x(), size.width() - secondPoint.x());
+            float yDist = std::min(secondPoint.y(), size.height() - secondPoint.y());
             if (shape == Circle) {
-                float smaller = min(xDist, yDist);
+                float smaller = std::min(xDist, yDist);
                 xDist = smaller;
                 yDist = smaller;
             }
@@ -1051,10 +1066,10 @@ PassRefPtr<Gradient> CSSRadialGradientValue::createGradient(const CSSToLengthCon
             break;
         }
         case FarthestSide: {
-            float xDist = max(secondPoint.x(), size.width() - secondPoint.x());
-            float yDist = max(secondPoint.y(), size.height() - secondPoint.y());
+            float xDist = std::max(secondPoint.x(), size.width() - secondPoint.x());
+            float yDist = std::max(secondPoint.y(), size.height() - secondPoint.y());
             if (shape == Circle) {
-                float larger = max(xDist, yDist);
+                float larger = std::max(xDist, yDist);
                 xDist = larger;
                 yDist = larger;
             }
@@ -1070,8 +1085,8 @@ PassRefPtr<Gradient> CSSRadialGradientValue::createGradient(const CSSToLengthCon
             else {
                 // If <shape> is ellipse, the gradient-shape has the same ratio of width to height
                 // that it would if closest-side or farthest-side were specified, as appropriate.
-                float xDist = min(secondPoint.x(), size.width() - secondPoint.x());
-                float yDist = min(secondPoint.y(), size.height() - secondPoint.y());
+                float xDist = std::min(secondPoint.x(), size.width() - secondPoint.x());
+                float yDist = std::min(secondPoint.y(), size.height() - secondPoint.y());
 
                 secondRadius = horizontalEllipseRadius(corner - secondPoint, xDist / yDist);
                 aspectRatio = xDist / yDist;
@@ -1087,8 +1102,8 @@ PassRefPtr<Gradient> CSSRadialGradientValue::createGradient(const CSSToLengthCon
             else {
                 // If <shape> is ellipse, the gradient-shape has the same ratio of width to height
                 // that it would if closest-side or farthest-side were specified, as appropriate.
-                float xDist = max(secondPoint.x(), size.width() - secondPoint.x());
-                float yDist = max(secondPoint.y(), size.height() - secondPoint.y());
+                float xDist = std::max(secondPoint.x(), size.width() - secondPoint.x());
+                float yDist = std::max(secondPoint.y(), size.height() - secondPoint.y());
 
                 secondRadius = horizontalEllipseRadius(corner - secondPoint, xDist / yDist);
                 aspectRatio = xDist / yDist;
@@ -1159,6 +1174,17 @@ bool CSSRadialGradientValue::equals(const CSSRadialGradientValue& other) const
         equalHorizontalAndVerticalSize = !other.m_endHorizontalSize && !other.m_endVerticalSize;
     }
     return equalShape && equalSizingBehavior && equalHorizontalAndVerticalSize && m_stops == other.m_stops;
+}
+
+void CSSRadialGradientValue::traceAfterDispatch(Visitor* visitor)
+{
+    visitor->trace(m_firstRadius);
+    visitor->trace(m_secondRadius);
+    visitor->trace(m_shape);
+    visitor->trace(m_sizingBehavior);
+    visitor->trace(m_endHorizontalSize);
+    visitor->trace(m_endVerticalSize);
+    CSSGradientValue::traceAfterDispatch(visitor);
 }
 
 } // namespace WebCore

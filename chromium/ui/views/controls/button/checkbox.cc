@@ -5,7 +5,7 @@
 #include "ui/views/controls/button/checkbox.h"
 
 #include "grit/ui_resources.h"
-#include "ui/base/accessibility/accessible_view_state.h"
+#include "ui/accessibility/ax_view_state.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/views/controls/button/label_button_border.h"
 #include "ui/views/painter.h"
@@ -15,15 +15,16 @@ namespace views {
 // static
 const char Checkbox::kViewClassName[] = "Checkbox";
 
-Checkbox::Checkbox(const string16& label)
+Checkbox::Checkbox(const base::string16& label)
     : LabelButton(NULL, label),
       checked_(false) {
   SetHorizontalAlignment(gfx::ALIGN_LEFT);
-  LabelButtonBorder* button_border = static_cast<LabelButtonBorder*>(border());
+  scoped_ptr<LabelButtonBorder> button_border(new LabelButtonBorder(style()));
   button_border->SetPainter(false, STATE_HOVERED, NULL);
   button_border->SetPainter(false, STATE_PRESSED, NULL);
   // Inset the trailing side by a couple pixels for the focus border.
   button_border->set_insets(gfx::Insets(0, 0, 0, 2));
+  SetBorder(button_border.PassAs<Border>());
   SetFocusable(true);
 
   ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
@@ -93,10 +94,11 @@ const char* Checkbox::GetClassName() const {
   return kViewClassName;
 }
 
-void Checkbox::GetAccessibleState(ui::AccessibleViewState* state) {
+void Checkbox::GetAccessibleState(ui::AXViewState* state) {
   LabelButton::GetAccessibleState(state);
-  state->role = ui::AccessibilityTypes::ROLE_CHECKBUTTON;
-  state->state = checked() ? ui::AccessibilityTypes::STATE_CHECKED : 0;
+  state->role = ui::AX_ROLE_CHECK_BOX;
+  if (checked())
+    state->AddStateFlag(ui::AX_STATE_CHECKED);
 }
 
 void Checkbox::OnFocus() {

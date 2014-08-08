@@ -192,6 +192,33 @@ located in patches.chromium/. Currently this consists of:
   chacha.patch
     Add support for ChaCha20+Poly1305 cipher suites.
 
+  paddingext.patch
+  paddingext2.patch
+    Add ClientHello padding to workaround bug in F5 terminators.
+
+  stricter_cutthrough.patch
+    Requires NPN and a PFS cipher suite to enable cut-through (false start) on
+    the client.
+
+  mac_osx32_assembly.patch
+    Add support for 32 bit OS X with assembly optimization.
+
+  fix_limit_checks.patch
+    Fix limit checks in writing extensions. BUF_MEM_grow allocates 4/3 the size
+    requested, so it doesn't overflow the actual allocation.
+
+  reorder_extensions.patch
+    Move the ECC extensions to the end of the ClientHello to work around a
+    server bug. Some servers are intolerant to the last extension being empty.
+    See https://crbug.com/363583
+
+  export_certificate_types.patch
+    Export the certificate_types field in CertificateRequest.
+
+  send_client_verify_cleanup.patch
+    Clean up ssl3_send_client_verify so the various cases (TLS 1.2, pre-TLS-1.2
+    cases for each cipher suite) are less intertwined.
+
 **************************************************************************
 Adding new Chromium patches:
 

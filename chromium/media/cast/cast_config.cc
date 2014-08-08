@@ -7,48 +7,59 @@
 namespace media {
 namespace cast {
 
+// TODO(miu): Revisit code factoring of these structs.  There are a number of
+// common elements between them all, so it might be reasonable to only have one
+// or two structs; or, at least a common base class.
+
+// TODO(miu): Make sure all POD members are initialized by ctors.  Policy
+// decision: Reasonable defaults or use invalid placeholder values to expose
+// unset members?
+
+// TODO(miu): Provide IsValidConfig() functions?
+
+// TODO(miu): Throughout the code, there is a lot of copy-and-paste of the same
+// calculations based on these config values.  So, why don't we add methods to
+// these classes to centralize the logic?
+
 VideoSenderConfig::VideoSenderConfig()
-    : rtcp_interval(kDefaultRtcpIntervalMs),
+    : incoming_feedback_ssrc(0),
+      rtcp_interval(kDefaultRtcpIntervalMs),
       rtcp_mode(kRtcpReducedSize),
-      rtp_history_ms(kDefaultRtpHistoryMs),
-      rtp_max_delay_ms(kDefaultRtpMaxDelayMs),
+      use_external_encoder(false),
+      width(0),
+      height(0),
       congestion_control_back_off(kDefaultCongestionControlBackOff),
+      max_bitrate(5000000),
+      min_bitrate(1000000),
+      start_bitrate(5000000),
       max_qp(kDefaultMaxQp),
       min_qp(kDefaultMinQp),
       max_frame_rate(kDefaultMaxFrameRate),
-      max_number_of_video_buffers_used(kDefaultNumberOfVideoBuffers) {}
+      max_number_of_video_buffers_used(kDefaultNumberOfVideoBuffers),
+      codec(transport::kVp8),
+      number_of_encode_threads(1) {}
 
 AudioSenderConfig::AudioSenderConfig()
-    : rtcp_interval(kDefaultRtcpIntervalMs),
+    : incoming_feedback_ssrc(0),
+      rtcp_interval(kDefaultRtcpIntervalMs),
       rtcp_mode(kRtcpReducedSize),
-      rtp_history_ms(kDefaultRtpHistoryMs),
-      rtp_max_delay_ms(kDefaultRtpMaxDelayMs) {}
+      use_external_encoder(false),
+      frequency(0),
+      channels(0),
+      bitrate(0) {}
 
-AudioReceiverConfig::AudioReceiverConfig()
-    : rtcp_interval(kDefaultRtcpIntervalMs),
-      rtcp_mode(kRtcpReducedSize),
-      rtp_max_delay_ms(kDefaultRtpMaxDelayMs) {}
-
-VideoReceiverConfig::VideoReceiverConfig()
-    : rtcp_interval(kDefaultRtcpIntervalMs),
+FrameReceiverConfig::FrameReceiverConfig()
+    : feedback_ssrc(0),
+      incoming_ssrc(0),
+      rtcp_interval(kDefaultRtcpIntervalMs),
       rtcp_mode(kRtcpReducedSize),
       rtp_max_delay_ms(kDefaultRtpMaxDelayMs),
-      max_frame_rate(kDefaultMaxFrameRate),
-      decoder_faster_than_max_frame_rate(true) {}
+      rtp_payload_type(0),
+      frequency(0),
+      channels(0),
+      max_frame_rate(0) {}
 
-EncodedVideoFrame::EncodedVideoFrame() {}
-EncodedVideoFrame::~EncodedVideoFrame() {}
-
-EncodedAudioFrame::EncodedAudioFrame() {}
-EncodedAudioFrame::~EncodedAudioFrame() {}
-
-PcmAudioFrame::PcmAudioFrame() {}
-PcmAudioFrame::~PcmAudioFrame() {}
-
-// static
-void PacketReceiver::DeletePacket(const uint8* packet) {
-  delete [] packet;
-}
+FrameReceiverConfig::~FrameReceiverConfig() {}
 
 }  // namespace cast
 }  // namespace media

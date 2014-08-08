@@ -27,9 +27,10 @@
 #include "webkit/browser/appcache/appcache_histograms.h"
 #include "webkit/browser/appcache/appcache_quota_client.h"
 #include "webkit/browser/appcache/appcache_response.h"
-#include "webkit/browser/appcache/appcache_service.h"
+#include "webkit/browser/appcache/appcache_service_impl.h"
 #include "webkit/browser/quota/quota_client.h"
 #include "webkit/browser/quota/quota_manager.h"
+#include "webkit/browser/quota/quota_manager_proxy.h"
 #include "webkit/browser/quota/special_storage_policy.h"
 
 namespace appcache {
@@ -173,7 +174,7 @@ class AppCacheStorageImpl::DatabaseTask
  private:
   void CallRun(base::TimeTicks schedule_time);
   void CallRunCompleted(base::TimeTicks schedule_time);
-  void CallDisableStorage();
+  void OnFatalError();
 
   scoped_refptr<base::MessageLoopProxy> io_thread_;
 };
@@ -208,10 +209,15 @@ void AppCacheStorageImpl::DatabaseTask::CallRun(
     Run();
     AppCacheHistograms::AddTaskRunTimeSample(
         base::TimeTicks::Now() - run_time);
+
+    if (database_->was_corruption_detected()) {
+      AppCacheHistograms::CountCorruptionDetected();
+      database_->Disable();
+    }
     if (database_->is_disabled()) {
       io_thread_->PostTask(
           FROM_HERE,
-          base::Bind(&DatabaseTask::CallDisableStorage, this));
+          base::Bind(&DatabaseTask::OnFatalError, this));
     }
   }
   io_thread_->PostTask(
@@ -236,10 +242,11 @@ void AppCacheStorageImpl::DatabaseTask::CallRunCompleted(
   }
 }
 
-void AppCacheStorageImpl::DatabaseTask::CallDisableStorage() {
+void AppCacheStorageImpl::DatabaseTask::OnFatalError() {
   if (storage_) {
     DCHECK(io_thread_->BelongsToCurrentThread());
     storage_->Disable();
+    storage_->DeleteAndStartOver();
   }
 }
 
@@ -250,7 +257,14 @@ class AppCacheStorageImpl::InitTask : public DatabaseTask {
   explicit InitTask(AppCacheStorageImpl* storage)
       : DatabaseTask(storage), last_group_id_(0),
         last_cache_id_(0), last_response_id_(0),
-        last_deletable_response_rowid_(0) {}
+        last_deletable_response_rowid_(0) {
+    if (!storage->is_incognito_) {
+      db_file_path_ =
+          storage->cache_directory_.Append(kAppCacheDatabaseName);
+      disk_cache_directory_ =
+          storage->cache_directory_.Append(kDiskCacheDirectoryName);
+    }
+  }
 
   // DatabaseTask:
   virtual void Run() OVERRIDE;
@@ -260,6 +274,8 @@ class AppCacheStorageImpl::InitTask : public DatabaseTask {
   virtual ~InitTask() {}
 
  private:
+  base::FilePath db_file_path_;
+  base::FilePath disk_cache_directory_;
   int64 last_group_id_;
   int64 last_cache_id_;
   int64 last_response_id_;
@@ -268,6 +284,17 @@ class AppCacheStorageImpl::InitTask : public DatabaseTask {
 };
 
 void AppCacheStorageImpl::InitTask::Run() {
+  // If there is no sql database, ensure there is no disk cache either.
+  if (!db_file_path_.empty() &&
+      !base::PathExists(db_file_path_) &&
+      base::DirectoryExists(disk_cache_directory_)) {
+    base::DeleteFile(disk_cache_directory_, true);
+    if (base::DirectoryExists(disk_cache_directory_)) {
+      database_->Disable();  // This triggers OnFatalError handling.
+      return;
+    }
+  }
+
   database_->FindLastStorageIds(
       &last_group_id_, &last_cache_id_, &last_response_id_,
       &last_deletable_response_rowid_);
@@ -293,20 +320,6 @@ void AppCacheStorageImpl::InitTask::RunCompleted() {
   if (storage_->service()->quota_client())
     storage_->service()->quota_client()->NotifyAppCacheReady();
 }
-
-// CloseConnectionTask -------
-
-class AppCacheStorageImpl::CloseConnectionTask : public DatabaseTask {
- public:
-  explicit CloseConnectionTask(AppCacheStorageImpl* storage)
-      : DatabaseTask(storage) {}
-
-  // DatabaseTask:
-  virtual void Run() OVERRIDE { database_->CloseConnection(); }
-
- protected:
-  virtual ~CloseConnectionTask() {}
-};
 
 // DisableDatabaseTask -------
 
@@ -846,7 +859,7 @@ class NetworkNamespaceHelper {
     WhiteListVector::const_iterator iter = records.begin();
     while (iter != records.end()) {
       namespaces->push_back(
-            Namespace(NETWORK_NAMESPACE, iter->namespace_url, GURL(),
+            Namespace(APPCACHE_NETWORK_NAMESPACE, iter->namespace_url, GURL(),
                       iter->is_pattern));
       ++iter;
     }
@@ -868,7 +881,7 @@ class AppCacheStorageImpl::FindMainResponseTask : public DatabaseTask {
                        const AppCacheWorkingSet::GroupMap* groups_in_use)
       : DatabaseTask(storage), url_(url),
         preferred_manifest_url_(preferred_manifest_url),
-        cache_id_(kNoCacheId), group_id_(0) {
+        cache_id_(kAppCacheNoCacheId), group_id_(0) {
     if (groups_in_use) {
       for (AppCacheWorkingSet::GroupMap::const_iterator it =
                groups_in_use->begin();
@@ -912,8 +925,6 @@ class AppCacheStorageImpl::FindMainResponseTask : public DatabaseTask {
   GURL manifest_url_;
 };
 
-
-
 void AppCacheStorageImpl::FindMainResponseTask::Run() {
   // NOTE: The heuristics around choosing amoungst multiple candidates
   // is underspecified, and just plain not fully understood. This needs
@@ -927,7 +938,7 @@ void AppCacheStorageImpl::FindMainResponseTask::Run() {
   // TODO(michaeln): come up with a 'preferred_manifest_url' in more cases
   // - when navigating a frame whose current contents are from an appcache
   // - when clicking an href in a frame that is appcached
-  int64 preferred_cache_id = kNoCacheId;
+  int64 preferred_cache_id = kAppCacheNoCacheId;
   if (!preferred_manifest_url_.is_empty()) {
     AppCacheDatabase::GroupRecord preferred_group;
     AppCacheDatabase::CacheRecord preferred_cache;
@@ -942,13 +953,13 @@ void AppCacheStorageImpl::FindMainResponseTask::Run() {
   if (FindExactMatch(preferred_cache_id) ||
       FindNamespaceMatch(preferred_cache_id)) {
     // We found something.
-    DCHECK(cache_id_ != kNoCacheId && !manifest_url_.is_empty() &&
+    DCHECK(cache_id_ != kAppCacheNoCacheId && !manifest_url_.is_empty() &&
            group_id_ != 0);
     return;
   }
 
   // We didn't find anything.
-  DCHECK(cache_id_ == kNoCacheId && manifest_url_.is_empty() &&
+  DCHECK(cache_id_ == kAppCacheNoCacheId && manifest_url_.is_empty() &&
          group_id_ == 0);
 }
 
@@ -1060,7 +1071,7 @@ FindMainResponseTask::FindFirstValidNamespace(
       group_id_ = group_record.group_id;
       cache_id_ = (*iter)->cache_id;
       namespace_entry_url_ = (*iter)->namespace_.target_url;
-      if ((*iter)->namespace_.type == FALLBACK_NAMESPACE)
+      if ((*iter)->namespace_.type == APPCACHE_FALLBACK_NAMESPACE)
         fallback_entry_ = AppCacheEntry(entry_record.flags,
                                         entry_record.response_id);
       else
@@ -1111,7 +1122,9 @@ void AppCacheStorageImpl::MarkEntryAsForeignTask::RunCompleted() {
 
 class AppCacheStorageImpl::MakeGroupObsoleteTask : public DatabaseTask {
  public:
-  MakeGroupObsoleteTask(AppCacheStorageImpl* storage, AppCacheGroup* group);
+  MakeGroupObsoleteTask(AppCacheStorageImpl* storage,
+                        AppCacheGroup* group,
+                        int response_code);
 
   // DatabaseTask:
   virtual void Run() OVERRIDE;
@@ -1126,16 +1139,22 @@ class AppCacheStorageImpl::MakeGroupObsoleteTask : public DatabaseTask {
   int64 group_id_;
   GURL origin_;
   bool success_;
+  int response_code_;
   int64 new_origin_usage_;
   std::vector<int64> newly_deletable_response_ids_;
 };
 
 AppCacheStorageImpl::MakeGroupObsoleteTask::MakeGroupObsoleteTask(
-    AppCacheStorageImpl* storage, AppCacheGroup* group)
-    : DatabaseTask(storage), group_(group), group_id_(group->group_id()),
+    AppCacheStorageImpl* storage,
+    AppCacheGroup* group,
+    int response_code)
+    : DatabaseTask(storage),
+      group_(group),
+      group_id_(group->group_id()),
       origin_(group->manifest_url().GetOrigin()),
-      success_(false), new_origin_usage_(-1) {
-}
+      success_(false),
+      response_code_(response_code),
+      new_origin_usage_(-1) {}
 
 void AppCacheStorageImpl::MakeGroupObsoleteTask::Run() {
   DCHECK(!success_);
@@ -1177,7 +1196,8 @@ void AppCacheStorageImpl::MakeGroupObsoleteTask::RunCompleted() {
       storage_->working_set()->RemoveGroup(group_.get());
     }
   }
-  FOR_EACH_DELEGATE(delegates_, OnGroupMadeObsolete(group_.get(), success_));
+  FOR_EACH_DELEGATE(
+      delegates_, OnGroupMadeObsolete(group_.get(), success_, response_code_));
   group_ = NULL;
 }
 
@@ -1291,7 +1311,7 @@ void AppCacheStorageImpl::UpdateGroupLastAccessTimeTask::Run() {
 
 // AppCacheStorageImpl ---------------------------------------------------
 
-AppCacheStorageImpl::AppCacheStorageImpl(AppCacheService* service)
+AppCacheStorageImpl::AppCacheStorageImpl(AppCacheServiceImpl* service)
     : AppCacheStorage(service),
       is_incognito_(false),
       is_response_deletion_scheduled_(false),
@@ -1539,8 +1559,8 @@ void AppCacheStorageImpl::DeliverShortCircuitedFindMainResponse(
     CallOnMainResponseFound(
         &delegates, url, found_entry,
         GURL(), AppCacheEntry(),
-        cache.get() ? cache->cache_id() : kNoCacheId,
-        group.get() ? group->group_id() : kNoCacheId,
+        cache.get() ? cache->cache_id() : kAppCacheNoCacheId,
+        group.get() ? group->group_id() : kAppCacheNoCacheId,
         group.get() ? group->manifest_url() : GURL());
   }
 }
@@ -1596,11 +1616,12 @@ void AppCacheStorageImpl::MarkEntryAsForeign(
   pending_foreign_markings_.push_back(std::make_pair(entry_url, cache_id));
 }
 
-void AppCacheStorageImpl::MakeGroupObsolete(
-    AppCacheGroup* group, Delegate* delegate) {
+void AppCacheStorageImpl::MakeGroupObsolete(AppCacheGroup* group,
+                                            Delegate* delegate,
+                                            int response_code) {
   DCHECK(group && delegate);
   scoped_refptr<MakeGroupObsoleteTask> task(
-      new MakeGroupObsoleteTask(this, group));
+      new MakeGroupObsoleteTask(this, group, response_code));
   task->AddDelegate(GetOrCreateDelegateReference(delegate));
   task->Schedule();
 }
@@ -1639,11 +1660,6 @@ void AppCacheStorageImpl::DeleteResponses(
   if (response_ids.empty())
     return;
   StartDeletingResponses(response_ids);
-}
-
-void AppCacheStorageImpl::PurgeMemory() {
-  scoped_refptr<CloseConnectionTask> task(new CloseConnectionTask(this));
-  task->Schedule();
 }
 
 void AppCacheStorageImpl::DelayedStartDeletingUnusedResponses() {
@@ -1792,9 +1808,6 @@ AppCacheDiskCache* AppCacheStorageImpl::disk_cache() {
                      base::Unretained(this)));
     }
 
-    // We should not keep this reference around.
-    cache_thread_ = NULL;
-
     if (rv != net::ERR_IO_PENDING)
       OnDiskCacheInitialized(rv);
   }
@@ -1810,21 +1823,38 @@ void AppCacheStorageImpl::OnDiskCacheInitialized(int rv) {
     // really recover from. We handle it by temporarily disabling the appcache
     // deleting the directory on disk and reinitializing the appcache system.
     Disable();
-    if (!is_incognito_ && rv != net::ERR_ABORTED) {
-      VLOG(1) << "Deleting existing appcache data and starting over.";
-      db_thread_->PostTaskAndReply(
-          FROM_HERE,
-          base::Bind(base::IgnoreResult(&base::DeleteFile),
-                     cache_directory_, true),
-          base::Bind(&AppCacheStorageImpl::CallReinitialize,
-                     weak_factory_.GetWeakPtr()));
-    }
+    if (rv != net::ERR_ABORTED)
+      DeleteAndStartOver();
   }
 }
 
-void AppCacheStorageImpl::CallReinitialize() {
-  service_->Reinitialize();
-  // note: 'this' may be deleted during reinit.
+void AppCacheStorageImpl::DeleteAndStartOver() {
+  DCHECK(is_disabled_);
+  if (!is_incognito_) {
+    VLOG(1) << "Deleting existing appcache data and starting over.";
+    // We can have tasks in flight to close file handles on both the db
+    // and cache threads, we need to allow those tasks to cycle thru
+    // prior to deleting the files and calling reinit.
+    cache_thread_->PostTaskAndReply(
+        FROM_HERE,
+        base::Bind(&base::DoNothing),
+        base::Bind(&AppCacheStorageImpl::DeleteAndStartOverPart2,
+                   weak_factory_.GetWeakPtr()));
+  }
+}
+
+void AppCacheStorageImpl::DeleteAndStartOverPart2() {
+  db_thread_->PostTaskAndReply(
+      FROM_HERE,
+      base::Bind(base::IgnoreResult(&base::DeleteFile),
+                 cache_directory_, true),
+      base::Bind(&AppCacheStorageImpl::CallScheduleReinitialize,
+                  weak_factory_.GetWeakPtr()));
+}
+
+void AppCacheStorageImpl::CallScheduleReinitialize() {
+  service_->ScheduleReinitialize();
+  // note: 'this' may be deleted at this point.
 }
 
 }  // namespace appcache

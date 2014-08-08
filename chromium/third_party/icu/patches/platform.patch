@@ -2,7 +2,7 @@ Index: source/common/unicode/ptypes.h
 ===================================================================
 --- source/common/unicode/ptypes.h	(revision 68397)
 +++ source/common/unicode/ptypes.h	(working copy)
-@@ -22,7 +22,15 @@
+@@ -22,7 +22,17 @@
  
  #include <sys/types.h>
  
@@ -11,6 +11,8 @@ Index: source/common/unicode/ptypes.h
 +#   include "unicode/pmac.h"
 +#elif defined(ANDROID)
 +#   include "unicode/pandroid.h"
++#elif defined(__native_client__)
++#   include "unicode/pnacl.h"
 +#elif defined(__linux__)
 +#   include "unicode/plinux.h"
 +#else

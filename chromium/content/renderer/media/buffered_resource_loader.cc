@@ -9,6 +9,7 @@
 #include "base/metrics/histogram.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
+#include "content/public/common/url_constants.h"
 #include "content/renderer/media/cache_util.h"
 #include "media/base/media_log.h"
 #include "net/http/http_byte_range.h"
@@ -388,7 +389,7 @@ void BufferedResourceLoader::didReceiveResponse(
   // received a response from HTTP/HTTPS protocol or the request was
   // successful (in particular range request). So we only verify the partial
   // response for HTTP and HTTPS protocol.
-  if (url_.SchemeIs(kHttpScheme) || url_.SchemeIs(kHttpsScheme)) {
+  if (url_.SchemeIsHTTPOrHTTPS()) {
     bool partial_response = (response.httpStatusCode() == kHttpPartialContent);
     bool ok_response = (response.httpStatusCode() == kHttpOK);
 
@@ -483,7 +484,8 @@ void BufferedResourceLoader::didReceiveCachedMetadata(
 
 void BufferedResourceLoader::didFinishLoading(
     WebURLLoader* loader,
-    double finishTime) {
+    double finishTime,
+    int64_t total_encoded_data_length) {
   DVLOG(1) << "didFinishLoading";
   DCHECK(active_loader_.get());
 

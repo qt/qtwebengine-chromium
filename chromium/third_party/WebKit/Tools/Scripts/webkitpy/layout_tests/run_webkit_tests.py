@@ -59,8 +59,8 @@ def main(argv, stdout, stderr):
         host = Host()
 
     if options.lint_test_files:
-        from webkitpy.layout_tests.lint_test_expectations import lint
-        return lint(host, options, stderr)
+        from webkitpy.layout_tests.lint_test_expectations import run_checks
+        return run_checks(host, options, stderr)
 
     try:
         port = host.port_factory.get(options.platform, options)
@@ -71,7 +71,9 @@ def main(argv, stdout, stderr):
 
     try:
         run_details = run(port, options, args, stderr)
-        if run_details.exit_code not in test_run_results.ERROR_CODES and not run_details.initial_results.keyboard_interrupted:
+        if ((run_details.exit_code not in test_run_results.ERROR_CODES or
+             run_details.exit_code == test_run_results.EARLY_EXIT_STATUS) and
+            not run_details.initial_results.keyboard_interrupted):
             bot_printer = buildbot_results.BuildBotPrinter(stdout, options.debug_rwt_logging)
             bot_printer.print_results(run_details)
 
@@ -253,6 +255,14 @@ def parse_args(args):
             help="Print detailed logging of the driver/content_shell"),
         optparse.make_option("--disable-breakpad", action="store_true",
             help="Don't use breakpad to symbolize unexpected crashes."),
+        optparse.make_option("--use-apache", action="store_true",
+            help="Use Apache instead of LigHTTPd (default is port-specific)."),
+        optparse.make_option("--no-use-apache", action="store_false", dest="use_apache",
+            help="Use LigHTTPd instead of Apache (default is port-specific)."),
+        optparse.make_option("--enable-leak-detection", action="store_true",
+            help="Enable the leak detection of DOM objects."),
+        optparse.make_option("--enable-sanitizer", action="store_true",
+            help="Only alert on sanitizer-related errors and crashes"),
     ]))
 
     option_group_definitions.append(("Miscellaneous Options", [

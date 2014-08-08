@@ -10,6 +10,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/debug/trace_event.h"
 #include "base/process/process_handle.h"
+#include "gpu/command_buffer/common/cmd_buffer_common.h"
 #include "gpu/command_buffer/common/gles2_cmd_utils.h"
 
 using ::base::SharedMemory;
@@ -26,9 +27,8 @@ TransferBufferManager::TransferBufferManager()
 TransferBufferManager::~TransferBufferManager() {
   while (!registered_buffers_.empty()) {
     BufferMap::iterator it = registered_buffers_.begin();
-    DCHECK(shared_memory_bytes_allocated_ >= it->second.size);
-    shared_memory_bytes_allocated_ -= it->second.size;
-    delete it->second.shared_memory;
+    DCHECK(shared_memory_bytes_allocated_ >= it->second->size());
+    shared_memory_bytes_allocated_ -= it->second->size();
     registered_buffers_.erase(it);
   }
   DCHECK(!shared_memory_bytes_allocated_);
@@ -40,8 +40,7 @@ bool TransferBufferManager::Initialize() {
 
 bool TransferBufferManager::RegisterTransferBuffer(
     int32 id,
-    base::SharedMemory* shared_memory,
-    size_t size) {
+    scoped_ptr<BufferBacking> buffer_backing) {
   if (id <= 0) {
     DVLOG(0) << "Cannot register transfer buffer with non-positive ID.";
     return false;
@@ -53,29 +52,14 @@ bool TransferBufferManager::RegisterTransferBuffer(
     return false;
   }
 
-  // Duplicate the handle.
-  base::SharedMemoryHandle duped_shared_memory_handle;
-  if (!shared_memory->ShareToProcess(base::GetCurrentProcessHandle(),
-                                     &duped_shared_memory_handle)) {
-    DVLOG(0) << "Failed to duplicate shared memory handle.";
-    return false;
-  }
-  scoped_ptr<SharedMemory> duped_shared_memory(
-      new SharedMemory(duped_shared_memory_handle, false));
+  // Register the shared memory with the ID.
+  scoped_refptr<Buffer> buffer(new gpu::Buffer(buffer_backing.Pass()));
 
-  // Map the shared memory into this process. This validates the size.
-  if (!duped_shared_memory->Map(size)) {
-    DVLOG(0) << "Failed to map shared memory.";
-    return false;
-  }
+  // Check buffer alignment is sane.
+  DCHECK(!(reinterpret_cast<uintptr_t>(buffer->memory()) &
+           (kCommandBufferEntrySize - 1)));
 
-  // If it could be mapped register the shared memory with the ID.
-  Buffer buffer;
-  buffer.ptr = duped_shared_memory->memory();
-  buffer.size = size;
-  buffer.shared_memory = duped_shared_memory.release();
-
-  shared_memory_bytes_allocated_ += size;
+  shared_memory_bytes_allocated_ += buffer->size();
   TRACE_COUNTER_ID1(
       "gpu", "GpuTransferBufferMemory", this, shared_memory_bytes_allocated_);
 
@@ -91,22 +75,21 @@ void TransferBufferManager::DestroyTransferBuffer(int32 id) {
     return;
   }
 
-  DCHECK(shared_memory_bytes_allocated_ >= it->second.size);
-  shared_memory_bytes_allocated_ -= it->second.size;
+  DCHECK(shared_memory_bytes_allocated_ >= it->second->size());
+  shared_memory_bytes_allocated_ -= it->second->size();
   TRACE_COUNTER_ID1(
       "gpu", "GpuTransferBufferMemory", this, shared_memory_bytes_allocated_);
 
-  delete it->second.shared_memory;
   registered_buffers_.erase(it);
 }
 
-Buffer TransferBufferManager::GetTransferBuffer(int32 id) {
+scoped_refptr<Buffer> TransferBufferManager::GetTransferBuffer(int32 id) {
   if (id == 0)
-    return Buffer();
+    return NULL;
 
   BufferMap::iterator it = registered_buffers_.find(id);
   if (it == registered_buffers_.end())
-    return Buffer();
+    return NULL;
 
   return it->second;
 }

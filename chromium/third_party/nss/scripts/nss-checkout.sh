@@ -12,7 +12,7 @@ set -ex
 # We only need the nss/lib directory, but hg requires us to check out the
 # complete nss source tree.
 rm -rf nss
-hg clone -u NSS_3_15_3_RTM https://hg.mozilla.org/projects/nss
+hg clone -u NSS_3_16_2_BETA3 https://hg.mozilla.org/projects/nss
 
 # Rename one of the utf8.c files to avoid name conflict.
 mv nss/lib/base/utf8.c nss/lib/base/nssutf8.c
@@ -34,7 +34,6 @@ rm -r nss/lib/sqlite
 rm -r nss/lib/sysinit
 rm -r nss/lib/zlib
 
-find nss/lib -name .cvsignore -print | xargs rm
 find nss/lib -name README -print | xargs rm
 
 # Remove the build system.
@@ -51,8 +50,6 @@ rm nss/lib/ckfw/builtins/certdata.perl
 rm nss/lib/ckfw/builtins/certdata.txt
 rm nss/lib/ckfw/ck.api
 rm nss/lib/ckfw/ckapi.perl
-rm nss/lib/libpkix/pkix/params/pkix_buildparams.c
-rm nss/lib/libpkix/pkix/params/pkix_buildparams.h
 rm nss/lib/util/secload.c
 rm nss/lib/util/secplcy.c
 rm nss/lib/util/secplcy.h
@@ -68,7 +65,7 @@ find nss/lib/freebl -type f \
     ! -name ctr.c ! -name ctr.h ! -name cts.c ! -name cts.h \
     ! -name des.c ! -name des.h ! -name desblapi.c ! -name dh.c \
     ! -name drbg.c ! -name dsa.c ! -name ec.c \
-    ! -name ec.h ! -name ec2.h ! -name ecl-curve.h \
+    ! -name ec.h ! -name ec2.h ! -name ecdecode.c ! -name ecl-curve.h \
     ! -name ecl-exp.h ! -name ecl-priv.h ! -name ecl.c \
     ! -name ecl.c ! -name ecl.h ! -name ecl_curve.c \
     ! -name ecl_gf.c ! -name ecl_mult.c ! -name ecp.h \
@@ -76,7 +73,10 @@ find nss/lib/freebl -type f \
     ! -name ecp_384.c ! -name ecp_521.c \
     ! -name ecp_aff.c ! -name ecp_jac.c ! -name ecp_jm.c \
     ! -name ecp_mont.c ! -name ec_naf.c ! -name gcm.c ! -name gcm.h \
-    ! -name hmacct.c ! -name hmacct.h ! -name jpake.c ! -name md2.c \
+    ! -name hmacct.c ! -name hmacct.h \
+    ! -name intel-aes-x64-masm.asm ! -name intel-aes-x86-masm.asm \
+    ! -name intel-gcm-x64-masm.asm ! -name intel-gcm-x86-masm.asm \
+    ! -name jpake.c ! -name md2.c \
     ! -name md5.c ! -name logtab.h ! -name mpcpucache.c \
     ! -name mpi-config.h \
     ! -name mpi-priv.h ! -name mpi.c ! -name mpi.h \
@@ -86,7 +86,7 @@ find nss/lib/freebl -type f \
     ! -name mp_gf2m-priv.h ! -name mp_gf2m.c ! -name mp_gf2m.h \
     ! -name primes.c ! -name pqg.c ! -name pqg.h ! -name rawhash.c \
     ! -name rijndael.c ! -name rijndael.h ! -name rijndael32.tab \
-    ! -name rsa.c ! -name secmpi.h \
+    ! -name rsa.c ! -name rsapkcs.c ! -name secmpi.h \
     ! -name secrng.h ! -name seed.c ! -name seed.h \
     ! -name sha256.h ! -name sha512.c ! -name sha_fast.c \
     ! -name sha_fast.h ! -name shsign.h ! -name shvfy.c \

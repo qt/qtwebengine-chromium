@@ -32,7 +32,7 @@
 #include "config.h"
 #include "core/html/forms/ResetInputType.h"
 
-#include "InputTypeNames.h"
+#include "core/InputTypeNames.h"
 #include "core/events/Event.h"
 #include "core/html/HTMLFormElement.h"
 #include "core/html/HTMLInputElement.h"
@@ -41,9 +41,9 @@
 
 namespace WebCore {
 
-PassRefPtr<InputType> ResetInputType::create(HTMLInputElement& element)
+PassRefPtrWillBeRawPtr<InputType> ResetInputType::create(HTMLInputElement& element)
 {
-    return adoptRef(new ResetInputType(element));
+    return adoptRefWillBeNoop(new ResetInputType(element));
 }
 
 const AtomicString& ResetInputType::formControlType() const

@@ -4,6 +4,8 @@
 
 #include "net/tools/quic/test_tools/mock_quic_dispatcher.h"
 
+#include "net/quic/test_tools/quic_test_utils.h"
+
 namespace net {
 namespace tools {
 namespace test {
@@ -11,11 +13,12 @@ namespace test {
 MockQuicDispatcher::MockQuicDispatcher(
     const QuicConfig& config,
     const QuicCryptoServerConfig& crypto_config,
-    QuicGuid guid,
     EpollServer* eps)
-    : QuicDispatcher(config, crypto_config, QuicSupportedVersions(), guid,
-                     eps) {
-}
+    : QuicDispatcher(config,
+                     crypto_config,
+                     QuicSupportedVersions(),
+                     eps) {}
+
 MockQuicDispatcher::~MockQuicDispatcher() {}
 
 }  // namespace test

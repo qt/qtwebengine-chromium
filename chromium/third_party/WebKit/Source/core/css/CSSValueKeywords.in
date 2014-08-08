@@ -9,10 +9,11 @@
 inherit
 initial
 //
-// CSS_PROP_OUTLINE_STYLE
-// CSS_PROP_BORDER_TOP_STYLE
-// CSS_PROP_BORDER_BOTTOM_STYLE
-// CSS_PROP_BORDER_LEFT_STYLE
+// outline-style
+// border-top-style
+// border-bottom-style
+// border-left-style
+// border-right-style
 // The order here must match the order of the EBorderStyle enum in RenderStyleConstants.h.
 none
 hidden
@@ -26,7 +27,7 @@ solid
 double
 
 //
-// CSS_PROP_FONT:
+// font
 //
 caption
 icon
@@ -39,20 +40,21 @@ small-caption
 status-bar
 
 //
-// CSS_PROP_FONT_STYLE:
+// font-style
 //
 //normal
 italic
 oblique
 // The following is only allowed in @font-face:
 all
+
 //
-// CSS_PROP_FONT_VARIANT:
+// font-variant
 //
 //normal
 small-caps
 
-// -webkit-font-variant-ligatures:
+// font-variant-ligatures:
 //
 // normal
 common-ligatures
@@ -61,9 +63,11 @@ discretionary-ligatures
 no-discretionary-ligatures
 historical-ligatures
 no-historical-ligatures
+contextual
+no-contextual
 
 //
-// CSS_PROP_FONT_WEIGHT:
+// font-weigth
 //
 normal
 bold
@@ -78,8 +82,9 @@ lighter
 700
 800
 900
+
 //
-// CSS_PROP_FONT_SIZE:
+// font-size
 //
 xx-small
 x-small
@@ -91,22 +96,9 @@ xx-large
 -webkit-xxx-large
 smaller
 larger
+
 //
-// CSS_PROP_FONT_STRETCH:
-//
-//normal
-wider
-narrower
-ultra-condensed
-extra-condensed
-condensed
-semi-condensed
-semi-expanded
-expanded
-extra-expanded
-ultra-expanded
-//
-// CSS_PROP_GENERIC_FONT_FAMILY:
+// font-family (<generic-family> in CSS 2.1)
 //
 serif
 sans-serif
@@ -115,9 +107,10 @@ fantasy
 monospace
 -webkit-body
 -webkit-pictograph
+
 //
 //
-// CSS_PROP_*_COLOR
+// *-color
 //
 aqua
 black
@@ -177,7 +170,7 @@ grey
 // colors in non strict mode
 -webkit-text mode=QuirksOrUASheet
 //
-// CSS_PROP_BACKGROUND_REPEAT:
+// background-repeat
 //
 repeat
 repeat-x
@@ -186,7 +179,7 @@ no-repeat
 // round
 // space
 //
-// CSS_PROP__WEBKIT_BACKGROUND_COMPOSITE:
+// -webkit-background-composite
 //
 clear
 copy
@@ -203,7 +196,7 @@ plus-darker
 // highlight
 plus-lighter
 //
-// CSS_PROP_VERTICAL_ALIGN:
+// vertical-align
 //
 baseline
 middle
@@ -216,7 +209,7 @@ bottom
 // HTML alignment MIDDLE has no corresponding CSS alignment
 -webkit-baseline-middle
 //
-// CSS_PROP_TEXT_ALIGN:
+// text-align
 // The order here must match the order of the ETextAlign enum in RenderStyleConstants.h.
 //
 -webkit-auto
@@ -229,19 +222,19 @@ justify
 -webkit-center
 -webkit-match-parent
 //
-// CSS_PROP_TEXT_JUSTIFY:
+// text-justify
 //
 //auto
 //none
 inter-word
 distribute
 //
-// CSS_PROP_LIST_STYLE_POSITION:
+// list-style-position
 //
 outside
 inside
 //
-// CSS_PROP_LIST_STYLE_TYPE:
+// list-style-type
 // The order here must match the order of the EListStyleType enum in RenderStyleConstants.h.
 //
 disc
@@ -326,7 +319,7 @@ hiragana-iroha
 katakana-iroha
 //none
 //
-// CSS_PROP_DISPLAY:
+// display
 // The order here must match the order of the EDisplay enum in RenderStyleConstants.h.
 //
 inline
@@ -349,12 +342,11 @@ flex
 inline-flex
 grid
 inline-grid
-lazy-block
 //none
 -webkit-flex
 -webkit-inline-flex
 //
-// CSS_PROP_CURSOR:
+// cursor
 // The order here must match the order of the ECursor enum in RenderStyleConstants.h.
 //
 auto
@@ -370,8 +362,8 @@ alias
 progress
 no-drop
 not-allowed
--webkit-zoom-in
--webkit-zoom-out
+zoom-in
+zoom-out
 e-resize
 ne-resize
 nw-resize
@@ -392,21 +384,23 @@ help
 all-scroll
 -webkit-grab
 -webkit-grabbing
+-webkit-zoom-in
+-webkit-zoom-out
 // none
 //
-// CSS_PROP_DIRECTION:
+// direction
 //
 ltr
 rtl
 //
-// CSS_PROP_TEXT_TRANSFORM:
+// text-transform
 //
 capitalize
 uppercase
 lowercase
 //none
 //
-// CSS_PROP_VISIBILITY:
+// visibility
 //
 visible
 //hidden
@@ -428,13 +422,10 @@ bidi-override
 blink
 both
 close-quote
-crop
-cross
 embed
 fixed
 hand
 hide
-higher
 invert
 -webkit-isolate
 -webkit-isolate-override
@@ -443,12 +434,8 @@ landscape
 ledger
 legal
 letter
-level
 line-through
 local
-loud
-lower
-mix
 no-close-quote
 no-open-quote
 nowrap
@@ -472,38 +459,38 @@ wavy
 -webkit-nowrap
 
 // CSS3 Values
-// CSS_PROP_BOX_ALIGN
+// box-align
 stretch
 start
 end
 //center
 //baseline
 
-// CSS_PROP_BOX_DECORATION_BREAK
+// box-decoration-break
 clone
 slice
 
-// CSS_PROP_BOX_DIRECTION
+// box-direction
 // normal
 reverse
 
-// CSS_PROP_BOX_ORIENT
+// box-orient
 horizontal
 vertical
 inline-axis
 block-axis
 
-// CSS_PROP_BOX_PACK
+// box-pack
 // start
 // end
 // center
 // justify
 
-// CSS_PROP_BOX_LINES
+// box-lines
 single
 multiple
 
-// CSS_PROP_ALIGN_CONTENT
+// align-content
 flex-start
 flex-end
 // center
@@ -511,21 +498,21 @@ space-between
 space-around
 // stretch
 
-// CSS_PROP_ALIGN_ITEMS / CSS_PROP_ALIGN_SELF
+// align-items / align-self
 // flex-start
 // flex-end
 // center
 // baseline
 // stretch
 
-// CSS_PROP_JUSTIFY_CONTENT
+// justify-content
 // flex-start
 // flex-end
 // center
 // space-between
 // space-around
 
-// CSS_PROP_FLEX_FLOW
+// flex-flow
 row
 row-reverse
 column
@@ -534,7 +521,7 @@ column-reverse
 // wrap
 wrap-reverse
 
-// CSS_PROP_MARQUEE_DIRECTION
+// -internal-marquee-direction
 forwards
 backwards
 ahead
@@ -545,39 +532,34 @@ up
 down
 // auto
 
-// CSS_PROP_MARQUEE_SPEED
+// -internal-marquee-speed
 slow
 // normal
 fast
 
-// CSS_PROP_MARQUEE_REPETITION
+// -internal-marquee-repetition
 infinite
 
-// CSS_PROP_MARQUEE_STYLE
+// -internal-marquee-style
 // none
 slide
 // scroll
 alternate
 
 //
-// CSS_PROP__KHTML_USER_MODIFY
+// -webkit-user-modify
 //
 read-only
 read-write
 read-write-plaintext-only
 
 //
-// CSS_PROP__KHTML_USER_DRAG
+// -webkit-user-drag
 //
 element
 
 //
-// CSS_PROP__KHTML_USER_SELECT
-//
-ignore
-
-//
-// CSS_PROP_WIDTH/MIN_WIDTH/MAX_WIDTH
+// width/min-width/max-width
 //
 intrinsic
 min-intrinsic
@@ -594,48 +576,48 @@ min-content
 max-content
 
 //
-// CSS_PROP_TEXT_OVERFLOW
+// text-overflow
 //
 clip
 ellipsis
 
 //
-// CSS_PROP__KHTML_MARGIN_COLLAPSE
+// -webkit-margin-collapse
 //
 // collapse
 // separate
 discard
 
 //
-// CSS_PROP_TEXT_*_COLOR
+// text-*-color
 //
 dot-dash
 dot-dot-dash
 wave
 
 //
-// CSS_PROP_TEXT_*_MODE
+// text-*-mode
 //
 continuous
 skip-white-space
 
 //
-// CSS_PROP_WORD_BREAK
+// word-break
 //
 break-all
 
 //
-// CSS_PROP_WORD_WRAP
+// word-wrap
 //
 break-word
 
 //
-// CSS_PROP__KHTML_NBSP_MODE
+// nbsp-mode
 //
 space
 
 //
-// CSS_PROP__KHTML_LINE_BREAK
+// -webkit-line-break
 //
 // auto
 loose
@@ -653,7 +635,6 @@ square-button
 button
 button-bevel
 inner-spin-button
--webkit-input-speech-button
 listbox
 listitem
 media-enter-fullscreen-button
@@ -663,17 +644,12 @@ media-fullscreen-volume-slider-thumb
 media-mute-button
 media-play-button
 media-overlay-play-button
-media-seek-back-button
-media-seek-forward-button
-media-rewind-button
-media-return-to-realtime-button
 media-toggle-closed-captions-button
 media-slider
 media-sliderthumb
 media-volume-slider-container
 media-volume-slider
 media-volume-sliderthumb
-media-volume-slider-mute-button
 media-controls-background
 media-controls-fullscreen-background
 media-current-time-display
@@ -704,14 +680,14 @@ textarea
 caps-lock-indicator
 
 //
-// CSS_PROP_BORDER_IMAGE
+// border-image
 //
 // stretch
 // repeat
 round
 
 //
-// CSS_PROP_BACKGROUND_CLIP/ORIGIN
+// background-clip/background-origin
 //
 // border/content/padding are deprecated and ultimately will only apply to the -webkit- form of these properties.
 // border-box/content-box/padding-box should be used instead.
@@ -723,7 +699,7 @@ content-box
 padding
 padding-box
 
-// CSS_SHAPES
+// CSS 3 SHAPES
 margin-box
 
 //
@@ -733,50 +709,50 @@ contain
 cover
 
 //
-// CSS_PROP__KHTML_RTL_ORDERING
+// -webkit-rtl-ordering
 //
 logical
 visual
 
 //
-// CSS_PROP__WEBKIT_BORDER_FIT
+// -webkit-border-fit
 //
 lines
 
 //
-// CSS_PROP__WEBKIT_ANIMATION_DIRECTION
+// animation-direction
 //
 // alternate
 
 alternate-reverse
 
 //
-// CSS_PROP__WEBKIT_ANIMATION_FILL_MODE
+// animation-fill-mode
 //
 // forwards
 // backwards
 // both
 
 //
-// CSS_PROP__WEBKIT_ANIMATION_ITERATION_COUNT
+// animation-iteration-count
 //
 // infinite
 
 //
-// CSS_PROP__WEBKIT_ANIMATION_PLAY_STATE
+// animation-play-state
 //
 running
 paused
 
 //
-// CSS_PROP__WEBKIT_TRANSFORM_STYLE
+// transform-style
 //
 flat
 preserve-3d
 
 //
-// CSS_PROP__WEBKIT_TRANSITION_TIMING_FUNCTION
-// CSS_PROP__WEBKIT_ANIMATION_TIMING_FUNCTION
+// transition-timing-function
+// animation-timing-function
 //
 ease
 linear
@@ -784,22 +760,23 @@ ease-in
 ease-out
 ease-in-out
 step-start
+step-middle
 step-end
 
 //
-// CSS_PROP_ZOOM
+// zoom
 //
 document
 reset
 
 //
-// CSS_PROP_USER_ZOOM
+// user-zoom
 //
 // fixed
 zoom
 
 //
-// CSS_PROP_POINTER_EVENTS
+// pointer-events
 //
 visiblePainted
 visibleFill
@@ -813,7 +790,7 @@ bounding-box
 //none
 
 //
-// CSS_PROP_SPEECH
+// speech
 //
 spell-out
 digits
@@ -837,16 +814,6 @@ geometricPrecision
 // -webkit-color-adjust
 economy
 exact
-
-// (-webkit-view-mode:) media feature:
-floating
-fullscreen
-maximized
-minimized
-windowed
-
-// -webkit-hyphenate-limit-lines
-no-limit
 
 // -webkit-writing-mode
 // SVG compatibility
@@ -911,15 +878,12 @@ off
 optimizeQuality
 -webkit-optimize-contrast
 
-// shape-inside
 // shape-outside
 nonzero
 evenodd
-outside-shape
-
-// -webkit-region-fragment
-// auto
-break
+at
+// closest-side
+// farthest-side
 
 // -webkit-wrap-flow
 // auto
@@ -933,9 +897,6 @@ maximum
 wrap
 // none
 
-// -webkit-line-align
-edges
-
 alphabetic
 
 // position
@@ -946,13 +907,6 @@ sticky
 coarse
 fine
 
-// -webkit-filter
-// values for the custom() function
-// border-box
-// padding-box
-// content-box
-filter-box
-detached
 // blend modes
 // normal
 multiply
@@ -985,17 +939,20 @@ balance
 drag
 no-drag
 
-// -webkit-grid-{start|end|before|after}
+// grid-{column|row}-{start|end}
 span
 
 // text-indent
 each-line
+//hanging   // hanging exists in SVGCSSValueKeywords.in
 
 // (scan:) media feature
 progressive
 interlace
 
-// CSS_PROP_PAINT_ORDER
+//
+// paint-order
+//
 // normal
 // fill
 // stroke
@@ -1017,3 +974,34 @@ script
 // touch-action
 pan-x
 pan-y
+manipulation
+
+// justify-self
+// auto
+// stretch
+// baseline
+// center
+// start
+// end
+self-start
+self-end
+// flex-start
+// flex-end
+// left
+// right
+true
+safe
+
+// scroll-behavior
+instant
+smooth
+
+// will-change
+// auto
+contents
+scroll-position
+
+// all
+// initial
+// inherit
+unset

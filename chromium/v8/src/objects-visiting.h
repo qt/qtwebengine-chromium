@@ -1,34 +1,11 @@
 // Copyright 2012 the V8 project authors. All rights reserved.
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-//       copyright notice, this list of conditions and the following
-//       disclaimer in the documentation and/or other materials provided
-//       with the distribution.
-//     * Neither the name of Google Inc. nor the names of its
-//       contributors may be used to endorse or promote products derived
-//       from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
 #ifndef V8_OBJECTS_VISITING_H_
 #define V8_OBJECTS_VISITING_H_
 
-#include "allocation.h"
+#include "src/allocation.h"
 
 // This file provides base classes and auxiliary methods for defining
 // static object visitors used during GC.
@@ -47,13 +24,15 @@ namespace internal {
 class StaticVisitorBase : public AllStatic {
  public:
 #define VISITOR_ID_LIST(V)    \
-  V(SeqOneByteString)           \
+  V(SeqOneByteString)         \
   V(SeqTwoByteString)         \
   V(ShortcutCandidate)        \
   V(ByteArray)                \
   V(FreeSpace)                \
   V(FixedArray)               \
   V(FixedDoubleArray)         \
+  V(FixedTypedArray)          \
+  V(FixedFloat64Array)        \
   V(ConstantPoolArray)        \
   V(NativeContext)            \
   V(AllocationSite)           \
@@ -94,8 +73,7 @@ class StaticVisitorBase : public AllStatic {
   V(PropertyCell)             \
   V(SharedFunctionInfo)       \
   V(JSFunction)               \
-  V(JSWeakMap)                \
-  V(JSWeakSet)                \
+  V(JSWeakCollection)         \
   V(JSArrayBuffer)            \
   V(JSTypedArray)             \
   V(JSDataView)               \
@@ -142,7 +120,7 @@ class StaticVisitorBase : public AllStatic {
            (base == kVisitJSObject));
     ASSERT(IsAligned(object_size, kPointerSize));
     ASSERT(kMinObjectSizeInWords * kPointerSize <= object_size);
-    ASSERT(object_size <= Page::kMaxNonCodeHeapObjectSize);
+    ASSERT(object_size <= Page::kMaxRegularHeapObjectSize);
 
     const VisitorId specialization = static_cast<VisitorId>(
         base + (object_size >> kPointerSizeLog2) - kMinObjectSizeInWords);
@@ -160,7 +138,7 @@ class VisitorDispatchTable {
     // every element of callbacks_ array will remain correct
     // pointer (memcpy might be implemented as a byte copying loop).
     for (int i = 0; i < StaticVisitorBase::kVisitorIdCount; i++) {
-      NoBarrier_Store(&callbacks_[i], other->callbacks_[i]);
+      base::NoBarrier_Store(&callbacks_[i], other->callbacks_[i]);
     }
   }
 
@@ -174,7 +152,7 @@ class VisitorDispatchTable {
 
   void Register(StaticVisitorBase::VisitorId id, Callback callback) {
     ASSERT(id < StaticVisitorBase::kVisitorIdCount);  // id is unsigned.
-    callbacks_[id] = reinterpret_cast<AtomicWord>(callback);
+    callbacks_[id] = reinterpret_cast<base::AtomicWord>(callback);
   }
 
   template<typename Visitor,
@@ -206,7 +184,7 @@ class VisitorDispatchTable {
   }
 
  private:
-  AtomicWord callbacks_[StaticVisitorBase::kVisitorIdCount];
+  base::AtomicWord callbacks_[StaticVisitorBase::kVisitorIdCount];
 };
 
 
@@ -322,6 +300,10 @@ class StaticNewSpaceVisitor : public StaticVisitorBase {
     return FixedDoubleArray::SizeFor(length);
   }
 
+  INLINE(static int VisitFixedTypedArray(Map* map, HeapObject* object)) {
+    return reinterpret_cast<FixedTypedArrayBase*>(object)->size();
+  }
+
   INLINE(static int VisitJSObject(Map* map, HeapObject* object)) {
     return JSObjectVisitor::Visit(map, object);
   }
@@ -399,7 +381,6 @@ class StaticMarkingVisitor : public StaticVisitorBase {
   }
 
   INLINE(static void VisitPropertyCell(Map* map, HeapObject* object));
-  INLINE(static void VisitAllocationSite(Map* map, HeapObject* object));
   INLINE(static void VisitCodeEntry(Heap* heap, Address entry_address));
   INLINE(static void VisitEmbeddedPointer(Heap* heap, RelocInfo* rinfo));
   INLINE(static void VisitCell(Heap* heap, RelocInfo* rinfo));
@@ -408,6 +389,8 @@ class StaticMarkingVisitor : public StaticVisitorBase {
   INLINE(static void VisitCodeAgeSequence(Heap* heap, RelocInfo* rinfo));
   INLINE(static void VisitExternalReference(RelocInfo* rinfo)) { }
   INLINE(static void VisitRuntimeEntry(RelocInfo* rinfo)) { }
+  // Skip the weak next code link in a code object.
+  INLINE(static void VisitNextCodeLink(Heap* heap, Object** slot)) { }
 
   // TODO(mstarzinger): This should be made protected once refactoring is done.
   // Mark non-optimize code for functions inlined into the given optimized
@@ -419,6 +402,8 @@ class StaticMarkingVisitor : public StaticVisitorBase {
   INLINE(static void VisitCode(Map* map, HeapObject* object));
   INLINE(static void VisitSharedFunctionInfo(Map* map, HeapObject* object));
   INLINE(static void VisitConstantPoolArray(Map* map, HeapObject* object));
+  INLINE(static void VisitAllocationSite(Map* map, HeapObject* object));
+  INLINE(static void VisitWeakCollection(Map* map, HeapObject* object));
   INLINE(static void VisitJSFunction(Map* map, HeapObject* object));
   INLINE(static void VisitJSRegExp(Map* map, HeapObject* object));
   INLINE(static void VisitJSArrayBuffer(Map* map, HeapObject* object));
@@ -474,6 +459,17 @@ template<typename StaticVisitor>
 VisitorDispatchTable<typename StaticMarkingVisitor<StaticVisitor>::Callback>
     StaticMarkingVisitor<StaticVisitor>::table_;
 
+
+class WeakObjectRetainer;
+
+
+// A weak list is single linked list where each element has a weak pointer to
+// the next element. Given the head of the list, this function removes dead
+// elements from the list and if requested records slots for next-element
+// pointers. The template parameter T is a WeakListVisitor that defines how to
+// access the next-element pointers.
+template <class T>
+Object* VisitWeakList(Heap* heap, Object* list, WeakObjectRetainer* retainer);
 
 } }  // namespace v8::internal
 

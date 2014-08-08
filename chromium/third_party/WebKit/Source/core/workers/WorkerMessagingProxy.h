@@ -45,10 +45,10 @@ namespace WebCore {
     class Worker;
     class WorkerClients;
 
-    class WorkerMessagingProxy : public WorkerGlobalScopeProxy, public WorkerLoaderProxy {
+    class WorkerMessagingProxy FINAL : public WorkerGlobalScopeProxy, public WorkerLoaderProxy {
         WTF_MAKE_NONCOPYABLE(WorkerMessagingProxy); WTF_MAKE_FAST_ALLOCATED;
     public:
-        WorkerMessagingProxy(Worker*, PassOwnPtr<WorkerClients>);
+        WorkerMessagingProxy(Worker*, PassOwnPtrWillBeRawPtr<WorkerClients>);
 
         // Implementations of WorkerGlobalScopeProxy.
         // (Only use these methods in the worker object thread.)
@@ -76,7 +76,7 @@ namespace WebCore {
         // These methods are called on different threads to schedule loading
         // requests and to send callbacks back to WorkerGlobalScope.
         virtual void postTaskToLoader(PassOwnPtr<ExecutionContextTask>) OVERRIDE;
-        virtual bool postTaskForModeToWorkerGlobalScope(PassOwnPtr<ExecutionContextTask>, const String& mode) OVERRIDE;
+        virtual bool postTaskToWorkerGlobalScope(PassOwnPtr<ExecutionContextTask>) OVERRIDE;
 
         void workerThreadCreated(PassRefPtr<DedicatedWorkerThread>);
 
@@ -86,7 +86,7 @@ namespace WebCore {
     private:
         static void workerObjectDestroyedInternal(ExecutionContext*, WorkerMessagingProxy*);
 
-        RefPtr<ExecutionContext> m_executionContext;
+        RefPtrWillBePersistent<ExecutionContext> m_executionContext;
         OwnPtr<WorkerObjectProxy> m_workerObjectProxy;
         Worker* m_workerObject;
         bool m_mayBeDestroyed;
@@ -100,7 +100,7 @@ namespace WebCore {
         Vector<OwnPtr<ExecutionContextTask> > m_queuedEarlyTasks; // Tasks are queued here until there's a thread object created.
         WorkerGlobalScopeProxy::PageInspector* m_pageInspector;
 
-        OwnPtr<WorkerClients> m_workerClients;
+        OwnPtrWillBePersistent<WorkerClients> m_workerClients;
     };
 
 } // namespace WebCore

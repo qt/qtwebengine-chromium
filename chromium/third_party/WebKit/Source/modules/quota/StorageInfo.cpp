@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2011 Google Inc. All rights reserved.
+ * Copyright (C) 2014 Google Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -29,65 +29,19 @@
  */
 
 #include "config.h"
-
 #include "modules/quota/StorageInfo.h"
-
-#include "core/dom/Document.h"
-#include "core/dom/ExceptionCode.h"
-#include "core/dom/ExecutionContext.h"
-#include "modules/quota/StorageErrorCallback.h"
-#include "modules/quota/StorageQuota.h"
-#include "modules/quota/StorageQuotaCallback.h"
-#include "modules/quota/StorageUsageCallback.h"
 
 namespace WebCore {
 
-StorageInfo::StorageInfo()
+StorageInfo::StorageInfo(unsigned long long usage, unsigned long long quota)
+    : m_usage(usage)
+    , m_quota(quota)
 {
     ScriptWrappable::init(this);
 }
 
 StorageInfo::~StorageInfo()
 {
-}
-
-void StorageInfo::queryUsageAndQuota(ExecutionContext* executionContext, int storageType, PassOwnPtr<StorageUsageCallback> successCallback, PassOwnPtr<StorageErrorCallback> errorCallback)
-{
-    // Dispatching the request to StorageQuota, as this interface is deprecated in favor of StorageQuota.
-    StorageQuota* storageQuota = getStorageQuota(storageType);
-    if (!storageQuota) {
-        // Unknown storage type is requested.
-        executionContext->postTask(StorageErrorCallback::CallbackTask::create(errorCallback, NotSupportedError));
-        return;
-    }
-    storageQuota->queryUsageAndQuota(executionContext, successCallback, errorCallback);
-}
-
-void StorageInfo::requestQuota(ExecutionContext* executionContext, int storageType, unsigned long long newQuotaInBytes, PassOwnPtr<StorageQuotaCallback> successCallback, PassOwnPtr<StorageErrorCallback> errorCallback)
-{
-    // Dispatching the request to StorageQuota, as this interface is deprecated in favor of StorageQuota.
-    StorageQuota* storageQuota = getStorageQuota(storageType);
-    if (!storageQuota) {
-        // Unknown storage type is requested.
-        executionContext->postTask(StorageErrorCallback::CallbackTask::create(errorCallback, NotSupportedError));
-        return;
-    }
-    storageQuota->requestQuota(executionContext, newQuotaInBytes, successCallback, errorCallback);
-}
-
-StorageQuota* StorageInfo::getStorageQuota(int storageType)
-{
-    switch (storageType) {
-    case TEMPORARY:
-        if (!m_temporaryStorage)
-            m_temporaryStorage = StorageQuota::create(StorageQuota::Temporary);
-        return m_temporaryStorage.get();
-    case PERSISTENT:
-        if (!m_persistentStorage)
-            m_persistentStorage = StorageQuota::create(StorageQuota::Persistent);
-        return m_persistentStorage.get();
-    }
-    return 0;
 }
 
 } // namespace WebCore

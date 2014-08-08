@@ -26,6 +26,7 @@
 #include "config.h"
 #include "modules/indexeddb/IDBOpenDBRequest.h"
 
+#include "bindings/v8/Nullable.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/ExecutionContext.h"
 #include "modules/indexeddb/IDBDatabase.h"
@@ -38,15 +39,15 @@ using blink::WebIDBDatabase;
 
 namespace WebCore {
 
-PassRefPtr<IDBOpenDBRequest> IDBOpenDBRequest::create(ExecutionContext* context, PassRefPtr<IDBDatabaseCallbacks> callbacks, int64_t transactionId, int64_t version)
+IDBOpenDBRequest* IDBOpenDBRequest::create(ScriptState* scriptState, IDBDatabaseCallbacks* callbacks, int64_t transactionId, int64_t version)
 {
-    RefPtr<IDBOpenDBRequest> request(adoptRef(new IDBOpenDBRequest(context, callbacks, transactionId, version)));
+    IDBOpenDBRequest* request = adoptRefCountedGarbageCollectedWillBeNoop(new IDBOpenDBRequest(scriptState, callbacks, transactionId, version));
     request->suspendIfNeeded();
-    return request.release();
+    return request;
 }
 
-IDBOpenDBRequest::IDBOpenDBRequest(ExecutionContext* context, PassRefPtr<IDBDatabaseCallbacks> callbacks, int64_t transactionId, int64_t version)
-    : IDBRequest(context, IDBAny::createNull(), 0)
+IDBOpenDBRequest::IDBOpenDBRequest(ScriptState* scriptState, IDBDatabaseCallbacks* callbacks, int64_t transactionId, int64_t version)
+    : IDBRequest(scriptState, IDBAny::createNull(), 0)
     , m_databaseCallbacks(callbacks)
     , m_transactionId(transactionId)
     , m_version(version)
@@ -59,6 +60,12 @@ IDBOpenDBRequest::~IDBOpenDBRequest()
 {
 }
 
+void IDBOpenDBRequest::trace(Visitor* visitor)
+{
+    visitor->trace(m_databaseCallbacks);
+    IDBRequest::trace(visitor);
+}
+
 const AtomicString& IDBOpenDBRequest::interfaceName() const
 {
     return EventTargetNames::IDBOpenDBRequest;
@@ -69,8 +76,8 @@ void IDBOpenDBRequest::onBlocked(int64_t oldVersion)
     IDB_TRACE("IDBOpenDBRequest::onBlocked()");
     if (!shouldEnqueueEvent())
         return;
-    RefPtr<IDBAny> newVersionAny = (m_version == IDBDatabaseMetadata::DefaultIntVersion) ? IDBAny::createNull() : IDBAny::create(m_version);
-    enqueueEvent(IDBVersionChangeEvent::create(IDBAny::create(oldVersion), newVersionAny.release(), EventTypeNames::blocked));
+    Nullable<unsigned long long> newVersionNullable = (m_version == IDBDatabaseMetadata::DefaultIntVersion) ? Nullable<unsigned long long>() : Nullable<unsigned long long>(m_version);
+    enqueueEvent(IDBVersionChangeEvent::create(EventTypeNames::blocked, oldVersion, newVersionNullable));
 }
 
 void IDBOpenDBRequest::onUpgradeNeeded(int64_t oldVersion, PassOwnPtr<WebIDBDatabase> backend, const IDBDatabaseMetadata& metadata, blink::WebIDBDataLoss dataLoss, String dataLossMessage)
@@ -87,7 +94,7 @@ void IDBOpenDBRequest::onUpgradeNeeded(int64_t oldVersion, PassOwnPtr<WebIDBData
 
     ASSERT(m_databaseCallbacks);
 
-    RefPtr<IDBDatabase> idbDatabase = IDBDatabase::create(executionContext(), backend, m_databaseCallbacks.release());
+    IDBDatabase* idbDatabase = IDBDatabase::create(executionContext(), backend, m_databaseCallbacks.release());
     idbDatabase->setMetadata(metadata);
 
     if (oldVersion == IDBDatabaseMetadata::NoIntVersion) {
@@ -97,12 +104,12 @@ void IDBOpenDBRequest::onUpgradeNeeded(int64_t oldVersion, PassOwnPtr<WebIDBData
     IDBDatabaseMetadata oldMetadata(metadata);
     oldMetadata.intVersion = oldVersion;
 
-    m_transaction = IDBTransaction::create(executionContext(), m_transactionId, idbDatabase.get(), this, oldMetadata);
-    setResult(IDBAny::create(idbDatabase.release()));
+    m_transaction = IDBTransaction::create(executionContext(), m_transactionId, idbDatabase, this, oldMetadata);
+    setResult(IDBAny::create(idbDatabase));
 
     if (m_version == IDBDatabaseMetadata::NoIntVersion)
         m_version = 1;
-    enqueueEvent(IDBVersionChangeEvent::create(IDBAny::create(oldVersion), IDBAny::create(m_version), EventTypeNames::upgradeneeded, dataLoss, dataLossMessage));
+    enqueueEvent(IDBVersionChangeEvent::create(EventTypeNames::upgradeneeded, oldVersion, m_version, dataLoss, dataLossMessage));
 }
 
 void IDBOpenDBRequest::onSuccess(PassOwnPtr<WebIDBDatabase> backend, const IDBDatabaseMetadata& metadata)
@@ -117,7 +124,7 @@ void IDBOpenDBRequest::onSuccess(PassOwnPtr<WebIDBDatabase> backend, const IDBDa
     if (!shouldEnqueueEvent())
         return;
 
-    RefPtr<IDBDatabase> idbDatabase;
+    IDBDatabase* idbDatabase = 0;
     if (resultAsAny()) {
         // Previous onUpgradeNeeded call delivered the backend.
         ASSERT(!backend.get());
@@ -128,10 +135,23 @@ void IDBOpenDBRequest::onSuccess(PassOwnPtr<WebIDBDatabase> backend, const IDBDa
         ASSERT(backend.get());
         ASSERT(m_databaseCallbacks);
         idbDatabase = IDBDatabase::create(executionContext(), backend, m_databaseCallbacks.release());
-        setResult(IDBAny::create(idbDatabase.get()));
+        setResult(IDBAny::create(idbDatabase));
     }
     idbDatabase->setMetadata(metadata);
     enqueueEvent(Event::create(EventTypeNames::success));
+}
+
+void IDBOpenDBRequest::onSuccess(int64_t oldVersion)
+{
+    IDB_TRACE("IDBOpenDBRequest::onSuccess()");
+    if (!shouldEnqueueEvent())
+        return;
+    if (oldVersion == IDBDatabaseMetadata::NoIntVersion) {
+        // This database hasn't had an integer version before.
+        oldVersion = IDBDatabaseMetadata::DefaultIntVersion;
+    }
+    setResult(IDBAny::createUndefined());
+    enqueueEvent(IDBVersionChangeEvent::create(EventTypeNames::success, oldVersion, Nullable<unsigned long long>()));
 }
 
 bool IDBOpenDBRequest::shouldEnqueueEvent() const
@@ -144,7 +164,7 @@ bool IDBOpenDBRequest::shouldEnqueueEvent() const
     return true;
 }
 
-bool IDBOpenDBRequest::dispatchEvent(PassRefPtr<Event> event)
+bool IDBOpenDBRequest::dispatchEvent(PassRefPtrWillBeRawPtr<Event> event)
 {
     // If the connection closed between onUpgradeNeeded and the delivery of the "success" event,
     // an "error" event should be fired instead.

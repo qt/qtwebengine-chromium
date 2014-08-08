@@ -29,7 +29,6 @@
 #include "wtf/Assertions.h"
 #include "wtf/CurrentTime.h"
 #include "wtf/MainThread.h"
-#include "wtf/Vector.h"
 
 namespace WebCore {
 
@@ -91,10 +90,10 @@ public:
 
 private:
     GestureToken()
-        : m_consumableGestures(0),
-        m_timestamp(0),
-        m_outOfProcess(false),
-        m_javascriptPrompt(false)
+        : m_consumableGestures(0)
+        , m_timestamp(0)
+        , m_outOfProcess(false)
+        , m_javascriptPrompt(false)
     {
     }
 
@@ -113,7 +112,7 @@ static bool isDefinite(ProcessingUserGestureState state)
 
 ProcessingUserGestureState UserGestureIndicator::s_state = DefinitelyNotProcessingUserGesture;
 UserGestureIndicator* UserGestureIndicator::s_topmostIndicator = 0;
-UserGestureHandler* UserGestureIndicator::s_handler = 0;
+bool UserGestureIndicator::s_processedUserGestureInPast = false;
 
 UserGestureIndicator::UserGestureIndicator(ProcessingUserGestureState state)
     : m_previousState(s_state)
@@ -133,17 +132,13 @@ UserGestureIndicator::UserGestureIndicator(ProcessingUserGestureState state)
         s_state = state;
     }
 
-    bool shouldNotifyHandler = false;
     if (state == DefinitelyProcessingNewUserGesture) {
         static_cast<GestureToken*>(m_token.get())->addGesture();
-        shouldNotifyHandler = true;
+        s_processedUserGestureInPast = true;
     } else if (state == DefinitelyProcessingUserGesture && s_topmostIndicator == this) {
         static_cast<GestureToken*>(m_token.get())->addGesture();
-        shouldNotifyHandler = true;
+        s_processedUserGestureInPast = true;
     }
-
-    if (shouldNotifyHandler && s_handler)
-        s_handler->onGesture();
     ASSERT(isDefinite(s_state));
 }
 
@@ -167,9 +162,6 @@ UserGestureIndicator::UserGestureIndicator(PassRefPtr<UserGestureToken> token)
             }
         }
         s_state = DefinitelyProcessingUserGesture;
-
-        if (s_handler)
-            s_handler->onGesture();
     }
 
     ASSERT(isDefinite(s_state));
@@ -206,9 +198,17 @@ UserGestureToken* UserGestureIndicator::currentToken()
     return s_topmostIndicator->m_token.get();
 }
 
-void UserGestureIndicator::setHandler(UserGestureHandler* handler)
+void UserGestureIndicator::clearProcessedUserGestureInPast()
 {
-    s_handler = handler;
+    if (isMainThread())
+        s_processedUserGestureInPast = false;
+}
+
+bool UserGestureIndicator::processedUserGestureInPast()
+{
+    if (!isMainThread())
+        return false;
+    return s_processedUserGestureInPast;
 }
 
 UserGestureIndicatorDisabler::UserGestureIndicatorDisabler()

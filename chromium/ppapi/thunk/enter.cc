@@ -32,16 +32,19 @@ namespace subtle {
 EnterBase::EnterBase()
     : resource_(NULL),
       retval_(PP_OK) {
+  PpapiGlobals::Get()->MarkPluginIsActive();
 }
 
 EnterBase::EnterBase(PP_Resource resource)
     : resource_(GetResource(resource)),
       retval_(PP_OK) {
+  PpapiGlobals::Get()->MarkPluginIsActive();
 }
 
 EnterBase::EnterBase(PP_Instance instance, SingletonResourceID resource_id)
     : resource_(GetSingletonResource(instance, resource_id)),
       retval_(PP_OK) {
+  PpapiGlobals::Get()->MarkPluginIsActive();
 }
 
 EnterBase::EnterBase(PP_Resource resource,
@@ -49,16 +52,17 @@ EnterBase::EnterBase(PP_Resource resource,
     : resource_(GetResource(resource)),
       retval_(PP_OK) {
   callback_ = new TrackedCallback(resource_, callback);
+  PpapiGlobals::Get()->MarkPluginIsActive();
 }
 
 EnterBase::EnterBase(PP_Instance instance, SingletonResourceID resource_id,
                      const PP_CompletionCallback& callback)
     : resource_(GetSingletonResource(instance, resource_id)),
       retval_(PP_OK) {
-  DCHECK(resource_ || !instance);
   if (!resource_)
     retval_ = PP_ERROR_BADARGUMENT;
   callback_ = new TrackedCallback(resource_, callback);
+  PpapiGlobals::Get()->MarkPluginIsActive();
 }
 
 EnterBase::~EnterBase() {

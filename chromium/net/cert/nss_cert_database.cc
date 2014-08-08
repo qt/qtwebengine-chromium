@@ -10,10 +10,15 @@
 #include <pk11pub.h>
 #include <secmod.h>
 
+#include "base/bind.h"
+#include "base/callback.h"
+#include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/memory/singleton.h"
 #include "base/observer_list_threadsafe.h"
+#include "base/task_runner.h"
+#include "base/task_runner_util.h"
+#include "base/threading/worker_pool.h"
 #include "crypto/nss_util.h"
 #include "crypto/nss_util_internal.h"
 #include "crypto/scoped_nss_types.h"
@@ -35,6 +40,13 @@ namespace psm = mozilla_security_manager;
 
 namespace net {
 
+namespace {
+
+base::LazyInstance<NSSCertDatabase>::Leaky
+    g_nss_cert_database = LAZY_INSTANCE_INITIALIZER;
+
+}  // namespace
+
 NSSCertDatabase::ImportCertFailure::ImportCertFailure(
     const scoped_refptr<X509Certificate>& cert,
     int err)
@@ -44,30 +56,57 @@ NSSCertDatabase::ImportCertFailure::~ImportCertFailure() {}
 
 // static
 NSSCertDatabase* NSSCertDatabase::GetInstance() {
-  return Singleton<NSSCertDatabase,
-                   LeakySingletonTraits<NSSCertDatabase> >::get();
+  // TODO(mattm): Remove this ifdef guard once the linux impl of
+  // GetNSSCertDatabaseForResourceContext does not call GetInstance.
+#if defined(OS_CHROMEOS)
+  LOG(ERROR) << "NSSCertDatabase::GetInstance() is deprecated."
+             << "See http://crbug.com/329735.";
+#endif
+  return &g_nss_cert_database.Get();
 }
 
 NSSCertDatabase::NSSCertDatabase()
-    : observer_list_(new ObserverListThreadSafe<Observer>) {
-  crypto::EnsureNSSInit();
+    : observer_list_(new ObserverListThreadSafe<Observer>),
+      weak_factory_(this) {
+  // This also makes sure that NSS has been initialized.
+  CertDatabase::GetInstance()->ObserveNSSCertDatabase(this);
+
   psm::EnsurePKCS12Init();
 }
 
 NSSCertDatabase::~NSSCertDatabase() {}
 
-void NSSCertDatabase::ListCerts(CertificateList* certs) {
-  certs->clear();
+void NSSCertDatabase::ListCertsSync(CertificateList* certs) {
+  ListCertsImpl(crypto::ScopedPK11Slot(), certs);
+}
 
-  CERTCertList* cert_list = PK11_ListCerts(PK11CertListUnique, NULL);
-  CERTCertListNode* node;
-  for (node = CERT_LIST_HEAD(cert_list);
-       !CERT_LIST_END(node, cert_list);
-       node = CERT_LIST_NEXT(node)) {
-    certs->push_back(X509Certificate::CreateFromHandle(
-        node->cert, X509Certificate::OSCertHandles()));
-  }
-  CERT_DestroyCertList(cert_list);
+void NSSCertDatabase::ListCerts(
+    const base::Callback<void(scoped_ptr<CertificateList> certs)>& callback) {
+  scoped_ptr<CertificateList> certs(new CertificateList());
+
+  // base::Passed will NULL out |certs|, so cache the underlying pointer here.
+  CertificateList* raw_certs = certs.get();
+  GetSlowTaskRunner()->PostTaskAndReply(
+      FROM_HERE,
+      base::Bind(&NSSCertDatabase::ListCertsImpl,
+                 base::Passed(crypto::ScopedPK11Slot()),
+                 base::Unretained(raw_certs)),
+      base::Bind(callback, base::Passed(&certs)));
+}
+
+void NSSCertDatabase::ListCertsInSlot(const ListCertsCallback& callback,
+                                      PK11SlotInfo* slot) {
+  DCHECK(slot);
+  scoped_ptr<CertificateList> certs(new CertificateList());
+
+  // base::Passed will NULL out |certs|, so cache the underlying pointer here.
+  CertificateList* raw_certs = certs.get();
+  GetSlowTaskRunner()->PostTaskAndReply(
+      FROM_HERE,
+      base::Bind(&NSSCertDatabase::ListCertsImpl,
+                 base::Passed(crypto::ScopedPK11Slot(PK11_ReferenceSlot(slot))),
+                 base::Unretained(raw_certs)),
+      base::Bind(callback, base::Passed(&certs)));
 }
 
 crypto::ScopedPK11Slot NSSCertDatabase::GetPublicSlot() const {
@@ -117,6 +156,9 @@ int NSSCertDatabase::ImportFromPKCS12(
     const base::string16& password,
     bool is_extractable,
     net::CertificateList* imported_certs) {
+  DVLOG(1) << __func__ << " "
+           << PK11_GetModuleID(module->os_module_handle()) << ":"
+           << PK11_GetSlotID(module->os_module_handle());
   int result = psm::nsPKCS12Blob_Import(module->os_module_handle(),
                                         data.data(), data.size(),
                                         password,
@@ -154,7 +196,7 @@ X509Certificate* NSSCertDatabase::FindRootInList(
                        &certn_1->os_cert_handle()->subject) == SECEqual)
     return certn_1;
 
-  VLOG(1) << "certificate list is not a hierarchy";
+  LOG(WARNING) << "certificate list is not a hierarchy";
   return cert0;
 }
 
@@ -289,29 +331,24 @@ bool NSSCertDatabase::SetCertTrust(const X509Certificate* cert,
   return success;
 }
 
-bool NSSCertDatabase::DeleteCertAndKey(const X509Certificate* cert) {
-  // For some reason, PK11_DeleteTokenCertAndKey only calls
-  // SEC_DeletePermCertificate if the private key is found.  So, we check
-  // whether a private key exists before deciding which function to call to
-  // delete the cert.
-  SECKEYPrivateKey *privKey = PK11_FindKeyByAnyCert(cert->os_cert_handle(),
-                                                    NULL);
-  if (privKey) {
-    SECKEY_DestroyPrivateKey(privKey);
-    if (PK11_DeleteTokenCertAndKey(cert->os_cert_handle(), NULL)) {
-      LOG(ERROR) << "PK11_DeleteTokenCertAndKey failed: " << PORT_GetError();
-      return false;
-    }
-  } else {
-    if (SEC_DeletePermCertificate(cert->os_cert_handle())) {
-      LOG(ERROR) << "SEC_DeletePermCertificate failed: " << PORT_GetError();
-      return false;
-    }
-  }
-
+bool NSSCertDatabase::DeleteCertAndKey(X509Certificate* cert) {
+  if (!DeleteCertAndKeyImpl(cert))
+    return false;
   NotifyObserversOfCertRemoved(cert);
-
   return true;
+}
+
+void NSSCertDatabase::DeleteCertAndKeyAsync(
+    const scoped_refptr<X509Certificate>& cert,
+    const DeleteCertCallback& callback) {
+  base::PostTaskAndReplyWithResult(
+      GetSlowTaskRunner().get(),
+      FROM_HERE,
+      base::Bind(&NSSCertDatabase::DeleteCertAndKeyImpl, cert),
+      base::Bind(&NSSCertDatabase::NotifyCertRemovalAndCallBack,
+                 weak_factory_.GetWeakPtr(),
+                 cert,
+                 callback));
 }
 
 bool NSSCertDatabase::IsReadOnly(const X509Certificate* cert) const {
@@ -332,6 +369,46 @@ void NSSCertDatabase::RemoveObserver(Observer* observer) {
   observer_list_->RemoveObserver(observer);
 }
 
+void NSSCertDatabase::SetSlowTaskRunnerForTest(
+    const scoped_refptr<base::TaskRunner>& task_runner) {
+  slow_task_runner_for_test_ = task_runner;
+}
+
+// static
+void NSSCertDatabase::ListCertsImpl(crypto::ScopedPK11Slot slot,
+                                    CertificateList* certs) {
+  certs->clear();
+
+  CERTCertList* cert_list = NULL;
+  if (slot)
+    cert_list = PK11_ListCertsInSlot(slot.get());
+  else
+    cert_list = PK11_ListCerts(PK11CertListUnique, NULL);
+
+  CERTCertListNode* node;
+  for (node = CERT_LIST_HEAD(cert_list); !CERT_LIST_END(node, cert_list);
+       node = CERT_LIST_NEXT(node)) {
+    certs->push_back(X509Certificate::CreateFromHandle(
+        node->cert, X509Certificate::OSCertHandles()));
+  }
+  CERT_DestroyCertList(cert_list);
+}
+
+scoped_refptr<base::TaskRunner> NSSCertDatabase::GetSlowTaskRunner() const {
+  if (slow_task_runner_for_test_)
+    return slow_task_runner_for_test_;
+  return base::WorkerPool::GetTaskRunner(true /*task is slow*/);
+}
+
+void NSSCertDatabase::NotifyCertRemovalAndCallBack(
+    scoped_refptr<X509Certificate> cert,
+    const DeleteCertCallback& callback,
+    bool success) {
+  if (success)
+    NotifyObserversOfCertRemoved(cert);
+  callback.Run(success);
+}
+
 void NSSCertDatabase::NotifyObserversOfCertAdded(const X509Certificate* cert) {
   observer_list_->Notify(&Observer::OnCertAdded, make_scoped_refptr(cert));
 }
@@ -345,6 +422,30 @@ void NSSCertDatabase::NotifyObserversOfCACertChanged(
     const X509Certificate* cert) {
   observer_list_->Notify(
       &Observer::OnCACertChanged, make_scoped_refptr(cert));
+}
+
+// static
+bool NSSCertDatabase::DeleteCertAndKeyImpl(
+    scoped_refptr<X509Certificate> cert) {
+  // For some reason, PK11_DeleteTokenCertAndKey only calls
+  // SEC_DeletePermCertificate if the private key is found.  So, we check
+  // whether a private key exists before deciding which function to call to
+  // delete the cert.
+  SECKEYPrivateKey* privKey =
+      PK11_FindKeyByAnyCert(cert->os_cert_handle(), NULL);
+  if (privKey) {
+    SECKEY_DestroyPrivateKey(privKey);
+    if (PK11_DeleteTokenCertAndKey(cert->os_cert_handle(), NULL)) {
+      LOG(ERROR) << "PK11_DeleteTokenCertAndKey failed: " << PORT_GetError();
+      return false;
+    }
+  } else {
+    if (SEC_DeletePermCertificate(cert->os_cert_handle())) {
+      LOG(ERROR) << "SEC_DeletePermCertificate failed: " << PORT_GetError();
+      return false;
+    }
+  }
+  return true;
 }
 
 }  // namespace net

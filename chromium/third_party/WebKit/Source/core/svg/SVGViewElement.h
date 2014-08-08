@@ -21,31 +21,27 @@
 #ifndef SVGViewElement_h
 #define SVGViewElement_h
 
-#include "SVGNames.h"
+#include "core/SVGNames.h"
 #include "core/svg/SVGAnimatedBoolean.h"
-#include "core/svg/SVGAnimatedPreserveAspectRatio.h"
-#include "core/svg/SVGAnimatedRect.h"
 #include "core/svg/SVGElement.h"
-#include "core/svg/SVGExternalResourcesRequired.h"
 #include "core/svg/SVGFitToViewBox.h"
-#include "core/svg/SVGStringList.h"
+#include "core/svg/SVGStaticStringList.h"
 #include "core/svg/SVGZoomAndPan.h"
 
 namespace WebCore {
 
 class SVGViewElement FINAL : public SVGElement,
-                             public SVGExternalResourcesRequired,
                              public SVGFitToViewBox,
                              public SVGZoomAndPan {
 public:
-    static PassRefPtr<SVGViewElement> create(Document&);
+    DECLARE_NODE_FACTORY(SVGViewElement);
 
+#if !ENABLE(OILPAN)
     using SVGElement::ref;
     using SVGElement::deref;
+#endif
 
-    SVGStringList& viewTarget() { return m_viewTarget; }
-    SVGZoomAndPanType zoomAndPan() const { return m_zoomAndPan; }
-    void setZoomAndPan(unsigned short zoomAndPan) { m_zoomAndPan = SVGZoomAndPan::parseFromNumber(zoomAndPan); }
+    SVGStringListTearOff* viewTarget() { return m_viewTarget->tearOff(); }
 
 private:
     explicit SVGViewElement(Document&);
@@ -54,19 +50,10 @@ private:
     bool isSupportedAttribute(const QualifiedName&);
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
 
-    virtual bool rendererIsNeeded(const RenderStyle&) { return false; }
+    virtual bool rendererIsNeeded(const RenderStyle&) OVERRIDE { return false; }
 
-    BEGIN_DECLARE_ANIMATED_PROPERTIES(SVGViewElement)
-        DECLARE_ANIMATED_BOOLEAN(ExternalResourcesRequired, externalResourcesRequired)
-        DECLARE_ANIMATED_RECT(ViewBox, viewBox)
-        DECLARE_ANIMATED_PRESERVEASPECTRATIO(PreserveAspectRatio, preserveAspectRatio)
-    END_DECLARE_ANIMATED_PROPERTIES
-
-    SVGZoomAndPanType m_zoomAndPan;
-    SVGStringList m_viewTarget;
+    RefPtr<SVGStaticStringList> m_viewTarget;
 };
-
-DEFINE_NODE_TYPE_CASTS(SVGViewElement, hasTagName(SVGNames::viewTag));
 
 } // namespace WebCore
 

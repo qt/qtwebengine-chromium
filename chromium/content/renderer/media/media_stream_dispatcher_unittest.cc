@@ -53,7 +53,9 @@ class MockMediaStreamDispatcherEventHandler
     }
   }
 
-  virtual void OnStreamGenerationFailed(int request_id) OVERRIDE {
+  virtual void OnStreamGenerationFailed(
+      int request_id,
+      content::MediaStreamRequestResult result) OVERRIDE {
     request_id_ = request_id;
   }
 
@@ -63,7 +65,7 @@ class MockMediaStreamDispatcherEventHandler
     if (IsVideoMediaType(device_info.device.type)) {
       EXPECT_TRUE(StreamDeviceInfo::IsEqual(video_device_, device_info));
     }
-    if (IsAudioMediaType(device_info.device.type)) {
+    if (IsAudioInputMediaType(device_info.device.type)) {
       EXPECT_TRUE(StreamDeviceInfo::IsEqual(audio_device_, device_info));
     }
   }
@@ -224,13 +226,15 @@ TEST_F(MediaStreamDispatcherTest, BasicVideoDevice) {
   dispatcher->EnumerateDevices(
       kRequestId1, handler1.get()->AsWeakPtr(),
       kVideoType,
-      security_origin);
+      security_origin,
+      false);
   int ipc_request_id2 = dispatcher->next_ipc_id_;
   EXPECT_NE(ipc_request_id1, ipc_request_id2);
   dispatcher->EnumerateDevices(
       kRequestId2, handler2.get()->AsWeakPtr(),
       kVideoType,
-      security_origin);
+      security_origin,
+      false);
   EXPECT_EQ(dispatcher->requests_.size(), size_t(2));
 
   StreamDeviceInfoArray video_device_array(1);
@@ -313,7 +317,7 @@ TEST_F(MediaStreamDispatcherTest, TestFailure) {
   dispatcher->GenerateStream(kRequestId1, handler.get()->AsWeakPtr(),
                              components, security_origin);
   dispatcher->OnMessageReceived(MediaStreamMsg_StreamGenerationFailed(
-      kRouteId, ipc_request_id1));
+      kRouteId, ipc_request_id1, MEDIA_DEVICE_PERMISSION_DENIED));
 
   // Verify that the request have been completed.
   EXPECT_EQ(handler->request_id_, kRequestId1);

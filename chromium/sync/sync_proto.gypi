@@ -10,11 +10,14 @@
     'SYNC_IMPLEMENTATION',
   ],
   'sources': [
+    # NOTE: If you add a file to this list, also add it to
+    # sync/protocol/BUILD.gn
     'protocol/app_notification_specifics.proto',
     'protocol/app_setting_specifics.proto',
     'protocol/app_specifics.proto',
     'protocol/app_list_specifics.proto',
     'protocol/article_specifics.proto',
+    'protocol/attachments.proto',
     'protocol/autofill_specifics.proto',
     'protocol/bookmark_specifics.proto',
     'protocol/client_commands.proto',
@@ -31,6 +34,7 @@
     'protocol/history_delete_directive_specifics.proto',
     'protocol/nigori_specifics.proto',
     'protocol/managed_user_setting_specifics.proto',
+    'protocol/managed_user_shared_setting_specifics.proto',
     'protocol/managed_user_specifics.proto',
     'protocol/password_specifics.proto',
     'protocol/preference_specifics.proto',
@@ -39,6 +43,7 @@
     'protocol/session_specifics.proto',
     'protocol/sync.proto',
     'protocol/sync_enums.proto',
+    'protocol/synced_notification_app_info_specifics.proto',
     'protocol/synced_notification_data.proto',
     'protocol/synced_notification_render.proto',
     'protocol/synced_notification_specifics.proto',

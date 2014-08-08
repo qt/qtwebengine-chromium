@@ -26,6 +26,17 @@ typedef intptr_t WindowId;
 
 const WindowId kNullWindowId = 0;
 
+// Type used to identify screens on the desktop. Values are platform-specific:
+//   - On Windows: integer display device index.
+//   - On OSX: CGDirectDisplayID cast to intptr_t.
+//   - On Linux (with X11): TBD.
+typedef intptr_t ScreenId;
+
+// The screen id corresponds to all screen combined together.
+const ScreenId kFullDesktopScreenId = -1;
+
+const ScreenId kInvalidScreenId = -2;
+
 }  // namespace webrtc
 
 #endif  // WEBRTC_MODULES_DESKTOP_CAPTURE_DESKTOP_CAPTURE_TYPES_H_

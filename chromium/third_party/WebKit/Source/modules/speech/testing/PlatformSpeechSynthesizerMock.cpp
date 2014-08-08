@@ -31,30 +31,39 @@
 
 namespace WebCore {
 
-PassOwnPtr<PlatformSpeechSynthesizerMock> PlatformSpeechSynthesizerMock::create(PlatformSpeechSynthesizerClient* client)
+PlatformSpeechSynthesizerMock* PlatformSpeechSynthesizerMock::create(PlatformSpeechSynthesizerClient* client)
 {
-    OwnPtr<PlatformSpeechSynthesizerMock> synthesizer = adoptPtr(new PlatformSpeechSynthesizerMock(client));
+    PlatformSpeechSynthesizerMock* synthesizer = new PlatformSpeechSynthesizerMock(client);
     synthesizer->initializeVoiceList();
     client->voicesDidChange();
-    return synthesizer.release();
+    return synthesizer;
 }
 
 PlatformSpeechSynthesizerMock::PlatformSpeechSynthesizerMock(PlatformSpeechSynthesizerClient* client)
     : PlatformSpeechSynthesizer(client)
     , m_speakingFinishedTimer(this, &PlatformSpeechSynthesizerMock::speakingFinished)
+    , m_speakingErrorOccurredTimer(this, &PlatformSpeechSynthesizerMock::speakingErrorOccurred)
 {
 }
 
 PlatformSpeechSynthesizerMock::~PlatformSpeechSynthesizerMock()
 {
     m_speakingFinishedTimer.stop();
+    m_speakingErrorOccurredTimer.stop();
 }
 
 void PlatformSpeechSynthesizerMock::speakingFinished(Timer<PlatformSpeechSynthesizerMock>*)
 {
     ASSERT(m_utterance.get());
     client()->didFinishSpeaking(m_utterance);
-    m_utterance = 0;
+    m_utterance = nullptr;
+}
+
+void PlatformSpeechSynthesizerMock::speakingErrorOccurred(Timer<PlatformSpeechSynthesizerMock>*)
+{
+    ASSERT(m_utterance.get());
+    client()->speakingErrorOccurred(m_utterance);
+    m_utterance = nullptr;
 }
 
 void PlatformSpeechSynthesizerMock::initializeVoiceList()
@@ -65,7 +74,7 @@ void PlatformSpeechSynthesizerMock::initializeVoiceList()
     m_voiceList.append(PlatformSpeechSynthesisVoice::create(String("mock.voice.logan"), String("logan"), String("fr-CA"), true, true));
 }
 
-void PlatformSpeechSynthesizerMock::speak(PassRefPtr<PlatformSpeechSynthesisUtterance> utterance)
+void PlatformSpeechSynthesizerMock::speak(PlatformSpeechSynthesisUtterance* utterance)
 {
     ASSERT(!m_utterance);
     m_utterance = utterance;
@@ -76,7 +85,7 @@ void PlatformSpeechSynthesizerMock::speak(PassRefPtr<PlatformSpeechSynthesisUtte
     client()->boundaryEventOccurred(m_utterance, SpeechSentenceBoundary, m_utterance->text().length());
 
     // Give the fake speech job some time so that pause and other functions have time to be called.
-    m_speakingFinishedTimer.startOneShot(.1);
+    m_speakingFinishedTimer.startOneShot(.1, FROM_HERE);
 }
 
 void PlatformSpeechSynthesizerMock::cancel()
@@ -85,8 +94,7 @@ void PlatformSpeechSynthesizerMock::cancel()
         return;
 
     m_speakingFinishedTimer.stop();
-    client()->speakingErrorOccurred(m_utterance);
-    m_utterance = 0;
+    m_speakingErrorOccurredTimer.startOneShot(.1, FROM_HERE);
 }
 
 void PlatformSpeechSynthesizerMock::pause()
@@ -99,5 +107,10 @@ void PlatformSpeechSynthesizerMock::resume()
     client()->didResumeSpeaking(m_utterance);
 }
 
+void PlatformSpeechSynthesizerMock::trace(Visitor* visitor)
+{
+    visitor->trace(m_utterance);
+    PlatformSpeechSynthesizer::trace(visitor);
+}
 
 } // namespace WebCore

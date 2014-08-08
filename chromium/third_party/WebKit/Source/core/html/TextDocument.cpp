@@ -36,9 +36,9 @@ TextDocument::TextDocument(const DocumentInit& initializer)
     lockCompatibilityMode();
 }
 
-PassRefPtr<DocumentParser> TextDocument::createParser()
+PassRefPtrWillBeRawPtr<DocumentParser> TextDocument::createParser()
 {
-    return TextDocumentParser::create(this);
+    return TextDocumentParser::create(*this);
 }
 
 }

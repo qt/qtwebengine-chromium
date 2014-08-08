@@ -40,14 +40,16 @@ typedef unsigned LineBoxContain;
 // Used for text-CSSLineBoxContain and box-CSSLineBoxContain
 class CSSLineBoxContainValue : public CSSValue {
 public:
-    static PassRefPtr<CSSLineBoxContainValue> create(LineBoxContain value)
+    static PassRefPtrWillBeRawPtr<CSSLineBoxContainValue> create(LineBoxContain value)
     {
-        return adoptRef(new CSSLineBoxContainValue(value));
+        return adoptRefWillBeNoop(new CSSLineBoxContainValue(value));
     }
 
     String customCSSText() const;
     bool equals(const CSSLineBoxContainValue& other) const { return m_value == other.m_value; }
     LineBoxContain value() const { return m_value; }
+
+    void traceAfterDispatch(Visitor* visitor) { CSSValue::traceAfterDispatch(visitor); }
 
 private:
     LineBoxContain m_value;

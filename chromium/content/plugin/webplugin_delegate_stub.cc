@@ -13,6 +13,7 @@
 #include "content/child/npapi/webplugin_delegate_impl.h"
 #include "content/child/npapi/webplugin_resource_client.h"
 #include "content/child/plugin_messages.h"
+#include "content/common/cursors/webcursor.h"
 #include "content/plugin/plugin_channel.h"
 #include "content/plugin/plugin_thread.h"
 #include "content/plugin/webplugin_proxy.h"
@@ -24,7 +25,6 @@
 #include "third_party/WebKit/public/web/WebBindings.h"
 #include "third_party/npapi/bindings/npapi.h"
 #include "third_party/npapi/bindings/npruntime.h"
-#include "webkit/common/cursors/webcursor.h"
 
 using blink::WebBindings;
 using blink::WebCursorInfo;
@@ -345,9 +345,7 @@ void WebPluginDelegateStub::OnImeCompositionUpdated(
     int cursor_position) {
   if (delegate_)
     delegate_->ImeCompositionUpdated(text, clauses, target, cursor_position);
-#if defined(OS_WIN) && !defined(USE_AURA)
   webplugin_->UpdateIMEStatus();
-#endif
 }
 
 void WebPluginDelegateStub::OnImeCompositionCompleted(
@@ -444,7 +442,8 @@ void WebPluginDelegateStub::OnFetchURL(
                       params.notify_redirect,
                       params.is_plugin_src_load,
                       channel_->renderer_id(),
-                      params.render_view_id);
+                      params.render_frame_id,
+                      webplugin_->host_render_view_routing_id());
 }
 
 }  // namespace content

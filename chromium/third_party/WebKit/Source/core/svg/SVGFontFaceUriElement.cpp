@@ -23,7 +23,7 @@
 #if ENABLE(SVG_FONTS)
 #include "core/svg/SVGFontFaceUriElement.h"
 
-#include "XLinkNames.h"
+#include "core/XLinkNames.h"
 #include "core/css/CSSFontFaceSrcValue.h"
 #include "core/dom/Document.h"
 #include "core/fetch/FetchRequest.h"
@@ -40,10 +40,7 @@ inline SVGFontFaceUriElement::SVGFontFaceUriElement(Document& document)
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<SVGFontFaceUriElement> SVGFontFaceUriElement::create(Document& document)
-{
-    return adoptRef(new SVGFontFaceUriElement(document));
-}
+DEFINE_NODE_FACTORY(SVGFontFaceUriElement)
 
 SVGFontFaceUriElement::~SVGFontFaceUriElement()
 {
@@ -51,9 +48,9 @@ SVGFontFaceUriElement::~SVGFontFaceUriElement()
         m_resource->removeClient(this);
 }
 
-PassRefPtr<CSSFontFaceSrcValue> SVGFontFaceUriElement::srcValue() const
+PassRefPtrWillBeRawPtr<CSSFontFaceSrcValue> SVGFontFaceUriElement::srcValue() const
 {
-    RefPtr<CSSFontFaceSrcValue> src = CSSFontFaceSrcValue::create(getAttribute(XLinkNames::hrefAttr));
+    RefPtrWillBeRawPtr<CSSFontFaceSrcValue> src = CSSFontFaceSrcValue::create(getAttribute(XLinkNames::hrefAttr));
     AtomicString value(fastGetAttribute(formatAttr));
     src->setFormat(value.isEmpty() ? "svg" : value); // Default format
     return src.release();
@@ -61,7 +58,7 @@ PassRefPtr<CSSFontFaceSrcValue> SVGFontFaceUriElement::srcValue() const
 
 void SVGFontFaceUriElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
 {
-    if (name == XLinkNames::hrefAttr)
+    if (name.matches(XLinkNames::hrefAttr))
         loadFont();
     else
         SVGElement::parseAttribute(name, value);
@@ -71,12 +68,12 @@ void SVGFontFaceUriElement::childrenChanged(bool changedByParser, Node* beforeCh
 {
     SVGElement::childrenChanged(changedByParser, beforeChange, afterChange, childCountDelta);
 
-    if (!parentNode() || !parentNode()->hasTagName(font_face_srcTag))
+    if (!isSVGFontFaceSrcElement(parentNode()))
         return;
 
     ContainerNode* grandparent = parentNode()->parentNode();
-    if (grandparent && grandparent->hasTagName(font_faceTag))
-        toSVGFontFaceElement(grandparent)->rebuildFontFace();
+    if (isSVGFontFaceElement(grandparent))
+        toSVGFontFaceElement(*grandparent).rebuildFontFace();
 }
 
 Node::InsertionNotificationRequest SVGFontFaceUriElement::insertedInto(ContainerNode* rootParent)

@@ -31,9 +31,10 @@
 #include "config.h"
 #include "core/html/LinkResource.h"
 
-#include "HTMLNames.h"
-#include "core/html/HTMLImport.h"
+#include "core/HTMLNames.h"
+#include "core/dom/Document.h"
 #include "core/html/HTMLLinkElement.h"
+#include "core/html/imports/HTMLImportsController.h"
 
 namespace WebCore {
 
@@ -50,15 +51,20 @@ LinkResource::~LinkResource()
 
 bool LinkResource::shouldLoadResource() const
 {
-    return m_owner->document().frame() || m_owner->document().import();
+    return m_owner->document().frame() || m_owner->document().importsController();
 }
 
-Frame* LinkResource::loadingFrame() const
+LocalFrame* LinkResource::loadingFrame() const
 {
-    HTMLImport* import = m_owner->document().import();
-    if (!import)
+    HTMLImportsController* importsController = m_owner->document().importsController();
+    if (!importsController)
         return m_owner->document().frame();
-    return import->master()->document().frame();
+    return importsController->master()->frame();
+}
+
+void LinkResource::trace(Visitor* visitor)
+{
+    visitor->trace(m_owner);
 }
 
 LinkRequestBuilder::LinkRequestBuilder(HTMLLinkElement* owner)

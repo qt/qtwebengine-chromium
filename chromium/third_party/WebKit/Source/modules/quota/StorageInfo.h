@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2011 Google Inc. All rights reserved.
+ * Copyright (C) 2014 Google Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -32,43 +32,29 @@
 #define StorageInfo_h
 
 #include "bindings/v8/ScriptWrappable.h"
-#include "wtf/PassRefPtr.h"
-#include "wtf/RefCounted.h"
-#include "wtf/RefPtr.h"
+#include "platform/heap/Handle.h"
 
 namespace WebCore {
 
-class ExecutionContext;
-class StorageErrorCallback;
-class StorageQuota;
-class StorageQuotaCallback;
-class StorageUsageCallback;
-
-class StorageInfo : public RefCounted<StorageInfo>, public ScriptWrappable {
+class StorageInfo FINAL : public GarbageCollectedFinalized<StorageInfo>, public ScriptWrappable {
 public:
-    enum {
-        TEMPORARY,
-        PERSISTENT,
-    };
-
-    static PassRefPtr<StorageInfo> create()
+    static StorageInfo* create(unsigned long long usage, unsigned long long quota)
     {
-        return adoptRef(new StorageInfo());
+        return new StorageInfo(usage, quota);
     }
 
-    void queryUsageAndQuota(ExecutionContext*, int storageType, PassOwnPtr<StorageUsageCallback>, PassOwnPtr<StorageErrorCallback>);
-
-    void requestQuota(ExecutionContext*, int storageType, unsigned long long newQuotaInBytes, PassOwnPtr<StorageQuotaCallback>, PassOwnPtr<StorageErrorCallback>);
+    unsigned long long usage() const { return m_usage; }
+    unsigned long long quota() const { return m_quota; }
 
     ~StorageInfo();
 
+    void trace(Visitor*) { }
+
 private:
-    StorageInfo();
+    StorageInfo(unsigned long long usage, unsigned long long quota);
 
-    StorageQuota* getStorageQuota(int storageType);
-
-    mutable RefPtr<StorageQuota> m_temporaryStorage;
-    mutable RefPtr<StorageQuota> m_persistentStorage;
+    unsigned long long m_usage;
+    unsigned long long m_quota;
 };
 
 } // namespace WebCore

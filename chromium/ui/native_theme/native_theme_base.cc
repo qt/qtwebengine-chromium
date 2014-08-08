@@ -20,6 +20,7 @@
 #include "ui/gfx/rect.h"
 #include "ui/gfx/size.h"
 #include "ui/gfx/skia_util.h"
+#include "ui/native_theme/common_theme.h"
 
 namespace {
 
@@ -89,6 +90,10 @@ namespace ui {
 gfx::Size NativeThemeBase::GetPartSize(Part part,
                                        State state,
                                        const ExtraParams& extra) const {
+  gfx::Size size = CommonThemeGetPartSize(part, state, extra);
+  if (!size.IsEmpty())
+    return size;
+
   switch (part) {
     // Please keep these in the order of NativeTheme::Part.
     case kCheckbox:
@@ -156,6 +161,31 @@ gfx::Size NativeThemeBase::GetPartSize(Part part,
   return gfx::Size();
 }
 
+void NativeThemeBase::PaintStateTransition(SkCanvas* canvas,
+                                           Part part,
+                                           State startState,
+                                           State endState,
+                                           double progress,
+                                           const gfx::Rect& rect) const {
+  if (rect.IsEmpty())
+    return;
+
+  // Currently state transition is animation only working for overlay scrollbars
+  // on Aura platforms.
+  switch (part) {
+    case kScrollbarHorizontalThumb:
+    case kScrollbarVerticalThumb:
+      PaintScrollbarThumbStateTransition(
+          canvas, startState, endState, progress, rect);
+      break;
+    default:
+      NOTREACHED() << "Does not support state transition for this part:"
+                   << part;
+      break;
+  }
+  return;
+}
+
 void NativeThemeBase::Paint(SkCanvas* canvas,
                             Part part,
                             State state,
@@ -166,6 +196,9 @@ void NativeThemeBase::Paint(SkCanvas* canvas,
 
   switch (part) {
     // Please keep these in the order of NativeTheme::Part.
+    case kComboboxArrow:
+      CommonThemePaintComboboxArrow(canvas, rect);
+      break;
     case kCheckbox:
       PaintCheckbox(canvas, state, rect, extra.button);
       break;
@@ -218,6 +251,9 @@ void NativeThemeBase::Paint(SkCanvas* canvas,
       // Invoked by views scrollbar code, don't care about for non-win
       // implementations, so no NOTIMPLEMENTED.
       break;
+    case kScrollbarCorner:
+      PaintScrollbarCorner(canvas, state, rect);
+      break;
     case kSliderTrack:
       PaintSliderTrack(canvas, state, rect, extra.slider);
       break;
@@ -252,15 +288,7 @@ NativeThemeBase::~NativeThemeBase() {
 void NativeThemeBase::PaintArrowButton(
     SkCanvas* canvas,
     const gfx::Rect& rect, Part direction, State state) const {
-  int widthMiddle, lengthMiddle;
   SkPaint paint;
-  if (direction == kScrollbarUpArrow || direction == kScrollbarDownArrow) {
-    widthMiddle = rect.width() / 2 + 1;
-    lengthMiddle = rect.height() / 2 + 1;
-  } else {
-    lengthMiddle = rect.width() / 2 + 1;
-    widthMiddle = rect.height() / 2 + 1;
-  }
 
   // Calculate button color.
   SkScalar trackHSV[3];
@@ -335,11 +363,24 @@ void NativeThemeBase::PaintArrowButton(
   paint.setColor(OutlineColor(trackHSV, thumbHSV));
   canvas->drawPath(outline, paint);
 
-  // If the button is disabled or read-only, the arrow is drawn with the
-  // outline color.
-  if (state != kDisabled)
-    paint.setColor(SK_ColorBLACK);
+  PaintArrow(canvas, rect, direction, GetArrowColor(state));
+}
 
+void NativeThemeBase::PaintArrow(SkCanvas* gc,
+                                 const gfx::Rect& rect,
+                                 Part direction,
+                                 SkColor color) const {
+  int width_middle, length_middle;
+  if (direction == kScrollbarUpArrow || direction == kScrollbarDownArrow) {
+    width_middle = rect.width() / 2 + 1;
+    length_middle = rect.height() / 2 + 1;
+  } else {
+    length_middle = rect.width() / 2 + 1;
+    width_middle = rect.height() / 2 + 1;
+  }
+
+  SkPaint paint;
+  paint.setColor(color);
   paint.setAntiAlias(false);
   paint.setStyle(SkPaint::kFill_Style);
 
@@ -348,22 +389,22 @@ void NativeThemeBase::PaintArrowButton(
   // looking arrows without anti-aliasing.
   switch (direction) {
     case kScrollbarUpArrow:
-      path.moveTo(rect.x() + widthMiddle - 4, rect.y() + lengthMiddle + 2);
+      path.moveTo(rect.x() + width_middle - 4, rect.y() + length_middle + 2);
       path.rLineTo(7, 0);
       path.rLineTo(-4, -4);
       break;
     case kScrollbarDownArrow:
-      path.moveTo(rect.x() + widthMiddle - 4, rect.y() + lengthMiddle - 3);
+      path.moveTo(rect.x() + width_middle - 4, rect.y() + length_middle - 3);
       path.rLineTo(7, 0);
       path.rLineTo(-4, 4);
       break;
     case kScrollbarRightArrow:
-      path.moveTo(rect.x() + lengthMiddle - 3, rect.y() + widthMiddle - 4);
+      path.moveTo(rect.x() + length_middle - 3, rect.y() + width_middle - 4);
       path.rLineTo(0, 7);
       path.rLineTo(4, -4);
       break;
     case kScrollbarLeftArrow:
-      path.moveTo(rect.x() + lengthMiddle + 1, rect.y() + widthMiddle - 5);
+      path.moveTo(rect.x() + length_middle + 1, rect.y() + width_middle - 5);
       path.rLineTo(0, 9);
       path.rLineTo(-4, -4);
       break;
@@ -372,7 +413,7 @@ void NativeThemeBase::PaintArrowButton(
   }
   path.close();
 
-  canvas->drawPath(path, paint);
+  gc->drawPath(path, paint);
 }
 
 void NativeThemeBase::PaintScrollbarTrack(SkCanvas* canvas,
@@ -473,6 +514,16 @@ void NativeThemeBase::PaintScrollbarThumb(SkCanvas* canvas,
                    paint);
     }
   }
+}
+
+void NativeThemeBase::PaintScrollbarCorner(SkCanvas* canvas,
+                                           State state,
+                                           const gfx::Rect& rect) const {
+  SkPaint paint;
+  paint.setColor(SK_ColorWHITE);
+  paint.setStyle(SkPaint::kFill_Style);
+  paint.setXfermodeMode(SkXfermode::kSrc_Mode);
+  canvas->drawIRect(RectToSkIRect(rect), paint);
 }
 
 void NativeThemeBase::PaintCheckbox(SkCanvas* canvas,
@@ -577,7 +628,7 @@ SkRect NativeThemeBase::PaintCheckboxRadioCommon(
   SkColor colors[3] = {startEndColors[0], startEndColors[0], startEndColors[1]};
   skia::RefPtr<SkShader> shader = skia::AdoptRef(
       SkGradientShader::CreateLinear(
-          gradient_bounds, colors, NULL, 3, SkShader::kClamp_TileMode, NULL));
+          gradient_bounds, colors, NULL, 3, SkShader::kClamp_TileMode));
   SkPaint paint;
   paint.setAntiAlias(true);
   paint.setShader(shader.get());
@@ -664,7 +715,7 @@ void NativeThemeBase::PaintButton(SkCanvas* canvas,
 
   skia::RefPtr<SkShader> shader = skia::AdoptRef(
       SkGradientShader::CreateLinear(
-          gradient_bounds, colors, NULL, 2, SkShader::kClamp_TileMode, NULL));
+          gradient_bounds, colors, NULL, 2, SkShader::kClamp_TileMode));
   paint.setStyle(SkPaint::kFill_Style);
   paint.setAntiAlias(true);
   paint.setShader(shader.get());
@@ -931,12 +982,7 @@ void NativeThemeBase::DrawImageInt(
     SkCanvas* sk_canvas, const gfx::ImageSkia& image,
     int src_x, int src_y, int src_w, int src_h,
     int dest_x, int dest_y, int dest_w, int dest_h) const {
-  // TODO(pkotwicz): Do something better and don't infer device
-  // scale factor from canvas scale.
-  SkMatrix m = sk_canvas->getTotalMatrix();
-  float device_scale = static_cast<float>(SkScalarAbs(m.getScaleX()));
-  scoped_ptr<gfx::Canvas> canvas(gfx::Canvas::CreateCanvasWithoutScaling(
-      sk_canvas, device_scale));
+  scoped_ptr<gfx::Canvas> canvas(CommonThemeCreateCanvas(sk_canvas));
   canvas->DrawImageInt(image, src_x, src_y, src_w, src_h,
       dest_x, dest_y, dest_w, dest_h, true);
 }
@@ -945,12 +991,7 @@ void NativeThemeBase::DrawTiledImage(SkCanvas* sk_canvas,
     const gfx::ImageSkia& image,
     int src_x, int src_y, float tile_scale_x, float tile_scale_y,
     int dest_x, int dest_y, int w, int h) const {
-  // TODO(pkotwicz): Do something better and don't infer device
-  // scale factor from canvas scale.
-  SkMatrix m = sk_canvas->getTotalMatrix();
-  float device_scale = static_cast<float>(SkScalarAbs(m.getScaleX()));
-  scoped_ptr<gfx::Canvas> canvas(gfx::Canvas::CreateCanvasWithoutScaling(
-      sk_canvas, device_scale));
+  scoped_ptr<gfx::Canvas> canvas(CommonThemeCreateCanvas(sk_canvas));
   canvas->TileImageInt(image, src_x, src_y, tile_scale_x,
       tile_scale_y, dest_x, dest_y, w, h);
 }
@@ -963,6 +1004,17 @@ SkColor NativeThemeBase::SaturateAndBrighten(SkScalar* hsv,
   color[1] = Clamp(hsv[1] + saturate_amount, 0.0, 1.0);
   color[2] = Clamp(hsv[2] + brighten_amount, 0.0, 1.0);
   return SkHSVToColor(color);
+}
+
+SkColor NativeThemeBase::GetArrowColor(State state) const {
+  if (state != kDisabled)
+    return SK_ColorBLACK;
+
+  SkScalar track_hsv[3];
+  SkColorToHSV(track_color_, track_hsv);
+  SkScalar thumb_hsv[3];
+  SkColorToHSV(thumb_inactive_color_, thumb_hsv);
+  return OutlineColor(track_hsv, thumb_hsv);
 }
 
 void NativeThemeBase::DrawVertLine(SkCanvas* canvas,

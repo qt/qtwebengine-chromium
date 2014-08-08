@@ -28,7 +28,7 @@
 
 #include "core/dom/Document.h"
 #include "core/fileapi/FileError.h"
-#include "core/frame/DOMWindow.h"
+#include "core/frame/LocalDOMWindow.h"
 #include "modules/filesystem/DOMFileSystem.h"
 #include "modules/filesystem/EntryCallback.h"
 #include "modules/filesystem/ErrorCallback.h"
@@ -48,12 +48,12 @@ DOMWindowFileSystem::~DOMWindowFileSystem()
 {
 }
 
-void DOMWindowFileSystem::webkitRequestFileSystem(DOMWindow* window, int type, long long size, PassOwnPtr<FileSystemCallback> successCallback, PassOwnPtr<ErrorCallback> errorCallback)
+void DOMWindowFileSystem::webkitRequestFileSystem(LocalDOMWindow& window, int type, long long size, PassOwnPtr<FileSystemCallback> successCallback, PassOwnPtr<ErrorCallback> errorCallback)
 {
-    if (!window->isCurrentlyDisplayedInFrame())
+    if (!window.isCurrentlyDisplayedInFrame())
         return;
 
-    Document* document = window->document();
+    Document* document = window.document();
     if (!document)
         return;
 
@@ -68,15 +68,15 @@ void DOMWindowFileSystem::webkitRequestFileSystem(DOMWindow* window, int type, l
         return;
     }
 
-    LocalFileSystem::from(document)->requestFileSystem(document, fileSystemType, size, FileSystemCallbacks::create(successCallback, errorCallback, document, fileSystemType));
+    LocalFileSystem::from(*document)->requestFileSystem(document, fileSystemType, size, FileSystemCallbacks::create(successCallback, errorCallback, document, fileSystemType));
 }
 
-void DOMWindowFileSystem::webkitResolveLocalFileSystemURL(DOMWindow* window, const String& url, PassOwnPtr<EntryCallback> successCallback, PassOwnPtr<ErrorCallback> errorCallback)
+void DOMWindowFileSystem::webkitResolveLocalFileSystemURL(LocalDOMWindow& window, const String& url, PassOwnPtr<EntryCallback> successCallback, PassOwnPtr<ErrorCallback> errorCallback)
 {
-    if (!window->isCurrentlyDisplayedInFrame())
+    if (!window.isCurrentlyDisplayedInFrame())
         return;
 
-    Document* document = window->document();
+    Document* document = window.document();
     if (!document)
         return;
 
@@ -92,7 +92,7 @@ void DOMWindowFileSystem::webkitResolveLocalFileSystemURL(DOMWindow* window, con
         return;
     }
 
-    LocalFileSystem::from(document)->resolveURL(document, completedURL, ResolveURICallbacks::create(successCallback, errorCallback, document));
+    LocalFileSystem::from(*document)->resolveURL(document, completedURL, ResolveURICallbacks::create(successCallback, errorCallback, document));
 }
 
 COMPILE_ASSERT(static_cast<int>(DOMWindowFileSystem::TEMPORARY) == static_cast<int>(FileSystemTypeTemporary), enum_mismatch);

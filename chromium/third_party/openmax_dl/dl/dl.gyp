@@ -18,6 +18,11 @@
       'include_dirs': [
         '../',
       ],
+      'direct_dependent_settings': {
+        'include_dirs': [
+          '../',
+        ],
+      },
       'sources': [
         'api/omxtypes.h',
         'sp/api/omxSP.h',
@@ -27,6 +32,21 @@
         ['big_float_fft == 1', {
           'defines': [
             'BIG_FFT_TABLE',
+          ],
+        }],
+        ['target_arch=="arm" or target_arch=="arm64"', {
+          'sources':[
+            # Common files that are used by both arm and arm64 code.
+            'api/arm/armOMX.h',
+            'api/arm/omxtypes_s.h',
+            'sp/api/armSP.h',
+            'sp/src/arm/armSP_FFT_S32TwiddleTable.c',
+            'sp/src/arm/omxSP_FFTGetBufSize_C_FC32.c',
+            'sp/src/arm/omxSP_FFTGetBufSize_C_SC32.c',
+            'sp/src/arm/omxSP_FFTGetBufSize_R_F32.c',
+            'sp/src/arm/omxSP_FFTGetBufSize_R_S32.c',
+            'sp/src/arm/omxSP_FFTInit_C_FC32.c',
+            'sp/src/arm/omxSP_FFTInit_R_F32.c',
           ],
         }],
         ['target_arch=="arm"', {
@@ -39,34 +59,16 @@
             '-mfpu=neon',
           ],
           'dependencies': [
-            '<(android_ndk_root)/android_tools_ndk.gyp:cpu_features',
             'openmax_dl_armv7',
           ],
-          'link_settings' : {
-            'libraries': [
-              # To get the __android_log_print routine
-              '-llog',
-            ],
-          },
           'sources': [
             # Common files that are used by both the NEON and non-NEON code.
             'api/armCOMM_s.h',
-            'api/armOMX.h',
-            'api/omxtypes_s.h',
-            'sp/api/armSP.h',
-            'sp/src/arm/armSP_FFT_S32TwiddleTable.c',
-            'sp/src/arm/detect.c',
-            'sp/src/arm/omxSP_FFTGetBufSize_C_FC32.c',
             'sp/src/arm/omxSP_FFTGetBufSize_C_SC16.c',
-            'sp/src/arm/omxSP_FFTGetBufSize_C_SC32.c',
-            'sp/src/arm/omxSP_FFTGetBufSize_R_F32.c',
             'sp/src/arm/omxSP_FFTGetBufSize_R_S16.c',
             'sp/src/arm/omxSP_FFTGetBufSize_R_S16S32.c',
-            'sp/src/arm/omxSP_FFTGetBufSize_R_S32.c',
-            'sp/src/arm/omxSP_FFTInit_C_FC32.c',
             'sp/src/arm/omxSP_FFTInit_C_SC16.c',
             'sp/src/arm/omxSP_FFTInit_C_SC32.c',
-            'sp/src/arm/omxSP_FFTInit_R_F32.c',
             'sp/src/arm/omxSP_FFTInit_R_S16.c',
             'sp/src/arm/omxSP_FFTInit_R_S16S32.c',
             'sp/src/arm/omxSP_FFTInit_R_S32.c',
@@ -156,6 +158,47 @@
             'sp/src/x86/x86SP_SSE_Math.h',
           ],
         }],
+        ['target_arch=="arm64"', {
+          'sources':[
+            'api/arm/arm64COMM_s.h',
+
+            # Complex floating-point FFT
+            'sp/src/arm/arm64/armSP_FFT_CToC_FC32_Radix2_fs_s.S',
+            'sp/src/arm/arm64/armSP_FFT_CToC_FC32_Radix2_ls_s.S',
+            'sp/src/arm/arm64/armSP_FFT_CToC_FC32_Radix2_s.S',
+            'sp/src/arm/arm64/armSP_FFT_CToC_FC32_Radix4_fs_s.S',
+            'sp/src/arm/arm64/armSP_FFT_CToC_FC32_Radix4_ls_s.S',
+            'sp/src/arm/arm64/armSP_FFT_CToC_FC32_Radix4_s.S',
+            'sp/src/arm/arm64/armSP_FFT_CToC_FC32_Radix8_fs_s.S',
+            'sp/src/arm/arm64/omxSP_FFTInv_CToC_FC32.c',
+            'sp/src/arm/arm64/omxSP_FFTFwd_CToC_FC32.c',
+            # Real floating-point FFT
+            'sp/src/arm/arm64/armSP_FFTInv_CCSToR_F32_preTwiddleRadix2_s.S',
+            'sp/src/arm/arm64/omxSP_FFTFwd_RToCCS_F32.c',
+            'sp/src/arm/arm64/ComplexToRealFixup.S',
+            'sp/src/arm/arm64/omxSP_FFTInv_CCSToR_F32.c',
+          ],
+        }],
+        ['target_arch=="mipsel"', {
+          'cflags': [
+            '-std=c99',
+          ],
+          'sources!': [
+            'sp/src/armSP_FFT_F32TwiddleTable.c',
+          ],
+          'sources': [
+            'sp/api/mipsSP.h',
+            'sp/src/mips/mips_FFTFwd_RToCCS_F32_complex.c',
+            'sp/src/mips/mips_FFTFwd_RToCCS_F32_real.c',
+            'sp/src/mips/mips_FFTInv_CCSToR_F32_complex.c',
+            'sp/src/mips/mips_FFTInv_CCSToR_F32_real.c',
+            'sp/src/mips/omxSP_FFT_F32TwiddleTable.c',
+            'sp/src/mips/omxSP_FFTFwd_RToCCS_F32_Sfs.c',
+            'sp/src/mips/omxSP_FFTGetBufSize_R_F32.c',
+            'sp/src/mips/omxSP_FFTInit_R_F32.c',
+            'sp/src/mips/omxSP_FFTInv_CCSToR_F32_Sfs.c',
+          ],
+        }],
       ],
     },
   ],
@@ -167,13 +210,24 @@
           # standalone. Applications must link with openmax_dl.
           'target_name': 'openmax_dl_armv7',
           'type': 'static_library',
+          'includes': [
+            '../../../build/android/cpufeatures.gypi',
+          ],
           'include_dirs': [
             '../',
           ],
           'cflags!': [
             '-mfpu=neon',
           ],
+          'link_settings' : {
+            'libraries': [
+              # To get the __android_log_print routine
+              '-llog',
+            ],
+          },
           'sources': [
+            # Detection routine
+            'sp/src/arm/detect.c',
             # Complex floating-point FFT
             'sp/src/arm/armv7/armSP_FFT_CToC_FC32_Radix2_fs_unsafe_s.S',
             'sp/src/arm/armv7/armSP_FFT_CToC_FC32_Radix2_fs_unsafe_s.S',

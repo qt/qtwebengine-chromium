@@ -26,26 +26,34 @@ bool TestRootCerts::Add(X509Certificate* certificate) {
     ERR_clear_error();
   }
 
-  empty_ = false;
+  temporary_roots_.push_back(certificate);
   return true;
 }
 
 void TestRootCerts::Clear() {
-  if (empty_)
+  if (temporary_roots_.empty())
     return;
 
+  temporary_roots_.clear();
   X509Certificate::ResetCertStore();
-  empty_ = true;
 }
 
 bool TestRootCerts::IsEmpty() const {
-  return empty_;
+  return temporary_roots_.empty();
+}
+
+bool TestRootCerts::Contains(X509* cert) const {
+  for (std::vector<scoped_refptr<X509Certificate> >::const_iterator it =
+           temporary_roots_.begin();
+       it != temporary_roots_.end(); ++it) {
+    if (X509Certificate::IsSameOSCert(cert, (*it)->os_cert_handle()))
+      return true;
+  }
+  return false;
 }
 
 TestRootCerts::~TestRootCerts() {}
 
-void TestRootCerts::Init() {
-  empty_ = true;
-}
+void TestRootCerts::Init() {}
 
 }  // namespace net

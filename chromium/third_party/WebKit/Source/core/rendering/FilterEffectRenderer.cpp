@@ -45,11 +45,6 @@
 #include "platform/graphics/filters/FEComponentTransfer.h"
 #include "platform/graphics/filters/FEDropShadow.h"
 #include "platform/graphics/filters/FEGaussianBlur.h"
-#include "platform/graphics/filters/custom/CustomFilterGlobalContext.h"
-#include "platform/graphics/filters/custom/CustomFilterValidatedProgram.h"
-#include "platform/graphics/filters/custom/FECustomFilter.h"
-#include "platform/graphics/filters/custom/ValidatedCustomFilterOperation.h"
-#include "platform/graphics/gpu/AcceleratedImageBufferSurface.h"
 #include "wtf/MathExtras.h"
 #include <algorithm>
 
@@ -70,35 +65,11 @@ static inline void lastMatrixRow(Vector<float>& parameters)
     parameters.append(0);
 }
 
-inline bool isFilterSizeValid(FloatRect rect)
-{
-    if (rect.width() < 0 || rect.width() > kMaxFilterSize
-        || rect.height() < 0 || rect.height() > kMaxFilterSize)
-        return false;
-    return true;
-}
-
-static PassRefPtr<FECustomFilter> createCustomFilterEffect(Filter* filter, Document* document, ValidatedCustomFilterOperation* operation)
-{
-    if (!document)
-        return 0;
-
-    CustomFilterGlobalContext* globalContext = document->renderView()->customFilterGlobalContext();
-    globalContext->prepareContextIfNeeded();
-    if (!globalContext->context())
-        return 0;
-
-    return FECustomFilter::create(filter, globalContext->context(), operation->validatedProgram(), operation->parameters(),
-        operation->meshRows(), operation->meshColumns(),  operation->meshType());
-}
-
 FilterEffectRenderer::FilterEffectRenderer()
     : Filter(AffineTransform())
     , m_graphicsBufferAttached(false)
     , m_hasFilterThatMovesPixels(false)
-    , m_hasCustomShaderFilter(false)
 {
-    setFilterResolution(FloatSize(1, 1));
     m_sourceGraphic = SourceGraphic::create(this);
 }
 
@@ -113,14 +84,15 @@ GraphicsContext* FilterEffectRenderer::inputContext()
 
 bool FilterEffectRenderer::build(RenderObject* renderer, const FilterOperations& operations)
 {
-    m_hasCustomShaderFilter = false;
     m_hasFilterThatMovesPixels = operations.hasFilterThatMovesPixels();
 
     // Inverse zoom the pre-zoomed CSS shorthand filters, so that they are in the same zoom as the unzoomed reference filters.
     const RenderStyle* style = renderer->style();
-    // FIXME: The effects now contain high dpi information, but the software path doesn't (yet) scale its backing.
-    //        When the proper dpi dependant backing size is allocated, we should remove deviceScaleFactor(...) here.
+#ifdef BLINK_SCALE_FILTERS_AT_RECORD_TIME
     float invZoom = 1.0f / ((style ? style->effectiveZoom() : 1.0f) * deviceScaleFactor(renderer->frame()));
+#else
+    float invZoom = style ? 1.0f / style->effectiveZoom() : 1.0f;
+#endif
 
     RefPtr<FilterEffect> previousEffect = m_sourceGraphic;
     for (size_t i = 0; i < operations.operations().size(); ++i) {
@@ -256,18 +228,6 @@ bool FilterEffectRenderer::build(RenderObject* renderer, const FilterOperations&
             effect = FEDropShadow::create(this, stdDeviation, stdDeviation, x, y, dropShadowOperation->color(), 1);
             break;
         }
-        case FilterOperation::CUSTOM:
-            // CUSTOM operations are always converted to VALIDATED_CUSTOM before getting here.
-            // The conversion happens in RenderLayer::computeFilterOperations.
-            ASSERT_NOT_REACHED();
-            break;
-        case FilterOperation::VALIDATED_CUSTOM: {
-            Document* document = renderer ? &renderer->document() : 0;
-            effect = createCustomFilterEffect(this, document, toValidatedCustomFilterOperation(filterOperation));
-            if (effect)
-                m_hasCustomShaderFilter = true;
-            break;
-        }
         default:
             break;
         }
@@ -283,7 +243,7 @@ bool FilterEffectRenderer::build(RenderObject* renderer, const FilterOperations&
         }
     }
 
-    // We need to keep the old effects alive until this point, so that filters like FECustomFilter
+    // We need to keep the old effects alive until this point, so that SVG reference filters
     // can share cached resources across frames.
     m_lastEffect = previousEffect;
 
@@ -294,9 +254,10 @@ bool FilterEffectRenderer::build(RenderObject* renderer, const FilterOperations&
     return true;
 }
 
-bool FilterEffectRenderer::updateBackingStoreRect(const FloatRect& filterRect)
+bool FilterEffectRenderer::updateBackingStoreRect(const FloatRect& floatFilterRect)
 {
-    if (!filterRect.isZero() && isFilterSizeValid(filterRect)) {
+    IntRect filterRect = enclosingIntRect(floatFilterRect);
+    if (!filterRect.isEmpty() && FilterEffect::isFilterSizeValid(filterRect)) {
         FloatRect currentSourceRect = sourceImageRect();
         if (filterRect != currentSourceRect) {
             setSourceImageRect(filterRect);
@@ -314,13 +275,7 @@ void FilterEffectRenderer::allocateBackingStoreIfNeeded()
     if (!m_graphicsBufferAttached) {
         IntSize logicalSize(m_sourceDrawingRegion.width(), m_sourceDrawingRegion.height());
         if (!sourceImage() || sourceImage()->size() != logicalSize) {
-            OwnPtr<ImageBufferSurface> surface;
-            if (isAccelerated()) {
-                surface = adoptPtr(new AcceleratedImageBufferSurface(logicalSize));
-            }
-            if (!surface || !surface->isValid()) {
-                surface = adoptPtr(new UnacceleratedImageBufferSurface(logicalSize));
-            }
+            OwnPtr<ImageBufferSurface> surface = adoptPtr(new UnacceleratedImageBufferSurface(logicalSize));
             setSourceImage(ImageBuffer::create(surface.release()));
         }
         m_graphicsBufferAttached = true;
@@ -342,18 +297,11 @@ void FilterEffectRenderer::apply()
 
 LayoutRect FilterEffectRenderer::computeSourceImageRectForDirtyRect(const LayoutRect& filterBoxRect, const LayoutRect& dirtyRect)
 {
-    if (hasCustomShaderFilter()) {
-        // When we have at least a custom shader in the chain, we need to compute the whole source image, because the shader can
-        // reference any pixel and we cannot control that.
-        return filterBoxRect;
-    }
     // The result of this function is the area in the "filterBoxRect" that needs to be repainted, so that we fully cover the "dirtyRect".
     FloatRect rectForRepaint = dirtyRect;
-    rectForRepaint.move(-filterBoxRect.location().x(), -filterBoxRect.location().y());
     float inf = std::numeric_limits<float>::infinity();
     FloatRect clipRect = FloatRect(FloatPoint(-inf, -inf), FloatSize(inf, inf));
     rectForRepaint = lastEffect()->getSourceRect(rectForRepaint, clipRect);
-    rectForRepaint.move(filterBoxRect.location().x(), filterBoxRect.location().y());
     rectForRepaint.intersect(filterBoxRect);
     return LayoutRect(rectForRepaint);
 }
@@ -364,8 +312,22 @@ bool FilterEffectRendererHelper::prepareFilterEffect(RenderLayer* renderLayer, c
     m_renderLayer = renderLayer;
     m_repaintRect = dirtyRect;
 
+    // Get the zoom factor to scale the filterSourceRect input
+    const RenderLayerModelObject* renderer = renderLayer->renderer();
+    const RenderStyle* style = renderer ? renderer->style() : 0;
+    float zoom = style ? style->effectiveZoom() : 1.0f;
+
+    // Prepare a transformation that brings the coordinates into the space
+    // filter coordinates are defined in.
+    AffineTransform absoluteTransform;
+    // FIXME: Should these really be upconverted to doubles and not rounded? crbug.com/350474
+    absoluteTransform.translate(filterBoxRect.x().toDouble(), filterBoxRect.y().toDouble());
+    absoluteTransform.scale(zoom, zoom);
+
     FilterEffectRenderer* filter = renderLayer->filterRenderer();
-    LayoutRect filterSourceRect = filter->computeSourceImageRectForDirtyRect(filterBoxRect, dirtyRect);
+    filter->setAbsoluteTransform(absoluteTransform);
+
+    IntRect filterSourceRect = pixelSnappedIntRect(filter->computeSourceImageRectForDirtyRect(filterBoxRect, dirtyRect));
 
     if (filterSourceRect.isEmpty()) {
         // The dirty rect is not in view, just bail out.
@@ -373,16 +335,7 @@ bool FilterEffectRendererHelper::prepareFilterEffect(RenderLayer* renderLayer, c
         return false;
     }
 
-    // Get the zoom factor to scale the filterSourceRect input
-    const RenderLayerModelObject* renderer = renderLayer->renderer();
-    const RenderStyle* style = renderer ? renderer->style() : 0;
-    float zoom = style ? style->effectiveZoom() : 1.0f;
-
-    AffineTransform absoluteTransform;
-    absoluteTransform.translate(filterBoxRect.x(), filterBoxRect.y());
-    filter->setAbsoluteTransform(absoluteTransform);
-    filter->setAbsoluteFilterRegion(AffineTransform().scale(zoom).mapRect(filterSourceRect));
-    filter->setFilterRegion(absoluteTransform.inverse().mapRect(filterSourceRect));
+    filter->setFilterRegion(filter->mapAbsoluteRectToLocalRect(filterSourceRect));
     filter->lastEffect()->determineFilterPrimitiveSubregion(MapRectForward);
 
     bool hasUpdatedBackingStore = filter->updateBackingStoreRect(filterSourceRect);
@@ -405,7 +358,7 @@ GraphicsContext* FilterEffectRendererHelper::beginFilterEffect(GraphicsContext* 
     filter->allocateBackingStoreIfNeeded();
     // Paint into the context that represents the SourceGraphic of the filter.
     GraphicsContext* sourceGraphicsContext = filter->inputContext();
-    if (!sourceGraphicsContext || !isFilterSizeValid(filter->absoluteFilterRegion())) {
+    if (!sourceGraphicsContext || !FilterEffect::isFilterSizeValid(filter->absoluteFilterRegion())) {
         // Disable the filters and continue.
         m_haveFilterEffect = false;
         return oldContext;
@@ -434,7 +387,7 @@ GraphicsContext* FilterEffectRendererHelper::applyFilterEffect()
     filter->apply();
 
     // Get the filtered output and draw it in place.
-    m_savedGraphicsContext->drawImageBuffer(filter->output(), filter->outputRect(), CompositeSourceOver);
+    m_savedGraphicsContext->drawImageBuffer(filter->output(), filter->outputRect());
 
     filter->clearIntermediateResults();
 

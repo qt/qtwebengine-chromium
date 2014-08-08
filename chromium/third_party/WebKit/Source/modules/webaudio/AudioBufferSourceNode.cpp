@@ -30,7 +30,6 @@
 
 #include "bindings/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
-#include "core/page/PageConsole.h"
 #include "platform/audio/AudioUtilities.h"
 #include "modules/webaudio/AudioContext.h"
 #include "modules/webaudio/AudioNodeOutput.h"
@@ -50,14 +49,14 @@ const double DefaultGrainDuration = 0.020; // 20ms
 // to minimize linear interpolation aliasing.
 const double MaxRate = 1024;
 
-PassRefPtr<AudioBufferSourceNode> AudioBufferSourceNode::create(AudioContext* context, float sampleRate)
+PassRefPtrWillBeRawPtr<AudioBufferSourceNode> AudioBufferSourceNode::create(AudioContext* context, float sampleRate)
 {
-    return adoptRef(new AudioBufferSourceNode(context, sampleRate));
+    return adoptRefWillBeNoop(new AudioBufferSourceNode(context, sampleRate));
 }
 
 AudioBufferSourceNode::AudioBufferSourceNode(AudioContext* context, float sampleRate)
     : AudioScheduledSourceNode(context, sampleRate)
-    , m_buffer(0)
+    , m_buffer(nullptr)
     , m_isLooping(false)
     , m_loopStart(0)
     , m_loopEnd(0)
@@ -65,13 +64,11 @@ AudioBufferSourceNode::AudioBufferSourceNode(AudioContext* context, float sample
     , m_isGrain(false)
     , m_grainOffset(0.0)
     , m_grainDuration(DefaultGrainDuration)
-    , m_lastGain(1.0)
     , m_pannerNode(0)
 {
     ScriptWrappable::init(this);
     setNodeType(NodeTypeAudioBufferSource);
 
-    m_gain = AudioParam::create(context, "gain", 1.0, 0.0, 1.0);
     m_playbackRate = AudioParam::create(context, "playbackRate", 1.0, 0.0, MaxRate);
 
     // Default to mono.  A call to setBuffer() will set the number of output channels to that of the buffer.
@@ -133,9 +130,6 @@ void AudioBufferSourceNode::process(size_t framesToProcess)
             return;
         }
 
-        // Apply the gain (in-place) to the output bus.
-        float totalGain = gain()->value() * m_buffer->gain();
-        outputBus->copyWithGainFrom(*outputBus, &m_lastGain, totalGain);
         outputBus->clearSilentFlag();
     } else {
         // Too bad - the tryLock() failed.  We must be in the middle of changing buffers and were already outputting silence anyway.
@@ -331,21 +325,9 @@ bool AudioBufferSourceNode::renderFromBuffer(AudioBus* bus, unsigned destination
 }
 
 
-void AudioBufferSourceNode::reset()
-{
-    m_virtualReadIndex = 0;
-    m_lastGain = gain()->value();
-}
-
 void AudioBufferSourceNode::setBuffer(AudioBuffer* buffer, ExceptionState& exceptionState)
 {
     ASSERT(isMainThread());
-    // FIXME: It does not look like we should throw if the buffer is null as
-    // the attribute is nullable in the specification.
-    if (!buffer) {
-        exceptionState.throwTypeError("buffer cannot be null");
-        return;
-    }
 
     // The context must be locked since changing the buffer can re-configure the number of channels that are output.
     AudioContext::AutoLocker contextLocker(context());
@@ -382,27 +364,17 @@ unsigned AudioBufferSourceNode::numberOfChannels()
     return output(0)->numberOfChannels();
 }
 
-void AudioBufferSourceNode::start(ExceptionState& exceptionState)
-{
-    startPlaying(false, 0, 0, buffer() ? buffer()->duration() : 0, exceptionState);
-}
-
 void AudioBufferSourceNode::start(double when, ExceptionState& exceptionState)
 {
-    startPlaying(false, when, 0, buffer() ? buffer()->duration() : 0, exceptionState);
+    AudioScheduledSourceNode::start(when, exceptionState);
 }
 
 void AudioBufferSourceNode::start(double when, double grainOffset, ExceptionState& exceptionState)
 {
-    startPlaying(true, when, grainOffset, buffer() ? buffer()->duration() : 0, exceptionState);
+    start(when, grainOffset, buffer() ? buffer()->duration() : 0, exceptionState);
 }
 
 void AudioBufferSourceNode::start(double when, double grainOffset, double grainDuration, ExceptionState& exceptionState)
-{
-    startPlaying(true, when, grainOffset, grainDuration, exceptionState);
-}
-
-void AudioBufferSourceNode::startPlaying(bool isGrain, double when, double grainOffset, double grainDuration, ExceptionState& exceptionState)
 {
     ASSERT(isMainThread());
 
@@ -416,22 +388,20 @@ void AudioBufferSourceNode::startPlaying(bool isGrain, double when, double grain
     if (!buffer())
         return;
 
-    if (isGrain) {
-        // Do sanity checking of grain parameters versus buffer size.
-        double bufferDuration = buffer()->duration();
+    // Do sanity checking of grain parameters versus buffer size.
+    double bufferDuration = buffer()->duration();
 
-        grainOffset = max(0.0, grainOffset);
-        grainOffset = min(bufferDuration, grainOffset);
-        m_grainOffset = grainOffset;
+    grainOffset = max(0.0, grainOffset);
+    grainOffset = min(bufferDuration, grainOffset);
+    m_grainOffset = grainOffset;
 
-        double maxDuration = bufferDuration - grainOffset;
+    double maxDuration = bufferDuration - grainOffset;
 
-        grainDuration = max(0.0, grainDuration);
-        grainDuration = min(maxDuration, grainDuration);
-        m_grainDuration = grainDuration;
-    }
+    grainDuration = max(0.0, grainDuration);
+    grainDuration = min(maxDuration, grainDuration);
+    m_grainDuration = grainDuration;
 
-    m_isGrain = isGrain;
+    m_isGrain = true;
     m_startTime = when;
 
     // We call timeToSampleFrame here since at playbackRate == 1 we don't want to go through linear interpolation
@@ -441,14 +411,6 @@ void AudioBufferSourceNode::startPlaying(bool isGrain, double when, double grain
     m_virtualReadIndex = AudioUtilities::timeToSampleFrame(m_grainOffset, buffer()->sampleRate());
 
     m_playbackState = SCHEDULED_STATE;
-}
-
-void AudioBufferSourceNode::noteGrainOn(double when, double grainOffset, double grainDuration, ExceptionState& exceptionState)
-{
-    // Handle unspecified duration where 0 means the rest of the buffer.
-    if (!grainDuration && buffer())
-        grainDuration = buffer()->duration();
-    startPlaying(true, when, grainOffset, grainDuration, exceptionState);
 }
 
 double AudioBufferSourceNode::totalPitchRate()
@@ -511,6 +473,13 @@ void AudioBufferSourceNode::finish()
     clearPannerNode();
     ASSERT(!m_pannerNode);
     AudioScheduledSourceNode::finish();
+}
+
+void AudioBufferSourceNode::trace(Visitor* visitor)
+{
+    visitor->trace(m_buffer);
+    visitor->trace(m_playbackRate);
+    AudioScheduledSourceNode::trace(visitor);
 }
 
 } // namespace WebCore

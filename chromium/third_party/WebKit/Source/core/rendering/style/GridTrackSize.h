@@ -42,30 +42,27 @@ enum GridTrackSizeType {
 
 class GridTrackSize {
 public:
-    GridTrackSize()
+    GridTrackSize(const GridLength& length)
         : m_type(LengthTrackSizing)
-        , m_minTrackBreadth(Undefined)
-        , m_maxTrackBreadth(Undefined)
+        , m_minTrackBreadth(length)
+        , m_maxTrackBreadth(length)
         , m_minTrackBreadthIsMinOrMaxContent(false)
         , m_minTrackBreadthIsMaxContent(false)
         , m_maxTrackBreadthIsMinOrMaxContent(false)
         , m_maxTrackBreadthIsMaxContent(false)
     {
-        // Someone has to set a valid lenght type through setLength or
-        // setMinMax before using the object.
+        cacheMinMaxTrackBreadthTypes();
     }
 
-    GridTrackSize(LengthType type)
-        : m_type(LengthTrackSizing)
-        , m_minTrackBreadth(type)
-        , m_maxTrackBreadth(type)
+    GridTrackSize(const GridLength& minTrackBreadth, const GridLength& maxTrackBreadth)
+        : m_type(MinMaxTrackSizing)
+        , m_minTrackBreadth(minTrackBreadth)
+        , m_maxTrackBreadth(maxTrackBreadth)
         , m_minTrackBreadthIsMinOrMaxContent(false)
         , m_minTrackBreadthIsMaxContent(false)
         , m_maxTrackBreadthIsMinOrMaxContent(false)
         , m_maxTrackBreadthIsMaxContent(false)
     {
-        ASSERT(type != Undefined);
-
         cacheMinMaxTrackBreadthTypes();
     }
 
@@ -74,24 +71,13 @@ public:
         ASSERT(m_type == LengthTrackSizing);
         ASSERT(m_minTrackBreadth == m_maxTrackBreadth);
         const GridLength& minTrackBreadth = m_minTrackBreadth;
-        ASSERT(!minTrackBreadth.isLength() || !minTrackBreadth.length().isUndefined());
         return minTrackBreadth;
-    }
-
-    void setLength(const GridLength& length)
-    {
-        m_type = LengthTrackSizing;
-        m_minTrackBreadth = length;
-        m_maxTrackBreadth = length;
-
-        cacheMinMaxTrackBreadthTypes();
     }
 
     const GridLength& minTrackBreadth() const
     {
-        ASSERT(!m_minTrackBreadth.isLength() || !m_minTrackBreadth.length().isUndefined());
         if (m_minTrackBreadth.isLength() && m_minTrackBreadth.length().isAuto()) {
-            DEFINE_STATIC_LOCAL(GridLength, minContent, (MinContent));
+            DEFINE_STATIC_LOCAL(GridLength, minContent, (Length(MinContent)));
             return minContent;
         }
         return m_minTrackBreadth;
@@ -99,26 +85,18 @@ public:
 
     const GridLength& maxTrackBreadth() const
     {
-        ASSERT(!m_maxTrackBreadth.isLength() || !m_maxTrackBreadth.length().isUndefined());
         if (m_maxTrackBreadth.isLength() && m_maxTrackBreadth.length().isAuto()) {
-            DEFINE_STATIC_LOCAL(GridLength, maxContent, (MaxContent));
+            DEFINE_STATIC_LOCAL(GridLength, maxContent, (Length(MaxContent)));
             return maxContent;
         }
         return m_maxTrackBreadth;
     }
 
-    void setMinMax(const GridLength& minTrackBreadth, const GridLength& maxTrackBreadth)
-    {
-        m_type = MinMaxTrackSizing;
-        m_minTrackBreadth = minTrackBreadth;
-        m_maxTrackBreadth = maxTrackBreadth;
-
-        cacheMinMaxTrackBreadthTypes();
-    }
-
     GridTrackSizeType type() const { return m_type; }
 
     bool isContentSized() const { return m_minTrackBreadth.isContentSized() || m_maxTrackBreadth.isContentSized(); }
+
+    bool isPercentage() const { return m_type == LengthTrackSizing && length().isLength() && length().length().isPercent(); }
 
     bool operator==(const GridTrackSize& other) const
     {

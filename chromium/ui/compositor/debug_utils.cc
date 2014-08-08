@@ -8,7 +8,7 @@
 
 #include <cmath>
 #include <iomanip>
-#include <iostream>
+#include <ostream>
 #include <string>
 
 #include "base/logging.h"
@@ -18,6 +18,8 @@
 #include "ui/gfx/point.h"
 #include "ui/gfx/point_conversions.h"
 #include "ui/gfx/transform.h"
+
+using base::UTF8ToWide;
 
 namespace ui {
 
@@ -102,4 +104,4 @@ void PrintLayerHierarchy(const Layer* layer, gfx::Point mouse_location) {
   LOG(ERROR) << out.str();
 }
 
-} // namespace ui
+}  // namespace ui

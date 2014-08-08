@@ -38,7 +38,7 @@ namespace WebCore {
 class AXSVGRoot;
 class AXObjectCache;
 class Element;
-class Frame;
+class LocalFrame;
 class FrameView;
 class HitTestResult;
 class HTMLAnchorElement;
@@ -64,16 +64,14 @@ public:
     virtual ~AXRenderObject();
 
     // Public, overridden from AXObject.
-    virtual RenderObject* renderer() const OVERRIDE { return m_renderer; }
+    virtual RenderObject* renderer() const OVERRIDE FINAL { return m_renderer; }
     virtual LayoutRect elementRect() const OVERRIDE;
 
     void setRenderer(RenderObject*);
     RenderBoxModelObject* renderBoxModelObject() const;
-    RenderView* topRenderer() const;
     Document* topDocument() const;
     bool shouldNotifyActiveDescendant() const;
-    bool needsToUpdateChildren() const { return m_childrenDirty; }
-    ScrollableArea* getScrollableAreaIfScrollable() const;
+    virtual ScrollableArea* getScrollableAreaIfScrollable() const OVERRIDE FINAL;
     virtual AccessibilityRole determineAccessibilityRole() OVERRIDE;
     void checkCachedElementRect() const;
     void updateCachedElementRect() const;
@@ -120,12 +118,16 @@ protected:
 
     // Properties of interactive elements.
     virtual String actionVerb() const OVERRIDE;
-    virtual void selectedChildren(AccessibilityChildrenVector&) OVERRIDE;
     virtual String stringValue() const OVERRIDE;
 
     // ARIA attributes.
     virtual AXObject* activeDescendant() const OVERRIDE;
     virtual void ariaFlowToElements(AccessibilityChildrenVector&) const OVERRIDE;
+    virtual void ariaControlsElements(AccessibilityChildrenVector&) const OVERRIDE;
+    virtual void ariaDescribedbyElements(AccessibilityChildrenVector&) const OVERRIDE;
+    virtual void ariaLabelledbyElements(AccessibilityChildrenVector&) const OVERRIDE;
+    virtual void ariaOwnsElements(AccessibilityChildrenVector&) const OVERRIDE;
+
     virtual bool ariaHasPopup() const OVERRIDE;
     virtual bool ariaRoleHasPresentationalChildren() const OVERRIDE;
     virtual bool isPresentationalChildOfAriaRole() const OVERRIDE;
@@ -165,6 +167,7 @@ protected:
     virtual void addChildren() OVERRIDE;
     virtual bool canHaveChildren() const OVERRIDE;
     virtual void updateChildrenIfNecessary() OVERRIDE;
+    virtual bool needsToUpdateChildren() const { return m_childrenDirty; }
     virtual void setNeedsToUpdateChildren() OVERRIDE { m_childrenDirty = true; }
     virtual void clearChildren() OVERRIDE;
     virtual AXObject* observableObject() const OVERRIDE;
@@ -181,7 +184,6 @@ protected:
 
     // Selected text.
     virtual PlainTextRange selectedTextRange() const OVERRIDE;
-    virtual String selectedText() const OVERRIDE;
 
     // Modify or take an action on an object.
     virtual void setSelectedTextRange(const PlainTextRange&) OVERRIDE;
@@ -204,7 +206,6 @@ private:
     PlainTextRange ariaSelectedTextRange() const;
     bool nodeIsTextControl(const Node*) const;
     bool isTabItemSelected() const;
-    AXObject* internalLinkElement() const;
     AXObject* accessibilityImageMapHitTest(HTMLAreaElement*, const IntPoint&) const;
     bool renderObjectIsObservable(RenderObject*) const;
     RenderObject* renderParentObject() const;
@@ -227,8 +228,8 @@ private:
     bool inheritsPresentationalRole() const;
     LayoutRect computeElementRect() const;
     VisibleSelection selection() const;
-    String stringForRange(const PlainTextRange&) const;
     int indexForVisiblePosition(const VisiblePosition&) const;
+    void accessibilityChildrenFromAttribute(QualifiedName attr, AccessibilityChildrenVector&) const;
 };
 
 DEFINE_AX_OBJECT_TYPE_CASTS(AXRenderObject, isAXRenderObject());

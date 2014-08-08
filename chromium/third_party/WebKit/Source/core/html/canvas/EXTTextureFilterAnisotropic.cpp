@@ -26,35 +26,33 @@
 #include "config.h"
 
 #include "core/html/canvas/EXTTextureFilterAnisotropic.h"
-#include "platform/graphics/Extensions3D.h"
 
 namespace WebCore {
 
-EXTTextureFilterAnisotropic::EXTTextureFilterAnisotropic(WebGLRenderingContext* context)
+EXTTextureFilterAnisotropic::EXTTextureFilterAnisotropic(WebGLRenderingContextBase* context)
     : WebGLExtension(context)
 {
     ScriptWrappable::init(this);
-    context->graphicsContext3D()->extensions()->ensureEnabled("GL_EXT_texture_filter_anisotropic");
+    context->extensionsUtil()->ensureExtensionEnabled("GL_EXT_texture_filter_anisotropic");
 }
 
 EXTTextureFilterAnisotropic::~EXTTextureFilterAnisotropic()
 {
 }
 
-WebGLExtension::ExtensionName EXTTextureFilterAnisotropic::name() const
+WebGLExtensionName EXTTextureFilterAnisotropic::name() const
 {
     return EXTTextureFilterAnisotropicName;
 }
 
-PassRefPtr<EXTTextureFilterAnisotropic> EXTTextureFilterAnisotropic::create(WebGLRenderingContext* context)
+PassRefPtr<EXTTextureFilterAnisotropic> EXTTextureFilterAnisotropic::create(WebGLRenderingContextBase* context)
 {
     return adoptRef(new EXTTextureFilterAnisotropic(context));
 }
 
-bool EXTTextureFilterAnisotropic::supported(WebGLRenderingContext* context)
+bool EXTTextureFilterAnisotropic::supported(WebGLRenderingContextBase* context)
 {
-    Extensions3D* extensions = context->graphicsContext3D()->extensions();
-    return extensions->supports("GL_EXT_texture_filter_anisotropic");
+    return context->extensionsUtil()->supportsExtension("GL_EXT_texture_filter_anisotropic");
 }
 
 const char* EXTTextureFilterAnisotropic::extensionName()

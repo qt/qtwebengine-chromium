@@ -9,37 +9,45 @@
 #include <vector>
 
 #include "base/basictypes.h"
+#include "base/observer_list.h"
 #include "device/bluetooth/bluetooth_device.h"
 #include "device/bluetooth/bluetooth_task_manager_win.h"
 
 namespace device {
 
 class BluetoothAdapterWin;
-class BluetoothServiceRecord;
+class BluetoothServiceRecordWin;
+class BluetoothSocketThread;
 
 class BluetoothDeviceWin : public BluetoothDevice {
  public:
   explicit BluetoothDeviceWin(
-      const BluetoothTaskManagerWin::DeviceState& state);
+      const BluetoothTaskManagerWin::DeviceState& state,
+      scoped_refptr<base::SequencedTaskRunner> ui_task_runner,
+      scoped_refptr<BluetoothSocketThread> socket_thread,
+      net::NetLog* net_log,
+      const net::NetLog::Source& net_log_source);
   virtual ~BluetoothDeviceWin();
 
   // BluetoothDevice override
+  virtual void AddObserver(
+      device::BluetoothDevice::Observer* observer) OVERRIDE;
+  virtual void RemoveObserver(
+      device::BluetoothDevice::Observer* observer) OVERRIDE;
   virtual uint32 GetBluetoothClass() const OVERRIDE;
   virtual std::string GetAddress() const OVERRIDE;
+  virtual VendorIDSource GetVendorIDSource() const OVERRIDE;
   virtual uint16 GetVendorID() const OVERRIDE;
   virtual uint16 GetProductID() const OVERRIDE;
   virtual uint16 GetDeviceID() const OVERRIDE;
+  virtual int GetRSSI() const OVERRIDE;
+  virtual int GetCurrentHostTransmitPower() const OVERRIDE;
+  virtual int GetMaximumHostTransmitPower() const OVERRIDE;
   virtual bool IsPaired() const OVERRIDE;
   virtual bool IsConnected() const OVERRIDE;
   virtual bool IsConnectable() const OVERRIDE;
   virtual bool IsConnecting() const OVERRIDE;
-  virtual ServiceList GetServices() const OVERRIDE;
-  virtual void GetServiceRecords(
-      const ServiceRecordsCallback& callback,
-      const ErrorCallback& error_callback) OVERRIDE;
-  virtual void ProvidesServiceWithName(
-      const std::string& name,
-      const ProvidesServiceCallback& callback) OVERRIDE;
+  virtual UUIDList GetUUIDs() const OVERRIDE;
   virtual bool ExpectingPinCode() const OVERRIDE;
   virtual bool ExpectingPasskey() const OVERRIDE;
   virtual bool ExpectingConfirmation() const OVERRIDE;
@@ -57,21 +65,20 @@ class BluetoothDeviceWin : public BluetoothDevice {
       const ErrorCallback& error_callback) OVERRIDE;
   virtual void Forget(const ErrorCallback& error_callback) OVERRIDE;
   virtual void ConnectToService(
-      const std::string& service_uuid,
-      const SocketCallback& callback) OVERRIDE;
-  virtual void ConnectToProfile(
-      device::BluetoothProfile* profile,
-      const base::Closure& callback,
-      const ErrorCallback& error_callback) OVERRIDE;
-  virtual void SetOutOfBandPairingData(
-      const BluetoothOutOfBandPairingData& data,
-      const base::Closure& callback,
-      const ErrorCallback& error_callback) OVERRIDE;
-  virtual void ClearOutOfBandPairingData(
+      const BluetoothUUID& uuid,
+      const ConnectToServiceCallback& callback,
+      const ConnectToServiceErrorCallback& error_callback) OVERRIDE;
+  virtual void CreateGattConnection(
+      const GattConnectionCallback& callback,
+      const ConnectErrorCallback& error_callback) OVERRIDE;
+  virtual void StartConnectionMonitor(
       const base::Closure& callback,
       const ErrorCallback& error_callback) OVERRIDE;
 
-  const BluetoothServiceRecord* GetServiceRecord(const std::string& uuid) const;
+  // Used by BluetoothProfileWin to retrieve the service record for the given
+  // |uuid|.
+  const BluetoothServiceRecordWin* GetServiceRecord(
+      const device::BluetoothUUID& uuid) const;
 
  protected:
   // BluetoothDevice override
@@ -83,6 +90,14 @@ class BluetoothDeviceWin : public BluetoothDevice {
   // Used by BluetoothAdapterWin to update the visible state during
   // discovery.
   void SetVisible(bool visible);
+
+  scoped_refptr<base::SequencedTaskRunner> ui_task_runner_;
+  scoped_refptr<BluetoothSocketThread> socket_thread_;
+  net::NetLog* net_log_;
+  net::NetLog::Source net_log_source_;
+
+  // List of observers interested in event notifications from us.
+  ObserverList<Observer> observers_;
 
   // The Bluetooth class of the device, a bitmask that may be decoded using
   // https://www.bluetooth.org/Technical/AssignedNumbers/baseband.htm
@@ -104,7 +119,10 @@ class BluetoothDeviceWin : public BluetoothDevice {
   bool visible_;
 
   // The services (identified by UUIDs) that this device provides.
-  ServiceList service_uuids_;
+  UUIDList uuids_;
+
+  // The service records retrieved from SDP.
+  typedef ScopedVector<BluetoothServiceRecordWin> ServiceRecordList;
   ServiceRecordList service_record_list_;
 
   DISALLOW_COPY_AND_ASSIGN(BluetoothDeviceWin);

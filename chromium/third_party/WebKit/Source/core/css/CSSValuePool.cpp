@@ -26,7 +26,7 @@
 #include "config.h"
 #include "core/css/CSSValuePool.h"
 
-#include "core/css/CSSParser.h"
+#include "core/css/parser/BisonCSSParser.h"
 #include "core/css/CSSValueList.h"
 #include "core/rendering/style/RenderStyle.h"
 
@@ -34,8 +34,13 @@ namespace WebCore {
 
 CSSValuePool& cssValuePool()
 {
+#if ENABLE(OILPAN)
+    DEFINE_STATIC_LOCAL(Persistent<CSSValuePool>, pool, (new CSSValuePool()));
+    return *pool;
+#else
     DEFINE_STATIC_LOCAL(CSSValuePool, pool, ());
     return pool;
+#endif // ENABLE(OILPAN)
 }
 
 CSSValuePool::CSSValuePool()
@@ -46,9 +51,13 @@ CSSValuePool::CSSValuePool()
     , m_colorWhite(CSSPrimitiveValue::createColor(Color::white))
     , m_colorBlack(CSSPrimitiveValue::createColor(Color::black))
 {
+    m_identifierValueCache.resize(numCSSValueKeywords);
+    m_pixelValueCache.resize(maximumCacheableIntegerValue + 1);
+    m_percentValueCache.resize(maximumCacheableIntegerValue + 1);
+    m_numberValueCache.resize(maximumCacheableIntegerValue + 1);
 }
 
-PassRefPtr<CSSPrimitiveValue> CSSValuePool::createIdentifierValue(CSSValueID ident)
+PassRefPtrWillBeRawPtr<CSSPrimitiveValue> CSSValuePool::createIdentifierValue(CSSValueID ident)
 {
     if (ident <= 0)
         return CSSPrimitiveValue::createIdentifier(ident);
@@ -58,12 +67,12 @@ PassRefPtr<CSSPrimitiveValue> CSSValuePool::createIdentifierValue(CSSValueID ide
     return m_identifierValueCache[ident];
 }
 
-PassRefPtr<CSSPrimitiveValue> CSSValuePool::createIdentifierValue(CSSPropertyID ident)
+PassRefPtrWillBeRawPtr<CSSPrimitiveValue> CSSValuePool::createIdentifierValue(CSSPropertyID ident)
 {
     return CSSPrimitiveValue::createIdentifier(ident);
 }
 
-PassRefPtr<CSSPrimitiveValue> CSSValuePool::createColorValue(unsigned rgbValue)
+PassRefPtrWillBeRawPtr<CSSPrimitiveValue> CSSValuePool::createColorValue(unsigned rgbValue)
 {
     // These are the empty and deleted values of the hash table.
     if (rgbValue == Color::transparent)
@@ -79,15 +88,18 @@ PassRefPtr<CSSPrimitiveValue> CSSValuePool::createColorValue(unsigned rgbValue)
     if (m_colorValueCache.size() > maximumColorCacheSize)
         m_colorValueCache.clear();
 
-    RefPtr<CSSPrimitiveValue> dummyValue;
+    RefPtrWillBeRawPtr<CSSPrimitiveValue> dummyValue = nullptr;
     ColorValueCache::AddResult entry = m_colorValueCache.add(rgbValue, dummyValue);
     if (entry.isNewEntry)
-        entry.iterator->value = CSSPrimitiveValue::createColor(rgbValue);
-    return entry.iterator->value;
+        entry.storedValue->value = CSSPrimitiveValue::createColor(rgbValue);
+    return entry.storedValue->value;
 }
 
-PassRefPtr<CSSPrimitiveValue> CSSValuePool::createValue(double value, CSSPrimitiveValue::UnitTypes type)
+PassRefPtrWillBeRawPtr<CSSPrimitiveValue> CSSValuePool::createValue(double value, CSSPrimitiveValue::UnitType type)
 {
+    if (std::isinf(value))
+        value = 0;
+
     if (value < 0 || value > maximumCacheableIntegerValue)
         return CSSPrimitiveValue::create(value, type);
 
@@ -95,50 +107,65 @@ PassRefPtr<CSSPrimitiveValue> CSSValuePool::createValue(double value, CSSPrimiti
     if (value != intValue)
         return CSSPrimitiveValue::create(value, type);
 
-    RefPtr<CSSPrimitiveValue>* cache;
     switch (type) {
     case CSSPrimitiveValue::CSS_PX:
-        cache = m_pixelValueCache;
-        break;
+        if (!m_pixelValueCache[intValue])
+            m_pixelValueCache[intValue] = CSSPrimitiveValue::create(value, type);
+        return m_pixelValueCache[intValue];
     case CSSPrimitiveValue::CSS_PERCENTAGE:
-        cache = m_percentValueCache;
-        break;
+        if (!m_percentValueCache[intValue])
+            m_percentValueCache[intValue] = CSSPrimitiveValue::create(value, type);
+        return m_percentValueCache[intValue];
     case CSSPrimitiveValue::CSS_NUMBER:
-        cache = m_numberValueCache;
-        break;
+        if (!m_numberValueCache[intValue])
+            m_numberValueCache[intValue] = CSSPrimitiveValue::create(value, type);
+        return m_numberValueCache[intValue];
     default:
         return CSSPrimitiveValue::create(value, type);
     }
-
-    if (!cache[intValue])
-        cache[intValue] = CSSPrimitiveValue::create(value, type);
-    return cache[intValue];
 }
 
-PassRefPtr<CSSPrimitiveValue> CSSValuePool::createValue(const Length& value, const RenderStyle& style)
+PassRefPtrWillBeRawPtr<CSSPrimitiveValue> CSSValuePool::createValue(const Length& value, const RenderStyle& style)
 {
     return CSSPrimitiveValue::create(value, style.effectiveZoom());
 }
 
-PassRefPtr<CSSPrimitiveValue> CSSValuePool::createFontFamilyValue(const String& familyName)
+PassRefPtrWillBeRawPtr<CSSPrimitiveValue> CSSValuePool::createFontFamilyValue(const String& familyName)
 {
-    RefPtr<CSSPrimitiveValue>& value = m_fontFamilyValueCache.add(familyName, 0).iterator->value;
+    RefPtrWillBeMember<CSSPrimitiveValue>& value = m_fontFamilyValueCache.add(familyName, nullptr).storedValue->value;
     if (!value)
         value = CSSPrimitiveValue::create(familyName, CSSPrimitiveValue::CSS_STRING);
     return value;
 }
 
-PassRefPtr<CSSValueList> CSSValuePool::createFontFaceValue(const AtomicString& string)
+PassRefPtrWillBeRawPtr<CSSValueList> CSSValuePool::createFontFaceValue(const AtomicString& string)
 {
     // Just wipe out the cache and start rebuilding if it gets too big.
     const unsigned maximumFontFaceCacheSize = 128;
     if (m_fontFaceValueCache.size() > maximumFontFaceCacheSize)
         m_fontFaceValueCache.clear();
 
-    RefPtr<CSSValueList>& value = m_fontFaceValueCache.add(string, 0).iterator->value;
+    RefPtrWillBeMember<CSSValueList>& value = m_fontFaceValueCache.add(string, nullptr).storedValue->value;
     if (!value)
-        value = CSSParser::parseFontFaceValue(string);
+        value = BisonCSSParser::parseFontFaceValue(string);
     return value;
+}
+
+void CSSValuePool::trace(Visitor* visitor)
+{
+    visitor->trace(m_inheritedValue);
+    visitor->trace(m_implicitInitialValue);
+    visitor->trace(m_explicitInitialValue);
+    visitor->trace(m_identifierValueCache);
+    visitor->trace(m_colorValueCache);
+    visitor->trace(m_colorTransparent);
+    visitor->trace(m_colorWhite);
+    visitor->trace(m_colorBlack);
+    visitor->trace(m_pixelValueCache);
+    visitor->trace(m_percentValueCache);
+    visitor->trace(m_numberValueCache);
+    visitor->trace(m_fontFaceValueCache);
+    visitor->trace(m_fontFamilyValueCache);
 }
 
 }

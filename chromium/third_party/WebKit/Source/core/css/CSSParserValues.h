@@ -21,7 +21,7 @@
 #ifndef CSSParserValues_h
 #define CSSParserValues_h
 
-#include "CSSValueKeywords.h"
+#include "core/CSSValueKeywords.h"
 #include "core/css/CSSPrimitiveValue.h"
 #include "core/css/CSSSelector.h"
 #include "core/css/CSSValueList.h"
@@ -77,8 +77,6 @@ struct CSSParserString {
         m_is8Bit = true;
     }
 
-    void trimTrailingWhitespace();
-
     bool is8Bit() const { return m_is8Bit; }
     const LChar* characters8() const { ASSERT(is8Bit()); return m_data.characters8; }
     const UChar* characters16() const { ASSERT(!is8Bit()); return m_data.characters16; }
@@ -98,9 +96,11 @@ struct CSSParserString {
 
     bool equalIgnoringCase(const char* str) const
     {
-        if (is8Bit())
-            return WTF::equalIgnoringCase(str, characters8(), length());
-        return WTF::equalIgnoringCase(str, characters16(), length());
+        bool match = is8Bit() ? WTF::equalIgnoringCase(str, characters8(), length()) : WTF::equalIgnoringCase(str, characters16(), length());
+        if (!match)
+            return false;
+        ASSERT(strlen(str) >= length());
+        return str[length()] == '\0';
     }
 
     template <size_t strLength>
@@ -118,8 +118,6 @@ struct CSSParserString {
 
     operator String() const { return is8Bit() ? String(m_data.characters8, m_length) : StringImpl::create8BitIfPossible(m_data.characters16, m_length); }
     operator AtomicString() const { return is8Bit() ? AtomicString(m_data.characters8, m_length) : AtomicString(m_data.characters16, m_length); }
-
-    AtomicString atomicSubstring(unsigned position, unsigned length) const;
 
     bool isFunction() const { return length() > 0 && (*this)[length() - 1] == '('; }
 
@@ -161,7 +159,7 @@ struct CSSParserValue {
     inline void setFromFunction(CSSParserFunction*);
     inline void setFromValueList(PassOwnPtr<CSSParserValueList>);
 
-    PassRefPtr<CSSValue> createCSSValue();
+    PassRefPtrWillBeRawPtr<CSSValue> createCSSValue();
 };
 
 class CSSParserValueList {
@@ -175,8 +173,7 @@ public:
 
     void addValue(const CSSParserValue&);
     void insertValueAt(unsigned, const CSSParserValue&);
-    void deleteValueAt(unsigned);
-    void extend(CSSParserValueList&);
+    void stealValues(CSSParserValueList&);
 
     unsigned size() const { return m_values.size(); }
     unsigned currentIndex() { return m_current; }
@@ -189,10 +186,17 @@ public:
         --m_current;
         return current();
     }
+    void setCurrentIndex(unsigned index)
+    {
+        ASSERT(index < m_values.size());
+        if (index < m_values.size())
+            m_current = index;
+    }
 
     CSSParserValue* valueAt(unsigned i) { return i < m_values.size() ? &m_values[i] : 0; }
 
-    void clear() { m_values.clear(); }
+    void clearAndLeakValues() { m_values.clear(); m_current = 0;}
+    void destroyAndClear();
 
 private:
     unsigned m_current;
@@ -219,23 +223,20 @@ public:
     void setValue(const AtomicString& value) { m_selector->setValue(value); }
     void setAttribute(const QualifiedName& value) { m_selector->setAttribute(value); }
     void setArgument(const AtomicString& value) { m_selector->setArgument(value); }
-    void setMatch(CSSSelector::Match value) { m_selector->m_match = value; }
-    void setRelation(CSSSelector::Relation value) { m_selector->m_relation = value; }
+    void setMatch(CSSSelector::Match value) { m_selector->setMatch(value); }
+    void setRelation(CSSSelector::Relation value) { m_selector->setRelation(value); }
     void setForPage() { m_selector->setForPage(); }
     void setRelationIsAffectedByPseudoContent() { m_selector->setRelationIsAffectedByPseudoContent(); }
     bool relationIsAffectedByPseudoContent() const { return m_selector->relationIsAffectedByPseudoContent(); }
 
     void adoptSelectorVector(Vector<OwnPtr<CSSParserSelector> >& selectorVector);
 
-    CSSParserSelector* functionArgumentSelector() const { return m_functionArgumentSelector; }
-    void setFunctionArgumentSelector(CSSParserSelector* selector) { m_functionArgumentSelector = selector; }
-    bool isDistributedPseudoElement() const { return m_selector->isDistributedPseudoElement(); }
-    CSSParserSelector* findDistributedPseudoElementSelector() const;
+    bool hasHostPseudoSelector() const;
     bool isContentPseudoElement() const { return m_selector->isContentPseudoElement(); }
 
     CSSSelector::PseudoType pseudoType() const { return m_selector->pseudoType(); }
     bool isCustomPseudoElement() const { return m_selector->isCustomPseudoElement(); }
-    bool needsCrossingTreeScopeBoundary() const { return isCustomPseudoElement() || pseudoType() == CSSSelector::PseudoCue; }
+    bool crossesTreeScopes() const { return isCustomPseudoElement() || pseudoType() == CSSSelector::PseudoCue || pseudoType() == CSSSelector::PseudoShadow; }
 
     bool isSimple() const;
     bool hasShadowPseudo() const;
@@ -250,7 +251,6 @@ public:
 private:
     OwnPtr<CSSSelector> m_selector;
     OwnPtr<CSSParserSelector> m_tagHistory;
-    CSSParserSelector* m_functionArgumentSelector;
 };
 
 inline bool CSSParserSelector::hasShadowPseudo() const
@@ -274,6 +274,7 @@ inline void CSSParserValue::setFromFunction(CSSParserFunction* function)
     id = CSSValueInvalid;
     this->function = function;
     unit = Function;
+    isInt = false;
 }
 
 inline void CSSParserValue::setFromValueList(PassOwnPtr<CSSParserValueList> valueList)
@@ -281,6 +282,7 @@ inline void CSSParserValue::setFromValueList(PassOwnPtr<CSSParserValueList> valu
     id = CSSValueInvalid;
     this->valueList = valueList.leakPtr();
     unit = ValueList;
+    isInt = false;
 }
 
 }

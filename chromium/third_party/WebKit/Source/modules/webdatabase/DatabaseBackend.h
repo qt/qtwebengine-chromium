@@ -48,12 +48,13 @@ class SQLTransactionCoordinator;
 
 class DatabaseBackend : public DatabaseBackendBase {
 public:
-    DatabaseBackend(PassRefPtr<DatabaseContext>, const String& name, const String& expectedVersion, const String& displayName, unsigned long estimatedSize);
+    DatabaseBackend(DatabaseContext*, const String& name, const String& expectedVersion, const String& displayName, unsigned long estimatedSize);
+    virtual void trace(Visitor*) OVERRIDE;
 
-    virtual bool openAndVerifyVersion(bool setVersionInNewDatabase, DatabaseError&, String& errorMessage);
+    virtual bool openAndVerifyVersion(bool setVersionInNewDatabase, DatabaseError&, String& errorMessage) OVERRIDE FINAL;
     void close();
 
-    PassRefPtr<SQLTransactionBackend> runTransaction(PassRefPtr<SQLTransaction>, bool readOnly, const ChangeVersionData*);
+    PassRefPtrWillBeRawPtr<SQLTransactionBackend> runTransaction(PassRefPtrWillBeRawPtr<SQLTransaction>, bool readOnly, const ChangeVersionData*);
     void scheduleTransactionStep(SQLTransactionBackend*);
     void inProgressTransactionCompleted();
 
@@ -66,11 +67,11 @@ private:
     class DatabaseTransactionTask;
     class DatabaseTableNamesTask;
 
-    virtual bool performOpenAndVerify(bool setVersionInNewDatabase, DatabaseError&, String& errorMessage);
+    virtual bool performOpenAndVerify(bool setVersionInNewDatabase, DatabaseError&, String& errorMessage) OVERRIDE FINAL;
 
     void scheduleTransaction();
 
-    Deque<RefPtr<SQLTransactionBackend> > m_transactionQueue;
+    Deque<RefPtrWillBeMember<SQLTransactionBackend> > m_transactionQueue;
     Mutex m_transactionInProgressMutex;
     bool m_transactionInProgress;
     bool m_isTransactionQueueEnabled;

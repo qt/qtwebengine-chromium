@@ -29,7 +29,7 @@
 
 #include "core/rendering/RenderMediaControlElements.h"
 
-#include "core/rendering/LayoutRectRecorder.h"
+#include "core/frame/DeprecatedScheduleStyleRecalcDuringLayout.h"
 #include "core/rendering/RenderView.h"
 
 namespace WebCore {
@@ -41,17 +41,16 @@ RenderTextTrackContainerElement::RenderTextTrackContainerElement(Element* elemen
 
 void RenderTextTrackContainerElement::layout()
 {
-    LayoutRectRecorder recorder(*this);
-    RenderBlock::layout();
+    RenderBlockFlow::layout();
     if (style()->display() == NONE)
         return;
 
     ASSERT(mediaControlElementType(node()) == MediaTextTrackDisplayContainer);
 
-    LayoutStateDisabler layoutStateDisabler(view());
+    DeprecatedScheduleStyleRecalcDuringLayout marker(node()->document().lifecycle());
+
+    ForceHorriblySlowRectMapping slowRectMapping(*this);
     static_cast<MediaControlTextTrackContainerElement*>(node())->updateSizes();
 }
 
-
 } // namespace WebCore
-

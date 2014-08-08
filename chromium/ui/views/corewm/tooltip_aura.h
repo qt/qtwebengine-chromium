@@ -10,6 +10,10 @@
 #include "ui/views/corewm/tooltip.h"
 #include "ui/views/widget/widget_observer.h"
 
+namespace gfx {
+class FontList;
+}  // namespace gfx
+
 namespace views {
 
 class Widget;
@@ -24,11 +28,11 @@ class VIEWS_EXPORT TooltipAura : public Tooltip, public WidgetObserver {
 
   // Trims the tooltip to fit in the width |max_width|, setting |text| to the
   // clipped result, |width| to the width (in pixels) of the clipped text
-  // and |line_count| to the number of lines of text in the tooltip. |x| and |y|
-  // give the location of the tooltip in screen coordinates. |max_width| comes
-  // from GetMaxWidth().
-  static void TrimTooltipToFit(int max_width,
-                               string16* text,
+  // and |line_count| to the number of lines of text in the tooltip. |font_list|
+  // is used to layout |text|. |max_width| comes from GetMaxWidth().
+  static void TrimTooltipToFit(const gfx::FontList& font_list,
+                               int max_width,
+                               base::string16* text,
                                int* width,
                                int* line_count);
 
@@ -36,24 +40,18 @@ class VIEWS_EXPORT TooltipAura : public Tooltip, public WidgetObserver {
   // Returns the max width of the tooltip when shown at the specified location.
   int GetMaxWidth(const gfx::Point& location) const;
 
-  // Returns the bounds to fit the tooltip in.
-  gfx::Rect GetBoundsForTooltip(const gfx::Point& origin) const;
-
   // Adjusts the bounds given by the arguments to fit inside the desktop
   // and applies the adjusted bounds to the label_.
   void SetTooltipBounds(const gfx::Point& mouse_pos,
                         int tooltip_width,
                         int tooltip_height);
 
-  // Makes sure |widget_| is valid, creating as necessary.
-  void CreateWidget();
-
   // Destroys |widget_|.
   void DestroyWidget();
 
   // Tooltip:
   virtual void SetText(aura::Window* window,
-                       const string16& tooltip_text,
+                       const base::string16& tooltip_text,
                        const gfx::Point& location) OVERRIDE;
   virtual void Show() OVERRIDE;
   virtual void Hide() OVERRIDE;

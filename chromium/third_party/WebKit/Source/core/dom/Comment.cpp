@@ -32,9 +32,9 @@ inline Comment::Comment(Document& document, const String& text)
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<Comment> Comment::create(Document& document, const String& text)
+PassRefPtrWillBeRawPtr<Comment> Comment::create(Document& document, const String& text)
 {
-    return adoptRef(new Comment(document, text));
+    return adoptRefWillBeNoop(new Comment(document, text));
 }
 
 String Comment::nodeName() const
@@ -47,14 +47,9 @@ Node::NodeType Comment::nodeType() const
     return COMMENT_NODE;
 }
 
-PassRefPtr<Node> Comment::cloneNode(bool /*deep*/)
+PassRefPtrWillBeRawPtr<Node> Comment::cloneNode(bool /*deep*/)
 {
     return create(document(), data());
-}
-
-bool Comment::childTypeAllowed(NodeType) const
-{
-    return false;
 }
 
 } // namespace WebCore

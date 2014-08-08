@@ -5,8 +5,10 @@
 #include "base/basictypes.h"
 #include "base/bind.h"
 #include "base/compiler_specific.h"
+#include "base/debug/trace_event.h"
 #include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/json/json_reader.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/path_service.h"
@@ -15,6 +17,8 @@
 #include "cc/layers/delegated_frame_provider.h"
 #include "cc/layers/delegated_frame_resource_collection.h"
 #include "cc/layers/layer.h"
+#include "cc/output/copy_output_request.h"
+#include "cc/output/copy_output_result.h"
 #include "cc/output/delegated_frame_data.h"
 #include "cc/test/pixel_test_utils.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -23,6 +27,7 @@
 #include "ui/compositor/layer_animation_sequence.h"
 #include "ui/compositor/layer_animator.h"
 #include "ui/compositor/test/context_factories_for_test.h"
+#include "ui/compositor/test/draw_waiter_for_test.h"
 #include "ui/compositor/test/test_compositor_host.h"
 #include "ui/compositor/test/test_layers.h"
 #include "ui/gfx/canvas.h"
@@ -84,24 +89,22 @@ class LayerWithRealCompositorTest : public testing::Test {
 
   // Overridden from testing::Test:
   virtual void SetUp() OVERRIDE {
-    bool allow_test_contexts = false;
-    InitializeContextFactoryForTests(allow_test_contexts);
-    Compositor::Initialize();
+    bool enable_pixel_output = true;
+    ui::ContextFactory* context_factory =
+        InitializeContextFactoryForTests(enable_pixel_output);
 
     const gfx::Rect host_bounds(10, 10, 500, 500);
-    window_.reset(TestCompositorHost::Create(host_bounds));
-    window_->Show();
+    compositor_host_.reset(TestCompositorHost::Create(
+                               host_bounds, context_factory));
+    compositor_host_->Show();
   }
 
   virtual void TearDown() OVERRIDE {
-    window_.reset();
+    compositor_host_.reset();
     TerminateContextFactoryForTests();
-    Compositor::Terminate();
   }
 
-  Compositor* GetCompositor() {
-    return window_->GetCompositor();
-  }
+  Compositor* GetCompositor() { return compositor_host_->GetCompositor(); }
 
   Layer* CreateLayer(LayerType type) {
     return new Layer(type);
@@ -126,8 +129,34 @@ class LayerWithRealCompositorTest : public testing::Test {
   }
 
   bool ReadPixels(SkBitmap* bitmap) {
-    return GetCompositor()->ReadPixels(bitmap,
-                                       gfx::Rect(GetCompositor()->size()));
+    return ReadPixels(bitmap, gfx::Rect(GetCompositor()->size()));
+  }
+
+  bool ReadPixels(SkBitmap* bitmap, gfx::Rect source_rect) {
+    scoped_refptr<ReadbackHolder> holder(new ReadbackHolder);
+    scoped_ptr<cc::CopyOutputRequest> request =
+        cc::CopyOutputRequest::CreateBitmapRequest(
+            base::Bind(&ReadbackHolder::OutputRequestCallback, holder));
+    request->set_area(source_rect);
+
+    GetCompositor()->root_layer()->RequestCopyOfOutput(request.Pass());
+
+    // Wait for copy response.  This needs to wait as the compositor could
+    // be in the middle of a draw right now, and the commit with the
+    // copy output request may not be done on the first draw.
+    for (int i = 0; i < 2; i++) {
+      GetCompositor()->ScheduleDraw();
+      WaitForDraw();
+    }
+
+    if (holder->completed()) {
+      *bitmap = holder->result();
+      return true;
+    }
+
+    // Callback never called.
+    NOTREACHED();
+    return false;
   }
 
   void WaitForDraw() {
@@ -149,7 +178,30 @@ class LayerWithRealCompositorTest : public testing::Test {
   }
 
  private:
-  scoped_ptr<TestCompositorHost> window_;
+  class ReadbackHolder : public base::RefCountedThreadSafe<ReadbackHolder> {
+   public:
+    ReadbackHolder() : completed_(false) {}
+
+    void OutputRequestCallback(scoped_ptr<cc::CopyOutputResult> result) {
+      DCHECK(!completed_);
+      result_ = result->TakeBitmap();
+      completed_ = true;
+    }
+    bool completed() const {
+      return completed_;
+    };
+    const SkBitmap& result() const { return *result_; }
+
+   private:
+    friend class base::RefCountedThreadSafe<ReadbackHolder>;
+
+    virtual ~ReadbackHolder() {}
+
+    scoped_ptr<SkBitmap> result_;
+    bool completed_;
+  };
+
+  scoped_ptr<TestCompositorHost> compositor_host_;
 
   // The root directory for test files.
   base::FilePath test_data_directory_;
@@ -180,8 +232,8 @@ class TestLayerDelegate : public LayerDelegate {
 
   // Overridden from LayerDelegate:
   virtual void OnPaintLayer(gfx::Canvas* canvas) OVERRIDE {
-    gfx::ImageSkiaRep contents = canvas->ExtractImageRep();
-    paint_size_ = gfx::Size(contents.pixel_width(), contents.pixel_height());
+    SkISize size = canvas->sk_canvas()->getBaseLayerSize();
+    paint_size_ = gfx::Size(size.width(), size.height());
     canvas->FillRect(gfx::Rect(paint_size_), colors_[color_index_]);
     color_index_ = (color_index_ + 1) % static_cast<int>(colors_.size());
     const SkMatrix& matrix = canvas->sk_canvas()->getTotalMatrix();
@@ -300,11 +352,6 @@ class TestCompositorObserver : public CompositorObserver {
   virtual void OnCompositingLockStateChanged(Compositor* compositor) OVERRIDE {
   }
 
-  virtual void OnUpdateVSyncParameters(Compositor* compositor,
-                                       base::TimeTicks timebase,
-                                       base::TimeDelta interval) OVERRIDE {
-  }
-
   bool committed_;
   bool started_;
   bool ended_;
@@ -351,20 +398,22 @@ class LayerWithDelegateTest : public testing::Test {
 
   // Overridden from testing::Test:
   virtual void SetUp() OVERRIDE {
-    bool allow_test_contexts = true;
-    InitializeContextFactoryForTests(allow_test_contexts);
-    Compositor::Initialize();
-    compositor_.reset(new Compositor(gfx::kNullAcceleratedWidget));
-    compositor_->SetScaleAndSize(1.0f, gfx::Size(1000, 1000));
+    bool enable_pixel_output = false;
+    ui::ContextFactory* context_factory =
+        InitializeContextFactoryForTests(enable_pixel_output);
+
+    const gfx::Rect host_bounds(1000, 1000);
+    compositor_host_.reset(TestCompositorHost::Create(host_bounds,
+                                                      context_factory));
+    compositor_host_->Show();
   }
 
   virtual void TearDown() OVERRIDE {
-    compositor_.reset();
+    compositor_host_.reset();
     TerminateContextFactoryForTests();
-    Compositor::Terminate();
   }
 
-  Compositor* compositor() { return compositor_.get(); }
+  Compositor* compositor() { return compositor_host_->GetCompositor(); }
 
   virtual Layer* CreateLayer(LayerType type) {
     return new Layer(type);
@@ -408,7 +457,7 @@ class LayerWithDelegateTest : public testing::Test {
   }
 
  private:
-  scoped_ptr<Compositor> compositor_;
+  scoped_ptr<TestCompositorHost> compositor_host_;
 
   DISALLOW_COPY_AND_ASSIGN(LayerWithDelegateTest);
 };
@@ -593,16 +642,29 @@ class LayerWithNullDelegateTest : public LayerWithDelegateTest {
   DISALLOW_COPY_AND_ASSIGN(LayerWithNullDelegateTest);
 };
 
-class FakeTexture : public Texture {
- public:
-  FakeTexture(bool flipped, const gfx::Size& size, float device_scale_factor)
-      : Texture(flipped, size, device_scale_factor) {}
+TEST_F(LayerWithNullDelegateTest, EscapedDebugNames) {
+  scoped_ptr<Layer> layer(CreateLayer(LAYER_NOT_DRAWN));
+  std::string name = "\"\'\\/\b\f\n\r\t\n";
+  layer->set_name(name);
+  scoped_refptr<base::debug::ConvertableToTraceFormat> debug_info =
+    layer->TakeDebugInfo();
+  EXPECT_TRUE(!!debug_info);
+  std::string json;
+  debug_info->AppendAsTraceFormat(&json);
+  base::JSONReader json_reader;
+  scoped_ptr<base::Value> debug_info_value(json_reader.ReadToValue(json));
+  EXPECT_TRUE(!!debug_info_value);
+  EXPECT_TRUE(debug_info_value->IsType(base::Value::TYPE_DICTIONARY));
+  base::DictionaryValue* dictionary = 0;
+  EXPECT_TRUE(debug_info_value->GetAsDictionary(&dictionary));
+  std::string roundtrip;
+  EXPECT_TRUE(dictionary->GetString("layer_name", &roundtrip));
+  EXPECT_EQ(name, roundtrip);
+}
 
-  virtual unsigned int PrepareTexture() OVERRIDE { return 0; }
-
- protected:
-  virtual ~FakeTexture() {}
-};
+void ReturnMailbox(bool* run, uint32 sync_point, bool is_lost) {
+  *run = true;
+}
 
 TEST_F(LayerWithNullDelegateTest, SwitchLayerPreservesCCLayerState) {
   scoped_ptr<Layer> l1(CreateColorLayer(SK_ColorRED,
@@ -611,8 +673,7 @@ TEST_F(LayerWithNullDelegateTest, SwitchLayerPreservesCCLayerState) {
   l1->SetForceRenderSurface(true);
   l1->SetVisible(false);
 
-  EXPECT_EQ(gfx::PointF().ToString(),
-            l1->cc_layer()->anchor_point().ToString());
+  EXPECT_EQ(gfx::Point3F(), l1->cc_layer()->transform_origin());
   EXPECT_TRUE(l1->cc_layer()->DrawsContent());
   EXPECT_TRUE(l1->cc_layer()->contents_opaque());
   EXPECT_TRUE(l1->cc_layer()->force_render_surface());
@@ -620,18 +681,38 @@ TEST_F(LayerWithNullDelegateTest, SwitchLayerPreservesCCLayerState) {
 
   cc::Layer* before_layer = l1->cc_layer();
 
-  scoped_refptr<Texture> texture =
-      new FakeTexture(false, gfx::Size(10, 10), 1.f);
-  l1->SetExternalTexture(texture.get());
+  bool callback1_run = false;
+  cc::TextureMailbox mailbox(gpu::Mailbox::Generate(), 0, 0);
+  l1->SetTextureMailbox(mailbox,
+                        cc::SingleReleaseCallback::Create(
+                            base::Bind(ReturnMailbox, &callback1_run)),
+                        gfx::Size(1, 1));
 
   EXPECT_NE(before_layer, l1->cc_layer());
 
-  EXPECT_EQ(gfx::PointF().ToString(),
-            l1->cc_layer()->anchor_point().ToString());
+  EXPECT_EQ(gfx::Point3F(), l1->cc_layer()->transform_origin());
   EXPECT_TRUE(l1->cc_layer()->DrawsContent());
   EXPECT_TRUE(l1->cc_layer()->contents_opaque());
   EXPECT_TRUE(l1->cc_layer()->force_render_surface());
   EXPECT_TRUE(l1->cc_layer()->hide_layer_and_subtree());
+  EXPECT_FALSE(callback1_run);
+
+  bool callback2_run = false;
+  mailbox = cc::TextureMailbox(gpu::Mailbox::Generate(), 0, 0);
+  l1->SetTextureMailbox(mailbox,
+                        cc::SingleReleaseCallback::Create(
+                            base::Bind(ReturnMailbox, &callback2_run)),
+                        gfx::Size(1, 1));
+  EXPECT_TRUE(callback1_run);
+  EXPECT_FALSE(callback2_run);
+
+  l1->SetShowPaintedContent();
+  EXPECT_EQ(gfx::Point3F(), l1->cc_layer()->transform_origin());
+  EXPECT_TRUE(l1->cc_layer()->DrawsContent());
+  EXPECT_TRUE(l1->cc_layer()->contents_opaque());
+  EXPECT_TRUE(l1->cc_layer()->force_render_surface());
+  EXPECT_TRUE(l1->cc_layer()->hide_layer_and_subtree());
+  EXPECT_TRUE(callback2_run);
 }
 
 // Various visibile/drawn assertions.
@@ -783,7 +864,7 @@ TEST_F(LayerWithRealCompositorTest, DrawPixels) {
   DrawTree(layer.get());
 
   SkBitmap bitmap;
-  ASSERT_TRUE(GetCompositor()->ReadPixels(&bitmap, gfx::Rect(viewport_size)));
+  ASSERT_TRUE(ReadPixels(&bitmap, gfx::Rect(viewport_size)));
   ASSERT_FALSE(bitmap.empty());
 
   SkAutoLockPixels lock(bitmap);
@@ -1111,10 +1192,10 @@ TEST_F(LayerWithRealCompositorTest, ScaleUpDown) {
 
   EXPECT_EQ("10,20 200x220", root->bounds().ToString());
   EXPECT_EQ("10,20 140x180", l1->bounds().ToString());
-  gfx::Size size_in_pixel = root->cc_layer()->bounds();
-  EXPECT_EQ("200x220", size_in_pixel.ToString());
-  size_in_pixel = l1->cc_layer()->bounds();
-  EXPECT_EQ("140x180", size_in_pixel.ToString());
+  gfx::Size cc_bounds_size = root->cc_layer()->bounds();
+  EXPECT_EQ("200x220", cc_bounds_size.ToString());
+  cc_bounds_size = l1->cc_layer()->bounds();
+  EXPECT_EQ("140x180", cc_bounds_size.ToString());
   // No scale change, so no scale notification.
   EXPECT_EQ(0.0f, root_delegate.device_scale_factor());
   EXPECT_EQ(0.0f, l1_delegate.device_scale_factor());
@@ -1126,11 +1207,11 @@ TEST_F(LayerWithRealCompositorTest, ScaleUpDown) {
   GetCompositor()->SetScaleAndSize(2.0f, gfx::Size(500, 500));
   EXPECT_EQ("10,20 200x220", root->bounds().ToString());
   EXPECT_EQ("10,20 140x180", l1->bounds().ToString());
-  // Pixel size must have been scaled up.
-  size_in_pixel = root->cc_layer()->bounds();
-  EXPECT_EQ("400x440", size_in_pixel.ToString());
-  size_in_pixel = l1->cc_layer()->bounds();
-  EXPECT_EQ("280x360", size_in_pixel.ToString());
+  // CC layer should still match the UI layer bounds.
+  cc_bounds_size = root->cc_layer()->bounds();
+  EXPECT_EQ("200x220", cc_bounds_size.ToString());
+  cc_bounds_size = l1->cc_layer()->bounds();
+  EXPECT_EQ("140x180", cc_bounds_size.ToString());
   // New scale factor must have been notified.
   EXPECT_EQ(2.0f, root_delegate.device_scale_factor());
   EXPECT_EQ(2.0f, l1_delegate.device_scale_factor());
@@ -1146,11 +1227,11 @@ TEST_F(LayerWithRealCompositorTest, ScaleUpDown) {
   GetCompositor()->SetScaleAndSize(1.0f, gfx::Size(500, 500));
   EXPECT_EQ("10,20 200x220", root->bounds().ToString());
   EXPECT_EQ("10,20 140x180", l1->bounds().ToString());
-  // Pixel size must have been scaled down.
-  size_in_pixel = root->cc_layer()->bounds();
-  EXPECT_EQ("200x220", size_in_pixel.ToString());
-  size_in_pixel = l1->cc_layer()->bounds();
-  EXPECT_EQ("140x180", size_in_pixel.ToString());
+  // CC layer should still match the UI layer bounds.
+  cc_bounds_size = root->cc_layer()->bounds();
+  EXPECT_EQ("200x220", cc_bounds_size.ToString());
+  cc_bounds_size = l1->cc_layer()->bounds();
+  EXPECT_EQ("140x180", cc_bounds_size.ToString());
   // New scale factor must have been notified.
   EXPECT_EQ(1.0f, root_delegate.device_scale_factor());
   EXPECT_EQ(1.0f, l1_delegate.device_scale_factor());
@@ -1192,8 +1273,8 @@ TEST_F(LayerWithRealCompositorTest, ScaleReparent) {
 
   root->Add(l1.get());
   EXPECT_EQ("10,20 140x180", l1->bounds().ToString());
-  gfx::Size size_in_pixel = l1->cc_layer()->bounds();
-  EXPECT_EQ("140x180", size_in_pixel.ToString());
+  gfx::Size cc_bounds_size = l1->cc_layer()->bounds();
+  EXPECT_EQ("140x180", cc_bounds_size.ToString());
   EXPECT_EQ(0.0f, l1_delegate.device_scale_factor());
 
   WaitForDraw();
@@ -1207,40 +1288,17 @@ TEST_F(LayerWithRealCompositorTest, ScaleReparent) {
   GetCompositor()->SetScaleAndSize(2.0f, gfx::Size(500, 500));
   // Sanity check on root and l1.
   EXPECT_EQ("10,20 200x220", root->bounds().ToString());
-  size_in_pixel = l1->cc_layer()->bounds();
-  EXPECT_EQ("140x180", size_in_pixel.ToString());
-
+  cc_bounds_size = l1->cc_layer()->bounds();
+  EXPECT_EQ("140x180", cc_bounds_size.ToString());
 
   root->Add(l1.get());
   EXPECT_EQ("10,20 140x180", l1->bounds().ToString());
-  size_in_pixel = l1->cc_layer()->bounds();
-  EXPECT_EQ("280x360", size_in_pixel.ToString());
+  cc_bounds_size = l1->cc_layer()->bounds();
+  EXPECT_EQ("140x180", cc_bounds_size.ToString());
   EXPECT_EQ(2.0f, l1_delegate.device_scale_factor());
   WaitForDraw();
   EXPECT_EQ("280x360", l1_delegate.paint_size().ToString());
   EXPECT_EQ("2.0 2.0", l1_delegate.ToScaleString());
-}
-
-// Tests layer::set_scale_content(false).
-TEST_F(LayerWithRealCompositorTest, NoScaleCanvas) {
-  scoped_ptr<Layer> root(CreateColorLayer(SK_ColorWHITE,
-                                          gfx::Rect(10, 20, 200, 220)));
-  scoped_ptr<Layer> l1(CreateColorLayer(SK_ColorWHITE,
-                                        gfx::Rect(10, 20, 140, 180)));
-  l1->set_scale_content(false);
-  root->Add(l1.get());
-  TestLayerDelegate l1_delegate;
-  l1_delegate.AddColor(SK_ColorWHITE);
-  l1->set_delegate(&l1_delegate);
-
-  GetCompositor()->SetScaleAndSize(2.0f, gfx::Size(500, 500));
-  GetCompositor()->SetRootLayer(root.get());
-  // Scale factor change is notified regardless of scale_content flag.
-  EXPECT_EQ(2.0f, l1_delegate.device_scale_factor());
-
-  WaitForDraw();
-  EXPECT_EQ("280x360", l1_delegate.paint_size().ToString());
-  EXPECT_EQ("1.0 1.0", l1_delegate.ToScaleString());
 }
 
 // Verifies that when changing bounds on a layer that is invisible, and then
@@ -1286,10 +1344,8 @@ TEST_F(LayerWithDelegateTest, SetBoundsWhenInvisible) {
 static scoped_ptr<cc::DelegatedFrameData> MakeFrameData(gfx::Size size) {
   scoped_ptr<cc::DelegatedFrameData> frame_data(new cc::DelegatedFrameData);
   scoped_ptr<cc::RenderPass> render_pass(cc::RenderPass::Create());
-  render_pass->SetNew(cc::RenderPass::Id(1, 1),
-                      gfx::Rect(size),
-                      gfx::RectF(),
-                      gfx::Transform());
+  render_pass->SetNew(
+      cc::RenderPass::Id(1, 1), gfx::Rect(size), gfx::Rect(), gfx::Transform());
   frame_data->render_pass_list.push_back(render_pass.Pass());
   return frame_data.Pass();
 }
@@ -1337,14 +1393,14 @@ TEST_F(LayerWithDelegateTest, DelegatedLayer) {
   // Hi-DPI content on hi-DPI layer.
   compositor()->SetScaleAndSize(2.f, gfx::Size(1000, 1000));
   EXPECT_EQ(child->cc_layer()->bounds().ToString(),
-            gfx::Size(20, 20).ToString());
+            gfx::Size(10, 10).ToString());
 
   // Low-DPI content on hi-DPI layer.
   frame_provider = new cc::DelegatedFrameProvider(
       resource_collection.get(), MakeFrameData(gfx::Size(10, 10)));
   child->SetShowDelegatedContent(frame_provider, gfx::Size(10, 10));
   EXPECT_EQ(child->cc_layer()->bounds().ToString(),
-            gfx::Size(20, 20).ToString());
+            gfx::Size(10, 10).ToString());
 }
 
 TEST_F(LayerWithDelegateTest, ExternalContent) {
@@ -1446,6 +1502,56 @@ TEST_F(LayerWithRealCompositorTest, SwitchCCLayerAnimations) {
 
   // Ensure that the opacity animation completed.
   EXPECT_FLOAT_EQ(l1->opacity(), 0.5f);
+}
+
+// Tests that the animators in the layer tree is added to the
+// animator-collection when the root-layer is set to the compositor.
+TEST_F(LayerWithDelegateTest, RootLayerAnimatorsInCompositor) {
+  scoped_ptr<Layer> root(CreateLayer(LAYER_SOLID_COLOR));
+  scoped_ptr<Layer> child(CreateColorLayer(SK_ColorRED, gfx::Rect(10, 10)));
+  child->SetAnimator(LayerAnimator::CreateImplicitAnimator());
+  child->SetOpacity(0.5f);
+  root->Add(child.get());
+
+  EXPECT_FALSE(compositor()->layer_animator_collection()->HasActiveAnimators());
+  compositor()->SetRootLayer(root.get());
+  EXPECT_TRUE(compositor()->layer_animator_collection()->HasActiveAnimators());
+}
+
+// Tests that adding/removing a layer adds/removes the animator from its entire
+// subtree from the compositor's animator-collection.
+TEST_F(LayerWithDelegateTest, AddRemoveLayerUpdatesAnimatorsFromSubtree) {
+  scoped_ptr<Layer> root(CreateLayer(LAYER_TEXTURED));
+  scoped_ptr<Layer> child(CreateLayer(LAYER_TEXTURED));
+  scoped_ptr<Layer> grandchild(CreateColorLayer(SK_ColorRED,
+                                                gfx::Rect(10, 10)));
+  root->Add(child.get());
+  child->Add(grandchild.get());
+  compositor()->SetRootLayer(root.get());
+
+  grandchild->SetAnimator(LayerAnimator::CreateImplicitAnimator());
+  grandchild->SetOpacity(0.5f);
+  EXPECT_TRUE(compositor()->layer_animator_collection()->HasActiveAnimators());
+
+  root->Remove(child.get());
+  EXPECT_FALSE(compositor()->layer_animator_collection()->HasActiveAnimators());
+
+  root->Add(child.get());
+  EXPECT_TRUE(compositor()->layer_animator_collection()->HasActiveAnimators());
+}
+
+TEST_F(LayerWithDelegateTest, DestroyingLayerRemovesTheAnimatorFromCollection) {
+  scoped_ptr<Layer> root(CreateLayer(LAYER_TEXTURED));
+  scoped_ptr<Layer> child(CreateLayer(LAYER_TEXTURED));
+  root->Add(child.get());
+  compositor()->SetRootLayer(root.get());
+
+  child->SetAnimator(LayerAnimator::CreateImplicitAnimator());
+  child->SetOpacity(0.5f);
+  EXPECT_TRUE(compositor()->layer_animator_collection()->HasActiveAnimators());
+
+  child.reset();
+  EXPECT_FALSE(compositor()->layer_animator_collection()->HasActiveAnimators());
 }
 
 }  // namespace ui

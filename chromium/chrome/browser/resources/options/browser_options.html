@@ -3,17 +3,20 @@
     <h1 i18n-content="settingsTitle"></h1>
   </header>
   <include src="reset_profile_settings_banner.html">
-<if expr="not pp_ifdef('chromeos')">
-  <include src="sync_section.html">
-</if>
-<if expr="pp_ifdef('chromeos')">
+  <include src="automatic_settings_reset_banner.html">
+<if expr="chromeos">
+  <include src="secondary_user_banner.html">
   <section>
-    <h3 i18n-content="sectionTitleInternet"></h3>
+    <div id="network-section-header" class="section-header">
+      <h3 i18n-content="sectionTitleInternet"></h3>
+      <span class="controlled-setting-indicator" plural></span>
+    </div>
     <div id="network-settings">
       <list id="network-list"></list>
       <div id="shared-proxies" class="checkbox">
         <label>
           <input id="use-shared-proxies" type="checkbox"
+              metric="Options_NetworkUseSharedProxies"
               pref="settings.use_shared_proxies">
           <span i18n-content="useSharedProxies"></span>
         </label>
@@ -22,24 +25,32 @@
     </div>
   </section>
 </if>
-<if expr="not pp_ifdef('chromeos')">
+<if expr="not chromeos">
+  <include src="sync_section.html">
   <include src="startup_section.html">
 </if>
+  <section id="proxy-section" hidden>
+    <h3 i18n-content="sectionTitleProxy"></h3>
+    <div id="proxy-section-content"></div>
+  </section>
+
   <section>
     <h3 i18n-content="sectionTitleAppearance"></h3>
     <div class="settings-row">
-<if expr="pp_ifdef('chromeos')">
+<if expr="chromeos">
       <button id="set-wallpaper" i18n-content="setWallpaper"
           guest-visibility="disabled"></button>
+      <span id="wallpaper-indicator" class="controlled-setting-indicator">
+      </span>
 </if>
-<if expr="not pp_ifdef('chromeos') and is_posix and not is_macosx">
+<if expr="not chromeos and is_posix and not is_macosx">
       <button id="themes-gallery" i18n-content="themesGallery"></button>
       <button id="themes-native-button"
           i18n-content="themesNativeButton"></button>
       <button id="themes-reset"
           i18n-content="themesSetClassic"></button>
 </if>
-<if expr="pp_ifdef('chromeos') or is_win or is_macosx">
+<if expr="chromeos or is_win or is_macosx">
       <button id="themes-gallery" i18n-content="themesGallery"></button>
       <button id="themes-reset" i18n-content="themesReset"></button>
 </if>
@@ -65,6 +76,7 @@
         <span id="home-page-url" class="home-page-label"></span>
         <button id="change-home-page" class="link-button"
             i18n-content="changeHomePage"></button>
+        <div id="extension-controlled-container"></div>
       </div>
     </div>
     <div class="checkbox" guest-visibility="disabled">
@@ -82,7 +94,7 @@
         </span>
       </span>
     </div>
-<if expr="not pp_ifdef('toolkit_views') and is_posix and not is_macosx">
+<if expr="is_posix and not chromeos and not is_macosx">
     <div class="checkbox"><label>
         <input id="show-window-decorations" type="checkbox"
             pref="browser.custom_chrome_frame" metric="Options_CustomFrame"
@@ -91,7 +103,7 @@
     </label></div>
 </if>
   </section>
-<if expr="pp_ifdef('chromeos')">
+<if expr="chromeos">
   <section>
     <h3 i18n-content="sectionTitleDevice"></h3>
     <div>
@@ -125,14 +137,14 @@
 </if>
   <section>
     <h3 i18n-content="sectionTitleSearch"></h3>
-      <div>
+      <div id="search-section-content">
         <label for="default-search-engine" class="settings-row"
             i18n-values=".innerHTML:defaultSearchGroupLabel">
         </label>
         <div class="settings-row">
           <select id="default-search-engine" class="weakrtl"></select>
           <span class="controlled-setting-indicator"
-              pref="default_search_provider.enabled">
+              pref="default_search_provider_data.template_url_data">
           </span>
           <button id="manage-default-search-engines"
               i18n-content="defaultSearchManageEngines">
@@ -142,7 +154,7 @@
   </section>
   <section id="sync-users-section" guest-visibility="hidden">
     <h3 i18n-content="sectionTitleUsers"></h3>
-<if expr="pp_ifdef('chromeos')">
+<if expr="chromeos">
     <include src="sync_section.html">
 </if>
     <div id="profiles-section" hidden>
@@ -152,7 +164,7 @@
       </div>
       <div id="profiles-buttons">
         <button id="profiles-create" i18n-content="profilesCreate"></button>
-<if expr="pp_ifdef('enable_settings_app')">
+<if expr="enable_settings_app">
         <button id="profiles-app-list-switch"
             i18n-content="profilesAppListSwitch" hidden>
         </button>
@@ -160,7 +172,7 @@
         <button id="profiles-manage" i18n-content="profilesManage" disabled>
         </button>
         <button id="profiles-delete" i18n-content="profilesDelete"></button>
-<if expr="not pp_ifdef('chromeos')">
+<if expr="not chromeos">
         <button id="import-data" i18n-content="importData"></button>
 </if>
       </div>
@@ -169,8 +181,8 @@
         i18n-values=".innerHTML:profilesSupervisedDashboardTip" hidden>
     </div>
   </section>
-<if expr="not pp_ifdef('chromeos')">
-  <section>
+  <section id="set-default-browser-section">
+<if expr="not chromeos">
     <h3 i18n-content="sectionTitleDefaultBrowser"></h3>
     <div>
       <button id="set-as-default-browser"
@@ -185,11 +197,11 @@
         </label>
       </div>
     </div>
+</if>  <!-- not chromeos -->
   </section>
-</if>  <!-- not pp_ifdef('chromeos') -->
 <div id="advanced-settings" hidden>
 <div id="advanced-settings-container">
-<if expr="pp_ifdef('chromeos')">
+<if expr="chromeos">
   <section>
     <h3 i18n-content="datetimeTitle"></h3>
     <div class="option-control-table">
@@ -203,13 +215,30 @@
           </select>
         </div>
       </div>
-      <div class="checkbox">
+      <div class="checkbox settings-row">
         <label>
           <input id="use-24hour-clock" pref="settings.clock.use_24hour_clock"
               type="checkbox">
           <span i18n-content="use24HourClock"></span>
         </label>
       </div>
+      <div id="time-synced-explanation" class="settings-row"
+          i18n-content="timeSyncedExplanation"></div>
+      <div id="set-time" class="settings-row" hidden>
+        <button id="set-time-button"
+            i18n-content="setTimeButton"></button>
+      </div>
+    </div>
+  </section>
+
+  <section id="security-section" hidden>
+    <h3 i18n-content="securityTitle"></h3>
+    <div class="settings-row">
+      <span i18n-content="consumerManagementEnrollDescription"></span>
+    </div>
+    <div class="settings-row">
+      <button id="consumer-management-enroll-button"
+          i18n-content="consumerManagementEnrollButton"></button>
     </div>
   </section>
 </if>
@@ -272,6 +301,22 @@
       </div>
       <div class="checkbox">
         <span class="controlled-setting-with-label">
+          <input id="safe-browsing-extended-reporting-enabled"
+              metric="Options_SafeBrowsingExtendedReportingCheckbox"
+              pref="safebrowsing.extended_reporting_enabled"
+              type="checkbox">
+          <span>
+            <label for="safe-browsing-extended-reporting-enabled"
+                i18n-content="safeBrowsingEnableExtendedReporting">
+            </label>
+            <span class="controlled-setting-indicator"
+                pref="safebrowsing.extended_reporting_enabled">
+            </span>
+          </span>
+        </span>
+      </div>
+      <div class="checkbox">
+        <span class="controlled-setting-with-label">
           <input id="safeBrowsingEnabled" pref="safebrowsing.enabled"
               metric="Options_SafeBrowsingCheckbox" type="checkbox">
           <span>
@@ -284,10 +329,11 @@
           </span>
         </span>
       </div>
-<if expr="pp_ifdef('_google_chrome')">
+<if expr="_google_chrome">
       <div class="checkbox">
         <span class="controlled-setting-with-label">
           <input id="spelling-enabled-control" type="checkbox"
+              metric="Options_SpellingServiceCheckbox"
               pref="spellcheck.use_spelling_service" dialog-pref>
           <span>
             <label for="spelling-enabled-control" i18n-content="spellingPref">
@@ -301,7 +347,7 @@
       </div>
       <div id="metricsReportingSetting" class="checkbox">
         <span class="controlled-setting-with-label">
-<if expr="pp_ifdef('chromeos')">
+<if expr="chromeos">
           <input id="metricsReportingEnabled"
               pref="cros.metrics.reportingEnabled" type="checkbox">
           <span>
@@ -312,7 +358,7 @@
             </span>
           </span>
 </if>
-<if expr="not pp_ifdef('chromeos')">
+<if expr="not chromeos">
           <input id="metricsReportingEnabled"
               pref="user_experience_metrics.reporting_enabled" type="checkbox">
           <span>
@@ -325,7 +371,7 @@
 </if>
         </span>
       </div>
-</if>  <!-- pp_ifdef('_google_chrome') -->
+</if>  <!-- _google_chrome -->
       <div class="checkbox">
         <label>
           <input id="do-not-track-enabled" pref="enable_do_not_track"
@@ -333,7 +379,7 @@
           <span i18n-content="doNotTrack"></span>
         </label>
       </div>
-<if expr="pp_ifdef('chromeos')">
+<if expr="chromeos">
       <div class="checkbox">
         <span class="controlled-setting-with-label">
           <input id="content-protection-attestation-enabled" type="checkbox"
@@ -352,9 +398,25 @@
         </span>
       </div>
 </if>
+      <div id="hotword-search" hidden>
+        <div class="checkbox">
+          <span class="controlled-setting-with-label">
+            <input id="hotword-search-enable" pref="hotword.search_enabled_2"
+                metric="Options_HotwordCheckbox" type="checkbox" dialog-pref>
+            <span>
+              <label for="hotword-search-enable"
+                  i18n-values=".innerHTML:hotwordSearchEnable">
+              </label>
+              <span id="hotword-search-setting-indicator"
+                  pref="hotword.search_enabled_2" dialog-pref>
+              </span>
+            </span>
+          </span>
+        </div>
+      </div>
     </div>
   </section>
-<if expr="pp_ifdef('chromeos')">
+<if expr="chromeos">
   <!-- By default, the bluetooth section is hidden.  It is only visible if a
        bluetooth adapter is discovered -->
   <section id="bluetooth-devices" hidden>
@@ -381,7 +443,7 @@
       </div>
     </div>
   </section>
-</if>  <!-- pp_ifdef('chromeos') -->
+</if>  <!-- chromeos -->
   <section id="passwords-and-autofill-section">
     <h3 i18n-content="passwordsAndAutofillGroupName"></h3>
     <div class="checkbox">
@@ -416,17 +478,46 @@
         </span>
       </span>
     </div>
-    <div class="checkbox" id="password-generation-checkbox">
-      <label>
-        <input id="password-generation-enabled" pref="password_generation.enabled"
-            metric="Options_PasswordGenerationCheckbox" type="checkbox">
-        <span i18n-content="passwordGenerationEnabledDescription"></span>
-      </label>
-    </div>
 <if expr="is_macosx">
     <div id="mac-passwords-warning" i18n-content="macPasswordsWarning" hidden>
     </div>
 </if>
+  </section>
+  <section id="easy-unlock-section" guest-visibility="hidden" hidden>
+    <h3 i18n-content="easyUnlockSectionTitle"></h3>
+    <!-- Options shown when the user has not set up Easy Unlock -->
+    <div id='easy-unlock-setup' hidden>
+      <button id="easy-unlock-setup-button"
+          i18n-content="easyUnlockSetupButton"></button>
+      <div>
+        <a target="_blank" i18n-content="learnMore"
+            i18n-values="href:easyUnlockLearnMoreURL"></a>
+      </div>
+    </div>
+    <!-- Options shown when the user has set up Easy Unlock -->
+    <div id='easy-unlock-enable' hidden>
+      <div class="checkbox">
+        <span class="controlled-setting-with-label">
+          <input id="easy-unlock-check" type="checkbox"
+              pref="easy_unlock.enabled"
+              metric="EasyUnlock_Enabled">
+          <span>
+            <label for="easy-unlock-checkbox">
+              <span i18n-content="easyUnlockCheckboxLabel"></span>
+              <a target="_blank" i18n-content="learnMore"
+                  i18n-values="href:easyUnlockLearnMoreURL"></a>
+            </label>
+            <span class="controlled-setting-indicator"
+                pref="easy_unlock.enabled">
+            </span>
+          </span>
+        </span>
+      </div>
+      <div>
+        <a target="_blank" i18n-content="easyUnlockManagement"
+            i18n-values="href:easyUnlockManagementURL"></a>
+      </div>
+    </div>
   </section>
   <section id="web-content-section">
     <h3 i18n-content="advancedSectionTitleContent"></h3>
@@ -466,11 +557,13 @@
 </if>
     </div>
   </section>
-<if expr="not pp_ifdef('chromeos')">
+<if expr="not chromeos">
   <section id="network-section">
     <h3 i18n-content="advancedSectionTitleNetwork"></h3>
     <div>
-      <span id="proxiesLabel" class="settings-row"></span>
+      <span id="proxiesLabel"
+            class="settings-row"
+            i18n-content="proxiesLabelSystem"></span>
       <div class="settings-row">
         <button id="proxiesConfigureButton"
             i18n-content="proxiesConfigureButton"></button>
@@ -481,7 +574,11 @@
 </if>
   <section id="languages-section">
     <h3 i18n-content="advancedSectionTitleLanguages"></h3>
-    <span class="settings-row" i18n-content="languageSectionLabel"></span>
+    <div class="settings-row">
+      <span i18n-content="languageSectionLabel"></span>
+      <a target="_blank" i18n-content="learnMore"
+          i18n-values="href:languagesLearnMoreURL"></a>
+    </div>
     <div class="settings-row">
       <button id="language-button"
           i18n-content="languageAndSpellCheckSettingsButton"></button>
@@ -534,7 +631,7 @@
           </span>
         </span>
       </div>
-<if expr="pp_ifdef('chromeos')">
+<if expr="chromeos">
       <div class="checkbox" id="disable-drive-row" guest-visibility="disabled">
         <span class="controlled-setting-with-label">
           <input id="drive-disabled" type="checkbox"
@@ -548,40 +645,32 @@
         </span>
       </div>
 </if>
-<if expr="not pp_ifdef('chromeos')">
       <div id="auto-open-file-types-section" hidden>
         <div id="auto-open-file-types-container">
-          <div id="auto-open-file-types-label"
+          <div id="auto-open-file-types-label" class="settings-row"
               i18n-content="autoOpenFileTypesInfo"></div>
-          <button id="autoOpenFileTypesResetToDefault"
-              i18n-content="autoOpenFileTypesResetToDefault"></button>
+          <div class="settings-row">
+            <button id="autoOpenFileTypesResetToDefault"
+                i18n-content="autoOpenFileTypesResetToDefault"></button>
+            </div>
         </div>
       </div>
-</if>
     </div>
   </section>
   <section>
-      <h3 i18n-content="advancedSectionTitleSecurity"></h3>
+      <h3 i18n-content="advancedSectionTitleCertificates"></h3>
       <div>
-<if expr="pp_ifdef('use_nss') or is_win or is_macosx">
+<if expr="use_nss or is_win or is_macosx">
         <div class="settings-row">
           <button id="certificatesManageButton"
               i18n-content="certificatesManageButton"></button>
         </div>
 </if>
-        <div class="checkbox">
-          <label>
-            <input id="sslCheckRevocation" pref="ssl.rev_checking.enabled"
-                   type="checkbox">
-            <span i18n-content="sslCheckRevocation"></span>
-          </label>
-        </div>
       </div>
   </section>
-  <section id="cloud-print-connector-section">
-    <h3 i18n-content="advancedSectionTitleCloudPrint"></h3>
-<if expr="pp_ifdef('enable_mdns')">
-    <div id="cloudprint-options-mdns" hidden>
+<if expr="enable_service_discovery">
+    <section id="cloudprint-options-mdns">
+      <h3 i18n-content="advancedSectionTitleCloudPrint"></h3>
       <div class="settings-row">
         <span i18n-content="cloudPrintOptionLabel"></span>
         <a target="_blank" i18n-content="learnMore"
@@ -597,7 +686,7 @@
           <input id="local-discovery-notifications-enabled"
                  pref="local_discovery.notifications_enabled"
                  type="checkbox"
-                 metric="LocalDiscoveryNotificationsDisabled_Settings" />
+                 metric="LocalDiscoveryNotificationsDisabled_Settings">
           <span>
             <label for="local-discovery-notifications-enabled"
                    i18n-content="cloudPrintEnableNotificationsLabel">
@@ -606,52 +695,27 @@
                   pref="local_discovery.notifications_enabled">
             </span>
           </span>
+        </span>
       </div>
-    </div>
+    </section>
 </if>
 
-    <div id="cloudprint-options-nomdns">
-<if expr="pp_ifdef('chromeos')">
-      <div>
-        <span i18n-content="cloudPrintOptionLabel"></span>
-        <a target="_blank" i18n-content="learnMore"
-           i18n-values="href:cloudPrintLearnMoreURL"></a>
-      </div>
-</if>
-
-<if expr="not pp_ifdef('chromeos')">
-      <p id="cloudPrintConnectorLabel" class="settings-row"
-         i18n-content="cloudPrintConnectorDisabledLabel"></p>
-</if>
-
-      <div class="settings-row">
-<if expr="not pp_ifdef('chromeos')">
-        <button id="cloudPrintConnectorSetupButton"
-                i18n-content="cloudPrintConnectorDisabledButton"></button>
-</if>
-
-        <button id="cloudPrintManageButton"
-                i18n-content="cloudPrintManageButton">
-        </button>
-      </div>
-    </div>
-  </section>
-
-<if expr="pp_ifdef('chromeos')">
+<if expr="chromeos">
   <include src="startup_section.html">
   <section>
     <h3 i18n-content="accessibilityTitle"></h3>
     <div class="option-control-table">
       <p id="accessibility-explanation" class="settings-row">
         <span i18n-content="accessibilityExplanation"></span>
-        <a target="_blank" i18n-content="learnMore"
-            i18n-values="href:accessibilityLearnMoreURL"></a>
+        <a id="accessibility-learn-more" target="_blank"
+           i18n-content="learnMore"></a>
       </p>
       <div class="option-name">
         <div class="checkbox">
           <span class="controlled-setting-with-label">
             <input id="accessibility-should-always-show-menu"
-                pref="settings.a11y.enable_menu" type="checkbox">
+                   pref="settings.a11y.enable_menu" type="checkbox"
+                   metric="Options_AccessibilitySystemMenu">
             <span>
               <label for="accessibility-should-always-show-menu"
                   i18n-content="accessibilityAlwaysShowMenu">
@@ -666,7 +730,8 @@
         <div class="checkbox">
           <span class="controlled-setting-with-label">
             <input id="accessibility-large-cursor-check"
-                pref="settings.a11y.large_cursor_enabled" type="checkbox">
+                   pref="settings.a11y.large_cursor_enabled" type="checkbox"
+                   metric="Options_AccessibilityLargeMouseCursor">
             <span>
               <label for="accessibility-large-cursor-check"
                   i18n-content="accessibilityLargeCursor">
@@ -682,7 +747,8 @@
         <div class="checkbox">
           <span class="controlled-setting-with-label">
             <input id="accessibility-high-contrast-check"
-                pref="settings.a11y.high_contrast_enabled" type="checkbox">
+                   pref="settings.a11y.high_contrast_enabled" type="checkbox"
+                   metric="Options_AccessibilityHighContrastMode">
             <span>
               <label for="accessibility-high-contrast-check"
                   i18n-content="accessibilityHighContrast">
@@ -694,11 +760,12 @@
           </span>
         </div>
       </div>
-      <div id="accessibility-sticky-keys" class="option-name" hidden>
+      <div id="accessibility-sticky-keys" class="option-name">
         <div class="checkbox">
           <span class="controlled-setting-with-label">
             <input id="accessibility-sticky-keys-check"
-                pref="settings.a11y.sticky_keys_enabled" type="checkbox">
+                   pref="settings.a11y.sticky_keys_enabled" type="checkbox"
+                   metric="Options_AccessibilityStickyKeys">
             <span>
               <label for="accessibility-sticky-keys-check"
                   i18n-content="accessibilityStickyKeys">
@@ -714,7 +781,8 @@
         <div class="checkbox">
           <span class="controlled-setting-with-label">
             <input id="accessibility-spoken-feedback-check"
-                pref="settings.accessibility" type="checkbox">
+                   pref="settings.accessibility" type="checkbox"
+                   metric="Options_AccessibilitySpokenFeedback">
             <span>
               <label for="accessibility-spoken-feedback-check"
                   i18n-content="accessibilitySpokenFeedback">
@@ -734,7 +802,8 @@
         <div class="checkbox">
           <span class="controlled-setting-with-label">
             <input id="accessibility-screen-magnifier-check"
-                pref="settings.a11y.screen_magnifier" type="checkbox">
+                   pref="settings.a11y.screen_magnifier" type="checkbox"
+                   metric="Options_AccessibilityScreenMagnifier">
             <span>
               <label for="accessibility-screen-magnifier-check"
                   i18n-content="accessibilityScreenMagnifier">
@@ -750,7 +819,8 @@
         <div class="checkbox">
           <label>
             <input id="accessibility-tap-dragging-check"
-                pref="settings.touchpad.enable_tap_dragging" type="checkbox">
+                   pref="settings.touchpad.enable_tap_dragging" type="checkbox"
+                   metric="Options_AccessibilityTapDragging">
             <span i18n-content="accessibilityTapDragging"></span>
           </label>
         </div>
@@ -795,8 +865,25 @@
           </span>
         </div>
       </div>
+      <div class="option_name" id="accessibility_onscreen_keyboard">
+        <div class="checkbox">
+          <span class="controlled-setting-with-label">
+            <input id="accessibility-virtual-keyboard-check"
+                   pref="settings.a11y.virtual_keyboard" type="checkbox"
+                   metric="Options_AccessibilityOnScreenKeyboard">
+            <span>
+              <label for="accessibility-virtual-keyboard-check"
+                  i18n-content="accessibilityVirtualKeyboard">
+              </label>
+              <span class="controlled-setting-indicator"
+                  pref="settings.a11y.virtual_keyboard">
+              </span>
+            </span>
+          </span>
+        </div>
+      </div>
   </section>
-<if expr="pp_ifdef('chromeos')">
+<if expr="chromeos">
   <section id="factory-reset-section" hidden>
     <h3 i18n-content="factoryResetTitle"></h3>
     <div>
@@ -809,7 +896,7 @@
   </section>
 </if>
 </if>
-<if expr="not pp_ifdef('chromeos')">
+<if expr="not chromeos">
   <section id="system-section">
     <h3 i18n-content="advancedSectionTitleSystem"></h3>
 <if expr="not is_macosx">

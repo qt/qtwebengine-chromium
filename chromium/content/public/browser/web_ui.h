@@ -12,7 +12,6 @@
 #include "base/strings/string16.h"
 #include "content/common/content_export.h"
 #include "content/public/common/page_transition_types.h"
-#include "ui/base/layout.h"
 
 class GURL;
 
@@ -55,7 +54,7 @@ class CONTENT_EXPORT WebUI {
   // Returns the device scale factor of the monitor that the renderer is on.
   // Whenever possible, WebUI should push resources with this scale factor to
   // Javascript.
-  virtual ui::ScaleFactor GetDeviceScaleFactor() const = 0;
+  virtual float GetDeviceScaleFactor() const = 0;
 
   // Gets a custom tab title provided by the Web UI. If there is no title
   // override, the string will be empty which should trigger the default title
@@ -73,8 +72,10 @@ class CONTENT_EXPORT WebUI {
   virtual int GetBindings() const = 0;
   virtual void SetBindings(int bindings) = 0;
 
-  // Sets the path for the iframe if this WebUI is embedded in a page.
-  virtual void SetFrameXPath(const std::string& xpath) = 0;
+  // Overrides which frame gets JavaScript messages; this is useful if this
+  // WebUI is embedded in a page. If no override is set, the main frame will
+  // receive the JavaScript messages.
+  virtual void OverrideJavaScriptFrame(const std::string& frame_name) = 0;
 
   // Takes ownership of |handler|, which will be destroyed when the WebUI is.
   virtual void AddMessageHandler(WebUIMessageHandler* handler) = 0;

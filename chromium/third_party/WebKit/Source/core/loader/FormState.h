@@ -29,8 +29,9 @@
 #ifndef FormState_h
 #define FormState_h
 
+#include "platform/heap/Handle.h"
 #include "wtf/RefCounted.h"
-#include "wtf/text/WTFString.h"
+#include "wtf/RefPtr.h"
 
 namespace WebCore {
 
@@ -42,23 +43,20 @@ namespace WebCore {
         NotSubmittedByJavaScript
     };
 
-    typedef Vector<std::pair<String, String> > StringPairVector;
-
-    class FormState : public RefCounted<FormState> {
+    class FormState FINAL : public RefCountedWillBeGarbageCollected<FormState> {
     public:
-        static PassRefPtr<FormState> create(PassRefPtr<HTMLFormElement>, StringPairVector& textFieldValuesToAdopt, PassRefPtr<Document>, FormSubmissionTrigger);
+        static PassRefPtrWillBeRawPtr<FormState> create(HTMLFormElement&, FormSubmissionTrigger);
+        void trace(Visitor*);
 
         HTMLFormElement* form() const { return m_form.get(); }
-        const StringPairVector& textFieldValues() const { return m_textFieldValues; }
         Document* sourceDocument() const { return m_sourceDocument.get(); }
         FormSubmissionTrigger formSubmissionTrigger() const { return m_formSubmissionTrigger; }
 
     private:
-        FormState(PassRefPtr<HTMLFormElement>, StringPairVector& textFieldValuesToAdopt, PassRefPtr<Document>, FormSubmissionTrigger);
+        FormState(HTMLFormElement&, FormSubmissionTrigger);
 
-        RefPtr<HTMLFormElement> m_form;
-        StringPairVector m_textFieldValues;
-        RefPtr<Document> m_sourceDocument;
+        RefPtrWillBeMember<HTMLFormElement> m_form;
+        RefPtrWillBeMember<Document> m_sourceDocument;
         FormSubmissionTrigger m_formSubmissionTrigger;
     };
 

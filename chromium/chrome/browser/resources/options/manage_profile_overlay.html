@@ -52,6 +52,29 @@
           i18n-content="deleteProfileOK"></button>
     </div>
   </div>
+  <!-- Dialog for disconnecting enterprise managed profiles. -->
+  <div id="manage-profile-overlay-disconnect-managed" hidden>
+    <h1 i18n-content="disconnectManagedProfileTitle"></h1>
+    <div class="content-area"
+        id="disconnect-managed-profile-domain-information"
+        i18n-values=".innerHTML:disconnectManagedProfileDomainInformation">
+    </div>
+    <div class="content-area">
+      <div id="disconnect-managed-profile-message">
+        <div id="disconnect-managed-profile-text"
+            i18n-values=".innerHTML:disconnectManagedProfileText">
+        </div>
+      </div>
+    </div>
+    <div class="action-area">
+      <div class="button-strip">
+        <button id="disconnect-managed-profile-ok"
+            i18n-content="disconnectManagedProfileOK"></button>
+        <button id="disconnect-managed-profile-cancel" class="default-button"
+            i18n-content="cancel"></button>
+      </div>
+    </div>
+  </div>
   <!-- Dialog for creating profiles. -->
   <div id="manage-profile-overlay-create" hidden>
     <h1 i18n-content="createProfileTitle"></h1>
@@ -66,7 +89,6 @@
           <input id="create-profile-name" type="text" required>
         </label>
       </div>
-      <div id="create-profile-error-bubble" hidden></div>
     </div>
     <div id="create-profile-managed-content-area" class="content-area">
       <div id="create-shortcut-container" class="checkbox" hidden>
@@ -107,11 +129,12 @@
             class="bubble-button controlled-setting-indicator">
         </span>
       </div>
+      <div id="create-profile-error-bubble" hidden></div>
     </div>
     <div class="action-area">
       <div id="create-profile-throbber" class="throbber"></div>
       <button id="import-existing-managed-user-link" class="link-button"
-          i18n-content="importExistingManagedUserLink">
+          i18n-content="importExistingManagedUserLink" hidden>
       </button>
       <div class="button-strip">
         <button id="create-profile-cancel" i18n-content="cancel"></button>

@@ -29,10 +29,14 @@ class ZygoteForkDelegate {
 
   // Initialization happens in the zygote after it has been
   // started by ZygoteMain.
-  virtual void Init(int sandboxdesc) = 0;
+  // If |enable_layer1_sandbox| is true, the delegate must enable a
+  // layer-1 sandbox such as the setuid sandbox.
+  virtual void Init(int sandboxdesc, bool enable_layer1_sandbox) = 0;
 
-  // After Init, supply a UMA_HISTOGRAM_ENUMERATION the delegate
-  // would like to supply on the first fork.
+  // After Init, supply a UMA_HISTOGRAM_ENUMERATION the delegate would like
+  // reported to the browser process.  (Note: Because these reports are
+  // piggy-backed onto fork responses that don't otherwise contain UMA reports,
+  // this method may not be called until much later.)
   virtual void InitialUMA(std::string* uma_name,
                           int* uma_sample,
                           int* uma_boundary_value) = 0;
@@ -47,11 +51,11 @@ class ZygoteForkDelegate {
   enum {
     // Used to pass in the descriptor for talking to the Browser
     kBrowserFDIndex,
-    // The next two are used in the protocol for discovering the
-    // child processes real PID from within the SUID sandbox. See
-    // http://code.google.com/p/chromium/wiki/LinuxZygote
-    kDummyFDIndex,
-    kParentFDIndex,
+    // The PID oracle is used in the protocol for discovering the
+    // child process's real PID from within the SUID sandbox.
+    // The child process is required to write to the socket after
+    // successfully forking.
+    kPIDOracleFDIndex,
     kNumPassedFDs  // Number of FDs in the vector passed to Fork().
   };
 
@@ -59,12 +63,11 @@ class ZygoteForkDelegate {
   // suid sandbox, Fork() returns the Linux process ID.
   // This method is not aware of any potential pid namespaces, so it'll
   // return a raw pid just like fork() would.
-  virtual pid_t Fork(const std::vector<int>& fds) = 0;
-
-  // After a successful fork, signal the child to indicate that
-  // the child's PID has been received. Also communicate the
-  // channel switch as a part of acknowledgement message.
-  virtual bool AckChild(int fd, const std::string& channel_switch) = 0;
+  // Delegate is responsible for communicating the channel ID to the
+  // newly created child process.
+  virtual pid_t Fork(const std::string& process_type,
+                     const std::vector<int>& fds,
+                     const std::string& channel_id) = 0;
 
   // The fork delegate must also assume the role of waiting for its children
   // since the caller will not be their parents and cannot do it. |pid| here

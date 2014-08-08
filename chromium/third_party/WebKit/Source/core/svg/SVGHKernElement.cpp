@@ -33,16 +33,13 @@ inline SVGHKernElement::SVGHKernElement(Document& document)
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<SVGHKernElement> SVGHKernElement::create(Document& document)
-{
-    return adoptRef(new SVGHKernElement(document));
-}
+DEFINE_NODE_FACTORY(SVGHKernElement)
 
 Node::InsertionNotificationRequest SVGHKernElement::insertedInto(ContainerNode* rootParent)
 {
     ContainerNode* fontNode = parentNode();
-    if (fontNode && fontNode->hasTagName(SVGNames::fontTag))
-        toSVGFontElement(fontNode)->invalidateGlyphCache();
+    if (isSVGFontElement(fontNode))
+        toSVGFontElement(*fontNode).invalidateGlyphCache();
 
     return SVGElement::insertedInto(rootParent);
 }
@@ -50,8 +47,8 @@ Node::InsertionNotificationRequest SVGHKernElement::insertedInto(ContainerNode* 
 void SVGHKernElement::removedFrom(ContainerNode* rootParent)
 {
     ContainerNode* fontNode = parentNode();
-    if (fontNode && fontNode->hasTagName(SVGNames::fontTag))
-        toSVGFontElement(fontNode)->invalidateGlyphCache();
+    if (isSVGFontElement(fontNode))
+        toSVGFontElement(*fontNode).invalidateGlyphCache();
 
     SVGElement::removedFrom(rootParent);
 }

@@ -42,9 +42,7 @@ class ImageTransportSurfaceAndroid
   // gfx::GLSurface implementation.
   virtual bool Initialize() OVERRIDE;
   virtual bool SwapBuffers() OVERRIDE;
-  virtual std::string GetExtensions() OVERRIDE;
   virtual bool OnMakeCurrent(gfx::GLContext* context) OVERRIDE;
-  virtual void SetFrontbufferAllocation(bool allocated) OVERRIDE;
   virtual void WakeUpGpu() OVERRIDE;
 
  protected:
@@ -55,7 +53,6 @@ class ImageTransportSurfaceAndroid
   void DoWakeUpGpu();
 
   uint32 parent_client_id_;
-  bool frontbuffer_suggested_allocation_;
   base::TimeTicks begin_wake_up_time_;
 };
 
@@ -63,8 +60,7 @@ class DirectSurfaceAndroid : public PassThroughImageTransportSurface {
  public:
   DirectSurfaceAndroid(GpuChannelManager* manager,
                        GpuCommandBufferStub* stub,
-                       gfx::GLSurface* surface,
-                       bool transport);
+                       gfx::GLSurface* surface);
 
   // gfx::GLSurface implementation.
   virtual bool SwapBuffers() OVERRIDE;
@@ -81,9 +77,8 @@ ImageTransportSurfaceAndroid::ImageTransportSurfaceAndroid(
     GpuCommandBufferStub* stub,
     gfx::GLSurface* surface,
     uint32 parent_client_id)
-    : PassThroughImageTransportSurface(manager, stub, surface, true),
-      parent_client_id_(parent_client_id),
-      frontbuffer_suggested_allocation_(true) {}
+    : PassThroughImageTransportSurface(manager, stub, surface),
+      parent_client_id_(parent_client_id) {}
 
 ImageTransportSurfaceAndroid::~ImageTransportSurfaceAndroid() {}
 
@@ -105,25 +100,9 @@ bool ImageTransportSurfaceAndroid::Initialize() {
   return true;
 }
 
-std::string ImageTransportSurfaceAndroid::GetExtensions() {
-  std::string extensions = gfx::GLSurface::GetExtensions();
-  extensions += extensions.empty() ? "" : " ";
-  extensions += "GL_CHROMIUM_front_buffer_cached ";
-  return extensions;
-}
-
-void ImageTransportSurfaceAndroid::SetFrontbufferAllocation(bool allocation) {
-  if (frontbuffer_suggested_allocation_ == allocation)
-    return;
-  frontbuffer_suggested_allocation_ = allocation;
-  // TODO(sievers): This races with CompositorFrame messages.
-  if (!allocation)
-    GetHelper()->SendAcceleratedSurfaceRelease();
-}
-
 bool ImageTransportSurfaceAndroid::OnMakeCurrent(gfx::GLContext* context) {
   DidAccessGpu();
-  return PassThroughImageTransportSurface::OnMakeCurrent(context);
+  return true;
 }
 
 bool ImageTransportSurfaceAndroid::SwapBuffers() {
@@ -168,9 +147,8 @@ void ImageTransportSurfaceAndroid::DoWakeUpGpu() {
 
 DirectSurfaceAndroid::DirectSurfaceAndroid(GpuChannelManager* manager,
                                            GpuCommandBufferStub* stub,
-                                           gfx::GLSurface* surface,
-                                           bool transport)
-    : PassThroughImageTransportSurface(manager, stub, surface, transport) {}
+                                           gfx::GLSurface* surface)
+    : PassThroughImageTransportSurface(manager, stub, surface) {}
 
 DirectSurfaceAndroid::~DirectSurfaceAndroid() {}
 
@@ -208,7 +186,7 @@ scoped_refptr<gfx::GLSurface> ImageTransportSurface::CreateNativeSurface(
     return scoped_refptr<gfx::GLSurface>();
 
   return scoped_refptr<gfx::GLSurface>(
-      new DirectSurfaceAndroid(manager, stub, surface.get(), false));
+      new DirectSurfaceAndroid(manager, stub, surface.get()));
 }
 
 }  // namespace content

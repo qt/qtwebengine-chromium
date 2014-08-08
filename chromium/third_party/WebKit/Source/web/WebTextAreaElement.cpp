@@ -29,9 +29,9 @@
  */
 
 #include "config.h"
-#include "WebTextAreaElement.h"
+#include "public/web/WebTextAreaElement.h"
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 #include "core/html/HTMLTextAreaElement.h"
 #include "public/platform/WebString.h"
 #include "wtf/PassRefPtr.h"
@@ -40,28 +40,18 @@ using namespace WebCore;
 
 namespace blink {
 
-void WebTextAreaElement::setValue(const WebString& value)
-{
-    unwrap<HTMLTextAreaElement>()->setValue(value);
-}
-
-WebString WebTextAreaElement::value() const
-{
-    return constUnwrap<HTMLTextAreaElement>()->value();
-}
-
-WebTextAreaElement::WebTextAreaElement(const PassRefPtr<HTMLTextAreaElement>& element)
+WebTextAreaElement::WebTextAreaElement(const PassRefPtrWillBeRawPtr<HTMLTextAreaElement>& element)
     : WebFormControlElement(element)
 {
 }
 
-WebTextAreaElement& WebTextAreaElement::operator=(const PassRefPtr<HTMLTextAreaElement>& element)
+WebTextAreaElement& WebTextAreaElement::operator=(const PassRefPtrWillBeRawPtr<HTMLTextAreaElement>& element)
 {
     m_private = element;
     return *this;
 }
 
-WebTextAreaElement::operator PassRefPtr<HTMLTextAreaElement>() const
+WebTextAreaElement::operator PassRefPtrWillBeRawPtr<HTMLTextAreaElement>() const
 {
     return toHTMLTextAreaElement(m_private.get());
 }

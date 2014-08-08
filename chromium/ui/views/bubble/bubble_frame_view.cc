@@ -12,6 +12,7 @@
 #include "ui/gfx/path.h"
 #include "ui/gfx/screen.h"
 #include "ui/gfx/skia_util.h"
+#include "ui/native_theme/native_theme.h"
 #include "ui/views/bubble/bubble_border.h"
 #include "ui/views/controls/button/label_button.h"
 #include "ui/views/widget/widget.h"
@@ -20,10 +21,11 @@
 
 namespace {
 
-// Padding, in pixels, for the title view, when it exists.
+// Insets for the title bar views in pixels.
 const int kTitleTopInset = 12;
 const int kTitleLeftInset = 19;
 const int kTitleBottomInset = 12;
+const int kTitleRightInset = 7;
 
 // Get the |vertical| or horizontal amount that |available_bounds| overflows
 // |window_bounds|.
@@ -57,7 +59,8 @@ const char BubbleFrameView::kViewClassName[] = "BubbleFrameView";
 
 // static
 gfx::Insets BubbleFrameView::GetTitleInsets() {
-  return gfx::Insets(kTitleTopInset, kTitleLeftInset, kTitleBottomInset, 0);
+  return gfx::Insets(kTitleTopInset, kTitleLeftInset,
+                     kTitleBottomInset, kTitleRightInset);
 }
 
 BubbleFrameView::BubbleFrameView(const gfx::Insets& content_margins)
@@ -67,19 +70,20 @@ BubbleFrameView::BubbleFrameView(const gfx::Insets& content_margins)
       close_(NULL),
       titlebar_extra_view_(NULL) {
   ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
-  title_ = new Label(string16(), rb.GetFont(ui::ResourceBundle::MediumFont));
+  title_ = new Label(base::string16(),
+                     rb.GetFontList(ui::ResourceBundle::MediumFont));
   title_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
   AddChildView(title_);
 
-  close_ = new LabelButton(this, string16());
+  close_ = new LabelButton(this, base::string16());
   close_->SetImage(CustomButton::STATE_NORMAL,
                    *rb.GetImageNamed(IDR_CLOSE_DIALOG).ToImageSkia());
   close_->SetImage(CustomButton::STATE_HOVERED,
                    *rb.GetImageNamed(IDR_CLOSE_DIALOG_H).ToImageSkia());
   close_->SetImage(CustomButton::STATE_PRESSED,
                    *rb.GetImageNamed(IDR_CLOSE_DIALOG_P).ToImageSkia());
+  close_->SetBorder(scoped_ptr<Border>());
   close_->SetSize(close_->GetPreferredSize());
-  close_->set_border(NULL);
   close_->SetVisible(false);
   AddChildView(close_);
 }
@@ -154,9 +158,13 @@ void BubbleFrameView::UpdateWindowIcon() {}
 
 void BubbleFrameView::UpdateWindowTitle() {
   title_->SetText(GetWidget()->widget_delegate()->ShouldShowWindowTitle() ?
-      GetWidget()->widget_delegate()->GetWindowTitle() : string16());
+      GetWidget()->widget_delegate()->GetWindowTitle() : base::string16());
   // Update the close button visibility too, otherwise it's not intialized.
   ResetWindowControls();
+}
+
+void BubbleFrameView::SetTitleFontList(const gfx::FontList& font_list) {
+  title_->SetFontList(font_list);
 }
 
 gfx::Insets BubbleFrameView::GetInsets() const {
@@ -168,39 +176,40 @@ gfx::Insets BubbleFrameView::GetInsets() const {
   return insets;
 }
 
-gfx::Size BubbleFrameView::GetPreferredSize() {
+gfx::Size BubbleFrameView::GetPreferredSize() const {
   return GetSizeForClientSize(GetWidget()->client_view()->GetPreferredSize());
 }
 
-gfx::Size BubbleFrameView::GetMinimumSize() {
+gfx::Size BubbleFrameView::GetMinimumSize() const {
   return GetSizeForClientSize(GetWidget()->client_view()->GetMinimumSize());
 }
 
 void BubbleFrameView::Layout() {
-  gfx::Rect bounds(GetLocalBounds());
-  bounds.Inset(border()->GetInsets());
-  // Small additional insets yield the desired 10px visual close button insets.
-  bounds.Inset(0, 0, close_->width() + 1, 0);
-  close_->SetPosition(gfx::Point(bounds.right(), bounds.y() + 2));
+  gfx::Rect bounds(GetContentsBounds());
+  bounds.Inset(GetTitleInsets());
+  if (bounds.IsEmpty())
+    return;
 
-  gfx::Rect title_bounds(bounds);
-  title_bounds.Inset(kTitleLeftInset, kTitleTopInset, 0, 0);
+  // The close button top inset is actually smaller than the title top inset.
+  close_->SetPosition(gfx::Point(bounds.right() - close_->width(),
+                                 bounds.y() - 5));
+
   gfx::Size title_size(title_->GetPreferredSize());
-  const int title_width = std::max(0, close_->bounds().x() - title_bounds.x());
+  const int title_width = std::max(0, close_->x() - bounds.x());
   title_size.SetToMin(gfx::Size(title_width, title_size.height()));
-  title_bounds.set_size(title_size);
-  title_->SetBoundsRect(title_bounds);
+  bounds.set_size(title_size);
+  title_->SetBoundsRect(bounds);
 
   if (titlebar_extra_view_) {
-    const int extra_width = close_->bounds().x() - title_->bounds().right();
+    const int extra_width = close_->x() - title_->bounds().right();
     gfx::Size size = titlebar_extra_view_->GetPreferredSize();
     size.SetToMin(gfx::Size(std::max(0, extra_width), size.height()));
     gfx::Rect titlebar_extra_view_bounds(
-        bounds.right() - size.width(),
-        title_bounds.y(),
+        close_->x() - size.width(),
+        bounds.y(),
         size.width(),
-        title_bounds.height());
-    titlebar_extra_view_bounds.Subtract(title_bounds);
+        bounds.height());
+    titlebar_extra_view_bounds.Subtract(bounds);
     titlebar_extra_view_->SetBoundsRect(titlebar_extra_view_bounds);
   }
 }
@@ -220,17 +229,25 @@ void BubbleFrameView::OnThemeChanged() {
   UpdateWindowIcon();
 }
 
+void BubbleFrameView::OnNativeThemeChanged(const ui::NativeTheme* theme) {
+  if (bubble_border_ && bubble_border_->use_theme_background_color()) {
+    bubble_border_->set_background_color(GetNativeTheme()->
+        GetSystemColor(ui::NativeTheme::kColorId_DialogBackground));
+    SchedulePaint();
+  }
+}
+
 void BubbleFrameView::ButtonPressed(Button* sender, const ui::Event& event) {
   if (sender == close_)
     GetWidget()->Close();
 }
 
-void BubbleFrameView::SetBubbleBorder(BubbleBorder* border) {
-  bubble_border_ = border;
-  set_border(bubble_border_);
+void BubbleFrameView::SetBubbleBorder(scoped_ptr<BubbleBorder> border) {
+  bubble_border_ = border.get();
+  SetBorder(border.PassAs<Border>());
 
   // Update the background, which relies on the border.
-  set_background(new views::BubbleBackground(border));
+  set_background(new views::BubbleBackground(bubble_border_));
 }
 
 void BubbleFrameView::SetTitlebarExtraView(View* view) {
@@ -243,27 +260,23 @@ void BubbleFrameView::SetTitlebarExtraView(View* view) {
 gfx::Rect BubbleFrameView::GetUpdatedWindowBounds(const gfx::Rect& anchor_rect,
                                                   gfx::Size client_size,
                                                   bool adjust_if_offscreen) {
-  gfx::Insets insets(GetInsets());
-  client_size.Enlarge(insets.width(), insets.height());
+  gfx::Size size(GetSizeForClientSize(client_size));
 
   const BubbleBorder::Arrow arrow = bubble_border_->arrow();
   if (adjust_if_offscreen && BubbleBorder::has_arrow(arrow)) {
+    // Try to mirror the anchoring if the bubble does not fit on the screen.
     if (!bubble_border_->is_arrow_at_center(arrow)) {
-      // Try to mirror the anchoring if the bubble does not fit on the screen.
-      MirrorArrowIfOffScreen(true, anchor_rect, client_size);
-      MirrorArrowIfOffScreen(false, anchor_rect, client_size);
+      MirrorArrowIfOffScreen(true, anchor_rect, size);
+      MirrorArrowIfOffScreen(false, anchor_rect, size);
     } else {
-      // Mirror as needed vertically if the arrow is on a horizontal edge and
-      // vice-versa.
-      MirrorArrowIfOffScreen(BubbleBorder::is_arrow_on_horizontal(arrow),
-                             anchor_rect,
-                             client_size);
-      OffsetArrowIfOffScreen(anchor_rect, client_size);
+      const bool mirror_vertical = BubbleBorder::is_arrow_on_horizontal(arrow);
+      MirrorArrowIfOffScreen(mirror_vertical, anchor_rect, size);
+      OffsetArrowIfOffScreen(anchor_rect, size);
     }
   }
 
   // Calculate the bounds with the arrow in its updated location and offset.
-  return bubble_border_->GetBounds(anchor_rect, client_size);
+  return bubble_border_->GetBounds(anchor_rect, size);
 }
 
 gfx::Rect BubbleFrameView::GetAvailableScreenBounds(const gfx::Rect& rect) {
@@ -337,9 +350,8 @@ void BubbleFrameView::OffsetArrowIfOffScreen(const gfx::Rect& anchor_rect,
     SchedulePaint();
 }
 
-gfx::Size BubbleFrameView::GetSizeForClientSize(const gfx::Size& client_size) {
-  gfx::Size size(
-      GetUpdatedWindowBounds(gfx::Rect(), client_size, false).size());
+gfx::Size BubbleFrameView::GetSizeForClientSize(
+    const gfx::Size& client_size) const {
   // Accommodate the width of the title bar elements.
   int title_bar_width = GetInsets().width() + border()->GetInsets().width();
   if (!title_->text().empty())
@@ -348,7 +360,10 @@ gfx::Size BubbleFrameView::GetSizeForClientSize(const gfx::Size& client_size) {
     title_bar_width += close_->width() + 1;
   if (titlebar_extra_view_ != NULL)
     title_bar_width += titlebar_extra_view_->GetPreferredSize().width();
+  gfx::Size size(client_size);
   size.SetToMax(gfx::Size(title_bar_width, 0));
+  const gfx::Insets insets(GetInsets());
+  size.Enlarge(insets.width(), insets.height());
   return size;
 }
 

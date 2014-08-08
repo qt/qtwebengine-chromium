@@ -38,11 +38,11 @@
 #include "wtf/text/StringHash.h"
 #include "wtf/text/WTFString.h"
 
-#include "WebEntities.h"
-#include "WebPageSerializer.h"
-#include "WebPageSerializerClient.h"
 #include "public/platform/WebString.h"
 #include "public/platform/WebURL.h"
+#include "public/web/WebPageSerializer.h"
+#include "public/web/WebPageSerializerClient.h"
+#include "web/WebEntities.h"
 
 namespace WTF{
 class TextEncoding;
@@ -55,7 +55,7 @@ class Node;
 }
 
 namespace blink {
-class WebFrameImpl;
+class WebLocalFrameImpl;
 
 // Get html data by serializing all frames of current page with lists
 // which contain all resource links that have local copy.
@@ -91,7 +91,7 @@ public:
 
 private:
     // Specified frame which need to be serialized;
-    WebFrameImpl* m_specifiedWebFrameImpl;
+    WebLocalFrameImpl* m_specifiedWebLocalFrameImpl;
     // Pointer of WebPageSerializerClient
     WebPageSerializerClient* m_client;
     // This hash map is used to map resource URL of original link to its local
@@ -112,7 +112,7 @@ private:
     // Local directory name of all local resource files.
     WTF::String m_localDirectoryName;
     // Vector for saving all frames which need to be serialized.
-    Vector<WebFrameImpl*> m_frames;
+    Vector<WebLocalFrameImpl*> m_frames;
 
     // Web entities conversion maps.
     WebEntities m_htmlEntities;

@@ -67,6 +67,8 @@ public:
     virtual bool getHotSpot(IntPoint&) const OVERRIDE;
 
     virtual bool dataChanged(bool allDataReceived) OVERRIDE;
+    bool isAllDataReceived() const;
+    bool hasColorProfile() const;
     virtual String filenameExtension() const OVERRIDE;
 
     // It may look unusual that there is no start animation call as public API.  This is because
@@ -74,13 +76,14 @@ public:
     // automatically pause once all observers no longer want to render the image anywhere.
     virtual void stopAnimation() OVERRIDE;
     virtual void resetAnimation() OVERRIDE;
+    virtual bool maybeAnimated() OVERRIDE;
 
     virtual PassRefPtr<NativeImageSkia> nativeImageForCurrentFrame() OVERRIDE;
     virtual bool currentFrameKnownToBeOpaque() OVERRIDE;
 
     ImageOrientation currentFrameOrientation();
 
-#if !ASSERT_DISABLED
+#if ASSERT_ENABLED
     virtual bool notSolidColor() OVERRIDE;
 #endif
 
@@ -138,7 +141,7 @@ protected:
     // Animation.
     int repetitionCount(bool imageKnownToBeComplete);  // |imageKnownToBeComplete| should be set if the caller knows the entire image has been decoded.
     bool shouldAnimate();
-    virtual void startAnimation(bool catchUpIfNecessary = true) OVERRIDE;
+    virtual void startAnimation(CatchUpAnimation = CatchUp) OVERRIDE;
     void advanceAnimation(Timer<BitmapImage>*);
 
     // Function that does the real work of advancing the animation.  When
@@ -153,8 +156,8 @@ protected:
     // changed.
     void checkForSolidColor();
 
-    virtual bool mayFillWithSolidColor();
-    virtual Color solidColor() const;
+    virtual bool mayFillWithSolidColor() OVERRIDE;
+    virtual Color solidColor() const OVERRIDE;
 
     ImageSource m_source;
     mutable IntSize m_size; // The size to use for the overall image (will just be the size of the first image).

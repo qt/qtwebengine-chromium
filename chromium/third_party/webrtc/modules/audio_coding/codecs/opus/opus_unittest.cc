@@ -202,6 +202,27 @@ TEST_F(OpusTest, OpusSetBitRate) {
   EXPECT_EQ(0, WebRtcOpus_EncoderFree(opus_stereo_encoder_));
 }
 
+TEST_F(OpusTest, OpusSetComplexity) {
+  // Test without creating encoder memory.
+  EXPECT_EQ(-1, WebRtcOpus_SetComplexity(opus_mono_encoder_, 9));
+  EXPECT_EQ(-1, WebRtcOpus_SetComplexity(opus_stereo_encoder_, 9));
+
+  // Create encoder memory, try with different complexities.
+  EXPECT_EQ(0, WebRtcOpus_EncoderCreate(&opus_mono_encoder_, 1));
+  EXPECT_EQ(0, WebRtcOpus_EncoderCreate(&opus_stereo_encoder_, 2));
+
+  EXPECT_EQ(0, WebRtcOpus_SetComplexity(opus_mono_encoder_, 0));
+  EXPECT_EQ(0, WebRtcOpus_SetComplexity(opus_stereo_encoder_, 0));
+  EXPECT_EQ(0, WebRtcOpus_SetComplexity(opus_mono_encoder_, 10));
+  EXPECT_EQ(0, WebRtcOpus_SetComplexity(opus_stereo_encoder_, 10));
+  EXPECT_EQ(-1, WebRtcOpus_SetComplexity(opus_mono_encoder_, 11));
+  EXPECT_EQ(-1, WebRtcOpus_SetComplexity(opus_stereo_encoder_, 11));
+
+  // Free memory.
+  EXPECT_EQ(0, WebRtcOpus_EncoderFree(opus_mono_encoder_));
+  EXPECT_EQ(0, WebRtcOpus_EncoderFree(opus_stereo_encoder_));
+}
+
 // Encode and decode one frame (stereo), initialize the decoder and
 // decode once more.
 TEST_F(OpusTest, OpusDecodeInit) {
@@ -264,6 +285,47 @@ TEST_F(OpusTest, OpusDecodeInit) {
   EXPECT_EQ(0, WebRtcOpus_DecoderFree(opus_stereo_decoder_));
   EXPECT_EQ(0, WebRtcOpus_DecoderFree(opus_stereo_decoder_new_));
 }
+
+TEST_F(OpusTest, OpusEnableDisableFec) {
+  // Test without creating encoder memory.
+  EXPECT_EQ(-1, WebRtcOpus_EnableFec(opus_mono_encoder_));
+  EXPECT_EQ(-1, WebRtcOpus_DisableFec(opus_stereo_encoder_));
+
+  // Create encoder memory, try with different bitrates.
+  EXPECT_EQ(0, WebRtcOpus_EncoderCreate(&opus_mono_encoder_, 1));
+  EXPECT_EQ(0, WebRtcOpus_EncoderCreate(&opus_stereo_encoder_, 2));
+
+  EXPECT_EQ(0, WebRtcOpus_EnableFec(opus_mono_encoder_));
+  EXPECT_EQ(0, WebRtcOpus_EnableFec(opus_stereo_encoder_));
+  EXPECT_EQ(0, WebRtcOpus_DisableFec(opus_mono_encoder_));
+  EXPECT_EQ(0, WebRtcOpus_DisableFec(opus_stereo_encoder_));
+
+  // Free memory.
+  EXPECT_EQ(0, WebRtcOpus_EncoderFree(opus_mono_encoder_));
+  EXPECT_EQ(0, WebRtcOpus_EncoderFree(opus_stereo_encoder_));
+}
+
+TEST_F(OpusTest, OpusSetPacketLossRate) {
+  // Test without creating encoder memory.
+  EXPECT_EQ(-1, WebRtcOpus_SetPacketLossRate(opus_mono_encoder_, 50));
+  EXPECT_EQ(-1, WebRtcOpus_SetPacketLossRate(opus_stereo_encoder_, 50));
+
+  // Create encoder memory, try with different bitrates.
+  EXPECT_EQ(0, WebRtcOpus_EncoderCreate(&opus_mono_encoder_, 1));
+  EXPECT_EQ(0, WebRtcOpus_EncoderCreate(&opus_stereo_encoder_, 2));
+
+  EXPECT_EQ(0, WebRtcOpus_SetPacketLossRate(opus_mono_encoder_, 50));
+  EXPECT_EQ(0, WebRtcOpus_SetPacketLossRate(opus_stereo_encoder_, 50));
+  EXPECT_EQ(-1, WebRtcOpus_SetPacketLossRate(opus_mono_encoder_, -1));
+  EXPECT_EQ(-1, WebRtcOpus_SetPacketLossRate(opus_stereo_encoder_, -1));
+  EXPECT_EQ(-1, WebRtcOpus_SetPacketLossRate(opus_mono_encoder_, 101));
+  EXPECT_EQ(-1, WebRtcOpus_SetPacketLossRate(opus_stereo_encoder_, 101));
+
+  // Free memory.
+  EXPECT_EQ(0, WebRtcOpus_EncoderFree(opus_mono_encoder_));
+  EXPECT_EQ(0, WebRtcOpus_EncoderFree(opus_stereo_encoder_));
+}
+
 
 // PLC in mono mode.
 TEST_F(OpusTest, OpusDecodePlcMono) {

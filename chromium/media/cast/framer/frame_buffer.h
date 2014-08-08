@@ -25,11 +25,11 @@ class FrameBuffer {
                     const RtpCastHeader& rtp_header);
   bool Complete() const;
 
-  bool GetEncodedAudioFrame(EncodedAudioFrame* audio_frame,
-                            uint32* rtp_timestamp) const;
-
-  bool GetEncodedVideoFrame(EncodedVideoFrame* video_frame,
-                            uint32* rtp_timestamp) const;
+  // If a frame is complete, sets the frame IDs and RTP timestamp in |frame|,
+  // and also copies the data from all packets into the data field in |frame|.
+  // Returns true if the frame was complete; false if incomplete and |frame|
+  // remains unchanged.
+  bool AssembleEncodedFrame(transport::EncodedFrame* frame) const;
 
   bool is_key_frame() const { return is_key_frame_; }
 

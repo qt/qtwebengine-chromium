@@ -26,26 +26,27 @@
 #ifndef GeolocationController_h
 #define GeolocationController_h
 
-#include "core/page/Page.h"
+#include "core/frame/LocalFrame.h"
 #include "core/page/PageLifecycleObserver.h"
 #include "modules/geolocation/Geolocation.h"
+#include "platform/heap/Handle.h"
 #include "wtf/HashSet.h"
 #include "wtf/Noncopyable.h"
-#include "wtf/RefPtr.h"
 
 namespace WebCore {
 
+class GeolocationInspectorAgent;
 class GeolocationClient;
 class GeolocationError;
 class GeolocationPosition;
-class Page;
 
-class GeolocationController : public Supplement<Page>, public PageLifecycleObserver {
+class GeolocationController FINAL : public NoBaseWillBeGarbageCollectedFinalized<GeolocationController>, public WillBeHeapSupplement<LocalFrame>, public PageLifecycleObserver {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(GeolocationController);
     WTF_MAKE_NONCOPYABLE(GeolocationController);
 public:
-    ~GeolocationController();
+    virtual ~GeolocationController();
 
-    static PassOwnPtr<GeolocationController> create(Page*, GeolocationClient*);
+    static PassOwnPtrWillBeRawPtr<GeolocationController> create(LocalFrame&, GeolocationClient*);
 
     void addObserver(Geolocation*, bool enableHighAccuracy);
     void removeObserver(Geolocation*);
@@ -58,26 +59,37 @@ public:
 
     GeolocationPosition* lastPosition();
 
+    void setClientForTest(GeolocationClient*);
+    bool hasClientForTest() { return m_hasClientForTest; }
+    GeolocationClient* client() { return m_client; }
+
     // Inherited from PageLifecycleObserver.
     virtual void pageVisibilityChanged() OVERRIDE;
 
     static const char* supplementName();
-    static GeolocationController* from(Page* page) { return static_cast<GeolocationController*>(Supplement<Page>::from(page, supplementName())); }
+    static GeolocationController* from(LocalFrame* frame) { return static_cast<GeolocationController*>(WillBeHeapSupplement<LocalFrame>::from(frame, supplementName())); }
+
+    // Inherited from Supplement.
+    virtual void trace(Visitor*) OVERRIDE;
+    virtual void willBeDestroyed() OVERRIDE;
+    virtual void persistentHostHasBeenDestroyed() OVERRIDE;
 
 private:
-    GeolocationController(Page*, GeolocationClient*);
+    GeolocationController(LocalFrame&, GeolocationClient*);
 
     void startUpdatingIfNeeded();
     void stopUpdatingIfNeeded();
 
     GeolocationClient* m_client;
+    bool m_hasClientForTest;
 
-    RefPtr<GeolocationPosition> m_lastPosition;
-    typedef HashSet<RefPtr<Geolocation> > ObserversSet;
+    PersistentWillBeMember<GeolocationPosition> m_lastPosition;
+    typedef PersistentHeapHashSetWillBeHeapHashSet<Member<Geolocation> > ObserversSet;
     // All observers; both those requesting high accuracy and those not.
     ObserversSet m_observers;
     ObserversSet m_highAccuracyObservers;
     bool m_isClientUpdating;
+    GeolocationInspectorAgent* m_inspectorAgent;
 };
 
 } // namespace WebCore

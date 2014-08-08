@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "base/strings/string_util.h"
+#include "ui/gfx/font_list.h"
 #include "ui/gfx/text_elider.h"
 #include "ui/native_theme/native_theme.h"
 #include "ui/views/controls/label.h"
@@ -15,17 +16,22 @@
 
 namespace views {
 
+
+// Helpers --------------------------------------------------------------------
+
 namespace {
 
 // Calculates the height of a line of text. Currently returns the height of
 // a label.
-int CalculateLineHeight() {
+int CalculateLineHeight(const gfx::FontList& font_list) {
   Label label;
+  label.SetFontList(font_list);
   return label.GetPreferredSize().height();
 }
 
 scoped_ptr<Label> CreateLabelRange(
-    const string16& text,
+    const base::string16& text,
+    const gfx::FontList& font_list,
     const StyledLabel::RangeStyleInfo& style_info,
     views::LinkListener* link_listener) {
   scoped_ptr<Label> result;
@@ -36,25 +42,26 @@ scoped_ptr<Label> CreateLabelRange(
     link->SetUnderline((style_info.font_style & gfx::Font::UNDERLINE) != 0);
     result.reset(link);
   } else {
-    Label* label = new Label(text);
-    // Give the label a focus border so that its preferred size matches
-    // links' preferred sizes
-    label->SetHasFocusBorder(true);
-
-    result.reset(label);
+    result.reset(new Label(text));
   }
 
   result->SetEnabledColor(style_info.color);
+  result->SetFontList(font_list);
 
   if (!style_info.tooltip.empty())
     result->SetTooltipText(style_info.tooltip);
-  if (style_info.font_style != gfx::Font::NORMAL)
-    result->SetFont(result->font().DeriveFont(0, style_info.font_style));
+  if (style_info.font_style != gfx::Font::NORMAL) {
+    result->SetFontList(
+        result->font_list().DeriveWithStyle(style_info.font_style));
+  }
 
-  return scoped_ptr<Label>(result.release());
+  return result.Pass();
 }
 
 }  // namespace
+
+
+// StyledLabel::RangeStyleInfo ------------------------------------------------
 
 StyledLabel::RangeStyleInfo::RangeStyleInfo()
     : font_style(gfx::Font::NORMAL),
@@ -74,25 +81,36 @@ StyledLabel::RangeStyleInfo StyledLabel::RangeStyleInfo::CreateForLink() {
   return result;
 }
 
+
+// StyledLabel::StyleRange ----------------------------------------------------
+
 bool StyledLabel::StyleRange::operator<(
     const StyledLabel::StyleRange& other) const {
-  // Intentionally reversed so the priority queue is sorted by smallest first.
-  return range.start() > other.range.start();
+  return range.start() < other.range.start();
 }
 
-StyledLabel::StyledLabel(const string16& text, StyledLabelListener* listener)
+
+// StyledLabel ----------------------------------------------------------------
+
+StyledLabel::StyledLabel(const base::string16& text,
+                         StyledLabelListener* listener)
     : listener_(listener),
       displayed_on_background_color_set_(false),
       auto_color_readability_enabled_(true) {
-  TrimWhitespace(text, TRIM_TRAILING, &text_);
+  base::TrimWhitespace(text, base::TRIM_TRAILING, &text_);
 }
 
 StyledLabel::~StyledLabel() {}
 
-void StyledLabel::SetText(const string16& text) {
+void StyledLabel::SetText(const base::string16& text) {
   text_ = text;
-  style_ranges_ = std::priority_queue<StyleRange>();
+  style_ranges_.clear();
   RemoveAllChildViews(true);
+  PreferredSizeChanged();
+}
+
+void StyledLabel::SetBaseFontList(const gfx::FontList& font_list) {
+  font_list_ = font_list;
   PreferredSizeChanged();
 }
 
@@ -102,7 +120,10 @@ void StyledLabel::AddStyleRange(const gfx::Range& range,
   DCHECK(!range.is_empty());
   DCHECK(gfx::Range(0, text_.size()).Contains(range));
 
-  style_ranges_.push(StyleRange(range, style_info));
+  // Insert the new range in sorted order.
+  StyleRanges new_range;
+  new_range.push_front(StyleRange(range, style_info));
+  style_ranges_.merge(new_range);
 
   PreferredSizeChanged();
 }
@@ -119,20 +140,37 @@ void StyledLabel::SetDisplayedOnBackgroundColor(SkColor color) {
 
 gfx::Insets StyledLabel::GetInsets() const {
   gfx::Insets insets = View::GetInsets();
-  const gfx::Insets focus_border_padding(1, 1, 1, 1);
-  insets += focus_border_padding;
+
+  // We need a focus border iff we contain a link that will have a focus border.
+  // That in turn will be true only if the link is non-empty.
+  for (StyleRanges::const_iterator i(style_ranges_.begin());
+        i != style_ranges_.end(); ++i) {
+    if (i->style_info.is_link && !i->range.is_empty()) {
+      const gfx::Insets focus_border_padding(
+          Label::kFocusBorderPadding, Label::kFocusBorderPadding,
+          Label::kFocusBorderPadding, Label::kFocusBorderPadding);
+      insets += focus_border_padding;
+      break;
+    }
+  }
+
   return insets;
 }
 
-int StyledLabel::GetHeightForWidth(int w) {
-  if (w != calculated_size_.width())
-    calculated_size_ = gfx::Size(w, CalculateAndDoLayout(w, true));
-
+int StyledLabel::GetHeightForWidth(int w) const {
+  if (w != calculated_size_.width()) {
+    // TODO(erg): Munge the const-ness of the style label. CalculateAndDoLayout
+    // doesn't actually make any changes to member variables when |dry_run| is
+    // set to true. In general, the mutating and non-mutating parts shouldn't
+    // be in the same codepath.
+    calculated_size_ =
+        const_cast<StyledLabel*>(this)->CalculateAndDoLayout(w, true);
+  }
   return calculated_size_.height();
 }
 
 void StyledLabel::Layout() {
-  CalculateAndDoLayout(GetLocalBounds().width(), false);
+  calculated_size_ = CalculateAndDoLayout(GetLocalBounds().width(), false);
 }
 
 void StyledLabel::PreferredSizeChanged() {
@@ -145,7 +183,7 @@ void StyledLabel::LinkClicked(Link* source, int event_flags) {
     listener_->StyledLabelLinkClicked(link_targets_[source], event_flags);
 }
 
-int StyledLabel::CalculateAndDoLayout(int width, bool dry_run) {
+gfx::Size StyledLabel::CalculateAndDoLayout(int width, bool dry_run) {
   if (!dry_run) {
     RemoveAllChildViews(true);
     link_targets_.clear();
@@ -153,41 +191,43 @@ int StyledLabel::CalculateAndDoLayout(int width, bool dry_run) {
 
   width -= GetInsets().width();
   if (width <= 0 || text_.empty())
-    return 0;
+    return gfx::Size();
 
-  const int line_height = CalculateLineHeight();
+  const int line_height = CalculateLineHeight(font_list_);
   // The index of the line we're on.
   int line = 0;
   // The x position (in pixels) of the line we're on, relative to content
   // bounds.
   int x = 0;
 
-  string16 remaining_string = text_;
-  std::priority_queue<StyleRange> style_ranges = style_ranges_;
+  base::string16 remaining_string = text_;
+  StyleRanges::const_iterator current_range = style_ranges_.begin();
 
   // Iterate over the text, creating a bunch of labels and links and laying them
   // out in the appropriate positions.
   while (!remaining_string.empty()) {
     // Don't put whitespace at beginning of a line with an exception for the
     // first line (so the text's leading whitespace is respected).
-    if (x == 0 && line > 0)
-      TrimWhitespace(remaining_string, TRIM_LEADING, &remaining_string);
+    if (x == 0 && line > 0) {
+      base::TrimWhitespace(remaining_string, base::TRIM_LEADING,
+                           &remaining_string);
+    }
 
     gfx::Range range(gfx::Range::InvalidRange());
-    if (!style_ranges.empty())
-      range = style_ranges.top().range;
+    if (current_range != style_ranges_.end())
+      range = current_range->range;
 
     const size_t position = text_.size() - remaining_string.size();
 
     const gfx::Rect chunk_bounds(x, 0, width - x, 2 * line_height);
-    std::vector<string16> substrings;
-    gfx::FontList text_font_list;
+    std::vector<base::string16> substrings;
+    gfx::FontList text_font_list = font_list_;
     // If the start of the remaining text is inside a styled range, the font
     // style may differ from the base font. The font specified by the range
     // should be used when eliding text.
     if (position >= range.start()) {
-      text_font_list = text_font_list.DeriveFontListWithSizeDeltaAndStyle(
-          0, style_ranges.top().style_info.font_style);
+      text_font_list = text_font_list.DeriveWithStyle(
+          current_range->style_info.font_style);
     }
     gfx::ElideRectangleText(remaining_string,
                             text_font_list,
@@ -197,7 +237,7 @@ int StyledLabel::CalculateAndDoLayout(int width, bool dry_run) {
                             &substrings);
 
     DCHECK(!substrings.empty());
-    string16 chunk = substrings[0];
+    base::string16 chunk = substrings[0];
     if (chunk.empty()) {
       // Nothing fits on this line. Start a new line.
       // If x is 0, first line may have leading whitespace that doesn't fit in a
@@ -205,7 +245,8 @@ int StyledLabel::CalculateAndDoLayout(int width, bool dry_run) {
       // anything; abort.
       if (x == 0) {
         if (line == 0) {
-          TrimWhitespace(remaining_string, TRIM_LEADING, &remaining_string);
+          base::TrimWhitespace(remaining_string, base::TRIM_LEADING,
+                               &remaining_string);
           continue;
         }
         break;
@@ -218,7 +259,7 @@ int StyledLabel::CalculateAndDoLayout(int width, bool dry_run) {
 
     scoped_ptr<Label> label;
     if (position >= range.start()) {
-      const RangeStyleInfo& style_info = style_ranges.top().style_info;
+      const RangeStyleInfo& style_info = current_range->style_info;
 
       if (style_info.disable_line_wrapping && chunk.size() < range.length() &&
           position == range.start() && x != 0) {
@@ -231,42 +272,44 @@ int StyledLabel::CalculateAndDoLayout(int width, bool dry_run) {
 
       chunk = chunk.substr(0, std::min(chunk.size(), range.end() - position));
 
-      label = CreateLabelRange(chunk, style_info, this);
+      label = CreateLabelRange(chunk, font_list_, style_info, this);
 
       if (style_info.is_link && !dry_run)
         link_targets_[label.get()] = range;
 
       if (position + chunk.size() >= range.end())
-        style_ranges.pop();
+        ++current_range;
     } else {
       // This chunk is normal text.
       if (position + chunk.size() > range.start())
         chunk = chunk.substr(0, range.start() - position);
-      label = CreateLabelRange(chunk, default_style_info_, this);
+      label = CreateLabelRange(chunk, font_list_, default_style_info_, this);
     }
 
     if (displayed_on_background_color_set_)
       label->SetBackgroundColor(displayed_on_background_color_);
     label->SetAutoColorReadabilityEnabled(auto_color_readability_enabled_);
 
-    // Lay out the views to overlap by 1 pixel to compensate for their border
-    // spacing. Otherwise, "<a>link</a>," will render as "link ,".
-    const int overlap = 1;
+    // Calculate the size of the optional focus border, and overlap by that
+    // amount. Otherwise, "<a>link</a>," will render as "link ,".
+    gfx::Insets focus_border_insets(label->GetInsets());
+    focus_border_insets += -label->View::GetInsets();
     const gfx::Size view_size = label->GetPreferredSize();
-    DCHECK_EQ(line_height, view_size.height() - 2 * overlap);
+    DCHECK_EQ(line_height, view_size.height() - focus_border_insets.height());
     if (!dry_run) {
       label->SetBoundsRect(gfx::Rect(
-          gfx::Point(GetInsets().left() + x - overlap,
-                     GetInsets().top() + line * line_height - overlap),
+          gfx::Point(GetInsets().left() + x - focus_border_insets.left(),
+                     GetInsets().top() + line * line_height -
+                         focus_border_insets.top()),
           view_size));
       AddChildView(label.release());
     }
-    x += view_size.width() - 2 * overlap;
+    x += view_size.width() - focus_border_insets.width();
 
     remaining_string = remaining_string.substr(chunk.size());
   }
 
-  return (line + 1) * line_height + GetInsets().height();
+  return gfx::Size(width, (line + 1) * line_height + GetInsets().height());
 }
 
 }  // namespace views

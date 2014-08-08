@@ -32,6 +32,7 @@
 #define MutationObserverRegistration_h
 
 #include "core/dom/MutationObserver.h"
+#include "platform/heap/Handle.h"
 #include "wtf/HashSet.h"
 #include "wtf/text/AtomicString.h"
 #include "wtf/text/AtomicStringHash.h"
@@ -40,34 +41,38 @@ namespace WebCore {
 
 class QualifiedName;
 
-class MutationObserverRegistration {
+class MutationObserverRegistration FINAL : public NoBaseWillBeGarbageCollectedFinalized<MutationObserverRegistration> {
 public:
-    static PassOwnPtr<MutationObserverRegistration> create(PassRefPtr<MutationObserver>, Node*, MutationObserverOptions, const HashSet<AtomicString>& attributeFilter);
+    static PassOwnPtrWillBeRawPtr<MutationObserverRegistration> create(MutationObserver&, Node*, MutationObserverOptions, const HashSet<AtomicString>& attributeFilter);
     ~MutationObserverRegistration();
 
     void resetObservation(MutationObserverOptions, const HashSet<AtomicString>& attributeFilter);
-    void observedSubtreeNodeWillDetach(Node*);
+    void observedSubtreeNodeWillDetach(Node&);
     void clearTransientRegistrations();
     bool hasTransientRegistrations() const { return m_transientRegistrationNodes && !m_transientRegistrationNodes->isEmpty(); }
     void unregister();
 
-    bool shouldReceiveMutationFrom(Node*, MutationObserver::MutationType, const QualifiedName* attributeName) const;
+    bool shouldReceiveMutationFrom(Node&, MutationObserver::MutationType, const QualifiedName* attributeName) const;
     bool isSubtree() const { return m_options & MutationObserver::Subtree; }
 
-    MutationObserver* observer() const { return m_observer.get(); }
+    MutationObserver& observer() const { return *m_observer; }
     MutationRecordDeliveryOptions deliveryOptions() const { return m_options & (MutationObserver::AttributeOldValue | MutationObserver::CharacterDataOldValue); }
     MutationObserverOptions mutationTypes() const { return m_options & MutationObserver::AllMutationTypes; }
 
     void addRegistrationNodesToSet(HashSet<Node*>&) const;
 
-private:
-    MutationObserverRegistration(PassRefPtr<MutationObserver>, Node*, MutationObserverOptions, const HashSet<AtomicString>& attributeFilter);
+    void trace(Visitor*);
 
-    RefPtr<MutationObserver> m_observer;
-    Node* m_registrationNode;
-    RefPtr<Node> m_registrationNodeKeepAlive;
-    typedef HashSet<RefPtr<Node> > NodeHashSet;
-    OwnPtr<NodeHashSet> m_transientRegistrationNodes;
+    void dispose();
+
+private:
+    MutationObserverRegistration(MutationObserver&, Node*, MutationObserverOptions, const HashSet<AtomicString>& attributeFilter);
+
+    RefPtrWillBeMember<MutationObserver> m_observer;
+    RawPtrWillBeWeakMember<Node> m_registrationNode;
+    RefPtrWillBeMember<Node> m_registrationNodeKeepAlive;
+    typedef WillBeHeapHashSet<RefPtrWillBeMember<Node> > NodeHashSet;
+    OwnPtrWillBeMember<NodeHashSet> m_transientRegistrationNodes;
 
     MutationObserverOptions m_options;
     HashSet<AtomicString> m_attributeFilter;

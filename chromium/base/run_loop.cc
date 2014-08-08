@@ -6,6 +6,10 @@
 
 #include "base/bind.h"
 
+#if defined(OS_WIN)
+#include "base/message_loop/message_pump_dispatcher.h"
+#endif
+
 namespace base {
 
 RunLoop::RunLoop()
@@ -17,15 +21,13 @@ RunLoop::RunLoop()
       running_(false),
       quit_when_idle_received_(false),
       weak_factory_(this) {
-#if !defined(OS_MACOSX) && !defined(OS_ANDROID) && \
-    !defined(USE_GTK_MESSAGE_PUMP)
+#if defined(OS_WIN)
    dispatcher_ = NULL;
 #endif
 }
 
-#if !defined(OS_MACOSX) && !defined(OS_ANDROID) && \
-    !defined(USE_GTK_MESSAGE_PUMP)
-RunLoop::RunLoop(MessageLoop::Dispatcher* dispatcher)
+#if defined(OS_WIN)
+RunLoop::RunLoop(MessagePumpDispatcher* dispatcher)
     : loop_(MessageLoop::current()),
       previous_run_loop_(NULL),
       dispatcher_(dispatcher),

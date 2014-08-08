@@ -27,16 +27,15 @@
 #define SpeechSynthesisVoice_h
 
 #include "bindings/v8/ScriptWrappable.h"
+#include "platform/heap/Handle.h"
 #include "platform/speech/PlatformSpeechSynthesisVoice.h"
-#include "wtf/PassRefPtr.h"
-#include "wtf/RefCounted.h"
 #include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
-class SpeechSynthesisVoice FINAL : public ScriptWrappable, public RefCounted<SpeechSynthesisVoice> {
+class SpeechSynthesisVoice FINAL : public GarbageCollectedFinalized<SpeechSynthesisVoice>, public ScriptWrappable {
 public:
-    static PassRefPtr<SpeechSynthesisVoice> create(PassRefPtr<PlatformSpeechSynthesisVoice>);
+    static SpeechSynthesisVoice* create(PlatformSpeechSynthesisVoice*);
 
     const String& voiceURI() const { return m_platformVoice->voiceURI(); }
     const String& name() const { return m_platformVoice->name(); }
@@ -44,12 +43,14 @@ public:
     bool localService() const { return m_platformVoice->localService(); }
     bool isDefault() const { return m_platformVoice->isDefault(); }
 
-    PlatformSpeechSynthesisVoice* platformVoice() const { return m_platformVoice.get(); }
+    PlatformSpeechSynthesisVoice* platformVoice() const { return m_platformVoice; }
+
+    void trace(Visitor*);
 
 private:
-    explicit SpeechSynthesisVoice(PassRefPtr<PlatformSpeechSynthesisVoice>);
+    explicit SpeechSynthesisVoice(PlatformSpeechSynthesisVoice*);
 
-    RefPtr<PlatformSpeechSynthesisVoice> m_platformVoice;
+    Member<PlatformSpeechSynthesisVoice> m_platformVoice;
 };
 
 } // namespace WebCore

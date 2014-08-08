@@ -37,7 +37,7 @@
 #ifndef CRYPTO_THIRD_PARTY_NSS_CHROMIUM_SHA_256_H_
 #define CRYPTO_THIRD_PARTY_NSS_CHROMIUM_SHA_256_H_
 
-#include "base/third_party/nspr/prtypes.h"
+#include "crypto/third_party/nss/chromium-prtypes.h"
 
 struct SHA256ContextStr {
     union {

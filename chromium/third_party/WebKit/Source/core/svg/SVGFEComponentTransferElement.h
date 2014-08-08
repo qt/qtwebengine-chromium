@@ -28,7 +28,8 @@ namespace WebCore {
 
 class SVGFEComponentTransferElement FINAL : public SVGFilterPrimitiveStandardAttributes {
 public:
-    static PassRefPtr<SVGFEComponentTransferElement> create(Document&);
+    DECLARE_NODE_FACTORY(SVGFEComponentTransferElement);
+    SVGAnimatedString* in1() { return m_in1.get(); }
 
 private:
     explicit SVGFEComponentTransferElement(Document&);
@@ -36,11 +37,9 @@ private:
     // FIXME: svgAttributeChanged missing.
     bool isSupportedAttribute(const QualifiedName&);
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual PassRefPtr<FilterEffect> build(SVGFilterBuilder*, Filter*);
+    virtual PassRefPtr<FilterEffect> build(SVGFilterBuilder*, Filter*) OVERRIDE;
 
-    BEGIN_DECLARE_ANIMATED_PROPERTIES(SVGFEComponentTransferElement)
-        DECLARE_ANIMATED_STRING(In1, in1)
-    END_DECLARE_ANIMATED_PROPERTIES
+    RefPtr<SVGAnimatedString> m_in1;
 };
 
 } // namespace WebCore

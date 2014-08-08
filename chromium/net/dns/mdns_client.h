@@ -27,7 +27,7 @@ class RecordParsed;
 // time out after a reasonable number of seconds.
 class NET_EXPORT MDnsTransaction {
  public:
-  // Used to signify what type of result the transaction has recieved.
+  // Used to signify what type of result the transaction has received.
   enum Result {
     // Passed whenever a record is found.
     RESULT_RECORD,
@@ -112,6 +112,9 @@ class NET_EXPORT MDnsListener {
 
   // Start the listener. Return true on success.
   virtual bool Start() = 0;
+
+  // Actively refresh any received records.
+  virtual void SetActiveRefresh(bool active_refresh) = 0;
 
   // Get the host or service name for this query.
   // Return an empty string for no name.

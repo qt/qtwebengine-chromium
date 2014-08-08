@@ -43,14 +43,14 @@ namespace WebCore {
 
 class AudioNodeOutput;
 
-class AudioParam : public RefCounted<AudioParam>, public ScriptWrappable, public AudioSummingJunction {
+class AudioParam FINAL : public RefCountedWillBeGarbageCollectedFinalized<AudioParam>, public ScriptWrappable, public AudioSummingJunction {
 public:
     static const double DefaultSmoothingConstant;
     static const double SnapThreshold;
 
-    static PassRefPtr<AudioParam> create(AudioContext* context, const String& name, double defaultValue, double minValue, double maxValue, unsigned units = 0)
+    static PassRefPtrWillBeRawPtr<AudioParam> create(AudioContext* context, const String& name, double defaultValue, double minValue, double maxValue, unsigned units = 0)
     {
-        return adoptRef(new AudioParam(context, name, defaultValue, minValue, maxValue, units));
+        return adoptRefWillBeNoop(new AudioParam(context, name, defaultValue, minValue, maxValue, units));
     }
 
     // AudioSummingJunction
@@ -83,12 +83,11 @@ public:
     bool smooth();
 
     void resetSmoothedValue() { m_smoothedValue = m_value; }
-    void setSmoothingConstant(double k) { m_smoothingConstant = k; }
 
     // Parameter automation.
     void setValueAtTime(float value, double time) { m_timeline.setValueAtTime(value, time); }
     void linearRampToValueAtTime(float value, double time) { m_timeline.linearRampToValueAtTime(value, time); }
-    void exponentialRampToValueAtTime(float value, double time) { m_timeline.exponentialRampToValueAtTime(value, time); }
+    void exponentialRampToValueAtTime(float value, double time, ExceptionState& es) { m_timeline.exponentialRampToValueAtTime(value, time, es); }
     void setTargetAtTime(float target, double time, double timeConstant) { m_timeline.setTargetAtTime(target, time, timeConstant); }
     void setValueCurveAtTime(Float32Array* curve, double time, double duration) { m_timeline.setValueCurveAtTime(curve, time, duration); }
     void cancelScheduledValues(double startTime) { m_timeline.cancelScheduledValues(startTime); }
@@ -103,6 +102,8 @@ public:
     void connect(AudioNodeOutput*);
     void disconnect(AudioNodeOutput*);
 
+    void trace(Visitor*) { }
+
 protected:
     AudioParam(AudioContext* context, const String& name, double defaultValue, double minValue, double maxValue, unsigned units = 0)
         : AudioSummingJunction(context)
@@ -113,7 +114,6 @@ protected:
         , m_maxValue(maxValue)
         , m_units(units)
         , m_smoothedValue(defaultValue)
-        , m_smoothingConstant(DefaultSmoothingConstant)
     {
         ScriptWrappable::init(this);
     }
@@ -132,7 +132,6 @@ private:
 
     // Smoothing (de-zippering)
     double m_smoothedValue;
-    double m_smoothingConstant;
 
     AudioParamTimeline m_timeline;
 };

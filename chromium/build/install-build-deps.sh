@@ -16,6 +16,8 @@ usage() {
   echo "--[no-]arm: enable or disable installation of arm cross toolchain"
   echo "--[no-]chromeos-fonts: enable or disable installation of Chrome OS"\
        "fonts"
+  echo "--[no-]nacl: enable or disable installation of prerequisites for"\
+       "building standalone NaCl and all its toolchains"
   echo "--no-prompt: silently select standard options/defaults"
   echo "--quick-check: quickly try to determine if dependencies are installed"
   echo "               (this avoids interactive prompts and sudo commands,"
@@ -31,6 +33,13 @@ package_exists() {
   apt-cache pkgnames | grep -x "$1" > /dev/null 2>&1
 }
 
+# These default to on because (some) bots need them and it keeps things
+# simple for the bot setup if all bots just run the script in its default
+# mode.  Developers who don't want stuff they don't need installed on their
+# own workstations can pass --no-arm --no-nacl when running the script.
+do_inst_arm=1
+do_inst_nacl=1
+
 while test "$1" != ""
 do
   case "$1" in
@@ -42,6 +51,8 @@ do
   --no-arm)                 do_inst_arm=0;;
   --chromeos-fonts)         do_inst_chromeos_fonts=1;;
   --no-chromeos-fonts)      do_inst_chromeos_fonts=0;;
+  --nacl)                   do_inst_nacl=1;;
+  --no-nacl)                do_inst_nacl=0;;
   --no-prompt)              do_default=1
                             do_quietly="-qq --assume-yes"
     ;;
@@ -52,17 +63,17 @@ do
   shift
 done
 
-ubuntu_versions="12\.04|12\.10|13\.04"
-ubuntu_codenames="precise|quantal|raring"
-ubuntu_issue="Ubuntu ($ubuntu_versions|$ubuntu_codenames)"
-# GCEL is an Ubuntu-derived VM image used on Google Compute Engine; /etc/issue
-# doesn't contain a version number so just trust that the user knows what
-# they're doing.
-gcel_issue="^GCEL"
+# Check for lsb_release command in $PATH
+if ! which lsb_release > /dev/null; then
+  echo "ERROR: lsb_release not found in \$PATH" >&2
+  exit 1;
+fi
 
+lsb_release=$(lsb_release --codename --short)
+ubuntu_codenames="(precise|quantal|raring|saucy|trusty)"
 if [ 0 -eq "${do_unsupported-0}" ] && [ 0 -eq "${do_quick_check-0}" ] ; then
-  if ! egrep -q "($ubuntu_issue|$gcel_issue)" /etc/issue; then
-    echo "ERROR: Only Ubuntu 12.04 (precise) through 13.04 (raring) are"\
+  if [[ ! $lsb_release =~ $ubuntu_codenames ]]; then
+    echo "ERROR: Only Ubuntu 12.04 (precise) through 14.04 (trusty) are"\
         "currently supported" >&2
     exit 1
   fi
@@ -83,19 +94,20 @@ fi
 chromeos_dev_list="libbluetooth-dev"
 
 # Packages needed for development
-dev_list="apache2.2-bin bison curl elfutils fakeroot flex g++ git-core gperf
-          language-pack-da language-pack-fr language-pack-he
-          language-pack-zh-hant libapache2-mod-php5 libasound2-dev libbrlapi-dev
-          libbz2-dev libcairo2-dev libcap-dev libcups2-dev libcurl4-gnutls-dev
-          libdrm-dev libelf-dev libgconf2-dev libgl1-mesa-dev libglib2.0-dev
-          libglu1-mesa-dev libgnome-keyring-dev libgtk2.0-dev libkrb5-dev
-          libnspr4-dev libnss3-dev libpam0g-dev libpci-dev libpulse-dev
-          libsctp-dev libspeechd-dev libsqlite3-dev libssl-dev libudev-dev
-          libwww-perl libxslt1-dev libxss-dev libxt-dev libxtst-dev
-          mesa-common-dev openbox patch perl php5-cgi pkg-config python
-          python-cherrypy3 python-dev python-psutil rpm ruby subversion
-          ttf-dejavu-core ttf-indic-fonts ttf-kochi-gothic ttf-kochi-mincho
-          ttf-thai-tlwg wdiff xfonts-mathml $chromeos_dev_list"
+dev_list="apache2.2-bin bison curl dpkg-dev elfutils devscripts fakeroot flex
+          fonts-thai-tlwg g++ git-core gperf language-pack-da language-pack-fr
+          language-pack-he language-pack-zh-hant libapache2-mod-php5
+          libasound2-dev libbrlapi-dev libbz2-dev libcairo2-dev libcap-dev
+          libcups2-dev libcurl4-gnutls-dev libdrm-dev libelf-dev libexif-dev
+          libgconf2-dev libgl1-mesa-dev libglib2.0-dev libglu1-mesa-dev
+          libgnome-keyring-dev libgtk2.0-dev libkrb5-dev libnspr4-dev
+          libnss3-dev libpam0g-dev libpci-dev libpulse-dev libsctp-dev
+          libspeechd-dev libsqlite3-dev libssl-dev libudev-dev libwww-perl
+          libxslt1-dev libxss-dev libxt-dev libxtst-dev mesa-common-dev openbox
+          patch perl php5-cgi pkg-config python python-cherrypy3 python-dev
+          python-psutil rpm ruby subversion ttf-dejavu-core ttf-indic-fonts
+          ttf-kochi-gothic ttf-kochi-mincho wdiff xfonts-mathml zip
+          $chromeos_dev_list"
 
 # 64-bit systems need a minimum set of 32-bit compat packages for the pre-built
 # NaCl binaries. These are always needed, regardless of whether or not we want
@@ -109,7 +121,7 @@ chromeos_lib_list="libpulse0 libbz2-1.0"
 
 # Full list of required run-time libraries
 lib_list="libatk1.0-0 libc6 libasound2 libcairo2 libcap2 libcups2 libexpat1
-          libfontconfig1 libfreetype6 libglib2.0-0 libgnome-keyring0
+          libexif12 libfontconfig1 libfreetype6 libglib2.0-0 libgnome-keyring0
           libgtk2.0-0 libpam0g libpango1.0-0 libpci3 libpcre3 libpixman-1-0
           libpng12-0 libspeechd2 libstdc++6 libsqlite3-0 libx11-6
           libxau6 libxcb1 libxcomposite1 libxcursor1 libxdamage1 libxdmcp6
@@ -126,23 +138,31 @@ dbg_list="libatk1.0-dbg libc6-dbg libcairo2-dbg libfontconfig1-dbg
           libstdc++6-4.6-dbg"
 
 # arm cross toolchain packages needed to build chrome on armhf
-arm_list="libc6-armhf-cross libc6-dev-armhf-cross libgcc1-armhf-cross
-          libgomp1-armhf-cross linux-libc-dev-armhf-cross
-          libgcc1-dbg-armhf-cross libgomp1-dbg-armhf-cross
-          binutils-arm-linux-gnueabihf cpp-arm-linux-gnueabihf
-          gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf
-          libmudflap0-dbg-armhf-cross"
+arm_list="libc6-dev-armhf-cross
+          linux-libc-dev-armhf-cross
+          g++-arm-linux-gnueabihf"
 
-# Old armel cross toolchain packages
-armel_list="libc6-armel-cross libc6-dev-armel-cross libgcc1-armel-cross
-            libgomp1-armel-cross linux-libc-dev-armel-cross
-            libgcc1-dbg-armel-cross libgomp1-dbg-armel-cross
-            binutils-arm-linux-gnueabi cpp-arm-linux-gnueabi
-            gcc-arm-linux-gnueabi g++-arm-linux-gnueabi
-            libmudflap0-dbg-armel-cross"
+# Packages to build NaCl, its toolchains, and its ports.
+nacl_list="autoconf bison cmake g++-mingw-w64-i686 gawk lib32z1-dev
+           libasound2:i386 libcap2:i386 libelf-dev:i386 libexif12:i386
+           libfontconfig1:i386 libgconf-2-4:i386 libglib2.0-0:i386 libgpm2:i386
+           libgtk2.0-0:i386 libncurses5:i386 libnss3:i386 libpango1.0-0:i386
+           libssl0.9.8:i386 libtinfo-dev libtinfo-dev:i386 libtool
+           libxcomposite1:i386 libxcursor1:i386 libxdamage1:i386 libxi6:i386
+           libxrandr2:i386 libxss1:i386 libxtst6:i386 texinfo xvfb"
 
-# TODO(sbc): remove armel once the armhf transition is complete
-arm_list="$arm_list $armel_list"
+# Find the proper version of libgbm-dev. We can't just install libgbm-dev as
+# it depends on mesa, and only one version of mesa can exists on the system.
+# Hence we must match the same version or this entire script will fail.
+mesa_variant=""
+for variant in "-lts-quantal" "-lts-raring" "-lts-saucy"; do
+  if $(dpkg-query -Wf'${Status}' libgl1-mesa-glx${variant} | \
+       grep -q " ok installed"); then
+    mesa_variant="${variant}"
+  fi
+done
+dev_list="${dev_list} libgbm-dev${mesa_variant}"
+nacl_list="${nacl_list} libgl1-mesa-glx${mesa_variant}:i386"
 
 # Some package names have changed over time
 if package_exists ttf-mscorefonts-installer; then
@@ -164,8 +184,10 @@ else
 fi
 if package_exists libudev1; then
   dev_list="${dev_list} libudev1"
+  nacl_list="${nacl_list} libudev1:i386"
 else
   dev_list="${dev_list} libudev0"
+  nacl_list="${nacl_list} libudev0:i386"
 fi
 if package_exists libbrlapi0.6; then
   dev_list="${dev_list} libbrlapi0.6"
@@ -242,25 +264,33 @@ fi
 # that are part of v8 need to be compiled with -m32 which means
 # that basic multilib support is needed.
 if file /sbin/init | grep -q 'ELF 64-bit'; then
-  arm_list="$arm_list g++-multilib"
+  if [ "$lsb_release" = "trusty" ]; then
+    # gcc-multilib conflicts with the arm cross compiler in trusty but
+    # g++-4.8-multilib gives us the 32-bit support that we need.
+    arm_list="$arm_list g++-4.8-multilib"
+  else
+    arm_list="$arm_list g++-multilib"
+  fi
 fi
 
 if test "$do_inst_arm" = "1" ; then
-  . /etc/lsb-release
-  if ! [ "${DISTRIB_CODENAME}" = "precise" -o \
-      1 -eq "${do_unsupported-0}" ]; then
-    echo "ERROR: Installing the ARM cross toolchain is only available on" \
-         "Ubuntu precise." >&2
-    exit 1
-  fi
   echo "Including ARM cross toolchain."
 else
   echo "Skipping ARM cross toolchain."
   arm_list=
 fi
 
-packages="$(echo "${dev_list} ${lib_list} ${dbg_list} ${arm_list}" | \
-  tr " " "\n" | sort -u | tr "\n" " ")"
+if test "$do_inst_nacl" = "1"; then
+  echo "Including NaCl, NaCl toolchain, NaCl ports dependencies."
+else
+  echo "Skipping NaCl, NaCl toolchain, NaCl ports dependencies."
+  nacl_list=
+fi
+
+packages="$(
+  echo "${dev_list} ${lib_list} ${dbg_list} ${arm_list} ${nacl_list}" |
+  tr " " "\n" | sort -u | tr "\n" " "
+)"
 
 if [ 1 -eq "${do_quick_check-0}" ] ; then
   failed_check="$(dpkg-query -W -f '${PackageSpec}:${Status}\n' \
@@ -360,6 +390,18 @@ if test "$do_inst_chromeos_fonts" != "0"; then
   fi
 else
   echo "Skipping installation of Chrome OS fonts."
+fi
+
+if test "$do_inst_nacl" = "1"; then
+  echo "Installing symbolic links for NaCl."
+  if [ ! -r /usr/lib/i386-linux-gnu/libcrypto.so ]; then
+    sudo ln -fs libcrypto.so.0.9.8 /usr/lib/i386-linux-gnu/libcrypto.so
+  fi
+  if [ ! -r /usr/lib/i386-linux-gnu/libssl.so ]; then
+    sudo ln -fs libssl.so.0.9.8 /usr/lib/i386-linux-gnu/libssl.so
+  fi
+else
+  echo "Skipping symbolic links for NaCl."
 fi
 
 # Install 32bit backwards compatibility support for 64bit systems

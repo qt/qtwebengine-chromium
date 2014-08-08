@@ -32,49 +32,48 @@ namespace WebCore {
 
 class EditingStyle;
 
-class DeleteSelectionCommand : public CompositeEditCommand {
+class DeleteSelectionCommand FINAL : public CompositeEditCommand {
 public:
-    static PassRefPtr<DeleteSelectionCommand> create(Document& document, bool smartDelete = false, bool mergeBlocksAfterDelete = true, bool replace = false, bool expandForSpecialElements = false, bool sanitizeMarkup = true)
+    static PassRefPtrWillBeRawPtr<DeleteSelectionCommand> create(Document& document, bool smartDelete = false, bool mergeBlocksAfterDelete = true, bool expandForSpecialElements = false, bool sanitizeMarkup = true)
     {
-        return adoptRef(new DeleteSelectionCommand(document, smartDelete, mergeBlocksAfterDelete, replace, expandForSpecialElements, sanitizeMarkup));
+        return adoptRefWillBeNoop(new DeleteSelectionCommand(document, smartDelete, mergeBlocksAfterDelete, expandForSpecialElements, sanitizeMarkup));
     }
-    static PassRefPtr<DeleteSelectionCommand> create(const VisibleSelection& selection, bool smartDelete = false, bool mergeBlocksAfterDelete = true, bool replace = false, bool expandForSpecialElements = false, bool sanitizeMarkup = true)
+    static PassRefPtrWillBeRawPtr<DeleteSelectionCommand> create(const VisibleSelection& selection, bool smartDelete = false, bool mergeBlocksAfterDelete = true, bool expandForSpecialElements = false, bool sanitizeMarkup = true)
     {
-        return adoptRef(new DeleteSelectionCommand(selection, smartDelete, mergeBlocksAfterDelete, replace, expandForSpecialElements, sanitizeMarkup));
+        return adoptRefWillBeNoop(new DeleteSelectionCommand(selection, smartDelete, mergeBlocksAfterDelete, expandForSpecialElements, sanitizeMarkup));
     }
+
+    virtual void trace(Visitor*) OVERRIDE;
 
 private:
-    DeleteSelectionCommand(Document&, bool smartDelete, bool mergeBlocksAfterDelete, bool replace, bool expandForSpecialElements, bool santizeMarkup);
-    DeleteSelectionCommand(const VisibleSelection&, bool smartDelete, bool mergeBlocksAfterDelete, bool replace, bool expandForSpecialElements, bool sanitizeMarkup);
+    DeleteSelectionCommand(Document&, bool smartDelete, bool mergeBlocksAfterDelete, bool expandForSpecialElements, bool santizeMarkup);
+    DeleteSelectionCommand(const VisibleSelection&, bool smartDelete, bool mergeBlocksAfterDelete, bool expandForSpecialElements, bool sanitizeMarkup);
 
-    virtual void doApply();
-    virtual EditAction editingAction() const;
+    virtual void doApply() OVERRIDE;
+    virtual EditAction editingAction() const OVERRIDE;
 
-    virtual bool preservesTypingStyle() const;
+    virtual bool preservesTypingStyle() const OVERRIDE;
 
     void initializeStartEnd(Position&, Position&);
     void setStartingSelectionOnSmartDelete(const Position&, const Position&);
     void initializePositionData();
     void saveTypingStyleState();
-    void insertPlaceholderForAncestorBlockContent();
     bool handleSpecialCaseBRDelete();
     void handleGeneralDelete();
     void fixupWhitespace();
     void mergeParagraphs();
     void removePreviouslySelectedEmptyTableRows();
-    void calculateEndingPosition();
     void calculateTypingStyleAfterDelete();
     void clearTransientState();
     void makeStylingElementsDirectChildrenOfEditableRootToPreventStyleLoss();
-    virtual void removeNode(PassRefPtr<Node>, ShouldAssumeContentIsAlwaysEditable = DoNotAssumeContentIsAlwaysEditable);
-    virtual void deleteTextFromNode(PassRefPtr<Text>, unsigned, unsigned);
+    virtual void removeNode(PassRefPtrWillBeRawPtr<Node>, ShouldAssumeContentIsAlwaysEditable = DoNotAssumeContentIsAlwaysEditable) OVERRIDE;
+    virtual void deleteTextFromNode(PassRefPtrWillBeRawPtr<Text>, unsigned, unsigned) OVERRIDE;
     void removeRedundantBlocks();
 
     bool m_hasSelectionToDelete;
     bool m_smartDelete;
     bool m_mergeBlocksAfterDelete;
     bool m_needPlaceholder;
-    bool m_replace;
     bool m_expandForSpecialElements;
     bool m_pruneStartBlockIfNecessary;
     bool m_startsAtEmptyLine;
@@ -89,15 +88,15 @@ private:
     Position m_endingPosition;
     Position m_leadingWhitespace;
     Position m_trailingWhitespace;
-    RefPtr<Node> m_startBlock;
-    RefPtr<Node> m_endBlock;
-    RefPtr<EditingStyle> m_typingStyle;
-    RefPtr<EditingStyle> m_deleteIntoBlockquoteStyle;
-    RefPtr<Node> m_startRoot;
-    RefPtr<Node> m_endRoot;
-    RefPtr<Node> m_startTableRow;
-    RefPtr<Node> m_endTableRow;
-    RefPtr<Node> m_temporaryPlaceholder;
+    RefPtrWillBeMember<Node> m_startBlock;
+    RefPtrWillBeMember<Node> m_endBlock;
+    RefPtrWillBeMember<EditingStyle> m_typingStyle;
+    RefPtrWillBeMember<EditingStyle> m_deleteIntoBlockquoteStyle;
+    RefPtrWillBeMember<Node> m_startRoot;
+    RefPtrWillBeMember<Node> m_endRoot;
+    RefPtrWillBeMember<Node> m_startTableRow;
+    RefPtrWillBeMember<Node> m_endTableRow;
+    RefPtrWillBeMember<Node> m_temporaryPlaceholder;
 };
 
 } // namespace WebCore

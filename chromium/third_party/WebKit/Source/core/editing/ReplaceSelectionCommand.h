@@ -34,7 +34,7 @@ namespace WebCore {
 class DocumentFragment;
 class ReplacementFragment;
 
-class ReplaceSelectionCommand : public CompositeEditCommand {
+class ReplaceSelectionCommand FINAL : public CompositeEditCommand {
 public:
     enum CommandOption {
         SelectReplacement = 1 << 0,
@@ -47,18 +47,21 @@ public:
 
     typedef unsigned CommandOptions;
 
-    static PassRefPtr<ReplaceSelectionCommand> create(Document& document, PassRefPtr<DocumentFragment> fragment, CommandOptions options, EditAction action = EditActionPaste)
+    static PassRefPtrWillBeRawPtr<ReplaceSelectionCommand> create(Document& document, PassRefPtrWillBeRawPtr<DocumentFragment> fragment, CommandOptions options, EditAction action = EditActionPaste)
     {
-        return adoptRef(new ReplaceSelectionCommand(document, fragment, options, action));
+        return adoptRefWillBeNoop(new ReplaceSelectionCommand(document, fragment, options, action));
     }
 
-private:
-    ReplaceSelectionCommand(Document&, PassRefPtr<DocumentFragment>, CommandOptions, EditAction);
+    virtual void trace(Visitor*) OVERRIDE;
 
-    virtual void doApply();
-    virtual EditAction editingAction() const;
+private:
+    ReplaceSelectionCommand(Document&, PassRefPtrWillBeRawPtr<DocumentFragment>, CommandOptions, EditAction);
+
+    virtual void doApply() OVERRIDE;
+    virtual EditAction editingAction() const OVERRIDE;
 
     class InsertedNodes {
+        STACK_ALLOCATED();
     public:
         void respondToNodeInsertion(Node&);
         void willRemoveNodePreservingChildren(Node&);
@@ -66,15 +69,15 @@ private:
         void didReplaceNode(Node&, Node& newNode);
 
         Node* firstNodeInserted() const { return m_firstNodeInserted.get(); }
-        Node& lastLeafInserted() const { ASSERT(m_lastNodeInserted); return m_lastNodeInserted->lastDescendant(); }
-        Node* pastLastLeaf() const { return m_lastNodeInserted ? NodeTraversal::next(lastLeafInserted()) : 0; }
+        Node* lastLeafInserted() const { return m_lastNodeInserted ? &m_lastNodeInserted->lastDescendantOrSelf() : 0; }
+        Node* pastLastLeaf() const { return m_lastNodeInserted ? NodeTraversal::next(m_lastNodeInserted->lastDescendantOrSelf()) : 0; }
 
     private:
-        RefPtr<Node> m_firstNodeInserted;
-        RefPtr<Node> m_lastNodeInserted;
+        RefPtrWillBeMember<Node> m_firstNodeInserted;
+        RefPtrWillBeMember<Node> m_lastNodeInserted;
     };
 
-    Node* insertAsListItems(PassRefPtr<HTMLElement> listElement, Node* insertionNode, const Position&, InsertedNodes&);
+    Node* insertAsListItems(PassRefPtrWillBeRawPtr<HTMLElement> listElement, Node* insertionNode, const Position&, InsertedNodes&);
 
     void updateNodesInserted(Node*);
     bool shouldRemoveEndBR(Node*, const VisiblePosition&);
@@ -88,10 +91,9 @@ private:
     void removeUnrenderedTextNodesAtEnds(InsertedNodes&);
 
     void removeRedundantStylesAndKeepStyleSpanInline(InsertedNodes&);
-    void makeInsertedContentRoundTrippableWithHTMLTreeBuilder(InsertedNodes&);
-    void moveNodeOutOfAncestor(PassRefPtr<Node>, PassRefPtr<Node> ancestor);
+    void makeInsertedContentRoundTrippableWithHTMLTreeBuilder(const InsertedNodes&);
+    void moveNodeOutOfAncestor(PassRefPtrWillBeRawPtr<Node>, PassRefPtrWillBeRawPtr<Node> ancestor);
     void handleStyleSpans(InsertedNodes&);
-    void handlePasteAsQuotationNode();
 
     VisiblePosition positionAtStartOfInsertedContent() const;
     VisiblePosition positionAtEndOfInsertedContent() const;
@@ -105,11 +107,11 @@ private:
 
     Position m_startOfInsertedContent;
     Position m_endOfInsertedContent;
-    RefPtr<EditingStyle> m_insertionStyle;
+    RefPtrWillBeMember<EditingStyle> m_insertionStyle;
     bool m_selectReplacement;
     bool m_smartReplace;
     bool m_matchStyle;
-    RefPtr<DocumentFragment> m_documentFragment;
+    RefPtrWillBeMember<DocumentFragment> m_documentFragment;
     bool m_preventNesting;
     bool m_movingParagraph;
     EditAction m_editAction;

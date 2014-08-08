@@ -22,7 +22,7 @@
 #include "config.h"
 #include "core/css/CSSPageRule.h"
 
-#include "core/css/CSSParser.h"
+#include "core/css/parser/BisonCSSParser.h"
 #include "core/css/CSSSelector.h"
 #include "core/css/CSSStyleSheet.h"
 #include "core/css/PropertySetCSSStyleDeclaration.h"
@@ -40,8 +40,10 @@ CSSPageRule::CSSPageRule(StyleRulePage* pageRule, CSSStyleSheet* parent)
 
 CSSPageRule::~CSSPageRule()
 {
+#if !ENABLE(OILPAN)
     if (m_propertiesCSSOMWrapper)
         m_propertiesCSSOMWrapper->clearParentRule();
+#endif
 }
 
 CSSStyleDeclaration* CSSPageRule::style() const
@@ -68,7 +70,8 @@ String CSSPageRule::selectorText() const
 
 void CSSPageRule::setSelectorText(const String& selectorText)
 {
-    CSSParser parser(parserContext());
+    CSSParserContext context(parserContext(), 0);
+    BisonCSSParser parser(context);
     CSSSelectorList selectorList;
     parser.parseSelector(selectorText, selectorList);
     if (!selectorList.isValid())
@@ -84,7 +87,7 @@ String CSSPageRule::cssText() const
     StringBuilder result;
     result.append(selectorText());
     result.appendLiteral(" { ");
-    String decls = m_pageRule->properties()->asText();
+    String decls = m_pageRule->properties().asText();
     result.append(decls);
     if (!decls.isEmpty())
         result.append(' ');
@@ -98,6 +101,13 @@ void CSSPageRule::reattach(StyleRuleBase* rule)
     m_pageRule = toStyleRulePage(rule);
     if (m_propertiesCSSOMWrapper)
         m_propertiesCSSOMWrapper->reattach(m_pageRule->mutableProperties());
+}
+
+void CSSPageRule::trace(Visitor* visitor)
+{
+    visitor->trace(m_pageRule);
+    visitor->trace(m_propertiesCSSOMWrapper);
+    CSSRule::trace(visitor);
 }
 
 } // namespace WebCore

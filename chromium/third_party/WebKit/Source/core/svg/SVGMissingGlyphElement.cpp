@@ -30,10 +30,7 @@ inline SVGMissingGlyphElement::SVGMissingGlyphElement(Document& document)
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<SVGMissingGlyphElement> SVGMissingGlyphElement::create(Document& document)
-{
-    return adoptRef(new SVGMissingGlyphElement(document));
-}
+DEFINE_NODE_FACTORY(SVGMissingGlyphElement)
 
 }
 

@@ -31,24 +31,31 @@
 
 #include "bindings/v8/ScriptWrappable.h"
 #include "platform/geometry/IntSize.h"
+#include "platform/heap/Handle.h"
 #include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
 #include "wtf/Uint8ClampedArray.h"
 
 namespace WebCore {
 
-class ImageData : public RefCounted<ImageData>, public ScriptWrappable {
+class ExceptionState;
+
+class ImageData FINAL : public RefCountedWillBeGarbageCollectedFinalized<ImageData>, public ScriptWrappable {
 public:
-    static PassRefPtr<ImageData> create(const IntSize&);
-    static PassRefPtr<ImageData> create(const IntSize&, PassRefPtr<Uint8ClampedArray>);
+    static PassRefPtrWillBeRawPtr<ImageData> create(const IntSize&);
+    static PassRefPtrWillBeRawPtr<ImageData> create(const IntSize&, PassRefPtr<Uint8ClampedArray>);
+    static PassRefPtrWillBeRawPtr<ImageData> create(unsigned width, unsigned height, ExceptionState&);
+    static PassRefPtrWillBeRawPtr<ImageData> create(Uint8ClampedArray*, unsigned width, unsigned height, ExceptionState&);
 
     IntSize size() const { return m_size; }
     int width() const { return m_size.width(); }
     int height() const { return m_size.height(); }
     Uint8ClampedArray* data() const { return m_data.get(); }
 
+    void trace(Visitor*) { }
+
 private:
-    ImageData(const IntSize&);
+    explicit ImageData(const IntSize&);
     ImageData(const IntSize&, PassRefPtr<Uint8ClampedArray>);
 
     IntSize m_size;

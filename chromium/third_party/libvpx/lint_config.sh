@@ -19,6 +19,7 @@
 # # Compare the two configuration files and output the final results.
 # ./lint_config.sh -h vpx_config.h -a vpx_config.asm -o libvpx.config -p
 
+export LC_ALL=C
 print_final="no"
 
 while getopts "h:a:o:p" flag

@@ -49,13 +49,12 @@ PepperUDPSocketMessageFilter::PepperUDPSocketMessageFilter(
       external_plugin_(host->external_plugin()),
       private_api_(private_api),
       render_process_id_(0),
-      render_view_id_(0) {
+      render_frame_id_(0) {
   ++g_num_instances;
   DCHECK(host);
 
-  if (!host->GetRenderViewIDsForInstance(instance,
-                                         &render_process_id_,
-                                         &render_view_id_)) {
+  if (!host->GetRenderFrameIDsForInstance(
+          instance, &render_process_id_, &render_frame_id_)) {
     NOTREACHED();
   }
 }
@@ -88,18 +87,17 @@ PepperUDPSocketMessageFilter::OverrideTaskRunnerForMessage(
 int32_t PepperUDPSocketMessageFilter::OnResourceMessageReceived(
     const IPC::Message& msg,
     ppapi::host::HostMessageContext* context) {
-  IPC_BEGIN_MESSAGE_MAP(PepperUDPSocketMessageFilter, msg)
-    PPAPI_DISPATCH_HOST_RESOURCE_CALL(
-        PpapiHostMsg_UDPSocket_SetOption, OnMsgSetOption)
-    PPAPI_DISPATCH_HOST_RESOURCE_CALL(
-        PpapiHostMsg_UDPSocket_Bind, OnMsgBind)
-    PPAPI_DISPATCH_HOST_RESOURCE_CALL(
-        PpapiHostMsg_UDPSocket_RecvFrom, OnMsgRecvFrom)
-    PPAPI_DISPATCH_HOST_RESOURCE_CALL(
-        PpapiHostMsg_UDPSocket_SendTo, OnMsgSendTo)
-    PPAPI_DISPATCH_HOST_RESOURCE_CALL_0(
-        PpapiHostMsg_UDPSocket_Close, OnMsgClose)
-  IPC_END_MESSAGE_MAP()
+  PPAPI_BEGIN_MESSAGE_MAP(PepperUDPSocketMessageFilter, msg)
+    PPAPI_DISPATCH_HOST_RESOURCE_CALL(PpapiHostMsg_UDPSocket_SetOption,
+                                      OnMsgSetOption)
+    PPAPI_DISPATCH_HOST_RESOURCE_CALL(PpapiHostMsg_UDPSocket_Bind, OnMsgBind)
+    PPAPI_DISPATCH_HOST_RESOURCE_CALL(PpapiHostMsg_UDPSocket_RecvFrom,
+                                      OnMsgRecvFrom)
+    PPAPI_DISPATCH_HOST_RESOURCE_CALL(PpapiHostMsg_UDPSocket_SendTo,
+                                      OnMsgSendTo)
+    PPAPI_DISPATCH_HOST_RESOURCE_CALL_0(PpapiHostMsg_UDPSocket_Close,
+                                        OnMsgClose)
+  PPAPI_END_MESSAGE_MAP()
   return PP_ERROR_FAILED;
 }
 
@@ -107,7 +105,7 @@ int32_t PepperUDPSocketMessageFilter::OnMsgSetOption(
     const ppapi::host::HostMessageContext* context,
     PP_UDPSocket_Option name,
     const ppapi::SocketOptionData& value) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   if (closed_)
     return PP_ERROR_FAILED;
@@ -140,21 +138,22 @@ int32_t PepperUDPSocketMessageFilter::OnMsgSetOption(
       if (!value.GetInt32(&integer_value) || integer_value <= 0)
         return PP_ERROR_BADARGUMENT;
 
-      bool result = false;
+      int net_result = net::ERR_UNEXPECTED;
       if (name == PP_UDPSOCKET_OPTION_SEND_BUFFER_SIZE) {
         if (integer_value >
-                ppapi::proxy::UDPSocketResourceBase::kMaxSendBufferSize) {
+            ppapi::proxy::UDPSocketResourceBase::kMaxSendBufferSize) {
           return PP_ERROR_BADARGUMENT;
         }
-        result = socket_->SetSendBufferSize(integer_value);
+        net_result = socket_->SetSendBufferSize(integer_value);
       } else {
         if (integer_value >
-                ppapi::proxy::UDPSocketResourceBase::kMaxReceiveBufferSize) {
+            ppapi::proxy::UDPSocketResourceBase::kMaxReceiveBufferSize) {
           return PP_ERROR_BADARGUMENT;
         }
-        result = socket_->SetReceiveBufferSize(integer_value);
+        net_result = socket_->SetReceiveBufferSize(integer_value);
       }
-      return result ? PP_OK : PP_ERROR_FAILED;
+      // TODO(wtc): Add error mapping code.
+      return (net_result == net::OK) ? PP_OK : PP_ERROR_FAILED;
     }
     default: {
       NOTREACHED();
@@ -166,30 +165,33 @@ int32_t PepperUDPSocketMessageFilter::OnMsgSetOption(
 int32_t PepperUDPSocketMessageFilter::OnMsgBind(
     const ppapi::host::HostMessageContext* context,
     const PP_NetAddress_Private& addr) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK(context);
 
   SocketPermissionRequest request =
       pepper_socket_utils::CreateSocketPermissionRequest(
           SocketPermissionRequest::UDP_BIND, addr);
-  if (!pepper_socket_utils::CanUseSocketAPIs(external_plugin_, private_api_,
-                                             &request, render_process_id_,
-                                             render_view_id_)) {
+  if (!pepper_socket_utils::CanUseSocketAPIs(external_plugin_,
+                                             private_api_,
+                                             &request,
+                                             render_process_id_,
+                                             render_frame_id_)) {
     return PP_ERROR_NOACCESS;
   }
 
-  BrowserThread::PostTask(
-      BrowserThread::IO, FROM_HERE,
-      base::Bind(&PepperUDPSocketMessageFilter::DoBind, this,
-                 context->MakeReplyMessageContext(),
-                 addr));
+  BrowserThread::PostTask(BrowserThread::IO,
+                          FROM_HERE,
+                          base::Bind(&PepperUDPSocketMessageFilter::DoBind,
+                                     this,
+                                     context->MakeReplyMessageContext(),
+                                     addr));
   return PP_OK_COMPLETIONPENDING;
 }
 
 int32_t PepperUDPSocketMessageFilter::OnMsgRecvFrom(
     const ppapi::host::HostMessageContext* context,
     int32_t num_bytes) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DCHECK(context);
   DCHECK(socket_.get());
 
@@ -229,28 +231,33 @@ int32_t PepperUDPSocketMessageFilter::OnMsgSendTo(
     const ppapi::host::HostMessageContext* context,
     const std::string& data,
     const PP_NetAddress_Private& addr) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK(context);
 
   SocketPermissionRequest request =
       pepper_socket_utils::CreateSocketPermissionRequest(
           SocketPermissionRequest::UDP_SEND_TO, addr);
-  if (!pepper_socket_utils::CanUseSocketAPIs(external_plugin_, private_api_,
-                                             &request, render_process_id_,
-                                             render_view_id_)) {
+  if (!pepper_socket_utils::CanUseSocketAPIs(external_plugin_,
+                                             private_api_,
+                                             &request,
+                                             render_process_id_,
+                                             render_frame_id_)) {
     return PP_ERROR_NOACCESS;
   }
 
-  BrowserThread::PostTask(
-      BrowserThread::IO, FROM_HERE,
-      base::Bind(&PepperUDPSocketMessageFilter::DoSendTo, this,
-                 context->MakeReplyMessageContext(), data, addr));
+  BrowserThread::PostTask(BrowserThread::IO,
+                          FROM_HERE,
+                          base::Bind(&PepperUDPSocketMessageFilter::DoSendTo,
+                                     this,
+                                     context->MakeReplyMessageContext(),
+                                     data,
+                                     addr));
   return PP_OK_COMPLETIONPENDING;
 }
 
 int32_t PepperUDPSocketMessageFilter::OnMsgClose(
     const ppapi::host::HostMessageContext* context) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   Close();
   return PP_OK;
 }
@@ -258,15 +265,15 @@ int32_t PepperUDPSocketMessageFilter::OnMsgClose(
 void PepperUDPSocketMessageFilter::DoBind(
     const ppapi::host::ReplyMessageContext& context,
     const PP_NetAddress_Private& addr) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   if (closed_ || socket_.get()) {
     SendBindError(context, PP_ERROR_FAILED);
     return;
   }
 
-  scoped_ptr<net::UDPServerSocket> socket(new net::UDPServerSocket(
-      NULL, net::NetLog::Source()));
+  scoped_ptr<net::UDPServerSocket> socket(
+      new net::UDPServerSocket(NULL, net::NetLog::Source()));
 
   net::IPAddressNumber address;
   int port;
@@ -280,8 +287,8 @@ void PepperUDPSocketMessageFilter::DoBind(
   if (allow_broadcast_)
     socket->AllowBroadcast();
 
-  int32_t pp_result = NetErrorToPepperError(
-      socket->Listen(net::IPEndPoint(address, port)));
+  int32_t pp_result =
+      NetErrorToPepperError(socket->Listen(net::IPEndPoint(address, port)));
   if (pp_result != PP_OK) {
     SendBindError(context, pp_result);
     return;
@@ -294,11 +301,9 @@ void PepperUDPSocketMessageFilter::DoBind(
     return;
   }
 
-  PP_NetAddress_Private net_address =
-      NetAddressPrivateImpl::kInvalidNetAddress;
-  if (!NetAddressPrivateImpl::IPEndPointToNetAddress(bound_address.address(),
-                                                     bound_address.port(),
-                                                     &net_address)) {
+  PP_NetAddress_Private net_address = NetAddressPrivateImpl::kInvalidNetAddress;
+  if (!NetAddressPrivateImpl::IPEndPointToNetAddress(
+          bound_address.address(), bound_address.port(), &net_address)) {
     SendBindError(context, PP_ERROR_ADDRESS_INVALID);
     return;
   }
@@ -313,7 +318,7 @@ void PepperUDPSocketMessageFilter::DoSendTo(
     const ppapi::host::ReplyMessageContext& context,
     const std::string& data,
     const PP_NetAddress_Private& addr) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DCHECK(socket_.get());
 
   if (closed_ || !socket_.get()) {
@@ -329,7 +334,7 @@ void PepperUDPSocketMessageFilter::DoSendTo(
   size_t num_bytes = data.size();
   if (num_bytes == 0 ||
       num_bytes > static_cast<size_t>(
-          ppapi::proxy::UDPSocketResourceBase::kMaxWriteSize)) {
+                      ppapi::proxy::UDPSocketResourceBase::kMaxWriteSize)) {
     // Size of |data| is checked on the plugin side.
     NOTREACHED();
     SendSendToError(context, PP_ERROR_BADARGUMENT);
@@ -360,7 +365,7 @@ void PepperUDPSocketMessageFilter::DoSendTo(
 }
 
 void PepperUDPSocketMessageFilter::Close() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   if (socket_.get() && !closed_)
     socket_->Close();
   closed_ = true;
@@ -369,7 +374,7 @@ void PepperUDPSocketMessageFilter::Close() {
 void PepperUDPSocketMessageFilter::OnRecvFromCompleted(
     const ppapi::host::ReplyMessageContext& context,
     int net_result) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DCHECK(recvfrom_buffer_.get());
 
   int32_t pp_result = NetErrorToPepperError(net_result);
@@ -384,8 +389,8 @@ void PepperUDPSocketMessageFilter::OnRecvFromCompleted(
   }
 
   if (pp_result >= 0) {
-    SendRecvFromReply(context, PP_OK,
-                      std::string(recvfrom_buffer_->data(), pp_result), addr);
+    SendRecvFromReply(
+        context, PP_OK, std::string(recvfrom_buffer_->data(), pp_result), addr);
   } else {
     SendRecvFromError(context, pp_result);
   }
@@ -396,7 +401,7 @@ void PepperUDPSocketMessageFilter::OnRecvFromCompleted(
 void PepperUDPSocketMessageFilter::OnSendToCompleted(
     const ppapi::host::ReplyMessageContext& context,
     int net_result) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DCHECK(sendto_buffer_.get());
 
   int32_t pp_result = NetErrorToPepperError(net_result);
@@ -423,8 +428,7 @@ void PepperUDPSocketMessageFilter::SendRecvFromReply(
     const PP_NetAddress_Private& addr) {
   ppapi::host::ReplyMessageContext reply_context(context);
   reply_context.params.set_result(result);
-  SendReply(reply_context,
-            PpapiPluginMsg_UDPSocket_RecvFromReply(data, addr));
+  SendReply(reply_context, PpapiPluginMsg_UDPSocket_RecvFromReply(data, addr));
 }
 
 void PepperUDPSocketMessageFilter::SendSendToReply(
@@ -433,8 +437,7 @@ void PepperUDPSocketMessageFilter::SendSendToReply(
     int32_t bytes_written) {
   ppapi::host::ReplyMessageContext reply_context(context);
   reply_context.params.set_result(result);
-  SendReply(reply_context,
-            PpapiPluginMsg_UDPSocket_SendToReply(bytes_written));
+  SendReply(reply_context, PpapiPluginMsg_UDPSocket_SendToReply(bytes_written));
 }
 
 void PepperUDPSocketMessageFilter::SendBindError(

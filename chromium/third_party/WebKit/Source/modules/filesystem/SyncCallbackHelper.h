@@ -36,7 +36,6 @@
 #include "core/fileapi/FileError.h"
 #include "core/html/VoidCallback.h"
 #include "modules/filesystem/DirectoryEntry.h"
-#include "modules/filesystem/DirectoryReaderSync.h"
 #include "modules/filesystem/EntriesCallback.h"
 #include "modules/filesystem/EntryCallback.h"
 #include "modules/filesystem/EntrySync.h"
@@ -44,6 +43,7 @@
 #include "modules/filesystem/FileEntry.h"
 #include "modules/filesystem/FileSystemCallback.h"
 #include "modules/filesystem/MetadataCallback.h"
+#include "platform/heap/Handle.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 
@@ -51,8 +51,10 @@ namespace WebCore {
 
 template <typename ResultType, typename CallbackArg>
 struct HelperResultType {
-    typedef PassRefPtr<ResultType> ReturnType;
-    typedef RefPtr<ResultType> StorageType;
+    DISALLOW_ALLOCATION();
+public:
+    typedef ResultType* ReturnType;
+    typedef Persistent<ResultType> StorageType;
 
     static ReturnType createFromCallbackArg(CallbackArg argument)
     {
@@ -60,36 +62,18 @@ struct HelperResultType {
     }
 };
 
-template <>
-struct HelperResultType<EntrySyncVector, const EntryVector&> {
-    typedef EntrySyncVector ReturnType;
-    typedef EntrySyncVector StorageType;
-
-    static EntrySyncVector createFromCallbackArg(const EntryVector& entries)
-    {
-        EntrySyncVector result;
-        size_t entryCount = entries.size();
-        result.reserveInitialCapacity(entryCount);
-        for (size_t i = 0; i < entryCount; ++i)
-            result.uncheckedAppend(EntrySync::create(entries[i].get()));
-        return result;
-    }
-};
-
 // A helper template for FileSystemSync implementation.
 template <typename SuccessCallback, typename CallbackArg, typename ResultType>
-class SyncCallbackHelper {
-    WTF_MAKE_NONCOPYABLE(SyncCallbackHelper);
+class SyncCallbackHelper FINAL : public RefCounted<SyncCallbackHelper<SuccessCallback, CallbackArg, ResultType> > {
 public:
     typedef SyncCallbackHelper<SuccessCallback, CallbackArg, ResultType> HelperType;
     typedef HelperResultType<ResultType, CallbackArg> ResultTypeTrait;
     typedef typename ResultTypeTrait::StorageType ResultStorageType;
     typedef typename ResultTypeTrait::ReturnType ResultReturnType;
 
-    SyncCallbackHelper()
-        : m_errorCode(FileError::OK)
-        , m_completed(false)
+    static PassRefPtr<HelperType> create()
     {
+        return adoptRef(new SyncCallbackHelper());
     }
 
     ResultReturnType getResult(ExceptionState& exceptionState)
@@ -104,9 +88,15 @@ public:
     PassOwnPtr<ErrorCallback> errorCallback() { return ErrorCallbackImpl::create(this); }
 
 private:
-    class SuccessCallbackImpl : public SuccessCallback {
+    SyncCallbackHelper()
+        : m_errorCode(FileError::OK)
+        , m_completed(false)
+    {
+    }
+
+    class SuccessCallbackImpl FINAL : public SuccessCallback {
     public:
-        static PassOwnPtr<SuccessCallbackImpl> create(HelperType* helper)
+        static PassOwnPtr<SuccessCallbackImpl> create(PassRefPtr<HelperType> helper)
         {
             return adoptPtr(new SuccessCallbackImpl(helper));
         }
@@ -122,32 +112,32 @@ private:
         }
 
     private:
-        explicit SuccessCallbackImpl(HelperType* helper)
+        explicit SuccessCallbackImpl(PassRefPtr<HelperType> helper)
             : m_helper(helper)
         {
         }
-        HelperType* m_helper;
+        RefPtr<HelperType> m_helper;
     };
 
-    class ErrorCallbackImpl : public ErrorCallback {
+    class ErrorCallbackImpl FINAL : public ErrorCallback {
     public:
-        static PassOwnPtr<ErrorCallbackImpl> create(HelperType* helper)
+        static PassOwnPtr<ErrorCallbackImpl> create(PassRefPtr<HelperType> helper)
         {
             return adoptPtr(new ErrorCallbackImpl(helper));
         }
 
-        virtual void handleEvent(FileError* error)
+        virtual void handleEvent(FileError* error) OVERRIDE
         {
             ASSERT(error);
             m_helper->setError(error->code());
         }
 
     private:
-        explicit ErrorCallbackImpl(HelperType* helper)
+        explicit ErrorCallbackImpl(PassRefPtr<HelperType> helper)
             : m_helper(helper)
         {
         }
-        HelperType* m_helper;
+        RefPtr<HelperType> m_helper;
     };
 
     void setError(FileError::ErrorCode code)
@@ -167,15 +157,16 @@ private:
     bool m_completed;
 };
 
-struct EmptyType : public RefCounted<EmptyType> {
-    static PassRefPtr<EmptyType> create(EmptyType*)
+struct EmptyType : public GarbageCollected<EmptyType> {
+    static EmptyType* create(EmptyType*)
     {
         return 0;
     }
+
+    void trace(Visitor*) { }
 };
 
 typedef SyncCallbackHelper<EntryCallback, Entry*, EntrySync> EntrySyncCallbackHelper;
-typedef SyncCallbackHelper<EntriesCallback, const EntryVector&, EntrySyncVector> EntriesSyncCallbackHelper;
 typedef SyncCallbackHelper<MetadataCallback, Metadata*, Metadata> MetadataSyncCallbackHelper;
 typedef SyncCallbackHelper<VoidCallback, EmptyType*, EmptyType> VoidSyncCallbackHelper;
 typedef SyncCallbackHelper<FileSystemCallback, DOMFileSystem*, DOMFileSystemSync> FileSystemSyncCallbackHelper;

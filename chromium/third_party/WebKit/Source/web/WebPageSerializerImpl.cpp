@@ -76,11 +76,9 @@
 // saved resource files.
 
 #include "config.h"
-#include "WebPageSerializerImpl.h"
+#include "web/WebPageSerializerImpl.h"
 
-#include "DOMUtilitiesPrivate.h"
-#include "HTMLNames.h"
-#include "WebFrameImpl.h"
+#include "core/HTMLNames.h"
 #include "core/dom/Document.h"
 #include "core/dom/DocumentType.h"
 #include "core/dom/Element.h"
@@ -93,6 +91,7 @@
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/FrameLoader.h"
 #include "public/platform/WebVector.h"
+#include "web/WebLocalFrameImpl.h"
 #include "wtf/text/TextEncoding.h"
 
 using namespace WebCore;
@@ -132,12 +131,13 @@ String WebPageSerializerImpl::preActionBeforeSerializeOpenTag(
         // Skip the open tag of original META tag which declare charset since we
         // have overrided the META which have correct charset declaration after
         // serializing open tag of HEAD element.
-        if (element->hasTagName(HTMLNames::metaTag)) {
-            const HTMLMetaElement* meta = toHTMLMetaElement(element);
+        ASSERT(element);
+        if (isHTMLMetaElement(*element)) {
+            const HTMLMetaElement& meta = toHTMLMetaElement(*element);
             // Check whether the META tag has declared charset or not.
-            String equiv = meta->httpEquiv();
+            String equiv = meta.httpEquiv();
             if (equalIgnoringCase(equiv, "content-type")) {
-                String content = meta->content();
+                String content = meta.content();
                 if (content.length() && content.contains("charset", false)) {
                     // Find META tag declared charset, we need to skip it when
                     // serializing DOM.
@@ -145,7 +145,7 @@ String WebPageSerializerImpl::preActionBeforeSerializeOpenTag(
                     *needSkip = true;
                 }
             }
-        } else if (isHTMLHtmlElement(element)) {
+        } else if (isHTMLHtmlElement(*element)) {
             // Check something before processing the open tag of HEAD element.
             // First we add doc type declaration if original document has it.
             if (!param->haveSeenDocType) {
@@ -156,7 +156,7 @@ String WebPageSerializerImpl::preActionBeforeSerializeOpenTag(
             // Add MOTW declaration before html tag.
             // See http://msdn2.microsoft.com/en-us/library/ms537628(VS.85).aspx.
             result.append(WebPageSerializer::generateMarkOfTheWebDeclaration(param->url));
-        } else if (element->hasTagName(HTMLNames::baseTag)) {
+        } else if (isHTMLBaseElement(*element)) {
             // Comment the BASE tag when serializing dom.
             result.append("<!--");
         }
@@ -197,7 +197,7 @@ String WebPageSerializerImpl::postActionAfterSerializeOpenTag(
         return result.toString();
     // Check after processing the open tag of HEAD element
     if (!param->haveAddedCharsetDeclaration
-        && element->hasTagName(HTMLNames::headTag)) {
+        && isHTMLHeadElement(*element)) {
         param->haveAddedCharsetDeclaration = true;
         // Check meta element. WebKit only pre-parse the first 512 bytes
         // of the document. If the whole <HEAD> is larger and meta is the
@@ -212,8 +212,7 @@ String WebPageSerializerImpl::postActionAfterSerializeOpenTag(
         param->haveAddedContentsBeforeEnd = true;
         // Will search each META which has charset declaration, and skip them all
         // in PreActionBeforeSerializeOpenTag.
-    } else if (element->hasTagName(HTMLNames::scriptTag)
-               || element->hasTagName(HTMLNames::styleTag)) {
+    } else if (isHTMLScriptElement(*element) || isHTMLScriptElement(*element)) {
         param->isInScriptOrStyleTag = true;
     }
 
@@ -231,10 +230,9 @@ String WebPageSerializerImpl::preActionBeforeSerializeEndTag(
     // Skip the end tag of original META tag which declare charset.
     // Need not to check whether it's META tag since we guarantee
     // skipMetaElement is definitely META tag if it's not 0.
-    if (param->skipMetaElement == element)
+    if (param->skipMetaElement == element) {
         *needSkip = true;
-    else if (element->hasTagName(HTMLNames::scriptTag)
-             || element->hasTagName(HTMLNames::styleTag)) {
+    } else if (isHTMLScriptElement(*element) || isHTMLScriptElement(*element)) {
         ASSERT(param->isInScriptOrStyleTag);
         param->isInScriptOrStyleTag = false;
     }
@@ -252,7 +250,7 @@ String WebPageSerializerImpl::postActionAfterSerializeEndTag(
     if (!param->isHTMLDocument)
         return result.toString();
     // Comment the BASE tag when serializing DOM.
-    if (element->hasTagName(HTMLNames::baseTag)) {
+    if (isHTMLBaseElement(*element)) {
         result.append("-->");
         // Append a new base tag declaration.
         result.append(WebPageSerializer::generateBaseTagDeclaration(
@@ -305,26 +303,26 @@ void WebPageSerializerImpl::openTagToString(Element* element,
     result.append(element->nodeName().lower());
     // Go through all attributes and serialize them.
     if (element->hasAttributes()) {
-        unsigned numAttrs = element->attributeCount();
-        for (unsigned i = 0; i < numAttrs; i++) {
+        AttributeCollection attributes = element->attributes();
+        AttributeCollection::const_iterator end = attributes.end();
+        for (AttributeCollection::const_iterator it = attributes.begin(); it != end; ++it) {
             result.append(' ');
             // Add attribute pair
-            const Attribute *attribute = element->attributeItem(i);
-            result.append(attribute->name().toString());
+            result.append(it->name().toString());
             result.appendLiteral("=\"");
-            if (!attribute->value().isEmpty()) {
-                const String& attrValue = attribute->value();
+            if (!it->value().isEmpty()) {
+                const String& attrValue = it->value();
 
                 // Check whether we need to replace some resource links
                 // with local resource paths.
-                const QualifiedName& attrName = attribute->name();
-                if (elementHasLegalLinkAttribute(element, attrName)) {
+                const QualifiedName& attrName = it->name();
+                if (element->hasLegalLinkAttribute(attrName)) {
                     // For links start with "javascript:", we do not change it.
                     if (attrValue.startsWith("javascript:", false))
                         result.append(attrValue);
                     else {
                         // Get the absolute link
-                        WebFrameImpl* subFrame = WebFrameImpl::fromFrameOwnerElement(element);
+                        WebLocalFrameImpl* subFrame = WebLocalFrameImpl::fromFrameOwnerElement(element);
                         String completeURL = subFrame ? subFrame->frame()->document()->url() :
                                                         param->document->completeURL(attrValue);
                         // Check whether we have local files for those link.
@@ -352,7 +350,7 @@ void WebPageSerializerImpl::openTagToString(Element* element,
     // Do post action for open tag.
     String addedContents = postActionAfterSerializeOpenTag(element, param);
     // Complete the open tag for element when it has child/children.
-    if (element->hasChildNodes() || param->haveAddedContentsBeforeEnd)
+    if (element->hasChildren() || param->haveAddedContentsBeforeEnd)
         result.append('>');
     // Append the added contents generate in  post action of open tag.
     result.append(addedContents);
@@ -371,7 +369,7 @@ void WebPageSerializerImpl::endTagToString(Element* element,
     if (needSkip)
         return;
     // Write end tag when element has child/children.
-    if (element->hasChildNodes() || param->haveAddedContentsBeforeEnd) {
+    if (element->hasChildren() || param->haveAddedContentsBeforeEnd) {
         result.appendLiteral("</");
         result.append(element->nodeName().lower());
         result.append('>');
@@ -444,7 +442,7 @@ WebPageSerializerImpl::WebPageSerializerImpl(WebFrame* frame,
 {
     // Must specify available webframe.
     ASSERT(frame);
-    m_specifiedWebFrameImpl = toWebFrameImpl(frame);
+    m_specifiedWebLocalFrameImpl = toWebLocalFrameImpl(frame);
     // Make sure we have non 0 client.
     ASSERT(client);
     // Build local resources map.
@@ -464,25 +462,24 @@ void WebPageSerializerImpl::collectTargetFrames()
     m_framesCollected = true;
 
     // First, process main frame.
-    m_frames.append(m_specifiedWebFrameImpl);
+    m_frames.append(m_specifiedWebLocalFrameImpl);
     // Return now if user only needs to serialize specified frame, not including
     // all sub-frames.
     if (!m_recursiveSerialization)
         return;
     // Collect all frames inside the specified frame.
     for (int i = 0; i < static_cast<int>(m_frames.size()); ++i) {
-        WebFrameImpl* currentFrame = m_frames[i];
+        WebLocalFrameImpl* currentFrame = m_frames[i];
         // Get current using document.
         Document* currentDoc = currentFrame->frame()->document();
         // Go through sub-frames.
-        RefPtr<HTMLCollection> all = currentDoc->all();
+        RefPtrWillBeRawPtr<HTMLAllCollection> all = currentDoc->all();
 
-        for (unsigned i = 0; Node* node = all->item(i); i++) {
-            if (!node->isHTMLElement())
+        for (unsigned i = 0; Element* element = all->item(i); ++i) {
+            if (!element->isHTMLElement())
                 continue;
-            Element* element = toElement(node);
-            WebFrameImpl* webFrame =
-                WebFrameImpl::fromFrameOwnerElement(element);
+            WebLocalFrameImpl* webFrame =
+                WebLocalFrameImpl::fromFrameOwnerElement(element);
             if (webFrame)
                 m_frames.append(webFrame);
         }
@@ -495,10 +492,10 @@ bool WebPageSerializerImpl::serialize()
         collectTargetFrames();
 
     bool didSerialization = false;
-    KURL mainURL = m_specifiedWebFrameImpl->frame()->document()->url();
+    KURL mainURL = m_specifiedWebLocalFrameImpl->frame()->document()->url();
 
     for (unsigned i = 0; i < m_frames.size(); ++i) {
-        WebFrameImpl* webFrame = m_frames[i];
+        WebLocalFrameImpl* webFrame = m_frames[i];
         Document* document = webFrame->frame()->document();
         const KURL& url = document->url();
 

@@ -30,43 +30,23 @@
 
 namespace WebCore {
 
-class DocumentMarkerController;
-class Text;
-
-class TextInsertionMarkerSupplier : public RefCounted<TextInsertionMarkerSupplier> {
-public:
-    virtual ~TextInsertionMarkerSupplier() { }
-    virtual void addMarkersToTextNode(Text*, unsigned offsetOfInsertion, const String& textInserted) = 0;
-protected:
-    TextInsertionMarkerSupplier() { }
-};
-
-class InsertTextCommand : public CompositeEditCommand {
+class InsertTextCommand FINAL : public CompositeEditCommand {
 public:
     enum RebalanceType {
         RebalanceLeadingAndTrailingWhitespaces,
         RebalanceAllWhitespaces
     };
 
-    static PassRefPtr<InsertTextCommand> create(Document& document, const String& text, bool selectInsertedText = false,
+    static PassRefPtrWillBeRawPtr<InsertTextCommand> create(Document& document, const String& text, bool selectInsertedText = false,
         RebalanceType rebalanceType = RebalanceLeadingAndTrailingWhitespaces)
     {
-        return adoptRef(new InsertTextCommand(document, text, selectInsertedText, rebalanceType));
-    }
-
-    static PassRefPtr<InsertTextCommand> createWithMarkerSupplier(Document& document, const String& text, PassRefPtr<TextInsertionMarkerSupplier> markerSupplier)
-    {
-        return adoptRef(new InsertTextCommand(document, text, markerSupplier));
+        return adoptRefWillBeNoop(new InsertTextCommand(document, text, selectInsertedText, rebalanceType));
     }
 
 private:
-
     InsertTextCommand(Document&, const String& text, bool selectInsertedText, RebalanceType);
-    InsertTextCommand(Document&, const String& text, PassRefPtr<TextInsertionMarkerSupplier>);
 
-    void deleteCharacter();
-
-    virtual void doApply();
+    virtual void doApply() OVERRIDE;
 
     Position positionInsideTextNode(const Position&);
     Position insertTab(const Position&);
@@ -80,7 +60,6 @@ private:
     String m_text;
     bool m_selectInsertedText;
     RebalanceType m_rebalanceType;
-    RefPtr<TextInsertionMarkerSupplier> m_markerSupplier;
 };
 
 } // namespace WebCore

@@ -28,6 +28,7 @@
 #include "config.h"
 #include "platform/transforms/TransformationMatrix.h"
 
+#include "platform/geometry/FloatBox.h"
 #include "platform/geometry/FloatQuad.h"
 #include "platform/geometry/FloatRect.h"
 #include "platform/geometry/IntRect.h"
@@ -621,7 +622,7 @@ FloatQuad TransformationMatrix::projectQuad(const FloatQuad& q, bool* clamped) c
 static float clampEdgeValue(float f)
 {
     ASSERT(!std::isnan(f));
-    return min<float>(max<float>(f, -LayoutUnit::max() / 2), LayoutUnit::max() / 2);
+    return min<float>(max<float>(f, (-LayoutUnit::max() / 2).toFloat()), (LayoutUnit::max() / 2).toFloat());
 }
 
 LayoutRect TransformationMatrix::clampedBoundsOfProjectedQuad(const FloatQuad& q) const
@@ -633,17 +634,39 @@ LayoutRect TransformationMatrix::clampedBoundsOfProjectedQuad(const FloatQuad& q
 
     float right;
     if (std::isinf(mappedQuadBounds.x()) && std::isinf(mappedQuadBounds.width()))
-        right = LayoutUnit::max() / 2;
+        right = (LayoutUnit::max() / 2).toFloat();
     else
         right = clampEdgeValue(ceilf(mappedQuadBounds.maxX()));
 
     float bottom;
     if (std::isinf(mappedQuadBounds.y()) && std::isinf(mappedQuadBounds.height()))
-        bottom = LayoutUnit::max() / 2;
+        bottom = (LayoutUnit::max() / 2).toFloat();
     else
         bottom = clampEdgeValue(ceilf(mappedQuadBounds.maxY()));
 
     return LayoutRect(LayoutUnit::clamp(left), LayoutUnit::clamp(top),  LayoutUnit::clamp(right - left), LayoutUnit::clamp(bottom - top));
+}
+
+void TransformationMatrix::transformBox(FloatBox& box) const
+{
+    FloatBox bounds;
+    bool firstPoint = true;
+    for (size_t i = 0; i < 2; ++i) {
+        for (size_t j = 0; j < 2; ++j) {
+            for (size_t k = 0; k < 2; ++k) {
+                FloatPoint3D point(box.x(), box.y(), box.z());
+                point += FloatPoint3D(i * box.width(), j * box.height(), k * box.depth());
+                point = mapPoint(point);
+                if (firstPoint) {
+                    bounds.setOrigin(point);
+                    firstPoint = false;
+                } else {
+                    bounds.expandTo(point);
+                }
+            }
+        }
+    }
+    box = bounds;
 }
 
 FloatPoint TransformationMatrix::mapPoint(const FloatPoint& p) const
@@ -1341,8 +1364,11 @@ void TransformationMatrix::blend(const TransformationMatrix& from, double progre
     // decompose
     DecomposedType fromDecomp;
     DecomposedType toDecomp;
-    from.decompose(fromDecomp);
-    decompose(toDecomp);
+    if (!from.decompose(fromDecomp) || !decompose(toDecomp)) {
+        if (progress < 0.5)
+            *this = from;
+        return;
+    }
 
     // interpolate
     blendFloat(fromDecomp.scaleX, toDecomp.scaleX, progress);

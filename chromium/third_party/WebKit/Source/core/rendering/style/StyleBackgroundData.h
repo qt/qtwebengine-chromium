@@ -45,8 +45,10 @@ public:
         return !(*this == o);
     }
 
+    bool visuallyEqual(const StyleBackgroundData&) const;
+
     const FillLayer& background() const { return m_background; }
-    const Color& color() const { return m_color; }
+    const StyleColor& color() const { return m_color; }
     const OutlineValue& outline() const { return m_outline; }
 
 private:
@@ -56,7 +58,7 @@ private:
     StyleBackgroundData(const StyleBackgroundData&);
 
     FillLayer m_background;
-    Color m_color;
+    StyleColor m_color;
     OutlineValue m_outline;
 };
 

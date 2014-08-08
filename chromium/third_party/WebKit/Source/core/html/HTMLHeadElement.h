@@ -30,13 +30,11 @@ namespace WebCore {
 
 class HTMLHeadElement FINAL : public HTMLElement {
 public:
-    static PassRefPtr<HTMLHeadElement> create(Document&);
+    DECLARE_NODE_FACTORY(HTMLHeadElement);
 
 private:
     explicit HTMLHeadElement(Document&);
 };
-
-DEFINE_NODE_TYPE_CASTS(HTMLHeadElement, hasTagName(HTMLNames::headTag));
 
 } // namespace
 

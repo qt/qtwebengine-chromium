@@ -5,7 +5,6 @@
 
 
 import copy
-import types
 
 
 class PolicyTemplateGenerator:
@@ -78,12 +77,6 @@ class PolicyTemplateGenerator:
     for supported_on_item in supported_on:
       product_platform_part, version_part = supported_on_item.split(':')
 
-      # TODO(joaodasilva): enable parsing 'android' as a platform and including
-      # that platform in the generated documentation. Just skip it for now to
-      # prevent build failures.
-      if product_platform_part == 'android':
-        continue
-
       if '.' in product_platform_part:
         product, platform = product_platform_part.split('.')
         if platform == '*':
@@ -94,11 +87,12 @@ class PolicyTemplateGenerator:
           platforms = [platform]
       else:
         # e.g.: 'chrome_frame:7-'
-        product = product_platform_part
-        platform = {
-          'chrome_os': 'chrome_os',
-          'chrome_frame': 'win'
-        }[product]
+        product, platform = {
+          'android':      ('chrome',        'android'),
+          'chrome_os':    ('chrome_os',     'chrome_os'),
+          'chrome_frame': ('chrome_frame',  'win'),
+          'ios':          ('chrome',        'ios'),
+        }[product_platform_part]
         platforms = [platform]
       since_version, until_version = version_part.split('-')
       result.append({
@@ -108,20 +102,6 @@ class PolicyTemplateGenerator:
         'until_version': until_version
       })
     return result
-
-  def _PrintPolicyValue(self, item):
-    '''Produces a string representation for a policy value. Taking care to print
-    dictionaries in a sorted order.'''
-    if type(item) == types.StringType:
-      str_val = "'%s'" % item
-    elif isinstance(item, dict):
-      str_val = "{";  
-      for it in sorted(item.iterkeys()):
-        str_val += "\'%s\': %s, " % (it, self._PrintPolicyValue(item[it]))
-      str_val = str_val.rstrip(", ") + "}";  
-    else:
-      str_val = str(item)
-    return str_val;  
 
   def _ProcessPolicy(self, policy):
     '''Processes localized message strings in a policy or a group.
@@ -142,8 +122,6 @@ class PolicyTemplateGenerator:
       # Iterate through all the items of an enum-type policy, and add captions.
       for item in policy['items']:
         item['caption'] = self._ImportMessage(item['caption'])
-    elif policy['type'] == 'dict' and 'example_value' in policy:
-      policy['example_value'] = self._PrintPolicyValue(policy['example_value'])
     if policy['type'] != 'group':
       if not 'label' in policy:
         # If 'label' is not specified, then it defaults to 'caption':

@@ -27,12 +27,12 @@
 
 #include "core/html/MediaDocument.h"
 
-#include "HTMLNames.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
-#include "core/dom/NodeTraversal.h"
+#include "core/HTMLNames.h"
+#include "core/dom/ElementTraversal.h"
 #include "core/dom/RawDataDocumentParser.h"
 #include "core/events/KeyboardEvent.h"
-#include "core/events/ThreadLocalEventNames.h"
+#include "core/frame/LocalFrame.h"
 #include "core/html/HTMLBodyElement.h"
 #include "core/html/HTMLHeadElement.h"
 #include "core/html/HTMLHtmlElement.h"
@@ -41,7 +41,6 @@
 #include "core/html/HTMLVideoElement.h"
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/FrameLoader.h"
-#include "core/frame/Frame.h"
 #include "platform/KeyboardCodes.h"
 
 namespace WebCore {
@@ -51,9 +50,9 @@ using namespace HTMLNames;
 // FIXME: Share more code with PluginDocumentParser.
 class MediaDocumentParser : public RawDataDocumentParser {
 public:
-    static PassRefPtr<MediaDocumentParser> create(MediaDocument* document)
+    static PassRefPtrWillBeRawPtr<MediaDocumentParser> create(MediaDocument* document)
     {
-        return adoptRef(new MediaDocumentParser(document));
+        return adoptRefWillBeNoop(new MediaDocumentParser(document));
     }
 
 private:
@@ -73,25 +72,25 @@ private:
 void MediaDocumentParser::createDocumentStructure()
 {
     ASSERT(document());
-    RefPtr<HTMLHtmlElement> rootElement = HTMLHtmlElement::create(*document());
+    RefPtrWillBeRawPtr<HTMLHtmlElement> rootElement = HTMLHtmlElement::create(*document());
     rootElement->insertedByParser();
     document()->appendChild(rootElement);
 
     if (document()->frame())
         document()->frame()->loader().dispatchDocumentElementAvailable();
 
-    RefPtr<HTMLHeadElement> head = HTMLHeadElement::create(*document());
-    RefPtr<HTMLMetaElement> meta = HTMLMetaElement::create(*document());
+    RefPtrWillBeRawPtr<HTMLHeadElement> head = HTMLHeadElement::create(*document());
+    RefPtrWillBeRawPtr<HTMLMetaElement> meta = HTMLMetaElement::create(*document());
     meta->setAttribute(nameAttr, "viewport");
     meta->setAttribute(contentAttr, "width=device-width");
     head->appendChild(meta.release());
 
-    RefPtr<HTMLVideoElement> media = HTMLVideoElement::create(*document());
+    RefPtrWillBeRawPtr<HTMLVideoElement> media = HTMLVideoElement::create(*document());
     media->setAttribute(controlsAttr, "");
     media->setAttribute(autoplayAttr, "");
     media->setAttribute(nameAttr, "media");
 
-    RefPtr<HTMLSourceElement> source = HTMLSourceElement::create(*document());
+    RefPtrWillBeRawPtr<HTMLSourceElement> source = HTMLSourceElement::create(*document());
     source->setSrc(document()->url());
 
     if (DocumentLoader* loader = document()->loader())
@@ -99,7 +98,7 @@ void MediaDocumentParser::createDocumentStructure()
 
     media->appendChild(source.release());
 
-    RefPtr<HTMLBodyElement> body = HTMLBodyElement::create(*document());
+    RefPtrWillBeRawPtr<HTMLBodyElement> body = HTMLBodyElement::create(*document());
     body->appendChild(media.release());
 
     rootElement->appendChild(head.release());
@@ -124,21 +123,9 @@ MediaDocument::MediaDocument(const DocumentInit& initializer)
     lockCompatibilityMode();
 }
 
-PassRefPtr<DocumentParser> MediaDocument::createParser()
+PassRefPtrWillBeRawPtr<DocumentParser> MediaDocument::createParser()
 {
     return MediaDocumentParser::create(this);
-}
-
-static inline HTMLVideoElement* descendentVideoElement(Node* root)
-{
-    ASSERT(root);
-
-    for (Node* node = root; node; node = NodeTraversal::next(*node, root)) {
-        if (isHTMLVideoElement(node))
-            return toHTMLVideoElement(node);
-    }
-
-    return 0;
 }
 
 void MediaDocument::defaultEventHandler(Event* event)
@@ -148,18 +135,14 @@ void MediaDocument::defaultEventHandler(Event* event)
         return;
 
     if (event->type() == EventTypeNames::keydown && event->isKeyboardEvent()) {
-        HTMLVideoElement* video = descendentVideoElement(targetNode);
+        HTMLVideoElement* video = Traversal<HTMLVideoElement>::firstWithin(*targetNode);
         if (!video)
             return;
 
         KeyboardEvent* keyboardEvent = toKeyboardEvent(event);
         if (keyboardEvent->keyIdentifier() == "U+0020" || keyboardEvent->keyCode() == VKEY_MEDIA_PLAY_PAUSE) {
             // space or media key (play/pause)
-            if (video->paused()) {
-                if (video->canPlay())
-                    video->play();
-            } else
-                video->pause();
+            video->togglePlayState();
             event->setDefaultHandled();
         }
     }

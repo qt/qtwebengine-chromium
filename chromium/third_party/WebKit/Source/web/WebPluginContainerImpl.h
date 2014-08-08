@@ -31,14 +31,14 @@
 #ifndef WebPluginContainerImpl_h
 #define WebPluginContainerImpl_h
 
-#include "WebPluginContainer.h"
 #include "core/plugins/PluginView.h"
 #include "platform/Widget.h"
+#include "public/web/WebPluginContainer.h"
 
 #include "wtf/OwnPtr.h"
 #include "wtf/PassRefPtr.h"
-#include "wtf/text/WTFString.h"
 #include "wtf/Vector.h"
+#include "wtf/text/WTFString.h"
 
 struct NPObject;
 
@@ -65,7 +65,7 @@ class WebPlugin;
 class WebPluginLoadObserver;
 class WebExternalTextureLayer;
 
-class WebPluginContainerImpl : public WebCore::PluginView, public WebPluginContainer {
+class WebPluginContainerImpl FINAL : public WebCore::PluginView, public WebPluginContainer {
 public:
     static PassRefPtr<WebPluginContainerImpl> create(WebCore::HTMLPlugInElement* element, WebPlugin* webPlugin)
     {
@@ -82,46 +82,46 @@ public:
     virtual bool wantsWheelEvents() OVERRIDE;
 
     // Widget methods
-    virtual void setFrameRect(const WebCore::IntRect&);
-    virtual void paint(WebCore::GraphicsContext*, const WebCore::IntRect&);
-    virtual void invalidateRect(const WebCore::IntRect&);
-    virtual void setFocus(bool);
-    virtual void show();
-    virtual void hide();
-    virtual void handleEvent(WebCore::Event*);
-    virtual void frameRectsChanged();
-    virtual void setParentVisible(bool);
-    virtual void setParent(WebCore::Widget*);
-    virtual void widgetPositionsUpdated();
-    virtual void clipRectChanged() OVERRIDE;
-    virtual bool isPluginContainer() const { return true; }
+    virtual void setFrameRect(const WebCore::IntRect&) OVERRIDE;
+    virtual void paint(WebCore::GraphicsContext*, const WebCore::IntRect&) OVERRIDE;
+    virtual void invalidateRect(const WebCore::IntRect&) OVERRIDE;
+    virtual void setFocus(bool) OVERRIDE;
+    virtual void show() OVERRIDE;
+    virtual void hide() OVERRIDE;
+    virtual void handleEvent(WebCore::Event*) OVERRIDE;
+    virtual void frameRectsChanged() OVERRIDE;
+    virtual void setParentVisible(bool) OVERRIDE;
+    virtual void setParent(WebCore::Widget*) OVERRIDE;
+    virtual void widgetPositionsUpdated() OVERRIDE;
+    virtual bool isPluginContainer() const OVERRIDE { return true; }
     virtual void eventListenersRemoved() OVERRIDE;
+    virtual bool pluginShouldPersist() const OVERRIDE;
 
     // WebPluginContainer methods
-    virtual WebElement element();
-    virtual void invalidate();
-    virtual void invalidateRect(const WebRect&);
-    virtual void scrollRect(int dx, int dy, const WebRect&);
-    virtual void reportGeometry();
-    virtual void allowScriptObjects();
-    virtual void clearScriptObjects();
-    virtual NPObject* scriptableObjectForElement();
-    virtual WebString executeScriptURL(const WebURL&, bool popupsAllowed);
-    virtual void loadFrameRequest(const WebURLRequest&, const WebString& target, bool notifyNeeded, void* notifyData);
-    virtual void zoomLevelChanged(double zoomLevel);
-    virtual bool isRectTopmost(const WebRect&);
-    virtual void requestTouchEventType(TouchEventRequestType);
-    virtual void setWantsWheelEvents(bool);
-    virtual WebPoint windowToLocalPoint(const WebPoint&);
-    virtual WebPoint localToWindowPoint(const WebPoint&);
+    virtual WebElement element() OVERRIDE;
+    virtual void invalidate() OVERRIDE;
+    virtual void invalidateRect(const WebRect&) OVERRIDE;
+    virtual void scrollRect(int dx, int dy, const WebRect&) OVERRIDE;
+    virtual void reportGeometry() OVERRIDE;
+    virtual void allowScriptObjects() OVERRIDE;
+    virtual void clearScriptObjects() OVERRIDE;
+    virtual NPObject* scriptableObjectForElement() OVERRIDE;
+    virtual WebString executeScriptURL(const WebURL&, bool popupsAllowed) OVERRIDE;
+    virtual void loadFrameRequest(const WebURLRequest&, const WebString& target, bool notifyNeeded, void* notifyData) OVERRIDE;
+    virtual void zoomLevelChanged(double zoomLevel) OVERRIDE;
+    virtual bool isRectTopmost(const WebRect&) OVERRIDE;
+    virtual void requestTouchEventType(TouchEventRequestType) OVERRIDE;
+    virtual void setWantsWheelEvents(bool) OVERRIDE;
+    virtual WebPoint windowToLocalPoint(const WebPoint&) OVERRIDE;
+    virtual WebPoint localToWindowPoint(const WebPoint&) OVERRIDE;
 
     // This cannot be null.
-    WebPlugin* plugin() { return m_webPlugin; }
-    void setPlugin(WebPlugin*);
+    virtual WebPlugin* plugin() OVERRIDE { return m_webPlugin; }
+    virtual void setPlugin(WebPlugin*) OVERRIDE;
 
-    virtual float deviceScaleFactor();
-    virtual float pageScaleFactor();
-    virtual float pageZoomFactor();
+    virtual float deviceScaleFactor() OVERRIDE;
+    virtual float pageScaleFactor() OVERRIDE;
+    virtual float pageZoomFactor() OVERRIDE;
 
     virtual void setWebLayer(WebLayer*);
 
@@ -164,7 +164,7 @@ public:
 
 private:
     WebPluginContainerImpl(WebCore::HTMLPlugInElement* element, WebPlugin* webPlugin);
-    ~WebPluginContainerImpl();
+    virtual ~WebPluginContainerImpl();
 
     void handleMouseEvent(WebCore::MouseEvent*);
     void handleDragEvent(WebCore::MouseEvent*);
@@ -199,23 +199,10 @@ private:
     bool m_wantsWheelEvents;
 };
 
-inline WebPluginContainerImpl* toPluginContainerImpl(WebCore::Widget* widget)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!widget || widget->isPluginContainer());
-    // We need to ensure that the object is actually of type PluginContainer
-    // as there are many subclasses of Widget.
-    return static_cast<WebPluginContainerImpl*>(widget);
-}
-
-inline WebPluginContainerImpl* toPluginContainerImpl(WebPluginContainer* container)
-{
-    // Unlike Widget, we need not worry about object type for container.
-    // WebPluginContainerImpl is the only subclass of WebPluginContainer.
-    return static_cast<WebPluginContainerImpl*>(container);
-}
-
-// This will catch anyone doing an unnecessary cast.
-void toPluginContainerImpl(const WebPluginContainerImpl*);
+DEFINE_TYPE_CASTS(WebPluginContainerImpl, WebCore::Widget, widget, widget->isPluginContainer(), widget.isPluginContainer());
+// Unlike Widget, we need not worry about object type for container.
+// WebPluginContainerImpl is the only subclass of WebPluginContainer.
+DEFINE_TYPE_CASTS(WebPluginContainerImpl, WebPluginContainer, container, true, true);
 
 } // namespace blink
 

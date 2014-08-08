@@ -37,6 +37,7 @@
 #include "core/page/Chrome.h"
 #include "core/page/Page.h"
 #include "core/rendering/RenderDetailsMarker.h"
+#include "wtf/TemporaryChange.h"
 
 using namespace WTF::Unicode;
 
@@ -47,21 +48,20 @@ using namespace HTMLNames;
 inline PickerIndicatorElement::PickerIndicatorElement(Document& document, PickerIndicatorOwner& pickerIndicatorOwner)
     : HTMLDivElement(document)
     , m_pickerIndicatorOwner(&pickerIndicatorOwner)
+    , m_isInOpenPopup(false)
 {
 }
 
-PassRefPtr<PickerIndicatorElement> PickerIndicatorElement::create(Document& document, PickerIndicatorOwner& pickerIndicatorOwner)
+PassRefPtrWillBeRawPtr<PickerIndicatorElement> PickerIndicatorElement::create(Document& document, PickerIndicatorOwner& pickerIndicatorOwner)
 {
-    RefPtr<PickerIndicatorElement> element = adoptRef(new PickerIndicatorElement(document, pickerIndicatorOwner));
-    element->setPseudo(AtomicString("-webkit-calendar-picker-indicator", AtomicString::ConstructFromLiteral));
+    RefPtrWillBeRawPtr<PickerIndicatorElement> element = adoptRefWillBeNoop(new PickerIndicatorElement(document, pickerIndicatorOwner));
+    element->setShadowPseudoId(AtomicString("-webkit-calendar-picker-indicator", AtomicString::ConstructFromLiteral));
     element->setAttribute(idAttr, ShadowElementNames::pickerIndicator());
     return element.release();
 }
 
 PickerIndicatorElement::~PickerIndicatorElement()
 {
-    closePopup();
-    ASSERT(!m_chooser);
 }
 
 RenderObject* PickerIndicatorElement::createRenderer(RenderStyle*)
@@ -113,6 +113,12 @@ void PickerIndicatorElement::didEndChooser()
 
 void PickerIndicatorElement::openPopup()
 {
+    // The m_isInOpenPopup flag is unnecessary in production.
+    // MockPagePopupDriver allows to execute JavaScript code in
+    // DateTimeChooserImpl constructor. It might create another DateTimeChooser.
+    if (m_isInOpenPopup)
+        return;
+    TemporaryChange<bool> reentrancyProtector(m_isInOpenPopup, true);
     if (m_chooser)
         return;
     if (!document().page())
@@ -141,6 +147,14 @@ void PickerIndicatorElement::detach(const AttachContext& context)
 bool PickerIndicatorElement::isPickerIndicatorElement() const
 {
     return true;
+}
+
+void PickerIndicatorElement::trace(Visitor* visitor)
+{
+    visitor->trace(m_pickerIndicatorOwner);
+    visitor->trace(m_chooser);
+    HTMLDivElement::trace(visitor);
+    DateTimeChooserClient::trace(visitor);
 }
 
 }

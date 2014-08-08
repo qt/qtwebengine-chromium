@@ -10,9 +10,9 @@
 #include "base/basictypes.h"
 #include "base/bind.h"
 #include "base/file_util.h"
+#include "base/files/file.h"
 #include "base/files/file_enumerator.h"
 #include "base/message_loop/message_loop_proxy.h"
-#include "base/platform_file.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "net/base/net_errors.h"
@@ -23,7 +23,7 @@
 #include "webkit/browser/database/database_quota_client.h"
 #include "webkit/browser/database/database_util.h"
 #include "webkit/browser/database/databases_table.h"
-#include "webkit/browser/quota/quota_manager.h"
+#include "webkit/browser/quota/quota_manager_proxy.h"
 #include "webkit/browser/quota/special_storage_policy.h"
 #include "webkit/common/database/database_identifier.h"
 
@@ -691,7 +691,7 @@ int DatabaseTracker::DeleteDataModifiedSince(
     for (std::vector<DatabaseDetails>::const_iterator db = details.begin();
          db != details.end(); ++db) {
       base::FilePath db_file = GetFullDBFilePath(*ori, db->database_name);
-      base::PlatformFileInfo file_info;
+      base::File::Info file_info;
       base::GetFileInfo(db_file, &file_info);
       if (file_info.last_modified < cutoff)
         continue;
@@ -741,42 +741,42 @@ int DatabaseTracker::DeleteDataForOrigin(
   return net::OK;
 }
 
-void DatabaseTracker::GetIncognitoFileHandle(
-    const base::string16& vfs_file_name,
-    base::PlatformFile* file_handle) const {
+const base::File* DatabaseTracker::GetIncognitoFile(
+    const base::string16& vfs_file_name) const {
   DCHECK(is_incognito_);
   FileHandlesMap::const_iterator it =
       incognito_file_handles_.find(vfs_file_name);
   if (it != incognito_file_handles_.end())
-    *file_handle = it->second;
-  else
-    *file_handle = base::kInvalidPlatformFileValue;
+    return it->second;
+
+  return NULL;
 }
 
-void DatabaseTracker::SaveIncognitoFileHandle(
+const base::File* DatabaseTracker::SaveIncognitoFile(
     const base::string16& vfs_file_name,
-    const base::PlatformFile& file_handle) {
+    base::File file) {
   DCHECK(is_incognito_);
-  DCHECK(incognito_file_handles_.find(vfs_file_name) ==
-         incognito_file_handles_.end());
-  if (file_handle != base::kInvalidPlatformFileValue)
-    incognito_file_handles_[vfs_file_name] = file_handle;
+  if (!file.IsValid())
+    return NULL;
+
+  base::File* to_insert = new base::File(file.Pass());
+  std::pair<FileHandlesMap::iterator, bool> rv =
+      incognito_file_handles_.insert(std::make_pair(vfs_file_name, to_insert));
+  DCHECK(rv.second);
+  return rv.first->second;
 }
 
-bool DatabaseTracker::CloseIncognitoFileHandle(
+void DatabaseTracker::CloseIncognitoFileHandle(
     const base::string16& vfs_file_name) {
   DCHECK(is_incognito_);
   DCHECK(incognito_file_handles_.find(vfs_file_name) !=
          incognito_file_handles_.end());
 
-  bool handle_closed = false;
   FileHandlesMap::iterator it = incognito_file_handles_.find(vfs_file_name);
   if (it != incognito_file_handles_.end()) {
-    handle_closed = base::ClosePlatformFile(it->second);
-    if (handle_closed)
-      incognito_file_handles_.erase(it);
+    delete it->second;
+    incognito_file_handles_.erase(it);
   }
-  return handle_closed;
 }
 
 bool DatabaseTracker::HasSavedIncognitoFileHandle(
@@ -789,8 +789,9 @@ void DatabaseTracker::DeleteIncognitoDBDirectory() {
   is_initialized_ = false;
 
   for (FileHandlesMap::iterator it = incognito_file_handles_.begin();
-       it != incognito_file_handles_.end(); it++)
-    base::ClosePlatformFile(it->second);
+       it != incognito_file_handles_.end(); it++) {
+    delete it->second;
+  }
 
   base::FilePath incognito_db_dir =
       profile_path_.Append(kIncognitoDatabaseDirectoryName);
@@ -828,14 +829,11 @@ void DatabaseTracker::ClearSessionOnlyOrigins() {
 
     for (std::vector<base::string16>::iterator database = databases.begin();
          database != databases.end(); ++database) {
-      base::PlatformFile file_handle = base::CreatePlatformFile(
-          GetFullDBFilePath(*origin, *database),
-          base::PLATFORM_FILE_OPEN_ALWAYS |
-          base::PLATFORM_FILE_SHARE_DELETE |
-          base::PLATFORM_FILE_DELETE_ON_CLOSE |
-          base::PLATFORM_FILE_READ,
-          NULL, NULL);
-      base::ClosePlatformFile(file_handle);
+      base::File file(GetFullDBFilePath(*origin, *database),
+                      base::File::FLAG_OPEN_ALWAYS |
+                          base::File::FLAG_SHARE_DELETE |
+                          base::File::FLAG_DELETE_ON_CLOSE |
+                          base::File::FLAG_READ);
     }
     DeleteOrigin(*origin, true);
   }

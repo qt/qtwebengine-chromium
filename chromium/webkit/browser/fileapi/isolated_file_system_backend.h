@@ -20,19 +20,18 @@ class IsolatedFileSystemBackend : public FileSystemBackend {
   // FileSystemBackend implementation.
   virtual bool CanHandleType(FileSystemType type) const OVERRIDE;
   virtual void Initialize(FileSystemContext* context) OVERRIDE;
-  virtual void OpenFileSystem(
-      const GURL& origin_url,
-      FileSystemType type,
-      OpenFileSystemMode mode,
-      const OpenFileSystemCallback& callback) OVERRIDE;
+  virtual void ResolveURL(const FileSystemURL& url,
+                          OpenFileSystemMode mode,
+                          const OpenFileSystemCallback& callback) OVERRIDE;
   virtual AsyncFileUtil* GetAsyncFileUtil(FileSystemType type) OVERRIDE;
   virtual CopyOrMoveFileValidatorFactory* GetCopyOrMoveFileValidatorFactory(
       FileSystemType type,
-      base::PlatformFileError* error_code) OVERRIDE;
+      base::File::Error* error_code) OVERRIDE;
   virtual FileSystemOperation* CreateFileSystemOperation(
       const FileSystemURL& url,
       FileSystemContext* context,
-      base::PlatformFileError* error_code) const OVERRIDE;
+      base::File::Error* error_code) const OVERRIDE;
+  virtual bool SupportsStreaming(const FileSystemURL& url) const OVERRIDE;
   virtual scoped_ptr<webkit_blob::FileStreamReader> CreateFileStreamReader(
       const FileSystemURL& url,
       int64 offset,

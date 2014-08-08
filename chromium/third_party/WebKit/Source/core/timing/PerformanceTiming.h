@@ -33,6 +33,7 @@
 
 #include "bindings/v8/ScriptWrappable.h"
 #include "core/frame/DOMWindowProperty.h"
+#include "platform/heap/Handle.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 
@@ -41,12 +42,15 @@ namespace WebCore {
 class DocumentLoadTiming;
 class DocumentLoader;
 struct DocumentTiming;
-class Frame;
+class LocalFrame;
 class ResourceLoadTiming;
 
-class PerformanceTiming : public RefCounted<PerformanceTiming>, public ScriptWrappable, public DOMWindowProperty {
+class PerformanceTiming FINAL : public RefCountedWillBeGarbageCollectedFinalized<PerformanceTiming>, public ScriptWrappable, public DOMWindowProperty {
 public:
-    static PassRefPtr<PerformanceTiming> create(Frame* frame) { return adoptRef(new PerformanceTiming(frame)); }
+    static PassRefPtrWillBeRawPtr<PerformanceTiming> create(LocalFrame* frame)
+    {
+        return adoptRefWillBeNoop(new PerformanceTiming(frame));
+    }
 
     unsigned long long navigationStart() const;
     unsigned long long unloadEventStart() const;
@@ -70,8 +74,10 @@ public:
     unsigned long long loadEventStart() const;
     unsigned long long loadEventEnd() const;
 
+    void trace(Visitor*) { }
+
 private:
-    explicit PerformanceTiming(Frame*);
+    explicit PerformanceTiming(LocalFrame*);
 
     const DocumentTiming* documentTiming() const;
     DocumentLoader* documentLoader() const;

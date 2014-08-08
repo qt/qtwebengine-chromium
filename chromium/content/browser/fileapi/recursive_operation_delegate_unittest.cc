@@ -19,10 +19,14 @@
 #include "webkit/browser/fileapi/file_system_operation.h"
 #include "webkit/browser/fileapi/file_system_operation_runner.h"
 
-namespace fileapi {
+using fileapi::FileSystemContext;
+using fileapi::FileSystemOperationContext;
+using fileapi::FileSystemURL;
+
+namespace content {
 namespace {
 
-class LoggingRecursiveOperation : public RecursiveOperationDelegate {
+class LoggingRecursiveOperation : public fileapi::RecursiveOperationDelegate {
  public:
   struct LogEntry {
     enum Type {
@@ -37,7 +41,7 @@ class LoggingRecursiveOperation : public RecursiveOperationDelegate {
   LoggingRecursiveOperation(FileSystemContext* file_system_context,
                             const FileSystemURL& root,
                             const StatusCallback& callback)
-      : RecursiveOperationDelegate(file_system_context),
+      : fileapi::RecursiveOperationDelegate(file_system_context),
         root_(root),
         callback_(callback),
         weak_factory_(this) {
@@ -67,13 +71,13 @@ class LoggingRecursiveOperation : public RecursiveOperationDelegate {
   virtual void ProcessDirectory(const FileSystemURL& url,
                                 const StatusCallback& callback) OVERRIDE {
     RecordLogEntry(LogEntry::PROCESS_DIRECTORY, url);
-    callback.Run(base::PLATFORM_FILE_OK);
+    callback.Run(base::File::FILE_OK);
   }
 
   virtual void PostProcessDirectory(const FileSystemURL& url,
                                     const StatusCallback& callback) OVERRIDE {
     RecordLogEntry(LogEntry::POST_PROCESS_DIRECTORY, url);
-    callback.Run(base::PLATFORM_FILE_OK);
+    callback.Run(base::File::FILE_OK);
   }
 
  private:
@@ -85,16 +89,16 @@ class LoggingRecursiveOperation : public RecursiveOperationDelegate {
   }
 
   void DidGetMetadata(const StatusCallback& callback,
-                      base::PlatformFileError result,
-                      const base::PlatformFileInfo& file_info) {
-    if (result != base::PLATFORM_FILE_OK) {
+                      base::File::Error result,
+                      const base::File::Info& file_info) {
+    if (result != base::File::FILE_OK) {
       callback.Run(result);
       return;
     }
 
     callback.Run(file_info.is_directory ?
-                 base::PLATFORM_FILE_ERROR_NOT_A_FILE :
-                 base::PLATFORM_FILE_OK);
+                 base::File::FILE_ERROR_NOT_A_FILE :
+                 base::File::FILE_OK);
   }
 
   FileSystemURL root_;
@@ -105,15 +109,16 @@ class LoggingRecursiveOperation : public RecursiveOperationDelegate {
   DISALLOW_COPY_AND_ASSIGN(LoggingRecursiveOperation);
 };
 
-void ReportStatus(base::PlatformFileError* out_error,
-                  base::PlatformFileError error) {
+void ReportStatus(base::File::Error* out_error,
+                  base::File::Error error) {
   DCHECK(out_error);
   *out_error = error;
 }
 
 // To test the Cancel() during operation, calls Cancel() of |operation|
 // after |counter| times message posting.
-void CallCancelLater(RecursiveOperationDelegate* operation, int counter) {
+void CallCancelLater(fileapi::RecursiveOperationDelegate* operation,
+                     int counter) {
   if (counter > 0) {
     base::MessageLoopProxy::current()->PostTask(
         FROM_HERE,
@@ -145,7 +150,7 @@ class RecursiveOperationDelegateTest : public testing::Test {
     return make_scoped_ptr(context);
   }
 
-  FileSystemFileUtil* file_util() {
+  fileapi::FileSystemFileUtil* file_util() {
     return sandbox_file_system_.file_util();
   }
 
@@ -156,7 +161,7 @@ class RecursiveOperationDelegateTest : public testing::Test {
   FileSystemURL CreateFile(const std::string& path) {
     FileSystemURL url = URLForPath(path);
     bool created = false;
-    EXPECT_EQ(base::PLATFORM_FILE_OK,
+    EXPECT_EQ(base::File::FILE_OK,
               file_util()->EnsureFileExists(NewContext().get(),
                                             url, &created));
     EXPECT_TRUE(created);
@@ -165,7 +170,7 @@ class RecursiveOperationDelegateTest : public testing::Test {
 
   FileSystemURL CreateDirectory(const std::string& path) {
     FileSystemURL url = URLForPath(path);
-    EXPECT_EQ(base::PLATFORM_FILE_OK,
+    EXPECT_EQ(base::File::FILE_OK,
               file_util()->CreateDirectory(NewContext().get(), url,
                                            false /* exclusive */, true));
     return url;
@@ -182,7 +187,7 @@ class RecursiveOperationDelegateTest : public testing::Test {
 TEST_F(RecursiveOperationDelegateTest, RootIsFile) {
   FileSystemURL src_file(CreateFile("src"));
 
-  base::PlatformFileError error = base::PLATFORM_FILE_ERROR_FAILED;
+  base::File::Error error = base::File::FILE_ERROR_FAILED;
   scoped_ptr<FileSystemOperationContext> context = NewContext();
   scoped_ptr<LoggingRecursiveOperation> operation(
       new LoggingRecursiveOperation(
@@ -190,7 +195,7 @@ TEST_F(RecursiveOperationDelegateTest, RootIsFile) {
           base::Bind(&ReportStatus, &error)));
   operation->RunRecursively();
   base::RunLoop().RunUntilIdle();
-  ASSERT_EQ(base::PLATFORM_FILE_OK, error);
+  ASSERT_EQ(base::File::FILE_OK, error);
 
   const std::vector<LoggingRecursiveOperation::LogEntry>& log_entries =
       operation->log_entries();
@@ -207,7 +212,7 @@ TEST_F(RecursiveOperationDelegateTest, RootIsDirectory) {
   FileSystemURL src_file2(CreateFile("src/dir1/file2"));
   FileSystemURL src_file3(CreateFile("src/dir1/file3"));
 
-  base::PlatformFileError error = base::PLATFORM_FILE_ERROR_FAILED;
+  base::File::Error error = base::File::FILE_ERROR_FAILED;
   scoped_ptr<FileSystemOperationContext> context = NewContext();
   scoped_ptr<LoggingRecursiveOperation> operation(
       new LoggingRecursiveOperation(
@@ -215,7 +220,7 @@ TEST_F(RecursiveOperationDelegateTest, RootIsDirectory) {
           base::Bind(&ReportStatus, &error)));
   operation->RunRecursively();
   base::RunLoop().RunUntilIdle();
-  ASSERT_EQ(base::PLATFORM_FILE_OK, error);
+  ASSERT_EQ(base::File::FILE_OK, error);
 
   const std::vector<LoggingRecursiveOperation::LogEntry>& log_entries =
       operation->log_entries();
@@ -263,7 +268,7 @@ TEST_F(RecursiveOperationDelegateTest, Cancel) {
   FileSystemURL src_file1(CreateFile("src/file1"));
   FileSystemURL src_file2(CreateFile("src/dir1/file2"));
 
-  base::PlatformFileError error = base::PLATFORM_FILE_ERROR_FAILED;
+  base::File::Error error = base::File::FILE_ERROR_FAILED;
   scoped_ptr<FileSystemOperationContext> context = NewContext();
   scoped_ptr<LoggingRecursiveOperation> operation(
       new LoggingRecursiveOperation(
@@ -274,7 +279,7 @@ TEST_F(RecursiveOperationDelegateTest, Cancel) {
   // Invoke Cancel(), after 5 times message posting.
   CallCancelLater(operation.get(), 5);
   base::RunLoop().RunUntilIdle();
-  ASSERT_EQ(base::PLATFORM_FILE_ERROR_ABORT, error);
+  ASSERT_EQ(base::File::FILE_ERROR_ABORT, error);
 }
 
-}  // namespace fileapi
+}  // namespace content

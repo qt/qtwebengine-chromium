@@ -31,7 +31,7 @@
 
 #include "core/dom/ExecutionContext.h"
 #include "modules/indexeddb/IDBFactory.h"
-#include "modules/indexeddb/IDBFactoryBackendInterface.h"
+#include "modules/indexeddb/IndexedDBClient.h"
 
 namespace WebCore {
 
@@ -48,28 +48,32 @@ const char* WorkerGlobalScopeIndexedDatabase::supplementName()
     return "WorkerGlobalScopeIndexedDatabase";
 }
 
-WorkerGlobalScopeIndexedDatabase* WorkerGlobalScopeIndexedDatabase::from(WorkerSupplementable* context)
+WorkerGlobalScopeIndexedDatabase& WorkerGlobalScopeIndexedDatabase::from(WillBeHeapSupplementable<WorkerGlobalScope>& context)
 {
-    WorkerGlobalScopeIndexedDatabase* supplement = static_cast<WorkerGlobalScopeIndexedDatabase*>(WorkerSupplement::from(context, supplementName()));
+    WorkerGlobalScopeIndexedDatabase* supplement = static_cast<WorkerGlobalScopeIndexedDatabase*>(WillBeHeapSupplement<WorkerGlobalScope>::from(context, supplementName()));
     if (!supplement) {
         supplement = new WorkerGlobalScopeIndexedDatabase();
-        provideTo(context, supplementName(), adoptPtr(supplement));
+        provideTo(context, supplementName(), adoptPtrWillBeNoop(supplement));
     }
-    return supplement;
+    return *supplement;
 }
 
-IDBFactory* WorkerGlobalScopeIndexedDatabase::indexedDB(WorkerSupplementable* context)
+IDBFactory* WorkerGlobalScopeIndexedDatabase::indexedDB(WillBeHeapSupplementable<WorkerGlobalScope>& context)
 {
-    return from(context)->indexedDB();
+    return from(context).indexedDB();
 }
 
 IDBFactory* WorkerGlobalScopeIndexedDatabase::indexedDB()
 {
-    if (!m_factoryBackend)
-        m_factoryBackend = IDBFactoryBackendInterface::create();
     if (!m_idbFactory)
-        m_idbFactory = IDBFactory::create(m_factoryBackend.get());
+        m_idbFactory = IDBFactory::create(IndexedDBClient::create());
     return m_idbFactory.get();
+}
+
+void WorkerGlobalScopeIndexedDatabase::trace(Visitor* visitor)
+{
+    visitor->trace(m_idbFactory);
+    WillBeHeapSupplement<WorkerGlobalScope>::trace(visitor);
 }
 
 } // namespace WebCore

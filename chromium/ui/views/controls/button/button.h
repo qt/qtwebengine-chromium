@@ -5,6 +5,7 @@
 #ifndef UI_VIEWS_CONTROLS_BUTTON_BUTTON_H_
 #define UI_VIEWS_CONTROLS_BUTTON_BUTTON_H_
 
+#include "ui/native_theme/native_theme.h"
 #include "ui/views/view.h"
 
 namespace views {
@@ -42,21 +43,22 @@ class VIEWS_EXPORT Button : public View {
   enum ButtonStyle {
     STYLE_BUTTON = 0,
     STYLE_TEXTBUTTON,
-    STYLE_NATIVE_TEXTBUTTON,
     STYLE_COUNT,
   };
 
-  void SetTooltipText(const string16& tooltip_text);
+  static ButtonState GetButtonStateFrom(ui::NativeTheme::State state);
+
+  void SetTooltipText(const base::string16& tooltip_text);
 
   int tag() const { return tag_; }
   void set_tag(int tag) { tag_ = tag; }
 
-  void SetAccessibleName(const string16& name);
+  void SetAccessibleName(const base::string16& name);
 
   // Overridden from View:
   virtual bool GetTooltipText(const gfx::Point& p,
-                              string16* tooltip) const OVERRIDE;
-  virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
+                              base::string16* tooltip) const OVERRIDE;
+  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
 
  protected:
   // Construct the Button with a Listener. The listener can be NULL. This can be
@@ -72,10 +74,10 @@ class VIEWS_EXPORT Button : public View {
 
  private:
   // The text shown in a tooltip.
-  string16 tooltip_text_;
+  base::string16 tooltip_text_;
 
   // Accessibility data.
-  string16 accessible_name_;
+  base::string16 accessible_name_;
 
   // The id tag associated with this button. Used to disambiguate buttons in
   // the ButtonListener implementation.

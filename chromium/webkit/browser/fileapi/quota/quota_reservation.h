@@ -6,6 +6,7 @@
 #define WEBKIT_BROWSER_FILEAPI_QUOTA_QUOTA_RESERVATION_H_
 
 #include "base/basictypes.h"
+#include "base/files/file.h"
 #include "base/files/file_path.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
@@ -24,10 +25,12 @@ class OpenFileHandle;
 class WEBKIT_STORAGE_BROWSER_EXPORT QuotaReservation
     : public base::RefCounted<QuotaReservation> {
  public:
-  typedef base::Callback<void(base::PlatformFileError error)> StatusCallback;
+  typedef base::Callback<void(base::File::Error error)> StatusCallback;
 
   // Reclaims unused quota and reserves another |size| of quota.  So that the
-  // resulting new |remaining_quota| will be same as |size|.
+  // resulting new |remaining_quota_| will be same as |size| as far as available
+  // space is enough.  |remaining_quota_| may be less than |size| if there is
+  // not enough space available.
   // Invokes |callback| upon completion.
   void RefreshReservation(int64 size, const StatusCallback& callback);
 
@@ -66,13 +69,16 @@ class WEBKIT_STORAGE_BROWSER_EXPORT QuotaReservation
 
   static bool AdaptDidUpdateReservedQuota(
       const base::WeakPtr<QuotaReservation>& reservation,
-      int64 new_reserved_size,
+      int64 previous_size,
       const StatusCallback& callback,
-      base::PlatformFileError error);
-  void DidUpdateReservedQuota(int64 new_reserved_size,
+      base::File::Error error,
+      int64 delta);
+  bool DidUpdateReservedQuota(int64 previous_size,
                               const StatusCallback& callback,
-                              base::PlatformFileError error);
+                              base::File::Error error,
+                              int64 delta);
 
+  bool client_crashed_;
   bool running_refresh_request_;
   int64 remaining_quota_;
 

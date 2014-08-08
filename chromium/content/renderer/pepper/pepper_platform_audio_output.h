@@ -30,6 +30,7 @@ class PepperPlatformAudioOutput
   static PepperPlatformAudioOutput* Create(int sample_rate,
                                            int frames_per_buffer,
                                            int source_render_view_id,
+                                           int source_render_frame_id,
                                            AudioHelper* client);
 
   // The following three methods are all called on main thread.
@@ -47,8 +48,8 @@ class PepperPlatformAudioOutput
   void ShutDown();
 
   // media::AudioOutputIPCDelegate implementation.
-  virtual void OnStateChanged(
-      media::AudioOutputIPCDelegate::State state) OVERRIDE;
+  virtual void OnStateChanged(media::AudioOutputIPCDelegate::State state)
+      OVERRIDE;
   virtual void OnStreamCreated(base::SharedMemoryHandle handle,
                                base::SyncSocket::Handle socket_handle,
                                int length) OVERRIDE;
@@ -65,6 +66,7 @@ class PepperPlatformAudioOutput
   bool Initialize(int sample_rate,
                   int frames_per_buffer,
                   int source_render_view_id,
+                  int source_render_frame_id,
                   AudioHelper* client);
 
   // I/O thread backends to above functions.

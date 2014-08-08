@@ -31,54 +31,16 @@
 // WebKit Web Facing API
 
 /** @type {boolean} */
-Event.prototype.isMetaOrCtrlForTest = false;
-/** @param {...*} vararg */
-Event.prototype.initWebKitWheelEvent = function(vararg) {}
-Event.prototype.stopImmediatePropagation = function() {}
-
-/**
- * @constructor
- * @extends {KeyboardEvent}
- * @param {string} eventType
- * @param {!Object=} properties
- */
-window.KeyboardEvent = function(eventType, properties) {}
+Event.prototype.isMetaOrCtrlForTest;
 
 /**
  * @type {number}
  */
 KeyboardEvent.DOM_KEY_LOCATION_NUMPAD;
 
-/** @param {?Element} element */
-window.getComputedStyle = function(element) {}
+// FIXME: Remove after the Closure compiler roll.
 /** @param {*} message */
 function postMessage(message) {}
-
-/** @type {*} */
-window.testRunner = null;
-
-/**
- * @constructor
- */
-function WebKitMutation(callback)
-{
-    this.type = "";
-    /** @type {Node} */ this.target = null;
-    /** @type {!Array.<!Node>} */ this.addedNodes = [];
-    /** @type {!Array.<!Node>} */ this.removedNodes = [];
-}
-
-/**
- * @constructor
- * @param {function(!Array.<!WebKitMutation>)} callback
- */
-function WebKitMutationObserver(callback) {}
-/** 
- * @param {!Node} container
- * @param {!Object} options
- */
-WebKitMutationObserver.prototype.observe = function(container, options) {}
-WebKitMutationObserver.prototype.disconnect = function() {}
 
 /**
  * @param {string} eventName
@@ -95,6 +57,12 @@ function addEventListener(eventName, listener, capturing) {}
  */
 Array.prototype.remove = function(value, onlyFirst) {}
 /**
+ * @param {!Array.<!T>} array
+ * @this {Array.<!T>}
+ * @template T
+ */
+Array.prototype.pushAll = function(array) {}
+/**
  * @return {!Object.<string, boolean>}
  * @this {Array.<T>}
  * @template T
@@ -107,6 +75,10 @@ Array.prototype.keySet = function() {}
  * @template T
  */
 Array.prototype.rotate = function(index) {}
+/**
+ * @this {Array.<number>}
+ */
+Array.prototype.sortNumbers = function() {}
 /**
  * @param {!T} object
  * @param {function(!T,!S):number=} comparator
@@ -201,13 +173,6 @@ Array.prototype.intersectOrdered = function(array, comparator) {}
  */
 Array.prototype.mergeOrdered = function(array, comparator) {}
 
-DOMApplicationCache.prototype.UNCACHED = 0;
-DOMApplicationCache.prototype.IDLE = 1;
-DOMApplicationCache.prototype.CHECKING = 2;
-DOMApplicationCache.prototype.DOWNLOADING = 3;
-DOMApplicationCache.prototype.UPDATEREADY = 4;
-DOMApplicationCache.prototype.OBSOLETE = 5;
-
 // File System API
 /**
  * @constructor
@@ -219,140 +184,84 @@ function DOMFileSystem() {}
  */
 DOMFileSystem.prototype.root = null;
 
-/** @type {Node} */
-Range.prototype.startContainer;
-
-// Inspector Backend
-var InspectorBackend = {}
-InspectorBackend.runAfterPendingDispatches = function(message) {}
-
 /** @interface */
 function InspectorFrontendHostAPI() {}
-/** @param {!Function=} callback callback */
+/** @param {!Function=} callback */
 InspectorFrontendHostAPI.prototype.addFileSystem = function(callback) {}
-/** @param {!Function=} callback callback */
+/** @param {!Function=} callback */
 InspectorFrontendHostAPI.prototype.append = function(url, content, callback) {}
-/** @param {!Function=} callback callback */
+/** @param {!Function=} callback */
 InspectorFrontendHostAPI.prototype.indexPath = function(requestId, fileSystemPath, callback) {}
+/** @return {string} */
+InspectorFrontendHostAPI.prototype.getSelectionBackgroundColor = function() {}
+/** @return {string} */
+InspectorFrontendHostAPI.prototype.getSelectionForegroundColor = function() {}
+/** @return {boolean} */
+InspectorFrontendHost.isUnderTest = function() {}
 /**
- * @param top
- * @param left
- * @param bottom
- * @param right
+ * Requests inspected page to be placed atop of the inspector frontend with specified bounds.
+ * @param {{x: number, y: number, width: number, height: number}} bounds
  */
-InspectorFrontendHostAPI.prototype.setContentsInsets = function(top, left, bottom, right) {}
-/** @param {!Function=} callback callback */
+InspectorFrontendHostAPI.prototype.setInspectedPageBounds = function(bounds) {}
+/**
+ * Requests inspected page to be placed atop of the inspector frontend
+ * with passed insets from the frontend sides, respecting minimum size passed.
+ * @param {{top: number, left: number, right: number, bottom: number}} insets
+ * @param {{width: number, height: number}} minSize
+ */
+InspectorFrontendHostAPI.prototype.setContentsResizingStrategy = function(insets, minSize) {}
+/** @param {string} shortcuts */
+InspectorFrontendHostAPI.prototype.setWhitelistedShortcuts = function(shortcuts) {}
+InspectorFrontendHostAPI.prototype.inspectElementCompleted = function() {}
+/** @param {!Function=} callback */
 InspectorFrontendHostAPI.prototype.moveWindowBy = function(x, y, callback) {}
-/** @param {!Function=} callback callback */
+/** @param {!Function=} callback */
 InspectorFrontendHostAPI.prototype.openInNewTab = function(url, callback) {}
-/** @param {!Function=} callback callback */
+/** @param {!Function=} callback */
 InspectorFrontendHostAPI.prototype.removeFileSystem = function(fileSystemPath, callback) {}
-/** @param {!Function=} callback callback */
+/** @param {!Function=} callback */
 InspectorFrontendHostAPI.prototype.requestFileSystems = function(callback) {}
-/** @param {!Function=} callback callback */
+/** @param {!Function=} callback */
 InspectorFrontendHostAPI.prototype.save = function(url, content, forceSaveAs, callback) {}
-/** @param {!Function=} callback callback */
+/** @param {!Function=} callback */
 InspectorFrontendHostAPI.prototype.searchInPath = function(requestId, fileSystemPath, query, callback) {}
-/** @param {!Function=} callback callback */
+/** @param {!Function=} callback */
 InspectorFrontendHostAPI.prototype.stopIndexing = function(requestId, callback) {}
 
 InspectorFrontendHostAPI.prototype.bringToFront = function() {}
-InspectorFrontendHostAPI.prototype.close = function(url) {}
+InspectorFrontendHostAPI.prototype.openUrlOnRemoteDeviceAndInspect = function(browserId, url) {}
 InspectorFrontendHostAPI.prototype.closeWindow = function() {}
 InspectorFrontendHostAPI.prototype.copyText = function(text) {}
 InspectorFrontendHostAPI.prototype.inspectedURLChanged = function(url) {}
 InspectorFrontendHostAPI.prototype.isolatedFileSystem = function(fileSystemId, registeredName) {}
 InspectorFrontendHostAPI.prototype.upgradeDraggedFileSystemPermissions = function(DOMFileSystem) {}
-InspectorFrontendHostAPI.prototype.loaded = function() {}
-InspectorFrontendHostAPI.prototype.localizedStringsURL = function() {}
 InspectorFrontendHostAPI.prototype.platform = function() {}
 InspectorFrontendHostAPI.prototype.port = function() {}
 InspectorFrontendHostAPI.prototype.recordActionTaken = function(actionCode) {}
 InspectorFrontendHostAPI.prototype.recordPanelShown = function(panelCode) {}
-InspectorFrontendHostAPI.prototype.recordSettingChanged = function(settingCode) {}
-InspectorFrontendHostAPI.prototype.requestSetDockSide = function(dockSide) {}
 InspectorFrontendHostAPI.prototype.sendMessageToBackend = function(message) {}
 InspectorFrontendHostAPI.prototype.sendMessageToEmbedder = function(message) {}
 InspectorFrontendHostAPI.prototype.setInjectedScriptForOrigin = function(origin, script) {}
+InspectorFrontendHostAPI.prototype.setIsDocked = function(isDocked, callback) {}
 InspectorFrontendHostAPI.prototype.setZoomFactor = function(zoom) {}
-InspectorFrontendHostAPI.prototype.supportsFileSystems = function() {}
+InspectorFrontendHostAPI.prototype.subscribe = function(eventType) {}
+InspectorFrontendHostAPI.prototype.unsubscribe = function(eventType) {}
+InspectorFrontendHostAPI.prototype.zoomFactor = function() {}
+InspectorFrontendHostAPI.prototype.zoomIn = function() {}
+InspectorFrontendHostAPI.prototype.zoomOut = function() {}
+InspectorFrontendHostAPI.prototype.resetZoom = function() {}
 /** @type {InspectorFrontendHostAPI} */
 var InspectorFrontendHost;
-
-/** @constructor */
-function SourceMapV3()
-{
-    /** @type {number} */ this.version;
-    /** @type {string} */ this.file;
-    /** @type {!Array.<string>} */ this.sources;
-    /** @type {!Array.<!SourceMapV3.Section>} */ this.sections;
-    /** @type {string} */ this.mappings;
-    /** @type {string} */ this.sourceRoot;
-}
-
-/** @constructor */
-SourceMapV3.Section = function()
-{
-    /** @type {SourceMapV3} */ this.map;
-    /** @type {SourceMapV3.Offset} */ this.offset;
-}
-
-/** @constructor */
-SourceMapV3.Offset = function()
-{
-    /** @type {number} */ this.line;
-    /** @type {number} */ this.column;
-}
+InspectorFrontendHost.embedderMessageAck = function(id, error) {}
 
 // FIXME: remove everything below.
 var FormatterWorker = {}
 var WebInspector = {}
 
-WebInspector.queryParamsObject = {}
-WebInspector.toggleSearchingForNode = function() {}
 WebInspector.panels = {};
+WebInspector.inspectorFrontendEventSink = {};
 
-/**
- * @param {string=} messageLevel
- * @param {boolean=} showConsole
- */
-WebInspector.log = function(message, messageLevel, showConsole) {}
-
-WebInspector.showErrorMessage = function(error) {}
-
-WebInspector.addMainEventListeners = function(doc) {}
-
-WebInspector.openResource = function(url, external) {}
-
-WebInspector.showConsole = function() {}
-
-/**
- * @param {string} expression
- * @param {boolean=} showResultOnly
- */
-WebInspector.evaluateInConsole = function(expression, showResultOnly) {}
-
-WebInspector.queryParamsObject = {}
-
-/**
- * @param {!Element} element
- * @return {boolean}
- */
-WebInspector.showAnchorLocation = function(element) {}
-
-WebInspector.Events = {
-    InspectorLoaded: "InspectorLoaded",
-    InspectorClosing: "InspectorClosing"
-}
-
-/** @type {!WebInspector.SettingsController} */
-WebInspector.settingsController;
-
-
-/**
- * @return {number}
- */
-WebInspector.zoomFactor = function() {}
+WebInspector.reload = function() { }
 
 /** Extensions API */
 
@@ -377,9 +286,6 @@ function Timeline() {}
 
 var extensionServer;
 
-/** @type {string} */
-Location.prototype.origin = "";
-
 /**
  * @constructor
  */
@@ -398,31 +304,6 @@ function ExtensionReloadOptions() {
     this.userAgent = "";
 }
 
-WebInspector.showPanel = function(panel)
-{
-}
-
-/**
- * @param {!ExtensionDescriptor} extensionInfo
- * @return {string}
- */
-function buildPlatformExtensionAPI(extensionInfo) {}
-
-/**
- * @type {string} 
- */
-WebInspector.inspectedPageDomain;
-
-WebInspector.SourceJavaScriptTokenizer = {}
-WebInspector.SourceJavaScriptTokenizer.Keywords = {}
-
-/**
- * @return {boolean}
- */
-WebInspector.isInspectingDevice = function() {}
-
-var InspectorTest = {}
-
 /* jsdifflib API */
 var difflib = {};
 difflib.stringAsLines = function(text) { return []; }
@@ -431,11 +312,23 @@ difflib.SequenceMatcher = function(baseText, newText) { }
 difflib.SequenceMatcher.prototype.get_opcodes = function() { return []; }
 
 /** @constructor */
-var CodeMirror = function() { }
+var Doc = function() { }
+Doc.prototype = {
+    /** @type {number} */
+    scrollLeft: 0,
+    /** @type {number} */
+    scrollTop: 0
+}
+
+/** @constructor */
+var CodeMirror = function(element, config) { }
 CodeMirror.on = function(obj, type, handler) { }
 CodeMirror.prototype = {
+    /** @type {!Doc} */
+    doc: null,
     addKeyMap: function(map) { },
     addLineClass: function(handle, where, cls) { },
+    /** @param {?Object=} options */
     addLineWidget: function(handle, node, options) { },
     /**
      * @param {string|!Object} spec
@@ -447,11 +340,17 @@ CodeMirror.prototype = {
     clearGutter: function(gutterID) { },
     clearHistory: function() { },
     clipPos: function(pos) { },
+    /** @param {string=} mode */
     coordsChar: function(coords, mode) { },
+    /** @param {string=} mode */
     cursorCoords: function(start, mode) { },
     defaultCharWidth: function() { },
     defaultTextHeight: function() { },
     deleteH: function(dir, unit) { },
+    /**
+     * @param {*=} to
+     * @param {*=} op
+     */
     eachLine: function(from, to, op) { },
     execCommand: function(cmd) { },
     extendSelection: function(from, to) { },
@@ -476,6 +375,7 @@ CodeMirror.prototype = {
     getLineNumber: function(line) { },
     getMode: function() { },
     getOption: function(option) { },
+    /** @param {*=} lineSep */
     getRange: function(from, to, lineSep) { },
     /**
      * @return {!{left: number, top: number, width: number, height: number, clientWidth: number, clientHeight: number}}
@@ -483,8 +383,10 @@ CodeMirror.prototype = {
     getScrollInfo: function() { },
     getScrollerElement: function() { },
     getSelection: function() { },
+    getSelections: function() { },
     getStateAfter: function(line) { },
     getTokenAt: function(pos) { },
+    /** @param {*=} lineSep */
     getValue: function(lineSep) { },
     getViewport: function() { },
     getWrapperElement: function() { },
@@ -504,6 +406,7 @@ CodeMirror.prototype = {
      */
     lineAtHeight: function(height, mode) { },
     linkedDoc: function(options) { },
+    listSelections: function() { },
     markClean: function() { },
     markText: function(from, to, options) { },
     moveH: function(dir, unit) { },
@@ -519,8 +422,10 @@ CodeMirror.prototype = {
     removeLineClass: function(handle, where, cls) { },
     removeLineWidget: function(widget) { },
     removeOverlay: function(spec) { },
+    /** @param {*=} origin */
     replaceRange: function(code, from, to, origin) { },
     replaceSelection: function(code, collapse, origin) { },
+    /** @param {*=} margin */
     scrollIntoView: function(pos, margin) { },
     scrollTo: function(x, y) { },
     setBookmark: function(pos, options) { },
@@ -531,6 +436,11 @@ CodeMirror.prototype = {
     setLine: function(line, text) { },
     setOption: function(option, value) { },
     setSelection: function(anchor, head) { },
+    /**
+     * @param {number=} primaryIndex
+     * @param {?Object=} config
+     */
+    setSelections: function(selections, primaryIndex, config) { },
     setSize: function(width, height) { },
     setValue: function(code) { },
     somethingSelected: function() { },
@@ -538,8 +448,9 @@ CodeMirror.prototype = {
     undo: function() { },
     unlinkDoc: function(other) { }
 }
-/** @type {number} */
-CodeMirror.prototype.lineCount;
+/** @type {!{cursorDiv: Element}} */
+CodeMirror.prototype.display;
+/** @type {!Object} */
 CodeMirror.Pass;
 CodeMirror.showHint = function(codeMirror, hintintFunction) { };
 CodeMirror.commands = {};
@@ -552,9 +463,9 @@ CodeMirror.startState = function(mode) { };
 
 /** @constructor */
 CodeMirror.Pos = function(line, ch) { }
-/** type {number} */
+/** @type {number} */
 CodeMirror.Pos.prototype.line;
-/** type {number} */
+/** @type {number} */
 CodeMirror.Pos.prototype.ch;
 
 /** @constructor */
@@ -588,15 +499,17 @@ CodeMirror.StringStream.prototype = {
 /** @type {Object.<string, !Object.<string, string>>} */
 CodeMirror.keyMap;
 
-WebInspector.suggestReload = function() { }
-WebInspector.reload = function() { }
+/** @type {{scrollLeft: number, scrollTop: number}} */
+CodeMirror.doc;
 
-WebInspector.settings.continuousPainting = /** type {WebInspector.Setting} */ { }
-WebInspector.settings.showDebugBorders = /** type {WebInspector.Setting} */ { }
-WebInspector.settings.showScrollBottleneckRects = /** type {WebInspector.Setting} */ { }
-WebInspector.settings.forceCompositingMode = /** type {WebInspector.Setting} */ { }
-WebInspector.settings.showFPSCounter = /** type {WebInspector.Setting} */ { }
-WebInspector.settings.showPaintRects = /** type {WebInspector.Setting} */ { }
+/**
+ * @constructor
+ * @extends {Event}
+ */
+function ErrorEvent() {}
+
+/** @type {string} */
+ErrorEvent.prototype.message;
 
 /** @type {boolean} */
 window.dispatchStandaloneTestRunnerMessages;

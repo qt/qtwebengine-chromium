@@ -27,7 +27,7 @@ typedef std::vector<net::MockWrite> WriteList;
 
 const uint64 kAuthId = 54321;
 const uint64 kAuthToken = 12345;
-const char kMCSVersion = 38;  // The protocol version.
+const char kMCSVersion = 41;  // The protocol version.
 const int kMCSPort = 5228;    // The server port.
 const char kDataMsgFrom[] = "data_from";
 const char kDataMsgCategory[] = "data_category";
@@ -49,12 +49,16 @@ const char kDataMsgCategoryLong2[] =
 std::string EncodePacket(uint8 tag, const std::string& proto) {
   std::string result;
   google::protobuf::io::StringOutputStream string_output_stream(&result);
-  google::protobuf::io::CodedOutputStream coded_output_stream(
+  {
+    google::protobuf::io::CodedOutputStream coded_output_stream(
       &string_output_stream);
-  const unsigned char tag_byte[1] = {tag};
-  coded_output_stream.WriteRaw(tag_byte, 1);
-  coded_output_stream.WriteVarint32(proto.size());
-  coded_output_stream.WriteRaw(proto.c_str(), proto.size());
+    const unsigned char tag_byte[1] = { tag };
+    coded_output_stream.WriteRaw(tag_byte, 1);
+    coded_output_stream.WriteVarint32(proto.size());
+    coded_output_stream.WriteRaw(proto.c_str(), proto.size());
+    // ~CodedOutputStream must run before the move constructor at the
+    // return statement. http://crbug.com/338962
+  }
   return result;
 }
 
@@ -63,7 +67,8 @@ std::string EncodeHandshakeRequest() {
   std::string result;
   const char version_byte[1] = {kMCSVersion};
   result.append(version_byte, 1);
-  ScopedMessage login_request(BuildLoginRequest(kAuthId, kAuthToken));
+  ScopedMessage login_request(
+      BuildLoginRequest(kAuthId, kAuthToken, ""));
   result.append(EncodePacket(kLoginRequestTag,
                              login_request->SerializeAsString()));
   return result;
@@ -198,8 +203,9 @@ void GCMConnectionHandlerImplTest::Connect(
           base::Bind(&GCMConnectionHandlerImplTest::ConnectionContinuation,
                      base::Unretained(this))));
   EXPECT_FALSE(connection_handler()->CanSendMessage());
-  connection_handler_->Init(*BuildLoginRequest(kAuthId, kAuthToken),
-                            socket_.Pass());
+  connection_handler_->Init(
+      *BuildLoginRequest(kAuthId, kAuthToken, ""),
+      socket_.get());
 }
 
 void GCMConnectionHandlerImplTest::ReadContinuation(
@@ -376,6 +382,7 @@ TEST_F(GCMConnectionHandlerImplTest, RecvMsg) {
   WaitForMessage();  // The data message.
   ASSERT_TRUE(received_message.get());
   EXPECT_EQ(data_message_proto, received_message->SerializeAsString());
+  EXPECT_EQ(net::OK, last_error());
 }
 
 // Verify that if two messages arrive at once, they're treated appropriately.
@@ -413,6 +420,7 @@ TEST_F(GCMConnectionHandlerImplTest, Recv2Msgs) {
   WaitForMessage();  // The second data message.
   ASSERT_TRUE(received_message.get());
   EXPECT_EQ(data_message_proto2, received_message->SerializeAsString());
+  EXPECT_EQ(net::OK, last_error());
 }
 
 // Receive a long (>128 bytes) message.
@@ -443,6 +451,46 @@ TEST_F(GCMConnectionHandlerImplTest, RecvLongMsg) {
   WaitForMessage();  // The login response.
   WaitForMessage();  // The data message.
   ASSERT_TRUE(received_message.get());
+  EXPECT_EQ(data_message_proto, received_message->SerializeAsString());
+  EXPECT_EQ(net::OK, last_error());
+}
+
+// Receive a long (>128 bytes) message in two synchronous parts.
+TEST_F(GCMConnectionHandlerImplTest, RecvLongMsg2Parts) {
+  std::string handshake_request = EncodeHandshakeRequest();
+  WriteList write_list(1, net::MockWrite(net::ASYNC,
+                                         handshake_request.c_str(),
+                                         handshake_request.size()));
+  std::string handshake_response = EncodeHandshakeResponse();
+
+  std::string data_message_proto =
+      BuildDataMessage(kDataMsgFromLong, kDataMsgCategoryLong);
+  std::string data_message_pkt =
+      EncodePacket(kDataMessageStanzaTag, data_message_proto);
+  DCHECK_GT(data_message_pkt.size(), 128U);
+  ReadList read_list;
+  read_list.push_back(net::MockRead(net::ASYNC,
+                                    handshake_response.c_str(),
+                                    handshake_response.size()));
+
+  int bytes_in_first_message = data_message_pkt.size() / 2;
+  read_list.push_back(net::MockRead(net::SYNCHRONOUS,
+                                    data_message_pkt.c_str(),
+                                    bytes_in_first_message));
+  read_list.push_back(net::MockRead(net::SYNCHRONOUS,
+                                    data_message_pkt.c_str() +
+                                        bytes_in_first_message,
+                                    data_message_pkt.size() -
+                                        bytes_in_first_message));
+  BuildSocket(read_list, write_list);
+
+  ScopedMessage received_message;
+  Connect(&received_message);
+  WaitForMessage();  // The login send.
+  WaitForMessage();  // The login response.
+  WaitForMessage();  // The data message.
+  ASSERT_TRUE(received_message.get());
+  EXPECT_EQ(net::OK, last_error());
   EXPECT_EQ(data_message_proto, received_message->SerializeAsString());
 }
 
@@ -482,6 +530,7 @@ TEST_F(GCMConnectionHandlerImplTest, Recv2LongMsgs) {
   WaitForMessage();  // The second data message.
   ASSERT_TRUE(received_message.get());
   EXPECT_EQ(data_message_proto2, received_message->SerializeAsString());
+  EXPECT_EQ(net::OK, last_error());
 }
 
 // Simulate a message where the end of the data does not arrive in time and the
@@ -622,6 +671,38 @@ TEST_F(GCMConnectionHandlerImplTest, SendMsgSocketDisconnected) {
   WaitForMessage();  // The message send. Should result in an error
   EXPECT_FALSE(connection_handler()->CanSendMessage());
   EXPECT_EQ(net::ERR_CONNECTION_CLOSED, last_error());
+}
+
+// Receive a message whose size field was corrupted and is larger than the
+// socket's buffer. Should fail gracefully.
+TEST_F(GCMConnectionHandlerImplTest, CorruptedSize) {
+  std::string handshake_request = EncodeHandshakeRequest();
+  WriteList write_list(1, net::MockWrite(net::ASYNC,
+                                         handshake_request.c_str(),
+                                         handshake_request.size()));
+  std::string handshake_response = EncodeHandshakeResponse();
+
+  // Fill a string with 9000 character zero.
+  std::string data_message_proto(9000, '0');
+  std::string data_message_pkt =
+      EncodePacket(kDataMessageStanzaTag, data_message_proto);
+  ReadList read_list;
+  read_list.push_back(net::MockRead(net::ASYNC,
+                                    handshake_response.c_str(),
+                                    handshake_response.size()));
+  read_list.push_back(net::MockRead(net::ASYNC,
+                                    data_message_pkt.c_str(),
+                                    data_message_pkt.size()));
+  BuildSocket(read_list, write_list);
+
+  ScopedMessage received_message;
+  Connect(&received_message);
+  WaitForMessage();  // The login send.
+  WaitForMessage();  // The login response.
+  received_message.reset();
+  WaitForMessage();  // The data message.
+  EXPECT_FALSE(received_message.get());
+  EXPECT_EQ(net::ERR_FILE_TOO_BIG, last_error());
 }
 
 }  // namespace

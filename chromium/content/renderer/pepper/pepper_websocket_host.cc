@@ -30,17 +30,49 @@ using blink::WebURL;
 
 namespace content {
 
-PepperWebSocketHost::PepperWebSocketHost(
-    RendererPpapiHost* host,
-    PP_Instance instance,
-    PP_Resource resource)
+#define COMPILE_ASSERT_MATCHING_ENUM(webkit_name, np_name)                   \
+  COMPILE_ASSERT(                                                            \
+      static_cast<int>(WebSocket::webkit_name) == static_cast<int>(np_name), \
+      mismatching_enums)
+
+COMPILE_ASSERT_MATCHING_ENUM(CloseEventCodeNormalClosure,
+                             PP_WEBSOCKETSTATUSCODE_NORMAL_CLOSURE);
+COMPILE_ASSERT_MATCHING_ENUM(CloseEventCodeGoingAway,
+                             PP_WEBSOCKETSTATUSCODE_GOING_AWAY);
+COMPILE_ASSERT_MATCHING_ENUM(CloseEventCodeProtocolError,
+                             PP_WEBSOCKETSTATUSCODE_PROTOCOL_ERROR);
+COMPILE_ASSERT_MATCHING_ENUM(CloseEventCodeUnsupportedData,
+                             PP_WEBSOCKETSTATUSCODE_UNSUPPORTED_DATA);
+COMPILE_ASSERT_MATCHING_ENUM(CloseEventCodeNoStatusRcvd,
+                             PP_WEBSOCKETSTATUSCODE_NO_STATUS_RECEIVED);
+COMPILE_ASSERT_MATCHING_ENUM(CloseEventCodeAbnormalClosure,
+                             PP_WEBSOCKETSTATUSCODE_ABNORMAL_CLOSURE);
+COMPILE_ASSERT_MATCHING_ENUM(CloseEventCodeInvalidFramePayloadData,
+                             PP_WEBSOCKETSTATUSCODE_INVALID_FRAME_PAYLOAD_DATA);
+COMPILE_ASSERT_MATCHING_ENUM(CloseEventCodePolicyViolation,
+                             PP_WEBSOCKETSTATUSCODE_POLICY_VIOLATION);
+COMPILE_ASSERT_MATCHING_ENUM(CloseEventCodeMessageTooBig,
+                             PP_WEBSOCKETSTATUSCODE_MESSAGE_TOO_BIG);
+COMPILE_ASSERT_MATCHING_ENUM(CloseEventCodeMandatoryExt,
+                             PP_WEBSOCKETSTATUSCODE_MANDATORY_EXTENSION);
+COMPILE_ASSERT_MATCHING_ENUM(CloseEventCodeInternalError,
+                             PP_WEBSOCKETSTATUSCODE_INTERNAL_SERVER_ERROR);
+COMPILE_ASSERT_MATCHING_ENUM(CloseEventCodeTLSHandshake,
+                             PP_WEBSOCKETSTATUSCODE_TLS_HANDSHAKE);
+COMPILE_ASSERT_MATCHING_ENUM(CloseEventCodeMinimumUserDefined,
+                             PP_WEBSOCKETSTATUSCODE_USER_REGISTERED_MIN);
+COMPILE_ASSERT_MATCHING_ENUM(CloseEventCodeMaximumUserDefined,
+                             PP_WEBSOCKETSTATUSCODE_USER_PRIVATE_MAX);
+
+PepperWebSocketHost::PepperWebSocketHost(RendererPpapiHost* host,
+                                         PP_Instance instance,
+                                         PP_Resource resource)
     : ResourceHost(host->GetPpapiHost(), instance, resource),
       renderer_ppapi_host_(host),
       connecting_(false),
       initiating_close_(false),
       accepting_close_(false),
-      error_was_received_(false) {
-}
+      error_was_received_(false) {}
 
 PepperWebSocketHost::~PepperWebSocketHost() {
   if (websocket_)
@@ -50,7 +82,7 @@ PepperWebSocketHost::~PepperWebSocketHost() {
 int32_t PepperWebSocketHost::OnResourceMessageReceived(
     const IPC::Message& msg,
     ppapi::host::HostMessageContext* context) {
-  IPC_BEGIN_MESSAGE_MAP(PepperWebSocketHost, msg)
+  PPAPI_BEGIN_MESSAGE_MAP(PepperWebSocketHost, msg)
     PPAPI_DISPATCH_HOST_RESOURCE_CALL(PpapiHostMsg_WebSocket_Connect,
                                       OnHostMsgConnect)
     PPAPI_DISPATCH_HOST_RESOURCE_CALL(PpapiHostMsg_WebSocket_Close,
@@ -61,7 +93,7 @@ int32_t PepperWebSocketHost::OnResourceMessageReceived(
                                       OnHostMsgSendBinary)
     PPAPI_DISPATCH_HOST_RESOURCE_CALL(PpapiHostMsg_WebSocket_Fail,
                                       OnHostMsgFail)
-  IPC_END_MESSAGE_MAP()
+  PPAPI_END_MESSAGE_MAP()
   return PP_ERROR_FAILED;
 }
 
@@ -72,9 +104,7 @@ void PepperWebSocketHost::didConnect() {
   connecting_ = false;
   connect_reply_.params.set_result(PP_OK);
   host()->SendReply(connect_reply_,
-                    PpapiPluginMsg_WebSocket_ConnectReply(
-                        url_,
-                        protocol));
+                    PpapiPluginMsg_WebSocket_ConnectReply(url_, protocol));
 }
 
 void PepperWebSocketHost::didReceiveMessage(const blink::WebString& message) {
@@ -84,9 +114,8 @@ void PepperWebSocketHost::didReceiveMessage(const blink::WebString& message) {
 
   // Send an IPC to transport received data.
   std::string string_message = message.utf8();
-  host()->SendUnsolicitedReply(pp_resource(),
-                               PpapiPluginMsg_WebSocket_ReceiveTextReply(
-                                  string_message));
+  host()->SendUnsolicitedReply(
+      pp_resource(), PpapiPluginMsg_WebSocket_ReceiveTextReply(string_message));
 }
 
 void PepperWebSocketHost::didReceiveArrayBuffer(
@@ -98,9 +127,9 @@ void PepperWebSocketHost::didReceiveArrayBuffer(
   // Send an IPC to transport received data.
   uint8_t* data = static_cast<uint8_t*>(binaryData.data());
   std::vector<uint8_t> array_message(data, data + binaryData.byteLength());
-  host()->SendUnsolicitedReply(pp_resource(),
-                               PpapiPluginMsg_WebSocket_ReceiveBinaryReply(
-                                  array_message));
+  host()->SendUnsolicitedReply(
+      pp_resource(),
+      PpapiPluginMsg_WebSocket_ReceiveBinaryReply(array_message));
 }
 
 void PepperWebSocketHost::didReceiveMessageError() {
@@ -118,18 +147,18 @@ void PepperWebSocketHost::didReceiveMessageError() {
 void PepperWebSocketHost::didUpdateBufferedAmount(
     unsigned long buffered_amount) {
   // Send an IPC to update buffered amount.
-  host()->SendUnsolicitedReply(pp_resource(),
-                               PpapiPluginMsg_WebSocket_BufferedAmountReply(
-                                  buffered_amount));
+  host()->SendUnsolicitedReply(
+      pp_resource(),
+      PpapiPluginMsg_WebSocket_BufferedAmountReply(buffered_amount));
 }
 
 void PepperWebSocketHost::didStartClosingHandshake() {
   accepting_close_ = true;
 
   // Send an IPC to notice that server starts closing handshake.
-  host()->SendUnsolicitedReply(pp_resource(),
-                               PpapiPluginMsg_WebSocket_StateReply(
-                                  PP_WEBSOCKETREADYSTATE_CLOSING));
+  host()->SendUnsolicitedReply(
+      pp_resource(),
+      PpapiPluginMsg_WebSocket_StateReply(PP_WEBSOCKETREADYSTATE_CLOSING));
 }
 
 void PepperWebSocketHost::didClose(unsigned long unhandled_buffered_amount,
@@ -145,27 +174,23 @@ void PepperWebSocketHost::didClose(unsigned long unhandled_buffered_amount,
   }
 
   // Set close_was_clean_.
-  bool was_clean =
-      (initiating_close_ || accepting_close_) &&
-      !unhandled_buffered_amount &&
-      status == WebSocketClient::ClosingHandshakeComplete;
+  bool was_clean = (initiating_close_ || accepting_close_) &&
+                   !unhandled_buffered_amount &&
+                   status == WebSocketClient::ClosingHandshakeComplete;
 
   if (initiating_close_) {
     initiating_close_ = false;
     close_reply_.params.set_result(PP_OK);
-    host()->SendReply(close_reply_, PpapiPluginMsg_WebSocket_CloseReply(
-          unhandled_buffered_amount,
-          was_clean,
-          code,
-          reason.utf8()));
+    host()->SendReply(
+        close_reply_,
+        PpapiPluginMsg_WebSocket_CloseReply(
+            unhandled_buffered_amount, was_clean, code, reason.utf8()));
   } else {
     accepting_close_ = false;
-    host()->SendUnsolicitedReply(pp_resource(),
-                                 PpapiPluginMsg_WebSocket_ClosedReply(
-                                     unhandled_buffered_amount,
-                                     was_clean,
-                                     code,
-                                     reason.utf8()));
+    host()->SendUnsolicitedReply(
+        pp_resource(),
+        PpapiPluginMsg_WebSocket_ClosedReply(
+            unhandled_buffered_amount, was_clean, code, reason.utf8()));
   }
 
   // Disconnect.
@@ -198,8 +223,8 @@ int32_t PepperWebSocketHost::OnHostMsgConnect(
 
     // Check containing characters.
     for (std::string::const_iterator string_it = vector_it->begin();
-        string_it != vector_it->end();
-        ++string_it) {
+         string_it != vector_it->end();
+         ++string_it) {
       uint8_t character = *string_it;
       // WebSocket specification says "(Subprotocol string must consist of)
       // characters in the range U+0021 to U+007E not including separator
@@ -207,12 +232,13 @@ int32_t PepperWebSocketHost::OnHostMsgConnect(
       const uint8_t minimumProtocolCharacter = '!';  // U+0021.
       const uint8_t maximumProtocolCharacter = '~';  // U+007E.
       if (character < minimumProtocolCharacter ||
-          character > maximumProtocolCharacter ||
-          character == '"' || character == '(' || character == ')' ||
-          character == ',' || character == '/' ||
+          character > maximumProtocolCharacter || character == '"' ||
+          character == '(' || character == ')' || character == ',' ||
+          character == '/' ||
           (character >= ':' && character <= '@') ||  // U+003A - U+0040
           (character >= '[' && character <= ']') ||  // U+005B - u+005D
-          character == '{' || character == '}')
+          character == '{' ||
+          character == '}')
         return PP_ERROR_BADARGUMENT;
     }
     // Join protocols with the comma separator.
@@ -253,8 +279,18 @@ int32_t PepperWebSocketHost::OnHostMsgClose(
     return PP_ERROR_FAILED;
   close_reply_ = context->MakeReplyMessageContext();
   initiating_close_ = true;
+
+  blink::WebSocket::CloseEventCode event_code =
+      static_cast<blink::WebSocket::CloseEventCode>(code);
+  if (code == PP_WEBSOCKETSTATUSCODE_NOT_SPECIFIED) {
+    // PP_WEBSOCKETSTATUSCODE_NOT_SPECIFIED and CloseEventCodeNotSpecified are
+    // assigned to different values. A conversion is needed if
+    // PP_WEBSOCKETSTATUSCODE_NOT_SPECIFIED is specified.
+    event_code = blink::WebSocket::CloseEventCodeNotSpecified;
+  }
+
   WebString web_reason = WebString::fromUTF8(reason);
-  websocket_->close(code, web_reason);
+  websocket_->close(event_code, web_reason);
   return PP_OK_COMPLETIONPENDING;
 }
 

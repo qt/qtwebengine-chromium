@@ -33,7 +33,7 @@ namespace WebCore {
 
 class ClearButtonElement FINAL : public HTMLDivElement {
 public:
-    class ClearButtonOwner {
+    class ClearButtonOwner : public WillBeGarbageCollectedMixin {
     public:
         virtual ~ClearButtonOwner() { }
         virtual void focusAndSelectClearButtonOwner() = 0;
@@ -41,18 +41,20 @@ public:
         virtual void clearValue() = 0;
     };
 
-    static PassRefPtr<ClearButtonElement> create(Document&, ClearButtonOwner&);
+    static PassRefPtrWillBeRawPtr<ClearButtonElement> create(Document&, ClearButtonOwner&);
     void releaseCapture();
-    void removeClearButtonOwner() { m_clearButtonOwner = 0; }
+    void removeClearButtonOwner() { m_clearButtonOwner = nullptr; }
+
+    virtual void trace(Visitor*) OVERRIDE;
 
 private:
     ClearButtonElement(Document&, ClearButtonOwner&);
     virtual void detach(const AttachContext& = AttachContext()) OVERRIDE;
-    virtual bool isMouseFocusable() const { return false; }
-    virtual void defaultEventHandler(Event*);
+    virtual bool isMouseFocusable() const OVERRIDE { return false; }
+    virtual void defaultEventHandler(Event*) OVERRIDE;
     virtual bool isClearButtonElement() const OVERRIDE;
 
-    ClearButtonOwner* m_clearButtonOwner;
+    RawPtrWillBeMember<ClearButtonOwner> m_clearButtonOwner;
     bool m_capturing;
 };
 

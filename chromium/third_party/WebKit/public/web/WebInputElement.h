@@ -39,17 +39,11 @@ namespace WebCore { class HTMLInputElement; }
 
 namespace blink {
 
-    class WebNodeCollection;
+    class WebElementCollection;
 
     // Provides readonly access to some properties of a DOM input element node.
     class WebInputElement : public WebFormControlElement {
     public:
-        enum SpeechInputState {
-            Idle,
-            Recording,
-            Recognizing,
-        };
-
         WebInputElement() : WebFormControlElement() { }
         WebInputElement(const WebInputElement& element) : WebFormControlElement(element) { }
 
@@ -69,52 +63,33 @@ namespace blink {
         BLINK_EXPORT bool isImageButton() const;
         BLINK_EXPORT bool isRadioButton() const;
         BLINK_EXPORT bool isCheckbox() const;
-        BLINK_EXPORT bool autoComplete() const;
         BLINK_EXPORT int maxLength() const;
-        BLINK_EXPORT bool isActivatedSubmit() const;
         BLINK_EXPORT void setActivatedSubmit(bool);
         BLINK_EXPORT int size() const;
-        BLINK_EXPORT void setValue(const WebString&, bool sendChangeEvent = false);
-        BLINK_EXPORT void setChecked(bool, bool sendChangeEvent = false);
-        BLINK_EXPORT WebString value() const;
-        // This returns the non-sanitized, exact value inside the text field.
-        BLINK_EXPORT WebString editingValue() const;
+        BLINK_EXPORT void setChecked(bool, bool sendEvents = false);
         // Sets the value inside the text field without being sanitized.
         // Can't be used if a renderer doesn't exist or on a non text field type.
         // Caret will be moved to the end.
         BLINK_EXPORT void setEditingValue(const WebString&);
-        BLINK_EXPORT void setSuggestedValue(const WebString&);
-        BLINK_EXPORT WebString suggestedValue() const;
-        BLINK_EXPORT void setSelectionRange(int, int);
-        BLINK_EXPORT int selectionStart() const;
-        BLINK_EXPORT int selectionEnd() const;
         BLINK_EXPORT bool isValidValue(const WebString&) const;
         BLINK_EXPORT bool isChecked() const;
         BLINK_EXPORT bool isMultiple() const;
 
-        BLINK_EXPORT WebNodeCollection dataListOptions() const;
+        BLINK_EXPORT WebElementCollection dataListOptions() const;
 
         // Return the localized value for this input type.
         BLINK_EXPORT WebString localizeValue(const WebString&) const;
 
-        BLINK_EXPORT bool isSpeechInputEnabled() const;
-        BLINK_EXPORT SpeechInputState getSpeechInputState() const;
-        BLINK_EXPORT void startSpeechInput();
-        BLINK_EXPORT void stopSpeechInput();
-
         // Exposes the default value of the maxLength attribute.
         BLINK_EXPORT static int defaultMaxLength();
 
-        // Returns the direction of the text in this element.
-        BLINK_EXPORT WebString directionForFormData() const;
-
-        BLINK_EXPORT WebElement decorationElementFor(void*);
-        BLINK_EXPORT WebElement passwordGeneratorButtonElement() const;
+        // If true, forces the text of the element to be visible.
+        BLINK_EXPORT void setShouldRevealPassword(bool value);
 
 #if BLINK_IMPLEMENTATION
-        WebInputElement(const WTF::PassRefPtr<WebCore::HTMLInputElement>&);
-        WebInputElement& operator=(const WTF::PassRefPtr<WebCore::HTMLInputElement>&);
-        operator WTF::PassRefPtr<WebCore::HTMLInputElement>() const;
+        WebInputElement(const PassRefPtrWillBeRawPtr<WebCore::HTMLInputElement>&);
+        WebInputElement& operator=(const PassRefPtrWillBeRawPtr<WebCore::HTMLInputElement>&);
+        operator PassRefPtrWillBeRawPtr<WebCore::HTMLInputElement>() const;
 #endif
     };
 

@@ -34,7 +34,7 @@ namespace WebCore {
 
 class Editor;
 class EditorClient;
-class Frame;
+class LocalFrame;
 class Range;
 class Text;
 
@@ -46,7 +46,7 @@ public:
         KeepSelection,
     };
 
-    static PassOwnPtr<InputMethodController> create(Frame&);
+    static PassOwnPtr<InputMethodController> create(LocalFrame&);
     ~InputMethodController();
 
     // international text input composition
@@ -66,7 +66,7 @@ public:
     // Deletes the existing composition text.
     void cancelComposition();
     void cancelCompositionIfSelectionIsInvalid();
-    PassRefPtr<Range> compositionRange() const;
+    PassRefPtrWillBeRawPtr<Range> compositionRange() const;
 
     // getting international text input composition state (for use by InlineTextBox)
     Text* compositionNode() const { return m_compositionNode.get(); }
@@ -94,8 +94,8 @@ private:
     };
     friend class SelectionOffsetsScope;
 
-    Frame& m_frame;
-    RefPtr<Text> m_compositionNode;
+    LocalFrame& m_frame;
+    RefPtrWillBePersistent<Text> m_compositionNode;
     // We don't use PlainTextRange which is immutable, for composition range.
     unsigned m_compositionStart;
     unsigned m_compositionEnd;
@@ -103,7 +103,7 @@ private:
     // m_compositionNode.
     Vector<CompositionUnderline> m_customCompositionUnderlines;
 
-    explicit InputMethodController(Frame&);
+    explicit InputMethodController(LocalFrame&);
     Editor& editor() const;
     bool insertTextForConfirmedComposition(const String& text);
     void selectComposition() const;

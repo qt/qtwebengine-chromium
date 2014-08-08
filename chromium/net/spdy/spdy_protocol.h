@@ -28,14 +28,15 @@ namespace net {
 
 // The major versions of SPDY. Major version differences indicate
 // framer-layer incompatibility, as opposed to minor version numbers
-// which indicate application-layer incompatibility. It is guaranteed
-// that the enum value SPDYn maps to the integer n.
+// which indicate application-layer incompatibility. Do not rely on
+// the mapping from enum value SPDYn to the integer n.
 enum SpdyMajorVersion {
   SPDY2 = 2,
   SPDY_MIN_VERSION = SPDY2,
   SPDY3 = 3,
   SPDY4 = 4,
-  SPDY_MAX_VERSION = SPDY4
+  SPDY5 = 5,
+  SPDY_MAX_VERSION = SPDY5
 };
 
 // A SPDY stream id is a 31 bit entity.
@@ -282,50 +283,86 @@ enum SpdyFrameType {
   GOAWAY,
   HEADERS,
   WINDOW_UPDATE,
-  CREDENTIAL,
+  CREDENTIAL,  // No longer valid.  Kept for identifiability/enum order.
   BLOCKED,
   PUSH_PROMISE,
-  LAST_CONTROL_TYPE = PUSH_PROMISE
+  CONTINUATION,
+  ALTSVC,
+  PRIORITY,
+  LAST_CONTROL_TYPE = PRIORITY
 };
 
 // Flags on data packets.
 enum SpdyDataFlags {
-  DATA_FLAG_NONE = 0,
-  DATA_FLAG_FIN = 1,
+  DATA_FLAG_NONE = 0x00,
+  DATA_FLAG_FIN = 0x01,
+  DATA_FLAG_END_SEGMENT = 0x02,
+  DATA_FLAG_PAD_LOW = 0x08,
+  DATA_FLAG_PAD_HIGH = 0x10,
+  DATA_FLAG_COMPRESSED = 0x20,
 };
 
 // Flags on control packets
 enum SpdyControlFlags {
-  CONTROL_FLAG_NONE = 0,
-  CONTROL_FLAG_FIN = 1,
-  CONTROL_FLAG_UNIDIRECTIONAL = 2
+  CONTROL_FLAG_NONE = 0x00,
+  CONTROL_FLAG_FIN = 0x01,
+  CONTROL_FLAG_UNIDIRECTIONAL = 0x02,
+};
+
+enum SpdyPingFlags {
+  PING_FLAG_ACK = 0x01,
+};
+
+// Used by HEADERS, PUSH_PROMISE, and CONTINUATION.
+enum SpdyHeadersFlags {
+  HEADERS_FLAG_END_SEGMENT = 0x02,
+  HEADERS_FLAG_END_HEADERS = 0x04,
+  HEADERS_FLAG_PAD_LOW = 0x08,
+  HEADERS_FLAG_PAD_HIGH = 0x10,
+  HEADERS_FLAG_PRIORITY = 0x20,
+};
+
+enum SpdyPushPromiseFlags {
+  PUSH_PROMISE_FLAG_END_PUSH_PROMISE = 0x04,
 };
 
 // Flags on the SETTINGS control frame.
 enum SpdySettingsControlFlags {
-  SETTINGS_FLAG_CLEAR_PREVIOUSLY_PERSISTED_SETTINGS = 0x1
+  SETTINGS_FLAG_CLEAR_PREVIOUSLY_PERSISTED_SETTINGS = 0x01,
+};
+
+enum Http2SettingsControlFlags {
+  SETTINGS_FLAG_ACK = 0x01,
 };
 
 // Flags for settings within a SETTINGS frame.
 enum SpdySettingsFlags {
-  SETTINGS_FLAG_NONE = 0x0,
-  SETTINGS_FLAG_PLEASE_PERSIST = 0x1,
-  SETTINGS_FLAG_PERSISTED = 0x2
+  SETTINGS_FLAG_NONE = 0x00,
+  SETTINGS_FLAG_PLEASE_PERSIST = 0x01,
+  SETTINGS_FLAG_PERSISTED = 0x02,
 };
 
-// List of known settings.
+// List of known settings. Avoid changing these enum values, as persisted
+// settings are keyed on them, and they are also exposed in net-internals.
 enum SpdySettingsIds {
   SETTINGS_UPLOAD_BANDWIDTH = 0x1,
   SETTINGS_DOWNLOAD_BANDWIDTH = 0x2,
   // Network round trip time in milliseconds.
   SETTINGS_ROUND_TRIP_TIME = 0x3,
+  // The maximum number of simultaneous live streams in each direction.
   SETTINGS_MAX_CONCURRENT_STREAMS = 0x4,
   // TCP congestion window in packets.
   SETTINGS_CURRENT_CWND = 0x5,
   // Downstream byte retransmission rate in percentage.
   SETTINGS_DOWNLOAD_RETRANS_RATE = 0x6,
   // Initial window size in bytes
-  SETTINGS_INITIAL_WINDOW_SIZE = 0x7
+  SETTINGS_INITIAL_WINDOW_SIZE = 0x7,
+  // HPACK header table maximum size.
+  SETTINGS_HEADER_TABLE_SIZE = 0x8,
+  // Whether or not server push (PUSH_PROMISE) is enabled.
+  SETTINGS_ENABLE_PUSH = 0x9,
+  // Whether or not to enable GZip compression of DATA frames.
+  SETTINGS_COMPRESS_DATA = 0xa,
 };
 
 // Status codes for RST_STREAM frames.
@@ -333,6 +370,7 @@ enum SpdyRstStreamStatus {
   RST_STREAM_INVALID = 0,
   RST_STREAM_PROTOCOL_ERROR = 1,
   RST_STREAM_INVALID_STREAM = 2,
+  RST_STREAM_STREAM_CLOSED = 2,  // Equivalent to INVALID_STREAM
   RST_STREAM_REFUSED_STREAM = 3,
   RST_STREAM_UNSUPPORTED_VERSION = 4,
   RST_STREAM_CANCEL = 5,
@@ -341,29 +379,143 @@ enum SpdyRstStreamStatus {
   RST_STREAM_STREAM_IN_USE = 8,
   RST_STREAM_STREAM_ALREADY_CLOSED = 9,
   RST_STREAM_INVALID_CREDENTIALS = 10,
+  // FRAME_TOO_LARGE (defined by SPDY versions 3.1 and below), and
+  // FRAME_SIZE_ERROR (defined by HTTP/2) are mapped to the same internal
+  // reset status.
   RST_STREAM_FRAME_TOO_LARGE = 11,
-  RST_STREAM_NUM_STATUS_CODES = 12
+  RST_STREAM_FRAME_SIZE_ERROR = 11,
+  RST_STREAM_SETTINGS_TIMEOUT = 12,
+  RST_STREAM_CONNECT_ERROR = 13,
+  RST_STREAM_ENHANCE_YOUR_CALM = 14,
+  RST_STREAM_NUM_STATUS_CODES = 15
 };
 
 // Status codes for GOAWAY frames.
 enum SpdyGoAwayStatus {
-  GOAWAY_INVALID = -1,
   GOAWAY_OK = 0,
+  GOAWAY_NO_ERROR = GOAWAY_OK,
   GOAWAY_PROTOCOL_ERROR = 1,
   GOAWAY_INTERNAL_ERROR = 2,
-  GOAWAY_NUM_STATUS_CODES = 3
+  GOAWAY_FLOW_CONTROL_ERROR = 3,
+  GOAWAY_SETTINGS_TIMEOUT = 4,
+  GOAWAY_STREAM_CLOSED = 5,
+  GOAWAY_FRAME_SIZE_ERROR = 6,
+  GOAWAY_REFUSED_STREAM = 7,
+  GOAWAY_CANCEL = 8,
+  GOAWAY_COMPRESSION_ERROR = 9,
+  GOAWAY_CONNECT_ERROR = 10,
+  GOAWAY_ENHANCE_YOUR_CALM = 11,
+  GOAWAY_INADEQUATE_SECURITY = 12
 };
 
 // A SPDY priority is a number between 0 and 7 (inclusive).
-// SPDY priority range is version-dependant. For SPDY 2 and below, priority is a
+// SPDY priority range is version-dependent. For SPDY 2 and below, priority is a
 // number between 0 and 3.
 typedef uint8 SpdyPriority;
 
-typedef uint8 SpdyCredentialSlot;
-
 typedef std::map<std::string, std::string> SpdyNameValueBlock;
 
-typedef uint32 SpdyPingId;
+typedef uint64 SpdyPingId;
+
+typedef std::string SpdyProtocolId;
+
+// TODO(hkhalil): Add direct testing for this? It won't increase coverage any,
+// but is good to do anyway.
+class NET_EXPORT_PRIVATE SpdyConstants {
+ public:
+  // Returns true if a given on-the-wire enumeration of a frame type is valid
+  // for a given protocol version, false otherwise.
+  static bool IsValidFrameType(SpdyMajorVersion version, int frame_type_field);
+
+  // Parses a frame type from an on-the-wire enumeration of a given protocol
+  // version.
+  // Behavior is undefined for invalid frame type fields; consumers should first
+  // use IsValidFrameType() to verify validity of frame type fields.
+  static SpdyFrameType ParseFrameType(SpdyMajorVersion version,
+                                      int frame_type_field);
+
+  // Serializes a given frame type to the on-the-wire enumeration value for the
+  // given protocol version.
+  // Returns -1 on failure (I.E. Invalid frame type for the given version).
+  static int SerializeFrameType(SpdyMajorVersion version,
+                                SpdyFrameType frame_type);
+
+  // Returns true if a given on-the-wire enumeration of a setting id is valid
+  // for a given protocol version, false otherwise.
+  static bool IsValidSettingId(SpdyMajorVersion version, int setting_id_field);
+
+  // Parses a setting id from an on-the-wire enumeration of a given protocol
+  // version.
+  // Behavior is undefined for invalid setting id fields; consumers should first
+  // use IsValidSettingId() to verify validity of setting id fields.
+  static SpdySettingsIds ParseSettingId(SpdyMajorVersion version,
+                                        int setting_id_field);
+
+  // Serializes a given setting id to the on-the-wire enumeration value for the
+  // given protocol version.
+  // Returns -1 on failure (I.E. Invalid setting id for the given version).
+  static int SerializeSettingId(SpdyMajorVersion version, SpdySettingsIds id);
+
+  // Returns true if a given on-the-wire enumeration of a RST_STREAM status code
+  // is valid for a given protocol version, false otherwise.
+  static bool IsValidRstStreamStatus(SpdyMajorVersion version,
+                                     int rst_stream_status_field);
+
+  // Parses a RST_STREAM status code from an on-the-wire enumeration of a given
+  // protocol version.
+  // Behavior is undefined for invalid RST_STREAM status code fields; consumers
+  // should first use IsValidRstStreamStatus() to verify validity of RST_STREAM
+  // status code fields..
+  static SpdyRstStreamStatus ParseRstStreamStatus(SpdyMajorVersion version,
+                                                  int rst_stream_status_field);
+
+  // Serializes a given RST_STREAM status code to the on-the-wire enumeration
+  // value for the given protocol version.
+  // Returns -1 on failure (I.E. Invalid RST_STREAM status code for the given
+  // version).
+  static int SerializeRstStreamStatus(SpdyMajorVersion version,
+                                      SpdyRstStreamStatus rst_stream_status);
+
+  // Returns true if a given on-the-wire enumeration of a GOAWAY status code is
+  // valid for the given protocol version, false otherwise.
+  static bool IsValidGoAwayStatus(SpdyMajorVersion version,
+                                  int goaway_status_field);
+
+  // Parses a GOAWAY status from an on-the-wire enumeration of a given protocol
+  // version.
+  // Behavior is undefined for invalid GOAWAY status fields; consumers should
+  // first use IsValidGoAwayStatus() to verify validity of GOAWAY status fields.
+  static SpdyGoAwayStatus ParseGoAwayStatus(SpdyMajorVersion version,
+                                            int goaway_status_field);
+
+  // Serializes a given GOAWAY status to the on-the-wire enumeration value for
+  // the given protocol version.
+  // Returns -1 on failure (I.E. Invalid GOAWAY status for the given version).
+  static int SerializeGoAwayStatus(SpdyMajorVersion version,
+                                   SpdyGoAwayStatus status);
+
+  // Size, in bytes, of the data frame header. Future versions of SPDY
+  // will likely vary this, so we allow for the flexibility of a function call
+  // for this value as opposed to a constant.
+  static size_t GetDataFrameMinimumSize();
+
+  // Size, in bytes, of the control frame header.
+  static size_t GetControlFrameHeaderSize(SpdyMajorVersion version);
+
+  static size_t GetPrefixLength(SpdyFrameType type, SpdyMajorVersion version);
+
+  static size_t GetFrameMaximumSize(SpdyMajorVersion version);
+
+  // Returns the size of a header block size field. Valid only for SPDY
+  // versions <= 3.
+  static size_t GetSizeOfSizeField(SpdyMajorVersion version);
+
+  static SpdyMajorVersion ParseMajorVersion(int version_number);
+
+  static int SerializeMajorVersion(SpdyMajorVersion version);
+
+  static std::string GetVersionString(SpdyMajorVersion version);
+};
 
 class SpdyFrame;
 typedef SpdyFrame SpdySerializedFrame;
@@ -373,7 +525,7 @@ class SpdyFrameVisitor;
 // Intermediate representation for SPDY frames.
 // TODO(hkhalil): Rename this class to SpdyFrame when the existing SpdyFrame is
 // gone.
-class SpdyFrameIR {
+class NET_EXPORT_PRIVATE SpdyFrameIR {
  public:
   virtual ~SpdyFrameIR() {}
 
@@ -388,7 +540,7 @@ class SpdyFrameIR {
 
 // Abstract class intended to be inherited by IRs that have a stream associated
 // to them.
-class SpdyFrameWithStreamIdIR : public SpdyFrameIR {
+class NET_EXPORT_PRIVATE SpdyFrameWithStreamIdIR : public SpdyFrameIR {
  public:
   virtual ~SpdyFrameWithStreamIdIR() {}
   SpdyStreamId stream_id() const { return stream_id_; }
@@ -410,7 +562,7 @@ class SpdyFrameWithStreamIdIR : public SpdyFrameIR {
 
 // Abstract class intended to be inherited by IRs that have the option of a FIN
 // flag. Implies SpdyFrameWithStreamIdIR.
-class SpdyFrameWithFinIR : public SpdyFrameWithStreamIdIR {
+class NET_EXPORT_PRIVATE SpdyFrameWithFinIR : public SpdyFrameWithStreamIdIR {
  public:
   virtual ~SpdyFrameWithFinIR() {}
   bool fin() const { return fin_; }
@@ -435,10 +587,16 @@ class NET_EXPORT_PRIVATE SpdyFrameWithNameValueBlockIR
   const SpdyNameValueBlock& name_value_block() const {
     return name_value_block_;
   }
-  SpdyNameValueBlock* GetMutableNameValueBlock() { return &name_value_block_; }
+  void set_name_value_block(const SpdyNameValueBlock& name_value_block) {
+    // Deep copy.
+    name_value_block_ = name_value_block;
+  }
   void SetHeader(const base::StringPiece& name,
                  const base::StringPiece& value) {
     name_value_block_[name.as_string()] = value.as_string();
+  }
+  SpdyNameValueBlock* mutable_name_value_block() {
+    return &name_value_block_;
   }
 
  protected:
@@ -464,6 +622,29 @@ class NET_EXPORT_PRIVATE SpdyDataIR
 
   base::StringPiece data() const { return data_; }
 
+  bool pad_low() const { return pad_low_; }
+
+  bool pad_high() const { return pad_high_; }
+
+  int padding_payload_len() const { return padding_payload_len_; }
+
+  void set_padding_len(int padding_len) {
+    // The padding_len should be in (0, 65535 + 2].
+    // Note that SpdyFramer::GetDataFrameMaximumPayload() enforces the overall
+    // payload size later so we actually can't pad more than 16375 bytes.
+    DCHECK_GT(padding_len, 0);
+    DCHECK_LT(padding_len, 65537);
+
+    if (padding_len <= 256) {
+      pad_low_ = true;
+      --padding_len;
+    } else {
+      pad_low_ = pad_high_ = true;
+      padding_len -= 2;
+    }
+    padding_payload_len_ = padding_len;
+  }
+
   // Deep-copy of data (keep private copy).
   void SetDataDeep(const base::StringPiece& data) {
     data_store_.reset(new std::string(data.data(), data.length()));
@@ -483,6 +664,11 @@ class NET_EXPORT_PRIVATE SpdyDataIR
   scoped_ptr<std::string> data_store_;
   base::StringPiece data_;
 
+  bool pad_low_;
+  bool pad_high_;
+  // padding_payload_len_ = desired padding length - len(padding length field).
+  int padding_payload_len_;
+
   DISALLOW_COPY_AND_ASSIGN(SpdyDataIR);
 };
 
@@ -493,7 +679,6 @@ class NET_EXPORT_PRIVATE SpdySynStreamIR
       : SpdyFrameWithNameValueBlockIR(stream_id),
         associated_to_stream_id_(0),
         priority_(0),
-        slot_(0),
         unidirectional_(false) {}
   SpdyStreamId associated_to_stream_id() const {
     return associated_to_stream_id_;
@@ -503,8 +688,6 @@ class NET_EXPORT_PRIVATE SpdySynStreamIR
   }
   SpdyPriority priority() const { return priority_; }
   void set_priority(SpdyPriority priority) { priority_ = priority; }
-  SpdyCredentialSlot slot() const { return slot_; }
-  void set_slot(SpdyCredentialSlot slot) { slot_ = slot; }
   bool unidirectional() const { return unidirectional_; }
   void set_unidirectional(bool unidirectional) {
     unidirectional_ = unidirectional;
@@ -515,13 +698,12 @@ class NET_EXPORT_PRIVATE SpdySynStreamIR
  private:
   SpdyStreamId associated_to_stream_id_;
   SpdyPriority priority_;
-  SpdyCredentialSlot slot_;
   bool unidirectional_;
 
   DISALLOW_COPY_AND_ASSIGN(SpdySynStreamIR);
 };
 
-class SpdySynReplyIR : public SpdyFrameWithNameValueBlockIR {
+class NET_EXPORT_PRIVATE SpdySynReplyIR : public SpdyFrameWithNameValueBlockIR {
  public:
   explicit SpdySynReplyIR(SpdyStreamId stream_id)
       : SpdyFrameWithNameValueBlockIR(stream_id) {}
@@ -532,30 +714,36 @@ class SpdySynReplyIR : public SpdyFrameWithNameValueBlockIR {
   DISALLOW_COPY_AND_ASSIGN(SpdySynReplyIR);
 };
 
-class SpdyRstStreamIR : public SpdyFrameWithStreamIdIR {
+class NET_EXPORT_PRIVATE SpdyRstStreamIR : public SpdyFrameWithStreamIdIR {
  public:
-  SpdyRstStreamIR(SpdyStreamId stream_id, SpdyRstStreamStatus status)
-      : SpdyFrameWithStreamIdIR(stream_id) {
-    set_status(status);
-  }
+  SpdyRstStreamIR(SpdyStreamId stream_id, SpdyRstStreamStatus status,
+                  base::StringPiece description);
+
+  virtual ~SpdyRstStreamIR();
+
   SpdyRstStreamStatus status() const {
     return status_;
   }
   void set_status(SpdyRstStreamStatus status) {
-    DCHECK_NE(status, RST_STREAM_INVALID);
-    DCHECK_LT(status, RST_STREAM_NUM_STATUS_CODES);
     status_ = status;
+  }
+
+  base::StringPiece description() const { return description_; }
+
+  void set_description(base::StringPiece description) {
+    description_ = description;
   }
 
   virtual void Visit(SpdyFrameVisitor* visitor) const OVERRIDE;
 
  private:
   SpdyRstStreamStatus status_;
+  base::StringPiece description_;
 
   DISALLOW_COPY_AND_ASSIGN(SpdyRstStreamIR);
 };
 
-class SpdySettingsIR : public SpdyFrameIR {
+class NET_EXPORT_PRIVATE SpdySettingsIR : public SpdyFrameIR {
  public:
   // Associates flags with a value.
   struct Value {
@@ -578,15 +766,18 @@ class SpdySettingsIR : public SpdyFrameIR {
                   bool persist_value,
                   bool persisted,
                   int32 value) {
-    // TODO(hkhalil): DCHECK_LE(SETTINGS_UPLOAD_BANDWIDTH, id);
-    // TODO(hkhalil): DCHECK_GE(SETTINGS_INITIAL_WINDOW_SIZE, id);
     values_[id].persist_value = persist_value;
     values_[id].persisted = persisted;
     values_[id].value = value;
   }
+
   bool clear_settings() const { return clear_settings_; }
   void set_clear_settings(bool clear_settings) {
     clear_settings_ = clear_settings;
+  }
+  bool is_ack() const { return is_ack_; }
+  void set_is_ack(bool is_ack) {
+    is_ack_ = is_ack;
   }
 
   virtual void Visit(SpdyFrameVisitor* visitor) const OVERRIDE;
@@ -594,29 +785,34 @@ class SpdySettingsIR : public SpdyFrameIR {
  private:
   ValueMap values_;
   bool clear_settings_;
+  bool is_ack_;
 
   DISALLOW_COPY_AND_ASSIGN(SpdySettingsIR);
 };
 
-class SpdyPingIR : public SpdyFrameIR {
+class NET_EXPORT_PRIVATE SpdyPingIR : public SpdyFrameIR {
  public:
-  explicit SpdyPingIR(SpdyPingId id) : id_(id) {}
+  explicit SpdyPingIR(SpdyPingId id) : id_(id), is_ack_(false) {}
   SpdyPingId id() const { return id_; }
+
+  // ACK logic is valid only for SPDY versions 4 and above.
+  bool is_ack() const { return is_ack_; }
+  void set_is_ack(bool is_ack) { is_ack_ = is_ack; }
 
   virtual void Visit(SpdyFrameVisitor* visitor) const OVERRIDE;
 
  private:
   SpdyPingId id_;
+  bool is_ack_;
 
   DISALLOW_COPY_AND_ASSIGN(SpdyPingIR);
 };
 
-class SpdyGoAwayIR : public SpdyFrameIR {
+class NET_EXPORT_PRIVATE SpdyGoAwayIR : public SpdyFrameIR {
  public:
-  SpdyGoAwayIR(SpdyStreamId last_good_stream_id, SpdyGoAwayStatus status) {
-    set_last_good_stream_id(last_good_stream_id);
-    set_status(status);
-  }
+  SpdyGoAwayIR(SpdyStreamId last_good_stream_id, SpdyGoAwayStatus status,
+               const base::StringPiece& description);
+  virtual ~SpdyGoAwayIR();
   SpdyStreamId last_good_stream_id() const { return last_good_stream_id_; }
   void set_last_good_stream_id(SpdyStreamId last_good_stream_id) {
     DCHECK_LE(0u, last_good_stream_id);
@@ -629,27 +825,40 @@ class SpdyGoAwayIR : public SpdyFrameIR {
     status_ = status;
   }
 
+  const base::StringPiece& description() const;
+
   virtual void Visit(SpdyFrameVisitor* visitor) const OVERRIDE;
 
  private:
   SpdyStreamId last_good_stream_id_;
   SpdyGoAwayStatus status_;
+  const base::StringPiece description_;
 
   DISALLOW_COPY_AND_ASSIGN(SpdyGoAwayIR);
 };
 
-class SpdyHeadersIR : public SpdyFrameWithNameValueBlockIR {
+class NET_EXPORT_PRIVATE SpdyHeadersIR : public SpdyFrameWithNameValueBlockIR {
  public:
   explicit SpdyHeadersIR(SpdyStreamId stream_id)
-      : SpdyFrameWithNameValueBlockIR(stream_id) {}
+    : SpdyFrameWithNameValueBlockIR(stream_id),
+      has_priority_(false),
+      priority_(0) {}
 
   virtual void Visit(SpdyFrameVisitor* visitor) const OVERRIDE;
 
+  bool has_priority() const { return has_priority_; }
+  void set_has_priority(bool has_priority) { has_priority_ = has_priority; }
+  uint32 priority() const { return priority_; }
+  void set_priority(SpdyPriority priority) { priority_ = priority; }
+
  private:
+  bool has_priority_;
+  // 31-bit priority.
+  uint32 priority_;
   DISALLOW_COPY_AND_ASSIGN(SpdyHeadersIR);
 };
 
-class SpdyWindowUpdateIR : public SpdyFrameWithStreamIdIR {
+class NET_EXPORT_PRIVATE SpdyWindowUpdateIR : public SpdyFrameWithStreamIdIR {
  public:
   SpdyWindowUpdateIR(SpdyStreamId stream_id, int32 delta)
       : SpdyFrameWithStreamIdIR(stream_id) {
@@ -670,50 +879,20 @@ class SpdyWindowUpdateIR : public SpdyFrameWithStreamIdIR {
   DISALLOW_COPY_AND_ASSIGN(SpdyWindowUpdateIR);
 };
 
-class SpdyCredentialIR : public SpdyFrameIR {
+class NET_EXPORT_PRIVATE SpdyBlockedIR
+    : public NON_EXPORTED_BASE(SpdyFrameWithStreamIdIR) {
  public:
-  typedef std::vector<std::string> CertificateList;
-
-  explicit SpdyCredentialIR(int16 slot);
-  virtual ~SpdyCredentialIR();
-
-  int16 slot() const { return slot_; }
-  void set_slot(int16 slot) {
-    // TODO(hkhalil): Verify valid slot range?
-    slot_ = slot;
-  }
-  base::StringPiece proof() const { return proof_; }
-  void set_proof(const base::StringPiece& proof) {
-    proof.CopyToString(&proof_);
-  }
-  const CertificateList* certificates() const { return &certificates_; }
-  void AddCertificate(const base::StringPiece& certificate) {
-    certificates_.push_back(certificate.as_string());
-  }
+  explicit SpdyBlockedIR(SpdyStreamId stream_id)
+      : SpdyFrameWithStreamIdIR(stream_id) {}
 
   virtual void Visit(SpdyFrameVisitor* visitor) const OVERRIDE;
 
  private:
-  int16 slot_;
-  std::string proof_;
-  CertificateList certificates_;
-
-  DISALLOW_COPY_AND_ASSIGN(SpdyCredentialIR);
+  DISALLOW_COPY_AND_ASSIGN(SpdyBlockedIR);
 };
 
-class NET_EXPORT_PRIVATE SpdyBlockedIR
-    : public NON_EXPORTED_BASE(SpdyFrameWithStreamIdIR) {
-  public:
-   explicit SpdyBlockedIR(SpdyStreamId stream_id)
-       : SpdyFrameWithStreamIdIR(stream_id) {}
-
-  virtual void Visit(SpdyFrameVisitor* visitor) const OVERRIDE;
-
-  private:
-   DISALLOW_COPY_AND_ASSIGN(SpdyBlockedIR);
-};
-
-class SpdyPushPromiseIR : public SpdyFrameWithNameValueBlockIR {
+class NET_EXPORT_PRIVATE SpdyPushPromiseIR
+    : public SpdyFrameWithNameValueBlockIR {
  public:
   SpdyPushPromiseIR(SpdyStreamId stream_id, SpdyStreamId promised_stream_id)
       : SpdyFrameWithNameValueBlockIR(stream_id),
@@ -728,6 +907,59 @@ class SpdyPushPromiseIR : public SpdyFrameWithNameValueBlockIR {
   DISALLOW_COPY_AND_ASSIGN(SpdyPushPromiseIR);
 };
 
+// TODO(jgraettinger): This representation needs review. SpdyContinuationIR
+// needs to frame a portion of a single, arbitrarily-broken encoded buffer.
+class NET_EXPORT_PRIVATE SpdyContinuationIR
+    : public SpdyFrameWithNameValueBlockIR {
+ public:
+  explicit SpdyContinuationIR(SpdyStreamId stream_id)
+      : SpdyFrameWithNameValueBlockIR(stream_id),
+        end_headers_(false) {}
+
+  virtual void Visit(SpdyFrameVisitor* visitor) const OVERRIDE;
+
+  bool end_headers() const { return end_headers_; }
+  void set_end_headers(bool end_headers) {end_headers_ = end_headers;}
+
+ private:
+  bool end_headers_;
+  DISALLOW_COPY_AND_ASSIGN(SpdyContinuationIR);
+};
+
+class NET_EXPORT_PRIVATE SpdyAltSvcIR : public SpdyFrameWithStreamIdIR {
+ public:
+  explicit SpdyAltSvcIR(SpdyStreamId stream_id);
+
+  uint32 max_age() const { return max_age_; }
+  uint16 port() const { return port_; }
+  SpdyProtocolId protocol_id() const {
+    return protocol_id_;
+  }
+  std::string host() const { return host_; }
+  std::string origin() const { return origin_; }
+
+  void set_max_age(uint32 max_age) { max_age_ = max_age; }
+  void set_port(uint16 port) { port_ = port; }
+  void set_protocol_id(SpdyProtocolId protocol_id) {
+    protocol_id_ = protocol_id;
+  }
+  void set_host(std::string host) {
+    host_ = host;
+  }
+  void set_origin(std::string origin) {
+    origin_ = origin;
+  }
+
+  virtual void Visit(SpdyFrameVisitor* visitor) const OVERRIDE;
+
+ private:
+  uint32 max_age_;
+  uint16 port_;
+  SpdyProtocolId protocol_id_;
+  std::string host_;
+  std::string origin_;
+  DISALLOW_COPY_AND_ASSIGN(SpdyAltSvcIR);
+};
 
 // -------------------------------------------------------------------------
 // Wrapper classes for various SPDY frames.
@@ -786,9 +1018,10 @@ class SpdyFrameVisitor {
   virtual void VisitGoAway(const SpdyGoAwayIR& goaway) = 0;
   virtual void VisitHeaders(const SpdyHeadersIR& headers) = 0;
   virtual void VisitWindowUpdate(const SpdyWindowUpdateIR& window_update) = 0;
-  virtual void VisitCredential(const SpdyCredentialIR& credential) = 0;
   virtual void VisitBlocked(const SpdyBlockedIR& blocked) = 0;
   virtual void VisitPushPromise(const SpdyPushPromiseIR& push_promise) = 0;
+  virtual void VisitContinuation(const SpdyContinuationIR& continuation) = 0;
+  virtual void VisitAltSvc(const SpdyAltSvcIR& altsvc) = 0;
   virtual void VisitData(const SpdyDataIR& data) = 0;
 
  protected:

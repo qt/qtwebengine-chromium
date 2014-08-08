@@ -33,10 +33,10 @@
 #include "core/dom/Microtask.h"
 #include "core/dom/ScriptLoader.h"
 #include "core/fetch/ScriptResource.h"
+#include "core/frame/LocalFrame.h"
 #include "core/html/parser/HTMLInputStream.h"
 #include "core/html/parser/HTMLScriptRunnerHost.h"
 #include "core/html/parser/NestingLevelIncrementer.h"
-#include "core/frame/Frame.h"
 #include "platform/NotImplemented.h"
 
 namespace WebCore {
@@ -54,7 +54,23 @@ HTMLScriptRunner::HTMLScriptRunner(Document* document, HTMLScriptRunnerHost* hos
 
 HTMLScriptRunner::~HTMLScriptRunner()
 {
-    // FIXME: Should we be passed a "done loading/parsing" callback sooner than destruction?
+#if ENABLE(OILPAN)
+    // If the document is destructed without having explicitly
+    // detached the parser (and this script runner object), perform
+    // detach steps now. This will happen if the Document, the parser
+    // and this script runner object are swept out in the same GC.
+    detach();
+#else
+    // Verify that detach() has been called.
+    ASSERT(!m_document);
+#endif
+}
+
+void HTMLScriptRunner::detach()
+{
+    if (!m_document)
+        return;
+
     if (m_parserBlockingScript.resource() && m_parserBlockingScript.watchingForLoad())
         stopWatchingForLoad(m_parserBlockingScript);
 
@@ -63,23 +79,25 @@ HTMLScriptRunner::~HTMLScriptRunner()
         if (pendingScript.resource() && pendingScript.watchingForLoad())
             stopWatchingForLoad(pendingScript);
     }
-}
-
-void HTMLScriptRunner::detach()
-{
-    m_document = 0;
+    m_document = nullptr;
 }
 
 static KURL documentURLForScriptExecution(Document* document)
 {
-    if (!document || !document->frame())
+    if (!document)
         return KURL();
+
+    if (!document->frame()) {
+        if (document->importsController())
+            return document->url();
+        return KURL();
+    }
 
     // Use the URL of the currently active document for this frame.
     return document->frame()->document()->url();
 }
 
-inline PassRefPtr<Event> createScriptLoadEvent()
+inline PassRefPtrWillBeRawPtr<Event> createScriptLoadEvent()
 {
     return Event::create(EventTypeNames::load);
 }
@@ -97,7 +115,7 @@ ScriptSourceCode HTMLScriptRunner::sourceFromPendingScript(const PendingScript& 
 
 bool HTMLScriptRunner::isPendingScriptReady(const PendingScript& script)
 {
-    m_hasScriptsWaitingForResources = !m_document->haveStylesheetsAndImportsLoaded();
+    m_hasScriptsWaitingForResources = !m_document->isScriptExecutionReady();
     if (m_hasScriptsWaitingForResources)
         return false;
     if (script.resource() && !script.resource()->isLoaded())
@@ -109,14 +127,14 @@ void HTMLScriptRunner::executeParsingBlockingScript()
 {
     ASSERT(m_document);
     ASSERT(!isExecutingScript());
-    ASSERT(m_document->haveStylesheetsAndImportsLoaded());
+    ASSERT(m_document->isScriptExecutionReady());
     ASSERT(isPendingScriptReady(m_parserBlockingScript));
 
     InsertionPointRecord insertionPointRecord(m_host->inputStream());
-    executePendingScriptAndDispatchEvent(m_parserBlockingScript);
+    executePendingScriptAndDispatchEvent(m_parserBlockingScript, PendingScriptBlockingParser);
 }
 
-void HTMLScriptRunner::executePendingScriptAndDispatchEvent(PendingScript& pendingScript)
+void HTMLScriptRunner::executePendingScriptAndDispatchEvent(PendingScript& pendingScript, PendingScriptType pendingScriptType)
 {
     bool errorOccurred = false;
     ScriptSourceCode sourceCode = sourceFromPendingScript(pendingScript, errorOccurred);
@@ -125,11 +143,18 @@ void HTMLScriptRunner::executePendingScriptAndDispatchEvent(PendingScript& pendi
     if (pendingScript.resource() && pendingScript.watchingForLoad())
         stopWatchingForLoad(pendingScript);
 
-    if (!isExecutingScript())
+    if (!isExecutingScript()) {
         Microtask::performCheckpoint();
+        if (pendingScriptType == PendingScriptBlockingParser) {
+            m_hasScriptsWaitingForResources = !m_document->isScriptExecutionReady();
+            // The parser cannot be unblocked as a microtask requested another resource
+            if (m_hasScriptsWaitingForResources)
+                return;
+        }
+    }
 
     // Clear the pending script before possible rentrancy from executeScript()
-    RefPtr<Element> element = pendingScript.releaseElementAndClear();
+    RefPtrWillBeRawPtr<Element> element = pendingScript.releaseElementAndClear();
     if (ScriptLoader* scriptLoader = toScriptLoaderIfPossible(element.get())) {
         NestingLevelIncrementer nestingLevelIncrementer(m_scriptNestingLevel);
         IgnoreDestructiveWriteCountIncrementer ignoreDestructiveWriteCountIncrementer(m_document);
@@ -137,8 +162,8 @@ void HTMLScriptRunner::executePendingScriptAndDispatchEvent(PendingScript& pendi
             scriptLoader->dispatchErrorEvent();
         else {
             ASSERT(isExecutingScript());
-            if (scriptLoader->executePotentiallyCrossOriginScript(sourceCode))
-                element->dispatchEvent(createScriptLoadEvent());
+            scriptLoader->executeScript(sourceCode);
+            element->dispatchEvent(createScriptLoadEvent());
         }
     }
     ASSERT(!isExecutingScript());
@@ -147,20 +172,30 @@ void HTMLScriptRunner::executePendingScriptAndDispatchEvent(PendingScript& pendi
 void HTMLScriptRunner::watchForLoad(PendingScript& pendingScript)
 {
     ASSERT(!pendingScript.watchingForLoad());
-    m_host->watchForLoad(pendingScript.resource());
+    ASSERT(!pendingScript.resource()->isLoaded());
+    // addClient() will call notifyFinished() if the load is complete.
+    // Callers do not expect to be re-entered from this call, so they
+    // should not become a client of an already-loaded Resource.
+    pendingScript.resource()->addClient(this);
     pendingScript.setWatchingForLoad(true);
 }
 
 void HTMLScriptRunner::stopWatchingForLoad(PendingScript& pendingScript)
 {
     ASSERT(pendingScript.watchingForLoad());
-    m_host->stopWatchingForLoad(pendingScript.resource());
+    pendingScript.resource()->removeClient(this);
     pendingScript.setWatchingForLoad(false);
 }
 
-// This function should match 10.2.5.11 "An end tag whose tag name is 'script'"
-// Script handling lives outside the tree builder to keep the each class simple.
-void HTMLScriptRunner::execute(PassRefPtr<Element> scriptElement, const TextPosition& scriptStartPosition)
+void HTMLScriptRunner::notifyFinished(Resource* cachedResource)
+{
+    m_host->notifyScriptLoaded(cachedResource);
+}
+
+// Implements the steps for 'An end tag whose tag name is "script"'
+// http://whatwg.org/html#scriptEndTag
+// Script handling lives outside the tree builder to keep each class simple.
+void HTMLScriptRunner::execute(PassRefPtrWillBeRawPtr<Element> scriptElement, const TextPosition& scriptStartPosition)
 {
     ASSERT(scriptElement);
     // FIXME: If scripting is disabled, always just return.
@@ -207,7 +242,7 @@ void HTMLScriptRunner::executeScriptsWaitingForResources()
     // to prevent parser or script re-entry during </style> parsing.
     ASSERT(hasScriptsWaitingForResources());
     ASSERT(!isExecutingScript());
-    ASSERT(m_document->haveStylesheetsAndImportsLoaded());
+    ASSERT(m_document->isScriptExecutionReady());
     executeParsingBlockingScripts();
 }
 
@@ -222,7 +257,7 @@ bool HTMLScriptRunner::executeScriptsWaitingForParsing()
             return false;
         }
         PendingScript first = m_scriptsToExecuteAfterParsing.takeFirst();
-        executePendingScriptAndDispatchEvent(first);
+        executePendingScriptAndDispatchEvent(first, PendingScriptDeferred);
         // FIXME: What is this m_document check for?
         if (!m_document)
             return false;
@@ -268,8 +303,8 @@ bool HTMLScriptRunner::requestPendingScript(PendingScript& pendingScript, Elemen
     return true;
 }
 
-// This method is meant to match the HTML5 definition of "running a script"
-// http://www.whatwg.org/specs/web-apps/current-work/multipage/scripting-1.html#running-a-script
+// Implements the initial steps for 'An end tag whose tag name is "script"'
+// http://whatwg.org/html#scriptEndTag
 void HTMLScriptRunner::runScript(Element* script, const TextPosition& scriptStartPosition)
 {
     ASSERT(m_document);
@@ -285,10 +320,8 @@ void HTMLScriptRunner::runScript(Element* script, const TextPosition& scriptStar
         if (!scriptLoader)
             return;
 
-        // FIXME: This may be too agressive as we always deliver mutations at
-        // every script element, even if it's not ready to execute yet. There's
-        // unfortuantely no obvious way to tell if prepareScript is going to
-        // execute the script from out here.
+        ASSERT(scriptLoader->isParserInserted());
+
         if (!isExecutingScript())
             Microtask::performCheckpoint();
 
@@ -314,6 +347,14 @@ void HTMLScriptRunner::runScript(Element* script, const TextPosition& scriptStar
             requestParsingBlockingScript(script);
         }
     }
+}
+
+void HTMLScriptRunner::trace(Visitor* visitor)
+{
+    visitor->trace(m_document);
+    visitor->trace(m_host);
+    visitor->trace(m_parserBlockingScript);
+    visitor->trace(m_scriptsToExecuteAfterParsing);
 }
 
 }

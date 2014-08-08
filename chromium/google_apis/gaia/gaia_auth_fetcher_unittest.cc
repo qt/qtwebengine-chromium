@@ -402,7 +402,7 @@ TEST_F(GaiaAuthFetcherTest, AccountDisabledError) {
   EXPECT_EQ(error.state(), GoogleServiceAuthError::ACCOUNT_DISABLED);
 }
 
-TEST_F(GaiaAuthFetcherTest,BadAuthenticationError) {
+TEST_F(GaiaAuthFetcherTest, BadAuthenticationError) {
   net::URLRequestStatus status(net::URLRequestStatus::SUCCESS, 0);
   std::string data = "Error=BadAuthentication\n";
   GoogleServiceAuthError error =
@@ -410,7 +410,7 @@ TEST_F(GaiaAuthFetcherTest,BadAuthenticationError) {
   EXPECT_EQ(error.state(), GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS);
 }
 
-TEST_F(GaiaAuthFetcherTest,IncomprehensibleError) {
+TEST_F(GaiaAuthFetcherTest, IncomprehensibleError) {
   net::URLRequestStatus status(net::URLRequestStatus::SUCCESS, 0);
   std::string data = "Error=Gobbledygook\n";
   GoogleServiceAuthError error =
@@ -418,43 +418,11 @@ TEST_F(GaiaAuthFetcherTest,IncomprehensibleError) {
   EXPECT_EQ(error.state(), GoogleServiceAuthError::SERVICE_UNAVAILABLE);
 }
 
-TEST_F(GaiaAuthFetcherTest,ServiceUnavailableError) {
+TEST_F(GaiaAuthFetcherTest, ServiceUnavailableError) {
   net::URLRequestStatus status(net::URLRequestStatus::SUCCESS, 0);
   std::string data = "Error=ServiceUnavailable\n";
   GoogleServiceAuthError error =
-      GaiaAuthFetcher::GenerateOAuthLoginError(data, status);
-  EXPECT_EQ(error.state(), GoogleServiceAuthError::SERVICE_UNAVAILABLE);
-}
-
-TEST_F(GaiaAuthFetcherTest, OAuthAccountDeletedError) {
-  net::URLRequestStatus status(net::URLRequestStatus::SUCCESS, 0);
-  std::string data = "Error=adel\n";
-  GoogleServiceAuthError error =
-      GaiaAuthFetcher::GenerateOAuthLoginError(data, status);
-  EXPECT_EQ(error.state(), GoogleServiceAuthError::ACCOUNT_DELETED);
-}
-
-TEST_F(GaiaAuthFetcherTest, OAuthAccountDisabledError) {
-  net::URLRequestStatus status(net::URLRequestStatus::SUCCESS, 0);
-  std::string data = "Error=adis\n";
-  GoogleServiceAuthError error =
-      GaiaAuthFetcher::GenerateOAuthLoginError(data, status);
-  EXPECT_EQ(error.state(), GoogleServiceAuthError::ACCOUNT_DISABLED);
-}
-
-TEST_F(GaiaAuthFetcherTest, OAuthBadAuthenticationError) {
-  net::URLRequestStatus status(net::URLRequestStatus::SUCCESS, 0);
-  std::string data = "Error=badauth\n";
-  GoogleServiceAuthError error =
-      GaiaAuthFetcher::GenerateOAuthLoginError(data, status);
-  EXPECT_EQ(error.state(), GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS);
-}
-
-TEST_F(GaiaAuthFetcherTest, OAuthServiceUnavailableError) {
-  net::URLRequestStatus status(net::URLRequestStatus::SUCCESS, 0);
-  std::string data = "Error=ire\n";
-  GoogleServiceAuthError error =
-      GaiaAuthFetcher::GenerateOAuthLoginError(data, status);
+      GaiaAuthFetcher::GenerateAuthError(data, status);
   EXPECT_EQ(error.state(), GoogleServiceAuthError::SERVICE_UNAVAILABLE);
 }
 
@@ -601,6 +569,25 @@ TEST_F(GaiaAuthFetcherTest, OAuthLoginTokenWithCookies) {
   net::TestURLFetcher* fetcher = factory.GetFetcherByID(0);
   EXPECT_TRUE(NULL != fetcher);
   EXPECT_EQ(net::LOAD_NORMAL, fetcher->GetLoadFlags());
+  EXPECT_FALSE(EndsWith(fetcher->upload_data(), "device_type=chrome", true));
+}
+
+TEST_F(GaiaAuthFetcherTest, OAuthLoginTokenWithCookies_DeviceId) {
+  MockGaiaConsumer consumer;
+  net::TestURLFetcherFactory factory;
+  std::string expected_device_id("ABCDE-12345");
+  GaiaAuthFetcher auth(&consumer, std::string(), GetRequestContext());
+  auth.StartCookieForOAuthLoginTokenExchangeWithDeviceId("0",
+                                                         expected_device_id);
+  net::TestURLFetcher* fetcher = factory.GetFetcherByID(0);
+  EXPECT_TRUE(NULL != fetcher);
+  EXPECT_EQ(net::LOAD_NORMAL, fetcher->GetLoadFlags());
+  EXPECT_TRUE(EndsWith(fetcher->upload_data(), "device_type=chrome", true));
+  net::HttpRequestHeaders extra_request_headers;
+  fetcher->GetExtraRequestHeaders(&extra_request_headers);
+  std::string device_id;
+  EXPECT_TRUE(extra_request_headers.GetHeader("X-Device-ID", &device_id));
+  EXPECT_EQ(device_id, expected_device_id);
 }
 
 TEST_F(GaiaAuthFetcherTest, OAuthLoginTokenClientLoginToOAuth2Failure) {

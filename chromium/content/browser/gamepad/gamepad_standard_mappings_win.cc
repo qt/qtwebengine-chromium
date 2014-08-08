@@ -4,96 +4,101 @@
 
 #include "content/browser/gamepad/gamepad_standard_mappings.h"
 
-#include "content/common/gamepad_hardware_buffer.h"
-
 namespace content {
 
 namespace {
-
-// Maps 0..65535 to -1..1.
-float NormalizeDirectInputAxis(long value) {
-  return (value * 1.f / 32767.5f) - 1.f;
-}
-
-float AxisNegativeAsButton(long value) {
-  return (value < 32767) ? 1.f : 0.f;
-}
-
-float AxisPositiveAsButton(long value) {
-  return (value > 32767) ? 1.f : 0.f;
-}
-
-void MapperDragonRiseGeneric(
-    const blink::WebGamepad& input,
-    blink::WebGamepad* mapped) {
-  *mapped = input;
-  mapped->buttons[0] = input.buttons[1];
-  mapped->buttons[1] = input.buttons[2];
-  mapped->buttons[2] = input.buttons[0];
-  mapped->buttons[12] = input.buttons[16];
-  mapped->buttons[13] = input.buttons[17];
-  mapped->buttons[14] = input.buttons[18];
-  mapped->buttons[15] = input.buttons[19];
-  mapped->buttonsLength = 16;
-  mapped->axes[0] = NormalizeDirectInputAxis(input.axes[0]);
-  mapped->axes[1] = NormalizeDirectInputAxis(input.axes[1]);
-  mapped->axes[2] = NormalizeDirectInputAxis(input.axes[2]);
-  mapped->axes[3] = NormalizeDirectInputAxis(input.axes[5]);
-  mapped->axesLength = 4;
-}
 
 void MapperLogitechDualAction(
     const blink::WebGamepad& input,
     blink::WebGamepad* mapped) {
   *mapped = input;
-  mapped->buttons[0] = input.buttons[1];
-  mapped->buttons[1] = input.buttons[2];
-  mapped->buttons[2] = input.buttons[0];
-  mapped->buttons[12] = input.buttons[16];
-  mapped->buttons[13] = input.buttons[17];
-  mapped->buttons[14] = input.buttons[18];
-  mapped->buttons[15] = input.buttons[19];
-  mapped->buttonsLength = 16;
-  mapped->axes[0] = NormalizeDirectInputAxis(input.axes[0]);
-  mapped->axes[1] = NormalizeDirectInputAxis(input.axes[1]);
-  mapped->axes[2] = NormalizeDirectInputAxis(input.axes[2]);
-  mapped->axes[3] = NormalizeDirectInputAxis(input.axes[5]);
-  mapped->axesLength = 4;
-}
+  mapped->buttons[kButtonPrimary] = input.buttons[1];
+  mapped->buttons[kButtonSecondary] = input.buttons[2];
+  mapped->buttons[kButtonTertiary] = input.buttons[0];
+  mapped->axes[kAxisRightStickY] = input.axes[5];
+  DpadFromAxis(mapped, input.axes[9]);
 
-void MapperLogitechPrecision(
-    const blink::WebGamepad& input,
-    blink::WebGamepad* mapped) {
-  *mapped = input;
-  mapped->buttons[0] = input.buttons[1];
-  mapped->buttons[1] = input.buttons[2];
-  mapped->buttons[2] = input.buttons[0];
-  mapped->buttons[kButtonLeftThumbstick] = 0;  // Not present
-  mapped->buttons[kButtonRightThumbstick] = 0;  // Not present
-  mapped->buttons[12] = AxisNegativeAsButton(input.axes[1]);
-  mapped->buttons[13] = AxisPositiveAsButton(input.axes[1]);
-  mapped->buttons[14] = AxisNegativeAsButton(input.axes[0]);
-  mapped->buttons[15] = AxisPositiveAsButton(input.axes[0]);
-  mapped->buttonsLength = 16;
-  mapped->axesLength = 0;
+  mapped->buttonsLength = kNumButtons;
+  mapped->axesLength = kNumAxes;
 }
 
 void Mapper2Axes8Keys(
     const blink::WebGamepad& input,
     blink::WebGamepad* mapped) {
   *mapped = input;
-  mapped->buttons[kButtonLeftTrigger] = 0;  // Not present
-  mapped->buttons[kButtonRightTrigger] = 0;  // Not present
-  mapped->buttons[8] = input.buttons[6];
-  mapped->buttons[9] = input.buttons[7];
-  mapped->buttons[kButtonLeftThumbstick] = 0;  // Not present
-  mapped->buttons[kButtonRightThumbstick] = 0;  // Not present
-  mapped->buttons[12] = AxisNegativeAsButton(input.axes[1]);
-  mapped->buttons[13] = AxisPositiveAsButton(input.axes[1]);
-  mapped->buttons[14] = AxisNegativeAsButton(input.axes[0]);
-  mapped->buttons[15] = AxisPositiveAsButton(input.axes[0]);
-  mapped->buttonsLength = 16;
+  mapped->buttons[kButtonPrimary] = input.buttons[2];
+  mapped->buttons[kButtonSecondary] = input.buttons[1];
+  mapped->buttons[kButtonTertiary] = input.buttons[3];
+  mapped->buttons[kButtonQuaternary] = input.buttons[0];
+  mapped->buttons[kButtonDpadUp] = AxisNegativeAsButton(input.axes[1]);
+  mapped->buttons[kButtonDpadDown] = AxisPositiveAsButton(input.axes[1]);
+  mapped->buttons[kButtonDpadLeft] = AxisNegativeAsButton(input.axes[0]);
+  mapped->buttons[kButtonDpadRight] = AxisPositiveAsButton(input.axes[0]);
+
+  // Missing buttons
+  mapped->buttons[kButtonLeftTrigger] = blink::WebGamepadButton();
+  mapped->buttons[kButtonRightTrigger] = blink::WebGamepadButton();
+  mapped->buttons[kButtonLeftThumbstick] = blink::WebGamepadButton();
+  mapped->buttons[kButtonRightThumbstick] = blink::WebGamepadButton();
+  mapped->buttons[kButtonMeta] = blink::WebGamepadButton();
+
+  mapped->buttonsLength = kNumButtons - 1;
   mapped->axesLength = 0;
+}
+
+void MapperDualshock4(
+    const blink::WebGamepad& input,
+    blink::WebGamepad* mapped) {
+  enum Dualshock4Buttons {
+    kTouchpadButton = kNumButtons,
+    kNumDualshock4Buttons
+  };
+
+  *mapped = input;
+  mapped->buttons[kButtonPrimary] = input.buttons[1];
+  mapped->buttons[kButtonSecondary] = input.buttons[2];
+  mapped->buttons[kButtonTertiary] = input.buttons[0];
+  mapped->buttons[kButtonQuaternary] = input.buttons[3];
+  mapped->buttons[kButtonLeftShoulder] = input.buttons[4];
+  mapped->buttons[kButtonRightShoulder] = input.buttons[5];
+  mapped->buttons[kButtonLeftTrigger] = AxisToButton(input.axes[3]);
+  mapped->buttons[kButtonRightTrigger] = AxisToButton(input.axes[4]);
+  mapped->buttons[kButtonBackSelect] = input.buttons[8];
+  mapped->buttons[kButtonStart] = input.buttons[9];
+  mapped->buttons[kButtonLeftThumbstick] = input.buttons[10];
+  mapped->buttons[kButtonRightThumbstick] = input.buttons[11];
+  mapped->buttons[kButtonMeta] = input.buttons[12];
+  mapped->buttons[kTouchpadButton] = input.buttons[13];
+  mapped->axes[kAxisRightStickY] = input.axes[5];
+  DpadFromAxis(mapped, input.axes[9]);
+
+  mapped->buttonsLength = kNumDualshock4Buttons;
+  mapped->axesLength = kNumAxes;
+}
+
+void MapperOnLiveWireless(
+    const blink::WebGamepad& input,
+    blink::WebGamepad* mapped) {
+  *mapped = input;
+  mapped->buttons[kButtonPrimary] = input.buttons[0];
+  mapped->buttons[kButtonSecondary] = input.buttons[1];
+  mapped->buttons[kButtonTertiary] = input.buttons[3];
+  mapped->buttons[kButtonQuaternary] = input.buttons[4];
+  mapped->buttons[kButtonLeftShoulder] = input.buttons[6];
+  mapped->buttons[kButtonRightShoulder] = input.buttons[7];
+  mapped->buttons[kButtonLeftTrigger] = AxisToButton(input.axes[2]);
+  mapped->buttons[kButtonRightTrigger] = AxisToButton(input.axes[5]);
+  mapped->buttons[kButtonBackSelect] = input.buttons[10];
+  mapped->buttons[kButtonStart] = input.buttons[11];
+  mapped->buttons[kButtonLeftThumbstick] = input.buttons[13];
+  mapped->buttons[kButtonRightThumbstick] = input.buttons[14];
+  mapped->buttons[kButtonMeta] = input.buttons[12];
+  mapped->axes[kAxisRightStickX] = input.axes[3];
+  mapped->axes[kAxisRightStickY] = input.axes[4];
+  DpadFromAxis(mapped, input.axes[9]);
+
+  mapped->buttonsLength = kNumButtons;
+  mapped->axesLength = kNumAxes;
 }
 
 struct MappingData {
@@ -102,10 +107,11 @@ struct MappingData {
   GamepadStandardMappingFunction function;
 } AvailableMappings[] = {
   // http://www.linux-usb.org/usb.ids
-  { "0079", "0006", MapperDragonRiseGeneric },  // DragonRise Generic USB
   { "046d", "c216", MapperLogitechDualAction },  // Logitech DualAction
-  { "046d", "c21a", MapperLogitechPrecision },  // Logitech Precision
-  { "12bd", "d012", Mapper2Axes8Keys },  // 2Axes 8Keys Game Pad
+  { "0079", "0011", Mapper2Axes8Keys },  // 2Axes 8Keys Game Pad
+  { "054c", "05c4", MapperDualshock4 },  // Playstation Dualshock 4
+  { "2378", "1008", MapperOnLiveWireless },  // OnLive Controller (Bluetooth)
+  { "2378", "100a", MapperOnLiveWireless },  // OnLive Controller (Wired)
 };
 
 }  // namespace

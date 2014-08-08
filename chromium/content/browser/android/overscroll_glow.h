@@ -22,7 +22,7 @@ namespace content {
 
 /* |OverscrollGlow| mirrors its Android counterpart, OverscrollGlow.java.
  * Conscious tradeoffs were made to align this as closely as possible with the
- * original Android java version.
+ * original Android Java version.
  */
 class OverscrollGlow {
  public:
@@ -43,30 +43,29 @@ class OverscrollGlow {
   void Disable();
 
   // Effect layers will be attached to |overscrolling_layer| if necessary.
-  // |overscroll| is the accumulated overscroll for the current gesture.
-  // |velocity| is the instantaneous velocity for the overscroll.
+  // |accumulated_overscroll| and |overscroll_delta| are in device pixels, while
+  // |velocity| is in device pixels / second.
   // Returns true if the effect still needs animation ticks.
   bool OnOverscrolled(cc::Layer* overscrolling_layer,
                       base::TimeTicks current_time,
-                      gfx::Vector2dF overscroll,
+                      gfx::Vector2dF accumulated_overscroll,
+                      gfx::Vector2dF overscroll_delta,
                       gfx::Vector2dF velocity);
 
   // Returns true if the effect still needs animation ticks.
   // Note: The effect will detach itself when no further animation is required.
   bool Animate(base::TimeTicks current_time);
 
-  // Horizontal overscroll will be ignored when false.
-  void set_horizontal_overscroll_enabled(bool enabled) {
-    horizontal_overscroll_enabled_ = enabled;
-  }
-  // Vertical overscroll will be ignored when false.
-  void set_vertical_overscroll_enabled(bool enabled) {
-    vertical_overscroll_enabled_ = enabled;
-  }
-  // The size of the layer for which edges will be animated.
-  void set_size(gfx::SizeF size) {
-    size_ = size;
-  }
+  // Update the effect according to the most recent display parameters,
+  // Note: All dimensions are in device pixels.
+  struct DisplayParameters {
+    DisplayParameters();
+    gfx::SizeF size;
+    float edge_offsets[EdgeEffect::EDGE_COUNT];
+    float device_scale_factor;
+  };
+  void UpdateDisplayParameters(const DisplayParameters& params);
+
 
  private:
   enum Axis { AXIS_X, AXIS_Y };
@@ -78,12 +77,11 @@ class OverscrollGlow {
   bool NeedsAnimate() const;
   void UpdateLayerAttachment(cc::Layer* parent);
   void Detach();
-  void Pull(base::TimeTicks current_time,
-            gfx::Vector2dF added_overscroll);
+  void Pull(base::TimeTicks current_time, gfx::Vector2dF overscroll_delta);
   void Absorb(base::TimeTicks current_time,
               gfx::Vector2dF velocity,
-              gfx::Vector2dF overscroll,
-              gfx::Vector2dF old_overscroll);
+              bool x_overscroll_started,
+              bool y_overscroll_started);
   void Release(base::TimeTicks current_time);
   void ReleaseAxis(Axis axis, base::TimeTicks current_time);
 
@@ -91,13 +89,9 @@ class OverscrollGlow {
 
   scoped_ptr<EdgeEffect> edge_effects_[EdgeEffect::EDGE_COUNT];
 
+  DisplayParameters display_params_;
   bool enabled_;
   bool initialized_;
-  gfx::SizeF size_;
-  gfx::Vector2dF old_overscroll_;
-  gfx::Vector2dF old_velocity_;
-  bool horizontal_overscroll_enabled_;
-  bool vertical_overscroll_enabled_;
 
   scoped_refptr<cc::Layer> root_layer_;
 

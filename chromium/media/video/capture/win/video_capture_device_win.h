@@ -33,19 +33,45 @@ class VideoCaptureDeviceWin
       public VideoCaptureDevice,
       public SinkFilterObserver {
  public:
+  // A utility class that wraps the AM_MEDIA_TYPE type and guarantees that
+  // we free the structure when exiting the scope.  DCHECKing is also done to
+  // avoid memory leaks.
+  class ScopedMediaType {
+   public:
+    ScopedMediaType() : media_type_(NULL) {}
+    ~ScopedMediaType() { Free(); }
+
+    AM_MEDIA_TYPE* operator->() { return media_type_; }
+    AM_MEDIA_TYPE* get() { return media_type_; }
+    void Free();
+    AM_MEDIA_TYPE** Receive();
+
+   private:
+    void FreeMediaType(AM_MEDIA_TYPE* mt);
+    void DeleteMediaType(AM_MEDIA_TYPE* mt);
+
+    AM_MEDIA_TYPE* media_type_;
+  };
+
+  static HRESULT GetDeviceFilter(const Name& device_name,
+                                 IBaseFilter** filter);
+  static bool PinMatchesCategory(IPin* pin, REFGUID category);
+  static base::win::ScopedComPtr<IPin> GetPin(IBaseFilter* filter,
+                                              PIN_DIRECTION pin_dir,
+                                              REFGUID category);
+  static VideoPixelFormat TranslateMediaSubtypeToPixelFormat(
+      const GUID& sub_type);
+
   explicit VideoCaptureDeviceWin(const Name& device_name);
   virtual ~VideoCaptureDeviceWin();
   // Opens the device driver for this device.
-  // This function is used by the static VideoCaptureDevice::Create function.
   bool Init();
 
   // VideoCaptureDevice implementation.
-  virtual void AllocateAndStart(const VideoCaptureParams& params,
-                                scoped_ptr<VideoCaptureDevice::Client> client)
-      OVERRIDE;
+  virtual void AllocateAndStart(
+      const VideoCaptureParams& params,
+      scoped_ptr<VideoCaptureDevice::Client> client) OVERRIDE;
   virtual void StopAndDeAllocate() OVERRIDE;
-
-  static void GetDeviceNames(Names* device_names);
 
  private:
   enum InternalState {
@@ -59,7 +85,8 @@ class VideoCaptureDeviceWin
   virtual void FrameReceived(const uint8* buffer, int length);
 
   bool CreateCapabilityMap();
-  void SetErrorState(const char* reason);
+  void SetAntiFlickerInCaptureFilter();
+  void SetErrorState(const std::string& reason);
 
   Name device_name_;
   InternalState state_;

@@ -4,6 +4,7 @@
 
 #include "ui/base/win/dpi_setup.h"
 
+#include "base/command_line.h"
 #include "ui/base/layout.h"
 #include "ui/gfx/display.h"
 #include "ui/gfx/win/dpi.h"

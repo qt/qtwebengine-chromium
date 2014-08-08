@@ -17,8 +17,12 @@ namespace media {
 
 class TextTrackConfig;
 
-class MEDIA_EXPORT DemuxerHost : public DataSourceHost {
+class MEDIA_EXPORT DemuxerHost {
  public:
+  // Notify the host that time range [start,end] has been buffered.
+  virtual void AddBufferedTimeRange(base::TimeDelta start,
+                                    base::TimeDelta end) = 0;
+
   // Sets the duration of the media in microseconds.
   // Duration may be kInfiniteDuration() if the duration is not known.
   virtual void SetDuration(base::TimeDelta duration) = 0;
@@ -40,6 +44,12 @@ class MEDIA_EXPORT DemuxerHost : public DataSourceHost {
 
 class MEDIA_EXPORT Demuxer {
  public:
+  enum Liveness {
+    LIVENESS_UNKNOWN,
+    LIVENESS_RECORDED,
+    LIVENESS_LIVE,
+  };
+
   // A new potentially encrypted stream has been parsed.
   // First parameter - The type of initialization data.
   // Second parameter - The initialization data associated with the stream.
@@ -68,20 +78,20 @@ class MEDIA_EXPORT Demuxer {
   // call any method (including Stop()) after a demuxer has stopped.
   virtual void Stop(const base::Closure& callback) = 0;
 
-  // This method is called from the pipeline when the audio renderer
-  // is disabled. Demuxers can ignore the notification if they do not
-  // need to react to this event.
-  //
-  // TODO(acolwell): Change to generic DisableStream(DemuxerStream::Type).
-  // TODO(scherkus): this might not be needed http://crbug.com/234708
-  virtual void OnAudioRendererDisabled() = 0;
-
   // Returns the first stream of the given stream type (which is not allowed
   // to be DemuxerStream::TEXT), or NULL if that type of stream is not present.
   virtual DemuxerStream* GetStream(DemuxerStream::Type type) = 0;
 
   // Returns the starting time for the media file.
   virtual base::TimeDelta GetStartTime() const = 0;
+
+  // Returns Time represented by presentation timestamp 0.
+  // If the timstamps are not associated with a Time, then
+  // a null Time is returned.
+  virtual base::Time GetTimelineOffset() const = 0;
+
+  // Returns liveness of the stream, i.e. whether it is recorded or live.
+  virtual Liveness GetLiveness() const = 0;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(Demuxer);

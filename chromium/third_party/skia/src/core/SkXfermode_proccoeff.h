@@ -2,7 +2,8 @@
 #define SkXfermode_proccoeff_DEFINED
 
 #include "SkXfermode.h"
-#include "SkFlattenableBuffers.h"
+#include "SkReadBuffer.h"
+#include "SkWriteBuffer.h"
 
 struct ProcCoeff {
     SkXfermodeProc      fProc;
@@ -12,15 +13,18 @@ struct ProcCoeff {
 
 #define CANNOT_USE_COEFF    SkXfermode::Coeff(-1)
 
-class SkProcCoeffXfermode : public SkProcXfermode {
+class SK_API SkProcCoeffXfermode : public SkXfermode {
 public:
-    SkProcCoeffXfermode(const ProcCoeff& rec, Mode mode)
-            : INHERITED(rec.fProc) {
-        fMode = mode;
-        // these may be valid, or may be CANNOT_USE_COEFF
-        fSrcCoeff = rec.fSC;
-        fDstCoeff = rec.fDC;
+    static SkProcCoeffXfermode* Create(const ProcCoeff& rec, Mode mode) {
+        return SkNEW_ARGS(SkProcCoeffXfermode, (rec, mode));
     }
+
+    virtual void xfer32(SkPMColor dst[], const SkPMColor src[], int count,
+                        const SkAlpha aa[]) const SK_OVERRIDE;
+    virtual void xfer16(uint16_t dst[], const SkPMColor src[], int count,
+                        const SkAlpha aa[]) const SK_OVERRIDE;
+    virtual void xferA8(SkAlpha dst[], const SkPMColor src[], int count,
+                        const SkAlpha aa[]) const SK_OVERRIDE;
 
     virtual bool asMode(Mode* mode) const SK_OVERRIDE;
 
@@ -31,23 +35,32 @@ public:
                              GrTexture* background) const SK_OVERRIDE;
 #endif
 
-    SK_DEVELOPER_TO_STRING()
+    SK_TO_STRING_OVERRIDE()
     SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(SkProcCoeffXfermode)
 
 protected:
-    SkProcCoeffXfermode(SkFlattenableReadBuffer& buffer);
-
-    virtual void flatten(SkFlattenableWriteBuffer& buffer) const SK_OVERRIDE;
-
-    Mode getMode() const {
-        return fMode;
+    SkProcCoeffXfermode(const ProcCoeff& rec, Mode mode) {
+        fMode = mode;
+        fProc = rec.fProc;
+        // these may be valid, or may be CANNOT_USE_COEFF
+        fSrcCoeff = rec.fSC;
+        fDstCoeff = rec.fDC;
     }
 
-private:
-    Mode    fMode;
-    Coeff   fSrcCoeff, fDstCoeff;
+    SkProcCoeffXfermode(SkReadBuffer& buffer);
 
-    typedef SkProcXfermode INHERITED;
+    virtual void flatten(SkWriteBuffer& buffer) const SK_OVERRIDE;
+
+    Mode getMode() const { return fMode; }
+
+    SkXfermodeProc getProc() const { return fProc; }
+
+private:
+    SkXfermodeProc  fProc;
+    Mode            fMode;
+    Coeff           fSrcCoeff, fDstCoeff;
+
+    typedef SkXfermode INHERITED;
 };
 
 #endif // #ifndef SkXfermode_proccoeff_DEFINED

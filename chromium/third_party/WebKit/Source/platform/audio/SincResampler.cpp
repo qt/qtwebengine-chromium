@@ -33,9 +33,10 @@
 #include "platform/audio/SincResampler.h"
 
 #include "platform/audio/AudioBus.h"
+#include "wtf/CPU.h"
 #include "wtf/MathExtras.h"
 
-#ifdef __SSE2__
+#if CPU(X86) || CPU(X86_64)
 #include <emmintrin.h>
 #endif
 
@@ -119,7 +120,7 @@ void SincResampler::initializeKernel()
 
             // Compute Blackman window, matching the offset of the sinc().
             double x = (i - subsampleOffset) / n;
-            double window = a0 - a1 * cos(2.0 * piDouble * x) + a2 * cos(4.0 * piDouble * x);
+            double window = a0 - a1 * cos(twoPiDouble * x) + a2 * cos(twoPiDouble * 2.0 * x);
 
             // Window the sinc() function and store at the correct offset.
             m_kernelStorage[i + offsetIndex * m_kernelSize] = sinc * window;
@@ -146,7 +147,7 @@ namespace {
 
 // BufferSourceProvider is an AudioSourceProvider wrapping an in-memory buffer.
 
-class BufferSourceProvider : public AudioSourceProvider {
+class BufferSourceProvider FINAL : public AudioSourceProvider {
 public:
     BufferSourceProvider(const float* source, size_t numberOfSourceFrames)
         : m_source(source)
@@ -155,7 +156,7 @@ public:
     }
 
     // Consumes samples from the in-memory buffer.
-    virtual void provideInput(AudioBus* bus, size_t framesToProcess)
+    virtual void provideInput(AudioBus* bus, size_t framesToProcess) OVERRIDE
     {
         ASSERT(m_source && bus);
         if (!m_source || !bus)
@@ -262,7 +263,7 @@ void SincResampler::process(AudioSourceProvider* sourceProvider, float* destinat
             {
                 float input;
 
-#ifdef __SSE2__
+#if CPU(X86) || CPU(X86_64)
                 // If the sourceP address is not 16-byte aligned, the first several frames (at most three) should be processed seperately.
                 while ((reinterpret_cast<uintptr_t>(inputP) & 0x0F) && n) {
                     CONVOLVE_ONE_SAMPLE

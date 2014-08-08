@@ -30,7 +30,7 @@ inline GrGLubyte verb_to_gl_path_cmd(SkPath::Verb verb) {
     GR_STATIC_ASSERT(4 == SkPath::kCubic_Verb);
     GR_STATIC_ASSERT(5 == SkPath::kClose_Verb);
 
-    SkASSERT(verb >= 0 && (size_t)verb < GR_ARRAY_COUNT(gTable));
+    SkASSERT(verb >= 0 && (size_t)verb < SK_ARRAY_COUNT(gTable));
     return gTable[verb];
 }
 
@@ -50,7 +50,7 @@ inline int num_pts(SkPath::Verb verb) {
     GR_STATIC_ASSERT(4 == SkPath::kCubic_Verb);
     GR_STATIC_ASSERT(5 == SkPath::kClose_Verb);
 
-    SkASSERT(verb >= 0 && (size_t)verb < GR_ARRAY_COUNT(gTable));
+    SkASSERT(verb >= 0 && (size_t)verb < SK_ARRAY_COUNT(gTable));
     return gTable[verb];
 }
 #endif
@@ -65,7 +65,7 @@ inline GrGLenum join_to_gl_join(SkPaint::Join join) {
     GR_STATIC_ASSERT(0 == SkPaint::kMiter_Join);
     GR_STATIC_ASSERT(1 == SkPaint::kRound_Join);
     GR_STATIC_ASSERT(2 == SkPaint::kBevel_Join);
-    GR_STATIC_ASSERT(GR_ARRAY_COUNT(gSkJoinsToGrGLJoins) == SkPaint::kJoinCount);
+    GR_STATIC_ASSERT(SK_ARRAY_COUNT(gSkJoinsToGrGLJoins) == SkPaint::kJoinCount);
 }
 
 inline GrGLenum cap_to_gl_cap(SkPaint::Cap cap) {
@@ -78,7 +78,7 @@ inline GrGLenum cap_to_gl_cap(SkPaint::Cap cap) {
     GR_STATIC_ASSERT(0 == SkPaint::kButt_Cap);
     GR_STATIC_ASSERT(1 == SkPaint::kRound_Cap);
     GR_STATIC_ASSERT(2 == SkPaint::kSquare_Cap);
-    GR_STATIC_ASSERT(GR_ARRAY_COUNT(gSkCapsToGrGLCaps) == SkPaint::kCapCount);
+    GR_STATIC_ASSERT(SK_ARRAY_COUNT(gSkCapsToGrGLCaps) == SkPaint::kCapCount);
 }
 
 }
@@ -87,12 +87,9 @@ static const bool kIsWrapped = false; // The constructor creates the GL path obj
 
 GrGLPath::GrGLPath(GrGpuGL* gpu, const SkPath& path, const SkStrokeRec& stroke)
     : INHERITED(gpu, kIsWrapped, path, stroke) {
-#ifndef SK_SCALAR_IS_FLOAT
-    GrCrash("Assumes scalar is float.");
-#endif
     SkASSERT(!path.isEmpty());
 
-    GL_CALL_RET(fPathID, GenPaths(1));
+    fPathID = gpu->createGLPathObject();
 
     SkSTArray<16, GrGLubyte, true> pathCommands;
     SkSTArray<16, SkPoint, true> pathPoints;
@@ -138,7 +135,7 @@ GrGLPath::~GrGLPath() {
 
 void GrGLPath::onRelease() {
     if (0 != fPathID && !this->isWrapped()) {
-        GL_CALL(DeletePaths(fPathID, 1));
+        static_cast<GrGpuGL*>(this->getGpu())->deleteGLPathObject(fPathID);
         fPathID = 0;
     }
 

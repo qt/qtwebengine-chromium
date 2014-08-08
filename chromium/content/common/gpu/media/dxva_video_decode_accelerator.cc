@@ -19,7 +19,6 @@
 #include "base/command_line.h"
 #include "base/debug/trace_event.h"
 #include "base/logging.h"
-#include "base/memory/scoped_handle.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/shared_memory.h"
 #include "base/message_loop/message_loop.h"
@@ -194,6 +193,9 @@ struct DXVAVideoDecodeAccelerator::DXVAPictureBuffer {
   media::PictureBuffer picture_buffer_;
   EGLSurface decoding_surface_;
   base::win::ScopedComPtr<IDirect3DTexture9> decoding_texture_;
+  // Set to true if RGB is supported by the texture.
+  // Defaults to true.
+  bool use_rgb_;
 
   DISALLOW_COPY_AND_ASSIGN(DXVAPictureBuffer);
 };
@@ -208,10 +210,14 @@ DXVAVideoDecodeAccelerator::DXVAPictureBuffer::Create(
 
   EGLDisplay egl_display = gfx::GLSurfaceEGL::GetHardwareDisplay();
 
+  EGLint use_rgb = 1;
+  eglGetConfigAttrib(egl_display, egl_config, EGL_BIND_TO_TEXTURE_RGB,
+                     &use_rgb);
+
   EGLint attrib_list[] = {
     EGL_WIDTH, buffer.size().width(),
     EGL_HEIGHT, buffer.size().height(),
-    EGL_TEXTURE_FORMAT, EGL_TEXTURE_RGB,
+    EGL_TEXTURE_FORMAT, use_rgb ? EGL_TEXTURE_RGB : EGL_TEXTURE_RGBA,
     EGL_TEXTURE_TARGET, EGL_TEXTURE_2D,
     EGL_NONE
   };
@@ -240,13 +246,14 @@ DXVAVideoDecodeAccelerator::DXVAPictureBuffer::Create(
       buffer.size().height(),
       1,
       D3DUSAGE_RENDERTARGET,
-      D3DFMT_X8R8G8B8,
+      use_rgb ? D3DFMT_X8R8G8B8 : D3DFMT_A8R8G8B8,
       D3DPOOL_DEFAULT,
       picture_buffer->decoding_texture_.Receive(),
       &share_handle);
 
   RETURN_ON_HR_FAILURE(hr, "Failed to create texture",
                        linked_ptr<DXVAPictureBuffer>(NULL));
+  picture_buffer->use_rgb_ = !!use_rgb;
   return picture_buffer;
 }
 
@@ -254,7 +261,8 @@ DXVAVideoDecodeAccelerator::DXVAPictureBuffer::DXVAPictureBuffer(
     const media::PictureBuffer& buffer)
     : available_(true),
       picture_buffer_(buffer),
-      decoding_surface_(NULL) {
+      decoding_surface_(NULL),
+      use_rgb_(true) {
 }
 
 DXVAVideoDecodeAccelerator::DXVAPictureBuffer::~DXVAPictureBuffer() {
@@ -303,7 +311,8 @@ bool DXVAVideoDecodeAccelerator::DXVAPictureBuffer::
   }
 
   hr = decoder.d3d9_->CheckDeviceFormatConversion(
-      D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, surface_desc.Format, D3DFMT_X8R8G8B8);
+      D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, surface_desc.Format,
+      use_rgb_ ? D3DFMT_X8R8G8B8 : D3DFMT_A8R8G8B8);
   RETURN_ON_HR_FAILURE(hr, "Device does not support format converision", false);
 
   // This function currently executes in the context of IPC handlers in the
@@ -413,15 +422,15 @@ bool DXVAVideoDecodeAccelerator::CreateD3DDevManager() {
 }
 
 DXVAVideoDecodeAccelerator::DXVAVideoDecodeAccelerator(
-    media::VideoDecodeAccelerator::Client* client,
     const base::Callback<bool(void)>& make_context_current)
-    : client_(client),
+    : client_(NULL),
       dev_manager_reset_token_(0),
       egl_config_(NULL),
       state_(kUninitialized),
       pictures_requested_(false),
       inputs_before_decode_(0),
-      make_context_current_(make_context_current) {
+      make_context_current_(make_context_current),
+      weak_this_factory_(this) {
   memset(&input_stream_info_, 0, sizeof(input_stream_info_));
   memset(&output_stream_info_, 0, sizeof(output_stream_info_));
 }
@@ -430,8 +439,11 @@ DXVAVideoDecodeAccelerator::~DXVAVideoDecodeAccelerator() {
   client_ = NULL;
 }
 
-bool DXVAVideoDecodeAccelerator::Initialize(media::VideoCodecProfile profile) {
+bool DXVAVideoDecodeAccelerator::Initialize(media::VideoCodecProfile profile,
+                                            Client* client) {
   DCHECK(CalledOnValidThread());
+
+  client_ = client;
 
   // Not all versions of Windows 7 and later include Media Foundation DLLs.
   // Instead of crashing while delay loading the DLL when calling MFStartup()
@@ -486,9 +498,6 @@ bool DXVAVideoDecodeAccelerator::Initialize(media::VideoCodecProfile profile) {
       PLATFORM_FAILURE, false);
 
   state_ = kNormal;
-  base::MessageLoop::current()->PostTask(FROM_HERE, base::Bind(
-      &DXVAVideoDecodeAccelerator::NotifyInitializeDone,
-      base::AsWeakPtr(this)));
   return true;
 }
 
@@ -598,8 +607,10 @@ void DXVAVideoDecodeAccelerator::Reset() {
   RETURN_AND_NOTIFY_ON_FAILURE(SendMFTMessage(MFT_MESSAGE_COMMAND_FLUSH, 0),
       "Reset: Failed to send message.", PLATFORM_FAILURE,);
 
-  base::MessageLoop::current()->PostTask(FROM_HERE, base::Bind(
-      &DXVAVideoDecodeAccelerator::NotifyResetDone, base::AsWeakPtr(this)));
+  base::MessageLoop::current()->PostTask(
+      FROM_HERE,
+      base::Bind(&DXVAVideoDecodeAccelerator::NotifyResetDone,
+                 weak_this_factory_.GetWeakPtr()));
 
   state_ = DXVAVideoDecodeAccelerator::kNormal;
 }
@@ -608,6 +619,10 @@ void DXVAVideoDecodeAccelerator::Destroy() {
   DCHECK(CalledOnValidThread());
   Invalidate();
   delete this;
+}
+
+bool DXVAVideoDecodeAccelerator::CanDecodeOnIOThread() {
+  return false;
 }
 
 bool DXVAVideoDecodeAccelerator::InitDecoder(media::VideoCodecProfile profile) {
@@ -872,9 +887,12 @@ bool DXVAVideoDecodeAccelerator::ProcessOutputSample(IMFSample* sample) {
   RETURN_ON_HR_FAILURE(hr, "Failed to get surface description", false);
 
   // Go ahead and request picture buffers.
-  base::MessageLoop::current()->PostTask(FROM_HERE, base::Bind(
-      &DXVAVideoDecodeAccelerator::RequestPictureBuffers,
-      base::AsWeakPtr(this), surface_desc.Width, surface_desc.Height));
+  base::MessageLoop::current()->PostTask(
+      FROM_HERE,
+      base::Bind(&DXVAVideoDecodeAccelerator::RequestPictureBuffers,
+                 weak_this_factory_.GetWeakPtr(),
+                 surface_desc.Width,
+                 surface_desc.Height));
 
   pictures_requested_ = true;
   return true;
@@ -926,9 +944,11 @@ void DXVAVideoDecodeAccelerator::ProcessPendingSamples() {
 
       media::Picture output_picture(index->second->id(),
                                     sample_info.input_buffer_id);
-      base::MessageLoop::current()->PostTask(FROM_HERE, base::Bind(
-          &DXVAVideoDecodeAccelerator::NotifyPictureReady,
-          base::AsWeakPtr(this), output_picture));
+      base::MessageLoop::current()->PostTask(
+          FROM_HERE,
+          base::Bind(&DXVAVideoDecodeAccelerator::NotifyPictureReady,
+                     weak_this_factory_.GetWeakPtr(),
+                     output_picture));
 
       index->second->set_available(false);
       pending_output_samples_.pop_front();
@@ -936,9 +956,10 @@ void DXVAVideoDecodeAccelerator::ProcessPendingSamples() {
   }
 
   if (!pending_input_buffers_.empty() && pending_output_samples_.empty()) {
-    base::MessageLoop::current()->PostTask(FROM_HERE, base::Bind(
-        &DXVAVideoDecodeAccelerator::DecodePendingInputBuffers,
-        base::AsWeakPtr(this)));
+    base::MessageLoop::current()->PostTask(
+        FROM_HERE,
+        base::Bind(&DXVAVideoDecodeAccelerator::DecodePendingInputBuffers,
+                   weak_this_factory_.GetWeakPtr()));
   }
 }
 
@@ -958,17 +979,13 @@ void DXVAVideoDecodeAccelerator::StopOnError(
 void DXVAVideoDecodeAccelerator::Invalidate() {
   if (state_ == kUninitialized)
     return;
+  weak_this_factory_.InvalidateWeakPtrs();
   output_picture_buffers_.clear();
   pending_output_samples_.clear();
   pending_input_buffers_.clear();
   decoder_.Release();
   MFShutdown();
   state_ = kUninitialized;
-}
-
-void DXVAVideoDecodeAccelerator::NotifyInitializeDone() {
-  if (client_)
-    client_->NotifyInitializeDone();
 }
 
 void DXVAVideoDecodeAccelerator::NotifyInputBufferRead(int input_buffer_id) {
@@ -1045,8 +1062,10 @@ void DXVAVideoDecodeAccelerator::FlushInternal() {
       return;
   }
 
-  base::MessageLoop::current()->PostTask(FROM_HERE, base::Bind(
-      &DXVAVideoDecodeAccelerator::NotifyFlushDone, base::AsWeakPtr(this)));
+  base::MessageLoop::current()->PostTask(
+      FROM_HERE,
+      base::Bind(&DXVAVideoDecodeAccelerator::NotifyFlushDone,
+                 weak_this_factory_.GetWeakPtr()));
 
   state_ = kNormal;
 }
@@ -1054,7 +1073,7 @@ void DXVAVideoDecodeAccelerator::FlushInternal() {
 void DXVAVideoDecodeAccelerator::DecodeInternal(
     const base::win::ScopedComPtr<IMFSample>& sample) {
   DCHECK(CalledOnValidThread());
-  
+
   if (state_ == kUninitialized)
     return;
 
@@ -1096,9 +1115,10 @@ void DXVAVideoDecodeAccelerator::DecodeInternal(
     if (hr == MF_E_NOTACCEPTING) {
       pending_input_buffers_.push_back(sample);
       if (pending_output_samples_.empty()) {
-        base::MessageLoop::current()->PostTask(FROM_HERE, base::Bind(
-            &DXVAVideoDecodeAccelerator::DecodePendingInputBuffers,
-            base::AsWeakPtr(this)));
+        base::MessageLoop::current()->PostTask(
+            FROM_HERE,
+            base::Bind(&DXVAVideoDecodeAccelerator::DecodePendingInputBuffers,
+                       weak_this_factory_.GetWeakPtr()));
       }
       return;
     }
@@ -1125,20 +1145,27 @@ void DXVAVideoDecodeAccelerator::DecodeInternal(
   // decoder to emit an output packet for every input packet.
   // http://code.google.com/p/chromium/issues/detail?id=108121
   // http://code.google.com/p/chromium/issues/detail?id=150925
-  base::MessageLoop::current()->PostTask(FROM_HERE, base::Bind(
-      &DXVAVideoDecodeAccelerator::NotifyInputBufferRead,
-      base::AsWeakPtr(this), input_buffer_id));
+  base::MessageLoop::current()->PostTask(
+      FROM_HERE,
+      base::Bind(&DXVAVideoDecodeAccelerator::NotifyInputBufferRead,
+                 weak_this_factory_.GetWeakPtr(),
+                 input_buffer_id));
 }
 
 void DXVAVideoDecodeAccelerator::HandleResolutionChanged(int width,
                                                          int height) {
-  base::MessageLoop::current()->PostTask(FROM_HERE, base::Bind(
-      &DXVAVideoDecodeAccelerator::DismissStaleBuffers,
-      base::AsWeakPtr(this), output_picture_buffers_));
+  base::MessageLoop::current()->PostTask(
+      FROM_HERE,
+      base::Bind(&DXVAVideoDecodeAccelerator::DismissStaleBuffers,
+                 weak_this_factory_.GetWeakPtr(),
+                 output_picture_buffers_));
 
-  base::MessageLoop::current()->PostTask(FROM_HERE, base::Bind(
-      &DXVAVideoDecodeAccelerator::RequestPictureBuffers,
-      base::AsWeakPtr(this), width, height));
+  base::MessageLoop::current()->PostTask(
+      FROM_HERE,
+      base::Bind(&DXVAVideoDecodeAccelerator::RequestPictureBuffers,
+                 weak_this_factory_.GetWeakPtr(),
+                 width,
+                 height));
 
   output_picture_buffers_.clear();
 }

@@ -7,6 +7,7 @@
 #include <cerrno>
 
 #include "base/basictypes.h"
+#include "base/files/file.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/metrics/histogram.h"
@@ -21,7 +22,6 @@
 #include "third_party/leveldatabase/env_chromium.h"
 #include "third_party/leveldatabase/env_idb.h"
 #include "third_party/leveldatabase/src/helpers/memenv/memenv.h"
-#include "third_party/leveldatabase/src/include/leveldb/comparator.h"
 #include "third_party/leveldatabase/src/include/leveldb/db.h"
 #include "third_party/leveldatabase/src/include/leveldb/env.h"
 #include "third_party/leveldatabase/src/include/leveldb/slice.h"
@@ -54,27 +54,26 @@ static StringPiece MakeStringPiece(const leveldb::Slice& s) {
   return StringPiece(s.data(), s.size());
 }
 
-class ComparatorAdapter : public leveldb::Comparator {
- public:
-  explicit ComparatorAdapter(const LevelDBComparator* comparator)
-      : comparator_(comparator) {}
+LevelDBDatabase::ComparatorAdapter::ComparatorAdapter(
+    const LevelDBComparator* comparator)
+    : comparator_(comparator) {}
 
-  virtual int Compare(const leveldb::Slice& a, const leveldb::Slice& b) const
-      OVERRIDE {
-    return comparator_->Compare(MakeStringPiece(a), MakeStringPiece(b));
-  }
+int LevelDBDatabase::ComparatorAdapter::Compare(const leveldb::Slice& a,
+                                                const leveldb::Slice& b) const {
+  return comparator_->Compare(MakeStringPiece(a), MakeStringPiece(b));
+}
 
-  virtual const char* Name() const OVERRIDE { return comparator_->Name(); }
+const char* LevelDBDatabase::ComparatorAdapter::Name() const {
+  return comparator_->Name();
+}
 
-  // TODO(jsbell): Support the methods below in the future.
-  virtual void FindShortestSeparator(std::string* start,
-                                     const leveldb::Slice& limit) const
-      OVERRIDE {}
-  virtual void FindShortSuccessor(std::string* key) const OVERRIDE {}
+// TODO(jsbell): Support the methods below in the future.
+void LevelDBDatabase::ComparatorAdapter::FindShortestSeparator(
+    std::string* start,
+    const leveldb::Slice& limit) const {}
 
- private:
-  const LevelDBComparator* comparator_;
-};
+void LevelDBDatabase::ComparatorAdapter::FindShortSuccessor(
+    std::string* key) const {}
 
 LevelDBSnapshot::LevelDBSnapshot(LevelDBDatabase* db)
     : db_(db->db_.get()), snapshot_(db_->GetSnapshot()) {}
@@ -109,13 +108,11 @@ static leveldb::Status OpenDB(leveldb::Comparator* comparator,
   return leveldb::DB::Open(options, path.AsUTF8Unsafe(), db);
 }
 
-bool LevelDBDatabase::Destroy(const base::FilePath& file_name) {
+leveldb::Status LevelDBDatabase::Destroy(const base::FilePath& file_name) {
   leveldb::Options options;
   options.env = leveldb::IDBEnv();
   // ChromiumEnv assumes UTF8, converts back to FilePath before using.
-  const leveldb::Status s =
-      leveldb::DestroyDB(file_name.AsUTF8Unsafe(), options);
-  return s.ok();
+  return leveldb::DestroyDB(file_name.AsUTF8Unsafe(), options);
 }
 
 namespace {
@@ -127,8 +124,10 @@ class LockImpl : public LevelDBLock {
  private:
   leveldb::Env* env_;
   leveldb::FileLock* lock_;
+
+  DISALLOW_COPY_AND_ASSIGN(LockImpl);
 };
-}
+}  // namespace
 
 scoped_ptr<LevelDBLock> LevelDBDatabase::LockForTesting(
     const base::FilePath& file_name) {
@@ -191,14 +190,14 @@ static void ParseAndHistogramIOErrorDetails(const std::string& histogram_name,
   std::string error_histogram_name(histogram_name);
 
   if (result == leveldb_env::METHOD_AND_PFE) {
-    DCHECK(error < 0);
+    DCHECK_LT(error, 0);
     error_histogram_name.append(std::string(".PFE.") +
                                 leveldb_env::MethodIDToString(method));
     base::LinearHistogram::FactoryGet(
         error_histogram_name,
         1,
-        -base::PLATFORM_FILE_ERROR_MAX,
-        -base::PLATFORM_FILE_ERROR_MAX + 1,
+        -base::File::FILE_ERROR_MAX,
+        -base::File::FILE_ERROR_MAX + 1,
         base::HistogramBase::kUmaTargetedHistogramFlag)->Add(-error);
   } else if (result == leveldb_env::METHOD_AND_ERRNO) {
     error_histogram_name.append(std::string(".Errno.") +
@@ -216,7 +215,7 @@ static void ParseAndHistogramCorruptionDetails(
     const std::string& histogram_name,
     const leveldb::Status& status) {
   int error = leveldb_env::GetCorruptionCode(status);
-  DCHECK(error >= 0);
+  DCHECK_GE(error, 0);
   std::string corruption_histogram_name(histogram_name);
   corruption_histogram_name.append(".Corruption");
   const int kNumPatterns = leveldb_env::GetNumCorruptionCodes();
@@ -318,35 +317,32 @@ scoped_ptr<LevelDBDatabase> LevelDBDatabase::OpenInMemory(
   return result.Pass();
 }
 
-bool LevelDBDatabase::Put(const StringPiece& key, std::string* value) {
+leveldb::Status LevelDBDatabase::Put(const StringPiece& key,
+                                     std::string* value) {
   leveldb::WriteOptions write_options;
   write_options.sync = kSyncWrites;
 
   const leveldb::Status s =
       db_->Put(write_options, MakeSlice(key), MakeSlice(*value));
-  if (s.ok())
-    return true;
-  LOG(ERROR) << "LevelDB put failed: " << s.ToString();
-  return false;
+  if (!s.ok())
+    LOG(ERROR) << "LevelDB put failed: " << s.ToString();
+  return s;
 }
 
-bool LevelDBDatabase::Remove(const StringPiece& key) {
+leveldb::Status LevelDBDatabase::Remove(const StringPiece& key) {
   leveldb::WriteOptions write_options;
   write_options.sync = kSyncWrites;
 
   const leveldb::Status s = db_->Delete(write_options, MakeSlice(key));
-  if (s.ok())
-    return true;
-  if (s.IsNotFound())
-    return false;
-  LOG(ERROR) << "LevelDB remove failed: " << s.ToString();
-  return false;
+  if (!s.IsNotFound())
+    LOG(ERROR) << "LevelDB remove failed: " << s.ToString();
+  return s;
 }
 
-bool LevelDBDatabase::Get(const StringPiece& key,
-                          std::string* value,
-                          bool* found,
-                          const LevelDBSnapshot* snapshot) {
+leveldb::Status LevelDBDatabase::Get(const StringPiece& key,
+                                     std::string* value,
+                                     bool* found,
+                                     const LevelDBSnapshot* snapshot) {
   *found = false;
   leveldb::ReadOptions read_options;
   read_options.verify_checksums = true;  // TODO(jsbell): Disable this if the
@@ -356,26 +352,26 @@ bool LevelDBDatabase::Get(const StringPiece& key,
   const leveldb::Status s = db_->Get(read_options, MakeSlice(key), value);
   if (s.ok()) {
     *found = true;
-    return true;
+    return s;
   }
   if (s.IsNotFound())
-    return true;
+    return leveldb::Status::OK();
   HistogramLevelDBError("WebCore.IndexedDB.LevelDBReadErrors", s);
   LOG(ERROR) << "LevelDB get failed: " << s.ToString();
-  return false;
+  return s;
 }
 
-bool LevelDBDatabase::Write(const LevelDBWriteBatch& write_batch) {
+leveldb::Status LevelDBDatabase::Write(const LevelDBWriteBatch& write_batch) {
   leveldb::WriteOptions write_options;
   write_options.sync = kSyncWrites;
 
   const leveldb::Status s =
       db_->Write(write_options, write_batch.write_batch_.get());
-  if (s.ok())
-    return true;
-  HistogramLevelDBError("WebCore.IndexedDB.LevelDBWriteErrors", s);
-  LOG(ERROR) << "LevelDB write failed: " << s.ToString();
-  return false;
+  if (!s.ok()) {
+    HistogramLevelDBError("WebCore.IndexedDB.LevelDBWriteErrors", s);
+    LOG(ERROR) << "LevelDB write failed: " << s.ToString();
+  }
+  return s;
 }
 
 namespace {
@@ -384,10 +380,10 @@ class IteratorImpl : public LevelDBIterator {
   virtual ~IteratorImpl() {}
 
   virtual bool IsValid() const OVERRIDE;
-  virtual void SeekToLast() OVERRIDE;
-  virtual void Seek(const StringPiece& target) OVERRIDE;
-  virtual void Next() OVERRIDE;
-  virtual void Prev() OVERRIDE;
+  virtual leveldb::Status SeekToLast() OVERRIDE;
+  virtual leveldb::Status Seek(const StringPiece& target) OVERRIDE;
+  virtual leveldb::Status Next() OVERRIDE;
+  virtual leveldb::Status Prev() OVERRIDE;
   virtual StringPiece Key() const OVERRIDE;
   virtual StringPiece Value() const OVERRIDE;
 
@@ -397,40 +393,46 @@ class IteratorImpl : public LevelDBIterator {
   void CheckStatus();
 
   scoped_ptr<leveldb::Iterator> iterator_;
+
+  DISALLOW_COPY_AND_ASSIGN(IteratorImpl);
 };
-}
+}  // namespace
 
 IteratorImpl::IteratorImpl(scoped_ptr<leveldb::Iterator> it)
     : iterator_(it.Pass()) {}
 
 void IteratorImpl::CheckStatus() {
-  const leveldb::Status s = iterator_->status();
+  const leveldb::Status& s = iterator_->status();
   if (!s.ok())
     LOG(ERROR) << "LevelDB iterator error: " << s.ToString();
 }
 
 bool IteratorImpl::IsValid() const { return iterator_->Valid(); }
 
-void IteratorImpl::SeekToLast() {
+leveldb::Status IteratorImpl::SeekToLast() {
   iterator_->SeekToLast();
   CheckStatus();
+  return iterator_->status();
 }
 
-void IteratorImpl::Seek(const StringPiece& target) {
+leveldb::Status IteratorImpl::Seek(const StringPiece& target) {
   iterator_->Seek(MakeSlice(target));
   CheckStatus();
+  return iterator_->status();
 }
 
-void IteratorImpl::Next() {
+leveldb::Status IteratorImpl::Next() {
   DCHECK(IsValid());
   iterator_->Next();
   CheckStatus();
+  return iterator_->status();
 }
 
-void IteratorImpl::Prev() {
+leveldb::Status IteratorImpl::Prev() {
   DCHECK(IsValid());
   iterator_->Prev();
   CheckStatus();
+  return iterator_->status();
 }
 
 StringPiece IteratorImpl::Key() const {
@@ -457,5 +459,14 @@ scoped_ptr<LevelDBIterator> LevelDBDatabase::CreateIterator(
 const LevelDBComparator* LevelDBDatabase::Comparator() const {
   return comparator_;
 }
+
+void LevelDBDatabase::Compact(const base::StringPiece& start,
+                              const base::StringPiece& stop) {
+  const leveldb::Slice start_slice = MakeSlice(start);
+  const leveldb::Slice stop_slice = MakeSlice(stop);
+  db_->CompactRange(&start_slice, &stop_slice);
+}
+
+void LevelDBDatabase::CompactAll() { db_->CompactRange(NULL, NULL); }
 
 }  // namespace content

@@ -34,6 +34,7 @@
 #include "modules/webdatabase/SQLCallbackWrapper.h"
 #include "modules/webdatabase/SQLStatement.h"
 #include "modules/webdatabase/SQLTransactionStateMachine.h"
+#include "platform/heap/Handle.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
 
@@ -42,7 +43,7 @@ namespace WebCore {
 class AbstractSQLTransactionBackend;
 class Database;
 class ExceptionState;
-class SQLError;
+class SQLErrorData;
 class SQLStatementCallback;
 class SQLStatementErrorCallback;
 class SQLTransactionCallback;
@@ -50,11 +51,12 @@ class SQLTransactionErrorCallback;
 class SQLValue;
 class VoidCallback;
 
-class SQLTransaction : public SQLTransactionStateMachine<SQLTransaction>, public AbstractSQLTransaction, public ScriptWrappable {
+class SQLTransaction FINAL : public AbstractSQLTransaction, public SQLTransactionStateMachine<SQLTransaction>, public ScriptWrappable {
 public:
-    static PassRefPtr<SQLTransaction> create(Database*, PassOwnPtr<SQLTransactionCallback>,
+    static PassRefPtrWillBeRawPtr<SQLTransaction> create(Database*, PassOwnPtr<SQLTransactionCallback>,
         PassOwnPtr<VoidCallback> successCallback, PassOwnPtr<SQLTransactionErrorCallback>,
         bool readOnly);
+    virtual void trace(Visitor*) OVERRIDE;
 
     void performPendingCallback();
 
@@ -95,14 +97,14 @@ private:
 
     SQLTransactionState nextStateForTransactionError();
 
-    RefPtr<Database> m_database;
-    RefPtr<AbstractSQLTransactionBackend> m_backend;
+    RefPtrWillBeMember<Database> m_database;
+    RefPtrWillBeMember<AbstractSQLTransactionBackend> m_backend;
     SQLCallbackWrapper<SQLTransactionCallback> m_callbackWrapper;
     SQLCallbackWrapper<VoidCallback> m_successCallbackWrapper;
     SQLCallbackWrapper<SQLTransactionErrorCallback> m_errorCallbackWrapper;
 
     bool m_executeSqlAllowed;
-    RefPtr<SQLError> m_transactionError;
+    OwnPtr<SQLErrorData> m_transactionError;
 
     bool m_readOnly;
 };

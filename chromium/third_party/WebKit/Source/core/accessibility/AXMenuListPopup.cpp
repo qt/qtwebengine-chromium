@@ -66,7 +66,8 @@ bool AXMenuListPopup::computeAccessibilityIsIgnored() const
 
 AXMenuListOption* AXMenuListPopup::menuListOptionAXObject(HTMLElement* element) const
 {
-    if (!element->hasTagName(optionTag))
+    ASSERT(element);
+    if (!isHTMLOptionElement(*element))
         return 0;
 
     AXObject* object = document()->axObjectCache()->getOrCreate(MenuListOptionRole);
@@ -98,7 +99,7 @@ void AXMenuListPopup::addChildren()
 
     m_haveChildren = true;
 
-    const Vector<HTMLElement*>& listItems = toHTMLSelectElement(selectNode)->listItems();
+    const WillBeHeapVector<RawPtrWillBeMember<HTMLElement> >& listItems = toHTMLSelectElement(selectNode)->listItems();
     unsigned length = listItems.size();
     for (unsigned i = 0; i < length; i++) {
         AXMenuListOption* option = menuListOptionAXObject(listItems[i]);
@@ -112,6 +113,8 @@ void AXMenuListPopup::addChildren()
 void AXMenuListPopup::childrenChanged()
 {
     AXObjectCache* cache = axObjectCache();
+    if (!cache)
+        return;
     for (size_t i = m_children.size(); i > 0 ; --i) {
         AXObject* child = m_children[i - 1].get();
         // FIXME: How could children end up in here that have no actionElement(), the check

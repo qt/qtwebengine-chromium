@@ -32,6 +32,7 @@
 #define WebInputEvent_h
 
 #include "../platform/WebCommon.h"
+#include "../platform/WebGestureDevice.h"
 #include "../platform/WebRect.h"
 #include "WebTouchPoint.h"
 
@@ -58,15 +59,6 @@ namespace blink {
 
 class WebInputEvent {
 public:
-    WebInputEvent(unsigned sizeParam = sizeof(WebInputEvent))
-    {
-        memset(this, 0, sizeParam);
-        timeStampSeconds = 0.0;
-        size = sizeParam;
-        type = Undefined;
-        modifiers = 0;
-    }
-
     // When we use an input method (or an input method editor), we receive
     // two events for a keypress. The former event is a keydown, which
     // provides a keycode, and the latter is a textinput, which provides
@@ -93,26 +85,32 @@ public:
 
     enum Type {
         Undefined = -1,
+        TypeFirst = Undefined,
 
         // WebMouseEvent
         MouseDown,
+        MouseTypeFirst = MouseDown,
         MouseUp,
         MouseMove,
         MouseEnter,
         MouseLeave,
         ContextMenu,
+        MouseTypeLast = ContextMenu,
 
         // WebMouseWheelEvent
         MouseWheel,
 
         // WebKeyboardEvent
         RawKeyDown,
+        KeyboardTypeFirst = RawKeyDown,
         KeyDown,
         KeyUp,
         Char,
+        KeyboardTypeLast = Char,
 
         // WebGestureEvent
         GestureScrollBegin,
+        GestureTypeFirst = GestureScrollBegin,
         GestureScrollEnd,
         GestureScrollUpdate,
         GestureScrollUpdateWithoutPropagation,
@@ -130,12 +128,17 @@ public:
         GesturePinchBegin,
         GesturePinchEnd,
         GesturePinchUpdate,
+        GestureTypeLast = GesturePinchUpdate,
 
         // WebTouchEvent
         TouchStart,
+        TouchTypeFirst = TouchStart,
         TouchMove,
         TouchEnd,
         TouchCancel,
+        TouchTypeLast = TouchCancel,
+
+        TypeLast = TouchTypeLast
     };
 
     enum Modifiers {
@@ -183,63 +186,35 @@ public:
     // Returns true if the WebInputEvent |type| is a mouse event.
     static bool isMouseEventType(int type)
     {
-        return type == MouseDown
-            || type == MouseUp
-            || type == MouseMove
-            || type == MouseEnter
-            || type == MouseLeave
-            || type == ContextMenu;
+        return MouseTypeFirst <= type && type <= MouseTypeLast;
     }
 
     // Returns true if the WebInputEvent |type| is a keyboard event.
     static bool isKeyboardEventType(int type)
     {
-        return type == RawKeyDown
-            || type == KeyDown
-            || type == KeyUp
-            || type == Char;
+        return KeyboardTypeFirst <= type && type <= KeyboardTypeLast;
     }
 
     // Returns true if the WebInputEvent |type| is a touch event.
     static bool isTouchEventType(int type)
     {
-        return type == TouchStart
-            || type == TouchMove
-            || type == TouchEnd
-            || type == TouchCancel;
-    }
-
-    // Returns true if the WebInputEvent |type| should be handled as user gesture.
-    static bool isUserGestureEventType(int type)
-    {
-        return isKeyboardEventType(type)
-            || type == MouseDown
-            || type == MouseUp
-            || type == TouchStart
-            || type == TouchEnd;
+        return TouchTypeFirst <= type && type <= TouchTypeLast;
     }
 
     // Returns true if the WebInputEvent is a gesture event.
     static bool isGestureEventType(int type)
     {
-        return type == GestureScrollBegin
-            || type == GestureScrollEnd
-            || type == GestureScrollUpdate
-            || type == GestureScrollUpdateWithoutPropagation
-            || type == GestureFlingStart
-            || type == GestureFlingCancel
-            || type == GesturePinchBegin
-            || type == GesturePinchEnd
-            || type == GesturePinchUpdate
-            || type == GestureTap
-            || type == GestureTapUnconfirmed
-            || type == GestureTapDown
-            || type == GestureTapCancel
-            || type == GestureShowPress
-            || type == GestureDoubleTap
-            || type == GestureTwoFingerTap
-            || type == GestureLongPress
-            || type == GestureLongTap;
+        return GestureTypeFirst <= type && type <= GestureTypeLast;
+    }
+
+protected:
+    explicit WebInputEvent(unsigned sizeParam)
+    {
+        memset(this, 0, sizeParam);
+        timeStampSeconds = 0.0;
+        size = sizeParam;
+        type = Undefined;
+        modifiers = 0;
     }
 };
 
@@ -291,8 +266,8 @@ public:
     // This is a string identifying the key pressed.
     char keyIdentifier[keyIdentifierLengthCap];
 
-    WebKeyboardEvent(unsigned sizeParam = sizeof(WebKeyboardEvent))
-        : WebInputEvent(sizeParam)
+    WebKeyboardEvent()
+        : WebInputEvent(sizeof(WebKeyboardEvent))
         , windowsKeyCode(0)
         , nativeKeyCode(0)
         , isSystemKey(false)
@@ -314,7 +289,6 @@ public:
 
 class WebMouseEvent : public WebInputEvent {
 public:
-    // These values defined for WebCore::MouseButton
     enum Button {
         ButtonNone = -1,
         ButtonLeft,
@@ -333,7 +307,23 @@ public:
     int movementY;
     int clickCount;
 
-    WebMouseEvent(unsigned sizeParam = sizeof(WebMouseEvent))
+    WebMouseEvent()
+        : WebInputEvent(sizeof(WebMouseEvent))
+        , button(ButtonNone)
+        , x(0)
+        , y(0)
+        , windowX(0)
+        , windowY(0)
+        , globalX(0)
+        , globalY(0)
+        , movementX(0)
+        , movementY(0)
+        , clickCount(0)
+    {
+    }
+
+protected:
+    explicit WebMouseEvent(unsigned sizeParam)
         : WebInputEvent(sizeParam)
         , button(ButtonNone)
         , x(0)
@@ -379,8 +369,26 @@ public:
     Phase phase;
     Phase momentumPhase;
 
-    WebMouseWheelEvent(unsigned sizeParam = sizeof(WebMouseWheelEvent))
-        : WebMouseEvent(sizeParam)
+    // See comment at the top of the file for why an int is used here.
+    // Rubberbanding is an OSX visual effect. When a user scrolls the content
+    // area with a track pad, and the content area is already at its limit in
+    // the direction being scrolled, the entire content area is allowed to
+    // scroll slightly off screen, revealing a grey background. When the user
+    // lets go, the content area snaps back into place. Blink is responsible
+    // for this rubberbanding effect, but the embedder may wish to disable
+    // rubber banding in the left or right direction, if the scroll should have
+    // an alternate effect. The common case is that a scroll in the left or
+    // right directions causes a back or forwards navigation, respectively.
+    //
+    // These flags prevent rubber banding from starting in a given direction,
+    // but have no effect on an ongoing rubber banding. A rubber banding that
+    // started in the vertical direction is allowed to continue in the right
+    // direction, even if canRubberbandRight is 0.
+    int canRubberbandLeft;
+    int canRubberbandRight;
+
+    WebMouseWheelEvent()
+        : WebMouseEvent(sizeof(WebMouseWheelEvent))
         , deltaX(0.0f)
         , deltaY(0.0f)
         , wheelTicksX(0.0f)
@@ -391,6 +399,8 @@ public:
         , hasPreciseScrollingDeltas(false)
         , phase(PhaseNone)
         , momentumPhase(PhaseNone)
+        , canRubberbandLeft(true)
+        , canRubberbandRight(true)
     {
     }
 };
@@ -399,18 +409,15 @@ public:
 
 class WebGestureEvent : public WebInputEvent {
 public:
-    enum SourceDevice {
-        Touchpad,
-        Touchscreen,
-    };
-
     int x;
     int y;
     int globalX;
     int globalY;
-    SourceDevice sourceDevice;
+    WebGestureDevice sourceDevice;
 
     union {
+        // Tap information must be set for GestureTap, GestureTapUnconfirmed,
+        // and GestureDoubleTap events.
         struct {
             int tapCount;
             float width;
@@ -438,6 +445,13 @@ public:
         } twoFingerTap;
 
         struct {
+            // Initial motion that triggered the scroll.
+            // May be redundant with deltaX/deltaY in the first scrollUpdate.
+            float deltaXHint;
+            float deltaYHint;
+        } scrollBegin;
+
+        struct {
             float deltaX;
             float deltaY;
             float velocityX;
@@ -454,8 +468,8 @@ public:
         } pinchUpdate;
     } data;
 
-    WebGestureEvent(unsigned sizeParam = sizeof(WebGestureEvent))
-        : WebInputEvent(sizeParam)
+    WebGestureEvent()
+        : WebInputEvent(sizeof(WebGestureEvent))
         , x(0)
         , y(0)
         , globalX(0)
@@ -485,11 +499,17 @@ public:
     // List of all touches which are currently down and are targeting the event recipient.
     WebTouchPoint targetTouches[touchesLengthCap];
 
-    WebTouchEvent(unsigned sizeParam = sizeof(WebTouchEvent))
-        : WebInputEvent(sizeParam)
+    // Whether the event can be canceled (with preventDefault). If true then the browser
+    // must wait for an ACK for this event. If false then no ACK IPC is expected.
+    // See comment at the top for why an int is used here instead of a bool.
+    int cancelable;
+
+    WebTouchEvent()
+        : WebInputEvent(sizeof(WebTouchEvent))
         , touchesLength(0)
         , changedTouchesLength(0)
         , targetTouchesLength(0)
+        , cancelable(true)
     {
     }
 };

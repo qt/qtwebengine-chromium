@@ -7,11 +7,12 @@
 
 #include <jni.h>
 
-#include "base/android/jni_helper.h"
+#include "base/android/jni_weak_ref.h"
 #include "base/android/scoped_java_ref.h"
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "base/timer/timer.h"
 #include "ui/gfx/native_widget_types.h"
 
@@ -28,10 +29,7 @@ class ContentVideoView {
  public:
   // Construct a ContentVideoView object. The |manager| will handle all the
   // playback controls from the Java class.
-  ContentVideoView(
-      const base::android::ScopedJavaLocalRef<jobject>& context,
-      const base::android::ScopedJavaLocalRef<jobject>& client,
-      BrowserMediaPlayerManager* manager);
+  explicit ContentVideoView(BrowserMediaPlayerManager* manager);
 
   ~ContentVideoView();
 
@@ -41,8 +39,8 @@ class ContentVideoView {
   static bool RegisterContentVideoView(JNIEnv* env);
   static void KeepScreenOn(bool screen_on);
 
-  // Return true if there is existing ContentVideoView object.
-  static bool HasContentVideoView();
+  // Return the singleton object or NULL.
+  static ContentVideoView* GetInstance();
 
   // Getter method called by the Java class to get the media information.
   int GetVideoWidth(JNIEnv*, jobject obj) const;
@@ -50,7 +48,7 @@ class ContentVideoView {
   int GetDurationInMilliSeconds(JNIEnv*, jobject obj) const;
   int GetCurrentPosition(JNIEnv*, jobject obj) const;
   bool IsPlaying(JNIEnv*, jobject obj);
-  void UpdateMediaMetadata(JNIEnv*, jobject obj);
+  void RequestMediaMetadata(JNIEnv*, jobject obj);
 
   // Called when the Java fullscreen view is destroyed. If
   // |release_media_player| is true, |manager_| needs to release the player
@@ -78,9 +76,8 @@ class ContentVideoView {
   base::android::ScopedJavaLocalRef<jobject> GetJavaObject(JNIEnv* env);
 
  private:
-  // Destroy the |j_content_video_view_|. If |native_view_destroyed| is true,
-  // no further calls to the native object is allowed.
-  void DestroyContentVideoView(bool native_view_destroyed);
+  // Creates the corresponding ContentVideoView Java object.
+  JavaObjectWeakGlobalRef CreateJavaObject();
 
   // Returns the associated NativeView
   gfx::NativeView GetNativeView();
@@ -101,6 +98,9 @@ class ContentVideoView {
 
   // Weak reference of corresponding Java object.
   JavaObjectWeakGlobalRef j_content_video_view_;
+
+  // Weak pointer for posting tasks.
+  base::WeakPtrFactory<ContentVideoView> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(ContentVideoView);
 };

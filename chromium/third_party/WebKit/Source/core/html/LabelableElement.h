@@ -35,13 +35,17 @@
 
 namespace WebCore {
 
+class LabelsNodeList;
+
 // LabelableElement represents "labelable element" defined in the HTML
 // specification, and provides the implementation of the "labels" attribute.
 class LabelableElement : public HTMLElement {
 public:
     virtual ~LabelableElement();
-    PassRefPtr<NodeList> labels();
+    PassRefPtrWillBeRawPtr<LabelsNodeList> labels();
     virtual bool supportLabels() const { return false; }
+
+    virtual void trace(Visitor*) OVERRIDE;
 
 protected:
     LabelableElement(const QualifiedName& tagName, Document&);
@@ -50,12 +54,17 @@ private:
     virtual bool isLabelable() const OVERRIDE FINAL { return true; }
 };
 
-inline bool isLabelableElement(const Node& node)
+inline bool isLabelableElement(const Element& element)
 {
-    return node.isHTMLElement() && toHTMLElement(node).isLabelable();
+    return element.isHTMLElement() && toHTMLElement(element).isLabelable();
 }
 
-DEFINE_NODE_TYPE_CASTS_WITH_FUNCTION(LabelableElement);
+inline bool isLabelableElement(const HTMLElement& element)
+{
+    return element.isLabelable();
+}
+
+DEFINE_HTMLELEMENT_TYPE_CASTS_WITH_FUNCTION(LabelableElement);
 
 } // namespace WebCore
 

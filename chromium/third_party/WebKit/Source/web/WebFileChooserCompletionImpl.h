@@ -31,10 +31,10 @@
 #ifndef WebFileChooserCompletionImpl_h
 #define WebFileChooserCompletionImpl_h
 
-#include "WebFileChooserCompletion.h"
 #include "platform/FileChooser.h"
 #include "public/platform/WebString.h"
 #include "public/platform/WebVector.h"
+#include "public/web/WebFileChooserCompletion.h"
 #include "wtf/PassRefPtr.h"
 
 using blink::WebFileChooserCompletion;
@@ -43,12 +43,12 @@ using blink::WebVector;
 
 namespace blink {
 
-class WebFileChooserCompletionImpl : public WebFileChooserCompletion {
+class WebFileChooserCompletionImpl FINAL : public WebFileChooserCompletion {
 public:
     WebFileChooserCompletionImpl(PassRefPtr<WebCore::FileChooser> chooser);
-    ~WebFileChooserCompletionImpl();
-    virtual void didChooseFile(const WebVector<WebString>& fileNames);
-    virtual void didChooseFile(const WebVector<SelectedFileInfo>& files);
+    virtual ~WebFileChooserCompletionImpl();
+    virtual void didChooseFile(const WebVector<WebString>& fileNames) OVERRIDE;
+    virtual void didChooseFile(const WebVector<SelectedFileInfo>& files) OVERRIDE;
 private:
     RefPtr<WebCore::FileChooser> m_fileChooser;
 };

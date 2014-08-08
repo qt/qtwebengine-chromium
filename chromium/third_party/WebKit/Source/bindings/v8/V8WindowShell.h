@@ -33,9 +33,8 @@
 
 #include "bindings/v8/DOMWrapperWorld.h"
 #include "bindings/v8/ScopedPersistent.h"
-#include "bindings/v8/V8PerContextData.h"
+#include "bindings/v8/ScriptState.h"
 #include "bindings/v8/WrapperTypeInfo.h"
-#include "gin/public/context_holder.h"
 #include "platform/weborigin/SecurityOrigin.h"
 #include "wtf/Forward.h"
 #include "wtf/HashMap.h"
@@ -47,17 +46,19 @@
 
 namespace WebCore {
 
-class DOMWindow;
-class Frame;
+class LocalDOMWindow;
+class LocalFrame;
 class HTMLDocument;
+class SecurityOrigin;
 
-// V8WindowShell represents all the per-global object state for a Frame that
+// V8WindowShell represents all the per-global object state for a LocalFrame that
 // persist between navigations.
 class V8WindowShell {
 public:
-    static PassOwnPtr<V8WindowShell> create(Frame*, PassRefPtr<DOMWrapperWorld>, v8::Isolate*);
+    static PassOwnPtr<V8WindowShell> create(LocalFrame*, DOMWrapperWorld&, v8::Isolate*);
 
-    v8::Local<v8::Context> context() const { return m_contextHolder ? m_contextHolder->context() : v8::Local<v8::Context>(); }
+    v8::Local<v8::Context> context() const { return m_scriptState ? m_scriptState->context() : v8::Local<v8::Context>(); }
+    ScriptState* scriptState() const { return m_scriptState.get(); }
 
     // Update document object of the frame.
     void updateDocument();
@@ -67,21 +68,22 @@ public:
 
     // Update the security origin of a document
     // (e.g., after setting docoument.domain).
-    void updateSecurityOrigin();
+    void updateSecurityOrigin(SecurityOrigin*);
 
-    bool isContextInitialized() { return m_contextHolder; }
+    bool isContextInitialized() { return m_scriptState && !!m_scriptState->perContextData(); }
     bool isGlobalInitialized() { return !m_global.isEmpty(); }
 
     bool initializeIfNeeded();
     void updateDocumentWrapper(v8::Handle<v8::Object> wrapper);
 
     void clearForNavigation();
-    void clearForClose(bool destroyGlobal);
+    void clearForClose();
 
-    DOMWrapperWorld* world() { return m_world.get(); }
+    DOMWrapperWorld& world() { return *m_world; }
 
 private:
-    V8WindowShell(Frame*, PassRefPtr<DOMWrapperWorld>, v8::Isolate*);
+    V8WindowShell(LocalFrame*, PassRefPtr<DOMWrapperWorld>, v8::Isolate*);
+    bool initialize();
 
     enum GlobalDetachmentBehavior {
         DoNotDetachGlobal,
@@ -89,7 +91,7 @@ private:
     };
     void disposeContext(GlobalDetachmentBehavior);
 
-    void setSecurityToken();
+    void setSecurityToken(SecurityOrigin*);
 
     // The JavaScript wrapper for the document object is cached on the global
     // object for fast access. UpdateDocumentProperty sets the wrapper
@@ -98,18 +100,18 @@ private:
     void updateDocumentProperty();
     void clearDocumentProperty();
 
+    // Updates Activity Logger for the current context.
+    void updateActivityLogger();
+
     void createContext();
     bool installDOMWindow();
 
     static V8WindowShell* enteredIsolatedWorldContext();
 
-    Frame* m_frame;
-    RefPtr<DOMWrapperWorld> m_world;
+    LocalFrame* m_frame;
     v8::Isolate* m_isolate;
-
-    OwnPtr<V8PerContextData> m_perContextData;
-
-    OwnPtr<gin::ContextHolder> m_contextHolder;
+    RefPtr<ScriptState> m_scriptState;
+    RefPtr<DOMWrapperWorld> m_world;
     ScopedPersistent<v8::Object> m_global;
     ScopedPersistent<v8::Object> m_document;
 };

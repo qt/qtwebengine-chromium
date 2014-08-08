@@ -14,9 +14,55 @@
 #include "SkMathPriv.h"
 #include "SkUtils.h"
 
-#include "SkCachePreload_arm.h"
 #include "SkColor_opts_neon.h"
 #include <arm_neon.h>
+
+#ifdef SK_CPU_ARM64
+static inline uint8x8x4_t sk_vld4_u8_arm64_3(const SkPMColor* SK_RESTRICT & src) {
+    uint8x8x4_t vsrc;
+    uint8x8_t vsrc_0, vsrc_1, vsrc_2;
+
+    asm (
+        "ld4    {v0.8b - v3.8b}, [%[src]], #32 \t\n"
+        "mov    %[vsrc0].8b, v0.8b             \t\n"
+        "mov    %[vsrc1].8b, v1.8b             \t\n"
+        "mov    %[vsrc2].8b, v2.8b             \t\n"
+        : [vsrc0] "=w" (vsrc_0), [vsrc1] "=w" (vsrc_1),
+          [vsrc2] "=w" (vsrc_2), [src] "+&r" (src)
+        : : "v0", "v1", "v2", "v3"
+    );
+
+    vsrc.val[0] = vsrc_0;
+    vsrc.val[1] = vsrc_1;
+    vsrc.val[2] = vsrc_2;
+
+    return vsrc;
+}
+
+static inline uint8x8x4_t sk_vld4_u8_arm64_4(const SkPMColor* SK_RESTRICT & src) {
+    uint8x8x4_t vsrc;
+    uint8x8_t vsrc_0, vsrc_1, vsrc_2, vsrc_3;
+
+    asm (
+        "ld4    {v0.8b - v3.8b}, [%[src]], #32 \t\n"
+        "mov    %[vsrc0].8b, v0.8b             \t\n"
+        "mov    %[vsrc1].8b, v1.8b             \t\n"
+        "mov    %[vsrc2].8b, v2.8b             \t\n"
+        "mov    %[vsrc3].8b, v3.8b             \t\n"
+        : [vsrc0] "=w" (vsrc_0), [vsrc1] "=w" (vsrc_1),
+          [vsrc2] "=w" (vsrc_2), [vsrc3] "=w" (vsrc_3),
+          [src] "+&r" (src)
+        : : "v0", "v1", "v2", "v3"
+    );
+
+    vsrc.val[0] = vsrc_0;
+    vsrc.val[1] = vsrc_1;
+    vsrc.val[2] = vsrc_2;
+    vsrc.val[3] = vsrc_3;
+
+    return vsrc;
+}
+#endif
 
 void S32_D565_Opaque_neon(uint16_t* SK_RESTRICT dst,
                            const SkPMColor* SK_RESTRICT src, int count,
@@ -28,7 +74,12 @@ void S32_D565_Opaque_neon(uint16_t* SK_RESTRICT dst,
         uint16x8_t vdst;
 
         // Load
+#ifdef SK_CPU_ARM64
+        vsrc = sk_vld4_u8_arm64_3(src);
+#else
         vsrc = vld4_u8((uint8_t*)src);
+        src += 8;
+#endif
 
         // Convert src to 565
         vdst = SkPixel32ToPixel16_neon8(vsrc);
@@ -38,7 +89,6 @@ void S32_D565_Opaque_neon(uint16_t* SK_RESTRICT dst,
 
         // Prepare next iteration
         dst += 8;
-        src += 8;
         count -= 8;
     };
 
@@ -52,6 +102,92 @@ void S32_D565_Opaque_neon(uint16_t* SK_RESTRICT dst,
     };
 }
 
+void S32_D565_Blend_neon(uint16_t* SK_RESTRICT dst,
+                          const SkPMColor* SK_RESTRICT src, int count,
+                          U8CPU alpha, int /*x*/, int /*y*/) {
+    SkASSERT(255 > alpha);
+
+    uint16x8_t vmask_blue, vscale;
+
+    // prepare constants
+    vscale = vdupq_n_u16(SkAlpha255To256(alpha));
+    vmask_blue = vmovq_n_u16(0x1F);
+
+    while (count >= 8) {
+        uint8x8x4_t vsrc;
+        uint16x8_t vdst, vdst_r, vdst_g, vdst_b;
+        uint16x8_t vres_r, vres_g, vres_b;
+
+        // Load src
+#ifdef SK_CPU_ARM64
+        vsrc = sk_vld4_u8_arm64_3(src);
+#else
+        {
+        register uint8x8_t d0 asm("d0");
+        register uint8x8_t d1 asm("d1");
+        register uint8x8_t d2 asm("d2");
+        register uint8x8_t d3 asm("d3");
+
+        asm (
+            "vld4.8    {d0-d3},[%[src]]!"
+            : "=w" (d0), "=w" (d1), "=w" (d2), "=w" (d3), [src] "+&r" (src)
+            :
+        );
+        vsrc.val[0] = d0;
+        vsrc.val[1] = d1;
+        vsrc.val[2] = d2;
+        }
+#endif
+
+        // Load and unpack dst
+        vdst = vld1q_u16(dst);
+        vdst_g = vshlq_n_u16(vdst, 5);        // shift green to top of lanes
+        vdst_b = vandq_u16(vdst, vmask_blue); // extract blue
+        vdst_r = vshrq_n_u16(vdst, 6+5);      // extract red
+        vdst_g = vshrq_n_u16(vdst_g, 5+5);    // extract green
+
+        // Shift src to 565 range
+        vsrc.val[NEON_R] = vshr_n_u8(vsrc.val[NEON_R], 3);
+        vsrc.val[NEON_G] = vshr_n_u8(vsrc.val[NEON_G], 2);
+        vsrc.val[NEON_B] = vshr_n_u8(vsrc.val[NEON_B], 3);
+
+        // Scale src - dst
+        vres_r = vmovl_u8(vsrc.val[NEON_R]) - vdst_r;
+        vres_g = vmovl_u8(vsrc.val[NEON_G]) - vdst_g;
+        vres_b = vmovl_u8(vsrc.val[NEON_B]) - vdst_b;
+
+        vres_r = vshrq_n_u16(vres_r * vscale, 8);
+        vres_g = vshrq_n_u16(vres_g * vscale, 8);
+        vres_b = vshrq_n_u16(vres_b * vscale, 8);
+
+        vres_r += vdst_r;
+        vres_g += vdst_g;
+        vres_b += vdst_b;
+
+        // Combine
+        vres_b = vsliq_n_u16(vres_b, vres_g, 5);    // insert green into blue
+        vres_b = vsliq_n_u16(vres_b, vres_r, 6+5);  // insert red into green/blue
+
+        // Store
+        vst1q_u16(dst, vres_b);
+        dst += 8;
+        count -= 8;
+    }
+    if (count > 0) {
+        int scale = SkAlpha255To256(alpha);
+        do {
+            SkPMColor c = *src++;
+            SkPMColorAssert(c);
+            uint16_t d = *dst;
+            *dst++ = SkPackRGB16(
+                    SkAlphaBlend(SkPacked32ToR16(c), SkGetPackedR16(d), scale),
+                    SkAlphaBlend(SkPacked32ToG16(c), SkGetPackedG16(d), scale),
+                    SkAlphaBlend(SkPacked32ToB16(c), SkGetPackedB16(d), scale));
+        } while (--count != 0);
+    }
+}
+
+#ifdef SK_CPU_ARM32
 void S32A_D565_Opaque_neon(uint16_t* SK_RESTRICT dst,
                            const SkPMColor* SK_RESTRICT src, int count,
                            U8CPU alpha, int /*x*/, int /*y*/) {
@@ -229,114 +365,129 @@ void S32A_D565_Opaque_neon(uint16_t* SK_RESTRICT dst,
                       );
     }
 }
+#endif
+
+static inline uint16x8_t SkDiv255Round_neon8(uint16x8_t prod) {
+    prod += vdupq_n_u16(128);
+    prod += vshrq_n_u16(prod, 8);
+    return vshrq_n_u16(prod, 8);
+}
 
 void S32A_D565_Blend_neon(uint16_t* SK_RESTRICT dst,
                           const SkPMColor* SK_RESTRICT src, int count,
                           U8CPU alpha, int /*x*/, int /*y*/) {
+   SkASSERT(255 > alpha);
 
-    U8CPU alpha_for_asm = alpha;
-
-    asm volatile (
-    /* This code implements a Neon version of S32A_D565_Blend. The output differs from
-     * the original in two respects:
-     *  1. The results have a few mismatches compared to the original code. These mismatches
-     *     never exceed 1. It's possible to improve accuracy vs. a floating point
-     *     implementation by introducing rounding right shifts (vrshr) for the final stage.
-     *     Rounding is not present in the code below, because although results would be closer
-     *     to a floating point implementation, the number of mismatches compared to the
-     *     original code would be far greater.
-     *  2. On certain inputs, the original code can overflow, causing colour channels to
-     *     mix. Although the Neon code can also overflow, it doesn't allow one colour channel
-     *     to affect another.
+    /* This code implements a Neon version of S32A_D565_Blend. The results have
+     * a few mismatches compared to the original code. These mismatches never
+     * exceed 1.
      */
 
-#if 1
-        /* reflects SkAlpha255To256()'s change from a+a>>7 to a+1 */
-                  "add        %[alpha], %[alpha], #1         \n\t"   // adjust range of alpha 0-256
-#else
-                  "add        %[alpha], %[alpha], %[alpha], lsr #7    \n\t"   // adjust range of alpha 0-256
-#endif
-                  "vmov.u16   q3, #255                        \n\t"   // set up constant
-                  "movs       r4, %[count], lsr #3            \n\t"   // calc. count>>3
-                  "vmov.u16   d2[0], %[alpha]                 \n\t"   // move alpha to Neon
-                  "beq        2f                              \n\t"   // if count8 == 0, exit
-                  "vmov.u16   q15, #0x1f                      \n\t"   // set up blue mask
+    if (count >= 8) {
+        uint16x8_t valpha_max, vmask_blue;
+        uint8x8_t valpha;
 
-                  "1:                                             \n\t"
-                  "vld1.u16   {d0, d1}, [%[dst]]              \n\t"   // load eight dst RGB565 pixels
-                  "subs       r4, r4, #1                      \n\t"   // decrement loop counter
-                  "vld4.u8    {d24, d25, d26, d27}, [%[src]]! \n\t"   // load eight src ABGR32 pixels
-                  //  and deinterleave
+        // prepare constants
+        valpha_max = vmovq_n_u16(255);
+        valpha = vdup_n_u8(alpha);
+        vmask_blue = vmovq_n_u16(SK_B16_MASK);
 
-                  "vshl.u16   q9, q0, #5                      \n\t"   // shift green to top of lanes
-                  "vand       q10, q0, q15                    \n\t"   // extract blue
-                  "vshr.u16   q8, q0, #11                     \n\t"   // extract red
-                  "vshr.u16   q9, q9, #10                     \n\t"   // extract green
-                  // dstrgb = {q8, q9, q10}
-
-                  "vshr.u8    d24, d24, #3                    \n\t"   // shift red to 565 range
-                  "vshr.u8    d25, d25, #2                    \n\t"   // shift green to 565 range
-                  "vshr.u8    d26, d26, #3                    \n\t"   // shift blue to 565 range
-
-                  "vmovl.u8   q11, d24                        \n\t"   // widen red to 16 bits
-                  "vmovl.u8   q12, d25                        \n\t"   // widen green to 16 bits
-                  "vmovl.u8   q14, d27                        \n\t"   // widen alpha to 16 bits
-                  "vmovl.u8   q13, d26                        \n\t"   // widen blue to 16 bits
-                  // srcrgba = {q11, q12, q13, q14}
-
-                  "vmul.u16   q2, q14, d2[0]                  \n\t"   // sa * src_scale
-                  "vmul.u16   q11, q11, d2[0]                 \n\t"   // red result = src_red * src_scale
-                  "vmul.u16   q12, q12, d2[0]                 \n\t"   // grn result = src_grn * src_scale
-                  "vmul.u16   q13, q13, d2[0]                 \n\t"   // blu result = src_blu * src_scale
-
-                  "vshr.u16   q2, q2, #8                      \n\t"   // sa * src_scale >> 8
-                  "vsub.u16   q2, q3, q2                      \n\t"   // 255 - (sa * src_scale >> 8)
-                  // dst_scale = q2
-
-                  "vmla.u16   q11, q8, q2                     \n\t"   // red result += dst_red * dst_scale
-                  "vmla.u16   q12, q9, q2                     \n\t"   // grn result += dst_grn * dst_scale
-                  "vmla.u16   q13, q10, q2                    \n\t"   // blu result += dst_blu * dst_scale
-
-#if 1
-    // trying for a better match with SkDiv255Round(a)
-    // C alg is:  a+=128; (a+a>>8)>>8
-    // we'll use just a rounding shift [q2 is available for scratch]
-                  "vrshr.u16   q11, q11, #8                    \n\t"   // shift down red
-                  "vrshr.u16   q12, q12, #8                    \n\t"   // shift down green
-                  "vrshr.u16   q13, q13, #8                    \n\t"   // shift down blue
-#else
-    // arm's original "truncating divide by 256"
-                  "vshr.u16   q11, q11, #8                    \n\t"   // shift down red
-                  "vshr.u16   q12, q12, #8                    \n\t"   // shift down green
-                  "vshr.u16   q13, q13, #8                    \n\t"   // shift down blue
-#endif
-
-                  "vsli.u16   q13, q12, #5                    \n\t"   // insert green into blue
-                  "vsli.u16   q13, q11, #11                   \n\t"   // insert red into green/blue
-                  "vst1.16    {d26, d27}, [%[dst]]!           \n\t"   // write pixel back to dst, update ptr
-
-                  "bne        1b                              \n\t"   // if counter != 0, loop
-                  "2:                                             \n\t"   // exit
-
-                  : [src] "+r" (src), [dst] "+r" (dst), [count] "+r" (count), [alpha] "+r" (alpha_for_asm)
-                  :
-                  : "cc", "memory", "r4", "d0", "d1", "d2", "d3", "d4", "d5", "d6", "d7", "d16", "d17", "d18", "d19", "d20", "d21", "d22", "d23", "d24", "d25", "d26", "d27", "d28", "d29", "d30", "d31"
-                  );
-
-    count &= 7;
-    if (count > 0) {
         do {
-            SkPMColor sc = *src++;
-            if (sc) {
-                uint16_t dc = *dst;
-                unsigned dst_scale = 255 - SkMulDiv255Round(SkGetPackedA32(sc), alpha);
-                unsigned dr = SkMulS16(SkPacked32ToR16(sc), alpha) + SkMulS16(SkGetPackedR16(dc), dst_scale);
-                unsigned dg = SkMulS16(SkPacked32ToG16(sc), alpha) + SkMulS16(SkGetPackedG16(dc), dst_scale);
-                unsigned db = SkMulS16(SkPacked32ToB16(sc), alpha) + SkMulS16(SkGetPackedB16(dc), dst_scale);
-                *dst = SkPackRGB16(SkDiv255Round(dr), SkDiv255Round(dg), SkDiv255Round(db));
-            }
-            dst += 1;
-        } while (--count != 0);
+            uint16x8_t vdst, vdst_r, vdst_g, vdst_b;
+            uint16x8_t vres_a, vres_r, vres_g, vres_b;
+            uint8x8x4_t vsrc;
+
+            // load pixels
+            vdst = vld1q_u16(dst);
+#ifdef SK_CPU_ARM64
+            vsrc = sk_vld4_u8_arm64_4(src);
+#else
+#if (__GNUC__ > 4) || ((__GNUC__ == 4) && (__GNUC_MINOR__ > 6))
+            asm (
+                "vld4.u8 %h[vsrc], [%[src]]!"
+                : [vsrc] "=w" (vsrc), [src] "+&r" (src)
+                : :
+            );
+#else
+            register uint8x8_t d0 asm("d0");
+            register uint8x8_t d1 asm("d1");
+            register uint8x8_t d2 asm("d2");
+            register uint8x8_t d3 asm("d3");
+
+            asm volatile (
+                "vld4.u8    {d0-d3},[%[src]]!;"
+                : "=w" (d0), "=w" (d1), "=w" (d2), "=w" (d3),
+                  [src] "+&r" (src)
+                : :
+            );
+            vsrc.val[0] = d0;
+            vsrc.val[1] = d1;
+            vsrc.val[2] = d2;
+            vsrc.val[3] = d3;
+#endif
+#endif // #ifdef SK_CPU_ARM64
+
+
+            // deinterleave dst
+            vdst_g = vshlq_n_u16(vdst, SK_R16_BITS);        // shift green to top of lanes
+            vdst_b = vdst & vmask_blue;                     // extract blue
+            vdst_r = vshrq_n_u16(vdst, SK_R16_SHIFT);       // extract red
+            vdst_g = vshrq_n_u16(vdst_g, SK_R16_BITS + SK_B16_BITS); // extract green
+
+            // shift src to 565
+            vsrc.val[NEON_R] = vshr_n_u8(vsrc.val[NEON_R], 8 - SK_R16_BITS);
+            vsrc.val[NEON_G] = vshr_n_u8(vsrc.val[NEON_G], 8 - SK_G16_BITS);
+            vsrc.val[NEON_B] = vshr_n_u8(vsrc.val[NEON_B], 8 - SK_B16_BITS);
+
+            // calc src * src_scale
+            vres_a = vmull_u8(vsrc.val[NEON_A], valpha);
+            vres_r = vmull_u8(vsrc.val[NEON_R], valpha);
+            vres_g = vmull_u8(vsrc.val[NEON_G], valpha);
+            vres_b = vmull_u8(vsrc.val[NEON_B], valpha);
+
+            // prepare dst_scale
+            vres_a = SkDiv255Round_neon8(vres_a);
+            vres_a = valpha_max - vres_a; // 255 - (sa * src_scale) / 255
+
+            // add dst * dst_scale to previous result
+            vres_r = vmlaq_u16(vres_r, vdst_r, vres_a);
+            vres_g = vmlaq_u16(vres_g, vdst_g, vres_a);
+            vres_b = vmlaq_u16(vres_b, vdst_b, vres_a);
+
+#ifdef S32A_D565_BLEND_EXACT
+            // It is possible to get exact results with this but it is slow,
+            // even slower than C code in some cases
+            vres_r = SkDiv255Round_neon8(vres_r);
+            vres_g = SkDiv255Round_neon8(vres_g);
+            vres_b = SkDiv255Round_neon8(vres_b);
+#else
+            vres_r = vrshrq_n_u16(vres_r, 8);
+            vres_g = vrshrq_n_u16(vres_g, 8);
+            vres_b = vrshrq_n_u16(vres_b, 8);
+#endif
+            // pack result
+            vres_b = vsliq_n_u16(vres_b, vres_g, SK_G16_SHIFT); // insert green into blue
+            vres_b = vsliq_n_u16(vres_b, vres_r, SK_R16_SHIFT); // insert red into green/blue
+
+            // store
+            vst1q_u16(dst, vres_b);
+            dst += 8;
+            count -= 8;
+        } while (count >= 8);
+    }
+
+    // leftovers
+    while (count-- > 0) {
+        SkPMColor sc = *src++;
+        if (sc) {
+            uint16_t dc = *dst;
+            unsigned dst_scale = 255 - SkMulDiv255Round(SkGetPackedA32(sc), alpha);
+            unsigned dr = SkMulS16(SkPacked32ToR16(sc), alpha) + SkMulS16(SkGetPackedR16(dc), dst_scale);
+            unsigned dg = SkMulS16(SkPacked32ToG16(sc), alpha) + SkMulS16(SkGetPackedG16(dc), dst_scale);
+            unsigned db = SkMulS16(SkPacked32ToB16(sc), alpha) + SkMulS16(SkGetPackedB16(dc), dst_scale);
+            *dst = SkPackRGB16(SkDiv255Round(dr), SkDiv255Round(dg), SkDiv255Round(db));
+        }
+        dst += 1;
     }
 }
 
@@ -374,6 +525,7 @@ void S32_D565_Blend_Dither_neon(uint16_t *dst, const SkPMColor *src,
 
         do {
 
+            uint8x8x4_t vsrc;
             uint8x8_t vsrc_r, vsrc_g, vsrc_b;
             uint8x8_t vsrc565_r, vsrc565_g, vsrc565_b;
             uint16x8_t vsrc_dit_r, vsrc_dit_g, vsrc_dit_b;
@@ -384,6 +536,9 @@ void S32_D565_Blend_Dither_neon(uint16_t *dst, const SkPMColor *src,
             int8x8_t vres8_r, vres8_g, vres8_b;
 
             // Load source and add dither
+#ifdef SK_CPU_ARM64
+            vsrc = sk_vld4_u8_arm64_3(src);
+#else
             {
             register uint8x8_t d0 asm("d0");
             register uint8x8_t d1 asm("d1");
@@ -391,17 +546,18 @@ void S32_D565_Blend_Dither_neon(uint16_t *dst, const SkPMColor *src,
             register uint8x8_t d3 asm("d3");
 
             asm (
-                "vld4.8    {d0-d3},[%[src]]!  /* r=%P0 g=%P1 b=%P2 a=%P3 */"
+                "vld4.8    {d0-d3},[%[src]]! "
                 : "=w" (d0), "=w" (d1), "=w" (d2), "=w" (d3), [src] "+&r" (src)
                 :
             );
-            vsrc_g = d1;
-#if SK_PMCOLOR_BYTE_ORDER(B,G,R,A)
-            vsrc_r = d2; vsrc_b = d0;
-#elif SK_PMCOLOR_BYTE_ORDER(R,G,B,A)
-            vsrc_r = d0; vsrc_b = d2;
-#endif
+            vsrc.val[0] = d0;
+            vsrc.val[1] = d1;
+            vsrc.val[2] = d2;
             }
+#endif
+            vsrc_r = vsrc.val[NEON_R];
+            vsrc_g = vsrc.val[NEON_G];
+            vsrc_b = vsrc.val[NEON_B];
 
             vsrc565_g = vshr_n_u8(vsrc_g, 6); // calc. green >> 6
             vsrc565_r = vshr_n_u8(vsrc_r, 5); // calc. red >> 5
@@ -766,76 +922,67 @@ void S32_Blend_BlitRow32_neon(SkPMColor* SK_RESTRICT dst,
                               const SkPMColor* SK_RESTRICT src,
                               int count, U8CPU alpha) {
     SkASSERT(alpha <= 255);
-    if (count > 0) {
-        uint16_t src_scale = SkAlpha255To256(alpha);
-        uint16_t dst_scale = 256 - src_scale;
 
-    /* run them N at a time through the NEON unit */
-    /* note that each 1 is 4 bytes, each treated exactly the same,
-     * so we can work under that guise. We *do* know that the src&dst
-     * will be 32-bit aligned quantities, so we can specify that on
-     * the load/store ops and do a neon 'reinterpret' to get us to
-     * byte-sized (pun intended) pieces that we widen/multiply/shift
-     * we're limited at 128 bits in the wide ops, which is 8x16bits
-     * or a pair of 32 bit src/dsts.
-     */
-    /* we *could* manually unroll this loop so that we load 128 bits
-     * (as a pair of 64s) from each of src and dst, processing them
-     * in pieces. This might give us a little better management of
-     * the memory latency, but my initial attempts here did not
-     * produce an instruction stream that looked all that nice.
-     */
-#define    UNROLL    2
-    while (count >= UNROLL) {
-        uint8x8_t  src_raw, dst_raw, dst_final;
-        uint16x8_t  src_wide, dst_wide;
-
-        /* get 64 bits of src, widen it, multiply by src_scale */
-        src_raw = vreinterpret_u8_u32(vld1_u32(src));
-        src_wide = vmovl_u8(src_raw);
-        /* gcc hoists vdupq_n_u16(), better than using vmulq_n_u16() */
-        src_wide = vmulq_u16 (src_wide, vdupq_n_u16(src_scale));
-
-        /* ditto with dst */
-        dst_raw = vreinterpret_u8_u32(vld1_u32(dst));
-        dst_wide = vmovl_u8(dst_raw);
-
-        /* combine add with dst multiply into mul-accumulate */
-        dst_wide = vmlaq_u16(src_wide, dst_wide, vdupq_n_u16(dst_scale));
-
-        dst_final = vshrn_n_u16(dst_wide, 8);
-        vst1_u32(dst, vreinterpret_u32_u8(dst_final));
-
-        src += UNROLL;
-        dst += UNROLL;
-        count -= UNROLL;
+    if (count <= 0) {
+        return;
     }
-    /* RBE: well, i don't like how gcc manages src/dst across the above
-     * loop it's constantly calculating src+bias, dst+bias and it only
-     * adjusts the real ones when we leave the loop. Not sure why
-     * it's "hoisting down" (hoisting implies above in my lexicon ;))
-     * the adjustments to src/dst/count, but it does...
-     * (might be SSA-style internal logic...
-     */
 
-#if    UNROLL == 2
+    uint16_t src_scale = SkAlpha255To256(alpha);
+    uint16_t dst_scale = 256 - src_scale;
+
+    while (count >= 2) {
+        uint8x8_t vsrc, vdst, vres;
+        uint16x8_t vsrc_wide, vdst_wide;
+
+        /* These commented prefetches are a big win for count
+         * values > 64 on an A9 (Pandaboard) but hurt by 10% for count = 4.
+         * They also hurt a little (<5%) on an A15
+         */
+        //__builtin_prefetch(src+32);
+        //__builtin_prefetch(dst+32);
+
+        // Load
+        vsrc = vreinterpret_u8_u32(vld1_u32(src));
+        vdst = vreinterpret_u8_u32(vld1_u32(dst));
+
+        // Process src
+        vsrc_wide = vmovl_u8(vsrc);
+        vsrc_wide = vmulq_u16(vsrc_wide, vdupq_n_u16(src_scale));
+
+        // Process dst
+        vdst_wide = vmull_u8(vdst, vdup_n_u8(dst_scale));
+
+        // Combine
+        vres = vshrn_n_u16(vdst_wide, 8) + vshrn_n_u16(vsrc_wide, 8);
+
+        // Store
+        vst1_u32(dst, vreinterpret_u32_u8(vres));
+
+        src += 2;
+        dst += 2;
+        count -= 2;
+    }
+
     if (count == 1) {
-            *dst = SkAlphaMulQ(*src, src_scale) + SkAlphaMulQ(*dst, dst_scale);
-    }
-#else
-    if (count > 0) {
-            do {
-                *dst = SkAlphaMulQ(*src, src_scale) + SkAlphaMulQ(*dst, dst_scale);
-                src += 1;
-                dst += 1;
-            } while (--count > 0);
-    }
-#endif
+        uint8x8_t vsrc = vdup_n_u8(0), vdst = vdup_n_u8(0), vres;
+        uint16x8_t vsrc_wide, vdst_wide;
 
-#undef    UNROLL
+        // Load
+        vsrc = vreinterpret_u8_u32(vld1_lane_u32(src, vreinterpret_u32_u8(vsrc), 0));
+        vdst = vreinterpret_u8_u32(vld1_lane_u32(dst, vreinterpret_u32_u8(vdst), 0));
+
+        // Process
+        vsrc_wide = vmovl_u8(vsrc);
+        vsrc_wide = vmulq_u16(vsrc_wide, vdupq_n_u16(src_scale));
+        vdst_wide = vmull_u8(vdst, vdup_n_u8(dst_scale));
+        vres = vshrn_n_u16(vdst_wide, 8) + vshrn_n_u16(vsrc_wide, 8);
+
+        // Store
+        vst1_lane_u32(dst, vreinterpret_u32_u8(vres), 0);
     }
 }
 
+#ifdef SK_CPU_ARM32
 void S32A_Blend_BlitRow32_neon(SkPMColor* SK_RESTRICT dst,
                          const SkPMColor* SK_RESTRICT src,
                          int count, U8CPU alpha) {
@@ -961,6 +1108,7 @@ static void showme16(char *str, void *p, int len)
     SkDebugf("%s\n", buf);
 }
 #endif
+#endif // #ifdef SK_CPU_ARM32
 
 void S32A_D565_Opaque_Dither_neon (uint16_t * SK_RESTRICT dst,
                                    const SkPMColor* SK_RESTRICT src,
@@ -970,9 +1118,8 @@ void S32A_D565_Opaque_Dither_neon (uint16_t * SK_RESTRICT dst,
 #define    UNROLL    8
 
     if (count >= UNROLL) {
-    uint8x8_t dbase;
 
-#if    defined(DEBUG_OPAQUE_DITHER)
+#if defined(DEBUG_OPAQUE_DITHER)
     uint16_t tmpbuf[UNROLL];
     int td[UNROLL];
     int tdv[UNROLL];
@@ -983,35 +1130,37 @@ void S32A_D565_Opaque_Dither_neon (uint16_t * SK_RESTRICT dst,
     int noisy = 0;
 #endif
 
+    uint8x8_t dbase;
     const uint8_t *dstart = &gDitherMatrix_Neon[(y&3)*12 + (x&3)];
     dbase = vld1_u8(dstart);
 
         do {
+        uint8x8x4_t vsrc;
         uint8x8_t sr, sg, sb, sa, d;
         uint16x8_t dst8, scale8, alpha8;
         uint16x8_t dst_r, dst_g, dst_b;
 
-#if    defined(DEBUG_OPAQUE_DITHER)
-    /* calculate 8 elements worth into a temp buffer */
-    {
-      int my_y = y;
-      int my_x = x;
-      SkPMColor* my_src = (SkPMColor*)src;
-      uint16_t* my_dst = dst;
-      int i;
+#if defined(DEBUG_OPAQUE_DITHER)
+        // calculate 8 elements worth into a temp buffer
+        {
+        int my_y = y;
+        int my_x = x;
+        SkPMColor* my_src = (SkPMColor*)src;
+        uint16_t* my_dst = dst;
+        int i;
 
-          DITHER_565_SCAN(my_y);
-          for(i=0;i<UNROLL;i++) {
+        DITHER_565_SCAN(my_y);
+        for(i = 0; i < UNROLL; i++) {
             SkPMColor c = *my_src++;
             SkPMColorAssert(c);
             if (c) {
                 unsigned a = SkGetPackedA32(c);
 
                 int d = SkAlphaMul(DITHER_VALUE(my_x), SkAlpha255To256(a));
-        tdv[i] = DITHER_VALUE(my_x);
-        ta[i] = a;
-        tap[i] = SkAlpha255To256(a);
-        td[i] = d;
+                tdv[i] = DITHER_VALUE(my_x);
+                ta[i] = a;
+                tap[i] = SkAlpha255To256(a);
+                td[i] = d;
 
                 unsigned sr = SkGetPackedR32(c);
                 unsigned sg = SkGetPackedG32(c);
@@ -1025,147 +1174,132 @@ void S32A_D565_Opaque_Dither_neon (uint16_t * SK_RESTRICT dst,
                 dst_expanded = dst_expanded * (SkAlpha255To256(255 - a) >> 3);
                 // now src and dst expanded are in g:11 r:10 x:1 b:10
                 tmpbuf[i] = SkCompact_rgb_16((src_expanded + dst_expanded) >> 5);
-        td[i] = d;
-
+                td[i] = d;
             } else {
-        tmpbuf[i] = *my_dst;
-        ta[i] = tdv[i] = td[i] = 0xbeef;
-        }
-        in_dst[i] = *my_dst;
+                tmpbuf[i] = *my_dst;
+                ta[i] = tdv[i] = td[i] = 0xbeef;
+            }
+            in_dst[i] = *my_dst;
             my_dst += 1;
             DITHER_INC_X(my_x);
-          }
-    }
+        }
+        }
 #endif
 
-        /* source is in ABGR */
+#ifdef SK_CPU_ARM64
+        vsrc = sk_vld4_u8_arm64_4(src);
+#else
         {
         register uint8x8_t d0 asm("d0");
         register uint8x8_t d1 asm("d1");
         register uint8x8_t d2 asm("d2");
         register uint8x8_t d3 asm("d3");
 
-        asm ("vld4.8    {d0-d3},[%4]  /* r=%P0 g=%P1 b=%P2 a=%P3 */"
-            : "=w" (d0), "=w" (d1), "=w" (d2), "=w" (d3)
-            : "r" (src)
-                    );
-            sr = d0; sg = d1; sb = d2; sa = d3;
+        asm ("vld4.8    {d0-d3},[%[src]]! "
+            : "=w" (d0), "=w" (d1), "=w" (d2), "=w" (d3), [src] "+r" (src)
+            :
+        );
+        vsrc.val[0] = d0;
+        vsrc.val[1] = d1;
+        vsrc.val[2] = d2;
+        vsrc.val[3] = d3;
         }
-
-        /* calculate 'd', which will be 0..7 */
-        /* dbase[] is 0..7; alpha is 0..256; 16 bits suffice */
-#if defined(SK_BUILD_FOR_ANDROID)
-        /* SkAlpha255To256() semantic a+1 vs a+a>>7 */
-        alpha8 = vaddw_u8(vmovl_u8(sa), vdup_n_u8(1));
-#else
-        alpha8 = vaddw_u8(vmovl_u8(sa), vshr_n_u8(sa, 7));
 #endif
-        alpha8 = vmulq_u16(alpha8, vmovl_u8(dbase));
-        d = vshrn_n_u16(alpha8, 8);    /* narrowing too */
+        sa = vsrc.val[NEON_A];
+        sr = vsrc.val[NEON_R];
+        sg = vsrc.val[NEON_G];
+        sb = vsrc.val[NEON_B];
 
-        /* sr = sr - (sr>>5) + d */
+        /* calculate 'd', which will be 0..7
+         * dbase[] is 0..7; alpha is 0..256; 16 bits suffice
+         */
+        alpha8 = vmovl_u8(dbase);
+        alpha8 = vmlal_u8(alpha8, sa, dbase);
+        d = vshrn_n_u16(alpha8, 8);    // narrowing too
+
+        // sr = sr - (sr>>5) + d
         /* watching for 8-bit overflow.  d is 0..7; risky range of
          * sr is >248; and then (sr>>5) is 7 so it offsets 'd';
-         * safe  as long as we do ((sr-sr>>5) + d) */
+         * safe  as long as we do ((sr-sr>>5) + d)
+         */
         sr = vsub_u8(sr, vshr_n_u8(sr, 5));
         sr = vadd_u8(sr, d);
 
-        /* sb = sb - (sb>>5) + d */
+        // sb = sb - (sb>>5) + d
         sb = vsub_u8(sb, vshr_n_u8(sb, 5));
         sb = vadd_u8(sb, d);
 
-        /* sg = sg - (sg>>6) + d>>1; similar logic for overflows */
+        // sg = sg - (sg>>6) + d>>1; similar logic for overflows
         sg = vsub_u8(sg, vshr_n_u8(sg, 6));
         sg = vadd_u8(sg, vshr_n_u8(d,1));
 
-        /* need to pick up 8 dst's -- at 16 bits each, 128 bits */
+        // need to pick up 8 dst's -- at 16 bits each, 128 bits
         dst8 = vld1q_u16(dst);
-        dst_b = vandq_u16(dst8, vdupq_n_u16(0x001F));
-        dst_g = vandq_u16(vshrq_n_u16(dst8,5), vdupq_n_u16(0x003F));
-        dst_r = vshrq_n_u16(dst8,11);    /* clearing hi bits */
+        dst_b = vandq_u16(dst8, vdupq_n_u16(SK_B16_MASK));
+        dst_g = vshrq_n_u16(vshlq_n_u16(dst8, SK_R16_BITS), SK_R16_BITS + SK_B16_BITS);
+        dst_r = vshrq_n_u16(dst8, SK_R16_SHIFT);    // clearing hi bits
 
-        /* blend */
-#if 1
-        /* SkAlpha255To256() semantic a+1 vs a+a>>7 */
-        /* originally 255-sa + 1 */
+        // blend
         scale8 = vsubw_u8(vdupq_n_u16(256), sa);
-#else
-        scale8 = vsubw_u8(vdupq_n_u16(255), sa);
-        scale8 = vaddq_u16(scale8, vshrq_n_u16(scale8, 7));
-#endif
 
-#if 1
-        /* combine the addq and mul, save 3 insns */
+        // combine the addq and mul, save 3 insns
         scale8 = vshrq_n_u16(scale8, 3);
         dst_b = vmlaq_u16(vshll_n_u8(sb,2), dst_b, scale8);
         dst_g = vmlaq_u16(vshll_n_u8(sg,3), dst_g, scale8);
         dst_r = vmlaq_u16(vshll_n_u8(sr,2), dst_r, scale8);
-#else
-        /* known correct, but +3 insns over above */
-        scale8 = vshrq_n_u16(scale8, 3);
-        dst_b = vmulq_u16(dst_b, scale8);
-        dst_g = vmulq_u16(dst_g, scale8);
-        dst_r = vmulq_u16(dst_r, scale8);
 
-        /* combine */
-        /* NB: vshll widens, need to preserve those bits */
-        dst_b = vaddq_u16(dst_b, vshll_n_u8(sb,2));
-        dst_g = vaddq_u16(dst_g, vshll_n_u8(sg,3));
-        dst_r = vaddq_u16(dst_r, vshll_n_u8(sr,2));
-#endif
-
-        /* repack to store */
-        dst8 = vandq_u16(vshrq_n_u16(dst_b, 5), vdupq_n_u16(0x001F));
+        // repack to store
+        dst8 = vshrq_n_u16(dst_b, 5);
         dst8 = vsliq_n_u16(dst8, vshrq_n_u16(dst_g, 5), 5);
         dst8 = vsliq_n_u16(dst8, vshrq_n_u16(dst_r,5), 11);
 
         vst1q_u16(dst, dst8);
 
-#if    defined(DEBUG_OPAQUE_DITHER)
-        /* verify my 8 elements match the temp buffer */
-    {
-       int i, bad=0;
-       static int invocation;
+#if defined(DEBUG_OPAQUE_DITHER)
+        // verify my 8 elements match the temp buffer
+        {
+        int i, bad=0;
+        static int invocation;
 
-       for (i=0;i<UNROLL;i++)
-        if (tmpbuf[i] != dst[i]) bad=1;
-       if (bad) {
-        SkDebugf("BAD S32A_D565_Opaque_Dither_neon(); invocation %d offset %d\n",
-            invocation, offset);
-        SkDebugf("  alpha 0x%x\n", alpha);
-        for (i=0;i<UNROLL;i++)
-            SkDebugf("%2d: %s %04x w %04x id %04x s %08x d %04x %04x %04x %04x\n",
-            i, ((tmpbuf[i] != dst[i])?"BAD":"got"),
-            dst[i], tmpbuf[i], in_dst[i], src[i], td[i], tdv[i], tap[i], ta[i]);
+        for (i = 0; i < UNROLL; i++) {
+            if (tmpbuf[i] != dst[i]) {
+                bad=1;
+            }
+        }
+        if (bad) {
+            SkDebugf("BAD S32A_D565_Opaque_Dither_neon(); invocation %d offset %d\n",
+                     invocation, offset);
+            SkDebugf("  alpha 0x%x\n", alpha);
+            for (i = 0; i < UNROLL; i++)
+                SkDebugf("%2d: %s %04x w %04x id %04x s %08x d %04x %04x %04x %04x\n",
+                         i, ((tmpbuf[i] != dst[i])?"BAD":"got"), dst[i], tmpbuf[i],
+                         in_dst[i], src[i-8], td[i], tdv[i], tap[i], ta[i]);
 
-        showme16("alpha8", &alpha8, sizeof(alpha8));
-        showme16("scale8", &scale8, sizeof(scale8));
-        showme8("d", &d, sizeof(d));
-        showme16("dst8", &dst8, sizeof(dst8));
-        showme16("dst_b", &dst_b, sizeof(dst_b));
-        showme16("dst_g", &dst_g, sizeof(dst_g));
-        showme16("dst_r", &dst_r, sizeof(dst_r));
-        showme8("sb", &sb, sizeof(sb));
-        showme8("sg", &sg, sizeof(sg));
-        showme8("sr", &sr, sizeof(sr));
+            showme16("alpha8", &alpha8, sizeof(alpha8));
+            showme16("scale8", &scale8, sizeof(scale8));
+            showme8("d", &d, sizeof(d));
+            showme16("dst8", &dst8, sizeof(dst8));
+            showme16("dst_b", &dst_b, sizeof(dst_b));
+            showme16("dst_g", &dst_g, sizeof(dst_g));
+            showme16("dst_r", &dst_r, sizeof(dst_r));
+            showme8("sb", &sb, sizeof(sb));
+            showme8("sg", &sg, sizeof(sg));
+            showme8("sr", &sr, sizeof(sr));
 
-        /* cop out */
-        return;
-       }
-       offset += UNROLL;
-       invocation++;
-    }
+            return;
+        }
+        offset += UNROLL;
+        invocation++;
+        }
 #endif
-
-            dst += UNROLL;
-        src += UNROLL;
+        dst += UNROLL;
         count -= UNROLL;
-        /* skip x += UNROLL, since it's unchanged mod-4 */
+        // skip x += UNROLL, since it's unchanged mod-4
         } while (count >= UNROLL);
     }
 #undef    UNROLL
 
-    /* residuals */
+    // residuals
     if (count > 0) {
         DITHER_565_SCAN(y);
         do {
@@ -1218,7 +1352,11 @@ void S32_D565_Opaque_Dither_neon(uint16_t* SK_RESTRICT dst,
         uint8x8_t sr, sg, sb;
         uint16x8_t dr, dg, db;
         uint16x8_t dst8;
+        uint8x8x4_t vsrc;
 
+#ifdef SK_CPU_ARM64
+        vsrc = sk_vld4_u8_arm64_3(src);
+#else
         {
         register uint8x8_t d0 asm("d0");
         register uint8x8_t d1 asm("d1");
@@ -1226,17 +1364,19 @@ void S32_D565_Opaque_Dither_neon(uint16_t* SK_RESTRICT dst,
         register uint8x8_t d3 asm("d3");
 
         asm (
-            "vld4.8    {d0-d3},[%[src]]!  /* r=%P0 g=%P1 b=%P2 a=%P3 */"
+            "vld4.8    {d0-d3},[%[src]]! "
             : "=w" (d0), "=w" (d1), "=w" (d2), "=w" (d3), [src] "+&r" (src)
             :
         );
-        sg = d1;
-#if SK_PMCOLOR_BYTE_ORDER(B,G,R,A)
-        sr = d2; sb = d0;
-#elif SK_PMCOLOR_BYTE_ORDER(R,G,B,A)
-        sr = d0; sb = d2;
-#endif
+        vsrc.val[0] = d0;
+        vsrc.val[1] = d1;
+        vsrc.val[2] = d2;
         }
+#endif
+        sr = vsrc.val[NEON_R];
+        sg = vsrc.val[NEON_G];
+        sb = vsrc.val[NEON_B];
+
         /* XXX: if we want to prefetch, hide it in the above asm()
          * using the gcc __builtin_prefetch(), the prefetch will
          * fall to the bottom of the loop -- it won't stick up
@@ -1321,84 +1461,88 @@ void Color32_arm_neon(SkPMColor* dst, const SkPMColor* src, int count,
     unsigned colorA = SkGetPackedA32(color);
     if (255 == colorA) {
         sk_memset32(dst, color, count);
-    } else {
-        unsigned scale = 256 - SkAlpha255To256(colorA);
+        return;
+    }
 
-        if (count >= 8) {
-            // at the end of this assembly, count will have been decremented
-            // to a negative value. That is, if count mod 8 = x, it will be
-            // -8 +x coming out.
-            asm volatile (
-                PLD128(src, 0)
+    unsigned scale = 256 - SkAlpha255To256(colorA);
 
-                "vdup.32    q0, %[color]                \n\t"
+    if (count >= 8) {
+        uint32x4_t vcolor;
+        uint8x8_t vscale;
 
-                PLD128(src, 128)
+        vcolor = vdupq_n_u32(color);
 
-                // scale numerical interval [0-255], so load as 8 bits
-                "vdup.8     d2, %[scale]                \n\t"
+        // scale numerical interval [0-255], so load as 8 bits
+        vscale = vdup_n_u8(scale);
 
-                PLD128(src, 256)
+        do {
+            // load src color, 8 pixels, 4 64 bit registers
+            // (and increment src).
+            uint32x2x4_t vsrc;
+#if defined(SK_CPU_ARM32) && ((__GNUC__ > 4) || ((__GNUC__ == 4) && (__GNUC_MINOR__ > 6)))
+            asm (
+                "vld1.32    %h[vsrc], [%[src]]!"
+                : [vsrc] "=w" (vsrc), [src] "+r" (src)
+                : :
+            );
+#else // 64bit targets and Clang
+            vsrc.val[0] = vld1_u32(src);
+            vsrc.val[1] = vld1_u32(src+2);
+            vsrc.val[2] = vld1_u32(src+4);
+            vsrc.val[3] = vld1_u32(src+6);
+            src += 8;
+#endif
 
-                "subs       %[count], %[count], #8      \n\t"
+            // multiply long by scale, 64 bits at a time,
+            // destination into a 128 bit register.
+            uint16x8x4_t vtmp;
+            vtmp.val[0] = vmull_u8(vreinterpret_u8_u32(vsrc.val[0]), vscale);
+            vtmp.val[1] = vmull_u8(vreinterpret_u8_u32(vsrc.val[1]), vscale);
+            vtmp.val[2] = vmull_u8(vreinterpret_u8_u32(vsrc.val[2]), vscale);
+            vtmp.val[3] = vmull_u8(vreinterpret_u8_u32(vsrc.val[3]), vscale);
 
-                PLD128(src, 384)
+            // shift the 128 bit registers, containing the 16
+            // bit scaled values back to 8 bits, narrowing the
+            // results to 64 bit registers.
+            uint8x16x2_t vres;
+            vres.val[0] = vcombine_u8(
+                            vshrn_n_u16(vtmp.val[0], 8),
+                            vshrn_n_u16(vtmp.val[1], 8));
+            vres.val[1] = vcombine_u8(
+                            vshrn_n_u16(vtmp.val[2], 8),
+                            vshrn_n_u16(vtmp.val[3], 8));
 
-                "Loop_Color32:                          \n\t"
+            // adding back the color, using 128 bit registers.
+            uint32x4x2_t vdst;
+            vdst.val[0] = vreinterpretq_u32_u8(vres.val[0] +
+                                               vreinterpretq_u8_u32(vcolor));
+            vdst.val[1] = vreinterpretq_u32_u8(vres.val[1] +
+                                               vreinterpretq_u8_u32(vcolor));
 
-                // load src color, 8 pixels, 4 64 bit registers
-                // (and increment src).
-                "vld1.32    {d4-d7}, [%[src]]!          \n\t"
+            // store back the 8 calculated pixels (2 128 bit
+            // registers), and increment dst.
+#if defined(SK_CPU_ARM32) && ((__GNUC__ > 4) || ((__GNUC__ == 4) && (__GNUC_MINOR__ > 6)))
+            asm (
+                "vst1.32    %h[vdst], [%[dst]]!"
+                : [dst] "+r" (dst)
+                : [vdst] "w" (vdst)
+                : "memory"
+            );
+#else // 64bit targets and Clang
+            vst1q_u32(dst, vdst.val[0]);
+            vst1q_u32(dst+4, vdst.val[1]);
+            dst += 8;
+#endif
+            count -= 8;
 
-                PLD128(src, 384)
+        } while (count >= 8);
+    }
 
-                // multiply long by scale, 64 bits at a time,
-                // destination into a 128 bit register.
-                "vmull.u8   q4, d4, d2                  \n\t"
-                "vmull.u8   q5, d5, d2                  \n\t"
-                "vmull.u8   q6, d6, d2                  \n\t"
-                "vmull.u8   q7, d7, d2                  \n\t"
-
-                // shift the 128 bit registers, containing the 16
-                // bit scaled values back to 8 bits, narrowing the
-                // results to 64 bit registers.
-                "vshrn.i16  d8, q4, #8                  \n\t"
-                "vshrn.i16  d9, q5, #8                  \n\t"
-                "vshrn.i16  d10, q6, #8                 \n\t"
-                "vshrn.i16  d11, q7, #8                 \n\t"
-
-                // adding back the color, using 128 bit registers.
-                "vadd.i8    q6, q4, q0                  \n\t"
-                "vadd.i8    q7, q5, q0                  \n\t"
-
-                // store back the 8 calculated pixels (2 128 bit
-                // registers), and increment dst.
-                "vst1.32    {d12-d15}, [%[dst]]!        \n\t"
-
-                "subs       %[count], %[count], #8      \n\t"
-                "bge        Loop_Color32                \n\t"
-                : [src] "+r" (src), [dst] "+r" (dst), [count] "+r" (count)
-                : [color] "r" (color), [scale] "r" (scale)
-                : "cc", "memory",
-                  "d0", "d1", "d2", "d3", "d4", "d5", "d6", "d7",
-                  "d8", "d9", "d10", "d11", "d12", "d13", "d14", "d15"
-                          );
-            // At this point, if we went through the inline assembly, count is
-            // a negative value:
-            // if the value is -8, there is no pixel left to process.
-            // if the value is -7, there is one pixel left to process
-            // ...
-            // And'ing it with 7 will give us the number of pixels
-            // left to process.
-            count = count & 0x7;
-        }
-
-        while (count > 0) {
-            *dst = color + SkAlphaMulQ(*src, scale);
-            src += 1;
-            dst += 1;
-            count--;
-        }
+    while (count > 0) {
+        *dst = color + SkAlphaMulQ(*src, scale);
+        src += 1;
+        dst += 1;
+        count--;
     }
 }
 
@@ -1406,12 +1550,13 @@ void Color32_arm_neon(SkPMColor* dst, const SkPMColor* src, int count,
 
 const SkBlitRow::Proc sk_blitrow_platform_565_procs_arm_neon[] = {
     // no dither
-    // NOTE: For the S32_D565_Blend function below, we don't have a special
-    //       version that assumes that each source pixel is opaque. But our
-    //       S32A is still faster than the default, so use it.
     S32_D565_Opaque_neon,
-    S32A_D565_Blend_neon,   // really S32_D565_Blend
+    S32_D565_Blend_neon,
+#ifdef SK_CPU_ARM32
     S32A_D565_Opaque_neon,
+#else
+    NULL,
+#endif
     S32A_D565_Blend_neon,
 
     // dither
@@ -1439,5 +1584,9 @@ const SkBlitRow::Proc32 sk_blitrow_platform_32_procs_arm_neon[] = {
 #else
     S32A_Opaque_BlitRow32_neon,     // S32A_Opaque,
 #endif
+#ifdef SK_CPU_ARM32
     S32A_Blend_BlitRow32_neon        // S32A_Blend
+#else
+    NULL
+#endif
 };

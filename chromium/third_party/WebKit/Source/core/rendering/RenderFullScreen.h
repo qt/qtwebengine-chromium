@@ -34,8 +34,8 @@ class RenderFullScreen FINAL : public RenderFlexibleBox {
 public:
     static RenderFullScreen* createAnonymous(Document*);
 
-    virtual bool isRenderFullScreen() const { return true; }
-    virtual const char* renderName() const { return "RenderFullScreen"; }
+    virtual bool isRenderFullScreen() const OVERRIDE { return true; }
+    virtual const char* renderName() const OVERRIDE { return "RenderFullScreen"; }
 
     void setPlaceholder(RenderBlock*);
     RenderBlock* placeholder() { return m_placeholder; }
@@ -47,8 +47,7 @@ public:
 
 private:
     RenderFullScreen();
-    virtual bool supportsPartialLayout() const OVERRIDE { return false; }
-    virtual void willBeDestroyed();
+    virtual void willBeDestroyed() OVERRIDE;
 
 protected:
     RenderBlock* m_placeholder;

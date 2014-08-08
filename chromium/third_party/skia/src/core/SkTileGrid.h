@@ -9,9 +9,9 @@
 #ifndef SkTileGrid_DEFINED
 #define SkTileGrid_DEFINED
 
+#include "SkBBHFactory.h"
 #include "SkBBoxHierarchy.h"
 #include "SkPictureStateTree.h"
-#include "SkTileGridPicture.h" // for TileGridInfo
 
 /**
  * Subclass of SkBBoxHierarchy that stores elements in buckets that correspond
@@ -35,7 +35,7 @@ public:
 
     typedef void* (*SkTileGridNextDatumFunctionPtr)(SkTDArray<void*>** tileData, SkAutoSTArray<kStackAllocationTileCount, int>& tileIndices);
 
-    SkTileGrid(int xTileCount, int yTileCount, const SkTileGridPicture::TileGridInfo& info,
+    SkTileGrid(int xTileCount, int yTileCount, const SkTileGridFactory::TileGridInfo& info,
         SkTileGridNextDatumFunctionPtr nextDatumFunction);
 
     virtual ~SkTileGrid();
@@ -63,23 +63,27 @@ public:
      */
     virtual int getCount() const SK_OVERRIDE;
 
+    virtual int getDepth() const SK_OVERRIDE { return -1; }
+
     virtual void rewindInserts() SK_OVERRIDE;
 
     // Used by search() and in SkTileGridHelper implementations
     enum {
         kTileFinished = -1,
     };
+
+    int tileCount(int x, int y);  // For testing only.
+
 private:
     SkTDArray<void*>& tile(int x, int y);
 
     int fXTileCount, fYTileCount, fTileCount;
-    SkTileGridPicture::TileGridInfo fInfo;
+    SkTileGridFactory::TileGridInfo fInfo;
     SkTDArray<void*>* fTileData;
     int fInsertionCount;
     SkIRect fGridBounds;
     SkTileGridNextDatumFunctionPtr fNextDatumFunction;
 
-    friend class TileGridTest;
     typedef SkBBoxHierarchy INHERITED;
 };
 

@@ -27,6 +27,7 @@
 #ifndef DOMWindowWebDatabase_h
 #define DOMWindowWebDatabase_h
 
+#include "platform/heap/Handle.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
@@ -34,15 +35,15 @@
 
 namespace WebCore {
 
-class DOMWindow;
+class LocalDOMWindow;
 class Database;
 class DatabaseCallback;
 class ExceptionState;
-class Frame;
+class LocalFrame;
 
 class DOMWindowWebDatabase {
 public:
-    static PassRefPtr<Database> openDatabase(DOMWindow*, const String& name, const String& version, const String& displayName, unsigned long estimatedSize, PassOwnPtr<DatabaseCallback> creationCallback, ExceptionState&);
+    static PassRefPtrWillBeRawPtr<Database> openDatabase(LocalDOMWindow&, const String& name, const String& version, const String& displayName, unsigned long estimatedSize, PassOwnPtr<DatabaseCallback> creationCallback, ExceptionState&);
 
 private:
     DOMWindowWebDatabase() { };

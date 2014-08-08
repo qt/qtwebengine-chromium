@@ -395,6 +395,10 @@ _swrast_write_zoomed_stencil_span(struct gl_context *ctx, GLint imgX, GLint imgY
    free(zoomedVals);
 }
 
+// http://crbug.com/348397
+#ifdef _MSC_VER
+#pragma optimize("", off)
+#endif
 
 /**
  * Zoom/write 32-bit Z values.
@@ -440,3 +444,7 @@ _swrast_write_zoomed_z_span(struct gl_context *ctx, GLint imgX, GLint imgY,
 
    free(zoomedVals);
 }
+
+#ifdef _MSC_VER
+#pragma optimize("", off)
+#endif

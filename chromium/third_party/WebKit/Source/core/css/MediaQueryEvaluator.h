@@ -28,64 +28,67 @@
 #ifndef MediaQueryEvaluator_h
 #define MediaQueryEvaluator_h
 
+#include "platform/heap/Handle.h"
 #include "wtf/text/WTFString.h"
 
 namespace WebCore {
-class Frame;
+class LocalFrame;
 class MediaQueryExp;
 class MediaQueryResult;
 class MediaQuerySet;
 class RenderStyle;
+class MediaValues;
 
-typedef Vector<RefPtr<MediaQueryResult> > MediaQueryResultList;
+typedef WillBeHeapVector<RefPtrWillBeMember<MediaQueryResult> > MediaQueryResultList;
 
-/**
- * Class that evaluates css media queries as defined in
- * CSS3 Module "Media Queries" (http://www.w3.org/TR/css3-mediaqueries/)
- * Special constructors are needed, if simple media queries are to be
- * evaluated without knowledge of the medium features. This can happen
- * for example when parsing UA stylesheets, if evaluation is done
- * right after parsing.
- *
- * the boolean parameter is used to approximate results of evaluation, if
- * the device characteristics are not known. This can be used to prune the loading
- * of stylesheets to only those which are probable to match.
- */
+// Class that evaluates css media queries as defined in
+// CSS3 Module "Media Queries" (http://www.w3.org/TR/css3-mediaqueries/)
+// Special constructors are needed, if simple media queries are to be
+// evaluated without knowledge of the medium features. This can happen
+// for example when parsing UA stylesheets, if evaluation is done
+// right after parsing.
+//
+// the boolean parameter is used to approximate results of evaluation, if
+// the device characteristics are not known. This can be used to prune the loading
+// of stylesheets to only those which are probable to match.
+
 class MediaQueryEvaluator {
     WTF_MAKE_NONCOPYABLE(MediaQueryEvaluator); WTF_MAKE_FAST_ALLOCATED;
 public:
-    /** Creates evaluator which evaluates only simple media queries
-     *  Evaluator returns true for "all", and returns value of \mediaFeatureResult
-     *  for any media features
-     */
+    // Creates evaluator which evaluates only simple media queries
+    // Evaluator returns true for "all", and returns value of \mediaFeatureResult
+    // for any media features
+
     explicit MediaQueryEvaluator(bool mediaFeatureResult = false);
 
-    /** Creates evaluator which evaluates only simple media queries
-     *  Evaluator  returns true for acceptedMediaType and returns value of \mediafeatureResult
-     *  for any media features
-     */
-    MediaQueryEvaluator(const AtomicString& acceptedMediaType, bool mediaFeatureResult = false);
+    // Creates evaluator which evaluates only simple media queries
+    // Evaluator  returns true for acceptedMediaType and returns value of \mediafeatureResult
+    // for any media features
+
+    MediaQueryEvaluator(const String& acceptedMediaType, bool mediaFeatureResult = false);
     MediaQueryEvaluator(const char* acceptedMediaType, bool mediaFeatureResult = false);
 
-    /** Creates evaluator which evaluates full media queries */
-    MediaQueryEvaluator(const AtomicString& acceptedMediaType, Frame*, RenderStyle*);
+    // Creates evaluator which evaluates full media queries
+    MediaQueryEvaluator(const String& acceptedMediaType, LocalFrame*);
+
+    // Creates evaluator which evaluates in a thread-safe manner a subset of media values
+    MediaQueryEvaluator(const String& acceptedMediaType, const MediaValues&);
 
     ~MediaQueryEvaluator();
 
-    bool mediaTypeMatch(const AtomicString& mediaTypeToMatch) const;
+    bool mediaTypeMatch(const String& mediaTypeToMatch) const;
     bool mediaTypeMatchSpecific(const char* mediaTypeToMatch) const;
 
-    /** Evaluates a list of media queries */
+    // Evaluates a list of media queries
     bool eval(const MediaQuerySet*, MediaQueryResultList* = 0) const;
 
-    /** Evaluates media query subexpression, ie "and (media-feature: value)" part */
+    // Evaluates media query subexpression, ie "and (media-feature: value)" part
     bool eval(const MediaQueryExp*) const;
 
 private:
-    AtomicString m_mediaType;
-    Frame* m_frame; // Not owned.
-    RefPtr<RenderStyle> m_style;
-    bool m_expResult;
+    String m_mediaType;
+    bool m_expectedResult;
+    RefPtr<MediaValues> m_mediaValues;
 };
 
 } // namespace

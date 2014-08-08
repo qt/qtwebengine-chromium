@@ -8,6 +8,7 @@
 #include <GLES2/gl2ext.h>
 #include <GLES2/gl2extchromium.h>
 
+#include "base/atomicops.h"
 #include "gpu/command_buffer/client/gles2_cmd_helper.h"
 #include "gpu/command_buffer/client/gles2_implementation.h"
 #include "gpu/command_buffer/client/mapped_memory.h"
@@ -92,7 +93,7 @@ QueryTracker::Query::Query(GLuint id, GLenum target,
       state_(kUninitialized),
       submit_count_(0),
       token_(0),
-      flushed_(false),
+      flush_count_(0),
       client_begin_time_us_(0),
       result_(0) {
     }
@@ -139,6 +140,7 @@ void QueryTracker::Query::End(GLES2Implementation* gl) {
       }
     }
   }
+  flush_count_ = gl->helper()->flush_generation();
   gl->helper()->EndQueryEXT(target(), submit_count());
   MarkAsPending(gl->helper()->InsertToken());
 }
@@ -146,11 +148,9 @@ void QueryTracker::Query::End(GLES2Implementation* gl) {
 bool QueryTracker::Query::CheckResultsAvailable(
     CommandBufferHelper* helper) {
   if (Pending()) {
-    if (info_.sync->process_count == submit_count_ ||
+    if (base::subtle::Acquire_Load(&info_.sync->process_count) ==
+            submit_count_ ||
         helper->IsContextLost()) {
-      // Need a MemoryBarrier here so that sync->result read after
-      // sync->process_count.
-      base::subtle::MemoryBarrier();
       switch (target()) {
         case GL_COMMANDS_ISSUED_CHROMIUM:
           result_ = std::min(info_.sync->result,
@@ -169,12 +169,7 @@ bool QueryTracker::Query::CheckResultsAvailable(
       }
       state_ = kComplete;
     } else {
-      if (!flushed_) {
-        // TODO(gman): We could reduce the number of flushes by having a
-        // flush count, recording that count at the time we insert the
-        // EndQuery command and then only flushing here if we've have not
-        // passed that count yet.
-        flushed_ = true;
+      if ((helper->flush_generation() - flush_count_ - 1) >= 0x80000000) {
         helper->Flush();
       } else {
         // Insert no-ops so that eventually the GPU process will see more work.
@@ -249,7 +244,8 @@ void QueryTracker::FreeCompletedQueries() {
   while (it != removed_queries_.end()) {
     Query* query = *it;
     if (query->Pending() &&
-        query->info_.sync->process_count != query->submit_count()) {
+        base::subtle::Acquire_Load(&query->info_.sync->process_count) !=
+            query->submit_count()) {
       ++it;
       continue;
     }

@@ -137,9 +137,7 @@
 // method in the parent class.
 // Use like:
 //   virtual void foo() OVERRIDE;
-#if defined(COMPILER_MSVC)
-#define OVERRIDE override
-#elif defined(__clang__)
+#if defined(__clang__) || defined(COMPILER_MSVC)
 #define OVERRIDE override
 #elif defined(COMPILER_GCC) && __cplusplus >= 201103 && \
       (__GNUC__ * 10000 + __GNUC_MINOR__ * 100) >= 40700
@@ -154,10 +152,7 @@
 // Use like:
 //   virtual void foo() FINAL;
 //   class B FINAL : public A {};
-#if defined(COMPILER_MSVC)
-// TODO(jered): Change this to "final" when chromium no longer uses MSVC 2010.
-#define FINAL sealed
-#elif defined(__clang__)
+#if defined(__clang__) || defined(COMPILER_MSVC)
 #define FINAL final
 #elif defined(COMPILER_GCC) && __cplusplus >= 201103 && \
       (__GNUC__ * 10000 + __GNUC_MINOR__ * 100) >= 40700
@@ -196,12 +191,9 @@
 // If available, it would look like:
 //   __attribute__((format(wprintf, format_param, dots_param)))
 
-
 // MemorySanitizer annotations.
-#ifdef MEMORY_SANITIZER
-extern "C" {
-void __msan_unpoison(const void *p, unsigned long s);
-}  // extern "C"
+#if defined(MEMORY_SANITIZER) && !defined(OS_NACL)
+#include <sanitizer/msan_interface.h>
 
 // Mark a memory region fully initialized.
 // Use this to annotate code that deliberately reads uninitialized data, for
@@ -210,5 +202,23 @@ void __msan_unpoison(const void *p, unsigned long s);
 #else  // MEMORY_SANITIZER
 #define MSAN_UNPOISON(p, s)
 #endif  // MEMORY_SANITIZER
+
+// Macro useful for writing cross-platform function pointers.
+#if !defined(CDECL)
+#if defined(OS_WIN)
+#define CDECL __cdecl
+#else  // defined(OS_WIN)
+#define CDECL
+#endif  // defined(OS_WIN)
+#endif  // !defined(CDECL)
+
+// Macro for hinting that an expression is likely to be false.
+#if !defined(UNLIKELY)
+#if defined(COMPILER_GCC)
+#define UNLIKELY(x) __builtin_expect(!!(x), 0)
+#else
+#define UNLIKELY(x) (x)
+#endif  // defined(COMPILER_GCC)
+#endif  // !defined(UNLIKELY)
 
 #endif  // BASE_COMPILER_SPECIFIC_H_

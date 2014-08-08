@@ -30,6 +30,12 @@ class AudioDeviceTemplate : public AudioDeviceGeneric {
     }
     return InputType::SetAndroidAudioDeviceObjects(javaVM, env, context);
   }
+
+  static void ClearAndroidAudioDeviceObjects() {
+    OutputType::ClearAndroidAudioDeviceObjects();
+    InputType::ClearAndroidAudioDeviceObjects();
+  }
+
   explicit AudioDeviceTemplate(const int32_t id)
       : output_(id),
         input_(id, &output_) {
@@ -169,22 +175,12 @@ class AudioDeviceTemplate : public AudioDeviceGeneric {
     return -1;
   }
 
-  int32_t SpeakerIsAvailable(
-      bool& available) {  // NOLINT
-    return output_.SpeakerIsAvailable(available);
-  }
-
   int32_t InitSpeaker() {
     return output_.InitSpeaker();
   }
 
   bool SpeakerIsInitialized() const {
     return output_.SpeakerIsInitialized();
-  }
-
-  int32_t MicrophoneIsAvailable(
-      bool& available) {  // NOLINT
-    return input_.MicrophoneIsAvailable(available);
   }
 
   int32_t InitMicrophone() {

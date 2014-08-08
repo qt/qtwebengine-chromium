@@ -28,6 +28,7 @@
 
 [
     CheckSecurity=Frame,
+    WillBeGarbageCollected,
 ] interface Location {
     // |assign|, |replace|, and *writing* |href| do not require a security
     // check, as they *change* the page, and thus these do not change any
@@ -36,8 +37,8 @@
     // problem, since that allows tracking navigation.
     [SetterCallWith=ActiveWindow&FirstWindow, DoNotCheckSecurity=Setter, Unforgeable] attribute DOMString href;
 
-    [CallWith=ActiveWindow&FirstWindow, DoNotCheckSecurity, Unforgeable, ReadOnly, PerWorldBindings, ActivityLogging=ForIsolatedWorlds] void assign(DOMString url);
-    [CallWith=ActiveWindow&FirstWindow, DoNotCheckSecurity, Unforgeable, ReadOnly, PerWorldBindings, ActivityLogging=ForIsolatedWorlds] void replace(DOMString url);
+    [CallWith=ActiveWindow&FirstWindow, DoNotCheckSecurity, Unforgeable, ReadOnly, LogActivity] void assign(DOMString url);
+    [CallWith=ActiveWindow&FirstWindow, DoNotCheckSecurity, Unforgeable, ReadOnly, LogActivity] void replace(DOMString url);
     [CallWith=ActiveWindow, Unforgeable, ReadOnly] void reload();
 
     // URI decomposition attributes

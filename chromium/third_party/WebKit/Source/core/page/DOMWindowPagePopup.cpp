@@ -31,7 +31,7 @@
 #include "config.h"
 #include "core/page/DOMWindowPagePopup.h"
 
-#include "core/frame/DOMWindow.h"
+#include "core/frame/LocalDOMWindow.h"
 #include "core/page/PagePopupController.h"
 
 namespace WebCore {
@@ -42,34 +42,36 @@ DOMWindowPagePopup::DOMWindowPagePopup(PagePopupClient* popupClient)
     ASSERT(popupClient);
 }
 
-DOMWindowPagePopup::~DOMWindowPagePopup()
-{
-    m_controller->clearPagePopupClient();
-}
+DEFINE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(DOMWindowPagePopup);
 
 const char* DOMWindowPagePopup::supplementName()
 {
     return "DOMWindowPagePopup";
 }
 
-PagePopupController* DOMWindowPagePopup::pagePopupController(DOMWindow* window)
+PagePopupController* DOMWindowPagePopup::pagePopupController(LocalDOMWindow& window)
 {
-    DOMWindowPagePopup* supplement = static_cast<DOMWindowPagePopup*>(from(window, supplementName()));
+    DOMWindowPagePopup* supplement = static_cast<DOMWindowPagePopup*>(from(&window, supplementName()));
     ASSERT(supplement);
     return supplement->m_controller.get();
 }
 
-void DOMWindowPagePopup::install(DOMWindow* window, PagePopupClient* popupClient)
+void DOMWindowPagePopup::install(LocalDOMWindow& window, PagePopupClient* popupClient)
 {
-    ASSERT(window);
     ASSERT(popupClient);
-    provideTo(window, supplementName(), adoptPtr(new DOMWindowPagePopup(popupClient)));
+    provideTo(window, supplementName(), adoptPtrWillBeNoop(new DOMWindowPagePopup(popupClient)));
 }
 
-void DOMWindowPagePopup::uninstall(DOMWindow* window)
+void DOMWindowPagePopup::uninstall(LocalDOMWindow& window)
 {
-    ASSERT(window);
-    window->removeSupplement(supplementName());
+    pagePopupController(window)->clearPagePopupClient();
+    window.removeSupplement(supplementName());
+}
+
+void DOMWindowPagePopup::trace(Visitor* visitor)
+{
+    visitor->trace(m_controller);
+    WillBeHeapSupplement<LocalDOMWindow>::trace(visitor);
 }
 
 }

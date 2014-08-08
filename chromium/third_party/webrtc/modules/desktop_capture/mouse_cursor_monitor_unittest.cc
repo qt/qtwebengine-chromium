@@ -50,7 +50,12 @@ class MouseCursorMonitorTest : public testing::Test,
 // tests. Figure out how to do that without breaking other tests in
 // modules_unittests and enable these tests on Mac.
 // https://code.google.com/p/webrtc/issues/detail?id=2532
-#if !defined(WEBRTC_MAC)
+//
+// Disabled on Windows due to flake, see:
+// https://code.google.com/p/webrtc/issues/detail?id=3408
+// Disabled on Linux due to flake, see:
+// https://code.google.com/p/webrtc/issues/detail?id=3245
+#if !defined(WEBRTC_MAC) && !defined(WEBRTC_WIN) && !defined(WEBRTC_LINUX)
 #define MAYBE(x) x
 #else
 #define MAYBE(x) DISABLED_##x
@@ -58,7 +63,7 @@ class MouseCursorMonitorTest : public testing::Test,
 
 TEST_F(MouseCursorMonitorTest, MAYBE(FromScreen)) {
   scoped_ptr<MouseCursorMonitor> capturer(MouseCursorMonitor::CreateForScreen(
-      DesktopCaptureOptions::CreateDefault()));
+      DesktopCaptureOptions::CreateDefault(), webrtc::kFullDesktopScreenId));
   assert(capturer.get());
   capturer->Init(this, MouseCursorMonitor::SHAPE_AND_POSITION);
   capturer->Capture();
@@ -66,10 +71,10 @@ TEST_F(MouseCursorMonitorTest, MAYBE(FromScreen)) {
   EXPECT_TRUE(cursor_image_.get());
   EXPECT_GE(cursor_image_->hotspot().x(), 0);
   EXPECT_LE(cursor_image_->hotspot().x(),
-            cursor_image_->image().size().width());
+            cursor_image_->image()->size().width());
   EXPECT_GE(cursor_image_->hotspot().y(), 0);
   EXPECT_LE(cursor_image_->hotspot().y(),
-            cursor_image_->image().size().height());
+            cursor_image_->image()->size().height());
 
   EXPECT_TRUE(position_received_);
   EXPECT_EQ(MouseCursorMonitor::INSIDE, state_);
@@ -109,7 +114,7 @@ TEST_F(MouseCursorMonitorTest, MAYBE(FromWindow)) {
 // Make sure that OnMouseCursorPosition() is not called in the SHAPE_ONLY mode.
 TEST_F(MouseCursorMonitorTest, MAYBE(ShapeOnly)) {
   scoped_ptr<MouseCursorMonitor> capturer(MouseCursorMonitor::CreateForScreen(
-      DesktopCaptureOptions::CreateDefault()));
+      DesktopCaptureOptions::CreateDefault(), webrtc::kFullDesktopScreenId));
   assert(capturer.get());
   capturer->Init(this, MouseCursorMonitor::SHAPE_ONLY);
   capturer->Capture();

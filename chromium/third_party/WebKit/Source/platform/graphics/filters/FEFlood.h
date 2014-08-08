@@ -41,14 +41,12 @@ public:
 
     // feFlood does not perform color interpolation of any kind, so the result is always in the current
     // color space regardless of the value of color-interpolation-filters.
-    void setOperatingColorSpace(ColorSpace) OVERRIDE { }
-    void setResultColorSpace(ColorSpace) OVERRIDE { }
+    virtual void setOperatingColorSpace(ColorSpace) OVERRIDE { }
+    virtual void setResultColorSpace(ColorSpace) OVERRIDE { }
 
     virtual PassRefPtr<SkImageFilter> createImageFilter(SkiaImageFilterBuilder*) OVERRIDE;
 
-    virtual void determineAbsolutePaintRect() { setAbsolutePaintRect(enclosingIntRect(maxEffectRect())); }
-
-    virtual TextStream& externalRepresentation(TextStream&, int indention) const;
+    virtual TextStream& externalRepresentation(TextStream&, int indention) const OVERRIDE;
 
 private:
     FEFlood(Filter*, const Color&, float);

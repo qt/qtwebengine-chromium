@@ -31,6 +31,7 @@
 #include "config.h"
 #include "platform/mhtml/MHTMLArchive.h"
 
+#include "platform/DateComponents.h"
 #include "platform/MIMETypeRegistry.h"
 #include "platform/SerializedResource.h"
 #include "platform/SharedBuffer.h"
@@ -39,7 +40,6 @@
 #include "platform/weborigin/SchemeRegistry.h"
 #include "wtf/CryptographicallyRandomNumber.h"
 #include "wtf/DateMath.h"
-#include "wtf/GregorianDateTime.h"
 #include "wtf/text/Base64.h"
 #include "wtf/text/StringBuilder.h"
 
@@ -99,12 +99,12 @@ PassRefPtr<MHTMLArchive> MHTMLArchive::create(const KURL& url, SharedBuffer* dat
 {
     // For security reasons we only load MHTML pages from local URLs.
     if (!SchemeRegistry::shouldTreatURLSchemeAsLocal(url.protocol()))
-        return 0;
+        return nullptr;
 
     MHTMLParser parser(data);
     RefPtr<MHTMLArchive> mainArchive = parser.parseArchive();
     if (!mainArchive)
-        return 0; // Invalid MHTML file.
+        return nullptr; // Invalid MHTML file.
 
     // Since MHTML is a flat format, we need to make all frames aware of all resources.
     for (size_t i = 0; i < parser.frameCount(); ++i) {
@@ -124,9 +124,9 @@ PassRefPtr<SharedBuffer> MHTMLArchive::generateMHTMLData(const Vector<Serialized
     String boundary = generateRandomBoundary();
     String endOfResourceBoundary = "--" + boundary + "\r\n";
 
-    GregorianDateTime now;
-    now.setToCurrentLocalTime();
-    String dateString = makeRFC2822DateString(now.weekDay(), now.monthDay(), now.month(), now.year(), now.hour(), now.minute(), now.second(), now.utcOffset() / 60);
+    DateComponents now;
+    now.setMillisecondsSinceEpochForDateTime(currentTimeMS());
+    String dateString = makeRFC2822DateString(now.weekDay(), now.monthDay(), now.month(), now.fullYear(), now.hour(), now.minute(), now.second(), 0);
 
     StringBuilder stringBuilder;
     stringBuilder.append("From: <Saved by WebKit>\r\n");

@@ -37,14 +37,7 @@ ui.notifications.Stream = base.extends('ol', {
     },
     add: function(notification)
     {
-        var insertBefore = null;
-        Array.prototype.some.call(this.children, function(existingNotification) {
-            if (existingNotification.index() < notification.index()) {
-                insertBefore = existingNotification;
-                return true;
-            }
-        });
-        this.insertBefore(notification, insertBefore);
+        this.appendChild(notification);
         return notification;
     }
 });
@@ -58,14 +51,6 @@ ui.notifications.Notification = base.extends('li', {
         this._what.className = 'what';
         this._index = 0;
         $(this).hide().fadeIn('fast');
-    },
-    index: function()
-    {
-        return this._index;
-    },
-    setIndex: function(index)
-    {
-        this._index = index;
     },
     dismiss: function()
     {
@@ -96,7 +81,7 @@ ui.notifications.Info = base.extends(ui.notifications.Notification, {
 ui.notifications.FailingTestGroup = base.extends('li', {
     init: function(groupName, testNameList)
     {
-        this.appendChild(base.createLinkNode(ui.urlForFlakinessDashboard(testNameList), groupName, '_blank'));
+        this.appendChild(ui.createLinkNode(ui.urlForFlakinessDashboard(testNameList), groupName));
     }
 });
 
@@ -112,13 +97,17 @@ ui.notifications.SuspiciousCommit = base.extends(Cause, {
     init: function(commitData)
     {
         this._revision = commitData.revision;
-        this._description.appendChild(base.createLinkNode(trac.changesetURL(commitData.revision), commitData.revision, '_blank'));
+        this._description.appendChild(ui.createLinkNode(trac.changesetURL(commitData.revision), commitData.revision));
         this._details = this._description.appendChild(document.createElement('span'));
-        this._addDetail('summary', commitData);
+        this._addDetail('title', commitData);
         this._addDetail('author', commitData);
         this._addDetail('reviewer', commitData);
-        // FIXME: Add bugID detail.
-        // this._addDetail('bugID', commitData, bugzilla.bugURL);
+        this._addDetail('bugID', commitData,
+            ui.urlForCrbug,
+            function(value) {
+                return value.split(/\s*,\s*/);
+            }
+        );
     },
     hasRevision: function(revision)
     {
@@ -132,19 +121,25 @@ ui.notifications.SuspiciousCommit = base.extends(Cause, {
 
         var span = this._details.appendChild(document.createElement('span'));
         span.className = part;
-        
+
         if (linkFunction) {
-            var link = base.createLinkNode(linkFunction(content), content, '_blank');
-            span.appendChild(link);
-        } else
+            var parts = $.isArray(content) ? content : [content];
+            parts.forEach(function(item, index) {
+                if (index > 0)
+                    span.appendChild(document.createTextNode(', '));
+                var link = ui.createLinkNode(linkFunction(item), item);
+                link.className = part + '-item';
+                span.appendChild(link);
+            });
+        } else {
             span.textContent = content;
+        }
     }
 });
 
 ui.notifications.Failure = base.extends(ui.notifications.Notification, {
     init: function()
     {
-        this._time = this._how.appendChild(new ui.RelativeTime());
         this._problem = this._what.appendChild(document.createElement('div'));
         this._problem.className = 'problem';
         this._effects = this._problem.appendChild(document.createElement('ul'));
@@ -152,10 +147,6 @@ ui.notifications.Failure = base.extends(ui.notifications.Notification, {
         this._causes = this._what.appendChild(document.createElement('ul'));
         this._causes.className = 'causes';
     },
-    date: function()
-    {
-        return this._time.date;
-    }
 });
 
 ui.notifications.FailingTests = base.extends(ui.notifications.Failure, {
@@ -235,11 +226,6 @@ ui.notifications.FailingTestsSummary = base.extends(ui.notifications.FailingTest
     {
         if (this._commitDataPinned)
             return null;
-        var commitDataDate = new Date(commitData.time);
-        if (this._time.date > commitDataDate); {
-            this.setIndex(commitDataDate.getTime());
-            this._time.setDate(commitDataDate);
-        }
         return this._causes.appendChild(new ui.notifications.SuspiciousCommit(commitData));
     }
 });

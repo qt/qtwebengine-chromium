@@ -24,6 +24,8 @@
 #include "net/base/net_errors.h"
 #include "url/gurl.h"
 
+namespace net {
+
 namespace {
 
 struct WlanApi {
@@ -81,64 +83,28 @@ struct WlanApi {
   bool initialized;
 };
 
-}  // namespace
+// Converts Windows defined types to NetworkInterfaceType.
+NetworkChangeNotifier::ConnectionType GetNetworkInterfaceType(DWORD ifType) {
+  // Bail out for pre-Vista versions of Windows which are documented to give
+  // inaccurate results like returning Ethernet for WiFi.
+  // http://msdn.microsoft.com/en-us/library/windows/desktop/aa366058.aspx
+  if (base::win::GetVersion() < base::win::VERSION_VISTA)
+    return NetworkChangeNotifier::CONNECTION_UNKNOWN;
 
-namespace net {
-
-bool FileURLToFilePath(const GURL& url, base::FilePath* file_path) {
-  *file_path = base::FilePath();
-  std::wstring& file_path_str = const_cast<std::wstring&>(file_path->value());
-  file_path_str.clear();
-
-  if (!url.is_valid())
-    return false;
-
-  std::string path;
-  std::string host = url.host();
-  if (host.empty()) {
-    // URL contains no host, the path is the filename. In this case, the path
-    // will probably be preceeded with a slash, as in "/C:/foo.txt", so we
-    // trim out that here.
-    path = url.path();
-    size_t first_non_slash = path.find_first_not_of("/\\");
-    if (first_non_slash != std::string::npos && first_non_slash > 0)
-      path.erase(0, first_non_slash);
-  } else {
-    // URL contains a host: this means it's UNC. We keep the preceeding slash
-    // on the path.
-    path = "\\\\";
-    path.append(host);
-    path.append(url.path());
+  NetworkChangeNotifier::ConnectionType type =
+      NetworkChangeNotifier::CONNECTION_UNKNOWN;
+  if (ifType == IF_TYPE_ETHERNET_CSMACD) {
+    type = NetworkChangeNotifier::CONNECTION_ETHERNET;
+  } else if (ifType == IF_TYPE_IEEE80211) {
+    type = NetworkChangeNotifier::CONNECTION_WIFI;
   }
-
-  if (path.empty())
-    return false;
-  std::replace(path.begin(), path.end(), '/', '\\');
-
-  // GURL stores strings as percent-encoded UTF-8, this will undo if possible.
-  path = UnescapeURLComponent(path,
-      UnescapeRule::SPACES | UnescapeRule::URL_SPECIAL_CHARS);
-
-  if (!IsStringUTF8(path)) {
-    // Not UTF-8, assume encoding is native codepage and we're done. We know we
-    // are giving the conversion function a nonempty string, and it may fail if
-    // the given string is not in the current encoding and give us an empty
-    // string back. We detect this and report failure.
-    file_path_str = base::SysNativeMBToWide(path);
-    return !file_path_str.empty();
-  }
-  file_path_str.assign(UTF8ToWide(path));
-
-  // We used to try too hard and see if |path| made up entirely of
-  // the 1st 256 characters in the Unicode was a zero-extended UTF-16.
-  // If so, we converted it to 'Latin-1' and checked if the result was UTF-8.
-  // If the check passed, we converted the result to UTF-8.
-  // Otherwise, we treated the result as the native OS encoding.
-  // However, that led to http://crbug.com/4619 and http://crbug.com/14153
-  return true;
+  // TODO(mallinath) - Cellular?
+  return type;
 }
 
-bool GetNetworkList(NetworkInterfaceList* networks) {
+}  // namespace
+
+bool GetNetworkList(NetworkInterfaceList* networks, int policy) {
   // GetAdaptersAddresses() may require IO operations.
   base::ThreadRestrictions::AssertIOAllowed();
   bool is_xp = base::win::GetVersion() < base::win::VERSION_VISTA;
@@ -159,6 +125,11 @@ bool GetNetworkList(NetworkInterfaceList* networks) {
     return false;
   }
 
+  // These two variables are used below when this method is asked to pick a
+  // IPv6 address which has the shortest lifetime.
+  ULONG ipv6_valid_lifetime = 0;
+  scoped_ptr<NetworkInterface> ipv6_address;
+
   for (IP_ADAPTER_ADDRESSES *adapter = adapters; adapter != NULL;
        adapter = adapter->Next) {
     // Ignore the loopback device.
@@ -170,7 +141,14 @@ bool GetNetworkList(NetworkInterfaceList* networks) {
       continue;
     }
 
-    std::string name = adapter->AdapterName;
+    // Ignore any HOST side vmware adapters with a description like:
+    // VMware Virtual Ethernet Adapter for VMnet1
+    // but don't ignore any GUEST side adapters with a description like:
+    // VMware Accelerated AMD PCNet Adapter #2
+    if (policy == EXCLUDE_HOST_SCOPE_VIRTUAL_INTERFACES &&
+        strstr(adapter->AdapterName, "VMnet") != NULL) {
+      continue;
+    }
 
     for (IP_ADAPTER_UNICAST_ADDRESS* address = adapter->FirstUnicastAddress;
          address; address = address->Next) {
@@ -202,14 +180,38 @@ bool GetNetworkList(NetworkInterfaceList* networks) {
           }
           uint32 index =
               (family == AF_INET) ? adapter->IfIndex : adapter->Ipv6IfIndex;
+          // Pick one IPv6 address with least valid lifetime.
+          // The reason we are checking |ValidLifeftime| as there is no other
+          // way identifying the interface type. Usually (and most likely) temp
+          // IPv6 will have a shorter ValidLifetime value then the permanent
+          // interface.
+          if (family == AF_INET6 &&
+              (policy & INCLUDE_ONLY_TEMP_IPV6_ADDRESS_IF_POSSIBLE)) {
+            if (ipv6_valid_lifetime == 0 ||
+                ipv6_valid_lifetime > address->ValidLifetime) {
+              ipv6_valid_lifetime = address->ValidLifetime;
+              ipv6_address.reset(new NetworkInterface(adapter->AdapterName,
+                                 base::SysWideToNativeMB(adapter->FriendlyName),
+                                 index,
+                                 GetNetworkInterfaceType(adapter->IfType),
+                                 endpoint.address(),
+                                 net_prefix));
+              continue;
+            }
+          }
           networks->push_back(
-              NetworkInterface(adapter->AdapterName, index, endpoint.address(),
-                               net_prefix));
+              NetworkInterface(adapter->AdapterName,
+                               base::SysWideToNativeMB(adapter->FriendlyName),
+                               index, GetNetworkInterfaceType(adapter->IfType),
+                               endpoint.address(), net_prefix));
         }
       }
     }
   }
 
+  if (ipv6_address.get()) {
+    networks->push_back(*(ipv6_address.get()));
+  }
   return true;
 }
 

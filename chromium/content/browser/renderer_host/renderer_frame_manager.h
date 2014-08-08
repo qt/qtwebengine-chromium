@@ -6,7 +6,7 @@
 #define CONTENT_BROWSER_RENDERER_HOST_RENDERER_FRAME_MANAGER_H_
 
 #include <list>
-#include <set>
+#include <map>
 
 #include "base/basictypes.h"
 #include "base/memory/singleton.h"
@@ -24,23 +24,29 @@ class CONTENT_EXPORT RendererFrameManager {
  public:
   static RendererFrameManager* GetInstance();
 
-  void AddFrame(RendererFrameManagerClient*, bool visible);
+  void AddFrame(RendererFrameManagerClient*, bool locked);
   void RemoveFrame(RendererFrameManagerClient*);
-  void SetFrameVisibility(RendererFrameManagerClient*, bool visible);
+  void LockFrame(RendererFrameManagerClient*);
+  void UnlockFrame(RendererFrameManagerClient*);
 
   size_t max_number_of_saved_frames() const {
     return max_number_of_saved_frames_;
   }
 
+  // For testing only
+  void set_max_handles(float max_handles) { max_handles_ = max_handles; }
+
  private:
   RendererFrameManager();
   ~RendererFrameManager();
-  void CullHiddenFrames();
+  void CullUnlockedFrames();
+
   friend struct DefaultSingletonTraits<RendererFrameManager>;
 
-  std::set<RendererFrameManagerClient*> visible_frames_;
-  std::list<RendererFrameManagerClient*> hidden_frames_;
+  std::map<RendererFrameManagerClient*, size_t> locked_frames_;
+  std::list<RendererFrameManagerClient*> unlocked_frames_;
   size_t max_number_of_saved_frames_;
+  float max_handles_;
 
   DISALLOW_COPY_AND_ASSIGN(RendererFrameManager);
 };

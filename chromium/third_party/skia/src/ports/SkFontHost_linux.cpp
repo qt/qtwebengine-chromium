@@ -24,9 +24,6 @@
 #ifndef SK_FONT_FILE_PREFIX
 #    define SK_FONT_FILE_PREFIX "/usr/share/fonts/truetype/"
 #endif
-#ifndef SK_FONT_FILE_DIR_SEPERATOR
-#    define SK_FONT_FILE_DIR_SEPERATOR "/"
-#endif
 
 bool find_name_and_attributes(SkStream* stream, SkString* name,
                               SkTypeface::Style* style, bool* isFixedPitch);
@@ -89,7 +86,7 @@ public:
 protected:
     virtual SkStream* onOpenStream(int* ttcIndex) const SK_OVERRIDE {
         *ttcIndex = 0;
-        return SkRef(fStream.get());
+        return fStream->duplicate();
     }
 
 private:
@@ -215,21 +212,21 @@ public:
     }
 
 protected:
-    virtual int onCountFamilies() SK_OVERRIDE {
+    virtual int onCountFamilies() const SK_OVERRIDE {
         return fFamilies.count();
     }
 
-    virtual void onGetFamilyName(int index, SkString* familyName) SK_OVERRIDE {
+    virtual void onGetFamilyName(int index, SkString* familyName) const SK_OVERRIDE {
         SkASSERT(index < fFamilies.count());
         familyName->set(fFamilies[index]->fFamilyName);
     }
 
-    virtual SkFontStyleSet_Custom* onCreateStyleSet(int index) SK_OVERRIDE {
+    virtual SkFontStyleSet_Custom* onCreateStyleSet(int index) const SK_OVERRIDE {
         SkASSERT(index < fFamilies.count());
         return SkRef(fFamilies[index].get());
     }
 
-    virtual SkFontStyleSet_Custom* onMatchFamily(const char familyName[]) SK_OVERRIDE {
+    virtual SkFontStyleSet_Custom* onMatchFamily(const char familyName[]) const SK_OVERRIDE {
         for (int i = 0; i < fFamilies.count(); ++i) {
             if (fFamilies[i]->fFamilyName.equals(familyName)) {
                 return SkRef(fFamilies[i].get());
@@ -239,14 +236,14 @@ protected:
     }
 
     virtual SkTypeface* onMatchFamilyStyle(const char familyName[],
-                                           const SkFontStyle& fontStyle) SK_OVERRIDE
+                                           const SkFontStyle& fontStyle) const SK_OVERRIDE
     {
         SkAutoTUnref<SkFontStyleSet> sset(this->matchFamily(familyName));
         return sset->matchStyle(fontStyle);
     }
 
     virtual SkTypeface* onMatchFaceStyle(const SkTypeface* familyMember,
-                                         const SkFontStyle& fontStyle) SK_OVERRIDE
+                                         const SkFontStyle& fontStyle) const SK_OVERRIDE
     {
         for (int i = 0; i < fFamilies.count(); ++i) {
             for (int j = 0; j < fFamilies[i]->fStyles.count(); ++j) {
@@ -258,12 +255,12 @@ protected:
         return NULL;
     }
 
-    virtual SkTypeface* onCreateFromData(SkData* data, int ttcIndex) SK_OVERRIDE {
+    virtual SkTypeface* onCreateFromData(SkData* data, int ttcIndex) const SK_OVERRIDE {
         SkAutoTUnref<SkStream> stream(new SkMemoryStream(data));
         return this->createFromStream(stream, ttcIndex);
     }
 
-    virtual SkTypeface* onCreateFromStream(SkStream* stream, int ttcIndex) SK_OVERRIDE {
+    virtual SkTypeface* onCreateFromStream(SkStream* stream, int ttcIndex) const SK_OVERRIDE {
         if (NULL == stream || stream->getLength() <= 0) {
             SkDELETE(stream);
             return NULL;
@@ -279,13 +276,13 @@ protected:
         }
     }
 
-    virtual SkTypeface* onCreateFromFile(const char path[], int ttcIndex) SK_OVERRIDE {
+    virtual SkTypeface* onCreateFromFile(const char path[], int ttcIndex) const SK_OVERRIDE {
         SkAutoTUnref<SkStream> stream(SkStream::NewFromFile(path));
         return stream.get() ? this->createFromStream(stream, ttcIndex) : NULL;
     }
 
     virtual SkTypeface* onLegacyCreateTypeface(const char familyName[],
-                                               unsigned styleBits) SK_OVERRIDE
+                                               unsigned styleBits) const SK_OVERRIDE
     {
         SkTypeface::Style oldStyle = (SkTypeface::Style)styleBits;
         SkFontStyle style = SkFontStyle(oldStyle & SkTypeface::kBold
@@ -326,8 +323,8 @@ private:
         SkString name;
 
         while (iter.next(&name, false)) {
-            SkString filename(directory);
-            filename.append(name);
+            SkString filename(
+                SkOSPath::SkPathJoin(directory.c_str(), name.c_str()));
 
             bool isFixedPitch;
             SkString realname;
@@ -358,9 +355,8 @@ private:
             if (name.startsWith(".")) {
                 continue;
             }
-            SkString dirname(directory);
-            dirname.append(name);
-            dirname.append(SK_FONT_FILE_DIR_SEPERATOR);
+            SkString dirname(
+                SkOSPath::SkPathJoin(directory.c_str(), name.c_str()));
             load_directory_fonts(dirname);
         }
     }
@@ -377,7 +373,7 @@ private:
 
         // Try to pick a default font.
         static const char* gDefaultNames[] = {
-            "Arial", "Verdana", "Times New Roman", NULL
+            "Arial", "Verdana", "Times New Roman", "Droid Sans", NULL
         };
         for (size_t i = 0; i < SK_ARRAY_COUNT(gDefaultNames); ++i) {
             SkFontStyleSet_Custom* set = this->onMatchFamily(gDefaultNames[i]);

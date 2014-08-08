@@ -58,9 +58,10 @@ const char* CodeFromNative(const base::NativeEvent& native_event) {
   return event->code().c_str();
 }
 
-bool IsMouseEvent(const base::NativeEvent& native_event) {
-  const ui::Event* e = static_cast<const ui::Event*>(native_event);
-  return e->IsMouseEvent();
+uint32 PlatformKeycodeFromNative(const base::NativeEvent& native_event) {
+  const ui::KeyEvent* event = static_cast<const ui::KeyEvent*>(native_event);
+  DCHECK(event->IsKeyEvent());
+  return event->platform_keycode();
 }
 
 gfx::Vector2d GetMouseWheelOffset(const base::NativeEvent& native_event) {
@@ -68,6 +69,13 @@ gfx::Vector2d GetMouseWheelOffset(const base::NativeEvent& native_event) {
       static_cast<const ui::MouseWheelEvent*>(native_event);
   DCHECK(event->type() == ET_MOUSEWHEEL);
   return event->offset();
+}
+
+base::NativeEvent CopyNativeEvent(const base::NativeEvent& event) {
+  return NULL;
+}
+
+void ReleaseCopiedNativeEvent(const base::NativeEvent& event) {
 }
 
 void ClearTouchIdIfReleased(const base::NativeEvent& xev) {
@@ -143,16 +151,6 @@ bool IsNaturalScrollEnabled() { return false; }
 bool IsTouchpadEvent(const base::NativeEvent& event) {
   NOTIMPLEMENTED();
   return false;
-}
-
-bool IsNoopEvent(const base::NativeEvent& event) {
-  NOTIMPLEMENTED();
-  return false;
-}
-
-base::NativeEvent CreateNoopEvent() {
-  NOTIMPLEMENTED();
-  return NULL;
 }
 
 int GetModifiersFromKeyState() {

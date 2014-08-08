@@ -29,34 +29,29 @@
 namespace WebCore {
 
 class ElementStyleResources;
-class ResourceFetcher;
 class RenderStyle;
+class ResourceFetcher;
 class ShapeValue;
 class StyleImage;
 class StylePendingImage;
-class StyleCustomFilterProgramCache;
 
 // Manages loading of resources, requested by the stylesheets.
-// Expects the same lifetime as StyleResolver, because:
-// 1) it expects ResourceFetcher to never change, and
-// 2) it also holds the StyleCustomFilterProgramCache.
+// Expects the same lifetime as StyleResolver, because
+// it expects ResourceFetcher to never change.
 class StyleResourceLoader {
 WTF_MAKE_NONCOPYABLE(StyleResourceLoader);
 public:
     explicit StyleResourceLoader(ResourceFetcher*);
 
     void loadPendingResources(RenderStyle*, ElementStyleResources&);
-    StyleCustomFilterProgramCache* customFilterProgramCache() const { return m_customFilterProgramCache.get(); }
 
 private:
-    void loadPendingSVGDocuments(RenderStyle*, const ElementStyleResources&);
-    void loadPendingShaders(RenderStyle*, const ElementStyleResources&);
+    void loadPendingSVGDocuments(RenderStyle*, ElementStyleResources&);
 
     PassRefPtr<StyleImage> loadPendingImage(StylePendingImage*, float deviceScaleFactor);
-    void loadPendingImages(RenderStyle*, const ElementStyleResources&);
-    void loadPendingShapeImage(RenderStyle*, ShapeValue*);
+    void loadPendingImages(RenderStyle*, ElementStyleResources&);
+    void loadPendingShapeImage(RenderStyle*, ShapeValue*, float deviceScaleFactor);
 
-    OwnPtr<StyleCustomFilterProgramCache> m_customFilterProgramCache;
     ResourceFetcher* m_fetcher;
 };
 

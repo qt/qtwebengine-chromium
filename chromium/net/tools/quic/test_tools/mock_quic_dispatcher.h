@@ -21,15 +21,16 @@ class MockQuicDispatcher : public QuicDispatcher {
  public:
   MockQuicDispatcher(const QuicConfig& config,
                      const QuicCryptoServerConfig& crypto_config,
-                     QuicGuid guid,
                      EpollServer* eps);
+
   virtual ~MockQuicDispatcher();
 
-  MOCK_METHOD5(ProcessPacket, void(const IPEndPoint& server_address,
+  MOCK_METHOD3(ProcessPacket, void(const IPEndPoint& server_address,
                                    const IPEndPoint& client_address,
-                                   QuicGuid guid,
-                                   bool has_version_flag,
                                    const QuicEncryptedPacket& packet));
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(MockQuicDispatcher);
 };
 
 }  // namespace test

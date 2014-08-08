@@ -27,35 +27,32 @@
 
 #include "core/html/canvas/EXTFragDepth.h"
 
-#include "platform/graphics/Extensions3D.h"
-
 namespace WebCore {
 
-EXTFragDepth::EXTFragDepth(WebGLRenderingContext* context)
+EXTFragDepth::EXTFragDepth(WebGLRenderingContextBase* context)
     : WebGLExtension(context)
 {
     ScriptWrappable::init(this);
-    context->graphicsContext3D()->extensions()->ensureEnabled("GL_EXT_frag_depth");
+    context->extensionsUtil()->ensureExtensionEnabled("GL_EXT_frag_depth");
 }
 
 EXTFragDepth::~EXTFragDepth()
 {
 }
 
-WebGLExtension::ExtensionName EXTFragDepth::name() const
+WebGLExtensionName EXTFragDepth::name() const
 {
     return EXTFragDepthName;
 }
 
-PassRefPtr<EXTFragDepth> EXTFragDepth::create(WebGLRenderingContext* context)
+PassRefPtr<EXTFragDepth> EXTFragDepth::create(WebGLRenderingContextBase* context)
 {
     return adoptRef(new EXTFragDepth(context));
 }
 
-bool EXTFragDepth::supported(WebGLRenderingContext* context)
+bool EXTFragDepth::supported(WebGLRenderingContextBase* context)
 {
-    Extensions3D* extensions = context->graphicsContext3D()->extensions();
-    return extensions->supports("GL_EXT_frag_depth");
+    return context->extensionsUtil()->supportsExtension("GL_EXT_frag_depth");
 }
 
 const char* EXTFragDepth::extensionName()

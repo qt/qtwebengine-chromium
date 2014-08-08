@@ -4,8 +4,8 @@
 
 #include "content/renderer/websharedworker_proxy.h"
 
-#include "content/child/child_thread.h"
 #include "content/child/webmessageportchannel_impl.h"
+#include "content/common/message_router.h"
 #include "content/common/view_messages.h"
 #include "content/common/worker_messages.h"
 #include "third_party/WebKit/public/platform/WebURL.h"
@@ -13,19 +13,18 @@
 
 namespace content {
 
-WebSharedWorkerProxy::WebSharedWorkerProxy(ChildThread* child_thread,
+WebSharedWorkerProxy::WebSharedWorkerProxy(MessageRouter* router,
                                            unsigned long long document_id,
-                                           bool exists,
                                            int route_id,
-                                           int render_view_route_id)
-    : route_id_(exists ? route_id : MSG_ROUTING_NONE),
-      render_view_route_id_(render_view_route_id),
-      child_thread_(child_thread),
+                                           int render_frame_route_id)
+    : route_id_(route_id),
+      render_frame_route_id_(render_frame_route_id),
+      router_(router),
       document_id_(document_id),
       pending_route_id_(route_id),
-      connect_listener_(NULL) {
-  if (route_id_ != MSG_ROUTING_NONE)
-    child_thread_->AddRoute(route_id_, this);
+      connect_listener_(NULL),
+      created_(false) {
+  router_->AddRoute(route_id_, this);
 }
 
 WebSharedWorkerProxy::~WebSharedWorkerProxy() {
@@ -43,49 +42,9 @@ void WebSharedWorkerProxy::Disconnect() {
   // So the messages from WorkerContext (like WorkerContextDestroyed) do not
   // come after nobody is listening. Since Worker and WorkerContext can
   // terminate independently, already sent messages may still be in the pipe.
-  child_thread_->RemoveRoute(route_id_);
+  router_->RemoveRoute(route_id_);
 
   route_id_ = MSG_ROUTING_NONE;
-}
-
-void WebSharedWorkerProxy::CreateWorkerContext(
-    const GURL& script_url,
-    bool is_shared,
-    const base::string16& name,
-    const base::string16& user_agent,
-    const base::string16& source_code,
-    const base::string16& content_security_policy,
-    blink::WebContentSecurityPolicyType policy_type,
-    int pending_route_id,
-    int64 script_resource_appcache_id) {
-  DCHECK(route_id_ == MSG_ROUTING_NONE);
-  ViewHostMsg_CreateWorker_Params params;
-  params.url = script_url;
-  params.name = name;
-  params.document_id = document_id_;
-  params.render_view_route_id = render_view_route_id_;
-  params.route_id = pending_route_id;
-  params.script_resource_appcache_id = script_resource_appcache_id;
-  IPC::Message* create_message = new ViewHostMsg_CreateWorker(
-      params, &route_id_);
-  child_thread_->Send(create_message);
-  if (route_id_ == MSG_ROUTING_NONE)
-    return;
-
-  child_thread_->AddRoute(route_id_, this);
-
-  // We make sure that the start message is the first, since postMessage or
-  // connect might have already been called.
-  queued_messages_.insert(queued_messages_.begin(),
-      new WorkerMsg_StartWorkerContext(
-          route_id_, script_url, user_agent, source_code,
-          content_security_policy, policy_type));
-}
-
-bool WebSharedWorkerProxy::IsStarted() {
-  // Worker is started if we have a route ID and there are no queued messages
-  // (meaning we've sent the WorkerMsg_StartWorkerContext already).
-  return (route_id_ != MSG_ROUTING_NONE && queued_messages_.empty());
 }
 
 bool WebSharedWorkerProxy::Send(IPC::Message* message) {
@@ -93,7 +52,7 @@ bool WebSharedWorkerProxy::Send(IPC::Message* message) {
   // which case route_id_ will be none.  Or the worker object can be interacted
   // with before the browser process told us that it started, in which case we
   // also want to queue the message.
-  if (!IsStarted()) {
+  if (!created_) {
     queued_messages_.push_back(message);
     return true;
   }
@@ -103,7 +62,7 @@ bool WebSharedWorkerProxy::Send(IPC::Message* message) {
   // TODO(jabdelmalek): handle sync messages if we need them.
   IPC::Message* wrapped_msg = new ViewHostMsg_ForwardToWorker(*message);
   delete message;
-  return child_thread_->Send(wrapped_msg);
+  return router_->Send(wrapped_msg);
 }
 
 void WebSharedWorkerProxy::SendQueuedMessages() {
@@ -116,24 +75,6 @@ void WebSharedWorkerProxy::SendQueuedMessages() {
   }
 }
 
-bool WebSharedWorkerProxy::isStarted() {
-  return IsStarted();
-}
-
-void WebSharedWorkerProxy::startWorkerContext(
-    const blink::WebURL& script_url,
-    const blink::WebString& name,
-    const blink::WebString& user_agent,
-    const blink::WebString& source_code,
-    const blink::WebString& content_security_policy,
-    blink::WebContentSecurityPolicyType policy_type,
-    long long script_resource_appcache_id) {
-  DCHECK(!isStarted());
-  CreateWorkerContext(
-      script_url, true, name, user_agent, source_code, content_security_policy,
-      policy_type, pending_route_id_, script_resource_appcache_id);
-}
-
 void WebSharedWorkerProxy::connect(blink::WebMessagePortChannel* channel,
                                    ConnectListener* listener) {
   WebMessagePortChannelImpl* webchannel =
@@ -144,32 +85,39 @@ void WebSharedWorkerProxy::connect(blink::WebMessagePortChannel* channel,
   webchannel->QueueMessages();
 
   Send(new WorkerMsg_Connect(route_id_, message_port_id, MSG_ROUTING_NONE));
-  if (HasQueuedMessages()) {
-    connect_listener_ = listener;
-  } else {
-    listener->connected();
-    // The listener may free this object, so do not access the object after
-    // this point.
-  }
+  connect_listener_ = listener;
 }
 
 bool WebSharedWorkerProxy::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(WebSharedWorkerProxy, message)
     IPC_MESSAGE_HANDLER(ViewMsg_WorkerCreated, OnWorkerCreated)
+    IPC_MESSAGE_HANDLER(ViewMsg_WorkerScriptLoadFailed,
+                        OnWorkerScriptLoadFailed)
+    IPC_MESSAGE_HANDLER(ViewMsg_WorkerConnected,
+                        OnWorkerConnected)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
 }
 
 void WebSharedWorkerProxy::OnWorkerCreated() {
-  // The worker is created - now send off the CreateWorkerContext message and
+  created_ = true;
+  // The worker is created - now send off the WorkerMsg_Connect message and
   // any other queued messages
   SendQueuedMessages();
+}
 
-  // Inform any listener that the pending connect event has been sent
-  // (this can result in this object being freed).
+void WebSharedWorkerProxy::OnWorkerScriptLoadFailed() {
   if (connect_listener_) {
+    // This can result in this object being freed.
+    connect_listener_->scriptLoadFailed();
+  }
+}
+
+void WebSharedWorkerProxy::OnWorkerConnected() {
+  if (connect_listener_) {
+    // This can result in this object being freed.
     connect_listener_->connected();
   }
 }

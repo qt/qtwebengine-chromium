@@ -31,11 +31,12 @@ bool ProxyChannel::InitWithChannel(Delegate* delegate,
                                    bool is_client) {
   delegate_ = delegate;
   peer_pid_ = peer_pid;
-  IPC::Channel::Mode mode = is_client ? IPC::Channel::MODE_CLIENT
-                                      : IPC::Channel::MODE_SERVER;
-  channel_.reset(new IPC::SyncChannel(channel_handle, mode, this,
+  IPC::Channel::Mode mode = is_client
+      ? IPC::Channel::MODE_CLIENT
+      : IPC::Channel::MODE_SERVER;
+  channel_ = IPC::SyncChannel::Create(channel_handle, mode, this,
                                       delegate->GetIPCMessageLoop(), true,
-                                      delegate->GetShutdownEvent()));
+                                      delegate->GetShutdownEvent());
   return true;
 }
 
@@ -64,11 +65,7 @@ IPC::PlatformFileForTransit ProxyChannel::ShareHandleWithRemote(
   // Channel could be closed if the plugin crashes.
   if (!channel_.get()) {
     if (should_close_source) {
-#if !defined(OS_NACL)
-      base::ClosePlatformFile(handle);
-#else
-      close(handle);
-#endif
+      base::File file_closer(handle);
     }
     return IPC::InvalidPlatformFileForTransit();
   }

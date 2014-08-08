@@ -29,15 +29,14 @@ namespace WebCore {
 
 class CDATASection FINAL : public Text {
 public:
-    static PassRefPtr<CDATASection> create(Document&, const String&);
+    static PassRefPtrWillBeRawPtr<CDATASection> create(Document&, const String&);
 
 private:
     CDATASection(Document&, const String&);
 
-    virtual String nodeName() const;
-    virtual NodeType nodeType() const;
-    virtual bool childTypeAllowed(NodeType) const;
-    virtual PassRefPtr<Text> cloneWithData(const String&) OVERRIDE;
+    virtual String nodeName() const OVERRIDE;
+    virtual NodeType nodeType() const OVERRIDE;
+    virtual PassRefPtrWillBeRawPtr<Text> cloneWithData(const String&) OVERRIDE;
 };
 
 DEFINE_NODE_TYPE_CASTS(CDATASection, nodeType() == Node::CDATA_SECTION_NODE);

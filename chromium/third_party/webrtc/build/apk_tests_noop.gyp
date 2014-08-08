@@ -22,19 +22,11 @@
       'type': 'none',
     },
     {
-      'target_name': 'metrics_unittests',
-      'type': 'none',
-    },
-    {
       'target_name': 'modules_tests_apk',
       'type': 'none',
     },
     {
       'target_name': 'modules_unittests_apk',
-      'type': 'none',
-    },
-    {
-      'target_name': 'neteq_unittests_apk',
       'type': 'none',
     },
     {
@@ -63,6 +55,14 @@
     },
     {
       'target_name': 'webrtc_perf_tests_apk',
+      'type': 'none',
+    },
+    {
+      'target_name': 'audio_codec_speed_tests_apk',
+      'type': 'none',
+    },
+    {
+      'target_name': 'video_capture_tests_apk',
       'type': 'none',
     },
   ],

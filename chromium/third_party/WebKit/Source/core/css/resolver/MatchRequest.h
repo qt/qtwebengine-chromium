@@ -23,6 +23,7 @@
 #ifndef MatchRequest_h
 #define MatchRequest_h
 
+#include "core/css/CSSStyleSheet.h"
 #include "core/css/RuleSet.h"
 
 namespace WebCore {
@@ -30,11 +31,13 @@ namespace WebCore {
 class ContainerNode;
 
 class MatchRequest {
+    STACK_ALLOCATED();
 public:
-    MatchRequest(RuleSet* ruleSet, bool includeEmptyRules = false, const ContainerNode* scope = 0, bool elementApplyAuthorStyles = true, unsigned styleSheetIndex = 0)
+    MatchRequest(RuleSet* ruleSet, bool includeEmptyRules = false, const ContainerNode* scope = 0, const CSSStyleSheet* cssSheet = 0, bool elementApplyAuthorStyles = true, unsigned styleSheetIndex = 0)
         : ruleSet(ruleSet)
         , includeEmptyRules(includeEmptyRules)
         , scope(scope)
+        , styleSheet(cssSheet)
         , elementApplyAuthorStyles(elementApplyAuthorStyles)
         , styleSheetIndex(styleSheetIndex)
     {
@@ -43,9 +46,10 @@ public:
         ruleSet->compactRulesIfNeeded();
     }
 
-    const RuleSet* ruleSet;
+    RawPtrWillBeMember<const RuleSet> ruleSet;
     const bool includeEmptyRules;
-    const ContainerNode* scope;
+    RawPtrWillBeMember<const ContainerNode> scope;
+    RawPtrWillBeMember<const CSSStyleSheet> styleSheet;
     const bool elementApplyAuthorStyles;
     const unsigned styleSheetIndex;
 };

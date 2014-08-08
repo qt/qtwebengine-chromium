@@ -20,23 +20,20 @@
 
 #include "base/basictypes.h"
 #include "base/strings/string16.h"
+#include "base/strings/utf_offset_string_conversions.h"
 #include "net/base/address_family.h"
 #include "net/base/escape.h"
 #include "net/base/net_export.h"
-#include "net/base/net_log.h"
+#include "net/base/network_change_notifier.h"
 
 class GURL;
 
 namespace base {
-class FilePath;
 class Time;
 }
 
-namespace url_canon {
+namespace url {
 struct CanonHostInfo;
-}
-
-namespace url_parse {
 struct Parsed;
 }
 
@@ -56,6 +53,10 @@ typedef std::vector<IPAddressNumber> IPAddressList;
 
 static const size_t kIPv4AddressSize = 4;
 static const size_t kIPv6AddressSize = 16;
+#if defined(OS_WIN)
+// Bluetooth address size. Windows Bluetooth is supported via winsock.
+static const size_t kBluetoothAddressSize = 6;
+#endif
 
 // Nothing is ommitted.
 NET_EXPORT extern const FormatUrlType kFormatUrlOmitNothing;
@@ -75,16 +76,6 @@ NET_EXPORT extern const FormatUrlType kFormatUrlOmitAll;
 
 // Returns the number of explicitly allowed ports; for testing.
 NET_EXPORT_PRIVATE extern size_t GetCountOfExplicitlyAllowedPorts();
-
-// Given the full path to a file name, creates a file: URL. The returned URL
-// may not be valid if the input is malformed.
-NET_EXPORT GURL FilePathToFileURL(const base::FilePath& path);
-
-// Converts a file: URL back to a filename that can be passed to the OS. The
-// file URL must be well-formed (GURL::is_valid() must return true); we don't
-// handle degenerate cases here. Returns true on success, false if it isn't a
-// valid file URL. On failure, *file_path will be empty.
-NET_EXPORT bool FileURLToFilePath(const GURL& url, base::FilePath* file_path);
 
 // Splits an input of the form <host>[":"<port>] into its consitituent parts.
 // Saves the result into |*host| and |*port|. If the input did not have
@@ -206,7 +197,7 @@ NET_EXPORT base::string16 IDNToUnicode(const std::string& host,
 // Canonicalizes |host| and returns it.  Also fills |host_info| with
 // IP address information.  |host_info| must not be NULL.
 NET_EXPORT std::string CanonicalizeHost(const std::string& host,
-                                        url_canon::CanonHostInfo* host_info);
+                                        url::CanonHostInfo* host_info);
 
 // Returns true if |host| is not an IP address and is compliant with a set of
 // rules based on RFC 1738 and tweaked to be compatible with the real world.
@@ -254,89 +245,6 @@ NET_EXPORT base::string16 StripWWW(const base::string16& text);
 
 // Runs |url|'s host through StripWWW().  |url| must be valid.
 NET_EXPORT base::string16 StripWWWFromHost(const GURL& url);
-
-// Generates a filename using the first successful method from the following (in
-// order):
-//
-// 1) The raw Content-Disposition header in |content_disposition| as read from
-//    the network.  |referrer_charset| is used to decode non-ASCII strings.
-// 2) |suggested_name| if specified.  |suggested_name| is assumed to be in
-//    UTF-8.
-// 3) The filename extracted from the |url|.  |referrer_charset| will be used to
-//    interpret the URL if there are non-ascii characters.
-// 4) |default_name|.  If non-empty, |default_name| is assumed to be a filename
-//    and shouldn't contain a path.  |default_name| is not subject to validation
-//    or sanitization, and therefore shouldn't be a user supplied string.
-// 5) The hostname portion from the |url|
-//
-// Then, leading and trailing '.'s will be removed.  On Windows, trailing spaces
-// are also removed.  The string "download" is the final fallback if no filename
-// is found or the filename is empty.
-//
-// Any illegal characters in the filename will be replaced by '-'.  If the
-// filename doesn't contain an extension, and a |mime_type| is specified, the
-// preferred extension for the |mime_type| will be appended to the filename.
-// The resulting filename is then checked against a list of reserved names on
-// Windows.  If the name is reserved, an underscore will be prepended to the
-// filename.
-//
-// Note: |mime_type| should only be specified if this function is called from a
-// thread that allows IO.
-NET_EXPORT base::string16 GetSuggestedFilename(
-    const GURL& url,
-    const std::string& content_disposition,
-    const std::string& referrer_charset,
-    const std::string& suggested_name,
-    const std::string& mime_type,
-    const std::string& default_name);
-
-// Similar to GetSuggestedFilename(), but returns a FilePath.
-NET_EXPORT base::FilePath GenerateFileName(
-    const GURL& url,
-    const std::string& content_disposition,
-    const std::string& referrer_charset,
-    const std::string& suggested_name,
-    const std::string& mime_type,
-    const std::string& default_name);
-
-// Valid components:
-// * are not empty
-// * are not Windows reserved names (CON, NUL.zip, etc.)
-// * do not have trailing separators
-// * do not equal kCurrentDirectory
-// * do not reference the parent directory
-// * do not contain illegal characters
-// * do not end with Windows shell-integrated extensions (even on posix)
-// * do not begin with '.' (which would hide them in most file managers)
-// * do not end with ' ' or '.'
-NET_EXPORT bool IsSafePortablePathComponent(const base::FilePath& component);
-
-// Basenames of valid relative paths are IsSafePortableBasename(), and internal
-// path components of valid relative paths are valid path components as
-// described above IsSafePortableBasename(). Valid relative paths are not
-// absolute paths.
-NET_EXPORT bool IsSafePortableRelativePath(const base::FilePath& path);
-
-// Ensures that the filename and extension is safe to use in the filesystem.
-//
-// Assumes that |file_path| already contains a valid path or file name.  On
-// Windows if the extension causes the file to have an unsafe interaction with
-// the shell (see net_util::IsShellIntegratedExtension()), then it will be
-// replaced by the string 'download'.  If |file_path| doesn't contain an
-// extension or |ignore_extension| is true then the preferred extension, if one
-// exists, for |mime_type| will be used as the extension.
-//
-// On Windows, the filename will be checked against a set of reserved names, and
-// if so, an underscore will be prepended to the name.
-//
-// |file_name| can either be just the file name or it can be a full path to a
-// file.
-//
-// Note: |mime_type| should only be non-empty if this function is called from a
-// thread that allows IO.
-NET_EXPORT void GenerateSafeFileName(const std::string& mime_type,
-                                     bool ignore_extension,
-                                     base::FilePath* file_path);
 
 // Checks |port| against a list of ports which are restricted by default.
 // Returns true if |port| is allowed, false if it is restricted.
@@ -394,7 +302,7 @@ NET_EXPORT base::string16 FormatUrl(const GURL& url,
                                     const std::string& languages,
                                     FormatUrlTypes format_types,
                                     UnescapeRule::Type unescape_rules,
-                                    url_parse::Parsed* new_parsed,
+                                    url::Parsed* new_parsed,
                                     size_t* prefix_end,
                                     size_t* offset_for_adjustment);
 NET_EXPORT base::string16 FormatUrlWithOffsets(
@@ -402,9 +310,21 @@ NET_EXPORT base::string16 FormatUrlWithOffsets(
     const std::string& languages,
     FormatUrlTypes format_types,
     UnescapeRule::Type unescape_rules,
-    url_parse::Parsed* new_parsed,
+    url::Parsed* new_parsed,
     size_t* prefix_end,
     std::vector<size_t>* offsets_for_adjustment);
+// This function is like those above except it takes |adjustments| rather
+// than |offset[s]_for_adjustment|.  |adjustments| will be set to reflect all
+// the transformations that happened to |url| to convert it into the returned
+// value.
+NET_EXPORT base::string16 FormatUrlWithAdjustments(
+    const GURL& url,
+    const std::string& languages,
+    FormatUrlTypes format_types,
+    UnescapeRule::Type unescape_rules,
+    url::Parsed* new_parsed,
+    size_t* prefix_end,
+    base::OffsetAdjuster::Adjustments* adjustments);
 
 // This is a convenience function for FormatUrl() with
 // format_types = kFormatUrlOmitAll and unescape = SPACES.  This is the typical
@@ -515,30 +435,44 @@ NET_EXPORT_PRIVATE bool IsLocalhost(const std::string& host);
 struct NET_EXPORT NetworkInterface {
   NetworkInterface();
   NetworkInterface(const std::string& name,
+                   const std::string& friendly_name,
                    uint32 interface_index,
+                   NetworkChangeNotifier::ConnectionType type,
                    const IPAddressNumber& address,
                    size_t network_prefix);
   ~NetworkInterface();
 
   std::string name;
+  std::string friendly_name;  // Same as |name| on non-Windows.
   uint32 interface_index;  // Always 0 on Android.
+  NetworkChangeNotifier::ConnectionType type;
   IPAddressNumber address;
   size_t network_prefix;
 };
 
 typedef std::vector<NetworkInterface> NetworkInterfaceList;
 
+// Policy settings to include/exclude network interfaces.
+enum HostAddressSelectionPolicy {
+  INCLUDE_HOST_SCOPE_VIRTUAL_INTERFACES           = 0x0,
+  EXCLUDE_HOST_SCOPE_VIRTUAL_INTERFACES           = 0x1,
+  // Include temp address only when interface has both permanent and
+  // temp addresses.
+  INCLUDE_ONLY_TEMP_IPV6_ADDRESS_IF_POSSIBLE      = 0x2,
+};
+
 // Returns list of network interfaces except loopback interface. If an
 // interface has more than one address, a separate entry is added to
 // the list for each address.
 // Can be called only on a thread that allows IO.
-NET_EXPORT bool GetNetworkList(NetworkInterfaceList* networks);
+NET_EXPORT bool GetNetworkList(NetworkInterfaceList* networks,
+                               int policy);
 
 // General category of the IEEE 802.11 (wifi) physical layer operating mode.
 enum WifiPHYLayerProtocol {
   // No wifi support or no associated AP.
   WIFI_PHY_LAYER_PROTOCOL_NONE,
-  // An obsolete modes introduced by the original 802.11, e.g. IR, FHSS,
+  // An obsolete modes introduced by the original 802.11, e.g. IR, FHSS.
   WIFI_PHY_LAYER_PROTOCOL_ANCIENT,
   // 802.11a, OFDM-based rates.
   WIFI_PHY_LAYER_PROTOCOL_A,
@@ -567,6 +501,7 @@ unsigned MaskPrefixLength(const IPAddressNumber& mask);
 // See http://tools.ietf.org/html/rfc2474 for details.
 enum DiffServCodePoint {
   DSCP_NO_CHANGE = -1,
+  DSCP_FIRST = DSCP_NO_CHANGE,
   DSCP_DEFAULT = 0,  // Same as DSCP_CS0
   DSCP_CS0  = 0,   // The default
   DSCP_CS1  = 8,   // Bulk/background traffic
@@ -589,6 +524,7 @@ enum DiffServCodePoint {
   DSCP_EF   = 46,  // Voice
   DSCP_CS6  = 48,  // Voice
   DSCP_CS7  = 56,  // Control messages
+  DSCP_LAST = DSCP_CS7
 };
 
 }  // namespace net

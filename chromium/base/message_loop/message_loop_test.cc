@@ -101,69 +101,14 @@ void RunTest_PostTask(MessagePumpFactory factory) {
       &Foo::Test1Int, foo.get(), 100));
   MessageLoop::current()->PostTask(FROM_HERE, Bind(
       &Foo::Test2Ptr, foo.get(), &a, &c));
-
-  // TryPost with no contention. It must succeed.
-  EXPECT_TRUE(MessageLoop::current()->TryPostTask(FROM_HERE, Bind(
-      &Foo::Test2Mixed, foo.get(), a, &d)));
-
-  // TryPost with simulated contention. It must fail. We wait for a helper
-  // thread to lock the queue, we TryPost on this thread and finally we
-  // signal the helper to unlock and exit.
-  WaitableEvent wait(true, false);
-  WaitableEvent signal(true, false);
-  Thread thread("RunTest_PostTask_helper");
-  thread.Start();
-  thread.message_loop()->PostTask(
-      FROM_HERE,
-      Bind(&MessageLoop::LockWaitUnLockForTesting,
-           base::Unretained(MessageLoop::current()),
-           &wait,
-           &signal));
-
-  wait.Wait();
-  EXPECT_FALSE(MessageLoop::current()->TryPostTask(FROM_HERE, Bind(
-      &Foo::Test2Mixed, foo.get(), a, &d)));
-  signal.Signal();
-
+  MessageLoop::current()->PostTask(FROM_HERE, Bind(
+      &Foo::Test2Mixed, foo.get(), a, &d));
   // After all tests, post a message that will shut down the message loop
   MessageLoop::current()->PostTask(FROM_HERE, Bind(
       &MessageLoop::Quit, Unretained(MessageLoop::current())));
 
   // Now kick things off
   MessageLoop::current()->Run();
-
-  EXPECT_EQ(foo->test_count(), 105);
-  EXPECT_EQ(foo->result(), "abacad");
-}
-
-void RunTest_PostTask_SEH(MessagePumpFactory factory) {
-  scoped_ptr<MessagePump> pump(factory());
-  MessageLoop loop(pump.Pass());
-
-  // Add tests to message loop
-  scoped_refptr<Foo> foo(new Foo());
-  std::string a("a"), b("b"), c("c"), d("d");
-  MessageLoop::current()->PostTask(FROM_HERE, Bind(
-      &Foo::Test0, foo.get()));
-  MessageLoop::current()->PostTask(FROM_HERE, Bind(
-      &Foo::Test1ConstRef, foo.get(), a));
-  MessageLoop::current()->PostTask(FROM_HERE, Bind(
-      &Foo::Test1Ptr, foo.get(), &b));
-  MessageLoop::current()->PostTask(FROM_HERE, Bind(
-      &Foo::Test1Int, foo.get(), 100));
-  MessageLoop::current()->PostTask(FROM_HERE, Bind(
-      &Foo::Test2Ptr, foo.get(), &a, &c));
-  MessageLoop::current()->PostTask(FROM_HERE, Bind(
-      &Foo::Test2Mixed, foo.get(), a, &d));
-
-  // After all tests, post a message that will shut down the message loop
-  MessageLoop::current()->PostTask(FROM_HERE, Bind(
-      &MessageLoop::Quit, Unretained(MessageLoop::current())));
-
-  // Now kick things off with the SEH block active.
-  MessageLoop::current()->set_exception_restoration(true);
-  MessageLoop::current()->Run();
-  MessageLoop::current()->set_exception_restoration(false);
 
   EXPECT_EQ(foo->test_count(), 105);
   EXPECT_EQ(foo->result(), "abacad");

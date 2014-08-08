@@ -11,9 +11,10 @@
       'type': 'executable',
       'dependencies': [
         '../../base/base.gyp:base',
-        '../../win8/win8.gyp:test_support_win8',
+        '../../ui/base/ui_base.gyp:ui_base',
         '../../ui/gfx/gfx.gyp:gfx',
-        '../../ui/ui.gyp:ui',
+        '../../ui/gfx/gfx.gyp:gfx_geometry',
+        '../../win8/win8.gyp:test_support_win8',
       ],
       'include_dirs': [
         '../..',

@@ -93,6 +93,7 @@ bool GLContextEGL::MakeCurrent(GLSurface* surface) {
   if (IsCurrent(surface))
       return true;
 
+  ScopedReleaseCurrent release_current;
   TRACE_EVENT2("gpu", "GLContextEGL::MakeCurrent",
                "context", context_,
                "surface", surface);
@@ -115,8 +116,7 @@ bool GLContextEGL::MakeCurrent(GLSurface* surface) {
   SetRealGLApi();
 
   SetCurrent(surface);
-  if (!InitializeExtensionBindings()) {
-    ReleaseCurrent(surface);
+  if (!InitializeDynamicBindings()) {
     return false;
   }
 
@@ -125,6 +125,7 @@ bool GLContextEGL::MakeCurrent(GLSurface* surface) {
     return false;
   }
 
+  release_current.Cancel();
   return true;
 }
 

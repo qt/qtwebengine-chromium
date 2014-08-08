@@ -1,41 +1,18 @@
 // Copyright 2012 the V8 project authors. All rights reserved.
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-//       copyright notice, this list of conditions and the following
-//       disclaimer in the documentation and/or other materials provided
-//       with the distribution.
-//     * Neither the name of Google Inc. nor the names of its
-//       contributors may be used to endorse or promote products derived
-//       from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
-#include "v8.h"
+#include "src/v8.h"
 
-#include "cpu-profiler-inl.h"
+#include "src/cpu-profiler-inl.h"
 
-#include "compiler.h"
-#include "frames-inl.h"
-#include "hashmap.h"
-#include "log-inl.h"
-#include "vm-state-inl.h"
+#include "src/compiler.h"
+#include "src/frames-inl.h"
+#include "src/hashmap.h"
+#include "src/log-inl.h"
+#include "src/vm-state-inl.h"
 
-#include "../include/v8-profiler.h"
+#include "include/v8-profiler.h"
 
 namespace v8 {
 namespace internal {
@@ -156,6 +133,16 @@ void ProfilerEventsProcessor::Run() {
 }
 
 
+void* ProfilerEventsProcessor::operator new(size_t size) {
+  return AlignedAlloc(size, V8_ALIGNOF(ProfilerEventsProcessor));
+}
+
+
+void ProfilerEventsProcessor::operator delete(void* ptr) {
+  AlignedFree(ptr);
+}
+
+
 int CpuProfiler::GetProfilesCount() {
   // The count of profiles doesn't depend on a security token.
   return profiles_->profiles()->length();
@@ -176,6 +163,10 @@ void CpuProfiler::DeleteAllProfiles() {
 void CpuProfiler::DeleteProfile(CpuProfile* profile) {
   profiles_->RemoveProfile(profile);
   delete profile;
+  if (profiles_->profiles()->is_empty() && !is_profiling_) {
+    // If this was the last profile, clean up all accessory data as well.
+    ResetProfiles();
+  }
 }
 
 
@@ -313,6 +304,15 @@ void CpuProfiler::CodeMoveEvent(Address from, Address to) {
 }
 
 
+void CpuProfiler::CodeDisableOptEvent(Code* code, SharedFunctionInfo* shared) {
+  CodeEventsContainer evt_rec(CodeEventRecord::CODE_DISABLE_OPT);
+  CodeDisableOptEventRecord* rec = &evt_rec.CodeDisableOptEventRecord_;
+  rec->start = code->address();
+  rec->bailout_reason = GetBailoutReason(shared->DisableOptimizationReason());
+  processor_->Enqueue(evt_rec);
+}
+
+
 void CpuProfiler::CodeDeleteEvent(Address from) {
 }
 
@@ -376,7 +376,6 @@ CpuProfiler::CpuProfiler(Isolate* isolate)
       sampling_interval_(TimeDelta::FromMicroseconds(
           FLAG_cpu_profiler_sampling_interval)),
       profiles_(new CpuProfilesCollection(isolate->heap())),
-      next_profile_uid_(1),
       generator_(NULL),
       processor_(NULL),
       is_profiling_(false) {
@@ -391,7 +390,6 @@ CpuProfiler::CpuProfiler(Isolate* isolate,
       sampling_interval_(TimeDelta::FromMicroseconds(
           FLAG_cpu_profiler_sampling_interval)),
       profiles_(test_profiles),
-      next_profile_uid_(1),
       generator_(test_generator),
       processor_(test_processor),
       is_profiling_(false) {
@@ -417,10 +415,9 @@ void CpuProfiler::ResetProfiles() {
 
 
 void CpuProfiler::StartProfiling(const char* title, bool record_samples) {
-  if (profiles_->StartProfiling(title, next_profile_uid_++, record_samples)) {
+  if (profiles_->StartProfiling(title, record_samples)) {
     StartProcessorIfNotStarted();
   }
-  processor_->AddCurrentStack(isolate_);
 }
 
 
@@ -430,39 +427,32 @@ void CpuProfiler::StartProfiling(String* title, bool record_samples) {
 
 
 void CpuProfiler::StartProcessorIfNotStarted() {
-  if (processor_ == NULL) {
-    Logger* logger = isolate_->logger();
-    // Disable logging when using the new implementation.
-    saved_is_logging_ = logger->is_logging_;
-    logger->is_logging_ = false;
-    generator_ = new ProfileGenerator(profiles_);
-    Sampler* sampler = logger->sampler();
-#if V8_CC_MSVC && (_MSC_VER >= 1800)
-    // VS2013 reports "warning C4316: 'v8::internal::ProfilerEventsProcessor'
-    // : object allocated on the heap may not be aligned 64".  We need to
-    // figure out if this is a legitimate warning or a compiler bug.
-    #pragma warning(push)
-    #pragma warning(disable:4316)
-#endif
-    processor_ = new ProfilerEventsProcessor(
-        generator_, sampler, sampling_interval_);
-#if V8_CC_MSVC && (_MSC_VER >= 1800)
-    #pragma warning(pop)
-#endif
-    is_profiling_ = true;
-    // Enumerate stuff we already have in the heap.
-    ASSERT(isolate_->heap()->HasBeenSetUp());
-    if (!FLAG_prof_browser_mode) {
-      logger->LogCodeObjects();
-    }
-    logger->LogCompiledFunctions();
-    logger->LogAccessorCallbacks();
-    LogBuiltins();
-    // Enable stack sampling.
-    sampler->SetHasProcessingThread(true);
-    sampler->IncreaseProfilingDepth();
-    processor_->StartSynchronously();
+  if (processor_ != NULL) {
+    processor_->AddCurrentStack(isolate_);
+    return;
   }
+  Logger* logger = isolate_->logger();
+  // Disable logging when using the new implementation.
+  saved_is_logging_ = logger->is_logging_;
+  logger->is_logging_ = false;
+  generator_ = new ProfileGenerator(profiles_);
+  Sampler* sampler = logger->sampler();
+  processor_ = new ProfilerEventsProcessor(
+      generator_, sampler, sampling_interval_);
+  is_profiling_ = true;
+  // Enumerate stuff we already have in the heap.
+  ASSERT(isolate_->heap()->HasBeenSetUp());
+  if (!FLAG_prof_browser_mode) {
+    logger->LogCodeObjects();
+  }
+  logger->LogCompiledFunctions();
+  logger->LogAccessorCallbacks();
+  LogBuiltins();
+  // Enable stack sampling.
+  sampler->SetHasProcessingThread(true);
+  sampler->IncreaseProfilingDepth();
+  processor_->AddCurrentStack(isolate_);
+  processor_->StartSynchronously();
 }
 
 

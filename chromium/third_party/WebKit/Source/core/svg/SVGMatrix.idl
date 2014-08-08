@@ -21,27 +21,29 @@
  */
 
 [
-    SetReference(SVGTransform parent)
+    TypeChecking=Interface|Nullable,
+    ImplementedAs=SVGMatrixTearOff,
+    SetWrapperReferenceTo(SVGTransform contextTransform)
 ] interface SVGMatrix {
     // FIXME: these attributes should all be floats but since we implement
     // AffineTransform with doubles setting these as doubles makes more sense.
-    [StrictTypeChecking] attribute double a;
-    [StrictTypeChecking] attribute double b;
-    [StrictTypeChecking] attribute double c;
-    [StrictTypeChecking] attribute double d;
-    [StrictTypeChecking] attribute double e;
-    [StrictTypeChecking] attribute double f;
+    [RaisesException=Setter] attribute double a;
+    [RaisesException=Setter] attribute double b;
+    [RaisesException=Setter] attribute double c;
+    [RaisesException=Setter] attribute double d;
+    [RaisesException=Setter] attribute double e;
+    [RaisesException=Setter] attribute double f;
 
-    [StrictTypeChecking] SVGMatrix multiply(SVGMatrix secondMatrix);
+    SVGMatrix multiply(SVGMatrix secondMatrix);
     [RaisesException] SVGMatrix inverse();
-    [Immutable, StrictTypeChecking] SVGMatrix translate(float x, float y);
-    [Immutable, StrictTypeChecking] SVGMatrix scale(float scaleFactor);
-    [Immutable, StrictTypeChecking] SVGMatrix scaleNonUniform(float scaleFactorX, float scaleFactorY);
-    [Immutable, StrictTypeChecking] SVGMatrix rotate(float angle);
-    [StrictTypeChecking, RaisesException] SVGMatrix rotateFromVector(float x, float y);
-    [Immutable] SVGMatrix flipX();
-    [Immutable] SVGMatrix flipY();
-    [Immutable, StrictTypeChecking] SVGMatrix skewX(float angle);
-    [Immutable, StrictTypeChecking] SVGMatrix skewY(float angle);
+    SVGMatrix translate(float x, float y);
+    SVGMatrix scale(float scaleFactor);
+    SVGMatrix scaleNonUniform(float scaleFactorX, float scaleFactorY);
+    SVGMatrix rotate(float angle);
+    [RaisesException] SVGMatrix rotateFromVector(float x, float y);
+    SVGMatrix flipX();
+    SVGMatrix flipY();
+    SVGMatrix skewX(float angle);
+    SVGMatrix skewY(float angle);
 };
 

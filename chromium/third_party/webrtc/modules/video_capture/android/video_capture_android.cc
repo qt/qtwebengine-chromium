@@ -10,6 +10,7 @@
 
 #include "webrtc/modules/video_capture/android/video_capture_android.h"
 
+#include "webrtc/base/common.h"
 #include "webrtc/modules/utility/interface/helpers_android.h"
 #include "webrtc/modules/video_capture/android/device_info_android.h"
 #include "webrtc/system_wrappers/interface/critical_section_wrapper.h"
@@ -19,8 +20,15 @@
 
 static JavaVM* g_jvm = NULL;
 static jclass g_java_capturer_class = NULL;  // VideoCaptureAndroid.class.
+static jobject g_context = NULL;  // Owned android.content.Context.
 
 namespace webrtc {
+
+// Called by Java to get the global application context.
+jobject JNICALL GetContext(JNIEnv* env, jclass) {
+  assert(g_context);
+  return g_context;
+}
 
 // Called by Java when the camera has a new frame to deliver.
 void JNICALL ProvideCameraFrame(
@@ -38,25 +46,67 @@ void JNICALL ProvideCameraFrame(
   env->ReleaseByteArrayElements(javaCameraFrame, cameraFrame, JNI_ABORT);
 }
 
-int32_t SetCaptureAndroidVM(JavaVM* javaVM) {
-  g_jvm = javaVM;
-  AttachThreadScoped ats(g_jvm);
+// Called by Java when the device orientation has changed.
+void JNICALL OnOrientationChanged(
+    JNIEnv* env, jobject, jlong context, jint degrees) {
+  webrtc::videocapturemodule::VideoCaptureAndroid* captureModule =
+      reinterpret_cast<webrtc::videocapturemodule::VideoCaptureAndroid*>(
+          context);
+  degrees = (360 + degrees) % 360;
+  assert(degrees >= 0 && degrees < 360);
+  VideoCaptureRotation rotation =
+      (degrees <= 45 || degrees > 315) ? kCameraRotate0 :
+      (degrees > 45 && degrees <= 135) ? kCameraRotate90 :
+      (degrees > 135 && degrees <= 225) ? kCameraRotate180 :
+      (degrees > 225 && degrees <= 315) ? kCameraRotate270 :
+      kCameraRotate0;  // Impossible.
+  int32_t status =
+      captureModule->VideoCaptureImpl::SetCaptureRotation(rotation);
+  RTC_UNUSED(status);
+  assert(status == 0);
+}
 
-  videocapturemodule::DeviceInfoAndroid::Initialize(ats.env());
+int32_t SetCaptureAndroidVM(JavaVM* javaVM, jobject context) {
+  if (javaVM) {
+    assert(!g_jvm);
+    g_jvm = javaVM;
+    AttachThreadScoped ats(g_jvm);
+    g_context = ats.env()->NewGlobalRef(context);
 
-  jclass j_capture_class =
-      ats.env()->FindClass("org/webrtc/videoengine/VideoCaptureAndroid");
-  assert(j_capture_class);
-  g_java_capturer_class =
-      reinterpret_cast<jclass>(ats.env()->NewGlobalRef(j_capture_class));
-  assert(g_java_capturer_class);
+    videocapturemodule::DeviceInfoAndroid::Initialize(ats.env());
 
-  JNINativeMethod native_method = {
-    "ProvideCameraFrame", "([BIJ)V",
-    reinterpret_cast<void*>(&ProvideCameraFrame)
-  };
-  if (ats.env()->RegisterNatives(g_java_capturer_class, &native_method, 1) != 0)
-    assert(false);
+    jclass j_capture_class =
+        ats.env()->FindClass("org/webrtc/videoengine/VideoCaptureAndroid");
+    assert(j_capture_class);
+    g_java_capturer_class =
+        reinterpret_cast<jclass>(ats.env()->NewGlobalRef(j_capture_class));
+    assert(g_java_capturer_class);
+
+    JNINativeMethod native_methods[] = {
+        {"GetContext",
+         "()Landroid/content/Context;",
+         reinterpret_cast<void*>(&GetContext)},
+        {"OnOrientationChanged",
+         "(JI)V",
+         reinterpret_cast<void*>(&OnOrientationChanged)},
+        {"ProvideCameraFrame",
+         "([BIJ)V",
+         reinterpret_cast<void*>(&ProvideCameraFrame)}};
+    if (ats.env()->RegisterNatives(g_java_capturer_class,
+                                   native_methods, 3) != 0)
+      assert(false);
+  } else {
+    if (g_jvm) {
+      AttachThreadScoped ats(g_jvm);
+      ats.env()->UnregisterNatives(g_java_capturer_class);
+      ats.env()->DeleteGlobalRef(g_java_capturer_class);
+      g_java_capturer_class = NULL;
+      ats.env()->DeleteGlobalRef(g_context);
+      g_context = NULL;
+      videocapturemodule::DeviceInfoAndroid::DeInitialize();
+      g_jvm = NULL;
+    }
+  }
 
   return 0;
 }
@@ -143,7 +193,8 @@ int32_t VideoCaptureAndroid::StartCapture(
   assert(j_start);
   int min_mfps = 0;
   int max_mfps = 0;
-  _deviceInfo.GetFpsRange(_deviceUniqueId, &min_mfps, &max_mfps);
+  _deviceInfo.GetMFpsRange(_deviceUniqueId, _captureCapability.maxFPS,
+                           &min_mfps, &max_mfps);
   bool started = env->CallBooleanMethod(_jCapturer, j_start,
                                         _captureCapability.width,
                                         _captureCapability.height,
@@ -184,8 +235,9 @@ int32_t VideoCaptureAndroid::CaptureSettings(
 int32_t VideoCaptureAndroid::SetCaptureRotation(
     VideoCaptureRotation rotation) {
   CriticalSectionScoped cs(&_apiCs);
-  if (VideoCaptureImpl::SetCaptureRotation(rotation) != 0)
-    return 0;
+  int32_t status = VideoCaptureImpl::SetCaptureRotation(rotation);
+  if (status != 0)
+    return status;
 
   AttachThreadScoped ats(g_jvm);
   JNIEnv* env = ats.env();

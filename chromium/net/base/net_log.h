@@ -78,9 +78,9 @@ class NET_EXPORT NetLog {
     // parameters for bytes sent/received events.
     LOG_ALL_BUT_BYTES,
 
-    // Only log events which are cheap, and don't consume much memory.  This is
-    // the default value for observers.
-    LOG_BASIC,
+    // Log all events, but do not include the actual transferred bytes and
+    // remove cookies and HTTP credentials.
+    LOG_STRIP_PRIVATE_DATA,
 
     // Don't log any events.
     LOG_NONE,
@@ -120,19 +120,32 @@ class NET_EXPORT NetLog {
     uint32 id;
   };
 
+  struct NET_EXPORT EntryData {
+    EntryData(EventType type,
+              Source source,
+              EventPhase phase,
+              base::TimeTicks time,
+              const ParametersCallback* parameters_callback);
+    ~EntryData();
+
+    const EventType type;
+    const Source source;
+    const EventPhase phase;
+    const base::TimeTicks time;
+    const ParametersCallback* const parameters_callback;
+  };
+
+  // An Entry pre-binds EntryData to a LogLevel, so observers will observe the
+  // output of ToValue() and ParametersToValue() at their log level rather than
+  // current maximum.
   class NET_EXPORT Entry {
    public:
-    Entry(EventType type,
-          Source source,
-          EventPhase phase,
-          base::TimeTicks time,
-          const ParametersCallback* parameters_callback,
-          LogLevel log_level);
+    Entry(const EntryData* data, LogLevel log_level);
     ~Entry();
 
-    EventType type() const { return type_; }
-    Source source() const { return source_; }
-    EventPhase phase() const { return phase_; }
+    EventType type() const { return data_->type; }
+    Source source() const { return data_->source; }
+    EventPhase phase() const { return data_->phase; }
 
     // Serializes the specified event to a Value.  The Value also includes the
     // current time.  Caller takes ownership of returned Value.  Takes in a time
@@ -144,11 +157,7 @@ class NET_EXPORT NetLog {
     base::Value* ParametersToValue() const;
 
    private:
-    const EventType type_;
-    const Source source_;
-    const EventPhase phase_;
-    const base::TimeTicks time_;
-    const ParametersCallback* parameters_callback_;
+    const EntryData* const data_;
 
     // Log level when the event occurred.
     const LogLevel log_level_;
@@ -196,6 +205,8 @@ class NET_EXPORT NetLog {
    private:
     friend class NetLog;
 
+    void OnAddEntryData(const EntryData& entry_data);
+
     // Both of these values are only modified by the NetLog.
     LogLevel log_level_;
     NetLog* net_log_;
@@ -221,11 +232,6 @@ class NET_EXPORT NetLog {
 
   // Adds an observer and sets its log level.  The observer must not be
   // watching any NetLog, including this one, when this is called.
-  //
-  // Typical observers should specify LOG_BASIC.
-  //
-  // Observers that need to see the full granularity of events can specify
-  // LOG_ALL_BUT_BYTES. However, doing so will have performance consequences.
   //
   // NetLog implementations must call NetLog::OnAddObserver to update the
   // observer's internal state.
@@ -268,10 +274,9 @@ class NET_EXPORT NetLog {
   // be logged.  This is only the case when |log_level| is LOG_ALL.
   static bool IsLoggingBytes(LogLevel log_level);
 
-  // Returns true if |log_level| indicates that all events should be logged,
-  // including frequently occuring ones that may impact performances.
-  // This is the case when |log_level| is LOG_ALL or LOG_ALL_BUT_BYTES.
-  static bool IsLoggingAllEvents(LogLevel log_level);
+  // Returns true if |log_level| indicates that events should be logged. This is
+  // the case when |log_level| is anything other than LOG_NONE.
+  static bool IsLogging(LogLevel log_level);
 
   // Creates a ParametersCallback that encapsulates a single integer.
   // Warning: |name| must remain valid for the life of the callback.
@@ -380,8 +385,8 @@ class NET_EXPORT BoundNetLog {
   // Shortcut for NetLog::IsLoggingBytes(this->GetLogLevel()).
   bool IsLoggingBytes() const;
 
-  // Shortcut for NetLog::IsLoggingAllEvents(this->GetLogLevel()).
-  bool IsLoggingAllEvents() const;
+  // Shortcut for NetLog::IsLogging(this->GetLogLevel()).
+  bool IsLogging() const;
 
   // Helper to create a BoundNetLog given a NetLog and a SourceType. Takes care
   // of creating a unique source ID, and handles the case of NULL net_log.

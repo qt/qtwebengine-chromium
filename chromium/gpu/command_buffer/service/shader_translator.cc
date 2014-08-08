@@ -9,6 +9,7 @@
 
 #include "base/at_exit.h"
 #include "base/debug/trace_event.h"
+#include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/strings/string_number_conversions.h"
 
@@ -16,21 +17,21 @@ namespace {
 
 using gpu::gles2::ShaderTranslator;
 
-void FinalizeShaderTranslator(void* /* dummy */) {
-  TRACE_EVENT0("gpu", "ShFinalize");
-  ShFinalize();
-}
-
-bool InitializeShaderTranslator() {
-  static bool initialized = false;
-  if (!initialized) {
+class ShaderTranslatorInitializer {
+ public:
+  ShaderTranslatorInitializer() {
     TRACE_EVENT0("gpu", "ShInitialize");
     CHECK(ShInitialize());
-    base::AtExitManager::RegisterCallback(&FinalizeShaderTranslator, NULL);
-    initialized = true;
   }
-  return initialized;
-}
+
+  ~ShaderTranslatorInitializer() {
+    TRACE_EVENT0("gpu", "ShFinalize");
+    ShFinalize();
+  }
+};
+
+base::LazyInstance<ShaderTranslatorInitializer> g_translator_initializer =
+    LAZY_INSTANCE_INITIALIZER;
 
 #if !defined(ANGLE_SH_VERSION) || ANGLE_SH_VERSION < 108
 typedef int ANGLEGetInfoType;
@@ -133,8 +134,7 @@ bool ShaderTranslator::Init(
   DCHECK(shader_spec == SH_GLES2_SPEC || shader_spec == SH_WEBGL_SPEC);
   DCHECK(resources != NULL);
 
-  if (!InitializeShaderTranslator())
-    return false;
+  g_translator_initializer.Get();
 
   ShShaderOutput shader_output =
       (glsl_implementation_type == kGlslES ? SH_ESSL_OUTPUT : SH_GLSL_OUTPUT);
@@ -152,11 +152,9 @@ bool ShaderTranslator::Init(
 
 int ShaderTranslator::GetCompileOptions() const {
   int compile_options =
-      SH_OBJECT_CODE | SH_VARIABLES |
-      SH_MAP_LONG_VARIABLE_NAMES | SH_ENFORCE_PACKING_RESTRICTIONS |
-      SH_LIMIT_EXPRESSION_COMPLEXITY | SH_LIMIT_CALL_STACK_DEPTH;
-
-  compile_options |= SH_CLAMP_INDIRECT_ARRAY_BOUNDS;
+      SH_OBJECT_CODE | SH_VARIABLES | SH_ENFORCE_PACKING_RESTRICTIONS |
+      SH_LIMIT_EXPRESSION_COMPLEXITY | SH_LIMIT_CALL_STACK_DEPTH |
+      SH_CLAMP_INDIRECT_ARRAY_BOUNDS;
 
   compile_options |= driver_bug_workarounds_;
 
@@ -203,9 +201,29 @@ bool ShaderTranslator::Translate(const char* shader) {
   return success;
 }
 
-std::string ShaderTranslator::GetStringForOptionsThatWouldEffectCompilation()
+std::string ShaderTranslator::GetStringForOptionsThatWouldAffectCompilation()
     const {
+#if ANGLE_SH_VERSION >= 124
+  DCHECK(compiler_ != NULL);
+
+  ANGLEGetInfoType resource_len = 0;
+  ShGetInfo(compiler_, SH_RESOURCES_STRING_LENGTH, &resource_len);
+  DCHECK(resource_len > 1);
+  scoped_ptr<char[]> resource_str(new char[resource_len]);
+
+  ShGetBuiltInResourcesString(compiler_, resource_len, resource_str.get());
+
+  return std::string(":CompileOptions:" +
+         base::IntToString(GetCompileOptions())) +
+         std::string(resource_str.get());
+#else
+#if ANGLE_SH_VERSION >= 123
+  const size_t kNumIntFields = 21;
+#elif ANGLE_SH_VERSION >= 122
+  const size_t kNumIntFields = 20;
+#else
   const size_t kNumIntFields = 16;
+#endif
   const size_t kNumEnumFields = 1;
   const size_t kNumFunctionPointerFields = 1;
   struct MustMatchShBuiltInResource {
@@ -256,7 +274,24 @@ std::string ShaderTranslator::GetStringForOptionsThatWouldEffectCompilation()
       ":MaxCallStackDepth:" +
       base::IntToString(compiler_options_.MaxCallStackDepth) +
       ":EXT_frag_depth:" +
+#if ANGLE_SH_VERSION >= 122
+      base::IntToString(compiler_options_.EXT_frag_depth) +
+#if ANGLE_SH_VERSION >= 123
+      ":EXT_shader_texture_lod:" +
+      base::IntToString(compiler_options_.EXT_shader_texture_lod) +
+#endif
+      ":MaxVertexOutputVectors:" +
+      base::IntToString(compiler_options_.MaxVertexOutputVectors) +
+      ":MaxFragmentInputVectors:" +
+      base::IntToString(compiler_options_.MaxFragmentInputVectors) +
+      ":MinProgramTexelOffset:" +
+      base::IntToString(compiler_options_.MinProgramTexelOffset) +
+      ":MaxProgramTexelOffset:" +
+      base::IntToString(compiler_options_.MaxProgramTexelOffset));
+#else   // ANGLE_SH_VERSION < 122
       base::IntToString(compiler_options_.EXT_frag_depth));
+#endif
+#endif
 }
 
 const char* ShaderTranslator::translated_shader() const {

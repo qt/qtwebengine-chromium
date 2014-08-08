@@ -103,8 +103,7 @@ BitmapPlatformDevice* BitmapPlatformDevice::Create(CGContextRef context,
   SkBitmap bitmap;
   // TODO: verify that the CG Context's pixels will have tight rowbytes or pass in the correct
   // rowbytes for the case when context != NULL.
-  bitmap.setConfig(SkBitmap::kARGB_8888_Config, width, height, 0,
-                   is_opaque ? kOpaque_SkAlphaType : kPremul_SkAlphaType);
+  bitmap.setInfo(SkImageInfo::MakeN32(width, height, is_opaque ? kOpaque_SkAlphaType : kPremul_SkAlphaType));
 
   void* data;
   if (context) {
@@ -146,7 +145,7 @@ BitmapPlatformDevice* BitmapPlatformDevice::CreateAndClear(int width,
                                                            bool is_opaque) {
   BitmapPlatformDevice* device = Create(NULL, width, height, is_opaque);
   if (!is_opaque)
-    device->accessBitmap(true).eraseARGB(0, 0, 0, 0);
+    device->clear(0);
   return device;
 }
 
@@ -238,14 +237,11 @@ void BitmapPlatformDevice::DrawToNativeContext(CGContextRef context, int x,
     ReleaseBitmapContext();
 }
 
-SkBaseDevice* BitmapPlatformDevice::onCreateCompatibleDevice(
-    SkBitmap::Config config, int width, int height, bool isOpaque,
-    Usage /*usage*/) {
-  SkASSERT(config == SkBitmap::kARGB_8888_Config);
-  SkBaseDevice* bitmap_device = BitmapPlatformDevice::CreateAndClear(width, 
-                                                                     height,
-                                                                     isOpaque);
-  return bitmap_device;
+SkBaseDevice* BitmapPlatformDevice::onCreateDevice(const SkImageInfo& info,
+                                                   Usage /*usage*/) {
+  SkASSERT(info.colorType() == kPMColor_SkColorType);
+  return BitmapPlatformDevice::CreateAndClear(info.width(), info.height(),
+                                                info.isOpaque());
 }
 
 // PlatformCanvas impl
@@ -275,10 +271,8 @@ bool PlatformBitmap::Allocate(int width, int height, bool is_opaque) {
   if (RasterDeviceTooBigToAllocate(width, height))
     return false;
     
-  bitmap_.setConfig(SkBitmap::kARGB_8888_Config, width, height, width * 4,
-                    is_opaque ? kOpaque_SkAlphaType : kPremul_SkAlphaType);
-  if (!bitmap_.allocPixels())
-      return false;
+  if (!bitmap_.allocN32Pixels(width, height, is_opaque))
+    return false;
 
   if (!is_opaque)
     bitmap_.eraseColor(0);

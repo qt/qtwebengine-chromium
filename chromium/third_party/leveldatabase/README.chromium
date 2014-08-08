@@ -1,7 +1,7 @@
 Name: LevelDB: A Fast Persistent Key-Value Store
 Short Name: leveldb
 URL: http://code.google.com/p/leveldb/
-Version: r78
+Version: r80
 License: New BSD
 License File: src/LICENSE
 Security Critical: yes
@@ -12,7 +12,8 @@ FileSystem API implementation and others.
 
 Local Additions:
 * gyp file for building in chromium
-* port/port_chromium.{h,cc} and env_chromium.{h,cc} provide chromium
+* port/port_chromium.{h,cc}, env_chromium.{h,cc}, env_chromium_stdio.{h,cc}, and
+  env_chromium_win.{h,cc} provide (POSIX and Windows respectively) chromium
   implementations of primitives used by leveldb.  E.g. threading, file handling,
   etc. env_chromium.h allows re-use of some utility functions.
 * chromium_logger.h was copied from src/util/posix_logger.h and updated to use
@@ -23,3 +24,4 @@ Local Additions:
   HANDLE_EINTR macro that retries the call.
 * TRACE macros/thread name for chrome://tracing diagnostics
 * Handle in-process exclusive file locks, based on src/util/env_posix.cc
+* Unit tests for the Chromium environment.

@@ -20,7 +20,7 @@
           {
             "name": "callback",
             "type": "function",
-            "optional": "true",
+            "optional": true,
             "parameters": []
           }
         ]
@@ -58,7 +58,7 @@
             "name": "callback",
             "type": "function",
             "description": "Called when the install process completes. Upon failures, chrome.runtime.lastError will be set to 'user_canceled' or 'unknown_error'.",
-            "optional": "true",
+            "optional": true,
             "parameters": []
           }
         ]
@@ -111,6 +111,11 @@
                 "type": "boolean",
                 "optional": true,
                 "description": "A flag to cause the app launcher to be installed before installing the extension, if it isn't installed already."
+              },
+              "authuser": {
+                "type": "string",
+                "optional": true,
+                "description": "The authuser index to be included with CRX download requests in multi-login sessions."
               }
             },
             "additionalProperties": { "type": "any" }
@@ -119,7 +124,7 @@
             "name": "callback",
             "type": "function",
             "description": "Called when the user has either accepted/rejected the dialog, or some error occurred (such as invalid manifest or icon image data).",
-            "optional": "true",
+            "optional": true,
             "parameters": [
               {
                 "name": "result",
@@ -143,7 +148,7 @@
           {
             "name": "callback",
             "type": "function",
-            "optional": "true",
+            "optional": true,
             "parameters": []
           }
         ]
@@ -155,7 +160,7 @@
           {
             "name": "callback",
             "type": "function",
-            "optional": "true",
+            "optional": true,
             "parameters": []
           }
         ]
@@ -167,7 +172,7 @@
           {
             "name": "callback",
             "type": "function",
-            "optional": "false",
+            "optional": false,
             "parameters": [
               {
                 "name": "info",
@@ -187,7 +192,7 @@
           {
             "name": "callback",
             "type": "function",
-            "optional": "false",
+            "optional": false,
             "parameters": [
               { "name": "login", "type": "string" }
             ]
@@ -202,7 +207,7 @@
           {
             "name": "callback",
             "type": "function",
-            "optional": "true",
+            "optional": true,
             "parameters": []
           }
         ]
@@ -214,7 +219,7 @@
           {
             "name": "callback",
             "type": "function",
-            "optional": "false",
+            "optional": false,
             "parameters": [
               {
                 "name": "webgl_status",
@@ -232,7 +237,7 @@
           {
             "name": "callback",
             "type": "function",
-            "optional": "false",
+            "optional": false,
             "parameters": [
               { "name": "is_enabled", "type": "boolean" }
             ]
@@ -246,10 +251,28 @@
           {
             "name": "callback",
             "type": "function",
-            "optional": "false",
+            "optional": false,
             "parameters": [
               { "name": "is_incognito", "type": "boolean" }
             ]
+          }
+        ]
+      },
+      {
+        "name": "signIn",
+        "description": "Signs the user into Chrome.",
+        "parameters": [
+          {
+            "name": "continue_url",
+            "type": "string",
+            "description": "The continue URL to navigate to once sign-in completes."
+          },
+          {
+            "name": "callback",
+            "type": "function",
+            "description": "Called if the user is already signed in or if the sign-in method was invoked incorrectly (e.g. with an invalid continue URL), sign-in is unavailable (e.g. in Incognito), or the API was not called in response to a user gesture. Upon such a failure, chrome.runtime.lastError will be set to 'invalid_continue_url', 'signin_is_disallowed', 'signin_failed', 'merge_session_failed', or 'user_gesture_required'.",
+            "optional": true,
+            "parameters": []
           }
         ]
       }

@@ -8,11 +8,14 @@
 
 #include <algorithm>
 
+#include "base/bind.h"
 #include "base/file_util.h"
 #include "base/files/file_path.h"
 #include "base/lazy_instance.h"
 #include "base/message_loop/message_loop.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "base/path_service.h"
+#include "base/run_loop.h"
 #include "base/strings/string16.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
@@ -37,7 +40,19 @@
 #define CERTDB_TERMINAL_RECORD CERTDB_VALID_PEER
 #endif
 
+using base::ASCIIToUTF16;
+
 namespace net {
+
+namespace {
+
+void SwapCertList(CertificateList* destination,
+                  scoped_ptr<CertificateList> source) {
+  ASSERT_TRUE(destination);
+  destination->swap(*source);
+}
+
+}  // namespace
 
 class CertDatabaseNSSTest : public testing::Test {
  public:
@@ -125,11 +140,26 @@ class CertDatabaseNSSTest : public testing::Test {
   crypto::ScopedTestNSSDB test_nssdb_;
 };
 
+TEST_F(CertDatabaseNSSTest, ListCertsSync) {
+  // This test isn't terribly useful, though it will at least let valgrind test
+  // for leaks.
+  CertificateList certs;
+  cert_db_->ListCertsSync(&certs);
+  // The test DB is empty, but let's assume there will always be something in
+  // the other slots.
+  EXPECT_LT(0U, certs.size());
+}
+
 TEST_F(CertDatabaseNSSTest, ListCerts) {
   // This test isn't terribly useful, though it will at least let valgrind test
   // for leaks.
   CertificateList certs;
-  cert_db_->ListCerts(&certs);
+  cert_db_->SetSlowTaskRunnerForTest(base::MessageLoopProxy::current());
+  cert_db_->ListCerts(base::Bind(&SwapCertList, base::Unretained(&certs)));
+  EXPECT_EQ(0U, certs.size());
+
+  base::RunLoop().RunUntilIdle();
+
   // The test DB is empty, but let's assume there will always be something in
   // the other slots.
   EXPECT_LT(0U, certs.size());
@@ -589,13 +619,6 @@ TEST_F(CertDatabaseNSSTest, ImportServerCert_SelfSigned) {
 }
 
 TEST_F(CertDatabaseNSSTest, ImportServerCert_SelfSigned_Trusted) {
-  // When using CERT_PKIXVerifyCert (which we do), server trust only works from
-  // 3.13.4 onwards.  See https://bugzilla.mozilla.org/show_bug.cgi?id=647364.
-  if (!NSS_VersionCheck("3.13.4")) {
-    LOG(INFO) << "test skipped on NSS < 3.13.4";
-    return;
-  }
-
   CertificateList certs;
   ASSERT_TRUE(ReadCertIntoList("punycodetest.der", &certs));
 
@@ -664,12 +687,6 @@ TEST_F(CertDatabaseNSSTest, ImportCaAndServerCert) {
 }
 
 TEST_F(CertDatabaseNSSTest, ImportCaAndServerCert_DistrustServer) {
-  // Explicit distrust only works starting in NSS 3.13.
-  if (!NSS_VersionCheck("3.13")) {
-    LOG(INFO) << "test skipped on NSS < 3.13";
-    return;
-  }
-
   CertificateList ca_certs = CreateCertificateListFromFile(
       GetTestCertsDirectory(), "root_ca_cert.pem",
       X509Certificate::FORMAT_AUTO);
@@ -757,12 +774,6 @@ TEST_F(CertDatabaseNSSTest, TrustIntermediateCa) {
                                   &verify_result);
   EXPECT_EQ(OK, error);
   EXPECT_EQ(0U, verify_result.cert_status);
-
-  // Explicit distrust only works starting in NSS 3.13.
-  if (!NSS_VersionCheck("3.13")) {
-    LOG(INFO) << "test partially skipped on NSS < 3.13";
-    return;
-  }
 
   // Trust the root cert and distrust the intermediate.
   EXPECT_TRUE(cert_db_->SetCertTrust(
@@ -927,12 +938,6 @@ TEST_F(CertDatabaseNSSTest, TrustIntermediateCa3) {
 }
 
 TEST_F(CertDatabaseNSSTest, TrustIntermediateCa4) {
-  // Explicit distrust only works starting in NSS 3.13.
-  if (!NSS_VersionCheck("3.13")) {
-    LOG(INFO) << "test skipped on NSS < 3.13";
-    return;
-  }
-
   NSSCertDatabase::ImportCertFailureList failed;
 
   CertificateList ca_certs = CreateCertificateListFromFile(

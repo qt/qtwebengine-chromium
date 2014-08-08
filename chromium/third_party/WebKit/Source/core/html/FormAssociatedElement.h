@@ -24,6 +24,8 @@
 #ifndef FormAssociatedElement_h
 #define FormAssociatedElement_h
 
+#include "platform/heap/Handle.h"
+#include "wtf/WeakPtr.h"
 #include "wtf/text/WTFString.h"
 
 namespace WebCore {
@@ -39,15 +41,17 @@ class ValidationMessage;
 class ValidityState;
 class VisibleSelection;
 
-class FormAssociatedElement {
+class FormAssociatedElement : public WillBeGarbageCollectedMixin {
 public:
     virtual ~FormAssociatedElement();
 
+#if !ENABLE(OILPAN)
     void ref() { refFormAssociatedElement(); }
     void deref() { derefFormAssociatedElement(); }
+#endif
 
-    static HTMLFormElement* findAssociatedForm(const HTMLElement*, HTMLFormElement*);
-    HTMLFormElement* form() const { return m_form; }
+    static HTMLFormElement* findAssociatedForm(const HTMLElement*);
+    HTMLFormElement* form() const { return m_form.get(); }
     ValidityState* validity();
 
     virtual bool isFormControlElement() const = 0;
@@ -63,11 +67,9 @@ public:
     // Return true for a successful control (see HTML4-17.13.2).
     virtual bool appendFormData(FormDataList&, bool) { return false; }
 
-    void formWillBeDestroyed();
-
     void resetFormOwner();
 
-    void formRemovedFromTree(const Node* formRoot);
+    void formRemovedFromTree(const Node& formRoot);
 
     // ValidityState attribute implementations
     bool customError() const;
@@ -88,14 +90,20 @@ public:
 
     void formAttributeTargetChanged();
 
+    typedef WillBeHeapVector<RawPtrWillBeMember<FormAssociatedElement> > List;
+
 protected:
     FormAssociatedElement();
 
+    void trace(Visitor*);
     void insertedInto(ContainerNode*);
     void removedFrom(ContainerNode*);
     void didMoveToNewDocument(Document& oldDocument);
 
+    // FIXME: Remove usage of setForm. resetFormOwner should be enough, and
+    // setForm is confusing.
     void setForm(HTMLFormElement*);
+    void associateByParser(HTMLFormElement*);
     void formAttributeChanged();
 
     // If you add an override of willChangeForm() or didChangeForm() to a class
@@ -107,15 +115,23 @@ protected:
     String customValidationMessage() const;
 
 private:
+#if !ENABLE(OILPAN)
     virtual void refFormAssociatedElement() = 0;
     virtual void derefFormAssociatedElement() = 0;
+#endif
 
+    void setFormAttributeTargetObserver(PassOwnPtrWillBeRawPtr<FormAttributeTargetObserver>);
     void resetFormAttributeTargetObserver();
 
-    OwnPtr<FormAttributeTargetObserver> m_formAttributeTargetObserver;
-    HTMLFormElement* m_form;
-    OwnPtr<ValidityState> m_validityState;
+    OwnPtrWillBeMember<FormAttributeTargetObserver> m_formAttributeTargetObserver;
+#if ENABLE(OILPAN)
+    Member<HTMLFormElement> m_form;
+#else
+    WeakPtr<HTMLFormElement> m_form;
+#endif
+    OwnPtrWillBeMember<ValidityState> m_validityState;
     String m_customValidationMessage;
+    bool m_formWasSetByParser;
 };
 
 HTMLElement* toHTMLElement(FormAssociatedElement*);

@@ -43,17 +43,17 @@ enum SamplerType {
 // the caching multi-thread/context safe in an easy low-overhead manner.
 // The caller must make sure to clear highp_threshold_cache to 0, so it can be
 // reinitialized, if a new or different context is used.
-CC_EXPORT TexCoordPrecision TexCoordPrecisionRequired(
-    gpu::gles2::GLES2Interface* context,
-    int *highp_threshold_cache,
-    int highp_threshold_min,
-    gfx::Point max_coordinate);
+CC_EXPORT TexCoordPrecision
+    TexCoordPrecisionRequired(gpu::gles2::GLES2Interface* context,
+                              int* highp_threshold_cache,
+                              int highp_threshold_min,
+                              const gfx::Point& max_coordinate);
 
 CC_EXPORT TexCoordPrecision TexCoordPrecisionRequired(
     gpu::gles2::GLES2Interface* context,
     int *highp_threshold_cache,
     int highp_threshold_min,
-    gfx::Size max_size);
+    const gfx::Size& max_size);
 
 class VertexShaderPosTex {
  public:
@@ -72,9 +72,9 @@ class VertexShaderPosTex {
   DISALLOW_COPY_AND_ASSIGN(VertexShaderPosTex);
 };
 
-class VertexShaderPosTexYUVStretch {
+class VertexShaderPosTexYUVStretchOffset {
  public:
-  VertexShaderPosTexYUVStretch();
+  VertexShaderPosTexYUVStretchOffset();
 
   void Init(gpu::gles2::GLES2Interface* context,
             unsigned program,
@@ -83,12 +83,14 @@ class VertexShaderPosTexYUVStretch {
 
   int matrix_location() const { return matrix_location_; }
   int tex_scale_location() const { return tex_scale_location_; }
+  int tex_offset_location() const { return tex_offset_location_; }
 
  private:
   int matrix_location_;
   int tex_scale_location_;
+  int tex_offset_location_;
 
-  DISALLOW_COPY_AND_ASSIGN(VertexShaderPosTexYUVStretch);
+  DISALLOW_COPY_AND_ASSIGN(VertexShaderPosTexYUVStretchOffset);
 };
 
 class VertexShaderPos {

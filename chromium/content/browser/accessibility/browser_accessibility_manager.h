@@ -10,12 +10,15 @@
 #include "base/containers/hash_tables.h"
 #include "base/memory/scoped_ptr.h"
 #include "build/build_config.h"
-#include "content/common/accessibility_node_data.h"
 #include "content/common/content_export.h"
 #include "third_party/WebKit/public/web/WebAXEnums.h"
+#include "ui/accessibility/ax_node_data.h"
+#include "ui/accessibility/ax_tree.h"
+#include "ui/accessibility/ax_tree_update.h"
 #include "ui/gfx/native_widget_types.h"
 
 struct AccessibilityHostMsg_EventParams;
+struct AccessibilityHostMsg_LocationChangeParams;
 
 namespace content {
 class BrowserAccessibility;
@@ -26,22 +29,38 @@ class BrowserAccessibilityManagerAndroid;
 class BrowserAccessibilityManagerWin;
 #endif
 
+// For testing.
+CONTENT_EXPORT ui::AXTreeUpdate MakeAXTreeUpdate(
+    const ui::AXNodeData& node,
+    const ui::AXNodeData& node2 = ui::AXNodeData(),
+    const ui::AXNodeData& node3 = ui::AXNodeData(),
+    const ui::AXNodeData& node4 = ui::AXNodeData(),
+    const ui::AXNodeData& node5 = ui::AXNodeData(),
+    const ui::AXNodeData& node6 = ui::AXNodeData(),
+    const ui::AXNodeData& node7 = ui::AXNodeData(),
+    const ui::AXNodeData& node8 = ui::AXNodeData(),
+    const ui::AXNodeData& node9 = ui::AXNodeData());
+
 // Class that can perform actions on behalf of the BrowserAccessibilityManager.
 class CONTENT_EXPORT BrowserAccessibilityDelegate {
  public:
   virtual ~BrowserAccessibilityDelegate() {}
-  virtual void SetAccessibilityFocus(int acc_obj_id) = 0;
+  virtual void AccessibilitySetFocus(int acc_obj_id) = 0;
   virtual void AccessibilityDoDefaultAction(int acc_obj_id) = 0;
+  virtual void AccessibilityShowMenu(int acc_obj_id) = 0;
   virtual void AccessibilityScrollToMakeVisible(
       int acc_obj_id, gfx::Rect subfocus) = 0;
   virtual void AccessibilityScrollToPoint(
       int acc_obj_id, gfx::Point point) = 0;
   virtual void AccessibilitySetTextSelection(
       int acc_obj_id, int start_offset, int end_offset) = 0;
-  virtual bool HasFocus() const = 0;
-  virtual gfx::Rect GetViewBounds() const = 0;
-  virtual gfx::Point GetLastTouchEventLocation() const = 0;
-  virtual void FatalAccessibilityTreeError() = 0;
+  virtual bool AccessibilityViewHasFocus() const = 0;
+  virtual gfx::Rect AccessibilityGetViewBounds() const = 0;
+  virtual gfx::Point AccessibilityOriginInScreen(
+      const gfx::Rect& bounds) const = 0;
+  virtual void AccessibilityHitTest(
+      const gfx::Point& point) = 0;
+  virtual void AccessibilityFatalError() = 0;
 };
 
 class CONTENT_EXPORT BrowserAccessibilityFactory {
@@ -54,44 +73,41 @@ class CONTENT_EXPORT BrowserAccessibilityFactory {
 };
 
 // Manages a tree of BrowserAccessibility objects.
-class CONTENT_EXPORT BrowserAccessibilityManager {
+class CONTENT_EXPORT BrowserAccessibilityManager : public ui::AXTreeDelegate {
  public:
   // Creates the platform-specific BrowserAccessibilityManager, but
   // with no parent window pointer. Only useful for unit tests.
   static BrowserAccessibilityManager* Create(
-      const AccessibilityNodeData& src,
+      const ui::AXTreeUpdate& initial_tree,
       BrowserAccessibilityDelegate* delegate,
       BrowserAccessibilityFactory* factory = new BrowserAccessibilityFactory());
 
   virtual ~BrowserAccessibilityManager();
 
-  void Initialize(const AccessibilityNodeData src);
+  void Initialize(const ui::AXTreeUpdate& initial_tree);
 
-  static AccessibilityNodeData GetEmptyDocument();
+  static ui::AXTreeUpdate GetEmptyDocument();
 
   virtual void NotifyAccessibilityEvent(
-      blink::WebAXEvent event_type, BrowserAccessibility* node) { }
+      ui::AXEvent event_type, BrowserAccessibility* node) { }
 
   // Return a pointer to the root of the tree, does not make a new reference.
   BrowserAccessibility* GetRoot();
 
-  // Removes a node from the manager.
-  virtual void RemoveNode(BrowserAccessibility* node);
+  // Returns a pointer to the BrowserAccessibility object for a given AXNode.
+  BrowserAccessibility* GetFromAXNode(ui::AXNode* node);
 
-  // Return a pointer to the object corresponding to the given renderer_id,
+  // Return a pointer to the object corresponding to the given id,
   // does not make a new reference.
-  BrowserAccessibility* GetFromRendererID(int32 renderer_id);
+  BrowserAccessibility* GetFromID(int32 id);
 
   // Called to notify the accessibility manager that its associated native
-  // view got focused. This implies that it is shown (opposite of WasHidden,
-  // below).
-  // The touch_event_context parameter indicates that we were called in the
-  // context of a touch event.
-  void GotFocus(bool touch_event_context);
+  // view got focused.
+  virtual void OnWindowFocused();
 
   // Called to notify the accessibility manager that its associated native
-  // view was hidden. When it's no longer hidden, GotFocus will be called.
-  void WasHidden();
+  // view lost focus.
+  virtual void OnWindowBlurred();
 
   // Called to notify the accessibility manager that a mouse down event
   // occurred in the tab.
@@ -100,6 +116,7 @@ class CONTENT_EXPORT BrowserAccessibilityManager {
   // Update the focused node to |node|, which may be null.
   // If |notify| is true, send a message to the renderer to set focus
   // to this node.
+  void SetFocus(ui::AXNode* node, bool notify);
   void SetFocus(BrowserAccessibility* node, bool notify);
 
   // Tell the renderer to do the default action for this node.
@@ -125,9 +142,13 @@ class CONTENT_EXPORT BrowserAccessibilityManager {
   gfx::Rect GetViewBounds();
 
   // Called when the renderer process has notified us of about tree changes.
-  // Send a notification to MSAA clients of the change.
   void OnAccessibilityEvents(
       const std::vector<AccessibilityHostMsg_EventParams>& params);
+
+  // Called when the renderer process updates the location of accessibility
+  // objects.
+  void OnLocationChanges(
+      const std::vector<AccessibilityHostMsg_LocationChangeParams>& params);
 
 #if defined(OS_WIN)
   BrowserAccessibilityManagerWin* ToBrowserAccessibilityManagerWin();
@@ -139,28 +160,29 @@ class CONTENT_EXPORT BrowserAccessibilityManager {
 
   // Return the object that has focus, if it's a descandant of the
   // given root (inclusive). Does not make a new reference.
-  BrowserAccessibility* GetFocus(BrowserAccessibility* root);
+  virtual BrowserAccessibility* GetFocus(BrowserAccessibility* root);
 
-  // Is the on-screen keyboard allowed to be shown, in response to a
-  // focus event on a text box?
-  bool IsOSKAllowed(const gfx::Rect& bounds);
+  // Return the descentant of the given root that has focus, or that object's
+  // active descendant if it has one.
+  BrowserAccessibility* GetActiveDescendantFocus(BrowserAccessibility* root);
 
   // True by default, but some platforms want to treat the root
   // scroll offsets separately.
   virtual bool UseRootScrollOffsetsWhenComputingBounds();
 
-  // For testing only: update the given nodes as if they were
-  // received from the renderer process in OnAccessibilityEvents.
-  // Takes up to 7 nodes at once so tests don't need to create a vector
-  // each time.
-  void UpdateNodesForTesting(
-      const AccessibilityNodeData& node,
-      const AccessibilityNodeData& node2 = AccessibilityNodeData(),
-      const AccessibilityNodeData& node3 = AccessibilityNodeData(),
-      const AccessibilityNodeData& node4 = AccessibilityNodeData(),
-      const AccessibilityNodeData& node5 = AccessibilityNodeData(),
-      const AccessibilityNodeData& node6 = AccessibilityNodeData(),
-      const AccessibilityNodeData& node7 = AccessibilityNodeData());
+  // Walk the tree.
+  BrowserAccessibility* NextInTreeOrder(BrowserAccessibility* node);
+  BrowserAccessibility* PreviousInTreeOrder(BrowserAccessibility* node);
+
+  // AXTreeDelegate implementation.
+  virtual void OnNodeWillBeDeleted(ui::AXNode* node) OVERRIDE;
+  virtual void OnNodeCreated(ui::AXNode* node) OVERRIDE;
+  virtual void OnNodeChanged(ui::AXNode* node) OVERRIDE;
+  virtual void OnNodeCreationFinished(ui::AXNode* node) OVERRIDE;
+  virtual void OnNodeChangeFinished(ui::AXNode* node) OVERRIDE;
+  virtual void OnRootChanged(ui::AXNode* new_root) OVERRIDE {}
+
+  BrowserAccessibilityDelegate* delegate() const { return delegate_; }
 
  protected:
   BrowserAccessibilityManager(
@@ -168,13 +190,12 @@ class CONTENT_EXPORT BrowserAccessibilityManager {
       BrowserAccessibilityFactory* factory);
 
   BrowserAccessibilityManager(
-      const AccessibilityNodeData& src,
+      const ui::AXTreeUpdate& initial_tree,
       BrowserAccessibilityDelegate* delegate,
       BrowserAccessibilityFactory* factory);
 
-  virtual void AddNodeToMap(BrowserAccessibility* node);
-
-  virtual void NotifyRootChanged() {}
+  // Called at the end of updating the tree.
+  virtual void OnTreeUpdateFinished() {}
 
  private:
   // The following states keep track of whether or not the
@@ -201,17 +222,17 @@ class CONTENT_EXPORT BrowserAccessibilityManager {
 
   // Update a set of nodes using data received from the renderer
   // process.
-  bool UpdateNodes(const std::vector<AccessibilityNodeData>& nodes);
+  bool UpdateNodes(const std::vector<ui::AXNodeData>& nodes);
 
   // Update one node from the tree using data received from the renderer
   // process. Returns true on success, false on fatal error.
-  bool UpdateNode(const AccessibilityNodeData& src);
+  bool UpdateNode(const ui::AXNodeData& src);
 
   void SetRoot(BrowserAccessibility* root);
 
   BrowserAccessibility* CreateNode(
       BrowserAccessibility* parent,
-      int32 renderer_id,
+      int32 id,
       int32 index_in_parent);
 
  protected:
@@ -221,16 +242,17 @@ class CONTENT_EXPORT BrowserAccessibilityManager {
   // Factory to create BrowserAccessibility objects (for dependency injection).
   scoped_ptr<BrowserAccessibilityFactory> factory_;
 
-  // The root of the tree of accessible objects and the element that
-  // currently has focus, if any.
-  BrowserAccessibility* root_;
-  BrowserAccessibility* focus_;
+  // The underlying tree of accessibility objects.
+  scoped_ptr<ui::AXTree> tree_;
+
+  // The node that currently has focus.
+  ui::AXNode* focus_;
+
+  // A mapping from a node id to its wrapper of type BrowserAccessibility.
+  base::hash_map<int32, BrowserAccessibility*> id_wrapper_map_;
 
   // The on-screen keyboard state.
   OnScreenKeyboardState osk_state_;
-
-  // A mapping from renderer IDs to BrowserAccessibility objects.
-  base::hash_map<int32, BrowserAccessibility*> renderer_id_map_;
 
   DISALLOW_COPY_AND_ASSIGN(BrowserAccessibilityManager);
 };

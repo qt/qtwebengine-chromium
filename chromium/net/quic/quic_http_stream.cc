@@ -5,6 +5,7 @@
 #include "net/quic/quic_http_stream.h"
 
 #include "base/callback_helpers.h"
+#include "base/metrics/histogram.h"
 #include "base/strings/stringprintf.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
@@ -37,6 +38,7 @@ QuicHttpStream::QuicHttpStream(const base::WeakPtr<QuicClientSession>& session)
       response_status_(OK),
       response_headers_received_(false),
       read_buf_(new GrowableIOBuffer()),
+      closed_stream_received_bytes_(0),
       user_buffer_len_(0),
       weak_factory_(this) {
   DCHECK(session_);
@@ -60,13 +62,16 @@ int QuicHttpStream::InitializeStream(const HttpRequestInfo* request_info,
 
   if (request_info->url.SchemeIsSecure()) {
     SSLInfo ssl_info;
-    if (!session_->GetSSLInfo(&ssl_info) || !ssl_info.cert) {
+    bool secure_session = session_->GetSSLInfo(&ssl_info) && ssl_info.cert;
+    UMA_HISTOGRAM_BOOLEAN("Net.QuicSession.SecureResourceSecureSession",
+                          secure_session);
+    if (!secure_session)
       return ERR_REQUEST_FOR_SECURE_RESOURCE_OVER_INSECURE_QUIC;
-    }
   }
 
   stream_net_log_ = stream_net_log;
   request_info_ = request_info;
+  request_time_ = base::Time::Now();
   priority_ = priority;
 
   int rv = stream_request_.StartRequest(
@@ -117,12 +122,9 @@ int QuicHttpStream::SendRequest(const HttpRequestHeaders& request_headers,
     // was being called even if we didn't yet allocate raw_request_body_buf_.
     //   && (request_body_stream_->size() ||
     //       request_body_stream_->is_chunked()))
-    //
-    // Use kMaxPacketSize as the buffer size, since the request
-    // body data is written with this size at a time.
-    // TODO(rch): use a smarter value since we can't write an entire
-    // packet due to overhead.
-    raw_request_body_buf_ = new IOBufferWithSize(kMaxPacketSize);
+    // Use 10 packets as the body buffer size to give enough space to
+    // help ensure we don't often send out partial packets.
+    raw_request_body_buf_ = new IOBufferWithSize(10 * kMaxPacketSize);
     // The request body buffer is empty at first.
     request_body_buf_ = new DrainableIOBuffer(raw_request_body_buf_.get(), 0);
   }
@@ -160,10 +162,6 @@ int QuicHttpStream::ReadResponseHeaders(const CompletionCallback& callback) {
   CHECK(callback_.is_null());
   callback_ = callback;
   return ERR_IO_PENDING;
-}
-
-const HttpResponseInfo* QuicHttpStream::GetResponseInfo() const {
-  return response_info_;
 }
 
 int QuicHttpStream::ReadResponseBody(
@@ -213,6 +211,7 @@ int QuicHttpStream::ReadResponseBody(
 void QuicHttpStream::Close(bool not_reusable) {
   // Note: the not_reusable flag has no meaning for SPDY streams.
   if (stream_) {
+    closed_stream_received_bytes_ = stream_->stream_bytes_read();
     stream_->SetDelegate(NULL);
     stream_->Reset(QUIC_STREAM_CANCELLED);
     stream_ = NULL;
@@ -246,8 +245,11 @@ bool QuicHttpStream::IsConnectionReusable() const {
 }
 
 int64 QuicHttpStream::GetTotalReceivedBytes() const {
-  // TODO(eustas): Implement.
-  return 0;
+  if (stream_) {
+    return stream_->stream_bytes_read();
+  }
+
+  return closed_stream_received_bytes_;
 }
 
 bool QuicHttpStream::GetLoadTimingInfo(LoadTimingInfo* load_timing_info) const {
@@ -327,6 +329,7 @@ void QuicHttpStream::OnClose(QuicErrorCode error) {
     response_status_ = ERR_ABORTED;
   }
 
+  closed_stream_received_bytes_ = stream_->stream_bytes_read();
   stream_ = NULL;
   if (!callback_.is_null())
     DoCallback(response_status_);
@@ -413,32 +416,23 @@ int QuicHttpStream::DoSendHeaders() {
   if (!stream_)
     return ERR_UNEXPECTED;
 
-  if (request_.empty() && !stream_->CanWrite(
-          base::Bind(&QuicHttpStream::OnIOComplete,
-                     weak_factory_.GetWeakPtr()))) {
-    // Do not compress headers unless it is likely that they can be sent.
-    next_state_ = STATE_SEND_HEADERS;
-    return ERR_IO_PENDING;
-  }
-  request_ = stream_->compressor()->CompressHeadersWithPriority(
-      ConvertRequestPriorityToQuicPriority(priority_), request_headers_);
-
   // Log the actual request with the URL Request's net log.
   stream_net_log_.AddEvent(
-      NetLog::TYPE_HTTP_TRANSACTION_SPDY_SEND_REQUEST_HEADERS,
-      base::Bind(&SpdyHeaderBlockNetLogCallback, &request_headers_));
+      NetLog::TYPE_HTTP_TRANSACTION_QUIC_SEND_REQUEST_HEADERS,
+      base::Bind(&QuicRequestNetLogCallback, stream_->id(), &request_headers_,
+                 priority_));
   // Also log to the QuicSession's net log.
   stream_->net_log().AddEvent(
       NetLog::TYPE_QUIC_HTTP_STREAM_SEND_REQUEST_HEADERS,
-      base::Bind(&SpdyHeaderBlockNetLogCallback, &request_headers_));
-  request_headers_.clear();
+      base::Bind(&QuicRequestNetLogCallback, stream_->id(), &request_headers_,
+                 priority_));
 
   bool has_upload_data = request_body_stream_ != NULL;
 
   next_state_ = STATE_SEND_HEADERS_COMPLETE;
-  return stream_->WriteStreamData(
-      request_, !has_upload_data,
-      base::Bind(&QuicHttpStream::OnIOComplete, weak_factory_.GetWeakPtr()));
+  int rv = stream_->WriteHeaders(request_headers_, !has_upload_data, NULL);
+  request_headers_.clear();
+  return rv;
 }
 
 int QuicHttpStream::DoSendHeadersComplete(int rv) {
@@ -546,6 +540,8 @@ int QuicHttpStream::ParseResponseHeaders() {
       .Init(*request_info_, *response_info_->headers.get());
   response_info_->was_npn_negotiated = true;
   response_info_->npn_negotiated_protocol = "quic/1+spdy/3";
+  response_info_->response_time = base::Time::Now();
+  response_info_->request_time = request_time_;
   response_headers_received_ = true;
 
   return OK;

@@ -12,7 +12,9 @@
 #include "base/files/file_path.h"
 #include "base/strings/string16.h"
 
+namespace base {
 class CommandLine;
+}
 
 namespace delegate_execute {
 
@@ -43,17 +45,17 @@ class DelegateExecuteOperation {
   DelegateExecuteOperation();
   ~DelegateExecuteOperation();
 
-  bool Init(const CommandLine* cmd_line);
+  bool Init(const base::CommandLine* cmd_line);
 
   OperationType operation_type() const {
     return operation_type_;
   }
 
-  const string16& relaunch_flags() const {
+  const base::string16& relaunch_flags() const {
     return relaunch_flags_;
   }
 
-  const string16& mutex() const {
+  const base::string16& mutex() const {
     return mutex_;
   }
 
@@ -66,9 +68,9 @@ class DelegateExecuteOperation {
 
  private:
   OperationType operation_type_;
-  string16 relaunch_flags_;
+  base::string16 relaunch_flags_;
   base::FilePath relaunch_shortcut_;
-  string16 mutex_;
+  base::string16 mutex_;
 
   DISALLOW_COPY_AND_ASSIGN(DelegateExecuteOperation);
 };

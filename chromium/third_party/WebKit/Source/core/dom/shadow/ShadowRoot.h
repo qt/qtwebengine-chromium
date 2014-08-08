@@ -43,6 +43,7 @@ class InsertionPoint;
 class ShadowRootRareData;
 
 class ShadowRoot FINAL : public DocumentFragment, public TreeScope, public DoublyLinkedListNode<ShadowRoot> {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(ShadowRoot);
     friend class WTF::DoublyLinkedListNode<ShadowRoot>;
 public:
     // FIXME: We will support multiple shadow subtrees, however current implementation does not work well
@@ -54,19 +55,23 @@ public:
         AuthorShadowRoot
     };
 
-    static PassRefPtr<ShadowRoot> create(Document* document, ShadowRootType type)
+    static PassRefPtrWillBeRawPtr<ShadowRoot> create(Document& document, ShadowRootType type)
     {
-        return adoptRef(new ShadowRoot(document, type));
+        return adoptRefWillBeNoop(new ShadowRoot(document, type));
     }
 
     void recalcStyle(StyleRecalcChange);
+
+    // Disambiguate between Node and TreeScope hierarchies; TreeScope's implementation is simpler.
+    using TreeScope::document;
+    using TreeScope::getElementById;
 
     Element* host() const { return toElement(parentOrShadowHostNode()); }
     ElementShadow* owner() const { return host() ? host()->shadow() : 0; }
 
     ShadowRoot* youngerShadowRoot() const { return prev(); }
 
-    ShadowRoot* bindingsOlderShadowRoot() const;
+    ShadowRoot* olderShadowRootForBindings() const;
     bool shouldExposeToBindings() const { return type() == AuthorShadowRoot; }
 
     bool isYoungest() const { return !youngerShadowRoot(); }
@@ -78,8 +83,8 @@ public:
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
     virtual void removedFrom(ContainerNode*) OVERRIDE;
 
-    virtual void registerScopedHTMLStyleChild() OVERRIDE;
-    virtual void unregisterScopedHTMLStyleChild() OVERRIDE;
+    void registerScopedHTMLStyleChild();
+    void unregisterScopedHTMLStyleChild();
 
     bool containsShadowElements() const;
     bool containsContentElements() const;
@@ -90,41 +95,44 @@ public:
 
     // For Internals, don't use this.
     unsigned childShadowRootCount() const;
+    unsigned numberOfStyles() const { return m_numberOfStyles; }
 
     HTMLShadowElement* shadowInsertionPointOfYoungerShadowRoot() const;
-    void setShadowInsertionPointOfYoungerShadowRoot(PassRefPtr<HTMLShadowElement>);
+    void setShadowInsertionPointOfYoungerShadowRoot(PassRefPtrWillBeRawPtr<HTMLShadowElement>);
 
     void didAddInsertionPoint(InsertionPoint*);
     void didRemoveInsertionPoint(InsertionPoint*);
-    const Vector<RefPtr<InsertionPoint> >& descendantInsertionPoints();
+    const WillBeHeapVector<RefPtrWillBeMember<InsertionPoint> >& descendantInsertionPoints();
 
     ShadowRootType type() const { return static_cast<ShadowRootType>(m_type); }
 
+    // Make protected methods from base class public here.
+    using TreeScope::setDocument;
+    using TreeScope::setParentTreeScope;
+
 public:
     Element* activeElement() const;
-
-    bool applyAuthorStyles() const { return m_applyAuthorStyles; }
-    void setApplyAuthorStyles(bool);
-
-    bool resetStyleInheritance() const { return m_resetStyleInheritance; }
-    void setResetStyleInheritance(bool);
 
     ShadowRoot* olderShadowRoot() const { return next(); }
 
     String innerHTML() const;
     void setInnerHTML(const String&, ExceptionState&);
 
-    PassRefPtr<Node> cloneNode(bool, ExceptionState&);
-    PassRefPtr<Node> cloneNode(ExceptionState& exceptionState) { return cloneNode(true, exceptionState); }
+    PassRefPtrWillBeRawPtr<Node> cloneNode(bool, ExceptionState&);
+    PassRefPtrWillBeRawPtr<Node> cloneNode(ExceptionState& exceptionState) { return cloneNode(true, exceptionState); }
 
     StyleSheetList* styleSheets();
 
+    virtual void trace(Visitor*) OVERRIDE;
+
 private:
-    ShadowRoot(Document*, ShadowRootType);
+    ShadowRoot(Document&, ShadowRootType);
     virtual ~ShadowRoot();
 
+#if !ENABLE(OILPAN)
     virtual void dispose() OVERRIDE;
-    virtual bool childTypeAllowed(NodeType) const OVERRIDE;
+#endif
+
     virtual void childrenChanged(bool changedByParser, Node* beforeChange, Node* afterChange, int childCountDelta) OVERRIDE;
 
     ShadowRootRareData* ensureShadowRootRareData();
@@ -134,18 +142,15 @@ private:
     void invalidateDescendantInsertionPoints();
 
     // ShadowRoots should never be cloned.
-    virtual PassRefPtr<Node> cloneNode(bool) OVERRIDE { return 0; }
+    virtual PassRefPtrWillBeRawPtr<Node> cloneNode(bool) OVERRIDE { return nullptr; }
 
     // FIXME: This shouldn't happen. https://bugs.webkit.org/show_bug.cgi?id=88834
     bool isOrphan() const { return !host(); }
-    bool isActive() const;
 
-    ShadowRoot* m_prev;
-    ShadowRoot* m_next;
-    OwnPtr<ShadowRootRareData> m_shadowRootRareData;
+    RawPtrWillBeMember<ShadowRoot> m_prev;
+    RawPtrWillBeMember<ShadowRoot> m_next;
+    OwnPtrWillBeMember<ShadowRootRareData> m_shadowRootRareData;
     unsigned m_numberOfStyles : 27;
-    unsigned m_applyAuthorStyles : 1;
-    unsigned m_resetStyleInheritance : 1;
     unsigned m_type : 1;
     unsigned m_registeredWithParentShadowRoot : 1;
     unsigned m_descendantInsertionPointsIsValid : 1;
@@ -157,7 +162,7 @@ inline Element* ShadowRoot::activeElement() const
 }
 
 DEFINE_NODE_TYPE_CASTS(ShadowRoot, isShadowRoot());
-DEFINE_TYPE_CASTS(ShadowRoot, TreeScope, treeScope, treeScope->rootNode() && treeScope->rootNode()->isShadowRoot(), treeScope.rootNode() && treeScope.rootNode()->isShadowRoot());
+DEFINE_TYPE_CASTS(ShadowRoot, TreeScope, treeScope, treeScope->rootNode().isShadowRoot(), treeScope.rootNode().isShadowRoot());
 
 } // namespace
 

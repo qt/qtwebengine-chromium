@@ -116,6 +116,7 @@ GENRB_SOURCE =\
  sn.txt\
  so.txt\
  sq.txt\
+ tg.txt\
  ti.txt\
  tl.txt\
  to.txt\

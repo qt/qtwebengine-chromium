@@ -22,13 +22,8 @@ GFX_EXPORT void InitDeviceScaleFactor(float scale);
 GFX_EXPORT Size GetDPI();
 
 // Gets the scale factor of the display. For example, if the display DPI is
-// 96 then the scale factor is 1.0. Note that this is the "desktop" scale, which
-// may be differnt than GetModernUIScale().
+// 96 then the scale factor is 1.0. 
 GFX_EXPORT float GetDPIScale();
-
-// Gets the scale factor of the modern (metro) UI display. Returns 1.0 for
-// unscaled or "not running on win8+"
-GFX_EXPORT float GetModernUIScale();
 
 // Tests to see if the command line flag "--high-dpi-support" is set.
 GFX_EXPORT bool IsHighDPIEnabled();
@@ -36,6 +31,8 @@ GFX_EXPORT bool IsHighDPIEnabled();
 GFX_EXPORT bool IsInHighDPIMode();
 
 GFX_EXPORT void EnableHighDPISupport();
+
+GFX_EXPORT void ForceHighDPISupportForTesting(float scale);
 
 // TODO(kevers|girard):  Move above methods into win namespace.
 
@@ -59,18 +56,12 @@ GFX_EXPORT Size DIPToScreenSize(const Size& dip_size);
 // GetSystemMetrics for the given |metric|, then converts the result to DIP.
 GFX_EXPORT int GetSystemMetricsInDIP(int metric);
 
-// Sometimes the OS secretly scales apps that are not DPIAware. This is not
-// visible through standard OS calls like GetWindowPos(), or through
-// GetDPIScale().
-// Returns the scale factor of the display, where 96 DPI is 1.0.
-// (Avoid this function... use GetDPIScale() instead.)
-// TODO(girard): Remove this once DPIAware is enabled - http://crbug.com/149881
-GFX_EXPORT double GetUndocumentedDPIScale();
+// Returns true if the global device scale factor has been explicitly set for
+// the process.
+GFX_EXPORT bool IsDeviceScaleFactorSet();
 
-// Win7 and Win8 send touch events scaled according to the current DPI
-// scaling. Win8.1 corrects this, and sends touch events in DPI units.
-// This function returns the appropriate scaling factor for touch events.
-GFX_EXPORT double GetUndocumentedDPITouchScale();
+GFX_EXPORT extern const wchar_t kRegistryProfilePath[];
+GFX_EXPORT extern const wchar_t kHighDPISupportW[];
 
 }  // namespace win
 }  // namespace gfx

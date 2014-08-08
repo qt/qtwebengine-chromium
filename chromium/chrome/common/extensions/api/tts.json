@@ -5,7 +5,7 @@
 [
   {
     "namespace": "tts",
-    "description": "Use the <code>chrome.tts</code> API to play synthesized text-to-speech (TTS). See also the related <a href='http://developer.chrome.com/extensions/ttsEngine.html'>ttsEngine</a> API, which allows an extension to implement a speech engine.",
+    "description": "Use the <code>chrome.tts</code> API to play synthesized text-to-speech (TTS). See also the related <a href='http://developer.chrome.com/extensions/ttsEngine'>ttsEngine</a> API, which allows an extension to implement a speech engine.",
     "types": [
       {
         "id": "TtsEvent",
@@ -231,7 +231,7 @@
                 "type": "array",
                 "name": "voices",
                 "items": { "$ref": "TtsVoice" },
-                "description": "Array of $ref:TtsVoice objects representing the available voices for speech synthesis."
+                "description": "Array of $(ref:tts.TtsVoice) objects representing the available voices for speech synthesis."
               }
             ]
           }

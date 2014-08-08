@@ -22,27 +22,20 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+enum OscillatorType {
+    "sine",
+    "square",
+    "sawtooth",
+    "triangle",
+    "custom"
+};
+    
 // OscillatorNode is an audio generator of periodic waveforms.
 [
     Conditional=WEB_AUDIO
 ] interface OscillatorNode : AudioSourceNode {
 
-    // Type constants.
-    const unsigned short SINE = 0;
-    const unsigned short SQUARE = 1;
-    const unsigned short SAWTOOTH = 2;
-    const unsigned short TRIANGLE = 3;
-    const unsigned short CUSTOM = 4;
-
-    [Custom=Setter] attribute DOMString type;
-
-    // Playback state constants.
-    const unsigned short UNSCHEDULED_STATE = 0;
-    const unsigned short SCHEDULED_STATE = 1;
-    const unsigned short PLAYING_STATE = 2;
-    const unsigned short FINISHED_STATE = 3;
-
-    readonly attribute unsigned short playbackState;
+    attribute OscillatorType type;
 
     readonly attribute AudioParam frequency; // in Hertz
     readonly attribute AudioParam detune; // in Cents

@@ -91,6 +91,7 @@
       'type': 'executable',
       'dependencies': [
         '<(webrtc_root)/voice_engine/voice_engine.gyp:voice_engine',
+        '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:field_trial_default',
       ],
       'sources': [
         'force_mic_volume_max/force_mic_volume_max.cc',
@@ -106,6 +107,7 @@
           'dependencies': [
             '<(webrtc_root)/test/test.gyp:channel_transport',
             '<(webrtc_root)/voice_engine/voice_engine.gyp:voice_engine',
+            '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:field_trial_default',
             '<(DEPTH)/testing/gtest.gyp:gtest',
             '<(DEPTH)/third_party/gflags/gflags.gyp:gflags',
           ],
@@ -135,7 +137,7 @@
           'conditions': [
             # TODO(henrike): remove build_with_chromium==1 when the bots are
             # using Chromium's buildbots.
-            ['build_with_chromium==1 and OS=="android" and gtest_target_type=="shared_library"', {
+            ['build_with_chromium==1 and OS=="android"', {
               'dependencies': [
                 '<(DEPTH)/testing/android/native_test.gyp:native_test_native_code',
               ],
@@ -146,7 +148,7 @@
       # TODO(henrike): remove build_with_chromium==1 when the bots are using
       # Chromium's buildbots.
       'conditions': [
-        ['build_with_chromium==1 and OS=="android" and gtest_target_type=="shared_library"', {
+        ['build_with_chromium==1 and OS=="android"', {
           'targets': [
             {
               'target_name': 'tools_unittests_apk_target',

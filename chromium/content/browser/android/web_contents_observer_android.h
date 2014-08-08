@@ -7,7 +7,7 @@
 
 #include <jni.h>
 
-#include "base/android/jni_helper.h"
+#include "base/android/jni_weak_ref.h"
 #include "base/basictypes.h"
 #include "base/process/kill.h"
 #include "content/browser/web_contents/web_contents_impl.h"
@@ -54,6 +54,7 @@ class WebContentsObserverAndroid : public WebContentsObserver {
                                     const FrameNavigateParams& params) OVERRIDE;
   virtual void DidNavigateAnyFrame(const LoadCommittedDetails& details,
                                    const FrameNavigateParams& params) OVERRIDE;
+  virtual void DidFirstVisuallyNonEmptyPaint() OVERRIDE;
   virtual void DidStartProvisionalLoadForFrame(
       int64 frame_id,
       int64 parent_frame_id,
@@ -73,12 +74,14 @@ class WebContentsObserverAndroid : public WebContentsObserver {
                              const GURL& validated_url,
                              bool is_main_frame,
                              RenderViewHost* render_view_host) OVERRIDE;
+  virtual void DocumentLoadedInFrame(int64 frame_id,
+                                     RenderViewHost* render_view_host) OVERRIDE;
   virtual void NavigationEntryCommitted(
       const LoadCommittedDetails& load_details) OVERRIDE;
-  virtual void WebContentsDestroyed(WebContents* web_contents) OVERRIDE;
-  virtual void DidChangeVisibleSSLState() OVERRIDE;
+  virtual void WebContentsDestroyed() OVERRIDE;
   virtual void DidAttachInterstitialPage() OVERRIDE;
   virtual void DidDetachInterstitialPage() OVERRIDE;
+  virtual void DidChangeThemeColor(SkColor color) OVERRIDE;
 
   void DidFailLoadInternal(bool is_provisional_load,
                            bool is_main_frame,

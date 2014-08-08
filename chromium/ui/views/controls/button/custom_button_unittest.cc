@@ -5,6 +5,9 @@
 #include "ui/views/controls/button/custom_button.h"
 
 #include "testing/gtest/include/gtest/gtest.h"
+#include "ui/aura/test/test_cursor_client.h"
+#include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/layout.h"
 #include "ui/gfx/screen.h"
 #include "ui/views/controls/button/checkbox.h"
@@ -15,12 +18,6 @@
 #include "ui/views/controls/link.h"
 #include "ui/views/controls/textfield/textfield.h"
 #include "ui/views/test/views_test_base.h"
-
-#if defined(USE_AURA)
-#include "ui/aura/root_window.h"
-#include "ui/aura/test/test_cursor_client.h"
-#include "ui/aura/window.h"
-#endif
 
 namespace views {
 
@@ -38,7 +35,6 @@ class TestCustomButton : public CustomButton {
   DISALLOW_COPY_AND_ASSIGN(TestCustomButton);
 };
 
-#if defined(USE_AURA)
 void PerformGesture(CustomButton* button, ui::EventType event_type) {
   ui::GestureEventDetails gesture_details(event_type, 0, 0);
   base::TimeDelta time_stamp = base::TimeDelta::FromMicroseconds(0);
@@ -46,7 +42,6 @@ void PerformGesture(CustomButton* button, ui::EventType event_type) {
                                  gesture_details, 1);
   button->OnGestureEvent(&gesture_event);
 }
-#endif  // USE_AURA
 
 }  // namespace
 
@@ -63,10 +58,8 @@ TEST_F(CustomButtonTest, HoverStateOnVisibilityChange) {
   widget->Init(params);
   widget->Show();
 
-#if defined(USE_AURA)
   aura::test::TestCursorClient cursor_client(
       widget->GetNativeView()->GetRootWindow());
-#endif
 
   // Position the widget in a way so that it is under the cursor.
   gfx::Point cursor = gfx::Screen::GetScreenFor(
@@ -80,10 +73,12 @@ TEST_F(CustomButtonTest, HoverStateOnVisibilityChange) {
 
   gfx::Point center(10, 10);
   button->OnMousePressed(ui::MouseEvent(ui::ET_MOUSE_PRESSED, center, center,
+                                        ui::EF_LEFT_MOUSE_BUTTON,
                                         ui::EF_LEFT_MOUSE_BUTTON));
   EXPECT_EQ(CustomButton::STATE_PRESSED, button->state());
 
   button->OnMouseReleased(ui::MouseEvent(ui::ET_MOUSE_RELEASED, center, center,
+                                         ui::EF_LEFT_MOUSE_BUTTON,
                                          ui::EF_LEFT_MOUSE_BUTTON));
   EXPECT_EQ(CustomButton::STATE_HOVERED, button->state());
 
@@ -99,7 +94,6 @@ TEST_F(CustomButtonTest, HoverStateOnVisibilityChange) {
   button->SetVisible(true);
   EXPECT_EQ(CustomButton::STATE_HOVERED, button->state());
 
-#if defined(USE_AURA)
   // In Aura views, no new hover effects are invoked if mouse events
   // are disabled.
   cursor_client.DisableMouseEvents();
@@ -115,10 +109,8 @@ TEST_F(CustomButtonTest, HoverStateOnVisibilityChange) {
 
   button->SetVisible(true);
   EXPECT_EQ(CustomButton::STATE_NORMAL, button->state());
-#endif
 }
 
-#if defined(USE_AURA)
 // Tests that gesture events correctly change the button state.
 TEST_F(CustomButtonTest, GestureEventsSetState) {
   // Create a widget so that the CustomButton can query the hover state
@@ -148,12 +140,10 @@ TEST_F(CustomButtonTest, GestureEventsSetState) {
   EXPECT_EQ(CustomButton::STATE_NORMAL, button->state());
 }
 
-#endif  // USE_AURA
-
 // Make sure all subclasses of CustomButton are correctly recognized
 // as CustomButton.
 TEST_F(CustomButtonTest, AsCustomButton) {
-  string16 text;
+  base::string16 text;
 
   TextButton text_button(NULL, text);
   EXPECT_TRUE(CustomButton::AsCustomButton(&text_button));
@@ -176,7 +166,7 @@ TEST_F(CustomButtonTest, AsCustomButton) {
   Link link(text);
   EXPECT_FALSE(CustomButton::AsCustomButton(&link));
 
-  Textfield textfield(Textfield::STYLE_DEFAULT);
+  Textfield textfield;
   EXPECT_FALSE(CustomButton::AsCustomButton(&textfield));
 }
 

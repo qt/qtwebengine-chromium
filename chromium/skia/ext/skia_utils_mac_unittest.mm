@@ -43,18 +43,16 @@ class SkiaUtilsMacTest : public testing::Test {
 
 SkBitmap SkiaUtilsMacTest::CreateSkBitmap(int width, int height,
                                           bool isred, bool tfbit) {
-  SkBitmap bitmap;
+  SkColorType ct = tfbit ? kN32_SkColorType : kARGB_4444_SkColorType;
+  SkImageInfo info = SkImageInfo::Make(width, height, ct, kPremul_SkAlphaType);
 
-  if (tfbit)
-    bitmap.setConfig(SkBitmap::kARGB_8888_Config, width, height);
-  else
-    bitmap.setConfig(SkBitmap::kARGB_4444_Config, width, height);
-  bitmap.allocPixels();
+  SkBitmap bitmap;
+  bitmap.allocPixels(info);
 
   if (isred)
-    bitmap.eraseRGB(0xff, 0, 0);
+    bitmap.eraseARGB(0xff, 0xff, 0, 0);
   else
-    bitmap.eraseRGB(0, 0, 0xff);
+    bitmap.eraseARGB(0xff, 0, 0, 0xff);
 
   return bitmap;
 }
@@ -123,9 +121,9 @@ void SkiaUtilsMacTest::RunBitLockerTest(BitLockerTest test) {
   EXPECT_EQ(storageSize, sizeof(original) / sizeof(original[0]));
   unsigned bits[storageSize];
   memcpy(bits, original, sizeof(original));
+  SkImageInfo info = SkImageInfo::MakeN32Premul(width, height);
   SkBitmap bitmap;
-  bitmap.setConfig(SkBitmap::kARGB_8888_Config, width, height);
-  bitmap.setPixels(bits);
+  bitmap.installPixels(info, bits, info.minRowBytes());
 
   SkCanvas canvas(bitmap);
   if (test & TestTranslate)

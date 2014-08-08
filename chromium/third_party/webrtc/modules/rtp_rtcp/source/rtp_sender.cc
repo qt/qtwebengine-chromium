@@ -15,7 +15,7 @@
 #include "webrtc/modules/rtp_rtcp/source/rtp_sender_audio.h"
 #include "webrtc/modules/rtp_rtcp/source/rtp_sender_video.h"
 #include "webrtc/system_wrappers/interface/critical_section_wrapper.h"
-#include "webrtc/system_wrappers/interface/trace.h"
+#include "webrtc/system_wrappers/interface/logging.h"
 #include "webrtc/system_wrappers/interface/trace_event.h"
 
 namespace webrtc {
@@ -56,7 +56,6 @@ RTPSender::RTPSender(const int32_t id,
       transport_(transport),
       sending_media_(true),                      // Default to sending media.
       max_payload_length_(IP_PACKET_SIZE - 28),  // Default is IP-v4/UDP.
-      target_send_bitrate_(0),
       packet_over_head_(28),
       payload_type_(-1),
       payload_type_map_(),
@@ -88,7 +87,9 @@ RTPSender::RTPSender(const int32_t id,
       csrcs_(),
       include_csrcs_(true),
       rtx_(kRtxOff),
-      payload_type_rtx_(-1) {
+      payload_type_rtx_(-1),
+      target_bitrate_critsect_(CriticalSectionWrapper::CreateCriticalSection()),
+      target_bitrate_(0) {
   memset(nack_byte_count_times_, 0, sizeof(nack_byte_count_times_));
   memset(nack_byte_count_, 0, sizeof(nack_byte_count_));
   memset(csrcs_, 0, sizeof(csrcs_));
@@ -104,9 +105,8 @@ RTPSender::RTPSender(const int32_t id,
     audio_ = new RTPSenderAudio(id, clock_, this);
     audio_->RegisterAudioCallback(audio_feedback);
   } else {
-    video_ = new RTPSenderVideo(id, clock_, this);
+    video_ = new RTPSenderVideo(clock_, this);
   }
-  WEBRTC_TRACE(kTraceMemory, kTraceRtpRtcp, id, "%s created", __FUNCTION__);
 }
 
 RTPSender::~RTPSender() {
@@ -125,12 +125,16 @@ RTPSender::~RTPSender() {
   }
   delete audio_;
   delete video_;
-
-  WEBRTC_TRACE(kTraceMemory, kTraceRtpRtcp, id_, "%s deleted", __FUNCTION__);
 }
 
-void RTPSender::SetTargetSendBitrate(const uint32_t bits) {
-  target_send_bitrate_ = static_cast<uint16_t>(bits / 1000);
+void RTPSender::SetTargetBitrate(uint32_t bitrate) {
+  CriticalSectionScoped cs(target_bitrate_critsect_.get());
+  target_bitrate_ = bitrate;
+}
+
+uint32_t RTPSender::GetTargetBitrate() {
+  CriticalSectionScoped cs(target_bitrate_critsect_.get());
+  return target_bitrate_;
 }
 
 uint16_t RTPSender::ActualSendBitrateKbit() const {
@@ -157,10 +161,12 @@ uint32_t RTPSender::NackOverheadRate() const {
 
 bool RTPSender::GetSendSideDelay(int* avg_send_delay_ms,
                                  int* max_send_delay_ms) const {
+  if (!SendingMedia())
+    return false;
   CriticalSectionScoped cs(statistics_crit_.get());
   SendDelayMap::const_iterator it = send_delays_.upper_bound(
       clock_->TimeInMilliseconds() - kSendSideDelayWindowMs);
-  if (!sending_media_ || it == send_delays_.end())
+  if (it == send_delays_.end())
     return false;
   int num_delays = 0;
   for (; it != send_delays_.end(); ++it) {
@@ -273,7 +279,10 @@ int32_t RTPSender::DeRegisterSendPayload(
   return 0;
 }
 
-int8_t RTPSender::SendPayloadType() const { return payload_type_; }
+int8_t RTPSender::SendPayloadType() const {
+  CriticalSectionScoped cs(send_critsect_);
+  return payload_type_;
+}
 
 int RTPSender::SendPayloadFrequency() const {
   return audio_ != NULL ? audio_->AudioFrequency() : kVideoPayloadTypeFrequency;
@@ -284,16 +293,12 @@ int32_t RTPSender::SetMaxPayloadLength(
     const uint16_t packet_over_head) {
   // Sanity check.
   if (max_payload_length < 100 || max_payload_length > IP_PACKET_SIZE) {
-    WEBRTC_TRACE(kTraceError, kTraceRtpRtcp, id_, "%s invalid argument",
-                 __FUNCTION__);
+    LOG(LS_ERROR) << "Invalid max payload length: " << max_payload_length;
     return -1;
   }
   CriticalSectionScoped cs(send_critsect_);
   max_payload_length_ = max_payload_length;
   packet_over_head_ = packet_over_head;
-
-  WEBRTC_TRACE(kTraceInfo, kTraceRtpRtcp, id_, "SetMaxPayloadLength to %d.",
-               max_payload_length);
   return 0;
 }
 
@@ -301,9 +306,9 @@ uint16_t RTPSender::MaxDataPayloadLength() const {
   if (audio_configured_) {
     return max_payload_length_ - RTPHeaderLength();
   } else {
-    return max_payload_length_ - RTPHeaderLength() -
-           video_->FECPacketOverhead() - ((rtx_) ? 2 : 0);
-    // Include the FEC/ULP/RED overhead.
+    return max_payload_length_ - RTPHeaderLength()  // RTP overhead.
+           - video_->FECPacketOverhead()            // FEC/ULP/RED overhead.
+           - ((rtx_) ? 2 : 0);                      // RTX overhead.
   }
 }
 
@@ -313,16 +318,14 @@ uint16_t RTPSender::MaxPayloadLength() const {
 
 uint16_t RTPSender::PacketOverHead() const { return packet_over_head_; }
 
-void RTPSender::SetRTXStatus(int mode, bool set_ssrc, uint32_t ssrc) {
+void RTPSender::SetRTXStatus(int mode) {
   CriticalSectionScoped cs(send_critsect_);
   rtx_ = mode;
-  if (rtx_ != kRtxOff) {
-    if (set_ssrc) {
-      ssrc_rtx_ = ssrc;
-    } else {
-      ssrc_rtx_ = ssrc_db_.CreateSSRC();  // Can't be 0.
-    }
-  }
+}
+
+void RTPSender::SetRtxSsrc(uint32_t ssrc) {
+  CriticalSectionScoped cs(send_critsect_);
+  ssrc_rtx_ = ssrc;
 }
 
 void RTPSender::RTXStatus(int* mode, uint32_t* ssrc,
@@ -332,7 +335,6 @@ void RTPSender::RTXStatus(int* mode, uint32_t* ssrc,
   *ssrc = ssrc_rtx_;
   *payload_type = payload_type_rtx_;
 }
-
 
 void RTPSender::SetRtxPayloadType(int payload_type) {
   CriticalSectionScoped cs(send_critsect_);
@@ -344,8 +346,7 @@ int32_t RTPSender::CheckPayloadType(const int8_t payload_type,
   CriticalSectionScoped cs(send_critsect_);
 
   if (payload_type < 0) {
-    WEBRTC_TRACE(kTraceError, kTraceRtpRtcp, id_, "\tinvalid payload_type (%d)",
-                 payload_type);
+    LOG(LS_ERROR) << "Invalid payload_type " << payload_type;
     return -1;
   }
   if (audio_configured_) {
@@ -367,8 +368,7 @@ int32_t RTPSender::CheckPayloadType(const int8_t payload_type,
   std::map<int8_t, ModuleRTPUtility::Payload *>::iterator it =
       payload_type_map_.find(payload_type);
   if (it == payload_type_map_.end()) {
-    WEBRTC_TRACE(kTraceError, kTraceRtpRtcp, id_,
-                 "\tpayloadType:%d not registered", payload_type);
+    LOG(LS_WARNING) << "Payload type " << payload_type << " not registered.";
     return -1;
   }
   payload_type_ = payload_type;
@@ -397,9 +397,7 @@ int32_t RTPSender::SendOutgoingData(
   }
   RtpVideoCodecTypes video_type = kRtpVideoGeneric;
   if (CheckPayloadType(payload_type, &video_type) != 0) {
-    WEBRTC_TRACE(kTraceError, kTraceRtpRtcp, id_,
-                 "%s invalid argument failed to find payload_type:%d",
-                 __FUNCTION__, payload_type);
+    LOG(LS_ERROR) << "Don't send data with unknown payload type.";
     return -1;
   }
 
@@ -456,7 +454,7 @@ int RTPSender::SendRedundantPayloads(int payload_type, int bytes_to_send) {
                                               &capture_time_ms)) {
       break;
     }
-    if (!PrepareAndSendPacket(buffer, length, capture_time_ms, true))
+    if (!PrepareAndSendPacket(buffer, length, capture_time_ms, true, false))
       return -1;
     ModuleRTPUtility::RTPHeaderParser rtp_parser(buffer, length);
     RTPHeader rtp_header;
@@ -472,7 +470,8 @@ bool RTPSender::SendPaddingAccordingToBitrate(
   // Current bitrate since last estimate(1 second) averaged with the
   // estimate since then, to get the most up to date bitrate.
   uint32_t current_bitrate = bitrate_sent_.BitrateNow();
-  int bitrate_diff = target_send_bitrate_ * 1000 - current_bitrate;
+  uint32_t target_bitrate = GetTargetBitrate();
+  int bitrate_diff = target_bitrate - current_bitrate;
   if (bitrate_diff <= 0) {
     return true;
   }
@@ -483,7 +482,7 @@ bool RTPSender::SendPaddingAccordingToBitrate(
   } else {
     bytes = (bitrate_diff / 8);
     // Cap at 200 ms of target send data.
-    int bytes_cap = target_send_bitrate_ * 25;  // 1000 / 8 / 5.
+    int bytes_cap = target_bitrate / 1000 * 25;  // 1000 / 8 / 5.
     if (bytes > bytes_cap) {
       bytes = bytes_cap;
     }
@@ -528,7 +527,7 @@ int RTPSender::SendPadData(int payload_type, uint32_t timestamp,
                            StorageType store, bool force_full_size_packets,
                            bool only_pad_after_markerbit) {
   // Drop this packet if we're not sending media packets.
-  if (!sending_media_) {
+  if (!SendingMedia()) {
     return bytes;
   }
   int padding_bytes_in_packet = 0;
@@ -596,7 +595,6 @@ bool RTPSender::StorePackets() const {
 int32_t RTPSender::ReSendPacket(uint16_t packet_id, uint32_t min_resend_time) {
   uint16_t length = IP_PACKET_SIZE;
   uint8_t data_buffer[IP_PACKET_SIZE];
-  uint8_t *buffer_to_send_ptr = data_buffer;
   int64_t capture_time_ms;
   if (!packet_history_.GetPacketAndSetSendTime(packet_id, min_resend_time, true,
                                                data_buffer, &length,
@@ -605,19 +603,13 @@ int32_t RTPSender::ReSendPacket(uint16_t packet_id, uint32_t min_resend_time) {
     return 0;
   }
 
-  ModuleRTPUtility::RTPHeaderParser rtp_parser(data_buffer, length);
-  RTPHeader header;
-  if (!rtp_parser.Parse(header)) {
-    assert(false);
-    WEBRTC_TRACE(kTraceError, kTraceRtpRtcp, id_,
-                 "Failed to parse RTP header of packet to be retransmitted.");
-    return -1;
-  }
-  TRACE_EVENT_INSTANT2("webrtc_rtp", "RTPSender::ReSendPacket",
-                       "timestamp", header.timestamp,
-                       "seqnum", header.sequenceNumber);
-
   if (paced_sender_) {
+    ModuleRTPUtility::RTPHeaderParser rtp_parser(data_buffer, length);
+    RTPHeader header;
+    if (!rtp_parser.Parse(header)) {
+      assert(false);
+      return -1;
+    }
     if (!paced_sender_->SendPacket(PacedSender::kHighPriority,
                                    header.ssrc,
                                    header.sequenceNumber,
@@ -630,17 +622,9 @@ int32_t RTPSender::ReSendPacket(uint16_t packet_id, uint32_t min_resend_time) {
     }
   }
 
-  uint8_t data_buffer_rtx[IP_PACKET_SIZE];
-  if ((rtx_ & kRtxRetransmitted) > 0) {
-    BuildRtxPacket(data_buffer, &length, data_buffer_rtx);
-    buffer_to_send_ptr = data_buffer_rtx;
-  }
-
-  if (SendPacketToNetwork(buffer_to_send_ptr, length)) {
-    UpdateRtpStats(buffer_to_send_ptr, length, header, rtx_ != kRtxOff, true);
-    return length;
-  }
-  return -1;
+  return PrepareAndSendPacket(data_buffer, length, capture_time_ms,
+                              (rtx_ & kRtxRetransmitted) > 0, true) ?
+      length : -1;
 }
 
 bool RTPSender::SendPacketToNetwork(const uint8_t *packet, uint32_t size) {
@@ -650,10 +634,9 @@ bool RTPSender::SendPacketToNetwork(const uint8_t *packet, uint32_t size) {
   }
   TRACE_EVENT_INSTANT2("webrtc_rtp", "RTPSender::SendPacketToNetwork",
                        "size", size, "sent", bytes_sent);
-  // TODO(pwesin): Add a separate bitrate for sent bitrate after pacer.
+  // TODO(pwestin): Add a separate bitrate for sent bitrate after pacer.
   if (bytes_sent <= 0) {
-    WEBRTC_TRACE(kTraceWarning, kTraceRtpRtcp, id_,
-                 "Transport failed to send packet");
+    LOG(LS_WARNING) << "Transport failed to send packet";
     return false;
   }
   return true;
@@ -678,12 +661,12 @@ void RTPSender::OnReceivedNACK(
                "num_seqnum", nack_sequence_numbers.size(), "avg_rtt", avg_rtt);
   const int64_t now = clock_->TimeInMilliseconds();
   uint32_t bytes_re_sent = 0;
+  uint32_t target_bitrate = GetTargetBitrate();
 
   // Enough bandwidth to send NACK?
   if (!ProcessNACKBitRate(now)) {
-    WEBRTC_TRACE(kTraceStream, kTraceRtpRtcp, id_,
-                 "NACK bitrate reached. Skip sending NACK response. Target %d",
-                 target_send_bitrate_);
+    LOG(LS_INFO) << "NACK bitrate reached. Skip sending NACK response. Target "
+                 << target_bitrate;
     return;
   }
 
@@ -698,16 +681,15 @@ void RTPSender::OnReceivedNACK(
       continue;
     } else if (bytes_sent < 0) {
       // Failed to send one Sequence number. Give up the rest in this nack.
-      WEBRTC_TRACE(kTraceWarning, kTraceRtpRtcp, id_,
-                   "Failed resending RTP packet %d, Discard rest of packets",
-                   *it);
+      LOG(LS_WARNING) << "Failed resending RTP packet " << *it
+                      << ", Discard rest of packets";
       break;
     }
     // Delay bandwidth estimate (RTT * BW).
-    if (target_send_bitrate_ != 0 && avg_rtt) {
+    if (target_bitrate != 0 && avg_rtt) {
       // kbits/s * ms = bits => bits/8 = bytes
       uint32_t target_bytes =
-          (static_cast<uint32_t>(target_send_bitrate_) * avg_rtt) >> 3;
+          (static_cast<uint32_t>(target_bitrate / 1000) * avg_rtt) >> 3;
       if (bytes_re_sent > target_bytes) {
         break;  // Ignore the rest of the packets in the list.
       }
@@ -722,32 +704,34 @@ void RTPSender::OnReceivedNACK(
 
 bool RTPSender::ProcessNACKBitRate(const uint32_t now) {
   uint32_t num = 0;
-  int32_t byte_count = 0;
-  const uint32_t avg_interval = 1000;
+  int byte_count = 0;
+  const int kAvgIntervalMs = 1000;
+  uint32_t target_bitrate = GetTargetBitrate();
 
   CriticalSectionScoped cs(send_critsect_);
 
-  if (target_send_bitrate_ == 0) {
+  if (target_bitrate == 0) {
     return true;
   }
   for (num = 0; num < NACK_BYTECOUNT_SIZE; ++num) {
-    if ((now - nack_byte_count_times_[num]) > avg_interval) {
+    if ((now - nack_byte_count_times_[num]) > kAvgIntervalMs) {
       // Don't use data older than 1sec.
       break;
     } else {
       byte_count += nack_byte_count_[num];
     }
   }
-  int32_t time_interval = avg_interval;
+  int time_interval = kAvgIntervalMs;
   if (num == NACK_BYTECOUNT_SIZE) {
     // More than NACK_BYTECOUNT_SIZE nack messages has been received
     // during the last msg_interval.
     time_interval = now - nack_byte_count_times_[num - 1];
     if (time_interval < 0) {
-      time_interval = avg_interval;
+      time_interval = kAvgIntervalMs;
     }
   }
-  return (byte_count * 8) < (target_send_bitrate_ * time_interval);
+  return (byte_count * 8) <
+         static_cast<int>(target_bitrate / 1000 * time_interval);
 }
 
 void RTPSender::UpdateNACKBitRate(const uint32_t bytes,
@@ -796,19 +780,21 @@ bool RTPSender::TimeToSendPacket(uint16_t sequence_number,
     UpdateDelayStatistics(capture_time_ms, clock_->TimeInMilliseconds());
   }
   return PrepareAndSendPacket(data_buffer, length, capture_time_ms,
-                              retransmission && (rtx_ & kRtxRetransmitted) > 0);
+                              retransmission && (rtx_ & kRtxRetransmitted) > 0,
+                              retransmission);
 }
 
 bool RTPSender::PrepareAndSendPacket(uint8_t* buffer,
                                      uint16_t length,
                                      int64_t capture_time_ms,
-                                     bool send_over_rtx) {
+                                     bool send_over_rtx,
+                                     bool is_retransmit) {
   uint8_t *buffer_to_send_ptr = buffer;
 
   ModuleRTPUtility::RTPHeaderParser rtp_parser(buffer, length);
   RTPHeader rtp_header;
   rtp_parser.Parse(rtp_header);
-  TRACE_EVENT_INSTANT2("webrtc_rtp", "RTPSender::TimeToSendPacket",
+  TRACE_EVENT_INSTANT2("webrtc_rtp", "PrepareAndSendPacket",
                        "timestamp", rtp_header.timestamp,
                        "seqnum", rtp_header.sequenceNumber);
 
@@ -820,20 +806,12 @@ bool RTPSender::PrepareAndSendPacket(uint8_t* buffer,
 
   int64_t now_ms = clock_->TimeInMilliseconds();
   int64_t diff_ms = now_ms - capture_time_ms;
-  bool updated_transmission_time_offset =
-      UpdateTransmissionTimeOffset(buffer_to_send_ptr, length, rtp_header,
-                                   diff_ms);
-  bool updated_abs_send_time =
-      UpdateAbsoluteSendTime(buffer_to_send_ptr, length, rtp_header, now_ms);
-  if (updated_transmission_time_offset || updated_abs_send_time) {
-    // Update stored packet in case of receiving a re-transmission request.
-    packet_history_.ReplaceRTPHeader(buffer_to_send_ptr,
-                                     rtp_header.sequenceNumber,
-                                     rtp_header.headerLength);
-  }
-
+  UpdateTransmissionTimeOffset(buffer_to_send_ptr, length, rtp_header,
+                               diff_ms);
+  UpdateAbsoluteSendTime(buffer_to_send_ptr, length, rtp_header, now_ms);
   bool ret = SendPacketToNetwork(buffer_to_send_ptr, length);
-  UpdateRtpStats(buffer_to_send_ptr, length, rtp_header, false, false);
+  UpdateRtpStats(buffer_to_send_ptr, length, rtp_header, send_over_rtx,
+                 is_retransmit);
   return ret;
 }
 
@@ -842,15 +820,16 @@ void RTPSender::UpdateRtpStats(const uint8_t* buffer,
                                const RTPHeader& header,
                                bool is_rtx,
                                bool is_retransmit) {
-  CriticalSectionScoped lock(statistics_crit_.get());
   StreamDataCounters* counters;
-  uint32_t ssrc;
+  // Get ssrc before taking statistics_crit_ to avoid possible deadlock.
+  uint32_t ssrc = SSRC();
+
+  CriticalSectionScoped lock(statistics_crit_.get());
   if (is_rtx) {
     counters = &rtx_rtp_stats_;
     ssrc = ssrc_rtx_;
   } else {
     counters = &rtp_stats_;
-    ssrc = ssrc_;
   }
 
   bitrate_sent_.Update(size);
@@ -887,14 +866,14 @@ bool RTPSender::IsFecPacket(const uint8_t* buffer,
 }
 
 int RTPSender::TimeToSendPadding(int bytes) {
-  if (!sending_media_) {
-    return 0;
-  }
   int payload_type;
   int64_t capture_time_ms;
   uint32_t timestamp;
   {
     CriticalSectionScoped cs(send_critsect_);
+    if (!sending_media_) {
+      return 0;
+    }
     payload_type = ((rtx_ & kRtxRedundantPayloads) > 0) ? payload_type_rtx_ :
         payload_type_;
     timestamp = timestamp_;
@@ -909,8 +888,13 @@ int RTPSender::TimeToSendPadding(int bytes) {
   int bytes_sent = SendRedundantPayloads(payload_type, bytes);
   bytes -= bytes_sent;
   if (bytes > 0) {
-    int padding_sent = SendPadData(payload_type, timestamp, capture_time_ms,
-                                   bytes, kDontStore, true, true);
+    int padding_sent = SendPadData(payload_type,
+                                   timestamp,
+                                   capture_time_ms,
+                                   bytes,
+                                   kDontStore,
+                                   true,
+                                   rtx_ == kRtxOff);
     bytes_sent += padding_sent;
   }
   return bytes_sent;
@@ -1116,9 +1100,8 @@ uint16_t RTPSender::BuildRTPHeaderExtension(uint8_t* data_buffer) const {
             data_buffer + kHeaderLength + total_block_length);
         break;
       case kRtpExtensionAudioLevel:
-        // Because AudioLevel is handled specially by RTPSenderAudio, we pretend
-        // we don't have to care about it here, which is true until we wan't to
-        // use it together with any of the other extensions we support.
+        block_length = BuildAudioLevelExtension(
+            data_buffer + kHeaderLength + total_block_length);
         break;
       case kRtpExtensionAbsoluteSendTime:
         block_length = BuildAbsoluteSendTimeExtension(
@@ -1178,8 +1161,42 @@ uint8_t RTPSender::BuildTransmissionTimeOffsetExtension(
   return kTransmissionTimeOffsetLength;
 }
 
-uint8_t RTPSender::BuildAbsoluteSendTimeExtension(
-    uint8_t* data_buffer) const {
+uint8_t RTPSender::BuildAudioLevelExtension(uint8_t* data_buffer) const {
+  // An RTP Header Extension for Client-to-Mixer Audio Level Indication
+  //
+  // https://datatracker.ietf.org/doc/draft-lennox-avt-rtp-audio-level-exthdr/
+  //
+  // The form of the audio level extension block:
+  //
+  //    0                   1                   2                   3
+  //    0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+  //    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+  //    |  ID   | len=0 |V|   level     |      0x00     |      0x00     |
+  //    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+  //
+  // Note that we always include 2 pad bytes, which will result in legal and
+  // correctly parsed RTP, but may be a bit wasteful if more short extensions
+  // are implemented. Right now the pad bytes would anyway be required at end
+  // of the extension block, so it makes no difference.
+
+  // Get id defined by user.
+  uint8_t id;
+  if (rtp_header_extension_map_.GetId(kRtpExtensionAudioLevel, &id) != 0) {
+    // Not registered.
+    return 0;
+  }
+  size_t pos = 0;
+  const uint8_t len = 0;
+  data_buffer[pos++] = (id << 4) + len;
+  data_buffer[pos++] = (1 << 7) + 0;     // Voice, 0 dBov.
+  data_buffer[pos++] = 0;                // Padding.
+  data_buffer[pos++] = 0;                // Padding.
+  // kAudioLevelLength is including pad bytes.
+  assert(pos == kAudioLevelLength);
+  return kAudioLevelLength;
+}
+
+uint8_t RTPSender::BuildAbsoluteSendTimeExtension(uint8_t* data_buffer) const {
   // Absolute send time in RTP streams.
   //
   // The absolute send time is signaled to the receiver in-band using the
@@ -1213,106 +1230,138 @@ uint8_t RTPSender::BuildAbsoluteSendTimeExtension(
   return kAbsoluteSendTimeLength;
 }
 
-bool RTPSender::UpdateTransmissionTimeOffset(
+void RTPSender::UpdateTransmissionTimeOffset(
     uint8_t *rtp_packet, const uint16_t rtp_packet_length,
     const RTPHeader &rtp_header, const int64_t time_diff_ms) const {
   CriticalSectionScoped cs(send_critsect_);
-
+  // Get id.
+  uint8_t id = 0;
+  if (rtp_header_extension_map_.GetId(kRtpExtensionTransmissionTimeOffset,
+                                      &id) != 0) {
+    // Not registered.
+    return;
+  }
   // Get length until start of header extension block.
   int extension_block_pos =
       rtp_header_extension_map_.GetLengthUntilBlockStartInBytes(
           kRtpExtensionTransmissionTimeOffset);
   if (extension_block_pos < 0) {
-    WEBRTC_TRACE(kTraceStream, kTraceRtpRtcp, id_,
-                 "Failed to update transmission time offset, not registered.");
-    return false;
+    LOG(LS_WARNING)
+        << "Failed to update transmission time offset, not registered.";
+    return;
   }
   int block_pos = 12 + rtp_header.numCSRCs + extension_block_pos;
   if (rtp_packet_length < block_pos + kTransmissionTimeOffsetLength ||
       rtp_header.headerLength <
           block_pos + kTransmissionTimeOffsetLength) {
-    WEBRTC_TRACE(kTraceStream, kTraceRtpRtcp, id_,
-                 "Failed to update transmission time offset, invalid length.");
+    LOG(LS_WARNING)
+        << "Failed to update transmission time offset, invalid length.";
+    return;
+  }
+  // Verify that header contains extension.
+  if (!((rtp_packet[12 + rtp_header.numCSRCs] == 0xBE) &&
+        (rtp_packet[12 + rtp_header.numCSRCs + 1] == 0xDE))) {
+    LOG(LS_WARNING) << "Failed to update transmission time offset, hdr "
+                       "extension not found.";
+    return;
+  }
+  // Verify first byte in block.
+  const uint8_t first_block_byte = (id << 4) + 2;
+  if (rtp_packet[block_pos] != first_block_byte) {
+    LOG(LS_WARNING) << "Failed to update transmission time offset.";
+    return;
+  }
+  // Update transmission offset field (converting to a 90 kHz timestamp).
+  ModuleRTPUtility::AssignUWord24ToBuffer(rtp_packet + block_pos + 1,
+                                          time_diff_ms * 90);  // RTP timestamp.
+}
+
+bool RTPSender::UpdateAudioLevel(uint8_t *rtp_packet,
+                                 const uint16_t rtp_packet_length,
+                                 const RTPHeader &rtp_header,
+                                 const bool is_voiced,
+                                 const uint8_t dBov) const {
+  CriticalSectionScoped cs(send_critsect_);
+
+  // Get id.
+  uint8_t id = 0;
+  if (rtp_header_extension_map_.GetId(kRtpExtensionAudioLevel, &id) != 0) {
+    // Not registered.
+    return false;
+  }
+  // Get length until start of header extension block.
+  int extension_block_pos =
+      rtp_header_extension_map_.GetLengthUntilBlockStartInBytes(
+          kRtpExtensionAudioLevel);
+  if (extension_block_pos < 0) {
+    // The feature is not enabled.
+    return false;
+  }
+  int block_pos = 12 + rtp_header.numCSRCs + extension_block_pos;
+  if (rtp_packet_length < block_pos + kAudioLevelLength ||
+      rtp_header.headerLength < block_pos + kAudioLevelLength) {
+    LOG(LS_WARNING) << "Failed to update audio level, invalid length.";
     return false;
   }
   // Verify that header contains extension.
   if (!((rtp_packet[12 + rtp_header.numCSRCs] == 0xBE) &&
         (rtp_packet[12 + rtp_header.numCSRCs + 1] == 0xDE))) {
-    WEBRTC_TRACE(
-        kTraceStream, kTraceRtpRtcp, id_,
-        "Failed to update transmission time offset, hdr extension not found.");
-    return false;
-  }
-  // Get id.
-  uint8_t id = 0;
-  if (rtp_header_extension_map_.GetId(kRtpExtensionTransmissionTimeOffset,
-                                      &id) != 0) {
-    WEBRTC_TRACE(kTraceStream, kTraceRtpRtcp, id_,
-                 "Failed to update transmission time offset, no id.");
+    LOG(LS_WARNING) << "Failed to update audio level, hdr extension not found.";
     return false;
   }
   // Verify first byte in block.
-  const uint8_t first_block_byte = (id << 4) + 2;
+  const uint8_t first_block_byte = (id << 4) + 0;
   if (rtp_packet[block_pos] != first_block_byte) {
-    WEBRTC_TRACE(kTraceStream, kTraceRtpRtcp, id_,
-                 "Failed to update transmission time offset.");
+    LOG(LS_WARNING) << "Failed to update audio level.";
     return false;
   }
-  // Update transmission offset field (converting to a 90 kHz timestamp).
-  ModuleRTPUtility::AssignUWord24ToBuffer(rtp_packet + block_pos + 1,
-                                          time_diff_ms * 90);  // RTP timestamp.
+  rtp_packet[block_pos + 1] = (is_voiced ? 0x80 : 0x00) + (dBov & 0x7f);
   return true;
 }
 
-bool RTPSender::UpdateAbsoluteSendTime(
+void RTPSender::UpdateAbsoluteSendTime(
     uint8_t *rtp_packet, const uint16_t rtp_packet_length,
     const RTPHeader &rtp_header, const int64_t now_ms) const {
   CriticalSectionScoped cs(send_critsect_);
 
+  // Get id.
+  uint8_t id = 0;
+  if (rtp_header_extension_map_.GetId(kRtpExtensionAbsoluteSendTime,
+                                      &id) != 0) {
+    // Not registered.
+    return;
+  }
   // Get length until start of header extension block.
   int extension_block_pos =
       rtp_header_extension_map_.GetLengthUntilBlockStartInBytes(
           kRtpExtensionAbsoluteSendTime);
   if (extension_block_pos < 0) {
-    WEBRTC_TRACE(kTraceStream, kTraceRtpRtcp, id_,
-                 "Failed to update absolute send time, not registered.");
-    return false;
+    // The feature is not enabled.
+    return;
   }
   int block_pos = 12 + rtp_header.numCSRCs + extension_block_pos;
   if (rtp_packet_length < block_pos + kAbsoluteSendTimeLength ||
       rtp_header.headerLength < block_pos + kAbsoluteSendTimeLength) {
-    WEBRTC_TRACE(kTraceStream, kTraceRtpRtcp, id_,
-                 "Failed to update absolute send time, invalid length.");
-    return false;
+    LOG(LS_WARNING) << "Failed to update absolute send time, invalid length.";
+    return;
   }
   // Verify that header contains extension.
   if (!((rtp_packet[12 + rtp_header.numCSRCs] == 0xBE) &&
         (rtp_packet[12 + rtp_header.numCSRCs + 1] == 0xDE))) {
-    WEBRTC_TRACE(
-        kTraceStream, kTraceRtpRtcp, id_,
-        "Failed to update absolute send time, hdr extension not found.");
-    return false;
-  }
-  // Get id.
-  uint8_t id = 0;
-  if (rtp_header_extension_map_.GetId(kRtpExtensionAbsoluteSendTime,
-                                      &id) != 0) {
-    WEBRTC_TRACE(kTraceStream, kTraceRtpRtcp, id_,
-                 "Failed to update absolute send time, no id.");
-    return false;
+    LOG(LS_WARNING)
+        << "Failed to update absolute send time, hdr extension not found.";
+    return;
   }
   // Verify first byte in block.
   const uint8_t first_block_byte = (id << 4) + 2;
   if (rtp_packet[block_pos] != first_block_byte) {
-    WEBRTC_TRACE(kTraceStream, kTraceRtpRtcp, id_,
-                 "Failed to update absolute send time.");
-    return false;
+    LOG(LS_WARNING) << "Failed to update absolute send time.";
+    return;
   }
   // Update absolute send time field (convert ms to 24-bit unsigned with 18 bit
   // fractional part).
   ModuleRTPUtility::AssignUWord24ToBuffer(rtp_packet + block_pos + 1,
                                           ((now_ms << 18) / 1000) & 0x00ffffff);
-  return true;
 }
 
 void RTPSender::SetSendingStatus(bool enabled) {
@@ -1460,19 +1509,6 @@ int32_t RTPSender::SetAudioPacketSize(
     return -1;
   }
   return audio_->SetAudioPacketSize(packet_size_samples);
-}
-
-int32_t RTPSender::SetAudioLevelIndicationStatus(const bool enable,
-                                                 const uint8_t ID) {
-  if (!audio_configured_) {
-    return -1;
-  }
-  return audio_->SetAudioLevelIndicationStatus(enable, ID);
-}
-
-int32_t RTPSender::AudioLevelIndicationStatus(bool *enable,
-                                              uint8_t* id) const {
-  return audio_->AudioLevelIndicationStatus(*enable, *id);
 }
 
 int32_t RTPSender::SetAudioLevel(const uint8_t level_d_bov) {

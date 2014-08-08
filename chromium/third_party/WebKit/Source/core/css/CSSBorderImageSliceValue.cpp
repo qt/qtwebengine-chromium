@@ -30,7 +30,7 @@
 
 namespace WebCore {
 
-CSSBorderImageSliceValue::CSSBorderImageSliceValue(PassRefPtr<CSSPrimitiveValue> slices, bool fill)
+CSSBorderImageSliceValue::CSSBorderImageSliceValue(PassRefPtrWillBeRawPtr<CSSPrimitiveValue> slices, bool fill)
     : CSSValue(BorderImageSliceClass)
     , m_slices(slices)
     , m_fill(fill)
@@ -51,6 +51,12 @@ String CSSBorderImageSliceValue::customCSSText() const
 bool CSSBorderImageSliceValue::equals(const CSSBorderImageSliceValue& other) const
 {
     return m_fill == other.m_fill && compareCSSValuePtr(m_slices, other.m_slices);
+}
+
+void CSSBorderImageSliceValue::traceAfterDispatch(Visitor* visitor)
+{
+    visitor->trace(m_slices);
+    CSSValue::traceAfterDispatch(visitor);
 }
 
 } // namespace WebCore

@@ -202,15 +202,15 @@ void ComplexTextController::collectComplexTextRunsForCharacters(const UChar* cp,
 
         RetainPtr<WebCascadeList> cascadeList(AdoptNS, [[WebCascadeList alloc] initWithFont:&m_font character:baseCharacter]);
 
-        stringAttributes.adoptCF(CFDictionaryCreateMutableCopy(kCFAllocatorDefault, 0, fontData->getCFStringAttributes(m_font.typesettingFeatures(), fontData->platformData().orientation())));
+        stringAttributes.adoptCF(CFDictionaryCreateMutableCopy(kCFAllocatorDefault, 0, fontData->getCFStringAttributes(m_font.fontDescription().typesettingFeatures(), fontData->platformData().orientation())));
         static const void* attributeKeys[] = { kCTFontCascadeListAttribute };
         const void* values[] = { cascadeList.get() };
         RetainPtr<CFDictionaryRef> attributes(AdoptCF, CFDictionaryCreate(kCFAllocatorDefault, attributeKeys, values, sizeof(attributeKeys) / sizeof(*attributeKeys), &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks));
         RetainPtr<CTFontDescriptorRef> fontDescriptor(AdoptCF, CTFontDescriptorCreateWithAttributes(attributes.get()));
-        RetainPtr<CTFontRef> fontWithCascadeList(AdoptCF, CTFontCreateCopyWithAttributes(fontData->platformData().ctFont(), m_font.pixelSize(), 0, fontDescriptor.get()));
+        RetainPtr<CTFontRef> fontWithCascadeList(AdoptCF, CTFontCreateCopyWithAttributes(fontData->platformData().ctFont(), m_font.fontDescription().computedPixelSize(), 0, fontDescriptor.get()));
         CFDictionarySetValue(const_cast<CFMutableDictionaryRef>(stringAttributes.get()), kCTFontAttributeName, fontWithCascadeList.get());
     } else
-        stringAttributes = fontData->getCFStringAttributes(m_font.typesettingFeatures(), fontData->platformData().orientation());
+        stringAttributes = fontData->getCFStringAttributes(m_font.fontDescription().typesettingFeatures(), fontData->platformData().orientation());
 
     RetainPtr<CTLineRef> line;
 
@@ -279,7 +279,7 @@ void ComplexTextController::collectComplexTextRunsForCharacters(const UChar* cp,
                     // Core Text may have used a font that is not known to NSFontManager. In that case, fall back on
                     // using the font as returned, even though it may not have the best NSFontRenderingMode.
                     if (!runFontData) {
-                        FontPlatformData runFontPlatformData((NSFont *)runFont, CTFontGetSize(runFont), m_font.fontDescription().usePrinterFont());
+                        FontPlatformData runFontPlatformData((NSFont *)runFont, CTFontGetSize(runFont));
                         runFontData = FontCache::fontCache()->fontDataFromFontPlatformData(&runFontPlatformData, DoNotRetain).get();
                     }
                 }

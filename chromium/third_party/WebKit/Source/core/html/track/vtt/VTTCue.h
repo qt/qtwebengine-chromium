@@ -32,42 +32,46 @@
 
 #include "bindings/v8/ScriptWrappable.h"
 #include "core/html/track/TextTrackCue.h"
+#include "platform/heap/Handle.h"
 
 namespace WebCore {
 
 class Document;
 class ExecutionContext;
 class VTTCue;
+class VTTScanner;
 
 class VTTCueBox FINAL : public HTMLDivElement {
 public:
-    static PassRefPtr<VTTCueBox> create(Document& document, VTTCue* cue)
+    static PassRefPtrWillBeRawPtr<VTTCueBox> create(Document& document, VTTCue* cue)
     {
-        return adoptRef(new VTTCueBox(document, cue));
+        return adoptRefWillBeNoop(new VTTCueBox(document, cue));
     }
 
     VTTCue* getCue() const { return m_cue; }
     void applyCSSProperties(const IntSize& videoSize);
+
+    virtual void trace(Visitor*) OVERRIDE;
 
 private:
     VTTCueBox(Document&, VTTCue*);
 
     virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
 
-    VTTCue* m_cue;
+    RawPtrWillBeMember<VTTCue> m_cue;
 };
 
 class VTTCue FINAL : public TextTrackCue, public ScriptWrappable {
 public:
-    static PassRefPtr<VTTCue> create(Document& document, double startTime, double endTime, const String& text)
+    static PassRefPtrWillBeRawPtr<VTTCue> create(Document& document, double startTime, double endTime, const String& text)
     {
-        return adoptRef(new VTTCue(document, startTime, endTime, text));
+        return adoptRefWillBeRefCountedGarbageCollected(new VTTCue(document, startTime, endTime, text));
     }
 
     virtual ~VTTCue();
 
     const String& vertical() const;
-    void setVertical(const String&, ExceptionState&);
+    void setVertical(const String&);
 
     bool snapToLines() const { return m_snapToLines; }
     void setSnapToLines(bool);
@@ -82,15 +86,15 @@ public:
     void setSize(int, ExceptionState&);
 
     const String& align() const;
-    void setAlign(const String&, ExceptionState&);
+    void setAlign(const String&);
 
     const String& text() const { return m_text; }
     void setText(const String&);
 
     void parseSettings(const String&);
 
-    PassRefPtr<DocumentFragment> getCueAsHTML();
-    PassRefPtr<DocumentFragment> createCueRenderingTree();
+    PassRefPtrWillBeRawPtr<DocumentFragment> getCueAsHTML();
+    PassRefPtrWillBeRawPtr<DocumentFragment> createCueRenderingTree();
 
     const String& regionId() const { return m_regionId; }
     void setRegionId(const String&);
@@ -136,13 +140,15 @@ public:
     virtual String toString() const OVERRIDE;
 #endif
 
+    virtual void trace(Visitor*) OVERRIDE;
+
 private:
     VTTCue(Document&, double startTime, double endTime, const String& text);
 
     Document& document() const;
 
-    PassRefPtr<VTTCueBox> displayTreeInternal();
-    PassRefPtr<VTTCueBox> getDisplayTree(const IntSize& videoSize);
+    VTTCueBox& ensureDisplayTree();
+    PassRefPtrWillBeRawPtr<VTTCueBox> getDisplayTree(const IntSize& videoSize);
 
     virtual void cueDidChange() OVERRIDE;
 
@@ -162,7 +168,7 @@ private:
         Align,
         RegionId
     };
-    CueSetting settingName(const String&);
+    CueSetting settingName(VTTScanner&);
 
     String m_text;
     int m_linePosition;
@@ -173,9 +179,9 @@ private:
     CueAlignment m_cueAlignment;
     String m_regionId;
 
-    RefPtr<DocumentFragment> m_vttNodeTree;
-    RefPtr<HTMLDivElement> m_cueBackgroundBox;
-    RefPtr<VTTCueBox> m_displayTree;
+    RefPtrWillBeMember<DocumentFragment> m_vttNodeTree;
+    RefPtrWillBeMember<HTMLDivElement> m_cueBackgroundBox;
+    RefPtrWillBeMember<VTTCueBox> m_displayTree;
 
     CSSValueID m_displayDirection;
     int m_displaySize;
@@ -186,11 +192,8 @@ private:
     bool m_notifyRegion : 1;
 };
 
-inline VTTCue* toVTTCue(TextTrackCue* cue)
-{
-    // VTTCue is currently the only TextTrackCue subclass.
-    return static_cast<VTTCue*>(cue);
-}
+// VTTCue is currently the only TextTrackCue subclass.
+DEFINE_TYPE_CASTS(VTTCue, TextTrackCue, cue, true, true);
 
 } // namespace WebCore
 

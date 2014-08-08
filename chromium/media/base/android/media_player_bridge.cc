@@ -18,7 +18,10 @@ using base::android::ConvertUTF8ToJavaString;
 using base::android::ScopedJavaLocalRef;
 
 // Time update happens every 250ms.
-static const int kTimeUpdateInterval = 250;
+const int kTimeUpdateInterval = 250;
+
+// blob url scheme.
+const char kBlobScheme[] = "blob";
 
 namespace media {
 
@@ -26,23 +29,33 @@ MediaPlayerBridge::MediaPlayerBridge(
     int player_id,
     const GURL& url,
     const GURL& first_party_for_cookies,
+    const std::string& user_agent,
     bool hide_url_log,
-    MediaPlayerManager* manager)
+    MediaPlayerManager* manager,
+    const RequestMediaResourcesCB& request_media_resources_cb,
+    const ReleaseMediaResourcesCB& release_media_resources_cb,
+    const GURL& frame_url)
     : MediaPlayerAndroid(player_id,
-                         manager),
+                         manager,
+                         request_media_resources_cb,
+                         release_media_resources_cb,
+                         frame_url),
       prepared_(false),
       pending_play_(false),
       url_(url),
       first_party_for_cookies_(first_party_for_cookies),
+      user_agent_(user_agent),
       hide_url_log_(hide_url_log),
       width_(0),
       height_(0),
       can_pause_(true),
       can_seek_forward_(true),
       can_seek_backward_(true),
-      weak_this_(this),
-      listener_(base::MessageLoopProxy::current(),
-                weak_this_.GetWeakPtr()) {
+      is_surface_in_use_(false),
+      volume_(-1.0),
+      weak_factory_(this) {
+  listener_.reset(new MediaPlayerListener(base::MessageLoopProxy::current(),
+                                          weak_factory_.GetWeakPtr()));
 }
 
 MediaPlayerBridge::~MediaPlayerBridge() {
@@ -55,23 +68,26 @@ MediaPlayerBridge::~MediaPlayerBridge() {
 }
 
 void MediaPlayerBridge::Initialize() {
+  cookies_.clear();
   if (url_.SchemeIsFile()) {
-    cookies_.clear();
     ExtractMediaMetadata(url_.spec());
     return;
   }
 
   media::MediaResourceGetter* resource_getter =
       manager()->GetMediaResourceGetter();
-  if (url_.SchemeIsFileSystem()) {
-    cookies_.clear();
-    resource_getter->GetPlatformPathFromFileSystemURL(url_, base::Bind(
-        &MediaPlayerBridge::ExtractMediaMetadata, weak_this_.GetWeakPtr()));
+  if (url_.SchemeIsFileSystem() || url_.SchemeIs(kBlobScheme)) {
+    resource_getter->GetPlatformPathFromURL(
+        url_,
+        base::Bind(&MediaPlayerBridge::ExtractMediaMetadata,
+                   weak_factory_.GetWeakPtr()));
     return;
   }
 
-  resource_getter->GetCookies(url_, first_party_for_cookies_, base::Bind(
-      &MediaPlayerBridge::OnCookiesRetrieved, weak_this_.GetWeakPtr()));
+  resource_getter->GetCookies(url_,
+                              first_party_for_cookies_,
+                              base::Bind(&MediaPlayerBridge::OnCookiesRetrieved,
+                                         weak_factory_.GetWeakPtr()));
 }
 
 void MediaPlayerBridge::CreateJavaMediaPlayerBridge() {
@@ -80,6 +96,9 @@ void MediaPlayerBridge::CreateJavaMediaPlayerBridge() {
 
   j_media_player_bridge_.Reset(Java_MediaPlayerBridge_create(
       env, reinterpret_cast<intptr_t>(this)));
+
+  if (volume_ >= 0)
+    SetVolume(volume_);
 
   SetMediaPlayerListener();
 }
@@ -103,7 +122,7 @@ void MediaPlayerBridge::SetMediaPlayerListener() {
   jobject j_context = base::android::GetApplicationContext();
   DCHECK(j_context);
 
-  listener_.CreateMediaPlayerListener(j_context, j_media_player_bridge_.obj());
+  listener_->CreateMediaPlayerListener(j_context, j_media_player_bridge_.obj());
 }
 
 void MediaPlayerBridge::SetDuration(base::TimeDelta duration) {
@@ -119,7 +138,7 @@ void MediaPlayerBridge::SetVideoSurface(gfx::ScopedJavaSurface surface) {
 
   JNIEnv* env = base::android::AttachCurrentThread();
   CHECK(env);
-
+  is_surface_in_use_ = true;
   Java_MediaPlayerBridge_setSurface(
       env, j_media_player_bridge_.obj(), surface.j_surface().obj());
 }
@@ -127,13 +146,15 @@ void MediaPlayerBridge::SetVideoSurface(gfx::ScopedJavaSurface surface) {
 void MediaPlayerBridge::Prepare() {
   DCHECK(j_media_player_bridge_.is_null());
   CreateJavaMediaPlayerBridge();
-  if (url_.SchemeIsFileSystem()) {
-    manager()->GetMediaResourceGetter()->GetPlatformPathFromFileSystemURL(
-            url_, base::Bind(&MediaPlayerBridge::SetDataSource,
-                             weak_this_.GetWeakPtr()));
-  } else {
-    SetDataSource(url_.spec());
+  if (url_.SchemeIsFileSystem() || url_.SchemeIs(kBlobScheme)) {
+    manager()->GetMediaResourceGetter()->GetPlatformPathFromURL(
+        url_,
+        base::Bind(&MediaPlayerBridge::SetDataSource,
+                   weak_factory_.GetWeakPtr()));
+    return;
   }
+
+  SetDataSource(url_.spec());
 }
 
 void MediaPlayerBridge::SetDataSource(const std::string& url) {
@@ -147,6 +168,8 @@ void MediaPlayerBridge::SetDataSource(const std::string& url) {
   ScopedJavaLocalRef<jstring> j_url_string = ConvertUTF8ToJavaString(env, url);
   ScopedJavaLocalRef<jstring> j_cookies = ConvertUTF8ToJavaString(
       env, cookies_);
+  ScopedJavaLocalRef<jstring> j_user_agent = ConvertUTF8ToJavaString(
+      env, user_agent_);
 
   jobject j_context = base::android::GetApplicationContext();
   DCHECK(j_context);
@@ -162,12 +185,12 @@ void MediaPlayerBridge::SetDataSource(const std::string& url) {
 
   if (!Java_MediaPlayerBridge_setDataSource(
       env, j_media_player_bridge_.obj(), j_context, j_url_string.obj(),
-      j_cookies.obj(), hide_url_log_)) {
+      j_cookies.obj(), j_user_agent.obj(), hide_url_log_)) {
     OnMediaError(MEDIA_ERROR_FORMAT);
     return;
   }
 
-  manager()->RequestMediaResources(player_id());
+  request_media_resources_cb_.Run(player_id());
   if (!Java_MediaPlayerBridge_prepareAsync(env, j_media_player_bridge_.obj()))
     OnMediaError(MEDIA_ERROR_FORMAT);
 }
@@ -179,7 +202,7 @@ void MediaPlayerBridge::OnDidSetDataUriDataSource(JNIEnv* env, jobject obj,
     return;
   }
 
-  manager()->RequestMediaResources(player_id());
+  request_media_resources_cb_.Run(player_id());
   if (!Java_MediaPlayerBridge_prepareAsync(env, j_media_player_bridge_.obj()))
     OnMediaError(MEDIA_ERROR_FORMAT);
 }
@@ -191,8 +214,11 @@ void MediaPlayerBridge::OnCookiesRetrieved(const std::string& cookies) {
 
 void MediaPlayerBridge::ExtractMediaMetadata(const std::string& url) {
   manager()->GetMediaResourceGetter()->ExtractMediaMetadata(
-      url, cookies_, base::Bind(&MediaPlayerBridge::OnMediaMetadataExtracted,
-                                weak_this_.GetWeakPtr()));
+      url,
+      cookies_,
+      user_agent_,
+      base::Bind(&MediaPlayerBridge::OnMediaMetadataExtracted,
+                 weak_factory_.GetWeakPtr()));
 }
 
 void MediaPlayerBridge::OnMediaMetadataExtracted(
@@ -256,7 +282,7 @@ int MediaPlayerBridge::GetVideoHeight() {
       env, j_media_player_bridge_.obj());
 }
 
-void MediaPlayerBridge::SeekTo(const base::TimeDelta& timestamp) {
+void MediaPlayerBridge::SeekTo(base::TimeDelta timestamp) {
   // Record the time to seek when OnMediaPrepared() is called.
   pending_seek_ = timestamp;
 
@@ -293,18 +319,20 @@ void MediaPlayerBridge::Release() {
     pending_seek_ = GetCurrentTime();
   prepared_ = false;
   pending_play_ = false;
+  is_surface_in_use_ = false;
   SetVideoSurface(gfx::ScopedJavaSurface());
-
   JNIEnv* env = base::android::AttachCurrentThread();
   Java_MediaPlayerBridge_release(env, j_media_player_bridge_.obj());
   j_media_player_bridge_.Reset();
-  manager()->ReleaseMediaResources(player_id());
-  listener_.ReleaseMediaPlayerListenerResources();
+  release_media_resources_cb_.Run(player_id());
+  listener_->ReleaseMediaPlayerListenerResources();
 }
 
 void MediaPlayerBridge::SetVolume(double volume) {
-  if (j_media_player_bridge_.is_null())
+  if (j_media_player_bridge_.is_null()) {
+    volume_ = volume;
     return;
+  }
 
   JNIEnv* env = base::android::AttachCurrentThread();
   CHECK(env);
@@ -453,6 +481,10 @@ GURL MediaPlayerBridge::GetUrl() {
 
 GURL MediaPlayerBridge::GetFirstPartyForCookies() {
   return first_party_for_cookies_;
+}
+
+bool MediaPlayerBridge::IsSurfaceInUse() const {
+  return is_surface_in_use_;
 }
 
 }  // namespace media

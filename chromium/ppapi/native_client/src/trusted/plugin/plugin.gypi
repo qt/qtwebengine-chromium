@@ -7,38 +7,18 @@
     'chromium_code': 1,  # Use higher warning level.
     'common_sources': [
       'file_downloader.cc',
-      'file_utils.cc',
-      'json_manifest.cc',
       'module_ppapi.cc',
-      'nacl_http_response_headers.cc',
       'nacl_subprocess.cc',
       'plugin.cc',
       'pnacl_coordinator.cc',
-      'pnacl_options.cc',
       'pnacl_resources.cc',
       'pnacl_translate_thread.cc',
-      'scriptable_plugin.cc',
       'sel_ldr_launcher_chrome.cc',
       'service_runtime.cc',
       'srpc_client.cc',
       'srpc_params.cc',
       'temporary_file.cc',
       'utility.cc',
-    ],
-    # Append the arch-specific ISA code to common_sources.
-    'conditions': [
-      # Note: this test assumes that if this is not an ARM build, then this is
-      # is an x86 build.  This is because |target_arch| for x86 can be one of a
-      # number of values (x64, ia32, etc.).
-      ['target_arch=="arm"', {
-        'common_sources': [
-          'arch_arm/sandbox_isa.cc',
-        ],
-      }, {  # else: 'target_arch != "arm"
-        'common_sources': [
-          'arch_x86/sandbox_isa.cc',
-        ],
-      }],
     ],
   },
   'includes': [
@@ -61,7 +41,7 @@
           '-Wno-unused-parameter', # be a bit stricter to match NaCl flags.
         ],
         'conditions': [
-          ['asan!=1', {
+          ['asan!=1 and msan!=1', {
             'ldflags': [
               # Catch unresolved symbols.
               '-Wl,-z,defs',

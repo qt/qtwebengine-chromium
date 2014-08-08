@@ -49,57 +49,70 @@ void FontCache::platformInit()
 }
 
 #if !OS(WIN) && !OS(ANDROID)
-PassRefPtr<SimpleFontData> FontCache::platformFallbackForCharacter(const FontDescription& fontDescription, UChar32 c, const SimpleFontData*, bool)
+PassRefPtr<SimpleFontData> FontCache::fallbackFontForCharacter(const FontDescription& fontDescription, UChar32 c, const SimpleFontData*)
 {
     icu::Locale locale = icu::Locale::getDefault();
-    FontCache::SimpleFontFamily family;
-    FontCache::getFontFamilyForCharacter(c, locale.getLanguage(), &family);
-    if (family.name.isEmpty())
-        return 0;
+    FontCache::PlatformFallbackFont fallbackFont;
+    FontCache::getFontForCharacter(c, locale.getLanguage(), &fallbackFont);
+    if (fallbackFont.name.isEmpty())
+        return nullptr;
 
-    AtomicString atomicFamily(family.name);
+    AtomicString atomicFamily(fallbackFont.name);
     // Changes weight and/or italic of given FontDescription depends on
     // the result of fontconfig so that keeping the correct font mapping
     // of the given character. See http://crbug.com/32109 for details.
-    bool shouldSetFakeBold = false;
-    bool shouldSetFakeItalic = false;
+    bool shouldSetSyntheticBold = false;
+    bool shouldSetSyntheticItalic = false;
     FontDescription description(fontDescription);
-    if (family.isBold && description.weight() < FontWeightBold)
+    if (fallbackFont.isBold && description.weight() < FontWeightBold)
         description.setWeight(FontWeightBold);
-    if (!family.isBold && description.weight() >= FontWeightBold) {
-        shouldSetFakeBold = true;
+    if (!fallbackFont.isBold && description.weight() >= FontWeightBold) {
+        shouldSetSyntheticBold = true;
         description.setWeight(FontWeightNormal);
     }
-    if (family.isItalic && description.italic() == FontItalicOff)
-        description.setItalic(FontItalicOn);
-    if (!family.isItalic && description.italic() == FontItalicOn) {
-        shouldSetFakeItalic = true;
-        description.setItalic(FontItalicOff);
+    if (fallbackFont.isItalic && description.style() == FontStyleNormal)
+        description.setStyle(FontStyleItalic);
+    if (!fallbackFont.isItalic && description.style() == FontStyleItalic) {
+        shouldSetSyntheticItalic = true;
+        description.setStyle(FontStyleNormal);
     }
 
     FontPlatformData* substitutePlatformData = getFontPlatformData(description, atomicFamily);
     if (!substitutePlatformData)
-        return 0;
+        return nullptr;
     FontPlatformData platformData = FontPlatformData(*substitutePlatformData);
-    platformData.setFakeBold(shouldSetFakeBold);
-    platformData.setFakeItalic(shouldSetFakeItalic);
+    platformData.setSyntheticBold(shouldSetSyntheticBold);
+    platformData.setSyntheticItalic(shouldSetSyntheticItalic);
     return fontDataFromFontPlatformData(&platformData, DoNotRetain);
 }
 
-#endif // !OS(WINDOWNS) && !OS(ANDROID)
+#endif // !OS(WIN) && !OS(ANDROID)
 
 PassRefPtr<SimpleFontData> FontCache::getLastResortFallbackFont(const FontDescription& description, ShouldRetain shouldRetain)
 {
     const AtomicString fallbackFontFamily = getFallbackFontFamily(description);
-    const FontPlatformData* fontPlatformData = 0;
-    if (!fallbackFontFamily.isEmpty())
-        fontPlatformData = getFontPlatformData(description, fallbackFontFamily);
+    const FontPlatformData* fontPlatformData = getFontPlatformData(description, fallbackFontFamily);
 
+    // We should at least have Sans or Arial which is the last resort fallback of SkFontHost ports.
     if (!fontPlatformData) {
-        // we should at least have Arial; this is the SkFontHost_fontconfig last resort fallback
+        DEFINE_STATIC_LOCAL(const AtomicString, sansStr, ("Sans", AtomicString::ConstructFromLiteral));
+        fontPlatformData = getFontPlatformData(description, sansStr);
+    }
+    if (!fontPlatformData) {
         DEFINE_STATIC_LOCAL(const AtomicString, arialStr, ("Arial", AtomicString::ConstructFromLiteral));
         fontPlatformData = getFontPlatformData(description, arialStr);
     }
+#if OS(WIN)
+    // Try some more Windows-specific fallbacks.
+    if (!fontPlatformData) {
+        DEFINE_STATIC_LOCAL(const AtomicString, msuigothicStr, ("MS UI Gothic", AtomicString::ConstructFromLiteral));
+        fontPlatformData = getFontPlatformData(description, msuigothicStr);
+    }
+    if (!fontPlatformData) {
+        DEFINE_STATIC_LOCAL(const AtomicString, mssansserifStr, ("Microsoft Sans Serif", AtomicString::ConstructFromLiteral));
+        fontPlatformData = getFontPlatformData(description, mssansserifStr);
+    }
+#endif
 
     ASSERT(fontPlatformData);
     return fontDataFromFontPlatformData(fontPlatformData, shouldRetain);
@@ -107,42 +120,29 @@ PassRefPtr<SimpleFontData> FontCache::getLastResortFallbackFont(const FontDescri
 
 PassRefPtr<SkTypeface> FontCache::createTypeface(const FontDescription& fontDescription, const AtomicString& family, CString& name)
 {
-    name = "";
-
     // If we're creating a fallback font (e.g. "-webkit-monospace"), convert the name into
     // the fallback name (like "monospace") that fontconfig understands.
     if (!family.length() || family.startsWith("-webkit-")) {
-        static const struct {
-            FontDescription::GenericFamilyType mType;
-            const char* mName;
-        } fontDescriptions[] = {
-            { FontDescription::SerifFamily, "serif" },
-            { FontDescription::SansSerifFamily, "sans-serif" },
-            { FontDescription::MonospaceFamily, "monospace" },
-            { FontDescription::CursiveFamily, "cursive" },
-            { FontDescription::FantasyFamily, "fantasy" }
-        };
-
-        FontDescription::GenericFamilyType type = fontDescription.genericFamily();
-        for (unsigned i = 0; i < SK_ARRAY_COUNT(fontDescriptions); i++) {
-            if (type == fontDescriptions[i].mType) {
-                name = fontDescriptions[i].mName;
-                break;
-            }
-        }
+        name = getFallbackFontFamily(fontDescription).string().utf8();
     } else {
         // convert the name to utf8
-        name = family.string().utf8();
+        name = family.utf8();
     }
 
     int style = SkTypeface::kNormal;
     if (fontDescription.weight() >= FontWeightBold)
         style |= SkTypeface::kBold;
-    if (fontDescription.italic())
+    if (fontDescription.style())
         style |= SkTypeface::kItalic;
 
+#if OS(WIN)
+    if (s_sideloadedFonts) {
+        HashMap<String, SkTypeface*>::iterator sideloadedFont = s_sideloadedFonts->find(name.data());
+        if (sideloadedFont != s_sideloadedFonts->end()) {
+            return adoptRef(sideloadedFont->value);
+        }
+    }
     // FIXME: Use SkFontStyle and matchFamilyStyle instead of legacyCreateTypeface.
-#if OS(WIN) && !ENABLE(GDI_FONTS_ON_WINDOWS)
     if (m_fontManager)
         return adoptRef(m_fontManager->legacyCreateTypeface(name.data(), style));
 #endif
@@ -162,11 +162,11 @@ FontPlatformData* FontCache::createFontPlatformData(const FontDescription& fontD
         name.data(),
         fontSize,
         (fontDescription.weight() >= FontWeightBold && !tf->isBold()) || fontDescription.isSyntheticBold(),
-        (fontDescription.italic() && !tf->isItalic()) || fontDescription.isSyntheticItalic(),
+        (fontDescription.style() && !tf->isItalic()) || fontDescription.isSyntheticItalic(),
         fontDescription.orientation(),
         fontDescription.useSubpixelPositioning());
     return result;
 }
-#endif // !OS(WINDOWNS)
+#endif // !OS(WIN)
 
 } // namespace WebCore

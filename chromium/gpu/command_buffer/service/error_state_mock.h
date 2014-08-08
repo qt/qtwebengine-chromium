@@ -18,20 +18,27 @@ class MockErrorState : public ErrorState {
   MockErrorState();
   virtual ~MockErrorState();
 
-  MOCK_METHOD0(GetGLError, uint32());
+  MOCK_METHOD0(GetGLError, uint32_t());
   MOCK_METHOD5(SetGLError, void(
       const char* filename, int line,
       unsigned error, const char* function_name, const char* msg));
   MOCK_METHOD5(SetGLErrorInvalidEnum, void(
       const char* filename, int line,
       const char* function_name, unsigned value, const char* label));
-  MOCK_METHOD6(SetGLErrorInvalidParam, void(
+  MOCK_METHOD6(SetGLErrorInvalidParami, void(
       const char* filename,
       int line,
       unsigned error,
       const char* function_name,
       unsigned pname,
       int param));
+  MOCK_METHOD6(SetGLErrorInvalidParamf, void(
+      const char* filename,
+      int line,
+      unsigned error,
+      const char* function_name,
+      unsigned pname,
+      float param));
   MOCK_METHOD3(PeekGLError, unsigned(
       const char* file, int line, const char* filename));
   MOCK_METHOD3(CopyRealGLErrorsToWrapper, void(

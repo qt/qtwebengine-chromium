@@ -14,20 +14,14 @@ ContextHolder::ContextHolder(v8::Isolate* isolate)
 }
 
 ContextHolder::~ContextHolder() {
-  v8::HandleScope handle_scope(isolate());
-  v8::Handle<v8::Context> context = this->context();
-
-  data_->Detach(context);
+  // PerContextData needs to be destroyed before the context.
   data_.reset();
-
-  // TODO(abarth): Figure out how to set kResetInDestructor to true.
-  context_.Reset();
 }
 
 void ContextHolder::SetContext(v8::Handle<v8::Context> context) {
   DCHECK(context_.IsEmpty());
   context_.Reset(isolate_, context);
-  data_.reset(new PerContextData(context));
+  data_.reset(new PerContextData(this, context));
 }
 
 }  // namespace gin

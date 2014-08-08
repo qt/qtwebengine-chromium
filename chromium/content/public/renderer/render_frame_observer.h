@@ -7,9 +7,16 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
+#include "base/strings/string16.h"
 #include "content/common/content_export.h"
 #include "ipc/ipc_listener.h"
 #include "ipc/ipc_sender.h"
+#include "v8/include/v8.h"
+
+namespace blink {
+class WebFrame;
+struct WebURLError;
+}
 
 namespace content {
 
@@ -28,6 +35,39 @@ class CONTENT_EXPORT RenderFrameObserver : public IPC::Listener,
 
   // Called when a Pepper plugin is created.
   virtual void DidCreatePepperPlugin(RendererPpapiHost* host) {}
+
+  // Called when a load is explicitly stopped by the user or browser.
+  virtual void OnStop() {}
+
+  // Called when the RenderFrame visiblity is changed.
+  virtual void WasHidden() {}
+  virtual void WasShown() {}
+
+  // These match the Blink API notifications
+  virtual void DidCommitProvisionalLoad(bool is_new_navigation) {}
+  virtual void DidStartProvisionalLoad() {}
+  virtual void DidFailProvisionalLoad(const blink::WebURLError& error) {}
+  virtual void DidFinishLoad() {}
+  virtual void DidFinishDocumentLoad() {}
+  virtual void WillReleaseScriptContext(v8::Handle<v8::Context> context,
+                                        int world_id) {}
+  virtual void DidClearWindowObject() {}
+  virtual void DidChangeName(const base::string16& name) {}
+
+  // Called when we receive a console message from Blink for which we requested
+  // extra details (like the stack trace). |message| is the error message,
+  // |source| is the Blink-reported source of the error (either external or
+  // internal), and |stack_trace| is the stack trace of the error in a
+  // human-readable format (each frame is formatted as
+  // "\n    at function_name (source:line_number:column_number)").
+  virtual void DetailedConsoleMessageAdded(const base::string16& message,
+                                           const base::string16& source,
+                                           const base::string16& stack_trace,
+                                           int32 line_number,
+                                           int32 severity_level) {}
+
+  // Called when a compositor frame has committed.
+  virtual void DidCommitCompositorFrame() {}
 
   // IPC::Listener implementation.
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;

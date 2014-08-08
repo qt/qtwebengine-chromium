@@ -25,8 +25,8 @@
 #include "config.h"
 #include "core/rendering/RenderThemeChromiumDefault.h"
 
-#include "CSSValueKeywords.h"
-#include "UserAgentStyleSheets.h"
+#include "core/CSSValueKeywords.h"
+#include "core/UserAgentStyleSheets.h"
 #include "core/rendering/PaintInfo.h"
 #include "core/rendering/RenderObject.h"
 #include "core/rendering/RenderProgress.h"
@@ -34,9 +34,9 @@
 #include "platform/graphics/Color.h"
 #include "platform/graphics/GraphicsContext.h"
 #include "platform/graphics/GraphicsContextStateSaver.h"
-#include "public/platform/default/WebThemeEngine.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebRect.h"
+#include "public/platform/WebThemeEngine.h"
 #include "wtf/StdLibExtras.h"
 
 namespace WebCore {
@@ -220,11 +220,6 @@ void RenderThemeChromiumDefault::adjustSliderThumbSize(RenderStyle* style, Eleme
         RenderThemeChromiumSkia::adjustSliderThumbSize(style, element);
 }
 
-bool RenderThemeChromiumDefault::supportsControlTints() const
-{
-    return true;
-}
-
 void RenderThemeChromiumDefault::setCaretBlinkInterval(double interval)
 {
     m_caretBlinkInterval = interval;
@@ -249,19 +244,22 @@ void RenderThemeChromiumDefault::setSelectionColors(
 
 bool RenderThemeChromiumDefault::paintCheckbox(RenderObject* o, const PaintInfo& i, const IntRect& rect)
 {
+    if (i.context->paintingDisabled())
+        return false;
     blink::WebThemeEngine::ExtraParams extraParams;
     blink::WebCanvas* canvas = i.context->canvas();
     extraParams.button.checked = isChecked(o);
     extraParams.button.indeterminate = isIndeterminate(o);
 
     float zoomLevel = o->style()->effectiveZoom();
-    GraphicsContextStateSaver stateSaver(*i.context);
+    GraphicsContextStateSaver stateSaver(*i.context, false);
     IntRect unzoomedRect = rect;
     if (zoomLevel != 1) {
+        stateSaver.save();
         unzoomedRect.setWidth(unzoomedRect.width() / zoomLevel);
         unzoomedRect.setHeight(unzoomedRect.height() / zoomLevel);
         i.context->translate(unzoomedRect.x(), unzoomedRect.y());
-        i.context->scale(FloatSize(zoomLevel, zoomLevel));
+        i.context->scale(zoomLevel, zoomLevel);
         i.context->translate(-unzoomedRect.x(), -unzoomedRect.y());
     }
 
@@ -284,6 +282,8 @@ void RenderThemeChromiumDefault::setCheckboxSize(RenderStyle* style) const
 
 bool RenderThemeChromiumDefault::paintRadio(RenderObject* o, const PaintInfo& i, const IntRect& rect)
 {
+    if (i.context->paintingDisabled())
+        return false;
     blink::WebThemeEngine::ExtraParams extraParams;
     blink::WebCanvas* canvas = i.context->canvas();
     extraParams.button.checked = isChecked(o);
@@ -307,6 +307,8 @@ void RenderThemeChromiumDefault::setRadioSize(RenderStyle* style) const
 
 bool RenderThemeChromiumDefault::paintButton(RenderObject* o, const PaintInfo& i, const IntRect& rect)
 {
+    if (i.context->paintingDisabled())
+        return false;
     blink::WebThemeEngine::ExtraParams extraParams;
     blink::WebCanvas* canvas = i.context->canvas();
     extraParams.button.hasBorder = true;
@@ -324,6 +326,8 @@ bool RenderThemeChromiumDefault::paintTextField(RenderObject* o, const PaintInfo
     // so return true to draw CSS border and background.
     if (o->style()->hasBorderRadius() || o->style()->hasBackgroundImage())
         return true;
+    if (i.context->paintingDisabled())
+        return false;
 
     ControlPart part = o->style()->appearance();
 
@@ -333,8 +337,7 @@ bool RenderThemeChromiumDefault::paintTextField(RenderObject* o, const PaintInfo
 
     blink::WebCanvas* canvas = i.context->canvas();
 
-    // Fallback to white if the specified color object is invalid.
-    Color backgroundColor = o->resolveColor(CSSPropertyBackgroundColor, Color::white);
+    Color backgroundColor = o->resolveColor(CSSPropertyBackgroundColor);
     extraParams.textField.backgroundColor = backgroundColor.rgb();
 
     blink::Platform::current()->themeEngine()->paint(canvas, blink::WebThemeEngine::PartTextField, getWebThemeState(this, o), blink::WebRect(rect), &extraParams);
@@ -343,7 +346,7 @@ bool RenderThemeChromiumDefault::paintTextField(RenderObject* o, const PaintInfo
 
 bool RenderThemeChromiumDefault::paintMenuList(RenderObject* o, const PaintInfo& i, const IntRect& rect)
 {
-    if (!o->isBox())
+    if (!o->isBox() || i.context->paintingDisabled())
         return false;
 
     const int right = rect.x() + rect.width();
@@ -388,7 +391,7 @@ bool RenderThemeChromiumDefault::paintMenuList(RenderObject* o, const PaintInfo&
 
 bool RenderThemeChromiumDefault::paintMenuListButton(RenderObject* o, const PaintInfo& i, const IntRect& rect)
 {
-    if (!o->isBox())
+    if (!o->isBox() || i.context->paintingDisabled())
         return false;
 
     const int right = rect.x() + rect.width();
@@ -422,6 +425,8 @@ bool RenderThemeChromiumDefault::paintMenuListButton(RenderObject* o, const Pain
 
 bool RenderThemeChromiumDefault::paintSliderTrack(RenderObject* o, const PaintInfo& i, const IntRect& rect)
 {
+    if (i.context->paintingDisabled())
+        return false;
     blink::WebThemeEngine::ExtraParams extraParams;
     blink::WebCanvas* canvas = i.context->canvas();
     extraParams.slider.vertical = o->style()->appearance() == SliderVerticalPart;
@@ -430,13 +435,14 @@ bool RenderThemeChromiumDefault::paintSliderTrack(RenderObject* o, const PaintIn
 
     // FIXME: Mock theme doesn't handle zoomed sliders.
     float zoomLevel = useMockTheme() ? 1 : o->style()->effectiveZoom();
-    GraphicsContextStateSaver stateSaver(*i.context);
+    GraphicsContextStateSaver stateSaver(*i.context, false);
     IntRect unzoomedRect = rect;
     if (zoomLevel != 1) {
+        stateSaver.save();
         unzoomedRect.setWidth(unzoomedRect.width() / zoomLevel);
         unzoomedRect.setHeight(unzoomedRect.height() / zoomLevel);
         i.context->translate(unzoomedRect.x(), unzoomedRect.y());
-        i.context->scale(FloatSize(zoomLevel, zoomLevel));
+        i.context->scale(zoomLevel, zoomLevel);
         i.context->translate(-unzoomedRect.x(), -unzoomedRect.y());
     }
 
@@ -447,6 +453,8 @@ bool RenderThemeChromiumDefault::paintSliderTrack(RenderObject* o, const PaintIn
 
 bool RenderThemeChromiumDefault::paintSliderThumb(RenderObject* o, const PaintInfo& i, const IntRect& rect)
 {
+    if (i.context->paintingDisabled())
+        return false;
     blink::WebThemeEngine::ExtraParams extraParams;
     blink::WebCanvas* canvas = i.context->canvas();
     extraParams.slider.vertical = o->style()->appearance() == SliderThumbVerticalPart;
@@ -454,13 +462,14 @@ bool RenderThemeChromiumDefault::paintSliderThumb(RenderObject* o, const PaintIn
 
     // FIXME: Mock theme doesn't handle zoomed sliders.
     float zoomLevel = useMockTheme() ? 1 : o->style()->effectiveZoom();
-    GraphicsContextStateSaver stateSaver(*i.context);
+    GraphicsContextStateSaver stateSaver(*i.context, false);
     IntRect unzoomedRect = rect;
     if (zoomLevel != 1) {
+        stateSaver.save();
         unzoomedRect.setWidth(unzoomedRect.width() / zoomLevel);
         unzoomedRect.setHeight(unzoomedRect.height() / zoomLevel);
         i.context->translate(unzoomedRect.x(), unzoomedRect.y());
-        i.context->scale(FloatSize(zoomLevel, zoomLevel));
+        i.context->scale(zoomLevel, zoomLevel);
         i.context->translate(-unzoomedRect.x(), -unzoomedRect.y());
     }
 
@@ -478,9 +487,11 @@ void RenderThemeChromiumDefault::adjustInnerSpinButtonStyle(RenderStyle* style, 
 
 bool RenderThemeChromiumDefault::paintInnerSpinButton(RenderObject* o, const PaintInfo& i, const IntRect& rect)
 {
+    if (i.context->paintingDisabled())
+        return false;
     blink::WebThemeEngine::ExtraParams extraParams;
     blink::WebCanvas* canvas = i.context->canvas();
-    extraParams.innerSpin.spinUp = (controlStatesForRenderer(o) & SpinUpState);
+    extraParams.innerSpin.spinUp = (controlStatesForRenderer(o) & SpinUpControlState);
     extraParams.innerSpin.readOnly = isReadOnlyControl(o);
 
     blink::Platform::current()->themeEngine()->paint(canvas, blink::WebThemeEngine::PartInnerSpinButton, getWebThemeState(this, o), blink::WebRect(rect), &extraParams);
@@ -491,6 +502,8 @@ bool RenderThemeChromiumDefault::paintProgressBar(RenderObject* o, const PaintIn
 {
     if (!o->isProgress())
         return true;
+    if (i.context->paintingDisabled())
+        return false;
 
     RenderProgress* renderProgress = toRenderProgress(o);
     IntRect valueRect = progressValueRectFor(renderProgress, rect);

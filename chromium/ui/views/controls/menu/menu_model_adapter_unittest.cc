@@ -2,12 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "ui/views/controls/menu/menu_model_adapter.h"
+
 #include "base/strings/utf_string_conversions.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/models/menu_model.h"
 #include "ui/base/models/menu_model_delegate.h"
 #include "ui/views/controls/menu/menu_item_view.h"
-#include "ui/views/controls/menu/menu_model_adapter.h"
 #include "ui/views/controls/menu/menu_runner.h"
 #include "ui/views/controls/menu/submenu_view.h"
 #include "ui/views/test/views_test_base.h"
@@ -51,7 +52,7 @@ class MenuModelBase : public ui::MenuModel {
     return index + command_id_base_;
   }
 
-  virtual string16 GetLabelAt(int index) const OVERRIDE {
+  virtual base::string16 GetLabelAt(int index) const OVERRIDE {
     return items_[index].label;
   }
 
@@ -59,7 +60,7 @@ class MenuModelBase : public ui::MenuModel {
     return false;
   }
 
-  virtual const gfx::Font* GetLabelFontAt(int index) const OVERRIDE {
+  virtual const gfx::FontList* GetLabelFontListAt(int index) const OVERRIDE {
     return NULL;
   }
 
@@ -128,12 +129,12 @@ class MenuModelBase : public ui::MenuModel {
          const std::string& item_label,
          ui::MenuModel* item_submenu)
         : type(item_type),
-          label(ASCIIToUTF16(item_label)),
+          label(base::ASCIIToUTF16(item_label)),
           submenu(item_submenu) {
     }
 
     ItemType type;
-    string16 label;
+    base::string16 label;
     ui::MenuModel* submenu;
   };
 

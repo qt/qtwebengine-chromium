@@ -4,7 +4,7 @@
 
 // Utility methods for the Core Audio API on Windows.
 // Always ensure that Core Audio is supported before using these methods.
-// Use media::CoreAudioIsSupported() for this purpose.
+// Use media::CoreAudioUtil::IsSupported() for this purpose.
 // Also, all methods must be called on a valid COM thread. This can be done
 // by using the base::win::ScopedCOMInitializer helper class.
 
@@ -37,6 +37,8 @@ class MEDIA_EXPORT CoreAudioUtil {
   // Returns true if Windows Core Audio is supported.
   // Always verify that this method returns true before using any of the
   // methods in this class.
+  // WARNING: This function must be called once from the main thread before
+  // it is safe to call from other threads.
   static bool IsSupported();
 
   // Converts between reference time to base::TimeDelta.

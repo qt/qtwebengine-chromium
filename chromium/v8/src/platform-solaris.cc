@@ -1,32 +1,9 @@
 // Copyright 2012 the V8 project authors. All rights reserved.
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-//       copyright notice, this list of conditions and the following
-//       disclaimer in the documentation and/or other materials provided
-//       with the distribution.
-//     * Neither the name of Google Inc. nor the names of its
-//       contributors may be used to endorse or promote products derived
-//       from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
-// Platform specific code for Solaris 10 goes here. For the POSIX comaptible
-// parts the implementation is in platform-posix.cc.
+// Platform-specific code for Solaris 10 goes here. For the POSIX-compatible
+// parts, the implementation is in platform-posix.cc.
 
 #ifdef __sparc
 # error "V8 does not support the SPARC CPU architecture."
@@ -49,11 +26,9 @@
 
 #undef MAP_TYPE
 
-#include "v8.h"
+#include "src/v8.h"
 
-#include "platform.h"
-#include "v8threads.h"
-#include "vm-state-inl.h"
+#include "src/platform.h"
 
 
 // It seems there is a bug in some Solaris distributions (experienced in
@@ -80,16 +55,16 @@ namespace v8 {
 namespace internal {
 
 
-const char* OS::LocalTimezone(double time) {
+const char* OS::LocalTimezone(double time, TimezoneCache* cache) {
   if (std::isnan(time)) return "";
-  time_t tv = static_cast<time_t>(floor(time/msPerSecond));
+  time_t tv = static_cast<time_t>(std::floor(time/msPerSecond));
   struct tm* t = localtime(&tv);
   if (NULL == t) return "";
   return tzname[0];  // The location of the timezone string on Solaris.
 }
 
 
-double OS::LocalTimeOffset() {
+double OS::LocalTimeOffset(TimezoneCache* cache) {
   tzset();
   return -static_cast<double>(timezone * msPerSecond);
 }
@@ -102,10 +77,7 @@ void* OS::Allocate(const size_t requested,
   int prot = PROT_READ | PROT_WRITE | (is_executable ? PROT_EXEC : 0);
   void* mbase = mmap(NULL, msize, prot, MAP_PRIVATE | MAP_ANON, -1, 0);
 
-  if (mbase == MAP_FAILED) {
-    LOG(Isolate::Current(), StringEvent("OS::Allocate", "mmap failed"));
-    return NULL;
-  }
+  if (mbase == MAP_FAILED) return NULL;
   *allocated = msize;
   return mbase;
 }
@@ -159,49 +131,12 @@ PosixMemoryMappedFile::~PosixMemoryMappedFile() {
 }
 
 
-void OS::LogSharedLibraryAddresses(Isolate* isolate) {
+std::vector<OS::SharedLibraryAddress> OS::GetSharedLibraryAddresses() {
+  return std::vector<SharedLibraryAddress>();
 }
 
 
 void OS::SignalCodeMovingGC() {
-}
-
-
-struct StackWalker {
-  Vector<OS::StackFrame>& frames;
-  int index;
-};
-
-
-static int StackWalkCallback(uintptr_t pc, int signo, void* data) {
-  struct StackWalker* walker = static_cast<struct StackWalker*>(data);
-  Dl_info info;
-
-  int i = walker->index;
-
-  walker->frames[i].address = reinterpret_cast<void*>(pc);
-
-  // Make sure line termination is in place.
-  walker->frames[i].text[OS::kStackWalkMaxTextLen - 1] = '\0';
-
-  Vector<char> text = MutableCStrVector(walker->frames[i].text,
-                                        OS::kStackWalkMaxTextLen);
-
-  if (dladdr(reinterpret_cast<void*>(pc), &info) == 0) {
-    OS::SNPrintF(text, "[0x%p]", pc);
-  } else if ((info.dli_fname != NULL && info.dli_sname != NULL)) {
-    // We have symbol info.
-    OS::SNPrintF(text, "%s'%s+0x%x", info.dli_fname, info.dli_sname, pc);
-  } else {
-    // No local symbol info.
-    OS::SNPrintF(text,
-                 "%s'0x%p [0x%p]",
-                 info.dli_fname,
-                 pc - reinterpret_cast<uintptr_t>(info.dli_fbase),
-                 pc);
-  }
-  walker->index++;
-  return 0;
 }
 
 

@@ -35,9 +35,9 @@
 
 namespace WebCore {
 
-class RadioInputType : public BaseCheckableInputType {
+class RadioInputType FINAL : public BaseCheckableInputType {
 public:
-    static PassRefPtr<InputType> create(HTMLInputElement&);
+    static PassRefPtrWillBeRawPtr<InputType> create(HTMLInputElement&);
 
 private:
     RadioInputType(HTMLInputElement& element) : BaseCheckableInputType(element) { }
@@ -49,7 +49,7 @@ private:
     virtual void handleKeyupEvent(KeyboardEvent*) OVERRIDE;
     virtual bool isKeyboardFocusable() const OVERRIDE;
     virtual bool shouldSendChangeEventAfterCheckedChanged() OVERRIDE;
-    virtual PassOwnPtr<ClickHandlingState> willDispatchClick() OVERRIDE;
+    virtual PassOwnPtrWillBeRawPtr<ClickHandlingState> willDispatchClick() OVERRIDE;
     virtual void didDispatchClick(Event*, const ClickHandlingState&) OVERRIDE;
     virtual bool isRadioButton() const OVERRIDE;
     virtual bool supportsIndeterminateAppearance() const OVERRIDE;

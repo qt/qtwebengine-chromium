@@ -20,7 +20,7 @@
 #include "content/common/media/media_stream_options.h"
 
 namespace base {
-class MessageLoopProxy;
+class SingleThreadTaskRunner;
 }
 
 namespace content {
@@ -41,16 +41,18 @@ enum { kInvalidMediaCaptureSessionId = 0xFFFFFFFF };
 class CONTENT_EXPORT MediaStreamProviderListener {
  public:
   // Called by a MediaStreamProvider when a stream has been opened.
-  virtual void Opened(MediaStreamType stream_type,
-                      int capture_session_id) = 0;
+  virtual void Opened(MediaStreamType stream_type, int capture_session_id) = 0;
 
   // Called by a MediaStreamProvider when a stream has been closed.
-  virtual void Closed(MediaStreamType stream_type,
-                      int capture_session_id) = 0;
+  virtual void Closed(MediaStreamType stream_type, int capture_session_id) = 0;
 
   // Called by a MediaStreamProvider when available devices has been enumerated.
   virtual void DevicesEnumerated(MediaStreamType stream_type,
                                  const StreamDeviceInfoArray& devices) = 0;
+
+  // Called by a MediaStreamProvider when the device has been aborted due to
+  // device error.
+  virtual void Aborted(MediaStreamType stream_type, int capture_session_id) = 0;
 
  protected:
   virtual ~MediaStreamProviderListener() {}
@@ -62,7 +64,8 @@ class CONTENT_EXPORT MediaStreamProvider
  public:
   // Registers a listener and a device message loop.
   virtual void Register(MediaStreamProviderListener* listener,
-                        base::MessageLoopProxy* device_thread_loop) = 0;
+                        const scoped_refptr<base::SingleThreadTaskRunner>&
+                            device_task_runner) = 0;
 
   // Unregisters the previously registered listener.
   virtual void Unregister() = 0;

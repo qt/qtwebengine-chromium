@@ -74,6 +74,12 @@
             'src/policy_target.h',
             'src/process_mitigations.cc',
             'src/process_mitigations.h',
+            'src/process_mitigations_win32k_dispatcher.cc',
+            'src/process_mitigations_win32k_dispatcher.h',
+            'src/process_mitigations_win32k_interception.cc',
+            'src/process_mitigations_win32k_interception.h',
+            'src/process_mitigations_win32k_policy.cc',
+            'src/process_mitigations_win32k_policy.h',
             'src/process_thread_dispatcher.cc',
             'src/process_thread_dispatcher.h',
             'src/process_thread_interception.cc',
@@ -174,7 +180,6 @@
         'sandbox_windows_target': 1,
       },
       'dependencies': [
-        '../testing/gtest.gyp:gtest',
         '../base/base.gyp:base',
         '../base/base.gyp:base_static',
       ],
@@ -209,6 +214,7 @@
       'type': 'executable',
       'dependencies': [
         'sandbox',
+        '../base/base.gyp:test_support_base',
         '../testing/gtest.gyp:gtest',
       ],
       'sources': [
@@ -240,6 +246,7 @@
       'type': 'executable',
       'dependencies': [
         'sandbox',
+        '../base/base.gyp:test_support_base',
         '../testing/gtest.gyp:gtest',
       ],
       'sources': [
@@ -256,6 +263,7 @@
       'type': 'executable',
       'dependencies': [
         'sandbox',
+        '../base/base.gyp:test_support_base',
         '../testing/gtest.gyp:gtest',
       ],
       'sources': [
@@ -337,7 +345,7 @@
             'target_arch': 'x64',
           },
           'dependencies': [
-            '../base/base.gyp:base_nacl_win64',
+            '../base/base.gyp:base_win64',
             '../base/base.gyp:base_static_win64',
           ],
           'configurations': {

@@ -1,188 +1,145 @@
 /*
- * Copyright (C) Research In Motion Limited 2010. All rights reserved.
+ * Copyright (C) 2013 Google Inc. All rights reserved.
  *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Library General Public
- * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are
+ * met:
  *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Library General Public License for more details.
+ *     * Redistributions of source code must retain the above copyright
+ * notice, this list of conditions and the following disclaimer.
+ *     * Redistributions in binary form must reproduce the above
+ * copyright notice, this list of conditions and the following disclaimer
+ * in the documentation and/or other materials provided with the
+ * distribution.
+ *     * Neither the name of Google Inc. nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
  *
- * You should have received a copy of the GNU Library General Public License
- * along with this library; see the file COPYING.LIB.  If not, write to
- * the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
- * Boston, MA 02110-1301, USA.
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+ * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+ * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+ * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #ifndef SVGPropertyTearOff_h
 #define SVGPropertyTearOff_h
 
-#include "core/svg/SVGElement.h"
-#include "core/svg/properties/SVGAnimatedProperty.h"
+#include "core/dom/QualifiedName.h"
 #include "core/svg/properties/SVGProperty.h"
-#include "wtf/WeakPtr.h"
+#include "wtf/RefCounted.h"
 
 namespace WebCore {
 
-class SVGPropertyTearOffBase : public SVGProperty {
-public:
-    virtual void setValueForMatrixIfNeeded(SVGTransform*) { }
-
-    virtual void detachWrapper() = 0;
+enum PropertyIsAnimValType {
+    PropertyIsNotAnimVal,
+    PropertyIsAnimVal
 };
 
-template<typename PropertyType>
-class SVGPropertyTearOff : public SVGPropertyTearOffBase {
+class SVGPropertyTearOffBase : public RefCounted<SVGPropertyTearOffBase> {
 public:
-    typedef SVGPropertyTearOff<PropertyType> Self;
+    virtual ~SVGPropertyTearOffBase() { }
 
-    // Used for child types (baseVal/animVal) of a SVGAnimated* property (for example: SVGAnimatedLength::baseVal()).
-    // Also used for list tear offs (for example: text.x.baseVal.getItem(0)).
-    static PassRefPtr<Self> create(SVGAnimatedProperty* animatedProperty, SVGPropertyRole role, PropertyType& value)
+    PropertyIsAnimValType propertyIsAnimVal() const
     {
-        ASSERT(animatedProperty);
-        return adoptRef(new Self(animatedProperty, role, value));
+        return m_propertyIsAnimVal;
     }
 
-    // Used for non-animated POD types (for example: SVGSVGElement::createSVGLength()).
-    static PassRefPtr<Self> create(const PropertyType& initialValue)
+    bool isAnimVal() const
     {
-        return adoptRef(new Self(initialValue));
+        return m_propertyIsAnimVal == PropertyIsAnimVal;
     }
 
-    PropertyType& propertyReference() { return *m_value; }
-    SVGAnimatedProperty* animatedProperty() const { return m_animatedProperty; }
-
-    void setValue(PropertyType& value)
+    bool isReadOnlyProperty() const
     {
-        if (m_valueIsCopy) {
-            detachChildren();
-            delete m_value;
-        }
-
-        updateChildrenTearOffs(&value);
-
-        m_valueIsCopy = false;
-        m_value = &value;
+        return m_isReadOnlyProperty;
     }
 
-    void setAnimatedProperty(SVGAnimatedProperty* animatedProperty)
+    void setIsReadOnlyProperty()
     {
-        m_animatedProperty = animatedProperty;
-
-        if (m_animatedProperty)
-            m_contextElement = m_animatedProperty->contextElement();
+        m_isReadOnlyProperty = true;
     }
 
-    SVGElement* contextElement() const
+    bool isImmutable() const
     {
-        if (!m_animatedProperty || m_valueIsCopy)
-            return 0;
-        ASSERT(m_contextElement);
+        return isReadOnlyProperty() || isAnimVal();
+    }
+
+    virtual void commitChange();
+
+    SVGElement* contextElement()
+    {
         return m_contextElement;
     }
 
-    void addChild(WeakPtr<SVGPropertyTearOffBase> child)
+    const QualifiedName& attributeName()
     {
-        m_childTearOffs.append(child);
+        return m_attributeName;
     }
 
-    virtual void detachWrapper() OVERRIDE
+    void attachToSVGElementAttribute(SVGElement* contextElement, const QualifiedName& attributeName)
     {
-        if (m_valueIsCopy)
-            return;
-
-        detachChildren();
-
-        // Switch from a live value, to a non-live value.
-        // For example: <text x="50"/>
-        // var item = text.x.baseVal.getItem(0);
-        // text.setAttribute("x", "100");
-        // item.value still has to report '50' and it has to be possible to modify 'item'
-        // w/o changing the "new item" (with x=100) in the text element.
-        // Whenever the XML DOM modifies the "x" attribute, all existing wrappers are detached, using this function.
-        m_value = new PropertyType(*m_value);
-        m_valueIsCopy = true;
-        m_animatedProperty = 0;
+        ASSERT(!isImmutable());
+        ASSERT(contextElement);
+        ASSERT(attributeName != QualifiedName::null());
+        m_contextElement = contextElement;
+        m_attributeName = attributeName;
     }
 
-    virtual void commitChange()
+    virtual AnimatedPropertyType type() const = 0;
+
+protected:
+    SVGPropertyTearOffBase(SVGElement* contextElement, PropertyIsAnimValType propertyIsAnimVal, const QualifiedName& attributeName = QualifiedName::null())
+        : m_contextElement(contextElement)
+        , m_propertyIsAnimVal(propertyIsAnimVal)
+        , m_isReadOnlyProperty(false)
+        , m_attributeName(attributeName)
     {
-        if (!m_animatedProperty || m_valueIsCopy)
-            return;
-        m_animatedProperty->commitChange();
     }
 
-    virtual bool isReadOnly() const
+private:
+    // These references are kept alive from V8 wrapper to prevent reference cycles
+    SVGElement* m_contextElement;
+
+    PropertyIsAnimValType m_propertyIsAnimVal;
+    bool m_isReadOnlyProperty;
+    QualifiedName m_attributeName;
+};
+
+template <typename Property>
+class SVGPropertyTearOff : public SVGPropertyTearOffBase {
+public:
+    Property* target()
     {
-        if (m_role == AnimValRole)
-            return true;
-        if (m_animatedProperty && m_animatedProperty->isReadOnly())
-            return true;
-        return false;
+        return m_target.get();
+    }
+
+    void setTarget(PassRefPtr<Property> target)
+    {
+        m_target = target;
+    }
+
+    virtual AnimatedPropertyType type() const OVERRIDE
+    {
+        return Property::classType();
     }
 
 protected:
-    SVGPropertyTearOff(SVGAnimatedProperty* animatedProperty, SVGPropertyRole role, PropertyType& value)
-        : m_animatedProperty(animatedProperty)
-        , m_role(role)
-        , m_value(&value)
-        , m_valueIsCopy(false)
+    SVGPropertyTearOff(PassRefPtr<Property> target, SVGElement* contextElement, PropertyIsAnimValType propertyIsAnimVal, const QualifiedName& attributeName = QualifiedName::null())
+        : SVGPropertyTearOffBase(contextElement, propertyIsAnimVal, attributeName)
+        , m_target(target)
     {
-        // Using operator & is completely fine, as SVGAnimatedProperty owns this reference,
-        // and we're guaranteed to live as long as SVGAnimatedProperty does.
-
-        if (m_animatedProperty)
-            m_contextElement = m_animatedProperty->contextElement();
+        ASSERT(m_target);
     }
 
-    SVGPropertyTearOff(const PropertyType& initialValue)
-        : m_animatedProperty(0)
-        , m_role(UndefinedRole)
-        , m_value(new PropertyType(initialValue))
-        , m_valueIsCopy(true)
-    {
-    }
-
-    virtual ~SVGPropertyTearOff()
-    {
-        if (m_valueIsCopy)
-            delete m_value;
-    }
-
-    void detachChildren()
-    {
-        for (Vector<WeakPtr<SVGPropertyTearOffBase> >::iterator iter = m_childTearOffs.begin(); iter != m_childTearOffs.end(); iter++) {
-            if (iter->get())
-                iter->get()->detachWrapper();
-        }
-        m_childTearOffs.clear();
-    }
-
-    // Update m_value of children tear-offs.
-    // Currently only SVGTransform has child tear-offs.
-    void updateChildrenTearOffs(SVGTransform* transform)
-    {
-        for (Vector<WeakPtr<SVGPropertyTearOffBase> >::iterator iter = m_childTearOffs.begin(); iter != m_childTearOffs.end(); iter++) {
-            if (iter->get())
-                iter->get()->setValueForMatrixIfNeeded(transform);
-        }
-    }
-
-    void updateChildrenTearOffs(void*)
-    {
-        // Tear-offs for other types do not have child tear-offs.
-    }
-
-    SVGElement* m_contextElement;
-    SVGAnimatedProperty* m_animatedProperty;
-    SVGPropertyRole m_role;
-    PropertyType* m_value;
-    Vector<WeakPtr<SVGPropertyTearOffBase> > m_childTearOffs;
-    bool m_valueIsCopy : 1;
+private:
+    RefPtr<Property> m_target;
 };
 
 }

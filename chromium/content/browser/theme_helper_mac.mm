@@ -4,13 +4,25 @@
 
 #include "content/browser/theme_helper_mac.h"
 
-#include <Foundation/Foundation.h>
+#import <Cocoa/Cocoa.h>
 
+#include "base/command_line.h"
+#include "base/mac/sdk_forward_declarations.h"
 #include "content/common/view_messages.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/render_process_host.h"
+#include "content/public/common/content_switches.h"
+
+// Declare notification names from the 10.7 SDK.
+#if !defined(MAC_OS_X_VERSION_10_7) || \
+    MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_7
+
+NSString* NSPreferredScrollerStyleDidChangeNotification =
+    @"NSPreferredScrollerStyleDidChangeNotification";
+
+#endif
 
 @interface ScrollbarPrefsObserver : NSObject
 
@@ -37,6 +49,17 @@ suspensionBehavior:NSNotificationSuspensionBehaviorDeliverImmediately];
              name:@"AppleNoRedisplayAppearancePreferenceChanged"
            object:nil
 suspensionBehavior:NSNotificationSuspensionBehaviorCoalesce];
+
+  // In single-process mode, renderers will catch these notifications
+  // themselves and listening for them here may trigger the DCHECK in Observe().
+  if ([NSScroller respondsToSelector:@selector(preferredScrollerStyle)] &&
+      !CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess)) {
+    [[NSNotificationCenter defaultCenter]
+        addObserver:self
+           selector:@selector(behaviorPrefsChanged:)
+               name:NSPreferredScrollerStyleDidChangeNotification
+             object:nil];
+  }
 }
 
 + (void)appearancePrefsChanged:(NSNotification*)notification {
@@ -56,12 +79,45 @@ suspensionBehavior:NSNotificationSuspensionBehaviorCoalesce];
       [defaults floatForKey:@"NSScrollerButtonDelay"],
       [defaults floatForKey:@"NSScrollerButtonPeriod"],
       [defaults boolForKey:@"AppleScrollerPagingBehavior"],
+      content::ThemeHelperMac::GetPreferredScrollerStyle(),
       redraw);
 }
 
 @end
 
 namespace content {
+
+// static
+ThemeHelperMac* ThemeHelperMac::GetInstance() {
+  return Singleton<ThemeHelperMac,
+      LeakySingletonTraits<ThemeHelperMac> >::get();
+}
+
+// static
+blink::ScrollerStyle ThemeHelperMac::GetPreferredScrollerStyle() {
+  if (![NSScroller respondsToSelector:@selector(preferredScrollerStyle)])
+    return blink::ScrollerStyleLegacy;
+  return static_cast<blink::ScrollerStyle>([NSScroller preferredScrollerStyle]);
+}
+
+// static
+void ThemeHelperMac::SendThemeChangeToAllRenderers(
+    float initial_button_delay,
+    float autoscroll_button_delay,
+    bool jump_on_track_click,
+    blink::ScrollerStyle preferred_scroller_style,
+    bool redraw) {
+  for (RenderProcessHost::iterator it(RenderProcessHost::AllHostsIterator());
+       !it.IsAtEnd();
+       it.Advance()) {
+    it.GetCurrentValue()->Send(new ViewMsg_UpdateScrollbarTheme(
+        initial_button_delay,
+        autoscroll_button_delay,
+        jump_on_track_click,
+        preferred_scroller_style,
+        redraw));
+  }
+}
 
 ThemeHelperMac::ThemeHelperMac() {
   [ScrollbarPrefsObserver registerAsObserver];
@@ -72,13 +128,6 @@ ThemeHelperMac::ThemeHelperMac() {
 
 ThemeHelperMac::~ThemeHelperMac() {
 }
-
-// static
-ThemeHelperMac* ThemeHelperMac::GetInstance() {
-  return Singleton<ThemeHelperMac,
-      LeakySingletonTraits<ThemeHelperMac> >::get();
-}
-
 
 void ThemeHelperMac::Observe(int type,
                              const NotificationSource& source,
@@ -94,24 +143,8 @@ void ThemeHelperMac::Observe(int type,
       [defaults floatForKey:@"NSScrollerButtonDelay"],
       [defaults floatForKey:@"NSScrollerButtonPeriod"],
       [defaults boolForKey:@"AppleScrollerPagingBehavior"],
+      GetPreferredScrollerStyle(),
       false));
-}
-
-// static
-void ThemeHelperMac::SendThemeChangeToAllRenderers(
-    float initial_button_delay,
-    float autoscroll_button_delay,
-    bool jump_on_track_click,
-    bool redraw) {
-  for (RenderProcessHost::iterator it(RenderProcessHost::AllHostsIterator());
-       !it.IsAtEnd();
-       it.Advance()) {
-    it.GetCurrentValue()->Send(new ViewMsg_UpdateScrollbarTheme(
-        initial_button_delay,
-        autoscroll_button_delay,
-        jump_on_track_click,
-        redraw));
-  }
 }
 
 }  // namespace content

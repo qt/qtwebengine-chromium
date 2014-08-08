@@ -21,20 +21,18 @@
 #ifndef SVGPolylineElement_h
 #define SVGPolylineElement_h
 
-#include "SVGNames.h"
+#include "core/SVGNames.h"
 #include "core/svg/SVGPolyElement.h"
 
 namespace WebCore {
 
 class SVGPolylineElement FINAL : public SVGPolyElement {
 public:
-    static PassRefPtr<SVGPolylineElement> create(Document&);
+    DECLARE_NODE_FACTORY(SVGPolylineElement);
 
 private:
     explicit SVGPolylineElement(Document&);
 };
-
-DEFINE_NODE_TYPE_CASTS(SVGPolylineElement, hasTagName(SVGNames::polylineTag));
 
 } // namespace WebCore
 

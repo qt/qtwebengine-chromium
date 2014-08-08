@@ -12,7 +12,7 @@
 #include "base/sync_socket.h"
 #include "base/synchronization/lock.h"
 #include "content/common/content_export.h"
-#include "ipc/ipc_channel_proxy.h"
+#include "ipc/message_filter.h"
 #include "media/audio/audio_output_ipc.h"
 #include "media/base/audio_hardware_config.h"
 
@@ -26,8 +26,7 @@ namespace content {
 // renderers. Created on render thread, AudioMessageFilter is operated on
 // IO thread (secondary thread of render process) it intercepts audio messages
 // and process them on IO thread since these messages are time critical.
-class CONTENT_EXPORT AudioMessageFilter
-    : public IPC::ChannelProxy::MessageFilter {
+class CONTENT_EXPORT AudioMessageFilter : public IPC::MessageFilter {
  public:
   explicit AudioMessageFilter(
       const scoped_refptr<base::MessageLoopProxy>& io_message_loop);
@@ -35,15 +34,18 @@ class CONTENT_EXPORT AudioMessageFilter
   // Getter for the one AudioMessageFilter object.
   static AudioMessageFilter* Get();
 
-  // Create an AudioOutputIPC to be owned by one delegate.  |render_view_id| is
-  // the render view containing the entity producing the audio.
+  // Create an AudioOutputIPC to be owned by one delegate.  |render_view_id| and
+  // |render_frame_id| are the render view and render frame containing the
+  // entity producing the audio.
+  // TODO(jam): remove render_view_id
   //
   // The returned object is not thread-safe, and must be used on
   // |io_message_loop|.
-  scoped_ptr<media::AudioOutputIPC> CreateAudioOutputIPC(int render_view_id);
+  scoped_ptr<media::AudioOutputIPC> CreateAudioOutputIPC(int render_view_id,
+                                                         int render_frame_id);
 
   // When set, AudioMessageFilter will update the AudioHardwareConfig with new
-  // configuration values as recieved by OnOutputDeviceChanged().  The provided
+  // configuration values as received by OnOutputDeviceChanged().  The provided
   // |config| must outlive AudioMessageFilter.
   void SetAudioHardwareConfig(media::AudioHardwareConfig* config);
 
@@ -63,12 +65,12 @@ class CONTENT_EXPORT AudioMessageFilter
   // stream_id and the source render_view_id.
   class AudioOutputIPCImpl;
 
-  // Sends an IPC message using |channel_|.
+  // Sends an IPC message using |sender_|.
   void Send(IPC::Message* message);
 
-  // IPC::ChannelProxy::MessageFilter override. Called on |io_message_loop|.
+  // IPC::MessageFilter override. Called on |io_message_loop|.
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
-  virtual void OnFilterAdded(IPC::Channel* channel) OVERRIDE;
+  virtual void OnFilterAdded(IPC::Sender* sender) OVERRIDE;
   virtual void OnFilterRemoved() OVERRIDE;
   virtual void OnChannelClosing() OVERRIDE;
 
@@ -90,8 +92,8 @@ class CONTENT_EXPORT AudioMessageFilter
   void OnOutputDeviceChanged(int stream_id, int new_buffer_size,
                              int new_sample_rate);
 
-  // IPC channel for Send(); must only be accesed on |io_message_loop_|.
-  IPC::Channel* channel_;
+  // IPC sender for Send(); must only be accesed on |io_message_loop_|.
+  IPC::Sender* sender_;
 
   // A map of stream ids to delegates; must only be accessed on
   // |io_message_loop_|.

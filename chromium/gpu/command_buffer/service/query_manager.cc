@@ -8,6 +8,7 @@
 #include "base/bind.h"
 #include "base/logging.h"
 #include "base/memory/shared_memory.h"
+#include "base/numerics/safe_math.h"
 #include "base/synchronization/lock.h"
 #include "base/time/time.h"
 #include "gpu/command_buffer/common/gles2_cmd_format.h"
@@ -15,6 +16,7 @@
 #include "gpu/command_buffer/service/error_state.h"
 #include "gpu/command_buffer/service/feature_info.h"
 #include "gpu/command_buffer/service/gles2_cmd_decoder.h"
+#include "ui/gl/gl_fence.h"
 
 namespace gpu {
 namespace gles2 {
@@ -24,9 +26,8 @@ namespace {
 class AsyncPixelTransferCompletionObserverImpl
     : public AsyncPixelTransferCompletionObserver {
  public:
-  AsyncPixelTransferCompletionObserverImpl(uint32 submit_count)
-      : submit_count_(submit_count),
-        cancelled_(false) {}
+  AsyncPixelTransferCompletionObserverImpl(base::subtle::Atomic32 submit_count)
+      : submit_count_(submit_count), cancelled_(false) {}
 
   void Cancel() {
     base::AutoLock locked(lock_);
@@ -36,23 +37,17 @@ class AsyncPixelTransferCompletionObserverImpl
   virtual void DidComplete(const AsyncMemoryParams& mem_params) OVERRIDE {
     base::AutoLock locked(lock_);
     if (!cancelled_) {
-      DCHECK(mem_params.shared_memory);
-      DCHECK(mem_params.shared_memory->memory());
-      void* data = static_cast<int8*>(mem_params.shared_memory->memory()) +
-                   mem_params.shm_data_offset;
+      DCHECK(mem_params.buffer());
+      void* data = mem_params.GetDataAddress();
       QuerySync* sync = static_cast<QuerySync*>(data);
-
-      // Need a MemoryBarrier here to ensure that upload completed before
-      // submit_count was written to sync->process_count.
-      base::subtle::MemoryBarrier();
-      sync->process_count = submit_count_;
+      base::subtle::Release_Store(&sync->process_count, submit_count_);
     }
   }
 
  private:
   virtual ~AsyncPixelTransferCompletionObserverImpl() {}
 
-  uint32 submit_count_;
+  base::subtle::Atomic32 submit_count_;
 
   base::Lock lock_;
   bool cancelled_;
@@ -68,7 +63,7 @@ class AsyncPixelTransfersCompletedQuery
       QueryManager* manager, GLenum target, int32 shm_id, uint32 shm_offset);
 
   virtual bool Begin() OVERRIDE;
-  virtual bool End(uint32 submit_count) OVERRIDE;
+  virtual bool End(base::subtle::Atomic32 submit_count) OVERRIDE;
   virtual bool Process() OVERRIDE;
   virtual void Destroy(bool have_context) OVERRIDE;
 
@@ -87,19 +82,16 @@ bool AsyncPixelTransfersCompletedQuery::Begin() {
   return true;
 }
 
-bool AsyncPixelTransfersCompletedQuery::End(uint32 submit_count) {
-  AsyncMemoryParams mem_params;
+bool AsyncPixelTransfersCompletedQuery::End(
+    base::subtle::Atomic32 submit_count) {
   // Get the real shared memory since it might need to be duped to prevent
   // use-after-free of the memory.
-  Buffer buffer = manager()->decoder()->GetSharedMemoryBuffer(shm_id());
-  if (!buffer.shared_memory)
+  scoped_refptr<Buffer> buffer =
+      manager()->decoder()->GetSharedMemoryBuffer(shm_id());
+  if (!buffer)
     return false;
-  mem_params.shared_memory = buffer.shared_memory;
-  mem_params.shm_size = buffer.size;
-  mem_params.shm_data_offset = shm_offset();
-  mem_params.shm_data_size = sizeof(QuerySync);
-  uint32 end = mem_params.shm_data_offset + mem_params.shm_data_size;
-  if (end > mem_params.shm_size || end < mem_params.shm_data_offset)
+  AsyncMemoryParams mem_params(buffer, shm_offset(), sizeof(QuerySync));
+  if (!mem_params.GetDataAddress())
     return false;
 
   observer_ = new AsyncPixelTransferCompletionObserverImpl(submit_count);
@@ -122,7 +114,7 @@ bool AsyncPixelTransfersCompletedQuery::Process() {
   // Check if completion callback has been run. sync->process_count atomicity
   // is guaranteed as this is already used to notify client of a completed
   // query.
-  if (sync->process_count != submit_count())
+  if (base::subtle::Acquire_Load(&sync->process_count) != submit_count())
     return true;
 
   UnmarkAsPending();
@@ -148,7 +140,7 @@ class AllSamplesPassedQuery : public QueryManager::Query {
       QueryManager* manager, GLenum target, int32 shm_id, uint32 shm_offset,
       GLuint service_id);
   virtual bool Begin() OVERRIDE;
-  virtual bool End(uint32 submit_count) OVERRIDE;
+  virtual bool End(base::subtle::Atomic32 submit_count) OVERRIDE;
   virtual bool Process() OVERRIDE;
   virtual void Destroy(bool have_context) OVERRIDE;
 
@@ -172,7 +164,7 @@ bool AllSamplesPassedQuery::Begin() {
   return true;
 }
 
-bool AllSamplesPassedQuery::End(uint32 submit_count) {
+bool AllSamplesPassedQuery::End(base::subtle::Atomic32 submit_count) {
   EndQueryHelper(target());
   return AddToPendingQueue(submit_count);
 }
@@ -207,7 +199,7 @@ class CommandsIssuedQuery : public QueryManager::Query {
       QueryManager* manager, GLenum target, int32 shm_id, uint32 shm_offset);
 
   virtual bool Begin() OVERRIDE;
-  virtual bool End(uint32 submit_count) OVERRIDE;
+  virtual bool End(base::subtle::Atomic32 submit_count) OVERRIDE;
   virtual bool Process() OVERRIDE;
   virtual void Destroy(bool have_context) OVERRIDE;
 
@@ -228,7 +220,7 @@ bool CommandsIssuedQuery::Begin() {
   return true;
 }
 
-bool CommandsIssuedQuery::End(uint32 submit_count) {
+bool CommandsIssuedQuery::End(base::subtle::Atomic32 submit_count) {
   base::TimeDelta elapsed = base::TimeTicks::HighResNow() - begin_time_;
   MarkAsPending(submit_count);
   return MarkAsCompleted(elapsed.InMicroseconds());
@@ -254,7 +246,7 @@ class CommandLatencyQuery : public QueryManager::Query {
       QueryManager* manager, GLenum target, int32 shm_id, uint32 shm_offset);
 
   virtual bool Begin() OVERRIDE;
-  virtual bool End(uint32 submit_count) OVERRIDE;
+  virtual bool End(base::subtle::Atomic32 submit_count) OVERRIDE;
   virtual bool Process() OVERRIDE;
   virtual void Destroy(bool have_context) OVERRIDE;
 
@@ -271,7 +263,7 @@ bool CommandLatencyQuery::Begin() {
     return true;
 }
 
-bool CommandLatencyQuery::End(uint32 submit_count) {
+bool CommandLatencyQuery::End(base::subtle::Atomic32 submit_count) {
     base::TimeDelta now = base::TimeTicks::HighResNow() - base::TimeTicks();
     MarkAsPending(submit_count);
     return MarkAsCompleted(now.InMicroseconds());
@@ -300,25 +292,31 @@ class AsyncReadPixelsCompletedQuery
       QueryManager* manager, GLenum target, int32 shm_id, uint32 shm_offset);
 
   virtual bool Begin() OVERRIDE;
-  virtual bool End(uint32 submit_count) OVERRIDE;
+  virtual bool End(base::subtle::Atomic32 submit_count) OVERRIDE;
   virtual bool Process() OVERRIDE;
   virtual void Destroy(bool have_context) OVERRIDE;
 
  protected:
   void Complete();
   virtual ~AsyncReadPixelsCompletedQuery();
+
+ private:
+  bool completed_;
+  bool complete_result_;
 };
 
 AsyncReadPixelsCompletedQuery::AsyncReadPixelsCompletedQuery(
     QueryManager* manager, GLenum target, int32 shm_id, uint32 shm_offset)
-    : Query(manager, target, shm_id, shm_offset) {
+    : Query(manager, target, shm_id, shm_offset),
+      completed_(false),
+      complete_result_(false) {
 }
 
 bool AsyncReadPixelsCompletedQuery::Begin() {
   return true;
 }
 
-bool AsyncReadPixelsCompletedQuery::End(uint32 submit_count) {
+bool AsyncReadPixelsCompletedQuery::End(base::subtle::Atomic32 submit_count) {
   if (!AddToPendingQueue(submit_count)) {
     return false;
   }
@@ -326,15 +324,16 @@ bool AsyncReadPixelsCompletedQuery::End(uint32 submit_count) {
       base::Bind(&AsyncReadPixelsCompletedQuery::Complete,
                  AsWeakPtr()));
 
-  return true;
+  return Process();
 }
 
 void AsyncReadPixelsCompletedQuery::Complete() {
-  MarkAsCompleted(1);
+  completed_ = true;
+  complete_result_ = MarkAsCompleted(1);
 }
 
 bool AsyncReadPixelsCompletedQuery::Process() {
-  return true;
+  return !completed_ || complete_result_;
 }
 
 void AsyncReadPixelsCompletedQuery::Destroy(bool /* have_context */) {
@@ -353,7 +352,7 @@ class GetErrorQuery : public QueryManager::Query {
       QueryManager* manager, GLenum target, int32 shm_id, uint32 shm_offset);
 
   virtual bool Begin() OVERRIDE;
-  virtual bool End(uint32 submit_count) OVERRIDE;
+  virtual bool End(base::subtle::Atomic32 submit_count) OVERRIDE;
   virtual bool Process() OVERRIDE;
   virtual void Destroy(bool have_context) OVERRIDE;
 
@@ -372,7 +371,7 @@ bool GetErrorQuery::Begin() {
   return true;
 }
 
-bool GetErrorQuery::End(uint32 submit_count) {
+bool GetErrorQuery::End(base::subtle::Atomic32 submit_count) {
   MarkAsPending(submit_count);
   return MarkAsCompleted(manager()->decoder()->GetErrorState()->GetGLError());
 }
@@ -390,6 +389,55 @@ void GetErrorQuery::Destroy(bool /* have_context */) {
 
 GetErrorQuery::~GetErrorQuery() {
 }
+
+class CommandsCompletedQuery : public QueryManager::Query {
+ public:
+  CommandsCompletedQuery(QueryManager* manager,
+                         GLenum target,
+                         int32 shm_id,
+                         uint32 shm_offset);
+
+  // Overridden from QueryManager::Query:
+  virtual bool Begin() OVERRIDE;
+  virtual bool End(base::subtle::Atomic32 submit_count) OVERRIDE;
+  virtual bool Process() OVERRIDE;
+  virtual void Destroy(bool have_context) OVERRIDE;
+
+ protected:
+  virtual ~CommandsCompletedQuery();
+
+ private:
+  scoped_ptr<gfx::GLFence> fence_;
+};
+
+CommandsCompletedQuery::CommandsCompletedQuery(QueryManager* manager,
+                                               GLenum target,
+                                               int32 shm_id,
+                                               uint32 shm_offset)
+    : Query(manager, target, shm_id, shm_offset) {}
+
+bool CommandsCompletedQuery::Begin() { return true; }
+
+bool CommandsCompletedQuery::End(base::subtle::Atomic32 submit_count) {
+  fence_.reset(gfx::GLFence::Create());
+  DCHECK(fence_);
+  return AddToPendingQueue(submit_count);
+}
+
+bool CommandsCompletedQuery::Process() {
+  if (fence_ && !fence_->HasCompleted())
+    return true;
+  return MarkAsCompleted(0);
+}
+
+void CommandsCompletedQuery::Destroy(bool have_context) {
+  if (have_context && !IsDeleted()) {
+    fence_.reset();
+    MarkAsDeleted();
+  }
+}
+
+CommandsCompletedQuery::~CommandsCompletedQuery() {}
 
 QueryManager::QueryManager(
     GLES2Decoder* decoder,
@@ -446,6 +494,9 @@ QueryManager::Query* QueryManager::CreateQuery(
     case GL_GET_ERROR_QUERY_CHROMIUM:
       query = new GetErrorQuery(this, target, shm_id, shm_offset);
       break;
+    case GL_COMMANDS_COMPLETED_CHROMIUM:
+      query = new CommandsCompletedQuery(this, target, shm_id, shm_offset);
+      break;
     default: {
       GLuint service_id = 0;
       glGenQueriesARB(1, &service_id);
@@ -459,6 +510,18 @@ QueryManager::Query* QueryManager::CreateQuery(
       queries_.insert(std::make_pair(client_id, query));
   DCHECK(result.second);
   return query.get();
+}
+
+void QueryManager::GenQueries(GLsizei n, const GLuint* queries) {
+  DCHECK_GE(n, 0);
+  for (GLsizei i = 0; i < n; ++i) {
+    generated_query_ids_.insert(queries[i]);
+  }
+}
+
+bool QueryManager::IsValidQuery(GLuint id) {
+  GeneratedQueryIds::iterator it = generated_query_ids_.find(id);
+  return it != generated_query_ids_.end();
 }
 
 QueryManager::Query* QueryManager::GetQuery(
@@ -475,6 +538,7 @@ void QueryManager::RemoveQuery(GLuint client_id) {
     query->MarkAsDeleted();
     queries_.erase(it);
   }
+  generated_query_ids_.erase(client_id);
 }
 
 void QueryManager::StartTracking(QueryManager::Query* /* query */) {
@@ -566,10 +630,7 @@ bool QueryManager::Query::MarkAsCompleted(uint64 result) {
 
   pending_ = false;
   sync->result = result;
-  // Need a MemoryBarrier here so that sync->result is written before
-  // sync->process_count.
-  base::subtle::MemoryBarrier();
-  sync->process_count = submit_count_;
+  base::subtle::Release_Store(&sync->process_count, submit_count_);
 
   return true;
 }
@@ -614,7 +675,8 @@ bool QueryManager::HavePendingTransferQueries() {
   return !pending_transfer_queries_.empty();
 }
 
-bool QueryManager::AddPendingQuery(Query* query, uint32 submit_count) {
+bool QueryManager::AddPendingQuery(Query* query,
+                                   base::subtle::Atomic32 submit_count) {
   DCHECK(query);
   DCHECK(!query->IsDeleted());
   if (!RemovePendingQuery(query)) {
@@ -625,7 +687,9 @@ bool QueryManager::AddPendingQuery(Query* query, uint32 submit_count) {
   return true;
 }
 
-bool QueryManager::AddPendingTransferQuery(Query* query, uint32 submit_count) {
+bool QueryManager::AddPendingTransferQuery(
+    Query* query,
+    base::subtle::Atomic32 submit_count) {
   DCHECK(query);
   DCHECK(!query->IsDeleted());
   if (!RemovePendingQuery(query)) {
@@ -671,7 +735,7 @@ bool QueryManager::BeginQuery(Query* query) {
   return query->Begin();
 }
 
-bool QueryManager::EndQuery(Query* query, uint32 submit_count) {
+bool QueryManager::EndQuery(Query* query, base::subtle::Atomic32 submit_count) {
   DCHECK(query);
   if (!RemovePendingQuery(query)) {
     return false;

@@ -1,41 +1,17 @@
 // Copyright 2012 the V8 project authors. All rights reserved.
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-//       copyright notice, this list of conditions and the following
-//       disclaimer in the documentation and/or other materials provided
-//       with the distribution.
-//     * Neither the name of Google Inc. nor the names of its
-//       contributors may be used to endorse or promote products derived
-//       from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
 #ifndef V8_API_H_
 #define V8_API_H_
 
-#include "v8.h"
+#include "src/v8.h"
 
-#include "../include/v8-testing.h"
-#include "apiutils.h"
-#include "contexts.h"
-#include "factory.h"
-#include "isolate.h"
-#include "list-inl.h"
+#include "include/v8-testing.h"
+#include "src/contexts.h"
+#include "src/factory.h"
+#include "src/isolate.h"
+#include "src/list-inl.h"
 
 namespace v8 {
 
@@ -56,7 +32,7 @@ class Consts {
 // env-independent JSObjects used by the api.
 class NeanderObject {
  public:
-  explicit NeanderObject(int size);
+  explicit NeanderObject(v8::internal::Isolate* isolate, int size);
   explicit inline NeanderObject(v8::internal::Handle<v8::internal::Object> obj);
   explicit inline NeanderObject(v8::internal::Object* obj);
   inline v8::internal::Object* get(int index);
@@ -72,7 +48,7 @@ class NeanderObject {
 // array abstraction built on neander-objects.
 class NeanderArray {
  public:
-  NeanderArray();
+  explicit NeanderArray(v8::internal::Isolate* isolate);
   explicit inline NeanderArray(v8::internal::Handle<v8::internal::Object> obj);
   inline v8::internal::Handle<v8::internal::JSObject> value() {
     return obj_.value();
@@ -184,11 +160,12 @@ class RegisteredExtension {
   V(DataView, JSDataView)                      \
   V(String, String)                            \
   V(Symbol, Symbol)                            \
-  V(Script, Object)                            \
+  V(Script, JSFunction)                        \
+  V(UnboundScript, SharedFunctionInfo)         \
   V(Function, JSFunction)                      \
-  V(Message, JSObject)                         \
+  V(Message, JSMessageObject)                  \
   V(Context, Context)                          \
-  V(External, Foreign)                         \
+  V(External, Object)                          \
   V(StackTrace, JSArray)                       \
   V(StackFrame, JSObject)                      \
   V(DeclaredAccessorDescriptor, DeclaredAccessorDescriptor)
@@ -196,7 +173,12 @@ class RegisteredExtension {
 
 class Utils {
  public:
-  static bool ReportApiFailure(const char* location, const char* message);
+  static inline bool ApiCheck(bool condition,
+                              const char* location,
+                              const char* message) {
+    if (!condition) Utils::ReportApiFailure(location, message);
+    return condition;
+  }
 
   static Local<FunctionTemplate> ToFunctionTemplate(NeanderObject obj);
   static Local<ObjectTemplate> ToObjectTemplate(NeanderObject obj);
@@ -303,6 +285,9 @@ OPEN_HANDLE_LIST(DECLARE_OPEN_HANDLE)
   static inline v8::internal::Handle<To> OpenHandle(v8::Local<From> handle) {
     return OpenHandle(*handle);
   }
+
+ private:
+  static void ReportApiFailure(const char* location, const char* message);
 };
 
 
@@ -337,11 +322,11 @@ inline v8::Local<T> ToApiHandle(
   }
 
 
-#define MAKE_TO_LOCAL_TYPED_ARRAY(TypedArray, typeConst)                    \
-  Local<v8::TypedArray> Utils::ToLocal##TypedArray(                         \
+#define MAKE_TO_LOCAL_TYPED_ARRAY(Type, typeName, TYPE, ctype, size)        \
+  Local<v8::Type##Array> Utils::ToLocal##Type##Array(                       \
       v8::internal::Handle<v8::internal::JSTypedArray> obj) {               \
-    ASSERT(obj->type() == typeConst);                                       \
-    return Convert<v8::internal::JSTypedArray, v8::TypedArray>(obj);        \
+    ASSERT(obj->type() == kExternal##Type##Array);                          \
+    return Convert<v8::internal::JSTypedArray, v8::Type##Array>(obj);       \
   }
 
 
@@ -358,15 +343,7 @@ MAKE_TO_LOCAL(ToLocal, JSArrayBufferView, ArrayBufferView)
 MAKE_TO_LOCAL(ToLocal, JSDataView, DataView)
 MAKE_TO_LOCAL(ToLocal, JSTypedArray, TypedArray)
 
-MAKE_TO_LOCAL_TYPED_ARRAY(Uint8Array, kExternalUnsignedByteArray)
-MAKE_TO_LOCAL_TYPED_ARRAY(Uint8ClampedArray, kExternalPixelArray)
-MAKE_TO_LOCAL_TYPED_ARRAY(Int8Array, kExternalByteArray)
-MAKE_TO_LOCAL_TYPED_ARRAY(Uint16Array, kExternalUnsignedShortArray)
-MAKE_TO_LOCAL_TYPED_ARRAY(Int16Array, kExternalShortArray)
-MAKE_TO_LOCAL_TYPED_ARRAY(Uint32Array, kExternalUnsignedIntArray)
-MAKE_TO_LOCAL_TYPED_ARRAY(Int32Array, kExternalIntArray)
-MAKE_TO_LOCAL_TYPED_ARRAY(Float32Array, kExternalFloatArray)
-MAKE_TO_LOCAL_TYPED_ARRAY(Float64Array, kExternalDoubleArray)
+TYPED_ARRAYS(MAKE_TO_LOCAL_TYPED_ARRAY)
 
 MAKE_TO_LOCAL(ToLocal, FunctionTemplateInfo, FunctionTemplate)
 MAKE_TO_LOCAL(ToLocal, ObjectTemplateInfo, ObjectTemplate)
@@ -393,8 +370,8 @@ MAKE_TO_LOCAL(ToLocal, DeclaredAccessorDescriptor, DeclaredAccessorDescriptor)
     const v8::From* that, bool allow_empty_handle) {                        \
     EXTRA_CHECK(allow_empty_handle || that != NULL);                        \
     EXTRA_CHECK(that == NULL ||                                             \
-        !(*reinterpret_cast<v8::internal::To**>(                            \
-            const_cast<v8::From*>(that)))->IsFailure());                    \
+        (*reinterpret_cast<v8::internal::Object**>(                         \
+            const_cast<v8::From*>(that)))->Is##To());                       \
     return v8::internal::Handle<v8::internal::To>(                          \
         reinterpret_cast<v8::internal::To**>(const_cast<v8::From*>(that))); \
   }
@@ -543,7 +520,8 @@ class HandleScopeImplementer {
   inline bool CallDepthIsZero() { return call_depth_ == 0; }
 
   inline void EnterContext(Handle<Context> context);
-  inline bool LeaveContext(Handle<Context> context);
+  inline void LeaveContext();
+  inline bool LastEnteredContextWas(Handle<Context> context);
 
   // Returns the last entered context or an empty handle if no
   // contexts have been entered.
@@ -599,7 +577,7 @@ class HandleScopeImplementer {
   int call_depth_;
   Object** last_handle_before_deferred_block_;
   // This is only used for threading support.
-  v8::ImplementationUtilities::HandleScopeData handle_scope_data_;
+  HandleScopeData handle_scope_data_;
 
   void IterateThis(ObjectVisitor* v);
   char* RestoreThreadHelper(char* from);
@@ -635,12 +613,13 @@ void HandleScopeImplementer::EnterContext(Handle<Context> context) {
 }
 
 
-bool HandleScopeImplementer::LeaveContext(Handle<Context> context) {
-  if (entered_contexts_.is_empty()) return false;
-  // TODO(dcarney): figure out what's wrong here
-  // if (entered_contexts_.last() != *context) return false;
+void HandleScopeImplementer::LeaveContext() {
   entered_contexts_.RemoveLast();
-  return true;
+}
+
+
+bool HandleScopeImplementer::LastEnteredContextWas(Handle<Context> context) {
+  return !entered_contexts_.is_empty() && entered_contexts_.last() == *context;
 }
 
 

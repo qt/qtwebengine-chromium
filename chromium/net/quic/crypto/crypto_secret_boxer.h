@@ -19,6 +19,8 @@ class QuicRandom;
 // thread-safe.
 class NET_EXPORT_PRIVATE CryptoSecretBoxer {
  public:
+  CryptoSecretBoxer() {}
+
   // GetKeySize returns the number of bytes in a key.
   static size_t GetKeySize();
 
@@ -42,6 +44,8 @@ class NET_EXPORT_PRIVATE CryptoSecretBoxer {
 
  private:
   std::string key_;
+
+  DISALLOW_COPY_AND_ASSIGN(CryptoSecretBoxer);
 };
 
 }  // namespace net

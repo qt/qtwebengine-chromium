@@ -14,7 +14,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/string16.h"
 #include "ui/base/accelerators/platform_accelerator.h"
-#include "ui/base/ui_export.h"
+#include "ui/base/ui_base_export.h"
 #include "ui/events/event_constants.h"
 #include "ui/events/keycodes/keyboard_codes.h"
 
@@ -24,7 +24,7 @@ class PlatformAccelerator;
 
 // This is a cross-platform class for accelerator keys used in menus.
 // |platform_accelerator| should be used to store platform specific data.
-class UI_EXPORT Accelerator {
+class UI_BASE_EXPORT Accelerator {
  public:
   Accelerator();
   Accelerator(ui::KeyboardCode keycode, int modifiers);
@@ -54,6 +54,7 @@ class UI_EXPORT Accelerator {
   bool IsCtrlDown() const;
   bool IsAltDown() const;
   bool IsCmdDown() const;
+  bool IsRepeat() const;
 
   // Returns a string with the localized shortcut if any.
   base::string16 GetShortcutText() const;
@@ -67,6 +68,7 @@ class UI_EXPORT Accelerator {
     return platform_accelerator_.get();
   }
 
+  void set_is_repeat(bool is_repeat) { is_repeat_ = is_repeat; }
 
  protected:
   // The keycode (VK_...).
@@ -78,13 +80,16 @@ class UI_EXPORT Accelerator {
   // The state of the Shift/Ctrl/Alt keys.
   int modifiers_;
 
+  // True if the accelerator is created for an auto repeated key event.
+  bool is_repeat_;
+
   // Stores platform specific data. May be NULL.
   scoped_ptr<PlatformAccelerator> platform_accelerator_;
 };
 
 // An interface that classes that want to register for keyboard accelerators
 // should implement.
-class UI_EXPORT AcceleratorTarget {
+class UI_BASE_EXPORT AcceleratorTarget {
  public:
   // Should return true if the accelerator was processed.
   virtual bool AcceleratorPressed(const Accelerator& accelerator) = 0;

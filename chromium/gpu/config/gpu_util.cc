@@ -67,6 +67,8 @@ void ApplyGpuDriverBugWorkarounds(
                  GpuControlList::kCurrentOsOnly);
   std::set<int> workarounds = list->MakeDecision(
       GpuControlList::kOsAny, std::string(), gpu_info);
+  GpuDriverBugList::AppendWorkaroundsFromCommandLine(
+      &workarounds, *command_line);
   if (!workarounds.empty()) {
     command_line->AppendSwitchASCII(switches::kGpuDriverBugWorkarounds,
                                     IntSetToString(workarounds));

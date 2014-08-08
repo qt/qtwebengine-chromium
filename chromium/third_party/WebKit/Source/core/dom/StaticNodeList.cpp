@@ -30,8 +30,22 @@
 #include "core/dom/StaticNodeList.h"
 
 #include "core/dom/Element.h"
+#include <v8.h>
 
 namespace WebCore {
+
+PassRefPtrWillBeRawPtr<StaticNodeList> StaticNodeList::adopt(WillBeHeapVector<RefPtrWillBeMember<Node> >& nodes)
+{
+    RefPtrWillBeRawPtr<StaticNodeList> nodeList = adoptRefWillBeNoop(new StaticNodeList);
+    nodeList->m_nodes.swap(nodes);
+    v8::Isolate::GetCurrent()->AdjustAmountOfExternalAllocatedMemory(nodeList->AllocationSize());
+    return nodeList.release();
+}
+
+StaticNodeList::~StaticNodeList()
+{
+    v8::Isolate::GetCurrent()->AdjustAmountOfExternalAllocatedMemory(-AllocationSize());
+}
 
 unsigned StaticNodeList::length() const
 {
@@ -45,16 +59,10 @@ Node* StaticNodeList::item(unsigned index) const
     return 0;
 }
 
-Node* StaticNodeList::namedItem(const AtomicString& elementId) const
+void StaticNodeList::trace(Visitor* visitor)
 {
-    size_t length = m_nodes.size();
-    for (size_t i = 0; i < length; ++i) {
-        Node* node = m_nodes[i].get();
-        if (node->isElementNode() && toElement(node)->getIdAttribute() == elementId)
-            return node;
-    }
-
-    return 0;
+    visitor->trace(m_nodes);
+    NodeList::trace(visitor);
 }
 
 } // namespace WebCore

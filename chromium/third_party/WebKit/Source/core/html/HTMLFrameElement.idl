@@ -27,7 +27,7 @@ interface HTMLFrameElement : HTMLElement {
     [Reflect] attribute DOMString name;
     [Reflect] attribute boolean noResize;
     [Reflect] attribute DOMString scrolling;
-    [Reflect, URL, PerWorldBindings, ActivityLogging=SetterForIsolatedWorlds] attribute DOMString src;
+    [Reflect, URL, LogActivity=SetterOnly] attribute DOMString src;
 
     // Introduced in DOM Level 2:
     [CheckSecurity=Node] readonly attribute Document contentDocument;
@@ -35,10 +35,8 @@ interface HTMLFrameElement : HTMLElement {
     // Extensions
     readonly attribute Window contentWindow;
 
-    [CheckSecurity=Node, RaisesException] SVGDocument getSVGDocument();
+    [CheckSecurity=Node, RaisesException] Document getSVGDocument();
 
-    [TreatNullAs=NullString, Custom=Setter, MeasureAs=HTMLFrameElementLocation] attribute DOMString location;
-
-    readonly attribute long width;
-    readonly attribute long height;
+    [MeasureAs=HTMLFrameElementWidth] readonly attribute long width;
+    [MeasureAs=HTMLFrameElementHeight] readonly attribute long height;
 };

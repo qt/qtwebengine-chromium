@@ -22,11 +22,29 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 
+from contextlib import contextmanager
+import filecmp
+import fnmatch
 import os
 import shutil
+import sys
 import tempfile
-from webkitpy.common.checkout.scm.detection import detect_scm_system
-from webkitpy.common.system.executive import ScriptError
+
+from webkitpy.common.system.executive import Executive
+
+# Source/ path is needed both to find input IDL files, and to import other
+# Python modules.
+module_path = os.path.dirname(__file__)
+source_path = os.path.normpath(os.path.join(module_path, os.pardir, os.pardir,
+                                            os.pardir, os.pardir, 'Source'))
+sys.path.append(source_path)  # for Source/bindings imports
+
+import bindings.scripts.compute_interfaces_info_individual
+from bindings.scripts.compute_interfaces_info_individual import compute_info_individual, info_individual
+import bindings.scripts.compute_interfaces_info_overall
+from bindings.scripts.compute_interfaces_info_overall import compute_interfaces_info_overall, interfaces_info
+from bindings.scripts.idl_compiler import IdlCompilerV8
+
 
 PASS_MESSAGE = 'All tests PASS!'
 FAIL_MESSAGE = """Some tests FAIL!
@@ -40,188 +58,124 @@ NOTRY=true
 TBR=(someone in Source/bindings/OWNERS or WATCHLISTS:bindings)
 """
 
-# Python compiler is incomplete; skip IDLs with unimplemented features
-SKIP_PYTHON = set([
-    'TestCustomAccessors.idl',
-    'TestEventTarget.idl',
-    'TestException.idl',
+DEPENDENCY_IDL_FILES = frozenset([
     'TestImplements.idl',
-    'TestInterface.idl',
-    'TestInterfaceImplementedAs.idl',
-    'TestNamedConstructor.idl',
-    'TestNode.idl',
-    'TestObject.idl',
-    'TestOverloadedConstructors.idl',
+    'TestImplements2.idl',
+    'TestImplements3.idl',
     'TestPartialInterface.idl',
-    'TestTypedefs.idl',
+    'TestPartialInterface2.idl',
 ])
 
-input_directory = os.path.join('bindings', 'tests', 'idls')
-support_input_directory = os.path.join('bindings', 'tests', 'idls', 'testing')
-reference_directory = os.path.join('bindings', 'tests', 'results')
-reference_event_names_filename = os.path.join(reference_directory, 'EventInterfaces.in')
+
+test_input_directory = os.path.join(source_path, 'bindings', 'tests', 'idls')
+reference_directory = os.path.join(source_path, 'bindings', 'tests', 'results')
 
 
-class ScopedTempFileProvider(object):
-    def __init__(self):
-        self.files = []
-        self.directories = []
+@contextmanager
+def TemporaryDirectory():
+    """Wrapper for tempfile.mkdtemp() so it's usable with 'with' statement.
 
-    def __del__(self):
-        for filename in self.files:
-            os.remove(filename)
-        for directory in self.directories:
-            shutil.rmtree(directory)
-
-    def newtempfile(self):
-        file_handle, path = tempfile.mkstemp()
-        self.files.append(path)
-        return file_handle, path
-
-    def newtempdir(self):
-        path = tempfile.mkdtemp()
-        self.directories.append(path)
-        return path
-
-provider = ScopedTempFileProvider()
+    Simple backport of tempfile.TemporaryDirectory from Python 3.2.
+    """
+    name = tempfile.mkdtemp()
+    try:
+        yield name
+    finally:
+        shutil.rmtree(name)
 
 
-class BindingsTests(object):
-    def __init__(self, reset_results, test_python, verbose, executive):
-        self.reset_results = reset_results
-        self.test_python = test_python
-        self.verbose = verbose
-        self.executive = executive
-        _, self.interface_dependencies_filename = provider.newtempfile()
-        _, self.derived_sources_list_filename = provider.newtempfile()
-        # Generate output into the reference directory if resetting results, or
-        # a temp directory if not.
-        if reset_results:
-            self.output_directory = reference_directory
-        else:
-            self.output_directory = provider.newtempdir()
-        self.output_directory_py = provider.newtempdir()
-        self.event_names_filename = os.path.join(self.output_directory, 'EventInterfaces.in')
+def generate_interface_dependencies():
+    def idl_paths_recursive(directory):
+        # This is slow, especially on Windows, due to os.walk making
+        # excess stat() calls. Faster versions may appear in Python 3.5 or
+        # later:
+        # https://github.com/benhoyt/scandir
+        # http://bugs.python.org/issue11406
+        idl_paths = []
+        for dirpath, _, files in os.walk(directory):
+            idl_paths.extend(os.path.join(dirpath, filename)
+                             for filename in fnmatch.filter(files, '*.idl'))
+        return idl_paths
 
-    def run_command(self, cmd):
-        output = self.executive.run_command(cmd)
-        if output:
-            print output
+    # We compute interfaces info for *all* IDL files, not just test IDL
+    # files, as code generator output depends on inheritance (both ancestor
+    # chain and inherited extended attributes), and some real interfaces
+    # are special-cased, such as Node.
+    #
+    # For example, when testing the behavior of interfaces that inherit
+    # from Node, we also need to know that these inherit from EventTarget,
+    # since this is also special-cased and Node inherits from EventTarget,
+    # but this inheritance information requires computing dependencies for
+    # the real Node.idl file.
 
-    def generate_from_idl_pl(self, idl_file):
-        cmd = ['perl', '-w',
-               '-Ibindings/scripts',
-               '-Ibuild/scripts',
-               '-Icore/scripts',
-               '-I../../JSON/out/lib/perl5',
-               'bindings/scripts/generate_bindings.pl',
-               # idl include directories (path relative to generate-bindings.pl)
-               '--include', '.',
-               '--outputDir', self.output_directory,
-               '--interfaceDependenciesFile', self.interface_dependencies_filename,
-               '--idlAttributesFile', 'bindings/IDLExtendedAttributes.txt',
-               idl_file]
-        try:
-            self.run_command(cmd)
-        except ScriptError, e:
-            print 'ERROR: generate_bindings.pl: ' + os.path.basename(idl_file)
-            print e.output
-            return e.exit_code
-        return 0
+    # 2-stage computation: individual, then overall
+    #
+    # Properly should compute separately by component (currently test
+    # includes are invalid), but that's brittle (would need to update this file
+    # for each new component) and doesn't test the code generator any better
+    # than using a single component.
+    for idl_filename in idl_paths_recursive(source_path):
+        compute_info_individual(idl_filename, 'tests')
+    info_individuals = [info_individual()]
+    compute_interfaces_info_overall(info_individuals)
 
-    def generate_from_idl_py(self, idl_file):
-        cmd = ['python',
-               'bindings/scripts/unstable/idl_compiler.py',
-               '--output-dir', self.output_directory_py,
-               '--idl-attributes-file', 'bindings/IDLExtendedAttributes.txt',
-               '--include', '.',
-               '--interface-dependencies-file',
-               self.interface_dependencies_filename,
-               idl_file]
-        try:
-            self.run_command(cmd)
-        except ScriptError, e:
-            print 'ERROR: idl_compiler.py: ' + os.path.basename(idl_file)
-            print e.output
-            return e.exit_code
-        return 0
 
-    def generate_interface_dependencies(self):
-        idl_files_list_file, main_idl_files_list_filename = provider.newtempfile()
-        idl_paths = [os.path.join(input_directory, input_file)
-                     for input_file in os.listdir(input_directory)
-                     if input_file.endswith('.idl')]
-        idl_files_list_contents = ''.join(idl_path + '\n'
-                                          for idl_path in idl_paths)
-        os.write(idl_files_list_file, idl_files_list_contents)
-        support_idl_files_list_file, support_idl_files_list_filename = provider.newtempfile()
-        support_idl_paths = [os.path.join(support_input_directory, input_file)
-                     for input_file in os.listdir(support_input_directory)
-                     if input_file.endswith('.idl')]
-        support_idl_files_list_contents = ''.join(idl_path + '\n'
-                                          for idl_path in support_idl_paths)
-        os.write(support_idl_files_list_file, support_idl_files_list_contents)
+def bindings_tests(output_directory, verbose):
+    executive = Executive()
 
-        # Dummy files, required by compute_dependencies but not checked
-        _, window_constructors_file = provider.newtempfile()
-        _, workerglobalscope_constructors_file = provider.newtempfile()
-        _, sharedworkerglobalscope_constructors_file = provider.newtempfile()
-        _, dedicatedworkerglobalscope_constructors_file = provider.newtempfile()
-        _, serviceworkersglobalscope_constructors_file = provider.newtempfile()
-        cmd = ['python',
-               'bindings/scripts/compute_dependencies.py',
-               '--main-idl-files-list', main_idl_files_list_filename,
-               '--support-idl-files-list', support_idl_files_list_filename,
-               '--interface-dependencies-file', self.interface_dependencies_filename,
-               '--bindings-derived-sources-file', self.derived_sources_list_filename,
-               '--window-constructors-file', window_constructors_file,
-               '--workerglobalscope-constructors-file', workerglobalscope_constructors_file,
-               '--sharedworkerglobalscope-constructors-file', sharedworkerglobalscope_constructors_file,
-               '--dedicatedworkerglobalscope-constructors-file', dedicatedworkerglobalscope_constructors_file,
-               '--serviceworkerglobalscope-constructors-file', serviceworkersglobalscope_constructors_file,
-               '--event-names-file', self.event_names_filename,
-               '--write-file-only-if-changed', '0']
-
-        if self.reset_results and self.verbose:
-            print 'Reset results: EventInterfaces.in'
-        try:
-            self.run_command(cmd)
-        except ScriptError, e:
-            print 'ERROR: compute_dependencies.py'
-            print e.output
-            return e.exit_code
-        return 0
-
-    def identical_file(self, reference_filename, output_filename):
-        reference_basename = os.path.basename(reference_filename)
+    def diff(filename1, filename2):
+        # Python's difflib module is too slow, especially on long output, so
+        # run external diff(1) command
         cmd = ['diff',
-               '-u',
-               '-N',
-               reference_filename,
-               output_filename]
-        try:
-            self.run_command(cmd)
-        except ScriptError, e:
-            # run_command throws an exception on diff (b/c non-zero exit code)
-            print 'FAIL: %s' % reference_basename
-            print e.output
+               '-u',  # unified format
+               '-N',  # treat absent files as empty
+               filename1,
+               filename2]
+        # Return output and don't raise exception, even though diff(1) has
+        # non-zero exit if files differ.
+        return executive.run_command(cmd, error_handler=lambda x: None)
+
+    def delete_cache_files():
+        # FIXME: Instead of deleting cache files, don't generate them.
+        cache_files = [os.path.join(output_directory, output_file)
+                       for output_file in os.listdir(output_directory)
+                       if (output_file in ('lextab.py',  # PLY lex
+                                           'lextab.pyc',
+                                           'parsetab.pickle') or  # PLY yacc
+                           output_file.endswith('.cache'))]  # Jinja
+        for cache_file in cache_files:
+            os.remove(cache_file)
+
+    def identical_file(reference_filename, output_filename):
+        reference_basename = os.path.basename(reference_filename)
+
+        if not os.path.isfile(reference_filename):
+            print 'Missing reference file!'
+            print '(if adding new test, update reference files)'
+            print reference_basename
+            print
             return False
 
-        if self.verbose:
+        if not filecmp.cmp(reference_filename, output_filename):
+            # cmp is much faster than diff, and usual case is "no differance",
+            # so only run diff if cmp detects a difference
+            print 'FAIL: %s' % reference_basename
+            print diff(reference_filename, output_filename)
+            return False
+
+        if verbose:
             print 'PASS: %s' % reference_basename
         return True
 
-    def identical_output_files(self, output_directory):
+    def identical_output_files():
         file_pairs = [(os.path.join(reference_directory, output_file),
                        os.path.join(output_directory, output_file))
-                      for output_file in os.listdir(output_directory)
-                      # FIXME: add option to compiler to not generate tables
-                      if output_file != 'parsetab.py']
-        return all([self.identical_file(reference_filename, output_filename)
+                      for output_file in os.listdir(output_directory)]
+        return all([identical_file(reference_filename, output_filename)
                     for (reference_filename, output_filename) in file_pairs])
 
-    def no_excess_files(self):
-        generated_files = set(os.listdir(self.output_directory))
+    def no_excess_files():
+        generated_files = set(os.listdir(output_directory))
         generated_files.add('.svn')  # Subversion working copy directory
         excess_files = [output_file
                         for output_file in os.listdir(reference_directory)
@@ -233,52 +187,46 @@ class BindingsTests(object):
             return False
         return True
 
-    def run_tests(self):
-        # Generate output, immediately dying on failure
-        if self.generate_interface_dependencies():
-            return False
+    try:
+        generate_interface_dependencies()
+        idl_compiler = IdlCompilerV8(output_directory,
+                                     interfaces_info=interfaces_info,
+                                     only_if_changed=True)
 
-        for directory in [input_directory, support_input_directory]:
-            for input_filename in os.listdir(directory):
-                if not input_filename.endswith('.idl'):
-                    continue
-                idl_path = os.path.join(directory, input_filename)
-                if self.generate_from_idl_pl(idl_path):
-                    return False
-                if self.reset_results and self.verbose:
-                    print 'Reset results: %s' % input_filename
-                if not self.test_python:
-                    continue
-                if (input_filename in SKIP_PYTHON or
-                    directory == support_input_directory):
-                    if self.verbose:
-                        print 'SKIP: %s' % input_filename
-                    continue
-                if self.generate_from_idl_py(idl_path):
-                    return False
+        idl_basenames = [filename
+                         for filename in os.listdir(test_input_directory)
+                         if (filename.endswith('.idl') and
+                             # Dependencies aren't built
+                             # (they are used by the dependent)
+                             filename not in DEPENDENCY_IDL_FILES)]
+        for idl_basename in idl_basenames:
+            idl_path = os.path.realpath(
+                os.path.join(test_input_directory, idl_basename))
+            idl_compiler.compile_file(idl_path)
+            if verbose:
+                print 'Compiled: %s' % filename
+    finally:
+        delete_cache_files()
 
-        # Detect all changes
-        passed = self.identical_file(reference_event_names_filename,
-                                     self.event_names_filename)
-        passed &= self.identical_output_files(self.output_directory)
-        if self.test_python:
-            if self.verbose:
-                print
-                print 'Python:'
-            passed &= self.identical_output_files(self.output_directory_py)
-        passed &= self.no_excess_files()
-        return passed
+    # Detect all changes
+    passed = identical_output_files()
+    passed &= no_excess_files()
 
-    def main(self):
-        current_scm = detect_scm_system(os.curdir)
-        os.chdir(os.path.join(current_scm.checkout_root, 'Source'))
+    if passed:
+        if verbose:
+            print
+            print PASS_MESSAGE
+        return 0
+    print
+    print FAIL_MESSAGE
+    return 1
 
-        all_tests_passed = self.run_tests()
-        if all_tests_passed:
-            if self.verbose:
-                print
-                print PASS_MESSAGE
-            return 0
-        print
-        print FAIL_MESSAGE
-        return -1
+
+def run_bindings_tests(reset_results, verbose):
+    # Generate output into the reference directory if resetting results, or
+    # a temp directory if not.
+    if reset_results:
+        print 'Resetting results'
+        return bindings_tests(reference_directory, verbose)
+    with TemporaryDirectory() as temp_dir:
+        return bindings_tests(temp_dir, verbose)

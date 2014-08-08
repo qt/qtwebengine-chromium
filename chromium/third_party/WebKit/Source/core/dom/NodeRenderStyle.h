@@ -27,6 +27,7 @@
 
 #include "core/dom/Node.h"
 #include "core/dom/NodeRenderingTraversal.h"
+#include "core/html/HTMLOptGroupElement.h"
 #include "core/rendering/RenderObject.h"
 #include "core/rendering/style/RenderStyle.h"
 
@@ -34,11 +35,14 @@ namespace WebCore {
 
 inline RenderStyle* Node::renderStyle() const
 {
-    // Using a ternary here confuses the Solaris Studio 12/12.1/12.2 compilers:
-    // Bug is CR 6569194, "Problem with question operator binding in inline function"
     if (RenderObject* renderer = this->renderer())
         return renderer->style();
-    return nonRendererStyle();
+    // <option> and <optgroup> can be styled even though they never get renderers,
+    // so they store their style internally and return it through nonRendererStyle().
+    // We check here explicitly to avoid the virtual call in the common case.
+    if (isHTMLOptGroupElement(*this) || isHTMLOptionElement(this))
+        return nonRendererStyle();
+    return 0;
 }
 
 inline RenderStyle* Node::parentRenderStyle() const

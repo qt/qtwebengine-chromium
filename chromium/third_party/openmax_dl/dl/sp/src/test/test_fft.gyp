@@ -128,13 +128,26 @@
         },
       ],
     }],
+    ['target_arch == "arm64"', {
+      'targets': [
+        {
+          # Test complex floating-point FFT
+          'target_name': 'test_float_fft',
+          'type': 'executable',
+          'sources': [
+            'test_float_fft.c',
+            'support/float_fft_neon.c',
+          ],
+        },
+      ],
+    }],
   ],
   'targets': [
     # Targets that should be supported by all architectures
     {
       # Test utilities
       'target_name': 'test_utilities',
-      'type' : '<(component)',
+      'type' : 'static_library',
       'dependencies!' : [
         'test_utilities'
       ],
@@ -143,6 +156,7 @@
         'compare.c',
         'gensig.c',
         'test_util.c',
+        'test_util_fft.c',
       ],
     },
     {
@@ -154,7 +168,7 @@
         'support/float_rfft_thresholds.h',
       ],
       'conditions': [
-        ['target_arch == "arm"', {
+        ['target_arch == "arm" or target_arch == "arm64"', {
           'sources': [
             'support/float_rfft_neon.c',
           ],
@@ -162,6 +176,11 @@
         ['target_arch == "ia32"', {
           'sources': [
             'support/float_rfft_x86.c',
+          ],
+        }],
+        ['target_arch == "mipsel"', {
+          'sources': [
+            'support/float_rfft_mips.c',
           ],
         }],
       ],
@@ -174,9 +193,9 @@
         'test_fft_time.c',
       ],
       'conditions': [
-        ['target_arch == "ia32"', {
+        ['target_arch == "ia32" or target_arch == "arm64" or target_arch == "mipsel"', {
           'defines': [
-            # Timing test only for float FFTs on x86
+            # Timing test only for float FFTs on x86 and arm64 and MIPSEL.
             'FLOAT_ONLY',
           ],
         }],
@@ -204,6 +223,12 @@
             # Tests with detection
             'test_float_rfft_detect',
           ],
+        }],
+        ['target_arch == "arm64"', {
+          # Supported test programs for ARM64
+          'dependencies': [
+            'test_float_fft',
+           ],
         }],
       ],
       'dependencies' : [

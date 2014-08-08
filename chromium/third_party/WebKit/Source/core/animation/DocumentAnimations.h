@@ -31,7 +31,7 @@
 #ifndef DocumentAnimations_h
 #define DocumentAnimations_h
 
-#include "CSSPropertyNames.h"
+#include "core/CSSPropertyNames.h"
 
 namespace WebCore {
 
@@ -39,11 +39,13 @@ class Document;
 class FrameView;
 class Node;
 
-class DocumentAnimations  {
+class DocumentAnimations {
 public:
-    static void serviceOnAnimationFrame(Document&, double monotonicAnimationStartTime);
-    static void serviceBeforeGetComputedStyle(Node&, CSSPropertyID);
-    static void serviceAfterStyleRecalc(Document&);
+    static void updateAnimationTimingForAnimationFrame(Document&, double monotonicAnimationStartTime);
+    static bool needsOutdatedAnimationPlayerUpdate(const Document&);
+    static void updateOutdatedAnimationPlayersIfNeeded(Document&);
+    static void updateAnimationTimingForGetComputedStyle(Node&, CSSPropertyID);
+    static void startPendingAnimations(Document&);
 
 private:
     DocumentAnimations() { }

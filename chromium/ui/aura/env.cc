@@ -4,62 +4,47 @@
 
 #include "ui/aura/env.h"
 
-#include "base/command_line.h"
+#include "base/lazy_instance.h"
+#include "base/threading/thread_local.h"
 #include "ui/aura/env_observer.h"
 #include "ui/aura/input_state_lookup.h"
-#include "ui/aura/window.h"
-#include "ui/compositor/compositor.h"
-#include "ui/compositor/compositor_switches.h"
 #include "ui/events/event_target_iterator.h"
+#include "ui/events/platform/platform_event_source.h"
 
-#if defined(USE_X11)
-#include "base/message_loop/message_pump_x11.h"
+#if defined(USE_OZONE)
+#include "ui/ozone/ozone_platform.h"
 #endif
 
 namespace aura {
 
-// static
-Env* Env::instance_ = NULL;
+namespace {
+
+// Env is thread local so that aura may be used on multiple threads.
+base::LazyInstance<base::ThreadLocalPointer<Env> >::Leaky lazy_tls_ptr =
+    LAZY_INSTANCE_INITIALIZER;
+
+}  // namespace
 
 ////////////////////////////////////////////////////////////////////////////////
 // Env, public:
 
-Env::Env()
-    : mouse_button_flags_(0),
-      is_touch_down_(false),
-      input_state_lookup_(InputStateLookup::Create().Pass()) {
-}
-
-Env::~Env() {
-#if defined(USE_X11)
-  base::MessagePumpX11::Current()->RemoveObserver(
-      &device_list_updater_aurax11_);
-#endif
-
-  FOR_EACH_OBSERVER(EnvObserver, observers_, OnWillDestroyEnv());
-
-  ui::Compositor::Terminate();
-}
-
-//static
-void Env::CreateInstance() {
-  if (!instance_) {
-    instance_ = new Env;
-    instance_->Init();
-  }
+// static
+void Env::CreateInstance(bool create_event_source) {
+  if (!lazy_tls_ptr.Pointer()->Get())
+    (new Env())->Init(create_event_source);
 }
 
 // static
 Env* Env::GetInstance() {
-  DCHECK(instance_) << "Env::CreateInstance must be called before getting "
-                       "the instance of Env.";
-  return instance_;
+  Env* env = lazy_tls_ptr.Pointer()->Get();
+  DCHECK(env) << "Env::CreateInstance must be called before getting the "
+                 "instance of Env.";
+  return env;
 }
 
 // static
 void Env::DeleteInstance() {
-  delete instance_;
-  instance_ = NULL;
+  delete lazy_tls_ptr.Pointer()->Get();
 }
 
 void Env::AddObserver(EnvObserver* observer) {
@@ -75,47 +60,44 @@ bool Env::IsMouseButtonDown() const {
       mouse_button_flags_ != 0;
 }
 
-#if !defined(OS_MACOSX) && !defined(OS_ANDROID) && \
-    !defined(USE_GTK_MESSAGE_PUMP)
-base::MessageLoop::Dispatcher* Env::GetDispatcher() {
-#if defined(USE_X11)
-  return base::MessagePumpX11::Current();
-#else
-  return dispatcher_.get();
-#endif
-}
-#endif
-
-void Env::RootWindowActivated(RootWindow* root_window) {
-  FOR_EACH_OBSERVER(EnvObserver, observers_,
-                    OnRootWindowActivated(root_window));
-}
-
 ////////////////////////////////////////////////////////////////////////////////
 // Env, private:
 
-void Env::Init() {
-#if !defined(OS_MACOSX) && !defined(OS_ANDROID) && !defined(USE_X11) && \
-    !defined(USE_OZONE)
-  dispatcher_.reset(CreateDispatcher());
+Env::Env()
+    : mouse_button_flags_(0),
+      is_touch_down_(false),
+      input_state_lookup_(InputStateLookup::Create().Pass()),
+      context_factory_(NULL) {
+  DCHECK(lazy_tls_ptr.Pointer()->Get() == NULL);
+  lazy_tls_ptr.Pointer()->Set(this);
+}
+
+Env::~Env() {
+  FOR_EACH_OBSERVER(EnvObserver, observers_, OnWillDestroyEnv());
+  DCHECK_EQ(this, lazy_tls_ptr.Pointer()->Get());
+  lazy_tls_ptr.Pointer()->Set(NULL);
+}
+
+void Env::Init(bool create_event_source) {
+#if defined(USE_OZONE)
+  // The ozone platform can provide its own event source. So initialize the
+  // platform before creating the default event source.
+  ui::OzonePlatform::InitializeForUI();
 #endif
-#if defined(USE_X11)
-  // We can't do this with a root window listener because XI_HierarchyChanged
-  // messages don't have a target window.
-  base::MessagePumpX11::Current()->AddObserver(
-      &device_list_updater_aurax11_);
-#endif
-  ui::Compositor::Initialize();
+  if (create_event_source && !ui::PlatformEventSource::GetInstance())
+    event_source_ = ui::PlatformEventSource::CreateDefault();
 }
 
 void Env::NotifyWindowInitialized(Window* window) {
   FOR_EACH_OBSERVER(EnvObserver, observers_, OnWindowInitialized(window));
 }
 
-void Env::NotifyRootWindowInitialized(RootWindow* root_window) {
-  FOR_EACH_OBSERVER(EnvObserver,
-                    observers_,
-                    OnRootWindowInitialized(root_window));
+void Env::NotifyHostInitialized(WindowTreeHost* host) {
+  FOR_EACH_OBSERVER(EnvObserver, observers_, OnHostInitialized(host));
+}
+
+void Env::NotifyHostActivated(WindowTreeHost* host) {
+  FOR_EACH_OBSERVER(EnvObserver, observers_, OnHostActivated(host));
 }
 
 ////////////////////////////////////////////////////////////////////////////////

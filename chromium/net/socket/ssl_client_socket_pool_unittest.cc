@@ -159,15 +159,15 @@ class SSLClientSocketPoolTest
         proxy == ProxyServer::SCHEME_HTTP ? http_proxy_socket_params_ : NULL,
         HostPortPair("host", 443),
         ssl_config_,
-        kPrivacyModeDisabled,
+        PRIVACY_MODE_DISABLED,
         0,
         false,
         want_spdy_over_npn));
   }
 
   void AddAuthToCache() {
-    const base::string16 kFoo(ASCIIToUTF16("foo"));
-    const base::string16 kBar(ASCIIToUTF16("bar"));
+    const base::string16 kFoo(base::ASCIIToUTF16("foo"));
+    const base::string16 kBar(base::ASCIIToUTF16("bar"));
     session_->http_auth_cache()->Add(GURL("http://proxy:443/"),
                                      "MyRealm1",
                                      HttpAuth::AUTH_SCHEME_BASIC,
@@ -227,8 +227,7 @@ INSTANTIATE_TEST_CASE_P(
     NextProto,
     SSLClientSocketPoolTest,
     testing::Values(kProtoDeprecatedSPDY2,
-                    kProtoSPDY3, kProtoSPDY31, kProtoSPDY4a2,
-                    kProtoHTTP2Draft04));
+                    kProtoSPDY3, kProtoSPDY31, kProtoSPDY4));
 
 TEST_P(SSLClientSocketPoolTest, TCPFail) {
   StaticSocketDataProvider data;
@@ -799,7 +798,8 @@ TEST_P(SSLClientSocketPoolTest, NeedProxyAuth) {
   EXPECT_FALSE(tunnel_handle->socket()->IsConnected());
 }
 
-TEST_P(SSLClientSocketPoolTest, IPPooling) {
+// TODO(rch): re-enable this.
+TEST_P(SSLClientSocketPoolTest, DISABLED_IPPooling) {
   const int kTestPort = 80;
   struct TestHosts {
     std::string name;
@@ -830,7 +830,7 @@ TEST_P(SSLClientSocketPoolTest, IPPooling) {
     // Setup a SpdySessionKey
     test_hosts[i].key = SpdySessionKey(
         HostPortPair(test_hosts[i].name, kTestPort), ProxyServer::Direct(),
-        kPrivacyModeDisabled);
+        PRIVACY_MODE_DISABLED);
   }
 
   MockRead reads[] = {
@@ -891,7 +891,7 @@ void SSLClientSocketPoolTest::TestIPPoolingDisabled(
     // Setup a SpdySessionKey
     test_hosts[i].key = SpdySessionKey(
         HostPortPair(test_hosts[i].name, kTestPort), ProxyServer::Direct(),
-        kPrivacyModeDisabled);
+        PRIVACY_MODE_DISABLED);
   }
 
   MockRead reads[] = {

@@ -32,29 +32,44 @@
 #define ParentNode_h
 
 #include "core/dom/ContainerNode.h"
+#include "core/dom/ElementTraversal.h"
+#include "platform/heap/Handle.h"
 
 namespace WebCore {
 
 class ParentNode {
 public:
-    static PassRefPtr<HTMLCollection> children(ContainerNode* node)
+    static PassRefPtrWillBeRawPtr<HTMLCollection> children(ContainerNode& node)
     {
-        return node->children();
+        return node.children();
     }
 
-    static Element* firstElementChild(ContainerNode* node)
+    static Element* firstElementChild(ContainerNode& node)
     {
-        return node->firstElementChild();
+        return ElementTraversal::firstChild(node);
     }
 
-    static Element* lastElementChild(ContainerNode* node)
+    static Element* lastElementChild(ContainerNode& node)
     {
-        return node->lastElementChild();
+        return ElementTraversal::lastChild(node);
     }
 
-    static unsigned childElementCount(ContainerNode* node)
+    static unsigned childElementCount(ContainerNode& node)
     {
-        return node->childElementCount();
+        unsigned count = 0;
+        for (Element* child = ElementTraversal::firstWithin(node); child; child = ElementTraversal::nextSibling(*child))
+            ++count;
+        return count;
+    }
+
+    static PassRefPtrWillBeRawPtr<Element> querySelector(ContainerNode& node, const AtomicString& selectors, ExceptionState& exceptionState)
+    {
+        return node.querySelector(selectors, exceptionState);
+    }
+
+    static PassRefPtrWillBeRawPtr<StaticNodeList> querySelectorAll(ContainerNode& node, const AtomicString& selectors, ExceptionState& exceptionState)
+    {
+        return node.querySelectorAll(selectors, exceptionState);
     }
 };
 

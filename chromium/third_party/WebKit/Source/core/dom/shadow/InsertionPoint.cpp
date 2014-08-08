@@ -31,13 +31,11 @@
 #include "config.h"
 #include "core/dom/shadow/InsertionPoint.h"
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 #include "core/dom/ElementTraversal.h"
 #include "core/dom/QualifiedName.h"
 #include "core/dom/StaticNodeList.h"
 #include "core/dom/shadow/ElementShadow.h"
-#include "core/html/shadow/HTMLContentElement.h"
-#include "core/html/shadow/HTMLShadowElement.h"
 
 namespace WebCore {
 
@@ -100,7 +98,7 @@ void InsertionPoint::setDistribution(ContentDistribution& distribution)
 void InsertionPoint::attach(const AttachContext& context)
 {
     // We need to attach the distribution here so that they're inserted in the right order
-    // otherwise the n^2 protection inside NodeRenderingContext will cause them to be
+    // otherwise the n^2 protection inside RenderTreeBuilder will cause them to be
     // inserted in the wrong place later. This also lets distributed nodes benefit from
     // the n^2 protection.
     for (size_t i = 0; i < m_distribution.size(); ++i) {
@@ -124,7 +122,7 @@ void InsertionPoint::willRecalcStyle(StyleRecalcChange change)
     if (change < Inherit)
         return;
     for (size_t i = 0; i < m_distribution.size(); ++i)
-        m_distribution.at(i)->setNeedsStyleRecalc(LocalStyleChange);
+        m_distribution.at(i)->setNeedsStyleRecalc(SubtreeStyleChange);
 }
 
 bool InsertionPoint::shouldUseFallbackElements() const
@@ -136,16 +134,9 @@ bool InsertionPoint::canBeActive() const
 {
     if (!isInShadowTree())
         return false;
-    bool foundShadowElementInAncestors = false;
-    bool thisIsContentHTMLElement = isHTMLContentElement(this);
     for (Node* node = parentNode(); node; node = node->parentNode()) {
-        if (node->isInsertionPoint()) {
-            // For HTMLContentElement, at most one HTMLShadowElement may appear in its ancestors.
-            if (thisIsContentHTMLElement && isHTMLShadowElement(node) && !foundShadowElementInAncestors)
-                foundShadowElementInAncestors = true;
-            else
-                return false;
-        }
+        if (node->isInsertionPoint())
+            return false;
     }
     return true;
 }
@@ -155,15 +146,16 @@ bool InsertionPoint::isActive() const
     if (!canBeActive())
         return false;
     ShadowRoot* shadowRoot = containingShadowRoot();
-    ASSERT(shadowRoot);
-    if (!isHTMLShadowElement(this) || shadowRoot->descendantShadowElementCount() <= 1)
+    if (!shadowRoot)
+        return false;
+    if (!isHTMLShadowElement(*this) || shadowRoot->descendantShadowElementCount() <= 1)
         return true;
 
     // Slow path only when there are more than one shadow elements in a shadow tree. That should be a rare case.
-    const Vector<RefPtr<InsertionPoint> >& insertionPoints = shadowRoot->descendantInsertionPoints();
+    const WillBeHeapVector<RefPtrWillBeMember<InsertionPoint> >& insertionPoints = shadowRoot->descendantInsertionPoints();
     for (size_t i = 0; i < insertionPoints.size(); ++i) {
         InsertionPoint* point = insertionPoints[i].get();
-        if (isHTMLShadowElement(point))
+        if (isHTMLShadowElement(*point))
             return point == this;
     }
     return true;
@@ -171,19 +163,19 @@ bool InsertionPoint::isActive() const
 
 bool InsertionPoint::isShadowInsertionPoint() const
 {
-    return isHTMLShadowElement(this) && isActive();
+    return isHTMLShadowElement(*this) && isActive();
 }
 
 bool InsertionPoint::isContentInsertionPoint() const
 {
-    return isHTMLContentElement(this) && isActive();
+    return isHTMLContentElement(*this) && isActive();
 }
 
-PassRefPtr<NodeList> InsertionPoint::getDistributedNodes()
+PassRefPtrWillBeRawPtr<StaticNodeList> InsertionPoint::getDistributedNodes()
 {
     document().updateDistributionForNodeIfNeeded(this);
 
-    Vector<RefPtr<Node> > nodes;
+    WillBeHeapVector<RefPtrWillBeMember<Node> > nodes;
     nodes.reserveInitialCapacity(m_distribution.size());
     for (size_t i = 0; i < m_distribution.size(); ++i)
         nodes.uncheckedAppend(m_distribution.at(i));
@@ -214,7 +206,6 @@ Node::InsertionNotificationRequest InsertionPoint::insertedInto(ContainerNode* i
             if (canBeActive() && !m_registeredWithShadowRoot && insertionPoint->treeScope().rootNode() == root) {
                 m_registeredWithShadowRoot = true;
                 root->didAddInsertionPoint(this);
-                rootOwner->didAffectApplyAuthorStyles();
                 if (canAffectSelector())
                     rootOwner->willAffectSelector();
             }
@@ -246,7 +237,6 @@ void InsertionPoint::removedFrom(ContainerNode* insertionPoint)
         m_registeredWithShadowRoot = false;
         root->didRemoveInsertionPoint(this);
         if (rootOwner) {
-            rootOwner->didAffectApplyAuthorStyles();
             if (canAffectSelector())
                 rootOwner->willAffectSelector();
         }
@@ -255,24 +245,10 @@ void InsertionPoint::removedFrom(ContainerNode* insertionPoint)
     HTMLElement::removedFrom(insertionPoint);
 }
 
-void InsertionPoint::parseAttribute(const QualifiedName& name, const AtomicString& value)
+void InsertionPoint::trace(Visitor* visitor)
 {
-    if (name == reset_style_inheritanceAttr) {
-        if (!inDocument() || !isActive())
-            return;
-        containingShadowRoot()->host()->setNeedsStyleRecalc();
-    } else
-        HTMLElement::parseAttribute(name, value);
-}
-
-bool InsertionPoint::resetStyleInheritance() const
-{
-    return fastHasAttribute(reset_style_inheritanceAttr);
-}
-
-void InsertionPoint::setResetStyleInheritance(bool value)
-{
-    setBooleanAttribute(reset_style_inheritanceAttr, value);
+    visitor->trace(m_distribution);
+    HTMLElement::trace(visitor);
 }
 
 const InsertionPoint* resolveReprojection(const Node* projectedNode)
@@ -296,7 +272,7 @@ const InsertionPoint* resolveReprojection(const Node* projectedNode)
     return insertionPoint;
 }
 
-void collectDestinationInsertionPoints(const Node& node, Vector<InsertionPoint*, 8>& results)
+void collectDestinationInsertionPoints(const Node& node, WillBeHeapVector<RawPtrWillBeMember<InsertionPoint>, 8>& results)
 {
     const Node* current = &node;
     ElementShadow* lastElementShadow = 0;

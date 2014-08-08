@@ -15,7 +15,7 @@
 #include "content/common/content_export.h"
 #include "content/common/gpu/media/va_surface.h"
 #include "media/base/video_decoder_config.h"
-#include "third_party/libva/va/va.h"
+#include "media/base/video_frame.h"
 #include "third_party/libva/va/va_x11.h"
 #include "ui/gfx/size.h"
 
@@ -81,6 +81,17 @@ class CONTENT_EXPORT VaapiWrapper {
   // Returns true if the VAAPI version is less than the specified version.
   bool VAAPIVersionLessThan(int major, int minor);
 
+  // Get a VAImage from a VASurface and map it into memory. The VAImage should
+  // be released using the ReturnVaImage function. Returns true when successful.
+  // This is intended for testing only.
+  bool GetVaImageForTesting(VASurfaceID va_surface_id,
+                            VAImage* image,
+                            void** mem);
+
+  // Release the VAImage (and the associated memory mapping) obtained from
+  // GetVaImage(). This is intended for testing only.
+  void ReturnVaImageForTesting(VAImage* image);
+
  private:
   VaapiWrapper();
 
@@ -93,6 +104,9 @@ class CONTENT_EXPORT VaapiWrapper {
   // vaapi driver refuses to accept parameter or slice buffers submitted
   // by client or if decode fails in hardware.
   bool SubmitDecode(VASurfaceID va_surface_id);
+
+  // Attempt to set render mode to "render to texture.". Failure is non-fatal.
+  void TryToSetVADisplayAttributeToLocalGPU();
 
   // Lazily initialize static data after sandbox is enabled.  Return false on
   // init failure.
@@ -124,9 +138,6 @@ class CONTENT_EXPORT VaapiWrapper {
   // Called to report decoding errors to UMA. Errors to clients are reported via
   // return values from public methods.
   base::Closure report_error_to_uma_cb_;
-
-  // Has static initialization of pre-sandbox components completed successfully?
-  static bool pre_sandbox_init_done_;
 
   DISALLOW_COPY_AND_ASSIGN(VaapiWrapper);
 };

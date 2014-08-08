@@ -20,7 +20,7 @@
  */
 
 #include "config.h"
-#include "StylePropertyShorthand.h"
+#include "core/StylePropertyShorthand.h"
 
 namespace WebCore {
 
@@ -86,6 +86,31 @@ const StylePropertyShorthand& webkitAnimationShorthandForParsing()
     return webkitAnimationLonghandsForParsing;
 }
 
+// Similar to animations, we have property after timing-function and delay after duration
+const StylePropertyShorthand& transitionShorthandForParsing()
+{
+    static const CSSPropertyID transitionProperties[] = {
+        CSSPropertyTransitionDuration,
+        CSSPropertyTransitionTimingFunction,
+        CSSPropertyTransitionDelay,
+        CSSPropertyTransitionProperty
+    };
+    DEFINE_STATIC_LOCAL(StylePropertyShorthand, transitionLonghands, (CSSPropertyTransition, transitionProperties, WTF_ARRAY_LENGTH(transitionProperties)));
+    return transitionLonghands;
+}
+
+const StylePropertyShorthand& webkitTransitionShorthandForParsing()
+{
+    static const CSSPropertyID webkitTransitionProperties[] = {
+        CSSPropertyWebkitTransitionDuration,
+        CSSPropertyWebkitTransitionTimingFunction,
+        CSSPropertyWebkitTransitionDelay,
+        CSSPropertyWebkitTransitionProperty
+    };
+    DEFINE_STATIC_LOCAL(StylePropertyShorthand, webkitTransitionLonghands, (CSSPropertyWebkitTransition, webkitTransitionProperties, WTF_ARRAY_LENGTH(webkitTransitionProperties)));
+    return webkitTransitionLonghands;
+}
+
 // Returns an empty list if the property is not a shorthand, otherwise the list of longhands for parsing.
 const StylePropertyShorthand& parsingShorthandForProperty(CSSPropertyID propertyID)
 {
@@ -96,6 +121,10 @@ const StylePropertyShorthand& parsingShorthandForProperty(CSSPropertyID property
         return borderShorthandForParsing();
     case CSSPropertyWebkitAnimation:
         return webkitAnimationShorthandForParsing();
+    case CSSPropertyTransition:
+        return transitionShorthandForParsing();
+    case CSSPropertyWebkitTransition:
+        return webkitTransitionShorthandForParsing();
     default:
         return shorthandForProperty(propertyID);
     }
@@ -111,6 +140,22 @@ bool isExpandedShorthand(CSSPropertyID id)
         return false;
 
     return shorthandForProperty(id).length();
+}
+
+bool isExpandedShorthandForAll(CSSPropertyID propertyId)
+{
+    // FIXME: isExpandedShorthand says "font" is not an expanded shorthand,
+    // but font is expanded to font-family, font-size, and so on.
+    // StylePropertySerializer::asText should not generate css text like
+    // "font: initial; font-family: initial;...". To avoid this, we need to
+    // treat "font" as an expanded shorthand.
+    // And while applying "all" property, we cannot apply "font" property
+    // directly. This causes ASSERT crash, because StyleBuilder assume that
+    // all given properties are not expanded shorthands.
+    // "marker" has the same issue.
+    if (propertyId == CSSPropertyMarker || propertyId == CSSPropertyFont)
+        return true;
+    return shorthandForProperty(propertyId).length();
 }
 
 unsigned indexOfShorthandForLonghand(CSSPropertyID shorthandID, const Vector<StylePropertyShorthand, 4>& shorthands)

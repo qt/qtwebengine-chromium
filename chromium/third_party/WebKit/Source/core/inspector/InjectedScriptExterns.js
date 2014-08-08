@@ -39,6 +39,12 @@ InjectedScriptHostClass.prototype.getInternalProperties = function(object) { }
  */
 InjectedScriptHostClass.prototype.functionDetails = function(func) { }
 /**
+ * @param {!Object} receiver
+ * @param {!Function} func
+ * @param {...*} args
+ */
+InjectedScriptHostClass.prototype.suppressWarningsAndCall = function(receiver, func, args) { }
+/**
  * @param {*} object
  */
 InjectedScriptHostClass.prototype.isHTMLAllCollection = function(object) { }
@@ -46,10 +52,7 @@ InjectedScriptHostClass.prototype.isHTMLAllCollection = function(object) { }
  * @param {*} object
  */
 InjectedScriptHostClass.prototype.internalConstructorName = function(object) { }
-/**
- * @param {*} object
- */
-InjectedScriptHostClass.prototype.copyText = function(object) { }
+
 InjectedScriptHostClass.prototype.clearConsoleMessages = function() { }
 /**
  * @param {number} index
@@ -157,8 +160,6 @@ function JavaScriptFunction()
     this.rawScopes;
 }
 
-var InspectorBackend = { };
-
 // http://code.google.com/p/v8/wiki/JavaScriptStackTraceApi
 /**
  * @constructor
@@ -178,3 +179,14 @@ CallSite.prototype.getLineNumber = function() { }
  * @return {number}
  */
 CallSite.prototype.getColumnNumber = function() { }
+
+// FIXME: Remove once ES6 is supported natively by JS compiler.
+
+/** @typedef {string} */
+var symbol;
+
+/**
+ * @param {string} description
+ * @return {symbol}
+ */
+function Symbol(description) {}

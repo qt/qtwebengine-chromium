@@ -34,7 +34,6 @@
 #import "core/html/TimeRanges.h"
 #import "core/html/shadow/MediaControlElements.h"
 #import "core/frame/FrameView.h"
-#import "core/platform/mac/ThemeMac.h"
 #import "core/rendering/PaintInfo.h"
 #import "core/rendering/RenderLayer.h"
 #import "core/rendering/RenderMedia.h"
@@ -50,9 +49,9 @@
 #import "platform/graphics/GraphicsContextStateSaver.h"
 #import "platform/graphics/Image.h"
 #import "platform/graphics/ImageBuffer.h"
-#import "platform/graphics/cg/GraphicsContextCG.h"
 #import "platform/mac/ColorMac.h"
 #import "platform/mac/LocalCurrentGraphicsContext.h"
+#import "platform/mac/ThemeMac.h"
 #import "platform/mac/WebCoreNSCellExtras.h"
 #import "platform/text/PlatformLocale.h"
 #import "platform/text/StringTruncator.h"
@@ -194,6 +193,11 @@ Color RenderThemeChromiumMac::platformInactiveSelectionBackgroundColor() const
     return Color(static_cast<int>(255.0 * [color redComponent]), static_cast<int>(255.0 * [color greenComponent]), static_cast<int>(255.0 * [color blueComponent]));
 }
 
+Color RenderThemeChromiumMac::platformActiveSelectionForegroundColor() const
+{
+    return Color::black;
+}
+
 Color RenderThemeChromiumMac::platformActiveListBoxSelectionBackgroundColor() const
 {
     NSColor* color = [[NSColor alternateSelectedControlColor] colorUsingColorSpaceName:NSDeviceRGBColorSpace];
@@ -212,8 +216,9 @@ Color RenderThemeChromiumMac::platformInactiveListBoxSelectionForegroundColor() 
 
 Color RenderThemeChromiumMac::platformFocusRingColor() const
 {
+    static const RGBA32 oldAquaFocusRingColor = 0xFF7DADD9;
     if (usesTestModeFocusRingColor())
-        return oldAquaFocusRingColor();
+        return oldAquaFocusRingColor;
 
     return systemColor(CSSValueWebkitFocusRingColor);
 }
@@ -306,7 +311,7 @@ void RenderThemeChromiumMac::systemFont(CSSValueID cssValueId, FontDescription& 
         cachedDesc->firstFamily().setFamily([font webCoreFamilyName]);
         cachedDesc->setSpecifiedSize([font pointSize]);
         cachedDesc->setWeight(toFontWeight([fontManager weightOfFont:font]));
-        cachedDesc->setItalic([fontManager traitsOfFont:font] & NSItalicFontMask);
+        cachedDesc->setStyle([fontManager traitsOfFont:font] & NSItalicFontMask ? FontStyleItalic : FontStyleNormal);
     }
     fontDescription = *cachedDesc;
 }
@@ -394,6 +399,7 @@ Color RenderThemeChromiumMac::systemColor(CSSValueID cssValueId) const
     }
 
     Color color;
+    bool needsFallback = false;
     switch (cssValueId) {
         case CSSValueActiveborder:
             color = convertNSColorToColor([NSColor keyboardFocusIndicatorColor]);
@@ -406,6 +412,7 @@ Color RenderThemeChromiumMac::systemColor(CSSValueID cssValueId) const
             break;
         case CSSValueBackground:
             // Use theme independent default
+            needsFallback = true;
             break;
         case CSSValueButtonface:
             // We use this value instead of NSColor's controlColor to avoid website incompatibilities.
@@ -491,22 +498,23 @@ Color RenderThemeChromiumMac::systemColor(CSSValueID cssValueId) const
             color = convertNSColorToColor([NSColor windowFrameTextColor]);
             break;
         default:
+            needsFallback = true;
             break;
     }
 
-    if (!color.isValid())
+    if (needsFallback)
         color = RenderTheme::systemColor(cssValueId);
 
-    if (color.isValid())
-        m_systemColorCache.set(cssValueId, color.rgb());
+    m_systemColorCache.set(cssValueId, color.rgb());
 
     return color;
 }
 
-bool RenderThemeChromiumMac::isControlStyled(const RenderStyle* style, const CachedUAStyle& uaStyle) const
+bool RenderThemeChromiumMac::isControlStyled(const RenderStyle* style, const CachedUAStyle* uaStyle) const
 {
+    ASSERT(uaStyle);
     if (style->appearance() == TextFieldPart || style->appearance() == TextAreaPart || style->appearance() == ListboxPart)
-        return style->border() != uaStyle.border || style->boxShadow();
+        return style->border() != uaStyle->border || style->boxShadow();
 
     // FIXME: This is horrible, but there is not much else that can be done.  Menu lists cannot draw properly when
     // scaled.  They can't really draw properly when transformed either.  We can't detect the transform case at style
@@ -733,7 +741,7 @@ void RenderThemeChromiumMac::setFontFromControlSize(RenderStyle* style, NSContro
     style->setLineHeight(RenderStyle::initialLineHeight());
 
     if (style->setFontDescription(fontDescription))
-        style->font().update(0);
+        style->font().update(nullptr);
 }
 
 NSControlSize RenderThemeChromiumMac::controlSizeForSystemFont(RenderStyle* style) const
@@ -903,7 +911,7 @@ bool RenderThemeChromiumMac::paintMenuList(RenderObject* o, const PaintInfo& pai
         inflatedRect.setWidth(inflatedRect.width() / zoomLevel);
         inflatedRect.setHeight(inflatedRect.height() / zoomLevel);
         paintInfo.context->translate(inflatedRect.x(), inflatedRect.y());
-        paintInfo.context->scale(FloatSize(zoomLevel, zoomLevel));
+        paintInfo.context->scale(zoomLevel, zoomLevel);
         paintInfo.context->translate(-inflatedRect.x(), -inflatedRect.y());
     }
 
@@ -1096,10 +1104,11 @@ bool RenderThemeChromiumMac::paintProgressBar(RenderObject* renderObject, const 
 
     if (!renderProgress->style()->isLeftToRightDirection()) {
         paintInfo.context->translate(2 * inflatedRect.x() + inflatedRect.width(), 0);
-        paintInfo.context->scale(FloatSize(-1, 1));
+        paintInfo.context->scale(-1, 1);
     }
 
-    paintInfo.context->drawImageBuffer(imageBuffer.get(), inflatedRect.location());
+    paintInfo.context->drawImageBuffer(imageBuffer.get(),
+        FloatRect(inflatedRect.location(), imageBuffer->size()));
     return false;
 }
 
@@ -1115,112 +1124,12 @@ const int styledPopupPaddingLeft = 8;
 const int styledPopupPaddingTop = 1;
 const int styledPopupPaddingBottom = 2;
 
-static void TopGradientInterpolate(void*, const CGFloat* inData, CGFloat* outData)
-{
-    static float dark[4] = { 1.0f, 1.0f, 1.0f, 0.4f };
-    static float light[4] = { 1.0f, 1.0f, 1.0f, 0.15f };
-    float a = inData[0];
-    int i = 0;
-    for (i = 0; i < 4; i++)
-        outData[i] = (1.0f - a) * dark[i] + a * light[i];
-}
-
-static void BottomGradientInterpolate(void*, const CGFloat* inData, CGFloat* outData)
-{
-    static float dark[4] = { 1.0f, 1.0f, 1.0f, 0.0f };
-    static float light[4] = { 1.0f, 1.0f, 1.0f, 0.3f };
-    float a = inData[0];
-    int i = 0;
-    for (i = 0; i < 4; i++)
-        outData[i] = (1.0f - a) * dark[i] + a * light[i];
-}
-
-static void MainGradientInterpolate(void*, const CGFloat* inData, CGFloat* outData)
-{
-    static float dark[4] = { 0.0f, 0.0f, 0.0f, 0.15f };
-    static float light[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
-    float a = inData[0];
-    int i = 0;
-    for (i = 0; i < 4; i++)
-        outData[i] = (1.0f - a) * dark[i] + a * light[i];
-}
-
-void RenderThemeChromiumMac::paintMenuListButtonGradients(RenderObject* o, const PaintInfo& paintInfo, const IntRect& r)
-{
-    if (r.isEmpty())
-        return;
-
-    ContextContainer cgContextContainer(paintInfo.context);
-    CGContextRef context = cgContextContainer.context();
-
-    GraphicsContextStateSaver stateSaver(*paintInfo.context);
-
-    RoundedRect border = o->style()->getRoundedBorderFor(r, o->view());
-    int radius = border.radii().topLeft().width();
-
-    CGColorSpaceRef cspace = deviceRGBColorSpaceRef();
-
-    FloatRect topGradient(r.x(), r.y(), r.width(), r.height() / 2.0f);
-    struct CGFunctionCallbacks topCallbacks = { 0, TopGradientInterpolate, NULL };
-    RetainPtr<CGFunctionRef> topFunction(AdoptCF, CGFunctionCreate(NULL, 1, NULL, 4, NULL, &topCallbacks));
-    RetainPtr<CGShadingRef> topShading(AdoptCF, CGShadingCreateAxial(cspace, CGPointMake(topGradient.x(), topGradient.y()), CGPointMake(topGradient.x(), topGradient.maxY()), topFunction.get(), false, false));
-
-    FloatRect bottomGradient(r.x() + radius, r.y() + r.height() / 2.0f, r.width() - 2.0f * radius, r.height() / 2.0f);
-    struct CGFunctionCallbacks bottomCallbacks = { 0, BottomGradientInterpolate, NULL };
-    RetainPtr<CGFunctionRef> bottomFunction(AdoptCF, CGFunctionCreate(NULL, 1, NULL, 4, NULL, &bottomCallbacks));
-    RetainPtr<CGShadingRef> bottomShading(AdoptCF, CGShadingCreateAxial(cspace, CGPointMake(bottomGradient.x(),  bottomGradient.y()), CGPointMake(bottomGradient.x(), bottomGradient.maxY()), bottomFunction.get(), false, false));
-
-    struct CGFunctionCallbacks mainCallbacks = { 0, MainGradientInterpolate, NULL };
-    RetainPtr<CGFunctionRef> mainFunction(AdoptCF, CGFunctionCreate(NULL, 1, NULL, 4, NULL, &mainCallbacks));
-    RetainPtr<CGShadingRef> mainShading(AdoptCF, CGShadingCreateAxial(cspace, CGPointMake(r.x(),  r.y()), CGPointMake(r.x(), r.maxY()), mainFunction.get(), false, false));
-
-    RetainPtr<CGShadingRef> leftShading(AdoptCF, CGShadingCreateAxial(cspace, CGPointMake(r.x(),  r.y()), CGPointMake(r.x() + radius, r.y()), mainFunction.get(), false, false));
-
-    RetainPtr<CGShadingRef> rightShading(AdoptCF, CGShadingCreateAxial(cspace, CGPointMake(r.maxX(),  r.y()), CGPointMake(r.maxX() - radius, r.y()), mainFunction.get(), false, false));
-
-    {
-        GraphicsContextStateSaver stateSaver(*paintInfo.context);
-        CGContextClipToRect(context, r);
-        paintInfo.context->clipRoundedRect(border);
-        context = cgContextContainer.context();
-        CGContextDrawShading(context, mainShading.get());
-    }
-
-    {
-        GraphicsContextStateSaver stateSaver(*paintInfo.context);
-        CGContextClipToRect(context, topGradient);
-        paintInfo.context->clipRoundedRect(RoundedRect(enclosingIntRect(topGradient), border.radii().topLeft(), border.radii().topRight(), IntSize(), IntSize()));
-        context = cgContextContainer.context();
-        CGContextDrawShading(context, topShading.get());
-    }
-
-    if (!bottomGradient.isEmpty()) {
-        GraphicsContextStateSaver stateSaver(*paintInfo.context);
-        CGContextClipToRect(context, bottomGradient);
-        paintInfo.context->clipRoundedRect(RoundedRect(enclosingIntRect(bottomGradient), IntSize(), IntSize(), border.radii().bottomLeft(), border.radii().bottomRight()));
-        context = cgContextContainer.context();
-        CGContextDrawShading(context, bottomShading.get());
-    }
-
-    {
-        GraphicsContextStateSaver stateSaver(*paintInfo.context);
-        CGContextClipToRect(context, r);
-        paintInfo.context->clipRoundedRect(border);
-        context = cgContextContainer.context();
-        CGContextDrawShading(context, leftShading.get());
-        CGContextDrawShading(context, rightShading.get());
-    }
-}
-
 bool RenderThemeChromiumMac::paintMenuListButton(RenderObject* o, const PaintInfo& paintInfo, const IntRect& r)
 {
     IntRect bounds = IntRect(r.x() + o->style()->borderLeftWidth(),
                              r.y() + o->style()->borderTopWidth(),
                              r.width() - o->style()->borderLeftWidth() - o->style()->borderRightWidth(),
                              r.height() - o->style()->borderTopWidth() - o->style()->borderBottomWidth());
-    // Draw the gradients to give the styled popup menu a button appearance
-    paintMenuListButtonGradients(o, paintInfo, bounds);
-
     // Since we actually know the size of the control here, we restrict the font scale to make sure the arrows will fit vertically in the bounds
     float fontScale = min(o->style()->fontSize() / baseFontSize, bounds.height() / (baseArrowHeight * 2 + baseSpaceBetweenArrows));
     float centerY = bounds.y() + bounds.height() / 2.0f;
@@ -1252,24 +1161,6 @@ bool RenderThemeChromiumMac::paintMenuListButton(RenderObject* o, const PaintInf
 
     // Draw the bottom arrow
     paintInfo.context->drawConvexPolygon(3, arrow2, true);
-
-    Color leftSeparatorColor(0, 0, 0, 40);
-    Color rightSeparatorColor(255, 255, 255, 40);
-
-    // FIXME: Should the separator thickness and space be scaled up by fontScale?
-    int separatorSpace = 2; // Deliberately ignores zoom since it looks nicer if it stays thin.
-    int leftEdgeOfSeparator = static_cast<int>(leftEdge - arrowPaddingLeft * o->style()->effectiveZoom()); // FIXME: Round?
-
-    // Draw the separator to the left of the arrows
-    paintInfo.context->setStrokeThickness(1.0f); // Deliberately ignores zoom since it looks nicer if it stays thin.
-    paintInfo.context->setStrokeStyle(SolidStroke);
-    paintInfo.context->setStrokeColor(leftSeparatorColor);
-    paintInfo.context->drawLine(IntPoint(leftEdgeOfSeparator, bounds.y()),
-                                IntPoint(leftEdgeOfSeparator, bounds.maxY()));
-
-    paintInfo.context->setStrokeColor(rightSeparatorColor);
-    paintInfo.context->drawLine(IntPoint(leftEdgeOfSeparator + separatorSpace, bounds.y()),
-                                IntPoint(leftEdgeOfSeparator + separatorSpace, bounds.maxY()));
     return false;
 }
 
@@ -1423,7 +1314,7 @@ bool RenderThemeChromiumMac::paintSliderTrack(RenderObject* o, const PaintInfo& 
     GraphicsContextStateSaver stateSaver(*paintInfo.context);
     if (zoomLevel != 1) {
         paintInfo.context->translate(unzoomedRect.x(), unzoomedRect.y());
-        paintInfo.context->scale(FloatSize(zoomLevel, zoomLevel));
+        paintInfo.context->scale(zoomLevel, zoomLevel);
         paintInfo.context->translate(-unzoomedRect.x(), -unzoomedRect.y());
     }
 
@@ -1488,7 +1379,7 @@ bool RenderThemeChromiumMac::paintSliderThumb(RenderObject* o, const PaintInfo& 
     FloatRect unzoomedRect(r.x(), r.y(), sliderThumbWidth, sliderThumbHeight);
     if (zoomLevel != 1.0f) {
         paintInfo.context->translate(unzoomedRect.x(), unzoomedRect.y());
-        paintInfo.context->scale(FloatSize(zoomLevel, zoomLevel));
+        paintInfo.context->scale(zoomLevel, zoomLevel);
         paintInfo.context->translate(-unzoomedRect.x(), -unzoomedRect.y());
     }
 
@@ -1573,7 +1464,7 @@ bool RenderThemeChromiumMac::paintSearchField(RenderObject* o, const PaintInfo& 
         unzoomedRect.setWidth(unzoomedRect.width() / zoomLevel);
         unzoomedRect.setHeight(unzoomedRect.height() / zoomLevel);
         paintInfo.context->translate(unzoomedRect.x(), unzoomedRect.y());
-        paintInfo.context->scale(FloatSize(zoomLevel, zoomLevel));
+        paintInfo.context->scale(zoomLevel, zoomLevel);
         paintInfo.context->translate(-unzoomedRect.x(), -unzoomedRect.y());
     }
 
@@ -1656,6 +1547,8 @@ void RenderThemeChromiumMac::adjustSearchFieldStyle(RenderStyle* style, Element*
 
 bool RenderThemeChromiumMac::paintSearchFieldCancelButton(RenderObject* o, const PaintInfo& paintInfo, const IntRect& r)
 {
+    if (!o->node())
+        return false;
     Element* input = o->node()->shadowHost();
     if (!input)
         input = toElement(o->node());
@@ -1671,7 +1564,7 @@ bool RenderThemeChromiumMac::paintSearchFieldCancelButton(RenderObject* o, const
         unzoomedRect.setWidth(unzoomedRect.width() / zoomLevel);
         unzoomedRect.setHeight(unzoomedRect.height() / zoomLevel);
         paintInfo.context->translate(unzoomedRect.x(), unzoomedRect.y());
-        paintInfo.context->scale(FloatSize(zoomLevel, zoomLevel));
+        paintInfo.context->scale(zoomLevel, zoomLevel);
         paintInfo.context->translate(-unzoomedRect.x(), -unzoomedRect.y());
     }
 
@@ -1754,6 +1647,8 @@ void RenderThemeChromiumMac::adjustSearchFieldResultsDecorationStyle(RenderStyle
 
 bool RenderThemeChromiumMac::paintSearchFieldResultsDecoration(RenderObject* o, const PaintInfo& paintInfo, const IntRect& r)
 {
+    if (!o->node())
+        return false;
     Node* input = o->node()->shadowHost();
     if (!input)
         input = o->node();
@@ -1768,7 +1663,7 @@ bool RenderThemeChromiumMac::paintSearchFieldResultsDecoration(RenderObject* o, 
         unzoomedRect.setWidth(unzoomedRect.width() / zoomLevel);
         unzoomedRect.setHeight(unzoomedRect.height() / zoomLevel);
         paintInfo.context->translate(unzoomedRect.x(), unzoomedRect.y());
-        paintInfo.context->scale(FloatSize(zoomLevel, zoomLevel));
+        paintInfo.context->scale(zoomLevel, zoomLevel);
         paintInfo.context->translate(-unzoomedRect.x(), -unzoomedRect.y());
     }
 
@@ -1940,6 +1835,11 @@ bool RenderThemeChromiumMac::paintMediaPlayButton(RenderObject* object, const Pa
     return RenderMediaControls::paintMediaControlsPart(MediaPlayButton, object, paintInfo, rect);
 }
 
+bool RenderThemeChromiumMac::paintMediaOverlayPlayButton(RenderObject* object, const PaintInfo& paintInfo, const IntRect& rect)
+{
+    return RenderMediaControls::paintMediaControlsPart(MediaOverlayPlayButton, object, paintInfo, rect);
+}
+
 bool RenderThemeChromiumMac::paintMediaMuteButton(RenderObject* object, const PaintInfo& paintInfo, const IntRect& rect)
 {
     return RenderMediaControls::paintMediaControlsPart(MediaMuteButton, object, paintInfo, rect);
@@ -1959,7 +1859,8 @@ String RenderThemeChromiumMac::extraFullScreenStyleSheet()
 String RenderThemeChromiumMac::extraDefaultStyleSheet()
 {
     return RenderTheme::extraDefaultStyleSheet() +
-           String(themeChromiumUserAgentStyleSheet, sizeof(themeChromiumUserAgentStyleSheet));
+           String(themeChromiumUserAgentStyleSheet, sizeof(themeChromiumUserAgentStyleSheet)) +
+           String(themeMacUserAgentStyleSheet, sizeof(themeMacUserAgentStyleSheet));
 }
 
 bool RenderThemeChromiumMac::paintMediaVolumeSliderContainer(RenderObject* object, const PaintInfo& paintInfo, const IntRect& rect)

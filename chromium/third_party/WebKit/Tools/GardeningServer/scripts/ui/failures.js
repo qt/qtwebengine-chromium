@@ -33,8 +33,7 @@ var kBuildingResult = 'BUILDING';
 ui.failures.Builder = base.extends('a', {
     init: function(builderName, failures)
     {
-        var platformBuilders = config.currentBuilders();
-        var configuration = platformBuilders[builderName];
+        var configuration = config.builders[builderName];
         if (configuration) {
             if (configuration.version)
                 this._addSpan('version', configuration.version);
@@ -45,8 +44,8 @@ ui.failures.Builder = base.extends('a', {
             this._addSpan('version', builderName);
 
         this.className = 'failing-builder';
-        this.target = '_blank';
         this.href = ui.displayURLForBuilder(builderName);
+        ui.setTargetForLink(this);
         if (failures)
             this._addSpan('failures', ' ' + failures.join(', '));
     },
@@ -58,7 +57,7 @@ ui.failures.Builder = base.extends('a', {
     },
     equals: function(configuration)
     {
-        return this._configuration && this._configuration.is64bit == configuration.is64bit && this._configuration.version == configuration.version; 
+        return this._configuration && this._configuration.is64bit == configuration.is64bit && this._configuration.version == configuration.version;
     }
 });
 
@@ -79,9 +78,9 @@ ui.failures.FailureGrid = base.extends('table', {
     {
         this.className = 'failures';
         var titles = this.createTHead().insertRow();
-        titles.insertCell().textContent = 'debug';
-        titles.insertCell().textContent = 'release';
         titles.insertCell().textContent = 'type';
+        titles.insertCell().textContent = 'release';
+        titles.insertCell().textContent = 'debug';
         this._body = this.appendChild(document.createElement('tbody'));
         this._reset();
     },
@@ -94,10 +93,10 @@ ui.failures.FailureGrid = base.extends('table', {
 
         row = this._resultRows[result] = this._body.insertRow(0);
         row.className = result;
-        row.insertCell();
-        row.insertCell();
         var titleCell = row.insertCell();
         titleCell.appendChild(document.createElement('span')).textContent = result;
+        row.insertCell();
+        row.insertCell();
         return row;
     },
     update: function(resultsByBuilder)
@@ -109,7 +108,7 @@ ui.failures.FailureGrid = base.extends('table', {
             return;
 
         Object.keys(resultsByBuilder).forEach(function(builderName) {
-            var configuration = config.kPlatforms[config.currentPlatform].builders[builderName];
+            var configuration = config.builders[builderName];
             if (!configuration)
                 throw "Unknown builder name: " + builderName;
             var row = this._rowByResult(resultsByBuilder[builderName].actual);

@@ -4,7 +4,7 @@
 
 #include "ui/views/debug_utils.h"
 
-#include <iostream>
+#include <ostream>
 
 #include "base/logging.h"
 #include "base/strings/utf_string_conversions.h"
@@ -18,7 +18,7 @@ void PrintViewHierarchyImp(const View* view,
   int ind = indent;
   while (ind-- > 0)
     *out << L' ';
-  *out << UTF8ToWide(view->GetClassName());
+  *out << base::UTF8ToWide(view->GetClassName());
   *out << L' ';
   *out << view->id();
   *out << L' ';
@@ -38,7 +38,7 @@ void PrintFocusHierarchyImp(const View* view,
   int ind = indent;
   while (ind-- > 0)
     *out << L' ';
-  *out << UTF8ToWide(view->GetClassName());
+  *out << base::UTF8ToWide(view->GetClassName());
   *out << L' ';
   *out << view->id();
   *out << L' ';

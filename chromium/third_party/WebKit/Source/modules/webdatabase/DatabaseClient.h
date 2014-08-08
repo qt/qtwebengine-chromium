@@ -33,27 +33,38 @@
 
 #include "core/page/Page.h"
 #include "core/workers/WorkerClients.h"
+#include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
 
 namespace WebCore {
 
+class Database;
 class ExecutionContext;
+class InspectorDatabaseAgent;
 class WorkerClients;
 
-class DatabaseClient : public Supplement<Page>, public Supplement<WorkerClients> {
+class GC_PLUGIN_IGNORE("http://crbug.com/367712") DatabaseClient;
+class DatabaseClient : public WillBeHeapSupplement<Page>, public WillBeHeapSupplement<WorkerClients> {
     WTF_MAKE_NONCOPYABLE(DatabaseClient);
 public:
-    DatabaseClient() { }
+    DatabaseClient();
     virtual ~DatabaseClient() { }
 
     virtual bool allowDatabase(ExecutionContext*, const String& name, const String& displayName, unsigned long estimatedSize) = 0;
 
+    void didOpenDatabase(PassRefPtrWillBeRawPtr<Database>, const String& domain, const String& name, const String& version);
+
     static DatabaseClient* from(ExecutionContext*);
     static const char* supplementName();
+
+    void createInspectorAgentFor(Page*);
+
+private:
+    InspectorDatabaseAgent* m_inspectorAgent;
 };
 
-void provideDatabaseClientTo(Page*, PassOwnPtr<DatabaseClient>);
-void provideDatabaseClientToWorker(WorkerClients*, PassOwnPtr<DatabaseClient>);
+void provideDatabaseClientTo(Page&, PassOwnPtrWillBeRawPtr<DatabaseClient>);
+void provideDatabaseClientToWorker(WorkerClients*, PassOwnPtrWillBeRawPtr<DatabaseClient>);
 
 } // namespace WebCore
 

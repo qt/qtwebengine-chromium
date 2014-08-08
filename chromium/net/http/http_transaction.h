@@ -21,6 +21,7 @@ struct HttpRequestInfo;
 class HttpResponseInfo;
 class IOBuffer;
 struct LoadTimingInfo;
+class QuicServerInfo;
 class X509Certificate;
 
 // Represents a single HTTP transaction (i.e., a single request/response pair).
@@ -28,6 +29,10 @@ class X509Certificate;
 // answered.  Cookies are assumed to be managed by the caller.
 class NET_EXPORT_PRIVATE HttpTransaction {
  public:
+  // If |*defer| is set to true, the transaction will wait until
+  // ResumeNetworkStart is called before establishing a connection.
+  typedef base::Callback<void(bool* defer)> BeforeNetworkStartCallback;
+
   // Stops any pending IO and destroys the transaction object.
   virtual ~HttpTransaction() {}
 
@@ -106,6 +111,9 @@ class NET_EXPORT_PRIVATE HttpTransaction {
   // otherwise, returns false and does not modify headers.
   virtual bool GetFullRequestHeaders(HttpRequestHeaders* headers) const = 0;
 
+  // Get the number of bytes received from network.
+  virtual int64 GetTotalReceivedBytes() const = 0;
+
   // Called to tell the transaction that we have successfully reached the end
   // of the stream. This is equivalent to performing an extra Read() at the end
   // that should return 0 bytes. This method should not be called if the
@@ -126,6 +134,10 @@ class NET_EXPORT_PRIVATE HttpTransaction {
   // zero will be returned.  This does not include the request headers.
   virtual UploadProgress GetUploadProgress() const = 0;
 
+  // SetQuicServerInfo sets a object which reads and writes public information
+  // about a QUIC server.
+  virtual void SetQuicServerInfo(QuicServerInfo* quic_server_info) = 0;
+
   // Populates all of load timing, except for request start times and receive
   // headers time.
   // |load_timing_info| must have all null times when called.  Returns false and
@@ -141,6 +153,13 @@ class NET_EXPORT_PRIVATE HttpTransaction {
   // Start(). Ownership of |create_helper| remains with the caller.
   virtual void SetWebSocketHandshakeStreamCreateHelper(
       WebSocketHandshakeStreamBase::CreateHelper* create_helper) = 0;
+
+  // Set the callback to receive notification just before network use.
+  virtual void SetBeforeNetworkStartCallback(
+      const BeforeNetworkStartCallback& callback) = 0;
+
+  // Resumes the transaction after being deferred.
+  virtual int ResumeNetworkStart() = 0;
 };
 
 }  // namespace net

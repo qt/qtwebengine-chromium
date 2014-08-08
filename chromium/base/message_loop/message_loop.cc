@@ -32,10 +32,8 @@
 #if defined(OS_ANDROID)
 #include "base/message_loop/message_pump_android.h"
 #endif
-
-#if defined(TOOLKIT_GTK)
-#include <gdk/gdk.h>
-#include <gdk/gdkx.h>
+#if defined(USE_GLIB)
+#include "base/message_loop/message_pump_glib.h"
 #endif
 
 namespace base {
@@ -50,6 +48,7 @@ LazyInstance<base::ThreadLocalPointer<MessageLoop> >::Leaky lazy_tls_ptr =
 // Logical events for Histogram profiling. Run with -message-loop-histogrammer
 // to get an accounting of messages and actions taken on each thread.
 const int kTaskRunEvent = 0x1;
+#if !defined(OS_NACL)
 const int kTimerEvent = 0x2;
 
 // Provide range of message IDs for use in histogramming and debug display.
@@ -83,6 +82,7 @@ const LinearHistogram::DescriptionPair event_descriptions_[] = {
 
   {-1, NULL}  // The list must be null terminated, per API to histogram.
 };
+#endif  // !defined(OS_NACL)
 
 bool enable_histogrammer_ = false;
 
@@ -98,29 +98,19 @@ bool AlwaysNotifyPump(MessageLoop::Type type) {
 #endif
 }
 
+#if defined(OS_IOS)
+typedef MessagePumpIOSForIO MessagePumpForIO;
+#elif defined(OS_NACL)
+typedef MessagePumpDefault MessagePumpForIO;
+#elif defined(OS_POSIX)
+typedef MessagePumpLibevent MessagePumpForIO;
+#endif
+
+MessagePumpForIO* ToPumpIO(MessagePump* pump) {
+  return static_cast<MessagePumpForIO*>(pump);
+}
+
 }  // namespace
-
-//------------------------------------------------------------------------------
-
-#if defined(OS_WIN)
-
-// Upon a SEH exception in this thread, it restores the original unhandled
-// exception filter.
-static int SEHFilter(LPTOP_LEVEL_EXCEPTION_FILTER old_filter) {
-  ::SetUnhandledExceptionFilter(old_filter);
-  return EXCEPTION_CONTINUE_SEARCH;
-}
-
-// Retrieves a pointer to the current unhandled exception filter. There
-// is no standalone getter method.
-static LPTOP_LEVEL_EXCEPTION_FILTER GetTopSEHFilter() {
-  LPTOP_LEVEL_EXCEPTION_FILTER top_filter = NULL;
-  top_filter = ::SetUnhandledExceptionFilter(0);
-  ::SetUnhandledExceptionFilter(top_filter);
-  return top_filter;
-}
-
-#endif  // defined(OS_WIN)
 
 //------------------------------------------------------------------------------
 
@@ -137,7 +127,6 @@ MessageLoop::DestructionObserver::~DestructionObserver() {
 
 MessageLoop::MessageLoop(Type type)
     : type_(type),
-      exception_restoration_(false),
       nestable_tasks_allowed_(true),
 #if defined(OS_WIN)
       os_modal_loop_(false),
@@ -146,13 +135,12 @@ MessageLoop::MessageLoop(Type type)
       run_loop_(NULL) {
   Init();
 
-  pump_.reset(CreateMessagePumpForType(type));
+  pump_ = CreateMessagePumpForType(type).Pass();
 }
 
 MessageLoop::MessageLoop(scoped_ptr<MessagePump> pump)
     : pump_(pump.Pass()),
       type_(TYPE_CUSTOM),
-      exception_restoration_(false),
       nestable_tasks_allowed_(true),
 #if defined(OS_WIN)
       os_modal_loop_(false),
@@ -223,29 +211,22 @@ bool MessageLoop::InitMessagePumpForUIFactory(MessagePumpFactory* factory) {
 }
 
 // static
-MessagePump* MessageLoop::CreateMessagePumpForType(Type type) {
+scoped_ptr<MessagePump> MessageLoop::CreateMessagePumpForType(Type type) {
 // TODO(rvargas): Get rid of the OS guards.
-#if defined(OS_WIN)
-#define MESSAGE_PUMP_UI new MessagePumpForUI()
-#define MESSAGE_PUMP_IO new MessagePumpForIO()
-#elif defined(OS_IOS)
-#define MESSAGE_PUMP_UI MessagePumpMac::Create()
-#define MESSAGE_PUMP_IO new MessagePumpIOSForIO()
-#elif defined(OS_MACOSX)
-#define MESSAGE_PUMP_UI MessagePumpMac::Create()
-#define MESSAGE_PUMP_IO new MessagePumpLibevent()
+#if defined(USE_GLIB) && !defined(OS_NACL)
+  typedef MessagePumpGlib MessagePumpForUI;
+#elif defined(OS_LINUX) && !defined(OS_NACL)
+  typedef MessagePumpLibevent MessagePumpForUI;
+#endif
+
+#if defined(OS_IOS) || defined(OS_MACOSX)
+#define MESSAGE_PUMP_UI scoped_ptr<MessagePump>(MessagePumpMac::Create())
 #elif defined(OS_NACL)
 // Currently NaCl doesn't have a UI MessageLoop.
 // TODO(abarth): Figure out if we need this.
-#define MESSAGE_PUMP_UI NULL
-// ipc_channel_nacl.cc uses a worker thread to do socket reads currently, and
-// doesn't require extra support for watching file descriptors.
-#define MESSAGE_PUMP_IO new MessagePumpDefault()
-#elif defined(OS_POSIX)  // POSIX but not MACOSX.
-#define MESSAGE_PUMP_UI new MessagePumpForUI()
-#define MESSAGE_PUMP_IO new MessagePumpLibevent()
+#define MESSAGE_PUMP_UI scoped_ptr<MessagePump>()
 #else
-#error Not implemented
+#define MESSAGE_PUMP_UI scoped_ptr<MessagePump>(new MessagePumpForUI())
 #endif
 
   if (type == MessageLoop::TYPE_UI) {
@@ -254,17 +235,15 @@ MessagePump* MessageLoop::CreateMessagePumpForType(Type type) {
     return MESSAGE_PUMP_UI;
   }
   if (type == MessageLoop::TYPE_IO)
-    return MESSAGE_PUMP_IO;
-#if defined(TOOLKIT_GTK)
-  if (type == MessageLoop::TYPE_GPU)
-    return new MessagePumpX11();
-#endif
+    return scoped_ptr<MessagePump>(new MessagePumpForIO());
+
 #if defined(OS_ANDROID)
   if (type == MessageLoop::TYPE_JAVA)
-    return MESSAGE_PUMP_UI;
+    return scoped_ptr<MessagePump>(new MessagePumpForUI());
 #endif
+
   DCHECK_EQ(MessageLoop::TYPE_DEFAULT, type);
-  return new MessagePumpDefault();
+  return scoped_ptr<MessagePump>(new MessagePumpDefault());
 }
 
 void MessageLoop::AddDestructionObserver(
@@ -284,13 +263,6 @@ void MessageLoop::PostTask(
     const Closure& task) {
   DCHECK(!task.is_null()) << from_here.ToString();
   incoming_task_queue_->AddToIncomingQueue(from_here, task, TimeDelta(), true);
-}
-
-bool MessageLoop::TryPostTask(
-    const tracked_objects::Location& from_here,
-    const Closure& task) {
-  DCHECK(!task.is_null()) << from_here.ToString();
-  return incoming_task_queue_->TryAddToIncomingQueue(from_here, task);
 }
 
 void MessageLoop::PostDelayedTask(
@@ -399,11 +371,6 @@ bool MessageLoop::IsIdleForTesting() {
   return incoming_task_queue_->IsIdleForTesting();
 }
 
-void MessageLoop::LockWaitUnLockForTesting(WaitableEvent* caller_wait,
-                                           WaitableEvent* caller_signal) {
-  incoming_task_queue_->LockWaitUnLockForTesting(caller_wait, caller_signal);
-}
-
 //------------------------------------------------------------------------------
 
 void MessageLoop::Init() {
@@ -417,40 +384,12 @@ void MessageLoop::Init() {
       new ThreadTaskRunnerHandle(message_loop_proxy_));
 }
 
-// Runs the loop in two different SEH modes:
-// enable_SEH_restoration_ = false : any unhandled exception goes to the last
-// one that calls SetUnhandledExceptionFilter().
-// enable_SEH_restoration_ = true : any unhandled exception goes to the filter
-// that was existed before the loop was run.
 void MessageLoop::RunHandler() {
-#if defined(OS_WIN)
-  if (exception_restoration_) {
-    RunInternalInSEHFrame();
-    return;
-  }
-#endif
-
-  RunInternal();
-}
-
-#if defined(OS_WIN)
-__declspec(noinline) void MessageLoop::RunInternalInSEHFrame() {
-  LPTOP_LEVEL_EXCEPTION_FILTER current_filter = GetTopSEHFilter();
-  __try {
-    RunInternal();
-  } __except(SEHFilter(current_filter)) {
-  }
-  return;
-}
-#endif
-
-void MessageLoop::RunInternal() {
   DCHECK_EQ(this, current());
 
   StartHistogrammer();
 
-#if !defined(OS_MACOSX) && !defined(OS_ANDROID) && \
-    !defined(USE_GTK_MESSAGE_PUMP)
+#if defined(OS_WIN)
   if (run_loop_->dispatcher_ && type() == TYPE_UI) {
     static_cast<MessagePumpForUI*>(pump_.get())->
         RunWithDispatcher(this, run_loop_->dispatcher_);
@@ -479,14 +418,14 @@ void MessageLoop::RunTask(const PendingTask& pending_task) {
   tracked_objects::TrackedTime start_time =
       tracked_objects::ThreadData::NowForStartOfRun(pending_task.birth_tally);
 
-  TRACE_EVENT_FLOW_END1("task", "MessageLoop::PostTask",
-      TRACE_ID_MANGLE(GetTaskTraceID(pending_task)),
+  TRACE_EVENT_FLOW_END1(TRACE_DISABLED_BY_DEFAULT("toplevel.flow"),
+      "MessageLoop::PostTask", TRACE_ID_MANGLE(GetTaskTraceID(pending_task)),
       "queue_duration",
       (start_time - pending_task.EffectiveTimePosted()).InMilliseconds());
   // When tracing memory for posted tasks it's more valuable to attribute the
   // memory allocations to the source function than generically to "RunTask".
   TRACE_EVENT_WITH_MEMORY_TAG2(
-      "task", "MessageLoop::RunTask",
+      "toplevel", "MessageLoop::RunTask",
       pending_task.posted_from.function_name(),  // Name for memory tracking.
       "src_file", pending_task.posted_from.file_name(),
       "src_func", pending_task.posted_from.function_name());
@@ -712,6 +651,7 @@ void MessageLoop::ReleaseSoonInternal(
   PostNonNestableTask(from_here, Bind(releaser, object));
 }
 
+#if !defined(OS_NACL)
 //------------------------------------------------------------------------------
 // MessageLoopForUI
 
@@ -728,64 +668,75 @@ void MessageLoopForUI::Attach() {
 }
 #endif
 
-#if !defined(OS_MACOSX) && !defined(OS_NACL) && !defined(OS_ANDROID)
+#if defined(OS_WIN)
 void MessageLoopForUI::AddObserver(Observer* observer) {
-  pump_ui()->AddObserver(observer);
+  static_cast<MessagePumpWin*>(pump_.get())->AddObserver(observer);
 }
 
 void MessageLoopForUI::RemoveObserver(Observer* observer) {
-  pump_ui()->RemoveObserver(observer);
+  static_cast<MessagePumpWin*>(pump_.get())->RemoveObserver(observer);
 }
+#endif  // defined(OS_WIN)
 
-#endif  //  !defined(OS_MACOSX) && !defined(OS_NACL) && !defined(OS_ANDROID)
+#if defined(USE_OZONE) || (defined(OS_CHROMEOS) && !defined(USE_GLIB))
+bool MessageLoopForUI::WatchFileDescriptor(
+    int fd,
+    bool persistent,
+    MessagePumpLibevent::Mode mode,
+    MessagePumpLibevent::FileDescriptorWatcher *controller,
+    MessagePumpLibevent::Watcher *delegate) {
+  return static_cast<MessagePumpLibevent*>(pump_.get())->WatchFileDescriptor(
+      fd,
+      persistent,
+      mode,
+      controller,
+      delegate);
+}
+#endif
+
+#endif  // !defined(OS_NACL)
 
 //------------------------------------------------------------------------------
 // MessageLoopForIO
 
-#if defined(OS_WIN)
+#if !defined(OS_NACL)
+void MessageLoopForIO::AddIOObserver(
+    MessageLoopForIO::IOObserver* io_observer) {
+  ToPumpIO(pump_.get())->AddIOObserver(io_observer);
+}
 
+void MessageLoopForIO::RemoveIOObserver(
+    MessageLoopForIO::IOObserver* io_observer) {
+  ToPumpIO(pump_.get())->RemoveIOObserver(io_observer);
+}
+
+#if defined(OS_WIN)
 void MessageLoopForIO::RegisterIOHandler(HANDLE file, IOHandler* handler) {
-  pump_io()->RegisterIOHandler(file, handler);
+  ToPumpIO(pump_.get())->RegisterIOHandler(file, handler);
 }
 
 bool MessageLoopForIO::RegisterJobObject(HANDLE job, IOHandler* handler) {
-  return pump_io()->RegisterJobObject(job, handler);
+  return ToPumpIO(pump_.get())->RegisterJobObject(job, handler);
 }
 
 bool MessageLoopForIO::WaitForIOCompletion(DWORD timeout, IOHandler* filter) {
-  return pump_io()->WaitForIOCompletion(timeout, filter);
+  return ToPumpIO(pump_.get())->WaitForIOCompletion(timeout, filter);
 }
-
-#elif defined(OS_IOS)
-
+#elif defined(OS_POSIX)
 bool MessageLoopForIO::WatchFileDescriptor(int fd,
                                            bool persistent,
                                            Mode mode,
                                            FileDescriptorWatcher *controller,
                                            Watcher *delegate) {
-  return pump_io()->WatchFileDescriptor(
+  return ToPumpIO(pump_.get())->WatchFileDescriptor(
       fd,
       persistent,
       mode,
       controller,
       delegate);
 }
-
-#elif defined(OS_POSIX) && !defined(OS_NACL)
-
-bool MessageLoopForIO::WatchFileDescriptor(int fd,
-                                           bool persistent,
-                                           Mode mode,
-                                           FileDescriptorWatcher *controller,
-                                           Watcher *delegate) {
-  return pump_libevent()->WatchFileDescriptor(
-      fd,
-      persistent,
-      mode,
-      controller,
-      delegate);
-}
-
 #endif
+
+#endif  // !defined(OS_NACL)
 
 }  // namespace base

@@ -28,11 +28,23 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+// https://dvcs.w3.org/hg/html-media/raw-file/tip/media-source/media-source.html#idl-def-SourceBuffer
+
+enum AppendMode {
+    "segments",
+    "sequence"
+};
+
 [
-    NoInterfaceObject,
     ActiveDOMObject,
-    RuntimeEnabled=MediaSource
+    NoInterfaceObject,
+    RuntimeEnabled=MediaSource,
+    TypeChecking=Interface|Nullable|Unrestricted,
 ] interface SourceBuffer : EventTarget {
+
+    // Gets or sets the AppendMode.
+    // FIXME: Remove MediaSourceExperimental once mode attribute is implemented and stabilized. See http://crbug.com/249422.
+    [RaisesException=Setter, RuntimeEnabled=MediaSourceExperimental] attribute AppendMode mode;
 
     readonly attribute boolean updating;
 
@@ -46,7 +58,7 @@
     [RaisesException=Setter] attribute double appendWindowStart;
 
     // Presentation timestamp for the end of append window.
-    [RaisesException=Setter] attribute double appendWindowEnd;
+    [RaisesException=Setter] attribute unrestricted double appendWindowEnd;
 
     // Append segment data.
     [RaisesException] void appendBuffer(ArrayBuffer data);
@@ -56,6 +68,8 @@
 
     // Abort the current segment append sequence.
     [RaisesException] void abort();
+    // Pending W3C bug: "Change SourceBuffer.remove() end parameter to 'unrestricted double'",
+    // https://www.w3.org/Bugs/Public/show_bug.cgi?id=25518
     [RaisesException] void remove(double start, double end);
 };
 

@@ -11,7 +11,9 @@
 #include "base/process/launch.h"
 #include "content/common/content_export.h"
 
+namespace base {
 class CommandLine;
+}
 
 namespace content {
 class SandboxedProcessLauncherDelegate;
@@ -27,6 +29,8 @@ class CONTENT_EXPORT ChildProcessLauncher {
     // constructed on.
     virtual void OnProcessLaunched() = 0;
 
+    virtual void OnProcessLaunchFailed() {};
+
    protected:
     virtual ~Client() {}
   };
@@ -37,14 +41,8 @@ class CONTENT_EXPORT ChildProcessLauncher {
   // this object destructs, it will be terminated.
   // Takes ownership of cmd_line.
   ChildProcessLauncher(
-#if defined(OS_WIN)
       SandboxedProcessLauncherDelegate* delegate,
-#elif defined(OS_POSIX)
-      bool use_zygote,
-      const base::EnvironmentMap& environ,
-      int ipcfd,
-#endif
-      CommandLine* cmd_line,
+      base::CommandLine* cmd_line,
       int child_process_id,
       Client* client);
   ~ChildProcessLauncher();

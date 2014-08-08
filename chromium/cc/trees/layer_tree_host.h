@@ -36,7 +36,6 @@
 #include "cc/trees/layer_tree_host_client.h"
 #include "cc/trees/layer_tree_host_common.h"
 #include "cc/trees/layer_tree_settings.h"
-#include "cc/trees/occlusion_tracker.h"
 #include "cc/trees/proxy.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/gfx/rect.h"
@@ -64,19 +63,19 @@ struct ScrollAndScaleSet;
 // Provides information on an Impl's rendering capabilities back to the
 // LayerTreeHost.
 struct CC_EXPORT RendererCapabilities {
+  RendererCapabilities(ResourceFormat best_texture_format,
+                       bool allow_partial_texture_updates,
+                       int max_texture_size,
+                       bool using_shared_memory_resources);
+
   RendererCapabilities();
   ~RendererCapabilities();
 
+  // Duplicate any modification to this list to RendererCapabilitiesImpl.
   ResourceFormat best_texture_format;
-  bool using_partial_swap;
-  bool using_egl_image;
   bool allow_partial_texture_updates;
-  bool using_offscreen_context3d;
   int max_texture_size;
-  bool avoid_pow2_textures;
-  bool using_map_image;
   bool using_shared_memory_resources;
-  bool using_discard_framebuffer;
 };
 
 class CC_EXPORT LayerTreeHost {
@@ -97,11 +96,6 @@ class CC_EXPORT LayerTreeHost {
 
   void SetLayerTreeHostClientReady();
 
-  void set_needs_filter_context() { needs_filter_context_ = true; }
-  bool needs_offscreen_context() const {
-    return needs_filter_context_;
-  }
-
   // LayerTreeHost interface to Proxy.
   void WillBeginMainFrame() {
     client_->WillBeginMainFrame(source_frame_number_);
@@ -120,18 +114,10 @@ class CC_EXPORT LayerTreeHost {
       LayerTreeHostImplClient* client);
   void DidLoseOutputSurface();
   bool output_surface_lost() const { return output_surface_lost_; }
-  enum CreateResult {
-    CreateSucceeded,
-    CreateFailedButTryAgain,
-    CreateFailedAndGaveUp,
-  };
-  CreateResult OnCreateAndInitializeOutputSurfaceAttempted(bool success);
+  virtual void OnCreateAndInitializeOutputSurfaceAttempted(bool success);
   void DidCommitAndDrawFrame() { client_->DidCommitAndDrawFrame(); }
   void DidCompleteSwapBuffers() { client_->DidCompleteSwapBuffers(); }
   void DeleteContentsTexturesOnImplThread(ResourceProvider* resource_provider);
-  virtual void AcquireLayerTextures();
-  // Returns false if we should abort this frame due to initialization failure.
-  bool InitializeOutputSurfaceIfNeeded();
   bool UpdateLayers(ResourceUpdateQueue* queue);
 
   LayerTreeHostClient* client() { return client_; }
@@ -142,11 +128,6 @@ class CC_EXPORT LayerTreeHost {
   void NotifyInputThrottledUntilCommit();
 
   void Composite(base::TimeTicks frame_begin_time);
-
-  // Composites and attempts to read back the result into the provided
-  // buffer. If it wasn't possible, e.g. due to context lost, will return
-  // false.
-  bool CompositeAndReadback(void* pixels, gfx::Rect rect_in_device_viewport);
 
   void FinishAllRendering();
 
@@ -172,7 +153,7 @@ class CC_EXPORT LayerTreeHost {
   virtual void SetNeedsCommit();
   virtual void SetNeedsFullTreeSync();
   void SetNeedsRedraw();
-  void SetNeedsRedrawRect(gfx::Rect damage_rect);
+  void SetNeedsRedrawRect(const gfx::Rect& damage_rect);
   bool CommitRequested() const;
   bool BeginMainFrameRequested() const;
 
@@ -180,8 +161,7 @@ class CC_EXPORT LayerTreeHost {
 
   void SetNextCommitForcesRedraw();
 
-  void SetAnimationEvents(scoped_ptr<AnimationEventsVector> events,
-                          base::Time wall_clock_time);
+  void SetAnimationEvents(scoped_ptr<AnimationEventsVector> events);
 
   void SetRootLayer(scoped_refptr<Layer> root_layer);
   Layer* root_layer() { return root_layer_.get(); }
@@ -191,13 +171,25 @@ class CC_EXPORT LayerTreeHost {
       scoped_refptr<Layer> page_scale_layer,
       scoped_refptr<Layer> inner_viewport_scroll_layer,
       scoped_refptr<Layer> outer_viewport_scroll_layer);
+  Layer* inner_viewport_scroll_layer() const {
+    return inner_viewport_scroll_layer_.get();
+  }
+  Layer* outer_viewport_scroll_layer() const {
+    return outer_viewport_scroll_layer_.get();
+  }
 
   const LayerTreeSettings& settings() const { return settings_; }
 
   void SetDebugState(const LayerTreeDebugState& debug_state);
   const LayerTreeDebugState& debug_state() const { return debug_state_; }
 
-  void SetViewportSize(gfx::Size device_viewport_size);
+  bool has_gpu_rasterization_trigger() const {
+    return has_gpu_rasterization_trigger_;
+  }
+  void SetHasGpuRasterizationTrigger(bool has_trigger);
+  bool UseGpuRasterization() const;
+
+  void SetViewportSize(const gfx::Size& device_viewport_size);
   void SetOverdrawBottomHeight(float overdraw_bottom_height);
 
   gfx::Size device_viewport_size() const { return device_viewport_size_; }
@@ -225,13 +217,12 @@ class CC_EXPORT LayerTreeHost {
   void SetVisible(bool visible);
   bool visible() const { return visible_; }
 
-  void StartPageScaleAnimation(gfx::Vector2d target_offset,
+  void StartPageScaleAnimation(const gfx::Vector2d& target_offset,
                                bool use_anchor,
                                float scale,
                                base::TimeDelta duration);
 
   void ApplyScrollAndScale(const ScrollAndScaleSet& info);
-
   void SetImplTransform(const gfx::Transform& transform);
 
   // Virtual for tests.
@@ -282,9 +273,12 @@ class CC_EXPORT LayerTreeHost {
   bool UsingSharedMemoryResources();
   int id() const { return id_; }
 
-  bool ScheduleMicroBenchmark(const std::string& benchmark_name,
-                              scoped_ptr<base::Value> value,
-                              const MicroBenchmark::DoneCallback& callback);
+  // Returns the id of the benchmark on success, 0 otherwise.
+  int ScheduleMicroBenchmark(const std::string& benchmark_name,
+                             scoped_ptr<base::Value> value,
+                             const MicroBenchmark::DoneCallback& callback);
+  // Returns true if the message was successfully delivered and handled.
+  bool SendMessageToMicroBenchmark(int id, scoped_ptr<base::Value> value);
 
   // When a SwapPromiseMonitor is created on the main thread, it calls
   // InsertSwapPromiseMonitor() to register itself with LayerTreeHost.
@@ -303,11 +297,11 @@ class CC_EXPORT LayerTreeHost {
   LayerTreeHost(LayerTreeHostClient* client,
                 SharedBitmapManager* manager,
                 const LayerTreeSettings& settings);
-  bool InitializeThreaded(
+  void InitializeThreaded(
       scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner);
-  bool InitializeSingleThreaded(
+  void InitializeSingleThreaded(
       LayerTreeHostSingleThreadClient* single_thread_client);
-  bool InitializeForTesting(scoped_ptr<Proxy> proxy_for_testing);
+  void InitializeForTesting(scoped_ptr<Proxy> proxy_for_testing);
   void SetOutputSurfaceLostForTesting(bool is_lost) {
     output_surface_lost_ = is_lost;
   }
@@ -315,7 +309,7 @@ class CC_EXPORT LayerTreeHost {
   MicroBenchmarkController micro_benchmark_controller_;
 
  private:
-  bool InitializeProxy(scoped_ptr<Proxy> proxy);
+  void InitializeProxy(scoped_ptr<Proxy> proxy);
 
   void PaintLayerContents(
       const RenderSurfaceLayerList& render_surface_layer_list,
@@ -333,8 +327,7 @@ class CC_EXPORT LayerTreeHost {
   void ReduceMemoryUsage();
 
   void PrioritizeTextures(
-      const RenderSurfaceLayerList& render_surface_layer_list,
-      OverdrawMetrics* metrics);
+      const RenderSurfaceLayerList& render_surface_layer_list);
   void SetPrioritiesForSurfaces(size_t surface_memory_bytes);
   void SetPrioritiesForLayers(const RenderSurfaceLayerList& update_list);
   size_t CalculateMemoryForRenderSurfaces(
@@ -355,13 +348,13 @@ class CC_EXPORT LayerTreeHost {
   typedef std::list<UIResourceRequest> UIResourceRequestQueue;
   UIResourceRequestQueue ui_resource_request_queue_;
 
+  void RecordGpuRasterizationHistogram();
   void CalculateLCDTextMetricsCallback(Layer* layer);
 
   void NotifySwapPromiseMonitorsOfSetNeedsCommit();
 
   bool animating_;
   bool needs_full_tree_sync_;
-  bool needs_filter_context_;
 
   base::CancelableClosure prepaint_callback_;
 
@@ -371,7 +364,6 @@ class CC_EXPORT LayerTreeHost {
   int source_frame_number_;
   scoped_ptr<RenderingStatsInstrumentation> rendering_stats_instrumentation_;
 
-  bool output_surface_can_be_initialized_;
   bool output_surface_lost_;
   int num_failed_recreate_attempts_;
 
@@ -400,6 +392,9 @@ class CC_EXPORT LayerTreeHost {
   float max_page_scale_factor_;
   gfx::Transform impl_transform_;
   bool trigger_idle_updates_;
+  bool has_gpu_rasterization_trigger_;
+  bool content_is_suitable_for_gpu_rasterization_;
+  bool gpu_rasterization_histogram_recorded_;
 
   SkColor background_color_;
   bool has_transparent_background_;

@@ -6,10 +6,9 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/string_number_conversions.h"
-#include "testing/gtest/include/gtest/gtest.h"
-
+#include "sandbox/linux/suid/client/setuid_sandbox_client.h"
 #include "sandbox/linux/suid/common/sandbox.h"
-#include "setuid_sandbox_client.h"
+#include "testing/gtest/include/gtest/gtest.h"
 
 namespace sandbox {
 
@@ -88,6 +87,14 @@ TEST(SetuidSandboxClient, SandboxedClientAPI) {
   // We didn't go through the actual sandboxing mechanism as it is
   // very hard in a unit test.
   EXPECT_FALSE(sandbox_client->IsSandboxed());
+}
+
+// This test doesn't accomplish much, but will make sure that analysis tools
+// will run this codepath.
+TEST(SetuidSandboxClient, GetSandboxBinaryPath) {
+  scoped_ptr<SetuidSandboxClient> setuid_sandbox_client(
+      SetuidSandboxClient::Create());
+  ignore_result(setuid_sandbox_client->GetSandboxBinaryPath());
 }
 
 }  // namespace sandbox

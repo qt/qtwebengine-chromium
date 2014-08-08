@@ -69,7 +69,9 @@ class AudioRendererAlgorithmTest : public testing::Test {
   AudioRendererAlgorithmTest()
       : frames_enqueued_(0),
         channels_(0),
+        channel_layout_(CHANNEL_LAYOUT_NONE),
         sample_format_(kUnknownSampleFormat),
+        samples_per_second_(0),
         bytes_per_sample_(0) {
   }
 
@@ -83,6 +85,8 @@ class AudioRendererAlgorithmTest : public testing::Test {
                   SampleFormat sample_format,
                   int samples_per_second) {
     channels_ = ChannelLayoutToChannelCount(channel_layout);
+    samples_per_second_ = samples_per_second;
+    channel_layout_ = channel_layout;
     sample_format_ = sample_format;
     bytes_per_sample_ = SampleFormatToBytesPerChannel(sample_format);
     AudioParameters params(media::AudioParameters::AUDIO_PCM_LINEAR,
@@ -101,31 +105,37 @@ class AudioRendererAlgorithmTest : public testing::Test {
     while (!algorithm_.IsQueueFull()) {
       switch (sample_format_) {
         case kSampleFormatU8:
-          buffer = MakeInterleavedAudioBuffer<uint8>(sample_format_,
-                                                     channels_,
-                                                     1,
-                                                     1,
-                                                     kFrameSize,
-                                                     kNoTimestamp(),
-                                                     kNoTimestamp());
+          buffer = MakeAudioBuffer<uint8>(
+              sample_format_,
+              channel_layout_,
+              ChannelLayoutToChannelCount(channel_layout_),
+              samples_per_second_,
+              1,
+              1,
+              kFrameSize,
+              kNoTimestamp());
           break;
         case kSampleFormatS16:
-          buffer = MakeInterleavedAudioBuffer<int16>(sample_format_,
-                                                     channels_,
-                                                     1,
-                                                     1,
-                                                     kFrameSize,
-                                                     kNoTimestamp(),
-                                                     kNoTimestamp());
+          buffer = MakeAudioBuffer<int16>(
+              sample_format_,
+              channel_layout_,
+              ChannelLayoutToChannelCount(channel_layout_),
+              samples_per_second_,
+              1,
+              1,
+              kFrameSize,
+              kNoTimestamp());
           break;
         case kSampleFormatS32:
-          buffer = MakeInterleavedAudioBuffer<int32>(sample_format_,
-                                                     channels_,
-                                                     1,
-                                                     1,
-                                                     kFrameSize,
-                                                     kNoTimestamp(),
-                                                     kNoTimestamp());
+          buffer = MakeAudioBuffer<int32>(
+              sample_format_,
+              channel_layout_,
+              ChannelLayoutToChannelCount(channel_layout_),
+              samples_per_second_,
+              1,
+              1,
+              kFrameSize,
+              kNoTimestamp());
           break;
         default:
           NOTREACHED() << "Unrecognized format " << sample_format_;
@@ -225,7 +235,7 @@ class AudioRendererAlgorithmTest : public testing::Test {
 
   void WsolaTest(float playback_rate) {
     const int kSampleRateHz = 48000;
-    const media::ChannelLayout kChannelLayout = CHANNEL_LAYOUT_STEREO;
+    const ChannelLayout kChannelLayout = CHANNEL_LAYOUT_STEREO;
     const int kBytesPerSample = 2;
     const int kNumFrames = kSampleRateHz / 100;  // 10 milliseconds.
 
@@ -242,8 +252,12 @@ class AudioRendererAlgorithmTest : public testing::Test {
     scoped_ptr<AudioBus> output = AudioBus::Create(channels_, 1);
 
     // Input buffer to inject pulses.
-    scoped_refptr<AudioBuffer> input = AudioBuffer::CreateBuffer(
-        kSampleFormatPlanarF32, channels_, kPulseWidthSamples);
+    scoped_refptr<AudioBuffer> input =
+        AudioBuffer::CreateBuffer(kSampleFormatPlanarF32,
+                                  kChannelLayout,
+                                  channels_,
+                                  kSampleRateHz,
+                                  kPulseWidthSamples);
 
     const std::vector<uint8*>& channel_data = input->channel_data();
 
@@ -300,7 +314,9 @@ class AudioRendererAlgorithmTest : public testing::Test {
   AudioRendererAlgorithm algorithm_;
   int frames_enqueued_;
   int channels_;
+  ChannelLayout channel_layout_;
   SampleFormat sample_format_;
+  int samples_per_second_;
   int bytes_per_sample_;
 };
 
@@ -578,7 +594,7 @@ TEST_F(AudioRendererAlgorithmTest, FullAndDecimatedSearch) {
                                       exclude_interval));
 }
 
-TEST_F(AudioRendererAlgorithmTest, CubicInterpolation) {
+TEST_F(AudioRendererAlgorithmTest, QuadraticInterpolation) {
   // Arbitrary coefficients.
   const float kA = 0.7f;
   const float kB = 1.2f;
@@ -592,13 +608,28 @@ TEST_F(AudioRendererAlgorithmTest, CubicInterpolation) {
   float extremum;
   float extremum_value;
 
-  internal::CubicInterpolation(y_values, &extremum, &extremum_value);
+  internal::QuadraticInterpolation(y_values, &extremum, &extremum_value);
 
   float x_star = -kB / (2.f * kA);
   float y_star = kA * x_star * x_star + kB * x_star + kC;
 
   EXPECT_FLOAT_EQ(x_star, extremum);
   EXPECT_FLOAT_EQ(y_star, extremum_value);
+}
+
+TEST_F(AudioRendererAlgorithmTest, QuadraticInterpolation_Colinear) {
+  float y_values[3];
+  y_values[0] = 1.0;
+  y_values[1] = 1.0;
+  y_values[2] = 1.0;
+
+  float extremum;
+  float extremum_value;
+
+  internal::QuadraticInterpolation(y_values, &extremum, &extremum_value);
+
+  EXPECT_FLOAT_EQ(extremum, 0.0);
+  EXPECT_FLOAT_EQ(extremum_value, 1.0);
 }
 
 TEST_F(AudioRendererAlgorithmTest, WsolaSlowdown) {

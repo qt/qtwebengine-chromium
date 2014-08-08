@@ -31,18 +31,21 @@ class CC_EXPORT PaintedScrollbarLayer : public ScrollbarLayerInterface,
 
   // ScrollbarLayerInterface
   virtual int ScrollLayerId() const OVERRIDE;
-  virtual void SetScrollLayerId(int id) OVERRIDE;
+  virtual void SetScrollLayer(int layer_id) OVERRIDE;
+  virtual void SetClipLayer(int layer_id) OVERRIDE;
 
   virtual ScrollbarOrientation orientation() const OVERRIDE;
 
   // Layer interface
   virtual bool Update(ResourceUpdateQueue* queue,
-                      const OcclusionTracker* occlusion) OVERRIDE;
+                      const OcclusionTracker<Layer>* occlusion) OVERRIDE;
   virtual void SetLayerTreeHost(LayerTreeHost* host) OVERRIDE;
   virtual void PushPropertiesTo(LayerImpl* layer) OVERRIDE;
+  virtual void PushScrollClipPropertiesTo(LayerImpl* layer) OVERRIDE;
   virtual void CalculateContentsScale(float ideal_contents_scale,
                                       float device_scale_factor,
                                       float page_scale_factor,
+                                      float maximum_animation_contents_scale,
                                       bool animating_transform_to_screen,
                                       float* contents_scale_x,
                                       float* contents_scale_y,
@@ -62,7 +65,7 @@ class CC_EXPORT PaintedScrollbarLayer : public ScrollbarLayerInterface,
   void UpdateThumbAndTrackGeometry();
 
  private:
-  gfx::Rect ScrollbarLayerRectToContentRect(gfx::Rect layer_rect) const;
+  gfx::Rect ScrollbarLayerRectToContentRect(const gfx::Rect& layer_rect) const;
   gfx::Rect OriginThumbRect() const;
 
   template<typename T> void UpdateProperty(T value, T* prop) {
@@ -75,11 +78,13 @@ class CC_EXPORT PaintedScrollbarLayer : public ScrollbarLayerInterface,
   int MaxTextureSize();
   float ClampScaleToMaxTextureSize(float scale);
 
-  UIResourceBitmap RasterizeScrollbarPart(gfx::Rect rect,
+  UIResourceBitmap RasterizeScrollbarPart(const gfx::Rect& layer_rect,
+                                          const gfx::Rect& content_rect,
                                           ScrollbarPart part);
 
   scoped_ptr<Scrollbar> scrollbar_;
   int scroll_layer_id_;
+  int clip_layer_id_;
 
   // Snapshot of properties taken in UpdateThumbAndTrackGeometry and used in
   // PushPropertiesTo.

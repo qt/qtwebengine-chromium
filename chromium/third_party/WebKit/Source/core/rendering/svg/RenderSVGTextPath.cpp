@@ -21,8 +21,8 @@
 
 #include "core/rendering/svg/RenderSVGTextPath.h"
 
-#include "SVGNames.h"
 #include "core/rendering/svg/SVGPathData.h"
+#include "core/rendering/svg/SVGRenderSupport.h"
 #include "core/svg/SVGPathElement.h"
 #include "core/svg/SVGTextPathElement.h"
 
@@ -33,30 +33,45 @@ RenderSVGTextPath::RenderSVGTextPath(Element* element)
 {
 }
 
+bool RenderSVGTextPath::isChildAllowed(RenderObject* child, RenderStyle*) const
+{
+    if (child->isText())
+        return SVGRenderSupport::isRenderableTextNode(child);
+
+#if ENABLE(SVG_FONTS)
+    // 'altGlyph' is supported by the content model for 'textPath', but...
+    ASSERT(child->node());
+    if (isSVGAltGlyphElement(*child->node()))
+        return false;
+#endif
+
+    return child->isSVGInline() && !child->isSVGTextPath();
+}
+
 Path RenderSVGTextPath::layoutPath() const
 {
     SVGTextPathElement* textPathElement = toSVGTextPathElement(node());
-    Element* targetElement = SVGURIReference::targetElementFromIRIString(textPathElement->hrefCurrentValue(), textPathElement->document());
-    if (!targetElement || !targetElement->hasTagName(SVGNames::pathTag))
+    Element* targetElement = SVGURIReference::targetElementFromIRIString(textPathElement->href()->currentValue()->value(), textPathElement->treeScope());
+    if (!isSVGPathElement(targetElement))
         return Path();
 
-    SVGPathElement* pathElement = toSVGPathElement(targetElement);
+    SVGPathElement& pathElement = toSVGPathElement(*targetElement);
 
     Path pathData;
-    updatePathFromGraphicsElement(pathElement, pathData);
+    updatePathFromGraphicsElement(&pathElement, pathData);
 
     // Spec:  The transform attribute on the referenced 'path' element represents a
     // supplemental transformation relative to the current user coordinate system for
     // the current 'text' element, including any adjustments to the current user coordinate
     // system due to a possible transform attribute on the current 'text' element.
     // http://www.w3.org/TR/SVG/text.html#TextPathElement
-    pathData.transform(pathElement->animatedLocalTransform());
+    pathData.transform(pathElement.animatedLocalTransform());
     return pathData;
 }
 
 float RenderSVGTextPath::startOffset() const
 {
-    return toSVGTextPathElement(node())->startOffsetCurrentValue().valueAsPercentage();
+    return toSVGTextPathElement(node())->startOffset()->currentValue()->valueAsPercentage();
 }
 
 }

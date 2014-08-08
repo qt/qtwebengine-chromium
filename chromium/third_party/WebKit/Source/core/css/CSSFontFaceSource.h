@@ -26,11 +26,8 @@
 #ifndef CSSFontFaceSource_h
 #define CSSFontFaceSource_h
 
-#include "core/fetch/FontResource.h"
-#include "core/fetch/ResourcePtr.h"
-#include "platform/Timer.h"
+#include "platform/heap/Handle.h"
 #include "wtf/HashMap.h"
-#include "wtf/text/AtomicString.h"
 
 namespace WebCore {
 
@@ -38,69 +35,37 @@ class FontResource;
 class CSSFontFace;
 class FontDescription;
 class SimpleFontData;
-#if ENABLE(SVG_FONTS)
-class SVGFontElement;
-class SVGFontFaceElement;
-#endif
 
-
-class CSSFontFaceSource : public FontResourceClient {
+class CSSFontFaceSource : public NoBaseWillBeGarbageCollectedFinalized<CSSFontFaceSource> {
 public:
-    CSSFontFaceSource(const String&, FontResource* = 0);
     virtual ~CSSFontFaceSource();
 
-    bool isLocal() const;
-    bool isLoading() const;
-    bool isLoaded() const;
-    bool isValid() const;
+    virtual bool isLocal() const { return false; }
+    virtual bool isLoading() const { return false; }
+    virtual bool isLoaded() const { return true; }
+    virtual bool isValid() const { return true; }
 
-    FontResource* resource() { return m_font.get(); }
+    virtual FontResource* resource() { return 0; }
     void setFontFace(CSSFontFace* face) { m_face = face; }
-
-    virtual void didStartFontLoad(FontResource*) OVERRIDE;
-    virtual void fontLoaded(FontResource*);
 
     PassRefPtr<SimpleFontData> getFontData(const FontDescription&);
 
-#if ENABLE(SVG_FONTS)
-    SVGFontFaceElement* svgFontFaceElement() const;
-    void setSVGFontFaceElement(PassRefPtr<SVGFontFaceElement>);
-    bool isSVGFontFaceSource() const;
-    void setHasExternalSVGFont(bool value) { m_hasExternalSVGFont = value; }
-#endif
+    virtual bool isLocalFontAvailable(const FontDescription&) { return false; }
+    virtual void beginLoadIfNeeded() { }
 
-    bool ensureFontData();
-    bool isLocalFontAvailable(const FontDescription&);
-    void beginLoadIfNeeded();
+    // For UMA reporting
+    virtual bool hadBlankText() { return false; }
 
-private:
+    virtual void trace(Visitor*);
+
+protected:
+    CSSFontFaceSource();
+    virtual PassRefPtr<SimpleFontData> createFontData(const FontDescription&) = 0;
+
     typedef HashMap<unsigned, RefPtr<SimpleFontData> > FontDataTable; // The hash key is composed of size synthetic styles.
 
-    class FontLoadHistograms {
-    public:
-        FontLoadHistograms() : m_loadStartTime(0) { }
-        void loadStarted();
-        void recordLocalFont(bool loadSuccess);
-        void recordRemoteFont(const FontResource*);
-    private:
-        const char* histogramName(const FontResource*);
-        double m_loadStartTime;
-    };
-
-    void pruneTable();
-    void startLoadingTimerFired(Timer<CSSFontFaceSource>*);
-
-    AtomicString m_string; // URI for remote, built-in font name for local.
-    ResourcePtr<FontResource> m_font; // For remote fonts, a pointer to our cached resource.
-    CSSFontFace* m_face; // Our owning font face.
+    RawPtrWillBeMember<CSSFontFace> m_face; // Our owning font face.
     FontDataTable m_fontDataTable;
-    FontLoadHistograms m_histograms;
-
-#if ENABLE(SVG_FONTS)
-    RefPtr<SVGFontFaceElement> m_svgFontFaceElement;
-    RefPtr<SVGFontElement> m_externalSVGFontElement;
-    bool m_hasExternalSVGFont;
-#endif
 };
 
 }

@@ -7,25 +7,18 @@
 #include <string>
 
 #include "base/bind.h"
-#include "base/command_line.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_piece.h"
-#include "base/strings/sys_string_conversions.h"
-#include "media/base/media_switches.h"
-
 
 namespace media {
-static const char kFileVideoCaptureDeviceName[] =
-    "/dev/placeholder-for-file-backed-fake-capture-device";
-
 static const int kY4MHeaderMaxSize = 200;
 static const char kY4MSimpleFrameDelimiter[] = "FRAME";
 static const int kY4MSimpleFrameDelimiterSize = 6;
 
 int ParseY4MInt(const base::StringPiece& token) {
   int temp_int;
-  CHECK(base::StringToInt(token, &temp_int));
+  CHECK(base::StringToInt(token, &temp_int)) << token;
   return temp_int;
 }
 
@@ -91,7 +84,8 @@ void ParseY4MTags(const std::string& file_header,
         // Pixel aspect ratio ignored.
         break;
       case 'C':
-        CHECK_EQ(ParseY4MInt(token), 420); // Only I420 supported.
+        CHECK(token == "420" || token == "420jpeg" || token == "420paldv")
+            << token;  // Only I420 is supported, and we fudge the variants.
         break;
       default:
         break;
@@ -109,11 +103,12 @@ void ParseY4MTags(const std::string& file_header,
 // format in |video_format|. Returns the index of the first byte of the first
 // video frame.
 // Restrictions: Only trivial per-frame headers are supported.
-int64 ParseFileAndExtractVideoFormat(
-    const base::PlatformFile& file,
+// static
+int64 FileVideoCaptureDevice::ParseFileAndExtractVideoFormat(
+    base::File* file,
     media::VideoCaptureFormat* video_format) {
   std::string header(kY4MHeaderMaxSize, 0);
-  base::ReadPlatformFile(file, 0, &header[0], kY4MHeaderMaxSize - 1);
+  file->Read(0, &header[0], kY4MHeaderMaxSize - 1);
 
   size_t header_end = header.find(kY4MSimpleFrameDelimiter);
   CHECK_NE(header_end, header.npos);
@@ -124,63 +119,17 @@ int64 ParseFileAndExtractVideoFormat(
 
 // Opens a given file for reading, and returns the file to the caller, who is
 // responsible for closing it.
-base::PlatformFile OpenFileForRead(const base::FilePath& file_path) {
-  base::PlatformFileError file_error;
-  base::PlatformFile file = base::CreatePlatformFile(
-      file_path,
-      base::PLATFORM_FILE_OPEN | base::PLATFORM_FILE_READ,
-      NULL,
-      &file_error);
-  CHECK_EQ(file_error, base::PLATFORM_FILE_OK);
-  return file;
-}
-
-// Inspects the command line and retrieves the file path parameter.
-base::FilePath GetFilePathFromCommandLine() {
-  base::FilePath command_line_file_path =
-      CommandLine::ForCurrentProcess()->GetSwitchValuePath(
-          switches::kUseFileForFakeVideoCapture);
-  CHECK(!command_line_file_path.empty());
-  return command_line_file_path;
-}
-
-void FileVideoCaptureDevice::GetDeviceNames(Names* const device_names) {
-  DCHECK(device_names->empty());
-  base::FilePath command_line_file_path = GetFilePathFromCommandLine();
-#if defined(OS_WIN)
-  device_names->push_back(
-      Name(base::SysWideToUTF8(command_line_file_path.value()),
-           kFileVideoCaptureDeviceName));
-#else
-  device_names->push_back(Name(command_line_file_path.value(),
-                               kFileVideoCaptureDeviceName));
-#endif  // OS_WIN
-}
-
-void FileVideoCaptureDevice::GetDeviceSupportedFormats(
-    const Name& device,
-    VideoCaptureFormats* supported_formats) {
-  base::PlatformFile file = OpenFileForRead(GetFilePathFromCommandLine());
-  VideoCaptureFormat capture_format;
-  ParseFileAndExtractVideoFormat(file, &capture_format);
-  supported_formats->push_back(capture_format);
-
-  CHECK(base::ClosePlatformFile(file));
-}
-
-VideoCaptureDevice* FileVideoCaptureDevice::Create(const Name& device_name) {
-#if defined(OS_WIN)
-  return new FileVideoCaptureDevice(
-      base::FilePath(base::SysUTF8ToWide(device_name.name())));
-#else
-  return new FileVideoCaptureDevice(base::FilePath(device_name.name()));
-#endif  // OS_WIN
+// static
+base::File FileVideoCaptureDevice::OpenFileForRead(
+    const base::FilePath& file_path) {
+  base::File file(file_path, base::File::FLAG_OPEN | base::File::FLAG_READ);
+  CHECK(file.IsValid()) << file_path.value();
+  return file.Pass();
 }
 
 FileVideoCaptureDevice::FileVideoCaptureDevice(const base::FilePath& file_path)
     : capture_thread_("CaptureThread"),
       file_path_(file_path),
-      file_(base::kInvalidPlatformFileValue),
       frame_size_(0),
       current_byte_index_(0),
       first_frame_byte_index_(0) {}
@@ -232,10 +181,10 @@ void FileVideoCaptureDevice::OnAllocateAndStart(
   client_ = client.Pass();
 
   // Open the file and parse the header. Get frame size and format.
-  DCHECK_EQ(file_, base::kInvalidPlatformFileValue);
+  DCHECK(!file_.IsValid());
   file_ = OpenFileForRead(file_path_);
   first_frame_byte_index_ =
-      ParseFileAndExtractVideoFormat(file_, &capture_format_);
+      ParseFileAndExtractVideoFormat(&file_, &capture_format_);
   current_byte_index_ = first_frame_byte_index_;
   DVLOG(1) << "Opened video file " << capture_format_.frame_size.ToString()
            << ", fps: " << capture_format_.frame_rate;
@@ -251,7 +200,7 @@ void FileVideoCaptureDevice::OnAllocateAndStart(
 
 void FileVideoCaptureDevice::OnStopAndDeAllocate() {
   DCHECK_EQ(capture_thread_.message_loop(), base::MessageLoop::current());
-  CHECK(base::ClosePlatformFile(file_));
+  file_.Close();
   client_.reset();
   current_byte_index_ = 0;
   first_frame_byte_index_ = 0;
@@ -263,32 +212,29 @@ void FileVideoCaptureDevice::OnCaptureTask() {
   DCHECK_EQ(capture_thread_.message_loop(), base::MessageLoop::current());
   if (!client_)
     return;
-  int result =
-      base::ReadPlatformFile(file_,
-                             current_byte_index_,
-                             reinterpret_cast<char*>(video_frame_.get()),
-                             frame_size_);
+  int result = file_.Read(current_byte_index_,
+                          reinterpret_cast<char*>(video_frame_.get()),
+                          frame_size_);
 
-  // If we passed EOF to PlatformFile, it will return 0 read characters. In that
+  // If we passed EOF to base::File, it will return 0 read characters. In that
   // case, reset the pointer and read again.
   if (result != frame_size_) {
     CHECK_EQ(result, 0);
     current_byte_index_ = first_frame_byte_index_;
-    CHECK_EQ(base::ReadPlatformFile(file_,
-                                    current_byte_index_,
-                                    reinterpret_cast<char*>(video_frame_.get()),
-                                    frame_size_),
+    CHECK_EQ(file_.Read(current_byte_index_,
+                        reinterpret_cast<char*>(video_frame_.get()),
+                        frame_size_),
              frame_size_);
   } else {
     current_byte_index_ += frame_size_ + kY4MSimpleFrameDelimiterSize;
   }
 
   // Give the captured frame to the client.
-  client_->OnIncomingCapturedFrame(video_frame_.get(),
-                                   frame_size_,
-                                   base::Time::Now(),
-                                   0,
-                                   capture_format_);
+  client_->OnIncomingCapturedData(video_frame_.get(),
+                                  frame_size_,
+                                  capture_format_,
+                                  0,
+                                  base::TimeTicks::Now());
   // Reschedule next CaptureTask.
   base::MessageLoop::current()->PostDelayedTask(
       FROM_HERE,

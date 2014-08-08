@@ -10,7 +10,7 @@
   position: absolute;
 }
 
-.step.animated {
+.step.animated:not(.faded) {
   -webkit-transition: -webkit-transform 200ms ease-in-out,
                       opacity 200ms ease-in-out,
                       visibility 200ms ease-in-out;
@@ -43,14 +43,19 @@
 }
 
 .step-controls {
-  -webkit-box-pack: end;
-  -webkit-padding-end: 34px;  /* Double the padding of .step */
   bottom: 21px;
   box-sizing: border-box;
-  display: -webkit-box;
+  display: flex;
   height: 28px;
+  justify-content: flex-end;
+  padding-right: 34px;  /* Double the padding of .step */
   position: absolute;
   width: 100%;
+}
+
+html[dir=rtl] .step-controls {
+  /* Hack as -webkit-padding-end doesn't catch direction. crbug.com/363836 */
+  padding-left: 34px;
 }
 
 .animation .step-controls button {
@@ -97,7 +102,7 @@
 #security-info a,
 #eula a,
 .step-extra-controls a {
-  color: #8c8c8c;
+  color: rgb(49, 106, 197); /* same as 'Learn more' link */
   font-size: 12px;
   text-decoration: none;
 }
@@ -138,10 +143,6 @@ html[dir=rtl] .step-extra-controls {
 #oobe.eula #back-button,
 #oobe.kiosk-enable #kiosk-cancel-button,
 #oobe.kiosk-enable #kiosk-enable-button,
-#oobe.oauth-enrollment #oauth-enroll-cancel-button,
-#oobe.oauth-enrollment #oauth-enroll-done-button,
-#oobe.oauth-enrollment #oauth-enroll-explain-button,
-#oobe.oauth-enrollment #oauth-enroll-try-again-button,
 #oobe.reset #reset-button,
 #oobe.reset #reset-cancel-button,
 #oobe.signin #signin-button,

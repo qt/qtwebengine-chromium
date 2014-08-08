@@ -49,6 +49,9 @@ const float piOverTwoFloat = static_cast<float>(M_PI_2);
 const double piOverFourDouble = M_PI_4;
 const float piOverFourFloat = static_cast<float>(M_PI_4);
 
+const double twoPiDouble = piDouble * 2.0;
+const float twoPiFloat = piFloat * 2.0f;
+
 #if OS(MACOSX)
 
 // Work around a bug in the Mac OS X libc where ceil(-0.1) return +0.
@@ -113,7 +116,12 @@ inline float log2f(float num)
 }
 #endif
 
-#if COMPILER(MSVC) && (_MSC_VER < 1800)
+#if COMPILER(MSVC)
+
+// VS2013 has most of the math functions now, but we still need to work
+// around various differences in behavior of Inf.
+
+#if _MSC_VER < 1800
 
 namespace std {
 
@@ -128,6 +136,8 @@ inline double nextafter(double x, double y) { return _nextafter(x, y); }
 inline float nextafterf(float x, float y) { return x > y ? x - FLT_EPSILON : x + FLT_EPSILON; }
 
 inline double copysign(double x, double y) { return _copysign(x, y); }
+
+#endif // _MSC_VER
 
 // Work around a bug in Win, where atan2(+-infinity, +-infinity) yields NaN instead of specific values.
 inline double wtf_atan2(double x, double y)
@@ -162,6 +172,8 @@ inline double wtf_pow(double x, double y) { return y == 0 ? 1 : pow(x, y); }
 #define fmod(x, y) wtf_fmod(x, y)
 #define pow(x, y) wtf_pow(x, y)
 
+#if _MSC_VER < 1800
+
 // MSVC's math functions do not bring lrint.
 inline long int lrint(double flt)
 {
@@ -184,6 +196,8 @@ inline long int lrint(double flt)
     return static_cast<long int>(intgr);
 }
 
+#endif // _MSC_VER
+
 #endif // COMPILER(MSVC)
 
 inline double deg2rad(double d)  { return d * piDouble / 180.0; }
@@ -194,6 +208,8 @@ inline double turn2deg(double t) { return t * 360.0; }
 inline double deg2turn(double d) { return d / 360.0; }
 inline double rad2grad(double r) { return r * 200.0 / piDouble; }
 inline double grad2rad(double g) { return g * piDouble / 200.0; }
+inline double turn2grad(double t) { return t * 400; }
+inline double grad2turn(double g) { return g / 400; }
 
 inline float deg2rad(float d)  { return d * piFloat / 180.0f; }
 inline float rad2deg(float r)  { return r * 180.0f / piFloat; }
@@ -203,6 +219,8 @@ inline float turn2deg(float t) { return t * 360.0f; }
 inline float deg2turn(float d) { return d / 360.0f; }
 inline float rad2grad(float r) { return r * 200.0f / piFloat; }
 inline float grad2rad(float g) { return g * piFloat / 200.0f; }
+inline float turn2grad(float t) { return t * 400; }
+inline float grad2turn(float g) { return g / 400; }
 
 // std::numeric_limits<T>::min() returns the smallest positive value for floating point types
 template<typename T> inline T defaultMinimumForClamp() { return std::numeric_limits<T>::min(); }
@@ -257,6 +275,16 @@ inline int clampToInteger(unsigned x)
 inline bool isWithinIntRange(float x)
 {
     return x > static_cast<float>(std::numeric_limits<int>::min()) && x < static_cast<float>(std::numeric_limits<int>::max());
+}
+
+static size_t greatestCommonDivisor(size_t a, size_t b)
+{
+    return b ? greatestCommonDivisor(b, a % b) : a;
+}
+
+inline size_t lowestCommonMultiple(size_t a, size_t b)
+{
+    return a && b ? a / greatestCommonDivisor(a, b) * b : 0;
 }
 
 #ifndef UINT64_C

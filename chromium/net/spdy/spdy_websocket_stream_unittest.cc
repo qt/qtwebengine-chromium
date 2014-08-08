@@ -201,7 +201,7 @@ class SpdyWebSocketStreamTest
     host_port_pair_.set_port(80);
     spdy_session_key_ = SpdySessionKey(host_port_pair_,
                                        ProxyServer::Direct(),
-                                       kPrivacyModeDisabled);
+                                       PRIVACY_MODE_DISABLED);
 
     spdy_settings_to_send_[spdy_settings_id_to_set_] =
         SettingsFlagsAndValue(
@@ -235,6 +235,12 @@ class SpdyWebSocketStreamTest
         kClosingFrameLength,
         stream_id_,
         false));
+
+    closing_frame_fin_.reset(spdy_util_.ConstructSpdyWebSocketDataFrame(
+        kClosingFrame,
+        kClosingFrameLength,
+        stream_id_,
+        true));
   }
 
   void InitSession(MockRead* reads, size_t reads_count,
@@ -273,6 +279,7 @@ class SpdyWebSocketStreamTest
   scoped_ptr<SpdyFrame> response_frame_;
   scoped_ptr<SpdyFrame> message_frame_;
   scoped_ptr<SpdyFrame> closing_frame_;
+  scoped_ptr<SpdyFrame> closing_frame_fin_;
   HostPortPair host_port_pair_;
   SpdySessionKey spdy_session_key_;
   TestCompletionCallback completion_callback_;
@@ -288,8 +295,7 @@ INSTANTIATE_TEST_CASE_P(
     NextProto,
     SpdyWebSocketStreamTest,
     testing::Values(kProtoDeprecatedSPDY2,
-                    kProtoSPDY3, kProtoSPDY31, kProtoSPDY4a2,
-                    kProtoHTTP2Draft04));
+                    kProtoSPDY3, kProtoSPDY31, kProtoSPDY4));
 
 // TODO(toyoshim): Replace old framing data to new one, then use HEADERS and
 // data frames.
@@ -369,6 +375,62 @@ TEST_P(SpdyWebSocketStreamTest, Basic) {
   EXPECT_EQ(OK, events[6].result);
 
   // EOF close SPDY session.
+  EXPECT_FALSE(
+      HasSpdySession(http_session_->spdy_session_pool(), spdy_session_key_));
+  EXPECT_TRUE(data()->at_read_eof());
+  EXPECT_TRUE(data()->at_write_eof());
+}
+
+// A SPDY websocket may still send it's close frame after
+// recieving a close with SPDY stream FIN.
+TEST_P(SpdyWebSocketStreamTest, RemoteCloseWithFin) {
+  Prepare(1);
+  MockWrite writes[] = {
+    CreateMockWrite(*request_frame_.get(), 1),
+    CreateMockWrite(*closing_frame_.get(), 4),
+  };
+  MockRead reads[] = {
+    CreateMockRead(*response_frame_.get(), 2),
+    CreateMockRead(*closing_frame_fin_.get(), 3),
+    MockRead(SYNCHRONOUS, 0, 5)  // EOF cause OnCloseSpdyStream event.
+  };
+  InitSession(reads, arraysize(reads), writes, arraysize(writes));
+
+  SpdyWebSocketStreamEventRecorder delegate(completion_callback_.callback());
+  delegate.SetOnReceivedData(
+      base::Bind(&SpdyWebSocketStreamTest::DoSendClosingFrame,
+                 base::Unretained(this)));
+
+  websocket_stream_.reset(new SpdyWebSocketStream(session_, &delegate));
+  BoundNetLog net_log;
+  GURL url("ws://example.com/echo");
+  ASSERT_EQ(OK, websocket_stream_->InitializeStream(url, HIGHEST, net_log));
+
+  SendRequest();
+  completion_callback_.WaitForResult();
+  websocket_stream_.reset();
+
+  const std::vector<SpdyWebSocketStreamEvent>& events =
+      delegate.GetSeenEvents();
+  EXPECT_EQ(5U, events.size());
+
+  EXPECT_EQ(SpdyWebSocketStreamEvent::EVENT_SENT_HEADERS,
+            events[0].event_type);
+  EXPECT_EQ(OK, events[0].result);
+  EXPECT_EQ(SpdyWebSocketStreamEvent::EVENT_RECEIVED_HEADER,
+            events[1].event_type);
+  EXPECT_EQ(OK, events[1].result);
+  EXPECT_EQ(SpdyWebSocketStreamEvent::EVENT_RECEIVED_DATA,
+            events[2].event_type);
+  EXPECT_EQ(static_cast<int>(kClosingFrameLength), events[2].result);
+  EXPECT_EQ(SpdyWebSocketStreamEvent::EVENT_SENT_DATA,
+            events[3].event_type);
+  EXPECT_EQ(static_cast<int>(kClosingFrameLength), events[3].result);
+  EXPECT_EQ(SpdyWebSocketStreamEvent::EVENT_CLOSE,
+            events[4].event_type);
+  EXPECT_EQ(OK, events[4].result);
+
+  // EOF closes SPDY session.
   EXPECT_FALSE(
       HasSpdySession(http_session_->spdy_session_pool(), spdy_session_key_));
   EXPECT_TRUE(data()->at_read_eof());
@@ -500,18 +562,20 @@ TEST_P(SpdyWebSocketStreamTest, IOPending) {
   Prepare(1);
   scoped_ptr<SpdyFrame> settings_frame(
       spdy_util_.ConstructSpdySettings(spdy_settings_to_send_));
+  scoped_ptr<SpdyFrame> settings_ack(spdy_util_.ConstructSpdySettingsAck());
   MockWrite writes[] = {
-    CreateMockWrite(*request_frame_.get(), 1),
-    CreateMockWrite(*message_frame_.get(), 3),
-    CreateMockWrite(*closing_frame_.get(), 5)
+    CreateMockWrite(*settings_ack, 1),
+    CreateMockWrite(*request_frame_.get(), 2),
+    CreateMockWrite(*message_frame_.get(), 4),
+    CreateMockWrite(*closing_frame_.get(), 6)
   };
 
   MockRead reads[] = {
     CreateMockRead(*settings_frame.get(), 0),
-    CreateMockRead(*response_frame_.get(), 2),
-    CreateMockRead(*message_frame_.get(), 4),
-    CreateMockRead(*closing_frame_.get(), 6),
-    MockRead(SYNCHRONOUS, 0, 7)  // EOF cause OnCloseSpdyStream event.
+    CreateMockRead(*response_frame_.get(), 3),
+    CreateMockRead(*message_frame_.get(), 5),
+    CreateMockRead(*closing_frame_.get(), 7),
+    MockRead(SYNCHRONOUS, 0, 8)  // EOF cause OnCloseSpdyStream event.
   };
 
   DeterministicSocketData data(reads, arraysize(reads),
@@ -560,7 +624,7 @@ TEST_P(SpdyWebSocketStreamTest, IOPending) {
 
   SendRequest();
 
-  data.RunFor(7);
+  data.RunFor(8);
   completion_callback_.WaitForResult();
 
   websocket_stream_.reset();

@@ -31,6 +31,7 @@
 #include "wtf/text/AtomicString.h"
 #include "wtf/text/CString.h"
 #include "wtf/text/WTFString.h"
+#include <unicode/rbbi.h>
 #include <unicode/ubrk.h>
 
 using namespace WTF;
@@ -63,7 +64,7 @@ public:
         if (!iterator) {
             UErrorCode openStatus = U_ZERO_ERROR;
             bool localeIsEmpty = locale.isEmpty();
-            iterator = icu::BreakIterator::createLineInstance(localeIsEmpty ? icu::Locale(currentTextBreakLocaleID()) : icu::Locale(locale.string().utf8().data()), openStatus);
+            iterator = icu::BreakIterator::createLineInstance(localeIsEmpty ? icu::Locale(currentTextBreakLocaleID()) : icu::Locale(locale.utf8().data()), openStatus);
             // locale comes from a web page and it can be invalid, leading ICU
             // to fail, in which case we fall back to the default locale.
             if (!localeIsEmpty && U_FAILURE(openStatus)) {

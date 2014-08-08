@@ -31,6 +31,7 @@
 #define GlyphPage_h
 
 #include "platform/PlatformExport.h"
+#include "platform/fonts/CustomFontData.h"
 #include "platform/fonts/Glyph.h"
 #include <string.h>
 #include "wtf/PassRefPtr.h"
@@ -93,17 +94,22 @@ public:
                 page->m_perGlyphFontData[i] = m_glyphs[i] ? m_fontDataForAllGlyphs : 0;
             }
         }
+        page->m_customFontToLoad = m_customFontToLoad;
         return page.release();
     }
 
     ~GlyphPage() { }
 
-    static const size_t size = 256; // Covers Latin-1 in a single page.
-    static unsigned indexForCharacter(UChar32 c) { return c % GlyphPage::size; }
+    static const unsigned char sizeBits = 8;
+    static const size_t size = (1 << GlyphPage::sizeBits); // Covers Latin-1 in a single page.
+    static unsigned indexForCharacter(UChar32 c) { return c & 0xFF; }
 
     ALWAYS_INLINE GlyphData glyphDataForCharacter(UChar32 c) const
     {
-        return glyphDataForIndex(indexForCharacter(c));
+        unsigned index = indexForCharacter(c);
+        if (const CustomFontData* customData = customFontToLoadAt(index))
+            customData->beginLoadIfNeeded();
+        return glyphDataForIndex(index);
     }
 
     ALWAYS_INLINE GlyphData glyphDataForIndex(unsigned index) const
@@ -126,14 +132,6 @@ public:
         return m_glyphs[index];
     }
 
-    ALWAYS_INLINE const SimpleFontData* fontDataForCharacter(UChar32 c) const
-    {
-        unsigned index = indexForCharacter(c);
-        if (hasPerGlyphFontData())
-            return m_perGlyphFontData[index];
-        return m_glyphs[index] ? m_fontDataForAllGlyphs : 0;
-    }
-
     void setGlyphDataForCharacter(UChar32 c, Glyph g, const SimpleFontData* f)
     {
         setGlyphDataForIndex(indexForCharacter(c), g, f);
@@ -143,6 +141,7 @@ public:
     {
         ASSERT_WITH_SECURITY_IMPLICATION(index < size);
         m_glyphs[index] = glyph;
+        setCustomFontToLoad(index, 0);
 
         // GlyphPage getters will always return a null SimpleFontData* for glyph #0 if there's no per-glyph font array.
         if (hasPerGlyphFontData()) {
@@ -159,6 +158,23 @@ public:
         setGlyphDataForIndex(index, glyphData.glyph, glyphData.fontData);
     }
 
+    const CustomFontData* customFontToLoadAt(unsigned index) const
+    {
+        ASSERT_WITH_SECURITY_IMPLICATION(index < size);
+        return m_customFontToLoad ? m_customFontToLoad->at(index) : 0;
+    }
+
+    void setCustomFontToLoad(unsigned index, const CustomFontData* customFontToLoad)
+    {
+        if (!m_customFontToLoad) {
+            if (!customFontToLoad)
+                return;
+            m_customFontToLoad = CustomDataPage::create();
+        }
+        ASSERT_WITH_SECURITY_IMPLICATION(index < size);
+        m_customFontToLoad->set(index, customFontToLoad);
+    }
+
     void removeFontDataFromSystemFallbackPage(const SimpleFontData* fontData)
     {
         // This method should only be called on the system fallback page, which is never single-font.
@@ -173,9 +189,6 @@ public:
 
     GlyphPageTreeNode* owner() const { return m_owner; }
 
-    // Implemented by the platform.
-    bool fill(unsigned offset, unsigned length, UChar* characterBuffer, unsigned bufferLength, const SimpleFontData*);
-
 private:
     explicit GlyphPage(GlyphPageTreeNode* owner, const SimpleFontData* fontDataForAllGlyphs = 0)
         : m_fontDataForAllGlyphs(fontDataForAllGlyphs)
@@ -188,8 +201,19 @@ private:
 
     bool hasPerGlyphFontData() const { return !m_fontDataForAllGlyphs; }
 
+    class CustomDataPage : public RefCounted<CustomDataPage> {
+    public:
+        static RefPtr<CustomDataPage> create() { return adoptRef(new CustomDataPage()); }
+        const CustomFontData* at(size_t index) const { return m_customData[index]; }
+        void set(size_t index, const CustomFontData* data) { m_customData[index] = data; }
+    private:
+        CustomDataPage() { memset(m_customData, 0, sizeof(m_customData)); }
+        const CustomFontData* m_customData[size];
+    };
+
     const SimpleFontData* m_fontDataForAllGlyphs;
     GlyphPageTreeNode* m_owner;
+    RefPtr<CustomDataPage> m_customFontToLoad;
     Glyph m_glyphs[size];
 
     // NOTE: This array has (GlyphPage::size) elements if m_fontDataForAllGlyphs is null.

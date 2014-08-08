@@ -38,6 +38,7 @@ namespace content {
 class BrowserContext;
 class IndexedDBContext;
 class DOMStorageContext;
+class ServiceWorkerContext;
 
 // Defines what persistent state a child process can access.
 //
@@ -56,6 +57,7 @@ class StoragePartition {
   virtual webkit_database::DatabaseTracker* GetDatabaseTracker() = 0;
   virtual DOMStorageContext* GetDOMStorageContext() = 0;
   virtual IndexedDBContext* GetIndexedDBContext() = 0;
+  virtual ServiceWorkerContext* GetServiceWorkerContext() = 0;
 
   enum RemoveDataMask {
     REMOVE_DATA_MASK_APPCACHE = 1 << 0,
@@ -113,7 +115,7 @@ class StoragePartition {
   // scheduled.
   virtual void ClearData(uint32 remove_mask,
                          uint32 quota_storage_remove_mask,
-                         const GURL* storage_origin,
+                         const GURL& storage_origin,
                          const OriginMatcherFunction& origin_matcher,
                          const base::Time begin,
                          const base::Time end,

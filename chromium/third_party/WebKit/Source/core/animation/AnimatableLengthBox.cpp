@@ -33,7 +33,7 @@
 
 namespace WebCore {
 
-PassRefPtr<AnimatableValue> AnimatableLengthBox::interpolateTo(const AnimatableValue* value, double fraction) const
+PassRefPtrWillBeRawPtr<AnimatableValue> AnimatableLengthBox::interpolateTo(const AnimatableValue* value, double fraction) const
 {
     const AnimatableLengthBox* lengthBox = toAnimatableLengthBox(value);
     return AnimatableLengthBox::create(
@@ -43,16 +43,6 @@ PassRefPtr<AnimatableValue> AnimatableLengthBox::interpolateTo(const AnimatableV
         AnimatableValue::interpolate(this->bottom(), lengthBox->bottom(), fraction));
 }
 
-PassRefPtr<AnimatableValue> AnimatableLengthBox::addWith(const AnimatableValue* value) const
-{
-    const AnimatableLengthBox* lengthBox = toAnimatableLengthBox(value);
-    return AnimatableLengthBox::create(
-        AnimatableValue::add(this->left(), lengthBox->left()),
-        AnimatableValue::add(this->right(), lengthBox->right()),
-        AnimatableValue::add(this->top(), lengthBox->top()),
-        AnimatableValue::add(this->bottom(), lengthBox->bottom()));
-}
-
 bool AnimatableLengthBox::equalTo(const AnimatableValue* value) const
 {
     const AnimatableLengthBox* lengthBox = toAnimatableLengthBox(value);
@@ -60,6 +50,15 @@ bool AnimatableLengthBox::equalTo(const AnimatableValue* value) const
         && right()->equals(lengthBox->right())
         && top()->equals(lengthBox->top())
         && bottom()->equals(lengthBox->bottom());
+}
+
+void AnimatableLengthBox::trace(Visitor* visitor)
+{
+    visitor->trace(m_left);
+    visitor->trace(m_right);
+    visitor->trace(m_top);
+    visitor->trace(m_bottom);
+    AnimatableValue::trace(visitor);
 }
 
 }

@@ -12,17 +12,17 @@
 #include "base/memory/scoped_ptr.h"
 #include "content/common/content_export.h"
 #include "ppapi/c/dev/ppb_device_ref_dev.h"
+#include "ppapi/host/host_message_context.h"
 #include "url/gurl.h"
 
 namespace ppapi {
 struct DeviceRefData;
 
 namespace host {
-struct HostMessageContext;
-struct ReplyMessageContext;
 class ResourceHost;
 }
-}
+
+}  // namespace ppapi
 
 namespace IPC {
 class Message;
@@ -42,8 +42,8 @@ class CONTENT_EXPORT PepperDeviceEnumerationHostHelper {
     virtual ~Delegate() {}
 
     typedef base::Callback<
-        void (int /* request_id */,
-              const std::vector<ppapi::DeviceRefData>& /* devices */)>
+        void(int /* request_id */,
+             const std::vector<ppapi::DeviceRefData>& /* devices */)>
         EnumerateDevicesCallback;
 
     // Enumerates devices of the specified type. The request ID passed into the
@@ -87,10 +87,9 @@ class CONTENT_EXPORT PepperDeviceEnumerationHostHelper {
   void OnEnumerateDevicesComplete(
       int request_id,
       const std::vector<ppapi::DeviceRefData>& devices);
-  void OnNotifyDeviceChange(
-      uint32_t callback_id,
-      int request_id,
-      const std::vector<ppapi::DeviceRefData>& devices);
+  void OnNotifyDeviceChange(uint32_t callback_id,
+                            int request_id,
+                            const std::vector<ppapi::DeviceRefData>& devices);
 
   // Non-owning pointers.
   ppapi::host::ResourceHost* resource_host_;
@@ -102,7 +101,7 @@ class CONTENT_EXPORT PepperDeviceEnumerationHostHelper {
   scoped_ptr<ScopedRequest> enumerate_;
   scoped_ptr<ScopedRequest> monitor_;
 
-  scoped_ptr<ppapi::host::ReplyMessageContext> enumerate_devices_context_;
+  ppapi::host::ReplyMessageContext enumerate_devices_context_;
 
   DISALLOW_COPY_AND_ASSIGN(PepperDeviceEnumerationHostHelper);
 };

@@ -23,72 +23,48 @@
 #include "config.h"
 #include "core/dom/LiveNodeList.h"
 
-#include "core/dom/Element.h"
-#include "core/html/HTMLCollection.h"
-
 namespace WebCore {
 
-Node& LiveNodeListBase::rootNode() const
+static inline bool isMatchingElement(const LiveNodeList& nodeList, const Element& element)
 {
-    if (isRootedAtDocument() && m_ownerNode->inDocument())
-        return m_ownerNode->document();
-    return *m_ownerNode;
+    return nodeList.elementMatches(element);
 }
 
-ContainerNode* LiveNodeListBase::rootContainerNode() const
+Node* LiveNodeList::virtualOwnerNode() const
 {
-    Node& rootNode = this->rootNode();
-    if (!rootNode.isContainerNode())
-        return 0;
-    return toContainerNode(&rootNode);
+    return &ownerNode();
 }
 
-void LiveNodeListBase::invalidateCache() const
+void LiveNodeList::invalidateCache(Document*) const
 {
-    m_cachedItem = 0;
-    m_isLengthCacheValid = false;
-    m_isItemCacheValid = false;
-    m_isNameCacheValid = false;
-    m_isItemRefElementsCacheValid = false;
-    if (isNodeList(type()))
-        return;
-
-    const HTMLCollection* cacheBase = static_cast<const HTMLCollection*>(this);
-    cacheBase->m_idCache.clear();
-    cacheBase->m_nameCache.clear();
-    cacheBase->m_cachedElementsArrayOffset = 0;
+    m_collectionIndexCache.invalidate();
 }
 
-void LiveNodeListBase::invalidateIdNameCacheMaps() const
+Element* LiveNodeList::traverseToFirstElement() const
 {
-    ASSERT(hasIdNameCache());
-    const HTMLCollection* cacheBase = static_cast<const HTMLCollection*>(this);
-    cacheBase->m_idCache.clear();
-    cacheBase->m_nameCache.clear();
+    return firstMatchingElement(*this);
 }
 
-Node* LiveNodeList::namedItem(const AtomicString& elementId) const
+Element* LiveNodeList::traverseToLastElement() const
 {
-    Node& rootNode = this->rootNode();
+    return lastMatchingElement(*this);
+}
 
-    if (rootNode.inDocument()) {
-        Element* element = rootNode.treeScope().getElementById(elementId);
-        if (element && nodeMatches(element) && element->isDescendantOf(&rootNode))
-            return element;
-        if (!element)
-            return 0;
-        // In the case of multiple nodes with the same name, just fall through.
-    }
+Element* LiveNodeList::traverseForwardToOffset(unsigned offset, Element& currentNode, unsigned& currentOffset) const
+{
+    return traverseMatchingElementsForwardToOffset(*this, offset, currentNode, currentOffset);
+}
 
-    unsigned length = this->length();
-    for (unsigned i = 0; i < length; i++) {
-        Node* node = item(i);
-        // FIXME: This should probably be using getIdAttribute instead of idForStyleResolution.
-        if (node->hasID() && toElement(node)->idForStyleResolution() == elementId)
-            return node;
-    }
+Element* LiveNodeList::traverseBackwardToOffset(unsigned offset, Element& currentNode, unsigned& currentOffset) const
+{
+    return traverseMatchingElementsBackwardToOffset(*this, offset, currentNode, currentOffset);
+}
 
-    return 0;
+void LiveNodeList::trace(Visitor* visitor)
+{
+    visitor->trace(m_collectionIndexCache);
+    LiveNodeListBase::trace(visitor);
+    NodeList::trace(visitor);
 }
 
 } // namespace WebCore

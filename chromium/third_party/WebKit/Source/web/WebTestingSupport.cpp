@@ -24,21 +24,21 @@
  */
 
 #include "config.h"
-#include "WebTestingSupport.h"
+#include "public/web/WebTestingSupport.h"
 
-#include "WebCoreTestSupport.h"
-#include "WebFrame.h"
+#include "core/testing/v8/WebCoreTestSupport.h"
+#include "public/web/WebLocalFrame.h"
 #include <v8/include/v8.h>
 
 namespace blink {
 
-void WebTestingSupport::injectInternalsObject(WebFrame* frame)
+void WebTestingSupport::injectInternalsObject(WebLocalFrame* frame)
 {
     v8::HandleScope handleScope(v8::Isolate::GetCurrent());
     WebCoreTestSupport::injectInternalsObject(frame->mainWorldScriptContext());
 }
 
-void WebTestingSupport::resetInternalsObject(WebFrame* frame)
+void WebTestingSupport::resetInternalsObject(WebLocalFrame* frame)
 {
     v8::HandleScope handleScope(v8::Isolate::GetCurrent());
     WebCoreTestSupport::resetInternalsObject(frame->mainWorldScriptContext());

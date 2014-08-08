@@ -5,14 +5,11 @@
 #include "ui/views/controls/menu/menu_config.h"
 
 #include "build/build_config.h"
-#include "ui/base/layout.h"
-#include "ui/native_theme/native_theme.h"
 
 namespace views {
 
 MenuConfig::MenuConfig(const ui::NativeTheme* theme)
-    : text_color(SK_ColorBLACK),
-      arrow_color(SK_ColorBLACK),
+    : arrow_color(SK_ColorBLACK),
       menu_vertical_border_size(3),
       menu_horizontal_border_size(0),
       submenu_horizontal_inset(3),
@@ -28,8 +25,6 @@ MenuConfig::MenuConfig(const ui::NativeTheme* theme)
       check_width(16),
       check_height(16),
       radio_width(16),
-      radio_height(16),
-      arrow_height(9),
       arrow_width(9),
       gutter_width(0),
       separator_height(11),
@@ -48,12 +43,6 @@ MenuConfig::MenuConfig(const ui::NativeTheme* theme)
       native_theme(theme),
       show_delay(400),
       corner_radius(0) {
-  // Use 40px tall menu items when running in touch optimized mode.
-  // For Windows use 40px tall menu items when running in touch optimized mode.
-  if (ui::GetDisplayLayout() == ui::LAYOUT_TOUCH) {
-    item_top_margin = item_no_icon_top_margin = 12;
-    item_bottom_margin = item_no_icon_bottom_margin = 13;
-  }
   Init(theme);
 }
 

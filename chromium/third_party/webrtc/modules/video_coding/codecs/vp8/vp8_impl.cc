@@ -35,10 +35,6 @@ enum { kVp8ErrorPropagationTh = 30 };
 
 namespace webrtc {
 
-VP8Encoder* VP8Encoder::Create() {
-  return new VP8EncoderImpl();
-}
-
 VP8EncoderImpl::VP8EncoderImpl()
     : encoded_image_(),
       encoded_complete_callback_(NULL),
@@ -218,7 +214,10 @@ int VP8EncoderImpl::InitEncode(const VideoCodec* inst,
   }
   config_->g_lag_in_frames = 0;  // 0- no frame lagging
 
-  if (codec_.width * codec_.height > 1280 * 960 && number_of_cores >= 6) {
+  if (codec_.width * codec_.height >= 1920 * 1080 && number_of_cores > 8) {
+    config_->g_threads = 8;  // 8 threads for 1080p on high perf machines.
+  } else if (codec_.width * codec_.height > 1280 * 960 &&
+      number_of_cores >= 6) {
     config_->g_threads = 3;  // 3 threads for 1080p.
   } else if (codec_.width * codec_.height > 640 * 480 && number_of_cores >= 3) {
     config_->g_threads = 2;  // 2 threads for qHD/HD.
@@ -477,8 +476,8 @@ int VP8EncoderImpl::GetEncodedPartitions(const I420VideoFrame& input_image) {
     TRACE_COUNTER1("webrtc", "EncodedFrameSize", encoded_image_._length);
     encoded_image_._timeStamp = input_image.timestamp();
     encoded_image_.capture_time_ms_ = input_image.render_time_ms();
-    encoded_image_._encodedHeight = raw_->h;
-    encoded_image_._encodedWidth = raw_->w;
+    encoded_image_._encodedHeight = codec_.height;
+    encoded_image_._encodedWidth = codec_.width;
     encoded_complete_callback_->Encoded(encoded_image_, &codec_specific,
                                       &frag_info);
   }
@@ -494,10 +493,6 @@ int VP8EncoderImpl::RegisterEncodeCompleteCallback(
     EncodedImageCallback* callback) {
   encoded_complete_callback_ = callback;
   return WEBRTC_VIDEO_CODEC_OK;
-}
-
-VP8Decoder* VP8Decoder::Create() {
-  return new VP8DecoderImpl();
 }
 
 VP8DecoderImpl::VP8DecoderImpl()
@@ -718,7 +713,7 @@ int VP8DecoderImpl::Decode(const EncodedImage& input_image,
   }
 
   img = vpx_codec_get_frame(decoder_, &iter);
-  ret = ReturnFrame(img, input_image._timeStamp);
+  ret = ReturnFrame(img, input_image._timeStamp, input_image.ntp_time_ms_);
   if (ret != 0) {
     // Reset to avoid requesting key frames too often.
     if (ret < 0 && propagation_cnt_ > 0)
@@ -798,7 +793,9 @@ int VP8DecoderImpl::DecodePartitions(
   return WEBRTC_VIDEO_CODEC_OK;
 }
 
-int VP8DecoderImpl::ReturnFrame(const vpx_image_t* img, uint32_t timestamp) {
+int VP8DecoderImpl::ReturnFrame(const vpx_image_t* img,
+                                uint32_t timestamp,
+                                int64_t ntp_time_ms) {
   if (img == NULL) {
     // Decoder OK and NULL image => No show frame
     return WEBRTC_VIDEO_CODEC_NO_OUTPUT;
@@ -816,6 +813,7 @@ int VP8DecoderImpl::ReturnFrame(const vpx_image_t* img, uint32_t timestamp) {
                              img->stride[VPX_PLANE_U],
                              img->stride[VPX_PLANE_V]);
   decoded_image_.set_timestamp(timestamp);
+  decoded_image_.set_ntp_time_ms(ntp_time_ms);
   int ret = decode_complete_callback_->Decoded(decoded_image_);
   if (ret != 0)
     return ret;

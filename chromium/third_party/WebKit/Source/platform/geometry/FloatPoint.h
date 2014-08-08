@@ -35,10 +35,8 @@
 #if OS(MACOSX)
 typedef struct CGPoint CGPoint;
 
-#ifdef NSGEOMETRY_TYPES_SAME_AS_CGGEOMETRY_TYPES
-typedef struct CGPoint NSPoint;
-#else
-typedef struct _NSPoint NSPoint;
+#ifdef __OBJC__
+#import <Foundation/Foundation.h>
 #endif
 #endif
 
@@ -46,8 +44,6 @@ struct SkPoint;
 
 namespace WebCore {
 
-class AffineTransform;
-class TransformationMatrix;
 class IntPoint;
 class IntSize;
 class LayoutPoint;
@@ -127,26 +123,31 @@ public:
         return FloatPoint(std::max(m_x, other.m_x), std::max(m_y, other.m_y));
     }
 
+    FloatPoint shrunkTo(const FloatPoint& other) const
+    {
+        return FloatPoint(std::min(m_x, other.m_x), std::min(m_y, other.m_y));
+    }
+
     FloatPoint transposedPoint() const
     {
         return FloatPoint(m_y, m_x);
     }
 
+    FloatPoint scaledBy(float scale) const
+    {
+        return FloatPoint(m_x * scale, m_y * scale);
+    }
+
 #if OS(MACOSX)
     FloatPoint(const CGPoint&);
     operator CGPoint() const;
-#if !defined(NSGEOMETRY_TYPES_SAME_AS_CGGEOMETRY_TYPES)
+#if defined(__OBJC__) && !defined(NSGEOMETRY_TYPES_SAME_AS_CGGEOMETRY_TYPES)
     FloatPoint(const NSPoint&);
     operator NSPoint() const;
 #endif
 #endif
 
-    operator SkPoint() const;
-
-    // FIXME: These are only used by SVGPoint and should probably move there.
-    // http://crbug.com/302829
-    FloatPoint matrixTransform(const TransformationMatrix&) const;
-    FloatPoint matrixTransform(const AffineTransform&) const;
+    SkPoint data() const;
 
 private:
     float m_x, m_y;

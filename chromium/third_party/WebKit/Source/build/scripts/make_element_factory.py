@@ -40,11 +40,13 @@ from make_qualified_names import MakeQualifiedNamesWriter
 class MakeElementFactoryWriter(MakeQualifiedNamesWriter):
     defaults = dict(MakeQualifiedNamesWriter.default_parameters, **{
         'JSInterfaceName': None,
+        'Conditional': None,
         'constructorNeedsCreatedByParser': None,
         'constructorNeedsFormElement': None,
         'contextConditional': None,
         'interfaceName': None,
         'noConstructor': None,
+        'noTypeHelpers': None,
         'runtimeEnabled': None,
     })
     default_parameters = dict(MakeQualifiedNamesWriter.default_parameters, **{
@@ -78,7 +80,7 @@ class MakeElementFactoryWriter(MakeQualifiedNamesWriter):
             interface_counts[tag['interface']] += 1
 
         for tag in tags:
-            tag['multipleTagNames'] = interface_counts[tag['interface']] > 1
+            tag['multipleTagNames'] = (interface_counts[tag['interface']] > 1 or tag['interface'] == fallback_interface)
 
         self._template_context.update({
             'fallback_interface': fallback_interface,

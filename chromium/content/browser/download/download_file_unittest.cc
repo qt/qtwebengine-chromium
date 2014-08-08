@@ -14,7 +14,6 @@
 #include "content/public/browser/download_destination_observer.h"
 #include "content/public/browser/download_interrupt_reasons.h"
 #include "content/public/browser/download_manager.h"
-#include "content/public/browser/power_save_blocker.h"
 #include "content/public/test/mock_download_manager.h"
 #include "net/base/file_stream.h"
 #include "net/base/mock_file_stream.h"
@@ -116,7 +115,7 @@ class DownloadFileTest : public testing::Test {
     *reason_p = reason;
   }
 
-  virtual bool CreateDownloadFile(int offset, bool calculate_hash) {
+  bool CreateDownloadFile(int offset, bool calculate_hash) {
     // There can be only one.
     DCHECK(!download_file_.get());
 
@@ -137,7 +136,6 @@ class DownloadFileTest : public testing::Test {
                              calculate_hash,
                              scoped_ptr<ByteStreamReader>(input_stream_),
                              net::BoundNetLog(),
-                             scoped_ptr<PowerSaveBlocker>().Pass(),
                              observer_factory_.GetWeakPtr()));
     download_file_->SetClientGuid(
         "12345678-ABCD-1234-DCBA-123456789ABC");
@@ -159,7 +157,7 @@ class DownloadFileTest : public testing::Test {
     return result == DOWNLOAD_INTERRUPT_REASON_NONE;
   }
 
-  virtual void DestroyDownloadFile(int offset) {
+  void DestroyDownloadFile(int offset) {
     EXPECT_FALSE(download_file_->InProgress());
 
     // Make sure the data has been properly written to disk.
@@ -414,7 +412,7 @@ TEST_F(DownloadFileTest, RenameFileFinal) {
   ASSERT_FALSE(base::PathExists(path_5));
   static const char file_data[] = "xyzzy";
   ASSERT_EQ(static_cast<int>(sizeof(file_data) - 1),
-            file_util::WriteFile(path_5, file_data, sizeof(file_data) - 1));
+            base::WriteFile(path_5, file_data, sizeof(file_data) - 1));
   ASSERT_TRUE(base::PathExists(path_5));
   EXPECT_TRUE(base::ReadFileToString(path_5, &file_contents));
   EXPECT_EQ(std::string(file_data), file_contents);
@@ -442,7 +440,7 @@ TEST_F(DownloadFileTest, RenameUniquifies) {
   ASSERT_FALSE(base::PathExists(path_1));
   static const char file_data[] = "xyzzy";
   ASSERT_EQ(static_cast<int>(sizeof(file_data)),
-            file_util::WriteFile(path_1, file_data, sizeof(file_data)));
+            base::WriteFile(path_1, file_data, sizeof(file_data)));
   ASSERT_TRUE(base::PathExists(path_1));
 
   EXPECT_EQ(DOWNLOAD_INTERRUPT_REASON_NONE, RenameAndUniquify(path_1, NULL));

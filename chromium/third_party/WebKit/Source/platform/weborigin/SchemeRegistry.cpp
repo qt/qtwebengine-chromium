@@ -55,6 +55,7 @@ static URLSchemesMap& secureSchemes()
         secureSchemes.add("https");
         secureSchemes.add("about");
         secureSchemes.add("data");
+        secureSchemes.add("wss");
     }
 
     return secureSchemes;
@@ -134,6 +135,7 @@ static URLSchemesMap& CORSEnabledSchemes()
     if (CORSEnabledSchemes.isEmpty()) {
         CORSEnabledSchemes.add("http");
         CORSEnabledSchemes.add("https");
+        CORSEnabledSchemes.add("data");
     }
 
     return CORSEnabledSchemes;

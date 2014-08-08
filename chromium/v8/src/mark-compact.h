@@ -1,35 +1,12 @@
 // Copyright 2012 the V8 project authors. All rights reserved.
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-//       copyright notice, this list of conditions and the following
-//       disclaimer in the documentation and/or other materials provided
-//       with the distribution.
-//     * Neither the name of Google Inc. nor the names of its
-//       contributors may be used to endorse or promote products derived
-//       from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
 #ifndef V8_MARK_COMPACT_H_
 #define V8_MARK_COMPACT_H_
 
-#include "compiler-intrinsics.h"
-#include "spaces.h"
+#include "src/compiler-intrinsics.h"
+#include "src/spaces.h"
 
 namespace v8 {
 namespace internal {
@@ -110,8 +87,7 @@ class Marking {
     markbit.Next().Set();
   }
 
-  // Returns true if the the object whose mark is transferred is marked black.
-  bool TransferMark(Address old_start, Address new_start);
+  void TransferMark(Address old_start, Address new_start);
 
 #ifdef DEBUG
   enum ObjectColor {
@@ -537,39 +513,12 @@ class ThreadLocalTop;
 // Mark-Compact collector
 class MarkCompactCollector {
  public:
-  // Type of functions to compute forwarding addresses of objects in
-  // compacted spaces.  Given an object and its size, return a (non-failure)
-  // Object* that will be the object after forwarding.  There is a separate
-  // allocation function for each (compactable) space based on the location
-  // of the object before compaction.
-  typedef MaybeObject* (*AllocationFunction)(Heap* heap,
-                                             HeapObject* object,
-                                             int object_size);
-
-  // Type of functions to encode the forwarding address for an object.
-  // Given the object, its size, and the new (non-failure) object it will be
-  // forwarded to, encode the forwarding address.  For paged spaces, the
-  // 'offset' input/output parameter contains the offset of the forwarded
-  // object from the forwarding address of the previous live object in the
-  // page as input, and is updated to contain the offset to be used for the
-  // next live object in the same page.  For spaces using a different
-  // encoding (i.e., contiguous spaces), the offset parameter is ignored.
-  typedef void (*EncodingFunction)(Heap* heap,
-                                   HeapObject* old_object,
-                                   int object_size,
-                                   Object* new_object,
-                                   int* offset);
-
-  // Type of functions to process non-live objects.
-  typedef void (*ProcessNonLiveFunction)(HeapObject* object, Isolate* isolate);
-
-  // Pointer to member function, used in IterateLiveObjects.
-  typedef int (MarkCompactCollector::*LiveObjectCallback)(HeapObject* obj);
-
   // Set the global flags, it must be called before Prepare to take effect.
   inline void SetFlags(int flags);
 
   static void Initialize();
+
+  void SetUp();
 
   void TearDown();
 
@@ -622,7 +571,6 @@ class MarkCompactCollector {
 
   enum SweeperType {
     CONSERVATIVE,
-    LAZY_CONSERVATIVE,
     PARALLEL_CONSERVATIVE,
     CONCURRENT_CONSERVATIVE,
     PRECISE
@@ -637,7 +585,7 @@ class MarkCompactCollector {
   void VerifyMarkbitsAreClean();
   static void VerifyMarkbitsAreClean(PagedSpace* space);
   static void VerifyMarkbitsAreClean(NewSpace* space);
-  void VerifyWeakEmbeddedObjectsInOptimizedCode();
+  void VerifyWeakEmbeddedObjectsInCode();
   void VerifyOmittedMapChecks();
 #endif
 
@@ -688,21 +636,18 @@ class MarkCompactCollector {
   void RecordCodeEntrySlot(Address slot, Code* target);
   void RecordCodeTargetPatch(Address pc, Code* target);
 
-  INLINE(void RecordSlot(Object** anchor_slot, Object** slot, Object* object));
+  INLINE(void RecordSlot(Object** anchor_slot,
+                         Object** slot,
+                         Object* object,
+                         SlotsBuffer::AdditionMode mode =
+                             SlotsBuffer::FAIL_ON_OVERFLOW));
 
-  void MigrateObject(Address dst,
-                     Address src,
+  void MigrateObject(HeapObject* dst,
+                     HeapObject* src,
                      int size,
                      AllocationSpace to_old_space);
 
   bool TryPromoteObject(HeapObject* object, int object_size);
-
-  inline Object* encountered_weak_collections() {
-    return encountered_weak_collections_;
-  }
-  inline void set_encountered_weak_collections(Object* weak_collection) {
-    encountered_weak_collections_ = weak_collection;
-  }
 
   void InvalidateCode(Code* code);
 
@@ -715,13 +660,13 @@ class MarkCompactCollector {
   MarkingParity marking_parity() { return marking_parity_; }
 
   // Concurrent and parallel sweeping support.
-  void SweepInParallel(PagedSpace* space,
-                       FreeList* private_free_list,
-                       FreeList* free_list);
+  void SweepInParallel(PagedSpace* space);
 
   void WaitUntilSweepingCompleted();
 
-  intptr_t StealMemoryFromSweeperThreads(PagedSpace* space);
+  bool IsSweepingCompleted();
+
+  void RefillFreeList(PagedSpace* space);
 
   bool AreSweeperThreadsActivated();
 
@@ -740,20 +685,19 @@ class MarkCompactCollector {
   void MarkWeakObjectToCodeTable();
 
   // Special case for processing weak references in a full collection. We need
-  // to artifically keep AllocationSites alive for a time.
+  // to artificially keep AllocationSites alive for a time.
   void MarkAllocationSite(AllocationSite* site);
 
  private:
-  MarkCompactCollector();
+  class SweeperTask;
+
+  explicit MarkCompactCollector(Heap* heap);
   ~MarkCompactCollector();
 
   bool MarkInvalidatedCode();
   bool WillBeDeoptimized(Code* code);
   void RemoveDeadInvalidatedCode();
   void ProcessInvalidatedCode(ObjectVisitor* visitor);
-
-  void UnlinkEvacuationCandidates();
-  void ReleaseEvacuationCandidates();
 
   void StartSweeperThreads();
 
@@ -790,6 +734,8 @@ class MarkCompactCollector {
 
   // True if concurrent or parallel sweeping is currently in progress.
   bool sweeping_pending_;
+
+  Semaphore pending_sweeper_jobs_semaphore_;
 
   bool sequential_sweeping_;
 
@@ -892,14 +838,11 @@ class MarkCompactCollector {
   void ClearNonLivePrototypeTransitions(Map* map);
   void ClearNonLiveMapTransitions(Map* map, MarkBit map_mark);
 
-  void ClearAndDeoptimizeDependentCode(DependentCode* dependent_code);
+  void ClearDependentCode(DependentCode* dependent_code);
+  void ClearDependentICList(Object* head);
   void ClearNonLiveDependentCode(DependentCode* dependent_code);
-
-  // Marking detaches initial maps from SharedFunctionInfo objects
-  // to make this reference weak. We need to reattach initial maps
-  // back after collection. This is either done during
-  // ClearNonLiveTransitions pass or by calling this function.
-  void ReattachInitialMaps();
+  int ClearNonLiveDependentCodeInGroup(DependentCode* dependent_code, int group,
+                                       int start, int end, int new_start);
 
   // Mark all values associated with reachable keys in weak collections
   // encountered so far.  This might push new object or even new weak maps onto
@@ -938,7 +881,19 @@ class MarkCompactCollector {
 
   void EvacuateNewSpaceAndCandidates();
 
+  void ReleaseEvacuationCandidates();
+
+  // Moves the pages of the evacuation_candidates_ list to the end of their
+  // corresponding space pages list.
+  void MoveEvacuationCandidatesToEndOfPagesList();
+
   void SweepSpace(PagedSpace* space, SweeperType sweeper);
+
+  // Finalizes the parallel sweeping phase. Marks all the pages that were
+  // swept in parallel.
+  void ParallelSweepSpacesComplete();
+
+  void ParallelSweepSpaceComplete(PagedSpace* space);
 
 #ifdef DEBUG
   friend class MarkObjectVisitor;
@@ -951,11 +906,13 @@ class MarkCompactCollector {
   Heap* heap_;
   MarkingDeque marking_deque_;
   CodeFlusher* code_flusher_;
-  Object* encountered_weak_collections_;
   bool have_code_to_deoptimize_;
 
   List<Page*> evacuation_candidates_;
   List<Code*> invalidated_code_;
+
+  SmartPointer<FreeList> free_list_old_data_space_;
+  SmartPointer<FreeList> free_list_old_pointer_space_;
 
   friend class Heap;
 };

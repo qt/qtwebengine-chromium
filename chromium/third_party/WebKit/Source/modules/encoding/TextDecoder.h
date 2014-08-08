@@ -32,6 +32,7 @@
 #define TextDecoder_h
 
 #include "bindings/v8/Dictionary.h"
+#include "platform/heap/Handle.h"
 #include "wtf/ArrayBufferView.h"
 #include "wtf/RefCounted.h"
 #include "wtf/text/TextCodec.h"
@@ -42,25 +43,27 @@ namespace WebCore {
 
 class ExceptionState;
 
-class TextDecoder : public RefCounted<TextDecoder> {
+class TextDecoder FINAL : public GarbageCollectedFinalized<TextDecoder> {
 public:
-    static PassRefPtr<TextDecoder> create(const String& label, const Dictionary&, ExceptionState&);
-    virtual ~TextDecoder();
+    static TextDecoder* create(const String& label, const Dictionary&, ExceptionState&);
+    ~TextDecoder();
 
     // Implement the IDL
     String encoding() const;
+    bool fatal() const { return m_fatal; }
+    bool ignoreBOM() const { return m_ignoreBOM; }
     String decode(ArrayBufferView*, const Dictionary&, ExceptionState&);
     String decode(ExceptionState& exceptionState) { return decode(0, Dictionary(), exceptionState); }
 
-    using RefCounted<TextDecoder>::ref;
-    using RefCounted<TextDecoder>::deref;
+    void trace(Visitor*) { }
 
 private:
-    TextDecoder(const String& encoding, bool fatal);
+    TextDecoder(const WTF::TextEncoding&, bool fatal, bool ignoreBOM);
 
     WTF::TextEncoding m_encoding;
     OwnPtr<WTF::TextCodec> m_codec;
     bool m_fatal;
+    bool m_ignoreBOM;
     bool m_bomSeen;
 };
 

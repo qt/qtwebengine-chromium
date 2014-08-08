@@ -50,7 +50,6 @@ extern SECMODModuleList *SECMOD_DestroyModuleListElement(SECMODModuleList *);
 extern void SECMOD_DestroyModuleList(SECMODModuleList *);
 extern SECStatus SECMOD_AddModule(SECMODModule *newModule);
 
-extern unsigned long SECMOD_InternaltoPubMechFlags(unsigned long internalFlags);
 extern unsigned long SECMOD_InternaltoPubCipherFlags(unsigned long internalFlags);
 
 /* Library functions */
@@ -94,8 +93,6 @@ CK_OBJECT_HANDLE pk11_FindObjectByTemplate(PK11SlotInfo *slot,
 					CK_ATTRIBUTE *inTemplate,int tsize);
 CK_OBJECT_HANDLE *pk11_FindObjectsByTemplate(PK11SlotInfo *slot,
 			CK_ATTRIBUTE *inTemplate,int tsize, int *objCount);
-SECStatus PK11_UpdateSlotAttribute(PK11SlotInfo *slot,
-				 PK11DefaultArrayEntry *entry, PRBool add);
 
 #define PK11_GETTAB(x) ((CK_FUNCTION_LIST_PTR)((x)->functionList))
 #define PK11_SETATTRS(x,id,v,l) (x)->type = (id); \

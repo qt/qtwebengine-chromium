@@ -32,9 +32,18 @@
     # If set to 1, doesn't compile debug symbols into webcore reducing the
     # size of the binary and increasing the speed of gdb.  gcc only.
     'remove_webcore_debug_symbols%': 0,
+    'enable_oilpan%': 0,
+    # If set to 1 (default) and using clang, the Blink GC plugin will check the
+    # usage of the garbage-collection infrastructure during compilation.
+    'blink_gc_plugin%': 1,
+    # If set to 1 together with blink_gc_plugin, the Blink GC plugin will dump
+    # points-to graph files for each compilation unit.
+    'blink_gc_plugin_dump_graph%': 0,
   },
   'targets': [
   {
+    # GN version: //third_party/WebKit/Source:config
+    #   (In GN this is a config rather than a target.)
     'target_name': 'config',
     'type': 'none',
     'direct_dependent_settings': {
@@ -68,11 +77,6 @@
             ['exclude', 'Mac\\.mm$'],
           ],
         }],
-        ['<(toolkit_uses_gtk) != 1', {
-            'sources/': [
-              ['exclude', 'Gtk\\.cpp$']
-            ]
-        }],
         ['OS!="android"', {
           'sources/': [
             ['exclude', 'Android\\.cpp$'],
@@ -98,6 +102,13 @@
             'WARNING_CFLAGS': ['-Wglobal-constructors'],
           },
         }],
+        # Only enable the blink_gc_plugin when using clang and chrome plugins.
+        ['blink_gc_plugin==1 and clang==1 and clang_use_chrome_plugins==1', {
+          'cflags': ['<!@(../../../tools/clang/scripts/blink_gc_plugin_flags.sh enable-oilpan=<(enable_oilpan) dump-graph=<(blink_gc_plugin_dump_graph))'],
+          'xcode_settings': {
+            'OTHER_CFLAGS': ['<!@(../../../tools/clang/scripts/blink_gc_plugin_flags.sh enable-oilpan=<(enable_oilpan) dump-graph=<(blink_gc_plugin_dump_graph))'],
+          },
+        }],
       ],
     },
   },
@@ -118,6 +129,9 @@
       'cflags!': ['-Wglobal-constructors'],
       'xcode_settings': {
         'WARNING_CFLAGS!': ['-Wglobal-constructors'],
+      },
+      'variables': {
+        'chromium_code': 1,
       },
     },
   }

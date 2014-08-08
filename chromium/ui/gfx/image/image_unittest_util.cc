@@ -15,10 +15,7 @@
 #include "ui/gfx/codec/png_codec.h"
 #include "ui/gfx/image/image_skia.h"
 
-#if defined(TOOLKIT_GTK)
-#include <gtk/gtk.h>
-#include "ui/gfx/gtk_util.h"
-#elif defined(OS_IOS)
+#if defined(OS_IOS)
 #include "base/mac/foundation_util.h"
 #include "base/mac/scoped_cftyperef.h"
 #include "skia/ext/skia_utils_ios.h"
@@ -59,7 +56,7 @@ const SkBitmap CreateBitmap(int width, int height) {
   SkBitmap bitmap;
   bitmap.setConfig(SkBitmap::kARGB_8888_Config, width, height);
   bitmap.allocPixels();
-  bitmap.eraseRGB(0, 255, 0);
+  bitmap.eraseARGB(255, 0, 255, 0);
   return bitmap;
 }
 
@@ -83,6 +80,8 @@ gfx::Image CreateImage(int width, int height) {
 }
 
 bool IsEqual(const gfx::Image& img1, const gfx::Image& img2) {
+  img1.AsImageSkia().EnsureRepsForSupportedScales();
+  img2.AsImageSkia().EnsureRepsForSupportedScales();
   std::vector<gfx::ImageSkiaRep> img1_reps = img1.AsImageSkia().image_reps();
   gfx::ImageSkia image_skia2 = img2.AsImageSkia();
   if (image_skia2.image_reps().size() != img1_reps.size())
@@ -192,8 +191,6 @@ PlatformImage CreatePlatformImage() {
   NSImage* image = gfx::SkBitmapToNSImage(bitmap);
   base::mac::NSObjectRetain(image);
   return image;
-#elif defined(TOOLKIT_GTK)
-  return gfx::GdkPixbufFromSkBitmap(bitmap);
 #else
   return gfx::ImageSkia::CreateFrom1xBitmap(bitmap);
 #endif
@@ -204,8 +201,6 @@ gfx::Image::RepresentationType GetPlatformRepresentationType() {
   return gfx::Image::kImageRepCocoaTouch;
 #elif defined(OS_MACOSX)
   return gfx::Image::kImageRepCocoa;
-#elif defined(TOOLKIT_GTK)
-  return gfx::Image::kImageRepGdk;
 #else
   return gfx::Image::kImageRepSkia;
 #endif
@@ -216,8 +211,6 @@ PlatformImage ToPlatformType(const gfx::Image& image) {
   return image.ToUIImage();
 #elif defined(OS_MACOSX)
   return image.ToNSImage();
-#elif defined(TOOLKIT_GTK)
-  return image.ToGdkPixbuf();
 #else
   return image.AsImageSkia();
 #endif
@@ -228,8 +221,6 @@ PlatformImage CopyPlatformType(const gfx::Image& image) {
   return image.CopyUIImage();
 #elif defined(OS_MACOSX)
   return image.CopyNSImage();
-#elif defined(TOOLKIT_GTK)
-  return image.CopyGdkPixbuf();
 #else
   return image.AsImageSkia();
 #endif
@@ -237,16 +228,6 @@ PlatformImage CopyPlatformType(const gfx::Image& image) {
 
 #if defined(OS_MACOSX)
 // Defined in image_unittest_util_mac.mm.
-#elif defined(TOOLKIT_GTK)
-SkColor GetPlatformImageColor(PlatformImage image, int x, int y) {
-  int n_channels = gdk_pixbuf_get_n_channels(image);
-  int rowstride = gdk_pixbuf_get_rowstride(image);
-  guchar* gdk_pixels = gdk_pixbuf_get_pixels(image);
-
-  guchar* pixel = gdk_pixels + (y * rowstride) + (x * n_channels);
-  guchar alpha = gdk_pixbuf_get_has_alpha(image) ? pixel[3] : 255;
-  return SkColorSetARGB(alpha, pixel[0], pixel[1], pixel[2]);
-}
 #else
 SkColor GetPlatformImageColor(PlatformImage image, int x, int y) {
   SkBitmap bitmap = *image.bitmap();
@@ -264,7 +245,7 @@ void CheckIsTransparent(SkColor color) {
 }
 
 bool IsPlatformImageValid(PlatformImage image) {
-#if defined(OS_MACOSX) || defined(TOOLKIT_GTK)
+#if defined(OS_MACOSX)
   return image != NULL;
 #else
   return !image.isNull();
@@ -272,7 +253,7 @@ bool IsPlatformImageValid(PlatformImage image) {
 }
 
 bool PlatformImagesEqual(PlatformImage image1, PlatformImage image2) {
-#if defined(OS_MACOSX) || defined(TOOLKIT_GTK)
+#if defined(OS_MACOSX)
   return image1 == image2;
 #else
   return image1.BackedBySameObjectAs(image2);

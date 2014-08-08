@@ -32,6 +32,7 @@
 #include "modules/webdatabase/AbstractSQLTransactionBackend.h"
 #include "modules/webdatabase/DatabaseBasicTypes.h"
 #include "modules/webdatabase/SQLTransactionStateMachine.h"
+#include "platform/heap/Handle.h"
 #include "wtf/Deque.h"
 #include "wtf/Forward.h"
 #include "wtf/ThreadingPrimitives.h"
@@ -41,27 +42,29 @@ namespace WebCore {
 
 class AbstractSQLTransaction;
 class DatabaseBackend;
-class SQLError;
+class SQLErrorData;
 class SQLiteTransaction;
 class SQLStatementBackend;
 class SQLTransactionBackend;
 class SQLValue;
 
-class SQLTransactionWrapper : public ThreadSafeRefCounted<SQLTransactionWrapper> {
+class SQLTransactionWrapper : public ThreadSafeRefCountedWillBeGarbageCollectedFinalized<SQLTransactionWrapper> {
 public:
     virtual ~SQLTransactionWrapper() { }
+    virtual void trace(Visitor*) { }
     virtual bool performPreflight(SQLTransactionBackend*) = 0;
     virtual bool performPostflight(SQLTransactionBackend*) = 0;
-    virtual SQLError* sqlError() const = 0;
+    virtual SQLErrorData* sqlError() const = 0;
     virtual void handleCommitFailedAfterPostflight(SQLTransactionBackend*) = 0;
 };
 
-class SQLTransactionBackend : public SQLTransactionStateMachine<SQLTransactionBackend>, public AbstractSQLTransactionBackend {
+class SQLTransactionBackend FINAL : public AbstractSQLTransactionBackend, public SQLTransactionStateMachine<SQLTransactionBackend> {
 public:
-    static PassRefPtr<SQLTransactionBackend> create(DatabaseBackend*,
-        PassRefPtr<AbstractSQLTransaction>, PassRefPtr<SQLTransactionWrapper>, bool readOnly);
+    static PassRefPtrWillBeRawPtr<SQLTransactionBackend> create(DatabaseBackend*,
+        PassRefPtrWillBeRawPtr<AbstractSQLTransaction>, PassRefPtrWillBeRawPtr<SQLTransactionWrapper>, bool readOnly);
 
     virtual ~SQLTransactionBackend();
+    virtual void trace(Visitor*) OVERRIDE;
 
     void lockAcquired();
     void performNextStep();
@@ -71,20 +74,20 @@ public:
     void notifyDatabaseThreadIsShuttingDown();
 
 private:
-    SQLTransactionBackend(DatabaseBackend*, PassRefPtr<AbstractSQLTransaction>,
-        PassRefPtr<SQLTransactionWrapper>, bool readOnly);
+    SQLTransactionBackend(DatabaseBackend*, PassRefPtrWillBeRawPtr<AbstractSQLTransaction>,
+        PassRefPtrWillBeRawPtr<SQLTransactionWrapper>, bool readOnly);
 
     // APIs called from the frontend published via AbstractSQLTransactionBackend:
     virtual void requestTransitToState(SQLTransactionState) OVERRIDE;
-    virtual PassRefPtr<SQLError> transactionError() OVERRIDE;
+    virtual SQLErrorData* transactionError() OVERRIDE;
     virtual AbstractSQLStatement* currentStatement() OVERRIDE;
     virtual void setShouldRetryCurrentStatement(bool) OVERRIDE;
-    virtual void executeSQL(PassOwnPtr<AbstractSQLStatement>, const String& statement,
+    virtual void executeSQL(PassOwnPtrWillBeRawPtr<AbstractSQLStatement>, const String& statement,
         const Vector<SQLValue>& arguments, int permissions) OVERRIDE;
 
     void doCleanup();
 
-    void enqueueStatementBackend(PassRefPtr<SQLStatementBackend>);
+    void enqueueStatementBackend(PassRefPtrWillBeRawPtr<SQLStatementBackend>);
 
     // State Machine functions:
     virtual StateFunction stateFunctionFor(SQLTransactionState) OVERRIDE;
@@ -107,12 +110,12 @@ private:
 
     void getNextStatement();
 
-    RefPtr<AbstractSQLTransaction> m_frontend; // Has a reference cycle, and will break in doCleanup().
-    RefPtr<SQLStatementBackend> m_currentStatementBackend;
+    RefPtrWillBeMember<AbstractSQLTransaction> m_frontend; // Has a reference cycle, and will break in doCleanup().
+    RefPtrWillBeMember<SQLStatementBackend> m_currentStatementBackend;
 
-    RefPtr<DatabaseBackend> m_database;
-    RefPtr<SQLTransactionWrapper> m_wrapper;
-    RefPtr<SQLError> m_transactionError;
+    RefPtrWillBeMember<DatabaseBackend> m_database;
+    RefPtrWillBeMember<SQLTransactionWrapper> m_wrapper;
+    OwnPtr<SQLErrorData> m_transactionError;
 
     bool m_hasCallback;
     bool m_hasSuccessCallback;
@@ -124,7 +127,7 @@ private:
     bool m_hasVersionMismatch;
 
     Mutex m_statementMutex;
-    Deque<RefPtr<SQLStatementBackend> > m_statementQueue;
+    Deque<RefPtrWillBeMember<SQLStatementBackend> > m_statementQueue;
 
     OwnPtr<SQLiteTransaction> m_sqliteTransaction;
 };

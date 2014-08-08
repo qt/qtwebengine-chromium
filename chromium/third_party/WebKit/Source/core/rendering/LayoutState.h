@@ -33,89 +33,95 @@
 
 namespace WebCore {
 
-class RenderBlockFlow;
+class ForceHorriblySlowRectMapping;
 class RenderBox;
 class RenderObject;
-class RenderFlowThread;
-class ShapeInsideInfo;
+class RenderView;
 
 class LayoutState {
     WTF_MAKE_NONCOPYABLE(LayoutState);
 public:
-    LayoutState()
-        : m_clipped(false)
-        , m_isPaginated(false)
-        , m_pageLogicalHeightChanged(false)
-#if !ASSERT_DISABLED
-        , m_layoutDeltaXSaturated(false)
-        , m_layoutDeltaYSaturated(false)
-#endif
-        , m_columnInfo(0)
-        , m_lineGrid(0)
-        , m_next(0)
-        , m_shapeInsideInfo(0)
-        , m_pageLogicalHeight(0)
-#ifndef NDEBUG
-        , m_renderer(0)
-#endif
-    {
-    }
+    // Constructor for root LayoutState created by RenderView
+    LayoutState(LayoutUnit pageLogicalHeight, bool pageLogicalHeightChanged, RenderView&);
+    // Constructor for sub-tree Layout and RenderTableSections
+    explicit LayoutState(RenderObject& root);
 
-    LayoutState(LayoutState*, RenderBox*, const LayoutSize& offset, LayoutUnit pageHeight, bool pageHeightChanged, ColumnInfo*);
-    LayoutState(RenderObject*);
+    LayoutState(RenderBox&, const LayoutSize& offset, LayoutUnit pageLogicalHeight = 0, bool pageHeightLogicalChanged = false, ColumnInfo* = 0);
 
-    // LayoutState is allocated out of the rendering partition.
-    void* operator new(size_t);
-    void operator delete(void*);
+    ~LayoutState();
 
     void clearPaginationInformation();
-    bool isPaginatingColumns() const { return m_columnInfo && m_columnInfo->paginationUnit() == ColumnInfo::Column; }
+    bool isPaginatingColumns() const { return m_columnInfo; }
     bool isPaginated() const { return m_isPaginated; }
+    bool isClipped() const { return m_clipped; }
 
     // The page logical offset is the object's offset from the top of the page in the page progression
     // direction (so an x-offset in vertical text and a y-offset for horizontal text).
-    LayoutUnit pageLogicalOffset(RenderBox*, LayoutUnit childLogicalOffset) const;
+    LayoutUnit pageLogicalOffset(const RenderBox&, const LayoutUnit& childLogicalOffset) const;
 
-    void addForcedColumnBreak(RenderBox*, LayoutUnit childLogicalOffset);
+    void addForcedColumnBreak(const RenderBox&, const LayoutUnit& childLogicalOffset);
 
+    void addLayoutDelta(const LayoutSize& delta)
+    {
+        m_layoutDelta += delta;
+#if ASSERT_ENABLED
+            m_layoutDeltaXSaturated |= m_layoutDelta.width() == LayoutUnit::max() || m_layoutDelta.width() == LayoutUnit::min();
+            m_layoutDeltaYSaturated |= m_layoutDelta.height() == LayoutUnit::max() || m_layoutDelta.height() == LayoutUnit::min();
+#endif
+    }
+
+    void setColumnInfo(ColumnInfo* columnInfo) { m_columnInfo = columnInfo; }
+
+    const LayoutSize& layoutOffset() const { return m_layoutOffset; }
+    const LayoutSize& layoutDelta() const { return m_layoutDelta; }
+    const LayoutSize& pageOffset() const { return m_pageOffset; }
     LayoutUnit pageLogicalHeight() const { return m_pageLogicalHeight; }
     bool pageLogicalHeightChanged() const { return m_pageLogicalHeightChanged; }
 
-    RenderBlockFlow* lineGrid() const { return m_lineGrid; }
-    LayoutSize lineGridOffset() const { return m_lineGridOffset; }
-    LayoutSize lineGridPaginationOrigin() const { return m_lineGridPaginationOrigin; }
+    LayoutState* next() const { return m_next; }
 
-    LayoutSize layoutOffset() const { return m_layoutOffset; }
+    bool needsBlockDirectionLocationSetBeforeLayout() const { return m_isPaginated && m_pageLogicalHeight; }
 
-    bool needsBlockDirectionLocationSetBeforeLayout() const { return m_lineGrid || (m_isPaginated && m_pageLogicalHeight); }
+    ColumnInfo* columnInfo() const { return m_columnInfo; }
 
-    ShapeInsideInfo* shapeInsideInfo() const { return m_shapeInsideInfo; }
+    bool cachedOffsetsEnabled() const { return m_cachedOffsetsEnabled; }
 
-#ifndef NDEBUG
-    RenderObject* renderer() const { return m_renderer; }
+    const LayoutRect& clipRect() const
+    {
+        ASSERT(m_cachedOffsetsEnabled);
+        return m_clipRect;
+    }
+    const LayoutSize& paintOffset() const
+    {
+        ASSERT(m_cachedOffsetsEnabled);
+        return m_paintOffset;
+    }
+
+
+    RenderObject& renderer() const { return m_renderer; }
+
+#if ASSERT_ENABLED
+    bool layoutDeltaXSaturated() const { return m_layoutDeltaXSaturated; }
+    bool layoutDeltaYSaturated() const { return m_layoutDeltaYSaturated; }
 #endif
+
 private:
-    void propagateLineGridInfo(RenderBox*);
-    void establishLineGrid(RenderBlockFlow*);
+    friend class ForceHorriblySlowRectMapping;
 
-    void computeLineGridPaginationOrigin(RenderBox*);
-
-public:
     // Do not add anything apart from bitfields until after m_columnInfo. See https://bugs.webkit.org/show_bug.cgi?id=100173
     bool m_clipped:1;
     bool m_isPaginated:1;
     // If our page height has changed, this will force all blocks to relayout.
     bool m_pageLogicalHeightChanged:1;
-#if !ASSERT_DISABLED
+
+    bool m_cachedOffsetsEnabled:1;
+#if ASSERT_ENABLED
     bool m_layoutDeltaXSaturated:1;
     bool m_layoutDeltaYSaturated:1;
 #endif
     // If the enclosing pagination model is a column model, then this will store column information for easy retrieval/manipulation.
     ColumnInfo* m_columnInfo;
-    // The current line grid that we're snapping to and the offset of the start of the grid.
-    RenderBlockFlow* m_lineGrid;
     LayoutState* m_next;
-    ShapeInsideInfo* m_shapeInsideInfo;
 
     // FIXME: Distinguish between the layout clip rect and the paint clip rect which may be larger,
     // e.g., because of composited scrolling.
@@ -134,12 +140,8 @@ public:
     LayoutUnit m_pageLogicalHeight;
     // The offset of the start of the first page in the nearest enclosing pagination model.
     LayoutSize m_pageOffset;
-    LayoutSize m_lineGridOffset;
-    LayoutSize m_lineGridPaginationOrigin;
 
-#ifndef NDEBUG
-    RenderObject* m_renderer;
-#endif
+    RenderObject& m_renderer;
 };
 
 } // namespace WebCore

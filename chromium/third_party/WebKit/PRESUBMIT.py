@@ -81,6 +81,7 @@ def _CommonChecks(input_api, output_api):
     results.extend(_CheckUnwantedDependencies(input_api, output_api))
     results.extend(_CheckChromiumPlatformMacros(input_api, output_api))
     results.extend(_CheckWatchlist(input_api, output_api))
+    results.extend(_CheckFilePermissions(input_api, output_api))
     return results
 
 
@@ -188,7 +189,7 @@ def _CheckUnwantedDependencies(input_api, output_api):
     original_sys_path = sys.path
     try:
         sys.path = sys.path + [input_api.os_path.realpath(input_api.os_path.join(
-                input_api.PresubmitLocalPath(), '..', '..', 'tools', 'checkdeps'))]
+                input_api.PresubmitLocalPath(), '..', '..', 'buildtools', 'checkdeps'))]
         import checkdeps
         from cpp_checker import CppChecker
         from rules import Rule
@@ -246,30 +247,12 @@ def _CheckChromiumPlatformMacros(input_api, output_api, source_file_filter=None)
     return []
 
 
-def _CompileDevtoolsFrontend(input_api, output_api):
-    if not input_api.platform.startswith('linux'):
-        return []
-    local_paths = [f.LocalPath() for f in input_api.AffectedFiles()]
-    if (any("devtools/front_end" in path for path in local_paths) or
-        any("InjectedScriptSource.js" in path for path in local_paths) or
-        any("InjectedScriptCanvasModuleSource.js" in path for path in local_paths)):
-        lint_path = input_api.os_path.join(input_api.PresubmitLocalPath(),
-            "Source", "devtools", "scripts", "compile_frontend.py")
-        out, _ = input_api.subprocess.Popen(
-            [input_api.python_executable, lint_path],
-            stdout=input_api.subprocess.PIPE,
-            stderr=input_api.subprocess.STDOUT).communicate()
-        if "WARNING" in out or "ERROR" in out:
-            return [output_api.PresubmitError(out)]
-    return []
-
-
 def _CheckForPrintfDebugging(input_api, output_api):
     """Generally speaking, we'd prefer not to land patches that printf
     debug output."""
-    os_macro_re = input_api.re.compile(r'^\s*printf\(')
+    printf_re = input_api.re.compile(r'^\s*printf\(')
     errors = input_api.canned_checks._FindNewViolationsOfRule(
-        lambda _, x: not os_macro_re.search(x),
+        lambda _, x: not printf_re.search(x),
         input_api, None)
     errors = ['  * %s' % violation for violation in errors]
     if errors:
@@ -277,6 +260,24 @@ def _CheckForPrintfDebugging(input_api, output_api):
                     'printf debugging is best debugging! That said, it might '
                     'be a good idea to drop the following occurances from '
                     'your patch before uploading:\n%s' % '\n'.join(errors))]
+    return []
+
+
+def _CheckForDangerousTestFunctions(input_api, output_api):
+    """Tests should not be using serveAsynchronousMockedRequests, since it does
+    not guarantee that the threaded HTML parser will have completed."""
+    serve_async_requests_re = input_api.re.compile(
+        r'serveAsynchronousMockedRequests')
+    errors = input_api.canned_checks._FindNewViolationsOfRule(
+        lambda _, x: not serve_async_requests_re.search(x),
+        input_api, None)
+    errors = ['  * %s' % violation for violation in errors]
+    if errors:
+        return [output_api.PresubmitError(
+                    'You should be using FrameTestHelpers::'
+                    'pumpPendingRequests() instead of '
+                    'serveAsynchronousMockedRequests() in the following '
+                    'locations:\n%s' % '\n'.join(errors))]
     return []
 
 
@@ -289,12 +290,30 @@ def _CheckForFailInFile(input_api, f):
     return errors
 
 
+def _CheckFilePermissions(input_api, output_api):
+    """Check that all files have their permissions properly set."""
+    if input_api.platform == 'win32':
+        return []
+    path = input_api.os_path.join(
+        '..', '..', 'tools', 'checkperms', 'checkperms.py')
+    args = [sys.executable, path, '--root', input_api.change.RepositoryRoot()]
+    for f in input_api.AffectedFiles():
+        args += ['--file', f.LocalPath()]
+    checkperms = input_api.subprocess.Popen(
+        args, stdout=input_api.subprocess.PIPE)
+    errors = checkperms.communicate()[0].strip()
+    if errors:
+        return [output_api.PresubmitError(
+            'checkperms.py failed.', errors.splitlines())]
+    return []
+
+
 def CheckChangeOnUpload(input_api, output_api):
     results = []
     results.extend(_CommonChecks(input_api, output_api))
     results.extend(_CheckStyle(input_api, output_api))
     results.extend(_CheckForPrintfDebugging(input_api, output_api))
-    results.extend(_CompileDevtoolsFrontend(input_api, output_api))
+    results.extend(_CheckForDangerousTestFunctions(input_api, output_api))
     return results
 
 
@@ -309,8 +328,24 @@ def CheckChangeOnCommit(input_api, output_api):
     results.extend(_CheckSubversionConfig(input_api, output_api))
     return results
 
-def GetPreferredTrySlaves(project, change):
-    return [
-        'linux_blink_rel', 'mac_blink_rel', 'win_blink_rel',
-        'linux_blink', 'mac_layout:webkit_lint', 'win_layout:webkit_lint',
-    ]
+
+def GetPreferredTryMasters(project, change):
+    return {
+        'tryserver.blink': {
+            'android_blink_compile_dbg': set(['defaulttests']),
+            'android_blink_compile_rel': set(['defaulttests']),
+            'android_chromium_gn_compile_rel': set(['defaulttests']),
+            'linux_blink_dbg': set(['defaulttests']),
+            'linux_blink_rel': set(['defaulttests']),
+            'linux_chromium_gn_rel': set(['defaulttests']),
+            'mac_blink_compile_dbg': set(['defaulttests']),
+            'mac_blink_rel': set(['defaulttests']),
+            'win_blink_compile_dbg': set(['defaulttests']),
+            'win_blink_rel': set(['defaulttests']),
+        },
+        'tryserver.chromium.gpu': {
+            'linux_gpu': set(['defaulttests']),
+            'mac_gpu': set(['defaulttests']),
+            'win_gpu': set(['defaulttests']),
+        }
+    }

@@ -29,25 +29,26 @@
  */
 
 #include "config.h"
-#include "WebBindings.h"
+#include "public/web/WebBindings.h"
 
 #include "V8Element.h"
 #include "V8Range.h"
-#include "WebArrayBufferView.h"
-#include "WebElement.h"
-#include "WebRange.h"
 #include "bindings/v8/NPV8Object.h"  // for PrivateIdentifier
 #include "bindings/v8/ScriptController.h"
 #include "bindings/v8/V8DOMWrapper.h"
+#include "bindings/v8/V8NPObject.h"
 #include "bindings/v8/V8NPUtils.h"
 #include "bindings/v8/custom/V8ArrayBufferCustom.h"
 #include "bindings/v8/custom/V8ArrayBufferViewCustom.h"
 #include "bindings/v8/npruntime_impl.h"
 #include "bindings/v8/npruntime_priv.h"
 #include "core/dom/Range.h"
-#include "core/frame/DOMWindow.h"
-#include "core/frame/Frame.h"
+#include "core/frame/LocalDOMWindow.h"
+#include "core/frame/LocalFrame.h"
 #include "public/platform/WebArrayBuffer.h"
+#include "public/web/WebArrayBufferView.h"
+#include "public/web/WebElement.h"
+#include "public/web/WebRange.h"
 #include "wtf/ArrayBufferView.h"
 
 using namespace WebCore;
@@ -182,6 +183,11 @@ void WebBindings::unregisterObject(NPObject* object)
     _NPN_UnregisterObject(object);
 }
 
+void WebBindings::dropV8WrapperForObject(NPObject* object)
+{
+    WebCore::forgetV8ObjectForNPObject(object);
+}
+
 NPUTF8* WebBindings::utf8FromIdentifier(NPIdentifier identifier)
 {
     return _NPN_UTF8FromIdentifier(identifier);
@@ -219,7 +225,7 @@ static bool getRangeImpl(NPObject* object, WebRange* webRange, v8::Isolate* isol
     if (!V8Range::wrapperTypeInfo.equals(toWrapperTypeInfo(v8Object)))
         return false;
 
-    Range* native = V8Range::hasInstanceInAnyWorld(v8Object, isolate) ? V8Range::toNative(v8Object) : 0;
+    Range* native = V8Range::hasInstance(v8Object, isolate) ? V8Range::toNative(v8Object) : 0;
     if (!native)
         return false;
 
@@ -240,7 +246,7 @@ static bool getNodeImpl(NPObject* object, WebNode* webNode, v8::Isolate* isolate
     v8::Handle<v8::Object> v8Object = v8::Local<v8::Object>::New(isolate, v8NPObject->v8Object);
     if (v8Object.IsEmpty())
         return false;
-    Node* native = V8Node::hasInstanceInAnyWorld(v8Object, isolate) ? V8Node::toNative(v8Object) : 0;
+    Node* native = V8Node::hasInstance(v8Object, isolate) ? V8Node::toNative(v8Object) : 0;
     if (!native)
         return false;
 
@@ -261,7 +267,7 @@ static bool getElementImpl(NPObject* object, WebElement* webElement, v8::Isolate
     v8::Handle<v8::Object> v8Object = v8::Local<v8::Object>::New(isolate, v8NPObject->v8Object);
     if (v8Object.IsEmpty())
         return false;
-    Element* native = V8Element::hasInstanceInAnyWorld(v8Object, isolate) ? V8Element::toNative(v8Object) : 0;
+    Element* native = V8Element::hasInstance(v8Object, isolate) ? V8Element::toNative(v8Object) : 0;
     if (!native)
         return false;
 
@@ -282,7 +288,7 @@ static bool getArrayBufferImpl(NPObject* object, WebArrayBuffer* arrayBuffer, v8
     v8::Handle<v8::Object> v8Object = v8::Local<v8::Object>::New(isolate, v8NPObject->v8Object);
     if (v8Object.IsEmpty())
         return false;
-    ArrayBuffer* native = V8ArrayBuffer::hasInstanceInAnyWorld(v8Object, isolate) ? V8ArrayBuffer::toNative(v8Object) : 0;
+    ArrayBuffer* native = V8ArrayBuffer::hasInstance(v8Object, isolate) ? V8ArrayBuffer::toNative(v8Object) : 0;
     if (!native)
         return false;
 
@@ -303,7 +309,7 @@ static bool getArrayBufferViewImpl(NPObject* object, WebArrayBufferView* arrayBu
     v8::Handle<v8::Object> v8Object = v8::Local<v8::Object>::New(isolate, v8NPObject->v8Object);
     if (v8Object.IsEmpty())
         return false;
-    ArrayBufferView* native = V8ArrayBufferView::hasInstanceInAnyWorld(v8Object, isolate) ? V8ArrayBufferView::toNative(v8Object) : 0;
+    ArrayBufferView* native = V8ArrayBufferView::hasInstance(v8Object, isolate) ? V8ArrayBufferView::toNative(v8Object) : 0;
     if (!native)
         return false;
 
@@ -318,7 +324,7 @@ static NPObject* makeIntArrayImpl(const WebVector<int>& data, v8::Isolate* isola
     for (size_t i = 0; i < data.size(); ++i)
         result->Set(i, v8::Number::New(isolate, data[i]));
 
-    DOMWindow* window = toDOMWindow(isolate->GetCurrentContext());
+    LocalDOMWindow* window = currentDOMWindow(isolate);
     return npCreateV8ScriptObject(0, result, window, isolate);
 }
 
@@ -329,7 +335,7 @@ static NPObject* makeStringArrayImpl(const WebVector<WebString>& data, v8::Isola
     for (size_t i = 0; i < data.size(); ++i)
         result->Set(i, v8String(isolate, data[i]));
 
-    DOMWindow* window = toDOMWindow(isolate->GetCurrentContext());
+    LocalDOMWindow* window = currentDOMWindow(isolate);
     return npCreateV8ScriptObject(0, result, window, isolate);
 }
 

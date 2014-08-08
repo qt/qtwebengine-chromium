@@ -27,11 +27,11 @@
 
 #include "core/html/canvas/WebGLRenderbuffer.h"
 
-#include "core/html/canvas/WebGLRenderingContext.h"
+#include "core/html/canvas/WebGLRenderingContextBase.h"
 
 namespace WebCore {
 
-PassRefPtr<WebGLRenderbuffer> WebGLRenderbuffer::create(WebGLRenderingContext* ctx)
+PassRefPtr<WebGLRenderbuffer> WebGLRenderbuffer::create(WebGLRenderingContextBase* ctx)
 {
     return adoptRef(new WebGLRenderbuffer(ctx));
 }
@@ -41,25 +41,24 @@ WebGLRenderbuffer::~WebGLRenderbuffer()
     deleteObject(0);
 }
 
-WebGLRenderbuffer::WebGLRenderbuffer(WebGLRenderingContext* ctx)
+WebGLRenderbuffer::WebGLRenderbuffer(WebGLRenderingContextBase* ctx)
     : WebGLSharedObject(ctx)
     , m_internalFormat(GL_RGBA4)
-    , m_initialized(false)
     , m_width(0)
     , m_height(0)
     , m_hasEverBeenBound(false)
 {
     ScriptWrappable::init(this);
-    setObject(ctx->graphicsContext3D()->createRenderbuffer());
+    setObject(ctx->webContext()->createRenderbuffer());
 }
 
-void WebGLRenderbuffer::deleteObjectImpl(GraphicsContext3D* context3d, Platform3DObject object)
+void WebGLRenderbuffer::deleteObjectImpl(blink::WebGraphicsContext3D* context3d, Platform3DObject object)
 {
     context3d->deleteRenderbuffer(object);
     deleteEmulatedStencilBuffer(context3d);
 }
 
-void WebGLRenderbuffer::deleteEmulatedStencilBuffer(GraphicsContext3D* context3d)
+void WebGLRenderbuffer::deleteEmulatedStencilBuffer(blink::WebGraphicsContext3D* context3d)
 {
     if (!m_emulatedStencilBuffer)
         return;

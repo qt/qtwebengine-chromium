@@ -46,12 +46,13 @@
 
 #include "core/rendering/RenderMarquee.h"
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 #include "core/html/HTMLMarqueeElement.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/UseCounter.h"
 #include "core/rendering/RenderLayer.h"
 #include "core/rendering/RenderView.h"
+#include "platform/LengthFunctions.h"
 
 using namespace std;
 
@@ -172,7 +173,7 @@ void RenderMarquee::start()
         m_stopped = false;
     }
 
-    m_timer.startRepeating(speed() * 0.001);
+    m_timer.startRepeating(speed() * 0.001, FROM_HERE);
 }
 
 void RenderMarquee::suspend()
@@ -194,8 +195,11 @@ void RenderMarquee::updateMarqueePosition()
         EMarqueeBehavior behavior = style()->marqueeBehavior();
         m_start = computePosition(direction(), behavior == MALTERNATE);
         m_end = computePosition(reverseDirection(), behavior == MALTERNATE || behavior == MSLIDE);
-        if (!m_stopped)
+        if (!m_stopped) {
+            // Hits in compositing/overflow/do-not-repaint-if-scrolling-composited-layers.html during layout.
+            DisableCompositingQueryAsserts disabler;
             start();
+        }
     }
 }
 
@@ -215,7 +219,7 @@ const char* RenderMarquee::renderName() const
 
 void RenderMarquee::styleDidChange(StyleDifference difference, const RenderStyle* oldStyle)
 {
-    RenderBlock::styleDidChange(difference, oldStyle);
+    RenderBlockFlow::styleDidChange(difference, oldStyle);
 
     RenderStyle* s = style();
 
@@ -248,20 +252,20 @@ void RenderMarquee::styleDidChange(StyleDifference difference, const RenderStyle
     if (speed() != marqueeSpeed()) {
         m_speed = marqueeSpeed();
         if (m_timer.isActive())
-            m_timer.startRepeating(speed() * 0.001);
+            m_timer.startRepeating(speed() * 0.001, FROM_HERE);
     }
 
     // Check the loop count to see if we should now stop.
     bool activate = (m_totalLoops <= 0 || m_currentLoop < m_totalLoops);
     if (activate && !m_timer.isActive())
-        setNeedsLayout();
+        setNeedsLayoutAndFullPaintInvalidation();
     else if (!activate && m_timer.isActive())
         m_timer.stop();
 }
 
-void RenderMarquee::layoutBlock(bool relayoutChildren, LayoutUnit pageLogicalHeight)
+void RenderMarquee::layoutBlock(bool relayoutChildren)
 {
-    RenderBlockFlow::layoutBlock(relayoutChildren, pageLogicalHeight);
+    RenderBlockFlow::layoutBlock(relayoutChildren);
 
     updateMarqueePosition();
 }

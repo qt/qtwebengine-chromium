@@ -15,6 +15,9 @@ const char kPreviewRequestID[] = "requestID";
 // Unique ID to identify a print preview UI.
 const char kPreviewUIID[] = "previewUIID";
 
+// Capabilities option. Contains the capabilities in CDD format.
+const char kSettingCapabilities[] = "capabilities";
+
 // Print using cloud print: true if selected, false if not.
 const char kSettingCloudPrintId[] = "cloudPrintID";
 
@@ -74,6 +77,18 @@ const char kSettingHeaderFooterURL[] = "url";
 // Page orientation: true for landscape, false for portrait.
 const char kSettingLandscape[] = "landscape";
 
+// Key that specifies the requested media size.
+const char kSettingMediaSize[] = "mediaSize";
+
+// Key that specifies the requested media height in microns.
+const char kSettingMediaSizeHeightMicrons[] = "height_microns";
+
+// Key that specifies the requested media width in microns.
+const char kSettingMediaSizeWidthMicrons[] = "width_microns";
+
+// Key that specifies the requested media platform specific vendor id.
+const char kSettingMediaSizeVendorId[] = "vendor_id";
+
 // Key that specifies the bottom margin of the page.
 const char kSettingMarginBottom[] = "marginBottom";
 
@@ -119,6 +134,12 @@ const char kSettingPrintableAreaHeight[] = "printableAreaHeight";
 
 // Printer name.
 const char kSettingPrinterName[] = "printerName";
+
+// Printer description.
+const char kSettingPrinterDescription[] = "printerDescription";
+
+// Additional printer options.
+const char kSettingPrinterOptions[] = "printerOptions";
 
 // Print to PDF option: true if selected, false if not.
 const char kSettingPrintToPDF[] = "printToPDF";

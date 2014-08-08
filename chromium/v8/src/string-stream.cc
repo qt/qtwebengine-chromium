@@ -1,34 +1,10 @@
-// Copyright 2012 the V8 project authors. All rights reserved.
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-//       copyright notice, this list of conditions and the following
-//       disclaimer in the documentation and/or other materials provided
-//       with the distribution.
-//     * Neither the name of Google Inc. nor the names of its
-//       contributors may be used to endorse or promote products derived
-//       from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Copyright 2014 the V8 project authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
-#include "v8.h"
+#include "src/string-stream.h"
 
-#include "factory.h"
-#include "string-stream.h"
+#include "src/handles-inl.h"
 
 namespace v8 {
 namespace internal {
@@ -153,21 +129,21 @@ void StringStream::Add(Vector<const char> format, Vector<FmtElm> elms) {
     case 'i': case 'd': case 'u': case 'x': case 'c': case 'X': {
       int value = current.data_.u_int_;
       EmbeddedVector<char, 24> formatted;
-      int length = OS::SNPrintF(formatted, temp.start(), value);
+      int length = SNPrintF(formatted, temp.start(), value);
       Add(Vector<const char>(formatted.start(), length));
       break;
     }
     case 'f': case 'g': case 'G': case 'e': case 'E': {
       double value = current.data_.u_double_;
       EmbeddedVector<char, 28> formatted;
-      OS::SNPrintF(formatted, temp.start(), value);
+      SNPrintF(formatted, temp.start(), value);
       Add(formatted.start());
       break;
     }
     case 'p': {
       void* value = current.data_.u_pointer_;
       EmbeddedVector<char, 20> formatted;
-      OS::SNPrintF(formatted, temp.start(), value);
+      SNPrintF(formatted, temp.start(), value);
       Add(formatted.start());
       break;
     }
@@ -261,7 +237,7 @@ void StringStream::Add(const char* format, FmtElm arg0, FmtElm arg1,
 
 SmartArrayPointer<const char> StringStream::ToCString() const {
   char* str = NewArray<char>(length_ + 1);
-  OS::MemCopy(str, buffer_, length_);
+  MemCopy(str, buffer_, length_);
   str[length_] = '\0';
   return SmartArrayPointer<const char>(str);
 }
@@ -290,7 +266,7 @@ void StringStream::OutputToFile(FILE* out) {
 
 Handle<String> StringStream::ToString(Isolate* isolate) {
   return isolate->factory()->NewStringFromUtf8(
-      Vector<const char>(buffer_, length_));
+      Vector<const char>(buffer_, length_)).ToHandleChecked();
 }
 
 
@@ -372,7 +348,8 @@ void StringStream::PrintUsingMap(JSObject* js_object) {
           key->ShortPrint();
         }
         Add(": ");
-        Object* value = js_object->RawFastPropertyAt(descs->GetFieldIndex(i));
+        FieldIndex index = FieldIndex::ForDescriptor(map, i);
+        Object* value = js_object->RawFastPropertyAt(index);
         Add("%o\n", value);
       }
     }
@@ -570,7 +547,7 @@ char* HeapStringAllocator::grow(unsigned* bytes) {
   if (new_space == NULL) {
     return space_;
   }
-  OS::MemCopy(new_space, space_, *bytes);
+  MemCopy(new_space, space_, *bytes);
   *bytes = new_bytes;
   DeleteArray(space_);
   space_ = new_space;

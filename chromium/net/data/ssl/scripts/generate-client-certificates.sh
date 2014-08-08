@@ -20,17 +20,17 @@
 
 try () {
   echo "$@"
-  $@ || exit 1
+  "$@" || exit 1
 }
 
 try rm -rf out
 try mkdir out
 
 echo Create the serial number files and indices.
-serial = 100
+serial=1000
 for i in B C E
 do
-  try echo $serial > out/$i-serial
+  try /bin/sh -c "echo $serial > out/$i-serial"
   serial=$(expr $serial + 1)
   touch out/$i-index.txt
   touch out/$i-index.txt.attr
@@ -60,6 +60,7 @@ COMMON_NAME="C Root CA" \
     -req -days 3650 \
     -in out/C.csr \
     -extensions ca_cert \
+    -extfile client-certs.cnf \
     -signkey out/C.key \
     -out out/C.pem
 
@@ -138,8 +139,8 @@ COMMON_NAME="E CA" \
 
 echo Package the client certs and private keys into PKCS12 files
 # This is done for easily importing all of the certs needed for clients.
-cat out/A.pem out/A.key out/B.pem out/C.pem > out/A-chain.pem
-cat out/D.pem out/D.key out/E.pem out/C.pem > out/D-chain.pem
+try /bin/sh -c "cat out/A.pem out/A.key out/B.pem out/C.pem > out/A-chain.pem"
+try /bin/sh -c "cat out/D.pem out/D.key out/E.pem out/C.pem > out/D-chain.pem"
 
 try openssl pkcs12 \
   -in out/A-chain.pem \
@@ -154,10 +155,10 @@ try openssl pkcs12 \
   -passout pass:chrome
 
 echo Package the client certs for unit tests
-cp out/A.pem client_1.pem
-cp out/A.key client_1.key
-cp out/B.pem client_1_ca.pem
+try cp out/A.pem ../certificates/client_1.pem
+try cp out/A.key ../certificates/client_1.key
+try cp out/B.pem ../certificates/client_1_ca.pem
 
-cp out/D.pem client_2.pem
-cp out/D.key client_2.key
-cp out/E.pem client_2_ca.pem
+try cp out/D.pem ../certificates/client_2.pem
+try cp out/D.key ../certificates/client_2.key
+try cp out/E.pem ../certificates/client_2_ca.pem

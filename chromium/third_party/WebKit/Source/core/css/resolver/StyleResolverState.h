@@ -22,9 +22,8 @@
 #ifndef StyleResolverState_h
 #define StyleResolverState_h
 
-#include "CSSPropertyNames.h"
+#include "core/CSSPropertyNames.h"
 
-#include "core/animation/css/CSSAnimations.h"
 #include "core/css/CSSSVGDocumentValue.h"
 #include "core/css/CSSToLengthConversionData.h"
 #include "core/css/resolver/CSSToStyleMap.h"
@@ -38,14 +37,16 @@
 
 namespace WebCore {
 
+class CSSAnimationUpdate;
 class FontDescription;
-class RenderRegion;
 class StyleRule;
 
 class StyleResolverState {
-WTF_MAKE_NONCOPYABLE(StyleResolverState);
+    STACK_ALLOCATED();
+    WTF_MAKE_NONCOPYABLE(StyleResolverState);
 public:
-    StyleResolverState(Document&, Element*, RenderStyle* parentStyle = 0, RenderRegion* regionForStyling = 0);
+    StyleResolverState(Document&, Element*, RenderStyle* parentStyle = 0);
+    ~StyleResolverState();
 
     // In FontFaceSet and CanvasRenderingContext2D, we don't have an element to grab the document from.
     // This is why we have to store the document separately.
@@ -66,15 +67,13 @@ public:
 
     const CSSToLengthConversionData& cssToLengthConversionData() const { return m_cssToLengthConversionData; }
 
-    void setAnimationUpdate(PassOwnPtr<CSSAnimationUpdate> update) { m_animationUpdate = update; }
+    void setAnimationUpdate(PassOwnPtrWillBeRawPtr<CSSAnimationUpdate>);
     const CSSAnimationUpdate* animationUpdate() { return m_animationUpdate.get(); }
-    PassOwnPtr<CSSAnimationUpdate> takeAnimationUpdate() { return m_animationUpdate.release(); }
+    PassOwnPtrWillBeRawPtr<CSSAnimationUpdate> takeAnimationUpdate();
 
     void setParentStyle(PassRefPtr<RenderStyle> parentStyle) { m_parentStyle = parentStyle; }
     const RenderStyle* parentStyle() const { return m_parentStyle.get(); }
     RenderStyle* parentStyle() { return m_parentStyle.get(); }
-
-    const RenderRegion* regionForStyling() const { return m_regionForStyling; }
 
     void setCurrentRule(StyleRule* currentRule) { m_currentRule = currentRule; }
     const StyleRule* currentRule() const { return m_currentRule; }
@@ -95,8 +94,20 @@ public:
     void setLineHeightValue(CSSValue* value) { m_lineHeightValue = value; }
     CSSValue* lineHeightValue() { return m_lineHeightValue; }
 
-    void cacheUserAgentBorderAndBackground() { m_cachedUAStyle = CachedUAStyle(style()); }
-    const CachedUAStyle& cachedUAStyle() const { return m_cachedUAStyle; }
+    void cacheUserAgentBorderAndBackground()
+    {
+        // RenderTheme only needs the cached style if it has an appearance,
+        // and constructing it is expensive so we avoid it if possible.
+        if (!style()->hasAppearance())
+            return;
+
+        m_cachedUAStyle = CachedUAStyle::create(style());
+    }
+
+    const CachedUAStyle* cachedUAStyle() const
+    {
+        return m_cachedUAStyle.get();
+    }
 
     ElementStyleResources& elementStyleResources() { return m_elementStyleResources; }
     const CSSToStyleMap& styleMap() const { return m_styleMap; }
@@ -107,7 +118,7 @@ public:
     // sites are extremely verbose.
     PassRefPtr<StyleImage> styleImage(CSSPropertyID propertyId, CSSValue* value)
     {
-        return m_elementStyleResources.styleImage(document().textLinkColors(), style()->color(), propertyId, value);
+        return m_elementStyleResources.styleImage(document(), document().textLinkColors(), style()->color(), propertyId, value);
     }
 
     FontBuilder& fontBuilder() { return m_fontBuilder; }
@@ -122,19 +133,7 @@ public:
     void setWritingMode(WritingMode writingMode) { m_fontBuilder.didChangeFontParameters(m_style->setWritingMode(writingMode)); }
     void setTextOrientation(TextOrientation textOrientation) { m_fontBuilder.didChangeFontParameters(m_style->setTextOrientation(textOrientation)); }
 
-    // SVG handles zooming in a different way compared to CSS. The whole document is scaled instead
-    // of each individual length value in the render style / tree. CSSPrimitiveValue::computeLength*()
-    // multiplies each resolved length with the zoom multiplier - so for SVG we need to disable that.
-    // Though all CSS values that can be applied to outermost <svg> elements (width/height/border/padding...)
-    // need to respect the scaling. RenderBox (the parent class of RenderSVGRoot) grabs values like
-    // width/height/border/padding/... from the RenderStyle -> for SVG these values would never scale,
-    // if we'd pass a 1.0 zoom factor everyhwere. So we only pass a zoom factor of 1.0 for specific
-    // properties that are NOT allowed to scale within a zoomed SVG document (letter/word-spacing/font-size).
-    bool useSVGZoomRules() const { return element() && element()->isSVGElement(); }
-
 private:
-    friend class StyleResolveScope;
-
     ElementResolveContext m_elementContext;
     Document& m_document;
 
@@ -147,21 +146,16 @@ private:
     // so we keep it separate from m_elementContext.
     RefPtr<RenderStyle> m_parentStyle;
 
-    OwnPtr<CSSAnimationUpdate> m_animationUpdate;
-
-    // Required to ASSERT in applyProperties.
-    // FIXME: Regions should not need special state on StyleResolverState
-    // no other @rule does.
-    RenderRegion* m_regionForStyling;
+    OwnPtrWillBeMember<CSSAnimationUpdate> m_animationUpdate;
 
     bool m_applyPropertyToRegularStyle;
     bool m_applyPropertyToVisitedLinkStyle;
 
-    CSSValue* m_lineHeightValue;
+    RawPtrWillBeMember<CSSValue> m_lineHeightValue;
 
     FontBuilder m_fontBuilder;
 
-    CachedUAStyle m_cachedUAStyle;
+    OwnPtr<CachedUAStyle> m_cachedUAStyle;
 
     ElementStyleResources m_elementStyleResources;
     // CSSToStyleMap is a pure-logic class and only contains
@@ -169,7 +163,7 @@ private:
     CSSToStyleMap m_styleMap;
     Vector<AtomicString> m_contentAttrValues;
 
-    StyleRule* m_currentRule;
+    RawPtrWillBeMember<StyleRule> m_currentRule;
 };
 
 } // namespace WebCore

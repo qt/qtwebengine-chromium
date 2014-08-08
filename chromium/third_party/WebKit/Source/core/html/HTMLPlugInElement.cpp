@@ -23,19 +23,20 @@
 #include "config.h"
 #include "core/html/HTMLPlugInElement.h"
 
-#include "CSSPropertyNames.h"
-#include "HTMLNames.h"
 #include "bindings/v8/ScriptController.h"
 #include "bindings/v8/npruntime_impl.h"
+#include "core/CSSPropertyNames.h"
+#include "core/HTMLNames.h"
 #include "core/dom/Document.h"
-#include "core/dom/PostAttachCallbacks.h"
+#include "core/dom/Node.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/events/Event.h"
-#include "core/frame/ContentSecurityPolicy.h"
-#include "core/frame/Frame.h"
+#include "core/frame/FrameView.h"
+#include "core/frame/LocalFrame.h"
+#include "core/frame/csp/ContentSecurityPolicy.h"
+#include "core/html/HTMLContentElement.h"
 #include "core/html/HTMLImageLoader.h"
 #include "core/html/PluginDocument.h"
-#include "core/html/shadow/HTMLContentElement.h"
 #include "core/loader/FrameLoaderClient.h"
 #include "core/page/EventHandler.h"
 #include "core/page/Page.h"
@@ -59,7 +60,6 @@ HTMLPlugInElement::HTMLPlugInElement(const QualifiedName& tagName, Document& doc
     , m_isDelayingLoadEvent(false)
     , m_NPObject(0)
     , m_isCapturingMouseEvents(false)
-    , m_inBeforeLoadEventHandler(false)
     // m_needsWidgetUpdate(!createdByParser) allows HTMLObjectElement to delay
     // widget updates until after all children are parsed. For HTMLEmbedElement
     // this delay is unnecessary, but it is simpler to make both classes share
@@ -80,6 +80,12 @@ HTMLPlugInElement::~HTMLPlugInElement()
         _NPN_ReleaseObject(m_NPObject);
         m_NPObject = 0;
     }
+}
+
+void HTMLPlugInElement::trace(Visitor* visitor)
+{
+    visitor->trace(m_imageLoader);
+    HTMLFrameOwnerElement::trace(visitor);
 }
 
 bool HTMLPlugInElement::canProcessDrag() const
@@ -117,9 +123,10 @@ void HTMLPlugInElement::attach(const AttachContext& context)
 
     if (!renderer() || useFallbackContent())
         return;
+
     if (isImageType()) {
         if (!m_imageLoader)
-            m_imageLoader = adoptPtr(new HTMLImageLoader(this));
+            m_imageLoader = HTMLImageLoader::create(this);
         m_imageLoader->updateFromElement();
     } else if (needsWidgetUpdate()
         && renderEmbeddedObject()
@@ -128,17 +135,55 @@ void HTMLPlugInElement::attach(const AttachContext& context)
         && !m_isDelayingLoadEvent) {
         m_isDelayingLoadEvent = true;
         document().incrementLoadEventDelayCount();
+        document().loadPluginsSoon();
     }
 }
 
 void HTMLPlugInElement::updateWidget()
 {
-    RefPtr<HTMLPlugInElement> protector(this);
+    RefPtrWillBeRawPtr<HTMLPlugInElement> protector(this);
     updateWidgetInternal();
     if (m_isDelayingLoadEvent) {
         m_isDelayingLoadEvent = false;
         document().decrementLoadEventDelayCount();
     }
+}
+
+void HTMLPlugInElement::requestPluginCreationWithoutRendererIfPossible()
+{
+    if (m_serviceType.isEmpty())
+        return;
+
+    if (!document().frame()
+        || !document().frame()->loader().client()->canCreatePluginWithoutRenderer(m_serviceType))
+        return;
+
+    if (renderer() && renderer()->isWidget())
+        return;
+
+    createPluginWithoutRenderer();
+}
+
+void HTMLPlugInElement::createPluginWithoutRenderer()
+{
+    ASSERT(document().frame()->loader().client()->canCreatePluginWithoutRenderer(m_serviceType));
+
+    KURL url;
+    Vector<String> paramNames;
+    Vector<String> paramValues;
+
+    paramNames.append("type");
+    paramValues.append(m_serviceType);
+
+    bool useFallback = false;
+    loadPlugin(url, m_serviceType, paramNames, paramValues, useFallback, false);
+}
+
+bool HTMLPlugInElement::shouldAccelerate() const
+{
+    if (Widget* widget = ownedWidget())
+        return widget->isPluginView() && toPluginView(widget)->platformLayer();
+    return false;
 }
 
 void HTMLPlugInElement::detach(const AttachContext& context)
@@ -152,11 +197,17 @@ void HTMLPlugInElement::detach(const AttachContext& context)
         document().decrementLoadEventDelayCount();
     }
 
+    // Only try to persist a plugin widget we actually own.
+    Widget* plugin = ownedWidget();
+    if (plugin && plugin->pluginShouldPersist())
+        m_persistedPluginWidget = plugin;
     resetInstance();
+    // FIXME - is this next line necessary?
+    setWidget(nullptr);
 
     if (m_isCapturingMouseEvents) {
-        if (Frame* frame = document().frame())
-            frame->eventHandler().setCapturingMouseEventsNode(0);
+        if (LocalFrame* frame = document().frame())
+            frame->eventHandler().setCapturingMouseEventsNode(nullptr);
         m_isCapturingMouseEvents = false;
     }
 
@@ -200,7 +251,7 @@ void HTMLPlugInElement::finishParsingChildren()
 
     setNeedsWidgetUpdate(true);
     if (inDocument())
-        setNeedsStyleRecalc();
+        setNeedsStyleRecalc(SubtreeStyleChange);
 }
 
 void HTMLPlugInElement::resetInstance()
@@ -210,7 +261,7 @@ void HTMLPlugInElement::resetInstance()
 
 SharedPersistent<v8::Object>* HTMLPlugInElement::pluginWrapper()
 {
-    Frame* frame = document().frame();
+    LocalFrame* frame = document().frame();
     if (!frame)
         return 0;
 
@@ -218,34 +269,21 @@ SharedPersistent<v8::Object>* HTMLPlugInElement::pluginWrapper()
     // return the cached allocated Bindings::Instance. Not supporting this
     // edge-case is OK.
     if (!m_pluginWrapper) {
-        if (Widget* widget = pluginWidget())
-            m_pluginWrapper = frame->script().createPluginWrapper(widget);
+        Widget* plugin;
+
+        if (m_persistedPluginWidget)
+            plugin = m_persistedPluginWidget.get();
+        else
+            plugin = pluginWidget();
+
+        if (plugin)
+            m_pluginWrapper = frame->script().createPluginWrapper(plugin);
     }
     return m_pluginWrapper.get();
 }
 
-bool HTMLPlugInElement::dispatchBeforeLoadEvent(const String& sourceURL)
-{
-    // FIXME: Our current plug-in loading design can't guarantee the following
-    // assertion is true, since plug-in loading can be initiated during layout,
-    // and synchronous layout can be initiated in a beforeload event handler!
-    // See <http://webkit.org/b/71264>.
-    // ASSERT(!m_inBeforeLoadEventHandler);
-    m_inBeforeLoadEventHandler = true;
-    bool beforeLoadAllowedLoad = HTMLFrameOwnerElement::dispatchBeforeLoadEvent(sourceURL);
-    m_inBeforeLoadEventHandler = false;
-    return beforeLoadAllowedLoad;
-}
-
 Widget* HTMLPlugInElement::pluginWidget() const
 {
-    if (m_inBeforeLoadEventHandler) {
-        // The plug-in hasn't loaded yet, and it makes no sense to try to load
-        // if beforeload handler happened to touch the plug-in element. That
-        // would recursively call beforeload for the same element.
-        return 0;
-    }
-
     if (RenderWidget* renderWidget = renderWidgetForJSBindings())
         return renderWidget->widget();
     return 0;
@@ -356,20 +394,12 @@ bool HTMLPlugInElement::isImageType()
     if (m_serviceType.isEmpty() && protocolIs(m_url, "data"))
         m_serviceType = mimeTypeFromDataURL(m_url);
 
-    if (Frame* frame = document().frame()) {
+    if (LocalFrame* frame = document().frame()) {
         KURL completedURL = document().completeURL(m_url);
         return frame->loader().client()->objectContentType(completedURL, m_serviceType, shouldPreferPlugInsForImages()) == ObjectContentImage;
     }
 
     return Image::supportsType(m_serviceType);
-}
-
-const String HTMLPlugInElement::loadedMimeType() const
-{
-    String mimeType = m_serviceType;
-    if (mimeType.isEmpty())
-        mimeType = mimeTypeFromURL(m_loadedUrl);
-    return mimeType;
 }
 
 RenderEmbeddedObject* HTMLPlugInElement::renderEmbeddedObject() const
@@ -415,10 +445,13 @@ bool HTMLPlugInElement::requestObject(const String& url, const String& mimeType,
         return false;
 
     KURL completedURL = document().completeURL(url);
+    if (!pluginIsLoadable(completedURL, mimeType))
+        return false;
 
     bool useFallback;
-    if (shouldUsePlugin(completedURL, mimeType, renderer->hasFallbackContent(), useFallback))
-        return loadPlugin(completedURL, mimeType, paramNames, paramValues, useFallback);
+    bool requireRenderer = true;
+    if (shouldUsePlugin(completedURL, mimeType, hasFallbackContent(), useFallback))
+        return loadPlugin(completedURL, mimeType, paramNames, paramValues, useFallback, requireRenderer);
 
     // If the plug-in element already contains a subframe,
     // loadOrRedirectSubframe will re-use it. Otherwise, it will create a new
@@ -427,38 +460,43 @@ bool HTMLPlugInElement::requestObject(const String& url, const String& mimeType,
     return loadOrRedirectSubframe(completedURL, getNameAttribute(), true);
 }
 
-bool HTMLPlugInElement::loadPlugin(const KURL& url, const String& mimeType, const Vector<String>& paramNames, const Vector<String>& paramValues, bool useFallback)
+bool HTMLPlugInElement::loadPlugin(const KURL& url, const String& mimeType, const Vector<String>& paramNames, const Vector<String>& paramValues, bool useFallback, bool requireRenderer)
 {
-    Frame* frame = document().frame();
+    LocalFrame* frame = document().frame();
 
     if (!frame->loader().allowPlugins(AboutToInstantiatePlugin))
         return false;
 
-    if (!pluginIsLoadable(url, mimeType))
-        return false;
-
     RenderEmbeddedObject* renderer = renderEmbeddedObject();
     // FIXME: This code should not depend on renderer!
-    if (!renderer || useFallback)
+    if ((!renderer && requireRenderer) || useFallback)
         return false;
 
     WTF_LOG(Plugins, "%p Plug-in URL: %s", this, m_url.utf8().data());
     WTF_LOG(Plugins, "   Loaded URL: %s", url.string().utf8().data());
     m_loadedUrl = url;
 
-    IntSize contentSize = roundedIntSize(LayoutSize(renderer->contentWidth(), renderer->contentHeight()));
-    bool loadManually = document().isPluginDocument() && !document().containsPlugins() && toPluginDocument(document()).shouldLoadPluginManually();
-    RefPtr<Widget> widget = frame->loader().client()->createPlugin(contentSize, this, url, paramNames, paramValues, mimeType, loadManually);
+    RefPtr<Widget> widget = m_persistedPluginWidget;
+    if (!widget) {
+        bool loadManually = document().isPluginDocument() && !document().containsPlugins() && toPluginDocument(document()).shouldLoadPluginManually();
+        FrameLoaderClient::DetachedPluginPolicy policy = requireRenderer ? FrameLoaderClient::FailOnDetachedPlugin : FrameLoaderClient::AllowDetachedPlugin;
+        widget = frame->loader().client()->createPlugin(this, url, paramNames, paramValues, mimeType, loadManually, policy);
+    }
 
     if (!widget) {
-        if (!renderer->showsUnavailablePluginIndicator())
+        if (renderer && !renderer->showsUnavailablePluginIndicator())
             renderer->setPluginUnavailabilityReason(RenderEmbeddedObject::PluginMissing);
         return false;
     }
 
-    renderer->setWidget(widget);
+    if (renderer) {
+        setWidget(widget);
+        m_persistedPluginWidget = nullptr;
+    } else if (widget != m_persistedPluginWidget) {
+        m_persistedPluginWidget = widget;
+    }
     document().setContainsPlugins();
-    setNeedsStyleRecalc(LocalStyleChange, StyleChangeFromRenderer);
+    scheduleSVGFilterLayerUpdateHack();
     return true;
 }
 
@@ -482,9 +520,17 @@ bool HTMLPlugInElement::shouldUsePlugin(const KURL& url, const String& mimeType,
 
 }
 
+void HTMLPlugInElement::dispatchErrorEvent()
+{
+    if (document().isPluginDocument() && document().ownerElement())
+        document().ownerElement()->dispatchEvent(Event::create(EventTypeNames::error));
+    else
+        dispatchEvent(Event::create(EventTypeNames::error));
+}
+
 bool HTMLPlugInElement::pluginIsLoadable(const KURL& url, const String& mimeType)
 {
-    Frame* frame = document().frame();
+    LocalFrame* frame = document().frame();
     Settings* settings = frame->settings();
     if (!settings)
         return false;
@@ -517,10 +563,14 @@ void HTMLPlugInElement::didAddUserAgentShadowRoot(ShadowRoot&)
     userAgentShadowRoot()->appendChild(HTMLContentElement::create(document()));
 }
 
-void HTMLPlugInElement::didAddShadowRoot(ShadowRoot& root)
+void HTMLPlugInElement::willAddFirstAuthorShadowRoot()
 {
-    if (root.isOldestAuthorShadowRoot())
-        lazyReattachIfAttached();
+    lazyReattachIfAttached();
+}
+
+bool HTMLPlugInElement::hasFallbackContent() const
+{
+    return false;
 }
 
 bool HTMLPlugInElement::useFallbackContent() const

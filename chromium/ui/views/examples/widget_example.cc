@@ -13,6 +13,8 @@
 #include "ui/views/widget/widget.h"
 #include "ui/views/window/dialog_delegate.h"
 
+using base::ASCIIToUTF16;
+
 namespace views {
 namespace examples {
 
@@ -22,7 +24,7 @@ class DialogExample : public DialogDelegateView {
  public:
   DialogExample();
   virtual ~DialogExample();
-  virtual string16 GetWindowTitle() const OVERRIDE;
+  virtual base::string16 GetWindowTitle() const OVERRIDE;
   virtual View* CreateExtraView() OVERRIDE;
   virtual View* CreateTitlebarExtraView() OVERRIDE;
   virtual View* CreateFootnoteView() OVERRIDE;
@@ -36,13 +38,13 @@ DialogExample::DialogExample() {
 
 DialogExample::~DialogExample() {}
 
-string16 DialogExample::GetWindowTitle() const {
+base::string16 DialogExample::GetWindowTitle() const {
   return ASCIIToUTF16("Dialog Widget Example");
 }
 
 View* DialogExample::CreateExtraView() {
   LabelButton* button = new LabelButton(NULL, ASCIIToUTF16("Extra button!"));
-  button->SetStyle(Button::STYLE_NATIVE_TEXTBUTTON);
+  button->SetStyle(Button::STYLE_BUTTON);
   return button;
 }
 

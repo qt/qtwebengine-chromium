@@ -28,18 +28,16 @@
 #define FloatRect_h
 
 #include "platform/geometry/FloatPoint.h"
+#include "third_party/skia/include/core/SkRect.h"
 #include "wtf/Vector.h"
 
 #if OS(MACOSX)
 typedef struct CGRect CGRect;
-#ifdef NSGEOMETRY_TYPES_SAME_AS_CGGEOMETRY_TYPES
-typedef struct CGRect NSRect;
-#else
-typedef struct _NSRect NSRect;
-#endif
-#endif
 
-struct SkRect;
+#ifdef __OBJC__
+#import <Foundation/Foundation.h>
+#endif
+#endif
 
 namespace WebCore {
 
@@ -167,13 +165,13 @@ public:
 #if OS(MACOSX)
     FloatRect(const CGRect&);
     operator CGRect() const;
-#if !defined(NSGEOMETRY_TYPES_SAME_AS_CGGEOMETRY_TYPES)
+#if defined(__OBJC__) && !defined(NSGEOMETRY_TYPES_SAME_AS_CGGEOMETRY_TYPES)
     FloatRect(const NSRect&);
     operator NSRect() const;
 #endif
 #endif
 
-    operator SkRect() const;
+    operator SkRect() const { return SkRect::MakeXYWH(x(), y(), width(), height()); }
 
 private:
     FloatPoint m_location;

@@ -44,6 +44,9 @@ extern const float kLowSystemCpuThreshold;
 extern const float kProcessCpuThreshold;
 
 extern const char kRtxCodecName[];
+extern const char kRedCodecName[];
+extern const char kUlpfecCodecName[];
+
 
 // Codec parameters
 extern const int kWildcardPayloadType;
@@ -89,6 +92,7 @@ extern const int kPreferredUseInbandFec;
 
 // rtcp-fb messages according to RFC 4585
 extern const char kRtcpFbParamNack[];
+extern const char kRtcpFbNackParamPli[];
 // rtcp-fb messages according to
 // http://tools.ietf.org/html/draft-alvestrand-rmcat-remb-00
 extern const char kRtcpFbParamRemb[];
@@ -98,6 +102,7 @@ extern const char kRtcpFbCcmParamFir[];
 // Google specific parameters
 extern const char kCodecParamMaxBitrate[];
 extern const char kCodecParamMinBitrate[];
+extern const char kCodecParamStartBitrate[];
 extern const char kCodecParamMaxQuantization[];
 extern const char kCodecParamPort[];
 
@@ -115,6 +120,23 @@ extern const char kGoogleSctpDataCodecName[];
 
 extern const char kComfortNoiseCodecName[];
 
+// Extension header for audio levels, as defined in
+// http://tools.ietf.org/html/draft-ietf-avtext-client-to-mixer-audio-level-03
+extern const int kRtpAudioLevelHeaderExtensionDefaultId;
+extern const char kRtpAudioLevelHeaderExtension[];
+
+// Extension header for RTP timestamp offset, see RFC 5450 for details:
+// http://tools.ietf.org/html/rfc5450
+extern const int kRtpTimestampOffsetHeaderExtensionDefaultId;
+extern const char kRtpTimestampOffsetHeaderExtension[];
+
+// Extension header for absolute send time, see url for details:
+// http://www.webrtc.org/experiments/rtp-hdrext/abs-send-time
+extern const int kRtpAbsoluteSenderTimeHeaderExtensionDefaultId;
+extern const char kRtpAbsoluteSenderTimeHeaderExtension[];
+
+extern const int kNumDefaultUnsignalledVideoRecvStreams;
 }  // namespace cricket
 
 #endif  // TALK_MEDIA_BASE_CONSTANTS_H_
+

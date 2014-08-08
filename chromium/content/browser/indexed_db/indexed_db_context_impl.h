@@ -7,6 +7,7 @@
 
 #include <map>
 #include <set>
+#include <string>
 #include <vector>
 
 #include "base/compiler_specific.h"
@@ -67,6 +68,7 @@ class CONTENT_EXPORT IndexedDBContextImpl
   void ConnectionOpened(const GURL& origin_url, IndexedDBConnection* db);
   void ConnectionClosed(const GURL& origin_url, IndexedDBConnection* db);
   void TransactionComplete(const GURL& origin_url);
+  void DatabaseDeleted(const GURL& origin_url);
   bool WouldBeOverQuota(const GURL& origin_url, int64 additional_bytes);
   bool IsOverQuota(const GURL& origin_url);
 
@@ -75,9 +77,19 @@ class CONTENT_EXPORT IndexedDBContextImpl
   std::vector<GURL> GetAllOrigins();
   base::Time GetOriginLastModified(const GURL& origin_url);
   base::ListValue* GetAllOriginsDetails();
+
+  // Recorded in histograms, so append only.
+  enum ForceCloseReason {
+    FORCE_CLOSE_DELETE_ORIGIN = 0,
+    FORCE_CLOSE_BACKING_STORE_FAILURE,
+    FORCE_CLOSE_INTERNALS_PAGE,
+    FORCE_CLOSE_REASON_MAX
+  };
+
   // ForceClose takes a value rather than a reference since it may release the
   // owning object.
-  void ForceClose(const GURL origin_url);
+  void ForceClose(const GURL origin_url, ForceCloseReason reason);
+
   base::FilePath GetFilePath(const GURL& origin_url) const;
   base::FilePath data_path() const { return data_path_; }
   bool IsInOriginSet(const GURL& origin_url) {
@@ -136,8 +148,6 @@ class CONTENT_EXPORT IndexedDBContextImpl
   scoped_ptr<std::set<GURL> > origin_set_;
   OriginToSizeMap origin_size_map_;
   OriginToSizeMap space_available_map_;
-  typedef std::set<IndexedDBConnection*> ConnectionSet;
-  std::map<GURL, ConnectionSet> connections_;
 
   DISALLOW_COPY_AND_ASSIGN(IndexedDBContextImpl);
 };

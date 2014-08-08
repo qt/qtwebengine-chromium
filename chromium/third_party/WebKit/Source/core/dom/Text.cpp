@@ -22,44 +22,44 @@
 #include "config.h"
 #include "core/dom/Text.h"
 
-#include "SVGNames.h"
 #include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "core/SVGNames.h"
 #include "core/css/resolver/StyleResolver.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/NodeRenderStyle.h"
-#include "core/dom/NodeRenderingContext.h"
+#include "core/dom/NodeRenderingTraversal.h"
 #include "core/dom/NodeTraversal.h"
-#include "core/events/ScopedEventQueue.h"
+#include "core/dom/RenderTreeBuilder.h"
 #include "core/dom/shadow/ShadowRoot.h"
+#include "core/events/ScopedEventQueue.h"
 #include "core/rendering/RenderCombineText.h"
 #include "core/rendering/RenderText.h"
 #include "core/rendering/svg/RenderSVGInlineText.h"
+#include "core/svg/SVGForeignObjectElement.h"
 #include "wtf/text/CString.h"
 #include "wtf/text/StringBuilder.h"
 
-using namespace std;
-
 namespace WebCore {
 
-PassRefPtr<Text> Text::create(Document& document, const String& data)
+PassRefPtrWillBeRawPtr<Text> Text::create(Document& document, const String& data)
 {
-    return adoptRef(new Text(document, data, CreateText));
+    return adoptRefWillBeNoop(new Text(document, data, CreateText));
 }
 
-PassRefPtr<Text> Text::createEditingText(Document& document, const String& data)
+PassRefPtrWillBeRawPtr<Text> Text::createEditingText(Document& document, const String& data)
 {
-    return adoptRef(new Text(document, data, CreateEditingText));
+    return adoptRefWillBeNoop(new Text(document, data, CreateEditingText));
 }
 
-PassRefPtr<Node> Text::mergeNextSiblingNodesIfPossible()
+PassRefPtrWillBeRawPtr<Node> Text::mergeNextSiblingNodesIfPossible()
 {
-    RefPtr<Node> protect(this);
+    RefPtrWillBeRawPtr<Node> protect(this);
 
     // Remove empty text nodes.
     if (!length()) {
         // Care must be taken to get the next node before removing the current node.
-        RefPtr<Node> nextNode(NodeTraversal::nextPostOrder(*this));
+        RefPtrWillBeRawPtr<Node> nextNode(NodeTraversal::nextPostOrder(*this));
         remove(IGNORE_EXCEPTION);
         return nextNode.release();
     }
@@ -69,7 +69,7 @@ PassRefPtr<Node> Text::mergeNextSiblingNodesIfPossible()
         if (nextSibling->nodeType() != TEXT_NODE)
             break;
 
-        RefPtr<Text> nextText = toText(nextSibling);
+        RefPtrWillBeRawPtr<Text> nextText = toText(nextSibling);
 
         // Remove empty text nodes.
         if (!nextText->length()) {
@@ -88,7 +88,7 @@ PassRefPtr<Node> Text::mergeNextSiblingNodesIfPossible()
         nextText->setDataWithoutUpdate(emptyString());
         nextText->updateTextRenderer(0, nextTextData.length());
 
-        document().didMergeTextNodes(nextText.get(), offset);
+        document().didMergeTextNodes(*nextText, offset);
 
         // Restore nextText for mutation event.
         nextText->setDataWithoutUpdate(nextTextData);
@@ -102,18 +102,18 @@ PassRefPtr<Node> Text::mergeNextSiblingNodesIfPossible()
     return NodeTraversal::nextPostOrder(*this);
 }
 
-PassRefPtr<Text> Text::splitText(unsigned offset, ExceptionState& exceptionState)
+PassRefPtrWillBeRawPtr<Text> Text::splitText(unsigned offset, ExceptionState& exceptionState)
 {
     // IndexSizeError: Raised if the specified offset is negative or greater than
     // the number of 16-bit units in data.
     if (offset > length()) {
         exceptionState.throwDOMException(IndexSizeError, "The offset " + String::number(offset) + " is larger than the Text node's length.");
-        return 0;
+        return nullptr;
     }
 
     EventQueueScope scope;
     String oldStr = data();
-    RefPtr<Text> newText = cloneWithData(oldStr.substring(offset));
+    RefPtrWillBeRawPtr<Text> newText = cloneWithData(oldStr.substring(offset));
     setDataWithoutUpdate(oldStr.substring(0, offset));
 
     didModifyData(oldStr);
@@ -121,13 +121,13 @@ PassRefPtr<Text> Text::splitText(unsigned offset, ExceptionState& exceptionState
     if (parentNode())
         parentNode()->insertBefore(newText.get(), nextSibling(), exceptionState);
     if (exceptionState.hadException())
-        return 0;
+        return nullptr;
 
     if (renderer())
         toRenderText(renderer())->setTextWithOffset(dataImpl(), 0, oldStr.length());
 
     if (parentNode())
-        document().didSplitTextNode(this);
+        document().didSplitTextNode(*this);
 
     return newText.release();
 }
@@ -189,26 +189,26 @@ String Text::wholeText() const
     return result.toString();
 }
 
-PassRefPtr<Text> Text::replaceWholeText(const String& newText)
+PassRefPtrWillBeRawPtr<Text> Text::replaceWholeText(const String& newText)
 {
     // Remove all adjacent text nodes, and replace the contents of this one.
 
     // Protect startText and endText against mutation event handlers removing the last ref
-    RefPtr<Text> startText = const_cast<Text*>(earliestLogicallyAdjacentTextNode(this));
-    RefPtr<Text> endText = const_cast<Text*>(latestLogicallyAdjacentTextNode(this));
+    RefPtrWillBeRawPtr<Text> startText = const_cast<Text*>(earliestLogicallyAdjacentTextNode(this));
+    RefPtrWillBeRawPtr<Text> endText = const_cast<Text*>(latestLogicallyAdjacentTextNode(this));
 
-    RefPtr<Text> protectedThis(this); // Mutation event handlers could cause our last ref to go away
-    RefPtr<ContainerNode> parent = parentNode(); // Protect against mutation handlers moving this node during traversal
-    for (RefPtr<Node> n = startText; n && n != this && n->isTextNode() && n->parentNode() == parent;) {
-        RefPtr<Node> nodeToRemove(n.release());
+    RefPtrWillBeRawPtr<Text> protectedThis(this); // Mutation event handlers could cause our last ref to go away
+    RefPtrWillBeRawPtr<ContainerNode> parent = parentNode(); // Protect against mutation handlers moving this node during traversal
+    for (RefPtrWillBeRawPtr<Node> n = startText; n && n != this && n->isTextNode() && n->parentNode() == parent;) {
+        RefPtrWillBeRawPtr<Node> nodeToRemove(n.release());
         n = nodeToRemove->nextSibling();
         parent->removeChild(nodeToRemove.get(), IGNORE_EXCEPTION);
     }
 
     if (this != endText) {
         Node* onePastEndText = endText->nextSibling();
-        for (RefPtr<Node> n = nextSibling(); n && n != onePastEndText && n->isTextNode() && n->parentNode() == parent;) {
-            RefPtr<Node> nodeToRemove(n.release());
+        for (RefPtrWillBeRawPtr<Node> n = nextSibling(); n && n != onePastEndText && n->isTextNode() && n->parentNode() == parent;) {
+            RefPtrWillBeRawPtr<Node> nodeToRemove(n.release());
             n = nodeToRemove->nextSibling();
             parent->removeChild(nodeToRemove.get(), IGNORE_EXCEPTION);
         }
@@ -217,7 +217,7 @@ PassRefPtr<Text> Text::replaceWholeText(const String& newText)
     if (newText.isEmpty()) {
         if (parent && parentNode() == parent)
             parent->removeChild(this, IGNORE_EXCEPTION);
-        return 0;
+        return nullptr;
     }
 
     setData(newText);
@@ -234,12 +234,12 @@ Node::NodeType Text::nodeType() const
     return TEXT_NODE;
 }
 
-PassRefPtr<Node> Text::cloneNode(bool /*deep*/)
+PassRefPtrWillBeRawPtr<Node> Text::cloneNode(bool /*deep*/)
 {
     return cloneWithData(data());
 }
 
-bool Text::textRendererIsNeeded(const NodeRenderingContext& context)
+bool Text::textRendererIsNeeded(const RenderStyle& style, const RenderObject& parent)
 {
     if (isEditingText())
         return true;
@@ -247,39 +247,38 @@ bool Text::textRendererIsNeeded(const NodeRenderingContext& context)
     if (!length())
         return false;
 
-    if (context.style()->display() == NONE)
+    if (style.display() == NONE)
         return false;
 
     if (!containsOnlyWhitespace())
         return true;
 
-    RenderObject* parent = context.parentRenderer();
-    if (!parent->canHaveWhitespaceChildren())
+    if (!parent.canHaveWhitespaceChildren())
         return false;
 
-    if (context.style()->preserveNewline()) // pre/pre-wrap/pre-line always make renderers.
+    if (style.preserveNewline()) // pre/pre-wrap/pre-line always make renderers.
         return true;
 
-    RenderObject* prev = context.previousRenderer();
+    const RenderObject* prev = NodeRenderingTraversal::previousSiblingRenderer(this);
     if (prev && prev->isBR()) // <span><br/> <br/></span>
         return false;
 
-    if (parent->isRenderInline()) {
+    if (parent.isRenderInline()) {
         // <span><div/> <div/></span>
         if (prev && !prev->isInline())
             return false;
     } else {
-        if (parent->isRenderBlock() && !parent->childrenInline() && (!prev || !prev->isInline()))
+        if (parent.isRenderBlock() && !parent.childrenInline() && (!prev || !prev->isInline()))
             return false;
 
         // Avoiding creation of a Renderer for the text node is a non-essential memory optimization.
         // So to avoid blowing up on very wide DOMs, we limit the number of siblings to visit.
         unsigned maxSiblingsToVisit = 50;
 
-        RenderObject* first = parent->firstChild();
+        RenderObject* first = parent.slowFirstChild();
         while (first && first->isFloatingOrOutOfFlowPositioned() && maxSiblingsToVisit--)
             first = first->nextSibling();
-        if (!first || context.nextRenderer() == first)
+        if (!first || NodeRenderingTraversal::nextSiblingRenderer(this) == first)
             // Whitespace at the start of a block just goes away.  Don't even
             // make a render object for this text.
             return false;
@@ -290,7 +289,8 @@ bool Text::textRendererIsNeeded(const NodeRenderingContext& context)
 static bool isSVGText(Text* text)
 {
     Node* parentOrShadowHostNode = text->parentOrShadowHostNode();
-    return parentOrShadowHostNode->isSVGElement() && !parentOrShadowHostNode->hasTagName(SVGNames::foreignObjectTag);
+    ASSERT(parentOrShadowHostNode);
+    return parentOrShadowHostNode->isSVGElement() && !isSVGForeignObjectElement(*parentOrShadowHostNode);
 }
 
 RenderText* Text::createTextRenderer(RenderStyle* style)
@@ -306,7 +306,7 @@ RenderText* Text::createTextRenderer(RenderStyle* style)
 
 void Text::attach(const AttachContext& context)
 {
-    NodeRenderingContext(this, context.resolvedStyle).createRendererForTextIfNeeded();
+    RenderTreeBuilder(this, context.resolvedStyle).createRendererForTextIfNeeded();
     CharacterData::attach(context);
 }
 
@@ -339,22 +339,17 @@ void Text::updateTextRenderer(unsigned offsetOfReplacedData, unsigned lengthOfRe
     if (!inActiveDocument())
         return;
     RenderText* textRenderer = toRenderText(renderer());
-    if (!textRenderer || !textRendererIsNeeded(NodeRenderingContext(this, textRenderer->style()))) {
+    if (!textRenderer || !textRendererIsNeeded(*textRenderer->style(), *textRenderer->parent())) {
         lazyReattachIfAttached();
         // FIXME: Editing should be updated so this is not neccesary.
         if (recalcStyleBehavior == DeprecatedRecalcStyleImmediatlelyForEditing)
-            document().updateStyleIfNeeded();
+            document().updateRenderTreeIfNeeded();
         return;
     }
     textRenderer->setTextWithOffset(dataImpl(), offsetOfReplacedData, lengthOfReplacedData);
 }
 
-bool Text::childTypeAllowed(NodeType) const
-{
-    return false;
-}
-
-PassRefPtr<Text> Text::cloneWithData(const String& data)
+PassRefPtrWillBeRawPtr<Text> Text::cloneWithData(const String& data)
 {
     return create(document(), data);
 }

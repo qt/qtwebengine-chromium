@@ -35,6 +35,7 @@
         '../build/scripts/scripts.gypi',
         '../core/core.gypi',
         '../modules/modules.gypi',
+        '../platform/blink_platform.gypi',
         '../web/web.gypi',
         '../wtf/wtf.gypi',
     ],
@@ -83,8 +84,10 @@
             'type': 'executable',
             'variables': { 'enable_wexit_time_destructors': 1, },
             'dependencies': [
+                '../config.gyp:unittest_config',
                 '../../public/blink.gyp:blink',
                 '../wtf/wtf_tests.gyp:wtf_unittest_helpers',
+                'web.gyp:blink_web_test_support',
                 '<(DEPTH)/base/base.gyp:base',
                 '<(DEPTH)/base/base.gyp:base_i18n',
                 '<(DEPTH)/base/base.gyp:test_support_base',
@@ -94,7 +97,7 @@
                 '<(DEPTH)/third_party/zlib/zlib.gyp:zlib',
                 '<(DEPTH)/url/url.gyp:url_lib',
                 '<(DEPTH)/v8/tools/gyp/v8.gyp:v8',
-                '<(DEPTH)/content/content_shell_and_tests.gyp:content_webkit_unit_test_support',
+                '<(DEPTH)/content/content_shell_and_tests.gyp:test_support_content',
                 'webkit_unit_tests_resources',
             ],
             'sources': [
@@ -122,18 +125,8 @@
                         '<@(bindings_unittest_files)',
                         '<@(core_unittest_files)',
                         '<@(modules_unittest_files)',
+                        '<@(platform_web_unittest_files)',
                         '<@(web_unittest_files)',
-                    ],
-                    'conditions': [
-                        ['toolkit_uses_gtk == 1', {
-                            'include_dirs': [
-                                '../../public/web/gtk',
-                            ],
-                            'variables': {
-                            # FIXME: Enable warnings on other platforms.
-                            'chromium_code': 1,
-                            },
-                        }],
                     ],
                 }],
                 ['OS=="win" and component!="shared_library"', {
@@ -154,7 +147,7 @@
                         }],
                     ],
                 }],
-                ['OS=="android" and gtest_target_type == "shared_library"', {
+                ['OS=="android"', {
                     'type': 'shared_library',
                     'dependencies': [
                         '<(DEPTH)/testing/android/native_test.gyp:native_test_native_code',
@@ -166,7 +159,7 @@
                         '../../public/web/mac',
                     ],
                 }],
-                [ 'os_posix==1 and OS!="mac" and OS!="android" and OS!="ios" and linux_use_tcmalloc==1', {
+                [ 'os_posix==1 and OS!="mac" and OS!="android" and OS!="ios" and use_allocator!="none"', {
                     'dependencies': [
                         '<(DEPTH)/base/allocator/allocator.gyp:allocator',
                     ],

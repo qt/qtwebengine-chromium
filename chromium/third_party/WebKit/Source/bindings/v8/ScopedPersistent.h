@@ -64,6 +64,7 @@ public:
     }
 
     bool isEmpty() const { return m_handle.IsEmpty(); }
+    bool isWeak() const { return m_handle.IsWeak(); }
 
     void set(v8::Isolate* isolate, v8::Handle<T> handle)
     {
@@ -79,6 +80,12 @@ public:
     bool operator==(const ScopedPersistent<T>& other)
     {
         return m_handle == other.m_handle;
+    }
+
+    template <class S>
+    bool operator==(const v8::Handle<S> other) const
+    {
+        return m_handle == other;
     }
 
 private:

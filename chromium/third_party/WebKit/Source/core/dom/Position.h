@@ -51,6 +51,7 @@ enum PositionMoveType {
 };
 
 class Position {
+    DISALLOW_ALLOCATION();
 public:
     enum AnchorType {
         PositionIsOffsetInAnchor,
@@ -75,19 +76,19 @@ public:
     private:
         explicit LegacyEditingOffset(int offset) : m_offset(offset) { }
 
-        friend Position createLegacyEditingPosition(PassRefPtr<Node>, int offset);
+        friend Position createLegacyEditingPosition(PassRefPtrWillBeRawPtr<Node>, int offset);
 
         int m_offset;
     };
-    Position(PassRefPtr<Node> anchorNode, LegacyEditingOffset);
+    Position(PassRefPtrWillBeRawPtr<Node> anchorNode, LegacyEditingOffset);
 
     // For creating before/after positions:
-    Position(PassRefPtr<Node> anchorNode, AnchorType);
-    Position(PassRefPtr<Text> textNode, unsigned offset);
+    Position(PassRefPtrWillBeRawPtr<Node> anchorNode, AnchorType);
+    Position(PassRefPtrWillBeRawPtr<Text> textNode, unsigned offset);
 
     // For creating offset positions:
     // FIXME: This constructor should eventually go away. See bug 63040.
-    Position(PassRefPtr<Node> anchorNode, int offset, AnchorType);
+    Position(PassRefPtrWillBeRawPtr<Node> anchorNode, int offset, AnchorType);
 
     AnchorType anchorType() const { return static_cast<AnchorType>(m_anchorType); }
 
@@ -137,7 +138,7 @@ public:
 
     // These should only be used for PositionIsOffsetInAnchor positions, unless
     // the position is a legacy editing position.
-    void moveToPosition(PassRefPtr<Node> anchorNode, int offset);
+    void moveToPosition(PassRefPtrWillBeRawPtr<Node> anchorNode, int offset);
     void moveToOffset(int offset);
 
     bool isNull() const { return !m_anchorNode; }
@@ -145,7 +146,7 @@ public:
     bool isOrphan() const { return m_anchorNode && !m_anchorNode->inDocument(); }
 
     Element* element() const;
-    PassRefPtr<CSSComputedStyleDeclaration> computedStyle() const;
+    PassRefPtrWillBeRawPtr<CSSComputedStyleDeclaration> computedStyle() const;
 
     // Move up or down the DOM by one position.
     // Offsets are computed using render text for nodes that have renderers - but note that even when
@@ -203,18 +204,18 @@ public:
     void showTreeForThis() const;
 #endif
 
+    void trace(Visitor*);
+
 private:
     int offsetForPositionAfterAnchor() const;
 
     int renderedOffset() const;
 
-
     Position previousCharacterPosition(EAffinity) const;
-    Position nextCharacterPosition(EAffinity) const;
 
     static AnchorType anchorTypeForLegacyEditingPosition(Node* anchorNode, int offset);
 
-    RefPtr<Node> m_anchorNode;
+    RefPtrWillBeMember<Node> m_anchorNode;
     // m_offset can be the offset inside m_anchorNode, or if editingIgnoresContent(m_anchorNode)
     // returns true, then other places in editing will treat m_offset == 0 as "before the anchor"
     // and m_offset > 0 as "after the anchor node".  See parentAnchoredEquivalent for more info.
@@ -223,7 +224,7 @@ private:
     bool m_isLegacyEditingPosition : 1;
 };
 
-inline Position createLegacyEditingPosition(PassRefPtr<Node> node, int offset)
+inline Position createLegacyEditingPosition(PassRefPtrWillBeRawPtr<Node> node, int offset)
 {
     return Position(node, Position::LegacyEditingOffset(offset));
 }
@@ -244,19 +245,19 @@ inline bool operator!=(const Position& a, const Position& b)
 // These are inline to prevent ref-churn when returning a Position object.
 // If we ever add a PassPosition we can make these non-inline.
 
-inline Position positionInParentBeforeNode(const Node* node)
+inline Position positionInParentBeforeNode(const Node& node)
 {
-    // FIXME: This should ASSERT(node->parentNode())
+    // FIXME: This should ASSERT(node.parentNode())
     // At least one caller currently hits this ASSERT though, which indicates
     // that the caller is trying to make a position relative to a disconnected node (which is likely an error)
     // Specifically, editing/deleting/delete-ligature-001.html crashes with ASSERT(node->parentNode())
-    return Position(node->parentNode(), node->nodeIndex(), Position::PositionIsOffsetInAnchor);
+    return Position(node.parentNode(), node.nodeIndex(), Position::PositionIsOffsetInAnchor);
 }
 
-inline Position positionInParentAfterNode(const Node* node)
+inline Position positionInParentAfterNode(const Node& node)
 {
-    ASSERT(node->parentNode());
-    return Position(node->parentNode(), node->nodeIndex() + 1, Position::PositionIsOffsetInAnchor);
+    ASSERT(node.parentNode());
+    return Position(node.parentNode(), node.nodeIndex() + 1, Position::PositionIsOffsetInAnchor);
 }
 
 // positionBeforeNode and positionAfterNode return neighbor-anchored positions, construction is O(1)
@@ -274,10 +275,10 @@ inline Position positionAfterNode(Node* anchorNode)
 
 inline int lastOffsetInNode(Node* node)
 {
-    return node->offsetInCharacters() ? node->maxCharacterOffset() : static_cast<int>(node->childNodeCount());
+    return node->offsetInCharacters() ? node->maxCharacterOffset() : static_cast<int>(node->countChildren());
 }
 
-// firstPositionInNode and lastPositionInNode return parent-anchored positions, lastPositionInNode construction is O(n) due to childNodeCount()
+// firstPositionInNode and lastPositionInNode return parent-anchored positions, lastPositionInNode construction is O(n) due to countChildren()
 inline Position firstPositionInNode(Node* anchorNode)
 {
     if (anchorNode->isTextNode())
@@ -318,6 +319,7 @@ inline bool offsetIsBeforeLastNodeOffset(int offset, Node* anchorNode)
 }
 
 class PositionWithAffinity {
+    DISALLOW_ALLOCATION();
 public:
     PositionWithAffinity()
         : m_affinity(DOWNSTREAM)
@@ -332,6 +334,11 @@ public:
 
     EAffinity affinity() const { return m_affinity; }
     const Position& position() const { return m_position; }
+
+    void trace(Visitor* visitor)
+    {
+        visitor->trace(m_position);
+    }
 
 private:
     Position m_position;

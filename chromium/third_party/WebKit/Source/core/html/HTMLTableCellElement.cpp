@@ -25,9 +25,9 @@
 #include "config.h"
 #include "core/html/HTMLTableCellElement.h"
 
-#include "CSSPropertyNames.h"
-#include "CSSValueKeywords.h"
-#include "HTMLNames.h"
+#include "core/CSSPropertyNames.h"
+#include "core/CSSValueKeywords.h"
+#include "core/HTMLNames.h"
 #include "core/dom/Attribute.h"
 #include "core/html/HTMLTableElement.h"
 #include "core/rendering/RenderTableCell.h"
@@ -48,10 +48,7 @@ inline HTMLTableCellElement::HTMLTableCellElement(const QualifiedName& tagName, 
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLTableCellElement> HTMLTableCellElement::create(const QualifiedName& tagName, Document& document)
-{
-    return adoptRef(new HTMLTableCellElement(tagName, document));
-}
+DEFINE_ELEMENT_FACTORY_WITH_TAGNAME(HTMLTableCellElement)
 
 int HTMLTableCellElement::colSpan() const
 {
@@ -67,14 +64,12 @@ int HTMLTableCellElement::rowSpan() const
 
 int HTMLTableCellElement::cellIndex() const
 {
-    int index = 0;
-    if (!parentElement() || !parentElement()->hasTagName(trTag))
+    if (!isHTMLTableRowElement(parentElement()))
         return -1;
 
-    for (const Node * node = previousSibling(); node; node = node->previousSibling()) {
-        if (node->hasTagName(tdTag) || node->hasTagName(thTag))
-            index++;
-    }
+    int index = 0;
+    for (const HTMLTableCellElement* element = Traversal<HTMLTableCellElement>::previousSibling(*this); element; element = Traversal<HTMLTableCellElement>::previousSibling(*element))
+        ++index;
 
     return index;
 }
@@ -130,14 +125,24 @@ bool HTMLTableCellElement::isURLAttribute(const Attribute& attribute) const
     return attribute.name() == backgroundAttr || HTMLTablePartElement::isURLAttribute(attribute);
 }
 
+bool HTMLTableCellElement::hasLegalLinkAttribute(const QualifiedName& name) const
+{
+    return (hasLocalName(tdTag) && name == backgroundAttr) || HTMLTablePartElement::hasLegalLinkAttribute(name);
+}
+
+const QualifiedName& HTMLTableCellElement::subResourceAttributeName() const
+{
+    return hasLocalName(tdTag) ? backgroundAttr : HTMLTablePartElement::subResourceAttributeName();
+}
+
 const AtomicString& HTMLTableCellElement::abbr() const
 {
-    return getAttribute(abbrAttr);
+    return fastGetAttribute(abbrAttr);
 }
 
 const AtomicString& HTMLTableCellElement::axis() const
 {
-    return getAttribute(axisAttr);
+    return fastGetAttribute(axisAttr);
 }
 
 void HTMLTableCellElement::setColSpan(int n)
@@ -147,7 +152,7 @@ void HTMLTableCellElement::setColSpan(int n)
 
 const AtomicString& HTMLTableCellElement::headers() const
 {
-    return getAttribute(headersAttr);
+    return fastGetAttribute(headersAttr);
 }
 
 void HTMLTableCellElement::setRowSpan(int n)
@@ -157,14 +162,7 @@ void HTMLTableCellElement::setRowSpan(int n)
 
 const AtomicString& HTMLTableCellElement::scope() const
 {
-    return getAttribute(scopeAttr);
-}
-
-void HTMLTableCellElement::addSubresourceAttributeURLs(ListHashSet<KURL>& urls) const
-{
-    HTMLTablePartElement::addSubresourceAttributeURLs(urls);
-
-    addSubresourceURL(urls, document().completeURL(getAttribute(backgroundAttr)));
+    return fastGetAttribute(scopeAttr);
 }
 
 HTMLTableCellElement* HTMLTableCellElement::cellAbove() const

@@ -11,6 +11,11 @@
 #include "base/memory/scoped_ptr.h"
 #include "content/public/common/sandbox_linux.h"
 
+#if defined(ADDRESS_SANITIZER) || defined(MEMORY_SANITIZER) || \
+    defined(LEAK_SANITIZER)
+#include <sanitizer/common_interface_defs.h>
+#endif
+
 template <typename T> struct DefaultSingletonTraits;
 namespace base {
 class Thread;
@@ -28,9 +33,9 @@ class LinuxSandbox {
   // This isn't the full list, values < 32 are reserved for methods called from
   // Skia.
   enum LinuxSandboxIPCMethods {
-    METHOD_GET_FONT_FAMILY_FOR_CHAR = 32,
+    METHOD_GET_FALLBACK_FONT_FOR_CHAR = 32,
     METHOD_LOCALTIME = 33,
-    METHOD_GET_CHILD_WITH_INODE = 34,
+    DEPRECATED_METHOD_GET_CHILD_WITH_INODE = 34,
     METHOD_GET_STYLE_FOR_STRIKE = 35,
     METHOD_MAKE_SHARED_MEMORY_SEGMENT = 36,
     METHOD_MATCH_WITH_FALLBACK = 37,
@@ -82,8 +87,18 @@ class LinuxSandbox {
   // to make some vulnerabilities harder to exploit.
   bool LimitAddressSpace(const std::string& process_type);
 
+#if defined(ADDRESS_SANITIZER) || defined(MEMORY_SANITIZER) || \
+    defined(LEAK_SANITIZER)
+  __sanitizer_sandbox_arguments* sanitizer_args() const {
+    return sanitizer_args_.get();
+  };
+#endif
+
  private:
   friend struct DefaultSingletonTraits<LinuxSandbox>;
+
+  LinuxSandbox();
+  ~LinuxSandbox();
 
   // Some methods are static and get an instance of the Singleton. These
   // are the non-static implementations.
@@ -115,10 +130,14 @@ class LinuxSandbox {
   // Did PreinitializeSandbox() run?
   bool pre_initialized_;
   bool seccomp_bpf_supported_;  // Accurate if pre_initialized_.
+  bool yama_is_enforcing_;  // Accurate if pre_initialized_.
   scoped_ptr<sandbox::SetuidSandboxClient> setuid_sandbox_client_;
+#if defined(ADDRESS_SANITIZER) || defined(MEMORY_SANITIZER) || \
+    defined(LEAK_SANITIZER)
+  scoped_ptr<__sanitizer_sandbox_arguments> sanitizer_args_;
+#endif
 
-  ~LinuxSandbox();
-  DISALLOW_IMPLICIT_CONSTRUCTORS(LinuxSandbox);
+  DISALLOW_COPY_AND_ASSIGN(LinuxSandbox);
 };
 
 }  // namespace content

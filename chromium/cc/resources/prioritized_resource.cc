@@ -14,7 +14,7 @@
 namespace cc {
 
 PrioritizedResource::PrioritizedResource(PrioritizedResourceManager* manager,
-                                         gfx::Size size,
+                                         const gfx::Size& size,
                                          ResourceFormat format)
     : size_(size),
       format_(format),
@@ -45,7 +45,8 @@ void PrioritizedResource::SetTextureManager(
     manager->RegisterTexture(this);
 }
 
-void PrioritizedResource::SetDimensions(gfx::Size size, ResourceFormat format) {
+void PrioritizedResource::SetDimensions(const gfx::Size& size,
+                                        ResourceFormat format) {
   if (format_ != format || size_ != size) {
     is_above_priority_cutoff_ = false;
     format_ = format;
@@ -76,9 +77,9 @@ void PrioritizedResource::AcquireBackingTexture(
 
 void PrioritizedResource::SetPixels(ResourceProvider* resource_provider,
                                     const uint8_t* image,
-                                    gfx::Rect image_rect,
-                                    gfx::Rect source_rect,
-                                    gfx::Vector2d dest_offset) {
+                                    const gfx::Rect& image_rect,
+                                    const gfx::Rect& source_rect,
+                                    const gfx::Vector2d& dest_offset) {
   DCHECK(is_above_priority_cutoff_);
   if (is_above_priority_cutoff_)
     AcquireBackingTexture(resource_provider);
@@ -117,7 +118,7 @@ void PrioritizedResource::SetToSelfManagedMemoryPlaceholder(size_t bytes) {
 
 PrioritizedResource::Backing::Backing(unsigned id,
                                       ResourceProvider* resource_provider,
-                                      gfx::Size size,
+                                      const gfx::Size& size,
                                       ResourceFormat format)
     : Resource(id, size, format),
       owner_(NULL),
@@ -125,12 +126,13 @@ PrioritizedResource::Backing::Backing(unsigned id,
       was_above_priority_cutoff_at_last_priority_update_(false),
       in_drawing_impl_tree_(false),
       in_parent_compositor_(false),
-#ifdef NDEBUG
-      resource_has_been_deleted_(false) {}
+#if !DCHECK_IS_ON
+      resource_has_been_deleted_(false) {
 #else
       resource_has_been_deleted_(false),
-      resource_provider_(resource_provider) {}
+      resource_provider_(resource_provider) {
 #endif
+}
 
 PrioritizedResource::Backing::~Backing() {
   DCHECK(!owner_);
@@ -141,7 +143,7 @@ void PrioritizedResource::Backing::DeleteResource(
     ResourceProvider* resource_provider) {
   DCHECK(!proxy() || proxy()->IsImplThread());
   DCHECK(!resource_has_been_deleted_);
-#ifndef NDEBUG
+#if DCHECK_IS_ON
   DCHECK(resource_provider == resource_provider_);
 #endif
 

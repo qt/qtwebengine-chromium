@@ -25,12 +25,15 @@
 #include "platform/LengthFunctions.h"
 
 #include "platform/LayoutUnit.h"
-#include "platform/Length.h"
+#include "platform/LengthSize.h"
 
 namespace WebCore {
 
-// This method is over-ridden in core/css/CSSLengthFunctions.cpp.
-// Any changes here most likely also need to be applied there.
+int intValueForLength(const Length& length, LayoutUnit maximumValue)
+{
+    return static_cast<int>(valueForLength(length, maximumValue));
+}
+
 float floatValueForLength(const Length& length, float maximumValue)
 {
     switch (length.type()) {
@@ -43,10 +46,34 @@ float floatValueForLength(const Length& length, float maximumValue)
         return static_cast<float>(maximumValue);
     case Calculated:
         return length.nonNanCalculatedValue(maximumValue);
-    case ViewportPercentageWidth:
-    case ViewportPercentageHeight:
-    case ViewportPercentageMin:
-    case ViewportPercentageMax:
+    case Intrinsic:
+    case MinIntrinsic:
+    case MinContent:
+    case MaxContent:
+    case FitContent:
+    case ExtendToZoom:
+    case DeviceWidth:
+    case DeviceHeight:
+    case Undefined:
+        ASSERT_NOT_REACHED();
+        return 0;
+    }
+    ASSERT_NOT_REACHED();
+    return 0;
+}
+
+LayoutUnit minimumValueForLength(const Length& length, LayoutUnit maximumValue)
+{
+    switch (length.type()) {
+    case Fixed:
+        return length.value();
+    case Percent:
+        // Don't remove the extra cast to float. It is needed for rounding on 32-bit Intel machines that use the FPU stack.
+        return static_cast<float>(maximumValue * length.percent() / 100.0f);
+    case Calculated:
+        return length.nonNanCalculatedValue(maximumValue);
+    case FillAvailable:
+    case Auto:
         return 0;
     case Intrinsic:
     case MinIntrinsic:
@@ -54,12 +81,52 @@ float floatValueForLength(const Length& length, float maximumValue)
     case MaxContent:
     case FitContent:
     case ExtendToZoom:
+    case DeviceWidth:
+    case DeviceHeight:
     case Undefined:
         ASSERT_NOT_REACHED();
         return 0;
     }
     ASSERT_NOT_REACHED();
     return 0;
+}
+
+LayoutUnit roundedMinimumValueForLength(const Length& length, LayoutUnit maximumValue)
+{
+    if (length.type() == Percent)
+        return static_cast<LayoutUnit>(round(maximumValue * length.percent() / 100.0f));
+    return minimumValueForLength(length, maximumValue);
+}
+
+LayoutUnit valueForLength(const Length& length, LayoutUnit maximumValue)
+{
+    switch (length.type()) {
+    case Fixed:
+    case Percent:
+    case Calculated:
+        return minimumValueForLength(length, maximumValue);
+    case FillAvailable:
+    case Auto:
+        return maximumValue;
+    case Intrinsic:
+    case MinIntrinsic:
+    case MinContent:
+    case MaxContent:
+    case FitContent:
+    case ExtendToZoom:
+    case DeviceWidth:
+    case DeviceHeight:
+    case Undefined:
+        ASSERT_NOT_REACHED();
+        return 0;
+    }
+    ASSERT_NOT_REACHED();
+    return 0;
+}
+
+FloatSize floatSizeForLengthSize(const LengthSize& lengthSize, const FloatSize& boxSize)
+{
+    return FloatSize(floatValueForLength(lengthSize.width(), boxSize.width()), floatValueForLength(lengthSize.height(), boxSize.height()));
 }
 
 } // namespace WebCore

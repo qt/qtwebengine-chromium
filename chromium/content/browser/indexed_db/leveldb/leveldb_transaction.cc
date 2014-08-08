@@ -62,9 +62,9 @@ void LevelDBTransaction::Remove(const StringPiece& key) {
   Set(key, &empty, true);
 }
 
-bool LevelDBTransaction::Get(const StringPiece& key,
-                             std::string* value,
-                             bool* found) {
+leveldb::Status LevelDBTransaction::Get(const StringPiece& key,
+                                        std::string* value,
+                                        bool* found) {
   *found = false;
   DCHECK(!finished_);
   std::string string_key(key.begin(), key.end() - key.begin());
@@ -72,27 +72,25 @@ bool LevelDBTransaction::Get(const StringPiece& key,
 
   if (it != data_.end()) {
     if (it->second->deleted)
-      return true;
+      return leveldb::Status::OK();
 
     *value = it->second->value;
     *found = true;
-    return true;
+    return leveldb::Status::OK();
   }
 
-  bool ok = db_->Get(key, value, found, &snapshot_);
-  if (!ok) {
+  leveldb::Status s = db_->Get(key, value, found, &snapshot_);
+  if (!s.ok())
     DCHECK(!*found);
-    return false;
-  }
-  return true;
+  return s;
 }
 
-bool LevelDBTransaction::Commit() {
+leveldb::Status LevelDBTransaction::Commit() {
   DCHECK(!finished_);
 
   if (data_.empty()) {
     finished_ = true;
-    return true;
+    return leveldb::Status::OK();
   }
 
   scoped_ptr<LevelDBWriteBatch> write_batch = LevelDBWriteBatch::Create();
@@ -105,12 +103,12 @@ bool LevelDBTransaction::Commit() {
       write_batch->Remove(iterator->first);
   }
 
-  if (!db_->Write(*write_batch))
-    return false;
-
-  Clear();
-  finished_ = true;
-  return true;
+  leveldb::Status s = db_->Write(*write_batch);
+  if (s.ok()) {
+    Clear();
+    finished_ = true;
+  }
+  return s;
 }
 
 void LevelDBTransaction::Rollback() {
@@ -132,27 +130,32 @@ bool LevelDBTransaction::DataIterator::IsValid() const {
   return iterator_ != data_->end();
 }
 
-void LevelDBTransaction::DataIterator::SeekToLast() {
+leveldb::Status LevelDBTransaction::DataIterator::SeekToLast() {
   iterator_ = data_->end();
   if (iterator_ != data_->begin())
     --iterator_;
+  return leveldb::Status::OK();
 }
 
-void LevelDBTransaction::DataIterator::Seek(const StringPiece& target) {
+leveldb::Status LevelDBTransaction::DataIterator::Seek(
+    const StringPiece& target) {
   iterator_ = data_->lower_bound(target);
+  return leveldb::Status::OK();
 }
 
-void LevelDBTransaction::DataIterator::Next() {
+leveldb::Status LevelDBTransaction::DataIterator::Next() {
   DCHECK(IsValid());
   ++iterator_;
+  return leveldb::Status::OK();
 }
 
-void LevelDBTransaction::DataIterator::Prev() {
+leveldb::Status LevelDBTransaction::DataIterator::Prev() {
   DCHECK(IsValid());
   if (iterator_ != data_->begin())
     --iterator_;
   else
     iterator_ = data_->end();
+  return leveldb::Status::OK();
 }
 
 StringPiece LevelDBTransaction::DataIterator::Key() const {
@@ -203,29 +206,39 @@ bool LevelDBTransaction::TransactionIterator::IsValid() const {
   return !!current_;
 }
 
-void LevelDBTransaction::TransactionIterator::SeekToLast() {
-  data_iterator_->SeekToLast();
-  db_iterator_->SeekToLast();
+leveldb::Status LevelDBTransaction::TransactionIterator::SeekToLast() {
+  leveldb::Status s = data_iterator_->SeekToLast();
+  DCHECK(s.ok());
+  s = db_iterator_->SeekToLast();
+  if (!s.ok())
+    return s;
   direction_ = REVERSE;
 
   HandleConflictsAndDeletes();
   SetCurrentIteratorToLargestKey();
+  return s;
 }
 
-void LevelDBTransaction::TransactionIterator::Seek(const StringPiece& target) {
-  data_iterator_->Seek(target);
-  db_iterator_->Seek(target);
+leveldb::Status LevelDBTransaction::TransactionIterator::Seek(
+    const StringPiece& target) {
+  leveldb::Status s = data_iterator_->Seek(target);
+  DCHECK(s.ok());
+  s = db_iterator_->Seek(target);
+  if (!s.ok())
+    return s;
   direction_ = FORWARD;
 
   HandleConflictsAndDeletes();
   SetCurrentIteratorToSmallestKey();
+  return s;
 }
 
-void LevelDBTransaction::TransactionIterator::Next() {
+leveldb::Status LevelDBTransaction::TransactionIterator::Next() {
   DCHECK(IsValid());
   if (data_changed_)
     RefreshDataIterator();
 
+  leveldb::Status s;
   if (direction_ != FORWARD) {
     // Ensure the non-current iterator is positioned after Key().
 
@@ -238,7 +251,9 @@ void LevelDBTransaction::TransactionIterator::Next() {
         !comparator_->Compare(non_current->Key(), Key())) {
       // Take an extra step so the non-current key is
       // strictly greater than Key().
-      non_current->Next();
+      s = non_current->Next();
+      if (!s.ok())
+        return s;
     }
     DCHECK(!non_current->IsValid() ||
            comparator_->Compare(non_current->Key(), Key()) > 0);
@@ -246,13 +261,17 @@ void LevelDBTransaction::TransactionIterator::Next() {
     direction_ = FORWARD;
   }
 
-  current_->Next();
+  s = current_->Next();
+  if (!s.ok())
+    return s;
   HandleConflictsAndDeletes();
   SetCurrentIteratorToSmallestKey();
+  return leveldb::Status::OK();
 }
 
-void LevelDBTransaction::TransactionIterator::Prev() {
+leveldb::Status LevelDBTransaction::TransactionIterator::Prev() {
   DCHECK(IsValid());
+  leveldb::Status s;
   if (data_changed_)
     RefreshDataIterator();
 
@@ -263,7 +282,9 @@ void LevelDBTransaction::TransactionIterator::Prev() {
                                        ? data_iterator_.get()
                                        : db_iterator_.get();
 
-    non_current->Seek(Key());
+    s = non_current->Seek(Key());
+    if (!s.ok())
+      return s;
     if (non_current->IsValid()) {
       // Iterator is at first entry >= Key().
       // Step back once to entry < key.
@@ -280,9 +301,12 @@ void LevelDBTransaction::TransactionIterator::Prev() {
     direction_ = REVERSE;
   }
 
-  current_->Prev();
+  s = current_->Prev();
+  if (!s.ok())
+    return s;
   HandleConflictsAndDeletes();
   SetCurrentIteratorToLargestKey();
+  return leveldb::Status::OK();
 }
 
 StringPiece LevelDBTransaction::TransactionIterator::Key() const {
@@ -423,32 +447,49 @@ void LevelDBTransaction::NotifyIterators() {
   }
 }
 
-scoped_ptr<LevelDBWriteOnlyTransaction> LevelDBWriteOnlyTransaction::Create(
+scoped_ptr<LevelDBDirectTransaction> LevelDBDirectTransaction::Create(
     LevelDBDatabase* db) {
-  return make_scoped_ptr(new LevelDBWriteOnlyTransaction(db));
+  return make_scoped_ptr(new LevelDBDirectTransaction(db));
 }
 
-LevelDBWriteOnlyTransaction::LevelDBWriteOnlyTransaction(LevelDBDatabase* db)
+LevelDBDirectTransaction::LevelDBDirectTransaction(LevelDBDatabase* db)
     : db_(db), write_batch_(LevelDBWriteBatch::Create()), finished_(false) {}
 
-LevelDBWriteOnlyTransaction::~LevelDBWriteOnlyTransaction() {
+LevelDBDirectTransaction::~LevelDBDirectTransaction() {
   write_batch_->Clear();
 }
 
-void LevelDBWriteOnlyTransaction::Remove(const StringPiece& key) {
+void LevelDBDirectTransaction::Put(const StringPiece& key,
+                                   const std::string* value) {
+  DCHECK(!finished_);
+  write_batch_->Put(key, *value);
+}
+
+leveldb::Status LevelDBDirectTransaction::Get(const StringPiece& key,
+                                              std::string* value,
+                                              bool* found) {
+  *found = false;
+  DCHECK(!finished_);
+
+  leveldb::Status s = db_->Get(key, value, found);
+  DCHECK(s.ok() || !*found);
+  return s;
+}
+
+void LevelDBDirectTransaction::Remove(const StringPiece& key) {
   DCHECK(!finished_);
   write_batch_->Remove(key);
 }
 
-bool LevelDBWriteOnlyTransaction::Commit() {
+leveldb::Status LevelDBDirectTransaction::Commit() {
   DCHECK(!finished_);
 
-  if (!db_->Write(*write_batch_))
-    return false;
-
-  finished_ = true;
-  write_batch_->Clear();
-  return true;
+  leveldb::Status s = db_->Write(*write_batch_);
+  if (s.ok()) {
+    finished_ = true;
+    write_batch_->Clear();
+  }
+  return s;
 }
 
 }  // namespace content

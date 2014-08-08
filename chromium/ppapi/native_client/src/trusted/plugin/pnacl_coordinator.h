@@ -21,13 +21,12 @@
 #include "ppapi/native_client/src/trusted/plugin/file_downloader.h"
 #include "ppapi/native_client/src/trusted/plugin/nacl_subprocess.h"
 #include "ppapi/native_client/src/trusted/plugin/plugin_error.h"
-#include "ppapi/native_client/src/trusted/plugin/pnacl_options.h"
 #include "ppapi/native_client/src/trusted/plugin/pnacl_resources.h"
 
+struct PP_PNaClOptions;
 
 namespace plugin {
 
-class Manifest;
 class Plugin;
 class PnaclCoordinator;
 class PnaclTranslateThread;
@@ -52,56 +51,23 @@ class TempFile;
 // Translation proceeds in two steps:
 // (1) llc translates the bitcode in pexe_url_ to an object in obj_file_.
 // (2) ld links the object code in obj_file_ and produces a nexe in nexe_file_.
-//
-// The coordinator proceeds through several states.  They are
-// OPEN_BITCODE_STREAM
-//       Complete when BitcodeStreamDidOpen is invoked
-// LOAD_TRANSLATOR_BINARIES
-//     Complete when ResourcesDidLoad is invoked.
-// GET_NEXE_FD
-//       Get an FD which contains the cached nexe, or is writeable for
-//       translation output. Complete when NexeFdDidOpen is called.
-//
-// If there was a cache hit, go to OPEN_NEXE_FOR_SEL_LDR, otherwise,
-// continue streaming the bitcode, and:
-// OPEN_TMP_FOR_LLC_TO_LD_COMMUNICATION
-//     Complete when ObjectFileDidOpen is invoked.
-// OPEN_NEXE_FD_FOR_WRITING
-//     Complete when RunTranslate is invoked.
-// START_LD_AND_LLC_SUBPROCESS_AND_INITIATE_TRANSLATION
-//     Complete when RunTranslate returns.
-// TRANSLATION_COMPLETE
-//     Complete when TranslateFinished is invoked.
-//
-// OPEN_NEXE_FOR_SEL_LDR
-//   Complete when NexeReadDidOpen is invoked.
 class PnaclCoordinator: public CallbackSource<FileStreamData> {
  public:
+  // Maximum number of object files passable to the translator. Cannot be
+  // changed without changing the RPC signatures.
+  const static size_t kMaxTranslatorObjectFiles = 16;
   virtual ~PnaclCoordinator();
 
   // The factory method for translations.
   static PnaclCoordinator* BitcodeToNative(
       Plugin* plugin,
       const nacl::string& pexe_url,
-      const PnaclOptions& pnacl_options,
+      const PP_PNaClOptions& pnacl_options,
       const pp::CompletionCallback& translate_notify_callback);
 
   // Call this to take ownership of the FD of the translated nexe after
   // BitcodeToNative has completed (and the finish_callback called).
-  nacl::DescWrapper* ReleaseTranslatedFD();
-
-  // Run |translate_notify_callback_| with an error condition that is not
-  // PPAPI specific.  Also set ErrorInfo report.
-  void ReportNonPpapiError(PluginErrorCode err, const nacl::string& message);
-  // Run when faced with a PPAPI error condition. Bring control back to the
-  // plugin by invoking the |translate_notify_callback_|.
-  // Also set ErrorInfo report.
-  void ReportPpapiError(PluginErrorCode err,
-                        int32_t pp_error, const nacl::string& message);
-  // Bring control back to the plugin by invoking the
-  // |translate_notify_callback_|.  This does not set the ErrorInfo report,
-  // it is assumed that it was already set.
-  void ExitWithError();
+  PP_FileHandle TakeTranslatedFileHandle();
 
   // Implement FileDownloader's template of the CallbackSource interface.
   // This method returns a callback which will be called by the FileDownloader
@@ -115,9 +81,6 @@ class PnaclCoordinator: public CallbackSource<FileStreamData> {
 
   // Get the last known load progress.
   void GetCurrentProgress(int64_t* bytes_loaded, int64_t* bytes_total);
-
-  // Return true if the total progress to report (w/ progress events) is known.
-  bool ExpectedProgressKnown() { return expected_pexe_size_ != -1; }
 
   // Return true if we should delay the progress event reporting.
   // This delay approximates:
@@ -136,7 +99,7 @@ class PnaclCoordinator: public CallbackSource<FileStreamData> {
   // Therefore the constructor is private.
   PnaclCoordinator(Plugin* plugin,
                    const nacl::string& pexe_url,
-                   const PnaclOptions& pnacl_options,
+                   const PP_PNaClOptions& pnacl_options,
                    const pp::CompletionCallback& translate_notify_callback);
 
   // Invoke to issue a GET request for bitcode.
@@ -159,8 +122,6 @@ class PnaclCoordinator: public CallbackSource<FileStreamData> {
   void BitcodeGotCompiled(int32_t pp_error, int64_t bytes_compiled);
   // Invoked when the pexe download finishes (using streaming translation)
   void BitcodeStreamDidFinish(int32_t pp_error);
-  // Invoked when the write descriptor for obj_file_ is created.
-  void ObjectFileDidOpen(int32_t pp_error);
   // Once llc and ld nexes have been loaded and the two temporary files have
   // been created, this starts the translation.  Translation starts two
   // subprocesses, one for llc and one for ld.
@@ -171,6 +132,20 @@ class PnaclCoordinator: public CallbackSource<FileStreamData> {
 
   // Invoked when the read descriptor for nexe_file_ is created.
   void NexeReadDidOpen(int32_t pp_error);
+
+  // Bring control back to the plugin by invoking the
+  // |translate_notify_callback_|.  This does not set the ErrorInfo report,
+  // it is assumed that it was already set.
+  void ExitWithError();
+  // Run |translate_notify_callback_| with an error condition that is not
+  // PPAPI specific.  Also set ErrorInfo report.
+  void ReportNonPpapiError(PP_NaClError err, const nacl::string& message);
+  // Run when faced with a PPAPI error condition. Bring control back to the
+  // plugin by invoking the |translate_notify_callback_|.
+  // Also set ErrorInfo report.
+  void ReportPpapiError(PP_NaClError err,
+                        int32_t pp_error, const nacl::string& message);
+
 
   // Keeps track of the pp_error upon entry to TranslateFinished,
   // for inspection after cleanup.
@@ -190,19 +165,24 @@ class PnaclCoordinator: public CallbackSource<FileStreamData> {
   pp::CompletionCallbackFactory<PnaclCoordinator,
                                 pp::ThreadSafeThreadTraits> callback_factory_;
 
-  // The manifest used by resource loading and ld + llc's reverse service
-  // to look up objects and libraries.
-  nacl::scoped_ptr<const Manifest> manifest_;
   // An auxiliary class that manages downloaded resources (llc and ld nexes).
   nacl::scoped_ptr<PnaclResources> resources_;
 
   // The URL for the pexe file.
   nacl::string pexe_url_;
   // Options for translation.
-  PnaclOptions pnacl_options_;
+  PP_PNaClOptions pnacl_options_;
+  // Architecture-specific attributes used for translation. These are
+  // supplied by Chrome, not the developer, and are therefore different
+  // from PNaCl options.
+  nacl::string architecture_attributes_;
 
   // Object file, produced by the translator and consumed by the linker.
-  nacl::scoped_ptr<TempFile> obj_file_;
+  std::vector<TempFile*> obj_files_;
+  nacl::scoped_ptr<nacl::DescWrapper> invalid_desc_wrapper_;
+  // Number of split modules (threads) for llc
+  int split_module_count_;
+
   // Translated nexe file, produced by the linker.
   nacl::scoped_ptr<TempFile> temp_nexe_file_;
   // Passed to the browser, which sets it to true if there is a translation
@@ -226,8 +206,8 @@ class PnaclCoordinator: public CallbackSource<FileStreamData> {
   int64_t expected_pexe_size_;   // Expected download total (-1 if unknown).
 
   // The helper thread used to do translations via SRPC.
-  // Keep this last in declaration order to ensure the other variables
-  // haven't been destroyed yet when its destructor runs.
+  // It accesses fields of PnaclCoordinator so it must have a
+  // shorter lifetime.
   nacl::scoped_ptr<PnaclTranslateThread> translate_thread_;
 };
 

@@ -14,6 +14,7 @@
 #include "base/logging.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/stl_util.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/threading/thread.h"
 #include "base/values.h"
 #include "content/browser/devtools/devtools_browser_target.h"
@@ -31,14 +32,15 @@
 #include "content/public/browser/devtools_target.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/url_constants.h"
+#include "content/public/common/user_agent.h"
+#include "content/public/common/user_agent.h"
 #include "grit/devtools_resources_map.h"
 #include "net/base/escape.h"
 #include "net/base/io_buffer.h"
 #include "net/base/ip_endpoint.h"
+#include "net/base/net_errors.h"
 #include "net/server/http_server_request_info.h"
 #include "net/server/http_server_response_info.h"
-#include "webkit/common/user_agent/user_agent.h"
-#include "webkit/common/user_agent/user_agent_util.h"
 
 #if defined(OS_ANDROID)
 #include "base/android/build_info.h"
@@ -48,7 +50,8 @@ namespace content {
 
 namespace {
 
-const char kProtocolVersion[] = "1.0";
+const base::FilePath::CharType kDevToolsActivePortFileName[] =
+    FILE_PATH_LITERAL("DevToolsActivePort");
 
 const char kDevToolsHandlerThreadName[] = "Chrome_DevToolsHandlerThread";
 
@@ -56,6 +59,7 @@ const char kThumbUrlPrefix[] = "/thumb/";
 const char kPageUrlPrefix[] = "/devtools/page/";
 
 const char kTargetIdField[] = "id";
+const char kTargetParentIdField[] = "parentId";
 const char kTargetTypeField[] = "type";
 const char kTargetTitleField[] = "title";
 const char kTargetDescriptionField[] = "description";
@@ -135,7 +139,7 @@ static bool TimeComparator(const DevToolsTarget* target1,
 // static
 bool DevToolsHttpHandler::IsSupportedProtocolVersion(
     const std::string& version) {
-  return version == kProtocolVersion;
+  return devtools::IsSupportedProtocolVersion(version);
 }
 
 // static
@@ -151,11 +155,13 @@ int DevToolsHttpHandler::GetFrontendResourceId(const std::string& name) {
 DevToolsHttpHandler* DevToolsHttpHandler::Start(
     const net::StreamListenSocketFactory* socket_factory,
     const std::string& frontend_url,
-    DevToolsHttpHandlerDelegate* delegate) {
+    DevToolsHttpHandlerDelegate* delegate,
+    const base::FilePath& active_port_output_directory) {
   DevToolsHttpHandlerImpl* http_handler =
       new DevToolsHttpHandlerImpl(socket_factory,
                                   frontend_url,
-                                  delegate);
+                                  delegate,
+                                  active_port_output_directory);
   http_handler->Start();
   return http_handler;
 }
@@ -215,8 +221,7 @@ GURL DevToolsHttpHandlerImpl::GetFrontendURL() {
   net::IPEndPoint ip_address;
   if (server_->GetLocalAddress(&ip_address))
     return GURL();
-  return GURL(std::string("http://") + ip_address.ToString() +
-      overridden_frontend_url_);
+  return GURL(std::string("http://") + ip_address.ToString() + frontend_url_);
 }
 
 static std::string PathWithoutParams(const std::string& path) {
@@ -237,7 +242,12 @@ static std::string GetMimeType(const std::string& filename) {
     return "image/png";
   } else if (EndsWith(filename, ".gif", false)) {
     return "image/gif";
+  } else if (EndsWith(filename, ".json", false)) {
+    return "application/json";
   }
+  LOG(ERROR) << "GetMimeType doesn't know mime type for: "
+             << filename
+             << " text/plain will be returned";
   NOTREACHED();
   return "text/plain";
 }
@@ -262,7 +272,7 @@ void DevToolsHttpHandlerImpl::OnHttpRequest(
     DevToolsTarget* target = GetTarget(target_id);
     GURL page_url;
     if (target)
-      page_url = target->GetUrl();
+      page_url = target->GetURL();
     BrowserThread::PostTask(
         BrowserThread::UI,
         FROM_HERE,
@@ -318,24 +328,21 @@ void DevToolsHttpHandlerImpl::OnWebSocketRequest(
   std::string browser_prefix = "/devtools/browser";
   size_t browser_pos = request.path.find(browser_prefix);
   if (browser_pos == 0) {
-    if (browser_target_) {
-      server_->Send500(connection_id, "Another client already attached");
-      return;
-    }
-    browser_target_ = new DevToolsBrowserTarget(
-        thread_->message_loop_proxy().get(), server_.get(), connection_id);
-    browser_target_->RegisterDomainHandler(
+    scoped_refptr<DevToolsBrowserTarget> browser_target =
+        new DevToolsBrowserTarget(server_.get(), connection_id);
+    browser_target->RegisterDomainHandler(
         devtools::Tracing::kName,
-        new DevToolsTracingHandler(),
+        new DevToolsTracingHandler(DevToolsTracingHandler::Browser),
         true /* handle on UI thread */);
-    browser_target_->RegisterDomainHandler(
+    browser_target->RegisterDomainHandler(
         TetheringHandler::kDomain,
         new TetheringHandler(delegate_.get()),
         false /* handle on this thread */);
-    browser_target_->RegisterDomainHandler(
+    browser_target->RegisterDomainHandler(
         devtools::SystemInfo::kName,
         new DevToolsSystemInfoHandler(),
         true /* handle on UI thread */);
+    browser_targets_[connection_id] = browser_target;
 
     server_->AcceptWebSocket(connection_id, request);
     return;
@@ -354,8 +361,9 @@ void DevToolsHttpHandlerImpl::OnWebSocketRequest(
 void DevToolsHttpHandlerImpl::OnWebSocketMessage(
     int connection_id,
     const std::string& data) {
-  if (browser_target_ && connection_id == browser_target_->connection_id()) {
-    browser_target_->HandleMessage(data);
+  BrowserTargets::iterator it = browser_targets_.find(connection_id);
+  if (it != browser_targets_.end()) {
+    it->second->HandleMessage(data);
     return;
   }
 
@@ -370,9 +378,10 @@ void DevToolsHttpHandlerImpl::OnWebSocketMessage(
 }
 
 void DevToolsHttpHandlerImpl::OnClose(int connection_id) {
-  if (browser_target_ && browser_target_->connection_id() == connection_id) {
-    browser_target_->Detach();
-    browser_target_ = NULL;
+  BrowserTargets::iterator it = browser_targets_.find(connection_id);
+  if (it != browser_targets_.end()) {
+    it->second->Detach();
+    browser_targets_.erase(it);
     return;
   }
 
@@ -390,8 +399,8 @@ std::string DevToolsHttpHandlerImpl::GetFrontendURLInternal(
     const std::string& host) {
   return base::StringPrintf(
       "%s%sws=%s%s%s",
-      overridden_frontend_url_.c_str(),
-      overridden_frontend_url_.find("?") == std::string::npos ? "?" : "&",
+      frontend_url_.c_str(),
+      frontend_url_.find("?") == std::string::npos ? "?" : "&",
       host.c_str(),
       kPageUrlPrefix,
       id.c_str());
@@ -452,11 +461,10 @@ void DevToolsHttpHandlerImpl::OnJsonRequestUI(
 
   if (command == "version") {
     base::DictionaryValue version;
-    version.SetString("Protocol-Version", kProtocolVersion);
-    version.SetString("WebKit-Version", webkit_glue::GetWebKitVersion());
-    version.SetString("Browser", content::GetContentClient()->GetProduct());
-    version.SetString("User-Agent",
-                      webkit_glue::GetUserAgent(GURL(kAboutBlankURL)));
+    version.SetString("Protocol-Version", devtools::kProtocolVersion);
+    version.SetString("WebKit-Version", GetWebKitVersion());
+    version.SetString("Browser", GetContentClient()->GetProduct());
+    version.SetString("User-Agent", GetContentClient()->GetUserAgent());
 #if defined(OS_ANDROID)
     version.SetString("Android-Package",
         base::android::BuildInfo::GetInstance()->package_name());
@@ -478,7 +486,7 @@ void DevToolsHttpHandlerImpl::OnJsonRequestUI(
     GURL url(net::UnescapeURLComponent(
         query, net::UnescapeRule::URL_SPECIAL_CHARS));
     if (!url.is_valid())
-      url = GURL(kAboutBlankURL);
+      url = GURL(url::kAboutBlankURL);
     scoped_ptr<DevToolsTarget> target(delegate_->CreateNewTarget(url));
     if (!target) {
       SendJson(connection_id,
@@ -641,12 +649,14 @@ void DevToolsHttpHandlerImpl::OnCloseUI(int connection_id) {
 DevToolsHttpHandlerImpl::DevToolsHttpHandlerImpl(
     const net::StreamListenSocketFactory* socket_factory,
     const std::string& frontend_url,
-    DevToolsHttpHandlerDelegate* delegate)
-    : overridden_frontend_url_(frontend_url),
+    DevToolsHttpHandlerDelegate* delegate,
+    const base::FilePath& active_port_output_directory)
+    : frontend_url_(frontend_url),
       socket_factory_(socket_factory),
-      delegate_(delegate) {
-  if (overridden_frontend_url_.empty())
-      overridden_frontend_url_ = "/devtools/devtools.html";
+      delegate_(delegate),
+      active_port_output_directory_(active_port_output_directory) {
+  if (frontend_url_.empty())
+      frontend_url_ = "/devtools/devtools.html";
 
   // Balanced in ResetHandlerThreadAndRelease().
   AddRef();
@@ -655,6 +665,8 @@ DevToolsHttpHandlerImpl::DevToolsHttpHandlerImpl(
 // Runs on the handler thread
 void DevToolsHttpHandlerImpl::Init() {
   server_ = new net::HttpServer(*socket_factory_.get(), this);
+  if (!active_port_output_directory_.empty())
+    WriteActivePortToUserProfile();
 }
 
 // Runs on the handler thread
@@ -672,6 +684,25 @@ void DevToolsHttpHandlerImpl::StopHandlerThread() {
       base::Bind(&DevToolsHttpHandlerImpl::Teardown, this));
   // Thread::Stop joins the thread.
   thread_->Stop();
+}
+
+void DevToolsHttpHandlerImpl::WriteActivePortToUserProfile() {
+  DCHECK(!active_port_output_directory_.empty());
+  net::IPEndPoint endpoint;
+  int err;
+  if ((err = server_->GetLocalAddress(&endpoint)) != net::OK) {
+    LOG(ERROR) << "Error " << err << " getting local address";
+    return;
+  }
+
+  // Write this port to a well-known file in the profile directory
+  // so Telemetry can pick it up.
+  base::FilePath path = active_port_output_directory_.Append(
+      kDevToolsActivePortFileName);
+  std::string port_string = base::IntToString(endpoint.port());
+  if (base::WriteFile(path, port_string.c_str(), port_string.length()) < 0) {
+    LOG(ERROR) << "Error writing DevTools active port to file";
+  }
 }
 
 void DevToolsHttpHandlerImpl::SendJson(int connection_id,
@@ -753,15 +784,18 @@ base::DictionaryValue* DevToolsHttpHandlerImpl::SerializeTarget(
 
   std::string id = target.GetId();
   dictionary->SetString(kTargetIdField, id);
+  std::string parent_id = target.GetParentId();
+  if (!parent_id.empty())
+    dictionary->SetString(kTargetParentIdField, parent_id);
   dictionary->SetString(kTargetTypeField, target.GetType());
   dictionary->SetString(kTargetTitleField,
                         net::EscapeForHTML(target.GetTitle()));
   dictionary->SetString(kTargetDescriptionField, target.GetDescription());
 
-  GURL url = target.GetUrl();
+  GURL url = target.GetURL();
   dictionary->SetString(kTargetUrlField, url.spec());
 
-  GURL favicon_url = target.GetFaviconUrl();
+  GURL favicon_url = target.GetFaviconURL();
   if (favicon_url.is_valid())
     dictionary->SetString(kTargetFaviconUrlField, favicon_url.spec());
 

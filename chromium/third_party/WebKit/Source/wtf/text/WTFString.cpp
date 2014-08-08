@@ -45,7 +45,7 @@ using namespace std;
 
 // Construct a string with UTF-16 data.
 String::String(const UChar* characters, unsigned length)
-    : m_impl(characters ? StringImpl::create(characters, length) : 0)
+    : m_impl(characters ? StringImpl::create(characters, length) : nullptr)
 {
 }
 
@@ -59,23 +59,23 @@ String::String(const UChar* str)
 
 // Construct a string with latin1 data.
 String::String(const LChar* characters, unsigned length)
-    : m_impl(characters ? StringImpl::create(characters, length) : 0)
+    : m_impl(characters ? StringImpl::create(characters, length) : nullptr)
 {
 }
 
 String::String(const char* characters, unsigned length)
-    : m_impl(characters ? StringImpl::create(reinterpret_cast<const LChar*>(characters), length) : 0)
+    : m_impl(characters ? StringImpl::create(reinterpret_cast<const LChar*>(characters), length) : nullptr)
 {
 }
 
 // Construct a string with latin1 data, from a null-terminated source.
 String::String(const LChar* characters)
-    : m_impl(characters ? StringImpl::create(characters) : 0)
+    : m_impl(characters ? StringImpl::create(characters) : nullptr)
 {
 }
 
 String::String(const char* characters)
-    : m_impl(characters ? StringImpl::create(reinterpret_cast<const LChar*>(characters)) : 0)
+    : m_impl(characters ? StringImpl::create(reinterpret_cast<const LChar*>(characters)) : nullptr)
 {
 }
 
@@ -504,7 +504,7 @@ String String::number(int number)
     return numberToStringSigned<String>(number);
 }
 
-String String::number(unsigned int number)
+String String::number(unsigned number)
 {
     return numberToStringUnsigned<String>(number);
 }
@@ -792,7 +792,7 @@ static inline void putUTF8Triple(char*& buffer, UChar ch)
     *buffer++ = static_cast<char>((ch & 0x3F) | 0x80);
 }
 
-CString String::utf8(ConversionMode mode) const
+CString String::utf8(UTF8ConversionMode mode) const
 {
     unsigned length = this->length();
 
@@ -823,7 +823,7 @@ CString String::utf8(ConversionMode mode) const
     } else {
         const UChar* characters = this->characters16();
 
-        if (mode == StrictConversionReplacingUnpairedSurrogatesWithFFFD) {
+        if (mode == StrictUTF8ConversionReplacingUnpairedSurrogatesWithFFFD) {
             const UChar* charactersEnd = characters + length;
             char* bufferEnd = buffer + bufferVector.size();
             while (characters < charactersEnd) {
@@ -841,7 +841,7 @@ CString String::utf8(ConversionMode mode) const
                 }
             }
         } else {
-            bool strict = mode == StrictConversion;
+            bool strict = mode == StrictUTF8Conversion;
             ConversionResult result = convertUTF16ToUTF8(&characters, characters + length, &buffer, buffer + bufferVector.size(), strict);
             ASSERT(result != targetExhausted); // (length * 3) should be sufficient for any conversion
 

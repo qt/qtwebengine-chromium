@@ -53,12 +53,6 @@ enum ResizerHitTestType {
     ResizerForTouch
 };
 
-enum ForceNeedsCompositedScrollingMode {
-    DoNotForceCompositedScrolling = 0,
-    CompositedScrollingAlwaysOn = 1,
-    CompositedScrollingAlwaysOff = 2
-};
-
 class PlatformEvent;
 class RenderBox;
 class RenderLayer;
@@ -68,7 +62,9 @@ class RenderLayerScrollableArea FINAL : public ScrollableArea {
     friend class Internals;
 
 public:
-    RenderLayerScrollableArea(RenderBox*);
+    // FIXME: We should pass in the RenderBox but this opens a window
+    // for crashers during RenderLayer setup (see crbug.com/368062).
+    RenderLayerScrollableArea(RenderLayer&);
     virtual ~RenderLayerScrollableArea();
 
     bool hasHorizontalScrollbar() const { return horizontalScrollbar(); }
@@ -76,7 +72,6 @@ public:
 
     virtual Scrollbar* horizontalScrollbar() const OVERRIDE { return m_hBar.get(); }
     virtual Scrollbar* verticalScrollbar() const OVERRIDE { return m_vBar.get(); }
-    virtual ScrollableArea* enclosingScrollableArea() const OVERRIDE;
 
     virtual GraphicsLayer* layerForScrolling() const OVERRIDE;
     virtual GraphicsLayer* layerForHorizontalScrollbar() const OVERRIDE;
@@ -124,6 +119,9 @@ public:
 
     void updateAfterLayout();
     void updateAfterStyleChange(const RenderStyle*);
+    void updateAfterOverflowRecalc();
+
+    virtual void updateAfterCompositingChange() OVERRIDE;
 
     bool hasScrollbar() const { return m_hBar || m_vBar; }
 
@@ -141,8 +139,8 @@ public:
         return resizerCornerRect(bounds, ResizerForTouch);
     }
 
-    int scrollWidth() const;
-    int scrollHeight() const;
+    LayoutUnit scrollWidth() const;
+    LayoutUnit scrollHeight() const;
 
     int verticalScrollbarWidth(OverlayScrollbarSizeRelevancy = IgnoreOverlayScrollbarSize) const;
     int horizontalScrollbarHeight(OverlayScrollbarSizeRelevancy = IgnoreOverlayScrollbarSize) const;
@@ -153,9 +151,6 @@ public:
     void paintOverflowControls(GraphicsContext*, const IntPoint& paintOffset, const IntRect& damageRect, bool paintingOverlayControls);
     void paintScrollCorner(GraphicsContext*, const IntPoint&, const IntRect& damageRect);
 
-    // If IntSize is not given, then we must incur additional overhead to instantiate a RenderGeometryMap
-    // and compute the correct offset ourselves.
-    void positionOverflowControls();
     void positionOverflowControls(const IntSize& offsetFromRoot);
 
     // isPointInResizeControl() is used for testing if a pointer/touch position is in the resize control
@@ -167,7 +162,10 @@ public:
 
     LayoutRect exposeRect(const LayoutRect&, const ScrollAlignment& alignX, const ScrollAlignment& alignY);
 
-    bool scrollsOverflow() const;
+    // Returns true our scrollable area is in the FrameView's collection of scrollable areas. This can
+    // only happen if we're both scrollable, and we do in fact overflow. This means that overflow: hidden
+    // layers never get added to the FrameView's collection.
+    bool scrollsOverflow() const { return m_scrollsOverflow; }
 
     // Rectangle encompassing the scroll corner and resizer rect.
     IntRect scrollCornerAndResizerRect() const;
@@ -211,32 +209,21 @@ private:
     void updateResizerStyle();
     void drawPlatformResizerImage(GraphicsContext*, IntRect resizerCornerRect);
 
+    RenderBox& box() const;
     RenderLayer* layer() const;
 
     void updateScrollableAreaSet(bool hasOverflow);
 
     void updateCompositingLayersAfterScroll();
-    virtual void updateNeedsCompositedScrolling() OVERRIDE;
-    bool setNeedsCompositedScrolling(bool);
 
-    virtual void updateHasVisibleNonLayerContent() OVERRIDE;
-
-    void setForceNeedsCompositedScrolling(ForceNeedsCompositedScrollingMode);
-
-    RenderBox* m_box;
+    RenderLayer& m_layer;
 
     // Keeps track of whether the layer is currently resizing, so events can cause resizing to start and stop.
     unsigned m_inResizeMode : 1;
+    unsigned m_scrollsOverflow : 1;
 
     unsigned m_scrollDimensionsDirty : 1;
     unsigned m_inOverflowRelayout : 1;
-
-    unsigned m_needsCompositedScrolling : 1;
-    unsigned m_willUseCompositedScrollingHasBeenRecorded : 1;
-
-    unsigned m_isScrollableAreaHasBeenRecorded : 1;
-
-    ForceNeedsCompositedScrollingMode m_forceNeedsCompositedScrolling;
 
     // The width/height of our scrolled area.
     LayoutRect m_overflowRect;

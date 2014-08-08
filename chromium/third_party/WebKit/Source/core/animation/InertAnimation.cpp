@@ -30,37 +30,43 @@
 
 #include "config.h"
 #include "core/animation/InertAnimation.h"
+#include "core/animation/interpolation/Interpolation.h"
 
 namespace WebCore {
 
-PassRefPtr<InertAnimation> InertAnimation::create(PassRefPtr<AnimationEffect> effect, const Timing& timing, bool paused)
+PassRefPtrWillBeRawPtr<InertAnimation> InertAnimation::create(PassRefPtrWillBeRawPtr<AnimationEffect> effect, const Timing& timing, bool paused)
 {
-    return adoptRef(new InertAnimation(effect, timing, paused));
+    return adoptRefWillBeNoop(new InertAnimation(effect, timing, paused));
 }
 
-InertAnimation::InertAnimation(PassRefPtr<AnimationEffect> effect, const Timing& timing, bool paused)
-    : TimedItem(timing)
+InertAnimation::InertAnimation(PassRefPtrWillBeRawPtr<AnimationEffect> effect, const Timing& timing, bool paused)
+    : AnimationNode(timing)
     , m_effect(effect)
     , m_paused(paused)
 {
 }
 
-PassOwnPtr<AnimationEffect::CompositableValueList> InertAnimation::sample()
+PassOwnPtrWillBeRawPtr<WillBeHeapVector<RefPtrWillBeMember<Interpolation> > > InertAnimation::sample(double inheritedTime)
 {
-    updateInheritedTime(0);
+    updateInheritedTime(inheritedTime, TimingUpdateOnDemand);
     if (!isInEffect())
         return nullptr;
 
     double iteration = currentIteration();
     ASSERT(iteration >= 0);
     // FIXME: Handle iteration values which overflow int.
-    return m_effect->sample(static_cast<int>(iteration), timeFraction());
+    return m_effect->sample(static_cast<int>(iteration), timeFraction(), iterationDuration());
 }
 
-
-double InertAnimation::calculateTimeToEffectChange(double, double) const
+double InertAnimation::calculateTimeToEffectChange(bool, double, double) const
 {
     return std::numeric_limits<double>::infinity();
+}
+
+void InertAnimation::trace(Visitor* visitor)
+{
+    visitor->trace(m_effect);
+    AnimationNode::trace(visitor);
 }
 
 } // namespace WebCore

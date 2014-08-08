@@ -32,29 +32,43 @@
 #define WebHelperPlugin_h
 
 #include "../platform/WebCommon.h"
-#include "WebWidget.h"
+#include "WebFrame.h"
 
 namespace blink {
 
-class WebFrameClient;
 class WebPlugin;
-class WebWidgetClient;
+class WebString;
 
-class WebHelperPlugin : public WebWidget {
+class WebHelperPlugin {
 public:
-    BLINK_EXPORT static WebHelperPlugin* create(WebWidgetClient*);
+    // May return null if initialization fails. If the returned pointer is
+    // non-null, the caller must free it by calling destroy().
+    BLINK_EXPORT static WebHelperPlugin* create(const WebString& PluginType, WebLocalFrame*);
 
-    virtual void initializeFrame(WebFrameClient*) = 0;
-
-    // The returned pointer may be 0 even if initialization was successful.
-    // For example, if the plugin cannot be found or the plugin is disabled.
-    // If not 0, the returned pointer is valid for the lifetime of this object.
+    // Returns a WebPlugin corresponding to the instantiated plugin. This will
+    // never return null.
     virtual WebPlugin* getPlugin() = 0;
 
+    // Initiates destruction of the WebHelperPlugin.
+    virtual void destroy() = 0;
+
 protected:
-    ~WebHelperPlugin() { }
+    virtual ~WebHelperPlugin() { }
 };
 
 } // namespace blink
+
+namespace WTF {
+
+template<typename T> struct OwnedPtrDeleter;
+template<> struct OwnedPtrDeleter<blink::WebHelperPlugin> {
+    static void deletePtr(blink::WebHelperPlugin* plugin)
+    {
+        if (plugin)
+            plugin->destroy();
+    }
+};
+
+} // namespace WTF
 
 #endif

@@ -25,6 +25,7 @@
 #ifndef StyleRareNonInheritedData_h
 #define StyleRareNonInheritedData_h
 
+#include "core/css/StyleColor.h"
 #include "core/rendering/ClipPathOperation.h"
 #include "core/rendering/style/BasicShapes.h"
 #include "core/rendering/style/CounterDirectives.h"
@@ -43,7 +44,9 @@
 namespace WebCore {
 
 class ContentData;
-class CSSAnimationDataList;
+class CSSAnimationData;
+class CSSTransitionData;
+class LengthSize;
 class ShadowList;
 class StyleDeprecatedFlexibleBoxData;
 class StyleFilterData;
@@ -53,10 +56,8 @@ class StyleGridItemData;
 class StyleMarqueeData;
 class StyleMultiColData;
 class StyleReflection;
-class StyleResolver;
 class StyleTransformData;
-
-struct LengthSize;
+class StyleWillChangeData;
 
 // Page size type.
 // StyleRareNonInheritedData::m_pageSize is meaningful only when
@@ -106,6 +107,7 @@ public:
     DataRef<StyleMarqueeData> m_marquee; // Marquee properties
     DataRef<StyleMultiColData> m_multiCol; //  CSS3 multicol properties
     DataRef<StyleTransformData> m_transform; // Transform properties (rotate, scale, skew, etc.)
+    DataRef<StyleWillChangeData> m_willChange; // CSS Will Change
 
     DataRef<StyleFilterData> m_filter; // Filter operations (url, sepia, blur, etc.)
 
@@ -119,30 +121,28 @@ public:
 
     RefPtr<StyleReflection> m_boxReflect;
 
-    OwnPtr<CSSAnimationDataList> m_animations;
-    OwnPtr<CSSAnimationDataList> m_transitions;
+    OwnPtrWillBePersistent<CSSAnimationData> m_animations;
+    OwnPtrWillBePersistent<CSSTransitionData> m_transitions;
 
     FillLayer m_mask;
     NinePieceImage m_maskBoxImage;
 
     LengthSize m_pageSize;
 
-    RefPtr<ShapeValue> m_shapeInside;
     RefPtr<ShapeValue> m_shapeOutside;
     Length m_shapeMargin;
-    Length m_shapePadding;
     float m_shapeImageThreshold;
 
     RefPtr<ClipPathOperation> m_clipPath;
 
-    Color m_textDecorationColor;
-    Color m_visitedLinkTextDecorationColor;
-    Color m_visitedLinkBackgroundColor;
-    Color m_visitedLinkOutlineColor;
-    Color m_visitedLinkBorderLeftColor;
-    Color m_visitedLinkBorderRightColor;
-    Color m_visitedLinkBorderTopColor;
-    Color m_visitedLinkBorderBottomColor;
+    StyleColor m_textDecorationColor;
+    StyleColor m_visitedLinkTextDecorationColor;
+    StyleColor m_visitedLinkBackgroundColor;
+    StyleColor m_visitedLinkOutlineColor;
+    StyleColor m_visitedLinkBorderLeftColor;
+    StyleColor m_visitedLinkBorderRightColor;
+    StyleColor m_visitedLinkBorderTopColor;
+    StyleColor m_visitedLinkBorderBottomColor;
 
     int m_order;
 
@@ -150,21 +150,15 @@ public:
 
     Vector<String> m_callbackSelectors;
 
-    AtomicString m_flowThread;
-    AtomicString m_regionThread;
-    unsigned m_regionFragment : 1; // RegionFragment
-
-    unsigned m_regionBreakAfter : 2; // EPageBreak
-    unsigned m_regionBreakBefore : 2; // EPageBreak
-    unsigned m_regionBreakInside : 2; // EPageBreak
-
     unsigned m_pageSizeType : 2; // PageSizeType
     unsigned m_transformStyle3D : 1; // ETransformStyle3D
     unsigned m_backfaceVisibility : 1; // EBackfaceVisibility
 
     unsigned m_alignContent : 3; // EAlignContent
-    unsigned m_alignItems : 3; // EAlignItems
-    unsigned m_alignSelf : 3; // EAlignItems
+    unsigned m_alignItems : 4; // ItemPosition
+    unsigned m_alignItemsOverflowAlignment : 2; // OverflowAlignment
+    unsigned m_alignSelf : 4; // ItemPosition
+    unsigned m_alignSelfOverflowAlignment : 2; // OverflowAlignment
     unsigned m_justifyContent : 3; // EJustifyContent
 
     unsigned userDrag : 2; // EUserDrag
@@ -179,7 +173,12 @@ public:
     unsigned m_wrapFlow: 3; // WrapFlow
     unsigned m_wrapThrough: 1; // WrapThrough
 
-    unsigned m_runningAcceleratedAnimation : 1;
+    unsigned m_hasCurrentOpacityAnimation : 1;
+    unsigned m_hasCurrentTransformAnimation : 1;
+    unsigned m_hasCurrentFilterAnimation : 1;
+    unsigned m_runningOpacityAnimationOnCompositor : 1;
+    unsigned m_runningTransformAnimationOnCompositor : 1;
+    unsigned m_runningFilterAnimationOnCompositor : 1;
 
     unsigned m_hasAspectRatio : 1; // Whether or not an aspect ratio has been specified.
 
@@ -190,6 +189,19 @@ public:
     unsigned m_objectFit : 3; // ObjectFit
 
     unsigned m_isolation : 1; // Isolation
+
+    unsigned m_justifySelf : 4; // ItemPosition
+    unsigned m_justifySelfOverflowAlignment : 2; // OverflowAlignment
+
+    // ScrollBehavior. 'scroll-behavior' has 2 accepted values, but ScrollBehavior has a third
+    // value (that can only be specified using CSSOM scroll APIs) so 2 bits are needed.
+    unsigned m_scrollBehavior: 2;
+
+    // Plugins require accelerated compositing for reasons external to blink.
+    // In which case, we need to update the RenderStyle on the RenderEmbeddedObject,
+    // so store this bit so that the style actually changes when the plugin
+    // becomes composited.
+    unsigned m_requiresAcceleratedCompositingForExternalReasons: 1;
 
 private:
     StyleRareNonInheritedData();

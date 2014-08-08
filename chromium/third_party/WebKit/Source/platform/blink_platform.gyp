@@ -33,6 +33,7 @@
     '../build/scripts/scripts.gypi',
     '../build/win/precompile.gypi',
     'blink_platform.gypi',
+    'heap/blink_heap.gypi',
   ],
   'targets': [{
     'target_name': 'blink_common',
@@ -56,11 +57,64 @@
       'BLINK_COMMON_IMPLEMENTATION=1',
       'INSIDE_BLINK',
     ],
+    'include_dirs': [
+      '<(SHARED_INTERMEDIATE_DIR)/blink',
+    ],
     'sources': [
       'exported/WebCString.cpp',
       'exported/WebString.cpp',
       'exported/WebCommon.cpp',
     ],
+  },
+  {
+    'target_name': 'blink_heap_asm_stubs',
+    'type': 'static_library',
+    # VS2010 does not correctly incrementally link obj files generated
+    # from asm files. This flag disables UseLibraryDependencyInputs to
+    # avoid this problem.
+    'msvs_2010_disable_uldi_when_referenced': 1,
+    'includes': [
+      '../../../yasm/yasm_compile.gypi',
+    ],
+    'sources': [
+      '<@(platform_heap_asm_files)',
+    ],
+    'variables': {
+      'more_yasm_flags': [],
+      'conditions': [
+        ['OS == "mac"', {
+          'more_yasm_flags': [
+            # Necessary to ensure symbols end up with a _ prefix; added by
+            # yasm_compile.gypi for Windows, but not Mac.
+            '-DPREFIX',
+          ],
+        }],
+        ['OS == "win" and target_arch == "x64"', {
+          'more_yasm_flags': [
+            '-DX64WIN=1',
+          ],
+        }],
+        ['OS != "win" and target_arch == "x64"', {
+          'more_yasm_flags': [
+            '-DX64POSIX=1',
+          ],
+        }],
+        ['target_arch == "ia32"', {
+          'more_yasm_flags': [
+            '-DIA32=1',
+          ],
+        }],
+        ['target_arch == "arm"', {
+          'more_yasm_flags': [
+            '-DARM=1',
+          ],
+        }],
+      ],
+      'yasm_flags': [
+        '>@(more_yasm_flags)',
+      ],
+      'yasm_output_path': '<(SHARED_INTERMEDIATE_DIR)/webcore/heap'
+    },
   },
   {
     'target_name': 'blink_prerequisites',
@@ -94,6 +148,9 @@
             'WebScrollbarPainterControllerDelegate=ChromiumWebCoreObjCWebScrollbarPainterControllerDelegate',
             'WebScrollbarPainterDelegate=ChromiumWebCoreObjCWebScrollbarPainterDelegate',
             'WebScrollbarPartAnimation=ChromiumWebCoreObjCWebScrollbarPartAnimation',
+            'WebCoreFlippedView=ChromiumWebCoreObjCWebCoreFlippedView',
+            'WebCoreTextFieldCell=ChromiumWebCoreObjCWebCoreTextFieldCell',
+            'WebCoreRenderThemeNotificationObserver=ChromiumWebCoreObjCWebCoreRenderThemeNotificationObserver',
           ],
           'postbuilds': [
             {
@@ -124,12 +181,10 @@
       '../config.gyp:config',
       '../wtf/wtf.gyp:wtf',
       'blink_common',
+      'blink_heap_asm_stubs',
       'blink_prerequisites',
       '<(DEPTH)/gpu/gpu.gyp:gles2_c_lib',
       '<(DEPTH)/skia/skia.gyp:skia',
-      # FIXME: This dependency exists for CSS Custom Filters, via the file ANGLEPlatformBridge
-      # The code touching ANGLE should really be moved into the ANGLE directory.
-      '<(angle_path)/src/build_angle.gyp:translator',
       '<(DEPTH)/third_party/icu/icu.gyp:icui18n',
       '<(DEPTH)/third_party/icu/icu.gyp:icuuc',
       '<(DEPTH)/third_party/libpng/libpng.gyp:libpng',
@@ -138,7 +193,7 @@
       '<(DEPTH)/third_party/qcms/qcms.gyp:qcms',
       '<(DEPTH)/url/url.gyp:url_lib',
       '<(DEPTH)/v8/tools/gyp/v8.gyp:v8',
-      'platform_derived_sources.gyp:make_platform_derived_sources',
+      'platform_generated.gyp:make_platform_generated',
       '<(DEPTH)/third_party/iccjpeg/iccjpeg.gyp:iccjpeg',
       '<(libjpeg_gyp_path):libjpeg',
     ],
@@ -150,9 +205,6 @@
       '<(DEPTH)/third_party/ots/ots.gyp:ots',
       '<(DEPTH)/third_party/qcms/qcms.gyp:qcms',
       '<(DEPTH)/v8/tools/gyp/v8.gyp:v8',
-      # FIXME: This dependency exists for CSS Custom Filters, via the file ANGLEPlatformBridge
-      # The code touching ANGLE should really be moved into the ANGLE directory.
-      '<(angle_path)/src/build_angle.gyp:translator',
       '<(DEPTH)/url/url.gyp:url_lib',
       '<(DEPTH)/third_party/iccjpeg/iccjpeg.gyp:iccjpeg',
       '<(libjpeg_gyp_path):libjpeg',
@@ -173,12 +225,13 @@
     },
     'sources': [
       '<@(platform_files)',
+      '<@(platform_heap_files)',
 
-      # Additional .cpp files from platform_derived_sources.gyp:make_platform_derived_sources actions.
-      '<(SHARED_INTERMEDIATE_DIR)/blink/FontFamilyNames.cpp',
-      '<(SHARED_INTERMEDIATE_DIR)/blink/RuntimeEnabledFeatures.cpp',
-      '<(SHARED_INTERMEDIATE_DIR)/blink/RuntimeEnabledFeatures.h',
-      '<(SHARED_INTERMEDIATE_DIR)/blink/ColorData.cpp',
+      # Additional .cpp files from platform_generated.gyp:make_platform_generated actions.
+      '<(blink_platform_output_dir)/FontFamilyNames.cpp',
+      '<(blink_platform_output_dir)/RuntimeEnabledFeatures.cpp',
+      '<(blink_platform_output_dir)/RuntimeEnabledFeatures.h',
+      '<(blink_platform_output_dir)/ColorData.cpp',
     ],
     'sources/': [
       # Exclude all platform specific things, reinclude them below on a per-platform basis
@@ -196,7 +249,7 @@
     # compiler optimizations, see crbug.com/237063
     'msvs_disabled_warnings': [ 4267, 4334, 4724 ],
     'conditions': [
-      ['OS=="linux" or OS=="android"', {
+      ['OS=="linux" or OS=="android" or OS=="win"', {
         'sources/': [
           # Cherry-pick files excluded by the broader regular expressions above.
           ['include', 'fonts/harfbuzz/FontHarfBuzz\\.cpp$'],
@@ -211,10 +264,19 @@
         'dependencies': [
           '<(DEPTH)/third_party/harfbuzz-ng/harfbuzz.gyp:harfbuzz-ng',
         ],
-      }, { # OS!="linux" and OS!="android"
+      }, { # OS!="linux" and OS!="android" and OS!="win"
         'sources/': [
           ['exclude', 'Harfbuzz[^/]+\\.(cpp|h)$'],
         ],
+      }],
+      ['OS=="linux" or OS=="android"', {
+        'sources/': [
+          ['include', 'fonts/linux/FontPlatformDataLinuxHarfBuzz\\.cpp$'],
+        ]
+      }, { # OS!="linux" and OS!="android"
+        'sources/': [
+          ['exclude', 'fonts/linux/FontPlatformDataLinuxHarfBuzz\\.cpp$'],
+        ]
       }],
       ['OS=="mac"', {
         'dependencies': [
@@ -247,7 +309,6 @@
           # Some of these are used instead of Chromium platform files, see
           # the specific exclusions in the "exclude" list below.
           ['include', 'audio/mac/FFTFrameMac\\.cpp$'],
-          ['include', 'fonts/mac/GlyphPageTreeNodeMac\\.cpp$'],
           ['include', 'fonts/mac/ComplexTextControllerCoreText\\.mm$'],
           ['include', 'mac/ColorMac\\.mm$'],
           ['include', 'mac/BlockExceptions\\.mm$'],
@@ -256,6 +317,8 @@
           ['include', 'mac/NSScrollerImpDetails\\.mm$'],
           ['include', 'mac/ScrollAnimatorMac\\.mm$'],
           ['include', 'mac/ScrollElasticityController\\.mm$'],
+          ['include', 'mac/ThemeMac\\.h$'],
+          ['include', 'mac/ThemeMac\\.mm$'],
  
           # Mac uses only ScrollAnimatorMac.
           ['exclude', 'scroll/ScrollbarThemeNonMacCommon\\.(cpp|h)$'],
@@ -267,7 +330,6 @@
           ['exclude', 'fonts/skia/FontCustomPlatformDataSkia\\.cpp$'],
 
           ['exclude', 'fonts/skia/FontCacheSkia\\.cpp$'],
-          ['exclude', 'fonts/skia/GlyphPageTreeNodeSkia\\.cpp$'],
           ['exclude', 'fonts/skia/SimpleFontDataSkia\\.cpp$'],
 
           # Mac uses Harfbuzz.
@@ -304,7 +366,7 @@
           ['exclude', 'fonts/harfbuzz/HarfBuzzFaceCoreText\\.cpp$'],
         ],
       }],
-      ['OS != "linux" and OS != "mac" and (OS != "win" or (OS == "win" and "ENABLE_GDI_FONTS_ON_WINDOWS=1" in feature_defines))', {
+      ['OS != "linux" and OS != "mac" and OS != "win"', {
         'sources/': [
           ['exclude', 'VDMX[^/]+\\.(cpp|h)$'],
         ],
@@ -317,63 +379,22 @@
 
           ['include', 'clipboard/ClipboardUtilitiesWin\\.(cpp|h)$'],
 
-          ['include', 'fonts/win/FontFallbackWin\\.(cpp|h)$'],
-          ['include', 'fonts/win/FontPlatformDataWin\\.(cpp|h)$'],
-          ['include', 'fonts/win/FontWin\\.cpp$'],
           ['include', 'fonts/opentype/'],
-          ['include', 'fonts/skia/SkiaFontWin\\.(cpp|h)$'],
-          ['include', 'fonts/win/UniscribeHelper\\.(cpp|h)$'],
-          ['include', 'fonts/win/UniscribeHelperTextRun\\.(cpp|h)$'],
-
-          ['include', 'scroll/ScrollbarThemeWin\\.(cpp|h)$'],
-
-          ['include', 'graphics/win/TransparencyWin\\.(cpp|h)$'],
+          ['include', 'fonts/skia/FontCustomPlatformDataSkia\\.cpp$'],
+          ['include', 'fonts/skia/FontCustomPlatformDataSkia\\.cpp$'],
+          ['include', 'fonts/skia/SimpleFontDataSkia\\.cpp$'],
+          ['include', 'fonts/win/FontCacheSkiaWin\\.cpp$'],
+          ['include', 'fonts/win/FontFallbackWin\\.(cpp|h)$'],
+          ['include', 'fonts/win/FontPlatformDataWin\\.cpp$'],
 
           # SystemInfo.cpp is useful and we don't want to copy it.
           ['include', 'win/SystemInfo\\.cpp$'],
-        ],
-        'conditions': [
-          ['"ENABLE_GDI_FONTS_ON_WINDOWS=1" in feature_defines', {
-            'sources/': [
-              ['include', 'fonts/win/FontCustomPlatformDataWin\\.cpp$'],
-              ['exclude', 'fonts/skia/SimpleFontDataSkia\\.cpp$'],
-              ['exclude', 'fonts/skia/GlyphPageTreeNodeSkia\\.cpp$'],
-              ['exclude', 'fonts/skia/FontCacheSkia\\.cpp$'],
-              ['exclude', 'fonts/skia/FontCacheSkiaWin\\.cpp$'],
-              ['exclude', 'fonts/skia/FontCustomPlatformDataSkia\\.cpp$'],
-            ],
-          },{ # ENABLE_GDI_FONTS_ON_WINDOWS!=1
-            'sources/': [
-              ['include', 'fonts/skia/SimpleFontDataSkia\\.cpp$'],
-              ['include', 'fonts/skia/GlyphPageTreeNodeSkia\\.cpp$'],
-              ['include', 'fonts/skia/FontCacheSkiaWin\\.cpp$'],
-              ['include', 'fonts/skia/FontCustomPlatformDataSkia\\.cpp$'],
-              ['include', 'fonts/skia/FontCustomPlatformDataSkia\\.cpp$'],
-              ['exclude', 'fonts/win/SimpleFontDataWin\\.cpp$'],
-              ['exclude', 'fonts/GlyphPageTreeNodeWin\\.cpp$'],
-              ['exclude', 'fonts/FontCacheWin\\.cpp$'],
-              ['exclude', 'fonts/FontCustomPlatformDataWin\\.cpp$'],
-            ],
-          }],
-          ['"ENABLE_HARFBUZZ_ON_WINDOWS=1" in feature_defines', {
-            'sources/': [
-              ['include', 'fonts/harfbuzz/FontHarfBuzz\\.cpp$'],
-              ['include', 'fonts/harfbuzz/HarfBuzzFace\\.(cpp|h)$'],
-              ['include', 'fonts/harfbuzz/HarfBuzzFaceSkia\\.cpp$'],
-              ['include', 'fonts/harfbuzz/HarfBuzzShaper\\.(cpp|h)$'],
-              ['exclude', 'fonts/win/FontWin\\.cpp$'],
-              ['exclude', '/(Uniscribe)[^/]*\\.(cpp|h)$'],
-            ],
-            'dependencies': [
-              '<(DEPTH)/third_party/harfbuzz-ng/harfbuzz.gyp:harfbuzz-ng',
-            ],
-          }],
         ],
       }, { # OS!="win"
         'sources/': [
           ['exclude', 'win/'],
           ['exclude', 'Win\\.cpp$'],
-          ['exclude', '/(Windows|Uniscribe)[^/]*\\.cpp$'],
+          ['exclude', '/(Windows)[^/]*\\.cpp$'],
           ['include', 'fonts/opentype/OpenTypeSanitizer\\.cpp$'],
         ],
       }],
@@ -391,7 +412,7 @@
           ['exclude', 'Android\\.cpp$'],
         ],
       }],
-      ['use_x11 == 1', {
+      ['OS=="linux"', {
         'dependencies': [
           '<(DEPTH)/build/linux/system.gyp:fontconfig',
         ],
@@ -399,13 +420,9 @@
           '<(DEPTH)/build/linux/system.gyp:fontconfig',
         ],
       }],
-      ['use_default_render_theme==1', {
+      ['use_default_render_theme==0', {
         'sources/': [
-          ['exclude', 'scroll/ScrollbarThemeWin\\.(cpp|h)'],
-        ],
-      }, { # use_default_render_theme==0
-        'sources/': [
-          ['exclude', 'scroll/ScrollbarThemeGtkOrAura\\.(cpp|h)'],
+          ['exclude', 'scroll/ScrollbarThemeAura\\.(cpp|h)'],
         ],
       }],
       ['"WTF_USE_WEBAUDIO_FFMPEG=1" in feature_defines', {
@@ -434,6 +451,7 @@
       ['OS=="android"', {
         'sources/': [
             ['include', 'exported/linux/WebFontRenderStyle\\.cpp$'],
+            ['include', 'fonts/linux/FontPlatformDataLinuxHarfBuzz\\.cpp$'],
         ],
       }],
     ],

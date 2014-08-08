@@ -6,7 +6,6 @@
 #define _USE_MATH_DEFINES
 #include <cmath>
 
-#include "base/cpu.h"
 #include "base/memory/aligned_memory.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/string_number_conversions.h"
@@ -44,12 +43,12 @@ class VectorMathTest : public testing::Test {
 
   void VerifyOutput(float value) {
     for (int i = 0; i < kVectorSize; ++i)
-      ASSERT_FLOAT_EQ(output_vector_.get()[i], value);
+      ASSERT_FLOAT_EQ(output_vector_[i], value);
   }
 
  protected:
-  scoped_ptr_malloc<float, base::ScopedPtrAlignedFree> input_vector_;
-  scoped_ptr_malloc<float, base::ScopedPtrAlignedFree> output_vector_;
+  scoped_ptr<float[], base::AlignedFreeDeleter> input_vector_;
+  scoped_ptr<float[], base::AlignedFreeDeleter> output_vector_;
 
   DISALLOW_COPY_AND_ASSIGN(VectorMathTest);
 };
@@ -76,7 +75,6 @@ TEST_F(VectorMathTest, FMAC) {
 
 #if defined(ARCH_CPU_X86_FAMILY)
   {
-    ASSERT_TRUE(base::CPU().has_sse());
     SCOPED_TRACE("FMAC_SSE");
     FillTestVectors(kInputFillValue, kOutputFillValue);
     vector_math::FMAC_SSE(
@@ -118,7 +116,6 @@ TEST_F(VectorMathTest, FMUL) {
 
 #if defined(ARCH_CPU_X86_FAMILY)
   {
-    ASSERT_TRUE(base::CPU().has_sse());
     SCOPED_TRACE("FMUL_SSE");
     FillTestVectors(kInputFillValue, kOutputFillValue);
     vector_math::FMUL_SSE(
@@ -138,7 +135,15 @@ TEST_F(VectorMathTest, FMUL) {
 #endif
 }
 
-namespace {
+TEST_F(VectorMathTest, Crossfade) {
+  FillTestVectors(0, 1);
+  vector_math::Crossfade(
+      input_vector_.get(), kVectorSize, output_vector_.get());
+  for (int i = 0; i < kVectorSize; ++i) {
+    ASSERT_FLOAT_EQ(i / static_cast<float>(kVectorSize), output_vector_[i])
+        << "i=" << i;
+  }
+}
 
 class EWMATestScenario {
  public:
@@ -219,7 +224,6 @@ class EWMATestScenario {
 
 #if defined(ARCH_CPU_X86_FAMILY)
     {
-      ASSERT_TRUE(base::CPU().has_sse());
       SCOPED_TRACE("EWMAAndMaxPower_SSE");
       const std::pair<float, float>& result = vector_math::EWMAAndMaxPower_SSE(
           initial_value_, data_.get(), data_len_, smoothing_factor_);
@@ -241,14 +245,12 @@ class EWMATestScenario {
 
  private:
   float initial_value_;
-  scoped_ptr_malloc<float, base::ScopedPtrAlignedFree> data_;
+  scoped_ptr<float, base::AlignedFreeDeleter> data_;
   int data_len_;
   float smoothing_factor_;
   float expected_final_avg_;
   float expected_max_;
 };
-
-}  // namespace
 
 typedef testing::TestWithParam<EWMATestScenario> VectorMathEWMAAndMaxPowerTest;
 

@@ -8,12 +8,15 @@
 #include <set>
 #include <vector>
 
+#include "base/format_macros.h"
+#include "base/strings/stringprintf.h"
 #include "cc/animation/layer_animation_controller.h"
 #include "cc/layers/layer.h"
 #include "cc/layers/layer_impl.h"
 #include "cc/test/animation_test_common.h"
 #include "cc/test/fake_impl_proxy.h"
 #include "cc/test/fake_layer_tree_host.h"
+#include "cc/test/test_shared_bitmap_manager.h"
 #include "cc/trees/proxy.h"
 #include "cc/trees/single_thread_proxy.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -110,12 +113,14 @@ void ExpectTreesAreIdentical(Layer* layer,
 
   ASSERT_EQ(!!layer->mask_layer(), !!layer_impl->mask_layer());
   if (layer->mask_layer()) {
+    SCOPED_TRACE("mask_layer");
     ExpectTreesAreIdentical(
         layer->mask_layer(), layer_impl->mask_layer(), tree_impl);
   }
 
   ASSERT_EQ(!!layer->replica_layer(), !!layer_impl->replica_layer());
   if (layer->replica_layer()) {
+    SCOPED_TRACE("replica_layer");
     ExpectTreesAreIdentical(
         layer->replica_layer(), layer_impl->replica_layer(), tree_impl);
   }
@@ -176,6 +181,7 @@ void ExpectTreesAreIdentical(Layer* layer,
   }
 
   for (size_t i = 0; i < layer_children.size(); ++i) {
+    SCOPED_TRACE(base::StringPrintf("child layer %" PRIuS, i).c_str());
     ExpectTreesAreIdentical(
         layer_children[i].get(), layer_impl_children[i], tree_impl);
   }
@@ -552,8 +558,15 @@ TEST_F(TreeSynchronizerTest, SynchronizeAnimations) {
   FakeProxy proxy;
   DebugScopedSetImplThread impl(&proxy);
   FakeRenderingStatsInstrumentation stats_instrumentation;
-  scoped_ptr<LayerTreeHostImpl> host_impl = LayerTreeHostImpl::Create(
-      settings, NULL, &proxy, &stats_instrumentation, NULL, 0);
+  scoped_ptr<SharedBitmapManager> shared_bitmap_manager(
+      new TestSharedBitmapManager());
+  scoped_ptr<LayerTreeHostImpl> host_impl =
+      LayerTreeHostImpl::Create(settings,
+                                NULL,
+                                &proxy,
+                                &stats_instrumentation,
+                                shared_bitmap_manager.get(),
+                                0);
 
   scoped_refptr<Layer> layer_tree_root = Layer::Create();
   host_->SetRootLayer(layer_tree_root);
@@ -584,8 +597,15 @@ TEST_F(TreeSynchronizerTest, SynchronizeScrollParent) {
   FakeProxy proxy;
   DebugScopedSetImplThread impl(&proxy);
   FakeRenderingStatsInstrumentation stats_instrumentation;
-  scoped_ptr<LayerTreeHostImpl> host_impl = LayerTreeHostImpl::Create(
-      settings, NULL, &proxy, &stats_instrumentation, NULL, 0);
+  scoped_ptr<SharedBitmapManager> shared_bitmap_manager(
+      new TestSharedBitmapManager());
+  scoped_ptr<LayerTreeHostImpl> host_impl =
+      LayerTreeHostImpl::Create(settings,
+                                NULL,
+                                &proxy,
+                                &stats_instrumentation,
+                                shared_bitmap_manager.get(),
+                                0);
 
   scoped_refptr<Layer> layer_tree_root = Layer::Create();
   scoped_refptr<Layer> scroll_parent = Layer::Create();
@@ -605,9 +625,12 @@ TEST_F(TreeSynchronizerTest, SynchronizeScrollParent) {
                                          host_impl->active_tree());
   TreeSynchronizer::PushProperties(layer_tree_root.get(),
                                    layer_impl_tree_root.get());
-  ExpectTreesAreIdentical(layer_tree_root.get(),
-                          layer_impl_tree_root.get(),
-                          host_impl->active_tree());
+  {
+    SCOPED_TRACE("case one");
+    ExpectTreesAreIdentical(layer_tree_root.get(),
+                            layer_impl_tree_root.get(),
+                            host_impl->active_tree());
+  }
 
   // Remove the first scroll child.
   layer_tree_root->children()[1]->RemoveFromParent();
@@ -617,9 +640,12 @@ TEST_F(TreeSynchronizerTest, SynchronizeScrollParent) {
                                          host_impl->active_tree());
   TreeSynchronizer::PushProperties(layer_tree_root.get(),
                                    layer_impl_tree_root.get());
-  ExpectTreesAreIdentical(layer_tree_root.get(),
-                          layer_impl_tree_root.get(),
-                          host_impl->active_tree());
+  {
+    SCOPED_TRACE("case two");
+    ExpectTreesAreIdentical(layer_tree_root.get(),
+                            layer_impl_tree_root.get(),
+                            host_impl->active_tree());
+  }
 
   // Add an additional scroll layer.
   scoped_refptr<Layer> additional_scroll_child = Layer::Create();
@@ -631,27 +657,12 @@ TEST_F(TreeSynchronizerTest, SynchronizeScrollParent) {
                                          host_impl->active_tree());
   TreeSynchronizer::PushProperties(layer_tree_root.get(),
                                    layer_impl_tree_root.get());
-  ExpectTreesAreIdentical(layer_tree_root.get(),
-                          layer_impl_tree_root.get(),
-                          host_impl->active_tree());
-
-  // Remove the scroll parent.
-  scroll_parent->RemoveFromParent();
-  scroll_parent = NULL;
-  layer_impl_tree_root =
-      TreeSynchronizer::SynchronizeTrees(layer_tree_root.get(),
-                                         layer_impl_tree_root.Pass(),
-                                         host_impl->active_tree());
-  TreeSynchronizer::PushProperties(layer_tree_root.get(),
-                                   layer_impl_tree_root.get());
-  ExpectTreesAreIdentical(layer_tree_root.get(),
-                          layer_impl_tree_root.get(),
-                          host_impl->active_tree());
-
-  // The scroll children should have been unhooked.
-  EXPECT_EQ(2u, layer_tree_root->children().size());
-  EXPECT_FALSE(layer_tree_root->children()[0]->scroll_parent());
-  EXPECT_FALSE(layer_tree_root->children()[1]->scroll_parent());
+  {
+    SCOPED_TRACE("case three");
+    ExpectTreesAreIdentical(layer_tree_root.get(),
+                            layer_impl_tree_root.get(),
+                            host_impl->active_tree());
+  }
 }
 
 TEST_F(TreeSynchronizerTest, SynchronizeClipParent) {
@@ -659,8 +670,15 @@ TEST_F(TreeSynchronizerTest, SynchronizeClipParent) {
   FakeProxy proxy;
   DebugScopedSetImplThread impl(&proxy);
   FakeRenderingStatsInstrumentation stats_instrumentation;
-  scoped_ptr<LayerTreeHostImpl> host_impl = LayerTreeHostImpl::Create(
-      settings, NULL, &proxy, &stats_instrumentation, NULL, 0);
+  scoped_ptr<SharedBitmapManager> shared_bitmap_manager(
+      new TestSharedBitmapManager());
+  scoped_ptr<LayerTreeHostImpl> host_impl =
+      LayerTreeHostImpl::Create(settings,
+                                NULL,
+                                &proxy,
+                                &stats_instrumentation,
+                                shared_bitmap_manager.get(),
+                                0);
 
   scoped_refptr<Layer> layer_tree_root = Layer::Create();
   scoped_refptr<Layer> clip_parent = Layer::Create();

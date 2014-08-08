@@ -30,7 +30,7 @@
 
 namespace WebCore {
 
-class TypingCommand : public TextInsertionBaseCommand {
+class TypingCommand FINAL : public TextInsertionBaseCommand {
 public:
     enum ETypingCommand {
         DeleteSelection,
@@ -65,7 +65,7 @@ public:
     static void insertLineBreak(Document&, Options);
     static void insertParagraphSeparator(Document&, Options);
     static void insertParagraphSeparatorInQuotedContent(Document&);
-    static void closeTyping(Frame*);
+    static void closeTyping(LocalFrame*);
 
     void insertText(const String &text, bool selectInsertedText);
     void insertTextRunWithoutNewlines(const String &text, bool selectInsertedText);
@@ -78,39 +78,33 @@ public:
     void setCompositionType(TextCompositionType type) { m_compositionType = type; }
 
 private:
-    static PassRefPtr<TypingCommand> create(Document& document, ETypingCommand command, const String& text = "", Options options = 0, TextGranularity granularity = CharacterGranularity)
+    static PassRefPtrWillBeRawPtr<TypingCommand> create(Document& document, ETypingCommand command, const String& text = "", Options options = 0, TextGranularity granularity = CharacterGranularity)
     {
-        return adoptRef(new TypingCommand(document, command, text, options, granularity, TextCompositionNone));
+        return adoptRefWillBeNoop(new TypingCommand(document, command, text, options, granularity, TextCompositionNone));
     }
 
-    static PassRefPtr<TypingCommand> create(Document& document, ETypingCommand command, const String& text, Options options, TextCompositionType compositionType)
+    static PassRefPtrWillBeRawPtr<TypingCommand> create(Document& document, ETypingCommand command, const String& text, Options options, TextCompositionType compositionType)
     {
-        return adoptRef(new TypingCommand(document, command, text, options, CharacterGranularity, compositionType));
+        return adoptRefWillBeNoop(new TypingCommand(document, command, text, options, CharacterGranularity, compositionType));
     }
 
     TypingCommand(Document&, ETypingCommand, const String& text, Options, TextGranularity, TextCompositionType);
 
-    bool smartDelete() const { return m_smartDelete; }
     void setSmartDelete(bool smartDelete) { m_smartDelete = smartDelete; }
     bool isOpenForMoreTyping() const { return m_openForMoreTyping; }
     void closeTyping() { m_openForMoreTyping = false; }
 
-    static PassRefPtr<TypingCommand> lastTypingCommandIfStillOpenForTyping(Frame*);
+    static PassRefPtrWillBeRawPtr<TypingCommand> lastTypingCommandIfStillOpenForTyping(LocalFrame*);
 
-    virtual void doApply();
-    virtual EditAction editingAction() const;
-    virtual bool isTypingCommand() const;
-    virtual bool preservesTypingStyle() const { return m_preservesTypingStyle; }
-    virtual bool shouldRetainAutocorrectionIndicator() const
-    {
-        ASSERT(isTopLevelCommand());
-        return m_shouldRetainAutocorrectionIndicator;
-    }
-    virtual void setShouldRetainAutocorrectionIndicator(bool retain) { m_shouldRetainAutocorrectionIndicator = retain; }
-    virtual bool shouldStopCaretBlinking() const { return true; }
+    virtual void doApply() OVERRIDE;
+    virtual EditAction editingAction() const OVERRIDE;
+    virtual bool isTypingCommand() const OVERRIDE;
+    virtual bool preservesTypingStyle() const OVERRIDE { return m_preservesTypingStyle; }
+    virtual void setShouldRetainAutocorrectionIndicator(bool retain) OVERRIDE { m_shouldRetainAutocorrectionIndicator = retain; }
+    virtual bool shouldStopCaretBlinking() const OVERRIDE { return true; }
     void setShouldPreventSpellChecking(bool prevent) { m_shouldPreventSpellChecking = prevent; }
 
-    static void updateSelectionIfDifferentFromCurrentSelection(TypingCommand*, Frame*);
+    static void updateSelectionIfDifferentFromCurrentSelection(TypingCommand*, LocalFrame*);
 
     void updatePreservesTypingStyle(ETypingCommand);
     void markMisspellingsAfterTyping(ETypingCommand);

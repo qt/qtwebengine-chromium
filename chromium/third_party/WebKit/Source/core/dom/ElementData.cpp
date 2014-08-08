@@ -70,7 +70,7 @@ ElementData::ElementData(unsigned arraySize)
 
 ElementData::ElementData(const ElementData& other, bool isUnique)
     : m_isUnique(isUnique)
-    , m_arraySize(isUnique ? 0 : other.length())
+    , m_arraySize(isUnique ? 0 : other.attributeCount())
     , m_presentationAttributeStyleIsDirty(other.m_presentationAttributeStyleIsDirty)
     , m_styleAttributeIsDirty(other.m_styleAttributeIsDirty)
     , m_animatedSVGAttributesAreDirty(other.m_animatedSVGAttributesAreDirty)
@@ -98,48 +98,52 @@ PassRefPtr<UniqueElementData> ElementData::makeUniqueCopy() const
 bool ElementData::isEquivalent(const ElementData* other) const
 {
     if (!other)
-        return isEmpty();
+        return !hasAttributes();
 
-    unsigned len = length();
-    if (len != other->length())
+    AttributeCollection attributes = this->attributes();
+    if (attributes.size() != other->attributeCount())
         return false;
 
-    for (unsigned i = 0; i < len; i++) {
-        const Attribute* attribute = attributeItem(i);
-        const Attribute* otherAttr = other->getAttributeItem(attribute->name());
-        if (!otherAttr || attribute->value() != otherAttr->value())
+    AttributeCollection::const_iterator end = attributes.end();
+    for (AttributeCollection::const_iterator it = attributes.begin(); it != end; ++it) {
+        const Attribute* otherAttr = other->findAttributeByName(it->name());
+        if (!otherAttr || it->value() != otherAttr->value())
             return false;
     }
-
     return true;
 }
 
-size_t ElementData::getAttrIndex(Attr* attr) const
+size_t ElementData::findAttrNodeIndex(Attr* attr) const
 {
     // This relies on the fact that Attr's QualifiedName == the Attribute's name.
-    for (unsigned i = 0; i < length(); ++i) {
-        if (attributeItem(i)->name() == attr->qualifiedName())
-            return i;
+    AttributeCollection attributes = this->attributes();
+    AttributeCollection::const_iterator end = attributes.end();
+    unsigned index = 0;
+    for (AttributeCollection::const_iterator it = attributes.begin(); it != end; ++it, ++index) {
+        if (it->name() == attr->qualifiedName())
+            return index;
     }
     return kNotFound;
 }
 
-size_t ElementData::getAttributeItemIndexSlowCase(const AtomicString& name, bool shouldIgnoreAttributeCase) const
+size_t ElementData::findAttributeIndexByNameSlowCase(const AtomicString& name, bool shouldIgnoreAttributeCase) const
 {
     // Continue to checking case-insensitively and/or full namespaced names if necessary:
-    for (unsigned i = 0; i < length(); ++i) {
-        const Attribute* attribute = attributeItem(i);
+    AttributeCollection attributes = this->attributes();
+    AttributeCollection::const_iterator end = attributes.end();
+    unsigned index = 0;
+    for (AttributeCollection::const_iterator it = attributes.begin(); it != end; ++it, ++index) {
         // FIXME: Why check the prefix? Namespace is all that should matter
         // and all HTML/SVG attributes have a null namespace!
-        if (!attribute->name().hasPrefix()) {
-            if (shouldIgnoreAttributeCase && equalIgnoringCase(name, attribute->localName()))
-                return i;
+        if (!it->name().hasPrefix()) {
+            if (shouldIgnoreAttributeCase && equalIgnoringCase(name, it->localName()))
+                return index;
         } else {
             // FIXME: Would be faster to do this comparison without calling toString, which
             // generates a temporary string by concatenation. But this branch is only reached
             // if the attribute name has a prefix, which is rare in HTML.
-            if (equalPossiblyIgnoringCase(name, attribute->name().toString(), shouldIgnoreAttributeCase))
-                return i;
+            if (equalPossiblyIgnoringCase(name, it->name().toString(), shouldIgnoreAttributeCase))
+                return index;
         }
     }
     return kNotFound;
@@ -164,7 +168,6 @@ ShareableElementData::ShareableElementData(const UniqueElementData& other)
     ASSERT(!other.m_presentationAttributeStyle);
 
     if (other.m_inlineStyle) {
-        ASSERT(!other.m_inlineStyle->hasCSSOMWrapper());
         m_inlineStyle = other.m_inlineStyle->immutableCopyIfNeeded();
     }
 
@@ -187,7 +190,7 @@ UniqueElementData::UniqueElementData(const UniqueElementData& other)
     , m_presentationAttributeStyle(other.m_presentationAttributeStyle)
     , m_attributeVector(other.m_attributeVector)
 {
-    m_inlineStyle = other.m_inlineStyle ? other.m_inlineStyle->mutableCopy() : 0;
+    m_inlineStyle = other.m_inlineStyle ? other.m_inlineStyle->mutableCopy() : nullptr;
 }
 
 UniqueElementData::UniqueElementData(const ShareableElementData& other)
@@ -197,8 +200,9 @@ UniqueElementData::UniqueElementData(const ShareableElementData& other)
     ASSERT(!other.m_inlineStyle || !other.m_inlineStyle->isMutable());
     m_inlineStyle = other.m_inlineStyle;
 
-    m_attributeVector.reserveCapacity(other.length());
-    for (unsigned i = 0; i < other.length(); ++i)
+    unsigned length = other.attributeCount();
+    m_attributeVector.reserveCapacity(length);
+    for (unsigned i = 0; i < length; ++i)
         m_attributeVector.uncheckedAppend(other.m_attributeArray[i]);
 }
 
@@ -213,9 +217,10 @@ PassRefPtr<ShareableElementData> UniqueElementData::makeShareableCopy() const
     return adoptRef(new (slot) ShareableElementData(*this));
 }
 
-Attribute* UniqueElementData::getAttributeItem(const QualifiedName& name)
+Attribute* UniqueElementData::findAttributeByName(const QualifiedName& name)
 {
-    for (unsigned i = 0; i < length(); ++i) {
+    unsigned length = m_attributeVector.size();
+    for (unsigned i = 0; i < length; ++i) {
         if (m_attributeVector.at(i).name().matches(name))
             return &m_attributeVector.at(i);
     }

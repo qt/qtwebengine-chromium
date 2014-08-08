@@ -5,43 +5,58 @@
 #ifndef CC_SCHEDULER_DELAY_BASED_TIME_SOURCE_H_
 #define CC_SCHEDULER_DELAY_BASED_TIME_SOURCE_H_
 
+#include <string>
+
 #include "base/memory/weak_ptr.h"
+#include "base/values.h"
 #include "cc/base/cc_export.h"
-#include "cc/scheduler/time_source.h"
 
 namespace base { class SingleThreadTaskRunner; }
 
 namespace cc {
 
+class CC_EXPORT TimeSourceClient {
+ public:
+  virtual void OnTimerTick() = 0;
+
+ protected:
+  virtual ~TimeSourceClient() {}
+};
+
 // This timer implements a time source that achieves the specified interval
 // in face of millisecond-precision delayed callbacks and random queueing
 // delays. DelayBasedTimeSource uses base::TimeTicks::Now as its timebase.
-class CC_EXPORT DelayBasedTimeSource : public TimeSource {
+class CC_EXPORT DelayBasedTimeSource
+    : public base::RefCounted<DelayBasedTimeSource> {
  public:
   static scoped_refptr<DelayBasedTimeSource> Create(
       base::TimeDelta interval, base::SingleThreadTaskRunner* task_runner);
 
-  virtual void SetClient(TimeSourceClient* client) OVERRIDE;
+  virtual void SetClient(TimeSourceClient* client);
 
   // TimeSource implementation
   virtual void SetTimebaseAndInterval(base::TimeTicks timebase,
-                                      base::TimeDelta interval) OVERRIDE;
+                                      base::TimeDelta interval);
 
-  virtual base::TimeTicks SetActive(bool active) OVERRIDE;
-  virtual bool Active() const OVERRIDE;
+  virtual base::TimeTicks SetActive(bool active);
+  virtual bool Active() const;
 
-  // Get the last and next tick times. nextTimeTime() returns null when
+  // Get the last and next tick times. NextTickTime() returns null when
   // inactive.
-  virtual base::TimeTicks LastTickTime() OVERRIDE;
-  virtual base::TimeTicks NextTickTime() OVERRIDE;
+  virtual base::TimeTicks LastTickTime() const;
+  virtual base::TimeTicks NextTickTime() const;
 
   // Virtual for testing.
   virtual base::TimeTicks Now() const;
+
+  virtual scoped_ptr<base::Value> AsValue() const;
 
  protected:
   DelayBasedTimeSource(base::TimeDelta interval,
                        base::SingleThreadTaskRunner* task_runner);
   virtual ~DelayBasedTimeSource();
+
+  virtual std::string TypeString() const;
 
   base::TimeTicks NextTickTarget(base::TimeTicks now);
   void PostNextTickTask(base::TimeTicks now);
@@ -70,6 +85,7 @@ class CC_EXPORT DelayBasedTimeSource : public TimeSource {
   base::WeakPtrFactory<DelayBasedTimeSource> weak_factory_;
 
  private:
+  friend class base::RefCounted<DelayBasedTimeSource>;
   DISALLOW_COPY_AND_ASSIGN(DelayBasedTimeSource);
 };
 
@@ -85,6 +101,8 @@ class DelayBasedTimeSourceHighRes : public DelayBasedTimeSource {
   DelayBasedTimeSourceHighRes(base::TimeDelta interval,
                               base::SingleThreadTaskRunner* task_runner);
   virtual ~DelayBasedTimeSourceHighRes();
+
+  virtual std::string TypeString() const OVERRIDE;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(DelayBasedTimeSourceHighRes);

@@ -43,14 +43,14 @@ DraggedIsolatedFileSystem::~DraggedIsolatedFileSystem()
 {
 }
 
-DOMFileSystem* DraggedIsolatedFileSystem::getDOMFileSystem(ExecutionContext* executionContext)
+DOMFileSystem* DraggedIsolatedFileSystem::getDOMFileSystem(DataObject* host, ExecutionContext* executionContext)
 {
-    ASSERT(!m_filesystemId.isEmpty());
-    if (!m_filesystem) {
-        ASSERT(executionContext);
-        m_filesystem = DOMFileSystem::createIsolatedFileSystem(executionContext, m_filesystemId);
-    }
-    return m_filesystem.get();
+    DraggedIsolatedFileSystem* draggedIsolatedFileSystem = from(host);
+    if (!draggedIsolatedFileSystem)
+        return 0;
+    if (!draggedIsolatedFileSystem->m_filesystem)
+        draggedIsolatedFileSystem->m_filesystem = DOMFileSystem::createIsolatedFileSystem(executionContext, host->filesystemId());
+    return draggedIsolatedFileSystem->m_filesystem.get();
 }
 
 // static
@@ -60,9 +60,20 @@ const char* DraggedIsolatedFileSystem::supplementName()
     return "DraggedIsolatedFileSystem";
 }
 
-DraggedIsolatedFileSystem::DraggedIsolatedFileSystem(const String& filesystemId)
-    : m_filesystemId(filesystemId)
+DraggedIsolatedFileSystem* DraggedIsolatedFileSystem::from(DataObject* dataObject)
 {
+    return static_cast<DraggedIsolatedFileSystem*>(WillBeHeapSupplement<DataObject>::from(dataObject, supplementName()));
+}
+
+DraggedIsolatedFileSystem::DraggedIsolatedFileSystem(DataObject& host, const String& filesystemId)
+{
+    host.setFilesystemId(filesystemId);
+}
+
+void DraggedIsolatedFileSystem::trace(Visitor* visitor)
+{
+    visitor->trace(m_filesystem);
+    WillBeHeapSupplement<DataObject>::trace(visitor);
 }
 
 } // namespace WebCore

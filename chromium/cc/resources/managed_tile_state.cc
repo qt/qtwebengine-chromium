@@ -14,35 +14,34 @@ scoped_ptr<base::Value> ManagedTileBinAsValue(ManagedTileBin bin) {
   switch (bin) {
     case NOW_AND_READY_TO_DRAW_BIN:
       return scoped_ptr<base::Value>(
-          base::Value::CreateStringValue("NOW_AND_READY_TO_DRAW_BIN"));
+          new base::StringValue("NOW_AND_READY_TO_DRAW_BIN"));
     case NOW_BIN:
-      return scoped_ptr<base::Value>(
-          base::Value::CreateStringValue("NOW_BIN"));
+      return scoped_ptr<base::Value>(new base::StringValue("NOW_BIN"));
     case SOON_BIN:
       return scoped_ptr<base::Value>(
-          base::Value::CreateStringValue("SOON_BIN"));
+          new base::StringValue("SOON_BIN"));
     case EVENTUALLY_AND_ACTIVE_BIN:
       return scoped_ptr<base::Value>(
-          base::Value::CreateStringValue("EVENTUALLY_AND_ACTIVE_BIN"));
+          new base::StringValue("EVENTUALLY_AND_ACTIVE_BIN"));
     case EVENTUALLY_BIN:
       return scoped_ptr<base::Value>(
-          base::Value::CreateStringValue("EVENTUALLY_BIN"));
+          new base::StringValue("EVENTUALLY_BIN"));
     case AT_LAST_AND_ACTIVE_BIN:
       return scoped_ptr<base::Value>(
-          base::Value::CreateStringValue("AT_LAST_AND_ACTIVE_BIN"));
+          new base::StringValue("AT_LAST_AND_ACTIVE_BIN"));
     case AT_LAST_BIN:
       return scoped_ptr<base::Value>(
-          base::Value::CreateStringValue("AT_LAST_BIN"));
+          new base::StringValue("AT_LAST_BIN"));
     case NEVER_BIN:
       return scoped_ptr<base::Value>(
-          base::Value::CreateStringValue("NEVER_BIN"));
+          new base::StringValue("NEVER_BIN"));
     case NUM_BINS:
       NOTREACHED();
       return scoped_ptr<base::Value>(
-          base::Value::CreateStringValue("Invalid Bin (NUM_BINS)"));
+          new base::StringValue("Invalid Bin (NUM_BINS)"));
   }
   return scoped_ptr<base::Value>(
-      base::Value::CreateStringValue("Invalid Bin (UNKNOWN)"));
+      new base::StringValue("Invalid Bin (UNKNOWN)"));
 }
 
 ManagedTileState::ManagedTileState()
@@ -50,20 +49,15 @@ ManagedTileState::ManagedTileState()
       bin(NEVER_BIN),
       resolution(NON_IDEAL_RESOLUTION),
       required_for_activation(false),
-      time_to_needed_in_seconds(std::numeric_limits<float>::infinity()),
-      distance_to_visible_in_pixels(std::numeric_limits<float>::infinity()),
+      priority_bin(TilePriority::EVENTUALLY),
+      distance_to_visible(std::numeric_limits<float>::infinity()),
       visible_and_ready_to_draw(false),
-      scheduled_priority(0) {
+      scheduled_priority(0) {}
+
+ManagedTileState::TileVersion::TileVersion() : mode_(RESOURCE_MODE) {
 }
 
-ManagedTileState::TileVersion::TileVersion()
-    : mode_(RESOURCE_MODE),
-      has_text_(false) {
-}
-
-ManagedTileState::TileVersion::~TileVersion() {
-  DCHECK(!resource_);
-}
+ManagedTileState::TileVersion::~TileVersion() { DCHECK(!resource_); }
 
 bool ManagedTileState::TileVersion::IsReadyToDraw() const {
   switch (mode_) {
@@ -83,15 +77,14 @@ size_t ManagedTileState::TileVersion::GPUMemoryUsageInBytes() const {
   return resource_->bytes();
 }
 
-ManagedTileState::~ManagedTileState() {
-}
+ManagedTileState::~ManagedTileState() {}
 
 scoped_ptr<base::Value> ManagedTileState::AsValue() const {
   bool has_resource = false;
   bool has_active_task = false;
   for (int mode = 0; mode < NUM_RASTER_MODES; ++mode) {
     has_resource |= (tile_versions[mode].resource_.get() != 0);
-    has_active_task |= !tile_versions[mode].raster_task_.is_null();
+    has_active_task |= (tile_versions[mode].raster_task_.get() != 0);
   }
 
   bool is_using_gpu_memory = has_resource || has_active_task;
@@ -101,10 +94,9 @@ scoped_ptr<base::Value> ManagedTileState::AsValue() const {
   state->SetBoolean("is_using_gpu_memory", is_using_gpu_memory);
   state->Set("bin", ManagedTileBinAsValue(bin).release());
   state->Set("resolution", TileResolutionAsValue(resolution).release());
-  state->Set("time_to_needed_in_seconds",
-      MathUtil::AsValueSafely(time_to_needed_in_seconds).release());
-  state->Set("distance_to_visible_in_pixels",
-      MathUtil::AsValueSafely(distance_to_visible_in_pixels).release());
+  state->Set("priority_bin", TilePriorityBinAsValue(priority_bin).release());
+  state->Set("distance_to_visible",
+             MathUtil::AsValueSafely(distance_to_visible).release());
   state->SetBoolean("required_for_activation", required_for_activation);
   state->SetBoolean(
       "is_solid_color",

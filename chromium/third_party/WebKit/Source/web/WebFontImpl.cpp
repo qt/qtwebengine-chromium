@@ -29,11 +29,8 @@
  */
 
 #include "config.h"
-#include "WebFontImpl.h"
+#include "web/WebFontImpl.h"
 
-#include <skia/ext/platform_canvas.h>
-#include "WebFontDescription.h"
-#include "WebTextRun.h"
 #include "platform/fonts/FontCache.h"
 #include "platform/fonts/FontDescription.h"
 #include "platform/graphics/GraphicsContext.h"
@@ -41,6 +38,9 @@
 #include "public/platform/WebFloatPoint.h"
 #include "public/platform/WebFloatRect.h"
 #include "public/platform/WebRect.h"
+#include "public/web/WebFontDescription.h"
+#include "public/web/WebTextRun.h"
+#include <skia/ext/platform_canvas.h>
 
 using namespace WebCore;
 
@@ -48,18 +48,18 @@ namespace blink {
 
 WebFont* WebFont::create(const WebFontDescription& desc)
 {
-    return new WebFontImpl(desc, desc.letterSpacing, desc.wordSpacing);
+    return new WebFontImpl(desc);
 }
 
-WebFontImpl::WebFontImpl(const FontDescription& desc, float letterSpacing, float wordSpacing)
-    : m_font(desc, letterSpacing, wordSpacing)
+WebFontImpl::WebFontImpl(const FontDescription& desc)
+    : m_font(desc)
 {
-    m_font.update(0);
+    m_font.update(nullptr);
 }
 
 WebFontDescription WebFontImpl::fontDescription() const
 {
-    return WebFontDescription(m_font.fontDescription(), m_font.letterSpacing(), m_font.wordSpacing());
+    return WebFontDescription(m_font.fontDescription());
 }
 
 int WebFontImpl::ascent() const

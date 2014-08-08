@@ -5,8 +5,7 @@
 #ifndef UI_VIEWS_EXAMPLES_SLIDER_EXAMPLE_H_
 #define UI_VIEWS_EXAMPLES_SLIDER_EXAMPLE_H_
 
-#include "base/basictypes.h"
-#include "base/compiler_specific.h"
+#include "base/macros.h"
 #include "ui/views/controls/slider.h"
 #include "ui/views/examples/example_base.h"
 
@@ -15,16 +14,17 @@ class Label;
 
 namespace examples {
 
-class SliderExample : public ExampleBase, public SliderListener {
+class VIEWS_EXAMPLES_EXPORT SliderExample : public ExampleBase,
+                                            public SliderListener {
  public:
   SliderExample();
   virtual ~SliderExample();
 
-  // Overridden from ExampleBase:
+  // ExampleBase:
   virtual void CreateExampleView(View* container) OVERRIDE;
 
  private:
-  // Overridden from SliderListener:
+  // SliderListener:
   virtual void SliderValueChanged(Slider* sender,
                                   float value,
                                   float old_value,

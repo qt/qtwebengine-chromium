@@ -6,24 +6,33 @@
   'variables': {
     'pak_inputs': [
       '<(SHARED_INTERMEDIATE_DIR)/chrome/chrome_unscaled_resources.pak',
-      '<(SHARED_INTERMEDIATE_DIR)/components/dom_distiller_resources.pak',
+      '<(SHARED_INTERMEDIATE_DIR)/components/component_resources.pak',
       '<(SHARED_INTERMEDIATE_DIR)/net/net_resources.pak',
       '<(SHARED_INTERMEDIATE_DIR)/ui/ui_resources/webui_resources.pak',
       '<(grit_out_dir)/browser_resources.pak',
       '<(grit_out_dir)/common_resources.pak',
+      '<(grit_out_dir)/invalidations_resources.pak',
       '<(grit_out_dir)/memory_internals_resources.pak',
       '<(grit_out_dir)/net_internals_resources.pak',
+      '<(grit_out_dir)/password_manager_internals_resources.pak',
       '<(grit_out_dir)/signin_internals_resources.pak',
       '<(grit_out_dir)/sync_internals_resources.pak',
       '<(grit_out_dir)/translate_internals_resources.pak',
     ],
+    'pak_output': '<(SHARED_INTERMEDIATE_DIR)/repack/resources.pak',
     'conditions': [
+      ['chromeos==1', {
+        'pak_inputs': [
+          '<(SHARED_INTERMEDIATE_DIR)/ui/file_manager/file_manager_resources.pak',
+        ],
+      }],
       ['OS != "ios"', {
         'pak_inputs': [
           '<(SHARED_INTERMEDIATE_DIR)/content/browser/tracing/tracing_resources.pak',
           '<(SHARED_INTERMEDIATE_DIR)/content/content_resources.pak',
+          '<(SHARED_INTERMEDIATE_DIR)/extensions/extensions_renderer_resources.pak', 
+          '<(SHARED_INTERMEDIATE_DIR)/extensions/extensions_resources.pak',
           '<(SHARED_INTERMEDIATE_DIR)/webkit/blink_resources.pak',
-          '<(grit_out_dir)/devtools_discovery_page_resources.pak',
         ],
       }],
       ['OS != "ios" and OS != "android"', {
@@ -43,12 +52,5 @@
       }],
     ],
   },
-  'inputs': [
-    '<(repack_path)',
-    '<@(pak_inputs)',
-  ],
-  'outputs': [
-    '<(SHARED_INTERMEDIATE_DIR)/repack/resources.pak',
-  ],
-  'action': ['python', '<(repack_path)', '<@(_outputs)', '<@(pak_inputs)'],
+  'includes': [ '../build/repack_action.gypi' ],
 }

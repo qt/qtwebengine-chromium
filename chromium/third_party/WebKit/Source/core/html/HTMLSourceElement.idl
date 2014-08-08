@@ -26,7 +26,12 @@
 [
     RuntimeEnabled=Media
 ] interface HTMLSourceElement : HTMLElement {
-    [Reflect, URL, PerWorldBindings, ActivityLogging=SetterForIsolatedWorlds] attribute DOMString src;
+    [Reflect, URL, LogActivity=SetterOnly] attribute DOMString src;
     attribute DOMString type;
-    attribute DOMString media;
+
+    [Reflect, RuntimeEnabled=Picture] attribute DOMString srcset;
+    [Reflect, RuntimeEnabled=Picture] attribute DOMString sizes;
+    [Reflect, RuntimeEnabled=Picture] attribute DOMString media;
+
+    [Reflect, RuntimeEnabled=SubresourceIntegrity] attribute DOMString integrity;
 };

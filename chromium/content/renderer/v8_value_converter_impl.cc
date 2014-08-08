@@ -6,15 +6,52 @@
 
 #include <string>
 
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/float_util.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/values.h"
 #include "third_party/WebKit/public/platform/WebArrayBuffer.h"
+#include "third_party/WebKit/public/web/WebArrayBufferConverter.h"
 #include "third_party/WebKit/public/web/WebArrayBufferView.h"
 #include "v8/include/v8.h"
 
 namespace content {
+
+// Default implementation of V8ValueConverter::Strategy
+
+bool V8ValueConverter::Strategy::FromV8Object(
+    v8::Handle<v8::Object> value,
+    base::Value** out,
+    v8::Isolate* isolate,
+    const FromV8ValueCallback& callback) const {
+  return false;
+}
+
+bool V8ValueConverter::Strategy::FromV8Array(
+    v8::Handle<v8::Array> value,
+    base::Value** out,
+    v8::Isolate* isolate,
+    const FromV8ValueCallback& callback) const {
+  return false;
+}
+
+bool V8ValueConverter::Strategy::FromV8ArrayBuffer(v8::Handle<v8::Object> value,
+                                                   base::Value** out,
+                                                   v8::Isolate* isolate) const {
+  return false;
+}
+
+bool V8ValueConverter::Strategy::FromV8Number(v8::Handle<v8::Number> value,
+                                              base::Value** out) const {
+  return false;
+}
+
+bool V8ValueConverter::Strategy::FromV8Undefined(base::Value** out) const {
+  return false;
+}
+
 
 namespace {
 
@@ -116,20 +153,22 @@ v8::Handle<v8::Value> V8ValueConverterImpl::ToV8Value(
     const base::Value* value, v8::Handle<v8::Context> context) const {
   v8::Context::Scope context_scope(context);
   v8::EscapableHandleScope handle_scope(context->GetIsolate());
-  return handle_scope.Escape(ToV8ValueImpl(context->GetIsolate(), value));
+  return handle_scope.Escape(
+      ToV8ValueImpl(context->GetIsolate(), context->Global(), value));
 }
 
-Value* V8ValueConverterImpl::FromV8Value(
+base::Value* V8ValueConverterImpl::FromV8Value(
     v8::Handle<v8::Value> val,
     v8::Handle<v8::Context> context) const {
   v8::Context::Scope context_scope(context);
   v8::HandleScope handle_scope(context->GetIsolate());
   FromV8ValueState state(avoid_identity_hash_for_testing_);
-  return FromV8ValueImpl(val, &state, context->GetIsolate());
+  return FromV8ValueImpl(&state, val, context->GetIsolate());
 }
 
 v8::Local<v8::Value> V8ValueConverterImpl::ToV8ValueImpl(
     v8::Isolate* isolate,
+    v8::Handle<v8::Object> creation_context,
     const base::Value* value) const {
   CHECK(value);
   switch (value->GetType()) {
@@ -162,14 +201,19 @@ v8::Local<v8::Value> V8ValueConverterImpl::ToV8ValueImpl(
     }
 
     case base::Value::TYPE_LIST:
-      return ToV8Array(isolate, static_cast<const base::ListValue*>(value));
+      return ToV8Array(isolate,
+                       creation_context,
+                       static_cast<const base::ListValue*>(value));
 
     case base::Value::TYPE_DICTIONARY:
       return ToV8Object(isolate,
+                        creation_context,
                         static_cast<const base::DictionaryValue*>(value));
 
     case base::Value::TYPE_BINARY:
-      return ToArrayBuffer(static_cast<const base::BinaryValue*>(value));
+      return ToArrayBuffer(isolate,
+                           creation_context,
+                           static_cast<const base::BinaryValue*>(value));
 
     default:
       LOG(ERROR) << "Unexpected value type: " << value->GetType();
@@ -179,6 +223,7 @@ v8::Local<v8::Value> V8ValueConverterImpl::ToV8ValueImpl(
 
 v8::Handle<v8::Value> V8ValueConverterImpl::ToV8Array(
     v8::Isolate* isolate,
+    v8::Handle<v8::Object> creation_context,
     const base::ListValue* val) const {
   v8::Handle<v8::Array> result(v8::Array::New(isolate, val->GetSize()));
 
@@ -186,7 +231,8 @@ v8::Handle<v8::Value> V8ValueConverterImpl::ToV8Array(
     const base::Value* child = NULL;
     CHECK(val->Get(i, &child));
 
-    v8::Handle<v8::Value> child_v8 = ToV8ValueImpl(isolate, child);
+    v8::Handle<v8::Value> child_v8 =
+        ToV8ValueImpl(isolate, creation_context, child);
     CHECK(!child_v8.IsEmpty());
 
     v8::TryCatch try_catch;
@@ -200,13 +246,15 @@ v8::Handle<v8::Value> V8ValueConverterImpl::ToV8Array(
 
 v8::Handle<v8::Value> V8ValueConverterImpl::ToV8Object(
     v8::Isolate* isolate,
+    v8::Handle<v8::Object> creation_context,
     const base::DictionaryValue* val) const {
-  v8::Handle<v8::Object> result(v8::Object::New());
+  v8::Handle<v8::Object> result(v8::Object::New(isolate));
 
   for (base::DictionaryValue::Iterator iter(*val);
        !iter.IsAtEnd(); iter.Advance()) {
     const std::string& key = iter.key();
-    v8::Handle<v8::Value> child_v8 = ToV8ValueImpl(isolate, &iter.value());
+    v8::Handle<v8::Value> child_v8 =
+        ToV8ValueImpl(isolate, creation_context, &iter.value());
     CHECK(!child_v8.IsEmpty());
 
     v8::TryCatch try_catch;
@@ -224,16 +272,19 @@ v8::Handle<v8::Value> V8ValueConverterImpl::ToV8Object(
 }
 
 v8::Handle<v8::Value> V8ValueConverterImpl::ToArrayBuffer(
+    v8::Isolate* isolate,
+    v8::Handle<v8::Object> creation_context,
     const base::BinaryValue* value) const {
   blink::WebArrayBuffer buffer =
       blink::WebArrayBuffer::create(value->GetSize(), 1);
   memcpy(buffer.data(), value->GetBuffer(), value->GetSize());
-  return buffer.toV8Value();
+  return blink::WebArrayBufferConverter::toV8Value(
+      &buffer, creation_context, isolate);
 }
 
-Value* V8ValueConverterImpl::FromV8ValueImpl(
-    v8::Handle<v8::Value> val,
+base::Value* V8ValueConverterImpl::FromV8ValueImpl(
     FromV8ValueState* state,
+    v8::Handle<v8::Value> val,
     v8::Isolate* isolate) const {
   CHECK(!val.IsEmpty());
 
@@ -246,6 +297,12 @@ Value* V8ValueConverterImpl::FromV8ValueImpl(
 
   if (val->IsBoolean())
     return new base::FundamentalValue(val->ToBoolean()->Value());
+
+  if (val->IsNumber() && strategy_) {
+    base::Value* out = NULL;
+    if (strategy_->FromV8Number(val->ToNumber(), &out))
+      return out;
+  }
 
   if (val->IsInt32())
     return new base::FundamentalValue(val->ToInt32()->Value());
@@ -262,9 +319,15 @@ Value* V8ValueConverterImpl::FromV8ValueImpl(
     return new base::StringValue(std::string(*utf8, utf8.length()));
   }
 
-  if (val->IsUndefined())
+  if (val->IsUndefined()) {
+    if (strategy_) {
+      base::Value* out = NULL;
+      if (strategy_->FromV8Undefined(&out))
+        return out;
+    }
     // JSON.stringify ignores undefined.
     return NULL;
+  }
 
   if (val->IsDate()) {
     if (!date_allowed_)
@@ -293,14 +356,11 @@ Value* V8ValueConverterImpl::FromV8ValueImpl(
     return FromV8Object(val->ToObject(), state, isolate);
   }
 
-  if (val->IsObject()) {
-    base::BinaryValue* binary_value = FromV8Buffer(val);
-    if (binary_value) {
-      return binary_value;
-    } else {
-      return FromV8Object(val->ToObject(), state, isolate);
-    }
-  }
+  if (val->IsArrayBuffer() || val->IsArrayBufferView())
+    return FromV8ArrayBuffer(val->ToObject(), isolate);
+
+  if (val->IsObject())
+    return FromV8Object(val->ToObject(), state, isolate);
 
   LOG(ERROR) << "Unexpected v8 value type encountered.";
   return NULL;
@@ -321,8 +381,14 @@ base::Value* V8ValueConverterImpl::FromV8Array(
     scope.reset(new v8::Context::Scope(val->CreationContext()));
 
   if (strategy_) {
-    Value* out = NULL;
-    if (strategy_->FromV8Array(val, &out, isolate))
+    // These base::Unretained's are safe, because Strategy::FromV8Value should
+    // be synchronous, so this object can't be out of scope.
+    V8ValueConverter::Strategy::FromV8ValueCallback callback =
+        base::Bind(&V8ValueConverterImpl::FromV8ValueImpl,
+                   base::Unretained(this),
+                   base::Unretained(state));
+    base::Value* out = NULL;
+    if (strategy_->FromV8Array(val, &out, isolate, callback))
       return out;
   }
 
@@ -337,10 +403,12 @@ base::Value* V8ValueConverterImpl::FromV8Array(
       child_v8 = v8::Null(isolate);
     }
 
-    if (!val->HasRealIndexedProperty(i))
+    if (!val->HasRealIndexedProperty(i)) {
+      result->Append(base::Value::CreateNullValue());
       continue;
+    }
 
-    base::Value* child = FromV8ValueImpl(child_v8, state, isolate);
+    base::Value* child = FromV8ValueImpl(state, child_v8, isolate);
     if (child)
       result->Append(child);
     else
@@ -351,13 +419,20 @@ base::Value* V8ValueConverterImpl::FromV8Array(
   return result;
 }
 
-base::BinaryValue* V8ValueConverterImpl::FromV8Buffer(
-    v8::Handle<v8::Value> val) const {
+base::Value* V8ValueConverterImpl::FromV8ArrayBuffer(
+    v8::Handle<v8::Object> val,
+    v8::Isolate* isolate) const {
+  if (strategy_) {
+    base::Value* out = NULL;
+    if (strategy_->FromV8ArrayBuffer(val, &out, isolate))
+      return out;
+  }
+
   char* data = NULL;
   size_t length = 0;
 
   scoped_ptr<blink::WebArrayBuffer> array_buffer(
-      blink::WebArrayBuffer::createFromV8Value(val));
+      blink::WebArrayBufferConverter::createFromV8Value(val, isolate));
   scoped_ptr<blink::WebArrayBufferView> view;
   if (array_buffer) {
     data = reinterpret_cast<char*>(array_buffer->data());
@@ -391,8 +466,14 @@ base::Value* V8ValueConverterImpl::FromV8Object(
     scope.reset(new v8::Context::Scope(val->CreationContext()));
 
   if (strategy_) {
-    Value* out = NULL;
-    if (strategy_->FromV8Object(val, &out, isolate))
+    // These base::Unretained's are safe, because Strategy::FromV8Value should
+    // be synchronous, so this object can't be out of scope.
+    V8ValueConverter::Strategy::FromV8ValueCallback callback =
+        base::Bind(&V8ValueConverterImpl::FromV8ValueImpl,
+                   base::Unretained(this),
+                   base::Unretained(state));
+    base::Value* out = NULL;
+    if (strategy_->FromV8Object(val, &out, isolate, callback))
       return out;
   }
 
@@ -406,8 +487,11 @@ base::Value* V8ValueConverterImpl::FromV8Object(
   //
   // NOTE: check this after |strategy_| so that callers have a chance to
   // do something else, such as convert to the node's name rather than NULL.
+  //
+  // ANOTHER NOTE: returning an empty dictionary here to minimise surprise.
+  // See also http://crbug.com/330559.
   if (val->InternalFieldCount())
-    return NULL;
+    return new base::DictionaryValue();
 
   scoped_ptr<base::DictionaryValue> result(new base::DictionaryValue());
   v8::Handle<v8::Array> property_names(val->GetOwnPropertyNames());
@@ -434,7 +518,7 @@ base::Value* V8ValueConverterImpl::FromV8Object(
       child_v8 = v8::Null(isolate);
     }
 
-    scoped_ptr<base::Value> child(FromV8ValueImpl(child_v8, state, isolate));
+    scoped_ptr<base::Value> child(FromV8ValueImpl(state, child_v8, isolate));
     if (!child)
       // JSON.stringify skips properties whose values don't serialize, for
       // example undefined and functions. Emulate that behavior.

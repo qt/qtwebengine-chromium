@@ -7,8 +7,8 @@
 #include "content/child/child_process.h"
 #include "content/child/npapi/npobject_util.h"  // For CreateNPVariant()
 #include "content/common/java_bridge_messages.h"
+#include "content/public/renderer/render_frame.h"
 #include "content/public/renderer/render_thread.h"
-#include "content/public/renderer/render_view.h"
 #include "content/renderer/java/java_bridge_channel.h"
 #include "third_party/WebKit/public/web/WebBindings.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
@@ -17,8 +17,8 @@
 
 namespace content {
 
-JavaBridgeDispatcher::JavaBridgeDispatcher(RenderView* render_view)
-    : RenderViewObserver(render_view) {
+JavaBridgeDispatcher::JavaBridgeDispatcher(RenderFrame* render_frame)
+    : RenderFrameObserver(render_frame) {
 }
 
 void JavaBridgeDispatcher::EnsureChannelIsSetUp() {
@@ -51,16 +51,21 @@ bool JavaBridgeDispatcher::OnMessageReceived(const IPC::Message& msg) {
   return handled;
 }
 
-void JavaBridgeDispatcher::DidClearWindowObject(blink::WebFrame* web_frame) {
+void JavaBridgeDispatcher::DidClearWindowObject() {
   // Note that we have to (re)bind all objects, as they will have been unbound
   // when the window object was cleared.
   for (ObjectMap::const_iterator iter = objects_.begin();
-      iter != objects_.end(); ++iter) {
+       iter != objects_.end();
+       ++iter) {
+    NPObject* object = NPVARIANT_TO_OBJECT(iter->second);
+    // De-associate from the existing V8 wrapper, so we don't pull any
+    // of the wrapper's custom properties into the context of the page we
+    // have navigated to.
+    blink::WebBindings::dropV8WrapperForObject(object);
     // This refs the NPObject. This reference is dropped when either the window
     // object is later cleared, or the object is GC'ed. So the object may be
     // deleted at any time after OnRemoveNamedObject() is called.
-    web_frame->bindToWindowObject(iter->first,
-        NPVARIANT_TO_OBJECT(iter->second));
+    render_frame()->GetWebFrame()->bindToWindowObject(iter->first, object);
   }
 }
 

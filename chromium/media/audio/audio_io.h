@@ -63,10 +63,6 @@ class MEDIA_EXPORT AudioOutputStream {
     virtual int OnMoreData(AudioBus* dest,
                            AudioBuffersState buffers_state) = 0;
 
-    virtual int OnMoreIOData(AudioBus* source,
-                             AudioBus* dest,
-                             AudioBuffersState buffers_state) = 0;
-
     // There was an error while playing a buffer. Audio source cannot be
     // destroyed yet. No direct action needed by the AudioStream, but it is
     // a good place to stop accumulating sound data since is is likely that
@@ -113,13 +109,18 @@ class MEDIA_EXPORT AudioInputStream {
     // Called by the audio recorder when a full packet of audio data is
     // available. This is called from a special audio thread and the
     // implementation should return as soon as possible.
-    virtual void OnData(AudioInputStream* stream, const uint8* src,
-                        uint32 size, uint32 hardware_delay_bytes,
-                        double volume) = 0;
+    // TODO(henrika): should be pure virtual when old OnData() is phased out.
+    virtual void OnData(AudioInputStream* stream,
+                        const AudioBus* source,
+                        uint32 hardware_delay_bytes,
+                        double volume) {};
 
-    // The stream is done with this callback, the last call received by this
-    // audio sink.
-    virtual void OnClose(AudioInputStream* stream) = 0;
+    // TODO(henrika): don't use; to be removed.
+    virtual void OnData(AudioInputStream* stream,
+                        const uint8* src,
+                        uint32 size,
+                        uint32 hardware_delay_bytes,
+                        double volume) {};
 
     // There was an error while recording audio. The audio sink cannot be
     // destroyed yet. No direct action needed by the AudioInputStream, but it

@@ -25,76 +25,19 @@
 #include "config.h"
 #include "platform/fonts/mac/ComplexTextController.h"
 
-#include <ApplicationServices/ApplicationServices.h>
+#include "platform/fonts/Character.h"
 #include "platform/fonts/Font.h"
+#include "platform/fonts/GlyphBuffer.h"
 #include "platform/geometry/FloatSize.h"
 #include "platform/text/TextBreakIterator.h"
 #include "platform/text/TextRun.h"
 #include "wtf/StdLibExtras.h"
 #include "wtf/unicode/CharacterNames.h"
+#include <ApplicationServices/ApplicationServices.h>
 
 using namespace std;
 
 namespace WebCore {
-
-class TextLayout {
-public:
-    static bool isNeeded(const TextRun& run, const Font& font)
-    {
-        return font.codePath(run) == Font::Complex;
-    }
-
-    TextLayout(const TextRun& run, unsigned textLength, const Font& font, float xPos)
-        : m_font(font)
-        , m_run(constructTextRun(run, textLength, font, xPos))
-        , m_controller(adoptPtr(new ComplexTextController(&m_font, m_run, true)))
-    {
-    }
-
-    float width(unsigned from, unsigned len, HashSet<const SimpleFontData*>* fallbackFonts)
-    {
-        m_controller->advance(from, 0, ByWholeGlyphs, fallbackFonts);
-        float beforeWidth = m_controller->runWidthSoFar();
-        if (m_font.wordSpacing() && from && Font::treatAsSpace(m_run[from]))
-            beforeWidth += m_font.wordSpacing();
-        m_controller->advance(from + len, 0, ByWholeGlyphs, fallbackFonts);
-        float afterWidth = m_controller->runWidthSoFar();
-        return afterWidth - beforeWidth;
-    }
-
-private:
-    static TextRun constructTextRun(const TextRun& textRun, unsigned textLength, const Font& font, float xPos)
-    {
-        TextRun run = textRun;
-        run.setCharactersLength(textLength);
-        ASSERT(run.charactersLength() >= run.length());
-
-        run.setXPos(xPos);
-        return run;
-    }
-
-    // ComplexTextController has only references to its Font and TextRun so they must be kept alive here.
-    Font m_font;
-    TextRun m_run;
-    OwnPtr<ComplexTextController> m_controller;
-};
-
-PassOwnPtr<TextLayout> Font::createLayoutForMacComplexText(const TextRun& run, unsigned textLength, float xPos, bool collapseWhiteSpace) const
-{
-    if (!collapseWhiteSpace || !TextLayout::isNeeded(run, *this))
-        return nullptr;
-    return adoptPtr(new TextLayout(run, textLength, *this, xPos));
-}
-
-void Font::deleteLayout(TextLayout* layout)
-{
-    delete layout;
-}
-
-float Font::width(TextLayout& layout, unsigned from, unsigned len, HashSet<const SimpleFontData*>* fallbackFonts)
-{
-    return layout.width(from, len, fallbackFonts);
-}
 
 static inline CGFloat roundCGFloat(CGFloat f)
 {
@@ -141,9 +84,9 @@ ComplexTextController::ComplexTextController(const Font* font, const TextRun& ru
         bool isAfterExpansion = m_afterExpansion;
         unsigned expansionOpportunityCount;
         if (m_run.is8Bit())
-            expansionOpportunityCount = Font::expansionOpportunityCount(m_run.characters8(), m_end, m_run.ltr() ? LTR : RTL, isAfterExpansion);
+            expansionOpportunityCount = Character::expansionOpportunityCount(m_run.characters8(), m_end, m_run.direction(), isAfterExpansion);
          else
-             expansionOpportunityCount = Font::expansionOpportunityCount(m_run.characters16(), m_end, m_run.ltr() ? LTR : RTL, isAfterExpansion);
+            expansionOpportunityCount = Character::expansionOpportunityCount(m_run.characters16(), m_end, m_run.direction(), isAfterExpansion);
         if (isAfterExpansion && !m_run.allowsTrailingExpansion())
             expansionOpportunityCount--;
 
@@ -302,7 +245,7 @@ void ComplexTextController::collectComplexTextRuns()
     } else
         cp = m_run.characters16();
 
-    if (m_font.isSmallCaps())
+    if (m_font.fontDescription().variant() == FontVariantSmallCaps)
         m_smallCapsBuffer.resize(m_end);
 
     unsigned indexOfFontTransition = 0;
@@ -323,7 +266,7 @@ void ComplexTextController::collectComplexTextRuns()
     UChar uppercaseCharacter = 0;
 
     bool isSmallCaps;
-    bool nextIsSmallCaps = m_font.isSmallCaps() && !(U_GET_GC_MASK(baseCharacter) & U_GC_M_MASK) && (uppercaseCharacter = u_toupper(baseCharacter)) != baseCharacter;
+    bool nextIsSmallCaps = m_font.fontDescription().variant() == FontVariantSmallCaps && !(U_GET_GC_MASK(baseCharacter) & U_GC_M_MASK) && (uppercaseCharacter = u_toupper(baseCharacter)) != baseCharacter;
 
     if (nextIsSmallCaps) {
         m_smallCapsBuffer[sequenceStart - cp] = uppercaseCharacter;
@@ -345,7 +288,7 @@ void ComplexTextController::collectComplexTextRuns()
         if (!advanceByCombiningCharacterSequence(curr, end, baseCharacter, markCount))
             return;
 
-        if (m_font.isSmallCaps()) {
+        if (m_font.fontDescription().variant()) {
             nextIsSmallCaps = (uppercaseCharacter = u_toupper(baseCharacter)) != baseCharacter;
             if (nextIsSmallCaps) {
                 m_smallCapsBuffer[index] = uppercaseCharacter;
@@ -528,7 +471,7 @@ void ComplexTextController::advance(unsigned offset, GlyphBuffer* glyphBuffer, G
                 return;
 
             if (glyphBuffer && !m_characterInCurrentGlyph)
-                glyphBuffer->add(m_adjustedGlyphs[k], complexTextRun.fontData(), adjustedAdvance);
+                glyphBuffer->add(m_adjustedGlyphs[k], complexTextRun.fontData(), FloatSize(adjustedAdvance));
 
             unsigned oldCharacterInCurrentGlyph = m_characterInCurrentGlyph;
             m_characterInCurrentGlyph = min(m_currentCharacter - complexTextRun.stringLocation(), glyphEndOffset) - glyphStartOffset;
@@ -570,7 +513,7 @@ void ComplexTextController::adjustGlyphsAndAdvances()
 {
     CGFloat widthSinceLastCommit = 0;
     size_t runCount = m_complexTextRuns.size();
-    bool hasExtraSpacing = (m_font.letterSpacing() || m_font.wordSpacing() || m_expansion) && !m_run.spacingDisabled();
+    bool hasExtraSpacing = (m_font.fontDescription().letterSpacing() || m_font.fontDescription().wordSpacing() || m_expansion) && !m_run.spacingDisabled();
     for (size_t r = 0; r < runCount; ++r) {
         ComplexTextRun& complexTextRun = *m_complexTextRuns[r];
         unsigned glyphCount = complexTextRun.glyphCount();
@@ -583,7 +526,7 @@ void ComplexTextController::adjustGlyphsAndAdvances()
         const CGSize* advances = complexTextRun.advances();
 
         bool lastRun = r + 1 == runCount;
-        bool roundsAdvances = !m_font.isPrinterFont() && fontData->platformData().roundsGlyphAdvances();
+        bool roundsAdvances = fontData->platformData().roundsGlyphAdvances();
         float spaceWidth = fontData->spaceWidth() - fontData->syntheticBoldOffset();
         CGFloat roundedSpaceWidth = roundCGFloat(spaceWidth);
         const UChar* cp = complexTextRun.characters();
@@ -610,13 +553,13 @@ void ComplexTextController::adjustGlyphsAndAdvances()
             else
                 nextCh = *(m_complexTextRuns[r + 1]->characters() + m_complexTextRuns[r + 1]->indexAt(0));
 
-            bool treatAsSpace = Font::treatAsSpace(ch);
+            bool treatAsSpace = Character::treatAsSpace(ch);
             CGGlyph glyph = treatAsSpace ? fontData->spaceGlyph() : glyphs[i];
             CGSize advance = treatAsSpace ? CGSizeMake(spaceWidth, advances[i].height) : advances[i];
 
-            if (ch == '\t' && m_run.allowTabs())
+            if (ch == '\t' && m_run.allowTabs()) {
                 advance.width = m_font.tabWidth(*fontData, m_run.tabSize(), m_run.xPos() + m_totalWidth + widthSinceLastCommit);
-            else if (Font::treatAsZeroWidthSpace(ch) && !treatAsSpace) {
+            } else if (Character::treatAsZeroWidthSpace(ch) && !treatAsSpace) {
                 advance.width = 0;
                 glyph = fontData->spaceGlyph();
             }
@@ -638,11 +581,11 @@ void ComplexTextController::adjustGlyphsAndAdvances()
             if (hasExtraSpacing) {
                 // If we're a glyph with an advance, go ahead and add in letter-spacing.
                 // That way we weed out zero width lurkers.  This behavior matches the fast text code path.
-                if (advance.width && m_font.letterSpacing())
-                    advance.width += m_font.letterSpacing();
+                if (advance.width && m_font.fontDescription().letterSpacing())
+                    advance.width += m_font.fontDescription().letterSpacing();
 
                 // Handle justification and word-spacing.
-                if (treatAsSpace || Font::isCJKIdeographOrSymbol(ch)) {
+                if (treatAsSpace || Character::isCJKIdeographOrSymbol(ch)) {
                     // Distribute the run's total expansion evenly over all expansion opportunities in the run.
                     if (m_expansion) {
                         float previousExpansion = m_expansion;
@@ -666,8 +609,8 @@ void ComplexTextController::adjustGlyphsAndAdvances()
                         m_afterExpansion = false;
 
                     // Account for word-spacing.
-                    if (treatAsSpace && (ch != '\t' || !m_run.allowTabs()) && (characterIndex > 0 || r > 0) && m_font.wordSpacing())
-                        advance.width += m_font.wordSpacing();
+                    if (treatAsSpace && (ch != '\t' || !m_run.allowTabs()) && (characterIndex > 0 || r > 0) && m_font.fontDescription().wordSpacing())
+                        advance.width += m_font.fontDescription().wordSpacing();
                 } else
                     m_afterExpansion = false;
             }
@@ -676,12 +619,12 @@ void ComplexTextController::adjustGlyphsAndAdvances()
             // We adjust the width of the last character of a "word" to ensure an integer width.
             // Force characters that are used to determine word boundaries for the rounding hack
             // to be integer width, so the following words will start on an integer boundary.
-            if (m_run.applyWordRounding() && Font::isRoundingHackCharacter(ch))
+            if (m_run.applyWordRounding() && Character::isRoundingHackCharacter(ch))
                 advance.width = ceilCGFloat(advance.width);
 
             // Check to see if the next character is a "rounding hack character", if so, adjust the
             // width so that the total run width will be on an integer boundary.
-            if ((m_run.applyWordRounding() && !lastGlyph && Font::isRoundingHackCharacter(nextCh)) || (m_run.applyRunRounding() && lastGlyph)) {
+            if ((m_run.applyWordRounding() && !lastGlyph && Character::isRoundingHackCharacter(nextCh)) || (m_run.applyRunRounding() && lastGlyph)) {
                 CGFloat totalWidth = widthSinceLastCommit + advance.width;
                 widthSinceLastCommit = ceilCGFloat(totalWidth);
                 CGFloat extraWidth = widthSinceLastCommit - totalWidth;
@@ -700,7 +643,7 @@ void ComplexTextController::adjustGlyphsAndAdvances()
                 widthSinceLastCommit += advance.width;
 
             // FIXME: Combining marks should receive a text emphasis mark if they are combine with a space.
-            if (m_forTextEmphasis && (!Font::canReceiveTextEmphasis(ch) || (U_GET_GC_MASK(ch) & U_GC_M_MASK)))
+            if (m_forTextEmphasis && (!Character::canReceiveTextEmphasis(ch) || (U_GET_GC_MASK(ch) & U_GC_M_MASK)))
                 glyph = 0;
 
             advance.height *= -1;

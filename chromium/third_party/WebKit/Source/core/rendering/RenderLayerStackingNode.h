@@ -65,20 +65,7 @@ public:
     int zIndex() const { return renderer()->style()->zIndex(); }
 
     // A stacking context is a layer that has a non-auto z-index.
-    bool isStackingContext() const { return isStackingContext(renderer()->style()); }
-
-    // A stacking container can have z-order lists. All stacking contexts are
-    // stacking containers, but the converse is not true. Layers that use
-    // composited scrolling are stacking containers, but they may not
-    // necessarily be stacking contexts.
-    bool isStackingContainer() const { return isStackingContext() || needsToBeStackingContainer(); }
-
-    bool setNeedsToBeStackingContainer(bool);
-
-    // Returns true if z ordering would not change if this layer were a stacking container.
-    bool descendantsAreContiguousInStackingOrder() const;
-    void setDescendantsAreContiguousInStackingOrderDirty(bool flag) { m_descendantsAreContiguousInStackingOrderDirty = flag; }
-    void updateDescendantsAreContiguousInStackingOrder();
+    bool isStackingContext() const { return !renderer()->style()->hasAutoZIndex(); }
 
     // Update our normal and z-index lists.
     void updateLayerListsIfNeeded();
@@ -87,31 +74,28 @@ public:
     void dirtyZOrderLists();
     void updateZOrderLists();
     void clearZOrderLists();
-    void dirtyStackingContainerZOrderLists();
+    void dirtyStackingContextZOrderLists();
 
     bool hasPositiveZOrderList() const { return posZOrderList() && posZOrderList()->size(); }
     bool hasNegativeZOrderList() const { return negZOrderList() && negZOrderList()->size(); }
 
+    // FIXME: should check for dirtiness here?
     bool isNormalFlowOnly() const { return m_isNormalFlowOnly; }
     void updateIsNormalFlowOnly();
     bool normalFlowListDirty() const { return m_normalFlowListDirty; }
     void dirtyNormalFlowList();
 
-    enum PaintOrderListType {BeforePromote, AfterPromote};
-    void computePaintOrderList(PaintOrderListType, Vector<RefPtr<Node> >&);
-
     void updateStackingNodesAfterStyleChange(const RenderStyle* oldStyle);
 
-    RenderLayerStackingNode* ancestorStackingContainerNode() const;
-    RenderLayerStackingNode* ancestorStackingNode() const;
+    RenderLayerStackingNode* ancestorStackingContextNode() const;
 
-    // Gets the enclosing stacking container for this node, possibly the node
-    // itself, if it is a stacking container.
-    RenderLayerStackingNode* enclosingStackingContainerNode() { return isStackingContainer() ? this : ancestorStackingContainerNode(); }
+    // Gets the enclosing stacking context for this node, possibly the node
+    // itself, if it is a stacking context.
+    RenderLayerStackingNode* enclosingStackingContextNode() { return isStackingContext() ? this : ancestorStackingContextNode(); }
 
     RenderLayer* layer() const { return m_layer; }
 
-#if !ASSERT_DISABLED
+#if ASSERT_ENABLED
     bool layerListMutationAllowed() const { return m_layerListMutationAllowed; }
     void setLayerListMutationAllowed(bool flag) { m_layerListMutationAllowed = flag; }
 #endif
@@ -124,7 +108,7 @@ private:
     Vector<RenderLayerStackingNode*>* posZOrderList() const
     {
         ASSERT(!m_zOrderListsDirty);
-        ASSERT(isStackingContainer() || !m_posZOrderList);
+        ASSERT(isStackingContext() || !m_posZOrderList);
         return m_posZOrderList.get();
     }
 
@@ -137,33 +121,14 @@ private:
     Vector<RenderLayerStackingNode*>* negZOrderList() const
     {
         ASSERT(!m_zOrderListsDirty);
-        ASSERT(isStackingContainer() || !m_negZOrderList);
+        ASSERT(isStackingContext() || !m_negZOrderList);
         return m_negZOrderList.get();
     }
 
-    enum CollectLayersBehavior {
-        ForceLayerToStackingContainer,
-        OverflowScrollCanBeStackingContainers,
-        OnlyStackingContextsCanBeStackingContainers
-    };
-
-    bool isStackingContext(const RenderStyle*) const;
-
     void rebuildZOrderLists();
+    void collectLayers(OwnPtr<Vector<RenderLayerStackingNode*> >& posZOrderList, OwnPtr<Vector<RenderLayerStackingNode*> >& negZOrderList);
 
-    // layerToForceAsStackingContainer allows us to build pre-promotion and
-    // post-promotion layer lists, by allowing us to treat a layer as if it is a
-    // stacking context, without adding a new member to RenderLayer or modifying
-    // the style (which could cause extra allocations).
-    void rebuildZOrderLists(OwnPtr<Vector<RenderLayerStackingNode*> >&, OwnPtr<Vector<RenderLayerStackingNode*> >&,
-        const RenderLayerStackingNode* nodeToForceAsStackingContainer = 0,
-        CollectLayersBehavior = OverflowScrollCanBeStackingContainers);
-
-    void collectLayers(OwnPtr<Vector<RenderLayerStackingNode*> >&,
-        OwnPtr<Vector<RenderLayerStackingNode*> >&, const RenderLayerStackingNode* nodeToForceAsStackingContainer = 0,
-        CollectLayersBehavior = OverflowScrollCanBeStackingContainers);
-
-#if !ASSERT_DISABLED
+#if ASSERT_ENABLED
     bool isInStackingParentZOrderLists() const;
     bool isInStackingParentNormalFlowList() const;
     void updateStackingParentForZOrderLists(RenderLayerStackingNode* stackingParent);
@@ -172,21 +137,10 @@ private:
 #endif
 
     bool shouldBeNormalFlowOnly() const;
-    bool shouldBeNormalFlowOnlyIgnoringCompositedScrolling() const;
 
     void updateNormalFlowList();
-    void dirtyNormalFlowListCanBePromotedToStackingContainer();
 
-    void dirtySiblingStackingNodeCanBePromotedToStackingContainer();
-
-    void collectBeforePromotionZOrderList(RenderLayerStackingNode*,
-        OwnPtr<Vector<RenderLayerStackingNode*> >& posZOrderList, OwnPtr<Vector<RenderLayerStackingNode*> >& negZOrderList);
-    void collectAfterPromotionZOrderList(RenderLayerStackingNode*,
-        OwnPtr<Vector<RenderLayerStackingNode*> >& posZOrderList, OwnPtr<Vector<RenderLayerStackingNode*> >& negZOrderList);
-
-    bool isDirtyStackingContainer() const { return m_zOrderListsDirty && isStackingContainer(); }
-
-    bool needsToBeStackingContainer() const;
+    bool isDirtyStackingContext() const { return m_zOrderListsDirty && isStackingContext(); }
 
     RenderLayerCompositor* compositor() const;
     // FIXME: Investigate changing this to Renderbox.
@@ -194,31 +148,21 @@ private:
 
     RenderLayer* m_layer;
 
-    // For stacking contexts, m_posZOrderList holds a sorted list of all the
-    // descendant nodes within the stacking context that have z-indices of 0 or greater
-    // (auto will count as 0). m_negZOrderList holds descendants within our stacking context with negative
-    // z-indices.
+    // m_posZOrderList holds a sorted list of all the descendant nodes within
+    // that have z-indices of 0 or greater (auto will count as 0).
+    // m_negZOrderList holds descendants within our stacking context with
+    // negative z-indices.
     OwnPtr<Vector<RenderLayerStackingNode*> > m_posZOrderList;
     OwnPtr<Vector<RenderLayerStackingNode*> > m_negZOrderList;
 
-    // This list contains child nodes that cannot create stacking contexts. For now it is just
-    // overflow layers, but that may change in the future.
+    // This list contains child nodes that cannot create stacking contexts.
     OwnPtr<Vector<RenderLayerStackingNode*> > m_normalFlowList;
-
-    // If this is true, then no non-descendant appears between any of our
-    // descendants in stacking order. This is one of the requirements of being
-    // able to safely become a stacking context.
-    unsigned m_descendantsAreContiguousInStackingOrder : 1;
-    unsigned m_descendantsAreContiguousInStackingOrderDirty : 1;
 
     unsigned m_zOrderListsDirty : 1;
     unsigned m_normalFlowListDirty: 1;
     unsigned m_isNormalFlowOnly : 1;
 
-    unsigned m_needsToBeStackingContainer : 1;
-    unsigned m_needsToBeStackingContainerHasBeenRecorded : 1;
-
-#if !ASSERT_DISABLED
+#if ASSERT_ENABLED
     unsigned m_layerListMutationAllowed : 1;
     RenderLayerStackingNode* m_stackingParent;
 #endif
@@ -226,9 +170,9 @@ private:
 
 inline void RenderLayerStackingNode::clearZOrderLists()
 {
-    ASSERT(!isStackingContainer());
+    ASSERT(!isStackingContext());
 
-#if !ASSERT_DISABLED
+#if ASSERT_ENABLED
     updateStackingParentForZOrderLists(0);
 #endif
 
@@ -241,7 +185,7 @@ inline void RenderLayerStackingNode::updateZOrderLists()
     if (!m_zOrderListsDirty)
         return;
 
-    if (!isStackingContainer()) {
+    if (!isStackingContext()) {
         clearZOrderLists();
         m_zOrderListsDirty = false;
         return;
@@ -250,7 +194,7 @@ inline void RenderLayerStackingNode::updateZOrderLists()
     rebuildZOrderLists();
 }
 
-#if !ASSERT_DISABLED
+#if ASSERT_ENABLED
 class LayerListMutationDetector {
 public:
     explicit LayerListMutationDetector(RenderLayerStackingNode* stackingNode)

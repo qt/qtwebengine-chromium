@@ -29,14 +29,11 @@
 
 .sidebar-pane {
     position: relative;
-    flex: auto;
 }
 
 .sidebar-pane > .body {
     position: relative;
     display: none;
-    overflow-y: auto;
-    overflow-x: hidden;
 }
 
 .sidebar-pane > .body .info {
@@ -45,6 +42,11 @@
     font-size: 90%;
     padding: 6px;
     color: #888;
+}
+
+.sidebar-pane > .body .placard.dimmed {
+    opacity: 0.6;
+    font-style: italic;
 }
 
 .sidebar-pane > .body .placard + .info {
@@ -80,6 +82,7 @@
     background-origin: padding;
     background-clip: padding;
     margin-top: -1px;
+    white-space: nowrap;
 }
 
 .sidebar-pane-title:active {
@@ -90,7 +93,7 @@
 
 .sidebar-pane-title::before {
     background-image: url(Images/statusbarButtonGlyphs.png);
-    background-size: 320px 120px;
+    background-size: 320px 144px;
     opacity: 0.5;
     float: left;
     width: 11px;
@@ -104,7 +107,7 @@
 
 @media (-webkit-min-device-pixel-ratio: 1.5) {
 .sidebar-pane-title::before {
-    background-image: url(Images/statusbarButtonGlyphs2x.png);
+    background-image: url(Images/statusbarButtonGlyphs_2x.png);
 }
 } /* media */
 
@@ -133,7 +136,7 @@
 .sidebar-pane-toolbar > .pane-title-button,
 .sidebar-pane-toolbar > label {
     float: right;
-    height: 17px;
+    height: 16px;
     background-color: transparent;
     border: none;
     background-repeat: no-repeat;
@@ -169,12 +172,10 @@
     background-image: url(Images/paneRefreshButtons.png);
 }
 
-.sidebar-pane-toolbar > label > input {
-    vertical-align: -2px;
-}
-
 .sidebar-pane-toolbar > label.scripts-callstack-async {
+    margin: auto;
     margin-right: 5px;
+    display: flex;
 }
 
 .sidebar-pane-subtitle {
@@ -186,7 +187,6 @@ body.platform-windows .sidebar-pane-subtitle {
     padding-top: 1px;
 }
 
-.sidebar-pane-subtitle input,
 .section > .header input[type=checkbox] {
     height: 1em;
     width: 1em;
@@ -194,4 +194,12 @@ body.platform-windows .sidebar-pane-subtitle {
     margin-top: 0;
     margin-bottom: 0.25em;
     vertical-align: bottom;
+}
+
+.hidden-placards-message {
+    text-align: center;
+    font-style: italic;
+    padding: 4px;
+    color: #888;
+    background-color: #FFFFC2;
 }

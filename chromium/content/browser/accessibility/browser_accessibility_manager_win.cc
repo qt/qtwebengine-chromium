@@ -4,104 +4,25 @@
 
 #include "content/browser/accessibility/browser_accessibility_manager_win.h"
 
-#include <atlbase.h>
-#include <atlapp.h>
-#include <atlcom.h>
-#include <atlcrack.h>
-#include <oleacc.h>
-
 #include "base/command_line.h"
 #include "base/win/scoped_comptr.h"
 #include "base/win/windows_version.h"
 #include "content/browser/accessibility/browser_accessibility_state_impl.h"
 #include "content/browser/accessibility/browser_accessibility_win.h"
+#include "content/browser/renderer_host/legacy_render_widget_host_win.h"
 #include "content/common/accessibility_messages.h"
+#include "ui/base/win/atl_module.h"
 
 namespace content {
 
-// Some screen readers expect every tab / every unique web content container
-// to be in its own HWND, like it was before Aura, but with Aura there's just
-// one main HWND for a frame, or even for the whole desktop. So, we need a
-// fake HWND as the root of the accessibility tree for each tab.
-// We should get rid of this code when the latest two versions of all
-// supported screen readers no longer make this assumption.
-//
-// This class implements a child HWND with zero size, that delegates its
-// accessibility implementation to the root of the BrowserAccessibilityManager
-// tree. This HWND is hooked up as the parent of the root object in the
-// BrowserAccessibilityManager tree, so when any accessibility client
-// calls ::WindowFromAccessibleObject, they get this HWND instead of the
-// DesktopRootWindowHostWin.
-class AccessibleHWND
-    : public ATL::CWindowImpl<AccessibleHWND,
-                              ATL::CWindow,
-                              ATL::CWinTraits<WS_CHILD> > {
- public:
-  // Unfortunately, some screen readers look for this exact window class
-  // to enable certain features. It'd be great to remove this.
-  DECLARE_WND_CLASS_EX(L"Chrome_RenderWidgetHostHWND", CS_DBLCLKS, 0);
-
-  BEGIN_MSG_MAP_EX(AccessibleHWND)
-    MESSAGE_HANDLER_EX(WM_GETOBJECT, OnGetObject)
-  END_MSG_MAP()
-
-  AccessibleHWND(HWND parent, BrowserAccessibilityManagerWin* manager)
-      : manager_(manager) {
-    Create(parent);
-    ShowWindow(true);
-    MoveWindow(0, 0, 0, 0);
-
-    HRESULT hr = ::CreateStdAccessibleObject(
-        hwnd(), OBJID_WINDOW, IID_IAccessible,
-        reinterpret_cast<void **>(window_accessible_.Receive()));
-    DCHECK(SUCCEEDED(hr));
-  }
-
-  HWND hwnd() {
-    DCHECK(::IsWindow(m_hWnd));
-    return m_hWnd;
-  }
-
-  IAccessible* window_accessible() { return window_accessible_; }
-
-  void OnManagerDeleted() {
-    manager_ = NULL;
-  }
-
- protected:
-  virtual void OnFinalMessage(HWND hwnd) OVERRIDE {
-    if (manager_)
-      manager_->OnAccessibleHwndDeleted();
-    delete this;
-  }
-
- private:
-  LRESULT OnGetObject(UINT message,
-                      WPARAM w_param,
-                      LPARAM l_param) {
-    if (OBJID_CLIENT != l_param || !manager_)
-      return static_cast<LRESULT>(0L);
-
-    base::win::ScopedComPtr<IAccessible> root(
-        manager_->GetRoot()->ToBrowserAccessibilityWin());
-    return LresultFromObject(IID_IAccessible, w_param,
-        static_cast<IAccessible*>(root.Detach()));
-  }
-
-  BrowserAccessibilityManagerWin* manager_;
-  base::win::ScopedComPtr<IAccessible> window_accessible_;
-
-  DISALLOW_COPY_AND_ASSIGN(AccessibleHWND);
-};
-
-
 // static
 BrowserAccessibilityManager* BrowserAccessibilityManager::Create(
-    const AccessibilityNodeData& src,
+    const ui::AXTreeUpdate& initial_tree,
     BrowserAccessibilityDelegate* delegate,
     BrowserAccessibilityFactory* factory) {
   return new BrowserAccessibilityManagerWin(
-      GetDesktopWindow(), NULL, src, delegate, factory);
+      content::LegacyRenderWidgetHostHWND::Create(GetDesktopWindow()).get(),
+      NULL, initial_tree, delegate, factory);
 }
 
 BrowserAccessibilityManagerWin*
@@ -110,18 +31,22 @@ BrowserAccessibilityManager::ToBrowserAccessibilityManagerWin() {
 }
 
 BrowserAccessibilityManagerWin::BrowserAccessibilityManagerWin(
-    HWND parent_hwnd,
+    LegacyRenderWidgetHostHWND* accessible_hwnd,
     IAccessible* parent_iaccessible,
-    const AccessibilityNodeData& src,
+    const ui::AXTreeUpdate& initial_tree,
     BrowserAccessibilityDelegate* delegate,
     BrowserAccessibilityFactory* factory)
-    : BrowserAccessibilityManager(src, delegate, factory),
-      parent_hwnd_(parent_hwnd),
+    : BrowserAccessibilityManager(initial_tree, delegate, factory),
+      parent_hwnd_(NULL),
       parent_iaccessible_(parent_iaccessible),
       tracked_scroll_object_(NULL),
-      is_chrome_frame_(
-          CommandLine::ForCurrentProcess()->HasSwitch("chrome-frame")),
-      accessible_hwnd_(NULL) {
+      accessible_hwnd_(accessible_hwnd),
+      focus_event_on_root_needed_(false) {
+  ui::win::CreateATLModuleIfNeeded();
+  if (accessible_hwnd_) {
+    accessible_hwnd_->set_browser_accessibility_manager(this);
+    parent_hwnd_ = accessible_hwnd_->GetParent();
+  }
 }
 
 BrowserAccessibilityManagerWin::~BrowserAccessibilityManagerWin() {
@@ -134,132 +59,192 @@ BrowserAccessibilityManagerWin::~BrowserAccessibilityManagerWin() {
 }
 
 // static
-AccessibilityNodeData BrowserAccessibilityManagerWin::GetEmptyDocument() {
-  AccessibilityNodeData empty_document;
+ui::AXTreeUpdate BrowserAccessibilityManagerWin::GetEmptyDocument() {
+  ui::AXNodeData empty_document;
   empty_document.id = 0;
-  empty_document.role = blink::WebAXRoleRootWebArea;
+  empty_document.role = ui::AX_ROLE_ROOT_WEB_AREA;
   empty_document.state =
-      (1 << blink::WebAXStateEnabled) |
-      (1 << blink::WebAXStateReadonly) |
-      (1 << blink::WebAXStateBusy);
-  return empty_document;
+      (1 << ui::AX_STATE_ENABLED) |
+      (1 << ui::AX_STATE_READ_ONLY) |
+      (1 << ui::AX_STATE_BUSY);
+
+  ui::AXTreeUpdate update;
+  update.nodes.push_back(empty_document);
+  return update;
+}
+
+void BrowserAccessibilityManagerWin::SetAccessibleHWND(
+    LegacyRenderWidgetHostHWND* accessible_hwnd) {
+  accessible_hwnd_ = accessible_hwnd;
+  if (accessible_hwnd_) {
+    accessible_hwnd_->set_browser_accessibility_manager(this);
+    parent_hwnd_ = accessible_hwnd_->GetParent();
+  }
 }
 
 void BrowserAccessibilityManagerWin::MaybeCallNotifyWinEvent(DWORD event,
                                                              LONG child_id) {
-  // Don't fire events if this view isn't hooked up to its parent.
-  if (!parent_iaccessible())
-    return;
-
-#if defined(USE_AURA)
-  // If this is an Aura build on Win 7 and complete accessibility is
-  // enabled, create a fake child HWND to use as the root of the
-  // accessibility tree. See comments above AccessibleHWND for details.
-  if (BrowserAccessibilityStateImpl::GetInstance()->IsAccessibleBrowser() &&
-      !is_chrome_frame_ &&
-      !accessible_hwnd_) {
-    accessible_hwnd_ = new AccessibleHWND(parent_hwnd_, this);
+  // If on Win 7 and complete accessibility is enabled, use the fake child HWND
+  // to use as the root of the accessibility tree. See comments above
+  // LegacyRenderWidgetHostHWND for details.
+  if (accessible_hwnd_ &&
+      BrowserAccessibilityStateImpl::GetInstance()->IsAccessibleBrowser()) {
     parent_hwnd_ = accessible_hwnd_->hwnd();
     parent_iaccessible_ = accessible_hwnd_->window_accessible();
   }
-#endif
 
-  ::NotifyWinEvent(event, parent_hwnd(), OBJID_CLIENT, child_id);
+  // Only fire events if this view is hooked up to its parent.
+  if (parent_iaccessible() && parent_hwnd())
+    ::NotifyWinEvent(event, parent_hwnd(), OBJID_CLIENT, child_id);
 }
 
-void BrowserAccessibilityManagerWin::AddNodeToMap(BrowserAccessibility* node) {
-  BrowserAccessibilityManager::AddNodeToMap(node);
-  LONG unique_id_win = node->ToBrowserAccessibilityWin()->unique_id_win();
-  unique_id_to_renderer_id_map_[unique_id_win] = node->renderer_id();
+
+void BrowserAccessibilityManagerWin::OnNodeCreated(ui::AXNode* node) {
+  BrowserAccessibilityManager::OnNodeCreated(node);
+  BrowserAccessibility* obj = GetFromAXNode(node);
+  LONG unique_id_win = obj->ToBrowserAccessibilityWin()->unique_id_win();
+  unique_id_to_ax_id_map_[unique_id_win] = obj->GetId();
 }
 
-void BrowserAccessibilityManagerWin::RemoveNode(BrowserAccessibility* node) {
-  unique_id_to_renderer_id_map_.erase(
-      node->ToBrowserAccessibilityWin()->unique_id_win());
-  BrowserAccessibilityManager::RemoveNode(node);
-  if (node == tracked_scroll_object_) {
+void BrowserAccessibilityManagerWin::OnNodeWillBeDeleted(ui::AXNode* node) {
+  BrowserAccessibilityManager::OnNodeWillBeDeleted(node);
+  BrowserAccessibility* obj = GetFromAXNode(node);
+  if (!obj)
+    return;
+  unique_id_to_ax_id_map_.erase(
+      obj->ToBrowserAccessibilityWin()->unique_id_win());
+  if (obj == tracked_scroll_object_) {
     tracked_scroll_object_->Release();
     tracked_scroll_object_ = NULL;
   }
 }
 
-void BrowserAccessibilityManagerWin::NotifyAccessibilityEvent(
-    blink::WebAXEvent event_type,
-    BrowserAccessibility* node) {
-  if (node->role() == blink::WebAXRoleInlineTextBox)
+void BrowserAccessibilityManagerWin::OnWindowFocused() {
+  // This is called either when this web frame gets focused, or when
+  // the root of the accessibility tree changes. In both cases, we need
+  // to fire a focus event on the root and then on the focused element
+  // within the page, if different.
+
+  // Set this flag so that we'll keep trying to fire these focus events
+  // if they're not successful this time.
+  focus_event_on_root_needed_ = true;
+
+  if (!delegate_ || !delegate_->AccessibilityViewHasFocus())
     return;
+
+  // Try to fire a focus event on the root first and then the focused node.
+  // This will clear focus_event_on_root_needed_ if successful.
+  if (focus_ != tree_->GetRoot())
+    NotifyAccessibilityEvent(ui::AX_EVENT_FOCUS, GetRoot());
+  BrowserAccessibilityManager::OnWindowFocused();
+}
+
+void BrowserAccessibilityManagerWin::NotifyAccessibilityEvent(
+    ui::AXEvent event_type,
+    BrowserAccessibility* node) {
+  if (node->GetRole() == ui::AX_ROLE_INLINE_TEXT_BOX)
+    return;
+
+  // Don't fire focus, blur, or load complete notifications if the
+  // window isn't focused, because that can confuse screen readers into
+  // entering their "browse" mode.
+  if ((event_type == ui::AX_EVENT_FOCUS ||
+       event_type == ui::AX_EVENT_BLUR ||
+       event_type == ui::AX_EVENT_LOAD_COMPLETE) &&
+      (!delegate_ || !delegate_->AccessibilityViewHasFocus())) {
+    return;
+  }
+
+  // NVDA gets confused if we focus the main document element when it hasn't
+  // finished loading and it has no children at all, so suppress that event.
+  if (event_type == ui::AX_EVENT_FOCUS &&
+      node == GetRoot() &&
+      node->PlatformChildCount() == 0 &&
+      !node->HasState(ui::AX_STATE_BUSY) &&
+      !node->GetBoolAttribute(ui::AX_ATTR_DOC_LOADED)) {
+    return;
+  }
+
+  // If a focus event is needed on the root, fire that first before
+  // this event.
+  if (event_type == ui::AX_EVENT_FOCUS && node == GetRoot())
+    focus_event_on_root_needed_ = false;
+  else if (focus_event_on_root_needed_)
+    OnWindowFocused();
 
   LONG event_id = EVENT_MIN;
   switch (event_type) {
-    case blink::WebAXEventActiveDescendantChanged:
+    case ui::AX_EVENT_ACTIVEDESCENDANTCHANGED:
       event_id = IA2_EVENT_ACTIVE_DESCENDANT_CHANGED;
       break;
-    case blink::WebAXEventAlert:
+    case ui::AX_EVENT_ALERT:
       event_id = EVENT_SYSTEM_ALERT;
       break;
-    case blink::WebAXEventAriaAttributeChanged:
+    case ui::AX_EVENT_ARIA_ATTRIBUTE_CHANGED:
       event_id = IA2_EVENT_OBJECT_ATTRIBUTE_CHANGED;
       break;
-    case blink::WebAXEventAutocorrectionOccured:
+    case ui::AX_EVENT_AUTOCORRECTION_OCCURED:
       event_id = IA2_EVENT_OBJECT_ATTRIBUTE_CHANGED;
       break;
-    case blink::WebAXEventBlur:
+    case ui::AX_EVENT_BLUR:
       // Equivalent to focus on the root.
       event_id = EVENT_OBJECT_FOCUS;
       node = GetRoot();
       break;
-    case blink::WebAXEventCheckedStateChanged:
+    case ui::AX_EVENT_CHECKED_STATE_CHANGED:
       event_id = EVENT_OBJECT_STATECHANGE;
       break;
-    case blink::WebAXEventChildrenChanged:
+    case ui::AX_EVENT_CHILDREN_CHANGED:
       event_id = EVENT_OBJECT_REORDER;
       break;
-    case blink::WebAXEventFocus:
+    case ui::AX_EVENT_FOCUS:
       event_id = EVENT_OBJECT_FOCUS;
       break;
-    case blink::WebAXEventInvalidStatusChanged:
+    case ui::AX_EVENT_INVALID_STATUS_CHANGED:
       event_id = EVENT_OBJECT_STATECHANGE;
       break;
-    case blink::WebAXEventLiveRegionChanged:
-      // TODO: try not firing a native notification at all, since
-      // on Windows, each individual item in a live region that changes
-      // already gets its own notification.
-      event_id = EVENT_OBJECT_REORDER;
+    case ui::AX_EVENT_LIVE_REGION_CHANGED:
+      if (node->GetBoolAttribute(ui::AX_ATTR_CONTAINER_LIVE_BUSY))
+        return;
+      event_id = EVENT_OBJECT_LIVEREGIONCHANGED;
       break;
-    case blink::WebAXEventLoadComplete:
+    case ui::AX_EVENT_LOAD_COMPLETE:
       event_id = IA2_EVENT_DOCUMENT_LOAD_COMPLETE;
       break;
-    case blink::WebAXEventMenuListItemSelected:
+    case ui::AX_EVENT_MENU_LIST_ITEM_SELECTED:
       event_id = EVENT_OBJECT_FOCUS;
       break;
-    case blink::WebAXEventMenuListValueChanged:
+    case ui::AX_EVENT_MENU_LIST_VALUE_CHANGED:
       event_id = EVENT_OBJECT_VALUECHANGE;
       break;
-    case blink::WebAXEventHide:
+    case ui::AX_EVENT_HIDE:
       event_id = EVENT_OBJECT_HIDE;
       break;
-    case blink::WebAXEventShow:
+    case ui::AX_EVENT_SHOW:
       event_id = EVENT_OBJECT_SHOW;
       break;
-    case blink::WebAXEventScrolledToAnchor:
+    case ui::AX_EVENT_SCROLL_POSITION_CHANGED:
+      event_id = EVENT_SYSTEM_SCROLLINGEND;
+      break;
+    case ui::AX_EVENT_SCROLLED_TO_ANCHOR:
       event_id = EVENT_SYSTEM_SCROLLINGSTART;
       break;
-    case blink::WebAXEventSelectedChildrenChanged:
+    case ui::AX_EVENT_SELECTED_CHILDREN_CHANGED:
       event_id = EVENT_OBJECT_SELECTIONWITHIN;
       break;
-    case blink::WebAXEventSelectedTextChanged:
+    case ui::AX_EVENT_SELECTED_TEXT_CHANGED:
       event_id = IA2_EVENT_TEXT_CARET_MOVED;
       break;
-    case blink::WebAXEventTextChanged:
+    case ui::AX_EVENT_TEXT_CHANGED:
       event_id = EVENT_OBJECT_NAMECHANGE;
       break;
-    case blink::WebAXEventTextInserted:
+    case ui::AX_EVENT_TEXT_INSERTED:
       event_id = IA2_EVENT_TEXT_INSERTED;
       break;
-    case blink::WebAXEventTextRemoved:
+    case ui::AX_EVENT_TEXT_REMOVED:
       event_id = IA2_EVENT_TEXT_REMOVED;
       break;
-    case blink::WebAXEventValueChanged:
+    case ui::AX_EVENT_VALUE_CHANGED:
       event_id = EVENT_OBJECT_VALUECHANGE;
       break;
     default:
@@ -280,7 +265,7 @@ void BrowserAccessibilityManagerWin::NotifyAccessibilityEvent(
   // If this is a layout complete notification (sent when a container scrolls)
   // and there is a descendant tracked object, send a notification on it.
   // TODO(dmazzoni): remove once http://crbug.com/113483 is fixed.
-  if (event_type == blink::WebAXEventLayoutComplete &&
+  if (event_type == ui::AX_EVENT_LAYOUT_COMPLETE &&
       tracked_scroll_object_ &&
       tracked_scroll_object_->IsDescendantOf(node)) {
     MaybeCallNotifyWinEvent(
@@ -289,6 +274,12 @@ void BrowserAccessibilityManagerWin::NotifyAccessibilityEvent(
     tracked_scroll_object_->Release();
     tracked_scroll_object_ = NULL;
   }
+}
+
+void BrowserAccessibilityManagerWin::OnRootChanged(ui::AXNode* new_root) {
+  // In order to make screen readers aware of the new accessibility root,
+  // we need to fire a focus event on it.
+  OnWindowFocused();
 }
 
 void BrowserAccessibilityManagerWin::TrackScrollingObject(
@@ -302,9 +293,9 @@ void BrowserAccessibilityManagerWin::TrackScrollingObject(
 BrowserAccessibilityWin* BrowserAccessibilityManagerWin::GetFromUniqueIdWin(
     LONG unique_id_win) {
   base::hash_map<LONG, int32>::iterator iter =
-      unique_id_to_renderer_id_map_.find(unique_id_win);
-  if (iter != unique_id_to_renderer_id_map_.end()) {
-    BrowserAccessibility* result = GetFromRendererID(iter->second);
+      unique_id_to_ax_id_map_.find(unique_id_win);
+  if (iter != unique_id_to_ax_id_map_.end()) {
+    BrowserAccessibility* result = GetFromID(iter->second);
     if (result)
       return result->ToBrowserAccessibilityWin();
   }

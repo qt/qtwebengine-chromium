@@ -23,6 +23,7 @@
 #include "core/rendering/style/StyleRareNonInheritedData.h"
 
 #include "core/rendering/style/ContentData.h"
+#include "core/rendering/style/DataEquivalency.h"
 #include "core/rendering/style/RenderStyle.h"
 #include "core/rendering/style/ShadowList.h"
 #include "core/rendering/style/StyleFilterData.h"
@@ -42,27 +43,28 @@ StyleRareNonInheritedData::StyleRareNonInheritedData()
     , m_draggableRegionMode(DraggableRegionNone)
     , m_mask(MaskFillLayer, true)
     , m_pageSize()
-    , m_shapeInside(RenderStyle::initialShapeInside())
     , m_shapeOutside(RenderStyle::initialShapeOutside())
     , m_shapeMargin(RenderStyle::initialShapeMargin())
-    , m_shapePadding(RenderStyle::initialShapePadding())
     , m_shapeImageThreshold(RenderStyle::initialShapeImageThreshold())
     , m_clipPath(RenderStyle::initialClipPath())
+    , m_textDecorationColor(StyleColor::currentColor())
+    , m_visitedLinkTextDecorationColor(StyleColor::currentColor())
     , m_visitedLinkBackgroundColor(RenderStyle::initialBackgroundColor())
+    , m_visitedLinkOutlineColor(StyleColor::currentColor())
+    , m_visitedLinkBorderLeftColor(StyleColor::currentColor())
+    , m_visitedLinkBorderRightColor(StyleColor::currentColor())
+    , m_visitedLinkBorderTopColor(StyleColor::currentColor())
+    , m_visitedLinkBorderBottomColor(StyleColor::currentColor())
     , m_order(RenderStyle::initialOrder())
     , m_objectPosition(RenderStyle::initialObjectPosition())
-    , m_flowThread(RenderStyle::initialFlowThread())
-    , m_regionThread(RenderStyle::initialRegionThread())
-    , m_regionFragment(RenderStyle::initialRegionFragment())
-    , m_regionBreakAfter(RenderStyle::initialPageBreak())
-    , m_regionBreakBefore(RenderStyle::initialPageBreak())
-    , m_regionBreakInside(RenderStyle::initialPageBreak())
     , m_pageSizeType(PAGE_SIZE_AUTO)
     , m_transformStyle3D(RenderStyle::initialTransformStyle3D())
     , m_backfaceVisibility(RenderStyle::initialBackfaceVisibility())
     , m_alignContent(RenderStyle::initialAlignContent())
     , m_alignItems(RenderStyle::initialAlignItems())
+    , m_alignItemsOverflowAlignment(RenderStyle::initialAlignItemsOverflowAlignment())
     , m_alignSelf(RenderStyle::initialAlignSelf())
+    , m_alignSelfOverflowAlignment(RenderStyle::initialAlignSelfOverflowAlignment())
     , m_justifyContent(RenderStyle::initialJustifyContent())
     , userDrag(RenderStyle::initialUserDrag())
     , textOverflow(RenderStyle::initialTextOverflow())
@@ -74,12 +76,21 @@ StyleRareNonInheritedData::StyleRareNonInheritedData()
     , m_textDecorationStyle(RenderStyle::initialTextDecorationStyle())
     , m_wrapFlow(RenderStyle::initialWrapFlow())
     , m_wrapThrough(RenderStyle::initialWrapThrough())
-    , m_runningAcceleratedAnimation(false)
+    , m_hasCurrentOpacityAnimation(false)
+    , m_hasCurrentTransformAnimation(false)
+    , m_hasCurrentFilterAnimation(false)
+    , m_runningOpacityAnimationOnCompositor(false)
+    , m_runningTransformAnimationOnCompositor(false)
+    , m_runningFilterAnimationOnCompositor(false)
     , m_hasAspectRatio(false)
     , m_effectiveBlendMode(RenderStyle::initialBlendMode())
     , m_touchAction(RenderStyle::initialTouchAction())
     , m_objectFit(RenderStyle::initialObjectFit())
     , m_isolation(RenderStyle::initialIsolation())
+    , m_justifySelf(RenderStyle::initialJustifySelf())
+    , m_justifySelfOverflowAlignment(RenderStyle::initialJustifySelfOverflowAlignment())
+    , m_scrollBehavior(RenderStyle::initialScrollBehavior())
+    , m_requiresAcceleratedCompositingForExternalReasons(false)
 {
     m_maskBoxImage.setMaskDefaults();
 }
@@ -99,6 +110,7 @@ StyleRareNonInheritedData::StyleRareNonInheritedData(const StyleRareNonInherited
     , m_marquee(o.m_marquee)
     , m_multiCol(o.m_multiCol)
     , m_transform(o.m_transform)
+    , m_willChange(o.m_willChange)
     , m_filter(o.m_filter)
     , m_grid(o.m_grid)
     , m_gridItem(o.m_gridItem)
@@ -106,15 +118,13 @@ StyleRareNonInheritedData::StyleRareNonInheritedData(const StyleRareNonInherited
     , m_counterDirectives(o.m_counterDirectives ? clone(*o.m_counterDirectives) : nullptr)
     , m_boxShadow(o.m_boxShadow)
     , m_boxReflect(o.m_boxReflect)
-    , m_animations(o.m_animations ? adoptPtr(new CSSAnimationDataList(*o.m_animations)) : nullptr)
-    , m_transitions(o.m_transitions ? adoptPtr(new CSSAnimationDataList(*o.m_transitions)) : nullptr)
+    , m_animations(o.m_animations ? CSSAnimationData::create(*o.m_animations) : nullptr)
+    , m_transitions(o.m_transitions ? CSSTransitionData::create(*o.m_transitions) : nullptr)
     , m_mask(o.m_mask)
     , m_maskBoxImage(o.m_maskBoxImage)
     , m_pageSize(o.m_pageSize)
-    , m_shapeInside(o.m_shapeInside)
     , m_shapeOutside(o.m_shapeOutside)
     , m_shapeMargin(o.m_shapeMargin)
-    , m_shapePadding(o.m_shapePadding)
     , m_shapeImageThreshold(o.m_shapeImageThreshold)
     , m_clipPath(o.m_clipPath)
     , m_textDecorationColor(o.m_textDecorationColor)
@@ -127,18 +137,14 @@ StyleRareNonInheritedData::StyleRareNonInheritedData(const StyleRareNonInherited
     , m_visitedLinkBorderBottomColor(o.m_visitedLinkBorderBottomColor)
     , m_order(o.m_order)
     , m_objectPosition(o.m_objectPosition)
-    , m_flowThread(o.m_flowThread)
-    , m_regionThread(o.m_regionThread)
-    , m_regionFragment(o.m_regionFragment)
-    , m_regionBreakAfter(o.m_regionBreakAfter)
-    , m_regionBreakBefore(o.m_regionBreakBefore)
-    , m_regionBreakInside(o.m_regionBreakInside)
     , m_pageSizeType(o.m_pageSizeType)
     , m_transformStyle3D(o.m_transformStyle3D)
     , m_backfaceVisibility(o.m_backfaceVisibility)
     , m_alignContent(o.m_alignContent)
     , m_alignItems(o.m_alignItems)
+    , m_alignItemsOverflowAlignment(o.m_alignItemsOverflowAlignment)
     , m_alignSelf(o.m_alignSelf)
+    , m_alignSelfOverflowAlignment(o.m_alignSelfOverflowAlignment)
     , m_justifyContent(o.m_justifyContent)
     , userDrag(o.userDrag)
     , textOverflow(o.textOverflow)
@@ -150,12 +156,21 @@ StyleRareNonInheritedData::StyleRareNonInheritedData(const StyleRareNonInherited
     , m_textDecorationStyle(o.m_textDecorationStyle)
     , m_wrapFlow(o.m_wrapFlow)
     , m_wrapThrough(o.m_wrapThrough)
-    , m_runningAcceleratedAnimation(o.m_runningAcceleratedAnimation)
+    , m_hasCurrentOpacityAnimation(o.m_hasCurrentOpacityAnimation)
+    , m_hasCurrentTransformAnimation(o.m_hasCurrentTransformAnimation)
+    , m_hasCurrentFilterAnimation(o.m_hasCurrentFilterAnimation)
+    , m_runningOpacityAnimationOnCompositor(o.m_runningOpacityAnimationOnCompositor)
+    , m_runningTransformAnimationOnCompositor(o.m_runningTransformAnimationOnCompositor)
+    , m_runningFilterAnimationOnCompositor(o.m_runningFilterAnimationOnCompositor)
     , m_hasAspectRatio(o.m_hasAspectRatio)
     , m_effectiveBlendMode(o.m_effectiveBlendMode)
     , m_touchAction(o.m_touchAction)
     , m_objectFit(o.m_objectFit)
     , m_isolation(o.m_isolation)
+    , m_justifySelf(o.m_justifySelf)
+    , m_justifySelfOverflowAlignment(o.m_justifySelfOverflowAlignment)
+    , m_scrollBehavior(o.m_scrollBehavior)
+    , m_requiresAcceleratedCompositingForExternalReasons(o.m_requiresAcceleratedCompositingForExternalReasons)
 {
 }
 
@@ -181,6 +196,7 @@ bool StyleRareNonInheritedData::operator==(const StyleRareNonInheritedData& o) c
         && m_marquee == o.m_marquee
         && m_multiCol == o.m_multiCol
         && m_transform == o.m_transform
+        && m_willChange == o.m_willChange
         && m_filter == o.m_filter
         && m_grid == o.m_grid
         && m_gridItem == o.m_gridItem
@@ -193,10 +209,8 @@ bool StyleRareNonInheritedData::operator==(const StyleRareNonInheritedData& o) c
         && m_mask == o.m_mask
         && m_maskBoxImage == o.m_maskBoxImage
         && m_pageSize == o.m_pageSize
-        && m_shapeInside == o.m_shapeInside
         && m_shapeOutside == o.m_shapeOutside
         && m_shapeMargin == o.m_shapeMargin
-        && m_shapePadding == o.m_shapePadding
         && m_shapeImageThreshold == o.m_shapeImageThreshold
         && m_clipPath == o.m_clipPath
         && m_textDecorationColor == o.m_textDecorationColor
@@ -210,18 +224,14 @@ bool StyleRareNonInheritedData::operator==(const StyleRareNonInheritedData& o) c
         && m_order == o.m_order
         && m_objectPosition == o.m_objectPosition
         && m_callbackSelectors == o.m_callbackSelectors
-        && m_flowThread == o.m_flowThread
-        && m_regionThread == o.m_regionThread
-        && m_regionFragment == o.m_regionFragment
-        && m_regionBreakAfter == o.m_regionBreakAfter
-        && m_regionBreakBefore == o.m_regionBreakBefore
-        && m_regionBreakInside == o.m_regionBreakInside
         && m_pageSizeType == o.m_pageSizeType
         && m_transformStyle3D == o.m_transformStyle3D
         && m_backfaceVisibility == o.m_backfaceVisibility
         && m_alignContent == o.m_alignContent
         && m_alignItems == o.m_alignItems
+        && m_alignItemsOverflowAlignment == o.m_alignItemsOverflowAlignment
         && m_alignSelf == o.m_alignSelf
+        && m_alignSelfOverflowAlignment == o.m_alignSelfOverflowAlignment
         && m_justifyContent == o.m_justifyContent
         && userDrag == o.userDrag
         && textOverflow == o.textOverflow
@@ -233,12 +243,18 @@ bool StyleRareNonInheritedData::operator==(const StyleRareNonInheritedData& o) c
         && m_textDecorationStyle == o.m_textDecorationStyle
         && m_wrapFlow == o.m_wrapFlow
         && m_wrapThrough == o.m_wrapThrough
-        && !m_runningAcceleratedAnimation && !o.m_runningAcceleratedAnimation
+        && m_hasCurrentOpacityAnimation == o.m_hasCurrentOpacityAnimation
+        && m_hasCurrentTransformAnimation == o.m_hasCurrentTransformAnimation
+        && m_hasCurrentFilterAnimation == o.m_hasCurrentFilterAnimation
         && m_effectiveBlendMode == o.m_effectiveBlendMode
         && m_hasAspectRatio == o.m_hasAspectRatio
         && m_touchAction == o.m_touchAction
         && m_objectFit == o.m_objectFit
-        && m_isolation == o.m_isolation;
+        && m_isolation == o.m_isolation
+        && m_justifySelf == o.m_justifySelf
+        && m_justifySelfOverflowAlignment == o.m_justifySelfOverflowAlignment
+        && m_scrollBehavior == o.m_scrollBehavior
+        && m_requiresAcceleratedCompositingForExternalReasons == o.m_requiresAcceleratedCompositingForExternalReasons;
 }
 
 bool StyleRareNonInheritedData::contentDataEquivalent(const StyleRareNonInheritedData& o) const
@@ -256,50 +272,35 @@ bool StyleRareNonInheritedData::contentDataEquivalent(const StyleRareNonInherite
 
 bool StyleRareNonInheritedData::counterDataEquivalent(const StyleRareNonInheritedData& o) const
 {
-    if (m_counterDirectives.get() == o.m_counterDirectives.get())
-        return true;
-
-    if (m_counterDirectives && o.m_counterDirectives && *m_counterDirectives == *o.m_counterDirectives)
-        return true;
-
-    return false;
+    return dataEquivalent(m_counterDirectives, o.m_counterDirectives);
 }
 
 bool StyleRareNonInheritedData::shadowDataEquivalent(const StyleRareNonInheritedData& o) const
 {
-    if ((!m_boxShadow && o.m_boxShadow) || (m_boxShadow && !o.m_boxShadow))
-        return false;
-    if (m_boxShadow && o.m_boxShadow && (*m_boxShadow != *o.m_boxShadow))
-        return false;
-    return true;
+    return dataEquivalent(m_boxShadow, o.m_boxShadow);
 }
 
 bool StyleRareNonInheritedData::reflectionDataEquivalent(const StyleRareNonInheritedData& o) const
 {
-    if (m_boxReflect != o.m_boxReflect) {
-        if (!m_boxReflect || !o.m_boxReflect)
-            return false;
-        return *m_boxReflect == *o.m_boxReflect;
-    }
-    return true;
+    return dataEquivalent(m_boxReflect, o.m_boxReflect);
 }
 
 bool StyleRareNonInheritedData::animationDataEquivalent(const StyleRareNonInheritedData& o) const
 {
-    if ((!m_animations && o.m_animations) || (m_animations && !o.m_animations))
+    if (!m_animations && !o.m_animations)
+        return true;
+    if (!m_animations || !o.m_animations)
         return false;
-    if (m_animations && o.m_animations && (*m_animations != *o.m_animations))
-        return false;
-    return true;
+    return m_animations->animationsMatchForStyleRecalc(*o.m_animations);
 }
 
 bool StyleRareNonInheritedData::transitionDataEquivalent(const StyleRareNonInheritedData& o) const
 {
-    if ((!m_transitions && o.m_transitions) || (m_transitions && !o.m_transitions))
+    if (!m_transitions && !o.m_transitions)
+        return true;
+    if (!m_transitions || !o.m_transitions)
         return false;
-    if (m_transitions && o.m_transitions && (*m_transitions != *o.m_transitions))
-        return false;
-    return true;
+    return m_transitions->transitionsMatchForStyleRecalc(*o.m_transitions);
 }
 
 bool StyleRareNonInheritedData::hasFilters() const

@@ -4,20 +4,19 @@
 
 #include <string>
 
+#include "base/message_loop/message_loop.h"
 #include "base/strings/utf_string_conversions.h"
-#include "content/renderer/media/media_stream_extra_data.h"
+#include "content/child/child_process.h"
+#include "content/common/media/video_capture.h"
+#include "content/public/renderer/media_stream_video_sink.h"
+#include "content/renderer/media/media_stream.h"
 #include "content/renderer/media/media_stream_registry_interface.h"
-#include "content/renderer/media/mock_media_stream_dependency_factory.h"
 #include "content/renderer/media/mock_media_stream_registry.h"
 #include "content/renderer/media/video_source_handler.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/WebKit/public/platform/WebMediaStreamTrack.h"
 #include "third_party/WebKit/public/platform/WebString.h"
-#include "third_party/libjingle/source/talk/media/base/videorenderer.h"
-#include "third_party/libjingle/source/talk/media/webrtc/webrtcvideoframe.h"
-
-using cricket::VideoFrame;
 
 namespace content {
 
@@ -27,31 +26,34 @@ static const std::string kUnknownStreamUrl = "unknown_stream_url";
 
 class FakeFrameReader : public FrameReaderInterface {
  public:
-  virtual bool GotFrame(VideoFrame* frame) OVERRIDE {
-    last_frame_.reset(frame);
+  virtual bool GotFrame(
+      const scoped_refptr<media::VideoFrame>& frame) OVERRIDE {
+    last_frame_ = frame;
     return true;
   }
 
-  const VideoFrame* last_frame() {
+  const media::VideoFrame* last_frame() {
     return last_frame_.get();
   }
 
  private:
-  scoped_ptr<VideoFrame> last_frame_;
+  scoped_refptr<media::VideoFrame> last_frame_;
 };
 
 class VideoSourceHandlerTest : public ::testing::Test {
  public:
-  VideoSourceHandlerTest() : registry_(&dependency_factory_) {
+  VideoSourceHandlerTest()
+       : child_process_(new ChildProcess()),
+         registry_() {
     handler_.reset(new VideoSourceHandler(&registry_));
-    dependency_factory_.EnsurePeerConnectionFactory();
     registry_.Init(kTestStreamUrl);
     registry_.AddVideoTrack(kTestVideoTrackId);
   }
 
  protected:
+  base::MessageLoop message_loop_;
+  scoped_ptr<ChildProcess> child_process_;
   scoped_ptr<VideoSourceHandler> handler_;
-  MockMediaStreamDependencyFactory dependency_factory_;
   MockMediaStreamRegistry registry_;
 };
 
@@ -60,30 +62,35 @@ TEST_F(VideoSourceHandlerTest, OpenClose) {
   // Unknow url will return false.
   EXPECT_FALSE(handler_->Open(kUnknownStreamUrl, &reader));
   EXPECT_TRUE(handler_->Open(kTestStreamUrl, &reader));
-  cricket::WebRtcVideoFrame test_frame;
+
   int width = 640;
   int height = 360;
-  int64 et = 123456;
-  int64 ts = 789012;
-  test_frame.InitToBlack(width, height, 1, 1, et, ts);
-  cricket::VideoRenderer* receiver = handler_->GetReceiver(&reader);
-  ASSERT(receiver != NULL);
-  receiver->RenderFrame(&test_frame);
+  base::TimeDelta ts = base::TimeDelta::FromInternalValue(789012);
 
-  const VideoFrame* frame = reader.last_frame();
+  // A new frame is captured.
+  scoped_refptr<media::VideoFrame> captured_frame =
+      media::VideoFrame::CreateBlackFrame(gfx::Size(width, height));
+  captured_frame->set_timestamp(ts);
+
+  // The frame is delivered to VideoSourceHandler.
+  handler_->DeliverFrameForTesting(&reader, captured_frame);
+
+  // Compare |frame| to |captured_frame|.
+  const media::VideoFrame* frame = reader.last_frame();
   ASSERT_TRUE(frame != NULL);
+  EXPECT_EQ(width, frame->coded_size().width());
+  EXPECT_EQ(height, frame->coded_size().height());
+  EXPECT_EQ(ts, frame->timestamp());
+  EXPECT_EQ(captured_frame->data(media::VideoFrame::kYPlane),
+            frame->data(media::VideoFrame::kYPlane));
 
-  // Compare |frame| to |test_frame|.
-  EXPECT_EQ(test_frame.GetWidth(), frame->GetWidth());
-  EXPECT_EQ(test_frame.GetHeight(), frame->GetHeight());
-  EXPECT_EQ(test_frame.GetElapsedTime(), frame->GetElapsedTime());
-  EXPECT_EQ(test_frame.GetTimeStamp(), frame->GetTimeStamp());
-  EXPECT_EQ(test_frame.GetYPlane(), frame->GetYPlane());
-  EXPECT_EQ(test_frame.GetUPlane(), frame->GetUPlane());
-  EXPECT_EQ(test_frame.GetVPlane(), frame->GetVPlane());
+  EXPECT_FALSE(handler_->Close(NULL));
+  EXPECT_TRUE(handler_->Close(&reader));
+}
 
-  EXPECT_TRUE(handler_->Close(kTestStreamUrl, &reader));
-  EXPECT_TRUE(handler_->GetReceiver(&reader) == NULL);
+TEST_F(VideoSourceHandlerTest, OpenWithoutClose) {
+  FakeFrameReader reader;
+  EXPECT_TRUE(handler_->Open(kTestStreamUrl, &reader));
 }
 
 }  // namespace content

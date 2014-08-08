@@ -11,7 +11,7 @@
 #include "base/memory/ref_counted.h"
 
 namespace content {
-class WorkerMessageFilter;
+class BrowserMessageFilter;
 
 // The WorkerDocumentSet tracks all of the DOM documents associated with a
 // set of workers. With nested workers, multiple workers can share the same
@@ -24,12 +24,12 @@ class WorkerDocumentSet : public base::RefCounted<WorkerDocumentSet> {
   // The information we track for each document
   class DocumentInfo {
    public:
-    DocumentInfo(WorkerMessageFilter* filter, unsigned long long document_id,
-                 int renderer_process_id, int render_view_id);
-    WorkerMessageFilter* filter() const { return filter_; }
+    DocumentInfo(BrowserMessageFilter* filter, unsigned long long document_id,
+                 int renderer_process_id, int render_frame_id);
+    BrowserMessageFilter* filter() const { return filter_; }
     unsigned long long document_id() const { return document_id_; }
     int render_process_id() const { return render_process_id_; }
-    int render_view_id() const { return render_view_id_; }
+    int render_frame_id() const { return render_frame_id_; }
 
     // Define operator "<", which is used to determine uniqueness within
     // the set.
@@ -46,31 +46,35 @@ class WorkerDocumentSet : public base::RefCounted<WorkerDocumentSet> {
     }
 
    private:
-    WorkerMessageFilter* filter_;
+    BrowserMessageFilter* filter_;
     unsigned long long document_id_;
     int render_process_id_;
-    int render_view_id_;
+    int render_frame_id_;
   };
 
   // Adds a document to a shared worker's document set. Also includes the
   // associated render_process_id the document is associated with, to enable
   // communication with the parent tab for things like http auth dialogs.
-  void Add(WorkerMessageFilter* parent,
+  void Add(BrowserMessageFilter* parent,
            unsigned long long document_id,
            int render_process_id,
-           int render_view_id);
+           int render_frame_id);
 
   // Checks to see if a document is in a shared worker's document set.
-  bool Contains(WorkerMessageFilter* parent,
+  bool Contains(BrowserMessageFilter* parent,
                 unsigned long long document_id) const;
+
+  // Checks to see if the document set contains any documents which is
+  // associated with other renderer process than worker_process_id.
+  bool ContainsExternalRenderer(int worker_process_id) const;
 
   // Removes a specific document from a worker's document set when that document
   // is detached.
-  void Remove(WorkerMessageFilter* parent, unsigned long long document_id);
+  void Remove(BrowserMessageFilter* parent, unsigned long long document_id);
 
   // Invoked when a render process exits, to remove all associated documents
   // from a worker's document set.
-  void RemoveAll(WorkerMessageFilter* parent);
+  void RemoveAll(BrowserMessageFilter* parent);
 
   bool IsEmpty() const { return document_set_.empty(); }
 

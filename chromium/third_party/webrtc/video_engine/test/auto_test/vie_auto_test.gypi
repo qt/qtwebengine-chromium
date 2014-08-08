@@ -13,6 +13,7 @@
       'type': 'executable',
       'dependencies': [
         '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers',
+        '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:field_trial_default',
         '<(webrtc_root)/modules/modules.gyp:video_render_module',
         '<(webrtc_root)/modules/modules.gyp:video_capture_module',
         '<(webrtc_root)/voice_engine/voice_engine.gyp:voice_engine',
@@ -21,7 +22,7 @@
         '<(webrtc_root)/test/metrics.gyp:metrics',
         '<(webrtc_root)/test/test.gyp:channel_transport',
         '<(webrtc_root)/test/test.gyp:test_support',
-        '<(webrtc_root)/test/libtest/libtest.gyp:libtest',
+        '<(webrtc_root)/test/test.gyp:field_trial',
         'video_engine_core',
         'libvietest',
       ],
@@ -42,7 +43,7 @@
         'automated/two_windows_fixture.cc',
         'automated/vie_api_integration_test.cc',
         'automated/vie_extended_integration_test.cc',
-        'automated/vie_rtp_fuzz_test.cc',
+        'automated/vie_network_test.cc',
         'automated/vie_standard_integration_test.cc',
         'automated/vie_video_verification_test.cc',
 
@@ -68,7 +69,6 @@
         'source/vie_autotest_base.cc',
         'source/vie_autotest_capture.cc',
         'source/vie_autotest_codec.cc',
-        'source/vie_autotest_encryption.cc',
         'source/vie_autotest_image_process.cc',
         'source/vie_autotest_loopback.cc',
         'source/vie_autotest_main.cc',

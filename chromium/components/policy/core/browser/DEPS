@@ -1,5 +1,0 @@
-include_rules = [
-  "+grit/component_strings.h",
-  "+ui/base/l10n",
-  "+ui/base/resource",
-]

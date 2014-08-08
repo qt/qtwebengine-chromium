@@ -7,13 +7,13 @@
 
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/platform_file.h"
-#include "content/child/webkitplatformsupport_impl.h"
+#include "content/child/blink_platform_impl.h"
 #include "content/common/content_export.h"
+#include "content/renderer/compositor_bindings/web_compositor_support_impl.h"
 #include "content/renderer/webpublicsuffixlist_impl.h"
 #include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
 #include "third_party/WebKit/public/platform/WebIDBFactory.h"
-#include "webkit/renderer/compositor_bindings/web_compositor_support_impl.h"
+#include "third_party/WebKit/public/platform/WebScreenOrientationType.h"
 
 namespace base {
 class MessageLoopProxy;
@@ -28,24 +28,27 @@ class SyncMessageFilter;
 }
 
 namespace blink {
+class WebBatteryStatus;
 class WebDeviceMotionData;
 class WebDeviceOrientationData;
 class WebGraphicsContext3DProvider;
 }
 
 namespace content {
+class BatteryStatusDispatcher;
 class DeviceMotionEventPump;
 class DeviceOrientationEventPump;
 class QuotaMessageFilter;
 class RendererClipboardClient;
+class RenderView;
+class RendererGamepadProvider;
 class ThreadSafeSender;
 class WebClipboardImpl;
-class WebCryptoImpl;
 class WebDatabaseObserverImpl;
 class WebFileSystemImpl;
 
 class CONTENT_EXPORT RendererWebKitPlatformSupportImpl
-    : public WebKitPlatformSupportImpl {
+    : public BlinkPlatformImpl {
  public:
   RendererWebKitPlatformSupportImpl();
   virtual ~RendererWebKitPlatformSupportImpl();
@@ -66,7 +69,8 @@ class CONTENT_EXPORT RendererWebKitPlatformSupportImpl
   virtual unsigned long long visitedLinkHash(
       const char* canonicalURL, size_t length);
   virtual bool isLinkVisited(unsigned long long linkHash);
-  virtual blink::WebMessagePortChannel* createMessagePortChannel();
+  virtual void createMessageChannel(blink::WebMessagePortChannel** channel1,
+                                    blink::WebMessagePortChannel** channel2);
   virtual blink::WebPrescientNetworking* prescientNetworking();
   virtual void cacheMetadata(
       const blink::WebURL&, double, const char*, size_t);
@@ -91,6 +95,7 @@ class CONTENT_EXPORT RendererWebKitPlatformSupportImpl
                              blink::WebPluginListBuilder* builder);
   virtual blink::WebPublicSuffixList* publicSuffixList();
   virtual void screenColorProfile(blink::WebVector<char>* to_profile);
+  virtual blink::WebScrollbarBehavior* scrollbarBehavior();
   virtual blink::WebIDBFactory* idbFactory();
   virtual blink::WebFileSystem* fileSystem();
   virtual bool canAccelerate2dCanvas();
@@ -100,15 +105,6 @@ class CONTENT_EXPORT RendererWebKitPlatformSupportImpl
   virtual unsigned audioHardwareOutputChannels();
   virtual blink::WebDatabaseObserver* databaseObserver();
 
-  // TODO(crogers): remove deprecated API as soon as WebKit calls new API.
-  virtual blink::WebAudioDevice* createAudioDevice(
-      size_t buffer_size, unsigned channels, double sample_rate,
-      blink::WebAudioDevice::RenderCallback* callback);
-  // TODO(crogers): remove deprecated API as soon as WebKit calls new API.
-  virtual blink::WebAudioDevice* createAudioDevice(
-      size_t buffer_size, unsigned input_channels, unsigned channels,
-      double sample_rate, blink::WebAudioDevice::RenderCallback* callback);
-
   virtual blink::WebAudioDevice* createAudioDevice(
       size_t buffer_size, unsigned input_channels, unsigned channels,
       double sample_rate, blink::WebAudioDevice::RenderCallback* callback,
@@ -116,16 +112,14 @@ class CONTENT_EXPORT RendererWebKitPlatformSupportImpl
 
   virtual bool loadAudioResource(
       blink::WebAudioBus* destination_bus, const char* audio_file_data,
-      size_t data_size, double sample_rate);
+      size_t data_size);
 
-  virtual blink::WebContentDecryptionModule* createContentDecryptionModule(
-      const blink::WebString& key_system);
   virtual blink::WebMIDIAccessor*
       createMIDIAccessor(blink::WebMIDIAccessorClient* client);
 
   virtual blink::WebBlobRegistry* blobRegistry();
   virtual void sampleGamepads(blink::WebGamepads&);
-  virtual blink::WebString userAgent(const blink::WebURL& url);
+  virtual void setGamepadListener(blink::WebGamepadListener*);
   virtual blink::WebRTCPeerConnectionHandler* createRTCPeerConnectionHandler(
       blink::WebRTCPeerConnectionHandlerClient* client);
   virtual blink::WebMediaStreamCenter* createMediaStreamCenter(
@@ -134,22 +128,30 @@ class CONTENT_EXPORT RendererWebKitPlatformSupportImpl
       size_t* private_bytes, size_t* shared_bytes);
   virtual blink::WebGraphicsContext3D* createOffscreenGraphicsContext3D(
       const blink::WebGraphicsContext3D::Attributes& attributes);
+  virtual blink::WebGraphicsContext3D* createOffscreenGraphicsContext3D(
+      const blink::WebGraphicsContext3D::Attributes& attributes,
+      blink::WebGraphicsContext3D* share_context);
   virtual blink::WebGraphicsContext3DProvider*
       createSharedOffscreenGraphicsContext3DProvider();
   virtual blink::WebCompositorSupport* compositorSupport();
   virtual blink::WebString convertIDNToUnicode(
       const blink::WebString& host, const blink::WebString& languages);
   virtual void setDeviceMotionListener(
-      blink::WebDeviceMotionListener* listener) OVERRIDE;
+      blink::WebDeviceMotionListener* listener);
   virtual void setDeviceOrientationListener(
-      blink::WebDeviceOrientationListener* listener) OVERRIDE;
-  virtual blink::WebCrypto* crypto() OVERRIDE;
+      blink::WebDeviceOrientationListener* listener);
   virtual void queryStorageUsageAndQuota(
       const blink::WebURL& storage_partition,
       blink::WebStorageQuotaType,
-      blink::WebStorageQuotaCallbacks*) OVERRIDE;
+      blink::WebStorageQuotaCallbacks);
   virtual void vibrate(unsigned int milliseconds);
   virtual void cancelVibration();
+  virtual void setBatteryStatusListener(
+      blink::WebBatteryStatusListener* listener);
+
+  void set_gamepad_provider(RendererGamepadProvider* provider) {
+    gamepad_provider_ = provider;
+  }
 
   // Disables the WebSandboxSupport implementation for testing.
   // Tests that do not set up a full sandbox environment should call
@@ -160,8 +162,6 @@ class CONTENT_EXPORT RendererWebKitPlatformSupportImpl
   // Returns the previous |enable| value.
   static bool SetSandboxEnabledForTesting(bool enable);
 
-  // Set WebGamepads to return when sampleGamepads() is invoked.
-  static void SetMockGamepadsForTesting(const blink::WebGamepads& pads);
   // Set WebDeviceMotionData to return when setDeviceMotionListener is invoked.
   static void SetMockDeviceMotionDataForTesting(
       const blink::WebDeviceMotionData& data);
@@ -169,6 +169,16 @@ class CONTENT_EXPORT RendererWebKitPlatformSupportImpl
   // is invoked.
   static void SetMockDeviceOrientationDataForTesting(
       const blink::WebDeviceOrientationData& data);
+  // Forces the screen orientation for testing purposes.
+  static void SetMockScreenOrientationForTesting(
+      RenderView* render_view,
+      blink::WebScreenOrientationType);
+  // Resets the mock screen orientation data used for testing.
+  static void ResetMockScreenOrientationForTesting();
+
+  // Notifies blink::WebBatteryStatusListener that battery status has changed.
+  static void MockBatteryStatusChangedForTesting(
+      const blink::WebBatteryStatus& status);
 
   WebDatabaseObserverImpl* web_database_observer_impl() {
     return web_database_observer_impl_.get();
@@ -214,9 +224,15 @@ class CONTENT_EXPORT RendererWebKitPlatformSupportImpl
 
   scoped_ptr<WebDatabaseObserverImpl> web_database_observer_impl_;
 
-  webkit::WebCompositorSupportImpl compositor_support_;
+  WebCompositorSupportImpl compositor_support_;
 
-  scoped_ptr<WebCryptoImpl> web_crypto_;
+  scoped_ptr<blink::WebScrollbarBehavior> web_scrollbar_behavior_;
+
+  scoped_ptr<BatteryStatusDispatcher> battery_status_dispatcher_;
+
+  RendererGamepadProvider* gamepad_provider_;
+
+  DISALLOW_COPY_AND_ASSIGN(RendererWebKitPlatformSupportImpl);
 };
 
 }  // namespace content

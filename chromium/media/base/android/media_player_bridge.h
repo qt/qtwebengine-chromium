@@ -45,8 +45,12 @@ class MEDIA_EXPORT MediaPlayerBridge : public MediaPlayerAndroid {
   MediaPlayerBridge(int player_id,
                     const GURL& url,
                     const GURL& first_party_for_cookies,
+                    const std::string& user_agent,
                     bool hide_url_log,
-                    MediaPlayerManager* manager);
+                    MediaPlayerManager* manager,
+                    const RequestMediaResourcesCB& request_media_resources_cb,
+                    const ReleaseMediaResourcesCB& release_media_resources_cb,
+                    const GURL& frame_url);
   virtual ~MediaPlayerBridge();
 
   // Initialize this object and extract the metadata from the media.
@@ -56,7 +60,7 @@ class MEDIA_EXPORT MediaPlayerBridge : public MediaPlayerAndroid {
   virtual void SetVideoSurface(gfx::ScopedJavaSurface surface) OVERRIDE;
   virtual void Start() OVERRIDE;
   virtual void Pause(bool is_media_related_action ALLOW_UNUSED) OVERRIDE;
-  virtual void SeekTo(const base::TimeDelta& timestamp) OVERRIDE;
+  virtual void SeekTo(base::TimeDelta timestamp) OVERRIDE;
   virtual void Release() OVERRIDE;
   virtual void SetVolume(double volume) OVERRIDE;
   virtual int GetVideoWidth() OVERRIDE;
@@ -70,6 +74,7 @@ class MEDIA_EXPORT MediaPlayerBridge : public MediaPlayerAndroid {
   virtual bool IsPlayerReady() OVERRIDE;
   virtual GURL GetUrl() OVERRIDE;
   virtual GURL GetFirstPartyForCookies() OVERRIDE;
+  virtual bool IsSurfaceInUse() const OVERRIDE;
 
   // MediaPlayerListener callbacks.
   void OnVideoSizeChanged(int width, int height);
@@ -101,6 +106,8 @@ class MEDIA_EXPORT MediaPlayerBridge : public MediaPlayerAndroid {
   virtual base::android::ScopedJavaLocalRef<jobject> GetAllowedOperations();
 
  private:
+  friend class MediaPlayerListener;
+
   // Set the data source for the media player.
   void SetDataSource(const std::string& url);
 
@@ -140,6 +147,9 @@ class MEDIA_EXPORT MediaPlayerBridge : public MediaPlayerAndroid {
   // First party url for cookies.
   GURL first_party_for_cookies_;
 
+  // User agent string to be used for media player.
+  const std::string user_agent_;
+
   // Hide url log from media player.
   bool hide_url_log_;
 
@@ -161,13 +171,19 @@ class MEDIA_EXPORT MediaPlayerBridge : public MediaPlayerAndroid {
 
   base::RepeatingTimer<MediaPlayerBridge> time_update_timer_;
 
-  // Weak pointer passed to |listener_| for callbacks.
-  base::WeakPtrFactory<MediaPlayerBridge> weak_this_;
-
   // Listener object that listens to all the media player events.
-  MediaPlayerListener listener_;
+  scoped_ptr<MediaPlayerListener> listener_;
 
-  friend class MediaPlayerListener;
+  // Whether player is currently using a surface.
+  bool is_surface_in_use_;
+
+  // Volume of playback.
+  double volume_;
+
+  // Weak pointer passed to |listener_| for callbacks.
+  // NOTE: Weak pointers must be invalidated before all other member variables.
+  base::WeakPtrFactory<MediaPlayerBridge> weak_factory_;
+
   DISALLOW_COPY_AND_ASSIGN(MediaPlayerBridge);
 };
 

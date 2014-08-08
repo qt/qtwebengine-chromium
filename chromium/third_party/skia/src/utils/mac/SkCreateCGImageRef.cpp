@@ -9,6 +9,40 @@
 #include "SkBitmap.h"
 #include "SkColorPriv.h"
 
+static CGBitmapInfo ComputeCGAlphaInfo_RGBA(SkAlphaType at) {
+    CGBitmapInfo info = kCGBitmapByteOrder32Big;
+    switch (at) {
+        case kOpaque_SkAlphaType:
+        case kIgnore_SkAlphaType:
+            info |= kCGImageAlphaNoneSkipLast;
+            break;
+        case kPremul_SkAlphaType:
+            info |= kCGImageAlphaPremultipliedLast;
+            break;
+        case kUnpremul_SkAlphaType:
+            info |= kCGImageAlphaLast;
+            break;
+    }
+    return info;
+}
+
+static CGBitmapInfo ComputeCGAlphaInfo_BGRA(SkAlphaType at) {
+    CGBitmapInfo info = kCGBitmapByteOrder32Little;
+    switch (at) {
+        case kOpaque_SkAlphaType:
+        case kIgnore_SkAlphaType:
+            info |= kCGImageAlphaNoneSkipFirst;
+            break;
+        case kPremul_SkAlphaType:
+            info |= kCGImageAlphaPremultipliedFirst;
+            break;
+        case kUnpremul_SkAlphaType:
+            info |= kCGImageAlphaFirst;
+            break;
+    }
+    return info;
+}
+
 static void SkBitmap_ReleaseInfo(void* info, const void* pixelData, size_t size) {
     SkBitmap* bitmap = reinterpret_cast<SkBitmap*>(info);
     delete bitmap;
@@ -22,52 +56,30 @@ static bool getBitmapInfo(const SkBitmap& bm,
         *upscaleTo32 = false;
     }
 
-    switch (bm.config()) {
-        case SkBitmap::kRGB_565_Config:
-            if (upscaleTo32) {
-                *upscaleTo32 = true;
-            }
-            // fall through
-        case SkBitmap::kARGB_8888_Config:
-            *bitsPerComponent = 8;
-#if SK_PMCOLOR_BYTE_ORDER(R,G,B,A)
-            *info = kCGBitmapByteOrder32Big;
-            if (bm.isOpaque()) {
-                *info |= kCGImageAlphaNoneSkipLast;
-            } else {
-                *info |= kCGImageAlphaPremultipliedLast;
-            }
-#elif SK_PMCOLOR_BYTE_ORDER(B,G,R,A)
-            // Matches the CGBitmapInfo that Apple recommends for best
-            // performance, used by google chrome.
-            *info = kCGBitmapByteOrder32Little;
-            if (bm.isOpaque()) {
-                *info |= kCGImageAlphaNoneSkipFirst;
-            } else {
-                *info |= kCGImageAlphaPremultipliedFirst;
-            }
-#else
-            // ...add more formats as required...
-#warning Cannot convert SkBitmap to CGImageRef with these shiftmasks. \
-This will probably not work.
-            // Legacy behavior. Perhaps turn this into an error at some
-            // point.
-            *info = kCGBitmapByteOrder32Big;
-            if (bm.isOpaque()) {
-                *info |= kCGImageAlphaNoneSkipLast;
-            } else {
-                *info |= kCGImageAlphaPremultipliedLast;
-            }
-#endif
-            break;
+    switch (bm.colorType()) {
+        case kRGB_565_SkColorType:
 #if 0
-        case SkBitmap::kRGB_565_Config:
             // doesn't see quite right. Are they thinking 1555?
             *bitsPerComponent = 5;
             *info = kCGBitmapByteOrder16Little | kCGImageAlphaNone;
-            break;
+#else
+            if (upscaleTo32) {
+                *upscaleTo32 = true;
+            }
+            // now treat like RGBA
+            *bitsPerComponent = 8;
+            *info = ComputeCGAlphaInfo_RGBA(kOpaque_SkAlphaType);
 #endif
-        case SkBitmap::kARGB_4444_Config:
+            break;
+        case kRGBA_8888_SkColorType:
+            *bitsPerComponent = 8;
+            *info = ComputeCGAlphaInfo_RGBA(bm.alphaType());
+            break;
+        case kBGRA_8888_SkColorType:
+            *bitsPerComponent = 8;
+            *info = ComputeCGAlphaInfo_BGRA(bm.alphaType());
+            break;
+        case kARGB_4444_SkColorType:
             *bitsPerComponent = 4;
             *info = kCGBitmapByteOrder16Little;
             if (bm.isOpaque()) {
@@ -95,7 +107,7 @@ static SkBitmap* prepareForImageRef(const SkBitmap& bm,
         copy = new SkBitmap;
         // here we make a ceep copy of the pixels, since CG won't take our
         // 565 directly
-        bm.copyTo(copy, SkBitmap::kARGB_8888_Config);
+        bm.copyTo(copy, kN32_SkColorType);
     } else {
         copy = new SkBitmap(bm);
     }
@@ -209,8 +221,9 @@ bool SkPDFDocumentToBitmap(SkStream* stream, SkBitmap* output) {
     int h = (int)CGRectGetHeight(bounds);
 
     SkBitmap bitmap;
-    bitmap.setConfig(SkBitmap::kARGB_8888_Config, w, h);
-    bitmap.allocPixels();
+    if (!bitmap.allocPixels(SkImageInfo::MakeN32Premul(w, h))) {
+        return false;
+    }
     bitmap.eraseColor(SK_ColorWHITE);
 
     size_t bitsPerComponent;
@@ -229,5 +242,74 @@ bool SkPDFDocumentToBitmap(SkStream* stream, SkBitmap* output) {
     }
 
     output->swap(bitmap);
+    return true;
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+SK_API bool SkCopyPixelsFromCGImage(const SkImageInfo& info, size_t rowBytes, void* pixels,
+                                    CGImageRef image) {
+    CGBitmapInfo cg_bitmap_info = 0;
+    size_t bitsPerComponent = 0;
+    switch (info.colorType()) {
+        case kRGBA_8888_SkColorType:
+            bitsPerComponent = 8;
+            cg_bitmap_info = ComputeCGAlphaInfo_RGBA(info.alphaType());
+            break;
+        case kBGRA_8888_SkColorType:
+            bitsPerComponent = 8;
+            cg_bitmap_info = ComputeCGAlphaInfo_BGRA(info.alphaType());
+            break;
+        default:
+            return false;   // no other colortypes are supported (for now)
+    }
+
+    CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
+    CGContextRef cg = CGBitmapContextCreate(pixels, info.width(), info.height(), bitsPerComponent,
+                                            rowBytes, cs, cg_bitmap_info);
+    CFRelease(cs);
+    if (NULL == cg) {
+        return false;
+    }
+
+    // use this blend mode, to avoid having to erase the pixels first, and to avoid CG performing
+    // any blending (which could introduce errors and be slower).
+    CGContextSetBlendMode(cg, kCGBlendModeCopy);
+
+    CGContextDrawImage(cg, CGRectMake(0, 0, info.width(), info.height()), image);
+    CGContextRelease(cg);
+    return true;
+}
+
+bool SkCreateBitmapFromCGImage(SkBitmap* dst, CGImageRef image, SkISize* scaleToFit) {
+    const int width = scaleToFit ? scaleToFit->width() : SkToInt(CGImageGetWidth(image));
+    const int height = scaleToFit ? scaleToFit->height() : SkToInt(CGImageGetHeight(image));
+    SkImageInfo info = SkImageInfo::MakeN32Premul(width, height);
+
+    SkBitmap tmp;
+    if (!tmp.allocPixels(info)) {
+        return false;
+    }
+
+    if (!SkCopyPixelsFromCGImage(tmp.info(), tmp.rowBytes(), tmp.getPixels(), image)) {
+        return false;
+    }
+
+    CGImageAlphaInfo cgInfo = CGImageGetAlphaInfo(image);
+    switch (cgInfo) {
+        case kCGImageAlphaNone:
+        case kCGImageAlphaNoneSkipLast:
+        case kCGImageAlphaNoneSkipFirst:
+            SkASSERT(SkBitmap::ComputeIsOpaque(tmp));
+            tmp.setAlphaType(kOpaque_SkAlphaType);
+            break;
+        default:
+            // we don't know if we're opaque or not, so compute it.
+            if (SkBitmap::ComputeIsOpaque(tmp)) {
+                tmp.setAlphaType(kOpaque_SkAlphaType);
+            }
+    }
+
+    *dst = tmp;
     return true;
 }

@@ -21,7 +21,7 @@
 #ifndef SVGStopElement_h
 #define SVGStopElement_h
 
-#include "SVGNames.h"
+#include "core/SVGNames.h"
 #include "core/svg/SVGAnimatedNumber.h"
 #include "core/svg/SVGElement.h"
 
@@ -29,33 +29,24 @@ namespace WebCore {
 
 class SVGStopElement FINAL : public SVGElement {
 public:
-    static PassRefPtr<SVGStopElement> create(Document&);
+    DECLARE_NODE_FACTORY(SVGStopElement);
 
     Color stopColorIncludingOpacity() const;
+
+    SVGAnimatedNumber* offset() { return m_offset.get(); }
 
 private:
     explicit SVGStopElement(Document&);
 
     bool isSupportedAttribute(const QualifiedName&);
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual void svgAttributeChanged(const QualifiedName&);
+    virtual void svgAttributeChanged(const QualifiedName&) OVERRIDE;
 
-    virtual bool isGradientStop() const OVERRIDE { return true; }
-
-    virtual RenderObject* createRenderer(RenderStyle*);
+    virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
     virtual bool rendererIsNeeded(const RenderStyle&) OVERRIDE;
 
-    BEGIN_DECLARE_ANIMATED_PROPERTIES(SVGStopElement)
-        DECLARE_ANIMATED_NUMBER(Offset, offset)
-    END_DECLARE_ANIMATED_PROPERTIES
+    RefPtr<SVGAnimatedNumber> m_offset;
 };
-
-inline bool isSVGStopElement(const Node& node)
-{
-    return node.isSVGElement() && toSVGElement(node).isGradientStop();
-}
-
-DEFINE_NODE_TYPE_CASTS_WITH_FUNCTION(SVGStopElement);
 
 } // namespace WebCore
 

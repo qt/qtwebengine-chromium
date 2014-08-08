@@ -26,6 +26,7 @@
 #define MemoryCache_h
 
 #include "core/fetch/Resource.h"
+#include "core/fetch/ResourcePtr.h"
 #include "public/platform/WebThread.h"
 #include "wtf/HashMap.h"
 #include "wtf/Noncopyable.h"
@@ -59,17 +60,58 @@ struct SecurityOriginHash;
 // Enable this macro to periodically log information about the memory cache.
 #undef MEMORY_CACHE_STATS
 
-class MemoryCache : public blink::WebThread::TaskObserver {
+// Determines the order in which CachedResources are evicted
+// from the decoded resources cache.
+enum MemoryCacheLiveResourcePriority {
+    MemoryCacheLiveResourcePriorityLow = 0,
+    MemoryCacheLiveResourcePriorityHigh,
+    MemoryCacheLiveResourcePriorityUnknown
+};
+
+enum UpdateReason {
+    UpdateForAccess,
+    UpdateForPropertyChange
+};
+
+class MemoryCache FINAL : public blink::WebThread::TaskObserver {
     WTF_MAKE_NONCOPYABLE(MemoryCache); WTF_MAKE_FAST_ALLOCATED;
 public:
     MemoryCache();
     virtual ~MemoryCache();
 
-    typedef HashMap<String, Resource*> ResourceMap;
+    class MemoryCacheEntry {
+    public:
+        static PassOwnPtr<MemoryCacheEntry> create(Resource* resource) { return adoptPtr(new MemoryCacheEntry(resource)); }
+
+        ResourcePtr<Resource> m_resource;
+        bool m_inLiveDecodedResourcesList;
+        unsigned m_accessCount;
+        MemoryCacheLiveResourcePriority m_liveResourcePriority;
+        double m_lastDecodedAccessTime; // Used as a thrash guard
+
+        MemoryCacheEntry* m_previousInLiveResourcesList;
+        MemoryCacheEntry* m_nextInLiveResourcesList;
+        MemoryCacheEntry* m_previousInAllResourcesList;
+        MemoryCacheEntry* m_nextInAllResourcesList;
+
+    private:
+        MemoryCacheEntry(Resource* resource)
+            : m_resource(resource)
+            , m_inLiveDecodedResourcesList(false)
+            , m_accessCount(0)
+            , m_liveResourcePriority(MemoryCacheLiveResourcePriorityLow)
+            , m_lastDecodedAccessTime(0.0)
+            , m_previousInLiveResourcesList(0)
+            , m_nextInLiveResourcesList(0)
+            , m_previousInAllResourcesList(0)
+            , m_nextInAllResourcesList(0)
+        {
+        }
+    };
 
     struct LRUList {
-        Resource* m_head;
-        Resource* m_tail;
+        MemoryCacheEntry* m_head;
+        MemoryCacheEntry* m_tail;
         LRUList() : m_head(0), m_tail(0) { }
     };
 
@@ -111,7 +153,8 @@ public:
 
     void add(Resource*);
     void replace(Resource* newResource, Resource* oldResource);
-    void remove(Resource* resource) { evict(resource); }
+    void remove(Resource*);
+    bool contains(const Resource*) const;
 
     static KURL removeFragmentIdentifierIfNeeded(const KURL& originalURL);
 
@@ -128,19 +171,13 @@ public:
 
     void prune(Resource* justReleasedResource = 0);
 
-    // Calls to put the cached resource into and out of LRU lists.
-    void insertInLRUList(Resource*);
-    void removeFromLRUList(Resource*);
+    // Called to adjust a resource's size, lru list position, and access count.
+    void update(Resource*, size_t oldSize, size_t newSize, bool wasAccessed = false);
+    void updateForAccess(Resource* resource) { update(resource, resource->size(), resource->size(), true); }
+    void updateDecodedResource(Resource*, UpdateReason, MemoryCacheLiveResourcePriority = MemoryCacheLiveResourcePriorityUnknown);
 
-    // Called to adjust the cache totals when a resource changes size.
-    void adjustSize(bool live, ptrdiff_t delta);
-
-    // Track decoded resources that are in the cache and referenced by a Web page.
-    void insertInLiveDecodedResourcesList(Resource*);
-    void removeFromLiveDecodedResourcesList(Resource*);
-
-    void addToLiveResourcesSize(Resource*);
-    void removeFromLiveResourcesSize(Resource*);
+    void makeLive(Resource*);
+    void makeDead(Resource*);
 
     static void removeURLFromCache(ExecutionContext*, const KURL&);
 
@@ -152,17 +189,28 @@ public:
     size_t liveSize() const { return m_liveSize; }
     size_t deadSize() const { return m_deadSize; }
 
+    // Exposed for testing
+    MemoryCacheLiveResourcePriority priority(Resource*) const;
+
     // TaskObserver implementation
     virtual void willProcessTask() OVERRIDE;
     virtual void didProcessTask() OVERRIDE;
 
 private:
-    LRUList* lruListFor(Resource*);
+    LRUList* lruListFor(unsigned accessCount, size_t);
 
 #ifdef MEMORY_CACHE_STATS
     void dumpStats(Timer<MemoryCache>*);
     void dumpLRULists(bool includeLive) const;
 #endif
+
+    // Calls to put the cached resource into and out of LRU lists.
+    void insertInLRUList(MemoryCacheEntry*, LRUList*);
+    void removeFromLRUList(MemoryCacheEntry*, LRUList*);
+
+    // Track decoded resources that are in the cache and referenced by a Web page.
+    void insertInLiveDecodedResourcesList(MemoryCacheEntry*);
+    void removeFromLiveDecodedResourcesList(MemoryCacheEntry*);
 
     size_t liveCapacity() const;
     size_t deadCapacity() const;
@@ -173,13 +221,12 @@ private:
     void pruneLiveResources();
     void pruneNow(double currentTime);
 
-    void evict(Resource*);
+    bool evict(MemoryCacheEntry*);
 
     static void removeURLFromCacheInternal(ExecutionContext*, const KURL&);
 
     bool m_inPruneResources;
     bool m_prunePending;
-    bool m_prePainting;
     double m_maxPruneDeferralDelay;
     double m_pruneTimeStamp;
     double m_pruneFrameTimeStamp;
@@ -189,7 +236,6 @@ private:
     size_t m_maxDeadCapacity;
     size_t m_maxDeferredPruneDeadCapacity;
     double m_delayBeforeLiveDecodedPrune;
-    double m_deadDecodedDataDeletionInterval;
 
     size_t m_liveSize; // The number of bytes currently consumed by "live" resources in the cache.
     size_t m_deadSize; // The number of bytes currently consumed by "dead" resources in the cache.
@@ -201,11 +247,12 @@ private:
 
     // Lists just for live resources with decoded data. Access to this list is based off of painting the resource.
     // The lists are ordered by decode priority, with higher indices having higher priorities.
-    LRUList m_liveDecodedResources[Resource::CacheLiveResourcePriorityHigh + 1];
+    LRUList m_liveDecodedResources[MemoryCacheLiveResourcePriorityHigh + 1];
 
     // A URL-based map of all resources that are in the cache (including the freshest version of objects that are currently being
     // referenced by a Web page).
-    HashMap<String, Resource*> m_resources;
+    typedef HashMap<String, OwnPtr<MemoryCacheEntry> > ResourceMap;
+    ResourceMap m_resources;
 
     friend class MemoryCacheTest;
 #ifdef MEMORY_CACHE_STATS

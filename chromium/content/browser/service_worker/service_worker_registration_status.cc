@@ -7,35 +7,45 @@
 #include "base/logging.h"
 #include "base/strings/utf_string_conversions.h"
 
-namespace {
-const char kInstallFailedErrorMessage[] = "ServiceWorker failed to install";
-const char kActivateFailedErrorMessage[] = "ServiceWorker failed to activate";
-}
-
 namespace content {
 
 using blink::WebServiceWorkerError;
 
 void GetServiceWorkerRegistrationStatusResponse(
-    ServiceWorkerRegistrationStatus status,
+    ServiceWorkerStatusCode status,
     blink::WebServiceWorkerError::ErrorType* error_type,
     base::string16* message) {
+  *error_type = WebServiceWorkerError::ErrorTypeUnknown;
+  *message = base::ASCIIToUTF16(ServiceWorkerStatusToString(status));
   switch (status) {
-    case REGISTRATION_OK:
-      NOTREACHED() << "Consumers should check registration status before "
-                      "calling this function.";
+    case SERVICE_WORKER_OK:
+      NOTREACHED() << "Calling this when status == OK is not allowed";
       return;
 
-    case REGISTRATION_INSTALL_FAILED:
-      *error_type = WebServiceWorkerError::InstallError;
-      *message = ASCIIToUTF16(kInstallFailedErrorMessage);
+    case SERVICE_WORKER_ERROR_START_WORKER_FAILED:
+    case SERVICE_WORKER_ERROR_INSTALL_WORKER_FAILED:
+      *error_type = WebServiceWorkerError::ErrorTypeInstall;
       return;
 
-    case REGISTRATION_ACTIVATE_FAILED:
-      *error_type = WebServiceWorkerError::ActivateError;
-      *message = ASCIIToUTF16(kActivateFailedErrorMessage);
+    case SERVICE_WORKER_ERROR_ACTIVATE_WORKER_FAILED:
+      *error_type = WebServiceWorkerError::ErrorTypeActivate;
       return;
+
+    case SERVICE_WORKER_ERROR_NOT_FOUND:
+      *error_type = WebServiceWorkerError::ErrorTypeNotFound;
+      return;
+
+    case SERVICE_WORKER_ERROR_ABORT:
+    case SERVICE_WORKER_ERROR_IPC_FAILED:
+    case SERVICE_WORKER_ERROR_FAILED:
+    case SERVICE_WORKER_ERROR_PROCESS_NOT_FOUND:
+    case SERVICE_WORKER_ERROR_EXISTS:
+      // Unexpected, or should have bailed out before calling this, or we don't
+      // have a corresponding blink error code yet.
+      break;  // Fall through to NOTREACHED().
   }
-  NOTREACHED();
+  NOTREACHED() << "Got unexpected error code: "
+               << status << " " << ServiceWorkerStatusToString(status);
 }
+
 }  // namespace content

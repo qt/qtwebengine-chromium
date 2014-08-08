@@ -32,6 +32,7 @@
 
 #include "modules/webaudio/AudioBuffer.h"
 
+#include "bindings/v8/ExceptionMessages.h"
 #include "bindings/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 #include "platform/audio/AudioBus.h"
@@ -42,36 +43,101 @@ namespace WebCore {
 
 float AudioBuffer::minAllowedSampleRate()
 {
-    return 22050;
+    // crbug.com/344375
+    return 3000;
 }
 
 float AudioBuffer::maxAllowedSampleRate()
 {
-    return 96000;
+    // Windows can support up to this rate.
+    return 192000;
 }
 
-PassRefPtr<AudioBuffer> AudioBuffer::create(unsigned numberOfChannels, size_t numberOfFrames, float sampleRate)
+PassRefPtrWillBeRawPtr<AudioBuffer> AudioBuffer::create(unsigned numberOfChannels, size_t numberOfFrames, float sampleRate)
 {
-    if (sampleRate < minAllowedSampleRate() || sampleRate > maxAllowedSampleRate() || numberOfChannels > AudioContext::maxNumberOfChannels() || !numberOfFrames)
-        return 0;
+    if (sampleRate < minAllowedSampleRate() || sampleRate > maxAllowedSampleRate() || numberOfChannels > AudioContext::maxNumberOfChannels() || !numberOfChannels || !numberOfFrames)
+        return nullptr;
 
-    RefPtr<AudioBuffer> buffer = adoptRef(new AudioBuffer(numberOfChannels, numberOfFrames, sampleRate));
+    RefPtrWillBeRawPtr<AudioBuffer> buffer = adoptRefWillBeNoop(new AudioBuffer(numberOfChannels, numberOfFrames, sampleRate));
 
     if (!buffer->createdSuccessfully(numberOfChannels))
-        return 0;
+        return nullptr;
     return buffer;
 }
 
-PassRefPtr<AudioBuffer> AudioBuffer::createFromAudioFileData(const void* data, size_t dataSize, bool mixToMono, float sampleRate)
+PassRefPtrWillBeRawPtr<AudioBuffer> AudioBuffer::create(unsigned numberOfChannels, size_t numberOfFrames, float sampleRate, ExceptionState& exceptionState)
+{
+    if (!numberOfChannels || numberOfChannels > AudioContext::maxNumberOfChannels()) {
+        exceptionState.throwDOMException(
+            NotSupportedError,
+            ExceptionMessages::indexOutsideRange(
+                "number of channels",
+                numberOfChannels,
+                1u,
+                ExceptionMessages::InclusiveBound,
+                AudioContext::maxNumberOfChannels(),
+                ExceptionMessages::InclusiveBound));
+        return nullptr;
+    }
+
+    if (sampleRate < AudioBuffer::minAllowedSampleRate() || sampleRate > AudioBuffer::maxAllowedSampleRate()) {
+        exceptionState.throwDOMException(
+            NotSupportedError,
+            ExceptionMessages::indexOutsideRange(
+                "sample rate",
+                sampleRate,
+                AudioBuffer::minAllowedSampleRate(),
+                ExceptionMessages::InclusiveBound,
+                AudioBuffer::maxAllowedSampleRate(),
+                ExceptionMessages::InclusiveBound));
+        return nullptr;
+    }
+
+    if (!numberOfFrames) {
+        exceptionState.throwDOMException(
+            NotSupportedError,
+            ExceptionMessages::indexExceedsMinimumBound(
+                "number of frames",
+                numberOfFrames,
+                static_cast<size_t>(0)));
+        return nullptr;
+    }
+
+    RefPtrWillBeRawPtr<AudioBuffer> audioBuffer = create(numberOfChannels, numberOfFrames, sampleRate);
+
+    if (!audioBuffer.get()) {
+        exceptionState.throwDOMException(
+            NotSupportedError,
+            "createBuffer("
+            + String::number(numberOfChannels) + ", "
+            + String::number(numberOfFrames) + ", "
+            + String::number(sampleRate)
+            + ") failed.");
+    }
+
+    return audioBuffer;
+}
+
+PassRefPtrWillBeRawPtr<AudioBuffer> AudioBuffer::createFromAudioFileData(const void* data, size_t dataSize, bool mixToMono, float sampleRate)
 {
     RefPtr<AudioBus> bus = createBusFromInMemoryAudioFile(data, dataSize, mixToMono, sampleRate);
     if (bus.get()) {
-        RefPtr<AudioBuffer> buffer = adoptRef(new AudioBuffer(bus.get()));
+        RefPtrWillBeRawPtr<AudioBuffer> buffer = adoptRefWillBeNoop(new AudioBuffer(bus.get()));
         if (buffer->createdSuccessfully(bus->numberOfChannels()))
             return buffer;
     }
 
-    return 0;
+    return nullptr;
+}
+
+PassRefPtrWillBeRawPtr<AudioBuffer> AudioBuffer::createFromAudioBus(AudioBus* bus)
+{
+    if (!bus)
+        return nullptr;
+    RefPtrWillBeRawPtr<AudioBuffer> buffer = adoptRefWillBeNoop(new AudioBuffer(bus));
+    if (buffer->createdSuccessfully(bus->numberOfChannels()))
+        return buffer;
+    return nullptr;
 }
 
 bool AudioBuffer::createdSuccessfully(unsigned desiredNumberOfChannels) const
@@ -80,8 +146,7 @@ bool AudioBuffer::createdSuccessfully(unsigned desiredNumberOfChannels) const
 }
 
 AudioBuffer::AudioBuffer(unsigned numberOfChannels, size_t numberOfFrames, float sampleRate)
-    : m_gain(1.0)
-    , m_sampleRate(sampleRate)
+    : m_sampleRate(sampleRate)
     , m_length(numberOfFrames)
 {
     ScriptWrappable::init(this);
@@ -101,8 +166,7 @@ AudioBuffer::AudioBuffer(unsigned numberOfChannels, size_t numberOfFrames, float
 }
 
 AudioBuffer::AudioBuffer(AudioBus* bus)
-    : m_gain(1.0)
-    , m_sampleRate(bus->sampleRate())
+    : m_sampleRate(bus->sampleRate())
     , m_length(bus->length())
 {
     ScriptWrappable::init(this);
@@ -122,16 +186,11 @@ AudioBuffer::AudioBuffer(AudioBus* bus)
     }
 }
 
-void AudioBuffer::releaseMemory()
-{
-    m_channels.clear();
-}
-
 PassRefPtr<Float32Array> AudioBuffer::getChannelData(unsigned channelIndex, ExceptionState& exceptionState)
 {
     if (channelIndex >= m_channels.size()) {
         exceptionState.throwDOMException(IndexSizeError, "channel index (" + String::number(channelIndex) + ") exceeds number of channels (" + String::number(m_channels.size()) + ")");
-        return 0;
+        return nullptr;
     }
 
     Float32Array* channelData = m_channels[channelIndex].get();

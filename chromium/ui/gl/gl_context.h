@@ -6,10 +6,12 @@
 #define UI_GL_GL_CONTEXT_H_
 
 #include <string>
+#include <vector>
 
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/synchronization/cancellation_flag.h"
 #include "ui/gl/gl_share_group.h"
 #include "ui/gl/gl_state_restorer.h"
 #include "ui/gl/gpu_preference.h"
@@ -18,6 +20,7 @@ namespace gfx {
 
 class GLSurface;
 class VirtualGLApi;
+struct GLVersionInfo;
 
 // Encapsulates an OpenGL context, hiding platform specific management.
 class GL_EXPORT GLContext : public base::RefCounted<GLContext> {
@@ -30,6 +33,25 @@ class GL_EXPORT GLContext : public base::RefCounted<GLContext> {
   // should be specific for all platforms though.
   virtual bool Initialize(
       GLSurface* compatible_surface, GpuPreference gpu_preference) = 0;
+
+  class FlushEvent : public base::RefCountedThreadSafe<FlushEvent> {
+    public:
+      bool IsSignaled();
+
+    private:
+      friend class base::RefCountedThreadSafe<FlushEvent>;
+      friend class GLContext;
+      FlushEvent();
+      virtual ~FlushEvent();
+      void Signal();
+
+      base::CancellationFlag flag_;
+  };
+
+  // Needs to be called with this context current. It will return a FlushEvent
+  // that is initially unsignaled, but will transition to signaled after the
+  // next glFlush() or glFinish() occurs in this context.
+  scoped_refptr<FlushEvent> SignalFlush();
 
   // Destroys the GL context.
   virtual void Destroy() = 0;
@@ -76,6 +98,10 @@ class GL_EXPORT GLContext : public base::RefCounted<GLContext> {
   // context must be current.
   bool HasExtension(const char* name);
 
+  // Returns version info of the underlying GL context. The context must be
+  // current.
+  const GLVersionInfo* GetVersionInfo();
+
   GLShareGroup* share_group();
 
   // Create a GL context that is compatible with the given surface.
@@ -103,17 +129,38 @@ class GL_EXPORT GLContext : public base::RefCounted<GLContext> {
   // being released or destroyed.
   void OnReleaseVirtuallyCurrent(GLContext* virtual_context);
 
+  // Returns the GL version string. The context must be current.
+  virtual std::string GetGLVersion();
+
+  // Returns the GL renderer string. The context must be current.
+  virtual std::string GetGLRenderer();
+
+  // Called when glFlush()/glFinish() is called with this context current.
+  void OnFlush();
+
  protected:
   virtual ~GLContext();
+
+  // Will release the current context when going out of scope, unless canceled.
+  class ScopedReleaseCurrent {
+   public:
+    ScopedReleaseCurrent();
+    ~ScopedReleaseCurrent();
+
+    void Cancel();
+
+   private:
+    bool canceled_;
+  };
 
   // Sets the GL api to the real hardware API (vs the VirtualAPI)
   static void SetRealGLApi();
   virtual void SetCurrent(GLSurface* surface);
 
-  // Initialize function pointers to extension functions in the GL
-  // implementation. Should be called immediately after this context is made
-  // current.
-  bool InitializeExtensionBindings();
+  // Initialize function pointers to functions where the bound version depends
+  // on GL version or supported extensions. Should be called immediately after
+  // this context is made current.
+  bool InitializeDynamicBindings();
 
   // Returns the last real (non-virtual) GLContext made current.
   static GLContext* GetRealCurrent();
@@ -127,6 +174,9 @@ class GL_EXPORT GLContext : public base::RefCounted<GLContext> {
   scoped_refptr<GLShareGroup> share_group_;
   scoped_ptr<VirtualGLApi> virtual_gl_api_;
   scoped_ptr<GLStateRestorer> state_restorer_;
+  scoped_ptr<GLVersionInfo> version_info_;
+
+  std::vector<scoped_refptr<FlushEvent> > flush_events_;
 
   DISALLOW_COPY_AND_ASSIGN(GLContext);
 };

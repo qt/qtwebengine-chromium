@@ -44,11 +44,11 @@ namespace WebCore {
 static const int kMaxRecursionDepth = 3;
 static const double progressNotificationIntervalMS = 50;
 
-PassRefPtr<FileWriter> FileWriter::create(ExecutionContext* context)
+FileWriter* FileWriter::create(ExecutionContext* context)
 {
-    RefPtr<FileWriter> fileWriter(adoptRef(new FileWriter(context)));
+    FileWriter* fileWriter = adoptRefCountedGarbageCollected(new FileWriter(context));
     fileWriter->suspendIfNeeded();
-    return fileWriter.release();
+    return fileWriter;
 }
 
 FileWriter::FileWriter(ExecutionContext* context)
@@ -232,7 +232,6 @@ void FileWriter::didFail(blink::WebFileError code)
         completeAbort();
         return;
     }
-    ASSERT(static_cast<FileError::ErrorCode>(code) != FileError::ABORT_ERR);
     ASSERT(m_queuedOperation == OperationNone);
     ASSERT(m_readyState == WRITING);
     m_blobBeingWritten.clear();
@@ -317,6 +316,14 @@ void FileWriter::setError(FileError::ErrorCode errorCode, ExceptionState& except
     ASSERT(errorCode);
     FileError::throwDOMException(exceptionState, errorCode);
     m_error = FileError::create(errorCode);
+}
+
+void FileWriter::trace(Visitor* visitor)
+{
+    visitor->trace(m_error);
+    visitor->trace(m_blobBeingWritten);
+    FileWriterBase::trace(visitor);
+    EventTargetWithInlineData::trace(visitor);
 }
 
 } // namespace WebCore

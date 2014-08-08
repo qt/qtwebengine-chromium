@@ -7,9 +7,13 @@
 #include "base/logging.h"
 #include "base/path_service.h"
 #include "base/strings/utf_string_conversions.h"
+#include "skia/ext/image_operations.h"
 #include "ui/base/layout.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/resource/resource_data_dll_win.h"
+#include "ui/gfx/geometry/size_conversions.h"
+#include "ui/gfx/image/image_skia.h"
+#include "ui/gfx/image/image_skia_source.h"
 #include "ui/gfx/win/dpi.h"
 
 namespace ui {
@@ -30,7 +34,7 @@ base::FilePath GetResourcesPakFilePath(const std::string& pak_name) {
     return path.AppendASCII(pak_name.c_str());
 
   // Return just the name of the pack file.
-  return base::FilePath(ASCIIToUTF16(pak_name));
+  return base::FilePath(base::ASCIIToUTF16(pak_name));
 }
 
 }  // namespace
@@ -38,35 +42,17 @@ base::FilePath GetResourcesPakFilePath(const std::string& pak_name) {
 void ResourceBundle::LoadCommonResources() {
   // As a convenience, add the current resource module as a data packs.
   data_packs_.push_back(new ResourceDataDLL(GetCurrentResourceDLL()));
-  // Have high-DPI resources for 140% and 180% scaling on Windows based on
-  // default scaling for Metro mode. If high-DPI mode is enabled, load resource
-  // pak closest to the desired scale factor.  The high-DPI resources are
-  // scaled up from 100% touch.
-  float scale = gfx::win::GetDeviceScaleFactor();
-  bool force_touch_resources = false;
-  switch(ui::GetSupportedScaleFactor(scale)) {
-    case ui::SCALE_FACTOR_180P:
-      AddDataPackFromPath(GetResourcesPakFilePath(
-          "chrome_touch_180_percent.pak"),
-          SCALE_FACTOR_180P);
-      force_touch_resources = true;
-      break;
-    case ui::SCALE_FACTOR_140P:
-      AddDataPackFromPath(GetResourcesPakFilePath(
-          "chrome_touch_140_percent.pak"),
-          SCALE_FACTOR_140P);
-      force_touch_resources = true;
-  }
-  // TODO(kevers|girard): Remove loading of 1x resources when in high-DPI
-  // mode once all resources are available at 140% and 180%.
-  if (ui::GetDisplayLayout() == ui::LAYOUT_TOUCH || force_touch_resources) {
-    AddDataPackFromPath(
-        GetResourcesPakFilePath("chrome_touch_100_percent.pak"),
-        SCALE_FACTOR_100P);
-  } else {
+
+  if (IsScaleFactorSupported(SCALE_FACTOR_100P)) {
     AddDataPackFromPath(
         GetResourcesPakFilePath("chrome_100_percent.pak"),
         SCALE_FACTOR_100P);
+  }
+  if (IsScaleFactorSupported(SCALE_FACTOR_200P)) {
+    DCHECK(gfx::IsHighDPIEnabled());
+    AddDataPackFromPath(
+        GetResourcesPakFilePath("chrome_200_percent.pak"),
+        SCALE_FACTOR_200P);
   }
 }
 

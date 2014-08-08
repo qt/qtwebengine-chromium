@@ -25,7 +25,6 @@
 
 #include "core/dom/Document.h"
 #include "core/svg/SVGPointList.h"
-#include "core/svg/SVGTransformList.h"
 #include "platform/geometry/FloatRect.h"
 #include "platform/transforms/AffineTransform.h"
 #include "wtf/ASCIICType.h"
@@ -44,7 +43,7 @@ static inline bool isValidRange(const FloatType& x)
 // at a higher precision internally, without any unnecessary runtime cost or code
 // complexity.
 template <typename CharType, typename FloatType>
-static bool genericParseNumber(const CharType*& ptr, const CharType* end, FloatType& number, bool skip)
+static bool genericParseNumber(const CharType*& ptr, const CharType* end, FloatType& number, WhitespaceMode mode)
 {
     FloatType integer, decimal, frac, exponent;
     int sign, expsign;
@@ -56,6 +55,9 @@ static bool genericParseNumber(const CharType*& ptr, const CharType* end, FloatT
     decimal = 0;
     sign = 1;
     expsign = 1;
+
+    if (mode & AllowLeadingWhitespace)
+        skipOptionalSVGSpaces(ptr, end);
 
     // read the sign
     if (ptr < end && *ptr == '+')
@@ -137,7 +139,7 @@ static bool genericParseNumber(const CharType*& ptr, const CharType* end, FloatT
     if (start == ptr)
         return false;
 
-    if (skip)
+    if (mode & AllowTrailingWhitespace)
         skipOptionalSVGSpacesOrDelimiter(ptr, end);
 
     return true;
@@ -148,35 +150,21 @@ bool parseSVGNumber(CharType* begin, size_t length, double& number)
 {
     const CharType* ptr = begin;
     const CharType* end = ptr + length;
-    return genericParseNumber(ptr, end, number, false);
+    return genericParseNumber(ptr, end, number, AllowLeadingAndTrailingWhitespace);
 }
 
 // Explicitly instantiate the two flavors of parseSVGNumber() to satisfy external callers
 template bool parseSVGNumber(LChar* begin, size_t length, double&);
 template bool parseSVGNumber(UChar* begin, size_t length, double&);
 
-bool parseNumber(const LChar*& ptr, const LChar* end, float& number, bool skip)
+bool parseNumber(const LChar*& ptr, const LChar* end, float& number, WhitespaceMode mode)
 {
-    return genericParseNumber(ptr, end, number, skip);
+    return genericParseNumber(ptr, end, number, mode);
 }
 
-bool parseNumber(const UChar*& ptr, const UChar* end, float& number, bool skip)
+bool parseNumber(const UChar*& ptr, const UChar* end, float& number, WhitespaceMode mode)
 {
-    return genericParseNumber(ptr, end, number, skip);
-}
-
-bool parseNumberFromString(const String& string, float& number, bool skip)
-{
-    if (string.isEmpty())
-        return false;
-    if (string.is8Bit()) {
-        const LChar* ptr = string.characters8();
-        const LChar* end = ptr + string.length();
-        return genericParseNumber(ptr, end, number, skip) && ptr == end;
-    }
-    const UChar* ptr = string.characters16();
-    const UChar* end = ptr + string.length();
-    return genericParseNumber(ptr, end, number, skip) && ptr == end;
+    return genericParseNumber(ptr, end, number, mode);
 }
 
 // only used to parse largeArcFlag and sweepFlag which must be a "0" or "1"
@@ -217,7 +205,7 @@ static bool genericParseNumberOptionalNumber(const CharType*& ptr, const CharTyp
 
     if (ptr == end)
         y = x;
-    else if (!parseNumber(ptr, end, y, false))
+    else if (!parseNumber(ptr, end, y, AllowLeadingAndTrailingWhitespace))
         return false;
 
     return ptr == end;
@@ -227,6 +215,7 @@ bool parseNumberOptionalNumber(const String& string, float& x, float& y)
 {
     if (string.isEmpty())
         return false;
+
     if (string.is8Bit()) {
         const LChar* ptr = string.characters8();
         const LChar* end = ptr + string.length();
@@ -238,75 +227,40 @@ bool parseNumberOptionalNumber(const String& string, float& x, float& y)
 }
 
 template<typename CharType>
-static bool genericParseRect(const CharType*& ptr, const CharType* end, FloatRect& rect)
+bool genericParseNumberOrPercentage(const CharType*& ptr, const CharType* end, float& number)
 {
-    skipOptionalSVGSpaces(ptr, end);
+    if (genericParseNumber(ptr, end, number, AllowLeadingWhitespace)) {
+        if (ptr == end)
+            return true;
 
-    float x = 0;
-    float y = 0;
-    float width = 0;
-    float height = 0;
-    bool valid = parseNumber(ptr, end, x) && parseNumber(ptr, end, y) && parseNumber(ptr, end, width) && parseNumber(ptr, end, height, false);
-    rect = FloatRect(x, y, width, height);
-    return valid;
+        bool isPercentage = (*ptr == '%');
+        if (isPercentage)
+            ptr++;
+
+        skipOptionalSVGSpaces(ptr, end);
+
+        if (isPercentage)
+            number /= 100.f;
+
+        return ptr == end;
+    }
+
+    return false;
 }
 
-bool parseRect(const String& string, FloatRect& rect)
+bool parseNumberOrPercentage(const String& string, float& number)
 {
     if (string.isEmpty())
         return false;
+
     if (string.is8Bit()) {
         const LChar* ptr = string.characters8();
         const LChar* end = ptr + string.length();
-        return genericParseRect(ptr, end, rect);
+        return genericParseNumberOrPercentage(ptr, end, number);
     }
     const UChar* ptr = string.characters16();
     const UChar* end = ptr + string.length();
-    return genericParseRect(ptr, end, rect);
-}
-
-template<typename CharType>
-static bool genericParsePointsList(SVGPointList& pointsList, const CharType*& ptr, const CharType* end)
-{
-    skipOptionalSVGSpaces(ptr, end);
-
-    bool delimParsed = false;
-    while (ptr < end) {
-        delimParsed = false;
-        float xPos = 0.0f;
-        if (!parseNumber(ptr, end, xPos))
-           return false;
-
-        float yPos = 0.0f;
-        if (!parseNumber(ptr, end, yPos, false))
-            return false;
-
-        skipOptionalSVGSpaces(ptr, end);
-
-        if (ptr < end && *ptr == ',') {
-            delimParsed = true;
-            ptr++;
-        }
-        skipOptionalSVGSpaces(ptr, end);
-
-        pointsList.append(FloatPoint(xPos, yPos));
-    }
-    return ptr == end && !delimParsed;
-}
-
-// FIXME: Why is the out parameter first?
-bool pointsListFromSVGData(SVGPointList& pointsList, const String& points)
-{
-    if (points.isEmpty())
-        return true;
-    if (points.is8Bit()) {
-        const LChar* ptr = points.characters8();
-        const LChar* end = ptr + points.length();
-        return genericParsePointsList(pointsList, ptr, end);
-    }
-    const UChar* ptr = points.characters16();
-    const UChar* end = ptr + points.length();
-    return genericParsePointsList(pointsList, ptr, end);
+    return genericParseNumberOrPercentage(ptr, end, number);
 }
 
 template<typename CharType>
@@ -325,7 +279,7 @@ static bool parseGlyphName(const CharType*& ptr, const CharType* end, HashSet<St
 
         // walk backwards from the ; to ignore any whitespace
         const CharType* inputEnd = ptr - 1;
-        while (inputStart < inputEnd && isSVGSpace(*inputEnd))
+        while (inputStart < inputEnd && isHTMLSpace<CharType>(*inputEnd))
             --inputEnd;
 
         values.add(String(inputStart, inputEnd - inputStart + 1));
@@ -477,7 +431,7 @@ static Vector<String> genericParseDelimitedString(const CharType*& ptr, const Ch
 
         // walk backwards from the ; to ignore any whitespace
         const CharType* inputEnd = ptr - 1;
-        while (inputStart < inputEnd && isSVGSpace(*inputEnd))
+        while (inputStart < inputEnd && isHTMLSpace<CharType>(*inputEnd))
             inputEnd--;
 
         values.append(String(inputStart, inputEnd - inputStart + 1));
@@ -561,117 +515,6 @@ bool parseFloatPoint3(const CharType*& current, const CharType* end, FloatPoint&
 template bool parseFloatPoint3(const LChar*& current, const LChar* end, FloatPoint& point1, FloatPoint& point2, FloatPoint& point3);
 template bool parseFloatPoint3(const UChar*& current, const UChar* end, FloatPoint& point1, FloatPoint& point2, FloatPoint& point3);
 
-template<typename CharType>
-static int parseTransformParamList(const CharType*& ptr, const CharType* end, float* values, int required, int optional)
-{
-    int optionalParams = 0, requiredParams = 0;
-
-    if (!skipOptionalSVGSpaces(ptr, end) || *ptr != '(')
-        return -1;
-
-    ptr++;
-
-    skipOptionalSVGSpaces(ptr, end);
-
-    while (requiredParams < required) {
-        if (ptr >= end || !parseNumber(ptr, end, values[requiredParams], false))
-            return -1;
-        requiredParams++;
-        if (requiredParams < required)
-            skipOptionalSVGSpacesOrDelimiter(ptr, end);
-    }
-    if (!skipOptionalSVGSpaces(ptr, end))
-        return -1;
-
-    bool delimParsed = skipOptionalSVGSpacesOrDelimiter(ptr, end);
-
-    if (ptr >= end)
-        return -1;
-
-    if (*ptr == ')') { // skip optionals
-        ptr++;
-        if (delimParsed)
-            return -1;
-    } else {
-        while (optionalParams < optional) {
-            if (ptr >= end || !parseNumber(ptr, end, values[requiredParams + optionalParams], false))
-                return -1;
-            optionalParams++;
-            if (optionalParams < optional)
-                skipOptionalSVGSpacesOrDelimiter(ptr, end);
-        }
-
-        if (!skipOptionalSVGSpaces(ptr, end))
-            return -1;
-
-        delimParsed = skipOptionalSVGSpacesOrDelimiter(ptr, end);
-
-        if (ptr >= end || *ptr != ')' || delimParsed)
-            return -1;
-        ptr++;
-    }
-
-    return requiredParams + optionalParams;
-}
-
-// These should be kept in sync with enum SVGTransformType
-static const int requiredValuesForType[] =  {0, 6, 1, 1, 1, 1, 1};
-static const int optionalValuesForType[] =  {0, 0, 1, 1, 2, 0, 0};
-
-template<typename CharType>
-static bool parseTransformValueInternal(unsigned type, const CharType*& ptr, const CharType* end, SVGTransform& transform)
-{
-    if (type == SVGTransform::SVG_TRANSFORM_UNKNOWN)
-        return false;
-
-    int valueCount = 0;
-    float values[] = {0, 0, 0, 0, 0, 0};
-    if ((valueCount = parseTransformParamList(ptr, end, values, requiredValuesForType[type], optionalValuesForType[type])) < 0)
-        return false;
-
-    switch (type) {
-    case SVGTransform::SVG_TRANSFORM_SKEWX:
-        transform.setSkewX(values[0]);
-        break;
-    case SVGTransform::SVG_TRANSFORM_SKEWY:
-        transform.setSkewY(values[0]);
-        break;
-    case SVGTransform::SVG_TRANSFORM_SCALE:
-        if (valueCount == 1) // Spec: if only one param given, assume uniform scaling
-            transform.setScale(values[0], values[0]);
-        else
-            transform.setScale(values[0], values[1]);
-        break;
-    case SVGTransform::SVG_TRANSFORM_TRANSLATE:
-        if (valueCount == 1) // Spec: if only one param given, assume 2nd param to be 0
-            transform.setTranslate(values[0], 0);
-        else
-            transform.setTranslate(values[0], values[1]);
-        break;
-    case SVGTransform::SVG_TRANSFORM_ROTATE:
-        if (valueCount == 1)
-            transform.setRotate(values[0], 0, 0);
-        else
-            transform.setRotate(values[0], values[1], values[2]);
-        break;
-    case SVGTransform::SVG_TRANSFORM_MATRIX:
-        transform.setMatrix(AffineTransform(values[0], values[1], values[2], values[3], values[4], values[5]));
-        break;
-    }
-
-    return true;
-}
-
-bool parseTransformValue(unsigned type, const LChar*& ptr, const LChar* end, SVGTransform& transform)
-{
-    return parseTransformValueInternal(type, ptr, end, transform);
-}
-
-bool parseTransformValue(unsigned type, const UChar*& ptr, const UChar* end, SVGTransform& transform)
-{
-    return parseTransformValueInternal(type, ptr, end, transform);
-}
-
 static const LChar skewXDesc[] =  {'s', 'k', 'e', 'w', 'X'};
 static const LChar skewYDesc[] =  {'s', 'k', 'e', 'w', 'Y'};
 static const LChar scaleDesc[] =  {'s', 'c', 'a', 'l', 'e'};
@@ -680,88 +523,50 @@ static const LChar rotateDesc[] =  {'r', 'o', 't', 'a', 't', 'e'};
 static const LChar matrixDesc[] =  {'m', 'a', 't', 'r', 'i', 'x'};
 
 template<typename CharType>
-static inline bool parseAndSkipType(const CharType*& ptr, const CharType* end, unsigned short& type)
+bool parseAndSkipTransformType(const CharType*& ptr, const CharType* end, SVGTransformType& type)
 {
     if (ptr >= end)
         return false;
 
     if (*ptr == 's') {
         if (skipString(ptr, end, skewXDesc, WTF_ARRAY_LENGTH(skewXDesc)))
-            type = SVGTransform::SVG_TRANSFORM_SKEWX;
+            type = SVG_TRANSFORM_SKEWX;
         else if (skipString(ptr, end, skewYDesc, WTF_ARRAY_LENGTH(skewYDesc)))
-            type = SVGTransform::SVG_TRANSFORM_SKEWY;
+            type = SVG_TRANSFORM_SKEWY;
         else if (skipString(ptr, end, scaleDesc, WTF_ARRAY_LENGTH(scaleDesc)))
-            type = SVGTransform::SVG_TRANSFORM_SCALE;
+            type = SVG_TRANSFORM_SCALE;
         else
             return false;
     } else if (skipString(ptr, end, translateDesc, WTF_ARRAY_LENGTH(translateDesc)))
-        type = SVGTransform::SVG_TRANSFORM_TRANSLATE;
+        type = SVG_TRANSFORM_TRANSLATE;
     else if (skipString(ptr, end, rotateDesc, WTF_ARRAY_LENGTH(rotateDesc)))
-        type = SVGTransform::SVG_TRANSFORM_ROTATE;
+        type = SVG_TRANSFORM_ROTATE;
     else if (skipString(ptr, end, matrixDesc, WTF_ARRAY_LENGTH(matrixDesc)))
-        type = SVGTransform::SVG_TRANSFORM_MATRIX;
+        type = SVG_TRANSFORM_MATRIX;
     else
         return false;
 
     return true;
 }
 
-SVGTransform::SVGTransformType parseTransformType(const String& string)
+template bool parseAndSkipTransformType(const UChar*& current, const UChar* end, SVGTransformType&);
+template bool parseAndSkipTransformType(const LChar*& current, const LChar* end, SVGTransformType&);
+
+SVGTransformType parseTransformType(const String& string)
 {
     if (string.isEmpty())
-        return SVGTransform::SVG_TRANSFORM_UNKNOWN;
-    unsigned short type = SVGTransform::SVG_TRANSFORM_UNKNOWN;
+        return SVG_TRANSFORM_UNKNOWN;
+    SVGTransformType type = SVG_TRANSFORM_UNKNOWN;
     if (string.is8Bit()) {
         const LChar* ptr = string.characters8();
         const LChar* end = ptr + string.length();
-        parseAndSkipType(ptr, end, type);
+        parseAndSkipTransformType(ptr, end, type);
     } else {
         const UChar* ptr = string.characters16();
         const UChar* end = ptr + string.length();
-        parseAndSkipType(ptr, end, type);
+        parseAndSkipTransformType(ptr, end, type);
     }
-    return static_cast<SVGTransform::SVGTransformType>(type);
-}
-
-template<typename CharType>
-bool parseTransformAttributeInternal(SVGTransformList& list, const CharType*& ptr, const CharType* end, TransformParsingMode mode)
-{
-    if (mode == ClearList)
-        list.clear();
-
-    bool delimParsed = false;
-    while (ptr < end) {
-        delimParsed = false;
-        unsigned short type = SVGTransform::SVG_TRANSFORM_UNKNOWN;
-        skipOptionalSVGSpaces(ptr, end);
-
-        if (!parseAndSkipType(ptr, end, type))
-            return false;
-
-        SVGTransform transform;
-        if (!parseTransformValue(type, ptr, end, transform))
-            return false;
-
-        list.append(transform);
-        skipOptionalSVGSpaces(ptr, end);
-        if (ptr < end && *ptr == ',') {
-            delimParsed = true;
-            ++ptr;
-        }
-        skipOptionalSVGSpaces(ptr, end);
-    }
-
-    return !delimParsed;
-}
-
-bool parseTransformAttribute(SVGTransformList& list, const LChar*& ptr, const LChar* end, TransformParsingMode mode)
-{
-    return parseTransformAttributeInternal(list, ptr, end, mode);
-}
-
-bool parseTransformAttribute(SVGTransformList& list, const UChar*& ptr, const UChar* end, TransformParsingMode mode)
-{
-    return parseTransformAttributeInternal(list, ptr, end, mode);
+    return type;
 }
 
 }

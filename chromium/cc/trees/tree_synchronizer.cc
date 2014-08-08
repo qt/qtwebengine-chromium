@@ -4,6 +4,8 @@
 
 #include "cc/trees/tree_synchronizer.h"
 
+#include <set>
+
 #include "base/containers/hash_tables.h"
 #include "base/containers/scoped_ptr_hash_map.h"
 #include "base/debug/trace_event.h"
@@ -24,6 +26,13 @@ void CollectExistingLayerImplRecursive(ScopedPtrLayerImplMap* old_layers,
                                        scoped_ptr<LayerImpl> layer_impl) {
   if (!layer_impl)
     return;
+
+  layer_impl->ClearScrollbars();
+  if (ScrollbarLayerImplBase* scrollbar_layer =
+          layer_impl->ToScrollbarLayer()) {
+    scrollbar_layer->ClearClipLayer();
+    scrollbar_layer->ClearScrollLayer();
+  }
 
   OwnedLayerImplList& children = layer_impl->children();
   for (OwnedLayerImplList::iterator it = children.begin();
@@ -112,11 +121,6 @@ scoped_ptr<LayerImpl> SynchronizeTreesRecursiveInternal(
   layer_impl->SetReplicaLayer(SynchronizeTreesRecursiveInternal(
       new_layers, old_layers, layer->replica_layer(), tree_impl));
 
-  // Remove all dangling pointers. The pointers will be setup later in
-  // UpdateScrollbarLayerPointersRecursive phase
-  layer_impl->SetHorizontalScrollbarLayer(NULL);
-  layer_impl->SetVerticalScrollbarLayer(NULL);
-
   return layer_impl.Pass();
 }
 
@@ -160,17 +164,9 @@ void UpdateScrollbarLayerPointersRecursiveInternal(
       iter != new_layers->end()
           ? static_cast<ScrollbarLayerImplBase*>(iter->second)
           : NULL;
-  iter = new_layers->find(scrollbar_layer->ScrollLayerId());
-  LayerImpl* scroll_layer_impl =
-      iter != new_layers->end() ? iter->second : NULL;
-
   DCHECK(scrollbar_layer_impl);
-  DCHECK(scroll_layer_impl);
 
-  if (scrollbar_layer->orientation() == HORIZONTAL)
-    scroll_layer_impl->SetHorizontalScrollbarLayer(scrollbar_layer_impl);
-  else
-    scroll_layer_impl->SetVerticalScrollbarLayer(scrollbar_layer_impl);
+  scrollbar_layer->PushScrollClipPropertiesTo(scrollbar_layer_impl);
 }
 
 void UpdateScrollbarLayerPointersRecursive(const RawPtrLayerImplMap* new_layers,
@@ -184,17 +180,6 @@ void UpdateScrollbarLayerPointersRecursive(const RawPtrLayerImplMap* new_layers,
   UpdateScrollbarLayerPointersRecursiveInternal<
       LayerImpl,
       ScrollbarLayerImplBase>(new_layers, layer);
-}
-
-// static
-void TreeSynchronizer::SetNumDependentsNeedPushProperties(
-    Layer* layer, size_t num) {
-  layer->num_dependents_need_push_properties_ = num;
-}
-
-// static
-void TreeSynchronizer::SetNumDependentsNeedPushProperties(
-    LayerImpl* layer, size_t num) {
 }
 
 // static
@@ -216,6 +201,8 @@ void TreeSynchronizer::PushPropertiesInternal(
 
   if (push_layer)
     layer->PushPropertiesTo(layer_impl);
+  else if (layer->ToScrollbarLayer())
+    layer->ToScrollbarLayer()->PushScrollClipPropertiesTo(layer_impl);
 
   size_t num_dependents_need_push_properties = 0;
   if (recurse_on_children_and_dependents) {
@@ -240,8 +227,8 @@ void TreeSynchronizer::PushPropertiesInternal(
     // every PushProperties tree walk. Here we keep track of those layers, and
     // ensure that their ancestors know about them for the next PushProperties
     // tree walk.
-    SetNumDependentsNeedPushProperties(
-        layer, num_dependents_need_push_properties);
+    layer->num_dependents_need_push_properties_ =
+        num_dependents_need_push_properties;
   }
 
   bool add_self_to_parent = num_dependents_need_push_properties > 0 ||
@@ -249,11 +236,64 @@ void TreeSynchronizer::PushPropertiesInternal(
   *num_dependents_need_push_properties_for_parent += add_self_to_parent ? 1 : 0;
 }
 
+static void CheckScrollAndClipPointersRecursive(Layer* layer,
+                                                LayerImpl* layer_impl) {
+  DCHECK_EQ(!!layer, !!layer_impl);
+  if (!layer)
+    return;
+
+  DCHECK_EQ(!!layer->scroll_parent(), !!layer_impl->scroll_parent());
+  if (layer->scroll_parent())
+    DCHECK_EQ(layer->scroll_parent()->id(), layer_impl->scroll_parent()->id());
+
+  DCHECK_EQ(!!layer->clip_parent(), !!layer_impl->clip_parent());
+  if (layer->clip_parent())
+    DCHECK_EQ(layer->clip_parent()->id(), layer_impl->clip_parent()->id());
+
+  DCHECK_EQ(!!layer->scroll_children(), !!layer_impl->scroll_children());
+  if (layer->scroll_children()) {
+    for (std::set<Layer*>::iterator it = layer->scroll_children()->begin();
+         it != layer->scroll_children()->end();
+         ++it) {
+      DCHECK_EQ((*it)->scroll_parent(), layer);
+    }
+    for (std::set<LayerImpl*>::iterator it =
+             layer_impl->scroll_children()->begin();
+         it != layer_impl->scroll_children()->end();
+         ++it) {
+      DCHECK_EQ((*it)->scroll_parent(), layer_impl);
+    }
+  }
+
+  DCHECK_EQ(!!layer->clip_children(), !!layer_impl->clip_children());
+  if (layer->clip_children()) {
+    for (std::set<Layer*>::iterator it = layer->clip_children()->begin();
+         it != layer->clip_children()->end();
+         ++it) {
+      DCHECK_EQ((*it)->clip_parent(), layer);
+    }
+    for (std::set<LayerImpl*>::iterator it =
+             layer_impl->clip_children()->begin();
+         it != layer_impl->clip_children()->end();
+         ++it) {
+      DCHECK_EQ((*it)->clip_parent(), layer_impl);
+    }
+  }
+
+  for (size_t i = 0u; i < layer->children().size(); ++i) {
+    CheckScrollAndClipPointersRecursive(layer->child_at(i),
+                                        layer_impl->child_at(i));
+  }
+}
+
 void TreeSynchronizer::PushProperties(Layer* layer,
                                       LayerImpl* layer_impl) {
   size_t num_dependents_need_push_properties = 0;
   PushPropertiesInternal(
       layer, layer_impl, &num_dependents_need_push_properties);
+#if DCHECK_IS_ON
+  CheckScrollAndClipPointersRecursive(layer, layer_impl);
+#endif
 }
 
 void TreeSynchronizer::PushProperties(LayerImpl* layer, LayerImpl* layer_impl) {

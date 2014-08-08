@@ -50,7 +50,7 @@ cr.define('print_preview', function() {
 
     /**
      * Current query used for filtering.
-     * @type {?string}
+     * @type {RegExp}
      * @private
      */
     this.query_ = null;
@@ -128,11 +128,7 @@ cr.define('print_preview', function() {
       numItems = Math.min(numItems, this.destinations_.length);
       var headerHeight =
           this.getChildElement('.destination-list > header').offsetHeight;
-      var throbberHeight =
-          getIsVisible(this.getChildElement('.throbber-container')) ?
-              DestinationList.HEIGHT_OF_ITEM_ : 0;
-      return headerHeight + numItems * DestinationList.HEIGHT_OF_ITEM_ +
-          throbberHeight;
+      return headerHeight + numItems * DestinationList.HEIGHT_OF_ITEM_;
     },
 
     /** @param {boolean} isVisible Whether the throbber is visible. */
@@ -192,7 +188,13 @@ cr.define('print_preview', function() {
 
     /** @param {?string} query Query to update the filter with. */
     updateSearchQuery: function(query) {
-      this.query_ = query;
+      if (!query) {
+        this.query_ = null;
+      } else {
+        // Generate regexp-safe query by escaping metacharacters.
+        var safeQuery = query.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
+        this.query_ = new RegExp('(' + safeQuery + ')', 'ig');
+      }
       this.renderDestinations_();
     },
 
@@ -233,7 +235,7 @@ cr.define('print_preview', function() {
       }
       for (var i = 0; i < numItems; i++) {
         var destListItem = new print_preview.DestinationListItem(
-            this.eventTarget_, destinations[i]);
+            this.eventTarget_, destinations[i], this.query_);
         this.addChild(destListItem);
         destListItem.render(this.getChildElement('.destination-list > ul'));
       }
@@ -247,14 +249,14 @@ cr.define('print_preview', function() {
     renderDestinations_: function() {
       this.removeChildren();
 
-      var filteredDests = [];
-      this.destinations_.forEach(function(destination) {
-        if (!this.query_ || destination.matches(this.query_)) {
-          filteredDests.push(destination);
-        }
-      }, this);
-
-      this.renderListInternal(filteredDests);
+      if (!this.query_) {
+        this.renderListInternal(this.destinations_);
+      } else {
+        var filteredDests = this.destinations_.filter(function(destination) {
+          return destination.matches(this.query_);
+        }, this);
+        this.renderListInternal(filteredDests);
+      }
     },
 
     /**

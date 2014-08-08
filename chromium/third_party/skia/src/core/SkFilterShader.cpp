@@ -8,7 +8,8 @@
 #include "SkFilterShader.h"
 
 #include "SkColorFilter.h"
-#include "SkFlattenableBuffers.h"
+#include "SkReadBuffer.h"
+#include "SkWriteBuffer.h"
 #include "SkShader.h"
 #include "SkString.h"
 
@@ -20,7 +21,7 @@ SkFilterShader::SkFilterShader(SkShader* shader, SkColorFilter* filter) {
     filter->ref();
 }
 
-SkFilterShader::SkFilterShader(SkFlattenableReadBuffer& buffer)
+SkFilterShader::SkFilterShader(SkReadBuffer& buffer)
     : INHERITED(buffer) {
     fShader = buffer.readShader();
     fFilter = buffer.readColorFilter();
@@ -31,15 +32,17 @@ SkFilterShader::~SkFilterShader() {
     fShader->unref();
 }
 
-void SkFilterShader::flatten(SkFlattenableWriteBuffer& buffer) const {
+void SkFilterShader::flatten(SkWriteBuffer& buffer) const {
     this->INHERITED::flatten(buffer);
     buffer.writeFlattenable(fShader);
     buffer.writeFlattenable(fFilter);
 }
 
-uint32_t SkFilterShader::getFlags() {
-    uint32_t shaderF = fShader->getFlags();
-    uint32_t filterF = fFilter->getFlags();
+uint32_t SkFilterShader::FilterShaderContext::getFlags() const {
+    const SkFilterShader& filterShader = static_cast<const SkFilterShader&>(fShader);
+
+    uint32_t shaderF = fShaderContext->getFlags();
+    uint32_t filterF = filterShader.fFilter->getFlags();
 
     // if the filter doesn't support 16bit, clear the matching bit in the shader
     if (!(filterF & SkColorFilter::kHasFilter16_Flag)) {
@@ -52,41 +55,47 @@ uint32_t SkFilterShader::getFlags() {
     return shaderF;
 }
 
-bool SkFilterShader::setContext(const SkBitmap& device,
-                                const SkPaint& paint,
-                                const SkMatrix& matrix) {
-    // we need to keep the setContext/endContext calls balanced. If we return
-    // false, our endContext() will not be called.
-
-    if (!this->INHERITED::setContext(device, paint, matrix)) {
-        return false;
+SkShader::Context* SkFilterShader::onCreateContext(const ContextRec& rec, void* storage) const {
+    char* shaderContextStorage = (char*)storage + sizeof(FilterShaderContext);
+    SkShader::Context* shaderContext = fShader->createContext(rec, shaderContextStorage);
+    if (NULL == shaderContext) {
+        return NULL;
     }
-    if (!fShader->setContext(device, paint, matrix)) {
-        this->INHERITED::endContext();
-        return false;
-    }
-    return true;
+    return SkNEW_PLACEMENT_ARGS(storage, FilterShaderContext, (*this, shaderContext, rec));
 }
 
-void SkFilterShader::endContext() {
-    fShader->endContext();
-    this->INHERITED::endContext();
+size_t SkFilterShader::contextSize() const {
+    return sizeof(FilterShaderContext) + fShader->contextSize();
 }
 
-void SkFilterShader::shadeSpan(int x, int y, SkPMColor result[], int count) {
-    fShader->shadeSpan(x, y, result, count);
-    fFilter->filterSpan(result, count, result);
+SkFilterShader::FilterShaderContext::FilterShaderContext(const SkFilterShader& filterShader,
+                                                         SkShader::Context* shaderContext,
+                                                         const ContextRec& rec)
+    : INHERITED(filterShader, rec)
+    , fShaderContext(shaderContext) {}
+
+SkFilterShader::FilterShaderContext::~FilterShaderContext() {
+    fShaderContext->~Context();
 }
 
-void SkFilterShader::shadeSpan16(int x, int y, uint16_t result[], int count) {
-    SkASSERT(fShader->getFlags() & SkShader::kHasSpan16_Flag);
-    SkASSERT(fFilter->getFlags() & SkColorFilter::kHasFilter16_Flag);
+void SkFilterShader::FilterShaderContext::shadeSpan(int x, int y, SkPMColor result[], int count) {
+    const SkFilterShader& filterShader = static_cast<const SkFilterShader&>(fShader);
 
-    fShader->shadeSpan16(x, y, result, count);
-    fFilter->filterSpan16(result, count, result);
+    fShaderContext->shadeSpan(x, y, result, count);
+    filterShader.fFilter->filterSpan(result, count, result);
 }
 
-#ifdef SK_DEVELOPER
+void SkFilterShader::FilterShaderContext::shadeSpan16(int x, int y, uint16_t result[], int count) {
+    const SkFilterShader& filterShader = static_cast<const SkFilterShader&>(fShader);
+
+    SkASSERT(fShaderContext->getFlags() & SkShader::kHasSpan16_Flag);
+    SkASSERT(filterShader.fFilter->getFlags() & SkColorFilter::kHasFilter16_Flag);
+
+    fShaderContext->shadeSpan16(x, y, result, count);
+    filterShader.fFilter->filterSpan16(result, count, result);
+}
+
+#ifndef SK_IGNORE_TO_STRING
 void SkFilterShader::toString(SkString* str) const {
     str->append("SkFilterShader: (");
 

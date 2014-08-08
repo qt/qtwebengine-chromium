@@ -32,39 +32,38 @@
 
 namespace WebCore {
 
-class GestureEvent : public MouseRelatedEvent {
+class GestureEvent FINAL : public MouseRelatedEvent {
 public:
     virtual ~GestureEvent() { }
 
-    static PassRefPtr<GestureEvent> create();
-    static PassRefPtr<GestureEvent> create(PassRefPtr<AbstractView>, const PlatformGestureEvent&);
-
-    void initGestureEvent(const AtomicString& type, PassRefPtr<AbstractView>, int screenX, int screenY, int clientX, int clientY, bool ctrlKey, bool altKey, bool shiftKey, bool metaKey, float deltaX, float deltaY);
+    static PassRefPtrWillBeRawPtr<GestureEvent> create(PassRefPtrWillBeRawPtr<AbstractView>, const PlatformGestureEvent&);
 
     virtual bool isGestureEvent() const OVERRIDE;
 
-    virtual const AtomicString& interfaceName() const;
+    virtual const AtomicString& interfaceName() const OVERRIDE;
 
     float deltaX() const { return m_deltaX; }
     float deltaY() const { return m_deltaY; }
 
+    virtual void trace(Visitor*) OVERRIDE;
+
 private:
     GestureEvent();
-    GestureEvent(const AtomicString& type, PassRefPtr<AbstractView>, int screenX, int screenY, int clientX, int clientY, bool ctrlKey, bool altKey, bool shiftKey, bool metaKey, float deltaX, float deltaY);
+    GestureEvent(const AtomicString& type, PassRefPtrWillBeRawPtr<AbstractView>, int screenX, int screenY, int clientX, int clientY, bool ctrlKey, bool altKey, bool shiftKey, bool metaKey, float deltaX, float deltaY);
 
     float m_deltaX;
     float m_deltaY;
 };
 
-class GestureEventDispatchMediator : public EventDispatchMediator {
+class GestureEventDispatchMediator FINAL : public EventDispatchMediator {
 public:
-    static PassRefPtr<GestureEventDispatchMediator> create(PassRefPtr<GestureEvent> gestureEvent)
+    static PassRefPtrWillBeRawPtr<GestureEventDispatchMediator> create(PassRefPtrWillBeRawPtr<GestureEvent> gestureEvent)
     {
-        return adoptRef(new GestureEventDispatchMediator(gestureEvent));
+        return adoptRefWillBeNoop(new GestureEventDispatchMediator(gestureEvent));
     }
 
 private:
-    explicit GestureEventDispatchMediator(PassRefPtr<GestureEvent>);
+    explicit GestureEventDispatchMediator(PassRefPtrWillBeRawPtr<GestureEvent>);
 
     GestureEvent* event() const;
 

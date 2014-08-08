@@ -35,7 +35,6 @@
 #include "core/dom/shadow/ContentDistribution.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/html/HTMLElement.h"
-#include "wtf/Forward.h"
 
 namespace WebCore {
 
@@ -52,12 +51,9 @@ public:
     bool isShadowInsertionPoint() const;
     bool isContentInsertionPoint() const;
 
-    PassRefPtr<NodeList> getDistributedNodes();
+    PassRefPtrWillBeRawPtr<StaticNodeList> getDistributedNodes();
 
     virtual bool canAffectSelector() const { return false; }
-
-    bool resetStyleInheritance() const;
-    void setResetStyleInheritance(bool);
 
     virtual void attach(const AttachContext& = AttachContext()) OVERRIDE;
     virtual void detach(const AttachContext& = AttachContext()) OVERRIDE;
@@ -71,13 +67,14 @@ public:
     Node* nextTo(const Node* node) const { return m_distribution.nextTo(node); }
     Node* previousTo(const Node* node) const { return m_distribution.previousTo(node); }
 
+    virtual void trace(Visitor*) OVERRIDE;
+
 protected:
     InsertionPoint(const QualifiedName&, Document&);
     virtual bool rendererIsNeeded(const RenderStyle&) OVERRIDE;
     virtual void childrenChanged(bool changedByParser, Node* beforeChange, Node* afterChange, int childCountDelta) OVERRIDE;
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
     virtual void removedFrom(ContainerNode*) OVERRIDE;
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
     virtual void willRecalcStyle(StyleRecalcChange) OVERRIDE;
 
 private:
@@ -85,9 +82,9 @@ private:
     bool m_registeredWithShadowRoot;
 };
 
-typedef Vector<RefPtr<InsertionPoint> > DestinationInsertionPoints;
+typedef WillBeHeapVector<RefPtrWillBeMember<InsertionPoint> > DestinationInsertionPoints;
 
-DEFINE_NODE_TYPE_CASTS(InsertionPoint, isInsertionPoint());
+DEFINE_ELEMENT_TYPE_CASTS(InsertionPoint, isInsertionPoint());
 
 inline bool isActiveInsertionPoint(const Node& node)
 {
@@ -115,7 +112,7 @@ inline ElementShadow* shadowWhereNodeCanBeDistributed(const Node& node)
 
 const InsertionPoint* resolveReprojection(const Node*);
 
-void collectDestinationInsertionPoints(const Node&, Vector<InsertionPoint*, 8>& results);
+void collectDestinationInsertionPoints(const Node&, WillBeHeapVector<RawPtrWillBeMember<InsertionPoint>, 8>& results);
 
 } // namespace WebCore
 

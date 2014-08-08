@@ -5,18 +5,13 @@
 #ifndef MEDIA_BASE_ANDROID_MEDIA_PLAYER_MANAGER_H_
 #define MEDIA_BASE_ANDROID_MEDIA_PLAYER_MANAGER_H_
 
-#include <string>
-#include <vector>
-
 #include "base/basictypes.h"
 #include "base/time/time.h"
 #include "media/base/android/demuxer_stream_player_params.h"
 #include "media/base/media_export.h"
-#include "media/base/media_keys.h"
 
 namespace media {
 
-class MediaDrmBridge;
 class MediaPlayerAndroid;
 class MediaResourceGetter;
 
@@ -24,16 +19,6 @@ class MediaResourceGetter;
 class MEDIA_EXPORT MediaPlayerManager {
  public:
   virtual ~MediaPlayerManager() {}
-
-  // Called by a MediaPlayerAndroid object when it is going to decode
-  // media streams. This helps the manager object maintain an array
-  // of active MediaPlayerAndroid objects and release the resources
-  // when needed.
-  virtual void RequestMediaResources(int player_id) = 0;
-
-  // Called when a MediaPlayerAndroid object releases all its decoding
-  // resources.
-  virtual void ReleaseMediaResources(int player_id) = 0;
 
   // Return a pointer to the MediaResourceGetter object.
   virtual MediaResourceGetter* GetMediaResourceGetter() = 0;
@@ -78,42 +63,14 @@ class MEDIA_EXPORT MediaPlayerManager {
   // Returns the player with the specified id.
   virtual MediaPlayerAndroid* GetPlayer(int player_id) = 0;
 
-  // Release all the players managed by this object.
-  virtual void DestroyAllMediaPlayers() = 0;
-
-  // Get the MediaDrmBridge object for the given media key Id.
-  virtual media::MediaDrmBridge* GetDrmBridge(int media_keys_id) = 0;
-
   // Called by the player to get a hardware protected surface.
-  virtual void OnProtectedSurfaceRequested(int player_id) = 0;
+  virtual void RequestFullScreen(int player_id) = 0;
 
-  // The following five methods are related to EME.
-  // TODO(xhwang): These methods needs to be decoupled from MediaPlayerManager
-  // to support the W3C Working Draft version of the EME spec.
-  // http://crbug.com/315312
-
-  // Called when MediaDrmBridge determines a SessionId.
-  virtual void OnSessionCreated(int media_keys_id,
-                                uint32 session_id,
-                                const std::string& web_session_id) = 0;
-
-  // Called when MediaDrmBridge wants to send a Message event.
-  virtual void OnSessionMessage(int media_keys_id,
-                                uint32 session_id,
-                                const std::vector<uint8>& message,
-                                const std::string& destination_url) = 0;
-
-  // Called when MediaDrmBridge wants to send a Ready event.
-  virtual void OnSessionReady(int media_keys_id, uint32 session_id) = 0;
-
-  // Called when MediaDrmBridge wants to send a Closed event.
-  virtual void OnSessionClosed(int media_keys_id, uint32 session_id) = 0;
-
-  // Called when MediaDrmBridge wants to send an Error event.
-  virtual void OnSessionError(int media_keys_id,
-                              uint32 session_id,
-                              media::MediaKeys::KeyError error_code,
-                              int system_code) = 0;
+#if defined(VIDEO_HOLE)
+  // Returns true if a media player should use video-overlay for the embedded
+  // encrypted video.
+  virtual bool ShouldUseVideoOverlayForEmbeddedEncryptedVideo() = 0;
+#endif  // defined(VIDEO_HOLE)
 };
 
 }  // namespace media

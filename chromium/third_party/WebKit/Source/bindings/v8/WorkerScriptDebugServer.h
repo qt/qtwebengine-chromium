@@ -32,21 +32,18 @@
 #define WorkerScriptDebugServer_h
 
 #include "bindings/v8/ScriptDebugServer.h"
-
-namespace v8 {
-class Isolate;
-}
+#include <v8.h>
 
 namespace WebCore {
 
 class WorkerGlobalScope;
 class WorkerThread;
 
-class WorkerScriptDebugServer : public ScriptDebugServer {
+class WorkerScriptDebugServer FINAL : public ScriptDebugServer {
     WTF_MAKE_NONCOPYABLE(WorkerScriptDebugServer);
 public:
-    WorkerScriptDebugServer(WorkerGlobalScope*, const String&);
-    ~WorkerScriptDebugServer() { }
+    explicit WorkerScriptDebugServer(WorkerGlobalScope*);
+    virtual ~WorkerScriptDebugServer() { }
 
     void addListener(ScriptDebugListener*);
     void removeListener(ScriptDebugListener*);
@@ -54,14 +51,13 @@ public:
     void interruptAndRunTask(PassOwnPtr<Task>);
 
 private:
-    virtual ScriptDebugListener* getDebugListenerForContext(v8::Handle<v8::Context>);
-    virtual void runMessageLoopOnPause(v8::Handle<v8::Context>);
-    virtual void quitMessageLoopOnPause();
+    virtual ScriptDebugListener* getDebugListenerForContext(v8::Handle<v8::Context>) OVERRIDE;
+    virtual void runMessageLoopOnPause(v8::Handle<v8::Context>) OVERRIDE;
+    virtual void quitMessageLoopOnPause() OVERRIDE;
 
     typedef HashMap<WorkerGlobalScope*, ScriptDebugListener*> ListenersMap;
     ScriptDebugListener* m_listener;
     WorkerGlobalScope* m_workerGlobalScope;
-    String m_debuggerTaskMode;
 };
 
 } // namespace WebCore

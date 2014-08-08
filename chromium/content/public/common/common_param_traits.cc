@@ -4,11 +4,14 @@
 
 #include "content/public/common/common_param_traits.h"
 
+#include <string>
+
 #include "content/public/common/content_constants.h"
 #include "content/public/common/page_state.h"
 #include "content/public/common/referrer.h"
 #include "content/public/common/url_utils.h"
 #include "net/base/host_port_pair.h"
+#include "net/base/ip_endpoint.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/rect_f.h"
@@ -86,6 +89,27 @@ void ParamTraits<GURL>::Log(const GURL& p, std::string* l) {
   l->append(p.spec());
 }
 
+void ParamTraits<url::Origin>::Write(Message* m,
+                                          const url::Origin& p) {
+  m->WriteString(p.string());
+}
+
+bool ParamTraits<url::Origin>::Read(const Message* m,
+                                    PickleIterator* iter,
+                                    url::Origin* p) {
+  std::string s;
+  if (!m->ReadString(iter, &s)) {
+    *p = url::Origin();
+    return false;
+  }
+  *p = url::Origin(s);
+  return true;
+}
+
+void ParamTraits<url::Origin>::Log(const url::Origin& p, std::string* l) {
+  l->append(p.string());
+}
+
 void ParamTraits<net::HostPortPair>::Write(Message* m, const param_type& p) {
   WriteParam(m, p.host());
   WriteParam(m, p.port());
@@ -108,6 +132,30 @@ void ParamTraits<net::HostPortPair>::Log(const param_type& p, std::string* l) {
   l->append(p.ToString());
 }
 
+void ParamTraits<net::IPEndPoint>::Write(Message* m, const param_type& p) {
+  WriteParam(m, p.address());
+  WriteParam(m, p.port());
+}
+
+bool ParamTraits<net::IPEndPoint>::Read(const Message* m, PickleIterator* iter,
+                                        param_type* p) {
+  net::IPAddressNumber address;
+  int port;
+  if (!ReadParam(m, iter, &address) || !ReadParam(m, iter, &port))
+    return false;
+  if (address.size() &&
+      address.size() != net::kIPv4AddressSize &&
+      address.size() != net::kIPv6AddressSize) {
+    return false;
+  }
+  *p = net::IPEndPoint(address, port);
+  return true;
+}
+
+void ParamTraits<net::IPEndPoint>::Log(const param_type& p, std::string* l) {
+  LogParam("IPEndPoint:" + p.ToString(), l);
+}
+
 void ParamTraits<content::PageState>::Write(
     Message* m, const param_type& p) {
   WriteParam(m, p.ToEncodedData());
@@ -126,26 +174,6 @@ void ParamTraits<content::PageState>::Log(
     const param_type& p, std::string* l) {
   l->append("(");
   LogParam(p.ToEncodedData(), l);
-  l->append(")");
-}
-
-void ParamTraits<content::Referrer>::Write(
-    Message* m, const param_type& p) {
-  WriteParam(m, p.url);
-  WriteParam(m, p.policy);
-}
-
-bool ParamTraits<content::Referrer>::Read(
-    const Message* m, PickleIterator* iter, param_type* r) {
-  return ReadParam(m, iter, &r->url) && ReadParam(m, iter, &r->policy);
-}
-
-void ParamTraits<content::Referrer>::Log(
-    const param_type& p, std::string* l) {
-  l->append("(");
-  LogParam(p.url, l);
-  l->append(",");
-  LogParam(p.policy, l);
   l->append(")");
 }
 

@@ -29,25 +29,23 @@
  */
 
 #include "config.h"
-#include "V8ErrorEvent.h"
+#include "bindings/core/v8/V8ErrorEvent.h"
 
-#include "RuntimeEnabledFeatures.h"
-#include "V8Event.h"
+#include "bindings/core/v8/V8Event.h"
 #include "bindings/v8/DOMWrapperWorld.h"
 #include "bindings/v8/Dictionary.h"
-#include "bindings/v8/ScriptState.h"
 #include "bindings/v8/SerializedScriptValue.h"
 #include "bindings/v8/V8Binding.h"
 #include "bindings/v8/V8DOMWrapper.h"
-#include "bindings/v8/V8HiddenPropertyName.h"
+#include "bindings/v8/V8HiddenValue.h"
 #include "core/dom/ContextFeatures.h"
+#include "platform/RuntimeEnabledFeatures.h"
 
 namespace WebCore {
 
 void V8ErrorEvent::errorAttributeGetterCustom(const v8::PropertyCallbackInfo<v8::Value>& info)
 {
-    v8::Handle<v8::Value> error = info.Holder()->GetHiddenValue(V8HiddenPropertyName::error(info.GetIsolate()));
-
+    v8::Handle<v8::Value> error = V8HiddenValue::getHiddenValue(info.GetIsolate(), info.Holder(), V8HiddenValue::error(info.GetIsolate()));
     if (!error.IsEmpty()) {
         v8SetReturnValue(info, error);
         return;

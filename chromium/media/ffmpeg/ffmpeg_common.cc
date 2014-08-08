@@ -8,6 +8,7 @@
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
 #include "media/base/decoder_buffer.h"
 #include "media/base/video_frame.h"
 #include "media/base/video_util.h"
@@ -269,7 +270,7 @@ static AVSampleFormat SampleFormatToAVSampleFormat(SampleFormat sample_format) {
   return AV_SAMPLE_FMT_NONE;
 }
 
-static void AVCodecContextToAudioDecoderConfig(
+void AVCodecContextToAudioDecoderConfig(
     const AVCodecContext* codec_context,
     bool is_encrypted,
     AudioDecoderConfig* config,
@@ -297,12 +298,6 @@ static void AVCodecContextToAudioDecoderConfig(
         codec_context->seek_preroll * 1000000.0 / codec_context->sample_rate);
   }
 
-  base::TimeDelta codec_delay;
-  if (codec_context->delay > 0) {
-    codec_delay = base::TimeDelta::FromMicroseconds(
-        codec_context->delay * 1000000.0 / codec_context->sample_rate);
-  }
-
   config->Initialize(codec,
                      sample_format,
                      channel_layout,
@@ -312,7 +307,7 @@ static void AVCodecContextToAudioDecoderConfig(
                      is_encrypted,
                      record_stats,
                      seek_preroll,
-                     codec_delay);
+                     codec_context->delay);
   if (codec != kCodecOpus) {
     DCHECK_EQ(av_get_bytes_per_sample(codec_context->sample_fmt) * 8,
               config->bits_per_channel());
@@ -389,9 +384,12 @@ void AVStreamToVideoDecoderConfig(
       visible_rect.size(), aspect_ratio.num, aspect_ratio.den);
 
   if (record_stats) {
+    // Note the PRESUBMIT_IGNORE_UMA_MAX below, this silences the PRESUBMIT.py
+    // check for uma enum max usage, since we're abusing
+    // UMA_HISTOGRAM_ENUMERATION to report a discrete value.
     UMA_HISTOGRAM_ENUMERATION("Media.VideoColorRange",
                               stream->codec->color_range,
-                              AVCOL_RANGE_NB);
+                              AVCOL_RANGE_NB);  // PRESUBMIT_IGNORE_UMA_MAX
   }
 
   VideoFrame::Format format = PixelFormatToVideoFormat(stream->codec->pix_fmt);
@@ -399,6 +397,13 @@ void AVStreamToVideoDecoderConfig(
     // TODO(tomfinegan): libavcodec doesn't know about VP9.
     format = VideoFrame::YV12;
     coded_size = natural_size;
+  }
+
+  // Pad out |coded_size| for subsampled YUV formats.
+  if (format != VideoFrame::YV24) {
+    coded_size.set_width((coded_size.width() + 1) / 2 * 2);
+    if (format != VideoFrame::YV16)
+      coded_size.set_height((coded_size.height() + 1) / 2 * 2);
   }
 
   bool is_encrypted = false;
@@ -514,6 +519,8 @@ VideoFrame::Format PixelFormatToVideoFormat(PixelFormat pixel_format) {
   switch (pixel_format) {
     case PIX_FMT_YUV422P:
       return VideoFrame::YV16;
+    case PIX_FMT_YUV444P:
+      return VideoFrame::YV24;
     case PIX_FMT_YUV420P:
       return VideoFrame::YV12;
     case PIX_FMT_YUVJ420P:
@@ -536,10 +543,45 @@ PixelFormat VideoFormatToPixelFormat(VideoFrame::Format video_format) {
       return PIX_FMT_YUVJ420P;
     case VideoFrame::YV12A:
       return PIX_FMT_YUVA420P;
+    case VideoFrame::YV24:
+      return PIX_FMT_YUV444P;
     default:
       DVLOG(1) << "Unsupported VideoFrame::Format: " << video_format;
   }
   return PIX_FMT_NONE;
+}
+
+bool FFmpegUTCDateToTime(const char* date_utc,
+                         base::Time* out) {
+  DCHECK(date_utc);
+  DCHECK(out);
+
+  std::vector<std::string> fields;
+  std::vector<std::string> date_fields;
+  std::vector<std::string> time_fields;
+  base::Time::Exploded exploded;
+  exploded.millisecond = 0;
+
+  // TODO(acolwell): Update this parsing code when FFmpeg returns sub-second
+  // information.
+  if ((Tokenize(date_utc, " ", &fields) == 2) &&
+      (Tokenize(fields[0], "-", &date_fields) == 3) &&
+      (Tokenize(fields[1], ":", &time_fields) == 3) &&
+      base::StringToInt(date_fields[0], &exploded.year) &&
+      base::StringToInt(date_fields[1], &exploded.month) &&
+      base::StringToInt(date_fields[2], &exploded.day_of_month) &&
+      base::StringToInt(time_fields[0], &exploded.hour) &&
+      base::StringToInt(time_fields[1], &exploded.minute) &&
+      base::StringToInt(time_fields[2], &exploded.second)) {
+    base::Time parsed_time = base::Time::FromUTCExploded(exploded);
+    if (parsed_time.is_null())
+      return false;
+
+    *out = parsed_time;
+    return true;
+  }
+
+  return false;
 }
 
 }  // namespace media

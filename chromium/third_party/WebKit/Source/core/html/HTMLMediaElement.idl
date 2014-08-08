@@ -24,17 +24,18 @@
  */
 
 [
+    ActiveDOMObject,
     RuntimeEnabled=Media,
-    ActiveDOMObject
+    TypeChecking=Unrestricted,
 ] interface HTMLMediaElement : HTMLElement {
 
     // error state
-    readonly attribute MediaError error;
+    [TypeChecking=Interface|Nullable] readonly attribute MediaError? error;
 
     // network state
-    [Reflect, URL, PerWorldBindings, ActivityLogging=SetterForIsolatedWorlds] attribute DOMString src;
-    [URL, PerWorldBindings, ActivityLogging=SetterForIsolatedWorlds] readonly attribute DOMString currentSrc;
-    [Reflect] attribute DOMString crossOrigin;
+    [Reflect, URL, LogActivity=SetterOnly] attribute DOMString src;
+    [URL, LogActivity=SetterOnly] readonly attribute DOMString currentSrc;
+    [Reflect, ReflectOnly="anonymous"|"use-credentials", ReflectEmpty="anonymous", ReflectInvalid="anonymous"] attribute DOMString crossOrigin;
 
     const unsigned short NETWORK_EMPTY = 0;
     const unsigned short NETWORK_IDLE = 1;
@@ -45,7 +46,7 @@
 
     readonly attribute TimeRanges buffered;
     void load();
-    DOMString canPlayType([Default=Undefined] optional DOMString type, [Default=Undefined, TreatNullAs=NullString, TreatUndefinedAs=NullString] optional DOMString keySystem);
+    DOMString canPlayType(DOMString type, [Default=Undefined, TreatNullAs=NullString, TreatUndefinedAs=NullString] optional DOMString keySystem);
 
     // ready state
     const unsigned short HAVE_NOTHING = 0;
@@ -58,7 +59,7 @@
 
     // playback state
     [RaisesException=Setter] attribute double currentTime;
-    readonly attribute double duration;
+    readonly attribute unrestricted double duration;
     readonly attribute boolean paused;
     attribute double defaultPlaybackRate;
     attribute double playbackRate;
@@ -71,8 +72,8 @@
     void pause();
 
     // media controller
-    [Reflect] attribute DOMString mediaGroup;
-    [StrictTypeChecking] attribute MediaController controller;
+    [RuntimeEnabled=MediaController, Reflect] attribute DOMString mediaGroup;
+    [RuntimeEnabled=MediaController, TypeChecking=Interface|Nullable] attribute MediaController? controller;
 
     // controls
     attribute boolean controls;
@@ -81,8 +82,10 @@
     [Reflect=muted] attribute boolean defaultMuted;
 
     // tracks
-    [RuntimeEnabled=VideoTrack] readonly attribute TextTrackList textTracks;
-    [RuntimeEnabled=VideoTrack, RaisesException] TextTrack addTextTrack(DOMString kind, optional DOMString label, optional DOMString language);
+    [RuntimeEnabled=AudioVideoTracks] readonly attribute AudioTrackList audioTracks;
+    [RuntimeEnabled=AudioVideoTracks] readonly attribute VideoTrackList videoTracks;
+    readonly attribute TextTrackList textTracks;
+    [RaisesException] TextTrack addTextTrack(DOMString kind, optional DOMString label, optional DOMString language);
 
     // WebKit extensions
 
@@ -90,15 +93,5 @@
     [MeasureAs=PrefixedAudioDecodedByteCount] readonly attribute unsigned long webkitAudioDecodedByteCount;
     [MeasureAs=PrefixedVideoDecodedByteCount] readonly attribute unsigned long webkitVideoDecodedByteCount;
 
-    // FIXME: add DeprecateAs=PrefixedMediaGenerateKeyRequest when MediaKeys is ready.
-    [RuntimeEnabled=PrefixedEncryptedMedia, RaisesException] void webkitGenerateKeyRequest([TreatNullAs=NullString, TreatUndefinedAs=NullString] DOMString keySystem, optional Uint8Array initData);
-    [RuntimeEnabled=PrefixedEncryptedMedia, RaisesException] void webkitAddKey([TreatNullAs=NullString, TreatUndefinedAs=NullString] DOMString keySystem, Uint8Array key, optional Uint8Array initData, [Default=NullString] optional DOMString sessionId);
-    [RuntimeEnabled=PrefixedEncryptedMedia, RaisesException] void webkitCancelKeyRequest([TreatNullAs=NullString, TreatUndefinedAs=NullString] DOMString keySystem, [Default=NullString] optional DOMString sessionId);
-
-    [RuntimeEnabled=PrefixedEncryptedMedia] attribute EventHandler onwebkitkeyadded;
-    [RuntimeEnabled=PrefixedEncryptedMedia] attribute EventHandler onwebkitkeyerror;
-    [RuntimeEnabled=PrefixedEncryptedMedia] attribute EventHandler onwebkitkeymessage;
-    [RuntimeEnabled=PrefixedEncryptedMedia] attribute EventHandler onwebkitneedkey;
-
-    [RuntimeEnabled=EncryptedMedia] attribute MediaKeys mediaKeys;
+    [Reflect, RuntimeEnabled=SubresourceIntegrity] attribute DOMString integrity;
 };

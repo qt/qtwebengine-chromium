@@ -42,12 +42,12 @@ Type HideValueFromCompiler(volatile Type value) {
   return value;
 }
 
-// - NO_TCMALLOC (should be defined if we compile with linux_use_tcmalloc=0)
-// - ADDRESS_SANITIZER because it has its own memory allocator
+// - NO_TCMALLOC (should be defined if compiled with use_allocator!="tcmalloc")
+// - ADDRESS_SANITIZER and SYZYASAN because they have their own memory allocator
 // - IOS does not use tcmalloc
 // - OS_MACOSX does not use tcmalloc
 #if !defined(NO_TCMALLOC) && !defined(ADDRESS_SANITIZER) && \
-    !defined(OS_IOS) && !defined(OS_MACOSX)
+    !defined(OS_IOS) && !defined(OS_MACOSX) && !defined(SYZYASAN)
   #define TCMALLOC_TEST(function) function
 #else
   #define TCMALLOC_TEST(function) DISABLED_##function
@@ -59,7 +59,7 @@ const size_t kTooBigAllocSize = INT_MAX;
 
 // Detect runtime TCMalloc bypasses.
 bool IsTcMallocBypassed() {
-#if defined(OS_LINUX) || defined(OS_CHROMEOS)
+#if defined(OS_LINUX)
   // This should detect a TCMalloc bypass from Valgrind.
   char* g_slice = getenv("G_SLICE");
   if (g_slice && !strcmp(g_slice, "always-malloc"))
@@ -78,8 +78,10 @@ bool CallocDiesOnOOM() {
 // The sanitizers' calloc dies on OOM instead of returning NULL.
 // The wrapper function in base/process_util_linux.cc that is used when we
 // compile without TCMalloc will just die on OOM instead of returning NULL.
-#if defined(ADDRESS_SANITIZER) || defined(MEMORY_SANITIZER) || \
-    defined(THREAD_SANITIZER) || (defined(OS_LINUX) && defined(NO_TCMALLOC))
+#if defined(ADDRESS_SANITIZER) || \
+    defined(MEMORY_SANITIZER) || \
+    defined(THREAD_SANITIZER) || \
+    (defined(OS_LINUX) && defined(NO_TCMALLOC))
   return true;
 #else
   return false;
@@ -229,7 +231,7 @@ TEST(SecurityTest, CallocOverflow) {
   }
 }
 
-#if (defined(OS_LINUX) || defined(OS_CHROMEOS)) && defined(__x86_64__)
+#if defined(OS_LINUX) && defined(__x86_64__)
 // Check if ptr1 and ptr2 are separated by less than size chars.
 bool ArePointersToSameArea(void* ptr1, void* ptr2, size_t size) {
   ptrdiff_t ptr_diff = reinterpret_cast<char*>(std::max(ptr1, ptr2)) -
@@ -285,6 +287,6 @@ TEST(SecurityTest, TCMALLOC_TEST(RandomMemoryAllocations)) {
   EXPECT_FALSE(impossible_random_address);
 }
 
-#endif  // (defined(OS_LINUX) || defined(OS_CHROMEOS)) && defined(__x86_64__)
+#endif  // defined(OS_LINUX) && defined(__x86_64__)
 
 }  // namespace

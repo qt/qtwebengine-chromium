@@ -38,34 +38,39 @@
 #include "modules/indexeddb/IDBPendingTransactionMonitor.h"
 #include "platform/SharedBuffer.h"
 #include "public/platform/WebIDBDatabase.h"
-
 #include <gtest/gtest.h>
+#include <v8.h>
 
 using namespace WebCore;
+
+using blink::WebIDBDatabase;
 
 namespace {
 
 class IDBTransactionTest : public testing::Test {
 public:
     IDBTransactionTest()
-        : m_handleScope(v8::Isolate::GetCurrent())
-        , m_scope(v8::Context::New(v8::Isolate::GetCurrent()))
-        , m_document(Document::create())
+        : m_scope(v8::Isolate::GetCurrent())
+        , m_executionContext(Document::create())
     {
+        m_scope.scriptState()->setExecutionContext(m_executionContext.get());
     }
 
-    ExecutionContext* executionContext()
+    ~IDBTransactionTest()
     {
-        return m_document.get();
+        m_scope.scriptState()->setExecutionContext(0);
     }
+
+    v8::Isolate* isolate() const { return m_scope.isolate(); }
+    ScriptState* scriptState() const { return m_scope.scriptState(); }
+    ExecutionContext* executionContext() { return m_scope.scriptState()->executionContext(); }
 
 private:
-    v8::HandleScope m_handleScope;
-    v8::Context::Scope m_scope;
-    RefPtr<Document> m_document;
+    V8TestingScope m_scope;
+    RefPtrWillBePersistent<ExecutionContext> m_executionContext;
 };
 
-class FakeWebIDBDatabase : public blink::WebIDBDatabase {
+class FakeWebIDBDatabase FINAL : public blink::WebIDBDatabase {
 public:
     static PassOwnPtr<FakeWebIDBDatabase> create() { return adoptPtr(new FakeWebIDBDatabase()); }
 
@@ -77,12 +82,12 @@ private:
     FakeWebIDBDatabase() { }
 };
 
-class FakeIDBDatabaseCallbacks : public IDBDatabaseCallbacks {
+class FakeIDBDatabaseCallbacks FINAL : public IDBDatabaseCallbacks {
 public:
-    static PassRefPtr<FakeIDBDatabaseCallbacks> create() { return adoptRef(new FakeIDBDatabaseCallbacks()); }
+    static FakeIDBDatabaseCallbacks* create() { return new FakeIDBDatabaseCallbacks(); }
     virtual void onVersionChange(int64_t oldVersion, int64_t newVersion) OVERRIDE { }
     virtual void onForcedClose() OVERRIDE { }
-    virtual void onAbort(int64_t transactionId, PassRefPtr<DOMError> error) OVERRIDE { }
+    virtual void onAbort(int64_t transactionId, PassRefPtrWillBeRawPtr<DOMError> error) OVERRIDE { }
     virtual void onComplete(int64_t transactionId) OVERRIDE { }
 private:
     FakeIDBDatabaseCallbacks() { }
@@ -91,53 +96,56 @@ private:
 TEST_F(IDBTransactionTest, EnsureLifetime)
 {
     OwnPtr<FakeWebIDBDatabase> backend = FakeWebIDBDatabase::create();
-    RefPtr<FakeIDBDatabaseCallbacks> connection = FakeIDBDatabaseCallbacks::create();
-    RefPtr<IDBDatabase> db = IDBDatabase::create(executionContext(), backend.release(), connection);
+    Persistent<IDBDatabase> db = IDBDatabase::create(executionContext(), backend.release(), FakeIDBDatabaseCallbacks::create());
 
     const int64_t transactionId = 1234;
     const Vector<String> transactionScope;
-    RefPtr<IDBTransaction> transaction = IDBTransaction::create(executionContext(), transactionId, transactionScope, IndexedDB::TransactionReadOnly, db.get());
+    Persistent<IDBTransaction> transaction = IDBTransaction::create(executionContext(), transactionId, transactionScope, blink::WebIDBTransactionModeReadOnly, db.get());
+    PersistentHeapHashSet<WeakMember<IDBTransaction> > set;
+    set.add(transaction);
 
-    // Local reference, IDBDatabase's reference and IDBPendingTransactionMonitor's reference:
-    EXPECT_EQ(3, transaction->refCount());
+    Heap::collectAllGarbage();
+    EXPECT_EQ(1u, set.size());
 
-    RefPtr<IDBRequest> request = IDBRequest::create(executionContext(), IDBAny::createUndefined(), transaction.get());
-    IDBPendingTransactionMonitor::deactivateNewTransactions();
+    Persistent<IDBRequest> request = IDBRequest::create(scriptState(), IDBAny::createUndefined(), transaction.get());
+    IDBPendingTransactionMonitor::from(*executionContext()).deactivateNewTransactions();
 
-    // Local reference, IDBDatabase's reference, and the IDBRequest's reference
-    EXPECT_EQ(3, transaction->refCount());
+    Heap::collectAllGarbage();
+    EXPECT_EQ(1u, set.size());
 
     // This will generate an abort() call to the back end which is dropped by the fake proxy,
     // so an explicit onAbort call is made.
     executionContext()->stopActiveDOMObjects();
     transaction->onAbort(DOMError::create(AbortError, "Aborted"));
+    transaction.clear();
 
-    EXPECT_EQ(1, transaction->refCount());
+    Heap::collectAllGarbage();
+    EXPECT_EQ(0u, set.size());
 }
 
 TEST_F(IDBTransactionTest, TransactionFinish)
 {
     OwnPtr<FakeWebIDBDatabase> backend = FakeWebIDBDatabase::create();
-    RefPtr<FakeIDBDatabaseCallbacks> connection = FakeIDBDatabaseCallbacks::create();
-    RefPtr<IDBDatabase> db = IDBDatabase::create(executionContext(), backend.release(), connection);
+    Persistent<IDBDatabase> db = IDBDatabase::create(executionContext(), backend.release(), FakeIDBDatabaseCallbacks::create());
 
     const int64_t transactionId = 1234;
     const Vector<String> transactionScope;
-    RefPtr<IDBTransaction> transaction = IDBTransaction::create(executionContext(), transactionId, transactionScope, IndexedDB::TransactionReadOnly, db.get());
+    Persistent<IDBTransaction> transaction = IDBTransaction::create(executionContext(), transactionId, transactionScope, blink::WebIDBTransactionModeReadOnly, db.get());
+    PersistentHeapHashSet<WeakMember<IDBTransaction> > set;
+    set.add(transaction);
 
-    // Local reference, IDBDatabase's reference and IDBPendingTransactionMonitor's reference:
-    EXPECT_EQ(3, transaction->refCount());
+    Heap::collectAllGarbage();
+    EXPECT_EQ(1u, set.size());
 
-    IDBPendingTransactionMonitor::deactivateNewTransactions();
+    IDBPendingTransactionMonitor::from(*executionContext()).deactivateNewTransactions();
 
-    // Local reference, IDBDatabase's reference
-    EXPECT_EQ(2, transaction->refCount());
+    Heap::collectAllGarbage();
+    EXPECT_EQ(1u, set.size());
 
-    IDBTransaction* transactionPtr = transaction.get();
     transaction.clear();
 
-    // IDBDatabase's reference
-    EXPECT_EQ(1, transactionPtr->refCount());
+    Heap::collectAllGarbage();
+    EXPECT_EQ(1u, set.size());
 
     // Stop the context, so events don't get queued (which would keep the transaction alive).
     executionContext()->stopActiveDOMObjects();
@@ -145,6 +153,10 @@ TEST_F(IDBTransactionTest, TransactionFinish)
     // Fire an abort to make sure this doesn't free the transaction during use. The test
     // will not fail if it is, but ASAN would notice the error.
     db->onAbort(transactionId, DOMError::create(AbortError, "Aborted"));
+
+    // onAbort() should have cleared the transaction's reference to the database.
+    Heap::collectAllGarbage();
+    EXPECT_EQ(0u, set.size());
 }
 
 } // namespace

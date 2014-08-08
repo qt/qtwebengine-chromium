@@ -5,9 +5,24 @@
 #include "ui/views/controls/button/button.h"
 
 #include "base/strings/utf_string_conversions.h"
-#include "ui/base/accessibility/accessible_view_state.h"
+#include "ui/accessibility/ax_view_state.h"
 
 namespace views {
+
+////////////////////////////////////////////////////////////////////////////////
+// Button, static public:
+
+// static
+Button::ButtonState Button::GetButtonStateFrom(ui::NativeTheme::State state) {
+  switch (state) {
+    case ui::NativeTheme::kDisabled: return Button::STATE_DISABLED;
+    case ui::NativeTheme::kHovered:  return Button::STATE_HOVERED;
+    case ui::NativeTheme::kNormal:   return Button::STATE_NORMAL;
+    case ui::NativeTheme::kPressed:  return Button::STATE_PRESSED;
+    case ui::NativeTheme::kMaxState: NOTREACHED() << "Unknown state: " << state;
+  }
+  return Button::STATE_NORMAL;
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 // Button, public:
@@ -15,21 +30,22 @@ namespace views {
 Button::~Button() {
 }
 
-void Button::SetTooltipText(const string16& tooltip_text) {
+void Button::SetTooltipText(const base::string16& tooltip_text) {
   tooltip_text_ = tooltip_text;
   if (accessible_name_.empty())
     accessible_name_ = tooltip_text_;
   TooltipTextChanged();
 }
 
-void Button::SetAccessibleName(const string16& name) {
+void Button::SetAccessibleName(const base::string16& name) {
   accessible_name_ = name;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 // Button, View overrides:
 
-bool Button::GetTooltipText(const gfx::Point& p, string16* tooltip) const {
+bool Button::GetTooltipText(const gfx::Point& p,
+                            base::string16* tooltip) const {
   if (tooltip_text_.empty())
     return false;
 
@@ -37,8 +53,8 @@ bool Button::GetTooltipText(const gfx::Point& p, string16* tooltip) const {
   return true;
 }
 
-void Button::GetAccessibleState(ui::AccessibleViewState* state) {
-  state->role = ui::AccessibilityTypes::ROLE_PUSHBUTTON;
+void Button::GetAccessibleState(ui::AXViewState* state) {
+  state->role = ui::AX_ROLE_BUTTON;
   state->name = accessible_name_;
 }
 

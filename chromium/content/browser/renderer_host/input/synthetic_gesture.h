@@ -9,7 +9,6 @@
 #include "base/time/time.h"
 #include "content/common/content_export.h"
 #include "content/common/input/synthetic_gesture_params.h"
-#include "third_party/WebKit/public/web/WebInputEvent.h"
 
 namespace content {
 
@@ -38,17 +37,18 @@ class CONTENT_EXPORT SyntheticGesture {
     GESTURE_RUNNING,
     GESTURE_FINISHED,
     GESTURE_SOURCE_TYPE_NOT_IMPLEMENTED,
-    GESTURE_SOURCE_TYPE_NOT_SUPPORTED_BY_PLATFORM,
-    GESTURE_RESULT_MAX = GESTURE_SOURCE_TYPE_NOT_SUPPORTED_BY_PLATFORM
+    GESTURE_RESULT_MAX = GESTURE_SOURCE_TYPE_NOT_IMPLEMENTED
   };
 
   // Update the state of the gesture and forward the appropriate events to the
   // platform. This function is called repeatedly by the synthetic gesture
   // controller until it stops returning GESTURE_RUNNING.
   virtual Result ForwardInputEvents(
-      const base::TimeDelta& interval, SyntheticGestureTarget* target) = 0;
+      const base::TimeTicks& timestamp, SyntheticGestureTarget* target) = 0;
 
- private:
+ protected:
+  static double ConvertTimestampToSeconds(const base::TimeTicks& timestamp);
+
   DISALLOW_COPY_AND_ASSIGN(SyntheticGesture);
 };
 

@@ -27,23 +27,23 @@
 
 #include "core/html/canvas/WebGLProgram.h"
 
-#include "core/html/canvas/WebGLRenderingContext.h"
+#include "core/html/canvas/WebGLRenderingContextBase.h"
 
 namespace WebCore {
 
-PassRefPtr<WebGLProgram> WebGLProgram::create(WebGLRenderingContext* ctx)
+PassRefPtr<WebGLProgram> WebGLProgram::create(WebGLRenderingContextBase* ctx)
 {
     return adoptRef(new WebGLProgram(ctx));
 }
 
-WebGLProgram::WebGLProgram(WebGLRenderingContext* ctx)
+WebGLProgram::WebGLProgram(WebGLRenderingContextBase* ctx)
     : WebGLSharedObject(ctx)
     , m_linkStatus(false)
     , m_linkCount(0)
     , m_infoValid(true)
 {
     ScriptWrappable::init(this);
-    setObject(ctx->graphicsContext3D()->createProgram());
+    setObject(ctx->webContext()->createProgram());
 }
 
 WebGLProgram::~WebGLProgram()
@@ -51,16 +51,16 @@ WebGLProgram::~WebGLProgram()
     deleteObject(0);
 }
 
-void WebGLProgram::deleteObjectImpl(GraphicsContext3D* context3d, Platform3DObject obj)
+void WebGLProgram::deleteObjectImpl(blink::WebGraphicsContext3D* context3d, Platform3DObject obj)
 {
     context3d->deleteProgram(obj);
     if (m_vertexShader) {
         m_vertexShader->onDetached(context3d);
-        m_vertexShader = 0;
+        m_vertexShader = nullptr;
     }
     if (m_fragmentShader) {
         m_fragmentShader->onDetached(context3d);
-        m_fragmentShader = 0;
+        m_fragmentShader = nullptr;
     }
 }
 
@@ -70,7 +70,7 @@ unsigned WebGLProgram::numActiveAttribLocations()
     return m_activeAttribLocations.size();
 }
 
-GC3Dint WebGLProgram::getActiveAttribLocation(GC3Duint index)
+GLint WebGLProgram::getActiveAttribLocation(GLuint index)
 {
     cacheInfoIfNeeded();
     if (index >= numActiveAttribLocations())
@@ -94,19 +94,13 @@ bool WebGLProgram::linkStatus()
     return m_linkStatus;
 }
 
-void WebGLProgram::setLinkStatus(bool status)
-{
-    cacheInfoIfNeeded();
-    m_linkStatus = status;
-}
-
 void WebGLProgram::increaseLinkCount()
 {
     ++m_linkCount;
     m_infoValid = false;
 }
 
-WebGLShader* WebGLProgram::getAttachedShader(GC3Denum type)
+WebGLShader* WebGLProgram::getAttachedShader(GLenum type)
 {
     switch (type) {
     case GL_VERTEX_SHADER:
@@ -146,29 +140,29 @@ bool WebGLProgram::detachShader(WebGLShader* shader)
     case GL_VERTEX_SHADER:
         if (m_vertexShader != shader)
             return false;
-        m_vertexShader = 0;
+        m_vertexShader = nullptr;
         return true;
     case GL_FRAGMENT_SHADER:
         if (m_fragmentShader != shader)
             return false;
-        m_fragmentShader = 0;
+        m_fragmentShader = nullptr;
         return true;
     default:
         return false;
     }
 }
 
-void WebGLProgram::cacheActiveAttribLocations(GraphicsContext3D* context3d)
+void WebGLProgram::cacheActiveAttribLocations(blink::WebGraphicsContext3D* context3d)
 {
     m_activeAttribLocations.clear();
 
-    GC3Dint numAttribs = 0;
+    GLint numAttribs = 0;
     context3d->getProgramiv(object(), GL_ACTIVE_ATTRIBUTES, &numAttribs);
     m_activeAttribLocations.resize(static_cast<size_t>(numAttribs));
     for (int i = 0; i < numAttribs; ++i) {
-        ActiveInfo info;
+        blink::WebGraphicsContext3D::ActiveInfo info;
         context3d->getActiveAttrib(object(), i, info);
-        m_activeAttribLocations[i] = context3d->getAttribLocation(object(), info.name);
+        m_activeAttribLocations[i] = context3d->getAttribLocation(object(), info.name.utf8().data());
     }
 }
 
@@ -180,10 +174,10 @@ void WebGLProgram::cacheInfoIfNeeded()
     if (!object())
         return;
 
-    GraphicsContext3D* context = getAGraphicsContext3D();
+    blink::WebGraphicsContext3D* context = getAWebGraphicsContext3D();
     if (!context)
         return;
-    GC3Dint linkStatus = 0;
+    GLint linkStatus = 0;
     context->getProgramiv(object(), GL_LINK_STATUS, &linkStatus);
     m_linkStatus = linkStatus;
     if (m_linkStatus)

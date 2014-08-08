@@ -13,6 +13,7 @@
 #include "base/json/json_string_value_serializer.h"
 #include "base/memory/ref_counted.h"
 #include "base/message_loop/message_loop_proxy.h"
+#include "base/prefs/pref_filter.h"
 #include "base/sequenced_task_runner.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "base/values.h"
@@ -36,19 +37,23 @@ class FileThreadDeserializer
         origin_loop_proxy_(base::MessageLoopProxy::current()) {
   }
 
-  void Start(const base::FilePath& path) {
+  void Start(const base::FilePath& path,
+             const base::FilePath& alternate_path) {
     DCHECK(origin_loop_proxy_->BelongsToCurrentThread());
+    // TODO(gab): This should use PostTaskAndReplyWithResult instead of using
+    // the |error_| member to pass data across tasks.
     sequenced_task_runner_->PostTask(
         FROM_HERE,
         base::Bind(&FileThreadDeserializer::ReadFileAndReport,
-                   this, path));
+                   this, path, alternate_path));
   }
 
   // Deserializes JSON on the sequenced task runner.
-  void ReadFileAndReport(const base::FilePath& path) {
+  void ReadFileAndReport(const base::FilePath& path,
+                         const base::FilePath& alternate_path) {
     DCHECK(sequenced_task_runner_->RunsTasksOnCurrentThread());
 
-    value_.reset(DoReading(path, &error_, &no_dir_));
+    value_.reset(DoReading(path, alternate_path, &error_, &no_dir_));
 
     origin_loop_proxy_->PostTask(
         FROM_HERE,
@@ -58,12 +63,18 @@ class FileThreadDeserializer
   // Reports deserialization result on the origin thread.
   void ReportOnOriginThread() {
     DCHECK(origin_loop_proxy_->BelongsToCurrentThread());
-    delegate_->OnFileRead(value_.release(), error_, no_dir_);
+    delegate_->OnFileRead(value_.Pass(), error_, no_dir_);
   }
 
   static base::Value* DoReading(const base::FilePath& path,
+                                const base::FilePath& alternate_path,
                                 PersistentPrefStore::PrefReadError* error,
                                 bool* no_dir) {
+    if (!base::PathExists(path) && !alternate_path.empty() &&
+        base::PathExists(alternate_path)) {
+      base::Move(alternate_path, path);
+    }
+
     int error_code;
     std::string error_msg;
     JSONFileValueSerializer serializer(path);
@@ -151,14 +162,34 @@ scoped_refptr<base::SequencedTaskRunner> JsonPrefStore::GetTaskRunnerForFile(
 }
 
 JsonPrefStore::JsonPrefStore(const base::FilePath& filename,
-                             base::SequencedTaskRunner* sequenced_task_runner)
+                             base::SequencedTaskRunner* sequenced_task_runner,
+                             scoped_ptr<PrefFilter> pref_filter)
     : path_(filename),
       sequenced_task_runner_(sequenced_task_runner),
       prefs_(new base::DictionaryValue()),
       read_only_(false),
       writer_(filename, sequenced_task_runner),
+      pref_filter_(pref_filter.Pass()),
       initialized_(false),
-      read_error_(PREF_READ_ERROR_OTHER) {}
+      filtering_in_progress_(false),
+      read_error_(PREF_READ_ERROR_NONE) {
+}
+
+JsonPrefStore::JsonPrefStore(const base::FilePath& filename,
+                             const base::FilePath& alternate_filename,
+                             base::SequencedTaskRunner* sequenced_task_runner,
+                             scoped_ptr<PrefFilter> pref_filter)
+    : path_(filename),
+      alternate_path_(alternate_filename),
+      sequenced_task_runner_(sequenced_task_runner),
+      prefs_(new base::DictionaryValue()),
+      read_only_(false),
+      writer_(filename, sequenced_task_runner),
+      pref_filter_(pref_filter.Pass()),
+      initialized_(false),
+      filtering_in_progress_(false),
+      read_error_(PREF_READ_ERROR_NONE) {
+}
 
 bool JsonPrefStore::GetValue(const std::string& key,
                              const base::Value** result) const {
@@ -221,6 +252,12 @@ void JsonPrefStore::RemoveValue(const std::string& key) {
     ReportValueChanged(key);
 }
 
+void JsonPrefStore::RemoveValueSilently(const std::string& key) {
+  prefs_->RemovePath(key, NULL);
+  if (!read_only_)
+    writer_.ScheduleWrite(this);
+}
+
 bool JsonPrefStore::ReadOnly() const {
   return read_only_;
 }
@@ -231,23 +268,27 @@ PersistentPrefStore::PrefReadError JsonPrefStore::GetReadError() const {
 
 PersistentPrefStore::PrefReadError JsonPrefStore::ReadPrefs() {
   if (path_.empty()) {
-    OnFileRead(NULL, PREF_READ_ERROR_FILE_NOT_SPECIFIED, false);
+    OnFileRead(
+        scoped_ptr<base::Value>(), PREF_READ_ERROR_FILE_NOT_SPECIFIED, false);
     return PREF_READ_ERROR_FILE_NOT_SPECIFIED;
   }
 
   PrefReadError error;
   bool no_dir;
-  base::Value* value =
-      FileThreadDeserializer::DoReading(path_, &error, &no_dir);
-  OnFileRead(value, error, no_dir);
-  return error;
+  scoped_ptr<base::Value> value(
+      FileThreadDeserializer::DoReading(path_, alternate_path_, &error,
+                                        &no_dir));
+  OnFileRead(value.Pass(), error, no_dir);
+  return filtering_in_progress_ ? PREF_READ_ERROR_ASYNCHRONOUS_TASK_INCOMPLETE :
+                                  error;
 }
 
-void JsonPrefStore::ReadPrefsAsync(ReadErrorDelegate *error_delegate) {
+void JsonPrefStore::ReadPrefsAsync(ReadErrorDelegate* error_delegate) {
   initialized_ = false;
   error_delegate_.reset(error_delegate);
   if (path_.empty()) {
-    OnFileRead(NULL, PREF_READ_ERROR_FILE_NOT_SPECIFIED, false);
+    OnFileRead(
+        scoped_ptr<base::Value>(), PREF_READ_ERROR_FILE_NOT_SPECIFIED, false);
     return;
   }
 
@@ -255,7 +296,7 @@ void JsonPrefStore::ReadPrefsAsync(ReadErrorDelegate *error_delegate) {
   // in the end.
   scoped_refptr<FileThreadDeserializer> deserializer(
       new FileThreadDeserializer(this, sequenced_task_runner_.get()));
-  deserializer->Start(path_);
+  deserializer->Start(path_, alternate_path_);
 }
 
 void JsonPrefStore::CommitPendingWrite() {
@@ -264,55 +305,77 @@ void JsonPrefStore::CommitPendingWrite() {
 }
 
 void JsonPrefStore::ReportValueChanged(const std::string& key) {
+  if (pref_filter_)
+    pref_filter_->FilterUpdate(key);
+
   FOR_EACH_OBSERVER(PrefStore::Observer, observers_, OnPrefValueChanged(key));
+
   if (!read_only_)
     writer_.ScheduleWrite(this);
 }
 
-void JsonPrefStore::OnFileRead(base::Value* value_owned,
+void JsonPrefStore::RegisterOnNextSuccessfulWriteCallback(
+    const base::Closure& on_next_successful_write) {
+  writer_.RegisterOnNextSuccessfulWriteCallback(on_next_successful_write);
+}
+
+void JsonPrefStore::OnFileRead(scoped_ptr<base::Value> value,
                                PersistentPrefStore::PrefReadError error,
                                bool no_dir) {
-  scoped_ptr<base::Value> value(value_owned);
+  scoped_ptr<base::DictionaryValue> unfiltered_prefs(new base::DictionaryValue);
+
   read_error_ = error;
 
-  if (no_dir) {
-    FOR_EACH_OBSERVER(PrefStore::Observer,
-                      observers_,
-                      OnInitializationCompleted(false));
-    return;
+  bool initialization_successful = !no_dir;
+
+  if (initialization_successful) {
+    switch (read_error_) {
+      case PREF_READ_ERROR_ACCESS_DENIED:
+      case PREF_READ_ERROR_FILE_OTHER:
+      case PREF_READ_ERROR_FILE_LOCKED:
+      case PREF_READ_ERROR_JSON_TYPE:
+      case PREF_READ_ERROR_FILE_NOT_SPECIFIED:
+        read_only_ = true;
+        break;
+      case PREF_READ_ERROR_NONE:
+        DCHECK(value.get());
+        unfiltered_prefs.reset(
+            static_cast<base::DictionaryValue*>(value.release()));
+        break;
+      case PREF_READ_ERROR_NO_FILE:
+        // If the file just doesn't exist, maybe this is first run.  In any case
+        // there's no harm in writing out default prefs in this case.
+        break;
+      case PREF_READ_ERROR_JSON_PARSE:
+      case PREF_READ_ERROR_JSON_REPEAT:
+        break;
+      case PREF_READ_ERROR_ASYNCHRONOUS_TASK_INCOMPLETE:
+        // This is a special error code to be returned by ReadPrefs when it
+        // can't complete synchronously, it should never be returned by the read
+        // operation itself.
+        NOTREACHED();
+        break;
+      case PREF_READ_ERROR_LEVELDB_IO:
+      case PREF_READ_ERROR_LEVELDB_CORRUPTION_READ_ONLY:
+      case PREF_READ_ERROR_LEVELDB_CORRUPTION:
+        // These are specific to LevelDBPrefStore.
+        NOTREACHED();
+      case PREF_READ_ERROR_MAX_ENUM:
+        NOTREACHED();
+        break;
+    }
   }
 
-  initialized_ = true;
-
-  switch (error) {
-    case PREF_READ_ERROR_ACCESS_DENIED:
-    case PREF_READ_ERROR_FILE_OTHER:
-    case PREF_READ_ERROR_FILE_LOCKED:
-    case PREF_READ_ERROR_JSON_TYPE:
-    case PREF_READ_ERROR_FILE_NOT_SPECIFIED:
-      read_only_ = true;
-      break;
-    case PREF_READ_ERROR_NONE:
-      DCHECK(value.get());
-      prefs_.reset(static_cast<base::DictionaryValue*>(value.release()));
-      break;
-    case PREF_READ_ERROR_NO_FILE:
-      // If the file just doesn't exist, maybe this is first run.  In any case
-      // there's no harm in writing out default prefs in this case.
-      break;
-    case PREF_READ_ERROR_JSON_PARSE:
-    case PREF_READ_ERROR_JSON_REPEAT:
-      break;
-    default:
-      NOTREACHED() << "Unknown error: " << error;
+  if (pref_filter_) {
+    filtering_in_progress_ = true;
+    const PrefFilter::PostFilterOnLoadCallback post_filter_on_load_callback(
+        base::Bind(
+            &JsonPrefStore::FinalizeFileRead, this, initialization_successful));
+    pref_filter_->FilterOnLoad(post_filter_on_load_callback,
+                               unfiltered_prefs.Pass());
+  } else {
+    FinalizeFileRead(initialization_successful, unfiltered_prefs.Pass(), false);
   }
-
-  if (error_delegate_.get() && error != PREF_READ_ERROR_NONE)
-    error_delegate_->OnError(error);
-
-  FOR_EACH_OBSERVER(PrefStore::Observer,
-                    observers_,
-                    OnInitializationCompleted(true));
 }
 
 JsonPrefStore::~JsonPrefStore() {
@@ -320,7 +383,39 @@ JsonPrefStore::~JsonPrefStore() {
 }
 
 bool JsonPrefStore::SerializeData(std::string* output) {
+  if (pref_filter_)
+    pref_filter_->FilterSerializeData(prefs_.get());
+
   JSONStringValueSerializer serializer(output);
   serializer.set_pretty_print(true);
   return serializer.Serialize(*prefs_);
+}
+
+void JsonPrefStore::FinalizeFileRead(bool initialization_successful,
+                                     scoped_ptr<base::DictionaryValue> prefs,
+                                     bool schedule_write) {
+  filtering_in_progress_ = false;
+
+  if (!initialization_successful) {
+    FOR_EACH_OBSERVER(PrefStore::Observer,
+                      observers_,
+                      OnInitializationCompleted(false));
+    return;
+  }
+
+  prefs_ = prefs.Pass();
+
+  initialized_ = true;
+
+  if (schedule_write && !read_only_)
+    writer_.ScheduleWrite(this);
+
+  if (error_delegate_ && read_error_ != PREF_READ_ERROR_NONE)
+    error_delegate_->OnError(read_error_);
+
+  FOR_EACH_OBSERVER(PrefStore::Observer,
+                    observers_,
+                    OnInitializationCompleted(true));
+
+  return;
 }

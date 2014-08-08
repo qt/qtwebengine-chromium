@@ -32,7 +32,9 @@
 #define CustomElementCallbackQueue_h
 
 #include "core/dom/Element.h"
-#include "core/dom/custom/CustomElementCallbackInvocation.h"
+#include "core/dom/custom/CustomElementProcessingStep.h"
+#include "platform/heap/Handle.h"
+#include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
@@ -40,14 +42,17 @@
 
 namespace WebCore {
 
-class CustomElementCallbackQueue {
+// FIXME: Rename this because it contains resolution and upgrade as
+// well as callbacks.
+class CustomElementCallbackQueue : public NoBaseWillBeGarbageCollectedFinalized<CustomElementCallbackQueue> {
     WTF_MAKE_NONCOPYABLE(CustomElementCallbackQueue);
 public:
-    static PassOwnPtr<CustomElementCallbackQueue> create(PassRefPtr<Element>);
+    static PassOwnPtrWillBeRawPtr<CustomElementCallbackQueue> create(PassRefPtrWillBeRawPtr<Element>);
 
-    typedef int ElementQueue;
-    ElementQueue owner() { return m_owner; }
-    void setOwner(ElementQueue newOwner)
+    typedef int ElementQueueId;
+    ElementQueueId owner() const { return m_owner; }
+
+    void setOwner(ElementQueueId newOwner)
     {
         // ElementCallbackQueues only migrate towards the top of the
         // processing stack.
@@ -55,16 +60,19 @@ public:
         m_owner = newOwner;
     }
 
-    void append(PassOwnPtr<CustomElementCallbackInvocation> invocation) { m_queue.append(invocation); }
-    void processInElementQueue(ElementQueue);
+    bool processInElementQueue(ElementQueueId);
+
+    void append(PassOwnPtr<CustomElementProcessingStep> invocation) { m_queue.append(invocation); }
     bool inCreatedCallback() const { return m_inCreatedCallback; }
 
-private:
-    CustomElementCallbackQueue(PassRefPtr<Element>);
+    void trace(Visitor*);
 
-    RefPtr<Element> m_element;
-    Vector<OwnPtr<CustomElementCallbackInvocation> > m_queue;
-    ElementQueue m_owner;
+private:
+    explicit CustomElementCallbackQueue(PassRefPtrWillBeRawPtr<Element>);
+
+    RefPtrWillBeMember<Element> m_element;
+    Vector<OwnPtr<CustomElementProcessingStep> > m_queue;
+    ElementQueueId m_owner;
     size_t m_index;
     bool m_inCreatedCallback;
 };

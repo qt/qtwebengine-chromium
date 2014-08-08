@@ -23,11 +23,10 @@
 #include "config.h"
 #include "core/dom/Attr.h"
 
-#include "XMLNSNames.h"
 #include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "core/dom/Document.h"
 #include "core/dom/Element.h"
-#include "core/dom/ExceptionCode.h"
 #include "core/dom/Text.h"
 #include "core/events/ScopedEventQueue.h"
 #include "core/frame/UseCounter.h"
@@ -49,24 +48,24 @@ Attr::Attr(Element& element, const QualifiedName& name)
 
 Attr::Attr(Document& document, const QualifiedName& name, const AtomicString& standaloneValue)
     : ContainerNode(&document)
-    , m_element(0)
+    , m_element(nullptr)
     , m_name(name)
-    , m_standaloneValue(standaloneValue)
+    , m_standaloneValueOrAttachedLocalName(standaloneValue)
     , m_ignoreChildrenChanged(0)
 {
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<Attr> Attr::create(Element& element, const QualifiedName& name)
+PassRefPtrWillBeRawPtr<Attr> Attr::create(Element& element, const QualifiedName& name)
 {
-    RefPtr<Attr> attr = adoptRef(new Attr(element, name));
+    RefPtrWillBeRawPtr<Attr> attr = adoptRefWillBeNoop(new Attr(element, name));
     attr->createTextChild();
     return attr.release();
 }
 
-PassRefPtr<Attr> Attr::create(Document& document, const QualifiedName& name, const AtomicString& value)
+PassRefPtrWillBeRawPtr<Attr> Attr::create(Document& document, const QualifiedName& name, const AtomicString& value)
 {
-    RefPtr<Attr> attr = adoptRef(new Attr(document, name, value));
+    RefPtrWillBeRawPtr<Attr> attr = adoptRefWillBeNoop(new Attr(document, name, value));
     attr->createTextChild();
     return attr.release();
 }
@@ -75,11 +74,26 @@ Attr::~Attr()
 {
 }
 
+const QualifiedName Attr::qualifiedName() const
+{
+    if (m_element && !m_standaloneValueOrAttachedLocalName.isNull()) {
+        // In the unlikely case the Element attribute has a local name
+        // that differs by case, construct the qualified name based on
+        // it. This is the qualified name that must be used when
+        // looking up the attribute on the element.
+        return QualifiedName(m_name.prefix(), m_standaloneValueOrAttachedLocalName, m_name.namespaceURI());
+    }
+
+    return m_name;
+}
+
 void Attr::createTextChild()
 {
+#if !ENABLE(OILPAN)
     ASSERT(refCount());
+#endif
     if (!value().isEmpty()) {
-        RefPtr<Text> textNode = document().createTextNode(value().string());
+        RefPtrWillBeRawPtr<Text> textNode = document().createTextNode(value().string());
 
         // This does everything appendChild() would do in this situation (assuming m_ignoreChildrenChanged was set),
         // but much more efficiently.
@@ -90,31 +104,6 @@ void Attr::createTextChild()
     }
 }
 
-void Attr::setPrefix(const AtomicString& prefix, ExceptionState& exceptionState)
-{
-    UseCounter::count(document(), UseCounter::AttributeSetPrefix);
-
-    checkSetPrefix(prefix, exceptionState);
-    if (exceptionState.hadException())
-        return;
-
-    if (prefix == xmlnsAtom && namespaceURI() != XMLNSNames::xmlnsNamespaceURI) {
-        exceptionState.throwDOMException(NamespaceError, "The prefix '" + xmlnsAtom + "' may not be used on the namespace '" + namespaceURI() + "'.");
-        return;
-    }
-
-    if (this->qualifiedName() == xmlnsAtom) {
-        exceptionState.throwDOMException(NamespaceError, "The prefix '" + prefix + "' may not be used as a namespace prefix for attributes whose qualified name is '" + xmlnsAtom + "'.");
-        return;
-    }
-
-    const AtomicString& newPrefix = prefix.isEmpty() ? nullAtom : prefix;
-
-    if (m_element)
-        elementAttribute().setPrefix(newPrefix);
-    m_name.setPrefix(newPrefix);
-}
-
 void Attr::setValue(const AtomicString& value)
 {
     EventQueueScope scope;
@@ -123,14 +112,15 @@ void Attr::setValue(const AtomicString& value)
     if (m_element)
         elementAttribute().setValue(value);
     else
-        m_standaloneValue = value;
+        m_standaloneValueOrAttachedLocalName = value;
     createTextChild();
     m_ignoreChildrenChanged--;
 
-    invalidateNodeListCachesInAncestors(&m_name, m_element);
+    QualifiedName name = qualifiedName();
+    invalidateNodeListCachesInAncestors(&name, m_element);
 }
 
-void Attr::setValue(const AtomicString& value, ExceptionState&)
+void Attr::setValueInternal(const AtomicString& value)
 {
     if (m_element)
         m_element->willModifyAttribute(qualifiedName(), this->value(), value);
@@ -141,14 +131,30 @@ void Attr::setValue(const AtomicString& value, ExceptionState&)
         m_element->didModifyAttribute(qualifiedName(), value);
 }
 
-void Attr::setNodeValue(const String& v)
+const AtomicString& Attr::valueForBindings() const
 {
-    setValue(v, IGNORE_EXCEPTION);
+    UseCounter::count(document(), UseCounter::AttrGetValue);
+    return value();
 }
 
-PassRefPtr<Node> Attr::cloneNode(bool /*deep*/)
+void Attr::setValueForBindings(const AtomicString& value)
 {
-    RefPtr<Attr> clone = adoptRef(new Attr(document(), qualifiedName(), value()));
+    UseCounter::count(document(), UseCounter::AttrSetValue);
+    if (m_element)
+        UseCounter::count(document(), UseCounter::AttrSetValueWithElement);
+    setValueInternal(value);
+}
+
+void Attr::setNodeValue(const String& v)
+{
+    // Attr uses AtomicString type for its value to save memory as there
+    // is duplication among Elements' attributes values.
+    setValueInternal(AtomicString(v));
+}
+
+PassRefPtrWillBeRawPtr<Node> Attr::cloneNode(bool /*deep*/)
+{
+    RefPtrWillBeRawPtr<Attr> clone = adoptRefWillBeNoop(new Attr(document(), m_name, value()));
     cloneChildNodes(clone.get());
     return clone.release();
 }
@@ -164,7 +170,8 @@ void Attr::childrenChanged(bool, Node*, Node*, int)
     if (m_ignoreChildrenChanged > 0)
         return;
 
-    invalidateNodeListCachesInAncestors(&qualifiedName(), m_element);
+    QualifiedName name = qualifiedName();
+    invalidateNodeListCachesInAncestors(&name, m_element);
 
     StringBuilder valueBuilder;
     for (Node *n = firstChild(); n; n = n->nextSibling()) {
@@ -179,44 +186,44 @@ void Attr::childrenChanged(bool, Node*, Node*, int)
     if (m_element)
         elementAttribute().setValue(newValue);
     else
-        m_standaloneValue = newValue;
+        m_standaloneValueOrAttachedLocalName = newValue;
 
     if (m_element)
         m_element->attributeChanged(qualifiedName(), newValue);
-}
-
-bool Attr::isId() const
-{
-    return qualifiedName().matches(document().idAttributeName());
 }
 
 const AtomicString& Attr::value() const
 {
     if (m_element)
         return m_element->getAttribute(qualifiedName());
-    return m_standaloneValue;
+    return m_standaloneValueOrAttachedLocalName;
 }
 
 Attribute& Attr::elementAttribute()
 {
     ASSERT(m_element);
     ASSERT(m_element->elementData());
-    return *m_element->ensureUniqueElementData()->getAttributeItem(qualifiedName());
+    return *m_element->ensureUniqueElementData().findAttributeByName(qualifiedName());
 }
 
 void Attr::detachFromElementWithValue(const AtomicString& value)
 {
     ASSERT(m_element);
-    ASSERT(m_standaloneValue.isNull());
-    m_standaloneValue = value;
-    m_element = 0;
+    m_standaloneValueOrAttachedLocalName = value;
+    m_element = nullptr;
 }
 
-void Attr::attachToElement(Element* element)
+void Attr::attachToElement(Element* element, const AtomicString& attachedLocalName)
 {
     ASSERT(!m_element);
     m_element = element;
-    m_standaloneValue = nullAtom;
+    m_standaloneValueOrAttachedLocalName = attachedLocalName;
+}
+
+void Attr::trace(Visitor* visitor)
+{
+    visitor->trace(m_element);
+    ContainerNode::trace(visitor);
 }
 
 }

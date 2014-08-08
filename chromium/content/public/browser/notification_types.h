@@ -72,7 +72,7 @@ enum NotificationType {
   // Other load-related (not from NavigationController) ----------------------
 
   // Corresponds to ViewHostMsg_DocumentOnLoadCompletedInMainFrame. The source
-  // is the WebContents and the details the page_id.
+  // is the WebContents.
   // DEPRECATED: Use WebContentsObserver::DocumentOnLoadCompletedInMainFrame()
   NOTIFICATION_LOAD_COMPLETED_MAIN_FRAME,
 
@@ -178,11 +178,6 @@ enum NotificationType {
   // Sent after the backing store has been updated but before the widget has
   // painted. The source is the RenderWidgetHost, the details are not used.
   NOTIFICATION_RENDER_WIDGET_HOST_DID_UPDATE_BACKING_STORE,
-
-  // This notifies the observer that a PaintAtSizeACK was received. The source
-  // is the RenderWidgetHost, the details are an instance of
-  // std::pair<int, gfx::Size>.
-  NOTIFICATION_RENDER_WIDGET_HOST_DID_RECEIVE_PAINT_AT_SIZE_ACK,
 
   // This notifies the observer that a HandleInputEventACK was received. The
   // source is the RenderWidgetHost, the details are the type of event

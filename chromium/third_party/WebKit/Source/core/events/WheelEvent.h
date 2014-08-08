@@ -44,7 +44,7 @@ struct WheelEventInit : public MouseEventInit {
     unsigned deltaMode;
 };
 
-class WheelEvent : public MouseEvent {
+class WheelEvent FINAL : public MouseEvent {
 public:
     enum { TickMultiplier = 120 };
 
@@ -54,30 +54,30 @@ public:
         DOM_DELTA_PAGE
     };
 
-    static PassRefPtr<WheelEvent> create()
+    static PassRefPtrWillBeRawPtr<WheelEvent> create()
     {
-        return adoptRef(new WheelEvent);
+        return adoptRefWillBeNoop(new WheelEvent);
     }
 
-    static PassRefPtr<WheelEvent> create(const AtomicString& type, const WheelEventInit& initializer)
+    static PassRefPtrWillBeRawPtr<WheelEvent> create(const AtomicString& type, const WheelEventInit& initializer)
     {
-        return adoptRef(new WheelEvent(type, initializer));
+        return adoptRefWillBeNoop(new WheelEvent(type, initializer));
     }
 
-    static PassRefPtr<WheelEvent> create(const FloatPoint& wheelTicks,
-        const FloatPoint& rawDelta, unsigned deltaMode, PassRefPtr<AbstractView> view,
+    static PassRefPtrWillBeRawPtr<WheelEvent> create(const FloatPoint& wheelTicks,
+        const FloatPoint& rawDelta, unsigned deltaMode, PassRefPtrWillBeRawPtr<AbstractView> view,
         const IntPoint& screenLocation, const IntPoint& pageLocation,
         bool ctrlKey, bool altKey, bool shiftKey, bool metaKey, bool directionInvertedFromDevice)
     {
-        return adoptRef(new WheelEvent(wheelTicks, rawDelta, deltaMode, view,
+        return adoptRefWillBeNoop(new WheelEvent(wheelTicks, rawDelta, deltaMode, view,
         screenLocation, pageLocation, ctrlKey, altKey, shiftKey, metaKey, directionInvertedFromDevice));
     }
 
-    void initWheelEvent(int rawDeltaX, int rawDeltaY, PassRefPtr<AbstractView>,
+    void initWheelEvent(int rawDeltaX, int rawDeltaY, PassRefPtrWillBeRawPtr<AbstractView>,
         int screenX, int screenY, int pageX, int pageY,
         bool ctrlKey, bool altKey, bool shiftKey, bool metaKey);
 
-    void initWebKitWheelEvent(int rawDeltaX, int rawDeltaY, PassRefPtr<AbstractView>,
+    void initWebKitWheelEvent(int rawDeltaX, int rawDeltaY, PassRefPtrWillBeRawPtr<AbstractView>,
         int screenX, int screenY, int pageX, int pageY,
         bool ctrlKey, bool altKey, bool shiftKey, bool metaKey);
 
@@ -93,15 +93,17 @@ public:
 
     bool webkitDirectionInvertedFromDevice() const { return m_directionInvertedFromDevice; }
 
-    virtual const AtomicString& interfaceName() const;
+    virtual const AtomicString& interfaceName() const OVERRIDE;
     virtual bool isMouseEvent() const OVERRIDE;
     virtual bool isWheelEvent() const OVERRIDE;
+
+    virtual void trace(Visitor*) OVERRIDE;
 
 private:
     WheelEvent();
     WheelEvent(const AtomicString&, const WheelEventInit&);
     WheelEvent(const FloatPoint& wheelTicks, const FloatPoint& rawDelta,
-        unsigned, PassRefPtr<AbstractView>, const IntPoint& screenLocation, const IntPoint& pageLocation,
+        unsigned, PassRefPtrWillBeRawPtr<AbstractView>, const IntPoint& screenLocation, const IntPoint& pageLocation,
         bool ctrlKey, bool altKey, bool shiftKey, bool metaKey, bool directionInvertedFromDevice);
 
     IntPoint m_wheelDelta;
@@ -114,11 +116,11 @@ private:
 
 DEFINE_EVENT_TYPE_CASTS(WheelEvent);
 
-class WheelEventDispatchMediator : public EventDispatchMediator {
+class WheelEventDispatchMediator FINAL : public EventDispatchMediator {
 public:
-    static PassRefPtr<WheelEventDispatchMediator> create(const PlatformWheelEvent&, PassRefPtr<AbstractView>);
+    static PassRefPtrWillBeRawPtr<WheelEventDispatchMediator> create(const PlatformWheelEvent&, PassRefPtrWillBeRawPtr<AbstractView>);
 private:
-    WheelEventDispatchMediator(const PlatformWheelEvent&, PassRefPtr<AbstractView>);
+    WheelEventDispatchMediator(const PlatformWheelEvent&, PassRefPtrWillBeRawPtr<AbstractView>);
     WheelEvent* event() const;
     virtual bool dispatchEvent(EventDispatcher*) const OVERRIDE;
 };

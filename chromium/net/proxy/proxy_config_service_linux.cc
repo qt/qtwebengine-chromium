@@ -4,6 +4,15 @@
 
 #include "net/proxy/proxy_config_service_linux.h"
 
+// glib >=2.40 deprecate g_settings_list_schemas in favor of
+// g_settings_schema_source_list_schemas. This function is not available on
+// earlier versions that we still need to support (specifically, 2.32), so
+// disable the warning.
+// TODO(mgiuca): Remove this suppression when we drop support for Ubuntu 13.10
+// (saucy) and earlier. Update the code to use
+// g_settings_schema_source_list_schemas instead.
+#define GLIB_DISABLE_DEPRECATION_WARNINGS
+
 #include <errno.h>
 #include <fcntl.h>
 #if defined(USE_GCONF)
@@ -19,9 +28,11 @@
 
 #include "base/bind.h"
 #include "base/compiler_specific.h"
+#include "base/debug/leak_annotations.h"
 #include "base/environment.h"
 #include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/files/scoped_file.h"
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
 #include "base/nix/xdg_util.h"
@@ -509,6 +520,8 @@ class SettingGetterImplGConf : public ProxyConfigServiceLinux::SettingGetter {
 #endif  // defined(USE_GCONF)
 
 #if defined(USE_GIO)
+const char kProxyGConfSchema[] = "org.gnome.system.proxy";
+
 // This setting getter uses gsettings, as used in most GNOME 3 desktops.
 class SettingGetterImplGSettings
     : public ProxyConfigServiceLinux::SettingGetter {
@@ -564,8 +577,8 @@ class SettingGetterImplGSettings
     DCHECK(!client_);
     DCHECK(!task_runner_.get());
 
-    if (!SchemaExists("org.gnome.system.proxy") ||
-        !(client_ = libgio_loader_.g_settings_new("org.gnome.system.proxy"))) {
+    if (!SchemaExists(kProxyGConfSchema) ||
+        !(client_ = libgio_loader_.g_settings_new(kProxyGConfSchema))) {
       // It's not clear whether/when this can return NULL.
       LOG(ERROR) << "Unable to create a gsettings client";
       return false;
@@ -805,9 +818,12 @@ bool SettingGetterImplGSettings::LoadAndCheckVersion(
     }
   }
 
-  GSettings* client;
-  if (!SchemaExists("org.gnome.system.proxy") ||
-      !(client = libgio_loader_.g_settings_new("org.gnome.system.proxy"))) {
+  GSettings* client = NULL;
+  if (SchemaExists(kProxyGConfSchema)) {
+    ANNOTATE_SCOPED_MEMORY_LEAK; // http://crbug.com/380782
+    client = libgio_loader_.g_settings_new(kProxyGConfSchema);
+  }
+  if (!client) {
     VLOG(1) << "Cannot create gsettings client. Will fall back to gconf.";
     return false;
   }
@@ -884,8 +900,8 @@ class SettingGetterImplKDE : public ProxyConfigServiceLinux::SettingGetter,
         base::FilePath kde4_config = KDEHomeToConfigPath(kde4_path);
         bool use_kde4 = false;
         if (base::DirectoryExists(kde4_path)) {
-          base::PlatformFileInfo kde3_info;
-          base::PlatformFileInfo kde4_info;
+          base::File::Info kde3_info;
+          base::File::Info kde4_info;
           if (base::GetFileInfo(kde4_config, &kde4_info)) {
             if (base::GetFileInfo(kde3_config, &kde3_info)) {
               use_kde4 = kde4_info.last_modified >= kde3_info.last_modified;
@@ -1171,7 +1187,7 @@ class SettingGetterImplKDE : public ProxyConfigServiceLinux::SettingGetter,
   // each relevant name-value pair to the appropriate value table.
   void UpdateCachedSettings() {
     base::FilePath kioslaverc = kde_config_dir_.Append("kioslaverc");
-    file_util::ScopedFILE input(base::OpenFile(kioslaverc, "r"));
+    base::ScopedFILE input(base::OpenFile(kioslaverc, "r"));
     if (!input.get())
       return;
     ResetCachedSettings();
@@ -1215,8 +1231,8 @@ class SettingGetterImplKDE : public ProxyConfigServiceLinux::SettingGetter,
         *(split++) = 0;
         std::string key = line;
         std::string value = split;
-        TrimWhitespaceASCII(key, TRIM_ALL, &key);
-        TrimWhitespaceASCII(value, TRIM_ALL, &value);
+        base::TrimWhitespaceASCII(key, base::TRIM_ALL, &key);
+        base::TrimWhitespaceASCII(value, base::TRIM_ALL, &value);
         // Skip this line if the key name is empty.
         if (key.empty())
           continue;
@@ -1230,7 +1246,7 @@ class SettingGetterImplKDE : public ProxyConfigServiceLinux::SettingGetter,
           // Trim the localization indicator off.
           key.resize(length);
           // Remove any resulting trailing whitespace.
-          TrimWhitespaceASCII(key, TRIM_TRAILING, &key);
+          base::TrimWhitespaceASCII(key, base::TRIM_TRAILING, &key);
           // Skip this line if the key name is now empty.
           if (key.empty())
             continue;

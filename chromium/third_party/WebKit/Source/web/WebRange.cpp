@@ -29,11 +29,8 @@
  */
 
 #include "config.h"
-#include "WebRange.h"
+#include "public/web/WebRange.h"
 
-#include "WebExceptionCode.h"
-#include "WebFrameImpl.h"
-#include "WebNode.h"
 #include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "core/dom/Document.h"
@@ -42,30 +39,27 @@
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/editing/FrameSelection.h"
 #include "core/editing/PlainTextRange.h"
-#include "core/frame/Frame.h"
 #include "core/frame/FrameView.h"
+#include "core/frame/LocalFrame.h"
 #include "public/platform/WebFloatQuad.h"
 #include "public/platform/WebString.h"
+#include "public/web/WebExceptionCode.h"
+#include "public/web/WebNode.h"
+#include "web/WebLocalFrameImpl.h"
 #include "wtf/PassRefPtr.h"
 
 using namespace WebCore;
 
 namespace blink {
 
-class WebRangePrivate : public Range {
-};
-
 void WebRange::reset()
 {
-    assign(0);
+    m_private.reset();
 }
 
 void WebRange::assign(const WebRange& other)
 {
-    WebRangePrivate* p = const_cast<WebRangePrivate*>(other.m_private);
-    if (p)
-        p->ref();
-    assign(p);
+    m_private = other.m_private;
 }
 
 int WebRange::startOffset() const
@@ -81,18 +75,16 @@ int WebRange::endOffset() const
 WebNode WebRange::startContainer(WebExceptionCode& exceptionCode) const
 {
     // FIXME: Create a wrapper class that just sets the internal int.
-    TrackExceptionState exceptionState;
-    RefPtr<Node> node(m_private->startContainer(exceptionState));
-    exceptionCode = exceptionState.code();
+    RefPtrWillBeRawPtr<Node> node(m_private->startContainer());
+    exceptionCode = 0;
     return node.release();
 }
 
 WebNode WebRange::endContainer(WebExceptionCode& exceptionCode) const
 {
     // FIXME: Create a wrapper class that just sets the internal int.
-    TrackExceptionState exceptionState;
-    RefPtr<Node> node(m_private->endContainer(exceptionState));
-    exceptionCode = exceptionState.code();
+    RefPtrWillBeRawPtr<Node> node(m_private->endContainer());
+    exceptionCode = 0;
     return node.release();
 }
 
@@ -114,9 +106,9 @@ WebRange WebRange::expandedToParagraph() const
 }
 
 // static
-WebRange WebRange::fromDocumentRange(WebFrame* frame, int start, int length)
+WebRange WebRange::fromDocumentRange(WebLocalFrame* frame, int start, int length)
 {
-    WebCore::Frame* webFrame = toWebFrameImpl(frame)->frame();
+    WebCore::LocalFrame* webFrame = toWebLocalFrameImpl(frame)->frame();
     Element* selectionRoot = webFrame->selection().rootEditableElement();
     ContainerNode* scope = selectionRoot ? selectionRoot : webFrame->document()->documentElement();
     return PlainTextRange(start, start + length).createRange(*scope);
@@ -127,7 +119,7 @@ WebVector<WebFloatQuad> WebRange::textQuads() const
     if (isNull())
         return WebVector<WebFloatQuad>();
 
-    Frame* frame = m_private->ownerDocument().frame();
+    LocalFrame* frame = m_private->ownerDocument().frame();
     if (!frame)
         return WebVector<WebFloatQuad>();
 
@@ -143,28 +135,14 @@ WebVector<WebFloatQuad> WebRange::textQuads() const
     return quads;
 }
 
-WebRange::WebRange(const WTF::PassRefPtr<WebCore::Range>& range)
-    : m_private(static_cast<WebRangePrivate*>(range.leakRef()))
+WebRange::WebRange(const PassRefPtrWillBeRawPtr<WebCore::Range>& range)
+    : m_private(range)
 {
 }
 
-WebRange& WebRange::operator=(const WTF::PassRefPtr<WebCore::Range>& range)
+WebRange::operator PassRefPtrWillBeRawPtr<WebCore::Range>() const
 {
-    assign(static_cast<WebRangePrivate*>(range.leakRef()));
-    return *this;
-}
-
-WebRange::operator WTF::PassRefPtr<WebCore::Range>() const
-{
-    return PassRefPtr<Range>(const_cast<WebRangePrivate*>(m_private));
-}
-
-void WebRange::assign(WebRangePrivate* p)
-{
-    // p is already ref'd for us by the caller
-    if (m_private)
-        m_private->deref();
-    m_private = p;
+    return m_private.get();
 }
 
 } // namespace blink

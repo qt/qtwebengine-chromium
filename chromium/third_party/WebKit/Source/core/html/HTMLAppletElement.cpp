@@ -24,14 +24,14 @@
 #include "config.h"
 #include "core/html/HTMLAppletElement.h"
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/html/HTMLParamElement.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderClient.h"
-#include "core/frame/ContentSecurityPolicy.h"
-#include "core/frame/Frame.h"
+#include "core/frame/LocalFrame.h"
 #include "core/frame/Settings.h"
+#include "core/frame/csp/ContentSecurityPolicy.h"
 #include "core/rendering/RenderApplet.h"
 #include "platform/Widget.h"
 #include "platform/weborigin/KURL.h"
@@ -49,9 +49,9 @@ HTMLAppletElement::HTMLAppletElement(Document& document, bool createdByParser)
     m_serviceType = "application/x-java-applet";
 }
 
-PassRefPtr<HTMLAppletElement> HTMLAppletElement::create(Document& document, bool createdByParser)
+PassRefPtrWillBeRawPtr<HTMLAppletElement> HTMLAppletElement::create(Document& document, bool createdByParser)
 {
-    RefPtr<HTMLAppletElement> element = adoptRef(new HTMLAppletElement(document, createdByParser));
+    RefPtrWillBeRawPtr<HTMLAppletElement> element = adoptRefWillBeNoop(new HTMLAppletElement(document, createdByParser));
     element->ensureUserAgentShadowRoot();
     return element.release();
 }
@@ -75,6 +75,11 @@ bool HTMLAppletElement::isURLAttribute(const Attribute& attribute) const
 {
     return attribute.name() == codebaseAttr || attribute.name() == objectAttr
         || HTMLPlugInElement::isURLAttribute(attribute);
+}
+
+bool HTMLAppletElement::hasLegalLinkAttribute(const QualifiedName& name) const
+{
+    return name == codebaseAttr || HTMLPlugInElement::hasLegalLinkAttribute(name);
 }
 
 bool HTMLAppletElement::rendererIsNeeded(const RenderStyle& style)
@@ -114,13 +119,8 @@ void HTMLAppletElement::updateWidgetInternal()
 
     RenderEmbeddedObject* renderer = renderEmbeddedObject();
 
-    Frame* frame = document().frame();
+    LocalFrame* frame = document().frame();
     ASSERT(frame);
-
-    LayoutUnit contentWidth = renderer->style()->width().isFixed() ? LayoutUnit(renderer->style()->width().value()) :
-        renderer->width() - renderer->borderAndPaddingWidth();
-    LayoutUnit contentHeight = renderer->style()->height().isFixed() ? LayoutUnit(renderer->style()->height().value()) :
-        renderer->height() - renderer->borderAndPaddingHeight();
 
     Vector<String> paramNames;
     Vector<String> paramValues;
@@ -172,11 +172,7 @@ void HTMLAppletElement::updateWidgetInternal()
         paramValues.append(mayScript.string());
     }
 
-    for (Node* child = firstChild(); child; child = child->nextSibling()) {
-        if (!child->hasTagName(paramTag))
-            continue;
-
-        HTMLParamElement* param = toHTMLParamElement(child);
+    for (HTMLParamElement* param = Traversal<HTMLParamElement>::firstChild(*this); param; param = Traversal<HTMLParamElement>::nextSibling(*param)) {
         if (param->name().isEmpty())
             continue;
 
@@ -186,7 +182,7 @@ void HTMLAppletElement::updateWidgetInternal()
 
     RefPtr<Widget> widget;
     if (frame->loader().allowPlugins(AboutToInstantiatePlugin))
-        widget = frame->loader().client()->createJavaAppletWidget(roundedIntSize(LayoutSize(contentWidth, contentHeight)), this, baseURL, paramNames, paramValues);
+        widget = frame->loader().client()->createJavaAppletWidget(this, baseURL, paramNames, paramValues);
 
     if (!widget) {
         if (!renderer->showsUnavailablePluginIndicator())
@@ -194,7 +190,7 @@ void HTMLAppletElement::updateWidgetInternal()
         return;
     }
     document().setContainsPlugins();
-    renderer->setWidget(widget);
+    setWidget(widget);
 }
 
 bool HTMLAppletElement::canEmbedJava() const

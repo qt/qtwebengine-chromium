@@ -29,8 +29,8 @@
 #include "core/events/TouchEvent.h"
 
 #include "core/events/EventDispatcher.h"
-#include "core/events/EventRetargeter.h"
-#include "core/events/ThreadLocalEventNames.h"
+#include "core/frame/FrameConsole.h"
+#include "core/frame/LocalFrame.h"
 
 namespace WebCore {
 
@@ -41,11 +41,9 @@ TouchEvent::TouchEvent()
 
 TouchEvent::TouchEvent(TouchList* touches, TouchList* targetTouches,
         TouchList* changedTouches, const AtomicString& type,
-        PassRefPtr<AbstractView> view, int screenX, int screenY, int pageX, int pageY,
-        bool ctrlKey, bool altKey, bool shiftKey, bool metaKey)
-    : MouseRelatedEvent(type, true, true, view, 0, IntPoint(screenX, screenY),
-                        IntPoint(pageX, pageY),
-                        IntPoint(0, 0),
+        PassRefPtrWillBeRawPtr<AbstractView> view,
+        bool ctrlKey, bool altKey, bool shiftKey, bool metaKey, bool cancelable)
+    : UIEventWithKeyState(type, true, cancelable, view, 0,
                         ctrlKey, altKey, shiftKey, metaKey)
     , m_touches(touches)
     , m_targetTouches(targetTouches)
@@ -60,23 +58,26 @@ TouchEvent::~TouchEvent()
 
 void TouchEvent::initTouchEvent(TouchList* touches, TouchList* targetTouches,
         TouchList* changedTouches, const AtomicString& type,
-        PassRefPtr<AbstractView> view, int screenX, int screenY, int clientX, int clientY,
+        PassRefPtrWillBeRawPtr<AbstractView> view,
+        int, int, int, int,
         bool ctrlKey, bool altKey, bool shiftKey, bool metaKey)
 {
     if (dispatched())
         return;
 
-    initUIEvent(type, true, true, view, 0);
+    bool cancelable = true;
+    if (type == EventTypeNames::touchcancel)
+        cancelable = false;
+
+    initUIEvent(type, true, cancelable, view, 0);
 
     m_touches = touches;
     m_targetTouches = targetTouches;
     m_changedTouches = changedTouches;
-    m_screenLocation = IntPoint(screenX, screenY);
     m_ctrlKey = ctrlKey;
     m_altKey = altKey;
     m_shiftKey = shiftKey;
     m_metaKey = metaKey;
-    initCoordinates(IntPoint(clientX, clientY));
 }
 
 const AtomicString& TouchEvent::interfaceName() const
@@ -89,12 +90,32 @@ bool TouchEvent::isTouchEvent() const
     return true;
 }
 
-PassRefPtr<TouchEventDispatchMediator> TouchEventDispatchMediator::create(PassRefPtr<TouchEvent> touchEvent)
+void TouchEvent::preventDefault()
 {
-    return adoptRef(new TouchEventDispatchMediator(touchEvent));
+    UIEventWithKeyState::preventDefault();
+
+    // A common developer error is to wait too long before attempting to stop
+    // scrolling by consuming a touchmove event. Generate a warning if this
+    // event is uncancelable.
+    if (!cancelable() && view() && view()->frame()) {
+        view()->frame()->console().addMessage(JSMessageSource, WarningMessageLevel,
+            "Ignored attempt to cancel a " + type() + " event with cancelable=false, for example because scrolling is in progress and cannot be interrupted.");
+    }
+}
+void TouchEvent::trace(Visitor* visitor)
+{
+    visitor->trace(m_touches);
+    visitor->trace(m_targetTouches);
+    visitor->trace(m_changedTouches);
+    UIEventWithKeyState::trace(visitor);
 }
 
-TouchEventDispatchMediator::TouchEventDispatchMediator(PassRefPtr<TouchEvent> touchEvent)
+PassRefPtrWillBeRawPtr<TouchEventDispatchMediator> TouchEventDispatchMediator::create(PassRefPtrWillBeRawPtr<TouchEvent> touchEvent)
+{
+    return adoptRefWillBeNoop(new TouchEventDispatchMediator(touchEvent));
+}
+
+TouchEventDispatchMediator::TouchEventDispatchMediator(PassRefPtrWillBeRawPtr<TouchEvent> touchEvent)
     : EventDispatchMediator(touchEvent)
 {
 }
@@ -106,7 +127,7 @@ TouchEvent* TouchEventDispatchMediator::event() const
 
 bool TouchEventDispatchMediator::dispatchEvent(EventDispatcher* dispatcher) const
 {
-    EventRetargeter::adjustForTouchEvent(dispatcher->node(), *event());
+    event()->eventPath().adjustForTouchEvent(dispatcher->node(), *event());
     return dispatcher->dispatch();
 }
 

@@ -123,21 +123,21 @@ bool NetLog::Source::FromEventParameters(base::Value* event_params,
 base::Value* NetLog::Entry::ToValue() const {
   base::DictionaryValue* entry_dict(new base::DictionaryValue());
 
-  entry_dict->SetString("time", TickCountToString(time_));
+  entry_dict->SetString("time", TickCountToString(data_->time));
 
   // Set the entry source.
   base::DictionaryValue* source_dict = new base::DictionaryValue();
-  source_dict->SetInteger("id", source_.id);
-  source_dict->SetInteger("type", static_cast<int>(source_.type));
+  source_dict->SetInteger("id", data_->source.id);
+  source_dict->SetInteger("type", static_cast<int>(data_->source.type));
   entry_dict->Set("source", source_dict);
 
   // Set the event info.
-  entry_dict->SetInteger("type", static_cast<int>(type_));
-  entry_dict->SetInteger("phase", static_cast<int>(phase_));
+  entry_dict->SetInteger("type", static_cast<int>(data_->type));
+  entry_dict->SetInteger("phase", static_cast<int>(data_->phase));
 
   // Set the event-specific parameters.
-  if (parameters_callback_) {
-    base::Value* value = parameters_callback_->Run(log_level_);
+  if (data_->parameters_callback) {
+    base::Value* value = data_->parameters_callback->Run(log_level_);
     if (value)
       entry_dict->Set("params", value);
   }
@@ -146,30 +146,35 @@ base::Value* NetLog::Entry::ToValue() const {
 }
 
 base::Value* NetLog::Entry::ParametersToValue() const {
-  if (parameters_callback_)
-    return parameters_callback_->Run(log_level_);
+  if (data_->parameters_callback)
+    return data_->parameters_callback->Run(log_level_);
   return NULL;
 }
 
-NetLog::Entry::Entry(
+NetLog::EntryData::EntryData(
     EventType type,
     Source source,
     EventPhase phase,
     base::TimeTicks time,
-    const ParametersCallback* parameters_callback,
-    LogLevel log_level)
-    : type_(type),
-      source_(source),
-      phase_(phase),
-      time_(time),
-      parameters_callback_(parameters_callback),
-      log_level_(log_level) {
-};
+    const ParametersCallback* parameters_callback)
+    : type(type),
+      source(source),
+      phase(phase),
+      time(time),
+      parameters_callback(parameters_callback) {
+}
+
+NetLog::EntryData::~EntryData() {
+}
+
+NetLog::Entry::Entry(const EntryData* data, LogLevel log_level)
+    : data_(data), log_level_(log_level) {
+}
 
 NetLog::Entry::~Entry() {
 }
 
-NetLog::ThreadSafeObserver::ThreadSafeObserver() : log_level_(LOG_BASIC),
+NetLog::ThreadSafeObserver::ThreadSafeObserver() : log_level_(LOG_NONE),
                                                    net_log_(NULL) {
 }
 
@@ -187,6 +192,10 @@ NetLog::LogLevel NetLog::ThreadSafeObserver::log_level() const {
 
 NetLog* NetLog::ThreadSafeObserver::net_log() const {
   return net_log_;
+}
+
+void NetLog::ThreadSafeObserver::OnAddEntryData(const EntryData& entry_data) {
+  OnAddEntry(Entry(&entry_data, log_level()));
 }
 
 NetLog::NetLog()
@@ -234,9 +243,11 @@ NetLog::LogLevel NetLog::GetLogLevel() const {
 void NetLog::AddThreadSafeObserver(
     net::NetLog::ThreadSafeObserver* observer,
     LogLevel log_level) {
+  DCHECK_NE(LOG_NONE, log_level);
   base::AutoLock lock(lock_);
 
   DCHECK(!observer->net_log_);
+  DCHECK_EQ(LOG_NONE, observer->log_level_);
   observers_.AddObserver(observer);
   observer->net_log_ = this;
   observer->log_level_ = log_level;
@@ -246,10 +257,12 @@ void NetLog::AddThreadSafeObserver(
 void NetLog::SetObserverLogLevel(
     net::NetLog::ThreadSafeObserver* observer,
     LogLevel log_level) {
+  DCHECK_NE(LOG_NONE, log_level);
   base::AutoLock lock(lock_);
 
   DCHECK(observers_.HasObserver(observer));
   DCHECK_EQ(this, observer->net_log_);
+  DCHECK_NE(LOG_NONE, observer->log_level_);
   observer->log_level_ = log_level;
   UpdateLogLevel();
 }
@@ -260,8 +273,10 @@ void NetLog::RemoveThreadSafeObserver(
 
   DCHECK(observers_.HasObserver(observer));
   DCHECK_EQ(this, observer->net_log_);
+  DCHECK_NE(LOG_NONE, observer->log_level_);
   observers_.RemoveObserver(observer);
   observer->net_log_ = NULL;
+  observer->log_level_ = LOG_NONE;
   UpdateLogLevel();
 }
 
@@ -349,8 +364,8 @@ bool NetLog::IsLoggingBytes(LogLevel log_level) {
 }
 
 // static
-bool NetLog::IsLoggingAllEvents(LogLevel log_level) {
-  return log_level <= NetLog::LOG_ALL_BUT_BYTES;
+bool NetLog::IsLogging(LogLevel log_level) {
+  return log_level < NetLog::LOG_NONE;
 }
 
 // static
@@ -383,15 +398,14 @@ void NetLog::AddEntry(EventType type,
                       const Source& source,
                       EventPhase phase,
                       const NetLog::ParametersCallback* parameters_callback) {
-  LogLevel log_level = GetLogLevel();
-  if (log_level == LOG_NONE)
+  if (GetLogLevel() == LOG_NONE)
     return;
-  Entry entry(type, source, phase, base::TimeTicks::Now(),
-              parameters_callback, log_level);
+  EntryData entry_data(type, source, phase, base::TimeTicks::Now(),
+                       parameters_callback);
 
   // Notify all of the log observers.
   base::AutoLock lock(lock_);
-  FOR_EACH_OBSERVER(ThreadSafeObserver, observers_, OnAddEntry(entry));
+  FOR_EACH_OBSERVER(ThreadSafeObserver, observers_, OnAddEntryData(entry_data));
 }
 
 void BoundNetLog::AddEntry(NetLog::EventType type,
@@ -469,15 +483,15 @@ void BoundNetLog::AddByteTransferEvent(NetLog::EventType event_type,
 NetLog::LogLevel BoundNetLog::GetLogLevel() const {
   if (net_log_)
     return net_log_->GetLogLevel();
-  return NetLog::LOG_BASIC;
+  return NetLog::LOG_NONE;
 }
 
 bool BoundNetLog::IsLoggingBytes() const {
   return NetLog::IsLoggingBytes(GetLogLevel());
 }
 
-bool BoundNetLog::IsLoggingAllEvents() const {
-  return NetLog::IsLoggingAllEvents(GetLogLevel());
+bool BoundNetLog::IsLogging() const {
+  return NetLog::IsLogging(GetLogLevel());
 }
 
 // static

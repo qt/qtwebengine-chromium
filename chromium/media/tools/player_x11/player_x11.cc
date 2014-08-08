@@ -16,6 +16,8 @@
 #include "base/threading/thread.h"
 #include "media/audio/audio_manager.h"
 #include "media/audio/null_audio_sink.h"
+#include "media/base/audio_hardware_config.h"
+#include "media/base/bind_to_current_loop.h"
 #include "media/base/decryptor.h"
 #include "media/base/filter_collection.h"
 #include "media/base/media.h"
@@ -78,22 +80,11 @@ bool InitX11() {
   return true;
 }
 
-void SetOpaque(bool /*opaque*/) {
-}
+static void DoNothing() {}
 
-typedef base::Callback<void(media::VideoFrame*)> PaintCB;
-void Paint(base::MessageLoop* message_loop, const PaintCB& paint_cb,
-           const scoped_refptr<media::VideoFrame>& video_frame) {
-  if (message_loop != base::MessageLoop::current()) {
-    message_loop->PostTask(FROM_HERE, base::Bind(
-        &Paint, message_loop, paint_cb, video_frame));
-    return;
-  }
+static void OnStatus(media::PipelineStatus status) {}
 
-  paint_cb.Run(video_frame.get());
-}
-
-static void OnBufferingState(media::Pipeline::BufferingState buffering_state) {}
+static void OnMetadata(media::PipelineMetadata metadata) {}
 
 static void NeedKey(const std::string& type,
                     const std::vector<uint8>& init_data) {
@@ -108,44 +99,55 @@ static void SaveStatusAndSignal(base::WaitableEvent* event,
 }
 
 // TODO(vrk): Re-enabled audio. (crbug.com/112159)
-void InitPipeline(media::Pipeline* pipeline,
-                  const scoped_refptr<base::MessageLoopProxy>& message_loop,
-                  media::Demuxer* demuxer,
-                  const PaintCB& paint_cb,
-                  bool /* enable_audio */,
-                  base::MessageLoop* paint_message_loop) {
+void InitPipeline(
+    media::Pipeline* pipeline,
+    const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
+    media::Demuxer* demuxer,
+    const media::VideoRendererImpl::PaintCB& paint_cb,
+    bool /* enable_audio */) {
   // Create our filter factories.
   scoped_ptr<media::FilterCollection> collection(
       new media::FilterCollection());
   collection->SetDemuxer(demuxer);
 
   ScopedVector<media::VideoDecoder> video_decoders;
-  video_decoders.push_back(new media::FFmpegVideoDecoder(message_loop));
+  video_decoders.push_back(new media::FFmpegVideoDecoder(task_runner));
   scoped_ptr<media::VideoRenderer> video_renderer(new media::VideoRendererImpl(
-      message_loop,
+      task_runner,
       video_decoders.Pass(),
       media::SetDecryptorReadyCB(),
-      base::Bind(&Paint, paint_message_loop, paint_cb),
-      base::Bind(&SetOpaque),
+      paint_cb,
       true));
   collection->SetVideoRenderer(video_renderer.Pass());
 
   ScopedVector<media::AudioDecoder> audio_decoders;
-  audio_decoders.push_back(new media::FFmpegAudioDecoder(message_loop));
-  scoped_ptr<media::AudioRenderer> audio_renderer(new media::AudioRendererImpl(
-      message_loop,
-      new media::NullAudioSink(message_loop),
-      audio_decoders.Pass(),
-      media::SetDecryptorReadyCB()));
+  audio_decoders.push_back(new media::FFmpegAudioDecoder(task_runner,
+                                                         media::LogCB()));
+  media::AudioParameters out_params(
+      media::AudioParameters::AUDIO_PCM_LOW_LATENCY,
+      media::CHANNEL_LAYOUT_STEREO,
+      44100,
+      16,
+      512);
+  media::AudioHardwareConfig hardware_config(out_params, out_params);
+
+  scoped_ptr<media::AudioRenderer> audio_renderer(
+      new media::AudioRendererImpl(task_runner,
+                                   new media::NullAudioSink(task_runner),
+                                   audio_decoders.Pass(),
+                                   media::SetDecryptorReadyCB(),
+                                   &hardware_config));
+
   collection->SetAudioRenderer(audio_renderer.Pass());
 
   base::WaitableEvent event(true, false);
   media::PipelineStatus status;
 
   pipeline->Start(
-      collection.Pass(), base::Closure(), media::PipelineStatusCB(),
+      collection.Pass(), base::Bind(&DoNothing), base::Bind(&OnStatus),
       base::Bind(&SaveStatusAndSignal, &event, &status),
-      base::Bind(&OnBufferingState), base::Closure());
+      base::Bind(&OnMetadata), base::Bind(&DoNothing),
+      base::Bind(&DoNothing));
 
   // Wait until the pipeline is fully initialized.
   event.Wait();
@@ -161,8 +163,7 @@ void TerminateHandler(int signal) {
 
 void PeriodicalUpdate(
     media::Pipeline* pipeline,
-    base::MessageLoop* message_loop,
-    bool audio_only) {
+    base::MessageLoop* message_loop) {
   if (!g_running) {
     // interrupt signal was received during last time period.
     // Quit message_loop only when pipeline is fully stopped.
@@ -190,7 +191,7 @@ void PeriodicalUpdate(
                        &border_width,
                        &depth);
           base::TimeDelta time = pipeline->GetMediaDuration();
-          pipeline->Seek(time*e.xbutton.x/width, media::PipelineStatusCB());
+          pipeline->Seek(time*e.xbutton.x/width, base::Bind(&OnStatus));
         }
         break;
       case KeyPress:
@@ -218,8 +219,7 @@ void PeriodicalUpdate(
       FROM_HERE,
       base::Bind(&PeriodicalUpdate,
                  base::Unretained(pipeline),
-                 message_loop,
-                 audio_only),
+                 message_loop),
       base::TimeDelta::FromMilliseconds(10));
 }
 
@@ -266,13 +266,13 @@ int main(int argc, char** argv) {
   base::Thread media_thread("MediaThread");
   media_thread.Start();
 
-  PaintCB paint_cb;
+  media::VideoRendererImpl::PaintCB paint_cb;
   if (command_line->HasSwitch("use-gl")) {
-    paint_cb = base::Bind(
-        &GlVideoRenderer::Paint, new GlVideoRenderer(g_display, g_window));
+    paint_cb = media::BindToCurrentLoop(base::Bind(
+        &GlVideoRenderer::Paint, new GlVideoRenderer(g_display, g_window)));
   } else {
-    paint_cb = base::Bind(
-        &X11VideoRenderer::Paint, new X11VideoRenderer(g_display, g_window));
+    paint_cb = media::BindToCurrentLoop(base::Bind(
+        &X11VideoRenderer::Paint, new X11VideoRenderer(g_display, g_window)));
   }
 
   scoped_ptr<media::DataSource> data_source(new DataSourceLogger(
@@ -284,14 +284,13 @@ int main(int argc, char** argv) {
   media::Pipeline pipeline(media_thread.message_loop_proxy(),
                            new media::MediaLog());
   InitPipeline(&pipeline, media_thread.message_loop_proxy(), demuxer.get(),
-               paint_cb, command_line->HasSwitch("audio"), &message_loop);
+               paint_cb, command_line->HasSwitch("audio"));
 
   // Main loop of the application.
   g_running = true;
 
   message_loop.PostTask(FROM_HERE, base::Bind(
-      &PeriodicalUpdate, base::Unretained(&pipeline), &message_loop,
-      !pipeline.HasVideo()));
+      &PeriodicalUpdate, base::Unretained(&pipeline), &message_loop));
   message_loop.Run();
 
   // Cleanup tasks.

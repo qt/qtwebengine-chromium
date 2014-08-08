@@ -32,7 +32,8 @@ AlsaPcmInputStream::AlsaPcmInputStream(AudioManagerBase* audio_manager,
       device_name_(device_name),
       params_(params),
       bytes_per_buffer_(params.frames_per_buffer() *
-                        (params.channels() * params.bits_per_sample()) / 8),
+                        (params.channels() * params.bits_per_sample()) /
+                        8),
       wrapper_(wrapper),
       buffer_duration_(base::TimeDelta::FromMicroseconds(
           params.frames_per_buffer() * base::Time::kMicrosecondsPerSecond /
@@ -41,8 +42,9 @@ AlsaPcmInputStream::AlsaPcmInputStream(AudioManagerBase* audio_manager,
       device_handle_(NULL),
       mixer_handle_(NULL),
       mixer_element_handle_(NULL),
-      weak_factory_(this),
-      read_callback_behind_schedule_(false) {
+      read_callback_behind_schedule_(false),
+      audio_bus_(AudioBus::Create(params)),
+      weak_factory_(this) {
 }
 
 AlsaPcmInputStream::~AlsaPcmInputStream() {}
@@ -208,8 +210,11 @@ void AlsaPcmInputStream::ReadAudio() {
     int frames_read = wrapper_->PcmReadi(device_handle_, audio_buffer_.get(),
                                          params_.frames_per_buffer());
     if (frames_read == params_.frames_per_buffer()) {
-      callback_->OnData(this, audio_buffer_.get(), bytes_per_buffer_,
-                        hardware_delay_bytes, normalized_volume);
+      audio_bus_->FromInterleaved(audio_buffer_.get(),
+                                  audio_bus_->frames(),
+                                  params_.bits_per_sample() / 8);
+      callback_->OnData(
+          this, audio_bus_.get(), hardware_delay_bytes, normalized_volume);
     } else {
       LOG(WARNING) << "PcmReadi returning less than expected frames: "
                    << frames_read << " vs. " << params_.frames_per_buffer()
@@ -245,6 +250,8 @@ void AlsaPcmInputStream::Stop() {
   int error = wrapper_->PcmDrop(device_handle_);
   if (error < 0)
     HandleError("PcmDrop", error);
+
+  callback_ = NULL;
 }
 
 void AlsaPcmInputStream::Close() {
@@ -261,9 +268,6 @@ void AlsaPcmInputStream::Close() {
     device_handle_ = NULL;
     mixer_handle_ = NULL;
     mixer_element_handle_ = NULL;
-
-    if (callback_)
-      callback_->OnClose(this);
   }
 
   audio_manager_->ReleaseInputStream(this);

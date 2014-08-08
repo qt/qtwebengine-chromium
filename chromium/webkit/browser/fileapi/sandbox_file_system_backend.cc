@@ -60,24 +60,25 @@ void SandboxFileSystemBackend::Initialize(FileSystemContext* context) {
       delegate_->quota_observer(), NULL);
 }
 
-void SandboxFileSystemBackend::OpenFileSystem(
-    const GURL& origin_url,
-    fileapi::FileSystemType type,
+void SandboxFileSystemBackend::ResolveURL(
+    const FileSystemURL& url,
     OpenFileSystemMode mode,
     const OpenFileSystemCallback& callback) {
-  DCHECK(CanHandleType(type));
+  DCHECK(CanHandleType(url.type()));
   DCHECK(delegate_);
   if (delegate_->file_system_options().is_incognito() &&
-      !(type == kFileSystemTypeTemporary &&
+      !(url.type() == kFileSystemTypeTemporary &&
         enable_temporary_file_system_in_incognito_)) {
     // TODO(kinuko): return an isolated temporary directory.
-    callback.Run(GURL(), std::string(), base::PLATFORM_FILE_ERROR_SECURITY);
+    callback.Run(GURL(), std::string(), base::File::FILE_ERROR_SECURITY);
     return;
   }
 
-  delegate_->OpenFileSystem(
-      origin_url, type, mode, callback,
-      GetFileSystemRootURI(origin_url, type));
+  delegate_->OpenFileSystem(url.origin(),
+                            url.type(),
+                            mode,
+                            callback,
+                            GetFileSystemRootURI(url.origin(), url.type()));
 }
 
 AsyncFileUtil* SandboxFileSystemBackend::GetAsyncFileUtil(
@@ -89,16 +90,16 @@ AsyncFileUtil* SandboxFileSystemBackend::GetAsyncFileUtil(
 CopyOrMoveFileValidatorFactory*
 SandboxFileSystemBackend::GetCopyOrMoveFileValidatorFactory(
     FileSystemType type,
-    base::PlatformFileError* error_code) {
+    base::File::Error* error_code) {
   DCHECK(error_code);
-  *error_code = base::PLATFORM_FILE_OK;
+  *error_code = base::File::FILE_OK;
   return NULL;
 }
 
 FileSystemOperation* SandboxFileSystemBackend::CreateFileSystemOperation(
     const FileSystemURL& url,
     FileSystemContext* context,
-    base::PlatformFileError* error_code) const {
+    base::File::Error* error_code) const {
   DCHECK(CanHandleType(url.type()));
   DCHECK(error_code);
 
@@ -115,6 +116,11 @@ FileSystemOperation* SandboxFileSystemBackend::CreateFileSystemOperation(
     operation_context->set_quota_limit_type(quota::kQuotaLimitTypeLimited);
 
   return FileSystemOperation::Create(url, context, operation_context.Pass());
+}
+
+bool SandboxFileSystemBackend::SupportsStreaming(
+    const fileapi::FileSystemURL& url) const {
+  return false;
 }
 
 scoped_ptr<webkit_blob::FileStreamReader>

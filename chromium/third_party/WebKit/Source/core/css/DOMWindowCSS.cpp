@@ -30,16 +30,16 @@
 #include "config.h"
 #include "core/css/DOMWindowCSS.h"
 
-#include "core/css/CSSParser.h"
+#include "core/css/parser/BisonCSSParser.h"
 #include "core/css/RuntimeCSSEnabled.h"
 #include "core/css/StylePropertySet.h"
 #include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
-PassRefPtr<DOMWindowCSS> DOMWindowCSS::create()
+PassRefPtrWillBeRawPtr<DOMWindowCSS> DOMWindowCSS::create()
 {
-    return adoptRef(new DOMWindowCSS());
+    return adoptRefWillBeNoop(new DOMWindowCSS());
 }
 
 static String valueWithoutImportant(const String& value)
@@ -65,7 +65,7 @@ bool DOMWindowCSS::supports(const String& property, const String& value) const
     if (!RuntimeCSSEnabled::isCSSPropertyEnabled(propertyID))
         return false;
 
-    // CSSParser::parseValue() won't work correctly if !important is present,
+    // BisonCSSParser::parseValue() won't work correctly if !important is present,
     // so just get rid of it. It doesn't matter to supports() if it's actually
     // there or not, provided how it's specified in the value is correct.
     String normalizedValue = value.stripWhiteSpace().simplifyWhiteSpace();
@@ -74,14 +74,14 @@ bool DOMWindowCSS::supports(const String& property, const String& value) const
     if (normalizedValue.isEmpty())
         return false;
 
-    RefPtr<MutableStylePropertySet> dummyStyle = MutableStylePropertySet::create();
-    return CSSParser::parseValue(dummyStyle.get(), propertyID, normalizedValue, false, HTMLStandardMode, 0);
+    RefPtrWillBeRawPtr<MutableStylePropertySet> dummyStyle = MutableStylePropertySet::create();
+    return BisonCSSParser::parseValue(dummyStyle.get(), propertyID, normalizedValue, false, HTMLStandardMode, 0);
 }
 
 bool DOMWindowCSS::supports(const String& conditionText) const
 {
-    CSSParserContext context(HTMLStandardMode);
-    CSSParser parser(context);
+    CSSParserContext context(HTMLStandardMode, 0);
+    BisonCSSParser parser(context);
     return parser.parseSupportsCondition(conditionText);
 }
 

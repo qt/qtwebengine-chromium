@@ -48,24 +48,24 @@ static String constructIllegalTypeExceptionMessage(const String& type)
     return "Illegal value of attribute 'type' : " + type;
 }
 
-PassRefPtr<RTCSessionDescription> RTCSessionDescription::create(const Dictionary& descriptionInitDict, ExceptionState& exceptionState)
+PassRefPtrWillBeRawPtr<RTCSessionDescription> RTCSessionDescription::create(const Dictionary& descriptionInitDict, ExceptionState& exceptionState)
 {
     String type;
     bool ok = descriptionInitDict.get("type", type);
     if (ok && !verifyType(type)) {
         exceptionState.throwDOMException(TypeMismatchError, constructIllegalTypeExceptionMessage(type));
-        return 0;
+        return nullptr;
     }
 
     String sdp;
     descriptionInitDict.get("sdp", sdp);
 
-    return adoptRef(new RTCSessionDescription(blink::WebRTCSessionDescription(type, sdp)));
+    return adoptRefWillBeNoop(new RTCSessionDescription(blink::WebRTCSessionDescription(type, sdp)));
 }
 
-PassRefPtr<RTCSessionDescription> RTCSessionDescription::create(blink::WebRTCSessionDescription webSessionDescription)
+PassRefPtrWillBeRawPtr<RTCSessionDescription> RTCSessionDescription::create(blink::WebRTCSessionDescription webSessionDescription)
 {
-    return adoptRef(new RTCSessionDescription(webSessionDescription));
+    return adoptRefWillBeNoop(new RTCSessionDescription(webSessionDescription));
 }
 
 RTCSessionDescription::RTCSessionDescription(blink::WebRTCSessionDescription webSessionDescription)

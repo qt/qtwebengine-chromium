@@ -39,12 +39,12 @@ PassOwnPtr<ResourceRequest> ResourceRequest::adopt(PassOwnPtr<CrossThreadResourc
     request->setTimeoutInterval(data->m_timeoutInterval);
     request->setFirstPartyForCookies(data->m_firstPartyForCookies);
     request->setHTTPMethod(AtomicString(data->m_httpMethod));
-    request->setPriority(data->m_priority);
+    request->setPriority(data->m_priority, data->m_intraPriorityValue);
 
     request->m_httpHeaderFields.adopt(data->m_httpHeaders.release());
 
     request->setHTTPBody(data->m_httpBody);
-    request->setAllowCookies(data->m_allowCookies);
+    request->setAllowStoredCredentials(data->m_allowStoredCredentials);
     request->setReportUploadProgress(data->m_reportUploadProgress);
     request->setHasUserGesture(data->m_hasUserGesture);
     request->setDownloadToFile(data->m_downloadToFile);
@@ -52,6 +52,7 @@ PassOwnPtr<ResourceRequest> ResourceRequest::adopt(PassOwnPtr<CrossThreadResourc
     request->setRequestorProcessID(data->m_requestorProcessID);
     request->setAppCacheHostID(data->m_appCacheHostID);
     request->setTargetType(data->m_targetType);
+    request->m_referrerPolicy = data->m_referrerPolicy;
     return request.release();
 }
 
@@ -65,10 +66,11 @@ PassOwnPtr<CrossThreadResourceRequestData> ResourceRequest::copyData() const
     data->m_httpMethod = httpMethod().string().isolatedCopy();
     data->m_httpHeaders = httpHeaderFields().copyData();
     data->m_priority = priority();
+    data->m_intraPriorityValue = m_intraPriorityValue;
 
     if (m_httpBody)
         data->m_httpBody = m_httpBody->deepCopy();
-    data->m_allowCookies = m_allowCookies;
+    data->m_allowStoredCredentials = m_allowStoredCredentials;
     data->m_reportUploadProgress = m_reportUploadProgress;
     data->m_hasUserGesture = m_hasUserGesture;
     data->m_downloadToFile = m_downloadToFile;
@@ -76,6 +78,7 @@ PassOwnPtr<CrossThreadResourceRequestData> ResourceRequest::copyData() const
     data->m_requestorProcessID = m_requestorProcessID;
     data->m_appCacheHostID = m_appCacheHostID;
     data->m_targetType = m_targetType;
+    data->m_referrerPolicy = m_referrerPolicy;
     return data.release();
 }
 
@@ -178,14 +181,10 @@ void ResourceRequest::clearHTTPAuthorization()
     m_httpHeaderFields.remove("Authorization");
 }
 
-void ResourceRequest::clearHTTPContentType()
-{
-    m_httpHeaderFields.remove("Content-Type");
-}
-
 void ResourceRequest::clearHTTPReferrer()
 {
     m_httpHeaderFields.remove("Referer");
+    m_referrerPolicy = ReferrerPolicyDefault;
 }
 
 void ResourceRequest::clearHTTPOrigin()
@@ -198,11 +197,6 @@ void ResourceRequest::clearHTTPUserAgent()
     m_httpHeaderFields.remove("User-Agent");
 }
 
-void ResourceRequest::clearHTTPAccept()
-{
-    m_httpHeaderFields.remove("Accept");
-}
-
 FormData* ResourceRequest::httpBody() const
 {
     return m_httpBody.get();
@@ -213,14 +207,14 @@ void ResourceRequest::setHTTPBody(PassRefPtr<FormData> httpBody)
     m_httpBody = httpBody;
 }
 
-bool ResourceRequest::allowCookies() const
+bool ResourceRequest::allowStoredCredentials() const
 {
-    return m_allowCookies;
+    return m_allowStoredCredentials;
 }
 
-void ResourceRequest::setAllowCookies(bool allowCookies)
+void ResourceRequest::setAllowStoredCredentials(bool allowCredentials)
 {
-    m_allowCookies = allowCookies;
+    m_allowStoredCredentials = allowCredentials;
 }
 
 ResourceLoadPriority ResourceRequest::priority() const
@@ -228,16 +222,17 @@ ResourceLoadPriority ResourceRequest::priority() const
     return m_priority;
 }
 
-void ResourceRequest::setPriority(ResourceLoadPriority priority)
+void ResourceRequest::setPriority(ResourceLoadPriority priority, int intraPriorityValue)
 {
     m_priority = priority;
+    m_intraPriorityValue = intraPriorityValue;
 }
 
 void ResourceRequest::addHTTPHeaderField(const AtomicString& name, const AtomicString& value)
 {
     HTTPHeaderMap::AddResult result = m_httpHeaderFields.add(name, value);
     if (!result.isNewEntry)
-        result.iterator->value = result.iterator->value + ',' + value;
+        result.storedValue->value = result.storedValue->value + ',' + value;
 }
 
 void ResourceRequest::addHTTPHeaderFields(const HTTPHeaderMap& headerFields)
@@ -269,10 +264,13 @@ bool equalIgnoringHeaderFields(const ResourceRequest& a, const ResourceRequest& 
     if (a.httpMethod() != b.httpMethod())
         return false;
 
-    if (a.allowCookies() != b.allowCookies())
+    if (a.allowStoredCredentials() != b.allowStoredCredentials())
         return false;
 
     if (a.priority() != b.priority())
+        return false;
+
+    if (a.referrerPolicy() != b.referrerPolicy())
         return false;
 
     FormData* formDataA = a.httpBody();
@@ -302,11 +300,45 @@ bool ResourceRequest::compare(const ResourceRequest& a, const ResourceRequest& b
 
 bool ResourceRequest::isConditional() const
 {
-    return (m_httpHeaderFields.contains("If-Match") ||
-            m_httpHeaderFields.contains("If-Modified-Since") ||
-            m_httpHeaderFields.contains("If-None-Match") ||
-            m_httpHeaderFields.contains("If-Range") ||
-            m_httpHeaderFields.contains("If-Unmodified-Since"));
+    return (m_httpHeaderFields.contains("If-Match")
+        || m_httpHeaderFields.contains("If-Modified-Since")
+        || m_httpHeaderFields.contains("If-None-Match")
+        || m_httpHeaderFields.contains("If-Range")
+        || m_httpHeaderFields.contains("If-Unmodified-Since"));
+}
+
+
+static const AtomicString& cacheControlHeaderString()
+{
+    DEFINE_STATIC_LOCAL(const AtomicString, cacheControlHeader, ("cache-control", AtomicString::ConstructFromLiteral));
+    return cacheControlHeader;
+}
+
+static const AtomicString& pragmaHeaderString()
+{
+    DEFINE_STATIC_LOCAL(const AtomicString, pragmaHeader, ("pragma", AtomicString::ConstructFromLiteral));
+    return pragmaHeader;
+}
+
+bool ResourceRequest::cacheControlContainsNoCache()
+{
+    if (!m_cacheControlHeader.parsed)
+        m_cacheControlHeader = parseCacheControlDirectives(m_httpHeaderFields.get(cacheControlHeaderString()), m_httpHeaderFields.get(pragmaHeaderString()));
+    return m_cacheControlHeader.containsNoCache;
+}
+
+bool ResourceRequest::cacheControlContainsNoStore()
+{
+    if (!m_cacheControlHeader.parsed)
+        m_cacheControlHeader = parseCacheControlDirectives(m_httpHeaderFields.get(cacheControlHeaderString()), m_httpHeaderFields.get(pragmaHeaderString()));
+    return m_cacheControlHeader.containsNoStore;
+}
+
+bool ResourceRequest::hasCacheValidatorFields()
+{
+    DEFINE_STATIC_LOCAL(const AtomicString, lastModifiedHeader, ("last-modified", AtomicString::ConstructFromLiteral));
+    DEFINE_STATIC_LOCAL(const AtomicString, eTagHeader, ("etag", AtomicString::ConstructFromLiteral));
+    return !m_httpHeaderFields.get(lastModifiedHeader).isEmpty() || !m_httpHeaderFields.get(eTagHeader).isEmpty();
 }
 
 double ResourceRequest::defaultTimeoutInterval()
@@ -325,17 +357,18 @@ void ResourceRequest::initialize(const KURL& url, ResourceRequestCachePolicy cac
     m_cachePolicy = cachePolicy;
     m_timeoutInterval = s_defaultTimeoutInterval;
     m_httpMethod = "GET";
-    m_allowCookies = true;
+    m_allowStoredCredentials = true;
     m_reportUploadProgress = false;
-    m_reportLoadTiming = false;
     m_reportRawHeaders = false;
     m_hasUserGesture = false;
     m_downloadToFile = false;
     m_priority = ResourceLoadPriorityLow;
+    m_intraPriorityValue = 0;
     m_requestorID = 0;
     m_requestorProcessID = 0;
     m_appCacheHostID = 0;
     m_targetType = TargetIsUnspecified;
+    m_referrerPolicy = ReferrerPolicyDefault;
 }
 
 // This is used by the loader to control the number of issued parallel load requests.

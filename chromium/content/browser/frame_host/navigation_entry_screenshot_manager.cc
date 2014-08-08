@@ -9,9 +9,13 @@
 #include "content/browser/frame_host/navigation_controller_impl.h"
 #include "content/browser/frame_host/navigation_entry_impl.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
+#include "content/public/browser/overscroll_configuration.h"
 #include "content/public/browser/render_widget_host.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/common/content_switches.h"
+#include "third_party/skia/include/core/SkCanvas.h"
+#include "third_party/skia/include/core/SkPaint.h"
+#include "third_party/skia/include/effects/SkLumaColorFilter.h"
 #include "ui/gfx/codec/png_codec.h"
 
 namespace {
@@ -23,7 +27,7 @@ const int kMinScreenshotIntervalMS = 1000;
 
 namespace content {
 
-// Encodes an SkBitmap to PNG data in a worker thread.
+// Converts SkBitmap to grayscale and encodes to PNG data in a worker thread.
 class ScreenshotData : public base::RefCountedThreadSafe<ScreenshotData> {
  public:
   ScreenshotData() {
@@ -49,7 +53,21 @@ class ScreenshotData : public base::RefCountedThreadSafe<ScreenshotData> {
 
   void EncodeOnWorker(const SkBitmap& bitmap) {
     std::vector<unsigned char> data;
-    if (gfx::PNGCodec::EncodeBGRASkBitmap(bitmap, true, &data))
+    // Paint |bitmap| to a kA8_Config SkBitmap
+    SkBitmap a8Bitmap;
+    a8Bitmap.setConfig(SkBitmap::kA8_Config,
+                       bitmap.width(),
+                       bitmap.height(),
+                       0);
+    a8Bitmap.allocPixels();
+    SkCanvas canvas(a8Bitmap);
+    SkPaint paint;
+    SkColorFilter* filter = SkLumaColorFilter::Create();
+    paint.setColorFilter(filter);
+    filter->unref();
+    canvas.drawBitmap(bitmap, SkIntToScalar(0), SkIntToScalar(0), &paint);
+    // Encode the a8Bitmap to grayscale PNG treating alpha as color intensity
+    if (gfx::PNGCodec::EncodeA8SkBitmap(a8Bitmap, &data))
       data_ = new base::RefCountedBytes(data);
   }
 
@@ -79,12 +97,11 @@ void NavigationEntryScreenshotManager::TakeScreenshot() {
   if (!entry)
     return;
 
+  if (!owner_->delegate()->CanOverscrollContent())
+    return;
+
   RenderViewHost* render_view_host =
       owner_->delegate()->GetRenderViewHost();
-  if (!static_cast<RenderViewHostImpl*>
-      (render_view_host)->overscroll_controller()) {
-    return;
-  }
   content::RenderWidgetHostView* view = render_view_host->GetView();
   if (!view)
     return;
@@ -117,11 +134,14 @@ void NavigationEntryScreenshotManager::TakeScreenshotImpl(
     NavigationEntryImpl* entry) {
   DCHECK(host && host->GetView());
   DCHECK(entry);
-  host->CopyFromBackingStore(gfx::Rect(),
+  SkBitmap::Config preferred_format = host->PreferredReadbackFormat();
+  host->CopyFromBackingStore(
+      gfx::Rect(),
       host->GetView()->GetViewBounds().size(),
       base::Bind(&NavigationEntryScreenshotManager::OnScreenshotTaken,
                  screenshot_factory_.GetWeakPtr(),
-                 entry->GetUniqueID()));
+                 entry->GetUniqueID()),
+      preferred_format);
 }
 
 void NavigationEntryScreenshotManager::SetMinScreenshotIntervalMS(

@@ -6,12 +6,12 @@
 #define UI_BASE_WIN_LOCK_STATE_H_
 
 #include "base/basictypes.h"
-#include "ui/base/ui_export.h"
+#include "ui/base/ui_base_export.h"
 
 namespace ui {
 
 // Returns true if the screen is currently locked.
-UI_EXPORT bool IsWorkstationLocked();
+UI_BASE_EXPORT bool IsWorkstationLocked();
 
 }  // namespace ui
 

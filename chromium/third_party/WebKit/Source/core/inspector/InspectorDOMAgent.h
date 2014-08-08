@@ -30,7 +30,7 @@
 #ifndef InspectorDOMAgent_h
 #define InspectorDOMAgent_h
 
-#include "InspectorFrontend.h"
+#include "core/InspectorFrontend.h"
 #include "core/inspector/InjectedScript.h"
 #include "core/inspector/InjectedScriptManager.h"
 #include "core/inspector/InspectorBaseAgent.h"
@@ -51,8 +51,8 @@ class CharacterData;
 class DOMEditor;
 class Document;
 class Element;
+class EventTarget;
 class ExceptionState;
-class InspectorClient;
 class InspectorFrontend;
 class InspectorHistory;
 class InspectorOverlay;
@@ -68,23 +68,22 @@ class ShadowRoot;
 struct HighlightConfig;
 
 typedef String ErrorString;
-typedef int BackendNodeId;
 
 
 struct EventListenerInfo {
-    EventListenerInfo(Node* node, const AtomicString& eventType, const EventListenerVector& eventListenerVector)
-        : node(node)
+    EventListenerInfo(EventTarget* eventTarget, const AtomicString& eventType, const EventListenerVector& eventListenerVector)
+        : eventTarget(eventTarget)
         , eventType(eventType)
         , eventListenerVector(eventListenerVector)
     {
     }
 
-    Node* node;
+    EventTarget* eventTarget;
     const AtomicString eventType;
     const EventListenerVector eventListenerVector;
 };
 
-class InspectorDOMAgent : public InspectorBaseAgent<InspectorDOMAgent>, public InspectorBackendDispatcher::DOMCommandHandler {
+class InspectorDOMAgent FINAL : public InspectorBaseAgent<InspectorDOMAgent>, public InspectorBackendDispatcher::DOMCommandHandler {
     WTF_MAKE_NONCOPYABLE(InspectorDOMAgent);
 public:
     struct DOMListener {
@@ -96,98 +95,107 @@ public:
         virtual void didModifyDOMAttr(Element*) = 0;
     };
 
-    static PassOwnPtr<InspectorDOMAgent> create(InstrumentingAgents* instrumentingAgents, InspectorPageAgent* pageAgent, InspectorCompositeState* inspectorState, InjectedScriptManager* injectedScriptManager, InspectorOverlay* overlay, InspectorClient* client)
+    static PassOwnPtr<InspectorDOMAgent> create(InspectorPageAgent* pageAgent, InjectedScriptManager* injectedScriptManager, InspectorOverlay* overlay)
     {
-        return adoptPtr(new InspectorDOMAgent(instrumentingAgents, pageAgent, inspectorState, injectedScriptManager, overlay, client));
+        return adoptPtr(new InspectorDOMAgent(pageAgent, injectedScriptManager, overlay));
     }
 
     static String toErrorString(ExceptionState&);
 
-    ~InspectorDOMAgent();
+    virtual ~InspectorDOMAgent();
 
-    virtual void setFrontend(InspectorFrontend*);
-    virtual void clearFrontend();
-    virtual void restore();
+    virtual void setFrontend(InspectorFrontend*) OVERRIDE;
+    virtual void clearFrontend() OVERRIDE;
+    virtual void restore() OVERRIDE;
 
     Vector<Document*> documents();
     void reset();
 
     // Methods called from the frontend for DOM nodes inspection.
-    virtual void querySelector(ErrorString*, int nodeId, const String& selectors, int* elementId);
-    virtual void querySelectorAll(ErrorString*, int nodeId, const String& selectors, RefPtr<TypeBuilder::Array<int> >& result);
-    virtual void getDocument(ErrorString*, RefPtr<TypeBuilder::DOM::Node>& root);
-    virtual void requestChildNodes(ErrorString*, int nodeId, const int* depth);
-    virtual void setAttributeValue(ErrorString*, int elementId, const String& name, const String& value);
-    virtual void setAttributesAsText(ErrorString*, int elementId, const String& text, const String* name);
-    virtual void removeAttribute(ErrorString*, int elementId, const String& name);
-    virtual void removeNode(ErrorString*, int nodeId);
-    virtual void setNodeName(ErrorString*, int nodeId, const String& name, int* newId);
-    virtual void getOuterHTML(ErrorString*, int nodeId, WTF::String* outerHTML);
-    virtual void setOuterHTML(ErrorString*, int nodeId, const String& outerHTML);
-    virtual void setNodeValue(ErrorString*, int nodeId, const String& value);
-    virtual void getEventListenersForNode(ErrorString*, int nodeId, const WTF::String* objectGroup, RefPtr<TypeBuilder::Array<TypeBuilder::DOM::EventListener> >& listenersArray);
-    virtual void performSearch(ErrorString*, const String& whitespaceTrimmedQuery, String* searchId, int* resultCount);
-    virtual void getSearchResults(ErrorString*, const String& searchId, int fromIndex, int toIndex, RefPtr<TypeBuilder::Array<int> >&);
-    virtual void discardSearchResults(ErrorString*, const String& searchId);
-    virtual void resolveNode(ErrorString*, int nodeId, const String* objectGroup, RefPtr<TypeBuilder::Runtime::RemoteObject>& result);
-    virtual void getAttributes(ErrorString*, int nodeId, RefPtr<TypeBuilder::Array<String> >& result);
-    virtual void setInspectModeEnabled(ErrorString*, bool enabled, const bool* inspectShadowDOM, const RefPtr<JSONObject>* highlightConfig);
-    virtual void requestNode(ErrorString*, const String& objectId, int* nodeId);
-    virtual void pushNodeByPathToFrontend(ErrorString*, const String& path, int* nodeId);
-    virtual void pushNodeByBackendIdToFrontend(ErrorString*, BackendNodeId, int* nodeId);
-    virtual void releaseBackendNodeIds(ErrorString*, const String& nodeGroup);
-    virtual void hideHighlight(ErrorString*);
-    virtual void highlightRect(ErrorString*, int x, int y, int width, int height, const RefPtr<JSONObject>* color, const RefPtr<JSONObject>* outlineColor);
-    virtual void highlightQuad(ErrorString*, const RefPtr<JSONArray>& quad, const RefPtr<JSONObject>* color, const RefPtr<JSONObject>* outlineColor);
-    virtual void highlightNode(ErrorString*, const RefPtr<JSONObject>& highlightConfig, const int* nodeId, const String* objectId);
-    virtual void highlightFrame(ErrorString*, const String& frameId, const RefPtr<JSONObject>* color, const RefPtr<JSONObject>* outlineColor);
+    virtual void enable(ErrorString*) OVERRIDE;
+    virtual void disable(ErrorString*) OVERRIDE;
+    virtual void querySelector(ErrorString*, int nodeId, const String& selectors, int* elementId) OVERRIDE;
+    virtual void querySelectorAll(ErrorString*, int nodeId, const String& selectors, RefPtr<TypeBuilder::Array<int> >& result) OVERRIDE;
+    virtual void getDocument(ErrorString*, RefPtr<TypeBuilder::DOM::Node>& root) OVERRIDE;
+    virtual void requestChildNodes(ErrorString*, int nodeId, const int* depth) OVERRIDE;
+    virtual void setAttributeValue(ErrorString*, int elementId, const String& name, const String& value) OVERRIDE;
+    virtual void setAttributesAsText(ErrorString*, int elementId, const String& text, const String* name) OVERRIDE;
+    virtual void removeAttribute(ErrorString*, int elementId, const String& name) OVERRIDE;
+    virtual void removeNode(ErrorString*, int nodeId) OVERRIDE;
+    virtual void setNodeName(ErrorString*, int nodeId, const String& name, int* newId) OVERRIDE;
+    virtual void getOuterHTML(ErrorString*, int nodeId, WTF::String* outerHTML) OVERRIDE;
+    virtual void setOuterHTML(ErrorString*, int nodeId, const String& outerHTML) OVERRIDE;
+    virtual void setNodeValue(ErrorString*, int nodeId, const String& value) OVERRIDE;
+    virtual void getEventListenersForNode(ErrorString*, int nodeId, const WTF::String* objectGroup, RefPtr<TypeBuilder::Array<TypeBuilder::DOM::EventListener> >& listenersArray) OVERRIDE;
+    virtual void performSearch(ErrorString*, const String& whitespaceTrimmedQuery, String* searchId, int* resultCount) OVERRIDE;
+    virtual void getSearchResults(ErrorString*, const String& searchId, int fromIndex, int toIndex, RefPtr<TypeBuilder::Array<int> >&) OVERRIDE;
+    virtual void discardSearchResults(ErrorString*, const String& searchId) OVERRIDE;
+    virtual void resolveNode(ErrorString*, int nodeId, const String* objectGroup, RefPtr<TypeBuilder::Runtime::RemoteObject>& result) OVERRIDE;
+    virtual void getAttributes(ErrorString*, int nodeId, RefPtr<TypeBuilder::Array<String> >& result) OVERRIDE;
+    virtual void setInspectModeEnabled(ErrorString*, bool enabled, const bool* inspectUAShadowDOM, const RefPtr<JSONObject>* highlightConfig) OVERRIDE;
+    virtual void requestNode(ErrorString*, const String& objectId, int* nodeId) OVERRIDE;
+    virtual void pushNodeByPathToFrontend(ErrorString*, const String& path, int* nodeId) OVERRIDE;
+    virtual void pushNodesByBackendIdsToFrontend(ErrorString*, const RefPtr<JSONArray>& nodeIds, RefPtr<TypeBuilder::Array<int> >&) OVERRIDE;
+    virtual void hideHighlight(ErrorString*) OVERRIDE;
+    virtual void highlightRect(ErrorString*, int x, int y, int width, int height, const RefPtr<JSONObject>* color, const RefPtr<JSONObject>* outlineColor) OVERRIDE;
+    virtual void highlightQuad(ErrorString*, const RefPtr<JSONArray>& quad, const RefPtr<JSONObject>* color, const RefPtr<JSONObject>* outlineColor) OVERRIDE;
+    virtual void highlightNode(ErrorString*, const RefPtr<JSONObject>& highlightConfig, const int* nodeId, const String* objectId) OVERRIDE;
+    virtual void highlightFrame(ErrorString*, const String& frameId, const RefPtr<JSONObject>* color, const RefPtr<JSONObject>* outlineColor) OVERRIDE;
 
-    virtual void moveTo(ErrorString*, int nodeId, int targetNodeId, const int* anchorNodeId, int* newNodeId);
-    virtual void undo(ErrorString*);
-    virtual void redo(ErrorString*);
-    virtual void markUndoableState(ErrorString*);
-    virtual void focus(ErrorString*, int nodeId);
-    virtual void setFileInputFiles(ErrorString*, int nodeId, const RefPtr<JSONArray>& files);
-    virtual void getBoxModel(ErrorString*, int nodeId, RefPtr<TypeBuilder::DOM::BoxModel>&);
-    virtual void getNodeForLocation(ErrorString*, int x, int y, int* nodeId);
-    virtual void getRelayoutBoundary(ErrorString*, int nodeId, int* relayoutBoundaryNodeId);
+    virtual void moveTo(ErrorString*, int nodeId, int targetNodeId, const int* anchorNodeId, int* newNodeId) OVERRIDE;
+    virtual void undo(ErrorString*) OVERRIDE;
+    virtual void redo(ErrorString*) OVERRIDE;
+    virtual void markUndoableState(ErrorString*) OVERRIDE;
+    virtual void focus(ErrorString*, int nodeId) OVERRIDE;
+    virtual void setFileInputFiles(ErrorString*, int nodeId, const RefPtr<JSONArray>& files) OVERRIDE;
+    virtual void getBoxModel(ErrorString*, int nodeId, RefPtr<TypeBuilder::DOM::BoxModel>&) OVERRIDE;
+    virtual void getNodeForLocation(ErrorString*, int x, int y, int* nodeId) OVERRIDE;
+    virtual void getRelayoutBoundary(ErrorString*, int nodeId, int* relayoutBoundaryNodeId) OVERRIDE;
 
-    static void getEventListeners(Node*, Vector<EventListenerInfo>& listenersArray, bool includeAncestors);
+    static void getEventListeners(EventTarget*, Vector<EventListenerInfo>& listenersArray, bool includeAncestors);
+
+    class Listener {
+    public:
+        virtual ~Listener() { }
+        virtual void domAgentWasEnabled() = 0;
+        virtual void domAgentWasDisabled() = 0;
+    };
+    void setListener(Listener* listener) { m_listener = listener; }
+
+    bool enabled() const;
 
     // Methods called from the InspectorInstrumentation.
     void setDocument(Document*);
     void releaseDanglingNodes();
 
-    void domContentLoadedEventFired(Frame*);
-    void didCommitLoad(Frame*, DocumentLoader*);
+    void domContentLoadedEventFired(LocalFrame*);
+    void didCommitLoad(LocalFrame*, DocumentLoader*);
 
     void didInsertDOMNode(Node*);
     void willRemoveDOMNode(Node*);
     void willModifyDOMAttr(Element*, const AtomicString& oldValue, const AtomicString& newValue);
     void didModifyDOMAttr(Element*, const AtomicString& name, const AtomicString& value);
     void didRemoveDOMAttr(Element*, const AtomicString& name);
-    void styleAttributeInvalidated(const Vector<Element*>& elements);
+    void styleAttributeInvalidated(const WillBeHeapVector<RawPtrWillBeMember<Element> >& elements);
     void characterDataModified(CharacterData*);
     void didInvalidateStyleAttr(Node*);
     void didPushShadowRoot(Element* host, ShadowRoot*);
     void willPopShadowRoot(Element* host, ShadowRoot*);
-    void frameDocumentUpdated(Frame*);
+    void frameDocumentUpdated(LocalFrame*);
     void pseudoElementCreated(PseudoElement*);
     void pseudoElementDestroyed(PseudoElement*);
 
-    int pushNodeToFrontend(ErrorString*, int documentNodeId, Node*);
     Node* nodeForId(int nodeId);
     int boundNodeId(Node*);
     void setDOMListener(DOMListener*);
-    BackendNodeId backendNodeIdForNode(Node*, const String& nodeGroup);
 
     static String documentURLString(Document*);
 
     PassRefPtr<TypeBuilder::Runtime::RemoteObject> resolveNode(Node*, const String& objectGroup);
     bool handleMousePress();
-    bool handleGestureEvent(Frame*, const PlatformGestureEvent&);
-    bool handleTouchEvent(Frame*, const PlatformTouchEvent&);
-    void handleMouseMove(Frame*, const PlatformMouseEvent&);
+    bool handleGestureEvent(LocalFrame*, const PlatformGestureEvent&);
+    bool handleTouchEvent(LocalFrame*, const PlatformTouchEvent&);
+    void handleMouseMove(LocalFrame*, const PlatformMouseEvent&);
 
     InspectorHistory* history() { return m_history.get(); }
 
@@ -205,15 +213,15 @@ public:
     Document* assertDocument(ErrorString*, int nodeId);
 
 private:
-    enum SearchMode { NotSearching, SearchingForNormal, SearchingForShadow };
+    enum SearchMode { NotSearching, SearchingForNormal, SearchingForUAShadow };
 
-    InspectorDOMAgent(InstrumentingAgents*, InspectorPageAgent*, InspectorCompositeState*, InjectedScriptManager*, InspectorOverlay*, InspectorClient*);
+    InspectorDOMAgent(InspectorPageAgent*, InjectedScriptManager*, InspectorOverlay*);
 
     void setSearchingForNode(ErrorString*, SearchMode, JSONObject* highlightConfig);
     PassOwnPtr<HighlightConfig> highlightConfigFromInspectorObject(ErrorString*, JSONObject* highlightInspectorObject);
 
     // Node-related methods.
-    typedef HashMap<RefPtr<Node>, int> NodeToIdMap;
+    typedef WillBeHeapHashMap<RefPtrWillBeMember<Node>, int> NodeToIdMap;
     int bind(Node*, NodeToIdMap*);
     void unbind(Node*, NodeToIdMap*);
 
@@ -225,7 +233,7 @@ private:
     int pushNodePathToFrontend(Node*);
     void pushChildNodesToFrontend(int nodeId, int depth = 1);
 
-    void invalidateFrameOwnerElement(Frame*);
+    void invalidateFrameOwnerElement(LocalFrame*);
 
     bool hasBreakpoint(Node*, int type);
     void updateSubtreeBreakpoints(Node* root, uint32_t rootMask, bool value);
@@ -239,7 +247,6 @@ private:
 
     Node* nodeForPath(const String& path);
 
-    void discardBackendBindings();
     void discardFrontendBindings();
 
     void innerHighlightQuad(PassOwnPtr<FloatQuad>, const RefPtr<JSONObject>* color, const RefPtr<JSONObject>* outlineColor);
@@ -249,29 +256,26 @@ private:
     InspectorPageAgent* m_pageAgent;
     InjectedScriptManager* m_injectedScriptManager;
     InspectorOverlay* m_overlay;
-    InspectorClient* m_client;
     InspectorFrontend::DOM* m_frontend;
     DOMListener* m_domListener;
-    NodeToIdMap m_documentNodeToIdMap;
-    typedef HashMap<RefPtr<Node>, BackendNodeId> NodeToBackendIdMap;
-    HashMap<String, NodeToBackendIdMap> m_nodeGroupToBackendIdMap;
+    OwnPtrWillBePersistent<NodeToIdMap> m_documentNodeToIdMap;
     // Owns node mappings for dangling nodes.
-    Vector<OwnPtr<NodeToIdMap> > m_danglingNodeToIdMaps;
-    HashMap<int, Node*> m_idToNode;
-    HashMap<int, NodeToIdMap*> m_idToNodesMap;
+    WillBePersistentHeapVector<OwnPtrWillBeMember<NodeToIdMap> > m_danglingNodeToIdMaps;
+    WillBePersistentHeapHashMap<int, RawPtrWillBeMember<Node> > m_idToNode;
+    WillBePersistentHeapHashMap<int, RawPtrWillBeMember<NodeToIdMap> > m_idToNodesMap;
     HashSet<int> m_childrenRequested;
-    HashMap<BackendNodeId, std::pair<Node*, String> > m_backendIdToNode;
+    HashMap<int, int> m_cachedChildCount;
     int m_lastNodeId;
-    BackendNodeId m_lastBackendNodeId;
-    RefPtr<Document> m_document;
-    typedef HashMap<String, Vector<RefPtr<Node> > > SearchResults;
+    RefPtrWillBePersistent<Document> m_document;
+    typedef WillBePersistentHeapHashMap<String, WillBeHeapVector<RefPtrWillBeMember<Node> > > SearchResults;
     SearchResults m_searchResults;
     OwnPtr<RevalidateStyleAttributeTask> m_revalidateStyleAttrTask;
     SearchMode m_searchingForNode;
     OwnPtr<HighlightConfig> m_inspectModeHighlightConfig;
-    OwnPtr<InspectorHistory> m_history;
-    OwnPtr<DOMEditor> m_domEditor;
+    OwnPtrWillBePersistent<InspectorHistory> m_history;
+    OwnPtrWillBePersistent<DOMEditor> m_domEditor;
     bool m_suppressAttributeModifiedEvent;
+    Listener* m_listener;
 };
 
 

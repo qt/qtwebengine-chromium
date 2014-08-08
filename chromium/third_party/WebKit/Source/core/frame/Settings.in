@@ -25,7 +25,6 @@
 # FIXME: Add support for custom getters/setters.
 
 defaultTextEncodingName type=String
-editableLinkBehavior type=EditableLinkBehavior, initial=EditableLinkDefaultBehavior
 
 # Do not hide chars typed in password fields immediately, but let the last char stay
 # visible for N seconds, configured by the passwordEchoDurationInSeconds setting
@@ -51,10 +50,6 @@ validationMessageTimerMagnification type=int, initial=50
 # draw canvas in software.
 minimumAccelerated2dCanvasSize type=int, initial=257*256
 
-# The layout width used with --enable-viewport when no viewport meta tag was defined.
-# FIXME: This should get the value from the @viewport UA sheet instead.
-layoutFallbackWidth type=int, initial=980
-
 minimumFontSize type=int, initial=0, invalidate=Style
 minimumLogicalFontSize type=int, initial=0, invalidate=Style
 defaultFontSize type=int, initial=0, invalidate=Style
@@ -73,10 +68,7 @@ shouldPrintBackgrounds initial=false
 shouldClearDocumentBackground initial=true
 
 textAreasAreResizable initial=false, invalidate=Style
-acceleratedCompositingEnabled initial=true, invalidate=Style
-
-# Debugging feature used for accelerated compositing layers.
-showRepaintCounter initial=false, invalidate=Style
+acceleratedCompositingEnabled initial=true, invalidate=AcceleratedCompositing
 
 shrinksStandaloneImagesToFit initial=true
 
@@ -87,8 +79,10 @@ needsSiteSpecificQuirks initial=false
 offlineWebApplicationCacheEnabled initial=false
 usesEncodingDetector initial=false
 allowScriptsToCloseWindows initial=false
-acceleratedFiltersEnabled initial=false
+deferredFiltersEnabled initial=true
 regionBasedColumnsEnabled initial=false
+
+containerCullingEnabled initial=false
 
 # FIXME: This should really be disabled by default as it makes platforms that
 # don't support the feature download files they can't use by.
@@ -99,29 +93,18 @@ xssAuditorEnabled initial=false
 unsafePluginPastingEnabled initial=true
 treatIPAddressAsDomain initial=false
 
-acceleratedCompositingFor3DTransformsEnabled initial=true
-acceleratedCompositingForVideoEnabled initial=true
-acceleratedCompositingForPluginsEnabled initial=true
-acceleratedCompositingForCanvasEnabled initial=true
-acceleratedCompositingForAnimationEnabled initial=true
-acceleratedCompositingForFiltersEnabled initial=false
-acceleratedCompositingForFixedPositionEnabled initial=false
-acceleratedCompositingForOverflowScrollEnabled initial=false
-acceleratedCompositingForTransitionEnabled initial=false
+acceleratedCompositingForVideoEnabled initial=true, invalidate=AcceleratedCompositing
+acceleratedCompositingForCanvasEnabled initial=true, invalidate=AcceleratedCompositing
+acceleratedCompositingForFiltersEnabled initial=false, invalidate=AcceleratedCompositing
+acceleratedCompositingForFixedPositionEnabled initial=false, invalidate=AcceleratedCompositing
+acceleratedCompositingForOverflowScrollEnabled initial=false, invalidate=AcceleratedCompositing
 acceleratedCompositingForFixedRootBackgroundEnabled initial=false
-
-forceCompositingMode initial=false
-
-# Works only in conjunction with forceCompositingMode.
-# crbug.com/304900 tracks removal once enabled on all platforms.
-acceleratedCompositingForScrollableFramesEnabled initial=false
-compositedScrollingForFramesEnabled initial=false
+compositedScrollingForFramesEnabled initial=false, invalidate=AcceleratedCompositing
 
 # 3D canvas (WebGL) support.
 webGLEnabled initial=false
 
 webGLErrorsToConsoleEnabled initial=true
-privilegedWebGLExtensionsEnabled initial=false
 accelerated2dCanvasEnabled initial=false
 antialiased2dCanvasEnabled initial=true
 accelerated2dCanvasMSAASampleCount type=int, initial=0
@@ -129,21 +112,17 @@ accelerated2dCanvasMSAASampleCount type=int, initial=0
 # WebAudio support.
 webAudioEnabled initial=false
 
-fullScreenEnabled initial=false
 asynchronousSpellCheckingEnabled initial=false
-memoryInfoEnabled initial=false
 
 hyperlinkAuditingEnabled initial=false
 allowDisplayOfInsecureContent initial=true
 allowRunningOfInsecureContent initial=true
+# FIXME: Remove this temporary flag. See crbug.com/366483 for the target
+# milestone.
+allowConnectingInsecureWebSocket initial=false
+mediaControlsOverlayPlayButtonEnabled initial=false
 mediaPlaybackRequiresUserGesture initial=false
-mediaFullscreenRequiresUserGesture initial=true
-visualWordMovementEnabled initial=false
-shouldDisplaySubtitles initial=false
-shouldDisplayCaptions initial=false
-shouldDisplayTextDescriptions initial=false
 
-scrollingCoordinatorEnabled initial=false
 scrollAnimatorEnabled initial=true
 
 shouldRespectImageOrientation initial=false
@@ -172,16 +151,10 @@ touchAdjustmentEnabled initial=true
 # A mostly-stable performance optimization. crbug.com/304518 tracks removal.
 compositorTouchHitTesting initial=true
 
-fixedPositionCreatesStackingContext initial=false
 syncXHRInDocumentsEnabled initial=true
 cookieEnabled initial=true
-mediaEnabled initial=true
+navigateOnDragDrop initial=true
 DOMPasteAllowed initial=false
-
-threadedHTMLParser initial=false
-useThreadedHTMLParserForDataURLs initial=false
-
-applyPageScaleFactorInCompositor initial=false
 
 allowCustomScrollbarInMainFrame initial=true
 webSecurityEnabled initial=true
@@ -234,8 +207,6 @@ wideViewportQuirkEnabled initial=false
 # crbug.com/304873 tracks removal once it's been enabled on all platforms.
 touchEditingEnabled initial=false
 
-experimentalWebSocketEnabled initial=false
-
 # Settings for experimental desktop pinch-zoom support (with semantics
 # optimized for large screens).  Pinch-zoom generally is implemented mainly
 # outside of blink (in the compositor) and doesn't require any settings.
@@ -244,12 +215,9 @@ experimentalWebSocketEnabled initial=false
 # crbug.com/304869 tracks removal.
 pinchVirtualViewportEnabled initial=false
 useSolidColorScrollbars initial=false
+pinchOverlayScrollbarThickness type=int, initial=0
 
 mainFrameClipsContent initial=true
-
-# Enable decoration shadow nodes to test password genration feature
-# crbug.com/114092. This flag should not be enabled for production.
-passwordGenerationDecorationEnabled initial=false
 
 
 # Presumably used by LayoutTests?  Unclear.
@@ -277,13 +245,31 @@ viewportMetaEnabled initial=false
 
 dnsPrefetchingEnabled initial=false, invalidate=DNSPrefetching
 
-touchEventEmulationEnabled initial=false
-
 
 # FIXME: This is a temporary flag and should be removed once
 # accelerated overflow scroll is ready (crbug.com/254111).
-compositorDrivenAcceleratedScrollingEnabled initial=false
+compositorDrivenAcceleratedScrollingEnabled initial=false, invalidate=AcceleratedCompositing
 
 # FIXME: This is a temporary flag and should be removed
 # when squashing is ready. (crbug.com/261605)
 layerSquashingEnabled initial=false
+
+# Clients that execute script should call ScriptController::canExecuteScripts()
+# instead of this function. ScriptController::canExecuteScripts() checks the
+# HTML sandbox, plug-in sandboxing, and other important details.
+scriptEnabled initial=false, invalidate=ScriptEnable
+
+# Compensates for poor text legibility on mobile devices. This value is
+# multiplied by the font scale factor when performing text autosizing of
+# websites that do not set an explicit viewport description.
+deviceScaleAdjustment type=double, initial=1.0, invalidate=TextAutosizing
+
+# This value indicates the maximum number of bytes a document is allowed
+# to transmit in Beacons (via navigator.sendBeacon()) -- Beacons are
+# intended to be smaller payloads transmitted as a page is unloading, not
+# a general (one-way) network transmission API.
+# The spec ( https://dvcs.w3.org/hg/webperf/raw-file/tip/specs/Beacon/Overview.html )
+# does not proscribe an upper limit, but allows for it -- the underlying
+# API will return 'false' in that case.
+maxBeaconTransmission type=int, initial=16384
+

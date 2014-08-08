@@ -38,36 +38,35 @@ namespace WebCore {
 
 class HTMLOutputElement FINAL : public HTMLFormControlElement {
 public:
-    static PassRefPtr<HTMLOutputElement> create(Document&, HTMLFormElement*);
+    static PassRefPtrWillBeRawPtr<HTMLOutputElement> create(Document&, HTMLFormElement*);
 
-    virtual bool willValidate() const { return false; }
+    virtual bool willValidate() const OVERRIDE { return false; }
 
     String value() const;
     void setValue(const String&);
     String defaultValue() const;
     void setDefaultValue(const String&);
-    void setFor(const String&);
+    void setFor(const AtomicString&);
     DOMSettableTokenList* htmlFor() const;
 
-    virtual bool canContainRangeEndPoint() const { return false; }
+    virtual bool canContainRangeEndPoint() const OVERRIDE { return false; }
+
+    virtual void trace(Visitor*) OVERRIDE;
 
 private:
     HTMLOutputElement(Document&, HTMLFormElement*);
 
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual const AtomicString& formControlType() const;
-    virtual bool isEnumeratable() const { return true; }
+    virtual const AtomicString& formControlType() const OVERRIDE;
+    virtual bool isEnumeratable() const OVERRIDE { return true; }
     virtual bool supportLabels() const OVERRIDE { return true; }
-    virtual bool supportsFocus() const;
-    virtual void childrenChanged(bool createdByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0);
+    virtual bool supportsFocus() const OVERRIDE;
+    virtual void childrenChanged(bool createdByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0) OVERRIDE;
     virtual void resetImpl() OVERRIDE;
 
-    void setTextContentInternal(const String&);
-
     bool m_isDefaultValueMode;
-    bool m_isSetTextContentInProgress;
     String m_defaultValue;
-    RefPtr<DOMSettableTokenList> m_tokens;
+    RefPtrWillBeMember<DOMSettableTokenList> m_tokens;
 };
 
 } // namespace

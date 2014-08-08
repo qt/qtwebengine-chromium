@@ -49,8 +49,6 @@ class RenderWidgetFullscreenPepper : public RenderWidgetFullscreen,
     return mouse_lock_dispatcher_.get();
   }
 
-  bool is_compositing() const { return !!layer_; }
-
  protected:
   RenderWidgetFullscreenPepper(PepperPluginInstanceImpl* plugin,
                                const GURL& active_url,
@@ -61,12 +59,6 @@ class RenderWidgetFullscreenPepper : public RenderWidgetFullscreen,
   virtual void DidInitiatePaint() OVERRIDE;
   virtual void DidFlushPaint() OVERRIDE;
   virtual void Close() OVERRIDE;
-  virtual PepperPluginInstanceImpl* GetBitmapForOptimizedPluginPaint(
-      const gfx::Rect& paint_bounds,
-      TransportDIB** dib,
-      gfx::Rect* location,
-      gfx::Rect* clip,
-      float* scale_factor) OVERRIDE;
   virtual void OnResize(const ViewMsg_Resize_Params& params) OVERRIDE;
 
   // RenderWidgetFullscreen API.

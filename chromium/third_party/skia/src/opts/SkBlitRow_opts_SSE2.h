@@ -1,4 +1,3 @@
-
 /*
  * Copyright 2009 The Android Open Source Project
  *
@@ -6,6 +5,8 @@
  * found in the LICENSE file.
  */
 
+#ifndef SkBlitRow_opts_SSE2_DEFINED
+#define SkBlitRow_opts_SSE2_DEFINED
 
 #include "SkBlitRow.h"
 
@@ -28,3 +29,18 @@ void SkBlitLCD16Row_SSE2(SkPMColor dst[], const uint16_t src[],
                          SkColor color, int width, SkPMColor);
 void SkBlitLCD16OpaqueRow_SSE2(SkPMColor dst[], const uint16_t src[],
                                SkColor color, int width, SkPMColor opaqueDst);
+
+void S32_D565_Opaque_SSE2(uint16_t* SK_RESTRICT dst,
+                          const SkPMColor* SK_RESTRICT src, int count,
+                          U8CPU alpha, int /*x*/, int /*y*/);
+void S32A_D565_Opaque_SSE2(uint16_t* SK_RESTRICT dst,
+                           const SkPMColor* SK_RESTRICT src,
+                           int count, U8CPU alpha, int /*x*/, int /*y*/);
+void S32_D565_Opaque_Dither_SSE2(uint16_t* SK_RESTRICT dst,
+                                 const SkPMColor* SK_RESTRICT src,
+                                 int count, U8CPU alpha, int x, int y);
+void S32A_D565_Opaque_Dither_SSE2(uint16_t* SK_RESTRICT dst,
+                                  const SkPMColor* SK_RESTRICT src,
+                                  int count, U8CPU alpha, int x, int y);
+
+#endif

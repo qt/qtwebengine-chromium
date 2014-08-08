@@ -3400,7 +3400,7 @@ PR_EXTERN(PRStatus) _pr_push_ipv6toipv4_layer(PRFileDesc *fd);
 extern PRBool _pr_ipv6_is_present(void);
 PR_IMPLEMENT(PRBool) _pr_test_ipv6_socket()
 {
-PRInt32 osfd;
+    int osfd;
 
 #if defined(DARWIN)
     /*

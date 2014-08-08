@@ -40,8 +40,8 @@ class MockNotificationView : public NotificationView {
                                 Test* test);
   virtual ~MockNotificationView();
 
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
-  virtual int GetHeightForWidth(int w) OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
+  virtual int GetHeightForWidth(int w) const OVERRIDE;
   virtual void Layout() OVERRIDE;
 
  private:
@@ -53,20 +53,20 @@ class MockNotificationView : public NotificationView {
 MockNotificationView::MockNotificationView(MessageCenterController* controller,
                                            const Notification& notification,
                                            Test* test)
-    : NotificationView(controller, notification, true),
+    : NotificationView(controller, notification),
       test_(test) {
 }
 
 MockNotificationView::~MockNotificationView() {
 }
 
-gfx::Size MockNotificationView::GetPreferredSize() {
+gfx::Size MockNotificationView::GetPreferredSize() const {
   test_->RegisterCall(GET_PREFERRED_SIZE);
   DCHECK(child_count() > 0);
   return NotificationView::GetPreferredSize();
 }
 
-int MockNotificationView::GetHeightForWidth(int width) {
+int MockNotificationView::GetHeightForWidth(int width) const {
   test_->RegisterCall(GET_HEIGHT_FOR_WIDTH);
   DCHECK(child_count() > 0);
   return NotificationView::GetHeightForWidth(width);
@@ -98,17 +98,12 @@ class MessageCenterViewTest : public testing::Test,
   virtual void ClickOnNotification(const std::string& notification_id) OVERRIDE;
   virtual void RemoveNotification(const std::string& notification_id,
                                   bool by_user) OVERRIDE;
-  virtual void DisableNotificationsFromThisSource(
-      const NotifierId& notifier_id) OVERRIDE;
-  virtual void ShowNotifierSettingsBubble() OVERRIDE;
+  virtual scoped_ptr<ui::MenuModel> CreateMenuModel(
+      const NotifierId& notifier_id,
+      const base::string16& display_source) OVERRIDE;
   virtual bool HasClickedListener(const std::string& notification_id) OVERRIDE;
   virtual void ClickOnNotificationButton(const std::string& notification_id,
                                          int button_index) OVERRIDE;
-  virtual void ExpandNotification(const std::string& notification_id) OVERRIDE;
-  virtual void GroupBodyClicked(const std::string& last_notification_id)
-      OVERRIDE;
-  virtual void ExpandGroup(const NotifierId& notifier_id) OVERRIDE;
-  virtual void RemoveGroup(const NotifierId& notifier_id) OVERRIDE;
 
   // Overridden from MockNotificationView::Test
   virtual void RegisterCall(CallType type) OVERRIDE;
@@ -136,10 +131,10 @@ void MessageCenterViewTest::SetUp() {
   // Create a dummy notification.
   Notification notification(NOTIFICATION_TYPE_SIMPLE,
                             std::string("notification id"),
-                            UTF8ToUTF16("title"),
-                            UTF8ToUTF16("message"),
+                            base::UTF8ToUTF16("title"),
+                            base::UTF8ToUTF16("message"),
                             gfx::Image(),
-                            UTF8ToUTF16("display source"),
+                            base::UTF8ToUTF16("display source"),
                             NotifierId(NotifierId::APPLICATION, "extension_id"),
                             message_center::RichNotificationData(),
                             NULL);
@@ -149,8 +144,9 @@ void MessageCenterViewTest::SetUp() {
   notifications.insert(&notification);
 
   // Then create a new MessageCenterView with that single notification.
+  base::string16 title;
   message_center_view_.reset(new MessageCenterView(
-      &message_center_, NULL, 100, false, /*top_down =*/false));
+      &message_center_, NULL, 100, false, /*top_down =*/false, title));
   message_center_view_->SetNotifications(notifications);
 
   // Remove and delete the NotificationView now owned by the MessageCenterView's
@@ -191,15 +187,12 @@ void MessageCenterViewTest::RemoveNotification(
   NOTREACHED();
 }
 
-void MessageCenterViewTest::DisableNotificationsFromThisSource(
-    const NotifierId& notifier_id) {
+scoped_ptr<ui::MenuModel> MessageCenterViewTest::CreateMenuModel(
+    const NotifierId& notifier_id,
+    const base::string16& display_source) {
   // For this test, this method should not be invoked.
   NOTREACHED();
-}
-
-void MessageCenterViewTest::ShowNotifierSettingsBubble() {
-  // For this test, this method should not be invoked.
-  NOTREACHED();
+  return scoped_ptr<ui::MenuModel>();
 }
 
 bool MessageCenterViewTest::HasClickedListener(
@@ -214,36 +207,14 @@ void MessageCenterViewTest::ClickOnNotificationButton(
   NOTREACHED();
 }
 
-void MessageCenterViewTest::ExpandNotification(
-    const std::string& notification_id) {
-  // For this test, this method should not be invoked.
-  NOTREACHED();
-}
-
-void MessageCenterViewTest::GroupBodyClicked(
-    const std::string& last_notification_id) {
-  // For this test, this method should not be invoked.
-  NOTREACHED();
-}
-
-void MessageCenterViewTest::ExpandGroup(const NotifierId& notifier_id) {
-  // For this test, this method should not be invoked.
-  NOTREACHED();
-}
-
-void MessageCenterViewTest::RemoveGroup(const NotifierId& notifier_id) {
-  // For this test, this method should not be invoked.
-  NOTREACHED();
-}
-
 void MessageCenterViewTest::RegisterCall(CallType type) {
   callCounts_[type] += 1;
 }
 
 void MessageCenterViewTest::LogBounds(int depth, views::View* view) {
-  string16 inset;
+  base::string16 inset;
   for (int i = 0; i < depth; ++i)
-    inset.append(UTF8ToUTF16("  "));
+    inset.append(base::UTF8ToUTF16("  "));
   gfx::Rect bounds = view->bounds();
   DVLOG(0) << inset << bounds.width() << " x " << bounds.height()
            << " @ " << bounds.x() << ", " << bounds.y();

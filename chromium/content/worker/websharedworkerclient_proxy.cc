@@ -7,10 +7,10 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/message_loop/message_loop.h"
+#include "content/child/shared_worker_devtools_agent.h"
 #include "content/child/webmessageportchannel_impl.h"
 #include "content/common/worker_messages.h"
 #include "content/public/common/content_switches.h"
-#include "content/worker/shared_worker_devtools_agent.h"
 #include "content/worker/shared_worker_permission_client_proxy.h"
 #include "content/worker/websharedworker_stub.h"
 #include "content/worker/worker_thread.h"
@@ -42,7 +42,8 @@ WebSharedWorkerClientProxy::WebSharedWorkerClientProxy(
       appcache_host_id_(0),
       stub_(stub),
       weak_factory_(this),
-      devtools_agent_(NULL) {
+      devtools_agent_(NULL),
+      app_cache_host_(NULL) {
 }
 
 WebSharedWorkerClientProxy::~WebSharedWorkerClientProxy() {
@@ -59,6 +60,28 @@ void WebSharedWorkerClientProxy::workerContextDestroyed() {
     stub_->Shutdown();
 }
 
+void WebSharedWorkerClientProxy::workerScriptLoaded() {
+  Send(new WorkerHostMsg_WorkerScriptLoaded(route_id_));
+  if (stub_)
+    stub_->WorkerScriptLoaded();
+}
+
+void WebSharedWorkerClientProxy::workerScriptLoadFailed() {
+  Send(new WorkerHostMsg_WorkerScriptLoadFailed(route_id_));
+  if (stub_)
+    stub_->WorkerScriptLoadFailed();
+}
+
+void WebSharedWorkerClientProxy::selectAppCacheID(long long app_cache_id) {
+  if (app_cache_host_) {
+    // app_cache_host_ could become stale as it's owned by blink's
+    // DocumentLoader. This method is assumed to be called while it's valid.
+    app_cache_host_->backend()->SelectCacheForSharedWorker(
+        app_cache_host_->host_id(),
+        app_cache_id);
+  }
+}
+
 blink::WebNotificationPresenter*
 WebSharedWorkerClientProxy::notificationPresenter() {
   // TODO(johnnyg): Notifications are not yet hooked up to workers.
@@ -69,13 +92,12 @@ WebSharedWorkerClientProxy::notificationPresenter() {
 
 WebApplicationCacheHost* WebSharedWorkerClientProxy::createApplicationCacheHost(
     blink::WebApplicationCacheHostClient* client) {
-  WorkerWebApplicationCacheHostImpl* host =
-      new WorkerWebApplicationCacheHostImpl(stub_->appcache_init_info(),
-                                            client);
+  DCHECK(!app_cache_host_);
+  app_cache_host_ = new WorkerWebApplicationCacheHostImpl(client);
   // Remember the id of the instance we create so we have access to that
   // value when creating nested dedicated workers in createWorker.
-  appcache_host_id_ = host->host_id();
-  return host;
+  appcache_host_id_ = app_cache_host_->host_id();
+  return app_cache_host_;
 }
 
 blink::WebWorkerPermissionClientProxy*
@@ -84,22 +106,6 @@ WebSharedWorkerClientProxy::createWorkerPermissionClientProxy(
   return new SharedWorkerPermissionClientProxy(
       GURL(origin.toString()), origin.isUnique(), route_id_,
       ChildThread::current()->thread_safe_sender());
-}
-
-// TODO(kinuko): Deprecate these methods.
-bool WebSharedWorkerClientProxy::allowDatabase(WebFrame* frame,
-                                         const WebString& name,
-                                         const WebString& display_name,
-                                         unsigned long estimated_size) {
-  return false;
-}
-
-bool WebSharedWorkerClientProxy::allowFileSystem() {
-  return false;
-}
-
-bool WebSharedWorkerClientProxy::allowIndexedDB(const blink::WebString& name) {
-  return false;
 }
 
 void WebSharedWorkerClientProxy::dispatchDevToolsMessage(

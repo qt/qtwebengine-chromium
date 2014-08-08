@@ -6,12 +6,7 @@
 {
   'variables': {
     'conditions': [
-      ['OS=="linux"', {
-        'syscall_handler': [
-          'posix/nacl_syscall_impl.c'
-        ],
-      }],
-      ['OS=="mac"', {
+      ['os_posix==1', {
         'syscall_handler': [
           'posix/nacl_syscall_impl.c'
         ],
@@ -194,7 +189,7 @@
                 'linux/nacl_signal_mips.c',
               ],
             }],
-            ['OS=="linux"', {
+            ['OS=="linux" or OS=="android"', {
               'sources': [
                 'linux/nacl_bootstrap_args.c',
                 'linux/nacl_thread_nice.c',
@@ -223,7 +218,7 @@
                 }],
               ],
             }],
-            ['OS=="linux" or OS=="mac" or OS=="FreeBSD"', {
+            ['<(os_posix)==1', {
               'sources': [
                 'posix/nacl_signal_stack.c',
                 'posix/sel_addrspace_posix.c',
@@ -261,6 +256,7 @@
         '<(DEPTH)/native_client/src/shared/srpc/srpc.gyp:nonnacl_srpc',
         '<(DEPTH)/native_client/src/trusted/debug_stub/debug_stub.gyp:debug_stub',
         '<(DEPTH)/native_client/src/trusted/desc/desc.gyp:nrd_xfer',
+        '<(DEPTH)/native_client/src/trusted/desc_cacheability/desc_cacheability.gyp:desc_cacheability',
         '<(DEPTH)/native_client/src/trusted/fault_injection/fault_injection.gyp:nacl_fault_inject',
         '<(DEPTH)/native_client/src/trusted/gio/gio_wrapped_desc.gyp:gio_wrapped_desc',
         '<(DEPTH)/native_client/src/trusted/interval_multiset/interval_multiset.gyp:nacl_interval',
@@ -300,7 +296,7 @@
             '<(DEPTH)/native_client/src/trusted/validator_x86/validator_x86.gyp:nccopy_x86_64',
           ],
         }],
-        ['OS=="linux" or OS=="FreeBSD"', {
+        ['OS=="linux" or OS=="FreeBSD" or OS=="android"', {
           'dependencies': [
             'nacl_signal',
           ],
@@ -346,7 +342,7 @@
         'force_cpp.cc',
       ],
       'conditions': [
-        ['OS=="linux"', {
+        ['OS=="linux" or OS=="android"', {
           'dependencies': [
             'linux/nacl_bootstrap.gyp:nacl_helper_bootstrap',
           ],
@@ -374,6 +370,7 @@
             '<(DEPTH)/native_client/src/shared/srpc/srpc.gyp:nonnacl_srpc64',
             '<(DEPTH)/native_client/src/trusted/debug_stub/debug_stub.gyp:debug_stub64',
             '<(DEPTH)/native_client/src/trusted/desc/desc.gyp:nrd_xfer64',
+            '<(DEPTH)/native_client/src/trusted/desc_cacheability/desc_cacheability.gyp:desc_cacheability64',
             '<(DEPTH)/native_client/src/trusted/fault_injection/fault_injection.gyp:nacl_fault_inject64',
             '<(DEPTH)/native_client/src/trusted/gio/gio_wrapped_desc.gyp:gio_wrapped_desc64',
             '<(DEPTH)/native_client/src/trusted/interval_multiset/interval_multiset.gyp:nacl_interval64',
@@ -448,7 +445,7 @@
         },
       ],
     }],
-    ['OS=="linux" or OS=="FreeBSD"', {
+    ['OS=="linux" or OS=="FreeBSD" or OS=="android"', {
       'targets': [
         {
           # This has to be an independent target in order to benefit from

@@ -1,32 +1,11 @@
 // Copyright 2013 the V8 project authors. All rights reserved.
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-//       copyright notice, this list of conditions and the following
-//       disclaimer in the documentation and/or other materials provided
-//       with the distribution.
-//     * Neither the name of Google Inc. nor the names of its
-//       contributors may be used to endorse or promote products derived
-//       from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
 #ifndef V8_ALLOCATION_TRACKER_H_
 #define V8_ALLOCATION_TRACKER_H_
+
+#include <map>
 
 namespace v8 {
 namespace internal {
@@ -38,13 +17,13 @@ class AllocationTraceTree;
 class AllocationTraceNode {
  public:
   AllocationTraceNode(AllocationTraceTree* tree,
-                      SnapshotObjectId shared_function_info_id);
+                      unsigned function_info_index);
   ~AllocationTraceNode();
-  AllocationTraceNode* FindChild(SnapshotObjectId shared_function_info_id);
-  AllocationTraceNode* FindOrAddChild(SnapshotObjectId shared_function_info_id);
+  AllocationTraceNode* FindChild(unsigned function_info_index);
+  AllocationTraceNode* FindOrAddChild(unsigned function_info_index);
   void AddAllocation(unsigned size);
 
-  SnapshotObjectId function_id() const { return function_id_; }
+  unsigned function_info_index() const { return function_info_index_; }
   unsigned allocation_size() const { return total_size_; }
   unsigned allocation_count() const { return allocation_count_; }
   unsigned id() const { return id_; }
@@ -54,7 +33,7 @@ class AllocationTraceNode {
 
  private:
   AllocationTraceTree* tree_;
-  SnapshotObjectId function_id_;
+  unsigned function_info_index_;
   unsigned total_size_;
   unsigned allocation_count_;
   unsigned id_;
@@ -68,7 +47,7 @@ class AllocationTraceTree {
  public:
   AllocationTraceTree();
   ~AllocationTraceTree();
-  AllocationTraceNode* AddPathFromEnd(const Vector<SnapshotObjectId>& path);
+  AllocationTraceNode* AddPathFromEnd(const Vector<unsigned>& path);
   AllocationTraceNode* root() { return &root_; }
   unsigned next_node_id() { return next_node_id_++; }
   void Print(AllocationTracker* tracker);
@@ -81,11 +60,36 @@ class AllocationTraceTree {
 };
 
 
+class AddressToTraceMap {
+ public:
+  void AddRange(Address addr, int size, unsigned node_id);
+  unsigned GetTraceNodeId(Address addr);
+  void MoveObject(Address from, Address to, int size);
+  void Clear();
+  size_t size() { return ranges_.size(); }
+  void Print();
+
+ private:
+  struct RangeStack {
+    RangeStack(Address start, unsigned node_id)
+        : start(start), trace_node_id(node_id) {}
+    Address start;
+    unsigned trace_node_id;
+  };
+  // [start, end) -> trace
+  typedef std::map<Address, RangeStack> RangeMap;
+
+  void RemoveRange(Address start, Address end);
+
+  RangeMap ranges_;
+};
+
 class AllocationTracker {
  public:
   struct FunctionInfo {
     FunctionInfo();
     const char* name;
+    SnapshotObjectId function_id;
     const char* script_name;
     int script_id;
     int line;
@@ -99,11 +103,15 @@ class AllocationTracker {
   void AllocationEvent(Address addr, int size);
 
   AllocationTraceTree* trace_tree() { return &trace_tree_; }
-  HashMap* id_to_function_info() { return &id_to_function_info_; }
-  FunctionInfo* GetFunctionInfo(SnapshotObjectId id);
+  const List<FunctionInfo*>& function_info_list() const {
+    return function_info_list_;
+  }
+  AddressToTraceMap* address_to_trace() { return &address_to_trace_; }
 
  private:
-  void AddFunctionInfo(SharedFunctionInfo* info, SnapshotObjectId id);
+  unsigned AddFunctionInfo(SharedFunctionInfo* info, SnapshotObjectId id);
+  static void DeleteFunctionInfo(FunctionInfo** info);
+  unsigned functionInfoIndexForVMState(StateTag state);
 
   class UnresolvedLocation {
    public:
@@ -112,9 +120,9 @@ class AllocationTracker {
     void Resolve();
 
    private:
-    static void HandleWeakScript(v8::Isolate* isolate,
-                                 v8::Persistent<v8::Value>* obj,
-                                 void* data);
+    static void HandleWeakScript(
+        const v8::WeakCallbackData<v8::Value, void>& data);
+
     Handle<Script> script_;
     int start_position_;
     FunctionInfo* info_;
@@ -125,9 +133,12 @@ class AllocationTracker {
   HeapObjectsMap* ids_;
   StringsStorage* names_;
   AllocationTraceTree trace_tree_;
-  SnapshotObjectId allocation_trace_buffer_[kMaxAllocationTraceLength];
-  HashMap id_to_function_info_;
+  unsigned allocation_trace_buffer_[kMaxAllocationTraceLength];
+  List<FunctionInfo*> function_info_list_;
+  HashMap id_to_function_info_index_;
   List<UnresolvedLocation*> unresolved_locations_;
+  unsigned info_index_for_other_state_;
+  AddressToTraceMap address_to_trace_;
 
   DISALLOW_COPY_AND_ASSIGN(AllocationTracker);
 };

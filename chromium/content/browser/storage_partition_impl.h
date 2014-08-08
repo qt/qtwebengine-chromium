@@ -42,6 +42,7 @@ class StoragePartitionImpl : public StoragePartition {
   virtual webkit_database::DatabaseTracker* GetDatabaseTracker() OVERRIDE;
   virtual DOMStorageContextWrapper* GetDOMStorageContext() OVERRIDE;
   virtual IndexedDBContextImpl* GetIndexedDBContext() OVERRIDE;
+  virtual ServiceWorkerContextWrapper* GetServiceWorkerContext() OVERRIDE;
 
   virtual void ClearDataForOrigin(
       uint32 remove_mask,
@@ -50,13 +51,11 @@ class StoragePartitionImpl : public StoragePartition {
       net::URLRequestContextGetter* request_context_getter) OVERRIDE;
   virtual void ClearData(uint32 remove_mask,
                          uint32 quota_storage_remove_mask,
-                         const GURL* storage_origin,
+                         const GURL& storage_origin,
                          const OriginMatcherFunction& origin_matcher,
                          const base::Time begin,
                          const base::Time end,
                          const base::Closure& callback) OVERRIDE;
-
-  ServiceWorkerContextWrapper* GetServiceWorkerContext();
 
   WebRTCIdentityStore* GetWebRTCIdentityStore();
 
@@ -121,7 +120,7 @@ class StoragePartitionImpl : public StoragePartition {
 
   void ClearDataImpl(uint32 remove_mask,
                      uint32 quota_storage_remove_mask,
-                     const GURL* remove_origin,
+                     const GURL& remove_origin,
                      const OriginMatcherFunction& origin_matcher,
                      net::URLRequestContextGetter* rq_context,
                      const base::Time begin,

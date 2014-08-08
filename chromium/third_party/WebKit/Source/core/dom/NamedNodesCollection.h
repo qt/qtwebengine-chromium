@@ -31,7 +31,7 @@
 #ifndef NamedNodesCollection_h
 #define NamedNodesCollection_h
 
-#include "core/dom/Node.h"
+#include "core/dom/Element.h"
 #include "core/dom/NodeList.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
@@ -41,20 +41,21 @@ namespace WebCore {
 
 class NamedNodesCollection FINAL : public NodeList {
 public:
-    static PassRefPtr<NodeList> create(const Vector<RefPtr<Node> >& nodes)
+    static PassRefPtrWillBeRawPtr<NodeList> create(const WillBeHeapVector<RefPtrWillBeMember<Element> >& nodes)
     {
-        return adoptRef(new NamedNodesCollection(nodes));
+        return adoptRefWillBeNoop(new NamedNodesCollection(nodes));
     }
 
     virtual unsigned length() const OVERRIDE { return m_nodes.size(); }
-    virtual Node* item(unsigned) const OVERRIDE;
-    virtual Node* namedItem(const AtomicString&) const OVERRIDE;
+    virtual Element* item(unsigned) const OVERRIDE;
+
+    virtual void trace(Visitor*) OVERRIDE;
 
 private:
-    explicit NamedNodesCollection(const Vector<RefPtr<Node> >& nodes)
+    explicit NamedNodesCollection(const WillBeHeapVector<RefPtrWillBeMember<Element> > nodes)
         : m_nodes(nodes) { }
 
-    Vector<RefPtr<Node> > m_nodes;
+    WillBeHeapVector<RefPtrWillBeMember<Element> > m_nodes;
 };
 
 } // namespace WebCore

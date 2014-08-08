@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <stack>
+#include <vector>
+
 #include "gpu/command_buffer/client/share_group.h"
 
 #include "base/logging.h"
@@ -12,6 +15,9 @@
 
 namespace gpu {
 namespace gles2 {
+
+ShareGroupContextData::IdHandlerData::IdHandlerData() : flush_generation_(0) {}
+ShareGroupContextData::IdHandlerData::~IdHandlerData() {}
 
 COMPILE_ASSERT(gpu::kInvalidResource == 0,
                INVALID_RESOURCE_NOT_0_AS_GL_EXPECTS);
@@ -26,6 +32,7 @@ class IdHandler : public IdHandlerInterface {
   virtual void MakeIds(
       GLES2Implementation* /* gl_impl */,
       GLuint id_offset, GLsizei n, GLuint* ids) OVERRIDE {
+    base::AutoLock auto_lock(lock_);
     if (id_offset == 0) {
       for (GLsizei ii = 0; ii < n; ++ii) {
         ids[ii] = id_allocator_.AllocateID();
@@ -42,35 +49,144 @@ class IdHandler : public IdHandlerInterface {
   virtual bool FreeIds(
       GLES2Implementation* gl_impl,
       GLsizei n, const GLuint* ids, DeleteFn delete_fn) OVERRIDE {
+    base::AutoLock auto_lock(lock_);
+
     for (GLsizei ii = 0; ii < n; ++ii) {
       id_allocator_.FreeID(ids[ii]);
     }
+
     (gl_impl->*delete_fn)(n, ids);
     // We need to ensure that the delete call is evaluated on the service side
     // before any other contexts issue commands using these client ids.
+    // TODO(vmiura): Can remove this by virtualizing internal ids, however
+    // this code only affects PPAPI for now.
     gl_impl->helper()->CommandBufferHelper::Flush();
     return true;
   }
 
   // Overridden from IdHandlerInterface.
   virtual bool MarkAsUsedForBind(GLuint id) OVERRIDE {
-    return id == 0 ? true : id_allocator_.MarkAsUsed(id);
+    if (id == 0)
+      return true;
+    base::AutoLock auto_lock(lock_);
+    return id_allocator_.MarkAsUsed(id);
   }
- protected:
+
+  virtual void FreeContext(GLES2Implementation* gl_impl) OVERRIDE {}
+
+ private:
+  base::Lock lock_;
   IdAllocator id_allocator_;
 };
 
-// An id handler that require Gen before Bind.
-class StrictIdHandler : public IdHandler {
+// An id handler that requires Gen before Bind.
+class StrictIdHandler : public IdHandlerInterface {
  public:
-  StrictIdHandler() {}
+  explicit StrictIdHandler(int id_namespace) : id_namespace_(id_namespace) {}
   virtual ~StrictIdHandler() {}
 
   // Overridden from IdHandler.
-  virtual bool MarkAsUsedForBind(GLuint id) OVERRIDE {
-    DCHECK(id == 0 || id_allocator_.InUse(id));
-    return IdHandler::MarkAsUsedForBind(id);
+  virtual void MakeIds(GLES2Implementation* gl_impl,
+                       GLuint /* id_offset */,
+                       GLsizei n,
+                       GLuint* ids) OVERRIDE {
+    base::AutoLock auto_lock(lock_);
+
+    // Collect pending FreeIds from other flush_generation.
+    CollectPendingFreeIds(gl_impl);
+
+    for (GLsizei ii = 0; ii < n; ++ii) {
+      if (!free_ids_.empty()) {
+        // Allocate a previously freed Id.
+        ids[ii] = free_ids_.top();
+        free_ids_.pop();
+
+        // Record kIdInUse state.
+        DCHECK(id_states_[ids[ii] - 1] == kIdFree);
+        id_states_[ids[ii] - 1] = kIdInUse;
+      } else {
+        // Allocate a new Id.
+        id_states_.push_back(kIdInUse);
+        ids[ii] = id_states_.size();
+      }
+    }
   }
+
+  // Overridden from IdHandler.
+  virtual bool FreeIds(GLES2Implementation* gl_impl,
+                       GLsizei n,
+                       const GLuint* ids,
+                       DeleteFn delete_fn) OVERRIDE {
+
+    // Delete stub must run before CollectPendingFreeIds.
+    (gl_impl->*delete_fn)(n, ids);
+
+    {
+      base::AutoLock auto_lock(lock_);
+
+      // Collect pending FreeIds from other flush_generation.
+      CollectPendingFreeIds(gl_impl);
+
+      // Save Ids to free in a later flush_generation.
+      ShareGroupContextData::IdHandlerData* ctxt_data =
+          gl_impl->share_group_context_data()->id_handler_data(id_namespace_);
+
+      for (GLsizei ii = 0; ii < n; ++ii) {
+        GLuint id = ids[ii];
+        if (id != 0) {
+          // Save freed Id for later.
+          DCHECK(id_states_[id - 1] == kIdInUse);
+          id_states_[id - 1] = kIdPendingFree;
+          ctxt_data->freed_ids_.push_back(id);
+        }
+      }
+    }
+
+    return true;
+  }
+
+  // Overridden from IdHandler.
+  virtual bool MarkAsUsedForBind(GLuint id) OVERRIDE {
+#ifndef NDEBUG
+    if (id != 0) {
+      base::AutoLock auto_lock(lock_);
+      DCHECK(id_states_[id - 1] == kIdInUse);
+    }
+#endif
+    return true;
+  }
+
+  // Overridden from IdHandlerInterface.
+  virtual void FreeContext(GLES2Implementation* gl_impl) OVERRIDE {
+    base::AutoLock auto_lock(lock_);
+    CollectPendingFreeIds(gl_impl);
+  }
+
+ private:
+  enum IdState { kIdFree, kIdPendingFree, kIdInUse };
+
+  void CollectPendingFreeIds(GLES2Implementation* gl_impl) {
+    uint32 flush_generation = gl_impl->helper()->flush_generation();
+    ShareGroupContextData::IdHandlerData* ctxt_data =
+        gl_impl->share_group_context_data()->id_handler_data(id_namespace_);
+
+    if (ctxt_data->flush_generation_ != flush_generation) {
+      ctxt_data->flush_generation_ = flush_generation;
+      for (uint32 ii = 0; ii < ctxt_data->freed_ids_.size(); ++ii) {
+        const GLuint id = ctxt_data->freed_ids_[ii];
+        DCHECK(id_states_[id - 1] == kIdPendingFree);
+        id_states_[id - 1] = kIdFree;
+        free_ids_.push(id);
+      }
+      ctxt_data->freed_ids_.clear();
+    }
+  }
+
+  int id_namespace_;
+
+  base::Lock lock_;
+  std::vector<uint8> id_states_;
+  std::stack<uint32> free_ids_;
 };
 
 // An id handler for ids that are never reused.
@@ -83,6 +199,7 @@ class NonReusedIdHandler : public IdHandlerInterface {
   virtual void MakeIds(
       GLES2Implementation* /* gl_impl */,
       GLuint id_offset, GLsizei n, GLuint* ids) OVERRIDE {
+    base::AutoLock auto_lock(lock_);
     for (GLsizei ii = 0; ii < n; ++ii) {
       ids[ii] = ++last_id_ + id_offset;
     }
@@ -103,82 +220,11 @@ class NonReusedIdHandler : public IdHandlerInterface {
     return false;
   }
 
+  virtual void FreeContext(GLES2Implementation* gl_impl) OVERRIDE {}
+
  private:
+  base::Lock lock_;
   GLuint last_id_;
-};
-
-// An id handler for shared ids.
-class SharedIdHandler : public IdHandlerInterface {
- public:
-  SharedIdHandler(
-      id_namespaces::IdNamespaces id_namespace)
-      : id_namespace_(id_namespace) {
-  }
-
-  virtual ~SharedIdHandler() {}
-
-  virtual void MakeIds(GLES2Implementation* gl_impl,
-                       GLuint id_offset,
-                       GLsizei n,
-                       GLuint* ids) OVERRIDE {
-    gl_impl->GenSharedIdsCHROMIUM(id_namespace_, id_offset, n, ids);
-  }
-
-  virtual bool FreeIds(GLES2Implementation* gl_impl,
-                       GLsizei n,
-                       const GLuint* ids,
-                       DeleteFn delete_fn) OVERRIDE {
-    gl_impl->DeleteSharedIdsCHROMIUM(id_namespace_, n, ids);
-    (gl_impl->*delete_fn)(n, ids);
-    // We need to ensure that the delete call is evaluated on the service side
-    // before any other contexts issue commands using these client ids.
-    gl_impl->helper()->CommandBufferHelper::Flush();
-    return true;
-  }
-
-  virtual bool MarkAsUsedForBind(GLuint id) OVERRIDE {
-    // This has no meaning for shared resources.
-    return true;
-  }
-
- private:
-  id_namespaces::IdNamespaces id_namespace_;
-};
-
-class ThreadSafeIdHandlerWrapper : public IdHandlerInterface {
- public:
-  ThreadSafeIdHandlerWrapper(IdHandlerInterface* id_handler)
-      : id_handler_(id_handler) {
-  }
-  virtual ~ThreadSafeIdHandlerWrapper() { }
-
-  // Overridden from IdHandlerInterface.
-  virtual void MakeIds(GLES2Implementation* gl_impl,
-                       GLuint id_offset,
-                       GLsizei n,
-                       GLuint* ids) OVERRIDE {
-    base::AutoLock auto_lock(lock_);
-    id_handler_->MakeIds(gl_impl, id_offset, n, ids);
-  }
-
-  // Overridden from IdHandlerInterface.
-  virtual bool FreeIds(GLES2Implementation* gl_impl,
-                       GLsizei n,
-                       const GLuint* ids,
-                       DeleteFn delete_fn) OVERRIDE {
-    base::AutoLock auto_lock(lock_);
-    return id_handler_->FreeIds(gl_impl, n, ids, delete_fn);
-  }
-
-  // Overridden from IdHandlerInterface.
-  virtual bool MarkAsUsedForBind(GLuint id) OVERRIDE {
-    base::AutoLock auto_lock(lock_);
-    return id_handler_->MarkAsUsedForBind(id);
-  }
-
- private:
-   scoped_ptr<IdHandlerInterface> id_handler_;
-   base::Lock lock_;
 };
 
 ShareGroup::ShareGroup(bool bind_generates_resource)
@@ -186,21 +232,17 @@ ShareGroup::ShareGroup(bool bind_generates_resource)
   if (bind_generates_resource) {
     for (int i = 0; i < id_namespaces::kNumIdNamespaces; ++i) {
       if (i == id_namespaces::kProgramsAndShaders) {
-        id_handlers_[i].reset(new ThreadSafeIdHandlerWrapper(
-            new NonReusedIdHandler()));
+        id_handlers_[i].reset(new NonReusedIdHandler());
       } else {
-        id_handlers_[i].reset(new ThreadSafeIdHandlerWrapper(
-            new IdHandler()));
+        id_handlers_[i].reset(new IdHandler());
       }
     }
   } else {
     for (int i = 0; i < id_namespaces::kNumIdNamespaces; ++i) {
       if (i == id_namespaces::kProgramsAndShaders) {
-        id_handlers_[i].reset(new ThreadSafeIdHandlerWrapper(
-            new NonReusedIdHandler()));
+        id_handlers_[i].reset(new NonReusedIdHandler());
       } else {
-        id_handlers_[i].reset(new ThreadSafeIdHandlerWrapper(
-            new StrictIdHandler()));
+        id_handlers_[i].reset(new StrictIdHandler(i));
       }
     }
   }

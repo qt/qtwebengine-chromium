@@ -37,10 +37,6 @@
 #include "base/mac/scoped_nsautorelease_pool.h"
 #endif
 
-#if defined(TOOLKIT_GTK)
-#include "ui/gfx/gtk_util.h"
-#endif
-
 namespace content {
 
 using blink::WebGLId;
@@ -62,14 +58,16 @@ class GLHelperTest : public testing::Test {
  protected:
   virtual void SetUp() {
     WebGraphicsContext3D::Attributes attributes;
+    bool lose_context_when_out_of_memory = false;
     context_ = webkit::gpu::WebGraphicsContext3DInProcessCommandBufferImpl::
-        CreateOffscreenContext(attributes);
+        CreateOffscreenContext(attributes, lose_context_when_out_of_memory);
     context_->makeContextCurrent();
 
     helper_.reset(
-        new content::GLHelper(context_.get(), context_->GetContextSupport()));
+        new content::GLHelper(context_->GetGLInterface(),
+                              context_->GetContextSupport()));
     helper_scaling_.reset(new content::GLHelperScaling(
-        context_.get(),
+        context_->GetGLInterface(),
         helper_.get()));
   }
 
@@ -291,7 +289,8 @@ TEST_F(GLHelperTest, DISABLED_ScaleTestImage) {
           gfx::Rect(0, 0,
                     dst_size.width(),
                     dst_size.height()),
-          static_cast<unsigned char *>(output_pixels.getPixels()));
+          static_cast<unsigned char *>(output_pixels.getPixels()),
+          SkBitmap::kARGB_8888_Config);
       context_->deleteTexture(dst_texture);
       std::string filename = base::StringPrintf("testoutput_%s_%d.ppm",
                                                 kQualityNames[q],
@@ -313,9 +312,6 @@ int main(int argc, char** argv) {
   base::TestSuite* suite = new content::ContentTestSuite(argc, argv);
 #if defined(OS_MACOSX)
   base::mac::ScopedNSAutoreleasePool pool;
-#endif
-#if defined(TOOLKIT_GTK)
-  gfx::GtkInitFromCommandLine(*CommandLine::ForCurrentProcess());
 #endif
   gfx::GLSurface::InitializeOneOff();
 

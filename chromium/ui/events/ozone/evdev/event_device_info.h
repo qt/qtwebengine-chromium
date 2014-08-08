@@ -9,6 +9,7 @@
 #include <linux/input.h>
 
 #include "base/basictypes.h"
+#include "ui/events/ozone/evdev/events_ozone_evdev_export.h"
 
 #define EVDEV_LONG_BITS (CHAR_BIT * sizeof(long))
 #define EVDEV_BITS_TO_LONGS(x) (((x) + EVDEV_LONG_BITS - 1) / EVDEV_LONG_BITS)
@@ -19,7 +20,7 @@ namespace ui {
 //
 // This stores and queries information about input devices; in
 // particular it knows which events the device can generate.
-class EventDeviceInfo {
+class EVENTS_OZONE_EVDEV_EXPORT EventDeviceInfo {
  public:
   EventDeviceInfo();
   ~EventDeviceInfo();
@@ -36,8 +37,22 @@ class EventDeviceInfo {
   bool HasSwEvent(unsigned int code) const;
   bool HasLedEvent(unsigned int code) const;
 
+  // Properties of absolute axes.
+  int32 GetAbsMinimum(unsigned int code) const;
+  int32 GetAbsMaximum(unsigned int code) const;
+
   // Check input device properties.
   bool HasProp(unsigned int code) const;
+
+  // Has absolute X & Y axes.
+  bool HasAbsXY() const;
+
+  // Has relativeX & Y axes.
+  bool HasRelXY() const;
+
+  // Determine whether absolute device X/Y coordinates are mapped onto the
+  // screen. This is the case for touchscreens and tablets but not touchpads.
+  bool IsMappedToScreen() const;
 
  private:
   unsigned long ev_bits_[EVDEV_BITS_TO_LONGS(EV_CNT)];
@@ -48,6 +63,8 @@ class EventDeviceInfo {
   unsigned long sw_bits_[EVDEV_BITS_TO_LONGS(SW_CNT)];
   unsigned long led_bits_[EVDEV_BITS_TO_LONGS(LED_CNT)];
   unsigned long prop_bits_[EVDEV_BITS_TO_LONGS(INPUT_PROP_CNT)];
+
+  struct input_absinfo abs_info_[ABS_CNT];
 
   DISALLOW_COPY_AND_ASSIGN(EventDeviceInfo);
 };

@@ -21,13 +21,11 @@ class MenuSeparator : public View {
 
   // View overrides.
   virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
 
  private:
-#if defined(USE_AURA)
   void OnPaintAura(gfx::Canvas* canvas);
-  gfx::Size GetPreferredSizeAura();
-#endif
+  gfx::Size GetPreferredSizeAura() const;
 
   // The type of the separator.
   const ui::MenuSeparatorType type_;

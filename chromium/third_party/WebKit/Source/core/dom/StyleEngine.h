@@ -28,10 +28,12 @@
 #ifndef StyleEngine_h
 #define StyleEngine_h
 
+#include "core/css/CSSFontSelectorClient.h"
 #include "core/css/resolver/StyleResolver.h"
 #include "core/dom/Document.h"
 #include "core/dom/DocumentOrderedList.h"
 #include "core/dom/DocumentStyleSheetCollection.h"
+#include "platform/heap/Handle.h"
 #include "wtf/FastAllocBase.h"
 #include "wtf/ListHashSet.h"
 #include "wtf/RefPtr.h"
@@ -48,30 +50,14 @@ class Node;
 class RuleFeatureSet;
 class ShadowTreeStyleSheetCollection;
 class StyleResolver;
+class StyleRuleFontFace;
 class StyleSheet;
 class StyleSheetCollection;
 class StyleSheetContents;
 class StyleSheetList;
 
-class StyleResolverChange {
-public:
-    StyleResolverChange()
-        : m_needsRepaint(false)
-        , m_needsStyleRecalc(false)
-    { }
-
-    bool needsRepaint() const { return m_needsRepaint; }
-    bool needsStyleRecalc() const { return m_needsStyleRecalc; }
-    void setNeedsRepaint() { m_needsRepaint = true; }
-    void setNeedsStyleRecalc() { m_needsStyleRecalc = true; }
-
-private:
-    bool m_needsRepaint;
-    bool m_needsStyleRecalc;
-};
-
-class StyleEngine {
-    WTF_MAKE_FAST_ALLOCATED;
+class StyleEngine FINAL : public CSSFontSelectorClient  {
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
 public:
 
     class IgnoringPendingStylesheet : public TemporaryChange<bool> {
@@ -84,42 +70,53 @@ public:
 
     friend class IgnoringPendingStylesheet;
 
-    static PassOwnPtr<StyleEngine> create(Document& document) { return adoptPtr(new StyleEngine(document)); }
+    static PassOwnPtrWillBeRawPtr<StyleEngine> create(Document& document) { return adoptPtrWillBeNoop(new StyleEngine(document)); }
 
     ~StyleEngine();
 
-    const Vector<RefPtr<StyleSheet> >& styleSheetsForStyleSheetList(TreeScope&);
-    const Vector<RefPtr<CSSStyleSheet> >& activeAuthorStyleSheets() const;
+#if !ENABLE(OILPAN)
+    void detachFromDocument();
+#endif
 
-    const Vector<RefPtr<CSSStyleSheet> >& documentAuthorStyleSheets() const { return m_authorStyleSheets; }
-    const Vector<RefPtr<CSSStyleSheet> >& injectedAuthorStyleSheets() const;
+    const WillBeHeapVector<RefPtrWillBeMember<StyleSheet> >& styleSheetsForStyleSheetList(TreeScope&);
+    const WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet> >& activeAuthorStyleSheets() const;
+
+    const WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet> >& documentAuthorStyleSheets() const { return m_authorStyleSheets; }
+    const WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet> >& injectedAuthorStyleSheets() const;
+
+    const WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet> > activeStyleSheetsForInspector() const;
 
     void modifiedStyleSheet(StyleSheet*);
     void addStyleSheetCandidateNode(Node*, bool createdByParser);
-    void removeStyleSheetCandidateNode(Node*, ContainerNode* scopingNode = 0);
+    void removeStyleSheetCandidateNode(Node*);
+    void removeStyleSheetCandidateNode(Node*, ContainerNode* scopingNode, TreeScope&);
     void modifiedStyleSheetCandidateNode(Node*);
+    void enableExitTransitionStylesheets();
+    void addXSLStyleSheet(ProcessingInstruction*, bool createdByParser);
+    void removeXSLStyleSheet(ProcessingInstruction*);
 
     void invalidateInjectedStyleSheetCache();
     void updateInjectedStyleSheetCache() const;
 
-    void addAuthorSheet(PassRefPtr<StyleSheetContents> authorSheet);
-
-    bool needsUpdateActiveStylesheetsOnStyleRecalc() const { return m_needsUpdateActiveStylesheetsOnStyleRecalc; }
+    void addAuthorSheet(PassRefPtrWillBeRawPtr<StyleSheetContents> authorSheet);
 
     void clearMediaQueryRuleSetStyleSheets();
-    bool updateActiveStyleSheets(StyleResolverUpdateMode);
+    void updateStyleSheetsInImport(DocumentStyleSheetCollector& parentCollector);
+    void updateActiveStyleSheets(StyleResolverUpdateMode);
 
     String preferredStylesheetSetName() const { return m_preferredStylesheetSetName; }
     String selectedStylesheetSetName() const { return m_selectedStylesheetSetName; }
     void setPreferredStylesheetSetName(const String& name) { m_preferredStylesheetSetName = name; }
     void setSelectedStylesheetSetName(const String& name) { m_selectedStylesheetSetName = name; }
 
+    void selectStylesheetSetName(const String& name)
+    {
+        setPreferredStylesheetSetName(name);
+        setSelectedStylesheetSetName(name);
+    }
+
     void addPendingSheet();
-    enum RemovePendingSheetNotificationType {
-        RemovePendingSheetNotifyImmediately,
-        RemovePendingSheetNotifyLater
-    };
-    void removePendingSheet(Node* styleSheetCandidateNode, RemovePendingSheetNotificationType = RemovePendingSheetNotifyImmediately);
+    void removePendingSheet(Node* styleSheetCandidateNode);
 
     bool hasPendingSheets() const { return m_pendingStylesheets > 0; }
     bool haveStylesheetsLoaded() const { return !hasPendingSheets() || m_ignorePendingStylesheets; }
@@ -133,15 +130,13 @@ public:
     void setUsesFirstLetterRules(bool b) { m_usesFirstLetterRules = b; }
     bool usesRemUnits() const { return m_usesRemUnits; }
     void setUsesRemUnit(bool b) { m_usesRemUnits = b; }
-    bool hasScopedStyleSheet() { return m_documentStyleSheetCollection.scopingNodesForStyleScoped(); }
+    bool hasScopedStyleSheet() { return documentStyleSheetCollection()->scopingNodesForStyleScoped(); }
 
     void combineCSSFeatureFlags(const RuleFeatureSet&);
     void resetCSSFeatureFlags(const RuleFeatureSet&);
 
-    void didModifySeamlessParentStyleSheet() { markDocumentDirty(); }
     void didRemoveShadowRoot(ShadowRoot*);
     void appendActiveAuthorStyleSheets();
-    void getActiveAuthorStyleSheets(Vector<const Vector<RefPtr<CSSStyleSheet> >*>& activeAuthorStyleSheets) const;
 
     StyleResolver* resolver() const
     {
@@ -163,30 +158,41 @@ public:
     void clearMasterResolver();
 
     CSSFontSelector* fontSelector() { return m_fontSelector.get(); }
-    void resetFontSelector();
+    void removeFontFaceRules(const WillBeHeapVector<RawPtrWillBeMember<const StyleRuleFontFace> >&);
+    void clearFontCache();
+    // updateGenericFontFamilySettings is used from WebSettingsImpl.
+    void updateGenericFontFamilySettings();
 
-    void didAttach();
     void didDetach();
     bool shouldClearResolver() const;
-    StyleResolverChange resolverChanged(RecalcStyleTime, StyleResolverUpdateMode);
+    void resolverChanged(StyleResolverUpdateMode);
     unsigned resolverAccessCount() const;
 
-    void collectDocumentActiveStyleSheets(StyleSheetCollectionBase&);
     void markDocumentDirty();
+
+    PassRefPtrWillBeRawPtr<CSSStyleSheet> createSheet(Element*, const String& text, TextPosition startPosition, bool createdByParser);
+    void removeSheet(StyleSheetContents*);
+
+    virtual void trace(Visitor*) OVERRIDE;
+
+private:
+    // CSSFontSelectorClient implementation.
+    virtual void fontsNeedUpdate(CSSFontSelector*) OVERRIDE;
 
 private:
     StyleEngine(Document&);
 
-    StyleSheetCollection* ensureStyleSheetCollectionFor(TreeScope&);
-    StyleSheetCollection* styleSheetCollectionFor(TreeScope&);
-    void activeStyleSheetsUpdatedForInspector();
-    bool shouldUpdateShadowTreeStyleSheetCollection(StyleResolverUpdateMode);
-    void resolverThrowawayTimerFired(Timer<StyleEngine>*);
+    TreeScopeStyleSheetCollection* ensureStyleSheetCollectionFor(TreeScope&);
+    TreeScopeStyleSheetCollection* styleSheetCollectionFor(TreeScope&);
+    bool shouldUpdateDocumentStyleSheetCollection(StyleResolverUpdateMode) const;
+    bool shouldUpdateShadowTreeStyleSheetCollection(StyleResolverUpdateMode) const;
+    bool shouldApplyXSLTransform() const;
 
     void markTreeScopeDirty(TreeScope&);
 
     bool isMaster() const { return m_isMaster; }
     Document* master();
+    Document& document() const { return *m_document; }
 
     typedef ListHashSet<TreeScope*, 16> TreeScopeSet;
     static void insertTreeScopeInDocumentOrder(TreeScopeSet&, TreeScope*);
@@ -194,10 +200,28 @@ private:
 
     void createResolver();
 
-    void notifyPendingStyleSheetAdded();
-    void notifyPendingStyleSheetRemoved(RemovePendingSheetNotificationType);
+    static PassRefPtrWillBeRawPtr<CSSStyleSheet> parseSheet(Element*, const String& text, TextPosition startPosition, bool createdByParser);
 
-    Document& m_document;
+    // FIXME: Oilpan: clean this const madness up once oilpan ships.
+    const DocumentStyleSheetCollection* documentStyleSheetCollection() const
+    {
+#if ENABLE(OILPAN)
+        return m_documentStyleSheetCollection;
+#else
+        return &m_documentStyleSheetCollection;
+#endif
+    }
+
+    DocumentStyleSheetCollection* documentStyleSheetCollection()
+    {
+#if ENABLE(OILPAN)
+        return m_documentStyleSheetCollection;
+#else
+        return &m_documentStyleSheetCollection;
+#endif
+    }
+
+    RawPtrWillBeMember<Document> m_document;
     bool m_isMaster;
 
     // Track the number of currently loading top-level stylesheets needed for rendering.
@@ -206,15 +230,18 @@ private:
     // elements and when it is safe to execute scripts.
     int m_pendingStylesheets;
 
-    mutable Vector<RefPtr<CSSStyleSheet> > m_injectedAuthorStyleSheets;
+    mutable WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet> > m_injectedAuthorStyleSheets;
     mutable bool m_injectedStyleSheetCacheValid;
 
-    Vector<RefPtr<CSSStyleSheet> > m_authorStyleSheets;
+    WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet> > m_authorStyleSheets;
 
-    bool m_needsUpdateActiveStylesheetsOnStyleRecalc;
-
+#if ENABLE(OILPAN)
+    Member<DocumentStyleSheetCollection> m_documentStyleSheetCollection;
+#else
     DocumentStyleSheetCollection m_documentStyleSheetCollection;
-    HashMap<TreeScope*, OwnPtr<StyleSheetCollection> > m_styleSheetCollectionMap;
+#endif
+    typedef WillBeHeapHashMap<RawPtrWillBeWeakMember<TreeScope>, OwnPtrWillBeMember<ShadowTreeStyleSheetCollection> > StyleSheetCollectionMap;
+    StyleSheetCollectionMap m_styleSheetCollectionMap;
 
     bool m_documentScopeDirty;
     TreeScopeSet m_dirtyTreeScopes;
@@ -232,11 +259,14 @@ private:
 
     bool m_ignorePendingStylesheets;
     bool m_didCalculateResolver;
-    unsigned m_lastResolverAccessCount;
-    Timer<StyleEngine> m_resolverThrowawayTimer;
-    OwnPtr<StyleResolver> m_resolver;
+    OwnPtrWillBeMember<StyleResolver> m_resolver;
 
-    RefPtr<CSSFontSelector> m_fontSelector;
+    RefPtrWillBeMember<CSSFontSelector> m_fontSelector;
+
+    WillBeHeapHashMap<AtomicString, RawPtrWillBeMember<StyleSheetContents> > m_textToSheetCache;
+    WillBeHeapHashMap<RawPtrWillBeMember<StyleSheetContents>, AtomicString> m_sheetToTextCache;
+
+    RefPtrWillBeMember<ProcessingInstruction> m_xslStyleSheet;
 };
 
 }

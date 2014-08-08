@@ -23,7 +23,8 @@ namespace content {
 DOMStorageMessageFilter::DOMStorageMessageFilter(
     int render_process_id,
     DOMStorageContextWrapper* context)
-    : render_process_id_(render_process_id),
+    : BrowserMessageFilter(DOMStorageMsgStart),
+      render_process_id_(render_process_id),
       context_(context->context()),
       connection_dispatching_message_for_(0) {
 }
@@ -46,7 +47,7 @@ void DOMStorageMessageFilter::UninitializeInSequence() {
   host_.reset();
 }
 
-void DOMStorageMessageFilter::OnFilterAdded(IPC::Channel* channel) {
+void DOMStorageMessageFilter::OnFilterAdded(IPC::Sender* sender) {
   context_->task_runner()->PostShutdownBlockingTask(
       FROM_HERE,
       DOMStorageTaskRunner::PRIMARY_SEQUENCE,
@@ -67,15 +68,14 @@ base::TaskRunner* DOMStorageMessageFilter::OverrideTaskRunnerForMessage(
   return NULL;
 }
 
-bool DOMStorageMessageFilter::OnMessageReceived(const IPC::Message& message,
-                                                bool* message_was_ok) {
+bool DOMStorageMessageFilter::OnMessageReceived(const IPC::Message& message) {
   if (IPC_MESSAGE_CLASS(message) != DOMStorageMsgStart)
     return false;
   DCHECK(!BrowserThread::CurrentlyOn(BrowserThread::IO));
   DCHECK(host_.get());
 
   bool handled = true;
-  IPC_BEGIN_MESSAGE_MAP_EX(DOMStorageMessageFilter, message, *message_was_ok)
+  IPC_BEGIN_MESSAGE_MAP(DOMStorageMessageFilter, message)
     IPC_MESSAGE_HANDLER(DOMStorageHostMsg_OpenStorageArea, OnOpenStorageArea)
     IPC_MESSAGE_HANDLER(DOMStorageHostMsg_CloseStorageArea, OnCloseStorageArea)
     IPC_MESSAGE_HANDLER(DOMStorageHostMsg_LoadStorageArea, OnLoadStorageArea)
@@ -94,7 +94,7 @@ void DOMStorageMessageFilter::OnOpenStorageArea(int connection_id,
                                                 const GURL& origin) {
   DCHECK(!BrowserThread::CurrentlyOn(BrowserThread::IO));
   if (!host_->OpenStorageArea(connection_id, namespace_id, origin)) {
-    RecordAction(UserMetricsAction("BadMessageTerminate_DSMF_1"));
+    RecordAction(base::UserMetricsAction("BadMessageTerminate_DSMF_1"));
     BadMessageReceived();
   }
 }
@@ -109,7 +109,7 @@ void DOMStorageMessageFilter::OnLoadStorageArea(int connection_id,
                                                 bool* send_log_get_messages) {
   DCHECK(!BrowserThread::CurrentlyOn(BrowserThread::IO));
   if (!host_->ExtractAreaValues(connection_id, map, send_log_get_messages)) {
-    RecordAction(UserMetricsAction("BadMessageTerminate_DSMF_2"));
+    RecordAction(base::UserMetricsAction("BadMessageTerminate_DSMF_2"));
     BadMessageReceived();
   }
   Send(new DOMStorageMsg_AsyncOperationComplete(true));

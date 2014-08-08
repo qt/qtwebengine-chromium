@@ -28,6 +28,7 @@
 
 #include "core/fetch/ResourcePtr.h"
 #include "core/fetch/StyleSheetResource.h"
+#include "platform/heap/Handle.h"
 
 namespace WebCore {
 
@@ -36,31 +37,29 @@ class ResourceClient;
 class StyleSheetContents;
 class TextResourceDecoder;
 
-class CSSStyleSheetResource : public StyleSheetResource {
+class CSSStyleSheetResource FINAL : public StyleSheetResource {
 public:
     CSSStyleSheetResource(const ResourceRequest&, const String& charset);
     virtual ~CSSStyleSheetResource();
 
     const String sheetText(bool enforceMIMEType = true, bool* hasValidMIMEType = 0) const;
 
-    virtual void didAddClient(ResourceClient*);
-    virtual void setEncoding(const String&);
-    virtual String encoding() const;
-    virtual void destroyDecodedData() OVERRIDE;
+    virtual void didAddClient(ResourceClient*) OVERRIDE;
 
-    PassRefPtr<StyleSheetContents> restoreParsedStyleSheet(const CSSParserContext&);
-    void saveParsedStyleSheet(PassRefPtr<StyleSheetContents>);
+    PassRefPtrWillBeRawPtr<StyleSheetContents> restoreParsedStyleSheet(const CSSParserContext&);
+    void saveParsedStyleSheet(PassRefPtrWillBeRawPtr<StyleSheetContents>);
+
+protected:
+    virtual bool isSafeToUnlock() const OVERRIDE;
+    virtual void destroyDecodedDataIfPossible() OVERRIDE;
 
 private:
     bool canUseSheet(bool enforceMIMEType, bool* hasValidMIMEType) const;
+    virtual void checkNotify() OVERRIDE;
 
-protected:
-    virtual void checkNotify();
-
-    OwnPtr<TextResourceDecoder> m_decoder;
     String m_decodedSheetText;
 
-    RefPtr<StyleSheetContents> m_parsedStyleSheetCache;
+    RefPtrWillBePersistent<StyleSheetContents> m_parsedStyleSheetCache;
 };
 
 DEFINE_RESOURCE_TYPE_CASTS(CSSStyleSheet);

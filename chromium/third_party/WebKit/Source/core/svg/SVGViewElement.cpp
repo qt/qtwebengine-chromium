@@ -22,40 +22,24 @@
 
 #include "core/svg/SVGViewElement.h"
 
-
 namespace WebCore {
-
-// Animated property definitions
-DEFINE_ANIMATED_BOOLEAN(SVGViewElement, SVGNames::externalResourcesRequiredAttr, ExternalResourcesRequired, externalResourcesRequired)
-DEFINE_ANIMATED_RECT(SVGViewElement, SVGNames::viewBoxAttr, ViewBox, viewBox)
-DEFINE_ANIMATED_PRESERVEASPECTRATIO(SVGViewElement, SVGNames::preserveAspectRatioAttr, PreserveAspectRatio, preserveAspectRatio)
-
-BEGIN_REGISTER_ANIMATED_PROPERTIES(SVGViewElement)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(externalResourcesRequired)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(viewBox)
-    REGISTER_LOCAL_ANIMATED_PROPERTY(preserveAspectRatio)
-    REGISTER_PARENT_ANIMATED_PROPERTIES(SVGElement)
-END_REGISTER_ANIMATED_PROPERTIES
 
 inline SVGViewElement::SVGViewElement(Document& document)
     : SVGElement(SVGNames::viewTag, document)
-    , m_zoomAndPan(SVGZoomAndPanMagnify)
-    , m_viewTarget(SVGNames::viewTargetAttr)
+    , SVGFitToViewBox(this)
+    , m_viewTarget(SVGStaticStringList::create(this, SVGNames::viewTargetAttr))
 {
     ScriptWrappable::init(this);
-    registerAnimatedPropertiesForSVGViewElement();
+
+    addToPropertyMap(m_viewTarget);
 }
 
-PassRefPtr<SVGViewElement> SVGViewElement::create(Document& document)
-{
-    return adoptRef(new SVGViewElement(document));
-}
+DEFINE_NODE_FACTORY(SVGViewElement)
 
 bool SVGViewElement::isSupportedAttribute(const QualifiedName& attrName)
 {
     DEFINE_STATIC_LOCAL(HashSet<QualifiedName>, supportedAttributes, ());
     if (supportedAttributes.isEmpty()) {
-        SVGExternalResourcesRequired::addSupportedAttributes(supportedAttributes);
         SVGFitToViewBox::addSupportedAttributes(supportedAttributes);
         SVGZoomAndPan::addSupportedAttributes(supportedAttributes);
         supportedAttributes.add(SVGNames::viewTargetAttr);
@@ -70,19 +54,17 @@ void SVGViewElement::parseAttribute(const QualifiedName& name, const AtomicStrin
         return;
     }
 
-    if (name == SVGNames::viewTargetAttr) {
-        viewTarget().reset(value);
-        return;
+    SVGParsingError parseError = NoError;
+
+    if (SVGFitToViewBox::parseAttribute(name, value, document(), parseError)) {
+    } else if (SVGZoomAndPan::parseAttribute(name, value)) {
+    } else if (name == SVGNames::viewTargetAttr) {
+        m_viewTarget->setBaseValueAsString(value, parseError);
+    } else {
+        ASSERT_NOT_REACHED();
     }
 
-    if (SVGExternalResourcesRequired::parseAttribute(name, value))
-        return;
-    if (SVGFitToViewBox::parseAttribute(this, name, value))
-        return;
-    if (SVGZoomAndPan::parseAttribute(this, name, value))
-        return;
-
-    ASSERT_NOT_REACHED();
+    reportAttributeParsingError(parseError, name, value);
 }
 
 }

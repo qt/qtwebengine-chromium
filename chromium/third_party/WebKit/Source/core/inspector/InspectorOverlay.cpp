@@ -29,21 +29,21 @@
 #include "config.h"
 #include "core/inspector/InspectorOverlay.h"
 
-#include "InspectorOverlayPage.h"
-#include "V8InspectorOverlayHost.h"
+#include "bindings/core/v8/V8InspectorOverlayHost.h"
 #include "bindings/v8/ScriptController.h"
 #include "bindings/v8/ScriptSourceCode.h"
+#include "core/InspectorOverlayPage.h"
 #include "core/dom/Element.h"
 #include "core/dom/Node.h"
 #include "core/dom/PseudoElement.h"
+#include "core/frame/FrameView.h"
+#include "core/frame/LocalFrame.h"
 #include "core/inspector/InspectorClient.h"
 #include "core/inspector/InspectorOverlayHost.h"
-#include "core/loader/DocumentLoader.h"
 #include "core/loader/EmptyClients.h"
+#include "core/loader/FrameLoadRequest.h"
 #include "core/page/Chrome.h"
 #include "core/page/EventHandler.h"
-#include "core/frame/Frame.h"
-#include "core/frame/FrameView.h"
 #include "core/page/Page.h"
 #include "core/frame/Settings.h"
 #include "core/rendering/RenderBoxModelObject.h"
@@ -54,39 +54,43 @@
 #include "platform/PlatformMouseEvent.h"
 #include "platform/graphics/GraphicsContextStateSaver.h"
 #include "wtf/text/StringBuilder.h"
+#include <v8.h>
 
 namespace WebCore {
 
 namespace {
 
-class InspectorOverlayChromeClient: public EmptyChromeClient {
+struct PathApplyInfo {
+    FrameView* rootView;
+    FrameView* view;
+    TypeBuilder::Array<JSONValue>* array;
+    RenderObject* renderer;
+    const ShapeOutsideInfo* shapeOutsideInfo;
+};
+
+class InspectorOverlayChromeClient FINAL: public EmptyChromeClient {
 public:
     InspectorOverlayChromeClient(ChromeClient& client, InspectorOverlay* overlay)
         : m_client(client)
         , m_overlay(overlay)
     { }
 
-    virtual void setCursor(const Cursor& cursor)
+    virtual void setCursor(const Cursor& cursor) OVERRIDE
     {
         m_client.setCursor(cursor);
     }
 
-    virtual void setToolTip(const String& tooltip, TextDirection direction)
+    virtual void setToolTip(const String& tooltip, TextDirection direction) OVERRIDE
     {
         m_client.setToolTip(tooltip, direction);
     }
 
-    virtual void invalidateRootView(const IntRect& rect)
+    virtual void invalidateContentsAndRootView(const IntRect&) OVERRIDE
     {
         m_overlay->invalidate();
     }
 
-    virtual void invalidateContentsAndRootView(const IntRect& rect)
-    {
-        m_overlay->invalidate();
-    }
-
-    virtual void invalidateContentsForSlowScroll(const IntRect& rect)
+    virtual void invalidateContentsForSlowScroll(const IntRect&) OVERRIDE
     {
         m_overlay->invalidate();
     }
@@ -143,13 +147,13 @@ static void contentsQuadToPage(const FrameView* mainView, const FrameView* view,
 static bool buildNodeQuads(Node* node, Vector<FloatQuad>& quads)
 {
     RenderObject* renderer = node->renderer();
-    Frame* containingFrame = node->document().frame();
+    LocalFrame* containingFrame = node->document().frame();
 
     if (!renderer || !containingFrame)
         return false;
 
     FrameView* containingView = containingFrame->view();
-    FrameView* mainView = containingFrame->page()->mainFrame()->view();
+    FrameView* mainView = containingFrame->page()->deprecatedLocalMainFrame()->view();
     IntRect boundingBox = pixelSnappedIntRect(containingView->contentsToRootView(renderer->absoluteBoundingBoxRect()));
     boundingBox.move(mainView->scrollOffset());
 
@@ -218,7 +222,7 @@ static bool buildNodeQuads(Node* node, Vector<FloatQuad>& quads)
 static void buildNodeHighlight(Node* node, const HighlightConfig& highlightConfig, Highlight* highlight)
 {
     RenderObject* renderer = node->renderer();
-    Frame* containingFrame = node->document().frame();
+    LocalFrame* containingFrame = node->document().frame();
 
     if (!renderer || !containingFrame)
         return;
@@ -251,6 +255,7 @@ InspectorOverlay::InspectorOverlay(Page* page, InspectorClient* client)
     , m_overlayHost(InspectorOverlayHost::create())
     , m_drawViewSize(false)
     , m_drawViewSizeWithGrid(false)
+    , m_omitTooltip(false)
     , m_timer(this, &InspectorOverlay::onTimer)
     , m_activeProfilerCount(0)
 {
@@ -258,6 +263,7 @@ InspectorOverlay::InspectorOverlay(Page* page, InspectorClient* client)
 
 InspectorOverlay::~InspectorOverlay()
 {
+    ASSERT(!m_overlayPage);
 }
 
 void InspectorOverlay::paint(GraphicsContext& context)
@@ -265,7 +271,7 @@ void InspectorOverlay::paint(GraphicsContext& context)
     if (isEmpty())
         return;
     GraphicsContextStateSaver stateSaver(context);
-    FrameView* view = overlayPage()->mainFrame()->view();
+    FrameView* view = toLocalFrame(overlayPage()->mainFrame())->view();
     ASSERT(!view->needsLayout());
     view->paint(&context, IntRect(0, 0, view->width(), view->height()));
 }
@@ -280,7 +286,7 @@ bool InspectorOverlay::handleGestureEvent(const PlatformGestureEvent& event)
     if (isEmpty())
         return false;
 
-    return overlayPage()->mainFrame()->eventHandler().handleGestureEvent(event);
+    return toLocalFrame(overlayPage()->mainFrame())->eventHandler().handleGestureEvent(event);
 }
 
 bool InspectorOverlay::handleMouseEvent(const PlatformMouseEvent& event)
@@ -288,7 +294,7 @@ bool InspectorOverlay::handleMouseEvent(const PlatformMouseEvent& event)
     if (isEmpty())
         return false;
 
-    EventHandler& eventHandler = overlayPage()->mainFrame()->eventHandler();
+    EventHandler& eventHandler = toLocalFrame(overlayPage()->mainFrame())->eventHandler();
     bool result;
     switch (event.type()) {
     case PlatformEvent::MouseMoved:
@@ -304,7 +310,7 @@ bool InspectorOverlay::handleMouseEvent(const PlatformMouseEvent& event)
         return false;
     }
 
-    overlayPage()->mainFrame()->document()->updateLayout();
+    toLocalFrame(overlayPage()->mainFrame())->document()->updateLayout();
     return result;
 }
 
@@ -313,7 +319,7 @@ bool InspectorOverlay::handleTouchEvent(const PlatformTouchEvent& event)
     if (isEmpty())
         return false;
 
-    return overlayPage()->mainFrame()->eventHandler().handleTouchEvent(event);
+    return toLocalFrame(overlayPage()->mainFrame())->eventHandler().handleTouchEvent(event);
 }
 
 bool InspectorOverlay::handleKeyboardEvent(const PlatformKeyboardEvent& event)
@@ -321,31 +327,13 @@ bool InspectorOverlay::handleKeyboardEvent(const PlatformKeyboardEvent& event)
     if (isEmpty())
         return false;
 
-    return overlayPage()->mainFrame()->eventHandler().keyEvent(event);
+    return toLocalFrame(overlayPage()->mainFrame())->eventHandler().keyEvent(event);
 }
 
 void InspectorOverlay::drawOutline(GraphicsContext* context, const LayoutRect& rect, const Color& color)
 {
     FloatRect outlineRect = rect;
     drawOutlinedQuad(context, outlineRect, Color(), color);
-}
-
-void InspectorOverlay::getHighlight(Highlight* highlight) const
-{
-    if (!m_highlightNode && !m_highlightQuad)
-        return;
-
-    highlight->type = HighlightTypeRects;
-    if (m_highlightNode)
-        buildNodeHighlight(m_highlightNode.get(), m_nodeHighlightConfig, highlight);
-    else
-        buildQuadHighlight(m_page, *m_highlightQuad, m_quadHighlightConfig, highlight);
-}
-
-void InspectorOverlay::resize(const IntSize& size)
-{
-    m_size = size;
-    update();
 }
 
 void InspectorOverlay::setPausedInDebuggerMessage(const String* message)
@@ -368,11 +356,12 @@ void InspectorOverlay::hideHighlight()
     update();
 }
 
-void InspectorOverlay::highlightNode(Node* node, Node* eventTarget, const HighlightConfig& highlightConfig)
+void InspectorOverlay::highlightNode(Node* node, Node* eventTarget, const HighlightConfig& highlightConfig, bool omitTooltip)
 {
     m_nodeHighlightConfig = highlightConfig;
     m_highlightNode = node;
     m_eventTargetNode = eventTarget;
+    m_omitTooltip = omitTooltip;
     update();
 }
 
@@ -380,6 +369,7 @@ void InspectorOverlay::highlightQuad(PassOwnPtr<FloatQuad> quad, const Highlight
 {
     m_quadHighlightConfig = highlightConfig;
     m_highlightQuad = quad;
+    m_omitTooltip = false;
     update();
 }
 
@@ -388,7 +378,7 @@ void InspectorOverlay::showAndHideViewSize(bool showGrid)
     m_drawViewSize = true;
     m_drawViewSizeWithGrid = showGrid;
     update();
-    m_timer.startOneShot(1);
+    m_timer.startOneShot(1, FROM_HERE);
 }
 
 Node* InspectorOverlay::highlightedNode() const
@@ -400,7 +390,7 @@ bool InspectorOverlay::isEmpty()
 {
     if (m_activeProfilerCount)
         return true;
-    bool hasAlwaysVisibleElements = m_highlightNode || m_eventTargetNode || m_highlightQuad || !m_size.isEmpty() || m_drawViewSize;
+    bool hasAlwaysVisibleElements = m_highlightNode || m_eventTargetNode || m_highlightQuad  || m_drawViewSize;
     bool hasInvisibleInInspectModeElements = !m_pausedInDebuggerMessage.isNull();
     return !(hasAlwaysVisibleElements || (hasInvisibleInInspectModeElements && !m_inspectModeEnabled));
 }
@@ -412,20 +402,17 @@ void InspectorOverlay::update()
         return;
     }
 
-    FrameView* view = m_page->mainFrame()->view();
+    FrameView* view = m_page->deprecatedLocalMainFrame()->view();
     if (!view)
         return;
-    IntRect viewRect = view->visibleContentRect();
-    FrameView* overlayView = overlayPage()->mainFrame()->view();
 
     // Include scrollbars to avoid masking them by the gutter.
-    IntSize frameViewFullSize = view->visibleContentRect(ScrollableArea::IncludeScrollbars).size();
-    IntSize size = m_size.isEmpty() ? frameViewFullSize : m_size;
-    size.scale(m_page->pageScaleFactor());
-    overlayView->resize(size);
+    IntSize size = view->unscaledVisibleContentSize(IncludeScrollbars);
+    toLocalFrame(overlayPage()->mainFrame())->view()->resize(size);
 
     // Clear canvas and paint things.
-    reset(size, m_size.isEmpty() ? IntSize() : frameViewFullSize, viewRect.x(), viewRect.y());
+    IntRect viewRect = view->visibleContentRect();
+    reset(size, viewRect.x(), viewRect.y());
 
     drawNodeHighlight();
     drawQuadHighlight();
@@ -434,9 +421,8 @@ void InspectorOverlay::update()
     drawViewSize();
 
     // Position DOM elements.
-    overlayPage()->mainFrame()->document()->recalcStyle(Force);
-    if (overlayView->needsLayout())
-        overlayView->layout();
+    toLocalFrame(overlayPage()->mainFrame())->document()->setNeedsStyleRecalc(SubtreeStyleChange);
+    toLocalFrame(overlayPage()->mainFrame())->document()->updateLayout();
 
     // Kick paint.
     m_client->highlight();
@@ -449,7 +435,6 @@ void InspectorOverlay::hide()
     m_eventTargetNode.clear();
     m_highlightQuad.clear();
     m_pausedInDebuggerMessage = String();
-    m_size = IntSize();
     m_drawViewSize = false;
     m_drawViewSizeWithGrid = false;
     update();
@@ -498,6 +483,151 @@ static PassRefPtr<JSONObject> buildObjectForSize(const IntSize& size)
     return result.release();
 }
 
+// CSS shapes
+static void appendPathCommandAndPoints(PathApplyInfo* info, const String& command, const FloatPoint points[], unsigned length)
+{
+    FloatPoint point;
+    info->array->addItem(JSONString::create(command));
+    for (unsigned i = 0; i < length; i++) {
+        point = info->shapeOutsideInfo->shapeToRendererPoint(points[i]);
+        point = info->view->contentsToRootView(roundedIntPoint(info->renderer->localToAbsolute(point))) + info->rootView->scrollOffset();
+        info->array->addItem(JSONBasicValue::create(point.x()));
+        info->array->addItem(JSONBasicValue::create(point.y()));
+    }
+}
+
+static void appendPathSegment(void* info, const PathElement* pathElement)
+{
+    PathApplyInfo* pathApplyInfo = static_cast<PathApplyInfo*>(info);
+    FloatPoint point;
+    switch (pathElement->type) {
+    // The points member will contain 1 value.
+    case PathElementMoveToPoint:
+        appendPathCommandAndPoints(pathApplyInfo, "M", pathElement->points, 1);
+        break;
+    // The points member will contain 1 value.
+    case PathElementAddLineToPoint:
+        appendPathCommandAndPoints(pathApplyInfo, "L", pathElement->points, 1);
+        break;
+    // The points member will contain 3 values.
+    case PathElementAddCurveToPoint:
+        appendPathCommandAndPoints(pathApplyInfo, "C", pathElement->points, 3);
+        break;
+    // The points member will contain 2 values.
+    case PathElementAddQuadCurveToPoint:
+        appendPathCommandAndPoints(pathApplyInfo, "Q", pathElement->points, 2);
+        break;
+    // The points member will contain no values.
+    case PathElementCloseSubpath:
+        appendPathCommandAndPoints(pathApplyInfo, "Z", 0, 0);
+        break;
+    }
+}
+
+static RefPtr<TypeBuilder::Array<double> > buildArrayForQuadTypeBuilder(const FloatQuad& quad)
+{
+    RefPtr<TypeBuilder::Array<double> > array = TypeBuilder::Array<double>::create();
+    array->addItem(quad.p1().x());
+    array->addItem(quad.p1().y());
+    array->addItem(quad.p2().x());
+    array->addItem(quad.p2().y());
+    array->addItem(quad.p3().x());
+    array->addItem(quad.p3().y());
+    array->addItem(quad.p4().x());
+    array->addItem(quad.p4().y());
+    return array.release();
+}
+
+PassRefPtr<TypeBuilder::DOM::ShapeOutsideInfo> InspectorOverlay::buildObjectForShapeOutside(Node* node)
+{
+    RenderObject* renderer = node->renderer();
+    if (!renderer || !renderer->isBox() || !toRenderBox(renderer)->shapeOutsideInfo())
+        return nullptr;
+
+    LocalFrame* containingFrame = node->document().frame();
+    RenderBox* renderBox = toRenderBox(renderer);
+    const ShapeOutsideInfo* shapeOutsideInfo = renderBox->shapeOutsideInfo();
+
+    LayoutRect shapeBounds = shapeOutsideInfo->computedShapePhysicalBoundingBox();
+    FloatQuad shapeQuad = renderBox->localToAbsoluteQuad(FloatRect(shapeBounds));
+    FrameView* mainView = containingFrame->page()->deprecatedLocalMainFrame()->view();
+    FrameView* containingView = containingFrame->view();
+    contentsQuadToPage(mainView, containingView, shapeQuad);
+
+    Shape::DisplayPaths paths;
+    shapeOutsideInfo->computedShape().buildDisplayPaths(paths);
+    RefPtr<TypeBuilder::Array<JSONValue> > shapePath = TypeBuilder::Array<JSONValue>::create();
+    RefPtr<TypeBuilder::Array<JSONValue> > marginShapePath = TypeBuilder::Array<JSONValue>::create();
+
+    if (paths.shape.length()) {
+        PathApplyInfo info;
+        info.rootView = mainView;
+        info.view = containingView;
+        info.array = shapePath.get();
+        info.renderer = renderBox;
+        info.shapeOutsideInfo = shapeOutsideInfo;
+        paths.shape.apply(&info, &appendPathSegment);
+
+        if (paths.marginShape.length()) {
+            info.array = marginShapePath.get();
+            paths.marginShape.apply(&info, &appendPathSegment);
+        }
+    }
+    RefPtr<TypeBuilder::DOM::ShapeOutsideInfo> shapeTypeBuilder = TypeBuilder::DOM::ShapeOutsideInfo::create()
+        .setBounds(buildArrayForQuadTypeBuilder(shapeQuad))
+        .setShape(shapePath)
+        .setMarginShape(marginShapePath);
+
+    return shapeTypeBuilder.release();
+}
+
+static void setElementInfo(RefPtr<JSONObject>& highlightObject, RefPtr<JSONObject>& shapeObject, Node* node)
+{
+    RefPtr<JSONObject> elementInfo = JSONObject::create();
+    Element* element = toElement(node);
+    Element* realElement = element;
+    PseudoElement* pseudoElement = 0;
+    if (element->isPseudoElement()) {
+        pseudoElement = toPseudoElement(element);
+        realElement = element->parentOrShadowHostElement();
+    }
+    bool isXHTML = realElement->document().isXHTMLDocument();
+    elementInfo->setString("tagName", isXHTML ? realElement->nodeName() : realElement->nodeName().lower());
+    elementInfo->setString("idValue", realElement->getIdAttribute());
+    StringBuilder classNames;
+    if (realElement->hasClass() && realElement->isStyledElement()) {
+        HashSet<AtomicString> usedClassNames;
+        const SpaceSplitString& classNamesString = realElement->classNames();
+        size_t classNameCount = classNamesString.size();
+        for (size_t i = 0; i < classNameCount; ++i) {
+            const AtomicString& className = classNamesString[i];
+            if (!usedClassNames.add(className).isNewEntry)
+                continue;
+            classNames.append('.');
+            classNames.append(className);
+        }
+    }
+    if (pseudoElement) {
+        if (pseudoElement->pseudoId() == BEFORE)
+            classNames.append("::before");
+        else if (pseudoElement->pseudoId() == AFTER)
+            classNames.append("::after");
+    }
+    if (!classNames.isEmpty())
+        elementInfo->setString("className", classNames.toString());
+
+    RenderObject* renderer = node->renderer();
+    LocalFrame* containingFrame = node->document().frame();
+    FrameView* containingView = containingFrame->view();
+    IntRect boundingBox = pixelSnappedIntRect(containingView->contentsToRootView(renderer->absoluteBoundingBoxRect()));
+    RenderBoxModelObject* modelObject = renderer->isBoxModelObject() ? toRenderBoxModelObject(renderer) : 0;
+    elementInfo->setString("nodeWidth", String::number(modelObject ? adjustForAbsoluteZoom(modelObject->pixelSnappedOffsetWidth(), modelObject) : boundingBox.width()));
+    elementInfo->setString("nodeHeight", String::number(modelObject ? adjustForAbsoluteZoom(modelObject->pixelSnappedOffsetHeight(), modelObject) : boundingBox.height()));
+    if (renderer->isBox() && shapeObject)
+        elementInfo->setObject("shapeOutsideInfo", shapeObject.release());
+    highlightObject->setObject("elementInfo", elementInfo.release());
+}
+
 void InspectorOverlay::drawNodeHighlight()
 {
     if (!m_highlightNode)
@@ -513,49 +643,10 @@ void InspectorOverlay::drawNodeHighlight()
     RefPtr<JSONObject> highlightObject = buildObjectForHighlight(highlight);
 
     Node* node = m_highlightNode.get();
-    if (node->isElementNode() && m_nodeHighlightConfig.showInfo && node->renderer() && node->document().frame()) {
-        RefPtr<JSONObject> elementInfo = JSONObject::create();
-        Element* element = toElement(node);
-        Element* realElement = element;
-        PseudoElement* pseudoElement = 0;
-        if (element->isPseudoElement()) {
-            pseudoElement = toPseudoElement(element);
-            realElement = element->parentOrShadowHostElement();
-        }
-        bool isXHTML = realElement->document().isXHTMLDocument();
-        elementInfo->setString("tagName", isXHTML ? realElement->nodeName() : realElement->nodeName().lower());
-        elementInfo->setString("idValue", realElement->getIdAttribute());
-        StringBuilder classNames;
-        if (realElement->hasClass() && realElement->isStyledElement()) {
-            HashSet<AtomicString> usedClassNames;
-            const SpaceSplitString& classNamesString = realElement->classNames();
-            size_t classNameCount = classNamesString.size();
-            for (size_t i = 0; i < classNameCount; ++i) {
-                const AtomicString& className = classNamesString[i];
-                if (!usedClassNames.add(className).isNewEntry)
-                    continue;
-                classNames.append('.');
-                classNames.append(className);
-            }
-        }
-        if (pseudoElement) {
-            if (pseudoElement->pseudoId() == BEFORE)
-                classNames.append("::before");
-            else if (pseudoElement->pseudoId() == AFTER)
-                classNames.append("::after");
-        }
-        if (!classNames.isEmpty())
-            elementInfo->setString("className", classNames.toString());
-
-        RenderObject* renderer = node->renderer();
-        Frame* containingFrame = node->document().frame();
-        FrameView* containingView = containingFrame->view();
-        IntRect boundingBox = pixelSnappedIntRect(containingView->contentsToRootView(renderer->absoluteBoundingBoxRect()));
-        RenderBoxModelObject* modelObject = renderer->isBoxModelObject() ? toRenderBoxModelObject(renderer) : 0;
-        elementInfo->setString("nodeWidth", String::number(modelObject ? adjustForAbsoluteZoom(modelObject->pixelSnappedOffsetWidth(), modelObject) : boundingBox.width()));
-        elementInfo->setString("nodeHeight", String::number(modelObject ? adjustForAbsoluteZoom(modelObject->pixelSnappedOffsetHeight(), modelObject) : boundingBox.height()));
-        highlightObject->setObject("elementInfo", elementInfo.release());
-    }
+    RefPtr<TypeBuilder::DOM::ShapeOutsideInfo> shapeObject = buildObjectForShapeOutside(node);
+    RefPtr<JSONObject> shapeObjectJSON = shapeObject ? shapeObject->asObject() : nullptr;
+    if (node->isElementNode() && !m_omitTooltip && m_nodeHighlightConfig.showInfo && node->renderer() && node->document().frame())
+        setElementInfo(highlightObject, shapeObjectJSON, node);
     evaluateInOverlay("drawNodeHighlight", highlightObject);
 }
 
@@ -592,7 +683,7 @@ Page* InspectorOverlay::overlayPage()
     ASSERT(!m_overlayChromeClient);
     m_overlayChromeClient = adoptPtr(new InspectorOverlayChromeClient(m_page->chrome().client(), this));
     pageClients.chromeClient = m_overlayChromeClient.get();
-    m_overlayPage = adoptPtr(new Page(pageClients));
+    m_overlayPage = adoptPtrWillBeNoop(new Page(pageClients));
 
     Settings& settings = m_page->settings();
     Settings& overlaySettings = m_overlayPage->settings();
@@ -605,27 +696,29 @@ Page* InspectorOverlay::overlayPage()
     overlaySettings.genericFontFamilySettings().setPictograph(settings.genericFontFamilySettings().pictograph());
     overlaySettings.setMinimumFontSize(settings.minimumFontSize());
     overlaySettings.setMinimumLogicalFontSize(settings.minimumLogicalFontSize());
-    overlaySettings.setMediaEnabled(false);
     overlaySettings.setScriptEnabled(true);
     overlaySettings.setPluginsEnabled(false);
     overlaySettings.setLoadsImagesAutomatically(true);
+    // FIXME: http://crbug.com/363843. Inspector should probably create its
+    // own graphics layers and attach them to the tree rather than going
+    // through some non-composited paint function.
+    overlaySettings.setAcceleratedCompositingEnabled(false);
 
-    RefPtr<Frame> frame = Frame::create(FrameInit::create(0, m_overlayPage.get(), dummyFrameLoaderClient));
+    RefPtr<LocalFrame> frame = LocalFrame::create(dummyFrameLoaderClient, &m_overlayPage->frameHost(), 0);
     frame->setView(FrameView::create(frame.get()));
     frame->init();
     FrameLoader& loader = frame->loader();
     frame->view()->setCanHaveScrollbars(false);
     frame->view()->setTransparent(true);
-    ASSERT(loader.activeDocumentLoader());
-    DocumentWriter* writer = loader.activeDocumentLoader()->beginWriting("text/html", "UTF-8");
-    writer->addData(reinterpret_cast<const char*>(InspectorOverlayPage_html), sizeof(InspectorOverlayPage_html));
-    loader.activeDocumentLoader()->endWriting(writer);
+
+    RefPtr<SharedBuffer> data = SharedBuffer::create(reinterpret_cast<const char*>(InspectorOverlayPage_html), sizeof(InspectorOverlayPage_html));
+    loader.load(FrameLoadRequest(0, blankURL(), SubstituteData(data, "text/html", "UTF-8", KURL(), ForceSynchronousLoad)));
     v8::Isolate* isolate = toIsolate(frame.get());
-    v8::HandleScope handleScope(isolate);
-    v8::Handle<v8::Context> frameContext = frame->script().currentWorldContext();
-    v8::Context::Scope contextScope(frameContext);
-    v8::Handle<v8::Value> overlayHostObj = toV8(m_overlayHost.get(), v8::Handle<v8::Object>(), isolate);
-    v8::Handle<v8::Object> global = frameContext->Global();
+    ScriptState* scriptState = ScriptState::forMainWorld(frame.get());
+    ASSERT(!scriptState->contextIsEmpty());
+    ScriptState::Scope scope(scriptState);
+    v8::Handle<v8::Object> global = scriptState->context()->Global();
+    v8::Handle<v8::Value> overlayHostObj = toV8(m_overlayHost.get(), global, isolate);
     global->Set(v8::String::NewFromUtf8(isolate, "InspectorOverlayHost"), overlayHostObj);
 
 #if OS(WIN)
@@ -639,14 +732,13 @@ Page* InspectorOverlay::overlayPage()
     return m_overlayPage.get();
 }
 
-void InspectorOverlay::reset(const IntSize& viewportSize, const IntSize& frameViewFullSize, int scrollX, int scrollY)
+void InspectorOverlay::reset(const IntSize& viewportSize, int scrollX, int scrollY)
 {
     RefPtr<JSONObject> resetData = JSONObject::create();
-    resetData->setNumber("pageScaleFactor", m_page->pageScaleFactor());
+    resetData->setNumber("pageScaleFactor", m_page->settings().pinchVirtualViewportEnabled() ? 1 : m_page->pageScaleFactor());
     resetData->setNumber("deviceScaleFactor", m_page->deviceScaleFactor());
     resetData->setObject("viewportSize", buildObjectForSize(viewportSize));
-    resetData->setObject("frameViewFullSize", buildObjectForSize(frameViewFullSize));
-    resetData->setNumber("pageZoomFactor", m_page->mainFrame()->pageZoomFactor());
+    resetData->setNumber("pageZoomFactor", m_page->deprecatedLocalMainFrame()->pageZoomFactor());
     resetData->setNumber("scrollX", scrollX);
     resetData->setNumber("scrollY", scrollY);
     evaluateInOverlay("reset", resetData.release());
@@ -657,7 +749,7 @@ void InspectorOverlay::evaluateInOverlay(const String& method, const String& arg
     RefPtr<JSONArray> command = JSONArray::create();
     command->pushString(method);
     command->pushString(argument);
-    overlayPage()->mainFrame()->script().executeScriptInMainWorld("dispatch(" + command->toJSONString() + ")", ScriptController::ExecuteScriptWhenScriptsDisabled);
+    toLocalFrame(overlayPage()->mainFrame())->script().executeScriptInMainWorld("dispatch(" + command->toJSONString() + ")", ScriptController::ExecuteScriptWhenScriptsDisabled);
 }
 
 void InspectorOverlay::evaluateInOverlay(const String& method, PassRefPtr<JSONValue> argument)
@@ -665,7 +757,7 @@ void InspectorOverlay::evaluateInOverlay(const String& method, PassRefPtr<JSONVa
     RefPtr<JSONArray> command = JSONArray::create();
     command->pushString(method);
     command->pushValue(argument);
-    overlayPage()->mainFrame()->script().executeScriptInMainWorld("dispatch(" + command->toJSONString() + ")", ScriptController::ExecuteScriptWhenScriptsDisabled);
+    toLocalFrame(overlayPage()->mainFrame())->script().executeScriptInMainWorld("dispatch(" + command->toJSONString() + ")", ScriptController::ExecuteScriptWhenScriptsDisabled);
 }
 
 void InspectorOverlay::onTimer(Timer<InspectorOverlay>*)
@@ -681,9 +773,15 @@ bool InspectorOverlay::getBoxModel(Node* node, Vector<FloatQuad>* quads)
 
 void InspectorOverlay::freePage()
 {
-    m_overlayPage.clear();
+    if (m_overlayPage) {
+        m_overlayPage->willBeDestroyed();
+        m_overlayPage.clear();
+    }
     m_overlayChromeClient.clear();
     m_timer.stop();
+
+    // This will clear internal structures and issue update to the client. Safe to call last.
+    hideHighlight();
 }
 
 void InspectorOverlay::startedRecordingProfile()

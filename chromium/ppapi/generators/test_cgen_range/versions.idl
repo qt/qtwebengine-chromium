@@ -8,11 +8,9 @@
 label Chrome {
   M13 = 0.0,
   M14 = 1.0,
-  M15 = 2.0
-};
-
-describe {
-  int32_t;
+  M15 = 2.0,
+  M16 = 3.0,
+  M17 = 4.0
 };
 
 /* Bogus Interface Foo */

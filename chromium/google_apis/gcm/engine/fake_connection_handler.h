@@ -23,7 +23,8 @@ class FakeConnectionHandler : public ConnectionHandler {
 
   // ConnectionHandler implementation.
   virtual void Init(const mcs_proto::LoginRequest& login_request,
-                    scoped_ptr<net::StreamSocket> socket) OVERRIDE;
+                    net::StreamSocket* socket) OVERRIDE;
+  virtual void Reset() OVERRIDE;
   virtual bool CanSendMessage() const OVERRIDE;
   virtual void SendMessage(const google::protobuf::MessageLite& message)
       OVERRIDE;

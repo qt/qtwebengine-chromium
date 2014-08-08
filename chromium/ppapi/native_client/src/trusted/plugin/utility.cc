@@ -8,45 +8,50 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "native_client/src/include/portability_io.h"
+#include "native_client/src/include/portability_process.h"
+#include "native_client/src/shared/platform/nacl_check.h"
+#include "ppapi/cpp/module.h"
 #include "ppapi/native_client/src/trusted/plugin/utility.h"
 
 namespace plugin {
 
 int gNaClPluginDebugPrintEnabled = -1;
-FILE* gNaClPluginLogFile = NULL;
 
 /*
  * Prints formatted message to the log.
  */
 int NaClPluginPrintLog(const char *format, ...) {
-  if (NULL == gNaClPluginLogFile) {
-    return 0;
-  }
   va_list arg;
-  int done;
-  va_start(arg, format);
-  done = vfprintf(gNaClPluginLogFile, format, arg);
-  va_end(arg);
-  fflush(gNaClPluginLogFile);
-  return done;
-}
+  int out_size;
 
-/*
- * Opens file where plugin log should be written. The file name is
- * taken from NACL_PLUGIN_LOG environment variable.
- * If environment variable doesn't exist or file can't be opened,
- * the function returns stdout.
- */
-FILE* NaClPluginLogFileEnv() {
-  char* file = getenv("NACL_PLUGIN_LOG");
-  if (NULL != file) {
-    FILE* log_file = fopen(file, "w+");
-    if (NULL == log_file) {
-        return stdout;
-    }
-    return log_file;
+  static const int kStackBufferSize = 512;
+  char stack_buffer[kStackBufferSize];
+
+  // Just log locally to stderr if we can't use the nacl interface.
+  if (!GetNaClInterface()) {
+    va_start(arg, format);
+    int rc = vfprintf(stderr, format, arg);
+    va_end(arg);
+    return rc;
   }
-  return stdout;
+
+  va_start(arg, format);
+  out_size = vsnprintf(stack_buffer, kStackBufferSize, format, arg);
+  va_end(arg);
+  if (out_size < kStackBufferSize) {
+    GetNaClInterface()->Vlog(stack_buffer);
+  } else {
+    // Message too large for our stack buffer; we have to allocate memory
+    // instead.
+    char *buffer = static_cast<char*>(malloc(out_size + 1));
+    va_start(arg, format);
+    vsnprintf(buffer, out_size + 1, format, arg);
+    va_end(arg);
+    GetNaClInterface()->Vlog(buffer);
+    free(buffer);
+  }
+  return out_size;
 }
 
 /*
@@ -98,6 +103,48 @@ bool IsValidIdentifierString(const char* strval, uint32_t* length) {
     *length = pos;
   }
   return true;
+}
+
+// We cache the NaCl interface pointer and ensure that its set early on, on the
+// main thread. This allows GetNaClInterface() to be used from non-main threads.
+static const PPB_NaCl_Private* g_nacl_interface = NULL;
+
+const PPB_NaCl_Private* GetNaClInterface() {
+  return g_nacl_interface;
+}
+
+void SetNaClInterface(const PPB_NaCl_Private* nacl_interface) {
+  g_nacl_interface = nacl_interface;
+}
+
+void CloseFileHandle(PP_FileHandle file_handle) {
+#if NACL_WINDOWS
+  CloseHandle(file_handle);
+#else
+  close(file_handle);
+#endif
+}
+
+// Converts a PP_FileHandle to a POSIX file descriptor.
+int32_t ConvertFileDescriptor(PP_FileHandle handle, bool read_only) {
+  PLUGIN_PRINTF(("ConvertFileDescriptor, handle=%d\n", handle));
+#if NACL_WINDOWS
+  int32_t file_desc = NACL_NO_FILE_DESC;
+  // On Windows, valid handles are 32 bit unsigned integers so this is safe.
+  file_desc = reinterpret_cast<intptr_t>(handle);
+  // Convert the Windows HANDLE from Pepper to a POSIX file descriptor.
+  int flags = _O_BINARY;
+  flags |= read_only ? _O_RDONLY : _O_RDWR;
+  int32_t posix_desc = _open_osfhandle(file_desc, flags);
+  if (posix_desc == -1) {
+    // Close the Windows HANDLE if it can't be converted.
+    CloseHandle(reinterpret_cast<HANDLE>(file_desc));
+    return -1;
+  }
+  return posix_desc;
+#else
+  return handle;
+#endif
 }
 
 }  // namespace plugin

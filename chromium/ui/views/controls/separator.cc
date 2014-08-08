@@ -4,7 +4,7 @@
 
 #include "ui/views/controls/separator.h"
 
-#include "ui/base/accessibility/accessible_view_state.h"
+#include "ui/accessibility/ax_view_state.h"
 #include "ui/gfx/canvas.h"
 
 namespace views {
@@ -28,17 +28,17 @@ Separator::~Separator() {
 ////////////////////////////////////////////////////////////////////////////////
 // Separator, View overrides:
 
-gfx::Size Separator::GetPreferredSize() {
+gfx::Size Separator::GetPreferredSize() const {
   if (orientation_ == HORIZONTAL)
     return gfx::Size(width(), kSeparatorHeight);
   return gfx::Size(kSeparatorHeight, height());
 }
 
-void Separator::GetAccessibleState(ui::AccessibleViewState* state) {
-  state->role = ui::AccessibilityTypes::ROLE_SEPARATOR;
+void Separator::GetAccessibleState(ui::AXViewState* state) {
+  state->role = ui::AX_ROLE_SPLITTER;
 }
 
-void Separator::Paint(gfx::Canvas* canvas) {
+void Separator::Paint(gfx::Canvas* canvas, const views::CullSet& cull_set) {
   canvas->FillRect(bounds(), kDefaultColor);
 }
 

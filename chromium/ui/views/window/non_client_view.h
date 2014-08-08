@@ -37,11 +37,17 @@ class VIEWS_EXPORT NonClientFrameView : public View {
     kClientEdgeThickness = 1,
   };
 
+  virtual ~NonClientFrameView();
+
   // Sets whether the window should be rendered as active regardless of the
   // actual active state. Used when bubbles become active to make their parent
   // appear active. A value of true makes the window render as active always,
   // false gives normal behavior.
   void SetInactiveRenderingDisabled(bool disable);
+
+  // Used to determine if the frame should be painted as active. Keyed off the
+  // window's actual active state and |inactive_rendering_disabled_|.
+  bool ShouldPaintAsActive() const;
 
   // Helper for non-client view implementations to determine which area of the
   // window border the specified |point| falls within. The other parameters are
@@ -74,28 +80,18 @@ class VIEWS_EXPORT NonClientFrameView : public View {
 
   // Overridden from View:
   virtual bool HitTestRect(const gfx::Rect& rect) const OVERRIDE;
-  virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
+  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
   virtual const char* GetClassName() const OVERRIDE;
 
  protected:
   virtual void OnBoundsChanged(const gfx::Rect& previous_bounds) OVERRIDE;
 
-  NonClientFrameView() : paint_as_active_(false) {}
-
-  // Used to determine if the frame should be painted as active. Keyed off the
-  // window's actual active state and the override, see
-  // SetInactiveRenderingDisabled() above.
-  bool ShouldPaintAsActive() const;
-
-  // Invoked from SetInactiveRenderingDisabled(). This implementation invokes
-  // SchedulesPaint as necessary.
-  virtual void ShouldPaintAsActiveChanged();
+  NonClientFrameView();
 
  private:
-  // True when the non-client view should always be rendered as if the window
-  // were active, regardless of whether or not the top level window actually
-  // is active.
-  bool paint_as_active_;
+  // Prevents the non-client frame view from being rendered as inactive when
+  // true.
+  bool inactive_rendering_disabled_;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -166,8 +162,6 @@ class VIEWS_EXPORT NonClientView : public View {
   // Prevents the window from being rendered as deactivated when |disable| is
   // true, until called with |disable| false. Used when a sub-window is to be
   // shown that shouldn't visually de-activate the window.
-  // Subclasses can override this to perform additional actions when this value
-  // changes.
   void SetInactiveRenderingDisabled(bool disable);
 
   // Returns the bounds of the window required to display the content area at
@@ -208,14 +202,14 @@ class VIEWS_EXPORT NonClientView : public View {
   void LayoutFrameView();
 
   // Set the accessible name of this view.
-  void SetAccessibleName(const string16& name);
+  void SetAccessibleName(const base::string16& name);
 
   // NonClientView, View overrides:
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
-  virtual gfx::Size GetMinimumSize() OVERRIDE;
-  virtual gfx::Size GetMaximumSize() OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
+  virtual gfx::Size GetMinimumSize() const OVERRIDE;
+  virtual gfx::Size GetMaximumSize() const OVERRIDE;
   virtual void Layout() OVERRIDE;
-  virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
+  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
   virtual const char* GetClassName() const OVERRIDE;
 
   virtual views::View* GetEventHandlerForRect(const gfx::Rect& rect) OVERRIDE;
@@ -243,7 +237,7 @@ class VIEWS_EXPORT NonClientView : public View {
   View* overlay_view_;
 
   // The accessible name of this view.
-  string16 accessible_name_;
+  base::string16 accessible_name_;
 
   DISALLOW_COPY_AND_ASSIGN(NonClientView);
 };

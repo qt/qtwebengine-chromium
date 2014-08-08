@@ -33,15 +33,18 @@
 #include "ui/base/test/data/resource.h"
 #endif
 
+using base::ASCIIToUTF16;
+using base::UTF8ToUTF16;
+
 namespace {
 
 class StringWrapper {
  public:
-  explicit StringWrapper(const string16& string) : string_(string) {}
-  const string16& string() const { return string_; }
+  explicit StringWrapper(const base::string16& string) : string_(string) {}
+  const base::string16& string() const { return string_; }
 
  private:
-  string16 string_;
+  base::string16 string_;
 
   DISALLOW_COPY_AND_ASSIGN(StringWrapper);
 };
@@ -62,7 +65,7 @@ TEST_F(L10nUtilTest, DISABLED_GetString) {
                                 UTF8ToUTF16("10"));
   EXPECT_EQ(std::string("Hello, chrome. Your number is 10."), s);
 
-  string16 s16 = l10n_util::GetStringFUTF16Int(IDS_PLACEHOLDERS_2, 20);
+  base::string16 s16 = l10n_util::GetStringFUTF16Int(IDS_PLACEHOLDERS_2, 20);
   EXPECT_EQ(UTF8ToUTF16("You owe me $20."), s16);
 }
 #endif  // defined(OS_WIN)
@@ -125,7 +128,7 @@ TEST_F(L10nUtilTest, GetAppLocale) {
   for (size_t i = 0; i < arraysize(filenames); ++i) {
     base::FilePath filename = new_locale_dir.AppendASCII(
         filenames[i] + ".pak");
-    file_util::WriteFile(filename, "", 0);
+    base::WriteFile(filename, "", 0);
   }
 
   // Keep a copy of ICU's default locale before we overwrite it.
@@ -326,13 +329,13 @@ void CheckUiDisplayNameForLocale(const std::string& locale,
                                  const std::string& display_locale,
                                  bool is_rtl) {
   EXPECT_EQ(true, base::i18n::IsRTL());
-  string16 result = l10n_util::GetDisplayNameForLocale(locale,
+  base::string16 result = l10n_util::GetDisplayNameForLocale(locale,
                                                        display_locale,
                                                        /* is_for_ui */ true);
 
   bool rtl_direction = true;
   for (size_t i = 0; i < result.length() - 1; i++) {
-    char16 ch = result.at(i);
+    base::char16 ch = result.at(i);
     switch (ch) {
     case base::i18n::kLeftToRightMark:
     case base::i18n::kLeftToRightEmbeddingMark:
@@ -352,7 +355,8 @@ void CheckUiDisplayNameForLocale(const std::string& locale,
 TEST_F(L10nUtilTest, GetDisplayNameForLocale) {
   // TODO(jungshik): Make this test more extensive.
   // Test zh-CN and zh-TW are treated as zh-Hans and zh-Hant.
-  string16 result = l10n_util::GetDisplayNameForLocale("zh-CN", "en", false);
+  base::string16 result =
+      l10n_util::GetDisplayNameForLocale("zh-CN", "en", false);
   EXPECT_EQ(ASCIIToUTF16("Chinese (Simplified Han)"), result);
 
   result = l10n_util::GetDisplayNameForLocale("zh-TW", "en", false);
@@ -370,7 +374,6 @@ TEST_F(L10nUtilTest, GetDisplayNameForLocale) {
   result = l10n_util::GetDisplayNameForLocale("xyz-xyz", "en", false);
   EXPECT_EQ(ASCIIToUTF16("xyz (XYZ)"), result);
 
-#if !defined(TOOLKIT_GTK)
   // Check for directional markers when using RTL languages to ensure that
   // direction neutral characters such as parentheses are properly formatted.
 
@@ -383,26 +386,25 @@ TEST_F(L10nUtilTest, GetDisplayNameForLocale) {
 
   // Clean up.
   base::i18n::SetICUDefaultLocale(original_locale);
-#endif
 
   // ToUpper and ToLower should work with embedded NULLs.
   const size_t length_with_null = 4;
-  char16 buf_with_null[length_with_null] = { 0, 'a', 0, 'b' };
-  string16 string16_with_null(buf_with_null, length_with_null);
+  base::char16 buf_with_null[length_with_null] = { 0, 'a', 0, 'b' };
+  base::string16 string16_with_null(buf_with_null, length_with_null);
 
-  string16 upper_with_null = base::i18n::ToUpper(string16_with_null);
+  base::string16 upper_with_null = base::i18n::ToUpper(string16_with_null);
   ASSERT_EQ(length_with_null, upper_with_null.size());
   EXPECT_TRUE(upper_with_null[0] == 0 && upper_with_null[1] == 'A' &&
               upper_with_null[2] == 0 && upper_with_null[3] == 'B');
 
-  string16 lower_with_null = base::i18n::ToLower(upper_with_null);
+  base::string16 lower_with_null = base::i18n::ToLower(upper_with_null);
   ASSERT_EQ(length_with_null, upper_with_null.size());
   EXPECT_TRUE(lower_with_null[0] == 0 && lower_with_null[1] == 'a' &&
               lower_with_null[2] == 0 && lower_with_null[3] == 'b');
 }
 
 TEST_F(L10nUtilTest, GetDisplayNameForCountry) {
-  string16 result = l10n_util::GetDisplayNameForCountry("BR", "en");
+  base::string16 result = l10n_util::GetDisplayNameForCountry("BR", "en");
   EXPECT_EQ(ASCIIToUTF16("Brazil"), result);
 
   result = l10n_util::GetDisplayNameForCountry("419", "en");

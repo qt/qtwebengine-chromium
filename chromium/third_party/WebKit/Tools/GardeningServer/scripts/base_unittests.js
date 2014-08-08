@@ -80,61 +80,6 @@ test("flattenArray", 5, function() {
     deepEqual(base.flattenArray([["a"], [], ["b"]]), ["a", "b"]);
 });
 
-test("callInParallel", 4, function() {
-    var expectedCall = [true, true, true];
-    var expectCompletionCallback = true;
-
-    base.callInParallel([
-        function(callback) {
-            ok(expectedCall[0]);
-            expectedCall[0] = false;
-            callback();
-        },
-        function(callback) {
-            ok(expectedCall[1]);
-            expectedCall[1] = false;
-            callback();
-        },
-        function(callback) {
-            ok(expectedCall[2]);
-            expectedCall[2] = false;
-            callback();
-        },
-    ], function() {
-        ok(expectCompletionCallback);
-        expectCompletionCallback = false;
-    })
-});
-
-test("RequestTracker", 5, function() {
-    var ready = false;
-    var tracker = new base.RequestTracker(1, function() {
-        ok(ready);
-    });
-    ready = true;
-    tracker.requestComplete();
-    ready = false;
-
-    tracker = new base.RequestTracker(2, function(parameter) {
-        ok(ready);
-        equals(parameter, 'argument');
-    }, ['argument']);
-    tracker.requestComplete();
-    ready = true;
-    tracker.requestComplete();
-    ready = false;
-
-    tracker = new base.RequestTracker(0, function() {
-        ok(true);
-    });
-    tracker.requestComplete();
-
-    tracker = new base.RequestTracker(0);
-    tracker.requestComplete();
-    // Should not barf.
-    ok(true);
-});
-
 test("filterDictionary", 3, function() {
     var dictionary = {
         'foo': 43,
@@ -367,37 +312,6 @@ test("extends", 14, function() {
     // Safari 5.1 lacks the <progress> element.
     // equals(document.body.lastChild.position, 1);
     document.body.removeChild(document.body.lastChild);
-});
-
-test("relativizeTime", 14, function() {
-    var time = new Date();
-    equals(base.relativizeTime(time), "Just now");
-    time.setMinutes(time.getMinutes() - 1);
-    equals(base.relativizeTime(time), "1 minute ago");
-    time.setMinutes(time.getMinutes() - 1);
-    equals(base.relativizeTime(time), "2 minutes ago");
-    time.setMinutes(time.getMinutes() - 1);
-    equals(base.relativizeTime(time), "3 minutes ago");
-    time.setMinutes(time.getMinutes() - 56);
-    equals(base.relativizeTime(time), "59 minutes ago");
-    time.setMinutes(time.getMinutes() - 1);
-    equals(base.relativizeTime(time), "1 hour ago");
-    time.setMinutes(time.getMinutes() - 29);
-    equals(base.relativizeTime(time), "1 hour ago");
-    time.setMinutes(time.getMinutes() - 2);
-    equals(base.relativizeTime(time), "2 hours ago");
-    time.setMinutes(time.getMinutes() - 29);
-    equals(base.relativizeTime(time), "2 hours ago");
-    time.setHours(time.getHours() - 1);
-    equals(base.relativizeTime(time), "3 hours ago");
-    time.setHours(time.getHours() - 20);
-    equals(base.relativizeTime(time), "23 hours ago");
-    time.setHours(time.getHours() - 1);
-    equals(base.relativizeTime(time), "1 day ago");
-    time.setDate(time.getDate() - 1);
-    equals(base.relativizeTime(time), "2 days ago");
-    time.setDate(time.getDate() - 998);
-    equals(base.relativizeTime(time), "1000 days ago");
 });
 
 test("getURLParameter", 1, function() {

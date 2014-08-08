@@ -60,7 +60,7 @@ class DriverOutput(object):
 
     def __init__(self, text, image, image_hash, audio, crash=False,
             test_time=0, measurements=None, timeout=False, error='', crashed_process_name='??',
-            crashed_pid=None, crash_log=None, pid=None):
+            crashed_pid=None, crash_log=None, leak=False, leak_log=None, pid=None):
         # FIXME: Args could be renamed to better clarify what they do.
         self.text = text
         self.image = image  # May be empty-string if the test crashes.
@@ -71,6 +71,8 @@ class DriverOutput(object):
         self.crashed_process_name = crashed_process_name
         self.crashed_pid = crashed_pid
         self.crash_log = crash_log
+        self.leak = leak
+        self.leak_log = leak_log
         self.test_time = test_time
         self.measurements = measurements
         self.timeout = timeout
@@ -102,16 +104,21 @@ class Driver(object):
         self._no_timeout = no_timeout
 
         self._driver_tempdir = None
-        # WebKitTestRunner can report back subprocess crashes by printing
+        # content_shell can report back subprocess crashes by printing
         # "#CRASHED - PROCESSNAME".  Since those can happen at any time
         # and ServerProcess won't be aware of them (since the actual tool
         # didn't crash, just a subprocess) we record the crashed subprocess name here.
         self._crashed_process_name = None
         self._crashed_pid = None
 
-        # WebKitTestRunner can report back subprocesses that became unresponsive
+        # content_shell can report back subprocesses that became unresponsive
         # This could mean they crashed.
         self._subprocess_was_unresponsive = False
+
+        # content_shell can report back subprocess DOM-object leaks by printing
+        # "#LEAK". This leak detection is enabled only when the flag
+        # --enable-leak-detection is passed to content_shell.
+        self._leaked = False
 
         # stderr reading is scoped on a per-test (not per-block) basis, so we store the accumulated
         # stderr output, as well as if we've seen #EOF on this driver instance.
@@ -158,8 +165,15 @@ class Driver(object):
         crashed = self.has_crashed()
         timed_out = self._server_process.timed_out
         pid = self._server_process.pid()
+        leaked = self._leaked
 
-        if stop_when_done or crashed or timed_out:
+        if not crashed and 'AddressSanitizer' in self.error_from_test:
+            self.error_from_test = 'OUTPUT CONTAINS "AddressSanitizer", so we are treating this test as if it crashed, even though it did not.\n\n' + self.error_from_test
+            crashed = True
+            self._crashed_process_name = "unknown process name"
+            self._crashed_pid = 0
+
+        if stop_when_done or crashed or timed_out or leaked:
             # We call stop() even if we crashed or timed out in order to get any remaining stdout/stderr output.
             # In the timeout case, we kill the hung process as well.
             out, err = self._server_process.stop(self._port.driver_stop_timeout() if stop_when_done else 0.0)
@@ -189,7 +203,9 @@ class Driver(object):
             crash=crashed, test_time=time.time() - test_begin_time, measurements=self._measurements,
             timeout=timed_out, error=self.error_from_test,
             crashed_process_name=self._crashed_process_name,
-            crashed_pid=self._crashed_pid, crash_log=crash_log, pid=pid)
+            crashed_pid=self._crashed_pid, crash_log=crash_log,
+            leak=leaked, leak_log=self._leak_log,
+            pid=pid)
 
     def _get_crash_log(self, stdout, stderr, newer_than):
         return self._port._get_crash_log(self._crashed_process_name, self._crashed_pid, stdout, stderr, newer_than)
@@ -268,6 +284,8 @@ class Driver(object):
         environment = self._setup_environ_for_driver(environment)
         self._crashed_process_name = None
         self._crashed_pid = None
+        self._leaked = False
+        self._leak_log = None
         cmd_line = self.cmd_line(pixel_tests, per_test_args)
         self._server_process = self._port._server_process_constructor(self._port, server_name, cmd_line, environment, logging=self._port.get_option("driver_logging"))
         self._server_process.start()
@@ -320,6 +338,8 @@ class Driver(object):
             cmd.append('--no-timeout')
         cmd.extend(self._port.get_option('additional_drt_flag', []))
         cmd.extend(self._port.additional_drt_flag())
+        if self._port.get_option('enable_leak_detection'):
+            cmd.append('--enable-leak-detection')
         cmd.extend(per_test_args)
         cmd.append('-')
         return cmd
@@ -347,6 +367,13 @@ class Driver(object):
                 self.error_from_test += error_line
             return True
         return self.has_crashed()
+
+    def _check_for_leak(self, error_line):
+        if error_line.startswith("#LEAK - "):
+            self._leaked = True
+            match = re.match('#LEAK - (\S+) pid (\d+) (.+)\n', error_line)
+            self._leak_log = match.group(3)
+        return self._leaked
 
     def _command_from_driver_input(self, driver_input):
         # FIXME: performance tests pass in full URLs instead of test names.
@@ -460,6 +487,8 @@ class Driver(object):
 
             if err_line:
                 if self._check_for_driver_crash(err_line):
+                    break
+                if self._check_for_leak(err_line):
                     break
                 self.error_from_test += err_line
 

@@ -16,6 +16,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/win/pe_image.h"
 #include "base/win/registry.h"
 #include "base/win/scoped_handle.h"
@@ -25,23 +26,23 @@
 namespace content {
 namespace {
 
-const char16 kRegistryApps[] =
+const base::char16 kRegistryApps[] =
     L"Software\\Microsoft\\Windows\\CurrentVersion\\App Paths";
-const char16 kRegistryFirefox[] = L"firefox.exe";
-const char16 kRegistryAcrobat[] = L"Acrobat.exe";
-const char16 kRegistryAcrobatReader[] = L"AcroRd32.exe";
-const char16 kRegistryWindowsMedia[] = L"wmplayer.exe";
-const char16 kRegistryQuickTime[] = L"QuickTimePlayer.exe";
-const char16 kRegistryPath[] = L"Path";
-const char16 kRegistryFirefoxInstalled[] =
+const base::char16 kRegistryFirefox[] = L"firefox.exe";
+const base::char16 kRegistryAcrobat[] = L"Acrobat.exe";
+const base::char16 kRegistryAcrobatReader[] = L"AcroRd32.exe";
+const base::char16 kRegistryWindowsMedia[] = L"wmplayer.exe";
+const base::char16 kRegistryQuickTime[] = L"QuickTimePlayer.exe";
+const base::char16 kRegistryPath[] = L"Path";
+const base::char16 kRegistryFirefoxInstalled[] =
     L"SOFTWARE\\Mozilla\\Mozilla Firefox";
-const char16 kRegistryJava[] =
+const base::char16 kRegistryJava[] =
     L"Software\\JavaSoft\\Java Runtime Environment";
-const char16 kRegistryBrowserJavaVersion[] = L"BrowserJavaVersion";
-const char16 kRegistryCurrentJavaVersion[] = L"CurrentVersion";
-const char16 kRegistryJavaHome[] = L"JavaHome";
-const char16 kJavaDeploy1[] = L"npdeploytk.dll";
-const char16 kJavaDeploy2[] = L"npdeployjava1.dll";
+const base::char16 kRegistryBrowserJavaVersion[] = L"BrowserJavaVersion";
+const base::char16 kRegistryCurrentJavaVersion[] = L"CurrentVersion";
+const base::char16 kRegistryJavaHome[] = L"JavaHome";
+const base::char16 kJavaDeploy1[] = L"npdeploytk.dll";
+const base::char16 kJavaDeploy2[] = L"npdeployjava1.dll";
 
 base::FilePath AppendPluginsDir(const base::FilePath& path) {
   return path.AppendASCII("plugins");
@@ -68,7 +69,7 @@ void GetExeDirectory(std::set<base::FilePath>* plugin_dirs) {
 }
 
 // Gets the installed path for a registered app.
-bool GetInstalledPath(const char16* app, base::FilePath* out) {
+bool GetInstalledPath(const base::char16* app, base::FilePath* out) {
   base::string16 reg_path(kRegistryApps);
   reg_path.append(L"\\");
   reg_path.append(app);
@@ -284,8 +285,8 @@ bool PluginList::ReadWebPluginInfo(const base::FilePath& filename,
 
   // TODO(evan): Move the ParseMimeTypes code inline once Pepper is updated.
   if (!PluginList::ParseMimeTypes(
-          UTF16ToASCII(version_info_win->GetStringValue(L"MIMEType")),
-          UTF16ToASCII(version_info_win->GetStringValue(L"FileExtents")),
+          base::UTF16ToASCII(version_info_win->GetStringValue(L"MIMEType")),
+          base::UTF16ToASCII(version_info_win->GetStringValue(L"FileExtents")),
           version_info_win->GetStringValue(L"FileOpenName"),
           &info->mime_types)) {
     LOG_IF(ERROR, PluginList::DebugPluginLoading())
@@ -462,9 +463,13 @@ bool PluginList::ShouldLoadPluginUsingPluginList(
     }
   }
 
-#if !defined(ARCH_CPU_X86_64)
-  // The plugin in question could be a 64 bit plugin which we cannot load.
   base::FilePath plugin_path(info.path);
+#if defined(ARCH_CPU_X86_64)
+  // The plugin in question could be a 32 bit plugin which we cannot load.
+  if (IsValid32BitImage(base::MakeAbsoluteFilePath(plugin_path)))
+    return false;
+#else
+  // The plugin in question could be a 64 bit plugin which we cannot load.
   if (!IsValid32BitImage(base::MakeAbsoluteFilePath(plugin_path)))
     return false;
 #endif

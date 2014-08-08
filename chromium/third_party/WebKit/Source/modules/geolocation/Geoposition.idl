@@ -24,6 +24,7 @@
  */
 
 [
+    GarbageCollected,
     NoInterfaceObject
 ] interface Geoposition {
     readonly attribute Coordinates coords;

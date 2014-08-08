@@ -23,11 +23,10 @@
 
 #include "core/svg/SVGAnimateMotionElement.h"
 
-#include "SVGNames.h"
+#include "core/SVGNames.h"
 #include "core/rendering/RenderObject.h"
 #include "core/rendering/svg/RenderSVGResource.h"
 #include "core/rendering/svg/SVGPathData.h"
-#include "core/svg/SVGElementInstance.h"
 #include "core/svg/SVGMPathElement.h"
 #include "core/svg/SVGParserUtilities.h"
 #include "core/svg/SVGPathElement.h"
@@ -48,15 +47,10 @@ inline SVGAnimateMotionElement::SVGAnimateMotionElement(Document& document)
     ScriptWrappable::init(this);
 }
 
+DEFINE_NODE_FACTORY(SVGAnimateMotionElement)
+
 SVGAnimateMotionElement::~SVGAnimateMotionElement()
 {
-    if (targetElement())
-        clearAnimatedType(targetElement());
-}
-
-PassRefPtr<SVGAnimateMotionElement> SVGAnimateMotionElement::create(Document& document)
-{
-    return adoptRef(new SVGAnimateMotionElement(document));
 }
 
 bool SVGAnimateMotionElement::hasValidAttributeType()
@@ -70,26 +64,24 @@ bool SVGAnimateMotionElement::hasValidAttributeType()
         return false;
     // Spec: SVG 1.1 section 19.2.15
     // FIXME: svgTag is missing. Needs to be checked, if transforming <svg> could cause problems.
-    if (targetElement->hasTagName(gTag)
-        || targetElement->hasTagName(defsTag)
-        || targetElement->hasTagName(useTag)
-        || targetElement->hasTagName(SVGNames::imageTag)
-        || targetElement->hasTagName(switchTag)
-        || targetElement->hasTagName(pathTag)
-        || targetElement->hasTagName(rectTag)
-        || targetElement->hasTagName(circleTag)
-        || targetElement->hasTagName(ellipseTag)
-        || targetElement->hasTagName(lineTag)
-        || targetElement->hasTagName(polylineTag)
-        || targetElement->hasTagName(polygonTag)
-        || targetElement->hasTagName(textTag)
-        || targetElement->hasTagName(clipPathTag)
-        || targetElement->hasTagName(maskTag)
-        || targetElement->hasTagName(SVGNames::aTag)
-        || targetElement->hasTagName(foreignObjectTag)
-        )
-        return true;
-    return false;
+    return (isSVGGElement(*targetElement)
+        || isSVGDefsElement(*targetElement)
+        || isSVGUseElement(*targetElement)
+        || isSVGImageElement(*targetElement)
+        || isSVGSwitchElement(*targetElement)
+        || isSVGPathElement(*targetElement)
+        || isSVGRectElement(*targetElement)
+        || isSVGCircleElement(*targetElement)
+        || isSVGEllipseElement(*targetElement)
+        || isSVGLineElement(*targetElement)
+        || isSVGPolylineElement(*targetElement)
+        || isSVGPolygonElement(*targetElement)
+        || isSVGTextElement(*targetElement)
+        || isSVGClipPathElement(*targetElement)
+        || isSVGMaskElement(*targetElement)
+        || isSVGAElement(*targetElement)
+        || isSVGForeignObjectElement(*targetElement)
+        );
 }
 
 bool SVGAnimateMotionElement::hasValidAttributeName()
@@ -140,15 +132,11 @@ void SVGAnimateMotionElement::updateAnimationPath()
     m_animationPath = Path();
     bool foundMPath = false;
 
-    for (Node* child = firstChild(); child; child = child->nextSibling()) {
-        if (child->hasTagName(SVGNames::mpathTag)) {
-            SVGMPathElement* mPath = toSVGMPathElement(child);
-            SVGPathElement* pathElement = mPath->pathElement();
-            if (pathElement) {
-                updatePathFromGraphicsElement(pathElement, m_animationPath);
-                foundMPath = true;
-                break;
-            }
+    for (SVGMPathElement* mpath = Traversal<SVGMPathElement>::firstChild(*this); mpath; mpath = Traversal<SVGMPathElement>::nextSibling(*mpath)) {
+        if (SVGPathElement* pathElement = mpath->pathElement()) {
+            updatePathFromGraphicsElement(pathElement, m_animationPath);
+            foundMPath = true;
+            break;
         }
     }
 
@@ -277,11 +265,10 @@ void SVGAnimateMotionElement::calculateAnimatedValue(float percentage, unsigned 
 
     ASSERT(!m_animationPath.isEmpty());
 
-    bool ok = false;
     float positionOnPath = m_animationPath.length() * percentage;
     FloatPoint position;
     float angle;
-    ok = m_animationPath.pointAndNormalAtLength(positionOnPath, position, angle);
+    bool ok = m_animationPath.pointAndNormalAtLength(positionOnPath, position, angle);
     if (!ok)
         return;
 
@@ -316,10 +303,10 @@ void SVGAnimateMotionElement::applyResultsToTarget()
         return;
 
     // ...except in case where we have additional instances in <use> trees.
-    const HashSet<SVGElementInstance*>& instances = targetElement->instancesForElement();
-    const HashSet<SVGElementInstance*>::const_iterator end = instances.end();
-    for (HashSet<SVGElementInstance*>::const_iterator it = instances.begin(); it != end; ++it) {
-        SVGElement* shadowTreeElement = (*it)->shadowTreeElement();
+    const WillBeHeapHashSet<RawPtrWillBeWeakMember<SVGElement> >& instances = targetElement->instancesForElement();
+    const WillBeHeapHashSet<RawPtrWillBeWeakMember<SVGElement> >::const_iterator end = instances.end();
+    for (WillBeHeapHashSet<RawPtrWillBeWeakMember<SVGElement> >::const_iterator it = instances.begin(); it != end; ++it) {
+        SVGElement* shadowTreeElement = *it;
         ASSERT(shadowTreeElement);
         AffineTransform* transform = shadowTreeElement->supplementalTransform();
         if (!transform)

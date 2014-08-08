@@ -5,9 +5,12 @@
 #include "content/browser/devtools/devtools_browser_target.h"
 
 #include "base/bind.h"
+#include "base/lazy_instance.h"
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/message_loop/message_loop_proxy.h"
+#include "base/stl_util.h"
+#include "base/strings/stringprintf.h"
 #include "base/values.h"
 #include "content/public/browser/browser_thread.h"
 #include "net/server/http_server.h"
@@ -15,13 +18,11 @@
 namespace content {
 
 DevToolsBrowserTarget::DevToolsBrowserTarget(
-    base::MessageLoopProxy* message_loop_proxy,
     net::HttpServer* http_server,
     int connection_id)
-    : message_loop_proxy_(message_loop_proxy),
+    : message_loop_proxy_(base::MessageLoopProxy::current()),
       http_server_(http_server),
       connection_id_(connection_id),
-      handlers_deleter_(&handlers_),
       weak_factory_(this) {
 }
 
@@ -29,6 +30,8 @@ void DevToolsBrowserTarget::RegisterDomainHandler(
     const std::string& domain,
     DevToolsProtocol::Handler* handler,
     bool handle_on_ui_thread) {
+  DCHECK_EQ(message_loop_proxy_, base::MessageLoopProxy::current());
+
   DCHECK(handlers_.find(domain) == handlers_.end());
   handlers_[domain] = handler;
   if (handle_on_ui_thread) {
@@ -41,7 +44,11 @@ void DevToolsBrowserTarget::RegisterDomainHandler(
   }
 }
 
+typedef std::map<std::string, DevToolsBrowserTarget*> DomainMap;
+base::LazyInstance<DomainMap>::Leaky g_used_domains = LAZY_INSTANCE_INITIALIZER;
+
 void DevToolsBrowserTarget::HandleMessage(const std::string& data) {
+  DCHECK_EQ(message_loop_proxy_, base::MessageLoopProxy::current());
   std::string error_response;
   scoped_refptr<DevToolsProtocol::Command> command =
       DevToolsProtocol::ParseCommand(data, &error_response);
@@ -55,9 +62,21 @@ void DevToolsBrowserTarget::HandleMessage(const std::string& data) {
     Respond(command->NoSuchMethodErrorResponse()->Serialize());
     return;
   }
+  DomainMap& used_domains(g_used_domains.Get());
+  std::string domain = command->domain();
+  DomainMap::iterator jt = used_domains.find(domain);
+  if (jt == used_domains.end()) {
+    used_domains[domain] = this;
+  } else if (jt->second != this) {
+    std::string message =
+        base::StringPrintf("'%s' is held by another connection",
+                           domain.c_str());
+    Respond(command->ServerErrorResponse(message)->Serialize());
+    return;
+  }
 
   DevToolsProtocol::Handler* handler = it->second;
-  bool handle_directly = handle_on_ui_thread_.find(command->domain()) ==
+  bool handle_directly = handle_on_ui_thread_.find(domain) ==
       handle_on_ui_thread_.end();
   if (handle_directly) {
     scoped_refptr<DevToolsProtocol::Response> response =
@@ -81,8 +100,22 @@ void DevToolsBrowserTarget::HandleMessage(const std::string& data) {
 }
 
 void DevToolsBrowserTarget::Detach() {
-  message_loop_proxy_ = NULL;
+  DCHECK_EQ(message_loop_proxy_, base::MessageLoopProxy::current());
+  DCHECK(http_server_);
+
   http_server_ = NULL;
+
+  DomainMap& used_domains(g_used_domains.Get());
+  for (DomainMap::iterator it = used_domains.begin();
+       it != used_domains.end();) {
+    if (it->second == this) {
+      DomainMap::iterator to_erase = it;
+      ++it;
+      used_domains.erase(to_erase);
+    } else {
+      ++it;
+    }
+  }
 
   std::vector<DevToolsProtocol::Handler*> ui_handlers;
   for (std::set<std::string>::iterator domain_it = handle_on_ui_thread_.begin();
@@ -94,6 +127,8 @@ void DevToolsBrowserTarget::Detach() {
     handlers_.erase(handler_it);
   }
 
+  STLDeleteValues(&handlers_);
+
   BrowserThread::PostTask(
       BrowserThread::UI,
       FROM_HERE,
@@ -103,11 +138,14 @@ void DevToolsBrowserTarget::Detach() {
 }
 
 DevToolsBrowserTarget::~DevToolsBrowserTarget() {
+  // DCHECK that Detach has been called or no handler has ever been registered.
+  DCHECK(handlers_.empty());
 }
 
 void DevToolsBrowserTarget::HandleCommandOnUIThread(
     DevToolsProtocol::Handler* handler,
     scoped_refptr<DevToolsProtocol::Command> command) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   scoped_refptr<DevToolsProtocol::Response> response =
       handler->HandleCommand(command);
   if (response && response->is_async_promise())
@@ -121,18 +159,19 @@ void DevToolsBrowserTarget::HandleCommandOnUIThread(
 
 void DevToolsBrowserTarget::DeleteHandlersOnUIThread(
     std::vector<DevToolsProtocol::Handler*> handlers) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   STLDeleteElements(&handlers);
 }
 
 void DevToolsBrowserTarget::Respond(const std::string& message) {
+  DCHECK_EQ(message_loop_proxy_, base::MessageLoopProxy::current());
   if (!http_server_)
     return;
   http_server_->SendOverWebSocket(connection_id_, message);
 }
 
 void DevToolsBrowserTarget::RespondFromUIThread(const std::string& message) {
-  if (!message_loop_proxy_)
-    return;
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   message_loop_proxy_->PostTask(
       FROM_HERE,
       base::Bind(&DevToolsBrowserTarget::Respond, this, message));

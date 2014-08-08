@@ -22,7 +22,7 @@
 #include "config.h"
 #include "core/css/CSSStyleRule.h"
 
-#include "core/css/CSSParser.h"
+#include "core/css/parser/BisonCSSParser.h"
 #include "core/css/CSSSelector.h"
 #include "core/css/CSSStyleSheet.h"
 #include "core/css/PropertySetCSSStyleDeclaration.h"
@@ -47,9 +47,10 @@ CSSStyleRule::CSSStyleRule(StyleRule* styleRule, CSSStyleSheet* parent)
 
 CSSStyleRule::~CSSStyleRule()
 {
+#if !ENABLE(OILPAN)
     if (m_propertiesCSSOMWrapper)
         m_propertiesCSSOMWrapper->clearParentRule();
-
+#endif
     if (hasCachedSelectorText()) {
         selectorTextCache().remove(this);
         setHasCachedSelectorText(false);
@@ -67,7 +68,7 @@ CSSStyleDeclaration* CSSStyleRule::style() const
 String CSSStyleRule::generateSelectorText() const
 {
     StringBuilder builder;
-    for (const CSSSelector* selector = m_styleRule->selectorList().first(); selector; selector = CSSSelectorList::next(selector)) {
+    for (const CSSSelector* selector = m_styleRule->selectorList().first(); selector; selector = CSSSelectorList::next(*selector)) {
         if (selector != m_styleRule->selectorList().first())
             builder.append(", ");
         builder.append(selector->selectorText());
@@ -91,7 +92,8 @@ String CSSStyleRule::selectorText() const
 
 void CSSStyleRule::setSelectorText(const String& selectorText)
 {
-    CSSParser p(parserContext());
+    CSSParserContext context(parserContext(), 0);
+    BisonCSSParser p(context);
     CSSSelectorList selectorList;
     p.parseSelector(selectorText, selectorList);
     if (!selectorList.isValid())
@@ -112,7 +114,7 @@ String CSSStyleRule::cssText() const
     StringBuilder result;
     result.append(selectorText());
     result.appendLiteral(" { ");
-    String decls = m_styleRule->properties()->asText();
+    String decls = m_styleRule->properties().asText();
     result.append(decls);
     if (!decls.isEmpty())
         result.append(' ');
@@ -126,6 +128,13 @@ void CSSStyleRule::reattach(StyleRuleBase* rule)
     m_styleRule = toStyleRule(rule);
     if (m_propertiesCSSOMWrapper)
         m_propertiesCSSOMWrapper->reattach(m_styleRule->mutableProperties());
+}
+
+void CSSStyleRule::trace(Visitor* visitor)
+{
+    visitor->trace(m_styleRule);
+    visitor->trace(m_propertiesCSSOMWrapper);
+    CSSRule::trace(visitor);
 }
 
 } // namespace WebCore

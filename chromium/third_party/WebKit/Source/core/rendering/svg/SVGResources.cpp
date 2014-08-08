@@ -20,7 +20,7 @@
 #include "config.h"
 #include "core/rendering/svg/SVGResources.h"
 
-#include "SVGNames.h"
+#include "core/SVGNames.h"
 #include "core/rendering/style/SVGRenderStyle.h"
 #include "core/rendering/svg/RenderSVGResourceClipper.h"
 #include "core/rendering/svg/RenderSVGResourceFilter.h"
@@ -38,6 +38,8 @@
 
 namespace WebCore {
 
+using namespace SVGNames;
+
 SVGResources::SVGResources()
     : m_linkedResource(0)
 {
@@ -49,39 +51,45 @@ static HashSet<AtomicString>& clipperFilterMaskerTags()
     if (s_tagList.isEmpty()) {
         // "container elements": http://www.w3.org/TR/SVG11/intro.html#TermContainerElement
         // "graphics elements" : http://www.w3.org/TR/SVG11/intro.html#TermGraphicsElement
-        s_tagList.add(SVGNames::aTag.localName());
-        s_tagList.add(SVGNames::circleTag.localName());
-        s_tagList.add(SVGNames::ellipseTag.localName());
-        s_tagList.add(SVGNames::glyphTag.localName());
-        s_tagList.add(SVGNames::gTag.localName());
-        s_tagList.add(SVGNames::imageTag.localName());
-        s_tagList.add(SVGNames::lineTag.localName());
-        s_tagList.add(SVGNames::markerTag.localName());
-        s_tagList.add(SVGNames::maskTag.localName());
-        s_tagList.add(SVGNames::missing_glyphTag.localName());
-        s_tagList.add(SVGNames::pathTag.localName());
-        s_tagList.add(SVGNames::polygonTag.localName());
-        s_tagList.add(SVGNames::polylineTag.localName());
-        s_tagList.add(SVGNames::rectTag.localName());
-        s_tagList.add(SVGNames::svgTag.localName());
-        s_tagList.add(SVGNames::textTag.localName());
-        s_tagList.add(SVGNames::useTag.localName());
+        s_tagList.add(aTag.localName());
+        s_tagList.add(circleTag.localName());
+        s_tagList.add(ellipseTag.localName());
+#if ENABLE(SVG_FONTS)
+        s_tagList.add(glyphTag.localName());
+#endif
+        s_tagList.add(gTag.localName());
+        s_tagList.add(imageTag.localName());
+        s_tagList.add(lineTag.localName());
+        s_tagList.add(markerTag.localName());
+        s_tagList.add(maskTag.localName());
+#if ENABLE(SVG_FONTS)
+        s_tagList.add(missing_glyphTag.localName());
+#endif
+        s_tagList.add(pathTag.localName());
+        s_tagList.add(polygonTag.localName());
+        s_tagList.add(polylineTag.localName());
+        s_tagList.add(rectTag.localName());
+        s_tagList.add(svgTag.localName());
+        s_tagList.add(textTag.localName());
+        s_tagList.add(useTag.localName());
 
         // Not listed in the definitions is the clipPath element, the SVG spec says though:
         // The "clipPath" element or any of its children can specify property "clip-path".
         // So we have to add clipPathTag here, otherwhise clip-path on clipPath will fail.
         // (Already mailed SVG WG, waiting for a solution)
-        s_tagList.add(SVGNames::clipPathTag.localName());
+        s_tagList.add(clipPathTag.localName());
 
         // Not listed in the definitions are the text content elements, though filter/clipper/masker on tspan/text/.. is allowed.
         // (Already mailed SVG WG, waiting for a solution)
-        s_tagList.add(SVGNames::altGlyphTag.localName());
-        s_tagList.add(SVGNames::textPathTag.localName());
-        s_tagList.add(SVGNames::tspanTag.localName());
+#if ENABLE(SVG_FONTS)
+        s_tagList.add(altGlyphTag.localName());
+#endif
+        s_tagList.add(textPathTag.localName());
+        s_tagList.add(tspanTag.localName());
 
         // Not listed in the definitions is the foreignObject element, but clip-path
         // is a supported attribute.
-        s_tagList.add(SVGNames::foreignObjectTag.localName());
+        s_tagList.add(foreignObjectTag.localName());
 
         // Elements that we ignore, as it doesn't make any sense.
         // defs, pattern, switch (FIXME: Mail SVG WG about these)
@@ -91,34 +99,36 @@ static HashSet<AtomicString>& clipperFilterMaskerTags()
     return s_tagList;
 }
 
-static HashSet<AtomicString>& markerTags()
+bool SVGResources::supportsMarkers(const SVGElement& element)
 {
     DEFINE_STATIC_LOCAL(HashSet<AtomicString>, s_tagList, ());
     if (s_tagList.isEmpty()) {
-        s_tagList.add(SVGNames::lineTag.localName());
-        s_tagList.add(SVGNames::pathTag.localName());
-        s_tagList.add(SVGNames::polygonTag.localName());
-        s_tagList.add(SVGNames::polylineTag.localName());
+        s_tagList.add(lineTag.localName());
+        s_tagList.add(pathTag.localName());
+        s_tagList.add(polygonTag.localName());
+        s_tagList.add(polylineTag.localName());
     }
 
-    return s_tagList;
+    return s_tagList.contains(element.localName());
 }
 
 static HashSet<AtomicString>& fillAndStrokeTags()
 {
     DEFINE_STATIC_LOCAL(HashSet<AtomicString>, s_tagList, ());
     if (s_tagList.isEmpty()) {
-        s_tagList.add(SVGNames::altGlyphTag.localName());
-        s_tagList.add(SVGNames::circleTag.localName());
-        s_tagList.add(SVGNames::ellipseTag.localName());
-        s_tagList.add(SVGNames::lineTag.localName());
-        s_tagList.add(SVGNames::pathTag.localName());
-        s_tagList.add(SVGNames::polygonTag.localName());
-        s_tagList.add(SVGNames::polylineTag.localName());
-        s_tagList.add(SVGNames::rectTag.localName());
-        s_tagList.add(SVGNames::textTag.localName());
-        s_tagList.add(SVGNames::textPathTag.localName());
-        s_tagList.add(SVGNames::tspanTag.localName());
+#if ENABLE(SVG_FONTS)
+        s_tagList.add(altGlyphTag.localName());
+#endif
+        s_tagList.add(circleTag.localName());
+        s_tagList.add(ellipseTag.localName());
+        s_tagList.add(lineTag.localName());
+        s_tagList.add(pathTag.localName());
+        s_tagList.add(polygonTag.localName());
+        s_tagList.add(polylineTag.localName());
+        s_tagList.add(rectTag.localName());
+        s_tagList.add(textTag.localName());
+        s_tagList.add(textPathTag.localName());
+        s_tagList.add(tspanTag.localName());
     }
 
     return s_tagList;
@@ -128,37 +138,52 @@ static HashSet<AtomicString>& chainableResourceTags()
 {
     DEFINE_STATIC_LOCAL(HashSet<AtomicString>, s_tagList, ());
     if (s_tagList.isEmpty()) {
-        s_tagList.add(SVGNames::linearGradientTag.localName());
-        s_tagList.add(SVGNames::filterTag.localName());
-        s_tagList.add(SVGNames::patternTag.localName());
-        s_tagList.add(SVGNames::radialGradientTag.localName());
+        s_tagList.add(linearGradientTag.localName());
+        s_tagList.add(filterTag.localName());
+        s_tagList.add(patternTag.localName());
+        s_tagList.add(radialGradientTag.localName());
     }
 
     return s_tagList;
 }
 
-static inline String targetReferenceFromResource(SVGElement* element)
+static inline AtomicString targetReferenceFromResource(SVGElement& element)
 {
     String target;
-    if (element->hasTagName(SVGNames::patternTag))
-        target = toSVGPatternElement(element)->hrefCurrentValue();
-    else if (element->hasTagName(SVGNames::linearGradientTag) || element->hasTagName(SVGNames::radialGradientTag))
-        target = toSVGGradientElement(element)->hrefCurrentValue();
-    else if (element->hasTagName(SVGNames::filterTag))
-        target = toSVGFilterElement(element)->hrefCurrentValue();
+    if (isSVGPatternElement(element))
+        target = toSVGPatternElement(element).href()->currentValue()->value();
+    else if (isSVGGradientElement(element))
+        target = toSVGGradientElement(element).href()->currentValue()->value();
+    else if (isSVGFilterElement(element))
+        target = toSVGFilterElement(element).href()->currentValue()->value();
     else
         ASSERT_NOT_REACHED();
 
-    return SVGURIReference::fragmentIdentifierFromIRIString(target, element->document());
+    return SVGURIReference::fragmentIdentifierFromIRIString(target, element.treeScope());
 }
 
-static inline RenderSVGResourceContainer* paintingResourceFromSVGPaint(Document& document, const SVGPaint::SVGPaintType& paintType, const String& paintUri, AtomicString& id, bool& hasPendingResource)
+static inline bool svgPaintTypeHasURL(SVGPaint::SVGPaintType paintType)
 {
-    if (paintType != SVGPaint::SVG_PAINTTYPE_URI && paintType != SVGPaint::SVG_PAINTTYPE_URI_RGBCOLOR)
+    switch (paintType) {
+    case SVGPaint::SVG_PAINTTYPE_URI_NONE:
+    case SVGPaint::SVG_PAINTTYPE_URI_CURRENTCOLOR:
+    case SVGPaint::SVG_PAINTTYPE_URI_RGBCOLOR:
+    case SVGPaint::SVG_PAINTTYPE_URI_RGBCOLOR_ICCCOLOR:
+    case SVGPaint::SVG_PAINTTYPE_URI:
+        return true;
+    default:
+        break;
+    }
+    return false;
+}
+
+static inline RenderSVGResourceContainer* paintingResourceFromSVGPaint(TreeScope& treeScope, const SVGPaint::SVGPaintType& paintType, const String& paintUri, AtomicString& id, bool& hasPendingResource)
+{
+    if (!svgPaintTypeHasURL(paintType))
         return 0;
 
-    id = SVGURIReference::fragmentIdentifierFromIRIString(paintUri, document);
-    RenderSVGResourceContainer* container = getRenderSVGResourceContainerById(document, id);
+    id = SVGURIReference::fragmentIdentifierFromIRIString(paintUri, treeScope);
+    RenderSVGResourceContainer* container = getRenderSVGResourceContainerById(treeScope, id);
     if (!container) {
         hasPendingResource = true;
         return 0;
@@ -171,10 +196,10 @@ static inline RenderSVGResourceContainer* paintingResourceFromSVGPaint(Document&
     return container;
 }
 
-static inline void registerPendingResource(SVGDocumentExtensions* extensions, const AtomicString& id, SVGElement* element)
+static inline void registerPendingResource(SVGDocumentExtensions& extensions, const AtomicString& id, SVGElement* element)
 {
     ASSERT(element);
-    extensions->addPendingResource(id, element);
+    extensions.addPendingResource(id, element);
 }
 
 bool SVGResources::hasResourceData() const
@@ -206,10 +231,9 @@ PassOwnPtr<SVGResources> SVGResources::buildResources(const RenderObject* object
     if (!element)
         return nullptr;
 
-    Document& document = object->document();
+    TreeScope& treeScope = element->treeScope();
 
-    SVGDocumentExtensions* extensions = document.accessSVGExtensions();
-    ASSERT(extensions);
+    SVGDocumentExtensions& extensions = object->document().accessSVGExtensions();
 
     const AtomicString& tagName = element->localName();
     if (tagName.isNull())
@@ -218,35 +242,35 @@ PassOwnPtr<SVGResources> SVGResources::buildResources(const RenderObject* object
     OwnPtr<SVGResources> resources;
     if (clipperFilterMaskerTags().contains(tagName)) {
         if (style->hasClipper()) {
-            AtomicString id(style->clipperResource());
-            if (!ensureResources(resources)->setClipper(getRenderSVGResourceById<RenderSVGResourceClipper>(document, id)))
+            AtomicString id = style->clipperResource();
+            if (!ensureResources(resources)->setClipper(getRenderSVGResourceById<RenderSVGResourceClipper>(treeScope, id)))
                 registerPendingResource(extensions, id, element);
         }
 
         if (style->hasFilter()) {
-            AtomicString id(style->filterResource());
-            if (!ensureResources(resources)->setFilter(getRenderSVGResourceById<RenderSVGResourceFilter>(document, id)))
+            AtomicString id = style->filterResource();
+            if (!ensureResources(resources)->setFilter(getRenderSVGResourceById<RenderSVGResourceFilter>(treeScope, id)))
                 registerPendingResource(extensions, id, element);
         }
 
         if (style->hasMasker()) {
-            AtomicString id(style->maskerResource());
-            if (!ensureResources(resources)->setMasker(getRenderSVGResourceById<RenderSVGResourceMasker>(document, id)))
+            AtomicString id = style->maskerResource();
+            if (!ensureResources(resources)->setMasker(getRenderSVGResourceById<RenderSVGResourceMasker>(treeScope, id)))
                 registerPendingResource(extensions, id, element);
         }
     }
 
-    if (markerTags().contains(tagName) && style->hasMarkers()) {
-        AtomicString markerStartId(style->markerStartResource());
-        if (!ensureResources(resources)->setMarkerStart(getRenderSVGResourceById<RenderSVGResourceMarker>(document, markerStartId)))
+    if (style->hasMarkers() && supportsMarkers(*element)) {
+        const AtomicString& markerStartId = style->markerStartResource();
+        if (!ensureResources(resources)->setMarkerStart(getRenderSVGResourceById<RenderSVGResourceMarker>(treeScope, markerStartId)))
             registerPendingResource(extensions, markerStartId, element);
 
-        AtomicString markerMidId(style->markerMidResource());
-        if (!ensureResources(resources)->setMarkerMid(getRenderSVGResourceById<RenderSVGResourceMarker>(document, markerMidId)))
+        const AtomicString& markerMidId = style->markerMidResource();
+        if (!ensureResources(resources)->setMarkerMid(getRenderSVGResourceById<RenderSVGResourceMarker>(treeScope, markerMidId)))
             registerPendingResource(extensions, markerMidId, element);
 
-        AtomicString markerEndId(style->markerEndResource());
-        if (!ensureResources(resources)->setMarkerEnd(getRenderSVGResourceById<RenderSVGResourceMarker>(document, markerEndId)))
+        const AtomicString& markerEndId = style->markerEndResource();
+        if (!ensureResources(resources)->setMarkerEnd(getRenderSVGResourceById<RenderSVGResourceMarker>(treeScope, style->markerEndResource())))
             registerPendingResource(extensions, markerEndId, element);
     }
 
@@ -254,7 +278,7 @@ PassOwnPtr<SVGResources> SVGResources::buildResources(const RenderObject* object
         if (style->hasFill()) {
             bool hasPendingResource = false;
             AtomicString id;
-            RenderSVGResourceContainer* resource = paintingResourceFromSVGPaint(document, style->fillPaintType(), style->fillPaintUri(), id, hasPendingResource);
+            RenderSVGResourceContainer* resource = paintingResourceFromSVGPaint(treeScope, style->fillPaintType(), style->fillPaintUri(), id, hasPendingResource);
             if (!ensureResources(resources)->setFill(resource) && hasPendingResource) {
                 registerPendingResource(extensions, id, element);
             }
@@ -263,7 +287,7 @@ PassOwnPtr<SVGResources> SVGResources::buildResources(const RenderObject* object
         if (style->hasStroke()) {
             bool hasPendingResource = false;
             AtomicString id;
-            RenderSVGResourceContainer* resource = paintingResourceFromSVGPaint(document, style->strokePaintType(), style->strokePaintUri(), id, hasPendingResource);
+            RenderSVGResourceContainer* resource = paintingResourceFromSVGPaint(treeScope, style->strokePaintType(), style->strokePaintUri(), id, hasPendingResource);
             if (!ensureResources(resources)->setStroke(resource) && hasPendingResource) {
                 registerPendingResource(extensions, id, element);
             }
@@ -271,8 +295,8 @@ PassOwnPtr<SVGResources> SVGResources::buildResources(const RenderObject* object
     }
 
     if (chainableResourceTags().contains(tagName)) {
-        AtomicString id(targetReferenceFromResource(element));
-        if (!ensureResources(resources)->setLinkedResource(getRenderSVGResourceContainerById(document, id)))
+        AtomicString id = targetReferenceFromResource(*element);
+        if (!ensureResources(resources)->setLinkedResource(getRenderSVGResourceContainerById(treeScope, id)))
             registerPendingResource(extensions, id, element);
     }
 

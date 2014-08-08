@@ -24,7 +24,6 @@
 #include "core/rendering/svg/RenderSVGForeignObject.h"
 
 #include "core/rendering/HitTestResult.h"
-#include "core/rendering/LayoutRectRecorder.h"
 #include "core/rendering/LayoutRepainter.h"
 #include "core/rendering/RenderView.h"
 #include "core/rendering/svg/SVGRenderSupport.h"
@@ -43,6 +42,12 @@ RenderSVGForeignObject::RenderSVGForeignObject(SVGForeignObjectElement* node)
 
 RenderSVGForeignObject::~RenderSVGForeignObject()
 {
+}
+
+bool RenderSVGForeignObject::isChildAllowed(RenderObject* child, RenderStyle* style) const
+{
+    // Disallow arbitary SVG content. Only allow proper <svg xmlns="svgNS"> subdocuments.
+    return !child->isSVG() || child->isSVGRoot();
 }
 
 void RenderSVGForeignObject::paint(PaintInfo& paintInfo, const LayoutPoint&)
@@ -85,16 +90,6 @@ void RenderSVGForeignObject::paint(PaintInfo& paintInfo, const LayoutPoint&)
     }
 }
 
-LayoutRect RenderSVGForeignObject::clippedOverflowRectForRepaint(const RenderLayerModelObject* repaintContainer) const
-{
-    return SVGRenderSupport::clippedOverflowRectForRepaint(this, repaintContainer);
-}
-
-void RenderSVGForeignObject::computeFloatRectForRepaint(const RenderLayerModelObject* repaintContainer, FloatRect& repaintRect, bool fixed) const
-{
-    SVGRenderSupport::computeFloatRectForRepaint(this, repaintContainer, repaintRect, fixed);
-}
-
 const AffineTransform& RenderSVGForeignObject::localToParentTransform() const
 {
     m_localToParentTransform = localTransform();
@@ -121,9 +116,8 @@ void RenderSVGForeignObject::computeLogicalHeight(LayoutUnit, LayoutUnit logical
 void RenderSVGForeignObject::layout()
 {
     ASSERT(needsLayout());
-    ASSERT(!view()->layoutStateEnabled()); // RenderSVGRoot disables layoutState for the SVG rendering tree.
+    ASSERT(!view()->layoutStateCachedOffsetsEnabled()); // RenderSVGRoot disables layoutState for the SVG rendering tree.
 
-    LayoutRectRecorder recorder(*this);
     LayoutRepainter repainter(*this, SVGRenderSupport::checkForSVGRepaintDuringLayout(this));
     SVGForeignObjectElement* foreign = toSVGForeignObjectElement(node());
 
@@ -138,8 +132,8 @@ void RenderSVGForeignObject::layout()
 
     // Cache viewport boundaries
     SVGLengthContext lengthContext(foreign);
-    FloatPoint viewportLocation(foreign->xCurrentValue().value(lengthContext), foreign->yCurrentValue().value(lengthContext));
-    m_viewport = FloatRect(viewportLocation, FloatSize(foreign->widthCurrentValue().value(lengthContext), foreign->heightCurrentValue().value(lengthContext)));
+    FloatPoint viewportLocation(foreign->x()->currentValue()->value(lengthContext), foreign->y()->currentValue()->value(lengthContext));
+    m_viewport = FloatRect(viewportLocation, FloatSize(foreign->width()->currentValue()->value(lengthContext), foreign->height()->currentValue()->value(lengthContext)));
     if (!updateCachedBoundariesInParents)
         updateCachedBoundariesInParents = oldViewport != m_viewport;
 
@@ -165,6 +159,14 @@ void RenderSVGForeignObject::layout()
     repainter.repaintAfterLayout();
 }
 
+void RenderSVGForeignObject::mapRectToPaintInvalidationBacking(const RenderLayerModelObject* paintInvalidationContainer,
+    LayoutRect& rect, bool fixed) const
+{
+    FloatRect r(rect);
+    SVGRenderSupport::computeFloatRectForRepaint(this, paintInvalidationContainer, r, fixed);
+    rect = enclosingLayoutRect(r);
+}
+
 bool RenderSVGForeignObject::nodeAtFloatPoint(const HitTestRequest& request, HitTestResult& result, const FloatPoint& pointInParent, HitTestAction hitTestAction)
 {
     // Embedded content is drawn in the foreground phase.
@@ -182,22 +184,6 @@ bool RenderSVGForeignObject::nodeAtFloatPoint(const HitTestRequest& request, Hit
     return RenderBlock::nodeAtPoint(request, result, hitTestLocation, LayoutPoint(), HitTestForeground)
         || RenderBlock::nodeAtPoint(request, result, hitTestLocation, LayoutPoint(), HitTestFloat)
         || RenderBlock::nodeAtPoint(request, result, hitTestLocation, LayoutPoint(), HitTestChildBlockBackgrounds);
-}
-
-bool RenderSVGForeignObject::nodeAtPoint(const HitTestRequest&, HitTestResult&, const HitTestLocation&, const LayoutPoint&, HitTestAction)
-{
-    ASSERT_NOT_REACHED();
-    return false;
-}
-
-void RenderSVGForeignObject::mapLocalToContainer(const RenderLayerModelObject* repaintContainer, TransformState& transformState, MapCoordinatesFlags, bool* wasFixed) const
-{
-    SVGRenderSupport::mapLocalToContainer(this, repaintContainer, transformState, wasFixed);
-}
-
-const RenderObject* RenderSVGForeignObject::pushMappingToContainer(const RenderLayerModelObject* ancestorToStopAt, RenderGeometryMap& geometryMap) const
-{
-    return SVGRenderSupport::pushMappingToContainer(this, ancestorToStopAt, geometryMap);
 }
 
 }

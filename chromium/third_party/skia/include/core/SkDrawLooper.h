@@ -10,7 +10,10 @@
 #ifndef SkDrawLooper_DEFINED
 #define SkDrawLooper_DEFINED
 
+#include "SkBlurTypes.h"
 #include "SkFlattenable.h"
+#include "SkPoint.h"
+#include "SkColor.h"
 
 class SkCanvas;
 class SkPaint;
@@ -30,24 +33,49 @@ public:
     SK_DECLARE_INST_COUNT(SkDrawLooper)
 
     /**
-     *  Called right before something is being drawn. This will be followed by
-     *  calls to next() until next() returns false.
+     *  Holds state during a draw. Users call next() until it returns false.
+     *
+     *  Subclasses of SkDrawLooper should create a subclass of this object to
+     *  hold state specific to their subclass.
      */
-    virtual void init(SkCanvas*) = 0;
+    class SK_API Context : ::SkNoncopyable {
+    public:
+        Context() {}
+        virtual ~Context() {}
+
+        /**
+         *  Called in a loop on objects returned by SkDrawLooper::createContext().
+         *  Each time true is returned, the object is drawn (possibly with a modified
+         *  canvas and/or paint). When false is finally returned, drawing for the object
+         *  stops.
+         *
+         *  On each call, the paint will be in its original state, but the
+         *  canvas will be as it was following the previous call to next() or
+         *  createContext().
+         *
+         *  The implementation must ensure that, when next() finally returns
+         *  false, the canvas has been restored to the state it was
+         *  initially, before createContext() was first called.
+         */
+        virtual bool next(SkCanvas* canvas, SkPaint* paint) = 0;
+    };
 
     /**
-     *  Called in a loop (after init()). Each time true is returned, the object
-     *  is drawn (possibly with a modified canvas and/or paint). When false is
-     *  finally returned, drawing for the object stops.
-     *
-     *  On each call, the paint will be in its original state, but the canvas
-     *  will be as it was following the previous call to next() or init().
-     *
-     *  The implementation must ensure that, when next() finally returns false,
-     *  that the canvas has been restored to the state it was initially, before
-     *  init() was first called.
+     *  Called right before something is being drawn. Returns a Context
+     *  whose next() method should be called until it returns false.
+     *  The caller has to ensure that the storage pointer provides enough
+     *  memory for the Context. The required size can be queried by calling
+     *  contextSize(). It is also the caller's responsibility to destroy the
+     *  object after use.
      */
-    virtual bool next(SkCanvas*, SkPaint* paint) = 0;
+    virtual Context* createContext(SkCanvas*, void* storage) const = 0;
+
+    /**
+      *  Returns the number of bytes needed to store subclasses of Context (belonging to the
+      *  corresponding SkDrawLooper subclass).
+      */
+    virtual size_t contextSize() const = 0;
+
 
     /**
      * The fast bounds functions are used to enable the paint to be culled early
@@ -59,16 +87,34 @@ public:
      * storage rect, where the storage rect is with the union of the src rect
      * and the looper's bounding rect.
      */
-    virtual bool canComputeFastBounds(const SkPaint& paint);
+    virtual bool canComputeFastBounds(const SkPaint& paint) const;
     virtual void computeFastBounds(const SkPaint& paint,
-                                   const SkRect& src, SkRect* dst);
+                                   const SkRect& src, SkRect* dst) const;
 
-    SkDEVCODE(virtual void toString(SkString* str) const = 0;)
+    struct BlurShadowRec {
+        SkScalar        fSigma;
+        SkVector        fOffset;
+        SkColor         fColor;
+        SkBlurStyle     fStyle;
+        SkBlurQuality   fQuality;
+    };
+    /**
+     *  If this looper can be interpreted as having two layers, such that
+     *      1. The first layer (bottom most) just has a blur and translate
+     *      2. The second layer has no modifications to either paint or canvas
+     *      3. No other layers.
+     *  then return true, and if not null, fill out the BlurShadowRec).
+     *
+     *  If any of the above are not met, return false and ignore the BlurShadowRec parameter.
+     */
+    virtual bool asABlurShadow(BlurShadowRec*) const;
+
+    SK_TO_STRING_PUREVIRT()
     SK_DEFINE_FLATTENABLE_TYPE(SkDrawLooper)
 
 protected:
     SkDrawLooper() {}
-    SkDrawLooper(SkFlattenableReadBuffer& buffer) : INHERITED(buffer) {}
+    SkDrawLooper(SkReadBuffer& buffer) : INHERITED(buffer) {}
 
 private:
     typedef SkFlattenable INHERITED;

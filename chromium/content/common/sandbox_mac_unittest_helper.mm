@@ -56,7 +56,6 @@ bool MacSandboxTest::RunTestInAllSandboxTypes(const char* test_name,
   for(int i = static_cast<int>(SANDBOX_TYPE_FIRST_TYPE);
       i < SANDBOX_TYPE_AFTER_LAST_TYPE;
       ++i) {
-
     if (!RunTestInSandbox(static_cast<SandboxType>(i),
             test_name, test_data)) {
       LOG(ERROR) << "Sandboxed test (" << test_name << ")" <<
@@ -78,8 +77,7 @@ bool MacSandboxTest::RunTestInSandbox(SandboxType sandbox_type,
   if (test_data)
     setenv(kTestDataKey, test_data, 1);
 
-  base::ProcessHandle child_process = SpawnChild("mac_sandbox_test_runner",
-                                                 false);
+  base::ProcessHandle child_process = SpawnChild("mac_sandbox_test_runner");
   if (child_process == base::kNullProcessHandle) {
     LOG(WARNING) << "SpawnChild failed";
     return false;

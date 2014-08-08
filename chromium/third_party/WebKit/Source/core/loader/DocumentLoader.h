@@ -37,12 +37,15 @@
 #include "core/loader/DocumentWriter.h"
 #include "core/loader/NavigationAction.h"
 #include "core/loader/SubstituteData.h"
-#include "platform/Timer.h"
 #include "platform/network/ResourceError.h"
 #include "platform/network/ResourceRequest.h"
 #include "platform/network/ResourceResponse.h"
 #include "wtf/HashSet.h"
 #include "wtf/RefPtr.h"
+
+namespace blink {
+class WebThreadedDataReceiver;
+}
 
 namespace WTF {
 class SchedulePair;
@@ -55,7 +58,7 @@ namespace WebCore {
     class ResourceFetcher;
     class ContentFilter;
     class FormState;
-    class Frame;
+    class LocalFrame;
     class FrameLoader;
     class MHTMLArchive;
     class Page;
@@ -65,70 +68,54 @@ namespace WebCore {
     class DocumentLoader : public RefCounted<DocumentLoader>, private RawResourceClient {
         WTF_MAKE_FAST_ALLOCATED;
     public:
-        static PassRefPtr<DocumentLoader> create(const ResourceRequest& request, const SubstituteData& data)
+        static PassRefPtr<DocumentLoader> create(LocalFrame* frame, const ResourceRequest& request, const SubstituteData& data)
         {
-            return adoptRef(new DocumentLoader(request, data));
+            return adoptRef(new DocumentLoader(frame, request, data));
         }
         virtual ~DocumentLoader();
 
-        void setFrame(Frame*);
-        Frame* frame() const { return m_frame; }
+        LocalFrame* frame() const { return m_frame; }
 
         void detachFromFrame();
-
-        FrameLoader* frameLoader() const;
 
         unsigned long mainResourceIdentifier() const;
 
         void replaceDocument(const String& source, Document*);
-        DocumentWriter* beginWriting(const AtomicString& mimeType, const AtomicString& encoding, const KURL& = KURL());
-        void endWriting(DocumentWriter*);
 
         const AtomicString& mimeType() const;
 
         void setUserChosenEncoding(const String& charset);
 
         const ResourceRequest& originalRequest() const;
-        const ResourceRequest& originalRequestCopy() const;
 
         const ResourceRequest& request() const;
-        ResourceRequest& request();
 
         ResourceFetcher* fetcher() const { return m_fetcher.get(); }
 
         const SubstituteData& substituteData() const { return m_substituteData; }
 
-        // FIXME: This is the same as requestURL(). We should remove one of them.
         const KURL& url() const;
         const KURL& unreachableURL() const;
-        bool isURLValidForNewHistoryEntry() const;
+        const KURL& urlForHistory() const;
 
-        const KURL& originalURL() const;
-        const KURL& requestURL() const;
         const AtomicString& responseMIMEType() const;
 
-        void updateForSameDocumentNavigation(const KURL&);
+        void updateForSameDocumentNavigation(const KURL&, SameDocumentNavigationSource);
         void stopLoading();
-        void setCommitted(bool committed) { m_committed = committed; }
         bool isCommitted() const { return m_committed; }
         bool isLoading() const;
+        bool isLoadingMainResource() const { return m_loadingMainResource; }
         const ResourceResponse& response() const { return m_response; }
         const ResourceError& mainDocumentError() const { return m_mainDocumentError; }
         bool isClientRedirect() const { return m_isClientRedirect; }
         void setIsClientRedirect(bool isClientRedirect) { m_isClientRedirect = isClientRedirect; }
         bool replacesCurrentHistoryItem() const { return m_replacesCurrentHistoryItem; }
         void setReplacesCurrentHistoryItem(bool replacesCurrentHistoryItem) { m_replacesCurrentHistoryItem = replacesCurrentHistoryItem; }
-        bool isLoadingInAPISense() const;
         const AtomicString& overrideEncoding() const { return m_overrideEncoding; }
 
         bool scheduleArchiveLoad(Resource*, const ResourceRequest&);
-        void cancelPendingSubstituteLoad(ResourceLoader*);
 
-        enum PolicyCheckLoadType {
-            PolicyCheckStandard,
-            PolicyCheckFragment
-        };
-        bool shouldContinueForNavigationPolicy(const ResourceRequest&, PolicyCheckLoadType);
+        bool shouldContinueForNavigationPolicy(const ResourceRequest&);
         const NavigationAction& triggeringAction() const { return m_triggeringAction; }
         void setTriggeringAction(const NavigationAction& action) { m_triggeringAction = action; }
 
@@ -139,40 +126,28 @@ namespace WebCore {
         void startLoadingMainResource();
         void cancelMainResourceLoad(const ResourceError&);
 
-        bool isLoadingMainResource() const { return m_loadingMainResource; }
-
-        void stopLoadingSubresources();
-
-        void subresourceLoaderFinishedLoadingOnePart(ResourceLoader*);
-
-        void setDeferMainResourceDataLoad(bool defer) { m_deferMainResourceDataLoad = defer; }
-
+        void attachThreadedDataReceiver(PassOwnPtr<blink::WebThreadedDataReceiver>);
         DocumentLoadTiming* timing() { return &m_documentLoadTiming; }
-        void resetTiming() { m_documentLoadTiming = DocumentLoadTiming(); }
 
         ApplicationCacheHost* applicationCacheHost() const { return m_applicationCacheHost.get(); }
-
-        void checkLoadComplete();
 
         bool isRedirect() const { return m_redirectChain.size() > 1; }
         void clearRedirectChain();
         void appendRedirect(const KURL&);
 
     protected:
-        DocumentLoader(const ResourceRequest&, const SubstituteData&);
+        DocumentLoader(LocalFrame*, const ResourceRequest&, const SubstituteData&);
 
-        bool m_deferMainResourceDataLoad;
         Vector<KURL> m_redirectChain;
 
     private:
-        static PassRefPtr<DocumentWriter> createWriterFor(Frame*, const Document* ownerDocument, const KURL&, const AtomicString& mimeType, const AtomicString& encoding, bool userChosen, bool dispatch);
+        static PassRefPtrWillBeRawPtr<DocumentWriter> createWriterFor(LocalFrame*, const Document* ownerDocument, const KURL&, const AtomicString& mimeType, const AtomicString& encoding, bool userChosen, bool dispatch);
 
-        void ensureWriter();
         void ensureWriter(const AtomicString& mimeType, const KURL& overridingURL = KURL());
+        void endWriting(DocumentWriter*);
 
         Document* document() const;
-
-        void setRequest(const ResourceRequest&);
+        FrameLoader* frameLoader() const;
 
         void commitIfReady();
         void commitData(const char* bytes, size_t length);
@@ -180,10 +155,8 @@ namespace WebCore {
         void clearMainResourceLoader();
         ResourceLoader* mainResourceLoader() const;
         void clearMainResourceHandle();
-        PassRefPtr<SharedBuffer> mainResourceData() const;
 
-        void createArchive();
-        void clearArchiveResources();
+        bool maybeCreateArchive();
 
         void prepareSubframeArchiveLoadIfNeeded();
         void addAllArchiveResources(MHTMLArchive*);
@@ -191,10 +164,11 @@ namespace WebCore {
         void willSendRequest(ResourceRequest&, const ResourceResponse&);
         void finishedLoading(double finishTime);
         void mainReceivedError(const ResourceError&);
-        virtual void redirectReceived(Resource*, ResourceRequest&, const ResourceResponse&) OVERRIDE;
-        virtual void responseReceived(Resource*, const ResourceResponse&) OVERRIDE;
-        virtual void dataReceived(Resource*, const char* data, int length) OVERRIDE;
-        virtual void notifyFinished(Resource*) OVERRIDE;
+        virtual void redirectReceived(Resource*, ResourceRequest&, const ResourceResponse&) OVERRIDE FINAL;
+        virtual void updateRequest(Resource*, const ResourceRequest&) OVERRIDE FINAL;
+        virtual void responseReceived(Resource*, const ResourceResponse&) OVERRIDE FINAL;
+        virtual void dataReceived(Resource*, const char* data, int length) OVERRIDE FINAL;
+        virtual void notifyFinished(Resource*) OVERRIDE FINAL;
 
         bool maybeLoadEmpty();
 
@@ -202,30 +176,19 @@ namespace WebCore {
 
         bool shouldContinueForResponse() const;
 
-        typedef Timer<DocumentLoader> DocumentLoaderTimer;
-
-        void handleSubstituteDataLoadSoon();
-        void handleSubstituteDataLoadNow(DocumentLoaderTimer*);
-        void startDataLoadTimer();
-
-        Frame* m_frame;
-        RefPtr<ResourceFetcher> m_fetcher;
+        LocalFrame* m_frame;
+        RefPtrWillBePersistent<ResourceFetcher> m_fetcher;
 
         ResourcePtr<RawResource> m_mainResource;
 
-        RefPtr<DocumentWriter> m_writer;
+        RefPtrWillBePersistent<DocumentWriter> m_writer;
 
         // A reference to actual request used to create the data source.
-        // This should only be used by the resourceLoadDelegate's
-        // identifierForInitialRequest:fromDatasource: method. It is
-        // not guaranteed to remain unchanged, as requests are mutable.
+        // The only part of this request that should change is the url, and
+        // that only in the case of a same-document navigation.
         ResourceRequest m_originalRequest;
 
         SubstituteData m_substituteData;
-
-        // A copy of the original request used to create the data source.
-        // We have to copy the request because requests are mutable.
-        ResourceRequest m_originalRequestCopy;
 
         // The 'working' request. It may be mutated
         // several times from the original request to include additional
@@ -253,9 +216,6 @@ namespace WebCore {
         DocumentLoadTiming m_documentLoadTiming;
 
         double m_timeOfLastDataReceived;
-        unsigned long m_identifierForLoadWithoutResourceLoader;
-
-        DocumentLoaderTimer m_dataLoadTimer;
 
         friend class ApplicationCacheHost;  // for substitute resource delivery
         OwnPtr<ApplicationCacheHost> m_applicationCacheHost;

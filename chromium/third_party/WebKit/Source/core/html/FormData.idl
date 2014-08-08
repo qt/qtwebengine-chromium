@@ -28,14 +28,14 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-[
-    Constructor([Default=Undefined] optional HTMLFormElement form),
-    ImplementedAs=DOMFormData
-] interface FormData {
-    // void append(DOMString name, DOMString value);
-    // void append(DOMString name, Blob value, optional DOMString filename);
-    [Custom] void append([Default=Undefined] optional DOMString name,
-                         [Default=Undefined] optional DOMString value,
-                         [Default=Undefined] optional DOMString filename);
-};
+// https://dvcs.w3.org/hg/xhr/raw-file/tip/Overview.html#formdata
 
+[
+    Constructor(optional HTMLFormElement form),
+    Exposed=Window&Worker,
+    ImplementedAs=DOMFormData,
+    WillBeGarbageCollected,
+] interface FormData {
+    void append(DOMString name, Blob value, optional DOMString filename);
+    void append(DOMString name, DOMString value);
+};

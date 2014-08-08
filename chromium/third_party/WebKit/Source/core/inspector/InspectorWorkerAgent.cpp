@@ -32,7 +32,7 @@
 
 #include "core/inspector/InspectorWorkerAgent.h"
 
-#include "InspectorFrontend.h"
+#include "core/InspectorFrontend.h"
 #include "core/inspector/InspectorState.h"
 #include "core/inspector/InstrumentingAgents.h"
 #include "core/inspector/JSONParser.h"
@@ -49,7 +49,7 @@ static const char workerInspectionEnabled[] = "workerInspectionEnabled";
 static const char autoconnectToWorkers[] = "autoconnectToWorkers";
 };
 
-class InspectorWorkerAgent::WorkerFrontendChannel : public WorkerGlobalScopeProxy::PageInspector {
+class InspectorWorkerAgent::WorkerFrontendChannel FINAL : public WorkerGlobalScopeProxy::PageInspector {
     WTF_MAKE_FAST_ALLOCATED;
 public:
     explicit WorkerFrontendChannel(InspectorFrontend* frontend, WorkerGlobalScopeProxy* proxy)
@@ -85,7 +85,7 @@ public:
 
 private:
     // WorkerGlobalScopeProxy::PageInspector implementation
-    virtual void dispatchMessageFromWorker(const String& message)
+    virtual void dispatchMessageFromWorker(const String& message) OVERRIDE
     {
         RefPtr<JSONValue> value = parseJSON(message);
         if (!value)
@@ -105,21 +105,25 @@ private:
 
 int InspectorWorkerAgent::WorkerFrontendChannel::s_nextId = 1;
 
-PassOwnPtr<InspectorWorkerAgent> InspectorWorkerAgent::create(InstrumentingAgents* instrumentingAgents, InspectorCompositeState* inspectorState)
+PassOwnPtr<InspectorWorkerAgent> InspectorWorkerAgent::create()
 {
-    return adoptPtr(new InspectorWorkerAgent(instrumentingAgents, inspectorState));
+    return adoptPtr(new InspectorWorkerAgent());
 }
 
-InspectorWorkerAgent::InspectorWorkerAgent(InstrumentingAgents* instrumentingAgents, InspectorCompositeState* inspectorState)
-    : InspectorBaseAgent<InspectorWorkerAgent>("Worker", instrumentingAgents, inspectorState)
+InspectorWorkerAgent::InspectorWorkerAgent()
+    : InspectorBaseAgent<InspectorWorkerAgent>("Worker")
     , m_inspectorFrontend(0)
 {
-    m_instrumentingAgents->setInspectorWorkerAgent(this);
 }
 
 InspectorWorkerAgent::~InspectorWorkerAgent()
 {
     m_instrumentingAgents->setInspectorWorkerAgent(0);
+}
+
+void InspectorWorkerAgent::init()
+{
+    m_instrumentingAgents->setInspectorWorkerAgent(this);
 }
 
 void InspectorWorkerAgent::setFrontend(InspectorFrontend* frontend)

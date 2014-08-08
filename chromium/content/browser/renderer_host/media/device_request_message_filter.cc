@@ -5,26 +5,21 @@
 #include "content/browser/renderer_host/media/device_request_message_filter.h"
 
 #include "content/browser/browser_main_loop.h"
+#include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/renderer_host/media/media_stream_manager.h"
 #include "content/common/media/media_stream_messages.h"
 #include "content/public/browser/resource_context.h"
-
-// Clears the MediaStreamDevice.name from all devices in |device_list|.
-static void ClearDeviceLabels(content::StreamDeviceInfoArray* devices) {
-  for (content::StreamDeviceInfoArray::iterator device_itr = devices->begin();
-       device_itr != devices->end();
-       ++device_itr) {
-    device_itr->device.name.clear();
-  }
-}
 
 namespace content {
 
 DeviceRequestMessageFilter::DeviceRequestMessageFilter(
     ResourceContext* resource_context,
-    MediaStreamManager* media_stream_manager)
-    : resource_context_(resource_context),
-      media_stream_manager_(media_stream_manager) {
+    MediaStreamManager* media_stream_manager,
+    int render_process_id)
+    : BrowserMessageFilter(MediaStreamMsgStart),
+      resource_context_(resource_context),
+      media_stream_manager_(media_stream_manager),
+      render_process_id_(render_process_id) {
   DCHECK(resource_context);
   DCHECK(media_stream_manager);
 }
@@ -62,7 +57,7 @@ void DeviceRequestMessageFilter::DevicesEnumerated(
     int page_request_id,
     const std::string& label,
     const StreamDeviceInfoArray& new_devices) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   // Look up the DeviceRequest by id.
   DeviceRequestList::iterator request_it = requests_.begin();
@@ -94,12 +89,6 @@ void DeviceRequestMessageFilter::DevicesEnumerated(
     return;
   }
 
-  // Query for mic and camera permissions.
-  if (!resource_context_->AllowMicAccess(request_it->origin))
-    ClearDeviceLabels(audio_devices);
-  if (!resource_context_->AllowCameraAccess(request_it->origin))
-    ClearDeviceLabels(video_devices);
-
   // Both audio and video devices are ready for copying.
   StreamDeviceInfoArray all_devices = *audio_devices;
   all_devices.insert(
@@ -112,13 +101,13 @@ void DeviceRequestMessageFilter::DevicesEnumerated(
   requests_.erase(request_it);
 }
 
-bool DeviceRequestMessageFilter::OnMessageReceived(const IPC::Message& message,
-                                                   bool* message_was_ok) {
+bool DeviceRequestMessageFilter::OnMessageReceived(
+    const IPC::Message& message) {
   bool handled = true;
-  IPC_BEGIN_MESSAGE_MAP_EX(DeviceRequestMessageFilter, message, *message_was_ok)
+  IPC_BEGIN_MESSAGE_MAP(DeviceRequestMessageFilter, message)
     IPC_MESSAGE_HANDLER(MediaStreamHostMsg_GetSources, OnGetSources)
     IPC_MESSAGE_UNHANDLED(handled = false)
-  IPC_END_MESSAGE_MAP_EX()
+  IPC_END_MESSAGE_MAP()
   return handled;
 }
 
@@ -134,16 +123,24 @@ void DeviceRequestMessageFilter::OnChannelClosing() {
 
 void DeviceRequestMessageFilter::OnGetSources(int request_id,
                                               const GURL& security_origin) {
+  if (!ChildProcessSecurityPolicyImpl::GetInstance()->CanRequestURL(
+          render_process_id_, security_origin)) {
+    LOG(ERROR) << "Disallowed URL in DRMF::OnGetSources: " << security_origin;
+    return;
+  }
+
   // Make request to get audio devices.
   const std::string& audio_label = media_stream_manager_->EnumerateDevices(
       this, -1, -1, resource_context_->GetMediaDeviceIDSalt(), -1,
-      MEDIA_DEVICE_AUDIO_CAPTURE, security_origin);
+      MEDIA_DEVICE_AUDIO_CAPTURE, security_origin,
+      resource_context_->AllowMicAccess(security_origin));
   DCHECK(!audio_label.empty());
 
   // Make request for video devices.
   const std::string& video_label = media_stream_manager_->EnumerateDevices(
       this, -1, -1, resource_context_->GetMediaDeviceIDSalt(), -1,
-      MEDIA_DEVICE_VIDEO_CAPTURE, security_origin);
+      MEDIA_DEVICE_VIDEO_CAPTURE, security_origin,
+      resource_context_->AllowCameraAccess(security_origin));
   DCHECK(!video_label.empty());
 
   requests_.push_back(DeviceRequest(

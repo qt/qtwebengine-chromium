@@ -37,8 +37,11 @@ class TestDialog : public DialogDelegateView, public ButtonListener {
   }
 
   // DialogDelegateView overrides:
-  virtual gfx::Size GetPreferredSize() OVERRIDE { return gfx::Size(200, 200); }
-  virtual string16 GetWindowTitle() const OVERRIDE { return title_; }
+  virtual gfx::Size GetPreferredSize() const OVERRIDE {
+    return gfx::Size(200, 200);
+  }
+  virtual base::string16 GetWindowTitle() const OVERRIDE { return title_; }
+  virtual bool UseNewStyleForThisDialog() const OVERRIDE { return true; }
 
   // ButtonListener override:
   virtual void ButtonPressed(Button* sender, const ui::Event& event) OVERRIDE {
@@ -73,7 +76,7 @@ class TestDialog : public DialogDelegateView, public ButtonListener {
     GetWidget()->Close();
   }
 
-  void set_title(const string16& title) { title_ = title; }
+  void set_title(const base::string16& title) { title_ = title; }
 
  private:
   bool canceled_;
@@ -81,7 +84,7 @@ class TestDialog : public DialogDelegateView, public ButtonListener {
   // Prevent the dialog from closing, for repeated ok and cancel button clicks.
   bool closeable_;
   Button* last_pressed_button_;
-  string16 title_;
+  base::string16 title_;
 
   DISALLOW_COPY_AND_ASSIGN(TestDialog);
 };
@@ -121,21 +124,21 @@ TEST_F(DialogTest, DefaultButtons) {
   dialog()->PressEnterAndCheckStates(ok_button);
 
   // Focus another button in the dialog, it should become the default.
-  LabelButton* button_1 = new LabelButton(dialog(), string16());
+  LabelButton* button_1 = new LabelButton(dialog(), base::string16());
   client_view->AddChildView(button_1);
   client_view->OnWillChangeFocus(ok_button, button_1);
   EXPECT_TRUE(button_1->is_default());
   dialog()->PressEnterAndCheckStates(button_1);
 
   // Focus a Checkbox (not a push button), OK should become the default again.
-  Checkbox* checkbox = new Checkbox(string16());
+  Checkbox* checkbox = new Checkbox(base::string16());
   client_view->AddChildView(checkbox);
   client_view->OnWillChangeFocus(button_1, checkbox);
   EXPECT_FALSE(button_1->is_default());
   dialog()->PressEnterAndCheckStates(ok_button);
 
   // Focus yet another button in the dialog, it should become the default.
-  LabelButton* button_2 = new LabelButton(dialog(), string16());
+  LabelButton* button_2 = new LabelButton(dialog(), base::string16());
   client_view->AddChildView(button_2);
   client_view->OnWillChangeFocus(checkbox, button_2);
   EXPECT_FALSE(button_1->is_default());
@@ -205,21 +208,22 @@ TEST_F(DialogTest, HitTest) {
   }
 }
 
-TEST_F(DialogTest, InitialBoundsAccommodateTitle) {
-  TestDialog* titled_dialog(new TestDialog());
-  titled_dialog->set_title(ASCIIToUTF16("Title"));
-  DialogDelegate::CreateDialogWidget(titled_dialog, GetContext(), NULL);
+TEST_F(DialogTest, BoundsAccommodateTitle) {
+  TestDialog* dialog2(new TestDialog());
+  dialog2->set_title(base::ASCIIToUTF16("Title"));
+  DialogDelegate::CreateDialogWidget(dialog2, GetContext(), NULL);
 
   // Titled dialogs have taller initial frame bounds than untitled dialogs.
-  EXPECT_GT(titled_dialog->GetWidget()->GetWindowBoundsInScreen().height(),
-            dialog()->GetWidget()->GetWindowBoundsInScreen().height());
+  View* frame1 = dialog()->GetWidget()->non_client_view()->frame_view();
+  View* frame2 = dialog2->GetWidget()->non_client_view()->frame_view();
+  EXPECT_LT(frame1->GetPreferredSize().height(),
+            frame2->GetPreferredSize().height());
 
-  // Giving the default test dialog a title will make the bounds the same.
-  dialog()->set_title(ASCIIToUTF16("Title"));
+  // Giving the default test dialog a title will yield the same bounds.
+  dialog()->set_title(base::ASCIIToUTF16("Title"));
   dialog()->GetWidget()->UpdateWindowTitle();
-  View* frame = dialog()->GetWidget()->non_client_view()->frame_view();
-  EXPECT_EQ(titled_dialog->GetWidget()->GetWindowBoundsInScreen().height(),
-            frame->GetPreferredSize().height());
+  EXPECT_EQ(frame1->GetPreferredSize().height(),
+            frame2->GetPreferredSize().height());
 }
 
 }  // namespace views

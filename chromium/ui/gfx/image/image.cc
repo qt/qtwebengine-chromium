@@ -5,6 +5,7 @@
 #include "ui/gfx/image/image.h"
 
 #include <algorithm>
+#include <set>
 
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
@@ -12,21 +13,14 @@
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/image/image_png_rep.h"
 #include "ui/gfx/image/image_skia.h"
+#include "ui/gfx/image/image_skia_source.h"
 #include "ui/gfx/size.h"
 
 #if !defined(OS_IOS)
 #include "ui/gfx/codec/png_codec.h"
 #endif
 
-#if defined(TOOLKIT_GTK)
-#include <gdk-pixbuf/gdk-pixbuf.h>
-#include <gdk/gdk.h>
-#include <glib-object.h>
-#include "ui/gfx/canvas.h"
-#include "ui/gfx/gtk_util.h"
-#include "ui/gfx/image/cairo_cached_surface.h"
-#include "ui/gfx/scoped_gobject.h"
-#elif defined(OS_IOS)
+#if defined(OS_IOS)
 #include "base/mac/foundation_util.h"
 #include "ui/gfx/image/image_skia_util_ios.h"
 #elif defined(OS_MACOSX)
@@ -38,100 +32,25 @@ namespace gfx {
 
 namespace internal {
 
-#if defined(TOOLKIT_GTK)
-const ImageSkia ImageSkiaFromGdkPixbuf(GdkPixbuf* pixbuf) {
-  CHECK(pixbuf);
-  gfx::Canvas canvas(gfx::Size(gdk_pixbuf_get_width(pixbuf),
-                               gdk_pixbuf_get_height(pixbuf)),
-                     1.0f,
-                     false);
-  skia::ScopedPlatformPaint scoped_platform_paint(canvas.sk_canvas());
-  cairo_t* cr = scoped_platform_paint.GetPlatformSurface();
-  gdk_cairo_set_source_pixbuf(cr, pixbuf, 0, 0);
-  cairo_paint(cr);
-  return ImageSkia(canvas.ExtractImageRep());
-}
-
-// Returns a 16x16 red pixbuf to visually show error in decoding PNG.
-// Also logs error to console.
-GdkPixbuf* GetErrorPixbuf() {
-  LOG(ERROR) << "Unable to decode PNG.";
-  GdkPixbuf* pixbuf = gdk_pixbuf_new(GDK_COLORSPACE_RGB, TRUE, 8, 16, 16);
-  gdk_pixbuf_fill(pixbuf, 0xff0000ff);
-  return pixbuf;
-}
-
-GdkPixbuf* GdkPixbufFromPNG(
-    const std::vector<gfx::ImagePNGRep>& image_png_reps) {
-  scoped_refptr<base::RefCountedMemory> png_bytes(NULL);
-  for (size_t i = 0; i < image_png_reps.size(); ++i) {
-    if (image_png_reps[i].scale == 1.0f)
-      png_bytes = image_png_reps[i].raw_data;
-  }
-
-  if (!png_bytes.get())
-    return GetErrorPixbuf();
-
-  GdkPixbuf* pixbuf = NULL;
-  ui::ScopedGObject<GdkPixbufLoader>::Type loader(gdk_pixbuf_loader_new());
-
-  bool ok = gdk_pixbuf_loader_write(loader.get(),
-      reinterpret_cast<const guint8*>(png_bytes->front()), png_bytes->size(),
-      NULL);
-
-  // Calling gdk_pixbuf_loader_close forces the data to be parsed by the
-  // loader. This must be done before calling gdk_pixbuf_loader_get_pixbuf.
-  if (ok)
-    ok = gdk_pixbuf_loader_close(loader.get(), NULL);
-  if (ok)
-    pixbuf = gdk_pixbuf_loader_get_pixbuf(loader.get());
-
-  if (pixbuf) {
-    // The pixbuf is owned by the scoped loader which will delete its ref when
-    // it goes out of scope. Add a ref so that the pixbuf still exists.
-    g_object_ref(pixbuf);
-  } else {
-    return GetErrorPixbuf();
-  }
-
-  return pixbuf;
-}
-
-scoped_refptr<base::RefCountedMemory> Get1xPNGBytesFromPixbuf(
-    GdkPixbuf* pixbuf) {
-  gchar* image = NULL;
-  gsize image_size;
-  GError* error = NULL;
-  CHECK(gdk_pixbuf_save_to_buffer(
-      pixbuf, &image, &image_size, "png", &error, NULL));
-  scoped_refptr<base::RefCountedBytes> png_bytes(
-      new base::RefCountedBytes());
-  png_bytes->data().assign(image, image + image_size);
-  g_free(image);
-  return png_bytes;
-}
-
-#endif // defined(TOOLKIT_GTK)
-
 #if defined(OS_IOS)
 scoped_refptr<base::RefCountedMemory> Get1xPNGBytesFromUIImage(
     UIImage* uiimage);
 // Caller takes ownership of the returned UIImage.
 UIImage* CreateUIImageFromPNG(
-    const std::vector<gfx::ImagePNGRep>& image_png_reps);
+    const std::vector<ImagePNGRep>& image_png_reps);
 gfx::Size UIImageSize(UIImage* image);
 #elif defined(OS_MACOSX)
 scoped_refptr<base::RefCountedMemory> Get1xPNGBytesFromNSImage(
     NSImage* nsimage);
 // Caller takes ownership of the returned NSImage.
-NSImage* NSImageFromPNG(const std::vector<gfx::ImagePNGRep>& image_png_reps,
+NSImage* NSImageFromPNG(const std::vector<ImagePNGRep>& image_png_reps,
                         CGColorSpaceRef color_space);
 gfx::Size NSImageSize(NSImage* image);
 #endif // defined(OS_MACOSX)
 
 #if defined(OS_IOS)
 ImageSkia* ImageSkiaFromPNG(
-    const std::vector<gfx::ImagePNGRep>& image_png_reps);
+    const std::vector<ImagePNGRep>& image_png_reps);
 scoped_refptr<base::RefCountedMemory> Get1xPNGBytesFromImageSkia(
     const ImageSkia* skia);
 #else
@@ -141,32 +60,92 @@ ImageSkia* GetErrorImageSkia() {
   SkBitmap bitmap;
   bitmap.setConfig(SkBitmap::kARGB_8888_Config, 16, 16);
   bitmap.allocPixels();
-  bitmap.eraseRGB(0xff, 0, 0);
-  return new gfx::ImageSkia(gfx::ImageSkiaRep(bitmap, 1.0f));
+  bitmap.eraseARGB(0xff, 0xff, 0, 0);
+  return new ImageSkia(ImageSkiaRep(bitmap, 1.0f));
 }
 
-ImageSkia* ImageSkiaFromPNG(
-    const std::vector<gfx::ImagePNGRep>& image_png_reps) {
-  if (image_png_reps.empty())
-    return GetErrorImageSkia();
+class PNGImageSource : public ImageSkiaSource {
+ public:
+  PNGImageSource() {}
+  virtual ~PNGImageSource() {}
 
-  scoped_ptr<gfx::ImageSkia> image_skia(new ImageSkia());
-  for (size_t i = 0; i < image_png_reps.size(); ++i) {
-    scoped_refptr<base::RefCountedMemory> raw_data =
-        image_png_reps[i].raw_data;
+  virtual ImageSkiaRep GetImageForScale(float scale) OVERRIDE {
+    if (image_skia_reps_.empty())
+      return ImageSkiaRep();
+
+    const ImageSkiaRep* rep = NULL;
+    // gfx::ImageSkia passes one of the resource scale factors. The source
+    // should return:
+    // 1) The ImageSkiaRep with the highest scale if all available
+    // scales are smaller than |scale|.
+    // 2) The ImageSkiaRep with the smallest one that is larger than |scale|.
+    for (ImageSkiaRepSet::const_iterator iter = image_skia_reps_.begin();
+         iter != image_skia_reps_.end(); ++iter) {
+      if ((*iter).scale() == scale)
+        return (*iter);
+      if (!rep || rep->scale() < (*iter).scale())
+        rep = &(*iter);
+      if (rep->scale() >= scale)
+        break;
+    }
+    return rep ? *rep : ImageSkiaRep();
+  }
+
+  const gfx::Size size() const {
+    return size_;
+  }
+
+  bool AddPNGData(const ImagePNGRep& png_rep) {
+    const gfx::ImageSkiaRep rep = ToImageSkiaRep(png_rep);
+    if (rep.is_null())
+      return false;
+    if (size_.IsEmpty())
+      size_ = gfx::Size(rep.GetWidth(), rep.GetHeight());
+    image_skia_reps_.insert(rep);
+    return true;
+  }
+
+  static ImageSkiaRep ToImageSkiaRep(const ImagePNGRep& png_rep) {
+    scoped_refptr<base::RefCountedMemory> raw_data = png_rep.raw_data;
     CHECK(raw_data.get());
     SkBitmap bitmap;
-    if (!gfx::PNGCodec::Decode(raw_data->front(), raw_data->size(),
+    if (!PNGCodec::Decode(raw_data->front(), raw_data->size(),
                                &bitmap)) {
-      LOG(ERROR) << "Unable to decode PNG for "
-                 << image_png_reps[i].scale
-                 << ".";
-      return GetErrorImageSkia();
+      LOG(ERROR) << "Unable to decode PNG for " << png_rep.scale << ".";
+      return ImageSkiaRep();
     }
-    image_skia->AddRepresentation(gfx::ImageSkiaRep(
-        bitmap, image_png_reps[i].scale));
+    return ImageSkiaRep(bitmap, png_rep.scale);
   }
-  return image_skia.release();
+
+ private:
+  struct Compare {
+    bool operator()(const ImageSkiaRep& rep1, const ImageSkiaRep& rep2) {
+      return rep1.scale() < rep2.scale();
+    }
+  };
+
+  typedef std::set<ImageSkiaRep, Compare> ImageSkiaRepSet;
+  ImageSkiaRepSet image_skia_reps_;
+  gfx::Size size_;
+
+  DISALLOW_COPY_AND_ASSIGN(PNGImageSource);
+};
+
+ImageSkia* ImageSkiaFromPNG(
+    const std::vector<ImagePNGRep>& image_png_reps) {
+  if (image_png_reps.empty())
+    return GetErrorImageSkia();
+  scoped_ptr<PNGImageSource> image_source(new PNGImageSource);
+
+  for (size_t i = 0; i < image_png_reps.size(); ++i) {
+    if (!image_source->AddPNGData(image_png_reps[i]))
+      return GetErrorImageSkia();
+  }
+  const gfx::Size& size = image_source->size();
+  DCHECK(!size.IsEmpty());
+  if (size.IsEmpty())
+    return GetErrorImageSkia();
+  return new ImageSkia(image_source.release(), size);
 }
 
 scoped_refptr<base::RefCountedMemory> Get1xPNGBytesFromImageSkia(
@@ -175,7 +154,7 @@ scoped_refptr<base::RefCountedMemory> Get1xPNGBytesFromImageSkia(
 
   scoped_refptr<base::RefCountedBytes> png_bytes(new base::RefCountedBytes());
   if (image_skia_rep.scale() != 1.0f ||
-      !gfx::PNGCodec::EncodeBGRASkBitmap(image_skia_rep.sk_bitmap(), false,
+      !PNGCodec::EncodeBGRASkBitmap(image_skia_rep.sk_bitmap(), false,
           &png_bytes->data())) {
     return NULL;
   }
@@ -185,8 +164,6 @@ scoped_refptr<base::RefCountedMemory> Get1xPNGBytesFromImageSkia(
 
 class ImageRepPNG;
 class ImageRepSkia;
-class ImageRepGdk;
-class ImageRepCairo;
 class ImageRepCocoa;
 class ImageRepCocoaTouch;
 
@@ -212,18 +189,6 @@ class ImageRep {
     CHECK_EQ(type_, Image::kImageRepSkia);
     return reinterpret_cast<ImageRepSkia*>(this);
   }
-
-#if defined(TOOLKIT_GTK)
-  ImageRepGdk* AsImageRepGdk() {
-    CHECK_EQ(type_, Image::kImageRepGdk);
-    return reinterpret_cast<ImageRepGdk*>(this);
-  }
-
-  ImageRepCairo* AsImageRepCairo() {
-    CHECK_EQ(type_, Image::kImageRepCairo);
-    return reinterpret_cast<ImageRepCairo*>(this);
-  }
-#endif
 
 #if defined(OS_IOS)
   ImageRepCocoaTouch* AsImageRepCocoaTouch() {
@@ -326,77 +291,6 @@ class ImageRepSkia : public ImageRep {
   DISALLOW_COPY_AND_ASSIGN(ImageRepSkia);
 };
 
-#if defined(TOOLKIT_GTK)
-class ImageRepGdk : public ImageRep {
- public:
-  explicit ImageRepGdk(GdkPixbuf* pixbuf)
-      : ImageRep(Image::kImageRepGdk),
-        pixbuf_(pixbuf) {
-    CHECK(pixbuf);
-  }
-
-  virtual ~ImageRepGdk() {
-    if (pixbuf_) {
-      g_object_unref(pixbuf_);
-      pixbuf_ = NULL;
-    }
-  }
-
-  virtual int Width() const OVERRIDE {
-    return gdk_pixbuf_get_width(pixbuf_);
-  }
-
-  virtual int Height() const OVERRIDE {
-    return gdk_pixbuf_get_height(pixbuf_);
-  }
-
-  virtual gfx::Size Size() const OVERRIDE {
-    return gfx::Size(Width(), Height());
-  }
-
-  GdkPixbuf* pixbuf() const { return pixbuf_; }
-
- private:
-  GdkPixbuf* pixbuf_;
-
-  DISALLOW_COPY_AND_ASSIGN(ImageRepGdk);
-};
-
-// Represents data that lives on the display server instead of in the client.
-class ImageRepCairo : public ImageRep {
- public:
-  explicit ImageRepCairo(GdkPixbuf* pixbuf)
-      : ImageRep(Image::kImageRepCairo),
-        cairo_cache_(new CairoCachedSurface) {
-    CHECK(pixbuf);
-    cairo_cache_->UsePixbuf(pixbuf);
-  }
-
-  virtual ~ImageRepCairo() {
-    delete cairo_cache_;
-  }
-
-  virtual int Width() const OVERRIDE {
-    return cairo_cache_->Width();
-  }
-
-  virtual int Height() const OVERRIDE {
-    return cairo_cache_->Height();
-  }
-
-  virtual gfx::Size Size() const OVERRIDE {
-    return gfx::Size(Width(), Height());
-  }
-
-  CairoCachedSurface* surface() const { return cairo_cache_; }
-
- private:
-  CairoCachedSurface* cairo_cache_;
-
-  DISALLOW_COPY_AND_ASSIGN(ImageRepCairo);
-};
-#endif  // defined(TOOLKIT_GTK)
-
 #if defined(OS_IOS)
 class ImageRepCocoaTouch : public ImageRep {
  public:
@@ -470,7 +364,7 @@ class ImageRepCocoa : public ImageRep {
 // ImageReps. This way, the Image can be cheaply copied.
 class ImageStorage : public base::RefCounted<ImageStorage> {
  public:
-  ImageStorage(gfx::Image::RepresentationType default_type)
+  ImageStorage(Image::RepresentationType default_type)
       : default_representation_type_(default_type),
 #if defined(OS_MACOSX) && !defined(OS_IOS)
         default_representation_color_space_(
@@ -479,10 +373,10 @@ class ImageStorage : public base::RefCounted<ImageStorage> {
         representations_deleter_(&representations_) {
   }
 
-  gfx::Image::RepresentationType default_representation_type() {
+  Image::RepresentationType default_representation_type() {
     return default_representation_type_;
   }
-  gfx::Image::RepresentationMap& representations() { return representations_; }
+  Image::RepresentationMap& representations() { return representations_; }
 
 #if defined(OS_MACOSX) && !defined(OS_IOS)
   void set_default_representation_color_space(CGColorSpaceRef color_space) {
@@ -500,7 +394,7 @@ class ImageStorage : public base::RefCounted<ImageStorage> {
 
   // The type of image that was passed to the constructor. This key will always
   // exist in the |representations_| map.
-  gfx::Image::RepresentationType default_representation_type_;
+  Image::RepresentationType default_representation_type_;
 
 #if defined(OS_MACOSX) && !defined(OS_IOS)
   // The default representation's colorspace. This is used for converting to
@@ -512,7 +406,7 @@ class ImageStorage : public base::RefCounted<ImageStorage> {
 
   // All the representations of an Image. Size will always be at least one, with
   // more for any converted representations.
-  gfx::Image::RepresentationMap representations_;
+  Image::RepresentationMap representations_;
 
   STLValueDeleter<Image::RepresentationMap> representations_deleter_;
 
@@ -550,16 +444,6 @@ Image::Image(const ImageSkia& image) {
   }
 }
 
-#if defined(TOOLKIT_GTK)
-Image::Image(GdkPixbuf* pixbuf) {
-  if (pixbuf) {
-    storage_ = new internal::ImageStorage(Image::kImageRepGdk);
-    internal::ImageRepGdk* rep = new internal::ImageRepGdk(pixbuf);
-    AddRepresentation(rep);
-  }
-}
-#endif
-
 #if defined(OS_IOS)
 Image::Image(UIImage* image)
     : storage_(new internal::ImageStorage(Image::kImageRepCocoaTouch)) {
@@ -591,20 +475,29 @@ Image::~Image() {
 
 // static
 Image Image::CreateFrom1xBitmap(const SkBitmap& bitmap) {
-  return gfx::Image(ImageSkia::CreateFrom1xBitmap(bitmap));
+  return Image(ImageSkia::CreateFrom1xBitmap(bitmap));
 }
 
 // static
 Image Image::CreateFrom1xPNGBytes(const unsigned char* input,
                                   size_t input_size) {
   if (input_size == 0u)
-    return gfx::Image();
+    return Image();
 
   scoped_refptr<base::RefCountedBytes> raw_data(new base::RefCountedBytes());
   raw_data->data().assign(input, input + input_size);
-  std::vector<gfx::ImagePNGRep> image_reps;
-  image_reps.push_back(ImagePNGRep(raw_data, 1.0f));
-  return gfx::Image(image_reps);
+
+  return CreateFrom1xPNGBytes(raw_data);
+}
+
+Image Image::CreateFrom1xPNGBytes(
+    const scoped_refptr<base::RefCountedMemory>& input) {
+  if (!input.get() || input->size() == 0u)
+    return Image();
+
+  std::vector<ImagePNGRep> image_reps;
+  image_reps.push_back(ImagePNGRep(input, 1.0f));
+  return Image(image_reps);
 }
 
 const SkBitmap* Image::ToSkBitmap() const {
@@ -623,15 +516,7 @@ const ImageSkia* Image::ToImageSkia() const {
             internal::ImageSkiaFromPNG(png_rep->image_reps()));
         break;
       }
-#if defined(TOOLKIT_GTK)
-      case kImageRepGdk: {
-        internal::ImageRepGdk* native_rep =
-            GetRepresentation(kImageRepGdk, true)->AsImageRepGdk();
-        rep = new internal::ImageRepSkia(new ImageSkia(
-            internal::ImageSkiaFromGdkPixbuf(native_rep->pixbuf())));
-        break;
-      }
-#elif defined(OS_IOS)
+#if defined(OS_IOS)
       case kImageRepCocoaTouch: {
         internal::ImageRepCocoaTouch* native_rep =
             GetRepresentation(kImageRepCocoaTouch, true)
@@ -657,47 +542,6 @@ const ImageSkia* Image::ToImageSkia() const {
   }
   return rep->AsImageRepSkia()->image();
 }
-
-#if defined(TOOLKIT_GTK)
-GdkPixbuf* Image::ToGdkPixbuf() const {
-  internal::ImageRep* rep = GetRepresentation(kImageRepGdk, false);
-  if (!rep) {
-    switch (DefaultRepresentationType()) {
-      case kImageRepPNG: {
-        internal::ImageRepPNG* png_rep =
-            GetRepresentation(kImageRepPNG, true)->AsImageRepPNG();
-        rep = new internal::ImageRepGdk(internal::GdkPixbufFromPNG(
-            png_rep->image_reps()));
-        break;
-      }
-      case kImageRepSkia: {
-        internal::ImageRepSkia* skia_rep =
-            GetRepresentation(kImageRepSkia, true)->AsImageRepSkia();
-        rep = new internal::ImageRepGdk(gfx::GdkPixbufFromSkBitmap(
-            *skia_rep->image()->bitmap()));
-        break;
-      }
-      default:
-        NOTREACHED();
-    }
-    CHECK(rep);
-    AddRepresentation(rep);
-  }
-  return rep->AsImageRepGdk()->pixbuf();
-}
-
-CairoCachedSurface* const Image::ToCairo() const {
-  internal::ImageRep* rep = GetRepresentation(kImageRepCairo, false);
-  if (!rep) {
-    // Handle any-to-Cairo conversion. This may create and cache an intermediate
-    // pixbuf before sending the data to the display server.
-    rep = new internal::ImageRepCairo(ToGdkPixbuf());
-    CHECK(rep);
-    AddRepresentation(rep);
-  }
-  return rep->AsImageRepCairo()->surface();
-}
-#endif
 
 #if defined(OS_IOS)
 UIImage* Image::ToUIImage() const {
@@ -768,7 +612,7 @@ scoped_refptr<base::RefCountedMemory> Image::As1xPNGBytes() const {
   internal::ImageRep* rep = GetRepresentation(kImageRepPNG, false);
 
   if (rep) {
-    const std::vector<gfx::ImagePNGRep>& image_png_reps =
+    const std::vector<ImagePNGRep>& image_png_reps =
         rep->AsImageRepPNG()->image_reps();
     for (size_t i = 0; i < image_png_reps.size(); ++i) {
       if (image_png_reps[i].scale == 1.0f)
@@ -779,14 +623,7 @@ scoped_refptr<base::RefCountedMemory> Image::As1xPNGBytes() const {
 
   scoped_refptr<base::RefCountedMemory> png_bytes(NULL);
   switch (DefaultRepresentationType()) {
-#if defined(TOOLKIT_GTK)
-    case kImageRepGdk: {
-      internal::ImageRepGdk* gdk_rep =
-          GetRepresentation(kImageRepGdk, true)->AsImageRepGdk();
-      png_bytes = internal::Get1xPNGBytesFromPixbuf(gdk_rep->pixbuf());
-      break;
-    }
-#elif defined(OS_IOS)
+#if defined(OS_IOS)
     case kImageRepCocoaTouch: {
       internal::ImageRepCocoaTouch* cocoa_touch_rep =
           GetRepresentation(kImageRepCocoaTouch, true)
@@ -826,7 +663,7 @@ scoped_refptr<base::RefCountedMemory> Image::As1xPNGBytes() const {
   //   final type eg (converting from ImageRepSkia to ImageRepPNG to get an
   //   ImageRepCocoa).
   std::vector<ImagePNGRep> image_png_reps;
-  image_png_reps.push_back(gfx::ImagePNGRep(png_bytes, 1.0f));
+  image_png_reps.push_back(ImagePNGRep(png_bytes, 1.0f));
   rep = new internal::ImageRepPNG(image_png_reps);
   AddRepresentation(rep);
   return png_bytes;
@@ -860,14 +697,6 @@ ImageSkia* Image::CopyImageSkia() const {
 SkBitmap* Image::CopySkBitmap() const {
   return new SkBitmap(*ToSkBitmap());
 }
-
-#if defined(TOOLKIT_GTK)
-GdkPixbuf* Image::CopyGdkPixbuf() const {
-  GdkPixbuf* pixbuf = ToGdkPixbuf();
-  g_object_ref(pixbuf);
-  return pixbuf;
-}
-#endif
 
 #if defined(OS_IOS)
 UIImage* Image::CopyUIImage() const {
@@ -916,7 +745,7 @@ gfx::Size Image::Size() const {
   return GetRepresentation(DefaultRepresentationType(), true)->Size();
 }
 
-void Image::SwapRepresentations(gfx::Image* other) {
+void Image::SwapRepresentations(Image* other) {
   storage_.swap(other->storage_);
 }
 
@@ -929,11 +758,7 @@ void Image::SetSourceColorSpace(CGColorSpaceRef color_space) {
 
 Image::RepresentationType Image::DefaultRepresentationType() const {
   CHECK(storage_.get());
-  RepresentationType default_type = storage_->default_representation_type();
-  // The conversions above assume that the default representation type is never
-  // kImageRepCairo.
-  DCHECK_NE(default_type, kImageRepCairo);
-  return default_type;
+  return storage_->default_representation_type();
 }
 
 internal::ImageRep* Image::GetRepresentation(

@@ -27,30 +27,21 @@
 
 [
     EventConstructor,
-    GlobalContext=Window&WorkerGlobalScope,
+    Exposed=Window&Worker,
     RaisesException=Constructor,
+    Custom=Wrap,
 ] interface MessageEvent : Event {
     [InitializedByEventConstructor] readonly attribute DOMString origin;
     [InitializedByEventConstructor] readonly attribute DOMString lastEventId;
     [InitializedByEventConstructor] readonly attribute EventTarget? source; // May be a Window or a MessagePort
     [InitializedByEventConstructor, Custom=Getter] readonly attribute any data;
     [InitializedByEventConstructor] readonly attribute MessagePort[] ports;
-    [Custom] void initMessageEvent([Default=Undefined] optional DOMString typeArg,
+    [Custom, MeasureAs=InitMessageEvent] void initMessageEvent([Default=Undefined] optional DOMString typeArg,
                                    [Default=Undefined] optional boolean canBubbleArg,
                                    [Default=Undefined] optional boolean cancelableArg,
                                    [Default=Undefined] optional any dataArg,
                                    [Default=Undefined] optional DOMString originArg,
                                    [Default=Undefined] optional DOMString lastEventIdArg,
                                    [Default=Undefined] optional Window sourceArg,
-                                   [Default=Undefined] optional Array messagePorts);
-
-    [Custom] void webkitInitMessageEvent([Default=Undefined] optional DOMString typeArg,
-                                         [Default=Undefined] optional boolean canBubbleArg,
-                                         [Default=Undefined] optional boolean cancelableArg,
-                                         [Default=Undefined] optional any dataArg,
-                                         [Default=Undefined] optional DOMString originArg,
-                                         [Default=Undefined] optional DOMString lastEventIdArg,
-                                         [Default=Undefined] optional Window sourceArg,
-                                         [Default=Undefined] optional Array transferables);
+                                   [Default=Undefined] optional MessagePort[] messagePorts);
 };
-

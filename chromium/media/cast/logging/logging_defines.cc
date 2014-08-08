@@ -6,96 +6,46 @@
 
 #include "base/logging.h"
 
+#define ENUM_TO_STRING(enum) \
+  case enum:                 \
+    return #enum
+
 namespace media {
 namespace cast {
 
-CastLoggingConfig::CastLoggingConfig()
-    : enable_data_collection(false),
-      enable_uma_stats(false),
-      enable_tracing(false) {}
-
-CastLoggingConfig::~CastLoggingConfig() {}
-
-CastLoggingConfig GetDefaultCastLoggingConfig() {
-  CastLoggingConfig config;
-  return config;
-}
-
-std::string CastLoggingToString(CastLoggingEvent event) {
+const char* CastLoggingToString(CastLoggingEvent event) {
   switch (event) {
-    case(kUnknown):
-      // Can happen if the sender and receiver of RTCP log messages are not
-      // aligned.
-      return "Unknown";
-    case(kRttMs):
-      return "RttMs";
-    case(kPacketLoss):
-      return "PacketLoss";
-    case(kJitterMs):
-      return "JitterMs";
-    case(kAckReceived):
-      return "AckReceived";
-    case(kRembBitrate):
-      return "RembBitrate";
-    case(kAckSent):
-      return "AckSent";
-    case(kLastEvent):
-      return "LastEvent";
-    case(kAudioFrameReceived):
-      return "AudioFrameReceived";
-    case(kAudioFrameCaptured):
-      return "AudioFrameCaptured";
-    case(kAudioFrameEncoded):
-      return "AudioFrameEncoded";
-    case(kAudioPlayoutDelay):
-      return "AudioPlayoutDelay";
-    case(kAudioFrameDecoded):
-      return "AudioFrameDecoded";
-    case(kVideoFrameCaptured):
-      return "VideoFrameCaptured";
-    case(kVideoFrameReceived):
-      return "VideoFrameReceived";
-    case(kVideoFrameSentToEncoder):
-      return "VideoFrameSentToEncoder";
-    case(kVideoFrameEncoded):
-      return "VideoFrameEncoded";
-    case(kVideoFrameDecoded):
-      return "VideoFrameDecoded";
-    case(kVideoRenderDelay):
-      return "VideoRenderDelay";
-    case(kPacketSentToPacer):
-      return "PacketSentToPacer";
-    case(kPacketSentToNetwork):
-      return "PacketSentToNetwork";
-    case(kPacketRetransmited):
-      return "PacketRetransmited";
-    case(kPacketReceived):
-      return "PacketReceived";
-    default:
-      NOTREACHED();
-      return "";
+    ENUM_TO_STRING(UNKNOWN);
+    ENUM_TO_STRING(FRAME_CAPTURE_BEGIN);
+    ENUM_TO_STRING(FRAME_CAPTURE_END);
+    ENUM_TO_STRING(FRAME_ENCODED);
+    ENUM_TO_STRING(FRAME_ACK_RECEIVED);
+    ENUM_TO_STRING(FRAME_ACK_SENT);
+    ENUM_TO_STRING(FRAME_DECODED);
+    ENUM_TO_STRING(FRAME_PLAYOUT);
+    ENUM_TO_STRING(PACKET_SENT_TO_NETWORK);
+    ENUM_TO_STRING(PACKET_RETRANSMITTED);
+    ENUM_TO_STRING(PACKET_RTX_REJECTED);
+    ENUM_TO_STRING(PACKET_RECEIVED);
   }
+  NOTREACHED();
+  return "";
 }
 
-FrameEvent::FrameEvent() {}
+FrameEvent::FrameEvent()
+    : rtp_timestamp(0u), frame_id(kFrameIdUnknown), size(0u), type(UNKNOWN),
+      media_type(UNKNOWN_EVENT), key_frame(false), target_bitrate(0) {}
 FrameEvent::~FrameEvent() {}
 
-BasePacketInfo::BasePacketInfo() {}
-BasePacketInfo::~BasePacketInfo() {}
-
-PacketEvent::PacketEvent() {}
+PacketEvent::PacketEvent()
+    : rtp_timestamp(0),
+      frame_id(kFrameIdUnknown),
+      max_packet_id(0),
+      packet_id(0),
+      size(0),
+      type(UNKNOWN),
+      media_type(UNKNOWN_EVENT) {}
 PacketEvent::~PacketEvent() {}
-
-GenericEvent::GenericEvent() {}
-GenericEvent::~GenericEvent() {}
-
-FrameLogStats::FrameLogStats()
-    : framerate_fps(0),
-      bitrate_kbps(0),
-      max_delay_ms(0),
-      min_delay_ms(0),
-      avg_delay_ms(0) {}
-FrameLogStats::~FrameLogStats() {}
 
 }  // namespace cast
 }  // namespace media

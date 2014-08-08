@@ -22,7 +22,8 @@
 #include "config.h"
 #include "core/svg/SVGZoomEvent.h"
 
-#include "core/events/ThreadLocalEventNames.h"
+#include "core/svg/SVGPointTearOff.h"
+#include "core/svg/SVGRectTearOff.h"
 
 namespace WebCore {
 
@@ -33,9 +34,11 @@ SVGZoomEvent::SVGZoomEvent()
     ScriptWrappable::init(this);
 }
 
-SVGRect SVGZoomEvent::zoomRectScreen() const
+PassRefPtr<SVGRectTearOff> SVGZoomEvent::zoomRectScreen() const
 {
-    return m_zoomRectScreen;
+    RefPtr<SVGRectTearOff> rectTearOff = SVGRectTearOff::create(SVGRect::create(), 0, PropertyIsNotAnimVal);
+    rectTearOff->setIsReadOnlyProperty();
+    return rectTearOff.release();
 }
 
 float SVGZoomEvent::previousScale() const
@@ -43,14 +46,11 @@ float SVGZoomEvent::previousScale() const
     return m_previousScale;
 }
 
-void SVGZoomEvent::setPreviousScale(float scale)
+PassRefPtr<SVGPointTearOff> SVGZoomEvent::previousTranslate() const
 {
-    m_previousScale = scale;
-}
-
-SVGPoint SVGZoomEvent::previousTranslate() const
-{
-    return m_previousTranslate;
+    RefPtr<SVGPointTearOff> pointTearOff = SVGPointTearOff::create(SVGPoint::create(m_previousTranslate), 0, PropertyIsNotAnimVal);
+    pointTearOff->setIsReadOnlyProperty();
+    return pointTearOff.release();
 }
 
 float SVGZoomEvent::newScale() const
@@ -58,19 +58,21 @@ float SVGZoomEvent::newScale() const
     return m_newScale;
 }
 
-void SVGZoomEvent::setNewScale(float scale)
+PassRefPtr<SVGPointTearOff> SVGZoomEvent::newTranslate() const
 {
-    m_newScale = scale;
-}
-
-SVGPoint SVGZoomEvent::newTranslate() const
-{
-    return m_newTranslate;
+    RefPtr<SVGPointTearOff> pointTearOff = SVGPointTearOff::create(SVGPoint::create(m_newTranslate), 0, PropertyIsNotAnimVal);
+    pointTearOff->setIsReadOnlyProperty();
+    return pointTearOff.release();
 }
 
 const AtomicString& SVGZoomEvent::interfaceName() const
 {
     return EventNames::SVGZoomEvent;
+}
+
+void SVGZoomEvent::trace(Visitor* visitor)
+{
+    UIEvent::trace(visitor);
 }
 
 } // namespace WebCore

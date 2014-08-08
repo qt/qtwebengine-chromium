@@ -26,7 +26,6 @@
 #include "config.h"
 #include "modules/encryptedmedia/MediaKeyNeededEvent.h"
 
-#include "core/events/ThreadLocalEventNames.h"
 #include "wtf/Uint8Array.h"
 
 namespace WebCore {
@@ -42,6 +41,7 @@ MediaKeyNeededEvent::MediaKeyNeededEvent()
 
 MediaKeyNeededEvent::MediaKeyNeededEvent(const AtomicString& type, const MediaKeyNeededEventInit& initializer)
     : Event(type, initializer)
+    , m_contentType(initializer.contentType)
     , m_initData(initializer.initData)
 {
     ScriptWrappable::init(this);
@@ -54,6 +54,11 @@ MediaKeyNeededEvent::~MediaKeyNeededEvent()
 const AtomicString& MediaKeyNeededEvent::interfaceName() const
 {
     return EventNames::MediaKeyNeededEvent;
+}
+
+void MediaKeyNeededEvent::trace(Visitor* visitor)
+{
+    Event::trace(visitor);
 }
 
 } // namespace WebCore

@@ -53,6 +53,7 @@
 #include "base/callback.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/scoped_vector.h"
 #include "base/message_loop/message_loop.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/metrics/histogram.h"
@@ -254,40 +255,40 @@ CookieMonster::CookieItVector::iterator LowerBoundAccessDate(
                           LowerBoundAccessDateComparator);
 }
 
-// Mapping between DeletionCause and Delegate::ChangeCause; the mapping also
-// provides a boolean that specifies whether or not an OnCookieChanged
-// notification ought to be generated.
+// Mapping between DeletionCause and CookieMonsterDelegate::ChangeCause; the
+// mapping also provides a boolean that specifies whether or not an
+// OnCookieChanged notification ought to be generated.
 typedef struct ChangeCausePair_struct {
-  CookieMonster::Delegate::ChangeCause cause;
+  CookieMonsterDelegate::ChangeCause cause;
   bool notify;
 } ChangeCausePair;
 ChangeCausePair ChangeCauseMapping[] = {
   // DELETE_COOKIE_EXPLICIT
-  { CookieMonster::Delegate::CHANGE_COOKIE_EXPLICIT, true },
+  { CookieMonsterDelegate::CHANGE_COOKIE_EXPLICIT, true },
   // DELETE_COOKIE_OVERWRITE
-  { CookieMonster::Delegate::CHANGE_COOKIE_OVERWRITE, true },
+  { CookieMonsterDelegate::CHANGE_COOKIE_OVERWRITE, true },
   // DELETE_COOKIE_EXPIRED
-  { CookieMonster::Delegate::CHANGE_COOKIE_EXPIRED, true },
+  { CookieMonsterDelegate::CHANGE_COOKIE_EXPIRED, true },
   // DELETE_COOKIE_EVICTED
-  { CookieMonster::Delegate::CHANGE_COOKIE_EVICTED, true },
+  { CookieMonsterDelegate::CHANGE_COOKIE_EVICTED, true },
   // DELETE_COOKIE_DUPLICATE_IN_BACKING_STORE
-  { CookieMonster::Delegate::CHANGE_COOKIE_EXPLICIT, false },
+  { CookieMonsterDelegate::CHANGE_COOKIE_EXPLICIT, false },
   // DELETE_COOKIE_DONT_RECORD
-  { CookieMonster::Delegate::CHANGE_COOKIE_EXPLICIT, false },
+  { CookieMonsterDelegate::CHANGE_COOKIE_EXPLICIT, false },
   // DELETE_COOKIE_EVICTED_DOMAIN
-  { CookieMonster::Delegate::CHANGE_COOKIE_EVICTED, true },
+  { CookieMonsterDelegate::CHANGE_COOKIE_EVICTED, true },
   // DELETE_COOKIE_EVICTED_GLOBAL
-  { CookieMonster::Delegate::CHANGE_COOKIE_EVICTED, true },
+  { CookieMonsterDelegate::CHANGE_COOKIE_EVICTED, true },
   // DELETE_COOKIE_EVICTED_DOMAIN_PRE_SAFE
-  { CookieMonster::Delegate::CHANGE_COOKIE_EVICTED, true },
+  { CookieMonsterDelegate::CHANGE_COOKIE_EVICTED, true },
   // DELETE_COOKIE_EVICTED_DOMAIN_POST_SAFE
-  { CookieMonster::Delegate::CHANGE_COOKIE_EVICTED, true },
+  { CookieMonsterDelegate::CHANGE_COOKIE_EVICTED, true },
   // DELETE_COOKIE_EXPIRED_OVERWRITE
-  { CookieMonster::Delegate::CHANGE_COOKIE_EXPIRED_OVERWRITE, true },
+  { CookieMonsterDelegate::CHANGE_COOKIE_EXPIRED_OVERWRITE, true },
   // DELETE_COOKIE_CONTROL_CHAR
-  { CookieMonster::Delegate::CHANGE_COOKIE_EVICTED, true},
+  { CookieMonsterDelegate::CHANGE_COOKIE_EVICTED, true},
   // DELETE_COOKIE_LAST_ENTRY
-  { CookieMonster::Delegate::CHANGE_COOKIE_EXPLICIT, false }
+  { CookieMonsterDelegate::CHANGE_COOKIE_EXPLICIT, false }
 };
 
 std::string BuildCookieLine(const CanonicalCookieVector& cookies) {
@@ -308,12 +309,10 @@ std::string BuildCookieLine(const CanonicalCookieVector& cookies) {
 
 }  // namespace
 
-// static
-bool CookieMonster::default_enable_file_scheme_ = false;
-
-CookieMonster::CookieMonster(PersistentCookieStore* store, Delegate* delegate)
+CookieMonster::CookieMonster(PersistentCookieStore* store,
+                             CookieMonsterDelegate* delegate)
     : initialized_(false),
-      loaded_(false),
+      loaded_(store == NULL),
       store_(store),
       last_access_threshold_(
           TimeDelta::FromSeconds(kDefaultAccessUpdateThresholdSeconds)),
@@ -326,10 +325,10 @@ CookieMonster::CookieMonster(PersistentCookieStore* store, Delegate* delegate)
 }
 
 CookieMonster::CookieMonster(PersistentCookieStore* store,
-                             Delegate* delegate,
+                             CookieMonsterDelegate* delegate,
                              int last_access_threshold_milliseconds)
     : initialized_(false),
-      loaded_(false),
+      loaded_(store == NULL),
       store_(store),
       last_access_threshold_(base::TimeDelta::FromMilliseconds(
           last_access_threshold_milliseconds)),
@@ -1289,11 +1288,6 @@ void CookieMonster::SetKeepExpiredCookies() {
   keep_expired_cookies_ = true;
 }
 
-// static
-void CookieMonster::EnableFileScheme() {
-  default_enable_file_scheme_ = true;
-}
-
 void CookieMonster::FlushStore(const base::Closure& callback) {
   base::AutoLock autolock(lock_);
   if (initialized_ && store_.get())
@@ -1440,6 +1434,11 @@ void CookieMonster::InitStore() {
   store_->Load(base::Bind(&CookieMonster::OnLoaded, this, TimeTicks::Now()));
 }
 
+void CookieMonster::ReportLoaded() {
+  if (delegate_.get())
+    delegate_->OnLoaded();
+}
+
 void CookieMonster::OnLoaded(TimeTicks beginning_time,
                              const std::vector<CanonicalCookie*>& cookies) {
   StoreLoadedCookies(cookies);
@@ -1447,6 +1446,8 @@ void CookieMonster::OnLoaded(TimeTicks beginning_time,
 
   // Invoke the task queue of cookie request.
   InvokeQueue();
+
+  ReportLoaded();
 }
 
 void CookieMonster::OnKeyLoaded(const std::string& key,
@@ -1673,9 +1674,9 @@ const int CookieMonster::kDefaultCookieableSchemesCount =
     arraysize(kDefaultCookieableSchemes);
 
 void CookieMonster::SetDefaultCookieableSchemes() {
-  int num_schemes = default_enable_file_scheme_ ?
-      kDefaultCookieableSchemesCount : kDefaultCookieableSchemesCount - 1;
-  SetCookieableSchemes(kDefaultCookieableSchemes, num_schemes);
+  // Always disable file scheme unless SetEnableFileScheme(true) is called.
+  SetCookieableSchemes(kDefaultCookieableSchemes,
+                       kDefaultCookieableSchemesCount - 1);
 }
 
 void CookieMonster::FindCookiesForHostAndDomain(
@@ -1777,7 +1778,7 @@ CookieMonster::CookieMap::iterator CookieMonster::InternalInsertCookie(
       cookies_.insert(CookieMap::value_type(key, cc));
   if (delegate_.get()) {
     delegate_->OnCookieChanged(
-        *cc, false, Delegate::CHANGE_COOKIE_EXPLICIT);
+        *cc, false, CookieMonsterDelegate::CHANGE_COOKIE_EXPLICIT);
   }
 
   return inserted;
@@ -2083,7 +2084,7 @@ int CookieMonster::GarbageCollectDeleteRange(
 std::string CookieMonster::GetKey(const std::string& domain) const {
   std::string effective_domain(
       registry_controlled_domains::GetDomainAndRegistry(
-          domain, registry_controlled_domains::EXCLUDE_PRIVATE_REGISTRIES));
+          domain, registry_controlled_domains::INCLUDE_PRIVATE_REGISTRIES));
   if (effective_domain.empty())
     effective_domain = domain;
 
@@ -2250,6 +2251,57 @@ void CookieMonster::InitializeHistograms() {
 Time CookieMonster::CurrentTime() {
   return std::max(Time::Now(),
       Time::FromInternalValue(last_time_seen_.ToInternalValue() + 1));
+}
+
+bool CookieMonster::CopyCookiesForKeyToOtherCookieMonster(
+    std::string key,
+    CookieMonster* other) {
+  ScopedVector<CanonicalCookie> duplicated_cookies;
+
+  {
+    base::AutoLock autolock(lock_);
+    DCHECK(other);
+    if (!loaded_)
+      return false;
+
+    for (CookieMapItPair its = cookies_.equal_range(key);
+         its.first != its.second;
+         ++its.first) {
+      CookieMap::iterator curit = its.first;
+      CanonicalCookie* cc = curit->second;
+
+      duplicated_cookies.push_back(cc->Duplicate());
+    }
+  }
+
+  {
+    base::AutoLock autolock(other->lock_);
+    if (!other->loaded_)
+      return false;
+
+    // There must not exist any entries for the key to be copied in |other|.
+    CookieMapItPair its = other->cookies_.equal_range(key);
+    if (its.first != its.second)
+      return false;
+
+    // Store the copied cookies in |other|.
+    for (ScopedVector<CanonicalCookie>::const_iterator it =
+             duplicated_cookies.begin();
+         it != duplicated_cookies.end();
+         ++it) {
+      other->InternalInsertCookie(key, *it, true);
+    }
+
+    // Since the cookies are owned by |other| now, weak clear must be used.
+    duplicated_cookies.weak_clear();
+  }
+
+  return true;
+}
+
+bool CookieMonster::loaded() {
+  base::AutoLock autolock(lock_);
+  return loaded_;
 }
 
 }  // namespace net

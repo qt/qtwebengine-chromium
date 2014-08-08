@@ -11,14 +11,19 @@
 #include <vector>
 
 #include "content/browser/renderer_host/p2p/socket_host_throttler.h"
+#include "content/common/p2p_socket_type.h"
 #include "content/public/browser/browser_message_filter.h"
 #include "content/public/browser/browser_thread.h"
-#include "content/public/common/p2p_socket_type.h"
+#include "content/public/browser/render_process_host.h"
 #include "net/base/ip_endpoint.h"
 #include "net/base/network_change_notifier.h"
 
 namespace net {
 class URLRequestContextGetter;
+}
+
+namespace talk_base {
+struct PacketOptions;
 }
 
 namespace content {
@@ -36,11 +41,19 @@ class P2PSocketDispatcherHost
   // content::BrowserMessageFilter overrides.
   virtual void OnChannelClosing() OVERRIDE;
   virtual void OnDestruct() const OVERRIDE;
-  virtual bool OnMessageReceived(const IPC::Message& message,
-                                 bool* message_was_ok) OVERRIDE;
+  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 
   // net::NetworkChangeNotifier::IPAddressObserver interface.
   virtual void OnIPAddressChanged() OVERRIDE;
+
+  // Starts the RTP packet header dumping. Must be called on the IO thread.
+  void StartRtpDump(
+      bool incoming,
+      bool outgoing,
+      const RenderProcessHost::WebRtcRtpPacketCallback& packet_callback);
+
+  // Stops the RTP packet header dumping. Must be Called on the UI thread.
+  void StopRtpDumpOnUIThread(bool incoming, bool outgoing);
 
  protected:
   virtual ~P2PSocketDispatcherHost();
@@ -56,31 +69,33 @@ class P2PSocketDispatcherHost
   P2PSocketHost* LookupSocket(int socket_id);
 
   // Handlers for the messages coming from the renderer.
-  void OnStartNetworkNotifications(const IPC::Message& msg);
-  void OnStopNetworkNotifications(const IPC::Message& msg);
-
+  void OnStartNetworkNotifications();
+  void OnStopNetworkNotifications();
   void OnGetHostAddress(const std::string& host_name,
                         int32 request_id);
 
   void OnCreateSocket(P2PSocketType type,
                       int socket_id,
                       const net::IPEndPoint& local_address,
-                      const net::IPEndPoint& remote_address);
+                      const P2PHostAndIPEndPoint& remote_address);
   void OnAcceptIncomingTcpConnection(int listen_socket_id,
                                      const net::IPEndPoint& remote_address,
                                      int connected_socket_id);
   void OnSend(int socket_id,
               const net::IPEndPoint& socket_address,
               const std::vector<char>& data,
-              net::DiffServCodePoint dscp,
+              const talk_base::PacketOptions& options,
               uint64 packet_id);
+  void OnSetOption(int socket_id, P2PSocketOption option, int value);
   void OnDestroySocket(int socket_id);
 
   void DoGetNetworkList();
   void SendNetworkList(const net::NetworkInterfaceList& list);
 
   void OnAddressResolved(DnsRequest* request,
-                         const net::IPAddressNumber& result);
+                         const net::IPAddressList& addresses);
+
+  void StopRtpDumpOnIOThread(bool incoming, bool outgoing);
 
   content::ResourceContext* resource_context_;
   scoped_refptr<net::URLRequestContextGetter> url_context_;
@@ -91,6 +106,10 @@ class P2PSocketDispatcherHost
 
   std::set<DnsRequest*> dns_requests_;
   P2PMessageThrottler throttler_;
+
+  bool dump_incoming_rtp_packet_;
+  bool dump_outgoing_rtp_packet_;
+  RenderProcessHost::WebRtcRtpPacketCallback packet_callback_;
 
   DISALLOW_COPY_AND_ASSIGN(P2PSocketDispatcherHost);
 };

@@ -34,16 +34,14 @@ public:
     virtual ~RenderMeter();
 
     HTMLMeterElement* meterElement() const;
-    virtual void updateFromElement();
+    virtual void updateFromElement() OVERRIDE;
 
 private:
     virtual void updateLogicalWidth() OVERRIDE;
     virtual void computeLogicalHeight(LayoutUnit logicalHeight, LayoutUnit logicalTop, LogicalExtentComputedValues&) const OVERRIDE;
 
-    virtual bool supportsPartialLayout() const OVERRIDE { return false; }
-
-    virtual const char* renderName() const { return "RenderMeter"; }
-    virtual bool isMeter() const { return true; }
+    virtual const char* renderName() const OVERRIDE { return "RenderMeter"; }
+    virtual bool isMeter() const OVERRIDE { return true; }
 
     double valueRatio() const;
 };

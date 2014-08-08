@@ -15,79 +15,29 @@ cr.define('print_preview', function() {
    * @return {!print_preview.Destination} Parsed local print destination.
    */
   LocalDestinationParser.parse = function(destinationInfo) {
+    var options = {'description': destinationInfo.printerDescription};
+    if (destinationInfo.printerOptions) {
+      // Convert options into cloud print tags format.
+      options.tags = Object.keys(destinationInfo.printerOptions).map(
+          function(key) {return '__cp__' + key + '=' + this[key];},
+          destinationInfo.printerOptions);
+    }
     return new print_preview.Destination(
         destinationInfo.deviceName,
         print_preview.Destination.Type.LOCAL,
         print_preview.Destination.Origin.LOCAL,
         destinationInfo.printerName,
         false /*isRecent*/,
-        print_preview.Destination.ConnectionStatus.ONLINE);
-  };
-
-  /** Namespace that contains a method to parse local print capabilities. */
-  function LocalCapabilitiesParser() {};
-
-  /**
-   * Parses local print capabilities.
-   * @param {!Object} settingsInfo Object that describes local print
-   *     capabilities.
-   * @return {!print_preview.Cdd} Parsed local print capabilities.
-   */
-  LocalCapabilitiesParser.parse = function(settingsInfo) {
-    var cdd = {
-      version: '1.0',
-      printer: {
-        collate: {default: true}
-      }
-    };
-
-    if (!settingsInfo['disableColorOption']) {
-      cdd.printer.color = {
-        option: [
-          {
-            type: 'STANDARD_COLOR',
-            is_default: !!settingsInfo['setColorAsDefault']
-          },
-          {
-            type: 'STANDARD_MONOCHROME',
-            is_default: !settingsInfo['setColorAsDefault']
-          }
-        ]
-      }
-    }
-
-    if (!settingsInfo['disableCopiesOption']) {
-      cdd.printer.copies = {default: 1};
-    }
-
-    if (settingsInfo['printerDefaultDuplexValue'] !=
-        print_preview.NativeLayer.DuplexMode.UNKNOWN_DUPLEX_MODE) {
-      cdd.printer.duplex = {
-        option: [
-          {type: 'NO_DUPLEX', is_default: !settingsInfo['setDuplexAsDefault']},
-          {type: 'LONG_EDGE', is_default: !!settingsInfo['setDuplexAsDefault']}
-        ]
-      };
-    }
-
-    if (!settingsInfo['disableLandscapeOption']) {
-      cdd.printer.page_orientation = {
-        option: [
-          {type: 'PORTRAIT', is_default: true},
-          {type: 'LANDSCAPE'}
-        ]
-      };
-    }
-
-    return cdd;
+        print_preview.Destination.ConnectionStatus.ONLINE,
+        options);
   };
 
   function PrivetDestinationParser() {}
 
   /**
-   * Parses a privet destination as a local printer or printers.
+   * Parses a privet destination as one or more local printers.
    * @param {!Object} destinationInfo Object that describes a privet printer.
-   * @return {!Array.<print_preview.Destination>} Parsed destination info.
+   * @return {!Array.<!print_preview.Destination>} Parsed destination info.
    */
   PrivetDestinationParser.parse = function(destinationInfo) {
     var returnedPrinters = [];
@@ -105,7 +55,7 @@ cr.define('print_preview', function() {
 
     if (destinationInfo.isUnregistered) {
       returnedPrinters.push(new print_preview.Destination(
-        destinationInfo.serviceName,
+          destinationInfo.serviceName,
           print_preview.Destination.Type.GOOGLE,
           print_preview.Destination.Origin.PRIVET,
           destinationInfo.name,
@@ -118,7 +68,6 @@ cr.define('print_preview', function() {
 
   // Export
   return {
-    LocalCapabilitiesParser: LocalCapabilitiesParser,
     LocalDestinationParser: LocalDestinationParser,
     PrivetDestinationParser: PrivetDestinationParser
   };

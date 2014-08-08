@@ -37,9 +37,11 @@
 #include "core/dom/ExecutionContext.h"
 #include "core/dom/MessageChannel.h"
 #include "core/dom/MessagePort.h"
-#include "core/inspector/InspectorInstrumentation.h"
-#include "core/page/Page.h"
+#include "core/frame/LocalFrame.h"
 #include "core/frame/UseCounter.h"
+#include "core/inspector/InspectorInstrumentation.h"
+#include "core/loader/FrameLoader.h"
+#include "core/loader/FrameLoaderClient.h"
 #include "core/workers/SharedWorkerRepositoryClient.h"
 #include "platform/weborigin/KURL.h"
 #include "platform/weborigin/SecurityOrigin.h"
@@ -52,16 +54,16 @@ inline SharedWorker::SharedWorker(ExecutionContext* context)
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<SharedWorker> SharedWorker::create(ExecutionContext* context, const String& url, const String& name, ExceptionState& exceptionState)
+PassRefPtrWillBeRawPtr<SharedWorker> SharedWorker::create(ExecutionContext* context, const String& url, const String& name, ExceptionState& exceptionState)
 {
     ASSERT(isMainThread());
     ASSERT_WITH_SECURITY_IMPLICATION(context->isDocument());
 
-    UseCounter::count(toDocument(context)->domWindow(), UseCounter::SharedWorkerStart);
+    UseCounter::count(context, UseCounter::SharedWorkerStart);
 
-    RefPtr<SharedWorker> worker = adoptRef(new SharedWorker(context));
+    RefPtrWillBeRawPtr<SharedWorker> worker = adoptRefWillBeRefCountedGarbageCollected(new SharedWorker(context));
 
-    RefPtr<MessageChannel> channel = MessageChannel::create(context);
+    RefPtrWillBeRawPtr<MessageChannel> channel = MessageChannel::create(context);
     worker->m_port = channel->port1();
     OwnPtr<blink::WebMessagePortChannel> remotePort = channel->port2()->disentangle();
     ASSERT(remotePort);
@@ -72,15 +74,15 @@ PassRefPtr<SharedWorker> SharedWorker::create(ExecutionContext* context, const S
     Document* document = toDocument(context);
     if (!document->securityOrigin()->canAccessSharedWorkers()) {
         exceptionState.throwSecurityError("Access to shared workers is denied to origin '" + document->securityOrigin()->toString() + "'.");
-        return 0;
+        return nullptr;
     }
 
     KURL scriptURL = worker->resolveURL(url, exceptionState);
     if (scriptURL.isEmpty())
-        return 0;
+        return nullptr;
 
-    if (document->page() && document->page()->sharedWorkerRepositoryClient())
-        document->page()->sharedWorkerRepositoryClient()->connect(worker.get(), remotePort.release(), scriptURL, name, exceptionState);
+    if (document->frame()->loader().client()->sharedWorkerRepositoryClient())
+        document->frame()->loader().client()->sharedWorkerRepositoryClient()->connect(worker.get(), remotePort.release(), scriptURL, name, exceptionState);
 
     return worker.release();
 }
@@ -102,6 +104,12 @@ void SharedWorker::setPreventGC()
 void SharedWorker::unsetPreventGC()
 {
     unsetPendingActivity(this);
+}
+
+void SharedWorker::trace(Visitor* visitor)
+{
+    AbstractWorker::trace(visitor);
+    WillBeHeapSupplementable<SharedWorker>::trace(visitor);
 }
 
 } // namespace WebCore

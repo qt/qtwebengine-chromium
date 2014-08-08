@@ -31,7 +31,8 @@
 #include "config.h"
 #include "core/events/ErrorEvent.h"
 
-#include "core/events/ThreadLocalEventNames.h"
+#include "bindings/v8/V8Binding.h"
+#include <v8.h>
 
 namespace WebCore {
 
@@ -54,12 +55,12 @@ ErrorEvent::ErrorEvent(const AtomicString& type, const ErrorEventInit& initializ
     , m_fileName(initializer.filename)
     , m_lineNumber(initializer.lineno)
     , m_columnNumber(initializer.colno)
-    , m_world(DOMWrapperWorld::current())
+    , m_world(DOMWrapperWorld::current(v8::Isolate::GetCurrent()))
 {
     ScriptWrappable::init(this);
 }
 
-ErrorEvent::ErrorEvent(const String& message, const String& fileName, unsigned lineNumber, unsigned columnNumber, PassRefPtr<DOMWrapperWorld> world)
+ErrorEvent::ErrorEvent(const String& message, const String& fileName, unsigned lineNumber, unsigned columnNumber, DOMWrapperWorld* world)
     : Event(EventTypeNames::error, false, true)
     , m_sanitizedMessage(message)
     , m_fileName(fileName)
@@ -83,6 +84,11 @@ ErrorEvent::~ErrorEvent()
 const AtomicString& ErrorEvent::interfaceName() const
 {
     return EventNames::ErrorEvent;
+}
+
+void ErrorEvent::trace(Visitor* visitor)
+{
+    Event::trace(visitor);
 }
 
 } // namespace WebCore

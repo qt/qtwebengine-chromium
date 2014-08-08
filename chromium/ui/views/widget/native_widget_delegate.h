@@ -80,10 +80,10 @@ class VIEWS_EXPORT NativeWidgetDelegate {
   virtual void OnNativeWidgetDestroyed() = 0;
 
   // Returns the smallest size the window can be resized to by the user.
-  virtual gfx::Size GetMinimumSize() = 0;
+  virtual gfx::Size GetMinimumSize() const = 0;
 
   // Returns the largest size the window can be resized to by the user.
-  virtual gfx::Size GetMaximumSize() = 0;
+  virtual gfx::Size GetMaximumSize() const = 0;
 
   // Called when the NativeWidget changed position.
   virtual void OnNativeWidgetMove() = 0;
@@ -116,7 +116,6 @@ class VIEWS_EXPORT NativeWidgetDelegate {
   virtual void OnMouseEvent(ui::MouseEvent* event) = 0;
   virtual void OnMouseCaptureLost() = 0;
 
-  virtual void OnTouchEvent(ui::TouchEvent* event) = 0;
   virtual void OnScrollEvent(ui::ScrollEvent* event) = 0;
   virtual void OnGestureEvent(ui::GestureEvent* event) = 0;
 
@@ -140,6 +139,14 @@ class VIEWS_EXPORT NativeWidgetDelegate {
   //
   virtual Widget* AsWidget() = 0;
   virtual const Widget* AsWidget() const = 0;
+
+  // Sets-up the focus manager with the view that should have focus when the
+  // window is shown the first time.  It takes the intended |show_state| of the
+  // window in order to decide whether the window should be focused now or
+  // later.  Returns true if the initial focus has been set or the window should
+  // not set the initial focus, or false if the caller should set the initial
+  // focus (if any).
+  virtual bool SetInitialFocus(ui::WindowShowState show_state) = 0;
 };
 
 }  // namespace internal

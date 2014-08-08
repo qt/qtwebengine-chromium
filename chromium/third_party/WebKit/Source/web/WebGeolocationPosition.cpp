@@ -24,7 +24,7 @@
  */
 
 #include "config.h"
-#include "WebGeolocationPosition.h"
+#include "public/web/WebGeolocationPosition.h"
 
 #include "modules/geolocation/GeolocationPosition.h"
 
@@ -47,13 +47,13 @@ void WebGeolocationPosition::reset()
     m_private.reset();
 }
 
-WebGeolocationPosition& WebGeolocationPosition::operator=(PassRefPtr<GeolocationPosition> position)
+WebGeolocationPosition& WebGeolocationPosition::operator=(GeolocationPosition* position)
 {
     m_private = position;
     return *this;
 }
 
-WebGeolocationPosition::operator PassRefPtr<GeolocationPosition>() const
+WebGeolocationPosition::operator GeolocationPosition*() const
 {
     return m_private.get();
 }

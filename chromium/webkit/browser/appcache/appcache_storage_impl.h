@@ -21,6 +21,7 @@
 #include "webkit/browser/webkit_storage_browser_export.h"
 
 namespace content {
+class AppCacheStorageImplTest;
 class ChromeAppCacheServiceTest;
 }
 
@@ -28,7 +29,7 @@ namespace appcache {
 
 class AppCacheStorageImpl : public AppCacheStorage {
  public:
-  explicit AppCacheStorageImpl(AppCacheService* service);
+  explicit AppCacheStorageImpl(AppCacheServiceImpl* service);
   virtual ~AppCacheStorageImpl();
 
   void Initialize(const base::FilePath& cache_directory,
@@ -55,7 +56,8 @@ class AppCacheStorageImpl : public AppCacheStorage {
   virtual void MarkEntryAsForeign(const GURL& entry_url,
                                   int64 cache_id) OVERRIDE;
   virtual void MakeGroupObsolete(AppCacheGroup* group,
-                                 Delegate* delegate) OVERRIDE;
+                                 Delegate* delegate,
+                                 int response_code) OVERRIDE;
   virtual AppCacheResponseReader* CreateResponseReader(
       const GURL& manifest_url, int64 group_id, int64 response_id) OVERRIDE;
   virtual AppCacheResponseWriter* CreateResponseWriter(
@@ -64,17 +66,13 @@ class AppCacheStorageImpl : public AppCacheStorage {
                              const std::vector<int64>& response_ids) OVERRIDE;
   virtual void DeleteResponses(const GURL& manifest_url,
                                const std::vector<int64>& response_ids) OVERRIDE;
-  virtual void PurgeMemory() OVERRIDE;
 
  private:
-  friend class AppCacheStorageImplTest;
-
   // The AppCacheStorageImpl class methods and datamembers may only be
   // accessed on the IO thread. This class manufactures seperate DatabaseTasks
   // which access the DB on a seperate background thread.
   class DatabaseTask;
   class InitTask;
-  class CloseConnectionTask;
   class DisableDatabaseTask;
   class GetAllInfoTask;
   class StoreOrLoadTask;
@@ -114,7 +112,9 @@ class AppCacheStorageImpl : public AppCacheStorage {
 
   void OnDeletedOneResponse(int rv);
   void OnDiskCacheInitialized(int rv);
-  void CallReinitialize();
+  void DeleteAndStartOver();
+  void DeleteAndStartOverPart2();
+  void CallScheduleReinitialize();
 
   // Sometimes we can respond without having to query the database.
   bool FindResponseForMainRequestInGroup(
@@ -172,6 +172,7 @@ class AppCacheStorageImpl : public AppCacheStorage {
   std::deque<base::Closure> pending_simple_tasks_;
   base::WeakPtrFactory<AppCacheStorageImpl> weak_factory_;
 
+  friend class content::AppCacheStorageImplTest;
   friend class content::ChromeAppCacheServiceTest;
 };
 

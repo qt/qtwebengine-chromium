@@ -30,13 +30,13 @@ ui.results = ui.results || {};
 
 var kResultsPrefetchDelayMS = 500;
 
-// FIXME: Rather than using table, should we be using something fancier?
-ui.results.Comparison = base.extends('table', {
+ui.results.Comparison = base.extends('div', {
     init: function()
     {
         this.className = 'comparison';
-        this.innerHTML = '<thead><tr><th>Expected</th><th>Actual</th><th>Diff</th></tr></thead>' +
-                         '<tbody><tr><td class="expected result-container"></td><td class="actual result-container"></td><td class="diff result-container"></td></tr></tbody>';
+        this.innerHTML = '<div><h2>Expected</h2><div class="results-container expected"></div></div>' +
+                         '<div><h2>Actual</h2><div class="results-container actual"></div></div>' +
+                         '<div><h2>Diff</h2><div class="results-container diff"></div></div>';
     },
     _selectorForKind: function(kind)
     {
@@ -149,7 +149,6 @@ ui.results.ResultsGrid = base.extends('div', {
             }
             this.addComparison(resultType, resultsURLsByKind);
         }.bind(this));
-
         if (!this.children.length)
             this.textContent = 'No results to display.'
     }
@@ -167,7 +166,7 @@ ui.results.ResultsDetails = base.extends('div', {
         if (this._haveShownOnce)
             return;
         this._haveShownOnce = true;
-        this._delegate.fetchResultsURLs(this._failureInfo, function(resultsURLs) {
+        this._delegate.fetchResultsURLs(this._failureInfo).then(function(resultsURLs) {
             var resultsGrid = new ui.results.ResultsGrid();
             resultsGrid.addResults(resultsURLs);
 
@@ -205,7 +204,6 @@ ui.results.FlakinessData = base.extends('iframe', {
             return;
 
         if (event.data.command != 'heightChanged') {
-            console.log('Unknown postMessage command: ' + event.data);
             return;
         }
 
@@ -240,8 +238,8 @@ ui.results.TestSelector = base.extends('div', {
 
             var linkTitle = document.createElement('a');
             linkTitle.classList.add('link-title');
-            linkTitle.setAttribute('href', ui.urlForFlakinessDashboard([testName]))
-            linkTitle.target = '_blank';
+            linkTitle.setAttribute('href', ui.urlForFlakinessDashboard([testName]));
+            ui.setTargetForLink(linkTitle);
             linkTitle.textContent = testName;
 
             var header = document.createElement('h3');
@@ -252,7 +250,7 @@ ui.results.TestSelector = base.extends('div', {
         }, this);
 
         // If we have a small amount of content, don't show the resize handler.
-        // Otherwise, set the minHeight so that the percentage height of the 
+        // Otherwise, set the minHeight so that the percentage height of the
         // topPanel is not too small.
         if (testNames.length <= 4)
             this.removeChild(this.querySelector('.resize-handle'));
@@ -434,9 +432,9 @@ ui.results.View = base.extends('div', {
         this._testSelector = new ui.results.TestSelector(this, resultsByTest);
         this.appendChild(this._testSelector);
     },
-    fetchResultsURLs: function(failureInfo, callback)
+    fetchResultsURLs: function(failureInfo)
     {
-        this._delegate.fetchResultsURLs(failureInfo, callback)
+        return this._delegate.fetchResultsURLs(failureInfo);
     },
     nextResult: function()
     {

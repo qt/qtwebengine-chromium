@@ -23,10 +23,23 @@ namespace media {
 // but only VideoCaptureManager would change their value.
 class MEDIA_EXPORT VideoCaptureDeviceAndroid : public VideoCaptureDevice {
  public:
+  // Automatically generated enum to interface with Java world.
+  enum AndroidImageFormat {
+#define DEFINE_ANDROID_IMAGEFORMAT(name, value) name = value,
+#include "media/video/capture/android/imageformat_list.h"
+#undef DEFINE_ANDROID_IMAGEFORMAT
+  };
+
+  explicit VideoCaptureDeviceAndroid(const Name& device_name);
   virtual ~VideoCaptureDeviceAndroid();
 
   static VideoCaptureDevice* Create(const Name& device_name);
   static bool RegisterVideoCaptureDevice(JNIEnv* env);
+
+  // Registers the Java VideoCaptureDevice pointer, used by the rest of the
+  // methods of the class to operate the Java capture code. This method must be
+  // called after the class constructor and before AllocateAndStart().
+  bool Init();
 
   // VideoCaptureDevice implementation.
   virtual void AllocateAndStart(const VideoCaptureParams& params,
@@ -48,15 +61,6 @@ class MEDIA_EXPORT VideoCaptureDeviceAndroid : public VideoCaptureDevice {
     kError  // Hit error. User needs to recover by destroying the object.
   };
 
-  // Automatically generated enum to interface with Java world.
-  enum AndroidImageFormat {
-#define DEFINE_ANDROID_IMAGEFORMAT(name, value) name = value,
-#include "media/video/capture/android/imageformat_list.h"
-#undef DEFINE_ANDROID_IMAGEFORMAT
-  };
-
-  explicit VideoCaptureDeviceAndroid(const Name& device_name);
-  bool Init();
   VideoPixelFormat GetColorspace();
   void SetErrorState(const std::string& reason);
 
@@ -73,7 +77,7 @@ class MEDIA_EXPORT VideoCaptureDeviceAndroid : public VideoCaptureDevice {
   VideoCaptureFormat capture_format_;
 
   // Java VideoCaptureAndroid instance.
-  base::android::ScopedJavaGlobalRef<jobject> j_capture_;
+  base::android::ScopedJavaLocalRef<jobject> j_capture_;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(VideoCaptureDeviceAndroid);
 };

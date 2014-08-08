@@ -12,6 +12,7 @@
          <td class="option-value">
            <select id="remap-search-key-to" class="control"
                data-type="number" i18n-options="remapSearchKeyToValue"
+               metric="Options_KeyboardRemapSearchKey"
                pref="settings.language.xkb_remap_search_key_to" dialog-pref>
            </select>
          </td>
@@ -25,6 +26,7 @@
          <td class="option-value">
            <select id="remap-control-key-to" class="control"
                data-type="number" i18n-options="remapControlKeyToValue"
+               metric="Options_KeyboardRemapControlKey"
                pref="settings.language.xkb_remap_control_key_to" dialog-pref>
            </select>
          </td>
@@ -37,6 +39,7 @@
          </td>
          <td class="option-value">
            <select id="remap-alt-key-to" class="control" data-type="number"
+               metric="Options_KeyboardRemapAltKey"
                pref="settings.language.xkb_remap_alt_key_to"
                i18n-options="remapAltKeyToValue" dialog-pref></select>
          </td>
@@ -52,6 +55,7 @@
          <td class="option-value">
            <select id="remap-caps-lock-key-to" class="control"
                data-type="number"
+               metric="Options_KeyboardRemapCapsLockKey"
                pref="settings.language.remap_caps_lock_key_to"
                i18n-options="remapCapsLockKeyToValue" dialog-pref></select>
          </td>
@@ -67,6 +71,7 @@
          <td class="option-value">
            <select id="remap-diamond-key-to" class="control"
                data-type="number"
+               metric="Options_KeyboardRemapDiamondKey"
                pref="settings.language.remap_diamond_key_to"
                i18n-options="remapDiamondKeyToValue" dialog-pref></select>
          </td>
@@ -74,16 +79,25 @@
     </table>
     <div class="settings-row">
       <div class="checkbox">
-        <label>
+        <span class="controlled-setting-with-label">
           <input id="send-function-keys" type="checkbox"
               pref="settings.language.send_function_keys" dialog-pref>
-          <span i18n-content="sendFunctionKeys"></span>
-        </label>
+          <span>
+            <label for="send-function-keys" i18n-content="sendFunctionKeys">
+            </label>
+            <span class="bubble-button controlled-setting-indicator"
+                pref="settings.language.send_function_keys"></span>
+          </span>
+        </span>
       </div>
       <label id="send-function-keys-description" for="send-function-keys"
           i18n-content="sendFunctionKeysDescription">
       </label>
     </div>
+  </div>
+  <div class="content-area">
+    <button id="keyboard-shortcuts" class="link-button"
+        i18n-content="showKeyboardShortcuts"></button>
   </div>
   <div class="content-area">
     <button id="languages-and-input-settings" class="link-button"

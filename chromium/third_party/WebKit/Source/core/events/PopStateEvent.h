@@ -28,6 +28,7 @@
 #define PopStateEvent_h
 
 #include "core/events/Event.h"
+#include "platform/heap/Handle.h"
 
 namespace WebCore {
 
@@ -36,12 +37,12 @@ class SerializedScriptValue;
 
 typedef EventInit PopStateEventInit;
 
-class PopStateEvent : public Event {
+class PopStateEvent FINAL : public Event {
 public:
     virtual ~PopStateEvent();
-    static PassRefPtr<PopStateEvent> create();
-    static PassRefPtr<PopStateEvent> create(PassRefPtr<SerializedScriptValue>, PassRefPtr<History>);
-    static PassRefPtr<PopStateEvent> create(const AtomicString&, const PopStateEventInit&);
+    static PassRefPtrWillBeRawPtr<PopStateEvent> create();
+    static PassRefPtrWillBeRawPtr<PopStateEvent> create(PassRefPtr<SerializedScriptValue>, PassRefPtrWillBeRawPtr<History>);
+    static PassRefPtrWillBeRawPtr<PopStateEvent> create(const AtomicString&, const PopStateEventInit&);
 
     SerializedScriptValue* serializedState() const { return m_serializedState.get(); }
     void setSerializedState(PassRefPtr<SerializedScriptValue> state)
@@ -51,15 +52,17 @@ public:
     }
     History* history() const { return m_history.get(); }
 
-    virtual const AtomicString& interfaceName() const;
+    virtual const AtomicString& interfaceName() const OVERRIDE;
+
+    virtual void trace(Visitor*) OVERRIDE;
 
 private:
     PopStateEvent();
     PopStateEvent(const AtomicString&, const PopStateEventInit&);
-    explicit PopStateEvent(PassRefPtr<SerializedScriptValue>, PassRefPtr<History>);
+    PopStateEvent(PassRefPtr<SerializedScriptValue>, PassRefPtrWillBeRawPtr<History>);
 
     RefPtr<SerializedScriptValue> m_serializedState;
-    RefPtr<History> m_history;
+    RefPtrWillBeMember<History> m_history;
 };
 
 } // namespace WebCore

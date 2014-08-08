@@ -4,6 +4,7 @@
 
 #include "ui/gl/gl_surface_wgl.h"
 
+#include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "ui/gl/gl_bindings.h"
@@ -164,25 +165,6 @@ bool GLSurfaceWGL::InitializeOneOff() {
   if (!wgl_display->Init())
     return false;
 
-  // Create a temporary GL context to bind to extension entry points.
-  HGLRC gl_context = wglCreateContext(wgl_display->device_context());
-  if (!gl_context) {
-    LOG(ERROR) << "Failed to create temporary context.";
-    return false;
-  }
-  if (!wglMakeCurrent(wgl_display->device_context(), gl_context)) {
-    LOG(ERROR) << "Failed to make temporary GL context current.";
-    wglDeleteContext(gl_context);
-    return false;
-  }
-  // Get bindings to extension functions that cannot be acquired without a
-  // current context.
-  InitializeGLBindingsGL();
-  InitializeGLBindingsWGL();
-
-  wglMakeCurrent(NULL, NULL);
-  wglDeleteContext(gl_context);
-
   g_display = wgl_display.release();
   initialized = true;
   return true;
@@ -267,6 +249,10 @@ bool NativeViewGLSurfaceWGL::IsOffscreen() {
 }
 
 bool NativeViewGLSurfaceWGL::SwapBuffers() {
+  TRACE_EVENT2("gpu", "NativeViewGLSurfaceWGL:RealSwapBuffers",
+      "width", GetSize().width(),
+      "height", GetSize().height());
+
   // Resize the child window to match the parent before swapping. Do not repaint
   // it as it moves.
   RECT rect;
@@ -299,6 +285,10 @@ PbufferGLSurfaceWGL::PbufferGLSurfaceWGL(const gfx::Size& size)
     : size_(size),
       device_context_(NULL),
       pbuffer_(NULL) {
+  // Some implementations of Pbuffer do not support having a 0 size. For such
+  // cases use a (1, 1) surface.
+  if (size_.GetArea() == 0)
+    size_.SetSize(1, 1);
 }
 
 PbufferGLSurfaceWGL::~PbufferGLSurfaceWGL() {

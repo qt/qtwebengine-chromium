@@ -55,7 +55,7 @@ class VIEWS_EXPORT ImageView : public View {
   // Return the preferred size for the receiving view. Returns false if the
   // preferred size is not defined, which means that the view uses the image
   // size.
-  bool GetImageSize(gfx::Size* image_size);
+  bool GetImageSize(gfx::Size* image_size) const;
 
   // Returns the actual bounds of the visible image inside the view.
   gfx::Rect GetImageBounds() const;
@@ -72,22 +72,22 @@ class VIEWS_EXPORT ImageView : public View {
   Alignment GetVerticalAlignment() const;
 
   // Set / Get the tooltip text.
-  void SetTooltipText(const string16& tooltip);
-  string16 GetTooltipText() const;
+  void SetTooltipText(const base::string16& tooltip);
+  base::string16 GetTooltipText() const;
 
   void set_interactive(bool interactive) { interactive_ = interactive; }
 
   void SetFocusPainter(scoped_ptr<Painter> focus_painter);
 
   // Overriden from View:
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
   virtual void OnFocus() OVERRIDE;
   virtual void OnBlur() OVERRIDE;
   virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
-  virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
+  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
   virtual bool GetTooltipText(const gfx::Point& p,
-                              string16* tooltip) const OVERRIDE;
-  virtual bool HitTestRect(const gfx::Rect& rect) const OVERRIDE;
+                              base::string16* tooltip) const OVERRIDE;
+  virtual bool CanProcessEventsWithinSubtree() const OVERRIDE;
 
  private:
   void OnPaintImage(gfx::Canvas* canvas);
@@ -117,7 +117,7 @@ class VIEWS_EXPORT ImageView : public View {
   Alignment vert_alignment_;
 
   // The current tooltip text.
-  string16 tooltip_text_;
+  base::string16 tooltip_text_;
 
   // A flag controlling hit test handling for interactivity.
   bool interactive_;

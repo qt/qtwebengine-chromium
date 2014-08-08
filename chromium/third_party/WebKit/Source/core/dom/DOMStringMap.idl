@@ -24,13 +24,15 @@
  */
 
 [
-    GenerateVisitDOMWrapper=element,
+    OverrideBuiltins,
+    SetWrapperReferenceFrom=element,
+    WillBeGarbageCollected,
 ] interface DOMStringMap {
-    [ImplementedAs=anonymousIndexedGetter, NotEnumerable] getter DOMString (unsigned long index);
-    [ImplementedAs=anonymousIndexedSetter, RaisesException, NotEnumerable] setter DOMString (unsigned long index, DOMString value);
-    [ImplementedAs=anonymousIndexedDeleter, RaisesException, NotEnumerable] deleter boolean (unsigned long index);
-    [ImplementedAs=item, OverrideBuiltins] getter DOMString (DOMString name);
-    [ImplementedAs=anonymousNamedSetter, RaisesException, OverrideBuiltins] setter DOMString (DOMString name, DOMString value);
-    [ImplementedAs=anonymousNamedDeleter, RaisesException] deleter boolean (DOMString name);
-};
+    [NotEnumerable] getter DOMString (unsigned long index);
+    [RaisesException] setter DOMString (unsigned long index, DOMString value);
+    deleter boolean (unsigned long index);
 
+    [ImplementedAs=item] getter DOMString (DOMString name);
+    [RaisesException] setter DOMString (DOMString name, DOMString value);
+    deleter boolean (DOMString name);
+};

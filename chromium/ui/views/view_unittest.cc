@@ -9,14 +9,15 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "grit/ui_strings.h"
-#include "testing/gmock/include/gmock/gmock.h"
 #include "ui/base/accelerators/accelerator.h"
 #include "ui/base/clipboard/clipboard.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/compositor/compositor.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/layer_animator.h"
+#include "ui/compositor/test/draw_waiter_for_test.h"
 #include "ui/events/event.h"
+#include "ui/events/gestures/gesture_recognizer.h"
 #include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/path.h"
@@ -25,7 +26,6 @@
 #include "ui/views/controls/native/native_view_host.h"
 #include "ui/views/controls/scroll_view.h"
 #include "ui/views/controls/textfield/textfield.h"
-#include "ui/views/focus/accelerator_handler.h"
 #include "ui/views/focus/view_storage.h"
 #include "ui/views/test/views_test_base.h"
 #include "ui/views/view.h"
@@ -35,15 +35,7 @@
 #include "ui/views/window/dialog_client_view.h"
 #include "ui/views/window/dialog_delegate.h"
 
-#if defined(OS_WIN)
-#include "ui/views/test/test_views_delegate.h"
-#endif
-#if defined(USE_AURA)
-#include "ui/aura/root_window.h"
-#include "ui/events/gestures/gesture_recognizer.h"
-#endif
-
-using ::testing::_;
+using base::ASCIIToUTF16;
 
 namespace {
 
@@ -205,7 +197,11 @@ typedef ViewsTestBase ViewTest;
 // A derived class for testing purpose.
 class TestView : public View {
  public:
-  TestView() : View(), delete_on_pressed_(false), in_touch_sequence_(false) {}
+  TestView()
+      : View(),
+        delete_on_pressed_(false),
+        native_theme_(NULL),
+        can_process_events_within_subtree_(true) {}
   virtual ~TestView() {}
 
   // Reset all test state
@@ -215,12 +211,11 @@ class TestView : public View {
     location_.SetPoint(0, 0);
     received_mouse_enter_ = false;
     received_mouse_exit_ = false;
-    last_touch_event_type_ = 0;
-    last_touch_event_was_handled_ = false;
     last_gesture_event_type_ = 0;
     last_gesture_event_was_handled_ = false;
     last_clip_.setEmpty();
     accelerator_count_map_.clear();
+    can_process_events_within_subtree_ = true;
   }
 
   // Exposed as public for testing.
@@ -232,6 +227,16 @@ class TestView : public View {
     views::View::Blur();
   }
 
+  bool focusable() const { return View::focusable(); }
+
+  void set_can_process_events_within_subtree(bool can_process) {
+    can_process_events_within_subtree_ = can_process;
+  }
+
+  virtual bool CanProcessEventsWithinSubtree() const OVERRIDE {
+    return can_process_events_within_subtree_;
+  }
+
   virtual void OnBoundsChanged(const gfx::Rect& previous_bounds) OVERRIDE;
   virtual bool OnMousePressed(const ui::MouseEvent& event) OVERRIDE;
   virtual bool OnMouseDragged(const ui::MouseEvent& event) OVERRIDE;
@@ -239,13 +244,15 @@ class TestView : public View {
   virtual void OnMouseEntered(const ui::MouseEvent& event) OVERRIDE;
   virtual void OnMouseExited(const ui::MouseEvent& event) OVERRIDE;
 
-  virtual void OnTouchEvent(ui::TouchEvent* event) OVERRIDE;
   // Ignores GestureEvent by default.
   virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
 
-  virtual void Paint(gfx::Canvas* canvas) OVERRIDE;
+  virtual void Paint(gfx::Canvas* canvas, const CullSet& cull_set) OVERRIDE;
   virtual void SchedulePaintInRect(const gfx::Rect& rect) OVERRIDE;
   virtual bool AcceleratorPressed(const ui::Accelerator& accelerator) OVERRIDE;
+
+  virtual void OnNativeThemeChanged(const ui::NativeTheme* native_theme)
+      OVERRIDE;
 
   // OnBoundsChanged.
   bool did_change_bounds_;
@@ -265,26 +272,17 @@ class TestView : public View {
   int last_gesture_event_type_;
   bool last_gesture_event_was_handled_;
 
-  // TouchEvent.
-  int last_touch_event_type_;
-  bool last_touch_event_was_handled_;
-  bool in_touch_sequence_;
-
   // Painting.
   SkRect last_clip_;
 
   // Accelerators.
   std::map<ui::Accelerator, int> accelerator_count_map_;
-};
 
-// A view subclass that ignores all touch events for testing purposes.
-class TestViewIgnoreTouch : public TestView {
- public:
-  TestViewIgnoreTouch() : TestView() {}
-  virtual ~TestViewIgnoreTouch() {}
+  // Native theme.
+  const ui::NativeTheme* native_theme_;
 
- private:
-  virtual void OnTouchEvent(ui::TouchEvent* event) OVERRIDE;
+  // Value to return from CanProcessEventsWithinSubtree().
+  bool can_process_events_within_subtree_;
 };
 
 // A view subclass that consumes all Gesture events for testing purposes.
@@ -412,7 +410,7 @@ TEST_F(ViewTest, MouseEvent) {
 
   gfx::Point p1(110, 120);
   ui::MouseEvent pressed(ui::ET_MOUSE_PRESSED, p1, p1,
-                         ui::EF_LEFT_MOUSE_BUTTON);
+                         ui::EF_LEFT_MOUSE_BUTTON, ui::EF_LEFT_MOUSE_BUTTON);
   root->OnMousePressed(pressed);
   EXPECT_EQ(v2->last_mouse_event_type_, ui::ET_MOUSE_PRESSED);
   EXPECT_EQ(v2->location_.x(), 10);
@@ -425,7 +423,7 @@ TEST_F(ViewTest, MouseEvent) {
   v2->Reset();
   gfx::Point p2(50, 40);
   ui::MouseEvent dragged(ui::ET_MOUSE_DRAGGED, p2, p2,
-                         ui::EF_LEFT_MOUSE_BUTTON);
+                         ui::EF_LEFT_MOUSE_BUTTON, 0);
   root->OnMouseDragged(dragged);
   EXPECT_EQ(v2->last_mouse_event_type_, ui::ET_MOUSE_DRAGGED);
   EXPECT_EQ(v2->location_.x(), -50);
@@ -436,7 +434,8 @@ TEST_F(ViewTest, MouseEvent) {
   // Releasted event out of bounds. Should still go to v2
   v1->Reset();
   v2->Reset();
-  ui::MouseEvent released(ui::ET_MOUSE_RELEASED, gfx::Point(), gfx::Point(), 0);
+  ui::MouseEvent released(ui::ET_MOUSE_RELEASED, gfx::Point(), gfx::Point(), 0,
+                          0);
   root->OnMouseDragged(released);
   EXPECT_EQ(v2->last_mouse_event_type_, ui::ET_MOUSE_RELEASED);
   EXPECT_EQ(v2->location_.x(), -100);
@@ -471,7 +470,7 @@ TEST_F(ViewTest, DeleteOnPressed) {
   v2->delete_on_pressed_ = true;
   gfx::Point point(110, 120);
   ui::MouseEvent pressed(ui::ET_MOUSE_PRESSED, point, point,
-                         ui::EF_LEFT_MOUSE_BUTTON);
+                         ui::EF_LEFT_MOUSE_BUTTON, ui::EF_LEFT_MOUSE_BUTTON);
   root->OnMousePressed(pressed);
   EXPECT_EQ(0, v1->child_count());
 
@@ -479,129 +478,8 @@ TEST_F(ViewTest, DeleteOnPressed) {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// TouchEvent
+// GestureEvent
 ////////////////////////////////////////////////////////////////////////////////
-void TestView::OnTouchEvent(ui::TouchEvent* event) {
-  last_touch_event_type_ = event->type();
-  location_.SetPoint(event->x(), event->y());
-  if (!in_touch_sequence_) {
-    if (event->type() == ui::ET_TOUCH_PRESSED) {
-      in_touch_sequence_ = true;
-      event->StopPropagation();
-      return;
-    }
-  } else {
-    if (event->type() == ui::ET_TOUCH_RELEASED) {
-      in_touch_sequence_ = false;
-      event->SetHandled();
-      return;
-    }
-    event->StopPropagation();
-    return;
-  }
-
-  if (last_touch_event_was_handled_)
-   event->StopPropagation();
-}
-
-void TestViewIgnoreTouch::OnTouchEvent(ui::TouchEvent* event) {
-}
-
-TEST_F(ViewTest, TouchEvent) {
-  TestView* v1 = new TestView();
-  v1->SetBoundsRect(gfx::Rect(0, 0, 300, 300));
-
-  TestView* v2 = new TestView();
-  v2->SetBoundsRect(gfx::Rect(100, 100, 100, 100));
-
-  TestView* v3 = new TestViewIgnoreTouch();
-  v3->SetBoundsRect(gfx::Rect(0, 0, 100, 100));
-
-  scoped_ptr<Widget> widget(new Widget());
-  Widget::InitParams params = CreateParams(Widget::InitParams::TYPE_POPUP);
-  params.ownership = views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
-  params.bounds = gfx::Rect(50, 50, 650, 650);
-  widget->Init(params);
-  internal::RootView* root =
-      static_cast<internal::RootView*>(widget->GetRootView());
-
-  root->AddChildView(v1);
-  v1->AddChildView(v2);
-  v2->AddChildView(v3);
-
-  // |v3| completely obscures |v2|, but all the touch events on |v3| should
-  // reach |v2| because |v3| doesn't process any touch events.
-
-  // Make sure if none of the views handle the touch event, the gesture manager
-  // does.
-  v1->Reset();
-  v2->Reset();
-
-  ui::TouchEvent unhandled(ui::ET_TOUCH_MOVED,
-                           gfx::Point(400, 400),
-                           0, /* no flags */
-                           0, /* first finger touch */
-                           base::TimeDelta(),
-                           1.0, 0.0, 1.0, 0.0);
-  root->DispatchTouchEvent(&unhandled);
-
-  EXPECT_EQ(v1->last_touch_event_type_, 0);
-  EXPECT_EQ(v2->last_touch_event_type_, 0);
-
-  // Test press, drag, release touch sequence.
-  v1->Reset();
-  v2->Reset();
-
-  ui::TouchEvent pressed(ui::ET_TOUCH_PRESSED,
-                         gfx::Point(110, 120),
-                         0, /* no flags */
-                         0, /* first finger touch */
-                         base::TimeDelta(),
-                         1.0, 0.0, 1.0, 0.0);
-  v2->last_touch_event_was_handled_ = true;
-  root->DispatchTouchEvent(&pressed);
-
-  EXPECT_EQ(v2->last_touch_event_type_, ui::ET_TOUCH_PRESSED);
-  EXPECT_EQ(v2->location_.x(), 10);
-  EXPECT_EQ(v2->location_.y(), 20);
-  // Make sure v1 did not receive the event
-  EXPECT_EQ(v1->last_touch_event_type_, 0);
-
-  // Drag event out of bounds. Should still go to v2
-  v1->Reset();
-  v2->Reset();
-  ui::TouchEvent dragged(ui::ET_TOUCH_MOVED,
-                         gfx::Point(50, 40),
-                         0, /* no flags */
-                         0, /* first finger touch */
-                         base::TimeDelta(),
-                         1.0, 0.0, 1.0, 0.0);
-
-  root->DispatchTouchEvent(&dragged);
-  EXPECT_EQ(v2->last_touch_event_type_, ui::ET_TOUCH_MOVED);
-  EXPECT_EQ(v2->location_.x(), -50);
-  EXPECT_EQ(v2->location_.y(), -60);
-  // Make sure v1 did not receive the event
-  EXPECT_EQ(v1->last_touch_event_type_, 0);
-
-  // Released event out of bounds. Should still go to v2
-  v1->Reset();
-  v2->Reset();
-  ui::TouchEvent released(ui::ET_TOUCH_RELEASED, gfx::Point(),
-                          0, /* no flags */
-                          0, /* first finger */
-                          base::TimeDelta(),
-                          1.0, 0.0, 1.0, 0.0);
-  v2->last_touch_event_was_handled_ = true;
-  root->DispatchTouchEvent(&released);
-  EXPECT_EQ(v2->last_touch_event_type_, ui::ET_TOUCH_RELEASED);
-  EXPECT_EQ(v2->location_.x(), -100);
-  EXPECT_EQ(v2->location_.y(), -100);
-  // Make sure v1 did not receive the event
-  EXPECT_EQ(v1->last_touch_event_type_, 0);
-
-  widget->CloseNow();
-}
 
 void TestView::OnGestureEvent(ui::GestureEvent* event) {
 }
@@ -624,6 +502,7 @@ TEST_F(ViewTest, GestureEvent) {
   widget->Init(params);
   internal::RootView* root =
       static_cast<internal::RootView*>(widget->GetRootView());
+  ui::EventDispatchDetails details;
 
   root->AddChildView(v1);
   v1->AddChildView(v2);
@@ -640,14 +519,19 @@ TEST_F(ViewTest, GestureEvent) {
 
   // Gesture on |v3|
   GestureEventForTest g1(ui::ET_GESTURE_TAP, 110, 110, 0);
-  root->DispatchGestureEvent(&g1);
+  details = root->OnEventFromSource(&g1);
+  EXPECT_FALSE(details.dispatcher_destroyed);
+  EXPECT_FALSE(details.target_destroyed);
+
   EXPECT_EQ(ui::ET_GESTURE_TAP, v2->last_gesture_event_type_);
   EXPECT_EQ(gfx::Point(10, 10), v2->location_);
   EXPECT_EQ(ui::ET_UNKNOWN, v1->last_gesture_event_type_);
 
   // Simulate an up so that RootView is no longer targetting |v3|.
   GestureEventForTest g1_up(ui::ET_GESTURE_END, 110, 110, 0);
-  root->DispatchGestureEvent(&g1_up);
+  details = root->OnEventFromSource(&g1_up);
+  EXPECT_FALSE(details.dispatcher_destroyed);
+  EXPECT_FALSE(details.target_destroyed);
 
   v1->Reset();
   v2->Reset();
@@ -655,7 +539,10 @@ TEST_F(ViewTest, GestureEvent) {
 
   // Gesture on |v1|
   GestureEventForTest g2(ui::ET_GESTURE_TAP, 80, 80, 0);
-  root->DispatchGestureEvent(&g2);
+  details = root->OnEventFromSource(&g2);
+  EXPECT_FALSE(details.dispatcher_destroyed);
+  EXPECT_FALSE(details.target_destroyed);
+
   EXPECT_EQ(ui::ET_GESTURE_TAP, v1->last_gesture_event_type_);
   EXPECT_EQ(gfx::Point(80, 80), v1->location_);
   EXPECT_EQ(ui::ET_UNKNOWN, v2->last_gesture_event_type_);
@@ -664,7 +551,10 @@ TEST_F(ViewTest, GestureEvent) {
   // to |v1| as that is the view the touch was initially down on.
   v1->last_gesture_event_type_ = ui::ET_UNKNOWN;
   v3->last_gesture_event_type_ = ui::ET_UNKNOWN;
-  root->DispatchGestureEvent(&g1);
+  details = root->OnEventFromSource(&g1);
+  EXPECT_FALSE(details.dispatcher_destroyed);
+  EXPECT_FALSE(details.target_destroyed);
+
   EXPECT_EQ(ui::ET_GESTURE_TAP, v1->last_gesture_event_type_);
   EXPECT_EQ(ui::ET_UNKNOWN, v3->last_gesture_event_type_);
   EXPECT_EQ("110,110", v1->location_.ToString());
@@ -690,6 +580,7 @@ TEST_F(ViewTest, ScrollGestureEvent) {
   widget->Init(params);
   internal::RootView* root =
       static_cast<internal::RootView*>(widget->GetRootView());
+  ui::EventDispatchDetails details;
 
   root->AddChildView(v1);
   v1->AddChildView(v2);
@@ -706,7 +597,10 @@ TEST_F(ViewTest, ScrollGestureEvent) {
 
   // Gesture on |v3|
   GestureEventForTest g1(ui::ET_GESTURE_TAP, 110, 110, 0);
-  root->DispatchGestureEvent(&g1);
+  details = root->OnEventFromSource(&g1);
+  EXPECT_FALSE(details.dispatcher_destroyed);
+  EXPECT_FALSE(details.target_destroyed);
+
   EXPECT_EQ(ui::ET_GESTURE_TAP, v2->last_gesture_event_type_);
   EXPECT_EQ(gfx::Point(10, 10), v2->location_);
   EXPECT_EQ(ui::ET_UNKNOWN, v1->last_gesture_event_type_);
@@ -717,7 +611,10 @@ TEST_F(ViewTest, ScrollGestureEvent) {
   // since it does not process scroll-gesture events, these events should reach
   // |v1|.
   GestureEventForTest gscroll_begin(ui::ET_GESTURE_SCROLL_BEGIN, 115, 115, 0);
-  root->DispatchGestureEvent(&gscroll_begin);
+  details = root->OnEventFromSource(&gscroll_begin);
+  EXPECT_FALSE(details.dispatcher_destroyed);
+  EXPECT_FALSE(details.target_destroyed);
+
   EXPECT_EQ(ui::ET_UNKNOWN, v2->last_gesture_event_type_);
   EXPECT_EQ(ui::ET_GESTURE_SCROLL_BEGIN, v1->last_gesture_event_type_);
   v1->Reset();
@@ -726,19 +623,28 @@ TEST_F(ViewTest, ScrollGestureEvent) {
   // default gesture handler, and not |v1| (even though it is the view under the
   // point, and is the scroll event handler).
   GestureEventForTest second_tap(ui::ET_GESTURE_TAP, 70, 70, 0);
-  root->DispatchGestureEvent(&second_tap);
+  details = root->OnEventFromSource(&second_tap);
+  EXPECT_FALSE(details.dispatcher_destroyed);
+  EXPECT_FALSE(details.target_destroyed);
+
   EXPECT_EQ(ui::ET_GESTURE_TAP, v2->last_gesture_event_type_);
   EXPECT_EQ(ui::ET_UNKNOWN, v1->last_gesture_event_type_);
   v2->Reset();
 
   GestureEventForTest gscroll_end(ui::ET_GESTURE_SCROLL_END, 50, 50, 0);
-  root->DispatchGestureEvent(&gscroll_end);
+  details = root->OnEventFromSource(&gscroll_end);
+  EXPECT_FALSE(details.dispatcher_destroyed);
+  EXPECT_FALSE(details.target_destroyed);
+
   EXPECT_EQ(ui::ET_GESTURE_SCROLL_END, v1->last_gesture_event_type_);
   v1->Reset();
 
   // Simulate an up so that RootView is no longer targetting |v3|.
   GestureEventForTest g1_up(ui::ET_GESTURE_END, 110, 110, 0);
-  root->DispatchGestureEvent(&g1_up);
+  details = root->OnEventFromSource(&g1_up);
+  EXPECT_FALSE(details.dispatcher_destroyed);
+  EXPECT_FALSE(details.target_destroyed);
+
   EXPECT_EQ(ui::ET_GESTURE_END, v2->last_gesture_event_type_);
 
   v1->Reset();
@@ -747,7 +653,10 @@ TEST_F(ViewTest, ScrollGestureEvent) {
 
   // Gesture on |v1|
   GestureEventForTest g2(ui::ET_GESTURE_TAP, 80, 80, 0);
-  root->DispatchGestureEvent(&g2);
+  details = root->OnEventFromSource(&g2);
+  EXPECT_FALSE(details.dispatcher_destroyed);
+  EXPECT_FALSE(details.target_destroyed);
+
   EXPECT_EQ(ui::ET_GESTURE_TAP, v1->last_gesture_event_type_);
   EXPECT_EQ(gfx::Point(80, 80), v1->location_);
   EXPECT_EQ(ui::ET_UNKNOWN, v2->last_gesture_event_type_);
@@ -756,7 +665,10 @@ TEST_F(ViewTest, ScrollGestureEvent) {
   // to |v1| as that is the view the touch was initially down on.
   v1->last_gesture_event_type_ = ui::ET_UNKNOWN;
   v3->last_gesture_event_type_ = ui::ET_UNKNOWN;
-  root->DispatchGestureEvent(&g1);
+  details = root->OnEventFromSource(&g1);
+  EXPECT_FALSE(details.dispatcher_destroyed);
+  EXPECT_FALSE(details.target_destroyed);
+
   EXPECT_EQ(ui::ET_GESTURE_TAP, v1->last_gesture_event_type_);
   EXPECT_EQ(ui::ET_UNKNOWN, v3->last_gesture_event_type_);
   EXPECT_EQ("110,110", v1->location_.ToString());
@@ -768,7 +680,7 @@ TEST_F(ViewTest, ScrollGestureEvent) {
 // Painting
 ////////////////////////////////////////////////////////////////////////////////
 
-void TestView::Paint(gfx::Canvas* canvas) {
+void TestView::Paint(gfx::Canvas* canvas, const CullSet& cull_set) {
   canvas->sk_canvas()->getClipBounds(&last_clip_);
 }
 
@@ -783,66 +695,6 @@ void CheckRect(const SkRect& check_rect, const SkRect& target_rect) {
   EXPECT_EQ(target_rect.fTop, check_rect.fTop);
   EXPECT_EQ(target_rect.fBottom, check_rect.fBottom);
 }
-
-/* This test is disabled because it is flakey on some systems.
-TEST_F(ViewTest, DISABLED_Painting) {
-  // Determine if InvalidateRect generates an empty paint rectangle.
-  EmptyWindow paint_window(CRect(50, 50, 650, 650));
-  paint_window.RedrawWindow(CRect(0, 0, 600, 600), NULL,
-                            RDW_UPDATENOW | RDW_INVALIDATE | RDW_ALLCHILDREN);
-  bool empty_paint = paint_window.empty_paint();
-
-  NativeWidgetWin window;
-  window.set_delete_on_destroy(false);
-  window.set_window_style(WS_OVERLAPPEDWINDOW);
-  window.Init(NULL, gfx::Rect(50, 50, 650, 650), NULL);
-  View* root = window.GetRootView();
-
-  TestView* v1 = new TestView();
-  v1->SetBoundsRect(gfx::Rect(0, 0, 650, 650));
-  root->AddChildView(v1);
-
-  TestView* v2 = new TestView();
-  v2->SetBoundsRect(gfx::Rect(10, 10, 80, 80));
-  v1->AddChildView(v2);
-
-  TestView* v3 = new TestView();
-  v3->SetBoundsRect(gfx::Rect(10, 10, 60, 60));
-  v2->AddChildView(v3);
-
-  TestView* v4 = new TestView();
-  v4->SetBoundsRect(gfx::Rect(10, 200, 100, 100));
-  v1->AddChildView(v4);
-
-  // Make sure to paint current rects
-  PaintRootView(root, empty_paint);
-
-
-  v1->Reset();
-  v2->Reset();
-  v3->Reset();
-  v4->Reset();
-  v3->SchedulePaintInRect(gfx::Rect(10, 10, 10, 10));
-  PaintRootView(root, empty_paint);
-
-  SkRect tmp_rect;
-
-  tmp_rect.iset(10, 10, 20, 20);
-  CheckRect(v3->last_clip_, tmp_rect);
-
-  tmp_rect.iset(20, 20, 30, 30);
-  CheckRect(v2->last_clip_, tmp_rect);
-
-  tmp_rect.iset(30, 30, 40, 40);
-  CheckRect(v1->last_clip_, tmp_rect);
-
-  // Make sure v4 was not painted
-  tmp_rect.setEmpty();
-  CheckRect(v4->last_clip_, tmp_rect);
-
-  window.DestroyWindow();
-}
-*/
 
 TEST_F(ViewTest, RemoveNotification) {
   ViewStorage* vs = ViewStorage::GetInstance();
@@ -1370,6 +1222,163 @@ TEST_F(ViewTest, GetEventHandlerForRect) {
   widget->CloseNow();
 }
 
+// Tests that GetEventHandlerForRect() and GetTooltipHandlerForPoint() behave
+// as expected when different views in the view hierarchy return false
+// when CanProcessEventsWithinSubtree() is called.
+TEST_F(ViewTest, CanProcessEventsWithinSubtree) {
+  Widget* widget = new Widget;
+  Widget::InitParams params = CreateParams(Widget::InitParams::TYPE_POPUP);
+  widget->Init(params);
+  View* root_view = widget->GetRootView();
+  root_view->SetBoundsRect(gfx::Rect(0, 0, 500, 500));
+
+  // Have this hierarchy of views (the coords here are in the coordinate
+  // space of the root view):
+  // v (0, 0, 100, 100)
+  //  - v_child (0, 0, 20, 30)
+  //    - v_grandchild (5, 5, 5, 15)
+
+  TestView* v = new TestView;
+  v->SetBounds(0, 0, 100, 100);
+  root_view->AddChildView(v);
+  v->set_notify_enter_exit_on_child(true);
+
+  TestView* v_child = new TestView;
+  v_child->SetBounds(0, 0, 20, 30);
+  v->AddChildView(v_child);
+
+  TestView* v_grandchild = new TestView;
+  v_grandchild->SetBounds(5, 5, 5, 15);
+  v_child->AddChildView(v_grandchild);
+
+  v->Reset();
+  v_child->Reset();
+  v_grandchild->Reset();
+
+  // Define rects and points within the views in the hierarchy.
+  gfx::Rect rect_in_v_grandchild(7, 7, 3, 3);
+  gfx::Point point_in_v_grandchild(rect_in_v_grandchild.origin());
+  gfx::Rect rect_in_v_child(12, 3, 5, 5);
+  gfx::Point point_in_v_child(rect_in_v_child.origin());
+  gfx::Rect rect_in_v(50, 50, 25, 30);
+  gfx::Point point_in_v(rect_in_v.origin());
+
+  // When all three views return true when CanProcessEventsWithinSubtree()
+  // is called, targeting should behave as expected.
+
+  View* result_view = root_view->GetEventHandlerForRect(rect_in_v_grandchild);
+  EXPECT_EQ(v_grandchild, result_view);
+  result_view = NULL;
+  result_view = root_view->GetTooltipHandlerForPoint(point_in_v_grandchild);
+  EXPECT_EQ(v_grandchild, result_view);
+  result_view = NULL;
+
+  result_view = root_view->GetEventHandlerForRect(rect_in_v_child);
+  EXPECT_EQ(v_child, result_view);
+  result_view = NULL;
+  result_view = root_view->GetTooltipHandlerForPoint(point_in_v_child);
+  EXPECT_EQ(v_child, result_view);
+  result_view = NULL;
+
+  result_view = root_view->GetEventHandlerForRect(rect_in_v);
+  EXPECT_EQ(v, result_view);
+  result_view = NULL;
+  result_view = root_view->GetTooltipHandlerForPoint(point_in_v);
+  EXPECT_EQ(v, result_view);
+  result_view = NULL;
+
+  // When |v_grandchild| returns false when CanProcessEventsWithinSubtree()
+  // is called, then |v_grandchild| cannot be returned as a target.
+
+  v_grandchild->set_can_process_events_within_subtree(false);
+
+  result_view = root_view->GetEventHandlerForRect(rect_in_v_grandchild);
+  EXPECT_EQ(v_child, result_view);
+  result_view = NULL;
+  result_view = root_view->GetTooltipHandlerForPoint(point_in_v_grandchild);
+  EXPECT_EQ(v_child, result_view);
+  result_view = NULL;
+
+  result_view = root_view->GetEventHandlerForRect(rect_in_v_child);
+  EXPECT_EQ(v_child, result_view);
+  result_view = NULL;
+  result_view = root_view->GetTooltipHandlerForPoint(point_in_v_child);
+  EXPECT_EQ(v_child, result_view);
+  result_view = NULL;
+
+  result_view = root_view->GetEventHandlerForRect(rect_in_v);
+  EXPECT_EQ(v, result_view);
+  result_view = NULL;
+  result_view = root_view->GetTooltipHandlerForPoint(point_in_v);
+  EXPECT_EQ(v, result_view);
+
+  // When |v_grandchild| returns false when CanProcessEventsWithinSubtree()
+  // is called, then NULL should be returned as a target if we call
+  // GetTooltipHandlerForPoint() with |v_grandchild| as the root of the
+  // views tree. Note that the location must be in the coordinate space
+  // of the root view (|v_grandchild| in this case), so use (1, 1).
+
+  result_view = v_grandchild;
+  result_view = v_grandchild->GetTooltipHandlerForPoint(gfx::Point(1, 1));
+  EXPECT_EQ(NULL, result_view);
+  result_view = NULL;
+
+  // When |v_child| returns false when CanProcessEventsWithinSubtree()
+  // is called, then neither |v_child| nor |v_grandchild| can be returned
+  // as a target (|v| should be returned as the target for each case).
+
+  v_grandchild->Reset();
+  v_child->set_can_process_events_within_subtree(false);
+
+  result_view = root_view->GetEventHandlerForRect(rect_in_v_grandchild);
+  EXPECT_EQ(v, result_view);
+  result_view = NULL;
+  result_view = root_view->GetTooltipHandlerForPoint(point_in_v_grandchild);
+  EXPECT_EQ(v, result_view);
+  result_view = NULL;
+
+  result_view = root_view->GetEventHandlerForRect(rect_in_v_child);
+  EXPECT_EQ(v, result_view);
+  result_view = NULL;
+  result_view = root_view->GetTooltipHandlerForPoint(point_in_v_child);
+  EXPECT_EQ(v, result_view);
+  result_view = NULL;
+
+  result_view = root_view->GetEventHandlerForRect(rect_in_v);
+  EXPECT_EQ(v, result_view);
+  result_view = NULL;
+  result_view = root_view->GetTooltipHandlerForPoint(point_in_v);
+  EXPECT_EQ(v, result_view);
+  result_view = NULL;
+
+  // When |v| returns false when CanProcessEventsWithinSubtree()
+  // is called, then none of |v|, |v_child|, and |v_grandchild| can be returned
+  // as a target (|root_view| should be returned as the target for each case).
+
+  v_child->Reset();
+  v->set_can_process_events_within_subtree(false);
+
+  result_view = root_view->GetEventHandlerForRect(rect_in_v_grandchild);
+  EXPECT_EQ(root_view, result_view);
+  result_view = NULL;
+  result_view = root_view->GetTooltipHandlerForPoint(point_in_v_grandchild);
+  EXPECT_EQ(root_view, result_view);
+  result_view = NULL;
+
+  result_view = root_view->GetEventHandlerForRect(rect_in_v_child);
+  EXPECT_EQ(root_view, result_view);
+  result_view = NULL;
+  result_view = root_view->GetTooltipHandlerForPoint(point_in_v_child);
+  EXPECT_EQ(root_view, result_view);
+  result_view = NULL;
+
+  result_view = root_view->GetEventHandlerForRect(rect_in_v);
+  EXPECT_EQ(root_view, result_view);
+  result_view = NULL;
+  result_view = root_view->GetTooltipHandlerForPoint(point_in_v);
+  EXPECT_EQ(root_view, result_view);
+}
+
 TEST_F(ViewTest, NotifyEnterExitOnChild) {
   Widget* widget = new Widget;
   Widget::InitParams params = CreateParams(Widget::InitParams::TYPE_POPUP);
@@ -1425,7 +1434,7 @@ TEST_F(ViewTest, NotifyEnterExitOnChild) {
 
   // Move the mouse in v111.
   gfx::Point p1(6, 6);
-  ui::MouseEvent move1(ui::ET_MOUSE_MOVED, p1, p1, 0);
+  ui::MouseEvent move1(ui::ET_MOUSE_MOVED, p1, p1, 0, 0);
   root_view->OnMouseMoved(move1);
   EXPECT_TRUE(v111->received_mouse_enter_);
   EXPECT_FALSE(v11->last_mouse_event_type_);
@@ -1436,7 +1445,7 @@ TEST_F(ViewTest, NotifyEnterExitOnChild) {
 
   // Now, move into v121.
   gfx::Point p2(65, 21);
-  ui::MouseEvent move2(ui::ET_MOUSE_MOVED, p2, p2, 0);
+  ui::MouseEvent move2(ui::ET_MOUSE_MOVED, p2, p2, 0, 0);
   root_view->OnMouseMoved(move2);
   EXPECT_TRUE(v111->received_mouse_exit_);
   EXPECT_TRUE(v121->received_mouse_enter_);
@@ -1447,7 +1456,7 @@ TEST_F(ViewTest, NotifyEnterExitOnChild) {
 
   // Now, move into v11.
   gfx::Point p3(1, 1);
-  ui::MouseEvent move3(ui::ET_MOUSE_MOVED, p3, p3, 0);
+  ui::MouseEvent move3(ui::ET_MOUSE_MOVED, p3, p3, 0, 0);
   root_view->OnMouseMoved(move3);
   EXPECT_TRUE(v121->received_mouse_exit_);
   EXPECT_TRUE(v11->received_mouse_enter_);
@@ -1458,7 +1467,7 @@ TEST_F(ViewTest, NotifyEnterExitOnChild) {
 
   // Move to v21.
   gfx::Point p4(121, 15);
-  ui::MouseEvent move4(ui::ET_MOUSE_MOVED, p4, p4, 0);
+  ui::MouseEvent move4(ui::ET_MOUSE_MOVED, p4, p4, 0, 0);
   root_view->OnMouseMoved(move4);
   EXPECT_TRUE(v21->received_mouse_enter_);
   EXPECT_FALSE(v2->last_mouse_event_type_);
@@ -1471,7 +1480,7 @@ TEST_F(ViewTest, NotifyEnterExitOnChild) {
 
   // Move to v1.
   gfx::Point p5(21, 0);
-  ui::MouseEvent move5(ui::ET_MOUSE_MOVED, p5, p5, 0);
+  ui::MouseEvent move5(ui::ET_MOUSE_MOVED, p5, p5, 0, 0);
   root_view->OnMouseMoved(move5);
   EXPECT_TRUE(v21->received_mouse_exit_);
   EXPECT_TRUE(v1->received_mouse_enter_);
@@ -1481,7 +1490,7 @@ TEST_F(ViewTest, NotifyEnterExitOnChild) {
 
   // Now, move into v11.
   gfx::Point p6(15, 15);
-  ui::MouseEvent mouse6(ui::ET_MOUSE_MOVED, p6, p6, 0);
+  ui::MouseEvent mouse6(ui::ET_MOUSE_MOVED, p6, p6, 0, 0);
   root_view->OnMouseMoved(mouse6);
   EXPECT_TRUE(v11->received_mouse_enter_);
   EXPECT_FALSE(v1->last_mouse_event_type_);
@@ -1493,7 +1502,7 @@ TEST_F(ViewTest, NotifyEnterExitOnChild) {
   // and the mouse remains inside |v1| the whole time, it receives another ENTER
   // when the mouse leaves v11.
   gfx::Point p7(21, 0);
-  ui::MouseEvent mouse7(ui::ET_MOUSE_MOVED, p7, p7, 0);
+  ui::MouseEvent mouse7(ui::ET_MOUSE_MOVED, p7, p7, 0, 0);
   root_view->OnMouseMoved(mouse7);
   EXPECT_TRUE(v11->received_mouse_exit_);
   EXPECT_FALSE(v1->received_mouse_enter_);
@@ -1502,10 +1511,10 @@ TEST_F(ViewTest, NotifyEnterExitOnChild) {
 }
 
 TEST_F(ViewTest, Textfield) {
-  const string16 kText = ASCIIToUTF16("Reality is that which, when you stop "
-                                      "believing it, doesn't go away.");
-  const string16 kExtraText = ASCIIToUTF16("Pretty deep, Philip!");
-  const string16 kEmptyString;
+  const base::string16 kText = ASCIIToUTF16(
+      "Reality is that which, when you stop believing it, doesn't go away.");
+  const base::string16 kExtraText = ASCIIToUTF16("Pretty deep, Philip!");
+  const base::string16 kEmptyString;
 
   Widget* widget = new Widget;
   Widget::InitParams params = CreateParams(Widget::InitParams::TYPE_POPUP);
@@ -1521,7 +1530,7 @@ TEST_F(ViewTest, Textfield) {
   EXPECT_EQ(kText, textfield->text());
   textfield->AppendText(kExtraText);
   EXPECT_EQ(kText + kExtraText, textfield->text());
-  textfield->SetText(string16());
+  textfield->SetText(base::string16());
   EXPECT_EQ(kEmptyString, textfield->text());
 
   // Test selection related methods.
@@ -1537,9 +1546,10 @@ TEST_F(ViewTest, Textfield) {
 
 // Tests that the Textfield view respond appropiately to cut/copy/paste.
 TEST_F(ViewTest, TextfieldCutCopyPaste) {
-  const string16 kNormalText = ASCIIToUTF16("Normal");
-  const string16 kReadOnlyText = ASCIIToUTF16("Read only");
-  const string16 kPasswordText = ASCIIToUTF16("Password! ** Secret stuff **");
+  const base::string16 kNormalText = ASCIIToUTF16("Normal");
+  const base::string16 kReadOnlyText = ASCIIToUTF16("Read only");
+  const base::string16 kPasswordText =
+      ASCIIToUTF16("Password! ** Secret stuff **");
 
   ui::Clipboard* clipboard = ui::Clipboard::GetForCurrentThread();
 
@@ -1552,7 +1562,8 @@ TEST_F(ViewTest, TextfieldCutCopyPaste) {
   Textfield* normal = new Textfield();
   Textfield* read_only = new Textfield();
   read_only->SetReadOnly(true);
-  Textfield* password = new Textfield(Textfield::STYLE_OBSCURED);
+  Textfield* password = new Textfield();
+  password->SetTextInputType(ui::TEXT_INPUT_TYPE_PASSWORD);
 
   root_view->AddChildView(normal);
   root_view->AddChildView(read_only);
@@ -1568,7 +1579,7 @@ TEST_F(ViewTest, TextfieldCutCopyPaste) {
 
   normal->SelectAll(false);
   normal->ExecuteCommand(IDS_APP_CUT);
-  string16 result;
+  base::string16 result;
   clipboard->ReadText(ui::CLIPBOARD_TYPE_COPY_PASTE, &result);
   EXPECT_EQ(kNormalText, result);
   normal->SetText(kNormalText);  // Let's revert to the original content.
@@ -1641,7 +1652,9 @@ bool TestView::AcceleratorPressed(const ui::Accelerator& accelerator) {
   return true;
 }
 
-#if defined(OS_WIN) && !defined(USE_AURA)
+// TODO: these tests were initially commented out when getting aura to
+// run. Figure out if still valuable and either nuke or fix.
+#if 0
 TEST_F(ViewTest, ActivateAccelerator) {
   // Register a keyboard accelerator before the view is added to a window.
   ui::Accelerator return_accelerator(ui::VKEY_RETURN, ui::EF_NONE);
@@ -1706,9 +1719,7 @@ TEST_F(ViewTest, ActivateAccelerator) {
 
   widget->CloseNow();
 }
-#endif
 
-#if defined(OS_WIN) && !defined(USE_AURA)
 TEST_F(ViewTest, HiddenViewWithAccelerator) {
   ui::Accelerator return_accelerator(ui::VKEY_RETURN, ui::EF_NONE);
   TestView* view = new TestView();
@@ -1736,9 +1747,7 @@ TEST_F(ViewTest, HiddenViewWithAccelerator) {
 
   widget->CloseNow();
 }
-#endif
 
-#if defined(OS_WIN) && !defined(USE_AURA)
 TEST_F(ViewTest, ViewInHiddenWidgetWithAccelerator) {
   ui::Accelerator return_accelerator(ui::VKEY_RETURN, ui::EF_NONE);
   TestView* view = new TestView();
@@ -1770,9 +1779,7 @@ TEST_F(ViewTest, ViewInHiddenWidgetWithAccelerator) {
 
   widget->CloseNow();
 }
-#endif
 
-#if defined(OS_WIN) && !defined(USE_AURA)
 ////////////////////////////////////////////////////////////////////////////////
 // Mouse-wheel message rerouting
 ////////////////////////////////////////////////////////////////////////////////
@@ -1849,20 +1856,10 @@ TEST_F(ViewTest, DISABLED_RerouteMouseWheelTest) {
                 WM_MOUSEWHEEL, MAKEWPARAM(0, -20), MAKELPARAM(250, 250));
   EXPECT_EQ(20, scroll_view->GetVisibleRect().y());
 
-  // Then the text-field.
-  ::SendMessage(view_with_controls->text_field_->GetTestingHandle(),
-                WM_MOUSEWHEEL, MAKEWPARAM(0, -20), MAKELPARAM(250, 250));
-  EXPECT_EQ(80, scroll_view->GetVisibleRect().y());
-
-  // Ensure we don't scroll when the mouse is not over that window.
-  ::SendMessage(view_with_controls->text_field_->GetTestingHandle(),
-                WM_MOUSEWHEEL, MAKEWPARAM(0, -20), MAKELPARAM(50, 50));
-  EXPECT_EQ(80, scroll_view->GetVisibleRect().y());
-
   window1->CloseNow();
   window2->CloseNow();
 }
-#endif
+#endif  // 0
 
 ////////////////////////////////////////////////////////////////////////////////
 // Native view hierachy
@@ -2030,14 +2027,15 @@ TEST_F(ViewTest, TransformEvent) {
 
   gfx::Point p1(110, 210);
   ui::MouseEvent pressed(ui::ET_MOUSE_PRESSED, p1, p1,
-                         ui::EF_LEFT_MOUSE_BUTTON);
+                         ui::EF_LEFT_MOUSE_BUTTON, ui::EF_LEFT_MOUSE_BUTTON);
   root->OnMousePressed(pressed);
   EXPECT_EQ(0, v1->last_mouse_event_type_);
   EXPECT_EQ(ui::ET_MOUSE_PRESSED, v2->last_mouse_event_type_);
   EXPECT_EQ(190, v2->location_.x());
   EXPECT_EQ(10, v2->location_.y());
 
-  ui::MouseEvent released(ui::ET_MOUSE_RELEASED, gfx::Point(), gfx::Point(), 0);
+  ui::MouseEvent released(ui::ET_MOUSE_RELEASED, gfx::Point(), gfx::Point(), 0,
+                          0);
   root->OnMouseReleased(released);
 
   // Now rotate |v2| inside |v1| clockwise.
@@ -2054,7 +2052,7 @@ TEST_F(ViewTest, TransformEvent) {
 
   gfx::Point point2(110, 320);
   ui::MouseEvent p2(ui::ET_MOUSE_PRESSED, point2, point2,
-                    ui::EF_LEFT_MOUSE_BUTTON);
+                    ui::EF_LEFT_MOUSE_BUTTON, ui::EF_LEFT_MOUSE_BUTTON);
   root->OnMousePressed(p2);
   EXPECT_EQ(0, v1->last_mouse_event_type_);
   EXPECT_EQ(ui::ET_MOUSE_PRESSED, v2->last_mouse_event_type_);
@@ -2090,7 +2088,7 @@ TEST_F(ViewTest, TransformEvent) {
 
   gfx::Point point(112, 110);
   ui::MouseEvent p3(ui::ET_MOUSE_PRESSED, point, point,
-                    ui::EF_LEFT_MOUSE_BUTTON);
+                    ui::EF_LEFT_MOUSE_BUTTON, ui::EF_LEFT_MOUSE_BUTTON);
   root->OnMousePressed(p3);
 
   EXPECT_EQ(ui::ET_MOUSE_PRESSED, v3->last_mouse_event_type_);
@@ -2129,7 +2127,7 @@ TEST_F(ViewTest, TransformEvent) {
 
   gfx::Point point3(124, 125);
   ui::MouseEvent p4(ui::ET_MOUSE_PRESSED, point3, point3,
-                    ui::EF_LEFT_MOUSE_BUTTON);
+                    ui::EF_LEFT_MOUSE_BUTTON, ui::EF_LEFT_MOUSE_BUTTON);
   root->OnMousePressed(p4);
 
   EXPECT_EQ(ui::ET_MOUSE_PRESSED, v3->last_mouse_event_type_);
@@ -2297,6 +2295,39 @@ TEST_F(ViewTest, SetBoundsSameBoundsDoesntSchedulePaint) {
   view.scheduled_paint_rects_.clear();
   view.SetBoundsRect(gfx::Rect(0, 0, 100, 100));
   EXPECT_TRUE(view.scheduled_paint_rects_.empty());
+}
+
+// Verifies AddChildView() and RemoveChildView() schedule appropriate paints.
+TEST_F(ViewTest, AddAndRemoveSchedulePaints) {
+  gfx::Rect viewport_bounds(0, 0, 100, 100);
+
+  // We have to put the View hierarchy into a Widget or no paints will be
+  // scheduled.
+  scoped_ptr<Widget> widget(new Widget);
+  Widget::InitParams params = CreateParams(Widget::InitParams::TYPE_POPUP);
+  params.ownership = views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
+  params.bounds = viewport_bounds;
+  widget->Init(params);
+  widget->GetRootView()->SetBoundsRect(viewport_bounds);
+
+  TestView* parent_view = new TestView;
+  widget->SetContentsView(parent_view);
+  parent_view->SetBoundsRect(viewport_bounds);
+  parent_view->scheduled_paint_rects_.clear();
+
+  View* child_view = new View;
+  child_view->SetBoundsRect(gfx::Rect(0, 0, 20, 20));
+  parent_view->AddChildView(child_view);
+  ASSERT_EQ(1U, parent_view->scheduled_paint_rects_.size());
+  EXPECT_EQ(child_view->bounds(), parent_view->scheduled_paint_rects_.front());
+
+  parent_view->scheduled_paint_rects_.clear();
+  parent_view->RemoveChildView(child_view);
+  scoped_ptr<View> child_deleter(child_view);
+  ASSERT_EQ(1U, parent_view->scheduled_paint_rects_.size());
+  EXPECT_EQ(child_view->bounds(), parent_view->scheduled_paint_rects_.front());
+
+  widget->CloseNow();
 }
 
 // Tests conversion methods with a transform.
@@ -2992,8 +3023,6 @@ TEST_F(ViewTest, AddExistingChild) {
 // Layers
 ////////////////////////////////////////////////////////////////////////////////
 
-#if defined(USE_AURA)
-
 namespace {
 
 // Test implementation of LayerAnimator.
@@ -3027,7 +3056,7 @@ void TestLayerAnimator::SetBounds(const gfx::Rect& bounds) {
 
 class ViewLayerTest : public ViewsTestBase {
  public:
-  ViewLayerTest() : widget_(NULL), old_use_acceleration_(false) {}
+  ViewLayerTest() : widget_(NULL) {}
 
   virtual ~ViewLayerTest() {
   }
@@ -3039,9 +3068,6 @@ class ViewLayerTest : public ViewsTestBase {
 
   virtual void SetUp() OVERRIDE {
     ViewTest::SetUp();
-    old_use_acceleration_ = View::get_use_acceleration_when_possible();
-    View::set_use_acceleration_when_possible(true);
-
     widget_ = new Widget;
     Widget::InitParams params = CreateParams(Widget::InitParams::TYPE_POPUP);
     params.bounds = gfx::Rect(50, 50, 200, 200);
@@ -3051,7 +3077,6 @@ class ViewLayerTest : public ViewsTestBase {
   }
 
   virtual void TearDown() OVERRIDE {
-    View::set_use_acceleration_when_possible(old_use_acceleration_);
     widget_->CloseNow();
     ViewsTestBase::TearDown();
   }
@@ -3060,7 +3085,6 @@ class ViewLayerTest : public ViewsTestBase {
 
  private:
   Widget* widget_;
-  bool old_use_acceleration_;
 };
 
 
@@ -3506,17 +3530,6 @@ TEST_F(ViewLayerTest, AcquireLayer) {
   c1.reset();
 }
 
-// Verify that new layer scales content only if the old layer does.
-TEST_F(ViewLayerTest, RecreateLayerScaling) {
-  scoped_ptr<View> v(new View());
-  v->SetPaintToLayer(true);
-  // Set to non default value.
-  v->layer()->set_scale_content(false);
-  scoped_ptr<ui::Layer> old_layer(v->RecreateLayer());
-  ui::Layer* new_layer = v->layer();
-  EXPECT_FALSE(new_layer->scale_content());
-}
-
 // Verify the z-order of the layers as a result of calling RecreateLayer().
 TEST_F(ViewLayerTest, RecreateLayerZOrder) {
   scoped_ptr<View> v(new View());
@@ -3537,13 +3550,13 @@ TEST_F(ViewLayerTest, RecreateLayerZOrder) {
 
   scoped_ptr<ui::Layer> v1_old_layer(v1->RecreateLayer());
 
-  // Test the new layer order. |v1_old_layer| should be above the layers
+  // Test the new layer order. We expect: |v1| |v1_old_layer| |v2|.
   // for |v1| and |v2|.
   const std::vector<ui::Layer*>& child_layers_post = v->layer()->children();
   ASSERT_EQ(3u, child_layers_post.size());
   EXPECT_EQ(v1->layer(), child_layers_post[0]);
-  EXPECT_EQ(v2->layer(), child_layers_post[1]);
-  EXPECT_EQ(v1_old_layer, child_layers_post[2]);
+  EXPECT_EQ(v1_old_layer, child_layers_post[1]);
+  EXPECT_EQ(v2->layer(), child_layers_post[2]);
 }
 
 // Verify the z-order of the layers as a result of calling RecreateLayer when
@@ -3569,15 +3582,393 @@ TEST_F(ViewLayerTest, RecreateLayerZOrderWidgetParent) {
 
   scoped_ptr<ui::Layer> v1_old_layer(v1->RecreateLayer());
 
-  // Test the new layer order. |v1_old_layer| should be above the layers
-  // for |v1| and |v2|.
+  // Test the new layer order. We expect: |v1| |v1_old_layer| |v2|.
   const std::vector<ui::Layer*>& child_layers_post = root_layer->children();
   ASSERT_EQ(3u, child_layers_post.size());
   EXPECT_EQ(v1->layer(), child_layers_post[0]);
-  EXPECT_EQ(v2->layer(), child_layers_post[1]);
-  EXPECT_EQ(v1_old_layer, child_layers_post[2]);
+  EXPECT_EQ(v1_old_layer, child_layers_post[1]);
+  EXPECT_EQ(v2->layer(), child_layers_post[2]);
 }
 
-#endif  // USE_AURA
+// Verifies RecreateLayer() moves all Layers over, even those that don't have
+// a View.
+TEST_F(ViewLayerTest, RecreateLayerMovesNonViewChildren) {
+  View v;
+  v.SetPaintToLayer(true);
+  View child;
+  child.SetPaintToLayer(true);
+  v.AddChildView(&child);
+  ASSERT_TRUE(v.layer() != NULL);
+  ASSERT_EQ(1u, v.layer()->children().size());
+  EXPECT_EQ(v.layer()->children()[0], child.layer());
+
+  ui::Layer layer(ui::LAYER_NOT_DRAWN);
+  v.layer()->Add(&layer);
+  v.layer()->StackAtBottom(&layer);
+
+  scoped_ptr<ui::Layer> old_layer(v.RecreateLayer());
+
+  // All children should be moved from old layer to new layer.
+  ASSERT_TRUE(old_layer.get() != NULL);
+  EXPECT_TRUE(old_layer->children().empty());
+
+  // And new layer should have the two children.
+  ASSERT_TRUE(v.layer() != NULL);
+  ASSERT_EQ(2u, v.layer()->children().size());
+  EXPECT_EQ(v.layer()->children()[0], &layer);
+  EXPECT_EQ(v.layer()->children()[1], child.layer());
+}
+
+class BoundsTreeTestView : public View {
+ public:
+  BoundsTreeTestView() {}
+
+  virtual void PaintChildren(gfx::Canvas* canvas,
+                             const CullSet& cull_set) OVERRIDE {
+    // Save out a copy of the cull_set before calling the base implementation.
+    last_cull_set_.clear();
+    if (cull_set.cull_set_) {
+      for (base::hash_set<intptr_t>::iterator it = cull_set.cull_set_->begin();
+           it != cull_set.cull_set_->end();
+           ++it) {
+        last_cull_set_.insert(reinterpret_cast<View*>(*it));
+      }
+    }
+    View::PaintChildren(canvas, cull_set);
+  }
+
+  std::set<View*> last_cull_set_;
+};
+
+TEST_F(ViewLayerTest, BoundsTreePaintUpdatesCullSet) {
+  BoundsTreeTestView* test_view = new BoundsTreeTestView;
+  widget()->SetContentsView(test_view);
+
+  View* v1 = new View();
+  v1->SetBoundsRect(gfx::Rect(10, 15, 150, 151));
+  test_view->AddChildView(v1);
+
+  View* v2 = new View();
+  v2->SetBoundsRect(gfx::Rect(20, 33, 40, 50));
+  v1->AddChildView(v2);
+
+  // Schedule a full-view paint to get everyone's rectangles updated.
+  test_view->SchedulePaintInRect(test_view->bounds());
+  GetRootLayer()->GetCompositor()->ScheduleDraw();
+  ui::DrawWaiterForTest::Wait(GetRootLayer()->GetCompositor());
+
+  // Now we have test_view - v1 - v2. Damage to only test_view should only
+  // return root_view and test_view.
+  test_view->SchedulePaintInRect(gfx::Rect(0, 0, 1, 1));
+  GetRootLayer()->GetCompositor()->ScheduleDraw();
+  ui::DrawWaiterForTest::Wait(GetRootLayer()->GetCompositor());
+  EXPECT_EQ(2U, test_view->last_cull_set_.size());
+  EXPECT_EQ(1U, test_view->last_cull_set_.count(widget()->GetRootView()));
+  EXPECT_EQ(1U, test_view->last_cull_set_.count(test_view));
+
+  // Damage to v1 only should only return root_view, test_view, and v1.
+  test_view->SchedulePaintInRect(gfx::Rect(11, 16, 1, 1));
+  GetRootLayer()->GetCompositor()->ScheduleDraw();
+  ui::DrawWaiterForTest::Wait(GetRootLayer()->GetCompositor());
+  EXPECT_EQ(3U, test_view->last_cull_set_.size());
+  EXPECT_EQ(1U, test_view->last_cull_set_.count(widget()->GetRootView()));
+  EXPECT_EQ(1U, test_view->last_cull_set_.count(test_view));
+  EXPECT_EQ(1U, test_view->last_cull_set_.count(v1));
+
+  // A Damage rect inside v2 should get all 3 views back in the |last_cull_set_|
+  // on call to TestView::Paint(), along with the widget root view.
+  test_view->SchedulePaintInRect(gfx::Rect(31, 49, 1, 1));
+  GetRootLayer()->GetCompositor()->ScheduleDraw();
+  ui::DrawWaiterForTest::Wait(GetRootLayer()->GetCompositor());
+  EXPECT_EQ(4U, test_view->last_cull_set_.size());
+  EXPECT_EQ(1U, test_view->last_cull_set_.count(widget()->GetRootView()));
+  EXPECT_EQ(1U, test_view->last_cull_set_.count(test_view));
+  EXPECT_EQ(1U, test_view->last_cull_set_.count(v1));
+  EXPECT_EQ(1U, test_view->last_cull_set_.count(v2));
+}
+
+TEST_F(ViewLayerTest, BoundsTreeWithRTL) {
+  std::string locale = l10n_util::GetApplicationLocale(std::string());
+  base::i18n::SetICUDefaultLocale("ar");
+
+  BoundsTreeTestView* test_view = new BoundsTreeTestView;
+  widget()->SetContentsView(test_view);
+
+  // Add child views, which should be in RTL coordinate space of parent view.
+  View* v1 = new View;
+  v1->SetBoundsRect(gfx::Rect(10, 12, 25, 26));
+  test_view->AddChildView(v1);
+
+  View* v2 = new View;
+  v2->SetBoundsRect(gfx::Rect(5, 6, 7, 8));
+  v1->AddChildView(v2);
+
+  // Schedule a full-view paint to get everyone's rectangles updated.
+  test_view->SchedulePaintInRect(test_view->bounds());
+  GetRootLayer()->GetCompositor()->ScheduleDraw();
+  ui::DrawWaiterForTest::Wait(GetRootLayer()->GetCompositor());
+
+  // Damage to the right side of the parent view should touch both child views.
+  gfx::Rect rtl_damage(test_view->bounds().width() - 16, 18, 1, 1);
+  test_view->SchedulePaintInRect(rtl_damage);
+  GetRootLayer()->GetCompositor()->ScheduleDraw();
+  ui::DrawWaiterForTest::Wait(GetRootLayer()->GetCompositor());
+  EXPECT_EQ(4U, test_view->last_cull_set_.size());
+  EXPECT_EQ(1U, test_view->last_cull_set_.count(widget()->GetRootView()));
+  EXPECT_EQ(1U, test_view->last_cull_set_.count(test_view));
+  EXPECT_EQ(1U, test_view->last_cull_set_.count(v1));
+  EXPECT_EQ(1U, test_view->last_cull_set_.count(v2));
+
+  // Damage to the left side of the parent view should only touch the
+  // container views.
+  gfx::Rect ltr_damage(16, 18, 1, 1);
+  test_view->SchedulePaintInRect(ltr_damage);
+  GetRootLayer()->GetCompositor()->ScheduleDraw();
+  ui::DrawWaiterForTest::Wait(GetRootLayer()->GetCompositor());
+  EXPECT_EQ(2U, test_view->last_cull_set_.size());
+  EXPECT_EQ(1U, test_view->last_cull_set_.count(widget()->GetRootView()));
+  EXPECT_EQ(1U, test_view->last_cull_set_.count(test_view));
+
+  // Reset locale.
+  base::i18n::SetICUDefaultLocale(locale);
+}
+
+TEST_F(ViewLayerTest, BoundsTreeSetBoundsChangesCullSet) {
+  BoundsTreeTestView* test_view = new BoundsTreeTestView;
+  widget()->SetContentsView(test_view);
+
+  View* v1 = new View;
+  v1->SetBoundsRect(gfx::Rect(5, 6, 100, 101));
+  test_view->AddChildView(v1);
+
+  View* v2 = new View;
+  v2->SetBoundsRect(gfx::Rect(20, 33, 40, 50));
+  v1->AddChildView(v2);
+
+  // Schedule a full-view paint to get everyone's rectangles updated.
+  test_view->SchedulePaintInRect(test_view->bounds());
+  GetRootLayer()->GetCompositor()->ScheduleDraw();
+  ui::DrawWaiterForTest::Wait(GetRootLayer()->GetCompositor());
+
+  // Move v1 to a new origin out of the way of our next query.
+  v1->SetBoundsRect(gfx::Rect(50, 60, 100, 101));
+  // The move will force a repaint.
+  GetRootLayer()->GetCompositor()->ScheduleDraw();
+  ui::DrawWaiterForTest::Wait(GetRootLayer()->GetCompositor());
+
+  // Schedule a paint with damage rect where v1 used to be.
+  test_view->SchedulePaintInRect(gfx::Rect(5, 6, 10, 11));
+  GetRootLayer()->GetCompositor()->ScheduleDraw();
+  ui::DrawWaiterForTest::Wait(GetRootLayer()->GetCompositor());
+
+  // Should only have picked up root_view and test_view.
+  EXPECT_EQ(2U, test_view->last_cull_set_.size());
+  EXPECT_EQ(1U, test_view->last_cull_set_.count(widget()->GetRootView()));
+  EXPECT_EQ(1U, test_view->last_cull_set_.count(test_view));
+}
+
+TEST_F(ViewLayerTest, BoundsTreeLayerChangeMakesNewTree) {
+  BoundsTreeTestView* test_view = new BoundsTreeTestView;
+  widget()->SetContentsView(test_view);
+
+  View* v1 = new View;
+  v1->SetBoundsRect(gfx::Rect(5, 10, 15, 20));
+  test_view->AddChildView(v1);
+
+  View* v2 = new View;
+  v2->SetBoundsRect(gfx::Rect(1, 2, 3, 4));
+  v1->AddChildView(v2);
+
+  // Schedule a full-view paint to get everyone's rectangles updated.
+  test_view->SchedulePaintInRect(test_view->bounds());
+  GetRootLayer()->GetCompositor()->ScheduleDraw();
+  ui::DrawWaiterForTest::Wait(GetRootLayer()->GetCompositor());
+
+  // Set v1 to paint to its own layer, it should remove itself from the
+  // test_view heiarchy and no longer intersect with damage rects in that cull
+  // set.
+  v1->SetPaintToLayer(true);
+
+  // Schedule another full-view paint.
+  test_view->SchedulePaintInRect(test_view->bounds());
+  GetRootLayer()->GetCompositor()->ScheduleDraw();
+  ui::DrawWaiterForTest::Wait(GetRootLayer()->GetCompositor());
+  // v1 and v2 should no longer be present in the test_view cull_set.
+  EXPECT_EQ(2U, test_view->last_cull_set_.size());
+  EXPECT_EQ(0U, test_view->last_cull_set_.count(v1));
+  EXPECT_EQ(0U, test_view->last_cull_set_.count(v2));
+
+  // Now set v1 back to not painting to a layer.
+  v1->SetPaintToLayer(false);
+  // Schedule another full-view paint.
+  test_view->SchedulePaintInRect(test_view->bounds());
+  GetRootLayer()->GetCompositor()->ScheduleDraw();
+  ui::DrawWaiterForTest::Wait(GetRootLayer()->GetCompositor());
+  // We should be back to the full cull set including v1 and v2.
+  EXPECT_EQ(4U, test_view->last_cull_set_.size());
+  EXPECT_EQ(1U, test_view->last_cull_set_.count(widget()->GetRootView()));
+  EXPECT_EQ(1U, test_view->last_cull_set_.count(test_view));
+  EXPECT_EQ(1U, test_view->last_cull_set_.count(v1));
+  EXPECT_EQ(1U, test_view->last_cull_set_.count(v2));
+}
+
+TEST_F(ViewLayerTest, BoundsTreeRemoveChildRemovesBounds) {
+  BoundsTreeTestView* test_view = new BoundsTreeTestView;
+  widget()->SetContentsView(test_view);
+
+  View* v1 = new View;
+  v1->SetBoundsRect(gfx::Rect(5, 10, 15, 20));
+  test_view->AddChildView(v1);
+
+  View* v2 = new View;
+  v2->SetBoundsRect(gfx::Rect(1, 2, 3, 4));
+  v1->AddChildView(v2);
+
+  // Schedule a full-view paint to get everyone's rectangles updated.
+  test_view->SchedulePaintInRect(test_view->bounds());
+  GetRootLayer()->GetCompositor()->ScheduleDraw();
+  ui::DrawWaiterForTest::Wait(GetRootLayer()->GetCompositor());
+
+  // Now remove v1 from the root view.
+  test_view->RemoveChildView(v1);
+
+  // Schedule another full-view paint.
+  test_view->SchedulePaintInRect(test_view->bounds());
+  GetRootLayer()->GetCompositor()->ScheduleDraw();
+  ui::DrawWaiterForTest::Wait(GetRootLayer()->GetCompositor());
+  // v1 and v2 should no longer be present in the test_view cull_set.
+  EXPECT_EQ(2U, test_view->last_cull_set_.size());
+  EXPECT_EQ(0U, test_view->last_cull_set_.count(v1));
+  EXPECT_EQ(0U, test_view->last_cull_set_.count(v2));
+
+  // View v1 and v2 are no longer part of view hierarchy and therefore won't be
+  // deleted with that hierarchy.
+  delete v1;
+}
+
+TEST_F(ViewLayerTest, BoundsTreeMoveViewMovesBounds) {
+  BoundsTreeTestView* test_view = new BoundsTreeTestView;
+  widget()->SetContentsView(test_view);
+
+  // Build hierarchy v1 - v2 - v3.
+  View* v1 = new View;
+  v1->SetBoundsRect(gfx::Rect(20, 30, 150, 160));
+  test_view->AddChildView(v1);
+
+  View* v2 = new View;
+  v2->SetBoundsRect(gfx::Rect(5, 10, 40, 50));
+  v1->AddChildView(v2);
+
+  View* v3 = new View;
+  v3->SetBoundsRect(gfx::Rect(1, 2, 3, 4));
+  v2->AddChildView(v3);
+
+  // Schedule a full-view paint and ensure all views are present in the cull.
+  test_view->SchedulePaintInRect(test_view->bounds());
+  GetRootLayer()->GetCompositor()->ScheduleDraw();
+  ui::DrawWaiterForTest::Wait(GetRootLayer()->GetCompositor());
+  EXPECT_EQ(5U, test_view->last_cull_set_.size());
+  EXPECT_EQ(1U, test_view->last_cull_set_.count(widget()->GetRootView()));
+  EXPECT_EQ(1U, test_view->last_cull_set_.count(test_view));
+  EXPECT_EQ(1U, test_view->last_cull_set_.count(v1));
+  EXPECT_EQ(1U, test_view->last_cull_set_.count(v2));
+  EXPECT_EQ(1U, test_view->last_cull_set_.count(v3));
+
+  // Build an unrelated view hierarchy and move v2 in to it.
+  scoped_ptr<Widget> test_widget(new Widget);
+  Widget::InitParams params = CreateParams(Widget::InitParams::TYPE_POPUP);
+  params.bounds = gfx::Rect(10, 10, 500, 500);
+  params.ownership = Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
+  test_widget->Init(params);
+  test_widget->Show();
+  BoundsTreeTestView* widget_view = new BoundsTreeTestView;
+  test_widget->SetContentsView(widget_view);
+  widget_view->AddChildView(v2);
+
+  // Now schedule full-view paints in both widgets.
+  test_view->SchedulePaintInRect(test_view->bounds());
+  widget_view->SchedulePaintInRect(widget_view->bounds());
+  GetRootLayer()->GetCompositor()->ScheduleDraw();
+  ui::DrawWaiterForTest::Wait(GetRootLayer()->GetCompositor());
+
+  // Only v1 should be present in the first cull set.
+  EXPECT_EQ(3U, test_view->last_cull_set_.size());
+  EXPECT_EQ(1U, test_view->last_cull_set_.count(widget()->GetRootView()));
+  EXPECT_EQ(1U, test_view->last_cull_set_.count(test_view));
+  EXPECT_EQ(1U, test_view->last_cull_set_.count(v1));
+
+  // We should find v2 and v3 in the widget_view cull_set.
+  EXPECT_EQ(4U, widget_view->last_cull_set_.size());
+  EXPECT_EQ(1U, widget_view->last_cull_set_.count(test_widget->GetRootView()));
+  EXPECT_EQ(1U, widget_view->last_cull_set_.count(widget_view));
+  EXPECT_EQ(1U, widget_view->last_cull_set_.count(v2));
+  EXPECT_EQ(1U, widget_view->last_cull_set_.count(v3));
+}
+
+TEST_F(ViewTest, FocusableAssertions) {
+  // View subclasses may change insets based on whether they are focusable,
+  // which effects the preferred size. To avoid preferred size changing around
+  // these Views need to key off the last value set to SetFocusable(), not
+  // whether the View is focusable right now. For this reason it's important
+  // that focusable() return the last value passed to SetFocusable and not
+  // whether the View is focusable right now.
+  TestView view;
+  view.SetFocusable(true);
+  EXPECT_TRUE(view.focusable());
+  view.SetEnabled(false);
+  EXPECT_TRUE(view.focusable());
+  view.SetFocusable(false);
+  EXPECT_FALSE(view.focusable());
+}
+
+// Verifies when a view is deleted it is removed from ViewStorage.
+TEST_F(ViewTest, UpdateViewStorageOnDelete) {
+  ViewStorage* view_storage = ViewStorage::GetInstance();
+  const int storage_id = view_storage->CreateStorageID();
+  {
+    View view;
+    view_storage->StoreView(storage_id, &view);
+  }
+  EXPECT_TRUE(view_storage->RetrieveView(storage_id) == NULL);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// NativeTheme
+////////////////////////////////////////////////////////////////////////////////
+
+void TestView::OnNativeThemeChanged(const ui::NativeTheme* native_theme) {
+  native_theme_ = native_theme;
+}
+
+TEST_F(ViewTest, OnNativeThemeChanged) {
+  TestView* test_view = new TestView();
+  EXPECT_FALSE(test_view->native_theme_);
+  TestView* test_view_child = new TestView();
+  EXPECT_FALSE(test_view_child->native_theme_);
+
+  // Child view added before the widget hierarchy exists should get the
+  // new native theme notification.
+  test_view->AddChildView(test_view_child);
+
+  scoped_ptr<Widget> widget(new Widget);
+  Widget::InitParams params = CreateParams(Widget::InitParams::TYPE_WINDOW);
+  params.ownership = views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
+  widget->Init(params);
+
+  widget->GetRootView()->AddChildView(test_view);
+  EXPECT_TRUE(test_view->native_theme_);
+  EXPECT_EQ(widget->GetNativeTheme(), test_view->native_theme_);
+  EXPECT_TRUE(test_view_child->native_theme_);
+  EXPECT_EQ(widget->GetNativeTheme(), test_view_child->native_theme_);
+
+  // Child view added after the widget hierarchy exists should also get the
+  // notification.
+  TestView* test_view_child_2 = new TestView();
+  test_view->AddChildView(test_view_child_2);
+  EXPECT_TRUE(test_view_child_2->native_theme_);
+  EXPECT_EQ(widget->GetNativeTheme(), test_view_child_2->native_theme_);
+
+  widget->CloseNow();
+}
 
 }  // namespace views

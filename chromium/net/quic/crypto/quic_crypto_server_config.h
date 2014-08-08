@@ -22,6 +22,7 @@
 
 namespace net {
 
+class CryptoHandshakeMessage;
 class EphemeralKeySource;
 class KeyExchange;
 class ProofSource;
@@ -38,6 +39,43 @@ struct ClientHelloInfo;
 namespace test {
 class QuicCryptoServerConfigPeer;
 }  // namespace test
+
+enum HandshakeFailureReason {
+  HANDSHAKE_OK = 0,
+
+  // Failure reasons for an invalid client nonce.
+  // TODO(rtenneti): Implement capturing of error from strike register.
+  CLIENT_NONCE_UNKNOWN_FAILURE = 100,
+  CLIENT_NONCE_INVALID_FAILURE,
+
+  // Failure reasons for an invalid server nonce.
+  SERVER_NONCE_INVALID_FAILURE = 200,
+  SERVER_NONCE_DECRYPTION_FAILURE,
+  SERVER_NONCE_NOT_UNIQUE_FAILURE,
+
+  // Failure reasons for an invalid server config.
+  SERVER_CONFIG_INCHOATE_HELLO_FAILURE = 300,
+  SERVER_CONFIG_UNKNOWN_CONFIG_FAILURE,
+
+  // Failure reasons for an invalid source adddress token.
+  SOURCE_ADDRESS_TOKEN_INVALID_FAILURE = 400,
+  SOURCE_ADDRESS_TOKEN_DECRYPTION_FAILURE,
+  SOURCE_ADDRESS_TOKEN_PARSE_FAILURE,
+  SOURCE_ADDRESS_TOKEN_DIFFERENT_IP_ADDRESS_FAILURE,
+  SOURCE_ADDRESS_TOKEN_CLOCK_SKEW_FAILURE,
+  SOURCE_ADDRESS_TOKEN_EXPIRED_FAILURE,
+};
+
+// Hook that allows application code to subscribe to primary config changes.
+class PrimaryConfigChangedCallback {
+ public:
+  PrimaryConfigChangedCallback();
+  virtual ~PrimaryConfigChangedCallback();
+  virtual void Run(const std::string& scid) = 0;
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(PrimaryConfigChangedCallback);
+};
 
 // Callback used to accept the result of the |client_hello| validation step.
 class NET_EXPORT_PRIVATE ValidateClientHelloResultCallback {
@@ -101,9 +139,9 @@ class NET_EXPORT_PRIVATE QuicCryptoServerConfig {
   // TESTING is a magic parameter for passing to the constructor in tests.
   static const char TESTING[];
 
-  // DefaultConfig generates a QuicServerConfigProtobuf protobuf suitable for
-  // using in tests.
-  static QuicServerConfigProtobuf* DefaultConfig(
+  // Generates a QuicServerConfigProtobuf protobuf suitable for
+  // AddConfig and SetConfigs.
+  static QuicServerConfigProtobuf* GenerateConfig(
       QuicRandom* rand,
       const QuicClock* clock,
       const ConfigOptions& options);
@@ -133,6 +171,9 @@ class NET_EXPORT_PRIVATE QuicCryptoServerConfig {
   // encountered and no changes to the QuicCryptoServerConfig will occur.
   bool SetConfigs(const std::vector<QuicServerConfigProtobuf*>& protobufs,
                   QuicWallTime now);
+
+  // Get the server config ids for all known configs.
+  void GetConfigIds(std::vector<std::string>* scids) const;
 
   // Checks |client_hello| for gross errors and determines whether it
   // can be shown to be fresh (i.e. not a replay).  The result of the
@@ -167,12 +208,15 @@ class NET_EXPORT_PRIVATE QuicCryptoServerConfig {
   // validate_chlo_result: Output from the asynchronous call to
   //     ValidateClientHello.  Contains the client hello message and
   //     information about it.
-  // guid: the GUID for the connection, which is used in key derivation.
-  // client_ip: the IP address of the client, which is used to generate and
-  //     validate source-address tokens.
+  // connection_id: the ConnectionId for the connection, which is used in key
+  //     derivation.
+  // client_address: the IP address and port of the client. The IP address is
+  //     used to generate and validate source-address tokens.
   // version: version of the QUIC protocol in use for this connection
   // supported_versions: versions of the QUIC protocol that this server
   //     supports.
+  // initial_flow_control_window: size of initial flow control window this
+  //     server uses for new streams.
   // clock: used to validate client nonces and ephemeral keys.
   // rand: an entropy source
   // params: the state of the handshake. This may be updated with a server
@@ -182,8 +226,8 @@ class NET_EXPORT_PRIVATE QuicCryptoServerConfig {
   // error_details: used to store a string describing any error.
   QuicErrorCode ProcessClientHello(
       const ValidateClientHelloResultCallback::Result& validate_chlo_result,
-      QuicGuid guid,
-      IPEndPoint client_ip,
+      QuicConnectionId connection_id,
+      IPEndPoint client_address,
       QuicVersion version,
       const QuicVersionVector& supported_versions,
       const QuicClock* clock,
@@ -254,6 +298,9 @@ class NET_EXPORT_PRIVATE QuicCryptoServerConfig {
   // uniqueness.
   void set_server_nonce_strike_register_window_secs(uint32 window_secs);
 
+  // Set and take ownership of the callback to invoke on primary config changes.
+  void AcquirePrimaryConfigChangedCb(PrimaryConfigChangedCallback* cb);
+
  private:
   friend class test::QuicCryptoServerConfigPeer;
 
@@ -296,14 +343,35 @@ class NET_EXPORT_PRIVATE QuicCryptoServerConfig {
     // will not be promoted at a specific time.
     QuicWallTime primary_time;
 
+    // Secondary sort key for use when selecting primary configs and
+    // there are multiple configs with the same primary time.
+    // Smaller numbers mean higher priority.
+    uint64 priority;
+
+    // source_address_token_boxer_ is used to protect the
+    // source-address tokens that are given to clients.
+    // Points to either source_address_token_boxer_storage or the
+    // default boxer provided by QuicCryptoServerConfig.
+    const CryptoSecretBoxer* source_address_token_boxer;
+
+    // Holds the override source_address_token_boxer instance if the
+    // Config is not using the default source address token boxer
+    // instance provided by QuicCryptoServerConfig.
+    scoped_ptr<CryptoSecretBoxer> source_address_token_boxer_storage;
+
    private:
     friend class base::RefCounted<Config>;
+
     virtual ~Config();
 
     DISALLOW_COPY_AND_ASSIGN(Config);
   };
 
   typedef std::map<ServerConfigID, scoped_refptr<Config> > ConfigMap;
+
+  // Get a ref to the config with a given server config id.
+  scoped_refptr<Config> GetConfigWithScid(
+      base::StringPiece requested_scid) const;
 
   // ConfigPrimaryTimeLessThan returns true if a->primary_time <
   // b->primary_time.
@@ -319,12 +387,13 @@ class NET_EXPORT_PRIVATE QuicCryptoServerConfig {
   // written to |info|.
   void EvaluateClientHello(
       const uint8* primary_orbit,
+      scoped_refptr<Config> requested_config,
       ValidateClientHelloResultCallback::Result* client_hello_state,
       ValidateClientHelloResultCallback* done_cb) const;
 
   // BuildRejection sets |out| to be a REJ message in reply to |client_hello|.
   void BuildRejection(
-      const scoped_refptr<Config>& config,
+      const Config& config,
       const CryptoHandshakeMessage& client_hello,
       const ClientHelloInfo& info,
       QuicRandom* rand,
@@ -337,16 +406,18 @@ class NET_EXPORT_PRIVATE QuicCryptoServerConfig {
 
   // NewSourceAddressToken returns a fresh source address token for the given
   // IP address.
-  std::string NewSourceAddressToken(const IPEndPoint& ip,
+  std::string NewSourceAddressToken(const Config& config,
+                                    const IPEndPoint& ip,
                                     QuicRandom* rand,
                                     QuicWallTime now) const;
 
-  // ValidateSourceAddressToken returns true if the source address token in
-  // |token| is a valid and timely token for the IP address |ip| given that the
-  // current time is |now|.
-  bool ValidateSourceAddressToken(base::StringPiece token,
-                                  const IPEndPoint& ip,
-                                  QuicWallTime now) const;
+  // ValidateSourceAddressToken returns HANDSHAKE_OK if the source address token
+  // in |token| is a valid and timely token for the IP address |ip| given that
+  // the current time is |now|. Otherwise it returns the reason for failure.
+  HandshakeFailureReason ValidateSourceAddressToken(const Config& config,
+                                                    base::StringPiece token,
+                                                    const IPEndPoint& ip,
+                                                    QuicWallTime now) const;
 
   // NewServerNonce generates and encrypts a random nonce.
   std::string NewServerNonce(QuicRandom* rand, QuicWallTime now) const;
@@ -354,10 +425,11 @@ class NET_EXPORT_PRIVATE QuicCryptoServerConfig {
   // ValidateServerNonce decrypts |token| and verifies that it hasn't been
   // previously used and is recent enough that it is plausible that it was part
   // of a very recently provided rejection ("recent" will be on the order of
-  // 10-30 seconds). If so, it records that it has been used and returns true.
-  // Otherwise it returns false.
-  bool ValidateServerNonce(base::StringPiece echoed_server_nonce,
-                           QuicWallTime now) const;
+  // 10-30 seconds). If so, it records that it has been used and returns
+  // HANDSHAKE_OK. Otherwise it returns the reason for failure.
+  HandshakeFailureReason ValidateServerNonce(
+      base::StringPiece echoed_server_nonce,
+      QuicWallTime now) const;
 
   // replay_protection_ controls whether the server enforces that handshakes
   // aren't replays.
@@ -377,15 +449,19 @@ class NET_EXPORT_PRIVATE QuicCryptoServerConfig {
   // next_config_promotion_time_ contains the nearest, future time when an
   // active config will be promoted to primary.
   mutable QuicWallTime next_config_promotion_time_;
+  // Callback to invoke when the primary config changes.
+  scoped_ptr<PrimaryConfigChangedCallback> primary_config_changed_cb_;
 
+  // Protects access to the pointer held by strike_register_client_.
   mutable base::Lock strike_register_client_lock_;
   // strike_register_ contains a data structure that keeps track of previously
   // observed client nonces in order to prevent replay attacks.
   mutable scoped_ptr<StrikeRegisterClient> strike_register_client_;
 
-  // source_address_token_boxer_ is used to protect the source-address tokens
-  // that are given to clients.
-  CryptoSecretBoxer source_address_token_boxer_;
+  // Default source_address_token_boxer_ used to protect the
+  // source-address tokens that are given to clients.  Individual
+  // configs may use boxers with alternate secrets.
+  CryptoSecretBoxer default_source_address_token_boxer_;
 
   // server_nonce_boxer_ is used to encrypt and validate suggested server
   // nonces.
@@ -419,6 +495,8 @@ class NET_EXPORT_PRIVATE QuicCryptoServerConfig {
   uint32 source_address_token_lifetime_secs_;
   uint32 server_nonce_strike_register_max_entries_;
   uint32 server_nonce_strike_register_window_secs_;
+
+  DISALLOW_COPY_AND_ASSIGN(QuicCryptoServerConfig);
 };
 
 }  // namespace net

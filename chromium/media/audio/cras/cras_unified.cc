@@ -4,11 +4,7 @@
 
 #include "media/audio/cras/cras_unified.h"
 
-#include <cras_client.h>
-
-#include "base/command_line.h"
 #include "base/logging.h"
-#include "media/audio/alsa/alsa_util.h"
 #include "media/audio/cras/audio_manager_cras.h"
 
 namespace media {
@@ -116,7 +112,7 @@ bool CrasUnifiedStream::Open() {
     return false;
   }
 
-  if (alsa_util::BitsToFormat(params_.bits_per_sample()) ==
+  if (AudioManagerCras::BitsToFormat(params_.bits_per_sample()) ==
       SND_PCM_FORMAT_UNKNOWN) {
     LOG(WARNING) << "Unsupported pcm format";
     return false;
@@ -187,7 +183,7 @@ void CrasUnifiedStream::Start(AudioSourceCallback* callback) {
   // Prepare |audio_format| and |stream_params| for the stream we
   // will create.
   cras_audio_format* audio_format = cras_audio_format_create(
-      alsa_util::BitsToFormat(params_.bits_per_sample()),
+      AudioManagerCras::BitsToFormat(params_.bits_per_sample()),
       params_.sample_rate(),
       params_.channels());
   if (!audio_format) {
@@ -361,8 +357,7 @@ uint32 CrasUnifiedStream::ReadWriteAudio(size_t frames,
   cras_client_calc_playback_latency(output_ts, &latency_ts);
   total_delay_bytes += GetBytesLatency(latency_ts);
 
-  int frames_filled = source_callback_->OnMoreIOData(
-      input_bus_.get(),
+  int frames_filled = source_callback_->OnMoreData(
       output_bus_.get(),
       AudioBuffersState(0, total_delay_bytes));
 

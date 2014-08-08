@@ -35,14 +35,14 @@ struct CSSParserFunction;
 
 class CSSFunctionValue : public CSSValue {
 public:
-    static PassRefPtr<CSSFunctionValue> create(CSSParserFunction* function)
+    static PassRefPtrWillBeRawPtr<CSSFunctionValue> create(CSSParserFunction* function)
     {
-        return adoptRef(new CSSFunctionValue(function));
+        return adoptRefWillBeNoop(new CSSFunctionValue(function));
     }
 
-    static PassRefPtr<CSSFunctionValue> create(String name, PassRefPtr<CSSValueList> args)
+    static PassRefPtrWillBeRawPtr<CSSFunctionValue> create(String name, PassRefPtrWillBeRawPtr<CSSValueList> args)
     {
-        return adoptRef(new CSSFunctionValue(name, args));
+        return adoptRefWillBeNoop(new CSSFunctionValue(name, args));
     }
 
     String customCSSText() const;
@@ -51,12 +51,14 @@ public:
 
     CSSValueList* arguments() const { return m_args.get(); }
 
+    void traceAfterDispatch(Visitor*);
+
 private:
     explicit CSSFunctionValue(CSSParserFunction*);
-    CSSFunctionValue(String, PassRefPtr<CSSValueList>);
+    CSSFunctionValue(String, PassRefPtrWillBeRawPtr<CSSValueList>);
 
     String m_name;
-    RefPtr<CSSValueList> m_args;
+    RefPtrWillBeMember<CSSValueList> m_args;
 };
 
 DEFINE_CSS_VALUE_TYPE_CASTS(CSSFunctionValue, isFunctionValue());

@@ -31,9 +31,9 @@
 #ifndef V8CustomElementLifecycleCallbacks_h
 #define V8CustomElementLifecycleCallbacks_h
 
-#include "bindings/v8/ActiveDOMCallback.h"
-#include "bindings/v8/DOMWrapperWorld.h"
 #include "bindings/v8/ScopedPersistent.h"
+#include "bindings/v8/ScriptState.h"
+#include "core/dom/ContextLifecycleObserver.h"
 #include "core/dom/custom/CustomElementLifecycleCallbacks.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/PassRefPtr.h"
@@ -46,16 +46,16 @@ class Element;
 class ExecutionContext;
 class V8PerContextData;
 
-class V8CustomElementLifecycleCallbacks : public CustomElementLifecycleCallbacks, ActiveDOMCallback {
+class V8CustomElementLifecycleCallbacks FINAL : public CustomElementLifecycleCallbacks, ContextLifecycleObserver {
 public:
-    static PassRefPtr<V8CustomElementLifecycleCallbacks> create(ExecutionContext*, v8::Handle<v8::Object> prototype, v8::Handle<v8::Function> created, v8::Handle<v8::Function> attached, v8::Handle<v8::Function> detached, v8::Handle<v8::Function> attributeChanged);
+    static PassRefPtr<V8CustomElementLifecycleCallbacks> create(ScriptState*, v8::Handle<v8::Object> prototype, v8::Handle<v8::Function> created, v8::Handle<v8::Function> attached, v8::Handle<v8::Function> detached, v8::Handle<v8::Function> attributeChanged);
 
     virtual ~V8CustomElementLifecycleCallbacks();
 
     bool setBinding(CustomElementDefinition* owner, PassOwnPtr<CustomElementBinding>);
 
 private:
-    V8CustomElementLifecycleCallbacks(ExecutionContext*, v8::Handle<v8::Object> prototype, v8::Handle<v8::Function> created, v8::Handle<v8::Function> attached, v8::Handle<v8::Function> detached, v8::Handle<v8::Function> attributeChanged);
+    V8CustomElementLifecycleCallbacks(ScriptState*, v8::Handle<v8::Object> prototype, v8::Handle<v8::Function> created, v8::Handle<v8::Function> attached, v8::Handle<v8::Function> detached, v8::Handle<v8::Function> attributeChanged);
 
     virtual void created(Element*) OVERRIDE;
     virtual void attached(Element*) OVERRIDE;
@@ -67,7 +67,7 @@ private:
     V8PerContextData* creationContextData();
 
     CustomElementDefinition* m_owner;
-    RefPtr<DOMWrapperWorld> m_world;
+    RefPtr<ScriptState> m_scriptState;
     ScopedPersistent<v8::Object> m_prototype;
     ScopedPersistent<v8::Function> m_created;
     ScopedPersistent<v8::Function> m_attached;

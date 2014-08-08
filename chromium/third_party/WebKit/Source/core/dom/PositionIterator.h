@@ -35,17 +35,18 @@ namespace WebCore {
 // increment, decrement, and several predicates on the Position it is at.
 // Conversion to/from Position is O(n) in the offset.
 class PositionIterator {
+    STACK_ALLOCATED();
 public:
     PositionIterator()
-        : m_anchorNode(0)
-        , m_nodeAfterPositionInAnchor(0)
+        : m_anchorNode(nullptr)
+        , m_nodeAfterPositionInAnchor(nullptr)
         , m_offsetInAnchor(0)
     {
     }
 
     PositionIterator(const Position& pos)
         : m_anchorNode(pos.anchorNode())
-        , m_nodeAfterPositionInAnchor(m_anchorNode->childNode(pos.deprecatedEditingOffset()))
+        , m_nodeAfterPositionInAnchor(m_anchorNode->traverseToChildAt(pos.deprecatedEditingOffset()))
         , m_offsetInAnchor(m_nodeAfterPositionInAnchor ? 0 : pos.deprecatedEditingOffset())
     {
     }
@@ -64,8 +65,8 @@ public:
     bool isCandidate() const;
 
 private:
-    Node* m_anchorNode;
-    Node* m_nodeAfterPositionInAnchor; // If this is non-null, m_nodeAfterPositionInAnchor->parentNode() == m_anchorNode;
+    RawPtrWillBeMember<Node> m_anchorNode;
+    RawPtrWillBeMember<Node> m_nodeAfterPositionInAnchor; // If this is non-null, m_nodeAfterPositionInAnchor->parentNode() == m_anchorNode;
     int m_offsetInAnchor;
 };
 

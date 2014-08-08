@@ -37,11 +37,8 @@
 #include "platform/fonts/FontWidthVariant.h"
 #include "wtf/Forward.h"
 #include "wtf/Noncopyable.h"
+#include "wtf/RefPtr.h"
 #include "wtf/text/WTFString.h"
-
-#if OS(WIN) && ENABLE(GDI_FONTS_ON_WINDOWS)
-#include <windows.h>
-#endif
 
 #if OS(MACOSX)
 #include "wtf/RetainPtr.h"
@@ -49,10 +46,7 @@
 typedef struct CGFont* CGFontRef;
 #endif
 
-#if OS(MACOSX) || OS(POSIX) || (OS(WIN) && !ENABLE(GDI_FONTS_ON_WINDOWS))
-#include "wtf/RefPtr.h"
 class SkTypeface;
-#endif
 
 namespace WebCore {
 
@@ -70,18 +64,13 @@ public:
     static bool supportsFormat(const String&);
 
 private:
-#if OS(WIN) && ENABLE(GDI_FONTS_ON_WINDOWS)
-    FontCustomPlatformData(HANDLE fontReference, const String& name);
-    HANDLE m_fontReference;
-    String m_name;
-#elif OS(MACOSX)
+#if OS(MACOSX)
     explicit FontCustomPlatformData(CGFontRef, PassRefPtr<SkTypeface>);
     RetainPtr<CGFontRef> m_cgFont;
-    RefPtr<SkTypeface> m_typeface;
-#elif OS(POSIX) || (OS(WIN) && !ENABLE(GDI_FONTS_ON_WINDOWS))
+#else
     explicit FontCustomPlatformData(PassRefPtr<SkTypeface>);
-    RefPtr<SkTypeface> m_typeface;
 #endif
+    RefPtr<SkTypeface> m_typeface;
 };
 
 } // namespace WebCore

@@ -251,13 +251,25 @@ void MD5Final(MD5Digest* digest, MD5Context* context) {
         byteReverse(ctx->in, 14);
 
         /* Append length in bits and transform */
-        ((uint32 *)ctx->in)[ 14 ] = ctx->bits[0];
-        ((uint32 *)ctx->in)[ 15 ] = ctx->bits[1];
+        memcpy(&ctx->in[14 * sizeof(ctx->bits[0])],
+               &ctx->bits[0],
+               sizeof(ctx->bits[0]));
+        memcpy(&ctx->in[15 * sizeof(ctx->bits[1])],
+               &ctx->bits[1],
+               sizeof(ctx->bits[1]));
 
         MD5Transform(ctx->buf, (uint32 *)ctx->in);
         byteReverse((unsigned char *)ctx->buf, 4);
         memcpy(digest->a, ctx->buf, 16);
         memset(ctx, 0, sizeof(*ctx));    /* In case it's sensitive */
+}
+
+void MD5IntermediateFinal(MD5Digest* digest, const MD5Context* context) {
+  /* MD5Final mutates the MD5Context*. Make a copy for generating the
+     intermediate value. */
+  MD5Context context_copy;
+  memcpy(&context_copy, context, sizeof(context_copy));
+  MD5Final(digest, &context_copy);
 }
 
 std::string MD5DigestToBase16(const MD5Digest& digest) {

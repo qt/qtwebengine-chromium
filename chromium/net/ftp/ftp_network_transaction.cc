@@ -152,7 +152,7 @@ bool ExtractPortFromPASVResponse(const net::FtpCtrlResponse& response,
     return false;
 
   std::string line(response.lines[0]);
-  if (!IsStringASCII(line))
+  if (!base::IsStringASCII(line))
     return false;
   if (line.length() < 2)
     return false;
@@ -256,8 +256,8 @@ int FtpNetworkTransaction::Start(const FtpRequestInfo* request_info,
     GetIdentityFromURL(request_->url, &username, &password);
     credentials_.Set(username, password);
   } else {
-    credentials_.Set(ASCIIToUTF16("anonymous"),
-                     ASCIIToUTF16("chrome@example.com"));
+    credentials_.Set(base::ASCIIToUTF16("anonymous"),
+                     base::ASCIIToUTF16("chrome@example.com"));
   }
 
   DetectTypecode();
@@ -706,7 +706,7 @@ int FtpNetworkTransaction::DoCtrlReadComplete(int result) {
     // connection when anonymous login is not permitted. For more details
     // see http://crbug.com/25023.
     if (command_sent_ == COMMAND_USER &&
-        credentials_.username() == ASCIIToUTF16("anonymous")) {
+        credentials_.username() == base::ASCIIToUTF16("anonymous")) {
       response_.needs_auth = true;
     }
     return Stop(ERR_EMPTY_RESPONSE);
@@ -753,7 +753,7 @@ int FtpNetworkTransaction::DoCtrlWriteComplete(int result) {
 
 // USER Command.
 int FtpNetworkTransaction::DoCtrlWriteUSER() {
-  std::string command = "USER " + UTF16ToUTF8(credentials_.username());
+  std::string command = "USER " + base::UTF16ToUTF8(credentials_.username());
 
   if (!IsValidFTPCommandString(command))
     return Stop(ERR_MALFORMED_IDENTITY);
@@ -784,7 +784,7 @@ int FtpNetworkTransaction::ProcessResponseUSER(
 
 // PASS command.
 int FtpNetworkTransaction::DoCtrlWritePASS() {
-  std::string command = "PASS " + UTF16ToUTF8(credentials_.password());
+  std::string command = "PASS " + base::UTF16ToUTF8(credentials_.password());
 
   if (!IsValidFTPCommandString(command))
     return Stop(ERR_MALFORMED_IDENTITY);
@@ -830,7 +830,7 @@ int FtpNetworkTransaction::ProcessResponseSYST(
       // The response should be ASCII, which allows us to do case-insensitive
       // comparisons easily. If it is not ASCII, we leave the system type
       // as unknown.
-      if (IsStringASCII(line)) {
+      if (base::IsStringASCII(line)) {
         line = StringToLowerASCII(line);
 
         // Remove all whitespace, to correctly handle cases like fancy "V M S"

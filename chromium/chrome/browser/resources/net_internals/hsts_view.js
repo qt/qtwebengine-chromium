@@ -116,54 +116,50 @@ var HSTSView = (function() {
       this.queryOutputDiv_.innerHTML = '';
 
       var s = addNode(this.queryOutputDiv_, 'span');
-      s.innerHTML = '<b>Found</b>: mode: ';
+      s.innerHTML = '<b>Found:</b><br/>';
 
-      var t = addNode(this.queryOutputDiv_, 'tt');
-      t.textContent = modeToString(result.mode);
+      var keys = [
+        'domain', 'static_upgrade_mode', 'static_sts_include_subdomains',
+        'static_pkp_include_subdomains', 'static_sts_observed',
+        'static_pkp_observed', 'static_spki_hashes', 'dynamic_upgrade_mode',
+        'dynamic_sts_include_subdomains', 'dynamic_pkp_include_subdomains',
+        'dynamic_sts_observed', 'dynamic_pkp_observed', 'dynamic_spki_hashes'
+      ];
 
-      addTextNode(this.queryOutputDiv_, ' sts_include_subdomains:');
+      var kStaticHashKeys = [
+        'public_key_hashes', 'preloaded_spki_hashes', 'static_spki_hashes'
+      ];
 
-      t = addNode(this.queryOutputDiv_, 'tt');
-      t.textContent = result.sts_subdomains;
+      var staticHashes = [];
+      for (var i = 0; i < kStaticHashKeys.length; ++i) {
+        var staticHashValue = result[kStaticHashKeys[i]];
+        if (staticHashValue != undefined && staticHashValue != '')
+          staticHashes.push(staticHashValue);
+      }
 
-      addTextNode(this.queryOutputDiv_, ' pkp_include_subdomains:');
+      for (var i = 0; i < keys.length; ++i) {
+        var key = keys[i];
+        var value = result[key];
+        addTextNode(this.queryOutputDiv_, ' ' + key + ': ');
 
-      t = addNode(this.queryOutputDiv_, 'tt');
-      t.textContent = result.pkp_subdomains;
+        // If there are no static_hashes, do not make it seem like there is a
+        // static PKP policy in place.
+        if (staticHashes.length == 0 && key.indexOf('static_pkp_') == 0) {
+          addNode(this.queryOutputDiv_, 'br');
+          continue;
+        }
 
-      addTextNode(this.queryOutputDiv_, ' domain:');
+        if (key === 'static_spki_hashes') {
+          addNodeWithText(this.queryOutputDiv_, 'tt', staticHashes.join(','));
+        } else if (key.indexOf('_upgrade_mode') >= 0) {
+          addNodeWithText(this.queryOutputDiv_, 'tt', modeToString(value));
+        } else {
+          addNodeWithText(this.queryOutputDiv_, 'tt',
+                          value == undefined ? '' : value);
+        }
+        addNode(this.queryOutputDiv_, 'br');
+      }
 
-      t = addNode(this.queryOutputDiv_, 'tt');
-      t.textContent = result.domain;
-
-      addTextNode(this.queryOutputDiv_, ' pubkey_hashes:');
-
-      t = addNode(this.queryOutputDiv_, 'tt');
-
-      // |public_key_hashes| is an old synonym for what is now
-      // |preloaded_spki_hashes|, which in turn is a legacy synonym for
-      // |static_spki_hashes|. Look for all three, and also for
-      // |dynamic_spki_hashes|.
-      if (typeof result.public_key_hashes === 'undefined')
-        result.public_key_hashes = '';
-      if (typeof result.preloaded_spki_hashes === 'undefined')
-        result.preloaded_spki_hashes = '';
-      if (typeof result.static_spki_hashes === 'undefined')
-        result.static_spki_hashes = '';
-      if (typeof result.dynamic_spki_hashes === 'undefined')
-        result.dynamic_spki_hashes = '';
-
-      var hashes = [];
-      if (result.public_key_hashes)
-        hashes.push(result.public_key_hashes);
-      if (result.preloaded_spki_hashes)
-        hashes.push(result.preloaded_spki_hashes);
-      if (result.static_spki_hashes)
-        hashes.push(result.static_spki_hashes);
-      if (result.dynamic_spki_hashes)
-        hashes.push(result.dynamic_spki_hashes);
-
-      t.textContent = hashes.join(',');
       yellowFade(this.queryOutputDiv_);
     }
   };

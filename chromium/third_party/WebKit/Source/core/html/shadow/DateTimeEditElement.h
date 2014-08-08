@@ -45,11 +45,12 @@ class StepRange;
 //  - Hour, Minute, Second, Millisecond, AM/PM
 class DateTimeEditElement FINAL : public HTMLDivElement, public DateTimeFieldElement::FieldOwner {
     WTF_MAKE_NONCOPYABLE(DateTimeEditElement);
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(DateTimeEditElement);
 
 public:
     // EditControlOwner implementer must call removeEditControlOwner when
     // it doesn't handle event, e.g. at destruction.
-    class EditControlOwner {
+    class EditControlOwner : public WillBeGarbageCollectedMixin {
     public:
         virtual ~EditControlOwner();
         virtual void didBlurFromControl() = 0;
@@ -59,6 +60,7 @@ public:
         virtual bool isEditControlOwnerDisabled() const = 0;
         virtual bool isEditControlOwnerReadOnly() const = 0;
         virtual AtomicString localeIdentifier() const = 0;
+        virtual void editControlDidChangeValueByKeyboard() = 0;
     };
 
     struct LayoutParameters {
@@ -79,10 +81,12 @@ public:
         }
     };
 
-    static PassRefPtr<DateTimeEditElement> create(Document&, EditControlOwner&);
+    static PassRefPtrWillBeRawPtr<DateTimeEditElement> create(Document&, EditControlOwner&);
 
     virtual ~DateTimeEditElement();
-    void addField(PassRefPtr<DateTimeFieldElement>);
+    virtual void trace(Visitor*) OVERRIDE;
+
+    void addField(PassRefPtrWillBeRawPtr<DateTimeFieldElement>);
     bool anyEditableFieldsHaveValues() const;
     void blurByOwner();
     virtual void defaultEventHandler(Event*) OVERRIDE;
@@ -94,7 +98,7 @@ public:
     void focusByOwner(Element* oldFocusedElement = 0);
     bool hasFocusedField();
     void readOnlyStateChanged();
-    void removeEditControlOwner() { m_editControlOwner = 0; }
+    void removeEditControlOwner() { m_editControlOwner = nullptr; }
     void resetFields();
     void setEmptyValue(const LayoutParameters&, const DateComponents& dateForReadOnlyField);
     void setValueAsDate(const LayoutParameters&, const DateComponents&);
@@ -136,17 +140,18 @@ private:
     virtual bool isDateTimeEditElement() const OVERRIDE;
 
     // DateTimeFieldElement::FieldOwner functions.
-    virtual void didBlurFromField() OVERRIDE FINAL;
-    virtual void didFocusOnField() OVERRIDE FINAL;
-    virtual void fieldValueChanged() OVERRIDE FINAL;
-    virtual bool focusOnNextField(const DateTimeFieldElement&) OVERRIDE FINAL;
-    virtual bool focusOnPreviousField(const DateTimeFieldElement&) OVERRIDE FINAL;
-    virtual bool isFieldOwnerDisabled() const OVERRIDE FINAL;
-    virtual bool isFieldOwnerReadOnly() const OVERRIDE FINAL;
-    virtual AtomicString localeIdentifier() const OVERRIDE FINAL;
+    virtual void didBlurFromField() OVERRIDE;
+    virtual void didFocusOnField() OVERRIDE;
+    virtual void fieldValueChanged() OVERRIDE;
+    virtual bool focusOnNextField(const DateTimeFieldElement&) OVERRIDE;
+    virtual bool focusOnPreviousField(const DateTimeFieldElement&) OVERRIDE;
+    virtual bool isFieldOwnerDisabled() const OVERRIDE;
+    virtual bool isFieldOwnerReadOnly() const OVERRIDE;
+    virtual AtomicString localeIdentifier() const OVERRIDE;
+    virtual void fieldDidChangeValueByKeyboard() OVERRIDE;
 
-    Vector<DateTimeFieldElement*, maximumNumberOfFields> m_fields;
-    EditControlOwner* m_editControlOwner;
+    WillBeHeapVector<RawPtrWillBeMember<DateTimeFieldElement>, maximumNumberOfFields> m_fields;
+    RawPtrWillBeMember<EditControlOwner> m_editControlOwner;
 };
 
 DEFINE_TYPE_CASTS(DateTimeEditElement, Element, element, element->isDateTimeEditElement(), element.isDateTimeEditElement());

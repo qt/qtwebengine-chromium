@@ -79,15 +79,6 @@ static opus_uint32 char_to_int(unsigned char ch[4])
          | ((opus_uint32)ch[2]<< 8) |  (opus_uint32)ch[3];
 }
 
-static void check_decoder_option(int encode_only, const char *opt)
-{
-   if (encode_only)
-   {
-      fprintf(stderr, "option %s is only for decoding\n", opt);
-      exit(EXIT_FAILURE);
-   }
-}
-
 static void check_encoder_option(int decode_only, const char *opt)
 {
    if (decode_only)
@@ -317,13 +308,6 @@ int main(int argc, char *argv[])
     }
     sampling_rate = (opus_int32)atol(argv[args]);
     args++;
-    channels = atoi(argv[args]);
-    args++;
-    if (!decode_only)
-    {
-       bitrate_bps = (opus_int32)atol(argv[args]);
-       args++;
-    }
 
     if (sampling_rate != 8000 && sampling_rate != 12000
      && sampling_rate != 16000 && sampling_rate != 24000
@@ -334,6 +318,21 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
     frame_size = sampling_rate/50;
+
+    channels = atoi(argv[args]);
+    args++;
+
+    if (channels < 1 || channels > 2)
+    {
+        fprintf(stderr, "Opus_demo supports only 1 or 2 channels.\n");
+        return EXIT_FAILURE;
+    }
+
+    if (!decode_only)
+    {
+       bitrate_bps = (opus_int32)atol(argv[args]);
+       args++;
+    }
 
     /* defaults: */
     use_vbr = 1;
@@ -425,7 +424,6 @@ int main(int argc, char *argv[])
             use_dtx = 1;
             args++;
         } else if( strcmp( argv[ args ], "-loss" ) == 0 ) {
-            check_decoder_option(encode_only, "-loss");
             packet_loss_perc = atoi( argv[ args + 1 ] );
             args += 2;
         } else if( strcmp( argv[ args ], "-sweep" ) == 0 ) {
@@ -737,6 +735,18 @@ int main(int argc, char *argv[])
             }
         }
 
+#if 0 /* This is for testing the padding code, do not enable by default */
+        if (len[toggle]<1275)
+        {
+           int new_len = len[toggle]+rand()%(max_payload_bytes-len[toggle]);
+           if ((err = opus_packet_pad(data[toggle], len[toggle], new_len)) != OPUS_OK)
+           {
+              fprintf(stderr, "padding failed: %s\n", opus_strerror(err));
+              return EXIT_FAILURE;
+           }
+           len[toggle] = new_len;
+        }
+#endif
         if (encode_only)
         {
             unsigned char int_field[4];

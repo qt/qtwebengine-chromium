@@ -4,8 +4,6 @@
 
 #include "ui/base/ime/win/imm32_manager.h"
 
-#include <atlbase.h>
-#include <atlcom.h>
 #include <msctf.h>
 
 #include "base/basictypes.h"
@@ -24,7 +22,7 @@
 
 // Following code requires wchar_t to be same as char16. It should always be
 // true on Windows.
-COMPILE_ASSERT(sizeof(wchar_t) == sizeof(char16), wchar_t__char16_diff);
+COMPILE_ASSERT(sizeof(wchar_t) == sizeof(base::char16), wchar_t__char16_diff);
 
 ///////////////////////////////////////////////////////////////////////////////
 // IMM32Manager
@@ -85,10 +83,11 @@ void GetCompositionUnderlines(HIMC imm_context,
         underline.end_offset = clause_data[i+1];
         underline.color = SK_ColorBLACK;
         underline.thick = false;
+        underline.background_color = SK_ColorTRANSPARENT;
 
         // Use thick underline for the target clause.
-        if (underline.start_offset >= static_cast<unsigned>(target_start) &&
-            underline.end_offset <= static_cast<unsigned>(target_end)) {
+        if (underline.start_offset >= static_cast<uint32>(target_start) &&
+            underline.end_offset <= static_cast<uint32>(target_end)) {
           underline.thick = true;
         }
         underlines->push_back(underline);
@@ -344,21 +343,22 @@ void IMM32Manager::GetCompositionInfo(HIMC imm_context, LPARAM lparam,
   if (!composition->underlines.size()) {
     CompositionUnderline underline;
     underline.color = SK_ColorBLACK;
+    underline.background_color = SK_ColorTRANSPARENT;
     if (target_start > 0) {
-      underline.start_offset = 0;
-      underline.end_offset = target_start;
+      underline.start_offset = 0U;
+      underline.end_offset = static_cast<uint32>(target_start);
       underline.thick = false;
       composition->underlines.push_back(underline);
     }
     if (target_end > target_start) {
-      underline.start_offset = target_start;
-      underline.end_offset = target_end;
+      underline.start_offset = static_cast<uint32>(target_start);
+      underline.end_offset = static_cast<uint32>(target_end);
       underline.thick = true;
       composition->underlines.push_back(underline);
     }
     if (target_end < length) {
-      underline.start_offset = target_end;
-      underline.end_offset = length;
+      underline.start_offset = static_cast<uint32>(target_end);
+      underline.end_offset = static_cast<uint32>(length);
       underline.thick = false;
       composition->underlines.push_back(underline);
     }
@@ -368,7 +368,7 @@ void IMM32Manager::GetCompositionInfo(HIMC imm_context, LPARAM lparam,
 bool IMM32Manager::GetString(HIMC imm_context,
                          WPARAM lparam,
                          int type,
-                         string16* result) {
+                         base::string16* result) {
   if (!(lparam & type))
     return false;
   LONG string_size = ::ImmGetCompositionString(imm_context, type, NULL, 0);
@@ -381,7 +381,7 @@ bool IMM32Manager::GetString(HIMC imm_context,
 }
 
 bool IMM32Manager::GetResult(
-    HWND window_handle, LPARAM lparam, string16* result) {
+    HWND window_handle, LPARAM lparam, base::string16* result) {
   bool ret = false;
   HIMC imm_context = ::ImmGetContext(window_handle);
   if (imm_context) {
@@ -487,7 +487,7 @@ std::string IMM32Manager::GetInputLanguageName() const {
     return std::string();
 
   std::string language;
-  WideToUTF8(buffer, length - 1, &language);
+  base::WideToUTF8(buffer, length - 1, &language);
   if (SUBLANGID(input_language_id_) == SUBLANG_NEUTRAL)
     return language;
 
@@ -498,13 +498,8 @@ std::string IMM32Manager::GetInputLanguageName() const {
     return language;
 
   std::string region;
-  WideToUTF8(buffer, length - 1, &region);
+  base::WideToUTF8(buffer, length - 1, &region);
   return language.append(1, '-').append(region);
-}
-
-base::i18n::TextDirection IMM32Manager::GetTextDirection() const {
-  return IsRTLPrimaryLangID(PRIMARYLANGID(input_language_id_)) ?
-      base::i18n::RIGHT_TO_LEFT : base::i18n::LEFT_TO_RIGHT;
 }
 
 void IMM32Manager::SetTextInputMode(HWND window_handle,

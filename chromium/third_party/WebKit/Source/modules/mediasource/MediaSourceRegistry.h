@@ -32,6 +32,7 @@
 #define MediaSourceRegistry_h
 
 #include "core/html/URLRegistry.h"
+#include "platform/heap/Handle.h"
 #include "wtf/HashMap.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/text/StringHash.h"
@@ -39,9 +40,9 @@
 namespace WebCore {
 
 class KURL;
-class MediaSourceBase;
+class MediaSource;
 
-class MediaSourceRegistry : public URLRegistry {
+class MediaSourceRegistry FINAL : public URLRegistry {
 public:
     // Returns a single instance of MediaSourceRegistry.
     static MediaSourceRegistry& registry();
@@ -53,7 +54,7 @@ public:
 
 private:
     MediaSourceRegistry();
-    HashMap<String, RefPtr<MediaSourceBase> > m_mediaSources;
+    WillBePersistentHeapHashMap<String, RefPtrWillBeMember<MediaSource> > m_mediaSources;
 };
 
 } // namespace WebCore

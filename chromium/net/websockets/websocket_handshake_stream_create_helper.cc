@@ -14,9 +14,14 @@
 namespace net {
 
 WebSocketHandshakeStreamCreateHelper::WebSocketHandshakeStreamCreateHelper(
+    WebSocketStream::ConnectDelegate* connect_delegate,
     const std::vector<std::string>& requested_subprotocols)
     : requested_subprotocols_(requested_subprotocols),
-      stream_(NULL) {}
+      stream_(NULL),
+      connect_delegate_(connect_delegate),
+      failure_message_(NULL) {
+  DCHECK(connect_delegate_);
+}
 
 WebSocketHandshakeStreamCreateHelper::~WebSocketHandshakeStreamCreateHelper() {}
 
@@ -24,11 +29,18 @@ WebSocketHandshakeStreamBase*
 WebSocketHandshakeStreamCreateHelper::CreateBasicStream(
     scoped_ptr<ClientSocketHandle> connection,
     bool using_proxy) {
-  return stream_ =
-      new WebSocketBasicHandshakeStream(connection.Pass(),
-                                        using_proxy,
-                                        requested_subprotocols_,
-                                        std::vector<std::string>());
+  DCHECK(failure_message_) << "set_failure_message() must be called";
+  // The list of supported extensions and parameters is hard-coded.
+  // TODO(ricea): If more extensions are added, consider a more flexible
+  // method.
+  std::vector<std::string> extensions(
+      1, "permessage-deflate; client_max_window_bits");
+  return stream_ = new WebSocketBasicHandshakeStream(connection.Pass(),
+                                                     connect_delegate_,
+                                                     using_proxy,
+                                                     requested_subprotocols_,
+                                                     extensions,
+                                                     failure_message_);
 }
 
 // TODO(ricea): Create a WebSocketSpdyHandshakeStream. crbug.com/323852

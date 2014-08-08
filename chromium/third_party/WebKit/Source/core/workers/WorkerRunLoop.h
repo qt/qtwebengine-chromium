@@ -33,6 +33,7 @@
 
 #include "core/dom/ExecutionContext.h"
 #include "core/dom/ExecutionContextTask.h"
+#include "public/platform/WebThread.h"
 #include "wtf/Functional.h"
 #include "wtf/MessageQueue.h"
 #include "wtf/OwnPtr.h"
@@ -40,7 +41,6 @@
 
 namespace WebCore {
 
-    class ModePredicate;
     class WorkerGlobalScope;
     class WorkerSharedTimer;
 
@@ -49,45 +49,42 @@ namespace WebCore {
         WorkerRunLoop();
         ~WorkerRunLoop();
 
+        void setWorkerGlobalScope(WorkerGlobalScope*);
+
         // Blocking call. Waits for tasks and timers, invokes the callbacks.
-        void run(WorkerGlobalScope*);
+        void run();
 
         enum WaitMode { WaitForMessage, DontWaitForMessage };
 
-        // Waits for a single task and returns.
-        MessageQueueWaitResult runInMode(WorkerGlobalScope*, const String& mode, WaitMode = WaitForMessage);
+        // Waits for a single debugger task and returns.
+        MessageQueueWaitResult runDebuggerTask(WaitMode = WaitForMessage);
 
         void terminate();
         bool terminated() const { return m_messageQueue.killed(); }
 
+        WorkerGlobalScope* context() const { return m_context; }
+
         // Returns true if the loop is still alive, false if it has been terminated.
         bool postTask(PassOwnPtr<ExecutionContextTask>);
-        bool postTask(const Closure&);
 
         void postTaskAndTerminate(PassOwnPtr<ExecutionContextTask>);
 
         // Returns true if the loop is still alive, false if it has been terminated.
-        bool postTaskForMode(PassOwnPtr<ExecutionContextTask>, const String& mode);
-        bool postTaskForMode(const Closure&, const String& mode);
-
-        unsigned long createUniqueId() { return ++m_uniqueId; }
-
-        static String defaultMode();
-
-        class Task;
+        bool postDebuggerTask(PassOwnPtr<ExecutionContextTask>);
 
     private:
         friend class RunLoopSetup;
-        MessageQueueWaitResult runInMode(WorkerGlobalScope*, const ModePredicate&, WaitMode);
+        MessageQueueWaitResult run(MessageQueue<blink::WebThread::Task>&, WaitMode);
 
         // Runs any clean up tasks that are currently in the queue and returns.
         // This should only be called when the context is closed or loop has been terminated.
-        void runCleanupTasks(WorkerGlobalScope*);
+        void runCleanupTasks();
 
-        MessageQueue<Task> m_messageQueue;
+        MessageQueue<blink::WebThread::Task> m_messageQueue;
+        MessageQueue<blink::WebThread::Task> m_debuggerMessageQueue;
         OwnPtr<WorkerSharedTimer> m_sharedTimer;
+        WorkerGlobalScope* m_context;
         int m_nestedCount;
-        unsigned long m_uniqueId;
     };
 
 } // namespace WebCore

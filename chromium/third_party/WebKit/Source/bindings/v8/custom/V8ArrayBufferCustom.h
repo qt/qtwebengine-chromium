@@ -34,9 +34,9 @@
 
 namespace WebCore {
 
-class V8ArrayBufferDeallocationObserver: public WTF::ArrayBufferDeallocationObserver {
+class V8ArrayBufferDeallocationObserver FINAL: public WTF::ArrayBufferDeallocationObserver {
 public:
-    virtual void arrayBufferDeallocated(unsigned sizeInBytes)
+    virtual void arrayBufferDeallocated(unsigned sizeInBytes) OVERRIDE
     {
         v8::Isolate::GetCurrent()->AdjustAmountOfExternalAllocatedMemory(-static_cast<int>(sizeInBytes));
     }
@@ -51,9 +51,9 @@ protected:
 
 class V8ArrayBuffer {
 public:
-    static bool hasInstance(v8::Handle<v8::Value>, v8::Isolate*, WrapperWorldType);
-    static bool hasInstanceInAnyWorld(v8::Handle<v8::Value>, v8::Isolate*);
+    static bool hasInstance(v8::Handle<v8::Value>, v8::Isolate*);
     static ArrayBuffer* toNative(v8::Handle<v8::Object>);
+    static ArrayBuffer* toNativeWithTypeCheck(v8::Isolate*, v8::Handle<v8::Value>);
     static void derefObject(void*);
     static const WrapperTypeInfo wrapperTypeInfo;
     static const int internalFieldCount = v8DefaultWrapperInternalFieldCount;
@@ -74,13 +74,6 @@ private:
     friend v8::Handle<v8::Object> wrap(ArrayBuffer*, v8::Handle<v8::Object> creationContext, v8::Isolate*);
     static v8::Handle<v8::Object> createWrapper(PassRefPtr<ArrayBuffer>, v8::Handle<v8::Object> creationContext, v8::Isolate*);
 };
-
-template<>
-class WrapperTypeTraits<ArrayBuffer > {
-public:
-    static const WrapperTypeInfo* wrapperTypeInfo() { return &V8ArrayBuffer::wrapperTypeInfo; }
-};
-
 
 inline v8::Handle<v8::Object> wrap(ArrayBuffer* impl, v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)
 {
@@ -115,7 +108,7 @@ inline void v8SetReturnValue(const CallbackInfo& info, ArrayBuffer* impl)
 template<class CallbackInfo>
 inline void v8SetReturnValueForMainWorld(const CallbackInfo& info, ArrayBuffer* impl)
 {
-    ASSERT(worldType(info.GetIsolate()) == MainWorld);
+    ASSERT(DOMWrapperWorld::current(info.GetIsolate()).isMainWorld());
     if (UNLIKELY(!impl)) {
         v8SetReturnValueNull(info);
         return;

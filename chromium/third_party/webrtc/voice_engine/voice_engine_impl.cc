@@ -12,8 +12,10 @@
 #include "webrtc/modules/audio_device/android/audio_device_template.h"
 #include "webrtc/modules/audio_device/android/audio_record_jni.h"
 #include "webrtc/modules/audio_device/android/audio_track_jni.h"
+#if !defined(WEBRTC_CHROMIUM_BUILD)
 #include "webrtc/modules/audio_device/android/opensles_input.h"
 #include "webrtc/modules/audio_device/android/opensles_output.h"
+#endif
 #endif
 
 #include "webrtc/modules/audio_coding/main/interface/audio_coding_module.h"
@@ -70,6 +72,12 @@ int VoiceEngineImpl::Release() {
                  "VoiceEngineImpl self deleting (voiceEngine=0x%p)",
                  this);
 
+    // Clear any pointers before starting destruction. Otherwise worker-
+    // threads will still have pointers to a partially destructed object.
+    // Example: AudioDeviceBuffer::RequestPlayoutData() can access a
+    // partially deconstructed |_ptrCbAudioTransport| during destruction
+    // if we don't call Terminate here.
+    Terminate();
     delete this;
   }
 
@@ -78,8 +86,6 @@ int VoiceEngineImpl::Release() {
 
 VoiceEngine* VoiceEngine::Create() {
   Config* config = new Config();
-  config->Set<AudioCodingModuleFactory>(new AudioCodingModuleFactory());
-
   return GetVoiceEngine(config, true);
 }
 
@@ -145,19 +151,27 @@ bool VoiceEngine::Delete(VoiceEngine*& voiceEngine)
     return true;
 }
 
+#if !defined(WEBRTC_CHROMIUM_BUILD)
 int VoiceEngine::SetAndroidObjects(void* javaVM, void* env, void* context)
 {
 #ifdef WEBRTC_ANDROID
 #ifdef WEBRTC_ANDROID_OPENSLES
-  return AudioDeviceTemplate<OpenSlesInput, OpenSlesOutput>::
-      SetAndroidAudioDeviceObjects(javaVM, env, context);
+  typedef AudioDeviceTemplate<OpenSlesInput, OpenSlesOutput>
+      AudioDeviceInstance;
 #else
-  return AudioDeviceTemplate<AudioRecordJni, AudioTrackJni>::
-      SetAndroidAudioDeviceObjects(javaVM, env, context);
+  typedef AudioDeviceTemplate<AudioRecordJni, AudioTrackJni>
+      AudioDeviceInstance;
 #endif
+  if (javaVM && env && context) {
+    AudioDeviceInstance::SetAndroidAudioDeviceObjects(javaVM, env, context);
+  } else {
+    AudioDeviceInstance::ClearAndroidAudioDeviceObjects();
+  }
+  return 0;
 #else
   return -1;
 #endif
 }
+#endif
 
 }  // namespace webrtc

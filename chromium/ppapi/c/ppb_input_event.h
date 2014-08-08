@@ -3,7 +3,7 @@
  * found in the LICENSE file.
  */
 
-/* From ppb_input_event.idl modified Tue Jul 23 19:23:51 2013. */
+/* From ppb_input_event.idl modified Thu Apr  3 14:52:10 2014. */
 
 #ifndef PPAPI_C_PPB_INPUT_EVENT_H_
 #define PPAPI_C_PPB_INPUT_EVENT_H_
@@ -29,8 +29,9 @@
 #define PPB_WHEEL_INPUT_EVENT_INTERFACE PPB_WHEEL_INPUT_EVENT_INTERFACE_1_0
 
 #define PPB_KEYBOARD_INPUT_EVENT_INTERFACE_1_0 "PPB_KeyboardInputEvent;1.0"
+#define PPB_KEYBOARD_INPUT_EVENT_INTERFACE_1_2 "PPB_KeyboardInputEvent;1.2"
 #define PPB_KEYBOARD_INPUT_EVENT_INTERFACE \
-    PPB_KEYBOARD_INPUT_EVENT_INTERFACE_1_0
+    PPB_KEYBOARD_INPUT_EVENT_INTERFACE_1_2
 
 #define PPB_TOUCH_INPUT_EVENT_INTERFACE_1_0 "PPB_TouchInputEvent;1.0"
 #define PPB_TOUCH_INPUT_EVENT_INTERFACE PPB_TOUCH_INPUT_EVENT_INTERFACE_1_0
@@ -330,12 +331,10 @@ struct PPB_InputEvent_1_0 {
    * the page.
    *
    * Note that synthetic mouse events will be generated from touch events if
-   * (and only if) the you do not request touch events.
+   * (and only if) you do not request touch events.
    *
    * When requesting input events through this function, the events will be
-   * delivered and <i>not</i> bubbled to the page. This means that even if you
-   * aren't interested in the message, no other parts of the page will get
-   * a crack at the message.
+   * delivered and <i>not</i> bubbled to the default handlers.
    *
    * <strong>Example:</strong>
    * @code
@@ -368,8 +367,8 @@ struct PPB_InputEvent_1_0 {
    * By default, no input events are delivered. In most cases you would
    * register to receive events by calling RequestInputEvents(). In some cases,
    * however, you may wish to filter events such that they can be bubbled up
-   * to the DOM. In this case, register for those classes of events using
-   * this function instead of RequestInputEvents().
+   * to the default handlers. In this case, register for those classes of
+   * events using this function instead of RequestInputEvents().
    *
    * Filtering input events requires significantly more overhead than just
    * delivering them to the instance. As such, you should only request
@@ -695,7 +694,7 @@ typedef struct PPB_WheelInputEvent_1_0 PPB_WheelInputEvent;
  * The <code>PPB_KeyboardInputEvent</code> interface contains pointers to
  * several functions related to keyboard input events.
  */
-struct PPB_KeyboardInputEvent_1_0 {
+struct PPB_KeyboardInputEvent_1_2 {
   /**
    * Creates a keyboard input event with the given parameters. Normally you
    * will get a keyboard event passed through the HandleInputEvent and will not
@@ -710,15 +709,18 @@ struct PPB_KeyboardInputEvent_1_0 {
    * @param[in] time_stamp A <code>PP_TimeTicks</code> indicating the time
    * when the event occurred.
    *
-   * @param[in]  modifiers A bit field combination of the
+   * @param[in] modifiers A bit field combination of the
    * <code>PP_InputEvent_Modifier</code> flags.
    *
    * @param[in] key_code This value reflects the DOM KeyboardEvent
-   * <code>keyCode</code> field. Chrome populates this with the Windows-style
-   * Virtual Key code of the key.
+   * <code>keyCode</code> field, which is the Windows-style Virtual Key
+   * code of the key.
    *
    * @param[in] character_text This value represents the typed character as a
    * UTF-8 string.
+   *
+   * @param[in] code This value represents the DOM3 |code| string that
+   * corresponds to the physical key being pressed.
    *
    * @return A <code>PP_Resource</code> containing the new keyboard input
    * event.
@@ -728,7 +730,8 @@ struct PPB_KeyboardInputEvent_1_0 {
                         PP_TimeTicks time_stamp,
                         uint32_t modifiers,
                         uint32_t key_code,
-                        struct PP_Var character_text);
+                        struct PP_Var character_text,
+                        struct PP_Var code);
   /**
    * IsKeyboardInputEvent() determines if a resource is a keyboard event.
    *
@@ -759,9 +762,31 @@ struct PPB_KeyboardInputEvent_1_0 {
    * undefined var.
    */
   struct PP_Var (*GetCharacterText)(PP_Resource character_event);
+  /**
+   * GetCode() returns the DOM |code| field for this keyboard event, as
+   * defined in the DOM3 Events spec:
+   * http://www.w3.org/TR/DOM-Level-3-Events/
+   *
+   * @param[in] key_event The key event for which to return the key code.
+   *
+   * @return The string that contains the DOM |code| for the keyboard event.
+   */
+  struct PP_Var (*GetCode)(PP_Resource key_event);
 };
 
-typedef struct PPB_KeyboardInputEvent_1_0 PPB_KeyboardInputEvent;
+typedef struct PPB_KeyboardInputEvent_1_2 PPB_KeyboardInputEvent;
+
+struct PPB_KeyboardInputEvent_1_0 {
+  PP_Resource (*Create)(PP_Instance instance,
+                        PP_InputEvent_Type type,
+                        PP_TimeTicks time_stamp,
+                        uint32_t modifiers,
+                        uint32_t key_code,
+                        struct PP_Var character_text);
+  PP_Bool (*IsKeyboardInputEvent)(PP_Resource resource);
+  uint32_t (*GetKeyCode)(PP_Resource key_event);
+  struct PP_Var (*GetCharacterText)(PP_Resource character_event);
+};
 /**
  * @}
  */

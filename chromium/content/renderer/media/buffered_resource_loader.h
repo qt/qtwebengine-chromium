@@ -28,9 +28,6 @@ namespace content {
 
 const int64 kPositionNotSpecified = -1;
 
-const char kHttpScheme[] = "http";
-const char kHttpsScheme[] = "https";
-
 // BufferedResourceLoader is single threaded and must be accessed on the
 // render thread. It wraps a WebURLLoader and does in-memory buffering,
 // pausing resource loading when the in-memory buffer is full and resuming
@@ -164,7 +161,8 @@ class CONTENT_EXPORT BufferedResourceLoader
       const char* data, int dataLength);
   virtual void didFinishLoading(
       blink::WebURLLoader* loader,
-      double finishTime);
+      double finishTime,
+      int64_t total_encoded_data_length);
   virtual void didFail(
       blink::WebURLLoader* loader,
       const blink::WebURLError&);

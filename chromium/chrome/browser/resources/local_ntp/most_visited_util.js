@@ -8,33 +8,43 @@
  */
 
 <include src="instant_iframe_validation.js">
+<include src="window_disposition_util.js">
+
 
 /**
- * Enum for the different types of events that are logged from the NTP.
+ * The different types of events that are logged from the NTP.  This enum is
+ * used to transfer information from the NTP javascript to the renderer and is
+ * not used as a UMA enum histogram's logged value.
+ * Note: Keep in sync with common/ntp_logging_events.h
  * @enum {number}
  * @const
  */
 var NTP_LOGGING_EVENT_TYPE = {
-  // The user moused over an NTP tile or title.
-  NTP_MOUSEOVER: 0,
-  // The page attempted to load a thumbnail image.
-  NTP_THUMBNAIL_ATTEMPT: 1,
+  // The suggestion is coming from the server.
+  NTP_SERVER_SIDE_SUGGESTION: 0,
+  // The suggestion is coming from the client.
+  NTP_CLIENT_SIDE_SUGGESTION: 1,
+  // Indicates a tile was rendered, no matter if it's a thumbnail, a gray tile
+  // or an external tile.
+  NTP_TILE: 2,
+  // The tile uses a local thumbnail image.
+  NTP_THUMBNAIL_TILE: 3,
+  // Used when no thumbnail is specified and a gray tile with the domain is used
+  // as the main tile.
+  NTP_GRAY_TILE: 4,
+  // The visuals of that tile are handled externally by the page itself.
+  NTP_EXTERNAL_TILE: 5,
   // There was an error in loading both the thumbnail image and the fallback
   // (if it was provided), resulting in a grey tile.
-  NTP_THUMBNAIL_ERROR: 2,
-  // The page attempted to load a thumbnail URL while a fallback thumbnail was
-  // provided.
-  NTP_FALLBACK_THUMBNAIL_REQUESTED: 3,
-  // The primary thumbnail image failed to load and caused us to use the
-  // secondary thumbnail as a fallback.
-  NTP_FALLBACK_THUMBNAIL_USED: 4,
-  // The suggestion is coming from the server.
-  NTP_SERVER_SIDE_SUGGESTION: 5,
-  // The suggestion is coming from the client.
-  NTP_CLIENT_SIDE_SUGGESTION: 6,
-  // The visuals of that tile are handled externally by the page itself.
-  NTP_EXTERNAL_TILE: 7
+  NTP_THUMBNAIL_ERROR: 6,
+  // Used a gray tile with the domain as the fallback for a failed thumbnail.
+  NTP_GRAY_TILE_FALLBACK: 7,
+  // The visuals of that tile's fallback are handled externally.
+  NTP_EXTERNAL_TILE_FALLBACK: 8,
+  // The user moused over an NTP tile or title.
+  NTP_MOUSEOVER: 9
 };
+
 
 /**
  * Type of the impression provider for a generic client-provided suggestion.
@@ -81,36 +91,20 @@ function parseQueryParams(location) {
  * @param {string} href The destination for the link.
  * @param {string} title The title for the link.
  * @param {string|undefined} text The text for the link or none.
- * @param {string|undefined} ping If specified, a location relative to the
- *     referrer of this iframe, to ping when the link is clicked. Only works if
- *     the referrer is HTTPS.
  * @param {string|undefined} provider A provider name (max 8 alphanumeric
  *     characters) used for logging. Undefined if suggestion is not coming from
  *     the server.
  * @return {HTMLAnchorElement} A new link element.
  */
-function createMostVisitedLink(params, href, title, text, ping, provider) {
+function createMostVisitedLink(params, href, title, text, provider) {
   var styles = getMostVisitedStyles(params, !!text);
   var link = document.createElement('a');
   link.style.color = styles.color;
   link.style.fontSize = styles.fontSize + 'px';
   if (styles.fontFamily)
     link.style.fontFamily = styles.fontFamily;
+
   link.href = href;
-  if ('pos' in params && isFinite(params.pos)) {
-    link.ping = '/log.html?pos=' + params.pos;
-    if (provider)
-      link.ping += '&pr=' + provider;
-    // If a ping parameter was specified, add it to the list of pings, relative
-    // to the referrer of this iframe, which is the default search provider.
-    if (ping) {
-      var parentUrl = document.createElement('a');
-      parentUrl.href = document.referrer;
-      if (parentUrl.protocol == 'https:') {
-        link.ping += ' ' + parentUrl.origin + '/' + ping;
-      }
-    }
-  }
   link.title = title;
   link.target = '_top';
   // Exclude links from the tab order.  The tabIndex is added to the thumbnail
@@ -122,6 +116,24 @@ function createMostVisitedLink(params, href, title, text, ping, provider) {
     var ntpApiHandle = chrome.embeddedSearch.newTabPage;
     ntpApiHandle.logEvent(NTP_LOGGING_EVENT_TYPE.NTP_MOUSEOVER);
   });
+
+  // Webkit's security policy prevents some Most Visited thumbnails from
+  // working (those with schemes different from http and https). Therefore,
+  // navigateContentWindow is being used in order to get all schemes working.
+  link.addEventListener('click', function handleNavigation(e) {
+    var ntpApiHandle = chrome.embeddedSearch.newTabPage;
+    if ('pos' in params && isFinite(params.pos)) {
+      ntpApiHandle.logMostVisitedNavigation(parseInt(params.pos, 10),
+                                            provider || '');
+    }
+    var isServerSuggestion = 'url' in params;
+    if (!isServerSuggestion) {
+      e.preventDefault();
+      ntpApiHandle.navigateContentWindow(href, getDispositionFromEvent(e));
+    }
+    // Else follow <a> normally, so transition type would be LINK.
+  });
+
   return link;
 }
 
@@ -176,11 +188,9 @@ function fillMostVisited(location, fill) {
     // Means that the suggestion data comes from the server. Create data object.
     data.url = params.url;
     data.thumbnailUrl = params.tu || '';
-    data.thumbnailUrl2 = params.tu2 || '';
     data.title = params.ti || '';
     data.direction = params.di || '';
     data.domain = params.dom || '';
-    data.ping = params.ping || '';
     data.provider = params.pr || SERVER_PROVIDER_NAME;
 
     // Log the fact that suggestion was obtained from the server.
@@ -191,12 +201,11 @@ function fillMostVisited(location, fill) {
     data = apiHandle.getMostVisitedItemData(params.rid);
     if (!data)
       return;
-    data.provider = CLIENT_PROVIDER_NAME;
-    delete data.ping;
+    // Allow server-side provider override.
+    data.provider = params.pr || CLIENT_PROVIDER_NAME;
   }
   if (/^javascript:/i.test(data.url) ||
       /^javascript:/i.test(data.thumbnailUrl) ||
-      /^javascript:/i.test(data.thumbnailUrl2) ||
       !/^[a-z0-9]{0,8}$/i.test(data.provider))
     return;
   if (data.direction)

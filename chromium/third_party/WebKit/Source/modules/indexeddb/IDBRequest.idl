@@ -28,12 +28,13 @@
  */
 
 [
-    ActiveDOMObject
+    ActiveDOMObject,
+    GarbageCollected,
 ] interface IDBRequest : EventTarget {
     [RaisesException=Getter, CachedAttribute=isResultDirty] readonly attribute any result;
     [RaisesException=Getter] readonly attribute DOMError error;
 
-    [CallWith=ExecutionContext] readonly attribute any source;
+    readonly attribute any source;
     readonly attribute IDBTransaction transaction;
 
     // States

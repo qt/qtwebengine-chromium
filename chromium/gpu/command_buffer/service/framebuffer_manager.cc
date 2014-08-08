@@ -119,6 +119,9 @@ class RenderbufferAttachment
     renderbuffer_->AddToSignature(signature);
   }
 
+  virtual void OnWillRenderTo() const OVERRIDE {}
+  virtual void OnDidRenderTo() const OVERRIDE {}
+
  protected:
   virtual ~RenderbufferAttachment() { }
 
@@ -243,6 +246,14 @@ class TextureAttachment
         texture_ref_.get(), target_, level_, signature);
   }
 
+  virtual void OnWillRenderTo() const OVERRIDE {
+    texture_ref_->texture()->OnWillModifyPixels();
+  }
+
+  virtual void OnDidRenderTo() const OVERRIDE {
+    texture_ref_->texture()->OnDidModifyPixels();
+  }
+
  protected:
   virtual ~TextureAttachment() {}
 
@@ -347,6 +358,55 @@ bool Framebuffer::HasUnclearedAttachment(
     return !attachment->cleared();
   }
   return false;
+}
+
+bool Framebuffer::HasUnclearedColorAttachments() const {
+  for (AttachmentMap::const_iterator it = attachments_.begin();
+       it != attachments_.end(); ++it) {
+    if (it->first >= GL_COLOR_ATTACHMENT0 &&
+        it->first < GL_COLOR_ATTACHMENT0 + manager_->max_draw_buffers_) {
+      const Attachment* attachment = it->second.get();
+      if (!attachment->cleared())
+        return true;
+    }
+  }
+  return false;
+}
+
+void Framebuffer::ChangeDrawBuffersHelper(bool recover) const {
+  scoped_ptr<GLenum[]> buffers(new GLenum[manager_->max_draw_buffers_]);
+  for (uint32 i = 0; i < manager_->max_draw_buffers_; ++i)
+    buffers[i] = GL_NONE;
+  for (AttachmentMap::const_iterator it = attachments_.begin();
+       it != attachments_.end(); ++it) {
+    if (it->first >= GL_COLOR_ATTACHMENT0 &&
+        it->first < GL_COLOR_ATTACHMENT0 + manager_->max_draw_buffers_) {
+      buffers[it->first - GL_COLOR_ATTACHMENT0] = it->first;
+    }
+  }
+  bool different = false;
+  for (uint32 i = 0; i < manager_->max_draw_buffers_; ++i) {
+    if (buffers[i] != draw_buffers_[i]) {
+      different = true;
+      break;
+    }
+  }
+  if (different) {
+    if (recover)
+      glDrawBuffersARB(manager_->max_draw_buffers_, draw_buffers_.get());
+    else
+      glDrawBuffersARB(manager_->max_draw_buffers_, buffers.get());
+  }
+}
+
+void Framebuffer::PrepareDrawBuffersForClear() const {
+  bool recover = false;
+  ChangeDrawBuffersHelper(recover);
+}
+
+void Framebuffer::RestoreDrawBuffersAfterClear() const {
+  bool recover = true;
+  ChangeDrawBuffersHelper(recover);
 }
 
 void Framebuffer::MarkAttachmentAsCleared(
@@ -505,6 +565,8 @@ void Framebuffer::SetDrawBuffers(GLsizei n, const GLenum* bufs) {
     draw_buffers_[i] = bufs[i];
 }
 
+
+
 bool Framebuffer::HasAlphaMRT() const {
   for (uint32 i = 0; i < manager_->max_draw_buffers_; ++i) {
     if (draw_buffers_[i] != GL_NONE) {
@@ -613,6 +675,20 @@ const Framebuffer::Attachment*
 
 void Framebuffer::OnTextureRefDetached(TextureRef* texture) {
   manager_->OnTextureRefDetached(texture);
+}
+
+void Framebuffer::OnWillRenderTo() const {
+  for (AttachmentMap::const_iterator it = attachments_.begin();
+       it != attachments_.end(); ++it) {
+    it->second->OnWillRenderTo();
+  }
+}
+
+void Framebuffer::OnDidRenderTo() const {
+  for (AttachmentMap::const_iterator it = attachments_.begin();
+       it != attachments_.end(); ++it) {
+    it->second->OnDidRenderTo();
+  }
 }
 
 bool FramebufferManager::GetClientId(

@@ -23,15 +23,18 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+// http://www.whatwg.org/specs/web-apps/current-work/multipage/the-video-element.html#mediacontroller
+
 [
     Constructor,
     ConstructorCallWith=ExecutionContext,
-    RuntimeEnabled=Media,
+    RuntimeEnabled=MediaController,
+    TypeChecking=Unrestricted,
 ] interface MediaController : EventTarget {
     readonly attribute TimeRanges buffered;
     readonly attribute TimeRanges seekable;
 
-    readonly attribute double duration;
+    readonly attribute unrestricted double duration;
     [RaisesException=Setter] attribute double currentTime;
 
     readonly attribute boolean paused;

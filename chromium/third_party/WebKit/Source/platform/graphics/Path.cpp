@@ -36,7 +36,6 @@
 #include "platform/graphics/GraphicsContext.h"
 #include "platform/graphics/skia/SkiaUtils.h"
 #include "platform/transforms/AffineTransform.h"
-#include "third_party/skia/include/core/SkPathMeasure.h"
 #include "third_party/skia/include/pathops/SkPathOps.h"
 #include "wtf/MathExtras.h"
 
@@ -177,10 +176,8 @@ float Path::normalAngleAtLength(float length, bool& ok) const
     return normal;
 }
 
-bool Path::pointAndNormalAtLength(float length, FloatPoint& point, float& normal) const
+static bool calculatePointAndNormalOnPath(SkPathMeasure& measure, SkScalar length, FloatPoint& point, float& normalAngle, SkScalar* accumulatedLength = 0)
 {
-    SkPathMeasure measure(m_path, false);
-
     do {
         SkScalar contourLength = measure.getLength();
         if (length <= contourLength) {
@@ -188,15 +185,54 @@ bool Path::pointAndNormalAtLength(float length, FloatPoint& point, float& normal
             SkPoint position;
 
             if (measure.getPosTan(length, &position, &tangent)) {
-                normal = rad2deg(SkScalarToFloat(SkScalarATan2(tangent.fY, tangent.fX)));
+                normalAngle = rad2deg(SkScalarToFloat(SkScalarATan2(tangent.fY, tangent.fX)));
                 point = FloatPoint(SkScalarToFloat(position.fX), SkScalarToFloat(position.fY));
                 return true;
             }
         }
         length -= contourLength;
+        if (accumulatedLength)
+            *accumulatedLength += contourLength;
     } while (measure.nextContour());
+    return false;
+}
+
+bool Path::pointAndNormalAtLength(float length, FloatPoint& point, float& normal) const
+{
+    SkPathMeasure measure(m_path, false);
+
+    if (calculatePointAndNormalOnPath(measure, WebCoreFloatToSkScalar(length), point, normal))
+        return true;
 
     normal = 0;
+    point = FloatPoint(0, 0);
+    return false;
+}
+
+Path::PositionCalculator::PositionCalculator(const Path& path)
+    : m_path(path.skPath())
+    , m_pathMeasure(path.skPath(), false)
+    , m_accumulatedLength(0)
+{
+}
+
+bool Path::PositionCalculator::pointAndNormalAtLength(float length, FloatPoint& point, float& normalAngle)
+{
+    SkScalar skLength = WebCoreFloatToSkScalar(length);
+    if (skLength >= 0) {
+        if (skLength < m_accumulatedLength) {
+            // Reset path measurer to rewind (and restart from 0).
+            m_pathMeasure.setPath(&m_path, false);
+            m_accumulatedLength = 0;
+        } else {
+            skLength -= m_accumulatedLength;
+        }
+
+        if (calculatePointAndNormalOnPath(m_pathMeasure, skLength, point, normalAngle, &m_accumulatedLength))
+            return true;
+    }
+
+    normalAngle = 0;
     point = FloatPoint(0, 0);
     return false;
 }
@@ -248,27 +284,27 @@ void Path::setWindRule(const WindRule rule)
 
 void Path::moveTo(const FloatPoint& point)
 {
-    m_path.moveTo(point);
+    m_path.moveTo(point.data());
 }
 
 void Path::addLineTo(const FloatPoint& point)
 {
-    m_path.lineTo(point);
+    m_path.lineTo(point.data());
 }
 
 void Path::addQuadCurveTo(const FloatPoint& cp, const FloatPoint& ep)
 {
-    m_path.quadTo(cp, ep);
+    m_path.quadTo(cp.data(), ep.data());
 }
 
 void Path::addBezierCurveTo(const FloatPoint& p1, const FloatPoint& p2, const FloatPoint& ep)
 {
-    m_path.cubicTo(p1, p2, ep);
+    m_path.cubicTo(p1.data(), p2.data(), ep.data());
 }
 
 void Path::addArcTo(const FloatPoint& p1, const FloatPoint& p2, float radius)
 {
-    m_path.arcTo(p1, p2, WebCoreFloatToSkScalar(radius));
+    m_path.arcTo(p1.data(), p2.data(), WebCoreFloatToSkScalar(radius));
 }
 
 void Path::closeSubpath()
@@ -279,7 +315,7 @@ void Path::closeSubpath()
 void Path::addEllipse(const FloatPoint& p, float radiusX, float radiusY, float startAngle, float endAngle, bool anticlockwise)
 {
     ASSERT(ellipseIsRenderable(startAngle, endAngle));
-    ASSERT(startAngle >= 0 && startAngle < 2 * piFloat);
+    ASSERT(startAngle >= 0 && startAngle < twoPiFloat);
     ASSERT((anticlockwise && (startAngle - endAngle) >= 0) || (!anticlockwise && (endAngle - startAngle) >= 0));
 
     SkScalar cx = WebCoreFloatToSkScalar(p.x());
@@ -327,7 +363,7 @@ void Path::addRect(const FloatRect& rect)
 void Path::addEllipse(const FloatPoint& p, float radiusX, float radiusY, float rotation, float startAngle, float endAngle, bool anticlockwise)
 {
     ASSERT(ellipseIsRenderable(startAngle, endAngle));
-    ASSERT(startAngle >= 0 && startAngle < 2 * piFloat);
+    ASSERT(startAngle >= 0 && startAngle < twoPiFloat);
     ASSERT((anticlockwise && (startAngle - endAngle) >= 0) || (!anticlockwise && (endAngle - startAngle) >= 0));
 
     if (!rotation) {
@@ -336,7 +372,7 @@ void Path::addEllipse(const FloatPoint& p, float radiusX, float radiusY, float r
     }
 
     // Add an arc after the relevant transform.
-    AffineTransform ellipseTransform = AffineTransform::translation(p.x(), p.y()).rotate(rad2deg(rotation));
+    AffineTransform ellipseTransform = AffineTransform::translation(p.x(), p.y()).rotateRadians(rotation);
     ASSERT(ellipseTransform.isInvertible());
     AffineTransform inverseEllipseTransform = ellipseTransform.inverse();
     transform(inverseEllipseTransform);
@@ -436,6 +472,11 @@ void Path::addBeziersForRoundedRect(const FloatRect& rect, const FloatSize& topL
     closeSubpath();
 }
 
+void Path::addPath(const Path& src, const AffineTransform& transform)
+{
+    m_path.addPath(src.skPath(), affineTransformToSkMatrix(transform));
+}
+
 void Path::translate(const FloatSize& size)
 {
     m_path.offset(WebCoreFloatToSkScalar(size.width()), WebCoreFloatToSkScalar(size.height()));
@@ -446,11 +487,11 @@ bool Path::unionPath(const Path& other)
     return Op(m_path, other.m_path, kUnion_PathOp, &m_path);
 }
 
-#if !ASSERT_DISABLED
+#if ASSERT_ENABLED
 bool ellipseIsRenderable(float startAngle, float endAngle)
 {
-    return (std::abs(endAngle - startAngle) < 2 * piFloat)
-        || WebCoreFloatNearlyEqual(std::abs(endAngle - startAngle), 2 * piFloat);
+    return (std::abs(endAngle - startAngle) < twoPiFloat)
+        || WebCoreFloatNearlyEqual(std::abs(endAngle - startAngle), twoPiFloat);
 }
 #endif
 

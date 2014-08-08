@@ -26,21 +26,22 @@
 #ifndef GeolocationError_h
 #define GeolocationError_h
 
-#include "wtf/PassRefPtr.h"
-#include "wtf/RefCounted.h"
-#include "wtf/RefPtr.h"
 #include "wtf/text/WTFString.h"
 
 namespace WebCore {
 
-class GeolocationError : public RefCounted<GeolocationError> {
+class GeolocationError : public GarbageCollectedFinalized<GeolocationError> {
 public:
     enum ErrorCode {
         PermissionDenied,
         PositionUnavailable
     };
 
-    static PassRefPtr<GeolocationError> create(ErrorCode code, const String& message) { return adoptRef(new GeolocationError(code, message)); }
+    static GeolocationError* create(ErrorCode code, const String& message)
+    {
+        return new GeolocationError(code, message);
+    }
+    void trace(Visitor*) { }
 
     ErrorCode code() const { return m_code; }
     const String& message() const { return m_message; }

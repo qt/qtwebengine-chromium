@@ -20,6 +20,7 @@
 #ifndef SVGResources_h
 #define SVGResources_h
 
+#include "wtf/FastAllocBase.h"
 #include "wtf/HashSet.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/OwnPtr.h"
@@ -27,13 +28,13 @@
 
 namespace WebCore {
 
-class Document;
 class RenderObject;
 class RenderSVGResourceClipper;
 class RenderSVGResourceContainer;
 class RenderSVGResourceFilter;
 class RenderSVGResourceMarker;
 class RenderSVGResourceMasker;
+class SVGElement;
 class SVGRenderStyle;
 
 // Holds a set of resources associated with a RenderObject
@@ -44,6 +45,8 @@ public:
 
     static PassOwnPtr<SVGResources> buildResources(const RenderObject*, const SVGRenderStyle*);
     void layoutIfNeeded();
+
+    static bool supportsMarkers(const SVGElement&);
 
     // Ordinary resources
     RenderSVGResourceClipper* clipper() const { return m_clipperFilterMaskerData ? m_clipperFilterMaskerData->clipper : 0; }

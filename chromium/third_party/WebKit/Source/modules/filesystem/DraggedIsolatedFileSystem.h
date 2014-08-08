@@ -31,7 +31,8 @@
 #ifndef DraggedIsolatedFileSystem_h
 #define DraggedIsolatedFileSystem_h
 
-#include "core/platform/chromium/ChromiumDataObject.h"
+#include "core/clipboard/DataObject.h"
+#include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
 #include "wtf/text/WTFString.h"
 
@@ -39,25 +40,26 @@ namespace WebCore {
 
 class DOMFileSystem;
 
-class DraggedIsolatedFileSystem : public Supplement<ChromiumDataObject> {
+class DraggedIsolatedFileSystem FINAL : public NoBaseWillBeGarbageCollectedFinalized<DraggedIsolatedFileSystem>, public WillBeHeapSupplement<DataObject> {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(DraggedIsolatedFileSystem);
 public:
-    ~DraggedIsolatedFileSystem();
+    virtual ~DraggedIsolatedFileSystem();
 
-    static PassOwnPtr<DraggedIsolatedFileSystem> create(const String& filesystemId)
+    static PassOwnPtrWillBeRawPtr<DraggedIsolatedFileSystem> create(DataObject& host, const String& filesystemId)
     {
-        return adoptPtr(new DraggedIsolatedFileSystem(filesystemId));
+        return adoptPtrWillBeNoop(new DraggedIsolatedFileSystem(host, filesystemId));
     }
 
-    const String& filesystemId() const { return m_filesystemId; }
-    DOMFileSystem* getDOMFileSystem(ExecutionContext*);
+    static DOMFileSystem* getDOMFileSystem(DataObject* host, ExecutionContext*);
 
     static const char* supplementName();
-    static DraggedIsolatedFileSystem* from(ChromiumDataObject* dataObject) { return static_cast<DraggedIsolatedFileSystem*>(Supplement<ChromiumDataObject>::from(dataObject, supplementName())); }
+    static DraggedIsolatedFileSystem* from(DataObject*);
+
+    void trace(Visitor*);
 
 private:
-    DraggedIsolatedFileSystem(const String& filesystemId);
-    RefPtr<DOMFileSystem> m_filesystem;
-    String m_filesystemId;
+    DraggedIsolatedFileSystem(DataObject& host, const String& filesystemId);
+    PersistentWillBeMember<DOMFileSystem> m_filesystem;
 };
 
 } // namespace WebCore

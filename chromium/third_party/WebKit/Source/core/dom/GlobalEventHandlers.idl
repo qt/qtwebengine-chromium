@@ -27,56 +27,62 @@
  * OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+// http://www.whatwg.org/specs/web-apps/current-work/#globaleventhandlers
+
 [
-    NoInterfaceObject
+    LegacyTreatAsPartialInterface,
+    NoInterfaceObject, // Always used on target of 'implements'
 ] interface GlobalEventHandlers {
     attribute EventHandler onabort;
+    [RuntimeEnabled=RequestAutocomplete] attribute EventHandler onautocomplete;
+    [RuntimeEnabled=RequestAutocomplete] attribute EventHandler onautocompleteerror;
     attribute EventHandler onblur;
     attribute EventHandler oncancel;
     attribute EventHandler oncanplay;
     attribute EventHandler oncanplaythrough;
     attribute EventHandler onchange;
-    [PerWorldBindings, ActivityLogging=SetterForIsolatedWorlds] attribute EventHandler onclick;
+    [LogActivity=SetterOnly] attribute EventHandler onclick;
     attribute EventHandler onclose;
     attribute EventHandler oncontextmenu;
     attribute EventHandler oncuechange;
-    [PerWorldBindings, ActivityLogging=SetterForIsolatedWorlds] attribute EventHandler ondblclick;
-    [PerWorldBindings, ActivityLogging=SetterForIsolatedWorlds] attribute EventHandler ondrag;
-    [PerWorldBindings, ActivityLogging=SetterForIsolatedWorlds] attribute EventHandler ondragend;
-    [PerWorldBindings, ActivityLogging=SetterForIsolatedWorlds] attribute EventHandler ondragenter;
-    //[PerWorldBindings, ActivityLogging=SetterForIsolatedWorlds] attribute EventHandler ondragexit;
-    [PerWorldBindings, ActivityLogging=SetterForIsolatedWorlds] attribute EventHandler ondragleave;
-    [PerWorldBindings, ActivityLogging=SetterForIsolatedWorlds] attribute EventHandler ondragover;
-    [PerWorldBindings, ActivityLogging=SetterForIsolatedWorlds] attribute EventHandler ondragstart;
-    [PerWorldBindings, ActivityLogging=SetterForIsolatedWorlds] attribute EventHandler ondrop;
+    [LogActivity=SetterOnly] attribute EventHandler ondblclick;
+    [LogActivity=SetterOnly] attribute EventHandler ondrag;
+    [LogActivity=SetterOnly] attribute EventHandler ondragend;
+    [LogActivity=SetterOnly] attribute EventHandler ondragenter;
+    //[LogActivity=SetterOnly] attribute EventHandler ondragexit;
+    [LogActivity=SetterOnly] attribute EventHandler ondragleave;
+    [LogActivity=SetterOnly] attribute EventHandler ondragover;
+    [LogActivity=SetterOnly] attribute EventHandler ondragstart;
+    [LogActivity=SetterOnly] attribute EventHandler ondrop;
     attribute EventHandler ondurationchange;
     attribute EventHandler onemptied;
     attribute EventHandler onended;
     attribute EventHandler onerror;
     attribute EventHandler onfocus;
-    [PerWorldBindings, ActivityLogging=SetterForIsolatedWorlds] attribute EventHandler oninput;
+    [LogActivity=SetterOnly] attribute EventHandler oninput;
     attribute EventHandler oninvalid;
-    [PerWorldBindings, ActivityLogging=SetterForIsolatedWorlds] attribute EventHandler onkeydown;
-    [PerWorldBindings, ActivityLogging=SetterForIsolatedWorlds] attribute EventHandler onkeypress;
-    [PerWorldBindings, ActivityLogging=SetterForIsolatedWorlds] attribute EventHandler onkeyup;
+    [LogActivity=SetterOnly] attribute EventHandler onkeydown;
+    [LogActivity=SetterOnly] attribute EventHandler onkeypress;
+    [LogActivity=SetterOnly] attribute EventHandler onkeyup;
     attribute EventHandler onload;
     attribute EventHandler onloadeddata;
     attribute EventHandler onloadedmetadata;
     attribute EventHandler onloadstart;
-    [PerWorldBindings, ActivityLogging=SetterForIsolatedWorlds] attribute EventHandler onmousedown;
-    [PerWorldBindings, ActivityLogging=SetterForIsolatedWorlds] attribute EventHandler onmouseenter;
-    [PerWorldBindings, ActivityLogging=SetterForIsolatedWorlds] attribute EventHandler onmouseleave;
-    [PerWorldBindings, ActivityLogging=SetterForIsolatedWorlds] attribute EventHandler onmousemove;
-    [PerWorldBindings, ActivityLogging=SetterForIsolatedWorlds] attribute EventHandler onmouseout;
-    [PerWorldBindings, ActivityLogging=SetterForIsolatedWorlds] attribute EventHandler onmouseover;
-    [PerWorldBindings, ActivityLogging=SetterForIsolatedWorlds] attribute EventHandler onmouseup;
-    [PerWorldBindings, ActivityLogging=SetterForIsolatedWorlds] attribute EventHandler onmousewheel;
+    [LogActivity=SetterOnly] attribute EventHandler onmousedown;
+    [LogActivity=SetterOnly] attribute EventHandler onmouseenter;
+    [LogActivity=SetterOnly] attribute EventHandler onmouseleave;
+    [LogActivity=SetterOnly] attribute EventHandler onmousemove;
+    [LogActivity=SetterOnly] attribute EventHandler onmouseout;
+    [LogActivity=SetterOnly] attribute EventHandler onmouseover;
+    [LogActivity=SetterOnly] attribute EventHandler onmouseup;
+    [LogActivity=SetterOnly] attribute EventHandler onmousewheel;
     attribute EventHandler onpause;
     attribute EventHandler onplay;
     attribute EventHandler onplaying;
     attribute EventHandler onprogress;
     attribute EventHandler onratechange;
     attribute EventHandler onreset;
+    attribute EventHandler onresize;
     attribute EventHandler onscroll;
     attribute EventHandler onseeked;
     attribute EventHandler onseeking;
@@ -87,6 +93,7 @@
     attribute EventHandler onsubmit;
     attribute EventHandler onsuspend;
     attribute EventHandler ontimeupdate;
+    attribute EventHandler ontoggle;
     attribute EventHandler onvolumechange;
     attribute EventHandler onwaiting;
 };

@@ -54,7 +54,8 @@ while (0)
 
 #endif
 
-static const int kFixedPointDenominator = 64;
+static const int kLayoutUnitFractionalBits = 6;
+static const int kFixedPointDenominator = 1 << kLayoutUnitFractionalBits;
 
 const int intMaxForLayoutUnit = INT_MAX / kFixedPointDenominator;
 const int intMinForLayoutUnit = INT_MIN / kFixedPointDenominator;
@@ -107,7 +108,6 @@ public:
 
     operator int() const { return toInt(); }
     operator unsigned() const { return toUnsigned(); }
-    operator float() const { return toFloat(); }
     operator double() const { return toDouble(); }
     operator bool() const { return m_value; }
 
@@ -144,11 +144,9 @@ public:
             return (m_value + kFixedPointDenominator - 1) / kFixedPointDenominator;
         return toInt();
     }
-    int round() const
+    ALWAYS_INLINE int round() const
     {
-        if (m_value > 0)
-            return saturatedAddition(rawValue(), kFixedPointDenominator / 2) / kFixedPointDenominator;
-        return saturatedSubtraction(rawValue(), (kFixedPointDenominator / 2) - 1) / kFixedPointDenominator;
+        return saturatedAddition(rawValue(), kFixedPointDenominator / 2) >> kLayoutUnitFractionalBits;
     }
 
     int floor() const
@@ -156,9 +154,7 @@ public:
         if (UNLIKELY(m_value <= INT_MIN + kFixedPointDenominator - 1))
             return intMinForLayoutUnit;
 
-        if (m_value >= 0)
-            return toInt();
-        return (m_value - kFixedPointDenominator + 1) / kFixedPointDenominator;
+        return m_value >> kLayoutUnitFractionalBits;
     }
 
     LayoutUnit fraction() const
@@ -573,7 +569,7 @@ inline LayoutUnit operator/(unsigned long long a, const LayoutUnit& b)
     return LayoutUnit(a) / b;
 }
 
-inline LayoutUnit operator+(const LayoutUnit& a, const LayoutUnit& b)
+ALWAYS_INLINE LayoutUnit operator+(const LayoutUnit& a, const LayoutUnit& b)
 {
     LayoutUnit returnVal;
     returnVal.setRawValue(saturatedAddition(a.rawValue(), b.rawValue()));
@@ -610,7 +606,7 @@ inline double operator+(const double a, const LayoutUnit& b)
     return a + b.toDouble();
 }
 
-inline LayoutUnit operator-(const LayoutUnit& a, const LayoutUnit& b)
+ALWAYS_INLINE LayoutUnit operator-(const LayoutUnit& a, const LayoutUnit& b)
 {
     LayoutUnit returnVal;
     returnVal.setRawValue(saturatedSubtraction(a.rawValue(), b.rawValue()));
@@ -792,6 +788,15 @@ inline LayoutUnit layoutMod(const LayoutUnit& numerator, const LayoutUnit& denom
 inline bool isIntegerValue(const LayoutUnit value)
 {
     return value.toInt() == value;
+}
+
+inline LayoutUnit clampToLayoutUnit(LayoutUnit value, LayoutUnit min, LayoutUnit max)
+{
+    if (value >= max)
+        return max;
+    if (value <= min)
+        return min;
+    return value;
 }
 
 } // namespace WebCore

@@ -10,8 +10,8 @@
 
 namespace google_apis {
 
-// Runs task on the thread to which |task_runner| belongs.
-void RunTaskOnThread(scoped_refptr<base::SingleThreadTaskRunner> task_runner,
+// Runs task on a thread on which |task_runner| may run tasks.
+void RunTaskOnThread(scoped_refptr<base::SequencedTaskRunner> task_runner,
                      const base::Closure& task);
 
 namespace internal {
@@ -92,17 +92,6 @@ struct ComposedCallback<void(T1, T2, T3, T4)> {
       const base::Callback<void(T1, T2, T3, T4)>& callback,
       T1 arg1, T2 arg2, T3 arg3, T4 arg4) {
     runner.Run(base::Bind(callback, arg1, arg2, arg3, arg4));
-  }
-};
-
-// ComposedCallback with four arguments, and the second one is scoped_ptr.
-template<typename T1, typename T2, typename D2, typename T3, typename T4>
-struct ComposedCallback<void(T1, scoped_ptr<T2, D2>, T3, T4)> {
-  static void Run(
-      const base::Callback<void(const base::Closure&)>& runner,
-      const base::Callback<void(T1, scoped_ptr<T2, D2>, T3, T4)>& callback,
-      T1 arg1, scoped_ptr<T2, D2> arg2, T3 arg3, T4 arg4) {
-    runner.Run(base::Bind(callback, arg1, base::Passed(&arg2), arg3, arg4));
   }
 };
 

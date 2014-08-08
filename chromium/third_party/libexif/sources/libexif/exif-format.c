@@ -64,6 +64,7 @@ exif_format_get_name (ExifFormat format)
 #if defined(BIND_TEXTDOMAIN)
 	bindtextdomain (GETTEXT_PACKAGE, LOCALEDIR);
 #endif
+
 	for (i = 0; ExifFormatTable[i].name; i++)
 		if (ExifFormatTable[i].format == format)
 			return _(ExifFormatTable[i].name);

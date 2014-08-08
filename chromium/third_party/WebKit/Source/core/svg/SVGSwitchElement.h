@@ -22,29 +22,19 @@
 #define SVGSwitchElement_h
 
 #include "core/svg/SVGAnimatedBoolean.h"
-#include "core/svg/SVGExternalResourcesRequired.h"
 #include "core/svg/SVGGraphicsElement.h"
 
 namespace WebCore {
 
-class SVGSwitchElement FINAL : public SVGGraphicsElement,
-                               public SVGExternalResourcesRequired {
+class SVGSwitchElement FINAL : public SVGGraphicsElement {
 public:
-    static PassRefPtr<SVGSwitchElement> create(Document&);
+    DECLARE_NODE_FACTORY(SVGSwitchElement);
 
 private:
     explicit SVGSwitchElement(Document&);
 
-    virtual bool isValid() const { return SVGTests::isValid(); }
-    virtual bool supportsFocus() const OVERRIDE { return hasFocusEventListeners(); }
+    virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
 
-    virtual bool childShouldCreateRenderer(const Node& child) const;
-
-    virtual RenderObject* createRenderer(RenderStyle*);
-
-    BEGIN_DECLARE_ANIMATED_PROPERTIES(SVGSwitchElement)
-        DECLARE_ANIMATED_BOOLEAN(ExternalResourcesRequired, externalResourcesRequired)
-    END_DECLARE_ANIMATED_PROPERTIES
 };
 
 } // namespace WebCore

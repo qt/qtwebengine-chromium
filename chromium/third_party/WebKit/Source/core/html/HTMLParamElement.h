@@ -29,7 +29,7 @@ namespace WebCore {
 
 class HTMLParamElement FINAL : public HTMLElement {
 public:
-    static PassRefPtr<HTMLParamElement> create(Document&);
+    DECLARE_NODE_FACTORY(HTMLParamElement);
 
     const AtomicString& name() const;
     const AtomicString& value() const;
@@ -40,11 +40,7 @@ private:
     explicit HTMLParamElement(Document&);
 
     virtual bool isURLAttribute(const Attribute&) const OVERRIDE;
-
-    virtual void addSubresourceAttributeURLs(ListHashSet<KURL>&) const;
 };
-
-DEFINE_NODE_TYPE_CASTS(HTMLParamElement, hasTagName(HTMLNames::paramTag));
 
 } // namespace WebCore
 

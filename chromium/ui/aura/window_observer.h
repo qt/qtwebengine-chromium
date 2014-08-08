@@ -31,6 +31,8 @@ class AURA_EXPORT WindowObserver {
     Window* receiver;   // The window receiving the notification.
   };
 
+  WindowObserver();
+
   // Called when a window is added or removed. Notifications are sent to the
   // following hierarchies in this order:
   // 1. |target|.
@@ -75,6 +77,10 @@ class AURA_EXPORT WindowObserver {
                                      const gfx::Rect& old_bounds,
                                      const gfx::Rect& new_bounds) {}
 
+  // Invoked when SetTransform() is invoked on |window|.
+  virtual void OnWindowTransforming(Window* window) {}
+  virtual void OnWindowTransformed(Window* window) {}
+
   // Invoked when |window|'s position among its siblings in the stacking order
   // has changed.
   virtual void OnWindowStackingChanged(Window* window) {}
@@ -100,17 +106,29 @@ class AURA_EXPORT WindowObserver {
   // Called when a Window has been added to a RootWindow.
   virtual void OnWindowAddedToRootWindow(Window* window) {}
 
-  // Called when a Window is about to be removed from a RootWindow.
-  virtual void OnWindowRemovingFromRootWindow(Window* window) {}
-
-  // Called when a transient child is added to |window|.
-  virtual void OnAddTransientChild(Window* window, Window* transient) {}
-
-  // Called when a transient child is removed from |window|.
-  virtual void OnRemoveTransientChild(Window* window, Window* transient) {}
+  // Called when a Window is about to be removed from a root Window.
+  // |new_root| contains the new root Window if it is being added to one
+  // atomically.
+  virtual void OnWindowRemovingFromRootWindow(Window* window,
+                                              Window* new_root) {}
 
  protected:
-  virtual ~WindowObserver() {}
+  virtual ~WindowObserver();
+
+ private:
+  friend class Window;
+
+  // Called when this is added as an observer on |window|.
+  void OnObservingWindow(Window* window);
+
+  // Called when this is removed from the observers on |window|.
+  void OnUnobservingWindow(Window* window);
+
+  // Tracks the number of windows being observed to track down
+  // http://crbug.com/365364.
+  int observing_;
+
+  DISALLOW_COPY_AND_ASSIGN(WindowObserver);
 };
 
 }  // namespace aura

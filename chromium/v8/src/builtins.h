@@ -1,29 +1,6 @@
 // Copyright 2011 the V8 project authors. All rights reserved.
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-//       copyright notice, this list of conditions and the following
-//       disclaimer in the documentation and/or other materials provided
-//       with the distribution.
-//     * Neither the name of Google Inc. nor the names of its
-//       contributors may be used to endorse or promote products derived
-//       from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
 #ifndef V8_BUILTINS_H_
 #define V8_BUILTINS_H_
@@ -82,15 +59,14 @@ enum BuiltinExtraArguments {
   V(HandleApiCallAsFunction, NO_EXTRA_ARGUMENTS)                    \
   V(HandleApiCallAsConstructor, NO_EXTRA_ARGUMENTS)                 \
                                                                     \
-  V(StrictModePoisonPill, NO_EXTRA_ARGUMENTS)
+  V(StrictModePoisonPill, NO_EXTRA_ARGUMENTS)                       \
+  V(GeneratorPoisonPill, NO_EXTRA_ARGUMENTS)
 
 // Define list of builtins implemented in assembly.
 #define BUILTIN_LIST_A(V)                                               \
   V(ArgumentsAdaptorTrampoline,     BUILTIN, UNINITIALIZED,             \
                                     kNoExtraICState)                    \
-  V(InRecompileQueue,               BUILTIN, UNINITIALIZED,             \
-                                    kNoExtraICState)                    \
-  V(JSConstructStubCountdown,       BUILTIN, UNINITIALIZED,             \
+  V(InOptimizationQueue,            BUILTIN, UNINITIALIZED,             \
                                     kNoExtraICState)                    \
   V(JSConstructStubGeneric,         BUILTIN, UNINITIALIZED,             \
                                     kNoExtraICState)                    \
@@ -100,11 +76,11 @@ enum BuiltinExtraArguments {
                                     kNoExtraICState)                    \
   V(JSConstructEntryTrampoline,     BUILTIN, UNINITIALIZED,             \
                                     kNoExtraICState)                    \
-  V(LazyCompile,                    BUILTIN, UNINITIALIZED,             \
+  V(CompileUnoptimized,             BUILTIN, UNINITIALIZED,             \
                                     kNoExtraICState)                    \
-  V(LazyRecompile,                  BUILTIN, UNINITIALIZED,             \
+  V(CompileOptimized,               BUILTIN, UNINITIALIZED,             \
                                     kNoExtraICState)                    \
-  V(ConcurrentRecompile,            BUILTIN, UNINITIALIZED,             \
+  V(CompileOptimizedConcurrent,     BUILTIN, UNINITIALIZED,             \
                                     kNoExtraICState)                    \
   V(NotifyDeoptimized,              BUILTIN, UNINITIALIZED,             \
                                     kNoExtraICState)                    \
@@ -125,15 +101,8 @@ enum BuiltinExtraArguments {
                                     kNoExtraICState)                    \
   V(KeyedStoreIC_Miss,              BUILTIN, UNINITIALIZED,             \
                                     kNoExtraICState)                    \
-  V(LoadIC_Initialize,              LOAD_IC, UNINITIALIZED,             \
-                                    kNoExtraICState)                    \
-  V(LoadIC_PreMonomorphic,          LOAD_IC, PREMONOMORPHIC,            \
-                                    kNoExtraICState)                    \
-  V(LoadIC_Megamorphic,             LOAD_IC, MEGAMORPHIC,               \
-                                    kNoExtraICState)                    \
   V(LoadIC_Getter_ForDeopt,         LOAD_IC, MONOMORPHIC,               \
                                     kNoExtraICState)                    \
-                                                                        \
   V(KeyedLoadIC_Initialize,         KEYED_LOAD_IC, UNINITIALIZED,       \
                                     kNoExtraICState)                    \
   V(KeyedLoadIC_PreMonomorphic,     KEYED_LOAD_IC, PREMONOMORPHIC,      \
@@ -144,25 +113,9 @@ enum BuiltinExtraArguments {
                                     kNoExtraICState)                    \
   V(KeyedLoadIC_IndexedInterceptor, KEYED_LOAD_IC, MONOMORPHIC,         \
                                     kNoExtraICState)                    \
-  V(KeyedLoadIC_NonStrictArguments, KEYED_LOAD_IC, MONOMORPHIC,         \
+  V(KeyedLoadIC_SloppyArguments,    KEYED_LOAD_IC, MONOMORPHIC,         \
                                     kNoExtraICState)                    \
                                                                         \
-  V(StoreIC_Initialize,             STORE_IC, UNINITIALIZED,            \
-                                    kNoExtraICState)                    \
-  V(StoreIC_PreMonomorphic,         STORE_IC, PREMONOMORPHIC,           \
-                                    kNoExtraICState)                    \
-  V(StoreIC_Megamorphic,            STORE_IC, MEGAMORPHIC,              \
-                                    kNoExtraICState)                    \
-  V(StoreIC_Generic,                STORE_IC, GENERIC,                  \
-                                    kNoExtraICState)                    \
-  V(StoreIC_Generic_Strict,         STORE_IC, GENERIC,                  \
-                                    StoreIC::kStrictModeState)          \
-  V(StoreIC_Initialize_Strict,      STORE_IC, UNINITIALIZED,            \
-                                    StoreIC::kStrictModeState)          \
-  V(StoreIC_PreMonomorphic_Strict,  STORE_IC, PREMONOMORPHIC,           \
-                                    StoreIC::kStrictModeState)          \
-  V(StoreIC_Megamorphic_Strict,     STORE_IC, MEGAMORPHIC,              \
-                                    StoreIC::kStrictModeState)          \
   V(StoreIC_Setter_ForDeopt,        STORE_IC, MONOMORPHIC,              \
                                     StoreIC::kStrictModeState)          \
                                                                         \
@@ -179,8 +132,8 @@ enum BuiltinExtraArguments {
                                     StoreIC::kStrictModeState)          \
   V(KeyedStoreIC_Generic_Strict,    KEYED_STORE_IC, GENERIC,            \
                                     StoreIC::kStrictModeState)          \
-  V(KeyedStoreIC_NonStrictArguments, KEYED_STORE_IC, MONOMORPHIC,       \
-                                     kNoExtraICState)                   \
+  V(KeyedStoreIC_SloppyArguments,   KEYED_STORE_IC, MONOMORPHIC,        \
+                                    kNoExtraICState)                    \
                                                                         \
   /* Uses KeyedLoadIC_Initialize; must be after in list. */             \
   V(FunctionCall,                   BUILTIN, UNINITIALIZED,             \
@@ -220,18 +173,17 @@ enum BuiltinExtraArguments {
   V(LoadIC_Normal,                  LOAD_IC)                            \
   V(StoreIC_Normal,                 STORE_IC)
 
-#ifdef ENABLE_DEBUGGER_SUPPORT
 // Define list of builtins used by the debugger implemented in assembly.
 #define BUILTIN_LIST_DEBUG_A(V)                                               \
   V(Return_DebugBreak,                         BUILTIN, DEBUG_STUB,           \
                                                DEBUG_BREAK)                   \
   V(CallFunctionStub_DebugBreak,               BUILTIN, DEBUG_STUB,           \
                                                DEBUG_BREAK)                   \
-  V(CallFunctionStub_Recording_DebugBreak,     BUILTIN, DEBUG_STUB,           \
-                                               DEBUG_BREAK)                   \
   V(CallConstructStub_DebugBreak,              BUILTIN, DEBUG_STUB,           \
                                                DEBUG_BREAK)                   \
   V(CallConstructStub_Recording_DebugBreak,    BUILTIN, DEBUG_STUB,           \
+                                               DEBUG_BREAK)                   \
+  V(CallICStub_DebugBreak,                     CALL_IC, DEBUG_STUB,           \
                                                DEBUG_BREAK)                   \
   V(LoadIC_DebugBreak,                         LOAD_IC, DEBUG_STUB,           \
                                                DEBUG_BREAK)                   \
@@ -249,9 +201,6 @@ enum BuiltinExtraArguments {
                                                DEBUG_BREAK)                   \
   V(FrameDropper_LiveEdit,                     BUILTIN, DEBUG_STUB,           \
                                                DEBUG_BREAK)
-#else
-#define BUILTIN_LIST_DEBUG_A(V)
-#endif
 
 // Define list of builtins implemented in JavaScript.
 #define BUILTINS_LIST_JS(V)              \
@@ -283,7 +232,7 @@ enum BuiltinExtraArguments {
   V(STRING_ADD_LEFT, 1)                  \
   V(STRING_ADD_RIGHT, 1)                 \
   V(APPLY_PREPARE, 1)                    \
-  V(APPLY_OVERFLOW, 1)
+  V(STACK_OVERFLOW, 1)
 
 class BuiltinFunctionTable;
 class ObjectVisitor;
@@ -385,15 +334,14 @@ class Builtins {
   static void Generate_Adaptor(MacroAssembler* masm,
                                CFunctionId id,
                                BuiltinExtraArguments extra_args);
-  static void Generate_InRecompileQueue(MacroAssembler* masm);
-  static void Generate_ConcurrentRecompile(MacroAssembler* masm);
-  static void Generate_JSConstructStubCountdown(MacroAssembler* masm);
+  static void Generate_CompileUnoptimized(MacroAssembler* masm);
+  static void Generate_InOptimizationQueue(MacroAssembler* masm);
+  static void Generate_CompileOptimized(MacroAssembler* masm);
+  static void Generate_CompileOptimizedConcurrent(MacroAssembler* masm);
   static void Generate_JSConstructStubGeneric(MacroAssembler* masm);
   static void Generate_JSConstructStubApi(MacroAssembler* masm);
   static void Generate_JSEntryTrampoline(MacroAssembler* masm);
   static void Generate_JSConstructEntryTrampoline(MacroAssembler* masm);
-  static void Generate_LazyCompile(MacroAssembler* masm);
-  static void Generate_LazyRecompile(MacroAssembler* masm);
   static void Generate_NotifyDeoptimized(MacroAssembler* masm);
   static void Generate_NotifySoftDeoptimized(MacroAssembler* masm);
   static void Generate_NotifyLazyDeoptimized(MacroAssembler* masm);

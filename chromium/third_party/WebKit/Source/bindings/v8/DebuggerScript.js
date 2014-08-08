@@ -33,9 +33,15 @@
 var DebuggerScript = {};
 
 DebuggerScript.PauseOnExceptionsState = {
-    DontPauseOnExceptions : 0,
-    PauseOnAllExceptions : 1,
+    DontPauseOnExceptions: 0,
+    PauseOnAllExceptions: 1,
     PauseOnUncaughtExceptions: 2
+};
+
+DebuggerScript.ScopeInfoDetails = {
+    AllScopes: 0,
+    FastAsyncScopes: 1,
+    NoScopes: 2
 };
 
 DebuggerScript._pauseOnExceptionsState = DebuggerScript.PauseOnExceptionsState.DontPauseOnExceptions;
@@ -70,10 +76,10 @@ DebuggerScript.getFunctionScopes = function(fun)
         return null;
     var result = [];
     for (var i = 0; i < count; i++) {
-        var scopeMirror = mirror.scope(i);
+        var scopeDetails = mirror.scope(i).details();
         result[i] = {
-            type: scopeMirror.scopeType(),
-            object: DebuggerScript._buildScopeObject(scopeMirror)
+            type: scopeDetails.type(),
+            object: DebuggerScript._buildScopeObject(scopeDetails.type(), scopeDetails.object())
         };
     }
     return result;
@@ -199,15 +205,23 @@ DebuggerScript.setPauseOnExceptionsState = function(newState)
         Debug.clearBreakOnUncaughtException();
 }
 
-DebuggerScript.currentCallFrame = function(execState, maximumLimit)
+DebuggerScript.frameCount = function(execState)
 {
+    return execState.frameCount();
+}
+
+DebuggerScript.currentCallFrame = function(execState, data)
+{
+    var maximumLimit = data >> 2;
+    var scopeDetailsLevel = data & 3;
+
     var frameCount = execState.frameCount();
-    if (maximumLimit >= 0 && maximumLimit < frameCount)
+    if (maximumLimit && maximumLimit < frameCount)
         frameCount = maximumLimit;
     var topFrame = undefined;
     for (var i = frameCount - 1; i >= 0; i--) {
         var frameMirror = execState.frame(i);
-        topFrame = DebuggerScript._frameMirrorToJSCallFrame(frameMirror, topFrame);
+        topFrame = DebuggerScript._frameMirrorToJSCallFrame(frameMirror, topFrame, scopeDetailsLevel);
     }
     return topFrame;
 }
@@ -219,14 +233,12 @@ DebuggerScript.stepIntoStatement = function(execState)
 
 DebuggerScript.stepOverStatement = function(execState, callFrame)
 {
-    var frameMirror = callFrame ? callFrame.frameMirror : undefined;
-    execState.prepareStep(Debug.StepAction.StepNext, 1, frameMirror);
+    execState.prepareStep(Debug.StepAction.StepNext, 1);
 }
 
 DebuggerScript.stepOutOfFunction = function(execState, callFrame)
 {
-    var frameMirror = callFrame ? callFrame.frameMirror : undefined;
-    execState.prepareStep(Debug.StepAction.StepOut, 1, frameMirror);
+    execState.prepareStep(Debug.StepAction.StepOut, 1);
 }
 
 // Returns array in form:
@@ -310,43 +322,95 @@ DebuggerScript.isEvalCompilation = function(eventData)
     return (script.compilationType() === Debug.ScriptCompilationType.Eval);
 }
 
-DebuggerScript._frameMirrorToJSCallFrame = function(frameMirror, callerFrame)
+// NOTE: This function is performance critical, as it can be run on every
+// statement that generates an async event (like addEventListener) to support
+// asynchronous call stacks. Thus, when possible, initialize the data lazily.
+DebuggerScript._frameMirrorToJSCallFrame = function(frameMirror, callerFrame, scopeDetailsLevel)
 {
-    // Get function name and display name.
-    var funcMirror;
-    var displayName;
-    try {
-        funcMirror = frameMirror.func();
-        if (funcMirror) {
-            var valueMirror = funcMirror.property("displayName").value();
-            if (valueMirror && valueMirror.isString())
-                displayName = valueMirror.value();
-        }
-    } catch(e) {
+    // Stuff that can not be initialized lazily (i.e. valid while paused with a valid break_id).
+    // The frameMirror and scopeMirror can be accessed only while paused on the debugger.
+    var frameDetails = frameMirror.details();
+
+    var funcObject = frameDetails.func();
+    var sourcePosition = frameDetails.sourcePosition();
+    var thisObject = frameDetails.receiver();
+
+    var isAtReturn = !!frameDetails.isAtReturn();
+    var returnValue = isAtReturn ? frameDetails.returnValue() : undefined;
+
+    var scopeMirrors = (scopeDetailsLevel === DebuggerScript.ScopeInfoDetails.NoScopes ? [] : frameMirror.allScopes(scopeDetailsLevel === DebuggerScript.ScopeInfoDetails.FastAsyncScopes));
+    var scopeTypes = new Array(scopeMirrors.length);
+    var scopeObjects = new Array(scopeMirrors.length);
+    for (var i = 0; i < scopeMirrors.length; ++i) {
+        var scopeDetails = scopeMirrors[i].details();
+        scopeTypes[i] = scopeDetails.type();
+        scopeObjects[i] = scopeDetails.object();
     }
-    var functionName;
-    if (funcMirror)
-        functionName = displayName || funcMirror.name() || funcMirror.inferredName();
 
-    // Get script ID.
-    var script = funcMirror.script();
-    var sourceID = script && script.id();
+    // Calculated lazily.
+    var scopeChain;
+    var funcMirror;
+    var location;
 
-    // Get location.
-    var location  = frameMirror.sourceLocation();
+    function lazyScopeChain()
+    {
+        if (!scopeChain) {
+            scopeChain = [];
+            for (var i = 0; i < scopeObjects.length; ++i)
+                scopeChain.push(DebuggerScript._buildScopeObject(scopeTypes[i], scopeObjects[i]));
+            scopeObjects = null; // Free for GC.
+        }
+        return scopeChain;
+    }
 
-    // Get this object.
-    var thisObject = frameMirror.details_.receiver();
+    function ensureFuncMirror()
+    {
+        if (!funcMirror) {
+            funcMirror = MakeMirror(funcObject);
+            if (!funcMirror.isFunction())
+                funcMirror = new UnresolvedFunctionMirror(funcObject);
+        }
+        return funcMirror;
+    }
 
-    var isAtReturn = !!frameMirror.details_.isAtReturn();
-    var returnValue = isAtReturn ? frameMirror.details_.returnValue() : undefined;
+    function ensureLocation()
+    {
+        if (!location) {
+            var script = ensureFuncMirror().script();
+            if (script)
+                location = script.locationFromPosition(sourcePosition, true);
+            if (!location)
+                location = { line: 0, column: 0 };
+        }
+        return location;
+    }
 
-    var scopeChain = [];
-    var scopeType = [];
-    for (var i = 0; i < frameMirror.scopeCount(); i++) {
-        var scopeMirror = frameMirror.scope(i);
-        scopeType.push(scopeMirror.scopeType());
-        scopeChain.push(DebuggerScript._buildScopeObject(scopeMirror));
+    function line()
+    {
+        return ensureLocation().line;
+    }
+
+    function column()
+    {
+        return ensureLocation().column;
+    }
+
+    function sourceID()
+    {
+        var script = ensureFuncMirror().script();
+        return script && script.id();
+    }
+
+    function functionName()
+    {
+        var func = ensureFuncMirror();
+        if (!func.resolved())
+            return undefined;
+        var displayName;
+        var valueMirror = func.property("displayName").value();
+        if (valueMirror && valueMirror.isString())
+            displayName = valueMirror.value();
+        return displayName || func.name() || func.inferredName();
     }
 
     function evaluate(expression)
@@ -370,7 +434,7 @@ DebuggerScript._frameMirrorToJSCallFrame = function(frameMirror, callerFrame)
         var stepInPositionsProtocol;
         if (stepInPositionsV8) {
             stepInPositionsProtocol = [];
-            var script = frameMirror.func().script();
+            var script = ensureFuncMirror().script();
             if (script) {
                 var scriptId = String(script.id());
                 for (var i = 0; i < stepInPositionsV8.length; i++) {
@@ -388,54 +452,55 @@ DebuggerScript._frameMirrorToJSCallFrame = function(frameMirror, callerFrame)
 
     return {
         "sourceID": sourceID,
-        "line": location ? location.line : 0,
-        "column": location ? location.column : 0,
+        "line": line,
+        "column": column,
         "functionName": functionName,
         "thisObject": thisObject,
-        "scopeChain": scopeChain,
-        "scopeType": scopeType,
+        "scopeChain": lazyScopeChain,
+        "scopeType": scopeTypes,
         "evaluate": evaluate,
         "caller": callerFrame,
         "restart": restart,
         "setVariableValue": setVariableValue,
         "stepInPositions": stepInPositions,
         "isAtReturn": isAtReturn,
-        "returnValue": returnValue,
-        "frameMirror": frameMirror
+        "returnValue": returnValue
     };
 }
 
-DebuggerScript._buildScopeObject = function(scopeMirror) {
-    var scopeObject;
-    switch (scopeMirror.scopeType()) {
+DebuggerScript._buildScopeObject = function(scopeType, scopeObject)
+{
+    var result;
+    switch (scopeType) {
     case ScopeType.Local:
     case ScopeType.Closure:
     case ScopeType.Catch:
         // For transient objects we create a "persistent" copy that contains
         // the same properties.
-        scopeObject = {};
         // Reset scope object prototype to null so that the proto properties
         // don't appear in the local scope section.
-        scopeObject.__proto__ = null;
-        var scopeObjectMirror = scopeMirror.scopeObject();
-        var properties = scopeObjectMirror.properties();
+        result = { __proto__: null };
+        var properties = MakeMirror(scopeObject, true /* transient */).properties();
         for (var j = 0; j < properties.length; j++) {
             var name = properties[j].name();
             if (name.charAt(0) === ".")
                 continue; // Skip internal variables like ".arguments"
-            scopeObject[name] = properties[j].value_;
+            result[name] = properties[j].value_;
         }
         break;
     case ScopeType.Global:
     case ScopeType.With:
-        scopeObject = scopeMirror.details_.object();
+        result = scopeObject;
         break;
     case ScopeType.Block:
         // Unsupported yet. Mustn't be reachable.
         break;
     }
-    return scopeObject;
+    return result;
 }
+
+// We never resolve Mirror by its handle so to avoid memory leaks caused by Mirrors in the cache we disable it.
+ToggleMirrorCache(false);
 
 return DebuggerScript;
 })();

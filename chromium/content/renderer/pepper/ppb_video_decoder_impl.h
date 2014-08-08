@@ -14,20 +14,13 @@
 #include "ppapi/c/pp_var.h"
 #include "ppapi/shared_impl/ppb_video_decoder_shared.h"
 #include "ppapi/shared_impl/resource.h"
-#include "ppapi/thunk/ppb_video_decoder_api.h"
+#include "ppapi/thunk/ppb_video_decoder_dev_api.h"
 
 struct PP_PictureBuffer_Dev;
 struct PP_VideoBitstreamBuffer_Dev;
 
-namespace gpu {
-namespace gles2 {
-class GLES2Implementation;
-}  // namespace gles2
-}  // namespace gpu
-
 namespace content {
-class PlatformContext3D;
-class PlatformVideoDecoder;
+class PPB_Graphics3D_Impl;
 
 class PPB_VideoDecoder_Impl : public ppapi::PPB_VideoDecoder_Shared,
                               public media::VideoDecodeAccelerator::Client {
@@ -38,17 +31,18 @@ class PPB_VideoDecoder_Impl : public ppapi::PPB_VideoDecoder_Shared,
                             PP_Resource graphics_context,
                             PP_VideoDecoder_Profile profile);
 
-  // PPB_VideoDecoder_API implementation.
-  virtual int32_t Decode(
-      const PP_VideoBitstreamBuffer_Dev* bitstream_buffer,
-      scoped_refptr<ppapi::TrackedCallback> callback) OVERRIDE;
-  virtual void AssignPictureBuffers(
-      uint32_t no_of_buffers, const PP_PictureBuffer_Dev* buffers) OVERRIDE;
+  // PPB_VideoDecoder_Dev_API implementation.
+  virtual int32_t Decode(const PP_VideoBitstreamBuffer_Dev* bitstream_buffer,
+                         scoped_refptr<ppapi::TrackedCallback> callback)
+      OVERRIDE;
+  virtual void AssignPictureBuffers(uint32_t no_of_buffers,
+                                    const PP_PictureBuffer_Dev* buffers)
+      OVERRIDE;
   virtual void ReusePictureBuffer(int32_t picture_buffer_id) OVERRIDE;
-  virtual int32_t Flush(
-      scoped_refptr<ppapi::TrackedCallback> callback) OVERRIDE;
-  virtual int32_t Reset(
-      scoped_refptr<ppapi::TrackedCallback> callback) OVERRIDE;
+  virtual int32_t Flush(scoped_refptr<ppapi::TrackedCallback> callback)
+      OVERRIDE;
+  virtual int32_t Reset(scoped_refptr<ppapi::TrackedCallback> callback)
+      OVERRIDE;
   virtual void Destroy() OVERRIDE;
 
   // media::VideoDecodeAccelerator::Client implementation.
@@ -57,9 +51,7 @@ class PPB_VideoDecoder_Impl : public ppapi::PPB_VideoDecoder_Shared,
                                      uint32 texture_target) OVERRIDE;
   virtual void DismissPictureBuffer(int32 picture_buffer_id) OVERRIDE;
   virtual void PictureReady(const media::Picture& picture) OVERRIDE;
-  virtual void NotifyInitializeDone() OVERRIDE;
-  virtual void NotifyError(
-      media::VideoDecodeAccelerator::Error error) OVERRIDE;
+  virtual void NotifyError(media::VideoDecodeAccelerator::Error error) OVERRIDE;
   virtual void NotifyFlushDone() OVERRIDE;
   virtual void NotifyEndOfBitstreamBuffer(int32 buffer_id) OVERRIDE;
   virtual void NotifyResetDone() OVERRIDE;
@@ -69,13 +61,11 @@ class PPB_VideoDecoder_Impl : public ppapi::PPB_VideoDecoder_Shared,
 
   explicit PPB_VideoDecoder_Impl(PP_Instance instance);
   bool Init(PP_Resource graphics_context,
-            PlatformContext3D* context,
-            gpu::gles2::GLES2Implementation* gles2_impl,
             PP_VideoDecoder_Profile profile);
 
-  // This is NULL before initialization, and if this PPB_VideoDecoder_Impl is
-  // swapped with another.
-  scoped_ptr<PlatformVideoDecoder> platform_video_decoder_;
+  // This is NULL before initialization, and after destruction.
+  // Holds a GpuVideoDecodeAcceleratorHost.
+  scoped_ptr<media::VideoDecodeAccelerator> decoder_;
 
   // Reference to the plugin requesting this interface.
   const PPP_VideoDecoder_Dev* ppp_videodecoder_;

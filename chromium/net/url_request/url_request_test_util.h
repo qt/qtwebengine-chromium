@@ -13,6 +13,7 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/path_service.h"
 #include "base/strings/string16.h"
@@ -31,6 +32,7 @@
 #include "net/http/http_auth_handler_factory.h"
 #include "net/http/http_cache.h"
 #include "net/http/http_network_layer.h"
+#include "net/http/http_network_session.h"
 #include "net/http/http_request_headers.h"
 #include "net/proxy/proxy_service.h"
 #include "net/ssl/ssl_config_service_defaults.h"
@@ -66,8 +68,17 @@ class TestURLRequestContext : public URLRequestContext {
     client_socket_factory_ = factory;
   }
 
+  void set_http_network_session_params(
+      const HttpNetworkSession::Params& params) {
+  }
+
  private:
   bool initialized_;
+
+  // Optional parameters to override default values.  Note that values that
+  // point to other objects the TestURLRequestContext creates will be
+  // overwritten.
+  scoped_ptr<HttpNetworkSession::Params> http_network_session_params_;
 
   // Not owned:
   ClientSocketFactory* client_socket_factory_;
@@ -130,6 +141,9 @@ class TestDelegate : public URLRequest::Delegate {
   }
   void set_quit_on_complete(bool val) { quit_on_complete_ = val; }
   void set_quit_on_redirect(bool val) { quit_on_redirect_ = val; }
+  void set_quit_on_network_start(bool val) {
+    quit_on_before_network_start_ = val;
+  }
   void set_allow_certificate_errors(bool val) {
     allow_certificate_errors_ = val;
   }
@@ -142,6 +156,9 @@ class TestDelegate : public URLRequest::Delegate {
   int bytes_received() const { return static_cast<int>(data_received_.size()); }
   int response_started_count() const { return response_started_count_; }
   int received_redirect_count() const { return received_redirect_count_; }
+  int received_before_network_start_count() const {
+    return received_before_network_start_count_;
+  }
   bool received_data_before_response() const {
     return received_data_before_response_;
   }
@@ -160,6 +177,7 @@ class TestDelegate : public URLRequest::Delegate {
   // URLRequest::Delegate:
   virtual void OnReceivedRedirect(URLRequest* request, const GURL& new_url,
                                   bool* defer_redirect) OVERRIDE;
+  virtual void OnBeforeNetworkStart(URLRequest* request, bool* defer) OVERRIDE;
   virtual void OnAuthRequired(URLRequest* request,
                               AuthChallengeInfo* auth_info) OVERRIDE;
   // NOTE: |fatal| causes |certificate_errors_are_fatal_| to be set to true.
@@ -184,6 +202,7 @@ class TestDelegate : public URLRequest::Delegate {
   bool cancel_in_rd_pending_;
   bool quit_on_complete_;
   bool quit_on_redirect_;
+  bool quit_on_before_network_start_;
   bool allow_certificate_errors_;
   AuthCredentials credentials_;
 
@@ -191,6 +210,7 @@ class TestDelegate : public URLRequest::Delegate {
   int response_started_count_;
   int received_bytes_count_;
   int received_redirect_count_;
+  int received_before_network_start_count_;
   bool received_data_before_response_;
   bool request_failed_;
   bool have_certificate_errors_;
@@ -225,6 +245,17 @@ class TestNetworkDelegate : public NetworkDelegate {
   bool GetLoadTimingInfoBeforeAuth(
       LoadTimingInfo* load_timing_info_before_auth) const;
 
+  // Will redirect once to the given URL when the next set of headers are
+  // received.
+  void set_redirect_on_headers_received_url(
+      GURL redirect_on_headers_received_url) {
+    redirect_on_headers_received_url_ = redirect_on_headers_received_url;
+  }
+
+  void set_allowed_unsafe_redirect_url(GURL allowed_unsafe_redirect_url) {
+    allowed_unsafe_redirect_url_ = allowed_unsafe_redirect_url;
+  }
+
   void set_cookie_options(int o) {cookie_options_bit_mask_ = o; }
 
   int last_error() const { return last_error_; }
@@ -257,7 +288,8 @@ class TestNetworkDelegate : public NetworkDelegate {
       URLRequest* request,
       const CompletionCallback& callback,
       const HttpResponseHeaders* original_response_headers,
-      scoped_refptr<HttpResponseHeaders>* override_response_headers) OVERRIDE;
+      scoped_refptr<HttpResponseHeaders>* override_response_headers,
+      GURL* allowed_unsafe_redirect_url) OVERRIDE;
   virtual void OnBeforeRedirect(URLRequest* request,
                                 const GURL& new_location) OVERRIDE;
   virtual void OnResponseStarted(URLRequest* request) OVERRIDE;
@@ -284,10 +316,12 @@ class TestNetworkDelegate : public NetworkDelegate {
   virtual int OnBeforeSocketStreamConnect(
       SocketStream* stream,
       const CompletionCallback& callback) OVERRIDE;
-  virtual void OnRequestWaitStateChange(const URLRequest& request,
-                                        RequestWaitState state) OVERRIDE;
 
   void InitRequestStatesIfNew(int request_id);
+
+  GURL redirect_on_headers_received_url_;
+  // URL marked as safe for redirection at the onHeadersReceived stage.
+  GURL allowed_unsafe_redirect_url_;
 
   int last_error_;
   int error_count_;

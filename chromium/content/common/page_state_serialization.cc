@@ -188,12 +188,17 @@ struct SerializeObject {
 // 15: Removes a bunch of values we defined but never used.
 // 16: Switched from blob urls to blob uuids.
 // 17: Add a target frame id number.
+// 18: Add referrer policy.
+// 19: Remove target frame id, which was a bad idea, and original url string,
+//         which is no longer used.
+// 20: Add pinch viewport scroll offset, the offset of the pinched zoomed
+//     viewport within the unzoomed main frame.
 //
 // NOTE: If the version is -1, then the pickle contains only a URL string.
 // See ReadPageState.
 //
 const int kMinVersion = 11;
-const int kCurrentVersion = 17;
+const int kCurrentVersion = 20;
 
 // A bunch of convenience functions to read/write to SerializeObjects.  The
 // de-serializers assume the input data will be in the correct format and fall
@@ -240,6 +245,10 @@ int64 ReadInteger64(SerializeObject* obj) {
     return tmp;
   obj->parse_error = true;
   return 0;
+}
+
+void ConsumeInteger64(SerializeObject* obj) {
+  int64 unused ALLOW_UNUSED = ReadInteger64(obj);
 }
 
 void WriteReal(double data, SerializeObject* obj) {
@@ -311,8 +320,8 @@ void WriteString(const base::NullableString16& str, SerializeObject* obj) {
   if (str.is_null()) {
     obj->pickle.WriteInt(-1);
   } else {
-    const char16* data = str.string().data();
-    size_t length_in_bytes = str.string().length() * sizeof(char16);
+    const base::char16* data = str.string().data();
+    size_t length_in_bytes = str.string().length() * sizeof(base::char16);
 
     CHECK_LT(length_in_bytes,
              static_cast<size_t>(std::numeric_limits<int>::max()));
@@ -323,7 +332,7 @@ void WriteString(const base::NullableString16& str, SerializeObject* obj) {
 
 // This reads a serialized NullableString16 from obj. If a string can't be
 // read, NULL is returned.
-const char16* ReadStringNoCopy(SerializeObject* obj, int* num_chars) {
+const base::char16* ReadStringNoCopy(SerializeObject* obj, int* num_chars) {
   int length_in_bytes;
   if (!obj->pickle.ReadInt(&obj->iter, &length_in_bytes)) {
     obj->parse_error = true;
@@ -340,20 +349,20 @@ const char16* ReadStringNoCopy(SerializeObject* obj, int* num_chars) {
   }
 
   if (num_chars)
-    *num_chars = length_in_bytes / sizeof(char16);
-  return reinterpret_cast<const char16*>(data);
+    *num_chars = length_in_bytes / sizeof(base::char16);
+  return reinterpret_cast<const base::char16*>(data);
 }
 
 base::NullableString16 ReadString(SerializeObject* obj) {
   int num_chars;
-  const char16* chars = ReadStringNoCopy(obj, &num_chars);
+  const base::char16* chars = ReadStringNoCopy(obj, &num_chars);
   return chars ?
       base::NullableString16(base::string16(chars, num_chars), false) :
       base::NullableString16();
 }
 
 void ConsumeString(SerializeObject* obj) {
-  const char16* unused ALLOW_UNUSED = ReadStringNoCopy(obj, NULL);
+  const base::char16* unused ALLOW_UNUSED = ReadStringNoCopy(obj, NULL);
 }
 
 template <typename T>
@@ -492,7 +501,6 @@ void WriteFrameState(
   // data, such as password fields.
 
   WriteString(state.url_string, obj);
-  WriteString(state.original_url_string, obj);
   WriteString(state.target, obj);
   WriteInteger(state.scroll_offset.x(), obj);
   WriteInteger(state.scroll_offset.y(), obj);
@@ -503,7 +511,9 @@ void WriteFrameState(
   WriteReal(state.page_scale_factor, obj);
   WriteInteger64(state.item_sequence_number, obj);
   WriteInteger64(state.document_sequence_number, obj);
-  WriteInteger64(state.target_frame_id, obj);
+  WriteInteger(state.referrer_policy, obj);
+  WriteReal(state.pinch_viewport_scroll_offset.x(), obj);
+  WriteReal(state.pinch_viewport_scroll_offset.y(), obj);
 
   bool has_state_object = !state.state_object.is_null();
   WriteBoolean(has_state_object, obj);
@@ -530,7 +540,10 @@ void ReadFrameState(SerializeObject* obj, bool is_top,
     ConsumeInteger(obj);  // Skip over redundant version field.
 
   state->url_string = ReadString(obj);
-  state->original_url_string = ReadString(obj);
+
+  if (obj->version < 19)
+    ConsumeString(obj);  // Skip obsolete original url string field.
+
   state->target = ReadString(obj);
   if (obj->version < 15) {
     ConsumeString(obj);  // Skip obsolete parent field.
@@ -554,8 +567,22 @@ void ReadFrameState(SerializeObject* obj, bool is_top,
   state->page_scale_factor = ReadReal(obj);
   state->item_sequence_number = ReadInteger64(obj);
   state->document_sequence_number = ReadInteger64(obj);
-  if (obj->version >= 17)
-    state->target_frame_id = ReadInteger64(obj);
+
+  if (obj->version >= 17 && obj->version < 19)
+    ConsumeInteger64(obj); // Skip obsolete target frame id number.
+
+  if (obj->version >= 18) {
+    state->referrer_policy =
+        static_cast<blink::WebReferrerPolicy>(ReadInteger(obj));
+  }
+
+  if (obj->version >= 20) {
+    double x = ReadReal(obj);
+    double y = ReadReal(obj);
+    state->pinch_viewport_scroll_offset = gfx::PointF(x, y);
+  } else {
+    state->pinch_viewport_scroll_offset = gfx::PointF(-1, -1);
+  }
 
   bool has_state_object = ReadBoolean(obj);
   if (has_state_object)
@@ -615,8 +642,9 @@ void ReadPageState(SerializeObject* obj, ExplodedPageState* state) {
   if (obj->version == -1) {
     GURL url = ReadGURL(obj);
     // NOTE: GURL::possibly_invalid_spec() always returns valid UTF-8.
-    state->top.url_string = state->top.original_url_string =
-        base::NullableString16(UTF8ToUTF16(url.possibly_invalid_spec()), false);
+    state->top.url_string =
+        base::NullableString16(
+            base::UTF8ToUTF16(url.possibly_invalid_spec()), false);
     return;
   }
 
@@ -664,8 +692,8 @@ ExplodedHttpBody::~ExplodedHttpBody() {
 ExplodedFrameState::ExplodedFrameState()
     : item_sequence_number(0),
       document_sequence_number(0),
-      target_frame_id(0),
-      page_scale_factor(0.0) {
+      page_scale_factor(0.0),
+      referrer_policy(blink::WebReferrerPolicyDefault) {
 }
 
 ExplodedFrameState::~ExplodedFrameState() {

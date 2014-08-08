@@ -33,6 +33,7 @@
 #define PerformanceResourceTiming_h
 
 #include "core/timing/PerformanceEntry.h"
+#include "platform/heap/Handle.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
 
@@ -45,16 +46,16 @@ class ResourceRequest;
 class ResourceResponse;
 class ResourceTimingInfo;
 
-class PerformanceResourceTiming : public PerformanceEntry {
+class PerformanceResourceTiming FINAL : public PerformanceEntry {
 public:
-    static PassRefPtr<PerformanceResourceTiming> create(const ResourceTimingInfo& info, Document* requestingDocument, double startTime, double lastRedirectEndTime, bool m_allowTimingDetails, bool m_allowRedirectDetails)
+    static PassRefPtrWillBeRawPtr<PerformanceResourceTiming> create(const ResourceTimingInfo& info, Document* requestingDocument, double startTime, double lastRedirectEndTime, bool m_allowTimingDetails, bool m_allowRedirectDetails)
     {
-        return adoptRef(new PerformanceResourceTiming(info, requestingDocument, startTime, lastRedirectEndTime, m_allowTimingDetails, m_allowRedirectDetails));
+        return adoptRefWillBeNoop(new PerformanceResourceTiming(info, requestingDocument, startTime, lastRedirectEndTime, m_allowTimingDetails, m_allowRedirectDetails));
     }
 
-    static PassRefPtr<PerformanceResourceTiming> create(const ResourceTimingInfo& info, Document* requestingDocument, double startTime, bool m_allowTimingDetails)
+    static PassRefPtrWillBeRawPtr<PerformanceResourceTiming> create(const ResourceTimingInfo& info, Document* requestingDocument, double startTime, bool m_allowTimingDetails)
     {
-        return adoptRef(new PerformanceResourceTiming(info, requestingDocument, startTime, 0.0, m_allowTimingDetails, false));
+        return adoptRefWillBeNoop(new PerformanceResourceTiming(info, requestingDocument, startTime, 0.0, m_allowTimingDetails, false));
     }
 
     AtomicString initiatorType() const;
@@ -71,11 +72,13 @@ public:
     double responseStart() const;
     double responseEnd() const;
 
-    virtual bool isResource() { return true; }
+    virtual bool isResource() OVERRIDE { return true; }
+
+    virtual void trace(Visitor*) OVERRIDE;
 
 private:
     PerformanceResourceTiming(const ResourceTimingInfo&, Document* requestingDocument, double startTime, double lastRedirectEndTime, bool m_allowTimingDetails, bool m_allowRedirectDetails);
-    ~PerformanceResourceTiming();
+    virtual ~PerformanceResourceTiming();
 
     AtomicString m_initiatorType;
     RefPtr<ResourceLoadTiming> m_timing;
@@ -84,7 +87,7 @@ private:
     bool m_didReuseConnection;
     bool m_allowTimingDetails;
     bool m_allowRedirectDetails;
-    RefPtr<Document> m_requestingDocument;
+    RefPtrWillBeMember<Document> m_requestingDocument;
 };
 
 }

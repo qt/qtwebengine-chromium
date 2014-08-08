@@ -22,6 +22,8 @@ const int kNotificationImageBorderSize = 10;
 const int kNotificationPreferredImageWidth = 360;
 const int kNotificationPreferredImageHeight = 240;
 const int kSettingsIconSize = 16;
+const int kSmallImageSize = 16;
+const int kSmallImagePadding = 4;
 
 // Limits.
 const size_t kMaxVisibleMessageCenterNotifications = 100;
@@ -29,6 +31,7 @@ const size_t kMaxVisiblePopupNotifications = 3;
 
 // DIP dimension; H size of the whole card.
 const int kNotificationWidth = 360;
+const int kMinScrollViewHeight = 100;
 
 // Colors.
 MESSAGE_CENTER_EXPORT extern const SkColor kMessageCenterBorderColor;
@@ -62,6 +65,7 @@ const int kIconBottomPadding = 16;  // Minimum non-zero V space between icon
 
 // Text sizes.
 const int kTitleFontSize = 14;             // For title only.
+const int kEmptyCenterFontSize = 13;       // For empty message only.
 const int kTitleLineHeight = 20;           // In DIPs.
 const int kMessageFontSize = 12;           // For everything but title.
 const int kMessageLineHeight = 18;         // In DIPs.
@@ -77,9 +81,10 @@ extern const SkColor kFocusBorderColor;  // The focus border.
 
 // Limits.
 
-// Given the size of an image, returns the rect the image should be displayed
-// in, centered.
-gfx::Size GetImageSizeForWidth(int width, const gfx::Size& image_size);
+// Given the size of an image, returns the size of the properly scaled-up image
+// which fits into |container_size|.
+gfx::Size GetImageSizeForContainerSize(const gfx::Size& container_size,
+                                       const gfx::Size& image_size);
 
 extern const int kNotificationMaximumImageHeight;  // For image notifications.
 extern const size_t kNotificationMaximumItems;     // For list notifications.
@@ -107,10 +112,9 @@ const SkColor kProgressBarBackgroundColor = SkColorSetRGB(216, 216, 216);
 const SkColor kProgressBarSliceColor = SkColorSetRGB(120, 120, 120);
 
 // Line limits.
-const int kTitleLineLimit = 3;
-const int kExperimentalTitleLineLimit = 1;
+const int kMaxTitleLines = 2;
 const int kMessageCollapsedLineLimit = 2;
-const int kMessageExpandedLineLimit = 7;
+const int kMessageExpandedLineLimit = 5;
 const int kContextMessageLineLimit = 1;
 
 // Around notifications ////////////////////////////////////////////////////////

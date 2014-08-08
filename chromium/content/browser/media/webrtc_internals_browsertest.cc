@@ -9,9 +9,10 @@
 #include "base/values.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/test/browser_test_utils.h"
+#include "content/public/test/content_browser_test.h"
+#include "content/public/test/content_browser_test_utils.h"
 #include "content/shell/browser/shell.h"
-#include "content/test/content_browser_test.h"
-#include "content/test/content_browser_test_utils.h"
+#include "media/base/media_switches.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 
 using std::string;
@@ -116,19 +117,39 @@ class PeerConnectionEntry {
   std::map<string, StatsMap> stats_;
 };
 
+class UserMediaRequestEntry {
+ public:
+  UserMediaRequestEntry(int pid,
+                        int rid,
+                        const std::string& origin,
+                        const std::string& audio_constraints,
+                        const std::string& video_constraints)
+      : pid(pid),
+        rid(rid),
+        origin(origin),
+        audio_constraints(audio_constraints),
+        video_constraints(video_constraints) {}
+
+  int pid;
+  int rid;
+  std::string origin;
+  std::string audio_constraints;
+  std::string video_constraints;
+};
+
 static const int64 FAKE_TIME_STAMP = 3600000;
 
 #if defined(OS_WIN)
 // All tests are flaky on Windows: crbug.com/277322.
-#define MAYBE_WebRTCInternalsBrowserTest DISABLED_WebRTCInternalsBrowserTest
+#define MAYBE_WebRtcInternalsBrowserTest DISABLED_WebRtcInternalsBrowserTest
 #else
-#define MAYBE_WebRTCInternalsBrowserTest WebRTCInternalsBrowserTest
+#define MAYBE_WebRtcInternalsBrowserTest WebRtcInternalsBrowserTest
 #endif
 
-class MAYBE_WebRTCInternalsBrowserTest: public ContentBrowserTest {
+class MAYBE_WebRtcInternalsBrowserTest: public ContentBrowserTest {
  public:
-  MAYBE_WebRTCInternalsBrowserTest() {}
-  virtual ~MAYBE_WebRTCInternalsBrowserTest() {}
+  MAYBE_WebRtcInternalsBrowserTest() {}
+  virtual ~MAYBE_WebRtcInternalsBrowserTest() {}
 
   virtual void SetUpOnMainThread() OVERRIDE {
     // We need fake devices in this test since we want to run on naked VMs. We
@@ -145,7 +166,7 @@ class MAYBE_WebRTCInternalsBrowserTest: public ContentBrowserTest {
   }
 
   void ExpectTitle(const std::string& expected_title) const {
-    base::string16 expected_title16(ASCIIToUTF16(expected_title));
+    base::string16 expected_title16(base::ASCIIToUTF16(expected_title));
     TitleWatcher title_watcher(shell()->web_contents(), expected_title16);
     EXPECT_EQ(expected_title16, title_watcher.WaitAndGetTitle());
   }
@@ -166,6 +187,24 @@ class MAYBE_WebRTCInternalsBrowserTest: public ContentBrowserTest {
     ASSERT_TRUE(ExecuteJavascript("removePeerConnection(" + ss.str() + ");"));
   }
 
+  // Execute the javascript of addGetUserMedia.
+  void ExecuteAddGetUserMediaJs(const UserMediaRequestEntry& request) {
+    std::stringstream ss;
+    ss << "{pid:" << request.pid << ", rid:" << request.rid << ", origin:'"
+       << request.origin << "', audio:'" << request.audio_constraints
+       << "', video:'" << request.video_constraints << "'}";
+
+    ASSERT_TRUE(ExecuteJavascript("addGetUserMedia(" + ss.str() + ");"));
+  }
+
+  // Execute the javascript of removeGetUserMediaForRenderer.
+  void ExecuteRemoveGetUserMediaForRendererJs(int rid) {
+    std::stringstream ss;
+    ss << "{rid:" << rid << "}";
+    ASSERT_TRUE(
+        ExecuteJavascript("removeGetUserMediaForRenderer(" + ss.str() + ");"));
+  }
+
   // Verifies that the DOM element with id |id| exists.
   void VerifyElementWithId(const string& id) {
     bool result = false;
@@ -184,6 +223,42 @@ class MAYBE_WebRTCInternalsBrowserTest: public ContentBrowserTest {
         "window.domAutomationController.send($('" + id + "') == null);",
         &result));
     EXPECT_TRUE(result);
+  }
+
+  // Verifies the JS Array of userMediaRequests matches |requests|.
+  void VerifyUserMediaRequest(
+      const std::vector<UserMediaRequestEntry>& requests) {
+    string json_requests;
+    ASSERT_TRUE(ExecuteScriptAndExtractString(
+        shell()->web_contents(),
+        "window.domAutomationController.send("
+        "JSON.stringify(userMediaRequests));",
+        &json_requests));
+    scoped_ptr<base::Value> value_requests;
+    value_requests.reset(base::JSONReader::Read(json_requests));
+
+    EXPECT_EQ(base::Value::TYPE_LIST, value_requests->GetType());
+
+    base::ListValue* list_request =
+        static_cast<base::ListValue*>(value_requests.get());
+    EXPECT_EQ(requests.size(), list_request->GetSize());
+
+    for (size_t i = 0; i < requests.size(); ++i) {
+      base::DictionaryValue* dict = NULL;
+      ASSERT_TRUE(list_request->GetDictionary(i, &dict));
+      int pid, rid;
+      std::string origin, audio, video;
+      ASSERT_TRUE(dict->GetInteger("pid", &pid));
+      ASSERT_TRUE(dict->GetInteger("rid", &rid));
+      ASSERT_TRUE(dict->GetString("origin", &origin));
+      ASSERT_TRUE(dict->GetString("audio", &audio));
+      ASSERT_TRUE(dict->GetString("video", &video));
+      EXPECT_EQ(requests[i].pid, pid);
+      EXPECT_EQ(requests[i].rid, rid);
+      EXPECT_EQ(requests[i].origin, origin);
+      EXPECT_EQ(requests[i].audio_constraints, audio);
+      EXPECT_EQ(requests[i].video_constraints, video);
+    }
   }
 
   // Verifies that DOM for |pc| is correctly created with the right content.
@@ -402,7 +477,7 @@ class MAYBE_WebRTCInternalsBrowserTest: public ContentBrowserTest {
   }
 };
 
-IN_PROC_BROWSER_TEST_F(MAYBE_WebRTCInternalsBrowserTest,
+IN_PROC_BROWSER_TEST_F(MAYBE_WebRtcInternalsBrowserTest,
                        AddAndRemovePeerConnection) {
   GURL url("chrome://webrtc-internals");
   NavigateToURL(shell(), url);
@@ -424,7 +499,7 @@ IN_PROC_BROWSER_TEST_F(MAYBE_WebRTCInternalsBrowserTest,
   VerifyNoElementWithId(pc_2.getIdString());
 }
 
-IN_PROC_BROWSER_TEST_F(MAYBE_WebRTCInternalsBrowserTest,
+IN_PROC_BROWSER_TEST_F(MAYBE_WebRtcInternalsBrowserTest,
                        UpdateAllPeerConnections) {
   GURL url("chrome://webrtc-internals");
   NavigateToURL(shell(), url);
@@ -442,7 +517,7 @@ IN_PROC_BROWSER_TEST_F(MAYBE_WebRTCInternalsBrowserTest,
   VerifyPeerConnectionEntry(pc_1);
 }
 
-IN_PROC_BROWSER_TEST_F(MAYBE_WebRTCInternalsBrowserTest, UpdatePeerConnection) {
+IN_PROC_BROWSER_TEST_F(MAYBE_WebRtcInternalsBrowserTest, UpdatePeerConnection) {
   GURL url("chrome://webrtc-internals");
   NavigateToURL(shell(), url);
 
@@ -479,7 +554,7 @@ IN_PROC_BROWSER_TEST_F(MAYBE_WebRTCInternalsBrowserTest, UpdatePeerConnection) {
 }
 
 // Tests that adding random named stats updates the dataSeries and graphs.
-IN_PROC_BROWSER_TEST_F(MAYBE_WebRTCInternalsBrowserTest, AddStats) {
+IN_PROC_BROWSER_TEST_F(MAYBE_WebRtcInternalsBrowserTest, AddStats) {
   GURL url("chrome://webrtc-internals");
   NavigateToURL(shell(), url);
 
@@ -505,7 +580,7 @@ IN_PROC_BROWSER_TEST_F(MAYBE_WebRTCInternalsBrowserTest, AddStats) {
 }
 
 // Tests that the bandwidth estimation values are drawn on a single graph.
-IN_PROC_BROWSER_TEST_F(MAYBE_WebRTCInternalsBrowserTest, BweCompoundGraph) {
+IN_PROC_BROWSER_TEST_F(MAYBE_WebRtcInternalsBrowserTest, BweCompoundGraph) {
   GURL url("chrome://webrtc-internals");
   NavigateToURL(shell(), url);
 
@@ -545,7 +620,7 @@ IN_PROC_BROWSER_TEST_F(MAYBE_WebRTCInternalsBrowserTest, BweCompoundGraph) {
 
 // Tests that the total packet/byte count is converted to count per second,
 // and the converted data is drawn.
-IN_PROC_BROWSER_TEST_F(MAYBE_WebRTCInternalsBrowserTest, ConvertedGraphs) {
+IN_PROC_BROWSER_TEST_F(MAYBE_WebRtcInternalsBrowserTest, ConvertedGraphs) {
   GURL url("chrome://webrtc-internals");
   NavigateToURL(shell(), url);
 
@@ -587,7 +662,7 @@ IN_PROC_BROWSER_TEST_F(MAYBE_WebRTCInternalsBrowserTest, ConvertedGraphs) {
 // Timing out on ARM linux bot: http://crbug.com/238490
 // Disabling due to failure on Linux, Mac, Win: http://crbug.com/272413
 // Sanity check of the page content under a real PeerConnection call.
-IN_PROC_BROWSER_TEST_F(MAYBE_WebRTCInternalsBrowserTest,
+IN_PROC_BROWSER_TEST_F(MAYBE_WebRtcInternalsBrowserTest,
                        DISABLED_WithRealPeerConnectionCall) {
   // Start a peerconnection call in the first window.
   ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
@@ -670,7 +745,7 @@ IN_PROC_BROWSER_TEST_F(MAYBE_WebRTCInternalsBrowserTest,
   EXPECT_GT(count, 0);
 }
 
-IN_PROC_BROWSER_TEST_F(MAYBE_WebRTCInternalsBrowserTest, CreatePageDump) {
+IN_PROC_BROWSER_TEST_F(MAYBE_WebRtcInternalsBrowserTest, CreatePageDump) {
   GURL url("chrome://webrtc-internals");
   NavigateToURL(shell(), url);
 
@@ -713,6 +788,78 @@ IN_PROC_BROWSER_TEST_F(MAYBE_WebRTCInternalsBrowserTest, CreatePageDump) {
       &dump_json));
   dump.reset(base::JSONReader::Read(dump_json));
   VerifyStatsDump(dump.get(), pc_0, type, id, stats);
+}
+
+IN_PROC_BROWSER_TEST_F(MAYBE_WebRtcInternalsBrowserTest, UpdateGetUserMedia) {
+  GURL url("chrome://webrtc-internals");
+  NavigateToURL(shell(), url);
+
+  UserMediaRequestEntry request1(1, 1, "origin", "ac", "vc");
+  UserMediaRequestEntry request2(2, 2, "origin2", "ac2", "vc2");
+  ExecuteAddGetUserMediaJs(request1);
+  ExecuteAddGetUserMediaJs(request2);
+
+  std::vector<UserMediaRequestEntry> list;
+  list.push_back(request1);
+  list.push_back(request2);
+  VerifyUserMediaRequest(list);
+
+  ExecuteRemoveGetUserMediaForRendererJs(1);
+  list.erase(list.begin());
+  VerifyUserMediaRequest(list);
+
+  ExecuteRemoveGetUserMediaForRendererJs(2);
+  list.erase(list.begin());
+  VerifyUserMediaRequest(list);
+}
+
+// Tests that the received propagation delta values are converted and drawn
+// correctly.
+IN_PROC_BROWSER_TEST_F(MAYBE_WebRtcInternalsBrowserTest,
+                       ReceivedPropagationDelta) {
+  GURL url("chrome://webrtc-internals");
+  NavigateToURL(shell(), url);
+
+  PeerConnectionEntry pc(1, 0);
+  ExecuteAddPeerConnectionJs(pc);
+
+  StatsUnit stats = {FAKE_TIME_STAMP};
+  stats.values["googReceivedPacketGroupArrivalTimeDebug"] =
+      "[1000, 1100, 1200]";
+  stats.values["googReceivedPacketGroupPropagationDeltaDebug"] =
+      "[10, 20, 30]";
+  const string stats_type = "bwe";
+  const string stats_id = "videobwe";
+  ExecuteAndVerifyAddStats(pc, stats_type, stats_id, stats);
+
+  string graph_id = pc.getIdString() + "-" + stats_id +
+      "-googReceivedPacketGroupPropagationDeltaDebug";
+  string data_series_id =
+      stats_id + "-googReceivedPacketGroupPropagationDeltaDebug";
+  bool result = false;
+  // Verify that the graph exists.
+  ASSERT_TRUE(ExecuteScriptAndExtractBool(
+      shell()->web_contents(),
+      "window.domAutomationController.send("
+      "   graphViews['" + graph_id + "'] != null)",
+      &result));
+  EXPECT_TRUE(result);
+
+  // Verify that the graph contains multiple data points.
+  int count = 0;
+  ASSERT_TRUE(ExecuteScriptAndExtractInt(
+      shell()->web_contents(),
+      "window.domAutomationController.send("
+      "   graphViews['" + graph_id + "'].getDataSeriesCount())",
+      &count));
+  EXPECT_EQ(1, count);
+  ASSERT_TRUE(ExecuteScriptAndExtractInt(
+      shell()->web_contents(),
+      "window.domAutomationController.send("
+      "   peerConnectionDataStore['" + pc.getIdString() + "']" +
+      "       .getDataSeries('" + data_series_id + "').getCount())",
+      &count));
+  EXPECT_EQ(3, count);
 }
 
 }  // namespace content

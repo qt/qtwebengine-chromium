@@ -14,6 +14,7 @@
 #include "net/socket/client_socket_handle.h"
 #include "net/socket/transport_client_socket_pool.h"
 #include "net/spdy/spdy_session.h"
+#include "net/spdy/spdy_stream_test_util.h"
 #include "net/spdy/spdy_test_util_common.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -51,8 +52,7 @@ INSTANTIATE_TEST_CASE_P(
     NextProto,
     SpdySessionPoolTest,
     testing::Values(kProtoDeprecatedSPDY2,
-                    kProtoSPDY3, kProtoSPDY31, kProtoSPDY4a2,
-                    kProtoHTTP2Draft04));
+                    kProtoSPDY3, kProtoSPDY31, kProtoSPDY4));
 
 // A delegate that opens a new session when it is closed.
 class SessionOpeningDelegate : public SpdyStream::Delegate {
@@ -96,7 +96,7 @@ TEST_P(SpdySessionPoolTest, CloseCurrentSessions) {
   SpdySessionKey test_key =
       SpdySessionKey(
           test_host_port_pair, ProxyServer::Direct(),
-          kPrivacyModeDisabled);
+          PRIVACY_MODE_DISABLED);
 
   MockConnect connect_data(SYNCHRONOUS, OK);
   MockRead reads[] = {
@@ -139,7 +139,7 @@ TEST_P(SpdySessionPoolTest, CloseCurrentSessions) {
 TEST_P(SpdySessionPoolTest, CloseCurrentIdleSessions) {
   MockConnect connect_data(SYNCHRONOUS, OK);
   MockRead reads[] = {
-    MockRead(ASYNC, 0, 0)  // EOF
+      MockRead(SYNCHRONOUS, ERR_IO_PENDING)  // Stall forever.
   };
 
   session_deps_.host_resolver->set_synchronous_mode(true);
@@ -157,7 +157,7 @@ TEST_P(SpdySessionPoolTest, CloseCurrentIdleSessions) {
   const std::string kTestHost1("http://www.a.com");
   HostPortPair test_host_port_pair1(kTestHost1, 80);
   SpdySessionKey key1(test_host_port_pair1, ProxyServer::Direct(),
-                      kPrivacyModeDisabled);
+                      PRIVACY_MODE_DISABLED);
   base::WeakPtr<SpdySession> session1 =
       CreateInsecureSpdySession(http_session_, key1, BoundNetLog());
   GURL url1(kTestHost1);
@@ -171,7 +171,7 @@ TEST_P(SpdySessionPoolTest, CloseCurrentIdleSessions) {
   const std::string kTestHost2("http://www.b.com");
   HostPortPair test_host_port_pair2(kTestHost2, 80);
   SpdySessionKey key2(test_host_port_pair2, ProxyServer::Direct(),
-                      kPrivacyModeDisabled);
+                      PRIVACY_MODE_DISABLED);
   base::WeakPtr<SpdySession> session2 =
       CreateInsecureSpdySession(http_session_, key2, BoundNetLog());
   GURL url2(kTestHost2);
@@ -185,7 +185,7 @@ TEST_P(SpdySessionPoolTest, CloseCurrentIdleSessions) {
   const std::string kTestHost3("http://www.c.com");
   HostPortPair test_host_port_pair3(kTestHost3, 80);
   SpdySessionKey key3(test_host_port_pair3, ProxyServer::Direct(),
-                      kPrivacyModeDisabled);
+                      PRIVACY_MODE_DISABLED);
   base::WeakPtr<SpdySession> session3 =
       CreateInsecureSpdySession(http_session_, key3, BoundNetLog());
   GURL url3(kTestHost3);
@@ -196,20 +196,20 @@ TEST_P(SpdySessionPoolTest, CloseCurrentIdleSessions) {
 
   // All sessions are active and not closed
   EXPECT_TRUE(session1->is_active());
-  EXPECT_FALSE(session1->IsClosed());
+  EXPECT_TRUE(session1->IsAvailable());
   EXPECT_TRUE(session2->is_active());
-  EXPECT_FALSE(session2->IsClosed());
+  EXPECT_TRUE(session2->IsAvailable());
   EXPECT_TRUE(session3->is_active());
-  EXPECT_FALSE(session3->IsClosed());
+  EXPECT_TRUE(session3->IsAvailable());
 
   // Should not do anything, all are active
   spdy_session_pool_->CloseCurrentIdleSessions();
   EXPECT_TRUE(session1->is_active());
-  EXPECT_FALSE(session1->IsClosed());
+  EXPECT_TRUE(session1->IsAvailable());
   EXPECT_TRUE(session2->is_active());
-  EXPECT_FALSE(session2->IsClosed());
+  EXPECT_TRUE(session2->IsAvailable());
   EXPECT_TRUE(session3->is_active());
-  EXPECT_FALSE(session3->IsClosed());
+  EXPECT_TRUE(session3->IsAvailable());
 
   // Make sessions 1 and 3 inactive, but keep them open.
   // Session 2 still open and active
@@ -218,32 +218,40 @@ TEST_P(SpdySessionPoolTest, CloseCurrentIdleSessions) {
   session3->CloseCreatedStream(spdy_stream3, OK);
   EXPECT_EQ(NULL, spdy_stream3.get());
   EXPECT_FALSE(session1->is_active());
-  EXPECT_FALSE(session1->IsClosed());
+  EXPECT_TRUE(session1->IsAvailable());
   EXPECT_TRUE(session2->is_active());
-  EXPECT_FALSE(session2->IsClosed());
+  EXPECT_TRUE(session2->IsAvailable());
   EXPECT_FALSE(session3->is_active());
-  EXPECT_FALSE(session3->IsClosed());
+  EXPECT_TRUE(session3->IsAvailable());
 
   // Should close session 1 and 3, 2 should be left open
   spdy_session_pool_->CloseCurrentIdleSessions();
+  base::MessageLoop::current()->RunUntilIdle();
+
   EXPECT_TRUE(session1 == NULL);
   EXPECT_TRUE(session2->is_active());
-  EXPECT_FALSE(session2->IsClosed());
+  EXPECT_TRUE(session2->IsAvailable());
   EXPECT_TRUE(session3 == NULL);
 
   // Should not do anything
   spdy_session_pool_->CloseCurrentIdleSessions();
+  base::MessageLoop::current()->RunUntilIdle();
+
   EXPECT_TRUE(session2->is_active());
-  EXPECT_FALSE(session2->IsClosed());
+  EXPECT_TRUE(session2->IsAvailable());
 
   // Make 2 not active
   session2->CloseCreatedStream(spdy_stream2, OK);
+  base::MessageLoop::current()->RunUntilIdle();
+
   EXPECT_EQ(NULL, spdy_stream2.get());
   EXPECT_FALSE(session2->is_active());
-  EXPECT_FALSE(session2->IsClosed());
+  EXPECT_TRUE(session2->IsAvailable());
 
   // This should close session 2
   spdy_session_pool_->CloseCurrentIdleSessions();
+  base::MessageLoop::current()->RunUntilIdle();
+
   EXPECT_TRUE(session2 == NULL);
 }
 
@@ -259,7 +267,7 @@ TEST_P(SpdySessionPoolTest, CloseAllSessions) {
   SpdySessionKey test_key =
       SpdySessionKey(
           test_host_port_pair, ProxyServer::Direct(),
-          kPrivacyModeDisabled);
+          PRIVACY_MODE_DISABLED);
 
   MockConnect connect_data(SYNCHRONOUS, OK);
   MockRead reads[] = {
@@ -348,7 +356,7 @@ void SpdySessionPoolTest::RunIPPoolingTest(
     // Setup a SpdySessionKey
     test_hosts[i].key = SpdySessionKey(
         HostPortPair(test_hosts[i].name, kTestPort), ProxyServer::Direct(),
-        kPrivacyModeDisabled);
+        PRIVACY_MODE_DISABLED);
   }
 
   MockConnect connect_data(SYNCHRONOUS, OK);
@@ -382,7 +390,7 @@ void SpdySessionPoolTest::RunIPPoolingTest(
   // Verify that the second host, through a proxy, won't share the IP.
   SpdySessionKey proxy_key(test_hosts[1].key.host_port_pair(),
       ProxyServer::FromPacString("HTTP http://proxy.foo.com/"),
-      kPrivacyModeDisabled);
+      PRIVACY_MODE_DISABLED);
   EXPECT_FALSE(HasSpdySession(spdy_session_pool_, proxy_key));
 
   // Overlap between 2 and 3 does is not transitive to 1.
@@ -421,8 +429,9 @@ void SpdySessionPoolTest::RunIPPoolingTest(
   switch (close_sessions_type) {
     case SPDY_POOL_CLOSE_SESSIONS_MANUALLY:
       session->CloseSessionOnError(ERR_ABORTED, std::string());
-      EXPECT_TRUE(session == NULL);
       session2->CloseSessionOnError(ERR_ABORTED, std::string());
+      base::MessageLoop::current()->RunUntilIdle();
+      EXPECT_TRUE(session == NULL);
       EXPECT_TRUE(session2 == NULL);
       break;
     case SPDY_POOL_CLOSE_CURRENT_SESSIONS:
@@ -450,27 +459,30 @@ void SpdySessionPoolTest::RunIPPoolingTest(
 
       // Check spdy_session and spdy_session1 are not closed.
       EXPECT_FALSE(session->is_active());
-      EXPECT_FALSE(session->IsClosed());
+      EXPECT_TRUE(session->IsAvailable());
       EXPECT_FALSE(session1->is_active());
-      EXPECT_FALSE(session1->IsClosed());
+      EXPECT_TRUE(session1->IsAvailable());
       EXPECT_TRUE(session2->is_active());
-      EXPECT_FALSE(session2->IsClosed());
+      EXPECT_TRUE(session2->IsAvailable());
 
       // Test that calling CloseIdleSessions, does not cause a crash.
       // http://crbug.com/181400
       spdy_session_pool_->CloseCurrentIdleSessions();
+      base::MessageLoop::current()->RunUntilIdle();
 
       // Verify spdy_session and spdy_session1 are closed.
       EXPECT_TRUE(session == NULL);
       EXPECT_TRUE(session1 == NULL);
       EXPECT_TRUE(session2->is_active());
-      EXPECT_FALSE(session2->IsClosed());
+      EXPECT_TRUE(session2->IsAvailable());
 
       spdy_stream2->Cancel();
       EXPECT_EQ(NULL, spdy_stream.get());
       EXPECT_EQ(NULL, spdy_stream1.get());
       EXPECT_EQ(NULL, spdy_stream2.get());
+
       session2->CloseSessionOnError(ERR_ABORTED, std::string());
+      base::MessageLoop::current()->RunUntilIdle();
       EXPECT_TRUE(session2 == NULL);
       break;
   }
@@ -491,6 +503,116 @@ TEST_P(SpdySessionPoolTest, IPPoolingCloseCurrentSessions) {
 
 TEST_P(SpdySessionPoolTest, IPPoolingCloseIdleSessions) {
   RunIPPoolingTest(SPDY_POOL_CLOSE_IDLE_SESSIONS);
+}
+
+// Construct a Pool with SpdySessions in various availability states. Simulate
+// an IP address change. Ensure sessions gracefully shut down. Regression test
+// for crbug.com/379469.
+TEST_P(SpdySessionPoolTest, IPAddressChanged) {
+  MockConnect connect_data(SYNCHRONOUS, OK);
+  session_deps_.host_resolver->set_synchronous_mode(true);
+  SpdyTestUtil spdy_util(GetParam());
+
+  MockRead reads[] = {
+      MockRead(SYNCHRONOUS, ERR_IO_PENDING)  // Stall forever.
+  };
+  scoped_ptr<SpdyFrame> req(
+      spdy_util.ConstructSpdyGet("http://www.a.com", false, 1, MEDIUM));
+  MockWrite writes[] = {CreateMockWrite(*req, 1)};
+
+  DelayedSocketData data(1, reads, arraysize(reads), writes, arraysize(writes));
+  data.set_connect_data(connect_data);
+  session_deps_.socket_factory->AddSocketDataProvider(&data);
+
+  SSLSocketDataProvider ssl(SYNCHRONOUS, OK);
+  session_deps_.socket_factory->AddSSLSocketDataProvider(&ssl);
+
+  CreateNetworkSession();
+
+  // Set up session A: Going away, but with an active stream.
+  session_deps_.socket_factory->AddSocketDataProvider(&data);
+  const std::string kTestHostA("http://www.a.com");
+  HostPortPair test_host_port_pairA(kTestHostA, 80);
+  SpdySessionKey keyA(
+      test_host_port_pairA, ProxyServer::Direct(), PRIVACY_MODE_DISABLED);
+  base::WeakPtr<SpdySession> sessionA =
+      CreateInsecureSpdySession(http_session_, keyA, BoundNetLog());
+
+  GURL urlA(kTestHostA);
+  base::WeakPtr<SpdyStream> spdy_streamA = CreateStreamSynchronously(
+      SPDY_BIDIRECTIONAL_STREAM, sessionA, urlA, MEDIUM, BoundNetLog());
+  test::StreamDelegateDoNothing delegateA(spdy_streamA);
+  spdy_streamA->SetDelegate(&delegateA);
+
+  scoped_ptr<SpdyHeaderBlock> headers(
+      spdy_util.ConstructGetHeaderBlock(urlA.spec()));
+  spdy_streamA->SendRequestHeaders(headers.Pass(), NO_MORE_DATA_TO_SEND);
+  EXPECT_TRUE(spdy_streamA->HasUrlFromHeaders());
+
+  base::MessageLoop::current()->RunUntilIdle();  // Allow headers to write.
+  EXPECT_TRUE(delegateA.send_headers_completed());
+
+  sessionA->MakeUnavailable();
+  EXPECT_TRUE(sessionA->IsGoingAway());
+  EXPECT_FALSE(delegateA.StreamIsClosed());
+
+  // Set up session B: Available, with a created stream.
+  const std::string kTestHostB("http://www.b.com");
+  HostPortPair test_host_port_pairB(kTestHostB, 80);
+  SpdySessionKey keyB(
+      test_host_port_pairB, ProxyServer::Direct(), PRIVACY_MODE_DISABLED);
+  base::WeakPtr<SpdySession> sessionB =
+      CreateInsecureSpdySession(http_session_, keyB, BoundNetLog());
+  EXPECT_TRUE(sessionB->IsAvailable());
+
+  GURL urlB(kTestHostB);
+  base::WeakPtr<SpdyStream> spdy_streamB = CreateStreamSynchronously(
+      SPDY_BIDIRECTIONAL_STREAM, sessionB, urlB, MEDIUM, BoundNetLog());
+  test::StreamDelegateDoNothing delegateB(spdy_streamB);
+  spdy_streamB->SetDelegate(&delegateB);
+
+  // Set up session C: Draining.
+  session_deps_.socket_factory->AddSocketDataProvider(&data);
+  const std::string kTestHostC("http://www.c.com");
+  HostPortPair test_host_port_pairC(kTestHostC, 80);
+  SpdySessionKey keyC(
+      test_host_port_pairC, ProxyServer::Direct(), PRIVACY_MODE_DISABLED);
+  base::WeakPtr<SpdySession> sessionC =
+      CreateInsecureSpdySession(http_session_, keyC, BoundNetLog());
+
+  sessionC->CloseSessionOnError(ERR_SPDY_PROTOCOL_ERROR, "Error!");
+  EXPECT_TRUE(sessionC->IsDraining());
+
+  spdy_session_pool_->OnIPAddressChanged();
+
+#if defined(OS_ANDROID) || defined(OS_WIN) || defined(OS_IOS)
+  EXPECT_TRUE(sessionA->IsGoingAway());
+  EXPECT_TRUE(sessionB->IsDraining());
+  EXPECT_TRUE(sessionC->IsDraining());
+
+  EXPECT_EQ(1u,
+            sessionA->num_active_streams());  // Active stream is still active.
+  EXPECT_FALSE(delegateA.StreamIsClosed());
+
+  EXPECT_TRUE(delegateB.StreamIsClosed());  // Created stream was closed.
+  EXPECT_EQ(ERR_NETWORK_CHANGED, delegateB.WaitForClose());
+
+  sessionA->CloseSessionOnError(ERR_ABORTED, "Closing");
+  sessionB->CloseSessionOnError(ERR_ABORTED, "Closing");
+
+  EXPECT_TRUE(delegateA.StreamIsClosed());
+  EXPECT_EQ(ERR_ABORTED, delegateA.WaitForClose());
+#else
+  EXPECT_TRUE(sessionA->IsDraining());
+  EXPECT_TRUE(sessionB->IsDraining());
+  EXPECT_TRUE(sessionC->IsDraining());
+
+  // Both streams were closed with an error.
+  EXPECT_TRUE(delegateA.StreamIsClosed());
+  EXPECT_EQ(ERR_NETWORK_CHANGED, delegateA.WaitForClose());
+  EXPECT_TRUE(delegateB.StreamIsClosed());
+  EXPECT_EQ(ERR_NETWORK_CHANGED, delegateB.WaitForClose());
+#endif  // defined(OS_ANDROID) || defined(OS_WIN) || defined(OS_IOS)
 }
 
 }  // namespace

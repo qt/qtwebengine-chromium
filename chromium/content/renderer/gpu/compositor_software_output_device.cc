@@ -6,7 +6,9 @@
 
 #include "base/logging.h"
 #include "cc/output/software_frame_data.h"
+#include "content/child/child_shared_bitmap_manager.h"
 #include "content/renderer/render_process.h"
+#include "content/renderer/render_thread_impl.h"
 #include "third_party/skia/include/core/SkBitmapDevice.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkPixelRef.h"
@@ -16,12 +18,9 @@
 namespace content {
 
 CompositorSoftwareOutputDevice::Buffer::Buffer(
-    unsigned id, scoped_ptr<base::SharedMemory> mem)
-    : id_(id),
-      mem_(mem.Pass()),
-      free_(true),
-      parent_(NULL) {
-}
+    unsigned id,
+    scoped_ptr<cc::SharedBitmap> bitmap)
+    : id_(id), shared_bitmap_(bitmap.Pass()), free_(true), parent_(NULL) {}
 
 CompositorSoftwareOutputDevice::Buffer::~Buffer() {
 }
@@ -59,7 +58,8 @@ bool CompositorSoftwareOutputDevice::Buffer::FindDamageDifferenceFrom(
 CompositorSoftwareOutputDevice::CompositorSoftwareOutputDevice()
     : current_index_(-1),
       next_buffer_id_(1),
-      render_thread_(RenderThread::Get()) {
+      shared_bitmap_manager_(
+          RenderThreadImpl::current()->shared_bitmap_manager()) {
   DetachFromThread();
 }
 
@@ -77,13 +77,10 @@ unsigned CompositorSoftwareOutputDevice::GetNextId() {
 
 CompositorSoftwareOutputDevice::Buffer*
 CompositorSoftwareOutputDevice::CreateBuffer() {
-  const size_t size = 4 * viewport_size_.GetArea();
-  scoped_ptr<base::SharedMemory> mem =
-      render_thread_->HostAllocateSharedMemoryBuffer(size).Pass();
-  CHECK(mem);
-  bool success = mem->Map(size);
-  CHECK(success);
-  return new Buffer(GetNextId(), mem.Pass());
+  scoped_ptr<cc::SharedBitmap> shared_bitmap =
+      shared_bitmap_manager_->AllocateSharedBitmap(viewport_pixel_size_);
+  CHECK(shared_bitmap);
+  return new Buffer(GetNextId(), shared_bitmap.Pass());
 }
 
 size_t CompositorSoftwareOutputDevice::FindFreeBuffer(size_t hint) {
@@ -97,10 +94,14 @@ size_t CompositorSoftwareOutputDevice::FindFreeBuffer(size_t hint) {
   return buffers_.size() - 1;
 }
 
-void CompositorSoftwareOutputDevice::Resize(gfx::Size viewport_size) {
+void CompositorSoftwareOutputDevice::Resize(
+    const gfx::Size& viewport_pixel_size,
+    float scale_factor) {
   DCHECK(CalledOnValidThread());
 
-  if (viewport_size_ == viewport_size)
+  scale_factor_ = scale_factor;
+
+  if (viewport_pixel_size_ == viewport_pixel_size)
     return;
 
   // Keep non-ACKed buffers in awaiting_ack_ until they get acknowledged.
@@ -113,7 +114,7 @@ void CompositorSoftwareOutputDevice::Resize(gfx::Size viewport_size) {
 
   buffers_.clear();
   current_index_ = -1;
-  viewport_size_ = viewport_size;
+  viewport_pixel_size_ = viewport_pixel_size;
 }
 
 void CompositorSoftwareOutputDevice::DiscardBackbuffer() {
@@ -131,7 +132,8 @@ void CompositorSoftwareOutputDevice::DiscardBackbuffer() {
 void CompositorSoftwareOutputDevice::EnsureBackbuffer() {
 }
 
-SkCanvas* CompositorSoftwareOutputDevice::BeginPaint(gfx::Rect damage_rect) {
+SkCanvas* CompositorSoftwareOutputDevice::BeginPaint(
+    const gfx::Rect& damage_rect) {
   DCHECK(CalledOnValidThread());
 
   Buffer* previous = NULL;
@@ -143,15 +145,14 @@ SkCanvas* CompositorSoftwareOutputDevice::BeginPaint(gfx::Rect damage_rect) {
   current->SetFree(false);
 
   // Set up a canvas for the current front buffer.
-  bitmap_.setConfig(SkBitmap::kARGB_8888_Config,
-                    viewport_size_.width(),
-                    viewport_size_.height());
-  bitmap_.setPixels(current->memory());
-  device_ = skia::AdoptRef(new SkBitmapDevice(bitmap_));
-  canvas_ = skia::AdoptRef(new SkCanvas(device_.get()));
+  SkImageInfo info = SkImageInfo::MakeN32Premul(viewport_pixel_size_.width(),
+                                                viewport_pixel_size_.height());
+  SkBitmap bitmap;
+  bitmap.installPixels(info, current->memory(), info.minRowBytes());
+  canvas_ = skia::AdoptRef(new SkCanvas(bitmap));
 
   if (!previous) {
-    DCHECK(damage_rect == gfx::Rect(viewport_size_));
+    DCHECK(damage_rect == gfx::Rect(viewport_pixel_size_));
   } else {
     // Find the smallest damage region that needs
     // to be copied from the |previous| buffer.
@@ -160,15 +161,15 @@ SkCanvas* CompositorSoftwareOutputDevice::BeginPaint(gfx::Rect damage_rect) {
         current->FindDamageDifferenceFrom(previous, &region) ||
         previous->FindDamageDifferenceFrom(current, &region);
     if (!found)
-      region = SkRegion(RectToSkIRect(gfx::Rect(viewport_size_)));
+      region = SkRegion(RectToSkIRect(gfx::Rect(viewport_pixel_size_)));
     region.op(RectToSkIRect(damage_rect), SkRegion::kDifference_Op);
 
     // Copy over the damage region.
     if (!region.isEmpty()) {
       SkBitmap back_bitmap;
       back_bitmap.setConfig(SkBitmap::kARGB_8888_Config,
-                            viewport_size_.width(),
-                            viewport_size_.height());
+                            viewport_pixel_size_.width(),
+                            viewport_pixel_size_.height());
       back_bitmap.setPixels(previous->memory());
 
       for (SkRegion::Iterator it(region); !it.done(); it.next()) {
@@ -184,7 +185,7 @@ SkCanvas* CompositorSoftwareOutputDevice::BeginPaint(gfx::Rect damage_rect) {
   for (size_t i = 0; i < buffers_.size(); ++i) {
     Buffer* buffer = buffers_[i];
     if (buffer->parent() == current)
-      buffer->SetParent(NULL, gfx::Rect(viewport_size_));
+      buffer->SetParent(NULL, gfx::Rect(viewport_pixel_size_));
   }
   damage_rect_ = damage_rect;
 
@@ -198,12 +199,9 @@ void CompositorSoftwareOutputDevice::EndPaint(
 
   Buffer* buffer = buffers_[current_index_];
   frame_data->id = buffer->id();
-  frame_data->size = viewport_size_;
+  frame_data->size = viewport_pixel_size_;
   frame_data->damage_rect = damage_rect_;
-  frame_data->handle = buffer->handle();
-
-  CHECK_LE(static_cast<size_t>(frame_data->size.GetArea()) * 4,
-           buffer->shared_memory()->mapped_size());
+  frame_data->bitmap_id = buffer->shared_bitmap_id();
 }
 
 void CompositorSoftwareOutputDevice::ReclaimSoftwareFrame(unsigned id) {

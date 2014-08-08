@@ -13,10 +13,9 @@ namespace content {
 
 class IndexedDBDatabaseError {
  public:
-  IndexedDBDatabaseError(uint16 code)
-      : code_(code) {}
+  explicit IndexedDBDatabaseError(uint16 code) : code_(code) {}
   IndexedDBDatabaseError(uint16 code, const char* message)
-      : code_(code), message_(ASCIIToUTF16(message)) {}
+      : code_(code), message_(base::ASCIIToUTF16(message)) {}
   IndexedDBDatabaseError(uint16 code, const base::string16& message)
       : code_(code), message_(message) {}
   ~IndexedDBDatabaseError() {}
@@ -27,6 +26,8 @@ class IndexedDBDatabaseError {
  private:
   const uint16 code_;
   const base::string16 message_;
+
+  DISALLOW_COPY_AND_ASSIGN(IndexedDBDatabaseError);
 };
 
 }  // namespace content

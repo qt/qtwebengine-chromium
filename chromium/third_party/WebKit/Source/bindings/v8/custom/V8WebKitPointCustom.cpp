@@ -29,7 +29,7 @@
  */
 
 #include "config.h"
-#include "V8WebKitPoint.h"
+#include "bindings/core/v8/V8WebKitPoint.h"
 
 #include "bindings/v8/V8Binding.h"
 #include "bindings/v8/V8DOMWrapper.h"
@@ -54,7 +54,7 @@ void V8WebKitPoint::constructorCustom(const v8::FunctionCallbackInfo<v8::Value>&
                 y = 0;
         }
     }
-    RefPtr<DOMPoint> point = DOMPoint::create(x, y);
+    RefPtrWillBeRawPtr<DOMPoint> point = DOMPoint::create(x, y);
     v8::Handle<v8::Object> wrapper = info.Holder();
     V8DOMWrapper::associateObjectWithWrapper<V8WebKitPoint>(point.release(), &wrapperTypeInfo, wrapper, info.GetIsolate(), WrapperConfiguration::Dependent);
     info.GetReturnValue().Set(wrapper);

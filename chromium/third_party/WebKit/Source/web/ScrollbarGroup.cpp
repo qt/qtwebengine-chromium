@@ -24,13 +24,13 @@
  */
 
 #include "config.h"
-#include "ScrollbarGroup.h"
+#include "web/ScrollbarGroup.h"
 
-#include "WebPluginScrollbarImpl.h"
 #include "core/frame/FrameView.h"
 #include "platform/scroll/Scrollbar.h"
 #include "platform/scroll/ScrollbarTheme.h"
 #include "public/platform/WebRect.h"
+#include "web/WebPluginScrollbarImpl.h"
 
 using namespace WebCore;
 
@@ -123,12 +123,6 @@ void ScrollbarGroup::invalidateScrollCornerRect(const IntRect&)
 bool ScrollbarGroup::isActive() const
 {
     return true;
-}
-
-ScrollableArea* ScrollbarGroup::enclosingScrollableArea() const
-{
-    // FIXME: Return a parent scrollable area that can be scrolled.
-    return 0;
 }
 
 void ScrollbarGroup::setFrameRect(const IntRect& frameRect)
@@ -244,11 +238,8 @@ bool ScrollbarGroup::shouldSuspendScrollAnimations() const
     return false;
 }
 
-void ScrollbarGroup::scrollbarStyleChanged(int, bool forceUpdate)
+void ScrollbarGroup::scrollbarStyleChanged()
 {
-    if (!forceUpdate)
-        return;
-
     if (m_horizontalScrollbar)
         m_horizontalScrollbar->scrollbarStyleChanged();
     if (m_verticalScrollbar)

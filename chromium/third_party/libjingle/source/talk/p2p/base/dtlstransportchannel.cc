@@ -42,7 +42,6 @@ namespace cricket {
 static const size_t kDtlsRecordHeaderLen = 13;
 static const size_t kMaxDtlsPacketLen = 2048;
 static const size_t kMinRtpPacketLen = 12;
-static const size_t kDefaultVideoAndDataCryptos = 1;
 
 static bool IsDtlsPacket(const char* data, size_t len) {
   const uint8* u = reinterpret_cast<const uint8*>(data);
@@ -71,8 +70,9 @@ talk_base::StreamResult StreamInterfaceChannel::Write(const void* data,
                                                       int* error) {
   // Always succeeds, since this is an unreliable transport anyway.
   // TODO: Should this block if channel_'s temporarily unwritable?
-  channel_->SendPacket(
-      static_cast<const char*>(data), data_len, talk_base::DSCP_NO_CHANGE);
+  talk_base::PacketOptions packet_options;
+  channel_->SendPacket(static_cast<const char*>(data), data_len,
+                       packet_options);
   if (written) {
     *written = data_len;
   }
@@ -124,6 +124,8 @@ DtlsTransportChannelWrapper::DtlsTransportChannelWrapper(
       &DtlsTransportChannelWrapper::OnRoleConflict);
   channel_->SignalRouteChange.connect(this,
       &DtlsTransportChannelWrapper::OnRouteChange);
+  channel_->SignalConnectionRemoved.connect(this,
+      &DtlsTransportChannelWrapper::OnConnectionRemoved);
 }
 
 DtlsTransportChannelWrapper::~DtlsTransportChannelWrapper() {
@@ -154,14 +156,15 @@ void DtlsTransportChannelWrapper::Reset() {
 
 bool DtlsTransportChannelWrapper::SetLocalIdentity(
     talk_base::SSLIdentity* identity) {
-  if (dtls_state_ == STATE_OPEN && identity == local_identity_) {
-    return true;
-  }
-
-  // TODO(ekr@rtfm.com): Forbid this if Connect() has been called.
   if (dtls_state_ != STATE_NONE) {
-    LOG_J(LS_ERROR, this) << "Can't set DTLS local identity in this state";
-    return false;
+    if (identity == local_identity_) {
+      // This may happen during renegotiation.
+      LOG_J(LS_INFO, this) << "Ignoring identical DTLS identity";
+      return true;
+    } else {
+      LOG_J(LS_ERROR, this) << "Can't change DTLS local identity in this state";
+      return false;
+    }
   }
 
   if (identity) {
@@ -208,8 +211,11 @@ bool DtlsTransportChannelWrapper::SetRemoteFingerprint(
 
   talk_base::Buffer remote_fingerprint_value(digest, digest_len);
 
-  if ((dtls_state_ == STATE_OPEN) &&
-      (remote_fingerprint_value_ == remote_fingerprint_value)) {
+  if (dtls_state_ != STATE_NONE &&
+      remote_fingerprint_value_ == remote_fingerprint_value &&
+      !digest_alg.empty()) {
+    // This may happen during renegotiation.
+    LOG_J(LS_INFO, this) << "Ignoring identical remote DTLS fingerprint";
     return true;
   }
 
@@ -339,9 +345,9 @@ bool DtlsTransportChannelWrapper::GetSrtpCipher(std::string* cipher) {
 
 
 // Called from upper layers to send a media packet.
-int DtlsTransportChannelWrapper::SendPacket(const char* data, size_t size,
-                                            talk_base::DiffServCodePoint dscp,
-                                            int flags) {
+int DtlsTransportChannelWrapper::SendPacket(
+    const char* data, size_t size,
+    const talk_base::PacketOptions& options, int flags) {
   int result = -1;
 
   switch (dtls_state_) {
@@ -361,11 +367,11 @@ int DtlsTransportChannelWrapper::SendPacket(const char* data, size_t size,
       if (flags & PF_SRTP_BYPASS) {
         ASSERT(!srtp_ciphers_.empty());
         if (!IsRtpPacket(data, size)) {
-          result = false;
+          result = -1;
           break;
         }
 
-        result = channel_->SendPacket(data, size, dscp);
+        result = channel_->SendPacket(data, size, options);
       } else {
         result = (dtls_->WriteAll(data, size, NULL, NULL) ==
           talk_base::SR_SUCCESS) ? static_cast<int>(size) : -1;
@@ -373,7 +379,7 @@ int DtlsTransportChannelWrapper::SendPacket(const char* data, size_t size,
       break;
       // Not doing DTLS.
     case STATE_NONE:
-      result = channel_->SendPacket(data, size, dscp);
+      result = channel_->SendPacket(data, size, options);
       break;
 
     case STATE_CLOSED:  // Can't send anything when we're closed.
@@ -619,6 +625,12 @@ void DtlsTransportChannelWrapper::OnRouteChange(
     TransportChannel* channel, const Candidate& candidate) {
   ASSERT(channel == channel_);
   SignalRouteChange(this, candidate);
+}
+
+void DtlsTransportChannelWrapper::OnConnectionRemoved(
+    TransportChannelImpl* channel) {
+  ASSERT(channel == channel_);
+  SignalConnectionRemoved(this);
 }
 
 }  // namespace cricket

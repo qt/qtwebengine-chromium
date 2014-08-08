@@ -17,30 +17,66 @@
 #include "webrtc/modules/video_coding/main/source/encoded_frame.h"
 #include "webrtc/modules/video_coding/main/source/video_coding_impl.h"
 #include "webrtc/system_wrappers/interface/clock.h"
+#include "webrtc/system_wrappers/interface/logging.h"
 
 namespace webrtc {
 namespace vcm {
 
-VideoSender::VideoSender(const int32_t id, Clock* clock)
-    : _id(id),
-      clock_(clock),
+class DebugRecorder {
+ public:
+  DebugRecorder()
+      : cs_(CriticalSectionWrapper::CreateCriticalSection()), file_(NULL) {}
+
+  ~DebugRecorder() { Stop(); }
+
+  int Start(const char* file_name_utf8) {
+    CriticalSectionScoped cs(cs_.get());
+    if (file_)
+      fclose(file_);
+    file_ = fopen(file_name_utf8, "wb");
+    if (!file_)
+      return VCM_GENERAL_ERROR;
+    return VCM_OK;
+  }
+
+  void Stop() {
+    CriticalSectionScoped cs(cs_.get());
+    if (file_) {
+      fclose(file_);
+      file_ = NULL;
+    }
+  }
+
+  void Add(const I420VideoFrame& frame) {
+    CriticalSectionScoped cs(cs_.get());
+    if (file_)
+      PrintI420VideoFrame(frame, file_);
+  }
+
+ private:
+  scoped_ptr<CriticalSectionWrapper> cs_;
+  FILE* file_ GUARDED_BY(cs_);
+};
+
+VideoSender::VideoSender(Clock* clock,
+                         EncodedImageCallback* post_encode_callback)
+    : clock_(clock),
+      recorder_(new DebugRecorder()),
       process_crit_sect_(CriticalSectionWrapper::CreateCriticalSection()),
       _sendCritSect(CriticalSectionWrapper::CreateCriticalSection()),
       _encoder(),
-      _encodedFrameCallback(),
+      _encodedFrameCallback(post_encode_callback),
       _nextFrameTypes(1, kVideoFrameDelta),
-      _mediaOpt(id, clock_),
+      _mediaOpt(clock_),
       _sendStatsCallback(NULL),
-      _encoderInputFile(NULL),
-      _codecDataBase(id),
+      _codecDataBase(),
       frame_dropper_enabled_(true),
-      _sendStatsTimer(1000, clock_) {}
+      _sendStatsTimer(1000, clock_),
+      qm_settings_callback_(NULL),
+      protection_callback_(NULL) {}
 
 VideoSender::~VideoSender() {
   delete _sendCritSect;
-  if (_encoderInputFile != NULL) {
-    fclose(_encoderInputFile);
-  }
 }
 
 int32_t VideoSender::Process() {
@@ -70,8 +106,6 @@ int32_t VideoSender::InitializeSender() {
   _codecDataBase.ResetSender();
   _encoder = NULL;
   _encodedFrameCallback.SetTransportCallback(NULL);
-  // setting default bitRate and frameRate to 0
-  _mediaOpt.SetEncodingData(kVideoCodecUnknown, 0, 0, 0, 0, 0, 0);
   _mediaOpt.Reset();  // Resetting frame dropper
   return VCM_OK;
 }
@@ -97,10 +131,8 @@ int32_t VideoSender::RegisterSendCodec(const VideoCodec* sendCodec,
   _encoder = _codecDataBase.GetEncoder();
 
   if (!ret) {
-    WEBRTC_TRACE(webrtc::kTraceError,
-                 webrtc::kTraceVideoCoding,
-                 VCMId(_id),
-                 "Failed to initialize encoder");
+    LOG(LS_ERROR) << "Failed to initialize the encoder with payload name "
+                  << sendCodec->plName << ". Error code: " << ret;
     return VCM_CODEC_ERROR;
   }
 
@@ -125,9 +157,8 @@ int32_t VideoSender::RegisterSendCodec(const VideoCodec* sendCodec,
                             sendCodec->startBitrate * 1000,
                             sendCodec->width,
                             sendCodec->height,
-                            numLayers);
-  _mediaOpt.set_max_payload_size(maxPayloadSize);
-
+                            numLayers,
+                            maxPayloadSize);
   return VCM_OK;
 }
 
@@ -171,12 +202,21 @@ int32_t VideoSender::RegisterExternalEncoder(VideoEncoder* externalEncoder,
 }
 
 // Get codec config parameters
-int32_t VideoSender::CodecConfigParameters(uint8_t* buffer, int32_t size) {
+int32_t VideoSender::CodecConfigParameters(uint8_t* buffer,
+                                           int32_t size) const {
   CriticalSectionScoped cs(_sendCritSect);
   if (_encoder != NULL) {
     return _encoder->CodecConfigParameters(buffer, size);
   }
   return VCM_UNINITIALIZED;
+}
+
+// TODO(andresp): Make const once media_opt is thread-safe and this has a
+// pointer to it.
+int32_t VideoSender::SentFrameCount(VCMFrameCount* frameCount) {
+  CriticalSectionScoped cs(_sendCritSect);
+  *frameCount = _mediaOpt.SentFrameCount();
+  return VCM_OK;
 }
 
 // Get encode bitrate
@@ -208,8 +248,11 @@ int32_t VideoSender::SetChannelParameters(uint32_t target_bitrate,
   int32_t ret = 0;
   {
     CriticalSectionScoped sendCs(_sendCritSect);
-    uint32_t targetRate =
-        _mediaOpt.SetTargetRates(target_bitrate, lossRate, rtt);
+    uint32_t targetRate = _mediaOpt.SetTargetRates(target_bitrate,
+                                                   lossRate,
+                                                   rtt,
+                                                   protection_callback_,
+                                                   qm_settings_callback_);
     if (_encoder != NULL) {
       ret = _encoder->SetChannelParameters(lossRate, rtt);
       if (ret < 0) {
@@ -247,17 +290,19 @@ int32_t VideoSender::RegisterSendStatisticsCallback(
 // Register a video quality settings callback which will be called when frame
 // rate/dimensions need to be updated for video quality optimization
 int32_t VideoSender::RegisterVideoQMCallback(
-    VCMQMSettingsCallback* videoQMSettings) {
+    VCMQMSettingsCallback* qm_settings_callback) {
   CriticalSectionScoped cs(_sendCritSect);
-  return _mediaOpt.RegisterVideoQMCallback(videoQMSettings);
+  qm_settings_callback_ = qm_settings_callback;
+  _mediaOpt.EnableQM(qm_settings_callback_ != NULL);
+  return VCM_OK;
 }
 
 // Register a video protection callback which will be called to deliver the
 // requested FEC rate and NACK status (on/off).
 int32_t VideoSender::RegisterProtectionCallback(
-    VCMProtectionCallback* protection) {
+    VCMProtectionCallback* protection_callback) {
   CriticalSectionScoped cs(_sendCritSect);
-  _mediaOpt.RegisterProtectionCallback(protection);
+  protection_callback_ = protection_callback;
   return VCM_OK;
 }
 
@@ -314,33 +359,19 @@ int32_t VideoSender::AddVideoFrame(const I420VideoFrame& videoFrame,
   if (_nextFrameTypes[0] == kFrameEmpty) {
     return VCM_OK;
   }
-  _mediaOpt.UpdateIncomingFrameRate();
-
   if (_mediaOpt.DropFrame()) {
-    WEBRTC_TRACE(webrtc::kTraceStream,
-                 webrtc::kTraceVideoCoding,
-                 VCMId(_id),
-                 "Drop frame due to bitrate");
-  } else {
-    _mediaOpt.UpdateContentData(contentMetrics);
-    int32_t ret =
-        _encoder->Encode(videoFrame, codecSpecificInfo, _nextFrameTypes);
-    if (_encoderInputFile != NULL) {
-      if (PrintI420VideoFrame(videoFrame, _encoderInputFile) < 0) {
-        return -1;
-      }
-    }
-    if (ret < 0) {
-      WEBRTC_TRACE(webrtc::kTraceError,
-                   webrtc::kTraceVideoCoding,
-                   VCMId(_id),
-                   "Encode error: %d",
-                   ret);
-      return ret;
-    }
-    for (size_t i = 0; i < _nextFrameTypes.size(); ++i) {
-      _nextFrameTypes[i] = kVideoFrameDelta;  // Default frame type.
-    }
+    return VCM_OK;
+  }
+  _mediaOpt.UpdateContentData(contentMetrics);
+  int32_t ret =
+      _encoder->Encode(videoFrame, codecSpecificInfo, _nextFrameTypes);
+  recorder_->Add(videoFrame);
+  if (ret < 0) {
+    LOG(LS_ERROR) << "Failed to encode frame. Error code: " << ret;
+    return ret;
+  }
+  for (size_t i = 0; i < _nextFrameTypes.size(); ++i) {
+    _nextFrameTypes[i] = kVideoFrameDelta;  // Default frame type.
   }
   return VCM_OK;
 }
@@ -367,11 +398,6 @@ int32_t VideoSender::EnableFrameDropper(bool enable) {
   frame_dropper_enabled_ = enable;
   _mediaOpt.EnableFrameDropper(enable);
   return VCM_OK;
-}
-
-int32_t VideoSender::SentFrameCount(VCMFrameCount* frameCount) const {
-  CriticalSectionScoped cs(_sendCritSect);
-  return _mediaOpt.SentFrameCount(frameCount);
 }
 
 int VideoSender::SetSenderNackMode(SenderNackMode mode) {
@@ -406,20 +432,11 @@ int VideoSender::SetSenderKeyFramePeriod(int periodMs) {
 }
 
 int VideoSender::StartDebugRecording(const char* file_name_utf8) {
-  CriticalSectionScoped cs(_sendCritSect);
-  _encoderInputFile = fopen(file_name_utf8, "wb");
-  if (_encoderInputFile == NULL)
-    return VCM_GENERAL_ERROR;
-  return VCM_OK;
+  return recorder_->Start(file_name_utf8);
 }
 
-int VideoSender::StopDebugRecording() {
-  CriticalSectionScoped cs(_sendCritSect);
-  if (_encoderInputFile != NULL) {
-    fclose(_encoderInputFile);
-    _encoderInputFile = NULL;
-  }
-  return VCM_OK;
+void VideoSender::StopDebugRecording() {
+  recorder_->Stop();
 }
 
 void VideoSender::SuspendBelowMinBitrate() {
@@ -443,14 +460,7 @@ void VideoSender::SuspendBelowMinBitrate() {
 
 bool VideoSender::VideoSuspended() const {
   CriticalSectionScoped cs(_sendCritSect);
-  return _mediaOpt.video_suspended();
+  return _mediaOpt.IsVideoSuspended();
 }
-
-void VideoSender::RegisterPostEncodeImageCallback(
-    EncodedImageCallback* observer) {
-  CriticalSectionScoped cs(_sendCritSect);
-  _encodedFrameCallback.RegisterPostEncodeImageCallback(observer);
-}
-
 }  // namespace vcm
 }  // namespace webrtc

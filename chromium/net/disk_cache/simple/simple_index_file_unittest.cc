@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "base/file_util.h"
+#include "base/files/file.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/hash.h"
 #include "base/logging.h"
@@ -169,9 +170,8 @@ TEST_F(SimpleIndexFileTest, LegacyIsIndexFileStale) {
       WrappedSimpleIndexFile::LegacyIsIndexFileStale(cache_mtime, index_path));
   const std::string kDummyData = "nothing to be seen here";
   EXPECT_EQ(static_cast<int>(kDummyData.size()),
-            file_util::WriteFile(index_path,
-                                 kDummyData.data(),
-                                 kDummyData.size()));
+            base::WriteFile(index_path,
+                            kDummyData.data(), kDummyData.size()));
   ASSERT_TRUE(simple_util::GetMTime(cache_path, &cache_mtime));
   EXPECT_FALSE(
       WrappedSimpleIndexFile::LegacyIsIndexFileStale(cache_mtime, index_path));
@@ -243,7 +243,7 @@ TEST_F(SimpleIndexFileTest, LoadCorruptIndex) {
   const std::string kDummyData = "nothing to be seen here";
   EXPECT_EQ(
       implicit_cast<int>(kDummyData.size()),
-      file_util::WriteFile(index_path, kDummyData.data(), kDummyData.size()));
+      base::WriteFile(index_path, kDummyData.data(), kDummyData.size()));
   base::Time fake_cache_mtime;
   ASSERT_TRUE(simple_util::GetMTime(simple_index_file.GetIndexFilePath(),
                                     &fake_cache_mtime));
@@ -269,19 +269,16 @@ TEST_F(SimpleIndexFileTest, SimpleCacheUpgrade) {
   const base::FilePath cache_path = cache_dir.path();
 
   // Write an old fake index file.
-  base::PlatformFileError error;
-  base::PlatformFile file = base::CreatePlatformFile(
-      cache_path.AppendASCII("index"),
-      base::PLATFORM_FILE_CREATE | base::PLATFORM_FILE_WRITE,
-      NULL,
-      &error);
+  base::File file(cache_path.AppendASCII("index"),
+                  base::File::FLAG_CREATE | base::File::FLAG_WRITE);
+  ASSERT_TRUE(file.IsValid());
   disk_cache::FakeIndexData file_contents;
   file_contents.initial_magic_number = disk_cache::kSimpleInitialMagicNumber;
   file_contents.version = 5;
-  int bytes_written = base::WritePlatformFile(
-      file, 0, reinterpret_cast<char*>(&file_contents), sizeof(file_contents));
-  ASSERT_TRUE(base::ClosePlatformFile(file));
+  int bytes_written = file.Write(0, reinterpret_cast<char*>(&file_contents),
+                                 sizeof(file_contents));
   ASSERT_EQ((int)sizeof(file_contents), bytes_written);
+  file.Close();
 
   // Write the index file. The format is incorrect, but for transitioning from
   // v5 it does not matter.
@@ -289,9 +286,9 @@ TEST_F(SimpleIndexFileTest, SimpleCacheUpgrade) {
   const base::FilePath old_index_file =
       cache_path.AppendASCII("the-real-index");
   ASSERT_EQ(implicit_cast<int>(index_file_contents.size()),
-            file_util::WriteFile(old_index_file,
-                                 index_file_contents.data(),
-                                 index_file_contents.size()));
+            base::WriteFile(old_index_file,
+                            index_file_contents.data(),
+                            index_file_contents.size()));
 
   // Upgrade the cache.
   ASSERT_TRUE(disk_cache::UpgradeSimpleCacheOnDisk(cache_path));

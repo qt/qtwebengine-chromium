@@ -35,37 +35,46 @@ class HTMLToken;
 
 class HTMLViewSourceDocument FINAL : public HTMLDocument {
 public:
-    static PassRefPtr<HTMLViewSourceDocument> create(const DocumentInit& initializer, const String& mimeType)
+    enum SourceAnnotation {
+        AnnotateSourceAsSafe,
+        AnnotateSourceAsXSS
+    };
+
+    static PassRefPtrWillBeRawPtr<HTMLViewSourceDocument> create(const DocumentInit& initializer, const String& mimeType)
     {
-        return adoptRef(new HTMLViewSourceDocument(initializer, mimeType));
+        return adoptRefWillBeNoop(new HTMLViewSourceDocument(initializer, mimeType));
     }
 
-    void addSource(const String&, HTMLToken&);
+    void addSource(const String&, HTMLToken&, SourceAnnotation);
+
+    virtual void trace(Visitor*) OVERRIDE;
 
 private:
     HTMLViewSourceDocument(const DocumentInit&, const String& mimeType);
 
-    virtual PassRefPtr<DocumentParser> createParser() OVERRIDE;
+    virtual PassRefPtrWillBeRawPtr<DocumentParser> createParser() OVERRIDE;
 
     void processDoctypeToken(const String& source, HTMLToken&);
     void processEndOfFileToken(const String& source, HTMLToken&);
-    void processTagToken(const String& source, HTMLToken&);
+    void processTagToken(const String& source, HTMLToken&, SourceAnnotation);
     void processCommentToken(const String& source, HTMLToken&);
-    void processCharacterToken(const String& source, HTMLToken&);
+    void processCharacterToken(const String& source, HTMLToken&, SourceAnnotation);
 
     void createContainingTable();
-    PassRefPtr<Element> addSpanWithClassName(const AtomicString&);
+    PassRefPtrWillBeRawPtr<Element> addSpanWithClassName(const AtomicString&);
     void addLine(const AtomicString& className);
     void finishLine();
-    void addText(const String& text, const AtomicString& className);
-    int addRange(const String& source, int start, int end, const String& className, bool isLink = false, bool isAnchor = false, const String& link = String());
-    PassRefPtr<Element> addLink(const AtomicString& url, bool isAnchor);
-    PassRefPtr<Element> addBase(const AtomicString& href);
+    void addText(const String& text, const AtomicString& className, SourceAnnotation = AnnotateSourceAsSafe);
+    int addRange(const String& source, int start, int end, const AtomicString& className, bool isLink = false, bool isAnchor = false, const AtomicString& link = nullAtom);
+    void maybeAddSpanForAnnotation(SourceAnnotation);
+
+    PassRefPtrWillBeRawPtr<Element> addLink(const AtomicString& url, bool isAnchor);
+    PassRefPtrWillBeRawPtr<Element> addBase(const AtomicString& href);
 
     String m_type;
-    RefPtr<Element> m_current;
-    RefPtr<HTMLTableSectionElement> m_tbody;
-    RefPtr<HTMLTableCellElement> m_td;
+    RefPtrWillBeMember<Element> m_current;
+    RefPtrWillBeMember<HTMLTableSectionElement> m_tbody;
+    RefPtrWillBeMember<HTMLTableCellElement> m_td;
     int m_lineNumber;
 };
 

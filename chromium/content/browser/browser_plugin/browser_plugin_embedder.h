@@ -33,7 +33,6 @@ namespace content {
 
 class BrowserPluginGuest;
 class BrowserPluginGuestManager;
-class BrowserPluginHostFactory;
 class RenderWidgetHostImpl;
 class WebContentsImpl;
 struct NativeWebKeyboardEvent;
@@ -44,41 +43,17 @@ class CONTENT_EXPORT BrowserPluginEmbedder : public WebContentsObserver {
 
   static BrowserPluginEmbedder* Create(WebContentsImpl* web_contents);
 
-  // Returns the RenderViewHost at a point (|x|, |y|) asynchronously via
-  // |callback|. We need a roundtrip to renderer process to get this
-  // information.
-  void GetRenderViewHostAtPosition(
-      int x,
-      int y,
-      const WebContents::GetRenderViewHostCallback& callback);
+  // Returns this embedder's WebContentsImpl.
+  WebContentsImpl* GetWebContents() const;
 
   // Called when embedder's |rwh| has sent screen rects to renderer.
   void DidSendScreenRects();
 
-  // Called when embedder's WebContentsImpl has unhandled keyboard input.
-  // Returns whether the BrowserPlugin has handled the keyboard event.
-  // Currently we are only interested in checking for the escape key to
-  // unlock hte guest's pointer lock.
-  bool HandleKeyboardEvent(const NativeWebKeyboardEvent& event);
-
-  // Overrides factory for testing. Default (NULL) value indicates regular
-  // (non-test) environment.
-  static void set_factory_for_testing(BrowserPluginHostFactory* factory) {
-    factory_ = factory;
-  }
-
-  // Sets the zoom level for all guests within this embedder.
-  void SetZoomLevel(double level);
-
   // WebContentsObserver implementation.
-  virtual void RenderProcessGone(base::TerminationStatus status) OVERRIDE;
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 
   void DragSourceEndedAt(int client_x, int client_y, int screen_x,
       int screen_y, blink::WebDragOperation operation);
-
-  void DragSourceMovedTo(int client_x, int client_y,
-                         int screen_x, int screen_y);
 
   void OnUpdateDragCursor(bool* handled);
 
@@ -88,47 +63,37 @@ class CONTENT_EXPORT BrowserPluginEmbedder : public WebContentsObserver {
 
   void StartDrag(BrowserPluginGuest* guest);
 
-  void StopDrag(BrowserPluginGuest* guest);
-
+  // Sends EndSystemDrag message to the guest that initiated the last drag/drop
+  // operation, if there's any.
   void SystemDragEnded();
 
  private:
-  friend class TestBrowserPluginEmbedder;
+  explicit BrowserPluginEmbedder(WebContentsImpl* web_contents);
 
-  BrowserPluginEmbedder(WebContentsImpl* web_contents);
+  BrowserPluginGuestManager* GetBrowserPluginGuestManager() const;
 
-  void CleanUp();
+  bool DidSendScreenRectsCallback(WebContents* guest_web_contents);
 
-  BrowserPluginGuestManager* GetBrowserPluginGuestManager();
-
-  bool DidSendScreenRectsCallback(BrowserPluginGuest* guest);
-
-  bool SetZoomLevelCallback(double level, BrowserPluginGuest* guest);
+  bool SetZoomLevelCallback(double level, WebContents* guest_web_contents);
 
   bool UnlockMouseIfNecessaryCallback(const NativeWebKeyboardEvent& event,
-                                      BrowserPluginGuest* guest);
+                                      WebContents* guest);
+
+  // Called by the content embedder when a guest exists with the provided
+  // |instance_id|.
+  void OnGuestCallback(int instance_id,
+                       const BrowserPluginHostMsg_Attach_Params& params,
+                       const base::DictionaryValue* extra_params,
+                       WebContents* guest_web_contents);
 
   // Message handlers.
 
-  void OnAllocateInstanceID(int request_id);
   void OnAttach(int instance_id,
                 const BrowserPluginHostMsg_Attach_Params& params,
                 const base::DictionaryValue& extra_params);
   void OnPluginAtPositionResponse(int instance_id,
                                   int request_id,
                                   const gfx::Point& position);
-
-  // Static factory instance (always NULL for non-test).
-  static BrowserPluginHostFactory* factory_;
-
-  // Map that contains outstanding queries to |GetRenderViewHostAtPosition|.
-  // We need a roundtrip to the renderer process to retrieve the answer,
-  // so we store these callbacks until we hear back from the renderer.
-  typedef std::map<int, WebContents::GetRenderViewHostCallback>
-      GetRenderViewHostCallbackMap;
-  GetRenderViewHostCallbackMap pending_get_render_view_callbacks_;
-  // Next request id for BrowserPluginMsg_PluginAtPositionRequest query.
-  int next_get_render_view_request_id_;
 
   // Used to correctly update the cursor when dragging over a guest, and to
   // handle a race condition when dropping onto the guest that started the drag
@@ -140,6 +105,8 @@ class CONTENT_EXPORT BrowserPluginEmbedder : public WebContentsObserver {
   // Pointer to the guest that started the drag, used to forward necessary drag
   // status messages to the correct guest.
   base::WeakPtr<BrowserPluginGuest> guest_started_drag_;
+
+  base::WeakPtrFactory<BrowserPluginEmbedder> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(BrowserPluginEmbedder);
 };

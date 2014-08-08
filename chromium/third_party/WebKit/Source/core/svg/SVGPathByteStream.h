@@ -26,21 +26,11 @@
 
 namespace WebCore {
 
-// Type definitions for the byte stream data
-typedef union {
-    bool value;
-    unsigned char bytes[sizeof(bool)];
-} BoolByte;
-
-typedef union {
-    float value;
-    unsigned char bytes[sizeof(float)];
-} FloatByte;
-
-typedef union {
-    unsigned short value;
-    unsigned char bytes[sizeof(unsigned short)];
-} UnsignedShortByte;
+template<typename DataType>
+union ByteType {
+    DataType value;
+    unsigned char bytes[sizeof(DataType)];
+};
 
 class SVGPathByteStream {
     WTF_MAKE_FAST_ALLOCATED;
@@ -50,7 +40,7 @@ public:
         return adoptPtr(new SVGPathByteStream);
     }
 
-    PassOwnPtr<SVGPathByteStream> copy()
+    PassOwnPtr<SVGPathByteStream> copy() const
     {
         return adoptPtr(new SVGPathByteStream(m_data));
     }
@@ -58,24 +48,19 @@ public:
     typedef Vector<unsigned char> Data;
     typedef Data::const_iterator DataIterator;
 
-    DataIterator begin() { return m_data.begin(); }
-    DataIterator end() { return m_data.end(); }
+    DataIterator begin() const { return m_data.begin(); }
+    DataIterator end() const { return m_data.end(); }
     void append(unsigned char byte) { m_data.append(byte); }
-    void append(SVGPathByteStream* other)
-    {
-        for (DataIterator it = other->begin(); it != other->end(); ++it)
-            append(*it);
-    }
+    void append(SVGPathByteStream* other) { m_data.appendVector(other->m_data); }
     void clear() { m_data.clear(); }
-    bool isEmpty() const { return !m_data.size(); }
+    void reserveInitialCapacity(size_t size) { m_data.reserveInitialCapacity(size); }
+    void shrinkToFit() { m_data.shrinkToFit(); }
+    bool isEmpty() const { return m_data.isEmpty(); }
     unsigned size() const { return m_data.size(); }
-
-    // Only defined to let SVGAnimatedPathAnimator use the standard list code paths - this method is never called.
-    void resize(unsigned) { }
 
 private:
     SVGPathByteStream() { }
-    SVGPathByteStream(Data& data)
+    SVGPathByteStream(const Data& data)
         : m_data(data)
     {
     }

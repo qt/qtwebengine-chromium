@@ -24,7 +24,7 @@
 #include "bindings/v8/ExceptionState.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
-#include "core/editing/markup.h"
+#include "core/editing/MarkupAccumulator.h"
 #include "wtf/text/WTFString.h"
 
 namespace WebCore {
@@ -32,11 +32,12 @@ namespace WebCore {
 String XMLSerializer::serializeToString(Node* node, ExceptionState& exceptionState)
 {
     if (!node) {
-        exceptionState.throwDOMException(TypeError, "Invalid node value.");
+        exceptionState.throwTypeError("Invalid node value.");
         return String();
     }
 
-    return createMarkup(node);
+    MarkupAccumulator accumulator(0, DoNotResolveURLs, nullptr, ForcedXML);
+    return accumulator.serializeNodes(*node, IncludeNode);
 }
 
 } // namespace WebCore

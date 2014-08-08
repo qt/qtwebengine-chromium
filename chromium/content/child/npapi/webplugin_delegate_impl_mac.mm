@@ -22,10 +22,10 @@
 #include "content/child/npapi/plugin_web_event_converter_mac.h"
 #include "content/child/npapi/webplugin.h"
 #include "content/child/npapi/webplugin_accelerated_surface_mac.h"
+#include "content/common/cursors/webcursor.h"
 #include "skia/ext/skia_utils_mac.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "ui/gfx/scoped_ns_graphics_context_save_gstate_mac.h"
-#include "webkit/common/cursors/webcursor.h"
 
 using blink::WebKeyboardEvent;
 using blink::WebInputEvent;
@@ -229,7 +229,7 @@ bool WebPluginDelegateImpl::PlatformInitialize() {
         // that behavior here.
         const WebPluginInfo& plugin_info =
             instance_->plugin_lib()->plugin_info();
-        if (plugin_info.name.find(ASCIIToUTF16("Flash")) !=
+        if (plugin_info.name.find(base::ASCIIToUTF16("Flash")) !=
             base::string16::npos)
           gpu_preference = gfx::PreferIntegratedGpu;
         surface_ = plugin_->GetAcceleratedSurface(gpu_preference);
@@ -354,7 +354,7 @@ bool WebPluginDelegateImpl::PlatformHandleInputEvent(
   }
   NPCocoaEvent* plugin_event = event_converter->plugin_event();
 
-  // The plugin host recieves events related to drags starting outside the
+  // The plugin host receives events related to drags starting outside the
   // plugin, but the NPAPI Cocoa event model spec says plugins shouldn't receive
   // them, so filter them out.
   // If WebKit adds a page capture mode (like the plugin capture mode that

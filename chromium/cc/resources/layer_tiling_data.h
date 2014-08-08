@@ -27,7 +27,7 @@ class CC_EXPORT LayerTilingData {
 
   ~LayerTilingData();
 
-  static scoped_ptr<LayerTilingData> Create(gfx::Size tile_size,
+  static scoped_ptr<LayerTilingData> Create(const gfx::Size& tile_size,
                                             BorderTexelOption option);
 
   bool has_empty_bounds() const { return tiling_data_.has_empty_bounds(); }
@@ -41,7 +41,7 @@ class CC_EXPORT LayerTilingData {
   }
 
   // Change the tile size. This may invalidate all the existing tiles.
-  void SetTileSize(gfx::Size size);
+  void SetTileSize(const gfx::Size& size);
   gfx::Size tile_size() const;
   // Change the border texel setting. This may invalidate all existing tiles.
   void SetBorderTexelOption(BorderTexelOption option);
@@ -64,7 +64,9 @@ class CC_EXPORT LayerTilingData {
     }
 
     gfx::Rect opaque_rect() const { return opaque_rect_; }
-    void set_opaque_rect(gfx::Rect opaque_rect) { opaque_rect_ = opaque_rect; }
+    void set_opaque_rect(const gfx::Rect& opaque_rect) {
+      opaque_rect_ = opaque_rect;
+    }
    private:
     int i_;
     int j_;
@@ -79,22 +81,22 @@ class CC_EXPORT LayerTilingData {
   Tile* TileAt(int i, int j) const;
   const TileMap& tiles() const { return tiles_; }
 
-  void SetBounds(gfx::Size size);
-  gfx::Size bounds() const { return tiling_data_.total_size(); }
+  void SetTilingRect(const gfx::Rect& tiling_rect);
+  gfx::Rect tiling_rect() const { return tiling_data_.tiling_rect(); }
 
-  void ContentRectToTileIndices(gfx::Rect rect,
+  void ContentRectToTileIndices(const gfx::Rect& rect,
                                 int* left,
                                 int* top,
                                 int* right,
                                 int* bottom) const;
   gfx::Rect TileRect(const Tile* tile) const;
 
-  Region OpaqueRegionInContentRect(gfx::Rect rect) const;
+  Region OpaqueRegionInContentRect(const gfx::Rect& rect) const;
 
   void reset() { tiles_.clear(); }
 
  protected:
-  LayerTilingData(gfx::Size tile_size, BorderTexelOption option);
+  LayerTilingData(const gfx::Size& tile_size, BorderTexelOption option);
 
   TileMap tiles_;
   TilingData tiling_data_;

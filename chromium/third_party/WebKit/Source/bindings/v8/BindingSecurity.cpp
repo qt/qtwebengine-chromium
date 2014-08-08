@@ -34,65 +34,69 @@
 #include "bindings/v8/V8Binding.h"
 #include "core/dom/Document.h"
 #include "core/html/HTMLFrameElementBase.h"
-#include "core/frame/DOMWindow.h"
-#include "core/frame/Frame.h"
+#include "core/frame/LocalDOMWindow.h"
+#include "core/frame/LocalFrame.h"
 #include "core/frame/Settings.h"
 #include "platform/weborigin/SecurityOrigin.h"
 
 namespace WebCore {
 
-static bool isDocumentAccessibleFromDOMWindow(Document* targetDocument, DOMWindow* activeWindow)
+static bool isDocumentAccessibleFromDOMWindow(Document* targetDocument, LocalDOMWindow* callingWindow)
 {
     if (!targetDocument)
         return false;
 
-    if (!activeWindow)
+    if (!callingWindow)
         return false;
 
-    if (activeWindow->document()->securityOrigin()->canAccess(targetDocument->securityOrigin()))
+    if (callingWindow->document()->securityOrigin()->canAccess(targetDocument->securityOrigin()))
         return true;
 
     return false;
 }
 
-static bool canAccessDocument(Document* targetDocument, ExceptionState& exceptionState)
+static bool canAccessDocument(v8::Isolate* isolate, Document* targetDocument, ExceptionState& exceptionState)
 {
-    DOMWindow* activeWindow = activeDOMWindow();
-    if (isDocumentAccessibleFromDOMWindow(targetDocument, activeWindow))
+    LocalDOMWindow* callingWindow = callingDOMWindow(isolate);
+    if (isDocumentAccessibleFromDOMWindow(targetDocument, callingWindow))
         return true;
 
     if (targetDocument->domWindow())
-        exceptionState.throwSecurityError(targetDocument->domWindow()->sanitizedCrossDomainAccessErrorMessage(activeWindow), targetDocument->domWindow()->crossDomainAccessErrorMessage(activeWindow));
+        exceptionState.throwSecurityError(targetDocument->domWindow()->sanitizedCrossDomainAccessErrorMessage(callingWindow), targetDocument->domWindow()->crossDomainAccessErrorMessage(callingWindow));
     return false;
 }
 
-static bool canAccessDocument(Document* targetDocument, SecurityReportingOption reportingOption = ReportSecurityError)
+static bool canAccessDocument(v8::Isolate* isolate, Document* targetDocument, SecurityReportingOption reportingOption = ReportSecurityError)
 {
-    DOMWindow* activeWindow = activeDOMWindow();
-    if (isDocumentAccessibleFromDOMWindow(targetDocument, activeWindow))
+    LocalDOMWindow* callingWindow = callingDOMWindow(isolate);
+    if (isDocumentAccessibleFromDOMWindow(targetDocument, callingWindow))
         return true;
 
     if (reportingOption == ReportSecurityError && targetDocument->domWindow()) {
-        if (Frame* frame = targetDocument->frame())
-            frame->domWindow()->printErrorMessage(targetDocument->domWindow()->crossDomainAccessErrorMessage(activeWindow));
+        if (LocalFrame* frame = targetDocument->frame())
+            frame->domWindow()->printErrorMessage(targetDocument->domWindow()->crossDomainAccessErrorMessage(callingWindow));
     }
 
     return false;
 }
 
-bool BindingSecurity::shouldAllowAccessToFrame(Frame* target, SecurityReportingOption reportingOption)
+bool BindingSecurity::shouldAllowAccessToFrame(v8::Isolate* isolate, Frame* target, SecurityReportingOption reportingOption)
 {
-    return target && canAccessDocument(target->document(), reportingOption);
+    if (!target || !target->isLocalFrame())
+        return false;
+    return canAccessDocument(isolate, toLocalFrame(target)->document(), reportingOption);
 }
 
-bool BindingSecurity::shouldAllowAccessToFrame(Frame* target, ExceptionState& exceptionState)
+bool BindingSecurity::shouldAllowAccessToFrame(v8::Isolate* isolate, Frame* target, ExceptionState& exceptionState)
 {
-    return target && canAccessDocument(target->document(), exceptionState);
+    if (!target || !target->isLocalFrame())
+        return false;
+    return canAccessDocument(isolate, toLocalFrame(target)->document(), exceptionState);
 }
 
-bool BindingSecurity::shouldAllowAccessToNode(Node* target, ExceptionState& exceptionState)
+bool BindingSecurity::shouldAllowAccessToNode(v8::Isolate* isolate, Node* target, ExceptionState& exceptionState)
 {
-    return target && canAccessDocument(&target->document(), exceptionState);
+    return target && canAccessDocument(isolate, &target->document(), exceptionState);
 }
 
 }
